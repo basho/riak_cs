@@ -1,0 +1,7 @@
+.eunit/*
+deps/*
+priv/*
+rel/riak_moss
+ebin/*.beam
+ebin/*.app
+doc

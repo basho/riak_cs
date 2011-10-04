@@ -1,0 +1,18 @@
+%%-*- mode: erlang -*-
+{application, riak_moss,
+ [
+  {description, "riak_moss"},
+  {vsn, "0.0.1"},
+  {modules, []},
+  {registered, []},
+  {applications, [
+                  kernel,
+                  stdlib,
+                  inets,
+                  crypto,
+                  mochiweb,
+                  webmachine
+                 ]},
+  {mod, { riak_moss_app, []}},
+  {env, []}
+ ]}.
