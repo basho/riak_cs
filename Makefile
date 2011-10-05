@@ -6,7 +6,9 @@ PKG_VERSION	?= $(shell echo $(REVISION) | tr - .)
 
 .PHONY: rel deps
 
-all: deps
+all: deps compile
+
+compile:
 	@./rebar compile
 
 deps:
@@ -27,7 +29,7 @@ test:
 ##
 ## Release targets
 ##
-rel: deps
+rel: deps compile
 	@./rebar compile generate
 
 relclean:
