@@ -2,6 +2,6 @@
 deps/*
 priv/*
 rel/riak_moss
-*.beam
+ebin/*.beam
+ebin/*.app
 doc
-ebin
