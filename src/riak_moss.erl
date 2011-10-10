@@ -18,19 +18,43 @@
 %%
 %% -------------------------------------------------------------------
 
-%% @doc riak_moss startup code
+%% @doc riak_moss utility functions
 
 -module(riak_moss).
 
--export([start/0, start_link/0, stop/0]).
-
--compile(export_all).
+%% Public API
+-export([riak_client/0,
+         moss_client/1,
+         make_bucket/2,
+         make_key/0]).
 
 -include("riak_moss.hrl").
 
+-type user() :: #rs3_user{}.
+
+%% ===================================================================
+%% Public API
+%% ===================================================================
+
+%% @doc Return a riak protocol buffers client reference
+-spec riak_client() -> {ok, pid()}.
+riak_client() ->
+    riakc_pb_socket:start_link("127.0.0.1", 8087).
+
+%% @doc Return a moss client reference for the specified user
+-spec moss_client(user()) -> {ok, term()}.
+moss_client(User) ->
+    {ok, Pid} = riak_client(),
+    {ok, riak_moss_client:new(Pid, User)}.
+
+%% @doc Compose a moss bucket name using the key id
+%% and the specified bucket name.
+-spec make_bucket(binary(), binary()) -> binary().
 make_bucket(KeyId, Bucket) ->
     iolist_to_binary([KeyId, ":", Bucket]).
 
+%% @doc Generate a pseudo-random 64-byte key
+-spec make_key() -> string().
 make_key() ->
     KeySize = 64,
     {A, B, C} = erlang:now(),
@@ -39,8 +63,12 @@ make_key() ->
     BKey = <<Rand:KeySize>>,
     binary_to_hexlist(BKey).
 
-%% @spec (integer(), integer(), integer()) -> integer()
+%% ===================================================================
+%% Internal functions
+%% ===================================================================
+
 %% @doc Integer version of the standard pow() function.
+-spec pow(integer(), integer(), integer()) -> integer().
 pow(Base, Power, Acc) ->
     case Power of
         0 ->
@@ -49,13 +77,13 @@ pow(Base, Power, Acc) ->
             pow(Base, Power - 1, Acc * Base)
     end.
 
-%% @spec (integer(), integer()) -> integer()
 %% @doc Integer version of the standard pow() function; call the recursive accumulator to calculate.
+-spec pow(integer(), integer()) -> integer().
 pow(Base, Power) ->
     pow(Base, Power, 1).
 
-%% @spec (binary()) -> string()
 %% @doc Convert the passed binary into a string where the numbers are represented in hexadecimal (lowercase and 0 prefilled).
+-spec binary_to_hexlist(binary()) -> string().
 binary_to_hexlist(Bin) ->
     XBin =
         [ begin
@@ -67,55 +95,4 @@ binary_to_hexlist(Bin) ->
                       Hex
               end
           end || X <- binary_to_list(Bin)],
-
     string:to_lower(lists:flatten(XBin)).
-
-
-riak_client() ->
-    {ok, _Pid} = riakc_pb_socket:start_link("127.0.0.1", 8087).
-
-
-moss_client(User) ->
-    {ok, Pid} = riak_client(),
-    {ok, riak_s3_client:new(Pid, User)}.
-
-
-ensure_started(App) ->
-    case application:start(App) of
-        ok ->
-            ok;
-        {error, {already_started, App}} ->
-            ok
-    end.
-
-%% @spec start_link() -> {ok,Pid::pid()}
-%% @doc Starts the app for inclusion in a supervisor tree
-start_link() ->
-    ensure_started(inets),
-    ensure_started(crypto),
-    ensure_started(mochiweb),
-    application:set_env(webmachine, webmachine_logger_module,
-                        webmachine_logger),
-    ensure_started(webmachine),
-    riak_moss_sup:start_link().
-
-%% @spec start() -> ok
-%% @doc Start the riak_moss server.
-start() ->
-    ensure_started(inets),
-    ensure_started(crypto),
-    ensure_started(mochiweb),
-    application:set_env(webmachine, webmachine_logger_module,
-                        webmachine_logger),
-    ensure_started(webmachine),
-    application:start(riak_moss).
-
-%% @spec stop() -> ok
-%% @doc Stop the riak_moss server.
-stop() ->
-    Res = application:stop(riak_moss),
-    application:stop(webmachine),
-    application:stop(mochiweb),
-    application:stop(crypto),
-    application:stop(inets),
-    Res.
