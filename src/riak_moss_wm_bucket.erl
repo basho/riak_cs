@@ -35,7 +35,7 @@ init(_Ctx) ->
     {ok, _Ctx}.
 
 service_available(RD, Ctx) ->
-    {true, RD, Ctx}.
+    riak_moss_wm_utils:service_available(RD, Ctx).
 
 malformed_request(RD, Ctx) ->
     {false, RD, Ctx}.

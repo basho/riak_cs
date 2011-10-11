@@ -35,18 +35,7 @@ init(_Ctx) ->
     {ok, _Ctx}.
 
 service_available(RD, Ctx) ->
-    %% TODO:
-    %% At some point in the future
-    %% this needs to check if we have
-    %% an alive Riak server. Although
-    %% maybe it makes more sense to be
-    %% optimistic and wait untl we actually
-    %% check the ACL?
-
-
-    %% For now we just always
-    %% return true
-    {true, RD, Ctx}.
+    riak_moss_wm_utils:service_available(RD, Ctx).
 
 malformed_request(RD, Ctx) ->
     {false, RD, Ctx}.
