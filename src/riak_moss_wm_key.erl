@@ -20,7 +20,13 @@
 
 -module(riak_moss_wm_key).
 
--export([init/1]).
+-export([init/1,
+         service_available/2,
+         forbidden/2,
+         content_types_provided/2,
+         malformed_request/2,
+         produce_body/2,
+         allowed_methods/2]).
 
 -include("riak_moss.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
@@ -28,3 +34,40 @@
 init(_Ctx) ->
     {ok, _Ctx}.
 
+service_available(RD, Ctx) ->
+    {true, RD, Ctx}.
+
+malformed_request(RD, Ctx) ->
+    {false, RD, Ctx}.
+
+forbidden(RD, Ctx) ->
+    %% TODO:
+    %% Actually check to see if this
+    %% is a real account.
+    {false, RD, Ctx}.
+
+%% @doc Get the list of methods this resource supports.
+allowed_methods(RD, Ctx) ->
+    %% TODO: add PUT, POST, DELETE
+    {['HEAD', 'GET'], RD, Ctx}.
+
+content_types_provided(RD, Ctx) ->
+    %% TODO:
+    %% As I understand S3, the content types provided
+    %% will either come from the value that was
+    %% last PUT or, from you adding a
+    %% `response-content-type` header in the request.
+
+    %% For now just return plaintext
+    {[{"text/plain", produce_body}], RD, Ctx}.
+
+produce_body(RD, Ctx) ->
+    %% TODO:
+    %% This is really just a placeholder
+    %% return value.
+    Return_body = <<>>,
+    {Return_body, RD, Ctx}.
+
+%% TODO:
+%% Add content_types_accepted when we add
+%% in PUT and POST requests.

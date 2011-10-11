@@ -63,7 +63,6 @@ forbidden(RD, Ctx) ->
     {false, RD, Ctx}.
 
 %% @doc Get the list of methods this resource supports.
-%%      Properties allows HEAD, GET, and PUT.
 allowed_methods(RD, Ctx) ->
     %% TODO:
     %% The docs seem to suggest GET is the only
@@ -86,4 +85,3 @@ produce_body(RD, Ctx) ->
     %% an empty list.
     Return_body = [],
     {mochijson2:encode(Return_body), RD, Ctx}.
-
