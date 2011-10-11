@@ -42,7 +42,7 @@ riak_client() ->
     riakc_pb_socket:start_link("127.0.0.1", 8087).
 
 %% @doc Return a moss client reference for the specified user
--spec moss_client(user()) -> {ok, ref()}.
+-spec moss_client(user()) -> {ok, term()}.
 moss_client(User) ->
     {ok, Pid} = riak_client(),
     {ok, riak_moss_client:new(Pid, User)}.
