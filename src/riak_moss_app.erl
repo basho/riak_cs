@@ -24,15 +24,26 @@
 
 -behaviour(application).
 
--export([start/2,stop/1]).
+%% application API
+-export([start/2,
+         stop/1]).
 
 
-%% @spec start(_Type, _StartArgs) -> ServerRet
+-type start_type() :: normal | {takeover, node()} | {failover, node()}.
+-type start_args() :: term().
+
+%% ===================================================================
+%% Public API
+%% ===================================================================
+
 %% @doc application start callback for riak_moss.
+-spec start(start_type(), start_args()) -> {ok, pid()} |
+                                           {ok, pid(), term()} |
+                                           {error, term()}.
 start(_Type, _StartArgs) ->
     riak_moss_sup:start_link().
 
-%% @spec stop(_State) -> ServerRet
 %% @doc application stop callback for riak_moss.
+-spec stop(term()) -> ok.
 stop(_State) ->
     ok.
