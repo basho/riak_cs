@@ -62,9 +62,9 @@ init([]) ->
             ok;
         undefined ->
             Dispatch =
-                [{[], riak_moss_resource, [{mode, service}]},
-                 {[bucket], riak_moss_resource, [{mode, bucket}]},
-                 {[bucket, key], riak_moss_resource, [{mode, key}]}]
+                [{[], riak_moss_wm_service, []},
+                 {[bucket], riak_moss_wm_bucket, []},
+                 {[bucket, key], riak_moss_wm_key, []}]
     end,
     Server =
         {riak_moss_riakc,
