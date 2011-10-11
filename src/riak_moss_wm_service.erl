@@ -31,9 +31,11 @@
 -include("riak_moss.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
 
+-spec init(term()) -> {ok, term()}.
 init(_Ctx) ->
     {ok, _Ctx}.
 
+-spec service_available(term(), term()) -> {true, term(), term()}.
 service_available(RD, Ctx) ->
     %% TODO:
     %% At some point in the future
@@ -48,6 +50,7 @@ service_available(RD, Ctx) ->
     %% return true
     {true, RD, Ctx}.
 
+-spec malformed_request(term(), term()) -> {false, term(), term()}.
 malformed_request(RD, Ctx) ->
     {false, RD, Ctx}.
 
@@ -56,6 +59,7 @@ malformed_request(RD, Ctx) ->
 %%      authenticated. Normally with HTTP
 %%      we'd use the `authorized` callback,
 %%      but this is how S3 does things.
+-spec forbidden(term(), term()) -> {false, term(), term()}.
 forbidden(RD, Ctx) ->
     %% TODO:
     %% Actually check to see if this
@@ -63,6 +67,7 @@ forbidden(RD, Ctx) ->
     {false, RD, Ctx}.
 
 %% @doc Get the list of methods this resource supports.
+-spec allowed_methods(term(), term()) -> {[atom()], term(), term()}.
 allowed_methods(RD, Ctx) ->
     %% TODO:
     %% The docs seem to suggest GET is the only
@@ -70,12 +75,21 @@ allowed_methods(RD, Ctx) ->
     %% if HEAD is supported too.
     {['GET'], RD, Ctx}.
 
+-spec content_types_provided(term(), term()) ->
+    {[{atom(), module()}], term(), term()}.
 content_types_provided(RD, Ctx) ->
     %% TODO:
     %% This needs to be xml soon, but for now
     %% let's do json.
     {[{"application/json", produce_body}], RD, Ctx}.
 
+
+%% TODO:
+%% This spec will need to be updated
+%% when we change this to allow streaming
+%% bodies.
+-spec produce_body(term(), term()) ->
+    {iolist(), term(), term()}.
 produce_body(RD, Ctx) ->
     %% TODO:
     %% Here is where we need to actually

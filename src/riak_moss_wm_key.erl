@@ -31,15 +31,19 @@
 -include("riak_moss.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
 
+-spec init(term()) -> {ok, term()}.
 init(_Ctx) ->
     {ok, _Ctx}.
 
+-spec service_available(term(), term()) -> {true, term(), term()}.
 service_available(RD, Ctx) ->
     {true, RD, Ctx}.
 
+-spec malformed_request(term(), term()) -> {false, term(), term()}.
 malformed_request(RD, Ctx) ->
     {false, RD, Ctx}.
 
+-spec forbidden(term(), term()) -> {false, term(), term()}.
 forbidden(RD, Ctx) ->
     %% TODO:
     %% Actually check to see if this
@@ -47,10 +51,13 @@ forbidden(RD, Ctx) ->
     {false, RD, Ctx}.
 
 %% @doc Get the list of methods this resource supports.
+-spec allowed_methods(term(), term()) -> {[atom()], term(), term()}.
 allowed_methods(RD, Ctx) ->
     %% TODO: add PUT, POST, DELETE
     {['HEAD', 'GET'], RD, Ctx}.
 
+-spec content_types_provided(term(), term()) ->
+    {[{atom(), module()}], term(), term()}.
 content_types_provided(RD, Ctx) ->
     %% TODO:
     %% As I understand S3, the content types provided
@@ -61,6 +68,8 @@ content_types_provided(RD, Ctx) ->
     %% For now just return plaintext
     {[{"text/plain", produce_body}], RD, Ctx}.
 
+-spec produce_body(term(), term()) ->
+    {iolist(), term(), term()}.
 produce_body(RD, Ctx) ->
     %% TODO:
     %% This is really just a placeholder
