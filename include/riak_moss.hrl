@@ -2,7 +2,7 @@
 -record(rs3_user, {
           name :: binary(),
           key_id :: binary(),
-          key_data :: binary(),
+          key_secret :: binary(),
           buckets = []}).
 
 -record(rs3_bucket, {

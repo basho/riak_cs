@@ -32,14 +32,15 @@
 
 -define(SERVER, ?MODULE).
 
--record(state, {}).
+-record(state, {riakc_pid}).
 
 
 start_link() ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
 
 init([]) ->
-    {ok, #state{}}.
+    {ok, Pid} = riak_moss:riak_client(),
+    {ok, #state{riakc_pid=Pid}}.
 
 get_user(KeyID) ->
     gen_server:call(?MODULE, {get_user, KeyID}).
@@ -47,61 +48,73 @@ get_user(KeyID) ->
 create_user(UserName) ->
     gen_server:call(?MODULE, {create_user, UserName}).
 
+%% TODO:
+%% missing do_get_buckets call
 get_buckets(KeyID) ->
     gen_server:call(?MODULE, {get_buckets, KeyID}).
 
+%% TODO:
+%% If there is only one namespace
+%% for buckets then do we need
+%% the KeyID here?
 create_bucket(KeyID, BucketName) ->
     gen_server:call(?MODULE, {create_bucket, KeyID, BucketName}).
 
+%% TODO:
+%% If there is only one namespace
+%% for buckets then do we need
+%% the KeyID here?
+%% TODO:
+%% missing do_create_bucket
 delete_bucket(KeyID, BucketName) ->
     gen_server:call(?MODULE, {delete_bucket, KeyID, BucketName}).
 
-put_object(KeyId, Bucket, Key, Val, Metadata) ->
-    gen_server:call(?MODULE, {put_object, KeyId, Bucket, Key, Val, Metadata}).
+%% TODO:
+%% What are we actually doing with
+%% the KeyID?
+%% TODO:
+%% missing do_create_bucket
+%% and handle_call pattern
+put_object(KeyID, Bucket, Key, Val, Metadata) ->
+    gen_server:call(?MODULE, {put_object, KeyID, Bucket, Key, Val, Metadata}).
 
-do_create_user(UserName) ->
-    {ok, Pid} = riak_moss:riak_client(),
-    {ok, KL} = riakc_pb_socket:list_keys(Pid, ?USER_BUCKET),
-    KeyId = integer_to_list(length(KL)),
-    KeyData = riak_moss:make_key(),
-    User = #rs3_user{name=UserName, key_id=KeyId, key_data=KeyData},
-    UserObj = riakc_obj:new(?USER_BUCKET, list_to_binary(KeyId), User),
-    ok = riakc_pb_socket:put(Pid, UserObj),
-    riakc_pb_socket:stop(Pid),
+do_create_user(UserName, RiakcPid) ->
+    KeyID = riak_moss:unique_id_62(),
+    Secret = riak_moss:unique_id_62(),
+
+    User = #rs3_user{name=UserName, key_id=KeyID, key_secret=Secret},
+    do_save_user(User, RiakcPid),
     User.
 
-do_save_user(User) ->
-    {ok, Pid} = riak_moss:riak_client(),
-    UserObj = riakc_obj:new(?USER_BUCKET,list_to_binary(User#rs3_user.key_id),User),
-    ok = riakc_pb_socket:put(Pid, UserObj),
-    riakc_pb_socket:stop(Pid),
+do_save_user(User, RiakcPid) ->
+    UserObj = riakc_obj:new(?USER_BUCKET, list_to_binary(User#rs3_user.key_id),User),
+    ok = riakc_pb_socket:put(RiakcPid, UserObj),
     ok.
 
-do_get_user(KeyId) ->
-    {ok, Pid} = riak_moss:riak_client(),
-    case riakc_pb_socket:get(Pid, ?USER_BUCKET, list_to_binary(KeyId)) of
+do_get_user(KeyId, RiakcPid) ->
+    case riakc_pb_socket:get(RiakcPid, ?USER_BUCKET, list_to_binary(KeyId)) of
         {ok, Obj} ->
-            riakc_pb_socket:stop(Pid),
             {ok, binary_to_term(riakc_obj:get_value(Obj))};
         Error ->
-            riakc_pb_socket:stop(Pid),
             Error
     end.
 
-handle_call({get_user, KeyId}, _From, State) ->
-    {reply, do_get_user(KeyId), State};
-handle_call({create_user, UserName}, _From, State) ->
-    {reply, {ok, do_create_user(UserName)}, State};
+handle_call({get_user, KeyId}, _From, State=#state{riakc_pid=RiakcPid}) ->
+    {reply, do_get_user(KeyId, RiakcPid), State};
+handle_call({create_user, UserName}, _From, State=#state{riakc_pid=RiakcPid}) ->
+    {reply, {ok, do_create_user(UserName, RiakcPid)}, State};
 handle_call({get_buckets, _KeyId}, _From, State) ->
     {reply, ok, State};
-handle_call({create_bucket, KeyId, Name}, _From, State) ->
+%% TODO:
+%% move this into do_create_bucket
+handle_call({create_bucket, KeyId, Name}, _From, State=#state{riakc_pid=RiakcPid}) ->
     Bucket = #rs3_bucket{name=Name, creation_date=httpd_util:rfc1123_date()},
-    {ok, User} = do_get_user(KeyId),
+    {ok, User} = do_get_user(KeyId, RiakcPid),
     OldBuckets = User#rs3_user.buckets,
     case [B || B <- OldBuckets, B#rs3_bucket.name =:= Name] of
         [] ->
             NewUser = User#rs3_user{buckets=[Bucket|OldBuckets]},
-            do_save_user(NewUser);
+            do_save_user(NewUser, RiakcPid);
         _ ->
             ignore
     end,
@@ -115,7 +128,8 @@ handle_cast(_Msg, State) ->
 handle_info(_Info, State) ->
     {noreply, State}.
 
-terminate(_Reason, _State) ->
+terminate(_Reason, #state{riakc_pid=RiakcPid}) ->
+    riakc_pb_socket:stop(RiakcPid),
     ok.
 
 code_change(_OldVsn, State, _Extra) ->
