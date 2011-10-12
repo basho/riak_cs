@@ -68,9 +68,9 @@ make_request(RD, Ctx, User) ->
                      subresource=string:str(canonicalize_resource(RD), "?") /= 0,
                      user=User}).
 
-parse_resource(RD, Ctx=#ctx{host=undefined, mode=service}) ->
+parse_resource(_RD, Ctx=#ctx{host=undefined, mode=service}) ->
     Ctx;
-parse_resource(RD, Ctx=#ctx{host=Host, mode=service}) ->
+parse_resource(_RD, Ctx=#ctx{host=Host, mode=service}) ->
     Ctx#ctx{mode=bucket,bucket=Host};
 parse_resource(RD, Ctx=#ctx{host=undefined, mode=bucket}) ->
     Ctx#ctx{bucket=wrq:path_info(bucket, RD)};
@@ -86,7 +86,7 @@ make_context(RD, Ctx) ->
         {ok, KeyId, Signature} ->
             case riak_moss_riakc:get_user(KeyId) of
                 {ok, User} ->
-                    Authed = moss_auth:check_auth(User#rs3_user.key_id,
+                    Authed = riak_moss_auth:check_auth(User#rs3_user.key_id,
                                                   User#rs3_user.key_data,
                                                   RD,
                                                   Signature),
@@ -190,7 +190,7 @@ delete_resource(RD, Ctx=#ctx{user=User, bucket=Bucket, key=Key}) ->
     case C:delete_object(Bucket, Key) of
         ok ->
             {true, RD, Ctx};
-        O ->
+        _ ->
             {false, RD, Ctx}
     end.
 

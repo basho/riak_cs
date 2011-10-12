@@ -31,9 +31,10 @@
 -include("riak_moss.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
 
--spec init(term()) -> {ok, term()}.
-init(_Ctx) ->
-    {ok, _Ctx}.
+init(Config) ->
+    %% Get the authentication module
+    AuthMod = proplists:get_value(auth_module, Config),
+    {ok, #context{auth_mod=AuthMod}}.
 
 -spec service_available(term(), term()) -> {true, term(), term()}.
 service_available(RD, Ctx) ->
@@ -43,12 +44,26 @@ service_available(RD, Ctx) ->
 malformed_request(RD, Ctx) ->
     {false, RD, Ctx}.
 
--spec forbidden(term(), term()) -> {false, term(), term()}.
-forbidden(RD, Ctx) ->
-    %% TODO:
-    %% Actually check to see if this
-    %% is a real account.
-    {false, RD, Ctx}.
+%% @doc Check to see if the user is
+%%      authenticated. Normally with HTTP
+%%      we'd use the `authorized` callback,
+%%      but this is how S3 does things.
+forbidden(RD, Ctx=#context{auth_mod=AuthMod}) ->
+    case AuthMod of
+        undefined ->
+            %% Authentication module not specified, deny access
+            {true, RD, Ctx};
+        _ ->
+            %% Attempt to authenticate the request
+            case AuthMod:authenticate(RD) of
+                true ->
+                    %% Authentication succeeded
+                    {false, RD, Ctx};
+                false ->
+                    %% Authentication failed, deny access
+                    {true, RD, Ctx}
+            end
+    end.
 
 %% @doc Get the list of methods this resource supports.
 -spec allowed_methods(term(), term()) -> {[atom()], term(), term()}.

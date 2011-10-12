@@ -92,7 +92,7 @@ handle_call({get_user, KeyId}, _From, State) ->
     {reply, do_get_user(KeyId), State};
 handle_call({create_user, UserName}, _From, State) ->
     {reply, {ok, do_create_user(UserName)}, State};
-handle_call({get_buckets, KeyId}, _From, State) ->
+handle_call({get_buckets, _KeyId}, _From, State) ->
     {reply, ok, State};
 handle_call({create_bucket, KeyId, Name}, _From, State) ->
     Bucket = #rs3_bucket{name=Name, creation_date=httpd_util:rfc1123_date()},
@@ -106,7 +106,7 @@ handle_call({create_bucket, KeyId, Name}, _From, State) ->
             ignore
     end,
     {reply, ok, State};
-handle_call({delete_bucket, KeyId, Name}, _From, State) ->
+handle_call({delete_bucket, _KeyId, _Name}, _From, State) ->
     {reply, ok, State}.
 
 handle_cast(_Msg, State) ->
