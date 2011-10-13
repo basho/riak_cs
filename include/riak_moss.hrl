@@ -9,7 +9,8 @@
           name :: binary(),
           creation_date :: term()}).
 
--record(context, {auth_mod :: atom()}).
+-record(context, {auth_bypass :: atom(),
+                  auth_mod=riak_kv_passthru_auth :: atom()}).
 
 -define(USER_BUCKET, <<"moss.users">>).
 
