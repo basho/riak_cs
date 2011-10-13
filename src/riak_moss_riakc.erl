@@ -48,8 +48,6 @@ get_user(KeyID) ->
 create_user(UserName) ->
     gen_server:call(?MODULE, {create_user, UserName}).
 
-%% TODO:
-%% missing do_get_buckets call
 get_buckets(KeyID) ->
     gen_server:call(?MODULE, {get_buckets, KeyID}).
 
@@ -89,30 +87,34 @@ do_create_user(UserName, RiakcPid) ->
     do_save_user(User, RiakcPid),
     User.
 
+do_get_buckets(KeyID, RiakcPid) ->
+    User = do_get_user(KeyID, RiakcPid),
+    User#rs3_user.buckets.
+
 do_save_user(User, RiakcPid) ->
     UserObj = riakc_obj:new(?USER_BUCKET, list_to_binary(User#rs3_user.key_id),User),
     ok = riakc_pb_socket:put(RiakcPid, UserObj),
     ok.
 
-do_get_user(KeyId, RiakcPid) ->
-    case riakc_pb_socket:get(RiakcPid, ?USER_BUCKET, list_to_binary(KeyId)) of
+do_get_user(KeyID, RiakcPid) ->
+    case riakc_pb_socket:get(RiakcPid, ?USER_BUCKET, list_to_binary(KeyID)) of
         {ok, Obj} ->
             {ok, binary_to_term(riakc_obj:get_value(Obj))};
         Error ->
             Error
     end.
 
-handle_call({get_user, KeyId}, _From, State=#state{riakc_pid=RiakcPid}) ->
-    {reply, do_get_user(KeyId, RiakcPid), State};
+handle_call({get_user, KeyID}, _From, State=#state{riakc_pid=RiakcPid}) ->
+    {reply, do_get_user(KeyID, RiakcPid), State};
 handle_call({create_user, UserName}, _From, State=#state{riakc_pid=RiakcPid}) ->
-    {reply, {ok, do_create_user(UserName, RiakcPid)}, State};
-handle_call({get_buckets, _KeyId}, _From, State) ->
-    {reply, ok, State};
+    {reply, do_create_user(UserName, RiakcPid), State};
+handle_call({get_buckets, KeyID}, _From, State=#state{riakc_pid=RiakcPid}) ->
+    {reply, do_get_buckets(KeyID, RiakcPid), State};
 %% TODO:
 %% move this into do_create_bucket
-handle_call({create_bucket, KeyId, Name}, _From, State=#state{riakc_pid=RiakcPid}) ->
+handle_call({create_bucket, KeyID, Name}, _From, State=#state{riakc_pid=RiakcPid}) ->
     Bucket = #rs3_bucket{name=Name, creation_date=httpd_util:rfc1123_date()},
-    {ok, User} = do_get_user(KeyId, RiakcPid),
+    {ok, User} = do_get_user(KeyID, RiakcPid),
     OldBuckets = User#rs3_user.buckets,
     case [B || B <- OldBuckets, B#rs3_bucket.name =:= Name] of
         [] ->
@@ -122,7 +124,7 @@ handle_call({create_bucket, KeyId, Name}, _From, State=#state{riakc_pid=RiakcPid
             ignore
     end,
     {reply, ok, State};
-handle_call({delete_bucket, _KeyId, _Name}, _From, State) ->
+handle_call({delete_bucket, _KeyID, _Name}, _From, State) ->
     {reply, ok, State}.
 
 handle_cast(_Msg, State) ->
