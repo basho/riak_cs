@@ -74,6 +74,8 @@ delete_bucket(KeyID, BucketName) ->
 put_object(KeyID, BucketName, Key, Val, Metadata) ->
     gen_server:call(?MODULE, {put_object, KeyID, BucketName, Key, Val, Metadata}).
 
+get_object(BucketName, Key) ->
+    gen_server:call(?MODULE, {get_object, BucketName, Key}).
 
 handle_call({get_user, KeyID}, _From, State=#state{riakc_pid=RiakcPid}) ->
     {reply, do_get_user(KeyID, RiakcPid), State};
@@ -92,7 +94,10 @@ handle_call({delete_bucket, KeyID, BucketName}, _From, State=#state{riakc_pid=Ri
 
 handle_call({put_object, KeyID, BucketName, Key, Value, Metadata},
                    _From, State=#state{riakc_pid=RiakcPid}) ->
-    {reply, do_put_object(KeyID, BucketName, Key, Value, Metadata, RiakcPid), State}.
+    {reply, do_put_object(KeyID, BucketName, Key, Value, Metadata, RiakcPid), State};
+
+handle_call({get_object, BucketName, Key}, _From, State=#state{riakc_pid=RiakcPid}) ->
+    {reply, do_get_object(BucketName, Key, RiakcPid), State}.
 
 handle_cast(_Msg, State) ->
     {noreply, State}.
@@ -171,10 +176,23 @@ do_delete_bucket(KeyID, BucketName, RiakcPid) ->
 do_put_object(KeyID, BucketName, Key, Value, Metadata, RiakcPid) ->
     %% TODO: KeyID is currently
     %% not used
+
+    %% TODO:
+    %% Should we be converting the
+    %% key to binary here, or in the
+    %% the public api method?
     BinKey = list_to_binary(Key),
     RiakObject = riakc_obj:new(BucketName, BinKey, Value),
     NewObj = riak_obj:update_metadata(RiakObject, Metadata),
     riakc_pb_socket:put(RiakcPid, NewObj).
+
+do_get_object(BucketName, Key, RiakcPid) ->
+    %% TODO:
+    %% Should we be converting the
+    %% key to binary here, or in the
+    %% the public api method?
+    BinKey = list_to_binary(Key),
+    riakc_pb_socket:get(RiakcPid, BucketName, BinKey).
 
 do_save_user(User, RiakcPid) ->
     UserObj = riakc_obj:new(?USER_BUCKET, list_to_binary(User#rs3_user.key_id), User),
