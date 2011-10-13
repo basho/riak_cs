@@ -34,6 +34,9 @@
 
 -record(state, {riakc_pid}).
 
+%% ====================================================================
+%% Public API
+%% ====================================================================
 
 start_link() ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
@@ -70,6 +73,43 @@ delete_bucket(KeyID, BucketName) ->
 %% the KeyID?
 put_object(KeyID, BucketName, Key, Val, Metadata) ->
     gen_server:call(?MODULE, {put_object, KeyID, BucketName, Key, Val, Metadata}).
+
+
+handle_call({get_user, KeyID}, _From, State=#state{riakc_pid=RiakcPid}) ->
+    {reply, do_get_user(KeyID, RiakcPid), State};
+
+handle_call({create_user, UserName}, _From, State=#state{riakc_pid=RiakcPid}) ->
+    {reply, do_create_user(UserName, RiakcPid), State};
+
+handle_call({get_buckets, KeyID}, _From, State=#state{riakc_pid=RiakcPid}) ->
+    {reply, do_get_buckets(KeyID, RiakcPid), State};
+
+handle_call({create_bucket, KeyID, BucketName}, _From, State=#state{riakc_pid=RiakcPid}) ->
+    {reply, do_create_bucket(KeyID, BucketName, RiakcPid), State};
+
+handle_call({delete_bucket, KeyID, BucketName}, _From, State=#state{riakc_pid=RiakcPid}) ->
+    {reply, do_delete_bucket(KeyID, BucketName, RiakcPid), State};
+
+handle_call({put_object, KeyID, BucketName, Key, Value, Metadata},
+                   _From, State=#state{riakc_pid=RiakcPid}) ->
+    {reply, do_put_object(KeyID, BucketName, Key, Value, Metadata, RiakcPid), State}.
+
+handle_cast(_Msg, State) ->
+    {noreply, State}.
+
+handle_info(_Info, State) ->
+    {noreply, State}.
+
+terminate(_Reason, #state{riakc_pid=RiakcPid}) ->
+    riakc_pb_socket:stop(RiakcPid),
+    ok.
+
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.
+
+%% ====================================================================
+%% Internal functions
+%% ====================================================================
 
 do_create_user(UserName, RiakcPid) ->
     %% TODO: Is it outside the scope
@@ -148,36 +188,3 @@ do_get_user(KeyID, RiakcPid) ->
         Error ->
             Error
     end.
-
-handle_call({get_user, KeyID}, _From, State=#state{riakc_pid=RiakcPid}) ->
-    {reply, do_get_user(KeyID, RiakcPid), State};
-
-handle_call({create_user, UserName}, _From, State=#state{riakc_pid=RiakcPid}) ->
-    {reply, do_create_user(UserName, RiakcPid), State};
-
-handle_call({get_buckets, KeyID}, _From, State=#state{riakc_pid=RiakcPid}) ->
-    {reply, do_get_buckets(KeyID, RiakcPid), State};
-
-handle_call({create_bucket, KeyID, BucketName}, _From, State=#state{riakc_pid=RiakcPid}) ->
-    {reply, do_create_bucket(KeyID, BucketName, RiakcPid), State};
-
-handle_call({delete_bucket, KeyID, BucketName}, _From, State=#state{riakc_pid=RiakcPid}) ->
-    {reply, do_delete_bucket(KeyID, BucketName, RiakcPid), State};
-
-handle_call({put_object, KeyID, BucketName, Key, Value, Metadata},
-                   _From, State=#state{riakc_pid=RiakcPid}) ->
-    {reply, do_put_object(KeyID, BucketName, Key, Value, Metadata, RiakcPid), State}.
-
-handle_cast(_Msg, State) ->
-    {noreply, State}.
-
-handle_info(_Info, State) ->
-    {noreply, State}.
-
-terminate(_Reason, #state{riakc_pid=RiakcPid}) ->
-    riakc_pb_socket:stop(RiakcPid),
-    ok.
-
-code_change(_OldVsn, State, _Extra) ->
-    {ok, State}.
-
