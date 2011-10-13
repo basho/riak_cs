@@ -79,6 +79,9 @@ put_object(KeyID, Bucket, Key, Val, Metadata) ->
     gen_server:call(?MODULE, {put_object, KeyID, Bucket, Key, Val, Metadata}).
 
 do_create_user(UserName, RiakcPid) ->
+    %% TODO: Is it outside the scope
+    %% of this module for this func
+    %% to be making up the key/secret?
     KeyID = riak_moss:unique_id_62(),
     Secret = riak_moss:unique_id_62(),
 
