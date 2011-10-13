@@ -151,7 +151,7 @@ do_get_buckets(KeyID, RiakcPid) ->
 %% shares a global bucket namespace
 do_create_bucket(KeyID, BucketName, RiakcPid) ->
     Bucket = #rs3_bucket{name=BucketName, creation_date=httpd_util:rfc1123_date()},
-    {ok, User} = do_get_user(KeyID, RiakcPid),
+    User = do_get_user(KeyID, RiakcPid),
     OldBuckets = User#rs3_user.buckets,
     case [B || B <- OldBuckets, B#rs3_bucket.name =:= BucketName] of
         [] ->
