@@ -17,10 +17,12 @@
 -include("riak_moss.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
 
+
 init(Config) ->
-    %% Get the authentication module
-    AuthMod = proplists:get_value(auth_module, Config),
-    {ok, #context{auth_mod=AuthMod}}.
+    %% Check if authentication is disabled and
+    %% set that in the context.
+    AuthBypass = proplists:get_value(auth_bypass, Config),
+    {ok, #context{auth_bypass=AuthBypass}}.
 
 -spec service_available(term(), term()) -> {true, term(), term()}.
 service_available(RD, Ctx) ->
@@ -34,12 +36,13 @@ malformed_request(RD, Ctx) ->
 %%      authenticated. Normally with HTTP
 %%      we'd use the `authorized` callback,
 %%      but this is how S3 does things.
-forbidden(RD, Ctx=#context{auth_mod=AuthMod}) ->
-    case AuthMod of
-        undefined ->
-            %% Authentication module not specified, deny access
-            {true, RD, Ctx};
-        _ ->
+forbidden(RD, Ctx=#context{auth_bypass=AuthBypass,
+                           auth_mod=AuthMod}) ->
+    case AuthBypass of
+        true ->
+            %% Authentication is disabled, allow access
+            {false, RD, Ctx};
+        false ->
             %% Attempt to authenticate the request
             case AuthMod:authenticate(RD) of
                 true ->
