@@ -119,7 +119,7 @@ code_change(_OldVsn, State, _Extra) ->
 do_get_user(KeyID, RiakcPid) ->
     case riakc_pb_socket:get(RiakcPid, ?USER_BUCKET, list_to_binary(KeyID)) of
         {ok, Obj} ->
-            {ok, binary_to_term(riakc_obj:get_value(Obj))};
+            binary_to_term(riakc_obj:get_value(Obj));
         Error ->
             Error
     end.
