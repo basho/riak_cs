@@ -113,6 +113,26 @@ do_create_bucket(KeyID, BucketName, RiakcPid) ->
     %% owned by the user?
     ok.
 
+do_delete_bucket(KeyID, BucketName, RiakcPid) ->
+    %% TODO:
+    %% Right now we're just removing
+    %% the bucket from the list of
+    %% buckets owned by the user.
+    %% What do we need to do
+    %% to actually "delete"
+    %% the bucket?
+    User = do_get_user(KeyID, RiakcPid),
+    CurrentBuckets = User#rs3_user.buckets,
+
+    %% TODO:
+    %% This logic is pure and should
+    %% be separated out into it's
+    %% own func so it can be easily
+    %% unit tested.
+    UpdatedBuckets = lists:keydelete(BucketName, 0, CurrentBuckets),
+    UpdatedUser = User#rs3_user{buckets=UpdatedBuckets},
+    do_save_user(UpdatedUser, RiakcPid).
+
 do_save_user(User, RiakcPid) ->
     UserObj = riakc_obj:new(?USER_BUCKET, list_to_binary(User#rs3_user.key_id),User),
     ok = riakc_pb_socket:put(RiakcPid, UserObj),
@@ -136,8 +156,8 @@ handle_call({get_buckets, KeyID}, _From, State=#state{riakc_pid=RiakcPid}) ->
 %% move this into do_create_bucket
 handle_call({create_bucket, KeyID, BucketName}, _From, State=#state{riakc_pid=RiakcPid}) ->
     {reply, do_create_bucket(KeyID, BucketName, RiakcPid), State};
-handle_call({delete_bucket, _KeyID, _Name}, _From, State) ->
-    {reply, ok, State}.
+handle_call({delete_bucket, KeyID, BucketName}, _From, State=#state{riakc_pid=RiakcPid}) ->
+    {reply, do_delete_bucket(KeyID, BucketName, RiakcPid), State}.
 
 handle_cast(_Msg, State) ->
     {noreply, State}.
