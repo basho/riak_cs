@@ -43,27 +43,28 @@ init([]) ->
         undefined ->
             Port = 80
     end,
-    case application:get_env(riak_moss, dispatch) of
-        {ok, Dispatch} ->
-            ok;
-        undefined ->
-            Dispatch =
-                [{[], riak_moss_wm_service, []},
-                 {[bucket], riak_moss_wm_bucket, []},
-                 {[bucket, key], riak_moss_wm_key, []}]
-    end,
+
+    %% Create child specifications
     Server =
         {riak_moss_riakc,
          {riak_moss_riakc, start_link, []},
          permanent, 5000, worker, dynamic},
-    WebConfig = [
-                 {dispatch, Dispatch},
+    WebConfig1 = [
+                 {dispatch, riak_moss_web:dispatch_table()},
                  {ip, Ip},
                  {port, Port},
+                 {nodelay, true},
                  {log_dir, "log"}],
+    case application:get_env(riak_moss, ssl) of
+
+        {ok, SSLOpts} ->
+            WebConfig = WebConfig1 ++ [{ssl, true},
+                                       {ssl_opts, SSLOpts}];
+        undefined ->
+            WebConfig = WebConfig1
+    end,
     Web = {webmachine_mochiweb,
            {webmachine_mochiweb, start, [WebConfig]},
            permanent, 5000, worker, dynamic},
-
     Processes = [Server,Web],
     {ok, { {one_for_one, 10, 10}, Processes} }.
