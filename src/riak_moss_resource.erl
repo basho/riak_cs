@@ -73,7 +73,7 @@ make_context(RD, Ctx) ->
             case riak_moss_riakc:get_user(KeyId) of
                 {ok, User} ->
                     Authed = riak_moss_auth:check_auth(User#rs3_user.key_id,
-                                                  User#rs3_user.key_data,
+                                                  User#rs3_user.key_secret,
                                                   RD,
                                                   Signature),
                     {Authed, make_request(RD, Ctx, User)};

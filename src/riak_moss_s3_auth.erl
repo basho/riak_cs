@@ -15,11 +15,11 @@
 authenticate(RD) ->
     AuthHeader = wrq:get_req_header("authorization", RD),
     case parse_auth_header(AuthHeader) of
-        {ok, KeyId, Signature} ->
-            case riak_moss_riakc:get_user(KeyId) of
+        {ok, KeyID, Signature} ->
+            case riak_moss_riakc:get_user(KeyID) of
                 {ok, User} ->
                     check_auth(User#rs3_user.key_id,
-                               User#rs3_user.key_data,
+                               User#rs3_user.key_secret,
                                RD,
                                Signature);
                 _ ->
