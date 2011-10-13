@@ -27,7 +27,7 @@
          moss_client/1,
          make_bucket/2,
          make_key/0,
-         unique_id_62/0]).
+         unique_hex_id/0]).
 
 -include("riak_moss.hrl").
 
@@ -56,11 +56,11 @@ make_bucket(KeyId, Bucket) ->
 
 %% @doc Create a random identifying integer, returning its string
 %%      representation in base 62.
--spec unique_id_62() -> string().
-unique_id_62() ->
+-spec unique_hex_id() -> string().
+unique_hex_id() ->
     Rand = crypto:sha(term_to_binary({make_ref(), now()})),
     <<I:160/integer>> = Rand,
-    integer_to_list(I, 62).
+    integer_to_list(I, 16).
 
 %% @doc Generate a pseudo-random 64-byte key
 -spec make_key() -> string().
