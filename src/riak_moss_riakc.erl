@@ -182,7 +182,8 @@ do_delete_bucket(KeyID, BucketName, RiakcPid) ->
     %% be separated out into it's
     %% own func so it can be easily
     %% unit tested.
-    UpdatedBuckets = lists:keydelete(BucketName, 0, CurrentBuckets),
+    FilterFun = fun(Element) -> Element#rs3_bucket.name =/= BucketName end,
+    UpdatedBuckets = lists:filter(FilterFun, CurrentBuckets),
     UpdatedUser = User#rs3_user{buckets=UpdatedBuckets},
     do_save_user(UpdatedUser, RiakcPid).
 
@@ -204,5 +205,5 @@ do_put_object(KeyID, BucketName, Key, Value, Metadata, RiakcPid) ->
     %% the public api method?
     BinKey = list_to_binary(Key),
     RiakObject = riakc_obj:new(BucketName, BinKey, Value),
-    NewObj = riak_obj:update_metadata(RiakObject, Metadata),
+    NewObj = riakc_obj:update_metadata(RiakObject, Metadata),
     riakc_pb_socket:put(RiakcPid, NewObj).
