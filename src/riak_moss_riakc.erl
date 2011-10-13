@@ -91,6 +91,28 @@ do_get_buckets(KeyID, RiakcPid) ->
     User = do_get_user(KeyID, RiakcPid),
     User#rs3_user.buckets.
 
+%% TODO:
+%% We need to be checking that
+%% this bucket doesn't already
+%% exist anywhere, since everyone
+%% shares a global bucket namespace
+do_create_bucket(KeyID, BucketName, RiakcPid) ->
+    Bucket = #rs3_bucket{name=BucketName, creation_date=httpd_util:rfc1123_date()},
+    {ok, User} = do_get_user(KeyID, RiakcPid),
+    OldBuckets = User#rs3_user.buckets,
+    case [B || B <- OldBuckets, B#rs3_bucket.name =:= BucketName] of
+        [] ->
+            NewUser = User#rs3_user{buckets=[Bucket|OldBuckets]},
+            do_save_user(NewUser, RiakcPid);
+        _ ->
+            ignore
+    end,
+    %% TODO:
+    %% Maybe this should return
+    %% the updated list of buckets
+    %% owned by the user?
+    ok.
+
 do_save_user(User, RiakcPid) ->
     UserObj = riakc_obj:new(?USER_BUCKET, list_to_binary(User#rs3_user.key_id),User),
     ok = riakc_pb_socket:put(RiakcPid, UserObj),
@@ -112,18 +134,8 @@ handle_call({get_buckets, KeyID}, _From, State=#state{riakc_pid=RiakcPid}) ->
     {reply, do_get_buckets(KeyID, RiakcPid), State};
 %% TODO:
 %% move this into do_create_bucket
-handle_call({create_bucket, KeyID, Name}, _From, State=#state{riakc_pid=RiakcPid}) ->
-    Bucket = #rs3_bucket{name=Name, creation_date=httpd_util:rfc1123_date()},
-    {ok, User} = do_get_user(KeyID, RiakcPid),
-    OldBuckets = User#rs3_user.buckets,
-    case [B || B <- OldBuckets, B#rs3_bucket.name =:= Name] of
-        [] ->
-            NewUser = User#rs3_user{buckets=[Bucket|OldBuckets]},
-            do_save_user(NewUser, RiakcPid);
-        _ ->
-            ignore
-    end,
-    {reply, ok, State};
+handle_call({create_bucket, KeyID, BucketName}, _From, State=#state{riakc_pid=RiakcPid}) ->
+    {reply, do_create_bucket(KeyID, BucketName, RiakcPid), State};
 handle_call({delete_bucket, _KeyID, _Name}, _From, State) ->
     {reply, ok, State}.
 
