@@ -62,19 +62,14 @@ create_bucket(KeyID, BucketName) ->
 %% If there is only one namespace
 %% for buckets then do we need
 %% the KeyID here?
-%% TODO:
-%% missing do_create_bucket
 delete_bucket(KeyID, BucketName) ->
     gen_server:call(?MODULE, {delete_bucket, KeyID, BucketName}).
 
 %% TODO:
 %% What are we actually doing with
 %% the KeyID?
-%% TODO:
-%% missing do_create_bucket
-%% and handle_call pattern
-put_object(KeyID, Bucket, Key, Val, Metadata) ->
-    gen_server:call(?MODULE, {put_object, KeyID, Bucket, Key, Val, Metadata}).
+put_object(KeyID, BucketName, Key, Val, Metadata) ->
+    gen_server:call(?MODULE, {put_object, KeyID, BucketName, Key, Val, Metadata}).
 
 do_create_user(UserName, RiakcPid) ->
     %% TODO: Is it outside the scope
@@ -133,8 +128,16 @@ do_delete_bucket(KeyID, BucketName, RiakcPid) ->
     UpdatedUser = User#rs3_user{buckets=UpdatedBuckets},
     do_save_user(UpdatedUser, RiakcPid).
 
+do_put_object(KeyID, BucketName, Key, Value, Metadata, RiakcPid) ->
+    %% TODO: KeyID is currently
+    %% not used
+    BinKey = list_to_binary(Key),
+    RiakObject = riakc_obj:new(BucketName, BinKey, Value),
+    NewObj = riak_obj:update_metadata(RiakObject, Metadata),
+    riakc_pb_socket:put(RiakcPid, NewObj).
+
 do_save_user(User, RiakcPid) ->
-    UserObj = riakc_obj:new(?USER_BUCKET, list_to_binary(User#rs3_user.key_id),User),
+    UserObj = riakc_obj:new(?USER_BUCKET, list_to_binary(User#rs3_user.key_id), User),
     ok = riakc_pb_socket:put(RiakcPid, UserObj),
     ok.
 
@@ -148,16 +151,22 @@ do_get_user(KeyID, RiakcPid) ->
 
 handle_call({get_user, KeyID}, _From, State=#state{riakc_pid=RiakcPid}) ->
     {reply, do_get_user(KeyID, RiakcPid), State};
+
 handle_call({create_user, UserName}, _From, State=#state{riakc_pid=RiakcPid}) ->
     {reply, do_create_user(UserName, RiakcPid), State};
+
 handle_call({get_buckets, KeyID}, _From, State=#state{riakc_pid=RiakcPid}) ->
     {reply, do_get_buckets(KeyID, RiakcPid), State};
-%% TODO:
-%% move this into do_create_bucket
+
 handle_call({create_bucket, KeyID, BucketName}, _From, State=#state{riakc_pid=RiakcPid}) ->
     {reply, do_create_bucket(KeyID, BucketName, RiakcPid), State};
+
 handle_call({delete_bucket, KeyID, BucketName}, _From, State=#state{riakc_pid=RiakcPid}) ->
-    {reply, do_delete_bucket(KeyID, BucketName, RiakcPid), State}.
+    {reply, do_delete_bucket(KeyID, BucketName, RiakcPid), State};
+
+handle_call({put_object, KeyID, BucketName, Key, Value, Metadata},
+                   _From, State=#state{riakc_pid=RiakcPid}) ->
+    {reply, do_put_object(KeyID, BucketName, Key, Value, Metadata, RiakcPid), State}.
 
 handle_cast(_Msg, State) ->
     {noreply, State}.
