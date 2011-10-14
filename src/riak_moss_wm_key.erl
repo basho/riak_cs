@@ -58,7 +58,7 @@ allowed_methods(RD, Ctx) ->
     {['HEAD', 'GET'], RD, Ctx}.
 
 -spec content_types_provided(term(), term()) ->
-    {[{atom(), module()}], term(), term()}.
+    {[{string(), atom()}], term(), term()}.
 content_types_provided(RD, Ctx) ->
     %% TODO:
     %% As I understand S3, the content types provided
@@ -70,7 +70,7 @@ content_types_provided(RD, Ctx) ->
     {[{"text/plain", produce_body}], RD, Ctx}.
 
 -spec produce_body(term(), term()) ->
-    {iolist(), term(), term()}.
+    {iolist()|binary(), term(), term()}.
 produce_body(RD, Ctx) ->
     %% TODO:
     %% This is really just a placeholder

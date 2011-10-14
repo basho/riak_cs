@@ -61,7 +61,7 @@ allowed_methods(RD, Ctx) ->
     {['GET'], RD, Ctx}.
 
 -spec content_types_provided(term(), term()) ->
-    {[{atom(), module()}], term(), term()}.
+    {[{string(), atom()}], term(), term()}.
 content_types_provided(RD, Ctx) ->
     %% TODO:
     %% This needs to be xml soon, but for now

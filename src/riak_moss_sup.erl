@@ -16,12 +16,15 @@
 %% supervisor callbacks
 -export([init/1]).
 
+-type startlink_err() :: {'already_started', pid()} | 'shutdown' | term().
+-type startlink_ret() :: {'ok', pid()} | 'ignore' | {'error', startlink_err()}.
+
 %% ===================================================================
 %% Public API
 %% ===================================================================
 
 %% @doc API for starting the supervisor.
--spec start_link() -> supervisor:startchild_ret().
+-spec start_link() -> startlink_ret().
 start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
@@ -29,7 +32,7 @@ start_link() ->
 -spec init([]) -> {ok, {{supervisor:strategy(),
                          integer(),
                          integer()},
-                        [supervisor:child_spec()]}} | ignore.
+                        [supervisor:child_spec()]}}.
 init([]) ->
     case application:get_env(riak_moss, moss_ip) of
         {ok, Ip} ->

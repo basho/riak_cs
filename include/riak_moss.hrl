@@ -1,8 +1,8 @@
 
 -record(rs3_user, {
-          name :: binary(),
-          key_id :: binary(),
-          key_data :: binary(),
+          name=[] :: string(),
+          key_id=[] :: string(),
+          key_data=[] :: string(),
           buckets = []}).
 
 -record(rs3_bucket, {

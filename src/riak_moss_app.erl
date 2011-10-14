@@ -24,7 +24,6 @@
 
 %% @doc application start callback for riak_moss.
 -spec start(start_type(), start_args()) -> {ok, pid()} |
-                                           {ok, pid(), term()} |
                                            {error, term()}.
 start(_Type, _StartArgs) ->
     riak_moss_sup:start_link().

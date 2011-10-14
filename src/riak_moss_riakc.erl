@@ -56,9 +56,9 @@ do_create_user(UserName) ->
     riakc_pb_socket:stop(Pid),
     User.
 
-do_save_user(User) ->
+do_save_user(User=#rs3_user{key_id=KeyId}) when KeyId /= undefined  ->
     {ok, Pid} = riak_moss:riak_client(),
-    UserObj = riakc_obj:new(?USER_BUCKET,list_to_binary(User#rs3_user.key_id),User),
+    UserObj = riakc_obj:new(?USER_BUCKET,list_to_binary(KeyId),User),
     ok = riakc_pb_socket:put(Pid, UserObj),
     riakc_pb_socket:stop(Pid),
     ok.
