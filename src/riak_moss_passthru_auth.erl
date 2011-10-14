@@ -16,5 +16,11 @@
                         | {ok, unknown}
                         | {error, atom()}.
 authenticate(_RD) ->
-    true.
+    %% TODO:
+    %% Even though we're 
+    %% going to authorize
+    %% no matter what,
+    %% maybe it still makes sense
+    %% to pass the user on
+    {ok, unknown}.
 

@@ -16,5 +16,8 @@
                         | {ok, unknown}
                         | {error, atom()}.
 authenticate(_RD) ->
-    false.
+    %% TODO:
+    %% is there a better
+    %% atom we could return?
+    {error, invalid_authentication}.
 

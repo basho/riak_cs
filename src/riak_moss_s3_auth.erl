@@ -21,12 +21,17 @@ authenticate(RD) ->
         {ok, KeyID, Signature} ->
             case riak_moss_riakc:get_user(KeyID) of
                 {ok, User} ->
-                    check_auth(User#rs3_user.key_id,
+                    case check_auth(User#rs3_user.key_id,
                                User#rs3_user.key_secret,
                                RD,
-                               Signature);
+                               Signature) of
+                        true ->
+                            {ok, User};
+                        _ ->
+                            {error, invalid_authentication}
+                        end;
                 _ ->
-                    {api_error, invalid_access_key_id}
+                    {error, invalid_authentication}
             end;
         Error -> Error
     end.
