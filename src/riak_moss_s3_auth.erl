@@ -29,7 +29,7 @@ authenticate(RD) ->
                             {ok, User};
                         _ ->
                             {error, invalid_authentication}
-                        end;
+                    end;
                 _ ->
                     {error, invalid_authentication}
             end;

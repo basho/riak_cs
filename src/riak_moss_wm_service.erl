@@ -44,10 +44,10 @@ forbidden(RD, Ctx=#context{auth_bypass=AuthBypass,
         false ->
             %% Attempt to authenticate the request
             case AuthMod:authenticate(RD) of
-                true ->
+                {ok, User} ->
                     %% Authentication succeeded
-                    {false, RD, Ctx};
-                false ->
+                    {false, RD, Ctx#context{user=User}};
+                {error, _Reason} ->
                     %% Authentication failed, deny access
                     {true, RD, Ctx}
             end
