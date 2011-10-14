@@ -10,6 +10,9 @@
 
 -include("riak_moss.hrl").
 
+-spec authenticate(term()) -> {ok, #rs3_user{}}
+                        | {ok, unknown}
+                        | {error, atom()}.
 -export([authenticate/1]).
 
 authenticate(RD) ->
