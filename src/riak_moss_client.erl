@@ -23,38 +23,39 @@
 
 %% @doc Compose a moss bucket name using the user's key id
 %% and the specified bucket name.
--spec make_bucket(binary()) -> binary().
+%% @spec make_bucket(binary()) -> binary().
 make_bucket(Bucket) ->
     iolist_to_binary([User#rs3_user.key_id, ".", Bucket]).
 
 %% @doc Terminate the moss client reference.
--spec stop() -> ok.
+%% @spec stop() -> ok.
 stop() ->
     riakc_pb_socket:stop(Pid).
 
 %% @doc Fetch the object for the given bucket and key
--spec get_object(binary(), binary()) -> {ok, tuple()} | {error, term()}.
+%% @spec get_object(binary(), binary()) -> {ok, tuple()} | {error, term()}.
 get_object(Bucket, Key) ->
     riakc_pb_socket:get(Pid, make_bucket(Bucket), Key).
 
 %% @doc Store the specified key and value in the given bucket
--spec put_object(binary(), binary(), term()) ->
-                        ok |
-                        {ok, tuple()} |
-                        {ok, binary()} |
-                        {error, term()}.
+%% @spec put_object(binary(), binary(), term()) ->
+%%                        ok |
+%%                        {ok, tuple()} |
+%%                        {ok, binary()} |
+%%                        {error, term()}.
 put_object(Bucket, Key, Value) ->
     Obj = riakc_obj:new(make_bucket(Bucket), Key, Value),
     riakc_pb_socket:put(Pid, Obj).
 
 %% @doc Delete the object stored for the given key
 %% from the specified bucket
--spec delete_object(binary(), binary()) -> ok | {error, term()}.
+%%
+%% @spec delete_object(binary(), binary()) -> ok | {error, term()}.
 delete_object(Bucket, Key) ->
     riakc_pb_socket:delete(Pid, make_bucket(Bucket), Key).
 
 %% @doc List the keys in the specified bucket
--spec list_bucket(binary()) -> [{binary(), integer()}].
+%% @spec list_bucket(binary()) -> [{binary(), integer()}].
 list_bucket(Bucket) ->
     {ok, KL} = riakc_pb_socket:list_keys(Pid, make_bucket(Bucket)),
     add_sizes(KL, Bucket, []).
