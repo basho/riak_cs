@@ -54,6 +54,9 @@ create_bucket(KeyID, BucketName) ->
 delete_bucket(KeyID, BucketName) ->
     gen_server:call(?MODULE, {delete_bucket, KeyID, BucketName}).
 
+list_keys(BucketName) ->
+    gen_server:call(?MODULE, {list_keys, BucketName}).
+
 get_object(BucketName, Key) ->
     gen_server:call(?MODULE, {get_object, BucketName, Key}).
 
@@ -77,6 +80,9 @@ handle_call({create_bucket, KeyID, BucketName}, _From, State=#state{riakc_pid=Ri
 
 handle_call({delete_bucket, KeyID, BucketName}, _From, State=#state{riakc_pid=RiakcPid}) ->
     {reply, do_delete_bucket(KeyID, BucketName, RiakcPid), State};
+
+handle_call({list_keys, BucketName}, _From, State=#state{riakc_pid=RiakcPid}) ->
+    {reply, do_list_keys(BucketName, RiakcPid), State};
 
 handle_call({get_object, BucketName, Key}, _From, State=#state{riakc_pid=RiakcPid}) ->
     {reply, do_get_object(BucketName, Key, RiakcPid), State};
@@ -179,6 +185,9 @@ do_delete_bucket(KeyID, BucketName, RiakcPid) ->
     UpdatedBuckets = lists:filter(FilterFun, CurrentBuckets),
     UpdatedUser = User#moss_user{buckets=UpdatedBuckets},
     do_save_user(UpdatedUser, RiakcPid).
+
+do_list_keys(BucketName, RiakcPid) ->
+    riakc_pb_socket:list_keys(RiakcPid, BucketName).
 
 do_get_object(BucketName, Key, RiakcPid) ->
     %% TODO:
