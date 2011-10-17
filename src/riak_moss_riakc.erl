@@ -105,7 +105,7 @@ code_change(_OldVsn, State, _Extra) ->
 do_get_user(KeyID, RiakcPid) ->
     case riakc_pb_socket:get(RiakcPid, ?USER_BUCKET, list_to_binary(KeyID)) of
         {ok, Obj} ->
-            binary_to_term(riakc_obj:get_value(Obj));
+            {ok, binary_to_term(riakc_obj:get_value(Obj))};
         Error ->
             Error
     end.
@@ -119,7 +119,7 @@ do_create_user(UserName, RiakcPid) ->
 
     User = #rs3_user{name=UserName, key_id=KeyID, key_secret=Secret},
     do_save_user(User, RiakcPid),
-    User.
+    {ok, User}.
 
 do_save_user(User, RiakcPid) ->
     UserObj = riakc_obj:new(?USER_BUCKET, list_to_binary(User#rs3_user.key_id), User),
@@ -127,8 +127,12 @@ do_save_user(User, RiakcPid) ->
     ok.
 
 do_get_buckets(KeyID, RiakcPid) ->
-    User = do_get_user(KeyID, RiakcPid),
-    User#rs3_user.buckets.
+    case do_get_user(KeyID, RiakcPid) of
+        {ok, User} ->
+            {ok, User#rs3_user.buckets};
+        {error, Reason} ->
+            {error, Reason}
+    end.
 
 %% TODO:
 %% We need to be checking that
@@ -137,7 +141,10 @@ do_get_buckets(KeyID, RiakcPid) ->
 %% shares a global bucket namespace
 do_create_bucket(KeyID, BucketName, RiakcPid) ->
     Bucket = #rs3_bucket{name=BucketName, creation_date=httpd_util:rfc1123_date()},
-    User = do_get_user(KeyID, RiakcPid),
+    %% TODO:
+    %% We don't do anything about
+    %% {error, Reason} here
+    {ok, User} = do_get_user(KeyID, RiakcPid),
     OldBuckets = User#rs3_user.buckets,
     case [B || B <- OldBuckets, B#rs3_bucket.name =:= BucketName] of
         [] ->
@@ -160,7 +167,7 @@ do_delete_bucket(KeyID, BucketName, RiakcPid) ->
     %% What do we need to do
     %% to actually "delete"
     %% the bucket?
-    User = do_get_user(KeyID, RiakcPid),
+    {ok, User} = do_get_user(KeyID, RiakcPid),
     CurrentBuckets = User#rs3_user.buckets,
 
     %% TODO:
