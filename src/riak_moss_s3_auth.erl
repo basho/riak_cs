@@ -10,7 +10,7 @@
 
 -include("riak_moss.hrl").
 
--spec authenticate(term(), [string()]) -> {ok, #rs3_user{}}
+-spec authenticate(term(), [string()]) -> {ok, #moss_user{}}
                                               | {ok, unknown}
                                               | {error, atom()}.
 -export([authenticate/2]).
@@ -18,8 +18,8 @@
 authenticate(RD, [KeyID, Signature]) ->
     case riak_moss_riakc:get_user(KeyID) of
         {ok, User} ->
-            case check_auth(User#rs3_user.key_id,
-                            User#rs3_user.key_secret,
+            case check_auth(User#moss_user.key_id,
+                            User#moss_user.key_secret,
                             RD,
                             Signature) of
                 true ->
