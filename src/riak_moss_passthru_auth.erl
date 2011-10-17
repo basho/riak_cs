@@ -10,14 +10,14 @@
 
 -include("riak_moss.hrl").
 
--export([authenticate/1]).
+-export([authenticate/2]).
 
--spec authenticate(term()) -> {ok, #rs3_user{}}
-                        | {ok, unknown}
-                        | {error, atom()}.
-authenticate(_RD) ->
+-spec authenticate(term(), [string()]) -> {ok, #rs3_user{}}
+                                              | {ok, unknown}
+                                              | {error, atom()}.
+authenticate(_RD, _AuthArgs) ->
     %% TODO:
-    %% Even though we're 
+    %% Even though we're
     %% going to authorize
     %% no matter what,
     %% maybe it still makes sense
