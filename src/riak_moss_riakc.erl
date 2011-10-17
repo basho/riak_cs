@@ -181,7 +181,7 @@ do_get_object(BucketName, Key, RiakcPid) ->
     BinKey = list_to_binary(Key),
     riakc_pb_socket:get(RiakcPid, BucketName, BinKey).
 
-do_put_object(KeyID, BucketName, Key, Value, Metadata, RiakcPid) ->
+do_put_object(_KeyID, BucketName, Key, Value, Metadata, RiakcPid) ->
     %% TODO: KeyID is currently
     %% not used
 
