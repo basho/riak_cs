@@ -11,7 +11,7 @@
          forbidden/2,
          content_types_provided/2,
          malformed_request/2,
-         produce_body/2,
+         to_json/2,
          allowed_methods/2]).
 
 -include("riak_moss.hrl").
@@ -66,11 +66,11 @@ content_types_provided(RD, Ctx) ->
     %% The subresource will likely affect
     %% the content-type. Need to look
     %% more into those.
-    {[{"application/json", produce_body}], RD, Ctx}.
+    {[{"application/json", to_json}], RD, Ctx}.
 
--spec produce_body(term(), term()) ->
-                          {iolist(), term(), term()}.
-produce_body(RD, Ctx) ->
+-spec to_json(term(), term()) ->
+    {iolist(), term(), term()}.
+to_json(RD, Ctx) ->
     %% TODO:
     %% This is really just a placeholder
     %% return value.
