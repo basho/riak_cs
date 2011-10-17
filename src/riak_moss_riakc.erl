@@ -117,18 +117,18 @@ do_create_user(UserName, RiakcPid) ->
     KeyID = riak_moss:unique_hex_id(),
     Secret = riak_moss:unique_hex_id(),
 
-    User = #rs3_user{name=UserName, key_id=KeyID, key_secret=Secret},
+    User = #moss_user{name=UserName, key_id=KeyID, key_secret=Secret},
     do_save_user(User, RiakcPid),
     User.
 
 do_save_user(User, RiakcPid) ->
-    UserObj = riakc_obj:new(?USER_BUCKET, list_to_binary(User#rs3_user.key_id), User),
+    UserObj = riakc_obj:new(?USER_BUCKET, list_to_binary(User#moss_user.key_id), User),
     ok = riakc_pb_socket:put(RiakcPid, UserObj),
     ok.
 
 do_get_buckets(KeyID, RiakcPid) ->
     User = do_get_user(KeyID, RiakcPid),
-    User#rs3_user.buckets.
+    User#moss_user.buckets.
 
 %% TODO:
 %% We need to be checking that
@@ -136,12 +136,12 @@ do_get_buckets(KeyID, RiakcPid) ->
 %% exist anywhere, since everyone
 %% shares a global bucket namespace
 do_create_bucket(KeyID, BucketName, RiakcPid) ->
-    Bucket = #rs3_bucket{name=BucketName, creation_date=httpd_util:rfc1123_date()},
+    Bucket = #moss_bucket{name=BucketName, creation_date=httpd_util:rfc1123_date()},
     User = do_get_user(KeyID, RiakcPid),
-    OldBuckets = User#rs3_user.buckets,
-    case [B || B <- OldBuckets, B#rs3_bucket.name =:= BucketName] of
+    OldBuckets = User#moss_user.buckets,
+    case [B || B <- OldBuckets, B#moss_bucket.name =:= BucketName] of
         [] ->
-            NewUser = User#rs3_user{buckets=[Bucket|OldBuckets]},
+            NewUser = User#moss_user{buckets=[Bucket|OldBuckets]},
             do_save_user(NewUser, RiakcPid);
         _ ->
             ignore
@@ -161,16 +161,16 @@ do_delete_bucket(KeyID, BucketName, RiakcPid) ->
     %% to actually "delete"
     %% the bucket?
     User = do_get_user(KeyID, RiakcPid),
-    CurrentBuckets = User#rs3_user.buckets,
+    CurrentBuckets = User#moss_user.buckets,
 
     %% TODO:
     %% This logic is pure and should
     %% be separated out into it's
     %% own func so it can be easily
     %% unit tested.
-    FilterFun = fun(Element) -> Element#rs3_bucket.name =/= BucketName end,
+    FilterFun = fun(Element) -> Element#moss_bucket.name =/= BucketName end,
     UpdatedBuckets = lists:filter(FilterFun, CurrentBuckets),
-    UpdatedUser = User#rs3_user{buckets=UpdatedBuckets},
+    UpdatedUser = User#moss_user{buckets=UpdatedBuckets},
     do_save_user(UpdatedUser, RiakcPid).
 
 do_get_object(BucketName, Key, RiakcPid) ->
