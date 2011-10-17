@@ -10,30 +10,25 @@
 
 -include("riak_moss.hrl").
 
--spec authenticate(term()) -> {ok, #rs3_user{}}
-                        | {ok, unknown}
-                        | {error, atom()}.
--export([authenticate/1]).
+-spec authenticate(term(), [string()]) -> {ok, #rs3_user{}}
+                                              | {ok, unknown}
+                                              | {error, atom()}.
+-export([authenticate/2]).
 
-authenticate(RD) ->
-    AuthHeader = wrq:get_req_header("authorization", RD),
-    case parse_auth_header(AuthHeader) of
-        {ok, KeyID, Signature} ->
-            case riak_moss_riakc:get_user(KeyID) of
-                {ok, User} ->
-                    case check_auth(User#rs3_user.key_id,
-                               User#rs3_user.key_secret,
-                               RD,
-                               Signature) of
-                        true ->
-                            {ok, User};
-                        _ ->
-                            {error, invalid_authentication}
-                    end;
+authenticate(RD, [KeyID, Signature]) ->
+    case riak_moss_riakc:get_user(KeyID) of
+        {ok, User} ->
+            case check_auth(User#rs3_user.key_id,
+                            User#rs3_user.key_secret,
+                            RD,
+                            Signature) of
+                true ->
+                    {ok, User};
                 _ ->
                     {error, invalid_authentication}
             end;
-        Error -> Error
+        _ ->
+            {error, invalid_authentication}
     end.
 
 extract_amz_meta(RD) ->
@@ -81,15 +76,6 @@ canonicalize_qs([{K, V}|T], Acc) ->
             canonicalize_qs(T)
     end.
 
-
-parse_auth_header("AWS " ++ Key) ->
-    case string:tokens(Key, ":") of
-        [KeyId, KeyData] ->
-            {ok, KeyId, KeyData};
-        Other -> Other
-    end.
-
-
 bucket_from_host(HostHeader) ->
     BaseTokens = string:tokens(?ROOT_HOST, "."),
     case string:tokens(HostHeader, ".") of
@@ -106,7 +92,6 @@ canonicalize_resource(RD) ->
         Bucket ->
             ["/", Bucket, wrq:path(RD)]
     end.
-
 
 check_auth(_KeyID, KeyData, RD, Signature) ->
     AmzHeaders = [[string:to_lower(K), ":", V, "\n"] ||

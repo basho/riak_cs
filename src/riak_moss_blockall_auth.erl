@@ -10,14 +10,11 @@
 
 -include("riak_moss.hrl").
 
--export([authenticate/1]).
+-export([authenticate/2]).
 
--spec authenticate(term()) -> {ok, #rs3_user{}}
-                        | {ok, unknown}
-                        | {error, atom()}.
-authenticate(_RD) ->
-    %% TODO:
-    %% is there a better
-    %% atom we could return?
-    {error, invalid_authentication}.
+-spec authenticate(term(), [string()]) -> {ok, #rs3_user{}}
+                                              | {ok, unknown}
+                                              | {error, atom()}.
+authenticate(_RD, [Reason]) ->
+    {error, Reason}.
 

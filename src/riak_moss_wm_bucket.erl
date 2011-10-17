@@ -36,15 +36,11 @@ malformed_request(RD, Ctx) ->
 %%      authenticated. Normally with HTTP
 %%      we'd use the `authorized` callback,
 %%      but this is how S3 does things.
-forbidden(RD, Ctx=#context{auth_bypass=AuthBypass,
-                           auth_mod=AuthMod}) ->
-    case AuthBypass of
-        true ->
-            %% Authentication is disabled, allow access
-            {false, RD, Ctx};
-        false ->
-            %% Attempt to authenticate the request
-            case AuthMod:authenticate(RD) of
+forbidden(RD, Ctx=#context{auth_bypass=AuthBypass}) ->
+    AuthHeader = wrq:get_req_header("authorization", RD),
+    case riak_moss_wm_utils:parse_auth_header(AuthHeader, AuthBypass) of
+        {ok, AuthMod, Args} ->
+            case AuthMod:authenticate(RD, Args) of
                 {ok, User} ->
                     %% Authentication succeeded
                     {false, RD, Ctx#context{user=User}};
@@ -61,7 +57,7 @@ allowed_methods(RD, Ctx) ->
     {['HEAD', 'GET'], RD, Ctx}.
 
 -spec content_types_provided(term(), term()) ->
-    {[{atom(), module()}], term(), term()}.
+                                    {[{atom(), module()}], term(), term()}.
 content_types_provided(RD, Ctx) ->
     %% TODO:
     %% Add xml support later
@@ -73,7 +69,7 @@ content_types_provided(RD, Ctx) ->
     {[{"application/json", produce_body}], RD, Ctx}.
 
 -spec produce_body(term(), term()) ->
-    {iolist(), term(), term()}.
+                          {iolist(), term(), term()}.
 produce_body(RD, Ctx) ->
     %% TODO:
     %% This is really just a placeholder
