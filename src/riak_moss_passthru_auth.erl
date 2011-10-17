@@ -12,12 +12,12 @@
 
 -export([authenticate/1]).
 
--spec authenticate(term()) -> {ok, #rs3_user{}}
+-spec authenticate(term()) -> {ok, #moss_user{}}
                         | {ok, unknown}
                         | {error, atom()}.
 authenticate(_RD) ->
     %% TODO:
-    %% Even though we're 
+    %% Even though we're
     %% going to authorize
     %% no matter what,
     %% maybe it still makes sense

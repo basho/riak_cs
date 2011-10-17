@@ -12,7 +12,7 @@
 
 -export([authenticate/1]).
 
--spec authenticate(term()) -> {ok, #rs3_user{}}
+-spec authenticate(term()) -> {ok, #moss_user{}}
                         | {ok, unknown}
                         | {error, atom()}.
 authenticate(_RD) ->
