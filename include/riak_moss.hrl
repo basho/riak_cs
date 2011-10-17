@@ -10,7 +10,6 @@
           creation_date :: term()}).
 
 -record(context, {auth_bypass :: atom(),
-                  auth_mod :: atom(),
+                  user :: #rs3_user{}}).
 
 -define(USER_BUCKET, <<"moss.users">>).
-
