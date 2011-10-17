@@ -74,12 +74,6 @@ content_types_provided(RD, Ctx) ->
 -spec to_json(term(), term()) ->
     {iolist(), term(), term()}.
 
-to_json(RD, Ctx=#context{user=User}) when User =:= undefined ->
-    Buckets = [],
-    {mochijson2:encode(Buckets), RD, Ctx};
-to_json(RD, Ctx=#context{user=User}) when User =:= unknown->
-    Buckets = [],
-    {mochijson2:encode(Buckets), RD, Ctx};
 to_json(RD, Ctx=#context{user=User}) ->
     KeyID = User#rs3_user.buckets,
     Buckets = riak_moss_riakc:get_buckets(KeyID),
