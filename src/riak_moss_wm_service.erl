@@ -73,12 +73,14 @@ content_types_provided(RD, Ctx) ->
 %% bodies.
 -spec to_json(term(), term()) ->
     {iolist(), term(), term()}.
-to_json(RD, Ctx) ->
-    %% TODO:
-    %% Here is where we need to actually
-    %% extract the user from the auth
-    %% and retrieve their list of
-    %% buckets. For now we just return
-    %% an empty list.
-    Return_body = [],
-    {mochijson2:encode(Return_body), RD, Ctx}.
+
+to_json(RD, Ctx=#context{user=User}) when User =:= undefined ->
+    Buckets = [],
+    {mochijson2:encode(Buckets), RD, Ctx};
+to_json(RD, Ctx=#context{user=User}) when User =:= unknown->
+    Buckets = [],
+    {mochijson2:encode(Buckets), RD, Ctx};
+to_json(RD, Ctx=#context{user=User}) ->
+    KeyID = User#rs3_user.buckets,
+    Buckets = riak_moss_riakc:get_buckets(KeyID),
+    {mochijson2:encode(Buckets), RD, Ctx}.
