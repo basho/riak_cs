@@ -12,6 +12,12 @@
 
 -export([authenticate/1]).
 
+-spec authenticate(term()) -> {ok, #rs3_user{}}
+                        | {ok, unknown}
+                        | {error, atom()}.
 authenticate(_RD) ->
-    false.
+    %% TODO:
+    %% is there a better
+    %% atom we could return?
+    {error, invalid_authentication}.
 
