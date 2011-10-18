@@ -26,8 +26,12 @@ service_available(RD, Ctx) ->
     {true, RD, Ctx}.
 
 %% @doc Parse an authentication header string and determine
-%% the appropriate module to use to authenticate the request.
+%%      the appropriate module to use to authenticate the request.
+%%      The passthru auth can be used either with a KeyID or
+%%      anonymously by leving the header empty.
 -spec parse_auth_header(string(), boolean()) -> {ok, atom(), [string()]} | {error, term()}.
+parse_auth_header(KeyID, true) when KeyID =/= undefined ->
+    {ok, riak_moss_passthru_auth, [KeyID]};
 parse_auth_header(_, true) ->
     {ok, riak_moss_passthru_auth, []};
 parse_auth_header(undefined, false) ->
