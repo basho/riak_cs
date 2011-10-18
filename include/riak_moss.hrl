@@ -1,15 +1,15 @@
 
--record(rs3_user, {
-          name=[] :: string(),
-          key_id=[] :: string(),
-          key_data=[] :: string(),
+-record(moss_user, {
+          name :: string(),
+          key_id :: string(),
+          key_secret :: string(),
           buckets = []}).
 
--record(rs3_bucket, {
+-record(moss_bucket, {
           name :: binary(),
           creation_date :: term()}).
 
--record(context, {auth_mod :: atom()}).
+-record(context, {auth_bypass :: atom(),
+                  user :: #moss_user{}}).
 
 -define(USER_BUCKET, <<"moss.users">>).
-

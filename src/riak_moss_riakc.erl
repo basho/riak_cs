@@ -18,14 +18,18 @@
 
 -define(SERVER, ?MODULE).
 
--record(state, {}).
+-record(state, {riakc_pid}).
 
+%% ====================================================================
+%% Public API
+%% ====================================================================
 
 start_link() ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
 
 init([]) ->
-    {ok, #state{}}.
+    {ok, Pid} = riak_moss:riak_client(),
+    {ok, #state{riakc_pid=Pid}}.
 
 get_user(KeyID) ->
     gen_server:call(?MODULE, {get_user, KeyID}).
@@ -36,64 +40,50 @@ create_user(UserName) ->
 get_buckets(KeyID) ->
     gen_server:call(?MODULE, {get_buckets, KeyID}).
 
+%% TODO:
+%% If there is only one namespace
+%% for buckets then do we need
+%% the KeyID here?
 create_bucket(KeyID, BucketName) ->
     gen_server:call(?MODULE, {create_bucket, KeyID, BucketName}).
 
+%% TODO:
+%% If there is only one namespace
+%% for buckets then do we need
+%% the KeyID here?
 delete_bucket(KeyID, BucketName) ->
     gen_server:call(?MODULE, {delete_bucket, KeyID, BucketName}).
 
-put_object(KeyId, Bucket, Key, Val, Metadata) ->
-    gen_server:call(?MODULE, {put_object, KeyId, Bucket, Key, Val, Metadata}).
+get_object(BucketName, Key) ->
+    gen_server:call(?MODULE, {get_object, BucketName, Key}).
 
-do_create_user(UserName) ->
-    {ok, Pid} = riak_moss:riak_client(),
-    {ok, KL} = riakc_pb_socket:list_keys(Pid, ?USER_BUCKET),
-    KeyId = integer_to_list(length(KL)),
-    KeyData = riak_moss:make_key(),
-    User = #rs3_user{name=UserName, key_id=KeyId, key_data=KeyData},
-    UserObj = riakc_obj:new(?USER_BUCKET, list_to_binary(KeyId), User),
-    ok = riakc_pb_socket:put(Pid, UserObj),
-    riakc_pb_socket:stop(Pid),
-    User.
+%% TODO:
+%% What are we actually doing with
+%% the KeyID?
+put_object(KeyID, BucketName, Key, Val, Metadata) ->
+    gen_server:call(?MODULE, {put_object, KeyID, BucketName, Key, Val, Metadata}).
 
-do_save_user(User=#rs3_user{key_id=KeyId}) when KeyId /= undefined  ->
-    {ok, Pid} = riak_moss:riak_client(),
-    UserObj = riakc_obj:new(?USER_BUCKET,list_to_binary(KeyId),User),
-    ok = riakc_pb_socket:put(Pid, UserObj),
-    riakc_pb_socket:stop(Pid),
-    ok.
+handle_call({get_user, KeyID}, _From, State=#state{riakc_pid=RiakcPid}) ->
+    {reply, do_get_user(KeyID, RiakcPid), State};
 
-do_get_user(KeyId) ->
-    {ok, Pid} = riak_moss:riak_client(),
-    case riakc_pb_socket:get(Pid, ?USER_BUCKET, list_to_binary(KeyId)) of
-        {ok, Obj} ->
-            riakc_pb_socket:stop(Pid),
-            {ok, binary_to_term(riakc_obj:get_value(Obj))};
-        Error ->
-            riakc_pb_socket:stop(Pid),
-            Error
-    end.
+handle_call({create_user, UserName}, _From, State=#state{riakc_pid=RiakcPid}) ->
+    {reply, do_create_user(UserName, RiakcPid), State};
 
-handle_call({get_user, KeyId}, _From, State) ->
-    {reply, do_get_user(KeyId), State};
-handle_call({create_user, UserName}, _From, State) ->
-    {reply, {ok, do_create_user(UserName)}, State};
-handle_call({get_buckets, _KeyId}, _From, State) ->
-    {reply, ok, State};
-handle_call({create_bucket, KeyId, Name}, _From, State) ->
-    Bucket = #rs3_bucket{name=Name, creation_date=httpd_util:rfc1123_date()},
-    {ok, User} = do_get_user(KeyId),
-    OldBuckets = User#rs3_user.buckets,
-    case [B || B <- OldBuckets, B#rs3_bucket.name =:= Name] of
-        [] ->
-            NewUser = User#rs3_user{buckets=[Bucket|OldBuckets]},
-            do_save_user(NewUser);
-        _ ->
-            ignore
-    end,
-    {reply, ok, State};
-handle_call({delete_bucket, _KeyId, _Name}, _From, State) ->
-    {reply, ok, State}.
+handle_call({get_buckets, KeyID}, _From, State=#state{riakc_pid=RiakcPid}) ->
+    {reply, do_get_buckets(KeyID, RiakcPid), State};
+
+handle_call({create_bucket, KeyID, BucketName}, _From, State=#state{riakc_pid=RiakcPid}) ->
+    {reply, do_create_bucket(KeyID, BucketName, RiakcPid), State};
+
+handle_call({delete_bucket, KeyID, BucketName}, _From, State=#state{riakc_pid=RiakcPid}) ->
+    {reply, do_delete_bucket(KeyID, BucketName, RiakcPid), State};
+
+handle_call({get_object, BucketName, Key}, _From, State=#state{riakc_pid=RiakcPid}) ->
+    {reply, do_get_object(BucketName, Key, RiakcPid), State};
+
+handle_call({put_object, KeyID, BucketName, Key, Value, Metadata},
+                   _From, State=#state{riakc_pid=RiakcPid}) ->
+    {reply, do_put_object(KeyID, BucketName, Key, Value, Metadata, RiakcPid), State}.
 
 handle_cast(_Msg, State) ->
     {noreply, State}.
@@ -101,9 +91,112 @@ handle_cast(_Msg, State) ->
 handle_info(_Info, State) ->
     {noreply, State}.
 
-terminate(_Reason, _State) ->
+terminate(_Reason, #state{riakc_pid=RiakcPid}) ->
+    riakc_pb_socket:stop(RiakcPid),
     ok.
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
+%% ====================================================================
+%% Internal functions
+%% ====================================================================
+
+do_get_user(KeyID, RiakcPid) ->
+    case riakc_pb_socket:get(RiakcPid, ?USER_BUCKET, list_to_binary(KeyID)) of
+        {ok, Obj} ->
+            {ok, binary_to_term(riakc_obj:get_value(Obj))};
+        Error ->
+            Error
+    end.
+
+do_create_user(UserName, RiakcPid) ->
+    %% TODO: Is it outside the scope
+    %% of this module for this func
+    %% to be making up the key/secret?
+    KeyID = riak_moss:unique_hex_id(),
+    Secret = riak_moss:unique_hex_id(),
+
+    User = #moss_user{name=UserName, key_id=KeyID, key_secret=Secret},
+    do_save_user(User, RiakcPid),
+    {ok, User}.
+
+do_save_user(User, RiakcPid) ->
+    UserObj = riakc_obj:new(?USER_BUCKET, list_to_binary(User#moss_user.key_id), User),
+    ok = riakc_pb_socket:put(RiakcPid, UserObj),
+    ok.
+
+do_get_buckets(KeyID, RiakcPid) ->
+    case do_get_user(KeyID, RiakcPid) of
+        {ok, User} ->
+            {ok, User#moss_user.buckets};
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
+%% TODO:
+%% We need to be checking that
+%% this bucket doesn't already
+%% exist anywhere, since everyone
+%% shares a global bucket namespace
+do_create_bucket(KeyID, BucketName, RiakcPid) ->
+    Bucket = #moss_bucket{name=BucketName, creation_date=httpd_util:rfc1123_date()},
+    %% TODO:
+    %% We don't do anything about
+    %% {error, Reason} here
+    {ok, User} = do_get_user(KeyID, RiakcPid),
+    OldBuckets = User#moss_user.buckets,
+    case [B || B <- OldBuckets, B#moss_bucket.name =:= BucketName] of
+        [] ->
+            NewUser = User#moss_user{buckets=[Bucket|OldBuckets]},
+            do_save_user(NewUser, RiakcPid);
+        _ ->
+            ignore
+    end,
+    %% TODO:
+    %% Maybe this should return
+    %% the updated list of buckets
+    %% owned by the user?
+    ok.
+
+do_delete_bucket(KeyID, BucketName, RiakcPid) ->
+    %% TODO:
+    %% Right now we're just removing
+    %% the bucket from the list of
+    %% buckets owned by the user.
+    %% What do we need to do
+    %% to actually "delete"
+    %% the bucket?
+    {ok, User} = do_get_user(KeyID, RiakcPid),
+    CurrentBuckets = User#moss_user.buckets,
+
+    %% TODO:
+    %% This logic is pure and should
+    %% be separated out into it's
+    %% own func so it can be easily
+    %% unit tested.
+    FilterFun = fun(Element) -> Element#moss_bucket.name =/= BucketName end,
+    UpdatedBuckets = lists:filter(FilterFun, CurrentBuckets),
+    UpdatedUser = User#moss_user{buckets=UpdatedBuckets},
+    do_save_user(UpdatedUser, RiakcPid).
+
+do_get_object(BucketName, Key, RiakcPid) ->
+    %% TODO:
+    %% Should we be converting the
+    %% key to binary here, or in the
+    %% the public api method?
+    BinKey = list_to_binary(Key),
+    riakc_pb_socket:get(RiakcPid, BucketName, BinKey).
+
+do_put_object(_KeyID, BucketName, Key, Value, Metadata, RiakcPid) ->
+    %% TODO: KeyID is currently
+    %% not used
+
+    %% TODO:
+    %% Should we be converting the
+    %% key to binary here, or in the
+    %% the public api method?
+    BinKey = list_to_binary(Key),
+    RiakObject = riakc_obj:new(BucketName, BinKey, Value),
+    NewObj = riakc_obj:update_metadata(RiakObject, Metadata),
+    riakc_pb_socket:put(RiakcPid, NewObj).

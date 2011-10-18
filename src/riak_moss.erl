@@ -10,13 +10,11 @@
 
 %% Public API
 -export([riak_client/0,
-         moss_client/1,
          make_bucket/2,
-         make_key/0]).
+         make_key/0,
+         unique_hex_id/0]).
 
 -include("riak_moss.hrl").
-
--type user() :: #rs3_user{}.
 
 %% ===================================================================
 %% Public API
@@ -27,17 +25,20 @@
 riak_client() ->
     riakc_pb_socket:start_link("127.0.0.1", 8087).
 
-%% @doc Return a moss client reference for the specified user
--spec moss_client(user()) -> {ok, term()}.
-moss_client(User) ->
-    {ok, Pid} = riak_client(),
-    {ok, riak_moss_client:new(Pid, User)}.
 
 %% @doc Compose a moss bucket name using the key id
 %% and the specified bucket name.
 -spec make_bucket(binary(), binary()) -> binary().
 make_bucket(KeyId, Bucket) ->
     iolist_to_binary([KeyId, ":", Bucket]).
+
+%% @doc Create a random identifying integer, returning its string
+%%      representation in base 62.
+-spec unique_hex_id() -> string().
+unique_hex_id() ->
+    Rand = crypto:sha(term_to_binary({make_ref(), now()})),
+    <<I:160/integer>> = Rand,
+    integer_to_list(I, 16).
 
 %% @doc Generate a pseudo-random 64-byte key
 -spec make_key() -> string().

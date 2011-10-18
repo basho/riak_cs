@@ -18,9 +18,10 @@
 -include_lib("webmachine/include/webmachine.hrl").
 
 init(Config) ->
-    %% Get the authentication module
-    AuthMod = proplists:get_value(auth_module, Config),
-    {ok, #context{auth_mod=AuthMod}}.
+    %% Check if authentication is disabled and
+    %% set that in the context.
+    AuthBypass = proplists:get_value(auth_bypass, Config),
+    {ok, #context{auth_bypass=AuthBypass}}.
 
 -spec service_available(term(), term()) -> {true, term(), term()}.
 service_available(RD, Ctx) ->
@@ -34,18 +35,15 @@ malformed_request(RD, Ctx) ->
 %%      authenticated. Normally with HTTP
 %%      we'd use the `authorized` callback,
 %%      but this is how S3 does things.
-forbidden(RD, Ctx=#context{auth_mod=AuthMod}) ->
-    case AuthMod of
-        undefined ->
-            %% Authentication module not specified, deny access
-            {true, RD, Ctx};
-        _ ->
-            %% Attempt to authenticate the request
-            case AuthMod:authenticate(RD) of
-                true ->
+forbidden(RD, Ctx=#context{auth_bypass=AuthBypass}) ->
+    AuthHeader = wrq:get_req_header("authorization", RD),
+    case riak_moss_wm_utils:parse_auth_header(AuthHeader, AuthBypass) of
+        {ok, AuthMod, Args} ->
+            case AuthMod:authenticate(RD, Args) of
+                {ok, User} ->
                     %% Authentication succeeded
-                    {false, RD, Ctx};
-                false ->
+                    {false, RD, Ctx#context{user=User}};
+                {error, _Reason} ->
                     %% Authentication failed, deny access
                     {true, RD, Ctx}
             end
@@ -69,8 +67,7 @@ content_types_provided(RD, Ctx) ->
     %% For now just return plaintext
     {[{"text/plain", produce_body}], RD, Ctx}.
 
--spec produce_body(term(), term()) ->
-    {iolist()|binary(), term(), term()}.
+-spec produce_body(term(), term()) -> {iolist()|binary(), term(), term()}.
 produce_body(RD, Ctx) ->
     %% TODO:
     %% This is really just a placeholder
