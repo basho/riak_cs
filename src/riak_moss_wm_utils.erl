@@ -7,7 +7,8 @@
 -module(riak_moss_wm_utils).
 
 -export([service_available/2,
-         parse_auth_header/2]).
+         parse_auth_header/2,
+         ensure_doc/1]).
 
 -include("riak_moss.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
@@ -45,3 +46,17 @@ parse_auth_header("AWS " ++ Key, _) ->
 parse_auth_header(_, _) ->
     {ok, riak_moss_blockall_auth, [unkown_auth_scheme]}.
 
+
+%% @doc Utility function for accessing
+%%      a riakc_obj without retrieving
+%%      it again if it's already in the
+%%      Ctx
+-spec ensure_doc(term()) -> term().
+ensure_doc(Ctx=#key_context{doc=undefined, bucket=Bucket, key=Key}) ->
+    %% TODO:
+    %% need to do some error
+    %% checking here to match
+    %% {error, Reason} too
+    {ok, RiakObject} = riak_moss_riakc:get_object(Bucket, Key),
+    Ctx#key_context{doc=RiakObject};
+ensure_doc(Ctx) -> Ctx.
