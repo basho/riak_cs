@@ -93,7 +93,6 @@ produce_body(RD, Ctx) ->
     DocCtx = riak_moss_wm_utils:ensure_doc(Ctx),
     Doc = DocCtx#key_context.doc,
     Return_body = riakc_obj:get_value(Doc),
-    io:format("the body is ~p ~n", [Return_body]),
     {Return_body, RD, Ctx}.
 
 %% TODO:
