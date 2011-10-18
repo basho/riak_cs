@@ -23,7 +23,7 @@ authenticate(_RD, []) ->
     %% maybe it still makes sense
     %% to pass the user on
     {ok, unknown};
-authenticate(_RD, KeyID) when is_list(KeyID) ->
+authenticate(_RD, [KeyID]) ->
     case riak_moss_riakc:get_user(KeyID) of
         {ok, User} ->
             {ok, User};
