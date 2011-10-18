@@ -71,9 +71,6 @@ content_types_provided(RD, Ctx) ->
 -spec to_json(term(), term()) ->
     {iolist(), term(), term()}.
 to_json(RD, Ctx) ->
-    %% TODO:
-    %% This is really just a placeholder
-    %% return value.
     BucketName = wrq:path_info(bucket, RD),
     {ok, Keys} = riak_moss_riakc:list_keys(BucketName),
     {mochijson2:encode(Keys), RD, Ctx}.
