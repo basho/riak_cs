@@ -29,6 +29,7 @@ docs:
 
 test:
 	@./rebar skip_deps=true eunit
+	@python tests/prototype_parity.py -v
 
 ##
 ## Release targets
