@@ -1,5 +1,5 @@
 REPO		?= riak_moss
-PKG_NAME        ?= riak_moss
+PKG_NAME        ?= riak-moss
 PKG_VERSION	?= 0.0.0
 PKG_ID           = $(PKG_NAME)-$(PKG_VERSION)
 PKG_BUILD        = 1
