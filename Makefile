@@ -1,6 +1,6 @@
 REPO		?= riak_moss
 PKG_NAME        ?= riak_moss
-PKG_VERSION	?= 0.0.1
+PKG_VERSION	?= 0.0.0
 PKG_ID           = $(PKG_NAME)-$(PKG_VERSION)
 PKG_BUILD        = 1
 BASE_DIR         = $(shell pwd)
