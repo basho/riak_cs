@@ -1,8 +1,12 @@
 REPO		?= riak_moss
-RIAK_MOSS_TAG	 = $(shell git describe --tags)
-REVISION	?= $(shell echo $(RIAK_MOSS_TAG) | sed -e 's/^$(REPO)-//')
-PKG_VERSION	?= $(shell echo $(REVISION) | tr - .)
-
+PKG_NAME        ?= riak_moss
+PKG_VERSION	?= 0.0.1
+PKG_ID           = $(PKG_NAME)-$(PKG_VERSION)
+PKG_BUILD        = 1
+BASE_DIR         = $(shell pwd)
+ERLANG_BIN       = $(shell dirname $(shell which erl))
+REBAR           ?= $(BASE_DIR)/rebar
+OVERLAY_VARS    ?=
 
 .PHONY: rel deps
 
@@ -87,41 +91,28 @@ cleanplt:
 	sleep 5
 	rm $(PLT)
 
-# Release tarball creation
-# Generates a tarball that includes all the deps sources so no checkouts are necessary
-archivegit = git archive --format=tar --prefix=$(1)/ HEAD | (cd $(2) && tar xf -)
-archive = $(call archivegit,$(1),$(2))
-
-buildtar = mkdir distdir && \
-		 git clone . distdir/riak-moss-clone && \
-		 cd distdir/riak-moss-clone && \
-		 git checkout $(RIAK_MOSS_TAG) && \
-		 $(call archive,$(RIAK_MOSS_TAG),..) && \
-		 mkdir ../$(RIAK_MOSS_TAG)/deps && \
-		 make deps; \
-		 for dep in deps/*; do \
-                     cd $${dep} && \
-                     $(call archive,$${dep},../../../$(RIAK_MOSS_TAG)) && \
-                     mkdir -p ../../../$(RIAK_MOSS_TAG)/$${dep}/priv && \
-                     git describe --tags > ../../../$(RIAK_MOSS_TAG)/$${dep}/priv/vsn.git && \
-                     cd ../..; done
-
-distdir:
-	$(if $(RIAK_MOSS_TAG), $(call buildtar), $(error "You can't generate a release tarball from a non-tagged revision. Run 'git checkout <tag>', then 'make dist'"))
-
-dist $(RIAK_MOSS_TAG).tar.gz: distdir
-	cd distdir; \
-	tar czf ../$(RIAK_MOSS_TAG).tar.gz $(RIAK_MOSS_TAG)
-
-ballclean:
-	rm -rf $(RIAK_MOSS_TAG).tar.gz distdir
-
-package: dist
-	$(MAKE) -C package package
-
-pkgclean:
-	$(MAKE) -C package pkgclean
-
+##
+## Packaging targets
+##
 .PHONY: package
-export PKG_VERSION REPO REVISION RIAK_MOSS_TAG
+export PKG_NAME PKG_VERSION PKG_ID PKG_BUILD BASE_DIR ERLANG_BIN REBAR OVERLAY_VARS RELEASE
+
+package.src:
+	mkdir -p package
+	rm -rf package/$(PKG_ID)
+	git archive --format=tar --prefix=$(PKG_ID)/ $(PKG_VERSION)| (cd package && tar -xf -)
+	make -C package/$(PKG_ID) deps
+	for dep in package/$(PKG_ID)/deps/*; do \
+             mkdir -p $${dep}/priv; \
+             git --git-dir=$${dep}/.git describe --tags >$${dep}/priv/vsn.git; \
+        done
+	find package/$(PKG_ID) -name ".git" -depth -exec rm -rf {} \;
+	tar -C package -czf package/$(PKG_ID).tar.gz $(PKG_ID)
+
+
+package.%: package.src
+	make -C package -f $(PKG_ID)/deps/node_package/priv/templates/$*/Makefile.bootstrap
+
+
+
 
