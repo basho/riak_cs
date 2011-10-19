@@ -37,8 +37,8 @@ get_user(KeyID) ->
 create_user(UserName) ->
     gen_server:call(?MODULE, {create_user, UserName}).
 
-get_buckets(KeyID) ->
-    gen_server:call(?MODULE, {get_buckets, KeyID}).
+get_buckets(#moss_user{buckets=Buckets}) ->
+    Buckets.
 
 %% TODO:
 %% If there is only one namespace
@@ -53,6 +53,9 @@ create_bucket(KeyID, BucketName) ->
 %% the KeyID here?
 delete_bucket(KeyID, BucketName) ->
     gen_server:call(?MODULE, {delete_bucket, KeyID, BucketName}).
+
+list_keys(BucketName) ->
+    gen_server:call(?MODULE, {list_keys, BucketName}).
 
 get_object(BucketName, Key) ->
     gen_server:call(?MODULE, {get_object, BucketName, Key}).
@@ -69,14 +72,14 @@ handle_call({get_user, KeyID}, _From, State=#state{riakc_pid=RiakcPid}) ->
 handle_call({create_user, UserName}, _From, State=#state{riakc_pid=RiakcPid}) ->
     {reply, do_create_user(UserName, RiakcPid), State};
 
-handle_call({get_buckets, KeyID}, _From, State=#state{riakc_pid=RiakcPid}) ->
-    {reply, do_get_buckets(KeyID, RiakcPid), State};
-
 handle_call({create_bucket, KeyID, BucketName}, _From, State=#state{riakc_pid=RiakcPid}) ->
     {reply, do_create_bucket(KeyID, BucketName, RiakcPid), State};
 
 handle_call({delete_bucket, KeyID, BucketName}, _From, State=#state{riakc_pid=RiakcPid}) ->
     {reply, do_delete_bucket(KeyID, BucketName, RiakcPid), State};
+
+handle_call({list_keys, BucketName}, _From, State=#state{riakc_pid=RiakcPid}) ->
+    {reply, do_list_keys(BucketName, RiakcPid), State};
 
 handle_call({get_object, BucketName, Key}, _From, State=#state{riakc_pid=RiakcPid}) ->
     {reply, do_get_object(BucketName, Key, RiakcPid), State};
@@ -126,14 +129,6 @@ do_save_user(User, RiakcPid) ->
     ok = riakc_pb_socket:put(RiakcPid, UserObj),
     ok.
 
-do_get_buckets(KeyID, RiakcPid) ->
-    case do_get_user(KeyID, RiakcPid) of
-        {ok, User} ->
-            {ok, User#moss_user.buckets};
-        {error, Reason} ->
-            {error, Reason}
-    end.
-
 %% TODO:
 %% We need to be checking that
 %% this bucket doesn't already
@@ -179,6 +174,9 @@ do_delete_bucket(KeyID, BucketName, RiakcPid) ->
     UpdatedBuckets = lists:filter(FilterFun, CurrentBuckets),
     UpdatedUser = User#moss_user{buckets=UpdatedBuckets},
     do_save_user(UpdatedUser, RiakcPid).
+
+do_list_keys(BucketName, RiakcPid) ->
+    riakc_pb_socket:list_keys(RiakcPid, BucketName).
 
 do_get_object(BucketName, Key, RiakcPid) ->
     %% TODO:

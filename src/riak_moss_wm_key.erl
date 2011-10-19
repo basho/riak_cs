@@ -21,11 +21,27 @@ init(Config) ->
     %% Check if authentication is disabled and
     %% set that in the context.
     AuthBypass = proplists:get_value(auth_bypass, Config),
-    {ok, #context{auth_bypass=AuthBypass}}.
+    {ok, #key_context{context=#context{auth_bypass=AuthBypass}}}.
+
+-spec extract_paths(term(), term()) -> term().
+extract_paths(RD, Ctx) ->
+    Bucket = wrq:path_info(bucket, RD),
+    Key = wrq:path_info(key, RD),
+    Ctx#key_context{bucket=Bucket, key=Key}.
 
 -spec service_available(term(), term()) -> {true, term(), term()}.
 service_available(RD, Ctx) ->
-    riak_moss_wm_utils:service_available(RD, Ctx).
+    case riak_moss_wm_utils:service_available(RD, Ctx) of
+        {true, ServiceRD, ServiceCtx} ->
+            %% this fills in the bucket and key
+            %% part of the context so they are
+            %% available in the rest of the
+            %% chain
+            NewCtx = extract_paths(ServiceRD, ServiceCtx),
+            {true, ServiceRD, NewCtx};
+        {false, _, _} ->
+            {false, RD, Ctx}
+    end.
 
 -spec malformed_request(term(), term()) -> {false, term(), term()}.
 malformed_request(RD, Ctx) ->
@@ -35,14 +51,15 @@ malformed_request(RD, Ctx) ->
 %%      authenticated. Normally with HTTP
 %%      we'd use the `authorized` callback,
 %%      but this is how S3 does things.
-forbidden(RD, Ctx=#context{auth_bypass=AuthBypass}) ->
+forbidden(RD, Ctx=#key_context{context=#context{auth_bypass=AuthBypass}}) ->
     AuthHeader = wrq:get_req_header("authorization", RD),
     case riak_moss_wm_utils:parse_auth_header(AuthHeader, AuthBypass) of
         {ok, AuthMod, Args} ->
             case AuthMod:authenticate(RD, Args) of
                 {ok, User} ->
                     %% Authentication succeeded
-                    {false, RD, Ctx#context{user=User}};
+                    NewInnerCtx = Ctx#key_context.context#context{user=User},
+                    {false, RD, Ctx#key_context{context=NewInnerCtx}};
                 {error, _Reason} ->
                     %% Authentication failed, deny access
                     {true, RD, Ctx}
@@ -63,16 +80,18 @@ content_types_provided(RD, Ctx) ->
     %% will either come from the value that was
     %% last PUT or, from you adding a
     %% `response-content-type` header in the request.
+    DocCtx = riak_moss_wm_utils:ensure_doc(Ctx),
+    Doc = DocCtx#key_context.doc,
+    ContentType = riakc_obj:get_content_type(Doc),
 
     %% For now just return plaintext
-    {[{"text/plain", produce_body}], RD, Ctx}.
+    {[{ContentType, produce_body}], RD, Ctx}.
 
 -spec produce_body(term(), term()) -> {iolist()|binary(), term(), term()}.
 produce_body(RD, Ctx) ->
-    %% TODO:
-    %% This is really just a placeholder
-    %% return value.
-    Return_body = <<>>,
+    DocCtx = riak_moss_wm_utils:ensure_doc(Ctx),
+    Doc = DocCtx#key_context.doc,
+    Return_body = riakc_obj:get_value(Doc),
     {Return_body, RD, Ctx}.
 
 %% TODO:
