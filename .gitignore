@@ -5,3 +5,5 @@ rel/riak_moss
 ebin/*.beam
 ebin/*.app
 doc
+/package/
+*~
