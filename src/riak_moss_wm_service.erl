@@ -11,7 +11,7 @@
          forbidden/2,
          content_types_provided/2,
          malformed_request/2,
-         produce_body/2,
+         to_json/2,
          allowed_methods/2]).
 
 -include("riak_moss.hrl").
@@ -40,6 +40,10 @@ forbidden(RD, Ctx=#context{auth_bypass=AuthBypass}) ->
     case riak_moss_wm_utils:parse_auth_header(AuthHeader, AuthBypass) of
         {ok, AuthMod, Args} ->
             case AuthMod:authenticate(RD, Args) of
+                {ok, unknown} ->
+                    %% this resource doesn't support
+                    %% anonymous users
+                    {true, RD, Ctx};
                 {ok, User} ->
                     %% Authentication succeeded
                     {false, RD, Ctx#context{user=User}};
@@ -64,21 +68,20 @@ content_types_provided(RD, Ctx) ->
     %% TODO:
     %% This needs to be xml soon, but for now
     %% let's do json.
-    {[{"application/json", produce_body}], RD, Ctx}.
+    {[{"application/json", to_json}], RD, Ctx}.
 
 
 %% TODO:
 %% This spec will need to be updated
 %% when we change this to allow streaming
 %% bodies.
--spec produce_body(term(), term()) ->
-                          {iolist(), term(), term()}.
-produce_body(RD, Ctx) ->
-    %% TODO:
-    %% Here is where we need to actually
-    %% extract the user from the auth
-    %% and retrieve their list of
-    %% buckets. For now we just return
-    %% an empty list.
-    Return_body = [],
-    {mochijson2:encode(Return_body), RD, Ctx}.
+-spec to_json(term(), term()) ->
+    {iolist(), term(), term()}.
+
+to_json(RD, Ctx=#context{user=User}) ->
+    Buckets = riak_moss_riakc:get_buckets(User),
+    %% we use list_to_binary because
+    %% mochijson2 will convert binaries
+    %% to strings
+    BucketNames = [list_to_binary(B#moss_bucket.name) || B <- Buckets],
+    {mochijson2:encode(BucketNames), RD, Ctx}.
