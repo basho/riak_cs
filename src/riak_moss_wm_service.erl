@@ -40,6 +40,10 @@ forbidden(RD, Ctx=#context{auth_bypass=AuthBypass}) ->
     case riak_moss_wm_utils:parse_auth_header(AuthHeader, AuthBypass) of
         {ok, AuthMod, Args} ->
             case AuthMod:authenticate(RD, Args) of
+                {ok, unknown} ->
+                    %% this resource doesn't support
+                    %% anonymous users
+                    {true, RD, Ctx};
                 {ok, User} ->
                     %% Authentication succeeded
                     {false, RD, Ctx#context{user=User}};
