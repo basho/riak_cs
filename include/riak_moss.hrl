@@ -12,4 +12,9 @@
 -record(context, {auth_bypass :: atom(),
                   user :: #moss_user{}}).
 
+-record(key_context, {context :: #context{},
+                      doc :: term(),
+                      bucket :: list(),
+                      key :: list()}).
+
 -define(USER_BUCKET, <<"moss.users">>).
