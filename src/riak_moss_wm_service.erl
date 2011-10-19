@@ -79,7 +79,7 @@ content_types_provided(RD, Ctx) ->
     {iolist(), term(), term()}.
 
 to_json(RD, Ctx=#context{user=User}) ->
-    Buckets = User#moss_user.buckets,
+    Buckets = riak_moss_riakc:get_buckets(User),
     %% we use list_to_binary because
     %% mochijson2 will convert binaries
     %% to strings

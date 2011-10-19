@@ -37,8 +37,8 @@ get_user(KeyID) ->
 create_user(UserName) ->
     gen_server:call(?MODULE, {create_user, UserName}).
 
-get_buckets(KeyID) ->
-    gen_server:call(?MODULE, {get_buckets, KeyID}).
+get_buckets(#moss_user{buckets=Buckets}) ->
+    Buckets.
 
 %% TODO:
 %% If there is only one namespace
@@ -71,9 +71,6 @@ handle_call({get_user, KeyID}, _From, State=#state{riakc_pid=RiakcPid}) ->
 
 handle_call({create_user, UserName}, _From, State=#state{riakc_pid=RiakcPid}) ->
     {reply, do_create_user(UserName, RiakcPid), State};
-
-handle_call({get_buckets, KeyID}, _From, State=#state{riakc_pid=RiakcPid}) ->
-    {reply, do_get_buckets(KeyID, RiakcPid), State};
 
 handle_call({create_bucket, KeyID, BucketName}, _From, State=#state{riakc_pid=RiakcPid}) ->
     {reply, do_create_bucket(KeyID, BucketName, RiakcPid), State};
@@ -131,14 +128,6 @@ do_save_user(User, RiakcPid) ->
     UserObj = riakc_obj:new(?USER_BUCKET, list_to_binary(User#moss_user.key_id), User),
     ok = riakc_pb_socket:put(RiakcPid, UserObj),
     ok.
-
-do_get_buckets(KeyID, RiakcPid) ->
-    case do_get_user(KeyID, RiakcPid) of
-        {ok, User} ->
-            {ok, User#moss_user.buckets};
-        {error, Reason} ->
-            {error, Reason}
-    end.
 
 %% TODO:
 %% We need to be checking that
