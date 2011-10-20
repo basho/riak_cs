@@ -14,7 +14,8 @@
 
 service_test_() ->
     {setup,
-     fun wm_resource_test_utils:setup/0,
+     fun riak_moss_wm_test_utils:setup/0,
+     fun riak_moss_wm_test_utils:teardown/1,
      [fun get_bucket_to_json/0]}.
 
 get_bucket_to_json() ->

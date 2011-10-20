@@ -6,7 +6,7 @@
 
 -module(riak_moss_wm_test_utils).
 
--export([setup/0, teardown/0]).
+-export([setup/0, teardown/1]).
 
 setup() ->
     application:set_env(riak_moss, moss_ip, "127.0.0.1"),
@@ -23,5 +23,5 @@ setup() ->
     application:start(webmachine),
     application:start(riak_moss).
 
-teardown() ->
+teardown(_) ->
     ok.
