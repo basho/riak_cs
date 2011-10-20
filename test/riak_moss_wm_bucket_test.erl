@@ -16,7 +16,7 @@ bucket_test_() ->
     {setup,
      fun riak_moss_wm_test_utils:setup/0,
      fun riak_moss_wm_test_utils:teardown/1,
-     [fun create_bucket/0]}.
+     [fun create_bucket_and_list_keys/0]}.
 
 %% @doc Test to see that a newly created
 %%      bucket has no keys.
@@ -24,7 +24,7 @@ bucket_test_() ->
 %% TODO: 
 %% The state needed for this test
 %% scares me
-create_bucket() ->
+create_bucket_and_list_keys() ->
     PathInfo = dict:from_list([{bucket, "create_bucket_test"}]),
     RD = #wm_reqdata{path_info = PathInfo},
     Ctx = #context{},
