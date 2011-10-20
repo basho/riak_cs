@@ -23,5 +23,7 @@ setup() ->
     application:start(webmachine),
     application:start(riak_moss).
 
+%% TODO:
+%% Implement this
 teardown(_) ->
     ok.
