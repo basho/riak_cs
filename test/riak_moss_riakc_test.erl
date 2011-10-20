@@ -41,11 +41,19 @@ riakc_test_() ->
       fun bucket_appears/0
      ]}.
 
+%% @doc Make sure that the name
+%%      of the user created is the
+%%      name that makes it into
+%%      the moss_user record
 name_matches() ->
     Name = "fooser",
     {ok, User} = riak_moss_riakc:create_user(Name),
     ?assertEqual(Name, User#moss_user.name).
 
+%% @doc Make sure that when we create
+%%      a new user and one bucket for that
+%%      user, that that bucket is the only
+%%      one owned by that user
 bucket_appears() ->
     Name = "fooser",
     BucketName = "fooser-bucket",
