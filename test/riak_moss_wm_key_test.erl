@@ -16,7 +16,19 @@ key_test_() ->
     {setup,
      fun riak_moss_wm_test_utils:setup/0,
      fun riak_moss_wm_test_utils:teardown/1,
-     [fun create_object/0]}.
+     [fun get_object/0]}.
 
 create_object() ->
     ok.
+
+get_object() ->
+    %% We use this instead of setting
+    %% path info the wm_reqdata because
+    %% riak_moss_wm_utils:ensure_doc uses
+    %% it.
+    Ctx= #key_context{bucket="keytest", key="foo"},
+    RD = #wm_reqdata{},
+
+    {Object, _, _} = riak_moss_wm_key:produce_body(RD, Ctx),
+    ?assertEqual(<<>>, Object).
+
