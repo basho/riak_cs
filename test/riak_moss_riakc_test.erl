@@ -36,10 +36,23 @@ riakc_test_() ->
     {setup,
      fun setup/0,
      fun teardown/1,
-     [fun name_matches/0]}.
+     [
+      fun name_matches/0,
+      fun bucket_appears/0
+     ]}.
 
 name_matches() ->
     Name = "fooser",
     {ok, User} = riak_moss_riakc:create_user(Name),
     ?assertEqual(Name, User#moss_user.name).
 
+bucket_appears() ->
+    Name = "fooser",
+    BucketName = "fooser-bucket",
+    {ok, User} = riak_moss_riakc:create_user(Name),
+    KeyID = User#moss_user.key_id,
+    riak_moss_riakc:create_bucket(KeyID, BucketName),
+    {ok, UserAfter} = riak_moss_riakc:get_user(KeyID),
+    AfterBucketNames = [B#moss_bucket.name ||
+                               B <- riak_moss_riakc:get_buckets(UserAfter)],
+    ?assertEqual([BucketName], AfterBucketNames).
