@@ -17,10 +17,6 @@
 -include("riak_moss.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
 
--ifdef(TEST).
--include_lib("eunit/include/eunit.hrl").
--endif.
-
 init(Config) ->
     %% Check if authentication is disabled and
     %% set that in the context.
@@ -89,30 +85,3 @@ to_json(RD, Ctx=#context{user=User}) ->
     %% to strings
     BucketNames = [list_to_binary(B#moss_bucket.name) || B <- Buckets],
     {mochijson2:encode(BucketNames), RD, Ctx}.
-
--ifdef(TEST).
-test_test() ->
-    application:set_env(riak_moss, moss_ip, "127.0.0.1"),
-    application:set_env(riak_moss, moss_port, 8080),
-    %% Start erlang node
-    application:start(sasl),
-    TestNode = list_to_atom("testnode" ++ integer_to_list(element(3, now()))),
-    net_kernel:start([TestNode, shortnames]),
-    application:start(lager),
-    application:start(riakc),
-    application:start(inets),
-    application:start(mochiweb),
-    application:start(crypto),
-    application:start(webmachine),
-    application:start(riak_moss),
-
-    BucketNames = ["foo", "bar", "baz"],
-    UserName = "fooser",
-    {ok, User} = riak_moss_riakc:create_user(UserName),
-    KeyID = User#moss_user.key_id,
-    [riak_moss_riakc:create_bucket(KeyID, Name) || Name <- BucketNames],
-    {ok, UpdatedUser} = riak_moss_riakc:get_user(User#moss_user.key_id),
-    CorrectJsonBucketNames = mochijson2:encode([list_to_binary(Name) || Name <- lists:reverse(BucketNames)]),
-    {ResultToTest, _, _} = to_json(fake_rd, #context{user=UpdatedUser}),
-    ?assertEqual(CorrectJsonBucketNames, ResultToTest).
--endif.
