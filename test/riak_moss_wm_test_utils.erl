@@ -1,3 +1,9 @@
+%% -------------------------------------------------------------------
+%%
+%% Copyright (c) 2007-2011 Basho Technologies, Inc.  All Rights Reserved.
+%%
+%% -------------------------------------------------------------------
+
 -module(wm_resource_test_utils).
 
 -export([setup/0]).
