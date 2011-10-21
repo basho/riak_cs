@@ -11,7 +11,8 @@
                   inets,
                   crypto,
                   mochiweb,
-                  webmachine
+                  webmachine,
+                  lager
                  ]},
   {mod, { riak_moss_app, []}},
   {env, [
