@@ -9,8 +9,6 @@
 -export([setup/0, teardown/1]).
 
 setup() ->
-    application:set_env(riak_moss, moss_ip, "127.0.0.1"),
-    application:set_env(riak_moss, moss_port, 8080),
     %% Start erlang node
     application:start(sasl),
     TestNode = list_to_atom("testnode" ++ integer_to_list(element(3, now()))),
