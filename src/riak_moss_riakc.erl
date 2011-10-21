@@ -32,6 +32,13 @@ init([]) ->
         {ok, Pid} ->
             {ok, #state{riakc_pid=Pid}};
         {error, Reason} ->
+            %% TODO:
+            %% I think this actually only gets called
+            %% because of a race. This process is going
+            %% to be killed because riak_moss:riak_client()
+            %% calls riakc_pb_socket:start_link(). However
+            %% lager will print a convenient error anyway
+            %% if this lager message loses the race.
             lager:error("Couldn't connect to Riak: ~p", [Reason])
     end.
 
