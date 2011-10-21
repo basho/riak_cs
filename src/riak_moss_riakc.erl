@@ -32,7 +32,7 @@ init([]) ->
         {ok, Pid} ->
             {ok, #state{riakc_pid=Pid}};
         {error, Reason} ->
-            lager:error("Riak is not available: ~p", [Reason])
+            lager:error("Couldn't connect to Riak: ~p", [Reason])
     end.
 
 get_user(KeyID) ->
