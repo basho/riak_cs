@@ -39,7 +39,8 @@ riakc_test_() ->
      [
       fun name_matches/0,
       fun bucket_appears/0,
-      fun key_appears/0
+      fun key_appears/0,
+      fun object_returns/0
      ]}.
 
 %% @doc Make sure that the name
@@ -87,3 +88,22 @@ key_appears() ->
 
     {ok, ListKeys} = riak_moss_riakc:list_keys(BucketName),
     ?assert(lists:member(list_to_binary(KeyName), ListKeys)).
+
+%% @doc Make sure that when we save an object,
+%%      we can later retrieve it and get the same
+%%      value
+object_returns() ->
+    %% TODO:
+    %% it's starting to get kind of annoying
+    %% that we need a KeyID to store objects
+    KeyID = "0",
+    BucketName = "object_returns",
+    KeyName = "testkey",
+    Value = <<"value">>,
+    Metadata = dict:new(),
+
+    riak_moss_riakc:put_object(KeyID, BucketName, KeyName,
+                                      Value, Metadata),
+
+    {ok, RetrievedObject} = riak_moss_riakc:get_object(BucketName, KeyName),
+    ?assertEqual(Value, riakc_obj:get_value(RetrievedObject)).
