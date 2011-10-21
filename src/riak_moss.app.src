@@ -14,5 +14,8 @@
                   webmachine
                  ]},
   {mod, { riak_moss_app, []}},
-  {env, []}
+  {env, [
+         {moss_ip, "127.0.0.1"},
+         {moss_port, 8080}
+        ]}
  ]}.

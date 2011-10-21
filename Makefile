@@ -8,7 +8,7 @@ ERLANG_BIN       = $(shell dirname $(shell which erl))
 REBAR           ?= $(BASE_DIR)/rebar
 OVERLAY_VARS    ?=
 
-.PHONY: rel deps
+.PHONY: rel deps test
 
 all: deps compile
 
