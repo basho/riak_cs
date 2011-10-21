@@ -28,8 +28,12 @@ start_link() ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
 
 init([]) ->
-    {ok, Pid} = riak_moss:riak_client(),
-    {ok, #state{riakc_pid=Pid}}.
+    case riak_moss:riak_client() of
+        {ok, Pid} ->
+            {ok, #state{riakc_pid=Pid}};
+        {error, Reason} ->
+            lager:error("Riak is not available: ~p", [Reason])
+    end.
 
 get_user(KeyID) ->
     gen_server:call(?MODULE, {get_user, KeyID}).
