@@ -38,7 +38,8 @@ riakc_test_() ->
      fun teardown/1,
      [
       fun name_matches/0,
-      fun bucket_appears/0
+      fun bucket_appears/0,
+      fun key_appears/0
      ]}.
 
 %% @doc Make sure that the name
@@ -64,3 +65,25 @@ bucket_appears() ->
     AfterBucketNames = [B#moss_bucket.name ||
                                B <- riak_moss_riakc:get_buckets(UserAfter)],
     ?assertEqual([BucketName], AfterBucketNames).
+
+
+%% @doc Make sure that when we create a key
+%%      that is appears in list keys for that
+%%      bucket
+key_appears() ->
+    %% TODO:
+    %% How much of a hack is it
+    %% that we have to pass the
+    %% key in as a list instead
+    %% of a binary?
+    Name = "fooser",
+    BucketName = "key_appears",
+    KeyName = "testkey",
+    {ok, User} = riak_moss_riakc:create_user(Name),
+    KeyID = User#moss_user.key_id,
+    ok = riak_moss_riakc:create_bucket(KeyID, BucketName),
+    riak_moss_riakc:put_object(KeyID, BucketName, KeyName,
+                                      "value", dict:new()),
+
+    {ok, ListKeys} = riak_moss_riakc:list_keys(BucketName),
+    ?assert(lists:member(list_to_binary(KeyName), ListKeys)).
