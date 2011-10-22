@@ -28,8 +28,19 @@ start_link() ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
 
 init([]) ->
-    {ok, Pid} = riak_moss:riak_client(),
-    {ok, #state{riakc_pid=Pid}}.
+    case riak_moss:riak_client() of
+        {ok, Pid} ->
+            {ok, #state{riakc_pid=Pid}};
+        {error, Reason} ->
+            %% TODO:
+            %% I think this actually only gets called
+            %% because of a race. This process is going
+            %% to be killed because riak_moss:riak_client()
+            %% calls riakc_pb_socket:start_link(). However
+            %% lager will print a convenient error anyway
+            %% if this lager message loses the race.
+            lager:error("Couldn't connect to Riak: ~p", [Reason])
+    end.
 
 get_user(KeyID) ->
     gen_server:call(?MODULE, {get_user, KeyID}).
