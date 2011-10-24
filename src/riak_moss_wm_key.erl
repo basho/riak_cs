@@ -46,7 +46,25 @@ service_available(RD, Ctx) ->
 
 -spec malformed_request(term(), term()) -> {false, term(), term()}.
 malformed_request(RD, Ctx) ->
-    {false, RD, Ctx}.
+    case wrq:method(RD) of
+        'GET' ->
+            DocCtx = riak_moss_wm_utils:ensure_doc(Ctx),
+            case DocCtx#key_context.doc of
+                notfound ->
+                    %% more or less ripped
+                    %% from riak_kv_wm_object.erl
+                    {{halt, 404},
+                        wrq:set_resp_header("Content-Type", "text/plain",
+                            wrq:append_to_response_body(
+                                io_lib:format("not found~n",[]),
+                                RD)),
+                        DocCtx};
+                _ ->
+                    {false, RD, DocCtx}
+            end;
+        _ ->
+            {false, RD, Ctx}
+    end.
 
 %% @doc Check to see if the user is
 %%      authenticated. Normally with HTTP
