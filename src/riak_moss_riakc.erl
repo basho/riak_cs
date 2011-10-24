@@ -77,6 +77,9 @@ get_object(BucketName, Key) ->
 put_object(KeyID, BucketName, Key, Val, Metadata) ->
     gen_server:call(?MODULE, {put_object, KeyID, BucketName, Key, Val, Metadata}).
 
+delete_object(BucketName, Key) ->
+    gen_server:call(?MODULE, {delete_object, BucketName, Key}).
+
 handle_call({get_user, KeyID}, _From, State=#state{riakc_pid=RiakcPid}) ->
     {reply, do_get_user(KeyID, RiakcPid), State};
 
@@ -97,7 +100,11 @@ handle_call({get_object, BucketName, Key}, _From, State=#state{riakc_pid=RiakcPi
 
 handle_call({put_object, KeyID, BucketName, Key, Value, Metadata},
                    _From, State=#state{riakc_pid=RiakcPid}) ->
-    {reply, do_put_object(KeyID, BucketName, Key, Value, Metadata, RiakcPid), State}.
+    {reply, do_put_object(KeyID, BucketName, Key, Value, Metadata, RiakcPid), State};
+
+handle_call({delete_object, BucketName, Key},
+                   _From, State=#state{riakc_pid=RiakcPid}) ->
+    {reply, do_delete_object(BucketName, Key, RiakcPid), State}.
 
 handle_cast(_Msg, State) ->
     {noreply, State}.
@@ -209,3 +216,7 @@ do_put_object(_KeyID, BucketName, Key, Value, Metadata, RiakcPid) ->
     RiakObject = riakc_obj:new(BucketName, BinKey, Value),
     NewObj = riakc_obj:update_metadata(RiakObject, Metadata),
     riakc_pb_socket:put(RiakcPid, NewObj).
+
+do_delete_object(BucketName, Key, RiakcPid) ->
+    BinKey = list_to_binary(Key),
+    riakc_pb_socket:delete(RiakcPid, BucketName, BinKey).
