@@ -99,12 +99,20 @@ content_types_provided(RD, Ctx) ->
     %% will either come from the value that was
     %% last PUT or, from you adding a
     %% `response-content-type` header in the request.
-    DocCtx = riak_moss_wm_utils:ensure_doc(Ctx),
-    Doc = DocCtx#key_context.doc,
-    ContentType = riakc_obj:get_content_type(Doc),
+    case lists:member(wrq:method(RD), ['GET', 'HEAD']) of
+        true ->
+            DocCtx = riak_moss_wm_utils:ensure_doc(Ctx),
+            Doc = DocCtx#key_context.doc,
+            ContentType = riakc_obj:get_content_type(Doc),
+            {[{ContentType, produce_body}], RD, Ctx};
 
-    %% For now just return plaintext
-    {[{ContentType, produce_body}], RD, Ctx}.
+        false ->
+            %% TODO
+            %% this shouldn't ever be
+            %% called, it's just to appease
+            %% webmachine
+            {[{"text/plain", produce_body}], RD, Ctx}
+    end.
 
 -spec produce_body(term(), term()) -> {iolist()|binary(), term(), term()}.
 produce_body(RD, Ctx) ->
@@ -115,14 +123,14 @@ produce_body(RD, Ctx) ->
 
 %% @doc Callback for deleting an object.
 -spec delete_resource(term(), term()) -> boolean().
-delete_resource(_RD, #key_context{bucket=Bucket, key=Key}) ->
+delete_resource(RD, Ctx=#key_context{bucket=Bucket, key=Key}) ->
     case riak_moss_riakc:delete_object(Bucket, Key) of
         ok ->
-            true;
+            {true, RD, Ctx};
         %% TODO:
         %% What could this error even be?
         _ ->
-            false
+            {false, RD, Ctx}
     end.
 
 
