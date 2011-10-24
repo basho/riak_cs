@@ -12,7 +12,8 @@
          content_types_provided/2,
          malformed_request/2,
          produce_body/2,
-         allowed_methods/2]).
+         allowed_methods/2,
+         delete_resource/2]).
 
 -include("riak_moss.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
@@ -69,8 +70,8 @@ forbidden(RD, Ctx=#key_context{context=#context{auth_bypass=AuthBypass}}) ->
 %% @doc Get the list of methods this resource supports.
 -spec allowed_methods(term(), term()) -> {[atom()], term(), term()}.
 allowed_methods(RD, Ctx) ->
-    %% TODO: add PUT, POST, DELETE
-    {['HEAD', 'GET'], RD, Ctx}.
+    %% TODO: add PUT, POST
+    {['HEAD', 'GET', 'DELETE'], RD, Ctx}.
 
 -spec content_types_provided(term(), term()) ->
     {[{string(), atom()}], term(), term()}.
@@ -93,6 +94,19 @@ produce_body(RD, Ctx) ->
     Doc = DocCtx#key_context.doc,
     Return_body = riakc_obj:get_value(Doc),
     {Return_body, RD, Ctx}.
+
+%% @doc Callback for deleting an object.
+-spec delete_resource(term(), term()) -> boolean().
+delete_resource(_RD, #key_context{bucket=Bucket, key=Key}) ->
+    case riak_moss_riakc:delete_object(Bucket, Key) of
+        ok ->
+            true;
+        %% TODO:
+        %% What could this error even be?
+        _ ->
+            false
+    end.
+
 
 %% TODO:
 %% Add content_types_accepted when we add
