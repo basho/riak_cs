@@ -38,7 +38,8 @@ riakc_test_() ->
       fun name_matches/0,
       fun bucket_appears/0,
       fun key_appears/0,
-      fun object_returns/0
+      fun object_returns/0,
+      fun keys_are_sorted/0
      ]}.
 
 %% @doc Make sure that the name
@@ -86,6 +87,22 @@ key_appears() ->
 
     {ok, ListKeys} = riak_moss_riakc:list_keys(BucketName),
     ?assert(lists:member(list_to_binary(KeyName), ListKeys)).
+
+keys_are_sorted() ->
+    Name = "fooser",
+    BucketName = "keys_are_sorted",
+    Keys = [<<"dog">>, <<"zebra">>, <<"aardvark">>, <<01>>, <<"panda">>],
+
+    {ok, User} = riak_moss_riakc:create_user(Name),
+    KeyID = User#moss_user.key_id,
+    ok = riak_moss_riakc:create_bucket(KeyID, BucketName),
+
+    [riak_moss_riakc:put_object(KeyID, BucketName, binary_to_list(KeyName),
+                                      "value", dict:new()) ||
+                                       KeyName <- Keys],
+
+    {ok, ListKeys} = riak_moss_riakc:list_keys(BucketName),
+    ?assertEqual(lists:sort(Keys), ListKeys).
 
 %% @doc Make sure that when we save an object,
 %%      we can later retrieve it and get the same

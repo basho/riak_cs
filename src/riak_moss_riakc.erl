@@ -187,7 +187,8 @@ do_delete_bucket(KeyID, BucketName, RiakcPid) ->
     do_save_user(UpdatedUser, RiakcPid).
 
 do_list_keys(BucketName, RiakcPid) ->
-    riakc_pb_socket:list_keys(RiakcPid, BucketName).
+    {ok, Keys} = riakc_pb_socket:list_keys(RiakcPid, BucketName),
+    {ok, lists:sort(Keys)}.
 
 do_get_object(BucketName, Key, RiakcPid) ->
     %% TODO:
