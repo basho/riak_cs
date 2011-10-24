@@ -39,7 +39,8 @@ riakc_test_() ->
       fun bucket_appears/0,
       fun key_appears/0,
       fun object_returns/0,
-      fun object_deletes/0
+      fun object_deletes/0,
+      fun nonexistent_deletes/0
      ]}.
 
 %% @doc Make sure that the name
@@ -123,3 +124,11 @@ object_deletes() ->
     ok = riak_moss_riakc:delete_object(BucketName, KeyName),
     {error, Reason} = riak_moss_riakc:get_object(BucketName, KeyName),
     ?assertEqual(Reason, notfound).
+
+
+%% @doc Make sure that an object
+%%      that doesn't exist still
+%%      deletes fine
+nonexistent_deletes() ->
+    Return = riak_moss_riakc:delete_object("doesn't", "exist"),
+    ?assertEqual(Return, ok).
