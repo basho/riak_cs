@@ -38,7 +38,8 @@ riakc_test_() ->
       fun name_matches/0,
       fun bucket_appears/0,
       fun key_appears/0,
-      fun object_returns/0
+      fun object_returns/0,
+      fun object_deletes/0
      ]}.
 
 %% @doc Make sure that the name
@@ -105,3 +106,20 @@ object_returns() ->
 
     {ok, RetrievedObject} = riak_moss_riakc:get_object(BucketName, KeyName),
     ?assertEqual(Value, riakc_obj:get_value(RetrievedObject)).
+
+%% @doc Make sure that after creating an
+%%      object and deleting it that it
+%%      no longer exists
+object_deletes() ->
+    KeyID = "0",
+    BucketName = "object_deletes",
+    KeyName = "testkey",
+    Value = <<"value">>,
+    Metadata = dict:new(),
+
+    riak_moss_riakc:put_object(KeyID, BucketName, KeyName,
+                                      Value, Metadata),
+
+    ok = riak_moss_riakc:delete_object(BucketName, KeyName),
+    {error, Reason} = riak_moss_riakc:get_object(BucketName, KeyName),
+    ?assertEqual(Reason, notfound).
