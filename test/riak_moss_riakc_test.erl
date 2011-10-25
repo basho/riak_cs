@@ -38,7 +38,10 @@ riakc_test_() ->
       fun name_matches/0,
       fun bucket_appears/0,
       fun key_appears/0,
-      fun object_returns/0
+      fun keys_are_sorted/0,
+      fun object_returns/0,
+      fun object_deletes/0,
+      fun nonexistent_deletes/0
      ]}.
 
 %% @doc Make sure that the name
@@ -87,6 +90,25 @@ key_appears() ->
     {ok, ListKeys} = riak_moss_riakc:list_keys(BucketName),
     ?assert(lists:member(list_to_binary(KeyName), ListKeys)).
 
+%% TODO:
+%% This would make a great
+%% EQC test
+keys_are_sorted() ->
+    Name = "fooser",
+    BucketName = "keys_are_sorted",
+    Keys = [<<"dog">>, <<"zebra">>, <<"aardvark">>, <<01>>, <<"panda">>],
+
+    {ok, User} = riak_moss_riakc:create_user(Name),
+    KeyID = User#moss_user.key_id,
+    ok = riak_moss_riakc:create_bucket(KeyID, BucketName),
+
+    [riak_moss_riakc:put_object(KeyID, BucketName, binary_to_list(KeyName),
+                                      "value", dict:new()) ||
+                                       KeyName <- Keys],
+
+    {ok, ListKeys} = riak_moss_riakc:list_keys(BucketName),
+    ?assertEqual(lists:sort(Keys), ListKeys).
+
 %% @doc Make sure that when we save an object,
 %%      we can later retrieve it and get the same
 %%      value
@@ -105,3 +127,28 @@ object_returns() ->
 
     {ok, RetrievedObject} = riak_moss_riakc:get_object(BucketName, KeyName),
     ?assertEqual(Value, riakc_obj:get_value(RetrievedObject)).
+
+%% @doc Make sure that after creating an
+%%      object and deleting it that it
+%%      no longer exists
+object_deletes() ->
+    KeyID = "0",
+    BucketName = "object_deletes",
+    KeyName = "testkey",
+    Value = <<"value">>,
+    Metadata = dict:new(),
+
+    riak_moss_riakc:put_object(KeyID, BucketName, KeyName,
+                                      Value, Metadata),
+
+    ok = riak_moss_riakc:delete_object(BucketName, KeyName),
+    {error, Reason} = riak_moss_riakc:get_object(BucketName, KeyName),
+    ?assertEqual(Reason, notfound).
+
+
+%% @doc Make sure that an object
+%%      that doesn't exist still
+%%      deletes fine
+nonexistent_deletes() ->
+    Return = riak_moss_riakc:delete_object("doesn't", "exist"),
+    ?assertEqual(Return, ok).

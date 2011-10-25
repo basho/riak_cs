@@ -14,7 +14,8 @@
          to_xml/2,
          allowed_methods/2,
          content_types_accepted/2,
-         accept_body/2]).
+         accept_body/2,
+         delete_resource/2]).
 
 -include("riak_moss.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
@@ -55,9 +56,9 @@ forbidden(RD, Ctx=#context{auth_bypass=AuthBypass}) ->
 %% @doc Get the list of methods this resource supports.
 -spec allowed_methods(term(), term()) -> {[atom()], term(), term()}.
 allowed_methods(RD, Ctx) ->
-    %% TODO: add POST, DELETE
+    %% TODO: add POST
     %% TODO: make this list conditional on Ctx
-    {['HEAD', 'GET', 'PUT'], RD, Ctx}.
+    {['HEAD', 'GET', 'PUT', 'DELETE'], RD, Ctx}.
 
 -spec content_types_provided(term(), term()) ->
     {[{string(), atom()}], term(), term()}.
@@ -90,8 +91,6 @@ to_xml(RD, Ctx=#context{user=User}) ->
     Bucket = hd([B || B <- riak_moss_riakc:get_buckets(User), B#moss_bucket.name =:= BucketName]),
     {ok, Keys} = riak_moss_riakc:list_keys(BucketName),
     riak_moss_s3_response:list_bucket_response(User, Bucket, Keys, RD, Ctx).
-    
-
 
 %% TODO:
 %% Add content_types_accepted when we add
@@ -103,4 +102,17 @@ accept_body(ReqData, Ctx=#context{user=User}) ->
             {{halt, 200}, ReqData, Ctx};
         ignore ->
             riak_moss_s3_response:api_error(bucket_already_exists, ReqData, Ctx)
+    end.
+
+%% @doc Callback for deleting a bucket.
+-spec delete_resource(term(), term()) -> boolean().
+delete_resource(RD, Ctx=#context{user=User}) ->
+    BucketName = wrq:path_info(bucket, RD),
+    case riak_moss_riakc:delete_bucket(User#moss_user.key_id, BucketName) of
+        ok ->
+            {true, RD, Ctx};
+        %% TODO:
+        %% What could this error even be?
+        _ ->
+            {false, RD, Ctx}
     end.

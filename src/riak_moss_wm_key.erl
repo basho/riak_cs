@@ -14,7 +14,8 @@
          malformed_request/2,
          produce_body/2,
          accept_body/2,
-         allowed_methods/2]).
+         allowed_methods/2,
+         delete_resource/2]).
 
 -include("riak_moss.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
@@ -47,7 +48,25 @@ service_available(RD, Ctx) ->
 
 -spec malformed_request(term(), term()) -> {false, term(), term()}.
 malformed_request(RD, Ctx) ->
-    {false, RD, Ctx}.
+    case wrq:method(RD) of
+        'GET' ->
+            DocCtx = riak_moss_wm_utils:ensure_doc(Ctx),
+            case DocCtx#key_context.doc of
+                notfound ->
+                    %% more or less ripped
+                    %% from riak_kv_wm_object.erl
+                    {{halt, 404},
+                        wrq:set_resp_header("Content-Type", "text/plain",
+                            wrq:append_to_response_body(
+                                io_lib:format("not found~n",[]),
+                                RD)),
+                        DocCtx};
+                _ ->
+                    {false, RD, DocCtx}
+            end;
+        _ ->
+            {false, RD, Ctx}
+    end.
 
 %% @doc Check to see if the user is
 %%      authenticated. Normally with HTTP
@@ -71,8 +90,8 @@ forbidden(RD, Ctx=#key_context{context=#context{auth_bypass=AuthBypass}}) ->
 %% @doc Get the list of methods this resource supports.
 -spec allowed_methods(term(), term()) -> {[atom()], term(), term()}.
 allowed_methods(RD, Ctx) ->
-    %% TODO: add PUT, POST, DELETE
-    {['HEAD', 'GET', 'PUT'], RD, Ctx}.
+    %% TODO: add POST
+    {['HEAD', 'GET', 'PUT', 'DELETE'], RD, Ctx}.
 
 -spec content_types_provided(term(), term()) ->
     {[{string(), atom()}], term(), term()}.
@@ -82,19 +101,22 @@ content_types_provided(RD, Ctx) ->
     %% will either come from the value that was
     %% last PUT or, from you adding a
     %% `response-content-type` header in the request.
-    DocCtx = riak_moss_wm_utils:ensure_doc(Ctx),
-    Doc = DocCtx#key_context.doc,
-    case Doc of
-        notfound ->
-            case wrq:get_req_header("content-type", RD) of
+    Method = wrq:method(RD),
+    if Method == 'GET'; Method == 'HEAD' ->
+            DocCtx = riak_moss_wm_utils:ensure_doc(Ctx),
+            Doc = DocCtx#key_context.doc,
+            case riakc_obj:get_content_type(Doc) of
                 undefined ->
-                    {[{"application/octet-stream", produce_body}], RD, DocCtx};
-                CType ->
-                    {[{CType, produce_body}], RD, DocCtx}
+                    {[{"application/octet-stream", produce_body}], RD, Ctx};
+                ContentType ->
+                    {[{ContentType, produce_body}], RD, Ctx}
             end;
-        _ ->
-            %%{[{riakc_obj:get_content_type(Doc), produce_body}], RD, DocCtx}
-            {[{"application/octet-stream", produce_body}], RD, DocCtx}
+       true ->
+            %% TODO
+            %% this shouldn't ever be
+            %% called, it's just to appease
+            %% webmachine
+            {[{"text/plain", produce_body}], RD, Ctx}
     end.
 
 content_types_accepted(RD, Ctx) ->
@@ -130,6 +152,19 @@ accept_body(RD, Ctx) ->
             riak_moss_s3_response:respond(500, <<>>, RD2, Ctx)
     end.
     
+
+%% @doc Callback for deleting an object.
+-spec delete_resource(term(), term()) -> boolean().
+delete_resource(RD, Ctx=#key_context{bucket=Bucket, key=Key}) ->
+    case riak_moss_riakc:delete_object(Bucket, Key) of
+        ok ->
+            {true, RD, Ctx};
+        %% TODO:
+        %% What could this error even be?
+        _ ->
+            {false, RD, Ctx}
+    end.
+
 
 %% TODO:
 %% Add content_types_accepted when we add
