@@ -188,6 +188,11 @@ do_delete_bucket(KeyID, BucketName, RiakcPid) ->
 
 do_list_keys(BucketName, RiakcPid) ->
     {ok, Keys} = riakc_pb_socket:list_keys(RiakcPid, BucketName),
+    %% TODO:
+    %% This is a naive implementation,
+    %% the longer-term solution is likely
+    %% going to involve 2i and merging the
+    %% results from each of the vnodes.
     {ok, lists:sort(Keys)}.
 
 do_get_object(BucketName, Key, RiakcPid) ->

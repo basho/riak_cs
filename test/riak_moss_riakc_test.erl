@@ -88,6 +88,9 @@ key_appears() ->
     {ok, ListKeys} = riak_moss_riakc:list_keys(BucketName),
     ?assert(lists:member(list_to_binary(KeyName), ListKeys)).
 
+%% TODO:
+%% This would make a great
+%% EQC test
 keys_are_sorted() ->
     Name = "fooser",
     BucketName = "keys_are_sorted",
