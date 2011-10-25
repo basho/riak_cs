@@ -99,19 +99,19 @@ content_types_provided(RD, Ctx) ->
     %% will either come from the value that was
     %% last PUT or, from you adding a
     %% `response-content-type` header in the request.
-    case lists:member(wrq:method(RD), ['GET', 'HEAD']) of
-        true ->
-            DocCtx = riak_moss_wm_utils:ensure_doc(Ctx),
-            Doc = DocCtx#key_context.doc,
-            ContentType = riakc_obj:get_content_type(Doc),
-            {[{ContentType, produce_body}], RD, Ctx};
+    Method = wrq:method(RD),
+    if Method == 'GET'; Method == 'HEAD' ->
+        DocCtx = riak_moss_wm_utils:ensure_doc(Ctx),
+        Doc = DocCtx#key_context.doc,
+        ContentType = riakc_obj:get_content_type(Doc),
+        {[{ContentType, produce_body}], RD, Ctx};
 
-        false ->
-            %% TODO
-            %% this shouldn't ever be
-            %% called, it's just to appease
-            %% webmachine
-            {[{"text/plain", produce_body}], RD, Ctx}
+    true ->
+        %% TODO
+        %% this shouldn't ever be
+        %% called, it's just to appease
+        %% webmachine
+        {[{"text/plain", produce_body}], RD, Ctx}
     end.
 
 -spec produce_body(term(), term()) -> {iolist()|binary(), term(), term()}.
