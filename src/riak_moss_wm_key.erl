@@ -13,6 +13,8 @@
          malformed_request/2,
          produce_body/2,
          allowed_methods/2,
+         content_types_accepted/2,
+         accept_body/2,
          delete_resource/2]).
 
 -include("riak_moss.hrl").
@@ -88,8 +90,8 @@ forbidden(RD, Ctx=#key_context{context=#context{auth_bypass=AuthBypass}}) ->
 %% @doc Get the list of methods this resource supports.
 -spec allowed_methods(term(), term()) -> {[atom()], term(), term()}.
 allowed_methods(RD, Ctx) ->
-    %% TODO: add PUT, POST
-    {['HEAD', 'GET', 'DELETE'], RD, Ctx}.
+    %% TODO: POST
+    {['HEAD', 'GET', 'DELETE', 'PUT'], RD, Ctx}.
 
 -spec content_types_provided(term(), term()) ->
     {[{string(), atom()}], term(), term()}.
@@ -133,7 +135,55 @@ delete_resource(RD, Ctx=#key_context{bucket=Bucket, key=Key}) ->
             {false, RD, Ctx}
     end.
 
+-spec content_types_accepted(term(), term()) ->
+    {[{string(), atom()}], term(), term()}.
+content_types_accepted(RD, Ctx) ->
+    case wrq:get_req_header("Content-Type", RD) of
+        undefined ->
+            {[{"binary/octet-stream", accept_body}], RD, Ctx};
+        %% This was shamelessly ripped out of
+        %% https://github.com/basho/riak_kv/blob/0d91ca641a309f2962a216daa0cee869c82ffe26/src/riak_kv_wm_object.erl#L492
+        CType ->
+            Media = hd(string:tokens(CType, ";")),
+            case string:tokens(Media, "/") of
+                [_Type, _Subtype] ->
+                    %% accept whatever the user says
+                    {[{Media, accept_body}], RD, Ctx#key_context{putctype=Media}};
+                _ ->
+                    %% TODO:
+                    %% Maybe we should have caught
+                    %% this in malformed_request?
+                    {[],
+                     wrq:set_resp_header(
+                       "Content-Type",
+                       "text/plain",
+                       wrq:set_resp_body(
+                         ["\"", Media, "\""
+                          " is not a valid media type"
+                          " for the Content-type header.\n"],
+                         RD)),
+                     Ctx}
+            end
+    end.
+
+-spec accept_body(term(), term()) ->
+    {true, term(), term()}.
 
 %% TODO:
-%% Add content_types_accepted when we add
-%% in PUT and POST requests.
+%% We need to do some checking to make sure
+%% the bucket exists for the user who is doing
+%% this PUT
+accept_body(RD, Ctx=#key_context{bucket=Bucket, key=Key,
+                   context=Context, putctype=CType}) ->
+    User = Context#context.user,
+    KeyID = User#moss_user.key_id,
+    %% TODO:
+    %% what happens if the body
+    %% is empty?
+    Body = wrq:req_body(RD),
+    %% TODO:
+    %% we should be ripping some metadata
+    %% out of the request headers
+    Metadata = dict:from_list([{<<"content-type">>, CType}]),
+    riak_moss_riakc:put_object(KeyID, Bucket, Key, Body, Metadata),
+    {true, RD, Ctx}.
