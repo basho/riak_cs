@@ -49,7 +49,7 @@ stage : rel
 
 devrel:
 	mkdir -p dev
-	(cd rel && ../rebar generate target_dir=../dev overlay_vars=vars/dev_vars.config)
+	(cd rel && ../rebar generate target_dir=../dev/$(REPO) overlay_vars=vars/dev_vars.config)
 
 devclean: clean
 	rm -rf dev
