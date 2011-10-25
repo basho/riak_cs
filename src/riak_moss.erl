@@ -12,7 +12,8 @@
 -export([riak_client/0,
          make_bucket/2,
          make_key/0,
-         unique_hex_id/0]).
+         unique_hex_id/0,
+         binary_to_hexlist/1]).
 
 -include("riak_moss.hrl").
 

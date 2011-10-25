@@ -10,8 +10,10 @@
          service_available/2,
          forbidden/2,
          content_types_provided/2,
+         content_types_accepted/2,
          malformed_request/2,
          produce_body/2,
+         accept_body/2,
          allowed_methods/2]).
 
 -include("riak_moss.hrl").
@@ -70,7 +72,7 @@ forbidden(RD, Ctx=#key_context{context=#context{auth_bypass=AuthBypass}}) ->
 -spec allowed_methods(term(), term()) -> {[atom()], term(), term()}.
 allowed_methods(RD, Ctx) ->
     %% TODO: add PUT, POST, DELETE
-    {['HEAD', 'GET'], RD, Ctx}.
+    {['HEAD', 'GET', 'PUT'], RD, Ctx}.
 
 -spec content_types_provided(term(), term()) ->
     {[{string(), atom()}], term(), term()}.
@@ -82,17 +84,52 @@ content_types_provided(RD, Ctx) ->
     %% `response-content-type` header in the request.
     DocCtx = riak_moss_wm_utils:ensure_doc(Ctx),
     Doc = DocCtx#key_context.doc,
-    ContentType = riakc_obj:get_content_type(Doc),
+    case Doc of
+        notfound ->
+            case wrq:get_req_header("content-type", RD) of
+                undefined ->
+                    {[{"application/octet-stream", produce_body}], RD, DocCtx};
+                CType ->
+                    {[{CType, produce_body}], RD, DocCtx}
+            end;
+        _ ->
+            %%{[{riakc_obj:get_content_type(Doc), produce_body}], RD, DocCtx}
+            {[{"application/octet-stream", produce_body}], RD, DocCtx}
+    end.
 
-    %% For now just return plaintext
-    {[{ContentType, produce_body}], RD, Ctx}.
+content_types_accepted(RD, Ctx) ->
+    case wrq:get_req_header("content-type", RD) of
+        undefined ->
+            {[{"application/octet-stream", accept_body}], RD, Ctx};
+        CType ->
+            {[{CType, accept_body}], RD, Ctx}
+    end.
 
 -spec produce_body(term(), term()) -> {iolist()|binary(), term(), term()}.
 produce_body(RD, Ctx) ->
     DocCtx = riak_moss_wm_utils:ensure_doc(Ctx),
     Doc = DocCtx#key_context.doc,
-    Return_body = riakc_obj:get_value(Doc),
-    {Return_body, RD, Ctx}.
+    case Doc of
+        notfound -> 
+            {{halt, 404}, RD, DocCtx};
+        _ ->
+            {riakc_obj:get_value(Doc), RD, DocCtx}
+    end.
+
+accept_body(RD, Ctx) ->
+    BucketName = wrq:path_info(bucket, RD),
+    Key = wrq:path_info(key, RD),
+    Body = wrq:req_body(RD),
+    %% TODO :  move etag calculation to generate_etag
+    RD2 = wrq:set_resp_header("ETag", 
+        "\"" ++ riak_moss:binary_to_hexlist(crypto:md5(Body)) ++ "\"", RD),
+    case riak_moss_riakc:put_object(0, BucketName, Key, Body, dict:new()) of
+        ok ->
+            riak_moss_s3_response:respond(200, <<>>, RD2, Ctx);
+        _ ->
+            riak_moss_s3_response:respond(500, <<>>, RD2, Ctx)
+    end.
+    
 
 %% TODO:
 %% Add content_types_accepted when we add

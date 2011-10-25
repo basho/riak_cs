@@ -207,5 +207,5 @@ do_put_object(_KeyID, BucketName, Key, Value, Metadata, RiakcPid) ->
     %% the public api method?
     BinKey = list_to_binary(Key),
     RiakObject = riakc_obj:new(BucketName, BinKey, Value),
-    NewObj = riakc_obj:update_metadata(RiakObject, Metadata),
-    riakc_pb_socket:put(RiakcPid, NewObj).
+    %NewObj = riakc_obj:update_metadata(RiakObject, Metadata),
+    riakc_pb_socket:put(RiakcPid, RiakObject).

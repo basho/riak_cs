@@ -5,10 +5,10 @@ from boto.s3.connection import S3Connection, OrdinaryCallingFormat
 from boto.s3.key import Key
 import unittest, time, uuid
 
-KEY_ID="0"
-SECRET_KEY="9372f58b69b05001"
+KEY_ID="A854BE7021A625131CD4E35D7D6B7B4A9CFE9435"
+SECRET_KEY="D5DE587D0122A2074BE91B9BBF8B9A3499283910"
 HOST="127.0.0.1"
-PORT=80
+PORT=8080
 
 class ParityWithPrototypeTest(unittest.TestCase):
 
@@ -37,41 +37,41 @@ class ParityWithPrototypeTest(unittest.TestCase):
                       [b.name for b in self.conn.get_all_buckets()])        
 
     def test_3_put_object(self):
-        bucket = self.conn.get_bucket(self.bucket_name)
-        k = Key(bucket)
-        k.key = self.key_name
-        k.set_contents_from_string(self.data)
+         bucket = self.conn.get_bucket(self.bucket_name)
+         k = Key(bucket)
+         k.key = self.key_name
+         k.set_contents_from_string(self.data)
 
     def test_4_get_object(self):
-        bucket = self.conn.get_bucket(self.bucket_name)
-        k = Key(bucket)
-        k.key = self.key_name        
-        self.assertEqual(k.get_contents_as_string(), self.data)
+         bucket = self.conn.get_bucket(self.bucket_name)
+         k = Key(bucket)
+         k.key = self.key_name        
+         self.assertEqual(k.get_contents_as_string(), self.data)
 
     def test_5_list_bucket(self):
-        bucket = self.conn.get_bucket(self.bucket_name)
-        self.assertIn(self.key_name,
-                      [k.key for k in bucket.get_all_keys()])
+         bucket = self.conn.get_bucket(self.bucket_name)
+         self.assertIn(self.key_name,
+                       [k.key for k in bucket.get_all_keys()])
 
-    def test_6_delete_object(self):
+    def test_6_delete_objet(self):
         bucket = self.conn.get_bucket(self.bucket_name)
         k = Key(bucket)
         k.key = self.key_name                
         k.delete()
 
     def test_7_list_bucket(self):
-        time.sleep(3) # XXX HACK
-        bucket = self.conn.get_bucket(self.bucket_name)
-        self.assertNotIn(self.key_name,
-                         [k.key for k in bucket.get_all_keys()])
+         time.sleep(3) # XXX HACK
+         bucket = self.conn.get_bucket(self.bucket_name)
+         self.assertNotIn(self.key_name,
+                          [k.key for k in bucket.get_all_keys()])
 
     def test_8_delete_bucket(self):
-        bucket = self.conn.get_bucket(self.bucket_name)
-        bucket.delete()
+         bucket = self.conn.get_bucket(self.bucket_name)
+         bucket.delete()
 
     def test_9_list_buckets(self):
-        self.assertNotIn(self.bucket_name, 
-                         [b.name for b in self.conn.get_all_buckets()]) 
+         self.assertNotIn(self.bucket_name, 
+                          [b.name for b in self.conn.get_all_buckets()]) 
                
 
 if __name__ == "__main__":

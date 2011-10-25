@@ -11,8 +11,10 @@
          forbidden/2,
          content_types_provided/2,
          malformed_request/2,
-         to_json/2,
-         allowed_methods/2]).
+         to_xml/2,
+         allowed_methods/2,
+         content_types_accepted/2,
+         accept_body/2]).
 
 -include("riak_moss.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
@@ -46,15 +48,16 @@ forbidden(RD, Ctx=#context{auth_bypass=AuthBypass}) ->
                     {false, RD, Ctx#context{user=User}};
                 {error, _Reason} ->
                     %% Authentication failed, deny access
-                    {true, RD, Ctx}
+                    riak_moss_s3_response:api_error(access_denied, RD, Ctx)
             end
     end.
 
 %% @doc Get the list of methods this resource supports.
 -spec allowed_methods(term(), term()) -> {[atom()], term(), term()}.
 allowed_methods(RD, Ctx) ->
-    %% TODO: add PUT, POST, DELETE
-    {['HEAD', 'GET'], RD, Ctx}.
+    %% TODO: add POST, DELETE
+    %% TODO: make this list conditional on Ctx
+    {['HEAD', 'GET', 'PUT'], RD, Ctx}.
 
 -spec content_types_provided(term(), term()) ->
     {[{string(), atom()}], term(), term()}.
@@ -66,15 +69,38 @@ content_types_provided(RD, Ctx) ->
     %% The subresource will likely affect
     %% the content-type. Need to look
     %% more into those.
-    {[{"application/json", to_json}], RD, Ctx}.
+    {[{"application/xml", to_xml}], RD, Ctx}.
 
--spec to_json(term(), term()) ->
+%% @spec content_types_accepted(reqdata(), context()) ->
+%%          {[{ContentType::string(), Acceptor::atom()}],
+%%           reqdata(), context()}
+content_types_accepted(RD, Ctx) ->
+    case wrq:get_req_header("content-type", RD) of
+        undefined ->
+            {[{"application/octet-stream", accept_body}], RD, Ctx};
+        CType ->
+            {[{CType, accept_body}], RD, Ctx}
+    end.
+
+
+-spec to_xml(term(), term()) ->
     {iolist(), term(), term()}.
-to_json(RD, Ctx) ->
+to_xml(RD, Ctx=#context{user=User}) ->
     BucketName = wrq:path_info(bucket, RD),
+    Bucket = hd([B || B <- riak_moss_riakc:get_buckets(User), B#moss_bucket.name =:= BucketName]),
     {ok, Keys} = riak_moss_riakc:list_keys(BucketName),
-    {mochijson2:encode(Keys), RD, Ctx}.
+    riak_moss_s3_response:list_bucket_response(User, Bucket, Keys, RD, Ctx).
+    
+
 
 %% TODO:
 %% Add content_types_accepted when we add
 %% in PUT and POST requests.
+accept_body(ReqData, Ctx=#context{user=User}) ->
+    case riak_moss_riakc:create_bucket(User#moss_user.key_id, 
+                                       wrq:path_info(bucket, ReqData)) of
+        ok ->
+            {{halt, 200}, ReqData, Ctx};
+        ignore ->
+            riak_moss_s3_response:api_error(bucket_already_exists, ReqData, Ctx)
+    end.
