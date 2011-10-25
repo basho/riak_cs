@@ -47,6 +47,13 @@ stage : rel
 	$(foreach dep,$(wildcard deps/*), rm -rf rel/riak_moss/lib/$(shell basename $(dep))-* && ln -sf $(abspath $(dep)) rel/riak_moss/lib;)
 	$(foreach app,$(wildcard apps/*), rm -rf rel/riak_moss/lib/$(shell basename $(app))-* && ln -sf $(abspath $(app)) rel/riak_moss/lib;)
 
+devrel:
+	mkdir -p dev
+	(cd rel && ../rebar generate target_dir=../dev overlay_vars=vars/dev_vars.config)
+
+devclean: clean
+	rm -rf dev
+
 ##
 ## Doc targets
 ##
