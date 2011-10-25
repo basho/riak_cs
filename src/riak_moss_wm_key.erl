@@ -90,8 +90,8 @@ forbidden(RD, Ctx=#key_context{context=#context{auth_bypass=AuthBypass}}) ->
 %% @doc Get the list of methods this resource supports.
 -spec allowed_methods(term(), term()) -> {[atom()], term(), term()}.
 allowed_methods(RD, Ctx) ->
-    %% TODO: add PUT, POST
-    {['HEAD', 'GET', 'DELETE'], RD, Ctx}.
+    %% TODO: POST
+    {['HEAD', 'GET', 'DELETE', 'PUT'], RD, Ctx}.
 
 -spec content_types_provided(term(), term()) ->
     {[{string(), atom()}], term(), term()}.
@@ -148,7 +148,7 @@ content_types_accepted(RD, Ctx) ->
             case string:tokens(Media, "/") of
                 [_Type, _Subtype] ->
                     %% accept whatever the user says
-                    {[{Media, accept_body}], RD, Ctx};
+                    {[{Media, accept_body}], RD, Ctx#key_context{putctype=Media}};
                 _ ->
                     %% TODO:
                     %% Maybe we should have caught
@@ -168,7 +168,13 @@ content_types_accepted(RD, Ctx) ->
 
 -spec accept_body(term(), term()) ->
     {true, term(), term()}.
-accept_body(RD, Ctx=#key_context{bucket=Bucket, key=Key, context=Context}) ->
+
+%% TODO:
+%% We need to do some checking to make sure
+%% the bucket exists for the user who is doing
+%% this PUT
+accept_body(RD, Ctx=#key_context{bucket=Bucket, key=Key,
+                   context=Context, putctype=CType}) ->
     User = Context#context.user,
     KeyID = User#moss_user.key_id,
     %% TODO:
@@ -178,5 +184,6 @@ accept_body(RD, Ctx=#key_context{bucket=Bucket, key=Key, context=Context}) ->
     %% TODO:
     %% we should be ripping some metadata
     %% out of the request headers
-    riak_moss_riakc:put_object(KeyID, Bucket, Key, Body, dict:new()),
+    Metadata = dict:from_list([{<<"content-type">>, CType}]),
+    riak_moss_riakc:put_object(KeyID, Bucket, Key, Body, Metadata),
     {true, RD, Ctx}.
