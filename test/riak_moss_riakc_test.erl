@@ -38,6 +38,7 @@ riakc_test_() ->
       fun name_matches/0,
       fun bucket_appears/0,
       fun key_appears/0,
+      fun content_type_sticks/0,
       fun keys_are_sorted/0,
       fun object_returns/0,
       fun object_deletes/0,
@@ -89,6 +90,23 @@ key_appears() ->
 
     {ok, ListKeys} = riak_moss_riakc:list_keys(BucketName),
     ?assert(lists:member(list_to_binary(KeyName), ListKeys)).
+
+%% @doc Make sure that storing a doc
+%%      with a content type in the metadata
+%%      keeps the content-type on GET
+content_type_sticks() ->
+    Name = "fooser",
+    BucketName = "content_type_sticks",
+    KeyName = "testkey",
+    CType = "x-foo/bar",
+    Metadata = dict:from_list([{<<"content-type">>, CType}]),
+    {ok, User} = riak_moss_riakc:create_user(Name),
+    KeyID = User#moss_user.key_id,
+    ok = riak_moss_riakc:create_bucket(KeyID, BucketName),
+    riak_moss_riakc:put_object(KeyID, BucketName, KeyName,
+                                      <<"value">>, Metadata),
+    {ok, Object} = riak_moss_riakc:get_object(BucketName, KeyName),
+    ?assertEqual(CType, riakc_obj:get_content_type(Object)).
 
 %% TODO:
 %% This would make a great

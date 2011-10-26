@@ -14,6 +14,7 @@
 
 -record(key_context, {context :: #context{},
                       doc :: term(),
+                      putctype :: string(),
                       bucket :: list(),
                       key :: list()}).
 
