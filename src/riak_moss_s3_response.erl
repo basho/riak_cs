@@ -1,3 +1,8 @@
+%% -------------------------------------------------------------------
+%%
+%% Copyright (c) 2007-2011 Basho Technologies, Inc.  All Rights Reserved.
+%%
+%% -------------------------------------------------------------------
 -module(riak_moss_s3_response).
 -export([api_error/3, 
          respond/4,
