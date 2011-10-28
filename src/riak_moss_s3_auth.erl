@@ -135,16 +135,12 @@ canonicalize_qs([{K, V}|T], Acc) ->
     end.
 
 bucket_from_host(HostHeader) ->
-    BaseTokens = string:tokens(?ROOT_HOST, ".:"),
+    BaseTokens = string:tokens(?ROOT_HOST, "."),
     case string:tokens(HostHeader, ".") of
         [H|BaseTokens] ->
             H;
         BaseTokens ->
-            undefined;
-        _ ->
-            %% Strip the port off the host
-            [Bucket | _] = string:tokens(HostHeader, ":"),
-            Bucket
+            undefined
     end.
 
 canonicalize_resource(RD) ->
