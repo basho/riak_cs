@@ -139,7 +139,7 @@ bucket_from_host(HostHeader) ->
     case string:tokens(HostHeader, ".") of
         [H|BaseTokens] ->
             H;
-        BaseTokens ->
+        _ ->
             undefined
     end.
 
