@@ -10,18 +10,27 @@
 
 -include("riak_moss.hrl").
 
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+-endif.
+
+
 -spec authenticate(term(), [string()]) -> {ok, #moss_user{}}
                                               | {ok, unknown}
                                               | {error, atom()}.
+-compile(export_all).
 -export([authenticate/2]).
+
+%% ===================================================================
+%% Public API
+%% ===================================================================
 
 authenticate(RD, [KeyID, Signature]) ->
     case riak_moss_riakc:get_user(KeyID) of
         {ok, User} ->
-            case check_auth(User#moss_user.key_id,
-                            User#moss_user.key_secret,
-                            RD,
-                            Signature) of
+            CalculatedSignature =
+                calculate_signature(User#moss_user.key_secret, RD),
+            case check_auth(Signature, CalculatedSignature) of
                 true ->
                     {ok, User};
                 _ ->
@@ -31,13 +40,62 @@ authenticate(RD, [KeyID, Signature]) ->
             {error, invalid_authentication}
     end.
 
-extract_amz_meta(RD) ->
-    lists:filter(fun({K,_V}) ->
-                    lists:prefix(
-                        "x-amz-",
-                        string:to_lower(any_to_list(K)))
-                end,
-                mochiweb_headers:to_list(wrq:req_headers(RD))).
+%% ===================================================================
+%% Internal functions
+%% ===================================================================
+
+calculate_signature(KeyData, RD) ->
+    Headers = get_request_headers(RD),
+    AmazonHeaders = extract_amazon_headers(Headers),
+    Resource = [canonicalize_resource(RD),
+                canonicalize_qs(lists:sort(wrq:req_qs(RD)))],
+    case proplists:is_defined("x-amz-date", Headers) of
+        true ->
+            Date = "\n";
+        false ->
+            Date = [wrq:get_req_header("date", RD), "\n"]
+    end,
+    case wrq:get_req_header("content-md5", RD) of
+        undefined ->
+            CMD5 = [];
+        CMD5 ->
+            ok
+    end,
+    case wrq:get_req_header("content-type", RD) of
+        undefined ->
+            ContentType = [];
+        ContentType ->
+            ok
+    end,
+    STS = [atom_to_list(wrq:method(RD)), "\n",
+           CMD5,
+           "\n",
+           ContentType,
+           "\n",
+           Date,
+           AmazonHeaders,
+           Resource],
+    base64:encode_to_string(
+      crypto:sha_mac(KeyData, STS)).
+
+check_auth(PresentedSignature, CalculatedSignature) ->
+    PresentedSignature == CalculatedSignature.
+
+get_request_headers(RD) ->
+    mochiweb_headers:to_list(wrq:req_headers(RD)).
+
+extract_amazon_headers(Headers) ->
+    FilterFun =
+        fun({K, V}, Acc) ->
+                LowerKey = string:to_lower(any_to_list(K)),
+                case lists:prefix("x-amz-", LowerKey) of
+                    true ->
+                        [[LowerKey, ":", V, "\n"] | Acc];
+                    false ->
+                        Acc
+                end
+        end,
+    ordsets:from_list(lists:foldl(FilterFun, [], Headers)).
 
 any_to_list(V) when is_list(V) ->
     V;
@@ -77,12 +135,16 @@ canonicalize_qs([{K, V}|T], Acc) ->
     end.
 
 bucket_from_host(HostHeader) ->
-    BaseTokens = string:tokens(?ROOT_HOST, "."),
+    BaseTokens = string:tokens(?ROOT_HOST, ".:"),
     case string:tokens(HostHeader, ".") of
         [H|BaseTokens] ->
             H;
+        BaseTokens ->
+            undefined;
         _ ->
-            undefined
+            %% Strip the port off the host
+            [Bucket | _] = string:tokens(HostHeader, ":"),
+            Bucket
     end.
 
 canonicalize_resource(RD) ->
@@ -93,19 +155,142 @@ canonicalize_resource(RD) ->
             ["/", Bucket, wrq:path(RD)]
     end.
 
-check_auth(_KeyID, KeyData, RD, Signature) ->
-    AmzHeaders = [[string:to_lower(K), ":", V, "\n"] ||
-                     {K, V} <- ordsets:to_list(ordsets:from_list(extract_amz_meta(RD)))],
-    Resource = [canonicalize_resource(RD),
-                canonicalize_qs(lists:sort(wrq:req_qs(RD)))],
-    CMD5 = wrq:get_req_header("content-md5", RD),
-    CType = wrq:get_req_header("content-type", RD),
-    STS = [atom_to_list(wrq:method(RD)), "\n",
-           case CMD5 of undefined -> ""; O -> O end, "\n",
-           case CType of undefined -> ""; O -> O end, "\n",
-           wrq:get_req_header("date", RD), "\n",
-           AmzHeaders,
-           Resource],
-    Sig = base64:encode_to_string(crypto:sha_mac(KeyData, STS)),
-    Sig == Signature.
+%% ===================================================================
+%% Eunit tests
+%% ===================================================================
 
+-ifdef(TEST).
+
+%% Test cases for the examples provided by Amazon here:
+%% http://docs.amazonwebservices.com/AmazonS3/latest/dev/index.html?RESTAuthentication.html
+
+example_get_object_test() ->
+    KeyData = "uV3F3YluFJax1cknvbcGwgjvx4QpvB+leU8dUj2o",
+    Method = 'GET',
+    Version = {1, 1},
+    Path = "/photos/puppy.jpg",
+    Headers =
+        mochiweb_headers:make([{"Host", "johnsmith.s3.amazonaws.com"},
+                               {"Date", "Tue, 27 Mar 2007 19:36:42 +0000"}]),
+    RD = wrq:create(Method, Version, Path, Headers),
+    ExpectedSignature = "xXjDGYUmKxnwqr5KXNPGldn5LbA=",
+    CalculatedSignature = calculate_signature(KeyData, RD),
+    ?assert(check_auth(ExpectedSignature, CalculatedSignature)).
+
+example_put_object_test() ->
+    KeyData = "uV3F3YluFJax1cknvbcGwgjvx4QpvB+leU8dUj2o",
+    Method = 'PUT',
+    Version = {1, 1},
+    Path = "/photos/puppy.jpg",
+    Headers =
+        mochiweb_headers:make([{"Host", "johnsmith.s3.amazonaws.com"},
+                               {"Content-Type", "image/jpeg"},
+                               {"Content-Length", 94328},
+                               {"Date", "Tue, 27 Mar 2007 21:15:45 +0000"}]),
+    RD = wrq:create(Method, Version, Path, Headers),
+    ExpectedSignature = "hcicpDDvL9SsO6AkvxqmIWkmOuQ=",
+    CalculatedSignature = calculate_signature(KeyData, RD),
+    ?assert(check_auth(ExpectedSignature, CalculatedSignature)).
+
+example_list_test() ->
+    KeyData = "uV3F3YluFJax1cknvbcGwgjvx4QpvB+leU8dUj2o",
+    Method = 'GET',
+    Version = {1, 1},
+    Path = "/?prefix=photos&max-keys=50&marker=puppy",
+    Headers =
+        mochiweb_headers:make([{"User-Agent", "Mozilla/5.0"},
+                               {"Host", "johnsmith.s3.amazonaws.com"},
+                               {"Date", "Tue, 27 Mar 2007 19:42:41 +0000"}]),
+    RD = wrq:create(Method, Version, Path, Headers),
+    ExpectedSignature = "jsRt/rhG+Vtp88HrYL706QhE4w4=",
+    CalculatedSignature = calculate_signature(KeyData, RD),
+    ?assert(check_auth(ExpectedSignature, CalculatedSignature)).
+
+example_fetch_test() ->
+    KeyData = "uV3F3YluFJax1cknvbcGwgjvx4QpvB+leU8dUj2o",
+    Method = 'GET',
+    Version = {1, 1},
+    Path = "/?acl",
+    Headers =
+        mochiweb_headers:make([{"Host", "johnsmith.s3.amazonaws.com"},
+                               {"Date", "Tue, 27 Mar 2007 19:44:46 +0000"}]),
+    RD = wrq:create(Method, Version, Path, Headers),
+    ExpectedSignature = "thdUi9VAkzhkniLj96JIrOPGi0g=",
+    CalculatedSignature = calculate_signature(KeyData, RD),
+    ?assert(check_auth(ExpectedSignature, CalculatedSignature)).
+
+example_delete_test() ->
+    KeyData = "uV3F3YluFJax1cknvbcGwgjvx4QpvB+leU8dUj2o",
+    Method = 'DELETE',
+    Version = {1, 1},
+    Path = "/johnsmith/photos/puppy.jpg",
+    Headers =
+        mochiweb_headers:make([{"User-Agent", "dotnet"},
+                               {"Host", "s3.amazonaws.com"},
+                               {"Date", "Tue, 27 Mar 2007 21:20:27 +0000"},
+                               {"x-amz-date", "Tue, 27 Mar 2007 21:20:26 +0000"}]),
+    RD = wrq:create(Method, Version, Path, Headers),
+    ExpectedSignature = "k3nL7gH3+PadhTEVn5Ip83xlYzk=",
+    CalculatedSignature = calculate_signature(KeyData, RD),
+    ?assert(check_auth(ExpectedSignature, CalculatedSignature)).
+
+%% @TODO This test case should be specified using two separate
+%% X-Amz-Meta-ReviewedBy headers, but Amazon strictly interprets
+%% section 4.2 of RFC 2616 and forbids anything but commas seperating
+%% field values of headers with the same field name whereas webmachine
+%% inserts a comma and a space between the field values. This is
+%% probably something that can be changed in webmachine without any
+%% ill effect, but that needs to be verified. For now, the test case
+%% is specified using a singled X-Amz-Meta-ReviewedBy header with
+%% multiple field values.
+example_upload_test() ->
+    KeyData = "uV3F3YluFJax1cknvbcGwgjvx4QpvB+leU8dUj2o",
+    Method = 'PUT',
+    Version = {1, 1},
+    Path = "/db-backup.dat.gz",
+    Headers =
+        mochiweb_headers:make([{"User-Agent", "curl/7.15.5"},
+                               {"Host", "static.johnsmith.net:8080"},
+                               {"Date", "Tue, 27 Mar 2007 21:06:08 +0000"},
+                               {"x-amz-acl", "public-read"},
+                               {"content-type", "application/x-download"},
+                               {"Content-MD5", "4gJE4saaMU4BqNR0kLY+lw=="},
+                               {"X-Amz-Meta-ReviewedBy", "joe@johnsmith.net,jane@johnsmith.net"},
+                               %% {"X-Amz-Meta-ReviewedBy", "jane@johnsmith.net"},
+                               {"X-Amz-Meta-FileChecksum", "0x02661779"},
+                               {"X-Amz-Meta-ChecksumAlgorithm", "crc32"},
+                               {"Content-Disposition", "attachment; filename=database.dat"},
+                               {"Content-Encoding", "gzip"},
+                               {"Content-Length", 5913339}]),
+    RD = wrq:create(Method, Version, Path, Headers),
+    ExpectedSignature = "C0FlOtU8Ylb9KDTpZqYkZPX91iI=",
+    CalculatedSignature = calculate_signature(KeyData, RD),
+    ?assert(check_auth(ExpectedSignature, CalculatedSignature)).
+
+example_list_all_buckets_test() ->
+    KeyData = "uV3F3YluFJax1cknvbcGwgjvx4QpvB+leU8dUj2o",
+    Method = 'GET',
+    Version = {1, 1},
+    Path = "/",
+    Headers =
+        mochiweb_headers:make([{"Host", "s3.amazonaws.com"},
+                               {"Date", "Wed, 28 Mar 2007 01:29:59 +0000"}]),
+    RD = wrq:create(Method, Version, Path, Headers),
+    ExpectedSignature = "Db+gepJSUbZKwpx1FR0DLtEYoZA=",
+    CalculatedSignature = calculate_signature(KeyData, RD),
+    ?assert(check_auth(ExpectedSignature, CalculatedSignature)).
+
+example_unicode_keys_test() ->
+    KeyData = "uV3F3YluFJax1cknvbcGwgjvx4QpvB+leU8dUj2o",
+    Method = 'GET',
+    Version = {1, 1},
+    Path = "/dictionary/fran%C3%A7ais/pr%c3%a9f%c3%a8re",
+    Headers =
+        mochiweb_headers:make([{"Host", "s3.amazonaws.com"},
+                               {"Date", "Wed, 28 Mar 2007 01:49:49 +0000"}]),
+    RD = wrq:create(Method, Version, Path, Headers),
+    ExpectedSignature = "dxhSBHoI6eVSPcXJqEghlUzZMnY=",
+    CalculatedSignature = calculate_signature(KeyData, RD),
+    ?assert(check_auth(ExpectedSignature, CalculatedSignature)).
+
+-endif.
