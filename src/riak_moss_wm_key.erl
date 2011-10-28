@@ -10,10 +10,8 @@
          service_available/2,
          forbidden/2,
          content_types_provided/2,
-         content_types_accepted/2,
          malformed_request/2,
          produce_body/2,
-         accept_body/2,
          allowed_methods/2,
          content_types_accepted/2,
          accept_body/2,
@@ -121,14 +119,6 @@ content_types_provided(RD, Ctx) ->
             {[{"text/plain", produce_body}], RD, Ctx}
     end.
 
-content_types_accepted(RD, Ctx) ->
-    case wrq:get_req_header("content-type", RD) of
-        undefined ->
-            {[{"application/octet-stream", accept_body}], RD, Ctx};
-        CType ->
-            {[{CType, accept_body}], RD, Ctx}
-    end.
-
 -spec produce_body(term(), term()) -> {iolist()|binary(), term(), term()}.
 produce_body(RD, Ctx) ->
     DocCtx = riak_moss_wm_utils:ensure_doc(Ctx),
@@ -139,21 +129,6 @@ produce_body(RD, Ctx) ->
         _ ->
             {riakc_obj:get_value(Doc), RD, DocCtx}
     end.
-
-accept_body(RD, Ctx) ->
-    BucketName = wrq:path_info(bucket, RD),
-    Key = wrq:path_info(key, RD),
-    Body = wrq:req_body(RD),
-    %% TODO :  move etag calculation to generate_etag
-    RD2 = wrq:set_resp_header("ETag", 
-        "\"" ++ riak_moss:binary_to_hexlist(crypto:md5(Body)) ++ "\"", RD),
-    case riak_moss_riakc:put_object(0, BucketName, Key, Body, dict:new()) of
-        ok ->
-            riak_moss_s3_response:respond(200, <<>>, RD2, Ctx);
-        _ ->
-            riak_moss_s3_response:respond(500, <<>>, RD2, Ctx)
-    end.
-    
 
 %% @doc Callback for deleting an object.
 -spec delete_resource(term(), term()) -> boolean().
@@ -200,7 +175,6 @@ content_types_accepted(RD, Ctx) ->
 
 -spec accept_body(term(), term()) ->
     {true, term(), term()}.
-
 %% TODO:
 %% We need to do some checking to make sure
 %% the bucket exists for the user who is doing
@@ -218,4 +192,5 @@ accept_body(RD, Ctx=#key_context{bucket=Bucket, key=Key,
     %% out of the request headers
     Metadata = dict:from_list([{<<"content-type">>, CType}]),
     riak_moss_riakc:put_object(KeyID, Bucket, Key, Body, Metadata),
-    {true, RD, Ctx}.
+    {true, wrq:set_resp_header("ETag", 
+      "\"" ++ riak_moss:binary_to_hexlist(crypto:md5(Body)) ++ "\"", RD), Ctx}.
