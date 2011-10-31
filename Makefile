@@ -29,6 +29,8 @@ docs:
 
 test:
 	@./rebar skip_deps=true eunit
+
+parity-test:
 	@python test/prototype_parity.py -v
 
 ##
