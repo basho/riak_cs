@@ -19,17 +19,23 @@ error_message(access_denied) ->
 error_message(bucket_not_empty) ->
     "The bucket you tried to delete is not empty.";
 error_message(bucket_already_exists) ->
-    "The requested bucket name is not available. The bucket namespace is shared by all users of the system. Please select a different name and try again.".
+    "The requested bucket name is not available. The bucket namespace is shared by all users of the system. Please select a different name and try again.";
+error_message(entity_too_large) ->
+    "Your proposed upload exceeds the maximum allowed object size.".
 
 error_code(invalid_access_key_id) -> 'InvalidAccessKeyId';
 error_code(access_denied) -> 'AccessDenied';
 error_code(bucket_not_empty) -> 'BucketNotEmpty';
-error_code(bucket_already_exists) -> 'BucketAlreadyExists'.
-
+error_code(bucket_already_exists) -> 'BucketAlreadyExists';
+error_code(entity_too_large) -> 'EntityTooLarge'.
+                                    
+     
 status_code(invalid_access_key_id) -> 403;
 status_code(access_denied) ->  403;
 status_code(bucket_not_empty) ->  409;
-status_code(bucket_already_exists) -> 409.
+status_code(bucket_already_exists) -> 409;
+status_code(entity_too_large) -> 400.
+    
 
 respond(StatusCode, Body, ReqData, Ctx) ->
     {{halt, StatusCode}, wrq:set_resp_body(Body, ReqData), Ctx}.
@@ -69,9 +75,9 @@ list_bucket_response(User, Bucket, Keys, RD, Ctx) ->
     XmlDoc = [{'ListBucketResult', BucketProps++Contents}],
     respond(200, export_xml(XmlDoc), RD, Ctx).
 
-user_to_xml_owner(User=#moss_user{key_id=KeyId, name=Name}) ->
-    {'Owner', [{'ID', [User#moss_user.key_id]},
-               {'DisplayName', [User#moss_user.name]}]}.
+user_to_xml_owner(#moss_user{key_id=KeyId, name=Name}) ->
+    {'Owner', [{'ID', [KeyId]},
+               {'DisplayName', [Name]}]}.
 
 export_xml(XmlDoc) ->
     unicode:characters_to_binary(

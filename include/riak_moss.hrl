@@ -19,3 +19,5 @@
                       key :: list()}).
 
 -define(USER_BUCKET, <<"moss.users">>).
+-define(MAX_CONTENT_LENGTH, 31457280).
+

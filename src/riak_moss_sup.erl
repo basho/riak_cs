@@ -57,7 +57,8 @@ init([]) ->
                  {ip, Ip},
                  {port, Port},
                  {nodelay, true},
-                 {log_dir, "log"}],
+                 {log_dir, "log"},
+                 {error_handler, riak_moss_wm_error_handler}],
     case application:get_env(riak_moss, ssl) of
 
         {ok, SSLOpts} ->

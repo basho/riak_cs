@@ -15,7 +15,8 @@
          allowed_methods/2,
          content_types_accepted/2,
          accept_body/2,
-         delete_resource/2]).
+         delete_resource/2,
+         valid_entity_length/2]).
 
 -include("riak_moss.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
@@ -57,9 +58,7 @@ malformed_request(RD, Ctx) ->
                     %% from riak_kv_wm_object.erl
                     {{halt, 404},
                         wrq:set_resp_header("Content-Type", "text/plain",
-                            wrq:append_to_response_body(
-                                io_lib:format("not found~n",[]),
-                                RD)),
+                                            RD),
                         DocCtx};
                 _ ->
                     {false, RD, DocCtx}
@@ -83,7 +82,7 @@ forbidden(RD, Ctx=#key_context{context=#context{auth_bypass=AuthBypass}}) ->
                     {false, RD, Ctx#key_context{context=NewInnerCtx}};
                 {error, _Reason} ->
                     %% Authentication failed, deny access
-                    {true, RD, Ctx}
+                    riak_moss_s3_response:api_error(access_denied, RD, Ctx)
             end
     end.
 
@@ -92,6 +91,29 @@ forbidden(RD, Ctx=#key_context{context=#context{auth_bypass=AuthBypass}}) ->
 allowed_methods(RD, Ctx) ->
     %% TODO: POST
     {['HEAD', 'GET', 'DELETE', 'PUT'], RD, Ctx}.
+
+valid_entity_length(RD, Ctx) ->
+    case wrq:method(RD) of
+        'PUT' ->
+            case catch(
+                   list_to_integer(
+                     wrq:get_req_header("Content-Length", RD))) of
+                Length when is_integer(Length) ->
+                    case Length =< ?MAX_CONTENT_LENGTH of
+                        false ->
+                            riak_moss_s3_response:api_error(
+                              entity_too_large, RD, Ctx);
+                        true ->
+                            {true, RD, Ctx}
+                    end;
+                                
+                _ ->
+                    {false, RD, Ctx}
+            end;
+        _ ->
+            {true, RD, Ctx}
+    end.
+        
 
 -spec content_types_provided(term(), term()) ->
     {[{string(), atom()}], term(), term()}.
