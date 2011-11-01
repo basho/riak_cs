@@ -8,7 +8,8 @@
 
 -export([service_available/2,
          parse_auth_header/2,
-         ensure_doc/1]).
+         ensure_doc/1,
+         user_record_to_proplist/1]).
 
 -include("riak_moss.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
@@ -64,3 +65,16 @@ ensure_doc(Ctx=#key_context{doc=undefined, bucket=Bucket, key=Key}) ->
             Ctx#key_context{doc=notfound}
     end;
 ensure_doc(Ctx) -> Ctx.
+
+%% @doc Convert a moss_user record
+%%      into a property list, likely
+%%      for json encoding
+-spec user_record_to_proplist(term()) -> list().
+user_record_to_proplist(#moss_user{name=Name,
+                                   key_id=KeyID,
+                                   key_secret=KeySecret,
+                                   buckets = Buckets}) ->
+    [{<<"name">>, list_to_binary(Name)},
+     {<<"key_id">>, list_to_binary(KeyID)},
+     {<<"key_secret">>, list_to_binary(KeySecret)},
+     {<<"buckets">>, Buckets}].
