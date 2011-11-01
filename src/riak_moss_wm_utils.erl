@@ -63,5 +63,4 @@ ensure_doc(Ctx=#key_context{doc=undefined, bucket=Bucket, key=Key}) ->
         {error, notfound} ->
             Ctx#key_context{doc=notfound}
     end;
-
 ensure_doc(Ctx) -> Ctx.

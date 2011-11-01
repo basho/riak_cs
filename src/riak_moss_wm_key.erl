@@ -15,7 +15,8 @@
          allowed_methods/2,
          content_types_accepted/2,
          accept_body/2,
-         delete_resource/2]).
+         delete_resource/2,
+         valid_entity_length/2]).
 
 -include("riak_moss.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
@@ -57,9 +58,7 @@ malformed_request(RD, Ctx) ->
                     %% from riak_kv_wm_object.erl
                     {{halt, 404},
                         wrq:set_resp_header("Content-Type", "text/plain",
-                            wrq:append_to_response_body(
-                                io_lib:format("not found~n",[]),
-                                RD)),
+                                            RD),
                         DocCtx};
                 _ ->
                     {false, RD, DocCtx}
@@ -83,7 +82,7 @@ forbidden(RD, Ctx=#key_context{context=#context{auth_bypass=AuthBypass}}) ->
                     {false, RD, Ctx#key_context{context=NewInnerCtx}};
                 {error, _Reason} ->
                     %% Authentication failed, deny access
-                    {true, RD, Ctx}
+                    riak_moss_s3_response:api_error(access_denied, RD, Ctx)
             end
     end.
 
@@ -92,6 +91,29 @@ forbidden(RD, Ctx=#key_context{context=#context{auth_bypass=AuthBypass}}) ->
 allowed_methods(RD, Ctx) ->
     %% TODO: POST
     {['HEAD', 'GET', 'DELETE', 'PUT'], RD, Ctx}.
+
+valid_entity_length(RD, Ctx) ->
+    case wrq:method(RD) of
+        'PUT' ->
+            case catch(
+                   list_to_integer(
+                     wrq:get_req_header("Content-Length", RD))) of
+                Length when is_integer(Length) ->
+                    case Length =< ?MAX_CONTENT_LENGTH of
+                        false ->
+                            riak_moss_s3_response:api_error(
+                              entity_too_large, RD, Ctx);
+                        true ->
+                            {true, RD, Ctx}
+                    end;
+                                
+                _ ->
+                    {false, RD, Ctx}
+            end;
+        _ ->
+            {true, RD, Ctx}
+    end.
+        
 
 -spec content_types_provided(term(), term()) ->
     {[{string(), atom()}], term(), term()}.
@@ -103,25 +125,32 @@ content_types_provided(RD, Ctx) ->
     %% `response-content-type` header in the request.
     Method = wrq:method(RD),
     if Method == 'GET'; Method == 'HEAD' ->
-        DocCtx = riak_moss_wm_utils:ensure_doc(Ctx),
-        Doc = DocCtx#key_context.doc,
-        ContentType = riakc_obj:get_content_type(Doc),
-        {[{ContentType, produce_body}], RD, Ctx};
-
-    true ->
-        %% TODO
-        %% this shouldn't ever be
-        %% called, it's just to appease
-        %% webmachine
-        {[{"text/plain", produce_body}], RD, Ctx}
+            DocCtx = riak_moss_wm_utils:ensure_doc(Ctx),
+            Doc = DocCtx#key_context.doc,
+            case riakc_obj:get_content_type(Doc) of
+                undefined ->
+                    {[{"application/octet-stream", produce_body}], RD, Ctx};
+                ContentType ->
+                    {[{ContentType, produce_body}], RD, Ctx}
+            end;
+       true ->
+            %% TODO
+            %% this shouldn't ever be
+            %% called, it's just to appease
+            %% webmachine
+            {[{"text/plain", produce_body}], RD, Ctx}
     end.
 
 -spec produce_body(term(), term()) -> {iolist()|binary(), term(), term()}.
 produce_body(RD, Ctx) ->
     DocCtx = riak_moss_wm_utils:ensure_doc(Ctx),
     Doc = DocCtx#key_context.doc,
-    Return_body = riakc_obj:get_value(Doc),
-    {Return_body, RD, Ctx}.
+    case Doc of
+        notfound -> 
+            {{halt, 404}, RD, DocCtx};
+        _ ->
+            {riakc_obj:get_value(Doc), RD, DocCtx}
+    end.
 
 %% @doc Callback for deleting an object.
 -spec delete_resource(term(), term()) -> boolean().
@@ -168,7 +197,6 @@ content_types_accepted(RD, Ctx) ->
 
 -spec accept_body(term(), term()) ->
     {true, term(), term()}.
-
 %% TODO:
 %% We need to do some checking to make sure
 %% the bucket exists for the user who is doing
@@ -186,4 +214,5 @@ accept_body(RD, Ctx=#key_context{bucket=Bucket, key=Key,
     %% out of the request headers
     Metadata = dict:from_list([{<<"content-type">>, CType}]),
     riak_moss_riakc:put_object(KeyID, Bucket, Key, Body, Metadata),
-    {true, RD, Ctx}.
+    {true, wrq:set_resp_header("ETag", 
+      "\"" ++ riak_moss:binary_to_hexlist(crypto:md5(Body)) ++ "\"", RD), Ctx}.

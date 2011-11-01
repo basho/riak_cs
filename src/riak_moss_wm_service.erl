@@ -11,7 +11,7 @@
          forbidden/2,
          content_types_provided/2,
          malformed_request/2,
-         to_json/2,
+         to_xml/2,
          allowed_methods/2]).
 
 -include("riak_moss.hrl").
@@ -43,13 +43,13 @@ forbidden(RD, Ctx=#context{auth_bypass=AuthBypass}) ->
                 {ok, unknown} ->
                     %% this resource doesn't support
                     %% anonymous users
-                    {true, RD, Ctx};
+                    riak_moss_s3_response:api_error(invalid_access_key_id, RD, Ctx);
                 {ok, User} ->
                     %% Authentication succeeded
                     {false, RD, Ctx#context{user=User}};
                 {error, _Reason} ->
                     %% Authentication failed, deny access
-                    {true, RD, Ctx}
+                    riak_moss_s3_response:api_error(access_denied, RD, Ctx)
             end
     end.
 
@@ -68,20 +68,15 @@ content_types_provided(RD, Ctx) ->
     %% TODO:
     %% This needs to be xml soon, but for now
     %% let's do json.
-    {[{"application/json", to_json}], RD, Ctx}.
+    {[{"application/xml", to_xml}], RD, Ctx}.
 
 
 %% TODO:
 %% This spec will need to be updated
 %% when we change this to allow streaming
 %% bodies.
--spec to_json(term(), term()) ->
+-spec to_xml(term(), term()) ->
     {iolist(), term(), term()}.
+to_xml(RD, Ctx=#context{user=User}) ->
+    riak_moss_s3_response:list_all_my_buckets_response(User, RD, Ctx).
 
-to_json(RD, Ctx=#context{user=User}) ->
-    Buckets = riak_moss_riakc:get_buckets(User),
-    %% we use list_to_binary because
-    %% mochijson2 will convert binaries
-    %% to strings
-    BucketNames = [list_to_binary(B#moss_bucket.name) || B <- Buckets],
-    {mochijson2:encode(BucketNames), RD, Ctx}.

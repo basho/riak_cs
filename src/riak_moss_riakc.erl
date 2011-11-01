@@ -226,3 +226,4 @@ do_put_object(_KeyID, BucketName, Key, Value, Metadata, RiakcPid) ->
 do_delete_object(BucketName, Key, RiakcPid) ->
     BinKey = list_to_binary(Key),
     riakc_pb_socket:delete(RiakcPid, BucketName, BinKey).
+
