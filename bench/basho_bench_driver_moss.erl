@@ -11,11 +11,12 @@
 
 -include("basho_bench.hrl").
 
--record(state, {}).
+-record(state, { client_id }).
 
 -spec new(integer()) -> {ok, term()}.
-new(_ID) ->
-    {ok, #state{}}.
+new(ID) ->
+    application:start(ibrowse),
+    {ok, #state{client_id=ID}}.
 
 -spec run(atom(), fun(), fun(), term()) -> {ok, term()}.
 run(_Operation, _KeyGen, _ValueGen, State) ->
