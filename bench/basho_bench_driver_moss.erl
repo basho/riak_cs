@@ -37,7 +37,16 @@ new(ID) ->
 
 -spec run(atom(), fun(), fun(), term()) -> {ok, term()}.
 run(insert, KeyGen, ValueGen, State) ->
-    {NextURL, S2} = next_host(State),
+    %% TODO:
+    %% bucket needs to be
+    %% configurable/generatable
+    Bucket = "test",
+    {NextHost, S2} = next_host(State),
+    {Host, Port} = NextHost,
+    Key = KeyGen(),
+    Url = ["http://", Host, ":", Port, "/", Bucket, Key],
+    Value = ValueGen(),
+    do_put(Url, [], Value),
     {ok, S2};
 
 run(_Operation, _KeyGen, _ValueGen, State) ->
@@ -152,6 +161,18 @@ send_request(Url, Headers, Method, Body, Options, Count) ->
             end
     end.
 
+do_put(Url, Headers, Value) ->
+    case send_request(Url, Headers ++ [{'Content-Type', 'application/octet-stream'}],
+                      post, Value, [{response_format, binary}]) of
+        {ok, "201", _Header, _Body} ->
+            ok;
+        {ok, "204", _Header, _Body} ->
+            ok;
+        {ok, Code, _Header, _Body} ->
+            {error, {http_error, Code}};
+        {error, Reason} ->
+            {error, Reason}
+    end.
 
 should_retry({error, send_failed})       -> true;
 should_retry({error, connection_closed}) -> true;
