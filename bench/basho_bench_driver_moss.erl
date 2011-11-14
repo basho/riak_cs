@@ -47,6 +47,14 @@ run(delete, KeyGen, _ValueGen, State) ->
     Url = url(Host, Port, Bucket, Key),
     do_delete({Host, Port}, Url, []),
     {ok, S2};
+run(get, KeyGen, _ValueGen, State) ->
+    Bucket = "test",
+    {NextHost, S2} = next_host(State),
+    {Host, Port} = NextHost,
+    Key = KeyGen(),
+    Url = url(Host, Port, Bucket, Key),
+    do_get({Host, Port}, Url, []),
+    {ok, S2};
 run(_Operation, _KeyGen, _ValueGen, State) ->
     {ok, State}.
 
@@ -195,6 +203,19 @@ do_delete(Host, Url, Headers) ->
     case send_request(Host, Url, Headers,
                       delete, <<>>, [{response_format, binary}]) of
         {ok, "200", _Header, _Body} ->
+            ok;
+        {ok, Code, _Header, _Body} ->
+            {error, {http_error, Code}};
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
+do_get(Host, Url, Headers) ->
+    case send_request(Host, Url, Headers,
+                      get, <<>>, [{response_format, binary}]) of
+        {ok, "200", _Header, _Body} ->
+            ok;
+        {ok, "404", _Header, _Body} ->
             ok;
         {ok, Code, _Header, _Body} ->
             {error, {http_error, Code}};
