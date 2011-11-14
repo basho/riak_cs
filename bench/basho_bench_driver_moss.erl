@@ -36,6 +36,17 @@ new(ID) ->
 
 -spec run(atom(), fun(), fun(), term()) -> {ok, term()}.
 run(insert, KeyGen, ValueGen, State) ->
+    insert_or_update(KeyGen, ValueGen, State);
+run(update, KeyGen, ValueGen, State) ->
+    insert_or_update(KeyGen, ValueGen, State);
+run(_Operation, _KeyGen, _ValueGen, State) ->
+    {ok, State}.
+
+%% ====================================================================
+%% Internal functions
+%% ====================================================================
+
+insert_or_update(KeyGen, ValueGen, State) ->
     %% TODO:
     %% bucket needs to be
     %% configurable/generatable
@@ -46,14 +57,7 @@ run(insert, KeyGen, ValueGen, State) ->
     Url = url(Host, Port, Bucket, Key),
     Value = ValueGen(),
     do_put({Host, Port}, Url, [], Value),
-    {ok, S2};
-
-run(_Operation, _KeyGen, _ValueGen, State) ->
-    {ok, State}.
-
-%% ====================================================================
-%% Internal functions
-%% ====================================================================
+    {ok, S2}.
 
 url(Host, Port, Bucket, Key) ->
     UnparsedUrl = lists:concat(["http://", Host, ":", Port, "/", Bucket, "/", Key]),
