@@ -11,7 +11,6 @@
 
 -include("basho_bench.hrl").
 
--record(url, {host, port}).
 -record(state, { client_id,
                  hosts}).
 
@@ -44,11 +43,9 @@ run(insert, KeyGen, ValueGen, State) ->
     {NextHost, S2} = next_host(State),
     {Host, Port} = NextHost,
     Key = KeyGen(),
-    UnparsedUrl = lists:concat(["http://", Host, ":", Port, "/", Bucket, "/", Key]),
-    Url = ibrowse_lib:parse_url(UnparsedUrl),
-    UrlRecord = #url{host=Host, port=Port},
+    Url = url(Host, Port, Bucket, Key),
     Value = ValueGen(),
-    do_put(UrlRecord, Url, [], Value),
+    do_put({Host, Port}, Url, [], Value),
     {ok, S2};
 
 run(_Operation, _KeyGen, _ValueGen, State) ->
@@ -57,6 +54,12 @@ run(_Operation, _KeyGen, _ValueGen, State) ->
 %% ====================================================================
 %% Internal functions
 %% ====================================================================
+
+url(Host, Port, Bucket, Key) ->
+    UnparsedUrl = lists:concat(["http://", Host, ":", Port, "/", Bucket, "/", Key]),
+    Url = ibrowse_lib:parse_url(UnparsedUrl),
+    Url.
+
 -spec next_host(term()) -> {term(), term()}.
 %% TODO:
 %% Currently we only support
@@ -67,10 +70,10 @@ next_host(State=#state{hosts=Hosts}) ->
     {Host, State}.
 
 %% This is ripped from basho_bench_driver_http_raw.erl
-connect(Url) ->
+connect(Url={Host, Port}) ->
     case erlang:get({ibrowse_pid, Url}) of
         undefined ->
-            {ok, Pid} = ibrowse_http_client:start({Url#url.host, Url#url.port}),
+            {ok, Pid} = ibrowse_http_client:start({Host, Port}),
             erlang:put({ibrowse_pid, Url}, Pid),
             Pid;
         Pid ->
@@ -102,7 +105,7 @@ maybe_disconnect(Url) ->
         Seconds -> should_disconnect_secs(Seconds,Url) andalso disconnect(Url)
     end.
 
-should_disconnect_ops(Count, #url{host=Host, port=Port}) ->
+should_disconnect_ops(Count, {Host, Port}) ->
     Key = {ops_since_disconnect, {Host, Port}},
     case erlang:get(Key) of
         undefined ->
@@ -116,7 +119,7 @@ should_disconnect_ops(Count, #url{host=Host, port=Port}) ->
             false
     end.
 
-should_disconnect_secs(Seconds, #url{host=Host, port=Port}) ->
+should_disconnect_secs(Seconds, {Host, Port}) ->
     Key = {last_disconnect, {Host, Port}},
     case erlang:get(Key) of
         undefined ->
@@ -132,17 +135,17 @@ should_disconnect_secs(Seconds, #url{host=Host, port=Port}) ->
             end
     end.
 
-clear_disconnect_freq(Host) ->
+clear_disconnect_freq(ConnInfo) ->
     case erlang:get(disconnect_freq) of
         infinity -> ok;
-        {ops, _Count} -> erlang:put({ops_since_disconnect, Host#url.host}, 0);
-        _Seconds -> erlang:put({last_disconnect, Host#url.host}, erlang:now())
+        {ops, _Count} -> erlang:put({ops_since_disconnect, ConnInfo}, 0);
+        _Seconds -> erlang:put({last_disconnect, ConnInfo}, erlang:now())
     end.
 
 send_request(Host, Url, Headers, Method, Body, Options) ->
     send_request(Host, Url, Headers, Method, Body, Options, 3).
 
-send_request(Host, _Url, _Headers, _Method, _Body, _Options, 0) ->
+send_request(_Host, _Url, _Headers, _Method, _Body, _Options, 0) ->
     {error, max_retries};
 send_request(Host, Url, Headers, Method, Body, Options, Count) ->
     Pid = connect(Host),
