@@ -153,7 +153,7 @@ do_save_user(User, RiakcPid) ->
 %% exist anywhere, since everyone
 %% shares a global bucket namespace
 do_create_bucket(KeyID, BucketName, RiakcPid) ->
-    Bucket = #moss_bucket{name=BucketName, creation_date=httpd_util:rfc1123_date()},
+    Bucket = #moss_bucket{name=BucketName, creation_date=creation_date()},
     %% TODO:
     %% We don't do anything about
     %% {error, Reason} here
@@ -227,3 +227,10 @@ do_delete_object(BucketName, Key, RiakcPid) ->
     BinKey = list_to_binary(Key),
     riakc_pb_socket:delete(RiakcPid, BucketName, BinKey).
 
+creation_date() ->
+    iso_8601(erlang:universaltime()).
+
+iso_8601(DateTime) ->
+    {{Year,Month,Day},{Hour,Min,Sec}} = DateTime,
+    io_lib:format("~4.10.0B-~2.10.0B-~2.10.0BT~2.10.0B:~2.10.0B:~2.10.0B.000Z",
+                  [Year, Month, Day, Hour, Min, Sec]).
