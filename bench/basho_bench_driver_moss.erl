@@ -44,9 +44,11 @@ run(insert, KeyGen, ValueGen, State) ->
     {NextHost, S2} = next_host(State),
     {Host, Port} = NextHost,
     Key = KeyGen(),
-    Url = ["http://", Host, ":", Port, "/", Bucket, Key],
+    UnparsedUrl = lists:concat(["http://", Host, ":", Port, "/", Bucket, "/", Key]),
+    Url = ibrowse_lib:parse_url(UnparsedUrl),
+    UrlRecord = #url{host=Host, port=Port},
     Value = ValueGen(),
-    do_put(Url, [], Value),
+    do_put(UrlRecord, Url, [], Value),
     {ok, S2};
 
 run(_Operation, _KeyGen, _ValueGen, State) ->
@@ -130,40 +132,40 @@ should_disconnect_secs(Seconds, #url{host=Host, port=Port}) ->
             end
     end.
 
-clear_disconnect_freq(Url) ->
+clear_disconnect_freq(Host) ->
     case erlang:get(disconnect_freq) of
         infinity -> ok;
-        {ops, _Count} -> erlang:put({ops_since_disconnect, Url#url.host}, 0);
-        _Seconds -> erlang:put({last_disconnect, Url#url.host}, erlang:now())
+        {ops, _Count} -> erlang:put({ops_since_disconnect, Host#url.host}, 0);
+        _Seconds -> erlang:put({last_disconnect, Host#url.host}, erlang:now())
     end.
 
-send_request(Url, Headers, Method, Body, Options) ->
-    send_request(Url, Headers, Method, Body, Options, 3).
+send_request(Host, Url, Headers, Method, Body, Options) ->
+    send_request(Host, Url, Headers, Method, Body, Options, 3).
 
-send_request(_Url, _Headers, _Method, _Body, _Options, 0) ->
+send_request(Host, _Url, _Headers, _Method, _Body, _Options, 0) ->
     {error, max_retries};
-send_request(Url, Headers, Method, Body, Options, Count) ->
-    Pid = connect(Url),
+send_request(Host, Url, Headers, Method, Body, Options, Count) ->
+    Pid = connect(Host),
     case catch(ibrowse_http_client:send_req(Pid, Url, Headers, Method, Body, Options, basho_bench_config:get(moss_request_timeout, 5000))) of
         {ok, Status, RespHeaders, RespBody} ->
-            maybe_disconnect(Url),
+            maybe_disconnect(Host),
             {ok, Status, RespHeaders, RespBody};
 
         Error ->
-            clear_disconnect_freq(Url),
-            disconnect(Url),
+            clear_disconnect_freq(Host),
+            disconnect(Host),
             case should_retry(Error) of
                 true ->
-                    send_request(Url, Headers, Method, Body, Options, Count-1);
+                    send_request(Host, Url, Headers, Method, Body, Options, Count-1);
 
                 false ->
                     normalize_error(Method, Error)
             end
     end.
 
-do_put(Url, Headers, Value) ->
-    case send_request(Url, Headers ++ [{'Content-Type', 'application/octet-stream'}],
-                      post, Value, [{response_format, binary}]) of
+do_put(Host, Url, Headers, Value) ->
+    case send_request(Host, Url, Headers ++ [{'Content-Type', 'application/octet-stream'}],
+                      put, Value, [{response_format, binary}]) of
         {ok, "201", _Header, _Body} ->
             ok;
         {ok, "204", _Header, _Body} ->
