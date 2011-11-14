@@ -39,6 +39,14 @@ run(insert, KeyGen, ValueGen, State) ->
     insert_or_update(KeyGen, ValueGen, State);
 run(update, KeyGen, ValueGen, State) ->
     insert_or_update(KeyGen, ValueGen, State);
+run(delete, KeyGen, _ValueGen, State) ->
+    Bucket = "test",
+    {NextHost, S2} = next_host(State),
+    {Host, Port} = NextHost,
+    Key = KeyGen(),
+    Url = url(Host, Port, Bucket, Key),
+    do_delete({Host, Port}, Url, []),
+    {ok, S2};
 run(_Operation, _KeyGen, _ValueGen, State) ->
     {ok, State}.
 
@@ -176,6 +184,17 @@ do_put(Host, Url, Headers, Value) ->
         {ok, "201", _Header, _Body} ->
             ok;
         {ok, "204", _Header, _Body} ->
+            ok;
+        {ok, Code, _Header, _Body} ->
+            {error, {http_error, Code}};
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
+do_delete(Host, Url, Headers) ->
+    case send_request(Host, Url, Headers,
+                      delete, <<>>, [{response_format, binary}]) of
+        {ok, "200", _Header, _Body} ->
             ok;
         {ok, Code, _Header, _Body} ->
             {error, {http_error, Code}};
