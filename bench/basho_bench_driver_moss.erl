@@ -9,8 +9,6 @@
 -export([new/1,
          run/4]).
 
--include("basho_bench.hrl").
-
 -record(state, { client_id,
                  hosts}).
 
