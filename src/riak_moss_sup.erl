@@ -58,6 +58,7 @@ init([]) ->
                  {port, Port},
                  {nodelay, true},
                  {log_dir, "log"},
+                 {rewrite_module, riak_moss_wm_rewrite},
                  {error_handler, riak_moss_wm_error_handler}],
     case application:get_env(riak_moss, ssl) of
 
