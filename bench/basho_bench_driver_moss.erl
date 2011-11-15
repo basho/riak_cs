@@ -36,25 +36,55 @@ new(ID) ->
 
 -spec run(atom(), fun(), fun(), term()) -> {ok, term()}.
 run(insert, KeyGen, ValueGen, State) ->
-    insert_or_update(KeyGen, ValueGen, State);
+    {NextHost, S2} = next_host(State),
+    ConnInfo = NextHost,
+    case insert(KeyGen, ValueGen, ConnInfo) of
+        ok ->
+            {ok, S2};
+        {Error, Reason} ->
+            {Error, Reason, S2}
+    end;
 run(update, KeyGen, ValueGen, State) ->
-    insert_or_update(KeyGen, ValueGen, State);
+    Bucket = "test",
+    {NextHost, S2} = next_host(State),
+    {Host, Port} = NextHost,
+    Key = KeyGen(),
+    Url = url(Host, Port, Bucket, Key),
+    case do_get({Host, Port}, Url, []) of
+        ok ->
+            case insert(KeyGen, ValueGen, {Host, Port}) of
+                ok ->
+                    {ok, State};
+                {Error, Reason} ->
+                    {Error, Reason, S2}
+            end;
+        {Error, Reason} ->
+            {Error, Reason, S2}
+    end;
 run(delete, KeyGen, _ValueGen, State) ->
     Bucket = "test",
     {NextHost, S2} = next_host(State),
     {Host, Port} = NextHost,
     Key = KeyGen(),
     Url = url(Host, Port, Bucket, Key),
-    do_delete({Host, Port}, Url, []),
-    {ok, S2};
+    case do_delete({Host, Port}, Url, []) of
+        ok ->
+            {ok, S2};
+        {Error, Reason} ->
+            {Error, Reason, S2}
+    end;
 run(get, KeyGen, _ValueGen, State) ->
     Bucket = "test",
     {NextHost, S2} = next_host(State),
     {Host, Port} = NextHost,
     Key = KeyGen(),
     Url = url(Host, Port, Bucket, Key),
-    do_get({Host, Port}, Url, []),
-    {ok, S2};
+    case do_get({Host, Port}, Url, []) of
+        ok ->
+            {ok, S2};
+        {Error, Reason} ->
+            {Error, Reason, S2}
+    end;
 run(_Operation, _KeyGen, _ValueGen, State) ->
     {ok, State}.
 
@@ -62,18 +92,15 @@ run(_Operation, _KeyGen, _ValueGen, State) ->
 %% Internal functions
 %% ====================================================================
 
-insert_or_update(KeyGen, ValueGen, State) ->
+insert(KeyGen, ValueGen, {Host, Port}) ->
     %% TODO:
     %% bucket needs to be
     %% configurable/generatable
     Bucket = "test",
-    {NextHost, S2} = next_host(State),
-    {Host, Port} = NextHost,
     Key = KeyGen(),
     Url = url(Host, Port, Bucket, Key),
     Value = ValueGen(),
-    do_put({Host, Port}, Url, [], Value),
-    {ok, S2}.
+    do_put({Host, Port}, Url, [], Value).
 
 url(Host, Port, Bucket, Key) ->
     UnparsedUrl = lists:concat(["http://", Host, ":", Port, "/", Bucket, "/", Key]),
@@ -169,7 +196,8 @@ send_request(_Host, _Url, _Headers, _Method, _Body, _Options, 0) ->
     {error, max_retries};
 send_request(Host, Url, Headers, Method, Body, Options, Count) ->
     Pid = connect(Host),
-    case catch(ibrowse_http_client:send_req(Pid, Url, Headers, Method, Body, Options, basho_bench_config:get(moss_request_timeout, 5000))) of
+    HeadersWithAuth = [{'Authorization', basho_bench_config:get(moss_authorization)}|Headers],
+    case catch(ibrowse_http_client:send_req(Pid, Url, HeadersWithAuth, Method, Body, Options, basho_bench_config:get(moss_request_timeout, 5000))) of
         {ok, Status, RespHeaders, RespBody} ->
             maybe_disconnect(Host),
             {ok, Status, RespHeaders, RespBody};
@@ -203,6 +231,8 @@ do_delete(Host, Url, Headers) ->
     case send_request(Host, Url, Headers,
                       delete, <<>>, [{response_format, binary}]) of
         {ok, "200", _Header, _Body} ->
+            ok;
+        {ok, "204", _Header, _Body} ->
             ok;
         {ok, Code, _Header, _Body} ->
             {error, {http_error, Code}};
