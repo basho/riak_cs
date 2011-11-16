@@ -4,6 +4,12 @@
 %%
 %% -------------------------------------------------------------------
 
+%%
+%% Please note that the in order
+%% to run basho_bench_driver_moss
+%% `auth_bypass` must be set to true
+%% on the riak_moss app.config
+
 -module(basho_bench_driver_moss).
 
 -export([new/1,
