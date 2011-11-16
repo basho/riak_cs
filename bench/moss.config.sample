@@ -1,0 +1,26 @@
+%% Sample config file for riak_moss
+%% basho benchmarking
+
+{mode, max}.
+
+{duration, 1}.
+
+{concurrent, 1}.
+
+{driver, basho_bench_driver_moss}.
+
+%% Replace this with a user you have created.
+%% Instructions to create a user are here:
+%% https://github.com/basho/riak_moss/wiki/Creating-a-User
+{moss_authorization, "4844552620141D3E1EA71090A9D27F363F9CFA25"}.
+
+{code_paths, ["deps/ibrowse"]}.
+
+{value_generator, {fixed_bin, 1000}}.
+
+{http_raw_port, 8080}.
+
+{operations, [{insert, 1}, {update, 1}, {delete, 1}, {get, 1}]}.
+
+%% replace this with your own path
+{source_dir, "/Users/reid/Documents/repos/basho/riak_moss/bench"}.
