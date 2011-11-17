@@ -45,7 +45,7 @@ authenticate(RD, [KeyID, Signature]) ->
 %% ===================================================================
 
 calculate_signature(KeyData, RD) ->
-    Headers = get_request_headers(RD),
+    Headers = normalize_headers(get_request_headers(RD)),
     AmazonHeaders = extract_amazon_headers(Headers),
     Resource = [canonicalize_resource(RD),
                 canonicalize_qs(lists:sort(wrq:req_qs(RD)))],
@@ -84,13 +84,20 @@ check_auth(PresentedSignature, CalculatedSignature) ->
 get_request_headers(RD) ->
     mochiweb_headers:to_list(wrq:req_headers(RD)).
 
-extract_amazon_headers(Headers) ->
+normalize_headers(Headers) ->
     FilterFun =
         fun({K, V}, Acc) ->
                 LowerKey = string:to_lower(any_to_list(K)),
-                case lists:prefix("x-amz-", LowerKey) of
+                [{LowerKey, V} | Acc]
+        end,
+    ordsets:from_list(lists:foldl(FilterFun, [], Headers)).
+
+extract_amazon_headers(Headers) ->
+    FilterFun =
+        fun({K, V}, Acc) ->
+                case lists:prefix("x-amz-", K) of
                     true ->
-                        [[LowerKey, ":", V, "\n"] | Acc];
+                        [[K, ":", V, "\n"] | Acc];
                     false ->
                         Acc
                 end
@@ -152,10 +159,10 @@ bucket_from_host(HostHeader, RD) ->
     end.
 
 %% XXX TODO:  this is conditional to make unit tests pass.
-%%            the webmachine resources need to support 
+%%            the webmachine resources need to support
 %%            vhost-style bucket addressing so that things
 %%            like path_info([key|bucket]) work properly.
-%% 
+%%
 %%            the test version of canonicalize_resource
 %%            doesn't use path_info, allowing the unit
 %%            tests to pass.
