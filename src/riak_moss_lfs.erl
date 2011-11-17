@@ -8,6 +8,8 @@
 
 -module(riak_moss_lfs).
 
+-include_lib("riakc/include/riakc_obj.hrl").
+
 -compile(export_all).
 
 -define(DEFAULT_BLOCK_SIZE, 1000).
@@ -19,7 +21,7 @@
 -spec create(string(), string(), pos_integer(), binary(), list()) ->
                     {ok, binary()} | {error, term()}.
 create(Bucket, FileName, FileSize, Data, MetaData) ->
-    create(Bucket, FileName, FileSize, Data, ?DEFAULT_BLOCK_SIZE, MetaData).
+    create(Bucket, FileName, FileSize, ?DEFAULT_BLOCK_SIZE, Data, MetaData).
 
 -spec create(string(), string(), pos_integer(), pos_integer(), binary(), list()) ->
                     {ok, binary()} | {error, term()}.
@@ -31,31 +33,29 @@ create(Bucket, FileName, FileSize, BlockSize, Data, MetaData) ->
 
     %% Punting on optimization where no extra blocks are created if
     %% file size < or ~= to block size.
-    Blocks = [list_to_binary(FileName ++ UUID ++ integer_to_list(X)) ||
-                 X <- lists:seq(1,BlockCount+1)],
+    Blocks = [list_to_binary(FileName ++ ":" ++ UUID ++ ":" ++ integer_to_list(X)) ||
+                 X <- lists:seq(1,BlockCount)],
     lager:debug("Blocks for ~p: ~p", [FileName, Blocks]),
     %% Assemble the metadata
-    MDDict = dict:from_list(MetaData ++
-                                [{file_size, FileSize},
-                                 {block_size, BlockSize},
-                                 {blocks_missing, Blocks},
-                                 {alive, false},
-                                 {uuid, UUID}]),
+    MDDict = dict:from_list([{?MD_USERMETA, MetaData ++
+                                [{"file_size", FileSize},
+                                 {"block_size", BlockSize},
+                                 {"blocks_missing", term_to_binary(Blocks)},
+                                 {"alive", false},
+                                 {"uuid", UUID}]}]),
 
     %% Punting on connection reuse for now
     %% Just open a new connection each time.
     case riakc_pb_socket:start_link("127.0.0.1", 8087) of
         {ok, Pid} ->
-            Obj = riakc_obj:new(Bucket,
-                                list_to_binary(FileName),
-                                UUID),
-            NewObj = riakc_obj:update_metadata(Obj, dict:to_list(MDDict)),
-            case riakc_pb_socket:put(Pid, NewObj, [return_body]) of
-                {ok, NewObj} ->
-                    put(Pid, Bucket, FileName, NewObj, BlockSize, Blocks, Data);
-                {ok, _} ->
-                    %% Error
-                    ok;
+            Obj = riakc_obj:new(list_to_binary(Bucket),
+                                list_to_binary(FileName)),
+            NewObj = riakc_obj:update_metadata(
+                       riakc_obj:update_value(Obj, list_to_binary(UUID)), MDDict),
+            case riakc_pb_socket:put(Pid, NewObj) of
+                ok ->
+                    {ok, StoredObj} = riakc_pb_socket:get(Pid, list_to_binary(Bucket), list_to_binary(FileName)),
+                    put(Pid, Bucket, FileName, StoredObj, BlockSize, Blocks, Data);
                 {error, _Reason1} ->
                     ok
             end;
@@ -66,19 +66,17 @@ create(Bucket, FileName, FileSize, BlockSize, Data, MetaData) ->
 put(Pid, _Bucket, FileName, RootObj, _BlockSize, [], _) ->
     %% Mark file as available
     RootMD = riakc_obj:get_metadata(RootObj),
-    case dict:fetch(blocks_missing, RootMD) of
+    UserMD = dict:from_list(dict:fetch(?MD_USERMETA, RootMD)),
+    case binary_to_term(list_to_binary(dict:fetch("blocks_missing", UserMD))) of
         [] ->
+            UserMD1 = dict:store("alive", true, UserMD),
             UpdRootObj =
                 riakc_obj:update_metadata(RootObj,
-                                          dict:store(alive, true)),
+                                          dict:store(?MD_USERMETA, dict:to_list(UserMD1), RootMD)),
             case riakc_pb_socket:put(Pid, UpdRootObj, [return_body]) of
-                {ok, UpdRootObj} ->
+                {ok, _StoredRootObj} ->
                     lager:info("~p is available", [FileName]),
                     ok;
-                {ok, _} ->
-                    %% Error
-                    lager:error("Root object update failed"),
-                    {error, file_changed};
                 {error, Reason} ->
                     lager:error("Root object update failed: ~p", [Reason]),
                     {error, Reason}
@@ -94,17 +92,15 @@ put(Pid, Bucket, FileName, RootObj, BlockSize, [Block | RestBlocks], Data) ->
     %% Update root metadata
     %% @TODO Error handling
     RootMD = riakc_obj:get_metadata(RootObj),
-    [_ | RemainingBlocks] = dict:fetch(blocks_missing, RootMD),
+    UserMD = dict:from_list(dict:fetch(?MD_USERMETA, RootMD)),
+    [_ | RemainingBlocks] = binary_to_term(list_to_binary(dict:fetch("blocks_missing", UserMD))),
+    UserMD1 = dict:store(<<"blocks_missing">>, term_to_binary(RemainingBlocks), UserMD),
     UpdRootObj =
         riakc_obj:update_metadata(RootObj,
-                                  dict:store(blocks_missing, RemainingBlocks)),
+                                  dict:store(?MD_USERMETA, dict:to_list(UserMD1), RootMD)),
     case riakc_pb_socket:put(Pid, UpdRootObj, [return_body]) of
-        {ok, UpdRootObj} ->
-            put(Pid, Bucket, FileName, UpdRootObj, BlockSize, RestBlocks, RestData);
-        {ok, _} ->
-            %% Error
-            lager:error("Root object update failed"),
-            {error, file_changed};
+        {ok, StoredRootObj} ->
+            put(Pid, Bucket, FileName, StoredRootObj, BlockSize, RestBlocks, RestData);
         {error, Reason} ->
             lager:error("Root object update failed: ~p", [Reason]),
             {error, Reason}
@@ -118,17 +114,18 @@ get(Bucket, FileName) ->
         {ok, Pid} ->
             case riakc_pb_socket:get(Pid, Bucket, FileName, [head]) of
                 {ok, Obj} ->
-                    MD = riakc_obj:get_metadata(Obj),
-                    UUID = dict:fetch(uuid, MD),
-                    FileSize = dict:fetch(file_size, MD),
-                    BlockSize = dict:fetch(block_size, MD),
+                    RootMD = riakc_obj:get_metadata(Obj),
+                    MD = dict:from_list(dict:fetch(?MD_USERMETA, RootMD)),
+                    UUID = dict:fetch("uuid", MD),
+                    FileSize = list_to_integer(dict:fetch("file_size", MD)),
+                    BlockSize = list_to_integer(dict:fetch("block_size", MD)),
                     BlockCount = block_count(FileSize, BlockSize),
                     [begin
-                         Block = list_to_binary(FileName ++ UUID ++ integer_to_list(X)),
+                         Block = list_to_binary(FileName ++ ":" ++ UUID ++ ":" ++ integer_to_list(X)),
                          {ok, BlockObj} = riakc_pb_socket:get(Pid, Bucket, Block),
                          riakc_obj:get_value(BlockObj)
                      end ||
-                        X <- lists:seq(1,BlockCount+1)];
+                        X <- lists:seq(1,BlockCount)];
                 {error, Reason} ->
                     lager:error("Error retrieving ~p: ~p", [FileName, Reason]),
                     {error, Reason}
@@ -147,7 +144,7 @@ put_block(Pid, Bucket, BlockKey, Data)->
                         BlockKey,
                         Data),
     case riakc_pb_socket:put(Pid, Obj) of
-        {ok, _} ->
+        ok ->
             ok;
         {error, Reason} ->
             {error, Reason}
