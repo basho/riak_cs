@@ -33,7 +33,7 @@ prepare(timeout, State) ->
     %% start the process that will
     %% fetch the value, be it manifest
     %% or regular object
-    ok.
+    {next_state, waiting_value, State}.
 
 waiting_value({object, Value}, State) ->
     %% determine if the object is a normal
@@ -49,7 +49,7 @@ waiting_value({object, Value}, State) ->
             %% will grab the chunks and
             %% start sending us
             %% chunk events
-            {ok, waiting_chunks, State}
+            {next_state, waiting_chunks, State}
     end.
 
 waiting_chunks({chunk, Chunk}, State) ->
@@ -59,7 +59,7 @@ waiting_chunks({chunk, Chunk}, State) ->
     NewState = remove_chunk(State, Chunk),
     case still_waiting(NewState) of
         true ->
-            {ok, waiting_chunks, NewState};
+            {next_state, waiting_chunks, NewState};
         false ->
             {stop, done, NewState}
     end.
