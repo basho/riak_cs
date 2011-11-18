@@ -10,17 +10,30 @@
 
 -behaviour(gen_fsm).
 
--export([start_link/3, init/1, chunk/1, return/0]).
+-export([start_link/3,
+         init/1,
+         prepare/2,
+         waiting_value/2,
+         waiting_chunks/2]).
 
 start_link(From, Bucket, Key) ->
     gen_fsm:start_link(?MODULE, [From, Bucket, Key], []).
 
 init([From, Bucket, Key]) ->
+    State = From,
+    %% purposely have the timeout happen
+    %% so that we get called in the prepare
+    %% state
+    {ok, prepare, State, 0}.
+
+%% TODO:
+%% could this func use
+%% use a better name?
+prepare(timeout, State) ->
     %% start the process that will
     %% fetch the value, be it manifest
     %% or regular object
-    State = From,
-    {ok, waiting_value, State}.
+    ok.
 
 waiting_value({object, Value}, State) ->
     %% determine if the object is a normal
@@ -75,3 +88,4 @@ remove_chunk(State, Chunk) ->
 %%      we're still waiting
 %%      to accumulate more chunks
 still_waiting(State) ->
+    ok.
