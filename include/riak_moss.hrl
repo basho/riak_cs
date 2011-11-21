@@ -28,7 +28,7 @@
     created :: term(),
     finished :: term(),
     active :: boolean(),
-    blocks_remaining :: list()}).
+    blocks_remaining = sets:new()}).
 
 -define(USER_BUCKET, <<"moss.users">>).
 -define(MAX_CONTENT_LENGTH, 10485760).
