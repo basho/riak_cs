@@ -7,6 +7,8 @@
 
 -module(riak_moss_lfs_utils).
 
+-include("riak_moss.hrl").
+
 -export([object_or_manifest/1,
          remove_chunk/2,
          still_waiting/1]).
@@ -14,8 +16,8 @@
 %% @doc Returns whether or not
 %%      a value is a normal object,
 %%      or a manifest document
-object_or_manifest(_Value) ->
-    ok.
+is_manifest(Value) ->
+    is_record(Value, lfs_manifest).
 
 %% @doc Remove a chunk from the
 %%      chunks field of State
