@@ -15,7 +15,9 @@
          block_count/1,
          block_name/3,
          block_name_to_term/1,
-         initial_blocks/1]).
+         initial_blocks/1,
+         riak_connection/0,
+         riak_connection/2]).
 
 %% @doc Returns true if Value is
 %%      a manifest record
@@ -62,3 +64,26 @@ block_count(ContentLength, BlockSize) ->
         _ ->
             Quotient + 1
     end.
+
+%% @doc Get a protobufs connection to the riak cluster
+%% using information from the application environment.
+-spec riak_connection() -> {ok, pid()} | {error, term()}.
+riak_connection() ->
+    case application:get_env(riak_moss, riak_ip) of
+        {ok, Host} ->
+            ok;
+        undefined ->
+            Host = "127.0.0.1"
+    end,
+    case application:get_env(riak_moss, riak_pb_port) of
+        {ok, Port} ->
+            ok;
+        undefined ->
+            Port = 8087
+    end,
+    riak_connection(Host, Port).
+
+%% @doc Get a protobufs connection to the riak cluster.
+-spec riak_connection(string(), pos_integer()) -> {ok, pid()} | {error, term()}.
+riak_connection(Host, Port) ->
+    riakc_pb_socket:start_link(Host, Port).
