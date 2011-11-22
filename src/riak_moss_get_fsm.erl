@@ -10,6 +10,8 @@
 
 -behaviour(gen_fsm).
 
+-include("riak_moss.hrl").
+
 -export([init/1, handle_event/3, handle_sync_event/4,
          handle_info/3, terminate/3, code_change/4]).
 
@@ -19,14 +21,17 @@
          retriever/3,
          waiting_chunks/2]).
 
+-record(state, {from :: pid(),
+                bucket :: term(),
+                key :: term(),
+                manifest :: #lfs_manifest{},
+                block_keys :: list()}).
+
 start_link(From, Bucket, Key) ->
     gen_fsm:start_link(?MODULE, [From, Bucket, Key], []).
 
 init([From, Bucket, Key]) ->
-    %% TODO:
-    %% turn this into a real
-    %% record
-    State = {From, Bucket, Key},
+    State = #state{from=From, bucket=Bucket, key=Key},
     %% purposely have the timeout happen
     %% so that we get called in the prepare
     %% state
@@ -35,7 +40,7 @@ init([From, Bucket, Key]) ->
 %% TODO:
 %% could this func use
 %% use a better name?
-prepare(timeout, {_ReplyPid, Bucket, Key}=State) ->
+prepare(timeout, #state{bucket=Bucket, key=Key}=State) ->
     %% start the process that will
     %% fetch the value, be it manifest
     %% or regular object
