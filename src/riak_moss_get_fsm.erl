@@ -24,6 +24,7 @@
 -record(state, {from :: pid(),
                 bucket :: term(),
                 key :: term(),
+                value_buffer :: binary(), 
                 manifest :: #lfs_manifest{},
                 block_keys :: list()}).
 
@@ -47,16 +48,22 @@ prepare(timeout, #state{bucket=Bucket, key=Key}=State) ->
     spawn_link(?MODULE, retriever, [self(), Bucket, Key]),
     {next_state, waiting_value, State}.
 
-waiting_value({object, Value}, State) ->
+waiting_value({object, Value}, #state{from=From}=State) ->
     %% determine if the object is a normal
     %% object, or a manifest object
     case riak_moss_lfs_utils:is_manifest(Value) of
-        true ->
-            %% send object back to
+        false ->
+            %% send metadata back to
             %% the `from` part of
             %% state
-            {stop, done, State};
-        false ->
+            %% TODO:
+            %% we don't deal with siblings here
+            %% at all
+            Metadata = riakc_obj:get_metadata(Value),
+            CachedValue = riakc_obj:get_value(Value),
+            From ! Metadata,
+            {stop, normal, State#state{value_buffer=CachedValue}};
+        true ->
             %% now launch a process that
             %% will grab the chunks and
             %% start sending us
@@ -73,7 +80,7 @@ waiting_chunks({chunk, Chunk}, State) ->
         true ->
             {next_state, waiting_chunks, NewState};
         false ->
-            {stop, done, NewState}
+            {stop, normal, NewState}
     end.
 
 %% @doc Grabs the object for a key and
