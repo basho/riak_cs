@@ -25,11 +25,11 @@
          code_change/4]).
 
 
--record(state, {name :: string(),
+-record(state, {filename :: binary(),
                 data :: [binary()],
-                pb_pid :: pid(),
                 writer_pid :: pid(),
-                size :: non_neg_integer(),
+                file_size :: pos_integer(),
+                block_size :: pos_integer(),
                 timeout :: timeout()}).
 -type state() :: #state{}.
 
@@ -48,33 +48,36 @@ start_link(Args) ->
 %% ====================================================================
 
 %% @doc Initialize the fsm.
--spec init([string(), non_neg_integer(), timeout()]) ->
-                  {ok, initialize, state(), 0}.
-init([Name, FileSize, BlockSize, Data, Timeout]) ->
-    State = #state{name=Name,
-                   size=Size,
+%% -spec init([string(), pos_integer(), pos_integer(), binary(), timeout()]) ->
+-spec init([term()]) -> {ok, initialize, state(), 0}.
+init([Name, FileSize, BlockSize, _Data, Timeout]) ->
+    State = #state{filename=list_to_binary(Name),
+                   file_size=FileSize,
+                   block_size=BlockSize,
                    timeout=Timeout},
     {ok, initialize, State, 0}.
 
 %% @doc First state of the put fsm
-initialize(timeout, State=#state{timeout=Timeout}) ->
-    %% Get a connection to riak
-    case riak_moss_lfs_utils:get_connection() of
-        {ok, PbPid} ->
-            %% Start the worker to perform the writing
-            case start_writer() of
-                {ok, WriterPid} ->
-                    ok;
-                {error, Reason1} ->
-                    lager:error("Failed to start the put fsm writer process. Reason: ",
-                                [Reason1]),
-                    {stop, Reason, State}
-            end,
-            UpdState = State#state{pb_pid=PbPid,
-                                   writer_pid=WriterPid},
+-spec initialize(timeout, state()) ->
+                        {next_state, write_root, state(), timeout()} |
+                        {stop, term(), state()}.
+initialize(timeout, State=#state{filename=FileName,
+                                 file_size=FileSize,
+                                 block_size=BlockSize,
+                                 timeout=Timeout}) ->
+    %% Start the worker to perform the writing
+    case start_writer() of
+        {ok, WriterPid} ->
+            %% Provide the writer with the file details
+            riak_moss_writer:initialize(WriterPid,
+                                        self(),
+                                        FileName,
+                                        FileSize,
+                                        BlockSize),
+            UpdState = State#state{writer_pid=WriterPid},
             {next_state, write_root, UpdState, Timeout};
         {error, Reason} ->
-            lager:error("Failed to establish connection to Riak. Reason: ~p",
+            lager:error("Failed to start the put fsm writer process. Reason: ",
                         [Reason]),
             {stop, Reason, State}
     end.
@@ -86,39 +89,12 @@ initialize(timeout, State=#state{timeout=Timeout}) ->
                          write_chunk,
                          state(),
                          non_neg_integer()}.
-write_root(writer_ready, State=#state{timeout=Timeout}) ->
-    %% Write the initial root block
-
-    %% @TODO Use actual UUID
-    UUID = riak_moss:unique_hex_id(),
-    %% Calculate the number of blocks
-    BlockCount = block_count(FileSize, BlockSize),
-
-    %% Punting on optimization where no extra blocks are created if
-    %% file size < or ~= to block size.
-    Blocks = [list_to_binary(FileName ++ ":" ++ UUID ++ ":" ++ integer_to_list(X)) ||
-                 X <- lists:seq(1,BlockCount)],
-    lager:debug("Blocks for ~p: ~p", [FileName, Blocks]),
-    %% Assemble the metadata
-    MDDict = dict:from_list([{?MD_USERMETA, MetaData ++
-                                [{"file_size", FileSize},
-                                 {"block_size", BlockSize},
-                                 {"blocks_missing", term_to_binary(Blocks)},
-                                 {"alive", false},
-                                 {"uuid", UUID}]}]),
-    Obj = riakc_obj:new(list_to_binary(Bucket),
-                        list_to_binary(FileName)),
-    NewObj = riakc_obj:update_metadata(
-               riakc_obj:update_value(Obj, list_to_binary(UUID)), MDDict),
-    case riakc_pb_socket:put(Pid, NewObj) of
-        ok ->
-            {ok, StoredObj} = riakc_pb_socket:get(Pid, list_to_binary(Bucket), list_to_binary(FileName)),
-            put(Pid, Bucket, FileName, StoredObj, BlockSize, Blocks, Data);
-        {error, _Reason1} ->
-            ok
-    end,
+write_root(writer_ready, State=#state{writer_pid=WriterPid,
+                                      timeout=Timeout}) ->
+    %% Send request to the writer to write the initial root block
+    riak_moss_writer:write_root(WriterPid),
     {next_state, write_chunk, State, Timeout};
-write_root({chunk_complete, Chunk}, State=#state{timeout=Timeout}) ->
+write_root({chunk_complete, _Chunk}, State=#state{timeout=Timeout}) ->
     {next_state, write_chunk, State, Timeout}.
 
 %% @doc @TODO
