@@ -54,8 +54,7 @@ write_root(Pid) ->
     gen_server:cast(Pid, write_root).
 
 %% @doc Update a root block
--type update_op() :: all_blocks_ready |
-                     {block_ready, pos_integer()}.
+-type update_op() :: {block_ready, pos_integer()}.
 -spec update_root(pid(), update_op()) -> ok.
 update_root(Pid, UpdateOp) ->
     gen_server:cast(Pid, {update_root, UpdateOp}).
@@ -128,7 +127,9 @@ handle_cast(write_root, State=#state{fsm_pid=FsmPid}) ->
     {noreply, State#state{uuid=UUID}};
 handle_cast({update_root, _UpdateOp}, State=#state{fsm_pid=FsmPid}) ->
     %% @TODO Update root block
-    gen_fsm:send_event(FsmPid, root_updated),
+    %% @TODO If `block_remaining' is empty
+    %% gen_fsm:send_event(FsmPid, all_blocks_written),
+    gen_fsm:send_event(FsmPid, root_ready),
     {noreply, State};
 handle_cast({write_block, BlockID, _Data}, State=#state{fsm_pid=FsmPid}) ->
     %% @TODO Write the block data to riak
