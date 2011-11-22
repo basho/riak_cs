@@ -16,6 +16,8 @@
          block_name/3,
          block_name_to_term/1,
          initial_blocks/1,
+         sorted_blocks_remaining/1,
+         block_keynames/3,
          riak_connection/0,
          riak_connection/2]).
 
@@ -64,6 +66,17 @@ block_count(ContentLength, BlockSize) ->
         _ ->
             Quotient + 1
     end.
+
+set_to_sorted_list(Set) ->
+    lists:sort(sets:to_list(Set)).
+
+sorted_blocks_remaining(#lfs_manifest{blocks_remaining=Remaining}) ->
+    set_to_sorted_list(Remaining).
+
+block_keynames(KeyName, UUID, BlockList) ->
+    MapFun = fun(BlockSeq) ->
+        block_name(KeyName, UUID, BlockSeq) end,
+    lists:map(MapFun, BlockList).
 
 %% @doc Get a protobufs connection to the riak cluster
 %% using information from the application environment.
