@@ -45,13 +45,13 @@ prepare(timeout, {_ReplyPid, Bucket, Key}=State) ->
 waiting_value({object, Value}, State) ->
     %% determine if the object is a normal
     %% object, or a manifest object
-    case riak_moss_lfs_utils:object_or_manifest(Value) of
-        object ->
+    case riak_moss_lfs_utils:is_manifest(Value) of
+        true ->
             %% send object back to
             %% the `from` part of
             %% state
             {stop, done, State};
-        manifest ->
+        false ->
             %% now launch a process that
             %% will grab the chunks and
             %% start sending us
@@ -77,8 +77,9 @@ waiting_chunks({chunk, Chunk}, State) ->
 %%      object, return it. If it's a manifest,
 %%      start grabbing the chunks and returning them.
 retriever(ReplyPid, Bucket, Key) ->
-    gen_fsm:send_event(ReplyPid,
-        riak_moss_riakc:get_object(Bucket, Key)).
+    {ok, RiakObject} = riak_moss_riakc:get_object(Bucket, Key),
+    gen_fsm:send_event(ReplyPid, {object, RiakObject}).
+        
 
 %% @private
 handle_event(_Event, _StateName, StateData) ->
