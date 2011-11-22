@@ -4,14 +4,14 @@
 %%
 %% -------------------------------------------------------------------
 
-%% @doc Supervisor for `riak_moss_put_fsm'
+%% @doc Supervisor for `riak_moss_writer'
 
--module(riak_moss_put_fsm_sup).
+-module(riak_moss_writer_sup).
 
 -behaviour(supervisor).
 
 %% API
--export([start_put_fsm/2]).
+-export([start_writer/2]).
 -export([start_link/0]).
 
 %% Supervisor callbacks
@@ -27,10 +27,10 @@
 start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
-%% @doc Start a `riak_moss_put_fsm' child process.
--spec start_put_fsm(node(), supervisor:child_spec()) ->
-                           supervisor:startchild_ret().
-start_put_fsm(Node, Args) ->
+%% @doc Start a `riak_moss_writer' child process.
+-spec start_writer(node(), supervisor:child_spec()) ->
+                          supervisor:startchild_ret().
+start_writer(Node, Args) ->
     supervisor:start_child({?MODULE, Node}, Args).
 
 %% ===================================================================
@@ -38,7 +38,7 @@ start_put_fsm(Node, Args) ->
 %% ===================================================================
 
 %% @doc Initialize this supervisor. This is a `simple_one_for_one',
-%%      whose child spec is for starting `riak_moss_put_fsm' processes.
+%%      whose child spec is for starting `riak_moss_writer' processes.
 -spec init([]) -> {ok, {{supervisor:strategy(),
                          pos_integer(),
                          pos_integer()},
@@ -54,9 +54,9 @@ init([]) ->
     Shutdown = 2000,
     Type = worker,
 
-    PutFsmSpec = {undefined,
+    WriterSpec = {undefined,
                   {riak_moss_put_fsm, start_link, []},
-                  Restart, Shutdown, Type, [riak_moss_put_fsm]},
+                  Restart, Shutdown, Type, [riak_moss_writer]},
 
-    {ok, {SupFlags, [PutFsmSpec]}}.
+    {ok, {SupFlags, [WriterSpec]}}.
 
