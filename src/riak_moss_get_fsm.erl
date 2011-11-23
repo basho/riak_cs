@@ -19,6 +19,7 @@
          prepare/2,
          waiting_value/2,
          retriever/3,
+         waiting_chunk_command/2,
          waiting_chunks/2]).
 
 -record(state, {from :: pid(),
@@ -73,13 +74,18 @@ waiting_value({object, Value}, #state{from=From}=State) ->
             Metadata = riak_moss_lfs_utils:metadata_from_manifest(Value),
             From ! Metadata,
             StateWithMani = State#state{manifest=Value},
-            %% TODO:
-            %% now launch a process that
-            %% will grab the chunks and
-            %% start sending us
-            %% chunk events
-            {next_state, waiting_chunks, StateWithMani}
+            {next_state, waiting_chunk_command, StateWithMani}
     end.
+
+waiting_chunk_command({stop, _}, State) ->
+    {stop, normal, State};
+waiting_chunk_command({continue, _}, State) ->
+    %% TODO:
+    %% now launch a process that
+    %% will grab the chunks and
+    %% start sending us
+    %% chunk events
+    {next_state, waiting_chunks, State}.
 
 waiting_chunks({chunk, Chunk}, State) ->
     %% we're assuming that we're receiving the
