@@ -17,6 +17,7 @@
          block_name_to_term/1,
          initial_blocks/1,
          sorted_blocks_remaining/1,
+         block_keynames/1,
          block_keynames/3,
          metadata_from_manifest/1,
          riak_connection/0,
@@ -87,6 +88,11 @@ set_to_sorted_list(Set) ->
 
 sorted_blocks_remaining(#lfs_manifest{blocks_remaining=Remaining}) ->
     set_to_sorted_list(Remaining).
+
+block_keynames(#lfs_manifest{bkey={_, KeyName},
+                             uuid=UUID}=Manifest) ->
+    BlockList = sorted_blocks_remaining(Manifest),
+    block_keynames(KeyName, UUID, BlockList).
 
 block_keynames(KeyName, UUID, BlockList) ->
     MapFun = fun(BlockSeq) ->
