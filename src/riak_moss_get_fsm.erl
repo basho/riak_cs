@@ -24,8 +24,8 @@
 -record(state, {from :: pid(),
                 bucket :: term(),
                 key :: term(),
-                value_buffer :: binary(), 
-                manifest :: #lfs_manifest{},
+                value_cache :: binary(), 
+                manifest :: term(),
                 block_keys :: list()}).
 
 start_link(From, Bucket, Key) ->
@@ -52,6 +52,12 @@ waiting_value({object, Value}, #state{from=From}=State) ->
     %% determine if the object is a normal
     %% object, or a manifest object
     case riak_moss_lfs_utils:is_manifest(Value) of
+
+    %% TODO:
+    %% create a shared func for sending messages
+    %% back to `From`. Each of these `From ! Metadata`
+    %% calls shouldn't be concerned with the exact
+    %% message format
         false ->
             %% send metadata back to
             %% the `from` part of
@@ -62,13 +68,17 @@ waiting_value({object, Value}, #state{from=From}=State) ->
             Metadata = riakc_obj:get_metadata(Value),
             CachedValue = riakc_obj:get_value(Value),
             From ! Metadata,
-            {stop, normal, State#state{value_buffer=CachedValue}};
+            {stop, normal, State#state{value_cache=CachedValue}};
         true ->
+            Metadata = riak_moss_lfs_utils:metadata_from_manifest(Value),
+            From ! Metadata,
+            StateWithMani = State#state{manifest=Value},
+            %% TODO:
             %% now launch a process that
             %% will grab the chunks and
             %% start sending us
             %% chunk events
-            {next_state, waiting_chunks, State}
+            {next_state, waiting_chunks, StateWithMani}
     end.
 
 waiting_chunks({chunk, Chunk}, State) ->
