@@ -18,8 +18,23 @@
          initial_blocks/1,
          sorted_blocks_remaining/1,
          block_keynames/3,
+         metadata_from_manifest/1,
          riak_connection/0,
          riak_connection/2]).
+
+%% Opaque record for a large-file manifest.
+-record(lfs_manifest, {
+    version :: atom(),
+    uuid :: binary(),
+    metadata :: dict(),
+    block_size :: integer(),
+    bkey :: {term(), term()},
+    content_length :: integer(),
+    content_md5 :: term(),
+    created :: term(),
+    finished :: term(),
+    active :: boolean(),
+    blocks_remaining = sets:new()}).
 
 %% @doc Returns true if Value is
 %%      a manifest record
@@ -77,6 +92,11 @@ block_keynames(KeyName, UUID, BlockList) ->
     MapFun = fun(BlockSeq) ->
         block_name(KeyName, UUID, BlockSeq) end,
     lists:map(MapFun, BlockList).
+
+%% @doc Return the metadata for the object
+%%      represented in the manifest
+metadata_from_manifest(#lfs_manifest{metadata=Metadata}) ->
+    Metadata.
 
 %% @doc Get a protobufs connection to the riak cluster
 %% using information from the application environment.

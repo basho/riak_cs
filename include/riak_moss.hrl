@@ -18,18 +18,6 @@
                       bucket :: list(),
                       key :: list()}).
 
--record(lfs_manifest, {
-    version :: atom(),
-    uuid :: binary(),
-    block_size :: integer(),
-    bkey :: {term(), term()},
-    content_length :: integer(),
-    content_md5 :: term(),
-    created :: term(),
-    finished :: term(),
-    active :: boolean(),
-    blocks_remaining = sets:new()}).
-
 -define(USER_BUCKET, <<"moss.users">>).
 -define(MAX_CONTENT_LENGTH, 10485760).
 -define(LFS_BLOCK_SIZE, 10485760).
