@@ -18,7 +18,7 @@
 -export([start_link/3,
          prepare/2,
          waiting_value/2,
-         retriever/3,
+         normal_retriever/3,
          waiting_chunk_command/2,
          waiting_chunks/2]).
 
@@ -46,7 +46,7 @@ prepare(timeout, #state{bucket=Bucket, key=Key}=State) ->
     %% start the process that will
     %% fetch the value, be it manifest
     %% or regular object
-    spawn_link(?MODULE, retriever, [self(), Bucket, Key]),
+    spawn_link(?MODULE, normal_retriever, [self(), Bucket, Key]),
     {next_state, waiting_value, State}.
 
 waiting_value({object, Value}, #state{from=From}=State) ->
@@ -99,12 +99,10 @@ waiting_chunks({chunk, Chunk}, State) ->
             {stop, normal, NewState}
     end.
 
-%% @doc Grabs the object for a key and
-%%      checks to see if it's a manifest or
-%%      a regular object. If it's a regular
-%%      object, return it. If it's a manifest,
-%%      start grabbing the chunks and returning them.
-retriever(ReplyPid, Bucket, Key) ->
+%% @doc Retrieve the value at
+%%      Bucket, Key, whether it's a
+%%      manifest or regular object
+normal_retriever(ReplyPid, Bucket, Key) ->
     {ok, RiakObject} = riak_moss_riakc:get_object(Bucket, Key),
     gen_fsm:send_event(ReplyPid, {object, RiakObject}).
         
