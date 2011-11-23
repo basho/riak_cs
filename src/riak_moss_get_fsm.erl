@@ -18,7 +18,6 @@
 -export([start_link/3,
          prepare/2,
          waiting_value/2,
-         normal_retriever/3,
          waiting_chunk_command/2,
          waiting_chunks/2]).
 
@@ -105,7 +104,22 @@ waiting_chunks({chunk, Chunk}, State) ->
 normal_retriever(ReplyPid, Bucket, Key) ->
     {ok, RiakObject} = riak_moss_riakc:get_object(Bucket, Key),
     gen_fsm:send_event(ReplyPid, {object, RiakObject}).
-        
+
+blocks_retriever(Pid, Manifest) ->
+    BlockKeys = riak_moss_lfs_utils:block_keynames(Manifest),
+    Func = fun(ChunkName) ->
+        %% TODO:
+        %% replace the chunk_bucket
+        %% with a real bucket name
+        {ok, Value} = riak_moss_riakc:get_object("chunk_bucket", ChunkName),
+        %% TODO:
+        %% we probably need to send back
+        %% the sequence number too, not just
+        %% the raw value. It's ok for now
+        %% because we're doing everything sequentially.
+        gen_fsm:send_event(Pid, {chunk, Value})
+    end,
+    lists:foreach(Func, BlockKeys).
 
 %% @private
 handle_event(_Event, _StateName, StateData) ->
