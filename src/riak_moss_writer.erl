@@ -10,12 +10,14 @@
 
 -behaviour(gen_server).
 
+%% API
 -export([start_link/1,
          initialize/5,
          write_root/1,
          update_root/2,
          write_block/3]).
 
+%% gen_server callbacks
 -export([init/1,
          handle_call/3,
          handle_cast/2,
