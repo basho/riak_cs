@@ -26,7 +26,8 @@
          code_change/3]).
 
 -record(state, {filename :: binary(),
-                uuid :: binary(),
+                uuid :: string() | binary(), % @TODO Remove string() after
+                                                % using druuid for uuids.
                 file_size :: pos_integer(),
                 block_size :: pos_integer(),
                 riak_pid :: pid(),
@@ -74,13 +75,13 @@ write_block(Pid, BlockID, Data) ->
 -spec init([term()]) -> {ok, state()} | {stop, term()}.
 init(_Args) ->
     %% Get a connection to riak
-    case riak_moss_lfs_utils:get_connection() of
+    case riak_moss_lfs_utils:riak_connection() of
         {ok, RiakPid} ->
             {ok, #state{riak_pid=RiakPid}};
         {error, Reason} ->
             lager:error("Failed to establish connection to Riak. Reason: ~p",
                         [Reason]),
-            {error, riak_connect_failed}
+            {stop, riak_connect_failed}
     end.
 
 %% @doc Unused

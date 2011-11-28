@@ -31,6 +31,7 @@
                 file_size :: pos_integer(),
                 block_size :: pos_integer(),
                 next_block_id=1 :: pos_integer(),
+                raw_data :: undefined | binary(),
                 timeout :: timeout()}).
 -type state() :: #state{}.
 
@@ -55,7 +56,7 @@ init([Name, FileSize, BlockSize, Data, Timeout]) ->
     State = #state{filename=list_to_binary(Name),
                    file_size=FileSize,
                    block_size=BlockSize,
-                   data=Data,
+                   raw_data=Data,
                    timeout=Timeout},
     {ok, initialize, State, 0}.
 
@@ -66,7 +67,7 @@ init([Name, FileSize, BlockSize, Data, Timeout]) ->
 initialize(timeout, State=#state{filename=FileName,
                                  file_size=FileSize,
                                  block_size=BlockSize,
-                                 data=RawData,
+                                 raw_data=RawData,
                                  timeout=Timeout}) ->
     %% Start the worker to perform the writing
     case start_writer() of
@@ -81,7 +82,8 @@ initialize(timeout, State=#state{filename=FileName,
             %% @TODO Maybe move this function to `riak_moss_lfs_util'.
             Data = data_blocks(RawData, BlockSize, []),
             UpdState = State#state{writer_pid=WriterPid,
-                                   data=Data},
+                                   data=Data,
+                                   raw_data=undefined},
             {next_state, write_root, UpdState, Timeout};
         {error, Reason} ->
             lager:error("Failed to start the put fsm writer process. Reason: ",
@@ -128,13 +130,13 @@ write_block(all_blocks_written, State) ->
 
 %% @doc Unused.
 -spec handle_event(term(), atom(), state()) ->
-         {next_state, atom(), state()}.
+                          {stop, badmsg, state()}.
 handle_event(_Event, _StateName, State) ->
     {stop, badmsg, State}.
 
 %% @doc Unused.
 -spec handle_sync_event(term(), term(), atom(), state()) ->
-         {reply, ok, atom(), state()}.
+         {next_state, atom(), state()}.
 handle_sync_event(_Event, _From, StateName, State) ->
     {next_state, StateName, State}.
 
@@ -170,7 +172,7 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 %% of writing data to Riak.
 -spec start_writer() -> {ok, pid()} | {error, term()}.
 start_writer() ->
-    riak_moss_writer_sup:start_writer().
+    riak_moss_writer_sup:start_writer(node(), []).
 
 %% @private
 %% @doc Break up a data binary into a list of block-sized chunks
