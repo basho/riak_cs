@@ -94,17 +94,17 @@ waiting_chunk_command({continue, _}, #state{from=From, value_cache=CachedValue}=
             From ! {done, CachedValue}
     end.
 
-waiting_chunks({chunk, Chunk}, #state{from=From}=State) ->
+waiting_chunks({chunk, {ChunkSeq, ChunkValue}}, #state{from=From}=State) ->
     %% we're assuming that we're receiving the
     %% chunks synchronously, and that we can
     %% send them back to WM as we get them
-    NewState = riak_moss_lfs_utils:remove_chunk(State, Chunk),
+    NewState = riak_moss_lfs_utils:remove_block(State, ChunkSeq),
     case riak_moss_lfs_utils:still_waiting(NewState) of
         true ->
-            From ! {chunk, Chunk},
+            From ! {chunk, ChunkValue},
             {next_state, waiting_chunks, NewState};
         false ->
-            From ! {done, Chunk},
+            From ! {done, ChunkValue},
             {stop, normal, NewState}
     end.
 
@@ -117,7 +117,7 @@ normal_retriever(ReplyPid, Bucket, Key) ->
 
 blocks_retriever(Pid, Manifest) ->
     BlockKeys = riak_moss_lfs_utils:block_keynames(Manifest),
-    Func = fun(ChunkName) ->
+    Func = fun({ChunkSeq, ChunkName}) ->
         %% TODO:
         %% replace the chunk_bucket
         %% with a real bucket name
@@ -127,7 +127,7 @@ blocks_retriever(Pid, Manifest) ->
         %% the sequence number too, not just
         %% the raw value. It's ok for now
         %% because we're doing everything sequentially.
-        gen_fsm:send_event(Pid, {chunk, Value})
+        gen_fsm:send_event(Pid, {chunk, {ChunkSeq, Value}})
     end,
     lists:foreach(Func, BlockKeys).
 
