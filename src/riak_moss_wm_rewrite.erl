@@ -4,7 +4,7 @@
 %%
 %% -------------------------------------------------------------------
 -module(riak_moss_wm_rewrite).
--export([rewrite/1]).
+-export([rewrite/2]).
 
 bucket_from_host(undefined) ->
     undefined;
@@ -23,17 +23,11 @@ bucket_from_host(HostHeader) ->
             end
     end.
 
-rewrite(MochiReq) ->
-    HostHeader = MochiReq:get_header_value("host"),
+rewrite(Headers, Path) ->
+    HostHeader = mochiweb_headers:get_value("host", Headers),
     case bucket_from_host(HostHeader) of
         undefined ->
-            MochiReq;
+            Path;
         Bucket ->
-            Path = "/" ++ Bucket ++ "/" ++
-                string:strip(MochiReq:get(raw_path), left, $/),
-            mochiweb_request:new(MochiReq:get(socket),
-                                 MochiReq:get(method),
-                                 Path,
-                                 MochiReq:get(version),
-                                 MochiReq:get(headers))
-    end.
+            "/" ++ Bucket ++ "/" ++ string:strip(Path, left, $/)
+    end.    
