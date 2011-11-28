@@ -105,7 +105,7 @@ block_keynames(#lfs_manifest{bkey={_, KeyName},
 
 block_keynames(KeyName, UUID, BlockList) ->
     MapFun = fun(BlockSeq) ->
-        block_name(KeyName, UUID, BlockSeq) end,
+        {BlockSeq, block_name(KeyName, UUID, BlockSeq)} end,
     lists:map(MapFun, BlockList).
 
 %% @doc Return the metadata for the object
