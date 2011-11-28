@@ -67,34 +67,44 @@ waiting_value({object, Value}, #state{from=From}=State) ->
             %% at all
             Metadata = riakc_obj:get_metadata(Value),
             CachedValue = riakc_obj:get_value(Value),
-            From ! Metadata,
-            {stop, normal, State#state{value_cache=CachedValue}};
+            From ! {metadata, Metadata},
+            {next_state, waiting_chunk_command, State#state{value_cache=CachedValue}};
         true ->
             Metadata = riak_moss_lfs_utils:metadata_from_manifest(Value),
-            From ! Metadata,
+            From ! {metadata, Metadata},
             StateWithMani = State#state{manifest=Value},
             {next_state, waiting_chunk_command, StateWithMani}
     end.
 
 waiting_chunk_command({stop, _}, State) ->
     {stop, normal, State};
-waiting_chunk_command({continue, _}, State) ->
-    %% TODO:
-    %% now launch a process that
-    %% will grab the chunks and
-    %% start sending us
-    %% chunk events
-    {next_state, waiting_chunks, State}.
+waiting_chunk_command({continue, _}, #state{from=From, value_cache=CachedValue}=State) ->
+    case CachedValue of
+        undefined ->
+            %% TODO:
+            %% now launch a process that
+            %% will grab the chunks and
+            %% start sending us
+            %% chunk events
+            {next_state, waiting_chunks, State};
+        _ ->
+            %% we don't actually have to start
+            %% retrieving chunks, as we already
+            %% have the value cached in our State
+            From ! {done, CachedValue}
+    end.
 
-waiting_chunks({chunk, Chunk}, State) ->
+waiting_chunks({chunk, Chunk}, #state{from=From}=State) ->
     %% we're assuming that we're receiving the
     %% chunks synchronously, and that we can
     %% send them back to WM as we get them
     NewState = riak_moss_lfs_utils:remove_chunk(State, Chunk),
     case riak_moss_lfs_utils:still_waiting(NewState) of
         true ->
+            From ! {chunk, Chunk},
             {next_state, waiting_chunks, NewState};
         false ->
+            From ! {done, Chunk},
             {stop, normal, NewState}
     end.
 
