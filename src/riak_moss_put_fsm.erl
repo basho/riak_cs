@@ -34,8 +34,6 @@
                 raw_data :: undefined | binary(),
                 timeout :: timeout()}).
 -type state() :: #state{}.
-
-
 %% ===================================================================
 %% Public API
 %% ===================================================================
@@ -110,7 +108,7 @@ write_root({block_written, BlockId}, State=#state{writer_pid=WriterPid,
 
 %% @doc State for writing a block of a file. The
 %% transition from this state is to `write_root'.
--spec write_block(root_ready | file_ready, state()) ->
+-spec write_block(root_ready | all_blocks_written, state()) ->
                          {next_state,
                           write_root,
                           state(),
@@ -142,7 +140,8 @@ handle_sync_event(_Event, _From, StateName, State) ->
 
 %% @doc @TODO
 -spec handle_info(term(), atom(), state()) ->
-         {next_state, atom(), state()}.
+                         {next_state, atom(), state(), timeout()} |
+                         {stop, badmsg, state()}.
 handle_info({'EXIT', _Pid, _Reason}, StateName, State=#state{timeout=Timeout}) ->
     {next_state, StateName, State, Timeout};
 handle_info({_ReqId, {ok, _Pid}},

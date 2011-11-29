@@ -13,9 +13,12 @@
          remove_block/2,
          still_waiting/1,
          block_count/1,
+         block_count/2,
          block_name/3,
          block_name_to_term/1,
+         block_size/0,
          initial_blocks/1,
+         initial_blocks/2,
          sorted_blocks_remaining/1,
          block_keynames/3,
          riak_connection/0,
@@ -42,8 +45,17 @@ still_waiting(#lfs_manifest{blocks_remaining=Remaining}) ->
 
 %% @doc A set of all of the blocks that
 %%      make up the file.
+-spec initial_blocks(pos_integer()) -> set().
 initial_blocks(ContentLength) ->
     UpperBound = block_count(ContentLength),
+    Seq = lists:seq(0, (UpperBound - 1)),
+    sets:from_list(Seq).
+
+%% @doc A set of all of the blocks that
+%%      make up the file.
+-spec initial_blocks(pos_integer(), pos_integer()) -> set().
+initial_blocks(ContentLength, BlockSize) ->
+    UpperBound = block_count(ContentLength, BlockSize),
     Seq = lists:seq(0, (UpperBound - 1)),
     sets:from_list(Seq).
 
@@ -55,9 +67,13 @@ block_name_to_term(Name) ->
 
 %% @doc The number of blocks that this
 %%      size will be broken up into
+-spec block_count(pos_integer()) -> non_neg_integer().
 block_count(ContentLength) ->
-    block_count(ContentLength, ?LFS_BLOCK_SIZE).
+    block_count(ContentLength, block_size()).
 
+%% @doc The number of blocks that this
+%%      size will be broken up into
+-spec block_count(pos_integer(), pos_integer()) -> non_neg_integer().
 block_count(ContentLength, BlockSize) ->
     Quotient = ContentLength div BlockSize,
     case ContentLength rem BlockSize of
@@ -100,3 +116,18 @@ riak_connection() ->
 -spec riak_connection(string(), pos_integer()) -> {ok, pid()} | {error, term()}.
 riak_connection(Host, Port) ->
     riakc_pb_socket:start_link(Host, Port).
+
+%% @doc Return the configured block size
+-spec block_size() -> pos_integer().
+block_size() ->
+    case application:get_env(riak_moss, lfs_block_size) of
+        undefined ->
+            ?DEFAULT_LFS_BLOCK_SIZE;
+        BlockSize ->
+            case BlockSize > ?DEFAULT_LFS_BLOCK_SIZE of
+                true ->
+                    ?DEFAULT_LFS_BLOCK_SIZE;
+                false ->
+                    BlockSize
+            end
+    end.
