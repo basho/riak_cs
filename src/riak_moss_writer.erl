@@ -29,8 +29,7 @@
 
 -record(state, {bucket :: binary(),
                 filename :: binary(),
-                uuid :: string() | binary(), % @TODO Remove string() after
-                                                % using druuid for uuids.
+                uuid :: binary(),
                 file_size :: pos_integer(),
                 block_size :: pos_integer(),
                 riak_pid :: pid(),
@@ -121,9 +120,7 @@ handle_cast(write_root, State=#state{bucket=Bucket,
                                      file_size=FileSize,
                                      block_size=BlockSize,
                                      riak_pid=RiakPid}) ->
-    %% @TODO Use druuid for actual UUIDs :)
-    UUID = list_to_binary(riak_moss:unique_hex_id()),
-
+    UUID = druuid:v4(),
     case write_root_block(RiakPid, Bucket, FileName, UUID, FileSize, BlockSize) of
         ok ->
             gen_fsm:send_event(FsmPid, root_ready);
