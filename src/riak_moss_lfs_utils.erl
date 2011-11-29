@@ -22,7 +22,9 @@
          sorted_blocks_remaining/1,
          block_keynames/3,
          riak_connection/0,
-         riak_connection/2]).
+         riak_connection/2,
+         new_manifest/5,
+         finalize_manifest/1]).
 
 %% @doc Returns true if Value is
 %%      a manifest record
@@ -131,3 +133,25 @@ block_size() ->
                     BlockSize
             end
     end.
+
+%% @doc Initialize a new file manifest
+-spec new_manifest(binary(), binary(), binary(), pos_integer(), pos_integer()) ->
+                          lfs_manifest().
+new_manifest(Bucket, FileName, UUID, FileSize, BlockSize) ->
+    Blocks = initial_blocks(FileSize, BlockSize),
+    #lfs_manifest{bkey={Bucket, FileName},
+                  uuid=UUID,
+                  content_length=FileSize,
+                  block_size=BlockSize,
+                  blocks_remaining=Blocks}.
+
+%% @doc Finalize the manifest of a file by
+%% marking it as active, setting a finished time,
+%% and setting blocks_remaining as an empty list.
+-spec finalize_manifest(lfs_manifest()) -> lfs_manifest().
+finalize_manifest(Manifest) ->
+    Manifest#lfs_manifest{active=true,
+                          finished=httpd_util:rfc1123_date(),
+                          blocks_remaining=sets:new()}.
+
+

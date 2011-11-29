@@ -29,6 +29,7 @@
     finished :: term(),
     active=false :: boolean(),
     blocks_remaining = sets:new()}).
+-type lfs_manifest() :: #lfs_manifest{}.
 
 -define(USER_BUCKET, <<"moss.users">>).
 -define(MAX_CONTENT_LENGTH, 10485760).

@@ -190,13 +190,12 @@ code_change(_OldVsn, State, _Extra) ->
                        pos_integer()) ->
                               ok | {error, term()}.
 write_root_block(Pid, Bucket, FileName, UUID, FileSize, BlockSize) ->
-    Blocks = riak_moss_lfs_utils:initial_blocks(FileSize, BlockSize),
     %% Create a new file manifest
-    Manifest = #lfs_manifest{bkey={Bucket, FileName},
-                             uuid=UUID,
-                             content_length=FileSize,
-                             block_size=BlockSize,
-                             blocks_remaining=Blocks},
+    Manifest = riak_moss_lfs_utils:new_manifest(Bucket,
+                                                FileName,
+                                                UUID,
+                                                FileSize,
+                                                BlockSize),
     case riakc_pb_socket:get(Pid, Bucket, FileName) of
         {ok, _StoredObj} ->
             %% @TODO The file being written by this writer will
@@ -221,18 +220,13 @@ update_root_block(Pid, Bucket, FileName, _UUID, {block_ready, BlockID}) ->
             UpdBlocksRemaining = sets:del_element(BlockID, BlocksRemaining),
             case sets:to_list(UpdBlocksRemaining) of
                 [] ->
-                    Active = true,
-                    Finished = httpd_util:rfc1123_date(),
+                    UpdManifest =
+                        riak_moss_lfs_utils:finalize_manifest(Manifest),
                     Status = all_blocks_written;
                 _ ->
-                    Active = false,
-                    Finished = undefined,
+                    UpdManifest = riak_moss_lfs_utils:remove_block(Manifest, BlockID),
                     Status = root_ready
             end,
-            UpdManifest =
-                Manifest#lfs_manifest{active=Active,
-                                      finished=Finished,
-                                      blocks_remaining=UpdBlocksRemaining},
             UpdObj = riakc_obj:update_value(Obj, term_to_binary(UpdManifest)),
             case riakc_pb_socket:put(Pid, UpdObj) of
                 ok ->
