@@ -23,6 +23,7 @@
          remove_block/2,
          still_waiting/1,
          block_count/1,
+         block_count/2,
          block_name/3,
          block_name_to_term/1,
          initial_blocks/1,

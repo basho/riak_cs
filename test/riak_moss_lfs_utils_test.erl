@@ -24,7 +24,10 @@ lfs_utils_test_() ->
      fun teardown/1,
      [
       fun test_not_manifest/0,
-      fun test_is_manifest/0
+      fun test_is_manifest/0,
+      fun test_block_count_1/0,
+      fun test_block_count_2/0,
+      fun test_block_count_3/0
      ]}.
 
 test_not_manifest() ->
@@ -38,6 +41,11 @@ test_is_manifest() ->
             <<"2522ccc1ca2a458eca94a9576d4b71c2">>),
     ?assert(riak_moss_lfs_utils:is_manifest(Manifest)).
 
+test_block_count_1() ->
+    ?assertEqual(riak_moss_lfs_utils:block_count(2, 1), 2).
 
-
-
+test_block_count_2() ->
+    ?assertEqual(riak_moss_lfs_utils:block_count(11, 2), 6).
+    
+test_block_count_3() ->
+    ?assertEqual(riak_moss_lfs_utils:block_count(100, 100), 1).
