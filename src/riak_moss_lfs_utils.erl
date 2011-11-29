@@ -30,8 +30,8 @@
          initial_blocks/2,
          is_manifest/1,
          metadata_from_manifest/1,
-         new_manifest/5,
          new_manifest/6,
+         new_manifest/7,
          remove_block/2,
          riak_connection/0,
          riak_connection/2,
@@ -146,13 +146,15 @@ metadata_from_manifest(#lfs_manifest{metadata=Metadata}) ->
                    binary(),
                    binary(),
                    pos_integer(),
-                   term()) -> lfs_manifest().
-new_manifest(Bucket, FileName, UUID, ContentLength, ContentMd5) ->
+                   term(),
+                   dict()) -> lfs_manifest().
+new_manifest(Bucket, FileName, UUID, ContentLength, ContentMd5, MetaData) ->
     new_manifest(Bucket,
                  FileName,
                  UUID,
                  ContentLength,
                  ContentMd5,
+                 MetaData,
                  block_size()).
 
 %% @doc Initialize a new file manifest
@@ -161,15 +163,23 @@ new_manifest(Bucket, FileName, UUID, ContentLength, ContentMd5) ->
                    binary(),
                    pos_integer(),
                    term(),
+                   dict(),
                    pos_integer()) -> lfs_manifest().
-new_manifest(Bucket, FileName, UUID, ContentLength, ContentMd5, BlockSize) ->
+new_manifest(Bucket,
+             FileName,
+             UUID,
+             ContentLength,
+             ContentMd5,
+             MetaData,
+             BlockSize) ->
     Blocks = initial_blocks(ContentLength, BlockSize),
     #lfs_manifest{bkey={Bucket, FileName},
                   uuid=UUID,
                   content_length=ContentLength,
                   content_md5=ContentMd5,
                   block_size=BlockSize,
-                  blocks_remaining=Blocks}.
+                  blocks_remaining=Blocks,
+                  metadata=MetaData}.
 
 %% @doc Remove a chunk from the
 %%      blocks_remaining field of Manifest
