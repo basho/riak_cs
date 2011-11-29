@@ -13,7 +13,7 @@
 -include("riak_moss.hrl").
 
 %% API
--export([start_link/1,
+-export([start_link/0,
          initialize/6,
          write_root/1,
          update_root/2,
@@ -42,10 +42,9 @@
 %% ===================================================================
 
 %% @doc Start a `riak_moss_writer'.
--spec start_link([term()]) ->
-                        {ok, pid()} | {error, term()}.
-start_link(Args) ->
-    gen_server:start_link(?MODULE, Args, []).
+-spec start_link() -> {ok, pid()} | {error, term()}.
+start_link() ->
+    gen_server:start_link(?MODULE, [], []).
 
 %% @doc Setup some state information once the
 %% server has started.
@@ -57,8 +56,8 @@ start_link(Args) ->
                  pos_integer()) -> ok.
 initialize(Pid, FsmPid, Bucket, FileName, FileSize, BlockSize) ->
     gen_server:cast(Pid, {initialize,
-                          Bucket,
                           FsmPid,
+                          Bucket,
                           FileName,
                           FileSize,
                           BlockSize}).
@@ -84,8 +83,8 @@ write_block(Pid, BlockID, Data) ->
 %% ===================================================================
 
 %% @doc Initialize the server.
--spec init([term()]) -> {ok, state()} | {stop, term()}.
-init(_Args) ->
+-spec init([]) -> {ok, state()} | {stop, term()}.
+init([]) ->
     %% Get a connection to riak
     case riak_moss_lfs_utils:riak_connection() of
         {ok, RiakPid} ->
@@ -106,8 +105,7 @@ handle_call(_Event, _From, State) ->
 %% the exported functions.
 -spec handle_cast(term(), state()) ->
                          {noreply, state()}.
-handle_cast({initialize, Bucket, FsmPid, FileName, FileSize, BlockSize}, State) ->
-
+handle_cast({initialize, FsmPid, Bucket, FileName, FileSize, BlockSize}, State) ->
     gen_fsm:send_event(FsmPid, writer_ready),
     {noreply, State#state{bucket=Bucket,
                           fsm_pid=FsmPid,
@@ -144,9 +142,12 @@ handle_cast({update_root, UpdateOp}, State=#state{bucket=Bucket,
     end,
     {noreply, State};
 handle_cast({write_block, BlockID, Data}, State=#state{bucket=Bucket,
+                                                       filename=FileName,
                                                        fsm_pid=FsmPid,
-                                                       riak_pid=RiakPid}) ->
-    case write_data_block(RiakPid, Bucket, BlockID, Data) of
+                                                       riak_pid=RiakPid,
+                                                       uuid=UUID}) ->
+    BlockName = riak_moss_lfs_utils:block_name(FileName, UUID, BlockID),
+    case write_data_block(RiakPid, Bucket, BlockName, Data) of
         ok ->
             gen_fsm:send_event(FsmPid, {block_written, BlockID});
         {error, _Reason} ->
@@ -204,7 +205,7 @@ write_root_block(Pid, Bucket, FileName, UUID, FileSize, BlockSize) ->
         {error, notfound} ->
             ok
     end,
-    Obj = riakc_obj:new(Bucket, FileName, Manifest),
+    Obj = riakc_obj:new(Bucket, FileName, term_to_binary(Manifest)),
     riakc_pb_socket:put(Pid, Obj).
 
 %% @private
@@ -214,21 +215,28 @@ write_root_block(Pid, Bucket, FileName, UUID, FileSize, BlockSize) ->
 update_root_block(Pid, Bucket, FileName, _UUID, {block_ready, BlockID}) ->
     case riakc_pb_socket:get(Pid, Bucket, FileName) of
         {ok, Obj} ->
-            Manifest = binary_to_term(riakc_obj:get_value()),
+            Manifest = binary_to_term(riakc_obj:get_value(Obj)),
             %% @TODO Check if the UUID is different
             BlocksRemaining = Manifest#lfs_manifest.blocks_remaining,
             UpdBlocksRemaining = sets:del_element(BlockID, BlocksRemaining),
+            case sets:to_list(UpdBlocksRemaining) of
+                [] ->
+                    Active = true,
+                    Finished = httpd_util:rfc1123_date(),
+                    Status = all_blocks_written;
+                _ ->
+                    Active = false,
+                    Finished = undefined,
+                    Status = root_ready
+            end,
             UpdManifest =
-                Manifest#lfs_manifest{blocks_remaining=UpdBlocksRemaining},
+                Manifest#lfs_manifest{active=Active,
+                                      finished=Finished,
+                                      blocks_remaining=UpdBlocksRemaining},
             UpdObj = riakc_obj:update_value(Obj, term_to_binary(UpdManifest)),
             case riakc_pb_socket:put(Pid, UpdObj) of
                 ok ->
-                    case sets:to_list(UpdBlocksRemaining) of
-                        [] ->
-                            {ok, all_blocks_written};
-                        _ ->
-                            {ok, root_ready}
-                    end;
+                    {ok, Status};
                 {error, Reason1} ->
                     {error, Reason1}
             end;
@@ -240,6 +248,6 @@ update_root_block(Pid, Bucket, FileName, _UUID, {block_ready, BlockID}) ->
 %% @doc Write a data block of a file to Riak.
 -spec write_data_block(pid(), binary(), binary(), binary()) ->
                               ok | {error, term()}.
-write_data_block(Pid, Bucket, BlockId, Data) ->
-    Obj = riakc_obj:new(Bucket, BlockId, Data),
+write_data_block(Pid, Bucket, BlockName, Data) ->
+    Obj = riakc_obj:new(Bucket, BlockName, Data),
     riakc_pb_socket:put(Pid, Obj).

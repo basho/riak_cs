@@ -11,7 +11,7 @@
 -behaviour(gen_fsm).
 
 %% API
--export([start_link/1]).
+-export([start_link/6]).
 
 %% gen_fsm callbacks
 -export([init/1,
@@ -25,24 +25,32 @@
          code_change/4]).
 
 
--record(state, {filename :: binary(),
+-record(state, {bucket :: binary(),
+                filename :: binary(),
                 data :: [binary()],
                 writer_pid :: pid(),
                 file_size :: pos_integer(),
                 block_size :: pos_integer(),
-                next_block_id=1 :: pos_integer(),
+                next_block_id=0 :: pos_integer(),
                 raw_data :: undefined | binary(),
                 timeout :: timeout()}).
 -type state() :: #state{}.
+
 %% ===================================================================
 %% Public API
 %% ===================================================================
 
 %% @doc Start a `riak_moss_put_fsm'.
--spec start_link([term()]) ->
+-spec start_link(binary(),
+                 string(),
+                 pos_integer(),
+                 pos_integer(),
+                 binary(),
+                 timeout()) ->
                         {ok, pid()} | ignore | {error, term()}.
-start_link(Args) ->
-    gen_fsm:start_link(?MODULE, [Args], []).
+start_link(Bucket, Name, FileSize, BlockSize, Data, Timeout) ->
+    Args = [Bucket, Name, FileSize, BlockSize, Data, Timeout],
+    gen_fsm:start_link(?MODULE, Args, []).
 
 %% ====================================================================
 %% gen_fsm callbacks
@@ -50,8 +58,9 @@ start_link(Args) ->
 
 %% @doc Initialize the fsm.
 -spec init([term()]) -> {ok, initialize, state(), 0}.
-init([Name, FileSize, BlockSize, Data, Timeout]) ->
-    State = #state{filename=list_to_binary(Name),
+init([Bucket, Name, FileSize, BlockSize, Data, Timeout]) ->
+    State = #state{bucket=Bucket,
+                   filename=list_to_binary(Name),
                    file_size=FileSize,
                    block_size=BlockSize,
                    raw_data=Data,
@@ -62,7 +71,8 @@ init([Name, FileSize, BlockSize, Data, Timeout]) ->
 -spec initialize(timeout, state()) ->
                         {next_state, write_root, state(), timeout()} |
                         {stop, term(), state()}.
-initialize(timeout, State=#state{filename=FileName,
+initialize(timeout, State=#state{bucket=Bucket,
+                                 filename=FileName,
                                  file_size=FileSize,
                                  block_size=BlockSize,
                                  raw_data=RawData,
@@ -73,6 +83,7 @@ initialize(timeout, State=#state{filename=FileName,
             %% Provide the writer with the file details
             riak_moss_writer:initialize(WriterPid,
                                         self(),
+                                        Bucket,
                                         FileName,
                                         FileSize,
                                         BlockSize),
@@ -114,13 +125,13 @@ write_root({block_written, BlockId}, State=#state{writer_pid=WriterPid,
                           state(),
                           non_neg_integer()}.
 write_block(root_ready, State=#state{data=Data,
-                                     next_block_id=BlockId,
+                                     next_block_id=BlockID,
                                      writer_pid=WriterPid,
                                      timeout=Timeout}) ->
     [NextBlock | RestData] = Data,
-    riak_moss_writer:write_block(WriterPid, BlockId, NextBlock),
+    riak_moss_writer:write_block(WriterPid, BlockID, NextBlock),
     UpdState = State#state{data=RestData,
-                           next_block_id=BlockId+1},
+                           next_block_id=BlockID+1},
     {next_state, write_root, UpdState, Timeout};
 write_block(all_blocks_written, State) ->
     %% @TODO Respond to the request initiator

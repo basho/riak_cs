@@ -55,7 +55,7 @@ init([]) ->
     Type = worker,
 
     WriterSpec = {undefined,
-                  {riak_moss_put_fsm, start_link, []},
+                  {riak_moss_writer, start_link, []},
                   Restart, Shutdown, Type, [riak_moss_writer]},
 
     {ok, {SupFlags, [WriterSpec]}}.
