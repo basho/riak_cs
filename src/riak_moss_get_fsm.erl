@@ -17,6 +17,8 @@
 
 -export([start_link/3,
          prepare/2,
+         normal_retriever/3,
+         blocks_retriever/2,
          waiting_value/2,
          waiting_chunk_command/2,
          waiting_chunks/2]).
@@ -91,7 +93,8 @@ waiting_chunk_command({continue, _}, #state{from=From, value_cache=CachedValue}=
             %% we don't actually have to start
             %% retrieving chunks, as we already
             %% have the value cached in our State
-            From ! {done, CachedValue}
+            From ! {done, CachedValue},
+            {stop, normal, State}
     end.
 
 waiting_chunks({chunk, {ChunkSeq, ChunkValue}}, #state{from=From}=State) ->
