@@ -18,7 +18,8 @@
 
 -include("riak_moss.hrl").
 
--export([is_manifest/1,
+-export([new_manifest/5,
+         is_manifest/1,
          remove_block/2,
          still_waiting/1,
          block_count/1,
@@ -45,6 +46,16 @@
     finished :: term(),
     active :: boolean(),
     blocks_remaining = sets:new()}).
+
+new_manifest(BKey, UUID, Metadata, ContentLength, ContentMd5) ->
+    #lfs_manifest{version=v1,
+                  uuid=UUID,
+                  metadata=Metadata,
+                  bkey=BKey,
+                  block_size=?LFS_BLOCK_SIZE,
+                  content_length=ContentLength,
+                  content_md5=ContentMd5,
+                  blocks_remaining=initial_blocks(ContentLength)}.
 
 %% @doc Returns true if Value is
 %%      a manifest record

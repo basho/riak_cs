@@ -23,8 +23,21 @@ lfs_utils_test_() ->
      fun setup/0,
      fun teardown/1,
      [
-      fun test_not_manifest/0
+      fun test_not_manifest/0,
+      fun test_is_manifest/0
      ]}.
 
 test_not_manifest() ->
     ?assertNot(riak_moss_lfs_utils:is_manifest(foo)).
+
+test_is_manifest() ->
+    Manifest = riak_moss_lfs_utils:new_manifest({<<"foo">>, <<"bar">>},
+            <<"uuid">>,
+            dict:new(),
+            (10485760 * 100), %% block size * 100
+            <<"2522ccc1ca2a458eca94a9576d4b71c2">>),
+    ?assert(riak_moss_lfs_utils:is_manifest(Manifest)).
+
+
+
+
