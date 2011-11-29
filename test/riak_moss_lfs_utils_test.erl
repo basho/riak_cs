@@ -24,7 +24,12 @@ lfs_utils_test_() ->
      fun teardown/1,
      [
       fun test_not_manifest/0,
-      fun test_is_manifest/0
+      fun test_is_manifest/0,
+      fun test_block_count_1/0,
+      fun test_block_count_2/0,
+      fun test_block_count_3/0,
+      fun test_block_count_4/0,
+      fun test_metadata_from_manifest/0
      ]}.
 
 test_not_manifest() ->
@@ -38,6 +43,23 @@ test_is_manifest() ->
             <<"2522ccc1ca2a458eca94a9576d4b71c2">>),
     ?assert(riak_moss_lfs_utils:is_manifest(Manifest)).
 
+test_block_count_1() ->
+    ?assertEqual(riak_moss_lfs_utils:block_count(2, 1), 2).
 
+test_block_count_2() ->
+    ?assertEqual(riak_moss_lfs_utils:block_count(11, 2), 6).
+    
+test_block_count_3() ->
+    ?assertEqual(riak_moss_lfs_utils:block_count(100, 100), 1).
 
+test_block_count_4() ->
+    ?assertEqual(riak_moss_lfs_utils:block_count(50, 100), 1).
 
+test_metadata_from_manifest() ->
+    Meta = dict:new(),
+    Manifest = riak_moss_lfs_utils:new_manifest({<<"foo">>, <<"bar">>},
+            <<"uuid">>,
+            Meta,
+            (10485760 * 100), %% block size * 100
+            <<"2522ccc1ca2a458eca94a9576d4b71c2">>),
+    ?assertEqual(Meta, riak_moss_lfs_utils:metadata_from_manifest(Manifest)).
