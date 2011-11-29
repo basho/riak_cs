@@ -24,14 +24,13 @@
          terminate/3,
          code_change/4]).
 
-
 -record(state, {bucket :: binary(),
                 filename :: binary(),
-                data :: [binary()],
-                writer_pid :: pid(),
+                data :: undefined | [binary()],
+                writer_pid :: undefined | pid(),
                 file_size :: pos_integer(),
                 block_size :: pos_integer(),
-                next_block_id=0 :: pos_integer(),
+                next_block_id=0 :: non_neg_integer(),
                 raw_data :: undefined | binary(),
                 timeout :: timeout()}).
 -type state() :: #state{}.
@@ -57,7 +56,8 @@ start_link(Bucket, Name, FileSize, BlockSize, Data, Timeout) ->
 %% ====================================================================
 
 %% @doc Initialize the fsm.
--spec init([term()]) -> {ok, initialize, state(), 0}.
+-spec init([binary() | pos_integer() | timeout()]) ->
+                  {ok, initialize, state(), 0}.
 init([Bucket, Name, FileSize, BlockSize, Data, Timeout]) ->
     State = #state{bucket=Bucket,
                    filename=list_to_binary(Name),
