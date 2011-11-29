@@ -16,7 +16,8 @@
                       doc :: term(),
                       putctype :: string(),
                       bucket :: list(),
-                      key :: list()}).
+                      key :: list(),
+                      size :: non_neg_integer()}).
 
 -record(lfs_manifest, {
     version=1 :: integer(),

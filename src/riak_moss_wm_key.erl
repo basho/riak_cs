@@ -104,16 +104,16 @@ valid_entity_length(RD, Ctx) ->
                             riak_moss_s3_response:api_error(
                               entity_too_large, RD, Ctx);
                         true ->
-                            {true, RD, Ctx}
+                            {true, RD, Ctx#key_context{size=Length}}
                     end;
-                                
+
                 _ ->
                     {false, RD, Ctx}
             end;
         _ ->
             {true, RD, Ctx}
     end.
-        
+
 
 -spec content_types_provided(term(), term()) ->
     {[{string(), atom()}], term(), term()}.
@@ -146,7 +146,7 @@ produce_body(RD, Ctx) ->
     DocCtx = riak_moss_wm_utils:ensure_doc(Ctx),
     Doc = DocCtx#key_context.doc,
     case Doc of
-        notfound -> 
+        notfound ->
             {{halt, 404}, RD, DocCtx};
         _ ->
             {riakc_obj:get_value(Doc), RD, DocCtx}
@@ -197,22 +197,27 @@ content_types_accepted(RD, Ctx) ->
 
 -spec accept_body(term(), term()) ->
     {true, term(), term()}.
+accept_body(RD, Ctx=#key_context{}) ->
+    accept_streambody(RD, Ctx, <<>>, wrq:stream_req_body(RD, ?DEFAULT_LFS_BLOCK_SIZE)).
+
+accept_streambody(RD, Ctx=#key_context{}, Buf, {Data, Next}) ->
+    NewBuf = <<Buf/binary,Data/binary>>,
+    if is_function(Next) ->
+            accept_streambody(RD, Ctx, NewBuf, Next());
+       Next =:= done ->
+            write_object(RD, Ctx, NewBuf)
+    end.
+
 %% TODO:
 %% We need to do some checking to make sure
 %% the bucket exists for the user who is doing
 %% this PUT
-accept_body(RD, Ctx=#key_context{bucket=Bucket, key=Key,
-                   context=Context, putctype=CType}) ->
+write_object(RD, Ctx=#key_context{bucket=Bucket,key=Key,context=Context,putctype=CType}, Data) ->
     User = Context#context.user,
     KeyID = User#moss_user.key_id,
-    %% TODO:
-    %% what happens if the body
-    %% is empty?
-    Body = wrq:req_body(RD),
-    %% TODO:
     %% we should be ripping some metadata
     %% out of the request headers
     Metadata = dict:from_list([{<<"content-type">>, CType}]),
-    riak_moss_riakc:put_object(KeyID, Bucket, Key, Body, Metadata),
-    {true, wrq:set_resp_header("ETag", 
-      "\"" ++ riak_moss:binary_to_hexlist(crypto:md5(Body)) ++ "\"", RD), Ctx}.
+    riak_moss_riakc:put_object(KeyID, Bucket, Key, Data, Metadata),
+    {true, wrq:set_resp_header("ETag",
+      "\"" ++ riak_moss:binary_to_hexlist(crypto:md5(Data)) ++ "\"", RD), Ctx}.
