@@ -61,7 +61,7 @@
 %% @doc The number of blocks that this
 %%      size will be broken up into
 block_count(ContentLength) ->
-    block_count(ContentLength, ?DEFAULT_LFS_BLOCK_SIZE).
+    block_count(ContentLength, block_size()).
 
 %% @doc The number of blocks that this
 %%      size will be broken up into
