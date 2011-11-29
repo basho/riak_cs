@@ -27,7 +27,8 @@ lfs_utils_test_() ->
       fun test_is_manifest/0,
       fun test_block_count_1/0,
       fun test_block_count_2/0,
-      fun test_block_count_3/0
+      fun test_block_count_3/0,
+      fun test_block_count_4/0
      ]}.
 
 test_not_manifest() ->
@@ -49,3 +50,6 @@ test_block_count_2() ->
     
 test_block_count_3() ->
     ?assertEqual(riak_moss_lfs_utils:block_count(100, 100), 1).
+
+test_block_count_4() ->
+    ?assertEqual(riak_moss_lfs_utils:block_count(50, 100), 1).
