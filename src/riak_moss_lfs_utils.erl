@@ -40,16 +40,16 @@
 
 %% Opaque record for a large-file manifest.
 -record(lfs_manifest, {
-    version :: atom(),
+    version=1 :: integer(),
     uuid :: binary(),
-    metadata :: dict(),
     block_size :: integer(),
-    bkey :: {term(), term()},
+    bkey :: {binary(), binary()},
     content_length :: integer(),
     content_md5 :: term(),
-    created :: term(),
+    metadata :: dict(),
+    created=httpd_util:rfc1123_date() :: term(), % @TODO Maybe change to iso8601
     finished :: term(),
-    active :: boolean(),
+    active=false :: boolean(),
     blocks_remaining = sets:new()}).
 
 -type lfs_manifest() :: #lfs_manifest{}.
@@ -201,11 +201,8 @@ riak_connection() ->
 riak_connection(Host, Port) ->
     riakc_pb_socket:start_link(Host, Port).
 
-set_to_sorted_list(Set) ->
-    lists:sort(sets:to_list(Set)).
-
 sorted_blocks_remaining(#lfs_manifest{blocks_remaining=Remaining}) ->
-    set_to_sorted_list(Remaining).
+    lists:sort(sets:to_list(Remaining)).
 
 %% @doc Return true or false
 %%      depending on whether
