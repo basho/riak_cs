@@ -23,8 +23,8 @@ lfs_utils_test_() ->
      fun setup/0,
      fun teardown/1,
      [
-      fun test/0
+      fun test_not_manifest/0
      ]}.
 
-test() ->
-    ?assertEqual(foo, foo).
+test_not_manifest() ->
+    ?assertNot(riak_moss_lfs_utils:is_manifest(foo)).
