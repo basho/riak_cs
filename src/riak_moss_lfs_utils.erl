@@ -18,20 +18,25 @@
 
 -include("riak_moss.hrl").
 
--export([new_manifest/5,
-         is_manifest/1,
-         remove_block/2,
-         still_waiting/1,
-         block_count/1,
-         block_name/3,
-         block_name_to_term/1,
-         initial_blocks/1,
-         sorted_blocks_remaining/1,
+-export([block_count/1,
+         block_count/2,
          block_keynames/1,
          block_keynames/3,
+         block_name/3,
+         block_name_to_term/1,
+         block_size/0,
+         finalize_manifest/1,
+         initial_blocks/1,
+         initial_blocks/2,
+         is_manifest/1,
          metadata_from_manifest/1,
+         new_manifest/5,
+         new_manifest/6,
+         remove_block/2,
          riak_connection/0,
-         riak_connection/2]).
+         riak_connection/2,
+         sorted_blocks_remaining/1,
+         still_waiting/1]).
 
 %% Opaque record for a large-file manifest.
 -record(lfs_manifest, {
@@ -47,53 +52,20 @@
     active :: boolean(),
     blocks_remaining = sets:new()}).
 
-new_manifest(BKey, UUID, Metadata, ContentLength, ContentMd5) ->
-    #lfs_manifest{version=v1,
-                  uuid=UUID,
-                  metadata=Metadata,
-                  bkey=BKey,
-                  block_size=?LFS_BLOCK_SIZE,
-                  content_length=ContentLength,
-                  content_md5=ContentMd5,
-                  blocks_remaining=initial_blocks(ContentLength)}.
+-type lfs_manifest() :: #lfs_manifest{}.
 
-%% @doc Returns true if Value is
-%%      a manifest record
-is_manifest(Value) ->
-    is_record(Value, lfs_manifest).
-
-%% @doc Remove a chunk from the
-%%      blocks_remaining field of Manifest
-remove_block(Manifest, Chunk) ->
-    Remaining = Manifest#lfs_manifest.blocks_remaining,
-    Updated = sets:del_element(Chunk, Remaining),
-    Manifest#lfs_manifest{blocks_remaining=Updated}.
-
-%% @doc Return true or false
-%%      depending on whether
-%%      we're still waiting
-%%      to accumulate more chunks
-still_waiting(#lfs_manifest{blocks_remaining=Remaining}) ->
-    sets:size(Remaining) =/= 0.
-
-%% @doc A set of all of the blocks that
-%%      make up the file.
-initial_blocks(ContentLength) ->
-    UpperBound = block_count(ContentLength),
-    Seq = lists:seq(0, (UpperBound - 1)),
-    sets:from_list(Seq).
-
-block_name(Key, UUID, Number) ->
-    term_to_binary({Key, UUID, Number}).
-
-block_name_to_term(Name) ->
-    binary_to_term(Name).
+%% -------------------------------------------------------------------
+%% Public API
+%% -------------------------------------------------------------------
 
 %% @doc The number of blocks that this
 %%      size will be broken up into
 block_count(ContentLength) ->
-    block_count(ContentLength, ?LFS_BLOCK_SIZE).
+    block_count(ContentLength, ?DEFAULT_LFS_BLOCK_SIZE).
 
+%% @doc The number of blocks that this
+%%      size will be broken up into
+-spec block_count(pos_integer(), pos_integer()) -> non_neg_integer().
 block_count(ContentLength, BlockSize) ->
     Quotient = ContentLength div BlockSize,
     case ContentLength rem BlockSize of
@@ -102,12 +74,6 @@ block_count(ContentLength, BlockSize) ->
         _ ->
             Quotient + 1
     end.
-
-set_to_sorted_list(Set) ->
-    lists:sort(sets:to_list(Set)).
-
-sorted_blocks_remaining(#lfs_manifest{blocks_remaining=Remaining}) ->
-    set_to_sorted_list(Remaining).
 
 block_keynames(#lfs_manifest{bkey={_, KeyName},
                              uuid=UUID}=Manifest) ->
@@ -119,10 +85,98 @@ block_keynames(KeyName, UUID, BlockList) ->
         {BlockSeq, block_name(KeyName, UUID, BlockSeq)} end,
     lists:map(MapFun, BlockList).
 
+block_name(Key, UUID, Number) ->
+    term_to_binary({Key, UUID, Number}).
+
+block_name_to_term(Name) ->
+    binary_to_term(Name).
+
+%% @doc Return the configured block size
+-spec block_size() -> pos_integer().
+block_size() ->
+    case application:get_env(riak_moss, lfs_block_size) of
+        undefined ->
+            ?DEFAULT_LFS_BLOCK_SIZE;
+        BlockSize ->
+            case BlockSize > ?DEFAULT_LFS_BLOCK_SIZE of
+                true ->
+                    ?DEFAULT_LFS_BLOCK_SIZE;
+                false ->
+                    BlockSize
+            end
+    end.
+
+%% @doc Finalize the manifest of a file by
+%% marking it as active, setting a finished time,
+%% and setting blocks_remaining as an empty list.
+-spec finalize_manifest(lfs_manifest()) -> lfs_manifest().
+finalize_manifest(Manifest) ->
+    Manifest#lfs_manifest{active=true,
+                          finished=httpd_util:rfc1123_date(),
+                          blocks_remaining=sets:new()}.
+
+%% @doc A set of all of the blocks that
+%%      make up the file.
+-spec initial_blocks(pos_integer()) -> set().
+initial_blocks(ContentLength) ->
+    UpperBound = block_count(ContentLength),
+    Seq = lists:seq(0, (UpperBound - 1)),
+    sets:from_list(Seq).
+
+%% @doc A set of all of the blocks that
+%%      make up the file.
+-spec initial_blocks(pos_integer(), pos_integer()) -> set().
+initial_blocks(ContentLength, BlockSize) ->
+    UpperBound = block_count(ContentLength, BlockSize),
+    Seq = lists:seq(0, (UpperBound - 1)),
+    sets:from_list(Seq).
+
+%% @doc Returns true if Value is
+%%      a manifest record
+is_manifest(Value) ->
+    is_record(Value, lfs_manifest).
+
 %% @doc Return the metadata for the object
 %%      represented in the manifest
 metadata_from_manifest(#lfs_manifest{metadata=Metadata}) ->
     Metadata.
+
+%% @doc Initialize a new file manifest
+-spec new_manifest(binary(),
+                   binary(),
+                   binary(),
+                   pos_integer(),
+                   term()) -> lfs_manifest().
+new_manifest(Bucket, FileName, UUID, ContentLength, ContentMd5) ->
+    new_manifest(Bucket,
+                 FileName,
+                 UUID,
+                 ContentLength,
+                 ContentMd5,
+                 block_size()).
+
+%% @doc Initialize a new file manifest
+-spec new_manifest(binary(),
+                   binary(),
+                   binary(),
+                   pos_integer(),
+                   term(),
+                   pos_integer()) -> lfs_manifest().
+new_manifest(Bucket, FileName, UUID, ContentLength, ContentMd5, BlockSize) ->
+    Blocks = initial_blocks(ContentLength, BlockSize),
+    #lfs_manifest{bkey={Bucket, FileName},
+                  uuid=UUID,
+                  content_length=ContentLength,
+                  content_md5=ContentMd5,
+                  block_size=BlockSize,
+                  blocks_remaining=Blocks}.
+
+%% @doc Remove a chunk from the
+%%      blocks_remaining field of Manifest
+remove_block(Manifest, Chunk) ->
+    Remaining = Manifest#lfs_manifest.blocks_remaining,
+    Updated = sets:del_element(Chunk, Remaining),
+    Manifest#lfs_manifest{blocks_remaining=Updated}.
 
 %% @doc Get a protobufs connection to the riak cluster
 %% using information from the application environment.
@@ -146,3 +200,16 @@ riak_connection() ->
 -spec riak_connection(string(), pos_integer()) -> {ok, pid()} | {error, term()}.
 riak_connection(Host, Port) ->
     riakc_pb_socket:start_link(Host, Port).
+
+set_to_sorted_list(Set) ->
+    lists:sort(sets:to_list(Set)).
+
+sorted_blocks_remaining(#lfs_manifest{blocks_remaining=Remaining}) ->
+    set_to_sorted_list(Remaining).
+
+%% @doc Return true or false
+%%      depending on whether
+%%      we're still waiting
+%%      to accumulate more chunks
+still_waiting(#lfs_manifest{blocks_remaining=Remaining}) ->
+    sets:size(Remaining) =/= 0.

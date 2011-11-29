@@ -20,5 +20,5 @@
 
 -define(USER_BUCKET, <<"moss.users">>).
 -define(MAX_CONTENT_LENGTH, 10485760).
--define(LFS_BLOCK_SIZE, 10485760).
+-define(DEFAULT_LFS_BLOCK_SIZE, 10485760).
 
