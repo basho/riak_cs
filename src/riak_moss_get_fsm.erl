@@ -33,6 +33,12 @@
 start_link(From, Bucket, Key) ->
     gen_fsm:start_link(?MODULE, [From, Bucket, Key], []).
 
+riak_object(Pid, Object) ->
+    gen_fsm:send_event(Pid, {object, Object}).
+
+chunk(Pid, ChunkSeq, ChunkValue) ->
+    gen_fsm:send_event(Pid, {chunk, {ChunkSeq, ChunkValue}}).
+
 init([From, Bucket, Key]) ->
     State = #state{from=From, bucket=Bucket, key=Key},
     %% purposely have the timeout happen
@@ -116,7 +122,7 @@ waiting_chunks({chunk, {ChunkSeq, ChunkValue}}, #state{from=From}=State) ->
 %%      manifest or regular object
 normal_retriever(ReplyPid, Bucket, Key) ->
     {ok, RiakObject} = riak_moss_riakc:get_object(Bucket, Key),
-    gen_fsm:send_event(ReplyPid, {object, RiakObject}).
+    riak_object(ReplyPid, RiakObject).
 
 blocks_retriever(Pid, Manifest) ->
     BlockKeys = riak_moss_lfs_utils:block_keynames(Manifest),
@@ -130,7 +136,7 @@ blocks_retriever(Pid, Manifest) ->
         %% the sequence number too, not just
         %% the raw value. It's ok for now
         %% because we're doing everything sequentially.
-        gen_fsm:send_event(Pid, {chunk, {ChunkSeq, Value}})
+        chunk(Pid, ChunkSeq, Value)
     end,
     lists:foreach(Func, BlockKeys).
 
