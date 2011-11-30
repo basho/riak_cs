@@ -97,7 +97,7 @@ block_size() ->
     case application:get_env(riak_moss, lfs_block_size) of
         undefined ->
             ?DEFAULT_LFS_BLOCK_SIZE;
-        BlockSize ->
+        {ok, BlockSize} ->
             case BlockSize > ?DEFAULT_LFS_BLOCK_SIZE of
                 true ->
                     ?DEFAULT_LFS_BLOCK_SIZE;
