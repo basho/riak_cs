@@ -33,6 +33,6 @@
 -type lfs_manifest() :: #lfs_manifest{}.
 
 -define(USER_BUCKET, <<"moss.users">>).
--define(MAX_CONTENT_LENGTH, 10485760).
--define(DEFAULT_LFS_BLOCK_SIZE, 10485760).
+-define(MAX_CONTENT_LENGTH,  5368709120).
+-define(DEFAULT_LFS_BLOCK_SIZE, 1048576).
 
