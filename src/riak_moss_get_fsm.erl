@@ -131,11 +131,6 @@ blocks_retriever(Pid, Manifest) ->
         %% replace the chunk_bucket
         %% with a real bucket name
         {ok, Value} = riak_moss_riakc:get_object("chunk_bucket", ChunkName),
-        %% TODO:
-        %% we probably need to send back
-        %% the sequence number too, not just
-        %% the raw value. It's ok for now
-        %% because we're doing everything sequentially.
         chunk(Pid, ChunkSeq, Value)
     end,
     lists:foreach(Func, BlockKeys).
