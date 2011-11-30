@@ -212,12 +212,15 @@ accept_streambody(RD, Ctx=#key_context{}, Buf, {Data, Next}) ->
 %% We need to do some checking to make sure
 %% the bucket exists for the user who is doing
 %% this PUT
-write_object(RD, Ctx=#key_context{bucket=Bucket,key=Key,context=Context,putctype=CType}, Data) ->
+write_object(RD, Ctx=#key_context{bucket=Bucket,key=Key,context=Context,putctype=CType,size=Size}, Data) ->
     User = Context#context.user,
     KeyID = User#moss_user.key_id,
+    {ok, Pid} = riak_moss_put_fsm:start_link(Bucket, Key, Size, ?DEFAULT_LFS_BLOCK_SIZE,
+                                             Data, 60000),
     %% we should be ripping some metadata
     %% out of the request headers
-    Metadata = dict:from_list([{<<"content-type">>, CType}]),
-    riak_moss_riakc:put_object(KeyID, Bucket, Key, Data, Metadata),
+    %Metadata = dict:from_list([{<<"content-type">>, CType}]),
+    %riak_moss_riakc:put_object(KeyID, Bucket, Key, Data, Metadata),
     {true, wrq:set_resp_header("ETag",
       "\"" ++ riak_moss:binary_to_hexlist(crypto:md5(Data)) ++ "\"", RD), Ctx}.
+
