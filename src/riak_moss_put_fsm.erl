@@ -188,6 +188,9 @@ start_writer() ->
 %% @doc Break up a data binary into a list of block-sized chunks
 data_blocks(<<>>, _, Blocks) ->
     lists:reverse(Blocks);
-data_blocks(Data, BlockSize, Blocks) ->
+data_blocks(Data, BlockSize, Blocks) when size(Data) > BlockSize ->
     <<BlockData:BlockSize/binary, RestData/binary>> = Data,
-    data_blocks(RestData, BlockSize, [BlockData | Blocks]).
+    data_blocks(RestData, BlockSize, [BlockData | Blocks]);
+data_blocks(Data, BlockSize, Blocks) ->
+    data_blocks(<<>>, BlockSize, [Data | Blocks]).
+
