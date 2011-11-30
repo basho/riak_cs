@@ -31,7 +31,6 @@
          is_manifest/1,
          metadata_from_manifest/1,
          new_manifest/6,
-         new_manifest/7,
          remove_block/2,
          riak_connection/0,
          riak_connection/2,
@@ -60,6 +59,7 @@
 
 %% @doc The number of blocks that this
 %%      size will be broken up into
+-spec block_count(pos_integer()) -> non_neg_integer().
 block_count(ContentLength) ->
     block_count(ContentLength, block_size()).
 
@@ -149,29 +149,7 @@ metadata_from_manifest(#lfs_manifest{metadata=Metadata}) ->
                    term(),
                    dict()) -> lfs_manifest().
 new_manifest(Bucket, FileName, UUID, ContentLength, ContentMd5, MetaData) ->
-    new_manifest(Bucket,
-                 FileName,
-                 UUID,
-                 ContentLength,
-                 ContentMd5,
-                 MetaData,
-                 block_size()).
-
-%% @doc Initialize a new file manifest
--spec new_manifest(binary(),
-                   binary(),
-                   binary(),
-                   pos_integer(),
-                   term(),
-                   dict(),
-                   pos_integer()) -> lfs_manifest().
-new_manifest(Bucket,
-             FileName,
-             UUID,
-             ContentLength,
-             ContentMd5,
-             MetaData,
-             BlockSize) ->
+    BlockSize = block_size(),
     Blocks = initial_blocks(ContentLength, BlockSize),
     #lfs_manifest{bkey={Bucket, FileName},
                   uuid=UUID,
