@@ -42,8 +42,7 @@ test_is_manifest() ->
                                          <<"uuid">>,
                                          1024,
                                          <<"2522ccc1ca2a458eca94a9576d4b71c2">>,
-                                         dict:new(),
-                                         (10485760 * 100)), %% block size * 100
+                                         dict:new()),
     ?assert(riak_moss_lfs_utils:is_manifest(Manifest)).
 
 test_block_count_1() ->
@@ -66,7 +65,6 @@ test_metadata_from_manifest() ->
                                          <<"uuid">>,
                                          1024,
                                          <<"2522ccc1ca2a458eca94a9576d4b71c2">>,
-                                         Meta,
-                                         (10485760 * 100)), %% block size * 100
+                                         Meta),
 
     ?assertEqual(Meta, riak_moss_lfs_utils:metadata_from_manifest(Manifest)).
