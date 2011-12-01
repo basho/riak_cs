@@ -28,7 +28,7 @@
                 key :: term(),
                 value_cache :: binary(), 
                 manifest :: term(),
-                block_keys :: list()}).
+                blocks_left :: list()}).
 
 start_link(From, Bucket, Key) ->
     gen_fsm:start_link(?MODULE, [From, Bucket, Key], []).
@@ -59,7 +59,7 @@ prepare(timeout, #state{bucket=Bucket, key=Key}=State) ->
 waiting_value({object, Value}, #state{from=From}=State) ->
     %% determine if the object is a normal
     %% object, or a manifest object
-    case riak_moss_lfs_utils:is_manifest(Value) of
+    case riak_moss_lfs_utils:is_manifest(binary_to_term(riakc_obj:get_value(Value))) of
 
     %% TODO:
     %% create a shared func for sending messages
@@ -74,19 +74,20 @@ waiting_value({object, Value}, #state{from=From}=State) ->
             %% we don't deal with siblings here
             %% at all
             Metadata = riakc_obj:get_metadata(Value),
-            CachedValue = riakc_obj:get_value(Value),
+            CachedValue = binary_to_term(riakc_obj:get_value(Value)),
             From ! {metadata, Metadata},
             {next_state, waiting_chunk_command, State#state{value_cache=CachedValue}};
         true ->
-            Metadata = riak_moss_lfs_utils:metadata_from_manifest(Value),
+            Manifest = binary_to_term(riakc_obj:get_value(Value)),
+            Metadata = riak_moss_lfs_utils:metadata_from_manifest(Manifest),
             From ! {metadata, Metadata},
-            StateWithMani = State#state{manifest=Value},
+            StateWithMani = State#state{manifest=Manifest},
             {next_state, waiting_chunk_command, StateWithMani}
     end.
 
 waiting_chunk_command({stop, _}, State) ->
     {stop, normal, State};
-waiting_chunk_command({continue, _}, #state{from=From, value_cache=CachedValue}=State) ->
+waiting_chunk_command({continue, _}, #state{from=From, value_cache=CachedValue, manifest=Manifest}=State) ->
     case CachedValue of
         undefined ->
             %% TODO:
@@ -94,7 +95,10 @@ waiting_chunk_command({continue, _}, #state{from=From, value_cache=CachedValue}=
             %% will grab the chunks and
             %% start sending us
             %% chunk events
-            {next_state, waiting_chunks, State};
+            BlockKeys = riak_moss_lfs_utils:initial_block_keynames(Manifest),
+            BlocksLeft = sets:from_list([X || {X, _} <- BlockKeys]),
+            spawn_link(?MODULE, blocks_retriever, [self(), BlockKeys]),
+            {next_state, waiting_chunks, State#state{blocks_left=BlocksLeft}};
         _ ->
             %% we don't actually have to start
             %% retrieving chunks, as we already
@@ -103,18 +107,19 @@ waiting_chunk_command({continue, _}, #state{from=From, value_cache=CachedValue}=
             {stop, normal, State}
     end.
 
-waiting_chunks({chunk, {ChunkSeq, ChunkValue}}, #state{from=From}=State) ->
+waiting_chunks({chunk, {ChunkSeq, ChunkValue}}, #state{from=From, blocks_left=Remaining}=State) ->
     %% we're assuming that we're receiving the
     %% chunks synchronously, and that we can
     %% send them back to WM as we get them
-    NewState = riak_moss_lfs_utils:remove_block(State, ChunkSeq),
-    case riak_moss_lfs_utils:still_waiting(NewState) of
-        true ->
-            From ! {chunk, ChunkValue},
-            {next_state, waiting_chunks, NewState};
-        false ->
+    NewRemaining = sets:del_element(ChunkSeq, Remaining),
+    NewState = State#state{blocks_left=NewRemaining},
+    case sets:size(NewRemaining) of
+        0 ->
             From ! {done, ChunkValue},
-            {stop, normal, NewState}
+            {stop, normal, NewState};
+        _ ->
+            From ! {chunk, ChunkValue},
+            {next_state, waiting_chunks, NewState}
     end.
 
 %% @doc Retrieve the value at
@@ -124,13 +129,12 @@ normal_retriever(ReplyPid, Bucket, Key) ->
     {ok, RiakObject} = riak_moss_riakc:get_object(Bucket, Key),
     riak_object(ReplyPid, RiakObject).
 
-blocks_retriever(Pid, Manifest) ->
-    BlockKeys = riak_moss_lfs_utils:block_keynames(Manifest),
+blocks_retriever(Pid, BlockKeys) ->
     Func = fun({ChunkSeq, ChunkName}) ->
         %% TODO:
         %% replace the chunk_bucket
         %% with a real bucket name
-        {ok, Value} = riak_moss_riakc:get_object("chunk_bucket", ChunkName),
+        {ok, Value} = riak_moss_riakc:get_object(<<"filebucket">>, ChunkName),
         chunk(Pid, ChunkSeq, Value)
     end,
     lists:foreach(Func, BlockKeys).
