@@ -17,8 +17,8 @@
 
 -export([start_link/3,
          prepare/2,
-         normal_retriever/3,
-         blocks_retriever/2,
+         normal_retriever/4,
+         blocks_retriever/3,
          waiting_value/2,
          waiting_chunk_command/2,
          waiting_chunks/2]).
@@ -28,7 +28,8 @@
                 key :: term(),
                 value_cache :: binary(), 
                 manifest :: term(),
-                blocks_left :: list()}).
+                blocks_left :: list(),
+                get_module :: module()}).
 
 start_link(From, Bucket, Key) ->
     gen_fsm:start_link(?MODULE, [From, Bucket, Key], []).
@@ -40,7 +41,8 @@ chunk(Pid, ChunkSeq, ChunkValue) ->
     gen_fsm:send_event(Pid, {chunk, {ChunkSeq, ChunkValue}}).
 
 init([From, Bucket, Key]) ->
-    State = #state{from=From, bucket=Bucket, key=Key},
+    State = #state{from=From, bucket=Bucket, key=Key,
+                   get_module=riak_moss_riakc},
     %% purposely have the timeout happen
     %% so that we get called in the prepare
     %% state
@@ -49,11 +51,11 @@ init([From, Bucket, Key]) ->
 %% TODO:
 %% could this func use
 %% use a better name?
-prepare(timeout, #state{bucket=Bucket, key=Key}=State) ->
+prepare(timeout, #state{bucket=Bucket, key=Key, get_module=GetModule}=State) ->
     %% start the process that will
     %% fetch the value, be it manifest
     %% or regular object
-    spawn_link(?MODULE, normal_retriever, [self(), Bucket, Key]),
+    spawn_link(?MODULE, normal_retriever, [self(), GetModule, Bucket, Key]),
     {next_state, waiting_value, State}.
 
 waiting_value({object, Value}, #state{from=From}=State) ->
@@ -87,7 +89,10 @@ waiting_value({object, Value}, #state{from=From}=State) ->
 
 waiting_chunk_command({stop, _}, State) ->
     {stop, normal, State};
-waiting_chunk_command({continue, _}, #state{from=From, value_cache=CachedValue, manifest=Manifest}=State) ->
+waiting_chunk_command({continue, _}, #state{from=From,
+                                            value_cache=CachedValue,
+                                            manifest=Manifest,
+                                            get_module=GetModule}=State) ->
     case CachedValue of
         undefined ->
             %% TODO:
@@ -97,7 +102,7 @@ waiting_chunk_command({continue, _}, #state{from=From, value_cache=CachedValue, 
             %% chunk events
             BlockKeys = riak_moss_lfs_utils:initial_block_keynames(Manifest),
             BlocksLeft = sets:from_list([X || {X, _} <- BlockKeys]),
-            spawn_link(?MODULE, blocks_retriever, [self(), BlockKeys]),
+            spawn_link(?MODULE, blocks_retriever, [self(), GetModule, BlockKeys]),
             {next_state, waiting_chunks, State#state{blocks_left=BlocksLeft}};
         _ ->
             %% we don't actually have to start
@@ -125,16 +130,16 @@ waiting_chunks({chunk, {ChunkSeq, ChunkValue}}, #state{from=From, blocks_left=Re
 %% @doc Retrieve the value at
 %%      Bucket, Key, whether it's a
 %%      manifest or regular object
-normal_retriever(ReplyPid, Bucket, Key) ->
-    {ok, RiakObject} = riak_moss_riakc:get_object(Bucket, Key),
+normal_retriever(ReplyPid, GetModule, Bucket, Key) ->
+    {ok, RiakObject} = GetModule:get_object(Bucket, Key),
     riak_object(ReplyPid, RiakObject).
 
-blocks_retriever(Pid, BlockKeys) ->
+blocks_retriever(Pid, GetModule, BlockKeys) ->
     Func = fun({ChunkSeq, ChunkName}) ->
         %% TODO:
         %% replace the chunk_bucket
         %% with a real bucket name
-        {ok, Value} = riak_moss_riakc:get_object(<<"filebucket">>, ChunkName),
+        {ok, Value} = GetModule:get_object(<<"filebucket">>, ChunkName),
         chunk(Pid, ChunkSeq, Value)
     end,
     lists:foreach(Func, BlockKeys).
