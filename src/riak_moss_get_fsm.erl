@@ -59,7 +59,8 @@ prepare(timeout, #state{bucket=Bucket, key=Key}=State) ->
 waiting_value({object, Value}, #state{from=From}=State) ->
     %% determine if the object is a normal
     %% object, or a manifest object
-    case riak_moss_lfs_utils:is_manifest(binary_to_term(riakc_obj:get_value(Value))) of
+    DecodedValue = binary_to_term(riakc_obj:get_value(Value)),
+    case riak_moss_lfs_utils:is_manifest(DecodedValue) of
 
     %% TODO:
     %% create a shared func for sending messages
@@ -74,14 +75,13 @@ waiting_value({object, Value}, #state{from=From}=State) ->
             %% we don't deal with siblings here
             %% at all
             Metadata = riakc_obj:get_metadata(Value),
-            CachedValue = binary_to_term(riakc_obj:get_value(Value)),
+            CachedValue = riakc_obj:get_value(Value),
             From ! {metadata, Metadata},
             {next_state, waiting_chunk_command, State#state{value_cache=CachedValue}};
         true ->
-            Manifest = binary_to_term(riakc_obj:get_value(Value)),
-            Metadata = riak_moss_lfs_utils:metadata_from_manifest(Manifest),
+            Metadata = riak_moss_lfs_utils:metadata_from_manifest(DecodedValue),
             From ! {metadata, Metadata},
-            StateWithMani = State#state{manifest=Manifest},
+            StateWithMani = State#state{manifest=DecodedValue},
             {next_state, waiting_chunk_command, StateWithMani}
     end.
 
