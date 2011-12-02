@@ -43,7 +43,8 @@ receives_chunks() ->
     lists:foreach(fun (_) ->
                          ?assertMatch({chunk, _}, receive_with_timeout(100)) end,
                   lists:seq(1,2)),
-    ?assertMatch({done, _}, receive_with_timeout(1000)).
+    ?assertMatch({done, _}, receive_with_timeout(1000)),
+    riak_moss_get_fsm:stop(Pid).
 
 %% ===================================================================
 %% Helper Funcs
