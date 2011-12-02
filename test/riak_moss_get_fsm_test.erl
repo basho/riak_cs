@@ -29,8 +29,9 @@ get_fsm_test_() ->
      ]}.
 
 receives_metadata() ->
-    {ok, _Pid} = riak_moss_get_fsm:test_link(self(), <<"bucket">>, <<"key">>),
-    ?assertMatch({metadata, _}, receive_with_timeout(1000)).
+    {ok, Pid} = riak_moss_get_fsm:test_link(self(), <<"bucket">>, <<"key">>),
+    ?assertMatch({metadata, _}, receive_with_timeout(1000)),
+    riak_moss_get_fsm:stop(Pid).
 
 %% ===================================================================
 %% Helper Funcs

@@ -25,6 +25,8 @@
          handle_info/3, terminate/3, code_change/4]).
 
 -export([start_link/3,
+         stop/1,
+         continue/1,
          prepare/2,
          normal_retriever/4,
          blocks_retriever/3,
@@ -48,6 +50,12 @@ riak_object(Pid, Object) ->
 
 chunk(Pid, ChunkSeq, ChunkValue) ->
     gen_fsm:send_event(Pid, {chunk, {ChunkSeq, ChunkValue}}).
+
+stop(Pid) ->
+    gen_fsm:send_event(Pid, stop).
+
+continue(Pid) ->
+    gen_fsm:send_event(Pid, continue).
 
 init([From, Bucket, Key]) ->
     State = #state{from=From, bucket=Bucket, key=Key,
@@ -103,9 +111,9 @@ waiting_value({object, Value}, #state{from=From}=State) ->
             {next_state, waiting_chunk_command, StateWithMani}
     end.
 
-waiting_chunk_command({stop, _}, State) ->
+waiting_chunk_command(stop, State) ->
     {stop, normal, State};
-waiting_chunk_command({continue, _}, #state{from=From,
+waiting_chunk_command(continue, #state{from=From,
                                             value_cache=CachedValue,
                                             manifest=Manifest,
                                             get_module=GetModule}=State) ->
