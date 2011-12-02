@@ -14,7 +14,7 @@ get_object(Bucket, Key) ->
     Manifest = riak_moss_lfs_utils:new_manifest(<<"dummy">>,
                                                 <<"dummy">>,
                                                 <<"uuid">>,
-                                                3000, % content length
+                                                10000, % content length
                                                 <<"md5">>,
                                                 dict:new()), % metadata
     RiakObj = riakc_obj:new_obj(Bucket, Key, [], [{dict:new(), Manifest}]),
