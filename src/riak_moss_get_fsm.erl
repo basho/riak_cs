@@ -66,7 +66,7 @@ init([From, Bucket, Key]) ->
     {ok, prepare, State, 0};
 init([test, From, Bucket, Key]) ->
     State = #state{from=From, bucket=Bucket, key=Key,
-                   get_module=dummy_gets},
+                   get_module=riak_moss_dummy_gets},
     %% purposely have the timeout happen
     %% so that we get called in the prepare
     %% state
@@ -86,6 +86,7 @@ waiting_value({object, Value}, #state{from=From}=State) ->
     %% determine if the object is a normal
     %% object, or a manifest object
     DecodedValue = binary_to_term(riakc_obj:get_value(Value)),
+    %%DecodedValue = riakc_obj:get_value(Value),
     case riak_moss_lfs_utils:is_manifest(DecodedValue) of
 
     %% TODO:

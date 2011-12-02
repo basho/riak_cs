@@ -17,5 +17,5 @@ get_object(Bucket, Key) ->
                                                 10000, % content length
                                                 <<"md5">>,
                                                 dict:new()), % metadata
-    RiakObj = riakc_obj:new_obj(Bucket, Key, [], [{dict:new(), Manifest}]),
+    RiakObj = riakc_obj:new_obj(Bucket, Key, [], [{dict:new(), term_to_binary(Manifest)}]),
     {ok, RiakObj}.

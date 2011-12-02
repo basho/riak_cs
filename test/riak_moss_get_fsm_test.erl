@@ -11,7 +11,6 @@
 setup() ->
     application:load(sasl),
     application:load(riak_moss),
-    application:set_env(riak_moss, lfs_block_size, 1000),
     application:set_env(sasl, sasl_error_logger, {file, "moss_get_fsm_sasl.log"}),
     error_logger:tty(false),
     application:start(lager),
@@ -20,7 +19,8 @@ setup() ->
 %% TODO:
 %% Implement this
 teardown(_) ->
-    ok.
+    application:stop(riak_moss),
+    application:stop(sasl).
 
 get_fsm_test_() ->
     {setup,
@@ -28,7 +28,7 @@ get_fsm_test_() ->
      fun teardown/1,
      [
       fun receives_metadata/0,
-      fun receives_chunks/0
+      fun receives_2_chunks/0
      ]}.
 
 receives_metadata() ->
@@ -36,14 +36,12 @@ receives_metadata() ->
     ?assertMatch({metadata, _}, receive_with_timeout(1000)),
     riak_moss_get_fsm:stop(Pid).
 
-receives_chunks() ->
+receives_2_chunks() ->
+    application:set_env(riak_moss, lfs_block_size, 5000),
     {ok, Pid} = riak_moss_get_fsm:test_link(self(), <<"bucket">>, <<"key">>),
     ?assertMatch({metadata, _}, receive_with_timeout(1000)),
     riak_moss_get_fsm:continue(Pid),
-    lists:foreach(fun (_) ->
-                         ?assertMatch({chunk, _}, receive_with_timeout(100)) end,
-                  lists:seq(1,2)),
-    ?assertMatch({done, _}, receive_with_timeout(1000)),
+    expect_n_chunks(2),
     riak_moss_get_fsm:stop(Pid).
 
 %% ===================================================================
@@ -59,3 +57,10 @@ receive_with_timeout(Timeout) ->
     after
         Timeout -> timeout
     end.
+
+expect_n_chunks(N) ->
+    lists:foreach(fun (_) ->
+                         ?assertMatch({chunk, _}, receive_with_timeout(100)) end,
+                  lists:seq(1,N-1)),  %% subtract 1 from N because we'll
+                                      %% end with an expectation of `done`
+    ?assertMatch({done, _}, receive_with_timeout(1000)).
