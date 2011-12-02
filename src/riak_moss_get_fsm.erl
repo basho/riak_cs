@@ -8,6 +8,15 @@
 
 -module(riak_moss_get_fsm).
 
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+
+%% Test API
+-export([test_link/3]).
+
+-endif.
+
+
 -behaviour(gen_fsm).
 
 -include("riak_moss.hrl").
@@ -43,6 +52,13 @@ chunk(Pid, ChunkSeq, ChunkValue) ->
 init([From, Bucket, Key]) ->
     State = #state{from=From, bucket=Bucket, key=Key,
                    get_module=riak_moss_riakc},
+    %% purposely have the timeout happen
+    %% so that we get called in the prepare
+    %% state
+    {ok, prepare, State, 0};
+init([test, From, Bucket, Key]) ->
+    State = #state{from=From, bucket=Bucket, key=Key,
+                   get_module=dummy_gets},
     %% purposely have the timeout happen
     %% so that we get called in the prepare
     %% state
@@ -165,3 +181,10 @@ terminate(Reason, _StateName, _State) ->
 
 %% @private
 code_change(_OldVsn, StateName, State, _Extra) -> {ok, StateName, State}.
+
+-ifdef(TEST).
+
+test_link(From, Bucket, Key) ->
+    gen_fsm:start_link(?MODULE, [test, From, Bucket, Key], []).
+
+-endif.
