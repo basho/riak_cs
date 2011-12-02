@@ -29,7 +29,8 @@ get_fsm_test_() ->
      [
       fun receives_metadata/0,
       fun receives_2_chunks/0,
-      fun receives_100_chunks/0
+      fun receives_100_chunks/0,
+      fun receives_1000_chunks/0
      ]}.
 
 receives_metadata() ->
@@ -51,6 +52,14 @@ receives_100_chunks() ->
     ?assertMatch({metadata, _}, receive_with_timeout(1000)),
     riak_moss_get_fsm:continue(Pid),
     expect_n_chunks(100),
+    riak_moss_get_fsm:stop(Pid).
+
+receives_1000_chunks() ->
+    application:set_env(riak_moss, lfs_block_size, 10),
+    {ok, Pid} = riak_moss_get_fsm:test_link(self(), <<"bucket">>, <<"key">>),
+    ?assertMatch({metadata, _}, receive_with_timeout(1000)),
+    riak_moss_get_fsm:continue(Pid),
+    expect_n_chunks(1000),
     riak_moss_get_fsm:stop(Pid).
 
 %% ===================================================================
