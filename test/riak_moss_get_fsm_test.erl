@@ -28,38 +28,37 @@ get_fsm_test_() ->
      fun teardown/1,
      [
       fun receives_metadata/0,
-      fun receives_2_chunks/0,
-      fun receives_100_chunks/0,
-      fun receives_1000_chunks/0
+      test_n_chunks_builder(1),
+      test_n_chunks_builder(2),
+      test_n_chunks_builder(5),
+      test_n_chunks_builder(9),
+      test_n_chunks_builder(100),
+      test_n_chunks_builder(1000)
      ]}.
+
+calc_block_size(ContentLength, NumBlocks) ->
+    Quotient = ContentLength div NumBlocks,
+    case ContentLength rem NumBlocks of
+        0 ->
+            Quotient;
+        _ ->
+            Quotient + 1
+    end.
+
+test_n_chunks_builder(N) ->
+    fun () ->
+        BlockSize = calc_block_size(10000, N),
+        application:set_env(riak_moss, lfs_block_size, BlockSize),
+        {ok, Pid} = riak_moss_get_fsm:test_link(self(), <<"bucket">>, <<"key">>),
+        ?assertMatch({metadata, _}, receive_with_timeout(1000)),
+        riak_moss_get_fsm:continue(Pid),
+        expect_n_chunks(N),
+        riak_moss_get_fsm:stop(Pid)
+    end.
 
 receives_metadata() ->
     {ok, Pid} = riak_moss_get_fsm:test_link(self(), <<"bucket">>, <<"key">>),
     ?assertMatch({metadata, _}, receive_with_timeout(1000)),
-    riak_moss_get_fsm:stop(Pid).
-
-receives_2_chunks() ->
-    application:set_env(riak_moss, lfs_block_size, 5000),
-    {ok, Pid} = riak_moss_get_fsm:test_link(self(), <<"bucket">>, <<"key">>),
-    ?assertMatch({metadata, _}, receive_with_timeout(1000)),
-    riak_moss_get_fsm:continue(Pid),
-    expect_n_chunks(2),
-    riak_moss_get_fsm:stop(Pid).
-
-receives_100_chunks() ->
-    application:set_env(riak_moss, lfs_block_size, 100),
-    {ok, Pid} = riak_moss_get_fsm:test_link(self(), <<"bucket">>, <<"key">>),
-    ?assertMatch({metadata, _}, receive_with_timeout(1000)),
-    riak_moss_get_fsm:continue(Pid),
-    expect_n_chunks(100),
-    riak_moss_get_fsm:stop(Pid).
-
-receives_1000_chunks() ->
-    application:set_env(riak_moss, lfs_block_size, 10),
-    {ok, Pid} = riak_moss_get_fsm:test_link(self(), <<"bucket">>, <<"key">>),
-    ?assertMatch({metadata, _}, receive_with_timeout(1000)),
-    riak_moss_get_fsm:continue(Pid),
-    expect_n_chunks(1000),
     riak_moss_get_fsm:stop(Pid).
 
 %% ===================================================================
