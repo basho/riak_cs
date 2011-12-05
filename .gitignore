@@ -7,5 +7,6 @@ ebin/*.app
 doc
 dev
 /package/
+log/
 *~
 /log

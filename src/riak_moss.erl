@@ -13,9 +13,14 @@
          make_bucket/2,
          make_key/0,
          unique_hex_id/0,
+         to_bucket_name/2,
+         from_bucket_name/1,
          binary_to_hexlist/1]).
 
 -include("riak_moss.hrl").
+
+-define(OBJECT_BUCKET_PREFIX, <<"objects:">>).
+-define(BLOCK_BUCKET_PREFIX, <<"blocks:">>).
 
 %% ===================================================================
 %% Public API
@@ -84,3 +89,21 @@ binary_to_hexlist(Bin) ->
               end
           end || X <- binary_to_list(Bin)],
     string:to_lower(lists:flatten(XBin)).
+
+to_bucket_name(objects, Name) ->
+    <<?OBJECT_BUCKET_PREFIX/binary, Name/binary>>;
+to_bucket_name(blocks, Name) ->
+    <<?BLOCK_BUCKET_PREFIX/binary, Name/binary>>.
+
+from_bucket_name(BucketNameWithPrefix) ->
+    BlocksName = ?BLOCK_BUCKET_PREFIX,
+    ObjectsName = ?OBJECT_BUCKET_PREFIX,
+    BlockByteSize = byte_size(BlocksName),
+    ObjectsByteSize = byte_size(ObjectsName),
+
+    case BucketNameWithPrefix of
+        <<BlocksName:BlockByteSize/binary, BucketName/binary>> ->
+            {blocks, BucketName};
+        <<ObjectsName:ObjectsByteSize/binary, BucketName/binary>> ->
+            {objects, BucketName}
+    end.
