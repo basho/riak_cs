@@ -58,7 +58,8 @@ ensure_doc(Ctx=#key_context{doc=undefined, bucket=Bucket, key=Key}) ->
     %% need to do some error
     %% checking here to match
     %% {error, Reason} too
-    case riak_moss_riakc:get_object(Bucket, Key) of
+    MOSSBucket = riak_moss:to_bucket_name(objects, list_to_binary(Bucket)),
+    case riak_moss_riakc:get_object(MOSSBucket, Key) of
         {ok, RiakObject} ->
             Ctx#key_context{doc=RiakObject};
         {error, notfound} ->

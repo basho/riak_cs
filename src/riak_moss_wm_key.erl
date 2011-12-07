@@ -10,7 +10,6 @@
          service_available/2,
          forbidden/2,
          content_types_provided/2,
-         malformed_request/2,
          produce_body/2,
          allowed_methods/2,
          content_types_accepted/2,
@@ -47,26 +46,6 @@ service_available(RD, Ctx) ->
             {false, RD, Ctx}
     end.
 
--spec malformed_request(term(), term()) -> {false, term(), term()}.
-malformed_request(RD, Ctx) ->
-    case wrq:method(RD) of
-        'GET' ->
-            DocCtx = riak_moss_wm_utils:ensure_doc(Ctx),
-            case DocCtx#key_context.doc of
-                notfound ->
-                    %% more or less ripped
-                    %% from riak_kv_wm_object.erl
-                    {{halt, 404},
-                        wrq:set_resp_header("Content-Type", "text/plain",
-                                            RD),
-                        DocCtx};
-                _ ->
-                    {false, RD, DocCtx}
-            end;
-        _ ->
-            {false, RD, Ctx}
-    end.
-
 %% @doc Check to see if the user is
 %%      authenticated. Normally with HTTP
 %%      we'd use the `authorized` callback,
@@ -79,12 +58,19 @@ forbidden(RD, Ctx=#key_context{context=#context{auth_bypass=AuthBypass}}) ->
                 {ok, User} ->
                     %% Authentication succeeded
                     NewInnerCtx = Ctx#key_context.context#context{user=User},
-                    {false, RD, Ctx#key_context{context=NewInnerCtx}};
+                    forbidden(wrq:method(RD), RD,
+                              riak_moss_wm_utils:ensure_doc(
+                                Ctx#key_context{context=NewInnerCtx}));
                 {error, _Reason} ->
                     %% Authentication failed, deny access
                     riak_moss_s3_response:api_error(access_denied, RD, Ctx)
             end
     end.
+
+forbidden('GET', RD, Ctx=#key_context{doc=notfound}) ->
+    {{halt, 404}, RD, Ctx};
+forbidden(_, RD, Ctx) ->
+    {false, RD, Ctx}.
 
 %% @doc Get the list of methods this resource supports.
 -spec allowed_methods(term(), term()) -> {[atom()], term(), term()}.
@@ -104,16 +90,16 @@ valid_entity_length(RD, Ctx) ->
                             riak_moss_s3_response:api_error(
                               entity_too_large, RD, Ctx);
                         true ->
-                            {true, RD, Ctx}
+                            {true, RD, Ctx#key_context{size=Length}}
                     end;
-                                
+
                 _ ->
                     {false, RD, Ctx}
             end;
         _ ->
             {true, RD, Ctx}
     end.
-        
+
 
 -spec content_types_provided(term(), term()) ->
     {[{string(), atom()}], term(), term()}.
@@ -146,10 +132,10 @@ produce_body(RD, Ctx) ->
     DocCtx = riak_moss_wm_utils:ensure_doc(Ctx),
     Doc = DocCtx#key_context.doc,
     case Doc of
-        notfound -> 
+        notfound ->
             {{halt, 404}, RD, DocCtx};
         _ ->
-            {riakc_obj:get_value(Doc), RD, DocCtx}
+            {<<>>, RD, DocCtx}
     end.
 
 %% @doc Callback for deleting an object.
@@ -197,22 +183,25 @@ content_types_accepted(RD, Ctx) ->
 
 -spec accept_body(term(), term()) ->
     {true, term(), term()}.
+accept_body(RD, Ctx=#key_context{bucket=Bucket,key=Key,
+                                 putctype=_CType,size=Size}) ->
+    {ok, Pid} = riak_moss_put_fsm:start_link(list_to_binary(Bucket), Key, Size, <<>>, 60000),
+    accept_streambody(RD, Ctx, Pid, wrq:stream_req_body(RD, ?DEFAULT_LFS_BLOCK_SIZE)).
+
+accept_streambody(RD, Ctx=#key_context{}, Pid, {Data, Next}) ->
+    riak_moss_put_fsm:augment_data(Pid, Data),
+    if is_function(Next) ->
+            accept_streambody(RD, Ctx, Pid, Next());
+       Next =:= done ->
+            finalize_request(RD, Ctx, Pid)
+    end.
+
 %% TODO:
 %% We need to do some checking to make sure
 %% the bucket exists for the user who is doing
 %% this PUT
-accept_body(RD, Ctx=#key_context{bucket=Bucket, key=Key,
-                   context=Context, putctype=CType}) ->
-    User = Context#context.user,
-    KeyID = User#moss_user.key_id,
-    %% TODO:
-    %% what happens if the body
-    %% is empty?
-    Body = wrq:req_body(RD),
-    %% TODO:
-    %% we should be ripping some metadata
-    %% out of the request headers
-    Metadata = dict:from_list([{<<"content-type">>, CType}]),
-    riak_moss_riakc:put_object(KeyID, Bucket, Key, Body, Metadata),
-    {true, wrq:set_resp_header("ETag", 
-      "\"" ++ riak_moss:binary_to_hexlist(crypto:md5(Body)) ++ "\"", RD), Ctx}.
+finalize_request(RD, Ctx, Pid) ->
+    %Metadata = dict:from_list([{<<"content-type">>, CType}]),
+    {ok, Manifest} = riak_moss_put_fsm:finalize(Pid),
+    ETag = "\"" ++ riak_moss:binary_to_hexlist(riak_moss_lfs_utils:content_md5(Manifest)) ++ "\"",
+    {true, wrq:set_resp_header("ETag",  ETag, RD), Ctx}.
