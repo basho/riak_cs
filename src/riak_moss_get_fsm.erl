@@ -123,6 +123,8 @@ waiting_value({object, Value}, #state{from=From}=State) ->
     From ! {metadata, Metadata},
     {next_state, waiting_chunk_command, NextStateTimeout, NextStateTimeout}.
 
+waiting_chunk_command(timeout, State) ->
+    {stop, normal, State};
 waiting_chunk_command(stop, State) ->
     {stop, normal, State};
 waiting_chunk_command(continue, #state{from=From,
