@@ -99,6 +99,7 @@ waiting_value({object, Value}, #state{from=From}=State) ->
     %% TODO:
     %% put binary_to_term in a catch statement
     DecodedValue = binary_to_term(RawValue),
+    NextStateTimeout = 60000,
     case riak_moss_lfs_utils:is_manifest(DecodedValue) of
 
     %% TODO:
@@ -115,12 +116,12 @@ waiting_value({object, Value}, #state{from=From}=State) ->
             %% at all
             Metadata = riakc_obj:get_metadata(Value),
             From ! {metadata, Metadata},
-            {next_state, waiting_chunk_command, State#state{value_cache=RawValue}};
+            {next_state, waiting_chunk_command, State#state{value_cache=RawValue}, NextStateTimeout};
         true ->
             Metadata = riak_moss_lfs_utils:metadata_from_manifest(DecodedValue),
             From ! {metadata, Metadata},
             StateWithMani = State#state{manifest=DecodedValue},
-            {next_state, waiting_chunk_command, StateWithMani}
+            {next_state, waiting_chunk_command, StateWithMani, NextStateTimeout}
     end.
 
 waiting_chunk_command(stop, State) ->
