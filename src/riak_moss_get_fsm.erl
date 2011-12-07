@@ -29,7 +29,7 @@
          continue/1,
          prepare/2,
          normal_retriever/4,
-         blocks_retriever/3,
+         blocks_retriever/4,
          waiting_value/2,
          waiting_chunk_command/2,
          waiting_chunks/2]).
@@ -121,6 +121,7 @@ waiting_chunk_command(stop, State) ->
 waiting_chunk_command(continue, #state{from=From,
                                             value_cache=CachedValue,
                                             manifest=Manifest,
+                                            bucket=BucketName,
                                             get_module=GetModule}=State) ->
     case CachedValue of
         undefined ->
@@ -131,7 +132,7 @@ waiting_chunk_command(continue, #state{from=From,
             %% chunk events
             BlockKeys = riak_moss_lfs_utils:initial_block_keynames(Manifest),
             BlocksLeft = sets:from_list([X || {X, _} <- BlockKeys]),
-            spawn_link(?MODULE, blocks_retriever, [self(), GetModule, BlockKeys]),
+            spawn_link(?MODULE, blocks_retriever, [self(), GetModule, BucketName, BlockKeys]),
             {next_state, waiting_chunks, State#state{blocks_left=BlocksLeft}};
         _ ->
             %% we don't actually have to start
@@ -160,15 +161,12 @@ waiting_chunks({chunk, {ChunkSeq, ChunkValue}}, #state{from=From, blocks_left=Re
 %%      Bucket, Key, whether it's a
 %%      manifest or regular object
 normal_retriever(ReplyPid, GetModule, Bucket, Key) ->
-    {ok, RiakObject} = GetModule:get_object(Bucket, Key),
+    {ok, RiakObject} = GetModule:get_object(riak_moss:to_bucket_name(objects, Bucket), Key),
     riak_object(ReplyPid, RiakObject).
 
-blocks_retriever(Pid, GetModule, BlockKeys) ->
+blocks_retriever(Pid, GetModule, BucketName, BlockKeys) ->
     Func = fun({ChunkSeq, ChunkName}) ->
-        %% TODO:
-        %% replace the chunk_bucket
-        %% with a real bucket name
-        {ok, Value} = GetModule:get_object(<<"filebucket">>, ChunkName),
+        {ok, Value} = GetModule:get_object(riak_moss:to_bucket_name(blocks, BucketName), ChunkName),
         chunk(Pid, ChunkSeq, Value)
     end,
     lists:foreach(Func, BlockKeys).
