@@ -28,12 +28,7 @@ get_fsm_test_() ->
      fun teardown/1,
      [
       fun receives_metadata/0,
-      test_n_chunks_builder(1),
-      test_n_chunks_builder(2),
-      test_n_chunks_builder(5),
-      test_n_chunks_builder(9),
-      test_n_chunks_builder(100),
-      test_n_chunks_builder(1000)
+      [test_n_chunks_builder(X) || X <- [1,2,5,9,100,1000]]
      ]}.
 
 calc_block_size(ContentLength, NumBlocks) ->
