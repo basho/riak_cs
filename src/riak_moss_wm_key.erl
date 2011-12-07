@@ -104,16 +104,16 @@ valid_entity_length(RD, Ctx) ->
                             riak_moss_s3_response:api_error(
                               entity_too_large, RD, Ctx);
                         true ->
-                            {true, RD, Ctx}
+                            {true, RD, Ctx#key_context{size=Length}}
                     end;
-                                
+
                 _ ->
                     {false, RD, Ctx}
             end;
         _ ->
             {true, RD, Ctx}
     end.
-        
+
 
 -spec content_types_provided(term(), term()) ->
     {[{string(), atom()}], term(), term()}.
@@ -146,7 +146,7 @@ produce_body(RD, Ctx) ->
     DocCtx = riak_moss_wm_utils:ensure_doc(Ctx),
     Doc = DocCtx#key_context.doc,
     case Doc of
-        notfound -> 
+        notfound ->
             {{halt, 404}, RD, DocCtx};
         _ ->
             {riakc_obj:get_value(Doc), RD, DocCtx}
@@ -197,22 +197,29 @@ content_types_accepted(RD, Ctx) ->
 
 -spec accept_body(term(), term()) ->
     {true, term(), term()}.
+accept_body(RD, Ctx=#key_context{bucket=Bucket,key=Key,context=Context,
+                                 putctype=_CType,size=Size}) ->
+    User = Context#context.user,
+    KeyID = User#moss_user.key_id,
+    MOSSBucket = riak_moss:make_bucket(KeyID, Bucket),
+    {ok, Pid} = riak_moss_put_fsm:start_link(MOSSBucket, Key, Size, <<>>, 60000),
+    MD5 = crypto:md5_init(),
+    accept_streambody(RD, Ctx, MD5, Pid, wrq:stream_req_body(RD, ?DEFAULT_LFS_BLOCK_SIZE)).
+
+accept_streambody(RD, Ctx=#key_context{}, MD5, Pid, {Data, Next}) ->
+    NewMD5 = crypto:md5_update(MD5, Data),
+    riak_moss_put_fsm:augment_data(Pid, Data),
+    if is_function(Next) ->
+            accept_streambody(RD, Ctx, NewMD5, Pid, Next());
+       Next =:= done ->
+            finalize_request(RD, Ctx, NewMD5, Pid)
+    end.
+
 %% TODO:
 %% We need to do some checking to make sure
 %% the bucket exists for the user who is doing
 %% this PUT
-accept_body(RD, Ctx=#key_context{bucket=Bucket, key=Key,
-                   context=Context, putctype=CType}) ->
-    User = Context#context.user,
-    KeyID = User#moss_user.key_id,
-    %% TODO:
-    %% what happens if the body
-    %% is empty?
-    Body = wrq:req_body(RD),
-    %% TODO:
-    %% we should be ripping some metadata
-    %% out of the request headers
-    Metadata = dict:from_list([{<<"content-type">>, CType}]),
-    riak_moss_riakc:put_object(KeyID, Bucket, Key, Body, Metadata),
-    {true, wrq:set_resp_header("ETag", 
-      "\"" ++ riak_moss:binary_to_hexlist(crypto:md5(Body)) ++ "\"", RD), Ctx}.
+finalize_request(RD, Ctx, MD5, Pid) ->
+    %Metadata = dict:from_list([{<<"content-type">>, CType}]),
+    {true, wrq:set_resp_header("ETag",
+      "\"" ++ riak_moss:binary_to_hexlist(crypto:md5_final(MD5)) ++ "\"", RD), Ctx}.
