@@ -71,8 +71,7 @@ receive_with_timeout(Timeout) ->
     end.
 
 expect_n_chunks(N) ->
-    lists:foreach(fun (_) ->
-                         ?assertMatch({chunk, _}, receive_with_timeout(100)) end,
-                  lists:seq(1,N-1)),  %% subtract 1 from N because we'll
-                                      %% end with an expectation of `done`
+    %% subtract 1 from N because the last
+    %% chunk will have a different pattern
+    [?assertMatch({chunk, _}, receive_with_timeout(100)) || _ <- lists:seq(1, N-1)],
     ?assertMatch({done, _}, receive_with_timeout(1000)).
