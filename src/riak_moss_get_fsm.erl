@@ -142,10 +142,15 @@ waiting_chunk_command(continue, #state{from=From,
             {stop, normal, State}
     end.
 
-waiting_chunks({chunk, {ChunkSeq, ChunkValue}}, #state{from=From, blocks_left=Remaining}=State) ->
+waiting_chunks({chunk, {ChunkSeq, ChunkRiakObject}}, #state{from=From, blocks_left=Remaining}=State) ->
     %% we're assuming that we're receiving the
     %% chunks synchronously, and that we can
     %% send them back to WM as we get them
+
+    %% we currently only care about the binary
+    %% data in the object
+    ChunkValue = riakc_obj:get_value(ChunkRiakObject),
+
     NewRemaining = sets:del_element(ChunkSeq, Remaining),
     NewState = State#state{blocks_left=NewRemaining},
     case sets:size(NewRemaining) of

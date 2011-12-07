@@ -79,7 +79,7 @@ block_count(ContentLength, BlockSize) ->
 initial_block_keynames(#lfs_manifest{bkey={_, KeyName},
                              uuid=UUID,
                              content_length=ContentLength}) ->
-    BlockList = sets:to_list(initial_blocks(ContentLength)),
+    BlockList = lists:sort(sets:to_list(initial_blocks(ContentLength))),
     block_keynames(KeyName, UUID, BlockList).
 
 remaining_block_keynames(#lfs_manifest{bkey={_, KeyName},
