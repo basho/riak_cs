@@ -20,7 +20,8 @@
 
 -export([block_count/1,
          block_count/2,
-         block_keynames/1,
+         initial_block_keynames/1,
+         remaining_block_keynames/1,
          block_keynames/3,
          block_name/3,
          block_name_to_term/1,
@@ -75,7 +76,13 @@ block_count(ContentLength, BlockSize) ->
             Quotient + 1
     end.
 
-block_keynames(#lfs_manifest{bkey={_, KeyName},
+initial_block_keynames(#lfs_manifest{bkey={_, KeyName},
+                             uuid=UUID,
+                             content_length=ContentLength}) ->
+    BlockList = lists:sort(sets:to_list(initial_blocks(ContentLength))),
+    block_keynames(KeyName, UUID, BlockList).
+
+remaining_block_keynames(#lfs_manifest{bkey={_, KeyName},
                              uuid=UUID}=Manifest) ->
     BlockList = sorted_blocks_remaining(Manifest),
     block_keynames(KeyName, UUID, BlockList).

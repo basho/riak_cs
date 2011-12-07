@@ -203,12 +203,7 @@ do_list_keys(BucketName, RiakcPid) ->
     {ok, lists:sort(Keys)}.
 
 do_get_object(BucketName, Key, RiakcPid) ->
-    %% TODO:
-    %% Should we be converting the
-    %% key to binary here, or in the
-    %% the public api method?
-    BinKey = list_to_binary(Key),
-    riakc_pb_socket:get(RiakcPid, BucketName, BinKey).
+    riakc_pb_socket:get(RiakcPid, BucketName, Key).
 
 do_put_object(_KeyID, BucketName, Key, Value, Metadata, RiakcPid) ->
     %% TODO: KeyID is currently
