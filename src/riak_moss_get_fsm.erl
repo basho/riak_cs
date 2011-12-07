@@ -42,6 +42,10 @@
                 blocks_left :: list(),
                 get_module :: module()}).
 
+%% ===================================================================
+%% Public API
+%% ===================================================================
+
 start_link(From, Bucket, Key) ->
     gen_fsm:start_link(?MODULE, [From, Bucket, Key], []).
 
@@ -169,6 +173,10 @@ blocks_retriever(Pid, GetModule, BlockKeys) ->
     end,
     lists:foreach(Func, BlockKeys).
 
+%% ====================================================================
+%% gen_fsm callbacks
+%% ====================================================================
+
 %% @private
 handle_event(_Event, _StateName, StateData) ->
     {stop,badmsg,StateData}.
@@ -190,6 +198,10 @@ terminate(Reason, _StateName, _State) ->
 
 %% @private
 code_change(_OldVsn, StateName, State, _Extra) -> {ok, StateName, State}.
+
+%% ===================================================================
+%% Test API
+%% ===================================================================
 
 -ifdef(TEST).
 
