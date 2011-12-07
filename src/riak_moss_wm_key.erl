@@ -10,7 +10,6 @@
          service_available/2,
          forbidden/2,
          content_types_provided/2,
-         malformed_request/2,
          produce_body/2,
          allowed_methods/2,
          content_types_accepted/2,
@@ -47,26 +46,6 @@ service_available(RD, Ctx) ->
             {false, RD, Ctx}
     end.
 
--spec malformed_request(term(), term()) -> {false, term(), term()}.
-malformed_request(RD, Ctx) ->
-    case wrq:method(RD) of
-        'GET' ->
-            DocCtx = riak_moss_wm_utils:ensure_doc(Ctx),
-            case DocCtx#key_context.doc of
-                notfound ->
-                    %% more or less ripped
-                    %% from riak_kv_wm_object.erl
-                    {{halt, 404},
-                        wrq:set_resp_header("Content-Type", "text/plain",
-                                            RD),
-                        DocCtx};
-                _ ->
-                    {false, RD, DocCtx}
-            end;
-        _ ->
-            {false, RD, Ctx}
-    end.
-
 %% @doc Check to see if the user is
 %%      authenticated. Normally with HTTP
 %%      we'd use the `authorized` callback,
@@ -79,12 +58,19 @@ forbidden(RD, Ctx=#key_context{context=#context{auth_bypass=AuthBypass}}) ->
                 {ok, User} ->
                     %% Authentication succeeded
                     NewInnerCtx = Ctx#key_context.context#context{user=User},
-                    {false, RD, Ctx#key_context{context=NewInnerCtx}};
+                    forbidden(wrq:method(RD), RD,
+                              riak_moss_wm_utils:ensure_doc(
+                                Ctx#key_context{context=NewInnerCtx}));
                 {error, _Reason} ->
                     %% Authentication failed, deny access
                     riak_moss_s3_response:api_error(access_denied, RD, Ctx)
             end
     end.
+
+forbidden('GET', RD, Ctx=#key_context{doc=notfound}) ->
+    {{halt, 404}, RD, Ctx};
+forbidden(_, RD, Ctx) ->
+    {false, RD, Ctx}.
 
 %% @doc Get the list of methods this resource supports.
 -spec allowed_methods(term(), term()) -> {[atom()], term(), term()}.
@@ -149,7 +135,7 @@ produce_body(RD, Ctx) ->
         notfound ->
             {{halt, 404}, RD, DocCtx};
         _ ->
-            {riakc_obj:get_value(Doc), RD, DocCtx}
+            {<<>>, RD, DocCtx}
     end.
 
 %% @doc Callback for deleting an object.
@@ -197,12 +183,9 @@ content_types_accepted(RD, Ctx) ->
 
 -spec accept_body(term(), term()) ->
     {true, term(), term()}.
-accept_body(RD, Ctx=#key_context{bucket=Bucket,key=Key,context=Context,
+accept_body(RD, Ctx=#key_context{bucket=Bucket,key=Key,
                                  putctype=_CType,size=Size}) ->
-    User = Context#context.user,
-    KeyID = User#moss_user.key_id,
-    MOSSBucket = riak_moss:make_bucket(KeyID, Bucket),
-    {ok, Pid} = riak_moss_put_fsm:start_link(MOSSBucket, Key, Size, <<>>, 60000),
+    {ok, Pid} = riak_moss_put_fsm:start_link(list_to_binary(Bucket), Key, Size, <<>>, 60000),
     MD5 = crypto:md5_init(),
     accept_streambody(RD, Ctx, MD5, Pid, wrq:stream_req_body(RD, ?DEFAULT_LFS_BLOCK_SIZE)).
 

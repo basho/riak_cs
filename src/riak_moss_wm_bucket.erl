@@ -89,14 +89,15 @@ content_types_accepted(RD, Ctx) ->
 to_xml(RD, Ctx=#context{user=User}) ->
     BucketName = wrq:path_info(bucket, RD),
     Bucket = hd([B || B <- riak_moss_riakc:get_buckets(User), B#moss_bucket.name =:= BucketName]),
-    {ok, Keys} = riak_moss_riakc:list_keys(BucketName),
+    MOSSBucket = riak_moss:to_bucket_name(objects, list_to_binary(Bucket#moss_bucket.name)),
+    {ok, Keys} = riak_moss_riakc:list_keys(MOSSBucket),
     riak_moss_s3_response:list_bucket_response(User, Bucket, Keys, RD, Ctx).
 
 %% TODO:
 %% Add content_types_accepted when we add
 %% in PUT and POST requests.
 accept_body(ReqData, Ctx=#context{user=User}) ->
-    case riak_moss_riakc:create_bucket(User#moss_user.key_id, 
+    case riak_moss_riakc:create_bucket(User#moss_user.key_id,
                                        wrq:path_info(bucket, ReqData)) of
         ok ->
             {{halt, 200}, ReqData, Ctx};

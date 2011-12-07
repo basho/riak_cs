@@ -53,12 +53,13 @@ parse_auth_header(_, _) ->
 %%      it again if it's already in the
 %%      Ctx
 -spec ensure_doc(term()) -> term().
-ensure_doc(Ctx=#key_context{doc=undefined, bucket=Bucket, key=Key}) ->
+ensure_doc(Ctx=#key_context{doc=undefined, bucket=Bucket, key=Key, context=C}) ->
     %% TODO:
     %% need to do some error
     %% checking here to match
     %% {error, Reason} too
-    case riak_moss_riakc:get_object(Bucket, Key) of
+    MOSSBucket = riak_moss:to_bucket_name(objects, list_to_binary(Bucket)),
+    case riak_moss_riakc:get_object(MOSSBucket, Key) of
         {ok, RiakObject} ->
             Ctx#key_context{doc=RiakObject};
         {error, notfound} ->
