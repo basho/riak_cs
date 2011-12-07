@@ -118,10 +118,10 @@ waiting_value({object, Value}, #state{from=From}=State) ->
             NextState = State#state{value_cache=RawValue};
         true ->
             Metadata = riak_moss_lfs_utils:metadata_from_manifest(DecodedValue),
-            NextState = State#state{manifest=DecodedValue},
+            NextState = State#state{manifest=DecodedValue}
     end,
     From ! {metadata, Metadata},
-    {next_state, waiting_chunk_command, NextStateTimeout, NextStateTimeout}.
+    {next_state, waiting_chunk_command, NextState, NextStateTimeout}.
 
 waiting_chunk_command(timeout, State) ->
     {stop, normal, State};
