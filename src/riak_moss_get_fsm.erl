@@ -4,7 +4,7 @@
 %%
 %% -------------------------------------------------------------------
 
-%% get fsm for Riak Moss. 
+%% @doc get fsm for Riak Moss. 
 
 -module(riak_moss_get_fsm).
 
