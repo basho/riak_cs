@@ -12,9 +12,7 @@
 
 -export([authenticate/2]).
 
--spec authenticate(term(), [string()]) -> {ok, #moss_user{}}
-                                              | {ok, unknown}
-                                              | {error, atom()}.
+-spec authenticate(term(), [string()]) -> {error, atom()}.
 authenticate(_RD, [Reason]) ->
     {error, Reason}.
 

@@ -76,7 +76,7 @@ content_types_provided(RD, Ctx) ->
 %% when we change this to allow streaming
 %% bodies.
 -spec to_xml(term(), term()) ->
-    {iolist(), term(), term()}.
+    {{halt, pos_integer()}, term(), term()}.
 to_xml(RD, Ctx=#context{user=User}) ->
     riak_moss_s3_response:list_all_my_buckets_response(User, RD, Ctx).
 
