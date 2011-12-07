@@ -89,8 +89,10 @@ prepare(timeout, #state{bucket=Bucket, key=Key, get_module=GetModule}=State) ->
 waiting_value({object, Value}, #state{from=From}=State) ->
     %% determine if the object is a normal
     %% object, or a manifest object
-    DecodedValue = binary_to_term(riakc_obj:get_value(Value)),
-    %%DecodedValue = riakc_obj:get_value(Value),
+    RawValue = riakc_obj:get_value(Value),
+    %% TODO:
+    %% put binary_to_term in a catch statement
+    DecodedValue = binary_to_term(RawValue),
     case riak_moss_lfs_utils:is_manifest(DecodedValue) of
 
     %% TODO:
@@ -106,9 +108,8 @@ waiting_value({object, Value}, #state{from=From}=State) ->
             %% we don't deal with siblings here
             %% at all
             Metadata = riakc_obj:get_metadata(Value),
-            CachedValue = riakc_obj:get_value(Value),
             From ! {metadata, Metadata},
-            {next_state, waiting_chunk_command, State#state{value_cache=CachedValue}};
+            {next_state, waiting_chunk_command, State#state{value_cache=RawValue}};
         true ->
             Metadata = riak_moss_lfs_utils:metadata_from_manifest(DecodedValue),
             From ! {metadata, Metadata},
