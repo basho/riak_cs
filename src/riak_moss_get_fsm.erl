@@ -115,14 +115,13 @@ waiting_value({object, Value}, #state{from=From}=State) ->
             %% we don't deal with siblings here
             %% at all
             Metadata = riakc_obj:get_metadata(Value),
-            From ! {metadata, Metadata},
-            {next_state, waiting_chunk_command, State#state{value_cache=RawValue}, NextStateTimeout};
+            NextState = State#state{value_cache=RawValue};
         true ->
             Metadata = riak_moss_lfs_utils:metadata_from_manifest(DecodedValue),
-            From ! {metadata, Metadata},
-            StateWithMani = State#state{manifest=DecodedValue},
-            {next_state, waiting_chunk_command, StateWithMani, NextStateTimeout}
-    end.
+            NextState = State#state{manifest=DecodedValue},
+    end,
+    From ! {metadata, Metadata},
+    {next_state, waiting_chunk_command, NextStateTimeout, NextStateTimeout}.
 
 waiting_chunk_command(stop, State) ->
     {stop, normal, State};
