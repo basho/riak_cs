@@ -74,8 +74,18 @@ send_event(Pid, Event) ->
 %% @doc Augment the file data being written by a `riak_moss_put_fsm'.
 -spec augment_data(pid(), binary()) -> ok | {error, term()}.
 augment_data(Pid, Data) ->
+    send_sync_event(Pid, {augment_data, Data}).
+
+%% @doc Finalize the put and return manifest.
+-spec finalize(pid()) -> {ok, riak_moss_lfs_utils:lfs_manifest()}
+                             | {error, term()}.
+finalize(Pid) ->
+    send_sync_event(Pid, finalize).
+
+-spec send_sync_event(pid(), term()) -> term() | {error, term()}.
+send_sync_event(Pid, Msg) ->
     try
-        gen_fsm:sync_send_all_state_event(Pid, {augment_data, Data})
+        gen_fsm:sync_send_all_state_event(Pid, Msg)
     catch
         _:Reason ->
             case Reason of
@@ -86,20 +96,6 @@ augment_data(Pid, Data) ->
             end
     end.
 
-%% @doc Augment the file data being written by a `riak_moss_put_fsm'.
--spec finalize(pid()) -> ok | {error, term()}.
-finalize(Pid) ->
-    try
-        gen_fsm:sync_send_all_state_event(Pid, finalize)
-    catch
-        _:Reason ->
-            case Reason of
-                {noproc, _} ->
-                    {error, {riak_moss_put_fsm_dead, Pid}};
-                _ ->
-                    {error, Reason}
-            end
-    end.
 
 %% ====================================================================
 %% gen_fsm callbacks
@@ -276,7 +272,7 @@ handle_sync_event({augment_data, NewData},
     {reply, ok, NextState, UpdState};
 handle_sync_event(finalize, From, StateName, State=#state{final_manifest=undefined}) ->
     {next_state, StateName, State#state{waiter=From}};
-handle_sync_event(finalize, From, StateName, State=#state{final_manifest=M}) ->
+handle_sync_event(finalize, _From, StateName, State=#state{final_manifest=M}) ->
     {reply, {ok, M}, StateName, State};
 handle_sync_event(_Event, _From, StateName, State) ->
     {next_state, StateName, State}.

@@ -70,7 +70,7 @@ initialize(Pid, FsmPid, Bucket, FileName, ContentLength) ->
                           FileName,
                           ContentLength}).
 
-%% @doc Write a new root b
+%% @doc Write a new root block
 -spec write_root(pid()) -> {ok, term()}.
 write_root(Pid) ->
     gen_server:cast(Pid, write_root).

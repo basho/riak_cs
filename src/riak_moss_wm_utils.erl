@@ -53,7 +53,7 @@ parse_auth_header(_, _) ->
 %%      it again if it's already in the
 %%      Ctx
 -spec ensure_doc(term()) -> term().
-ensure_doc(Ctx=#key_context{doc=undefined, bucket=Bucket, key=Key, context=C}) ->
+ensure_doc(Ctx=#key_context{doc=undefined, bucket=Bucket, key=Key}) ->
     %% TODO:
     %% need to do some error
     %% checking here to match
