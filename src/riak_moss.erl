@@ -27,10 +27,9 @@
 %% ===================================================================
 
 %% @doc Return a riak protocol buffers client reference
--spec riak_client() -> {ok, pid()}.
+-spec riak_client() -> {ok, pid()} | {error, term()}.
 riak_client() ->
     riakc_pb_socket:start_link("127.0.0.1", 8087).
-
 
 %% @doc Compose a moss bucket name using the key id
 %% and the specified bucket name.

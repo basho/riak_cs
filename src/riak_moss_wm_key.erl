@@ -33,7 +33,7 @@ extract_paths(RD, Ctx) ->
     Key = wrq:path_info(key, RD),
     Ctx#key_context{bucket=Bucket, key=Key}.
 
--spec service_available(term(), term()) -> {true, term(), term()}.
+-spec service_available(term(), term()) -> {boolean(), term(), term()}.
 service_available(RD, Ctx) ->
     case riak_moss_wm_utils:service_available(RD, Ctx) of
         {true, ServiceRD, ServiceCtx} ->
@@ -106,14 +106,14 @@ valid_entity_length(RD, Ctx) ->
                         true ->
                             {true, RD, Ctx}
                     end;
-                                
+
                 _ ->
                     {false, RD, Ctx}
             end;
         _ ->
             {true, RD, Ctx}
     end.
-        
+
 
 -spec content_types_provided(term(), term()) ->
     {[{string(), atom()}], term(), term()}.
@@ -146,14 +146,14 @@ produce_body(RD, Ctx) ->
     DocCtx = riak_moss_wm_utils:ensure_doc(Ctx),
     Doc = DocCtx#key_context.doc,
     case Doc of
-        notfound -> 
+        notfound ->
             {{halt, 404}, RD, DocCtx};
         _ ->
             {riakc_obj:get_value(Doc), RD, DocCtx}
     end.
 
 %% @doc Callback for deleting an object.
--spec delete_resource(term(), term()) -> boolean().
+-spec delete_resource(term(), term()) -> {boolean(), term(), term()}.
 delete_resource(RD, Ctx=#key_context{bucket=Bucket, key=Key}) ->
     case riak_moss_riakc:delete_object(Bucket, Key) of
         ok ->
@@ -214,5 +214,5 @@ accept_body(RD, Ctx=#key_context{bucket=Bucket, key=Key,
     %% out of the request headers
     Metadata = dict:from_list([{<<"content-type">>, CType}]),
     riak_moss_riakc:put_object(KeyID, Bucket, Key, Body, Metadata),
-    {true, wrq:set_resp_header("ETag", 
+    {true, wrq:set_resp_header("ETag",
       "\"" ++ riak_moss:binary_to_hexlist(crypto:md5(Body)) ++ "\"", RD), Ctx}.

@@ -85,7 +85,7 @@ content_types_accepted(RD, Ctx) ->
 
 
 -spec to_xml(term(), term()) ->
-    {iolist(), term(), term()}.
+    {{halt, pos_integer()}, term(), term()}.
 to_xml(RD, Ctx=#context{user=User}) ->
     BucketName = wrq:path_info(bucket, RD),
     Bucket = hd([B || B <- riak_moss_riakc:get_buckets(User), B#moss_bucket.name =:= BucketName]),
@@ -96,7 +96,7 @@ to_xml(RD, Ctx=#context{user=User}) ->
 %% Add content_types_accepted when we add
 %% in PUT and POST requests.
 accept_body(ReqData, Ctx=#context{user=User}) ->
-    case riak_moss_riakc:create_bucket(User#moss_user.key_id, 
+    case riak_moss_riakc:create_bucket(User#moss_user.key_id,
                                        wrq:path_info(bucket, ReqData)) of
         ok ->
             {{halt, 200}, ReqData, Ctx};
@@ -105,7 +105,7 @@ accept_body(ReqData, Ctx=#context{user=User}) ->
     end.
 
 %% @doc Callback for deleting a bucket.
--spec delete_resource(term(), term()) -> boolean().
+-spec delete_resource(term(), term()) -> {boolean(), term(), term()}.
 delete_resource(RD, Ctx=#context{user=User}) ->
     BucketName = wrq:path_info(bucket, RD),
     case riak_moss_riakc:delete_bucket(User#moss_user.key_id, BucketName) of
