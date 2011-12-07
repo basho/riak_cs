@@ -174,7 +174,7 @@ next_event(Response, BlockCount) ->
         update_root when BlockCount > 0 ->
             root_ready;
         update_root ->
-            all_blocks_written;
+            {all_blocks_written, manifest};
         {write_block, BlockID} ->
             {block_written, BlockID}
     end.
@@ -226,4 +226,3 @@ current_state(Pid) ->
     ?TESTMODULE:current_state(Pid).
 
 -endif.
-
