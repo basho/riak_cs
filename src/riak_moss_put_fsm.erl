@@ -22,7 +22,8 @@
 %% API
 -export([start_link/5,
          send_event/2,
-         augment_data/2]).
+         augment_data/2,
+         finalize/1]).
 
 %% gen_fsm callbacks
 -export([init/1,
@@ -30,6 +31,7 @@
          write_root/2,
          write_block/2,
          waiting/2,
+         client_wait/2,
          handle_event/3,
          handle_sync_event/4,
          handle_info/3,
@@ -44,6 +46,8 @@
                 bytes_received :: non_neg_integer(),
                 next_block_id=0 :: non_neg_integer(),
                 raw_data :: undefined | binary(),
+                final_manifest :: undefined | riak_moss_lfs_utils:lfs_manifest(),
+                waiter :: undefined | {reference(), pid()},
                 timeout :: timeout()}).
 -type state() :: #state{}.
 
@@ -72,6 +76,21 @@ send_event(Pid, Event) ->
 augment_data(Pid, Data) ->
     try
         gen_fsm:sync_send_all_state_event(Pid, {augment_data, Data})
+    catch
+        _:Reason ->
+            case Reason of
+                {noproc, _} ->
+                    {error, {riak_moss_put_fsm_dead, Pid}};
+                _ ->
+                    {error, Reason}
+            end
+    end.
+
+%% @doc Augment the file data being written by a `riak_moss_put_fsm'.
+-spec finalize(pid()) -> ok | {error, term()}.
+finalize(Pid) ->
+    try
+        gen_fsm:sync_send_all_state_event(Pid, finalize)
     catch
         _:Reason ->
             case Reason of
@@ -188,15 +207,24 @@ write_block(root_ready, State=#state{data=Data,
                                    next_block_id=BlockID+1},
             {next_state, write_root, UpdState, Timeout}
     end;
-write_block(all_blocks_written, State) ->
-    %% @TODO Respond to the request initiator
-    {stop, normal, State}.
+write_block({all_blocks_written, Manifest}, State=#state{waiter=Waiter, timeout=Timeout}) ->
+    NewState = State#state{final_manifest=Manifest},
+    case Waiter of
+        undefined ->
+            {next_state, client_wait, NewState, Timeout};
+        Waiter ->
+            gen_fsm:reply(Waiter, {ok, Manifest}),
+            {stop, normal, NewState}
+    end.
 
 %% @doc State that is transistioned to when all the data
 %% that has been received by the fsm has been written, but
 %% more data for the file remains.
 -spec waiting(timeout, state()) -> {stop, timeout, state()}.
 waiting(timeout, State) ->
+    {stop, timeout, State}.
+
+client_wait(timeout, State) ->
     {stop, timeout, State}.
 
 %% @doc Handle events that should be handled
@@ -246,6 +274,10 @@ handle_sync_event({augment_data, NewData},
             NextState = StateName
     end,
     {reply, ok, NextState, UpdState};
+handle_sync_event(finalize, From, StateName, State=#state{final_manifest=undefined}) ->
+    {next_state, StateName, State#state{waiter=From}};
+handle_sync_event(finalize, From, StateName, State=#state{final_manifest=M}) ->
+    {reply, {ok, M}, StateName, State};
 handle_sync_event(_Event, _From, StateName, State) ->
     {next_state, StateName, State}.
 

@@ -186,23 +186,22 @@ content_types_accepted(RD, Ctx) ->
 accept_body(RD, Ctx=#key_context{bucket=Bucket,key=Key,
                                  putctype=_CType,size=Size}) ->
     {ok, Pid} = riak_moss_put_fsm:start_link(list_to_binary(Bucket), Key, Size, <<>>, 60000),
-    MD5 = crypto:md5_init(),
-    accept_streambody(RD, Ctx, MD5, Pid, wrq:stream_req_body(RD, ?DEFAULT_LFS_BLOCK_SIZE)).
+    accept_streambody(RD, Ctx, Pid, wrq:stream_req_body(RD, ?DEFAULT_LFS_BLOCK_SIZE)).
 
-accept_streambody(RD, Ctx=#key_context{}, MD5, Pid, {Data, Next}) ->
-    NewMD5 = crypto:md5_update(MD5, Data),
+accept_streambody(RD, Ctx=#key_context{}, Pid, {Data, Next}) ->
     riak_moss_put_fsm:augment_data(Pid, Data),
     if is_function(Next) ->
-            accept_streambody(RD, Ctx, NewMD5, Pid, Next());
+            accept_streambody(RD, Ctx, Pid, Next());
        Next =:= done ->
-            finalize_request(RD, Ctx, NewMD5, Pid)
+            finalize_request(RD, Ctx, Pid)
     end.
 
 %% TODO:
 %% We need to do some checking to make sure
 %% the bucket exists for the user who is doing
 %% this PUT
-finalize_request(RD, Ctx, MD5, Pid) ->
+finalize_request(RD, Ctx, Pid) ->
     %Metadata = dict:from_list([{<<"content-type">>, CType}]),
-    {true, wrq:set_resp_header("ETag",
-      "\"" ++ riak_moss:binary_to_hexlist(crypto:md5_final(MD5)) ++ "\"", RD), Ctx}.
+    {ok, Manifest} = riak_moss_put_fsm:finalize(Pid),
+    ETag = "\"" ++ riak_moss:binary_to_hexlist(riak_moss_lfs_utils:content_md5(Manifest)) ++ "\"",
+    {true, wrq:set_resp_header("ETag",  ETag, RD), Ctx}.

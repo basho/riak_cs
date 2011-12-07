@@ -25,7 +25,7 @@
          block_name/3,
          block_name_to_term/1,
          block_size/0,
-         finalize_manifest/1,
+         finalize_manifest/2,
          initial_blocks/1,
          initial_blocks/2,
          is_manifest/1,
@@ -35,7 +35,10 @@
          riak_connection/0,
          riak_connection/2,
          sorted_blocks_remaining/1,
-         still_waiting/1]).
+         still_waiting/1,
+         content_md5/1]).
+
+-export_type([lfs_manifest/0]).
 
 %% Opaque record for a large-file manifest.
 -record(lfs_manifest, {
@@ -109,9 +112,10 @@ block_size() ->
 %% @doc Finalize the manifest of a file by
 %% marking it as active, setting a finished time,
 %% and setting blocks_remaining as an empty list.
--spec finalize_manifest(lfs_manifest()) -> lfs_manifest().
-finalize_manifest(Manifest) ->
+-spec finalize_manifest(lfs_manifest(), binary()) -> lfs_manifest().
+finalize_manifest(Manifest, MD5) ->
     Manifest#lfs_manifest{active=true,
+                          content_md5=MD5,
                           finished=httpd_util:rfc1123_date(),
                           blocks_remaining=sets:new()}.
 
@@ -198,3 +202,7 @@ sorted_blocks_remaining(#lfs_manifest{blocks_remaining=Remaining}) ->
 %%      to accumulate more chunks
 still_waiting(#lfs_manifest{blocks_remaining=Remaining}) ->
     sets:size(Remaining) =/= 0.
+
+-spec content_md5(lfs_manifest()) -> binary().
+content_md5(#lfs_manifest{content_md5=ContentMD5}) ->
+    ContentMD5.
