@@ -8,6 +8,8 @@
 
 -module(riak_moss_get_fsm).
 
+-behaviour(gen_fsm).
+
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 
@@ -16,23 +18,29 @@
 
 -endif.
 
-
--behaviour(gen_fsm).
-
 -include("riak_moss.hrl").
 
--export([init/1, handle_event/3, handle_sync_event/4,
-         handle_info/3, terminate/3, code_change/4]).
-
+%% API
 -export([start_link/3,
          stop/1,
-         continue/1,
+         continue/1]).
+
+%% exported to be used by
+%% spawn_link
+-export([normal_retriever/4,
+         blocks_retriever/4]).
+
+%% gen_fsm callbacks
+-export([init/1,
          prepare/2,
-         normal_retriever/4,
-         blocks_retriever/4,
          waiting_value/2,
          waiting_chunk_command/2,
-         waiting_chunks/2]).
+         waiting_chunks/2,
+         handle_event/3,
+         handle_sync_event/4,
+         handle_info/3,
+         terminate/3,
+         code_change/4]).
 
 -record(state, {from :: pid(),
                 bucket :: term(),
@@ -49,17 +57,15 @@
 start_link(From, Bucket, Key) ->
     gen_fsm:start_link(?MODULE, [From, Bucket, Key], []).
 
-riak_object(Pid, Object) ->
-    gen_fsm:send_event(Pid, {object, Object}).
-
-chunk(Pid, ChunkSeq, ChunkValue) ->
-    gen_fsm:send_event(Pid, {chunk, {ChunkSeq, ChunkValue}}).
-
 stop(Pid) ->
     gen_fsm:send_event(Pid, stop).
 
 continue(Pid) ->
     gen_fsm:send_event(Pid, continue).
+
+%% ====================================================================
+%% gen_fsm callbacks
+%% ====================================================================
 
 init([From, Bucket, Key]) ->
     State = #state{from=From, bucket=Bucket, key=Key,
@@ -163,24 +169,6 @@ waiting_chunks({chunk, {ChunkSeq, ChunkRiakObject}}, #state{from=From, blocks_le
             {next_state, waiting_chunks, NewState}
     end.
 
-%% @doc Retrieve the value at
-%%      Bucket, Key, whether it's a
-%%      manifest or regular object
-normal_retriever(ReplyPid, GetModule, Bucket, Key) ->
-    {ok, RiakObject} = GetModule:get_object(riak_moss:to_bucket_name(objects, Bucket), Key),
-    riak_object(ReplyPid, RiakObject).
-
-blocks_retriever(Pid, GetModule, BucketName, BlockKeys) ->
-    Func = fun({ChunkSeq, ChunkName}) ->
-        {ok, Value} = GetModule:get_object(riak_moss:to_bucket_name(blocks, BucketName), ChunkName),
-        chunk(Pid, ChunkSeq, Value)
-    end,
-    lists:foreach(Func, BlockKeys).
-
-%% ====================================================================
-%% gen_fsm callbacks
-%% ====================================================================
-
 %% @private
 handle_event(_Event, _StateName, StateData) ->
     {stop,badmsg,StateData}.
@@ -202,6 +190,34 @@ terminate(Reason, _StateName, _State) ->
 
 %% @private
 code_change(_OldVsn, StateName, State, _Extra) -> {ok, StateName, State}.
+
+%% ====================================================================
+%% Internal functions
+%% ====================================================================
+
+%% @private
+riak_object(Pid, Object) ->
+    gen_fsm:send_event(Pid, {object, Object}).
+
+%% @private
+chunk(Pid, ChunkSeq, ChunkValue) ->
+    gen_fsm:send_event(Pid, {chunk, {ChunkSeq, ChunkValue}}).
+
+%% @private 
+%% Retrieve the value at
+%% Bucket, Key, whether it's a
+%% manifest or regular object
+normal_retriever(ReplyPid, GetModule, Bucket, Key) ->
+    {ok, RiakObject} = GetModule:get_object(riak_moss:to_bucket_name(objects, Bucket), Key),
+    riak_object(ReplyPid, RiakObject).
+
+%% @private
+blocks_retriever(Pid, GetModule, BucketName, BlockKeys) ->
+    Func = fun({ChunkSeq, ChunkName}) ->
+        {ok, Value} = GetModule:get_object(riak_moss:to_bucket_name(blocks, BucketName), ChunkName),
+        chunk(Pid, ChunkSeq, Value)
+    end,
+    lists:foreach(Func, BlockKeys).
 
 %% ===================================================================
 %% Test API
