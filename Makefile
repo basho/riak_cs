@@ -127,8 +127,6 @@ package.%: package.src
 ## Dialyzer
 ##
 
-DIALYZER = dialyzer
-
 APPS = kernel stdlib sasl erts ssl tools os_mon runtime_tools crypto inets \
 	xmerl webtool eunit syntax_tools compiler
 
