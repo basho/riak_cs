@@ -78,11 +78,11 @@ PLT = $(HOME)/.riak_moss_dialyzer_plt
 
 check_plt: compile
 	dialyzer --check_plt --plt $(PLT) --apps $(APPS) \
-		deps/*/ebin
+		deps/*/ebin ebin
 
 build_plt: compile
 	dialyzer --build_plt --output_plt $(PLT) --apps $(APPS) \
-		deps/*/ebin
+		deps/*/ebin ebin
 
 dialyzer: compile
 	@echo
@@ -146,7 +146,7 @@ dialyzer: compile
 	@echo Use "'make build_plt'" to build PLT prior to using this target.
 	@echo
 	@sleep 1
-	dialyzer -Wno_return --plt $(COMBO_PLT) deps/*/ebin | \
+	dialyzer -Wno_return --plt $(COMBO_PLT) deps/*/ebin ebin | \
 	    fgrep -v -f ./dialyzer.ignore-warnings
 
 cleanplt:
