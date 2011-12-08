@@ -23,7 +23,8 @@
 %% API
 -export([start_link/3,
          stop/1,
-         continue/1]).
+         continue/1,
+         get_metadata/1]).
 
 %% exported to be used by
 %% spawn_link
@@ -34,6 +35,7 @@
 -export([init/1,
          prepare/2,
          waiting_value/2,
+         waiting_metadata_request/3,
          waiting_chunk_command/2,
          waiting_chunks/2,
          handle_event/3,
@@ -46,6 +48,8 @@
                 bucket :: term(),
                 key :: term(),
                 value_cache :: binary(), 
+                metadata_cache :: term(), 
+                reply_pid :: pid(),
                 manifest :: term(),
                 blocks_left :: list(),
                 get_module :: module()}).
@@ -62,6 +66,9 @@ stop(Pid) ->
 
 continue(Pid) ->
     gen_fsm:send_event(Pid, continue).
+
+get_metadata(Pid) ->
+    gen_fsm:sync_send_event(Pid, get_metadata).
 
 %% ====================================================================
 %% gen_fsm callbacks
@@ -92,7 +99,7 @@ prepare(timeout, #state{bucket=Bucket, key=Key, get_module=GetModule}=State) ->
     spawn_link(?MODULE, normal_retriever, [self(), GetModule, Bucket, Key]),
     {next_state, waiting_value, State}.
 
-waiting_value({object, Value}, #state{from=From}=State) ->
+waiting_value({object, Value}, State) ->
     %% determine if the object is a normal
     %% object, or a manifest object
     RawValue = riakc_obj:get_value(Value),
@@ -115,13 +122,17 @@ waiting_value({object, Value}, #state{from=From}=State) ->
             %% we don't deal with siblings here
             %% at all
             Metadata = riakc_obj:get_metadata(Value),
-            NextState = State#state{value_cache=RawValue};
+            NextState = State#state{value_cache=RawValue,
+                                    metadata_cache=Metadata};
         true ->
             Metadata = riak_moss_lfs_utils:metadata_from_manifest(DecodedValue),
-            NextState = State#state{manifest=DecodedValue}
+            NextState = State#state{manifest=DecodedValue,
+                                    metadata_cache=Metadata}
     end,
-    From ! {metadata, Metadata},
-    {next_state, waiting_chunk_command, NextState, NextStateTimeout}.
+    {next_state, waiting_metadata_request, NextState, NextStateTimeout}.
+
+waiting_metadata_request(get_metadata, _From, #state{metadata_cache=Metadata}=State) ->
+    {reply, Metadata, waiting_chunk_command, State#state{metadata_cache=undefined}}.
 
 waiting_chunk_command(timeout, State) ->
     {stop, normal, State};
