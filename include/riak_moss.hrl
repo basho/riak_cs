@@ -20,5 +20,5 @@
                       size :: non_neg_integer()}).
 
 -define(USER_BUCKET, <<"moss.users">>).
--define(MAX_CONTENT_LENGTH, 10485760).
--define(DEFAULT_LFS_BLOCK_SIZE, 10485760).
+-define(MAX_CONTENT_LENGTH, 5368709120). %% 5 GB
+-define(DEFAULT_LFS_BLOCK_SIZE, 1048576).%% 1 MB
