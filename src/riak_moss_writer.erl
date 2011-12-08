@@ -42,6 +42,7 @@
                 block_size :: pos_integer(),
                 riak_pid :: pid(),
                 fsm_pid :: pid(),
+                md5 :: binary(),
                 storage_module :: atom()}).
 -type state() :: #state{}.
 
@@ -95,7 +96,9 @@ init([]) ->
     %% Get a connection to riak
     case riak_moss_lfs_utils:riak_connection() of
         {ok, RiakPid} ->
+            MD5 = crypto:md5_init(),
             {ok, #state{riak_pid=RiakPid,
+                        md5=MD5,
                         storage_module=riakc_pb_socket}};
         {error, Reason} ->
             lager:error("Failed to establish connection to Riak. Reason: ~p",
@@ -108,7 +111,7 @@ init(test) ->
 %% @doc Unused
 -spec handle_call(term(), {pid(), term()}, state()) ->
                          {reply, ok, state()}.
-handle_call(_Event, _From, State) ->
+handle_call(_Msg, _From, State) ->
     {reply, ok, State}.
 
 %% @doc Handle asynchronous commands issued via
@@ -146,10 +149,13 @@ handle_cast({update_root, UpdateOp}, State=#state{bucket=Bucket,
                                                   filename=FileName,
                                                   fsm_pid=FsmPid,
                                                   riak_pid=RiakPid,
+                                                  md5=MD5,
                                                   storage_module=StorageModule,
                                                   uuid=UUID}) ->
     ObjsBucket = riak_moss:to_bucket_name(objects, Bucket),
-    case update_root_block(RiakPid, StorageModule, ObjsBucket, FileName, UUID, UpdateOp) of
+    case update_root_block(RiakPid, StorageModule, ObjsBucket, FileName, UUID, MD5, UpdateOp) of
+        {ok, {all_blocks_written, Manifest}} ->
+            riak_moss_put_fsm:send_event(FsmPid, {all_blocks_written, Manifest});
         {ok, Status} ->
             riak_moss_put_fsm:send_event(FsmPid, Status);
         {error, _Reason} ->
@@ -161,11 +167,13 @@ handle_cast({update_root, UpdateOp}, State=#state{bucket=Bucket,
 handle_cast({write_block, BlockID, Data}, State=#state{bucket=Bucket,
                                                        filename=FileName,
                                                        fsm_pid=FsmPid,
+                                                       md5=MD5,
                                                        riak_pid=RiakPid,
                                                        storage_module=StorageModule,
                                                        uuid=UUID}) ->
     BlockName = riak_moss_lfs_utils:block_name(FileName, UUID, BlockID),
     BlocksBucket = riak_moss:to_bucket_name(blocks, Bucket),
+    NewMD5 = crypto:md5_update(MD5, Data),
     case write_data_block(RiakPid, StorageModule, BlocksBucket, BlockName, Data) of
         ok ->
             riak_moss_put_fsm:send_event(FsmPid, {block_written, BlockID});
@@ -173,7 +181,7 @@ handle_cast({write_block, BlockID, Data}, State=#state{bucket=Bucket,
             %% @TODO Handle error condition
             ok
     end,
-    {noreply, State};
+    {noreply, State#state{md5=NewMD5}};
 handle_cast(Event, State) ->
     lager:warning("Received unknown cast event: ~p", [Event]),
     {noreply, State}.
@@ -229,9 +237,9 @@ write_root_block(Pid, Module, Bucket, FileName, UUID, ContentLength) ->
 
 %% @private
 %% @doc Update the root block for a file stored in Riak.
--spec update_root_block(pid(), atom(), binary(), binary(), binary(), update_op()) ->
+-spec update_root_block(pid(), atom(), binary(), binary(), binary(), binary(), update_op()) ->
                                {ok, root_ready | all_blocks_written} | {error, term()}.
-update_root_block(Pid, Module, Bucket, FileName, _UUID, {block_ready, BlockID}) ->
+update_root_block(Pid, Module, Bucket, FileName, _UUID, MD5, {block_ready, BlockID}) ->
     case Module:get(Pid, Bucket, FileName) of
         {ok, Obj} ->
             Manifest = binary_to_term(riakc_obj:get_value(Obj)),
@@ -241,8 +249,8 @@ update_root_block(Pid, Module, Bucket, FileName, _UUID, {block_ready, BlockID}) 
             case BlocksRemaining of
                 [] ->
                     UpdManifest1 =
-                        riak_moss_lfs_utils:finalize_manifest(Manifest),
-                    Status = all_blocks_written;
+                        riak_moss_lfs_utils:finalize_manifest(Manifest, crypto:md5_final(MD5)),
+                    Status = {all_blocks_written, UpdManifest1};
                 _ ->
                     UpdManifest1 = UpdManifest,
                     Status = root_ready
