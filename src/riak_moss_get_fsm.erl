@@ -24,7 +24,8 @@
 -export([start_link/3,
          stop/1,
          continue/1,
-         get_metadata/1]).
+         get_metadata/1,
+         get_next_chunk/1]).
 
 %% exported to be used by
 %% spawn_link
@@ -36,8 +37,11 @@
          prepare/2,
          waiting_value/2,
          waiting_metadata_request/3,
-         waiting_chunk_command/2,
+         waiting_chunk_request/3,
+         waiting_continue_or_stop/2,
          waiting_chunks/2,
+         waiting_chunks/3,
+         sending_remaining/3,
          handle_event/3,
          handle_sync_event/4,
          handle_info/3,
@@ -49,6 +53,7 @@
                 key :: term(),
                 value_cache :: binary(), 
                 metadata_cache :: term(), 
+                chunk_queue :: term(),
                 reply_pid :: pid(),
                 manifest :: term(),
                 blocks_left :: list(),
@@ -70,24 +75,29 @@ continue(Pid) ->
 get_metadata(Pid) ->
     gen_fsm:sync_send_event(Pid, get_metadata).
 
+get_next_chunk(Pid) ->
+    gen_fsm:sync_send_event(Pid, get_next_chunk).
+
 %% ====================================================================
 %% gen_fsm callbacks
 %% ====================================================================
 
-init([From, Bucket, Key]) ->
-    State = #state{from=From, bucket=Bucket, key=Key,
-                   get_module=riak_moss_riakc},
+init([_From, Bucket, Key]) ->
+    Queue = queue:new(),
+    State = #state{bucket=Bucket, key=Key,
+                   get_module=riak_moss_riakc,
+                   chunk_queue=Queue},
     %% purposely have the timeout happen
     %% so that we get called in the prepare
     %% state
     {ok, prepare, State, 0};
 init([test, From, Bucket, Key]) ->
-    State = #state{from=From, bucket=Bucket, key=Key,
-                   get_module=riak_moss_dummy_gets},
+    {ok, prepare, State1, 0} = init([From, Bucket, Key]),
+    State2 = State1#state{get_module=riak_moss_dummy_gets},
     %% purposely have the timeout happen
     %% so that we get called in the prepare
     %% state
-    {ok, prepare, State, 0}.
+    {ok, prepare, State2, 0}.
 
 %% TODO:
 %% could this func use
@@ -132,17 +142,16 @@ waiting_value({object, Value}, State) ->
     {next_state, waiting_metadata_request, NextState, NextStateTimeout}.
 
 waiting_metadata_request(get_metadata, _From, #state{metadata_cache=Metadata}=State) ->
-    {reply, Metadata, waiting_chunk_command, State#state{metadata_cache=undefined}}.
+    {reply, Metadata, waiting_continue_or_stop, State#state{metadata_cache=undefined}}.
 
-waiting_chunk_command(timeout, State) ->
+waiting_continue_or_stop(timeout, State) ->
     {stop, normal, State};
-waiting_chunk_command(stop, State) ->
+waiting_continue_or_stop(stop, State) ->
     {stop, normal, State};
-waiting_chunk_command(continue, #state{from=From,
-                                            value_cache=CachedValue,
-                                            manifest=Manifest,
-                                            bucket=BucketName,
-                                            get_module=GetModule}=State) ->
+waiting_continue_or_stop(continue, #state{value_cache=CachedValue,
+                                       manifest=Manifest,
+                                       bucket=BucketName,
+                                       get_module=GetModule}=State) ->
     case CachedValue of
         undefined ->
             %% TODO:
@@ -158,28 +167,66 @@ waiting_chunk_command(continue, #state{from=From,
             %% we don't actually have to start
             %% retrieving chunks, as we already
             %% have the value cached in our State
-            From ! {done, CachedValue},
-            {stop, normal, State}
+            {next_state, waiting_chunk_request, State}
     end.
 
-waiting_chunks({chunk, {ChunkSeq, ChunkRiakObject}}, #state{from=From, blocks_left=Remaining}=State) ->
-    %% we're assuming that we're receiving the
-    %% chunks synchronously, and that we can
-    %% send them back to WM as we get them
+waiting_chunk_request(get_next_chunk, _From, #state{value_cache=CachedValue}=State) ->
+    {stop, normal, CachedValue, State}.
+
+waiting_chunks(get_next_chunk, From, #state{chunk_queue=ChunkQueue}=State) ->
+    case queue:is_empty(ChunkQueue) of
+        true ->
+            %% we don't have a chunk ready
+            %% yet, so we'll make note
+            %% of the sender and go back
+            %% into waiting for another
+            %% chunk
+            {next_state, waiting_chunks, State#state{from=From}};
+        _ ->
+            {ToReturn, NewQueue} = queue:out(ChunkQueue),
+            {reply, ToReturn, waiting_chunks, State#state{chunk_queue=NewQueue}}
+    end.
+
+waiting_chunks({chunk, {ChunkSeq, ChunkRiakObject}}, #state{from=From,
+                                                            blocks_left=Remaining,
+                                                            chunk_queue=ChunkQueue}=State) ->
 
     %% we currently only care about the binary
     %% data in the object
     ChunkValue = riakc_obj:get_value(ChunkRiakObject),
 
-    NewRemaining = sets:del_element(ChunkSeq, Remaining),
-    NewState = State#state{blocks_left=NewRemaining},
-    case sets:size(NewRemaining) of
-        0 ->
-            From ! {done, ChunkValue},
-            {stop, normal, NewState};
+    NewQueue = queue:in(ChunkValue, ChunkQueue),
+
+    %% @TODO
+    %% put into a function called
+    %% `maybe_reply` or something
+    NewQueue2 = case From of
+        undefined ->
+            NewQueue;
         _ ->
-            From ! {chunk, ChunkValue},
-            {next_state, waiting_chunks, NewState}
+            {Reply, Queue} = queue:out(NewQueue),
+            gen_fsm:reply(From, Reply),
+            Queue
+    end,
+
+    NewRemaining = sets:del_element(ChunkSeq, Remaining),
+    NewState = State#state{blocks_left=NewRemaining, chunk_queue=NewQueue2},
+    NextState = case sets:size(NewRemaining) of
+        0 ->
+            sending_remaining;
+        _ ->
+            waiting_chunks
+    end,
+    {next_state, NextState, NewState}.
+
+sending_remaining(get_next_chunk, _From, #state{chunk_queue=ChunkQueue}=State) ->
+    {Item, Queue} = queue:out(ChunkQueue),
+    NewState = State#state{chunk_queue=Queue},
+    case queue:is_empty(Queue) of
+        true ->
+            {stop, normal, Item, NewState};
+        _ ->
+            {reply, Item, sending_remaining, NewState}
     end.
 
 %% @private
