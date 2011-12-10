@@ -36,11 +36,13 @@
 -export([init/1,
          prepare/2,
          waiting_value/2,
+         waiting_value/3,
          waiting_metadata_request/3,
          waiting_chunk_request/3,
          waiting_continue_or_stop/2,
          waiting_chunks/2,
          waiting_chunks/3,
+         %sending_remaining/2,
          sending_remaining/3,
          handle_event/3,
          handle_sync_event/4,
@@ -109,7 +111,11 @@ prepare(timeout, #state{bucket=Bucket, key=Key, get_module=GetModule}=State) ->
     spawn_link(?MODULE, normal_retriever, [self(), GetModule, Bucket, Key]),
     {next_state, waiting_value, State}.
 
-waiting_value({object, Value}, State) ->
+waiting_value(get_metadata, From, State) ->
+    NewState = State#state{from=From},
+    {next_state, waiting_value, NewState}.
+
+waiting_value({object, Value}, #state{from=From}=State) ->
     %% determine if the object is a normal
     %% object, or a manifest object
     RawValue = riakc_obj:get_value(Value),
@@ -118,28 +124,26 @@ waiting_value({object, Value}, State) ->
     DecodedValue = binary_to_term(RawValue),
     NextStateTimeout = 60000,
     case riak_moss_lfs_utils:is_manifest(DecodedValue) of
-
-    %% TODO:
-    %% create a shared func for sending messages
-    %% back to `From`. Each of these `From ! Metadata`
-    %% calls shouldn't be concerned with the exact
-    %% message format
         false ->
-            %% send metadata back to
-            %% the `from` part of
-            %% state
             %% TODO:
             %% we don't deal with siblings here
             %% at all
             Metadata = riakc_obj:get_metadata(Value),
-            NextState = State#state{value_cache=RawValue,
+            NewState = State#state{value_cache=RawValue,
                                     metadata_cache=Metadata};
         true ->
             Metadata = riak_moss_lfs_utils:metadata_from_manifest(DecodedValue),
-            NextState = State#state{manifest=DecodedValue,
+            NewState = State#state{manifest=DecodedValue,
                                     metadata_cache=Metadata}
     end,
-    {next_state, waiting_metadata_request, NextState, NextStateTimeout}.
+    NextState = case From of
+        undefined ->
+            waiting_metadata_request;
+        _ ->
+            gen_fsm:reply(From, Metadata),
+            waiting_continue_or_stop
+    end,
+    {next_state, NextState, NewState#state{from=undefined}, NextStateTimeout}.
 
 waiting_metadata_request(get_metadata, _From, #state{metadata_cache=Metadata}=State) ->
     {reply, Metadata, waiting_continue_or_stop, State#state{metadata_cache=undefined}}.
@@ -173,7 +177,8 @@ waiting_continue_or_stop(continue, #state{value_cache=CachedValue,
 waiting_chunk_request(get_next_chunk, _From, #state{value_cache=CachedValue}=State) ->
     {stop, normal, CachedValue, State}.
 
-waiting_chunks(get_next_chunk, From, #state{chunk_queue=ChunkQueue}=State) ->
+waiting_chunks(get_next_chunk, From, #state{chunk_queue=ChunkQueue, from=PreviousFrom}=State) ->
+    ?assertEqual(PreviousFrom, undefined),
     case queue:is_empty(ChunkQueue) of
         true ->
             %% we don't have a chunk ready
@@ -183,44 +188,58 @@ waiting_chunks(get_next_chunk, From, #state{chunk_queue=ChunkQueue}=State) ->
             %% chunk
             {next_state, waiting_chunks, State#state{from=From}};
         _ ->
-            {ToReturn, NewQueue} = queue:out(ChunkQueue),
+            {{value, ToReturn}, NewQueue} = queue:out(ChunkQueue),
             {reply, ToReturn, waiting_chunks, State#state{chunk_queue=NewQueue}}
     end.
 
 waiting_chunks({chunk, {ChunkSeq, ChunkRiakObject}}, #state{from=From,
                                                             blocks_left=Remaining,
                                                             chunk_queue=ChunkQueue}=State) ->
+    NewRemaining = sets:del_element(ChunkSeq, Remaining),
 
     %% we currently only care about the binary
     %% data in the object
     ChunkValue = riakc_obj:get_value(ChunkRiakObject),
 
-    NewQueue = queue:in(ChunkValue, ChunkQueue),
-
-    %% @TODO
-    %% put into a function called
-    %% `maybe_reply` or something
-    NewQueue2 = case From of
-        undefined ->
-            NewQueue;
-        _ ->
-            {Reply, Queue} = queue:out(NewQueue),
-            gen_fsm:reply(From, Reply),
-            Queue
-    end,
-
-    NewRemaining = sets:del_element(ChunkSeq, Remaining),
-    NewState = State#state{blocks_left=NewRemaining, chunk_queue=NewQueue2},
-    NextState = case sets:size(NewRemaining) of
+    case sets:size(NewRemaining) of
         0 ->
-            sending_remaining;
+            case From of
+                undefined ->
+                    NewQueue = queue:in({done, ChunkValue}, ChunkQueue),
+                    NewState = State#state{blocks_left=NewRemaining,
+                                           chunk_queue=NewQueue},
+                    {next_state, sending_remaining, NewState};
+                _ ->
+                    ?assert(queue:is_empty(ChunkQueue)),
+                    gen_fsm:reply(From, {done, ChunkValue}),
+                    NewState = State#state{blocks_left=NewRemaining, from=undefined},
+                    {stop, normal, NewState}
+            end;
         _ ->
-            waiting_chunks
-    end,
-    {next_state, NextState, NewState}.
+            case From of
+                undefined ->
+                    NewQueue = queue:in({chunk, ChunkValue}, ChunkQueue),
+                    NewState = State#state{blocks_left=NewRemaining,
+                                           chunk_queue=NewQueue},
+                    {next_state, waiting_chunks, NewState};
+                _ ->
+                    {ReplyChunk, NewQueue2} = case queue:is_empty(ChunkQueue) of
+                        true ->
+                            {{chunk, ChunkValue}, ChunkQueue};
+                        _ ->
+                            {{value, ChunkToReplyWith}, NewQueue} = queue:out(ChunkQueue),
+                            {ChunkToReplyWith, NewQueue}
+                    end,
+                    gen_fsm:reply(From, ReplyChunk),
+                    NewState = State#state{blocks_left=NewRemaining,
+                                           chunk_queue=NewQueue2,
+                                           from=undefined},
+                    {next_state, waiting_chunks, NewState}
+            end
+    end.
 
 sending_remaining(get_next_chunk, _From, #state{chunk_queue=ChunkQueue}=State) ->
-    {Item, Queue} = queue:out(ChunkQueue),
+    {{value, Item}, Queue} = queue:out(ChunkQueue),
     NewState = State#state{chunk_queue=Queue},
     case queue:is_empty(Queue) of
         true ->
