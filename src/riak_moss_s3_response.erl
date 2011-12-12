@@ -4,10 +4,10 @@
 %%
 %% -------------------------------------------------------------------
 -module(riak_moss_s3_response).
--export([api_error/3, 
+-export([api_error/3,
          respond/4,
-         error_response/5, 
-         list_bucket_response/5, 
+         error_response/5,
+         list_bucket_response/5,
          list_all_my_buckets_response/3]).
 -define(xml_prolog, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>").
 -include("riak_moss.hrl").
@@ -28,14 +28,14 @@ error_code(access_denied) -> 'AccessDenied';
 error_code(bucket_not_empty) -> 'BucketNotEmpty';
 error_code(bucket_already_exists) -> 'BucketAlreadyExists';
 error_code(entity_too_large) -> 'EntityTooLarge'.
-                                    
-     
+
+
 status_code(invalid_access_key_id) -> 403;
 status_code(access_denied) ->  403;
 status_code(bucket_not_empty) ->  409;
 status_code(bucket_already_exists) -> 409;
 status_code(entity_too_large) -> 400.
-    
+
 
 respond(StatusCode, Body, ReqData, Ctx) ->
     {{halt, StatusCode}, wrq:set_resp_body(Body, ReqData), Ctx}.
@@ -50,21 +50,23 @@ error_response(StatusCode, Code, Message, RD, Ctx) ->
                         {'Resource', [wrq:path(RD)]},
                         {'RequestId', [""]}]}],
     respond(StatusCode, export_xml(XmlDoc), RD, Ctx).
-    
+
 
 list_all_my_buckets_response(User, RD, Ctx) ->
-    BucketsDoc = [{'Bucket', 
+    BucketsDoc = [{'Bucket',
                    [{'Name', [B#moss_bucket.name]},
-                    {'CreationDate', [B#moss_bucket.creation_date]}]} 
+                    {'CreationDate', [B#moss_bucket.creation_date]}]}
                   || B <- riak_moss_riakc:get_buckets(User)],
     Contents =  [user_to_xml_owner(User)] ++ [{'Buckets', BucketsDoc}],
     XmlDoc = [{'ListAllMyBucketsResult',  Contents}],
     respond(200, export_xml(XmlDoc), RD, Ctx).
 
 list_bucket_response(User, Bucket, Keys, RD, Ctx) ->
+    %% @TODO Need to properly set the size an etag fields
     Contents = [{'Contents', [{'Key', [binary_to_list(K)]},
                               {'Size', ["0"]},
-                              {'LastModified', [httpd_util:rfc1123_date()]},
+                              {'LastModified', [riak_moss_wm_utils:iso_8601_datetime()]},
+                              {'ETag', ["etagplaceholder"]},
                               {'Owner', [user_to_xml_owner(User)]}]}|| K <- Keys],
     BucketProps = [{'Name', [Bucket#moss_bucket.name]},
                     {'Prefix', []},
