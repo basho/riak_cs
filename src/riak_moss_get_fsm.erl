@@ -58,6 +58,8 @@
                 chunk_queue :: term(),
                 manifest :: term(),
                 blocks_left :: list(),
+                normal_retriever_pid :: pid(),
+                blocks_retriever_pid :: pid(),
                 get_module :: module()}).
 
 %% ===================================================================
@@ -107,14 +109,14 @@ prepare(timeout, #state{bucket=Bucket, key=Key, get_module=GetModule}=State) ->
     %% start the process that will
     %% fetch the value, be it manifest
     %% or regular object
-    spawn_link(?MODULE, normal_retriever, [self(), GetModule, Bucket, Key]),
-    {next_state, waiting_value, State}.
+    Pid = spawn_link(?MODULE, normal_retriever, [self(), GetModule, Bucket, Key]),
+    {next_state, waiting_value, State#state{normal_retriever_pid=Pid}}.
 
 waiting_value(get_metadata, From, State) ->
     NewState = State#state{from=From},
     {next_state, waiting_value, NewState}.
 
-waiting_value({object, Value}, #state{from=From}=State) ->
+waiting_value({object, Pid, Value}, #state{from=From, normal_retriever_pid=Pid}=State) ->
     %% determine if the object is a normal
     %% object, or a manifest object
     RawValue = riakc_obj:get_value(Value),
@@ -164,8 +166,9 @@ waiting_continue_or_stop(continue, #state{value_cache=CachedValue,
             %% chunk events
             BlockKeys = riak_moss_lfs_utils:initial_block_keynames(Manifest),
             BlocksLeft = sets:from_list([X || {X, _} <- BlockKeys]),
-            spawn_link(?MODULE, blocks_retriever, [self(), GetModule, BucketName, BlockKeys]),
-            {next_state, waiting_chunks, State#state{blocks_left=BlocksLeft}};
+            Pid = spawn_link(?MODULE, blocks_retriever, [self(), GetModule, BucketName, BlockKeys]),
+            {next_state, waiting_chunks, State#state{blocks_left=BlocksLeft,
+                                                     blocks_retriever_pid=Pid}};
         _ ->
             %% we don't actually have to start
             %% retrieving chunks, as we already
@@ -190,8 +193,9 @@ waiting_chunks(get_next_chunk, From, #state{chunk_queue=ChunkQueue, from=Previou
             {reply, ToReturn, waiting_chunks, State#state{chunk_queue=NewQueue}}
     end.
 
-waiting_chunks({chunk, {ChunkSeq, ChunkRiakObject}}, #state{from=From,
+waiting_chunks({chunk, Pid, {ChunkSeq, ChunkRiakObject}}, #state{from=From,
                                                             blocks_left=Remaining,
+                                                            blocks_retriever_pid=Pid,
                                                             chunk_queue=ChunkQueue}=State) ->
     NewRemaining = sets:del_element(ChunkSeq, Remaining),
 
@@ -277,11 +281,11 @@ code_change(_OldVsn, StateName, State, _Extra) -> {ok, StateName, State}.
 
 %% @private
 riak_object(Pid, Object) ->
-    gen_fsm:send_event(Pid, {object, Object}).
+    gen_fsm:send_event(Pid, {object, self(), Object}).
 
 %% @private
 chunk(Pid, ChunkSeq, ChunkValue) ->
-    gen_fsm:send_event(Pid, {chunk, {ChunkSeq, ChunkValue}}).
+    gen_fsm:send_event(Pid, {chunk, self(), {ChunkSeq, ChunkValue}}).
 
 %% @private 
 %% Retrieve the value at
