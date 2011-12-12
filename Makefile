@@ -24,9 +24,6 @@ clean:
 distclean: clean
 	@./rebar delete-deps
 
-docs:
-	@erl -noshell -run edoc_run application '$(REPO)' '"."' '[]'
-
 test:
 	@./rebar skip_deps=true eunit
 
@@ -61,7 +58,6 @@ devclean: clean
 ##
 docs:
 	./rebar skip_deps=true doc
-	@cp -R apps/webmachine/doc doc/webmachine
 
 orgs: orgs-doc orgs-README
 
@@ -73,7 +69,7 @@ orgs-README:
 	@mv README.txt README
 
 APPS = kernel stdlib sasl erts ssl tools os_mon runtime_tools crypto inets \
-	xmerl webtool snmp public_key mnesia eunit syntax_tools compiler
+	xmerl webtool eunit syntax_tools compiler
 PLT = $(HOME)/.riak_moss_dialyzer_plt
 
 check_plt: compile
@@ -123,38 +119,6 @@ package.src:
 package.%: package.src
 	make -C package -f $(PKG_ID)/deps/node_package/priv/templates/$*/Makefile.bootstrap
 
-##
-## Dialyzer
-##
 
-APPS = kernel stdlib sasl erts ssl tools os_mon runtime_tools crypto inets \
-	xmerl webtool eunit syntax_tools compiler
-
-COMBO_PLT = $(HOME)/.riak_moss_combo_dialyzer_plt
-
-check_plt: compile
-	dialyzer --check_plt --plt $(COMBO_PLT) --apps $(APPS) \
-		deps/*/ebin
-
-build_plt: compile
-	dialyzer --build_plt --output_plt $(COMBO_PLT) --apps $(APPS) \
-		deps/*/ebin
-
-dialyzer: compile
-	@echo
-	@echo Use "'make check_plt'" to check PLT prior to using this target.
-	@echo Use "'make build_plt'" to build PLT prior to using this target.
-	@echo
-	@sleep 1
-	dialyzer -Wno_return --plt $(COMBO_PLT) deps/*/ebin ebin | \
-	    fgrep -v -f ./dialyzer.ignore-warnings
-
-cleanplt:
-	@echo 
-	@echo "Are you sure?  It takes about 1/2 hour to re-build."
-	@echo Deleting $(COMBO_PLT) in 5 seconds.
-	@echo 
-	sleep 5
-	rm $(COMBO_PLT)
 
 
