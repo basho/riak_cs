@@ -56,7 +56,6 @@
                 value_cache :: binary(), 
                 metadata_cache :: term(), 
                 chunk_queue :: term(),
-                reply_pid :: pid(),
                 manifest :: term(),
                 blocks_left :: list(),
                 get_module :: module()}).
