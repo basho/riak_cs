@@ -14,14 +14,14 @@
 -include_lib("eunit/include/eunit.hrl").
 
 %% Test API
--export([test_link/3]).
+-export([test_link/2]).
 
 -endif.
 
 -include("riak_moss.hrl").
 
 %% API
--export([start_link/3,
+-export([start_link/2,
          stop/1,
          continue/1,
          get_metadata/1,
@@ -65,8 +65,8 @@
 %% Public API
 %% ===================================================================
 
-start_link(From, Bucket, Key) ->
-    gen_fsm:start_link(?MODULE, [From, Bucket, Key], []).
+start_link(Bucket, Key) ->
+    gen_fsm:start_link(?MODULE, [Bucket, Key], []).
 
 stop(Pid) ->
     gen_fsm:send_event(Pid, stop).
@@ -84,7 +84,7 @@ get_next_chunk(Pid) ->
 %% gen_fsm callbacks
 %% ====================================================================
 
-init([_From, Bucket, Key]) ->
+init([Bucket, Key]) ->
     Queue = queue:new(),
     State = #state{bucket=Bucket, key=Key,
                    get_module=riak_moss_riakc,
@@ -93,8 +93,8 @@ init([_From, Bucket, Key]) ->
     %% so that we get called in the prepare
     %% state
     {ok, prepare, State, 0};
-init([test, From, Bucket, Key]) ->
-    {ok, prepare, State1, 0} = init([From, Bucket, Key]),
+init([test, Bucket, Key]) ->
+    {ok, prepare, State1, 0} = init([Bucket, Key]),
     State2 = State1#state{get_module=riak_moss_dummy_gets},
     %% purposely have the timeout happen
     %% so that we get called in the prepare
@@ -306,7 +306,7 @@ blocks_retriever(Pid, GetModule, BucketName, BlockKeys) ->
 
 -ifdef(TEST).
 
-test_link(From, Bucket, Key) ->
-    gen_fsm:start_link(?MODULE, [test, From, Bucket, Key], []).
+test_link(Bucket, Key) ->
+    gen_fsm:start_link(?MODULE, [test, Bucket, Key], []).
 
 -endif.

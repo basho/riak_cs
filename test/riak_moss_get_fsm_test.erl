@@ -44,14 +44,14 @@ test_n_chunks_builder(N) ->
     fun () ->
         BlockSize = calc_block_size(10000, N),
         application:set_env(riak_moss, lfs_block_size, BlockSize),
-        {ok, Pid} = riak_moss_get_fsm:test_link(self(), <<"bucket">>, <<"key">>),
+        {ok, Pid} = riak_moss_get_fsm:test_link(<<"bucket">>, <<"key">>),
         ?assertEqual(dict:new(), riak_moss_get_fsm:get_metadata(Pid)),
         riak_moss_get_fsm:continue(Pid),
         expect_n_chunks(Pid, N)
     end.
 
 receives_metadata() ->
-    {ok, Pid} = riak_moss_get_fsm:test_link(self(), <<"bucket">>, <<"key">>),
+    {ok, Pid} = riak_moss_get_fsm:test_link(<<"bucket">>, <<"key">>),
     ?assertEqual(dict:new(), riak_moss_get_fsm:get_metadata(Pid)),
     riak_moss_get_fsm:stop(Pid).
 
