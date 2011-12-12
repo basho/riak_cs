@@ -144,8 +144,14 @@ initial_blocks(ContentLength, BlockSize) ->
 
 %% @doc Returns true if Value is
 %%      a manifest record
-is_manifest(Value) ->
-    is_record(Value, lfs_manifest).
+is_manifest(BinaryValue) ->
+    try binary_to_term(BinaryValue) of
+        Term ->
+            is_record(Term, lfs_manifest)
+    catch
+        error:badarg ->
+            false
+    end.
 
 %% @doc Return the metadata for the object
 %%      represented in the manifest

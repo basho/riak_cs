@@ -121,9 +121,8 @@ waiting_value({object, Value}, #state{from=From}=State) ->
     RawValue = riakc_obj:get_value(Value),
     %% TODO:
     %% put binary_to_term in a catch statement
-    DecodedValue = binary_to_term(RawValue),
     NextStateTimeout = 60000,
-    case riak_moss_lfs_utils:is_manifest(DecodedValue) of
+    case riak_moss_lfs_utils:is_manifest(RawValue) of
         false ->
             %% TODO:
             %% we don't deal with siblings here
@@ -132,6 +131,7 @@ waiting_value({object, Value}, #state{from=From}=State) ->
             NewState = State#state{value_cache=RawValue,
                                     metadata_cache=Metadata};
         true ->
+            DecodedValue = binary_to_term(RawValue),
             Metadata = riak_moss_lfs_utils:metadata_from_manifest(DecodedValue),
             NewState = State#state{manifest=DecodedValue,
                                     metadata_cache=Metadata}
