@@ -9,7 +9,8 @@
 -export([service_available/2,
          parse_auth_header/2,
          ensure_doc/1,
-         user_record_to_proplist/1]).
+         user_record_to_proplist/1,
+         iso_8601_datetime/0]).
 
 -include("riak_moss.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
@@ -79,3 +80,11 @@ user_record_to_proplist(#moss_user{name=Name,
      {<<"key_id">>, list_to_binary(KeyID)},
      {<<"key_secret">>, list_to_binary(KeySecret)},
      {<<"buckets">>, Buckets}].
+
+%% @doc Get an ISO 8601 formatted timestamp representing
+%% current time.
+-spec iso_8601_datetime() -> [non_neg_integer()].
+iso_8601_datetime() ->
+    {{Year, Month, Day}, {Hour, Min, Sec}} = erlang:universaltime(),
+    io_lib:format("~4.10.0B-~2.10.0B-~2.10.0BT~2.10.0B:~2.10.0B:~2.10.0B.000Z",
+                  [Year, Month, Day, Hour, Min, Sec]).
