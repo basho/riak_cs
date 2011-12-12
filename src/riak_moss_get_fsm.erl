@@ -177,8 +177,7 @@ waiting_continue_or_stop(continue, #state{value_cache=CachedValue,
 waiting_chunk_request(get_next_chunk, _From, #state{value_cache=CachedValue}=State) ->
     {stop, normal, CachedValue, State}.
 
-waiting_chunks(get_next_chunk, From, #state{chunk_queue=ChunkQueue, from=PreviousFrom}=State) ->
-    ?assertEqual(PreviousFrom, undefined),
+waiting_chunks(get_next_chunk, From, #state{chunk_queue=ChunkQueue, from=PreviousFrom}=State) when PreviousFrom =:= undefined ->
     case queue:is_empty(ChunkQueue) of
         true ->
             %% we don't have a chunk ready
@@ -201,6 +200,10 @@ waiting_chunks({chunk, {ChunkSeq, ChunkRiakObject}}, #state{from=From,
     %% data in the object
     ChunkValue = riakc_obj:get_value(ChunkRiakObject),
 
+    %% this is just to be used
+    %% in a guard later
+    Empty = queue:is_empty(ChunkQueue),
+
     case sets:size(NewRemaining) of
         0 ->
             case From of
@@ -209,8 +212,7 @@ waiting_chunks({chunk, {ChunkSeq, ChunkRiakObject}}, #state{from=From,
                     NewState = State#state{blocks_left=NewRemaining,
                                            chunk_queue=NewQueue},
                     {next_state, sending_remaining, NewState};
-                _ ->
-                    ?assert(queue:is_empty(ChunkQueue)),
+                _ when Empty ->
                     gen_fsm:reply(From, {done, ChunkValue}),
                     NewState = State#state{blocks_left=NewRemaining, from=undefined},
                     {stop, normal, NewState}
