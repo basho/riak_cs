@@ -38,7 +38,8 @@ initialize_case({WriterPid, ReceiverPid}) ->
                                          ReceiverPid,
                                          <<"testbucket">>,
                                          <<"testfile">>,
-                                         1024),
+                                         1024,
+                                        "text/plain"),
     {"initialize response test",
      fun() ->
              [

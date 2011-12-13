@@ -22,7 +22,7 @@
 
 %% API
 -export([start_link/0,
-         initialize/5,
+         initialize/6,
          write_root/1,
          update_root/2,
          write_block/3]).
@@ -36,6 +36,7 @@
          code_change/3]).
 
 -record(state, {bucket :: binary(),
+                content_type :: string(),
                 filename :: binary(),
                 uuid :: binary(),
                 file_size :: pos_integer(),
@@ -62,13 +63,15 @@ start_link() ->
                  pid(),
                  binary(),
                  binary(),
-                 pos_integer()) -> ok.
-initialize(Pid, FsmPid, Bucket, FileName, ContentLength) ->
+                 pos_integer(),
+                 string()) -> ok.
+initialize(Pid, FsmPid, Bucket, FileName, ContentLength, ContentType) ->
     gen_server:cast(Pid, {initialize,
                           FsmPid,
                           Bucket,
                           FileName,
-                          ContentLength}).
+                          ContentLength,
+                          ContentType}).
 
 %% @doc Write a new root block
 -spec write_root(pid()) -> {ok, term()}.
@@ -118,13 +121,15 @@ handle_call(_Msg, _From, State) ->
 %% the exported functions.
 -spec handle_cast(term(), state()) ->
                          {noreply, state()}.
-handle_cast({initialize, FsmPid, Bucket, FileName, ContentLength}, State) ->
+handle_cast({initialize, FsmPid, Bucket, FileName, ContentLength, ContentType}, State) ->
     riak_moss_put_fsm:send_event(FsmPid, writer_ready),
     {noreply, State#state{bucket=Bucket,
+                          content_type=ContentType,
                           fsm_pid=FsmPid,
                           filename=FileName,
                           file_size=ContentLength}};
 handle_cast(write_root, State=#state{bucket=Bucket,
+                                     content_type=ContentType,
                                      fsm_pid=FsmPid,
                                      filename=FileName,
                                      file_size=ContentLength,
@@ -137,7 +142,8 @@ handle_cast(write_root, State=#state{bucket=Bucket,
                           ObjsBucket,
                           FileName,
                           UUID,
-                          ContentLength) of
+                          ContentLength,
+                          ContentType) of
         ok ->
             riak_moss_put_fsm:send_event(FsmPid, root_ready);
         {error, _Reason} ->
@@ -214,9 +220,10 @@ code_change(_OldVsn, State, _Extra) ->
                        binary(),
                        binary(),
                        binary(),
-                       pos_integer()) ->
+                       pos_integer(),
+                       string()) ->
                               ok | {error, term()}.
-write_root_block(Pid, Module, Bucket, FileName, UUID, ContentLength) ->
+write_root_block(Pid, Module, Bucket, FileName, UUID, ContentLength, ContentType) ->
     %% Create a new file manifest
     Manifest = riak_moss_lfs_utils:new_manifest(Bucket,
                                                 FileName,
@@ -233,7 +240,7 @@ write_root_block(Pid, Module, Bucket, FileName, UUID, ContentLength) ->
             ok
     end,
     Obj = riakc_obj:new(Bucket, FileName, term_to_binary(Manifest)),
-    Module:put(Pid, Obj).
+    Module:put(Pid, Obj, ContentType).
 
 %% @private
 %% @doc Update the root block for a file stored in Riak.

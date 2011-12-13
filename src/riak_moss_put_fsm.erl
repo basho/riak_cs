@@ -14,7 +14,7 @@
 -include_lib("eunit/include/eunit.hrl").
 
 %% Test API
--export([test_link/6,
+-export([test_link/7,
          current_state/1]).
 
 -endif.
@@ -43,6 +43,7 @@
                 data :: undefined | [binary()],
                 writer_pid :: undefined | pid(),
                 content_length :: pos_integer(),
+                content_type :: string(),
                 bytes_received :: non_neg_integer(),
                 next_block_id=0 :: non_neg_integer(),
                 raw_data :: undefined | binary(),
@@ -105,7 +106,7 @@ send_sync_event(Pid, Msg) ->
 -spec init([binary() | string() | pos_integer() | timeout()]) ->
                   {ok, initialize, state(), 0} |
                   {ok, write_root, state()}.
-init([Bucket, Name, ContentLength, RawData, Timeout]) ->
+init([Bucket, Name, ContentLength, ContentType, RawData, Timeout]) ->
     %% @TODO Get rid of this once sure that we can
     %% guarantee file name will be passed in as a binary.
     case is_binary(Name) of
@@ -122,6 +123,7 @@ init([Bucket, Name, ContentLength, RawData, Timeout]) ->
     State = #state{bucket=Bucket,
                    filename=FileName,
                    content_length=ContentLength,
+                   content_type=ContentType,
                    bytes_received=RawDataSize,
                    data=Data,
                    raw_data=Remainder,
@@ -146,6 +148,7 @@ init({test, Args, StateProps}) ->
 initialize(timeout, State=#state{bucket=Bucket,
                                  filename=FileName,
                                  content_length=ContentLength,
+                                 content_type=ContentType,
                                  timeout=Timeout}) ->
     %% Start the worker to perform the writing
     case start_writer() of
@@ -155,7 +158,8 @@ initialize(timeout, State=#state{bucket=Bucket,
                                         self(),
                                         Bucket,
                                         FileName,
-                                        ContentLength),
+                                        ContentLength,
+                                        ContentType),
             UpdState = State#state{writer_pid=WriterPid},
             {next_state, write_root, UpdState, Timeout};
         {error, Reason} ->
@@ -369,11 +373,12 @@ append_data_block(BlockData, Blocks) ->
                 binary(),
                 string(),
                 pos_integer(),
+                string(),
                 binary(),
                 timeout()) ->
                        {ok, pid()} | ignore | {error, term()}.
-test_link(StateProps, Bucket, Name, ContentLength, Data, Timeout) ->
-    Args = [Bucket, Name, ContentLength, Data, Timeout],
+test_link(StateProps, Bucket, Name, ContentLength, ContentType, Data, Timeout) ->
+    Args = [Bucket, Name, ContentLength, ContentType, Data, Timeout],
     gen_fsm:start_link(?MODULE, {test, Args, StateProps}, []).
 
 %% @doc Get the current state of the fsm for testing inspection
