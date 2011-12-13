@@ -121,7 +121,7 @@ content_types_provided(RD, Ctx) ->
 -spec produce_body(term(), term()) -> {iolist()|binary(), term(), term()}.
 produce_body(RD, #key_context{get_fsm_pid=GetFsmPid}=Ctx) ->
     riak_moss_get_fsm:continue(GetFsmPid),
-    {{stream, {<<>>, fun() -> riak_moss_wm_utils:streaming_get(GetFsmPid) end}},
+    {{known_length_stream, 352492248, {<<>>, fun() -> riak_moss_wm_utils:streaming_get(GetFsmPid) end}},
         RD, Ctx}.
 
 %% @doc Callback for deleting an object.
