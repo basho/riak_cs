@@ -59,16 +59,13 @@ forbidden(RD, Ctx=#key_context{context=#context{auth_bypass=AuthBypass}}) ->
                     %% Authentication succeeded
                     NewInnerCtx = Ctx#key_context.context#context{user=User},
                     forbidden(wrq:method(RD), RD,
-                              riak_moss_wm_utils:ensure_doc(
-                                Ctx#key_context{context=NewInnerCtx}));
+                                Ctx#key_context{context=NewInnerCtx});
                 {error, _Reason} ->
                     %% Authentication failed, deny access
                     riak_moss_s3_response:api_error(access_denied, RD, Ctx)
             end
     end.
 
-forbidden('GET', RD, Ctx=#key_context{doc=notfound}) ->
-    {{halt, 404}, RD, Ctx};
 forbidden(_, RD, Ctx) ->
     {false, RD, Ctx}.
 
@@ -112,13 +109,7 @@ content_types_provided(RD, Ctx) ->
     Method = wrq:method(RD),
     if Method == 'GET'; Method == 'HEAD' ->
             DocCtx = riak_moss_wm_utils:ensure_doc(Ctx),
-            Doc = DocCtx#key_context.doc,
-            case riakc_obj:get_content_type(Doc) of
-                undefined ->
-                    {[{"application/octet-stream", produce_body}], RD, Ctx};
-                ContentType ->
-                    {[{ContentType, produce_body}], RD, Ctx}
-            end;
+            {[{"application/octet-stream", produce_body}], RD, DocCtx};
        true ->
             %% TODO
             %% this shouldn't ever be
@@ -128,15 +119,12 @@ content_types_provided(RD, Ctx) ->
     end.
 
 -spec produce_body(term(), term()) -> {iolist()|binary(), term(), term()}.
-produce_body(RD, Ctx) ->
-    DocCtx = riak_moss_wm_utils:ensure_doc(Ctx),
-    Doc = DocCtx#key_context.doc,
-    case Doc of
-        notfound ->
-            {{halt, 404}, RD, DocCtx};
-        _ ->
-            {<<>>, RD, DocCtx}
-    end.
+produce_body(RD, #key_context{get_fsm_pid=GetFsmPid}=Ctx) ->
+    lager:error("just before the continue"),
+    riak_moss_get_fsm:continue(GetFsmPid),
+    lager:error("just after the continue"),
+    {{stream, {<<>>, fun() -> riak_moss_lfs_utils:streaming_get(GetFsmPid) end}},
+        RD, Ctx}.
 
 %% @doc Callback for deleting an object.
 -spec delete_resource(term(), term()) -> boolean().
