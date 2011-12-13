@@ -64,13 +64,10 @@ ensure_doc(Ctx=#key_context{get_fsm_pid=undefined, bucket=Bucket, key=Key}) ->
 ensure_doc(Ctx) -> Ctx.
 
 streaming_get(FsmPid) ->
-    lager:error("just before the get_next_chunk call"),
     case riak_moss_get_fsm:get_next_chunk(FsmPid) of
         {done, Chunk} ->
-            lager:error("got a chunk"),
             {Chunk, done};
         {chunk, Chunk} ->
-            lager:error("got the last chunk"),
             {Chunk, fun() -> streaming_get(FsmPid) end}
     end.
 

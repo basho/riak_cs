@@ -120,10 +120,8 @@ content_types_provided(RD, Ctx) ->
 
 -spec produce_body(term(), term()) -> {iolist()|binary(), term(), term()}.
 produce_body(RD, #key_context{get_fsm_pid=GetFsmPid}=Ctx) ->
-    lager:error("just before the continue"),
     riak_moss_get_fsm:continue(GetFsmPid),
-    lager:error("just after the continue"),
-    {{stream, {<<>>, fun() -> riak_moss_lfs_utils:streaming_get(GetFsmPid) end}},
+    {{stream, {<<>>, fun() -> riak_moss_wm_utils:streaming_get(GetFsmPid) end}},
         RD, Ctx}.
 
 %% @doc Callback for deleting an object.
