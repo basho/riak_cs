@@ -33,8 +33,6 @@
          metadata_from_manifest/1,
          new_manifest/6,
          remove_block/2,
-         riak_connection/0,
-         riak_connection/2,
          sorted_blocks_remaining/1,
          still_waiting/1,
          content_md5/1,
@@ -183,29 +181,6 @@ remove_block(Manifest, Chunk) ->
     Remaining = Manifest#lfs_manifest.blocks_remaining,
     Updated = sets:del_element(Chunk, Remaining),
     Manifest#lfs_manifest{blocks_remaining=Updated}.
-
-%% @doc Get a protobufs connection to the riak cluster
-%% using information from the application environment.
--spec riak_connection() -> {ok, pid()} | {error, term()}.
-riak_connection() ->
-    case application:get_env(riak_moss, riak_ip) of
-        {ok, Host} ->
-            ok;
-        undefined ->
-            Host = "127.0.0.1"
-    end,
-    case application:get_env(riak_moss, riak_pb_port) of
-        {ok, Port} ->
-            ok;
-        undefined ->
-            Port = 8087
-    end,
-    riak_connection(Host, Port).
-
-%% @doc Get a protobufs connection to the riak cluster.
--spec riak_connection(string(), pos_integer()) -> {ok, pid()} | {error, term()}.
-riak_connection(Host, Port) ->
-    riakc_pb_socket:start_link(Host, Port).
 
 sorted_blocks_remaining(#lfs_manifest{blocks_remaining=Remaining}) ->
     lists:sort(sets:to_list(Remaining)).

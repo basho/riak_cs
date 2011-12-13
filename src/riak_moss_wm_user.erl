@@ -38,8 +38,16 @@ process_post(RD, Ctx) ->
     %% if this pattern doesn't match
     %% and return 400
     UserName = proplists:get_value("name", ParsedBody),
-    {ok, UserRecord} = riak_moss_riakc:create_user(UserName),
-    PropListUser = riak_moss_wm_utils:user_record_to_proplist(UserRecord),
-    CTypeWritten = wrq:set_resp_header("Content-Type", "application/json", RD),
-    WrittenRD = wrq:set_resp_body(list_to_binary(mochijson2:encode(PropListUser)), CTypeWritten),
-    {true, WrittenRD, Ctx}.
+
+    case riak_moss_utils:create_user(UserName) of
+        {ok, UserRecord} ->
+            PropListUser = riak_moss_wm_utils:user_record_to_proplist(UserRecord),
+            CTypeWritten = wrq:set_resp_header("Content-Type", "application/json", RD),
+            WrittenRD = wrq:set_resp_body(list_to_binary(
+                                            mochijson2:encode(PropListUser)),
+                                          CTypeWritten),
+            {true, WrittenRD, Ctx};
+        {error, Reason} ->
+            riak_moss_s3_response:api_error(Reason, RD, Ctx)
+    end.
+

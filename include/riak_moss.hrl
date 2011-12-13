@@ -4,10 +4,12 @@
           key_id :: string(),
           key_secret :: string(),
           buckets = []}).
+-type moss_user() :: #moss_user{}.
 
 -record(moss_bucket, {
           name :: binary(),
           creation_date :: term()}).
+
 
 -record(context, {auth_bypass :: atom(),
                   user :: #moss_user{}}).

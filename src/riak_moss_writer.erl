@@ -97,7 +97,7 @@ write_block(Pid, BlockID, Data) ->
 -spec init([] | {test, [atom()]}) -> {ok, state()} | {stop, term()}.
 init([]) ->
     %% Get a connection to riak
-    case riak_moss_lfs_utils:riak_connection() of
+    case riak_moss_utils:riak_connection() of
         {ok, RiakPid} ->
             MD5 = crypto:md5_init(),
             {ok, #state{riak_pid=RiakPid,
@@ -136,7 +136,7 @@ handle_cast(write_root, State=#state{bucket=Bucket,
                                      riak_pid=RiakPid,
                                      storage_module=StorageModule}) ->
     UUID = druuid:v4(),
-    ObjsBucket = riak_moss:to_bucket_name(objects, Bucket),
+    ObjsBucket = riak_moss_utils:to_bucket_name(objects, Bucket),
     case write_root_block(RiakPid,
                           StorageModule,
                           ObjsBucket,
@@ -158,7 +158,7 @@ handle_cast({update_root, UpdateOp}, State=#state{bucket=Bucket,
                                                   md5=MD5,
                                                   storage_module=StorageModule,
                                                   uuid=UUID}) ->
-    ObjsBucket = riak_moss:to_bucket_name(objects, Bucket),
+    ObjsBucket = riak_moss_utils:to_bucket_name(objects, Bucket),
     case update_root_block(RiakPid, StorageModule, ObjsBucket, FileName, UUID, MD5, UpdateOp) of
         {ok, {all_blocks_written, Manifest}} ->
             riak_moss_put_fsm:send_event(FsmPid, {all_blocks_written, Manifest});
@@ -178,7 +178,7 @@ handle_cast({write_block, BlockID, Data}, State=#state{bucket=Bucket,
                                                        storage_module=StorageModule,
                                                        uuid=UUID}) ->
     BlockName = riak_moss_lfs_utils:block_name(FileName, UUID, BlockID),
-    BlocksBucket = riak_moss:to_bucket_name(blocks, Bucket),
+    BlocksBucket = riak_moss_utils:to_bucket_name(blocks, Bucket),
     NewMD5 = crypto:md5_update(MD5, Data),
     case write_data_block(RiakPid, StorageModule, BlocksBucket, BlockName, Data) of
         ok ->
@@ -239,7 +239,9 @@ write_root_block(Pid, Module, Bucket, FileName, UUID, ContentLength, ContentType
         {error, notfound} ->
             ok
     end,
-    Obj = riakc_obj:new(Bucket, FileName, term_to_binary(Manifest),
+    Obj = riakc_obj:new(Bucket,
+                        FileName,
+                        term_to_binary(Manifest),
                         ContentType),
     Module:put(Pid, Obj).
 
