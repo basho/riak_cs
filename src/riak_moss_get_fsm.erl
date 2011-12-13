@@ -119,8 +119,6 @@ waiting_value({object, Value}, #state{from=From}=State) ->
     %% determine if the object is a normal
     %% object, or a manifest object
     RawValue = riakc_obj:get_value(Value),
-    %% TODO:
-    %% put binary_to_term in a catch statement
     NextStateTimeout = 60000,
     case riak_moss_lfs_utils:is_manifest(RawValue) of
         false ->
