@@ -44,34 +44,23 @@ test_n_chunks_builder(N) ->
     fun () ->
         BlockSize = calc_block_size(10000, N),
         application:set_env(riak_moss, lfs_block_size, BlockSize),
-        {ok, Pid} = riak_moss_get_fsm:test_link(self(), <<"bucket">>, <<"key">>),
-        ?assertMatch({metadata, _}, receive_with_timeout(1000)),
+        {ok, Pid} = riak_moss_get_fsm:test_link(<<"bucket">>, <<"key">>),
+        ?assertEqual(dict:new(), riak_moss_get_fsm:get_metadata(Pid)),
         riak_moss_get_fsm:continue(Pid),
-        expect_n_chunks(N),
-        riak_moss_get_fsm:stop(Pid)
+        expect_n_chunks(Pid, N)
     end.
 
 receives_metadata() ->
-    {ok, Pid} = riak_moss_get_fsm:test_link(self(), <<"bucket">>, <<"key">>),
-    ?assertMatch({metadata, _}, receive_with_timeout(1000)),
+    {ok, Pid} = riak_moss_get_fsm:test_link(<<"bucket">>, <<"key">>),
+    ?assertEqual(dict:new(), riak_moss_get_fsm:get_metadata(Pid)),
     riak_moss_get_fsm:stop(Pid).
 
 %% ===================================================================
 %% Helper Funcs
 %% ===================================================================
 
-%% @doc Just returns whatever it receives, or
-%%      `timeout` after `Timeout`
-receive_with_timeout(Timeout) ->
-    receive
-        Anything ->
-            Anything
-    after
-        Timeout -> timeout
-    end.
-
-expect_n_chunks(N) ->
+expect_n_chunks(FsmPid, N) ->
     %% subtract 1 from N because the last
     %% chunk will have a different pattern
-    [?assertMatch({chunk, _}, receive_with_timeout(100)) || _ <- lists:seq(1, N-1)],
-    ?assertMatch({done, _}, receive_with_timeout(1000)).
+    [?assertMatch({chunk, _}, riak_moss_get_fsm:get_next_chunk(FsmPid)) || _ <- lists:seq(1, N-1)],
+    ?assertMatch({done, _}, riak_moss_get_fsm:get_next_chunk(FsmPid)).
