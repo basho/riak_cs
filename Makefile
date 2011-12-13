@@ -1,5 +1,6 @@
 REPO		?= riak_moss
 PKG_NAME        ?= riak-moss
+PKG_REVISION    ?= $(shell git describe --tags)
 PKG_VERSION	?= $(shell git describe --tags | tr - .)
 PKG_ID           = $(PKG_NAME)-$(PKG_VERSION)
 PKG_BUILD        = 1
@@ -103,10 +104,10 @@ cleanplt:
 .PHONY: package
 export PKG_NAME PKG_VERSION PKG_ID PKG_BUILD BASE_DIR ERLANG_BIN REBAR OVERLAY_VARS RELEASE
 
-package.src:
+package.src: deps
 	mkdir -p package
 	rm -rf package/$(PKG_ID)
-	git archive --format=tar --prefix=$(PKG_ID)/ $(PKG_VERSION)| (cd package && tar -xf -)
+	git archive --format=tar --prefix=$(PKG_ID)/ $(PKG_REVISION)| (cd package && tar -xf -)
 	make -C package/$(PKG_ID) deps
 	for dep in package/$(PKG_ID)/deps/*; do \
              mkdir -p $${dep}/priv; \
@@ -119,6 +120,7 @@ package.src:
 package.%: package.src
 	make -C package -f $(PKG_ID)/deps/node_package/priv/templates/$*/Makefile.bootstrap
 
-
+pkgclean: distclean
+	rm -rf package
 
 
