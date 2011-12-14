@@ -118,48 +118,53 @@ waiting_value(get_metadata, From, State) ->
 waiting_value({object, Value}, #state{from=From}=State) ->
     %% determine if the object is a normal
     %% object, or a manifest object
-    RawValue = riakc_obj:get_value(Value),
     NextStateTimeout = 60000,
-    case riak_moss_lfs_utils:is_manifest(RawValue) of
-        false ->
-            %% TODO:
-            %% we don't deal with siblings here
-            %% at all
-            Metadata = riakc_obj:get_metadata(Value),
-            %% @TODO
-            %% content length is a hack now
-            %% because we're forcing everything
-            %% to be a manifest
-            ContentLength = 0,
-            ContentMd5 = <<>>,
-            NewState = State#state{value_cache=RawValue,
-                                    metadata_cache=Metadata};
-        true ->
-            DecodedValue = binary_to_term(RawValue),
-            Metadata = riak_moss_lfs_utils:metadata_from_manifest(DecodedValue),
-            ContentLength = riak_moss_lfs_utils:content_length(DecodedValue),
-            ContentMd5 = riak_moss_lfs_utils:content_md5(DecodedValue),
-            NewState = State#state{manifest=DecodedValue,
-                                    metadata_cache=Metadata}
+    ReturnMeta = case Value of
+        notfound ->
+            NewState = State,
+            notfound;
+        _ ->
+            RawValue = riakc_obj:get_value(Value),
+            case riak_moss_lfs_utils:is_manifest(RawValue) of
+                false ->
+                    %% TODO:
+                    %% we don't deal with siblings here
+                    %% at all
+                    Metadata = riakc_obj:get_metadata(Value),
+                    %% @TODO
+                    %% content length is a hack now
+                    %% because we're forcing everything
+                    %% to be a manifest
+                    ContentLength = 0,
+                    ContentMd5 = <<>>,
+                    NewState = State#state{value_cache=RawValue};
+                true ->
+                    DecodedValue = binary_to_term(RawValue),
+                    Metadata = riak_moss_lfs_utils:metadata_from_manifest(DecodedValue),
+                    ContentLength = riak_moss_lfs_utils:content_length(DecodedValue),
+                    ContentMd5 = riak_moss_lfs_utils:content_md5(DecodedValue),
+                    NewState = State#state{manifest=DecodedValue}
+            end,
+            Meta1 = dict:store("content-type",
+                                    riakc_obj:get_content_type(Value),
+                                    Metadata),
+            Meta2 = dict:store("content-md5",
+                                    ContentMd5,
+                                    Meta1),
+            Meta3 = dict:store("content-length",
+                                    ContentLength,
+                                    Meta2),
+            Meta3
     end,
-    Meta1 = dict:store("content-type",
-                            riakc_obj:get_content_type(Value),
-                            Metadata),
-    Meta2 = dict:store("content-md5",
-                            ContentMd5,
-                            Meta1),
-    Meta3 = dict:store("content-length",
-                            ContentLength,
-                            Meta2),
 
     NextState = case From of
         undefined ->
             waiting_metadata_request;
         _ ->
-            gen_fsm:reply(From, Meta3),
+            gen_fsm:reply(From, ReturnMeta),
             waiting_continue_or_stop
     end,
-    {next_state, NextState, NewState#state{from=undefined}, NextStateTimeout}.
+    {next_state, NextState, NewState#state{from=undefined, metadata_cache=ReturnMeta}, NextStateTimeout}.
 
 waiting_metadata_request(get_metadata, _From, #state{metadata_cache=Metadata}=State) ->
     {reply, Metadata, waiting_continue_or_stop, State#state{metadata_cache=undefined}}.
@@ -305,8 +310,12 @@ chunk(Pid, ChunkSeq, ChunkValue) ->
 %% Bucket, Key, whether it's a
 %% manifest or regular object
 normal_retriever(ReplyPid, GetModule, Bucket, Key) ->
-    {ok, RiakObject} = GetModule:get_object(riak_moss:to_bucket_name(objects, Bucket), Key),
-    riak_object(ReplyPid, RiakObject).
+    case GetModule:get_object(riak_moss:to_bucket_name(objects, Bucket), Key) of
+        {ok, RiakObject} ->
+            riak_object(ReplyPid, RiakObject);
+        {error, notfound} ->
+            riak_object(ReplyPid, notfound)
+    end.
 
 %% @private
 blocks_retriever(Pid, GetModule, BucketName, BlockKeys) ->
