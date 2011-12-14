@@ -82,6 +82,7 @@ prop_put_fsm() ->
                                              Bucket,
                                              FileName,
                                              ContentLength,
+                                             "text/plain",
                                              Data,
                                              10000),
 

@@ -184,8 +184,9 @@ content_types_accepted(RD, Ctx) ->
 -spec accept_body(term(), term()) ->
     {true, term(), term()}.
 accept_body(RD, Ctx=#key_context{bucket=Bucket,key=Key,
-                                 putctype=_CType,size=Size}) ->
-    {ok, Pid} = riak_moss_put_fsm:start_link(list_to_binary(Bucket), Key, Size, <<>>, 60000),
+                                 putctype=ContentType,size=Size}) ->
+    Args = [list_to_binary(Bucket), Key, Size, ContentType, <<>>, 60000],
+    {ok, Pid} = riak_moss_put_fsm_sup:start_put_fsm(node(), Args),
     accept_streambody(RD, Ctx, Pid, wrq:stream_req_body(RD, riak_moss_lfs_utils:block_size())).
 
 accept_streambody(RD, Ctx=#key_context{}, Pid, {Data, Next}) ->
