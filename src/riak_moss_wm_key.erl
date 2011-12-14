@@ -109,7 +109,13 @@ content_types_provided(RD, Ctx) ->
     Method = wrq:method(RD),
     if Method == 'GET'; Method == 'HEAD' ->
             DocCtx = riak_moss_wm_utils:ensure_doc(Ctx),
-            {[{"application/octet-stream", produce_body}], RD, DocCtx};
+            ContentType = dict:fetch("content-type", DocCtx#key_context.doc_metadata),
+            case ContentType of
+                undefined ->
+                    {[{"application/octet-stream", produce_body}], RD, DocCtx};
+                _ ->
+                    {[{ContentType, produce_body}], RD, DocCtx}
+            end;
        true ->
             %% TODO
             %% this shouldn't ever be
@@ -119,10 +125,14 @@ content_types_provided(RD, Ctx) ->
     end.
 
 -spec produce_body(term(), term()) -> {iolist()|binary(), term(), term()}.
-produce_body(RD, #key_context{get_fsm_pid=GetFsmPid}=Ctx) ->
+produce_body(RD, #key_context{get_fsm_pid=GetFsmPid, doc_metadata=DocMeta}=Ctx) ->
+    ContentLength = dict:fetch("content-length", DocMeta),
+    ContentMd5 = dict:fetch("content-md5", DocMeta),
+    ETag = "\"" ++ riak_moss:binary_to_hexlist(ContentMd5) ++ "\"",
+    NewRQ = wrq:set_resp_header("ETag",  ETag, RD),
     riak_moss_get_fsm:continue(GetFsmPid),
-    {{known_length_stream, 352492248, {<<>>, fun() -> riak_moss_wm_utils:streaming_get(GetFsmPid) end}},
-        RD, Ctx}.
+    {{known_length_stream, ContentLength, {<<>>, fun() -> riak_moss_wm_utils:streaming_get(GetFsmPid) end}},
+        NewRQ, Ctx}.
 
 %% @doc Callback for deleting an object.
 -spec delete_resource(term(), term()) -> boolean().

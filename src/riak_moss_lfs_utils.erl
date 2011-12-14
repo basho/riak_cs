@@ -37,7 +37,8 @@
          riak_connection/2,
          sorted_blocks_remaining/1,
          still_waiting/1,
-         content_md5/1]).
+         content_md5/1,
+         content_length/1]).
 
 -export_type([lfs_manifest/0]).
 
@@ -219,3 +220,7 @@ still_waiting(#lfs_manifest{blocks_remaining=Remaining}) ->
 -spec content_md5(lfs_manifest()) -> binary().
 content_md5(#lfs_manifest{content_md5=ContentMD5}) ->
     ContentMD5.
+
+-spec content_length(lfs_manifest()) -> integer().
+content_length(#lfs_manifest{content_length=CL}) ->
+    CL.

@@ -126,19 +126,37 @@ waiting_value({object, Value}, #state{from=From}=State) ->
             %% we don't deal with siblings here
             %% at all
             Metadata = riakc_obj:get_metadata(Value),
+            %% @TODO
+            %% content length is a hack now
+            %% because we're forcing everything
+            %% to be a manifest
+            ContentLength = 0,
+            ContentMd5 = <<>>,
             NewState = State#state{value_cache=RawValue,
                                     metadata_cache=Metadata};
         true ->
             DecodedValue = binary_to_term(RawValue),
             Metadata = riak_moss_lfs_utils:metadata_from_manifest(DecodedValue),
+            ContentLength = riak_moss_lfs_utils:content_length(DecodedValue),
+            ContentMd5 = riak_moss_lfs_utils:content_md5(DecodedValue),
             NewState = State#state{manifest=DecodedValue,
                                     metadata_cache=Metadata}
     end,
+    Meta1 = dict:store("content-type",
+                            riakc_obj:get_content_type(Value),
+                            Metadata),
+    Meta2 = dict:store("content-md5",
+                            ContentMd5,
+                            Meta1),
+    Meta3 = dict:store("content-length",
+                            ContentLength,
+                            Meta2),
+
     NextState = case From of
         undefined ->
             waiting_metadata_request;
         _ ->
-            gen_fsm:reply(From, Metadata),
+            gen_fsm:reply(From, Meta3),
             waiting_continue_or_stop
     end,
     {next_state, NextState, NewState#state{from=undefined}, NextStateTimeout}.
