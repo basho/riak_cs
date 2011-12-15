@@ -48,10 +48,6 @@ init([]) ->
     end,
 
     %% Create child specifications
-    Server =
-        {riak_moss_riakc,
-         {riak_moss_riakc, start_link, []},
-         permanent, 5000, worker, dynamic},
     WebConfig1 = [
                  {dispatch, riak_moss_web:dispatch_table()},
                  {ip, Ip},
@@ -83,6 +79,5 @@ init([]) ->
     Processes = [GetFsmSup,
                  WriterSup,
                  PutFsmSup,
-                 Server,
                  Web],
     {ok, { {one_for_one, 10, 10}, Processes} }.

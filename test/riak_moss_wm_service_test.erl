@@ -22,10 +22,10 @@ get_bucket_to_json() ->
     %% XXX TODO: MAKE THESE ACTUALLY TEST SOMETHING
     BucketNames = ["foo", "bar", "baz"],
     UserName = "fooser",
-    {ok, User} = riak_moss_riakc:create_user(UserName),
+    {ok, User} = riak_moss_utils:create_user(UserName),
     KeyID = User#moss_user.key_id,
-    [riak_moss_riakc:create_bucket(KeyID, Name) || Name <- BucketNames],
-    {ok, UpdatedUser} = riak_moss_riakc:get_user(User#moss_user.key_id),
+    [riak_moss_utils:create_bucket(KeyID, Name) || Name <- BucketNames],
+    {ok, UpdatedUser} = riak_moss_utils:get_user(User#moss_user.key_id),
     CorrectJsonBucketNames = [list_to_binary(Name) ||
                                      Name <- lists:reverse(BucketNames)],
     EncodedCorrectNames = mochijson2:encode(CorrectJsonBucketNames),

@@ -21,20 +21,25 @@ error_message(bucket_not_empty) ->
 error_message(bucket_already_exists) ->
     "The requested bucket name is not available. The bucket namespace is shared by all users of the system. Please select a different name and try again.";
 error_message(entity_too_large) ->
-    "Your proposed upload exceeds the maximum allowed object size.".
+    "Your proposed upload exceeds the maximum allowed object size.";
+error_message({riak_connect_failed, Reason}) ->
+    io_lib:format("Unable to establish connection to Riak. Reason: ~p", [Reason]).
+
 
 error_code(invalid_access_key_id) -> 'InvalidAccessKeyId';
 error_code(access_denied) -> 'AccessDenied';
 error_code(bucket_not_empty) -> 'BucketNotEmpty';
 error_code(bucket_already_exists) -> 'BucketAlreadyExists';
-error_code(entity_too_large) -> 'EntityTooLarge'.
+error_code(entity_too_large) -> 'EntityTooLarge';
+error_code({riak_connect_failed, _}) -> 'RiakConnectFailed'.
 
 
 status_code(invalid_access_key_id) -> 403;
 status_code(access_denied) ->  403;
 status_code(bucket_not_empty) ->  409;
 status_code(bucket_already_exists) -> 409;
-status_code(entity_too_large) -> 400.
+status_code(entity_too_large) -> 400;
+status_code({riak_connect_failed, _}) -> 503.
 
 
 respond(StatusCode, Body, ReqData, Ctx) ->
@@ -56,7 +61,7 @@ list_all_my_buckets_response(User, RD, Ctx) ->
     BucketsDoc = [{'Bucket',
                    [{'Name', [B#moss_bucket.name]},
                     {'CreationDate', [B#moss_bucket.creation_date]}]}
-                  || B <- riak_moss_riakc:get_buckets(User)],
+                  || B <- riak_moss_utils:get_buckets(User)],
     Contents =  [user_to_xml_owner(User)] ++ [{'Buckets', BucketsDoc}],
     XmlDoc = [{'ListAllMyBucketsResult',  Contents}],
     respond(200, export_xml(XmlDoc), RD, Ctx).

@@ -60,8 +60,8 @@
 -spec start_link(binary(),
                  string(),
                  pos_integer(),
-                 binary(),
                  string(),
+                 binary(),
                  timeout()) ->
                         {ok, pid()} | ignore | {error, term()}.
 start_link(Bucket, Name, ContentLength, ContentType, Data, Timeout) ->

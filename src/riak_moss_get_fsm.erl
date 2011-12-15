@@ -4,7 +4,7 @@
 %%
 %% -------------------------------------------------------------------
 
-%% @doc get fsm for Riak Moss. 
+%% @doc get fsm for Riak Moss.
 
 -module(riak_moss_get_fsm).
 
@@ -53,8 +53,8 @@
 -record(state, {from :: pid(),
                 bucket :: term(),
                 key :: term(),
-                value_cache :: binary(), 
-                metadata_cache :: term(), 
+                value_cache :: binary(),
+                metadata_cache :: term(),
                 chunk_queue :: term(),
                 manifest :: term(),
                 blocks_left :: list(),
@@ -88,7 +88,7 @@ get_next_chunk(Pid) ->
 init([Bucket, Key]) ->
     Queue = queue:new(),
     State = #state{bucket=Bucket, key=Key,
-                   get_module=riak_moss_riakc,
+                   get_module=riak_moss_utils,
                    chunk_queue=Queue},
     %% purposely have the timeout happen
     %% so that we get called in the prepare
@@ -308,12 +308,12 @@ riak_object(Pid, Object) ->
 chunk(Pid, ChunkSeq, ChunkValue) ->
     gen_fsm:send_event(Pid, {chunk, self(), {ChunkSeq, ChunkValue}}).
 
-%% @private 
+%% @private
 %% Retrieve the value at
 %% Bucket, Key, whether it's a
 %% manifest or regular object
 normal_retriever(ReplyPid, GetModule, Bucket, Key) ->
-    case GetModule:get_object(riak_moss:to_bucket_name(objects, Bucket), Key) of
+    case GetModule:get_object(riak_moss_utils:to_bucket_name(objects, Bucket), Key) of
         {ok, RiakObject} ->
             riak_object(ReplyPid, RiakObject);
         {error, notfound} ->
@@ -322,18 +322,23 @@ normal_retriever(ReplyPid, GetModule, Bucket, Key) ->
 
 %% @private
 blocks_retriever(Pid, GetModule, BucketName, BlockKeys) ->
-    Func = fun({ChunkSeq, ChunkName}) ->
-        case GetModule:get_object(riak_moss:to_bucket_name(blocks, BucketName), ChunkName) of
-            {ok, Value} ->
-                chunk(Pid, ChunkSeq, Value);
-            {error, Reason} ->
-                DeconstructedBlock = riak_moss_lfs_utils:block_name_to_term(ChunkName),
-                lager:error("block ~p couldn't be retrieved with reason ~p",
-                                   [DeconstructedBlock, Reason]),
-                exit(Reason)
-        end
-    end,
+    Func =
+        fun({ChunkSeq, ChunkName}) ->
+                case GetModule:get_object(
+                       riak_moss_utils:to_bucket_name(blocks, BucketName),
+                       ChunkName) of
+                    {ok, Value} ->
+                        chunk(Pid, ChunkSeq, Value);
+                    {error, Reason} ->
+                        DeconstructedBlock =
+                            riak_moss_lfs_utils:block_name_to_term(ChunkName),
+                        lager:error("block ~p couldn't be retrieved with reason ~p",
+                                    [DeconstructedBlock, Reason]),
+                        exit(Reason)
+                end
+        end,
     lists:foreach(Func, BlockKeys).
+
 
 %% ===================================================================
 %% Test API

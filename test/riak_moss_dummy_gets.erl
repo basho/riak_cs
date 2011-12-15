@@ -7,7 +7,8 @@
 -module(riak_moss_dummy_gets).
 
 %% API
--export([get_object/2]).
+-export([get_object/2,
+         get_object/3]).
 
 %% @doc Dummy get function
 get_object(Bucket, Key) ->
@@ -19,3 +20,7 @@ get_object(Bucket, Key) ->
                                                 dict:new()), % metadata
     RiakObj = riakc_obj:new_obj(Bucket, Key, [], [{dict:new(), term_to_binary(Manifest)}]),
     {ok, RiakObj}.
+
+%% @doc Dummy get function
+get_object(Bucket, Key, _RiakPid) ->
+    get_object(Bucket, Key).

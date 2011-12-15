@@ -142,13 +142,13 @@ produce_body(RD, #key_context{get_fsm_pid=GetFsmPid, doc_metadata=DocMeta}=Ctx) 
 %% @doc Callback for deleting an object.
 -spec delete_resource(term(), term()) -> boolean().
 delete_resource(RD, Ctx=#key_context{bucket=Bucket, key=Key}) ->
-    case riak_moss_riakc:delete_object(Bucket, Key) of
+    case riak_moss_utils:delete_object(Bucket, Key) of
         ok ->
             {true, RD, Ctx};
-        %% TODO:
-        %% What could this error even be?
-        _ ->
-            {false, RD, Ctx}
+        {error, Reason} ->
+            riak_moss_s3_response:api_error({riak_connect_failed, Reason},
+                                            RD,
+                                            Ctx)
     end.
 
 -spec content_types_accepted(term(), term()) ->
@@ -205,5 +205,5 @@ accept_streambody(RD, Ctx=#key_context{}, Pid, {Data, Next}) ->
 finalize_request(RD, Ctx, Pid) ->
     %Metadata = dict:from_list([{<<"content-type">>, CType}]),
     {ok, Manifest} = riak_moss_put_fsm:finalize(Pid),
-    ETag = "\"" ++ riak_moss:binary_to_hexlist(riak_moss_lfs_utils:content_md5(Manifest)) ++ "\"",
+    ETag = "\"" ++ riak_moss_utils:binary_to_hexlist(riak_moss_lfs_utils:content_md5(Manifest)) ++ "\"",
     {true, wrq:set_resp_header("ETag",  ETag, RD), Ctx}.
