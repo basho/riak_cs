@@ -37,7 +37,8 @@
          riak_connection/2,
          sorted_blocks_remaining/1,
          still_waiting/1,
-         content_md5/1]).
+         content_md5/1,
+         content_length/1]).
 
 -export_type([lfs_manifest/0]).
 
@@ -144,8 +145,14 @@ initial_blocks(ContentLength, BlockSize) ->
 
 %% @doc Returns true if Value is
 %%      a manifest record
-is_manifest(Value) ->
-    is_record(Value, lfs_manifest).
+is_manifest(BinaryValue) ->
+    try binary_to_term(BinaryValue) of
+        Term ->
+            is_record(Term, lfs_manifest)
+    catch
+        error:badarg ->
+            false
+    end.
 
 %% @doc Return the metadata for the object
 %%      represented in the manifest
@@ -213,3 +220,7 @@ still_waiting(#lfs_manifest{blocks_remaining=Remaining}) ->
 -spec content_md5(lfs_manifest()) -> binary().
 content_md5(#lfs_manifest{content_md5=ContentMD5}) ->
     ContentMD5.
+
+-spec content_length(lfs_manifest()) -> integer().
+content_length(#lfs_manifest{content_length=CL}) ->
+    CL.

@@ -9,8 +9,9 @@
 -export([service_available/2,
          parse_auth_header/2,
          ensure_doc/1,
-         user_record_to_proplist/1,
-         iso_8601_datetime/0]).
+         iso_8601_datetime/0,
+         streaming_get/1,
+         user_record_to_proplist/1]).
 
 -include("riak_moss.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
@@ -54,19 +55,22 @@ parse_auth_header(_, _) ->
 %%      it again if it's already in the
 %%      Ctx
 -spec ensure_doc(term()) -> term().
-ensure_doc(Ctx=#key_context{doc=undefined, bucket=Bucket, key=Key}) ->
-    %% TODO:
-    %% need to do some error
-    %% checking here to match
-    %% {error, Reason} too
-    MOSSBucket = riak_moss:to_bucket_name(objects, list_to_binary(Bucket)),
-    case riak_moss_riakc:get_object(MOSSBucket, Key) of
-        {ok, RiakObject} ->
-            Ctx#key_context{doc=RiakObject};
-        {error, notfound} ->
-            Ctx#key_context{doc=notfound}
-    end;
+ensure_doc(Ctx=#key_context{get_fsm_pid=undefined, bucket=Bucket, key=Key}) ->
+    %% start the get_fsm
+    BinBucket = list_to_binary(Bucket),
+    BinKey = list_to_binary(Key),
+    {ok, Pid} = riak_moss_get_fsm_sup:start_get_fsm(node(), [BinBucket, BinKey]),
+    Metadata = riak_moss_get_fsm:get_metadata(Pid),
+    Ctx#key_context{get_fsm_pid=Pid, doc_metadata=Metadata};
 ensure_doc(Ctx) -> Ctx.
+
+streaming_get(FsmPid) ->
+    case riak_moss_get_fsm:get_next_chunk(FsmPid) of
+        {done, Chunk} ->
+            {Chunk, done};
+        {chunk, Chunk} ->
+            {Chunk, fun() -> streaming_get(FsmPid) end}
+    end.
 
 %% @doc Convert a moss_user record
 %%      into a property list, likely

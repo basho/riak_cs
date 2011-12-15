@@ -13,7 +13,8 @@
                   user :: #moss_user{}}).
 
 -record(key_context, {context :: #context{},
-                      doc :: term(),
+                      doc_metadata :: term(),
+                      get_fsm_pid :: pid(),
                       putctype :: string(),
                       bucket :: list(),
                       key :: list(),

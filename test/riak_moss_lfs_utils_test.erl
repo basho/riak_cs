@@ -6,8 +6,6 @@
 
 -module(riak_moss_lfs_utils_test).
 
--export([lfs_utils_test_/0]).
-
 -include_lib("eunit/include/eunit.hrl").
 
 setup() ->
@@ -33,7 +31,7 @@ lfs_utils_test_() ->
      ]}.
 
 test_not_manifest() ->
-    ?assertNot(riak_moss_lfs_utils:is_manifest(foo)).
+    ?assertNot(riak_moss_lfs_utils:is_manifest(term_to_binary(foo))).
 
 test_is_manifest() ->
     Manifest =
@@ -43,7 +41,7 @@ test_is_manifest() ->
                                          1024,
                                          <<"2522ccc1ca2a458eca94a9576d4b71c2">>,
                                          dict:new()),
-    ?assert(riak_moss_lfs_utils:is_manifest(Manifest)).
+    ?assert(riak_moss_lfs_utils:is_manifest(term_to_binary(Manifest))).
 
 test_block_count_1() ->
     ?assertEqual(riak_moss_lfs_utils:block_count(2, 1), 2).
