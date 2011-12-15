@@ -88,28 +88,38 @@ content_types_accepted(RD, Ctx) ->
     {iolist(), term(), term()}.
 to_xml(RD, Ctx=#context{user=User}) ->
     BucketName = wrq:path_info(bucket, RD),
-    Bucket = hd([B || B <- riak_moss_riakc:get_buckets(User), B#moss_bucket.name =:= BucketName]),
-    MOSSBucket = riak_moss:to_bucket_name(objects, list_to_binary(Bucket#moss_bucket.name)),
-    {ok, Keys} = riak_moss_riakc:list_keys(MOSSBucket),
-    riak_moss_s3_response:list_bucket_response(User, Bucket, Keys, RD, Ctx).
+    Bucket = hd([B || B <- riak_moss_utils:get_buckets(User), B#moss_bucket.name =:= BucketName]),
+    MOSSBucket = riak_moss_utils:to_bucket_name(objects, list_to_binary(Bucket#moss_bucket.name)),
+    case riak_moss_utils:list_keys(MOSSBucket) of
+        {ok, Keys} ->
+            riak_moss_s3_response:list_bucket_response(User,
+                                                       Bucket,
+                                                       Keys,
+                                                       RD,
+                                                       Ctx);
+        {error, Reason} ->
+            riak_moss_s3_response:api_error(Reason, RD, Ctx)
+    end.
 
 %% TODO:
 %% Add content_types_accepted when we add
 %% in PUT and POST requests.
 accept_body(ReqData, Ctx=#context{user=User}) ->
-    case riak_moss_riakc:create_bucket(User#moss_user.key_id,
+    case riak_moss_utils:create_bucket(User#moss_user.key_id,
                                        wrq:path_info(bucket, ReqData)) of
         ok ->
             {{halt, 200}, ReqData, Ctx};
         ignore ->
-            riak_moss_s3_response:api_error(bucket_already_exists, ReqData, Ctx)
+            riak_moss_s3_response:api_error(bucket_already_exists, ReqData, Ctx);
+        {error, Reason} ->
+            riak_moss_s3_response:api_error(Reason, ReqData, Ctx)
     end.
 
 %% @doc Callback for deleting a bucket.
 -spec delete_resource(term(), term()) -> boolean().
 delete_resource(RD, Ctx=#context{user=User}) ->
     BucketName = wrq:path_info(bucket, RD),
-    case riak_moss_riakc:delete_bucket(User#moss_user.key_id, BucketName) of
+    case riak_moss_utils:delete_bucket(User#moss_user.key_id, BucketName) of
         ok ->
             {true, RD, Ctx};
         %% TODO:
