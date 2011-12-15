@@ -239,8 +239,9 @@ write_root_block(Pid, Module, Bucket, FileName, UUID, ContentLength, ContentType
         {error, notfound} ->
             ok
     end,
-    Obj = riakc_obj:new(Bucket, FileName, term_to_binary(Manifest)),
-    Module:put(Pid, Obj, ContentType).
+    Obj = riakc_obj:new(Bucket, FileName, term_to_binary(Manifest),
+                        ContentType),
+    Module:put(Pid, Obj).
 
 %% @private
 %% @doc Update the root block for a file stored in Riak.

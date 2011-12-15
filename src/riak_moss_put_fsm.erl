@@ -20,7 +20,7 @@
 -endif.
 
 %% API
--export([start_link/5,
+-export([start_link/6,
          send_event/2,
          augment_data/2,
          finalize/1]).
@@ -61,10 +61,11 @@
                  string(),
                  pos_integer(),
                  binary(),
+                 string(),
                  timeout()) ->
                         {ok, pid()} | ignore | {error, term()}.
-start_link(Bucket, Name, ContentLength, Data, Timeout) ->
-    Args = [Bucket, Name, ContentLength, Data, Timeout],
+start_link(Bucket, Name, ContentLength, ContentType, Data, Timeout) ->
+    Args = [Bucket, Name, ContentLength, ContentType, Data, Timeout],
     gen_fsm:start_link(?MODULE, Args, []).
 
 %% @doc Send an event to a `riak_moss_put_fsm'.
@@ -75,18 +76,18 @@ send_event(Pid, Event) ->
 %% @doc Augment the file data being written by a `riak_moss_put_fsm'.
 -spec augment_data(pid(), binary()) -> ok | {error, term()}.
 augment_data(Pid, Data) ->
-    send_sync_event(Pid, {augment_data, Data}).
+    send_sync_event(Pid, {augment_data, Data}, infinity).
 
 %% @doc Finalize the put and return manifest.
 -spec finalize(pid()) -> {ok, riak_moss_lfs_utils:lfs_manifest()}
                              | {error, term()}.
 finalize(Pid) ->
-    send_sync_event(Pid, finalize).
+    send_sync_event(Pid, finalize, 60000).
 
--spec send_sync_event(pid(), term()) -> term() | {error, term()}.
-send_sync_event(Pid, Msg) ->
+-spec send_sync_event(pid(), term(), timeout()) -> term() | {error, term()}.
+send_sync_event(Pid, Msg, Timeout) ->
     try
-        gen_fsm:sync_send_all_state_event(Pid, Msg)
+        gen_fsm:sync_send_all_state_event(Pid, Msg, Timeout)
     catch
         _:Reason ->
             case Reason of
