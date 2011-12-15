@@ -119,7 +119,7 @@ package.src: deps
 
 
 package: package.src
-	make -C default -f $(PKG_ID)/deps/node_package/Makefile
+	make -C package -f $(PKG_ID)/deps/node_package/Makefile
 
 pkgclean: distclean
 	rm -rf package
