@@ -320,8 +320,15 @@ normal_retriever(ReplyPid, GetModule, Bucket, Key) ->
 %% @private
 blocks_retriever(Pid, GetModule, BucketName, BlockKeys) ->
     Func = fun({ChunkSeq, ChunkName}) ->
-        {ok, Value} = GetModule:get_object(riak_moss:to_bucket_name(blocks, BucketName), ChunkName),
-        chunk(Pid, ChunkSeq, Value)
+        case GetModule:get_object(riak_moss:to_bucket_name(blocks, BucketName), ChunkName) of
+            {ok, Value} ->
+                chunk(Pid, ChunkSeq, Value);
+            {error, Reason} ->
+                DeconstructedBlock = riak_moss_lfs_utils:block_name_to_term(ChunkName),
+                lager:error("block ~p couldn't be retrieved with reason ~p",
+                                   [DeconstructedBlock, Reason]),
+                exit(Reason)
+        end
     end,
     lists:foreach(Func, BlockKeys).
 
