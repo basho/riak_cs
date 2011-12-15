@@ -110,11 +110,11 @@ package.src: deps
 	git archive --format=tar --prefix=$(PKG_ID)/ $(PKG_REVISION)| (cd package && tar -xf -)
 	make -C package/$(PKG_ID) deps
 	for dep in package/$(PKG_ID)/deps/*; do \
-             echo "Processing dep: ${{dep}"; \
+             echo "Processing dep: $${dep}"; \
              mkdir -p $${dep}/priv; \
              git --git-dir=$${dep}/.git describe --tags >$${dep}/priv/vsn.git; \
         done
-	find package/$(PKG_ID) -name ".git" -depth -exec rm -rf {} \;
+	find package/$(PKG_ID) -depth -name ".git" -exec rm -rf {} \;
 	tar -C package -czf package/$(PKG_ID).tar.gz $(PKG_ID)
 
 
