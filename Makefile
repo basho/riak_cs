@@ -118,8 +118,8 @@ package.src: deps
 	tar -C package -czf package/$(PKG_ID).tar.gz $(PKG_ID)
 
 
-package.%: package.src
-	make -C package -f $(PKG_ID)/deps/node_package/priv/templates/$*/Makefile.bootstrap
+package: package.src
+	make -C default -f $(PKG_ID)/deps/node_package/Makefile
 
 pkgclean: distclean
 	rm -rf package
