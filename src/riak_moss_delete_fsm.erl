@@ -14,7 +14,7 @@
 -include_lib("eunit/include/eunit.hrl").
 
 %% Test API
--export([test_link/7,
+-export([test_link/4,
          current_state/1]).
 
 -endif.
@@ -27,6 +27,7 @@
 -export([init/1,
          initialize/2,
          waiting_file_info/2,
+         waiting_root_update/2,
          waiting_blocks_delete/2,
          waiting_root_delete/2,
          handle_event/3,
@@ -126,22 +127,37 @@ initialize(timeout, State=#state{bucket=Bucket,
                                {next_state,
                                 waiting_root_delete | waiting_blocks_delete,
                                 state(),
-                                non_neg_integer()}.
+                                timeout()}.
 waiting_file_info({deleter_ready, object}, State=#state{deleter_pid=DeleterPid,
                                                         timeout=Timeout}) ->
     %% Send request to the deleter to delete the object
     riak_moss_deleter:delete_root(DeleterPid),
     {next_state, waiting_root_delete, State, Timeout};
-waiting_file_info({deleter_ready, {file, BlockCount}}, State=#state{deleter_pid=DeleterPid,
-                                                  timeout=Timeout}) ->
+waiting_file_info({deleter_ready, {file, BlockCount}},
+                  State=#state{deleter_pid=DeleterPid,
+                               timeout=Timeout}) ->
+    riak_moss_deleter:update_root(DeleterPid, set_inactive),
+    UpdState = State#state{block_count=BlockCount,
+                           blocks_remaining=BlockCount},
+    {next_state, waiting_root_update, UpdState, Timeout}.
+
+%% @doc State to receive notifcation when the root file object has
+%% been updated to mark the file as inactive.
+-spec waiting_root_update(root_inactive, state()) ->
+                                 {next_state,
+                                  waiting_blocks_delete,
+                                  state(),
+                                  timeout()}.
+waiting_root_update(root_inactive, State=#state{block_count=BlockCount,
+                                                deleter_pid=DeleterPid,
+                                                timeout=Timeout}) ->
+
     %% Send request to the deleter to delete the file blocks
     %% @TODO Backpressure or concurrency of deletion needed. Currently
     %% all block delete requests will serialize at the `riak_moss_deleter'.
     [riak_moss_deleter:delete_block(DeleterPid, BlockID) ||
         BlockID <- lists:seq(1, BlockCount)],
-    UpdState = State#state{block_count=BlockCount,
-                           blocks_remaining=BlockCount},
-    {next_state, waiting_blocks_delete, UpdState, Timeout}.
+    {next_state, waiting_blocks_delete, State, Timeout}.
 
 %% @doc State for waiting for responses about file data blocks
 %% being deleted.
