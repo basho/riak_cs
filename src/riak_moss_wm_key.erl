@@ -133,7 +133,7 @@ content_types_provided(RD, Ctx) ->
 produce_body(RD, #key_context{get_fsm_pid=GetFsmPid, doc_metadata=DocMeta}=Ctx) ->
     ContentLength = dict:fetch("content-length", DocMeta),
     ContentMd5 = dict:fetch("content-md5", DocMeta),
-    ETag = "\"" ++ riak_moss:binary_to_hexlist(ContentMd5) ++ "\"",
+    ETag = "\"" ++ riak_moss_utils:binary_to_hexlist(ContentMd5) ++ "\"",
     NewRQ = wrq:set_resp_header("ETag",  ETag, RD),
     riak_moss_get_fsm:continue(GetFsmPid),
     {{known_length_stream, ContentLength, {<<>>, fun() -> riak_moss_wm_utils:streaming_get(GetFsmPid) end}},
