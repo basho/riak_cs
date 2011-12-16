@@ -18,6 +18,7 @@
   {env, [
          {moss_ip, "127.0.0.1"},
          {moss_port, 8080},
-         {moss_root_host, "s3.amazonaws.com"}
+         {moss_root_host, "s3.amazonaws.com"},
+         {put_fsm_buffer_size_max, 10485760}
         ]}
  ]}.
