@@ -5,7 +5,8 @@
 %% -------------------------------------------------------------------
 
 %% @doc Module to mirror the API of `riakc_pb_socket' so
-%% to facilitate testing of the `riak_moss_writer' module.
+%% to facilitate testing of the `riak_moss_writer' and
+%% `riak_moss_deleter' modules.
 
 -module(riak_socket_dummy).
 
