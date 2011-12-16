@@ -48,7 +48,11 @@
                 next_block_id=0 :: non_neg_integer(),
                 raw_data :: undefined | binary(),
                 final_manifest :: undefined | riak_moss_lfs_utils:lfs_manifest(),
-                waiter :: undefined | {reference(), pid()},
+                buffer_size :: non_neg_integer(),
+                max_buffer_size :: non_neg_integer(),
+                block_size :: pos_integer(),
+                block_waiter :: undefined | {reference(), pid()},
+                manifest_waiter :: undefined | {reference(), pid()},
                 timeout :: timeout()}).
 -type state() :: #state{}.
 
@@ -76,13 +80,17 @@ send_event(Pid, Event) ->
 %% @doc Augment the file data being written by a `riak_moss_put_fsm'.
 -spec augment_data(pid(), binary()) -> ok | {error, term()}.
 augment_data(Pid, Data) ->
-    send_sync_event(Pid, {augment_data, Data}, infinity).
+    send_sync_event(Pid, {augment_data, Data}).
 
 %% @doc Finalize the put and return manifest.
 -spec finalize(pid()) -> {ok, riak_moss_lfs_utils:lfs_manifest()}
                              | {error, term()}.
 finalize(Pid) ->
-    send_sync_event(Pid, finalize, 60000).
+    send_sync_event(Pid, finalize, infinity).
+
+-spec send_sync_event(pid(), term()) -> term() | {error, term()}.
+send_sync_event(Pid, Msg) ->
+    send_sync_event(Pid, Msg, 5000).
 
 -spec send_sync_event(pid(), term(), timeout()) -> term() | {error, term()}.
 send_sync_event(Pid, Msg, Timeout) ->
@@ -116,7 +124,7 @@ init([Bucket, Name, ContentLength, ContentType, RawData, Timeout]) ->
         false ->
             FileName = list_to_binary(Name)
     end,
-
+    {ok, MaxBufSz} = application:get_env(riak_moss, put_fsm_buffer_size_max),
     RawDataSize = byte_size(RawData),
     %% Break up the current data into block-sized chunks
     %% @TODO Maybe move this function to `riak_moss_lfs_utils'.
@@ -128,6 +136,9 @@ init([Bucket, Name, ContentLength, ContentType, RawData, Timeout]) ->
                    bytes_received=RawDataSize,
                    data=Data,
                    raw_data=Remainder,
+                   buffer_size=0,
+                   max_buffer_size=MaxBufSz,
+                   block_size=riak_moss_lfs_utils:block_size(),
                    timeout=Timeout},
     {ok, initialize, State, 0};
 init({test, Args, StateProps}) ->
@@ -182,9 +193,25 @@ write_root(writer_ready, State=#state{writer_pid=WriterPid,
     riak_moss_writer:write_root(WriterPid),
     {next_state, write_block, State, Timeout};
 write_root({block_written, BlockId}, State=#state{writer_pid=WriterPid,
+                                                  buffer_size=BufSz,
+                                                  max_buffer_size=MaxBufSz,
+                                                  block_size=BlockSz,
+                                                  block_waiter=From,
                                                   timeout=Timeout}) ->
     riak_moss_writer:update_root(WriterPid, {block_ready, BlockId}),
-    {next_state, write_block, State, Timeout}.
+    %% @TODO Perhaps address the fact that if BufSz is < BlockSz,
+    %% NewBufSz will be a negative integer and that value could grow
+    %% somewhat large if there are many transitions between
+    %% write_block and write_root before another data chunk is
+    %% received.
+    NewState = case (NewBufSz = BufSz - BlockSz) >= MaxBufSz of
+        false when From /= undefined ->
+            gen_fsm:reply(From, ok),
+            State#state{block_waiter=undefined};
+        _ ->
+            State#state{block_waiter=From}
+    end,
+    {next_state, write_block, NewState#state{buffer_size=NewBufSz}, Timeout}.
 
 %% @doc State for writing a block of a file. The
 %% transition from this state is to `write_root'.
@@ -208,7 +235,8 @@ write_block(root_ready, State=#state{data=Data,
                                    next_block_id=BlockID+1},
             {next_state, write_root, UpdState, Timeout}
     end;
-write_block({all_blocks_written, Manifest}, State=#state{waiter=Waiter, timeout=Timeout}) ->
+write_block({all_blocks_written, Manifest}, State=#state{manifest_waiter=Waiter,
+                                                         timeout=Timeout}) ->
     NewState = State#state{final_manifest=Manifest},
     case Waiter of
         undefined ->
@@ -243,12 +271,14 @@ handle_event(_Event, _StateName, State) ->
 handle_sync_event(current_state, _From, StateName, State) ->
     {reply, StateName, StateName, State};
 handle_sync_event({augment_data, NewData},
-             _From,
+             From,
              StateName,
              State=#state{data=Data,
                           content_length=ContentLength,
                           raw_data=RawData,
-                          bytes_received=BytesReceived
+                          bytes_received=BytesReceived,
+                          block_size=BlockSz,
+                          max_buffer_size=MaxBufSz
                          }) ->
     UpdBytesReceived = BytesReceived + byte_size(NewData),
     case RawData of
@@ -264,8 +294,10 @@ handle_sync_event({augment_data, NewData},
                             UpdBytesReceived,
                             Data)
     end,
+    NewBufSz = BlockSz * length(UpdData),
     UpdState = State#state{data=UpdData,
                            bytes_received=UpdBytesReceived,
+                           buffer_size=NewBufSz,
                            raw_data=Remainder},
     case StateName of
         waiting ->
@@ -274,11 +306,16 @@ handle_sync_event({augment_data, NewData},
         _ ->
             NextState = StateName
     end,
-    {reply, ok, NextState, UpdState};
+    case NewBufSz >= MaxBufSz of
+        true ->
+            {next_state, NextState, UpdState#state{block_waiter=From, buffer_size=NewBufSz}};
+        false ->
+            {reply, ok, NextState, UpdState#state{buffer_size=NewBufSz}}
+    end;
 handle_sync_event(finalize, From, StateName, State=#state{final_manifest=undefined}) ->
-    {next_state, StateName, State#state{waiter=From}};
-handle_sync_event(finalize, _From, StateName, State=#state{final_manifest=M}) ->
-    {reply, {ok, M}, StateName, State};
+    {next_state, StateName, State#state{manifest_waiter=From}};
+handle_sync_event(finalize, _From, _StateName, State=#state{final_manifest=M}) ->
+    {stop, normal, {ok, M}, State};
 handle_sync_event(_Event, _From, StateName, State) ->
     {next_state, StateName, State}.
 
