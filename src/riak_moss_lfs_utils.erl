@@ -26,6 +26,7 @@
          block_name/3,
          block_name_to_term/1,
          block_size/0,
+         file_uuid/1,
          finalize_manifest/2,
          initial_blocks/1,
          initial_blocks/2,
@@ -33,6 +34,7 @@
          metadata_from_manifest/1,
          new_manifest/6,
          remove_block/2,
+         set_inactive/1,
          sorted_blocks_remaining/1,
          still_waiting/1,
          content_md5/1,
@@ -62,7 +64,10 @@
 
 %% @doc The number of blocks that this
 %%      size will be broken up into
--spec block_count(pos_integer()) -> non_neg_integer().
+-spec block_count(lfs_manifest() | pos_integer()) -> non_neg_integer().
+block_count(Manifest) when is_manifest(Manifest) ->
+    block_count(Manifest#lfs_manifest.content_length,
+                Manifest#lfs_manifest.block_size);
 block_count(ContentLength) ->
     block_count(ContentLength, block_size()).
 
@@ -114,6 +119,11 @@ block_size() ->
                     BlockSize
             end
     end.
+
+%% @doc Get the file UUID from the manifest.
+-spec file_uuid(lfs_manifest()) -> binary().
+file_uuid(#lfs_manifest{uuid=UUID}) ->
+    UUID.
 
 %% @doc Finalize the manifest of a file by
 %% marking it as active, setting a finished time,
@@ -181,6 +191,12 @@ remove_block(Manifest, Chunk) ->
     Remaining = Manifest#lfs_manifest.blocks_remaining,
     Updated = sets:del_element(Chunk, Remaining),
     Manifest#lfs_manifest{blocks_remaining=Updated}.
+
+%% @doc Mark a file manifest as inactive by setting
+%% the `active' field of the manifest to `false'.
+-spec set_inactive(lfs_manifest()) -> lfs_manifest().
+set_inactive(Manifest) ->
+    Manifest#lfs_manifest{active=false}.
 
 sorted_blocks_remaining(#lfs_manifest{blocks_remaining=Remaining}) ->
     lists:sort(sets:to_list(Remaining)).
