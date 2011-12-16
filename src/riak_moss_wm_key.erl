@@ -142,10 +142,13 @@ produce_body(RD, #key_context{get_fsm_pid=GetFsmPid, doc_metadata=DocMeta}=Ctx) 
 %% @doc Callback for deleting an object.
 -spec delete_resource(term(), term()) -> boolean().
 delete_resource(RD, Ctx=#key_context{bucket=Bucket, key=Key}) ->
-    case riak_moss_utils:delete_object(Bucket, Key) of
-        ok ->
+    BinBucket = list_to_binary(Bucket),
+    BinKey = list_to_binary(Key),
+    case riak_moss_delete_fsm:start_delete_fsm([BinBucket, BinKey, 300000]) of
+        {ok, _Pid} ->
             {true, RD, Ctx};
         {error, Reason} ->
+            lager:error("delete fsm couldn't be started: ~p", [Reason]),
             riak_moss_s3_response:api_error({riak_connect_failed, Reason},
                                             RD,
                                             Ctx)
