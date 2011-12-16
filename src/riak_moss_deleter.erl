@@ -22,7 +22,7 @@
 
 %% API
 -export([start_link/0,
-         initialize/6,
+         initialize/4,
          delete_root/1,
          update_root/2,
          delete_block/2]).
@@ -71,7 +71,7 @@ delete_root(Pid) ->
     gen_server:cast(Pid, delete_root).
 
 %% @doc Update a root block
--type update_op() :: {block_ready, pos_integer()}.
+-type update_op() :: set_inactive.
 -spec update_root(pid(), update_op()) -> ok.
 update_root(Pid, UpdateOp) ->
     gen_server:cast(Pid, {update_root, UpdateOp}).
@@ -112,8 +112,9 @@ handle_call(_Msg, _From, State) ->
 -spec handle_cast(term(), state()) ->
                          {noreply, state()}.
 handle_cast({initialize, FsmPid, Bucket, FileName}, State) ->
+    #state{storage_module=StorageModule} = State,
     %% Get the details about the object or file to be deleted
-    case object_details(Bucket, FileName) of
+    case object_details(FsmPid, StorageModule, Bucket, FileName) of
         object ->
             ObjDetails = object,
             UUID = undefined;
@@ -223,7 +224,7 @@ delete_root_block(Pid, Module, Bucket, FileName, _UUID) ->
 
 %% @private
 %% @doc Update the root block for a file stored in Riak.
--spec update_root_block(pid(), atom(), binary(), binary(), binary(), binary(), update_op()) ->
+-spec update_root_block(pid(), atom(), binary(), binary(), binary(), update_op()) ->
                                {ok, root_inactive} | {error, term()}.
 update_root_block(Pid, Module, Bucket, FileName, _UUID, set_inactive) ->
     case Module:get(Pid, Bucket, FileName) of

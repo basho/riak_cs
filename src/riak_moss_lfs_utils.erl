@@ -65,11 +65,11 @@
 %% @doc The number of blocks that this
 %%      size will be broken up into
 -spec block_count(lfs_manifest() | pos_integer()) -> non_neg_integer().
-block_count(Manifest) when is_manifest(Manifest) ->
+block_count(ContentLength) when is_integer(ContentLength) ->
+    block_count(ContentLength, block_size());
+block_count(Manifest) ->
     block_count(Manifest#lfs_manifest.content_length,
-                Manifest#lfs_manifest.block_size);
-block_count(ContentLength) ->
-    block_count(ContentLength, block_size()).
+                Manifest#lfs_manifest.block_size).
 
 %% @doc The number of blocks that this
 %%      size will be broken up into

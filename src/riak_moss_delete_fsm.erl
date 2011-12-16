@@ -21,16 +21,14 @@
 
 %% API
 -export([start_link/3,
-         send_event/2,
-         finalize/1]).
+         send_event/2]).
 
 %% gen_fsm callbacks
 -export([init/1,
          initialize/2,
          waiting_file_info/2,
-         delete_blocks/2,
-         delete_manifest/2,
-         client_wait/2,
+         waiting_blocks_delete/2,
+         waiting_root_delete/2,
          handle_event/3,
          handle_sync_event/4,
          handle_info/3,
@@ -63,27 +61,6 @@ start_link(Bucket, Name, Timeout) ->
 -spec send_event(pid(), term()) -> ok.
 send_event(Pid, Event) ->
     gen_fsm:send_event(Pid, Event).
-
-%% @doc Finalize the put and return manifest.
--spec finalize(pid()) -> {ok, riak_moss_lfs_utils:lfs_manifest()}
-                             | {error, term()}.
-finalize(Pid) ->
-    send_sync_event(Pid, finalize, 60000).
-
--spec send_sync_event(pid(), term(), timeout()) -> term() | {error, term()}.
-send_sync_event(Pid, Msg, Timeout) ->
-    try
-        gen_fsm:sync_send_all_state_event(Pid, Msg, Timeout)
-    catch
-        _:Reason ->
-            case Reason of
-                {noproc, _} ->
-                    {error, {riak_moss_delete_fsm_dead, Pid}};
-                _ ->
-                    {error, Reason}
-            end
-    end.
-
 
 %% ====================================================================
 %% gen_fsm callbacks
@@ -130,7 +107,7 @@ initialize(timeout, State=#state{bucket=Bucket,
     case start_deleter() of
         {ok, DeleterPid} ->
             %% Provide the deleter with the file details
-            riak_moss_writer:initialize(DeleterPid,
+            riak_moss_deleter:initialize(DeleterPid,
                                         self(),
                                         Bucket,
                                         FileName),
@@ -144,63 +121,58 @@ initialize(timeout, State=#state{bucket=Bucket,
 
 %% @doc State to receive information about the file or object to be
 %% deleted from the deleter process.
--spec waiting_file_info({deleter_ready, object | {file, BlockCount}}
+-spec waiting_file_info({deleter_ready, object | {file, non_neg_integer()}},
                         state()) ->
                                {next_state,
-                                delete_blocks | delete_object,
+                                waiting_root_delete | waiting_blocks_delete,
                                 state(),
                                 non_neg_integer()}.
-waiting_file_info({deleter_ready, object}, State=#state{writer_pid=WriterPid,
-                                      timeout=Timeout}) ->
-    %% Send request to the writer to write the initial root block
-    riak_moss_writer:write_root(WriterPid),
-    {next_state, write_block, State, Timeout};
-write_root({block_written, BlockId}, State=#state{writer_pid=WriterPid,
+waiting_file_info({deleter_ready, object}, State=#state{deleter_pid=DeleterPid,
+                                                        timeout=Timeout}) ->
+    %% Send request to the deleter to delete the object
+    riak_moss_deleter:delete_root(DeleterPid),
+    {next_state, waiting_root_delete, State, Timeout};
+waiting_file_info({deleter_ready, {file, BlockCount}}, State=#state{deleter_pid=DeleterPid,
                                                   timeout=Timeout}) ->
-    riak_moss_writer:update_root(WriterPid, {block_ready, BlockId}),
-    {next_state, write_block, State, Timeout}.
+    %% Send request to the deleter to delete the file blocks
+    %% @TODO Backpressure or concurrency of deletion needed. Currently
+    %% all block delete requests will serialize at the `riak_moss_deleter'.
+    [riak_moss_deleter:delete_block(DeleterPid, BlockID) ||
+        BlockID <- lists:seq(1, BlockCount)],
+    UpdState = State#state{block_count=BlockCount,
+                           blocks_remaining=BlockCount},
+    {next_state, waiting_blocks_delete, UpdState, Timeout}.
 
-%% @doc State for writing a block of a file. The
-%% transition from this state is to `write_root'.
--spec write_block(root_ready | all_blocks_written, state()) ->
-                         {next_state,
-                          write_root,
-                          state(),
-                          non_neg_integer()}.
-write_block(root_ready, State=#state{data=Data,
-                                     next_block_id=BlockID,
-                                     writer_pid=WriterPid,
-                                     timeout=Timeout}) ->
-    case Data of
-        [] ->
-            %% All received data has been written so wait
-            %% for more data to arrive.
-            {next_state, waiting, State, Timeout};
-        [NextBlock | RestData] ->
-            riak_moss_writer:write_block(WriterPid, BlockID, NextBlock),
-            UpdState = State#state{data=RestData,
-                                   next_block_id=BlockID+1},
-            {next_state, write_root, UpdState, Timeout}
-    end;
-write_block({all_blocks_written, Manifest}, State=#state{waiter=Waiter, timeout=Timeout}) ->
-    NewState = State#state{final_manifest=Manifest},
-    case Waiter of
-        undefined ->
-            {next_state, client_wait, NewState, Timeout};
-        Waiter ->
-            gen_fsm:reply(Waiter, {ok, Manifest}),
-            {stop, normal, NewState}
+%% @doc State for waiting for responses about file data blocks
+%% being deleted.
+-spec waiting_blocks_delete({block_deleted, non_neg_integer()}, state()) ->
+                                   {next_state,
+                                    write_root,
+                                    state(),
+                                    non_neg_integer()}.
+waiting_blocks_delete({block_deleted, _},
+                      State=#state{blocks_remaining=BlocksRemaining,
+                                   deleter_pid=DeleterPid,
+                                   timeout=Timeout}) ->
+    UpdBlocksRemaining = BlocksRemaining-1,
+    UpdState = State#state{blocks_remaining=UpdBlocksRemaining},
+    case UpdBlocksRemaining of
+        0 ->
+            %% All blocks deleted, transition to `waiting_root_delete'.
+            %% @TODO The method for tracking compelted blocks could stand
+            %% to be more robust.
+            riak_moss_deleter:delete_root(DeleterPid),
+            {next_state, waiting_root_delete, UpdState, Timeout};
+        _ ->
+            {next_state, waiting_blocks_delete, UpdState, Timeout}
     end.
 
-%% @doc State that is transistioned to when all the data
-%% that has been received by the fsm has been written, but
-%% more data for the file remains.
--spec waiting(timeout, state()) -> {stop, timeout, state()}.
-waiting(timeout, State) ->
-    {stop, timeout, State}.
-
-client_wait(timeout, State) ->
-    {stop, timeout, State}.
+%% @doc State for waiting for response about object or file root
+%% being deleted.
+-spec waiting_root_delete(root_deleted, state()) ->
+                                   {stop, normal, state()}.
+waiting_root_delete(root_deleted, State) ->
+    {stop, normal, State}.
 
 %% @doc Handle events that should be handled
 %% the same regardless of the current state.
@@ -216,43 +188,6 @@ handle_event(_Event, _StateName, State) ->
                                {next_state, atom(), state()}.
 handle_sync_event(current_state, _From, StateName, State) ->
     {reply, StateName, StateName, State};
-handle_sync_event({augment_data, NewData},
-             _From,
-             StateName,
-             State=#state{data=Data,
-                          content_length=ContentLength,
-                          raw_data=RawData,
-                          bytes_received=BytesReceived
-                         }) ->
-    UpdBytesReceived = BytesReceived + byte_size(NewData),
-    case RawData of
-        undefined ->
-            {UpdData, Remainder} = data_blocks(NewData,
-                                               ContentLength,
-                                               UpdBytesReceived,
-                                               Data);
-        _ ->
-            {UpdData, Remainder} =
-                data_blocks(<<RawData/binary, NewData/binary>>,
-                            ContentLength,
-                            UpdBytesReceived,
-                            Data)
-    end,
-    UpdState = State#state{data=UpdData,
-                           bytes_received=UpdBytesReceived,
-                           raw_data=Remainder},
-    case StateName of
-        waiting ->
-            gen_fsm:send_event(self(), root_ready),
-            NextState = write_block;
-        _ ->
-            NextState = StateName
-    end,
-    {reply, ok, NextState, UpdState};
-handle_sync_event(finalize, From, StateName, State=#state{final_manifest=undefined}) ->
-    {next_state, StateName, State#state{waiter=From}};
-handle_sync_event(finalize, _From, StateName, State=#state{final_manifest=M}) ->
-    {reply, {ok, M}, StateName, State};
 handle_sync_event(_Event, _From, StateName, State) ->
     {next_state, StateName, State}.
 
@@ -285,57 +220,11 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 %% ====================================================================
 
 %% @private
-%% @doc Start a `riak_moss_writer' process to perform the actual work
+%% @doc Start a `riak_moss_deleter' process to perform the actual work
 %% of writing data to Riak.
--spec start_writer() -> {ok, pid()} | {error, term()}.
-start_writer() ->
-    riak_moss_writer_sup:start_writer(node(), []).
-
-%% @private
-%% @doc Break up a data binary into a list of block-sized chunks
--spec data_blocks(binary(), pos_integer(), non_neg_integer(), [binary()]) ->
-                         {[binary()], undefined | binary()}.
-data_blocks(Data, ContentLength, BytesReceived, Blocks) ->
-    data_blocks(Data,
-                ContentLength,
-                BytesReceived,
-                riak_moss_lfs_utils:block_size(),
-                Blocks).
-
-%% @private
-%% @doc Break up a data binary into a list of block-sized chunks
--spec data_blocks(binary(),
-                  pos_integer(),
-                  non_neg_integer(),
-                  pos_integer(),
-                  [binary()]) ->
-                         {[binary()], undefined | binary()}.
-data_blocks(<<>>, _, _, _, Blocks) ->
-    {Blocks, undefined};
-data_blocks(Data, ContentLength, BytesReceived, BlockSize, Blocks) ->
-    if
-        byte_size(Data) >= BlockSize ->
-            <<BlockData:BlockSize/binary, RestData/binary>> = Data,
-            data_blocks(RestData,
-                        ContentLength,
-                        BytesReceived,
-                        BlockSize,
-                        append_data_block(BlockData, Blocks));
-        ContentLength == BytesReceived ->
-            data_blocks(<<>>,
-                        ContentLength,
-                        BytesReceived,
-                        BlockSize,
-                        append_data_block(Data, Blocks));
-        true ->
-            {Blocks, Data}
-    end.
-
-%% @private
-%% @doc Append a data block to an list of data blocks.
--spec append_data_block(binary(), [binary()]) -> [binary()].
-append_data_block(BlockData, Blocks) ->
-    lists:reverse([BlockData | lists:reverse(Blocks)]).
+-spec start_deleter() -> {ok, pid()} | {error, term()}.
+start_deleter() ->
+    riak_moss_deleter_sup:start_deleter(node(), []).
 
 %% ===================================================================
 %% Test API
