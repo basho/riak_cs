@@ -144,7 +144,7 @@ produce_body(RD, #key_context{get_fsm_pid=GetFsmPid, doc_metadata=DocMeta}=Ctx) 
 delete_resource(RD, Ctx=#key_context{bucket=Bucket, key=Key}) ->
     BinBucket = list_to_binary(Bucket),
     BinKey = list_to_binary(Key),
-    case riak_moss_delete_fsm:start_delete_fsm([BinBucket, BinKey, 300000]) of
+    case riak_moss_delete_fsm:start_delete_fsm(node(), [BinBucket, BinKey, 300000]) of
         {ok, _Pid} ->
             {true, RD, Ctx};
         {error, Reason} ->
