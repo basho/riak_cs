@@ -112,14 +112,15 @@ handle_call(_Msg, _From, State) ->
 -spec handle_cast(term(), state()) ->
                          {noreply, state()}.
 handle_cast({initialize, FsmPid, Bucket, FileName}, State) ->
-    #state{storage_module=StorageModule} = State,
+    #state{storage_module=StorageModule,
+           riak_pid=RiakPid} = State,
     %% Get the details about the object or file to be deleted
-    case object_details(FsmPid, StorageModule, Bucket, FileName) of
+    case object_details(RiakPid, StorageModule, Bucket, FileName) of
         object ->
             ObjDetails = object,
             UUID = undefined;
         {file, BlockCount, UUID} ->
-            ObjDetails = BlockCount
+            ObjDetails = {file, BlockCount}
     end,
     riak_moss_delete_fsm:send_event(FsmPid, {deleter_ready, ObjDetails}),
     {noreply, State#state{bucket=Bucket,
@@ -154,7 +155,7 @@ handle_cast({update_root, UpdateOp}, State=#state{bucket=Bucket,
     ObjsBucket = riak_moss_utils:to_bucket_name(objects, Bucket),
     case update_root_block(RiakPid, StorageModule, ObjsBucket, FileName, UUID, UpdateOp) of
         {ok, Status} ->
-            riak_moss_put_fsm:send_event(FsmPid, Status);
+            riak_moss_delete_fsm:send_event(FsmPid, Status);
         {error, _Reason} ->
             %% @TODO Handle error condition including
             %% case where the UUID has changed.
@@ -171,7 +172,7 @@ handle_cast({delete_block, BlockID}, State=#state{bucket=Bucket,
     BlocksBucket = riak_moss_utils:to_bucket_name(blocks, Bucket),
     case delete_data_block(RiakPid, StorageModule, BlocksBucket, BlockName) of
         ok ->
-            riak_moss_put_fsm:send_event(FsmPid, {block_deleted, BlockID});
+            riak_moss_delete_fsm:send_event(FsmPid, {block_deleted, BlockID});
         {error, _Reason} ->
             %% @TODO Handle error condition
             ok
@@ -256,11 +257,13 @@ delete_data_block(Pid, Module, Bucket, BlockName) ->
 -spec object_details(pid(), atom(), binary(), binary()) ->
                                object | {file, pos_integer()} | {error, term()}.
 object_details(Pid, Module, Bucket, FileName) ->
-    case Module:get(Pid, Bucket, FileName) of
+    ObjsBucket = riak_moss_utils:to_bucket_name(objects, Bucket),
+    case Module:get(Pid, ObjsBucket, FileName) of
         {ok, Obj} ->
-            case riak_moss_lfs_utils:is_manifest(Obj) of
+            Value = riakc_obj:get_value(Obj),
+            case riak_moss_lfs_utils:is_manifest(Value) of
                 true ->
-                    Manifest = binary_to_term(riakc_obj:get_value(Obj)),
+                    Manifest = binary_to_term(Value),
                     BlockCount = riak_moss_lfs_utils:block_count(Manifest),
                     UUID = riak_moss_lfs_utils:file_uuid(Manifest),
                     {file, BlockCount, UUID};

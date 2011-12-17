@@ -156,14 +156,14 @@ waiting_root_update(root_inactive, State=#state{block_count=BlockCount,
     %% @TODO Backpressure or concurrency of deletion needed. Currently
     %% all block delete requests will serialize at the `riak_moss_deleter'.
     [riak_moss_deleter:delete_block(DeleterPid, BlockID) ||
-        BlockID <- lists:seq(1, BlockCount)],
+        BlockID <- lists:seq(0, BlockCount-1)],
     {next_state, waiting_blocks_delete, State, Timeout}.
 
 %% @doc State for waiting for responses about file data blocks
 %% being deleted.
 -spec waiting_blocks_delete({block_deleted, non_neg_integer()}, state()) ->
                                    {next_state,
-                                    write_root,
+                                    waiting_root_delete | waiting_blocks_delete,
                                     state(),
                                     non_neg_integer()}.
 waiting_blocks_delete({block_deleted, _},
