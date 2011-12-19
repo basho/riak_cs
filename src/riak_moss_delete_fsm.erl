@@ -122,7 +122,9 @@ initialize(timeout, State=#state{bucket=Bucket,
 
 %% @doc State to receive information about the file or object to be
 %% deleted from the deleter process.
--spec waiting_file_info({deleter_ready, object | {file, non_neg_integer()}},
+-spec waiting_file_info({deleter_ready, object |
+                         {file, non_neg_integer()} |
+                         {error, term()}},
                         state()) ->
                                {next_state,
                                 waiting_root_delete | waiting_blocks_delete,
@@ -139,7 +141,11 @@ waiting_file_info({deleter_ready, {file, BlockCount}},
     riak_moss_deleter:update_root(DeleterPid, set_inactive),
     UpdState = State#state{block_count=BlockCount,
                            blocks_remaining=BlockCount},
-    {next_state, waiting_root_update, UpdState, Timeout}.
+    {next_state, waiting_root_update, UpdState, Timeout};
+waiting_file_info({deleter_ready, {error, Reason}},
+                  State) ->
+    lager:warning("The deletion process encountered an error. Reason: ~p", [Reason]),
+    {stop, normal, State}.
 
 %% @doc State to receive notifcation when the root file object has
 %% been updated to mark the file as inactive.

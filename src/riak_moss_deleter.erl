@@ -120,7 +120,10 @@ handle_cast({initialize, FsmPid, Bucket, FileName}, State) ->
             ObjDetails = object,
             UUID = undefined;
         {file, BlockCount, UUID} ->
-            ObjDetails = {file, BlockCount}
+            ObjDetails = {file, BlockCount};
+        {error, Reason} ->
+            ObjDetails = {error, Reason},
+            UUID = undefined
     end,
     riak_moss_delete_fsm:send_event(FsmPid, {deleter_ready, ObjDetails}),
     {noreply, State#state{bucket=Bucket,
