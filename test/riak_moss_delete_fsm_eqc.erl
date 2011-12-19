@@ -95,7 +95,8 @@ prop_delete_fsm() ->
                       conjunction(
                         [
                          {results_length, equals(length(ExpectedStates), length(ActualStates))},
-                         {results_match, equals(ExpectedStates, ActualStates)}
+                         {results_match, equals(ExpectedStates, ActualStates)},
+                         {fsm_pid_dead, equals(false, is_process_alive(FsmPid))}
                         ]))
                end)).
 
