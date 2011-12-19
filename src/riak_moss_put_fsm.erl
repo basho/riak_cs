@@ -90,7 +90,7 @@ finalize(Pid) ->
 
 -spec send_sync_event(pid(), term()) -> term() | {error, term()}.
 send_sync_event(Pid, Msg) ->
-    send_sync_event(Pid, Msg, 5000).
+    send_sync_event(Pid, Msg, 60000).
 
 -spec send_sync_event(pid(), term(), timeout()) -> term() | {error, term()}.
 send_sync_event(Pid, Msg, Timeout) ->
