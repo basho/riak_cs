@@ -17,7 +17,7 @@
 %% @doc Dummy get function
 -spec get(pid(), binary(), binary()) -> {ok, term()}.
 get(_Pid, Bucket, Key) ->
-    {ok, riakc_obj:new(Bucket, Key, <<"val">>)}.
+    {ok, riakc_obj:new_obj(Bucket, Key, <<"fakevclock">>, [{dict:new(), <<"val">>}])}.
 
 %% @doc Dummy put function
 -spec put(pid(), term()) -> ok.

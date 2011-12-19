@@ -35,9 +35,9 @@ deleter_response_test_() ->
 
 initialize_case({DeleterPid, ReceiverPid}) ->
     Result = riak_moss_deleter:initialize(DeleterPid,
-                                         ReceiverPid,
-                                         <<"testbucket">>,
-                                         <<"testfile">>),
+                                          ReceiverPid,
+                                          <<"testbucket">>,
+                                          <<"testfile">>),
     {"initialize response test",
      fun() ->
              [
