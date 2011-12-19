@@ -109,9 +109,9 @@ initialize(timeout, State=#state{bucket=Bucket,
         {ok, DeleterPid} ->
             %% Provide the deleter with the file details
             riak_moss_deleter:initialize(DeleterPid,
-                                        self(),
-                                        Bucket,
-                                        FileName),
+                                         self(),
+                                         Bucket,
+                                         FileName),
             UpdState = State#state{deleter_pid=DeleterPid},
             {next_state, waiting_file_info, UpdState, Timeout};
         {error, Reason} ->
@@ -186,7 +186,7 @@ waiting_blocks_delete({block_deleted, _},
 %% @doc State for waiting for response about object or file root
 %% being deleted.
 -spec waiting_root_delete(root_deleted, state()) ->
-                                   {stop, normal, state()}.
+                                 {stop, normal, state()}.
 waiting_root_delete(root_deleted, State) ->
     {stop, normal, State}.
 

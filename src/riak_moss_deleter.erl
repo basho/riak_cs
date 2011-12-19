@@ -99,7 +99,7 @@ init([]) ->
             {stop, riak_connect_failed}
     end;
 init(test) ->
-      {ok, #state{storage_module=riak_socket_dummy}}.
+    {ok, #state{storage_module=riak_socket_dummy}}.
 
 %% @doc Unused
 -spec handle_call(term(), {pid(), term()}, state()) ->
@@ -128,17 +128,17 @@ handle_cast({initialize, FsmPid, Bucket, FileName}, State) ->
                           filename=FileName,
                           uuid=UUID}};
 handle_cast(delete_root, State=#state{bucket=Bucket,
-                                     fsm_pid=FsmPid,
-                                     filename=FileName,
-                                     riak_pid=RiakPid,
-                                     storage_module=StorageModule,
-                                     uuid=UUID}) ->
+                                      fsm_pid=FsmPid,
+                                      filename=FileName,
+                                      riak_pid=RiakPid,
+                                      storage_module=StorageModule,
+                                      uuid=UUID}) ->
     ObjsBucket = riak_moss_utils:to_bucket_name(objects, Bucket),
     case delete_root_block(RiakPid,
-                          StorageModule,
-                          ObjsBucket,
-                          FileName,
-                          UUID) of
+                           StorageModule,
+                           ObjsBucket,
+                           FileName,
+                           UUID) of
         ok ->
             riak_moss_delete_fsm:send_event(FsmPid, root_deleted);
         {error, _Reason} ->
@@ -163,11 +163,11 @@ handle_cast({update_root, UpdateOp}, State=#state{bucket=Bucket,
     end,
     {noreply, State};
 handle_cast({delete_block, BlockID}, State=#state{bucket=Bucket,
-                                                       filename=FileName,
-                                                       fsm_pid=FsmPid,
-                                                       riak_pid=RiakPid,
-                                                       storage_module=StorageModule,
-                                                       uuid=UUID}) ->
+                                                  filename=FileName,
+                                                  fsm_pid=FsmPid,
+                                                  riak_pid=RiakPid,
+                                                  storage_module=StorageModule,
+                                                  uuid=UUID}) ->
     BlockName = riak_moss_lfs_utils:block_name(FileName, UUID, BlockID),
     BlocksBucket = riak_moss_utils:to_bucket_name(blocks, Bucket),
     case delete_data_block(RiakPid, StorageModule, BlocksBucket, BlockName) of
@@ -206,10 +206,10 @@ code_change(_OldVsn, State, _Extra) ->
 %% @private
 %% @doc Delete the root block for a file from Riak.
 -spec delete_root_block(pid(),
-                       atom(),
-                       binary(),
-                       binary(),
-                       binary() | undefined) ->
+                        atom(),
+                        binary(),
+                        binary(),
+                        binary() | undefined) ->
                                ok | {error, term()}.
 delete_root_block(Pid, Module, Bucket, FileName, _UUID) ->
     case Module:delete(Pid, Bucket, FileName) of
@@ -247,7 +247,7 @@ update_root_block(Pid, Module, Bucket, FileName, _UUID, set_inactive) ->
 %% @private
 %% @doc Delete a data block of a file from Riak.
 -spec delete_data_block(pid(), atom(), binary(), binary()) ->
-                              ok | {error, term()}.
+                               ok | {error, term()}.
 delete_data_block(Pid, Module, Bucket, BlockName) ->
     Module:delete(Pid, Bucket, BlockName).
 
@@ -255,7 +255,7 @@ delete_data_block(Pid, Module, Bucket, BlockName) ->
 %% @doc Determine if the target of deletion is a simple object
 %% or a file.
 -spec object_details(pid(), atom(), binary(), binary()) ->
-                               object | {file, pos_integer()} | {error, term()}.
+                            object | {file, pos_integer()} | {error, term()}.
 object_details(Pid, Module, Bucket, FileName) ->
     ObjsBucket = riak_moss_utils:to_bucket_name(objects, Bucket),
     case Module:get(Pid, ObjsBucket, FileName) of
