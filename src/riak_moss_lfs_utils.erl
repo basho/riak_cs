@@ -95,10 +95,11 @@ block_keynames(KeyName, UUID, BlockList) ->
     lists:map(MapFun, BlockList).
 
 block_name(Key, UUID, Number) ->
-    term_to_binary({Key, UUID, Number}).
+    sext:encode({Key, Number, UUID}).
 
 block_name_to_term(Name) ->
-    binary_to_term(Name).
+    {Key, Number, UUID} = sext:decode(Name),
+    {Key, UUID, Number}.
 
 %% @doc Return the configured block size
 -spec block_size() -> pos_integer().
