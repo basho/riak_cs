@@ -26,8 +26,7 @@
          put_object/4,
          riak_connection/0,
          riak_connection/2,
-         to_bucket_name/2,
-         unique_hex_id/0]).
+         to_bucket_name/2]).
 
 -include("riak_moss.hrl").
 
@@ -97,12 +96,7 @@ create_bucket(KeyID, BucketName) ->
 create_user(UserName) ->
     case riak_connection() of
         {ok, RiakPid} ->
-            %% TODO: Is it outside the scope
-            %% of this module for this func
-            %% to be making up the key/secret?
-            KeyID = unique_hex_id(),
-            Secret = unique_hex_id(),
-
+            {KeyID, Secret} = generate_access_creds(UserName),
             User = #moss_user{name=UserName, key_id=KeyID, key_secret=Secret},
             save_user(User, RiakPid),
             close_riak_connection(RiakPid),
@@ -285,17 +279,17 @@ to_bucket_name(objects, Name) ->
 to_bucket_name(blocks, Name) ->
     <<?BLOCK_BUCKET_PREFIX/binary, Name/binary>>.
 
-%% @doc Create a random identifying integer, returning its string
-%%      representation in base 62.
--spec unique_hex_id() -> string().
-unique_hex_id() ->
-    Rand = crypto:sha(term_to_binary({make_ref(), now()})),
-    <<I:160/integer>> = Rand,
-    integer_to_list(I, 16).
-
 %% ===================================================================
 %% Internal functions
 %% ===================================================================
+
+%% @doc Generate a new set of access credentials for user.
+-spec generate_access_creds(string()) -> {binary(), binary()}.
+generate_access_creds(UserName) ->
+    BinUser = list_to_binary(UserName),
+    KeyID = generate_key(BinUser),
+    Secret = generate_secret(BinUser, KeyID),
+    {KeyID, Secret}.
 
 %% @doc Retrieve a MOSS user's information based on their id string.
 -spec get_user(string(), pid()) -> {ok, term()} | {error, term()}.
@@ -307,6 +301,28 @@ get_user(KeyID, RiakPid) ->
             Error
     end.
 
+%% @doc Generate an access key for a user
+-spec generate_key(binary()) -> string().
+generate_key(UserName) ->
+    Ctx = crypto:hmac_init(sha, UserName),
+    Ctx1 = crypto:hmac_update(Ctx, druuid:v4()),
+    Key = crypto:hmac_final_n(Ctx1, 15),
+    string:to_upper(base64:encode_to_string(Key)).
+
+%% @doc Generate a secret access token for a user
+-spec generate_secret(binary(), string()) -> string().
+generate_secret(UserName, Key) ->
+    Bytes = 14,
+    Ctx = crypto:hmac_init(sha, UserName),
+    Ctx1 = crypto:hmac_update(Ctx, list_to_binary(Key)),
+    SecretPart1 = crypto:hmac_final_n(Ctx1, Bytes),
+    Ctx2 = crypto:hmac_init(sha, UserName),
+    Ctx3 = crypto:hmac_update(Ctx2, druuid:v4()),
+    SecretPart2 = crypto:hmac_final_n(Ctx3, Bytes),
+    base64:encode_to_string(
+      iolist_to_binary(<< SecretPart1:Bytes/binary,
+                          SecretPart2:Bytes/binary >>)).
+
 %% @doc Save information about a MOSS user
 -spec save_user(moss_user(), pid()) -> ok.
 save_user(User, RiakPid) ->
@@ -314,3 +330,4 @@ save_user(User, RiakPid) ->
     %% @TODO Error handling
     ok = riakc_pb_socket:put(RiakPid, UserObj),
     ok.
+
