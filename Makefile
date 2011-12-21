@@ -24,7 +24,7 @@ clean:
 distclean: clean
 	@./rebar delete-deps
 
-test:
+test: all
 	@./rebar skip_deps=true eunit
 
 parity-test:
@@ -118,7 +118,3 @@ package.src:
 
 package.%: package.src
 	make -C package -f $(PKG_ID)/deps/node_package/priv/templates/$*/Makefile.bootstrap
-
-
-
-
