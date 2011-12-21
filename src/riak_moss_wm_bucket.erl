@@ -58,7 +58,7 @@ forbidden(RD, Ctx=#context{auth_bypass=AuthBypass}) ->
 allowed_methods(RD, Ctx) ->
     %% TODO: add POST
     %% TODO: make this list conditional on Ctx
-    {['HEAD', 'GET', 'PUT', 'DELETE'], RD, Ctx}.
+    {['HEAD', 'GET', 'PUT'], RD, Ctx}.
 
 -spec content_types_provided(term(), term()) ->
     {[{string(), atom()}], term(), term()}.
