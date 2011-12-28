@@ -1,5 +1,6 @@
 REPO		?= riak_moss
 PKG_NAME        ?= riak-moss
+PKG_REVISION    ?= $(shell git describe --tags)
 PKG_VERSION	?= $(shell git describe --tags | tr - .)
 PKG_ID           = $(PKG_NAME)-$(PKG_VERSION)
 PKG_BUILD        = 1
@@ -34,7 +35,7 @@ parity-test:
 ## Release targets
 ##
 rel: deps compile
-	@./rebar compile generate
+	@./rebar compile generate  $(OVERLAY_VARS)
 
 relclean:
 	rm -rf rel/riak_moss
@@ -103,18 +104,21 @@ cleanplt:
 .PHONY: package
 export PKG_NAME PKG_VERSION PKG_ID PKG_BUILD BASE_DIR ERLANG_BIN REBAR OVERLAY_VARS RELEASE
 
-package.src:
+package.src: deps
 	mkdir -p package
 	rm -rf package/$(PKG_ID)
-	git archive --format=tar --prefix=$(PKG_ID)/ $(PKG_VERSION)| (cd package && tar -xf -)
+	git archive --format=tar --prefix=$(PKG_ID)/ $(PKG_REVISION)| (cd package && tar -xf -)
 	make -C package/$(PKG_ID) deps
 	for dep in package/$(PKG_ID)/deps/*; do \
+             echo "Processing dep: $${dep}"; \
              mkdir -p $${dep}/priv; \
              git --git-dir=$${dep}/.git describe --tags >$${dep}/priv/vsn.git; \
         done
-	find package/$(PKG_ID) -name ".git" -depth -exec rm -rf {} \;
+	find package/$(PKG_ID) -depth -name ".git" -exec rm -rf {} \;
 	tar -C package -czf package/$(PKG_ID).tar.gz $(PKG_ID)
 
+package: package.src
+	make -C package -f $(PKG_ID)/deps/node_package/Makefile
 
-package.%: package.src
-	make -C package -f $(PKG_ID)/deps/node_package/priv/templates/$*/Makefile.bootstrap
+pkgclean: distclean
+	rm -rf package
