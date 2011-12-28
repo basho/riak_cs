@@ -35,7 +35,7 @@ parity-test:
 ## Release targets
 ##
 rel: deps compile
-	@./rebar compile generate
+	@./rebar compile generate  $(OVERLAY_VARS)
 
 relclean:
 	rm -rf rel/riak_moss
