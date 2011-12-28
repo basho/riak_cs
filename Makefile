@@ -1,10 +1,11 @@
 REPO		?= riak_moss
 PKG_NAME        ?= riak-moss
-PKG_VERSION	?= $(shell git describe --tags | tr - .)
+LATEST_TAG	:= $(shell git describe --tags | tr - .)
+PKG_VERSION	?= $(LATEST_TAG)
 PKG_ID           = $(PKG_NAME)-$(PKG_VERSION)
 PKG_BUILD        = 1
-BASE_DIR         = $(shell pwd)
-ERLANG_BIN       = $(shell dirname $(shell which erl))
+BASE_DIR        := $(shell pwd)
+ERLANG_BIN      := $(shell dirname $(shell which erl))
 REBAR           ?= $(BASE_DIR)/rebar
 OVERLAY_VARS    ?=
 
