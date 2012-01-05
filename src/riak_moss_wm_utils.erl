@@ -84,10 +84,12 @@ streaming_get(FsmPid) ->
 user_record_to_proplist(#moss_user{name=Name,
                                    key_id=KeyID,
                                    key_secret=KeySecret,
+                                   canonical_id=CanonicalID,
                                    buckets = Buckets}) ->
     [{<<"name">>, list_to_binary(Name)},
      {<<"key_id">>, list_to_binary(KeyID)},
      {<<"key_secret">>, list_to_binary(KeySecret)},
+     {<<"id">>, list_to_binary(CanonicalID)},
      {<<"buckets">>, Buckets}].
 
 %% @doc Get an ISO 8601 formatted timestamp representing

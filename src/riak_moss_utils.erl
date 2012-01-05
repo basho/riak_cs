@@ -100,7 +100,11 @@ create_user(UserName) ->
     case riak_connection() of
         {ok, RiakPid} ->
             {KeyID, Secret} = generate_access_creds(UserName),
-            User = #moss_user{name=UserName, key_id=KeyID, key_secret=Secret},
+            CanonicalID = generate_canonical_id(KeyID, Secret),
+            User = #moss_user{name=UserName,
+                              key_id=KeyID,
+                              key_secret=Secret,
+                              canonical_id=CanonicalID},
             save_user(User, RiakPid),
             close_riak_connection(RiakPid),
             {ok, User};
@@ -368,6 +372,16 @@ get_user(KeyID, RiakPid) ->
         Error ->
             Error
     end.
+
+%% @doc Generate the canonical id for a user.
+-spec generate_canonical_id(string(), string()) -> string().
+generate_canonical_id(KeyID, Secret) ->
+    Bytes = 16,
+    Id1 = crypto:md5(KeyID),
+    Id2 = crypto:md5(Secret),
+    binary_to_hexlist(
+      iolist_to_binary(<< Id1:Bytes/binary,
+                          Id2:Bytes/binary >>)).
 
 %% @doc Generate an access key for a user
 -spec generate_key(binary()) -> string().
