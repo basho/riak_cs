@@ -3,6 +3,7 @@
           name :: string(),
           key_id :: string(),
           key_secret :: string(),
+          canonical_id :: string(),
           buckets = []}).
 -type moss_user() :: #moss_user{}.
 
