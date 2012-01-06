@@ -22,7 +22,8 @@ get_bucket_to_json() ->
     %% XXX TODO: MAKE THESE ACTUALLY TEST SOMETHING
     BucketNames = ["foo", "bar", "baz"],
     UserName = "fooser",
-    {ok, User} = riak_moss_utils:create_user(UserName),
+    Email = "fooser@fooser.com",
+    {ok, User} = riak_moss_utils:create_user(UserName, Email),
     KeyID = User#moss_user.key_id,
     [riak_moss_utils:create_bucket(KeyID, Name) || Name <- BucketNames],
     {ok, UpdatedUser} = riak_moss_utils:get_user(User#moss_user.key_id),

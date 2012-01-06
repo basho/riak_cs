@@ -1,6 +1,8 @@
 
 -record(moss_user, {
           name :: string(),
+          display_name :: string(),
+          email :: string(),
           key_id :: string(),
           key_secret :: string(),
           canonical_id :: string(),

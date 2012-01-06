@@ -62,7 +62,8 @@ riak_moss_utils_test_() ->
 %%      the moss_user record
 name_matches() ->
     Name = "fooser",
-    {ok, User} = riak_moss_utils:create_user(Name),
+    Email = "fooser@fooser.com",
+    {ok, User} = riak_moss_utils:create_user(Name, Email),
     {"name matches test",
      fun() ->
              [
@@ -77,8 +78,9 @@ name_matches() ->
 %%      one owned by that user
 bucket_appears() ->
     Name = "fooser",
+    Email = "fooser@fooser.com",
     BucketName = "fooser-bucket",
-    {ok, User} = riak_moss_utils:create_user(Name),
+    {ok, User} = riak_moss_utils:create_user(Name, Email),
     KeyID = User#moss_user.key_id,
     riak_moss_utils:create_bucket(KeyID, BucketName),
     {ok, UserAfter} = riak_moss_utils:get_user(KeyID),
@@ -102,9 +104,10 @@ key_appears() ->
     %% key in as a list instead
     %% of a binary?
     Name = "fooser",
+    Email = "fooser@fooser.com",
     BucketName = "key_appears",
     KeyName = "testkey",
-    {ok, User} = riak_moss_utils:create_user(Name),
+    {ok, User} = riak_moss_utils:create_user(Name, Email),
     KeyID = User#moss_user.key_id,
     ok = riak_moss_utils:create_bucket(KeyID, BucketName),
     riak_moss_utils:put_object(BucketName, KeyName,
@@ -124,11 +127,12 @@ key_appears() ->
 %%      keeps the content-type on GET
 content_type_sticks() ->
     Name = "fooser",
+    Email = "fooser@fooser.com",
     BucketName = "content_type_sticks",
     KeyName = "testkey",
     CType = "x-foo/bar",
     Metadata = dict:from_list([{<<"content-type">>, CType}]),
-    {ok, User} = riak_moss_utils:create_user(Name),
+    {ok, User} = riak_moss_utils:create_user(Name, Email),
     KeyID = User#moss_user.key_id,
     ok = riak_moss_utils:create_bucket(KeyID, BucketName),
     riak_moss_utils:put_object(BucketName, KeyName,
@@ -147,10 +151,11 @@ content_type_sticks() ->
 %% EQC test
 keys_are_sorted() ->
     Name = "fooser",
+    Email = "fooser@fooser.com",
     BucketName = "keys_are_sorted",
     Keys = [<<"dog">>, <<"zebra">>, <<"aardvark">>, <<01>>, <<"panda">>],
 
-    {ok, User} = riak_moss_utils:create_user(Name),
+    {ok, User} = riak_moss_utils:create_user(Name, Email),
     KeyID = User#moss_user.key_id,
     ok = riak_moss_utils:create_bucket(KeyID, BucketName),
 
