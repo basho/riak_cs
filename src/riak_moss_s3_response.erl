@@ -14,6 +14,8 @@
 
 error_message(invalid_access_key_id) ->
     "The AWS Access Key Id you provided does not exist in our records.";
+error_message(invalid_email_address) ->
+    "The email address you provided is not a valid.";
 error_message(access_denied) ->
     "Access Denied";
 error_message(bucket_not_empty) ->
@@ -29,6 +31,7 @@ error_message({riak_connect_failed, Reason}) ->
 
 
 error_code(invalid_access_key_id) -> 'InvalidAccessKeyId';
+error_code(invalid_email_address) -> 'InvalidEmailAddress';
 error_code(access_denied) -> 'AccessDenied';
 error_code(bucket_not_empty) -> 'BucketNotEmpty';
 error_code(bucket_already_exists) -> 'BucketAlreadyExists';
@@ -37,6 +40,8 @@ error_code(no_such_bucket) -> 'NoSuchBucket';
 error_code({riak_connect_failed, _}) -> 'RiakConnectFailed'.
 
 
+status_code(invalid_access_key_id) -> 403;
+status_code(invalid_email_address) -> 400;
 status_code(access_denied) ->  403;
 status_code(bucket_not_empty) ->  409;
 status_code(bucket_already_exists) -> 409;
