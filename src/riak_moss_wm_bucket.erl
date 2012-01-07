@@ -90,11 +90,11 @@ to_xml(RD, Ctx=#context{user=User}) ->
     BucketName = wrq:path_info(bucket, RD),
     Bucket = hd([B || B <- riak_moss_utils:get_buckets(User), B#moss_bucket.name =:= BucketName]),
     MOSSBucket = riak_moss_utils:to_bucket_name(objects, list_to_binary(Bucket#moss_bucket.name)),
-    case riak_moss_utils:list_keys(MOSSBucket) of
-        {ok, Keys} ->
+    case riak_moss_utils:get_keys_and_objects(MOSSBucket) of
+        {ok, KeyObjPairs} ->
             riak_moss_s3_response:list_bucket_response(User,
                                                        Bucket,
-                                                       Keys,
+                                                       KeyObjPairs,
                                                        RD,
                                                        Ctx);
         {error, Reason} ->

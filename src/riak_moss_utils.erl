@@ -17,10 +17,12 @@
          delete_object/2,
          from_bucket_name/1,
          get_buckets/1,
+         get_keys_and_objects/1,
          get_object/2,
          get_object/3,
          get_user/1,
          list_keys/1,
+         list_keys/2,
          pow/2,
          pow/3,
          put_object/4,
@@ -46,7 +48,8 @@ binary_to_hexlist(Bin) ->
               if
                   X < 16 ->
                       lists:flatten(["0" | Hex]);
-                  true ->                      Hex
+                  true ->
+                      Hex
               end
           end || X <- binary_to_list(Bin)],
     string:to_lower(lists:flatten(XBin)).
@@ -171,6 +174,27 @@ from_bucket_name(BucketNameWithPrefix) ->
 get_buckets(#moss_user{buckets=Buckets}) ->
     Buckets.
 
+%% @doc Return a list of keys for a bucket along
+%% with their associated objects.
+-spec get_keys_and_objects(binary()) -> {ok, [binary()]}.
+get_keys_and_objects(BucketName) ->
+    case riak_connection() of
+        {ok, RiakPid} ->
+            case list_keys(BucketName, RiakPid) of
+                {ok, Keys} ->
+                    KeyObjPairs =
+                        [{Key, get_object(BucketName, Key, RiakPid)}
+                         || Key <- Keys],
+                    Res = {ok, KeyObjPairs};
+                {error, Reason1} ->
+                    Res = {error, Reason1}
+            end,
+            close_riak_connection(RiakPid),
+            Res;
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
 %% @doc Get an object from Riak
 -spec get_object(binary(), binary()) ->
                         {ok, binary()} | {error, term()}.
@@ -207,8 +231,18 @@ get_user(KeyID) ->
 list_keys(BucketName) ->
     case riak_connection() of
         {ok, RiakPid} ->
-            {ok, Keys} = riakc_pb_socket:list_keys(RiakPid, BucketName),
+            Res = list_keys(BucketName, RiakPid),
             close_riak_connection(RiakPid),
+            Res;
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
+%% @doc List the keys from a bucket
+-spec list_keys(binary(), pid()) -> {ok, [binary()]}.
+list_keys(BucketName, RiakPid) ->
+    case riakc_pb_socket:list_keys(RiakPid, BucketName) of
+        {ok, Keys} ->
             %% TODO:
             %% This is a naive implementation,
             %% the longer-term solution is likely
@@ -330,4 +364,3 @@ save_user(User, RiakPid) ->
     %% @TODO Error handling
     ok = riakc_pb_socket:put(RiakPid, UserObj),
     ok.
-
