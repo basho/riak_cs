@@ -113,28 +113,27 @@ create_user(UserName) ->
 delete_bucket(KeyID, BucketName) ->
     case riak_connection() of
         {ok, RiakPid} ->
-            %% TODO:
-            %% Right now we're just removing
-            %% the bucket from the list of
-            %% buckets owned by the user.
-            %% What do we need to do
-            %% to actually "delete"
-            %% the bucket?
+            %% @TODO This will need to be updated once globally
+            %% unique buckets are enforced.
             {ok, User} = get_user(KeyID, RiakPid),
-            CurrentBuckets = User#moss_user.buckets,
+            CurrentBuckets = get_buckets(User),
 
-            %% TODO:
-            %% This logic is pure and should
-            %% be separated out into it's
-            %% own func so it can be easily
-            %% unit tested.
-            FilterFun =
-                fun(Element) ->
-                        Element#moss_bucket.name =/= BucketName
-                end,
-            UpdatedBuckets = lists:filter(FilterFun, CurrentBuckets),
-            UpdatedUser = User#moss_user{buckets=UpdatedBuckets},
-            Res = save_user(UpdatedUser, RiakPid),
+            %% Buckets can only be deleted if they exist
+            case bucket_exists(CurrentBuckets, BucketName) of
+                true ->
+                    case bucket_empty(BucketName, RiakPid) of
+                        true ->
+                            UpdatedBuckets =
+                                remove_bucket(CurrentBuckets, BucketName),
+                            UpdatedUser =
+                                User#moss_user{buckets=UpdatedBuckets},
+                            Res = save_user(UpdatedUser, RiakPid);
+                        false ->
+                            Res = {error, bucket_not_empty}
+                    end;
+                false ->
+                    Res = {error, no_such_bucket}
+            end,
             close_riak_connection(RiakPid),
             Res;
         {error, Reason} ->
@@ -317,6 +316,31 @@ to_bucket_name(blocks, Name) ->
 %% Internal functions
 %% ===================================================================
 
+%% @doc Check if a bucket is empty
+-spec bucket_empty(string(), pid()) -> boolean().
+bucket_empty(Bucket, RiakPid) ->
+    ObjBucket = to_bucket_name(objects, list_to_binary(Bucket)),
+    case list_keys(ObjBucket, RiakPid) of
+        {ok, []} ->
+            true;
+        _ ->
+            false
+    end.
+
+%% @doc Check if a bucket exists in a list of the user's buckets.
+%% @TODO This will need to change once globally unique buckets
+%% are enforced.
+-spec bucket_exists([moss_bucket()], string()) -> boolean().
+bucket_exists(Buckets, CheckBucket) ->
+    SearchResults = [Bucket || Bucket <- Buckets,
+                               Bucket#moss_bucket.name =:= CheckBucket],
+    case SearchResults of
+        [] ->
+            false;
+        _ ->
+            true
+    end.
+
 %% @doc Generate a new set of access credentials for user.
 -spec generate_access_creds(string()) -> {binary(), binary()}.
 generate_access_creds(UserName) ->
@@ -356,6 +380,17 @@ generate_secret(UserName, Key) ->
     base64:encode_to_string(
       iolist_to_binary(<< SecretPart1:Bytes/binary,
                           SecretPart2:Bytes/binary >>)).
+
+%% @doc Remove a bucket from a user's list of buckets.
+%% @TODO This may need to change once globally unique buckets
+%% are enforced.
+-spec remove_bucket([moss_bucket()], string()) -> boolean().
+remove_bucket(Buckets, RemovalBucket) ->
+    FilterFun =
+        fun(Element) ->
+                Element#moss_bucket.name =/= RemovalBucket
+        end,
+    lists:filter(FilterFun, Buckets).
 
 %% @doc Save information about a MOSS user
 -spec save_user(moss_user(), pid()) -> ok.

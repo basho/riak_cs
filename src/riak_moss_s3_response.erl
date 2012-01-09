@@ -22,6 +22,8 @@ error_message(bucket_already_exists) ->
     "The requested bucket name is not available. The bucket namespace is shared by all users of the system. Please select a different name and try again.";
 error_message(entity_too_large) ->
     "Your proposed upload exceeds the maximum allowed object size.";
+error_message(no_such_bucket) ->
+    "The specified bucket does not exist.";
 error_message({riak_connect_failed, Reason}) ->
     io_lib:format("Unable to establish connection to Riak. Reason: ~p", [Reason]).
 
@@ -31,14 +33,16 @@ error_code(access_denied) -> 'AccessDenied';
 error_code(bucket_not_empty) -> 'BucketNotEmpty';
 error_code(bucket_already_exists) -> 'BucketAlreadyExists';
 error_code(entity_too_large) -> 'EntityTooLarge';
+error_code(no_such_bucket) -> 'NoSuchBucket';
 error_code({riak_connect_failed, _}) -> 'RiakConnectFailed'.
 
 
-status_code(invalid_access_key_id) -> 403;
 status_code(access_denied) ->  403;
 status_code(bucket_not_empty) ->  409;
 status_code(bucket_already_exists) -> 409;
 status_code(entity_too_large) -> 400;
+status_code(invalid_access_key_id) -> 403;
+status_code(no_such_bucket) -> 404;
 status_code({riak_connect_failed, _}) -> 503.
 
 
