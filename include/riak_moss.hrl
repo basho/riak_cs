@@ -7,9 +7,9 @@
 -type moss_user() :: #moss_user{}.
 
 -record(moss_bucket, {
-          name :: binary(),
+          name :: string(),
           creation_date :: term()}).
-
+-type moss_bucket() :: #moss_bucket{}.
 
 -record(context, {auth_bypass :: atom(),
                   user :: #moss_user{}}).
