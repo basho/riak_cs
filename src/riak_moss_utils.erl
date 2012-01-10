@@ -17,10 +17,12 @@
          delete_object/2,
          from_bucket_name/1,
          get_buckets/1,
+         get_keys_and_objects/1,
          get_object/2,
          get_object/3,
          get_user/1,
          list_keys/1,
+         list_keys/2,
          pow/2,
          pow/3,
          put_object/4,
@@ -46,7 +48,8 @@ binary_to_hexlist(Bin) ->
               if
                   X < 16 ->
                       lists:flatten(["0" | Hex]);
-                  true ->                      Hex
+                  true ->
+                      Hex
               end
           end || X <- binary_to_list(Bin)],
     string:to_lower(lists:flatten(XBin)).
@@ -110,28 +113,27 @@ create_user(UserName) ->
 delete_bucket(KeyID, BucketName) ->
     case riak_connection() of
         {ok, RiakPid} ->
-            %% TODO:
-            %% Right now we're just removing
-            %% the bucket from the list of
-            %% buckets owned by the user.
-            %% What do we need to do
-            %% to actually "delete"
-            %% the bucket?
+            %% @TODO This will need to be updated once globally
+            %% unique buckets are enforced.
             {ok, User} = get_user(KeyID, RiakPid),
-            CurrentBuckets = User#moss_user.buckets,
+            CurrentBuckets = get_buckets(User),
 
-            %% TODO:
-            %% This logic is pure and should
-            %% be separated out into it's
-            %% own func so it can be easily
-            %% unit tested.
-            FilterFun =
-                fun(Element) ->
-                        Element#moss_bucket.name =/= BucketName
-                end,
-            UpdatedBuckets = lists:filter(FilterFun, CurrentBuckets),
-            UpdatedUser = User#moss_user{buckets=UpdatedBuckets},
-            Res = save_user(UpdatedUser, RiakPid),
+            %% Buckets can only be deleted if they exist
+            case bucket_exists(CurrentBuckets, BucketName) of
+                true ->
+                    case bucket_empty(BucketName, RiakPid) of
+                        true ->
+                            UpdatedBuckets =
+                                remove_bucket(CurrentBuckets, BucketName),
+                            UpdatedUser =
+                                User#moss_user{buckets=UpdatedBuckets},
+                            Res = save_user(UpdatedUser, RiakPid);
+                        false ->
+                            Res = {error, bucket_not_empty}
+                    end;
+                false ->
+                    Res = {error, no_such_bucket}
+            end,
             close_riak_connection(RiakPid),
             Res;
         {error, Reason} ->
@@ -171,6 +173,27 @@ from_bucket_name(BucketNameWithPrefix) ->
 get_buckets(#moss_user{buckets=Buckets}) ->
     Buckets.
 
+%% @doc Return a list of keys for a bucket along
+%% with their associated objects.
+-spec get_keys_and_objects(binary()) -> {ok, [binary()]}.
+get_keys_and_objects(BucketName) ->
+    case riak_connection() of
+        {ok, RiakPid} ->
+            case list_keys(BucketName, RiakPid) of
+                {ok, Keys} ->
+                    KeyObjPairs =
+                        [{Key, get_object(BucketName, Key, RiakPid)}
+                         || Key <- Keys],
+                    Res = {ok, KeyObjPairs};
+                {error, Reason1} ->
+                    Res = {error, Reason1}
+            end,
+            close_riak_connection(RiakPid),
+            Res;
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
 %% @doc Get an object from Riak
 -spec get_object(binary(), binary()) ->
                         {ok, binary()} | {error, term()}.
@@ -207,8 +230,18 @@ get_user(KeyID) ->
 list_keys(BucketName) ->
     case riak_connection() of
         {ok, RiakPid} ->
-            {ok, Keys} = riakc_pb_socket:list_keys(RiakPid, BucketName),
+            Res = list_keys(BucketName, RiakPid),
             close_riak_connection(RiakPid),
+            Res;
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
+%% @doc List the keys from a bucket
+-spec list_keys(binary(), pid()) -> {ok, [binary()]}.
+list_keys(BucketName, RiakPid) ->
+    case riakc_pb_socket:list_keys(RiakPid, BucketName) of
+        {ok, Keys} ->
             %% TODO:
             %% This is a naive implementation,
             %% the longer-term solution is likely
@@ -283,6 +316,31 @@ to_bucket_name(blocks, Name) ->
 %% Internal functions
 %% ===================================================================
 
+%% @doc Check if a bucket is empty
+-spec bucket_empty(string(), pid()) -> boolean().
+bucket_empty(Bucket, RiakPid) ->
+    ObjBucket = to_bucket_name(objects, list_to_binary(Bucket)),
+    case list_keys(ObjBucket, RiakPid) of
+        {ok, []} ->
+            true;
+        _ ->
+            false
+    end.
+
+%% @doc Check if a bucket exists in a list of the user's buckets.
+%% @TODO This will need to change once globally unique buckets
+%% are enforced.
+-spec bucket_exists([moss_bucket()], string()) -> boolean().
+bucket_exists(Buckets, CheckBucket) ->
+    SearchResults = [Bucket || Bucket <- Buckets,
+                               Bucket#moss_bucket.name =:= CheckBucket],
+    case SearchResults of
+        [] ->
+            false;
+        _ ->
+            true
+    end.
+
 %% @doc Generate a new set of access credentials for user.
 -spec generate_access_creds(string()) -> {binary(), binary()}.
 generate_access_creds(UserName) ->
@@ -323,6 +381,17 @@ generate_secret(UserName, Key) ->
       iolist_to_binary(<< SecretPart1:Bytes/binary,
                           SecretPart2:Bytes/binary >>)).
 
+%% @doc Remove a bucket from a user's list of buckets.
+%% @TODO This may need to change once globally unique buckets
+%% are enforced.
+-spec remove_bucket([moss_bucket()], string()) -> boolean().
+remove_bucket(Buckets, RemovalBucket) ->
+    FilterFun =
+        fun(Element) ->
+                Element#moss_bucket.name =/= RemovalBucket
+        end,
+    lists:filter(FilterFun, Buckets).
+
 %% @doc Save information about a MOSS user
 -spec save_user(moss_user(), pid()) -> ok.
 save_user(User, RiakPid) ->
@@ -330,4 +399,3 @@ save_user(User, RiakPid) ->
     %% @TODO Error handling
     ok = riakc_pb_socket:put(RiakPid, UserObj),
     ok.
-

@@ -58,7 +58,7 @@ forbidden(RD, Ctx=#context{auth_bypass=AuthBypass}) ->
 allowed_methods(RD, Ctx) ->
     %% TODO: add POST
     %% TODO: make this list conditional on Ctx
-    {['HEAD', 'GET', 'PUT'], RD, Ctx}.
+    {['HEAD', 'GET', 'PUT', 'DELETE'], RD, Ctx}.
 
 -spec content_types_provided(term(), term()) ->
     {[{string(), atom()}], term(), term()}.
@@ -90,11 +90,11 @@ to_xml(RD, Ctx=#context{user=User}) ->
     BucketName = wrq:path_info(bucket, RD),
     Bucket = hd([B || B <- riak_moss_utils:get_buckets(User), B#moss_bucket.name =:= BucketName]),
     MOSSBucket = riak_moss_utils:to_bucket_name(objects, list_to_binary(Bucket#moss_bucket.name)),
-    case riak_moss_utils:list_keys(MOSSBucket) of
-        {ok, Keys} ->
+    case riak_moss_utils:get_keys_and_objects(MOSSBucket) of
+        {ok, KeyObjPairs} ->
             riak_moss_s3_response:list_bucket_response(User,
                                                        Bucket,
-                                                       Keys,
+                                                       KeyObjPairs,
                                                        RD,
                                                        Ctx);
         {error, Reason} ->
@@ -117,13 +117,12 @@ accept_body(ReqData, Ctx=#context{user=User}) ->
 
 %% @doc Callback for deleting a bucket.
 -spec delete_resource(term(), term()) -> boolean().
-delete_resource(RD, Ctx=#context{user=User}) ->
-    BucketName = wrq:path_info(bucket, RD),
-    case riak_moss_utils:delete_bucket(User#moss_user.key_id, BucketName) of
+delete_resource(ReqData, Ctx=#context{user=User}) ->
+    BucketName = wrq:path_info(bucket, ReqData),
+    case riak_moss_utils:delete_bucket(User#moss_user.key_id,
+                                       BucketName) of
         ok ->
-            {true, RD, Ctx};
-        %% TODO:
-        %% What could this error even be?
-        _ ->
-            {false, RD, Ctx}
+            {true, ReqData, Ctx};
+        {error, Reason} ->
+            riak_moss_s3_response:api_error(Reason, ReqData, Ctx)
     end.

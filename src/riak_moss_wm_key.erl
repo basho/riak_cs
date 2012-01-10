@@ -29,7 +29,12 @@ init(Config) ->
 -spec extract_paths(term(), term()) -> term().
 extract_paths(RD, Ctx) ->
     Bucket = wrq:path_info(bucket, RD),
-    Key = wrq:path_info(key, RD),
+    case wrq:path_tokens(RD) of
+        [] ->
+            Key = undefined;
+        KeyTokens ->
+            Key = string:join(KeyTokens, "/")
+    end,
     Ctx#key_context{bucket=Bucket, key=Key}.
 
 -spec service_available(term(), term()) -> {true, term(), term()}.
