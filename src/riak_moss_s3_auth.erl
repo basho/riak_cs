@@ -36,7 +36,7 @@ authenticate(RD, [KeyID, Signature]) ->
                     case bucket_auth(User,
                                      wrq:method(RD),
                                      wrq:path_info(bucket, RD),
-                                     wrq:path_info(key, RD)) of
+                                     wrq:path_tokens(RD)) of
                         true ->
                             {ok, User};
                         false ->
@@ -186,16 +186,17 @@ canonicalize_resource(RD) ->
 -else.
 canonicalize_resource(RD) ->
     case {bucket_from_host(wrq:get_req_header("host", RD), RD),
-          wrq:path_info(key, RD)} of
-        {undefined, undefined} -> ["/"];
-        {Bucket, undefined} -> ["/", Bucket, "/"];
-        {Bucket, Key} -> ["/", Bucket, "/", Key]
+          wrq:path_tokens(RD)} of
+        {undefined, []} -> ["/"];
+        {Bucket, []} -> ["/", Bucket, "/"];
+        {Bucket, KeyTokens} ->
+            ["/", Bucket, "/", string:join(KeyTokens, "/")]
     end.
 -endif.
 
-bucket_auth(_User=#moss_user{}, _, undefined, undefined) ->
+bucket_auth(_User=#moss_user{}, _, undefined, []) ->
     true;
-bucket_auth(_User=#moss_user{}, 'PUT', _BucketName, undefined) ->
+bucket_auth(_User=#moss_user{}, 'PUT', _BucketName, []) ->
     true;
 bucket_auth(User=#moss_user{}, _, BucketName, _KeyName) ->
     bucket_owner(User, BucketName).
@@ -204,6 +205,7 @@ bucket_owner(User=#moss_user{}, BucketName) ->
     lists:member(BucketName,
                  [B#moss_bucket.name
                   || B <- riak_moss_utils:get_buckets(User)]).
+
 
 
 %% ===================================================================
