@@ -14,7 +14,7 @@
 -include_lib("eunit/include/eunit.hrl").
 
 %% eqc property
--export([prop_reverse/0]).
+-export([prop_block_count/0]).
 
 %% Helpers
 -export([test/0,
@@ -30,7 +30,7 @@ eqc_test_() ->
     {spawn,
         [%% Run the quickcheck tests
             {timeout, 60,
-                ?_assertEqual(true, quickcheck(numtests(?TEST_ITERATIONS, prop_reverse())))}
+                ?_assertEqual(true, quickcheck(numtests(?TEST_ITERATIONS, prop_block_count())))}
         ]
     }.
 
@@ -38,13 +38,25 @@ eqc_test_() ->
 %% eqc property
 %% ====================================================================
 
-prop_reverse() ->
-    ?FORALL(Xs,list(int()),
-        lists:reverse(lists:reverse(Xs)) == Xs).
+prop_block_count() ->
+    ?FORALL({CLength, BlockSize},{block_size(), content_length()},
+        begin
+            NumBlocks = riak_moss_lfs_utils:block_count(CLength, BlockSize),
+            (NumBlocks * BlockSize) >= CLength
+        end).
 
 %%====================================================================
 %% Generators
 %%====================================================================
+
+block_size() ->
+    elements([bs(El) || El <- [4, 8, 16, 32, 64]]).
+
+content_length() ->
+    ?LET(X, large_non_negs(), abs(X)).
+
+large_non_negs() ->
+    ?SUCHTHAT(X, largeint(), X =/= 0).
 
 %%====================================================================
 %% Helpers
@@ -54,6 +66,9 @@ test() ->
     test(100).
 
 test(Iterations) ->
-    eqc:quickcheck(eqc:numtests(Iterations, prop_reverse())).
+    eqc:quickcheck(eqc:numtests(Iterations, prop_block_count())).
+
+bs(Power) ->
+    trunc(math:pow(2, Power)).
 
 -endif.
