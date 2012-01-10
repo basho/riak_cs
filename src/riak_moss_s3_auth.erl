@@ -178,16 +178,13 @@ canonicalize_resource(RD) ->
 -else.
 canonicalize_resource(RD) ->
     case {bucket_from_host(wrq:get_req_header("host", RD), RD),
-          wrq:path_info(key, RD)} of
-        {undefined, undefined} -> ["/"];
-        {Bucket, undefined} -> ["/", Bucket, "/"];
-        {Bucket, Key} -> ["/", Bucket, "/", Key]
+          wrq:path_tokens(RD)} of
+        {undefined, []} -> ["/"];
+        {Bucket, []} -> ["/", Bucket, "/"];
+        {Bucket, KeyTokens} ->
+            ["/", Bucket, "/", string:join(KeyTokens, "/")]
     end.
 -endif.
-
-
-
-
 
 %% ===================================================================
 %% Eunit tests
