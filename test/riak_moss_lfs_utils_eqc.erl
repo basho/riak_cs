@@ -35,7 +35,7 @@ eqc_test_() ->
     }.
 
 %% ====================================================================
-%% eqc property
+%% EQC Properties
 %% ====================================================================
 
 prop_block_count() ->
@@ -53,9 +53,9 @@ block_size() ->
     elements([bs(El) || El <- [4, 8, 16, 32, 64]]).
 
 content_length() ->
-    ?LET(X, large_non_negs(), abs(X)).
+    ?LET(X, large_non_zero_nums(), abs(X)).
 
-large_non_negs() ->
+large_non_zero_nums() ->
     ?SUCHTHAT(X, largeint(), X =/= 0).
 
 %%====================================================================
