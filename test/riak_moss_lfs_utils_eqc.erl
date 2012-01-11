@@ -42,7 +42,9 @@ prop_block_count() ->
     ?FORALL({CLength, BlockSize},{block_size(), content_length()},
         begin
             NumBlocks = riak_moss_lfs_utils:block_count(CLength, BlockSize),
-            (NumBlocks * BlockSize) >= CLength
+            Product = NumBlocks * BlockSize,
+            conjunction([{greater, Product >= CLength},
+                         {lesser, (Product - BlockSize) < CLength}])
         end).
 
 %%====================================================================
