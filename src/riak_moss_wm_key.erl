@@ -33,7 +33,7 @@ extract_paths(RD, Ctx) ->
         [] ->
             Key = undefined;
         KeyTokens ->
-            Key = string:join(KeyTokens, "/")
+            Key = mochiweb_util:unquote(string:join(KeyTokens, "/"))
     end,
     Ctx#key_context{bucket=Bucket, key=Key}.
 
