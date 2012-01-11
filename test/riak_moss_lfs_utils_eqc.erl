@@ -39,26 +39,13 @@ eqc_test_() ->
 %% ====================================================================
 
 prop_block_count() ->
-    ?FORALL({CLength, BlockSize},{block_size(), content_length()},
+    ?FORALL({CLength, BlockSize},{moss_gen:block_size(), moss_gen:content_length()},
         begin
             NumBlocks = riak_moss_lfs_utils:block_count(CLength, BlockSize),
             Product = NumBlocks * BlockSize,
             conjunction([{greater, Product >= CLength},
                          {lesser, (Product - BlockSize) < CLength}])
         end).
-
-%%====================================================================
-%% Generators
-%%====================================================================
-
-block_size() ->
-    elements([bs(El) || El <- [4, 8, 16, 32, 64]]).
-
-content_length() ->
-    ?LET(X, large_non_zero_nums(), abs(X)).
-
-large_non_zero_nums() ->
-    ?SUCHTHAT(X, largeint(), X =/= 0).
 
 %%====================================================================
 %% Helpers
@@ -69,8 +56,5 @@ test() ->
 
 test(Iterations) ->
     eqc:quickcheck(eqc:numtests(Iterations, prop_block_count())).
-
-bs(Power) ->
-    trunc(math:pow(2, Power)).
 
 -endif.
