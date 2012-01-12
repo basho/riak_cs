@@ -16,7 +16,8 @@
 -export([bucket/0,
          file_name/0,
          block_size/0,
-         content_length/0]).
+         content_length/0,
+         bounded_content_length/0]).
 
 %%====================================================================
 %% Generators
@@ -29,17 +30,23 @@ file_name() ->
     non_blank_string().
 
 block_size() ->
-    elements([bs(El) || El <- [4, 8, 16, 32, 64]]).
+    elements([bs(El) || El <- [4, 8, 16, 32]]).
 
 content_length() ->
     ?LET(X, large_non_zero_nums(), abs(X)).
+
+bounded_content_length() ->
+    ?LET(X, bounded_non_zero_nums(), abs(X)).
 
 %%====================================================================
 %% Helpers
 %%====================================================================
 
 large_non_zero_nums() ->
-    ?SUCHTHAT(X, largeint(), X =/= 0).
+    not_zero(largeint()).
+
+bounded_non_zero_nums() ->
+    ?LET(X, not_zero(int()), X * 100).
 
 non_blank_string() ->
     ?LET(X,not_empty(list(lower_char())), list_to_binary(X)).
@@ -51,6 +58,9 @@ lower_char() ->
 
 not_empty(G) ->
     ?SUCHTHAT(X, G, X /= [] andalso X /= <<>>).
+
+not_zero(G) ->
+    ?SUCHTHAT(X, G, X =/= 0).
 
 bs(Power) ->
     trunc(math:pow(2, Power)).

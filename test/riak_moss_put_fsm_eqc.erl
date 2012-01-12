@@ -66,7 +66,7 @@ cleanup(_) ->
 
 prop_put_fsm() ->
     ?FORALL({Bucket, FileName, ContentLength, BlockSize},
-            {moss_gen:bucket(), moss_gen:file_name(), noshrink(moss_gen:content_length()), moss_gen:block_size()},
+            {moss_gen:bucket(), moss_gen:file_name(), noshrink(moss_gen:bounded_content_length()), moss_gen:block_size()},
             ?TRAPEXIT(
                begin
                    BlockCount = riak_moss_lfs_utils:block_count(ContentLength, BlockSize),
