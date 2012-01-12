@@ -30,7 +30,8 @@ file_name() ->
     non_blank_string().
 
 block_size() ->
-    elements([bs(El) || El <- [4, 8, 16, 32]]).
+    %elements([bs(El) || El <- [4, 8, 16, 32]]).
+    elements([bs(El) || El <- [16, 32]]).
 
 content_length() ->
     ?LET(X, large_non_zero_nums(), abs(X)).
@@ -46,7 +47,7 @@ large_non_zero_nums() ->
     not_zero(largeint()).
 
 bounded_non_zero_nums() ->
-    ?LET(X, not_zero(int()), X * 100).
+    ?LET(X, not_zero(int()), X * 100000).
 
 non_blank_string() ->
     ?LET(X,not_empty(list(lower_char())), list_to_binary(X)).
