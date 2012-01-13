@@ -31,12 +31,10 @@
 
 eqc_test_() ->
     {spawn,
-        {timeout, 60,
-            [
-                ?_assertEqual(true, quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_block_count())))),
-                ?_assertEqual(true, quickcheck(?TIMEOUT(60000, numtests(?TEST_ITERATIONS, ?QC_OUT(prop_manifest_manipulation())))))
-            ]
-        }
+        [
+            {timeout, 20, ?_assertEqual(true, quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_block_count()))))},
+            {timeout, 60, ?_assertEqual(true, quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_manifest_manipulation()))))}
+        ]
     }.
 
 %% ====================================================================
