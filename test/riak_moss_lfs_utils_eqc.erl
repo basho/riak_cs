@@ -49,6 +49,14 @@ prop_block_count() ->
                          {lesser, (Product - BlockSize) < CLength}])
         end).
 
+%% @doc EQC property for manipulating manifests
+%% with `riak_moss_lfs_utils`. Tests:
+%%
+%% 1. `is_manifest` correctly returns true for binary
+%% encoded manifests
+%% 2. `still_waiting` correctly returns false when
+%% all of the blocks calculated by `initial_blocks`
+%% have been removed from the manifest
 prop_manifest_manipulation() ->
     ?FORALL({Bucket, FileName, UUID, CLength, Md5, MD},
                     {moss_gen:bucket(),
