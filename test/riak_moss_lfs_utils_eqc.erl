@@ -34,7 +34,7 @@ eqc_test_() ->
         {timeout, 60,
             [
                 ?_assertEqual(true, quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_block_count())))),
-                ?_assertEqual(true, quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_manifest_manipulation()))))
+                ?_assertEqual(true, quickcheck(?TIMEOUT(60000, numtests(?TEST_ITERATIONS, ?QC_OUT(prop_manifest_manipulation())))))
             ]
         }
     }.
