@@ -63,8 +63,9 @@ forbidden(RD, Ctx=#key_context{context=#context{auth_bypass=AuthBypass}}) ->
                 {ok, User} ->
                     %% Authentication succeeded
                     NewInnerCtx = Ctx#key_context.context#context{user=User},
-                    forbidden(wrq:method(RD), RD,
-                                Ctx#key_context{context=NewInnerCtx});
+                    AccessRD = riak_moss_access_logger:set_user(User, RD),
+                    forbidden(wrq:method(RD), AccessRD,
+                              Ctx#key_context{context=NewInnerCtx});
                 {error, _Reason} ->
                     %% Authentication failed, deny access
                     riak_moss_s3_response:api_error(access_denied, RD, Ctx)
@@ -215,8 +216,12 @@ accept_streambody(RD, Ctx=#key_context{}, Pid, {Data, Next}) ->
 %% We need to do some checking to make sure
 %% the bucket exists for the user who is doing
 %% this PUT
-finalize_request(RD, Ctx, Pid) ->
+finalize_request(RD, #key_context{size=S}=Ctx, Pid) ->
+    %% TODO: probably want something that counts actual bytes uploaded
+    %% instead, to record partial/aborted uploads
+    AccessRD = riak_moss_access_logger:set_stat(in_bytes, S, RD),
+
     %Metadata = dict:from_list([{<<"content-type">>, CType}]),
     {ok, Manifest} = riak_moss_put_fsm:finalize(Pid),
     ETag = "\"" ++ riak_moss_utils:binary_to_hexlist(riak_moss_lfs_utils:content_md5(Manifest)) ++ "\"",
-    {true, wrq:set_resp_header("ETag",  ETag, RD), Ctx}.
+    {true, wrq:set_resp_header("ETag",  ETag, AccessRD), Ctx}.
