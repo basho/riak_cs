@@ -17,7 +17,7 @@
          delete_object/2,
          from_bucket_name/1,
          get_buckets/1,
-         get_keys_and_objects/1,
+         get_keys_and_objects/2,
          get_object/2,
          get_object/3,
          get_user/1,
@@ -175,15 +175,15 @@ get_buckets(#moss_user{buckets=Buckets}) ->
 
 %% @doc Return a list of keys for a bucket along
 %% with their associated objects.
--spec get_keys_and_objects(binary()) -> {ok, [binary()]}.
-get_keys_and_objects(BucketName) ->
+-spec get_keys_and_objects(binary(), binary()) -> {ok, [binary()]}.
+get_keys_and_objects(BucketName, Prefix) ->
     case riak_connection() of
         {ok, RiakPid} ->
             case list_keys(BucketName, RiakPid) of
                 {ok, Keys} ->
                     KeyObjPairs =
                         [{Key, get_object(BucketName, Key, RiakPid)}
-                         || Key <- Keys],
+                         || Key <- prefix_filter(Keys, Prefix)],
                     Res = {ok, KeyObjPairs};
                 {error, Reason1} ->
                     Res = {error, Reason1}
@@ -193,6 +193,16 @@ get_keys_and_objects(BucketName) ->
         {error, Reason} ->
             {error, Reason}
     end.
+
+-spec prefix_filter(list(), binary()) -> list().
+prefix_filter(Keys, <<>>) ->
+    Keys;
+prefix_filter(Keys, Prefix) ->
+    PL = size(Prefix),
+    lists:filter(
+      fun(<<P:PL/binary,_/binary>>) when P =:= Prefix -> true;
+         (_) -> false
+      end, Keys).
 
 %% @doc Get an object from Riak
 -spec get_object(binary(), binary()) ->
