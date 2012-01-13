@@ -30,7 +30,9 @@ eqc_test_() ->
     {spawn,
         [%% Run the quickcheck tests
             {timeout, 60,
-                ?_assertEqual(true, quickcheck(numtests(?TEST_ITERATIONS, prop_block_count())))}
+                ?_assertEqual(true, quickcheck(numtests(?TEST_ITERATIONS, prop_block_count())))},
+            {timeout, 60,
+                ?_assertEqual(true, quickcheck(numtests(?TEST_ITERATIONS, prop_manifest_manipulation())))}
         ]
     }.
 
@@ -47,6 +49,26 @@ prop_block_count() ->
                          {lesser, (Product - BlockSize) < CLength}])
         end).
 
+prop_manifest_manipulation() ->
+    ?FORALL({Bucket, FileName, UUID, CLength, Md5, MD},
+                    {moss_gen:bucket(),
+                     moss_gen:file_name(),
+                     moss_gen:uuid(),
+                     moss_gen:content_length(),
+                     moss_gen:md5(),
+                     moss_gen:metadata()},
+
+        begin
+            Manifest = riak_moss_lfs_utils:new_manifest(Bucket,
+                                                        FileName,
+                                                        UUID,
+                                                        CLength,
+                                                        Md5,
+                                                        MD),
+            conjunction([{is_manifest, riak_moss_lfs_utils:is_manifest(term_to_binary(Manifest))}])
+        end).
+
+
 %%====================================================================
 %% Helpers
 %%====================================================================
@@ -55,6 +77,7 @@ test() ->
     test(100).
 
 test(Iterations) ->
-    eqc:quickcheck(eqc:numtests(Iterations, prop_block_count())).
+    eqc:quickcheck(eqc:numtests(Iterations, prop_block_count())),
+    eqc:quickcheck(eqc:numtests(Iterations, prop_manifest_manipulation())).
 
 -endif.

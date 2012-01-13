@@ -17,7 +17,10 @@
          file_name/0,
          block_size/0,
          content_length/0,
-         bounded_content_length/0]).
+         bounded_content_length/0,
+         md5/0,
+         uuid/0,
+         metadata/0]).
 
 %%====================================================================
 %% Generators
@@ -30,14 +33,25 @@ file_name() ->
     non_blank_string().
 
 block_size() ->
-    %elements([bs(El) || El <- [4, 8, 16, 32]]).
-    elements([bs(El) || El <- [16, 32]]).
+    elements([bs(El) || El <- [8, 16, 32]]).
 
 content_length() ->
     ?LET(X, large_non_zero_nums(), abs(X)).
 
 bounded_content_length() ->
     ?LET(X, bounded_non_zero_nums(), abs(X)).
+
+md5() ->
+    non_blank_string().
+
+uuid() ->
+    non_blank_string().
+
+metadata() ->
+    %% TODO: not sure if I could,
+    %% just use `dict:new()` as a generator,
+    %% but this is more explicit either way
+    return(dict:new()).
 
 %%====================================================================
 %% Helpers
