@@ -65,7 +65,14 @@ prop_manifest_manipulation() ->
                                                         CLength,
                                                         Md5,
                                                         MD),
-            conjunction([{is_manifest, riak_moss_lfs_utils:is_manifest(term_to_binary(Manifest))}])
+
+            %% BlockCount = riak_moss_lfs_utils:block_count(Manifest),
+            Blocks = sets:to_list(riak_moss_lfs_utils:initial_blocks(CLength)),
+            %% TODO: maybe we should shuffle blocks?
+            FoldFun = fun (Chunk, Mani) -> riak_moss_lfs_utils:remove_block(Mani, Chunk) end,
+            EmptyMani = lists:foldl(FoldFun, Manifest, Blocks),
+            conjunction([{is_manifest, riak_moss_lfs_utils:is_manifest(term_to_binary(Manifest))},
+                         {not_waiting, not riak_moss_lfs_utils:still_waiting(EmptyMani)}])
         end).
 
 
