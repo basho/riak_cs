@@ -195,6 +195,8 @@ get_keys_and_objects(BucketName, Prefix) ->
     end.
 
 -spec prefix_filter(list(), binary()) -> list().
+prefix_filter(Keys, <<>>) ->
+    Keys;
 prefix_filter(Keys, Prefix) ->
     PL = size(Prefix),
     lists:filter(
