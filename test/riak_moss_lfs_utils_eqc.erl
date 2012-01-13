@@ -20,6 +20,9 @@
 -export([test/0,
          test/1]).
 
+-define(QC_OUT(P),
+        eqc:on_output(fun(Str, Args) ->
+                              io:format(user, Str, Args) end, P)).
 -define(TEST_ITERATIONS, 500).
 
 %%====================================================================
@@ -28,12 +31,12 @@
 
 eqc_test_() ->
     {spawn,
-        [%% Run the quickcheck tests
-            {timeout, 60,
-                ?_assertEqual(true, quickcheck(numtests(?TEST_ITERATIONS, prop_block_count())))},
-            {timeout, 60,
-                ?_assertEqual(true, quickcheck(numtests(?TEST_ITERATIONS, prop_manifest_manipulation())))}
-        ]
+        {timeout, 60,
+            [
+                ?_assertEqual(true, quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_block_count())))),
+                ?_assertEqual(true, quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_manifest_manipulation()))))
+            ]
+        }
     }.
 
 %% ====================================================================
@@ -89,7 +92,7 @@ prop_manifest_manipulation() ->
 %%====================================================================
 
 test() ->
-    test(100).
+    test(500).
 
 test(Iterations) ->
     eqc:quickcheck(eqc:numtests(Iterations, prop_block_count())),
