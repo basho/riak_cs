@@ -46,7 +46,7 @@ eqc_test_() ->
        fun setup/0,
        fun cleanup/1,
        [%% Run the quickcheck tests
-        {timeout, 60,
+        {timeout, 300,
          ?_assertEqual(true, quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_put_fsm()))))}
        ]
       }
@@ -92,6 +92,7 @@ prop_put_fsm() ->
 
                    %% Start the fsm processing and capture the state transitions
                    ActualStates = start_fsm(FsmState),
+                   {ok, _Manifest} = riak_moss_put_fsm:finalize(FsmPid),
                    ?WHENFAIL(
                       begin
                           ?debugFmt("Expected States ~p~nActual States: ~p~n", [ExpectedStates, ActualStates]),
@@ -100,7 +101,11 @@ prop_put_fsm() ->
                       end,
                       conjunction(
                         [
-                         {results, equals(ExpectedStates, ActualStates)}
+                         {state_comparison, equals(ExpectedStates, ActualStates)},
+                         {pid_dead, equals(false, is_process_alive(FsmPid))},
+                         {expected_response, equals(update_root, get_response(DummyPid))},
+                         {expected_event, equals({all_blocks_written, manifest},
+                                                 get_next_event(DummyPid))}
                         ]))
                end)).
 
@@ -201,8 +206,7 @@ get_next_event(Pid) ->
 start_fsm(State) ->
           execute_fsm(State, []).
 
-execute_fsm(#fsm_state{block_count=0,
-                       dummy_pid=DummyPid},
+execute_fsm(#fsm_state{block_count=0},
             States) ->
             lists:reverse(States);
 execute_fsm(FsmState=#fsm_state{dummy_pid=DummyPid,
