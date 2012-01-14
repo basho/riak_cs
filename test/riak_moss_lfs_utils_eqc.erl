@@ -68,6 +68,7 @@ prop_manifest_manipulation() ->
                      moss_gen:metadata()},
 
         begin
+            application:set_env(riak_moss, lfs_block_size, 1048576),
             Manifest = riak_moss_lfs_utils:new_manifest(Bucket,
                                                         FileName,
                                                         UUID,
@@ -75,7 +76,6 @@ prop_manifest_manipulation() ->
                                                         Md5,
                                                         MD),
 
-            %% BlockCount = riak_moss_lfs_utils:block_count(Manifest),
             Blocks = sets:to_list(riak_moss_lfs_utils:initial_blocks(CLength)),
             %% TODO: maybe we should shuffle blocks?
             FoldFun = fun (Chunk, Mani) -> riak_moss_lfs_utils:remove_block(Mani, Chunk) end,
