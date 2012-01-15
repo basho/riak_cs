@@ -72,7 +72,9 @@
 %% @doc Set the MOSS user for this request.  Stats are not recorded if
 %% the user is not set.
 set_user(#moss_user{}=User, RD) ->
-    wrq:add_note(?STAT(user), User, RD).
+    wrq:add_note(?STAT(user), User, RD);
+set_user(unknown, RD) ->
+    RD.
 
 %% @doc Set the value of the named stat for this request.
 set_stat(Name, Value, RD) when (is_atom(Name) orelse is_binary(Name)),
