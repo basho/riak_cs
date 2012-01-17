@@ -24,7 +24,9 @@
          next_slice/2,
          make_object/3,
          iso8601/1,
-         get_usage/3
+         datetime/1,
+         get_usage/3,
+         get_usage/4
         ]).
 
 -include("riak_moss.hrl").
@@ -133,6 +135,18 @@ iso8601({{Y,M,D},{H,I,S}}) ->
       io_lib:format("~4..0b~2..0b~2..0bT~2..0b~2..0b~2..0bZ",
                     [Y, M, D, H, I, S])).
 
+%% @doc Produce a datetime tuple from a ISO8601 string
+-spec datetime(binary()) -> {ok, calendar:datetime()} | error.
+datetime(String) when is_binary(String); is_list(String) ->
+    case io_lib:fread("~4d~2d~2dT~2d~2d~2dZ", String) of
+        {ok, [Y,M,D,H,I,S], _} ->
+            {ok, {{Y,M,D},{H,I,S}}};
+        %% TODO: match {more, _, _, RevList} to allow for shortened
+        %% month-month/etc.
+        _ ->
+            error
+    end.
+
 %% @doc Produce a usage compilation for the given `User' between
 %% `Start' and `End' times, inclusive.  The result is an orddict in
 %% which the keys are MOSS node names.  The value for each key is a
@@ -147,14 +161,17 @@ iso8601({{Y,M,D},{H,I,S}}) ->
 get_usage(User, Start, End) ->
     case riak_moss_utils:riak_connection() of
         {ok, Riak} ->
-            Slices = slices_filling(Start, End),
-            UsageAdder = usage_adder(User, Riak),
-            Usage = lists:foldl(UsageAdder, [], Slices),
+            Usage = get_usage(User, Start, End, Riak),
             riakc_pb_socket:stop(Riak),
             {ok, Usage};
         {error, Reason} ->
             {error, Reason}
     end.
+
+get_usage(User, Start, End, Riak) ->
+    Slices = slices_filling(Start, End),
+    UsageAdder = usage_adder(User, Riak),
+    lists:foldl(UsageAdder, [], Slices).
 
 usage_adder(User, Riak) ->
     fun(Slice, Usage) ->

@@ -21,6 +21,7 @@
          get_object/2,
          get_object/3,
          get_user/1,
+         get_user/2,
          list_keys/1,
          list_keys/2,
          pow/2,
