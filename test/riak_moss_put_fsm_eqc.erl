@@ -66,7 +66,7 @@ cleanup(_) ->
 
 prop_put_fsm() ->
     ?FORALL({Bucket, FileName, ContentLength, BlockSize},
-            {g_bucket(), g_file_name(), noshrink(g_content_length()), g_block_size()},
+            {moss_gen:bucket(), moss_gen:file_name(), noshrink(moss_gen:bounded_content_length()), moss_gen:block_size()},
             ?TRAPEXIT(
                begin
                    BlockCount = riak_moss_lfs_utils:block_count(ContentLength, BlockSize),
@@ -108,33 +108,6 @@ prop_put_fsm() ->
                                                  get_next_event(DummyPid))}
                         ]))
                end)).
-
-%%====================================================================
-%% Generators
-%%====================================================================
-
-g_bucket() ->
-    non_blank_string().
-
-g_file_name() ->
-    non_blank_string().
-
-g_block_size() ->
-    elements([1024, 2048, 4096, 8192, 16384, 32768, 65536]).
-
-g_content_length() ->
-    choose(1024, 65536).
-
-non_blank_string() ->
-    ?LET(X,not_empty(list(lower_char())), list_to_binary(X)).
-
-%% Generate a lower 7-bit ACSII character that should not cause any problems
-%% with utf8 conversion.
-lower_char() ->
-    choose(16#20, 16#7f).
-
-not_empty(G) ->
-    ?SUCHTHAT(X, G, X /= [] andalso X /= <<>>).
 
 %%====================================================================
 %% Helpers
