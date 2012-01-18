@@ -81,22 +81,26 @@ list_bucket_response(User, Bucket, KeyObjPairs, RD, Ctx) ->
                     case ObjResp of
                         {ok, Obj} ->
                             Manifest = binary_to_term(riakc_obj:get_value(Obj)),
-                            Size = integer_to_list(
-                                     riak_moss_lfs_utils:content_length(Manifest)),
-                            ETag = "\"" ++ riak_moss_utils:binary_to_hexlist(
-                                             riak_moss_lfs_utils:content_md5(Manifest))
-                                ++ "\"";
+                            case riak_moss_lfs_utils:is_active(Manifest) of
+                                true ->
+                                    Size = integer_to_list(
+                                             riak_moss_lfs_utils:content_length(Manifest)),
+                                    ETag = "\"" ++ riak_moss_utils:binary_to_hexlist(
+                                                     riak_moss_lfs_utils:content_md5(Manifest))
+                                        ++ "\"",
+                                    {'Contents', [{'Key', [KeyString]},
+                                                  {'Size', [Size]},
+                                                  {'LastModified', [LastModified]},
+                                                  {'ETag', [ETag]},
+                                                  {'Owner', [user_to_xml_owner(User)]}]};
+                                false ->
+                                    undefined
+                            end;
                         {error, Reason} ->
                             lager:warning("Unable to fetch object for ~p. Reason: ~p",
                                           [Key, Reason]),
-                            Size = "unavailable",
-                            ETag = "unavailable"
-                    end,
-                    {'Contents', [{'Key', [KeyString]},
-                              {'Size', [Size]},
-                              {'LastModified', [LastModified]},
-                              {'ETag', [ETag]},
-                              {'Owner', [user_to_xml_owner(User)]}]}
+                            undefined
+                    end
                 end
                 || {Key, ObjResp} <- KeyObjPairs],
     BucketProps = [{'Name', [Bucket#moss_bucket.name]},
@@ -105,7 +109,9 @@ list_bucket_response(User, Bucket, KeyObjPairs, RD, Ctx) ->
                     {'MaxKeys', ["1000"]},
                     {'Delimiter', ["/"]},
                     {'IsTruncated', ["false"]}],
-    XmlDoc = [{'ListBucketResult', BucketProps++Contents}],
+    XmlDoc = [{'ListBucketResult', BucketProps++
+                   lists:filter(fun(E) -> E /= undefined end,
+                                Contents)}],
     respond(200, export_xml(XmlDoc), RD, Ctx).
 
 user_to_xml_owner(#moss_user{key_id=KeyId, name=Name}) ->

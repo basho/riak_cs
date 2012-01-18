@@ -38,7 +38,8 @@
          sorted_blocks_remaining/1,
          still_waiting/1,
          content_md5/1,
-         content_length/1]).
+         content_length/1,
+         is_active/1]).
 
 -export_type([lfs_manifest/0]).
 
@@ -216,3 +217,7 @@ content_md5(#lfs_manifest{content_md5=ContentMD5}) ->
 -spec content_length(lfs_manifest()) -> integer().
 content_length(#lfs_manifest{content_length=CL}) ->
     CL.
+
+-spec is_active(lfs_manifest()) -> boolean().
+is_active(#lfs_manifest{active=A}) ->
+    A.
