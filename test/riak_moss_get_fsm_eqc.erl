@@ -29,7 +29,7 @@
 -export([prop_get_fsm/0]).
 
 %% States
--export([state_name/1]).
+-export([stopped/2]).
 
 %% Helpers
 -export([]).
@@ -80,7 +80,7 @@ initial_state_data() ->
 next_state_data(_From, _To, S, _R, _C) ->
     S.
 
-state_name(_S) ->
+stopped(_Args, _S) ->
     [].
 
 precondition(_From,_To,_S,_C) ->
