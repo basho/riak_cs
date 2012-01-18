@@ -70,7 +70,6 @@ prop_put_fsm() ->
             ?TRAPEXIT(
                begin
                    BlockCount = riak_moss_lfs_utils:block_count(ContentLength, BlockSize),
-                   io:format("the block count is ~p ~n", [BlockCount]),
                    %% Calculate the expected state transitions
                    ExpectedStates = expected_states(BlockCount),
                    %% Start a dummy writer process
