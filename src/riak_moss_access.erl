@@ -30,6 +30,13 @@
         ]).
 
 -include("riak_moss.hrl").
+-ifdef(TEST).
+-ifdef(EQC).
+-compile([export_all]).
+-include_lib("eqc/include/eqc.hrl").
+-endif.
+-include_lib("eunit/include/eunit.hrl").
+-endif.
 
 -export_type([slice/0]).
 
@@ -46,7 +53,7 @@
 -spec archive_period() -> {ok, integer()}|{error, term()}.
 archive_period() ->
     case application:get_env(riak_moss, access_archive_period) of
-        {ok, AP} when is_integer(AP) ->
+        {ok, AP} when is_integer(AP), AP > 0 ->
             case (24*60*60) rem AP of
                 0 ->
                     %% require period boundaries to fall on day boundaries
@@ -85,6 +92,8 @@ next_slice({_,Prev}, Period) ->
 %% @doc Get the slices between `Start' and `End', inclusive.
 -spec slices_filling(calendar:datetime(), calendar:datetime())
          -> slice().
+slices_filling(Start, End) when Start > End ->
+    slices_filling(End, Start);
 slices_filling(Start, End) ->
     {ok, Period} = archive_period(),
     Last = slice_containing(End),
@@ -119,7 +128,7 @@ make_object(User, Accesses, {Start, End}=Slice) ->
 aggregate_accesses(Accesses) ->
     lists:foldl(fun merge_stats/2, [], Accesses).
 
-merge_stats({_User, Stats}, Acc) ->
+merge_stats(Stats, Acc) ->
     %% TODO: orddict conversion could be omitted if Stats was already
     %% an orddict
     orddict:merge(fun(_K, V1, V2) -> V1+V2 end,
@@ -127,17 +136,17 @@ merge_stats({_User, Stats}, Acc) ->
                   orddict:from_list(Stats)).
 
 %% @doc Produce an ISO8601-compatible representation of the given time.
--spec iso8601(calendar:datetime()|erlang:timestamp()) -> binary().
-iso8601({_,_,_}=Now) ->
-    iso8601(calendar:now_to_universal_time(Now));
+-spec iso8601(calendar:datetime()) -> binary().
 iso8601({{Y,M,D},{H,I,S}}) ->
     iolist_to_binary(
       io_lib:format("~4..0b~2..0b~2..0bT~2..0b~2..0b~2..0bZ",
                     [Y, M, D, H, I, S])).
 
 %% @doc Produce a datetime tuple from a ISO8601 string
--spec datetime(binary()) -> {ok, calendar:datetime()} | error.
-datetime(String) when is_binary(String); is_list(String) ->
+-spec datetime(binary()|string()) -> {ok, calendar:datetime()} | error.
+datetime(Binary) when is_binary(Binary) ->
+    datetime(binary_to_list(Binary));
+datetime(String) when is_list(String) ->
     case io_lib:fread("~4d~2d~2dT~2d~2d~2dZ", String) of
         {ok, [Y,M,D,H,I,S], _} ->
             {ok, {{Y,M,D},{H,I,S}}};
@@ -197,3 +206,251 @@ add_usage(JSON, Usage) ->
     {struct, Access} = mochijson2:decode(JSON),
     {value, {?NODEKEY, Node}, Other} = lists:keytake(?NODEKEY, 1, Access),
     orddict:append(Node, Other, Usage).
+
+-ifdef(TEST).
+-ifdef(EQC).
+
+iso8601_test() ->
+    true = eqc:quickcheck(iso8601_roundtrip_prop()).
+
+%% make sure that iso8601 roundtrips with datetime
+iso8601_roundtrip_prop() ->
+    %% iso8601 & datetime don't actually care if the date was valid,
+    %% but writing a valid generator was fun
+    ?FORALL(T, datetime_g(),
+            is_binary(iso8601(T)) andalso
+                {ok, T} == datetime(iso8601(T))).
+
+%% generate a valid datetime tuple; years are 1970-2200, to keep them
+%% more relevant-ish
+datetime_g() ->
+    ?LET({Y, M}, {choose(1970, 2200), choose(1, 12)},
+         {{Y, M, valid_day_g(Y, M)},
+          {choose(0, 23), choose(0, 59), choose(0, 59)}}).
+
+valid_day_g(Year, 2) ->
+    case {Year rem 4, Year rem 100, Year rem 400} of
+        {_, _, 0} -> 29;
+        {_, 0, _} -> 28;
+        {0, _, _} -> 29;
+        {_, _, _} -> 28
+    end;
+valid_day_g(_Year, Month) ->
+    case lists:member(Month, [4, 6, 9, 11]) of
+        true  -> 30;
+        false -> 31
+    end.
+
+datetime_test() ->
+    true = eqc:quickcheck(datetime_invalid_prop()).
+
+%% make sure that datetime correctly returns 'error' for invalid
+%% iso8601 date strings
+datetime_invalid_prop() ->
+    ?FORALL(L, list(char()),
+            case datetime(L) of
+                {{_,_,_},{_,_,_}} ->
+                    %% really, we never expect this to happen, given
+                    %% that a random string is highly unlikely to be
+                    %% valid iso8601, but just in case...
+                    valid_iso8601(L);
+                error ->
+                    not valid_iso8601(L)
+            end).
+
+%% a string is considered valid iso8601 if it is of the form
+%% ddddddddZddddddT, where d is a digit, Z is a 'Z' and T is a 'T'
+valid_iso8601(L) ->
+    length(L) == 4+2+2+1+2+2+2+1 andalso
+        string:chr(L, $Z) == 4+2+2+1 andalso
+        lists:all(fun is_digit/1, string:substr(L, 1, 8)) andalso
+        string:chr(L, $T) == 16 andalso
+        lists:all(fun is_digit/1, string:substr(L, 10, 15)).
+
+is_digit(C) ->
+    C >= $0 andalso C =< $9.
+
+archive_period_test() ->
+    true = eqc:quickcheck(archive_period_prop()).
+
+%% make sure archive_period accepts valid periods, but bombs on
+%% invalid ones
+archive_period_prop() ->
+    ?FORALL(I, oneof([valid_period_g(),
+                      choose(-86500, 86500)]), % purposely outside day boundary
+            begin
+                application:set_env(riak_moss, access_archive_period, I),
+                case archive_period() of
+                    {ok, I} ->
+                        valid_period(I);
+                    {error, _Reason} ->
+                        not valid_period(I)
+                end
+            end).
+
+%% not exhaustive, but a good selection
+valid_period_g() ->
+    elements([1,10,100,
+              2,4,8,16,32,
+              3,9,27,
+              6,18,54,
+              12,24,48,96,
+              60,600,3600,21600]). % 1min, 10min, 1hr, 6hr
+
+%% a valid period is an integer 1-86400 that evenly divides 86400 (the
+%% number of seconds in a day)
+valid_period(I) ->
+    is_integer(I) andalso
+        I > 0 andalso I =< 86400
+        andalso (86400 rem I) == 0.
+
+slice_containing_test() ->
+    true = eqc:quickcheck(slice_containing_prop()).
+
+%% make sure that slice_containing returns a slice that is the length
+%% of the archive period, and actually surrounds the given time
+slice_containing_prop() ->
+    ?FORALL({T, I}, {datetime_g(), valid_period_g()},
+            begin
+                application:set_env(riak_moss, access_archive_period, I),
+                {S, E} = slice_containing(T),
+                %% slice actually surrounds time
+                S =< T andalso T =< E andalso
+                    %% slice length is the configured period
+                    I == datetime_diff(S, E) andalso
+                    %% start of slice is N periods from start of day
+                    0 == datetime_diff(S, {element(1, S),{0,0,0}}) rem I
+            end).
+
+datetime_diff(S, E) ->
+    abs(calendar:datetime_to_gregorian_seconds(E)
+        -calendar:datetime_to_gregorian_seconds(S)).
+
+next_slice_test() ->
+    true = eqc:quickcheck(next_slice_prop()).
+
+%% make sure the "next" slice is starts at the end of the given slice,
+%% and is the length of the configured period
+next_slice_prop() ->
+    ?FORALL({T, I}, {datetime_g(), valid_period_g()},
+            begin
+                application:set_env(riak_moss, access_archive_period, I),
+                {S1, E1} = slice_containing(T),
+                {S2, E2} = next_slice({S1, E1}, I),
+                S2 == E1 andalso I == datetime_diff(S2, E2)
+            end).
+
+slices_filling_test() ->
+    true = eqc:quickcheck(slices_filling_prop()).
+
+%% make sure that slices_filling produces a list of slices, where the
+%% first slice contains the start time, the last slice contains the
+%% last time, and the number of slices is equal to the number of
+%% periods between the start of the first slice and the end of the
+%% last slice; slices are not checked for contiguousness, since we
+%% know that the function uses next_slice, and next_slice is tested
+%% elsewhere
+slices_filling_prop() ->
+    ?FORALL({T0, I, M, R}, {datetime_g(), valid_period_g(), int(), int()},
+            begin
+                application:set_env(riak_moss, access_archive_period, I),
+                T1 = calendar:gregorian_seconds_to_datetime(
+                       I*M+R+calendar:datetime_to_gregorian_seconds(T0)),
+                Slices = slices_filling(T0, T1),
+                [Early, Late] = lists:sort([T0, T1]),
+                {SF,EF} = hd(Slices),
+                {SL,EL} = lists:last(Slices),
+                ?WHENFAIL(
+                   io:format("SF: ~p~nT0: ~p~nEF: ~p~n~n"
+                             "SL: ~p~nT1: ~p~nEL: ~p~n~n"
+                             "# slices: ~p~n",
+                             [SF, T0, EF, SL, T1, EL, length(Slices)]),
+                   conj([SF =< Early, Early =< EF,
+                         SL =< Late, Late =< EL,
+                         length(Slices) == datetime_diff(SF, EL) div I]))
+            end).
+
+%% Check that all elements in the list are boolean true, or 2-tuples
+%% where the second element is true; return 'true' if this is the
+%% case, or the input List if it is not.  This is a useful alternative
+%% to many 'andalso' clauses at the end of an EQC test, as it's easier
+%% to tell which clause failed.
+conj(List) ->
+    case lists:all(fun({_,B}) -> B == true; (B) -> B == true end, List) of
+        true -> true;
+        false -> List
+    end.
+
+make_object_test() ->
+    true = eqc:quickcheck(make_object_prop()).
+
+%% check that an archive object is in the right bucket, with a key
+%% containing the end time and the username, with application/json as
+%% the content type, and a value that is a JSON representation of the
+%% sum of each access metric plus start and end times
+make_object_prop() ->
+    ?FORALL({UserKey, Accesses, T0, T1},
+            {user_key_g(), list(access_g()), datetime_g(), datetime_g()},
+            begin
+                {Start, End} = list_to_tuple(lists:sort([T0, T1])),
+                Obj = make_object(UserKey, Accesses, {Start, End}),
+                
+                Unique = lists:usort(
+                           [ if is_atom(K)   -> atom_to_binary(K, latin1);
+                                is_binary(K) -> K
+                             end || {K, _V} <- lists:flatten(Accesses)]),
+                {struct, MJ} = mochijson2:decode(
+                                 riakc_obj:get_update_value(Obj)),
+
+                ?WHENFAIL(
+                io:format("keys: ~p~n", [MJ]),
+                conj([{bucket, ?ACCESS_BUCKET == riakc_obj:bucket(Obj)},
+                      {key_user, 0 /= string:str(
+                                        binary_to_list(riakc_obj:key(Obj)),
+                                        binary_to_list(UserKey))},
+                      {key_time, 0 /= string:str(
+                                        binary_to_list(riakc_obj:key(Obj)),
+                                        binary_to_list(iso8601(End)))},
+                      {ctype, "application/json" ==
+                           riakc_obj:md_ctype(
+                             riakc_obj:get_update_metadata(Obj))},
+
+                      {start_time, iso8601(Start) ==
+                           proplists:get_value(<<"start_time">>, MJ)},
+                      {end_time, iso8601(End) ==
+                           proplists:get_value(<<"end_time">>, MJ)},
+                      {keys, lists:all(fun({X,Y}) -> X == Y end,
+                                       [{sum_access(K, Accesses),
+                                         proplists:get_value(K, MJ)}
+                                        || K <- Unique])}]))
+            end).
+
+%% create something vaguely user-key-ish; not actually a good
+%% representation since user keys are 20-byte base64 strings, not any
+%% random character, but this will hopefully find some odd corner
+%% cases in case that key format changes
+user_key_g() ->
+    ?LET(L, ?SUCHTHAT(X, list(char()), X /= []), list_to_binary(L)).
+
+%% create an access proplist
+access_g() ->
+    ?LET(L, list(access_field_g()), lists:ukeysort(1, L)).
+
+%% create one access metric
+access_field_g() ->
+    {elements([bytes_in, bytes_out, <<"dummy1">>, dummy2]),
+     oneof([int(), largeint()])}.
+
+%% sum a given access metric K, given a list of accesses
+sum_access(K, Accesses) ->
+    lists:foldl(fun(Access, Sum) ->
+                        Sum+proplists:get_value(
+                              K, Access, proplists:get_value(
+                                           binary_to_atom(K, latin1),
+                                           Access, 0))
+                end,
+                0,
+                Accesses).
+
+-endif. % EQC
+-endif. % TEST
