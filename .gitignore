@@ -10,3 +10,4 @@ dev
 log/
 *~
 /log
+current_counterexample.eqc
