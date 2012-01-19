@@ -13,7 +13,6 @@ setup() ->
 %                                "@localhost"),
 %    {ok, _} = net_kernel:start([TestNode, longnames]),
     application:load(sasl),
-    %application:start(riak_moss),
     application:load(riak_moss),
     application:set_env(sasl, sasl_error_logger, {file, "moss_get_fsm_sasl.log"}),
     error_logger:tty(false),

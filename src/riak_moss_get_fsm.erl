@@ -95,12 +95,12 @@ init([Bucket, Key]) ->
     %% so that we get called in the prepare
     %% state
     {ok, prepare, State, 0};
-init([test, Bucket, Key]) ->
+init([test, Bucket, Key, ContentLength]) ->
     {ok, prepare, State1, 0} = init([Bucket, Key]),
     %% purposely have the timeout happen
     %% so that we get called in the prepare
     %% state
-    {ok, ReaderPid} = riak_moss_reader:start_link([self()]),
+    {ok, ReaderPid} = riak_moss_dummy_reader:start_link([self(), ContentLength]),
     riak_moss_reader:get_manifest(ReaderPid, Bucket, Key),
     {ok, waiting_value, State1#state{reader_pid=ReaderPid}}.
 
@@ -132,6 +132,7 @@ waiting_value({object, _Pid, Reply}, #state{from=From}=State) ->
             notfound;
         {ok, Value} ->
             RawValue = riakc_obj:get_value(Value),
+            lager:error("the value is ~p", [RawValue]),
             case riak_moss_lfs_utils:is_manifest(RawValue) of
                 false ->
                     %% TODO:
