@@ -14,7 +14,7 @@
 -include_lib("eunit/include/eunit.hrl").
 
 %% Test API
--export([test_link/2]).
+-export([test_link/4]).
 
 -endif.
 
@@ -95,12 +95,12 @@ init([Bucket, Key]) ->
     %% so that we get called in the prepare
     %% state
     {ok, prepare, State, 0};
-init([test, Bucket, Key, ContentLength]) ->
+init([test, Bucket, Key, ContentLength, BlockSize]) ->
     {ok, prepare, State1, 0} = init([Bucket, Key]),
     %% purposely have the timeout happen
     %% so that we get called in the prepare
     %% state
-    {ok, ReaderPid} = riak_moss_dummy_reader:start_link([self(), ContentLength, riak_moss_lfs_utils:block_size()]),
+    {ok, ReaderPid} = riak_moss_dummy_reader:start_link([self(), ContentLength, BlockSize]),
     riak_moss_reader:get_manifest(ReaderPid, Bucket, Key),
     {ok, waiting_value, State1#state{reader_pid=ReaderPid}}.
 
@@ -132,7 +132,6 @@ waiting_value({object, _Pid, Reply}, #state{from=From}=State) ->
             notfound;
         {ok, Value} ->
             RawValue = riakc_obj:get_value(Value),
-            lager:error("the value is ~p", [RawValue]),
             case riak_moss_lfs_utils:is_manifest(RawValue) of
                 false ->
                     %% TODO:
@@ -222,6 +221,10 @@ waiting_chunks(get_next_chunk, From, #state{chunk_queue=ChunkQueue, from=Previou
 
 waiting_chunks({chunk, _Pid, {ChunkSeq, ChunkReturnValue}}, #state{from=From,
                                                             blocks_left=Remaining,
+                                                            manifest_uuid=UUID,
+                                                            key=Key,
+                                                            bucket=BucketName,
+                                                            reader_pid=ReaderPid,
                                                             chunk_queue=ChunkQueue}=State) ->
     %% TODO:
     %% we don't deal with missing chunks
@@ -253,6 +256,7 @@ waiting_chunks({chunk, _Pid, {ChunkSeq, ChunkReturnValue}}, #state{from=From,
                     {stop, normal, NewState}
             end;
         _ ->
+            riak_moss_reader:get_chunk(ReaderPid, BucketName, Key, UUID, hd(lists:sort(sets:to_list(NewRemaining)))),
             case From of
                 undefined ->
                     NewQueue = queue:in({chunk, ChunkValue}, ChunkQueue),
@@ -337,7 +341,7 @@ blocks_retriever(Pid, GetModule, BucketName, BlockKeys) ->
 
 -ifdef(TEST).
 
-test_link(Bucket, Key) ->
-    gen_fsm:start_link(?MODULE, [test, Bucket, Key], []).
+test_link(Bucket, Key, ContentLength, BlockSize) ->
+    gen_fsm:start_link(?MODULE, [test, Bucket, Key, ContentLength, BlockSize], []).
 
 -endif.
