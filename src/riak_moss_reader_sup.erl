@@ -31,7 +31,7 @@ start_link() ->
 -spec start_reader(node(), supervisor:child_spec()) ->
                           supervisor:startchild_ret().
 start_reader(Node, Args) ->
-    supervisor:start_child({?MODULE, Node}, Args).
+    supervisor:start_child({?MODULE, Node}, [Args]).
 
 %% ===================================================================
 %% Supervisor callbacks

@@ -47,7 +47,7 @@
 %% @doc Start a `riak_moss_reader'.
 -spec start_link(list()) -> {ok, pid()} | {error, term()}.
 start_link(Args) ->
-    gen_server:start_link(?MODULE, [], Args).
+    gen_server:start_link(?MODULE, Args, []).
 
 get_manifest(Pid, Bucket, Key) ->
     gen_server:call(?MODULE, Pid, {get_manifest, Bucket, Key}).
@@ -63,7 +63,7 @@ get_chunk(Pid, Bucket, Key, UUID, ChunkSeq) ->
 %% ===================================================================
 
 %% @doc Initialize the server.
--spec init([] | {test, [atom()]}) -> {ok, state()} | {stop, term()}.
+-spec init([pid()] | {test, [pid()]}) -> {ok, state()} | {stop, term()}.
 init([CallerPid]) ->
     %% Get a connection to riak
     case riak_moss_utils:riak_connection() of

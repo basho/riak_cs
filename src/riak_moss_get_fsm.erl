@@ -109,7 +109,7 @@ prepare(timeout, #state{bucket=Bucket, key=Key, reader_pid=ReaderPid}=State) ->
     %% start the process that will
     %% fetch the value, be it manifest
     %% or regular object
-    {ok, ReaderPid} = riak_moss_reader_sup:start_reader(node(), []),
+    {ok, ReaderPid} = riak_moss_reader_sup:start_reader(node(), [self()]),
     %% TODO:
     %% we need to tell the reader gen_server
     %% about our pid() another way
