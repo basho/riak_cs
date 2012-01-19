@@ -100,7 +100,7 @@ init([test, Bucket, Key, ContentLength]) ->
     %% purposely have the timeout happen
     %% so that we get called in the prepare
     %% state
-    {ok, ReaderPid} = riak_moss_dummy_reader:start_link([self(), ContentLength]),
+    {ok, ReaderPid} = riak_moss_dummy_reader:start_link([self(), ContentLength, riak_moss_lfs_utils:block_size()]),
     riak_moss_reader:get_manifest(ReaderPid, Bucket, Key),
     {ok, waiting_value, State1#state{reader_pid=ReaderPid}}.
 

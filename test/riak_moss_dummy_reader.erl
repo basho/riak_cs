@@ -6,7 +6,7 @@
 
 %% @doc Module to write data to Riak.
 
--module(riak_moss_reader).
+-module(riak_moss_dummy_reader).
 
 -behaviour(gen_server).
 
@@ -31,6 +31,7 @@
          code_change/3]).
 
 -record(state, {content_length :: integer(),
+                block_size :: integer(),
                 caller_pid :: pid()}).
 
 -type state() :: #state{}.
@@ -60,9 +61,10 @@ get_chunk(Pid, Bucket, Key, UUID, ChunkSeq) ->
 
 %% @doc Initialize the server.
 -spec init([pid()] | {test, [pid()]}) -> {ok, state()} | {stop, term()}.
-init([CallerPid, ContentLength]) ->
+init([CallerPid, ContentLength, BlockSize]) ->
     %% Get a connection to riak
     {ok, #state{content_length=ContentLength,
+                block_size=BlockSize,
                 caller_pid=CallerPid}}.
 
 %% @doc Unused
