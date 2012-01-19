@@ -50,10 +50,10 @@ start_link(Args) ->
     gen_server:start_link(?MODULE, Args, []).
 
 get_manifest(Pid, Bucket, Key) ->
-    gen_server:call(?MODULE, Pid, {get_manifest, Bucket, Key}).
+    gen_server:cast(Pid, {get_manifest, Bucket, Key}).
 
 get_chunk(Pid, Bucket, Key, UUID, ChunkSeq) ->
-    gen_server:call(?MODULE, Pid, {get_chunk, Bucket, Key, UUID, ChunkSeq}).
+    gen_server:cast(Pid, {get_chunk, Bucket, Key, UUID, ChunkSeq}).
 
 %% TODO:
 %% Add shutdown public function

@@ -30,8 +30,8 @@ start_link() ->
 %% @doc Start a `riak_moss_reader' child process.
 -spec start_reader(node(), supervisor:child_spec()) ->
                           supervisor:startchild_ret().
-start_reader(Node, Args) ->
-    supervisor:start_child({?MODULE, Node}, [Args]).
+start_reader(Node, CallerPid) ->
+    supervisor:start_child({?MODULE, Node}, [[CallerPid]]).
 
 %% ===================================================================
 %% Supervisor callbacks

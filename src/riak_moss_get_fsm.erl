@@ -100,7 +100,9 @@ init([test, Bucket, Key]) ->
     %% purposely have the timeout happen
     %% so that we get called in the prepare
     %% state
-    {ok, prepare, State1, 0}.
+    {ok, ReaderPid} = riak_moss_reader:start_link([self()]),
+    riak_moss_reader:get_manifest(ReaderPid, Bucket, Key),
+    {ok, waiting_value, State1#state{reader_pid=ReaderPid}}.
 
 %% TODO:
 %% could this func use
@@ -109,7 +111,7 @@ prepare(timeout, #state{bucket=Bucket, key=Key, reader_pid=ReaderPid}=State) ->
     %% start the process that will
     %% fetch the value, be it manifest
     %% or regular object
-    {ok, ReaderPid} = riak_moss_reader_sup:start_reader(node(), [self()]),
+    {ok, ReaderPid} = riak_moss_reader_sup:start_reader(node(), self()),
     %% TODO:
     %% we need to tell the reader gen_server
     %% about our pid() another way

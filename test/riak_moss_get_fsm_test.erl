@@ -9,7 +9,11 @@
 -include_lib("eunit/include/eunit.hrl").
 
 setup() ->
+%    TestNode = list_to_atom("testnode" ++ integer_to_list(element(3, now())) ++
+%                                "@localhost"),
+%    {ok, _} = net_kernel:start([TestNode, longnames]),
     application:load(sasl),
+    %application:start(riak_moss),
     application:load(riak_moss),
     application:set_env(sasl, sasl_error_logger, {file, "moss_get_fsm_sasl.log"}),
     error_logger:tty(false),
@@ -20,7 +24,8 @@ setup() ->
 %% Implement this
 teardown(_) ->
     application:stop(riak_moss),
-    application:stop(sasl).
+    application:stop(sasl),
+    net_kernel:stop().
 
 get_fsm_test_() ->
     {setup,
