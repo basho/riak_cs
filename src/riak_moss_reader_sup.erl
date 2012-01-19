@@ -43,7 +43,7 @@ start_reader(Node, Args) ->
                          pos_integer(),
                          pos_integer()},
                         [supervisor:child_spec()]}}.
-init([CallerPid]) ->
+init([]) ->
     RestartStrategy = simple_one_for_one,
     MaxRestarts = 1000,
     MaxSecondsBetweenRestarts = 3600,
@@ -55,8 +55,7 @@ init([CallerPid]) ->
     Type = worker,
 
     ReaderSpec = {undefined,
-                  {riak_moss_reader, start_link, [CallerPid]},
+                  {riak_moss_reader, start_link, []},
                   Restart, Shutdown, Type, [riak_moss_reader]},
 
     {ok, {SupFlags, [ReaderSpec]}}.
-

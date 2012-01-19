@@ -21,7 +21,7 @@
 -endif.
 
 %% API
--export([start_link/0,
+-export([start_link/1,
          get_manifest/3,
          get_chunk/5]).
 
@@ -45,9 +45,9 @@
 %% ===================================================================
 
 %% @doc Start a `riak_moss_reader'.
--spec start_link() -> {ok, pid()} | {error, term()}.
-start_link() ->
-    gen_server:start_link(?MODULE, [], []).
+-spec start_link(list()) -> {ok, pid()} | {error, term()}.
+start_link(Args) ->
+    gen_server:start_link(?MODULE, [], Args).
 
 get_manifest(Pid, Bucket, Key) ->
     gen_server:call(?MODULE, Pid, {get_manifest, Bucket, Key}).

@@ -55,6 +55,7 @@
                 metadata_cache :: term(),
                 chunk_queue :: term(),
                 manifest :: term(),
+                manifest_uuid :: term(),
                 blocks_left :: list()}).
 
 %% ===================================================================
@@ -108,7 +109,10 @@ prepare(timeout, #state{bucket=Bucket, key=Key, reader_pid=ReaderPid}=State) ->
     %% start the process that will
     %% fetch the value, be it manifest
     %% or regular object
-    ReaderPid = riak_moss_reader_sup:start_reader(node(), []),
+    {ok, ReaderPid} = riak_moss_reader_sup:start_reader(node(), []),
+    %% TODO:
+    %% we need to tell the reader gen_server
+    %% about our pid() another way
     riak_moss_reader:get_manifest(ReaderPid, Bucket, Key),
     {next_state, waiting_value, State#state{reader_pid=ReaderPid}}.
 
@@ -144,7 +148,8 @@ waiting_value({object, _Pid, Reply}, #state{from=From}=State) ->
                     Metadata = riak_moss_lfs_utils:metadata_from_manifest(DecodedValue),
                     ContentLength = riak_moss_lfs_utils:content_length(DecodedValue),
                     ContentMd5 = riak_moss_lfs_utils:content_md5(DecodedValue),
-                    NewState = State#state{manifest=DecodedValue}
+                    NewState = State#state{manifest=DecodedValue,
+                                           manifest_uuid=riak_moss_lfs_utils:file_uuid(DecodedValue)}
             end,
             Meta1 = dict:store("content-type",
                                     riakc_obj:get_content_type(Value),
@@ -175,17 +180,18 @@ waiting_continue_or_stop(timeout, State) ->
 waiting_continue_or_stop(stop, State) ->
     {stop, normal, State};
 waiting_continue_or_stop(continue, #state{value_cache=CachedValue,
-                                       manifest=Manifest,
-                                       bucket=BucketName}=State) ->
+                                          manifest=Manifest,
+                                          bucket=BucketName,
+                                          key=Key,
+                                          manifest_uuid=UUID,
+                                          reader_pid=ReaderPid}=State) ->
     case CachedValue of
         undefined ->
-            %% TODO:
-            %% now launch a process that
-            %% will grab the chunks and
-            %% start sending us
-            %% chunk events
-            BlockKeys = riak_moss_lfs_utils:initial_block_keynames(Manifest),
-            BlocksLeft = sets:from_list([X || {X, _} <- BlockKeys]),
+            BlockSequences = riak_moss_lfs_utils:block_sequences_for_manifest(Manifest),
+            BlocksLeft = sets:from_list(BlockSequences),
+
+            %% start retrieving the first block
+            riak_moss_reader:get_chunk(ReaderPid, BucketName, Key, UUID, hd(BlockSequences)),
             {next_state, waiting_chunks, State#state{blocks_left=BlocksLeft}};
         _ ->
             %% we don't actually have to start
@@ -211,9 +217,15 @@ waiting_chunks(get_next_chunk, From, #state{chunk_queue=ChunkQueue, from=Previou
             {reply, ToReturn, waiting_chunks, State#state{chunk_queue=NewQueue}}
     end.
 
-waiting_chunks({chunk, _Pid, {ChunkSeq, ChunkRiakObject}}, #state{from=From,
+waiting_chunks({chunk, _Pid, {ChunkSeq, ChunkReturnValue}}, #state{from=From,
                                                             blocks_left=Remaining,
                                                             chunk_queue=ChunkQueue}=State) ->
+    %% TODO:
+    %% we don't deal with missing chunks
+    %% at all here, so this pattern
+    %% match will fail
+    {ok, ChunkRiakObject} = ChunkReturnValue,
+
     NewRemaining = sets:del_element(ChunkSeq, Remaining),
 
     %% we currently only care about the binary
@@ -295,23 +307,6 @@ code_change(_OldVsn, StateName, State, _Extra) -> {ok, StateName, State}.
 %% ====================================================================
 %% Internal functions
 %% ====================================================================
-
-%% @private
-riak_object(Pid, Object) ->
-    gen_fsm:send_event(Pid, {object, self(), Object}).
-
-
-%% @private
-%% Retrieve the value at
-%% Bucket, Key, whether it's a
-%% manifest or regular object
-normal_retriever(ReplyPid, GetModule, Bucket, Key) ->
-    case GetModule:get_object(riak_moss_utils:to_bucket_name(objects, Bucket), Key) of
-        {ok, RiakObject} ->
-            riak_object(ReplyPid, RiakObject);
-        {error, notfound} ->
-            riak_object(ReplyPid, notfound)
-    end.
 
 %% @private
 blocks_retriever(Pid, GetModule, BucketName, BlockKeys) ->
