@@ -83,9 +83,8 @@ handle_cast({get_manifest, Bucket, Key}, #state{content_length=ContentLength,
     RiakObject = riakc_obj:new_obj(Bucket,Key, [], [{dict:new(), term_to_binary(Manifest)}]),
     riak_moss_get_fsm:manifest(CallerPid, {ok, RiakObject}),
     {noreply, State};
-handle_cast({get_chunk, Bucket, Key, UUID, ChunkSeq}, #state{caller_pid=CallerPid, block_size=BlockSize}=State) ->
-    BigFakeData = list_to_binary(["a" || _ <- lists:seq(1, BlockSize - 4)]),
-    FakeData = <<ChunkSeq:4/integer, BigFakeData/binary>>,
+handle_cast({get_chunk, Bucket, Key, UUID, ChunkSeq}, #state{caller_pid=CallerPid, block_size=_BlockSize}=State) ->
+    FakeData = <<ChunkSeq:32/integer>>,
     RiakObject = riakc_obj:new_obj(Bucket,riak_moss_lfs_utils:block_name(Key, UUID, ChunkSeq), [], [{dict:new(),FakeData}]),
     riak_moss_get_fsm:chunk(CallerPid, ChunkSeq, {ok, RiakObject}),
     {noreply, State};
