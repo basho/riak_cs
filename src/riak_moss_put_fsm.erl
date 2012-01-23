@@ -222,10 +222,14 @@ write_root({block_written, BlockId}, State=#state{writer_pid=WriterPid,
                           state(),
                           non_neg_integer()}.
 write_block(root_ready, State=#state{data=Data,
+                                     content_length=ContentLength,
                                      next_block_id=BlockID,
                                      writer_pid=WriterPid,
                                      timeout=Timeout}) ->
     case Data of
+        [] when ContentLength =:= 0 ->
+            riak_moss_writer:update_root(WriterPid, {block_ready, BlockID}),
+            {next_state, write_block, State, Timeout};
         [] ->
             %% All received data has been written so wait
             %% for more data to arrive.

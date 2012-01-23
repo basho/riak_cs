@@ -141,8 +141,13 @@ produce_body(RD, #key_context{get_fsm_pid=GetFsmPid, doc_metadata=DocMeta}=Ctx) 
     ETag = "\"" ++ riak_moss_utils:binary_to_hexlist(ContentMd5) ++ "\"",
     NewRQ = wrq:set_resp_header("ETag",  ETag, RD),
     riak_moss_get_fsm:continue(GetFsmPid),
-    {{known_length_stream, ContentLength, {<<>>, fun() -> riak_moss_wm_utils:streaming_get(GetFsmPid) end}},
-        NewRQ, Ctx}.
+    case ContentLength of
+        0 ->
+            {<<>>, RD, Ctx};
+        _ ->
+            {{known_length_stream, ContentLength, {<<>>, fun() -> riak_moss_wm_utils:streaming_get(GetFsmPid) end}},
+             NewRQ, Ctx}
+    end.
 
 %% @doc Callback for deleting an object.
 -spec delete_resource(term(), term()) -> boolean().
