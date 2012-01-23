@@ -25,7 +25,8 @@
          initialize/6,
          write_root/1,
          update_root/2,
-         write_block/3]).
+         write_block/3,
+         stop/1]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -88,6 +89,9 @@ update_root(Pid, UpdateOp) ->
 -spec write_block(pid(), pos_integer(), binary()) -> ok.
 write_block(Pid, BlockID, Data) ->
     gen_server:cast(Pid, {write_block, BlockID, Data}).
+
+stop(Pid) ->
+    gen_server:cast(Pid, stop).
 
 %% ===================================================================
 %% gen_server callbacks
@@ -188,6 +192,10 @@ handle_cast({write_block, BlockID, Data}, State=#state{bucket=Bucket,
             ok
     end,
     {noreply, State#state{md5=NewMD5}};
+handle_cast(stop, State=#state{riak_pid=RiakPid,
+                               storage_module=StorageMod}) ->
+    StorageMod:stop(RiakPid),
+    {stop, normal, State};
 handle_cast(Event, State) ->
     lager:warning("Received unknown cast event: ~p", [Event]),
     {noreply, State}.
