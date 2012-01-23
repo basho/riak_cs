@@ -161,9 +161,15 @@ waiting_root_update(root_inactive, State=#state{block_count=BlockCount,
     %% Send request to the deleter to delete the file blocks
     %% @TODO Backpressure or concurrency of deletion needed. Currently
     %% all block delete requests will serialize at the `riak_moss_deleter'.
-    [riak_moss_deleter:delete_block(DeleterPid, BlockID) ||
-        BlockID <- lists:seq(0, BlockCount-1)],
-    {next_state, waiting_blocks_delete, State, Timeout}.
+    case BlockCount of
+        0 ->
+            riak_moss_deleter:delete_root(DeleterPid),
+            {next_state, waiting_root_delete, State, Timeout};
+        _ ->
+            [riak_moss_deleter:delete_block(DeleterPid, BlockID) ||
+                BlockID <- lists:seq(0, BlockCount-1)],
+            {next_state, waiting_blocks_delete, State, Timeout}
+    end.
 
 %% @doc State for waiting for responses about file data blocks
 %% being deleted.

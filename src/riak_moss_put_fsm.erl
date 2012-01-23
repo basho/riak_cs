@@ -165,6 +165,7 @@ initialize(timeout, State=#state{bucket=Bucket,
     %% Start the worker to perform the writing
     case start_writer() of
         {ok, WriterPid} ->
+            link(WriterPid),
             %% Provide the writer with the file details
             riak_moss_writer:initialize(WriterPid,
                                         self(),
@@ -221,10 +222,14 @@ write_root({block_written, BlockId}, State=#state{writer_pid=WriterPid,
                           state(),
                           non_neg_integer()}.
 write_block(root_ready, State=#state{data=Data,
+                                     content_length=ContentLength,
                                      next_block_id=BlockID,
                                      writer_pid=WriterPid,
                                      timeout=Timeout}) ->
     case Data of
+        [] when ContentLength =:= 0 ->
+            riak_moss_writer:update_root(WriterPid, {block_ready, BlockID}),
+            {next_state, write_block, State, Timeout};
         [] ->
             %% All received data has been written so wait
             %% for more data to arrive.
@@ -236,13 +241,15 @@ write_block(root_ready, State=#state{data=Data,
             {next_state, write_root, UpdState, Timeout}
     end;
 write_block({all_blocks_written, Manifest}, State=#state{manifest_waiter=Waiter,
-                                                         timeout=Timeout}) ->
+                                                         timeout=Timeout,
+                                                         writer_pid=WriterPid}) ->
     NewState = State#state{final_manifest=Manifest},
     case Waiter of
         undefined ->
             {next_state, client_wait, NewState, Timeout};
         Waiter ->
             gen_fsm:reply(Waiter, {ok, Manifest}),
+            riak_moss_writer:stop(WriterPid),
             {stop, normal, NewState}
     end.
 
@@ -250,10 +257,12 @@ write_block({all_blocks_written, Manifest}, State=#state{manifest_waiter=Waiter,
 %% that has been received by the fsm has been written, but
 %% more data for the file remains.
 -spec waiting(timeout, state()) -> {stop, timeout, state()}.
-waiting(timeout, State) ->
+waiting(timeout, State=#state{writer_pid=WriterPid}) ->
+    riak_moss_writer:stop(WriterPid),
     {stop, timeout, State}.
 
-client_wait(timeout, State) ->
+client_wait(timeout, State=#state{writer_pid=WriterPid}) ->
+    riak_moss_writer:stop(WriterPid),
     {stop, timeout, State}.
 
 %% @doc Handle events that should be handled
@@ -314,7 +323,9 @@ handle_sync_event({augment_data, NewData},
     end;
 handle_sync_event(finalize, From, StateName, State=#state{final_manifest=undefined}) ->
     {next_state, StateName, State#state{manifest_waiter=From}};
-handle_sync_event(finalize, _From, _StateName, State=#state{final_manifest=M}) ->
+handle_sync_event(finalize, _From, _StateName, State=#state{final_manifest=M,
+                                                            writer_pid=WriterPid}) ->
+    riak_moss_writer:stop(WriterPid),
     {stop, normal, {ok, M}, State};
 handle_sync_event(_Event, _From, StateName, State) ->
     {next_state, StateName, State}.
