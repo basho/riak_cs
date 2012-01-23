@@ -60,8 +60,8 @@ test(Iterations) ->
 %% ====================================================================
 
 prop_get_fsm() ->
-    ?FORALL(State, #state{content_length=moss_gen:bounded_content_length()},
-        ?FORALL(Cmds, commands(?MODULE, {start, State}),
+    ?FORALL(State, #state{content_length=?LET(X, moss_gen:bounded_content_length(), X * 10)},
+        ?FORALL(Cmds, eqc_statem:more_commands(10, commands(?MODULE, {start, State})),
                 begin
                     {H,{_F,_S},Res} = run_commands(?MODULE, Cmds),
                     ?WHENFAIL(io:format("history is ~p ~n", [[StateRecord#state{last_chunk=last_chunk_substitute} || {{_StateName, StateRecord}, _Results}<- H]]), equals(ok, Res))
