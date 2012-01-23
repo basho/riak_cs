@@ -36,6 +36,9 @@
 %% TODO: export!
 -export([]).
 
+-define(QC_OUT(P),
+        eqc:on_output(fun(Str, Args) ->
+                              io:format(user, Str, Args) end, P)).
 -define(TEST_ITERATIONS, 500).
 
 -record(state, {fsm_pid :: pid(), %% real pid}
@@ -43,6 +46,29 @@
                 total_blocks :: integer(), %% not symbolic
                 last_chunk :: binary(), %% not symbolic
                 counter=0 :: integer()}). %% not symbolic
+
+%%====================================================================
+%% Eunit tests
+%%====================================================================
+
+eqc_test_() ->
+    {spawn,
+     [{setup,
+       fun setup/0,
+       fun cleanup/1,
+       [%% Run the quickcheck tests
+        {timeout, 300,
+         ?_assertEqual(true, quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_get_fsm()))))}
+       ]
+      }
+     ]
+    }.
+
+setup() ->
+    ok.
+
+cleanup(_) ->
+    ok.
 
 %% ====================================================================
 %% Public API
@@ -60,6 +86,7 @@ test(Iterations) ->
 %% ====================================================================
 
 prop_get_fsm() ->
+    application:set_env(riak_moss, lfs_block_size, 1048576),
     ?FORALL(State, #state{content_length=?LET(X, moss_gen:bounded_content_length(), X * 10)},
         ?FORALL(Cmds, eqc_statem:more_commands(10, commands(?MODULE, {start, State})),
                 begin
