@@ -36,7 +36,7 @@
 
 -record(state, {riakc_pid :: pid(),
                 caller_pid :: pid(),
-                monitor_ref :: reference()}). %% TODO: is ref() the right type here?
+                monitor_ref :: reference()}).
 
 -type state() :: #state{}.
 
