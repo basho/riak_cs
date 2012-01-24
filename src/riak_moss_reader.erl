@@ -85,12 +85,14 @@ handle_call(_Msg, _From, State) ->
     {reply, ok, State}.
 
 handle_cast({get_manifest, Bucket, Key}, #state{riakc_pid=RiakcPid, caller_pid=CallerPid}=State) ->
-    ManifestValue = riakc_pb_socket:get(RiakcPid, Bucket, Key),
+    PrefixedBucket = riak_moss_utils:to_bucket_name(objects, Bucket),
+    ManifestValue = riakc_pb_socket:get(RiakcPid, PrefixedBucket, Key),
     riak_moss_get_fsm:manifest(CallerPid, ManifestValue),
     {noreply, State};
 handle_cast({get_chunk, Bucket, Key, UUID, ChunkSeq}, #state{riakc_pid=RiakcPid, caller_pid=CallerPid}=State) ->
-    Key = riak_moss_lfs_utils:block_name(Key, UUID, ChunkSeq),
-    ChunkValue = riakc_pb_socket:get(RiakcPid, Bucket, Key),
+    PrefixedBucket = riak_moss_utils:to_bucket_name(blocks, Bucket),
+    BlockKey = riak_moss_lfs_utils:block_name(Key, UUID, ChunkSeq),
+    ChunkValue = riakc_pb_socket:get(RiakcPid, PrefixedBucket, BlockKey),
     riak_moss_get_fsm:chunk(CallerPid, ChunkSeq, ChunkValue),
     {noreply, State};
 handle_cast(Event, State) ->
