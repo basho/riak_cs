@@ -107,6 +107,7 @@ initialize(timeout, State=#state{bucket=Bucket,
     %% Start the worker to perform the writing
     case start_deleter() of
         {ok, DeleterPid} ->
+            link(DeleterPid),
             %% Provide the deleter with the file details
             riak_moss_deleter:initialize(DeleterPid,
                                          self(),
@@ -143,8 +144,9 @@ waiting_file_info({deleter_ready, {file, BlockCount}},
                            blocks_remaining=BlockCount},
     {next_state, waiting_root_update, UpdState, Timeout};
 waiting_file_info({deleter_ready, {error, Reason}},
-                  State) ->
+                  State=#state{deleter_pid=DeleterPid}) ->
     lager:warning("The deletion process encountered an error. Reason: ~p", [Reason]),
+    riak_moss_deleter:stop(DeleterPid),
     {stop, normal, State}.
 
 %% @doc State to receive notifcation when the root file object has
@@ -199,7 +201,8 @@ waiting_blocks_delete({block_deleted, _},
 %% being deleted.
 -spec waiting_root_delete(root_deleted, state()) ->
                                  {stop, normal, state()}.
-waiting_root_delete(root_deleted, State) ->
+waiting_root_delete(root_deleted, State=#state{deleter_pid=DeleterPid}) ->
+    riak_moss_deleter:stop(DeleterPid),
     {stop, normal, State}.
 
 %% @doc Handle events that should be handled
