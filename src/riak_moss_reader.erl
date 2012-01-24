@@ -35,7 +35,8 @@
          code_change/3]).
 
 -record(state, {riakc_pid :: pid(),
-                caller_pid :: pid()}).
+                caller_pid :: pid(),
+                monitor_ref :: reference()}). %% TODO: is ref() the right type here?
 
 -type state() :: #state{}.
 
@@ -55,9 +56,6 @@ get_manifest(Pid, Bucket, Key) ->
 get_chunk(Pid, Bucket, Key, UUID, ChunkSeq) ->
     gen_server:cast(Pid, {get_chunk, Bucket, Key, UUID, ChunkSeq}).
 
-%% TODO:
-%% Add shutdown public function
-
 %% ===================================================================
 %% gen_server callbacks
 %% ===================================================================
@@ -65,11 +63,16 @@ get_chunk(Pid, Bucket, Key, UUID, ChunkSeq) ->
 %% @doc Initialize the server.
 -spec init([pid()] | {test, [pid()]}) -> {ok, state()} | {stop, term()}.
 init([CallerPid]) ->
+    %% start a monitor with our calling
+    %% proc so that if it goes away, so
+    %% do we
+    MonitorRef = erlang:monitor(process, CallerPid),
     %% Get a connection to riak
     case riak_moss_utils:riak_connection() of
         {ok, RiakPid} ->
             {ok, #state{riakc_pid=RiakPid,
-                        caller_pid=CallerPid}};
+                        caller_pid=CallerPid,
+                        monitor_ref=MonitorRef}};
         {error, Reason} ->
             lager:error("Failed to establish connection to Riak. Reason: ~p",
                         [Reason]),
@@ -102,13 +105,15 @@ handle_cast(Event, State) ->
 %% @doc @TODO
 -spec handle_info(term(), state()) ->
                          {noreply, state()}.
+handle_info({'DOWN', Ref, process, _Pid, _Reason}, State=#state{monitor_ref=Ref}) ->
+    {stop, normal, State};
 handle_info(_Info, State) ->
     {noreply, State}.
 
 %% @doc Unused.
 -spec terminate(term(), state()) -> ok.
-terminate(_Reason, _State) ->
-    ok.
+terminate(_Reason, #state{riakc_pid=RiakcPid}) ->
+    riakc_pb_socket:stop(RiakcPid).
 
 %% @doc Unused.
 -spec code_change(term(), state(), term()) ->

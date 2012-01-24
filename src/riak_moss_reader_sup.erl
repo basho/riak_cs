@@ -11,12 +11,12 @@
 -behaviour(supervisor).
 
 %% API
--export([start_reader/2]).
--export([start_link/0]).
+-export([start_link/0,
+         start_reader/2,
+         terminate_reader/2]).
 
 %% Supervisor callbacks
 -export([init/1]).
-
 
 %% ===================================================================
 %% API functions
@@ -32,6 +32,11 @@ start_link() ->
                           supervisor:startchild_ret().
 start_reader(Node, CallerPid) ->
     supervisor:start_child({?MODULE, Node}, [[CallerPid]]).
+
+%% @doc Stop a reader process immediately
+-spec terminate_reader(node(), supervisor:child_spec()) -> {ok | {error, term()}}.
+terminate_reader(Node, ReaderPid) ->
+    supervisor:terminate_child({?MODULE, Node}, ReaderPid).
 
 %% ===================================================================
 %% Supervisor callbacks

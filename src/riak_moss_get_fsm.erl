@@ -39,7 +39,6 @@
          waiting_continue_or_stop/2,
          waiting_chunks/2,
          waiting_chunks/3,
-         %sending_remaining/2,
          sending_remaining/3,
          handle_event/3,
          handle_sync_event/4,
@@ -56,7 +55,8 @@
                 chunk_queue :: term(),
                 manifest :: term(),
                 manifest_uuid :: term(),
-                blocks_left :: list()}).
+                blocks_left :: list(),
+                test=false :: boolean()}).
 
 %% ===================================================================
 %% Public API
@@ -102,7 +102,7 @@ init([test, Bucket, Key, ContentLength, BlockSize]) ->
     %% state
     {ok, ReaderPid} = riak_moss_dummy_reader:start_link([self(), ContentLength, BlockSize]),
     riak_moss_reader:get_manifest(ReaderPid, Bucket, Key),
-    {ok, waiting_value, State1#state{reader_pid=ReaderPid}}.
+    {ok, waiting_value, State1#state{reader_pid=ReaderPid, test=true}}.
 
 %% TODO:
 %% could this func use
@@ -305,35 +305,13 @@ handle_info(_Info, _StateName, StateData) ->
     {stop,badmsg,StateData}.
 
 %% @private
-terminate(Reason, _StateName, _State) ->
-    Reason.
+terminate(_Reason, _StateName, #state{reader_pid=ReaderPid,test=false}) ->
+    riak_moss_reader_sup:terminate_reader(node(), ReaderPid);
+terminate(_Reason, _StateName, #state{reader_pid=ReaderPid,test=true}) ->
+    exit(ReaderPid, normal).
 
 %% @private
 code_change(_OldVsn, StateName, State, _Extra) -> {ok, StateName, State}.
-
-%% ====================================================================
-%% Internal functions
-%% ====================================================================
-
-%% @private
-blocks_retriever(Pid, GetModule, BucketName, BlockKeys) ->
-    Func =
-        fun({ChunkSeq, ChunkName}) ->
-                case GetModule:get_object(
-                       riak_moss_utils:to_bucket_name(blocks, BucketName),
-                       ChunkName) of
-                    {ok, Value} ->
-                        chunk(Pid, ChunkSeq, Value);
-                    {error, Reason} ->
-                        DeconstructedBlock =
-                            riak_moss_lfs_utils:block_name_to_term(ChunkName),
-                        lager:error("block ~p couldn't be retrieved with reason ~p",
-                                    [DeconstructedBlock, Reason]),
-                        exit(Reason)
-                end
-        end,
-    lists:foreach(Func, BlockKeys).
-
 
 %% ===================================================================
 %% Test API
