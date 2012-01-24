@@ -88,6 +88,16 @@ chunk(Pid, ChunkSeq, ChunkValue) ->
 %% ====================================================================
 
 init([Bucket, Key]) ->
+    %% we want to trap exits because
+    %% `erlang:link` isn't atomic, and
+    %% since we're starting the reader
+    %% through a supervisor we can't use
+    %% `spawn_link`. If the process has already
+    %% died before we call link, we'll get
+    %% an exit Reason of `noproc`
+    process_flag(trap_exit, true),
+
+
     Queue = queue:new(),
     State = #state{bucket=Bucket, key=Key,
                    chunk_queue=Queue},
@@ -101,6 +111,7 @@ init([test, Bucket, Key, ContentLength, BlockSize]) ->
     %% so that we get called in the prepare
     %% state
     {ok, ReaderPid} = riak_moss_dummy_reader:start_link([self(), ContentLength, BlockSize]),
+    link(ReaderPid),
     riak_moss_reader:get_manifest(ReaderPid, Bucket, Key),
     {ok, waiting_value, State1#state{reader_pid=ReaderPid, test=true}}.
 
@@ -112,9 +123,7 @@ prepare(timeout, #state{bucket=Bucket, key=Key}=State) ->
     %% fetch the value, be it manifest
     %% or regular object
     {ok, ReaderPid} = riak_moss_reader_sup:start_reader(node(), self()),
-    %% TODO:
-    %% we need to tell the reader gen_server
-    %% about our pid() another way
+    link(ReaderPid),
     riak_moss_reader:get_manifest(ReaderPid, Bucket, Key),
     {next_state, waiting_value, State#state{reader_pid=ReaderPid}}.
 
@@ -297,9 +306,17 @@ handle_event(_Event, _StateName, StateData) ->
 handle_sync_event(_Event, _From, _StateName, StateData) ->
     {stop,badmsg,StateData}.
 
-%% @private
 handle_info(request_timeout, StateName, StateData) ->
     ?MODULE:StateName(request_timeout, StateData);
+%% TODO:
+%% we don't want to just
+%% stop whenever a reader is
+%% killed once we have some concurrency
+%% in our readers. But since we just
+%% have one reader process now, if it dies,
+%% we have no reason to stick around
+handle_info({'EXIT', ReaderPid, _Reason}, _StateName, StateData=#state{reader_pid=ReaderPid}) ->
+    {stop, normal, StateData};
 %% @private
 handle_info(_Info, _StateName, StateData) ->
     {stop,badmsg,StateData}.
