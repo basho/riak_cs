@@ -107,7 +107,7 @@ init([test, Bucket, Key, ContentLength, BlockSize]) ->
 %% TODO:
 %% could this func use
 %% use a better name?
-prepare(timeout, #state{bucket=Bucket, key=Key, reader_pid=ReaderPid}=State) ->
+prepare(timeout, #state{bucket=Bucket, key=Key}=State) ->
     %% start the process that will
     %% fetch the value, be it manifest
     %% or regular object
