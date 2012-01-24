@@ -26,10 +26,12 @@
          block_name/3,
          block_name_to_term/1,
          block_size/0,
+         safe_block_size_from_manifest/1,
          file_uuid/1,
          finalize_manifest/2,
          initial_blocks/1,
          initial_blocks/2,
+         block_sequences_for_manifest/1,
          is_manifest/1,
          metadata_from_manifest/1,
          new_manifest/6,
@@ -87,7 +89,7 @@ block_count(ContentLength, BlockSize) ->
 initial_block_keynames(#lfs_manifest{bkey={_, KeyName},
                              uuid=UUID,
                              content_length=ContentLength}) ->
-    BlockList = lists:sort(sets:to_list(initial_blocks(ContentLength))),
+    BlockList = initial_blocks(ContentLength),
     block_keynames(KeyName, UUID, BlockList).
 
 remaining_block_keynames(#lfs_manifest{bkey={_, KeyName},
@@ -122,6 +124,13 @@ block_size() ->
             end
     end.
 
+safe_block_size_from_manifest(#lfs_manifest{block_size=BlockSize}) ->
+    case BlockSize of
+        undefined ->
+            block_size();
+        _ -> BlockSize
+    end.
+
 %% @doc Get the file UUID from the manifest.
 -spec file_uuid(lfs_manifest()) -> binary().
 file_uuid(#lfs_manifest{uuid=UUID}) ->
@@ -141,17 +150,18 @@ finalize_manifest(Manifest, MD5) ->
 %%      make up the file.
 -spec initial_blocks(pos_integer()) -> set().
 initial_blocks(ContentLength) ->
-    UpperBound = block_count(ContentLength),
-    Seq = lists:seq(0, (UpperBound - 1)),
-    sets:from_list(Seq).
+    initial_blocks(ContentLength, block_size()).
 
 %% @doc A set of all of the blocks that
 %%      make up the file.
 -spec initial_blocks(pos_integer(), pos_integer()) -> set().
 initial_blocks(ContentLength, BlockSize) ->
     UpperBound = block_count(ContentLength, BlockSize),
-    Seq = lists:seq(0, (UpperBound - 1)),
-    sets:from_list(Seq).
+    lists:seq(0, (UpperBound - 1)).
+
+block_sequences_for_manifest(#lfs_manifest{content_length=ContentLength}=Manifest) ->
+    SafeBlockSize = safe_block_size_from_manifest(Manifest),
+    initial_blocks(ContentLength, SafeBlockSize).
 
 %% @doc Returns true if Value is
 %%      a manifest record
@@ -178,7 +188,7 @@ metadata_from_manifest(#lfs_manifest{metadata=Metadata}) ->
                    dict()) -> lfs_manifest().
 new_manifest(Bucket, FileName, UUID, ContentLength, ContentMd5, MetaData) ->
     BlockSize = block_size(),
-    Blocks = initial_blocks(ContentLength, BlockSize),
+    Blocks = sets:from_list(initial_blocks(ContentLength, BlockSize)),
     #lfs_manifest{bkey={Bucket, FileName},
                   uuid=UUID,
                   content_length=ContentLength,

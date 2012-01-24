@@ -73,6 +73,9 @@ init([]) ->
     WriterSup = {riak_moss_writer_sup,
                  {riak_moss_writer_sup, start_link, []},
                  permanent, 5000, worker, dynamic},
+    ReaderSup = {riak_moss_reader_sup,
+                 {riak_moss_reader_sup, start_link, []},
+                 permanent, 5000, worker, dynamic},
     GetFsmSup = {riak_moss_get_fsm_sup,
              {riak_moss_get_fsm_sup, start_link, []},
              permanent, 5000, worker, dynamic},
@@ -86,6 +89,7 @@ init([]) ->
                  DeleteFsmSup,
                  GetFsmSup,
                  WriterSup,
+                 ReaderSup,
                  PutFsmSup,
                  Web],
     {ok, { {one_for_one, 10, 10}, Processes} }.
