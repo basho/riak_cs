@@ -14,7 +14,7 @@
 -include_lib("eunit/include/eunit.hrl").
 
 %% Test API
--export([test_link/2]).
+-export([test_link/4]).
 
 -endif.
 
@@ -24,13 +24,10 @@
 -export([start_link/2,
          stop/1,
          continue/1,
+         manifest/2,
+         chunk/3,
          get_metadata/1,
          get_next_chunk/1]).
-
-%% exported to be used by
-%% spawn_link
--export([normal_retriever/4,
-         blocks_retriever/4]).
 
 %% gen_fsm callbacks
 -export([init/1,
@@ -42,7 +39,6 @@
          waiting_continue_or_stop/2,
          waiting_chunks/2,
          waiting_chunks/3,
-         %sending_remaining/2,
          sending_remaining/3,
          handle_event/3,
          handle_sync_event/4,
@@ -51,16 +47,16 @@
          code_change/4]).
 
 -record(state, {from :: pid(),
+                reader_pid :: pid(),
                 bucket :: term(),
                 key :: term(),
                 value_cache :: binary(),
                 metadata_cache :: term(),
                 chunk_queue :: term(),
                 manifest :: term(),
+                manifest_uuid :: term(),
                 blocks_left :: list(),
-                normal_retriever_pid :: pid(),
-                blocks_retriever_pid :: pid(),
-                get_module :: module()}).
+                test=false :: boolean()}).
 
 %% ===================================================================
 %% Public API
@@ -81,50 +77,69 @@ get_metadata(Pid) ->
 get_next_chunk(Pid) ->
     gen_fsm:sync_send_event(Pid, get_next_chunk, 60000).
 
+manifest(Pid, ManifestValue) ->
+    gen_fsm:send_event(Pid, {object, self(), ManifestValue}).
+
+chunk(Pid, ChunkSeq, ChunkValue) ->
+    gen_fsm:send_event(Pid, {chunk, self(), {ChunkSeq, ChunkValue}}).
+
 %% ====================================================================
 %% gen_fsm callbacks
 %% ====================================================================
 
 init([Bucket, Key]) ->
+    %% we want to trap exits because
+    %% `erlang:link` isn't atomic, and
+    %% since we're starting the reader
+    %% through a supervisor we can't use
+    %% `spawn_link`. If the process has already
+    %% died before we call link, we'll get
+    %% an exit Reason of `noproc`
+    process_flag(trap_exit, true),
+
+
     Queue = queue:new(),
     State = #state{bucket=Bucket, key=Key,
-                   get_module=riak_moss_utils,
                    chunk_queue=Queue},
     %% purposely have the timeout happen
     %% so that we get called in the prepare
     %% state
     {ok, prepare, State, 0};
-init([test, Bucket, Key]) ->
+init([test, Bucket, Key, ContentLength, BlockSize]) ->
     {ok, prepare, State1, 0} = init([Bucket, Key]),
-    State2 = State1#state{get_module=riak_moss_dummy_gets},
     %% purposely have the timeout happen
     %% so that we get called in the prepare
     %% state
-    {ok, prepare, State2, 0}.
+    {ok, ReaderPid} = riak_moss_dummy_reader:start_link([self(), ContentLength, BlockSize]),
+    link(ReaderPid),
+    riak_moss_reader:get_manifest(ReaderPid, Bucket, Key),
+    {ok, waiting_value, State1#state{reader_pid=ReaderPid, test=true}}.
 
 %% TODO:
 %% could this func use
 %% use a better name?
-prepare(timeout, #state{bucket=Bucket, key=Key, get_module=GetModule}=State) ->
+prepare(timeout, #state{bucket=Bucket, key=Key}=State) ->
     %% start the process that will
     %% fetch the value, be it manifest
     %% or regular object
-    Pid = spawn_link(?MODULE, normal_retriever, [self(), GetModule, Bucket, Key]),
-    {next_state, waiting_value, State#state{normal_retriever_pid=Pid}}.
+    {ok, ReaderPid} = riak_moss_reader_sup:start_reader(node(), self()),
+    link(ReaderPid),
+    riak_moss_reader:get_manifest(ReaderPid, Bucket, Key),
+    {next_state, waiting_value, State#state{reader_pid=ReaderPid}}.
 
 waiting_value(get_metadata, From, State) ->
     NewState = State#state{from=From},
     {next_state, waiting_value, NewState}.
 
-waiting_value({object, Pid, Value}, #state{from=From, normal_retriever_pid=Pid}=State) ->
+waiting_value({object, _Pid, Reply}, #state{from=From}=State) ->
     %% determine if the object is a normal
     %% object, or a manifest object
     NextStateTimeout = 60000,
-    ReturnMeta = case Value of
-        notfound ->
+    ReturnMeta = case Reply of
+        {error, notfound} ->
             NewState = State,
             notfound;
-        _ ->
+        {ok, Value} ->
             RawValue = riakc_obj:get_value(Value),
             case riak_moss_lfs_utils:is_manifest(RawValue) of
                 false ->
@@ -144,7 +159,8 @@ waiting_value({object, Pid, Value}, #state{from=From, normal_retriever_pid=Pid}=
                     Metadata = riak_moss_lfs_utils:metadata_from_manifest(DecodedValue),
                     ContentLength = riak_moss_lfs_utils:content_length(DecodedValue),
                     ContentMd5 = riak_moss_lfs_utils:content_md5(DecodedValue),
-                    NewState = State#state{manifest=DecodedValue}
+                    NewState = State#state{manifest=DecodedValue,
+                                           manifest_uuid=riak_moss_lfs_utils:file_uuid(DecodedValue)}
             end,
             Meta1 = dict:store("content-type",
                                     riakc_obj:get_content_type(Value),
@@ -175,21 +191,19 @@ waiting_continue_or_stop(timeout, State) ->
 waiting_continue_or_stop(stop, State) ->
     {stop, normal, State};
 waiting_continue_or_stop(continue, #state{value_cache=CachedValue,
-                                       manifest=Manifest,
-                                       bucket=BucketName,
-                                       get_module=GetModule}=State) ->
+                                          manifest=Manifest,
+                                          bucket=BucketName,
+                                          key=Key,
+                                          manifest_uuid=UUID,
+                                          reader_pid=ReaderPid}=State) ->
     case CachedValue of
         undefined ->
-            %% TODO:
-            %% now launch a process that
-            %% will grab the chunks and
-            %% start sending us
-            %% chunk events
-            BlockKeys = riak_moss_lfs_utils:initial_block_keynames(Manifest),
-            BlocksLeft = sets:from_list([X || {X, _} <- BlockKeys]),
-            Pid = spawn_link(?MODULE, blocks_retriever, [self(), GetModule, BucketName, BlockKeys]),
-            {next_state, waiting_chunks, State#state{blocks_left=BlocksLeft,
-                                                     blocks_retriever_pid=Pid}};
+            BlockSequences = riak_moss_lfs_utils:block_sequences_for_manifest(Manifest),
+            BlocksLeft = sets:from_list(BlockSequences),
+
+            %% start retrieving the first block
+            riak_moss_reader:get_chunk(ReaderPid, BucketName, Key, UUID, hd(BlockSequences)),
+            {next_state, waiting_chunks, State#state{blocks_left=BlocksLeft}};
         _ ->
             %% we don't actually have to start
             %% retrieving chunks, as we already
@@ -214,10 +228,19 @@ waiting_chunks(get_next_chunk, From, #state{chunk_queue=ChunkQueue, from=Previou
             {reply, ToReturn, waiting_chunks, State#state{chunk_queue=NewQueue}}
     end.
 
-waiting_chunks({chunk, Pid, {ChunkSeq, ChunkRiakObject}}, #state{from=From,
+waiting_chunks({chunk, _Pid, {ChunkSeq, ChunkReturnValue}}, #state{from=From,
                                                             blocks_left=Remaining,
-                                                            blocks_retriever_pid=Pid,
+                                                            manifest_uuid=UUID,
+                                                            key=Key,
+                                                            bucket=BucketName,
+                                                            reader_pid=ReaderPid,
                                                             chunk_queue=ChunkQueue}=State) ->
+    %% TODO:
+    %% we don't deal with missing chunks
+    %% at all here, so this pattern
+    %% match will fail
+    {ok, ChunkRiakObject} = ChunkReturnValue,
+
     NewRemaining = sets:del_element(ChunkSeq, Remaining),
 
     %% we currently only care about the binary
@@ -242,6 +265,7 @@ waiting_chunks({chunk, Pid, {ChunkSeq, ChunkRiakObject}}, #state{from=From,
                     {stop, normal, NewState}
             end;
         _ ->
+            riak_moss_reader:get_chunk(ReaderPid, BucketName, Key, UUID, hd(lists:sort(sets:to_list(NewRemaining)))),
             case From of
                 undefined ->
                     NewQueue = queue:in({chunk, ChunkValue}, ChunkQueue),
@@ -282,63 +306,29 @@ handle_event(_Event, _StateName, StateData) ->
 handle_sync_event(_Event, _From, _StateName, StateData) ->
     {stop,badmsg,StateData}.
 
-%% @private
 handle_info(request_timeout, StateName, StateData) ->
     ?MODULE:StateName(request_timeout, StateData);
+%% TODO:
+%% we don't want to just
+%% stop whenever a reader is
+%% killed once we have some concurrency
+%% in our readers. But since we just
+%% have one reader process now, if it dies,
+%% we have no reason to stick around
+handle_info({'EXIT', ReaderPid, _Reason}, _StateName, StateData=#state{reader_pid=ReaderPid}) ->
+    {stop, normal, StateData};
 %% @private
 handle_info(_Info, _StateName, StateData) ->
     {stop,badmsg,StateData}.
 
 %% @private
-terminate(Reason, _StateName, _State) ->
-    Reason.
+terminate(_Reason, _StateName, #state{reader_pid=ReaderPid,test=false}) ->
+    riak_moss_reader_sup:terminate_reader(node(), ReaderPid);
+terminate(_Reason, _StateName, #state{reader_pid=ReaderPid,test=true}) ->
+    exit(ReaderPid, normal).
 
 %% @private
 code_change(_OldVsn, StateName, State, _Extra) -> {ok, StateName, State}.
-
-%% ====================================================================
-%% Internal functions
-%% ====================================================================
-
-%% @private
-riak_object(Pid, Object) ->
-    gen_fsm:send_event(Pid, {object, self(), Object}).
-
-%% @private
-chunk(Pid, ChunkSeq, ChunkValue) ->
-    gen_fsm:send_event(Pid, {chunk, self(), {ChunkSeq, ChunkValue}}).
-
-%% @private
-%% Retrieve the value at
-%% Bucket, Key, whether it's a
-%% manifest or regular object
-normal_retriever(ReplyPid, GetModule, Bucket, Key) ->
-    case GetModule:get_object(riak_moss_utils:to_bucket_name(objects, Bucket), Key) of
-        {ok, RiakObject} ->
-            riak_object(ReplyPid, RiakObject);
-        {error, notfound} ->
-            riak_object(ReplyPid, notfound)
-    end.
-
-%% @private
-blocks_retriever(Pid, GetModule, BucketName, BlockKeys) ->
-    Func =
-        fun({ChunkSeq, ChunkName}) ->
-                case GetModule:get_object(
-                       riak_moss_utils:to_bucket_name(blocks, BucketName),
-                       ChunkName) of
-                    {ok, Value} ->
-                        chunk(Pid, ChunkSeq, Value);
-                    {error, Reason} ->
-                        DeconstructedBlock =
-                            riak_moss_lfs_utils:block_name_to_term(ChunkName),
-                        lager:error("block ~p couldn't be retrieved with reason ~p",
-                                    [DeconstructedBlock, Reason]),
-                        exit(Reason)
-                end
-        end,
-    lists:foreach(Func, BlockKeys).
-
 
 %% ===================================================================
 %% Test API
@@ -346,7 +336,7 @@ blocks_retriever(Pid, GetModule, BucketName, BlockKeys) ->
 
 -ifdef(TEST).
 
-test_link(Bucket, Key) ->
-    gen_fsm:start_link(?MODULE, [test, Bucket, Key], []).
+test_link(Bucket, Key, ContentLength, BlockSize) ->
+    gen_fsm:start_link(?MODULE, [test, Bucket, Key, ContentLength, BlockSize], []).
 
 -endif.

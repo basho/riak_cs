@@ -76,7 +76,7 @@ prop_manifest_manipulation() ->
                                                         Md5,
                                                         MD),
 
-            Blocks = sets:to_list(riak_moss_lfs_utils:initial_blocks(CLength)),
+            Blocks = riak_moss_lfs_utils:initial_blocks(CLength),
             %% TODO: maybe we should shuffle blocks?
             FoldFun = fun (Chunk, Mani) -> riak_moss_lfs_utils:remove_block(Mani, Chunk) end,
             EmptyMani = lists:foldl(FoldFun, Manifest, Blocks),
