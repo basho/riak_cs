@@ -176,7 +176,7 @@ do_archive(Table, Slice) ->
 archive_user('$end_of_table', _, _, _) ->
     ok;
 archive_user(User, Riak, Table, Slice) ->
-    {User, Accesses} = ets:lookup(Table, User),
+    Accesses = [ A || {_, A} <- ets:lookup(Table, User) ],
     Record = riak_moss_access:make_object(User, Accesses, Slice),
     store(User, Riak, Record, Slice),
     archive_user(ets:next(Table, User), Riak, Table, Slice).
