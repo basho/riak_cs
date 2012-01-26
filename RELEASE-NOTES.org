@@ -1,0 +1,23 @@
+* MOSS 0.0.3 Release Notes
+** Bugs Fixed
+- URL decode keys on put so they are represented correctly. This
+  eliminates confusion when objects with spaces in their names are
+  listed and when attempting to access them.
+- Properly handle zero-byte files
+- Reap all processes during file puts
+** Other Additions
+*** Support for the s3cmd subcommands sync, du, and rb
+- Return valid size and checksum for each object when listing bucket objects.
+- Changes so that a bucket may be deleted if it is empty.
+
+*** Changes so a subdirectory path can be specified when storing or retrieving files.
+*** Make buckets private by default
+*** Support the prefix query parameter
+*** Enhance process dependencies for improved failure handling
+** Known Issues
+- Buckets are marked as /private/ by default, but globally-unique
+    bucket names are not enforced. This means that two users may
+    create the same bucket and this could result in unauthorized
+    access and unintentional overwriting of files. This will be
+    addressed in a future release by ensuring that bucket names are
+    unique across the system.
