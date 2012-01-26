@@ -14,17 +14,15 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
-
--spec authenticate(term(), [string()]) -> {ok, #moss_user{}}
-                                              | {ok, unknown}
-                                              | {error, atom()}.
--compile(export_all).
 -export([authenticate/2]).
 
 %% ===================================================================
 %% Public API
 %% ===================================================================
 
+-spec authenticate(term(), [string()]) -> {ok, #moss_user{}}
+                                              | {ok, unknown}
+                                              | {error, atom()}.
 authenticate(RD, [KeyID, Signature]) ->
     %% @TODO Also handle riak connection error
     case riak_moss_utils:get_user(KeyID) of
@@ -217,7 +215,42 @@ bucket_owner(User=#moss_user{}, BucketName) ->
 %% Test cases for the examples provided by Amazon here:
 %% http://docs.amazonwebservices.com/AmazonS3/latest/dev/index.html?RESTAuthentication.html
 
-example_get_object_test() ->
+auth_test_() ->
+    {spawn,
+     [
+      {setup,
+       fun setup/0,
+       fun teardown/1,
+       fun(_X) ->
+               [
+                example_get_object(),
+                example_put_object(),
+                example_list(),
+                example_fetch(),
+                example_delete(),
+                example_upload(),
+                example_list_all_buckets(),
+                example_unicode_keys()
+               ]
+       end
+      }]}.
+
+setup() ->
+    application:set_env(riak_moss, moss_root_host, "s3.amazonaws.com").
+
+teardown(_) ->
+    application:unset_env(riak_moss, moss_root_host).
+
+test_fun(Description, ExpectedSignature, CalculatedSignature) ->
+    {Description,
+     fun() ->
+             [
+              ?_assert(check_auth(ExpectedSignature, CalculatedSignature))
+             ]
+     end
+    }.
+
+example_get_object() ->
     KeyData = "uV3F3YluFJax1cknvbcGwgjvx4QpvB+leU8dUj2o",
     Method = 'GET',
     Version = {1, 1},
@@ -228,9 +261,9 @@ example_get_object_test() ->
     RD = wrq:create(Method, Version, Path, Headers),
     ExpectedSignature = "xXjDGYUmKxnwqr5KXNPGldn5LbA=",
     CalculatedSignature = calculate_signature(KeyData, RD),
-    ?assert(check_auth(ExpectedSignature, CalculatedSignature)).
+    test_fun("example get object test", ExpectedSignature, CalculatedSignature).
 
-example_put_object_test() ->
+example_put_object() ->
     KeyData = "uV3F3YluFJax1cknvbcGwgjvx4QpvB+leU8dUj2o",
     Method = 'PUT',
     Version = {1, 1},
@@ -243,9 +276,9 @@ example_put_object_test() ->
     RD = wrq:create(Method, Version, Path, Headers),
     ExpectedSignature = "hcicpDDvL9SsO6AkvxqmIWkmOuQ=",
     CalculatedSignature = calculate_signature(KeyData, RD),
-    ?assert(check_auth(ExpectedSignature, CalculatedSignature)).
+    test_fun("example put object test", ExpectedSignature, CalculatedSignature).
 
-example_list_test() ->
+example_list() ->
     KeyData = "uV3F3YluFJax1cknvbcGwgjvx4QpvB+leU8dUj2o",
     Method = 'GET',
     Version = {1, 1},
@@ -257,9 +290,9 @@ example_list_test() ->
     RD = wrq:create(Method, Version, Path, Headers),
     ExpectedSignature = "jsRt/rhG+Vtp88HrYL706QhE4w4=",
     CalculatedSignature = calculate_signature(KeyData, RD),
-    ?assert(check_auth(ExpectedSignature, CalculatedSignature)).
+    test_fun("example list test", ExpectedSignature, CalculatedSignature).
 
-example_fetch_test() ->
+example_fetch() ->
     KeyData = "uV3F3YluFJax1cknvbcGwgjvx4QpvB+leU8dUj2o",
     Method = 'GET',
     Version = {1, 1},
@@ -270,9 +303,9 @@ example_fetch_test() ->
     RD = wrq:create(Method, Version, Path, Headers),
     ExpectedSignature = "thdUi9VAkzhkniLj96JIrOPGi0g=",
     CalculatedSignature = calculate_signature(KeyData, RD),
-    ?assert(check_auth(ExpectedSignature, CalculatedSignature)).
+    test_fun("example fetch test", ExpectedSignature, CalculatedSignature).
 
-example_delete_test() ->
+example_delete() ->
     KeyData = "uV3F3YluFJax1cknvbcGwgjvx4QpvB+leU8dUj2o",
     Method = 'DELETE',
     Version = {1, 1},
@@ -285,7 +318,7 @@ example_delete_test() ->
     RD = wrq:create(Method, Version, Path, Headers),
     ExpectedSignature = "k3nL7gH3+PadhTEVn5Ip83xlYzk=",
     CalculatedSignature = calculate_signature(KeyData, RD),
-    ?assert(check_auth(ExpectedSignature, CalculatedSignature)).
+    test_fun("example delete test", ExpectedSignature, CalculatedSignature).
 
 %% @TODO This test case should be specified using two separate
 %% X-Amz-Meta-ReviewedBy headers, but Amazon strictly interprets
@@ -296,7 +329,7 @@ example_delete_test() ->
 %% ill effect, but that needs to be verified. For now, the test case
 %% is specified using a singled X-Amz-Meta-ReviewedBy header with
 %% multiple field values.
-example_upload_test() ->
+example_upload() ->
     KeyData = "uV3F3YluFJax1cknvbcGwgjvx4QpvB+leU8dUj2o",
     Method = 'PUT',
     Version = {1, 1},
@@ -318,11 +351,9 @@ example_upload_test() ->
     RD = wrq:create(Method, Version, Path, Headers),
     ExpectedSignature = "C0FlOtU8Ylb9KDTpZqYkZPX91iI=",
     CalculatedSignature = calculate_signature(KeyData, RD),
-    %%?assert(check_auth(ExpectedSignature, CalculatedSignature)).
-    %% XXX TODO:  support CNAMES
-    ?assert(true).
+    test_fun("example upload test", ExpectedSignature, CalculatedSignature).
 
-example_list_all_buckets_test() ->
+example_list_all_buckets() ->
     KeyData = "uV3F3YluFJax1cknvbcGwgjvx4QpvB+leU8dUj2o",
     Method = 'GET',
     Version = {1, 1},
@@ -333,9 +364,9 @@ example_list_all_buckets_test() ->
     RD = wrq:create(Method, Version, Path, Headers),
     ExpectedSignature = "Db+gepJSUbZKwpx1FR0DLtEYoZA=",
     CalculatedSignature = calculate_signature(KeyData, RD),
-    ?assert(check_auth(ExpectedSignature, CalculatedSignature)).
+    test_fun("example list all buckts test", ExpectedSignature, CalculatedSignature).
 
-example_unicode_keys_test() ->
+example_unicode_keys() ->
     KeyData = "uV3F3YluFJax1cknvbcGwgjvx4QpvB+leU8dUj2o",
     Method = 'GET',
     Version = {1, 1},
@@ -346,6 +377,6 @@ example_unicode_keys_test() ->
     RD = wrq:create(Method, Version, Path, Headers),
     ExpectedSignature = "dxhSBHoI6eVSPcXJqEghlUzZMnY=",
     CalculatedSignature = calculate_signature(KeyData, RD),
-    ?assert(check_auth(ExpectedSignature, CalculatedSignature)).
+    test_fun("example unicode keys test", ExpectedSignature, CalculatedSignature).
 
 -endif.
