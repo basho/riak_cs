@@ -57,29 +57,38 @@ resolve_manifests(writing, writing, A, B) ->
     LastWritten = resolve_last_written(A, B),
     NewMani1 = riak_moss_lfs_utils:update_blocks(A, BlocksWritten),
     riak_moss_lfs_utils:update_last_written(NewMani1, LastWritten);
-resolve_manifests(writing, active, _A, _B) -> ok;
-resolve_manifests(writing, pending_delete, _A, _B) -> ok;
-resolve_manifests(writing, deleted, _A, _B) -> ok;
+
+resolve_manifests(writing, active, _A, B) -> B;
+resolve_manifests(writing, pending_delete, _A, B) -> B;
+resolve_manifests(writing, deleted, _A, B) -> B;
 
 %% purposely throw a function clause
 %% exception if the manifests aren't
 %% equivalent
 resolve_manifests(active, active, A, A) -> A;
-resolve_manifests(active, pending_delete, _A, _B) -> ok;
-resolve_manifests(active, deleted, _A, _B) -> ok;
+resolve_manifests(active, pending_delete, _A, B) -> B;
+resolve_manifests(active, deleted, _A, B) -> B;
 
-resolve_manifests(pending_delete, pending_delete, _A, _B) -> ok;
+resolve_manifests(pending_delete, pending_delete, A, B) ->
+    BlocksLeftToDelete = resolve_deleted_blocks(A, B),
+    LastDeleted = resolve_last_deleted(A, B),
+    NewMani1 = riak_moss_lfs_utils:update_blocks_deleted(A, BlocksLeftToDelete),
+    riak_moss_lfs_utils:update_last_deleted(NewMani1, LastDeleted);
 resolve_manifests(pending_delete, deleted, _A, _B) -> ok;
 
 resolve_manifests(deleted, deleted, _A, _B) -> ok.
 
 %% TODO
-resolve_written_blocks(_A, _B) ->
-    ok.
+resolve_written_blocks(_A, _B) -> ok.
+
+%% TODO
+resolve_deleted_blocks(_A, _B) -> ok.
 
 %% TODO
 resolve_last_written(_A, _B) -> ok.
 
+%% TODO
+resolve_last_deleted(_A, _B) -> ok.
+
 latest_date(A, B) when A > B -> A;
 latest_date(_A, B) -> B.
-
