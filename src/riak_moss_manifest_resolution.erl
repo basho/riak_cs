@@ -52,12 +52,19 @@ resolve_manifests(A, B) ->
 %% manifests themselves.
 %% @private
 -spec resolve_manifests(atom(), atom(), term(), term()) -> term().
-resolve_manifests(writing, writing, _A, _B) -> ok;
+resolve_manifests(writing, writing, A, B) ->
+    BlocksWritten = resolve_written_blocks(A, B),
+    LastWritten = resolve_last_written(A, B),
+    NewMani1 = riak_moss_lfs_utils:update_blocks(A, BlocksWritten),
+    riak_moss_lfs_utils:update_last_written(NewMani1, LastWritten);
 resolve_manifests(writing, active, _A, _B) -> ok;
 resolve_manifests(writing, pending_delete, _A, _B) -> ok;
 resolve_manifests(writing, deleted, _A, _B) -> ok;
 
-resolve_manifests(active, active, _A, _B) -> ok;
+%% purposely throw a function clause
+%% exception if the manifests aren't
+%% equivalent
+resolve_manifests(active, active, A, A) -> A;
 resolve_manifests(active, pending_delete, _A, _B) -> ok;
 resolve_manifests(active, deleted, _A, _B) -> ok;
 
@@ -65,3 +72,14 @@ resolve_manifests(pending_delete, pending_delete, _A, _B) -> ok;
 resolve_manifests(pending_delete, deleted, _A, _B) -> ok;
 
 resolve_manifests(deleted, deleted, _A, _B) -> ok.
+
+%% TODO
+resolve_written_blocks(_A, _B) ->
+    ok.
+
+%% TODO
+resolve_last_written(_A, _B) -> ok.
+
+latest_date(A, B) when A > B -> A;
+latest_date(_A, B) -> B.
+
