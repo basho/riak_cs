@@ -23,10 +23,24 @@
 %% are manifests.
 -spec resolve(list()) -> term().
 resolve(Siblings) ->
-    lists:foldl(fun resolve/2, dict:new(), Siblings).
+    lists:foldl(fun resolve_dicts/2, dict:new(), Siblings).
 
 %% ====================================================================
 %% Internal functions
 %% ====================================================================
 
-resolve(_A, _B) -> ok.
+%% @doc Take two dictionaries
+%% of manifests and resolve them.
+-spec resolve_dicts(term(), term()) -> term().
+resolve_dicts(A, B) ->
+    dict:merge(fun resolve_manifests/2, A, B).
+
+%% @doc Take two manifests with
+%% the same UUID and resolve them
+-spec resolve_manifests(term(), term()) -> term().
+resolve_manifests(A, B) ->
+    AState = riak_moss_lfs_utils:manifest_state(A),
+    BState = riak_moss_lfs_utils:manifest_state(B),
+    resolve_manifests(AState, BState, A, B).
+
+resolve_manifests(_AState, _BState, _A, _B) -> ok.
