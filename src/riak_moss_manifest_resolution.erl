@@ -74,9 +74,15 @@ resolve_manifests(pending_delete, pending_delete, A, B) ->
     LastDeleted = resolve_last_deleted(A, B),
     NewMani1 = riak_moss_lfs_utils:update_blocks_deleted(A, BlocksLeftToDelete),
     riak_moss_lfs_utils:update_last_deleted(NewMani1, LastDeleted);
-resolve_manifests(pending_delete, deleted, _A, _B) -> ok;
+resolve_manifests(pending_delete, deleted, _A, B) -> B;
 
-resolve_manifests(deleted, deleted, _A, _B) -> ok.
+resolve_manifests(deleted, deleted, A, A) -> A;
+resolve_manifests(deleted, deleted, A, B) ->
+    %% should this deleted date
+    %% be different than the last block
+    %% deleted date? I'm think yes, technically.
+    LastDeleted = resolve_last_deleted(A, B),
+    riak_moss_lfs_utils:update_last_deleted(A, LastDeleted).
 
 %% TODO
 resolve_written_blocks(_A, _B) -> ok.
