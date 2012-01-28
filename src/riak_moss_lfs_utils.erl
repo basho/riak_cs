@@ -41,6 +41,7 @@
          still_waiting/1,
          content_md5/1,
          content_length/1,
+         created/1,
          is_active/1]).
 
 -export_type([lfs_manifest/0]).
@@ -54,7 +55,7 @@
     content_length :: integer(),
     content_md5 :: term(),
     metadata :: dict(),
-    created=httpd_util:rfc1123_date() :: term(), % @TODO Maybe change to iso8601
+    created=riak_moss_wm_utils:iso_8601_datetime(),
     finished :: term(),
     active=false :: boolean(),
     blocks_remaining = sets:new()}).
@@ -227,6 +228,10 @@ content_md5(#lfs_manifest{content_md5=ContentMD5}) ->
 -spec content_length(lfs_manifest()) -> integer().
 content_length(#lfs_manifest{content_length=CL}) ->
     CL.
+
+-spec created(lfs_manifest()) -> string().
+created(#lfs_manifest{created=Created}) ->
+    Created.
 
 -spec is_active(lfs_manifest()) -> boolean().
 is_active(#lfs_manifest{active=A}) ->
