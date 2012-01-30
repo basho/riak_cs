@@ -140,7 +140,9 @@ mochijson_access(Access) ->
       Access).
 
 mochijson_storage(Msg) when is_atom(Msg) ->
-    Msg.
+    Msg;
+mochijson_storage(Storage) ->
+    [ {struct, S} || S <- Storage ].
 
 %% XML Production %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 produce_xml(RD, Ctx) ->
@@ -176,11 +178,21 @@ xml_name(<<"bytes_in">>)   -> 'BytesIn';
 xml_name(Other)            -> binary_to_atom(Other, latin1).
 
 xml_storage(Msg) when is_atom(Msg) ->
-    [atom_to_list(Msg)].
+    [atom_to_list(Msg)];
+xml_storage(Storage) ->
+    [xml_storage_sample(S) || S <- Storage].
+
+xml_storage_sample(Sample) ->
+    {value, {<<"time">>, T}, SampleS} =
+        lists:keytake(<<"time">>, 1, Sample),
+    {value, {<<"bytes">>, Y}, _} =
+        lists:keytake(<<"bytes">>, 1, SampleS),
+
+    {'Sample', [{time, T}], [{bytes, [mochinum:digits(Y)]}]}.
 
 %% Internals %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 user_key(RD) ->
-    wrq:path_info(user, RD).
+    mochiweb_util:unquote(wrq:path_info(user, RD)).
 
 maybe_access(RD, #ctx{riak=Riak, start_time=Start, end_time=End}) ->
     case true_param(RD, "a") of
@@ -190,10 +202,21 @@ maybe_access(RD, #ctx{riak=Riak, start_time=Start, end_time=End}) ->
             not_requested
     end.
 
-maybe_storage(RD, _Ctx) ->
+%% TODO: this is just "now", not the span they asked for
+maybe_storage(RD, #ctx{riak=Riak}) ->
     case true_param(RD, "b") of
-        true  -> todo_not_yet_supported;
-        false -> not_requested
+        true  ->
+            case riak_moss_storage:sum_user(Riak, user_key(RD)) of
+                {ok, Buckets} ->
+                    [[{<<"time">>, riak_moss_access:iso8601(
+                                     calendar:universal_time())},
+                      {<<"bytes">>, lists:sum([ Y || {_B, Y} <- Buckets,
+                                                     is_integer(Y) ])}]];
+                {error, _Error} ->
+                    error
+            end;
+        false ->
+            not_requested
     end.
 
 true_param(RD, Param) ->
