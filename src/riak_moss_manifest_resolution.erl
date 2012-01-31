@@ -8,6 +8,8 @@
 
 -module(riak_moss_manifest_resolution).
 
+-include("riak_moss.hrl").
+
 %% export Public API
 -export([resolve/1]).
 
@@ -41,8 +43,8 @@ resolve_dicts(A, B) ->
 %% @private
 -spec resolve_manifests(term(), term()) -> term().
 resolve_manifests(A, B) ->
-    AState = riak_moss_lfs_utils:manifest_state(A),
-    BState = riak_moss_lfs_utils:manifest_state(B),
+    AState = A#lfs_manifest_v2.state,
+    BState = B#lfs_manifest_v2.state,
     resolve_manifests(AState, BState, A, B).
 
 %% @doc Return a new, resolved manifest.
@@ -53,10 +55,9 @@ resolve_manifests(A, B) ->
 %% @private
 -spec resolve_manifests(atom(), atom(), term(), term()) -> term().
 resolve_manifests(writing, writing, A, B) ->
-    BlocksWritten = resolve_written_blocks(A, B),
-    LastWritten = resolve_last_written(A, B),
-    NewMani1 = riak_moss_lfs_utils:update_blocks(A, BlocksWritten),
-    riak_moss_lfs_utils:update_last_block_written_time(NewMani1, LastWritten);
+    WriteBlocksRemaining = resolve_written_blocks(A, B),
+    LastBlockWrittenTime = resolve_last_written_time(A, B),
+    A#lfs_manifest_v2{write_blocks_remaining=WriteBlocksRemaining, last_block_written_time=LastBlockWrittenTime};
 
 resolve_manifests(writing, active, _A, B) -> B;
 resolve_manifests(writing, pending_delete, _A, B) -> B;
@@ -71,9 +72,8 @@ resolve_manifests(active, deleted, _A, B) -> B;
 
 resolve_manifests(pending_delete, pending_delete, A, B) ->
     BlocksLeftToDelete = resolve_deleted_blocks(A, B),
-    LastDeletedTime = resolve_last_deleted(A, B),
-    NewMani1 = riak_moss_lfs_utils:update_delete_blocks_remaining(A, BlocksLeftToDelete),
-    riak_moss_lfs_utils:update_last_block_deleted_time(NewMani1, LastDeletedTime);
+    LastDeletedTime = resolve_last_deleted_time(A, B),
+    A#lfs_manifest_v2{delete_blocks_remaining=BlocksLeftToDelete, last_block_deleted_time=LastDeletedTime};
 resolve_manifests(pending_delete, deleted, _A, B) -> B;
 
 resolve_manifests(deleted, deleted, A, A) -> A;
@@ -81,27 +81,27 @@ resolve_manifests(deleted, deleted, A, B) ->
     %% should this deleted date
     %% be different than the last block
     %% deleted date? I'm think yes, technically.
-    LastDeleted = resolve_last_deleted(A, B),
-    riak_moss_lfs_utils:update_last_deleted_time(A, LastDeleted).
+    LastBlockDeletedTime = resolve_last_deleted_time(A, B),
+    A#lfs_manifest_v2{last_block_deleted_time=LastBlockDeletedTime}.
 
 resolve_written_blocks(A, B) ->
-    AWritten = riak_moss_lfs_utils:write_blocks_remaining(A),
-    BWritten = riak_moss_lfs_utils:write_blocks_remaining(B),
+    AWritten = A#lfs_manifest_v2.write_blocks_remaining,
+    BWritten = B#lfs_manifest_v2.write_blocks_remaining,
     ordsets:intersection(AWritten, BWritten).
 
 resolve_deleted_blocks(A, B) ->
-    ADeleted = riak_moss_lfs_utils:delete_blocks_remaining(A),
-    BDeleted = riak_moss_lfs_utils:delete_blocks_remaining(B),
+    ADeleted = A#lfs_manifest_v2.delete_blocks_remaining,
+    BDeleted = B#lfs_manifest_v2.delete_blocks_remaining,
     ordsets:intersection(ADeleted, BDeleted).
 
-resolve_last_written(A, B) ->
-    ALastWritten = riak_moss_lfs_utils:last_block_written_time(A),
-    BLastWritten = riak_moss_lfs_utils:last_block_written_time(B),
+resolve_last_written_time(A, B) ->
+    ALastWritten = A#lfs_manifest_v2.last_block_written_time,
+    BLastWritten = B#lfs_manifest_v2.last_block_written_time,
     latest_date(ALastWritten, BLastWritten).
 
-resolve_last_deleted(A, B) ->
-    ALastDeleted = riak_moss_lfs_utils:last_block_deleted_time(A),
-    BLastDeleted = riak_moss_lfs_utils:last_block_deleted_time(B),
+resolve_last_deleted_time(A, B) ->
+    ALastDeleted = A#lfs_manifest_v2.last_block_deleted_time,
+    BLastDeleted = B#lfs_manifest_v2.last_block_deleted_time,
     latest_date(ALastDeleted, BLastDeleted).
 
 latest_date(A, B) when A > B -> A;
