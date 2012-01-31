@@ -56,7 +56,7 @@ resolve_manifests(writing, writing, A, B) ->
     BlocksWritten = resolve_written_blocks(A, B),
     LastWritten = resolve_last_written(A, B),
     NewMani1 = riak_moss_lfs_utils:update_blocks(A, BlocksWritten),
-    riak_moss_lfs_utils:update_last_written(NewMani1, LastWritten);
+    riak_moss_lfs_utils:update_last_block_written_time(NewMani1, LastWritten);
 
 resolve_manifests(writing, active, _A, B) -> B;
 resolve_manifests(writing, pending_delete, _A, B) -> B;
@@ -71,9 +71,9 @@ resolve_manifests(active, deleted, _A, B) -> B;
 
 resolve_manifests(pending_delete, pending_delete, A, B) ->
     BlocksLeftToDelete = resolve_deleted_blocks(A, B),
-    LastDeleted = resolve_last_deleted(A, B),
-    NewMani1 = riak_moss_lfs_utils:update_blocks_deleted(A, BlocksLeftToDelete),
-    riak_moss_lfs_utils:update_last_deleted(NewMani1, LastDeleted);
+    LastDeletedTime = resolve_last_deleted(A, B),
+    NewMani1 = riak_moss_lfs_utils:update_delete_blocks_remaining(A, BlocksLeftToDelete),
+    riak_moss_lfs_utils:update_last_block_deleted_time(NewMani1, LastDeletedTime);
 resolve_manifests(pending_delete, deleted, _A, B) -> B;
 
 resolve_manifests(deleted, deleted, A, A) -> A;
@@ -82,19 +82,27 @@ resolve_manifests(deleted, deleted, A, B) ->
     %% be different than the last block
     %% deleted date? I'm think yes, technically.
     LastDeleted = resolve_last_deleted(A, B),
-    riak_moss_lfs_utils:update_last_deleted(A, LastDeleted).
+    riak_moss_lfs_utils:update_last_deleted_time(A, LastDeleted).
 
-%% TODO
-resolve_written_blocks(_A, _B) -> ok.
+resolve_written_blocks(A, B) ->
+    AWritten = riak_moss_lfs_utils:write_blocks_remaining(A),
+    BWritten = riak_moss_lfs_utils:write_blocks_remaining(B),
+    ordsets:intersection(AWritten, BWritten).
 
-%% TODO
-resolve_deleted_blocks(_A, _B) -> ok.
+resolve_deleted_blocks(A, B) ->
+    ADeleted = riak_moss_lfs_utils:delete_blocks_remaining(A),
+    BDeleted = riak_moss_lfs_utils:delete_blocks_remaining(B),
+    ordsets:intersection(ADeleted, BDeleted).
 
-%% TODO
-resolve_last_written(_A, _B) -> ok.
+resolve_last_written(A, B) ->
+    ALastWritten = riak_moss_lfs_utils:last_block_written_time(A),
+    BLastWritten = riak_moss_lfs_utils:last_block_written_time(B),
+    latest_date(ALastWritten, BLastWritten).
 
-%% TODO
-resolve_last_deleted(_A, _B) -> ok.
+resolve_last_deleted(A, B) ->
+    ALastDeleted = riak_moss_lfs_utils:last_block_deleted_time(A),
+    BLastDeleted = riak_moss_lfs_utils:last_block_deleted_time(B),
+    latest_date(ALastDeleted, BLastDeleted).
 
 latest_date(A, B) when A > B -> A;
 latest_date(_A, B) -> B.
