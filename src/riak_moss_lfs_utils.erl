@@ -70,6 +70,7 @@ block_size() ->
             BlockSize
     end.
 
+<<<<<<< HEAD
 %% @doc Return the configured block size
 -spec max_content_len() -> pos_integer().
 max_content_len() ->
@@ -80,6 +81,8 @@ max_content_len() ->
             MaxContentLen
     end.
 
+=======
+>>>>>>> Remove getter/setter funcs from riak_moss_lfs_utils
 safe_block_size_from_manifest(#lfs_manifest_v2{block_size=BlockSize}) ->
     case BlockSize of
         undefined ->
@@ -135,6 +138,7 @@ new_manifest(Bucket, FileName, UUID, ContentLength, ContentType, ContentMd5, Met
 remove_write_block(Manifest, Chunk) ->
     Remaining = Manifest#lfs_manifest_v2.write_blocks_remaining,
     Updated = ordsets:del_element(Chunk, Remaining),
+<<<<<<< HEAD
     ManiState = case Updated of
         [] ->
             active;
@@ -144,6 +148,9 @@ remove_write_block(Manifest, Chunk) ->
     Manifest#lfs_manifest_v2{write_blocks_remaining=Updated,
                              state=ManiState,
                              last_block_written_time=erlang:now()}.
+=======
+    Manifest#lfs_manifest_v2{write_blocks_remaining=Updated}.
+>>>>>>> Remove getter/setter funcs from riak_moss_lfs_utils
 
 sorted_blocks_remaining(#lfs_manifest_v2{write_blocks_remaining=Remaining}) ->
     lists:sort(sets:to_list(Remaining)).
