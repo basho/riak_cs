@@ -142,6 +142,7 @@
         %% a shrinking set
         delete_blocks_remaining :: ordsets:new()
     }).
+-type lfs_manifest() :: #lfs_manifest_v2{}.
 
 -define(ACL, #acl_v1).
 -define(MOSS_BUCKET, #moss_bucket_v1).
