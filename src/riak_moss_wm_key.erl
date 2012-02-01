@@ -76,6 +76,11 @@ forbidden('GET', RD, Ctx=#key_context{doc_metadata=undefined}) ->
     forbidden('GET', RD, NewCtx);
 forbidden('GET', RD, Ctx=#key_context{doc_metadata=notfound}) ->
     {{halt, 404}, RD, Ctx};
+forbidden('HEAD', RD, Ctx=#key_context{doc_metadata=undefined}) ->
+    NewCtx = riak_moss_wm_utils:ensure_doc(Ctx),
+    forbidden('HEAD', RD, NewCtx);
+forbidden('HEAD', RD, Ctx=#key_context{doc_metadata=notfound}) ->
+    {{halt, 404}, RD, Ctx};
 forbidden(_, RD, Ctx) ->
     {false, RD, Ctx}.
 
