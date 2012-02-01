@@ -10,11 +10,16 @@
          parse_auth_header/2,
          ensure_doc/1,
          iso_8601_datetime/0,
+         to_iso_8601/1,
          streaming_get/1,
          user_record_to_proplist/1]).
 
 -include("riak_moss.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
+
+%% ===================================================================
+%% Public API
+%% ===================================================================
 
 service_available(RD, Ctx) ->
     %% TODO:
@@ -87,8 +92,34 @@ user_record_to_proplist(#moss_user{name=Name,
 
 %% @doc Get an ISO 8601 formatted timestamp representing
 %% current time.
--spec iso_8601_datetime() -> [non_neg_integer()].
+-spec iso_8601_datetime() -> string().
 iso_8601_datetime() ->
     {{Year, Month, Day}, {Hour, Min, Sec}} = erlang:universaltime(),
+    iso_8601_format(Year, Month, Day, Hour, Min, Sec).
+
+%% @doc Convert an RFC 1123 date into an ISO 8601 formatted timestamp.
+-spec to_iso_8601(string()) -> string().
+to_iso_8601(Date) ->
+    case httpd_util:convert_request_date(Date) of
+        {{Year, Month, Day}, {Hour, Min, Sec}} ->
+            iso_8601_format(Year, Month, Day, Hour, Min, Sec);
+        bad_date ->
+            %% Date is already in ISO 8601 format
+            Date
+    end.
+
+%% ===================================================================
+%% Internal functions
+%% ===================================================================
+
+%% @doc Get an ISO 8601 formatted timestamp representing
+%% current time.
+-spec iso_8601_format(pos_integer(),
+                      pos_integer(),
+                      pos_integer(),
+                      non_neg_integer(),
+                      non_neg_integer(),
+                      non_neg_integer()) -> string().
+iso_8601_format(Year, Month, Day, Hour, Min, Sec) ->
     io_lib:format("~4.10.0B-~2.10.0B-~2.10.0BT~2.10.0B:~2.10.0B:~2.10.0B.000Z",
                   [Year, Month, Day, Hour, Min, Sec]).
