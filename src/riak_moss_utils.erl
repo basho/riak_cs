@@ -76,21 +76,38 @@ create_bucket(KeyID, BucketName, _ACL) ->
             %% TODO:
             %% We don't do anything about
             %% {error, Reason} here
-            {ok, User} = get_user(KeyID, RiakPid),
+            {ok, User} = get_user(KeyId, RiakPid),
             OldBuckets = User#moss_user.buckets,
-            case [B || B <- OldBuckets, B#moss_bucket.name =:= BucketName] of
-                [] ->
-                    NewUser = User#moss_user{buckets=[Bucket|OldBuckets]},
-                    save_user(NewUser, RiakPid);
-                _ ->
-                    ignore
+            {StanchionIp, StanchionPort, StanchionSSL} = get_stanchion_data(),
+            case get_admin_creds() of
+                {ok, AdminCreds} ->
+                    %% Generate the bucket JSON document
+                    BucketDoc = bucket_json(BucketName, KeyId),
+                    %% Make a call to the bucket request
+                    %% serialization service.
+                    Result = velvet:create_bucket(StanchionIp,
+                                                  StanchionPort,
+                                                  "application/json",
+                                                  BucketDoc,
+                                                  [{ssl, StanchionSSL},
+                                                   {auth_creds, AdminCreds}]),
+                    case Result of
+                        ok ->
+                            case [B || B <- OldBuckets, B#moss_bucket.name =:= BucketName] of
+                                [] ->
+                                    NewUser = User#moss_user{buckets=[Bucket|OldBuckets]},
+                                    save_user(NewUser, RiakPid);
+                                _ ->
+                                    ignore
+                            end;
+                        {error, _} ->
+                            ok
+                    end;
+                {error, Reason1} ->
+                    Result = {error, Reason1}
             end,
             close_riak_connection(RiakPid),
-            %% TODO:
-            %% Maybe this should return
-            %% the updated list of buckets
-            %% owned by the user?
-            ok;
+            Result;
         {error, Reason} ->
             {error, {riak_connect_failed, Reason}}
     end.
@@ -124,29 +141,54 @@ create_user(UserName, Email) ->
 
 %% @doc Delete a bucket
 -spec delete_bucket(string(), binary()) -> ok.
-delete_bucket(KeyID, BucketName) ->
+delete_bucket(KeyId, BucketName) ->
     case riak_connection() of
         {ok, RiakPid} ->
             %% @TODO This will need to be updated once globally
             %% unique buckets are enforced.
-            {ok, User} = get_user(KeyID, RiakPid),
+            {ok, User} = get_user(KeyId, RiakPid),
             CurrentBuckets = get_buckets(User),
+
+            {StanchionIp, StanchionPort, StanchionSSL} = get_stanchion_data(),
+            AdminCreds = get_admin_creds(),
 
             %% Buckets can only be deleted if they exist
             case bucket_exists(CurrentBuckets, BucketName) of
                 true ->
                     case bucket_empty(BucketName, RiakPid) of
                         true ->
+                            AttemptDelete = true,
+                            LocalError = ok;
+                        false ->
+                            AttemptDelete = false,
+                            LocalError = {error, bucket_not_empty}
+                    end;
+                false ->
+                    AttemptDelete = true,
+                    LocalError = ok
+            end,
+            case AttemptDelete of
+                true ->
+                    %% Make a call to the bucket request
+                    %% serialization service.
+                    DeleteRes = velvet:delete_bucket(StanchionIp,
+                                                     StanchionPort,
+                                                     BucketName,
+                                                     KeyId,
+                                                     [{ssl, StanchionSSL},
+                                                      {auth_creds, AdminCreds}]),
+                    case DeleteRes of
+                        ok ->
                             UpdatedBuckets =
                                 remove_bucket(CurrentBuckets, BucketName),
                             UpdatedUser =
                                 User#moss_user{buckets=UpdatedBuckets},
                             Res = save_user(UpdatedUser, RiakPid);
-                        false ->
-                            Res = {error, bucket_not_empty}
+                        {error, _} ->
+                            Res = DeleteRes
                     end;
                 false ->
-                    Res = {error, no_such_bucket}
+                    Res = LocalError
             end,
             close_riak_connection(RiakPid),
             Res;
@@ -182,10 +224,36 @@ from_bucket_name(BucketNameWithPrefix) ->
             {objects, BucketName}
     end.
 
+%% @doc Return `stanchion' configuration data.
+-spec get_stanchion_data() -> {string(), pos_integer(), boolean()} | {error, term()}.
+get_stanchion_data() ->
+    case application:get_env(riak_moss, stanchion_ip) of
+        {ok, IP} ->
+            ok;
+        undefined ->
+            lager:warning("No IP address or host name for stanchion access defined. Using default."),
+            IP = ?DEFAULT_STANCHION_IP
+    end,
+    case application:get_env(riak_moss, stanchion_port) of
+        {ok, Port} ->
+            ok;
+        undefined ->
+            lager:warning("No port for stanchion access defined. Using default."),
+            Port = ?DEFAULT_STANCHION_PORT
+    end,
+    case application:get_env(riak_moss, stanchion_ssl) of
+        {ok, SSL} ->
+            ok;
+        undefined ->
+            lager:warning("No ssl flag for stanchion access defined. Using default."),
+            SSL = ?DEFAULT_STANCHION_SSL
+    end,
+    {IP, Port, SSL}.
+
 %% @doc Return a user's buckets.
 -spec get_buckets(moss_user()) -> [binary()].
 get_buckets(#moss_user{buckets=Buckets}) ->
-    Buckets.
+    lists:sort(Buckets).
 
 %% @doc Return a list of keys for a bucket along
 %% with their associated objects.
@@ -388,6 +456,15 @@ bucket_exists(Buckets, CheckBucket) ->
         _ ->
             true
     end.
+
+%% @doc Generate a JSON document to use for a bucket
+%% creation request.
+-spec bucket_json(binary(), string()) -> string().
+bucket_json(Bucket, KeyId)  ->
+    binary_to_list(
+      iolist_to_binary(
+        mochijson2:encode([{struct, [{<<"bucket">>, Bucket}]},
+                           {struct, [{<<"requester">>, list_to_binary(KeyId)}]}]))).
 
 %% @doc Strip off the user name portion of an email address
 -spec display_name(string()) -> string().
