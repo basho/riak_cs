@@ -77,7 +77,6 @@ list_bucket_response(User, Bucket, KeyObjPairs, RD, Ctx) ->
     %% associated with each key is an `lfs_manifest' or not.
     Contents = [begin
                     KeyString = binary_to_list(Key),
-                    LastModified = riak_moss_wm_utils:iso_8601_datetime(),
                     case ObjResp of
                         {ok, Obj} ->
                             Manifest = binary_to_term(riakc_obj:get_value(Obj)),
@@ -85,6 +84,9 @@ list_bucket_response(User, Bucket, KeyObjPairs, RD, Ctx) ->
                                 true ->
                                     Size = integer_to_list(
                                              riak_moss_lfs_utils:content_length(Manifest)),
+                                    LastModified =
+                                        riak_moss_wm_utils:to_iso_8601(
+                                          riak_moss_lfs_utils:created(Manifest)),
                                     ETag = "\"" ++ riak_moss_utils:binary_to_hexlist(
                                                      riak_moss_lfs_utils:content_md5(Manifest))
                                         ++ "\"",
