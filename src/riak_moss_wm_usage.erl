@@ -129,15 +129,25 @@ produce_json(RD, Ctx) ->
 
 mochijson_access(Msg) when is_atom(Msg) ->
     Msg;
-mochijson_access(Access) ->
+mochijson_access({Access, Errors}) ->
     orddict:fold(
       fun(Node, Samples, Acc) ->
               [{struct, [{node, Node},
                          {samples, [{struct, S} || S <- Samples]}]}
                |Acc]
       end,
-      [],
+      [{struct, [{errors, [ {struct, mochijson_access_error(E)}
+                            || E <- Errors ]}]}],
       Access).
+
+mochijson_access_error({{Start, End}, Reason}) ->
+    JSReason = if is_atom(Reason) -> atom_to_binary(Reason, latin1);
+                  is_binary(Reason) -> Reason;
+                  true -> list_to_binary(io_lib:format("~p", [Reason]))
+               end,
+    [{<<"start_time">>, riak_moss_access:iso8601(Start)},
+     {<<"end_time">>, riak_moss_access:iso8601(End)},
+     {<<"reason">>, JSReason}].
 
 mochijson_storage(Msg) when is_atom(Msg) ->
     Msg;
@@ -154,15 +164,27 @@ produce_xml(RD, Ctx) ->
 
 xml_access(Msg) when is_atom(Msg) ->
     [atom_to_list(Msg)];
-xml_access(Access) ->
+xml_access({Access, Errors}) ->
     orddict:fold(
       fun(Node, Samples, Acc) ->
               [{'Node', [{name, Node}],
                 [xml_access_sample(S) || S <- Samples]}
                |Acc]
       end,
-      [],
+      [{'Errors', [ xml_access_error(E) || E <- Errors ]}],
       Access).
+
+xml_access_error({{Start, End}, Reason}) ->
+    %% cheat to make errors structured exactly like samples
+    FakeSample = [{<<"start_time">>, riak_moss_access:iso8601(Start)},
+                  {<<"end_time">>, riak_moss_access:iso8601(End)}],
+    {Tag, Props, Contents} = xml_access_sample(FakeSample),
+
+    XMLReason = [if is_atom(Reason) -> atom_to_binary(Reason, latin1);
+                   is_binary(Reason) -> Reason;
+                   true -> io_lib:format("~p", [Reason])
+                end],
+    {Tag, Props, [{'Reason', [XMLReason]}|Contents]}.
 
 xml_access_sample(Sample) ->
     {value, {<<"start_time">>,S}, SampleS} =

@@ -166,7 +166,8 @@ datetime(String) when is_list(String) ->
 %% modification to do this via MapReduce instead.
 -spec get_usage(riak_moss:user_key(),
                 calendar:datetime(),
-                calendar:datetime()) -> orddict:orddict().
+                calendar:datetime()) ->
+         {Usage::orddict:orddict(), Errors::[{slice(), term()}]}.
 get_usage(User, Start, End) ->
     case riak_moss_utils:riak_connection() of
         {ok, Riak} ->
@@ -180,25 +181,23 @@ get_usage(User, Start, End) ->
 get_usage(User, Start, End, Riak) ->
     Slices = slices_filling(Start, End),
     UsageAdder = usage_adder(User, Riak),
-    lists:foldl(UsageAdder, [], Slices).
+    lists:foldl(UsageAdder, {[], []}, Slices).
 
 usage_adder(User, Riak) ->
-    fun(Slice, Usage) ->
+    fun(Slice, {Usage, Errors}) ->
             case riakc_pb_socket:get(Riak, ?ACCESS_BUCKET,
                                      slice_key(User, Slice)) of
                 {ok, Object} ->
-                    lists:foldl(fun add_usage/2, Usage,
-                                riakc_obj:get_values(Object));
+                    {lists:foldl(fun add_usage/2, Usage,
+                                 riakc_obj:get_values(Object)),
+                     Errors};
                 {error, notfound} ->
                     %% this is normal - we ask for all possible
                     %% slices, and just deal with the ones that exist
-                    Usage;
-                Error ->
-                    %% TODO: maybe include this as a result instead?
-                    lager:warning(
-                      "Usage rollup encountered error on ~s: ~p",
-                      [slice_key(User, Slice), Error]),
-                    Usage
+                    {Usage, Errors};
+                {error, Error} ->
+                    {Usage,
+                     [{Slice, Error}|Errors]}
             end
     end.
 
