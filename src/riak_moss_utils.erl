@@ -11,7 +11,7 @@
 %% Public API
 -export([binary_to_hexlist/1,
          close_riak_connection/1,
-         create_bucket/2,
+         create_bucket/3,
          create_user/2,
          delete_bucket/2,
          delete_object/2,
@@ -66,24 +66,10 @@ close_riak_connection(Pid) ->
 %% this bucket doesn't already
 %% exist anywhere, since everyone
 %% shares a global bucket namespace
--spec create_bucket(string(), binary()) -> ok.
-create_bucket(KeyID, BucketName) ->
-    Bucket = #moss_bucket{name=BucketName,
-                          creation_date=riak_moss_wm_utils:iso_8601_datetime()},
+-spec create_bucket(string(), binary(), acl_v1()) -> ok.
+create_bucket(_KeyID, _Bucket, _ACL) ->
     case riak_connection() of
         {ok, RiakPid} ->
-            %% TODO:
-            %% We don't do anything about
-            %% {error, Reason} here
-            {ok, User} = get_user(KeyID, RiakPid),
-            OldBuckets = User#moss_user.buckets,
-            case [B || B <- OldBuckets, B#moss_bucket.name =:= BucketName] of
-                [] ->
-                    NewUser = User#moss_user{buckets=[Bucket|OldBuckets]},
-                    save_user(NewUser, RiakPid);
-                _ ->
-                    ignore
-            end,
             close_riak_connection(RiakPid),
             %% TODO:
             %% Maybe this should return
@@ -105,7 +91,7 @@ create_user(UserName, Email) ->
                     {KeyID, Secret} = generate_access_creds(UserName),
                     CanonicalID = generate_canonical_id(KeyID, Secret),
                     DisplayName = display_name(Email),
-                    User = #moss_user{name=UserName,
+                    User = ?MOSS_USER{name=UserName,
                                       display_name=DisplayName,
                                       email=Email,
                                       key_id=KeyID,
@@ -434,7 +420,7 @@ remove_bucket(Buckets, RemovalBucket) ->
 %% @doc Save information about a MOSS user
 -spec save_user(moss_user(), pid()) -> ok.
 save_user(User, RiakPid) ->
-    UserObj = riakc_obj:new(?USER_BUCKET, list_to_binary(User#moss_user.key_id), User),
+    UserObj = riakc_obj:new(?USER_BUCKET, list_to_binary(User?MOSS_USER.key_id), User),
     %% @TODO Error handling
     ok = riakc_pb_socket:put(RiakPid, UserObj),
     ok.
