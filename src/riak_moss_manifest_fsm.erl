@@ -31,7 +31,13 @@
 
 -define(SERVER, ?MODULE).
 
--record(state, {}).
+-record(state, {bucket :: binary(),
+                key :: binary(),
+                riak_object :: term(),
+                
+                %% an orddict mapping
+                %% UUID -> Manifest
+                manifests :: term()}).
 
 %%%===================================================================
 %%% API
