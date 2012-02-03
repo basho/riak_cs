@@ -119,7 +119,7 @@ prepare(timeout, State) ->
         {error, Reason} ->
             lager:error("Failed to establish connection to Riak. Reason: ~p",
                         [Reason]),
-            {stop, riak_connect_failed}
+            {stop, riak_connect_failed, State}
     end.
 
 %% This clause is for adding a new
@@ -128,11 +128,29 @@ prepare(timeout, State) ->
 %% with a particular UUID, update_manifest
 %% should be used from then on out.
 waiting_command({add_new_manifest, _Manifest}, State) ->
+    %% retrieve the current (resolved) value at {Bucket, Key},
+    %% add the new manifest, and then write the value
+    %% back to Riak
+    %% NOTE: it would also be nice to assert that the
+    %% UUID being added doesn't already exist in the
+    %% dict
     {next_state, waiting_update_command, State}.
 
 waiting_update_command({update_manifest, _Manifest}, State) ->
+    %% we'll either have a previously retrieved
+    %% riak_object in our state, or we'll need to
+    %% retrieve the (resolved) value from Riak.
+
+    %% Then we need to update the manifest
+    %% with this UUID and store the data
+    %% back in Riak
     {next_state, waiting_update_command, State};
 waiting_update_command(stop, State) ->
+    %% TODO:
+    %% need to revisit this and remind myself
+    %% the best way to deal with this
+    %% w/r/t supervisors, and whether
+    %% it's necessary to even use a supervisor
     {stop, normal, State}.
 
 
@@ -155,12 +173,13 @@ waiting_update_command(stop, State) ->
 %% @end
 %%--------------------------------------------------------------------
 waiting_command(get_active_manifest, _From, State) ->
-    %% TODO:
-    %% either retrieve the value(s)
-    %% from Riak, or grab the value
-    %% from State. Then call some library
-    %% function to grab the "active"
-    %% manifest.
+    %% Retrieve the (resolved) value
+    %% from Riak and return the active
+    %% manifest, if there is one. Then
+    %% stash the riak_object the state
+    %% so that the next time we write
+    %% we write with the correct vector
+    %% clock.
     Reply = ok,
     {reply, Reply, waiting_update_or_delete_command, State}.
 
@@ -247,5 +266,17 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
-
-
+%% @doc
+-spec get_manifests(pid(), binary(), binary()) ->
+    {ok, term(), term()} | {error, notfound}.
+get_manifests(RiakcPid, Bucket, Key) ->
+    ManifestBucket = riak_moss_utils:to_bucket_name(objects, Bucket),
+    case riakc_pb_socket:get(RiakcPid, ManifestBucket, Key) of
+        {ok, Object} ->
+            Siblings = riakc_obj:get_values(Object),
+            DecodedSiblings = lists:map(fun erlang:binary_to_term/1, Siblings),
+            Resolved = riak_moss_manifest_resolution:resolve(DecodedSiblings),
+            {ok, Object, Resolved};
+        {error, notfound} ->
+            {error, notfound}
+    end.
