@@ -9,7 +9,10 @@
 -behaviour(gen_fsm).
 
 %% API
--export([start_link/2]).
+-export([start_link/2,
+         get_active_manifest/1,
+         add_new_manifest/2,
+         update_manifest/2]).
 
 %% gen_fsm callbacks
 -export([init/1,
@@ -37,7 +40,10 @@
                 
                 %% an orddict mapping
                 %% UUID -> Manifest
-                manifests :: term()}).
+                manifests :: term(),
+
+                riakc_pid :: pid()
+            }).
 
 %%%===================================================================
 %%% API
@@ -53,7 +59,16 @@
 %% @end
 %%--------------------------------------------------------------------
 start_link(Bucket, Key) ->
-        gen_fsm:start_link({local, ?SERVER}, ?MODULE, [Bucket, Key], []).
+    gen_fsm:start_link({local, ?SERVER}, ?MODULE, [Bucket, Key], []).
+
+get_active_manifest(Pid) ->
+    gen_fsm:sync_send_event(Pid, get_active_manifest).
+
+add_new_manifest(Pid, Manifest) ->
+    gen_fsm:send_event(Pid, {add_new_manifest, Manifest}).
+
+update_manifest(Pid, Manifest) ->
+    gen_fsm:send_event(Pid, {update_manifest, Manifest}).
 
 %%%===================================================================
 %%% gen_fsm callbacks
@@ -114,8 +129,6 @@ prepare(timeout, State) ->
 waiting_command({add_new_manifest, _Manifest}, State) ->
     {next_state, waiting_update_command, State}.
 
-waiting_update_command({delete_manifest, _Manifest}, State) ->
-    {stop, normal, State};
 waiting_update_command({update_manifest, _Manifest}, State) ->
     {next_state, waiting_update_command, State};
 waiting_update_command(stop, State) ->
@@ -165,7 +178,7 @@ waiting_command(get_active_manifest, _From, State) ->
 %% @end
 %%--------------------------------------------------------------------
 handle_event(_Event, StateName, State) ->
-        {next_state, StateName, State}.
+    {next_state, StateName, State}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -184,8 +197,8 @@ handle_event(_Event, StateName, State) ->
 %% @end
 %%--------------------------------------------------------------------
 handle_sync_event(_Event, _From, StateName, State) ->
-        Reply = ok,
-        {reply, Reply, StateName, State}.
+    Reply = ok,
+    {reply, Reply, StateName, State}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -201,7 +214,7 @@ handle_sync_event(_Event, _From, StateName, State) ->
 %% @end
 %%--------------------------------------------------------------------
 handle_info(_Info, StateName, State) ->
-        {next_state, StateName, State}.
+    {next_state, StateName, State}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -215,7 +228,7 @@ handle_info(_Info, StateName, State) ->
 %% @end
 %%--------------------------------------------------------------------
 terminate(_Reason, _StateName, _State) ->
-        ok.
+    ok.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -227,7 +240,7 @@ terminate(_Reason, _StateName, _State) ->
 %% @end
 %%--------------------------------------------------------------------
 code_change(_OldVsn, StateName, State, _Extra) ->
-        {ok, StateName, State}.
+    {ok, StateName, State}.
 
 %%%===================================================================
 %%% Internal functions
