@@ -104,5 +104,4 @@ resolve_last_deleted_time(A, B) ->
     BLastDeleted = B#lfs_manifest_v2.last_block_deleted_time,
     latest_date(ALastDeleted, BLastDeleted).
 
-latest_date(A, B) when A > B -> A;
-latest_date(_A, B) -> B.
+latest_date(A, B) -> erlang:max(A, B).
