@@ -20,9 +20,9 @@
 
 %% @doc Return the current active manifest
 %% from an orddict of manifests.
--spec active_manifest(term()) -> lfs_manifest().
-active_manifest(_Manifests) ->
-    ok.
+-spec active_manifest(term()) -> {ok, lfs_manifest()} | {error, no_active_manifest}.
+active_manifest(Manifests) ->
+    lists:foldl(fun most_recent_active_manifest/2, no_active_manifest, Manifests).
 
 %% @doc Return a new orddict of Manifests
 %% with any deleted and need-to-be-pruned
@@ -34,3 +34,15 @@ prune(_Manifests) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
+
+most_recent_active_manifest(Manifest=#lfs_manifest_v2{state=active}, no_active_manifest) ->
+    Manifest;
+most_recent_active_manifest(_Manfest, no_active_manifest) ->
+    no_active_manifest;
+most_recent_active_manifest(Man1=#lfs_manifest_v2{state=active}, Man2=#lfs_manifest_v2{state=active}) ->
+    case Man1#lfs_manifest_v2.write_start_time > Man2#lfs_manifest_v2.write_start_time of
+        true -> Man1;
+        false -> Man2
+    end;
+most_recent_active_manifest(Man1=#lfs_manifest_v2{state=active}, _Man2) -> Man1;
+most_recent_active_manifest(_Man1, Man2=#lfs_manifest_v2{state=active}) -> Man2.
