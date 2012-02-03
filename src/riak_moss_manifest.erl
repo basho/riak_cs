@@ -22,7 +22,7 @@
 %% from an orddict of manifests.
 -spec active_manifest(term()) -> {ok, lfs_manifest()} | {error, no_active_manifest}.
 active_manifest(Manifests) ->
-    lists:foldl(fun most_recent_active_manifest/2, no_active_manifest, Manifests).
+    lists:foldl(fun most_recent_active_manifest/2, no_active_manifest, orddict_values(Manifests)).
 
 %% @doc Return a new orddict of Manifests
 %% with any deleted and need-to-be-pruned
@@ -34,6 +34,14 @@ prune(_Manifests) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
+
+orddict_values(OrdDict) ->
+    %% orddict's are by definition
+    %% represented as lists, so no
+    %% need to call orddict:to_list,
+    %% which actually is the identity
+    %% func
+    [V || {_K, V} <- OrdDict].
 
 most_recent_active_manifest(Manifest=#lfs_manifest_v2{state=active}, no_active_manifest) ->
     Manifest;
