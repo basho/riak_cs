@@ -109,17 +109,14 @@ init([_Bucket, _Key]) ->
 %% @end
 %%--------------------------------------------------------------------
 prepare(timeout, State) ->
-    %% TODO:
-    %% add in code that grabs
-    %% a riakc_pb_socket pid
-    %% and stash it in our state
-
-    %% also not sure if this is the place
-    %% that we should go retrieve the
-    %% value from riak or do it when
-    %% we get a request to retrieve
-    %% the active manifest
-    {next_state, waiting_command, State}.
+    case riak_moss_utils:riak_connection() of
+        {ok, RiakPid} ->
+            {next_state, waiting_command, State#state{riakc_pid=RiakPid}};
+        {error, Reason} ->
+            lager:error("Failed to establish connection to Riak. Reason: ~p",
+                        [Reason]),
+            {stop, riak_connect_failed}
+    end.
 
 %% This clause is for adding a new
 %% manifest that doesn't exist yet.
