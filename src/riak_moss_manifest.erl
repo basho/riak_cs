@@ -11,12 +11,21 @@
 -include("riak_moss.hrl").
 
 %% export Public API
--export([active_manifest/1,
+-export([new/2,
+         active_manifest/1,
          prune/1]).
 
 %%%===================================================================
 %%% API
 %%%===================================================================
+
+%% @doc Return a new orddict of manifest (only
+%% one in this case). Used when storing something
+%% in Riak when the previous GET returned notfound,
+%% so we're (maybe) creating a new object.
+-spec new(binary(), lfs_manifest()) -> term().
+new(UUID, Manifest) ->
+    orddict:store(UUID, Manifest, orddict:new()).
 
 %% @doc Return the current active manifest
 %% from an orddict of manifests.

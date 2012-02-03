@@ -6,6 +6,8 @@
 
 -module(riak_moss_manifest_fsm).
 
+-include("riak_moss.hrl").
+
 -behaviour(gen_fsm).
 
 %% API
@@ -127,13 +129,29 @@ prepare(timeout, State) ->
 %% Once it has been called _once_
 %% with a particular UUID, update_manifest
 %% should be used from then on out.
-waiting_command({add_new_manifest, _Manifest}, State) ->
+waiting_command({add_new_manifest, Manifest}, State=#state{riakc_pid=RiakcPid,
+                                                           bucket=Bucket,
+                                                           key=Key}) ->
     %% retrieve the current (resolved) value at {Bucket, Key},
     %% add the new manifest, and then write the value
     %% back to Riak
     %% NOTE: it would also be nice to assert that the
     %% UUID being added doesn't already exist in the
     %% dict
+    WrappedManifest = riak_moss_manifest:new(Manifest#lfs_manifest_v2.uuid, Manifest),
+    ObjectToWrite = case get_manifests(RiakcPid, Bucket, Key) of
+        {ok, RiakObject, Manifests} ->
+            NewManiAdded = riak_moss_manifest_resolution:resolve([WrappedManifest, Manifests]),
+            riakc_obj:update_value(RiakObject, term_to_binary(NewManiAdded));
+        {error, notfound} ->
+            ManifestBucket = riak_moss_utils:to_bucket_name(objects, Bucket),
+            riakc_obj:new(ManifestBucket, Key, term_to_binary(WrappedManifest))
+    end,
+
+    riakc_pb_socket:put(RiakcPid, ObjectToWrite),
+    %% if there isn't currently a riak_object
+    %% stored at {Bucket, Key}, then we need
+    %% to create one
     {next_state, waiting_update_command, State}.
 
 waiting_update_command({update_manifest, _Manifest}, State) ->
