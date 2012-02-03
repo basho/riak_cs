@@ -40,6 +40,10 @@
                 
                 %% an orddict mapping
                 %% UUID -> Manifest
+                %% TODO:
+                %% maybe this can just
+                %% be pulled out of the
+                %% riak object every time?
                 manifests :: term(),
 
                 riakc_pid :: pid()
@@ -87,11 +91,11 @@ update_manifest(Pid, Manifest) ->
 %%                     {stop, StopReason}
 %% @end
 %%--------------------------------------------------------------------
-init([_Bucket, _Key]) ->
+init([Bucket, Key]) ->
     %% purposely have the timeout happen
     %% so that we get called in the prepare
     %% state
-    {ok, prepare, #state{}, 0}.
+    {ok, prepare, #state{bucket=Bucket, key=Key}, 0}.
 
 %%--------------------------------------------------------------------
 %% @private
