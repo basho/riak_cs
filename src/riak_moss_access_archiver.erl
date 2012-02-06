@@ -18,6 +18,7 @@
 
 %% API
 -export([start_link/0, archive/2]).
+-export([status/1]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -64,6 +65,27 @@ archive(Table, Slice) ->
             false %% opposite of ets:give_away/3 success
     end.
 
+%% @doc Find out what the archiver is up to.  Should return `{ok, N}`
+%% where N is the number of logs waiting to be archived.
+status(Timeout) ->
+    case catch gen_server:call(?SERVER, status, Timeout) of
+        idle ->
+            %% the server won't respond while it's archiving, so if it
+            %% does respond, we know there's nothing to archive
+            {ok, 0};
+        {'EXIT',{timeout,_}} ->
+            %% if the response times out, the number of logs waiting
+            %% to be archived (including the currently archiving one)
+            %% should be roughly equal to the number of messages in
+            %% the process's mailbox (modulo status query messages),
+            %% since that's how ETS tables are transfered.
+            [{message_queue_len, MessageCount}] =
+                process_info(whereis(?SERVER), [message_queue_len]),
+            {ok, MessageCount};
+        {'EXIT',{Reason,_}} ->
+            {error, Reason}
+    end.
+
 %%%===================================================================
 %%% gen_server callbacks
 %%%===================================================================
@@ -96,6 +118,10 @@ init([]) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
+handle_call(status, _From, State) ->
+    %% this is used during a request to flush the current access log;
+    %% therefore, if we have time to read this message, we are idle
+    {reply, idle, State};
 handle_call(_Request, _From, State) ->
     Reply = ok,
     {reply, Reply, State}.

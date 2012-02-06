@@ -46,6 +46,7 @@
 %% API
 -export([start_link/1, log_access/1]).
 -export([set_user/2, set_stat/3]).
+-export([flush/1]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -109,6 +110,12 @@ log_access(LogData) ->
     %% response -- just cast
     gen_server:cast(?SERVER, {log_access, LogData}).
 
+flush(Timeout) ->
+    case catch gen_server:call(?SERVER, flush, Timeout) of
+        ok -> ok;
+        {'EXIT',{Reason,_}} -> Reason
+    end.
+
 %%%===================================================================
 %%% gen_server callbacks
 %%%===================================================================
@@ -158,6 +165,20 @@ init(Props) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
+handle_call(flush, _From, State) ->
+    NewState = do_archive(State),
+
+    %% it's probably still the same time slice, so undo the
+    %% advancement that do_archive applied
+    OldNewState = NewState#state{current=State#state.current},
+    case schedule_archival(OldNewState) of
+        {ok, SchedState} -> ok;
+        {error, _TL} ->
+            %% or maybe it's not still the same time slice, reinstate
+            %% the advancement
+            {ok, SchedState} = schedule_archival(NewState)
+    end,
+    {reply, ok, SchedState};
 handle_call(_Request, _From, State) ->
     Reply = ok,
     {reply, Reply, State}.
