@@ -154,15 +154,25 @@ waiting_command({add_new_manifest, Manifest}, State=#state{riakc_pid=RiakcPid,
     %% to create one
     {next_state, waiting_update_command, State}.
 
-waiting_update_command({update_manifest, _Manifest}, State) ->
-    %% we'll either have a previously retrieved
-    %% riak_object in our state, or we'll need to
-    %% retrieve the (resolved) value from Riak.
-
-    %% Then we need to update the manifest
-    %% with this UUID and store the data
-    %% back in Riak
+waiting_update_command({update_manifest, Manifest}, State=#state{riakc_pid=RiakcPid,
+                                                                  bucket=Bucket,
+                                                                  key=Key,
+                                                                  riak_object=undefined,
+                                                                  manifests=undefined}) ->
+    WrappedManifest = riak_moss_manifest:new(Manifest#lfs_manifest_v2.uuid, Manifest),
+    ManifestBucket = riak_moss_utils:to_bucket_name(objects, Bucket),
+    RiakObject = riakc_obj:new(ManifestBucket, Key, term_to_binary(WrappedManifest)),
+    riakc_pb_socket:put(RiakcPid, RiakObject),
     {next_state, waiting_update_command, State};
+waiting_update_command({update_manifest, Manifest}, State=#state{riakc_pid=RiakcPid,
+                                                                  riak_object=PreviousRiakObject,
+                                                                  manifests=PreviousManifests}) ->
+
+    WrappedManifest = riak_moss_manifest:new(Manifest#lfs_manifest_v2.uuid, Manifest),
+    Resolved = riak_moss_manifest_resolution:resolve([PreviousManifests, WrappedManifest]),
+    RiakObject = riakc_obj:update_value(PreviousRiakObject, term_to_binary(Resolved)),
+    riakc_pb_socket:put_object(RiakcPid, RiakObject),
+    {next_state, waiting_update_command, State#state{riak_object=undefined, manifests=undefined}};
 waiting_update_command(stop, State) ->
     %% TODO:
     %% need to revisit this and remind myself
@@ -190,7 +200,9 @@ waiting_update_command(stop, State) ->
 %%                   {stop, Reason, Reply, NewState}
 %% @end
 %%--------------------------------------------------------------------
-waiting_command(get_active_manifest, _From, State) ->
+waiting_command(get_active_manifest, _From, State=#state{riakc_pid=RiakcPid,
+                                                         bucket=Bucket,
+                                                         key=Key}) ->
     %% Retrieve the (resolved) value
     %% from Riak and return the active
     %% manifest, if there is one. Then
@@ -198,9 +210,19 @@ waiting_command(get_active_manifest, _From, State) ->
     %% so that the next time we write
     %% we write with the correct vector
     %% clock.
-    Reply = ok,
-    {reply, Reply, waiting_update_or_delete_command, State}.
-
+    case get_manifests(RiakcPid, Bucket, Key) of
+        {ok, RiakObject, Resolved} ->
+            Reply = case riak_moss_manifest:active_manifest(Resolved) of
+                {ok, _Active}=ActiveReply ->
+                    ActiveReply;
+                {error, no_active_manifest} ->
+                    {error, notfound}
+            end,
+            NewState = State#state{riak_object=RiakObject, manifests=Resolved},
+            {reply, Reply, waiting_update_or_delete_command, NewState};
+        {error, notfound}=NotFound ->
+            {reply, NotFound, waiting_update_or_delete_command, State}
+    end.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -295,6 +317,6 @@ get_manifests(RiakcPid, Bucket, Key) ->
             DecodedSiblings = lists:map(fun erlang:binary_to_term/1, Siblings),
             Resolved = riak_moss_manifest_resolution:resolve(DecodedSiblings),
             {ok, Object, Resolved};
-        {error, notfound} ->
-            {error, notfound}
+        {error, notfound}=NotFound ->
+            NotFound
     end.
