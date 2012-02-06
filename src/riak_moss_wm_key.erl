@@ -173,7 +173,7 @@ content_types_accepted(RD, Ctx) ->
         %% This was shamelessly ripped out of
         %% https://github.com/basho/riak_kv/blob/0d91ca641a309f2962a216daa0cee869c82ffe26/src/riak_kv_wm_object.erl#L492
         CType ->
-            Media = hd(string:tokens(CType, ";")),
+            {Media, _Params} = mochiweb_util:parse_header(CType),
             case string:tokens(Media, "/") of
                 [_Type, _Subtype] ->
                     %% accept whatever the user says
