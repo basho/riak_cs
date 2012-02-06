@@ -80,9 +80,9 @@ content_types_accepted(RD, Ctx) ->
         undefined ->
             {[{"application/octet-stream", accept_body}], RD, Ctx};
         CType ->
-            {[{CType, accept_body}], RD, Ctx}
+            Media = hd(string:tokens(CType, ";")),
+            {[{Media, accept_body}], RD, Ctx}
     end.
-
 
 -spec to_xml(term(), term()) ->
     {iolist(), term(), term()}.
