@@ -31,7 +31,12 @@ new(UUID, Manifest) ->
 %% from an orddict of manifests.
 -spec active_manifest(term()) -> {ok, lfs_manifest()} | {error, no_active_manifest}.
 active_manifest(Manifests) ->
-    lists:foldl(fun most_recent_active_manifest/2, no_active_manifest, orddict_values(Manifests)).
+    case lists:foldl(fun most_recent_active_manifest/2, no_active_manifest, orddict_values(Manifests)) of
+        no_active_manifest ->
+            {error, no_active_manifest};
+        Manifest ->
+            Manifest
+    end.
 
 %% @doc Return a new orddict of Manifests
 %% with any deleted and need-to-be-pruned
