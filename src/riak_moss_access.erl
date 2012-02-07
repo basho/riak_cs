@@ -59,11 +59,11 @@ archive_period() ->
                     %% require period boundaries to fall on day boundaries
                     {ok, AP};
                 _ ->
-                    {error, "riak_moss:archive_period"
+                    {error, "riak_moss:access_archive_period"
                             " does not evenly divide one day"}
             end;
         _ ->
-            {error, "riak_moss:archive_period was not an integer"}
+            {error, "riak_moss:access_archive_period was not an integer"}
     end.
 
 %% @doc Retrive the Riak object key under which the access data is
