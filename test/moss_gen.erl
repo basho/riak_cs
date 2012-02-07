@@ -20,7 +20,9 @@
          bounded_content_length/0,
          md5/0,
          uuid/0,
-         metadata/0]).
+         metadata/0,
+         bounded_uuid/0,
+         manifest_state/0]).
 
 %%====================================================================
 %% Generators
@@ -52,6 +54,12 @@ metadata() ->
     %% just use `dict:new()` as a generator,
     %% but this is more explicit either way
     return(dict:new()).
+
+bounded_uuid() ->
+    oneof([<<"uuid-1">>, <<"uuid-2">>, <<"uuid-3">>, <<"uuid-4">>]).
+
+manifest_state() ->
+    oneof([writing, active, pending_delete, deleted]).
 
 %%====================================================================
 %% Helpers
