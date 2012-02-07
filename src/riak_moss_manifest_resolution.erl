@@ -89,6 +89,8 @@ resolve_manifests(pending_delete, pending_delete, A, B) ->
     LastDeletedTime = resolve_last_deleted_time(A, B),
     A#lfs_manifest_v2{delete_blocks_remaining=BlocksLeftToDelete, last_block_deleted_time=LastDeletedTime};
 resolve_manifests(pending_delete, deleted, _A, B) -> B;
+resolve_manifests(deleted, pending_delete, A, B) ->
+    resolve_manifests(pending_delete, deleted, B, A);
 
 resolve_manifests(deleted, deleted, A, A) -> A;
 resolve_manifests(deleted, deleted, A, B) ->
