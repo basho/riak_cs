@@ -145,7 +145,7 @@ is_manifest(BinaryValue) ->
                    binary(),
                    pos_integer(),
                    term(),
-                   dict()) -> lfs_manifest().
+                   term()) -> lfs_manifest().
 new_manifest(Bucket, FileName, UUID, ContentLength, ContentMd5, MetaData) ->
     BlockSize = block_size(),
     Blocks = ordsets:from_list(initial_blocks(ContentLength, BlockSize)),

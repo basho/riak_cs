@@ -155,23 +155,23 @@ waiting_command({add_new_manifest, Manifest}, State=#state{riakc_pid=RiakcPid,
     {next_state, waiting_update_command, State}.
 
 waiting_update_command({update_manifest, Manifest}, State=#state{riakc_pid=RiakcPid,
-                                                                  bucket=Bucket,
-                                                                  key=Key,
-                                                                  riak_object=undefined,
-                                                                  manifests=undefined}) ->
+                                                                 bucket=Bucket,
+                                                                 key=Key,
+                                                                 riak_object=undefined,
+                                                                 manifests=undefined}) ->
     WrappedManifest = riak_moss_manifest:new(Manifest#lfs_manifest_v2.uuid, Manifest),
     ManifestBucket = riak_moss_utils:to_bucket_name(objects, Bucket),
     RiakObject = riakc_obj:new(ManifestBucket, Key, term_to_binary(WrappedManifest)),
     riakc_pb_socket:put(RiakcPid, RiakObject),
     {next_state, waiting_update_command, State};
 waiting_update_command({update_manifest, Manifest}, State=#state{riakc_pid=RiakcPid,
-                                                                  riak_object=PreviousRiakObject,
-                                                                  manifests=PreviousManifests}) ->
+                                                                 riak_object=PreviousRiakObject,
+                                                                 manifests=PreviousManifests}) ->
 
     WrappedManifest = riak_moss_manifest:new(Manifest#lfs_manifest_v2.uuid, Manifest),
     Resolved = riak_moss_manifest_resolution:resolve([PreviousManifests, WrappedManifest]),
     RiakObject = riakc_obj:update_value(PreviousRiakObject, term_to_binary(Resolved)),
-    riakc_pb_socket:put_object(RiakcPid, RiakObject),
+    riakc_pb_socket:put(RiakcPid, RiakObject),
     {next_state, waiting_update_command, State#state{riak_object=undefined, manifests=undefined}};
 waiting_update_command(stop, State) ->
     %% TODO:
@@ -219,9 +219,9 @@ waiting_command(get_active_manifest, _From, State=#state{riakc_pid=RiakcPid,
                     {error, notfound}
             end,
             NewState = State#state{riak_object=RiakObject, manifests=Resolved},
-            {reply, Reply, waiting_update_or_delete_command, NewState};
+            {reply, Reply, waiting_update_command, NewState};
         {error, notfound}=NotFound ->
-            {reply, NotFound, waiting_update_or_delete_command, State}
+            {reply, NotFound, waiting_update_command, State}
     end.
 
 %%--------------------------------------------------------------------
