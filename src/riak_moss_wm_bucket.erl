@@ -80,7 +80,7 @@ content_types_accepted(RD, Ctx) ->
         undefined ->
             {[{"application/octet-stream", accept_body}], RD, Ctx};
         CType ->
-            Media = hd(string:tokens(CType, ";")),
+            {Media, _Params} = mochiweb_util:parse_header(CType),
             {[{Media, accept_body}], RD, Ctx}
     end.
 
