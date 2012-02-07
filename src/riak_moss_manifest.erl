@@ -35,7 +35,7 @@ active_manifest(Manifests) ->
         no_active_manifest ->
             {error, no_active_manifest};
         Manifest ->
-            Manifest
+            {ok, Manifest}
     end.
 
 %% @doc Return a new orddict of Manifests
