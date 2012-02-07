@@ -69,8 +69,11 @@ archive_period() ->
 %% @doc Retrive the Riak object key under which the access data is
 %% stored for the given user during the given time slice.
 -spec slice_key(riak_moss:user_key(), slice()) -> binary().
-slice_key(User, {_Start, End}) ->
-    iolist_to_binary([User,".",iso8601(End)]).
+slice_key(User, {Start, _End}) ->
+    %% logger may give us a slice that doesn't fill a whole archive
+    %% slice, so realign it to make sure
+    {_, RealEnd} = slice_containing(Start),
+    iolist_to_binary([User,".",iso8601(RealEnd)]).
 
 %% @doc Get the slice containing the given time.
 -spec slice_containing(calendar:datetime()) -> slice().

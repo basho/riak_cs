@@ -111,7 +111,8 @@ log_access(LogData) ->
     gen_server:cast(?SERVER, {log_access, LogData}).
 
 flush(Timeout) ->
-    case catch gen_server:call(?SERVER, flush, Timeout) of
+    Now = calendar:universal_time(),
+    case catch gen_server:call(?SERVER, {flush, Now}, Timeout) of
         ok -> ok;
         {'EXIT',{Reason,_}} -> Reason
     end.
@@ -165,20 +166,16 @@ init(Props) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_call(flush, _From, State) ->
-    NewState = do_archive(State),
+handle_call({flush, FlushEnd}, _From, #state{current=C}=State) ->
+    %% record this archive as not filling the whole slice
+    {SliceStart, SliceEnd} = C,
+    NewState = do_archive(State#state{current={SliceStart, FlushEnd}}),
 
-    %% it's probably still the same time slice, so undo the
-    %% advancement that do_archive applied
-    OldNewState = NewState#state{current=State#state.current},
-    case schedule_archival(OldNewState) of
-        {ok, SchedState} -> ok;
-        {error, _TL} ->
-            %% or maybe it's not still the same time slice, reinstate
-            %% the advancement
-            {ok, SchedState} = schedule_archival(NewState)
-    end,
-    {reply, ok, SchedState};
+    %% Now continue waiting for the archive message for this slice,
+    %% but mark the next archive as not filling the whole slice as well
+    OldNewState = NewState#state{current={FlushEnd, SliceEnd}},
+
+    {reply, ok, OldNewState};
 handle_call(_Request, _From, State) ->
     Reply = ok,
     {reply, Reply, State}.
