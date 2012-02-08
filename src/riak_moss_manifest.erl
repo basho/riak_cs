@@ -41,6 +41,7 @@ active_manifest(Manifests) ->
 %% @doc Return a new orddict of Manifests
 %% with any deleted and need-to-be-pruned
 %% manifests removed
+%% TODO
 -spec prune(term()) -> term().
 prune(_Manifests) ->
     ok.
