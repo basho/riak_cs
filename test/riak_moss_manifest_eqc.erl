@@ -61,10 +61,14 @@ prop_choose_active_commutative() ->
             Active = riak_moss_manifest:active_manifest(AsDict),
             case Active of
                 {error, no_active_manifest} ->
+                    %% if no manifest is returned then there should
+                    %% not be an active manifest in the list _at_ _all_
                     [] == lists:filter(fun(#lfs_manifest_v2{state=State}) ->
                                 State == active end,
                             Manifests);
                 {ok, AMani} ->
+                    %% if a manifest is returned,
+                    %% its state should be active
                     AMani#lfs_manifest_v2.state == active
             end
         end).

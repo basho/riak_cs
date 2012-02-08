@@ -41,7 +41,13 @@ active_manifest(Manifests) ->
 %% @doc Return a new orddict of Manifests
 %% with any deleted and need-to-be-pruned
 %% manifests removed
-%% TODO
+%% TODO: write the function... :)
+
+%% TODO: for pruning we're likely
+%% going to want to add some app.config
+%% stuff for how long to keep around
+%% fully deleted manifests, just like
+%% we do with vclocks.
 -spec prune(term()) -> term().
 prune(_Manifests) ->
     ok.
