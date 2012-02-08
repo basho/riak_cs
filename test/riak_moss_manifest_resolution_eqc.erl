@@ -15,7 +15,7 @@
 -compile(export_all).
 
 %% eqc property
--export([resolution_commutative/0]).
+-export([prop_resolution_commutative/0]).
 
 %% helpers
 -export([test/0, test/1]).
@@ -25,11 +25,35 @@
     eqc:on_output(fun(Str, Args) ->
                 io:format(user, Str, Args) end, P)).
 
+%%====================================================================
+%% Eunit tests
+%%====================================================================
+
+eqc_test_() ->
+    {spawn,
+     [{setup,
+       fun setup/0,
+       fun cleanup/1,
+       [%% Run the quickcheck tests
+        {timeout, 300,
+            ?_assertEqual(true, quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT((prop_resolution_commutative())))))}
+       ]
+      }
+     ]
+    }.
+
+setup() ->
+    ok.
+
+cleanup(_) ->
+    ok.
+
+
 %% ====================================================================
 %% eqc property
 %% ====================================================================
 
-resolution_commutative() ->
+prop_resolution_commutative() ->
     ?FORALL(Manifests, eqc_gen:resize(50, manifests()),
         begin
             MapFun = fun(Mani) ->
@@ -85,7 +109,7 @@ test() ->
     test(100).
 
 test(Iterations) ->
-    eqc:quickcheck(eqc:numtests(Iterations, resolution_commutative())).
+    eqc:quickcheck(eqc:numtests(Iterations, prop_resolution_commutative())).
 
 only_one_active(Manifests) ->
     {_, FilteredManifests} = lists:foldl(fun only_one_active_helper/2, {not_found, []}, Manifests),
