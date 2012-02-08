@@ -30,7 +30,7 @@
 %% ====================================================================
 
 resolution_commutative() ->
-    ?FORALL(Manifests, manifests(),
+    ?FORALL(Manifests, eqc_gen:resize(50, manifests()),
         begin
             MapFun = fun(Mani) ->
                 riak_moss_manifest:new(Mani#lfs_manifest_v2.uuid, Mani)
