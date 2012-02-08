@@ -104,9 +104,10 @@ start_link(_BaseDir) ->
 
 %% @doc webmachine logging callback
 log_access(LogData) ->
-    %% calls to this function are spawned in Webmachine, so calling
-    %% instead of casting is correct
-    gen_server:call(?SERVER, {log_access, LogData}).
+    %% this happens in a fun spawned by webmachine_decision_core, but
+    %% there's no reason to make the process wait around for an ok
+    %% response -- just cast
+    gen_server:cast(?SERVER, {log_access, LogData}).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -134,7 +135,14 @@ init(Props) ->
     C = {Start, End},
 
     InitState = #state{period=P, table=T, current=C},
-    {ok, schedule_archival(InitState)}.
+    case schedule_archival(InitState) of
+        {ok, SchedState} -> ok;
+        {error, _Behind} ->
+            %% startup was right on a boundary, just try again,
+            %% and fail if this one also fails
+            {ok, SchedState} = schedule_archival(InitState)
+    end,
+    {ok, SchedState}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -150,14 +158,6 @@ init(Props) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_call({log_access, LogData}, _From, #state{table=T}=State) ->
-    case access_record(LogData) of
-        {ok, Access} -> ets:insert(T, Access);
-        _            -> ok
-    end,
-    %% TODO: probably want to check table size as a trigger for
-    %% archival, in addition to time period
-    {reply, ok, State};
 handle_call(_Request, _From, State) ->
     Reply = ok,
     {reply, Reply, State}.
@@ -172,6 +172,14 @@ handle_call(_Request, _From, State) ->
 %%                                  {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
+handle_cast({log_access, LogData}, #state{table=T}=State) ->
+    case access_record(LogData) of
+        {ok, Access} -> ets:insert(T, Access);
+        _            -> ok
+    end,
+    %% TODO: probably want to check table size as a trigger for
+    %% archival, in addition to time period
+    {noreply, State};
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
@@ -187,7 +195,23 @@ handle_cast(_Msg, State) ->
 %%--------------------------------------------------------------------
 handle_info({archive, Ref}, #state{archive=Ref}=State) ->
     NewState = do_archive(State),
-    {noreply, schedule_archival(NewState)};
+    case schedule_archival(NewState) of
+        {ok, SchedState} ->
+            {noreply, SchedState};
+        {error, Behind} ->
+            %% if the logger is so far behind that it has already
+            %% missed the time that the next archival should happen,
+            %% just bounce the server to clear up the backlog -- this
+            %% decision could be changed to some heuristic based on
+            %% number of seconds and number of messages behind, if the
+            %% simple "missed window" is too lossy
+            [{message_queue_len, MessageCount}] =
+                process_info(self(), [message_queue_len]),
+            lager:error("Access logger is running ~b seconds behind,"
+                        " skipping ~p log messages to catch up",
+                        [Behind, MessageCount]),
+            {stop, behind, NewState}
+    end;
 handle_info(_Info, State) ->
     {noreply, State}.
 
@@ -231,18 +255,20 @@ fresh_table() ->
 schedule_archival(#state{current={_,E}}=State) ->
     Ref = make_ref(),
 
-    %% TimeLeft should almost always be zero, except for the first
-    %% slice in which this server starts
-    %% TODO: check that TL is non-negative, and consider throwing away
-    %% backlog if we're that far behind?
     Now = calendar:datetime_to_gregorian_seconds(
             calendar:universal_time()),
     TL = calendar:datetime_to_gregorian_seconds(E)-Now,
-    lager:debug("Next access archival in ~b seconds", [TL]),
+    case TL < 0 of
+        false ->
+            lager:debug("Next access archival in ~b seconds", [TL]),
 
-    %% time left is in seconds, we need milliseconds
-    erlang:send_after(TL*1000, self(), {archive, Ref}),
-    State#state{archive=Ref}.
+            %% time left is in seconds, we need milliseconds
+            erlang:send_after(TL*1000, self(), {archive, Ref}),
+            {ok, State#state{archive=Ref}};
+        true ->
+            {error, -TL}
+    end.
+
 
 %% @doc Send the current slice's accumulated accesses to the archiver
 %% for storage.  Create a clean table to store the next slice's accesses.
