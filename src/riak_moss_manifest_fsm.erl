@@ -10,6 +10,14 @@
 
 -behaviour(gen_fsm).
 
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+
+%% Test API
+-export([test_link/2]).
+
+-endif.
+
 %% API
 -export([start_link/2,
          get_active_manifest/1,
@@ -65,7 +73,7 @@
 %% @end
 %%--------------------------------------------------------------------
 start_link(Bucket, Key) ->
-    gen_fsm:start_link({local, ?SERVER}, ?MODULE, [Bucket, Key], []).
+    gen_fsm:start_link(?MODULE, [Bucket, Key], []).
 
 get_active_manifest(Pid) ->
     gen_fsm:sync_send_event(Pid, get_active_manifest).
@@ -97,7 +105,14 @@ init([Bucket, Key]) ->
     %% purposely have the timeout happen
     %% so that we get called in the prepare
     %% state
-    {ok, prepare, #state{bucket=Bucket, key=Key}, 0}.
+    {ok, prepare, #state{bucket=Bucket, key=Key}, 0};
+init([test, Bucket, Key]) ->
+    %% skip the prepare phase
+    %% and jump right into waiting command,
+    %% creating the "mock" riakc_pb_socket
+    %% gen_server here
+    {ok, Pid} = riakc_pb_socket_fake:start_link(),
+    {ok, waiting_command, #state{bucket=Bucket, key=Key, riakc_pid=Pid}, 0}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -320,3 +335,14 @@ get_manifests(RiakcPid, Bucket, Key) ->
         {error, notfound}=NotFound ->
             NotFound
     end.
+
+%% ===================================================================
+%% Test API
+%% ===================================================================
+
+-ifdef(TEST).
+
+test_link(Bucket, Key) ->
+    gen_fsm:start_link(?MODULE, [test, Bucket, Key], []).
+
+-endif.
