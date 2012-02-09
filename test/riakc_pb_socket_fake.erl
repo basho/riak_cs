@@ -23,7 +23,7 @@
 
 -define(SERVER, ?MODULE).
 
--record(state, {}).
+-record(state, {current_obj :: term()}).
 
 %%%===================================================================
 %%% API
@@ -71,12 +71,20 @@ init([]) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_call({req, Req=#rpbgetreq{}, _Timeout}, _From, State) ->
-        Reply = ok,
-        {reply, Reply, State};
-handle_call({req, Req, _Timeout}, _From, State) ->
-        Reply = other,
-        {reply, Reply, State}.
+handle_call({req, #rpbgetreq{}, _Timeout}, _From, State=#state{current_obj=undefined}) ->
+    Reply = {error, notfound},
+    {reply, Reply, State};
+handle_call({req, #rpbgetreq{}, _Timeout}, _From, State=#state{current_obj=Obj}) ->
+    Reply = {ok, Obj},
+    {reply, Reply, State};
+handle_call({req, #rpbputreq{content=Content}, _Timeout}, _From, State) ->
+    Value = Content#rpbcontent.value,
+    NewObj = riakc_obj:new(<<"bucket">>, <<"key">>, Value),
+    Reply = {ok, <<"key">>},
+    {reply, Reply, State#state{current_obj=NewObj}};
+handle_call({req, #rpbdelreq{}, _Timeout}, _From, State) ->
+    Reply = ok,
+    {reply, Reply, State#state{current_obj=undefined}}.
 
 %%--------------------------------------------------------------------
 %% @private
