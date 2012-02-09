@@ -37,7 +37,7 @@
 %% @end
 %%--------------------------------------------------------------------
 start_link() ->
-        gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
+        gen_server:start_link(?MODULE, [], []).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -79,7 +79,7 @@ handle_call({req, #rpbgetreq{}, _Timeout}, _From, State=#state{current_obj=Obj})
     {reply, Reply, State};
 handle_call({req, #rpbputreq{content=Content}, _Timeout}, _From, State) ->
     Value = Content#rpbcontent.value,
-    NewObj = riakc_obj:new(<<"bucket">>, <<"key">>, Value),
+    NewObj = riakc_obj:new_obj(<<"bucket">>, <<"key">>, <<"fake-vclock">>, [{dict:new(), Value}]),
     Reply = {ok, <<"key">>},
     {reply, Reply, State#state{current_obj=NewObj}};
 handle_call({req, #rpbdelreq{}, _Timeout}, _From, State) ->
