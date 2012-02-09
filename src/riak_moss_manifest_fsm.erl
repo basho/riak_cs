@@ -112,7 +112,7 @@ init([test, Bucket, Key]) ->
     %% creating the "mock" riakc_pb_socket
     %% gen_server here
     {ok, Pid} = riakc_pb_socket_fake:start_link(),
-    {ok, waiting_command, #state{bucket=Bucket, key=Key, riakc_pid=Pid}, 0}.
+    {ok, waiting_command, #state{bucket=Bucket, key=Key, riakc_pid=Pid}}.
 
 %%--------------------------------------------------------------------
 %% @private
