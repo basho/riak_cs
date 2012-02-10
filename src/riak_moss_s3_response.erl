@@ -8,7 +8,8 @@
          respond/4,
          error_response/5,
          list_bucket_response/5,
-         list_all_my_buckets_response/3]).
+         list_all_my_buckets_response/3,
+         error_code_to_atom/1]).
 
 -include("riak_moss.hrl").
 
@@ -27,7 +28,10 @@ error_message(entity_too_large) ->
 error_message(no_such_bucket) ->
     "The specified bucket does not exist.";
 error_message({riak_connect_failed, Reason}) ->
-    io_lib:format("Unable to establish connection to Riak. Reason: ~p", [Reason]).
+    io_lib:format("Unable to establish connection to Riak. Reason: ~p", [Reason]);
+error_message(admin_key_undefined) -> "Please reduce your request rate.";
+error_message(admin_secret_undefined) -> "Please reduce your request rate.";
+error_message(econnrefused) -> "Please reduce your request rate.".
 
 
 error_code(invalid_access_key_id) -> 'InvalidAccessKeyId';
@@ -37,7 +41,10 @@ error_code(bucket_not_empty) -> 'BucketNotEmpty';
 error_code(bucket_already_exists) -> 'BucketAlreadyExists';
 error_code(entity_too_large) -> 'EntityTooLarge';
 error_code(no_such_bucket) -> 'NoSuchBucket';
-error_code({riak_connect_failed, _}) -> 'RiakConnectFailed'.
+error_code({riak_connect_failed, _}) -> 'RiakConnectFailed';
+error_code(admin_key_undefined) -> 'ServiceUnavailable';
+error_code(admin_secret_undefined) -> 'ServiceUnavailable';
+error_code(econnrefused) -> 'ServiceUnavailable'.
 
 
 status_code(invalid_access_key_id) -> 403;
@@ -47,7 +54,10 @@ status_code(bucket_not_empty) ->  409;
 status_code(bucket_already_exists) -> 409;
 status_code(entity_too_large) -> 400;
 status_code(no_such_bucket) -> 404;
-status_code({riak_connect_failed, _}) -> 503.
+status_code({riak_connect_failed, _}) -> 503;
+status_code(admin_key_undefined) -> 503;
+status_code(admin_secret_undefined) -> 503;
+status_code(econnrefused) -> 503.
 
 
 respond(StatusCode, Body, ReqData, Ctx) ->
@@ -126,4 +136,26 @@ user_to_xml_owner(?MOSS_USER{canonical_id=CanonicalId, display_name=Name}) ->
 
 export_xml(XmlDoc) ->
     unicode:characters_to_binary(
+<<<<<<< HEAD
       xmerl:export_simple(XmlDoc, xmerl_xml, [{prolog, ?XML_PROLOG}])).
+=======
+      xmerl:export_simple(XmlDoc, xmerl_xml, [{prolog, ?xml_prolog}])).
+
+%% @doc Convert an error code string into its corresponding atom
+-spec error_code_to_atom(string()) -> atom().
+error_code_to_atom(ErrorCode) ->
+    case ErrorCode of
+        "InvalidAccessKeyId" ->
+            invalid_access_key_id;
+        "AccessDenied" ->
+            access_denied;
+        "BucketNotEmpty" ->
+            bucket_not_empty;
+        "BucketAlreadyExists" ->
+            bucket_already_exists;
+        "NoSuchBucket" ->
+            no_such_bucket;
+        _ ->
+            unknown
+    end.
+>>>>>>> Changes to better handle error documents reported from stanchion.

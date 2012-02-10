@@ -32,9 +32,12 @@
          to_bucket_name/2]).
 
 -include("riak_moss.hrl").
+-include_lib("xmerl/include/xmerl.hrl").
 
 -define(OBJECT_BUCKET_PREFIX, <<"objects:">>).
 -define(BLOCK_BUCKET_PREFIX, <<"blocks:">>).
+
+-type xmlElement() :: #xmlElement{}.
 
 %% ===================================================================
 %% Public API
@@ -85,29 +88,32 @@ create_bucket(KeyID, BucketName, _ACL) ->
                     BucketDoc = bucket_json(BucketName, KeyId),
                     %% Make a call to the bucket request
                     %% serialization service.
-                    Result = velvet:create_bucket(StanchionIp,
-                                                  StanchionPort,
-                                                  "application/json",
-                                                  BucketDoc,
-                                                  [{ssl, StanchionSSL},
-                                                   {auth_creds, AdminCreds}]),
-                    case Result of
+                    CreateResult = velvet:create_bucket(StanchionIp,
+                                                        StanchionPort,
+                                                        "application/json",
+                                                        BucketDoc,
+                                                        [{ssl, StanchionSSL},
+                                                         {auth_creds, AdminCreds}]),
+                    case CreateResult of
                         ok ->
                             case [B || B <- OldBuckets, B#moss_bucket.name =:= BucketName] of
                                 [] ->
                                     NewUser = User#moss_user{buckets=[Bucket|OldBuckets]},
-                                    save_user(NewUser, RiakPid);
+                                    Res = save_user(NewUser, RiakPid);
                                 _ ->
-                                    ignore
+                                    Res = ignore
                             end;
+                        {error, {error_status, _, _, ErrorDoc}} ->
+                            ErrorCode = xml_error_code(ErrorDoc),
+                            Res = {error, riak_moss_s3_response:error_code_to_atom(ErrorCode)};
                         {error, _} ->
-                            ok
+                            Res = CreateResult
                     end;
                 {error, Reason1} ->
-                    Result = {error, Reason1}
+                    Res = {error, Reason1}
             end,
             close_riak_connection(RiakPid),
-            Result;
+            Res;
         {error, Reason} ->
             {error, {riak_connect_failed, Reason}}
     end.
@@ -150,8 +156,6 @@ delete_bucket(KeyId, BucketName) ->
             CurrentBuckets = get_buckets(User),
 
             {StanchionIp, StanchionPort, StanchionSSL} = get_stanchion_data(),
-            AdminCreds = get_admin_creds(),
-
             %% Buckets can only be deleted if they exist
             case bucket_exists(CurrentBuckets, BucketName) of
                 true ->
@@ -169,23 +173,31 @@ delete_bucket(KeyId, BucketName) ->
             end,
             case AttemptDelete of
                 true ->
-                    %% Make a call to the bucket request
-                    %% serialization service.
-                    DeleteRes = velvet:delete_bucket(StanchionIp,
-                                                     StanchionPort,
-                                                     BucketName,
-                                                     KeyId,
-                                                     [{ssl, StanchionSSL},
-                                                      {auth_creds, AdminCreds}]),
-                    case DeleteRes of
-                        ok ->
-                            UpdatedBuckets =
-                                remove_bucket(CurrentBuckets, BucketName),
-                            UpdatedUser =
-                                User#moss_user{buckets=UpdatedBuckets},
-                            Res = save_user(UpdatedUser, RiakPid);
-                        {error, _} ->
-                            Res = DeleteRes
+                    case get_admin_creds() of
+                        {ok, AdminCreds} ->
+                            %% Make a call to the bucket request
+                            %% serialization service.
+                            DeleteRes = velvet:delete_bucket(StanchionIp,
+                                                             StanchionPort,
+                                                             BucketName,
+                                                             KeyId,
+                                                             [{ssl, StanchionSSL},
+                                                              {auth_creds, AdminCreds}]),
+                            case DeleteRes of
+                                ok ->
+                                    UpdatedBuckets =
+                                        remove_bucket(CurrentBuckets, BucketName),
+                                    UpdatedUser =
+                                        User#moss_user{buckets=UpdatedBuckets},
+                                    Res = save_user(UpdatedUser, RiakPid);
+                                {error, {error_status, _, _, ErrorDoc}} ->
+                                    ErrorCode = xml_error_code(ErrorDoc),
+                                    Res = {error, riak_moss_s3_response:error_code_to_atom(ErrorCode)};
+                                {error, _} ->
+                                    Res = DeleteRes
+                            end;
+                        {error, Reason1} ->
+                            Res = {error, Reason1}
                     end;
                 false ->
                     Res = LocalError
@@ -293,21 +305,21 @@ get_admin_creds() ->
     case application:get_env(riak_moss, admin_key) of
         {ok, []} ->
             lager:warning("The admin user's key id has not been specified."),
-            {error, key_id_undefined};
+            {error, admin_key_undefined};
         {ok, KeyId} ->
             case application:get_env(riak_moss, admin_secret) of
                 {ok, []} ->
                     lager:warning("The admin user's secret has not been specified."),
-                    {error, secret_undefined};
+                    {error, admin_secret_undefined};
                 {ok, Secret} ->
                     {ok, {KeyId, Secret}};
                 undefined ->
                     lager:warning("The admin user's secret is not defined."),
-                    {error, secret_undefined}
+                    {error, admin_secret_undefined}
             end;
         undefined ->
             lager:warning("The admin user's key id is not defined."),
-            {error, key_id_undefined}
+            {error, admin_key_undefined}
     end.
 
 %% @doc Get an object from Riak
@@ -522,6 +534,21 @@ generate_secret(UserName, Key) ->
       iolist_to_binary(<< SecretPart1:Bytes/binary,
                           SecretPart2:Bytes/binary >>)).
 
+%% @doc Process the top-level elements of the
+-spec process_xml_error([xmlElement()]) -> string().
+process_xml_error([]) ->
+    [];
+process_xml_error([HeadElement | RestElements]) ->
+    lager:debug("Element name: ~p", [HeadElement#xmlElement.name]),
+    ElementName = HeadElement#xmlElement.name,
+    case ElementName of
+        'Code' ->
+            [Content] = HeadElement#xmlElement.content,
+            Content#xmlText.value;
+        _ ->
+            process_xml_error(RestElements)
+    end.
+
 %% @doc Remove a bucket from a user's list of buckets.
 %% @TODO This may need to change once globally unique buckets
 %% are enforced.
@@ -551,3 +578,10 @@ validate_email(EmailAddr) ->
         _ ->
             ok
     end.
+
+%% @doc Get the value of the `Code' element from
+%% and XML document.
+-spec xml_error_code(string()) -> string().
+xml_error_code(Xml) ->
+    {ParsedData, _Rest} = xmerl_scan:string(Xml, []),
+    process_xml_error(ParsedData#xmlElement.content).
