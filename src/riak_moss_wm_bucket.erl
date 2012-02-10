@@ -124,7 +124,7 @@ accept_body(ReqData, Ctx=#context{user=User}) ->
 %% @doc Callback for deleting a bucket.
 -spec delete_resource(term(), term()) -> boolean().
 delete_resource(ReqData, Ctx=#context{user=User}) ->
-    BucketName = wrq:path_info(bucket, ReqData),
+    BucketName = list_to_binary(wrq:path_info(bucket, ReqData)),
     case riak_moss_utils:delete_bucket(User?MOSS_USER.key_id,
                                        BucketName) of
         ok ->
