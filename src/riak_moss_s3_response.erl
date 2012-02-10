@@ -34,17 +34,16 @@ error_message(admin_secret_undefined) -> "Please reduce your request rate.";
 error_message(econnrefused) -> "Please reduce your request rate.".
 
 
-error_code(invalid_access_key_id) -> 'InvalidAccessKeyId';
-error_code(invalid_email_address) -> 'InvalidEmailAddress';
-error_code(access_denied) -> 'AccessDenied';
-error_code(bucket_not_empty) -> 'BucketNotEmpty';
-error_code(bucket_already_exists) -> 'BucketAlreadyExists';
-error_code(entity_too_large) -> 'EntityTooLarge';
-error_code(no_such_bucket) -> 'NoSuchBucket';
-error_code({riak_connect_failed, _}) -> 'RiakConnectFailed';
-error_code(admin_key_undefined) -> 'ServiceUnavailable';
-error_code(admin_secret_undefined) -> 'ServiceUnavailable';
-error_code(econnrefused) -> 'ServiceUnavailable'.
+error_code(invalid_access_key_id) -> "InvalidAccessKeyId";
+error_code(access_denied) -> "AccessDenied";
+error_code(bucket_not_empty) -> "BucketNotEmpty";
+error_code(bucket_already_exists) -> "BucketAlreadyExists";
+error_code(entity_too_large) -> "EntityTooLarge";
+error_code(no_such_bucket) -> "NoSuchBucket";
+error_code({riak_connect_failed, _}) -> "RiakConnectFailed";
+error_code(admin_key_undefined) -> "ServiceUnavailable";
+error_code(admin_secret_undefined) -> "ServiceUnavailable";
+error_code(econnrefused) -> "ServiceUnavailable".
 
 
 status_code(invalid_access_key_id) -> 403;
@@ -136,10 +135,7 @@ user_to_xml_owner(?MOSS_USER{canonical_id=CanonicalId, display_name=Name}) ->
 
 export_xml(XmlDoc) ->
     unicode:characters_to_binary(
-<<<<<<< HEAD
       xmerl:export_simple(XmlDoc, xmerl_xml, [{prolog, ?XML_PROLOG}])).
-=======
-      xmerl:export_simple(XmlDoc, xmerl_xml, [{prolog, ?xml_prolog}])).
 
 %% @doc Convert an error code string into its corresponding atom
 -spec error_code_to_atom(string()) -> atom().
@@ -158,4 +154,3 @@ error_code_to_atom(ErrorCode) ->
         _ ->
             unknown
     end.
->>>>>>> Changes to better handle error documents reported from stanchion.
