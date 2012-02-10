@@ -33,7 +33,6 @@ error_message(admin_key_undefined) -> "Please reduce your request rate.";
 error_message(admin_secret_undefined) -> "Please reduce your request rate.";
 error_message(econnrefused) -> "Please reduce your request rate.".
 
-
 error_code(invalid_access_key_id) -> "InvalidAccessKeyId";
 error_code(access_denied) -> "AccessDenied";
 error_code(bucket_not_empty) -> "BucketNotEmpty";
@@ -44,7 +43,6 @@ error_code({riak_connect_failed, _}) -> "RiakConnectFailed";
 error_code(admin_key_undefined) -> "ServiceUnavailable";
 error_code(admin_secret_undefined) -> "ServiceUnavailable";
 error_code(econnrefused) -> "ServiceUnavailable".
-
 
 status_code(invalid_access_key_id) -> 403;
 status_code(invalid_email_address) -> 400;
