@@ -88,7 +88,6 @@ create_bucket(KeyId, Bucket, _ACL) ->
                                        VClock,
                                        created,
                                        RiakPid),
-
             close_riak_connection(RiakPid),
             Res;
         {error, Reason} ->
