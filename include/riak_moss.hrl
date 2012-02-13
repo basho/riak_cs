@@ -10,7 +10,8 @@
           email :: string(),
           key_id :: string(),
           key_secret :: string(),
-          canonical_id :: string()}).
+          canonical_id :: string(),
+          buckets=[] :: [moss_bucket()]}).
 -type moss_user() :: #moss_user_v1{}.
 
 -type bucket_acl() :: string().
