@@ -12,7 +12,8 @@
 
 -export([
          sum_user/2,
-         sum_bucket/2
+         sum_bucket/2,
+         make_object/5
         ]).
 
 %% @doc Sum the number of bytes stored in active files in all of the
@@ -66,3 +67,26 @@ object_size(Riak, Bucket, Key) ->
         {error, Error} ->
             {error, Error}
     end.
+
+make_object(Time, User, BucketList, SampleStart, SampleEnd) ->
+    Aggregate = aggregate_bucketlist(BucketList),
+    MJSON = {struct, [{start_time, riak_moss_access:iso8601(SampleStart)},
+                      {end_time, riak_moss_access:iso8601(SampleEnd)}
+                      |Aggregate]},
+    riakc_obj:new(?STORAGE_BUCKET,
+                  sample_key(User, Time),
+                  iolist_to_binary(mochijson2:encode(MJSON)),
+                  "application/json").
+
+aggregate_bucketlist(BucketList) ->
+    {BucketCount, TotalBytes} =
+        lists:foldl(fun({_Name, Size}, {C, B}) ->
+                            {C+1, B+Size}
+                    end,
+                    {0, 0},
+                    BucketList),
+    [{buckets, BucketCount},
+     {bytes, TotalBytes}].
+
+sample_key(User, Time) ->
+    iolist_to_binary([User,".",riak_moss_access:iso8601(Time)]).
