@@ -26,21 +26,12 @@
 authenticate(RD, [KeyID, Signature]) ->
     %% @TODO Also handle riak connection error
     case riak_moss_utils:get_user(KeyID) of
-        {ok, User} ->
+        {ok, {User, _}} ->
             CalculatedSignature =
                 calculate_signature(User?MOSS_USER.key_secret, RD),
             case check_auth(Signature, CalculatedSignature) of
                 true ->
                     {ok, User};
-                    %% case bucket_auth(User,
-                    %%                  wrq:method(RD),
-                    %%                  wrq:path_info(bucket, RD),
-                    %%                  wrq:path_tokens(RD)) of
-                    %%     true ->
-                            %% {ok, User};
-                    %%     false ->
-                    %%         {error, invalid_authentication}
-                    %% end;
                 _ ->
                     {error, invalid_authentication}
             end;
@@ -192,20 +183,6 @@ canonicalize_resource(RD) ->
             ["/", Bucket, "/", string:join(KeyTokens, "/")]
     end.
 -endif.
-
-%% bucket_auth(_User=#moss_user{}, _, undefined, []) ->
-%%     true;
-%% bucket_auth(_User=#moss_user{}, 'PUT', _BucketName, []) ->
-%%     true;
-%% bucket_auth(User=#moss_user{}, _, BucketName, _KeyName) ->
-%%     bucket_owner(User, BucketName).
-
-%% bucket_owner(User=#moss_user{}, BucketName) ->
-%%     lists:member(BucketName,
-%%                  [B#moss_bucket.name
-%%                   || B <- riak_moss_utils:get_buckets(User)]).
-
-
 
 %% ===================================================================
 %% Eunit tests
