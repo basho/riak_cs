@@ -94,6 +94,7 @@ create_bucket(KeyId, Bucket, _ACL) ->
             {error, {riak_connect_failed, Reason}}
     end.
 
+
 %% @doc Create a new MOSS user
 -spec create_user(string(), string()) -> {ok, moss_user()}.
 create_user(Name, Email) ->
