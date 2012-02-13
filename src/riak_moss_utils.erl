@@ -75,7 +75,9 @@ close_riak_connection(Pid) ->
 %% exist anywhere, since everyone
 %% shares a global bucket namespace
 -spec create_bucket(string(), binary(), acl_v1()) -> ok.
-create_bucket(KeyId, Bucket, _ACL) ->
+create_bucket(KeyId, BucketName, _ACL) ->
+    Bucket = #moss_bucket{name=BucketName,
+                          creation_date=riak_moss_wm_utils:iso_8601_datetime()},
     case riak_connection() of
         {ok, RiakPid} ->
             %% TODO:
