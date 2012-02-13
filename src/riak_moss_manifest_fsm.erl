@@ -147,26 +147,7 @@ prepare(timeout, State) ->
 waiting_command({add_new_manifest, Manifest}, State=#state{riakc_pid=RiakcPid,
                                                            bucket=Bucket,
                                                            key=Key}) ->
-    %% retrieve the current (resolved) value at {Bucket, Key},
-    %% add the new manifest, and then write the value
-    %% back to Riak
-    %% NOTE: it would also be nice to assert that the
-    %% UUID being added doesn't already exist in the
-    %% dict
-    WrappedManifest = riak_moss_manifest:new(Manifest#lfs_manifest_v2.uuid, Manifest),
-    ObjectToWrite = case get_manifests(RiakcPid, Bucket, Key) of
-        {ok, RiakObject, Manifests} ->
-            NewManiAdded = riak_moss_manifest_resolution:resolve([WrappedManifest, Manifests]),
-            riakc_obj:update_value(RiakObject, term_to_binary(NewManiAdded));
-        {error, notfound} ->
-            ManifestBucket = riak_moss_utils:to_bucket_name(objects, Bucket),
-            riakc_obj:new(ManifestBucket, Key, term_to_binary(WrappedManifest))
-    end,
-
-    riakc_pb_socket:put(RiakcPid, ObjectToWrite),
-    %% if there isn't currently a riak_object
-    %% stored at {Bucket, Key}, then we need
-    %% to create one
+    get_and_update(RiakcPid, Manifest, Bucket, Key),
     {next_state, waiting_update_command, State}.
 
 waiting_update_command({update_manifest, Manifest}, State=#state{riakc_pid=RiakcPid,
@@ -174,10 +155,7 @@ waiting_update_command({update_manifest, Manifest}, State=#state{riakc_pid=Riakc
                                                                  key=Key,
                                                                  riak_object=undefined,
                                                                  manifests=undefined}) ->
-    WrappedManifest = riak_moss_manifest:new(Manifest#lfs_manifest_v2.uuid, Manifest),
-    ManifestBucket = riak_moss_utils:to_bucket_name(objects, Bucket),
-    RiakObject = riakc_obj:new(ManifestBucket, Key, term_to_binary(WrappedManifest)),
-    riakc_pb_socket:put(RiakcPid, RiakObject),
+    get_and_update(RiakcPid, Manifest, Bucket, Key),
     {next_state, waiting_update_command, State};
 waiting_update_command({update_manifest, Manifest}, State=#state{riakc_pid=RiakcPid,
                                                                  riak_object=PreviousRiakObject,
@@ -186,6 +164,10 @@ waiting_update_command({update_manifest, Manifest}, State=#state{riakc_pid=Riakc
     WrappedManifest = riak_moss_manifest:new(Manifest#lfs_manifest_v2.uuid, Manifest),
     Resolved = riak_moss_manifest_resolution:resolve([PreviousManifests, WrappedManifest]),
     RiakObject = riakc_obj:update_value(PreviousRiakObject, term_to_binary(Resolved)),
+    %% TODO:
+    %% currently we don't do
+    %% anything to make sure
+    %% this call succeeded
     riakc_pb_socket:put(RiakcPid, RiakObject),
     {next_state, waiting_update_command, State#state{riak_object=undefined, manifests=undefined}};
 waiting_update_command(stop, State) ->
@@ -335,6 +317,29 @@ get_manifests(RiakcPid, Bucket, Key) ->
         {error, notfound}=NotFound ->
             NotFound
     end.
+
+get_and_update(RiakcPid, Manifest, Bucket, Key) ->
+    %% retrieve the current (resolved) value at {Bucket, Key},
+    %% add the new manifest, and then write the value
+    %% back to Riak
+    %% NOTE: it would also be nice to assert that the
+    %% UUID being added doesn't already exist in the
+    %% dict
+    WrappedManifest = riak_moss_manifest:new(Manifest#lfs_manifest_v2.uuid, Manifest),
+    ObjectToWrite = case get_manifests(RiakcPid, Bucket, Key) of
+        {ok, RiakObject, Manifests} ->
+            NewManiAdded = riak_moss_manifest_resolution:resolve([WrappedManifest, Manifests]),
+            riakc_obj:update_value(RiakObject, term_to_binary(NewManiAdded));
+        {error, notfound} ->
+            ManifestBucket = riak_moss_utils:to_bucket_name(objects, Bucket),
+            riakc_obj:new(ManifestBucket, Key, term_to_binary(WrappedManifest))
+    end,
+
+    %% TODO:
+    %% currently we don't do
+    %% anything to make sure
+    %% this call succeeded
+    riakc_pb_socket:put(RiakcPid, ObjectToWrite).
 
 %% ===================================================================
 %% Test API
