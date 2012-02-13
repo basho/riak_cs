@@ -94,9 +94,10 @@ create_bucket(KeyId, Bucket, _ACL) ->
             {error, {riak_connect_failed, Reason}}
     end.
 
+
 %% @doc Create a new MOSS user
 -spec create_user(string(), string()) -> {ok, moss_user()}.
-create_user(UserName, Email) ->
+create_user(Name, Email) ->
     %% Validate the email address
     case validate_email(Email) of
         ok ->
@@ -556,11 +557,11 @@ fetch_user(Key, RiakPid) ->
 
 %% @doc Generate a new set of access credentials for user.
 -spec generate_access_creds(string()) -> {binary(), binary()}.
-generate_access_creds(UserName) ->
-    BinUser = list_to_binary(UserName),
-    KeyID = generate_key(BinUser),
-    Secret = generate_secret(BinUser, KeyID),
-    {KeyID, Secret}.
+generate_access_creds(UserId) ->
+    UserBin = list_to_binary(UserId),
+    KeyId = generate_key(UserBin),
+    Secret = generate_secret(UserBin, KeyId),
+    {KeyId, Secret}.
 
 %% @doc Retrieve a MOSS user's information based on their id string.
 -spec get_user(string(), pid()) -> {ok, {term(), term()}} | {error, term()}.
