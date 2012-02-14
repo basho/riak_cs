@@ -9,7 +9,10 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/0]).
+-export([start_link/0,
+         get_block/5,
+         put_block/6,
+         delete_block/5]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -56,6 +59,18 @@ start_link() ->
 %%--------------------------------------------------------------------
 init([]) ->
     {ok, #state{}}.
+
+-spec get_block(pid(), binary(), binary(), binary(), pos_integer()) -> ok.
+get_block(Pid, Bucket, Key, UUID, BlockNumber) ->
+    gen_server:cast(Pid, {get_block, Bucket, Key, UUID, BlockNumber}).
+
+-spec put_block(pid(), binary(), binary(), binary(), pos_integer(), binary()) -> ok.
+put_block(Pid, Bucket, Key, UUID, BlockNumber, Value) ->
+    gen_server:cast(Pid, {put_block, Bucket, Key, UUID, BlockNumber, Value}).
+
+-spec delete_block(pid(), binary(), binary(), binary(), pos_integer()) -> ok.
+delete_block(Pid, Bucket, Key, UUID, BlockNumber) ->
+    gen_server:cast(Pid, {delete_block, Bucket, Key, UUID, BlockNumber}).
 
 %%--------------------------------------------------------------------
 %% @private
