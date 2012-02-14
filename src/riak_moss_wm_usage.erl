@@ -141,18 +141,28 @@ mochijson_access({Access, Errors}) ->
       Access).
 
 mochijson_access_error({{Start, End}, Reason}) ->
-    JSReason = if is_atom(Reason) -> atom_to_binary(Reason, latin1);
-                  is_binary(Reason) -> Reason;
-                  true -> list_to_binary(io_lib:format("~p", [Reason]))
-               end,
     [{<<"start_time">>, riak_moss_access:iso8601(Start)},
      {<<"end_time">>, riak_moss_access:iso8601(End)},
-     {<<"reason">>, JSReason}].
+     {<<"reason">>, mochijson_reason(Reason)}].
+
+mochijson_reason(Reason) ->
+    if is_atom(Reason) -> atom_to_binary(Reason, latin1);
+       is_binary(Reason) -> Reason;
+       true -> list_to_binary(io_lib:format("~p", [Reason]))
+    end.
 
 mochijson_storage(Msg) when is_atom(Msg) ->
     Msg;
-mochijson_storage(Storage) ->
-    [ {struct, S} || S <- Storage ].
+mochijson_storage({Storage, Errors}) ->
+    [ mochijson_storage_sample(S) || S <- Storage ]
+        ++ [{struct, [{errors, [mochijson_storage_error(E)
+                                || E <- Errors]}]}].
+
+mochijson_storage_sample(Sample) ->
+    {struct, Sample}.
+
+mochijson_storage_error({Time, Reason}) ->
+    {struct, [{time, Time}, {reason, mochijson_reason(Reason)}]}.
 
 %% XML Production %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 produce_xml(RD, Ctx) ->
@@ -180,10 +190,7 @@ xml_access_error({{Start, End}, Reason}) ->
                   {<<"end_time">>, riak_moss_access:iso8601(End)}],
     {Tag, Props, Contents} = xml_access_sample(FakeSample),
 
-    XMLReason = [if is_atom(Reason) -> atom_to_binary(Reason, latin1);
-                   is_binary(Reason) -> Reason;
-                   true -> io_lib:format("~p", [Reason])
-                end],
+    XMLReason = xml_reason(Reason),
     {Tag, Props, [{'Reason', [XMLReason]}|Contents]}.
 
 xml_access_sample(Sample) ->
@@ -199,19 +206,30 @@ xml_name(<<"bytes_out">>)  -> 'BytesOut';
 xml_name(<<"bytes_in">>)   -> 'BytesIn';
 xml_name(Other)            -> binary_to_atom(Other, latin1).
 
+xml_reason(Reason) ->
+    [if is_atom(Reason) -> atom_to_binary(Reason, latin1);
+       is_binary(Reason) -> Reason;
+       true -> io_lib:format("~p", [Reason])
+     end].
+
 xml_storage(Msg) when is_atom(Msg) ->
     [atom_to_list(Msg)];
-xml_storage(Storage) ->
-    [xml_storage_sample(S) || S <- Storage].
+xml_storage({Storage, Errors}) ->
+    [xml_storage_sample(S) || S <- Storage]
+        ++ [{'Errors', [xml_storage_error(E) || E <- Errors ]}].
 
 xml_storage_sample(Sample) ->
-    {value, {<<"time">>, T}, SampleS} =
-        lists:keytake(<<"time">>, 1, Sample),
-    {value, {<<"bytes">>, Y}, _} =
-        lists:keytake(<<"bytes">>, 1, SampleS),
+    {value, {<<"start_time">>,S}, SampleS} =
+        lists:keytake(<<"start_time">>, 1, Sample),
+    {value, {<<"end_time">>,E}, Rest} =
+        lists:keytake(<<"end_time">>, 1, SampleS),
+    
+    {'Sample', [{start, S}, {'end', E}],
+     [{xml_name(K), [mochinum:digits(V)]} || {K, V} <- Rest]}.
 
-    {'Sample', [{time, T}], [{bytes, [mochinum:digits(Y)]}]}.
-
+xml_storage_error({Time, Reason}) ->
+    {'Sample', [{start, Time}], [{'Reason', [xml_reason(Reason)]}]}.
+    
 %% Internals %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 user_key(RD) ->
     mochiweb_util:unquote(wrq:path_info(user, RD)).
@@ -225,18 +243,10 @@ maybe_access(RD, #ctx{riak=Riak, start_time=Start, end_time=End}) ->
     end.
 
 %% TODO: this is just "now", not the span they asked for
-maybe_storage(RD, #ctx{riak=Riak}) ->
+maybe_storage(RD, #ctx{riak=Riak, start_time=Start, end_time=End}) ->
     case true_param(RD, "b") of
         true  ->
-            case riak_moss_storage:sum_user(Riak, user_key(RD)) of
-                {ok, Buckets} ->
-                    [[{<<"time">>, riak_moss_access:iso8601(
-                                     calendar:universal_time())},
-                      {<<"bytes">>, lists:sum([ Y || {_B, Y} <- Buckets,
-                                                     is_integer(Y) ])}]];
-                {error, _Error} ->
-                    error
-            end;
+            riak_moss_storage:get_usage(user_key(RD), Start, End, Riak);
         false ->
             not_requested
     end.

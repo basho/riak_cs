@@ -14,7 +14,8 @@
 %% API
 -export([start_link/0,
          status/0,
-         start_batch/0]).
+         start_batch/0,
+         read_storage_schedule/0]).
 
 %% gen_fsm callbacks
 -export([init/1,
