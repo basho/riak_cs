@@ -24,7 +24,7 @@
 
 -define(SERVER, ?MODULE).
 
--record(state, {}).
+-record(state, {riakc_pid :: pid()}).
 
 %%%===================================================================
 %%% API
@@ -58,19 +58,26 @@ start_link() ->
 %% @end
 %%--------------------------------------------------------------------
 init([]) ->
-    {ok, #state{}}.
+    case riak_moss_utils:riak_connection() of
+        {ok, RiakPid} ->
+            {ok, #state{riakc_pid=RiakPid}};
+        {error, Reason} ->
+            lager:error("Failed to establish connection to Riak. Reason: ~p",
+                        [Reason]),
+            {stop, riak_connect_failed}
+    end.
 
 -spec get_block(pid(), binary(), binary(), binary(), pos_integer()) -> ok.
 get_block(Pid, Bucket, Key, UUID, BlockNumber) ->
-    gen_server:cast(Pid, {get_block, Bucket, Key, UUID, BlockNumber}).
+    gen_server:cast(Pid, {get_block, self(), Bucket, Key, UUID, BlockNumber}).
 
 -spec put_block(pid(), binary(), binary(), binary(), pos_integer(), binary()) -> ok.
 put_block(Pid, Bucket, Key, UUID, BlockNumber, Value) ->
-    gen_server:cast(Pid, {put_block, Bucket, Key, UUID, BlockNumber, Value}).
+    gen_server:cast(Pid, {put_block, self(), Bucket, Key, UUID, BlockNumber, Value}).
 
 -spec delete_block(pid(), binary(), binary(), binary(), pos_integer()) -> ok.
 delete_block(Pid, Bucket, Key, UUID, BlockNumber) ->
-    gen_server:cast(Pid, {delete_block, Bucket, Key, UUID, BlockNumber}).
+    gen_server:cast(Pid, {delete_block, self(), Bucket, Key, UUID, BlockNumber}).
 
 %%--------------------------------------------------------------------
 %% @private
@@ -100,6 +107,37 @@ handle_call(_Request, _From, State) ->
 %%                                  {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
+handle_cast({get_block, ReplyPid, Bucket, Key, UUID, BlockNumber}, State=#state{riakc_pid=RiakcPid}) ->
+    {FullBucket, FullKey} = full_bkey(Bucket, Key, UUID, BlockNumber),
+    ChunkValue = case riakc_pb_socket:get(RiakcPid, FullBucket, FullKey) of
+        {ok, RiakObject} ->
+            {ok, riakc_obj:get_value(RiakObject)};
+        {error, notfound}=NotFound ->
+            NotFound
+    end,
+    riak_moss_get_fsm:chunk(ReplyPid, BlockNumber, ChunkValue),
+    {noreply, State};
+handle_cast({put_block, _ReplyPid, Bucket, Key, UUID, BlockNumber, Value}, State=#state{riakc_pid=RiakcPid}) ->
+    {FullBucket, FullKey} = full_bkey(Bucket, Key, UUID, BlockNumber),
+    RiakObject = riakc_obj:new(FullBucket, FullKey, Value),
+    %% TODO: note the return value
+    %% of this put call
+    riakc_pb_socket:put(RiakcPid, RiakObject),
+    %% TODO:
+    %% add a public func to riak_moss_put_fsm
+    %% to send messages back to the fsm
+    %% saying that the block was written
+    {noreply, State};
+handle_cast({delete_block, _ReplyPid, Bucket, Key, UUID, BlockNumber}, State=#state{riakc_pid=RiakcPid}) ->
+    {FullBucket, FullKey} = full_bkey(Bucket, Key, UUID, BlockNumber),
+    %% TODO: note the return
+    %% value of this delete call
+    riakc_pb_socket:delete(RiakcPid, FullBucket, FullKey),
+    %% TODO:
+    %% add a public func to riak_moss_delete_fsm 
+    %% to send messages back to the fsm
+    %% saying that the block was deleted
+    {noreply, State};
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
@@ -145,4 +183,9 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
-
+-spec full_bkey(binary(), binary(), binary(), pos_integer()) -> {binary(), binary()}.
+%% @private
+full_bkey(Bucket, Key, UUID, BlockNumber) ->
+    PrefixedBucket = riak_moss_utils:to_bucket_name(blocks, Bucket),
+    FullKey = riak_moss_lfs_utils:block_name(Key, UUID, BlockNumber),
+    {PrefixedBucket, FullKey}.
