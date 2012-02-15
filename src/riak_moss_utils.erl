@@ -102,8 +102,8 @@ create_user(Name, Email) ->
     case validate_email(Email) of
         ok ->
             {StanchionIp, StanchionPort, StanchionSSL} =
-                get_stanchion_data(),
-            User = user_record(UserName, Email),
+                stanchion_data(),
+            User = user_record(Name, Email),
             case get_admin_creds() of
                 {ok, AdminCreds} ->
                     %% Generate the user JSON document
