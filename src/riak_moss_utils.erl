@@ -17,7 +17,6 @@
          delete_object/2,
          from_bucket_name/1,
          get_admin_creds/0,
-         get_buckets/1,
          get_keys_and_objects/2,
          get_object/2,
          get_object/3,
@@ -93,7 +92,6 @@ create_bucket(KeyId, Bucket, _ACL) ->
         {error, Reason} ->
             {error, {riak_connect_failed, Reason}}
     end.
-
 
 %% @doc Create a new MOSS user
 -spec create_user(string(), string()) -> {ok, moss_user()}.
@@ -413,9 +411,9 @@ to_bucket_name(blocks, Name) ->
 %% ===================================================================
 
 %% @doc Check if a bucket is empty
--spec bucket_empty(string(), pid()) -> boolean().
+-spec bucket_empty(binary(), pid()) -> boolean().
 bucket_empty(Bucket, RiakPid) ->
-    ObjBucket = to_bucket_name(objects, list_to_binary(Bucket)),
+    ObjBucket = to_bucket_name(objects, Bucket),
     case list_keys(ObjBucket, RiakPid) of
         {ok, []} ->
             true;
@@ -434,7 +432,11 @@ bucket_exists(Buckets, CheckBucket) ->
     case SearchResults of
         [] ->
             false;
-        _ ->
+        {ok, _} ->
+            true;
+        {error, notfound} ->
+            false;
+        {error, _} ->
             true
     end.
 
