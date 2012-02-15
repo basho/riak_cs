@@ -666,19 +666,6 @@ resolve_buckets([HeadUserRec | RestUserRecs], Buckets, _KeepDeleted) ->
     UpdBuckets = lists:foldl(fun bucket_resolver/2, Buckets, HeadBuckets),
     resolve_buckets(RestUserRecs, UpdBuckets, _KeepDeleted).
 
-%% @doc Resolve the set of buckets for a user when
-%% siblings are encountered on a read of a user record.
--spec resolve_buckets([moss_user()], [moss_bucket()], boolean()) ->
-                             [moss_bucket()].
-resolve_buckets([], Buckets, true) ->
-    lists:sort(fun bucket_sorter/2, Buckets);
-resolve_buckets([], Buckets, false) ->
-    lists:sort(fun bucket_sorter/2, [Bucket || Bucket <- Buckets, not cleanup_bucket(Bucket)]);
-resolve_buckets([HeadUserRec | RestUserRecs], Buckets, _KeepDeleted) ->
-    HeadBuckets = HeadUserRec?MOSS_USER.buckets,
-    UpdBuckets = lists:foldl(fun bucket_resolver/2, Buckets, HeadBuckets),
-    resolve_buckets(RestUserRecs, UpdBuckets, _KeepDeleted).
-
 %% @doc Save information about a MOSS user
 -spec save_user(moss_user(), term(), pid()) -> ok.
 save_user(User, VClock, RiakPid) ->
@@ -793,8 +780,12 @@ update_user_buckets(User, Bucket, Action) ->
                 (Action == created andalso
                  ExistingBucket?MOSS_BUCKET.last_action == deleted) of
                 true ->
+<<<<<<< HEAD
                     UpdBuckets = [Bucket | lists:delete(ExistingBucket, Buckets)],
                     {ok, User?MOSS_USER{buckets=UpdBuckets}};
+=======
+                    {ok, [Bucket | lists:delete(ExistingBucket, Buckets)]};
+>>>>>>> Refactor and cleanup of bucket creation and deletion handling functions.
                 false ->
                     {ok, ignore}
             end
