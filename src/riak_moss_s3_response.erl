@@ -76,8 +76,8 @@ error_response(StatusCode, Code, Message, RD, Ctx) ->
 
 list_all_my_buckets_response(User, RD, Ctx) ->
     BucketsDoc = [{'Bucket',
-                   [{'Name', [B#moss_bucket.name]},
-                    {'CreationDate', [B#moss_bucket.creation_date]}]}
+                   [{'Name', [B?MOSS_BUCKET.name]},
+                    {'CreationDate', [B?MOSS_BUCKET.creation_date]}]}
                   || B <- riak_moss_utils:get_buckets(User)],
     Contents =  [user_to_xml_owner(User)] ++ [{'Buckets', BucketsDoc}],
     XmlDoc = [{'ListAllMyBucketsResult',  Contents}],
@@ -118,7 +118,7 @@ list_bucket_response(User, Bucket, KeyObjPairs, RD, Ctx) ->
                     end
                 end
                 || {Key, ObjResp} <- KeyObjPairs],
-    BucketProps = [{'Name', [Bucket#moss_bucket.name]},
+    BucketProps = [{'Name', [Bucket?MOSS_BUCKET.name]},
                    {'Prefix', []},
                    {'Marker', []},
                    {'MaxKeys', ["1000"]},

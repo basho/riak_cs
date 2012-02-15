@@ -202,7 +202,7 @@ canonicalize_resource(RD) ->
 
 %% bucket_owner(User=#moss_user{}, BucketName) ->
 %%     lists:member(BucketName,
-%%                  [B#moss_bucket.name
+%%                  [B?MOSS_BUCKET.name
 %%                   || B <- riak_moss_utils:get_buckets(User)]).
 
 
