@@ -82,37 +82,13 @@ create_bucket(KeyId, Bucket, _ACL) ->
             %% We don't do anything about
             %% {error, Reason} here
             {ok, {User, VClock}} = get_user(KeyId, RiakPid),
-            {StanchionIp, StanchionPort, StanchionSSL} = get_stanchion_data(),
-            case get_admin_creds() of
-                {ok, AdminCreds} ->
-                    %% Generate the bucket JSON document
-                    BucketDoc = bucket_json(Bucket, KeyId),
-                    %% Make a call to the bucket request
-                    %% serialization service.
-                    CreateResult = velvet:create_bucket(StanchionIp,
-                                                        StanchionPort,
-                                                        "application/json",
-                                                        BucketDoc,
-                                                        [{ssl, StanchionSSL},
-                                                         {auth_creds, AdminCreds}]),
-                    case CreateResult of
-                        ok ->
-                            BucketRecord = bucket_record(Bucket, created),
-                            case update_user_buckets(User, BucketRecord) of
-                                {ok, ignore} ->
-                                    Res = CreateResult;
-                                {ok, UpdUser} ->
-                                    Res = save_user(UpdUser, VClock, RiakPid)
-                            end;
-                        {error, {error_status, _, _, ErrorDoc}} ->
-                            ErrorCode = xml_error_code(ErrorDoc),
-                            Res = {error, riak_moss_s3_response:error_code_to_atom(ErrorCode)};
-                        {error, _} ->
-                            Res = CreateResult
-                    end;
-                {error, Reason1} ->
-                    Res = {error, Reason1}
-            end,
+            Res = serialized_bucket_op(Bucket,
+                                       KeyId,
+                                       User,
+                                       VClock,
+                                       created,
+                                       RiakPid),
+
             close_riak_connection(RiakPid),
             Res;
         {error, Reason} ->
@@ -140,7 +116,7 @@ create_user(UserName, Email) ->
 
 %% @doc Delete a bucket
 -spec delete_bucket(string(), binary()) -> ok.
-delete_bucket(KeyId, BucketName) ->
+delete_bucket(KeyId, Bucket) ->
     case riak_connection() of
         {ok, RiakPid} ->
             %% @TODO This will need to be updated once globally
@@ -148,11 +124,10 @@ delete_bucket(KeyId, BucketName) ->
             {ok, {User, VClock}} = get_user(KeyId, RiakPid),
             CurrentBuckets = get_buckets(User),
 
-            {StanchionIp, StanchionPort, StanchionSSL} = get_stanchion_data(),
             %% Buckets can only be deleted if they exist
-            case bucket_exists(CurrentBuckets, BucketName) of
+            case bucket_exists(CurrentBuckets, Bucket) of
                 true ->
-                    case bucket_empty(BucketName, RiakPid) of
+                    case bucket_empty(Bucket, RiakPid) of
                         true ->
                             AttemptDelete = true,
                             LocalError = ok;
@@ -166,32 +141,12 @@ delete_bucket(KeyId, BucketName) ->
             end,
             case AttemptDelete of
                 true ->
-                    case get_admin_creds() of
-                        {ok, AdminCreds} ->
-                            %% Make a call to the bucket request
-                            %% serialization service.
-                            DeleteRes = velvet:delete_bucket(StanchionIp,
-                                                             StanchionPort,
-                                                             BucketName,
-                                                             KeyId,
-                                                             [{ssl, StanchionSSL},
-                                                              {auth_creds, AdminCreds}]),
-                            case DeleteRes of
-                                ok ->
-                                    UpdatedBuckets =
-                                        remove_bucket(CurrentBuckets, BucketName),
-                                    UpdatedUser =
-                                        User#moss_user{buckets=UpdatedBuckets},
-                                    Res = save_user(UpdatedUser, VClock, RiakPid);
-                                {error, {error_status, _, _, ErrorDoc}} ->
-                                    ErrorCode = xml_error_code(ErrorDoc),
-                                    Res = {error, riak_moss_s3_response:error_code_to_atom(ErrorCode)};
-                                {error, _} ->
-                                    Res = DeleteRes
-                            end;
-                        {error, Reason1} ->
-                            Res = {error, Reason1}
-                    end;
+                    Res = serialized_bucket_op(Bucket,
+                                               KeyId,
+                                               User,
+                                               VClock,
+                                               deleted,
+                                               RiakPid);
                 false ->
                     Res = LocalError
             end,
@@ -230,8 +185,8 @@ from_bucket_name(BucketNameWithPrefix) ->
     end.
 
 %% @doc Return `stanchion' configuration data.
--spec get_stanchion_data() -> {string(), pos_integer(), boolean()} | {error, term()}.
-get_stanchion_data() ->
+-spec stanchion_data() -> {string(), pos_integer(), boolean()} | {error, term()}.
+stanchion_data() ->
     case application:get_env(riak_moss, stanchion_ip) of
         {ok, IP} ->
             ok;
@@ -454,12 +409,44 @@ bucket_empty(Bucket, RiakPid) ->
 -spec bucket_exists([moss_bucket()], string()) -> boolean().
 bucket_exists(Buckets, CheckBucket) ->
     SearchResults = [Bucket || Bucket <- Buckets,
-                               Bucket#moss_bucket.name =:= CheckBucket],
+                               Bucket?MOSS_BUCKET.name =:= CheckBucket andalso
+                                   Bucket?MOSS_BUCKET.last_action =:= created],
     case SearchResults of
         [] ->
             false;
         _ ->
             true
+    end.
+
+%% @doc Return a closure over a specific function
+%% call to the stanchion client module for either
+%% bucket creation or deletion.
+-spec bucket_fun(created | deleted,
+                 binary(),
+                 string(),
+                 {string(), string()},
+                 {string(), pos_integer(), boolean()}) -> function().
+bucket_fun(created, Bucket, KeyId, AdminCreds, StanchionData) ->
+    {StanchionIp, StanchionPort, StanchionSSL} = StanchionData,
+    %% Generate the bucket JSON document
+    BucketDoc = bucket_json(Bucket, KeyId),
+    fun() ->
+            velvet:create_bucket(StanchionIp,
+                                 StanchionPort,
+                                 "application/json",
+                                 BucketDoc,
+                                 [{ssl, StanchionSSL},
+                                  {auth_creds, AdminCreds}])
+    end;
+bucket_fun(deleted, Bucket, KeyId, AdminCreds, StanchionData) ->
+    {StanchionIp, StanchionPort, StanchionSSL} = StanchionData,
+    fun() ->
+            velvet:delete_bucket(StanchionIp,
+                                 StanchionPort,
+                                 Bucket,
+                                 KeyId,
+                                 [{ssl, StanchionSSL},
+                                  {auth_creds, AdminCreds}])
     end.
 
 %% @doc Generate a JSON document to use for a bucket
@@ -476,6 +463,7 @@ bucket_json(Bucket, KeyId)  ->
 bucket_record(Name, Action) ->
     ?MOSS_BUCKET{name=Name,
                  last_action=Action,
+                 creation_date=riak_moss_utils:iso_8601_datetime(),
                  modification_time=erlang:now()}.
 
 %% @doc Check for and resolve any conflict between
@@ -647,17 +635,6 @@ process_xml_error([HeadElement | RestElements]) ->
             process_xml_error(RestElements)
     end.
 
-%% @doc Remove a bucket from a user's list of buckets.
-%% @TODO This may need to change once globally unique buckets
-%% are enforced.
--spec remove_bucket([moss_bucket()], string()) -> boolean().
-remove_bucket(Buckets, RemovalBucket) ->
-    FilterFun =
-        fun(Element) ->
-                Element#moss_bucket.name =/= RemovalBucket
-        end,
-    lists:filter(FilterFun, Buckets).
-
 %% @doc Resolve the set of buckets for a user when
 %% siblings are encountered on a read of a user record.
 -spec resolve_buckets([moss_user()], [moss_bucket()], boolean()) ->
@@ -686,6 +663,46 @@ save_user(User, VClock, RiakPid) ->
     %% @TODO Error handling
     riakc_pb_socket:put(RiakPid, UserObj).
 
+%% @doc Shared code used when doing a bucket creation or deletion.
+-spec serialized_bucket_op(binary(),
+                           string(),
+                           moss_user(),
+                           term(),
+                           created | deleted,
+                           pid()) ->
+                                  {ok, moss_user()} |
+                                  {ok, ignore} |
+                                  {error, term()}.
+serialized_bucket_op(Bucket, KeyId, User, VClock, BucketOp, RiakPid) ->
+    case get_admin_creds() of
+        {ok, AdminCreds} ->
+            BucketFun = bucket_fun(BucketOp,
+                                   Bucket,
+                                   KeyId,
+                                   AdminCreds,
+                                   stanchion_data()),
+            %% Make a call to the bucket request
+            %% serialization service.
+            OpResult = BucketFun(),
+            case OpResult of
+                ok ->
+                    BucketRecord = bucket_record(Bucket, BucketOp),
+                    case update_user_buckets(User, BucketRecord, BucketOp) of
+                        {ok, ignore} ->
+                            OpResult;
+                        {ok, UpdUser} ->
+                            save_user(UpdUser, VClock, RiakPid)
+                    end;
+                {error, {error_status, _, _, ErrorDoc}} ->
+                    ErrorCode = xml_error_code(ErrorDoc),
+                    {error, riak_moss_s3_response:error_code_to_atom(ErrorCode)};
+                {error, _} ->
+                    OpResult
+            end;
+        {error, Reason1} ->
+            {error, Reason1}
+    end.
+
 %% @doc Validate an email address.
 -spec validate_email(string()) -> ok | {error, term()}.
 validate_email(EmailAddr) ->
@@ -706,9 +723,9 @@ xml_error_code(Xml) ->
 
 %% @doc Check if a user already has an ownership of
 %% a bucket and update the bucket list if needed.
--spec update_user_buckets(moss_user(), moss_bucket()) ->
+-spec update_user_buckets(moss_user(), moss_bucket(), created | deleted) ->
                                  {ok, ignore} | {ok, moss_user()}.
-update_user_buckets(User, Bucket) ->
+update_user_buckets(User, Bucket, Action) ->
     Buckets = User?MOSS_USER.buckets,
     %% At this point any siblings from the read of the
     %% user record have been resolved so the user bucket
@@ -718,11 +735,16 @@ update_user_buckets(User, Bucket) ->
         [] ->
             {ok, User?MOSS_USER{buckets=[Bucket | Buckets]}};
         [ExistingBucket] ->
-            case ExistingBucket?MOSS_BUCKET.last_action of
-                created ->
-                    {ok, ignore};
-                deleted ->
-                    {ok, [Bucket | lists:delete(ExistingBucket, Buckets)]}
+            case
+                (Action == deleted andalso
+                  ExistingBucket?MOSS_BUCKET.last_action == created)
+                orelse
+                (Action == created andalso
+                 ExistingBucket?MOSS_BUCKET.last_action == deleted) of
+                true ->
+                    {ok, [Bucket | lists:delete(ExistingBucket, Buckets)]};
+                false ->
+                    {ok, ignore}
             end
     end.
 
