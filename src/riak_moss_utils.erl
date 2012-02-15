@@ -211,9 +211,9 @@ stanchion_data() ->
     {IP, Port, SSL}.
 
 %% @doc Return a user's buckets.
--spec get_buckets(moss_user()) -> [binary()].
-get_buckets(#moss_user{buckets=Buckets}) ->
-    lists:sort(Buckets).
+-spec get_buckets(moss_user()) -> [moss_bucket()].
+get_buckets(?MOSS_USER{buckets=Buckets}) ->
+    Buckets.
 
 %% @doc Return a list of keys for a bucket along
 %% with their associated objects.
