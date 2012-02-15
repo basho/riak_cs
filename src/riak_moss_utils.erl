@@ -75,9 +75,7 @@ close_riak_connection(Pid) ->
 %% exist anywhere, since everyone
 %% shares a global bucket namespace
 -spec create_bucket(string(), binary(), acl_v1()) -> ok.
-create_bucket(KeyId, BucketName, _ACL) ->
-    Bucket = #moss_bucket{name=BucketName,
-                          creation_date=riak_moss_wm_utils:iso_8601_datetime()},
+create_bucket(KeyId, Bucket, _ACL) ->
     case riak_connection() of
         {ok, RiakPid} ->
             %% TODO:
@@ -586,6 +584,96 @@ get_user(KeyId, RiakPid) ->
             end;
         Error ->
             Error
+    end.
+
+%% @doc Perform an initial read attempt with R=PR=N.
+%% If the initial read fails retry using
+%% R=quorum and PR=1, but indicate that bucket deletion
+%% indicators should not be cleaned up.
+-spec fetch_user(binary(), pid()) ->
+                        {ok, {term(), boolean()}} | {error, term()}.
+fetch_user(Key, RiakPid) ->
+    StrongOptions = [{r, all}, {pr, all}, {notfound_ok, false}],
+    case riakc_pb_socket:get(RiakPid, ?USER_BUCKET, Key, StrongOptions) of
+        {ok, Obj} ->
+            {ok, {Obj, true}};
+        {error, _} ->
+            WeakOptions = [{r, quorum}, {pr, one}, {notfound_ok, false}],
+            case riakc_pb_socket:get(RiakPid, ?USER_BUCKET, Key, WeakOptions) of
+                {ok, Obj} ->
+                    {ok, {Obj, false}};
+                {error, Reason} ->
+                    {error, Reason}
+            end
+    end.
+
+%% @doc Return true if the last action for the bucket
+%% is deleted and the action occurred over 24 hours ago.
+-spec cleanup_bucket(moss_bucket()) -> boolean().
+cleanup_bucket(?MOSS_BUCKET{last_action=created}) ->
+    false;
+cleanup_bucket(?MOSS_BUCKET{last_action=deleted,
+                            modification_time=ModTime}) ->
+    timer:now_diff(erlang:now(), ModTime) > 86400.
+
+%% @doc Resolve the set of buckets for a user when
+%% siblings are encountered on a read of a user record.
+-spec resolve_buckets([moss_user()], [moss_bucket()], boolean()) ->
+                             [moss_bucket()].
+resolve_buckets([], Buckets, true) ->
+    Buckets;
+resolve_buckets([], Buckets, false) ->
+    [Bucket || Bucket <- Buckets, not cleanup_bucket(Bucket)];
+resolve_buckets([HeadUserVal | RestUserVals], Buckets, _KeepDeleted) ->
+    UserRecord = binary_to_term(HeadUserVal),
+    HeadBuckets = UserRecord?MOSS_USER.buckets,
+    UpdBuckets = lists:foldl(fun bucket_resolver/2, Buckets, HeadBuckets),
+    resolve_buckets(RestUserVals, UpdBuckets, _KeepDeleted).
+
+%% @doc Check for and resolve any conflict between
+%% a bucket record from a user record sibling and
+%% a list of resolved bucket records.
+-spec bucket_resolver(moss_bucket(), [moss_bucket()]) -> [moss_bucket()].
+bucket_resolver(Bucket, ResolvedBuckets) ->
+    case lists:member(Bucket, ResolvedBuckets) of
+        true ->
+            ResolvedBuckets;
+        false ->
+            case [RB || RB <- ResolvedBuckets,
+                        RB?MOSS_BUCKET.name =:=
+                            Bucket?MOSS_BUCKET.name] of
+                [] ->
+                    [Bucket | ResolvedBuckets];
+                [ExistingBucket] ->
+                    case keep_existing_bucket(ExistingBucket,
+                                              Bucket) of
+                        true ->
+                            ResolvedBuckets;
+                        false ->
+                           [Bucket | lists:delete(ExistingBucket,
+                                                  ResolvedBuckets)]
+                    end
+            end
+    end.
+
+%% @doc Determine if an existing bucket from the resolution list
+%% should be kept or replaced when a conflict occurs.
+-spec keep_existing_bucket(moss_bucket(), moss_bucket()) -> boolean().
+keep_existing_bucket(?MOSS_BUCKET{last_action=LastAction1,
+                                  modification_time=ModTime1},
+                     ?MOSS_BUCKET{last_action=LastAction2,
+                                  modification_time=ModTime2}) ->
+    if
+        LastAction1 == LastAction2
+        andalso
+        ModTime1 =< ModTime2 ->
+            true;
+        LastAction1 == LastAction2 ->
+            false;
+         ModTime1 > ModTime2 ->
+            true;
+        true ->
+            false
     end.
 
 %% @doc Generate the canonical id for a user.
