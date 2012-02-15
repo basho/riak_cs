@@ -23,6 +23,7 @@
 -record(moss_bucket_v1, {
           name :: string(),
           last_action :: created | deleted,
+          creation_date :: string(),
           modification_time :: erlang:timestamp(),
           acl :: bucket_acl()}).
 -type moss_bucket() :: #moss_bucket_v1{}.
