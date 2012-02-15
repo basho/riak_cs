@@ -34,6 +34,10 @@
 -include("riak_moss.hrl").
 -include_lib("xmerl/include/xmerl.hrl").
 
+-ifdef(TEST).
+-compile(export_all).
+-endif.
+
 -define(OBJECT_BUCKET_PREFIX, <<"objects:">>).
 -define(BLOCK_BUCKET_PREFIX, <<"blocks:">>).
 
