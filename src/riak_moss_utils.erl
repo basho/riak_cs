@@ -123,15 +123,7 @@ create_user(UserName, Email) ->
         ok ->
             case riak_connection() of
                 {ok, RiakPid} ->
-                    {KeyID, Secret} = generate_access_creds(UserName),
-                    CanonicalID = generate_canonical_id(KeyID, Secret),
-                    DisplayName = display_name(Email),
-                    User = ?MOSS_USER{name=UserName,
-                                      display_name=DisplayName,
-                                      email=Email,
-                                      key_id=KeyID,
-                                      key_secret=Secret,
-                                      canonical_id=CanonicalID},
+                    User = user_record(UserName, Email),
                     save_user(User, undefined, RiakPid),
                     close_riak_connection(RiakPid),
                     {ok, User};
@@ -482,11 +474,74 @@ bucket_record(Name, Action) ->
                  last_action=Action,
                  modification_time=erlang:now()}.
 
+%% @doc Check for and resolve any conflict between
+%% a bucket record from a user record sibling and
+%% a list of resolved bucket records.
+-spec bucket_resolver(moss_bucket(), [moss_bucket()]) -> [moss_bucket()].
+bucket_resolver(Bucket, ResolvedBuckets) ->
+    case lists:member(Bucket, ResolvedBuckets) of
+        true ->
+            ResolvedBuckets;
+        false ->
+            case [RB || RB <- ResolvedBuckets,
+                        RB?MOSS_BUCKET.name =:=
+                            Bucket?MOSS_BUCKET.name] of
+                [] ->
+                    [Bucket | ResolvedBuckets];
+                [ExistingBucket] ->
+                    case keep_existing_bucket(ExistingBucket,
+                                              Bucket) of
+                        true ->
+                            ResolvedBuckets;
+                        false ->
+                           [Bucket | lists:delete(ExistingBucket,
+                                                  ResolvedBuckets)]
+                    end
+            end
+    end.
+
+%% @doc Ordering function for sorting a list of bucket records
+%% according to bucket name.
+-spec bucket_sorter(moss_bucket(), moss_bucket()) -> boolean().
+bucket_sorter(?MOSS_BUCKET{name=Bucket1},
+              ?MOSS_BUCKET{name=Bucket2}) ->
+    Bucket1 =< Bucket2.
+
+%% @doc Return true if the last action for the bucket
+%% is deleted and the action occurred over 24 hours ago.
+-spec cleanup_bucket(moss_bucket()) -> boolean().
+cleanup_bucket(?MOSS_BUCKET{last_action=created}) ->
+    false;
+cleanup_bucket(?MOSS_BUCKET{last_action=deleted,
+                            modification_time=ModTime}) ->
+    timer:now_diff(erlang:now(), ModTime) > 86400.
+
 %% @doc Strip off the user name portion of an email address
 -spec display_name(string()) -> string().
 display_name(Email) ->
     Index = string:chr(Email, $@),
     string:sub_string(Email, 1, Index-1).
+
+%% @doc Perform an initial read attempt with R=PR=N.
+%% If the initial read fails retry using
+%% R=quorum and PR=1, but indicate that bucket deletion
+%% indicators should not be cleaned up.
+-spec fetch_user(binary(), pid()) ->
+                        {ok, {term(), boolean()}} | {error, term()}.
+fetch_user(Key, RiakPid) ->
+    StrongOptions = [{r, all}, {pr, all}, {notfound_ok, false}],
+    case riakc_pb_socket:get(RiakPid, ?USER_BUCKET, Key, StrongOptions) of
+        {ok, Obj} ->
+            {ok, {Obj, true}};
+        {error, _} ->
+            WeakOptions = [{r, quorum}, {pr, one}, {notfound_ok, false}],
+            case riakc_pb_socket:get(RiakPid, ?USER_BUCKET, Key, WeakOptions) of
+                {ok, Obj} ->
+                    {ok, {Obj, false}};
+                {error, Reason} ->
+                    {error, Reason}
+            end
+    end.
 
 %% @doc Generate a new set of access credentials for user.
 -spec generate_access_creds(string()) -> {binary(), binary()}.
@@ -521,96 +576,6 @@ get_user(KeyId, RiakPid) ->
             Error
     end.
 
-%% @doc Perform an initial read attempt with R=PR=N.
-%% If the initial read fails retry using
-%% R=quorum and PR=1, but indicate that bucket deletion
-%% indicators should not be cleaned up.
--spec fetch_user(binary(), pid()) ->
-                        {ok, {term(), boolean()}} | {error, term()}.
-fetch_user(Key, RiakPid) ->
-    StrongOptions = [{r, all}, {pr, all}, {notfound_ok, false}],
-    case riakc_pb_socket:get(RiakPid, ?USER_BUCKET, Key, StrongOptions) of
-        {ok, Obj} ->
-            {ok, {Obj, true}};
-        {error, _} ->
-            WeakOptions = [{r, quorum}, {pr, one}, {notfound_ok, false}],
-            case riakc_pb_socket:get(RiakPid, ?USER_BUCKET, Key, WeakOptions) of
-                {ok, Obj} ->
-                    {ok, {Obj, false}};
-                {error, Reason} ->
-                    {error, Reason}
-            end
-    end.
-
-%% @doc Return true if the last action for the bucket
-%% is deleted and the action occurred over 24 hours ago.
--spec cleanup_bucket(moss_bucket()) -> boolean().
-cleanup_bucket(?MOSS_BUCKET{last_action=created}) ->
-    false;
-cleanup_bucket(?MOSS_BUCKET{last_action=deleted,
-                            modification_time=ModTime}) ->
-    timer:now_diff(erlang:now(), ModTime) > 86400.
-
-%% @doc Resolve the set of buckets for a user when
-%% siblings are encountered on a read of a user record.
--spec resolve_buckets([moss_user()], [moss_bucket()], boolean()) ->
-                             [moss_bucket()].
-resolve_buckets([], Buckets, true) ->
-    Buckets;
-resolve_buckets([], Buckets, false) ->
-    [Bucket || Bucket <- Buckets, not cleanup_bucket(Bucket)];
-resolve_buckets([HeadUserVal | RestUserVals], Buckets, _KeepDeleted) ->
-    UserRecord = binary_to_term(HeadUserVal),
-    HeadBuckets = UserRecord?MOSS_USER.buckets,
-    UpdBuckets = lists:foldl(fun bucket_resolver/2, Buckets, HeadBuckets),
-    resolve_buckets(RestUserVals, UpdBuckets, _KeepDeleted).
-
-%% @doc Check for and resolve any conflict between
-%% a bucket record from a user record sibling and
-%% a list of resolved bucket records.
--spec bucket_resolver(moss_bucket(), [moss_bucket()]) -> [moss_bucket()].
-bucket_resolver(Bucket, ResolvedBuckets) ->
-    case lists:member(Bucket, ResolvedBuckets) of
-        true ->
-            ResolvedBuckets;
-        false ->
-            case [RB || RB <- ResolvedBuckets,
-                        RB?MOSS_BUCKET.name =:=
-                            Bucket?MOSS_BUCKET.name] of
-                [] ->
-                    [Bucket | ResolvedBuckets];
-                [ExistingBucket] ->
-                    case keep_existing_bucket(ExistingBucket,
-                                              Bucket) of
-                        true ->
-                            ResolvedBuckets;
-                        false ->
-                           [Bucket | lists:delete(ExistingBucket,
-                                                  ResolvedBuckets)]
-                    end
-            end
-    end.
-
-%% @doc Determine if an existing bucket from the resolution list
-%% should be kept or replaced when a conflict occurs.
--spec keep_existing_bucket(moss_bucket(), moss_bucket()) -> boolean().
-keep_existing_bucket(?MOSS_BUCKET{last_action=LastAction1,
-                                  modification_time=ModTime1},
-                     ?MOSS_BUCKET{last_action=LastAction2,
-                                  modification_time=ModTime2}) ->
-    if
-        LastAction1 == LastAction2
-        andalso
-        ModTime1 =< ModTime2 ->
-            true;
-        LastAction1 == LastAction2 ->
-            false;
-         ModTime1 > ModTime2 ->
-            true;
-        true ->
-            false
-    end.
-
 %% @doc Generate the canonical id for a user.
 -spec generate_canonical_id(string(), string()) -> string().
 generate_canonical_id(KeyID, Secret) ->
@@ -643,6 +608,26 @@ generate_secret(UserName, Key) ->
       iolist_to_binary(<< SecretPart1:Bytes/binary,
                           SecretPart2:Bytes/binary >>)).
 
+%% @doc Determine if an existing bucket from the resolution list
+%% should be kept or replaced when a conflict occurs.
+-spec keep_existing_bucket(moss_bucket(), moss_bucket()) -> boolean().
+keep_existing_bucket(?MOSS_BUCKET{last_action=LastAction1,
+                                  modification_time=ModTime1},
+                     ?MOSS_BUCKET{last_action=LastAction2,
+                                  modification_time=ModTime2}) ->
+    if
+        LastAction1 == LastAction2
+        andalso
+        ModTime1 =< ModTime2 ->
+            true;
+        LastAction1 == LastAction2 ->
+            false;
+         ModTime1 > ModTime2 ->
+            true;
+        true ->
+            false
+    end.
+
 %% @doc Process the top-level elements of the
 -spec process_xml_error([xmlElement()]) -> string().
 process_xml_error([]) ->
@@ -669,10 +654,31 @@ remove_bucket(Buckets, RemovalBucket) ->
         end,
     lists:filter(FilterFun, Buckets).
 
+%% @doc Resolve the set of buckets for a user when
+%% siblings are encountered on a read of a user record.
+-spec resolve_buckets([moss_user()], [moss_bucket()], boolean()) ->
+                             [moss_bucket()].
+resolve_buckets([], Buckets, true) ->
+    lists:sort(fun bucket_sorter/2, Buckets);
+resolve_buckets([], Buckets, false) ->
+    lists:sort(fun bucket_sorter/2, [Bucket || Bucket <- Buckets, not cleanup_bucket(Bucket)]);
+resolve_buckets([HeadUserRec | RestUserRecs], Buckets, _KeepDeleted) ->
+    HeadBuckets = HeadUserRec?MOSS_USER.buckets,
+    UpdBuckets = lists:foldl(fun bucket_resolver/2, Buckets, HeadBuckets),
+    resolve_buckets(RestUserRecs, UpdBuckets, _KeepDeleted).
+
 %% @doc Save information about a MOSS user
 -spec save_user(moss_user(), term(), pid()) -> ok.
-save_user(User, _VClock, RiakPid) ->
-    UserObj = riakc_obj:new(?USER_BUCKET, list_to_binary(User?MOSS_USER.key_id), User),
+save_user(User, VClock, RiakPid) ->
+    UserObj0 = riakc_obj:new(?USER_BUCKET,
+                             list_to_binary(User?MOSS_USER.key_id),
+                             User),
+    case VClock of
+        undefined ->
+            UserObj = UserObj0;
+        _ ->
+            UserObj = riakc_obj:set_vclock(UserObj0, VClock)
+    end,
     %% @TODO Error handling
     riakc_pb_socket:put(RiakPid, UserObj).
 
@@ -715,3 +721,24 @@ update_user_buckets(User, Bucket) ->
                     {ok, [Bucket | lists:delete(ExistingBucket, Buckets)]}
             end
     end.
+
+%% @doc Return a user record for the specified user name and
+%% email address.
+-spec user_record(string(), string()) -> moss_user().
+user_record(Name, Email) ->
+    user_record(Name, Email, []).
+
+%% @doc Return a user record for the specified user name and
+%% email address.
+-spec user_record(string(), string(), [moss_bucket()]) -> moss_user().
+user_record(Name, Email, Buckets) ->
+    {KeyId, Secret} = generate_access_creds(Name),
+    CanonicalId = generate_canonical_id(KeyId, Secret),
+    DisplayName = display_name(Email),
+    ?MOSS_USER{name=Name,
+               display_name=DisplayName,
+               email=Email,
+               key_id=KeyId,
+               key_secret=Secret,
+               canonical_id=CanonicalId,
+               buckets=Buckets}.
