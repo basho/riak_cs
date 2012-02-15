@@ -232,6 +232,11 @@ stanchion_data() ->
     end,
     {IP, Port, SSL}.
 
+%% @doc Return a user's buckets.
+-spec get_buckets(moss_user()) -> [moss_bucket()].
+get_buckets(?MOSS_USER{buckets=Buckets}) ->
+    Buckets.
+
 %% @doc Return a list of keys for a bucket along
 %% with their associated objects.
 -spec get_keys_and_objects(binary(), binary()) -> {ok, [binary()]}.
@@ -780,12 +785,8 @@ update_user_buckets(User, Bucket, Action) ->
                 (Action == created andalso
                  ExistingBucket?MOSS_BUCKET.last_action == deleted) of
                 true ->
-<<<<<<< HEAD
                     UpdBuckets = [Bucket | lists:delete(ExistingBucket, Buckets)],
                     {ok, User?MOSS_USER{buckets=UpdBuckets}};
-=======
-                    {ok, [Bucket | lists:delete(ExistingBucket, Buckets)]};
->>>>>>> Refactor and cleanup of bucket creation and deletion handling functions.
                 false ->
                     {ok, ignore}
             end
