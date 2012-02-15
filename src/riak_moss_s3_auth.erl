@@ -26,7 +26,7 @@
 authenticate(RD, [KeyID, Signature]) ->
     %% @TODO Also handle riak connection error
     case riak_moss_utils:get_user(KeyID) of
-        {ok, User} ->
+        {ok, {User, _}} ->
             CalculatedSignature =
                 calculate_signature(User?MOSS_USER.key_secret, RD),
             case check_auth(Signature, CalculatedSignature) of
@@ -202,7 +202,7 @@ canonicalize_resource(RD) ->
 
 %% bucket_owner(User=#moss_user{}, BucketName) ->
 %%     lists:member(BucketName,
-%%                  [B#moss_bucket.name
+%%                  [B?MOSS_BUCKET.name
 %%                   || B <- riak_moss_utils:get_buckets(User)]).
 
 

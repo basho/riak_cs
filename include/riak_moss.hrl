@@ -19,7 +19,14 @@
           name :: string(),
           creation_date :: term(),
           acl :: bucket_acl()}).
--type moss_bucket() :: #moss_bucket{}.
+
+-record(moss_bucket_v1, {
+          name :: string(),
+          last_action :: created | deleted,
+          creation_date :: string(),
+          modification_time :: erlang:timestamp(),
+          acl :: bucket_acl()}).
+-type moss_bucket() :: #moss_bucket_v1{}.
 
 -record(context, {auth_bypass :: atom(),
                   user :: #moss_user{}}).
@@ -40,8 +47,12 @@
 -type acl_v1() :: #acl_v1{}.
 
 -define(ACL, #acl_v1).
+-define(MOSS_BUCKET, #moss_bucket_v1).
 -define(MOSS_USER, #moss_user_v1).
 -define(USER_BUCKET, <<"moss.users">>).
 -define(MAX_CONTENT_LENGTH, 5368709120). %% 5 GB
 -define(DEFAULT_LFS_BLOCK_SIZE, 1048576).%% 1 MB
 -define(XML_PROLOG, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>").
+-define(DEFAULT_STANCHION_IP, "127.0.0.1").
+-define(DEFAULT_STANCHION_PORT, 8085).
+-define(DEFAULT_STANCHION_SSL, true).
