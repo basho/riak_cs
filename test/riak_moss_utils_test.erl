@@ -44,14 +44,14 @@ riak_moss_utils_test_() ->
        fun teardown/1,
        fun(_X) ->
                [
-                name_matches(),
-                bucket_appears(),
-                key_appears(),
-                content_type_sticks(),
-                keys_are_sorted(),
-                object_returns(),
-                object_deletes(),
-                nonexistent_deletes()
+                %% name_matches(),
+                %% bucket_appears(),
+                %% key_appears(),
+                %% content_type_sticks(),
+                %% keys_are_sorted(),
+                %% object_returns(),
+                %% object_deletes(),
+                %% nonexistent_deletes()
                ]
        end
       }]}.
@@ -67,7 +67,7 @@ name_matches() ->
     {"name matches test",
      fun() ->
              [
-              ?_assertEqual(Name, User#moss_user.name)
+              ?_assertEqual(Name, User?MOSS_USER.name)
              ]
      end
     }.
@@ -81,7 +81,7 @@ bucket_appears() ->
     Email = "fooser@fooser.com",
     BucketName = "fooser-bucket",
     {ok, User} = riak_moss_utils:create_user(Name, Email),
-    KeyID = User#moss_user.key_id,
+    KeyID = User?MOSS_USER.key_id,
     riak_moss_utils:create_bucket(KeyID, BucketName),
     {ok, UserAfter} = riak_moss_utils:get_user(KeyID),
     AfterBucketNames = [B#moss_bucket.name ||
@@ -108,7 +108,7 @@ key_appears() ->
     BucketName = "key_appears",
     KeyName = "testkey",
     {ok, User} = riak_moss_utils:create_user(Name, Email),
-    KeyID = User#moss_user.key_id,
+    KeyID = User?MOSS_USER.key_id,
     ok = riak_moss_utils:create_bucket(KeyID, BucketName),
     riak_moss_utils:put_object(BucketName, KeyName,
                                "value", dict:new()),
@@ -133,7 +133,7 @@ content_type_sticks() ->
     CType = "x-foo/bar",
     Metadata = dict:from_list([{<<"content-type">>, CType}]),
     {ok, User} = riak_moss_utils:create_user(Name, Email),
-    KeyID = User#moss_user.key_id,
+    KeyID = User?MOSS_USER.key_id,
     ok = riak_moss_utils:create_bucket(KeyID, BucketName),
     riak_moss_utils:put_object(BucketName, KeyName,
                                <<"value">>, Metadata),
@@ -156,7 +156,7 @@ keys_are_sorted() ->
     Keys = [<<"dog">>, <<"zebra">>, <<"aardvark">>, <<01>>, <<"panda">>],
 
     {ok, User} = riak_moss_utils:create_user(Name, Email),
-    KeyID = User#moss_user.key_id,
+    KeyID = User?MOSS_USER.key_id,
     ok = riak_moss_utils:create_bucket(KeyID, BucketName),
 
     [riak_moss_utils:put_object(BucketName, binary_to_list(KeyName),
