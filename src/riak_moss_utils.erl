@@ -558,8 +558,9 @@ get_user(KeyId, RiakPid) ->
                 0 ->
                     {error, no_value};
                 _ ->
-                    Values = riakc_obj:get_values(Obj),
-                    User = binary_to_term(hd(Values)),
+                    Values = [binary_to_term(Value) ||
+                                 Value <- riakc_obj:get_values(Obj)],
+                    User = hd(Values),
                     Buckets = resolve_buckets(Values, [], KeepDeletedBuckets),
                     {ok, {User?MOSS_USER{buckets=Buckets},
                           riakc_obj:vclock(Obj)}}
