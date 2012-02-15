@@ -463,7 +463,7 @@ bucket_json(Bucket, KeyId)  ->
 bucket_record(Name, Action) ->
     ?MOSS_BUCKET{name=Name,
                  last_action=Action,
-                 creation_date=riak_moss_utils:iso_8601_datetime(),
+                 creation_date=riak_moss_wm_utils:iso_8601_datetime(),
                  modification_time=erlang:now()}.
 
 %% @doc Check for and resolve any conflict between
