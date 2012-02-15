@@ -17,7 +17,6 @@
          delete_object/2,
          from_bucket_name/1,
          get_admin_creds/0,
-         get_buckets/1,
          get_keys_and_objects/2,
          get_object/2,
          get_object/3,
@@ -88,7 +87,6 @@ create_bucket(KeyId, Bucket, _ACL) ->
                                        VClock,
                                        created,
                                        RiakPid),
-
             close_riak_connection(RiakPid),
             Res;
         {error, Reason} ->
@@ -97,21 +95,41 @@ create_bucket(KeyId, Bucket, _ACL) ->
 
 %% @doc Create a new MOSS user
 -spec create_user(string(), string()) -> {ok, moss_user()}.
-create_user(UserName, Email) ->
+create_user(Name, Email) ->
     %% Validate the email address
     case validate_email(Email) of
         ok ->
-            case riak_connection() of
-                {ok, RiakPid} ->
-                    User = user_record(UserName, Email),
-                    save_user(User, undefined, RiakPid),
-                    close_riak_connection(RiakPid),
-                    {ok, User};
-                {error, Reason} ->
-                    {error, {riak_connect_failed, Reason}}
+            {StanchionIp, StanchionPort, StanchionSSL} =
+                stanchion_data(),
+            User = user_record(Name, Email),
+            case get_admin_creds() of
+                {ok, AdminCreds} ->
+                    %% Generate the user JSON document
+                    UserDoc = user_json(User),
+
+                    %% Make a call to the user request
+                    %% serialization service.
+                    CreateResult =
+                        velvet:create_user(StanchionIp,
+                                           StanchionPort,
+                                           "application/json",
+                                           UserDoc,
+                                           [{ssl, StanchionSSL},
+                                            {auth_creds, AdminCreds}]),
+                    case CreateResult of
+                        ok ->
+                            {ok, User};
+                        {error, {error_status, _, _, ErrorDoc}} ->
+                            ErrorCode = xml_error_code(ErrorDoc),
+                            {error, riak_moss_s3_response:error_code_to_atom(ErrorCode)};
+                        {error, _} ->
+                            CreateResult
+                    end;
+                {error, Reason1} ->
+                    {error, {riak_connect_failed, Reason1}}
             end;
-        {error, Reason1} ->
-            {error, Reason1}
+        {error, Reason} ->
+            {error, Reason}
     end.
 
 %% @doc Delete a bucket
@@ -393,9 +411,9 @@ to_bucket_name(blocks, Name) ->
 %% ===================================================================
 
 %% @doc Check if a bucket is empty
--spec bucket_empty(string(), pid()) -> boolean().
+-spec bucket_empty(binary(), pid()) -> boolean().
 bucket_empty(Bucket, RiakPid) ->
-    ObjBucket = to_bucket_name(objects, list_to_binary(Bucket)),
+    ObjBucket = to_bucket_name(objects, Bucket),
     case list_keys(ObjBucket, RiakPid) of
         {ok, []} ->
             true;
@@ -414,7 +432,11 @@ bucket_exists(Buckets, CheckBucket) ->
     case SearchResults of
         [] ->
             false;
-        _ ->
+        {ok, _} ->
+            true;
+        {error, notfound} ->
+            false;
+        {error, _} ->
             true
     end.
 
@@ -537,11 +559,11 @@ fetch_user(Key, RiakPid) ->
 
 %% @doc Generate a new set of access credentials for user.
 -spec generate_access_creds(string()) -> {binary(), binary()}.
-generate_access_creds(UserName) ->
-    BinUser = list_to_binary(UserName),
-    KeyID = generate_key(BinUser),
-    Secret = generate_secret(BinUser, KeyID),
-    {KeyID, Secret}.
+generate_access_creds(UserId) ->
+    UserBin = list_to_binary(UserId),
+    KeyId = generate_key(UserBin),
+    Secret = generate_secret(UserBin, KeyId),
+    {KeyId, Secret}.
 
 %% @doc Retrieve a MOSS user's information based on their id string.
 -spec get_user(string(), pid()) -> {ok, {term(), term()}} | {error, term()}.
@@ -703,6 +725,26 @@ serialized_bucket_op(Bucket, KeyId, User, VClock, BucketOp, RiakPid) ->
         {error, Reason1} ->
             {error, Reason1}
     end.
+
+%% @doc Generate a JSON document to use for a user
+%% creation request.
+-spec user_json(moss_user()) -> string().
+user_json(User) ->
+    ?MOSS_USER{name=UserName,
+               display_name=DisplayName,
+               email=Email,
+               key_id=KeyId,
+               key_secret=Secret,
+               canonical_id=CanonicalId} = User,
+    binary_to_list(
+      iolist_to_binary(
+        mochijson2:encode([{struct, [{<<"email">>, list_to_binary(Email)}]},
+                           {struct, [{<<"display_name">>, list_to_binary(DisplayName)}]},
+                           {struct, [{<<"name">>, list_to_binary(UserName)}]},
+                           {struct, [{<<"key_id">>, list_to_binary(KeyId)}]},
+                           {struct, [{<<"key_secret">>, list_to_binary(Secret)}]},
+                           {struct, [{<<"canonical_id">>, list_to_binary(CanonicalId)}]}
+                          ]))).
 
 %% @doc Validate an email address.
 -spec validate_email(string()) -> ok | {error, term()}.

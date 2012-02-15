@@ -23,6 +23,8 @@ error_message(bucket_not_empty) ->
     "The bucket you tried to delete is not empty.";
 error_message(bucket_already_exists) ->
     "The requested bucket name is not available. The bucket namespace is shared by all users of the system. Please select a different name and try again.";
+error_message(user_already_exists) ->
+    "The specified email address has already been registered. Email addresses must be unique among all users of the system. Please try again with a different email address.";
 error_message(entity_too_large) ->
     "Your proposed upload exceeds the maximum allowed object size.";
 error_message(no_such_bucket) ->
@@ -33,11 +35,11 @@ error_message(admin_key_undefined) -> "Please reduce your request rate.";
 error_message(admin_secret_undefined) -> "Please reduce your request rate.";
 error_message(econnrefused) -> "Please reduce your request rate.".
 
-
 error_code(invalid_access_key_id) -> "InvalidAccessKeyId";
 error_code(access_denied) -> "AccessDenied";
 error_code(bucket_not_empty) -> "BucketNotEmpty";
 error_code(bucket_already_exists) -> "BucketAlreadyExists";
+error_code(user_already_exists) -> "UserAlreadyExists";
 error_code(entity_too_large) -> "EntityTooLarge";
 error_code(no_such_bucket) -> "NoSuchBucket";
 error_code({riak_connect_failed, _}) -> "RiakConnectFailed";
@@ -45,12 +47,12 @@ error_code(admin_key_undefined) -> "ServiceUnavailable";
 error_code(admin_secret_undefined) -> "ServiceUnavailable";
 error_code(econnrefused) -> "ServiceUnavailable".
 
-
 status_code(invalid_access_key_id) -> 403;
 status_code(invalid_email_address) -> 400;
 status_code(access_denied) ->  403;
 status_code(bucket_not_empty) ->  409;
 status_code(bucket_already_exists) -> 409;
+status_code(user_already_exists) -> 409;
 status_code(entity_too_large) -> 400;
 status_code(no_such_bucket) -> 404;
 status_code({riak_connect_failed, _}) -> 503;
@@ -149,6 +151,8 @@ error_code_to_atom(ErrorCode) ->
             bucket_not_empty;
         "BucketAlreadyExists" ->
             bucket_already_exists;
+        "UserAlreadyExists" ->
+            user_already_exists;
         "NoSuchBucket" ->
             no_such_bucket;
         _ ->
