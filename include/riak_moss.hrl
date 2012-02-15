@@ -19,7 +19,13 @@
           name :: string(),
           creation_date :: term(),
           acl :: bucket_acl()}).
--type moss_bucket() :: #moss_bucket{}.
+
+-record(moss_bucket_v1, {
+          name :: string(),
+          last_action :: created | deleted,
+          modification_time :: erlang:timestamp(),
+          acl :: bucket_acl()}).
+-type moss_bucket() :: #moss_bucket_v1{}.
 
 -record(context, {auth_bypass :: atom(),
                   user :: #moss_user{}}).
@@ -40,6 +46,7 @@
 -type acl_v1() :: #acl_v1{}.
 
 -define(ACL, #acl_v1).
+-define(MOSS_BUCKET, #moss_bucket_v1).
 -define(MOSS_USER, #moss_user_v1).
 -define(USER_BUCKET, <<"moss.users">>).
 -define(MAX_CONTENT_LENGTH, 5368709120). %% 5 GB
