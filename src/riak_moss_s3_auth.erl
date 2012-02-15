@@ -26,7 +26,7 @@
 authenticate(RD, [KeyID, Signature]) ->
     %% @TODO Also handle riak connection error
     case riak_moss_utils:get_user(KeyID) of
-        {ok, User} ->
+        {ok, {User, _}} ->
             CalculatedSignature =
                 calculate_signature(User?MOSS_USER.key_secret, RD),
             case check_auth(Signature, CalculatedSignature) of
