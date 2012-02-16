@@ -29,6 +29,8 @@
 -export([
          new_sample/6,
          find_samples/6,
+         slice_containing/2,
+         next_slice/2,
          iso8601/1
         ]).
 

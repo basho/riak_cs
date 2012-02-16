@@ -130,7 +130,7 @@ init(Props) ->
     %% accuracy in recording: say the first slice starts *now*, not
     %% at the just-passed boundary
     Start = calendar:universal_time(),
-    {_,End} = riak_moss_access:slice_containing(Start),
+    {_,End} = rts:slice_containing(Start, P),
     C = {Start, End},
 
     InitState = #state{period=P, table=T, current=C},
@@ -254,7 +254,7 @@ do_archive(#state{period=P, table=T, current=C}=State) ->
 
     %% create a fresh table for use here
     NewT = fresh_table(),
-    NewC = riak_moss_access:next_slice(C, P),
+    NewC = rts:next_slice(C, P),
     State#state{table=NewT, current=NewC}.
 
 %% @doc Digest a Webmachine log data record, and produce a record for
