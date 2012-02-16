@@ -14,28 +14,29 @@
           buckets=[] :: [moss_bucket()]}).
 -type moss_user() :: #moss_user_v1{}.
 
--type bucket_acl() :: string().
 -record(moss_bucket, {
           name :: string(),
           creation_date :: term(),
-          acl :: bucket_acl()}).
+          acl :: acl_v1()}).
 
 -record(moss_bucket_v1, {
           name :: string(),
           last_action :: created | deleted,
           creation_date :: string(),
           modification_time :: erlang:timestamp(),
-          acl :: bucket_acl()}).
+          acl :: acl_v1()}).
 -type moss_bucket() :: #moss_bucket_v1{}.
 
 -record(context, {auth_bypass :: atom(),
-                  user :: #moss_user{}}).
+                  user :: moss_user(),
+                  bucket :: binary()
+                 }).
 
 -record(key_context, {context :: #context{},
                       doc_metadata :: term(),
                       get_fsm_pid :: pid(),
                       putctype :: string(),
-                      bucket :: list(),
+                      bucket :: binary(),
                       key :: list(),
                       size :: non_neg_integer()}).
 
@@ -43,7 +44,8 @@
 -type acl_perms() :: [acl_perm()].
 -type acl_grant() :: {{string(), string()}, acl_perms()}.
 -record(acl_v1, {owner={"", ""} :: {string(), string()},
-                 grants=[] :: [acl_grant()]}).
+                 grants=[] :: [acl_grant()],
+                 creation_time=now() :: erlang:timestamp()}).
 -type acl_v1() :: #acl_v1{}.
 
 -define(ACL, #acl_v1).
@@ -58,3 +60,4 @@
 -define(DEFAULT_STANCHION_IP, "127.0.0.1").
 -define(DEFAULT_STANCHION_PORT, 8085).
 -define(DEFAULT_STANCHION_SSL, true).
+-define(MD_ACL, "X-Moss-Acl").

@@ -19,9 +19,11 @@
 
 %% Public API
 -export([acl/3,
+         default_acl/2,
          acl_from_xml/1,
          acl_to_xml/1,
-         default_acl/2
+         acl_to_json_term/1,
+         requested_access/2
         ]).
 
 -type xmlElement() :: #xmlElement{}.
@@ -72,9 +74,91 @@ acl_to_xml(Acl) ->
     unicode:characters_to_list(
       xmerl:export_simple(XmlDoc, xmerl_xml, [{prolog, ?XML_PROLOG}])).
 
+%% @doc Convert an internal representation of an ACL into
+%% erlang terms that can be encoded using `mochijson2:encode'.
+-spec acl_to_json_term(acl_v1()) -> term().
+acl_to_json_term(#acl_v1{owner={DisplayName, CanonicalId},
+                         grants=Grants,
+                         creation_time=CreationTime}) ->
+    {struct, [{<<"acl">>,
+               {struct, [{<<"version">>, 1},
+                         owner_to_json_term(DisplayName, CanonicalId),
+                         grants_to_json_term(Grants, []),
+                         erlang_time_to_json_term(CreationTime)]}
+              }]}.
+
+%% @doc Map a request type to the type of ACL permissions needed
+%% to complete the request.
+-spec requested_access(atom(), string()) -> acl_perm().
+requested_access(Method, QueryString) ->
+    AclRequest = acl_request(QueryString),
+    if
+        Method == 'GET'
+        andalso
+        AclRequest == true->
+            'READ_ACP';
+        Method == 'GET' ->
+            'READ';
+        Method == 'PUT'
+        andalso
+        AclRequest == true->
+            'WRITE_ACP';
+        (Method == 'POST'
+         orelse
+         Method == 'DELETE')
+        andalso
+        AclRequest == true->
+            undefined;
+        Method == 'PUT'
+        orelse
+        Method == 'POST'
+        orelse
+        Method == 'DELETE' ->
+            'WRITE';
+        true ->
+            undefined
+    end.
+
 %% ===================================================================
 %% Internal functions
 %% ===================================================================
+
+%% @doc Check if the acl subresource is specified in the
+%% list of query string parameters.
+-spec acl_request([{string(), string()}]) -> boolean().
+acl_request([]) ->
+    false;
+acl_request([{"acl", _} | _]) ->
+    true;
+acl_request([_ | Rest]) ->
+    acl_request(Rest).
+
+%% @doc Convert an information from an ACL into erlang
+%% terms that can be encoded using `mochijson2:encode'.
+-spec erlang_time_to_json_term(erlang:timestamp()) -> term().
+erlang_time_to_json_term({MegaSecs, Secs, MicroSecs}) ->
+    {<<"creation_time">>,
+     {struct, [{<<"mega_seconds">>, MegaSecs},
+               {<<"seconds">>, Secs},
+               {<<"micro_seconds">>, MicroSecs}]}
+    }.
+
+%% @doc Convert grantee information from an ACL into erlang
+%% terms that can be encoded using `mochijson2:encode'.
+-spec grantee_to_json_term(acl_grant()) -> term().
+grantee_to_json_term({{DisplayName, CanonicalId}, Perms}) ->
+    {struct, [{<<"display_name">>, list_to_binary(DisplayName)},
+              {<<"canonical_id">>, list_to_binary(CanonicalId)},
+              {<<"permissions">>, permissions_to_json_term(Perms)}]}.
+
+%% @doc Convert owner information from an ACL into erlang
+%% terms that can be encoded using `mochijson2:encode'.
+-spec grants_to_json_term([acl_grant()], [term()]) -> term().
+grants_to_json_term([], GrantTerms) ->
+    {<<"grants">>, GrantTerms};
+grants_to_json_term([HeadGrant | RestGrants], GrantTerms) ->
+    grants_to_json_term(RestGrants,
+                        [grantee_to_json_term(HeadGrant) | GrantTerms]).
 
 %% @doc Assemble the xml for the set of grantees for an acl.
 -spec grants_xml([acl_grant()]) -> term().
@@ -102,6 +186,21 @@ grant_xml(DisplayName, CanonicalId, Permission) ->
        ]},
       {'Permission', [atom_to_list(Permission)]}
      ]}.
+
+%% @doc Convert owner information from an ACL into erlang
+%% terms that can be encoded using `mochijson2:encode'.
+-spec owner_to_json_term(string(), string()) -> term().
+owner_to_json_term(DisplayName, CanonicalId) ->
+    {<<"owner">>,
+     {struct, [{<<"display_name">>, list_to_binary(DisplayName)},
+               {<<"canonical_id">>, list_to_binary(CanonicalId)}]}
+    }.
+
+%% @doc Convert a list of permissions into binaries
+%% that can be encoded using `mochijson2:encode'.
+-spec permissions_to_json_term(acl_perms()) -> term().
+permissions_to_json_term(Perms) ->
+    [list_to_binary(atom_to_list(Perm)) || Perm <- Perms].
 
 %% @doc Process the top-level elements of the
 -spec process_acl_contents([xmlElement()], acl_v1()) -> acl_v1().
@@ -231,15 +330,17 @@ process_permission([Content], Grant) ->
 default_acl_test() ->
     ExpectedXml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><AccessControlPolicy><Owner><ID>TESTID1</ID><DisplayName>tester1</DisplayName></Owner><AccessControlList><Grant><Grantee><ID>TESTID1</ID><DisplayName>tester1</DisplayName></Grantee><Permission>FULL_CONTROL</Permission></Grant></AccessControlList></AccessControlPolicy>",
     DefaultAcl = default_acl("tester1", "TESTID1"),
-    ?assertEqual({acl_v1,{"tester1","TESTID1"},
-                  [{{"tester1","TESTID1"},['FULL_CONTROL']}]}, DefaultAcl),
+    ?assertMatch({acl_v1,{"tester1","TESTID1"},
+                  [{{"tester1","TESTID1"},['FULL_CONTROL']}], _}, DefaultAcl),
     ?assertEqual(ExpectedXml, acl_to_xml(DefaultAcl)).
 
 acl_from_xml_test() ->
     application:start(lager),
     Xml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><AccessControlPolicy><Owner><ID>TESTID1</ID><DisplayName>tester1</DisplayName></Owner><AccessControlList><Grant><Grantee><ID>TESTID1</ID><DisplayName>tester1</DisplayName></Grantee><Permission>FULL_CONTROL</Permission></Grant></AccessControlList></AccessControlPolicy>",
     DefaultAcl = default_acl("tester1", "TESTID1"),
-    ?assertEqual(DefaultAcl, acl_from_xml(Xml)).
+    Acl = acl_from_xml(Xml),
+    ?assertEqual(DefaultAcl?ACL.grants, Acl?ACL.grants),
+    ?assertEqual(DefaultAcl?ACL.owner, Acl?ACL.owner).
 
 acl_to_xml_test() ->
     Xml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><AccessControlPolicy><Owner><ID>TESTID1</ID><DisplayName>tester1</DisplayName></Owner><AccessControlList><Grant><Grantee><ID>TESTID2</ID><DisplayName>tester2</DisplayName></Grantee><Permission>WRITE</Permission></Grant><Grant><Grantee><ID>TESTID1</ID><DisplayName>tester1</DisplayName></Grantee><Permission>READ</Permission></Grant></AccessControlList></AccessControlPolicy>",
@@ -250,5 +351,100 @@ acl_to_xml_test() ->
 roundtrip_test() ->
     Xml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><AccessControlPolicy><Owner><ID>TESTID1</ID><DisplayName>tester1</DisplayName></Owner><AccessControlList><Grant><Grantee><ID>TESTID1</ID><DisplayName>tester1</DisplayName></Grantee><Permission>FULL_CONTROL</Permission></Grant></AccessControlList></AccessControlPolicy>",
     ?assertEqual(Xml, acl_to_xml(acl_from_xml(Xml))).
+
+acl_to_json_term_test() ->
+    Acl = acl("tester1", "TESTID1", [{{"tester1", "TESTID1"}, ['READ']},
+                                     {{"tester2", "TESTID2"}, ['WRITE']}]),
+    JsonTerm = acl_to_json_term(Acl),
+    {AclMegaSecs, AclSecs, AclMicroSecs} = Acl?ACL.creation_time,
+    ExpectedTerm = {struct,
+                    [{<<"acl">>,
+                      {struct,
+                       [{<<"version">>,1},
+                        {<<"owner">>,
+                         {struct,
+                          [{<<"display_name">>,<<"tester1">>},
+                           {<<"canonical_id">>,<<"TESTID1">>}]}},
+                        {<<"grants">>,
+                         [{struct,
+                           [{<<"display_name">>,<<"tester2">>},
+                            {<<"canonical_id">>,<<"TESTID2">>},
+                            {<<"permissions">>,[<<"WRITE">>]}]},
+                          {struct,
+                           [{<<"display_name">>,<<"tester1">>},
+                            {<<"canonical_id">>,<<"TESTID1">>},
+                            {<<"permissions">>,[<<"READ">>]}]}]},
+                        {<<"creation_time">>,
+                         {struct,
+                          [{<<"mega_seconds">>, AclMegaSecs},
+                           {<<"seconds">>, AclSecs},
+                           {<<"micro_seconds">>, AclMicroSecs}]}}]}}]},
+    ?assertEqual(ExpectedTerm, JsonTerm).
+
+owner_to_json_term_test() ->
+    JsonTerm = owner_to_json_term("name", "id123"),
+    ExpectedTerm = {<<"owner">>,
+                    {struct, [{<<"display_name">>, <<"name">>},
+                              {<<"canonical_id">>, <<"id123">>}]}
+                   },
+    ?assertEqual(ExpectedTerm, JsonTerm).
+
+grants_to_json_term_test() ->
+    Acl = acl("tester1", "TESTID1", [{{"tester1", "TESTID1"}, ['READ']},
+                                     {{"tester2", "TESTID2"}, ['WRITE']}]),
+    JsonTerm = grants_to_json_term(Acl?ACL.grants, []),
+    ExpectedTerm =
+        {<<"grants">>, [{struct,
+                           [{<<"display_name">>,<<"tester2">>},
+                            {<<"canonical_id">>,<<"TESTID2">>},
+                            {<<"permissions">>,[<<"WRITE">>]}]},
+                          {struct,
+                           [{<<"display_name">>,<<"tester1">>},
+                            {<<"canonical_id">>,<<"TESTID1">>},
+                            {<<"permissions">>,[<<"READ">>]}]}]},
+
+    ?assertEqual(ExpectedTerm, JsonTerm).
+
+grantee_to_json_term_test() ->
+    JsonTerm = grantee_to_json_term({{"tester1", "TESTID1"}, ['READ']}),
+    ExpectedTerm = {struct,
+                    [{<<"display_name">>,<<"tester1">>},
+                     {<<"canonical_id">>,<<"TESTID1">>},
+                     {<<"permissions">>,[<<"READ">>]}]},
+    ?assertEqual(ExpectedTerm, JsonTerm).
+
+permissions_to_json_term_test() ->
+    JsonTerm = permissions_to_json_term(['READ',
+                                         'WRITE',
+                                         'READ_ACP',
+                                         'WRITE_ACP',
+                                         'FULL_CONTROL']),
+    ExpectedTerm = [<<"READ">>,
+                    <<"WRITE">>,
+                    <<"READ_ACP">>,
+                    <<"WRITE_ACP">>,
+                    <<"FULL_CONTROL">>],
+    ?assertEqual(ExpectedTerm, JsonTerm).
+
+erlang_time_to_json_term_test() ->
+    JsonTerm = erlang_time_to_json_term({1000, 100, 10}),
+    ExpectedTerm = {<<"creation_time">>,
+                    {struct,
+                     [{<<"mega_seconds">>, 1000},
+                      {<<"seconds">>, 100},
+                      {<<"micro_seconds">>, 10}]}},
+    ?assertEqual(ExpectedTerm, JsonTerm).
+
+requested_access_test() ->
+    ?assertEqual('READ', requested_access('GET', [])),
+    ?assertEqual('READ_ACP', requested_access('GET', [{"acl", ""}])),
+    ?assertEqual('WRITE', requested_access('PUT', [])),
+    ?assertEqual('WRITE_ACP', requested_access('PUT', [{"acl", ""}])),
+    ?assertEqual('WRITE', requested_access('POST', [])),
+    ?assertEqual('WRITE', requested_access('DELETE', [])),
+    ?assertEqual(undefined, requested_access('POST', [{"acl", ""}])),
+    ?assertEqual(undefined, requested_access('DELETE', [{"acl", ""}])),
+    ?assertEqual(undefined, requested_access('GARBAGE', [])),
+    ?assertEqual(undefined, requested_access('GARBAGE', [{"acl", ""}])).
 
 -endif.

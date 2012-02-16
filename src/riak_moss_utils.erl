@@ -75,7 +75,7 @@ close_riak_connection(Pid) ->
 %% exist anywhere, since everyone
 %% shares a global bucket namespace
 -spec create_bucket(string(), binary(), acl_v1()) -> ok.
-create_bucket(KeyId, Bucket, _ACL) ->
+create_bucket(KeyId, Bucket, ACL) ->
     case riak_connection() of
         {ok, RiakPid} ->
             %% TODO:
@@ -83,6 +83,7 @@ create_bucket(KeyId, Bucket, _ACL) ->
             %% {error, Reason} here
             {ok, {User, VClock}} = get_user(KeyId, RiakPid),
             Res = serialized_bucket_op(Bucket,
+                                       ACL,
                                        KeyId,
                                        User,
                                        VClock,
@@ -159,6 +160,7 @@ delete_bucket(KeyId, Bucket) ->
             case AttemptDelete of
                 true ->
                     Res = serialized_bucket_op(Bucket,
+                                               ?ACL{},
                                                KeyId,
                                                User,
                                                VClock,
@@ -444,13 +446,14 @@ bucket_exists(Buckets, CheckBucket) ->
 %% bucket creation or deletion.
 -spec bucket_fun(created | deleted,
                  binary(),
+                 acl_v1(),
                  string(),
                  {string(), string()},
                  {string(), pos_integer(), boolean()}) -> function().
-bucket_fun(created, Bucket, KeyId, AdminCreds, StanchionData) ->
+bucket_fun(created, Bucket, ACL, KeyId, AdminCreds, StanchionData) ->
     {StanchionIp, StanchionPort, StanchionSSL} = StanchionData,
     %% Generate the bucket JSON document
-    BucketDoc = bucket_json(Bucket, KeyId),
+    BucketDoc = bucket_json(Bucket, ACL, KeyId),
     fun() ->
             velvet:create_bucket(StanchionIp,
                                  StanchionPort,
@@ -459,7 +462,7 @@ bucket_fun(created, Bucket, KeyId, AdminCreds, StanchionData) ->
                                  [{ssl, StanchionSSL},
                                   {auth_creds, AdminCreds}])
     end;
-bucket_fun(deleted, Bucket, KeyId, AdminCreds, StanchionData) ->
+bucket_fun(deleted, Bucket, _ACL, KeyId, AdminCreds, StanchionData) ->
     {StanchionIp, StanchionPort, StanchionSSL} = StanchionData,
     fun() ->
             velvet:delete_bucket(StanchionIp,
@@ -472,11 +475,12 @@ bucket_fun(deleted, Bucket, KeyId, AdminCreds, StanchionData) ->
 
 %% @doc Generate a JSON document to use for a bucket
 %% creation request.
--spec bucket_json(binary(), string()) -> string().
-bucket_json(Bucket, KeyId)  ->
+-spec bucket_json(binary(), acl_v1(), string()) -> string().
+bucket_json(Bucket, ACL, KeyId)  ->
     binary_to_list(
       iolist_to_binary(
         mochijson2:encode([{struct, [{<<"bucket">>, Bucket}]},
+                           riak_moss_acl_utils:acl_to_json_term(ACL),
                            {struct, [{<<"requester">>, list_to_binary(KeyId)}]}]))).
 
 %% @doc Return a bucket record for the specified bucket name.
@@ -507,8 +511,8 @@ bucket_resolver(Bucket, ResolvedBuckets) ->
                         true ->
                             ResolvedBuckets;
                         false ->
-                           [Bucket | lists:delete(ExistingBucket,
-                                                  ResolvedBuckets)]
+                            [Bucket | lists:delete(ExistingBucket,
+                                                   ResolvedBuckets)]
                     end
             end
     end.
@@ -636,7 +640,7 @@ keep_existing_bucket(?MOSS_BUCKET{last_action=LastAction1,
             true;
         LastAction1 == LastAction2 ->
             false;
-         ModTime1 > ModTime2 ->
+        ModTime1 > ModTime2 ->
             true;
         true ->
             false
@@ -687,6 +691,7 @@ save_user(User, VClock, RiakPid) ->
 
 %% @doc Shared code used when doing a bucket creation or deletion.
 -spec serialized_bucket_op(binary(),
+                           acl_v1(),
                            string(),
                            moss_user(),
                            term(),
@@ -695,11 +700,12 @@ save_user(User, VClock, RiakPid) ->
                                   {ok, moss_user()} |
                                   {ok, ignore} |
                                   {error, term()}.
-serialized_bucket_op(Bucket, KeyId, User, VClock, BucketOp, RiakPid) ->
+serialized_bucket_op(Bucket, ACL, KeyId, User, VClock, BucketOp, RiakPid) ->
     case get_admin_creds() of
         {ok, AdminCreds} ->
             BucketFun = bucket_fun(BucketOp,
                                    Bucket,
+                                   ACL,
                                    KeyId,
                                    AdminCreds,
                                    stanchion_data()),
@@ -779,7 +785,7 @@ update_user_buckets(User, Bucket, Action) ->
         [ExistingBucket] ->
             case
                 (Action == deleted andalso
-                  ExistingBucket?MOSS_BUCKET.last_action == created)
+                 ExistingBucket?MOSS_BUCKET.last_action == created)
                 orelse
                 (Action == created andalso
                  ExistingBucket?MOSS_BUCKET.last_action == deleted) of

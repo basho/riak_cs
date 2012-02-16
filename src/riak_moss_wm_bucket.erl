@@ -40,13 +40,35 @@ malformed_request(RD, Ctx) ->
 %%      we'd use the `authorized` callback,
 %%      but this is how S3 does things.
 forbidden(RD, Ctx=#context{auth_bypass=AuthBypass}) ->
+    Bucket = list_to_binary(wrq:path_info(bucket, RD)),
     AuthHeader = wrq:get_req_header("authorization", RD),
     case riak_moss_wm_utils:parse_auth_header(AuthHeader, AuthBypass) of
         {ok, AuthMod, Args} ->
             case AuthMod:authenticate(RD, Args) of
                 {ok, User} ->
-                    %% Authentication succeeded
-                    {false, RD, Ctx#context{user=User}};
+                    %% Authentication succeeded, now perform
+                    %% ACL check to verify access permission.
+                    lager:debug("QS: ~p", [wrq:req_qs(RD)]),
+                    Method = wrq:method(RD),
+                    RequestedAccess =
+                        riak_moss_acl_utils:requested_access(Method,
+                                                             wrq:req_qs(RD)),
+                    case Method of
+                        'PUT' ->
+                            {false, RD, Ctx#context{user=User,
+                                                    bucket=Bucket}};
+                        _ ->
+                            case riak_moss_acl:bucket_access(Bucket,
+                                                             RequestedAccess,
+                                                             User?MOSS_USER.canonical_id) of
+                                true ->
+                                    {false, RD, Ctx#context{user=User,
+                                                            bucket=Bucket}};
+                                false ->
+                                    %% ACL check failed, deny access
+                                    riak_moss_s3_response:api_error(access_denied, RD, Ctx)
+                            end
+                    end;
                 {error, _Reason} ->
                     %% Authentication failed, deny access
                     riak_moss_s3_response:api_error(access_denied, RD, Ctx)
@@ -61,7 +83,7 @@ allowed_methods(RD, Ctx) ->
     {['HEAD', 'GET', 'PUT', 'DELETE'], RD, Ctx}.
 
 -spec content_types_provided(term(), term()) ->
-    {[{string(), atom()}], term(), term()}.
+                                    {[{string(), atom()}], term(), term()}.
 content_types_provided(RD, Ctx) ->
     %% TODO:
     %% Add xml support later
@@ -85,16 +107,18 @@ content_types_accepted(RD, Ctx) ->
     end.
 
 -spec to_xml(term(), term()) ->
-    {iolist(), term(), term()}.
-to_xml(RD, Ctx=#context{user=User}) ->
-    BucketName = wrq:path_info(bucket, RD),
-    Bucket = hd([B || B <- riak_moss_utils:get_buckets(User), B?MOSS_BUCKET.name =:= BucketName]),
-    MOSSBucket = riak_moss_utils:to_bucket_name(objects, list_to_binary(Bucket?MOSS_BUCKET.name)),
+                    {iolist(), term(), term()}.
+to_xml(RD, Ctx=#context{user=User,
+                        bucket=Bucket}) ->
+    BucketRecord =
+        hd([B || B <- riak_moss_utils:get_buckets(User),
+                 B?MOSS_BUCKET.name =:= Bucket]),
+    MOSSBucket = riak_moss_utils:to_bucket_name(objects, Bucket),
     Prefix = list_to_binary(wrq:get_qs_value("prefix", "", RD)),
     case riak_moss_utils:get_keys_and_objects(MOSSBucket, Prefix) of
         {ok, KeyObjPairs} ->
             riak_moss_s3_response:list_bucket_response(User,
-                                                       Bucket,
+                                                       BucketRecord,
                                                        KeyObjPairs,
                                                        RD,
                                                        Ctx);
@@ -105,13 +129,14 @@ to_xml(RD, Ctx=#context{user=User}) ->
 %% TODO:
 %% Add content_types_accepted when we add
 %% in PUT and POST requests.
-accept_body(ReqData, Ctx=#context{user=User}) ->
+accept_body(ReqData, Ctx=#context{user=User,
+                                  bucket=Bucket}) ->
     %% @TODO Check for `x-amz-acl' header to support
     %% non-default ACL at bucket creation time.
     ACL = riak_moss_acl_utils:default_acl(User?MOSS_USER.display_name,
                                           User?MOSS_USER.canonical_id),
     case riak_moss_utils:create_bucket(User?MOSS_USER.key_id,
-                                       list_to_binary(wrq:path_info(bucket, ReqData)),
+                                       Bucket,
                                        ACL) of
         ok ->
             {{halt, 200}, ReqData, Ctx};
@@ -123,10 +148,10 @@ accept_body(ReqData, Ctx=#context{user=User}) ->
 
 %% @doc Callback for deleting a bucket.
 -spec delete_resource(term(), term()) -> boolean().
-delete_resource(ReqData, Ctx=#context{user=User}) ->
-    BucketName = list_to_binary(wrq:path_info(bucket, ReqData)),
+delete_resource(ReqData, Ctx=#context{user=User,
+                                      bucket=Bucket}) ->
     case riak_moss_utils:delete_bucket(User?MOSS_USER.key_id,
-                                       BucketName) of
+                                       Bucket) of
         ok ->
             {true, ReqData, Ctx};
         {error, Reason} ->

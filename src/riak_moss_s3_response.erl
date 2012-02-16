@@ -128,7 +128,7 @@ list_bucket_response(User, Bucket, KeyObjPairs, RD, Ctx) ->
                     end
                 end
                 || {Key, ObjResp} <- KeyObjPairs],
-    BucketProps = [{'Name', [Bucket?MOSS_BUCKET.name]},
+    BucketProps = [{'Name', [binary_to_list(Bucket?MOSS_BUCKET.name)]},
                    {'Prefix', []},
                    {'Marker', []},
                    {'MaxKeys', ["1000"]},
