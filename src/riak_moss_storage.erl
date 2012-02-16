@@ -13,7 +13,7 @@
 -export([
          sum_user/2,
          sum_bucket/2,
-         make_object/5,
+         make_object/4,
          get_usage/4
         ]).
 
@@ -69,15 +69,24 @@ object_size(Riak, Bucket, Key) ->
             {error, Error}
     end.
 
-make_object(Time, User, BucketList, SampleStart, SampleEnd) ->
+%% @doc Retreive the number of seconds that should elapse between
+%% archivings of storage stats.  This setting is controlled by the
+%% `storage_archive_period' environment variable of the `riak_moss'
+%% application.
+-spec archive_period() -> {ok, integer()}|{error, term()}.
+archive_period() ->
+    case application:get_env(riak_moss, storage_archive_period) of
+        {ok, AP} when is_integer(AP), AP > 0 ->
+            {ok, AP};
+        _ ->
+            {error, "riak_moss:storage_archive_period was not an integer"}
+    end.
+
+make_object(User, BucketList, SampleStart, SampleEnd) ->
+    {ok, Period} = archive_period(),
     Aggregate = aggregate_bucketlist(BucketList),
-    MJSON = {struct, [{start_time, riak_moss_access:iso8601(SampleStart)},
-                      {end_time, riak_moss_access:iso8601(SampleEnd)}
-                      |Aggregate]},
-    riakc_obj:new(?STORAGE_BUCKET,
-                  sample_key(User, Time),
-                  iolist_to_binary(mochijson2:encode(MJSON)),
-                  "application/json").
+    rts:new_sample(?STORAGE_BUCKET, User, SampleStart, SampleEnd, Period,
+                   Aggregate).
 
 aggregate_bucketlist(BucketList) ->
     {BucketCount, TotalBytes} =
@@ -89,75 +98,6 @@ aggregate_bucketlist(BucketList) ->
     [{buckets, BucketCount},
      {bytes, TotalBytes}].
 
-sample_key(User, Time) ->
-    iolist_to_binary([User,".",riak_moss_access:iso8601(Time)]).
-
-get_usage(User, Start, End, Riak) ->
-    Times = times_covering(Start, End),
-    UsageAdder = usage_adder(User, Riak),
-    lists:foldl(UsageAdder, {[], []}, Times).
-
-usage_adder(User, Riak) ->
-    fun(Time, {Usage, Errors}) ->
-            case riakc_pb_socket:get(Riak, ?STORAGE_BUCKET,
-                                     sample_key(User, Time)) of
-                {ok, Object} ->
-                    NewUsages = [element(2, {struct, _}=mochijson2:decode(V))
-                                 || V <- riakc_obj:get_values(Object)],
-                    {NewUsages++Usage, Errors};
-                {error, notfound} ->
-                    %% this is normal - we ask for all possible
-                    %% archives, and just deal with the ones that exist
-                    {Usage, Errors};
-                {error, Error} ->
-                    {Usage, [{Time, Error}|Errors]}
-            end
-    end.
-
-times_covering(Start, End) ->
-    case riak_moss_storage_d:read_storage_schedule() of
-        [] ->
-            %% no schedule means no idea where to look
-            [];
-        Schedule ->
-            {Day,{SH,SM,_}} = Start,
-            case {SH, SM} < hd(Schedule) of
-                true ->
-                    %% start with last archive of previous day
-                    {DayBefore,_} = calendar:gregorian_seconds_to_datetime(
-                                      calendar:datetime_to_gregorian_seconds(
-                                        Start)-24*60*60),
-                    [{H, M}|_] = lists:reverse(Schedule),
-                    First = {DayBefore, {H, M, 0}},
-                    Rest = Schedule;
-                false ->
-                    %% start somewhere in day
-                    {Early, [{H,M}|Late]} =
-                        lists:splitwith(
-                          fun({H,M}) ->
-                                  H < SH orelse
-                                           (H == SH andalso M < SM)
-                          end),
-                    First = {Day, {H, M, 0}},
-                    Rest = Late++Early++[{H,M}]
-            end,
-            times_covering1(End, Rest, [First])
-    end.
-
-times_covering1(End, [{H,M}|_]=Schedule, [{SameDay,_}|_]=Acc) ->
-    case {H,M} =< lists:last(Schedule) of
-        true ->
-            %% new day
-            NewTime = calendar:gregorian_seconds_to_datetime(
-                        calendar:datetime_to_gregorian_seconds(
-                          {SameDay, {H,M,0}})+24*60*60);
-        false ->
-            %% same day
-            NewTime = {SameDay, {H, M, 0}}
-    end,
-    case NewTime > End of
-        true ->
-            Acc;
-        false ->
-            times_covering1(End, tl(Schedule)++[{H,M}], [NewTime|Acc])
-    end.
+get_usage(Riak, User, Start, End) ->
+    {ok, Period} = archive_period(),
+    rts:find_samples(Riak, ?STORAGE_BUCKET, User, Start, End, Period).

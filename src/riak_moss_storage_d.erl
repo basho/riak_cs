@@ -108,7 +108,7 @@ calculating(continue, #state{batch=[]}=State) ->
     %% finished with this batch
     lager:info("Finished storage calculation in ~b seconds.",
                [elapsed(State#state.batch_start)]),
-    riak_moss_utils:close_connection(State#state.riak),
+    riak_moss_utils:close_riak_connection(State#state.riak),
     {next_state, idle, State#state{riak=undefined}};
 calculating(continue, State) ->
     NewState = calculate_next_user(State),
@@ -319,9 +319,8 @@ calculate_next_user(#state{riak=Riak,
     end,
     State#state{batch=Rest, batch_count=1+State#state.batch_count}.
 
-store_user(#state{riak=Riak, target=Time},
-           User, BucketList, Start, End) ->
-    Obj = riak_moss_storage:make_object(Time, User, BucketList, Start, End),
+store_user(#state{riak=Riak}, User, BucketList, Start, End) ->
+    Obj = riak_moss_storage:make_object(User, BucketList, Start, End),
     case riakc_pb_socket:put(Riak, Obj) of
         ok -> ok;
         {error, Error} ->

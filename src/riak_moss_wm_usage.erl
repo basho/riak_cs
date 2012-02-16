@@ -68,7 +68,16 @@
          produce_xml/2
         ]).
 
+-ifdef(TEST).
+-ifdef(EQC).
+-compile([export_all]).
+-include_lib("eqc/include/eqc.hrl").
+-endif.
+-include_lib("eunit/include/eunit.hrl").
+-endif.
+
 -include_lib("webmachine/include/webmachine.hrl").
+-include("rts.hrl").
 
 -define(JSON_TYPE, "application/json").
 -define(XML_TYPE, "application/xml").
@@ -136,13 +145,13 @@ mochijson_access({Access, Errors}) ->
                          {samples, [{struct, S} || S <- Samples]}]}
                |Acc]
       end,
-      [{struct, [{errors, [ {struct, mochijson_access_error(E)}
+      [{struct, [{errors, [ {struct, mochijson_sample_error(E)}
                             || E <- Errors ]}]}],
       Access).
 
-mochijson_access_error({{Start, End}, Reason}) ->
-    [{<<"start_time">>, riak_moss_access:iso8601(Start)},
-     {<<"end_time">>, riak_moss_access:iso8601(End)},
+mochijson_sample_error({{Start, End}, Reason}) ->
+    [{?START_TIME, rts:iso8601(Start)},
+     {?END_TIME, rts:iso8601(End)},
      {<<"reason">>, mochijson_reason(Reason)}].
 
 mochijson_reason(Reason) ->
@@ -155,14 +164,11 @@ mochijson_storage(Msg) when is_atom(Msg) ->
     Msg;
 mochijson_storage({Storage, Errors}) ->
     [ mochijson_storage_sample(S) || S <- Storage ]
-        ++ [{struct, [{errors, [mochijson_storage_error(E)
+        ++ [{struct, [{errors, [mochijson_sample_error(E)
                                 || E <- Errors]}]}].
 
 mochijson_storage_sample(Sample) ->
     {struct, Sample}.
-
-mochijson_storage_error({Time, Reason}) ->
-    {struct, [{time, Time}, {reason, mochijson_reason(Reason)}]}.
 
 %% XML Production %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 produce_xml(RD, Ctx) ->
@@ -178,29 +184,29 @@ xml_access({Access, Errors}) ->
     orddict:fold(
       fun(Node, Samples, Acc) ->
               [{'Node', [{name, Node}],
-                [xml_access_sample(S) || S <- Samples]}
+                [xml_sample(S) || S <- Samples]}
                |Acc]
       end,
-      [{'Errors', [ xml_access_error(E) || E <- Errors ]}],
+      [{'Errors', [ xml_sample_error(E) || E <- Errors ]}],
       Access).
 
-xml_access_error({{Start, End}, Reason}) ->
-    %% cheat to make errors structured exactly like samples
-    FakeSample = [{<<"start_time">>, riak_moss_access:iso8601(Start)},
-                  {<<"end_time">>, riak_moss_access:iso8601(End)}],
-    {Tag, Props, Contents} = xml_access_sample(FakeSample),
-
-    XMLReason = xml_reason(Reason),
-    {Tag, Props, [{'Reason', [XMLReason]}|Contents]}.
-
-xml_access_sample(Sample) ->
-    {value, {<<"start_time">>,S}, SampleS} =
-        lists:keytake(<<"start_time">>, 1, Sample),
-    {value, {<<"end_time">>,E}, Rest} =
-        lists:keytake(<<"end_time">>, 1, SampleS),
+xml_sample(Sample) ->
+    {value, {?START_TIME,S}, SampleS} =
+        lists:keytake(?START_TIME, 1, Sample),
+    {value, {?END_TIME,E}, Rest} =
+        lists:keytake(?END_TIME, 1, SampleS),
 
     {'Sample', [{start, S}, {'end', E}],
      [{xml_name(K), [mochinum:digits(V)]} || {K, V} <- Rest]}.
+
+xml_sample_error({{Start, End}, Reason}) ->
+    %% cheat to make errors structured exactly like samples
+    FakeSample = [{?START_TIME, rts:iso8601(Start)},
+                  {?END_TIME, rts:iso8601(End)}],
+    {Tag, Props, Contents} = xml_sample(FakeSample),
+
+    XMLReason = xml_reason(Reason),
+    {Tag, Props, [{'Reason', [XMLReason]}|Contents]}.
 
 xml_name(<<"bytes_out">>)  -> 'BytesOut';
 xml_name(<<"bytes_in">>)   -> 'BytesIn';
@@ -215,38 +221,24 @@ xml_reason(Reason) ->
 xml_storage(Msg) when is_atom(Msg) ->
     [atom_to_list(Msg)];
 xml_storage({Storage, Errors}) ->
-    [xml_storage_sample(S) || S <- Storage]
-        ++ [{'Errors', [xml_storage_error(E) || E <- Errors ]}].
-
-xml_storage_sample(Sample) ->
-    {value, {<<"start_time">>,S}, SampleS} =
-        lists:keytake(<<"start_time">>, 1, Sample),
-    {value, {<<"end_time">>,E}, Rest} =
-        lists:keytake(<<"end_time">>, 1, SampleS),
-    
-    {'Sample', [{start, S}, {'end', E}],
-     [{xml_name(K), [mochinum:digits(V)]} || {K, V} <- Rest]}.
-
-xml_storage_error({Time, Reason}) ->
-    {'Sample', [{start, Time}], [{'Reason', [xml_reason(Reason)]}]}.
+    [xml_sample(S) || S <- Storage]
+        ++ [{'Errors', [xml_sample_error(E) || E <- Errors ]}].
     
 %% Internals %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 user_key(RD) ->
     mochiweb_util:unquote(wrq:path_info(user, RD)).
 
-maybe_access(RD, #ctx{riak=Riak, start_time=Start, end_time=End}) ->
-    case true_param(RD, "a") of
-        true ->
-            riak_moss_access:get_usage(user_key(RD), Start, End, Riak);
-        false ->
-            not_requested
-    end.
+maybe_access(RD, Ctx) ->
+    usage_if(RD, Ctx, "a", riak_moss_access).
 
-%% TODO: this is just "now", not the span they asked for
-maybe_storage(RD, #ctx{riak=Riak, start_time=Start, end_time=End}) ->
-    case true_param(RD, "b") of
-        true  ->
-            riak_moss_storage:get_usage(user_key(RD), Start, End, Riak);
+maybe_storage(RD, Ctx) ->
+    usage_if(RD, Ctx, "b", riak_moss_storage).
+
+usage_if(RD, #ctx{riak=Riak, start_time=Start, end_time=End},
+         QParam, Module) ->
+    case true_param(RD, QParam) of
+        true ->
+            Module:get_usage(Riak, user_key(RD), Start, End);
         false ->
             not_requested
     end.
@@ -266,7 +258,7 @@ time_param(RD, Param, Default) ->
         undefined ->
             {ok, Default};
         TimeString ->
-            riak_moss_access:datetime(TimeString)
+            datetime(TimeString)
     end.
 
 error_msg(RD, Message) ->
@@ -293,3 +285,53 @@ xml_error_msg(Message) when is_binary(Message) ->
 xml_error_msg(Message) ->
     Doc = [{'Error', [{'Messsage', [Message]}]}],
     riak_moss_s3_response:export_xml(Doc).
+
+%% @doc Produce a datetime tuple from a ISO8601 string
+-spec datetime(binary()|string()) -> {ok, calendar:datetime()} | error.
+datetime(Binary) when is_binary(Binary) ->
+    datetime(binary_to_list(Binary));
+datetime(String) when is_list(String) ->
+    case io_lib:fread("~4d~2d~2dT~2d~2d~2dZ", String) of
+        {ok, [Y,M,D,H,I,S], _} ->
+            {ok, {{Y,M,D},{H,I,S}}};
+        %% TODO: match {more, _, _, RevList} to allow for shortened
+        %% month-month/etc.
+        _ ->
+            error
+    end.
+
+-ifdef(TEST).
+-ifdef(EQC).
+
+
+datetime_test() ->
+    true = eqc:quickcheck(datetime_invalid_prop()).
+
+%% make sure that datetime correctly returns 'error' for invalid
+%% iso8601 date strings
+datetime_invalid_prop() ->
+    ?FORALL(L, list(char()),
+            case datetime(L) of
+                {{_,_,_},{_,_,_}} ->
+                    %% really, we never expect this to happen, given
+                    %% that a random string is highly unlikely to be
+                    %% valid iso8601, but just in case...
+                    valid_iso8601(L);
+                error ->
+                    not valid_iso8601(L)
+            end).
+
+%% a string is considered valid iso8601 if it is of the form
+%% ddddddddZddddddT, where d is a digit, Z is a 'Z' and T is a 'T'
+valid_iso8601(L) ->
+    length(L) == 4+2+2+1+2+2+2+1 andalso
+        string:chr(L, $Z) == 4+2+2+1 andalso
+        lists:all(fun is_digit/1, string:substr(L, 1, 8)) andalso
+        string:chr(L, $T) == 16 andalso
+        lists:all(fun is_digit/1, string:substr(L, 10, 15)).
+
+is_digit(C) ->
+    C >= $0 andalso C =< $9.
+
+-endif. % EQC
+-endif. % TEST
