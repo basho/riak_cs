@@ -81,6 +81,18 @@ streaming_get(FsmPid) ->
 %%      into a property list, likely
 %%      for json encoding
 -spec user_record_to_proplist(term()) -> list().
+user_record_to_proplist(?MOSS_USER{email=Email,
+                                   display_name=DisplayName,
+                                   name=Name,
+                                   key_id=KeyID,
+                                   key_secret=KeySecret,
+                                   canonical_id=CanonicalID}) ->
+    [{<<"email">>, list_to_binary(Email)},
+     {<<"display_name">>, list_to_binary(DisplayName)},
+     {<<"name">>, list_to_binary(Name)},
+     {<<"key_id">>, list_to_binary(KeyID)},
+     {<<"key_secret">>, list_to_binary(KeySecret)},
+     {<<"id">>, list_to_binary(CanonicalID)}];
 user_record_to_proplist(#moss_user{name=Name,
                                    key_id=KeyID,
                                    key_secret=KeySecret,

@@ -20,7 +20,7 @@
 %% Public API
 %% ===================================================================
 
--spec authenticate(term(), [string()]) -> {ok, #moss_user{}}
+-spec authenticate(term(), [string()]) -> {ok, ?MOSS_USER{}}
                                               | {ok, unknown}
                                               | {error, atom()}.
 authenticate(RD, [KeyID, Signature]) ->
@@ -28,18 +28,19 @@ authenticate(RD, [KeyID, Signature]) ->
     case riak_moss_utils:get_user(KeyID) of
         {ok, User} ->
             CalculatedSignature =
-                calculate_signature(User#moss_user.key_secret, RD),
+                calculate_signature(User?MOSS_USER.key_secret, RD),
             case check_auth(Signature, CalculatedSignature) of
                 true ->
-                    case bucket_auth(User,
-                                     wrq:method(RD),
-                                     wrq:path_info(bucket, RD),
-                                     wrq:path_tokens(RD)) of
-                        true ->
-                            {ok, User};
-                        false ->
-                            {error, invalid_authentication}
-                    end;
+                    {ok, User};
+                    %% case bucket_auth(User,
+                    %%                  wrq:method(RD),
+                    %%                  wrq:path_info(bucket, RD),
+                    %%                  wrq:path_tokens(RD)) of
+                    %%     true ->
+                            %% {ok, User};
+                    %%     false ->
+                    %%         {error, invalid_authentication}
+                    %% end;
                 _ ->
                     {error, invalid_authentication}
             end;
@@ -192,17 +193,17 @@ canonicalize_resource(RD) ->
     end.
 -endif.
 
-bucket_auth(_User=#moss_user{}, _, undefined, []) ->
-    true;
-bucket_auth(_User=#moss_user{}, 'PUT', _BucketName, []) ->
-    true;
-bucket_auth(User=#moss_user{}, _, BucketName, _KeyName) ->
-    bucket_owner(User, BucketName).
+%% bucket_auth(_User=#moss_user{}, _, undefined, []) ->
+%%     true;
+%% bucket_auth(_User=#moss_user{}, 'PUT', _BucketName, []) ->
+%%     true;
+%% bucket_auth(User=#moss_user{}, _, BucketName, _KeyName) ->
+%%     bucket_owner(User, BucketName).
 
-bucket_owner(User=#moss_user{}, BucketName) ->
-    lists:member(BucketName,
-                 [B#moss_bucket.name
-                  || B <- riak_moss_utils:get_buckets(User)]).
+%% bucket_owner(User=#moss_user{}, BucketName) ->
+%%     lists:member(BucketName,
+%%                  [B#moss_bucket.name
+%%                   || B <- riak_moss_utils:get_buckets(User)]).
 
 
 

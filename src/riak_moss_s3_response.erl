@@ -9,11 +9,13 @@
          error_response/5,
          list_bucket_response/5,
          list_all_my_buckets_response/3]).
--define(xml_prolog, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>").
+
 -include("riak_moss.hrl").
 
 error_message(invalid_access_key_id) ->
     "The AWS Access Key Id you provided does not exist in our records.";
+error_message(invalid_email_address) ->
+    "The email address you provided is not a valid.";
 error_message(access_denied) ->
     "Access Denied";
 error_message(bucket_not_empty) ->
@@ -29,6 +31,7 @@ error_message({riak_connect_failed, Reason}) ->
 
 
 error_code(invalid_access_key_id) -> 'InvalidAccessKeyId';
+error_code(invalid_email_address) -> 'InvalidEmailAddress';
 error_code(access_denied) -> 'AccessDenied';
 error_code(bucket_not_empty) -> 'BucketNotEmpty';
 error_code(bucket_already_exists) -> 'BucketAlreadyExists';
@@ -37,11 +40,12 @@ error_code(no_such_bucket) -> 'NoSuchBucket';
 error_code({riak_connect_failed, _}) -> 'RiakConnectFailed'.
 
 
+status_code(invalid_access_key_id) -> 403;
+status_code(invalid_email_address) -> 400;
 status_code(access_denied) ->  403;
 status_code(bucket_not_empty) ->  409;
 status_code(bucket_already_exists) -> 409;
 status_code(entity_too_large) -> 400;
-status_code(invalid_access_key_id) -> 403;
 status_code(no_such_bucket) -> 404;
 status_code({riak_connect_failed, _}) -> 503.
 
@@ -55,9 +59,9 @@ api_error(Error, ReqData, Ctx) when is_atom(Error) ->
 
 error_response(StatusCode, Code, Message, RD, Ctx) ->
     XmlDoc = [{'Error', [{'Code', [Code]},
-                        {'Message', [Message]},
-                        {'Resource', [wrq:path(RD)]},
-                        {'RequestId', [""]}]}],
+                         {'Message', [Message]},
+                         {'Resource', [wrq:path(RD)]},
+                         {'RequestId', [""]}]}],
     respond(StatusCode, export_xml(XmlDoc), RD, Ctx).
 
 
@@ -106,20 +110,20 @@ list_bucket_response(User, Bucket, KeyObjPairs, RD, Ctx) ->
                 end
                 || {Key, ObjResp} <- KeyObjPairs],
     BucketProps = [{'Name', [Bucket#moss_bucket.name]},
-                    {'Prefix', []},
-                    {'Marker', []},
-                    {'MaxKeys', ["1000"]},
-                    {'Delimiter', ["/"]},
-                    {'IsTruncated', ["false"]}],
+                   {'Prefix', []},
+                   {'Marker', []},
+                   {'MaxKeys', ["1000"]},
+                   {'Delimiter', ["/"]},
+                   {'IsTruncated', ["false"]}],
     XmlDoc = [{'ListBucketResult', BucketProps++
                    lists:filter(fun(E) -> E /= undefined end,
                                 Contents)}],
     respond(200, export_xml(XmlDoc), RD, Ctx).
 
-user_to_xml_owner(#moss_user{key_id=KeyId, name=Name}) ->
-    {'Owner', [{'ID', [KeyId]},
+user_to_xml_owner(?MOSS_USER{canonical_id=CanonicalId, display_name=Name}) ->
+    {'Owner', [{'ID', [CanonicalId]},
                {'DisplayName', [Name]}]}.
 
 export_xml(XmlDoc) ->
     unicode:characters_to_binary(
-      xmerl:export_simple(XmlDoc, xmerl_xml, [{prolog, ?xml_prolog}])).
+      xmerl:export_simple(XmlDoc, xmerl_xml, [{prolog, ?XML_PROLOG}])).

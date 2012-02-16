@@ -11,8 +11,8 @@
 %% Public API
 -export([binary_to_hexlist/1,
          close_riak_connection/1,
-         create_bucket/2,
-         create_user/1,
+         create_bucket/3,
+         create_user/2,
          delete_bucket/2,
          delete_object/2,
          from_bucket_name/1,
@@ -66,8 +66,8 @@ close_riak_connection(Pid) ->
 %% this bucket doesn't already
 %% exist anywhere, since everyone
 %% shares a global bucket namespace
--spec create_bucket(string(), binary()) -> ok.
-create_bucket(KeyID, BucketName) ->
+-spec create_bucket(string(), binary(), acl_v1()) -> ok.
+create_bucket(KeyID, BucketName, _ACL) ->
     Bucket = #moss_bucket{name=BucketName,
                           creation_date=riak_moss_wm_utils:iso_8601_datetime()},
     case riak_connection() of
@@ -95,17 +95,30 @@ create_bucket(KeyID, BucketName) ->
     end.
 
 %% @doc Create a new MOSS user
--spec create_user(string()) -> {ok, moss_user()}.
-create_user(UserName) ->
-    case riak_connection() of
-        {ok, RiakPid} ->
-            {KeyID, Secret} = generate_access_creds(UserName),
-            User = #moss_user{name=UserName, key_id=KeyID, key_secret=Secret},
-            save_user(User, RiakPid),
-            close_riak_connection(RiakPid),
-            {ok, User};
-        {error, Reason} ->
-            {error, {riak_connect_failed, Reason}}
+-spec create_user(string(), string()) -> {ok, moss_user()}.
+create_user(UserName, Email) ->
+    %% Validate the email address
+    case validate_email(Email) of
+        ok ->
+            case riak_connection() of
+                {ok, RiakPid} ->
+                    {KeyID, Secret} = generate_access_creds(UserName),
+                    CanonicalID = generate_canonical_id(KeyID, Secret),
+                    DisplayName = display_name(Email),
+                    User = ?MOSS_USER{name=UserName,
+                                      display_name=DisplayName,
+                                      email=Email,
+                                      key_id=KeyID,
+                                      key_secret=Secret,
+                                      canonical_id=CanonicalID},
+                    save_user(User, RiakPid),
+                    close_riak_connection(RiakPid),
+                    {ok, User};
+                {error, Reason} ->
+                    {error, {riak_connect_failed, Reason}}
+            end;
+        {error, Reason1} ->
+            {error, Reason1}
     end.
 
 %% @doc Delete a bucket
@@ -351,6 +364,12 @@ bucket_exists(Buckets, CheckBucket) ->
             true
     end.
 
+%% @doc Strip off the user name portion of an email address
+-spec display_name(string()) -> string().
+display_name(Email) ->
+    Index = string:chr(Email, $@),
+    string:sub_string(Email, 1, Index-1).
+
 %% @doc Generate a new set of access credentials for user.
 -spec generate_access_creds(string()) -> {binary(), binary()}.
 generate_access_creds(UserName) ->
@@ -368,6 +387,16 @@ get_user(KeyID, RiakPid) ->
         Error ->
             Error
     end.
+
+%% @doc Generate the canonical id for a user.
+-spec generate_canonical_id(string(), string()) -> string().
+generate_canonical_id(KeyID, Secret) ->
+    Bytes = 16,
+    Id1 = crypto:md5(KeyID),
+    Id2 = crypto:md5(Secret),
+    binary_to_hexlist(
+      iolist_to_binary(<< Id1:Bytes/binary,
+                          Id2:Bytes/binary >>)).
 
 %% @doc Generate an access key for a user
 -spec generate_key(binary()) -> string().
@@ -405,7 +434,18 @@ remove_bucket(Buckets, RemovalBucket) ->
 %% @doc Save information about a MOSS user
 -spec save_user(moss_user(), pid()) -> ok.
 save_user(User, RiakPid) ->
-    UserObj = riakc_obj:new(?USER_BUCKET, list_to_binary(User#moss_user.key_id), User),
+    UserObj = riakc_obj:new(?USER_BUCKET, list_to_binary(User?MOSS_USER.key_id), User),
     %% @TODO Error handling
     ok = riakc_pb_socket:put(RiakPid, UserObj),
     ok.
+
+%% @doc Validate an email address.
+-spec validate_email(string()) -> ok | {error, term()}.
+validate_email(EmailAddr) ->
+    %% @TODO More robust email address validation
+    case string:chr(EmailAddr, $@) of
+        0 ->
+            {error, invalid_email_address};
+        _ ->
+            ok
+    end.
