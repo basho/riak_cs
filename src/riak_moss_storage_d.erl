@@ -46,15 +46,6 @@
 %%% API
 %%%===================================================================
 
-%%--------------------------------------------------------------------
-%% @doc
-%% Creates a gen_fsm process which calls Module:init/1 to
-%% initialize. To ensure a synchronized start-up procedure, this
-%% function does not return until Module:init/1 has returned.
-%%
-%% @spec start_link() -> {ok, Pid} | ignore | {error, Error}
-%% @end
-%%--------------------------------------------------------------------
 start_link() ->
     gen_fsm:start_link({local, ?SERVER}, ?MODULE, [], []).
 
@@ -68,42 +59,20 @@ start_batch() ->
 %%% gen_fsm callbacks
 %%%===================================================================
 
-%%--------------------------------------------------------------------
-%% @private
-%% @doc
-%% Whenever a gen_fsm is started using gen_fsm:start/[3,4] or
-%% gen_fsm:start_link/[3,4], this function is called by the new
-%% process to initialize.
-%%
-%% @spec init(Args) -> {ok, StateName, State} |
-%%                     {ok, StateName, State, Timeout} |
-%%                     ignore |
-%%                     {stop, StopReason}
-%% @end
-%%--------------------------------------------------------------------
+%% @doc Read the storage schedule and go to idle.
 init([]) ->
     Schedule = read_storage_schedule(),
     {ok, idle, #state{schedule=Schedule}}.
 
-%%--------------------------------------------------------------------
-%% @private
-%% @doc
-%% There should be one instance of this function for each possible
-%% state name. Whenever a gen_fsm receives an event sent using
-%% gen_fsm:send_event/2, the instance of this function with the same
-%% name as the current state name StateName is called to handle
-%% the event. It is also called if a timeout occurs.
-%%
-%% @spec state_name(Event, State) ->
-%%                   {next_state, NextStateName, NextState} |
-%%                   {next_state, NextStateName, NextState, Timeout} |
-%%                   {stop, Reason, NewState}
-%% @end
-%%--------------------------------------------------------------------
+%% Asynchronous events
 
+%% @doc Transitions out of idle are all synchronous events
 idle(_, State) ->
     {next_state, idle, State}.
 
+%% @doc Async transitions from calculating are all due to messages the
+%% FSM sends itself, in order to have opportunities to handle messages
+%% from the outside world (like `status').
 calculating(continue, #state{batch=[]}=State) ->
     %% finished with this batch
     lager:info("Finished storage calculation in ~b seconds.",
@@ -111,31 +80,15 @@ calculating(continue, #state{batch=[]}=State) ->
     riak_moss_utils:close_riak_connection(State#state.riak),
     {next_state, idle, State#state{riak=undefined}};
 calculating(continue, State) ->
-    NewState = calculate_next_user(State),
     %% more to do yet
+    NewState = calculate_next_user(State),
     gen_fsm:send_event(?SERVER, continue),
     {next_state, calculating, NewState};
 calculating(_, State) ->
     {next_state, calculating, State}.
 
-%%--------------------------------------------------------------------
-%% @private
-%% @doc
-%% There should be one instance of this function for each possible
-%% state name. Whenever a gen_fsm receives an event sent using
-%% gen_fsm:sync_send_event/[2,3], the instance of this function with
-%% the same name as the current state name StateName is called to
-%% handle the event.
-%%
-%% @spec state_name(Event, From, State) ->
-%%                   {next_state, NextStateName, NextState} |
-%%                   {next_state, NextStateName, NextState, Timeout} |
-%%                   {reply, Reply, NextStateName, NextState} |
-%%                   {reply, Reply, NextStateName, NextState, Timeout} |
-%%                   {stop, Reason, NewState} |
-%%                   {stop, Reason, Reply, NewState}
-%% @end
-%%--------------------------------------------------------------------
+%% Synchronous events
+
 idle(status, _From, State) ->
     Props = [{schedule, State#state.schedule}],
     {reply, {ok, {idle, Props}}, idle, State};
@@ -171,81 +124,25 @@ calculating(start_batch, _From, State) ->
 calculating(_, _From, State) ->
     {reply, ok, calculating, State}.
 
-%%--------------------------------------------------------------------
-%% @private
-%% @doc
-%% Whenever a gen_fsm receives an event sent using
-%% gen_fsm:send_all_state_event/2, this function is called to handle
-%% the event.
-%%
-%% @spec handle_event(Event, StateName, State) ->
-%%                   {next_state, NextStateName, NextState} |
-%%                   {next_state, NextStateName, NextState, Timeout} |
-%%                   {stop, Reason, NewState}
-%% @end
-%%--------------------------------------------------------------------
+%% @doc there are no all-state events for this fsm
 handle_event(_Event, StateName, State) ->
     {next_state, StateName, State}.
 
-%%--------------------------------------------------------------------
-%% @private
-%% @doc
-%% Whenever a gen_fsm receives an event sent using
-%% gen_fsm:sync_send_all_state_event/[2,3], this function is called
-%% to handle the event.
-%%
-%% @spec handle_sync_event(Event, From, StateName, State) ->
-%%                   {next_state, NextStateName, NextState} |
-%%                   {next_state, NextStateName, NextState, Timeout} |
-%%                   {reply, Reply, NextStateName, NextState} |
-%%                   {reply, Reply, NextStateName, NextState, Timeout} |
-%%                   {stop, Reason, NewState} |
-%%                   {stop, Reason, Reply, NewState}
-%% @end
-%%--------------------------------------------------------------------
+%% @doc there are no all-state events for this fsm
 handle_sync_event(_Event, _From, StateName, State) ->
     Reply = ok,
     {reply, Reply, StateName, State}.
 
-%%--------------------------------------------------------------------
-%% @private
-%% @doc
-%% This function is called by a gen_fsm when it receives any
-%% message other than a synchronous or asynchronous event
-%% (or a system message).
-%%
-%% @spec handle_info(Info,StateName,State)->
-%%                   {next_state, NextStateName, NextState} |
-%%                   {next_state, NextStateName, NextState, Timeout} |
-%%                   {stop, Reason, NewState}
-%% @end
-%%--------------------------------------------------------------------
+%% @doc this fsm does not expect to receive any non-event messages
 handle_info(_Info, StateName, State) ->
     {next_state, StateName, State}.
 
-%%--------------------------------------------------------------------
-%% @private
-%% @doc
-%% This function is called by a gen_fsm when it is about to
-%% terminate. It should be the opposite of Module:init/1 and do any
-%% necessary cleaning up. When it returns, the gen_fsm terminates with
-%% Reason. The return value is ignored.
-%%
-%% @spec terminate(Reason, StateName, State) -> void()
-%% @end
-%%--------------------------------------------------------------------
+%% @doc TODO: log warnings if this fsm is asked to terminate in the
+%% middle of running a calculation
 terminate(_Reason, _StateName, _State) ->
     ok.
 
-%%--------------------------------------------------------------------
-%% @private
-%% @doc
-%% Convert process state when code is changed
-%%
-%% @spec code_change(OldVsn, StateName, State, Extra) ->
-%%                   {ok, StateName, NewState}
-%% @end
-%%--------------------------------------------------------------------
+%% @doc this fsm has no special upgrade process
 code_change(_OldVsn, StateName, State, _Extra) ->
     {ok, StateName, State}.
 
