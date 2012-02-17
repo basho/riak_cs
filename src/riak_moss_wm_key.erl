@@ -28,7 +28,7 @@ init(Config) ->
 
 -spec extract_paths(term(), term()) -> term().
 extract_paths(RD, Ctx) ->
-    Bucket = wrq:path_info(bucket, RD),
+    Bucket = list_to_binary(wrq:path_info(bucket, RD)),
     case wrq:path_tokens(RD) of
         [] ->
             Key = undefined;
@@ -55,16 +55,32 @@ service_available(RD, Ctx) ->
 %%      authenticated. Normally with HTTP
 %%      we'd use the `authorized` callback,
 %%      but this is how S3 does things.
-forbidden(RD, Ctx=#key_context{context=#context{auth_bypass=AuthBypass}}) ->
+forbidden(RD, Ctx=#key_context{bucket=Bucket,
+                               context=#context{auth_bypass=AuthBypass}}) ->
     AuthHeader = wrq:get_req_header("authorization", RD),
     case riak_moss_wm_utils:parse_auth_header(AuthHeader, AuthBypass) of
         {ok, AuthMod, Args} ->
             case AuthMod:authenticate(RD, Args) of
                 {ok, User} ->
-                    %% Authentication succeeded
-                    NewInnerCtx = Ctx#key_context.context#context{user=User},
-                    forbidden(wrq:method(RD), RD,
-                                Ctx#key_context{context=NewInnerCtx});
+                    %% Authentication succeeded, now perform
+                    %% ACL check to verify access permission.
+                    lager:debug("QS: ~p", [wrq:req_qs(RD)]),
+                    RequestedAccess =
+                        riak_moss_acl_utils:requested_access(wrq:method(RD),
+                                                             wrq:req_qs(RD)),
+                    case riak_moss_acl:bucket_access(Bucket,
+                                                     RequestedAccess,
+                                                     User?MOSS_USER.canonical_id) of
+                        true ->
+                            NewInnerCtx =
+                                Ctx#key_context.context#context{user=User},
+                            forbidden(wrq:method(RD), RD,
+                                      Ctx#key_context{bucket=Bucket,
+                                                      context=NewInnerCtx});
+                        false ->
+                            %% ACL check failed, deny access
+                            riak_moss_s3_response:api_error(access_denied, RD, Ctx)
+                    end;
                 {error, _Reason} ->
                     %% Authentication failed, deny access
                     riak_moss_s3_response:api_error(access_denied, RD, Ctx)
@@ -161,9 +177,8 @@ produce_body(RD, #key_context{get_fsm_pid=GetFsmPid, doc_metadata=DocMeta}=Ctx) 
 %% @doc Callback for deleting an object.
 -spec delete_resource(term(), term()) -> boolean().
 delete_resource(RD, Ctx=#key_context{bucket=Bucket, key=Key}) ->
-    BinBucket = list_to_binary(Bucket),
     BinKey = list_to_binary(Key),
-    case riak_moss_delete_fsm_sup:start_delete_fsm(node(), [BinBucket, BinKey, 600000]) of
+    case riak_moss_delete_fsm_sup:start_delete_fsm(node(), [Bucket, BinKey, 600000]) of
         {ok, _Pid} ->
             {true, RD, Ctx};
         {error, Reason} ->
@@ -206,9 +221,11 @@ content_types_accepted(RD, Ctx) ->
 
 -spec accept_body(term(), term()) ->
     {true, term(), term()}.
-accept_body(RD, Ctx=#key_context{bucket=Bucket,key=Key,
-                                 putctype=ContentType,size=Size}) ->
-    Args = [list_to_binary(Bucket), Key, Size, ContentType, <<>>, 60000],
+accept_body(RD, Ctx=#key_context{bucket=Bucket,
+                                 key=Key,
+                                 putctype=ContentType,
+                                 size=Size}) ->
+    Args = [Bucket, Key, Size, ContentType, <<>>, 60000],
     {ok, Pid} = riak_moss_put_fsm_sup:start_put_fsm(node(), Args),
     accept_streambody(RD, Ctx, Pid, wrq:stream_req_body(RD, riak_moss_lfs_utils:block_size())).
 
