@@ -59,18 +59,21 @@ archive_period() ->
                     %% require period boundaries to fall on day boundaries
                     {ok, AP};
                 _ ->
-                    {error, "riak_moss:archive_period"
+                    {error, "riak_moss:access_archive_period"
                             " does not evenly divide one day"}
             end;
         _ ->
-            {error, "riak_moss:archive_period was not an integer"}
+            {error, "riak_moss:access_archive_period was not an integer"}
     end.
 
 %% @doc Retrive the Riak object key under which the access data is
 %% stored for the given user during the given time slice.
 -spec slice_key(riak_moss:user_key(), slice()) -> binary().
-slice_key(User, {_Start, End}) ->
-    iolist_to_binary([User,".",iso8601(End)]).
+slice_key(User, {Start, _End}) ->
+    %% logger may give us a slice that doesn't fill a whole archive
+    %% slice, so realign it to make sure
+    {_, RealEnd} = slice_containing(Start),
+    iolist_to_binary([User,".",iso8601(RealEnd)]).
 
 %% @doc Get the slice containing the given time.
 -spec slice_containing(calendar:datetime()) -> slice().
@@ -389,10 +392,21 @@ make_object_test() ->
 %% the content type, and a value that is a JSON representation of the
 %% sum of each access metric plus start and end times
 make_object_prop() ->
-    ?FORALL({UserKey, Accesses, T0, T1},
-            {user_key_g(), list(access_g()), datetime_g(), datetime_g()},
+    ?FORALL({UserKey, Accesses, Start, DRand},
+            {user_key_g(), list(access_g()), datetime_g(), nat()},
             begin
-                {Start, End} = list_to_tuple(lists:sort([T0, T1])),
+                %% different periods should be irrelevant to this test
+                application:set_env(riak_moss, access_archive_period, 10),
+
+                %% Start and End are always within the same slice;
+                %% make sure they are at test time as well
+                {_, SliceEnd} = slice_containing(Start),
+                StartSec = calendar:datetime_to_gregorian_seconds(Start),
+                EndSec = calendar:datetime_to_gregorian_seconds(SliceEnd),
+                End = calendar:gregorian_seconds_to_datetime(
+                        (DRand rem (1+EndSec-StartSec))+StartSec),
+                %% the '1+' above allows the choice of End==SliceEnd
+                
                 Obj = make_object(UserKey, Accesses, {Start, End}),
                 
                 Unique = lists:usort(
@@ -410,7 +424,7 @@ make_object_prop() ->
                                         binary_to_list(UserKey))},
                       {key_time, 0 /= string:str(
                                         binary_to_list(riakc_obj:key(Obj)),
-                                        binary_to_list(iso8601(End)))},
+                                        binary_to_list(iso8601(SliceEnd)))},
                       {ctype, "application/json" ==
                            riakc_obj:md_ctype(
                              riakc_obj:get_update_metadata(Obj))},

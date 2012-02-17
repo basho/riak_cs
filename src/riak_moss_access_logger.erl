@@ -46,6 +46,7 @@
 %% API
 -export([start_link/1, log_access/1]).
 -export([set_user/2, set_stat/3]).
+-export([flush/1]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -109,6 +110,13 @@ log_access(LogData) ->
     %% response -- just cast
     gen_server:cast(?SERVER, {log_access, LogData}).
 
+flush(Timeout) ->
+    Now = calendar:universal_time(),
+    case catch gen_server:call(?SERVER, {flush, Now}, Timeout) of
+        ok -> ok;
+        {'EXIT',{Reason,_}} -> Reason
+    end.
+
 %%%===================================================================
 %%% gen_server callbacks
 %%%===================================================================
@@ -158,6 +166,16 @@ init(Props) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
+handle_call({flush, FlushEnd}, _From, #state{current=C}=State) ->
+    %% record this archive as not filling the whole slice
+    {SliceStart, SliceEnd} = C,
+    NewState = do_archive(State#state{current={SliceStart, FlushEnd}}),
+
+    %% Now continue waiting for the archive message for this slice,
+    %% but mark the next archive as not filling the whole slice as well
+    OldNewState = NewState#state{current={FlushEnd, SliceEnd}},
+
+    {reply, ok, OldNewState};
 handle_call(_Request, _From, State) ->
     Reply = ok,
     {reply, Reply, State}.
