@@ -17,6 +17,7 @@
          delete_object/2,
          from_bucket_name/1,
          get_admin_creds/0,
+         get_buckets/1,
          get_keys_and_objects/2,
          get_object/2,
          get_object/3,
@@ -230,11 +231,6 @@ stanchion_data() ->
             SSL = ?DEFAULT_STANCHION_SSL
     end,
     {IP, Port, SSL}.
-
-%% @doc Return a user's buckets.
--spec get_buckets(moss_user()) -> [moss_bucket()].
-get_buckets(?MOSS_USER{buckets=Buckets}) ->
-    Buckets.
 
 %% @doc Return a list of keys for a bucket along
 %% with their associated objects.
