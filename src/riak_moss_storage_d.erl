@@ -14,8 +14,7 @@
 %% API
 -export([start_link/0,
          status/0,
-         start_batch/0,
-         read_storage_schedule/0]).
+         start_batch/0]).
 
 %% gen_fsm callbacks
 -export([init/1,
@@ -34,10 +33,13 @@
 -define(SERVER, ?MODULE).
 
 -record(state, {
-          schedule,      %% the times that archives are stored
+          schedule,      %% the times that storage is calculated
+          last,          %% the last time a calculation was scheduled
+          current,       %% what schedule we're calculating for now
+          next,          %% the next scheduled time
+
           riak,          %% client we're currently using
-          target,        %% the ideal time the batch would start
-          batch_start,   %% the time we started 
+          batch_start,   %% the time we actually started 
           batch_count=0, %% count of users processed so far
           batch=[]       %% users left to process in this batch
          }).
@@ -46,12 +48,27 @@
 %%% API
 %%%===================================================================
 
+%% @doc Starting the server also verifies the storage schedule.  If
+%% the schedule contains invalid elements, an error will be printed in
+%% the logs.
 start_link() ->
     gen_fsm:start_link({local, ?SERVER}, ?MODULE, [], []).
 
+%% @doc Status is returned as a 2-tuple of `{State, Details}'.  State
+%% should be either `idle' or `calculating'.  When `idle' the details
+%% (a proplist) will include the schedule, as well as the times of the
+%% last calculation and the next planned calculation.  When
+%% `calculating' details also the scheduled time of the active
+%% calculation, the number of seconds the process has been calculating
+%% so far, and counts of how many users have been processed and how
+%% many are left.
 status() ->
     gen_fsm:sync_send_event(?SERVER, status).
 
+%% @doc Force a calculation and archival manually.  The `current'
+%% property returned from a {@link status/0} call will show the most
+%% recently passed schedule time, but calculations will be stored with
+%% the time at which they happen, as expected.
 start_batch() ->
     gen_fsm:sync_send_event(?SERVER, start_batch, infinity).
 
@@ -62,7 +79,9 @@ start_batch() ->
 %% @doc Read the storage schedule and go to idle.
 init([]) ->
     Schedule = read_storage_schedule(),
-    {ok, idle, #state{schedule=Schedule}}.
+    SchedState = schedule_next(#state{schedule=Schedule},
+                               calendar:universal_time()),
+    {ok, idle, SchedState}.
 
 %% Asynchronous events
 
@@ -73,12 +92,15 @@ idle(_, State) ->
 %% @doc Async transitions from calculating are all due to messages the
 %% FSM sends itself, in order to have opportunities to handle messages
 %% from the outside world (like `status').
-calculating(continue, #state{batch=[]}=State) ->
+calculating(continue, #state{batch=[], current=Current}=State) ->
     %% finished with this batch
     lager:info("Finished storage calculation in ~b seconds.",
                [elapsed(State#state.batch_start)]),
     riak_moss_utils:close_riak_connection(State#state.riak),
-    {next_state, idle, State#state{riak=undefined}};
+    NewState = State#state{riak=undefined,
+                           last=Current,
+                           current=undefined},
+    {next_state, idle, NewState};
 calculating(continue, State) ->
     %% more to do yet
     NewState = calculate_next_user(State),
@@ -90,36 +112,28 @@ calculating(_, State) ->
 %% Synchronous events
 
 idle(status, _From, State) ->
-    Props = [{schedule, State#state.schedule}],
+    Props = [{schedule, State#state.schedule},
+             {last, State#state.last},
+             {next, State#state.next}],
     {reply, {ok, {idle, Props}}, idle, State};
 idle(start_batch, _From, #state{schedule=Schedule}=State) ->
-    BatchStart = calendar:universal_time(),
-    Target = target_time(BatchStart, Schedule),
-
-    %% TODO: probably want to do this fetch streaming, to avoid
-    %% accidental memory pressure at other points
-    {ok, Riak} = riak_moss_utils:riak_connection(),
-    Batch = fetch_user_list(Riak),
-
-    NewState = State#state{batch_start=BatchStart,
-                           target=Target,
-                           riak=Riak,
-                           batch=Batch,
-                           batch_count=0},
-
-    gen_fsm:send_event(?SERVER, continue),
+    Target = target_time(calendar:universal_time(), Schedule),
+    NewState = start_batch(Target, State),
     {reply, ok, calculating, NewState};
 idle(_, _From, State) ->
     {reply, ok, idle, State}.
 
 calculating(status, _From, State) ->
     Props = [{schedule, State#state.schedule},
-             {target, State#state.target},
+             {last, State#state.last},
+             {current, State#state.current},
+             {next, State#state.next},
              {elapsed, elapsed(State#state.batch_start)},
              {users_done, State#state.batch_count},
              {users_left, length(State#state.batch)}],
     {reply, {ok, {calculating, Props}}, calculating, State};
 calculating(start_batch, _From, State) ->
+    %% this is the manual user request to begin a batch
     {reply, {error, already_calculating}, calculating, State};
 calculating(_, _From, State) ->
     {reply, ok, calculating, State}.
@@ -133,7 +147,18 @@ handle_sync_event(_Event, _From, StateName, State) ->
     Reply = ok,
     {reply, Reply, StateName, State}.
 
-%% @doc this fsm does not expect to receive any non-event messages
+handle_info({start_batch, Next}, idle, #state{next=Next}=State) ->
+    %% next is scheduled immediately in order to generate warnings if
+    %% the current calculation runs over time (see next clause)
+    NewState = schedule_next(start_batch(Next, State), Next),
+    {next_state, calculating, NewState};
+handle_info({start_batch, Next}, calculating,
+            #state{next=Next, current=Current}=State) ->
+    lager:error("Unable to start storage calculation for ~p"
+                " because ~p is still working. Skipping forward...",
+                [Next, Current]),
+    NewState = schedule_next(State, Next),
+    {next_state, calculating, NewState};
 handle_info(_Info, StateName, State) ->
     {next_state, StateName, State}.
 
@@ -150,39 +175,52 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
-%% Returns the schedules sorted such that the next time to start
-%% calculation is the head of the list.
+%% @doc The schedule will contain all valid times found in the
+%% configuration, and will be sorted in day order.
 read_storage_schedule() ->
     lists:usort(read_storage_schedule1()).
 
 read_storage_schedule1() ->
     case application:get_env(riak_moss, storage_schedule) of
         undefined ->
-            lager:warning("No storage schedule defined."),
-            [];
-        {ok, []} ->
-            lager:warning("No storage schedule defined."),
+            lager:warning("No storage schedule defined."
+                          " Calculation must be triggered manually."),
             [];
         {ok, Sched} ->
             case catch parse_time(Sched) of
                 {ok, Time} ->
                     %% user provided just one time
                     [Time];
-                {'EXIT',_} ->
+                {'EXIT',_} when is_list(Sched) ->
                     Times = [ {S, catch parse_time(S)} || S <- Sched ],
-                    case [ Bad || {_,{'EXIT',_}}=Bad <- Times ] of
+                    case [ X || {X,{'EXIT',_}} <- Times ] of
+                        [] -> ok;
+                        Bad ->
+                            lager:error(
+                              "Ignoring bad storage schedule elements ~p",
+                              [Bad])
+                    end,
+                    case [ Parsed || {_, {ok, Parsed}} <- Times] of
                         [] ->
-                            %% all times user provided were good
-                            [ Parsed || {_, {ok, Parsed}} <- Times];
-                        Errors ->
-                            lager:error("Bad storage schedule elements ~p,"
-                                        " ignoring given schedule.",
-                                        [ [S || {S,_} <- Errors] ]),
-                            []
-                    end
+                            lager:warning(
+                              "No storage schedule defined."
+                              " Calculation must be triggered manually."),
+                            [];
+                        Good ->
+                            Good
+                    end;
+                _ ->
+                    lager:error(
+                      "Invalid storage schedule defined."
+                      " Calculation must be triggered manually."),
+                    []
             end
     end.
 
+%% @doc Time is allowed as a `{Hour, Minute}' tuple, or as an `"HHMM"'
+%% string.  This function purposely fails (with function or case
+%% clause currently) to allow {@link read_storage_schedule1/0} to pick
+%% out the bad eggs.
 parse_time({Hour, Min}) when (Hour >= 0 andalso Hour =< 23),
                              (Min >= 0 andalso Min =< 59) ->
     {ok, {Hour, Min}};
@@ -192,7 +230,24 @@ parse_time(HHMM) when is_list(HHMM) ->
             %% make sure numeric bounds apply
             parse_time({Hour, Min})
     end.
-                            
+
+%% @doc Actually kick off the batch.  After calling this function, you
+%% must advance the FSM state to `calculating'.
+start_batch(Time, State) ->
+    BatchStart = calendar:universal_time(),
+    %% TODO: probably want to do this fetch streaming, to avoid
+    %% accidental memory pressure at other points
+    {ok, Riak} = riak_moss_utils:riak_connection(),
+    Batch = fetch_user_list(Riak),
+
+    gen_fsm:send_event(?SERVER, continue),
+    State#state{batch_start=BatchStart,
+                current=Time,
+                riak=Riak,
+                batch=Batch,
+                batch_count=0}.
+
+%% @doc Grab the whole list of MOSS users.
 fetch_user_list(Riak) ->
     case riakc_pb_socket:list_keys(Riak, ?USER_BUCKET) of
         {ok, Users} -> Users;
@@ -203,6 +258,7 @@ fetch_user_list(Riak) ->
             []
     end.
 
+%% @doc Compute storage for the next user in the batch.
 calculate_next_user(#state{riak=Riak,
                            batch=[User|Rest]}=State) ->
     Start = calendar:universal_time(),
@@ -216,6 +272,7 @@ calculate_next_user(#state{riak=Riak,
     end,
     State#state{batch=Rest, batch_count=1+State#state.batch_count}.
 
+%% @doc Archive a user's storage calculation.
 store_user(#state{riak=Riak}, User, BucketList, Start, End) ->
     Obj = riak_moss_storage:make_object(User, BucketList, Start, End),
     case riakc_pb_socket:put(Riak, Obj) of
@@ -225,10 +282,19 @@ store_user(#state{riak=Riak}, User, BucketList, Start, End) ->
                         [User, Error])
     end.
 
+%% @doc How many seconds have passed from `Time' to now.
 elapsed(Time) ->
-    calendar:datetime_to_gregorian_seconds(calendar:universal_time())
-        -calendar:datetime_to_gregorian_seconds(Time).
+    elapsed(Time, calendar:universal_time()).
 
+%% @doc How many seconds are between `Early' and `Late'.  Warning:
+%% this will be negative if `Early' is later than `Late'.
+elapsed(Early, Late) ->
+    calendar:datetime_to_gregorian_seconds(Late)
+        -calendar:datetime_to_gregorian_seconds(Early).
+
+%% @doc Determine which of our schedules would have triggered the
+%% given batch start time.  This is only used for reporting in status.
+%% TODO: maybe get rid of it?
 target_time({Today,{BSH, BSM,_}}=BatchStart, Schedule) ->
     case {BSH, BSM} < hd(Schedule) of
         true ->
@@ -245,5 +311,46 @@ target_time({Today,{BSH, BSM,_}}=BatchStart, Schedule) ->
                                                (H == BSH andalso M < BSM) ],
             {Today, {H, M, 0}}
     end.
-                                         
-            
+
+%% @doc Setup the automatic trigger to start the next scheduled batch
+%% calculation.  "Next" is defined as the scheduled time occurring
+%% soonest after the `Last' parameter, that has not also already
+%% passed by the wall clock.  If the next scheduled time <em>has</em>
+%% already passed, an error is printed to the logs, and the next time
+%% that has not already passed is found and scheduled instead.
+schedule_next(#state{schedule=[]}=State, _) ->
+    %% nothing to schedule, all triggers manual
+    State;
+schedule_next(#state{schedule=Schedule}=State, Last) ->
+    NextTime = next_target_time(Last, Schedule),
+    case elapsed(calendar:universal_time(), NextTime) of
+        D when D > 0 ->
+            lager:info("Scheduling next storage calculation for ~p",
+                       [NextTime]),
+            erlang:send_after(D*1000, self(), {start_batch, NextTime}),
+            State#state{next=NextTime};
+        _ ->
+            lager:error("Missed start time for storage calculation at ~p,"
+                        " skipping to next scheduled time...",
+                        [NextTime]),
+            %% just skip everything until the next scheduled time from now
+            schedule_next(State, calendar:universal_time())
+    end.
+
+%% @doc Find the next scheduled time after the given time.
+next_target_time({Day, {LH, LM,_}}, Schedule) ->
+    RemainingInDay = lists:dropwhile(
+                       fun(Sched) -> Sched =< {LH, LM} end, Schedule),
+    case RemainingInDay of
+        [] ->
+            [{NH, NM}|_] = Schedule,
+            {next_day(Day), {NH, NM, 0}};
+        [{NH, NM}|_] ->
+            {Day, {NH, NM, 0}}
+    end.
+
+next_day(Day) ->
+    {DayP,_} = calendar:gregorian_seconds_to_datetime(
+                 86400+calendar:datetime_to_gregorian_seconds(
+                         {Day, {0,0,1}})),
+    DayP.
