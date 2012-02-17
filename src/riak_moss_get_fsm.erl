@@ -199,11 +199,20 @@ waiting_continue_or_stop(continue, #state{value_cache=CachedValue,
     case CachedValue of
         undefined ->
             BlockSequences = riak_moss_lfs_utils:block_sequences_for_manifest(Manifest),
-            BlocksLeft = sets:from_list(BlockSequences),
+            case BlockSequences of
+                [] ->
+                    %% No blocks = empty file
+                    {next_state, waiting_chunk_request, State};
+                    %% {next_state, waiting_chunk_request,
+                    %%  State#state{value_cache = <<>>}};
+                [_|_] ->
+                    BlocksLeft = sets:from_list(BlockSequences),
 
-            %% start retrieving the first block
-            riak_moss_reader:get_chunk(ReaderPid, BucketName, Key, UUID, hd(BlockSequences)),
-            {next_state, waiting_chunks, State#state{blocks_left=BlocksLeft}};
+                    %% start retrieving the first block
+                    riak_moss_reader:get_chunk(ReaderPid, BucketName, Key, UUID,
+                                               hd(BlockSequences)),
+                    {next_state, waiting_chunks, State#state{blocks_left=BlocksLeft}}
+            end;
         _ ->
             %% we don't actually have to start
             %% retrieving chunks, as we already
