@@ -251,19 +251,8 @@ case "$1" in
         fi
         echo "config is OK"
         ;;
-    flush_access)
-        # Make sure the local node IS running
-        RES=`$NODETOOL ping`
-        if [ "$RES" != "pong" ]; then
-            echo "Node is not running!"
-            exit 1
-        fi
-        shift
-
-        $NODETOOL rpc riak_moss_console flush_access $@
-        ;;
     *)
-        echo "Usage: $SCRIPT {start|stop|restart|reboot|ping|console|attach|chkconfig|flush_access}"
+        echo "Usage: $SCRIPT {start|stop|restart|reboot|ping|console|attach|chkconfig}"
         exit 1
         ;;
 esac
