@@ -11,6 +11,7 @@
          ensure_doc/1,
          iso_8601_datetime/0,
          to_iso_8601/1,
+         iso_8601_to_rfc_1123/1,
          streaming_get/1,
          user_record_to_proplist/1]).
 
@@ -108,6 +109,19 @@ to_iso_8601(Date) ->
             Date
     end.
 
+%% @doc Convert an ISO 8601 date to RFC 1123 date
+-spec iso_8601_to_rfc_1123(binary() | string()) -> string().
+iso_8601_to_rfc_1123(Date) when is_list(Date) ->
+    iso_8601_to_rfc_1123(iolist_to_binary(Date));
+iso_8601_to_rfc_1123(Date) when is_binary(Date) ->
+    %% e.g. "2012-02-17T18:22:50.000Z"
+    <<Yr:4/binary, _:1/binary, Mo:2/binary, _:1/binary, Da:2/binary,
+      _T:1/binary,
+      Hr:2/binary, _:1/binary, Mn:2/binary, _:1/binary, Sc:2/binary,
+      _/binary>> = Date,
+    httpd_util:rfc1123_date({{b2i(Yr), b2i(Mo), b2i(Da)},
+                             {b2i(Hr), b2i(Mn), b2i(Sc)}}).
+
 %% ===================================================================
 %% Internal functions
 %% ===================================================================
@@ -123,3 +137,6 @@ to_iso_8601(Date) ->
 iso_8601_format(Year, Month, Day, Hour, Min, Sec) ->
     io_lib:format("~4.10.0B-~2.10.0B-~2.10.0BT~2.10.0B:~2.10.0B:~2.10.0B.000Z",
                   [Year, Month, Day, Hour, Min, Sec]).
+
+b2i(Bin) ->
+    list_to_integer(binary_to_list(Bin)).

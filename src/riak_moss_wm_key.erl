@@ -139,7 +139,11 @@ produce_body(RD, #key_context{get_fsm_pid=GetFsmPid, doc_metadata=DocMeta}=Ctx) 
     ContentLength = dict:fetch("content-length", DocMeta),
     ContentMd5 = dict:fetch("content-md5", DocMeta),
     ETag = "\"" ++ riak_moss_utils:binary_to_hexlist(ContentMd5) ++ "\"",
-    NewRQ = wrq:set_resp_header("ETag",  ETag, RD),
+    NewRQ = lists:foldl(fun({K, V}, Rq) -> wrq:set_resp_header(K, V, Rq) end,
+                        RD,
+                        [{"ETag",  ETag},
+                         {"Last-Modified", dict:fetch("last-modified", DocMeta)}
+                        ]),
     riak_moss_get_fsm:continue(GetFsmPid),
     case ContentLength of
         0 ->
