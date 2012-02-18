@@ -60,11 +60,16 @@ parse_auth_header(_, _) ->
 %%      it again if it's already in the
 %%      Ctx
 -spec ensure_doc(term()) -> term().
-ensure_doc(Ctx=#key_context{get_fsm_pid=undefined, bucket=Bucket, key=Key}) ->
+ensure_doc(Ctx=#key_context{get_fsm_pid=undefined, bucket=Bucket, key=Key,
+                            method=Method}) ->
     %% start the get_fsm
     BinBucket = list_to_binary(Bucket),
     BinKey = list_to_binary(Key),
-    {ok, Pid} = riak_moss_get_fsm_sup:start_get_fsm(node(), [BinBucket, BinKey]),
+    ManifestOnly = case Method of 'HEAD' -> true;
+                                  _      -> false
+                   end,
+    {ok, Pid} = riak_moss_get_fsm_sup:start_get_fsm(
+                  node(), [BinBucket, BinKey, ManifestOnly]),
     Metadata = riak_moss_get_fsm:get_metadata(Pid),
     Ctx#key_context{get_fsm_pid=Pid, doc_metadata=Metadata};
 ensure_doc(Ctx) -> Ctx.

@@ -21,7 +21,7 @@
 -include("riak_moss.hrl").
 
 %% API
--export([start_link/2,
+-export([start_link/3,
          stop/1,
          continue/1,
          manifest/2,
@@ -53,6 +53,7 @@
                 value_cache :: binary(),
                 metadata_cache :: term(),
                 chunk_queue :: term(),
+                manifest_only :: boolean(),
                 manifest :: term(),
                 manifest_uuid :: term(),
                 blocks_left :: list(),
@@ -62,8 +63,9 @@
 %% Public API
 %% ===================================================================
 
-start_link(Bucket, Key) ->
-    gen_fsm:start_link(?MODULE, [Bucket, Key], []).
+start_link(Bucket, Key, ManifestOnly)
+  when is_atom(ManifestOnly)->
+    gen_fsm:start_link(?MODULE, [Bucket, Key, ManifestOnly], []).
 
 stop(Pid) ->
     gen_fsm:send_event(Pid, stop).
@@ -87,7 +89,7 @@ chunk(Pid, ChunkSeq, ChunkValue) ->
 %% gen_fsm callbacks
 %% ====================================================================
 
-init([Bucket, Key]) ->
+init([Bucket, Key, ManifestOnly]) ->
     %% we want to trap exits because
     %% `erlang:link` isn't atomic, and
     %% since we're starting the reader
@@ -97,16 +99,16 @@ init([Bucket, Key]) ->
     %% an exit Reason of `noproc`
     process_flag(trap_exit, true),
 
-
     Queue = queue:new(),
     State = #state{bucket=Bucket, key=Key,
+                   manifest_only = ManifestOnly,
                    chunk_queue=Queue},
     %% purposely have the timeout happen
     %% so that we get called in the prepare
     %% state
     {ok, prepare, State, 0};
 init([test, Bucket, Key, ContentLength, BlockSize]) ->
-    {ok, prepare, State1, 0} = init([Bucket, Key]),
+    {ok, prepare, State1, 0} = init([Bucket, Key, false]),
     %% purposely have the timeout happen
     %% so that we get called in the prepare
     %% state
@@ -192,6 +194,7 @@ waiting_continue_or_stop(stop, State) ->
     {stop, normal, State};
 waiting_continue_or_stop(continue, #state{value_cache=CachedValue,
                                           manifest=Manifest,
+                                          manifest_only=ManifestOnly,
                                           bucket=BucketName,
                                           key=Key,
                                           manifest_uuid=UUID,
@@ -201,9 +204,14 @@ waiting_continue_or_stop(continue, #state{value_cache=CachedValue,
             BlockSequences = riak_moss_lfs_utils:block_sequences_for_manifest(Manifest),
             BlocksLeft = sets:from_list(BlockSequences),
 
-            %% start retrieving the first block
-            riak_moss_reader:get_chunk(ReaderPid, BucketName, Key, UUID, hd(BlockSequences)),
-            {next_state, waiting_chunks, State#state{blocks_left=BlocksLeft}};
+            if ManifestOnly ->
+                    {stop, normal, State};
+               true ->
+                    %% start retrieving the first block
+                    riak_moss_reader:get_chunk(ReaderPid, BucketName, Key, UUID,
+                                               hd(BlockSequences)),
+                    {next_state, waiting_chunks, State#state{blocks_left=BlocksLeft}}
+            end;
         _ ->
             %% we don't actually have to start
             %% retrieving chunks, as we already

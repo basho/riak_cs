@@ -20,6 +20,7 @@
                       putctype :: string(),
                       bucket :: list(),
                       key :: list(),
+                      method :: atom(),
                       size :: non_neg_integer()}).
 
 -define(USER_BUCKET, <<"moss.users">>).
