@@ -81,6 +81,7 @@ init([]) ->
     Schedule = read_storage_schedule(),
     SchedState = schedule_next(#state{schedule=Schedule},
                                calendar:universal_time()),
+    rts:check_bucket_props(?STORAGE_BUCKET),
     {ok, idle, SchedState}.
 
 %% Asynchronous events

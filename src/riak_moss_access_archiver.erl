@@ -104,44 +104,8 @@ status(Timeout) ->
 %% @end
 %%--------------------------------------------------------------------
 init([]) ->
-    ensure_bucket_props(),
+    rts:check_bucket_props(?ACCESS_BUCKET),
     {ok, #state{}}.
-
-%% make sure the archive bucket is allow_mult=true, or we'll
-%% clobber data there
-ensure_bucket_props() ->
-    case riak_moss_utils:riak_connection() of
-        {ok, Riak} ->
-            case riakc_pb_socket:get_bucket(Riak, ?ACCESS_BUCKET) of
-                {ok, Props} ->
-                    case lists:keyfind(allow_mult, 1, Props) of
-                        {allow_mult, true} ->
-                            lager:debug("Access archive bucket was"
-                                        " already configured correctly."),
-                            ok;
-                        _ ->
-                            case riakc_pb_socket:set_bucket(
-                                   Riak, ?ACCESS_BUCKET,
-                                   [{allow_mult, true}]) of
-                                ok ->
-                                    lager:info("Configured access archive"
-                                               " bucket settings.");
-                                {error, Reason} ->
-                                    lager:warn("Unable to configure access "
-                                               "archive bucket settings (~p).",
-                                               [Reason])
-                            end
-                    end;
-                {error, Reason} ->
-                    lager:warn(
-                      "Unable to verify access archive bucket settings (~p).",
-                      [Reason])
-            end;
-        {error, Reason} ->
-            lager:warn(
-              "Unable to verify access archive bucket settings (~p).",
-              [Reason])
-    end.
 
 %%--------------------------------------------------------------------
 %% @private
