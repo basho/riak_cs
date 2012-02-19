@@ -32,11 +32,13 @@
 %% The stat `bytes_out' is logged automatically from the log data
 %% field `bytes'.
 %%
-%% The archive period is controlled by the `riak_moss' application
-%% environment variable `access_archive_period', specified as an
-%% integer number of seconds.  Archives are always made at the same
-%% time each day (for a given period), to allow for a predictable
-%% storage key.
+%% The log is flushed to Riak at an interval specified by the
+%% `riak_moss' application environment variable
+%% `access_log_flush_interval'.  The value is the maximum number of
+%% seconds between flushes.  This number should be less than or equal
+%% to the `access_archive_period' setting, and should also evenly
+%% divide that setting, or results of later queries may miss
+%% information.
 -module(riak_moss_access_logger).
 
 -behaviour(gen_server).
@@ -94,10 +96,10 @@ set_stat(Name, Value, RD) when (is_atom(Name) orelse is_binary(Name)),
 %% @end
 %%--------------------------------------------------------------------
 start_link(_BaseDir) ->
-    case riak_moss_access:archive_period() of
-        {ok, ArchivePeriod} ->
+    case riak_moss_access:log_flush_interval() of
+        {ok, LogPeriod} ->
             gen_server:start_link({local, ?SERVER}, ?MODULE,
-                                  [{period, ArchivePeriod}],
+                                  [{period, LogPeriod}],
                                   []);
         {error, Reason} ->
             {error, Reason}
