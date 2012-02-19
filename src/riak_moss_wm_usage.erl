@@ -291,7 +291,7 @@ xml_error_msg(Message) ->
 datetime(Binary) when is_binary(Binary) ->
     datetime(binary_to_list(Binary));
 datetime(String) when is_list(String) ->
-    case io_lib:fread("~4d~2d~2dT~2d~2d~2dZ", String) of
+    case catch io_lib:fread("~4d~2d~2dT~2d~2d~2dZ", String) of
         {ok, [Y,M,D,H,I,S], _} ->
             {ok, {{Y,M,D},{H,I,S}}};
         %% TODO: match {more, _, _, RevList} to allow for shortened
