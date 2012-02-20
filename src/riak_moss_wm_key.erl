@@ -56,25 +56,39 @@ service_available(RD, Ctx) ->
 %%      we'd use the `authorized` callback,
 %%      but this is how S3 does things.
 forbidden(RD, Ctx=#key_context{bucket=Bucket,
+                               key=Key,
                                context=#context{auth_bypass=AuthBypass}}) ->
+    BinKey = list_to_binary(Key),
     AuthHeader = wrq:get_req_header("authorization", RD),
-    case riak_moss_wm_utils:parse_auth_header(AuthHeader, AuthBypass) of
-        {ok, AuthMod, Args} ->
-            case AuthMod:authenticate(RD, Args) of
-                {ok, User} ->
+    {AuthMod, KeyId, Signature} =
+        riak_moss_wm_utils:parse_auth_header(AuthHeader, AuthBypass),
+    Method = wrq:method(RD),
+    RequestedAccess =
+        riak_moss_acl_utils:requested_access(Method,
+                                             wrq:req_qs(RD)),
+    case riak_moss_utils:get_user(KeyId) of
+        {ok, {User, _}} ->
+            case AuthMod:authenticate(RD, User?MOSS_USER.key_secret, Signature) of
+                ok ->
                     %% Authentication succeeded, now perform
                     %% ACL check to verify access permission.
-                    lager:debug("QS: ~p", [wrq:req_qs(RD)]),
                     RequestedAccess =
-                        riak_moss_acl_utils:requested_access(wrq:method(RD),
+                        riak_moss_acl_utils:requested_access(Method,
                                                              wrq:req_qs(RD)),
-                    case riak_moss_acl:bucket_access(Bucket,
+                    case riak_moss_acl:object_access(Bucket,
+                                                     BinKey,
                                                      RequestedAccess,
                                                      User?MOSS_USER.canonical_id) of
+                        {true, _OwnerId} ->
+                            NewInnerCtx =
+                                Ctx#key_context.context#context{user=User},
+                            forbidden(Method, RD,
+                                      Ctx#key_context{bucket=Bucket,
+                                                      context=NewInnerCtx});
                         true ->
                             NewInnerCtx =
                                 Ctx#key_context.context#context{user=User},
-                            forbidden(wrq:method(RD), RD,
+                            forbidden(Method, RD,
                                       Ctx#key_context{bucket=Bucket,
                                                       context=NewInnerCtx});
                         false ->
@@ -84,7 +98,22 @@ forbidden(RD, Ctx=#key_context{bucket=Bucket,
                 {error, _Reason} ->
                     %% Authentication failed, deny access
                     riak_moss_s3_response:api_error(access_denied, RD, Ctx)
-            end
+            end;
+        {error, no_user_key} ->
+            %% User record not provided, check for anonymous access
+            case riak_moss_acl:anonymous_object_access(Bucket,
+                                                       BinKey,
+                                                       RequestedAccess) of
+                {true, _} ->
+                    {false, RD, Ctx#context{bucket=Bucket,
+                                            requested_perm=RequestedAccess}};
+                false ->
+                    %% Anonymous access not allowed, deny access
+                    riak_moss_s3_response:api_error(access_denied, RD, Ctx)
+            end;
+        {error, Reason} ->
+            lager:error("Retrieval of user record for ~p failed. Reason: ~p", [KeyId, Reason]),
+            riak_moss_s3_response:api_error(user_record_unavailable, RD, Ctx)
     end.
 
 forbidden('GET', RD, Ctx=#key_context{doc_metadata=undefined}) ->

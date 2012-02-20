@@ -10,8 +10,8 @@
 
 -include("riak_moss.hrl").
 
--export([authenticate/2]).
+-export([authenticate/3]).
 
--spec authenticate(term(), [string()]) -> {error, atom()}.
-authenticate(_RD, [Reason]) ->
+-spec authenticate(term(), string(), undefined) -> {error, atom()}.
+authenticate(_RD, Reason, undefined) ->
     {error, Reason}.

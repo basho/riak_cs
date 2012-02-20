@@ -26,10 +26,14 @@
           modification_time :: erlang:timestamp(),
           acl :: acl_v1()}).
 -type moss_bucket() :: #moss_bucket_v1{}.
+-type bucket_operation() :: create | delete | update_acl.
+-type bucket_action() :: created | deleted.
 
 -record(context, {auth_bypass :: atom(),
                   user :: moss_user(),
-                  bucket :: binary()
+                  user_vclock :: term(),
+                  bucket :: binary(),
+                  requested_perm :: acl_perm()
                  }).
 
 -record(key_context, {context :: #context{},
@@ -42,7 +46,9 @@
 
 -type acl_perm() :: 'READ' | 'WRITE' | 'READ_ACP' | 'WRITE_ACP' | 'FULL_CONTROL'.
 -type acl_perms() :: [acl_perm()].
--type acl_grant() :: {{string(), string()}, acl_perms()}.
+-type group_grant() :: 'AllUsers' | 'AuthUsers'.
+-type acl_grantee() :: {string(), string()} | group_grant().
+-type acl_grant() :: {acl_grantee(), acl_perms()}.
 -record(acl_v1, {owner={"", ""} :: {string(), string()},
                  grants=[] :: [acl_grant()],
                  creation_time=now() :: erlang:timestamp()}).
@@ -61,3 +67,8 @@
 -define(DEFAULT_STANCHION_PORT, 8085).
 -define(DEFAULT_STANCHION_SSL, true).
 -define(MD_ACL, "X-Moss-Acl").
+-define(EMAIL_INDEX, <<"email_bin">>).
+-define(ID_INDEX, <<"c_id_bin">>).
+-define(AUTH_USERS_GROUP, "http://acs.amazonaws.com/groups/global/AuthenticatedUsers").
+-define(ALL_USERS_GROUP, "http://acs.amazonaws.com/groups/global/AllUsers").
+-define(LOG_DELIVERY_GROUP, "http://acs.amazonaws.com/groups/s3/LogDelivery").
