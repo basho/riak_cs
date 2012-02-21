@@ -33,13 +33,9 @@ allowed_methods(RD, Ctx) ->
 process_post(RD, Ctx) ->
     Body = wrq:req_body(RD),
     ParsedBody = mochiweb_util:parse_qs(binary_to_list(Body)),
-    %% TODO:
-    %% we should halt the request
-    %% if this pattern doesn't match
-    %% and return 400
-    UserName = proplists:get_value("name", ParsedBody),
-
-    case riak_moss_utils:create_user(UserName) of
+    UserName = proplists:get_value("name", ParsedBody, ""),
+    Email= proplists:get_value("email", ParsedBody, ""),
+    case riak_moss_utils:create_user(UserName, Email) of
         {ok, UserRecord} ->
             PropListUser = riak_moss_wm_utils:user_record_to_proplist(UserRecord),
             CTypeWritten = wrq:set_resp_header("Content-Type", "application/json", RD),
@@ -50,4 +46,3 @@ process_post(RD, Ctx) ->
         {error, Reason} ->
             riak_moss_s3_response:api_error(Reason, RD, Ctx)
     end.
-
