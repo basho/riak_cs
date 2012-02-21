@@ -135,16 +135,16 @@ content_types_provided(RD, Ctx) ->
     end.
 
 -spec produce_body(term(), term()) -> {iolist()|binary(), term(), term()}.
-produce_body(#wm_reqdata{method=Method}=RD,
-             #key_context{get_fsm_pid=GetFsmPid, doc_metadata=DocMeta}=Ctx) ->
+produce_body(RD, #key_context{get_fsm_pid=GetFsmPid, doc_metadata=DocMeta}=Ctx) ->
     ContentLength = dict:fetch("content-length", DocMeta),
     ContentMd5 = dict:fetch("content-md5", DocMeta),
     ETag = "\"" ++ riak_moss_utils:binary_to_hexlist(ContentMd5) ++ "\"",
     NewRQ = wrq:set_resp_header("ETag",  ETag, RD),
     riak_moss_get_fsm:continue(GetFsmPid),
-    if ContentLength == 0; Method == 'HEAD' ->
+    case ContentLength of
+        0 ->
             {<<>>, RD, Ctx};
-       true ->
+        _ ->
             {{known_length_stream, ContentLength, {<<>>, fun() -> riak_moss_wm_utils:streaming_get(GetFsmPid) end}},
              NewRQ, Ctx}
     end.
