@@ -135,8 +135,9 @@ iso_8601_to_rfc_1123(Date) when is_binary(Date) ->
                       non_neg_integer(),
                       non_neg_integer()) -> string().
 iso_8601_format(Year, Month, Day, Hour, Min, Sec) ->
-    io_lib:format("~4.10.0B-~2.10.0B-~2.10.0BT~2.10.0B:~2.10.0B:~2.10.0B.000Z",
-                  [Year, Month, Day, Hour, Min, Sec]).
+    lists:flatten(
+     io_lib:format("~4.10.0B-~2.10.0B-~2.10.0BT~2.10.0B:~2.10.0B:~2.10.0B.000Z",
+                   [Year, Month, Day, Hour, Min, Sec])).
 
 b2i(Bin) ->
     list_to_integer(binary_to_list(Bin)).
