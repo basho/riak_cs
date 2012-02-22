@@ -117,9 +117,8 @@ idle(status, _From, State) ->
              {last, State#state.last},
              {next, State#state.next}],
     {reply, {ok, {idle, Props}}, idle, State};
-idle(start_batch, _From, #state{schedule=Schedule}=State) ->
-    Target = target_time(calendar:universal_time(), Schedule),
-    NewState = start_batch(Target, State),
+idle(start_batch, _From, State) ->
+    NewState = start_batch(calendar:universal_time(), State),
     {reply, ok, calculating, NewState};
 idle(_, _From, State) ->
     {reply, ok, idle, State}.
@@ -292,26 +291,6 @@ elapsed(Time) ->
 elapsed(Early, Late) ->
     calendar:datetime_to_gregorian_seconds(Late)
         -calendar:datetime_to_gregorian_seconds(Early).
-
-%% @doc Determine which of our schedules would have triggered the
-%% given batch start time.  This is only used for reporting in status.
-%% TODO: maybe get rid of it?
-target_time({Today,{BSH, BSM,_}}=BatchStart, Schedule) ->
-    case {BSH, BSM} < hd(Schedule) of
-        true ->
-            %% this batch was meant to start yesterday
-            {Yesterday,_} = calendar:gregorian_seconds_to_datetime(
-                              calendar:datetime_to_gregorian_seconds(
-                                BatchStart)-24*60*60),
-            [{H, M}|_] = Schedule,
-            {Yesterday, {H, M, 0}};
-        false ->
-            %% find the latest time that is still before BatchStart
-            [{H, M}|_] = [ {H, M} || {H, M} <- lists:reverse(Schedule),
-                                     H < BSH orelse
-                                               (H == BSH andalso M < BSM) ],
-            {Today, {H, M, 0}}
-    end.
 
 %% @doc Setup the automatic trigger to start the next scheduled batch
 %% calculation.  "Next" is defined as the scheduled time occurring
