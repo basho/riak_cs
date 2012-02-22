@@ -74,8 +74,11 @@
 
 %% @doc Set the MOSS user for this request.  Stats are not recorded if
 %% the user is not set.
-set_user(#moss_user{}=User, RD) ->
-    wrq:add_note(?STAT(user), User, RD);
+set_user(?MOSS_USER{key_id=KeyID}, RD) ->
+    wrq:add_note(?STAT(user), KeyID, RD);
+set_user(#moss_user{key_id=KeyID}, RD) ->
+    %% TODO: does this support for old user records need to be here?
+    wrq:add_note(?STAT(user), KeyID, RD);
 set_user(unknown, RD) ->
     RD.
 
@@ -310,7 +313,7 @@ do_archive(#state{period=P, table=T, current=C}=State) ->
           | ignore.
 access_record(#wm_log_data{response_length=BytesOut, notes=Notes}) ->
     case lists:keytake(?STAT(user), 1, Notes) of
-        {value, {_, #moss_user{key_id=Key}}, OtherNotes} ->
+        {value, {_, Key}, OtherNotes} ->
             {ok, {Key, [{bytes_out, BytesOut}|access_notes(OtherNotes)]}};
         _ ->
             ignore

@@ -11,11 +11,12 @@
 %% Public API
 -export([binary_to_hexlist/1,
          close_riak_connection/1,
-         create_bucket/2,
-         create_user/1,
+         create_bucket/3,
+         create_user/2,
          delete_bucket/2,
          delete_object/2,
          from_bucket_name/1,
+         get_admin_creds/0,
          get_buckets/1,
          get_keys_and_objects/2,
          get_object/2,
@@ -32,9 +33,16 @@
          to_bucket_name/2]).
 
 -include("riak_moss.hrl").
+-include_lib("xmerl/include/xmerl.hrl").
+
+-ifdef(TEST).
+-compile(export_all).
+-endif.
 
 -define(OBJECT_BUCKET_PREFIX, <<"objects:">>).
 -define(BLOCK_BUCKET_PREFIX, <<"blocks:">>).
+
+-type xmlElement() :: #xmlElement{}.
 
 %% ===================================================================
 %% Public API
@@ -67,73 +75,98 @@ close_riak_connection(Pid) ->
 %% this bucket doesn't already
 %% exist anywhere, since everyone
 %% shares a global bucket namespace
--spec create_bucket(string(), binary()) -> ok.
-create_bucket(KeyID, BucketName) ->
-    Bucket = #moss_bucket{name=BucketName,
-                          creation_date=riak_moss_wm_utils:iso_8601_datetime()},
+-spec create_bucket(string(), binary(), acl_v1()) -> ok.
+create_bucket(KeyId, Bucket, _ACL) ->
     case riak_connection() of
         {ok, RiakPid} ->
             %% TODO:
             %% We don't do anything about
             %% {error, Reason} here
-            {ok, User} = get_user(KeyID, RiakPid),
-            OldBuckets = User#moss_user.buckets,
-            case [B || B <- OldBuckets, B#moss_bucket.name =:= BucketName] of
-                [] ->
-                    NewUser = User#moss_user{buckets=[Bucket|OldBuckets]},
-                    save_user(NewUser, RiakPid);
-                _ ->
-                    ignore
-            end,
+            {ok, {User, VClock}} = get_user(KeyId, RiakPid),
+            Res = serialized_bucket_op(Bucket,
+                                       KeyId,
+                                       User,
+                                       VClock,
+                                       created,
+                                       RiakPid),
             close_riak_connection(RiakPid),
-            %% TODO:
-            %% Maybe this should return
-            %% the updated list of buckets
-            %% owned by the user?
-            ok;
+            Res;
         {error, Reason} ->
             {error, {riak_connect_failed, Reason}}
     end.
 
 %% @doc Create a new MOSS user
--spec create_user(string()) -> {ok, moss_user()}.
-create_user(UserName) ->
-    case riak_connection() of
-        {ok, RiakPid} ->
-            {KeyID, Secret} = generate_access_creds(UserName),
-            User = #moss_user{name=UserName, key_id=KeyID, key_secret=Secret},
-            save_user(User, RiakPid),
-            close_riak_connection(RiakPid),
-            {ok, User};
-        {error, Reason} ->
-            {error, {riak_connect_failed, Reason}}
+-spec create_user(string(), string()) -> {ok, moss_user()}.
+create_user(Name, Email) ->
+    %% Validate the email address
+    case validate_email(Email) of
+        ok ->
+            {StanchionIp, StanchionPort, StanchionSSL} =
+                stanchion_data(),
+            User = user_record(Name, Email),
+            case get_admin_creds() of
+                {ok, AdminCreds} ->
+                    %% Generate the user JSON document
+                    UserDoc = user_json(User),
+
+                    %% Make a call to the user request
+                    %% serialization service.
+                    CreateResult =
+                        velvet:create_user(StanchionIp,
+                                           StanchionPort,
+                                           "application/json",
+                                           UserDoc,
+                                           [{ssl, StanchionSSL},
+                                            {auth_creds, AdminCreds}]),
+                    case CreateResult of
+                        ok ->
+                            {ok, User};
+                        {error, {error_status, _, _, ErrorDoc}} ->
+                            ErrorCode = xml_error_code(ErrorDoc),
+                            {error, riak_moss_s3_response:error_code_to_atom(ErrorCode)};
+                        {error, _} ->
+                            CreateResult
+                    end;
+                {error, _Reason1}=Error1 ->
+                    Error1
+            end;
+        {error, _Reason}=Error ->
+            Error
     end.
 
 %% @doc Delete a bucket
 -spec delete_bucket(string(), binary()) -> ok.
-delete_bucket(KeyID, BucketName) ->
+delete_bucket(KeyId, Bucket) ->
     case riak_connection() of
         {ok, RiakPid} ->
-            %% @TODO This will need to be updated once globally
-            %% unique buckets are enforced.
-            {ok, User} = get_user(KeyID, RiakPid),
+            {ok, {User, VClock}} = get_user(KeyId, RiakPid),
             CurrentBuckets = get_buckets(User),
 
             %% Buckets can only be deleted if they exist
-            case bucket_exists(CurrentBuckets, BucketName) of
+            case bucket_exists(CurrentBuckets, Bucket) of
                 true ->
-                    case bucket_empty(BucketName, RiakPid) of
+                    case bucket_empty(Bucket, RiakPid) of
                         true ->
-                            UpdatedBuckets =
-                                remove_bucket(CurrentBuckets, BucketName),
-                            UpdatedUser =
-                                User#moss_user{buckets=UpdatedBuckets},
-                            Res = save_user(UpdatedUser, RiakPid);
+                            AttemptDelete = true,
+                            LocalError = ok;
                         false ->
-                            Res = {error, bucket_not_empty}
+                            AttemptDelete = false,
+                            LocalError = {error, bucket_not_empty}
                     end;
                 false ->
-                    Res = {error, no_such_bucket}
+                    AttemptDelete = true,
+                    LocalError = ok
+            end,
+            case AttemptDelete of
+                true ->
+                    Res = serialized_bucket_op(Bucket,
+                                               KeyId,
+                                               User,
+                                               VClock,
+                                               deleted,
+                                               RiakPid);
+                false ->
+                    Res = LocalError
             end,
             close_riak_connection(RiakPid),
             Res;
@@ -170,9 +203,35 @@ from_bucket_name(BucketNameWithPrefix) ->
     end.
 
 %% @doc Return a user's buckets.
--spec get_buckets(moss_user()) -> [binary()].
-get_buckets(#moss_user{buckets=Buckets}) ->
-    Buckets.
+-spec get_buckets(moss_user()) -> [moss_bucket()].
+get_buckets(?MOSS_USER{buckets=Buckets}) ->
+    [Bucket || Bucket <- Buckets, Bucket?MOSS_BUCKET.last_action /= deleted].
+
+%% @doc Return `stanchion' configuration data.
+-spec stanchion_data() -> {string(), pos_integer(), boolean()} | {error, term()}.
+stanchion_data() ->
+    case application:get_env(riak_moss, stanchion_ip) of
+        {ok, IP} ->
+            ok;
+        undefined ->
+            lager:warning("No IP address or host name for stanchion access defined. Using default."),
+            IP = ?DEFAULT_STANCHION_IP
+    end,
+    case application:get_env(riak_moss, stanchion_port) of
+        {ok, Port} ->
+            ok;
+        undefined ->
+            lager:warning("No port for stanchion access defined. Using default."),
+            Port = ?DEFAULT_STANCHION_PORT
+    end,
+    case application:get_env(riak_moss, stanchion_ssl) of
+        {ok, SSL} ->
+            ok;
+        undefined ->
+            lager:warning("No ssl flag for stanchion access defined. Using default."),
+            SSL = ?DEFAULT_STANCHION_SSL
+    end,
+    {IP, Port, SSL}.
 
 %% @doc Return a list of keys for a bucket along
 %% with their associated objects.
@@ -204,6 +263,30 @@ prefix_filter(Keys, Prefix) ->
       fun(<<P:PL/binary,_/binary>>) when P =:= Prefix -> true;
          (_) -> false
       end, Keys).
+
+
+%% @doc Return the credentials of the admin user
+-spec get_admin_creds() -> {ok, {string(), string()}} | {error, term()}.
+get_admin_creds() ->
+    case application:get_env(riak_moss, admin_key) of
+        {ok, []} ->
+            lager:warning("The admin user's key id has not been specified."),
+            {error, admin_key_undefined};
+        {ok, KeyId} ->
+            case application:get_env(riak_moss, admin_secret) of
+                {ok, []} ->
+                    lager:warning("The admin user's secret has not been specified."),
+                    {error, admin_secret_undefined};
+                {ok, Secret} ->
+                    {ok, {KeyId, Secret}};
+                undefined ->
+                    lager:warning("The admin user's secret is not defined."),
+                    {error, admin_secret_undefined}
+            end;
+        undefined ->
+            lager:warning("The admin user's key id is not defined."),
+            {error, admin_key_undefined}
+    end.
 
 %% @doc Get an object from Riak
 -spec get_object(binary(), binary()) ->
@@ -328,9 +411,9 @@ to_bucket_name(blocks, Name) ->
 %% ===================================================================
 
 %% @doc Check if a bucket is empty
--spec bucket_empty(string(), pid()) -> boolean().
+-spec bucket_empty(binary(), pid()) -> boolean().
 bucket_empty(Bucket, RiakPid) ->
-    ObjBucket = to_bucket_name(objects, list_to_binary(Bucket)),
+    ObjBucket = to_bucket_name(objects, Bucket),
     case list_keys(ObjBucket, RiakPid) of
         {ok, []} ->
             true;
@@ -344,7 +427,8 @@ bucket_empty(Bucket, RiakPid) ->
 -spec bucket_exists([moss_bucket()], string()) -> boolean().
 bucket_exists(Buckets, CheckBucket) ->
     SearchResults = [Bucket || Bucket <- Buckets,
-                               Bucket#moss_bucket.name =:= CheckBucket],
+                               Bucket?MOSS_BUCKET.name =:= CheckBucket andalso
+                                   Bucket?MOSS_BUCKET.last_action =:= created],
     case SearchResults of
         [] ->
             false;
@@ -352,23 +436,166 @@ bucket_exists(Buckets, CheckBucket) ->
             true
     end.
 
+%% @doc Return a closure over a specific function
+%% call to the stanchion client module for either
+%% bucket creation or deletion.
+-spec bucket_fun(created | deleted,
+                 binary(),
+                 string(),
+                 {string(), string()},
+                 {string(), pos_integer(), boolean()}) -> function().
+bucket_fun(created, Bucket, KeyId, AdminCreds, StanchionData) ->
+    {StanchionIp, StanchionPort, StanchionSSL} = StanchionData,
+    %% Generate the bucket JSON document
+    BucketDoc = bucket_json(Bucket, KeyId),
+    fun() ->
+            velvet:create_bucket(StanchionIp,
+                                 StanchionPort,
+                                 "application/json",
+                                 BucketDoc,
+                                 [{ssl, StanchionSSL},
+                                  {auth_creds, AdminCreds}])
+    end;
+bucket_fun(deleted, Bucket, KeyId, AdminCreds, StanchionData) ->
+    {StanchionIp, StanchionPort, StanchionSSL} = StanchionData,
+    fun() ->
+            velvet:delete_bucket(StanchionIp,
+                                 StanchionPort,
+                                 Bucket,
+                                 KeyId,
+                                 [{ssl, StanchionSSL},
+                                  {auth_creds, AdminCreds}])
+    end.
+
+%% @doc Generate a JSON document to use for a bucket
+%% creation request.
+-spec bucket_json(binary(), string()) -> string().
+bucket_json(Bucket, KeyId)  ->
+    binary_to_list(
+      iolist_to_binary(
+        mochijson2:encode([{struct, [{<<"bucket">>, Bucket}]},
+                           {struct, [{<<"requester">>, list_to_binary(KeyId)}]}]))).
+
+%% @doc Return a bucket record for the specified bucket name.
+-spec bucket_record(binary(), created | deleted) -> moss_bucket().
+bucket_record(Name, Action) ->
+    ?MOSS_BUCKET{name=Name,
+                 last_action=Action,
+                 creation_date=riak_moss_wm_utils:iso_8601_datetime(),
+                 modification_time=erlang:now()}.
+
+%% @doc Check for and resolve any conflict between
+%% a bucket record from a user record sibling and
+%% a list of resolved bucket records.
+-spec bucket_resolver(moss_bucket(), [moss_bucket()]) -> [moss_bucket()].
+bucket_resolver(Bucket, ResolvedBuckets) ->
+    case lists:member(Bucket, ResolvedBuckets) of
+        true ->
+            ResolvedBuckets;
+        false ->
+            case [RB || RB <- ResolvedBuckets,
+                        RB?MOSS_BUCKET.name =:=
+                            Bucket?MOSS_BUCKET.name] of
+                [] ->
+                    [Bucket | ResolvedBuckets];
+                [ExistingBucket] ->
+                    case keep_existing_bucket(ExistingBucket,
+                                              Bucket) of
+                        true ->
+                            ResolvedBuckets;
+                        false ->
+                           [Bucket | lists:delete(ExistingBucket,
+                                                  ResolvedBuckets)]
+                    end
+            end
+    end.
+
+%% @doc Ordering function for sorting a list of bucket records
+%% according to bucket name.
+-spec bucket_sorter(moss_bucket(), moss_bucket()) -> boolean().
+bucket_sorter(?MOSS_BUCKET{name=Bucket1},
+              ?MOSS_BUCKET{name=Bucket2}) ->
+    Bucket1 =< Bucket2.
+
+%% @doc Return true if the last action for the bucket
+%% is deleted and the action occurred over 24 hours ago.
+-spec cleanup_bucket(moss_bucket()) -> boolean().
+cleanup_bucket(?MOSS_BUCKET{last_action=created}) ->
+    false;
+cleanup_bucket(?MOSS_BUCKET{last_action=deleted,
+                            modification_time=ModTime}) ->
+    timer:now_diff(erlang:now(), ModTime) > 86400.
+
+%% @doc Strip off the user name portion of an email address
+-spec display_name(string()) -> string().
+display_name(Email) ->
+    Index = string:chr(Email, $@),
+    string:sub_string(Email, 1, Index-1).
+
+%% @doc Perform an initial read attempt with R=PR=N.
+%% If the initial read fails retry using
+%% R=quorum and PR=1, but indicate that bucket deletion
+%% indicators should not be cleaned up.
+-spec fetch_user(binary(), pid()) ->
+                        {ok, {term(), boolean()}} | {error, term()}.
+fetch_user(Key, RiakPid) ->
+    StrongOptions = [{r, all}, {pr, all}, {notfound_ok, false}],
+    case riakc_pb_socket:get(RiakPid, ?USER_BUCKET, Key, StrongOptions) of
+        {ok, Obj} ->
+            {ok, {Obj, true}};
+        {error, _} ->
+            WeakOptions = [{r, quorum}, {pr, one}, {notfound_ok, false}],
+            case riakc_pb_socket:get(RiakPid, ?USER_BUCKET, Key, WeakOptions) of
+                {ok, Obj} ->
+                    {ok, {Obj, false}};
+                {error, Reason} ->
+                    {error, Reason}
+            end
+    end.
+
 %% @doc Generate a new set of access credentials for user.
 -spec generate_access_creds(string()) -> {binary(), binary()}.
-generate_access_creds(UserName) ->
-    BinUser = list_to_binary(UserName),
-    KeyID = generate_key(BinUser),
-    Secret = generate_secret(BinUser, KeyID),
-    {KeyID, Secret}.
+generate_access_creds(UserId) ->
+    UserBin = list_to_binary(UserId),
+    KeyId = generate_key(UserBin),
+    Secret = generate_secret(UserBin, KeyId),
+    {KeyId, Secret}.
 
 %% @doc Retrieve a MOSS user's information based on their id string.
--spec get_user(string(), pid()) -> {ok, term()} | {error, term()}.
-get_user(KeyID, RiakPid) ->
-    case riakc_pb_socket:get(RiakPid, ?USER_BUCKET, list_to_binary(KeyID)) of
-        {ok, Obj} ->
-            {ok, binary_to_term(riakc_obj:get_value(Obj))};
+-spec get_user(string(), pid()) -> {ok, {term(), term()}} | {error, term()}.
+get_user(KeyId, RiakPid) ->
+    %% @TODO Check for an resolve siblings to get a
+    %% coherent view of the bucket ownership.
+    BinKey = list_to_binary(KeyId),
+    case fetch_user(BinKey, RiakPid) of
+        {ok, {Obj, KeepDeletedBuckets}} ->
+            case riakc_obj:value_count(Obj) of
+                1 ->
+                    {ok, {binary_to_term(riakc_obj:get_value(Obj)),
+                          riakc_obj:vclock(Obj)}};
+                0 ->
+                    {error, no_value};
+                _ ->
+                    Values = [binary_to_term(Value) ||
+                                 Value <- riakc_obj:get_values(Obj)],
+                    User = hd(Values),
+                    Buckets = resolve_buckets(Values, [], KeepDeletedBuckets),
+                    {ok, {User?MOSS_USER{buckets=Buckets},
+                          riakc_obj:vclock(Obj)}}
+            end;
         Error ->
             Error
     end.
+
+%% @doc Generate the canonical id for a user.
+-spec generate_canonical_id(string(), string()) -> string().
+generate_canonical_id(KeyID, Secret) ->
+    Bytes = 16,
+    Id1 = crypto:md5(KeyID),
+    Id2 = crypto:md5(Secret),
+    binary_to_hexlist(
+      iolist_to_binary(<< Id1:Bytes/binary,
+                          Id2:Bytes/binary >>)).
 
 %% @doc Generate an access key for a user
 -spec generate_key(binary()) -> string().
@@ -392,21 +619,192 @@ generate_secret(UserName, Key) ->
       iolist_to_binary(<< SecretPart1:Bytes/binary,
                           SecretPart2:Bytes/binary >>)).
 
-%% @doc Remove a bucket from a user's list of buckets.
-%% @TODO This may need to change once globally unique buckets
-%% are enforced.
--spec remove_bucket([moss_bucket()], string()) -> boolean().
-remove_bucket(Buckets, RemovalBucket) ->
-    FilterFun =
-        fun(Element) ->
-                Element#moss_bucket.name =/= RemovalBucket
-        end,
-    lists:filter(FilterFun, Buckets).
+%% @doc Determine if an existing bucket from the resolution list
+%% should be kept or replaced when a conflict occurs.
+-spec keep_existing_bucket(moss_bucket(), moss_bucket()) -> boolean().
+keep_existing_bucket(?MOSS_BUCKET{last_action=LastAction1,
+                                  modification_time=ModTime1},
+                     ?MOSS_BUCKET{last_action=LastAction2,
+                                  modification_time=ModTime2}) ->
+    if
+        LastAction1 == LastAction2
+        andalso
+        ModTime1 =< ModTime2 ->
+            true;
+        LastAction1 == LastAction2 ->
+            false;
+         ModTime1 > ModTime2 ->
+            true;
+        true ->
+            false
+    end.
+
+%% @doc Process the top-level elements of the
+-spec process_xml_error([xmlElement()]) -> string().
+process_xml_error([]) ->
+    [];
+process_xml_error([HeadElement | RestElements]) ->
+    lager:debug("Element name: ~p", [HeadElement#xmlElement.name]),
+    ElementName = HeadElement#xmlElement.name,
+    case ElementName of
+        'Code' ->
+            [Content] = HeadElement#xmlElement.content,
+            Content#xmlText.value;
+        _ ->
+            process_xml_error(RestElements)
+    end.
+
+%% @doc Resolve the set of buckets for a user when
+%% siblings are encountered on a read of a user record.
+-spec resolve_buckets([moss_user()], [moss_bucket()], boolean()) ->
+                             [moss_bucket()].
+resolve_buckets([], Buckets, true) ->
+    lists:sort(fun bucket_sorter/2, Buckets);
+resolve_buckets([], Buckets, false) ->
+    lists:sort(fun bucket_sorter/2, [Bucket || Bucket <- Buckets, not cleanup_bucket(Bucket)]);
+resolve_buckets([HeadUserRec | RestUserRecs], Buckets, _KeepDeleted) ->
+    HeadBuckets = HeadUserRec?MOSS_USER.buckets,
+    UpdBuckets = lists:foldl(fun bucket_resolver/2, Buckets, HeadBuckets),
+    resolve_buckets(RestUserRecs, UpdBuckets, _KeepDeleted).
 
 %% @doc Save information about a MOSS user
--spec save_user(moss_user(), pid()) -> ok.
-save_user(User, RiakPid) ->
-    UserObj = riakc_obj:new(?USER_BUCKET, list_to_binary(User#moss_user.key_id), User),
+-spec save_user(moss_user(), term(), pid()) -> ok.
+save_user(User, VClock, RiakPid) ->
+    UserObj0 = riakc_obj:new(?USER_BUCKET,
+                             list_to_binary(User?MOSS_USER.key_id),
+                             User),
+    case VClock of
+        undefined ->
+            UserObj = UserObj0;
+        _ ->
+            UserObj = riakc_obj:set_vclock(UserObj0, VClock)
+    end,
     %% @TODO Error handling
-    ok = riakc_pb_socket:put(RiakPid, UserObj),
-    ok.
+    riakc_pb_socket:put(RiakPid, UserObj).
+
+%% @doc Shared code used when doing a bucket creation or deletion.
+-spec serialized_bucket_op(binary(),
+                           string(),
+                           moss_user(),
+                           term(),
+                           created | deleted,
+                           pid()) ->
+                                  {ok, moss_user()} |
+                                  {ok, ignore} |
+                                  {error, term()}.
+serialized_bucket_op(Bucket, KeyId, User, VClock, BucketOp, RiakPid) ->
+    case get_admin_creds() of
+        {ok, AdminCreds} ->
+            BucketFun = bucket_fun(BucketOp,
+                                   Bucket,
+                                   KeyId,
+                                   AdminCreds,
+                                   stanchion_data()),
+            %% Make a call to the bucket request
+            %% serialization service.
+            OpResult = BucketFun(),
+            case OpResult of
+                ok ->
+                    BucketRecord = bucket_record(Bucket, BucketOp),
+                    case update_user_buckets(User, BucketRecord, BucketOp) of
+                        {ok, ignore} ->
+                            OpResult;
+                        {ok, UpdUser} ->
+                            save_user(UpdUser, VClock, RiakPid)
+                    end;
+                {error, {error_status, _, _, ErrorDoc}} ->
+                    ErrorCode = xml_error_code(ErrorDoc),
+                    {error, riak_moss_s3_response:error_code_to_atom(ErrorCode)};
+                {error, _} ->
+                    OpResult
+            end;
+        {error, Reason1} ->
+            {error, Reason1}
+    end.
+
+%% @doc Generate a JSON document to use for a user
+%% creation request.
+-spec user_json(moss_user()) -> string().
+user_json(User) ->
+    ?MOSS_USER{name=UserName,
+               display_name=DisplayName,
+               email=Email,
+               key_id=KeyId,
+               key_secret=Secret,
+               canonical_id=CanonicalId} = User,
+    binary_to_list(
+      iolist_to_binary(
+        mochijson2:encode([{struct, [{<<"email">>, list_to_binary(Email)}]},
+                           {struct, [{<<"display_name">>, list_to_binary(DisplayName)}]},
+                           {struct, [{<<"name">>, list_to_binary(UserName)}]},
+                           {struct, [{<<"key_id">>, list_to_binary(KeyId)}]},
+                           {struct, [{<<"key_secret">>, list_to_binary(Secret)}]},
+                           {struct, [{<<"canonical_id">>, list_to_binary(CanonicalId)}]}
+                          ]))).
+
+%% @doc Validate an email address.
+-spec validate_email(string()) -> ok | {error, term()}.
+validate_email(EmailAddr) ->
+    %% @TODO More robust email address validation
+    case string:chr(EmailAddr, $@) of
+        0 ->
+            {error, invalid_email_address};
+        _ ->
+            ok
+    end.
+
+%% @doc Get the value of the `Code' element from
+%% and XML document.
+-spec xml_error_code(string()) -> string().
+xml_error_code(Xml) ->
+    {ParsedData, _Rest} = xmerl_scan:string(Xml, []),
+    process_xml_error(ParsedData#xmlElement.content).
+
+%% @doc Check if a user already has an ownership of
+%% a bucket and update the bucket list if needed.
+-spec update_user_buckets(moss_user(), moss_bucket(), created | deleted) ->
+                                 {ok, ignore} | {ok, moss_user()}.
+update_user_buckets(User, Bucket, Action) ->
+    Buckets = User?MOSS_USER.buckets,
+    %% At this point any siblings from the read of the
+    %% user record have been resolved so the user bucket
+    %% list should have 0 or 1 buckets that share a name
+    %% with `Bucket'.
+    case [B || B <- Buckets, B?MOSS_BUCKET.name =:= Bucket?MOSS_BUCKET.name] of
+        [] ->
+            {ok, User?MOSS_USER{buckets=[Bucket | Buckets]}};
+        [ExistingBucket] ->
+            case
+                (Action == deleted andalso
+                  ExistingBucket?MOSS_BUCKET.last_action == created)
+                orelse
+                (Action == created andalso
+                 ExistingBucket?MOSS_BUCKET.last_action == deleted) of
+                true ->
+                    UpdBuckets = [Bucket | lists:delete(ExistingBucket, Buckets)],
+                    {ok, User?MOSS_USER{buckets=UpdBuckets}};
+                false ->
+                    {ok, ignore}
+            end
+    end.
+
+%% @doc Return a user record for the specified user name and
+%% email address.
+-spec user_record(string(), string()) -> moss_user().
+user_record(Name, Email) ->
+    user_record(Name, Email, []).
+
+%% @doc Return a user record for the specified user name and
+%% email address.
+-spec user_record(string(), string(), [moss_bucket()]) -> moss_user().
+user_record(Name, Email, Buckets) ->
+    {KeyId, Secret} = generate_access_creds(Name),
+    CanonicalId = generate_canonical_id(KeyId, Secret),
+    DisplayName = display_name(Email),
+    ?MOSS_USER{name=Name,
+               display_name=DisplayName,
+               email=Email,
+               key_id=KeyId,
+               key_secret=Secret,
+               canonical_id=CanonicalId,
+               buckets=Buckets}.

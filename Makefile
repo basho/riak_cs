@@ -35,7 +35,7 @@ parity-test:
 ## Release targets
 ##
 rel: deps compile
-	@./rebar compile generate  $(OVERLAY_VARS)
+	@./rebar skip_deps=true generate  $(OVERLAY_VARS)
 
 relclean:
 	rm -rf rel/riak_moss
@@ -49,7 +49,7 @@ stage : rel
 
 devrel:
 	mkdir -p dev
-	(cd rel && ../rebar generate target_dir=../dev/$(REPO) overlay_vars=vars/dev_vars.config)
+	(cd rel && ../rebar generate skip_deps=true target_dir=../dev/$(REPO) overlay_vars=vars/dev_vars.config)
 
 devclean: clean
 	rm -rf dev
