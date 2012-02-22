@@ -674,7 +674,7 @@ generate_key(UserName) ->
     Ctx = crypto:hmac_init(sha, UserName),
     Ctx1 = crypto:hmac_update(Ctx, druuid:v4()),
     Key = crypto:hmac_final_n(Ctx1, 15),
-    string:to_upper(base64:encode_to_string(Key)).
+    string:to_upper(base64url:encode_to_string(Key)).
 
 %% @doc Generate a secret access token for a user
 -spec generate_secret(binary(), string()) -> string().
@@ -686,7 +686,7 @@ generate_secret(UserName, Key) ->
     Ctx2 = crypto:hmac_init(sha, UserName),
     Ctx3 = crypto:hmac_update(Ctx2, druuid:v4()),
     SecretPart2 = crypto:hmac_final_n(Ctx3, Bytes),
-    base64:encode_to_string(
+    base64url:encode_to_string(
       iolist_to_binary(<< SecretPart1:Bytes/binary,
                           SecretPart2:Bytes/binary >>)).
 
