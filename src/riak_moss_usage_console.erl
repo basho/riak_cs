@@ -8,7 +8,8 @@
 -module(riak_moss_usage_console).
 
 -export([
-         flush_access/1
+         flush_access/1,
+         start_storage/1
         ]).
 
 -define(DEFAULT_FLUSH_RETRIES, 10).
@@ -108,5 +109,25 @@ wait_for_archiver(N, Max) ->
             wait_for_archiver(N-1, Max);
         Error ->
             io:format("Flushing archives failed:~n  ~p~n", [Error]),
+            error
+    end.
+
+%% @doc Kick off a batch of storage calculation, unless one is already
+%% in progress.
+start_storage(_Opts) ->
+    try
+        case riak_moss_storage_d:start_batch() of
+            ok ->
+                io:format("Batch storage calculation started.~n"),
+                ok;
+            {error, already_calculating} ->
+                io:format("Error: A batch storage calculation is already"
+                          " in progress.~n"),
+                error
+        end
+    catch
+        Type:Reason ->
+            io:format("Starting batch storage calculation failed:~n"
+                      "  ~p:~p~n", [Type, Reason]),
             error
     end.

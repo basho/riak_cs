@@ -22,6 +22,17 @@ case "$1" in
 
         $NODETOOL rpc riak_moss_usage_console flush_access $@
         ;;
+    start_storage)
+        # Make sure the local node IS running
+        RES=`$NODETOOL ping`
+        if [ "$RES" != "pong" ]; then
+            echo "Node is not running!"
+            exit 1
+        fi
+        shift
+
+        $NODETOOL rpc riak_moss_usage_console start_storage $@
+        ;;
     *)
         echo "Usage: $SCRIPT { flush_access }"
         exit 1
