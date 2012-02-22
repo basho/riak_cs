@@ -16,6 +16,10 @@
          make_object/4,
          get_usage/4
         ]).
+-export([
+         object_size_map/3,
+         object_size_reduce/2
+        ]).
 
 %% @doc Sum the number of bytes stored in active files in all of the
 %% given user's directories.  The result is a list of pairs of
@@ -42,32 +46,33 @@ sum_bucket(Riak, Bucket) when is_list(Bucket) ->
     sum_bucket(Riak, list_to_binary(Bucket));
 sum_bucket(Riak, Bucket) when is_binary(Bucket) ->
     FullBucket = riak_moss_utils:to_bucket_name(objects, Bucket),
-    case riakc_pb_socket:list_keys(Riak, FullBucket) of
-        {ok, Keys} ->
-            lists:sum([ object_size(Riak, FullBucket, K) || K <- Keys ]);
+    Query = [{map, {modfun, riak_moss_storage, object_size_map},
+              none, false},
+             {reduce, {modfun, riak_moss_storage, object_size_reduce},
+              none, true}],
+    case riakc_pb_socket:mapred(Riak, FullBucket, Query) of
+        {ok, Results} ->
+            {1, [Sum]} = lists:keyfind(1, 1, Results),
+            Sum;
         {error, Error} ->
             {error, Error}
     end.
 
-%% @doc Retrieve the size of an active named file.  The returned size
-%% is 0 if the file is not active.
--spec object_size(pid(), string(), string()) -> integer()
-                                              | {error, term()}.
-object_size(Riak, Bucket, Key) ->
-    case riak_moss_utils:get_object(Bucket, Key, Riak) of
-        {ok, Object} ->
-            %% TODO: use Reid's sibling resolution code to choose
-            %% correct value
-            Manifest = binary_to_term(hd(riakc_obj:get_values(Object))),
-            case riak_moss_lfs_utils:is_active(Manifest) of
-                true ->
-                    riak_moss_lfs_utils:content_length(Manifest);
-                false ->
-                    0
-            end;
-        {error, Error} ->
-            {error, Error}
+object_size_map({error, notfound}, _, _) ->
+    0;
+object_size_map(Object, _, _) ->
+    %% TODO: use Reid's sibling resolution code to choose
+    %% correct value
+    Manifest = binary_to_term(hd(riak_object:get_values(Object))),
+    case riak_moss_lfs_utils:is_active(Manifest) of
+        true ->
+            [riak_moss_lfs_utils:content_length(Manifest)];
+        false ->
+            [0]
     end.
+
+object_size_reduce(Sizes, _) ->
+    [lists:sum(Sizes)].
 
 %% @doc Retreive the number of seconds that should elapse between
 %% archivings of storage stats.  This setting is controlled by the
