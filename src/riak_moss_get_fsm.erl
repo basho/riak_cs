@@ -151,27 +151,31 @@ waiting_value({object, _Pid, Reply}, #state{from=From}=State) ->
                     %% content length is a hack now
                     %% because we're forcing everything
                     %% to be a manifest
+                    Mfst = undefined,
                     ContentLength = 0,
                     ContentMd5 = <<>>,
                     NewState = State#state{value_cache=RawValue};
                 true ->
-                    DecodedValue = binary_to_term(RawValue),
-                    Metadata = riak_moss_lfs_utils:metadata_from_manifest(DecodedValue),
-                    ContentLength = riak_moss_lfs_utils:content_length(DecodedValue),
-                    ContentMd5 = riak_moss_lfs_utils:content_md5(DecodedValue),
-                    NewState = State#state{manifest=DecodedValue,
-                                           manifest_uuid=riak_moss_lfs_utils:file_uuid(DecodedValue)}
+                    Mfst = binary_to_term(RawValue),
+                    Metadata = riak_moss_lfs_utils:metadata_from_manifest(Mfst),
+                    ContentLength = riak_moss_lfs_utils:content_length(Mfst),
+                    ContentMd5 = riak_moss_lfs_utils:content_md5(Mfst),
+                    NewState = State#state{manifest=Mfst,
+                                           manifest_uuid=riak_moss_lfs_utils:file_uuid(Mfst)}
             end,
-            Meta1 = dict:store("content-type",
-                                    riakc_obj:get_content_type(Value),
-                                    Metadata),
-            Meta2 = dict:store("content-md5",
-                                    ContentMd5,
-                                    Meta1),
-            Meta3 = dict:store("content-length",
-                                    ContentLength,
-                                    Meta2),
-            Meta3
+            lists:foldl(
+              fun({K, V}, Dict) -> dict:store(K, V, Dict) end,
+              Metadata,
+              if Mfst == undefined ->
+                      [];
+                 true ->
+                      LastModified = riak_moss_wm_utils:iso_8601_to_rfc_1123(
+                                         riak_moss_lfs_utils:created(Mfst)),
+                      [{"last-modified", LastModified}]
+              end ++
+                  [{"content-type", riakc_obj:get_content_type(Value)},
+                   {"content-md5", ContentMd5},
+                   {"content-length", ContentLength}])
     end,
 
     NextState = case From of
