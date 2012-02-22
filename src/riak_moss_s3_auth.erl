@@ -74,7 +74,7 @@ calculate_signature(KeyData, RD) ->
            Date,
            AmazonHeaders,
            Resource],
-    base64:encode_to_string(
+    base64url:encode_to_string(
       crypto:sha_mac(KeyData, STS)).
 
 check_auth(PresentedSignature, CalculatedSignature) ->
