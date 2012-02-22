@@ -35,7 +35,7 @@ extract_paths(RD, Ctx) ->
         KeyTokens ->
             Key = mochiweb_util:unquote(string:join(KeyTokens, "/"))
     end,
-    Ctx#key_context{bucket=Bucket, key=Key}.
+    Ctx#key_context{bucket=Bucket, key=Key, method=RD#wm_reqdata.method}.
 
 -spec service_available(term(), term()) -> {true, term(), term()}.
 service_available(RD, Ctx) ->

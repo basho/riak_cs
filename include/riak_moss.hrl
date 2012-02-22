@@ -37,6 +37,7 @@
                       putctype :: string(),
                       bucket :: list(),
                       key :: list(),
+                      method :: atom(),
                       size :: non_neg_integer()}).
 
 -type acl_perm() :: 'READ' | 'WRITE' | 'READ_ACP' | 'WRITE_ACP' | 'FULL_CONTROL'.
