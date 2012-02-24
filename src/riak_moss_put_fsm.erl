@@ -20,8 +20,13 @@
 
 %% gen_fsm callbacks
 -export([init/1,
-         state_name/2,
-         state_name/3,
+         prepare/2,
+         not_full/2,
+         full/2,
+         all_received/2,
+         not_full/3,
+         all_received/3,
+         done/3,
          handle_event/3,
          handle_sync_event/4,
          handle_info/3,
@@ -65,58 +70,72 @@ block_written(Pid, BlockID) ->
 %%%===================================================================
 
 %%--------------------------------------------------------------------
-%% @spec init(Args) -> {ok, StateName, State} |
-%%                     {ok, StateName, State, Timeout} |
-%%                     ignore |
-%%                     {stop, StopReason}
-%% @end
+%%
 %%--------------------------------------------------------------------
 init([]) ->
-    {ok, state_name, #state{}}.
+    {ok, prepare, #state{}, 0}.
 
 %%--------------------------------------------------------------------
-%% @spec state_name(Event, State) ->
-%%                   {next_state, NextStateName, NextState} |
-%%                   {next_state, NextStateName, NextState, Timeout} |
-%%                   {stop, Reason, NewState}
-%% @end
+%%
 %%--------------------------------------------------------------------
-state_name(_Event, State) ->
-    {next_state, state_name, State}.
+prepare(timeout, State) ->
+    %% do set up work
+    {next_state, not_full, State}.
+
+%% when a block is written
+%% and we were already not full,
+%% we're still not full
+not_full({block_written, _BlockID}, State) ->
+    {next_state, not_full, State}.
+
+%% when we're in the full state
+%% a block being written can either
+%% keep us in the full state,
+%% or drop us down to the not_full
+%% state
+
+%% when this block being written
+%% drops us down to not_full
+full({block_written, _BlockID}, State) ->
+    {next_state, not_full, State}.
+
+all_received({block_written, _BlockID}, State) ->
+    {next_state, all_received, State};
+all_received({block_written, _BlockID}, State) ->
+    {next_state, done, State}.
 
 %%--------------------------------------------------------------------
-%% @spec state_name(Event, From, State) ->
-%%                   {next_state, NextStateName, NextState} |
-%%                   {next_state, NextStateName, NextState, Timeout} |
-%%                   {reply, Reply, NextStateName, NextState} |
-%%                   {reply, Reply, NextStateName, NextState, Timeout} |
-%%                   {stop, Reason, NewState} |
-%%                   {stop, Reason, Reply, NewState}
-%% @end
+%%
 %%--------------------------------------------------------------------
-state_name(_Event, _From, State) ->
+
+%% when size of NewData doesn't put us over the edge
+not_full({augment_data, NewData}, _From, State) ->
     Reply = ok,
-    {reply, Reply, state_name, State}.
+    {reply, Reply, not_full, State};
+%% when size of NewData does make our buffer full
+not_full({augment_data, NewData}, _From, State) ->
+    Reply = ok,
+    {reply, Reply, full, State};
+not_full({augment_data, NewData}, _From, State) ->
+    Reply = ok,
+    {reply, Reply, all_received, State}.
+
+all_received(finalize, _From, State) ->
+    Reply = ok,
+    {reply, Reply, all_received, State}.
+
+done(finalize, _From, State) ->
+    Reply = ok,
+    {reply, Reply, stop, State}.
 
 %%--------------------------------------------------------------------
-%% @spec handle_event(Event, StateName, State) ->
-%%                   {next_state, NextStateName, NextState} |
-%%                   {next_state, NextStateName, NextState, Timeout} |
-%%                   {stop, Reason, NewState}
-%% @end
+%%
 %%--------------------------------------------------------------------
 handle_event(_Event, StateName, State) ->
     {next_state, StateName, State}.
 
 %%--------------------------------------------------------------------
-%% @spec handle_sync_event(Event, From, StateName, State) ->
-%%                   {next_state, NextStateName, NextState} |
-%%                   {next_state, NextStateName, NextState, Timeout} |
-%%                   {reply, Reply, NextStateName, NextState} |
-%%                   {reply, Reply, NextStateName, NextState, Timeout} |
-%%                   {stop, Reason, NewState} |
-%%                   {stop, Reason, Reply, NewState}
-%% @end
+%%
 %%--------------------------------------------------------------------
 handle_sync_event({augment_data, _NewData}, _From, StateName, State) ->
     Reply = ok,
@@ -126,26 +145,19 @@ handle_sync_event(_Event, _From, StateName, State) ->
     {reply, Reply, StateName, State}.
 
 %%--------------------------------------------------------------------
-%% @spec handle_info(Info,StateName,State)->
-%%                   {next_state, NextStateName, NextState} |
-%%                   {next_state, NextStateName, NextState, Timeout} |
-%%                   {stop, Reason, NewState}
-%% @end
+%%
 %%--------------------------------------------------------------------
 handle_info(_Info, StateName, State) ->
     {next_state, StateName, State}.
 
 %%--------------------------------------------------------------------
-%% @spec terminate(Reason, StateName, State) -> void()
-%% @end
+%%
 %%--------------------------------------------------------------------
 terminate(_Reason, _StateName, _State) ->
     ok.
 
 %%--------------------------------------------------------------------
-%% @spec code_change(OldVsn, StateName, State, Extra) ->
-%%                   {ok, StateName, NewState}
-%% @end
+%%
 %%--------------------------------------------------------------------
 code_change(_OldVsn, StateName, State, _Extra) ->
     {ok, StateName, State}.
