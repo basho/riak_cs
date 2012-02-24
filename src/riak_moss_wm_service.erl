@@ -37,20 +37,24 @@ malformed_request(RD, Ctx) ->
 %%      but this is how S3 does things.
 forbidden(RD, Ctx=#context{auth_bypass=AuthBypass}) ->
     AuthHeader = wrq:get_req_header("authorization", RD),
-    case riak_moss_wm_utils:parse_auth_header(AuthHeader, AuthBypass) of
-        {ok, AuthMod, Args} ->
-            case AuthMod:authenticate(RD, Args) of
-                {ok, unknown} ->
-                    %% this resource doesn't support
-                    %% anonymous users
-                    riak_moss_s3_response:api_error(invalid_access_key_id, RD, Ctx);
-                {ok, User} ->
+    {AuthMod, KeyId, Signature} =
+        riak_moss_wm_utils:parse_auth_header(AuthHeader, AuthBypass),
+    case riak_moss_utils:get_user(KeyId) of
+        {ok, {User, _}} ->
+            case AuthMod:authenticate(RD, User?MOSS_USER.key_secret, Signature) of
+                ok ->
                     %% Authentication succeeded
                     {false, RD, Ctx#context{user=User}};
                 {error, _Reason} ->
                     %% Authentication failed, deny access
                     riak_moss_s3_response:api_error(access_denied, RD, Ctx)
-            end
+            end;
+        {error, no_such_user} ->
+            %% Anonymous access not allowed, deny access
+            riak_moss_s3_response:api_error(access_denied, RD, Ctx);
+        {error, Reason} ->
+            lager:error("Retrieval of user record for ~p failed. Reason: ~p", [KeyId, Reason]),
+            riak_moss_s3_response:api_error(user_record_unavailable, RD, Ctx)
     end.
 
 %% @doc Get the list of methods this resource supports.
@@ -79,4 +83,3 @@ content_types_provided(RD, Ctx) ->
     {iolist(), term(), term()}.
 to_xml(RD, Ctx=#context{user=User}) ->
     riak_moss_s3_response:list_all_my_buckets_response(User, RD, Ctx).
-

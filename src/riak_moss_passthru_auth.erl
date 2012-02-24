@@ -10,12 +10,10 @@
 
 -include("riak_moss.hrl").
 
--export([authenticate/2]).
+-export([authenticate/3]).
 
--spec authenticate(term(), [string()]) -> {ok, ?MOSS_USER{}}
-                                              | {ok, unknown}
-                                              | {error, atom()}.
-authenticate(_RD, []) ->
+-spec authenticate(term(), string(), undefined) -> ok | {error, atom()}.
+authenticate(_RD, [], _) ->
     %% TODO:
     %% Even though we're
     %% going to authorize
@@ -23,9 +21,9 @@ authenticate(_RD, []) ->
     %% maybe it still makes sense
     %% to pass the user on
     {ok, unknown};
-authenticate(_RD, [KeyID]) ->
+authenticate(_RD, KeyId, _) ->
     %% @TODO Also handle riak connection error
-    case riak_moss_utils:get_user(KeyID) of
+    case riak_moss_utils:get_user(KeyId) of
         {ok, User} ->
             {ok, User};
         _ ->
