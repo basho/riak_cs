@@ -152,7 +152,7 @@ produce_body(RD, #key_context{get_fsm_pid=GetFsmPid, doc_metadata=DocMeta}=Ctx) 
     riak_moss_get_fsm:continue(GetFsmPid),
     case ContentLength of
         0 ->
-            {<<>>, RD, Ctx};
+            {<<>>, NewRQ, Ctx};
         _ ->
             {{known_length_stream, ContentLength, {<<>>, fun() -> riak_moss_wm_utils:streaming_get(GetFsmPid) end}},
              NewRQ, Ctx}
