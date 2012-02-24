@@ -39,21 +39,23 @@ service_available(RD, Ctx) ->
 %%      the appropriate module to use to authenticate the request.
 %%      The passthru auth can be used either with a KeyID or
 %%      anonymously by leving the header empty.
--spec parse_auth_header(string(), boolean()) -> {ok, atom(), [string()]} | {error, term()}.
-parse_auth_header(KeyID, true) when KeyID =/= undefined ->
-    {ok, riak_moss_passthru_auth, [KeyID]};
+-spec parse_auth_header(string(), boolean()) -> {atom(),
+                                                 string() | unknown_auth_scheme,
+                                                 string() | undefined}.
+parse_auth_header(KeyId, true) when KeyId =/= undefined ->
+    {riak_moss_passthru_auth, KeyId, undefined};
 parse_auth_header(_, true) ->
-    {ok, riak_moss_passthru_auth, []};
+    {riak_moss_passthru_auth, [], undefined};
 parse_auth_header(undefined, false) ->
-    {ok, riak_moss_blockall_auth, [unkown_auth_scheme]};
+    {riak_moss_blockall_auth, unkown_auth_scheme, undefined};
 parse_auth_header("AWS " ++ Key, _) ->
     case string:tokens(Key, ":") of
         [KeyId, KeyData] ->
-            {ok, riak_moss_s3_auth, [KeyId, KeyData]};
+            {riak_moss_s3_auth, KeyId, KeyData};
         Other -> Other
     end;
 parse_auth_header(_, _) ->
-    {ok, riak_moss_blockall_auth, [unkown_auth_scheme]}.
+    {riak_moss_blockall_auth, unkown_auth_scheme, undefined}.
 
 
 %% @doc Utility function for accessing
@@ -63,9 +65,8 @@ parse_auth_header(_, _) ->
 -spec ensure_doc(term()) -> term().
 ensure_doc(Ctx=#key_context{get_fsm_pid=undefined, bucket=Bucket, key=Key}) ->
     %% start the get_fsm
-    BinBucket = list_to_binary(Bucket),
     BinKey = list_to_binary(Key),
-    {ok, Pid} = riak_moss_get_fsm_sup:start_get_fsm(node(), [BinBucket, BinKey]),
+    {ok, Pid} = riak_moss_get_fsm_sup:start_get_fsm(node(), [Bucket, BinKey]),
     Metadata = riak_moss_get_fsm:get_metadata(Pid),
     Ctx#key_context{get_fsm_pid=Pid, doc_metadata=Metadata};
 ensure_doc(Ctx) -> Ctx.

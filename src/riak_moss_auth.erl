@@ -12,7 +12,6 @@
 
 -spec behaviour_info(atom()) -> 'undefined' | [{atom(), arity()}].
 behaviour_info(callbacks) ->
-    [{authenticate, 2}];
+    [{authenticate, 3}];
 behaviour_info(_Other) ->
     undefined.
-
