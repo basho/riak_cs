@@ -35,7 +35,8 @@
 
 -define(SERVER, ?MODULE).
 
--record(state, {reply_pid :: pid(),
+-record(state, {timeout :: pos_integer(),
+                reply_pid :: pid(),
                 timer_ref :: term(),
                 bucket :: binary(),
                 key :: binary(),
@@ -83,11 +84,12 @@ block_written(Pid, BlockID) ->
 %% so that I can be thinking about how it
 %% might be implemented. Does it actually
 %% make things more confusing?
-init([Bucket, Key, ContentLength, ContentType, _Metadata]) ->
+init([Bucket, Key, ContentLength, ContentType, _Metadata, Timeout]) ->
     {ok, prepare, #state{bucket=Bucket,
                          key=Key,
                          content_length=ContentLength,
-                         content_type=ContentType},
+                         content_type=ContentType,
+                         timeout=Timeout},
                      0}.
 
 %%--------------------------------------------------------------------
