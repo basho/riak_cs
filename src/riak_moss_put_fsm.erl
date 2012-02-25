@@ -41,6 +41,7 @@
                 key :: binary(),
                 manifest :: lfs_manifest(),
                 content_length :: pos_integer(),
+                content_type :: binary(),
                 num_bytes_received :: non_neg_integer(),
                 max_buffer_size :: non_neg_integer(),
                 current_buffer_size :: non_neg_integer(),
@@ -75,8 +76,19 @@ block_written(Pid, BlockID) ->
 %%--------------------------------------------------------------------
 %%
 %%--------------------------------------------------------------------
-init([]) ->
-    {ok, prepare, #state{}, 0}.
+
+%% TODO:
+%% Metadata support is a future feature,
+%% but I'm just stubbing it in here
+%% so that I can be thinking about how it
+%% might be implemented. Does it actually
+%% make things more confusing?
+init([Bucket, Key, ContentLength, ContentType, _Metadata]) ->
+    {ok, prepare, #state{bucket=Bucket,
+                         key=Key,
+                         content_length=ContentLength,
+                         content_type=ContentType},
+                     0}.
 
 %%--------------------------------------------------------------------
 %%
