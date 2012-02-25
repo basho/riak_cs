@@ -88,7 +88,12 @@ prepare(timeout, State) ->
     %% 2. create a new manifest
     %% 3. start (or pull from poolboy)
     %%    blocks gen_servers
-    {next_state, not_full, State}.
+    %% 4. start a timer that will
+    %%    send events to let us know to
+    %%    to save the manifest to the
+    %%    manifest_fsm
+    {ok, TRef} = timer:send_interval(60000, self(), save_manifest),
+    {next_state, not_full, State#state{timer_ref=TRef}}.
 
 %% when a block is written
 %% and we were already not full,
@@ -176,6 +181,15 @@ handle_sync_event(_Event, _From, StateName, State) ->
 %%--------------------------------------------------------------------
 %%
 %%--------------------------------------------------------------------
+handle_info(save_manifest, StateName, State) ->
+    %% 1. save the manifest
+
+    %% TODO:
+    %% are there any times where
+    %% we should be cancelling the
+    %% timer here, depending on the
+    %% state we're in?
+    {next_state, StateName, State};
 handle_info(_Info, StateName, State) ->
     {next_state, StateName, State}.
 
