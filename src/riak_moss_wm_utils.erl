@@ -12,6 +12,7 @@
          iso_8601_datetime/0,
          to_iso_8601/1,
          iso_8601_to_rfc_1123/1,
+         to_rfc_1123/1,
          streaming_get/1,
          user_record_to_proplist/1]).
 
@@ -122,6 +123,16 @@ to_iso_8601(Date) ->
             Date
     end.
 
+-spec to_rfc_1123(string()) -> string().
+to_rfc_1123(Date) when is_list(Date) ->
+    case httpd_util:convert_request_date(Date) of
+        {{_Year, _Month, _Day}, {_Hour, _Min, _Sec}} ->
+            %% Date is already in RFC 1123 format
+            Date;
+        bad_date ->
+            iso_8601_to_rfc_1123(Date)
+    end.
+    
 %% @doc Convert an ISO 8601 date to RFC 1123 date
 -spec iso_8601_to_rfc_1123(binary() | string()) -> string().
 iso_8601_to_rfc_1123(Date) when is_list(Date) ->
