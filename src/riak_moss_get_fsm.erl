@@ -169,7 +169,7 @@ waiting_value({object, _Pid, Reply}, #state{from=From}=State) ->
               if Mfst == undefined ->
                       [];
                  true ->
-                      LastModified = riak_moss_wm_utils:iso_8601_to_rfc_1123(
+                      LastModified = riak_moss_wm_utils:to_rfc_1123(
                                          riak_moss_lfs_utils:created(Mfst)),
                       [{"last-modified", LastModified}]
               end ++
