@@ -41,9 +41,12 @@
                 key :: binary(),
                 manifest :: lfs_manifest(),
                 content_length :: pos_integer(),
+                num_bytes_received :: non_neg_integer(),
                 max_buffer_size :: non_neg_integer(),
-                curent_buffer_size :: non_neg_integer(),
-                remainder_data :: binary()}).
+                current_buffer_size :: non_neg_integer(),
+                buffer_queue=queue:new(),
+                remainder_data :: binary(),
+                unacked_writes=ordsets:new()}).
 
 %%%===================================================================
 %%% API
@@ -80,45 +83,71 @@ init([]) ->
 %%--------------------------------------------------------------------
 prepare(timeout, State) ->
     %% do set up work
+
+    %% 1. start the manifest_fsm proc
+    %% 2. create a new manifest
+    %% 3. start (or pull from poolboy)
+    %%    blocks gen_servers
     {next_state, not_full, State}.
 
 %% when a block is written
 %% and we were already not full,
 %% we're still not full
 not_full({block_written, _BlockID}, State) ->
+    %% 1. send a message to the
+    %%    gen_server that sent us this
+    %%    message to start writing
+    %%    the next block from our
+    %%    buffer
+    %% 2. Remove this block from the
+    %%    unacked_writes set
     {next_state, not_full, State}.
 
-%% when we're in the full state
-%% a block being written can either
-%% keep us in the full state,
-%% or drop us down to the not_full
-%% state
-
-%% when this block being written
-%% drops us down to not_full
 full({block_written, _BlockID}, State) ->
+    %% 1. send a message to the
+    %%    gen_server that sent us this
+    %%    message to start writing
+    %%    the next block from our
+    %%    buffer
+    %% 2. Remove this block from the
+    %%    unacked_writes set
     {next_state, not_full, State}.
 
-all_received({block_written, _BlockID}, State) ->
-    {next_state, all_received, State};
-all_received({block_written, _BlockID}, State) ->
-    {next_state, done, State}.
+all_received({block_written, BlockID}, State=#state{unacked_writes=UnackedWrites}) ->
+    NewUnackedSet = ordsets:del_element(BlockID, UnackedWrites),
+    case ordsets:size(NewUnackedSet) of
+        0 ->
+            {next_state, done, State};
+        _ ->
+            {next_state, all_received, State}
+    end.
 
 %%--------------------------------------------------------------------
 %%
 %%--------------------------------------------------------------------
 
-%% when size of NewData doesn't put us over the edge
-not_full({augment_data, NewData}, _From, State) ->
-    Reply = ok,
-    {reply, Reply, not_full, State};
-%% when size of NewData does make our buffer full
-not_full({augment_data, NewData}, _From, State) ->
-    Reply = ok,
-    {reply, Reply, full, State};
-not_full({augment_data, NewData}, _From, State) ->
-    Reply = ok,
-    {reply, Reply, all_received, State}.
+%% when this new data
+%% is the last chunk
+not_full({augment_data, NewData}, _From, State=#state{content_length=CLength,
+                                                      num_bytes_received=NumBytesReceived,
+                                                      current_buffer_size=CurrentBufferSize,
+                                                      max_buffer_size=MaxBufferSize}) ->
+    case handle_chunk(CLength, NumBytesReceived, size(NewData), CurrentBufferSize, MaxBufferSize) of
+        last_chunk ->
+            %% handle_receiving_last_chunk(),
+            Reply = ok,
+            {reply, Reply, all_received, State};
+        accept ->
+            %% handle_accept_chunk(),
+            Reply = ok,
+            {reply, Reply, not_full, State};
+        backpressure ->
+            %% stash the From pid into
+            %% state
+            %% handle_backpressure_for_chunk(),
+            Reply = ok,
+            {reply, Reply, not_full, State}
+    end.
 
 all_received(finalize, _From, State) ->
     Reply = ok,
@@ -165,6 +194,9 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
+
+handle_chunk(_ContentLength, _NumBytesReceived, _NewDataSize, _CurrentBufferSize, _MaxBufferSize) ->
+    ok.
 
 %% @private
 %% @doc Break up a data binary into a list of block-sized chunks
