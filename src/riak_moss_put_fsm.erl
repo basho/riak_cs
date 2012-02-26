@@ -174,7 +174,7 @@ not_full({augment_data, NewData}, _From, State=#state{content_length=CLength,
     end.
 
 all_received(finalize, _From, State) ->
-    %% 1. state the From pid into our
+    %% 1. stash the From pid into our
     %%    state so that we know to reply
     %%    later with the finished manifest
     Reply = ok,
