@@ -41,14 +41,14 @@ service_available(RD, Ctx) ->
 %%      The passthru auth can be used either with a KeyID or
 %%      anonymously by leving the header empty.
 -spec parse_auth_header(string(), boolean()) -> {atom(),
-                                                 string() | unknown_auth_scheme,
+                                                 string() | undefined,
                                                  string() | undefined}.
 parse_auth_header(KeyId, true) when KeyId =/= undefined ->
     {riak_moss_passthru_auth, KeyId, undefined};
 parse_auth_header(_, true) ->
     {riak_moss_passthru_auth, [], undefined};
 parse_auth_header(undefined, false) ->
-    {riak_moss_blockall_auth, unkown_auth_scheme, undefined};
+    {riak_moss_blockall_auth, undefined, undefined};
 parse_auth_header("AWS " ++ Key, _) ->
     case string:tokens(Key, ":") of
         [KeyId, KeyData] ->
@@ -56,7 +56,7 @@ parse_auth_header("AWS " ++ Key, _) ->
         Other -> Other
     end;
 parse_auth_header(_, _) ->
-    {riak_moss_blockall_auth, unkown_auth_scheme, undefined}.
+    {riak_moss_blockall_auth, undefined, undefined}.
 
 
 %% @doc Utility function for accessing
@@ -132,7 +132,7 @@ to_rfc_1123(Date) when is_list(Date) ->
         bad_date ->
             iso_8601_to_rfc_1123(Date)
     end.
-    
+
 %% @doc Convert an ISO 8601 date to RFC 1123 date
 -spec iso_8601_to_rfc_1123(binary() | string()) -> string().
 iso_8601_to_rfc_1123(Date) when is_list(Date) ->
