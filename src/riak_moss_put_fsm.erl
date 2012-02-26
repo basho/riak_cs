@@ -133,6 +133,11 @@ full({block_written, _BlockID}, State) ->
     {next_state, not_full, State}.
 
 all_received({block_written, BlockID}, State=#state{unacked_writes=UnackedWrites}) ->
+    %% 1. send a message to the
+    %%    gen_server that sent us this
+    %%    message to start writing
+    %%    the next block from our
+    %%    buffer
     NewUnackedSet = ordsets:del_element(BlockID, UnackedWrites),
     case ordsets:size(NewUnackedSet) of
         0 ->
@@ -169,10 +174,15 @@ not_full({augment_data, NewData}, _From, State=#state{content_length=CLength,
     end.
 
 all_received(finalize, _From, State) ->
+    %% 1. state the From pid into our
+    %%    state so that we know to reply
+    %%    later with the finished manifest
     Reply = ok,
     {reply, Reply, all_received, State}.
 
 done(finalize, _From, State) ->
+    %% 1. reply immediately
+    %%    with the finished manifest
     Reply = ok,
     {reply, Reply, stop, State}.
 
@@ -185,9 +195,6 @@ handle_event(_Event, StateName, State) ->
 %%--------------------------------------------------------------------
 %%
 %%--------------------------------------------------------------------
-handle_sync_event({augment_data, _NewData}, _From, StateName, State) ->
-    Reply = ok,
-    {reply, Reply, StateName, State};
 handle_sync_event(_Event, _From, StateName, State) ->
     Reply = ok,
     {reply, Reply, StateName, State}.
