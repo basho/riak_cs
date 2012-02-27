@@ -106,7 +106,9 @@ prepare(timeout, State=#state{bucket=Bucket,
 
     %% 1. start the manifest_fsm proc
     %% 2. start (or pull from poolboy)
-    %%    blocks gen_servers
+    %%    blocks gen_servers, and make
+    %%    sure to monitor them
+    %%    
     UUID = druuid:v4(),
     Manifest = riak_moss_lfs_utils:new_manifest(Bucket,
                                                 Key,
@@ -128,34 +130,18 @@ prepare(timeout, State=#state{bucket=Bucket,
 %% when a block is written
 %% and we were already not full,
 %% we're still not full
-not_full({block_written, _BlockID, _WriterPid}, State) ->
-    %% 1. Remove this block from the
-    %%    unacked_writes set
-    %% 2. Add this writer back to the
-    %%    free_writers set
-    %% 3. Maybe write another block
-    {next_state, not_full, State}.
+not_full({block_written, BlockID, WriterPid}, State) ->
+    NewState = state_from_block_written(BlockID, WriterPid, State),
+    {next_state, not_full, NewState}.
 
-full({block_written, _BlockID, _WriterPid}, State) ->
-    %% 1. Remove this block from the
-    %%    unacked_writes set
-    %% 2. Add this writer back to the
-    %%    free_writers set
-    %% 3. Maybe write another block
-    %% 4. Reply to the waiting proc
-    %%    that their block has been
-    %%    written
-    {next_state, not_full, State}.
+full({block_written, BlockID, WriterPid}, State=#state{reply_pid=Waiter}) ->
+    NewState = state_from_block_written(BlockID, WriterPid, State),
+    gen_fsm:reply(Waiter, ok),
+    {next_state, not_full, NewState}.
 
-all_received({block_written, BlockID, _WriterPid},
-                    State=#state{unacked_writes=UnackedWrites}) ->
-    %% 1. Remove this block from the
-    %%    unacked_writes set
-    %% 2. Add this writer back to the
-    %%    free_writers set
-    %% 3. Maybe write another block
-    NewUnackedSet = ordsets:del_element(BlockID, UnackedWrites),
-    case ordsets:size(NewUnackedSet) of
+all_received({block_written, BlockID, WriterPid}, State) ->
+    NewState = state_from_block_written(BlockID, WriterPid, State),
+    case ordsets:size(NewState#state.unacked_writes) of
         0 ->
             {next_state, done, State};
         _ ->
@@ -231,6 +217,9 @@ handle_info(save_manifest, StateName, State) ->
     %% timer here, depending on the
     %% state we're in?
     {next_state, StateName, State};
+%% TODO:
+%% add a clause for handling down
+%% messages from the blocks gen_servers
 handle_info(_Info, StateName, State) ->
     {next_state, StateName, State}.
 
@@ -298,3 +287,28 @@ data_blocks(Data, ContentLength, BytesReceived, BlockSize, Blocks) ->
 -spec append_data_block(binary(), [binary()]) -> [binary()].
 append_data_block(BlockData, Blocks) ->
     lists:reverse([BlockData | lists:reverse(Blocks)]).
+
+%% @private
+%% @doc Maybe send a message to one of the
+%%      gen_servers to write another block,
+%%      and then return the updated func inputs
+-spec maybe_write_block(term(), term(), term()) -> {term(), term(), term()}.
+maybe_write_block(BufferQueue, FreeWriters, UnackedWrites) ->
+    {BufferQueue, FreeWriters, UnackedWrites}.
+
+-spec state_from_block_written(non_neg_integer(), pid(), term()) -> term().
+state_from_block_written(BlockID, WriterPid,
+                                State=#state{unacked_writes=UnackedWrites,
+                                             free_writers=FreeWriters,
+                                             buffer_queue=BufferQueue}) ->
+    NewUnackedSet = ordsets:del_element(BlockID, UnackedWrites),
+    NewFreeWriters = ordsets:add_element(WriterPid, FreeWriters),
+    %% 3. Maybe write another block
+    {NewBufferQueue, NewFreeWriters2, NewUnackedSet2} =
+    maybe_write_block(BufferQueue, NewFreeWriters, NewUnackedSet),
+    State#state{unacked_writes=NewUnackedSet2,
+                free_writers=NewFreeWriters2,
+                buffer_queue=NewBufferQueue}.
+
+
+
