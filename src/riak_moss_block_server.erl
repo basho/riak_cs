@@ -40,7 +40,17 @@
 start_link() ->
     gen_server:start_link(?MODULE, [], []).
 
+-spec get_block(pid(), binary(), binary(), binary(), pos_integer()) -> ok.
+get_block(Pid, Bucket, Key, UUID, BlockNumber) ->
+    gen_server:cast(Pid, {get_block, self(), Bucket, Key, UUID, BlockNumber}).
 
+-spec put_block(pid(), binary(), binary(), binary(), pos_integer(), binary()) -> ok.
+put_block(Pid, Bucket, Key, UUID, BlockNumber, Value) ->
+    gen_server:cast(Pid, {put_block, self(), Bucket, Key, UUID, BlockNumber, Value}).
+
+-spec delete_block(pid(), binary(), binary(), binary(), pos_integer()) -> ok.
+delete_block(Pid, Bucket, Key, UUID, BlockNumber) ->
+    gen_server:cast(Pid, {delete_block, self(), Bucket, Key, UUID, BlockNumber}).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -66,18 +76,6 @@ init([]) ->
                         [Reason]),
             {stop, riak_connect_failed}
     end.
-
--spec get_block(pid(), binary(), binary(), binary(), pos_integer()) -> ok.
-get_block(Pid, Bucket, Key, UUID, BlockNumber) ->
-    gen_server:cast(Pid, {get_block, self(), Bucket, Key, UUID, BlockNumber}).
-
--spec put_block(pid(), binary(), binary(), binary(), pos_integer(), binary()) -> ok.
-put_block(Pid, Bucket, Key, UUID, BlockNumber, Value) ->
-    gen_server:cast(Pid, {put_block, self(), Bucket, Key, UUID, BlockNumber, Value}).
-
--spec delete_block(pid(), binary(), binary(), binary(), pos_integer()) -> ok.
-delete_block(Pid, Bucket, Key, UUID, BlockNumber) ->
-    gen_server:cast(Pid, {delete_block, self(), Bucket, Key, UUID, BlockNumber}).
 
 %%--------------------------------------------------------------------
 %% @private
