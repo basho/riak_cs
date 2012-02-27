@@ -83,7 +83,9 @@ requested_access(Method, QueryString) ->
         andalso
         AclRequest == true->
             'READ_ACP';
-        Method == 'GET' ->
+        (Method == 'GET'
+         orelse
+         Method == 'HEAD') ->
             'READ';
         Method == 'PUT'
         andalso
