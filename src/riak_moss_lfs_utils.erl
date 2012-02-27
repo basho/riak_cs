@@ -32,7 +32,7 @@
          initial_blocks/2,
          block_sequences_for_manifest/1,
          is_manifest/1,
-         new_manifest/6,
+         new_manifest/7,
          remove_write_block/2,
          sorted_blocks_remaining/1]).
 
@@ -143,16 +143,18 @@ is_manifest(BinaryValue) ->
 -spec new_manifest(binary(),
                    binary(),
                    binary(),
+                   binary(),
                    pos_integer(),
                    term(),
                    term()) -> lfs_manifest().
-new_manifest(Bucket, FileName, UUID, ContentLength, ContentMd5, MetaData) ->
+new_manifest(Bucket, FileName, UUID, ContentLength, ContentType, ContentMd5, MetaData) ->
     BlockSize = block_size(),
     Blocks = ordsets:from_list(initial_blocks(ContentLength, BlockSize)),
     #lfs_manifest_v2{bkey={Bucket, FileName},
                   uuid=UUID,
                   state=writing,
                   content_length=ContentLength,
+                  content_type=ContentType,
                   content_md5=ContentMd5,
                   block_size=BlockSize,
                   write_blocks_remaining=Blocks,
