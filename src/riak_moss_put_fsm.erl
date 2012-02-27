@@ -48,6 +48,7 @@
                 current_buffer_size :: non_neg_integer(),
                 buffer_queue=queue:new(),
                 remainder_data :: binary(),
+                free_writers :: ordsets:new(),
                 unacked_writes=ordsets:new()}).
 
 %%%===================================================================
@@ -106,6 +107,12 @@ prepare(timeout, State) ->
     %%    send events to let us know to
     %%    to save the manifest to the
     %%    manifest_fsm
+
+    %% TODO:
+    %% this time probably
+    %% shouldn't be hardcoded,
+    %% and if it is, what should
+    %% it be?
     {ok, TRef} = timer:send_interval(60000, self(), save_manifest),
     {next_state, not_full, State#state{timer_ref=TRef}}.
 
@@ -113,32 +120,28 @@ prepare(timeout, State) ->
 %% and we were already not full,
 %% we're still not full
 not_full({block_written, _BlockID, _WriterPid}, State) ->
-    %% 1. send a message to the
-    %%    gen_server that sent us this
-    %%    message to start writing
-    %%    the next block from our
-    %%    buffer
-    %% 2. Remove this block from the
+    %% 1. Remove this block from the
     %%    unacked_writes set
+    %% 2. Add this writer back to the
+    %%    free_writers set
+    %% 3. Maybe write another block
     {next_state, not_full, State}.
 
 full({block_written, _BlockID, _WriterPid}, State) ->
-    %% 1. send a message to the
-    %%    gen_server that sent us this
-    %%    message to start writing
-    %%    the next block from our
-    %%    buffer
-    %% 2. Remove this block from the
+    %% 1. Remove this block from the
     %%    unacked_writes set
+    %% 2. Add this writer back to the
+    %%    free_writers set
+    %% 3. Maybe write another block
     {next_state, not_full, State}.
 
 all_received({block_written, BlockID, _WriterPid},
                     State=#state{unacked_writes=UnackedWrites}) ->
-    %% 1. send a message to the
-    %%    gen_server that sent us this
-    %%    message to start writing
-    %%    the next block from our
-    %%    buffer
+    %% 1. Remove this block from the
+    %%    unacked_writes set
+    %% 2. Add this writer back to the
+    %%    free_writers set
+    %% 3. Maybe write another block
     NewUnackedSet = ordsets:del_element(BlockID, UnackedWrites),
     case ordsets:size(NewUnackedSet) of
         0 ->
@@ -153,11 +156,14 @@ all_received({block_written, BlockID, _WriterPid},
 
 %% when this new data
 %% is the last chunk
-not_full({augment_data, NewData}, _From, State=#state{content_length=CLength,
-                                                      num_bytes_received=NumBytesReceived,
-                                                      current_buffer_size=CurrentBufferSize,
-                                                      max_buffer_size=MaxBufferSize}) ->
-    case handle_chunk(CLength, NumBytesReceived, size(NewData), CurrentBufferSize, MaxBufferSize) of
+not_full({augment_data, NewData}, _From, 
+                State=#state{content_length=CLength,
+                             num_bytes_received=NumBytesReceived,
+                             current_buffer_size=CurrentBufferSize,
+                             max_buffer_size=MaxBufferSize}) ->
+
+    case handle_chunk(CLength, NumBytesReceived, size(NewData),
+                             CurrentBufferSize, MaxBufferSize) of
         last_chunk ->
             %% handle_receiving_last_chunk(),
             Reply = ok,
@@ -172,6 +178,7 @@ not_full({augment_data, NewData}, _From, State=#state{content_length=CLength,
             %% handle_backpressure_for_chunk(),
             Reply = ok,
             {reply, Reply, not_full, State}
+    %% 1. Maybe write another block
     end.
 
 all_received(finalize, _From, State) ->
