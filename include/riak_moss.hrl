@@ -60,7 +60,7 @@
 -define(USER_BUCKET, <<"moss.users">>).
 -define(BUCKETS_BUCKET, <<"moss.buckets">>).
 -define(FREE_BUCKET_MARKER, <<"0">>).
--define(MAX_CONTENT_LENGTH, 5368709120). %% 5 GB
+-define(DEFAULT_MAX_CONTENT_LENGTH, 5368709120). %% 5 GB
 -define(DEFAULT_LFS_BLOCK_SIZE, 1048576).%% 1 MB
 -define(XML_PROLOG, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>").
 -define(DEFAULT_STANCHION_IP, "127.0.0.1").
