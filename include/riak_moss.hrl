@@ -95,6 +95,7 @@
         %% content properties
         %% -----------------------------------------------------------------
         content_length :: integer(),
+        content_type :: binary(),
         content_md5 :: term(),
 
         %% state properties

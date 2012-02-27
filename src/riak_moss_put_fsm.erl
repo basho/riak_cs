@@ -40,6 +40,7 @@
                 timer_ref :: term(),
                 bucket :: binary(),
                 key :: binary(),
+                metadata :: term(),
                 manifest :: lfs_manifest(),
                 content_length :: pos_integer(),
                 content_type :: binary(),
@@ -85,9 +86,10 @@ block_written(Pid, BlockID) ->
 %% so that I can be thinking about how it
 %% might be implemented. Does it actually
 %% make things more confusing?
-init([Bucket, Key, ContentLength, ContentType, _Metadata, Timeout]) ->
+init([Bucket, Key, ContentLength, ContentType, Metadata, Timeout]) ->
     {ok, prepare, #state{bucket=Bucket,
                          key=Key,
+                         metadata=Metadata,
                          content_length=ContentLength,
                          content_type=ContentType,
                          timeout=Timeout},
@@ -96,17 +98,23 @@ init([Bucket, Key, ContentLength, ContentType, _Metadata, Timeout]) ->
 %%--------------------------------------------------------------------
 %%
 %%--------------------------------------------------------------------
-prepare(timeout, State) ->
-    %% do set up work
+prepare(timeout, State=#state{bucket=Bucket,
+                              key=Key,
+                              content_length=ContentLength,
+                              content_type=ContentType,
+                              metadata=Metadata}) ->
 
     %% 1. start the manifest_fsm proc
-    %% 2. create a new manifest
-    %% 3. start (or pull from poolboy)
+    %% 2. start (or pull from poolboy)
     %%    blocks gen_servers
-    %% 4. start a timer that will
-    %%    send events to let us know to
-    %%    to save the manifest to the
-    %%    manifest_fsm
+    UUID = druuid:v4(),
+    Manifest = riak_moss_lfs_utils:new_manifest(Bucket,
+                                                Key,
+                                                UUID,
+                                                ContentLength,
+                                                ContentType,
+                                                undefined, %% we don't know the md5 yet
+                                                Metadata),
 
     %% TODO:
     %% this time probably
@@ -114,7 +122,8 @@ prepare(timeout, State) ->
     %% and if it is, what should
     %% it be?
     {ok, TRef} = timer:send_interval(60000, self(), save_manifest),
-    {next_state, not_full, State#state{timer_ref=TRef}}.
+    {next_state, not_full, State#state{manifest=Manifest,
+                                       timer_ref=TRef}}.
 
 %% when a block is written
 %% and we were already not full,
