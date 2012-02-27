@@ -133,6 +133,9 @@ full({block_written, _BlockID, _WriterPid}, State) ->
     %% 2. Add this writer back to the
     %%    free_writers set
     %% 3. Maybe write another block
+    %% 4. Reply to the waiting proc
+    %%    that their block has been
+    %%    written
     {next_state, not_full, State}.
 
 all_received({block_written, BlockID, _WriterPid},
