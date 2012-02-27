@@ -68,7 +68,7 @@ finalize(Pid) ->
     gen_fsm:sync_send_event(Pid, finalize).
 
 block_written(Pid, BlockID) ->
-    gen_fsm:sync_send_event(Pid, {block_written, BlockID}).
+    gen_fsm:sync_send_event(Pid, {block_written, BlockID, self()}).
 
 %%%===================================================================
 %%% gen_fsm callbacks
@@ -112,7 +112,7 @@ prepare(timeout, State) ->
 %% when a block is written
 %% and we were already not full,
 %% we're still not full
-not_full({block_written, _BlockID}, State) ->
+not_full({block_written, _BlockID, _WriterPid}, State) ->
     %% 1. send a message to the
     %%    gen_server that sent us this
     %%    message to start writing
@@ -122,7 +122,7 @@ not_full({block_written, _BlockID}, State) ->
     %%    unacked_writes set
     {next_state, not_full, State}.
 
-full({block_written, _BlockID}, State) ->
+full({block_written, _BlockID, _WriterPid}, State) ->
     %% 1. send a message to the
     %%    gen_server that sent us this
     %%    message to start writing
@@ -132,7 +132,8 @@ full({block_written, _BlockID}, State) ->
     %%    unacked_writes set
     {next_state, not_full, State}.
 
-all_received({block_written, BlockID}, State=#state{unacked_writes=UnackedWrites}) ->
+all_received({block_written, BlockID, _WriterPid},
+                    State=#state{unacked_writes=UnackedWrites}) ->
     %% 1. send a message to the
     %%    gen_server that sent us this
     %%    message to start writing
