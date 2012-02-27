@@ -81,16 +81,20 @@ forbidden(RD, Ctx=#key_context{bucket=Bucket,
                                                      User?MOSS_USER.canonical_id) of
                         {true, _OwnerId} ->
                             NewInnerCtx =
-                                Ctx#key_context.context#context{user=User},
+                                Ctx#key_context.context#context{user=User,
+                                                                requested_perm=RequestedAccess},
                             forbidden(Method, RD,
                                       Ctx#key_context{bucket=Bucket,
                                                       context=NewInnerCtx});
+
                         true ->
                             NewInnerCtx =
-                                Ctx#key_context.context#context{user=User},
+                                Ctx#key_context.context#context{user=User,
+                                                                requested_perm=RequestedAccess},
                             forbidden(Method, RD,
                                       Ctx#key_context{bucket=Bucket,
                                                       context=NewInnerCtx});
+
                         false ->
                             %% ACL check failed, deny access
                             riak_moss_s3_response:api_error(access_denied, RD, Ctx)
@@ -185,6 +189,8 @@ content_types_provided(RD, Ctx) ->
     end.
 
 -spec produce_body(term(), term()) -> {iolist()|binary(), term(), term()}.
+produce_body(RD, #key_context{context=#context{requested_perm='READ_ACP'}}=KeyCtx) ->
+    {riak_moss_acl_utils:empty_acl_xml(), RD, KeyCtx};
 produce_body(RD, #key_context{get_fsm_pid=GetFsmPid, doc_metadata=DocMeta}=Ctx) ->
     ContentLength = dict:fetch("content-length", DocMeta),
     ContentMd5 = dict:fetch("content-md5", DocMeta),
