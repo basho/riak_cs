@@ -153,9 +153,9 @@ all_received({block_written, BlockID, WriterPid}, State) ->
     NewState = state_from_block_written(BlockID, WriterPid, State),
     case ordsets:size(NewState#state.unacked_writes) of
         0 ->
-            {next_state, done, State};
+            {next_state, done, NewState};
         _ ->
-            {next_state, all_received, State}
+            {next_state, all_received, NewState}
     end.
 
 %%--------------------------------------------------------------------
