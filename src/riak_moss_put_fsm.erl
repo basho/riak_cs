@@ -50,7 +50,8 @@
                 buffer_queue=queue:new(),
                 remainder_data :: binary(),
                 free_writers :: ordsets:new(),
-                unacked_writes=ordsets:new()}).
+                unacked_writes=ordsets:new(),
+                all_writer_pids :: list(pid())}).
 
 %%%===================================================================
 %%% API
@@ -61,7 +62,7 @@
 %% @end
 %%--------------------------------------------------------------------
 start_link() ->
-    gen_fsm:start_link({local, ?SERVER}, ?MODULE, [], []).
+    gen_fsm:start_link(?MODULE, [], []).
 
 augment_data(Pid, Data) ->
     gen_fsm:sync_send_event(Pid, {augment_data, Data}).
@@ -105,18 +106,22 @@ prepare(timeout, State=#state{bucket=Bucket,
                               metadata=Metadata}) ->
 
     %% 1. start the manifest_fsm proc
-    %% 2. start (or pull from poolboy)
-    %%    blocks gen_servers, and make
-    %%    sure to monitor them
+    %% TODO:
+    %% this shouldn't be hardcoded.
+    %% Also, use poolboy :)
+    WriterPids = start_writer_servers(1),
+    FreeWriters = ordsets:from_list(WriterPids),
     %%    
     UUID = druuid:v4(),
-    Manifest = riak_moss_lfs_utils:new_manifest(Bucket,
-                                                Key,
-                                                UUID,
-                                                ContentLength,
-                                                ContentType,
-                                                undefined, %% we don't know the md5 yet
-                                                Metadata),
+    Manifest =
+    riak_moss_lfs_utils:new_manifest(Bucket,
+                                     Key,
+                                     UUID,
+                                     ContentLength,
+                                     ContentType,
+                                     %% we don't know the md5 yet
+                                     undefined, 
+                                     Metadata),
 
     %% TODO:
     %% this time probably
@@ -125,7 +130,9 @@ prepare(timeout, State=#state{bucket=Bucket,
     %% it be?
     {ok, TRef} = timer:send_interval(60000, self(), save_manifest),
     {next_state, not_full, State#state{manifest=Manifest,
-                                       timer_ref=TRef}}.
+                                       timer_ref=TRef,
+                                       all_writer_pids=WriterPids,
+                                       free_writers=FreeWriters}}.
 
 %% when a block is written
 %% and we were already not full,
@@ -310,5 +317,16 @@ state_from_block_written(BlockID, WriterPid,
                 free_writers=NewFreeWriters2,
                 buffer_queue=NewBufferQueue}.
 
-
-
+%% @private
+%% @doc Start a number
+%%      of riak_moss_block_server
+%%      processes and return a list
+%%      of their pids
+-spec start_writer_servers(pos_integer()) -> list(pid()).
+start_writer_servers(NumServers) ->
+    %% TODO:
+    %% doesn't handle
+    %% failure at all
+    [Pid || {ok, Pid} <- 
+        [riak_moss_block_server:start_link() ||
+            _ <- lists:seq(1, NumServers)]].
