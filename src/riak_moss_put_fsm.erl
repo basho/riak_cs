@@ -162,8 +162,6 @@ all_received({block_written, BlockID, WriterPid}, State) ->
 %%
 %%--------------------------------------------------------------------
 
-%% when this new data
-%% is the last chunk
 not_full({augment_data, NewData}, _From, 
                 State=#state{content_length=CLength,
                              num_bytes_received=NumBytesReceived,
