@@ -37,6 +37,7 @@
 
 -record(state, {timeout :: pos_integer(),
                 reply_pid :: pid(),
+                mani_pid :: pid(),
                 timer_ref :: term(),
                 bucket :: binary(),
                 key :: binary(),
@@ -106,6 +107,7 @@ prepare(timeout, State=#state{bucket=Bucket,
                               metadata=Metadata}) ->
 
     %% 1. start the manifest_fsm proc
+    {ok, ManiPid} = riak_moss_manifest_fsm:start_link(Bucket, Key),
     %% TODO:
     %% this shouldn't be hardcoded.
     %% Also, use poolboy :)
@@ -131,6 +133,7 @@ prepare(timeout, State=#state{bucket=Bucket,
     {ok, TRef} = timer:send_interval(60000, self(), save_manifest),
     {next_state, not_full, State#state{manifest=Manifest,
                                        timer_ref=TRef,
+                                       mani_pid=ManiPid,
                                        all_writer_pids=WriterPids,
                                        free_writers=FreeWriters}}.
 
