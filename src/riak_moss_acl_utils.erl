@@ -22,6 +22,7 @@
          default_acl/2,
          acl_from_xml/1,
          acl_to_xml/1,
+         empty_acl_xml/0,
          requested_access/2
         ]).
 
@@ -69,6 +70,17 @@ acl_to_xml(Acl) ->
              {'DisplayName', [OwnerName]}
             ]},
            {'AccessControlList', grants_xml(Acl?ACL.grants)}
+          ]}],
+    unicode:characters_to_binary(
+      xmerl:export_simple(XmlDoc, xmerl_xml, [{prolog, ?XML_PROLOG}])).
+
+%% @doc Convert an internal representation of an ACL
+%% into XML.
+-spec empty_acl_xml() -> binary().
+empty_acl_xml() ->
+    XmlDoc =
+        [{'AccessControlPolicy',
+          [
           ]}],
     unicode:characters_to_binary(
       xmerl:export_simple(XmlDoc, xmerl_xml, [{prolog, ?XML_PROLOG}])).
