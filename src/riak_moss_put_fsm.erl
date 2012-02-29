@@ -244,8 +244,15 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
-handle_chunk(_ContentLength, _NumBytesReceived, _NewDataSize, _CurrentBufferSize, _MaxBufferSize) ->
-    ok.
+handle_chunk(ContentLength, NumBytesReceived, NewDataSize, CurrentBufferSize, MaxBufferSize) ->
+    if
+        (NumBytesReceived + NewDataSize) == ContentLength ->
+            last_chunk;
+        (CurrentBufferSize + NewDataSize) >= MaxBufferSize ->
+            backpressure;
+        true ->
+            accept
+    end.
 
 %% @private
 %% @doc Break up a data binary into a list of block-sized chunks
