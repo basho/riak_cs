@@ -1,3 +1,32 @@
+* MOSS 0.1.1 Release Notes
+** Bugs Fixed
+- HEAD requests always result in a =403 Forbidden=.
+- =s3cmd info= on a bucket object results in an error due to missing
+  ACL document.
+- Incorrect atom specified in =riak_moss_wm_utils:parse_auth_header=.
+- Bad match condition used in =riak_moss_acl:has_permission/2=.
+
+* MOSS 0.1.0 Release Notes
+** Bugs Fixed
+- =s3cmd info= fails due to missing ='last-modified= key in return document.
+- =s3cmd get= of 0 byte file fails.
+- Bucket creation fails with status code =415= using the AWS Java SDK.
+** Other Additions
+- Bucket-level access control lists
+- User records have been modified so that an system-wide unique email
+  address is required to create a user.
+- User creation requests are serialized throuh =stanchion= to be
+  certain the email address is unique.
+- Bucket creation and deletion requests are serialized through
+  =stanchion= to ensure bucket names are unique in the system.
+- The =stanchion= serialization service is now required to be installed
+  and running for the system to be fully operational.
+- The concept of an administrative user has been added to the system. The credentials of the
+  administrative user must be added to the app.config files for =moss= and =stanchion=.
+- User credentials are now created using a url-safe base64 encoding module.
+** Known Issues
+- Object-level access control lists have not yet been implemented.
+
 * MOSS 0.0.3 Release Notes
 ** Bugs Fixed
 - URL decode keys on put so they are represented correctly. This
