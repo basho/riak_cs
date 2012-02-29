@@ -15,7 +15,7 @@
 - Bucket-level access control lists
 - User records have been modified so that an system-wide unique email
   address is required to create a user.
-- User creation requests are serialized throuh =stanchion= to be
+- User creation requests are serialized through =stanchion= to be
   certain the email address is unique.
 - Bucket creation and deletion requests are serialized through
   =stanchion= to ensure bucket names are unique in the system.
