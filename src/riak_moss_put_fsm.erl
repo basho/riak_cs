@@ -162,6 +162,12 @@ all_received({block_written, BlockID, WriterPid}, State) ->
 %%
 %%--------------------------------------------------------------------
 
+%% Note, we never receive the `augment_data`
+%% event in the full state because there should
+%% only ever be a singleton proc sending the event,
+%% and it will be blocked waiting for a response from
+%% when we transitioned from not_full => full
+
 not_full({augment_data, NewData}, _From, 
                 State=#state{content_length=CLength,
                              num_bytes_received=NumBytesReceived,
