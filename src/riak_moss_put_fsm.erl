@@ -176,21 +176,12 @@ not_full({augment_data, NewData}, _From,
 
     case handle_chunk(CLength, NumBytesReceived, size(NewData),
                              CurrentBufferSize, MaxBufferSize) of
-        last_chunk ->
-            %% handle_receiving_last_chunk(),
-            Reply = ok,
-            {reply, Reply, all_received, State};
         accept ->
-            %% handle_accept_chunk(),
-            Reply = ok,
-            {reply, Reply, not_full, State};
+            handle_accept_chunk(State);
         backpressure ->
-            %% stash the From pid into
-            %% state
-            %% handle_backpressure_for_chunk(),
-            Reply = ok,
-            {reply, Reply, not_full, State}
-    %% 1. Maybe write another block
+            handle_backpressure_for_chunk(State);
+        last_chunk ->
+            handle_receiving_last_chunk(State)
     end.
 
 all_received(finalize, _From, State) ->
@@ -337,3 +328,21 @@ start_writer_servers(NumServers) ->
     [Pid || {ok, Pid} <- 
         [riak_moss_block_server:start_link() ||
             _ <- lists:seq(1, NumServers)]].
+
+handle_accept_chunk(State=#state{}) ->
+    %% 1. Maybe write another block
+    Reply = ok,
+    {reply, Reply, not_full, State}.
+
+handle_backpressure_for_chunk(State=#state{}) ->
+    %% 1. Maybe write another block
+
+    %% stash the From pid into
+    %% state
+    Reply = ok,
+    {reply, Reply, full, State}.
+
+handle_receiving_last_chunk(State=#state{}) ->
+    %% 1. Maybe write another block
+    Reply = ok,
+    {reply, Reply, all_received, State}.
