@@ -48,7 +48,7 @@
                 num_bytes_received :: non_neg_integer(),
                 max_buffer_size :: non_neg_integer(),
                 current_buffer_size :: non_neg_integer(),
-                buffer_queue=queue:new(),
+                buffer_queue=[], %% not actually a queue, but we treat it like one
                 remainder_data :: binary(),
                 free_writers :: ordsets:new(),
                 unacked_writes=ordsets:new(),
@@ -168,7 +168,7 @@ all_received({block_written, BlockID, WriterPid}, State) ->
 %% and it will be blocked waiting for a response from
 %% when we transitioned from not_full => full
 
-not_full({augment_data, NewData}, _From, 
+not_full({augment_data, NewData}, From,
                 State=#state{content_length=CLength,
                              num_bytes_received=NumBytesReceived,
                              current_buffer_size=CurrentBufferSize,
@@ -177,11 +177,11 @@ not_full({augment_data, NewData}, _From,
     case handle_chunk(CLength, NumBytesReceived, size(NewData),
                              CurrentBufferSize, MaxBufferSize) of
         accept ->
-            handle_accept_chunk(State);
+            handle_accept_chunk(NewData, State);
         backpressure ->
-            handle_backpressure_for_chunk(State);
+            handle_backpressure_for_chunk(NewData, From, State);
         last_chunk ->
-            handle_receiving_last_chunk(State)
+            handle_receiving_last_chunk(NewData, State)
     end.
 
 all_received(finalize, _From, State) ->
@@ -253,6 +253,12 @@ handle_chunk(ContentLength, NumBytesReceived, NewDataSize, CurrentBufferSize, Ma
         true ->
             accept
     end.
+
+combine_new_and_remainder_data(NewData, undefined) ->
+    NewData;
+combine_new_and_remainder_data(NewData, Remainder) ->
+    <<Remainder/binary, NewData/binary>>.
+
 
 %% @private
 %% @doc Break up a data binary into a list of block-sized chunks
@@ -336,20 +342,52 @@ start_writer_servers(NumServers) ->
         [riak_moss_block_server:start_link() ||
             _ <- lists:seq(1, NumServers)]].
 
-handle_accept_chunk(State=#state{}) ->
-    %% 1. Maybe write another block
+handle_accept_chunk(NewData, State=#state{buffer_queue=BufferQueue,
+                                          remainder_data=RemainderData,
+                                          num_bytes_received=PreviousBytesReceived,
+                                          content_length=ContentLength,
+                                          free_writers=FreeWriters,
+                                          unacked_writes=UnackedWrites}) ->
+    NewRemainderData = combine_new_and_remainder_data(NewData, RemainderData),
+    UpdatedBytesReceived = PreviousBytesReceived + size(NewData),
+
+    {NewBufferQueue, NewRemainderData2} =
+    data_blocks(NewRemainderData, ContentLength, UpdatedBytesReceived, BufferQueue),
+
+    {NewBufferQueue2, NewFreeWriters, NewUnackedWrites} =
+    maybe_write_block(NewBufferQueue, FreeWriters, UnackedWrites),
+
     Reply = ok,
-    {reply, Reply, not_full, State}.
+    {reply, Reply, not_full, State#state{buffer_queue=NewBufferQueue2,
+                                         free_writers=NewFreeWriters,
+                                         unacked_writes=NewUnackedWrites,
+                                         remainder_data=NewRemainderData2}}.
 
-handle_backpressure_for_chunk(State=#state{}) ->
-    %% 1. Maybe write another block
+%% pattern match on reply_pid=undefined as a sort of
+%% assert
+handle_backpressure_for_chunk(NewData, From, State=#state{reply_pid=undefined,
+                                                          buffer_queue=BufferQueue,
+                                                          remainder_data=RemainderData,
+                                                          num_bytes_received=PreviousBytesReceived,
+                                                          content_length=ContentLength,
+                                                          free_writers=FreeWriters,
+                                                          unacked_writes=UnackedWrites}) ->
+    NewRemainderData = combine_new_and_remainder_data(NewData, RemainderData),
+    UpdatedBytesReceived = PreviousBytesReceived + size(NewData),
 
-    %% stash the From pid into
-    %% state
-    Reply = ok,
-    {reply, Reply, full, State}.
+    {NewBufferQueue, NewRemainderData2} =
+    data_blocks(NewRemainderData, ContentLength, UpdatedBytesReceived, BufferQueue),
 
-handle_receiving_last_chunk(State=#state{}) ->
+    {NewBufferQueue2, NewFreeWriters, NewUnackedWrites} =
+    maybe_write_block(NewBufferQueue, FreeWriters, UnackedWrites),
+
+    {noreply, full, State#state{reply_pid=From,
+                                buffer_queue=NewBufferQueue2,
+                                free_writers=NewFreeWriters,
+                                unacked_writes=NewUnackedWrites,
+                                remainder_data=NewRemainderData2}}.
+
+handle_receiving_last_chunk(_NewData, State=#state{}) ->
     %% 1. Maybe write another block
     Reply = ok,
     {reply, Reply, all_received, State}.
