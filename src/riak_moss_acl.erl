@@ -42,12 +42,7 @@ anonymous_bucket_access(Bucket, RequestedAccess) ->
                     %% Only owners may delete buckets
                     false;
                 _ ->
-                    case has_permission(Acl, RequestedAccess) of
-                        true ->
-                            {true, owner_id(Acl)};
-                        false ->
-                            false
-                    end
+                    has_permission(Acl, RequestedAccess)
             end;
         {error, Reason} ->
             %% @TODO Think about bubbling this error up and providing
@@ -204,7 +199,7 @@ has_group_permission([{_, Perms} | RestGrants], RequestedAccess) ->
 has_permission(Acl, RequestedAccess) ->
     GroupGrants = group_grants(Acl?ACL.grants, []),
     case [Perms || {Grantee, Perms} <- GroupGrants,
-                   Grantee =:= 'AllUsers'] of
+                   Grantee =:= ?ALL_USERS_GROUP] of
         [] ->
             false;
         [Perms | _] ->

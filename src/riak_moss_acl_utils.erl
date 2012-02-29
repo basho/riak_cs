@@ -22,7 +22,6 @@
          default_acl/2,
          acl_from_xml/1,
          acl_to_xml/1,
-         empty_acl_xml/0,
          requested_access/2
         ]).
 
@@ -74,17 +73,6 @@ acl_to_xml(Acl) ->
     unicode:characters_to_binary(
       xmerl:export_simple(XmlDoc, xmerl_xml, [{prolog, ?XML_PROLOG}])).
 
-%% @doc Convert an internal representation of an ACL
-%% into XML.
--spec empty_acl_xml() -> binary().
-empty_acl_xml() ->
-    XmlDoc =
-        [{'AccessControlPolicy',
-          [
-          ]}],
-    unicode:characters_to_binary(
-      xmerl:export_simple(XmlDoc, xmerl_xml, [{prolog, ?XML_PROLOG}])).
-
 %% @doc Map a request type to the type of ACL permissions needed
 %% to complete the request.
 -spec requested_access(atom(), string()) -> acl_perm().
@@ -95,9 +83,7 @@ requested_access(Method, QueryString) ->
         andalso
         AclRequest == true->
             'READ_ACP';
-        (Method == 'GET'
-         orelse
-         Method == 'HEAD') ->
+        Method == 'GET' ->
             'READ';
         Method == 'PUT'
         andalso
