@@ -34,6 +34,7 @@
          code_change/4]).
 
 -define(SERVER, ?MODULE).
+-define(EMPTYORDSET, ordsets:new()).
 
 -record(state, {timeout :: pos_integer(),
                 reply_pid :: pid(),
@@ -52,6 +53,7 @@
                 remainder_data :: binary(),
                 free_writers :: ordsets:new(),
                 unacked_writes=ordsets:new(),
+                next_block_id=0,
                 all_writer_pids :: list(pid())}).
 
 %%%===================================================================
@@ -310,23 +312,38 @@ append_data_block(BlockData, Blocks) ->
 %% @doc Maybe send a message to one of the
 %%      gen_servers to write another block,
 %%      and then return the updated func inputs
--spec maybe_write_block(term(), term(), term()) -> {term(), term(), term()}.
-maybe_write_block(BufferQueue, FreeWriters, UnackedWrites) ->
-    {BufferQueue, FreeWriters, UnackedWrites}.
+-spec maybe_write_blocks(term()) -> term().
+maybe_write_blocks(State=#state{buffer_queue=[]}) ->
+        State;
+maybe_write_blocks(State=#state{free_writers=[]}) ->
+        State;
+maybe_write_blocks(State=#state{buffer_queue=[ToWrite, RestBuffer],
+                                free_writers=FreeWriters,
+                                unacked_writes=UnackedWrites,
+                                bucket=Bucket,
+                                key=Key,
+                                manifest=Manifest,
+                                next_block_id=NextBlockID}) ->
+
+    UUID = Manifest#lfs_manifest_v2.uuid,
+    WriterPid = hd(ordsets:to_list(FreeWriters)),
+    NewFreeWriters = ordsets:del_element(WriterPid, FreeWriters),
+    NewUnackedWrites = ordsets:add_element(NextBlockID, UnackedWrites),
+
+    riak_moss_block_server:put_block(WriterPid, Bucket, Key, UUID, NextBlockID, ToWrite),
+
+    maybe_write_blocks(State#state{buffer_queue=RestBuffer,
+                                   free_writers=NewFreeWriters,
+                                   unacked_writes=NewUnackedWrites,
+                                   next_block_id=(NextBlockID + 1)}).
 
 -spec state_from_block_written(non_neg_integer(), pid(), term()) -> term().
-state_from_block_written(BlockID, WriterPid,
-                                State=#state{unacked_writes=UnackedWrites,
-                                             free_writers=FreeWriters,
-                                             buffer_queue=BufferQueue}) ->
-    NewUnackedSet = ordsets:del_element(BlockID, UnackedWrites),
+state_from_block_written(BlockID, WriterPid, State=#state{unacked_writes=UnackedWrites,
+                                                          free_writers=FreeWriters}) ->
+    NewUnackedWrites = ordsets:del_element(BlockID, UnackedWrites),
     NewFreeWriters = ordsets:add_element(WriterPid, FreeWriters),
-    %% 3. Maybe write another block
-    {NewBufferQueue, NewFreeWriters2, NewUnackedSet2} =
-    maybe_write_block(BufferQueue, NewFreeWriters, NewUnackedSet),
-    State#state{unacked_writes=NewUnackedSet2,
-                free_writers=NewFreeWriters2,
-                buffer_queue=NewBufferQueue}.
+    maybe_write_blocks(State#state{unacked_writes=NewUnackedWrites,
+                                   free_writers=NewFreeWriters}).
 
 %% @private
 %% @doc Start a number
@@ -345,23 +362,19 @@ start_writer_servers(NumServers) ->
 handle_accept_chunk(NewData, State=#state{buffer_queue=BufferQueue,
                                           remainder_data=RemainderData,
                                           num_bytes_received=PreviousBytesReceived,
-                                          content_length=ContentLength,
-                                          free_writers=FreeWriters,
-                                          unacked_writes=UnackedWrites}) ->
+                                          content_length=ContentLength}) ->
+
     NewRemainderData = combine_new_and_remainder_data(NewData, RemainderData),
     UpdatedBytesReceived = PreviousBytesReceived + size(NewData),
 
     {NewBufferQueue, NewRemainderData2} =
     data_blocks(NewRemainderData, ContentLength, UpdatedBytesReceived, BufferQueue),
 
-    {NewBufferQueue2, NewFreeWriters, NewUnackedWrites} =
-    maybe_write_block(NewBufferQueue, FreeWriters, UnackedWrites),
-
+    NewStateData = maybe_write_blocks(State#state{buffer_queue=NewBufferQueue,
+                                                  remainder_data=NewRemainderData2,
+                                                  num_bytes_received=UpdatedBytesReceived}),
     Reply = ok,
-    {reply, Reply, not_full, State#state{buffer_queue=NewBufferQueue2,
-                                         free_writers=NewFreeWriters,
-                                         unacked_writes=NewUnackedWrites,
-                                         remainder_data=NewRemainderData2}}.
+    {reply, Reply, not_full, NewStateData}.
 
 %% pattern match on reply_pid=undefined as a sort of
 %% assert
@@ -369,41 +382,34 @@ handle_backpressure_for_chunk(NewData, From, State=#state{reply_pid=undefined,
                                                           buffer_queue=BufferQueue,
                                                           remainder_data=RemainderData,
                                                           num_bytes_received=PreviousBytesReceived,
-                                                          content_length=ContentLength,
-                                                          free_writers=FreeWriters,
-                                                          unacked_writes=UnackedWrites}) ->
+                                                          content_length=ContentLength}) ->
+
     NewRemainderData = combine_new_and_remainder_data(NewData, RemainderData),
     UpdatedBytesReceived = PreviousBytesReceived + size(NewData),
 
     {NewBufferQueue, NewRemainderData2} =
     data_blocks(NewRemainderData, ContentLength, UpdatedBytesReceived, BufferQueue),
 
-    {NewBufferQueue2, NewFreeWriters, NewUnackedWrites} =
-    maybe_write_block(NewBufferQueue, FreeWriters, UnackedWrites),
+    NewStateData = maybe_write_blocks(State#state{buffer_queue=NewBufferQueue,
+                                                  remainder_data=NewRemainderData2,
+                                                  num_bytes_received=UpdatedBytesReceived}),
 
-    {noreply, full, State#state{reply_pid=From,
-                                buffer_queue=NewBufferQueue2,
-                                free_writers=NewFreeWriters,
-                                unacked_writes=NewUnackedWrites,
-                                remainder_data=NewRemainderData2}}.
+    {noreply, full, NewStateData#state{reply_pid=From}}.
 
 handle_receiving_last_chunk(NewData, State=#state{buffer_queue=BufferQueue,
-                                                   remainder_data=RemainderData,
-                                                   num_bytes_received=PreviousBytesReceived,
-                                                   content_length=ContentLength,
-                                                   free_writers=FreeWriters,
-                                                   unacked_writes=UnackedWrites}) ->
+                                                  remainder_data=RemainderData,
+                                                  num_bytes_received=PreviousBytesReceived,
+                                                  content_length=ContentLength}) ->
+
     NewRemainderData = combine_new_and_remainder_data(NewData, RemainderData),
     UpdatedBytesReceived = PreviousBytesReceived + size(NewData),
 
     {NewBufferQueue, NewRemainderData2} =
     data_blocks(NewRemainderData, ContentLength, UpdatedBytesReceived, BufferQueue),
 
-    {NewBufferQueue2, NewFreeWriters, NewUnackedWrites} =
-    maybe_write_block(NewBufferQueue, FreeWriters, UnackedWrites),
+    NewStateData = maybe_write_blocks(State#state{buffer_queue=NewBufferQueue,
+                                                  remainder_data=NewRemainderData2,
+                                                  num_bytes_received=UpdatedBytesReceived}),
 
     Reply = ok,
-    {reply, Reply, all_received, State#state{buffer_queue=NewBufferQueue2,
-                                             free_writers=NewFreeWriters,
-                                             unacked_writes=NewUnackedWrites,
-                                             remainder_data=NewRemainderData2}}.
+    {reply, Reply, all_received, NewStateData}.
