@@ -47,7 +47,7 @@
          code_change/4]).
 
 -record(state, {from :: pid(),
-                reader_pid :: pid(),
+                mani_fsm_pid :: pid(),
                 bucket :: term(),
                 key :: term(),
                 value_cache :: binary(),
@@ -56,7 +56,11 @@
                 manifest :: term(),
                 manifest_uuid :: term(),
                 blocks_left :: list(),
-                test=false :: boolean()}).
+                test=false :: boolean(),
+                free_readers :: [pid()],
+                all_reader_pids :: [pid()]}).
+
+-define(BLOCK_FETCH_CONCURRENCY, 1).
 
 %% ===================================================================
 %% Public API
@@ -113,7 +117,7 @@ init([test, Bucket, Key, ContentLength, BlockSize]) ->
     {ok, ReaderPid} = riak_moss_dummy_reader:start_link([self(), ContentLength, BlockSize]),
     link(ReaderPid),
     riak_moss_reader:get_manifest(ReaderPid, Bucket, Key),
-    {ok, waiting_value, State1#state{reader_pid=ReaderPid, test=true}}.
+    {ok, waiting_value, State1#state{free_readers=[ReaderPid], test=true}}.
 
 %% TODO:
 %% could this func use
@@ -122,10 +126,15 @@ prepare(timeout, #state{bucket=Bucket, key=Key}=State) ->
     %% start the process that will
     %% fetch the value, be it manifest
     %% or regular object
-    {ok, ReaderPid} = riak_moss_reader_sup:start_reader(node(), self()),
-    link(ReaderPid),
-    riak_moss_reader:get_manifest(ReaderPid, Bucket, Key),
-    {next_state, waiting_value, State#state{reader_pid=ReaderPid}}.
+    {ok, ManiPid} = riak_moss_manifest_fsm:start_link(Bucket, Key),
+    %% {ok, ReaderPid} = riak_moss_reader_sup:start_reader(node(), self()),
+    %% link(ReaderPid),
+    %% riak_moss_reader:get_manifest(ReaderPid, Bucket, Key),
+    ReaderPids = start_block_servers(?BLOCK_FETCH_CONCURRENCY),
+    riak_moss_manifest_fsm:get_active_manifest(ManiPid, Bucket, Key),
+    {next_state, waiting_value, State#state{mani_fsm_pid=ManiPid,
+                                            all_reader_pids=ReaderPids,
+                                            free_readers=ReaderPids}}.
 
 waiting_value(get_metadata, From, State) ->
     NewState = State#state{from=From},
@@ -199,7 +208,9 @@ waiting_continue_or_stop(continue, #state{value_cache=CachedValue,
                                           bucket=BucketName,
                                           key=Key,
                                           manifest_uuid=UUID,
-                                          reader_pid=ReaderPid}=State) ->
+                                          %% @TODO This only works with BLOCK_FETCH_CONCURRENCY
+                                          %% of 1.
+                                          free_readers=[ReaderPid | _]}=State) ->
     case CachedValue of
         undefined ->
             BlockSequences = riak_moss_lfs_utils:block_sequences_for_manifest(Manifest),
@@ -213,8 +224,7 @@ waiting_continue_or_stop(continue, #state{value_cache=CachedValue,
                     BlocksLeft = sets:from_list(BlockSequences),
 
                     %% start retrieving the first block
-                    riak_moss_reader:get_chunk(ReaderPid, BucketName, Key, UUID,
-                                               hd(BlockSequences)),
+                    riak_moss_manifest_fsm:get_block(ReaderPid, BucketName, Key, UUID, hd(BlockSequences)),
                     {next_state, waiting_chunks, State#state{blocks_left=BlocksLeft}}
             end;
         _ ->
@@ -242,12 +252,12 @@ waiting_chunks(get_next_chunk, From, #state{chunk_queue=ChunkQueue, from=Previou
     end.
 
 waiting_chunks({chunk, _Pid, {ChunkSeq, ChunkReturnValue}}, #state{from=From,
-                                                            blocks_left=Remaining,
-                                                            manifest_uuid=UUID,
-                                                            key=Key,
-                                                            bucket=BucketName,
-                                                            reader_pid=ReaderPid,
-                                                            chunk_queue=ChunkQueue}=State) ->
+                                                                   blocks_left=Remaining,
+                                                                   manifest_uuid=UUID,
+                                                                   key=Key,
+                                                                   bucket=BucketName,
+                                                                   free_readers=[ReaderPid | _],
+                                                                   chunk_queue=ChunkQueue}=State) ->
     %% TODO:
     %% we don't deal with missing chunks
     %% at all here, so this pattern
@@ -278,7 +288,7 @@ waiting_chunks({chunk, _Pid, {ChunkSeq, ChunkReturnValue}}, #state{from=From,
                     {stop, normal, NewState}
             end;
         _ ->
-            riak_moss_reader:get_chunk(ReaderPid, BucketName, Key, UUID, hd(lists:sort(sets:to_list(NewRemaining)))),
+            riak_moss_block_server:get_block(ReaderPid, BucketName, Key, UUID, hd(lists:sort(sets:to_list(NewRemaining)))),
             case From of
                 undefined ->
                     NewQueue = queue:in({chunk, ChunkValue}, ChunkQueue),
@@ -328,20 +338,42 @@ handle_info(request_timeout, StateName, StateData) ->
 %% in our readers. But since we just
 %% have one reader process now, if it dies,
 %% we have no reason to stick around
-handle_info({'EXIT', ReaderPid, _Reason}, _StateName, StateData=#state{reader_pid=ReaderPid}) ->
+%%
+%% @TODO Also handle reader pid death
+handle_info({'EXIT', ManiPid, _Reason}, _StateName, StateData=#state{mani_fsm_pid=ManiPid}) ->
     {stop, normal, StateData};
 %% @private
 handle_info(_Info, _StateName, StateData) ->
     {stop,badmsg,StateData}.
 
 %% @private
-terminate(_Reason, _StateName, #state{reader_pid=ReaderPid,test=false}) ->
-    riak_moss_reader_sup:terminate_reader(node(), ReaderPid);
-terminate(_Reason, _StateName, #state{reader_pid=ReaderPid,test=true}) ->
+terminate(_Reason, _StateName, #state{test=false}) ->
+    %% riak_moss_reader_sup:terminate_reader(node(), ReaderPid);
+    ok;
+terminate(_Reason, _StateName, #state{test=true,
+                                      free_readers=[ReaderPid | _]}) ->
     exit(ReaderPid, normal).
 
 %% @private
 code_change(_OldVsn, StateName, State, _Extra) -> {ok, StateName, State}.
+
+%% ===================================================================
+%% Internal functions
+%% ===================================================================
+
+%% @private
+%% @doc Start a number of riak_moss_block_server processes
+%% and return a list of their pids.
+%% @TODO Can probably share this among the fsms.
+-spec start_block_servers(pos_integer()) -> list(pid()).
+start_block_servers(NumServers) ->
+    %% TODO:
+    %% doesn't handle
+    %% failure at all
+    [Pid || {ok, Pid} <-
+        [riak_moss_block_server:start_link() ||
+            _ <- lists:seq(1, NumServers)]].
+
 
 %% ===================================================================
 %% Test API
