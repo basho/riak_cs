@@ -156,7 +156,19 @@ all_received({block_written, BlockID, WriterPid}, State) ->
     NewState = state_from_block_written(BlockID, WriterPid, State),
     case ordsets:size(NewState#state.unacked_writes) of
         0 ->
-            {next_state, done, NewState};
+            case State#state.reply_pid of
+                undefined ->
+                    {next_state, done, NewState};
+                ReplyPid ->
+                    %% reply with the final
+                    %% manifest
+                    %% TODO:
+                    %% The reply shouldn't
+                    %% be 'ok', it should
+                    %% be the final manifest
+                    gen_fsm:reply(ReplyPid, ok),
+                    {stop, normal, NewState}
+            end;
         _ ->
             {next_state, all_received, NewState}
     end.
@@ -187,12 +199,11 @@ not_full({augment_data, NewData}, From,
             handle_receiving_last_chunk(NewData, State)
     end.
 
-all_received(finalize, _From, State) ->
+all_received(finalize, From, State) ->
     %% 1. stash the From pid into our
     %%    state so that we know to reply
     %%    later with the finished manifest
-    Reply = ok,
-    {reply, Reply, all_received, State}.
+    {next_state, all_received, State#state{reply_pid=From}}.
 
 done(finalize, _From, State) ->
     %% 1. reply immediately
@@ -400,7 +411,7 @@ handle_backpressure_for_chunk(NewData, From, State=#state{reply_pid=undefined,
                                                   remainder_data=NewRemainderData2,
                                                   num_bytes_received=UpdatedBytesReceived}),
 
-    {noreply, full, NewStateData#state{reply_pid=From}}.
+    {next_state, full, NewStateData#state{reply_pid=From}}.
 
 handle_receiving_last_chunk(NewData, State=#state{buffer_queue=BufferQueue,
                                                   remainder_data=RemainderData,
