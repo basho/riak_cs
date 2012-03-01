@@ -387,7 +387,23 @@ handle_backpressure_for_chunk(NewData, From, State=#state{reply_pid=undefined,
                                 unacked_writes=NewUnackedWrites,
                                 remainder_data=NewRemainderData2}}.
 
-handle_receiving_last_chunk(_NewData, State=#state{}) ->
-    %% 1. Maybe write another block
+handle_receiving_last_chunk(NewData, State=#state{buffer_queue=BufferQueue,
+                                                   remainder_data=RemainderData,
+                                                   num_bytes_received=PreviousBytesReceived,
+                                                   content_length=ContentLength,
+                                                   free_writers=FreeWriters,
+                                                   unacked_writes=UnackedWrites}) ->
+    NewRemainderData = combine_new_and_remainder_data(NewData, RemainderData),
+    UpdatedBytesReceived = PreviousBytesReceived + size(NewData),
+
+    {NewBufferQueue, NewRemainderData2} =
+    data_blocks(NewRemainderData, ContentLength, UpdatedBytesReceived, BufferQueue),
+
+    {NewBufferQueue2, NewFreeWriters, NewUnackedWrites} =
+    maybe_write_block(NewBufferQueue, FreeWriters, UnackedWrites),
+
     Reply = ok,
-    {reply, Reply, all_received, State}.
+    {reply, Reply, all_received, State#state{buffer_queue=NewBufferQueue2,
+                                             free_writers=NewFreeWriters,
+                                             unacked_writes=NewUnackedWrites,
+                                             remainder_data=NewRemainderData2}}.
