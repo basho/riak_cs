@@ -382,7 +382,6 @@ handle_accept_chunk(NewData, State=#state{buffer_queue=BufferQueue,
                                           content_length=ContentLength}) ->
 
     NewRemainderData = combine_new_and_remainder_data(NewData, RemainderData),
-    lager:debug("previous is ~p and size of new data is ~p", [PreviousBytesReceived, size(NewData)]),
     UpdatedBytesReceived = PreviousBytesReceived + size(NewData),
 
     {NewBufferQueue, NewRemainderData2} =
