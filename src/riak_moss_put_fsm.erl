@@ -46,11 +46,11 @@
                 manifest :: lfs_manifest(),
                 content_length :: pos_integer(),
                 content_type :: binary(),
-                num_bytes_received :: non_neg_integer(),
+                num_bytes_received=0,
                 max_buffer_size :: non_neg_integer(),
                 current_buffer_size :: non_neg_integer(),
                 buffer_queue=[], %% not actually a queue, but we treat it like one
-                remainder_data :: binary(),
+                remainder_data :: undefined | binary(),
                 free_writers :: ordsets:new(),
                 unacked_writes=ordsets:new(),
                 next_block_id=0,
@@ -75,7 +75,7 @@ finalize(Pid) ->
     gen_fsm:sync_send_event(Pid, finalize).
 
 block_written(Pid, BlockID) ->
-    gen_fsm:sync_send_event(Pid, {block_written, BlockID, self()}).
+    gen_fsm:send_event(Pid, {block_written, BlockID, self()}).
 
 %%%===================================================================
 %%% gen_fsm callbacks
@@ -197,6 +197,10 @@ all_received(finalize, _From, State) ->
 done(finalize, _From, State) ->
     %% 1. reply immediately
     %%    with the finished manifest
+
+    %% need to synchronously
+    %% wait for the manifest
+    %% to be saved, I think.
     Reply = ok,
     {reply, Reply, stop, State}.
 
@@ -318,7 +322,7 @@ maybe_write_blocks(State=#state{buffer_queue=[]}) ->
         State;
 maybe_write_blocks(State=#state{free_writers=[]}) ->
         State;
-maybe_write_blocks(State=#state{buffer_queue=[ToWrite, RestBuffer],
+maybe_write_blocks(State=#state{buffer_queue=[ToWrite | RestBuffer],
                                 free_writers=FreeWriters,
                                 unacked_writes=UnackedWrites,
                                 bucket=Bucket,
@@ -366,6 +370,7 @@ handle_accept_chunk(NewData, State=#state{buffer_queue=BufferQueue,
                                           content_length=ContentLength}) ->
 
     NewRemainderData = combine_new_and_remainder_data(NewData, RemainderData),
+    lager:debug("previous is ~p and size of new data is ~p", [PreviousBytesReceived, size(NewData)]),
     UpdatedBytesReceived = PreviousBytesReceived + size(NewData),
 
     {NewBufferQueue, NewRemainderData2} =
