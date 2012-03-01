@@ -202,7 +202,7 @@ done(finalize, _From, State) ->
     %% wait for the manifest
     %% to be saved, I think.
     Reply = ok,
-    {reply, Reply, stop, State}.
+    {stop, normal, Reply, State}.
 
 %%--------------------------------------------------------------------
 %%
