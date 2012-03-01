@@ -13,7 +13,7 @@
 -include("riak_moss.hrl").
 
 %% API
--export([start_link/0,
+-export([start_link/6,
          augment_data/2,
          block_written/2,
          finalize/1]).
@@ -64,8 +64,9 @@
 %% @spec start_link() -> {ok, Pid} | ignore | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
-start_link() ->
-    gen_fsm:start_link(?MODULE, [], []).
+start_link(Bucket, Key, ContentLength, ContentType, Metadata, Timeout) ->
+    Args = [Bucket, Key, ContentLength, ContentType, Metadata, Timeout],
+    gen_fsm:start_link(?MODULE, Args, []).
 
 augment_data(Pid, Data) ->
     gen_fsm:sync_send_event(Pid, {augment_data, Data}).
