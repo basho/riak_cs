@@ -48,7 +48,7 @@
                 content_type :: binary(),
                 num_bytes_received=0,
                 max_buffer_size :: non_neg_integer(),
-                current_buffer_size :: non_neg_integer(),
+                current_buffer_size=0,
                 buffer_queue=[], %% not actually a queue, but we treat it like one
                 remainder_data :: undefined | binary(),
                 free_writers :: ordsets:new(),
@@ -116,7 +116,7 @@ prepare(timeout, State=#state{bucket=Bucket,
     %% Also, use poolboy :)
     WriterPids = start_writer_servers(1),
     FreeWriters = ordsets:from_list(WriterPids),
-    %%    
+    MaxBufferSize = riak_moss_lfs_utils:block_size(),
     UUID = druuid:v4(),
     Manifest =
     riak_moss_lfs_utils:new_manifest(Bucket,
@@ -137,6 +137,7 @@ prepare(timeout, State=#state{bucket=Bucket,
     {next_state, not_full, State#state{manifest=Manifest,
                                        timer_ref=TRef,
                                        mani_pid=ManiPid,
+                                       max_buffer_size=MaxBufferSize,
                                        all_writer_pids=WriterPids,
                                        free_writers=FreeWriters}}.
 
