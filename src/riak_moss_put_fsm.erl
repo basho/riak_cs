@@ -356,10 +356,14 @@ maybe_write_blocks(State=#state{buffer_queue=[ToWrite | RestBuffer],
 
 -spec state_from_block_written(non_neg_integer(), pid(), term()) -> term().
 state_from_block_written(BlockID, WriterPid, State=#state{unacked_writes=UnackedWrites,
-                                                          free_writers=FreeWriters}) ->
+                                                          free_writers=FreeWriters,
+                                                          manifest=Manifest}) ->
+    NewManifest = riak_moss_lfs_utils:remove_write_block(Manifest, BlockID),
     NewUnackedWrites = ordsets:del_element(BlockID, UnackedWrites),
     NewFreeWriters = ordsets:add_element(WriterPid, FreeWriters),
-    maybe_write_blocks(State#state{unacked_writes=NewUnackedWrites,
+
+    maybe_write_blocks(State#state{manifest=NewManifest,
+                                   unacked_writes=NewUnackedWrites,
                                    free_writers=NewFreeWriters}).
 
 %% @private
