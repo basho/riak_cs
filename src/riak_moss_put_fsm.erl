@@ -154,8 +154,10 @@ full({block_written, BlockID, WriterPid}, State=#state{reply_pid=Waiter}) ->
     gen_fsm:reply(Waiter, ok),
     {next_state, not_full, NewState}.
 
-all_received({block_written, BlockID, WriterPid}, State) ->
+all_received({block_written, BlockID, WriterPid}, State=#state{mani_pid=ManiPid}) ->
+
     NewState = state_from_block_written(BlockID, WriterPid, State),
+    Manifest = NewState#state.manifest,
     case ordsets:size(NewState#state.unacked_writes) of
         0 ->
             case State#state.reply_pid of
@@ -168,8 +170,14 @@ all_received({block_written, BlockID, WriterPid}, State) ->
                     %% The reply shouldn't
                     %% be 'ok', it should
                     %% be the final manifest
-                    gen_fsm:reply(ReplyPid, ok),
-                    {stop, normal, NewState}
+                    case riak_moss_manifest_fsm:update_manifest_with_confirmation(ManiPid, Manifest) of
+                        ok ->
+                            gen_fsm:reply(ReplyPid, {ok, Manifest}),
+                            {stop, normal, NewState};
+                        Error ->
+                            gen_fsm:reply(ReplyPid, {error, Error}),
+                            {stop, Error, NewState}
+                    end
             end;
         _ ->
             {next_state, all_received, NewState}
@@ -207,15 +215,15 @@ all_received(finalize, From, State) ->
     %%    later with the finished manifest
     {next_state, all_received, State#state{reply_pid=From}}.
 
-done(finalize, _From, State) ->
+done(finalize, _From, State=#state{manifest=Manifest, mani_pid=ManiPid}) ->
     %% 1. reply immediately
     %%    with the finished manifest
-
-    %% need to synchronously
-    %% wait for the manifest
-    %% to be saved, I think.
-    Reply = ok,
-    {stop, normal, Reply, State}.
+    case riak_moss_manifest_fsm:update_manifest_with_confirmation(ManiPid, Manifest) of
+        ok ->
+            {stop, normal, {ok, Manifest}, State};
+        Error ->
+            {stop, Error, {error, Error}, State}
+    end.
 
 %%--------------------------------------------------------------------
 %%

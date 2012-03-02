@@ -87,7 +87,7 @@ update_manifest(Pid, Manifest) ->
     gen_fsm:send_event(Pid, {update_manifest, Manifest}).
 
 update_manifest_with_confirmation(Pid, Manifest) ->
-    gen_fsm:send_event(Pid, {update_manifest_with_confirmation, Manifest}).
+    gen_fsm:sync_send_event(Pid, {update_manifest_with_confirmation, Manifest}).
 
 %%%===================================================================
 %%% gen_fsm callbacks
