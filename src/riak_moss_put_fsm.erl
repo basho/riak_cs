@@ -225,6 +225,9 @@ handle_event(_Event, StateName, State) ->
 %%--------------------------------------------------------------------
 %%
 %%--------------------------------------------------------------------
+handle_sync_event(current_state, _From, StateName, State) ->
+    Reply = {StateName, State},
+    {reply, Reply, StateName, State};
 handle_sync_event(_Event, _From, StateName, State) ->
     Reply = ok,
     {reply, Reply, StateName, State}.

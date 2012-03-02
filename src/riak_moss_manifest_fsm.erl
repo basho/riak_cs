@@ -22,7 +22,8 @@
 -export([start_link/2,
          get_active_manifest/1,
          add_new_manifest/2,
-         update_manifest/2]).
+         update_manifest/2,
+         update_manifest_with_confirmation/2]).
 
 %% gen_fsm callbacks
 -export([init/1,
@@ -34,6 +35,7 @@
 
          %% sync
          waiting_command/3,
+         waiting_update_command/3,
 
          %% rest
          handle_event/3,
@@ -83,6 +85,9 @@ add_new_manifest(Pid, Manifest) ->
 
 update_manifest(Pid, Manifest) ->
     gen_fsm:send_event(Pid, {update_manifest, Manifest}).
+
+update_manifest_with_confirmation(Pid, Manifest) ->
+    gen_fsm:send_event(Pid, {update_manifest_with_confirmation, Manifest}).
 
 %%%===================================================================
 %%% gen_fsm callbacks
@@ -220,6 +225,15 @@ waiting_command(get_active_manifest, _From, State=#state{riakc_pid=RiakcPid,
         {error, notfound}=NotFound ->
             {reply, NotFound, waiting_update_command, State}
     end.
+
+waiting_update_command({update_manifest_with_confirmation, Manifest}, _From, 
+                                            State=#state{riakc_pid=RiakcPid,
+                                            bucket=Bucket,
+                                            key=Key,
+                                            riak_object=undefined,
+                                            manifests=undefined}) ->
+    Reply = get_and_update(RiakcPid, Manifest, Bucket, Key),
+    {reply, Reply, waiting_update_command, State}.
 
 %%--------------------------------------------------------------------
 %% @private
