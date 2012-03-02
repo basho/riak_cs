@@ -134,6 +134,7 @@ prepare(timeout, State=#state{bucket=Bucket,
     %% and if it is, what should
     %% it be?
     {ok, TRef} = timer:send_interval(60000, self(), save_manifest),
+    riak_moss_manifest_fsm:add_new_manifest(ManiPid, Manifest),
     {next_state, not_full, State#state{manifest=Manifest,
                                        timer_ref=TRef,
                                        mani_pid=ManiPid,
@@ -235,7 +236,8 @@ handle_sync_event(_Event, _From, StateName, State) ->
 %%--------------------------------------------------------------------
 %%
 %%--------------------------------------------------------------------
-handle_info(save_manifest, StateName, State) ->
+handle_info(save_manifest, StateName, State=#state{mani_pid=ManiPid,
+                                                   manifest=Manifest}) ->
     %% 1. save the manifest
 
     %% TODO:
@@ -243,6 +245,7 @@ handle_info(save_manifest, StateName, State) ->
     %% we should be cancelling the
     %% timer here, depending on the
     %% state we're in?
+    riak_moss_manifest_fsm:update_manifest(ManiPid, Manifest),
     {next_state, StateName, State};
 %% TODO:
 %% add a clause for handling down
