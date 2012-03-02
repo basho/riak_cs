@@ -127,6 +127,7 @@ prepare(timeout, State=#state{bucket=Bucket,
                                      %% we don't know the md5 yet
                                      undefined, 
                                      Metadata),
+    NewManifest = Manifest#lfs_manifest_v2{write_start_time=erlang:now()},
 
     %% TODO:
     %% this time probably
@@ -134,8 +135,8 @@ prepare(timeout, State=#state{bucket=Bucket,
     %% and if it is, what should
     %% it be?
     {ok, TRef} = timer:send_interval(60000, self(), save_manifest),
-    riak_moss_manifest_fsm:add_new_manifest(ManiPid, Manifest),
-    {next_state, not_full, State#state{manifest=Manifest,
+    riak_moss_manifest_fsm:add_new_manifest(ManiPid, NewManifest),
+    {next_state, not_full, State#state{manifest=NewManifest,
                                        timer_ref=TRef,
                                        mani_pid=ManiPid,
                                        max_buffer_size=MaxBufferSize,
