@@ -116,6 +116,9 @@ prepare(timeout, State=#state{bucket=Bucket,
     %% Also, use poolboy :)
     WriterPids = start_writer_servers(1),
     FreeWriters = ordsets:from_list(WriterPids),
+    %% TODO:
+    %% we should get this
+    %% from the app.config
     MaxBufferSize = riak_moss_lfs_utils:block_size(),
     UUID = druuid:v4(),
     Manifest =
@@ -153,7 +156,7 @@ not_full({block_written, BlockID, WriterPid}, State) ->
 full({block_written, BlockID, WriterPid}, State=#state{reply_pid=Waiter}) ->
     NewState = state_from_block_written(BlockID, WriterPid, State),
     gen_fsm:reply(Waiter, ok),
-    {next_state, not_full, NewState}.
+    {next_state, not_full, NewState#state{reply_pid=undefined}}.
 
 all_received({block_written, BlockID, WriterPid}, State=#state{mani_pid=ManiPid}) ->
 
@@ -401,16 +404,20 @@ start_writer_servers(NumServers) ->
 handle_accept_chunk(NewData, State=#state{buffer_queue=BufferQueue,
                                           remainder_data=RemainderData,
                                           num_bytes_received=PreviousBytesReceived,
+                                          current_buffer_size=CurrentBufferSize,
                                           content_length=ContentLength}) ->
 
     NewRemainderData = combine_new_and_remainder_data(NewData, RemainderData),
     UpdatedBytesReceived = PreviousBytesReceived + size(NewData),
+
+    NewCurrentBufferSize = CurrentBufferSize + size(NewData),
 
     {NewBufferQueue, NewRemainderData2} =
     data_blocks(NewRemainderData, ContentLength, UpdatedBytesReceived, BufferQueue),
 
     NewStateData = maybe_write_blocks(State#state{buffer_queue=NewBufferQueue,
                                                   remainder_data=NewRemainderData2,
+                                                  current_buffer_size=NewCurrentBufferSize,
                                                   num_bytes_received=UpdatedBytesReceived}),
     Reply = ok,
     {reply, Reply, not_full, NewStateData}.
@@ -420,34 +427,42 @@ handle_accept_chunk(NewData, State=#state{buffer_queue=BufferQueue,
 handle_backpressure_for_chunk(NewData, From, State=#state{reply_pid=undefined,
                                                           buffer_queue=BufferQueue,
                                                           remainder_data=RemainderData,
+                                                          current_buffer_size=CurrentBufferSize,
                                                           num_bytes_received=PreviousBytesReceived,
                                                           content_length=ContentLength}) ->
 
     NewRemainderData = combine_new_and_remainder_data(NewData, RemainderData),
     UpdatedBytesReceived = PreviousBytesReceived + size(NewData),
 
+    NewCurrentBufferSize = CurrentBufferSize + size(NewData),
+
     {NewBufferQueue, NewRemainderData2} =
     data_blocks(NewRemainderData, ContentLength, UpdatedBytesReceived, BufferQueue),
 
     NewStateData = maybe_write_blocks(State#state{buffer_queue=NewBufferQueue,
                                                   remainder_data=NewRemainderData2,
+                                                  current_buffer_size=NewCurrentBufferSize,
                                                   num_bytes_received=UpdatedBytesReceived}),
 
     {next_state, full, NewStateData#state{reply_pid=From}}.
 
 handle_receiving_last_chunk(NewData, State=#state{buffer_queue=BufferQueue,
                                                   remainder_data=RemainderData,
+                                                  current_buffer_size=CurrentBufferSize,
                                                   num_bytes_received=PreviousBytesReceived,
                                                   content_length=ContentLength}) ->
 
     NewRemainderData = combine_new_and_remainder_data(NewData, RemainderData),
     UpdatedBytesReceived = PreviousBytesReceived + size(NewData),
 
+    NewCurrentBufferSize = CurrentBufferSize + size(NewData),
+
     {NewBufferQueue, NewRemainderData2} =
     data_blocks(NewRemainderData, ContentLength, UpdatedBytesReceived, BufferQueue),
 
     NewStateData = maybe_write_blocks(State#state{buffer_queue=NewBufferQueue,
                                                   remainder_data=NewRemainderData2,
+                                                  current_buffer_size=NewCurrentBufferSize,
                                                   num_bytes_received=UpdatedBytesReceived}),
 
     Reply = ok,
