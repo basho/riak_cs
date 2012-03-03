@@ -42,8 +42,8 @@
 -compile(export_all).
 -endif.
 
--define(OBJECT_BUCKET_PREFIX, <<"objects:">>).
--define(BLOCK_BUCKET_PREFIX, <<"blocks:">>).
+-define(OBJECT_BUCKET_PREFIX, <<"o:">>).
+-define(BLOCK_BUCKET_PREFIX, <<"b:">>).
 
 -type xmlElement() :: #xmlElement{}.
 
