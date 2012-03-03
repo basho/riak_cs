@@ -37,6 +37,7 @@
 -define(EMPTYORDSET, ordsets:new()).
 
 -record(state, {timeout :: pos_integer(),
+                md5 :: binary(),
                 reply_pid :: pid(),
                 mani_pid :: pid(),
                 timer_ref :: term(),
@@ -114,12 +115,13 @@ prepare(timeout, State=#state{bucket=Bucket,
     %% TODO:
     %% this shouldn't be hardcoded.
     %% Also, use poolboy :)
-    WriterPids = start_writer_servers(1),
+    Md5 = crypto:md5_init(),
+    WriterPids = start_writer_servers(2),
     FreeWriters = ordsets:from_list(WriterPids),
     %% TODO:
     %% we should get this
     %% from the app.config
-    MaxBufferSize = riak_moss_lfs_utils:block_size(),
+    MaxBufferSize = (2 * riak_moss_lfs_utils:block_size()),
     UUID = druuid:v4(),
     Manifest =
     riak_moss_lfs_utils:new_manifest(Bucket,
@@ -140,6 +142,7 @@ prepare(timeout, State=#state{bucket=Bucket,
     {ok, TRef} = timer:send_interval(60000, self(), save_manifest),
     riak_moss_manifest_fsm:add_new_manifest(ManiPid, NewManifest),
     {next_state, not_full, State#state{manifest=NewManifest,
+                                       md5=Md5,
                                        timer_ref=TRef,
                                        mani_pid=ManiPid,
                                        max_buffer_size=MaxBufferSize,
@@ -413,9 +416,11 @@ start_writer_servers(NumServers) ->
 handle_accept_chunk(NewData, State=#state{buffer_queue=BufferQueue,
                                           remainder_data=RemainderData,
                                           num_bytes_received=PreviousBytesReceived,
+                                          md5=Md5,
                                           current_buffer_size=CurrentBufferSize,
                                           content_length=ContentLength}) ->
 
+    NewMd5 = crypto:md5_update(Md5, NewData),
     NewRemainderData = combine_new_and_remainder_data(NewData, RemainderData),
     UpdatedBytesReceived = PreviousBytesReceived + size(NewData),
 
@@ -426,6 +431,7 @@ handle_accept_chunk(NewData, State=#state{buffer_queue=BufferQueue,
 
     NewStateData = maybe_write_blocks(State#state{buffer_queue=NewBufferQueue,
                                                   remainder_data=NewRemainderData2,
+                                                  md5=NewMd5,
                                                   current_buffer_size=NewCurrentBufferSize,
                                                   num_bytes_received=UpdatedBytesReceived}),
     Reply = ok,
@@ -435,11 +441,13 @@ handle_accept_chunk(NewData, State=#state{buffer_queue=BufferQueue,
 %% assert
 handle_backpressure_for_chunk(NewData, From, State=#state{reply_pid=undefined,
                                                           buffer_queue=BufferQueue,
+                                                          md5=Md5,
                                                           remainder_data=RemainderData,
                                                           current_buffer_size=CurrentBufferSize,
                                                           num_bytes_received=PreviousBytesReceived,
                                                           content_length=ContentLength}) ->
 
+    NewMd5 = crypto:md5_update(Md5, NewData),
     NewRemainderData = combine_new_and_remainder_data(NewData, RemainderData),
     UpdatedBytesReceived = PreviousBytesReceived + size(NewData),
 
@@ -450,6 +458,7 @@ handle_backpressure_for_chunk(NewData, From, State=#state{reply_pid=undefined,
 
     NewStateData = maybe_write_blocks(State#state{buffer_queue=NewBufferQueue,
                                                   remainder_data=NewRemainderData2,
+                                                  md5=NewMd5,
                                                   current_buffer_size=NewCurrentBufferSize,
                                                   num_bytes_received=UpdatedBytesReceived}),
 
@@ -457,10 +466,14 @@ handle_backpressure_for_chunk(NewData, From, State=#state{reply_pid=undefined,
 
 handle_receiving_last_chunk(NewData, State=#state{buffer_queue=BufferQueue,
                                                   remainder_data=RemainderData,
+                                                  md5=Md5,
+                                                  manifest=Manifest,
                                                   current_buffer_size=CurrentBufferSize,
                                                   num_bytes_received=PreviousBytesReceived,
                                                   content_length=ContentLength}) ->
 
+    NewMd5 = crypto:md5_final(crypto:md5_update(Md5, NewData)),
+    NewManifest = Manifest#lfs_manifest_v2{content_md5=NewMd5},
     NewRemainderData = combine_new_and_remainder_data(NewData, RemainderData),
     UpdatedBytesReceived = PreviousBytesReceived + size(NewData),
 
@@ -471,6 +484,8 @@ handle_receiving_last_chunk(NewData, State=#state{buffer_queue=BufferQueue,
 
     NewStateData = maybe_write_blocks(State#state{buffer_queue=NewBufferQueue,
                                                   remainder_data=NewRemainderData2,
+                                                  md5=NewMd5,
+                                                  manifest=NewManifest,
                                                   current_buffer_size=NewCurrentBufferSize,
                                                   num_bytes_received=UpdatedBytesReceived}),
 

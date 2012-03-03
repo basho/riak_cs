@@ -269,7 +269,12 @@ accept_body(RD, Ctx=#key_context{bucket=Bucket,
                                  key=Key,
                                  putctype=ContentType,
                                  size=Size}) ->
-    Args = [Bucket, Key, Size, ContentType, <<>>, 60000],
+    %% TODO:
+    %% the Metadata
+    %% should be pulled out of the
+    %% headers
+    Metadata = orddict:new(),
+    Args = [Bucket, Key, Size, ContentType, Metadata, 60000],
     {ok, Pid} = riak_moss_put_fsm_sup:start_put_fsm(node(), Args),
     accept_streambody(RD, Ctx, Pid, wrq:stream_req_body(RD, riak_moss_lfs_utils:block_size())).
 
@@ -288,5 +293,5 @@ accept_streambody(RD, Ctx=#key_context{}, Pid, {Data, Next}) ->
 finalize_request(RD, Ctx, Pid) ->
     %Metadata = dict:from_list([{<<"content-type">>, CType}]),
     {ok, Manifest} = riak_moss_put_fsm:finalize(Pid),
-    ETag = "\"" ++ riak_moss_utils:binary_to_hexlist(riak_moss_lfs_utils:content_md5(Manifest)) ++ "\"",
+    ETag = "\"" ++ riak_moss_utils:binary_to_hexlist(Manifest#lfs_manifest_v2.content_md5) ++ "\"",
     {true, wrq:set_resp_header("ETag",  ETag, RD), Ctx}.
