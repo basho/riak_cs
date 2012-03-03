@@ -266,6 +266,9 @@ handle_info(_Info, StateName, State) ->
 %%
 %%--------------------------------------------------------------------
 terminate(_Reason, _StateName, _State) ->
+    %% TODO:
+    %% need to stop the manifest fsm
+    %% and the blocks gen_servers
     ok.
 
 %%--------------------------------------------------------------------
