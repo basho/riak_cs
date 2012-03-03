@@ -107,7 +107,7 @@ handle_call(_Request, _From, State) ->
 %%--------------------------------------------------------------------
 handle_cast({get_block, ReplyPid, Bucket, Key, UUID, BlockNumber}, State=#state{riakc_pid=RiakcPid}) ->
     {FullBucket, FullKey} = full_bkey(Bucket, Key, UUID, BlockNumber),
-    ChunkValue = case riakc_pb_socket:get(RiakcPid, FullBucket, FullKey) of
+    ChunkValue = case riakc_pb_socket:get(RiakcPid, FullBucket, FullKey, [{r, 1}]) of
         {ok, RiakObject} ->
             {ok, riakc_obj:get_value(RiakObject)};
         {error, notfound}=NotFound ->
