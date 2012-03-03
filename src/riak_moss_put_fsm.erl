@@ -378,13 +378,22 @@ maybe_write_blocks(State=#state{buffer_queue=[ToWrite | RestBuffer],
 -spec state_from_block_written(non_neg_integer(), pid(), term()) -> term().
 state_from_block_written(BlockID, WriterPid, State=#state{unacked_writes=UnackedWrites,
                                                           free_writers=FreeWriters,
+                                                          current_buffer_size=CurrentBufferSize,
                                                           manifest=Manifest}) ->
+
     NewManifest = riak_moss_lfs_utils:remove_write_block(Manifest, BlockID),
     NewUnackedWrites = ordsets:del_element(BlockID, UnackedWrites),
     NewFreeWriters = ordsets:add_element(WriterPid, FreeWriters),
 
+    %% After the last chunk is written,
+    %% there's a chance this could go negative
+    %% if the last block isn't a full
+    %% block size, so don't bring it below 0
+    NewCurrentBufferSize = max(0, CurrentBufferSize - riak_moss_lfs_utils:block_size()),
+
     maybe_write_blocks(State#state{manifest=NewManifest,
                                    unacked_writes=NewUnackedWrites,
+                                   current_buffer_size=NewCurrentBufferSize,
                                    free_writers=NewFreeWriters}).
 
 %% @private
