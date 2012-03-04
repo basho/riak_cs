@@ -45,6 +45,12 @@
 -define(API_VERSION, 1).
 -define(CAPABILITIES, []).
 
+%% Borrowed from bitcask.hrl
+-define(VALSIZEFIELD, 32).
+-define(CRCSIZEFIELD, 32).
+-define(HEADER_SIZE,  8). % Differs from bitcask.hrl!
+-define(MAXVALSIZE, 2#11111111111111111111111111111111).
+
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 -endif.
@@ -76,7 +82,7 @@ capabilities(_, _) ->
 -spec start(integer(), config()) -> {ok, state()} | {error, term()}.
 start(Partition, Config) ->
     PartitionName = integer_to_list(Partition),
-    ConfigRoot = app_helper:get_prop_or_env(fs_backend_data_root, Config, riak_kv),
+    ConfigRoot = app_helper:get_prop_or_env(fs2_backend_data_root, Config, riak_kv),
     if
         ConfigRoot =:= undefined ->
             riak:stop("fs_backend_data_root unset, failing");
@@ -97,8 +103,17 @@ stop(_State) -> ok.
 get(Bucket, Key, State) ->
     File = location(State, {Bucket, Key}),
     case filelib:is_file(File) of
-        false -> {error, not_found, State};
-        true -> {ok, element(2, file:read_file(File)), State}
+        false ->
+            {error, not_found, State};
+        true ->
+            {ok, Bin} = file:read_file(File),
+            case unpack_ondisk(Bin) of
+                bad_crc ->
+                    %% TODO logging?
+                    {error, not_found, State};
+                Val ->
+                    {ok, Val, State}
+            end
     end.
 
 %% @spec atomic_write(File :: string(), Val :: binary()) ->
@@ -107,7 +122,7 @@ get(Bucket, Key, State) ->
 %%       normal path.
 atomic_write(File, Val) ->
     FakeFile = File ++ ".tmpwrite",
-    case file:write_file(FakeFile, Val) of
+    case file:write_file(FakeFile, pack_ondisk(Val)) of
         ok ->
             file:rename(FakeFile, File);
         X -> X
@@ -312,6 +327,24 @@ nest([Na],N,Acc) ->
     nest([],N-1,[[Na]|Acc]);
 nest([],N,Acc) ->
     nest([],N-1,["0"|Acc]).
+
+%% Borrowed from bitcask_fileops.erl and then mangled
+-spec pack_ondisk(binary()) -> binary().
+pack_ondisk(Bin) ->
+    ValueSz = size(Bin),
+    true = (ValueSz =< ?MAXVALSIZE),
+    Bytes0 = [<<ValueSz:?VALSIZEFIELD>>, Bin],
+    [<<(erlang:crc32(Bytes0)):?CRCSIZEFIELD>> | Bytes0].
+
+-spec unpack_ondisk(binary()) -> binary() | bad_crc.
+unpack_ondisk(<<Crc32:?CRCSIZEFIELD/unsigned, Bytes/binary>>) ->
+    case erlang:crc32(Bytes) of
+        Crc32 ->
+            <<ValueSz:?VALSIZEFIELD, Value:ValueSz/bytes>> = Bytes,
+            Value;
+        _BadCrc ->
+            bad_crc
+    end.
 
 %%
 %% Test
