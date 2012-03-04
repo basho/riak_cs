@@ -8,15 +8,26 @@
 %% We're evenutally going to have to start storing more
 %% than just a single lfs_manifest record at a key, and store
 %% a list of them. This will be used so that we can still have
-%% pointers to the chunks to do GC when an update has been made.
+%% pointers to the blocks to do GC when an update has been made.
 %% We also want to be able to continue to serve the "current"
 %% version of an object as a new one is being streamed in. While
 %% the new one is being streamed in, we're going to want to check point
-%% the chunks so that we can do GC is the PUT fails.
+%% the blocks so that we can do GC is the PUT fails.
 
 -module(riak_moss_lfs_utils).
 
 -include("riak_moss.hrl").
+
+%% 16 bits & 1MB block size = 64GB max object size
+%% 24 bits & 1MB block size = 16TB max object size
+%% 32 bits & 1MB block size = 4PB max object size
+-define(BLOCK_FIELD_SIZE, 16).
+
+%% druuid:v4() uses 16 bytes in raw form.
+-define(UUID_BYTES, 16).
+
+%% TODO: Make this configurable via app env?
+-define(CONTIGUOUS_BLOCKS, 16).
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -47,7 +58,9 @@
          content_length/1,
          created/1,
          is_active/1]).
--compile(export_all). %% SLF debugging only!
+-export([chash_moss_keyfun/1,
+         cooked_to_raw_v4/1,
+         raw_to_cooked_v4/1]).
 
 -export_type([lfs_manifest/0]).
 
@@ -109,9 +122,6 @@ block_keynames(KeyName, UUID, BlockList) ->
     lists:map(MapFun, BlockList).
 
 block_name(_Key, UUID, Number) ->
-    %% 16 bits & 1MB chunk size = 64GB max object size
-    %% 24 bits & 1MB chunk size = 16TB max object size
-    %% 32 bits & 1MB chunk size = 4PB max object size
     %%
     %% Using 16 bits for UUID, we're at 18 bytes for the new scheme
     %% and 55+ bytes for the old scheme.  We don't need the name in
@@ -120,10 +130,10 @@ block_name(_Key, UUID, Number) ->
     %% avoiding the ASCII hexadecimal encoding for the druuid:v4()
     %% UUID is 20 saved bytes.
     RawUUID = cooked_to_raw_v4(UUID),
-    <<RawUUID/binary, Number:16>>.
+    <<RawUUID/binary, Number:?BLOCK_FIELD_SIZE>>.
 
 block_name_to_term(Name) ->
-    <<RawUUID:77/binary, Number:16>> = Name,
+    <<RawUUID:77/binary, Number:?BLOCK_FIELD_SIZE>> = Name,
     {raw_to_cooked_v4(RawUUID), Number}.
 
 %% @doc Return the configured block size
@@ -252,6 +262,15 @@ created(#lfs_manifest{created=Created}) ->
 -spec is_active(lfs_manifest()) -> boolean().
 is_active(#lfs_manifest{active=A}) ->
     A.
+
+%% @doc Default object/ring hashing fun, direct passthrough of bkey.
+-spec chash_moss_keyfun({binary(), binary()}) -> binary().
+chash_moss_keyfun({<<"b:", _/binary>> = Bucket,
+                   <<UUID:?UUID_BYTES/binary, BlockNum:?BLOCK_FIELD_SIZE>>}) ->
+    Contig = BlockNum div ?CONTIGUOUS_BLOCKS,
+    chash:key_of({Bucket, <<UUID/binary, Contig:?BLOCK_FIELD_SIZE>>});
+chash_moss_keyfun({Bucket, Key}) ->
+    chash:key_of({Bucket, Key}).
 
 %% This is a temp hack .. I'd like to see the druuid:v4() return the
 %% raw data rather than do this kind of silly conversion, all in the
