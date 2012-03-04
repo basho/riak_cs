@@ -18,6 +18,10 @@
 
 -include("riak_moss.hrl").
 
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+-endif.
+
 -export([block_count/1,
          block_count/2,
          initial_block_keynames/1,
@@ -43,6 +47,7 @@
          content_length/1,
          created/1,
          is_active/1]).
+-compile(export_all). %% SLF debugging only!
 
 -export_type([lfs_manifest/0]).
 
@@ -103,12 +108,23 @@ block_keynames(KeyName, UUID, BlockList) ->
         {BlockSeq, block_name(KeyName, UUID, BlockSeq)} end,
     lists:map(MapFun, BlockList).
 
-block_name(Key, UUID, Number) ->
-    sext:encode({Key, Number, UUID}).
+block_name(_Key, UUID, Number) ->
+    %% 16 bits & 1MB chunk size = 64GB max object size
+    %% 24 bits & 1MB chunk size = 16TB max object size
+    %% 32 bits & 1MB chunk size = 4PB max object size
+    %%
+    %% Using 16 bits for UUID, we're at 18 bytes for the new scheme
+    %% and 55+ bytes for the old scheme.  We don't need the name in
+    %% the key (but it might be a very good idea to add the S3 object
+    %% name in the key's metadata dictionary), and the benefit of
+    %% avoiding the ASCII hexadecimal encoding for the druuid:v4()
+    %% UUID is 20 saved bytes.
+    RawUUID = cooked_to_raw_v4(UUID),
+    <<RawUUID/binary, Number:16>>.
 
 block_name_to_term(Name) ->
-    {Key, Number, UUID} = sext:decode(Name),
-    {Key, UUID, Number}.
+    <<RawUUID:77/binary, Number:16>> = Name,
+    {raw_to_cooked_v4(RawUUID), Number}.
 
 %% @doc Return the configured block size
 -spec block_size() -> pos_integer().
@@ -236,3 +252,65 @@ created(#lfs_manifest{created=Created}) ->
 -spec is_active(lfs_manifest()) -> boolean().
 is_active(#lfs_manifest{active=A}) ->
     A.
+
+%% This is a temp hack .. I'd like to see the druuid:v4() return the
+%% raw data rather than do this kind of silly conversion, all in the
+%% name of saving 50% space in the UUID....
+
+cooked_to_raw_v4(<<B1:8/binary, $-:8, B2:4/binary, 
+                   $-:8, B3:4/binary, $-:8, B4:4/binary,
+                   $-:8, B5:12/binary>>) ->
+    N1 = httpd_util:hexlist_to_integer(binary_to_list(B1)),
+    N2 = httpd_util:hexlist_to_integer(binary_to_list(B2)),
+    N3 = httpd_util:hexlist_to_integer(binary_to_list(B3)),
+    N4 = httpd_util:hexlist_to_integer(binary_to_list(B4)),
+    N5 = httpd_util:hexlist_to_integer(binary_to_list(B5)),
+    <<N1:(4*8), N2:(2*8), N3:(2*8), N4:(2*8), N5:(6*8)>>;
+cooked_to_raw_v4(Else) ->
+    %% This passthrough clause is for EUnit tests
+    Else.
+
+%% This function isn't exactly gracefully efficient, but no code is
+%% calling it yet because nobody is calling block_name_to_term/1 yet.
+
+raw_to_cooked_v4(<<N1:(4*8), N2:(2*8), N3:(2*8), N4:(2*8), N5:(6*8)>>) ->
+    B1 = hexify(N1, 8),
+    B2 = hexify(N2, 4),
+    B3 = hexify(N3, 4),
+    B4 = hexify(N4, 4),
+    B5 = hexify(N5, 12),
+    <<B1/binary, $-:8, B2/binary, $-:8, B3/binary, $-:8,
+      B4/binary, $-:8, B5/binary>>;
+raw_to_cooked_v4(Else) ->
+    %% This passthrough clause is for EUnit tests
+    Else.
+
+hexify(N, Len) ->
+    list_to_binary(pad(string:to_lower(httpd_util:integer_to_hexlist(N)), Len)).
+
+pad(Str, Len) ->
+    pad(Str, length(Str), Len).
+
+pad(Str, StrLen, StrLen) ->
+    Str;
+pad(Str, StrLen, Len) ->
+    [$0|pad(Str, StrLen + 1, Len)].
+
+%%%%%%%%%%%%%%%%%%%%%%
+%%
+%% Tests
+%%
+%%%%%%%%%%%%%%%%%%%%%%
+
+-ifdef(TEST).
+
+raw_and_cooked_test_() ->
+    [{timeout, 300,
+     fun() ->
+    [true] = lists:usort([begin Ux = druuid:v4(),
+                                Ux == riak_moss_lfs_utils:raw_to_cooked_v4(
+                                       riak_moss_lfs_utils:cooked_to_raw_v4(Ux))
+                          end || _ <- lists:seq(1, 50000)])
+     end}].
+
+-endif. % TEST
