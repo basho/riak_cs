@@ -32,7 +32,6 @@
 %% gen_fsm callbacks
 -export([init/1,
          prepare/2,
-         waiting_value/2,
          waiting_value/3,
          waiting_metadata_request/3,
          waiting_chunk_request/3,
@@ -127,73 +126,43 @@ prepare(timeout, #state{bucket=Bucket, key=Key}=State) ->
     %% fetch the value, be it manifest
     %% or regular object
     {ok, ManiPid} = riak_moss_manifest_fsm:start_link(Bucket, Key),
-    %% {ok, ReaderPid} = riak_moss_reader_sup:start_reader(node(), self()),
-    %% link(ReaderPid),
-    %% riak_moss_reader:get_manifest(ReaderPid, Bucket, Key),
-    ReaderPids = start_block_servers(?BLOCK_FETCH_CONCURRENCY),
-    riak_moss_manifest_fsm:get_active_manifest(ManiPid, Bucket, Key),
-    {next_state, waiting_value, State#state{mani_fsm_pid=ManiPid,
-                                            all_reader_pids=ReaderPids,
-                                            free_readers=ReaderPids}}.
-
-waiting_value(get_metadata, From, State) ->
-    NewState = State#state{from=From},
-    {next_state, waiting_value, NewState}.
-
-waiting_value({object, _Pid, Reply}, #state{from=From}=State) ->
-    %% determine if the object is a normal
-    %% object, or a manifest object
-    NextStateTimeout = 60000,
-    ReturnMeta = case Reply of
+    case riak_moss_manifest_fsm:get_active_manifest(ManiPid) of
+        {ok, Manifest} ->
+            ReaderPids = start_block_servers(?BLOCK_FETCH_CONCURRENCY),
+            NewState = State#state{manifest=Manifest,
+                                   mani_fsm_pid=ManiPid,
+                                   all_reader_pids=ReaderPids,
+                                   free_readers=ReaderPids},
+            {next_state, waiting_value, NewState};
         {error, notfound} ->
-            NewState = State,
-            notfound;
-        {ok, Value} ->
-            RawValue = riakc_obj:get_value(Value),
-            case riak_moss_lfs_utils:is_manifest(RawValue) of
-                false ->
-                    %% TODO:
-                    %% we don't deal with siblings here
-                    %% at all
-                    Metadata = riakc_obj:get_metadata(Value),
-                    %% @TODO
-                    %% content length is a hack now
-                    %% because we're forcing everything
-                    %% to be a manifest
-                    Mfst = undefined,
-                    ContentLength = 0,
-                    ContentMd5 = <<>>,
-                    NewState = State#state{value_cache=RawValue};
-                true ->
-                    Mfst = binary_to_term(RawValue),
-                    Metadata = riak_moss_lfs_utils:metadata_from_manifest(Mfst),
-                    ContentLength = riak_moss_lfs_utils:content_length(Mfst),
-                    ContentMd5 = riak_moss_lfs_utils:content_md5(Mfst),
-                    NewState = State#state{manifest=Mfst,
-                                           manifest_uuid=riak_moss_lfs_utils:file_uuid(Mfst)}
-            end,
-            lists:foldl(
-              fun({K, V}, Dict) -> dict:store(K, V, Dict) end,
-              Metadata,
-              if Mfst == undefined ->
-                      [];
-                 true ->
-                      LastModified = riak_moss_wm_utils:to_rfc_1123(
-                                         riak_moss_lfs_utils:created(Mfst)),
-                      [{"last-modified", LastModified}]
-              end ++
-                  [{"content-type", riakc_obj:get_content_type(Value)},
-                   {"content-md5", ContentMd5},
-                   {"content-length", ContentLength}])
-    end,
+            {next_state, waiting_value, State}
+    end.
 
+waiting_value(get_metadata, From, State=#state{manifest=undefined}) ->
+    gen_fsm:reply(From, notfound),
+    {stop, normal, State};
+waiting_value(get_metadata, From, State=#state{manifest=Mfst}) ->
+    NextStateTimeout = 60000,
+    Metadata = Mfst#lfs_manifest_v2.metadata,
+    ContentType = Mfst#lfs_manifest_v2.content_type,
+    ContentLength = Mfst#lfs_manifest_v2.content_length,
+    ContentMd5 = Mfst#lfs_manifest_v2.content_md5,
+    LastModified = riak_moss_wm_utils:to_rfc_1123(Mfst#lfs_manifest_v2.created),
+    NewState = State#state{manifest_uuid=Mfst#lfs_manifest_v2.uuid},
+    ReturnMeta = lists:foldl(
+                   fun({K, V}, Dict) -> orddict:store(K, V, Dict) end,
+                   Metadata,
+                   [{"last-modified", LastModified},
+                    {"content-type", ContentType},
+                    {"content-md5", ContentMd5},
+                    {"content-length", ContentLength}]),
     NextState = case From of
-        undefined ->
-            waiting_metadata_request;
-        _ ->
-            gen_fsm:reply(From, ReturnMeta),
-            waiting_continue_or_stop
-    end,
+                    undefined ->
+                        waiting_metadata_request;
+                    _ ->
+                        gen_fsm:reply(From, ReturnMeta),
+                        waiting_continue_or_stop
+                end,
     {next_state, NextState, NewState#state{from=undefined, metadata_cache=ReturnMeta}, NextStateTimeout}.
 
 waiting_metadata_request(get_metadata, _From, #state{metadata_cache=Metadata}=State) ->
@@ -218,13 +187,11 @@ waiting_continue_or_stop(continue, #state{value_cache=CachedValue,
                 [] ->
                     %% No blocks = empty file
                     {next_state, waiting_chunk_request, State};
-                    %% {next_state, waiting_chunk_request,
-                    %%  State#state{value_cache = <<>>}};
                 [_|_] ->
                     BlocksLeft = sets:from_list(BlockSequences),
 
                     %% start retrieving the first block
-                    riak_moss_manifest_fsm:get_block(ReaderPid, BucketName, Key, UUID, hd(BlockSequences)),
+                    riak_moss_block_server:get_block(ReaderPid, BucketName, binary_to_list(Key), UUID, hd(BlockSequences)),
                     {next_state, waiting_chunks, State#state{blocks_left=BlocksLeft}}
             end;
         _ ->
@@ -262,13 +229,8 @@ waiting_chunks({chunk, _Pid, {ChunkSeq, ChunkReturnValue}}, #state{from=From,
     %% we don't deal with missing chunks
     %% at all here, so this pattern
     %% match will fail
-    {ok, ChunkRiakObject} = ChunkReturnValue,
-
+    {ok, ChunkValue} = ChunkReturnValue,
     NewRemaining = sets:del_element(ChunkSeq, Remaining),
-
-    %% we currently only care about the binary
-    %% data in the object
-    ChunkValue = riakc_obj:get_value(ChunkRiakObject),
 
     %% this is just to be used
     %% in a guard later
@@ -348,7 +310,7 @@ handle_info(_Info, _StateName, StateData) ->
 
 %% @private
 terminate(_Reason, _StateName, #state{test=false}) ->
-    %% riak_moss_reader_sup:terminate_reader(node(), ReaderPid);
+    %% @TODO Cleanup manifest fsm and block servers
     ok;
 terminate(_Reason, _StateName, #state{test=true,
                                       free_readers=[ReaderPid | _]}) ->
@@ -365,15 +327,19 @@ code_change(_OldVsn, StateName, State, _Extra) -> {ok, StateName, State}.
 %% @doc Start a number of riak_moss_block_server processes
 %% and return a list of their pids.
 %% @TODO Can probably share this among the fsms.
--spec start_block_servers(pos_integer()) -> list(pid()).
-start_block_servers(NumServers) ->
-    %% TODO:
-    %% doesn't handle
-    %% failure at all
-    [Pid || {ok, Pid} <-
-        [riak_moss_block_server:start_link() ||
-            _ <- lists:seq(1, NumServers)]].
+-spec server_result(pos_integer(), [pid()]) -> [pid()].
+server_result(_, Acc) ->
+    case riak_moss_block_server:start_link() of
+        {ok, Pid} ->
+            [Pid | Acc];
+        {error, Reason} ->
+            lager:warning("Failed to start block server instance. Reason: ~p", [Reason]),
+            Acc
+    end.
 
+-spec start_block_servers(pos_integer()) -> [pid()].
+start_block_servers(NumServers) ->
+    lists:foldl(fun server_result/2, [], lists:seq(1, NumServers)).
 
 %% ===================================================================
 %% Test API
