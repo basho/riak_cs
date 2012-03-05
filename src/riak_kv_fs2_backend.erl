@@ -41,6 +41,7 @@
          is_empty/1,
          status/1,
          callback/3]).
+-compile(export_all). % SLF debugging only!
 
 -define(API_VERSION, 1).
 -define(CAPABILITIES, []).
@@ -51,11 +52,16 @@
 -define(HEADER_SIZE,  8). % Differs from bitcask.hrl!
 -define(MAXVALSIZE, 2#11111111111111111111111111111111).
 
+-include("riak_moss_lfs.hrl").
+
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
--record(state, {dir}).
+-record(state, {
+          dir        :: string(),
+          block_size :: integer()
+         }).
 -type state() :: #state{}.
 -type config() :: [{atom(), term()}].
 
@@ -82,15 +88,26 @@ capabilities(_, _) ->
 -spec start(integer(), config()) -> {ok, state()} | {error, term()}.
 start(Partition, Config) ->
     PartitionName = integer_to_list(Partition),
-    ConfigRoot = app_helper:get_prop_or_env(fs2_backend_data_root, Config, riak_kv),
-    if
-        ConfigRoot =:= undefined ->
-            riak:stop("fs_backend_data_root unset, failing");
-        true ->
-            ok
-    end,
-    Dir = filename:join([ConfigRoot,PartitionName]),
-    {filelib:ensure_dir(Dir), #state{dir=Dir}}.
+    try
+        ConfigRoot = case app_helper:get_prop_or_env(
+                            fs2_backend_data_root, Config, riak_kv) of
+                         undefined ->
+                             throw("fs2_backend_data_root unset, failing");
+                         Else1 ->
+                             Else1
+                     end,
+        BlockSize = case app_helper:get_prop_or_env(
+                           fs2_backend_block_size, Config, riak_kv) of
+                        undefined ->
+                            throw("fs2_backend_block_size unset, failing");
+                        Else2 ->
+                            Else2
+                    end,
+        Dir = filename:join([ConfigRoot,PartitionName]),
+        {filelib:ensure_dir(Dir), #state{dir = Dir, block_size = BlockSize}}
+    catch throw:Error ->
+            {error, Error}
+    end.
 
 -spec stop(state()) -> ok.
 stop(_State) -> ok.
@@ -100,6 +117,32 @@ stop(_State) -> ok.
                  {ok, any(), state()} |
                  {ok, not_found, state()} |
                  {error, term(), state()}.
+get(<<"b:", _/binary>> = Bucket,
+    <<UUID:?UUID_BYTES/binary, BlockNum:?BLOCK_FIELD_SIZE>>,
+    #state{block_size = BlockSize} = State) ->
+    File = location(State, {Bucket, UUID}),
+    Offset = calc_block_offset(BlockNum, State),
+    io:format("DBG line ~p block ~p offset ~p uuid ~p\n",
+              [?LINE, BlockNum, Offset, UUID]),
+    try
+        io:format("DBG line ~p file ~s\n", [?LINE, File]),
+        {ok, FH} = file:open(File, [read, raw, binary]),
+        try
+            io:format("DBG line ~p\n", [?LINE]),
+            {ok, PackedBin} = file:pread(FH, Offset, ?HEADER_SIZE + BlockSize),
+            io:format("DBG line ~p packed ~P\n", [?LINE, PackedBin, 20]),
+            Bin = unpack_ondisk(PackedBin),
+            io:format("DBG line ~p bin ~P\n", [?LINE, Bin, 20]),
+            {ok, Bin, State}
+        catch _X:_Y ->
+                io:format("DBG line ~p err ~p ~p\n", [?LINE, _X, _Y]),
+                {error, not_found, State}
+        after
+            file:close(FH)
+        end
+    catch _:_ ->
+            {error, not_found, State}
+    end;
 get(Bucket, Key, State) ->
     File = location(State, {Bucket, Key}),
     case filelib:is_file(File) of
@@ -133,6 +176,35 @@ atomic_write(File, Val) ->
 -spec put(riak_object:bucket(), riak_object:key(), [index_spec()], binary(), state()) ->
                  {ok, state()} |
                  {error, term(), state()}.
+put(<<"b:", _/binary>> = Bucket,
+    <<UUID:?UUID_BYTES/binary, BlockNum:?BLOCK_FIELD_SIZE>>,
+    _IndexSpecs, Val, #state{block_size = BlockSize} = State)
+  when size(Val) =< BlockSize ->
+    File = location(State, {Bucket, UUID}),
+    Offset = calc_block_offset(BlockNum, State),
+    io:format("DBG line ~p block ~p offset ~p uuid ~p\n",
+              [?LINE, BlockNum, Offset, UUID]),
+    try
+        ok = filelib:ensure_dir(File),
+        io:format("DBG line ~p file ~s\n", [?LINE, File]),
+        {ok, FH} = file:open(File, [write, read, raw, binary]),
+        try
+            io:format("DBG line ~p\n", [?LINE]),
+            PackedBin = pack_ondisk(Val),
+            io:format("DBG line ~p packed ~P\n", [?LINE, PackedBin, 20]),
+            ok = file:pwrite(FH, Offset, PackedBin),
+            io:format("DBG line ~p\n", [?LINE]),
+            io:format("DBG line ~p\n", [?LINE]),
+            {ok, State}
+        catch _X:_Y ->
+                io:format("DBG line ~p err ~p ~p\n", [?LINE, _X, _Y]),
+                {error, eBummer, State}
+        after
+            file:close(FH)
+        end
+    catch _:_ ->
+            {error, not_found, State}
+    end;
 put(Bucket, PrimaryKey, _IndexSpecs, Val, State) ->       
     File = location(State, {Bucket, PrimaryKey}),
     case filelib:ensure_dir(File) of
@@ -340,11 +412,31 @@ pack_ondisk(Bin) ->
 unpack_ondisk(<<Crc32:?CRCSIZEFIELD/unsigned, Bytes/binary>>) ->
     case erlang:crc32(Bytes) of
         Crc32 ->
-            <<ValueSz:?VALSIZEFIELD, Value:ValueSz/bytes>> = Bytes,
+            <<ValueSz:?VALSIZEFIELD, Value:ValueSz/binary, _/binary>> = Bytes,
             Value;
         _BadCrc ->
             bad_crc
     end.
+
+calc_block_offset(BlockNum, #state{block_size = BlockSize}) ->
+    %% MOSS block numbers start at zero.
+    (BlockNum rem ?CONTIGUOUS_BLOCKS) * (?HEADER_SIZE + BlockSize).
+
+t0() ->
+    TestDir = "./delme",
+    Bucket = <<"b:delme">>, 
+    K0 = <<0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0>>,
+    V0 = <<42:64>>,
+    K1 = <<0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1>>,
+    V1 = <<43:64>>,
+    os:cmd("rm -rf " ++ TestDir),
+    {ok, S} = start(-1, [{fs2_backend_data_root, TestDir},
+                         {fs2_backend_block_size, 8}]),
+    {ok, S} = put(Bucket, K0, [], V0, S),
+    {ok, S} = put(Bucket, K1, [], V1, S),
+    {ok, V0, S} = get(Bucket, K0, S),
+    {ok, V1, S} = get(Bucket, K1, S),
+    ok.
 
 %%
 %% Test

@@ -17,17 +17,7 @@
 -module(riak_moss_lfs_utils).
 
 -include("riak_moss.hrl").
-
-%% 16 bits & 1MB block size = 64GB max object size
-%% 24 bits & 1MB block size = 16TB max object size
-%% 32 bits & 1MB block size = 4PB max object size
--define(BLOCK_FIELD_SIZE, 16).
-
-%% druuid:v4() uses 16 bytes in raw form.
--define(UUID_BYTES, 16).
-
-%% TODO: Make this configurable via app env?
--define(CONTIGUOUS_BLOCKS, 16).
+-include("riak_moss_lfs.hrl").
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
