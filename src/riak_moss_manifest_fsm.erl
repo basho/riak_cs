@@ -51,7 +51,7 @@
 -record(state, {bucket :: binary(),
                 key :: binary(),
                 riak_object :: term(),
-                
+
                 %% an orddict mapping
                 %% UUID -> Manifest
                 %% TODO:
@@ -115,6 +115,7 @@ stop(Pid) ->
 %% @end
 %%--------------------------------------------------------------------
 init([Bucket, Key]) ->
+    process_flag(trap_exit, true),
     %% purposely have the timeout happen
     %% so that we get called in the prepare
     %% state
@@ -246,7 +247,7 @@ waiting_command(mark_active_as_pending_delete, _From, State=#state{riakc_pid=Ria
             {stop, normal, NotFound, State}
     end.
 
-waiting_update_command({update_manifest_with_confirmation, Manifest}, _From, 
+waiting_update_command({update_manifest_with_confirmation, Manifest}, _From,
                                             State=#state{riakc_pid=RiakcPid,
                                             bucket=Bucket,
                                             key=Key,

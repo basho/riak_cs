@@ -100,9 +100,9 @@ init([Bucket, Key]) ->
     %% an exit Reason of `noproc`
     process_flag(trap_exit, true),
 
-
     Queue = queue:new(),
-    State = #state{bucket=Bucket, key=Key,
+    State = #state{bucket=Bucket,
+                   key=Key,
                    chunk_queue=Queue},
     %% purposely have the timeout happen
     %% so that we get called in the prepare
@@ -310,7 +310,6 @@ handle_info(_Info, _StateName, StateData) ->
 
 %% @private
 terminate(_Reason, _StateName, #state{test=false}) ->
-    %% @TODO Cleanup manifest fsm and block servers
     ok;
 terminate(_Reason, _StateName, #state{test=true,
                                       free_readers=[ReaderPid | _]}) ->
