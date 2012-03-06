@@ -123,7 +123,7 @@ block_name(_Key, UUID, Number) ->
     <<RawUUID/binary, Number:?BLOCK_FIELD_SIZE>>.
 
 block_name_to_term(Name) ->
-    <<RawUUID:77/binary, Number:?BLOCK_FIELD_SIZE>> = Name,
+    <<RawUUID:16/binary, Number:?BLOCK_FIELD_SIZE>> = Name,
     {raw_to_cooked_v4(RawUUID), Number}.
 
 %% @doc Return the configured block size
