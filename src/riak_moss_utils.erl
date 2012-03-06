@@ -11,9 +11,9 @@
 %% Public API
 -export([binary_to_hexlist/1,
          close_riak_connection/1,
-         create_bucket/3,
+         create_bucket/4,
          create_user/2,
-         delete_bucket/2,
+         delete_bucket/3,
          delete_object/2,
          from_bucket_name/1,
          get_admin_creds/0,
@@ -23,6 +23,8 @@
          get_object/3,
          get_user/1,
          get_user/2,
+         get_user_by_index/2,
+         get_user_index/3,
          list_keys/1,
          list_keys/2,
          pow/2,
@@ -30,9 +32,11 @@
          put_object/4,
          riak_connection/0,
          riak_connection/2,
+         set_bucket_acl/4,
          to_bucket_name/2]).
 
 -include("riak_moss.hrl").
+-include_lib("riakc/include/riakc_obj.hrl").
 -include_lib("xmerl/include/xmerl.hrl").
 
 -ifdef(TEST).
@@ -70,30 +74,16 @@ close_riak_connection(Pid) ->
 
 %% @doc Create a bucket in the global namespace or return
 %% an error if it already exists.
-%% TODO:
-%% We need to be checking that
-%% this bucket doesn't already
-%% exist anywhere, since everyone
-%% shares a global bucket namespace
--spec create_bucket(string(), binary(), acl_v1()) -> ok.
-create_bucket(KeyId, Bucket, _ACL) ->
-    case riak_connection() of
-        {ok, RiakPid} ->
-            %% TODO:
-            %% We don't do anything about
-            %% {error, Reason} here
-            {ok, {User, VClock}} = get_user(KeyId, RiakPid),
-            Res = serialized_bucket_op(Bucket,
-                                       KeyId,
-                                       User,
-                                       VClock,
-                                       created,
-                                       RiakPid),
-            close_riak_connection(RiakPid),
-            Res;
-        {error, Reason} ->
-            {error, {riak_connect_failed, Reason}}
-    end.
+-spec create_bucket(moss_user(), term(), binary(), acl_v1()) ->
+                           {ok, moss_user()} |
+                           {ok, ignore} |
+                           {error, term()}.
+create_bucket(User, VClock, Bucket, ACL) ->
+    serialized_bucket_op(Bucket,
+                         ACL,
+                         User,
+                         VClock,
+                         create).
 
 %% @doc Create a new MOSS user
 -spec create_user(string(), string()) -> {ok, moss_user()}.
@@ -135,43 +125,37 @@ create_user(Name, Email) ->
     end.
 
 %% @doc Delete a bucket
--spec delete_bucket(string(), binary()) -> ok.
-delete_bucket(KeyId, Bucket) ->
-    case riak_connection() of
-        {ok, RiakPid} ->
-            {ok, {User, VClock}} = get_user(KeyId, RiakPid),
-            CurrentBuckets = get_buckets(User),
+-spec delete_bucket(moss_user(), term(), binary()) ->
+                           {ok, moss_user()} |
+                           {ok, ignore} |
+                           {error, term()}.
+delete_bucket(User, VClock, Bucket) ->
+    CurrentBuckets = get_buckets(User),
 
-            %% Buckets can only be deleted if they exist
-            case bucket_exists(CurrentBuckets, Bucket) of
+    %% Buckets can only be deleted if they exist
+    case bucket_exists(CurrentBuckets, Bucket) of
+        true ->
+            case bucket_empty(Bucket) of
                 true ->
-                    case bucket_empty(Bucket, RiakPid) of
-                        true ->
-                            AttemptDelete = true,
-                            LocalError = ok;
-                        false ->
-                            AttemptDelete = false,
-                            LocalError = {error, bucket_not_empty}
-                    end;
-                false ->
                     AttemptDelete = true,
-                    LocalError = ok
-            end,
-            case AttemptDelete of
-                true ->
-                    Res = serialized_bucket_op(Bucket,
-                                               KeyId,
-                                               User,
-                                               VClock,
-                                               deleted,
-                                               RiakPid);
+                    LocalError = ok;
                 false ->
-                    Res = LocalError
-            end,
-            close_riak_connection(RiakPid),
-            Res;
-        {error, Reason} ->
-            {error, {riak_connect_failed, Reason}}
+                    AttemptDelete = false,
+                    LocalError = {error, bucket_not_empty}
+            end;
+        false ->
+            AttemptDelete = true,
+            LocalError = ok
+    end,
+    case AttemptDelete of
+        true ->
+            serialized_bucket_op(Bucket,
+                                 ?ACL{},
+                                 User,
+                                 VClock,
+                                 delete);
+        false ->
+            LocalError
     end.
 
 %% @doc Delete an object from Riak
@@ -308,7 +292,9 @@ get_object(BucketName, Key, RiakPid) ->
     riakc_pb_socket:get(RiakPid, BucketName, Key).
 
 %% @doc Retrieve a MOSS user's information based on their id string.
--spec get_user(string()) -> {ok, term()} | {error, term()}.
+-spec get_user(string() | undefined) -> {ok, term()} | {error, term()}.
+get_user(undefined) ->
+    {error, no_user_key};
 get_user(KeyID) ->
     case riak_connection() of
         {ok, RiakPid} ->
@@ -317,6 +303,41 @@ get_user(KeyID) ->
             Res;
         {error, Reason} ->
             {error, Reason}
+    end.
+
+%% @doc Retrieve a MOSS user's information based on their
+%% canonical id string.
+%% @TODO May want to use mapreduce job for this.
+-spec get_user_by_index(binary(), binary()) -> {ok, {moss_user(), term()}} |
+                                               {error, term()}.
+get_user_by_index(Index, Value) ->
+    case riak_connection() of
+        {ok, RiakPid} ->
+            case get_user_index(Index, Value, RiakPid) of
+                {ok, KeyId} ->
+                    Res = get_user(KeyId, RiakPid);
+                {error, _}=Error1 ->
+                    Res = Error1
+            end,
+            close_riak_connection(RiakPid),
+            Res;
+        {error, _}=Error ->
+            Error
+    end.
+
+%% @doc Query `Index' for `Value' in the users bucket.
+-spec get_user_index(binary(), binary(), pid()) -> {ok, binary()} | {error, term()}.
+get_user_index(Index, Value, RiakPid) ->
+    case riakc_pb_socket:get_index(RiakPid, ?USER_BUCKET, Index, Value) of
+        {ok, []} ->
+            {error, notfound};
+        {ok, [[_, Key]]} ->
+            {ok, binary_to_list(Key)};
+        {error, Reason}=Error ->
+            lager:warning("Error occurred trying to query ~p in user index ~p. Reason: ~p", [Value,
+                                                                                             Index,
+                                                                                             Reason]),
+            Error
     end.
 
 %% @doc List the keys from a bucket
@@ -398,6 +419,16 @@ riak_connection() ->
 riak_connection(Host, Port) ->
     riakc_pb_socket:start_link(Host, Port).
 
+%% @doc Set the ACL for a bucket. Existing ACLs are only
+%% replaced, they cannot be updated.
+-spec set_bucket_acl(moss_user(), term(), binary(), acl_v1()) -> ok.
+set_bucket_acl(User, VClock, Bucket, ACL) ->
+    serialized_bucket_op(Bucket,
+                         ACL,
+                         User,
+                         VClock,
+                         update_acl).
+
 %% Get the proper bucket name for either the MOSS object
 %% bucket or the data block bucket.
 -spec to_bucket_name([objects | blocks], binary()) -> binary().
@@ -410,15 +441,32 @@ to_bucket_name(blocks, Name) ->
 %% Internal functions
 %% ===================================================================
 
+%% @doc Generate a JSON document to use for a bucket
+%% ACL request.
+-spec bucket_acl_json(acl_v1(), string()) -> string().
+bucket_acl_json(ACL, KeyId)  ->
+    binary_to_list(
+      iolist_to_binary(
+        mochijson2:encode([stanchion_acl_utils:acl_to_json_term(ACL),
+                           {struct, [{<<"requester">>, list_to_binary(KeyId)}]}]))).
+
 %% @doc Check if a bucket is empty
--spec bucket_empty(binary(), pid()) -> boolean().
-bucket_empty(Bucket, RiakPid) ->
-    ObjBucket = to_bucket_name(objects, Bucket),
-    case list_keys(ObjBucket, RiakPid) of
-        {ok, []} ->
-            true;
-        _ ->
-            false
+-spec bucket_empty(binary()) -> boolean().
+bucket_empty(Bucket) ->
+
+    case riak_connection() of
+        {ok, RiakPid} ->
+            ObjBucket = to_bucket_name(objects, Bucket),
+            case list_keys(ObjBucket, RiakPid) of
+                {ok, []} ->
+                    Res = true;
+                _ ->
+                    Res = false
+            end,
+            close_riak_connection(RiakPid),
+            Res;
+        {error, Reason} ->
+            {error, {riak_connect_failed, Reason}}
     end.
 
 %% @doc Check if a bucket exists in a list of the user's buckets.
@@ -439,15 +487,16 @@ bucket_exists(Buckets, CheckBucket) ->
 %% @doc Return a closure over a specific function
 %% call to the stanchion client module for either
 %% bucket creation or deletion.
--spec bucket_fun(created | deleted,
+-spec bucket_fun(bucket_operation(),
                  binary(),
+                 acl_v1(),
                  string(),
                  {string(), string()},
                  {string(), pos_integer(), boolean()}) -> function().
-bucket_fun(created, Bucket, KeyId, AdminCreds, StanchionData) ->
+bucket_fun(create, Bucket, ACL, KeyId, AdminCreds, StanchionData) ->
     {StanchionIp, StanchionPort, StanchionSSL} = StanchionData,
     %% Generate the bucket JSON document
-    BucketDoc = bucket_json(Bucket, KeyId),
+    BucketDoc = bucket_json(Bucket, ACL, KeyId),
     fun() ->
             velvet:create_bucket(StanchionIp,
                                  StanchionPort,
@@ -456,7 +505,20 @@ bucket_fun(created, Bucket, KeyId, AdminCreds, StanchionData) ->
                                  [{ssl, StanchionSSL},
                                   {auth_creds, AdminCreds}])
     end;
-bucket_fun(deleted, Bucket, KeyId, AdminCreds, StanchionData) ->
+bucket_fun(update_acl, Bucket, ACL, KeyId, AdminCreds, StanchionData) ->
+    {StanchionIp, StanchionPort, StanchionSSL} = StanchionData,
+    %% Generate the bucket JSON document for the ACL request
+    AclDoc = bucket_acl_json(ACL, KeyId),
+    fun() ->
+            velvet:set_bucket_acl(StanchionIp,
+                                  StanchionPort,
+                                  Bucket,
+                                  "application/json",
+                                  AclDoc,
+                                  [{ssl, StanchionSSL},
+                                   {auth_creds, AdminCreds}])
+    end;
+bucket_fun(delete, Bucket, _ACL, KeyId, AdminCreds, StanchionData) ->
     {StanchionIp, StanchionPort, StanchionSSL} = StanchionData,
     fun() ->
             velvet:delete_bucket(StanchionIp,
@@ -469,16 +531,26 @@ bucket_fun(deleted, Bucket, KeyId, AdminCreds, StanchionData) ->
 
 %% @doc Generate a JSON document to use for a bucket
 %% creation request.
--spec bucket_json(binary(), string()) -> string().
-bucket_json(Bucket, KeyId)  ->
+-spec bucket_json(binary(), acl_v1(), string()) -> string().
+bucket_json(Bucket, ACL, KeyId)  ->
     binary_to_list(
       iolist_to_binary(
         mochijson2:encode([{struct, [{<<"bucket">>, Bucket}]},
+                           stanchion_acl_utils:acl_to_json_term(ACL),
                            {struct, [{<<"requester">>, list_to_binary(KeyId)}]}]))).
 
+
 %% @doc Return a bucket record for the specified bucket name.
--spec bucket_record(binary(), created | deleted) -> moss_bucket().
-bucket_record(Name, Action) ->
+-spec bucket_record(binary(), bucket_operation()) -> moss_bucket().
+bucket_record(Name, Operation) ->
+    case Operation of
+        create ->
+            Action = created;
+        delete ->
+            Action = deleted;
+        _ ->
+            Action = undefined
+    end,
     ?MOSS_BUCKET{name=Name,
                  last_action=Action,
                  creation_date=riak_moss_wm_utils:iso_8601_datetime(),
@@ -504,8 +576,8 @@ bucket_resolver(Bucket, ResolvedBuckets) ->
                         true ->
                             ResolvedBuckets;
                         false ->
-                           [Bucket | lists:delete(ExistingBucket,
-                                                  ResolvedBuckets)]
+                            [Bucket | lists:delete(ExistingBucket,
+                                                   ResolvedBuckets)]
                     end
             end
     end.
@@ -603,7 +675,7 @@ generate_key(UserName) ->
     Ctx = crypto:hmac_init(sha, UserName),
     Ctx1 = crypto:hmac_update(Ctx, druuid:v4()),
     Key = crypto:hmac_final_n(Ctx1, 15),
-    string:to_upper(base64:encode_to_string(Key)).
+    string:to_upper(base64url:encode_to_string(Key)).
 
 %% @doc Generate a secret access token for a user
 -spec generate_secret(binary(), string()) -> string().
@@ -615,7 +687,7 @@ generate_secret(UserName, Key) ->
     Ctx2 = crypto:hmac_init(sha, UserName),
     Ctx3 = crypto:hmac_update(Ctx2, druuid:v4()),
     SecretPart2 = crypto:hmac_final_n(Ctx3, Bytes),
-    base64:encode_to_string(
+    base64url:encode_to_string(
       iolist_to_binary(<< SecretPart1:Bytes/binary,
                           SecretPart2:Bytes/binary >>)).
 
@@ -633,7 +705,7 @@ keep_existing_bucket(?MOSS_BUCKET{last_action=LastAction1,
             true;
         LastAction1 == LastAction2 ->
             false;
-         ModTime1 > ModTime2 ->
+        ModTime1 > ModTime2 ->
             true;
         true ->
             false
@@ -668,6 +740,18 @@ resolve_buckets([HeadUserRec | RestUserRecs], Buckets, _KeepDeleted) ->
     resolve_buckets(RestUserRecs, UpdBuckets, _KeepDeleted).
 
 %% @doc Save information about a MOSS user
+-spec save_user(moss_user(), term()) -> ok.
+save_user(User, VClock) ->
+    case riak_connection() of
+        {ok, RiakPid} ->
+            Res = save_user(User, VClock, RiakPid),
+            close_riak_connection(RiakPid),
+            Res;
+        {error, Reason} ->
+            {error, {riak_connect_failed, Reason}}
+    end.
+
+%% @doc Save information about a MOSS user
 -spec save_user(moss_user(), term(), pid()) -> ok.
 save_user(User, VClock, RiakPid) ->
     UserObj0 = riakc_obj:new(?USER_BUCKET,
@@ -675,29 +759,34 @@ save_user(User, VClock, RiakPid) ->
                              User),
     case VClock of
         undefined ->
-            UserObj = UserObj0;
+            UserObj1 = UserObj0;
         _ ->
-            UserObj = riakc_obj:set_vclock(UserObj0, VClock)
+            UserObj1 = riakc_obj:set_vclock(UserObj0, VClock)
     end,
+    Indexes = [{?EMAIL_INDEX, User?MOSS_USER.email},
+               {?ID_INDEX, User?MOSS_USER.canonical_id}],
+    Meta = dict:store(?MD_INDEX, Indexes, dict:new()),
+    UserObj = riakc_obj:update_metadata(UserObj1, Meta),
+
     %% @TODO Error handling
     riakc_pb_socket:put(RiakPid, UserObj).
 
 %% @doc Shared code used when doing a bucket creation or deletion.
 -spec serialized_bucket_op(binary(),
-                           string(),
+                           acl_v1(),
                            moss_user(),
                            term(),
-                           created | deleted,
-                           pid()) ->
+                           bucket_action()) ->
                                   {ok, moss_user()} |
                                   {ok, ignore} |
                                   {error, term()}.
-serialized_bucket_op(Bucket, KeyId, User, VClock, BucketOp, RiakPid) ->
+serialized_bucket_op(Bucket, ACL, User, VClock, BucketOp) ->
     case get_admin_creds() of
         {ok, AdminCreds} ->
             BucketFun = bucket_fun(BucketOp,
                                    Bucket,
-                                   KeyId,
+                                   ACL,
+                                   User?MOSS_USER.key_id,
                                    AdminCreds,
                                    stanchion_data()),
             %% Make a call to the bucket request
@@ -706,11 +795,11 @@ serialized_bucket_op(Bucket, KeyId, User, VClock, BucketOp, RiakPid) ->
             case OpResult of
                 ok ->
                     BucketRecord = bucket_record(Bucket, BucketOp),
-                    case update_user_buckets(User, BucketRecord, BucketOp) of
+                    case update_user_buckets(User, BucketRecord) of
                         {ok, ignore} ->
                             OpResult;
                         {ok, UpdUser} ->
-                            save_user(UpdUser, VClock, RiakPid)
+                            save_user(UpdUser, VClock)
                     end;
                 {error, {error_status, _, _, ErrorDoc}} ->
                     ErrorCode = xml_error_code(ErrorDoc),
@@ -762,9 +851,9 @@ xml_error_code(Xml) ->
 
 %% @doc Check if a user already has an ownership of
 %% a bucket and update the bucket list if needed.
--spec update_user_buckets(moss_user(), moss_bucket(), created | deleted) ->
+-spec update_user_buckets(moss_user(), moss_bucket()) ->
                                  {ok, ignore} | {ok, moss_user()}.
-update_user_buckets(User, Bucket, Action) ->
+update_user_buckets(User, Bucket) ->
     Buckets = User?MOSS_USER.buckets,
     %% At this point any siblings from the read of the
     %% user record have been resolved so the user bucket
@@ -775,10 +864,10 @@ update_user_buckets(User, Bucket, Action) ->
             {ok, User?MOSS_USER{buckets=[Bucket | Buckets]}};
         [ExistingBucket] ->
             case
-                (Action == deleted andalso
-                  ExistingBucket?MOSS_BUCKET.last_action == created)
+                (Bucket?MOSS_BUCKET.last_action == deleted andalso
+                 ExistingBucket?MOSS_BUCKET.last_action == created)
                 orelse
-                (Action == created andalso
+                (Bucket?MOSS_BUCKET.last_action == created andalso
                  ExistingBucket?MOSS_BUCKET.last_action == deleted) of
                 true ->
                     UpdBuckets = [Bucket | lists:delete(ExistingBucket, Buckets)],

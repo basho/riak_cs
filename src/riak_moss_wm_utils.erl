@@ -11,6 +11,8 @@
          ensure_doc/1,
          iso_8601_datetime/0,
          to_iso_8601/1,
+         iso_8601_to_rfc_1123/1,
+         to_rfc_1123/1,
          streaming_get/1,
          user_record_to_proplist/1]).
 
@@ -38,21 +40,23 @@ service_available(RD, Ctx) ->
 %%      the appropriate module to use to authenticate the request.
 %%      The passthru auth can be used either with a KeyID or
 %%      anonymously by leving the header empty.
--spec parse_auth_header(string(), boolean()) -> {ok, atom(), [string()]} | {error, term()}.
-parse_auth_header(KeyID, true) when KeyID =/= undefined ->
-    {ok, riak_moss_passthru_auth, [KeyID]};
+-spec parse_auth_header(string(), boolean()) -> {atom(),
+                                                 string() | undefined,
+                                                 string() | undefined}.
+parse_auth_header(KeyId, true) when KeyId =/= undefined ->
+    {riak_moss_passthru_auth, KeyId, undefined};
 parse_auth_header(_, true) ->
-    {ok, riak_moss_passthru_auth, []};
+    {riak_moss_passthru_auth, [], undefined};
 parse_auth_header(undefined, false) ->
-    {ok, riak_moss_blockall_auth, [unkown_auth_scheme]};
+    {riak_moss_blockall_auth, undefined, undefined};
 parse_auth_header("AWS " ++ Key, _) ->
     case string:tokens(Key, ":") of
         [KeyId, KeyData] ->
-            {ok, riak_moss_s3_auth, [KeyId, KeyData]};
+            {riak_moss_s3_auth, KeyId, KeyData};
         Other -> Other
     end;
 parse_auth_header(_, _) ->
-    {ok, riak_moss_blockall_auth, [unkown_auth_scheme]}.
+    {riak_moss_blockall_auth, undefined, undefined}.
 
 
 %% @doc Utility function for accessing
@@ -62,9 +66,8 @@ parse_auth_header(_, _) ->
 -spec ensure_doc(term()) -> term().
 ensure_doc(Ctx=#key_context{get_fsm_pid=undefined, bucket=Bucket, key=Key}) ->
     %% start the get_fsm
-    BinBucket = list_to_binary(Bucket),
     BinKey = list_to_binary(Key),
-    {ok, Pid} = riak_moss_get_fsm_sup:start_get_fsm(node(), [BinBucket, BinKey]),
+    {ok, Pid} = riak_moss_get_fsm_sup:start_get_fsm(node(), [Bucket, BinKey]),
     Metadata = riak_moss_get_fsm:get_metadata(Pid),
     Ctx#key_context{get_fsm_pid=Pid, doc_metadata=Metadata};
 ensure_doc(Ctx) -> Ctx.
@@ -120,6 +123,29 @@ to_iso_8601(Date) ->
             Date
     end.
 
+-spec to_rfc_1123(string()) -> string().
+to_rfc_1123(Date) when is_list(Date) ->
+    case httpd_util:convert_request_date(Date) of
+        {{_Year, _Month, _Day}, {_Hour, _Min, _Sec}} ->
+            %% Date is already in RFC 1123 format
+            Date;
+        bad_date ->
+            iso_8601_to_rfc_1123(Date)
+    end.
+
+%% @doc Convert an ISO 8601 date to RFC 1123 date
+-spec iso_8601_to_rfc_1123(binary() | string()) -> string().
+iso_8601_to_rfc_1123(Date) when is_list(Date) ->
+    iso_8601_to_rfc_1123(iolist_to_binary(Date));
+iso_8601_to_rfc_1123(Date) when is_binary(Date) ->
+    %% e.g. "2012-02-17T18:22:50.000Z"
+    <<Yr:4/binary, _:1/binary, Mo:2/binary, _:1/binary, Da:2/binary,
+      _T:1/binary,
+      Hr:2/binary, _:1/binary, Mn:2/binary, _:1/binary, Sc:2/binary,
+      _/binary>> = Date,
+    httpd_util:rfc1123_date({{b2i(Yr), b2i(Mo), b2i(Da)},
+                             {b2i(Hr), b2i(Mn), b2i(Sc)}}).
+
 %% ===================================================================
 %% Internal functions
 %% ===================================================================
@@ -133,5 +159,9 @@ to_iso_8601(Date) ->
                       non_neg_integer(),
                       non_neg_integer()) -> string().
 iso_8601_format(Year, Month, Day, Hour, Min, Sec) ->
-    io_lib:format("~4.10.0B-~2.10.0B-~2.10.0BT~2.10.0B:~2.10.0B:~2.10.0B.000Z",
-                  [Year, Month, Day, Hour, Min, Sec]).
+    lists:flatten(
+     io_lib:format("~4.10.0B-~2.10.0B-~2.10.0BT~2.10.0B:~2.10.0B:~2.10.0B.000Z",
+                   [Year, Month, Day, Hour, Min, Sec])).
+
+b2i(Bin) ->
+    list_to_integer(binary_to_list(Bin)).

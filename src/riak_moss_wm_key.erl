@@ -28,7 +28,7 @@ init(Config) ->
 
 -spec extract_paths(term(), term()) -> term().
 extract_paths(RD, Ctx) ->
-    Bucket = wrq:path_info(bucket, RD),
+    Bucket = list_to_binary(wrq:path_info(bucket, RD)),
     case wrq:path_tokens(RD) of
         [] ->
             Key = undefined;
@@ -55,21 +55,75 @@ service_available(RD, Ctx) ->
 %%      authenticated. Normally with HTTP
 %%      we'd use the `authorized` callback,
 %%      but this is how S3 does things.
-forbidden(RD, Ctx=#key_context{context=#context{auth_bypass=AuthBypass}}) ->
+forbidden(RD, Ctx=#key_context{bucket=Bucket,
+                               key=Key,
+                               context=#context{auth_bypass=AuthBypass}}) ->
+    BinKey = list_to_binary(Key),
     AuthHeader = wrq:get_req_header("authorization", RD),
-    case riak_moss_wm_utils:parse_auth_header(AuthHeader, AuthBypass) of
-        {ok, AuthMod, Args} ->
-            case AuthMod:authenticate(RD, Args) of
-                {ok, User} ->
-                    %% Authentication succeeded
-                    NewInnerCtx = Ctx#key_context.context#context{user=User},
-                    AccessRD = riak_moss_access_logger:set_user(User, RD),
-                    forbidden(wrq:method(RD), AccessRD,
-                              Ctx#key_context{context=NewInnerCtx});
+    {AuthMod, KeyId, Signature} =
+        riak_moss_wm_utils:parse_auth_header(AuthHeader, AuthBypass),
+    Method = wrq:method(RD),
+    RequestedAccess =
+        riak_moss_acl_utils:requested_access(Method,
+                                             wrq:req_qs(RD)),
+    case riak_moss_utils:get_user(KeyId) of
+        {ok, {User, _}} ->
+            %% TODO: log bucket owner, not accessor
+            AccessRD = riak_moss_access_logger:set_user(User, RD),
+            case AuthMod:authenticate(RD, User?MOSS_USER.key_secret, Signature) of
+                ok ->
+                    %% Authentication succeeded, now perform
+                    %% ACL check to verify access permission.
+                    RequestedAccess =
+                        riak_moss_acl_utils:requested_access(Method,
+                                                             wrq:req_qs(RD)),
+                    case riak_moss_acl:object_access(Bucket,
+                                                     BinKey,
+                                                     RequestedAccess,
+                                                     User?MOSS_USER.canonical_id) of
+                        {true, _OwnerId} ->
+                            NewInnerCtx =
+                                Ctx#key_context.context#context{user=User,
+                                                                requested_perm=RequestedAccess},
+                            forbidden(Method, AccessRD,
+                                      Ctx#key_context{bucket=Bucket,
+                                                      context=NewInnerCtx});
+
+                        true ->
+                            NewInnerCtx =
+                                Ctx#key_context.context#context{user=User,
+                                                                requested_perm=RequestedAccess},
+                            forbidden(Method, AccessRD,
+                                      Ctx#key_context{bucket=Bucket,
+                                                      context=NewInnerCtx});
+
+                        false ->
+                            %% ACL check failed, deny access
+                            riak_moss_s3_response:api_error(access_denied, AccessRD, Ctx)
+                    end;
                 {error, _Reason} ->
                     %% Authentication failed, deny access
+                    riak_moss_s3_response:api_error(access_denied, AccessRD, Ctx)
+            end;
+        {error, no_user_key} ->
+            %% User record not provided, check for anonymous access
+            case riak_moss_acl:anonymous_object_access(Bucket,
+                                                       BinKey,
+                                                       RequestedAccess) of
+                {true, _} ->
+                    {false, RD, Ctx#context{bucket=Bucket,
+                                            requested_perm=RequestedAccess}};
+                false ->
+                    %% Anonymous access not allowed, deny access
                     riak_moss_s3_response:api_error(access_denied, RD, Ctx)
-            end
+            end;
+        {error, notfound} ->
+            %% Access not allowed, deny access
+            riak_moss_s3_response:api_error(invalid_access_key_id, RD, Ctx);
+        {error, Reason} ->
+            %% Access not allowed, deny access and log the reason
+            lager:error("Retrieval of user record for ~p failed. Reason: ~p", [KeyId, Reason]),
+            riak_moss_s3_response:api_error(invalid_access_key_id, RD, Ctx)
     end.
 
 forbidden('GET', RD, Ctx=#key_context{doc_metadata=undefined}) ->
@@ -141,26 +195,37 @@ content_types_provided(RD, Ctx) ->
     end.
 
 -spec produce_body(term(), term()) -> {iolist()|binary(), term(), term()}.
+produce_body(RD, #key_context{get_fsm_pid=GetFsmPid,
+                              context=#context{requested_perm='READ_ACP'}}=KeyCtx) ->
+    riak_moss_get_fsm:stop(GetFsmPid),
+    {riak_moss_acl_utils:empty_acl_xml(), RD, KeyCtx};
 produce_body(RD, #key_context{get_fsm_pid=GetFsmPid, doc_metadata=DocMeta}=Ctx) ->
     ContentLength = dict:fetch("content-length", DocMeta),
     ContentMd5 = dict:fetch("content-md5", DocMeta),
     ETag = "\"" ++ riak_moss_utils:binary_to_hexlist(ContentMd5) ++ "\"",
-    NewRQ = wrq:set_resp_header("ETag",  ETag, RD),
-    riak_moss_get_fsm:continue(GetFsmPid),
-    case ContentLength of
-        0 ->
-            {<<>>, RD, Ctx};
-        _ ->
-            {{known_length_stream, ContentLength, {<<>>, fun() -> riak_moss_wm_utils:streaming_get(GetFsmPid) end}},
-             NewRQ, Ctx}
-    end.
+    NewRQ = lists:foldl(fun({K, V}, Rq) -> wrq:set_resp_header(K, V, Rq) end,
+                        RD,
+                        [{"ETag",  ETag},
+                         {"Last-Modified", dict:fetch("last-modified", DocMeta)}
+                        ]),
+    Method = wrq:method(RD),
+    case Method == 'HEAD'
+        orelse
+    ContentLength == 0 of
+        true ->
+            riak_moss_get_fsm:stop(GetFsmPid),
+            StreamFun = fun() -> {<<>>, done} end;
+        false ->
+            riak_moss_get_fsm:continue(GetFsmPid),
+            StreamFun = fun() -> riak_moss_wm_utils:streaming_get(GetFsmPid) end
+    end,
+    {{known_length_stream, ContentLength, {<<>>, StreamFun}}, NewRQ, Ctx}.
 
 %% @doc Callback for deleting an object.
 -spec delete_resource(term(), term()) -> boolean().
 delete_resource(RD, Ctx=#key_context{bucket=Bucket, key=Key}) ->
-    BinBucket = list_to_binary(Bucket),
     BinKey = list_to_binary(Key),
-    case riak_moss_delete_fsm_sup:start_delete_fsm(node(), [BinBucket, BinKey, 600000]) of
+    case riak_moss_delete_fsm_sup:start_delete_fsm(node(), [Bucket, BinKey, 600000]) of
         {ok, _Pid} ->
             {true, RD, Ctx};
         {error, Reason} ->
@@ -179,7 +244,7 @@ content_types_accepted(RD, Ctx) ->
         %% This was shamelessly ripped out of
         %% https://github.com/basho/riak_kv/blob/0d91ca641a309f2962a216daa0cee869c82ffe26/src/riak_kv_wm_object.erl#L492
         CType ->
-            Media = hd(string:tokens(CType, ";")),
+            {Media, _Params} = mochiweb_util:parse_header(CType),
             case string:tokens(Media, "/") of
                 [_Type, _Subtype] ->
                     %% accept whatever the user says
@@ -203,9 +268,11 @@ content_types_accepted(RD, Ctx) ->
 
 -spec accept_body(term(), term()) ->
     {true, term(), term()}.
-accept_body(RD, Ctx=#key_context{bucket=Bucket,key=Key,
-                                 putctype=ContentType,size=Size}) ->
-    Args = [list_to_binary(Bucket), Key, Size, ContentType, <<>>, 60000],
+accept_body(RD, Ctx=#key_context{bucket=Bucket,
+                                 key=Key,
+                                 putctype=ContentType,
+                                 size=Size}) ->
+    Args = [Bucket, Key, Size, ContentType, <<>>, 60000],
     {ok, Pid} = riak_moss_put_fsm_sup:start_put_fsm(node(), Args),
     accept_streambody(RD, Ctx, Pid, wrq:stream_req_body(RD, riak_moss_lfs_utils:block_size())).
 

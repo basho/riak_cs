@@ -19,9 +19,11 @@
 
 %% Public API
 -export([acl/3,
+         default_acl/2,
          acl_from_xml/1,
          acl_to_xml/1,
-         default_acl/2
+         empty_acl_xml/0,
+         requested_access/2
         ]).
 
 -type xmlElement() :: #xmlElement{}.
@@ -56,7 +58,7 @@ acl_from_xml(Xml) ->
 
 %% @doc Convert an internal representation of an ACL
 %% into XML.
--spec acl_to_xml(acl_v1()) -> string().
+-spec acl_to_xml(acl_v1()) -> binary().
 acl_to_xml(Acl) ->
     {OwnerName, OwnerId} = Acl?ACL.owner,
     XmlDoc =
@@ -69,12 +71,94 @@ acl_to_xml(Acl) ->
             ]},
            {'AccessControlList', grants_xml(Acl?ACL.grants)}
           ]}],
-    unicode:characters_to_list(
+    unicode:characters_to_binary(
       xmerl:export_simple(XmlDoc, xmerl_xml, [{prolog, ?XML_PROLOG}])).
+
+%% @doc Convert an internal representation of an ACL
+%% into XML.
+-spec empty_acl_xml() -> binary().
+empty_acl_xml() ->
+    XmlDoc =
+        [{'AccessControlPolicy',
+          [
+          ]}],
+    unicode:characters_to_binary(
+      xmerl:export_simple(XmlDoc, xmerl_xml, [{prolog, ?XML_PROLOG}])).
+
+%% @doc Map a request type to the type of ACL permissions needed
+%% to complete the request.
+-spec requested_access(atom(), string()) -> acl_perm().
+requested_access(Method, QueryString) ->
+    AclRequest = acl_request(QueryString),
+    if
+        Method == 'GET'
+        andalso
+        AclRequest == true->
+            'READ_ACP';
+        (Method == 'GET'
+         orelse
+         Method == 'HEAD') ->
+            'READ';
+        Method == 'PUT'
+        andalso
+        AclRequest == true->
+            'WRITE_ACP';
+        (Method == 'POST'
+         orelse
+         Method == 'DELETE')
+        andalso
+        AclRequest == true->
+            undefined;
+        Method == 'PUT'
+        orelse
+        Method == 'POST'
+        orelse
+        Method == 'DELETE' ->
+            'WRITE';
+        true ->
+            undefined
+    end.
 
 %% ===================================================================
 %% Internal functions
 %% ===================================================================
+
+%% @doc Check if the acl subresource is specified in the
+%% list of query string parameters.
+-spec acl_request([{string(), string()}]) -> boolean().
+acl_request([]) ->
+    false;
+acl_request([{"acl", _} | _]) ->
+    true;
+acl_request([_ | Rest]) ->
+    acl_request(Rest).
+
+%% @doc Update the permissions for a grant in the provided
+%% list of grants if an entry exists with matching grantee
+%% data or add a grant to a list of grants.
+-spec add_grant(acl_grant(), [acl_grant()]) -> [acl_grant()].
+add_grant(NewGrant, Grants) ->
+    {NewGrantee, NewPerms} = NewGrant,
+    case [Grant || Grant={Grantee, _} <- Grants,
+                   Grantee == NewGrantee] of
+        [] ->
+            [NewGrant | Grants];
+        [{_, Perms} | _] ->
+                [{NewGrantee, Perms ++ NewPerms} | Grants]
+        end.
+
+%% @doc Get the canonical id of the user associated with
+%% a given email address.
+-spec canonical_for_email(string()) -> string().
+canonical_for_email(Email) ->
+    case riak_moss_utils:get_user_by_index(?EMAIL_INDEX,
+                                           list_to_binary(Email)) of
+        {ok, {User, _}} ->
+            User?MOSS_USER.canonical_id;
+        {error, Reason} ->
+            lager:warning("Failed to retrieve canonical id for ~p. Reason: ~p", [Email, Reason]),
+            []
+    end.
 
 %% @doc Assemble the xml for the set of grantees for an acl.
 -spec grants_xml([acl_grant()]) -> term().
@@ -86,9 +170,29 @@ grants_xml(Grantees) ->
 grants_xml([], Acc) ->
     lists:flatten(Acc);
 grants_xml([HeadGrantee | RestGrantees], Acc) ->
-    {{GranteeName, GranteeId}, Perms} = HeadGrantee,
-    GranteeXml = [grant_xml(GranteeName, GranteeId, Perm) || Perm <- Perms],
+    case HeadGrantee of
+        {{GranteeName, GranteeId}, Perms} ->
+            GranteeXml = [grant_xml(GranteeName, GranteeId, Perm) ||
+                             Perm <- Perms];
+        {Group, Perms} ->
+            GranteeXml = [grant_xml(Group, Perm) ||
+                             Perm <- Perms]
+    end,
     grants_xml(RestGrantees, [GranteeXml | Acc]).
+
+%% @doc Assemble the xml for a group grantee for an acl.
+-spec grant_xml(atom(), acl_perm()) -> term().
+grant_xml(Group, Permission) ->
+    {'Grant',
+     [
+      {'Grantee',
+       [{'xmlns:xsi', "http://www.w3.org/2001/XMLSchema-instance"},
+        {'xsi:type', "Group"}],
+       [
+        {'URI', [uri_for_group(Group)]}
+       ]},
+      {'Permission', [atom_to_list(Permission)]}
+     ]}.
 
 %% @doc Assemble the xml for a single grantee for an acl.
 -spec grant_xml(string(), string(), acl_perm()) -> term().
@@ -96,12 +200,26 @@ grant_xml(DisplayName, CanonicalId, Permission) ->
     {'Grant',
      [
       {'Grantee',
+       [{'xmlns:xsi', "http://www.w3.org/2001/XMLSchema-instance"},
+        {'xsi:type', "CanonicalUser"}],
        [
         {'ID', [CanonicalId]},
         {'DisplayName', [DisplayName]}
        ]},
       {'Permission', [atom_to_list(Permission)]}
      ]}.
+
+%% @doc Get the display name of the user associated with
+%% a given canonical id.
+-spec name_for_canonical(string()) -> string().
+name_for_canonical(CanonicalId) ->
+    case riak_moss_utils:get_user_by_index(?ID_INDEX,
+                                           list_to_binary(CanonicalId)) of
+        {ok, {User, _}} ->
+            User?MOSS_USER.display_name;
+        {error, _} ->
+            []
+    end.
 
 %% @doc Process the top-level elements of the
 -spec process_acl_contents([xmlElement()], acl_v1()) -> acl_v1().
@@ -156,7 +274,7 @@ process_grants([HeadElement | RestElements], Acl) ->
     case ElementName of
         'Grant' ->
             Grant = process_grant(Content, {{"", ""}, []}),
-            UpdAcl = Acl?ACL{grants=[Grant | Acl?ACL.grants]};
+            UpdAcl = Acl?ACL{grants=add_grant(Grant, Acl?ACL.grants)};
         _ ->
             lager:debug("Encountered unexpected grants element: ~p", [ElementName]),
             UpdAcl = Acl
@@ -186,6 +304,11 @@ process_grant([HeadElement | RestElements], Grant) ->
 %% @doc Process an XML element containing information about
 %% an ACL permission grantee.
 -spec process_grantee([xmlElement()], acl_grant()) -> acl_grant().
+process_grantee([], {{[], CanonicalId}, _Perms}) ->
+    %% Lookup the display name for the user with the
+    %% canonical id of `CanonicalId'.
+    DisplayName = name_for_canonical(CanonicalId),
+    {{DisplayName, CanonicalId}, _Perms};
 process_grantee([], Grant) ->
     Grant;
 process_grantee([HeadElement | RestElements], Grant) ->
@@ -201,6 +324,24 @@ process_grantee([HeadElement | RestElements], Grant) ->
             lager:debug("Name value: ~p", [Value]),
             {{_, Id}, Perms} = Grant,
             UpdGrant = {{Value, Id}, Perms};
+        'EmailAddress' ->
+            lager:debug("Email value: ~p", [Value]),
+            Id = canonical_for_email(Value),
+            %% Get the canonical id for a given email address
+            lager:debug("ID value: ~p", [Id]),
+            {{Name, _}, Perms} = Grant,
+            UpdGrant = {{Name, Id}, Perms};
+        'URI' ->
+            {_, Perms} = Grant,
+            case Value of
+                ?AUTH_USERS_GROUP ->
+                    UpdGrant = {'AuthUsers', Perms};
+                ?ALL_USERS_GROUP ->
+                    UpdGrant = {'AllUsers', Perms};
+                _ ->
+                    %% Not yet supporting log delivery group
+                    UpdGrant = Grant
+            end;
         _ ->
             UpdGrant = Grant
     end,
@@ -220,6 +361,15 @@ process_permission([Content], Grant) ->
     end,
     {Grantee, UpdPerms}.
 
+%% @doc Map a ACL group atom to its corresponding URI.
+-spec uri_for_group(atom()) -> string().
+uri_for_group('AllUsers') ->
+    ?ALL_USERS_GROUP;
+uri_for_group('AuthUsers') ->
+    ?AUTH_USERS_GROUP;
+uri_for_group(_) ->
+    [].
+
 %% ===================================================================
 %% Eunit tests
 %% ===================================================================
@@ -229,26 +379,42 @@ process_permission([Content], Grant) ->
 %% @TODO Use eqc to do some more interesting case explorations.
 
 default_acl_test() ->
-    ExpectedXml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><AccessControlPolicy><Owner><ID>TESTID1</ID><DisplayName>tester1</DisplayName></Owner><AccessControlList><Grant><Grantee><ID>TESTID1</ID><DisplayName>tester1</DisplayName></Grantee><Permission>FULL_CONTROL</Permission></Grant></AccessControlList></AccessControlPolicy>",
+    ExpectedXml = <<"<?xml version=\"1.0\" encoding=\"UTF-8\"?><AccessControlPolicy><Owner><ID>TESTID1</ID><DisplayName>tester1</DisplayName></Owner><AccessControlList><Grant><Grantee xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"CanonicalUser\"><ID>TESTID1</ID><DisplayName>tester1</DisplayName></Grantee><Permission>FULL_CONTROL</Permission></Grant></AccessControlList></AccessControlPolicy>">>,
     DefaultAcl = default_acl("tester1", "TESTID1"),
-    ?assertEqual({acl_v1,{"tester1","TESTID1"},
-                  [{{"tester1","TESTID1"},['FULL_CONTROL']}]}, DefaultAcl),
+    ?assertMatch({acl_v1,{"tester1","TESTID1"},
+                  [{{"tester1","TESTID1"},['FULL_CONTROL']}], _}, DefaultAcl),
     ?assertEqual(ExpectedXml, acl_to_xml(DefaultAcl)).
 
 acl_from_xml_test() ->
     application:start(lager),
-    Xml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><AccessControlPolicy><Owner><ID>TESTID1</ID><DisplayName>tester1</DisplayName></Owner><AccessControlList><Grant><Grantee><ID>TESTID1</ID><DisplayName>tester1</DisplayName></Grantee><Permission>FULL_CONTROL</Permission></Grant></AccessControlList></AccessControlPolicy>",
+    Xml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><AccessControlPolicy><Owner><ID>TESTID1</ID><DisplayName>tester1</DisplayName></Owner><AccessControlList><Grant><Grantee xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"CanonicalUser\"><ID>TESTID1</ID><DisplayName>tester1</DisplayName></Grantee><Permission>FULL_CONTROL</Permission></Grant></AccessControlList></AccessControlPolicy>",
     DefaultAcl = default_acl("tester1", "TESTID1"),
-    ?assertEqual(DefaultAcl, acl_from_xml(Xml)).
+    Acl = acl_from_xml(Xml),
+    ?assertEqual(DefaultAcl?ACL.grants, Acl?ACL.grants),
+    ?assertEqual(DefaultAcl?ACL.owner, Acl?ACL.owner).
 
 acl_to_xml_test() ->
-    Xml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><AccessControlPolicy><Owner><ID>TESTID1</ID><DisplayName>tester1</DisplayName></Owner><AccessControlList><Grant><Grantee><ID>TESTID2</ID><DisplayName>tester2</DisplayName></Grantee><Permission>WRITE</Permission></Grant><Grant><Grantee><ID>TESTID1</ID><DisplayName>tester1</DisplayName></Grantee><Permission>READ</Permission></Grant></AccessControlList></AccessControlPolicy>",
+    Xml = <<"<?xml version=\"1.0\" encoding=\"UTF-8\"?><AccessControlPolicy><Owner><ID>TESTID1</ID><DisplayName>tester1</DisplayName></Owner><AccessControlList><Grant><Grantee xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"CanonicalUser\"><ID>TESTID2</ID><DisplayName>tester2</DisplayName></Grantee><Permission>WRITE</Permission></Grant><Grant><Grantee xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"CanonicalUser\"><ID>TESTID1</ID><DisplayName>tester1</DisplayName></Grantee><Permission>READ</Permission></Grant></AccessControlList></AccessControlPolicy>">>,
     Acl = acl("tester1", "TESTID1", [{{"tester1", "TESTID1"}, ['READ']},
                                      {{"tester2", "TESTID2"}, ['WRITE']}]),
     ?assertEqual(Xml, acl_to_xml(Acl)).
 
 roundtrip_test() ->
-    Xml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><AccessControlPolicy><Owner><ID>TESTID1</ID><DisplayName>tester1</DisplayName></Owner><AccessControlList><Grant><Grantee><ID>TESTID1</ID><DisplayName>tester1</DisplayName></Grantee><Permission>FULL_CONTROL</Permission></Grant></AccessControlList></AccessControlPolicy>",
-    ?assertEqual(Xml, acl_to_xml(acl_from_xml(Xml))).
+    Xml1 = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><AccessControlPolicy><Owner><ID>TESTID1</ID><DisplayName>tester1</DisplayName></Owner><AccessControlList><Grant><Grantee xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"CanonicalUser\"><ID>TESTID1</ID><DisplayName>tester1</DisplayName></Grantee><Permission>FULL_CONTROL</Permission></Grant></AccessControlList></AccessControlPolicy>",
+    Xml2 = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><AccessControlPolicy><Owner><ID>TESTID1</ID><DisplayName>tester1</DisplayName></Owner><AccessControlList><Grant><Grantee xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"CanonicalUser\"><ID>TESTID1</ID><DisplayName>tester1</DisplayName></Grantee><Permission>FULL_CONTROL</Permission></Grant><Grant><Grantee xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"Group\"><URI>http://acs.amazonaws.com/groups/global/AuthenticatedUsers</URI></Grantee><Permission>READ</Permission></Grant></AccessControlList></AccessControlPolicy>",
+    ?assertEqual(Xml1, binary_to_list(acl_to_xml(acl_from_xml(Xml1)))),
+    ?assertEqual(Xml2, binary_to_list(acl_to_xml(acl_from_xml(Xml2)))).
+
+requested_access_test() ->
+    ?assertEqual('READ', requested_access('GET', [])),
+    ?assertEqual('READ_ACP', requested_access('GET', [{"acl", ""}])),
+    ?assertEqual('WRITE', requested_access('PUT', [])),
+    ?assertEqual('WRITE_ACP', requested_access('PUT', [{"acl", ""}])),
+    ?assertEqual('WRITE', requested_access('POST', [])),
+    ?assertEqual('WRITE', requested_access('DELETE', [])),
+    ?assertEqual(undefined, requested_access('POST', [{"acl", ""}])),
+    ?assertEqual(undefined, requested_access('DELETE', [{"acl", ""}])),
+    ?assertEqual(undefined, requested_access('GARBAGE', [])),
+    ?assertEqual(undefined, requested_access('GARBAGE', [{"acl", ""}])).
 
 -endif.

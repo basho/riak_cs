@@ -14,27 +14,19 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
--export([authenticate/2]).
+-export([authenticate/3]).
 
 %% ===================================================================
 %% Public API
 %% ===================================================================
 
--spec authenticate(term(), [string()]) -> {ok, ?MOSS_USER{}}
-                                              | {ok, unknown}
-                                              | {error, atom()}.
-authenticate(RD, [KeyID, Signature]) ->
-    %% @TODO Also handle riak connection error
-    case riak_moss_utils:get_user(KeyID) of
-        {ok, {User, _}} ->
-            CalculatedSignature =
-                calculate_signature(User?MOSS_USER.key_secret, RD),
-            case check_auth(Signature, CalculatedSignature) of
-                true ->
-                    {ok, User};
-                _ ->
-                    {error, invalid_authentication}
-            end;
+-spec authenticate(term(), string(), string()) -> ok | {error, atom()}.
+authenticate(RD, KeyData, Signature) ->
+    CalculatedSignature =
+        calculate_signature(KeyData, RD),
+    case check_auth(Signature, CalculatedSignature) of
+        true ->
+            ok;
         _ ->
             {error, invalid_authentication}
     end.
