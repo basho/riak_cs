@@ -34,7 +34,6 @@
          prepare/2,
          waiting_value/3,
          waiting_metadata_request/3,
-         waiting_chunk_request/3,
          waiting_continue_or_stop/2,
          waiting_chunks/2,
          waiting_chunks/3,
@@ -49,13 +48,15 @@
                 mani_fsm_pid :: pid(),
                 bucket :: term(),
                 key :: term(),
-                value_cache :: binary(),
                 metadata_cache :: term(),
-                chunk_queue :: term(),
+                block_buffer=[] :: [{pos_integer, term()}],
                 manifest :: term(),
                 manifest_uuid :: term(),
                 blocks_left :: list(),
                 test=false :: boolean(),
+                next_block=0 :: pos_integer(),
+                last_block_requested :: pos_integer(),
+                total_blocks :: pos_integer(),
                 free_readers :: [pid()],
                 all_reader_pids :: [pid()]}).
 
@@ -100,10 +101,8 @@ init([Bucket, Key]) ->
     %% an exit Reason of `noproc`
     process_flag(trap_exit, true),
 
-    Queue = queue:new(),
     State = #state{bucket=Bucket,
-                   key=Key,
-                   chunk_queue=Queue},
+                   key=Key},
     %% purposely have the timeout happen
     %% so that we get called in the prepare
     %% state
@@ -148,7 +147,6 @@ waiting_value(get_metadata, From, State=#state{manifest=Mfst}) ->
     ContentLength = Mfst#lfs_manifest_v2.content_length,
     ContentMd5 = Mfst#lfs_manifest_v2.content_md5,
     LastModified = riak_moss_wm_utils:to_rfc_1123(Mfst#lfs_manifest_v2.created),
-    NewState = State#state{manifest_uuid=Mfst#lfs_manifest_v2.uuid},
     ReturnMeta = lists:foldl(
                    fun({K, V}, Dict) -> orddict:store(K, V, Dict) end,
                    Metadata,
@@ -163,7 +161,10 @@ waiting_value(get_metadata, From, State=#state{manifest=Mfst}) ->
                         gen_fsm:reply(From, ReturnMeta),
                         waiting_continue_or_stop
                 end,
-    {next_state, NextState, NewState#state{from=undefined, metadata_cache=ReturnMeta}, NextStateTimeout}.
+    NewState = State#state{manifest_uuid=Mfst#lfs_manifest_v2.uuid,
+                           from=undefined,
+                           metadata_cache=ReturnMeta},
+    {next_state, NextState, NewState, NextStateTimeout}.
 
 waiting_metadata_request(get_metadata, _From, #state{metadata_cache=Metadata}=State) ->
     {reply, Metadata, waiting_continue_or_stop, State#state{metadata_cache=undefined}}.
@@ -172,115 +173,141 @@ waiting_continue_or_stop(timeout, State) ->
     {stop, normal, State};
 waiting_continue_or_stop(stop, State) ->
     {stop, normal, State};
-waiting_continue_or_stop(continue, #state{value_cache=CachedValue,
-                                          manifest=Manifest,
+waiting_continue_or_stop(continue, #state{manifest=Manifest,
                                           bucket=BucketName,
                                           key=Key,
+                                          next_block=NextBlock,
                                           manifest_uuid=UUID,
-                                          %% @TODO This only works with BLOCK_FETCH_CONCURRENCY
-                                          %% of 1.
-                                          free_readers=[ReaderPid | _]}=State) ->
-    case CachedValue of
-        undefined ->
-            BlockSequences = riak_moss_lfs_utils:block_sequences_for_manifest(Manifest),
-            case BlockSequences of
-                [] ->
-                    %% No blocks = empty file
-                    {next_state, waiting_chunk_request, State};
-                [_|_] ->
-                    BlocksLeft = sets:from_list(BlockSequences),
+                                          free_readers=FreeReaders}=State) ->
+    BlockSequences = riak_moss_lfs_utils:block_sequences_for_manifest(Manifest),
+    case BlockSequences of
+        [] ->
+            %% No blocks = empty file
+            {stop, normal, State};
+        [_|_] ->
+            BlocksLeft = sets:from_list(BlockSequences),
+            TotalBlocks = sets:size(BlocksLeft),
 
-                    %% start retrieving the first block
-                    riak_moss_block_server:get_block(ReaderPid, BucketName, binary_to_list(Key), UUID, hd(BlockSequences)),
-                    {next_state, waiting_chunks, State#state{blocks_left=BlocksLeft}}
-            end;
-        _ ->
-            %% we don't actually have to start
-            %% retrieving chunks, as we already
-            %% have the value cached in our State
-            {next_state, waiting_chunk_request, State}
+            %% start retrieving the first set of blocks
+            {LastBlockRequested, UpdFreeReaders} =
+                read_blocks(BucketName, Key, UUID, FreeReaders, NextBlock, TotalBlocks+1),
+            NewState = State#state{blocks_left=BlocksLeft,
+                                   last_block_requested=LastBlockRequested,
+                                   total_blocks=TotalBlocks,
+                                   free_readers=UpdFreeReaders},
+            {next_state, waiting_chunks, NewState}
     end.
 
-waiting_chunk_request(get_next_chunk, _From, #state{value_cache=CachedValue}=State) ->
-    {stop, normal, CachedValue, State}.
+waiting_chunks(get_next_chunk, From, #state{block_buffer=[], from=PreviousFrom}=State) when PreviousFrom =:= undefined ->
+    %% we don't have a chunk ready
+    %% yet, so we'll make note
+    %% of the sender and go back
+    %% into waiting for another
+    %% chunk
+    {next_state, waiting_chunks, State#state{from=From}};
+waiting_chunks(get_next_chunk,
+               _From,
+               State=#state{block_buffer=[{NextBlock, Block} | RestBlockBuffer],
+                            next_block=NextBlock}) ->
+    {reply, {chunk, Block}, waiting_chunks, State#state{block_buffer=RestBlockBuffer,
+                                                        next_block=NextBlock+1}};
+waiting_chunks(get_next_chunk,
+               From,
+               State) ->
+    {next_state, waiting_chunks, State#state{from=From}}.
 
-waiting_chunks(get_next_chunk, From, #state{chunk_queue=ChunkQueue, from=PreviousFrom}=State) when PreviousFrom =:= undefined ->
-    case queue:is_empty(ChunkQueue) of
-        true ->
-            %% we don't have a chunk ready
-            %% yet, so we'll make note
-            %% of the sender and go back
-            %% into waiting for another
-            %% chunk
-            {next_state, waiting_chunks, State#state{from=From}};
-        _ ->
-            {{value, ToReturn}, NewQueue} = queue:out(ChunkQueue),
-            {reply, ToReturn, waiting_chunks, State#state{chunk_queue=NewQueue}}
-    end.
-
-waiting_chunks({chunk, _Pid, {ChunkSeq, ChunkReturnValue}}, #state{from=From,
+waiting_chunks({chunk, _Pid, {NextBlock, BlockReturnValue}}, #state{from=From,
                                                                    blocks_left=Remaining,
                                                                    manifest_uuid=UUID,
                                                                    key=Key,
                                                                    bucket=BucketName,
-                                                                   free_readers=[ReaderPid | _],
-                                                                   chunk_queue=ChunkQueue}=State) ->
-    %% TODO:
+                                                                   next_block=NextBlock,
+                                                                   free_readers=FreeReaders,
+                                                                   last_block_requested=LastBlockRequested,
+                                                                   total_blocks=TotalBlocks,
+                                                                   block_buffer=BlockBuffer}=State) ->
+
+    {ok, BlockValue} = BlockReturnValue,
+    NewRemaining = sets:del_element(NextBlock, Remaining),
+    BlocksLeft = sets:size(NewRemaining),
+    case From of
+        undefined ->
+            UpdBlockBuffer =
+                lists:sort(fun block_sorter/2,
+                           [{NextBlock, BlockValue} | BlockBuffer]),
+            NewState0 = State#state{blocks_left=NewRemaining,
+                                   block_buffer=UpdBlockBuffer,
+                                   from=undefined},
+            case BlocksLeft of
+                0 ->
+                    NewState=NewState0,
+                    NextStateName = sending_remaining;
+                _ ->
+                    {ReadRequests, UpdFreeReaders} =
+                        read_blocks(BucketName, Key, UUID, FreeReaders, NextBlock, TotalBlocks),
+                    NewState = NewState0#state{last_block_requested=LastBlockRequested+ReadRequests,
+                                               free_readers=UpdFreeReaders},
+                    NextStateName = waiting_chunks
+            end,
+            {next_state, NextStateName, NewState};
+        _ ->
+            NewState0 = State#state{blocks_left=NewRemaining,
+                                   from=undefined},
+            case BlocksLeft of
+                0 ->
+                    gen_fsm:reply(From, {done, BlockValue}),
+                    NewState=NewState0,
+                    {stop, normal, NewState};
+                _ ->
+                    gen_fsm:reply(From, {chunk, BlockValue}),
+                    {ReadRequests, UpdFreeReaders} =
+                        read_blocks(BucketName, Key, UUID, FreeReaders, LastBlockRequested+1, TotalBlocks),
+                    NewState = NewState0#state{last_block_requested=LastBlockRequested+ReadRequests,
+                                               free_readers=UpdFreeReaders},
+                    {next_state, waiting_chunks, NewState}
+            end
+    end;
+
+waiting_chunks({chunk, _Pid, {BlockSeq, BlockReturnValue}}, #state{blocks_left=Remaining,
+                                                                   manifest_uuid=UUID,
+                                                                   key=Key,
+                                                                   bucket=BucketName,
+                                                                   free_readers=FreeReaders,
+                                                                   last_block_requested=LastBlockRequested,
+                                                                   total_blocks=TotalBlocks,
+                                                                   block_buffer=BlockBuffer}=State) ->
     %% we don't deal with missing chunks
     %% at all here, so this pattern
     %% match will fail
-    {ok, ChunkValue} = ChunkReturnValue,
-    NewRemaining = sets:del_element(ChunkSeq, Remaining),
-
-    %% this is just to be used
-    %% in a guard later
-    Empty = queue:is_empty(ChunkQueue),
-
-    case sets:size(NewRemaining) of
+    {ok, BlockValue} = BlockReturnValue,
+    NewRemaining = sets:del_element(BlockSeq, Remaining),
+    BlocksLeft = sets:size(NewRemaining),
+    UpdBlockBuffer =
+        lists:sort(fun block_sorter/2,
+                   [{BlockSeq, BlockValue} | BlockBuffer]),
+    NewState0 = State#state{blocks_left=NewRemaining,
+                            block_buffer=UpdBlockBuffer,
+                            from=undefined},
+    case BlocksLeft of
         0 ->
-            case From of
-                undefined ->
-                    NewQueue = queue:in({done, ChunkValue}, ChunkQueue),
-                    NewState = State#state{blocks_left=NewRemaining,
-                                           chunk_queue=NewQueue},
-                    {next_state, sending_remaining, NewState};
-                _ when Empty ->
-                    gen_fsm:reply(From, {done, ChunkValue}),
-                    NewState = State#state{blocks_left=NewRemaining, from=undefined},
-                    {stop, normal, NewState}
-            end;
+            NewState = NewState0,
+            NextStateName = sending_remaining;
         _ ->
-            riak_moss_block_server:get_block(ReaderPid, BucketName, Key, UUID, hd(lists:sort(sets:to_list(NewRemaining)))),
-            case From of
-                undefined ->
-                    NewQueue = queue:in({chunk, ChunkValue}, ChunkQueue),
-                    NewState = State#state{blocks_left=NewRemaining,
-                                           chunk_queue=NewQueue},
-                    {next_state, waiting_chunks, NewState};
-                _ ->
-                    {ReplyChunk, NewQueue2} = case queue:is_empty(ChunkQueue) of
-                        true ->
-                            {{chunk, ChunkValue}, ChunkQueue};
-                        _ ->
-                            {{value, ChunkToReplyWith}, NewQueue} = queue:out(ChunkQueue),
-                            {ChunkToReplyWith, NewQueue}
-                    end,
-                    gen_fsm:reply(From, ReplyChunk),
-                    NewState = State#state{blocks_left=NewRemaining,
-                                           chunk_queue=NewQueue2,
-                                           from=undefined},
-                    {next_state, waiting_chunks, NewState}
-            end
-    end.
+            {ReadRequests, UpdFreeReaders} =
+                read_blocks(BucketName, Key, UUID, FreeReaders, LastBlockRequested+1, TotalBlocks),
+            NewState = NewState0#state{last_block_requested=LastBlockRequested+ReadRequests,
+                                       free_readers=UpdFreeReaders},
+            NextStateName = waiting_chunks
+    end,
+    {next_state, NextStateName, NewState}.
 
-sending_remaining(get_next_chunk, _From, #state{chunk_queue=ChunkQueue}=State) ->
-    {{value, Item}, Queue} = queue:out(ChunkQueue),
-    NewState = State#state{chunk_queue=Queue},
-    case queue:is_empty(Queue) of
-        true ->
-            {stop, normal, Item, NewState};
+sending_remaining(get_next_chunk, _From, #state{block_buffer=[{_, Block} | RestBlockBuffer]}=State) ->
+    NewState = State#state{block_buffer=RestBlockBuffer},
+    case RestBlockBuffer of
+        [] ->
+            {stop, normal, {done, Block}, NewState};
         _ ->
-            {reply, Item, sending_remaining, NewState}
+            {reply, {chunk, Block}, sending_remaining, NewState}
     end.
 
 %% @private
@@ -321,6 +348,37 @@ code_change(_OldVsn, StateName, State, _Extra) -> {ok, StateName, State}.
 %% ===================================================================
 %% Internal functions
 %% ===================================================================
+
+-spec block_sorter({pos_integer(), term()}, {pos_integer(), term()}) -> boolean().
+block_sorter({A, _}, {B, _}) ->
+    A < B.
+
+-spec read_blocks(binary(), binary(), binary(), [pid()], pos_integer(), pos_integer()) ->
+                         {pos_integer(), [pid()]}.
+read_blocks(Bucket, Key, UUID, FreeReaders, NextBlock, TotalBlocks) ->
+    read_blocks(Bucket,
+                binary_to_list(Key),
+                UUID,
+                FreeReaders,
+                NextBlock,
+                TotalBlocks,
+                0).
+
+-spec read_blocks(binary(),
+                  binary(),
+                  binary(),
+                  [pid()],
+                  pos_integer(),
+                  pos_integer(),
+                  non_neg_integer()) ->
+                         {pos_integer(), [pid()]}.
+read_blocks(_Bucket, _Key, _UUID, [], _, _, ReadsRequested) ->
+    {ReadsRequested, []};
+read_blocks(_Bucket, _Key, _UUID, FreeReaders, _TotalBlocks, _TotalBlocks, ReadsRequested) ->
+    {ReadsRequested, FreeReaders};
+read_blocks(Bucket, Key, UUID, [ReaderPid | RestFreeReaders], NextBlock, _TotalBlocks, ReadsRequested) ->
+    riak_moss_block_server:get_block(ReaderPid, Bucket, Key, UUID, NextBlock),
+    read_blocks(Bucket, Key, UUID, RestFreeReaders, NextBlock+1, _TotalBlocks, ReadsRequested+1).
 
 %% @private
 %% @doc Start a number of riak_moss_block_server processes
