@@ -193,7 +193,9 @@ content_types_provided(RD, Ctx) ->
     end.
 
 -spec produce_body(term(), term()) -> {iolist()|binary(), term(), term()}.
-produce_body(RD, #key_context{context=#context{requested_perm='READ_ACP'}}=KeyCtx) ->
+produce_body(RD, #key_context{get_fsm_pid=GetFsmPid,
+                              context=#context{requested_perm='READ_ACP'}}=KeyCtx) ->
+    riak_moss_get_fsm:stop(GetFsmPid),
     {riak_moss_acl_utils:empty_acl_xml(), RD, KeyCtx};
 produce_body(RD, #key_context{get_fsm_pid=GetFsmPid, doc_metadata=DocMeta}=Ctx) ->
     ContentLength = dict:fetch("content-length", DocMeta),
@@ -204,14 +206,18 @@ produce_body(RD, #key_context{get_fsm_pid=GetFsmPid, doc_metadata=DocMeta}=Ctx) 
                         [{"ETag",  ETag},
                          {"Last-Modified", dict:fetch("last-modified", DocMeta)}
                         ]),
-    riak_moss_get_fsm:continue(GetFsmPid),
-    case ContentLength of
-        0 ->
-            {<<>>, NewRQ, Ctx};
-        _ ->
-            {{known_length_stream, ContentLength, {<<>>, fun() -> riak_moss_wm_utils:streaming_get(GetFsmPid) end}},
-             NewRQ, Ctx}
-    end.
+    Method = wrq:method(RD),
+    case Method == 'HEAD'
+        orelse
+    ContentLength == 0 of
+        true ->
+            riak_moss_get_fsm:stop(GetFsmPid),
+            StreamFun = fun() -> {<<>>, done} end;
+        false ->
+            riak_moss_get_fsm:continue(GetFsmPid),
+            StreamFun = fun() -> riak_moss_wm_utils:streaming_get(GetFsmPid) end
+    end,
+    {{known_length_stream, ContentLength, {<<>>, StreamFun}}, NewRQ, Ctx}.
 
 %% @doc Callback for deleting an object.
 -spec delete_resource(term(), term()) -> boolean().
