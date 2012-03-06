@@ -62,6 +62,10 @@ get_chunk(Pid, Bucket, Key, UUID, ChunkSeq) ->
 %% @doc Initialize the server.
 -spec init([pid()] | {test, [pid()]}) -> {ok, state()} | {stop, term()}.
 init([CallerPid]) ->
+    %% Ensure the the terminate callback is called if the
+    %% supervisor shuts us down.
+    process_flag(trap_exit, true),
+
     %% Get a connection to riak
     case riak_moss_utils:riak_connection() of
         {ok, RiakPid} ->
@@ -105,7 +109,7 @@ handle_info(_Info, State) ->
 %% @doc Unused.
 -spec terminate(term(), state()) -> ok.
 terminate(_Reason, #state{riakc_pid=RiakcPid}) ->
-    riakc_pb_socket:stop(RiakcPid).
+    riak_moss_utils:close_riak_connection(RiakcPid).
 
 %% @doc Unused.
 -spec code_change(term(), state(), term()) ->
