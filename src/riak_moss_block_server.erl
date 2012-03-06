@@ -12,7 +12,8 @@
 -export([start_link/0,
          get_block/5,
          put_block/6,
-         delete_block/5]).
+         delete_block/5,
+         stop/1]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -51,6 +52,9 @@ put_block(Pid, Bucket, Key, UUID, BlockNumber, Value) ->
 -spec delete_block(pid(), binary(), binary(), binary(), pos_integer()) -> ok.
 delete_block(Pid, Bucket, Key, UUID, BlockNumber) ->
     gen_server:cast(Pid, {delete_block, self(), Bucket, Key, UUID, BlockNumber}).
+
+stop(Pid) ->
+    gen_server:call(Pid, stop).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -91,9 +95,8 @@ init([]) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_call(_Request, _From, State) ->
-    Reply = ok,
-    {reply, Reply, State}.
+handle_call(stop, _From, State) ->
+    {stop, normal, ok, State}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -161,7 +164,8 @@ handle_info(_Info, State) ->
 %% @spec terminate(Reason, State) -> void()
 %% @end
 %%--------------------------------------------------------------------
-terminate(_Reason, _State) ->
+terminate(_Reason, #state{riakc_pid=RiakcPid}) ->
+    riak_moss_utils:close_riak_connection(RiakcPid),
     ok.
 
 %%--------------------------------------------------------------------

@@ -267,10 +267,10 @@ handle_info(_Info, StateName, State) ->
 %%--------------------------------------------------------------------
 %%
 %%--------------------------------------------------------------------
-terminate(_Reason, _StateName, _State) ->
-    %% TODO:
-    %% need to stop the manifest fsm
-    %% and the blocks gen_servers
+terminate(_Reason, _StateName, #state{mani_pid=ManiPid,
+                                      all_writer_pids=BlockServerPids}) ->
+    riak_moss_manifest_fsm:stop(ManiPid),
+    [riak_moss_block_server:stop(P) || P <- BlockServerPids],
     ok.
 
 %%--------------------------------------------------------------------
