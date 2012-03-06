@@ -173,10 +173,6 @@ all_received({block_written, BlockID, WriterPid}, State=#state{mani_pid=ManiPid}
                 ReplyPid ->
                     %% reply with the final
                     %% manifest
-                    %% TODO:
-                    %% The reply shouldn't
-                    %% be 'ok', it should
-                    %% be the final manifest
                     case riak_moss_manifest_fsm:update_manifest_with_confirmation(ManiPid, Manifest) of
                         ok ->
                             gen_fsm:reply(ReplyPid, {ok, Manifest}),
