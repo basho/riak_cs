@@ -93,6 +93,7 @@ block_written(Pid, BlockID) ->
 %% might be implemented. Does it actually
 %% make things more confusing?
 init([Bucket, Key, ContentLength, ContentType, Metadata, Timeout]) ->
+    process_flag(trap_exit, true),
     {ok, prepare, #state{bucket=Bucket,
                          key=Key,
                          metadata=Metadata,
