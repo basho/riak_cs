@@ -23,7 +23,8 @@
          get_active_manifest/1,
          add_new_manifest/2,
          update_manifest/2,
-         update_manifest_with_confirmation/2]).
+         update_manifest_with_confirmation/2,
+         stop/1]).
 
 %% gen_fsm callbacks
 -export([init/1,
@@ -88,6 +89,9 @@ update_manifest(Pid, Manifest) ->
 
 update_manifest_with_confirmation(Pid, Manifest) ->
     gen_fsm:sync_send_event(Pid, {update_manifest_with_confirmation, Manifest}).
+
+stop(Pid) ->
+    gen_fsm:sync_send_all_state_event(Pid, stop).
 
 %%%===================================================================
 %%% gen_fsm callbacks
@@ -174,14 +178,7 @@ waiting_update_command({update_manifest, Manifest}, State=#state{riakc_pid=Riakc
     %% anything to make sure
     %% this call succeeded
     riakc_pb_socket:put(RiakcPid, RiakObject),
-    {next_state, waiting_update_command, State#state{riak_object=undefined, manifests=undefined}};
-waiting_update_command(stop, State) ->
-    %% TODO:
-    %% need to revisit this and remind myself
-    %% the best way to deal with this
-    %% w/r/t supervisors, and whether
-    %% it's necessary to even use a supervisor
-    {stop, normal, State}.
+    {next_state, waiting_update_command, State#state{riak_object=undefined, manifests=undefined}}.
 
 
 %%--------------------------------------------------------------------
@@ -267,9 +264,9 @@ handle_event(_Event, StateName, State) ->
 %%                   {stop, Reason, Reply, NewState}
 %% @end
 %%--------------------------------------------------------------------
-handle_sync_event(_Event, _From, StateName, State) ->
+handle_sync_event(stop, _From, _StateName, State) ->
     Reply = ok,
-    {reply, Reply, StateName, State}.
+    {stop, normal, Reply, State}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -298,7 +295,8 @@ handle_info(_Info, StateName, State) ->
 %% @spec terminate(Reason, StateName, State) -> void()
 %% @end
 %%--------------------------------------------------------------------
-terminate(_Reason, _StateName, _State) ->
+terminate(_Reason, _StateName, #state{riakc_pid=RiakcPid}) ->
+    riak_moss_utils:close_riak_connection(RiakcPid),
     ok.
 
 %%--------------------------------------------------------------------
