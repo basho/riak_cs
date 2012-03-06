@@ -113,9 +113,13 @@ forbidden(RD, Ctx=#context{auth_bypass=AuthBypass}) ->
                     %% Anonymous access not allowed, deny access
                     riak_moss_s3_response:api_error(access_denied, RD, Ctx)
             end;
+        {error, notfound} ->
+            %% Access not allowed, deny access
+            riak_moss_s3_response:api_error(invalid_access_key_id, RD, Ctx);
         {error, Reason} ->
+            %% Access not allowed, deny access and log the reason
             lager:error("Retrieval of user record for ~p failed. Reason: ~p", [KeyId, Reason]),
-            riak_moss_s3_response:api_error(user_record_unavailable, RD, Ctx)
+            riak_moss_s3_response:api_error(invalid_access_key_id, RD, Ctx)
     end.
 
 %% @doc Get the list of methods this resource supports.
