@@ -253,13 +253,13 @@ created(#lfs_manifest{created=Created}) ->
 is_active(#lfs_manifest{active=A}) ->
     A.
 
-%% @doc Default object/ring hashing fun, direct passthrough of bkey.
 -spec chash_moss_keyfun({binary(), binary()}) -> binary().
 chash_moss_keyfun({<<"b:", _/binary>> = Bucket,
                    <<UUID:?UUID_BYTES/binary, BlockNum:?BLOCK_FIELD_SIZE>>}) ->
     Contig = BlockNum div ?CONTIGUOUS_BLOCKS,
     chash:key_of({Bucket, <<UUID/binary, Contig:?BLOCK_FIELD_SIZE>>});
 chash_moss_keyfun({Bucket, Key}) ->
+    %% Default object/ring hashing fun, direct passthrough of bkey.
     chash:key_of({Bucket, Key}).
 
 %% This is a temp hack .. I'd like to see the druuid:v4() return the
