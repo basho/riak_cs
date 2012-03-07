@@ -39,8 +39,9 @@ test_is_manifest() ->
                                          <<"bar">>,
                                          <<"uuid">>,
                                          1024,
+                                         <<"ctype">>,
                                          <<"2522ccc1ca2a458eca94a9576d4b71c2">>,
-                                         dict:new()),
+                                         orddict:new()),
     ?assert(riak_moss_lfs_utils:is_manifest(term_to_binary(Manifest))).
 
 test_block_count_1() ->
