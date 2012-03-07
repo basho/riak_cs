@@ -274,7 +274,8 @@ accept_body(RD, Ctx=#key_context{bucket=Bucket,
     %% should be pulled out of the
     %% headers
     Metadata = orddict:new(),
-    Args = [Bucket, Key, Size, ContentType, Metadata, 60000],
+    Args = [Bucket, list_to_binary(Key), Size, list_to_binary(ContentType),
+        Metadata, timer:seconds(60), self()],
     {ok, Pid} = riak_moss_put_fsm_sup:start_put_fsm(node(), Args),
     accept_streambody(RD, Ctx, Pid, wrq:stream_req_body(RD, riak_moss_lfs_utils:block_size())).
 
