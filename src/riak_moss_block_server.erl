@@ -72,7 +72,6 @@ stop(Pid) ->
 %% @end
 %%--------------------------------------------------------------------
 init([]) ->
-    process_flag(trap_exit, true),
     case riak_moss_utils:riak_connection() of
         {ok, RiakPid} ->
             {ok, #state{riakc_pid=RiakPid}};

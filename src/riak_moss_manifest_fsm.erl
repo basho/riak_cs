@@ -114,14 +114,12 @@ init([Bucket, Key]) ->
     %% purposely have the timeout happen
     %% so that we get called in the prepare
     %% state
-    process_flag(trap_exit, true),
     {ok, prepare, #state{bucket=Bucket, key=Key}, 0};
 init([test, Bucket, Key]) ->
     %% skip the prepare phase
     %% and jump right into waiting command,
     %% creating the "mock" riakc_pb_socket
     %% gen_server here
-    process_flag(trap_exit, true),
     {ok, Pid} = riakc_pb_socket_fake:start_link(),
     {ok, waiting_command, #state{bucket=Bucket, key=Key, riakc_pid=Pid}}.
 

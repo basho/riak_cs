@@ -13,7 +13,7 @@
 -include("riak_moss.hrl").
 
 %% API
--export([start_link/6,
+-export([start_link/7,
          augment_data/2,
          block_written/2,
          finalize/1]).
@@ -37,6 +37,7 @@
 -define(EMPTYORDSET, ordsets:new()).
 
 -record(state, {timeout :: pos_integer(),
+                caller :: pid(),
                 md5 :: binary(),
                 reply_pid :: pid(),
                 mani_pid :: pid(),
@@ -65,8 +66,8 @@
 %% @spec start_link() -> {ok, Pid} | ignore | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
-start_link(Bucket, Key, ContentLength, ContentType, Metadata, Timeout) ->
-    Args = [Bucket, Key, ContentLength, ContentType, Metadata, Timeout],
+start_link(Bucket, Key, ContentLength, ContentType, Metadata, Timeout, Caller) ->
+    Args = [Bucket, Key, ContentLength, ContentType, Metadata, Timeout, Caller],
     gen_fsm:start_link(?MODULE, Args, []).
 
 augment_data(Pid, Data) ->
@@ -92,10 +93,20 @@ block_written(Pid, BlockID) ->
 %% so that I can be thinking about how it
 %% might be implemented. Does it actually
 %% make things more confusing?
-init([Bucket, Key, ContentLength, ContentType, Metadata, Timeout]) ->
-    process_flag(trap_exit, true),
+init([Bucket, Key, ContentLength, ContentType, Metadata, Timeout, Caller]) ->
+    %% We need to do this (the monitor) for two reasons
+    %% 1. We're started through a supervisor, so the
+    %%    proc that actually intends to start us isn't
+    %%    linked to us.
+    %% 2. Even if we didn't use a supervisor, the webmachine
+    %%    process uses exit(..., normal), even on abnormal
+    %%    terminations, so this process would still
+    %%    live.
+    CallerRef = erlang:monitor(process, Caller),
+
     {ok, prepare, #state{bucket=Bucket,
                          key=Key,
+                         caller=CallerRef,
                          metadata=Metadata,
                          content_length=ContentLength,
                          content_type=ContentType,
@@ -262,8 +273,8 @@ handle_info(save_manifest, StateName, State=#state{mani_pid=ManiPid,
 %% TODO:
 %% add a clause for handling down
 %% messages from the blocks gen_servers
-handle_info(_Info, StateName, State) ->
-    {next_state, StateName, State}.
+handle_info({'DOWN', CallerRef, process, _Pid, Reason}, _StateName, State=#state{caller=CallerRef}) ->
+    {stop, Reason, State}.
 
 %%--------------------------------------------------------------------
 %%
