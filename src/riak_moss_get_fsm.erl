@@ -60,8 +60,6 @@
                 free_readers :: [pid()],
                 all_reader_pids :: [pid()]}).
 
--define(BLOCK_FETCH_CONCURRENCY, 1).
-
 %% ===================================================================
 %% Public API
 %% ===================================================================
@@ -127,7 +125,7 @@ prepare(timeout, #state{bucket=Bucket, key=Key}=State) ->
     {ok, ManiPid} = riak_moss_manifest_fsm:start_link(Bucket, Key),
     case riak_moss_manifest_fsm:get_active_manifest(ManiPid) of
         {ok, Manifest} ->
-            ReaderPids = start_block_servers(?BLOCK_FETCH_CONCURRENCY),
+            ReaderPids = start_block_servers(riak_moss_lfs_utils:fetch_concurrency()),
             NewState = State#state{manifest=Manifest,
                                    mani_fsm_pid=ManiPid,
                                    all_reader_pids=ReaderPids,

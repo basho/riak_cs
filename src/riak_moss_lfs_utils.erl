@@ -23,7 +23,7 @@
          block_name/3,
          block_name_to_term/1,
          block_size/0,
-         max_content_len/0,
+         fetch_concurrency/0,
          safe_block_size_from_manifest/1,
          initial_blocks/2,
          block_sequences_for_manifest/1,
@@ -70,19 +70,6 @@ block_size() ->
             BlockSize
     end.
 
-<<<<<<< HEAD
-%% @doc Return the configured block size
--spec max_content_len() -> pos_integer().
-max_content_len() ->
-    case application:get_env(riak_moss, max_content_length) of
-        undefined ->
-            ?DEFAULT_MAX_CONTENT_LENGTH;
-        {ok, MaxContentLen} ->
-            MaxContentLen
-    end.
-
-=======
->>>>>>> Remove getter/setter funcs from riak_moss_lfs_utils
 safe_block_size_from_manifest(#lfs_manifest_v2{block_size=BlockSize}) ->
     case BlockSize of
         undefined ->
@@ -100,6 +87,16 @@ initial_blocks(ContentLength, BlockSize) ->
 block_sequences_for_manifest(#lfs_manifest_v2{content_length=ContentLength}=Manifest) ->
     SafeBlockSize = safe_block_size_from_manifest(Manifest),
     initial_blocks(ContentLength, SafeBlockSize).
+
+%% @doc Return the configured file block fetch concurrency .
+-spec fetch_concurrency() -> pos_integer().
+fetch_concurrency() ->
+    case application:get_env(riak_moss, fetch_concurrency) of
+        undefined ->
+            ?DEFAULT_FETCH_CONCURRENCY;
+        {ok, Concurrency} ->
+            Concurrency
+    end.
 
 %% @doc Returns true if Value is
 %%      a manifest record
@@ -138,19 +135,7 @@ new_manifest(Bucket, FileName, UUID, ContentLength, ContentType, ContentMd5, Met
 remove_write_block(Manifest, Chunk) ->
     Remaining = Manifest#lfs_manifest_v2.write_blocks_remaining,
     Updated = ordsets:del_element(Chunk, Remaining),
-<<<<<<< HEAD
-    ManiState = case Updated of
-        [] ->
-            active;
-        _ ->
-            writing
-        end,
-    Manifest#lfs_manifest_v2{write_blocks_remaining=Updated,
-                             state=ManiState,
-                             last_block_written_time=erlang:now()}.
-=======
     Manifest#lfs_manifest_v2{write_blocks_remaining=Updated}.
->>>>>>> Remove getter/setter funcs from riak_moss_lfs_utils
 
 sorted_blocks_remaining(#lfs_manifest_v2{write_blocks_remaining=Remaining}) ->
     lists:sort(sets:to_list(Remaining)).
