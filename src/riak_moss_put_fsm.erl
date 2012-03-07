@@ -173,7 +173,8 @@ full({block_written, BlockID, WriterPid}, State=#state{reply_pid=Waiter}) ->
     gen_fsm:reply(Waiter, ok),
     {next_state, not_full, NewState#state{reply_pid=undefined}}.
 
-all_received({block_written, BlockID, WriterPid}, State=#state{mani_pid=ManiPid}) ->
+all_received({block_written, BlockID, WriterPid}, State=#state{mani_pid=ManiPid,
+                                                               timer_ref=TimerRef}) ->
 
     NewState = state_from_block_written(BlockID, WriterPid, State),
     Manifest = NewState#state.manifest,
@@ -185,6 +186,7 @@ all_received({block_written, BlockID, WriterPid}, State=#state{mani_pid=ManiPid}
                 ReplyPid ->
                     %% reply with the final
                     %% manifest
+                    timer:cancel(TimerRef),
                     case riak_moss_manifest_fsm:update_manifest_with_confirmation(ManiPid, Manifest) of
                         ok ->
                             gen_fsm:reply(ReplyPid, {ok, Manifest}),
@@ -230,9 +232,11 @@ all_received(finalize, From, State) ->
     %%    later with the finished manifest
     {next_state, all_received, State#state{reply_pid=From}}.
 
-done(finalize, _From, State=#state{manifest=Manifest, mani_pid=ManiPid}) ->
+done(finalize, _From, State=#state{manifest=Manifest, mani_pid=ManiPid,
+                                   timer_ref=TimerRef}) ->
     %% 1. reply immediately
     %%    with the finished manifest
+    timer:cancel(TimerRef),
     case riak_moss_manifest_fsm:update_manifest_with_confirmation(ManiPid, Manifest) of
         ok ->
             {stop, normal, {ok, Manifest}, State};
