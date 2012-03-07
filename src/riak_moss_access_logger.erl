@@ -47,7 +47,7 @@
 
 %% API
 -export([start_link/1, log_access/1]).
--export([set_user/2, set_stat/3]).
+-export([set_user/2, expect_bytes_out/2, set_bytes_in/2]).
 -export([flush/1]).
 
 %% gen_server callbacks
@@ -71,6 +71,8 @@
 %%%===================================================================
 
 -define(STAT(Name), {access, Name}).
+-define(EXPECT_BYTES_OUT, expect_bytes_out).
+-define(BYTES_IN, bytes_in).
 
 %% @doc Set the MOSS user for this request.  Stats are not recorded if
 %% the user is not set.
@@ -82,10 +84,16 @@ set_user(#moss_user{key_id=KeyID}, RD) ->
 set_user(unknown, RD) ->
     RD.
 
-%% @doc Set the value of the named stat for this request.
-set_stat(Name, Value, RD) when (is_atom(Name) orelse is_binary(Name)),
-                               is_number(Value) ->
-    wrq:add_note(?STAT(Name), Value, RD).
+%% @doc Tell the logger that this resource expected to send `Count'
+%% bytes, such that it can classify the count it actually receives as
+%% complete or incomplete.
+expect_bytes_out(Count, RD) when is_integer(Count) ->
+    wrq:add_note(?EXPECT_BYTES_OUT, Count, RD).
+
+%% @doc Note that this resource received `Count' bytes from the
+%% request body.
+set_bytes_in(Count, RD) when is_integer(Count) ->
+    wrq:add_note(?BYTES_IN, Count, RD).
 
 %%%===================================================================
 %%% Server API (Final Logging)
@@ -311,18 +319,94 @@ do_archive(#state{period=P, table=T, current=C}=State) ->
 -spec access_record(#wm_log_data{})
          -> {ok, {riak_moss:user_key(), [{atom()|binary(), number()}]}}
           | ignore.
-access_record(#wm_log_data{response_length=BytesOut, notes=Notes}) ->
-    case lists:keytake(?STAT(user), 1, Notes) of
-        {value, {_, Key}, OtherNotes} ->
-            {ok, {Key, [{bytes_out, BytesOut}|access_notes(OtherNotes)]}};
-        _ ->
+access_record(#wm_log_data{notes=Notes}=Log) ->
+    case lists:keyfind(?STAT(user), 1, Notes) of
+        {?STAT(user), Key} ->
+            {ok, {Key, {operation(Log), stats(Log)}}};
+        false ->
             ignore
     end.
 
-%% @doc Find just the access notes in the list of notes extracted from
-%% the WM log data.
--spec access_notes(list()) -> [{atom()|binary(), number()}].
-access_notes(Notes) ->
-    [ {K, V} || {?STAT(K), V} <- Notes,
-                (is_atom(K) orelse is_binary(K)),
-                is_number(V) ].
+operation(#wm_log_data{resource_module=riak_moss_wm_bucket,
+                       path=Path,
+                       method=Method}) ->
+    case is_acl(Method, Path) of
+        true ->
+            case Method of
+                'GET'  -> <<"BucketReadACL">>;
+                'HEAD' -> <<"BucketStatACL">>;
+                'PUT'  -> <<"BucketWriteACL">>;
+                _      -> <<"BucketUnknownACL">>
+            end;
+        false ->
+            case Method of
+                'GET'  -> <<"BucketRead">>;
+                'HEAD' -> <<"BucketStat">>;
+                'PUT'  -> <<"BucketCreate">>;
+                'DELETE' -> <<"BucketDelete">>;
+                _        -> <<"BucketUnknown">>
+            end
+    end;
+operation(#wm_log_data{resource_module=riak_moss_wm_key,
+                       path=Path,
+                       method=Method}) ->
+    case is_acl(Method, Path) of
+        true ->
+            case Method of
+                'GET'  -> <<"KeyReadACL">>;
+                'HEAD' -> <<"KeyStatACL">>;
+                'PUT'  -> <<"KeyWriteACL">>;
+                _      -> <<"KeyUnknownACL">>
+            end;
+        false ->
+            case Method of
+                'GET'  -> <<"KeyRead">>;
+                'HEAD' -> <<"KeyStat">>;
+                'PUT'  -> <<"KeyWrite">>;
+                'DELETE' -> <<"KeyDelete">>;
+                _        -> <<"KeyUnknown">>
+            end
+    end;
+operation(#wm_log_data{method=Method}) ->
+    iolist_to_binary([<<"Unknown">>, atom_to_binary(Method, latin1)]).
+
+is_acl(Method, Path) ->
+    {_, Query, _} = mochiweb_util:urlsplit_path(Path),
+    Params = mochiweb_util:parse_qs(Query),
+    case riak_moss_acl_utils:requested_access(Method, Params) of
+        'READ_ACP'  -> true;
+        'WRITE_ACP' -> true;
+        _           -> false
+    end.
+
+stats(#wm_log_data{response_code=Code,
+                   notes=Notes,
+                   headers=Headers,
+                   response_length=Length}) ->
+    Prefix = if Code >= 500 -> <<"SystemError">>;
+                Code >= 400 -> <<"UserError">>;
+                true        -> <<"">>
+             end,
+    BytesIn = case lists:keyfind(?BYTES_IN, 1, Notes) of
+                  {?BYTES_IN, BI} -> BI;
+                  false ->
+                      CLS = mochiweb_headers:get_value(
+                              "content-length", Headers),
+                      case catch list_to_integer(CLS) of
+                          CL when is_integer(CL) -> CL;
+                          _                      -> 0
+                      end
+              end,
+    BytesOutType = case lists:keyfind(?EXPECT_BYTES_OUT, 1, Notes) of
+                       {?EXPECT_BYTES_OUT, EL} when EL /= Length ->
+                           <<"Incomplete">>;
+                       false ->
+                           <<"">>
+                   end,
+    %% KEEP THIS IN ORDER, so that it's an orddict
+    lists:flatten(
+      [[{iolist_to_binary([Prefix,<<"BytesIn">>]), BytesIn}
+        || BytesIn > 0],
+       [{iolist_to_binary([Prefix,<<"BytesOut">>,BytesOutType]), Length}
+        || Length > 0],
+       {iolist_to_binary([Prefix,<<"Count">>]), 1}]).

@@ -291,7 +291,7 @@ accept_streambody(RD, Ctx=#key_context{}, Pid, {Data, Next}) ->
 finalize_request(RD, #key_context{size=S}=Ctx, Pid) ->
     %% TODO: probably want something that counts actual bytes uploaded
     %% instead, to record partial/aborted uploads
-    AccessRD = riak_moss_access_logger:set_stat(in_bytes, S, RD),
+    AccessRD = riak_moss_access_logger:set_bytes_in(S, RD),
 
     %Metadata = dict:from_list([{<<"content-type">>, CType}]),
     {ok, Manifest} = riak_moss_put_fsm:finalize(Pid),

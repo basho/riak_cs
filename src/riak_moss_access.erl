@@ -74,14 +74,21 @@ make_object(User, Accesses, {Start, End}) ->
                    [{?NODEKEY, node()}|Aggregate]).
 
 aggregate_accesses(Accesses) ->
-    lists:foldl(fun merge_stats/2, [], Accesses).
+    Merged = lists:foldl(fun merge_ops/2, [], Accesses),
+    %% now mochijson-ify
+    [ {OpName, {struct, Stats}} || {OpName, Stats} <- Merged ].
 
+merge_ops({OpName, Stats}, Acc) ->
+    case lists:keytake(OpName, 1, Acc) of
+        {value, {OpName, Existing}, RemAcc} ->
+            [{OpName, merge_stats(Stats, Existing)}|RemAcc];
+        false ->
+            [{OpName, Stats}|Acc]
+    end.
+
+%% `Stats' had better be an orddict
 merge_stats(Stats, Acc) ->
-    %% TODO: orddict conversion could be omitted if Stats was already
-    %% an orddict
-    orddict:merge(fun(_K, V1, V2) -> V1+V2 end,
-                  Acc,
-                  orddict:from_list(Stats)).
+    orddict:merge(fun(_K, V1, V2) -> V1+V2 end, Acc, Stats).
 
 %% @doc Produce a usage compilation for the given `User' between
 %% `Start' and `End' times, inclusive.  The result is an orddict in
@@ -142,8 +149,10 @@ make_object_test() ->
 %% sum of each access metric plus start and end times
 make_object_prop() ->
     ?FORALL(Accesses,
-            list(access_g()),
+            list({op_g(), access_g()}),
             begin
+                application:set_env(riak_moss, access_archive_period, 60000),
+
                 %% trust rts:make_object_prop to check all of the
                 %% bucket/key/time/etc. properties
                 User = <<"AAABBBCCCDDDEEEFFF">>,
@@ -159,12 +168,14 @@ make_object_prop() ->
                 {struct, MJ} = mochijson2:decode(
                                  riakc_obj:get_update_value(Obj)),
 
+                Paired = [{{struct, sum_access(K, Accesses)},
+                           proplists:get_value(K, MJ)}
+                          || K <- Unique],
+
                 ?WHENFAIL(
-                   io:format(user, "keys: ~p~n", [MJ]),
-                   lists:all(fun({X,Y}) -> X == Y end,
-                             [{sum_access(K, Accesses),
-                               proplists:get_value(K, MJ)}
-                              || K <- Unique]))
+                   io:format(user, "keys: ~p~nAccesses: ~p~nPaired: ~p~n",
+                             [MJ, Accesses, Paired]),
+                   [] == [ {X, Y} || {X, Y} <- Paired, X =/= Y ])
             end).
 
 %% create something vaguely user-key-ish; not actually a good
@@ -174,24 +185,28 @@ make_object_prop() ->
 user_key_g() ->
     ?LET(L, ?SUCHTHAT(X, list(char()), X /= []), list_to_binary(L)).
 
+op_g() ->
+    elements([<<"BucketRead">>, <<"BucketCreate">>,
+              <<"KeyRead">>, <<"KeyReadACL">>]).
+
 %% create an access proplist
 access_g() ->
     ?LET(L, list(access_field_g()), lists:ukeysort(1, L)).
 
 %% create one access metric
 access_field_g() ->
-    {elements([bytes_in, bytes_out, <<"dummy1">>, dummy2]),
+    {elements([<<"Count">>, <<"SystemErrorCount">>,
+               <<"BytesOut">>, <<"BytesOutIncomplete">>]),
      oneof([int(), largeint()])}.
 
 %% sum a given access metric K, given a list of accesses
 sum_access(K, Accesses) ->
-    lists:foldl(fun(Access, Sum) ->
-                        Sum+proplists:get_value(
-                              K, Access, proplists:get_value(
-                                           binary_to_atom(K, latin1),
-                                           Access, 0))
+    lists:foldl(fun({MK, Access}, Sum) when K == MK ->
+                        orddict:merge(fun(_K, V1, V2) -> V1+V2 end,
+                                      Access, Sum);
+                   (_, Sum) -> Sum
                 end,
-                0,
+                [],
                 Accesses).
 
 -endif. % EQC

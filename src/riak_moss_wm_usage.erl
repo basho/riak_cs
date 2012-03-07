@@ -24,12 +24,16 @@
 %% {"access":[{"node":"riak_moss@127.0.0.1",
 %%             "samples":[{"start_time":"20120113T194510Z",
 %%                         "end_time":"20120113T194520Z",
-%%                         "bytes_out":22,
-%%                         "bytes_in":44},
+%%                         "KeyRead":{"Count":1,
+%%                                    "BytesOut":22},
+%%                         "KeyWrite":{"Count":2,
+%%                                     "BytesIn":44},
 %%                        {"start_time":"20120113T194520Z",
 %%                         "end_time":"20120113T194530Z",
-%%                         "bytes_out":66,
-%%                         "bytes_in":88}
+%%                         "KeyRead":{"Count":3,
+%%                                    "BytesOut":66},
+%%                         "KeyWrite":{"Count":4,
+%%                                     "BytesIn":88}
 %%                       ]}
 %%           ],
 %%  "storage":"not_requested"}
@@ -42,12 +46,24 @@
 %%     <Access>
 %%       <Node name="riak_moss@127.0.0.1">
 %%         <Sample start="20120113T194510Z" end="20120113T194520Z">
-%%           <BytesOut>22</BytesOut>
-%%           <BytesIn>44</BytesIn>
+%%           <Operation type="KeyRead">
+%%             <Count>1</Count>
+%%             <BytesOut>22</BytesOut>
+%%           </Operation>
+%%           <Operation type="KeyWrite">
+%%             <Count>2</Count>
+%%             <BytesIn>44</BytesIn>
+%%           </Operation>
 %%         </Sample>
 %%         <Sample start="20120113T194520Z" end="20120113T194530Z">
-%%           <BytesOut>66</BytesOut>
-%%           <BytesIn>88</BytesIn>
+%%           <Operation type="KeyRead">
+%%             <Count>3</Count>
+%%             <BytesOut>66</BytesOut>
+%%           </Operation>
+%%           <Operation type="KeyWrite">
+%%             <Count>4</Count>
+%%             <BytesIn>88</BytesIn>
+%%           </Operation>
 %%         </Sample>
 %%       </Node>
 %%     </Access>
@@ -197,7 +213,9 @@ xml_sample(Sample) ->
         lists:keytake(?END_TIME, 1, SampleS),
 
     {'Sample', [{start, S}, {'end', E}],
-     [{xml_name(K), [mochinum:digits(V)]} || {K, V} <- Rest]}.
+     [{'Operation', [{type, OpName}],
+       [{xml_name(K), [mochinum:digits(V)]} || {K, V} <- Stats]}
+      || {OpName, {struct, Stats}} <- Rest ]}.
 
 xml_sample_error({{Start, End}, Reason}) ->
     %% cheat to make errors structured exactly like samples
