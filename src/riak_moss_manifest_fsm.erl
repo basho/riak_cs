@@ -23,6 +23,7 @@
          get_active_manifest/1,
          add_new_manifest/2,
          update_manifest/2,
+         mark_active_as_pending_delete/1,
          update_manifest_with_confirmation/2,
          stop/1]).
 
@@ -83,6 +84,9 @@ get_active_manifest(Pid) ->
 
 add_new_manifest(Pid, Manifest) ->
     gen_fsm:send_event(Pid, {add_new_manifest, Manifest}).
+
+mark_active_as_pending_delete(Pid) ->
+    gen_fsm:sync_send_event(Pid, mark_active_as_pending_delete).
 
 update_manifest(Pid, Manifest) ->
     gen_fsm:send_event(Pid, {update_manifest, Manifest}).
@@ -221,6 +225,25 @@ waiting_command(get_active_manifest, _From, State=#state{riakc_pid=RiakcPid,
             {reply, Reply, waiting_update_command, NewState};
         {error, notfound}=NotFound ->
             {reply, NotFound, waiting_update_command, State}
+    end;
+waiting_command(mark_active_as_pending_delete, _From, State=#state{riakc_pid=RiakcPid,
+                                                                   bucket=Bucket,
+                                                                   key=Key}) ->
+    case get_manifests(RiakcPid, Bucket, Key) of
+        {ok, RiakObject, Resolved} ->
+            Marked = orddict:map(fun(_Key, Value) ->
+                        if
+                            Value#lfs_manifest_v2.state == active ->
+                                Value#lfs_manifest_v2{state=pending_delete,
+                                                      delete_marked_time=erlang:now()};
+                            true ->
+                                Value
+                        end end, Resolved),
+            NewRiakObject = riakc_obj:update_value(RiakObject, term_to_binary(Marked)),
+            riakc_pb_socket:put(RiakcPid, NewRiakObject),
+            {stop, normal, ok, State};
+        {error, notfound}=NotFound ->
+            {stop, normal, NotFound, State}
     end.
 
 waiting_update_command({update_manifest_with_confirmation, Manifest}, _From, 
@@ -341,7 +364,8 @@ get_and_update(RiakcPid, Manifest, Bucket, Key) ->
     ObjectToWrite = case get_manifests(RiakcPid, Bucket, Key) of
         {ok, RiakObject, Manifests} ->
             NewManiAdded = riak_moss_manifest_resolution:resolve([WrappedManifest, Manifests]),
-            riakc_obj:update_value(RiakObject, term_to_binary(NewManiAdded));
+            OverriddenMarkedAsPendingDelete = riak_moss_manifest:mark_overridden(NewManiAdded),
+            riakc_obj:update_value(RiakObject, term_to_binary(OverriddenMarkedAsPendingDelete));
         {error, notfound} ->
             ManifestBucket = riak_moss_utils:to_bucket_name(objects, Bucket),
             riakc_obj:new(ManifestBucket, Key, term_to_binary(WrappedManifest))

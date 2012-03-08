@@ -13,6 +13,7 @@
 %% export Public API
 -export([new/2,
          active_manifest/1,
+         mark_overridden/1,
          prune/1]).
 
 %%%===================================================================
@@ -37,6 +38,29 @@ active_manifest(Manifests) ->
         Manifest ->
             {ok, Manifest}
     end.
+
+%% @doc Mark all active manifests
+%% that are not "the most active"
+%% as pending_delete
+-spec mark_overridden(term()) -> term().
+mark_overridden(Manifests) ->
+    case active_manifest(Manifests) of
+        {error, no_active_manifest} ->
+            Manifests;
+        {ok, Active} ->
+            orddict:map(fun(_Key, Value) ->
+                    if
+                        Value == Active ->
+                            Active;
+                        Value#lfs_manifest_v2.state == active ->
+                            Value#lfs_manifest_v2{state=pending_delete,
+                                                  delete_marked_time=erlang:now()};
+                        true ->
+                            Value
+                    end end,
+                    Manifests)
+    end.
+
 
 %% @doc Return a new orddict of Manifests
 %% with any deleted and need-to-be-pruned
