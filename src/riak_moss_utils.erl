@@ -18,7 +18,7 @@
          from_bucket_name/1,
          get_admin_creds/0,
          get_buckets/1,
-         get_keys_and_objects/2,
+         get_keys_and_manifests/2,
          get_object/2,
          get_object/3,
          get_user/1,
@@ -218,14 +218,19 @@ stanchion_data() ->
 
 %% @doc Return a list of keys for a bucket along
 %% with their associated objects.
--spec get_keys_and_objects(binary(), binary()) -> {ok, [binary()]}.
-get_keys_and_objects(BucketName, Prefix) ->
+-spec get_keys_and_manifests(binary(), binary()) -> {ok, [lfs_manifest()]}.
+get_keys_and_manifests(BucketName, Prefix) ->
     case riak_connection() of
         {ok, RiakPid} ->
-            case list_keys(BucketName, RiakPid) of
+            ManifestBucket = riak_moss_utils:to_bucket_name(objects, BucketName),
+            case list_keys(ManifestBucket, RiakPid) of
                 {ok, Keys} ->
                     KeyObjPairs =
-                        [{Key, get_object(BucketName, Key, RiakPid)}
+                        [begin
+                             {ok, ManiPid} = riak_moss_manifest_fsm:start_link(BucketName, Key),
+                             Manifest = riak_moss_manifest_fsm:get_active_manifest(ManiPid),
+                             {Key, Manifest}
+                         end
                          || Key <- prefix_filter(Keys, Prefix)],
                     Res = {ok, KeyObjPairs};
                 {error, Reason1} ->

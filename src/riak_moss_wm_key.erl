@@ -176,7 +176,9 @@ content_types_provided(RD, Ctx) ->
     Method = wrq:method(RD),
     if Method == 'GET'; Method == 'HEAD' ->
             DocCtx = riak_moss_wm_utils:ensure_doc(Ctx),
-            ContentType = orddict:fetch("content-type", DocCtx#key_context.doc_metadata),
+            ContentType =
+                binary_to_list(orddict:fetch("content-type",
+                                             DocCtx#key_context.doc_metadata)),
             case ContentType of
                 undefined ->
                     {[{"application/octet-stream", produce_body}], RD, DocCtx};
