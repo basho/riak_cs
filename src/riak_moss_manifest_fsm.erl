@@ -364,7 +364,7 @@ get_and_update(RiakcPid, Manifest, Bucket, Key) ->
     ObjectToWrite = case get_manifests(RiakcPid, Bucket, Key) of
         {ok, RiakObject, Manifests} ->
             NewManiAdded = riak_moss_manifest_resolution:resolve([WrappedManifest, Manifests]),
-            OverriddenMarkedAsPendingDelete = riak_moss_manifest:mark_overridden(NewManiAdded),
+            OverriddenMarkedAsPendingDelete = riak_moss_manifest:mark_overwritten(NewManiAdded),
             riakc_obj:update_value(RiakObject, term_to_binary(OverriddenMarkedAsPendingDelete));
         {error, notfound} ->
             ManifestBucket = riak_moss_utils:to_bucket_name(objects, Bucket),

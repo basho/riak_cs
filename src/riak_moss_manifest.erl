@@ -13,7 +13,7 @@
 %% export Public API
 -export([new/2,
          active_manifest/1,
-         mark_overridden/1,
+         mark_overwritten/1,
          prune/1]).
 
 %%%===================================================================
@@ -42,8 +42,8 @@ active_manifest(Manifests) ->
 %% @doc Mark all active manifests
 %% that are not "the most active"
 %% as pending_delete
--spec mark_overridden(term()) -> term().
-mark_overridden(Manifests) ->
+-spec mark_overwritten(term()) -> term().
+mark_overwritten(Manifests) ->
     case active_manifest(Manifests) of
         {error, no_active_manifest} ->
             Manifests;
