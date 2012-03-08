@@ -117,12 +117,7 @@ block_size() ->
         undefined ->
             ?DEFAULT_LFS_BLOCK_SIZE;
         {ok, BlockSize} ->
-            case BlockSize > ?DEFAULT_LFS_BLOCK_SIZE of
-                true ->
-                    ?DEFAULT_LFS_BLOCK_SIZE;
-                false ->
-                    BlockSize
-            end
+            BlockSize
     end.
 
 safe_block_size_from_manifest(#lfs_manifest{block_size=BlockSize}) ->
