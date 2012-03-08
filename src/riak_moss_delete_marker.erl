@@ -12,9 +12,8 @@
 
 -export([delete/2]).
 
-%% @doc Mark the currently active
-%%      manifest as deleted. If it doens't
-%%      exist, return notfound.
+%% @doc Mark all active manifests as
+%%      pending_delete.
 %% TODO:
 %% Should we be doing anything here to
 %% do garbage collection? One idea would be
@@ -24,11 +23,4 @@
 -spec delete(binary(), binary()) -> ok | {error, notfound}.
 delete(Bucket, Key) ->
     {ok, Pid} = riak_moss_manifest_fsm:start_link(Bucket, Key),
-    case riak_moss_manifest_fsm:get_active_manifest(Pid) of
-        {ok, Manifest} ->
-            DelMani = Manifest#lfs_manifest_v2{state=pending_delete},
-            riak_moss_manifest_fsm:update_manifest(Pid, DelMani),
-            ok;
-        {error, no_active_manifest} ->
-            {error, notfound}
-    end.
+    riak_moss_manifest_fsm:mark_active_as_pending_delete(Pid).
