@@ -20,6 +20,7 @@
 %% Public API
 -export([acl/3,
          default_acl/2,
+         canned_acl/3,
          acl_from_xml/1,
          acl_to_xml/1,
          empty_acl_xml/0,
@@ -48,6 +49,17 @@ default_acl(DisplayName, CanonicalId) ->
     acl(DisplayName,
         CanonicalId,
         [{{DisplayName, CanonicalId}, ['FULL_CONTROL']}]).
+
+%% @doc Map a x-amz-acl header value to an
+%% internal acl representation.
+-spec canned_acl(string(), string(), string()) -> acl_v1().
+canned_acl(undefined, {Name, CanonicalId}, _) ->
+    default_acl(Name, CanonicalId);
+canned_acl(HeaderVal, Owner, BucketOwner) ->
+    {Name, CanonicalId} = Owner,
+    acl(Name, CanonicalId, canned_acl_grants(HeaderVal,
+                                             Owner,
+                                             BucketOwner)).
 
 %% @doc Convert an XML document representing an ACL into
 %% an internal representation.
@@ -146,6 +158,32 @@ add_grant(NewGrant, Grants) ->
         [{_, Perms} | _] ->
                 [{NewGrantee, Perms ++ NewPerms} | Grants]
         end.
+
+%% @doc Get the list of grants for a canned ACL
+-spec canned_acl_grants(string(),
+                        {string(), string()},
+                        undefined | {string(), string()}) -> [acl_grant()].
+canned_acl_grants("public-read", Owner, _) ->
+    [{Owner, ['FULL_CONTROL']},
+     {'AllUsers', ['READ']}];
+canned_acl_grants("public-read-write", Owner, _) ->
+    [{Owner, ['FULL_CONTROL']},
+     {'AllUsers', ['READ', 'WRITE']}];
+canned_acl_grants("authenticated-read", Owner, _) ->
+    [{Owner, ['FULL_CONTROL']},
+     {'AuthUsers', ['READ']}];
+canned_acl_grants("bucket-owner-read", Owner, undefined) ->
+    canned_acl_grants("private", Owner, undefined);
+canned_acl_grants("bucket-owner-read", Owner, BucketOwner) ->
+    [{Owner, ['FULL_CONTROL']},
+     {BucketOwner, ['READ']}];
+canned_acl_grants("bucket-owner-full-control", Owner, undefined) ->
+    canned_acl_grants("private", Owner, undefined);
+canned_acl_grants("bucket-owner-full-control", Owner, BucketOwner) ->
+    [{Owner, ['FULL_CONTROL']},
+     {BucketOwner, ['FULL_CONTROL']}];
+canned_acl_grants(_, {Name, CanonicalId}, _) ->
+    [{{Name, CanonicalId}, ['FULL_CONTROL']}].
 
 %% @doc Get the canonical id of the user associated with
 %% a given email address.
@@ -416,5 +454,41 @@ requested_access_test() ->
     ?assertEqual(undefined, requested_access('DELETE', [{"acl", ""}])),
     ?assertEqual(undefined, requested_access('GARBAGE', [])),
     ?assertEqual(undefined, requested_access('GARBAGE', [{"acl", ""}])).
+
+canned_acl_test() ->
+    Owner  = {"tester1", "TESTID1"},
+    BucketOwner = {"owner", "OWNERID"},
+    DefaultAcl = canned_acl(undefined, Owner, undefined),
+    PrivateAcl = canned_acl("private", Owner, undefined),
+    PublicReadAcl = canned_acl("public-read", Owner, undefined),
+    PublicRWAcl = canned_acl("public-read-write", Owner, undefined),
+    AuthReadAcl = canned_acl("authenticated-read", Owner, undefined),
+    BucketOwnerReadAcl1 = canned_acl("bucket-owner-read", Owner, undefined),
+    BucketOwnerReadAcl2 = canned_acl("bucket-owner-read", Owner, BucketOwner),
+    BucketOwnerFCAcl1 = canned_acl("bucket-owner-full-control", Owner, undefined),
+    BucketOwnerFCAcl2 = canned_acl("bucket-owner-full-control", Owner, BucketOwner),
+    ?assertMatch({acl_v1,{"tester1","TESTID1"},
+                  [{{"tester1","TESTID1"},['FULL_CONTROL']}], _}, DefaultAcl),
+    ?assertMatch({acl_v1,{"tester1","TESTID1"},
+                  [{{"tester1","TESTID1"},['FULL_CONTROL']}], _}, PrivateAcl),
+    ?assertMatch({acl_v1,{"tester1","TESTID1"},
+                  [{{"tester1","TESTID1"},['FULL_CONTROL']},
+                   {'AllUsers', ['READ']}], _}, PublicReadAcl),
+    ?assertMatch({acl_v1,{"tester1","TESTID1"},
+                  [{{"tester1","TESTID1"},['FULL_CONTROL']},
+                   {'AllUsers', ['READ', 'WRITE']}], _}, PublicRWAcl),
+    ?assertMatch({acl_v1,{"tester1","TESTID1"},
+                  [{{"tester1","TESTID1"},['FULL_CONTROL']},
+                   {'AuthUsers', ['READ']}], _}, AuthReadAcl),
+    ?assertMatch({acl_v1,{"tester1","TESTID1"},
+                  [{{"tester1","TESTID1"},['FULL_CONTROL']}], _}, BucketOwnerReadAcl1),
+    ?assertMatch({acl_v1,{"tester1","TESTID1"},
+                  [{{"tester1","TESTID1"},['FULL_CONTROL']},
+                   {{"owner", "OWNERID"}, ['READ']}], _}, BucketOwnerReadAcl2),
+    ?assertMatch({acl_v1,{"tester1","TESTID1"},
+                  [{{"tester1","TESTID1"},['FULL_CONTROL']}], _}, BucketOwnerFCAcl1),
+    ?assertMatch({acl_v1,{"tester1","TESTID1"},
+                  [{{"tester1","TESTID1"},['FULL_CONTROL']},
+                   {{"owner", "OWNERID"}, ['FULL_CONTROL']}], _}, BucketOwnerFCAcl2).
 
 -endif.
