@@ -12,20 +12,8 @@
 
 -export([authenticate/3]).
 
--spec authenticate(term(), string(), undefined) -> ok | {error, atom()}.
-authenticate(_RD, [], _) ->
-    %% TODO:
-    %% Even though we're
-    %% going to authorize
-    %% no matter what,
-    %% maybe it still makes sense
-    %% to pass the user on
-    {ok, unknown};
-authenticate(_RD, KeyId, _) ->
-    %% @TODO Also handle riak connection error
-    case riak_moss_utils:get_user(KeyId) of
-        {ok, User} ->
-            {ok, User};
-        _ ->
-            {error, invalid_authentication}
-    end.
+-spec authenticate(term(), string(), undefined) -> ok.
+authenticate(_RD, _, _) ->
+    %% TODO: Even though we're going to authorize no matter what,
+    %% maybe it still makes sense to pass the user on
+    ok.
