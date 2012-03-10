@@ -50,7 +50,7 @@ block_count(ContentLength, BlockSize) ->
 
 block_keynames(KeyName, UUID, BlockList) ->
     MapFun = fun(BlockSeq) ->
-        {BlockSeq, block_name(KeyName, UUID, BlockSeq)} end,
+                     {BlockSeq, block_name(KeyName, UUID, BlockSeq)} end,
     lists:map(MapFun, BlockList).
 
 block_name(Key, UUID, Number) ->

@@ -110,10 +110,17 @@ init([test, Bucket, Key, ContentLength, BlockSize]) ->
     %% purposely have the timeout happen
     %% so that we get called in the prepare
     %% state
-    {ok, ReaderPid} = riak_moss_dummy_reader:start_link([self(), ContentLength, BlockSize]),
+    {ok, ReaderPid} =
+        riak_moss_dummy_reader:start_link([self(),
+                                           Bucket,
+                                           Key,
+                                           ContentLength,
+                                           BlockSize]),
     link(ReaderPid),
-    riak_moss_reader:get_manifest(ReaderPid, Bucket, Key),
-    {ok, waiting_value, State1#state{free_readers=[ReaderPid], test=true}}.
+    {ok, Manifest} = riak_moss_dummy_reader:get_manifest(ReaderPid),
+    {ok, waiting_value, State1#state{free_readers=[ReaderPid],
+                                     manifest=Manifest,
+                                     test=true}}.
 
 %% TODO:
 %% could this func use
@@ -244,7 +251,7 @@ waiting_chunks({chunk, Pid, {NextBlock, BlockReturnValue}}, #state{from=From,
                                    block_buffer=UpdBlockBuffer},
             case BlocksLeft of
                 0 ->
-                    NewState=NewState0,
+                    NewState = NewState0#state{free_readers=[Pid | FreeReaders]},
                     NextStateName = sending_remaining;
                 _ ->
                     {ReadRequests, UpdFreeReaders} =
@@ -258,6 +265,7 @@ waiting_chunks({chunk, Pid, {NextBlock, BlockReturnValue}}, #state{from=From,
             lager:debug("Returning block ~p to client", [NextBlock]),
             NewState0 = State#state{blocks_left=NewRemaining,
                                     from=undefined,
+                                    free_readers=[Pid | FreeReaders],
                                     next_block=NextBlock+1},
             case BlocksLeft of
                 0 when length(BlockBuffer) > 0 ->
@@ -302,7 +310,7 @@ waiting_chunks({chunk, Pid, {BlockSeq, BlockReturnValue}}, #state{blocks_left=Re
     lager:debug("BlocksLeft: ~p", [BlocksLeft]),
     case BlocksLeft of
         0 ->
-            NewState = NewState0,
+            NewState = NewState0#state{free_readers=[Pid | FreeReaders]},
             NextStateName = sending_remaining;
         _ ->
             {ReadRequests, UpdFreeReaders} =
