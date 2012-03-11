@@ -96,21 +96,54 @@ check_permission(RD, #key_context{bucket=Bucket,
             riak_moss_wm_utils:deny_access(RD, NewCtx)
     end.
 
+%% @TODO Further attention needed here.
 %% @doc Final step of {@link forbidden/2}: after the permissions have
 %% been confirmed, ensure that the document metadata is available
 %% during GET & HEAD processing.
-forbidden(Method, RD, Ctx=#key_context{doc_metadata=undefined})
-  when Method == 'GET'; Method == 'HEAD' ->
-    %% no idea whether the doc is available - go check
+%% @doc Authentication succeeded, now perform ACL check to verify
+%% access permission.
+forbidden(_Method, _RD, Ctx=#key_context{doc_metadata=undefined}) ->
+    %% With object ACLs we need the metadata for all
+    %% methods so just get it here.
     NewCtx = riak_moss_wm_utils:ensure_doc(Ctx),
-    forbidden(Method, RD, NewCtx);
-forbidden(Method, RD, Ctx=#key_context{doc_metadata=notfound})
-  when Method == 'GET'; Method == 'HEAD' ->
-    %% the doc is not available - say it doesn't exist
+    forbidden(_Method, _RD, NewCtx);
+forbidden('GET', RD, Ctx=#key_context{doc_metadata=notfound}) ->
     {{halt, 404}, RD, Ctx};
-forbidden(_, RD, Ctx) ->
-    %% the doc is available, or we don't care (for PUT & such)
-    {false, RD, Ctx}.
+forbidden('HEAD', RD, Ctx=#key_context{doc_metadata=notfound}) ->
+    {{halt, 404}, RD, Ctx};
+forbidden(Method, RD, Ctx=#key_context{bucket=Bucket,
+                                       context=InnerCtx,
+                                       doc_metadata=MD}) ->
+    RequestedAccess =
+        riak_moss_acl_utils:requested_access(Method,
+                                             wrq:req_qs(RD)),
+    case InnerCtx#context.user of
+        undefined ->
+            CanonicalId = undefined;
+        User ->
+            CanonicalId = User?MOSS_USER.canonical_id
+    end,
+    ObjectAcl = MD#lfs_manifest_v2.acl,
+    case riak_moss_acl:object_access(Bucket,
+                                     ObjectAcl,
+                                     RequestedAccess,
+                                     CanonicalId) of
+        true ->
+            {false, RD, Ctx};
+        {true, OwnerId} ->
+            case riak_moss_utils:get_user_by_index(?ID_INDEX,
+                                                   list_to_binary(OwnerId)) of
+                {ok, {Owner, _}} ->
+                    NewInnerCtx = Ctx#key_context.context#context{user=Owner},
+                    {false, RD, Ctx#key_context{context=NewInnerCtx}};
+                {error, _} ->
+                    %% @TODO Decide if this should return 403 instead
+                    riak_moss_s3_response:api_error(object_owner_unavailable, RD, Ctx)
+            end;
+        false ->
+            %% ACL check failed, deny access
+            riak_moss_s3_response:api_error(access_denied, RD, Ctx)
+    end.
 
 %% @doc Get the list of methods this resource supports.
 -spec allowed_methods(term(), term()) -> {[atom()], term(), term()}.
@@ -132,7 +165,6 @@ valid_entity_length(RD, Ctx) ->
                         true ->
                             {true, RD, Ctx#key_context{size=Length}}
                     end;
-
                 _ ->
                     {false, RD, Ctx}
             end;

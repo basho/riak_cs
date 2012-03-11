@@ -58,26 +58,25 @@ anonymous_bucket_access(Bucket, RequestedAccess) ->
 
 %% @doc Determine if anonymous access is set for the object.
 %% @TODO Enhance when doing object ACLs
--spec anonymous_object_access(binary(), binary(), atom()) -> {true, string()} |
+-spec anonymous_object_access(binary(), acl_v1(), atom()) -> {true, string()} |
                                                              false.
-anonymous_object_access(_Bucket, _Key, undefined) ->
+anonymous_object_access(_Bucket, _ObjAcl, undefined) ->
     false;
-anonymous_object_access(Bucket, _Key, RequestedAccess) ->
-    %% Fetch the bucket's ACL
+anonymous_object_access(Bucket, ObjAcl, RequestedAccess) ->
     case bucket_acl(Bucket) of
-        {ok, Acl} ->
+        {ok, BucketAcl} ->
             case RequestedAccess of
                 'WRITE' ->
                     %% `WRITE' is the only pertinent bucket-level
                     %% permission when checking object access.
-                    has_permission(Acl, RequestedAccess);
+                    has_permission(BucketAcl, RequestedAccess);
                 _ ->
                     false
             end;
         {error, Reason} ->
             %% @TODO Think about bubbling this error up and providing
             %% feedback to requester.
-            lager:error("Anonymous objcet access check failed due to error. Reason: ~p", [Reason]),
+            lager:error("Anonymous object access check failed due to error. Reason: ~p", [Reason]),
             false
     end.
 
@@ -128,21 +127,24 @@ bucket_acl(Bucket) ->
 %% @TODO Enhance when doing object-level ACL work. This is a bit
 %% patchy until object ACLs are done. The bucket owner gets full
 %% control, but bucket-level ACLs only matter for writes otherwise.
--spec object_access(binary(), binary(), atom(), string()) -> boolean() |
+-spec object_access(binary(), acl_v1(), atom(), string()) -> boolean() |
                                                              {true, string()}.
-object_access(_Bucket, _Key, undefined, _CanonicalId) ->
+object_access(_Bucket, _ObjAcl, undefined, _CanonicalId) ->
     false;
-object_access(Bucket, _Key, RequestedAccess, CanonicalId) ->
+object_access(_Bucket, _ObjAcl, _RequestedAccess, undefined) ->
+    %% User record not provided, check for anonymous access
+    anonymous_object_access(_Bucket, _ObjAcl, _RequestedAccess);
+object_access(Bucket, ObjAcl, RequestedAccess, CanonicalId) ->
     %% Fetch the bucket's ACL
     case bucket_acl(Bucket) of
-        {ok, Acl} ->
-            IsOwner = is_owner(Acl, CanonicalId),
-            HasPerm = has_permission(Acl, RequestedAccess, CanonicalId),
+        {ok, BucketAcl} ->
+            IsOwner = is_owner(BucketAcl, CanonicalId),
+            HasPerm = has_permission(BucketAcl, RequestedAccess, CanonicalId),
             case HasPerm of
                 true when IsOwner == true ->
                     true;
                 true when RequestedAccess == 'WRITE' ->
-                    {true, owner_id(Acl)};
+                    {true, owner_id(BucketAcl)};
                 _ ->
                     false
             end;
@@ -154,7 +156,7 @@ object_access(Bucket, _Key, RequestedAccess, CanonicalId) ->
     end.
 
 %% ===================================================================
-%% Interal functions
+%% Internal functions
 %% ===================================================================
 
 %% @doc Find the ACL in a list of metadata values and

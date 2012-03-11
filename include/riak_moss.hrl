@@ -141,7 +141,11 @@
         %% See write_blocks_remaining for
         %% an explanation of why we chose
         %% a shrinking set
-        delete_blocks_remaining :: ordsets:new()
+        delete_blocks_remaining :: ordsets:new(),
+
+        %% The ACL for the version of the object represented
+        %% by this manifest.
+        acl :: acl_v1()
     }).
 -type lfs_manifest() :: #lfs_manifest_v2{}.
 
