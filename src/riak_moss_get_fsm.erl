@@ -26,7 +26,7 @@
          continue/1,
          manifest/2,
          chunk/3,
-         get_metadata/1,
+         get_manifest/1,
          get_next_chunk/1]).
 
 %% gen_fsm callbacks
@@ -48,7 +48,6 @@
                 mani_fsm_pid :: pid(),
                 bucket :: term(),
                 key :: term(),
-                metadata_cache :: term(),
                 block_buffer=[] :: [{pos_integer, term()}],
                 manifest :: term(),
                 manifest_uuid :: term(),
@@ -73,8 +72,8 @@ stop(Pid) ->
 continue(Pid) ->
     gen_fsm:send_event(Pid, continue).
 
-get_metadata(Pid) ->
-    gen_fsm:sync_send_event(Pid, get_metadata, 60000).
+get_manifest(Pid) ->
+    gen_fsm:sync_send_event(Pid, get_manifest, 60000).
 
 get_next_chunk(Pid) ->
     gen_fsm:sync_send_event(Pid, get_next_chunk, 60000).
@@ -146,37 +145,24 @@ prepare(timeout, #state{bucket=Bucket, key=Key}=State) ->
             {next_state, waiting_value, State}
     end.
 
-waiting_value(get_metadata, From, State=#state{manifest=undefined}) ->
+waiting_value(get_manifest, From, State=#state{manifest=undefined}) ->
     gen_fsm:reply(From, notfound),
     {stop, normal, State};
-waiting_value(get_metadata, From, State=#state{manifest=Mfst}) ->
+waiting_value(get_manifest, From, State=#state{manifest=Mfst}) ->
     NextStateTimeout = 60000,
-    Metadata = Mfst#lfs_manifest_v2.metadata,
-    ContentType = Mfst#lfs_manifest_v2.content_type,
-    ContentLength = Mfst#lfs_manifest_v2.content_length,
-    ContentMd5 = Mfst#lfs_manifest_v2.content_md5,
-    LastModified = riak_moss_wm_utils:to_rfc_1123(Mfst#lfs_manifest_v2.created),
-    ReturnMeta = lists:foldl(
-                   fun({K, V}, Dict) -> orddict:store(K, V, Dict) end,
-                   Metadata,
-                   [{"last-modified", LastModified},
-                    {"content-type", ContentType},
-                    {"content-md5", ContentMd5},
-                    {"content-length", ContentLength}]),
     NextState = case From of
                     undefined ->
                         waiting_metadata_request;
                     _ ->
-                        gen_fsm:reply(From, ReturnMeta),
+                        gen_fsm:reply(From, Mfst),
                         waiting_continue_or_stop
                 end,
     NewState = State#state{manifest_uuid=Mfst#lfs_manifest_v2.uuid,
-                           from=undefined,
-                           metadata_cache=ReturnMeta},
+                           from=undefined},
     {next_state, NextState, NewState, NextStateTimeout}.
 
-waiting_metadata_request(get_metadata, _From, #state{metadata_cache=Metadata}=State) ->
-    {reply, Metadata, waiting_continue_or_stop, State#state{metadata_cache=undefined}}.
+waiting_metadata_request(get_manifest, _From, #state{manifest=Manifest}=State) ->
+    {reply, Manifest, waiting_continue_or_stop, State}.
 
 waiting_continue_or_stop(timeout, State) ->
     {stop, normal, State};

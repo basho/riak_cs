@@ -210,7 +210,7 @@ waiting_command(get_active_manifest, _From, State=#state{riakc_pid=RiakcPid,
     %% Retrieve the (resolved) value
     %% from Riak and return the active
     %% manifest, if there is one. Then
-    %% stash the riak_object the state
+    %% stash the riak_object in the state
     %% so that the next time we write
     %% we write with the correct vector
     %% clock.
@@ -254,7 +254,23 @@ waiting_update_command({update_manifest_with_confirmation, Manifest}, _From,
                                             riak_object=undefined,
                                             manifests=undefined}) ->
     Reply = get_and_update(RiakcPid, Manifest, Bucket, Key),
-    {reply, Reply, waiting_update_command, State}.
+    {reply, Reply, waiting_update_command, State};
+waiting_update_command({update_manifest_with_confirmation, Manifest}, _From,
+                                            State=#state{riakc_pid=RiakcPid,
+                                            riak_object=PreviousRiakObject,
+                                            manifests=PreviousManifests}) ->
+    WrappedManifest = riak_moss_manifest:new(Manifest#lfs_manifest_v2.uuid, Manifest),
+    Resolved = riak_moss_manifest_resolution:resolve([PreviousManifests, WrappedManifest]),
+    RiakObject = riakc_obj:update_value(PreviousRiakObject, term_to_binary(Resolved)),
+    %% TODO:
+    %% currently we don't do
+    %% anything to make sure
+    %% this call succeeded
+    Reply = riakc_pb_socket:put(RiakcPid, RiakObject),
+    {reply, Reply, waiting_update_command, State#state{riak_object=undefined,
+                                                       manifests=undefined}}.
+
+
 
 %%--------------------------------------------------------------------
 %% @private

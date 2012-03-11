@@ -122,7 +122,7 @@ list_bucket_response(User, Bucket, KeyObjPairs, RD, Ctx) ->
                                           {'ETag', [ETag]},
                                           {'Owner', [user_to_xml_owner(User)]}]};
                         {error, Reason} ->
-                            lager:warning("Unable to fetch manifest for ~p. Reason: ~p",
+                            lager:debug("Unable to fetch manifest for ~p. Reason: ~p",
                                           [Key, Reason]),
                             undefined
                     end

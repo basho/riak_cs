@@ -17,14 +17,14 @@
 -record(moss_bucket, {
           name :: string(),
           creation_date :: term(),
-          acl :: acl_v1()}).
+          acl :: acl()}).
 
 -record(moss_bucket_v1, {
           name :: string(),
           last_action :: created | deleted,
           creation_date :: string(),
           modification_time :: erlang:timestamp(),
-          acl :: acl_v1()}).
+          acl :: acl()}).
 -type moss_bucket() :: #moss_bucket_v1{}.
 -type bucket_operation() :: create | delete | update_acl.
 -type bucket_action() :: created | deleted.
@@ -37,11 +37,12 @@
                  }).
 
 -record(key_context, {context :: #context{},
-                      doc_metadata :: term(),
+                      manifest :: lfs_manifest(),
                       get_fsm_pid :: pid(),
                       putctype :: string(),
                       bucket :: binary(),
                       key :: list(),
+                      owner :: moss_user(),
                       size :: non_neg_integer()}).
 
 -type acl_perm() :: 'READ' | 'WRITE' | 'READ_ACP' | 'WRITE_ACP' | 'FULL_CONTROL'.
@@ -52,7 +53,7 @@
 -record(acl_v1, {owner={"", ""} :: {string(), string()},
                  grants=[] :: [acl_grant()],
                  creation_time=now() :: erlang:timestamp()}).
--type acl_v1() :: #acl_v1{}.
+-type acl() :: #acl_v1{}.
 
 -record(lfs_manifest_v2, {
         %% "global" properties
@@ -141,7 +142,11 @@
         %% See write_blocks_remaining for
         %% an explanation of why we chose
         %% a shrinking set
-        delete_blocks_remaining :: ordsets:new()
+        delete_blocks_remaining :: ordsets:new(),
+
+        %% The ACL for the version of the object represented
+        %% by this manifest.
+        acl :: acl()
     }).
 -type lfs_manifest() :: #lfs_manifest_v2{}.
 
