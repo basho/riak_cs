@@ -62,21 +62,24 @@ anonymous_bucket_access(Bucket, RequestedAccess) ->
                                                              false.
 anonymous_object_access(_Bucket, _ObjAcl, undefined) ->
     false;
-anonymous_object_access(Bucket, ObjAcl, RequestedAccess) ->
+anonymous_object_access(Bucket, _ObjAcl, 'WRITE') ->
     case bucket_acl(Bucket) of
         {ok, BucketAcl} ->
-            case RequestedAccess of
-                'WRITE' ->
-                    %% `WRITE' is the only pertinent bucket-level
-                    %% permission when checking object access.
-                    has_permission(BucketAcl, RequestedAccess);
-                _ ->
-                    false
-            end;
+            %% `WRITE' is the only pertinent bucket-level
+            %% permission when checking object access.
+            has_permission(BucketAcl, 'WRITE');
         {error, Reason} ->
             %% @TODO Think about bubbling this error up and providing
             %% feedback to requester.
             lager:error("Anonymous object access check failed due to error. Reason: ~p", [Reason]),
+            false
+    end;
+anonymous_object_access(_Bucket, ObjAcl, RequestedAccess) ->
+    HasObjPerm = has_permission(ObjAcl, RequestedAccess),
+    case HasObjPerm of
+        true ->
+            {true, owner_id(ObjAcl)};
+        _ ->
             false
     end.
 
@@ -134,17 +137,17 @@ object_access(_Bucket, _ObjAcl, undefined, _CanonicalId) ->
 object_access(_Bucket, _ObjAcl, _RequestedAccess, undefined) ->
     %% User record not provided, check for anonymous access
     anonymous_object_access(_Bucket, _ObjAcl, _RequestedAccess);
-object_access(Bucket, ObjAcl, RequestedAccess, CanonicalId) ->
+object_access(Bucket, ObjAcl, 'WRITE', CanonicalId) ->
     %% Fetch the bucket's ACL
     case bucket_acl(Bucket) of
         {ok, BucketAcl} ->
-            IsOwner = is_owner(BucketAcl, CanonicalId),
-            HasPerm = has_permission(BucketAcl, RequestedAccess, CanonicalId),
-            case HasPerm of
-                true when IsOwner == true ->
+            IsObjOwner = is_owner(ObjAcl, CanonicalId),
+            HasBucketPerm = has_permission(BucketAcl, 'WRITE', CanonicalId),
+            case HasBucketPerm of
+                true when IsObjOwner == true ->
                     true;
-                true when RequestedAccess == 'WRITE' ->
-                    {true, owner_id(BucketAcl)};
+                true ->
+                    {true, owner_id(ObjAcl)};
                 _ ->
                     false
             end;
@@ -152,6 +155,17 @@ object_access(Bucket, ObjAcl, RequestedAccess, CanonicalId) ->
             %% @TODO Think about bubbling this error up and providing
             %% feedback to requester.
             lager:error("Object access check failed due to error. Reason: ~p", [Reason]),
+            false
+    end;
+object_access(_Bucket, ObjAcl, RequestedAccess, CanonicalId) ->
+    IsObjOwner = is_owner(ObjAcl, CanonicalId),
+    HasObjPerm = has_permission(ObjAcl, RequestedAccess, CanonicalId),
+    case HasObjPerm of
+        true when IsObjOwner == true ->
+            true;
+        true ->
+            {true, owner_id(ObjAcl)};
+        _ ->
             false
     end.
 
