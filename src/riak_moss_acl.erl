@@ -58,7 +58,7 @@ anonymous_bucket_access(Bucket, RequestedAccess) ->
 
 %% @doc Determine if anonymous access is set for the object.
 %% @TODO Enhance when doing object ACLs
--spec anonymous_object_access(binary(), acl_v1(), atom()) -> {true, string()} |
+-spec anonymous_object_access(binary(), acl(), atom()) -> {true, string()} |
                                                              false.
 anonymous_object_access(_Bucket, _ObjAcl, undefined) ->
     false;
@@ -111,7 +111,7 @@ bucket_access(Bucket, RequestedAccess, CanonicalId) ->
     end.
 
 %% @doc Get the ACL for a bucket
--spec bucket_acl(binary()) -> acl_v1().
+-spec bucket_acl(binary()) -> acl().
 bucket_acl(Bucket) ->
     case riak_moss_utils:get_object(?BUCKETS_BUCKET, Bucket) of
         {ok, Obj} ->
@@ -127,7 +127,7 @@ bucket_acl(Bucket) ->
 %% @TODO Enhance when doing object-level ACL work. This is a bit
 %% patchy until object ACLs are done. The bucket owner gets full
 %% control, but bucket-level ACLs only matter for writes otherwise.
--spec object_access(binary(), acl_v1(), atom(), string()) -> boolean() |
+-spec object_access(binary(), acl(), atom(), string()) -> boolean() |
                                                              {true, string()}.
 object_access(_Bucket, _ObjAcl, undefined, _CanonicalId) ->
     false;
@@ -162,7 +162,7 @@ object_access(Bucket, ObjAcl, RequestedAccess, CanonicalId) ->
 %% @doc Find the ACL in a list of metadata values and
 %% convert it to an erlang term representation. Return
 %% `undefined' if an ACL is not found.
--spec acl_from_meta([{string(), term()}]) -> undefined | acl_v1().
+-spec acl_from_meta([{string(), term()}]) -> undefined | acl().
 acl_from_meta([]) ->
     {error, acl_undefined};
 acl_from_meta([{?MD_ACL, Acl} | _]) ->
@@ -171,7 +171,7 @@ acl_from_meta([_ | RestMD]) ->
     acl_from_meta(RestMD).
 
 %% @doc Get the canonical id of the owner of an entity.
--spec owner_id(acl_v1()) -> string().
+-spec owner_id(acl()) -> string().
 owner_id(Acl) ->
     {_, OwnerId} = Acl?ACL.owner,
     OwnerId.
@@ -189,7 +189,7 @@ group_grants([_ | RestGrants], _GroupGrants) ->
 
 %% @doc Determine if the ACL grants group access
 %% for the requestsed permission type.
--spec has_group_permission(acl_v1(), atom()) -> boolean().
+-spec has_group_permission(acl(), atom()) -> boolean().
 has_group_permission([], _RequestedAccess) ->
     false;
 has_group_permission([{_, Perms} | RestGrants], RequestedAccess) ->
@@ -202,7 +202,7 @@ has_group_permission([{_, Perms} | RestGrants], RequestedAccess) ->
 
 %% @doc Determine if the ACL grants anonymous access
 %% for the requestsed permission type.
--spec has_permission(acl_v1(), atom()) -> boolean().
+-spec has_permission(acl(), atom()) -> boolean().
 has_permission(Acl, RequestedAccess) ->
     GroupGrants = group_grants(Acl?ACL.grants, []),
     case [Perms || {Grantee, Perms} <- GroupGrants,
@@ -215,7 +215,7 @@ has_permission(Acl, RequestedAccess) ->
 
 %% @doc Determine if a user has the requested permission
 %% granted in an ACL.
--spec has_permission(acl_v1(), atom(), string()) -> boolean().
+-spec has_permission(acl(), atom(), string()) -> boolean().
 has_permission(Acl, RequestedAccess, CanonicalId) ->
     Grants = Acl?ACL.grants,
     case user_grant(Grants, CanonicalId) of
@@ -227,7 +227,7 @@ has_permission(Acl, RequestedAccess, CanonicalId) ->
     end.
 
 %% @doc Determine if a user is the owner of a system entity.
--spec is_owner(acl_v1(), string()) -> boolean().
+-spec is_owner(acl(), string()) -> boolean().
 is_owner(Acl, CanonicalId) ->
     {_, OwnerId} = Acl?ACL.owner,
     CanonicalId == OwnerId.
