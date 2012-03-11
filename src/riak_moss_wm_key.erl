@@ -202,9 +202,16 @@ content_types_provided(RD, Ctx) ->
 
 -spec produce_body(term(), term()) -> {iolist()|binary(), term(), term()}.
 produce_body(RD, #key_context{get_fsm_pid=GetFsmPid,
+                              doc_metadata=MD,
                               context=#context{requested_perm='READ_ACP'}}=KeyCtx) ->
     riak_moss_get_fsm:stop(GetFsmPid),
-    {riak_moss_acl_utils:empty_acl_xml(), RD, KeyCtx};
+    Acl = MD#lfs_manifest_v2.acl,
+    case Acl of
+        undefined ->
+            {riak_moss_acl_utils:empty_acl_xml(), RD, KeyCtx};
+        _ ->
+            {riak_moss_acl_utils:acl_to_xml(Acl), RD, KeyCtx}
+    end;
 produce_body(RD, #key_context{get_fsm_pid=GetFsmPid, doc_metadata=DocMeta}=Ctx) ->
     ContentLength = orddict:fetch("content-length", DocMeta),
     ContentMd5 = orddict:fetch("content-md5", DocMeta),
@@ -267,6 +274,14 @@ content_types_accepted(RD, Ctx) ->
 
 -spec accept_body(term(), term()) ->
     {true, term(), term()}.
+accept_body(RD, Ctx=#key_context{bucket=Bucket,
+                                 key=Key,
+                                 context=#context{requested_perm='WRITE_ACP'}}) ->
+
+    Body = binary_to_list(wrq:req_body(RD)),
+    ACL = riak_moss_acl_utils:acl_from_xml(Body),
+    %% @TODO Write new ACL to active manifest
+    {true, RD, Ctx};
 accept_body(RD, Ctx=#key_context{bucket=Bucket,
                                  key=Key,
                                  putctype=ContentType,
