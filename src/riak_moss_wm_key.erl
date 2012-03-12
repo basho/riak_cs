@@ -123,7 +123,12 @@ forbidden(Method, RD, Ctx=#key_context{bucket=Bucket,
         User ->
             CanonicalId = User?MOSS_USER.canonical_id
     end,
-    ObjectAcl = MD#lfs_manifest_v2.acl,
+    case is_record(lfs_manifest_v2, MD) of
+        true ->
+            ObjectAcl = MD#lfs_manifest_v2.acl;
+        false ->
+            ObjectAcl = undefined
+    end,
     case riak_moss_acl:object_access(Bucket,
                                      ObjectAcl,
                                      RequestedAccess,
@@ -304,6 +309,8 @@ accept_body(RD, Ctx=#key_context{bucket=Bucket,
     BlockSize = riak_moss_lfs_utils:block_size(),
     %% Check for `x-amz-acl' header to support
     %% non-default ACL at bucket creation time.
+    %% @TODO Need plumbing to be able to specify
+    %% bucket owner if different from requesting user.
     ACL = riak_moss_acl_utils:canned_acl(
             wrq:get_req_header("x-amz-acl", RD),
             {User?MOSS_USER.display_name,

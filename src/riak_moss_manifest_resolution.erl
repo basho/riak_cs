@@ -71,10 +71,19 @@ resolve_manifests(writing, deleted, _A, B) -> B;
 resolve_manifests(deleted, writing, A, B) ->
    resolve_manifests(writing, deleted, B, A);
 
-%% purposely throw a function clause
-%% exception if the manifests aren't
-%% equivalent
+%% Check for and handle differing ACLs, but otherwise purposely throw
+%% a function clause exception if the manifests aren't equivalent
 resolve_manifests(active, active, A, A) -> A;
+resolve_manifests(active,
+                  active,
+                  A1=#lfs_manifest_v2{acl=A1Acl},
+                  A2=#lfs_manifest_v2{acl=A2Acl}) when A1Acl =/= A2Acl ->
+    case A1Acl?ACL.creation_time >= A2Acl?ACL.creation_time of
+        true ->
+            A1;
+        false ->
+            A2
+    end;
 
 resolve_manifests(active, pending_delete, _A, B) -> B;
 resolve_manifests(pending_delete, active, A, B) ->

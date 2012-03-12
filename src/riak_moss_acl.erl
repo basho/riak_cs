@@ -137,17 +137,14 @@ object_access(_Bucket, _ObjAcl, undefined, _CanonicalId) ->
 object_access(_Bucket, _ObjAcl, _RequestedAccess, undefined) ->
     %% User record not provided, check for anonymous access
     anonymous_object_access(_Bucket, _ObjAcl, _RequestedAccess);
-object_access(Bucket, ObjAcl, 'WRITE', CanonicalId) ->
+object_access(Bucket, _ObjAcl, 'WRITE', CanonicalId) ->
     %% Fetch the bucket's ACL
     case bucket_acl(Bucket) of
         {ok, BucketAcl} ->
-            IsObjOwner = is_owner(ObjAcl, CanonicalId),
             HasBucketPerm = has_permission(BucketAcl, 'WRITE', CanonicalId),
             case HasBucketPerm of
-                true when IsObjOwner == true ->
-                    true;
                 true ->
-                    {true, owner_id(ObjAcl)};
+                    true;
                 _ ->
                     false
             end;
