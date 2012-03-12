@@ -18,36 +18,23 @@
 
 -include("riak_moss.hrl").
 
--export([block_count/1,
-         block_count/2,
-         initial_block_keynames/1,
-         remaining_block_keynames/1,
+-export([block_count/2,
          block_keynames/3,
          block_name/3,
          block_name_to_term/1,
          block_size/0,
          max_content_len/0,
          safe_block_size_from_manifest/1,
-         initial_blocks/1,
          initial_blocks/2,
          block_sequences_for_manifest/1,
          is_manifest/1,
-         new_manifest/7,
+         new_manifest/8,
          remove_write_block/2,
          sorted_blocks_remaining/1]).
 
 %% -------------------------------------------------------------------
 %% Public API
 %% -------------------------------------------------------------------
-
-%% @doc The number of blocks that this
-%%      size will be broken up into
--spec block_count(lfs_manifest() | pos_integer()) -> non_neg_integer().
-block_count(ContentLength) when is_integer(ContentLength) ->
-    block_count(ContentLength, block_size());
-block_count(Manifest) ->
-    block_count(Manifest#lfs_manifest_v2.content_length,
-                Manifest#lfs_manifest_v2.block_size).
 
 %% @doc The number of blocks that this
 %%      size will be broken up into
@@ -60,17 +47,6 @@ block_count(ContentLength, BlockSize) ->
         _ ->
             Quotient + 1
     end.
-
-initial_block_keynames(#lfs_manifest_v2{bkey={_, KeyName},
-                             uuid=UUID,
-                             content_length=ContentLength}) ->
-    BlockList = initial_blocks(ContentLength),
-    block_keynames(KeyName, UUID, BlockList).
-
-remaining_block_keynames(#lfs_manifest_v2{bkey={_, KeyName},
-                             uuid=UUID}=Manifest) ->
-    BlockList = sorted_blocks_remaining(Manifest),
-    block_keynames(KeyName, UUID, BlockList).
 
 block_keynames(KeyName, UUID, BlockList) ->
     MapFun = fun(BlockSeq) ->
@@ -113,12 +89,6 @@ safe_block_size_from_manifest(#lfs_manifest_v2{block_size=BlockSize}) ->
 
 %% @doc A list of all of the blocks that
 %%      make up the file.
--spec initial_blocks(pos_integer()) -> list().
-initial_blocks(ContentLength) ->
-    initial_blocks(ContentLength, block_size()).
-
-%% @doc A list of all of the blocks that
-%%      make up the file.
 -spec initial_blocks(pos_integer(), pos_integer()) -> list().
 initial_blocks(ContentLength, BlockSize) ->
     UpperBound = block_count(ContentLength, BlockSize),
@@ -146,19 +116,19 @@ is_manifest(BinaryValue) ->
                    binary(),
                    pos_integer(),
                    term(),
-                   term()) -> lfs_manifest().
-new_manifest(Bucket, FileName, UUID, ContentLength, ContentType, ContentMd5, MetaData) ->
-    BlockSize = block_size(),
+                   term(),
+                   pos_integer()) -> lfs_manifest().
+new_manifest(Bucket, FileName, UUID, ContentLength, ContentType, ContentMd5, MetaData, BlockSize) ->
     Blocks = ordsets:from_list(initial_blocks(ContentLength, BlockSize)),
     #lfs_manifest_v2{bkey={Bucket, FileName},
-                  uuid=UUID,
-                  state=writing,
-                  content_length=ContentLength,
-                  content_type=ContentType,
-                  content_md5=ContentMd5,
-                  block_size=BlockSize,
-                  write_blocks_remaining=Blocks,
-                  metadata=MetaData}.
+                     uuid=UUID,
+                     state=writing,
+                     content_length=ContentLength,
+                     content_type=ContentType,
+                     content_md5=ContentMd5,
+                     block_size=BlockSize,
+                     write_blocks_remaining=Blocks,
+                     metadata=MetaData}.
 
 %% @doc Remove a chunk from the
 %%      write_blocks_remaining field of Manifest

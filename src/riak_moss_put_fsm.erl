@@ -13,7 +13,7 @@
 -include("riak_moss.hrl").
 
 %% API
--export([start_link/7,
+-export([start_link/8,
          augment_data/2,
          block_written/2,
          finalize/1]).
@@ -37,6 +37,7 @@
 -define(EMPTYORDSET, ordsets:new()).
 
 -record(state, {timeout :: pos_integer(),
+                block_size :: pos_integer(),
                 caller :: pid(),
                 md5 :: binary(),
                 reply_pid :: pid(),
@@ -66,8 +67,8 @@
 %% @spec start_link() -> {ok, Pid} | ignore | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
-start_link(Bucket, Key, ContentLength, ContentType, Metadata, Timeout, Caller) ->
-    Args = [Bucket, Key, ContentLength, ContentType, Metadata, Timeout, Caller],
+start_link(Bucket, Key, ContentLength, ContentType, Metadata, BlockSize, Timeout, Caller) ->
+    Args = [Bucket, Key, ContentLength, ContentType, Metadata, BlockSize, Timeout, Caller],
     gen_fsm:start_link(?MODULE, Args, []).
 
 augment_data(Pid, Data) ->
@@ -93,7 +94,7 @@ block_written(Pid, BlockID) ->
 %% so that I can be thinking about how it
 %% might be implemented. Does it actually
 %% make things more confusing?
-init([Bucket, Key, ContentLength, ContentType, Metadata, Timeout, Caller]) ->
+init([Bucket, Key, ContentLength, ContentType, Metadata, BlockSize, Timeout, Caller]) ->
     %% We need to do this (the monitor) for two reasons
     %% 1. We're started through a supervisor, so the
     %%    proc that actually intends to start us isn't
@@ -106,6 +107,7 @@ init([Bucket, Key, ContentLength, ContentType, Metadata, Timeout, Caller]) ->
 
     {ok, prepare, #state{bucket=Bucket,
                          key=Key,
+                         block_size=BlockSize,
                          caller=CallerRef,
                          metadata=Metadata,
                          content_length=ContentLength,
@@ -118,6 +120,7 @@ init([Bucket, Key, ContentLength, ContentType, Metadata, Timeout, Caller]) ->
 %%--------------------------------------------------------------------
 prepare(timeout, State=#state{bucket=Bucket,
                               key=Key,
+                              block_size=BlockSize,
                               content_length=ContentLength,
                               content_type=ContentType,
                               metadata=Metadata}) ->
@@ -133,7 +136,7 @@ prepare(timeout, State=#state{bucket=Bucket,
     %% TODO:
     %% we should get this
     %% from the app.config
-    MaxBufferSize = (2 * riak_moss_lfs_utils:block_size()),
+    MaxBufferSize = (2 * BlockSize),
     UUID = druuid:v4(),
     Manifest =
     riak_moss_lfs_utils:new_manifest(Bucket,
@@ -143,7 +146,8 @@ prepare(timeout, State=#state{bucket=Bucket,
                                      ContentType,
                                      %% we don't know the md5 yet
                                      undefined, 
-                                     Metadata),
+                                     Metadata,
+                                     BlockSize),
     NewManifest = Manifest#lfs_manifest_v2{write_start_time=erlang:now()},
 
     %% TODO:
@@ -314,18 +318,6 @@ combine_new_and_remainder_data(NewData, undefined) ->
 combine_new_and_remainder_data(NewData, Remainder) ->
     <<Remainder/binary, NewData/binary>>.
 
-
-%% @private
-%% @doc Break up a data binary into a list of block-sized chunks
--spec data_blocks(binary(), pos_integer(), non_neg_integer(), [binary()]) ->
-                         {[binary()], undefined | binary()}.
-data_blocks(Data, ContentLength, BytesReceived, Blocks) ->
-    data_blocks(Data,
-                ContentLength,
-                BytesReceived,
-                riak_moss_lfs_utils:block_size(),
-                Blocks).
-
 %% @private
 %% @doc Break up a data binary into a list of block-sized chunks
 -spec data_blocks(binary(),
@@ -392,6 +384,7 @@ maybe_write_blocks(State=#state{buffer_queue=[ToWrite | RestBuffer],
 
 -spec state_from_block_written(non_neg_integer(), pid(), term()) -> term().
 state_from_block_written(BlockID, WriterPid, State=#state{unacked_writes=UnackedWrites,
+                                                          block_size=BlockSize,
                                                           free_writers=FreeWriters,
                                                           current_buffer_size=CurrentBufferSize,
                                                           manifest=Manifest}) ->
@@ -404,7 +397,7 @@ state_from_block_written(BlockID, WriterPid, State=#state{unacked_writes=Unacked
     %% there's a chance this could go negative
     %% if the last block isn't a full
     %% block size, so don't bring it below 0
-    NewCurrentBufferSize = max(0, CurrentBufferSize - riak_moss_lfs_utils:block_size()),
+    NewCurrentBufferSize = max(0, CurrentBufferSize - BlockSize),
 
     maybe_write_blocks(State#state{manifest=NewManifest,
                                    unacked_writes=NewUnackedWrites,
@@ -427,6 +420,7 @@ start_writer_servers(NumServers) ->
 
 handle_accept_chunk(NewData, State=#state{buffer_queue=BufferQueue,
                                           remainder_data=RemainderData,
+                                          block_size=BlockSize,
                                           num_bytes_received=PreviousBytesReceived,
                                           md5=Md5,
                                           current_buffer_size=CurrentBufferSize,
@@ -439,7 +433,7 @@ handle_accept_chunk(NewData, State=#state{buffer_queue=BufferQueue,
     NewCurrentBufferSize = CurrentBufferSize + size(NewData),
 
     {NewBufferQueue, NewRemainderData2} =
-    data_blocks(NewRemainderData, ContentLength, UpdatedBytesReceived, BufferQueue),
+    data_blocks(NewRemainderData, ContentLength, UpdatedBytesReceived, BlockSize, BufferQueue),
 
     NewStateData = maybe_write_blocks(State#state{buffer_queue=NewBufferQueue,
                                                   remainder_data=NewRemainderData2,
@@ -454,6 +448,7 @@ handle_accept_chunk(NewData, State=#state{buffer_queue=BufferQueue,
 handle_backpressure_for_chunk(NewData, From, State=#state{reply_pid=undefined,
                                                           buffer_queue=BufferQueue,
                                                           md5=Md5,
+                                                          block_size=BlockSize,
                                                           remainder_data=RemainderData,
                                                           current_buffer_size=CurrentBufferSize,
                                                           num_bytes_received=PreviousBytesReceived,
@@ -466,7 +461,7 @@ handle_backpressure_for_chunk(NewData, From, State=#state{reply_pid=undefined,
     NewCurrentBufferSize = CurrentBufferSize + size(NewData),
 
     {NewBufferQueue, NewRemainderData2} =
-    data_blocks(NewRemainderData, ContentLength, UpdatedBytesReceived, BufferQueue),
+    data_blocks(NewRemainderData, ContentLength, UpdatedBytesReceived, BlockSize, BufferQueue),
 
     NewStateData = maybe_write_blocks(State#state{buffer_queue=NewBufferQueue,
                                                   remainder_data=NewRemainderData2,
@@ -479,6 +474,7 @@ handle_backpressure_for_chunk(NewData, From, State=#state{reply_pid=undefined,
 handle_receiving_last_chunk(NewData, State=#state{buffer_queue=BufferQueue,
                                                   remainder_data=RemainderData,
                                                   md5=Md5,
+                                                  block_size=BlockSize,
                                                   manifest=Manifest,
                                                   current_buffer_size=CurrentBufferSize,
                                                   num_bytes_received=PreviousBytesReceived,
@@ -492,7 +488,7 @@ handle_receiving_last_chunk(NewData, State=#state{buffer_queue=BufferQueue,
     NewCurrentBufferSize = CurrentBufferSize + size(NewData),
 
     {NewBufferQueue, NewRemainderData2} =
-    data_blocks(NewRemainderData, ContentLength, UpdatedBytesReceived, BufferQueue),
+    data_blocks(NewRemainderData, ContentLength, UpdatedBytesReceived, BlockSize, BufferQueue),
 
     NewStateData = maybe_write_blocks(State#state{buffer_queue=NewBufferQueue,
                                                   remainder_data=NewRemainderData2,
