@@ -23,6 +23,7 @@
          block_name/3,
          block_name_to_term/1,
          block_size/0,
+         max_content_len/0,
          fetch_concurrency/0,
          safe_block_size_from_manifest/1,
          initial_blocks/2,
@@ -68,6 +69,18 @@ block_size() ->
             ?DEFAULT_LFS_BLOCK_SIZE;
         {ok, BlockSize} ->
             BlockSize
+    end.
+
+%% @doc Return the configured block size
+-spec max_content_len() -> pos_integer().
+max_content_len() ->
+
+    case application:get_env(riak_moss, max_content_length) of
+        undefined ->
+
+            ?DEFAULT_MAX_CONTENT_LENGTH;
+                {ok, MaxContentLen} ->
+            MaxContentLen
     end.
 
 safe_block_size_from_manifest(#lfs_manifest_v2{block_size=BlockSize}) ->
