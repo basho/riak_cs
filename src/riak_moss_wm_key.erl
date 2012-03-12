@@ -275,25 +275,42 @@ content_types_accepted(RD, Ctx) ->
 -spec accept_body(term(), term()) ->
     {true, term(), term()}.
 accept_body(RD, Ctx=#key_context{bucket=Bucket,
+                                 doc_metadata=MD,
                                  key=Key,
                                  context=#context{requested_perm='WRITE_ACP'}}) ->
 
     Body = binary_to_list(wrq:req_body(RD)),
     ACL = riak_moss_acl_utils:acl_from_xml(Body),
     %% @TODO Write new ACL to active manifest
-    {true, RD, Ctx};
+    case riak_moss_utils:set_object_acl(Bucket,
+                                        Key,
+                                        MD,
+                                        ACL) of
+        ok ->
+            {{halt, 200}, RD, Ctx};
+        {error, Reason} ->
+            riak_moss_s3_response:api_error(Reason, RD, Ctx)
+    end;
 accept_body(RD, Ctx=#key_context{bucket=Bucket,
                                  key=Key,
                                  putctype=ContentType,
-                                 size=Size}) ->
+                                 size=Size,
+                                 context=#context{user=User}}) ->
     %% TODO:
     %% the Metadata
     %% should be pulled out of the
     %% headers
     Metadata = orddict:new(),
     BlockSize = riak_moss_lfs_utils:block_size(),
+    %% Check for `x-amz-acl' header to support
+    %% non-default ACL at bucket creation time.
+    ACL = riak_moss_acl_utils:canned_acl(
+            wrq:get_req_header("x-amz-acl", RD),
+            {User?MOSS_USER.display_name,
+             User?MOSS_USER.canonical_id},
+            undefined),
     Args = [Bucket, list_to_binary(Key), Size, list_to_binary(ContentType),
-        Metadata, BlockSize, timer:seconds(60), self()],
+        Metadata, BlockSize, ACL, timer:seconds(60), self()],
     {ok, Pid} = riak_moss_put_fsm_sup:start_put_fsm(node(), Args),
     accept_streambody(RD, Ctx, Pid, wrq:stream_req_body(RD, riak_moss_lfs_utils:block_size())).
 

@@ -46,6 +46,7 @@
                 bucket :: binary(),
                 key :: binary(),
                 metadata :: term(),
+                acl :: acl(),
                 manifest :: lfs_manifest(),
                 content_length :: pos_integer(),
                 content_type :: binary(),
@@ -94,7 +95,7 @@ block_written(Pid, BlockID) ->
 %% so that I can be thinking about how it
 %% might be implemented. Does it actually
 %% make things more confusing?
-init([Bucket, Key, ContentLength, ContentType, Metadata, BlockSize, Timeout, Caller]) ->
+init([Bucket, Key, ContentLength, ContentType, Metadata, BlockSize, Acl, Timeout, Caller]) ->
     %% We need to do this (the monitor) for two reasons
     %% 1. We're started through a supervisor, so the
     %%    proc that actually intends to start us isn't
@@ -110,6 +111,7 @@ init([Bucket, Key, ContentLength, ContentType, Metadata, BlockSize, Timeout, Cal
                          block_size=BlockSize,
                          caller=CallerRef,
                          metadata=Metadata,
+                         acl=Acl,
                          content_length=ContentLength,
                          content_type=ContentType,
                          timeout=Timeout},
@@ -123,7 +125,8 @@ prepare(timeout, State=#state{bucket=Bucket,
                               block_size=BlockSize,
                               content_length=ContentLength,
                               content_type=ContentType,
-                              metadata=Metadata}) ->
+                              metadata=Metadata,
+                              acl=Acl}) ->
 
     %% 1. start the manifest_fsm proc
     {ok, ManiPid} = riak_moss_manifest_fsm:start_link(Bucket, Key),
@@ -145,9 +148,15 @@ prepare(timeout, State=#state{bucket=Bucket,
                                      ContentLength,
                                      ContentType,
                                      %% we don't know the md5 yet
-                                     undefined, 
+<<<<<<< HEAD
+                                     undefined,
                                      Metadata,
                                      BlockSize),
+=======
+                                     undefined,
+                                     Metadata,
+                                     Acl),
+>>>>>>> Create acl when objects are stored.
     NewManifest = Manifest#lfs_manifest_v2{write_start_time=erlang:now()},
 
     %% TODO:
@@ -414,7 +423,7 @@ start_writer_servers(NumServers) ->
     %% TODO:
     %% doesn't handle
     %% failure at all
-    [Pid || {ok, Pid} <- 
+    [Pid || {ok, Pid} <-
         [riak_moss_block_server:start_link() ||
             _ <- lists:seq(1, NumServers)]].
 
