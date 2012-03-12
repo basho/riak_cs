@@ -13,7 +13,7 @@
 -include("riak_moss.hrl").
 
 %% API
--export([start_link/8,
+-export([start_link/9,
          augment_data/2,
          block_written/2,
          finalize/1]).
@@ -68,8 +68,8 @@
 %% @spec start_link() -> {ok, Pid} | ignore | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
-start_link(Bucket, Key, ContentLength, ContentType, Metadata, BlockSize, Timeout, Caller) ->
-    Args = [Bucket, Key, ContentLength, ContentType, Metadata, BlockSize, Timeout, Caller],
+start_link(Bucket, Key, ContentLength, ContentType, Metadata, BlockSize, Acl, Timeout, Caller) ->
+    Args = [Bucket, Key, ContentLength, ContentType, Metadata, BlockSize, Acl, Timeout, Caller],
     gen_fsm:start_link(?MODULE, Args, []).
 
 augment_data(Pid, Data) ->
@@ -148,15 +148,10 @@ prepare(timeout, State=#state{bucket=Bucket,
                                      ContentLength,
                                      ContentType,
                                      %% we don't know the md5 yet
-<<<<<<< HEAD
                                      undefined,
                                      Metadata,
-                                     BlockSize),
-=======
-                                     undefined,
-                                     Metadata,
+                                     BlockSize,
                                      Acl),
->>>>>>> Create acl when objects are stored.
     NewManifest = Manifest#lfs_manifest_v2{write_start_time=erlang:now()},
 
     %% TODO:
