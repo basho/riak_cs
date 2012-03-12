@@ -31,7 +31,7 @@
          initial_blocks/2,
          block_sequences_for_manifest/1,
          is_manifest/1,
-         new_manifest/8,
+         new_manifest/9,
          remove_write_block/2,
          sorted_blocks_remaining/1]).
 
