@@ -280,10 +280,24 @@ content_types_accepted(RD, Ctx) ->
 accept_body(RD, Ctx=#key_context{bucket=Bucket,
                                  key=Key,
                                  manifest=Mfst,
-                                 context=#context{requested_perm='WRITE_ACP'}}) ->
+                                 owner=Owner,
+                                 context=#context{user=User,
+                                                  requested_perm='WRITE_ACP'}}) ->
 
     Body = binary_to_list(wrq:req_body(RD)),
-    Acl = riak_moss_acl_utils:acl_from_xml(Body),
+    case Body of
+        [] ->
+            %% Check for `x-amz-acl' header to support
+            %% the use of a canned ACL.
+            Acl = riak_moss_acl_utils:canned_acl(
+                    wrq:get_req_header("x-amz-acl", RD),
+                    {User?MOSS_USER.display_name,
+                     User?MOSS_USER.canonical_id},
+                    {Owner?MOSS_USER.display_name,
+                     Owner?MOSS_USER.canonical_id});
+        _ ->
+            Acl = riak_moss_acl_utils:acl_from_xml(Body)
+    end,
     %% Write new ACL to active manifest
     case riak_moss_utils:set_object_acl(Bucket, Key, Mfst, Acl) of
         ok ->
