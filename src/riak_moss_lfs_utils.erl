@@ -123,7 +123,8 @@ put_concurrency() ->
             Concurrency
     end.
 
-%% @doc Return the configured file block put concurrency .
+%% @doc Return the configured put fsm buffer
+%% size factor
 -spec put_fsm_buffer_size_factor() -> pos_integer().
 put_fsm_buffer_size_factor() ->
     case application:get_env(riak_moss, put_buffer_factor) of
