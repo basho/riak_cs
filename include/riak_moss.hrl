@@ -163,3 +163,4 @@
 -define(AUTH_USERS_GROUP, "http://acs.amazonaws.com/groups/global/AuthenticatedUsers").
 -define(ALL_USERS_GROUP, "http://acs.amazonaws.com/groups/global/AllUsers").
 -define(LOG_DELIVERY_GROUP, "http://acs.amazonaws.com/groups/s3/LogDelivery").
+-define(DEFAULT_FETCH_CONCURRENCY, 1).
