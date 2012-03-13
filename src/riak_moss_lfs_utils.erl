@@ -24,6 +24,7 @@
          block_name_to_term/1,
          block_size/0,
          max_content_len/0,
+         fetch_concurrency/0,
          safe_block_size_from_manifest/1,
          initial_blocks/2,
          block_sequences_for_manifest/1,
@@ -50,7 +51,7 @@ block_count(ContentLength, BlockSize) ->
 
 block_keynames(KeyName, UUID, BlockList) ->
     MapFun = fun(BlockSeq) ->
-        {BlockSeq, block_name(KeyName, UUID, BlockSeq)} end,
+                     {BlockSeq, block_name(KeyName, UUID, BlockSeq)} end,
     lists:map(MapFun, BlockList).
 
 block_name(Key, UUID, Number) ->
@@ -73,10 +74,12 @@ block_size() ->
 %% @doc Return the configured block size
 -spec max_content_len() -> pos_integer().
 max_content_len() ->
+
     case application:get_env(riak_moss, max_content_length) of
         undefined ->
+
             ?DEFAULT_MAX_CONTENT_LENGTH;
-        {ok, MaxContentLen} ->
+                {ok, MaxContentLen} ->
             MaxContentLen
     end.
 
@@ -97,6 +100,16 @@ initial_blocks(ContentLength, BlockSize) ->
 block_sequences_for_manifest(#lfs_manifest_v2{content_length=ContentLength}=Manifest) ->
     SafeBlockSize = safe_block_size_from_manifest(Manifest),
     initial_blocks(ContentLength, SafeBlockSize).
+
+%% @doc Return the configured file block fetch concurrency .
+-spec fetch_concurrency() -> pos_integer().
+fetch_concurrency() ->
+    case application:get_env(riak_moss, fetch_concurrency) of
+        undefined ->
+            ?DEFAULT_FETCH_CONCURRENCY;
+        {ok, Concurrency} ->
+            Concurrency
+    end.
 
 %% @doc Returns true if Value is
 %%      a manifest record
@@ -136,11 +149,11 @@ remove_write_block(Manifest, Chunk) ->
     Remaining = Manifest#lfs_manifest_v2.write_blocks_remaining,
     Updated = ordsets:del_element(Chunk, Remaining),
     ManiState = case Updated of
-        [] ->
-            active;
-        _ ->
-            writing
-        end,
+                    [] ->
+                        active;
+                    _ ->
+                        writing
+                end,
     Manifest#lfs_manifest_v2{write_blocks_remaining=Updated,
                              state=ManiState,
                              last_block_written_time=erlang:now()}.

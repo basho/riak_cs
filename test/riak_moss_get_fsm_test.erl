@@ -46,18 +46,18 @@ calc_block_size(ContentLength, NumBlocks) ->
 
 test_n_chunks_builder(N) ->
     fun () ->
-        ContentLength = 10000,
-        BlockSize = calc_block_size(ContentLength, N),
-        application:set_env(riak_moss, lfs_block_size, BlockSize),
-        {ok, Pid} = riak_moss_get_fsm:test_link(<<"bucket">>, <<"key">>, ContentLength, BlockSize),
-        ?assert(dict:is_key("content-length", riak_moss_get_fsm:get_metadata(Pid))),
-        riak_moss_get_fsm:continue(Pid),
-        expect_n_chunks(Pid, N)
+            ContentLength = 10000,
+            BlockSize = calc_block_size(ContentLength, N),
+            application:set_env(riak_moss, lfs_block_size, BlockSize),
+            {ok, Pid} = riak_moss_get_fsm:test_link(<<"bucket">>, <<"key">>, ContentLength, BlockSize),
+            ?assert(orddict:is_key("content-length", riak_moss_get_fsm:get_metadata(Pid))),
+            riak_moss_get_fsm:continue(Pid),
+            expect_n_chunks(Pid, N)
     end.
 
 receives_metadata() ->
     {ok, Pid} = riak_moss_get_fsm:test_link(<<"bucket">>, <<"key">>, 100, 10),
-    ?assert(dict:is_key("content-length", riak_moss_get_fsm:get_metadata(Pid))),
+    ?assert(orddict:is_key("content-length", riak_moss_get_fsm:get_metadata(Pid))),
     riak_moss_get_fsm:stop(Pid).
 
 %% ===================================================================

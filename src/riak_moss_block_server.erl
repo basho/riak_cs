@@ -72,6 +72,7 @@ stop(Pid) ->
 %% @end
 %%--------------------------------------------------------------------
 init([]) ->
+    process_flag(trap_exit, true),
     case riak_moss_utils:riak_connection() of
         {ok, RiakPid} ->
             {ok, #state{riakc_pid=RiakPid}};
@@ -133,7 +134,7 @@ handle_cast({delete_block, _ReplyPid, Bucket, Key, UUID, BlockNumber}, State=#st
     %% value of this delete call
     riakc_pb_socket:delete(RiakcPid, FullBucket, FullKey),
     %% TODO:
-    %% add a public func to riak_moss_delete_fsm 
+    %% add a public func to riak_moss_delete_fsm
     %% to send messages back to the fsm
     %% saying that the block was deleted
     {noreply, State};
