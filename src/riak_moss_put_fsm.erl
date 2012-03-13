@@ -131,12 +131,12 @@ prepare(timeout, State=#state{bucket=Bucket,
     %% this shouldn't be hardcoded.
     %% Also, use poolboy :)
     Md5 = crypto:md5_init(),
-    WriterPids = start_writer_servers(2),
+    WriterPids = start_writer_servers(riak_moss_lfs_utils:put_concurrency()),
     FreeWriters = ordsets:from_list(WriterPids),
     %% TODO:
     %% we should get this
     %% from the app.config
-    MaxBufferSize = (2 * BlockSize),
+    MaxBufferSize = (riak_moss_lfs_utils:put_fsm_buffer_size_factor() * BlockSize),
     UUID = druuid:v4(),
     Manifest =
     riak_moss_lfs_utils:new_manifest(Bucket,
