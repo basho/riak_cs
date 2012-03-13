@@ -42,6 +42,7 @@
                       putctype :: string(),
                       bucket :: binary(),
                       key :: list(),
+                      owner :: moss_user(),
                       size :: non_neg_integer()}).
 
 -type acl_perm() :: 'READ' | 'WRITE' | 'READ_ACP' | 'WRITE_ACP' | 'FULL_CONTROL'.

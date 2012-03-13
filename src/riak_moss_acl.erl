@@ -144,7 +144,7 @@ object_access(Bucket, _ObjAcl, 'WRITE', CanonicalId) ->
             HasBucketPerm = has_permission(BucketAcl, 'WRITE', CanonicalId),
             case HasBucketPerm of
                 true ->
-                    true;
+                    {true, owner_id(BucketAcl)};
                 _ ->
                     false
             end;
@@ -155,8 +155,11 @@ object_access(Bucket, _ObjAcl, 'WRITE', CanonicalId) ->
             false
     end;
 object_access(_Bucket, ObjAcl, RequestedAccess, CanonicalId) ->
+    lager:debug("ObjAcl: ~p~nCanonicalId: ~p", [ObjAcl, CanonicalId]),
     IsObjOwner = is_owner(ObjAcl, CanonicalId),
     HasObjPerm = has_permission(ObjAcl, RequestedAccess, CanonicalId),
+    lager:debug("IsObjOwner: ~p", [IsObjOwner]),
+    lager:debug("HasObjPerm: ~p", [HasObjPerm]),
     case HasObjPerm of
         true when IsObjOwner == true ->
             true;
