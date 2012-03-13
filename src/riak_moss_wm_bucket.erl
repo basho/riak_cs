@@ -39,87 +39,87 @@ malformed_request(RD, Ctx) ->
 %%      authenticated. Normally with HTTP
 %%      we'd use the `authorized` callback,
 %%      but this is how S3 does things.
-forbidden(RD, Ctx=#context{auth_bypass=AuthBypass}) ->
-    Bucket = list_to_binary(wrq:path_info(bucket, RD)),
-    AuthHeader = wrq:get_req_header("authorization", RD),
-    {AuthMod, KeyId, Signature} =
-        riak_moss_wm_utils:parse_auth_header(AuthHeader, AuthBypass),
+forbidden(RD, Ctx) ->
+    riak_moss_wm_utils:find_and_auth_user(RD, Ctx, fun check_permission/2).
+
+check_permission(RD, #context{user=User}=Ctx) ->
     Method = wrq:method(RD),
     RequestedAccess =
-        riak_moss_acl_utils:requested_access(Method,
-                                             wrq:req_qs(RD)),
-    case riak_moss_utils:get_user(KeyId) of
-        {ok, {User, UserVClock}} ->
-            case AuthMod:authenticate(RD, User?MOSS_USER.key_secret, Signature) of
-                ok ->
-                    %% Authentication succeeded, now perform
-                    %% ACL check to verify access permission.
-                    case Method == 'PUT' andalso
-                        RequestedAccess == 'WRITE' of
-                        true ->
-                            {false,
-                             RD,
-                             Ctx#context{user=User,
-                                         user_vclock=UserVClock,
-                                         bucket=Bucket}};
-                        _ ->
-                            case riak_moss_acl:bucket_access(Bucket,
-                                                             RequestedAccess,
-                                                             User?MOSS_USER.canonical_id) of
-                                true ->
-                                    {false, RD, Ctx#context{user=User,
-                                                            user_vclock=UserVClock,
-                                                            bucket=Bucket,
-                                                            requested_perm=RequestedAccess}};
-                                {true, _OwnerId} when RequestedAccess == 'WRITE' ->
-                                    %% Only bucket owners may delete buckets, deny access
-                                    riak_moss_s3_response:api_error(access_denied, RD, Ctx);
-                                {true, OwnerId} ->
-                                    case riak_moss_utils:get_user_by_index(?ID_INDEX,
-                                                                           list_to_binary(OwnerId)) of
-                                        {ok, {Owner, OwnerVClock}} ->
-                                            {false, RD, Ctx#context{user=Owner,
-                                                                    user_vclock=OwnerVClock,
-                                                                    bucket=Bucket,
-                                                                    requested_perm=RequestedAccess}};
-                                        {error, _} ->
-                                            riak_moss_s3_response:api_error(bucket_owner_unavailable, RD, Ctx)
-                                    end;
-                                false ->
-                                    %% ACL check failed, deny access
-                                    riak_moss_s3_response:api_error(access_denied, RD, Ctx)
-                            end
-                    end;
-                {error, _Reason} ->
-                    %% Authentication failed, deny access
-                    riak_moss_s3_response:api_error(access_denied, RD, Ctx)
-            end;
-        {error, no_user_key} ->
-            %% User record not provided, check for anonymous access
-            case riak_moss_acl:anonymous_bucket_access(Bucket,
-                                                       RequestedAccess) of
+        riak_moss_acl_utils:requested_access(Method, wrq:req_qs(RD)),
+    Bucket = list_to_binary(wrq:path_info(bucket, RD)),
+    PermCtx = Ctx#context{bucket=Bucket,
+                          requested_perm=RequestedAccess},
+
+    case {Method, RequestedAccess} of
+        {_, 'WRITE'} when User == undefined ->
+            %% unauthed users may neither create nor delete buckets
+            riak_moss_wm_utils:deny_access(RD, PermCtx);
+        {'PUT', 'WRITE'} ->
+            %% authed users are always allowed to attempt bucket creation
+            AccessRD = riak_moss_access_logger:set_user(User, RD),
+            {false, AccessRD, PermCtx};
+        _ ->
+            %% only owners are allowed to delete buckets
+            case check_grants(PermCtx) of
+                true ->
+                    %% because users are not allowed to create/destroy
+                    %% buckets, we can assume that User is not
+                    %% undefined here
+                    AccessRD = riak_moss_access_logger:set_user(User, RD),
+                    {false, AccessRD, PermCtx};
+                {true, _OwnerId} when RequestedAccess == 'WRITE' ->
+                    %% grants lied: this is a delete, and only the
+                    %% owner is allowed to do that; setting user for
+                    %% the request anyway, so the error tally is
+                    %% logged for them
+                    AccessRD = riak_moss_access_logger:set_user(User, RD),
+                    riak_moss_wm_utils:deny_access(AccessRD, PermCtx);
                 {true, OwnerId} ->
-                    case riak_moss_utils:get_user_by_index(?ID_INDEX,
-                                                           list_to_binary(OwnerId)) of
-                        {ok, {Owner, OwnerVClock}} ->
-                            {false, RD, Ctx#context{user=Owner,
-                                                    user_vclock=OwnerVClock,
-                                                    bucket=Bucket,
-                                                    requested_perm=RequestedAccess}};
-                        {error, _} ->
-                            riak_moss_s3_response:api_error(bucket_owner_unavailable, RD, Ctx)
-                    end;
+                    %% this operation is allowed, but we need to get
+                    %% the owner's record, and log the access against
+                    %% them instead of the actor
+                    shift_to_owner(RD, PermCtx, OwnerId);
                 false ->
-                    %% Anonymous access not allowed, deny access
-                    riak_moss_s3_response:api_error(access_denied, RD, Ctx)
-            end;
-        {error, notfound} ->
-            %% Access not allowed, deny access
-            riak_moss_s3_response:api_error(invalid_access_key_id, RD, Ctx);
-        {error, Reason} ->
-            %% Access not allowed, deny access and log the reason
-            lager:error("Retrieval of user record for ~p failed. Reason: ~p", [KeyId, Reason]),
-            riak_moss_s3_response:api_error(invalid_access_key_id, RD, Ctx)
+                    case User of
+                        undefined ->
+                            %% no facility for logging bad access
+                            %% against unknown actors
+                            AccessRD = RD;
+                        _ ->
+                            %% log bad requests against the actors
+                            %% that make them
+                            AccessRD =
+                                riak_moss_access_logger:set_user(User, RD)
+                    end,
+                    riak_moss_wm_utils:deny_access(AccessRD, PermCtx)
+            end
+    end.
+
+%% @doc Call the correct (anonymous or auth'd user) {@link
+%% riak_moss_acl} function to check permissions for this request.
+check_grants(#context{user=undefined,
+                      bucket=Bucket,
+                      requested_perm=RequestedAccess}) ->
+    riak_moss_acl:anonymous_bucket_access(Bucket, RequestedAccess);
+check_grants(#context{user=User,
+                      bucket=Bucket,
+                      requested_perm=RequestedAccess}) ->
+    riak_moss_acl:bucket_access(Bucket,
+                                RequestedAccess,
+                                User?MOSS_USER.canonical_id).
+
+%% @doc The {@link forbidden/2} decision passed, but the bucket
+%% belongs to someone else.  Switch to it if the owner's record can be
+%% retrieved.
+shift_to_owner(RD, Ctx, OwnerId) ->
+    case riak_moss_utils:get_user_by_index(?ID_INDEX,
+                                           list_to_binary(OwnerId)) of
+        {ok, {Owner, OwnerVClock}} ->
+            AccessRD = riak_moss_access_logger:set_user(Owner, RD),
+            {false, AccessRD, Ctx#context{user=Owner,
+                                          user_vclock=OwnerVClock}};
+        {error, _} ->
+            riak_moss_s3_response:api_error(bucket_owner_unavailable, RD, Ctx)
     end.
 
 %% @doc Get the list of methods this resource supports.
