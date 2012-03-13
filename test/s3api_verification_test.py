@@ -12,12 +12,50 @@ SECRET_KEY="wJBF8Cg0LkvpFKTg_VaM-odkMYk2PoweqBlC9Q=="
 HOST="127.0.0.1"
 PORT=8080
 
-class ParityWithPrototypeTest(unittest.TestCase):
+class S3ApiVerificationTest(unittest.TestCase):
+
+    SimpleAcl = "<AccessControlPolicy>" + \
+                      "<Owner>" + \
+                        "<ID>%s</ID>" + \
+                        "<DisplayName>%s</DisplayName>" + \
+                      "</Owner>" + \
+                    "<AccessControlList>" + \
+                      "<Grant>" + \
+                        "<Grantee xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"CanonicalUser\">" + \
+                          "<ID>%s</ID>" + \
+                          "<DisplayName>%s</DisplayName>" + \
+                        "</Grantee>" + \
+                        "<Permission>%s</Permission>" + \
+                       "</Grant>" + \
+                    "</AccessControlList>" + \
+                  "</AccessControlPolicy>"
+    PublicReadAcl = "<AccessControlPolicy>" + \
+                      "<Owner>" + \
+                        "<ID>%s</ID>" + \
+                        "<DisplayName>%s</DisplayName>" + \
+                      "</Owner>" + \
+                    "<AccessControlList>" + \
+                      "<Grant>" + \
+                        "<Grantee xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"Group\">" + \
+                          "<URI>http://acs.amazonaws.com/groups/global/AllUsers</URI>" + \
+                        "</Grantee>" + \
+                          "<Permission>READ</Permission>" + \
+                      "</Grant>" + \
+                      "<Grant>" + \
+                        "<Grantee xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"CanonicalUser\">" + \
+                          "<ID>%s</ID>" + \
+                          "<DisplayName>%s</DisplayName>" + \
+                        "</Grantee>" + \
+                        "<Permission>%s</Permission>" + \
+                       "</Grant>" + \
+                    "</AccessControlList>" + \
+                  "</AccessControlPolicy>"
 
     def make_connection(self, key_id=KEY_ID, secret_key=SECRET_KEY):
         return S3Connection(key_id, secret_key, is_secure=False,
-                            host=HOST, port=PORT, debug=True,
+                            host=HOST, port=PORT, debug=False,
                             calling_format=OrdinaryCallingFormat() )
+
     @classmethod
     def setUpClass(self):
         # TODO: Create test user so credentials don't have to be updated
@@ -25,13 +63,8 @@ class ParityWithPrototypeTest(unittest.TestCase):
         self.bucket_name = str(uuid.uuid4())
         self.key_name = str(uuid.uuid4())
         self.data = file("/dev/random").read(1024)
-        self.default_acl = "<AccessControlPolicy><Owner><ID>" + CANONICAL_ID \
-            + "</ID><DisplayName>" + DISPLAY_NAME + "</DisplayName></Owner><AccessControlList>" \
-            + "<Grant><Grantee xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"CanonicalUser\">" \
-            + "<ID>" + CANONICAL_ID + "</ID>" \
-            + "<DisplayName>" + DISPLAY_NAME + "</DisplayName></Grantee>" \
-            + "<Permission>FULL_CONTROL</Permission></Grant>" \
-            + "</AccessControlList></AccessControlPolicy>"
+        self.default_acl = self.SimpleAcl % (CANONICAL_ID, DISPLAY_NAME, CANONICAL_ID, DISPLAY_NAME, 'FULL_CONTROL')
+        self.pr_acl = self.PublicReadAcl % (CANONICAL_ID, DISPLAY_NAME, CANONICAL_ID, DISPLAY_NAME, 'FULL_CONTROL')
 
     def setUp(self):
         self.conn = self.make_connection()
@@ -62,6 +95,7 @@ class ParityWithPrototypeTest(unittest.TestCase):
         self.assertNotIn(self.key_name,
                          [k.key for k in bucket.get_all_keys()])
 
+    # TODO: Uncomment this test once bucket deletion issue is resolved.
     # def test_delete_bucket(self):
     #      bucket = self.conn.get_bucket(self.bucket_name)
     #      bucket.delete()
@@ -78,7 +112,7 @@ class ParityWithPrototypeTest(unittest.TestCase):
     def test_set_bucket_acl(self):
          bucket = self.conn.get_bucket(self.bucket_name)
          bucket.set_canned_acl('public-read')
-         self.assertEqual(bucket.get_acl().to_xml(), self.default_acl)
+         self.assertEqual(bucket.get_acl().to_xml(), self.pr_acl)
 
     def test_get_object_acl(self):
          bucket = self.conn.get_bucket(self.bucket_name)
@@ -87,6 +121,13 @@ class ParityWithPrototypeTest(unittest.TestCase):
          k.set_contents_from_string(self.data)
          self.assertEqual(k.get_contents_as_string(), self.data)
          self.assertEqual(k.get_acl().to_xml(), self.default_acl)
+
+    def test_set_object_acl(self):
+         bucket = self.conn.get_bucket(self.bucket_name)
+         k = Key(bucket)
+         k.key = self.key_name
+         k.set_canned_acl('public-read')
+         self.assertEqual(k.get_acl().to_xml(), self.pr_acl)
 
 if __name__ == "__main__":
     unittest.main()
