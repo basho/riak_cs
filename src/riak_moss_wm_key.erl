@@ -139,9 +139,7 @@ forbidden(Method, RD, Ctx=#key_context{bucket=Bucket,
             case riak_moss_utils:get_user_by_index(?ID_INDEX,
                                                    list_to_binary(OwnerId)) of
                 {ok, {Owner, _}} ->
-                    %% NewInnerCtx = Ctx#key_context.context#context{user=Owner},
-                    {false, RD, Ctx#key_context{%context=NewInnerCtx,
-                                                owner=Owner}};
+                    {false, RD, Ctx#key_context{owner=Owner}};
                 {error, _} ->
                     %% @TODO Decide if this should return 403 instead
                     riak_moss_s3_response:api_error(object_owner_unavailable, RD, Ctx)
