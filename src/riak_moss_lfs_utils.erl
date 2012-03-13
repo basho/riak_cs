@@ -148,7 +148,15 @@ new_manifest(Bucket, FileName, UUID, ContentLength, ContentType, ContentMd5, Met
 remove_write_block(Manifest, Chunk) ->
     Remaining = Manifest#lfs_manifest_v2.write_blocks_remaining,
     Updated = ordsets:del_element(Chunk, Remaining),
-    Manifest#lfs_manifest_v2{write_blocks_remaining=Updated}.
+    ManiState = case Updated of
+                    [] ->
+                        active;
+                    _ ->
+                        writing
+                end,
+    Manifest#lfs_manifest_v2{write_blocks_remaining=Updated,
+                             state=ManiState,
+                             last_block_written_time=erlang:now()}.
 
 sorted_blocks_remaining(#lfs_manifest_v2{write_blocks_remaining=Remaining}) ->
     lists:sort(sets:to_list(Remaining)).
