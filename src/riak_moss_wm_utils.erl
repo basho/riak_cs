@@ -138,8 +138,8 @@ ensure_doc(Ctx=#key_context{get_fsm_pid=undefined, bucket=Bucket, key=Key}) ->
     %% start the get_fsm
     BinKey = list_to_binary(Key),
     {ok, Pid} = riak_moss_get_fsm_sup:start_get_fsm(node(), [Bucket, BinKey]),
-    Metadata = riak_moss_get_fsm:get_metadata(Pid),
-    Ctx#key_context{get_fsm_pid=Pid, doc_metadata=Metadata};
+    Manifest = riak_moss_get_fsm:get_manifest(Pid),
+    Ctx#key_context{get_fsm_pid=Pid, manifest=Manifest};
 ensure_doc(Ctx) -> Ctx.
 
 streaming_get(FsmPid) ->

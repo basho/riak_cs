@@ -102,18 +102,18 @@ check_permission(RD, #key_context{bucket=Bucket,
 %% during GET & HEAD processing.
 %% @doc Authentication succeeded, now perform ACL check to verify
 %% access permission.
-forbidden(_Method, _RD, Ctx=#key_context{doc_metadata=undefined}) ->
-    %% With object ACLs we need the metadata for all
+forbidden(_Method, _RD, Ctx=#key_context{manifest=undefined}) ->
+    %% With object ACLs we need the manifest for all
     %% methods so just get it here.
     NewCtx = riak_moss_wm_utils:ensure_doc(Ctx),
     forbidden(_Method, _RD, NewCtx);
-forbidden('GET', RD, Ctx=#key_context{doc_metadata=notfound}) ->
+forbidden('GET', RD, Ctx=#key_context{manifest=notfound}) ->
     {{halt, 404}, RD, Ctx};
-forbidden('HEAD', RD, Ctx=#key_context{doc_metadata=notfound}) ->
+forbidden('HEAD', RD, Ctx=#key_context{manifest=notfound}) ->
     {{halt, 404}, RD, Ctx};
 forbidden(Method, RD, Ctx=#key_context{bucket=Bucket,
                                        context=InnerCtx,
-                                       doc_metadata=MD}) ->
+                                       manifest=Mfst}) ->
     RequestedAccess =
         riak_moss_acl_utils:requested_access(Method,
                                              wrq:req_qs(RD)),
@@ -123,11 +123,11 @@ forbidden(Method, RD, Ctx=#key_context{bucket=Bucket,
         User ->
             CanonicalId = User?MOSS_USER.canonical_id
     end,
-    case is_record(lfs_manifest_v2, MD) of
-        true ->
-            ObjectAcl = MD#lfs_manifest_v2.acl;
-        false ->
-            ObjectAcl = undefined
+    case Mfst of
+        notfound ->
+            ObjectAcl = undefined;
+        _ ->
+            ObjectAcl = Mfst#lfs_manifest_v2.acl
     end,
     case riak_moss_acl:object_access(Bucket,
                                      ObjectAcl,
@@ -179,7 +179,7 @@ valid_entity_length(RD, Ctx) ->
 
 -spec content_types_provided(term(), term()) ->
     {[{string(), atom()}], term(), term()}.
-content_types_provided(RD, Ctx) ->
+content_types_provided(RD, Ctx=#key_context{manifest=Mfst}) ->
     %% TODO:
     %% As I understand S3, the content types provided
     %% will either come from the value that was
@@ -188,9 +188,7 @@ content_types_provided(RD, Ctx) ->
     Method = wrq:method(RD),
     if Method == 'GET'; Method == 'HEAD' ->
             DocCtx = riak_moss_wm_utils:ensure_doc(Ctx),
-            ContentType =
-                binary_to_list(orddict:fetch("content-type",
-                                             DocCtx#key_context.doc_metadata)),
+            ContentType = binary_to_list(Mfst#lfs_manifest_v2.content_type),
             case ContentType of
                 undefined ->
                     {[{"application/octet-stream", produce_body}], RD, DocCtx};
@@ -207,24 +205,25 @@ content_types_provided(RD, Ctx) ->
 
 -spec produce_body(term(), term()) -> {iolist()|binary(), term(), term()}.
 produce_body(RD, #key_context{get_fsm_pid=GetFsmPid,
-                              doc_metadata=MD,
+                              manifest=Mfst,
                               context=#context{requested_perm='READ_ACP'}}=KeyCtx) ->
     riak_moss_get_fsm:stop(GetFsmPid),
-    Acl = MD#lfs_manifest_v2.acl,
+    Acl = Mfst#lfs_manifest_v2.acl,
     case Acl of
         undefined ->
             {riak_moss_acl_utils:empty_acl_xml(), RD, KeyCtx};
         _ ->
             {riak_moss_acl_utils:acl_to_xml(Acl), RD, KeyCtx}
     end;
-produce_body(RD, #key_context{get_fsm_pid=GetFsmPid, doc_metadata=DocMeta}=Ctx) ->
-    ContentLength = orddict:fetch("content-length", DocMeta),
-    ContentMd5 = orddict:fetch("content-md5", DocMeta),
+produce_body(RD, #key_context{get_fsm_pid=GetFsmPid, manifest=Mfst}=Ctx) ->
+    ContentLength = Mfst#lfs_manifest_v2.content_length,
+    ContentMd5 = Mfst#lfs_manifest_v2.content_md5,
+    LastModified = riak_moss_wm_utils:to_rfc_1123(Mfst#lfs_manifest_v2.created),
     ETag = "\"" ++ riak_moss_utils:binary_to_hexlist(ContentMd5) ++ "\"",
     NewRQ = lists:foldl(fun({K, V}, Rq) -> wrq:set_resp_header(K, V, Rq) end,
                         RD,
                         [{"ETag",  ETag},
-                         {"Last-Modified", orddict:fetch("last-modified", DocMeta)}
+                         {"Last-Modified", LastModified}
                         ]),
     Method = wrq:method(RD),
     case Method == 'HEAD'
@@ -251,7 +250,7 @@ delete_resource(RD, Ctx=#key_context{bucket=Bucket, key=Key}) ->
 content_types_accepted(RD, Ctx) ->
     case wrq:get_req_header("Content-Type", RD) of
         undefined ->
-            {[{"binary/octet-stream", accept_body}], RD, Ctx};
+            {[{"application/octet-stream", accept_body}], RD, Ctx};
         %% This was shamelessly ripped out of
         %% https://github.com/basho/riak_kv/blob/0d91ca641a309f2962a216daa0cee869c82ffe26/src/riak_kv_wm_object.erl#L492
         CType ->
@@ -280,17 +279,14 @@ content_types_accepted(RD, Ctx) ->
 -spec accept_body(term(), term()) ->
     {true, term(), term()}.
 accept_body(RD, Ctx=#key_context{bucket=Bucket,
-                                 doc_metadata=MD,
                                  key=Key,
+                                 manifest=Mfst,
                                  context=#context{requested_perm='WRITE_ACP'}}) ->
 
     Body = binary_to_list(wrq:req_body(RD)),
-    ACL = riak_moss_acl_utils:acl_from_xml(Body),
-    %% @TODO Write new ACL to active manifest
-    case riak_moss_utils:set_object_acl(Bucket,
-                                        Key,
-                                        MD,
-                                        ACL) of
+    Acl = riak_moss_acl_utils:acl_from_xml(Body),
+    %% Write new ACL to active manifest
+    case riak_moss_utils:set_object_acl(Bucket, Key, Mfst, Acl) of
         ok ->
             {{halt, 200}, RD, Ctx};
         {error, Reason} ->
@@ -334,7 +330,6 @@ accept_streambody(RD, Ctx=#key_context{}, Pid, {Data, Next}) ->
 %% the bucket exists for the user who is doing
 %% this PUT
 finalize_request(RD, Ctx, Pid) ->
-    %Metadata = dict:from_list([{<<"content-type">>, CType}]),
     {ok, Manifest} = riak_moss_put_fsm:finalize(Pid),
     ETag = "\"" ++ riak_moss_utils:binary_to_hexlist(Manifest#lfs_manifest_v2.content_md5) ++ "\"",
     {true, wrq:set_resp_header("ETag",  ETag, RD), Ctx}.

@@ -439,6 +439,7 @@ set_bucket_acl(User, VClock, Bucket, ACL) ->
 -spec set_object_acl(binary(), binary(), lfs_manifest(), acl()) -> ok.
 set_object_acl(Bucket, Key, Manifest, Acl) ->
     {ok, ManiPid} = riak_moss_manifest_fsm:start_link(Bucket, Key),
+    _ActiveMfst = riak_moss_manifest_fsm:get_active_manifest(ManiPid),
     UpdManifest = Manifest#lfs_manifest_v2{acl=Acl},
     Res = riak_moss_manifest_fsm:update_manifest_with_confirmation(ManiPid, UpdManifest),
     riak_moss_manifest_fsm:stop(ManiPid),
