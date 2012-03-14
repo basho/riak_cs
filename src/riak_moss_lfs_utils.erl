@@ -157,13 +157,13 @@ finalize_manifest(Manifest, MD5) ->
 
 %% @doc A set of all of the blocks that
 %%      make up the file.
--spec initial_blocks(pos_integer()) -> set().
+-spec initial_blocks(pos_integer()) -> [pos_integer()].
 initial_blocks(ContentLength) ->
     initial_blocks(ContentLength, block_size()).
 
 %% @doc A set of all of the blocks that
 %%      make up the file.
--spec initial_blocks(pos_integer(), pos_integer()) -> set().
+-spec initial_blocks(pos_integer(), pos_integer()) -> [pos_integer()].
 initial_blocks(ContentLength, BlockSize) ->
     UpperBound = block_count(ContentLength, BlockSize),
     lists:seq(0, (UpperBound - 1)).
