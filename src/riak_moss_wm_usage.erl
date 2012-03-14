@@ -21,22 +21,22 @@
 %%
 %% JSON response looks like:
 %% ```
-%% {"access":[{"node":"riak_moss@127.0.0.1",
-%%             "samples":[{"start_time":"20120113T194510Z",
-%%                         "end_time":"20120113T194520Z",
+%% {"Access":[{"Node":"riak_moss@127.0.0.1",
+%%             "Samples":[{"StartTime":"20120113T194510Z",
+%%                         "EndTime":"20120113T194520Z",
 %%                         "KeyRead":{"Count":1,
 %%                                    "BytesOut":22},
 %%                         "KeyWrite":{"Count":2,
 %%                                     "BytesIn":44},
-%%                        {"start_time":"20120113T194520Z",
-%%                         "end_time":"20120113T194530Z",
+%%                        {"StartTime":"20120113T194520Z",
+%%                         "EndTime":"20120113T194530Z",
 %%                         "KeyRead":{"Count":3,
 %%                                    "BytesOut":66},
 %%                         "KeyWrite":{"Count":4,
 %%                                     "BytesIn":88}
 %%                       ]}
 %%           ],
-%%  "storage":"not_requested"}
+%%  "Storage":"not_requested"}
 %% '''
 %%
 %% XML response looks like:
@@ -45,7 +45,7 @@
 %%   <Usage>
 %%     <Access>
 %%       <Node name="riak_moss@127.0.0.1">
-%%         <Sample start="20120113T194510Z" end="20120113T194520Z">
+%%         <Sample StartTime="20120113T194510Z" EndTime="20120113T194520Z">
 %%           <Operation type="KeyRead">
 %%             <Count>1</Count>
 %%             <BytesOut>22</BytesOut>
@@ -55,7 +55,7 @@
 %%             <BytesIn>44</BytesIn>
 %%           </Operation>
 %%         </Sample>
-%%         <Sample start="20120113T194520Z" end="20120113T194530Z">
+%%         <Sample StartTime="20120113T194520Z" EndTime="20120113T194530Z">
 %%           <Operation type="KeyRead">
 %%             <Count>3</Count>
 %%             <BytesOut>66</BytesOut>
@@ -97,6 +97,18 @@
 
 -define(JSON_TYPE, "application/json").
 -define(XML_TYPE, "application/xml").
+
+%% Keys used in output - defined here to help keep JSON and XML output
+%% as similar as possible.
+-define(KEY_USAGE, 'Usage').
+-define(KEY_ACCESS, 'Access').
+-define(KEY_STORAGE, 'Storage').
+-define(KEY_NODE, 'Node').
+-define(KEY_SAMPLE,  'Sample').
+-define(KEY_SAMPLES, 'Samples').
+-define(KEY_OPERATION, 'Operation').
+-define(KEY_ERRORS, 'Errors').
+-define(KEY_REASON, 'Reason').
 
 -record(ctx, {
           riak :: pid(),
@@ -148,8 +160,8 @@ content_types_provided(RD, Ctx) ->
 produce_json(RD, Ctx) ->
     Access = maybe_access(RD, Ctx),
     Storage = maybe_storage(RD, Ctx),
-    MJ = {struct, [{access, mochijson_access(Access)},
-                   {storage, mochijson_storage(Storage)}]},
+    MJ = {struct, [{?KEY_ACCESS, mochijson_access(Access)},
+                   {?KEY_STORAGE, mochijson_storage(Storage)}]},
     {mochijson2:encode(MJ), RD, Ctx}.
 
 mochijson_access(Msg) when is_atom(Msg) ->
@@ -157,18 +169,18 @@ mochijson_access(Msg) when is_atom(Msg) ->
 mochijson_access({Access, Errors}) ->
     orddict:fold(
       fun(Node, Samples, Acc) ->
-              [{struct, [{node, Node},
-                         {samples, [{struct, S} || S <- Samples]}]}
+              [{struct, [{?KEY_NODE, Node},
+                         {?KEY_SAMPLES, [{struct, S} || S <- Samples]}]}
                |Acc]
       end,
-      [{struct, [{errors, [ {struct, mochijson_sample_error(E)}
-                            || E <- Errors ]}]}],
+      [{struct, [{?KEY_ERRORS, [ {struct, mochijson_sample_error(E)}
+                                 || E <- Errors ]}]}],
       Access).
 
 mochijson_sample_error({{Start, End}, Reason}) ->
     [{?START_TIME, rts:iso8601(Start)},
      {?END_TIME, rts:iso8601(End)},
-     {<<"reason">>, mochijson_reason(Reason)}].
+     {?KEY_REASON, mochijson_reason(Reason)}].
 
 mochijson_reason(Reason) ->
     if is_atom(Reason) -> atom_to_binary(Reason, latin1);
@@ -180,8 +192,8 @@ mochijson_storage(Msg) when is_atom(Msg) ->
     Msg;
 mochijson_storage({Storage, Errors}) ->
     [ mochijson_storage_sample(S) || S <- Storage ]
-        ++ [{struct, [{errors, [mochijson_sample_error(E)
-                                || E <- Errors]}]}].
+        ++ [{struct, [{?KEY_ERRORS, [mochijson_sample_error(E)
+                                     || E <- Errors]}]}].
 
 mochijson_storage_sample(Sample) ->
     {struct, Sample}.
@@ -190,8 +202,8 @@ mochijson_storage_sample(Sample) ->
 produce_xml(RD, Ctx) ->
     Access = maybe_access(RD, Ctx),
     Storage = maybe_storage(RD, Ctx),
-    Doc = [{'Usage', [{'Access', xml_access(Access)},
-                      {'Storage', xml_storage(Storage)}]}],
+    Doc = [{?KEY_USAGE, [{?KEY_ACCESS, xml_access(Access)},
+                         {?KEY_STORAGE, xml_storage(Storage)}]}],
     {riak_moss_s3_response:export_xml(Doc), RD, Ctx}.
 
 xml_access(Msg) when is_atom(Msg) ->
@@ -199,11 +211,11 @@ xml_access(Msg) when is_atom(Msg) ->
 xml_access({Access, Errors}) ->
     orddict:fold(
       fun(Node, Samples, Acc) ->
-              [{'Node', [{name, Node}],
+              [{?KEY_NODE, [{name, Node}],
                 [xml_sample(S) || S <- Samples]}
                |Acc]
       end,
-      [{'Errors', [ xml_sample_error(E) || E <- Errors ]}],
+      [{?KEY_ERRORS, [ xml_sample_error(E) || E <- Errors ]}],
       Access).
 
 xml_sample(Sample) ->
@@ -212,8 +224,8 @@ xml_sample(Sample) ->
     {value, {?END_TIME,E}, Rest} =
         lists:keytake(?END_TIME, 1, SampleS),
 
-    {'Sample', [{start, S}, {'end', E}],
-     [{'Operation', [{type, OpName}],
+    {?KEY_SAMPLE, [{xml_name(?START_TIME), S}, {xml_name(?END_TIME), E}],
+     [{?KEY_OPERATION, [{type, OpName}],
        [{xml_name(K), [mochinum:digits(V)]} || {K, V} <- Stats]}
       || {OpName, {struct, Stats}} <- Rest ]}.
 
@@ -224,11 +236,11 @@ xml_sample_error({{Start, End}, Reason}) ->
     {Tag, Props, Contents} = xml_sample(FakeSample),
 
     XMLReason = xml_reason(Reason),
-    {Tag, Props, [{'Reason', [XMLReason]}|Contents]}.
+    {Tag, Props, [{?KEY_REASON, [XMLReason]}|Contents]}.
 
-xml_name(<<"bytes_out">>)  -> 'BytesOut';
-xml_name(<<"bytes_in">>)   -> 'BytesIn';
-xml_name(Other)            -> binary_to_atom(Other, latin1).
+%% @doc JSON deserializes with keys as binaries, but xmerl requires
+%% tag names to be atoms.
+xml_name(Other) -> binary_to_atom(Other, latin1).
 
 xml_reason(Reason) ->
     [if is_atom(Reason) -> atom_to_binary(Reason, latin1);
@@ -240,7 +252,7 @@ xml_storage(Msg) when is_atom(Msg) ->
     [atom_to_list(Msg)];
 xml_storage({Storage, Errors}) ->
     [xml_sample(S) || S <- Storage]
-        ++ [{'Errors', [xml_sample_error(E) || E <- Errors ]}].
+        ++ [{?KEY_ERRORS, [xml_sample_error(E) || E <- Errors ]}].
     
 %% Internals %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 user_key(RD) ->
