@@ -16,8 +16,7 @@ setup() ->
     application:load(riak_moss),
     application:set_env(sasl, sasl_error_logger, {file, "moss_get_fsm_sasl.log"}),
     error_logger:tty(false),
-    application:start(lager),
-    lager:set_loglevel(lager_console_backend, info).
+    application:start(lager).
 
 %% TODO:
 %% Implement this

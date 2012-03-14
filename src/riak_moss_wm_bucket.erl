@@ -204,10 +204,13 @@ accept_body(RD, Ctx=#context{user=User,
 accept_body(RD, Ctx=#context{user=User,
                              user_vclock=VClock,
                              bucket=Bucket}) ->
-    %% @TODO Check for `x-amz-acl' header to support
+    %% Check for `x-amz-acl' header to support
     %% non-default ACL at bucket creation time.
-    ACL = riak_moss_acl_utils:default_acl(User?MOSS_USER.display_name,
-                                          User?MOSS_USER.canonical_id),
+    ACL = riak_moss_acl_utils:canned_acl(
+            wrq:get_req_header("x-amz-acl", RD),
+            {User?MOSS_USER.display_name,
+             User?MOSS_USER.canonical_id},
+            undefined),
     case riak_moss_utils:create_bucket(User,
                                        VClock,
                                        Bucket,

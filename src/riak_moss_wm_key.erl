@@ -128,7 +128,7 @@ valid_entity_length(RD, Ctx) ->
                    list_to_integer(
                      wrq:get_req_header("Content-Length", RD))) of
                 Length when is_integer(Length) ->
-                    case Length =< ?MAX_CONTENT_LENGTH of
+                    case Length =< riak_moss_lfs_utils:max_content_len() of
                         false ->
                             riak_moss_s3_response:api_error(
                               entity_too_large, RD, Ctx);
@@ -142,7 +142,6 @@ valid_entity_length(RD, Ctx) ->
         _ ->
             {true, RD, Ctx}
     end.
-
 
 -spec content_types_provided(term(), term()) ->
     {[{string(), atom()}], term(), term()}.
