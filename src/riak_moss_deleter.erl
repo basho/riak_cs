@@ -22,7 +22,7 @@
 
 %% API
 -export([start_link/0,
-         initialize/4,
+         initialize/5,
          delete_root/1,
          update_root/2,
          delete_block/2,
@@ -37,6 +37,7 @@
          code_change/3]).
 
 -record(state, {bucket :: binary(),
+                bucket_id :: binary(),
                 filename :: binary(),
                 uuid :: binary(),
                 riak_pid :: pid(),
@@ -59,11 +60,13 @@ start_link() ->
 -spec initialize(pid(),
                  pid(),
                  binary(),
+                 binary(),
                  binary()) -> ok.
-initialize(Pid, FsmPid, Bucket, FileName) ->
+initialize(Pid, FsmPid, Bucket, BucketId, FileName) ->
     gen_server:cast(Pid, {initialize,
                           FsmPid,
                           Bucket,
+                          BucketId,
                           FileName}).
 
 %% @doc Delete a root block
@@ -115,7 +118,7 @@ handle_call(_Msg, _From, State) ->
 %% the exported functions.
 -spec handle_cast(term(), state()) ->
                          {noreply, state()}.
-handle_cast({initialize, FsmPid, Bucket, FileName}, State) ->
+handle_cast({initialize, FsmPid, Bucket, BucketId, FileName}, State) ->
     #state{storage_module=StorageModule,
            riak_pid=RiakPid} = State,
     %% Get the details about the object or file to be deleted
@@ -131,6 +134,7 @@ handle_cast({initialize, FsmPid, Bucket, FileName}, State) ->
     end,
     riak_moss_delete_fsm:send_event(FsmPid, {deleter_ready, ObjDetails}),
     {noreply, State#state{bucket=Bucket,
+                          bucket_id=BucketId,
                           fsm_pid=FsmPid,
                           filename=FileName,
                           uuid=UUID}};
@@ -169,14 +173,14 @@ handle_cast({update_root, UpdateOp}, State=#state{bucket=Bucket,
             ok
     end,
     {noreply, State};
-handle_cast({delete_block, BlockID}, State=#state{bucket=Bucket,
+handle_cast({delete_block, BlockID}, State=#state{bucket_id=BucketId,
                                                   filename=FileName,
                                                   fsm_pid=FsmPid,
                                                   riak_pid=RiakPid,
                                                   storage_module=StorageModule,
                                                   uuid=UUID}) ->
     BlockName = riak_moss_lfs_utils:block_name(FileName, UUID, BlockID),
-    BlocksBucket = riak_moss_utils:to_bucket_name(blocks, Bucket),
+    BlocksBucket = riak_moss_utils:to_bucket_name(blocks, BucketId),
     case delete_data_block(RiakPid, StorageModule, BlocksBucket, BlockName) of
         ok ->
             riak_moss_delete_fsm:send_event(FsmPid, {block_deleted, BlockID});

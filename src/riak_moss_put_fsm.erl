@@ -14,13 +14,13 @@
 -include_lib("eunit/include/eunit.hrl").
 
 %% Test API
--export([test_link/7,
+-export([test_link/8,
          current_state/1]).
 
 -endif.
 
 %% API
--export([start_link/6,
+-export([start_link/7,
          send_event/2,
          augment_data/2,
          finalize/1]).
@@ -39,6 +39,7 @@
          code_change/4]).
 
 -record(state, {bucket :: binary(),
+                bucket_id :: binary(),
                 filename :: binary(),
                 data :: undefined | [binary()],
                 writer_pid :: undefined | pid(),
@@ -62,14 +63,15 @@
 
 %% @doc Start a `riak_moss_put_fsm'.
 -spec start_link(binary(),
+                 binary(),
                  string(),
                  pos_integer(),
                  string(),
                  binary(),
                  timeout()) ->
                         {ok, pid()} | ignore | {error, term()}.
-start_link(Bucket, Name, ContentLength, ContentType, Data, Timeout) ->
-    Args = [Bucket, Name, ContentLength, ContentType, Data, Timeout],
+start_link(Bucket, BucketId, Name, ContentLength, ContentType, Data, Timeout) ->
+    Args = [Bucket, BucketId, Name, ContentLength, ContentType, Data, Timeout],
     gen_fsm:start_link(?MODULE, Args, []).
 
 %% @doc Send an event to a `riak_moss_put_fsm'.
@@ -115,7 +117,7 @@ send_sync_event(Pid, Msg, Timeout) ->
 -spec init([binary() | string() | pos_integer() | timeout()]) ->
                   {ok, initialize, state(), 0} |
                   {ok, write_root, state()}.
-init([Bucket, Name, ContentLength, ContentType, RawData, Timeout]) ->
+init([Bucket, BucketId, Name, ContentLength, ContentType, RawData, Timeout]) ->
     %% @TODO Get rid of this once sure that we can
     %% guarantee file name will be passed in as a binary.
     case is_binary(Name) of
@@ -129,7 +131,8 @@ init([Bucket, Name, ContentLength, ContentType, RawData, Timeout]) ->
     %% Break up the current data into block-sized chunks
     %% @TODO Maybe move this function to `riak_moss_lfs_utils'.
     {Data, Remainder} = data_blocks(RawData, ContentLength, RawDataSize, []),
-    State = #state{bucket=Bucket,
+    State = #state{bucket_id=BucketId,
+                   bucket=Bucket,
                    filename=FileName,
                    content_length=ContentLength,
                    content_type=ContentType,
@@ -157,7 +160,8 @@ init({test, Args, StateProps}) ->
 -spec initialize(timeout, state()) ->
                         {next_state, write_root, state(), timeout()} |
                         {stop, term(), state()}.
-initialize(timeout, State=#state{bucket=Bucket,
+initialize(timeout, State=#state{bucket_id=BucketId,
+                                 bucket=Bucket,
                                  filename=FileName,
                                  content_length=ContentLength,
                                  content_type=ContentType,
@@ -169,6 +173,7 @@ initialize(timeout, State=#state{bucket=Bucket,
             %% Provide the writer with the file details
             riak_moss_writer:initialize(WriterPid,
                                         self(),
+                                        BucketId,
                                         Bucket,
                                         FileName,
                                         ContentLength,
@@ -420,14 +425,15 @@ append_data_block(BlockData, Blocks) ->
 %% @doc Start a `riak_moss_put_fsm' for testing.
 -spec test_link([{atom(), term()}],
                 binary(),
+                binary(),
                 string(),
                 pos_integer(),
                 string(),
                 binary(),
                 timeout()) ->
                        {ok, pid()} | ignore | {error, term()}.
-test_link(StateProps, Bucket, Name, ContentLength, ContentType, Data, Timeout) ->
-    Args = [Bucket, Name, ContentLength, ContentType, Data, Timeout],
+test_link(StateProps, Bucket, BucketId, Name, ContentLength, ContentType, Data, Timeout) ->
+    Args = [Bucket, BucketId, Name, ContentLength, ContentType, Data, Timeout],
     gen_fsm:start_link(?MODULE, {test, Args, StateProps}, []).
 
 %% @doc Get the current state of the fsm for testing inspection

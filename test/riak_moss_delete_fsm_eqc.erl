@@ -77,6 +77,7 @@ prop_delete_fsm() ->
                    {ok, FsmPid} =
                        ?TESTMODULE:test_link([{deleter_pid, DummyPid}],
                                              Bucket,
+                                             <<"bucket_id">>,
                                              FileName,
                                              10000),
 

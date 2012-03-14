@@ -25,7 +25,14 @@
           creation_date :: string(),
           modification_time :: erlang:timestamp(),
           acl :: acl_v1()}).
--type moss_bucket() :: #moss_bucket_v1{}.
+-record(moss_bucket_v2, {
+          name :: string(),
+          last_action :: created | deleted,
+          bucket_id :: binary(),
+          creation_date :: string(),
+          modification_time :: erlang:timestamp(),
+          acl :: acl_v1()}).
+-type moss_bucket() :: #moss_bucket_v2{}.
 -type bucket_operation() :: create | delete | update_acl.
 -type bucket_action() :: created | deleted.
 
@@ -42,6 +49,7 @@
                       putctype :: string(),
                       bucket :: binary(),
                       key :: list(),
+                      moss_bucket :: false | #moss_bucket_v2{} | #moss_bucket_v1{},
                       size :: non_neg_integer()}).
 
 -type acl_perm() :: 'READ' | 'WRITE' | 'READ_ACP' | 'WRITE_ACP' | 'FULL_CONTROL'.
@@ -55,7 +63,7 @@
 -type acl_v1() :: #acl_v1{}.
 
 -define(ACL, #acl_v1).
--define(MOSS_BUCKET, #moss_bucket_v1).
+-define(MOSS_BUCKET, #moss_bucket_v2).
 -define(MOSS_USER, #moss_user_v1).
 -define(USER_BUCKET, <<"moss.users">>).
 -define(BUCKETS_BUCKET, <<"moss.buckets">>).

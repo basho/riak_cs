@@ -99,7 +99,7 @@ prop_get_fsm() ->
 %%====================================================================
 
 start_fsm(ContentLength, BlockSize) ->
-    {ok, FSMPid} = riak_moss_get_fsm:test_link(<<"bucket">>, <<"key">>, ContentLength, BlockSize),
+    {ok, FSMPid} = riak_moss_get_fsm:test_link(<<"bucket">>, <<"bucket_id">>, <<"key">>, ContentLength, BlockSize),
     _Metadata = riak_moss_get_fsm:get_metadata(FSMPid),
     riak_moss_get_fsm:continue(FSMPid),
     FSMPid.

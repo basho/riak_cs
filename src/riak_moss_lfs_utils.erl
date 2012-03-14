@@ -104,12 +104,14 @@ block_keynames(KeyName, UUID, BlockList) ->
         {BlockSeq, block_name(KeyName, UUID, BlockSeq)} end,
     lists:map(MapFun, BlockList).
 
-block_name(Key, UUID, Number) ->
-    sext:encode({Key, Number, UUID}).
+block_name(_Key, UUID, Number) ->
+    %% 16 bits & 1MB chunk size = 64GB max object size
+    %% 24 bits & 1MB chunk size = 16TB max object size
+    %% 32 bits & 1MB chunk size = 4PB max object size
+    <<UUID/binary, Number:32>>.
 
-block_name_to_term(Name) ->
-    {Key, Number, UUID} = sext:decode(Name),
-    {Key, UUID, Number}.
+block_name_to_term(<<UUID:16/binary, Number:32>>) ->
+    {UUID, Number}.
 
 %% @doc Return the configured block size
 -spec block_size() -> pos_integer().

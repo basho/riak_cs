@@ -14,14 +14,14 @@
 -include_lib("eunit/include/eunit.hrl").
 
 %% Test API
--export([test_link/4]).
+-export([test_link/5]).
 
 -endif.
 
 -include("riak_moss.hrl").
 
 %% API
--export([start_link/2,
+-export([start_link/3,
          stop/1,
          continue/1,
          manifest/2,
@@ -49,6 +49,7 @@
 -record(state, {from :: pid(),
                 reader_pid :: pid(),
                 bucket :: term(),
+                bucket_id :: binary(),
                 key :: term(),
                 value_cache :: binary(),
                 metadata_cache :: term(),
@@ -62,8 +63,8 @@
 %% Public API
 %% ===================================================================
 
-start_link(Bucket, Key) ->
-    gen_fsm:start_link(?MODULE, [Bucket, Key], []).
+start_link(Bucket, BucketId, Key) ->
+    gen_fsm:start_link(?MODULE, [Bucket, BucketId, Key], []).
 
 stop(Pid) ->
     gen_fsm:send_event(Pid, stop).
@@ -87,7 +88,7 @@ chunk(Pid, ChunkSeq, ChunkValue) ->
 %% gen_fsm callbacks
 %% ====================================================================
 
-init([Bucket, Key]) ->
+init([Bucket, BucketId, Key]) ->
     %% we want to trap exits because
     %% `erlang:link` isn't atomic, and
     %% since we're starting the reader
@@ -99,14 +100,14 @@ init([Bucket, Key]) ->
 
 
     Queue = queue:new(),
-    State = #state{bucket=Bucket, key=Key,
+    State = #state{bucket=Bucket, bucket_id=BucketId, key=Key,
                    chunk_queue=Queue},
     %% purposely have the timeout happen
     %% so that we get called in the prepare
     %% state
     {ok, prepare, State, 0};
-init([test, Bucket, Key, ContentLength, BlockSize]) ->
-    {ok, prepare, State1, 0} = init([Bucket, Key]),
+init([test, Bucket, BucketId, Key, ContentLength, BlockSize]) ->
+    {ok, prepare, State1, 0} = init([Bucket, BucketId, Key]),
     %% purposely have the timeout happen
     %% so that we get called in the prepare
     %% state
@@ -196,7 +197,7 @@ waiting_continue_or_stop(stop, State) ->
     {stop, normal, State};
 waiting_continue_or_stop(continue, #state{value_cache=CachedValue,
                                           manifest=Manifest,
-                                          bucket=BucketName,
+                                          bucket_id=BucketId,
                                           key=Key,
                                           manifest_uuid=UUID,
                                           reader_pid=ReaderPid}=State) ->
@@ -213,7 +214,7 @@ waiting_continue_or_stop(continue, #state{value_cache=CachedValue,
                     BlocksLeft = sets:from_list(BlockSequences),
 
                     %% start retrieving the first block
-                    riak_moss_reader:get_chunk(ReaderPid, BucketName, Key, UUID,
+                    riak_moss_reader:get_chunk(ReaderPid, BucketId, Key, UUID,
                                                hd(BlockSequences)),
                     {next_state, waiting_chunks, State#state{blocks_left=BlocksLeft}}
             end;
@@ -245,7 +246,7 @@ waiting_chunks({chunk, _Pid, {ChunkSeq, ChunkReturnValue}}, #state{from=From,
                                                             blocks_left=Remaining,
                                                             manifest_uuid=UUID,
                                                             key=Key,
-                                                            bucket=BucketName,
+                                                            bucket_id=BucketId,
                                                             reader_pid=ReaderPid,
                                                             chunk_queue=ChunkQueue}=State) ->
     %% TODO:
@@ -278,7 +279,7 @@ waiting_chunks({chunk, _Pid, {ChunkSeq, ChunkReturnValue}}, #state{from=From,
                     {stop, normal, NewState}
             end;
         _ ->
-            riak_moss_reader:get_chunk(ReaderPid, BucketName, Key, UUID, hd(lists:sort(sets:to_list(NewRemaining)))),
+            riak_moss_reader:get_chunk(ReaderPid, BucketId, Key, UUID, hd(lists:sort(sets:to_list(NewRemaining)))),
             case From of
                 undefined ->
                     NewQueue = queue:in({chunk, ChunkValue}, ChunkQueue),
@@ -349,7 +350,7 @@ code_change(_OldVsn, StateName, State, _Extra) -> {ok, StateName, State}.
 
 -ifdef(TEST).
 
-test_link(Bucket, Key, ContentLength, BlockSize) ->
-    gen_fsm:start_link(?MODULE, [test, Bucket, Key, ContentLength, BlockSize], []).
+test_link(Bucket, BucketId, Key, ContentLength, BlockSize) ->
+    gen_fsm:start_link(?MODULE, [test, Bucket, BucketId, Key, ContentLength, BlockSize], []).
 
 -endif.
