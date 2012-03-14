@@ -1,5 +1,5 @@
 REPO		?= riak_moss
-PKG_NAME        ?= riak-moss
+PKG_NAME        ?= riak-cs
 PKG_REVISION    ?= $(shell git describe --tags)
 PKG_VERSION	?= $(shell git describe --tags | tr - .)
 PKG_ID           = $(PKG_NAME)-$(PKG_VERSION)
