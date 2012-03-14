@@ -216,12 +216,13 @@ has_permission(Acl, RequestedAccess) ->
 -spec has_permission(acl_v1(), atom(), string()) -> boolean().
 has_permission(Acl, RequestedAccess, CanonicalId) ->
     Grants = Acl?ACL.grants,
+    GroupGrants = group_grants(Acl?ACL.grants, []),
     case user_grant(Grants, CanonicalId) of
         undefined ->
-            GroupGrants = group_grants(Acl?ACL.grants, []),
             has_group_permission(GroupGrants, RequestedAccess);
         {_, Perms} ->
-            check_permission(RequestedAccess, Perms)
+            check_permission(RequestedAccess, Perms) orelse
+                has_group_permission(GroupGrants, RequestedAccess)
     end.
 
 %% @doc Determine if a user is the owner of a system entity.
