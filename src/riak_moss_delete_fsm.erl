@@ -14,13 +14,13 @@
 -include_lib("eunit/include/eunit.hrl").
 
 %% Test API
--export([test_link/4,
+-export([test_link/5,
          current_state/1]).
 
 -endif.
 
 %% API
--export([start_link/3,
+-export([start_link/4,
          send_event/2]).
 
 %% gen_fsm callbacks
@@ -37,6 +37,7 @@
          code_change/4]).
 
 -record(state, {bucket :: binary(),
+                bucket_id :: binary(),
                 filename :: binary(),
                 block_count :: non_neg_integer(),
                 blocks_remaining :: non_neg_integer(),
@@ -51,11 +52,12 @@
 
 %% @doc Start a `riak_moss_delete_fsm'.
 -spec start_link(binary(),
+                 binary(),
                  string(),
                  timeout()) ->
                         {ok, pid()} | ignore | {error, term()}.
-start_link(Bucket, Name, Timeout) ->
-    Args = [Bucket, Name, Timeout],
+start_link(Bucket, BucketId, Name, Timeout) ->
+    Args = [Bucket, BucketId, Name, Timeout],
     gen_fsm:start_link(?MODULE, Args, []).
 
 %% @doc Send an event to a `riak_moss_delete_fsm'.
@@ -71,7 +73,7 @@ send_event(Pid, Event) ->
 -spec init([binary() | timeout()]) ->
                   {ok, initialize, state(), 0} |
                   {ok, write_root, state()}.
-init([Bucket, Name, Timeout]) ->
+init([Bucket, BucketId, Name, Timeout]) ->
     %% @TODO Get rid of this once sure that we can
     %% guarantee file name will be passed in as a binary.
     case is_binary(Name) of
@@ -82,6 +84,7 @@ init([Bucket, Name, Timeout]) ->
     end,
 
     State = #state{bucket=Bucket,
+                   bucket_id=BucketId,
                    filename=FileName,
                    timeout=Timeout},
     {ok, initialize, State, 0};
@@ -102,6 +105,7 @@ init({test, Args, StateProps}) ->
                         {next_state, write_root, state(), timeout()} |
                         {stop, term(), state()}.
 initialize(timeout, State=#state{bucket=Bucket,
+                                 bucket_id=BucketId,
                                  filename=FileName,
                                  timeout=Timeout}) ->
     %% Start the worker to perform the writing
@@ -112,6 +116,7 @@ initialize(timeout, State=#state{bucket=Bucket,
             riak_moss_deleter:initialize(DeleterPid,
                                          self(),
                                          Bucket,
+                                         BucketId,
                                          FileName),
             UpdState = State#state{deleter_pid=DeleterPid},
             {next_state, waiting_file_info, UpdState, Timeout};
@@ -266,11 +271,12 @@ start_deleter() ->
 %% @doc Start a `riak_moss_delete_fsm' for testing.
 -spec test_link([{atom(), term()}],
                 binary(),
+                binary(),
                 string(),
                 timeout()) ->
                        {ok, pid()} | ignore | {error, term()}.
-test_link(StateProps, Bucket, Name, Timeout) ->
-    Args = [Bucket, Name, Timeout],
+test_link(StateProps, Bucket, BucketId, Name, Timeout) ->
+    Args = [Bucket, BucketId, Name, Timeout],
     gen_fsm:start_link(?MODULE, {test, Args, StateProps}, []).
 
 %% @doc Get the current state of the fsm for testing inspection

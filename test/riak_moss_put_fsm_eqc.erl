@@ -80,6 +80,7 @@ prop_put_fsm() ->
                    {ok, FsmPid} =
                        ?TESTMODULE:test_link([{writer_pid, DummyPid}],
                                              Bucket,
+                                             <<"bucket_id">>,
                                              FileName,
                                              ContentLength,
                                              "text/plain",

@@ -22,7 +22,7 @@
 
 %% API
 -export([start_link/0,
-         initialize/6,
+         initialize/7,
          write_root/1,
          update_root/2,
          write_block/3,
@@ -36,7 +36,8 @@
          terminate/2,
          code_change/3]).
 
--record(state, {bucket :: binary(),
+-record(state, {bucket_id :: binary(),
+                bucket :: binary(),
                 content_type :: string(),
                 filename :: binary(),
                 uuid :: binary(),
@@ -64,12 +65,14 @@ start_link() ->
                  pid(),
                  binary(),
                  binary(),
+                 binary(),
                  pos_integer(),
                  string()) -> ok.
-initialize(Pid, FsmPid, Bucket, FileName, ContentLength, ContentType) ->
+initialize(Pid, FsmPid, Bucket, BucketId, FileName, ContentLength, ContentType) ->
     gen_server:cast(Pid, {initialize,
                           FsmPid,
                           Bucket,
+                          BucketId,
                           FileName,
                           ContentLength,
                           ContentType}).
@@ -125,9 +128,10 @@ handle_call(_Msg, _From, State) ->
 %% the exported functions.
 -spec handle_cast(term(), state()) ->
                          {noreply, state()}.
-handle_cast({initialize, FsmPid, Bucket, FileName, ContentLength, ContentType}, State) ->
+handle_cast({initialize, FsmPid, Bucket, BucketId, FileName, ContentLength, ContentType}, State) ->
     riak_moss_put_fsm:send_event(FsmPid, writer_ready),
-    {noreply, State#state{bucket=Bucket,
+    {noreply, State#state{bucket_id=BucketId,
+                          bucket=Bucket,
                           content_type=ContentType,
                           fsm_pid=FsmPid,
                           filename=FileName,
@@ -174,7 +178,8 @@ handle_cast({update_root, UpdateOp}, State=#state{bucket=Bucket,
             ok
     end,
     {noreply, State};
-handle_cast({write_block, BlockID, Data}, State=#state{bucket=Bucket,
+handle_cast({write_block, BlockID, Data}, State=#state{bucket_id=BucketId,
+                                                       bucket=Bucket,
                                                        filename=FileName,
                                                        fsm_pid=FsmPid,
                                                        md5=MD5,
@@ -182,9 +187,9 @@ handle_cast({write_block, BlockID, Data}, State=#state{bucket=Bucket,
                                                        storage_module=StorageModule,
                                                        uuid=UUID}) ->
     BlockName = riak_moss_lfs_utils:block_name(FileName, UUID, BlockID),
-    BlocksBucket = riak_moss_utils:to_bucket_name(blocks, Bucket),
+    BlocksBucket = riak_moss_utils:to_bucket_name(blocks, BucketId),
     NewMD5 = crypto:md5_update(MD5, Data),
-    case write_data_block(RiakPid, StorageModule, BlocksBucket, BlockName, Data) of
+    case write_data_block(RiakPid, StorageModule, Bucket, FileName, BlocksBucket, BlockName, Data) of
         ok ->
             riak_moss_put_fsm:send_event(FsmPid, {block_written, BlockID});
         {error, _Reason} ->
@@ -286,10 +291,18 @@ update_root_block(Pid, Module, Bucket, FileName, _UUID, MD5, {block_ready, Block
 
 %% @private
 %% @doc Write a data block of a file to Riak.
--spec write_data_block(pid(), atom(), binary(), binary(), binary()) ->
+-spec write_data_block(pid(), atom(), binary(), binary(), binary(), binary(), binary()) ->
                               ok | {error, term()}.
-write_data_block(Pid, Module, Bucket, BlockName, Data) ->
-    Obj = riakc_obj:new(Bucket, BlockName, Data),
+write_data_block(Pid, Module, S3Bucket, FileName, Bucket, Key, Data) ->
+    Obj0 = riakc_obj:new(Bucket, Key, Data),
+    %% SLF TODO: It looks like the #rpbputreq record for the riakc_pb_socket
+    %%           client doesn't send the object's metadata over the PB wire,
+    %%           so this metadata update is in vain?
+    %%
+    %%           I think it's a good idea to have "backpointers", to
+    %%           be able to map these UUID jibberish things back to
+    %%           human-sensible S3 bucket & file names.
+    Obj = riakc_obj:update_metadata(Obj0, dict:from_list([{bucket, S3Bucket}, {filename, FileName}])),
     Module:put(Pid, Obj).
 
 %% ===================================================================

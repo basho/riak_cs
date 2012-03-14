@@ -37,6 +37,7 @@ initialize_case({WriterPid, ReceiverPid}) ->
     Result = riak_moss_writer:initialize(WriterPid,
                                          ReceiverPid,
                                          <<"testbucket">>,
+                                         <<"testbucket_id">>,
                                          <<"testfile">>,
                                          1024,
                                         "text/plain"),

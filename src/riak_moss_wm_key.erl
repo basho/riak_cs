@@ -68,6 +68,7 @@ forbidden(RD, Ctx=#key_context{bucket=Bucket,
                                              wrq:req_qs(RD)),
     case riak_moss_utils:get_user(KeyId) of
         {ok, {User, _}} ->
+            MossBucket = lists:keyfind(Bucket, ?MOSS_BUCKET.name, User?MOSS_USER.buckets),
             case AuthMod:authenticate(RD, User?MOSS_USER.key_secret, Signature) of
                 ok ->
                     %% Authentication succeeded, now perform
@@ -85,7 +86,8 @@ forbidden(RD, Ctx=#key_context{bucket=Bucket,
                                                                 requested_perm=RequestedAccess},
                             forbidden(Method, RD,
                                       Ctx#key_context{bucket=Bucket,
-                                                      context=NewInnerCtx});
+                                                      context=NewInnerCtx,
+                                                      moss_bucket = MossBucket});
 
                         true ->
                             NewInnerCtx =
@@ -93,7 +95,8 @@ forbidden(RD, Ctx=#key_context{bucket=Bucket,
                                                                 requested_perm=RequestedAccess},
                             forbidden(Method, RD,
                                       Ctx#key_context{bucket=Bucket,
-                                                      context=NewInnerCtx});
+                                                      context=NewInnerCtx,
+                                                      moss_bucket = MossBucket});
 
                         false ->
                             %% ACL check failed, deny access
@@ -220,9 +223,10 @@ produce_body(RD, #key_context{get_fsm_pid=GetFsmPid, doc_metadata=DocMeta}=Ctx) 
 
 %% @doc Callback for deleting an object.
 -spec delete_resource(term(), term()) -> boolean().
-delete_resource(RD, Ctx=#key_context{bucket=Bucket, key=Key}) ->
+delete_resource(RD, Ctx=#key_context{moss_bucket=MossBucket, bucket=Bucket, key=Key}) ->
+    BucketId = MossBucket?MOSS_BUCKET.bucket_id,
     BinKey = list_to_binary(Key),
-    case riak_moss_delete_fsm_sup:start_delete_fsm(node(), [Bucket, BinKey, 600000]) of
+    case riak_moss_delete_fsm_sup:start_delete_fsm(node(), [Bucket, BucketId, BinKey, 600000]) of
         {ok, _Pid} ->
             {true, RD, Ctx};
         {error, Reason} ->
@@ -265,11 +269,13 @@ content_types_accepted(RD, Ctx) ->
 
 -spec accept_body(term(), term()) ->
     {true, term(), term()}.
-accept_body(RD, Ctx=#key_context{bucket=Bucket,
+accept_body(RD, Ctx=#key_context{moss_bucket=MossBucket,
+                                 bucket=Bucket,
                                  key=Key,
                                  putctype=ContentType,
                                  size=Size}) ->
-    Args = [Bucket, Key, Size, ContentType, <<>>, 60000],
+    BucketId = MossBucket?MOSS_BUCKET.bucket_id,
+    Args = [BucketId, Bucket, Key, Size, ContentType, <<>>, 60000],
     {ok, Pid} = riak_moss_put_fsm_sup:start_put_fsm(node(), Args),
     accept_streambody(RD, Ctx, Pid, wrq:stream_req_body(RD, riak_moss_lfs_utils:block_size())).
 

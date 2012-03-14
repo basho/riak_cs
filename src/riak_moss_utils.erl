@@ -552,6 +552,10 @@ bucket_record(Name, Operation) ->
     end,
     ?MOSS_BUCKET{name=Name,
                  last_action=Action,
+                 %% SLF TODO: If Action == deleted, then what will break
+                 %%           downstream if this bucket_id doesn't match
+                 %%           the bucket's actual bucket_id?
+                 bucket_id=druuid:v4(),
                  creation_date=riak_moss_wm_utils:iso_8601_datetime(),
                  modification_time=erlang:now()}.
 
