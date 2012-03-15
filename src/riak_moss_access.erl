@@ -30,7 +30,7 @@
                   End :: calendar:datetime()}.
 -type riakc_pb_socket() :: pid().
 
--define(NODEKEY, <<"moss_node">>).
+-define(NODEKEY, <<"MossNode">>).
 
 %% @doc Retreive the number of seconds that should elapse between
 %% archivings of access stats.  This setting is controlled by the
