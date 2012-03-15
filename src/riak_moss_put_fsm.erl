@@ -10,371 +10,313 @@
 
 -behaviour(gen_fsm).
 
--ifdef(TEST).
--include_lib("eunit/include/eunit.hrl").
-
-%% Test API
--export([test_link/7,
-         current_state/1]).
-
--endif.
+-include("riak_moss.hrl").
 
 %% API
--export([start_link/6,
-         send_event/2,
+-export([start_link/8,
          augment_data/2,
+         block_written/2,
          finalize/1]).
 
 %% gen_fsm callbacks
 -export([init/1,
-         initialize/2,
-         write_root/2,
-         write_block/2,
-         waiting/2,
-         client_wait/2,
+         prepare/2,
+         not_full/2,
+         full/2,
+         all_received/2,
+         not_full/3,
+         all_received/3,
+         done/3,
          handle_event/3,
          handle_sync_event/4,
          handle_info/3,
          terminate/3,
          code_change/4]).
 
--record(state, {bucket :: binary(),
-                filename :: binary(),
-                data :: undefined | [binary()],
-                writer_pid :: undefined | pid(),
-                content_length :: pos_integer(),
-                content_type :: string(),
-                bytes_received :: non_neg_integer(),
-                next_block_id=0 :: non_neg_integer(),
-                raw_data :: undefined | binary(),
-                final_manifest :: undefined | riak_moss_lfs_utils:lfs_manifest(),
-                buffer_size :: non_neg_integer(),
-                max_buffer_size :: non_neg_integer(),
+-define(SERVER, ?MODULE).
+-define(EMPTYORDSET, ordsets:new()).
+
+-record(state, {timeout :: pos_integer(),
                 block_size :: pos_integer(),
-                block_waiter :: undefined | {reference(), pid()},
-                manifest_waiter :: undefined | {reference(), pid()},
-                timeout :: timeout()}).
--type state() :: #state{}.
+                caller :: pid(),
+                md5 :: binary(),
+                reply_pid :: pid(),
+                mani_pid :: pid(),
+                timer_ref :: term(),
+                bucket :: binary(),
+                key :: binary(),
+                metadata :: term(),
+                manifest :: lfs_manifest(),
+                content_length :: pos_integer(),
+                content_type :: binary(),
+                num_bytes_received=0,
+                max_buffer_size :: non_neg_integer(),
+                current_buffer_size=0,
+                buffer_queue=[], %% not actually a queue, but we treat it like one
+                remainder_data :: undefined | binary(),
+                free_writers :: ordsets:new(),
+                unacked_writes=ordsets:new(),
+                next_block_id=0,
+                all_writer_pids :: list(pid())}).
 
-%% ===================================================================
-%% Public API
-%% ===================================================================
+%%%===================================================================
+%%% API
+%%%===================================================================
 
-%% @doc Start a `riak_moss_put_fsm'.
--spec start_link(binary(),
-                 string(),
-                 pos_integer(),
-                 string(),
-                 binary(),
-                 timeout()) ->
-                        {ok, pid()} | ignore | {error, term()}.
-start_link(Bucket, Name, ContentLength, ContentType, Data, Timeout) ->
-    Args = [Bucket, Name, ContentLength, ContentType, Data, Timeout],
+%%--------------------------------------------------------------------
+%% @spec start_link() -> {ok, Pid} | ignore | {error, Error}
+%% @end
+%%--------------------------------------------------------------------
+start_link(Bucket, Key, ContentLength, ContentType, Metadata, BlockSize, Timeout, Caller) ->
+    Args = [Bucket, Key, ContentLength, ContentType, Metadata, BlockSize, Timeout, Caller],
     gen_fsm:start_link(?MODULE, Args, []).
 
-%% @doc Send an event to a `riak_moss_put_fsm'.
--spec send_event(pid(), term()) -> ok.
-send_event(Pid, Event) ->
-    gen_fsm:send_event(Pid, Event).
-
-%% @doc Augment the file data being written by a `riak_moss_put_fsm'.
--spec augment_data(pid(), binary()) -> ok | {error, term()}.
 augment_data(Pid, Data) ->
-    send_sync_event(Pid, {augment_data, Data}).
+    gen_fsm:sync_send_event(Pid, {augment_data, Data}).
 
-%% @doc Finalize the put and return manifest.
--spec finalize(pid()) -> {ok, riak_moss_lfs_utils:lfs_manifest()}
-                             | {error, term()}.
 finalize(Pid) ->
-    send_sync_event(Pid, finalize, infinity).
+    gen_fsm:sync_send_event(Pid, finalize).
 
--spec send_sync_event(pid(), term()) -> term() | {error, term()}.
-send_sync_event(Pid, Msg) ->
-    send_sync_event(Pid, Msg, 60000).
+block_written(Pid, BlockID) ->
+    gen_fsm:send_event(Pid, {block_written, BlockID, self()}).
 
--spec send_sync_event(pid(), term(), timeout()) -> term() | {error, term()}.
-send_sync_event(Pid, Msg, Timeout) ->
-    try
-        gen_fsm:sync_send_all_state_event(Pid, Msg, Timeout)
-    catch
-        _:Reason ->
-            case Reason of
-                {noproc, _} ->
-                    {error, {riak_moss_put_fsm_dead, Pid}};
-                _ ->
-                    {error, Reason}
-            end
+%%%===================================================================
+%%% gen_fsm callbacks
+%%%===================================================================
+
+%%--------------------------------------------------------------------
+%%
+%%--------------------------------------------------------------------
+
+%% TODO:
+%% Metadata support is a future feature,
+%% but I'm just stubbing it in here
+%% so that I can be thinking about how it
+%% might be implemented. Does it actually
+%% make things more confusing?
+init([Bucket, Key, ContentLength, ContentType, Metadata, BlockSize, Timeout, Caller]) ->
+    %% We need to do this (the monitor) for two reasons
+    %% 1. We're started through a supervisor, so the
+    %%    proc that actually intends to start us isn't
+    %%    linked to us.
+    %% 2. Even if we didn't use a supervisor, the webmachine
+    %%    process uses exit(..., normal), even on abnormal
+    %%    terminations, so this process would still
+    %%    live.
+    CallerRef = erlang:monitor(process, Caller),
+
+    {ok, prepare, #state{bucket=Bucket,
+                         key=Key,
+                         block_size=BlockSize,
+                         caller=CallerRef,
+                         metadata=Metadata,
+                         content_length=ContentLength,
+                         content_type=ContentType,
+                         timeout=Timeout},
+                     0}.
+
+%%--------------------------------------------------------------------
+%%
+%%--------------------------------------------------------------------
+prepare(timeout, State=#state{bucket=Bucket,
+                              key=Key,
+                              block_size=BlockSize,
+                              content_length=ContentLength,
+                              content_type=ContentType,
+                              metadata=Metadata}) ->
+
+    %% 1. start the manifest_fsm proc
+    {ok, ManiPid} = riak_moss_manifest_fsm:start_link(Bucket, Key),
+    %% TODO:
+    %% this shouldn't be hardcoded.
+    %% Also, use poolboy :)
+    Md5 = crypto:md5_init(),
+    WriterPids = start_writer_servers(riak_moss_lfs_utils:put_concurrency()),
+    FreeWriters = ordsets:from_list(WriterPids),
+    %% TODO:
+    %% we should get this
+    %% from the app.config
+    MaxBufferSize = (riak_moss_lfs_utils:put_fsm_buffer_size_factor() * BlockSize),
+    UUID = druuid:v4(),
+    Manifest =
+    riak_moss_lfs_utils:new_manifest(Bucket,
+                                     Key,
+                                     UUID,
+                                     ContentLength,
+                                     ContentType,
+                                     %% we don't know the md5 yet
+                                     undefined, 
+                                     Metadata,
+                                     BlockSize),
+    NewManifest = Manifest#lfs_manifest_v2{write_start_time=erlang:now()},
+
+    %% TODO:
+    %% this time probably
+    %% shouldn't be hardcoded,
+    %% and if it is, what should
+    %% it be?
+    {ok, TRef} = timer:send_interval(60000, self(), save_manifest),
+    riak_moss_manifest_fsm:add_new_manifest(ManiPid, NewManifest),
+    {next_state, not_full, State#state{manifest=NewManifest,
+                                       md5=Md5,
+                                       timer_ref=TRef,
+                                       mani_pid=ManiPid,
+                                       max_buffer_size=MaxBufferSize,
+                                       all_writer_pids=WriterPids,
+                                       free_writers=FreeWriters}}.
+
+%% when a block is written
+%% and we were already not full,
+%% we're still not full
+not_full({block_written, BlockID, WriterPid}, State) ->
+    NewState = state_from_block_written(BlockID, WriterPid, State),
+    {next_state, not_full, NewState}.
+
+full({block_written, BlockID, WriterPid}, State=#state{reply_pid=Waiter}) ->
+    NewState = state_from_block_written(BlockID, WriterPid, State),
+    gen_fsm:reply(Waiter, ok),
+    {next_state, not_full, NewState#state{reply_pid=undefined}}.
+
+all_received({block_written, BlockID, WriterPid}, State=#state{mani_pid=ManiPid,
+                                                               timer_ref=TimerRef}) ->
+
+    NewState = state_from_block_written(BlockID, WriterPid, State),
+    Manifest = NewState#state.manifest,
+    case ordsets:size(NewState#state.unacked_writes) of
+        0 ->
+            case State#state.reply_pid of
+                undefined ->
+                    {next_state, done, NewState};
+                ReplyPid ->
+                    %% reply with the final
+                    %% manifest
+                    timer:cancel(TimerRef),
+                    case riak_moss_manifest_fsm:update_manifest_with_confirmation(ManiPid, Manifest) of
+                        ok ->
+                            gen_fsm:reply(ReplyPid, {ok, Manifest}),
+                            {stop, normal, NewState};
+                        Error ->
+                            gen_fsm:reply(ReplyPid, {error, Error}),
+                            {stop, Error, NewState}
+                    end
+            end;
+        _ ->
+            {next_state, all_received, NewState}
     end.
 
+%%--------------------------------------------------------------------
+%%
+%%--------------------------------------------------------------------
 
-%% ====================================================================
-%% gen_fsm callbacks
-%% ====================================================================
+%% Note, we never receive the `augment_data`
+%% event in the full state because there should
+%% only ever be a singleton proc sending the event,
+%% and it will be blocked waiting for a response from
+%% when we transitioned from not_full => full
 
-%% @doc Initialize the fsm.
--spec init([binary() | string() | pos_integer() | timeout()]) ->
-                  {ok, initialize, state(), 0} |
-                  {ok, write_root, state()}.
-init([Bucket, Name, ContentLength, ContentType, RawData, Timeout]) ->
-    %% @TODO Get rid of this once sure that we can
-    %% guarantee file name will be passed in as a binary.
-    case is_binary(Name) of
-        true ->
-            FileName = Name;
-        false ->
-            FileName = list_to_binary(Name)
-    end,
-    {ok, MaxBufSz} = application:get_env(riak_moss, put_fsm_buffer_size_max),
-    RawDataSize = byte_size(RawData),
-    %% Break up the current data into block-sized chunks
-    %% @TODO Maybe move this function to `riak_moss_lfs_utils'.
-    {Data, Remainder} = data_blocks(RawData, ContentLength, RawDataSize, []),
-    State = #state{bucket=Bucket,
-                   filename=FileName,
-                   content_length=ContentLength,
-                   content_type=ContentType,
-                   bytes_received=RawDataSize,
-                   data=Data,
-                   raw_data=Remainder,
-                   buffer_size=0,
-                   max_buffer_size=MaxBufSz,
-                   block_size=riak_moss_lfs_utils:block_size(),
-                   timeout=Timeout},
-    {ok, initialize, State, 0};
-init({test, Args, StateProps}) ->
-    {ok, initialize, State, 0} = init(Args),
-    %% Update the state with entries from StateProps
-    Fields = record_info(fields, state),
-    FieldPos = lists:zip(Fields, lists:seq(2, length(Fields)+1)),
-    ModStateFun = fun({Field, Value}, State0) ->
-                          Pos = proplists:get_value(Field, FieldPos),
-                          setelement(Pos, State0, Value)
-                  end,
-    TestState = lists:foldl(ModStateFun, State, StateProps),
-    {ok, write_root, TestState}.
+not_full({augment_data, NewData}, From,
+                State=#state{content_length=CLength,
+                             num_bytes_received=NumBytesReceived,
+                             current_buffer_size=CurrentBufferSize,
+                             max_buffer_size=MaxBufferSize}) ->
 
-%% @doc First state of the put fsm
--spec initialize(timeout, state()) ->
-                        {next_state, write_root, state(), timeout()} |
-                        {stop, term(), state()}.
-initialize(timeout, State=#state{bucket=Bucket,
-                                 filename=FileName,
-                                 content_length=ContentLength,
-                                 content_type=ContentType,
-                                 timeout=Timeout}) ->
-    %% Start the worker to perform the writing
-    case start_writer() of
-        {ok, WriterPid} ->
-            link(WriterPid),
-            %% Provide the writer with the file details
-            riak_moss_writer:initialize(WriterPid,
-                                        self(),
-                                        Bucket,
-                                        FileName,
-                                        ContentLength,
-                                        ContentType),
-            UpdState = State#state{writer_pid=WriterPid},
-            {next_state, write_root, UpdState, Timeout};
-        {error, Reason} ->
-            lager:error("Failed to start the put fsm writer process. Reason: ",
-                        [Reason]),
-            {stop, Reason, State}
+    case handle_chunk(CLength, NumBytesReceived, size(NewData),
+                             CurrentBufferSize, MaxBufferSize) of
+        accept ->
+            handle_accept_chunk(NewData, State);
+        backpressure ->
+            handle_backpressure_for_chunk(NewData, From, State);
+        last_chunk ->
+            handle_receiving_last_chunk(NewData, State)
     end.
 
-%% @doc State for writing to the root block of a file.
--spec write_root(writer_ready | {block_written, pos_integer()},
-                 state()) ->
-                        {next_state,
-                         write_block,
-                         state(),
-                         non_neg_integer()}.
-write_root(writer_ready, State=#state{writer_pid=WriterPid,
-                                      timeout=Timeout}) ->
-    %% Send request to the writer to write the initial root block
-    riak_moss_writer:write_root(WriterPid),
-    {next_state, write_block, State, Timeout};
-write_root({block_written, BlockId}, State=#state{writer_pid=WriterPid,
-                                                  buffer_size=BufSz,
-                                                  max_buffer_size=MaxBufSz,
-                                                  block_size=BlockSz,
-                                                  block_waiter=From,
-                                                  timeout=Timeout}) ->
-    riak_moss_writer:update_root(WriterPid, {block_ready, BlockId}),
-    %% @TODO Perhaps address the fact that if BufSz is < BlockSz,
-    %% NewBufSz will be a negative integer and that value could grow
-    %% somewhat large if there are many transitions between
-    %% write_block and write_root before another data chunk is
-    %% received.
-    NewState = case (NewBufSz = BufSz - BlockSz) >= MaxBufSz of
-        false when From /= undefined ->
-            gen_fsm:reply(From, ok),
-            State#state{block_waiter=undefined};
-        _ ->
-            State#state{block_waiter=From}
-    end,
-    {next_state, write_block, NewState#state{buffer_size=NewBufSz}, Timeout}.
+all_received(finalize, From, State) ->
+    %% 1. stash the From pid into our
+    %%    state so that we know to reply
+    %%    later with the finished manifest
+    {next_state, all_received, State#state{reply_pid=From}}.
 
-%% @doc State for writing a block of a file. The
-%% transition from this state is to `write_root'.
--spec write_block(root_ready | all_blocks_written, state()) ->
-                         {next_state,
-                          write_root,
-                          state(),
-                          non_neg_integer()}.
-write_block(root_ready, State=#state{data=Data,
-                                     content_length=ContentLength,
-                                     next_block_id=BlockID,
-                                     writer_pid=WriterPid,
-                                     timeout=Timeout}) ->
-    case Data of
-        [] when ContentLength =:= 0 ->
-            riak_moss_writer:update_root(WriterPid, {block_ready, BlockID}),
-            {next_state, write_block, State, Timeout};
-        [] ->
-            %% All received data has been written so wait
-            %% for more data to arrive.
-            {next_state, waiting, State, Timeout};
-        [NextBlock | RestData] ->
-            riak_moss_writer:write_block(WriterPid, BlockID, NextBlock),
-            UpdState = State#state{data=RestData,
-                                   next_block_id=BlockID+1},
-            {next_state, write_root, UpdState, Timeout}
-    end;
-write_block({all_blocks_written, Manifest}, State=#state{manifest_waiter=Waiter,
-                                                         timeout=Timeout,
-                                                         writer_pid=WriterPid}) ->
-    NewState = State#state{final_manifest=Manifest},
-    case Waiter of
-        undefined ->
-            {next_state, client_wait, NewState, Timeout};
-        Waiter ->
-            gen_fsm:reply(Waiter, {ok, Manifest}),
-            riak_moss_writer:stop(WriterPid),
-            {stop, normal, NewState}
+done(finalize, _From, State=#state{manifest=Manifest, mani_pid=ManiPid,
+                                   timer_ref=TimerRef}) ->
+    %% 1. reply immediately
+    %%    with the finished manifest
+    timer:cancel(TimerRef),
+    case riak_moss_manifest_fsm:update_manifest_with_confirmation(ManiPid, Manifest) of
+        ok ->
+            {stop, normal, {ok, Manifest}, State};
+        Error ->
+            {stop, Error, {error, Error}, State}
     end.
 
-%% @doc State that is transistioned to when all the data
-%% that has been received by the fsm has been written, but
-%% more data for the file remains.
--spec waiting(timeout, state()) -> {stop, timeout, state()}.
-waiting(timeout, State=#state{writer_pid=WriterPid}) ->
-    riak_moss_writer:stop(WriterPid),
-    {stop, timeout, State}.
-
-client_wait(timeout, State=#state{writer_pid=WriterPid}) ->
-    riak_moss_writer:stop(WriterPid),
-    {stop, timeout, State}.
-
-%% @doc Handle events that should be handled
-%% the same regardless of the current state.
--spec handle_event(term(), atom(), state()) ->
-                          {stop, badmsg, state()}.
-handle_event(_Event, _StateName, State) ->
-    {stop, badmsg, State}.
-
-%% @doc Handle synchronous events that should be handled
-%% the same regardless of the current state.
--spec handle_sync_event(term(), term(), atom(), state()) ->
-                               {reply, term(), atom(), state()} |
-                               {next_state, atom(), state()}.
-handle_sync_event(current_state, _From, StateName, State) ->
-    {reply, StateName, StateName, State};
-handle_sync_event({augment_data, NewData},
-             From,
-             StateName,
-             State=#state{data=Data,
-                          content_length=ContentLength,
-                          raw_data=RawData,
-                          bytes_received=BytesReceived,
-                          block_size=BlockSz,
-                          max_buffer_size=MaxBufSz
-                         }) ->
-    UpdBytesReceived = BytesReceived + byte_size(NewData),
-    case RawData of
-        undefined ->
-            {UpdData, Remainder} = data_blocks(NewData,
-                                               ContentLength,
-                                               UpdBytesReceived,
-                                               Data);
-        _ ->
-            {UpdData, Remainder} =
-                data_blocks(<<RawData/binary, NewData/binary>>,
-                            ContentLength,
-                            UpdBytesReceived,
-                            Data)
-    end,
-    NewBufSz = BlockSz * length(UpdData),
-    UpdState = State#state{data=UpdData,
-                           bytes_received=UpdBytesReceived,
-                           buffer_size=NewBufSz,
-                           raw_data=Remainder},
-    case StateName of
-        waiting ->
-            gen_fsm:send_event(self(), root_ready),
-            NextState = write_block;
-        _ ->
-            NextState = StateName
-    end,
-    case NewBufSz >= MaxBufSz of
-        true ->
-            {next_state, NextState, UpdState#state{block_waiter=From, buffer_size=NewBufSz}};
-        false ->
-            {reply, ok, NextState, UpdState#state{buffer_size=NewBufSz}}
-    end;
-handle_sync_event(finalize, From, StateName, State=#state{final_manifest=undefined}) ->
-    {next_state, StateName, State#state{manifest_waiter=From}};
-handle_sync_event(finalize, _From, _StateName, State=#state{final_manifest=M,
-                                                            writer_pid=WriterPid}) ->
-    riak_moss_writer:stop(WriterPid),
-    {stop, normal, {ok, M}, State};
-handle_sync_event(_Event, _From, StateName, State) ->
+%%--------------------------------------------------------------------
+%%
+%%--------------------------------------------------------------------
+handle_event(_Event, StateName, State) ->
     {next_state, StateName, State}.
 
-%% @doc @TODO
--spec handle_info(term(), atom(), state()) ->
-                         {next_state, atom(), state(), timeout()} |
-                         {stop, badmsg, state()}.
-handle_info({'EXIT', _Pid, _Reason}, StateName, State=#state{timeout=Timeout}) ->
-    {next_state, StateName, State, Timeout};
-handle_info({_ReqId, {ok, _Pid}},
-            StateName,
-            State=#state{timeout=Timeout}) ->
-    {next_state, StateName, State, Timeout};
-handle_info(_Info, _StateName, State) ->
-    {stop, badmsg, State}.
+%%--------------------------------------------------------------------
+%%
+%%--------------------------------------------------------------------
+handle_sync_event(current_state, _From, StateName, State) ->
+    Reply = {StateName, State},
+    {reply, Reply, StateName, State};
+handle_sync_event(_Event, _From, StateName, State) ->
+    Reply = ok,
+    {reply, Reply, StateName, State}.
 
-%% @doc Unused.
--spec terminate(term(), atom(), state()) -> ok.
-terminate(Reason, _StateName, _State) ->
-    Reason.
+%%--------------------------------------------------------------------
+%%
+%%--------------------------------------------------------------------
+handle_info(save_manifest, StateName, State=#state{mani_pid=ManiPid,
+                                                   manifest=Manifest}) ->
+    %% 1. save the manifest
 
-%% @doc Unused.
--spec code_change(term(), atom(), state(), term()) ->
-                         {ok, atom(), state()}.
+    %% TODO:
+    %% are there any times where
+    %% we should be cancelling the
+    %% timer here, depending on the
+    %% state we're in?
+    riak_moss_manifest_fsm:update_manifest(ManiPid, Manifest),
+    {next_state, StateName, State};
+%% TODO:
+%% add a clause for handling down
+%% messages from the blocks gen_servers
+handle_info({'DOWN', CallerRef, process, _Pid, Reason}, _StateName, State=#state{caller=CallerRef}) ->
+    {stop, Reason, State}.
+
+%%--------------------------------------------------------------------
+%%
+%%--------------------------------------------------------------------
+terminate(_Reason, _StateName, #state{mani_pid=ManiPid,
+                                      all_writer_pids=BlockServerPids}) ->
+    riak_moss_manifest_fsm:stop(ManiPid),
+    [riak_moss_block_server:stop(P) || P <- BlockServerPids],
+    ok.
+
+%%--------------------------------------------------------------------
+%%
+%%--------------------------------------------------------------------
 code_change(_OldVsn, StateName, State, _Extra) ->
     {ok, StateName, State}.
 
-%% ====================================================================
-%% Internal functions
-%% ====================================================================
+%%%===================================================================
+%%% Internal functions
+%%%===================================================================
 
-%% @private
-%% @doc Start a `riak_moss_writer' process to perform the actual work
-%% of writing data to Riak.
--spec start_writer() -> {ok, pid()} | {error, term()}.
-start_writer() ->
-    riak_moss_writer_sup:start_writer(node(), []).
+handle_chunk(ContentLength, NumBytesReceived, NewDataSize, CurrentBufferSize, MaxBufferSize) ->
+    if
+        (NumBytesReceived + NewDataSize) == ContentLength ->
+            last_chunk;
+        (CurrentBufferSize + NewDataSize) >= MaxBufferSize ->
+            backpressure;
+        true ->
+            accept
+    end.
 
-%% @private
-%% @doc Break up a data binary into a list of block-sized chunks
--spec data_blocks(binary(), pos_integer(), non_neg_integer(), [binary()]) ->
-                         {[binary()], undefined | binary()}.
-data_blocks(Data, ContentLength, BytesReceived, Blocks) ->
-    data_blocks(Data,
-                ContentLength,
-                BytesReceived,
-                riak_moss_lfs_utils:block_size(),
-                Blocks).
+combine_new_and_remainder_data(NewData, undefined) ->
+    NewData;
+combine_new_and_remainder_data(NewData, Remainder) ->
+    <<Remainder/binary, NewData/binary>>.
 
 %% @private
 %% @doc Break up a data binary into a list of block-sized chunks
@@ -411,28 +353,149 @@ data_blocks(Data, ContentLength, BytesReceived, BlockSize, Blocks) ->
 append_data_block(BlockData, Blocks) ->
     lists:reverse([BlockData | lists:reverse(Blocks)]).
 
-%% ===================================================================
-%% Test API
-%% ===================================================================
+%% @private
+%% @doc Maybe send a message to one of the
+%%      gen_servers to write another block,
+%%      and then return the updated func inputs
+-spec maybe_write_blocks(term()) -> term().
+maybe_write_blocks(State=#state{buffer_queue=[]}) ->
+        State;
+maybe_write_blocks(State=#state{free_writers=[]}) ->
+        State;
+maybe_write_blocks(State=#state{buffer_queue=[ToWrite | RestBuffer],
+                                free_writers=FreeWriters,
+                                unacked_writes=UnackedWrites,
+                                bucket=Bucket,
+                                key=Key,
+                                manifest=Manifest,
+                                next_block_id=NextBlockID}) ->
 
--ifdef(TEST).
+    UUID = Manifest#lfs_manifest_v2.uuid,
+    WriterPid = hd(ordsets:to_list(FreeWriters)),
+    NewFreeWriters = ordsets:del_element(WriterPid, FreeWriters),
+    NewUnackedWrites = ordsets:add_element(NextBlockID, UnackedWrites),
 
-%% @doc Start a `riak_moss_put_fsm' for testing.
--spec test_link([{atom(), term()}],
-                binary(),
-                string(),
-                pos_integer(),
-                string(),
-                binary(),
-                timeout()) ->
-                       {ok, pid()} | ignore | {error, term()}.
-test_link(StateProps, Bucket, Name, ContentLength, ContentType, Data, Timeout) ->
-    Args = [Bucket, Name, ContentLength, ContentType, Data, Timeout],
-    gen_fsm:start_link(?MODULE, {test, Args, StateProps}, []).
+    riak_moss_block_server:put_block(WriterPid, Bucket, Key, UUID, NextBlockID, ToWrite),
 
-%% @doc Get the current state of the fsm for testing inspection
--spec current_state(pid()) -> atom() | {error, term()}.
-current_state(Pid) ->
-    gen_fsm:sync_send_all_state_event(Pid, current_state).
+    maybe_write_blocks(State#state{buffer_queue=RestBuffer,
+                                   free_writers=NewFreeWriters,
+                                   unacked_writes=NewUnackedWrites,
+                                   next_block_id=(NextBlockID + 1)}).
 
--endif.
+-spec state_from_block_written(non_neg_integer(), pid(), term()) -> term().
+state_from_block_written(BlockID, WriterPid, State=#state{unacked_writes=UnackedWrites,
+                                                          block_size=BlockSize,
+                                                          free_writers=FreeWriters,
+                                                          current_buffer_size=CurrentBufferSize,
+                                                          manifest=Manifest}) ->
+
+    NewManifest = riak_moss_lfs_utils:remove_write_block(Manifest, BlockID),
+    NewUnackedWrites = ordsets:del_element(BlockID, UnackedWrites),
+    NewFreeWriters = ordsets:add_element(WriterPid, FreeWriters),
+
+    %% After the last chunk is written,
+    %% there's a chance this could go negative
+    %% if the last block isn't a full
+    %% block size, so don't bring it below 0
+    NewCurrentBufferSize = max(0, CurrentBufferSize - BlockSize),
+
+    maybe_write_blocks(State#state{manifest=NewManifest,
+                                   unacked_writes=NewUnackedWrites,
+                                   current_buffer_size=NewCurrentBufferSize,
+                                   free_writers=NewFreeWriters}).
+
+%% @private
+%% @doc Start a number
+%%      of riak_moss_block_server
+%%      processes and return a list
+%%      of their pids
+-spec start_writer_servers(pos_integer()) -> list(pid()).
+start_writer_servers(NumServers) ->
+    %% TODO:
+    %% doesn't handle
+    %% failure at all
+    [Pid || {ok, Pid} <- 
+        [riak_moss_block_server:start_link() ||
+            _ <- lists:seq(1, NumServers)]].
+
+handle_accept_chunk(NewData, State=#state{buffer_queue=BufferQueue,
+                                          remainder_data=RemainderData,
+                                          block_size=BlockSize,
+                                          num_bytes_received=PreviousBytesReceived,
+                                          md5=Md5,
+                                          current_buffer_size=CurrentBufferSize,
+                                          content_length=ContentLength}) ->
+
+    NewMd5 = crypto:md5_update(Md5, NewData),
+    NewRemainderData = combine_new_and_remainder_data(NewData, RemainderData),
+    UpdatedBytesReceived = PreviousBytesReceived + size(NewData),
+
+    NewCurrentBufferSize = CurrentBufferSize + size(NewData),
+
+    {NewBufferQueue, NewRemainderData2} =
+    data_blocks(NewRemainderData, ContentLength, UpdatedBytesReceived, BlockSize, BufferQueue),
+
+    NewStateData = maybe_write_blocks(State#state{buffer_queue=NewBufferQueue,
+                                                  remainder_data=NewRemainderData2,
+                                                  md5=NewMd5,
+                                                  current_buffer_size=NewCurrentBufferSize,
+                                                  num_bytes_received=UpdatedBytesReceived}),
+    Reply = ok,
+    {reply, Reply, not_full, NewStateData}.
+
+%% pattern match on reply_pid=undefined as a sort of
+%% assert
+handle_backpressure_for_chunk(NewData, From, State=#state{reply_pid=undefined,
+                                                          buffer_queue=BufferQueue,
+                                                          md5=Md5,
+                                                          block_size=BlockSize,
+                                                          remainder_data=RemainderData,
+                                                          current_buffer_size=CurrentBufferSize,
+                                                          num_bytes_received=PreviousBytesReceived,
+                                                          content_length=ContentLength}) ->
+
+    NewMd5 = crypto:md5_update(Md5, NewData),
+    NewRemainderData = combine_new_and_remainder_data(NewData, RemainderData),
+    UpdatedBytesReceived = PreviousBytesReceived + size(NewData),
+
+    NewCurrentBufferSize = CurrentBufferSize + size(NewData),
+
+    {NewBufferQueue, NewRemainderData2} =
+    data_blocks(NewRemainderData, ContentLength, UpdatedBytesReceived, BlockSize, BufferQueue),
+
+    NewStateData = maybe_write_blocks(State#state{buffer_queue=NewBufferQueue,
+                                                  remainder_data=NewRemainderData2,
+                                                  md5=NewMd5,
+                                                  current_buffer_size=NewCurrentBufferSize,
+                                                  num_bytes_received=UpdatedBytesReceived}),
+
+    {next_state, full, NewStateData#state{reply_pid=From}}.
+
+handle_receiving_last_chunk(NewData, State=#state{buffer_queue=BufferQueue,
+                                                  remainder_data=RemainderData,
+                                                  md5=Md5,
+                                                  block_size=BlockSize,
+                                                  manifest=Manifest,
+                                                  current_buffer_size=CurrentBufferSize,
+                                                  num_bytes_received=PreviousBytesReceived,
+                                                  content_length=ContentLength}) ->
+
+    NewMd5 = crypto:md5_final(crypto:md5_update(Md5, NewData)),
+    NewManifest = Manifest#lfs_manifest_v2{content_md5=NewMd5},
+    NewRemainderData = combine_new_and_remainder_data(NewData, RemainderData),
+    UpdatedBytesReceived = PreviousBytesReceived + size(NewData),
+
+    NewCurrentBufferSize = CurrentBufferSize + size(NewData),
+
+    {NewBufferQueue, NewRemainderData2} =
+    data_blocks(NewRemainderData, ContentLength, UpdatedBytesReceived, BlockSize, BufferQueue),
+
+    NewStateData = maybe_write_blocks(State#state{buffer_queue=NewBufferQueue,
+                                                  remainder_data=NewRemainderData2,
+                                                  md5=NewMd5,
+                                                  manifest=NewManifest,
+                                                  current_buffer_size=NewCurrentBufferSize,
+                                                  num_bytes_received=UpdatedBytesReceived}),
+
+    Reply = ok,
+    {reply, Reply, all_received, NewStateData}.

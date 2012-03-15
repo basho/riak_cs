@@ -151,7 +151,9 @@ content_types_provided(RD, Ctx) ->
     Method = wrq:method(RD),
     if Method == 'GET'; Method == 'HEAD' ->
             DocCtx = riak_moss_wm_utils:ensure_doc(Ctx),
-            ContentType = dict:fetch("content-type", DocCtx#key_context.doc_metadata),
+            ContentType =
+                binary_to_list(orddict:fetch("content-type",
+                                             DocCtx#key_context.doc_metadata)),
             case ContentType of
                 undefined ->
                     {[{"application/octet-stream", produce_body}], RD, DocCtx};
@@ -172,13 +174,13 @@ produce_body(RD, #key_context{get_fsm_pid=GetFsmPid,
     riak_moss_get_fsm:stop(GetFsmPid),
     {riak_moss_acl_utils:empty_acl_xml(), RD, KeyCtx};
 produce_body(RD, #key_context{get_fsm_pid=GetFsmPid, doc_metadata=DocMeta}=Ctx) ->
-    ContentLength = dict:fetch("content-length", DocMeta),
-    ContentMd5 = dict:fetch("content-md5", DocMeta),
+    ContentLength = orddict:fetch("content-length", DocMeta),
+    ContentMd5 = orddict:fetch("content-md5", DocMeta),
     ETag = "\"" ++ riak_moss_utils:binary_to_hexlist(ContentMd5) ++ "\"",
     NewRQ = lists:foldl(fun({K, V}, Rq) -> wrq:set_resp_header(K, V, Rq) end,
                         RD,
                         [{"ETag",  ETag},
-                         {"Last-Modified", dict:fetch("last-modified", DocMeta)}
+                         {"Last-Modified", orddict:fetch("last-modified", DocMeta)}
                         ]),
     Method = wrq:method(RD),
     case Method == 'HEAD'
@@ -197,15 +199,8 @@ produce_body(RD, #key_context{get_fsm_pid=GetFsmPid, doc_metadata=DocMeta}=Ctx) 
 -spec delete_resource(term(), term()) -> boolean().
 delete_resource(RD, Ctx=#key_context{bucket=Bucket, key=Key}) ->
     BinKey = list_to_binary(Key),
-    case riak_moss_delete_fsm_sup:start_delete_fsm(node(), [Bucket, BinKey, 600000]) of
-        {ok, _Pid} ->
-            {true, RD, Ctx};
-        {error, Reason} ->
-            lager:error("delete fsm couldn't be started: ~p", [Reason]),
-            riak_moss_s3_response:api_error({riak_connect_failed, Reason},
-                                            RD,
-                                            Ctx)
-    end.
+    riak_moss_delete_marker:delete(Bucket, BinKey),
+    {true, RD, Ctx}.
 
 -spec content_types_accepted(term(), term()) ->
     {[{string(), atom()}], term(), term()}.
@@ -244,7 +239,14 @@ accept_body(RD, Ctx=#key_context{bucket=Bucket,
                                  key=Key,
                                  putctype=ContentType,
                                  size=Size}) ->
-    Args = [Bucket, Key, Size, ContentType, <<>>, 60000],
+    %% TODO:
+    %% the Metadata
+    %% should be pulled out of the
+    %% headers
+    Metadata = orddict:new(),
+    BlockSize = riak_moss_lfs_utils:block_size(),
+    Args = [Bucket, list_to_binary(Key), Size, list_to_binary(ContentType),
+        Metadata, BlockSize, timer:seconds(60), self()],
     {ok, Pid} = riak_moss_put_fsm_sup:start_put_fsm(node(), Args),
     accept_streambody(RD, Ctx, Pid, wrq:stream_req_body(RD, riak_moss_lfs_utils:block_size())).
 
@@ -263,5 +265,5 @@ accept_streambody(RD, Ctx=#key_context{}, Pid, {Data, Next}) ->
 finalize_request(RD, Ctx, Pid) ->
     %Metadata = dict:from_list([{<<"content-type">>, CType}]),
     {ok, Manifest} = riak_moss_put_fsm:finalize(Pid),
-    ETag = "\"" ++ riak_moss_utils:binary_to_hexlist(riak_moss_lfs_utils:content_md5(Manifest)) ++ "\"",
+    ETag = "\"" ++ riak_moss_utils:binary_to_hexlist(Manifest#lfs_manifest_v2.content_md5) ++ "\"",
     {true, wrq:set_resp_header("ETag",  ETag, RD), Ctx}.

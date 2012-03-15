@@ -17,7 +17,8 @@ get_object(Bucket, Key) ->
                                                 <<"uuid">>,
                                                 10000, % content length
                                                 <<"md5">>,
-                                                dict:new()), % metadata
+                                                dict:new(),
+                                                riak_moss_lfs_utils:block_size()), % metadata
     RiakObj = riakc_obj:new_obj(Bucket, Key, [], [{dict:new(), term_to_binary(Manifest)}]),
     {ok, RiakObj}.
 
