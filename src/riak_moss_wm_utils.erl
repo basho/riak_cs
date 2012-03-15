@@ -14,7 +14,9 @@
          iso_8601_to_rfc_1123/1,
          to_rfc_1123/1,
          streaming_get/1,
-         user_record_to_proplist/1]).
+         user_record_to_proplist/1,
+         find_and_auth_user/3,
+         deny_access/2]).
 
 -include("riak_moss.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
@@ -58,6 +60,74 @@ parse_auth_header("AWS " ++ Key, _) ->
 parse_auth_header(_, _) ->
     {riak_moss_blockall_auth, undefined, undefined}.
 
+%% @doc Lookup the user specified by the access headers, and call
+%% `Next(RD, NewCtx)' if there is no auth error.
+%%
+%% If a user was successfully authed, the `user' and `user_vclock'
+%% fields in the `#context' record passed to `Next' will be filled.
+%% If the access is instead anonymous, those fields will be left as
+%% they were passed to this function.
+%%
+%% If authorization fails (a bad key or signature is given, or the
+%% Riak lookup fails), a tuple suitable for returning from a
+%% webmachine resource's `forbidden/2' function is returned, with
+%% appropriate error message included.
+find_and_auth_user(RD, #context{auth_bypass=AuthBypass}=Ctx, Next) ->
+    case find_and_auth_user(RD, AuthBypass) of
+        {ok, User, UserVclock} ->
+            %% given keyid and signature matched, proceed
+            NewCtx = Ctx#context{user=User,
+                                 user_vclock=UserVclock},
+            Next(RD, NewCtx);
+        {error, no_user_key} ->
+            %% no keyid was given, proceed anonymously
+            Next(RD, Ctx);
+        {error, bad_auth} ->
+            %% given keyid was found, but signature didn't match
+            deny_access(RD, Ctx);
+        {error, _Reason} ->
+            %% no matching keyid was found, or lookup failed
+            deny_invalid_key(RD, Ctx)
+    end.
+
+%% @doc Look for an Authorization header in the request, and validate
+%% it if it exists.  Returns `{ok, User, UserVclock}' if validation
+%% succeeds, or `{error, KeyId, Reason}' if any step fails.
+find_and_auth_user(RD, AuthBypass) ->
+    AuthHeader = wrq:get_req_header("authorization", RD),
+    {AuthMod, KeyId, Signature} = parse_auth_header(AuthHeader, AuthBypass),
+    case riak_moss_utils:get_user(KeyId) of
+        {ok, {User, UserVclock}} ->
+            Secret = User?MOSS_USER.key_secret,
+            case AuthMod:authenticate(RD, Secret, Signature) of
+                ok ->
+                    {ok, User, UserVclock};
+                {error, _Reason} ->
+                    %% TODO: are the errors here of small enough
+                    %% number that we could just handle them in
+                    %% forbidden/2?
+                    {error, bad_auth}
+            end;
+        {error, NE} when NE == notfound; NE == no_user_key ->
+            %% anonymous access lookups don't need to be logged, and
+            %% auth failures are logged by other meands
+            {error, NE};
+        {error, Reason} ->
+            %% other failures, like Riak fetch timeout, be loud about
+            lager:error("Retrieval of user record for ~p failed. Reason: ~p",
+                        [KeyId, Reason]),
+            {error, Reason}
+    end.
+
+%% @doc Produce an access-denied error message from a webmachine
+%% resource's `forbidden/2' function.
+deny_access(RD, Ctx) ->
+    riak_moss_s3_response:api_error(access_denied, RD, Ctx).
+
+%% @doc Prodice an invalid-access-keyid error message from a
+%% webmachine resource's `forbidden/2' function.
+deny_invalid_key(RD, Ctx) ->
+    riak_moss_s3_response:api_error(invalid_access_key_id, RD, Ctx).
 
 %% @doc Utility function for accessing
 %%      a riakc_obj without retrieving
@@ -68,8 +138,8 @@ ensure_doc(Ctx=#key_context{get_fsm_pid=undefined, bucket=Bucket, key=Key}) ->
     %% start the get_fsm
     BinKey = list_to_binary(Key),
     {ok, Pid} = riak_moss_get_fsm_sup:start_get_fsm(node(), [Bucket, BinKey]),
-    Metadata = riak_moss_get_fsm:get_metadata(Pid),
-    Ctx#key_context{get_fsm_pid=Pid, doc_metadata=Metadata};
+    Manifest = riak_moss_get_fsm:get_manifest(Pid),
+    Ctx#key_context{get_fsm_pid=Pid, manifest=Manifest};
 ensure_doc(Ctx) -> Ctx.
 
 streaming_get(FsmPid) ->

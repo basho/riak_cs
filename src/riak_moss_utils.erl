@@ -32,6 +32,7 @@
          riak_connection/0,
          riak_connection/2,
          set_bucket_acl/4,
+         set_object_acl/4,
          to_bucket_name/2]).
 
 -include("riak_moss.hrl").
@@ -73,7 +74,7 @@ close_riak_connection(Pid) ->
 
 %% @doc Create a bucket in the global namespace or return
 %% an error if it already exists.
--spec create_bucket(moss_user(), term(), binary(), acl_v1()) ->
+-spec create_bucket(moss_user(), term(), binary(), acl()) ->
                            {ok, moss_user()} |
                            {ok, ignore} |
                            {error, term()}.
@@ -425,13 +426,24 @@ riak_connection(Host, Port) ->
 
 %% @doc Set the ACL for a bucket. Existing ACLs are only
 %% replaced, they cannot be updated.
--spec set_bucket_acl(moss_user(), term(), binary(), acl_v1()) -> ok.
+-spec set_bucket_acl(moss_user(), term(), binary(), acl()) -> ok.
 set_bucket_acl(User, VClock, Bucket, ACL) ->
     serialized_bucket_op(Bucket,
                          ACL,
                          User,
                          VClock,
                          update_acl).
+
+%% @doc Set the ACL for an object. Existing ACLs are only
+%% replaced, they cannot be updated.
+-spec set_object_acl(binary(), binary(), lfs_manifest(), acl()) -> ok.
+set_object_acl(Bucket, Key, Manifest, Acl) ->
+    {ok, ManiPid} = riak_moss_manifest_fsm:start_link(Bucket, Key),
+    _ActiveMfst = riak_moss_manifest_fsm:get_active_manifest(ManiPid),
+    UpdManifest = Manifest#lfs_manifest_v2{acl=Acl},
+    Res = riak_moss_manifest_fsm:update_manifest_with_confirmation(ManiPid, UpdManifest),
+    riak_moss_manifest_fsm:stop(ManiPid),
+    Res.
 
 %% Get the proper bucket name for either the MOSS object
 %% bucket or the data block bucket.
@@ -447,7 +459,7 @@ to_bucket_name(blocks, Name) ->
 
 %% @doc Generate a JSON document to use for a bucket
 %% ACL request.
--spec bucket_acl_json(acl_v1(), string()) -> string().
+-spec bucket_acl_json(acl(), string()) -> string().
 bucket_acl_json(ACL, KeyId)  ->
     binary_to_list(
       iolist_to_binary(
@@ -493,7 +505,7 @@ bucket_exists(Buckets, CheckBucket) ->
 %% bucket creation or deletion.
 -spec bucket_fun(bucket_operation(),
                  binary(),
-                 acl_v1(),
+                 acl(),
                  string(),
                  {string(), string()},
                  {string(), pos_integer(), boolean()}) -> function().
@@ -535,7 +547,7 @@ bucket_fun(delete, Bucket, _ACL, KeyId, AdminCreds, StanchionData) ->
 
 %% @doc Generate a JSON document to use for a bucket
 %% creation request.
--spec bucket_json(binary(), acl_v1(), string()) -> string().
+-spec bucket_json(binary(), acl(), string()) -> string().
 bucket_json(Bucket, ACL, KeyId)  ->
     binary_to_list(
       iolist_to_binary(
@@ -777,7 +789,7 @@ save_user(User, VClock, RiakPid) ->
 
 %% @doc Shared code used when doing a bucket creation or deletion.
 -spec serialized_bucket_op(binary(),
-                           acl_v1(),
+                           acl(),
                            moss_user(),
                            term(),
                            bucket_action()) ->

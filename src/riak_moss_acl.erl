@@ -58,26 +58,28 @@ anonymous_bucket_access(Bucket, RequestedAccess) ->
 
 %% @doc Determine if anonymous access is set for the object.
 %% @TODO Enhance when doing object ACLs
--spec anonymous_object_access(binary(), binary(), atom()) -> {true, string()} |
+-spec anonymous_object_access(binary(), acl(), atom()) -> {true, string()} |
                                                              false.
-anonymous_object_access(_Bucket, _Key, undefined) ->
+anonymous_object_access(_Bucket, _ObjAcl, undefined) ->
     false;
-anonymous_object_access(Bucket, _Key, RequestedAccess) ->
-    %% Fetch the bucket's ACL
+anonymous_object_access(Bucket, _ObjAcl, 'WRITE') ->
     case bucket_acl(Bucket) of
-        {ok, Acl} ->
-            case RequestedAccess of
-                'WRITE' ->
-                    %% `WRITE' is the only pertinent bucket-level
-                    %% permission when checking object access.
-                    has_permission(Acl, RequestedAccess);
-                _ ->
-                    false
-            end;
+        {ok, BucketAcl} ->
+            %% `WRITE' is the only pertinent bucket-level
+            %% permission when checking object access.
+            has_permission(BucketAcl, 'WRITE');
         {error, Reason} ->
             %% @TODO Think about bubbling this error up and providing
             %% feedback to requester.
-            lager:error("Anonymous objcet access check failed due to error. Reason: ~p", [Reason]),
+            lager:error("Anonymous object access check failed due to error. Reason: ~p", [Reason]),
+            false
+    end;
+anonymous_object_access(_Bucket, ObjAcl, RequestedAccess) ->
+    HasObjPerm = has_permission(ObjAcl, RequestedAccess),
+    case HasObjPerm of
+        true ->
+            {true, owner_id(ObjAcl)};
+        _ ->
             false
     end.
 
@@ -112,7 +114,7 @@ bucket_access(Bucket, RequestedAccess, CanonicalId) ->
     end.
 
 %% @doc Get the ACL for a bucket
--spec bucket_acl(binary()) -> acl_v1().
+-spec bucket_acl(binary()) -> acl().
 bucket_acl(Bucket) ->
     case riak_moss_utils:get_object(?BUCKETS_BUCKET, Bucket) of
         {ok, Obj} ->
@@ -128,21 +130,21 @@ bucket_acl(Bucket) ->
 %% @TODO Enhance when doing object-level ACL work. This is a bit
 %% patchy until object ACLs are done. The bucket owner gets full
 %% control, but bucket-level ACLs only matter for writes otherwise.
--spec object_access(binary(), binary(), atom(), string()) -> boolean() |
+-spec object_access(binary(), acl(), atom(), string()) -> boolean() |
                                                              {true, string()}.
-object_access(_Bucket, _Key, undefined, _CanonicalId) ->
+object_access(_Bucket, _ObjAcl, undefined, _CanonicalId) ->
     false;
-object_access(Bucket, _Key, RequestedAccess, CanonicalId) ->
+object_access(_Bucket, _ObjAcl, _RequestedAccess, undefined) ->
+    %% User record not provided, check for anonymous access
+    anonymous_object_access(_Bucket, _ObjAcl, _RequestedAccess);
+object_access(Bucket, _ObjAcl, 'WRITE', CanonicalId) ->
     %% Fetch the bucket's ACL
     case bucket_acl(Bucket) of
-        {ok, Acl} ->
-            IsOwner = is_owner(Acl, CanonicalId),
-            HasPerm = has_permission(Acl, RequestedAccess, CanonicalId),
-            case HasPerm of
-                true when IsOwner == true ->
-                    true;
-                true when RequestedAccess == 'WRITE' ->
-                    {true, owner_id(Acl)};
+        {ok, BucketAcl} ->
+            HasBucketPerm = has_permission(BucketAcl, 'WRITE', CanonicalId),
+            case HasBucketPerm of
+                true ->
+                    {true, owner_id(BucketAcl)};
                 _ ->
                     false
             end;
@@ -151,16 +153,30 @@ object_access(Bucket, _Key, RequestedAccess, CanonicalId) ->
             %% feedback to requester.
             lager:error("Object access check failed due to error. Reason: ~p", [Reason]),
             false
+    end;
+object_access(_Bucket, ObjAcl, RequestedAccess, CanonicalId) ->
+    lager:debug("ObjAcl: ~p~nCanonicalId: ~p", [ObjAcl, CanonicalId]),
+    IsObjOwner = is_owner(ObjAcl, CanonicalId),
+    HasObjPerm = has_permission(ObjAcl, RequestedAccess, CanonicalId),
+    lager:debug("IsObjOwner: ~p", [IsObjOwner]),
+    lager:debug("HasObjPerm: ~p", [HasObjPerm]),
+    case HasObjPerm of
+        true when IsObjOwner == true ->
+            true;
+        true ->
+            {true, owner_id(ObjAcl)};
+        _ ->
+            false
     end.
 
 %% ===================================================================
-%% Interal functions
+%% Internal functions
 %% ===================================================================
 
 %% @doc Find the ACL in a list of metadata values and
 %% convert it to an erlang term representation. Return
 %% `undefined' if an ACL is not found.
--spec acl_from_meta([{string(), term()}]) -> undefined | acl_v1().
+-spec acl_from_meta([{string(), term()}]) -> undefined | acl().
 acl_from_meta([]) ->
     {error, acl_undefined};
 acl_from_meta([{?MD_ACL, Acl} | _]) ->
@@ -169,7 +185,7 @@ acl_from_meta([_ | RestMD]) ->
     acl_from_meta(RestMD).
 
 %% @doc Get the canonical id of the owner of an entity.
--spec owner_id(acl_v1()) -> string().
+-spec owner_id(acl()) -> string().
 owner_id(Acl) ->
     {_, OwnerId} = Acl?ACL.owner,
     OwnerId.
@@ -187,7 +203,7 @@ group_grants([_ | RestGrants], _GroupGrants) ->
 
 %% @doc Determine if the ACL grants group access
 %% for the requestsed permission type.
--spec has_group_permission(acl_v1(), atom()) -> boolean().
+-spec has_group_permission(acl(), atom()) -> boolean().
 has_group_permission([], _RequestedAccess) ->
     false;
 has_group_permission([{_, Perms} | RestGrants], RequestedAccess) ->
@@ -200,7 +216,7 @@ has_group_permission([{_, Perms} | RestGrants], RequestedAccess) ->
 
 %% @doc Determine if the ACL grants anonymous access
 %% for the requestsed permission type.
--spec has_permission(acl_v1(), atom()) -> boolean().
+-spec has_permission(acl(), atom()) -> boolean().
 has_permission(Acl, RequestedAccess) ->
     GroupGrants = group_grants(Acl?ACL.grants, []),
     case [Perms || {Grantee, Perms} <- GroupGrants,
@@ -213,7 +229,7 @@ has_permission(Acl, RequestedAccess) ->
 
 %% @doc Determine if a user has the requested permission
 %% granted in an ACL.
--spec has_permission(acl_v1(), atom(), string()) -> boolean().
+-spec has_permission(acl(), atom(), string()) -> boolean().
 has_permission(Acl, RequestedAccess, CanonicalId) ->
     Grants = Acl?ACL.grants,
     case user_grant(Grants, CanonicalId) of
@@ -225,7 +241,7 @@ has_permission(Acl, RequestedAccess, CanonicalId) ->
     end.
 
 %% @doc Determine if a user is the owner of a system entity.
--spec is_owner(acl_v1(), string()) -> boolean().
+-spec is_owner(acl(), string()) -> boolean().
 is_owner(Acl, CanonicalId) ->
     {_, OwnerId} = Acl?ACL.owner,
     CanonicalId == OwnerId.
