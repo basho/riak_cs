@@ -107,8 +107,10 @@
 -define(KEY_SAMPLE,  'Sample').
 -define(KEY_SAMPLES, 'Samples').
 -define(KEY_OPERATION, 'Operation').
+-define(KEY_ERROR, 'Error').
 -define(KEY_ERRORS, 'Errors').
 -define(KEY_REASON, 'Reason').
+-define(KEY_MESSAGE, 'Message').
 
 -record(ctx, {
           riak :: pid(),
@@ -307,13 +309,13 @@ error_msg(RD, Message) ->
 json_error_msg(Message) when is_list(Message) ->
     json_error_msg(list_to_binary(Message));
 json_error_msg(Message) ->
-    MJ = {struct, [{error, {struct, [{message, Message}]}}]},
+    MJ = {struct, [{?KEY_ERROR, {struct, [{?KEY_MESSAGE, Message}]}}]},
     mochijson2:encode(MJ).
 
 xml_error_msg(Message) when is_binary(Message) ->
     xml_error_msg(binary_to_list(Message));
 xml_error_msg(Message) ->
-    Doc = [{'Error', [{'Messsage', [Message]}]}],
+    Doc = [{?KEY_ERROR, [{?KEY_MESSAGE, [Message]}]}],
     riak_moss_s3_response:export_xml(Doc).
 
 %% @doc Produce a datetime tuple from a ISO8601 string
