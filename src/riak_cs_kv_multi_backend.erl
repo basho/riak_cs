@@ -1,6 +1,6 @@
 %% -------------------------------------------------------------------
 %%
-%% riak_multi_backend: switching between multiple storage engines
+%% riak_cs_kv_multi_backend: switching between multiple storage engines
 %%
 %% Copyright (c) 2007-2010 Basho Technologies, Inc.  All Rights Reserved.
 %%
@@ -20,7 +20,7 @@
 %%
 %% -------------------------------------------------------------------
 
--module (riak_kv_multi_backend).
+-module (riak_cs_kv_multi_backend).
 -behavior(riak_kv_backend).
 
 %% KV Backend API
