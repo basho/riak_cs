@@ -11,6 +11,7 @@
 -behaviour(gen_server).
 
 -include("riak_moss.hrl").
+-include_lib("riakc/include/riakc_obj.hrl").
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -295,14 +296,9 @@ update_root_block(Pid, Module, Bucket, FileName, _UUID, MD5, {block_ready, Block
                               ok | {error, term()}.
 write_data_block(Pid, Module, S3Bucket, FileName, Bucket, Key, Data) ->
     Obj0 = riakc_obj:new(Bucket, Key, Data),
-    %% SLF TODO: It looks like the #rpbputreq record for the riakc_pb_socket
-    %%           client doesn't send the object's metadata over the PB wire,
-    %%           so this metadata update is in vain?
-    %%
-    %%           I think it's a good idea to have "backpointers", to
-    %%           be able to map these UUID jibberish things back to
-    %%           human-sensible S3 bucket & file names.
-    Obj = riakc_obj:update_metadata(Obj0, dict:from_list([{bucket, S3Bucket}, {filename, FileName}])),
+    MD = dict:from_list([{?MD_USERMETA, [{"RCS-bucket", S3Bucket},
+                                         {"RCS-filename", FileName}]}]),
+    Obj = riakc_obj:update_metadata(Obj0, MD),
     Module:put(Pid, Obj).
 
 %% ===================================================================
