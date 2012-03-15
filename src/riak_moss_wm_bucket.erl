@@ -148,9 +148,8 @@ to_xml(RD, Ctx=#context{user=User,
         [] ->
             riak_moss_s3_response:api_error(no_such_bucket, RD, Ctx);
         [BucketRecord] ->
-            MOSSBucket = riak_moss_utils:to_bucket_name(objects, Bucket),
             Prefix = list_to_binary(wrq:get_qs_value("prefix", "", RD)),
-            case riak_moss_utils:get_keys_and_objects(MOSSBucket, Prefix) of
+            case riak_moss_utils:get_keys_and_manifests(Bucket, Prefix) of
                 {ok, KeyObjPairs} ->
                     riak_moss_s3_response:list_bucket_response(User,
                                                                BucketRecord,

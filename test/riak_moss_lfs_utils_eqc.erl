@@ -8,8 +8,9 @@
 
 -module(riak_moss_lfs_utils_eqc).
 
--ifdef(EQC).
+-include("riak_moss.hrl").
 
+-ifdef(EQC).
 -include_lib("eqc/include/eqc.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -73,15 +74,17 @@ prop_manifest_manipulation() ->
                                                         FileName,
                                                         UUID,
                                                         CLength,
+                                                        <<"ctype">>,
                                                         Md5,
-                                                        MD),
+                                                        MD,
+                                                        riak_moss_lfs_utils:block_size()),
 
-            Blocks = riak_moss_lfs_utils:initial_blocks(CLength),
+            Blocks = riak_moss_lfs_utils:initial_blocks(CLength, riak_moss_lfs_utils:block_size()),
             %% TODO: maybe we should shuffle blocks?
-            FoldFun = fun (Chunk, Mani) -> riak_moss_lfs_utils:remove_block(Mani, Chunk) end,
+            FoldFun = fun (Chunk, Mani) -> riak_moss_lfs_utils:remove_write_block(Mani, Chunk) end,
             EmptyMani = lists:foldl(FoldFun, Manifest, Blocks),
             conjunction([{is_manifest, riak_moss_lfs_utils:is_manifest(term_to_binary(Manifest))},
-                         {not_waiting, not riak_moss_lfs_utils:still_waiting(EmptyMani)}])
+                         {is_active, EmptyMani#lfs_manifest_v2.state == active}])
         end).
 
 
