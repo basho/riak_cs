@@ -57,61 +57,30 @@ service_available(RD, Ctx) ->
 %%      but this is how S3 does things.
 forbidden(RD, #key_context{context=ICtx}=Ctx) ->
     Next = fun(NewRD, NewCtx) ->
-                   check_permission(NewRD, Ctx#key_context{context=NewCtx})
+                   get_access_and_manifest(NewRD, Ctx#key_context{context=NewCtx})
            end,
     riak_moss_wm_utils:find_and_auth_user(RD, ICtx, Next).
 
-%% @doc Compare the permission requested with the permission granted,
-%% and allow or deny access.  Returns a result suitable for directly
-%% returning from the {@link forbidden/2} webmachine export.
-check_permission(RD, #key_context{bucket=Bucket,
-                                  key=Key,
-                                  context=ICtx}=Ctx) ->
+%% @doc Get the type of access requested and the manifest with the
+%% object ACL and compare the permission requested with the permission
+%% granted, and allow or deny access. Returns a result suitable for
+%% directly returning from the {@link forbidden/2} webmachine export.
+get_access_and_manifest(RD, Ctx=#key_context{context=InnerCtx}) ->
     Method = wrq:method(RD),
     RequestedAccess =
-        riak_moss_acl_utils:requested_access(Method, wrq:req_qs(RD)),
-    BinKey = list_to_binary(Key),
-    Granted = case ICtx#context.user of
-                  undefined ->
-                      riak_moss_acl:anonymous_object_access(Bucket,
-                                                            BinKey,
-                                                            RequestedAccess);
-                  User ->
-                      riak_moss_acl:object_access(Bucket,
-                                                  BinKey,
-                                                  RequestedAccess,
-                                                  User?MOSS_USER.canonical_id)
-              end,
+        riak_moss_acl_utils:requested_access(Method,
+                                             wrq:req_qs(RD)),
+    NewInnerCtx = InnerCtx#context{requested_perm=RequestedAccess},
+    NewCtx = riak_moss_wm_utils:ensure_doc(Ctx#key_context{context=NewInnerCtx}),
+    check_permission(Method, RD, NewCtx).
 
-    NewICtx = ICtx#context{requested_perm=RequestedAccess},
-    NewCtx = Ctx#key_context{context=NewICtx},
-    case Granted of
-        {true, _Owner} ->
-            %% TODO: keep this pathway, even though redundant now - it
-            %% will be tracked differently in the access-log branch
-            forbidden(Method, RD, NewCtx);
-        true ->
-            forbidden(Method, RD, NewCtx);
-        false ->
-            riak_moss_wm_utils:deny_access(RD, NewCtx)
-    end.
-
-%% @TODO Further attention needed here.
-%% @doc Final step of {@link forbidden/2}: after the permissions have
-%% been confirmed, ensure that the document metadata is available
-%% during GET & HEAD processing.
-%% @doc Authentication succeeded, now perform ACL check to verify
-%% access permission.
-forbidden(_Method, _RD, Ctx=#key_context{manifest=undefined}) ->
-    %% With object ACLs we need the manifest for all
-    %% methods so just get it here.
-    NewCtx = riak_moss_wm_utils:ensure_doc(Ctx),
-    forbidden(_Method, _RD, NewCtx);
-forbidden('GET', RD, Ctx=#key_context{manifest=notfound}) ->
+%% @doc Final step of {@link forbidden/2}: Authentication succeeded,
+%% now perform ACL check to verify access permission.
+check_permission('GET', RD, Ctx=#key_context{manifest=notfound}) ->
     {{halt, 404}, RD, Ctx};
-forbidden('HEAD', RD, Ctx=#key_context{manifest=notfound}) ->
+check_permission('HEAD', RD, Ctx=#key_context{manifest=notfound}) ->
     {{halt, 404}, RD, Ctx};
-forbidden(Method, RD, Ctx=#key_context{bucket=Bucket,
+check_permission(Method, RD, Ctx=#key_context{bucket=Bucket,
                                        context=InnerCtx,
                                        manifest=Mfst}) ->
     RequestedAccess =
@@ -146,7 +115,7 @@ forbidden(Method, RD, Ctx=#key_context{bucket=Bucket,
             end;
         false ->
             %% ACL check failed, deny access
-            riak_moss_s3_response:api_error(access_denied, RD, Ctx)
+            riak_moss_wm_utils:deny_access(RD, Ctx)
     end.
 
 %% @doc Get the list of methods this resource supports.
