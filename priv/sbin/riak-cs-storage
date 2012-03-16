@@ -11,19 +11,18 @@ cd $RUNNER_RUN_DIR
 
 # Check the first argument for instructions
 case "$1" in
-    batch)
+    batch|status|pause|resume|cancel)
         # Make sure the local node IS running
         RES=`$NODETOOL ping`
         if [ "$RES" != "pong" ]; then
             echo "Node is not running!"
             exit 1
         fi
-        shift
 
-        $NODETOOL rpc riak_cs_storage_console batch $@
+        $NODETOOL rpc riak_cs_storage_console $@
         ;;
     *)
-        echo "Usage: $SCRIPT { batch }"
+        echo "Usage: $SCRIPT { batch|status|pause|resume|cancel }"
         exit 1
         ;;
 esac

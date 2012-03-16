@@ -14,13 +14,17 @@
 %% API
 -export([start_link/0,
          status/0,
-         start_batch/0]).
+         start_batch/0,
+         cancel_batch/0,
+         pause_batch/0,
+         resume_batch/0]).
 
 %% gen_fsm callbacks
 -export([init/1,
 
          idle/2, idle/3,
          calculating/2, calculating/3,
+         paused/2, paused/3,
 
          handle_event/3,
          handle_sync_event/4,
@@ -55,13 +59,13 @@ start_link() ->
     gen_fsm:start_link({local, ?SERVER}, ?MODULE, [], []).
 
 %% @doc Status is returned as a 2-tuple of `{State, Details}'.  State
-%% should be either `idle' or `calculating'.  When `idle' the details
-%% (a proplist) will include the schedule, as well as the times of the
-%% last calculation and the next planned calculation.  When
-%% `calculating' details also the scheduled time of the active
-%% calculation, the number of seconds the process has been calculating
-%% so far, and counts of how many users have been processed and how
-%% many are left.
+%% should be `idle', `calculating', or `paused'.  When `idle' the
+%% details (a proplist) will include the schedule, as well as the
+%% times of the last calculation and the next planned calculation.
+%% When `calculating' or `paused' details also the scheduled time of
+%% the active calculation, the number of seconds the process has been
+%% calculating so far, and counts of how many users have been
+%% processed and how many are left.
 status() ->
     gen_fsm:sync_send_event(?SERVER, status).
 
@@ -71,6 +75,27 @@ status() ->
 %% the time at which they happen, as expected.
 start_batch() ->
     gen_fsm:sync_send_event(?SERVER, start_batch, infinity).
+
+%% @doc Cancel the calculation currently in progress.  Returns `ok' if
+%% a batch was canceled, or `{error, no_batch}' if there was no batch
+%% in progress.
+cancel_batch() ->
+    gen_fsm:sync_send_event(?SERVER, cancel_batch, infinity).
+
+%% @doc Pause the calculation currently in progress.  Returns `ok' if
+%% a batch was paused, or `{error, no_batch}' if there was no batch in
+%% progress.  Also returns `ok' if there was a batch in progress that
+%% was already paused.
+pause_batch() ->
+    gen_fsm:sync_send_event(?SERVER, pause_batch, infinity).
+
+%% @doc Resume the batch currently in progress.  Returns `ok' if a
+%% batch was resumed, or `{error, no_batch}' if there was no batch in
+%% progress.  Also returns `ok' if there was a batch in progress that
+%% was not paused.
+resume_batch() ->
+    gen_fsm:sync_send_event(?SERVER, resume_batch, infinity).
+    
 
 %%%===================================================================
 %%% gen_fsm callbacks
@@ -110,6 +135,9 @@ calculating(continue, State) ->
 calculating(_, State) ->
     {next_state, calculating, State}.
 
+paused(_, State) ->
+    {next_state, paused, State}.
+
 %% Synchronous events
 
 idle(status, _From, State) ->
@@ -120,6 +148,12 @@ idle(status, _From, State) ->
 idle(start_batch, _From, State) ->
     NewState = start_batch(calendar:universal_time(), State),
     {reply, ok, calculating, NewState};
+idle(cancel_batch, _From, State) ->
+    {reply, {error, no_batch}, idle, State};
+idle(pause_batch, _From, State) ->
+    {reply, {error, no_batch}, idle, State};
+idle(resume_batch, _From, State) ->
+    {reply, {error, no_batch}, idle, State};
 idle(_, _From, State) ->
     {reply, ok, idle, State}.
 
@@ -135,8 +169,33 @@ calculating(status, _From, State) ->
 calculating(start_batch, _From, State) ->
     %% this is the manual user request to begin a batch
     {reply, {error, already_calculating}, calculating, State};
+calculating(pause_batch, _From, State) ->
+    lager:info("Pausing storage calcluation"),
+    {reply, ok, paused, State};
+calculating(cancel_batch, _From, #state{current=Current}=State) ->
+    %% finished with this batch
+    lager:info("Canceled storage calculation after ~b seconds.",
+               [elapsed(State#state.batch_start)]),
+    riak_moss_utils:close_riak_connection(State#state.riak),
+    NewState = State#state{riak=undefined,
+                           last=Current,
+                           current=undefined,
+                           batch=[]},
+    {reply, ok, idle, NewState};
 calculating(_, _From, State) ->
     {reply, ok, calculating, State}.
+
+paused(status, From, State) ->
+    {reply, {ok, {_, Status}}, _, State} = calculating(status, From, State),
+    {reply, {ok, {paused, Status}}, paused, State};
+paused(resume_batch, _From, State) ->
+    lager:info("Resuming storage calculation"),
+    gen_fsm:send_event(?SERVER, continue),
+    {reply, ok, calculating, State};
+paused(cancel_batch, From, State) ->
+    calculating(cancel_batch, From, State);
+paused(_, _From, State) ->
+    {reply, ok, paused, State}.
 
 %% @doc there are no all-state events for this fsm
 handle_event(_Event, StateName, State) ->

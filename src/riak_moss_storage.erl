@@ -31,6 +31,7 @@ sum_user(Riak, User) when is_binary(User) ->
 sum_user(Riak, User) when is_list(User) ->
     case riak_moss_utils:get_user(User, Riak) of
         {ok, {?MOSS_USER{buckets=Buckets}, _VClock}} ->
+            timer:sleep(3000),
             {ok, [ {B, sum_bucket(Riak, B)}
                    || ?MOSS_BUCKET{name=B} <- Buckets ]};
         {ok, #moss_user{buckets=Buckets}} ->
