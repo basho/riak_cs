@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Pull environment for this install
-source /Users/bryan/work/riak_moss/rel/riak_moss/lib/env.sh
+source {{runner_bin_dir}}/lib/env.sh
 
 # Make sure the user running this script is the owner and/or su to that user
 check_user $@
@@ -11,7 +11,7 @@ cd $RUNNER_RUN_DIR
 
 # Check the first argument for instructions
 case "$1" in
-    flush_access)
+    flush)
         # Make sure the local node IS running
         RES=`$NODETOOL ping`
         if [ "$RES" != "pong" ]; then
@@ -20,21 +20,10 @@ case "$1" in
         fi
         shift
 
-        $NODETOOL rpc riak_moss_usage_console flush_access $@
-        ;;
-    start_storage)
-        # Make sure the local node IS running
-        RES=`$NODETOOL ping`
-        if [ "$RES" != "pong" ]; then
-            echo "Node is not running!"
-            exit 1
-        fi
-        shift
-
-        $NODETOOL rpc riak_moss_usage_console start_storage $@
+        $NODETOOL rpc riak_cs_access_console flush $@
         ;;
     *)
-        echo "Usage: $SCRIPT { flush_access | start_storage }"
+        echo "Usage: $SCRIPT { flush_access }"
         exit 1
         ;;
 esac

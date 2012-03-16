@@ -1,0 +1,29 @@
+#!/bin/bash
+
+# Pull environment for this install
+source {{runner_bin_dir}}/lib/env.sh
+
+# Make sure the user running this script is the owner and/or su to that user
+check_user $@
+
+# Make sure CWD is set to runner run dir
+cd $RUNNER_RUN_DIR
+
+# Check the first argument for instructions
+case "$1" in
+    batch)
+        # Make sure the local node IS running
+        RES=`$NODETOOL ping`
+        if [ "$RES" != "pong" ]; then
+            echo "Node is not running!"
+            exit 1
+        fi
+        shift
+
+        $NODETOOL rpc riak_cs_storage_console batch $@
+        ;;
+    *)
+        echo "Usage: $SCRIPT { batch }"
+        exit 1
+        ;;
+esac

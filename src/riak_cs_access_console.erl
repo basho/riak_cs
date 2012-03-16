@@ -4,12 +4,11 @@
 %%
 %% -------------------------------------------------------------------
 
-%% @doc These functions are used by the riak_moss command line script.
--module(riak_moss_usage_console).
+%% @doc These functions are used by the riak-cs-access command line script.
+-module(riak_cs_access_console).
 
 -export([
-         flush_access/1,
-         start_storage/1
+         flush/1
         ]).
 
 -define(DEFAULT_FLUSH_RETRIES, 10).
@@ -17,7 +16,7 @@
 
 %% @doc Roll the current access log over to the archiver, and then
 %% wait until the archiver has stored it in riak.
-flush_access(Opts) ->
+flush(Opts) ->
     try
         Retries = flush_retries(Opts),
         io:format("Adding current log to archive queue...~n"),
@@ -109,25 +108,5 @@ wait_for_archiver(N, Max) ->
             wait_for_archiver(N-1, Max);
         Error ->
             io:format("Flushing archives failed:~n  ~p~n", [Error]),
-            error
-    end.
-
-%% @doc Kick off a batch of storage calculation, unless one is already
-%% in progress.
-start_storage(_Opts) ->
-    try
-        case riak_moss_storage_d:start_batch() of
-            ok ->
-                io:format("Batch storage calculation started.~n"),
-                ok;
-            {error, already_calculating} ->
-                io:format("Error: A batch storage calculation is already"
-                          " in progress.~n"),
-                error
-        end
-    catch
-        Type:Reason ->
-            io:format("Starting batch storage calculation failed:~n"
-                      "  ~p:~p~n", [Type, Reason]),
             error
     end.
