@@ -107,6 +107,9 @@
 -define(KEY_SAMPLE,  'Sample').
 -define(KEY_SAMPLES, 'Samples').
 -define(KEY_OPERATION, 'Operation').
+-define(KEY_TYPE, 'type').
+-define(KEY_BUCKET, 'Bucket').
+-define(KEY_NAME, 'name').
 -define(KEY_ERROR, 'Error').
 -define(KEY_ERRORS, 'Errors').
 -define(KEY_REASON, 'Reason').
@@ -214,28 +217,29 @@ xml_access({Access, Errors}) ->
     orddict:fold(
       fun(Node, Samples, Acc) ->
               [{?KEY_NODE, [{name, Node}],
-                [xml_sample(S) || S <- Samples]}
+                [xml_sample(S, ?KEY_OPERATION, ?KEY_TYPE) || S <- Samples]}
                |Acc]
       end,
-      [{?KEY_ERRORS, [ xml_sample_error(E) || E <- Errors ]}],
+      [{?KEY_ERRORS, [ xml_sample_error(E, ?KEY_OPERATION, ?KEY_TYPE)
+                       || E <- Errors ]}],
       Access).
 
-xml_sample(Sample) ->
+xml_sample(Sample, SubType, TypeLabel) ->
     {value, {?START_TIME,S}, SampleS} =
         lists:keytake(?START_TIME, 1, Sample),
     {value, {?END_TIME,E}, Rest} =
         lists:keytake(?END_TIME, 1, SampleS),
 
     {?KEY_SAMPLE, [{xml_name(?START_TIME), S}, {xml_name(?END_TIME), E}],
-     [{?KEY_OPERATION, [{type, OpName}],
+     [{SubType, [{TypeLabel, OpName}],
        [{xml_name(K), [mochinum:digits(V)]} || {K, V} <- Stats]}
       || {OpName, {struct, Stats}} <- Rest ]}.
 
-xml_sample_error({{Start, End}, Reason}) ->
+xml_sample_error({{Start, End}, Reason}, SubType, TypeLabel) ->
     %% cheat to make errors structured exactly like samples
     FakeSample = [{?START_TIME, rts:iso8601(Start)},
                   {?END_TIME, rts:iso8601(End)}],
-    {Tag, Props, Contents} = xml_sample(FakeSample),
+    {Tag, Props, Contents} = xml_sample(FakeSample, SubType, TypeLabel),
 
     XMLReason = xml_reason(Reason),
     {Tag, Props, [{?KEY_REASON, [XMLReason]}|Contents]}.
@@ -253,8 +257,9 @@ xml_reason(Reason) ->
 xml_storage(Msg) when is_atom(Msg) ->
     [atom_to_list(Msg)];
 xml_storage({Storage, Errors}) ->
-    [xml_sample(S) || S <- Storage]
-        ++ [{?KEY_ERRORS, [xml_sample_error(E) || E <- Errors ]}].
+    [xml_sample(S, ?KEY_BUCKET, ?KEY_NAME) || S <- Storage]
+        ++ [{?KEY_ERRORS, [xml_sample_error(E, ?KEY_BUCKET, ?KEY_NAME)
+                           || E <- Errors ]}].
     
 %% Internals %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 user_key(RD) ->
