@@ -44,8 +44,12 @@ sum_user(Riak, User) when is_list(User) ->
 %% @doc Sum the number of bytes stored in active files in the named
 %% bucket.  This assumes that the bucket exists; there will be no
 %% difference in output between a non-existent bucket and an empty
-%% one.  TODO: this could be a simple MapReduce query.
--spec sum_bucket(pid(), string()) -> integer() | {error, term()}.
+%% one.
+%%
+%% The result is a mochijson structure with two fields: `Objects',
+%% which is the number of objects that were counted in the bucket, and
+%% `Bytes', which is the total size of all of those objects.
+-spec sum_bucket(pid(), string()) -> term() | {error, term()}.
 sum_bucket(Riak, Bucket) when is_list(Bucket) ->
     sum_bucket(Riak, list_to_binary(Bucket));
 sum_bucket(Riak, Bucket) when is_binary(Bucket) ->
@@ -56,27 +60,29 @@ sum_bucket(Riak, Bucket) when is_binary(Bucket) ->
               none, true}],
     case riakc_pb_socket:mapred(Riak, FullBucket, Query) of
         {ok, Results} ->
-            {1, [Sum]} = lists:keyfind(1, 1, Results),
-            Sum;
+            {1, [{Objects, Bytes}]} = lists:keyfind(1, 1, Results),
+            {struct, [{<<"Objects">>, Objects},
+                      {<<"Bytes">>, Bytes}]};
         {error, Error} ->
             {error, Error}
     end.
 
 object_size_map({error, notfound}, _, _) ->
-    0;
+    {0,0};
 object_size_map(Object, _, _) ->
     %% TODO: use Reid's sibling resolution code to choose
     %% correct value
     Manifest = binary_to_term(hd(riak_object:get_values(Object))),
     case riak_moss_lfs_utils:is_active(Manifest) of
         true ->
-            [riak_moss_lfs_utils:content_length(Manifest)];
+            [{1,riak_moss_lfs_utils:content_length(Manifest)}];
         false ->
-            [0]
+            [{0,0}]
     end.
 
 object_size_reduce(Sizes, _) ->
-    [lists:sum(Sizes)].
+    {Objects,Bytes} = lists:unzip(Sizes),
+    [{lists:sum(Objects),lists:sum(Bytes)}].
 
 %% @doc Retreive the number of seconds that should elapse between
 %% archivings of storage stats.  This setting is controlled by the
@@ -93,19 +99,8 @@ archive_period() ->
 
 make_object(User, BucketList, SampleStart, SampleEnd) ->
     {ok, Period} = archive_period(),
-    Aggregate = aggregate_bucketlist(BucketList),
     rts:new_sample(?STORAGE_BUCKET, User, SampleStart, SampleEnd, Period,
-                   Aggregate).
-
-aggregate_bucketlist(BucketList) ->
-    {BucketCount, TotalBytes} =
-        lists:foldl(fun({_Name, Size}, {C, B}) ->
-                            {C+1, B+Size}
-                    end,
-                    {0, 0},
-                    BucketList),
-    [{buckets, BucketCount},
-     {bytes, TotalBytes}].
+                   BucketList).
 
 get_usage(Riak, User, Start, End) ->
     {ok, Period} = archive_period(),
