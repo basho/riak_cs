@@ -211,13 +211,13 @@ handle_info({start_batch, Next}, idle, #state{next=Next}=State) ->
     %% the current calculation runs over time (see next clause)
     NewState = schedule_next(start_batch(Next, State), Next),
     {next_state, calculating, NewState};
-handle_info({start_batch, Next}, calculating,
+handle_info({start_batch, Next}, InBatch,
             #state{next=Next, current=Current}=State) ->
     lager:error("Unable to start storage calculation for ~p"
                 " because ~p is still working. Skipping forward...",
                 [Next, Current]),
     NewState = schedule_next(State, Next),
-    {next_state, calculating, NewState};
+    {next_state, InBatch, NewState};
 handle_info(_Info, StateName, State) ->
     {next_state, StateName, State}.
 
