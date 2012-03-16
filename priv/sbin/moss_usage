@@ -34,7 +34,7 @@ case "$1" in
         $NODETOOL rpc riak_moss_usage_console start_storage $@
         ;;
     *)
-        echo "Usage: $SCRIPT { flush_access }"
+        echo "Usage: $SCRIPT { flush_access | start_storage }"
         exit 1
         ;;
 esac
