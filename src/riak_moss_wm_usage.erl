@@ -80,6 +80,7 @@
          malformed_request/2,
          resource_exists/2,
          content_types_provided/2,
+         generate_etag/2,
          produce_json/2,
          produce_xml/2
         ]).
@@ -119,7 +120,9 @@
           riak :: pid(),
           user :: riak_moss:moss_user(),
           start_time :: calendar:datetime(),
-          end_time :: calendar:datetime()
+          end_time :: calendar:datetime(),
+          body :: iolist(),
+          etag :: iolist()
          }).
 
 init([]) ->
@@ -157,17 +160,43 @@ resource_exists(RD, #ctx{riak=Riak}=Ctx) ->
     end.
 
 content_types_provided(RD, Ctx) ->
-    {[{?JSON_TYPE, produce_json},
-      {?XML_TYPE, produce_xml}],
-     RD, Ctx}.
+    Types = case {true_param(RD, "j"), true_param(RD, "x")} of
+                {true,_} -> [{?JSON_TYPE, produce_json}];
+                {_,true} -> [{?XML_TYPE, produce_xml}];
+                {_,_} -> [{?JSON_TYPE, produce_json},
+                          {?XML_TYPE, produce_xml}]
+            end,
+    {Types, RD, Ctx}.
+
+generate_etag(RD, #ctx{etag=undefined}=Ctx) ->
+    case content_types_provided(RD, Ctx) of
+        {[{_Type, Producer}], _, _} -> ok;
+        {Choices, _, _} ->
+            Accept = wrq:get_req_header("Accept", RD),
+            ChosenType = webmachine_util:choose_media_type(
+                           [ Type || {Type, _} <- Choices ],
+                           Accept),
+            case [ P || {T, P} <- Choices, T == ChosenType ] of
+                [] -> Producer = element(2, hd(Choices));
+                [Producer|_] -> ok
+            end
+    end,
+    {Body, NewRD, NewCtx} = ?MODULE:Producer(RD, Ctx),
+    Etag = riak_moss_utils:binary_to_hexlist(crypto:md5(Body)),
+    {Etag, NewRD, NewCtx#ctx{etag=Etag}};
+generate_etag(RD, #ctx{etag=Etag}=Ctx) ->
+    {Etag, RD, Ctx}.
 
 %% JSON Production %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-produce_json(RD, Ctx) ->
+produce_json(RD, #ctx{body=undefined}=Ctx) ->
     Access = maybe_access(RD, Ctx),
     Storage = maybe_storage(RD, Ctx),
     MJ = {struct, [{?KEY_ACCESS, mochijson_access(Access)},
                    {?KEY_STORAGE, mochijson_storage(Storage)}]},
-    {mochijson2:encode(MJ), RD, Ctx}.
+    Body = mochijson2:encode(MJ),
+    {Body, RD, Ctx#ctx{body=Body}};
+produce_json(RD, #ctx{body=Body}=Ctx) ->
+    {Body, RD, Ctx}.
 
 mochijson_access(Msg) when is_atom(Msg) ->
     Msg;
@@ -204,12 +233,15 @@ mochijson_storage_sample(Sample) ->
     {struct, Sample}.
 
 %% XML Production %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-produce_xml(RD, Ctx) ->
+produce_xml(RD, #ctx{body=undefined}=Ctx) ->
     Access = maybe_access(RD, Ctx),
     Storage = maybe_storage(RD, Ctx),
     Doc = [{?KEY_USAGE, [{?KEY_ACCESS, xml_access(Access)},
                          {?KEY_STORAGE, xml_storage(Storage)}]}],
-    {riak_moss_s3_response:export_xml(Doc), RD, Ctx}.
+    Body = riak_moss_s3_response:export_xml(Doc),
+    {Body, RD, Ctx#ctx{body=Body}};
+produce_xml(RD, #ctx{body=Body}=Ctx) ->
+    {Body, RD, Ctx}.
 
 xml_access(Msg) when is_atom(Msg) ->
     [atom_to_list(Msg)];
@@ -281,8 +313,18 @@ usage_if(RD, #ctx{riak=Riak, start_time=Start, end_time=End},
     end.
 
 true_param(RD, Param) ->
-    lists:member(wrq:get_qs_value(Param, RD),
-                 ["","t","true","1","y","yes"]).
+    case lists:member(wrq:get_qs_value(Param, RD),
+                      ["","t","true","1","y","yes"]) of
+        true ->
+            true;
+        false ->
+            case wrq:path_info(o, RD) of
+                undefined ->
+                    false;
+                Types ->
+                    0 < string:str(Types, Param)
+            end
+    end.
 
 parse_start_time(RD) ->
     time_param(RD, "s", calendar:universal_time()).
@@ -293,7 +335,12 @@ parse_end_time(RD, StartTime) ->
 time_param(RD, Param, Default) ->
     case wrq:get_qs_value(Param, RD) of
         undefined ->
-            {ok, Default};
+            case wrq:path_info(list_to_atom(Param), RD) of
+                undefined ->
+                    {ok, Default};
+                TimeString ->
+                    datetime(TimeString)
+            end;
         TimeString ->
             datetime(TimeString)
     end.
