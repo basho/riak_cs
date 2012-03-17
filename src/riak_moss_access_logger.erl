@@ -327,6 +327,8 @@ access_record(#wm_log_data{notes=Notes}=Log) ->
             ignore
     end.
 
+operation(#wm_log_data{resource_module=riak_moss_wm_service}) ->
+    <<"ListBuckets">>;
 operation(#wm_log_data{resource_module=riak_moss_wm_bucket,
                        path=Path,
                        method=Method}) ->
