@@ -81,6 +81,7 @@
          resource_exists/2,
          content_types_provided/2,
          generate_etag/2,
+         forbidden/2,
          produce_json/2,
          produce_xml/2
         ]).
@@ -95,6 +96,7 @@
 
 -include_lib("webmachine/include/webmachine.hrl").
 -include("rts.hrl").
+-include("riak_moss.hrl").
 
 -define(JSON_TYPE, "application/json").
 -define(XML_TYPE, "application/xml").
@@ -117,6 +119,7 @@
 -define(KEY_MESSAGE, 'Message').
 
 -record(ctx, {
+          auth_bypass :: boolean(),
           riak :: pid(),
           user :: riak_moss:moss_user(),
           start_time :: calendar:datetime(),
@@ -125,8 +128,11 @@
           etag :: iolist()
          }).
 
-init([]) ->
-    {ok, #ctx{}}.
+init(Config) ->
+    %% Check if authentication is disabled and
+    %% set that in the context.
+    AuthBypass = proplists:get_value(auth_bypass, Config),
+    {ok, #ctx{auth_bypass=AuthBypass}}.
 
 service_available(RD, Ctx) ->
     case riak_moss_utils:riak_connection() of
@@ -186,6 +192,33 @@ generate_etag(RD, #ctx{etag=undefined}=Ctx) ->
     {Etag, NewRD, NewCtx#ctx{etag=Etag}};
 generate_etag(RD, #ctx{etag=Etag}=Ctx) ->
     {Etag, RD, Ctx}.
+
+forbidden(RD, #ctx{auth_bypass=AuthBypass}=Ctx) ->
+    BogusContext = #context{auth_bypass=AuthBypass},
+    Next = fun(NewRD, #context{user=User}) ->
+                   forbidden(NewRD, Ctx, User)
+           end,
+    riak_moss_wm_utils:find_and_auth_user(RD, BogusContext, Next).
+
+forbidden(RD, Ctx, undefined) ->
+    %% anonymous access disallowed
+    riak_moss_wm_utils:deny_access(RD, Ctx);
+forbidden(RD, Ctx, User) ->
+    case user_key(RD) == User?MOSS_USER.key_id of
+        true ->
+            %% user is accessing own stats
+            AccessRD = riak_moss_access_logger:set_user(User, RD),
+            {false, AccessRD, Ctx};
+        false ->
+            case riak_moss_utils:get_admin_creds() of
+                {ok, {Admin, _}} when Admin == User?MOSS_USER.key_id ->
+                    %% admin can access anyone's stats
+                    {false, RD, Ctx};
+                _ ->
+                    %% no one else is allowed
+                    riak_moss_wm_utils:deny_access(RD, Ctx)
+            end
+    end.
 
 %% JSON Production %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 produce_json(RD, #ctx{body=undefined}=Ctx) ->
@@ -295,7 +328,10 @@ xml_storage({Storage, Errors}) ->
     
 %% Internals %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 user_key(RD) ->
-    mochiweb_util:unquote(wrq:path_info(user, RD)).
+    case wrq:path_tokens(RD) of
+        [KeyId|_] -> mochiweb_util:unquote(KeyId);
+        _         -> []
+    end.
 
 maybe_access(RD, Ctx) ->
     usage_if(RD, Ctx, "a", riak_moss_access).
@@ -318,25 +354,25 @@ true_param(RD, Param) ->
         true ->
             true;
         false ->
-            case wrq:path_info(o, RD) of
-                undefined ->
-                    false;
-                Types ->
-                    0 < string:str(Types, Param)
+            case wrq:path_tokens(RD) of
+                [_,Options|_] ->
+                    0 < string:str(Options, Param);
+                _ ->
+                    false
             end
     end.
 
 parse_start_time(RD) ->
-    time_param(RD, "s", calendar:universal_time()).
+    time_param(RD, "s", 3, calendar:universal_time()).
 
 parse_end_time(RD, StartTime) ->
-    time_param(RD, "e", StartTime).
+    time_param(RD, "e", 4, StartTime).
 
-time_param(RD, Param, Default) ->
+time_param(RD, Param, N, Default) ->
     case wrq:get_qs_value(Param, RD) of
         undefined ->
-            case wrq:path_info(list_to_atom(Param), RD) of
-                undefined ->
+            case catch lists:nth(N, wrq:path_tokens(RD)) of
+                {'EXIT', _} ->
                     {ok, Default};
                 TimeString ->
                     datetime(TimeString)
