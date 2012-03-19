@@ -6,6 +6,7 @@
 
 -module(riak_moss_get_fsm_test).
 
+-include("riak_moss.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 setup() ->
@@ -30,8 +31,8 @@ get_fsm_test_() ->
      fun setup/0,
      fun teardown/1,
      [
-      fun receives_metadata/0,
-      [test_n_chunks_builder(X) || X <- [1,2,5,9,100,1000]]
+      fun receives_manifest/0,
+      [{timeout, 30, test_n_chunks_builder(X)} || X <- [1,2,5,9,100,1000]]
      ]}.
 
 calc_block_size(ContentLength, NumBlocks) ->
@@ -45,18 +46,20 @@ calc_block_size(ContentLength, NumBlocks) ->
 
 test_n_chunks_builder(N) ->
     fun () ->
-        ContentLength = 10000,
-        BlockSize = calc_block_size(ContentLength, N),
-        application:set_env(riak_moss, lfs_block_size, BlockSize),
-        {ok, Pid} = riak_moss_get_fsm:test_link(<<"bucket">>, <<"key">>, ContentLength, BlockSize),
-        ?assert(dict:is_key("content-length", riak_moss_get_fsm:get_metadata(Pid))),
-        riak_moss_get_fsm:continue(Pid),
-        expect_n_chunks(Pid, N)
+            ContentLength = 10000,
+            BlockSize = calc_block_size(ContentLength, N),
+            application:set_env(riak_moss, lfs_block_size, BlockSize),
+            {ok, Pid} = riak_moss_get_fsm:test_link(<<"bucket">>, <<"key">>, ContentLength, BlockSize),
+            Manifest = riak_moss_get_fsm:get_manifest(Pid),
+            ?assertEqual(ContentLength, Manifest#lfs_manifest_v2.content_length),
+            riak_moss_get_fsm:continue(Pid),
+            expect_n_chunks(Pid, N)
     end.
 
-receives_metadata() ->
+receives_manifest() ->
     {ok, Pid} = riak_moss_get_fsm:test_link(<<"bucket">>, <<"key">>, 100, 10),
-    ?assert(dict:is_key("content-length", riak_moss_get_fsm:get_metadata(Pid))),
+    Manifest = riak_moss_get_fsm:get_manifest(Pid),
+    ?assertEqual(100, Manifest#lfs_manifest_v2.content_length),
     riak_moss_get_fsm:stop(Pid).
 
 %% ===================================================================

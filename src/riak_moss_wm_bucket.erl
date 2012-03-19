@@ -163,9 +163,8 @@ to_xml(RD, Ctx=#context{user=User,
         [] ->
             riak_moss_s3_response:api_error(no_such_bucket, RD, Ctx);
         [BucketRecord] ->
-            MOSSBucket = riak_moss_utils:to_bucket_name(objects, Bucket),
             Prefix = list_to_binary(wrq:get_qs_value("prefix", "", RD)),
-            case riak_moss_utils:get_keys_and_objects(MOSSBucket, Prefix) of
+            case riak_moss_utils:get_keys_and_manifests(Bucket, Prefix) of
                 {ok, KeyObjPairs} ->
                     riak_moss_s3_response:list_bucket_response(User,
                                                                BucketRecord,
@@ -191,7 +190,18 @@ accept_body(RD, Ctx=#context{user=User,
                              bucket=Bucket,
                              requested_perm='WRITE_ACP'}) ->
     Body = binary_to_list(wrq:req_body(RD)),
-    ACL = riak_moss_acl_utils:acl_from_xml(Body),
+    case Body of
+        [] ->
+            %% Check for `x-amz-acl' header to support
+            %% the use of a canned ACL.
+            ACL = riak_moss_acl_utils:canned_acl(
+                    wrq:get_req_header("x-amz-acl", RD),
+                    {User?MOSS_USER.display_name,
+                     User?MOSS_USER.canonical_id},
+                    undefined);
+        _ ->
+            ACL = riak_moss_acl_utils:acl_from_xml(Body)
+    end,
     case riak_moss_utils:set_bucket_acl(User,
                                         VClock,
                                         Bucket,

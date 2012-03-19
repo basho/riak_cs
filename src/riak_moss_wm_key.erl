@@ -57,63 +57,80 @@ service_available(RD, Ctx) ->
 %%      but this is how S3 does things.
 forbidden(RD, #key_context{context=ICtx}=Ctx) ->
     Next = fun(NewRD, NewCtx) ->
-                   check_permission(NewRD, Ctx#key_context{context=NewCtx})
+                   get_access_and_manifest(NewRD, Ctx#key_context{context=NewCtx})
            end,
     riak_moss_wm_utils:find_and_auth_user(RD, ICtx, Next).
 
-%% @doc Compare the permission requested with the permission granted,
-%% and allow or deny access.  Returns a result suitable for directly
-%% returning from the {@link forbidden/2} webmachine export.
-check_permission(RD, #key_context{bucket=Bucket,
-                                  key=Key,
-                                  context=ICtx}=Ctx) ->
+%% @doc Get the type of access requested and the manifest with the
+%% object ACL and compare the permission requested with the permission
+%% granted, and allow or deny access. Returns a result suitable for
+%% directly returning from the {@link forbidden/2} webmachine export.
+get_access_and_manifest(RD, Ctx=#key_context{context=InnerCtx}) ->
     Method = wrq:method(RD),
     RequestedAccess =
-        riak_moss_acl_utils:requested_access(Method, wrq:req_qs(RD)),
-    BinKey = list_to_binary(Key),
-    Granted = case ICtx#context.user of
-                  undefined ->
-                      riak_moss_acl:anonymous_object_access(Bucket,
-                                                            BinKey,
-                                                            RequestedAccess);
-                  User ->
-                      riak_moss_acl:object_access(Bucket,
-                                                  BinKey,
-                                                  RequestedAccess,
-                                                  User?MOSS_USER.canonical_id)
-              end,
+        riak_moss_acl_utils:requested_access(Method,
+                                             wrq:req_qs(RD)),
+    NewInnerCtx = InnerCtx#context{requested_perm=RequestedAccess},
+    NewCtx = riak_moss_wm_utils:ensure_doc(Ctx#key_context{context=NewInnerCtx}),
+    check_permission(Method, RD, NewCtx).
 
-    NewICtx = ICtx#context{requested_perm=RequestedAccess},
-    NewCtx = Ctx#key_context{context=NewICtx},
-    case Granted of
-        {true, Owner} ->
-            %% bill the owner, not the actor
-            AccessRD = riak_moss_access_logger:set_user(Owner, RD),
-            forbidden(Method, AccessRD, NewCtx);
+%% @doc Final step of {@link forbidden/2}: Authentication succeeded,
+%% now perform ACL check to verify access permission.
+check_permission('GET', RD, Ctx=#key_context{manifest=notfound}) ->
+    {{halt, 404}, maybe_log_user(RD, Ctx), Ctx};
+check_permission('HEAD', RD, Ctx=#key_context{manifest=notfound}) ->
+    {{halt, 404}, maybe_log_user(RD, Ctx), Ctx};
+check_permission(Method, RD, Ctx=#key_context{bucket=Bucket,
+                                       context=InnerCtx,
+                                       manifest=Mfst}) ->
+    RequestedAccess =
+        riak_moss_acl_utils:requested_access(Method,
+                                             wrq:req_qs(RD)),
+    case InnerCtx#context.user of
+        undefined ->
+            User = CanonicalId = undefined;
+        User ->
+            CanonicalId = User?MOSS_USER.canonical_id
+    end,
+    case Mfst of
+        notfound ->
+            ObjectAcl = undefined;
+        _ ->
+            ObjectAcl = Mfst#lfs_manifest_v2.acl
+    end,
+    case riak_moss_acl:object_access(Bucket,
+                                     ObjectAcl,
+                                     RequestedAccess,
+                                     CanonicalId) of
         true ->
-            %% the actor *is* the owner
-            AccessRD = riak_moss_access_logger:set_user(
-                         ICtx#context.user, RD),
-            forbidden(Method, AccessRD, NewCtx);
+            %% actor is the owner
+            AccessRD = riak_moss_access_logger:set_user(User, RD),
+            {false, AccessRD, Ctx#key_context{owner=User}};
+        {true, OwnerId} ->
+            case riak_moss_utils:get_user_by_index(?ID_INDEX,
+                                                   list_to_binary(OwnerId)) of
+                {ok, {Owner, _}} ->
+                    %% bill the owner, not the actor
+                    AccessRD = riak_moss_access_logger:set_user(Owner, RD),
+                    {false, AccessRD, Ctx#key_context{owner=Owner}};
+                {error, _} ->
+                    %% @TODO Decide if this should return 403 instead
+                    riak_moss_s3_response:api_error(object_owner_unavailable, RD, Ctx)
+            end;
         false ->
-            riak_moss_wm_utils:deny_access(RD, NewCtx)
+            %% ACL check failed, deny access
+            riak_moss_wm_utils:deny_access(RD, Ctx)
     end.
 
-%% @doc Final step of {@link forbidden/2}: after the permissions have
-%% been confirmed, ensure that the document metadata is available
-%% during GET & HEAD processing.
-forbidden(Method, RD, Ctx=#key_context{doc_metadata=undefined})
-  when Method == 'GET'; Method == 'HEAD' ->
-    %% no idea whether the doc is available - go check
-    NewCtx = riak_moss_wm_utils:ensure_doc(Ctx),
-    forbidden(Method, RD, NewCtx);
-forbidden(Method, RD, Ctx=#key_context{doc_metadata=notfound})
-  when Method == 'GET'; Method == 'HEAD' ->
-    %% the doc is not available - say it doesn't exist
-    {{halt, 404}, RD, Ctx};
-forbidden(_, RD, Ctx) ->
-    %% the doc is available, or we don't care (for PUT & such)
-    {false, RD, Ctx}.
+%% @doc Only set the user for the access logger to catch if there is a
+%% user to catch.
+maybe_log_user(RD, #key_context{context=Context}) ->
+    case Context#context.user of
+        undefined ->
+            RD;
+        User ->
+            riak_moss_access_logger:set_user(User, RD)
+    end.
 
 %% @doc Get the list of methods this resource supports.
 -spec allowed_methods(term(), term()) -> {[atom()], term(), term()}.
@@ -135,7 +152,6 @@ valid_entity_length(RD, Ctx) ->
                         true ->
                             {true, RD, Ctx#key_context{size=Length}}
                     end;
-
                 _ ->
                     {false, RD, Ctx}
             end;
@@ -145,7 +161,7 @@ valid_entity_length(RD, Ctx) ->
 
 -spec content_types_provided(term(), term()) ->
     {[{string(), atom()}], term(), term()}.
-content_types_provided(RD, Ctx) ->
+content_types_provided(RD, Ctx=#key_context{manifest=Mfst}) ->
     %% TODO:
     %% As I understand S3, the content types provided
     %% will either come from the value that was
@@ -154,7 +170,7 @@ content_types_provided(RD, Ctx) ->
     Method = wrq:method(RD),
     if Method == 'GET'; Method == 'HEAD' ->
             DocCtx = riak_moss_wm_utils:ensure_doc(Ctx),
-            ContentType = dict:fetch("content-type", DocCtx#key_context.doc_metadata),
+            ContentType = binary_to_list(Mfst#lfs_manifest_v2.content_type),
             case ContentType of
                 undefined ->
                     {[{"application/octet-stream", produce_body}], RD, DocCtx};
@@ -171,17 +187,25 @@ content_types_provided(RD, Ctx) ->
 
 -spec produce_body(term(), term()) -> {iolist()|binary(), term(), term()}.
 produce_body(RD, #key_context{get_fsm_pid=GetFsmPid,
+                              manifest=Mfst,
                               context=#context{requested_perm='READ_ACP'}}=KeyCtx) ->
     riak_moss_get_fsm:stop(GetFsmPid),
-    {riak_moss_acl_utils:empty_acl_xml(), RD, KeyCtx};
-produce_body(RD, #key_context{get_fsm_pid=GetFsmPid, doc_metadata=DocMeta}=Ctx) ->
-    ContentLength = dict:fetch("content-length", DocMeta),
-    ContentMd5 = dict:fetch("content-md5", DocMeta),
+    Acl = Mfst#lfs_manifest_v2.acl,
+    case Acl of
+        undefined ->
+            {riak_moss_acl_utils:empty_acl_xml(), RD, KeyCtx};
+        _ ->
+            {riak_moss_acl_utils:acl_to_xml(Acl), RD, KeyCtx}
+    end;
+produce_body(RD, #key_context{get_fsm_pid=GetFsmPid, manifest=Mfst}=Ctx) ->
+    ContentLength = Mfst#lfs_manifest_v2.content_length,
+    ContentMd5 = Mfst#lfs_manifest_v2.content_md5,
+    LastModified = riak_moss_wm_utils:to_rfc_1123(Mfst#lfs_manifest_v2.created),
     ETag = "\"" ++ riak_moss_utils:binary_to_hexlist(ContentMd5) ++ "\"",
     NewRQ = lists:foldl(fun({K, V}, Rq) -> wrq:set_resp_header(K, V, Rq) end,
                         RD,
                         [{"ETag",  ETag},
-                         {"Last-Modified", dict:fetch("last-modified", DocMeta)}
+                         {"Last-Modified", LastModified}
                         ]),
     Method = wrq:method(RD),
     case Method == 'HEAD'
@@ -200,22 +224,15 @@ produce_body(RD, #key_context{get_fsm_pid=GetFsmPid, doc_metadata=DocMeta}=Ctx) 
 -spec delete_resource(term(), term()) -> boolean().
 delete_resource(RD, Ctx=#key_context{bucket=Bucket, key=Key}) ->
     BinKey = list_to_binary(Key),
-    case riak_moss_delete_fsm_sup:start_delete_fsm(node(), [Bucket, BinKey, 600000]) of
-        {ok, _Pid} ->
-            {true, RD, Ctx};
-        {error, Reason} ->
-            lager:error("delete fsm couldn't be started: ~p", [Reason]),
-            riak_moss_s3_response:api_error({riak_connect_failed, Reason},
-                                            RD,
-                                            Ctx)
-    end.
+    riak_moss_delete_marker:delete(Bucket, BinKey),
+    {true, RD, Ctx}.
 
 -spec content_types_accepted(term(), term()) ->
     {[{string(), atom()}], term(), term()}.
 content_types_accepted(RD, Ctx) ->
     case wrq:get_req_header("Content-Type", RD) of
         undefined ->
-            {[{"binary/octet-stream", accept_body}], RD, Ctx};
+            {[{"application/octet-stream", accept_body}], RD, Ctx};
         %% This was shamelessly ripped out of
         %% https://github.com/basho/riak_kv/blob/0d91ca641a309f2962a216daa0cee869c82ffe26/src/riak_kv_wm_object.erl#L492
         CType ->
@@ -245,9 +262,54 @@ content_types_accepted(RD, Ctx) ->
     {true, term(), term()}.
 accept_body(RD, Ctx=#key_context{bucket=Bucket,
                                  key=Key,
+                                 manifest=Mfst,
+                                 owner=Owner,
+                                 context=#context{user=User,
+                                                  requested_perm='WRITE_ACP'}}) ->
+
+    Body = binary_to_list(wrq:req_body(RD)),
+    case Body of
+        [] ->
+            %% Check for `x-amz-acl' header to support
+            %% the use of a canned ACL.
+            Acl = riak_moss_acl_utils:canned_acl(
+                    wrq:get_req_header("x-amz-acl", RD),
+                    {User?MOSS_USER.display_name,
+                     User?MOSS_USER.canonical_id},
+                    {Owner?MOSS_USER.display_name,
+                     Owner?MOSS_USER.canonical_id});
+        _ ->
+            Acl = riak_moss_acl_utils:acl_from_xml(Body)
+    end,
+    %% Write new ACL to active manifest
+    case riak_moss_utils:set_object_acl(Bucket, Key, Mfst, Acl) of
+        ok ->
+            {{halt, 200}, RD, Ctx};
+        {error, Reason} ->
+            riak_moss_s3_response:api_error(Reason, RD, Ctx)
+    end;
+accept_body(RD, Ctx=#key_context{bucket=Bucket,
+                                 key=Key,
                                  putctype=ContentType,
-                                 size=Size}) ->
-    Args = [Bucket, Key, Size, ContentType, <<>>, 60000],
+                                 size=Size,
+                                 owner=Owner,
+                                 context=#context{user=User}}) ->
+    %% TODO:
+    %% the Metadata
+    %% should be pulled out of the
+    %% headers
+    Metadata = orddict:new(),
+    BlockSize = riak_moss_lfs_utils:block_size(),
+    %% Check for `x-amz-acl' header to support
+    %% non-default ACL at bucket creation time.
+    ACL = riak_moss_acl_utils:canned_acl(
+            wrq:get_req_header("x-amz-acl", RD),
+            {User?MOSS_USER.display_name,
+             User?MOSS_USER.canonical_id},
+            {Owner?MOSS_USER.display_name,
+             Owner?MOSS_USER.canonical_id}),
+    Args = [Bucket, list_to_binary(Key), Size, list_to_binary(ContentType),
+        Metadata, BlockSize, ACL, timer:seconds(60), self()],
     {ok, Pid} = riak_moss_put_fsm_sup:start_put_fsm(node(), Args),
     accept_streambody(RD, Ctx, Pid, wrq:stream_req_body(RD, riak_moss_lfs_utils:block_size())).
 
@@ -268,7 +330,6 @@ finalize_request(RD, #key_context{size=S}=Ctx, Pid) ->
     %% instead, to record partial/aborted uploads
     AccessRD = riak_moss_access_logger:set_bytes_in(S, RD),
 
-    %Metadata = dict:from_list([{<<"content-type">>, CType}]),
     {ok, Manifest} = riak_moss_put_fsm:finalize(Pid),
-    ETag = "\"" ++ riak_moss_utils:binary_to_hexlist(riak_moss_lfs_utils:content_md5(Manifest)) ++ "\"",
+    ETag = "\"" ++ riak_moss_utils:binary_to_hexlist(Manifest#lfs_manifest_v2.content_md5) ++ "\"",
     {true, wrq:set_resp_header("ETag",  ETag, AccessRD), Ctx}.

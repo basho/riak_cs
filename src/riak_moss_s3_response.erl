@@ -108,28 +108,22 @@ list_bucket_response(User, Bucket, KeyObjPairs, RD, Ctx) ->
     Contents = [begin
                     KeyString = binary_to_list(Key),
                     case ObjResp of
-                        {ok, Obj} ->
-                            Manifest = binary_to_term(riakc_obj:get_value(Obj)),
-                            case riak_moss_lfs_utils:is_active(Manifest) of
-                                true ->
-                                    Size = integer_to_list(
-                                             riak_moss_lfs_utils:content_length(Manifest)),
-                                    LastModified =
-                                        riak_moss_wm_utils:to_iso_8601(
-                                          riak_moss_lfs_utils:created(Manifest)),
-                                    ETag = "\"" ++ riak_moss_utils:binary_to_hexlist(
-                                                     riak_moss_lfs_utils:content_md5(Manifest))
-                                        ++ "\"",
-                                    {'Contents', [{'Key', [KeyString]},
-                                                  {'Size', [Size]},
-                                                  {'LastModified', [LastModified]},
-                                                  {'ETag', [ETag]},
-                                                  {'Owner', [user_to_xml_owner(User)]}]};
-                                false ->
-                                    undefined
-                            end;
+                        {ok, Manifest} ->
+                            Size = integer_to_list(
+                                     Manifest#lfs_manifest_v2.content_length),
+                            LastModified =
+                                riak_moss_wm_utils:to_iso_8601(
+                                  Manifest#lfs_manifest_v2.created),
+                            ETag = "\"" ++ riak_moss_utils:binary_to_hexlist(
+                                             Manifest#lfs_manifest_v2.content_md5)
+                                ++ "\"",
+                            {'Contents', [{'Key', [KeyString]},
+                                          {'Size', [Size]},
+                                          {'LastModified', [LastModified]},
+                                          {'ETag', [ETag]},
+                                          {'Owner', [user_to_xml_owner(User)]}]};
                         {error, Reason} ->
-                            lager:warning("Unable to fetch object for ~p. Reason: ~p",
+                            lager:debug("Unable to fetch manifest for ~p. Reason: ~p",
                                           [Key, Reason]),
                             undefined
                     end
