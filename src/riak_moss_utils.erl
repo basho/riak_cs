@@ -43,8 +43,8 @@
 -compile(export_all).
 -endif.
 
--define(OBJECT_BUCKET_PREFIX, <<"objects:">>).
--define(BLOCK_BUCKET_PREFIX, <<"blocks:">>).
+-define(OBJECT_BUCKET_PREFIX, <<"0o:">>).       % Version # = 0
+-define(BLOCK_BUCKET_PREFIX, <<"0b:">>).        % Version # = 0
 
 -type xmlElement() :: #xmlElement{}.
 
@@ -448,10 +448,14 @@ set_object_acl(Bucket, Key, Manifest, Acl) ->
 %% Get the proper bucket name for either the MOSS object
 %% bucket or the data block bucket.
 -spec to_bucket_name([objects | blocks], binary()) -> binary().
-to_bucket_name(objects, Name) ->
-    <<?OBJECT_BUCKET_PREFIX/binary, Name/binary>>;
-to_bucket_name(blocks, Name) ->
-    <<?BLOCK_BUCKET_PREFIX/binary, Name/binary>>.
+to_bucket_name(Type, Bucket) ->
+    case Type of
+        objects ->
+            Prefix = ?OBJECT_BUCKET_PREFIX;
+        blocks ->
+            Prefix = ?BLOCK_BUCKET_PREFIX
+    end,
+    crypto:md5(<<Prefix/binary, Bucket/binary>>).
 
 %% ===================================================================
 %% Internal functions

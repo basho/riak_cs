@@ -8,6 +8,8 @@
 
 -behaviour(gen_server).
 
+-include_lib("riakc/include/riakc_obj.hrl").
+
 %% API
 -export([start_link/0,
          get_block/5,
@@ -121,7 +123,12 @@ handle_cast({get_block, ReplyPid, Bucket, Key, UUID, BlockNumber}, State=#state{
     {noreply, State};
 handle_cast({put_block, ReplyPid, Bucket, Key, UUID, BlockNumber, Value}, State=#state{riakc_pid=RiakcPid}) ->
     {FullBucket, FullKey} = full_bkey(Bucket, Key, UUID, BlockNumber),
-    RiakObject = riakc_obj:new(FullBucket, FullKey, Value),
+    RiakObject0 = riakc_obj:new(FullBucket, FullKey, Value),
+    MD = dict:from_list([{?MD_USERMETA, [{"RCS-bucket", Bucket},
+                                         {"RCS-key", Key}]}]),
+    lager:debug("put_block: Bucket ~p Key ~p UUID ~p", [Bucket, Key, UUID]),
+    lager:debug("put_block: FullBucket: ~p FullKey: ~p", [FullBucket, FullKey]),
+    RiakObject = riakc_obj:update_metadata(RiakObject0, MD),
     %% TODO: note the return value
     %% of this put call
     riakc_pb_socket:put(RiakcPid, RiakObject),
