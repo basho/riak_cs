@@ -175,7 +175,18 @@ accept_body(RD, Ctx=#context{user=User,
                              bucket=Bucket,
                              requested_perm='WRITE_ACP'}) ->
     Body = binary_to_list(wrq:req_body(RD)),
-    ACL = riak_moss_acl_utils:acl_from_xml(Body),
+    case Body of
+        [] ->
+            %% Check for `x-amz-acl' header to support
+            %% the use of a canned ACL.
+            ACL = riak_moss_acl_utils:canned_acl(
+                    wrq:get_req_header("x-amz-acl", RD),
+                    {User?MOSS_USER.display_name,
+                     User?MOSS_USER.canonical_id},
+                    undefined);
+        _ ->
+            ACL = riak_moss_acl_utils:acl_from_xml(Body)
+    end,
     case riak_moss_utils:set_bucket_acl(User,
                                         VClock,
                                         Bucket,

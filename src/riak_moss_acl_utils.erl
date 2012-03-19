@@ -36,7 +36,7 @@
 
 %% @doc Construct an acl. The structure is the same for buckets
 %% and objects.
--spec acl(string(), string(), [acl_grant()]) -> acl_v1().
+-spec acl(string(), string(), [acl_grant()]) -> acl().
 acl(DisplayName, CanonicalId, Grants) ->
     OwnerData = {DisplayName, CanonicalId},
     ?ACL{owner=OwnerData,
@@ -44,7 +44,7 @@ acl(DisplayName, CanonicalId, Grants) ->
 
 %% @doc Construct a default acl. The structure is the same for buckets
 %% and objects.
--spec default_acl(string(), string()) -> acl_v1().
+-spec default_acl(string(), string()) -> acl().
 default_acl(DisplayName, CanonicalId) ->
     acl(DisplayName,
         CanonicalId,
@@ -52,7 +52,7 @@ default_acl(DisplayName, CanonicalId) ->
 
 %% @doc Map a x-amz-acl header value to an
 %% internal acl representation.
--spec canned_acl(string(), string(), string()) -> acl_v1().
+-spec canned_acl(string(), string(), string()) -> acl().
 canned_acl(undefined, {Name, CanonicalId}, _) ->
     default_acl(Name, CanonicalId);
 canned_acl(HeaderVal, Owner, BucketOwner) ->
@@ -63,14 +63,14 @@ canned_acl(HeaderVal, Owner, BucketOwner) ->
 
 %% @doc Convert an XML document representing an ACL into
 %% an internal representation.
--spec acl_from_xml(string()) -> acl_v1().
+-spec acl_from_xml(string()) -> acl().
 acl_from_xml(Xml) ->
     {ParsedData, _Rest} = xmerl_scan:string(Xml, []),
     process_acl_contents(ParsedData#xmlElement.content, ?ACL{}).
 
 %% @doc Convert an internal representation of an ACL
 %% into XML.
--spec acl_to_xml(acl_v1()) -> binary().
+-spec acl_to_xml(acl()) -> binary().
 acl_to_xml(Acl) ->
     {OwnerName, OwnerId} = Acl?ACL.owner,
     XmlDoc =
@@ -151,12 +151,24 @@ acl_request([_ | Rest]) ->
 -spec add_grant(acl_grant(), [acl_grant()]) -> [acl_grant()].
 add_grant(NewGrant, Grants) ->
     {NewGrantee, NewPerms} = NewGrant,
-    case [Grant || Grant={Grantee, _} <- Grants,
-                   Grantee == NewGrantee] of
+    SplitFun = fun(G) ->
+                       {Grantee, _} = G,
+                       Grantee =:= NewGrantee
+               end,
+    {GranteeGrants, OtherGrants} = lists:splitwith(SplitFun, Grants),
+    case GranteeGrants of
         [] ->
             [NewGrant | Grants];
-        [{_, Perms} | _] ->
-                [{NewGrantee, Perms ++ NewPerms} | Grants]
+        _ ->
+            %% `GranteeGrants' will nearly always be a single
+            %% item list, but use a fold just in case.
+            %% The combined list of perms should be small so
+            %% using usort should not be too expensive.
+            FoldFun = fun({_, Perms}, Acc) ->
+                              lists:usort(Perms ++ Acc)
+                      end,
+            UpdPerms = lists:foldl(FoldFun, NewPerms, GranteeGrants),
+            [{NewGrantee, UpdPerms} | OtherGrants]
         end.
 
 %% @doc Get the list of grants for a canned ACL
@@ -260,7 +272,7 @@ name_for_canonical(CanonicalId) ->
     end.
 
 %% @doc Process the top-level elements of the
--spec process_acl_contents([xmlElement()], acl_v1()) -> acl_v1().
+-spec process_acl_contents([xmlElement()], acl()) -> acl().
 process_acl_contents([], Acl) ->
     Acl;
 process_acl_contents([HeadElement | RestElements], Acl) ->
@@ -279,7 +291,7 @@ process_acl_contents([HeadElement | RestElements], Acl) ->
     process_acl_contents(RestElements, UpdAcl).
 
 %% @doc Process an XML element containing acl owner information.
--spec process_owner([xmlElement()], acl_v1()) -> acl_v1().
+-spec process_owner([xmlElement()], acl()) -> acl().
 process_owner([], Acl) ->
     Acl;
 process_owner([HeadElement | RestElements], Acl) ->
@@ -303,7 +315,7 @@ process_owner([HeadElement | RestElements], Acl) ->
     process_owner(RestElements, Acl?ACL{owner=UpdOwner}).
 
 %% @doc Process an XML element containing the grants for the acl.
--spec process_grants([xmlElement()], acl_v1()) -> acl_v1().
+-spec process_grants([xmlElement()], acl()) -> acl().
 process_grants([], Acl) ->
     Acl;
 process_grants([HeadElement | RestElements], Acl) ->
