@@ -151,12 +151,24 @@ acl_request([_ | Rest]) ->
 -spec add_grant(acl_grant(), [acl_grant()]) -> [acl_grant()].
 add_grant(NewGrant, Grants) ->
     {NewGrantee, NewPerms} = NewGrant,
-    case [Grant || Grant={Grantee, _} <- Grants,
-                   Grantee == NewGrantee] of
+    SplitFun = fun(G) ->
+                       {Grantee, _} = G,
+                       Grantee =:= NewGrantee
+               end,
+    {GranteeGrants, OtherGrants} = lists:splitwith(SplitFun, Grants),
+    case GranteeGrants of
         [] ->
             [NewGrant | Grants];
-        [{_, Perms} | _] ->
-                [{NewGrantee, Perms ++ NewPerms} | Grants]
+        _ ->
+            %% `GranteeGrants' will nearly always be a single
+            %% item list, but use a fold just in case.
+            %% The combined list of perms should be small so
+            %% using usort should not be too expensive.
+            FoldFun = fun({_, Perms}, Acc) ->
+                              lists:usort(Perms ++ Acc)
+                      end,
+            UpdPerms = lists:foldl(FoldFun, NewPerms, GranteeGrants),
+            [{NewGrantee, UpdPerms} | OtherGrants]
         end.
 
 %% @doc Get the list of grants for a canned ACL
