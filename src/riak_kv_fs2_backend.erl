@@ -96,6 +96,7 @@ start(Partition, Config) ->
     Dir = filename:join([ConfigRoot,PartitionName]),
     {filelib:ensure_dir(Dir), #state{dir=Dir}}.
 
+%% @doc Stop the backend
 -spec stop(state()) -> ok.
 stop(_State) -> ok.
 
@@ -118,18 +119,6 @@ get(Bucket, Key, State) ->
                 Val ->
                     {ok, Val, State}
             end
-    end.
-
-%% @spec atomic_write(File :: string(), Val :: binary()) ->
-%%       ok | {error, Reason :: term()}
-%% @doc store a atomic value to disk. Write to temp file and rename to
-%%       normal path.
-atomic_write(File, Val) ->
-    FakeFile = File ++ ".tmpwrite",
-    case file:write_file(FakeFile, pack_ondisk(Val)) of
-        ok ->
-            file:rename(FakeFile, File);
-        X -> X
     end.
 
 %% @doc Store Val under Bkey
@@ -156,106 +145,12 @@ delete(Bucket, Key, _IndexSpecs, State) ->
         {error, Err} -> {error, Err, State}
     end.
 
-
-
-%% @spec list(state()) -> [{Bucket :: riak_object:bucket(),
-%%                          Key :: riak_object:key()}]
-%% @doc Get a list of all bucket/key pairs stored by this backend
-list(#state{dir=Dir}) ->
-    % this is slow slow slow
-    %                                              B,N,N,N,K
-    [location_to_bkey(X) || X <- filelib:wildcard("*/*/*/*/*",
-                                                         Dir)].
-
--ifdef(SLF_COMMENT).
-
-%% @spec list_bucket(state(), riak_object:bucket()) ->
-%%           [riak_object:key()]
-%% @doc Get a list of the keys in a bucket
-list_bucket(State, Bucket) ->
-    case Bucket of
-        '_' ->
-            lists:usort(lists:map(fun({B, _}) -> B end, list(State)));
-        {filter, B, Fun} ->
-            [ hd(K) || K <-
-                lists:filter(Fun,
-                    [ EV || EV <- lists:map(fun(K) ->
-                                                case K of
-                                                    {B, Key} -> [Key];
-                                                    _ -> []
-                                                end
-                                            end, list(State)),
-                            EV /= [] ]) ];
-        _ ->
-            B64 = encode_bucket(Bucket),
-            L = length(State#state.dir),
-            [ K || {_,K} <- [ location_to_bkey(lists:nthtail(L, X)) ||
-                                X <- filelib:wildcard(
-                                       filename:join([State#state.dir,
-                                                      B64,"*/*/*/*"])) ]]
-    end.
-
-is_empty(State) -> ?MODULE:list(State) =:= [].
-
-fold(State, Fun0, Acc) ->
-    Fun = fun(BKey, AccIn) ->
-                  case ?MODULE:get(State, BKey) of
-                      {ok, Bin} ->
-                          Fun0(BKey, Bin, AccIn);
-                      _ ->
-                          AccIn
-                  end
-          end,
-    lists:foldl(Fun, Acc, ?MODULE:list(State)).
-
--endif. % SLF_COMMENT
-
-%% @doc Fold over all the keys for one or all buckets.
--spec fold_keys(riak_kv_backend:fold_keys_fun(),
-                any(),
-                [{atom(), term()}],
-                state()) -> {ok, term()} | {async, fun()} | {error, term()}.
-fold_keys(_FoldKeysFun, Acc, _Opts, _S) ->
-    Acc.                                        % lazy!
-
-%% @doc Fold over all the objects for one or all buckets.
--spec fold_objects(riak_kv_backend:fold_objects_fun(),
-                   any(),
-                   [{atom(), term()}],
-                   state()) -> {ok, any()} | {async, fun()} | {error, term()}.
-fold_objects(_FoldObjectsFun, Acc, _Opts, _S) ->
-    Acc.                                        % lazy!
-
-
 %% @doc Fold over all the buckets.
 -spec fold_buckets(riak_kv_backend:fold_buckets_fun(),
                    any(),
                    [],
                    state()) -> {ok, any()} | {async, fun()} | {error, term()}.
 fold_buckets(FoldBucketsFun, Acc, Opts, State) ->
-    %% case Bucket of
-    %%     '_' ->
-    %%         lists:usort(lists:map(fun({B, _}) -> B end, list(State)));
-    %%     {filter, B, Fun} ->
-    %%         [ hd(K) || K <-
-    %%             lists:filter(Fun,
-    %%                 [ EV || EV <- lists:map(fun(K) ->
-    %%                                             case K of
-    %%                                                 {B, Key} -> [Key];
-    %%                                                 _ -> []
-    %%                                             end
-    %%                                         end, list(State)),
-    %%                         EV /= [] ]) ];
-    %%     _ ->
-    %%         B64 = encode_bucket(Bucket),
-    %%         L = length(State#state.dir),
-    %%         [ K || {_,K} <- [ location_to_bkey(lists:nthtail(L, X)) ||
-    %%                             X <- filelib:wildcard(
-    %%                                    filename:join([State#state.dir,
-    %%                                                   B64,"*/*/*/*"])) ]]
-    %% end.
-
-
     FoldFun = fold_buckets_fun(FoldBucketsFun),
     BucketFolder =
         fun() ->
@@ -270,102 +165,67 @@ fold_buckets(FoldBucketsFun, Acc, Opts, State) ->
             {ok, BucketFolder()}
     end.
 
-%% %% @doc Fold over all the keys for one or all buckets.
-%% -spec fold_keys(riak_kv_backend:fold_keys_fun(),
-%%                 any(),
-%%                 [{atom(), term()}],
-%%                 state()) -> {ok, term()} | {async, fun()} | {error, term()}.
-%% fold_keys(FoldKeysFun, Acc, Opts, #state{opts=BitcaskOpts,
-%%                                          data_dir=DataFile,
-%%                                          ref=Ref,
-%%                                          root=DataRoot}) ->
-%%     Bucket =  proplists:get_value(bucket, Opts),
-%%     FoldFun = fold_keys_fun(FoldKeysFun, Bucket),
-%%     case lists:member(async_fold, Opts) of
-%%         true ->
-%%             ReadOpts = set_mode(read_only, BitcaskOpts),
-%%             KeyFolder =
-%%                 fun() ->
-%%                         case bitcask:open(filename:join(DataRoot, DataFile),
-%%                                           ReadOpts) of
-%%                             Ref1 when is_reference(Ref1) ->
-%%                                 try
-%%                                     bitcask:fold_keys(Ref1, FoldFun, Acc)
-%%                                 after
-%%                                     bitcask:close(Ref1)
-%%                                 end;
-%%                             {error, Reason} ->
-%%                                 {error, Reason}
-%%                         end
-%%                 end,
-%%             {async, KeyFolder};
-%%         false ->
-%%             FoldResult = bitcask:fold_keys(Ref, FoldFun, Acc),
-%%             case FoldResult of
-%%                 {error, _} ->
-%%                     FoldResult;
-%%                 _ ->
-%%                     {ok, FoldResult}
-%%             end
-%%     end.
+%% @doc Fold over all the keys for one or all buckets.
+-spec fold_keys(riak_kv_backend:fold_keys_fun(),
+                any(),
+                [{atom(), term()}],
+                state()) -> {ok, term()} | {async, fun()} | {error, term()}.
+fold_keys(FoldKeysFun, Acc, Opts, State) ->
+    Bucket =  proplists:get_value(bucket, Opts),
+    FoldFun = fold_keys_fun(FoldKeysFun, Bucket),
+    KeyFolder =
+        fun() ->
+                lists:foldl(FoldFun, Acc, list(State))
+        end,
+    case lists:member(async_fold, Opts) of
+        true ->
+            {async, KeyFolder};
+        false ->
+            {ok, KeyFolder()}
+    end.
 
-%% %% @doc Fold over all the objects for one or all buckets.
-%% -spec fold_objects(riak_kv_backend:fold_objects_fun(),
-%%                    any(),
-%%                    [{atom(), term()}],
-%%                    state()) -> {ok, any()} | {async, fun()} | {error, term()}.
-%% fold_objects(FoldObjectsFun, Acc, Opts, #state{opts=BitcaskOpts,
-%%                                                data_dir=DataFile,
-%%                                                ref=Ref,
-%%                                                root=DataRoot}) ->
-%%     Bucket =  proplists:get_value(bucket, Opts),
-%%     FoldFun = fold_objects_fun(FoldObjectsFun, Bucket),
-%%     case lists:member(async_fold, Opts) of
-%%         true ->
-%%             ReadOpts = set_mode(read_only, BitcaskOpts),
-%%             ObjectFolder =
-%%                 fun() ->
-%%                         case bitcask:open(filename:join(DataRoot, DataFile),
-%%                                           ReadOpts) of
-%%                             Ref1 when is_reference(Ref1) ->
-%%                                 try
-%%                                     bitcask:fold(Ref1, FoldFun, Acc)
-%%                                 after
-%%                                     bitcask:close(Ref1)
-%%                                 end;
-%%                             {error, Reason} ->
-%%                                 {error, Reason}
-%%                         end
-%%                 end,
-%%             {async, ObjectFolder};
-%%         false ->
-%%             FoldResult = bitcask:fold(Ref, FoldFun, Acc),
-%%             case FoldResult of
-%%                 {error, _} ->
-%%                     FoldResult;
-%%                 _ ->
-%%                     {ok, FoldResult}
-%%             end
-%%     end.
+%% @doc Fold over all the objects for one or all buckets.
+-spec fold_objects(riak_kv_backend:fold_objects_fun(),
+                   any(),
+                   [{atom(), term()}],
+                   state()) -> {ok, any()} | {async, fun()} | {error, term()}.
+fold_objects(FoldObjectsFun, Acc, Opts, State) ->
+    %% Warning: This ain't pretty. Hold your nose.
+    Bucket =  proplists:get_value(bucket, Opts),
+    FoldFun = fold_objects_fun(FoldObjectsFun, Bucket),
+    ObjectFolder =
+        fun() ->
+                fold(State, FoldFun, Acc)
+        end,
+    case lists:member(async_fold, Opts) of
+        true ->
+            {async, ObjectFolder};
+        false ->
+            {ok, ObjectFolder()}
+    end.
 
-
-
-
+%% @doc Delete all objects from this backend
+%% and return a fresh reference.
 -spec drop(state()) -> {ok, state()} | {error, term(), state()}.
-drop(State) ->
-    [file:delete(location(State, BK)) || BK <- ?MODULE:list(State)],
-    Cmd = io_lib:format("rm -Rf ~s", [State#state.dir]),
+drop(State=#state{dir=Dir}) ->
+    [file:delete(location(State, BK)) || BK <- list(State)],
+    Cmd = io_lib:format("rm -Rf ~s", [Dir]),
     os:cmd(Cmd),
+    filelib:ensure_dir(Dir),
     {ok, State}.
 
+%% @doc Returns true if this backend contains any
+%% non-tombstone values; otherwise returns false.
 -spec is_empty(state()) -> boolean().
 is_empty(S) ->
-    ?MODULE:list(S) == [].
+    list(S) == [].
 
+%% @doc Get the status information for this fs backend
 -spec status(state()) -> [{atom(), term()}].
 status(_S) ->
     [no_status_sorry].
 
+%% @doc Register an asynchronous callback
 -spec callback(reference(), any(), state()) -> {ok, state()}.
 callback(_Ref, _Term, S) ->
     {ok, S}.
@@ -374,13 +234,37 @@ callback(_Ref, _Term, S) ->
 %% Internal functions
 %% ===================================================================
 
+%% @spec atomic_write(File :: string(), Val :: binary()) ->
+%%       ok | {error, Reason :: term()}
+%% @doc store a atomic value to disk. Write to temp file and rename to
+%%       normal path.
+atomic_write(File, Val) ->
+    FakeFile = File ++ ".tmpwrite",
+    case file:write_file(FakeFile, pack_ondisk(Val)) of
+        ok ->
+            file:rename(FakeFile, File);
+        X -> X
+    end.
+
+%% @private
+%% Fold over the keys and objects on this backend
+fold(State, Fun0, Acc) ->
+    Fun = fun(BKey, AccIn) ->
+                  {Bucket, Key} = BKey,
+                  case get(Bucket, Key, State) of
+                      {ok, Bin, _} ->
+                          Fun0(BKey, Bin, AccIn);
+                      _ ->
+                          AccIn
+                  end
+          end,
+    lists:foldl(Fun, Acc, list(State)).
+
 %% @private
 %% Return a function to fold over the buckets on this backend
 fold_buckets_fun(FoldBucketsFun) ->
-    fun(Location, {Acc, BucketSet}) ->
-            %% {Bucket, _} = location_to_bkey(Location),
-            {Bucket, _} = Location,
-
+    fun(BKey, {Acc, BucketSet}) ->
+            {Bucket, _} = BKey,
             case sets:is_element(Bucket, BucketSet) of
                 true ->
                     {Acc, BucketSet};
@@ -390,78 +274,50 @@ fold_buckets_fun(FoldBucketsFun) ->
             end
     end.
 
-%% %% @private
-%% %% Return a function to fold over keys on this backend
-%% fold_keys_fun(FoldKeysFun, undefined) ->
-%%     %% Fold across everything...
-%%     fun(StorageKey, Acc) ->
-%%             case from_object_key(StorageKey) of
-%%                 {Bucket, Key} ->
-%%                     FoldKeysFun(Bucket, Key, Acc);
-%%                 _ ->
-%%                     throw({break, Acc})
-%%             end
-%%     end;
-%% fold_keys_fun(FoldKeysFun, {bucket, FilterBucket}) ->
-%%     %% Fold across a specific bucket...
-%%     fun(StorageKey, Acc) ->
-%%             case from_object_key(StorageKey) of
-%%                 {Bucket, Key} when Bucket == FilterBucket ->
-%%                     FoldKeysFun(Bucket, Key, Acc);
-%%                 _ ->
-%%                     throw({break, Acc})
-%%             end
-%%     end;
-%% fold_keys_fun(FoldKeysFun, {index, FilterBucket, {eq, <<"$bucket">>, _}}) ->
-%%     %% 2I exact match query on special $bucket field...
-%%     fold_keys_fun(FoldKeysFun, {bucket, FilterBucket});
-%% fold_keys_fun(FoldKeysFun, {index, FilterBucket, {eq, FilterField, FilterTerm}}) ->
-%%     %% Rewrite 2I exact match query as a range...
-%%     NewQuery = {range, FilterField, FilterTerm, FilterTerm},
-%%     fold_keys_fun(FoldKeysFun, {index, FilterBucket, NewQuery});
-%% fold_keys_fun(FoldKeysFun, {index, FilterBucket, {range, <<"$key">>, StartKey, EndKey}}) ->
-%%     %% 2I range query on special $key field...
-%%     fun(StorageKey, Acc) ->
-%%             case from_object_key(StorageKey) of
-%%                 {Bucket, Key} when FilterBucket == Bucket,
-%%                                    StartKey =< Key,
-%%                                    EndKey >= Key ->
-%%                     FoldKeysFun(Bucket, Key, Acc);
-%%                 _ ->
-%%                     throw({break, Acc})
-%%             end
-%%     end;
-%% fold_keys_fun(FoldKeysFun, {index, FilterBucket, {range, FilterField, StartTerm, EndTerm}}) ->
-%%     %% 2I range query...
-%%     fun(StorageKey, Acc) ->
-%%             case from_index_key(StorageKey) of
-%%                 {Bucket, Key, Field, Term} when FilterBucket == Bucket,
-%%                                                 FilterField == Field,
-%%                                                 StartTerm =< Term,
-%%                                                 EndTerm >= Term ->
-%%                     FoldKeysFun(Bucket, Key, Acc);
-%%                 _ ->
-%%                     throw({break, Acc})
-%%             end
-%%     end;
-%% fold_keys_fun(_FoldKeysFun, Other) ->
-%%     throw({unknown_limiter, Other}).
+%% @private
+%% Return a function to fold over keys on this backend
+fold_keys_fun(FoldKeysFun, undefined) ->
+    fun(BKey, Acc) ->
+            {Bucket, Key} = BKey,
+            FoldKeysFun(Bucket, Key, Acc)
+    end;
+fold_keys_fun(FoldKeysFun, Bucket) ->
+    fun(BKey, Acc) ->
+            {B, Key} = BKey,
+            case B =:= Bucket of
+                true ->
+                    FoldKeysFun(Bucket, Key, Acc);
+                false ->
+                    Acc
+            end
+    end.
 
-%% %% @private
-%% %% Return a function to fold over the objects on this backend
-%% fold_objects_fun(FoldObjectsFun, FilterBucket) ->
-%%     %% 2I does not support fold objects at this time, so this is much
-%%     %% simpler than fold_keys_fun.
-%%     fun({StorageKey, Value}, Acc) ->
-%%             case from_object_key(StorageKey) of
-%%                 {Bucket, Key} when FilterBucket == undefined;
-%%                                    Bucket == FilterBucket ->
-%%                     FoldObjectsFun(Bucket, Key, Value, Acc);
-%%                 _ ->
-%%                     throw({break, Acc})
-%%             end
-%%     end.
+%% @private
+%% Return a function to fold over the objects on this backend
+fold_objects_fun(FoldObjectsFun, undefined) ->
+    fun(BKey, Value, Acc) ->
+            {Bucket, Key} = BKey,
+            FoldObjectsFun(Bucket, Key, Value, Acc)
+    end;
+fold_objects_fun(FoldObjectsFun, Bucket) ->
+    fun(BKey, Value, Acc) ->
+            {B, Key} = BKey,
+            case B =:= Bucket of
+                true ->
+                    FoldObjectsFun(Bucket, Key, Value, Acc);
+                false ->
+                    Acc
+            end
+    end.
 
+%% @spec list(state()) -> [{Bucket :: riak_object:bucket(),
+%%                          Key :: riak_object:key()}]
+%% @doc Get a list of all bucket/key pairs stored by this backend
+list(#state{dir=Dir}) ->
+    % this is slow slow slow
+    %                                              B,N,N,N,K
+    [location_to_bkey(X) || X <- filelib:wildcard("*/*/*/*/*",
+                                                         Dir)].
 
 %% @spec location(state(), {riak_object:bucket(), riak_object:key()})
 %%          -> string()
@@ -503,14 +359,6 @@ dirty(Str64) ->
                  (C)  -> C
               end,
               Str64).
-
--ifdef(SLF_COMMENT).
-
-
--endif. % SLF_LAZY
-
--ifdef(TEST).
--endif. % TEST
 
 %% @spec encode_bucket(binary()) -> string()
 %% @doc make a filename out of a Riak bucket
@@ -563,9 +411,9 @@ unpack_ondisk(<<Crc32:?CRCSIZEFIELD/unsigned, Bytes/binary>>) ->
             bad_crc
     end.
 
-%%
-%% Test
-%%
+%% ===================================================================
+%% EUnit tests
+%% ===================================================================
 -ifdef(TEST).
 
 %% Broken test:
@@ -609,7 +457,7 @@ eqc_test_() ->
            [?_assertEqual(true,
                           backend_eqc:test(?MODULE,
                                            false,
-                                           [{data_root,
+                                           [{fs2_backend_data_root,
                                              "test/fs-backend"}]))]}
          ]}]}]}.
 
