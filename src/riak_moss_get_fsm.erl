@@ -21,7 +21,7 @@
 -include("riak_moss.hrl").
 
 %% API
--export([start_link/2,
+-export([start_link/3,
          stop/1,
          continue/1,
          manifest/2,
@@ -47,6 +47,7 @@
 -record(state, {from :: pid(),
                 mani_fsm_pid :: pid(),
                 bucket :: term(),
+                caller :: pid(),
                 key :: term(),
                 block_buffer=[] :: [{pos_integer, term()}],
                 manifest :: term(),
@@ -63,8 +64,8 @@
 %% Public API
 %% ===================================================================
 
-start_link(Bucket, Key) ->
-    gen_fsm:start_link(?MODULE, [Bucket, Key], []).
+start_link(Bucket, Key, Caller) ->
+    gen_fsm:start_link(?MODULE, [Bucket, Key, Caller], []).
 
 stop(Pid) ->
     gen_fsm:send_event(Pid, stop).
@@ -88,7 +89,17 @@ chunk(Pid, ChunkSeq, ChunkValue) ->
 %% gen_fsm callbacks
 %% ====================================================================
 
-init([Bucket, Key]) ->
+init([Bucket, Key, Caller]) ->
+    %% We need to do this (the monitor) for two reasons
+    %% 1. We're started through a supervisor, so the
+    %%    proc that actually intends to start us isn't
+    %%    linked to us.
+    %% 2. Even if we didn't use a supervisor, the webmachine
+    %%    process uses exit(..., normal), even on abnormal
+    %%    terminations, so this process would still
+    %%    live.
+    CallerRef = erlang:monitor(process, Caller),
+
     %% we want to trap exits because
     %% `erlang:link` isn't atomic, and
     %% since we're starting the reader
@@ -99,6 +110,7 @@ init([Bucket, Key]) ->
     process_flag(trap_exit, true),
 
     State = #state{bucket=Bucket,
+                   caller=CallerRef,
                    key=Key},
     %% purposely have the timeout happen
     %% so that we get called in the prepare
@@ -325,6 +337,7 @@ handle_event(_Event, _StateName, StateData) ->
 handle_sync_event(_Event, _From, _StateName, StateData) ->
     {stop,badmsg,StateData}.
 
+%% @private
 handle_info(request_timeout, StateName, StateData) ->
     ?MODULE:StateName(request_timeout, StateData);
 %% TODO:
@@ -338,9 +351,12 @@ handle_info(request_timeout, StateName, StateData) ->
 %% @TODO Also handle reader pid death
 handle_info({'EXIT', ManiPid, _Reason}, _StateName, StateData=#state{mani_fsm_pid=ManiPid}) ->
     {stop, normal, StateData};
-%% @private
+handle_info({'DOWN', CallerRef, process, _Pid, Reason},
+            _StateName,
+            State=#state{caller=CallerRef}) ->
+    {stop, Reason, State};
 handle_info(_Info, _StateName, StateData) ->
-    {stop,badmsg,StateData}.
+    {stop, badmsg, StateData}.
 
 %% @private
 terminate(_Reason, _StateName, #state{test=false}) ->
