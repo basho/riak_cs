@@ -68,16 +68,20 @@ sum_bucket(Riak, Bucket) when is_binary(Bucket) ->
     end.
 
 object_size_map({error, notfound}, _, _) ->
-    {0,0};
+    [];
 object_size_map(Object, _, _) ->
-    %% TODO: use Reid's sibling resolution code to choose
-    %% correct value
-    Manifest = binary_to_term(hd(riak_object:get_values(Object))),
-    case riak_moss_lfs_utils:is_active(Manifest) of
-        true ->
-            [{1,riak_moss_lfs_utils:content_length(Manifest)}];
-        false ->
-            [{0,0}]
+    try
+        AllManifests = [ binary_to_term(V)
+                         || V <- riak_object:get_values(Object) ],
+        Resolved = riak_moss_manifest_resolution:resolve(AllManifests),
+        case riak_moss_manifest:active_manifest(Resolved) of
+            {ok, #lfs_manifest_v2{content_length=Length}} ->
+                [{1,Length}];
+            _ ->
+                []
+        end
+    catch _:_ ->
+            []
     end.
 
 object_size_reduce(Sizes, _) ->
