@@ -83,7 +83,8 @@
          generate_etag/2,
          forbidden/2,
          produce_json/2,
-         produce_xml/2
+         produce_xml/2,
+         finish_request/2
         ]).
 
 -ifdef(TEST).
@@ -219,6 +220,12 @@ forbidden(RD, Ctx, User) ->
                     riak_moss_wm_utils:deny_access(RD, Ctx)
             end
     end.
+
+finish_request(RD, #ctx{riak=undefined}=Ctx) ->
+    {true, RD, Ctx};
+finish_request(RD, #ctx{riak=Riak}=Ctx) ->
+    riak_moss_utils:close_riak_connection(Riak),
+    {true, RD, Ctx#ctx{riak=undefined}}.
 
 %% JSON Production %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 produce_json(RD, #ctx{body=undefined}=Ctx) ->
