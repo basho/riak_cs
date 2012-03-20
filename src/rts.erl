@@ -366,9 +366,9 @@ make_object_prop() ->
                              riakc_obj:get_update_metadata(Obj))},
 
                       {start_time, rts:iso8601(Start) ==
-                           proplists:get_value(<<"start_time">>, MJ)},
+                           proplists:get_value(?START_TIME, MJ)},
                       {end_time, rts:iso8601(End) ==
-                           proplists:get_value(<<"end_time">>, MJ)}]))
+                           proplists:get_value(?END_TIME, MJ)}]))
             end).
 
 string_g() ->
