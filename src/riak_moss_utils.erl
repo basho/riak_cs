@@ -473,18 +473,33 @@ bucket_acl_json(ACL, KeyId)  ->
 %% @doc Check if a bucket is empty
 -spec bucket_empty(binary()) -> boolean().
 bucket_empty(Bucket) ->
-
     case riak_connection() of
         {ok, RiakPid} ->
-            ObjBucket = to_bucket_name(objects, Bucket),
-            case list_keys(ObjBucket, RiakPid) of
-                {ok, []} ->
-                    Res = true;
+            ManifestBucket = to_bucket_name(objects, Bucket),
+            %% @TODO Use `stream_list_keys' instead and
+            %% break out as soon as an active manifest is found.
+            case list_keys(ManifestBucket, RiakPid) of
+                {ok, Keys} ->
+                    FoldFun =
+                        fun(Key, Acc) ->
+                                {ok, ManiPid} = riak_moss_manifest_fsm:start_link(Bucket, Key),
+                                case riak_moss_manifest_fsm:get_active_manifest(ManiPid) of
+                                    {ok, _} ->
+                                        [Key | Acc];
+                                    {error, notfound} ->
+                                        Acc
+                                end
+                        end,
+                    ActiveKeys = lists:foldl(FoldFun, [], Keys),
+                    case ActiveKeys of
+                        [] ->
+                            true;
+                        _ ->
+                            false
+                    end;
                 _ ->
-                    Res = false
-            end,
-            close_riak_connection(RiakPid),
-            Res;
+                    false
+            end;
         {error, Reason} ->
             {error, {riak_connect_failed, Reason}}
     end.
