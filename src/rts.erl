@@ -325,10 +325,13 @@ slices_filling_prop() ->
                              "SL: ~p~nT1: ~p~nEL: ~p~n~n"
                              "# slices: ~p~n",
                              [SF, T0, EF, SL, T1, EL, Slices]),
-                   conj([SF =< Early, Early =< EF,
-                         SL =< Late, Late =< EL,
-                         length(Slices) ==
-                             mochinum:int_ceil(datetime_diff(SF, EL) / I)]))
+                   eqc:conjunction(
+                     [{start_first, SF =< Early},
+                      {end_first, Early =< EF},
+                      {start_last, SL =< Late},
+                      {end_last, Late =< EL},
+                      {count, length(Slices) ==
+                           mochinum:int_ceil(datetime_diff(SF, EL) / I)}]))
             end).
 
 make_object_test() ->
@@ -353,7 +356,7 @@ make_object_prop() ->
 
                 ?WHENFAIL(
                 io:format(user, "keys: ~p~n", [MJ]),
-                rts:conj(
+                eqc:conjunction(
                      [{bucket, Bucket == riakc_obj:bucket(Obj)},
                       {key_user, 0 /= string:str(
                                         binary_to_list(riakc_obj:key(Obj)),
@@ -403,17 +406,6 @@ valid_period_g() ->
               12,24,48,96,
               60,600,3600,21600, % 1min, 10min, 1hr, 6hr
               86400,86401,86500]). % 1day, over 1 day (will be trunc'd)
-
-%% Check that all elements in the list are boolean true, or 2-tuples
-%% where the second element is true; return 'true' if this is the
-%% case, or the input List if it is not.  This is a useful alternative
-%% to many 'andalso' clauses at the end of an EQC test, as it's easier
-%% to tell which clause failed.
-conj(List) ->
-    case lists:all(fun({_,B}) -> B == true; (B) -> B == true end, List) of
-        true -> true;
-        false -> List
-    end.
 
 -endif. % EQC
 -endif. % TEST
