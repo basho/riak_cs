@@ -190,35 +190,42 @@ iso8601({{Y,M,D},{H,I,S}}) ->
 check_bucket_props(Bucket) ->
     case riak_moss_utils:riak_connection() of
         {ok, Riak} ->
-            case riakc_pb_socket:get_bucket(Riak, Bucket) of
-                {ok, Props} ->
-                    case lists:keyfind(allow_mult, 1, Props) of
-                        {allow_mult, true} ->
-                            lager:debug("~s bucket was"
-                                        " already configured correctly.",
-                                        [Bucket]),
+            try
+                check_bucket_props(Bucket, Riak)
+            after
+                riak_moss_utils:close_riak_connection(Riak)
+            end;
+        {error, Reason} ->
+            lager:warn(
+              "Unable to verify ~s bucket settings (~p).",
+              [Bucket, Reason]),
+            {error, Reason}
+    end.
+
+check_bucket_props(Bucket, Riak) ->
+    case riakc_pb_socket:get_bucket(Riak, Bucket) of
+        {ok, Props} ->
+            case lists:keyfind(allow_mult, 1, Props) of
+                {allow_mult, true} ->
+                    lager:debug("~s bucket was"
+                                " already configured correctly.",
+                                [Bucket]),
+                    ok;
+                _ ->
+                    case riakc_pb_socket:set_bucket(
+                           Riak, Bucket,
+                           [{allow_mult, true}]) of
+                        ok ->
+                            lager:info("Configured ~s"
+                                       " bucket settings.",
+                                       [Bucket]),
                             ok;
-                        _ ->
-                            case riakc_pb_socket:set_bucket(
-                                   Riak, Bucket,
-                                   [{allow_mult, true}]) of
-                                ok ->
-                                    lager:info("Configured ~s"
-                                               " bucket settings.",
-                                               [Bucket]),
-                                    ok;
-                                {error, Reason} ->
-                                    lager:warn("Unable to configure ~s"
-                                               " bucket settings (~p).",
-                                               [Bucket, Reason]),
-                                    {error, Reason}
-                            end
-                    end;
-                {error, Reason} ->
-                    lager:warn(
-                      "Unable to verify ~s bucket settings (~p).",
-                      [Bucket, Reason]),
-                    {error, Reason}
+                        {error, Reason} ->
+                            lager:warn("Unable to configure ~s"
+                                       " bucket settings (~p).",
+                                       [Bucket, Reason]),
+                            {error, Reason}
+                    end
             end;
         {error, Reason} ->
             lager:warn(
