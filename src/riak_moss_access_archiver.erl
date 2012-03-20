@@ -58,7 +58,7 @@ archive(Table, Slice) ->
                         [?SERVER, Slice]),
             %% if the archiver had been alive just now, but crashed
             %% during operation, the stats also would have been lost,
-            %% so also losing them here is just an efficient was to
+            %% so also losing them here is just an efficient way to
             %% work around accidental memory bloat via repeated
             %% archiver error; TODO: using disk instead of memory
             %% storage for access stats may be better protection
