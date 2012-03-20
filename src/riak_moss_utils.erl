@@ -467,8 +467,8 @@ to_bucket_name(Type, Bucket) ->
 bucket_acl_json(ACL, KeyId)  ->
     binary_to_list(
       iolist_to_binary(
-        mochijson2:encode([stanchion_acl_utils:acl_to_json_term(ACL),
-                           {struct, [{<<"requester">>, list_to_binary(KeyId)}]}]))).
+        mochijson2:encode({struct, [{<<"requester">>, list_to_binary(KeyId)},
+                                    stanchion_acl_utils:acl_to_json_term(ACL)]}))).
 
 %% @doc Check if a bucket is empty
 -spec bucket_empty(binary()) -> boolean().
@@ -570,10 +570,9 @@ bucket_fun(delete, Bucket, _ACL, KeyId, AdminCreds, StanchionData) ->
 bucket_json(Bucket, ACL, KeyId)  ->
     binary_to_list(
       iolist_to_binary(
-        mochijson2:encode([{struct, [{<<"bucket">>, Bucket}]},
-                           stanchion_acl_utils:acl_to_json_term(ACL),
-                           {struct, [{<<"requester">>, list_to_binary(KeyId)}]}]))).
-
+        mochijson2:encode({struct, [{<<"bucket">>, Bucket},
+                                    {<<"requester">>, list_to_binary(KeyId)},
+                                    stanchion_acl_utils:acl_to_json_term(ACL)]}))).
 
 %% @doc Return a bucket record for the specified bucket name.
 -spec bucket_record(binary(), bucket_operation()) -> moss_bucket().
@@ -858,13 +857,13 @@ user_json(User) ->
                canonical_id=CanonicalId} = User,
     binary_to_list(
       iolist_to_binary(
-        mochijson2:encode([{struct, [{<<"email">>, list_to_binary(Email)}]},
-                           {struct, [{<<"display_name">>, list_to_binary(DisplayName)}]},
-                           {struct, [{<<"name">>, list_to_binary(UserName)}]},
-                           {struct, [{<<"key_id">>, list_to_binary(KeyId)}]},
-                           {struct, [{<<"key_secret">>, list_to_binary(Secret)}]},
-                           {struct, [{<<"canonical_id">>, list_to_binary(CanonicalId)}]}
-                          ]))).
+        mochijson2:encode({struct, [{<<"email">>, list_to_binary(Email)},
+                                    {<<"display_name">>, list_to_binary(DisplayName)},
+                                    {<<"name">>, list_to_binary(UserName)},
+                                    {<<"key_id">>, list_to_binary(KeyId)},
+                                    {<<"key_secret">>, list_to_binary(Secret)},
+                                    {<<"canonical_id">>, list_to_binary(CanonicalId)}
+                                   ]}))).
 
 %% @doc Validate an email address.
 -spec validate_email(string()) -> ok | {error, term()}.
