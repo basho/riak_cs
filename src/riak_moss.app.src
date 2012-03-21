@@ -13,7 +13,8 @@
                   mochiweb,
                   webmachine,
                   poolboy,
-                  lager
+                  lager,
+                  folsom
                  ]},
   {mod, { riak_moss_app, []}},
   {env, [

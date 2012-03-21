@@ -122,6 +122,7 @@ handle_call(stop, _From, State) ->
 %%--------------------------------------------------------------------
 handle_cast({get_block, ReplyPid, Bucket, Key, UUID, BlockNumber}, State=#state{riakc_pid=RiakcPid}) ->
     {FullBucket, FullKey} = full_bkey(Bucket, Key, UUID, BlockNumber),
+    StartTime = os:timestamp(),
     GetOptions = [{r, 1}, {notfound_ok, false}, {basic_quorum, false}],
     ChunkValue = case riakc_pb_socket:get(RiakcPid, FullBucket, FullKey, GetOptions) of
         {ok, RiakObject} ->
@@ -129,6 +130,7 @@ handle_cast({get_block, ReplyPid, Bucket, Key, UUID, BlockNumber}, State=#state{
         {error, notfound}=NotFound ->
             NotFound
     end,
+    riak_moss_stats:update(block_get, timer:now_diff(os:timestamp(), StartTime)),
     riak_moss_get_fsm:chunk(ReplyPid, BlockNumber, ChunkValue),
     {noreply, State};
 handle_cast({put_block, ReplyPid, Bucket, Key, UUID, BlockNumber, Value}, State=#state{riakc_pid=RiakcPid}) ->
@@ -139,13 +141,16 @@ handle_cast({put_block, ReplyPid, Bucket, Key, UUID, BlockNumber, Value}, State=
     _ = lager:debug("put_block: Bucket ~p Key ~p UUID ~p", [Bucket, Key, UUID]),
     _ = lager:debug("put_block: FullBucket: ~p FullKey: ~p", [FullBucket, FullKey]),
     RiakObject = riakc_obj:update_metadata(RiakObject0, MD),
+    StartTime = os:timestamp(),
     ok = riakc_pb_socket:put(RiakcPid, RiakObject),
-
+    riak_moss_stats:update_with_starttime(block_put, StartTime),
     riak_moss_put_fsm:block_written(ReplyPid, BlockNumber),
     {noreply, State};
 handle_cast({delete_block, _ReplyPid, Bucket, Key, UUID, BlockNumber}, State=#state{riakc_pid=RiakcPid}) ->
     {FullBucket, FullKey} = full_bkey(Bucket, Key, UUID, BlockNumber),
+    StartTime = os:timestamp(),
     ok = riakc_pb_socket:delete(RiakcPid, FullBucket, FullKey),
+    riak_moss_stats:update_with_starttime(block_delete, StartTime),
     %% TODO:
     %% add a public func to riak_moss_delete_fsm
     %% to send messages back to the fsm

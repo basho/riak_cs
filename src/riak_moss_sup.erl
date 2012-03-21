@@ -64,6 +64,8 @@ init([]) ->
         undefined ->
             WebConfig = WebConfig1
     end,
+    Stats = {riak_moss_stats, {riak_moss_stats, start_link, []},
+             permanent, 5000, worker, dynamic},
     Web = {webmachine_mochiweb,
            {webmachine_mochiweb, start, [WebConfig]},
            permanent, 5000, worker, dynamic},
@@ -99,6 +101,7 @@ init([]) ->
     Processes = [RiakCPool,
                  Archiver,
                  Storage,
+                 Stats,
                  DeleterSup,
                  DeleteFsmSup,
                  GetFsmSup,
