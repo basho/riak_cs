@@ -35,6 +35,8 @@ new(ID) ->
     %% IP for now
     Ip  = basho_bench_config:get(moss_raw_ip, "127.0.0.1"),
     Port = basho_bench_config:get(moss_raw_port, 8080),
+    Disconnect = basho_bench_config:get(moss_disconnect_frequency, infinity),
+    erlang:put(disconnect_freq, Disconnect),
 
     Hosts = [{Ip, Port}],
 
