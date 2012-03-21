@@ -14,7 +14,8 @@
          sum_user/2,
          sum_bucket/2,
          make_object/4,
-         get_usage/4
+         get_usage/4,
+         archive_period/0
         ]).
 -export([
          object_size_map/3,
