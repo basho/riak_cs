@@ -25,6 +25,7 @@
 -spec new(integer()) -> {ok, term()}.
 new(ID) ->
     application:start(ibrowse),
+    application:start(crypto),
 
     %% The IP, port and path we'll be testing
 
@@ -198,10 +199,23 @@ send_request(Host, Url, Headers, Method, Body, Options) ->
 
 send_request(_Host, _Url, _Headers, _Method, _Body, _Options, 0) ->
     {error, max_retries};
-send_request(Host, Url, Headers, Method, Body, Options, Count) ->
+send_request(Host, Url, Headers0, Method, Body, Options, Count) ->
     Pid = connect(Host),
-    HeadersWithAuth = [{'Authorization', basho_bench_config:get(moss_authorization)}|Headers],
-    case catch(ibrowse_http_client:send_req(Pid, Url, HeadersWithAuth, Method, Body, Options, basho_bench_config:get(moss_request_timeout, 5000))) of
+    ContentTypeStr = atom_to_list(proplists:get_value(
+                                    'Content-Type', Headers0,
+                                    'application/octet-stream')),
+    Date = httpd_util:rfc1123_date(),
+    Headers = [{'Content-Type', ContentTypeStr},
+               {'Date', Date}|lists:keydelete('Content-Type', 1, Headers0)],
+    Uri = element(7, Url),
+    Sig = stanchion_auth:request_signature(
+            uppercase_verb(Method), Headers, Uri,
+            basho_bench_config:get(moss_secret_key)),
+    AuthStr = ["AWS ", basho_bench_config:get(moss_access_key), ":", Sig],
+    HeadersWithAuth = [{'Authorization', AuthStr}|Headers],
+    Timeout = basho_bench_config:get(moss_request_timeout, 5000),
+    case catch(ibrowse_http_client:send_req(Pid, Url, HeadersWithAuth, Method,
+                                            Body, Options, Timeout)) of
         {ok, Status, RespHeaders, RespBody} ->
             maybe_disconnect(Host),
             {ok, Status, RespHeaders, RespBody};
@@ -220,7 +234,7 @@ send_request(Host, Url, Headers, Method, Body, Options, Count) ->
 
 do_put(Host, Url, Headers, Value) ->
     case send_request(Host, Url, Headers ++ [{'Content-Type', 'application/octet-stream'}],
-                      put, Value, [{response_format, binary}]) of
+                      put, Value, proxy_opts()) of
         {ok, "201", _Header, _Body} ->
             ok;
         {ok, "204", _Header, _Body} ->
@@ -232,8 +246,7 @@ do_put(Host, Url, Headers, Value) ->
     end.
 
 do_delete(Host, Url, Headers) ->
-    case send_request(Host, Url, Headers,
-                      delete, <<>>, [{response_format, binary}]) of
+    case send_request(Host, Url, Headers, delete, <<>>, proxy_opts()) of
         {ok, "200", _Header, _Body} ->
             ok;
         {ok, "204", _Header, _Body} ->
@@ -245,8 +258,7 @@ do_delete(Host, Url, Headers) ->
     end.
 
 do_get(Host, Url, Headers) ->
-    case send_request(Host, Url, Headers,
-                      get, <<>>, [{response_format, binary}]) of
+    case send_request(Host, Url, Headers, get, <<>>, proxy_opts()) of
         {ok, "200", _Header, _Body} ->
             ok;
         {ok, "404", _Header, _Body} ->
@@ -266,3 +278,15 @@ should_retry(_)                          -> false.
 normalize_error(Method, {'EXIT', {timeout, _}})  -> {error, {Method, timeout}};
 normalize_error(Method, {'EXIT', Reason})        -> {error, {Method, 'EXIT', Reason}};
 normalize_error(Method, {error, Reason})         -> {error, {Method, Reason}}.
+
+proxy_opts() ->
+    [{response_format, binary},
+     {proxy_host, basho_bench_config:get(moss_http_proxy_host)},
+     {proxy_port, basho_bench_config:get(moss_http_proxy_port)}].
+
+uppercase_verb(put) ->
+    'PUT';
+uppercase_verb(get) ->
+    'GET';
+uppercase_verb(delete) ->
+    'DELETE'.
