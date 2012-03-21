@@ -117,7 +117,7 @@ init([Bucket, Key, Caller]) ->
     %% state
     {ok, prepare, State, 0};
 init([test, Bucket, Key, ContentLength, BlockSize]) ->
-    {ok, prepare, State1, 0} = init([Bucket, Key]),
+    {ok, prepare, State1, 0} = init([Bucket, Key, self()]),
     %% purposely have the timeout happen
     %% so that we get called in the prepare
     %% state
