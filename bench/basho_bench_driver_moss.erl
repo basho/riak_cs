@@ -16,7 +16,8 @@
          run/4]).
 
 -record(state, { client_id,
-                 hosts}).
+                 hosts,
+                 bucket}).
 
 %% ====================================================================
 %% API
@@ -25,6 +26,7 @@
 -spec new(integer()) -> {ok, term()}.
 new(ID) ->
     application:start(ibrowse),
+    application:start(crypto),
 
     %% The IP, port and path we'll be testing
 
@@ -33,30 +35,32 @@ new(ID) ->
     %% IP for now
     Ip  = basho_bench_config:get(moss_raw_ip, "127.0.0.1"),
     Port = basho_bench_config:get(moss_raw_port, 8080),
+    Disconnect = basho_bench_config:get(moss_disconnect_frequency, infinity),
+    erlang:put(disconnect_freq, Disconnect),
 
     Hosts = [{Ip, Port}],
 
-    {ok, #state{client_id=ID, hosts=Hosts}}.
+    {ok, #state{client_id=ID, hosts=Hosts,
+                bucket = basho_bench_config:get(moss_bucket, "test")}}.
 
 -spec run(atom(), fun(), fun(), term()) -> {ok, term()}.
-run(insert, KeyGen, ValueGen, State) ->
+run(insert, KeyGen, ValueGen, #state{bucket = Bucket} = State) ->
     {NextHost, S2} = next_host(State),
     ConnInfo = NextHost,
-    case insert(KeyGen, ValueGen, ConnInfo) of
+    case insert(KeyGen, ValueGen, ConnInfo, Bucket) of
         ok ->
             {ok, S2};
         {Error, Reason} ->
             {Error, Reason, S2}
     end;
-run(update, KeyGen, ValueGen, State) ->
-    Bucket = "test",
+run(update, KeyGen, ValueGen, #state{bucket = Bucket} = State) ->
     {NextHost, S2} = next_host(State),
     {Host, Port} = NextHost,
     Key = KeyGen(),
     Url = url(Host, Port, Bucket, Key),
     case do_get({Host, Port}, Url, []) of
         ok ->
-            case insert(KeyGen, ValueGen, {Host, Port}) of
+            case insert(KeyGen, ValueGen, {Host, Port}, Bucket) of
                 ok ->
                     {ok, State};
                 {Error, Reason} ->
@@ -65,8 +69,7 @@ run(update, KeyGen, ValueGen, State) ->
         {Error, Reason} ->
             {Error, Reason, S2}
     end;
-run(delete, KeyGen, _ValueGen, State) ->
-    Bucket = "test",
+run(delete, KeyGen, _ValueGen, #state{bucket = Bucket} = State) ->
     {NextHost, S2} = next_host(State),
     {Host, Port} = NextHost,
     Key = KeyGen(),
@@ -77,8 +80,7 @@ run(delete, KeyGen, _ValueGen, State) ->
         {Error, Reason} ->
             {Error, Reason, S2}
     end;
-run(get, KeyGen, _ValueGen, State) ->
-    Bucket = "test",
+run(get, KeyGen, _ValueGen, #state{bucket = Bucket} = State) ->
     {NextHost, S2} = next_host(State),
     {Host, Port} = NextHost,
     Key = KeyGen(),
@@ -96,11 +98,7 @@ run(_Operation, _KeyGen, _ValueGen, State) ->
 %% Internal functions
 %% ====================================================================
 
-insert(KeyGen, ValueGen, {Host, Port}) ->
-    %% TODO:
-    %% bucket needs to be
-    %% configurable/generatable
-    Bucket = "test",
+insert(KeyGen, ValueGen, {Host, Port}, Bucket) ->
     Key = KeyGen(),
     Url = url(Host, Port, Bucket, Key),
     Value = ValueGen(),
@@ -198,10 +196,23 @@ send_request(Host, Url, Headers, Method, Body, Options) ->
 
 send_request(_Host, _Url, _Headers, _Method, _Body, _Options, 0) ->
     {error, max_retries};
-send_request(Host, Url, Headers, Method, Body, Options, Count) ->
+send_request(Host, Url, Headers0, Method, Body, Options, Count) ->
     Pid = connect(Host),
-    HeadersWithAuth = [{'Authorization', basho_bench_config:get(moss_authorization)}|Headers],
-    case catch(ibrowse_http_client:send_req(Pid, Url, HeadersWithAuth, Method, Body, Options, basho_bench_config:get(moss_request_timeout, 5000))) of
+    ContentTypeStr = to_list(proplists:get_value(
+                               'Content-Type', Headers0,
+                               'application/octet-stream')),
+    Date = httpd_util:rfc1123_date(),
+    Headers = [{'Content-Type', ContentTypeStr},
+               {'Date', Date}|lists:keydelete('Content-Type', 1, Headers0)],
+    Uri = element(7, Url),
+    Sig = stanchion_auth:request_signature(
+            uppercase_verb(Method), Headers, Uri,
+            basho_bench_config:get(moss_secret_key)),
+    AuthStr = ["AWS ", basho_bench_config:get(moss_access_key), ":", Sig],
+    HeadersWithAuth = [{'Authorization', AuthStr}|Headers],
+    Timeout = basho_bench_config:get(moss_request_timeout, 5000),
+    case catch(ibrowse_http_client:send_req(Pid, Url, HeadersWithAuth, Method,
+                                            Body, Options, Timeout)) of
         {ok, Status, RespHeaders, RespBody} ->
             maybe_disconnect(Host),
             {ok, Status, RespHeaders, RespBody};
@@ -220,7 +231,7 @@ send_request(Host, Url, Headers, Method, Body, Options, Count) ->
 
 do_put(Host, Url, Headers, Value) ->
     case send_request(Host, Url, Headers ++ [{'Content-Type', 'application/octet-stream'}],
-                      put, Value, [{response_format, binary}]) of
+                      put, Value, proxy_opts()) of
         {ok, "201", _Header, _Body} ->
             ok;
         {ok, "204", _Header, _Body} ->
@@ -232,8 +243,7 @@ do_put(Host, Url, Headers, Value) ->
     end.
 
 do_delete(Host, Url, Headers) ->
-    case send_request(Host, Url, Headers,
-                      delete, <<>>, [{response_format, binary}]) of
+    case send_request(Host, Url, Headers, delete, <<>>, proxy_opts()) of
         {ok, "200", _Header, _Body} ->
             ok;
         {ok, "204", _Header, _Body} ->
@@ -245,8 +255,7 @@ do_delete(Host, Url, Headers) ->
     end.
 
 do_get(Host, Url, Headers) ->
-    case send_request(Host, Url, Headers,
-                      get, <<>>, [{response_format, binary}]) of
+    case send_request(Host, Url, Headers, get, <<>>, proxy_opts()) of
         {ok, "200", _Header, _Body} ->
             ok;
         {ok, "404", _Header, _Body} ->
@@ -266,3 +275,20 @@ should_retry(_)                          -> false.
 normalize_error(Method, {'EXIT', {timeout, _}})  -> {error, {Method, timeout}};
 normalize_error(Method, {'EXIT', Reason})        -> {error, {Method, 'EXIT', Reason}};
 normalize_error(Method, {error, Reason})         -> {error, {Method, Reason}}.
+
+proxy_opts() ->
+    [{response_format, binary},
+     {proxy_host, basho_bench_config:get(moss_http_proxy_host)},
+     {proxy_port, basho_bench_config:get(moss_http_proxy_port)}].
+
+uppercase_verb(put) ->
+    'PUT';
+uppercase_verb(get) ->
+    'GET';
+uppercase_verb(delete) ->
+    'DELETE'.
+
+to_list(A) when is_atom(A) ->
+    atom_to_list(A);
+to_list(L) when is_list(L) ->
+    L.

@@ -1,26 +1,35 @@
-%% Sample config file for riak_moss
-%% basho benchmarking
+%% Sample config file for Riak CS basho_bench benchmarking
 
-{mode, max}.
-
+%{mode, max}.
+{mode, {rate,4}}.
 {duration, 1}.
-
 {concurrent, 1}.
 
+%% Replace these with your own paths
+{source_dir, "/Users/fritchie/b/src/riak_moss/bench"}.
+{code_paths, ["deps/ibrowse", "/Users/fritchie/b/src/riak_moss",
+              "/Users/fritchie/b/src/riak_moss/deps/stanchion"]}.
 {driver, basho_bench_driver_moss}.
 
 %% Replace this with a user you have created.
 %% Instructions to create a user are here:
 %% https://github.com/basho/riak_moss/wiki/Creating-a-User
-{moss_authorization, "4844552620141D3E1EA71090A9D27F363F9CFA25"}.
+{moss_access_key, "ZG7SS3ZPECF-8LZOEBMA"}.
+{moss_secret_key, "21HoIRdeO617nJrIbam9mKH2MBxmcsMEwESvmQ=="}.
+{moss_bucket, "test"}.
+{moss_disconnect_frequency, 5}.    % # ops before disconnecting HTTP socket
+{moss_raw_ip, "s3.amazonaws.com"}. % DO NOT CHANGE
+{moss_raw_port, 80}.               % DO NOT CHANGE
+%% Replace these with your HTTP proxy's location (i.e. Riak CS)
+{moss_http_proxy_host, "localhost"}.
+{moss_http_proxy_port, 8080}.
+{moss_request_timeout, 999999000}.
 
-{code_paths, ["deps/ibrowse"]}.
-
-{value_generator, {fixed_bin, 1000}}.
-
-{http_raw_port, 8080}.
+%{key_generator, {int_to_bin, {uniform_int, 500}}}.
+{key_generator, {uniform_int, 5}}.
+%{value_generator_source_size, 12100105}. %% Must be larger than val gen max size.
+%{value_generator, {fixed_bin, 12100100}}.
+{value_generator, {fixed_bin, 1024}}.
 
 {operations, [{insert, 1}, {update, 1}, {delete, 1}, {get, 1}]}.
 
-%% replace this with your own path
-{source_dir, "/Users/reid/Documents/repos/basho/riak_moss/bench"}.
