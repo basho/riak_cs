@@ -16,7 +16,8 @@
          run/4]).
 
 -record(state, { client_id,
-                 hosts}).
+                 hosts,
+                 bucket}).
 
 %% ====================================================================
 %% API
@@ -37,27 +38,27 @@ new(ID) ->
 
     Hosts = [{Ip, Port}],
 
-    {ok, #state{client_id=ID, hosts=Hosts}}.
+    {ok, #state{client_id=ID, hosts=Hosts,
+                bucket = basho_bench_config:get(moss_bucket, "test")}}.
 
 -spec run(atom(), fun(), fun(), term()) -> {ok, term()}.
-run(insert, KeyGen, ValueGen, State) ->
+run(insert, KeyGen, ValueGen, #state{bucket = Bucket} = State) ->
     {NextHost, S2} = next_host(State),
     ConnInfo = NextHost,
-    case insert(KeyGen, ValueGen, ConnInfo) of
+    case insert(KeyGen, ValueGen, ConnInfo, Bucket) of
         ok ->
             {ok, S2};
         {Error, Reason} ->
             {Error, Reason, S2}
     end;
-run(update, KeyGen, ValueGen, State) ->
-    Bucket = "test",
+run(update, KeyGen, ValueGen, #state{bucket = Bucket} = State) ->
     {NextHost, S2} = next_host(State),
     {Host, Port} = NextHost,
     Key = KeyGen(),
     Url = url(Host, Port, Bucket, Key),
     case do_get({Host, Port}, Url, []) of
         ok ->
-            case insert(KeyGen, ValueGen, {Host, Port}) of
+            case insert(KeyGen, ValueGen, {Host, Port}, Bucket) of
                 ok ->
                     {ok, State};
                 {Error, Reason} ->
@@ -66,8 +67,7 @@ run(update, KeyGen, ValueGen, State) ->
         {Error, Reason} ->
             {Error, Reason, S2}
     end;
-run(delete, KeyGen, _ValueGen, State) ->
-    Bucket = "test",
+run(delete, KeyGen, _ValueGen, #state{bucket = Bucket} = State) ->
     {NextHost, S2} = next_host(State),
     {Host, Port} = NextHost,
     Key = KeyGen(),
@@ -78,8 +78,7 @@ run(delete, KeyGen, _ValueGen, State) ->
         {Error, Reason} ->
             {Error, Reason, S2}
     end;
-run(get, KeyGen, _ValueGen, State) ->
-    Bucket = "test",
+run(get, KeyGen, _ValueGen, #state{bucket = Bucket} = State) ->
     {NextHost, S2} = next_host(State),
     {Host, Port} = NextHost,
     Key = KeyGen(),
@@ -97,11 +96,7 @@ run(_Operation, _KeyGen, _ValueGen, State) ->
 %% Internal functions
 %% ====================================================================
 
-insert(KeyGen, ValueGen, {Host, Port}) ->
-    %% TODO:
-    %% bucket needs to be
-    %% configurable/generatable
-    Bucket = "test",
+insert(KeyGen, ValueGen, {Host, Port}, Bucket) ->
     Key = KeyGen(),
     Url = url(Host, Port, Bucket, Key),
     Value = ValueGen(),
