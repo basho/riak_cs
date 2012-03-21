@@ -198,9 +198,9 @@ send_request(_Host, _Url, _Headers, _Method, _Body, _Options, 0) ->
     {error, max_retries};
 send_request(Host, Url, Headers0, Method, Body, Options, Count) ->
     Pid = connect(Host),
-    ContentTypeStr = atom_to_list(proplists:get_value(
-                                    'Content-Type', Headers0,
-                                    'application/octet-stream')),
+    ContentTypeStr = to_list(proplists:get_value(
+                               'Content-Type', Headers0,
+                               'application/octet-stream')),
     Date = httpd_util:rfc1123_date(),
     Headers = [{'Content-Type', ContentTypeStr},
                {'Date', Date}|lists:keydelete('Content-Type', 1, Headers0)],
@@ -287,3 +287,8 @@ uppercase_verb(get) ->
     'GET';
 uppercase_verb(delete) ->
     'DELETE'.
+
+to_list(A) when is_atom(A) ->
+    atom_to_list(A);
+to_list(L) when is_list(L) ->
+    L.
