@@ -78,9 +78,6 @@
 %% the user is not set.
 set_user(?MOSS_USER{key_id=KeyID}, RD) ->
     wrq:add_note(?STAT(user), KeyID, RD);
-set_user(#moss_user{key_id=KeyID}, RD) ->
-    %% TODO: does this support for old user records need to be here?
-    wrq:add_note(?STAT(user), KeyID, RD);
 set_user(unknown, RD) ->
     RD.
 

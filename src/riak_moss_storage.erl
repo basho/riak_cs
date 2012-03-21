@@ -33,10 +33,6 @@ sum_user(Riak, User) when is_list(User) ->
         {ok, {?MOSS_USER{buckets=Buckets}, _VClock}} ->
             {ok, [ {B, sum_bucket(Riak, B)}
                    || ?MOSS_BUCKET{name=B} <- Buckets ]};
-        {ok, #moss_user{buckets=Buckets}} ->
-            %% TODO: does this old record match need to remain?
-            {ok, [ {B, sum_bucket(Riak, B)}
-                   || #moss_bucket{name=B} <- Buckets ]};
         {error, Error} ->
             {error, Error}
     end.
