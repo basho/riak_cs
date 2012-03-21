@@ -32,6 +32,7 @@
          block_sequences_for_manifest/1,
          is_manifest/1,
          new_manifest/9,
+         new_manifest/11,
          remove_write_block/2,
          sorted_blocks_remaining/1]).
 
@@ -158,6 +159,20 @@ is_manifest(BinaryValue) ->
                    pos_integer(),
                    acl()) -> lfs_manifest().
 new_manifest(Bucket, FileName, UUID, ContentLength, ContentType, ContentMd5, MetaData, BlockSize, Acl) ->
+    new_manifest(Bucket, FileName, UUID, ContentLength, ContentType, ContentMd5, MetaData, BlockSize, Acl, [], undefined).
+
+-spec new_manifest(binary(),
+                   binary(),
+                   binary(),
+                   binary(),
+                   pos_integer(),
+                   term(),
+                   term(),
+                   pos_integer(),
+                   acl(),
+                   proplists:proplist(),
+                   cluster_id()) -> lfs_manifest().
+new_manifest(Bucket, FileName, UUID, ContentLength, ContentType, ContentMd5, MetaData, BlockSize, Acl, Props, ClusterID) ->
     Blocks = ordsets:from_list(initial_blocks(ContentLength, BlockSize)),
     #lfs_manifest_v2{bkey={Bucket, FileName},
                      uuid=UUID,
@@ -168,7 +183,9 @@ new_manifest(Bucket, FileName, UUID, ContentLength, ContentType, ContentMd5, Met
                      block_size=BlockSize,
                      write_blocks_remaining=Blocks,
                      metadata=MetaData,
-                     acl=Acl}.
+                     acl=Acl,
+                     props=Props,
+                     cluster_id=ClusterID}.
 
 %% @doc Remove a chunk from the
 %%      write_blocks_remaining field of Manifest

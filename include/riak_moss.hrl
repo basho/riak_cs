@@ -55,6 +55,8 @@
                  creation_time=now() :: erlang:timestamp()}).
 -type acl() :: #acl_v1{}.
 
+-type cluster_id() :: undefined | term().  % Type still in flux.
+
 -record(lfs_manifest_v2, {
         %% "global" properties
         %% -----------------------------------------------------------------
@@ -146,7 +148,36 @@
 
         %% The ACL for the version of the object represented
         %% by this manifest.
-        acl :: acl()
+        acl :: acl(),
+
+        %% There are a couple of cases where we want to add record
+        %% member'ish data without adding new members to the record,
+        %% e.g.
+        %%    1. Data for which the common value is 'undefined' or not
+        %%       used/set for this particular manifest
+        %%    2. Cases where we do want to change the structure of the
+        %%       record but don't want to go through the full code
+        %%       refactoring and backward-compatibility tap dance
+        %%       until sometime later.
+        props = [] :: proplists:proplist(),
+
+        %% cluster_id: A couple of uses, both short- and longer-term
+        %%  possibilities:
+        %%
+        %%  1. We don't have a good story in early 2012 for how to
+        %%     build a stable 2,000 node Riak cluster.  If MOSS can
+        %%     talk to multiple Riak clusters, then each individual
+        %%     cluster can be a size that we're comfortable
+        %%     supporting.
+        %%
+        %%  2. We may soon have Riak EE's replication have full
+        %%     plumbing to make it feasible to forward arbitrary
+        %%     traffic between clusters.  Then if a slave cluster is
+        %%     missing a data block, and read-repair cannot
+        %%     automagically fix the 'not_found' problem, then perhaps
+        %%     forwarding a get request to the source Riak cluster can
+        %%     fetch us the missing data.
+        cluster_id :: cluster_id()
     }).
 -type lfs_manifest() :: #lfs_manifest_v2{}.
 
