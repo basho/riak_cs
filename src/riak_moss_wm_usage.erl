@@ -8,16 +8,27 @@
 %%
 %% `GET /usage/USER_KEY?s=STARTTIME&e=ENDTIME&a=ACCESS&b=STORAGE'
 %%
+%% `s3cmd get s3://usage/USER_KEY/ab/STARTTIME/ENDTIME'
+%%
 %% Default `s' is the beginning of the previous period.  If no `e' is
 %% given, the return only includes data for the period containing `s'.
 %%
 %% The `a' and `b' parameters default to `false'. Set `a' to `true' to
 %% get access usage stats.  Set `b' to `true' to get storage usage
-%% stats.
+%% stats.  Including each in the s3cmd enables that stat, excluding it
+%% disables it.
+%%
+%% The `s3cmd' variant also supports `x' and `j' in the path segment
+%% with the `a' and `b'.  Including `x' gets the results in XML
+%% format; `j' gets them in JSON.  Default is JSON.
 %%
 %% This service is only available if a connection to Riak can be made.
 %%
 %% This resource only exists if the user named by the key exists.
+%%
+%% Authorization is done the same way as all other authorized
+%% resources: with the `Authorization' header, hashed with S3 keys,
+%% etc.
 %%
 %% JSON response looks like:
 %% ```
@@ -70,8 +81,6 @@
 %%   <Storage>not_requested</Storage>
 %% </Usage>
 %% '''
-%%
-%% TODO: what auth is needed here?
 -module(riak_moss_wm_usage).
 
 -export([
