@@ -101,7 +101,7 @@ human_detail(schedule, Schedule) ->
                 _ ->
                     %% convert the list of tuples to a comma-separated
                     %% stringy thing
-                    string:join([io:format("~2..0b~2..0b", [H, M])
+                    string:join([io_lib:format("~2..0b~2..0b", [H, M])
                                  || {H, M} <- Schedule],
                                 ",")
             end,
