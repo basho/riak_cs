@@ -64,6 +64,8 @@ init([]) ->
         undefined ->
             WebConfig = WebConfig1
     end,
+    Stats = {riak_moss_stats, {riak_moss_stats, start_link, []},
+             permanent, 5000, worker, dynamic},
     Web = {webmachine_mochiweb,
            {webmachine_mochiweb, start, [WebConfig]},
            permanent, 5000, worker, dynamic},
@@ -79,7 +81,8 @@ init([]) ->
     DeleterSup = {riak_moss_deleter_sup,
                  {riak_moss_deleter_sup, start_link, []},
                  permanent, 5000, worker, dynamic},
-    Processes = [DeleterSup,
+    Processes = [Stats,
+                 DeleterSup,
                  DeleteFsmSup,
                  GetFsmSup,
                  PutFsmSup,

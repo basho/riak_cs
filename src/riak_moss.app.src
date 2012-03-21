@@ -12,7 +12,8 @@
                   crypto,
                   mochiweb,
                   webmachine,
-                  lager
+                  lager,
+                  folsom
                  ]},
   {mod, { riak_moss_app, []}},
   {env, [
