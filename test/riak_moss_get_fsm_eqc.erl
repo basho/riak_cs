@@ -53,7 +53,8 @@
 
 eqc_test_() ->
     {spawn,
-     [{setup,
+     [
+      {setup,
        fun setup/0,
        fun cleanup/1,
        [%% Run the quickcheck tests
@@ -100,7 +101,7 @@ prop_get_fsm() ->
 
 start_fsm(ContentLength, BlockSize) ->
     {ok, FSMPid} = riak_moss_get_fsm:test_link(<<"bucket">>, <<"key">>, ContentLength, BlockSize),
-    _Metadata = riak_moss_get_fsm:get_metadata(FSMPid),
+    _Manifest = riak_moss_get_fsm:get_manifest(FSMPid),
     riak_moss_get_fsm:continue(FSMPid),
     FSMPid.
 
@@ -114,7 +115,7 @@ stop_fsm() -> ok.
 %%====================================================================
 
 check_chunk(Counter, Chunk) ->
-    <<NewCounter:32>> = Chunk,
+    <<NewCounter:32>> = riakc_obj:get_value(Chunk),
     Counter == NewCounter.
 
 %%====================================================================
@@ -158,4 +159,3 @@ postcondition(_From, _To, _S, _C, _R) ->
     true.
 
 -endif.
-
