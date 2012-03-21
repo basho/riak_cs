@@ -1,5 +1,5 @@
 REPO		?= riak_moss
-PKG_NAME        ?= riak-moss
+PKG_NAME        ?= riak-cs
 PKG_REVISION    ?= $(shell git describe --tags)
 PKG_VERSION	?= $(shell git describe --tags | tr - .)
 PKG_ID           = $(PKG_NAME)-$(PKG_VERSION)
@@ -38,18 +38,18 @@ rel: deps compile
 	@./rebar skip_deps=true generate  $(OVERLAY_VARS)
 
 relclean:
-	rm -rf rel/riak_moss
+	rm -rf rel/riak-cs
 
 ##
 ## Developer targets
 ##
 stage : rel
-	$(foreach dep,$(wildcard deps/*), rm -rf rel/riak_moss/lib/$(shell basename $(dep))-* && ln -sf $(abspath $(dep)) rel/riak_moss/lib;)
-	$(foreach app,$(wildcard apps/*), rm -rf rel/riak_moss/lib/$(shell basename $(app))-* && ln -sf $(abspath $(app)) rel/riak_moss/lib;)
+	$(foreach dep,$(wildcard deps/*), rm -rf rel/riak-cs/lib/$(shell basename $(dep))-* && ln -sf $(abspath $(dep)) rel/riak-cs/lib;)
+	$(foreach app,$(wildcard apps/*), rm -rf rel/riak-cs/lib/$(shell basename $(app))-* && ln -sf $(abspath $(app)) rel/riak-cs/lib;)
 
 devrel:
 	mkdir -p dev
-	(cd rel && ../rebar generate skip_deps=true target_dir=../dev/$(REPO) overlay_vars=vars/dev_vars.config)
+	(cd rel && ../rebar generate skip_deps=true target_dir=../dev/$(PKG_NAME) overlay_vars=vars/dev_vars.config)
 
 devclean: clean
 	rm -rf dev
@@ -71,7 +71,7 @@ orgs-README:
 
 APPS = kernel stdlib sasl erts ssl tools os_mon runtime_tools crypto inets \
 	xmerl webtool eunit syntax_tools compiler
-PLT = $(HOME)/.riak_moss_dialyzer_plt
+PLT = $(HOME)/.riak-cs_dialyzer_plt
 
 check_plt: compile
 	dialyzer --check_plt --plt $(PLT) --apps $(APPS) \
