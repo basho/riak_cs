@@ -55,6 +55,9 @@ service_available(RD, Ctx) ->
 %%      authenticated. Normally with HTTP
 %%      we'd use the `authorized` callback,
 %%      but this is how S3 does things.
+%%
+%%      This function is implemented by up to 3 steps:
+%%      forbidden/2, forbidden/5, and forbidden/3.
 forbidden(RD, Ctx=#key_context{bucket=Bucket,
                                key=Key,
                                context=#context{auth_bypass=AuthBypass}}) ->
@@ -75,27 +78,21 @@ forbidden(RD, Ctx=#key_context{bucket=Bucket,
                     RequestedAccess =
                         riak_moss_acl_utils:requested_access(Method,
                                                              wrq:req_qs(RD)),
-                    case riak_moss_acl:object_access(Bucket,
-                                                     BinKey,
-                                                     RequestedAccess,
-                                                     User?MOSS_USER.canonical_id) of
-                        {true, _OwnerId} ->
-                            NewInnerCtx =
-                                Ctx#key_context.context#context{user=User,
-                                                                requested_perm=RequestedAccess},
-                            forbidden(Method, RD,
-                                      Ctx#key_context{bucket=Bucket,
-                                                      context=NewInnerCtx});
-
-                        true ->
-                            NewInnerCtx =
-                                Ctx#key_context.context#context{user=User,
-                                                                requested_perm=RequestedAccess},
-                            forbidden(Method, RD,
-                                      Ctx#key_context{bucket=Bucket,
-                                                      context=NewInnerCtx});
-
-                        false ->
+                    case {AuthBypass,
+                          riak_moss_acl:object_access(Bucket,
+                                                      BinKey,
+                                                      RequestedAccess,
+                                                      User?MOSS_USER.canonical_id)} of
+                        {_, {true, _OwnerId}} ->
+                            forbidden(User, RequestedAccess, Method, RD,
+                                      Ctx#key_context{bucket=Bucket});
+                        {_, true} ->
+                            forbidden(User, RequestedAccess, Method, RD,
+                                      Ctx#key_context{bucket=Bucket});
+                        {true, false} ->
+                            forbidden(User, RequestedAccess, Method, RD,
+                                      Ctx#key_context{bucket=Bucket});
+                        {_, false} ->
                             %% ACL check failed, deny access
                             riak_moss_s3_response:api_error(access_denied, RD, Ctx)
                     end;
@@ -124,6 +121,12 @@ forbidden(RD, Ctx=#key_context{bucket=Bucket,
             riak_moss_s3_response:api_error(invalid_access_key_id, RD, Ctx)
     end.
 
+%% Step 2 of 3.
+forbidden(User, RequestedAccess, Method, RD, Ctx) ->
+    NewInnerCtx = Ctx#key_context.context#context{user=User, requested_perm=RequestedAccess},
+    forbidden(Method, RD, Ctx#key_context{context=NewInnerCtx}).
+
+%% Step 3 of 3.
 forbidden('GET', RD, Ctx=#key_context{doc_metadata=undefined}) ->
     NewCtx = riak_moss_wm_utils:ensure_doc(Ctx),
     forbidden('GET', RD, NewCtx);
