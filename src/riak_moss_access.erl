@@ -51,9 +51,21 @@ archive_period() ->
 %% application.
 -spec log_flush_interval() -> {ok, integer()}|{error, term()}.
 log_flush_interval() ->
-    case application:get_env(riak_moss, access_log_flush_interval) of
-        {ok, AP} when is_integer(AP), AP > 0 ->
-            {ok, AP};
+    case application:get_env(riak_moss, access_log_flush_factor) of
+        {ok, AF} when is_integer(AF), AF > 0 ->
+            case archive_period() of
+                {ok, AP} ->
+                    case AP rem AF of
+                        0 ->
+                            {ok, AP div AF};
+                        _ ->
+                            {error, "riak_moss:access_log_flush_interval"
+                                    " does not evenly divide"
+                                    " riak_moss:access_archive_period"}
+                    end;
+                APError ->
+                    APError
+            end;
         _ ->
             {error, "riak_moss:access_log_flush_interval was not an integer"}
     end.

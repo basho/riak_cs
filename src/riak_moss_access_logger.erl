@@ -110,7 +110,12 @@ start_link(_BaseDir) ->
                                   [{period, LogPeriod}],
                                   []);
         {error, Reason} ->
-            {error, Reason}
+            lager:error("Error starting access logger: ~s", [Reason]),
+            %% can't simply {error, Reason} out here, because
+            %% webmachine/mochiweb will just ignore the failed
+            %% startup; using init:stop/0 here so that the user isn't
+            %% suprised later when there are no logs
+            init:stop()
     end.
 
 %% @doc webmachine logging callback
