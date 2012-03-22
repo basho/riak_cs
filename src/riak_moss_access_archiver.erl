@@ -194,7 +194,7 @@ do_archive(Table, Slice) ->
     case riak_moss_utils:riak_connection() of
         {ok, Riak} ->
             archive_user(ets:first(Table), Riak, Table, Slice),
-            riakc_pb_socket:stop(Riak);
+            riak_moss_utils:close_riak_connection(Riak);
         {error, Reason} ->
             lager:error("Access archiver connection to Riak failed (~p), "
                         "stats for ~p were lost",
