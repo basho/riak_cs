@@ -185,6 +185,8 @@
 -define(MOSS_BUCKET, #moss_bucket_v1).
 -define(MOSS_USER, #moss_user_v1).
 -define(USER_BUCKET, <<"moss.users">>).
+-define(ACCESS_BUCKET, <<"moss.access">>).
+-define(STORAGE_BUCKET, <<"moss.storage">>).
 -define(BUCKETS_BUCKET, <<"moss.buckets">>).
 -define(FREE_BUCKET_MARKER, <<"0">>).
 -define(DEFAULT_MAX_CONTENT_LENGTH, 5368709120). %% 5 GB

@@ -44,7 +44,8 @@ forbidden(RD, Ctx=#context{auth_bypass=AuthBypass}) ->
             case AuthMod:authenticate(RD, User?MOSS_USER.key_secret, Signature) of
                 ok ->
                     %% Authentication succeeded
-                    {false, RD, Ctx#context{user=User}};
+                    AccessRD = riak_moss_access_logger:set_user(User, RD),
+                    {false, AccessRD, Ctx#context{user=User}};
                 {error, _Reason} ->
                     %% Authentication failed, deny access
                     riak_moss_s3_response:api_error(access_denied, RD, Ctx)

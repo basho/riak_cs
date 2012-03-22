@@ -77,9 +77,9 @@ get_access_and_manifest(RD, Ctx=#key_context{context=InnerCtx}) ->
 %% @doc Final step of {@link forbidden/2}: Authentication succeeded,
 %% now perform ACL check to verify access permission.
 check_permission('GET', RD, Ctx=#key_context{manifest=notfound}) ->
-    {{halt, 404}, RD, Ctx};
+    {{halt, 404}, maybe_log_user(RD, Ctx), Ctx};
 check_permission('HEAD', RD, Ctx=#key_context{manifest=notfound}) ->
-    {{halt, 404}, RD, Ctx};
+    {{halt, 404}, maybe_log_user(RD, Ctx), Ctx};
 check_permission(Method, RD, Ctx=#key_context{bucket=Bucket,
                                        context=InnerCtx,
                                        manifest=Mfst}) ->
@@ -103,12 +103,16 @@ check_permission(Method, RD, Ctx=#key_context{bucket=Bucket,
                                      RequestedAccess,
                                      CanonicalId) of
         true ->
-            {false, RD, Ctx#key_context{owner=User}};
+            %% actor is the owner
+            AccessRD = riak_moss_access_logger:set_user(User, RD),
+            {false, AccessRD, Ctx#key_context{owner=User}};
         {true, OwnerId} ->
             case riak_moss_utils:get_user_by_index(?ID_INDEX,
                                                    list_to_binary(OwnerId)) of
                 {ok, {Owner, _}} ->
-                    {false, RD, Ctx#key_context{owner=Owner}};
+                    %% bill the owner, not the actor
+                    AccessRD = riak_moss_access_logger:set_user(Owner, RD),
+                    {false, AccessRD, Ctx#key_context{owner=Owner}};
                 {error, _} ->
                     %% @TODO Decide if this should return 403 instead
                     riak_moss_s3_response:api_error(object_owner_unavailable, RD, Ctx)
@@ -116,6 +120,16 @@ check_permission(Method, RD, Ctx=#key_context{bucket=Bucket,
         false ->
             %% ACL check failed, deny access
             riak_moss_wm_utils:deny_access(RD, Ctx)
+    end.
+
+%% @doc Only set the user for the access logger to catch if there is a
+%% user to catch.
+maybe_log_user(RD, #key_context{context=Context}) ->
+    case Context#context.user of
+        undefined ->
+            RD;
+        User ->
+            riak_moss_access_logger:set_user(User, RD)
     end.
 
 %% @doc Get the list of methods this resource supports.
@@ -311,7 +325,11 @@ accept_streambody(RD, Ctx=#key_context{}, Pid, {Data, Next}) ->
 %% We need to do some checking to make sure
 %% the bucket exists for the user who is doing
 %% this PUT
-finalize_request(RD, Ctx, Pid) ->
+finalize_request(RD, #key_context{size=S}=Ctx, Pid) ->
+    %% TODO: probably want something that counts actual bytes uploaded
+    %% instead, to record partial/aborted uploads
+    AccessRD = riak_moss_access_logger:set_bytes_in(S, RD),
+
     {ok, Manifest} = riak_moss_put_fsm:finalize(Pid),
     ETag = "\"" ++ riak_moss_utils:binary_to_hexlist(Manifest#lfs_manifest_v2.content_md5) ++ "\"",
-    {true, wrq:set_resp_header("ETag",  ETag, RD), Ctx}.
+    {true, wrq:set_resp_header("ETag",  ETag, AccessRD), Ctx}.
