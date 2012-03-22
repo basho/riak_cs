@@ -74,10 +74,10 @@ continue(Pid) ->
     gen_fsm:send_event(Pid, continue).
 
 get_manifest(Pid) ->
-    gen_fsm:sync_send_event(Pid, get_manifest, 60000).
+    gen_fsm:sync_send_event(Pid, get_manifest, infinity).
 
 get_next_chunk(Pid) ->
-    gen_fsm:sync_send_event(Pid, get_next_chunk, 60000).
+    gen_fsm:sync_send_event(Pid, get_next_chunk, infinity).
 
 manifest(Pid, ManifestValue) ->
     gen_fsm:send_event(Pid, {object, self(), ManifestValue}).
