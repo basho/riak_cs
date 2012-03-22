@@ -230,6 +230,7 @@ get_keys_and_manifests(BucketName, Prefix) ->
                         [begin
                              {ok, ManiPid} = riak_moss_manifest_fsm:start_link(BucketName, Key),
                              Manifest = riak_moss_manifest_fsm:get_active_manifest(ManiPid),
+                             riak_moss_manifest_fsm:stop(ManiPid),
                              {Key, Manifest}
                          end
                          || Key <- prefix_filter(Keys, Prefix)],
