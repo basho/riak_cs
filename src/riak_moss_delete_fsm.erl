@@ -276,6 +276,6 @@ test_link(StateProps, Bucket, Name, Timeout) ->
 %% @doc Get the current state of the fsm for testing inspection
 -spec current_state(pid()) -> atom() | {error, term()}.
 current_state(Pid) ->
-    gen_fsm:sync_send_all_state_event(Pid, current_state).
+    gen_fsm:sync_send_all_state_event(Pid, current_state, infinity).
 
 -endif.

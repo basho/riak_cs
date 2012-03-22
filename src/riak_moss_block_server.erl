@@ -56,7 +56,7 @@ delete_block(Pid, Bucket, Key, UUID, BlockNumber) ->
     gen_server:cast(Pid, {delete_block, self(), Bucket, Key, UUID, BlockNumber}).
 
 stop(Pid) ->
-    gen_server:call(Pid, stop).
+    gen_server:call(Pid, stop, infinity).
 
 %%%===================================================================
 %%% gen_server callbacks

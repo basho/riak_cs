@@ -80,22 +80,23 @@ start_link(Bucket, Key) ->
     gen_fsm:start_link(?MODULE, [Bucket, Key], []).
 
 get_active_manifest(Pid) ->
-    gen_fsm:sync_send_event(Pid, get_active_manifest).
+    gen_fsm:sync_send_event(Pid, get_active_manifest, infinity).
 
 add_new_manifest(Pid, Manifest) ->
     gen_fsm:send_event(Pid, {add_new_manifest, Manifest}).
 
 mark_active_as_pending_delete(Pid) ->
-    gen_fsm:sync_send_event(Pid, mark_active_as_pending_delete).
+    gen_fsm:sync_send_event(Pid, mark_active_as_pending_delete, infinity).
 
 update_manifest(Pid, Manifest) ->
     gen_fsm:send_event(Pid, {update_manifest, Manifest}).
 
 update_manifest_with_confirmation(Pid, Manifest) ->
-    gen_fsm:sync_send_event(Pid, {update_manifest_with_confirmation, Manifest}).
+    gen_fsm:sync_send_event(Pid, {update_manifest_with_confirmation, Manifest},
+                           infinity).
 
 stop(Pid) ->
-    gen_fsm:sync_send_all_state_event(Pid, stop).
+    gen_fsm:sync_send_all_state_event(Pid, stop, infinity).
 
 %%%===================================================================
 %%% gen_fsm callbacks
