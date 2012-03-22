@@ -455,7 +455,8 @@ to_bucket_name(Type, Bucket) ->
         blocks ->
             Prefix = ?BLOCK_BUCKET_PREFIX
     end,
-    crypto:md5(<<Prefix/binary, Bucket/binary>>).
+    BucketHash = crypto:md5(Bucket),
+    <<Prefix/binary, BucketHash/binary>>.
 
 %% ===================================================================
 %% Internal functions
