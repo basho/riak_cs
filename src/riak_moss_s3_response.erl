@@ -6,6 +6,7 @@
 -module(riak_moss_s3_response).
 -export([api_error/3,
          respond/4,
+         export_xml/1,
          error_response/5,
          list_bucket_response/5,
          list_all_my_buckets_response/3,

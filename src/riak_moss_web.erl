@@ -20,6 +20,7 @@ dispatch_table() ->
     [
      {[], riak_moss_wm_service, [{auth_bypass, AuthBypass}]},
      {["user"], riak_moss_wm_user, []},
+     {["usage", '*'], riak_moss_wm_usage, [{auth_bypass, AuthBypass}]},
      {[bucket], riak_moss_wm_bucket, [{auth_bypass, AuthBypass}]},
      {[bucket, '*'], riak_moss_wm_key, [{auth_bypass, AuthBypass}]}
     ].

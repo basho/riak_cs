@@ -56,7 +56,8 @@ check_permission(RD, #context{user=User}=Ctx) ->
             riak_moss_wm_utils:deny_access(RD, PermCtx);
         {'PUT', 'WRITE'} ->
             %% authed users are always allowed to attempt bucket creation
-            {false, RD, PermCtx};
+            AccessRD = riak_moss_access_logger:set_user(User, RD),
+            {false, AccessRD, PermCtx};
         _ ->
             %% only owners are allowed to delete buckets
             case check_grants(PermCtx) of
@@ -64,20 +65,33 @@ check_permission(RD, #context{user=User}=Ctx) ->
                     %% because users are not allowed to create/destroy
                     %% buckets, we can assume that User is not
                     %% undefined here
-                    {false, RD, PermCtx};
+                    AccessRD = riak_moss_access_logger:set_user(User, RD),
+                    {false, AccessRD, PermCtx};
                 {true, _OwnerId} when RequestedAccess == 'WRITE' ->
                     %% grants lied: this is a delete, and only the
                     %% owner is allowed to do that; setting user for
                     %% the request anyway, so the error tally is
                     %% logged for them
-                    riak_moss_wm_utils:deny_access(RD, PermCtx);
+                    AccessRD = riak_moss_access_logger:set_user(User, RD),
+                    riak_moss_wm_utils:deny_access(AccessRD, PermCtx);
                 {true, OwnerId} ->
                     %% this operation is allowed, but we need to get
                     %% the owner's record, and log the access against
                     %% them instead of the actor
                     shift_to_owner(RD, PermCtx, OwnerId);
                 false ->
-                    riak_moss_wm_utils:deny_access(RD, PermCtx)
+                    case User of
+                        undefined ->
+                            %% no facility for logging bad access
+                            %% against unknown actors
+                            AccessRD = RD;
+                        _ ->
+                            %% log bad requests against the actors
+                            %% that make them
+                            AccessRD =
+                                riak_moss_access_logger:set_user(User, RD)
+                    end,
+                    riak_moss_wm_utils:deny_access(AccessRD, PermCtx)
             end
     end.
 
@@ -101,8 +115,9 @@ shift_to_owner(RD, Ctx, OwnerId) ->
     case riak_moss_utils:get_user_by_index(?ID_INDEX,
                                            list_to_binary(OwnerId)) of
         {ok, {Owner, OwnerVClock}} ->
-            {false, RD, Ctx#context{user=Owner,
-                                    user_vclock=OwnerVClock}};
+            AccessRD = riak_moss_access_logger:set_user(Owner, RD),
+            {false, AccessRD, Ctx#context{user=Owner,
+                                          user_vclock=OwnerVClock}};
         {error, _} ->
             riak_moss_s3_response:api_error(bucket_owner_unavailable, RD, Ctx)
     end.
