@@ -73,10 +73,10 @@ start_link(Bucket, Key, ContentLength, ContentType, Metadata, BlockSize, Acl, Ti
     gen_fsm:start_link(?MODULE, Args, []).
 
 augment_data(Pid, Data) ->
-    gen_fsm:sync_send_event(Pid, {augment_data, Data}).
+    gen_fsm:sync_send_event(Pid, {augment_data, Data}, infinity).
 
 finalize(Pid) ->
-    gen_fsm:sync_send_event(Pid, finalize).
+    gen_fsm:sync_send_event(Pid, finalize, infinity).
 
 block_written(Pid, BlockID) ->
     gen_fsm:send_event(Pid, {block_written, BlockID, self()}).

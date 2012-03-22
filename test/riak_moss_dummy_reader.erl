@@ -49,7 +49,7 @@ start_link(Args) ->
     gen_server:start_link(?MODULE, Args, []).
 
 get_manifest(Pid) ->
-    gen_server:call(Pid, get_manifest).
+    gen_server:call(Pid, get_manifest, infinity).
 
 get_chunk(Pid, Bucket, Key, UUID, ChunkSeq) ->
     gen_server:cast(Pid, {get_chunk, Bucket, Key, UUID, ChunkSeq}).
