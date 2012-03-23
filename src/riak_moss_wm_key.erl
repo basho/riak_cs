@@ -208,7 +208,8 @@ produce_body(RD, #key_context{get_fsm_pid=GetFsmPid, manifest=Mfst}=Ctx) ->
 
 %% @doc Callback for deleting an object.
 -spec delete_resource(term(), term()) -> boolean().
-delete_resource(RD, Ctx=#key_context{bucket=Bucket, key=Key}) ->
+delete_resource(RD, Ctx=#key_context{bucket=Bucket, key=Key, get_fsm_pid=GetFsmPid}) ->
+    riak_moss_get_fsm:stop(GetFsmPid),
     BinKey = list_to_binary(Key),
     riak_moss_delete_marker:delete(Bucket, BinKey),
     {true, RD, Ctx}.
@@ -250,9 +251,12 @@ accept_body(RD, Ctx=#key_context{bucket=Bucket,
                                  key=Key,
                                  manifest=Mfst,
                                  owner=Owner,
+                                 get_fsm_pid=GetFsmPid,
                                  context=#context{user=User,
                                                   requested_perm='WRITE_ACP'}}) ->
 
+
+    riak_moss_get_fsm:stop(GetFsmPid),
     Body = binary_to_list(wrq:req_body(RD)),
     case Body of
         [] ->
@@ -278,8 +282,10 @@ accept_body(RD, Ctx=#key_context{bucket=Bucket,
                                  key=Key,
                                  putctype=ContentType,
                                  size=Size,
+                                 get_fsm_pid=GetFsmPid,
                                  owner=Owner,
                                  context=#context{user=User}}) ->
+    riak_moss_get_fsm:stop(GetFsmPid),
     %% TODO:
     %% the Metadata
     %% should be pulled out of the
