@@ -154,7 +154,8 @@ prepare(timeout, #state{bucket=Bucket, key=Key}=State) ->
                                    free_readers=ReaderPids},
             {next_state, waiting_value, NewState};
         {error, notfound} ->
-            {next_state, waiting_value, State}
+            {next_state, waiting_value, State#state{mani_fsm_pid=ManiPid,
+                                                    all_reader_pids=[]}}
     end.
 
 waiting_value(get_manifest, From, State=#state{manifest=undefined}) ->
@@ -359,7 +360,10 @@ handle_info(_Info, _StateName, StateData) ->
     {stop, badmsg, StateData}.
 
 %% @private
-terminate(_Reason, _StateName, #state{test=false}) ->
+terminate(_Reason, _StateName, #state{test=false, all_reader_pids=BlockServerPids,
+                                      mani_fsm_pid=ManiPid}) ->
+    riak_moss_manifest_fsm:stop(ManiPid),
+    [riak_moss_block_server:stop(P) || P <- BlockServerPids],
     ok;
 terminate(_Reason, _StateName, #state{test=true,
                                       free_readers=[ReaderPid | _]}) ->
