@@ -1,6 +1,6 @@
 .eunit/*
 deps/*
-rel/riak_moss
+rel/riak-cs
 ebin/*.beam
 ebin/*.app
 doc
