@@ -31,7 +31,6 @@
          pow/3,
          put_object/4,
          riak_connection/0,
-         riak_connection/2,
          set_bucket_acl/4,
          set_object_acl/4,
          to_bucket_name/2]).
@@ -71,7 +70,7 @@ binary_to_hexlist(Bin) ->
 %% @doc Close a protobufs connection to the riak cluster.
 -spec close_riak_connection(pid()) -> ok.
 close_riak_connection(Pid) ->
-    riakc_pb_socket:stop(Pid).
+    poolboy:checkin(riakc_pool, Pid).
 
 %% @doc Create a bucket in the global namespace or return
 %% an error if it already exists.
@@ -407,24 +406,13 @@ put_object(BucketName, Key, Value, Metadata) ->
 %% using information from the application environment.
 -spec riak_connection() -> {ok, pid()} | {error, term()}.
 riak_connection() ->
-    case application:get_env(riak_moss, riak_ip) of
-        {ok, Host} ->
-            ok;
-        undefined ->
-            Host = "127.0.0.1"
-    end,
-    case application:get_env(riak_moss, riak_pb_port) of
-        {ok, Port} ->
-            ok;
-        undefined ->
-            Port = 8087
-    end,
-    riak_connection(Host, Port).
+    Worker = poolboy:checkout(riakc_pool),
+    {ok, Worker}.
 
 %% @doc Get a protobufs connection to the riak cluster.
--spec riak_connection(string(), pos_integer()) -> {ok, pid()} | {error, term()}.
-riak_connection(Host, Port) ->
-    riakc_pb_socket:start_link(Host, Port).
+%% -spec riak_connection(string(), pos_integer()) -> {ok, pid()} | {error, term()}.
+%% riak_connection(Host, Port) ->
+%%     riakc_pb_socket:start_link(Host, Port).
 
 %% @doc Set the ACL for a bucket. Existing ACLs are only
 %% replaced, they cannot be updated.
