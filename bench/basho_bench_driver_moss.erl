@@ -274,7 +274,7 @@ do_get(Host, Url, Headers, ReportFun) ->
         {ok, "200", _Header, Body} ->
             {ok, ReportFun(byte_size(Body))};
         {ok, "404", _Header, _Body} ->
-            {ok, 0};
+            {ok, 0.0};
         {ok, Code, _Header, _Body} ->
             {error, {http_error, Code}};
         {error, Reason} ->
