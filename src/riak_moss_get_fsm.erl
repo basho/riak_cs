@@ -32,8 +32,8 @@
 %% gen_fsm callbacks
 -export([init/1,
          prepare/2,
+         prepare/3,
          waiting_value/3,
-         waiting_metadata_request/3,
          waiting_continue_or_stop/2,
          waiting_chunks/2,
          waiting_chunks/3,
@@ -99,7 +99,6 @@ init([Bucket, Key, Caller]) ->
     %%    terminations, so this process would still
     %%    live.
     CallerRef = erlang:monitor(process, Caller),
-
     %% we want to trap exits because
     %% `erlang:link` isn't atomic, and
     %% since we're starting the reader
@@ -112,12 +111,10 @@ init([Bucket, Key, Caller]) ->
     State = #state{bucket=Bucket,
                    caller=CallerRef,
                    key=Key},
-    %% purposely have the timeout happen
-    %% so that we get called in the prepare
-    %% state
     {ok, prepare, State, 0};
 init([test, Bucket, Key, ContentLength, BlockSize]) ->
     {ok, prepare, State1, 0} = init([Bucket, Key, self()]),
+
     %% purposely have the timeout happen
     %% so that we get called in the prepare
     %% state
@@ -133,49 +130,29 @@ init([test, Bucket, Key, ContentLength, BlockSize]) ->
                                      manifest=Manifest,
                                      test=true}}.
 
-%% TODO:
-%% could this func use
-%% use a better name?
-prepare(timeout, #state{bucket=Bucket, key=Key}=State) ->
-    %% start the process that will
-    %% fetch the value, be it manifest
-    %% or regular object
-    {ok, ManiPid} = riak_moss_manifest_fsm:start_link(Bucket, Key),
-    case riak_moss_manifest_fsm:get_active_manifest(ManiPid) of
-        {ok, Manifest} ->
-            lager:debug("Manifest: ~p", [Manifest]),
-            FetchConcurrency = riak_moss_lfs_utils:fetch_concurrency(),
-            lager:debug("Get Concurrency Level: ~p", [FetchConcurrency]),
-            ReaderPids = start_block_servers(FetchConcurrency),
-            lager:debug("Block Servers: ~p", [ReaderPids]),
-            NewState = State#state{manifest=Manifest,
-                                   mani_fsm_pid=ManiPid,
-                                   all_reader_pids=ReaderPids,
-                                   free_readers=ReaderPids},
-            {next_state, waiting_value, NewState};
-        {error, notfound} ->
-            {next_state, waiting_value, State#state{mani_fsm_pid=ManiPid,
-                                                    all_reader_pids=[]}}
+prepare(timeout, State) ->
+    NewState = prepare(State),
+    {next_state, waiting_value, NewState}.
+
+prepare(get_manifest, _From, State) ->
+    PreparedState = prepare(State),
+    case PreparedState#state.manifest of
+        undefined ->
+            {stop, normal, notfound, State};
+        Mfst ->
+            NextStateTimeout = 60000,
+            NewState = PreparedState#state{manifest_uuid=Mfst#lfs_manifest_v2.uuid,
+                                           from=undefined},
+            {reply, Mfst, waiting_continue_or_stop, NewState, NextStateTimeout}
     end.
 
-waiting_value(get_manifest, From, State=#state{manifest=undefined}) ->
-    gen_fsm:reply(From, notfound),
-    {stop, normal, State};
-waiting_value(get_manifest, From, State=#state{manifest=Mfst}) ->
+waiting_value(get_manifest, _From, State=#state{manifest=undefined}) ->
+    {stop, normal, notfound, State};
+waiting_value(get_manifest, _From, State=#state{manifest=Mfst}) ->
     NextStateTimeout = 60000,
-    NextState = case From of
-                    undefined ->
-                        waiting_metadata_request;
-                    _ ->
-                        gen_fsm:reply(From, Mfst),
-                        waiting_continue_or_stop
-                end,
     NewState = State#state{manifest_uuid=Mfst#lfs_manifest_v2.uuid,
                            from=undefined},
-    {next_state, NextState, NewState, NextStateTimeout}.
-
-waiting_metadata_request(get_manifest, _From, #state{manifest=Manifest}=State) ->
-    {reply, Manifest, waiting_continue_or_stop, State}.
+    {reply, Mfst, waiting_continue_or_stop, NewState, NextStateTimeout}.
 
 waiting_continue_or_stop(timeout, State) ->
     {stop, normal, State};
@@ -360,8 +337,10 @@ handle_info(_Info, _StateName, StateData) ->
     {stop, badmsg, StateData}.
 
 %% @private
-terminate(_Reason, _StateName, #state{test=false, all_reader_pids=BlockServerPids,
+terminate(_Reason, _StateName, #state{test=false,
+                                      all_reader_pids=BlockServerPids,
                                       mani_fsm_pid=ManiPid}) ->
+
     riak_moss_manifest_fsm:stop(ManiPid),
     [riak_moss_block_server:stop(P) || P <- BlockServerPids],
     ok;
@@ -379,6 +358,28 @@ code_change(_OldVsn, StateName, State, _Extra) -> {ok, StateName, State}.
 -spec block_sorter({pos_integer(), term()}, {pos_integer(), term()}) -> boolean().
 block_sorter({A, _}, {B, _}) ->
     A < B.
+
+-spec prepare(#state{}) -> #state{}.
+prepare(#state{bucket=Bucket, key=Key}=State) ->
+    %% start the process that will
+    %% fetch the value, be it manifest
+    %% or regular object
+    {ok, ManiPid} = riak_moss_manifest_fsm:start_link(Bucket, Key),
+    case riak_moss_manifest_fsm:get_active_manifest(ManiPid) of
+        {ok, Manifest} ->
+            lager:debug("Manifest: ~p", [Manifest]),
+            FetchConcurrency = riak_moss_lfs_utils:fetch_concurrency(),
+            lager:debug("Get Concurrency Level: ~p", [FetchConcurrency]),
+            ReaderPids = start_block_servers(FetchConcurrency),
+            lager:debug("Block Servers: ~p", [ReaderPids]),
+            State#state{manifest=Manifest,
+                        mani_fsm_pid=ManiPid,
+                        all_reader_pids=ReaderPids,
+                        free_readers=ReaderPids};
+        {error, notfound} ->
+            State#state{mani_fsm_pid=ManiPid,
+                        all_reader_pids=[]}
+    end.
 
 -spec read_blocks(binary(), binary(), binary(), [pid()], pos_integer(), pos_integer()) ->
                          {pos_integer(), [pid()]}.
