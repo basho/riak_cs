@@ -44,7 +44,7 @@ Step 2: Edit the Riak "app.config" file to configure the multi backend
                 /opt/riak/data
 
             Riak developer source data directory path:
-                ./rel/riak/data
+                ./data
 
     Step b: Use a text editor to edit the 'riak_kv' section of the Riak
             "app.config" file.
