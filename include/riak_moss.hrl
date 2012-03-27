@@ -42,7 +42,7 @@
                       putctype :: string(),
                       bucket :: binary(),
                       key :: list(),
-                      owner :: moss_user(),
+                      owner :: string(),
                       size :: non_neg_integer()}).
 
 -type acl_perm() :: 'READ' | 'WRITE' | 'READ_ACP' | 'WRITE_ACP' | 'FULL_CONTROL'.
@@ -50,10 +50,14 @@
 -type group_grant() :: 'AllUsers' | 'AuthUsers'.
 -type acl_grantee() :: {string(), string()} | group_grant().
 -type acl_grant() :: {acl_grantee(), acl_perms()}.
--record(acl_v1, {owner={"", ""} :: {string(), string()},
+-type acl_owner() :: {string(), string()} | {string(), string(), string()}.
+-record(acl_v1, {owner={"", ""} :: acl_owner(),
                  grants=[] :: [acl_grant()],
                  creation_time=now() :: erlang:timestamp()}).
--type acl() :: #acl_v1{}.
+-record(acl_v2, {owner={"", "", ""} :: acl_owner(),
+                 grants=[] :: [acl_grant()],
+                 creation_time=now() :: erlang:timestamp()}).
+-type acl() :: #acl_v1{} | #acl_v2{}.
 
 -type cluster_id() :: undefined | term().  % Type still in flux.
 
@@ -181,7 +185,7 @@
     }).
 -type lfs_manifest() :: #lfs_manifest_v2{}.
 
--define(ACL, #acl_v1).
+-define(ACL, #acl_v2).
 -define(MOSS_BUCKET, #moss_bucket_v1).
 -define(MOSS_USER, #moss_user_v1).
 -define(USER_BUCKET, <<"moss.users">>).

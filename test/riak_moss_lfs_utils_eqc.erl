@@ -78,7 +78,9 @@ prop_manifest_manipulation() ->
                                                         Md5,
                                                         MD,
                                                         riak_moss_lfs_utils:block_size(),
-                                                        riak_moss_acl_utils:default_acl("tester", "tester_id")),
+                                                        riak_moss_acl_utils:default_acl("tester",
+                                                                                        "tester_id",
+                                                                                        "tester_key_id")),
 
             Blocks = riak_moss_lfs_utils:initial_blocks(CLength, riak_moss_lfs_utils:block_size()),
             %% TODO: maybe we should shuffle blocks?

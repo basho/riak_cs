@@ -54,7 +54,7 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          terminate/2, code_change/3]).
 
--define(SERVER, ?MODULE). 
+-define(SERVER, ?MODULE).
 
 -record(state, {
           period :: integer(),         %% time between aggregation archivals
@@ -76,6 +76,8 @@
 
 %% @doc Set the MOSS user for this request.  Stats are not recorded if
 %% the user is not set.
+set_user(KeyID, RD) when is_list(KeyID) ->
+    wrq:add_note(?STAT(user), KeyID, RD);
 set_user(?MOSS_USER{key_id=KeyID}, RD) ->
     wrq:add_note(?STAT(user), KeyID, RD);
 set_user(unknown, RD) ->
@@ -280,7 +282,7 @@ code_change(_OldVsn, State, _Extra) ->
 %% @doc Create a new ets table to accumulate accesses in.
 -spec fresh_table() -> ets:tid().
 fresh_table() ->
-    ets:new(?SERVER, [private, duplicate_bag, {keypos, 1}]).    
+    ets:new(?SERVER, [private, duplicate_bag, {keypos, 1}]).
 
 %% @doc Schedule a message to be sent when it's time to archive this
 %% slice's accumulated accesses.
