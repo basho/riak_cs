@@ -18,10 +18,10 @@
 -endif.
 
 %% Public API
--export([acl/3,
-         default_acl/2,
+-export([acl/4,
+         default_acl/3,
          canned_acl/3,
-         acl_from_xml/1,
+         acl_from_xml/2,
          acl_to_xml/1,
          empty_acl_xml/0,
          requested_access/2
@@ -36,43 +36,45 @@
 
 %% @doc Construct an acl. The structure is the same for buckets
 %% and objects.
--spec acl(string(), string(), [acl_grant()]) -> acl().
-acl(DisplayName, CanonicalId, Grants) ->
-    OwnerData = {DisplayName, CanonicalId},
+-spec acl(string(), string(), string(), [acl_grant()]) -> acl().
+acl(DisplayName, CanonicalId, KeyId, Grants) ->
+    OwnerData = {DisplayName, CanonicalId, KeyId},
     ?ACL{owner=OwnerData,
          grants=Grants}.
 
 %% @doc Construct a default acl. The structure is the same for buckets
 %% and objects.
--spec default_acl(string(), string()) -> acl().
-default_acl(DisplayName, CanonicalId) ->
+-spec default_acl(string(), string(), string()) -> acl().
+default_acl(DisplayName, CanonicalId, KeyId) ->
     acl(DisplayName,
         CanonicalId,
+        KeyId,
         [{{DisplayName, CanonicalId}, ['FULL_CONTROL']}]).
 
 %% @doc Map a x-amz-acl header value to an
 %% internal acl representation.
 -spec canned_acl(string(), string(), string()) -> acl().
-canned_acl(undefined, {Name, CanonicalId}, _) ->
-    default_acl(Name, CanonicalId);
-canned_acl(HeaderVal, Owner, BucketOwner) ->
-    {Name, CanonicalId} = Owner,
-    acl(Name, CanonicalId, canned_acl_grants(HeaderVal,
-                                             Owner,
-                                             BucketOwner)).
+canned_acl(undefined, {Name, CanonicalId, KeyId}, _) ->
+    default_acl(Name, CanonicalId, KeyId);
+canned_acl(HeaderVal, Owner, BucketOwnerId) ->
+    {Name, CanonicalId, KeyId} = Owner,
+    acl(Name, CanonicalId, KeyId, canned_acl_grants(HeaderVal,
+                                                    {Name, CanonicalId},
+                                                    BucketOwnerId)).
 
 %% @doc Convert an XML document representing an ACL into
 %% an internal representation.
--spec acl_from_xml(string()) -> acl().
-acl_from_xml(Xml) ->
+-spec acl_from_xml(string(), string()) -> acl().
+acl_from_xml(Xml, KeyId) ->
     {ParsedData, _Rest} = xmerl_scan:string(Xml, []),
-    process_acl_contents(ParsedData#xmlElement.content, ?ACL{}).
+    BareAcl = ?ACL{owner={[], [], KeyId}},
+    process_acl_contents(ParsedData#xmlElement.content, BareAcl).
 
 %% @doc Convert an internal representation of an ACL
 %% into XML.
 -spec acl_to_xml(acl()) -> binary().
-acl_to_xml(Acl) ->
-    {OwnerName, OwnerId} = Acl?ACL.owner,
+acl_to_xml(?ACL{owner=Owner, grants=Grants}) ->
+    {OwnerName, OwnerId, _} = Owner,
     XmlDoc =
         [{'AccessControlPolicy',
           [
@@ -81,7 +83,21 @@ acl_to_xml(Acl) ->
              {'ID', [OwnerId]},
              {'DisplayName', [OwnerName]}
             ]},
-           {'AccessControlList', grants_xml(Acl?ACL.grants)}
+           {'AccessControlList', grants_xml(Grants)}
+          ]}],
+    unicode:characters_to_binary(
+      xmerl:export_simple(XmlDoc, xmerl_xml, [{prolog, ?XML_PROLOG}]));
+acl_to_xml(#acl_v1{owner=Owner, grants=Grants}) ->
+    {OwnerName, OwnerId} = Owner,
+    XmlDoc =
+        [{'AccessControlPolicy',
+          [
+           {'Owner',
+            [
+             {'ID', [OwnerId]},
+             {'DisplayName', [OwnerName]}
+            ]},
+           {'AccessControlList', grants_xml(Grants)}
           ]}],
     unicode:characters_to_binary(
       xmerl:export_simple(XmlDoc, xmerl_xml, [{prolog, ?XML_PROLOG}])).
@@ -186,12 +202,14 @@ canned_acl_grants("authenticated-read", Owner, _) ->
      {'AuthUsers', ['READ']}];
 canned_acl_grants("bucket-owner-read", Owner, undefined) ->
     canned_acl_grants("private", Owner, undefined);
-canned_acl_grants("bucket-owner-read", Owner, BucketOwner) ->
+canned_acl_grants("bucket-owner-read", Owner, BucketOwnerId) ->
+    BucketOwner = get_owner_data(BucketOwnerId),
     [{Owner, ['FULL_CONTROL']},
      {BucketOwner, ['READ']}];
 canned_acl_grants("bucket-owner-full-control", Owner, undefined) ->
     canned_acl_grants("private", Owner, undefined);
-canned_acl_grants("bucket-owner-full-control", Owner, BucketOwner) ->
+canned_acl_grants("bucket-owner-full-control", Owner, BucketOwnerId) ->
+    BucketOwner = get_owner_data(BucketOwnerId),
     [{Owner, ['FULL_CONTROL']},
      {BucketOwner, ['FULL_CONTROL']}];
 canned_acl_grants(_, {Name, CanonicalId}, _) ->
@@ -208,6 +226,17 @@ canonical_for_email(Email) ->
         {error, Reason} ->
             lager:warning("Failed to retrieve canonical id for ~p. Reason: ~p", [Email, Reason]),
             []
+    end.
+
+%% @doc Get user display name and canonical id for a specified key id.
+-spec get_owner_data(string()) -> {string(), string()}.
+get_owner_data(KeyId) ->
+    case catch riak_moss_utils:get_user(?ID_INDEX,
+                                  list_to_binary(KeyId)) of
+        {ok, {User, _}} ->
+            {User?MOSS_USER.display_name, User?MOSS_USER.canonical_id};
+        _ ->
+            {[], []}
     end.
 
 %% @doc Assemble the xml for the set of grantees for an acl.
@@ -302,12 +331,12 @@ process_owner([HeadElement | RestElements], Acl) ->
     case ElementName of
         'ID' ->
             lager:debug("Owner ID value: ~p", [Value]),
-            {OwnerName, _} = Owner,
-            UpdOwner = {OwnerName, Value};
+            {OwnerName, _, OwnerKeyId} = Owner,
+            UpdOwner = {OwnerName, Value, OwnerKeyId};
         'DisplayName' ->
             lager:debug("Owner Name content: ~p", [Value]),
-            {_, OwnerId} = Owner,
-            UpdOwner = {Value, OwnerId};
+            {_, OwnerId, OwnerKeyId} = Owner,
+            UpdOwner = {Value, OwnerId, OwnerKeyId};
         _ ->
             lager:debug("Encountered unexpected element: ~p", [ElementName]),
             UpdOwner = Owner
@@ -430,30 +459,32 @@ uri_for_group(_) ->
 
 default_acl_test() ->
     ExpectedXml = <<"<?xml version=\"1.0\" encoding=\"UTF-8\"?><AccessControlPolicy><Owner><ID>TESTID1</ID><DisplayName>tester1</DisplayName></Owner><AccessControlList><Grant><Grantee xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"CanonicalUser\"><ID>TESTID1</ID><DisplayName>tester1</DisplayName></Grantee><Permission>FULL_CONTROL</Permission></Grant></AccessControlList></AccessControlPolicy>">>,
-    DefaultAcl = default_acl("tester1", "TESTID1"),
-    ?assertMatch({acl_v1,{"tester1","TESTID1"},
+    DefaultAcl = default_acl("tester1", "TESTID1", "TESTKEYID1"),
+    ?assertMatch({acl_v2,{"tester1","TESTID1", "TESTKEYID1"},
                   [{{"tester1","TESTID1"},['FULL_CONTROL']}], _}, DefaultAcl),
     ?assertEqual(ExpectedXml, acl_to_xml(DefaultAcl)).
 
 acl_from_xml_test() ->
-    application:start(lager),
     Xml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><AccessControlPolicy><Owner><ID>TESTID1</ID><DisplayName>tester1</DisplayName></Owner><AccessControlList><Grant><Grantee xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"CanonicalUser\"><ID>TESTID1</ID><DisplayName>tester1</DisplayName></Grantee><Permission>FULL_CONTROL</Permission></Grant></AccessControlList></AccessControlPolicy>",
-    DefaultAcl = default_acl("tester1", "TESTID1"),
-    Acl = acl_from_xml(Xml),
+    DefaultAcl = default_acl("tester1", "TESTID1", "TESTKEYID1"),
+    Acl = acl_from_xml(Xml, "TESTKEYID1"),
+    {ExpectedOwnerName, ExpectedOwnerId, _} = DefaultAcl?ACL.owner,
+    {ActualOwnerName, ActualOwnerId, _} = Acl?ACL.owner,
     ?assertEqual(DefaultAcl?ACL.grants, Acl?ACL.grants),
-    ?assertEqual(DefaultAcl?ACL.owner, Acl?ACL.owner).
+    ?assertEqual(ExpectedOwnerName, ActualOwnerName),
+    ?assertEqual(ExpectedOwnerId, ActualOwnerId).
 
 acl_to_xml_test() ->
     Xml = <<"<?xml version=\"1.0\" encoding=\"UTF-8\"?><AccessControlPolicy><Owner><ID>TESTID1</ID><DisplayName>tester1</DisplayName></Owner><AccessControlList><Grant><Grantee xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"CanonicalUser\"><ID>TESTID2</ID><DisplayName>tester2</DisplayName></Grantee><Permission>WRITE</Permission></Grant><Grant><Grantee xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"CanonicalUser\"><ID>TESTID1</ID><DisplayName>tester1</DisplayName></Grantee><Permission>READ</Permission></Grant></AccessControlList></AccessControlPolicy>">>,
-    Acl = acl("tester1", "TESTID1", [{{"tester1", "TESTID1"}, ['READ']},
+    Acl = acl("tester1", "TESTID1", "TESTKEYID1", [{{"tester1", "TESTID1"}, ['READ']},
                                      {{"tester2", "TESTID2"}, ['WRITE']}]),
     ?assertEqual(Xml, acl_to_xml(Acl)).
 
 roundtrip_test() ->
     Xml1 = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><AccessControlPolicy><Owner><ID>TESTID1</ID><DisplayName>tester1</DisplayName></Owner><AccessControlList><Grant><Grantee xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"CanonicalUser\"><ID>TESTID1</ID><DisplayName>tester1</DisplayName></Grantee><Permission>FULL_CONTROL</Permission></Grant></AccessControlList></AccessControlPolicy>",
     Xml2 = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><AccessControlPolicy><Owner><ID>TESTID1</ID><DisplayName>tester1</DisplayName></Owner><AccessControlList><Grant><Grantee xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"CanonicalUser\"><ID>TESTID1</ID><DisplayName>tester1</DisplayName></Grantee><Permission>FULL_CONTROL</Permission></Grant><Grant><Grantee xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"Group\"><URI>http://acs.amazonaws.com/groups/global/AuthenticatedUsers</URI></Grantee><Permission>READ</Permission></Grant></AccessControlList></AccessControlPolicy>",
-    ?assertEqual(Xml1, binary_to_list(acl_to_xml(acl_from_xml(Xml1)))),
-    ?assertEqual(Xml2, binary_to_list(acl_to_xml(acl_from_xml(Xml2)))).
+    ?assertEqual(Xml1, binary_to_list(acl_to_xml(acl_from_xml(Xml1, "TESTKEYID1")))),
+    ?assertEqual(Xml2, binary_to_list(acl_to_xml(acl_from_xml(Xml2, "TESTKEYID2")))).
 
 requested_access_test() ->
     ?assertEqual('READ', requested_access('GET', [])),
@@ -468,39 +499,40 @@ requested_access_test() ->
     ?assertEqual(undefined, requested_access('GARBAGE', [{"acl", ""}])).
 
 canned_acl_test() ->
-    Owner  = {"tester1", "TESTID1"},
-    BucketOwner = {"owner", "OWNERID"},
+    Owner  = {"tester1", "TESTID1", "TESTKEYID1"},
+    BucketOwnerId = "OWNERKEYID",
     DefaultAcl = canned_acl(undefined, Owner, undefined),
     PrivateAcl = canned_acl("private", Owner, undefined),
     PublicReadAcl = canned_acl("public-read", Owner, undefined),
     PublicRWAcl = canned_acl("public-read-write", Owner, undefined),
     AuthReadAcl = canned_acl("authenticated-read", Owner, undefined),
     BucketOwnerReadAcl1 = canned_acl("bucket-owner-read", Owner, undefined),
-    BucketOwnerReadAcl2 = canned_acl("bucket-owner-read", Owner, BucketOwner),
+    BucketOwnerReadAcl2 = canned_acl("bucket-owner-read", Owner, BucketOwnerId),
     BucketOwnerFCAcl1 = canned_acl("bucket-owner-full-control", Owner, undefined),
-    BucketOwnerFCAcl2 = canned_acl("bucket-owner-full-control", Owner, BucketOwner),
-    ?assertMatch({acl_v1,{"tester1","TESTID1"},
+    BucketOwnerFCAcl2 = canned_acl("bucket-owner-full-control", Owner, BucketOwnerId),
+
+    ?assertMatch({acl_v2,{"tester1","TESTID1","TESTKEYID1"},
                   [{{"tester1","TESTID1"},['FULL_CONTROL']}], _}, DefaultAcl),
-    ?assertMatch({acl_v1,{"tester1","TESTID1"},
+    ?assertMatch({acl_v2,{"tester1","TESTID1","TESTKEYID1"},
                   [{{"tester1","TESTID1"},['FULL_CONTROL']}], _}, PrivateAcl),
-    ?assertMatch({acl_v1,{"tester1","TESTID1"},
+    ?assertMatch({acl_v2,{"tester1","TESTID1","TESTKEYID1"},
                   [{{"tester1","TESTID1"},['FULL_CONTROL']},
                    {'AllUsers', ['READ']}], _}, PublicReadAcl),
-    ?assertMatch({acl_v1,{"tester1","TESTID1"},
+    ?assertMatch({acl_v2,{"tester1","TESTID1","TESTKEYID1"},
                   [{{"tester1","TESTID1"},['FULL_CONTROL']},
                    {'AllUsers', ['READ', 'WRITE']}], _}, PublicRWAcl),
-    ?assertMatch({acl_v1,{"tester1","TESTID1"},
+    ?assertMatch({acl_v2,{"tester1","TESTID1","TESTKEYID1"},
                   [{{"tester1","TESTID1"},['FULL_CONTROL']},
                    {'AuthUsers', ['READ']}], _}, AuthReadAcl),
-    ?assertMatch({acl_v1,{"tester1","TESTID1"},
+    ?assertMatch({acl_v2,{"tester1","TESTID1","TESTKEYID1"},
                   [{{"tester1","TESTID1"},['FULL_CONTROL']}], _}, BucketOwnerReadAcl1),
-    ?assertMatch({acl_v1,{"tester1","TESTID1"},
+    ?assertMatch({acl_v2,{"tester1","TESTID1","TESTKEYID1"},
                   [{{"tester1","TESTID1"},['FULL_CONTROL']},
-                   {{"owner", "OWNERID"}, ['READ']}], _}, BucketOwnerReadAcl2),
-    ?assertMatch({acl_v1,{"tester1","TESTID1"},
+                   {{[], []}, ['READ']}], _}, BucketOwnerReadAcl2),
+    ?assertMatch({acl_v2,{"tester1","TESTID1","TESTKEYID1"},
                   [{{"tester1","TESTID1"},['FULL_CONTROL']}], _}, BucketOwnerFCAcl1),
-    ?assertMatch({acl_v1,{"tester1","TESTID1"},
+    ?assertMatch({acl_v2,{"tester1","TESTID1","TESTKEYID1"},
                   [{{"tester1","TESTID1"},['FULL_CONTROL']},
-                   {{"owner", "OWNERID"}, ['FULL_CONTROL']}], _}, BucketOwnerFCAcl2).
+                   {{[], []}, ['FULL_CONTROL']}], _}, BucketOwnerFCAcl2).
 
 -endif.

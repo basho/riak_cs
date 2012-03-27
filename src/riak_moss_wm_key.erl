@@ -107,16 +107,9 @@ check_permission(Method, RD, Ctx=#key_context{bucket=Bucket,
             AccessRD = riak_moss_access_logger:set_user(User, RD),
             {false, AccessRD, Ctx#key_context{owner=User}};
         {true, OwnerId} ->
-            case riak_moss_utils:get_user_by_index(?ID_INDEX,
-                                                   list_to_binary(OwnerId)) of
-                {ok, {Owner, _}} ->
-                    %% bill the owner, not the actor
-                    AccessRD = riak_moss_access_logger:set_user(Owner, RD),
-                    {false, AccessRD, Ctx#key_context{owner=Owner}};
-                {error, _} ->
-                    %% @TODO Decide if this should return 403 instead
-                    riak_moss_s3_response:api_error(object_owner_unavailable, RD, Ctx)
-            end;
+            %% bill the owner, not the actor
+            AccessRD = riak_moss_access_logger:set_user(OwnerId, RD),
+            {false, AccessRD, Ctx#key_context{owner=OwnerId}};
         false ->
             %% ACL check failed, deny access
             riak_moss_wm_utils:deny_access(RD, Ctx)
@@ -279,11 +272,11 @@ accept_body(RD, Ctx=#key_context{bucket=Bucket,
             Acl = riak_moss_acl_utils:canned_acl(
                     wrq:get_req_header("x-amz-acl", RD),
                     {User?MOSS_USER.display_name,
-                     User?MOSS_USER.canonical_id},
-                    {Owner?MOSS_USER.display_name,
-                     Owner?MOSS_USER.canonical_id});
+                     User?MOSS_USER.canonical_id,
+                     User?MOSS_USER.key_id},
+                    Owner);
         _ ->
-            Acl = riak_moss_acl_utils:acl_from_xml(Body)
+            Acl = riak_moss_acl_utils:acl_from_xml(Body, User?MOSS_USER.key_id)
     end,
     %% Write new ACL to active manifest
     case riak_moss_utils:set_object_acl(Bucket, Key, Mfst, Acl) of
@@ -311,9 +304,9 @@ accept_body(RD, Ctx=#key_context{bucket=Bucket,
     ACL = riak_moss_acl_utils:canned_acl(
             wrq:get_req_header("x-amz-acl", RD),
             {User?MOSS_USER.display_name,
-             User?MOSS_USER.canonical_id},
-            {Owner?MOSS_USER.display_name,
-             Owner?MOSS_USER.canonical_id}),
+             User?MOSS_USER.canonical_id,
+             User?MOSS_USER.key_id},
+            Owner),
     Args = [Bucket, list_to_binary(Key), Size, list_to_binary(ContentType),
         Metadata, BlockSize, ACL, timer:seconds(60), self()],
     {ok, Pid} = riak_moss_put_fsm_sup:start_put_fsm(node(), Args),

@@ -85,7 +85,7 @@ handle_call(get_manifest, _From, #state{bucket=Bucket,
                                                 <<"md5">>,
                                                 orddict:new(),
                                                 riak_moss_lfs_utils:block_size(),
-                                                riak_moss_acl_utils:default_acl("tester", "id123")),
+                                                riak_moss_acl_utils:default_acl("tester", "id123", "keyid123")),
     {reply, {ok, Manifest}, State};
 handle_call(_Msg, _From, State) ->
     {reply, ok, State}.
