@@ -112,8 +112,7 @@ check_grants(#context{user=User,
 %% belongs to someone else.  Switch to it if the owner's record can be
 %% retrieved.
 shift_to_owner(RD, Ctx, OwnerId) ->
-    case riak_moss_utils:get_user_by_index(?ID_INDEX,
-                                           list_to_binary(OwnerId)) of
+    case riak_moss_utils:get_user(list_to_binary(OwnerId)) of
         {ok, {Owner, OwnerVClock}} ->
             AccessRD = riak_moss_access_logger:set_user(Owner, RD),
             {false, AccessRD, Ctx#context{user=Owner,
@@ -197,10 +196,11 @@ accept_body(RD, Ctx=#context{user=User,
             ACL = riak_moss_acl_utils:canned_acl(
                     wrq:get_req_header("x-amz-acl", RD),
                     {User?MOSS_USER.display_name,
-                     User?MOSS_USER.canonical_id},
+                     User?MOSS_USER.canonical_id,
+                     User?MOSS_USER.key_id},
                     undefined);
         _ ->
-            ACL = riak_moss_acl_utils:acl_from_xml(Body)
+            ACL = riak_moss_acl_utils:acl_from_xml(Body, User?MOSS_USER.key_id)
     end,
     case riak_moss_utils:set_bucket_acl(User,
                                         VClock,
@@ -219,7 +219,8 @@ accept_body(RD, Ctx=#context{user=User,
     ACL = riak_moss_acl_utils:canned_acl(
             wrq:get_req_header("x-amz-acl", RD),
             {User?MOSS_USER.display_name,
-             User?MOSS_USER.canonical_id},
+             User?MOSS_USER.canonical_id,
+             User?MOSS_USER.key_id},
             undefined),
     case riak_moss_utils:create_bucket(User,
                                        VClock,
