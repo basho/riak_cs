@@ -24,6 +24,7 @@ clean:
 
 distclean: clean
 	@./rebar delete-deps
+	@rm -rf $(PKG_ID).tar.gz
 
 test: all
 	@./rebar skip_deps=true eunit
@@ -116,6 +117,9 @@ package.src: deps
         done
 	find package/$(PKG_ID) -depth -name ".git" -exec rm -rf {} \;
 	tar -C package -czf package/$(PKG_ID).tar.gz $(PKG_ID)
+
+dist: package.src
+	cp package/$(PKG_ID).tar.gz .
 
 package: package.src
 	make -C package -f $(PKG_ID)/deps/node_package/Makefile
