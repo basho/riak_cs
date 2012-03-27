@@ -406,7 +406,7 @@ put_object(BucketName, Key, Value, Metadata) ->
 %% using information from the application environment.
 -spec riak_connection() -> {ok, pid()} | {error, term()}.
 riak_connection() ->
-    Worker = poolboy:checkout(riakc_pool),
+    Worker = poolboy:checkout(riakc_pool, true, infinity),
     {ok, Worker}.
 
 %% @doc Get a protobufs connection to the riak cluster.
