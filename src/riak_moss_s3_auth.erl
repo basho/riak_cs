@@ -170,6 +170,7 @@ canonicalize_resource(RD) ->
     case {bucket_from_host(wrq:get_req_header("host", RD), RD),
           wrq:path_tokens(RD)} of
         {undefined, []} -> ["/"];
+        {undefined, _} -> [wrq:path(RD)];
         {Bucket, []} -> ["/", Bucket, "/"];
         {Bucket, KeyTokens} ->
             ["/", Bucket, "/", string:join(KeyTokens, "/")]
