@@ -163,7 +163,7 @@ waiting_continue_or_stop(continue, #state{manifest=Manifest,
                                           key=Key,
                                           next_block=NextBlock,
                                           manifest_uuid=UUID,
-                                          free_readers=FreeReaders}=State) ->
+                                          free_readers=Readers}=State) ->
     BlockSequences = riak_moss_lfs_utils:block_sequences_for_manifest(Manifest),
     case BlockSequences of
         [] ->
@@ -175,6 +175,14 @@ waiting_continue_or_stop(continue, #state{manifest=Manifest,
             BlocksLeft = sets:from_list(BlockSequences),
             TotalBlocks = sets:size(BlocksLeft),
 
+            %% Start the block servers
+            case Readers of
+                undefined ->
+                    FreeReaders = start_block_servers(),
+                    lager:debug("Block Servers: ~p", [FreeReaders]);
+                _ ->
+                    FreeReaders = Readers
+            end,
             %% start retrieving the first set of blocks
             {LastBlockRequested, UpdFreeReaders} =
                 read_blocks(BucketName, Key, UUID, FreeReaders, NextBlock, TotalBlocks),
@@ -368,17 +376,10 @@ prepare(#state{bucket=Bucket, key=Key}=State) ->
     case riak_moss_manifest_fsm:get_active_manifest(ManiPid) of
         {ok, Manifest} ->
             lager:debug("Manifest: ~p", [Manifest]),
-            FetchConcurrency = riak_moss_lfs_utils:fetch_concurrency(),
-            lager:debug("Get Concurrency Level: ~p", [FetchConcurrency]),
-            ReaderPids = start_block_servers(FetchConcurrency),
-            lager:debug("Block Servers: ~p", [ReaderPids]),
             State#state{manifest=Manifest,
-                        mani_fsm_pid=ManiPid,
-                        all_reader_pids=ReaderPids,
-                        free_readers=ReaderPids};
+                        mani_fsm_pid=ManiPid};
         {error, notfound} ->
-            State#state{mani_fsm_pid=ManiPid,
-                        all_reader_pids=[]}
+            State#state{mani_fsm_pid=ManiPid}
     end.
 
 -spec read_blocks(binary(), binary(), binary(), [pid()], pos_integer(), pos_integer()) ->
@@ -422,9 +423,10 @@ server_result(_, Acc) ->
             Acc
     end.
 
--spec start_block_servers(pos_integer()) -> [pid()].
-start_block_servers(NumServers) ->
-    lists:foldl(fun server_result/2, [], lists:seq(1, NumServers)).
+-spec start_block_servers() -> [pid()].
+start_block_servers() ->
+    FetchConcurrency = riak_moss_lfs_utils:fetch_concurrency(),
+    lists:foldl(fun server_result/2, [], lists:seq(1, FetchConcurrency)).
 
 %% ===================================================================
 %% Test API
