@@ -350,7 +350,12 @@ terminate(_Reason, _StateName, #state{test=false,
                                       mani_fsm_pid=ManiPid}) ->
 
     riak_moss_manifest_fsm:stop(ManiPid),
-    [riak_moss_block_server:stop(P) || P <- BlockServerPids],
+    case BlockServerPids of
+        undefined ->
+            ok;
+        _ ->
+            [riak_moss_block_server:stop(P) || P <- BlockServerPids]
+    end,
     ok;
 terminate(_Reason, _StateName, #state{test=true,
                                       free_readers=[ReaderPid | _]}) ->
