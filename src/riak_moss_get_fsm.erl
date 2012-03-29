@@ -140,7 +140,7 @@ prepare(get_manifest, _From, State) ->
     PreparedState = prepare(State),
     case PreparedState#state.manifest of
         undefined ->
-            {stop, normal, notfound, State};
+            {stop, normal, notfound, PreparedState};
         Mfst ->
             NextStateTimeout = 60000,
             NewState = PreparedState#state{manifest_uuid=Mfst#lfs_manifest_v2.uuid,
