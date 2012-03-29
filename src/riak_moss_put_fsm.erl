@@ -151,10 +151,24 @@ init([Bucket, Key, ContentLength, ContentType,
 %%--------------------------------------------------------------------
 %%
 %%--------------------------------------------------------------------
+prepare(timeout, State=#state{content_length=0}) ->
+    NewState = prepare(State),
+    Md5 = crypto:md5_final(NewState#state.md5),
+    NewManifest = NewState#state.manifest#lfs_manifest_v2{content_md5=Md5,
+                                                          state=active,
+                                                          last_block_written_time=erlang:now()},
+    {next_state, done, NewState#state{md5=Md5, manifest=NewManifest}};
 prepare(timeout, State) ->
     NewState = prepare(State),
     {next_state, not_full, NewState}.
 
+prepare(finalize, From, State=#state{content_length=0}) ->
+    NewState = prepare(State),
+    Md5 = crypto:md5_final(NewState#state.md5),
+    NewManifest = NewState#state.manifest#lfs_manifest_v2{content_md5=Md5,
+                                                          state=active,
+                                                          last_block_written_time=erlang:now()},
+    done(finalize, From, NewState#state{md5=Md5, manifest=NewManifest});
 prepare({augment_data, NewData}, From, State) ->
     #state{content_length=CLength,
            num_bytes_received=NumBytesReceived,
@@ -324,7 +338,15 @@ prepare(State=#state{bucket=Bucket,
     %% this shouldn't be hardcoded.
     %% Also, use poolboy :)
     Md5 = crypto:md5_init(),
-    WriterPids = start_writer_servers(RiakPid, riak_moss_lfs_utils:put_concurrency()),
+    WriterPids = case ContentLength of
+        0 ->
+            %% Don't start any writers
+            %% if we're not going to need
+            %% to write any blocks
+            [];
+        _ ->
+            start_writer_servers(RiakPid, riak_moss_lfs_utils:put_concurrency())
+    end,
     FreeWriters = ordsets:from_list(WriterPids),
     %% TODO:
     %% we should get this
