@@ -208,7 +208,9 @@ accept_body(RD, Ctx=#context{user=User,
                      User?MOSS_USER.key_id},
                     undefined);
         _ ->
-            ACL = riak_moss_acl_utils:acl_from_xml(Body, User?MOSS_USER.key_id)
+            ACL = riak_moss_acl_utils:acl_from_xml(Body,
+                                                   User?MOSS_USER.key_id,
+                                                   RiakPid)
     end,
     case riak_moss_utils:set_bucket_acl(User,
                                         VClock,

@@ -130,6 +130,23 @@ init([Bucket, Key, ContentLength, ContentType,
                          riakc_pid=RiakPid,
                          timeout=Timeout},
                      0}.
+%% init([test, Bucket, Key, ContentLength, BlockSize]) ->
+%%     {ok, prepare, State1, 0} = init([Bucket, Key, self(), pid]),
+
+%%     %% %% purposely have the timeout happen
+%%     %% %% so that we get called in the prepare
+%%     %% %% state
+%%     %% {ok, ReaderPid} =
+%%     %%     riak_moss_dummy_reader:start_link([self(),
+%%     %%                                        Bucket,
+%%     %%                                        Key,
+%%     %%                                        ContentLength,
+%%     %%                                        BlockSize]),
+%%     %% link(ReaderPid),
+%%     {ok, Manifest} = riak_moss_dummy_reader:get_manifest(ReaderPid),
+%%     {ok, waiting_value, State1#state{free_readers=[ReaderPid],
+%%                                      manifest=Manifest,
+%%                                      test=true}}.
 
 %%--------------------------------------------------------------------
 %%

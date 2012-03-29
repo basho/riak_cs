@@ -44,7 +44,7 @@ anonymous_bucket_access(Bucket, RequestedAccess, RiakPid) ->
                 _ ->
                     case has_permission(acl_grants(Acl), RequestedAccess) of
                         true ->
-                            {true, owner_id(Acl)};
+                            {true, owner_id(Acl, RiakPid)};
                         false ->
                             false
                     end
@@ -75,11 +75,11 @@ anonymous_object_access(Bucket, _ObjAcl, 'WRITE', RiakPid) ->
             lager:error("Anonymous object access check failed due to error. Reason: ~p", [Reason]),
             false
     end;
-anonymous_object_access(_Bucket, ObjAcl, RequestedAccess, _) ->
+anonymous_object_access(_Bucket, ObjAcl, RequestedAccess, RiakPid) ->
     HasObjPerm = has_permission(acl_grants(ObjAcl), RequestedAccess),
     case HasObjPerm of
         true ->
-            {true, owner_id(ObjAcl)};
+            {true, owner_id(ObjAcl, RiakPid)};
         _ ->
             false
     end.
@@ -101,7 +101,7 @@ bucket_access(Bucket, RequestedAccess, CanonicalId, RiakPid) ->
                 true when IsOwner == true ->
                     true;
                 true ->
-                    {true, owner_id(Acl)};
+                    {true, owner_id(Acl, RiakPid)};
                 _ ->
                     false
             end;
@@ -149,7 +149,7 @@ object_access(Bucket, _ObjAcl, 'WRITE', CanonicalId, RiakPid) ->
                                            CanonicalId),
             case HasBucketPerm of
                 true ->
-                    {true, owner_id(BucketAcl)};
+                    {true, owner_id(BucketAcl, RiakPid)};
                 _ ->
                     false
             end;
@@ -159,7 +159,7 @@ object_access(Bucket, _ObjAcl, 'WRITE', CanonicalId, RiakPid) ->
             lager:error("Object access check failed due to error. Reason: ~p", [Reason]),
             false
     end;
-object_access(_Bucket, ObjAcl, RequestedAccess, CanonicalId, _RiakPid) ->
+object_access(_Bucket, ObjAcl, RequestedAccess, CanonicalId, RiakPid) ->
     lager:debug("ObjAcl: ~p~nCanonicalId: ~p", [ObjAcl, CanonicalId]),
     IsObjOwner = is_owner(ObjAcl, CanonicalId),
     HasObjPerm = has_permission(acl_grants(ObjAcl),
@@ -171,7 +171,7 @@ object_access(_Bucket, ObjAcl, RequestedAccess, CanonicalId, _RiakPid) ->
         true when IsObjOwner == true ->
             true;
         true ->
-            {true, owner_id(ObjAcl)};
+            {true, owner_id(ObjAcl, RiakPid)};
         _ ->
             false
     end.
@@ -199,14 +199,15 @@ acl_grants(#acl_v1{grants=Grants}) ->
     Grants.
 
 %% @doc Get the canonical id of the owner of an entity.
--spec owner_id(acl()) -> string().
-owner_id(?ACL{owner=Owner}) ->
+-spec owner_id(acl(), pid()) -> string().
+owner_id(?ACL{owner=Owner}, _) ->
     {_, _, OwnerId} = Owner,
     OwnerId;
-owner_id(#acl_v1{owner=OwnerData}) ->
+owner_id(#acl_v1{owner=OwnerData}, RiakPid) ->
     {Name, CanonicalId} = OwnerData,
     case riak_moss_utils:get_user_by_index(?ID_INDEX,
-                                           list_to_binary(CanonicalId)) of
+                                           list_to_binary(CanonicalId),
+                                           RiakPid) of
         {ok, {Owner, _}} ->
             Owner?MOSS_USER.key_id;
         {error, _} ->

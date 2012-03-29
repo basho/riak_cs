@@ -284,7 +284,9 @@ accept_body(RD, Ctx=#key_context{bucket=Bucket,
                      User?MOSS_USER.key_id},
                     Owner);
         _ ->
-            Acl = riak_moss_acl_utils:acl_from_xml(Body, User?MOSS_USER.key_id)
+            Acl = riak_moss_acl_utils:acl_from_xml(Body,
+                                                   User?MOSS_USER.key_id,
+                                                   RiakPid)
     end,
     %% Write new ACL to active manifest
     case riak_moss_utils:set_object_acl(Bucket, Key, Mfst, Acl, RiakPid) of
