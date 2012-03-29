@@ -21,6 +21,7 @@
 %% gen_fsm callbacks
 -export([init/1,
          prepare/2,
+         prepare/3,
          not_full/2,
          full/2,
          all_received/2,
@@ -120,54 +121,24 @@ init([Bucket, Key, ContentLength, ContentType, Metadata, BlockSize, Acl, Timeout
 %%--------------------------------------------------------------------
 %%
 %%--------------------------------------------------------------------
-prepare(timeout, State=#state{bucket=Bucket,
-                              key=Key,
-                              block_size=BlockSize,
-                              content_length=ContentLength,
-                              content_type=ContentType,
-                              metadata=Metadata,
-                              acl=Acl}) ->
+prepare(timeout, State) ->
+    NewState = prepare(State),
+    {next_state, not_full, NewState}.
 
-    %% 1. start the manifest_fsm proc
-    {ok, ManiPid} = riak_moss_manifest_fsm:start_link(Bucket, Key),
-    %% TODO:
-    %% this shouldn't be hardcoded.
-    %% Also, use poolboy :)
-    Md5 = crypto:md5_init(),
-    WriterPids = start_writer_servers(riak_moss_lfs_utils:put_concurrency()),
-    FreeWriters = ordsets:from_list(WriterPids),
-    %% TODO:
-    %% we should get this
-    %% from the app.config
-    MaxBufferSize = (riak_moss_lfs_utils:put_fsm_buffer_size_factor() * BlockSize),
-    UUID = druuid:v4(),
-    Manifest =
-    riak_moss_lfs_utils:new_manifest(Bucket,
-                                     Key,
-                                     UUID,
-                                     ContentLength,
-                                     ContentType,
-                                     %% we don't know the md5 yet
-                                     undefined,
-                                     Metadata,
-                                     BlockSize,
-                                     Acl),
-    NewManifest = Manifest#lfs_manifest_v2{write_start_time=erlang:now()},
-
-    %% TODO:
-    %% this time probably
-    %% shouldn't be hardcoded,
-    %% and if it is, what should
-    %% it be?
-    {ok, TRef} = timer:send_interval(60000, self(), save_manifest),
-    riak_moss_manifest_fsm:add_new_manifest(ManiPid, NewManifest),
-    {next_state, not_full, State#state{manifest=NewManifest,
-                                       md5=Md5,
-                                       timer_ref=TRef,
-                                       mani_pid=ManiPid,
-                                       max_buffer_size=MaxBufferSize,
-                                       all_writer_pids=WriterPids,
-                                       free_writers=FreeWriters}}.
+prepare({augment_data, NewData}, From, State) ->
+    #state{content_length=CLength,
+           num_bytes_received=NumBytesReceived,
+           current_buffer_size=CurrentBufferSize,
+           max_buffer_size=MaxBufferSize} = NewState = prepare(State),
+    case handle_chunk(CLength, NumBytesReceived, size(NewData),
+                      CurrentBufferSize, MaxBufferSize) of
+        accept ->
+            handle_accept_chunk(NewData, NewState);
+        backpressure ->
+            handle_backpressure_for_chunk(NewData, From, NewState);
+        last_chunk ->
+            handle_receiving_last_chunk(NewData, NewState)
+    end.
 
 %% when a block is written
 %% and we were already not full,
@@ -306,6 +277,56 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
+
+%% @doc Handle expensive initialization operations required for the put_fsm.
+-spec prepare(#state{}) -> #state{}.
+prepare(State=#state{bucket=Bucket,
+                     key=Key,
+                     block_size=BlockSize,
+                     content_length=ContentLength,
+                     content_type=ContentType,
+                     metadata=Metadata,
+                     acl=Acl}) ->
+    %% 1. start the manifest_fsm proc
+    {ok, ManiPid} = riak_moss_manifest_fsm:start_link(Bucket, Key),
+    %% TODO:
+    %% this shouldn't be hardcoded.
+    %% Also, use poolboy :)
+    Md5 = crypto:md5_init(),
+    WriterPids = start_writer_servers(riak_moss_lfs_utils:put_concurrency()),
+    FreeWriters = ordsets:from_list(WriterPids),
+    %% TODO:
+    %% we should get this
+    %% from the app.config
+    MaxBufferSize = (riak_moss_lfs_utils:put_fsm_buffer_size_factor() * BlockSize),
+    UUID = druuid:v4(),
+    Manifest =
+    riak_moss_lfs_utils:new_manifest(Bucket,
+                                     Key,
+                                     UUID,
+                                     ContentLength,
+                                     ContentType,
+                                     %% we don't know the md5 yet
+                                     undefined,
+                                     Metadata,
+                                     BlockSize,
+                                     Acl),
+    NewManifest = Manifest#lfs_manifest_v2{write_start_time=erlang:now()},
+
+    %% TODO:
+    %% this time probably
+    %% shouldn't be hardcoded,
+    %% and if it is, what should
+    %% it be?
+    {ok, TRef} = timer:send_interval(60000, self(), save_manifest),
+    riak_moss_manifest_fsm:add_new_manifest(ManiPid, NewManifest),
+    State#state{manifest=NewManifest,
+                md5=Md5,
+                timer_ref=TRef,
+                mani_pid=ManiPid,
+                max_buffer_size=MaxBufferSize,
+                all_writer_pids=WriterPids,
+                free_writers=FreeWriters}.
 
 handle_chunk(ContentLength, NumBytesReceived, NewDataSize, CurrentBufferSize, MaxBufferSize) ->
     if
