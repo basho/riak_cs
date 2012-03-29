@@ -45,8 +45,8 @@
 start_link() ->
     gen_server:start_link(?MODULE, [], []).
 
-start_link(_RiakPid) ->
-    gen_server:start_link(?MODULE, [_RiakPid], []).
+start_link(RiakPid) ->
+    gen_server:start_link(?MODULE, [RiakPid], []).
 
 -spec get_block(pid(), binary(), binary(), binary(), pos_integer()) -> ok.
 get_block(Pid, Bucket, Key, UUID, BlockNumber) ->
