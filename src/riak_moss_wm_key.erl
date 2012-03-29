@@ -344,5 +344,11 @@ finalize_request(RD, #key_context{size=S}=Ctx, Pid) ->
 
 finish_request(RD, KeyCtx=#key_context{context=InnerCtx}) ->
     #context{riakc_pid=RiakPid} = InnerCtx,
-    riak_moss_utils:close_riak_connection(RiakPid),
-    {true, RD, KeyCtx}.
+    case RiakPid of
+        undefined ->
+            {true, RD, KeyCtx};
+        _ ->
+            riak_moss_utils:close_riak_connection(RiakPid),
+            UpdInnerCtx = InnerCtx#context{riakc_pid=undefined},
+            {true, RD, KeyCtx#key_context{context=UpdInnerCtx}}
+    end.

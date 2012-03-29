@@ -261,6 +261,8 @@ delete_resource(RD, Ctx=#context{user=User,
             riak_moss_s3_response:api_error(Reason, RD, Ctx)
     end.
 
+finish_request(RD, Ctx=#context{riakc_pid=undefined}) ->
+    {true, RD, Ctx};
 finish_request(RD, Ctx=#context{riakc_pid=RiakPid}) ->
     riak_moss_utils:close_riak_connection(RiakPid),
-    {true, RD, Ctx}.
+    {true, RD, Ctx#context{riakc_pid=undefined}}.

@@ -91,6 +91,8 @@ content_types_provided(RD, Ctx) ->
 to_xml(RD, Ctx=#context{user=User}) ->
     riak_moss_s3_response:list_all_my_buckets_response(User, RD, Ctx).
 
+finish_request(RD, Ctx=#context{riakc_pid=undefined}) ->
+    {true, RD, Ctx};
 finish_request(RD, Ctx=#context{riakc_pid=RiakPid}) ->
     riak_moss_utils:close_riak_connection(RiakPid),
-    {true, RD, Ctx}.
+    {true, RD, Ctx#context{riakc_pid=undefined}}.
