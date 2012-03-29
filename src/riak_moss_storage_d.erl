@@ -43,7 +43,7 @@
           next,          %% the next scheduled time
 
           riak,          %% client we're currently using
-          batch_start,   %% the time we actually started 
+          batch_start,   %% the time we actually started
           batch_count=0, %% count of users processed so far
           batch=[]       %% users left to process in this batch
          }).
@@ -95,7 +95,7 @@ pause_batch() ->
 %% was not paused.
 resume_batch() ->
     gen_fsm:sync_send_event(?SERVER, resume_batch, infinity).
-    
+
 
 %%%===================================================================
 %%% gen_fsm callbacks
@@ -240,7 +240,7 @@ read_storage_schedule() ->
     lists:usort(read_storage_schedule1()).
 
 read_storage_schedule1() ->
-    case application:get_env(riak_moss, storage_schedule) of
+    case application:get_env(?RIAKCS, storage_schedule) of
         undefined ->
             lager:warning("No storage schedule defined."
                           " Calculation must be triggered manually."),
@@ -326,7 +326,7 @@ calculate_next_user(#state{riak=Riak,
             End = calendar:universal_time(),
             store_user(State, User, BucketList, Start, End);
         {error, Error} ->
-            lager:error("Error computing storage for user ~s (~p)", 
+            lager:error("Error computing storage for user ~s (~p)",
                         [User, Error])
     end,
     State#state{batch=Rest, batch_count=1+State#state.batch_count}.

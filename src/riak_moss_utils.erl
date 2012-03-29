@@ -186,21 +186,21 @@ get_buckets(?MOSS_USER{buckets=Buckets}) ->
 %% @doc Return `stanchion' configuration data.
 -spec stanchion_data() -> {string(), pos_integer(), boolean()} | {error, term()}.
 stanchion_data() ->
-    case application:get_env(riak_moss, stanchion_ip) of
+    case application:get_env(?RIAKCS, stanchion_ip) of
         {ok, IP} ->
             ok;
         undefined ->
             lager:warning("No IP address or host name for stanchion access defined. Using default."),
             IP = ?DEFAULT_STANCHION_IP
     end,
-    case application:get_env(riak_moss, stanchion_port) of
+    case application:get_env(?RIAKCS, stanchion_port) of
         {ok, Port} ->
             ok;
         undefined ->
             lager:warning("No port for stanchion access defined. Using default."),
             Port = ?DEFAULT_STANCHION_PORT
     end,
-    case application:get_env(riak_moss, stanchion_ssl) of
+    case application:get_env(?RIAKCS, stanchion_ssl) of
         {ok, SSL} ->
             ok;
         undefined ->
@@ -243,12 +243,12 @@ prefix_filter(Keys, Prefix) ->
 %% @doc Return the credentials of the admin user
 -spec get_admin_creds() -> {ok, {string(), string()}} | {error, term()}.
 get_admin_creds() ->
-    case application:get_env(riak_moss, admin_key) of
+    case application:get_env(?RIAKCS, admin_key) of
         {ok, []} ->
             lager:warning("The admin user's key id has not been specified."),
             {error, admin_key_undefined};
         {ok, KeyId} ->
-            case application:get_env(riak_moss, admin_secret) of
+            case application:get_env(?RIAKCS, admin_secret) of
                 {ok, []} ->
                     lager:warning("The admin user's secret has not been specified."),
                     {error, admin_secret_undefined};

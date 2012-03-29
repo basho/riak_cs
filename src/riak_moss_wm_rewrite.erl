@@ -4,13 +4,16 @@
 %%
 %% -------------------------------------------------------------------
 -module(riak_moss_wm_rewrite).
+
+-include("riak_moss.hrl").
+
 -export([rewrite/2]).
 
 bucket_from_host(undefined) ->
     undefined;
 bucket_from_host(HostHeader) ->
     HostNoPort = hd(string:tokens(HostHeader, ":")),
-    {ok, RootHost} = application:get_env(riak_moss, moss_root_host),
+    {ok, RootHost} = application:get_env(?RIAKCS, riak_cs_root_host),
     case HostNoPort of
         RootHost ->
             undefined;
@@ -30,4 +33,4 @@ rewrite(Headers, Path) ->
             Path;
         Bucket ->
             "/" ++ Bucket ++ "/" ++ string:strip(Path, left, $/)
-    end.    
+    end.

@@ -212,3 +212,4 @@
 %% to determine the PUT buffer size.
 %% ex. 2 would mean BlockSize * 2
 -define(DEFAULT_PUT_BUFFER_FACTOR, 1).
+-define(RIAKCS, 'riak-cs').

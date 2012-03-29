@@ -136,7 +136,7 @@ bucket_from_host(undefined, RD) ->
     wrq:path_info(bucket, RD);
 bucket_from_host(HostHeader, RD) ->
     HostNoPort = hd(string:tokens(HostHeader, ":")),
-    {ok, RootHost} = application:get_env(riak_moss, moss_root_host),
+    {ok, RootHost} = application:get_env(?RIAKCS, riak_cs_root_host),
     case HostNoPort of
         RootHost ->
             wrq:path_info(bucket, RD);
@@ -207,10 +207,10 @@ auth_test_() ->
       }]}.
 
 setup() ->
-    application:set_env(riak_moss, moss_root_host, "s3.amazonaws.com").
+    application:set_env(?RIAKCS, riak_cs_root_host, "s3.amazonaws.com").
 
 teardown(_) ->
-    application:unset_env(riak_moss, moss_root_host).
+    application:unset_env(?RIAKCS, riak_cs_root_host).
 
 test_fun(Description, ExpectedSignature, CalculatedSignature) ->
     {Description,

@@ -69,7 +69,7 @@ block_name_to_term(<<UUID:16/binary, Number:32>>) ->
 %% @doc Return the configured block size
 -spec block_size() -> pos_integer().
 block_size() ->
-    case application:get_env(riak_moss, lfs_block_size) of
+    case application:get_env(?RIAKCS, lfs_block_size) of
         undefined ->
             ?DEFAULT_LFS_BLOCK_SIZE;
         {ok, BlockSize} ->
@@ -80,7 +80,7 @@ block_size() ->
 -spec max_content_len() -> pos_integer().
 max_content_len() ->
 
-    case application:get_env(riak_moss, max_content_length) of
+    case application:get_env(?RIAKCS, max_content_length) of
         undefined ->
 
             ?DEFAULT_MAX_CONTENT_LENGTH;
@@ -109,7 +109,7 @@ block_sequences_for_manifest(#lfs_manifest_v2{content_length=ContentLength}=Mani
 %% @doc Return the configured file block fetch concurrency .
 -spec fetch_concurrency() -> pos_integer().
 fetch_concurrency() ->
-    case application:get_env(riak_moss, fetch_concurrency) of
+    case application:get_env(?RIAKCS, fetch_concurrency) of
         undefined ->
             ?DEFAULT_FETCH_CONCURRENCY;
         {ok, Concurrency} ->
@@ -119,7 +119,7 @@ fetch_concurrency() ->
 %% @doc Return the configured file block put concurrency .
 -spec put_concurrency() -> pos_integer().
 put_concurrency() ->
-    case application:get_env(riak_moss, put_concurrency) of
+    case application:get_env(?RIAKCS, put_concurrency) of
         undefined ->
             ?DEFAULT_PUT_CONCURRENCY;
         {ok, Concurrency} ->
@@ -130,7 +130,7 @@ put_concurrency() ->
 %% size factor
 -spec put_fsm_buffer_size_factor() -> pos_integer().
 put_fsm_buffer_size_factor() ->
-    case application:get_env(riak_moss, put_buffer_factor) of
+    case application:get_env(?RIAKCS, put_buffer_factor) of
         undefined ->
             ?DEFAULT_PUT_BUFFER_FACTOR;
         {ok, Factor} ->

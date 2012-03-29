@@ -4,9 +4,9 @@
 %%
 %% -------------------------------------------------------------------
 
-%% @doc Callbacks for the riak_moss application.
+%% @doc Callbacks for the riak-cs application.
 
--module(riak_moss_app).
+-module('riak-cs_app').
 
 -behaviour(application).
 

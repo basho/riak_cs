@@ -38,7 +38,7 @@
 %% application.
 -spec archive_period() -> {ok, integer()}|{error, term()}.
 archive_period() ->
-    case application:get_env(riak_moss, access_archive_period) of
+    case application:get_env(?RIAKCS, access_archive_period) of
         {ok, AP} when is_integer(AP), AP > 0 ->
             {ok, AP};
         _ ->
@@ -51,7 +51,7 @@ archive_period() ->
 %% application.
 -spec log_flush_interval() -> {ok, integer()}|{error, term()}.
 log_flush_interval() ->
-    case application:get_env(riak_moss, access_log_flush_factor) of
+    case application:get_env(?RIAKCS, access_log_flush_factor) of
         {ok, AF} when is_integer(AF), AF > 0 ->
             case archive_period() of
                 {ok, AP} ->
@@ -138,7 +138,7 @@ archive_period_prop() ->
     ?FORALL(I, oneof([rts:valid_period_g(),
                       choose(-86500, 86500)]), % purposely outside day boundary
             begin
-                application:set_env(riak_moss, access_archive_period, I),
+                application:set_env(?RIAKCS, access_archive_period, I),
                 case archive_period() of
                     {ok, I} ->
                         valid_period(I);
@@ -163,7 +163,7 @@ make_object_prop() ->
     ?FORALL(Accesses,
             list({op_g(), access_g()}),
             begin
-                application:set_env(riak_moss, access_archive_period, 60000),
+                application:set_env(?RIAKCS, access_archive_period, 60000),
 
                 %% trust rts:make_object_prop to check all of the
                 %% bucket/key/time/etc. properties
@@ -172,7 +172,7 @@ make_object_prop() ->
                 T1 = {{2012,02,16},{10,45,00}},
 
                 Obj = make_object(User, Accesses, {T0, T1}),
-                
+
                 Unique = lists:usort(
                            [ if is_atom(K)   -> atom_to_binary(K, latin1);
                                 is_binary(K) -> K

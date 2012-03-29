@@ -8,10 +8,12 @@
 
 -module(riak_moss_web).
 
+-include("riak_moss.hrl").
+
 -export([dispatch_table/0]).
 
 dispatch_table() ->
-    case application:get_env(riak_moss, auth_bypass) of
+    case application:get_env(?RIAKCS, auth_bypass) of
         {ok, AuthBypass} ->
             ok;
         undefined ->

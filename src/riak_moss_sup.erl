@@ -10,6 +10,8 @@
 
 -behaviour(supervisor).
 
+-include("riak_moss.hrl").
+
 %% Public API
 -export([start_link/0]).
 
@@ -34,13 +36,13 @@ start_link() ->
                          integer()},
                         [supervisor:child_spec()]}}.
 init([]) ->
-    case application:get_env(riak_moss, moss_ip) of
+    case application:get_env(?RIAKCS, riak_cs_ip) of
         {ok, Ip} ->
             ok;
         undefined ->
             Ip = "0.0.0.0"
     end,
-    case application:get_env(riak_moss, moss_port) of
+    case application:get_env(?RIAKCS, riak_cs_port) of
         {ok, Port} ->
             ok;
         undefined ->
@@ -56,7 +58,7 @@ init([]) ->
                  {log_dir, "log"},
                  {rewrite_module, riak_moss_wm_rewrite},
                  {error_handler, riak_moss_wm_error_handler}],
-    case application:get_env(riak_moss, ssl) of
+    case application:get_env(?RIAKCS, ssl) of
 
         {ok, SSLOpts} ->
             WebConfig = WebConfig1 ++ [{ssl, true},
@@ -86,7 +88,7 @@ init([]) ->
                {riak_moss_storage_d, start_link, []},
                permanent, 5000, worker, [riak_moss_storage_d]},
 
-    {ok, {RiakCWorkers, RiakCMaxOverflow}} = application:get_env(riak_moss, riakc_pool),
+    {ok, {RiakCWorkers, RiakCMaxOverflow}} = application:get_env(?RIAKCS, riakc_pool),
     RiakCStop = fun(Worker) -> riak_moss_riakc_pool_worker:stop(Worker) end,
     RiakCPool = {riakc_pool,
                  {poolboy, start_link, [[{name, {local, riakc_pool}},
