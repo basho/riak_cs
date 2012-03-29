@@ -10,7 +10,7 @@
 
 -include("riak_moss.hrl").
 
--export([delete/2]).
+-export([delete/3]).
 
 %% @doc Mark all active manifests as
 %%      pending_delete.
@@ -20,7 +20,7 @@
 %% to start a GC process in a timer, but
 %% lots of 30 minute timers could queue
 %% up and maybe slow things down?
--spec delete(binary(), binary()) -> ok | {error, notfound}.
-delete(Bucket, Key) ->
-    {ok, Pid} = riak_moss_manifest_fsm:start_link(Bucket, Key),
+-spec delete(binary(), binary(), pid()) -> ok | {error, notfound}.
+delete(Bucket, Key, RiakPid) ->
+    {ok, Pid} = riak_moss_manifest_fsm:start_link(Bucket, Key, RiakPid),
     riak_moss_manifest_fsm:mark_active_as_pending_delete(Pid).

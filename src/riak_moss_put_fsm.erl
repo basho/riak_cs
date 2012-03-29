@@ -13,7 +13,7 @@
 -include("riak_moss.hrl").
 
 %% API
--export([start_link/9,
+-export([start_link/10,
          augment_data/2,
          block_written/2,
          finalize/1]).
@@ -21,6 +21,7 @@
 %% gen_fsm callbacks
 -export([init/1,
          prepare/2,
+         prepare/3,
          not_full/2,
          full/2,
          all_received/2,
@@ -42,6 +43,7 @@
                 md5 :: binary(),
                 reply_pid :: pid(),
                 mani_pid :: pid(),
+                riakc_pid :: pid(),
                 timer_ref :: term(),
                 bucket :: binary(),
                 key :: binary(),
@@ -68,8 +70,18 @@
 %% @spec start_link() -> {ok, Pid} | ignore | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
-start_link(Bucket, Key, ContentLength, ContentType, Metadata, BlockSize, Acl, Timeout, Caller) ->
-    Args = [Bucket, Key, ContentLength, ContentType, Metadata, BlockSize, Acl, Timeout, Caller],
+start_link(Bucket,
+           Key,
+           ContentLength,
+           ContentType,
+           Metadata,
+           BlockSize,
+           Acl,
+           Timeout,
+           Caller,
+           RiakPid) ->
+    Args = [Bucket, Key, ContentLength, ContentType,
+            Metadata, BlockSize, Acl, Timeout, Caller, RiakPid],
     gen_fsm:start_link(?MODULE, Args, []).
 
 augment_data(Pid, Data) ->
@@ -95,7 +107,8 @@ block_written(Pid, BlockID) ->
 %% so that I can be thinking about how it
 %% might be implemented. Does it actually
 %% make things more confusing?
-init([Bucket, Key, ContentLength, ContentType, Metadata, BlockSize, Acl, Timeout, Caller]) ->
+init([Bucket, Key, ContentLength, ContentType,
+      Metadata, BlockSize, Acl, Timeout, Caller, RiakPid]) ->
     %% We need to do this (the monitor) for two reasons
     %% 1. We're started through a supervisor, so the
     %%    proc that actually intends to start us isn't
@@ -114,60 +127,48 @@ init([Bucket, Key, ContentLength, ContentType, Metadata, BlockSize, Acl, Timeout
                          acl=Acl,
                          content_length=ContentLength,
                          content_type=ContentType,
+                         riakc_pid=RiakPid,
                          timeout=Timeout},
                      0}.
+%% init([test, Bucket, Key, ContentLength, BlockSize]) ->
+%%     {ok, prepare, State1, 0} = init([Bucket, Key, self(), pid]),
+
+%%     %% %% purposely have the timeout happen
+%%     %% %% so that we get called in the prepare
+%%     %% %% state
+%%     %% {ok, ReaderPid} =
+%%     %%     riak_moss_dummy_reader:start_link([self(),
+%%     %%                                        Bucket,
+%%     %%                                        Key,
+%%     %%                                        ContentLength,
+%%     %%                                        BlockSize]),
+%%     %% link(ReaderPid),
+%%     {ok, Manifest} = riak_moss_dummy_reader:get_manifest(ReaderPid),
+%%     {ok, waiting_value, State1#state{free_readers=[ReaderPid],
+%%                                      manifest=Manifest,
+%%                                      test=true}}.
 
 %%--------------------------------------------------------------------
 %%
 %%--------------------------------------------------------------------
-prepare(timeout, State=#state{bucket=Bucket,
-                              key=Key,
-                              block_size=BlockSize,
-                              content_length=ContentLength,
-                              content_type=ContentType,
-                              metadata=Metadata,
-                              acl=Acl}) ->
+prepare(timeout, State) ->
+    NewState = prepare(State),
+    {next_state, not_full, NewState}.
 
-    %% 1. start the manifest_fsm proc
-    {ok, ManiPid} = riak_moss_manifest_fsm:start_link(Bucket, Key),
-    %% TODO:
-    %% this shouldn't be hardcoded.
-    %% Also, use poolboy :)
-    Md5 = crypto:md5_init(),
-    WriterPids = start_writer_servers(riak_moss_lfs_utils:put_concurrency()),
-    FreeWriters = ordsets:from_list(WriterPids),
-    %% TODO:
-    %% we should get this
-    %% from the app.config
-    MaxBufferSize = (riak_moss_lfs_utils:put_fsm_buffer_size_factor() * BlockSize),
-    UUID = druuid:v4(),
-    Manifest =
-    riak_moss_lfs_utils:new_manifest(Bucket,
-                                     Key,
-                                     UUID,
-                                     ContentLength,
-                                     ContentType,
-                                     %% we don't know the md5 yet
-                                     undefined,
-                                     Metadata,
-                                     BlockSize,
-                                     Acl),
-    NewManifest = Manifest#lfs_manifest_v2{write_start_time=erlang:now()},
-
-    %% TODO:
-    %% this time probably
-    %% shouldn't be hardcoded,
-    %% and if it is, what should
-    %% it be?
-    {ok, TRef} = timer:send_interval(60000, self(), save_manifest),
-    riak_moss_manifest_fsm:add_new_manifest(ManiPid, NewManifest),
-    {next_state, not_full, State#state{manifest=NewManifest,
-                                       md5=Md5,
-                                       timer_ref=TRef,
-                                       mani_pid=ManiPid,
-                                       max_buffer_size=MaxBufferSize,
-                                       all_writer_pids=WriterPids,
-                                       free_writers=FreeWriters}}.
+prepare({augment_data, NewData}, From, State) ->
+    #state{content_length=CLength,
+           num_bytes_received=NumBytesReceived,
+           current_buffer_size=CurrentBufferSize,
+           max_buffer_size=MaxBufferSize} = NewState = prepare(State),
+    case handle_chunk(CLength, NumBytesReceived, size(NewData),
+                      CurrentBufferSize, MaxBufferSize) of
+        accept ->
+            handle_accept_chunk(NewData, NewState);
+        backpressure ->
+            handle_backpressure_for_chunk(NewData, From, NewState);
+        last_chunk ->
+            handle_receiving_last_chunk(NewData, NewState)
+    end.
 
 %% when a block is written
 %% and we were already not full,
@@ -307,6 +308,57 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
+%% @doc Handle expensive initialization operations required for the put_fsm.
+-spec prepare(#state{}) -> #state{}.
+prepare(State=#state{bucket=Bucket,
+                     key=Key,
+                     block_size=BlockSize,
+                     content_length=ContentLength,
+                     content_type=ContentType,
+                     metadata=Metadata,
+                     acl=Acl,
+                     riakc_pid=RiakPid}) ->
+    %% 1. start the manifest_fsm proc
+    {ok, ManiPid} = riak_moss_manifest_fsm:start_link(Bucket, Key, RiakPid),
+    %% TODO:
+    %% this shouldn't be hardcoded.
+    %% Also, use poolboy :)
+    Md5 = crypto:md5_init(),
+    WriterPids = start_writer_servers(RiakPid, riak_moss_lfs_utils:put_concurrency()),
+    FreeWriters = ordsets:from_list(WriterPids),
+    %% TODO:
+    %% we should get this
+    %% from the app.config
+    MaxBufferSize = (riak_moss_lfs_utils:put_fsm_buffer_size_factor() * BlockSize),
+    UUID = druuid:v4(),
+    Manifest =
+    riak_moss_lfs_utils:new_manifest(Bucket,
+                                     Key,
+                                     UUID,
+                                     ContentLength,
+                                     ContentType,
+                                     %% we don't know the md5 yet
+                                     undefined,
+                                     Metadata,
+                                     BlockSize,
+                                     Acl),
+    NewManifest = Manifest#lfs_manifest_v2{write_start_time=erlang:now()},
+
+    %% TODO:
+    %% this time probably
+    %% shouldn't be hardcoded,
+    %% and if it is, what should
+    %% it be?
+    {ok, TRef} = timer:send_interval(60000, self(), save_manifest),
+    riak_moss_manifest_fsm:add_new_manifest(ManiPid, NewManifest),
+    State#state{manifest=NewManifest,
+                md5=Md5,
+                timer_ref=TRef,
+                mani_pid=ManiPid,
+                max_buffer_size=MaxBufferSize,
+                all_writer_pids=WriterPids,
+                free_writers=FreeWriters}.
+
 handle_chunk(ContentLength, NumBytesReceived, NewDataSize, CurrentBufferSize, MaxBufferSize) ->
     if
         (NumBytesReceived + NewDataSize) == ContentLength ->
@@ -413,14 +465,17 @@ state_from_block_written(BlockID, WriterPid, State=#state{unacked_writes=Unacked
 %%      of riak_moss_block_server
 %%      processes and return a list
 %%      of their pids
--spec start_writer_servers(pos_integer()) -> list(pid()).
-start_writer_servers(NumServers) ->
+-spec start_writer_servers(pid(), pos_integer()) -> list(pid()).
+start_writer_servers(RiakPid, NumServers) ->
     %% TODO:
     %% doesn't handle
     %% failure at all
-    [Pid || {ok, Pid} <-
-        [riak_moss_block_server:start_link() ||
-            _ <- lists:seq(1, NumServers)]].
+    {ok, WriterPid} = riak_moss_block_server:start_link(RiakPid),
+    RestWriterPids =
+        [Pid || {ok, Pid} <-
+                    [riak_moss_block_server:start_link() ||
+                        _ <- lists:seq(1, NumServers-1)]],
+    [WriterPid | RestWriterPids].
 
 handle_accept_chunk(NewData, State=#state{buffer_queue=BufferQueue,
                                           remainder_data=RemainderData,

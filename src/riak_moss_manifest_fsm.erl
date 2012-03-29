@@ -19,7 +19,7 @@
 -endif.
 
 %% API
--export([start_link/2,
+-export([start_link/3,
          get_active_manifest/1,
          add_new_manifest/2,
          update_manifest/2,
@@ -31,7 +31,6 @@
 -export([init/1,
 
          %% async
-         prepare/2,
          waiting_command/2,
          waiting_update_command/2,
 
@@ -76,8 +75,8 @@
 %% @spec start_link() -> {ok, Pid} | ignore | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
-start_link(Bucket, Key) ->
-    gen_fsm:start_link(?MODULE, [Bucket, Key], []).
+start_link(Bucket, Key, RiakPid) ->
+    gen_fsm:start_link(?MODULE, [Bucket, Key, RiakPid], []).
 
 get_active_manifest(Pid) ->
     gen_fsm:sync_send_event(Pid, get_active_manifest, infinity).
@@ -115,12 +114,11 @@ stop(Pid) ->
 %%                     {stop, StopReason}
 %% @end
 %%--------------------------------------------------------------------
-init([Bucket, Key]) ->
+init([Bucket, Key, RiakPid]) ->
     process_flag(trap_exit, true),
-    %% purposely have the timeout happen
-    %% so that we get called in the prepare
-    %% state
-    {ok, prepare, #state{bucket=Bucket, key=Key}, 0};
+    {ok, waiting_command, #state{bucket=Bucket,
+                                 key=Key,
+                                 riakc_pid=RiakPid}};
 init([test, Bucket, Key]) ->
     %% skip the prepare phase
     %% and jump right into waiting command,
@@ -128,31 +126,6 @@ init([test, Bucket, Key]) ->
     %% gen_server here
     {ok, Pid} = riakc_pb_socket_fake:start_link(),
     {ok, waiting_command, #state{bucket=Bucket, key=Key, riakc_pid=Pid}}.
-
-%%--------------------------------------------------------------------
-%% @private
-%% @doc
-%% There should be one instance of this function for each possible
-%% state name. Whenever a gen_fsm receives an event sent using
-%% gen_fsm:send_event/2, the instance of this function with the same
-%% name as the current state name StateName is called to handle
-%% the event. It is also called if a timeout occurs.
-%%
-%% @spec state_name(Event, State) ->
-%%                   {next_state, NextStateName, NextState} |
-%%                   {next_state, NextStateName, NextState, Timeout} |
-%%                   {stop, Reason, NewState}
-%% @end
-%%--------------------------------------------------------------------
-prepare(timeout, State) ->
-    case riak_moss_utils:riak_connection() of
-        {ok, RiakPid} ->
-            {next_state, waiting_command, State#state{riakc_pid=RiakPid}};
-        {error, Reason} ->
-            lager:error("Failed to establish connection to Riak. Reason: ~p",
-                        [Reason]),
-            {stop, riak_connect_failed, State}
-    end.
 
 %% This clause is for adding a new
 %% manifest that doesn't exist yet.
@@ -205,48 +178,12 @@ waiting_update_command({update_manifest, Manifest}, State=#state{riakc_pid=Riakc
 %%                   {stop, Reason, Reply, NewState}
 %% @end
 %%--------------------------------------------------------------------
-waiting_command(get_active_manifest, _From, State=#state{riakc_pid=RiakcPid,
-                                                         bucket=Bucket,
-                                                         key=Key}) ->
-    %% Retrieve the (resolved) value
-    %% from Riak and return the active
-    %% manifest, if there is one. Then
-    %% stash the riak_object in the state
-    %% so that the next time we write
-    %% we write with the correct vector
-    %% clock.
-    case get_manifests(RiakcPid, Bucket, Key) of
-        {ok, RiakObject, Resolved} ->
-            Reply = case riak_moss_manifest:active_manifest(Resolved) of
-                {ok, _Active}=ActiveReply ->
-                    ActiveReply;
-                {error, no_active_manifest} ->
-                    {error, notfound}
-            end,
-            NewState = State#state{riak_object=RiakObject, manifests=Resolved},
-            {reply, Reply, waiting_update_command, NewState};
-        {error, notfound}=NotFound ->
-            {reply, NotFound, waiting_update_command, State}
-    end;
-waiting_command(mark_active_as_pending_delete, _From, State=#state{riakc_pid=RiakcPid,
-                                                                   bucket=Bucket,
-                                                                   key=Key}) ->
-    case get_manifests(RiakcPid, Bucket, Key) of
-        {ok, RiakObject, Resolved} ->
-            Marked = orddict:map(fun(_Key, Value) ->
-                        if
-                            Value#lfs_manifest_v2.state == active ->
-                                Value#lfs_manifest_v2{state=pending_delete,
-                                                      delete_marked_time=erlang:now()};
-                            true ->
-                                Value
-                        end end, Resolved),
-            NewRiakObject = riakc_obj:update_value(RiakObject, term_to_binary(Marked)),
-            riakc_pb_socket:put(RiakcPid, NewRiakObject),
-            {stop, normal, ok, State};
-        {error, notfound}=NotFound ->
-            {stop, normal, NotFound, State}
-    end.
+waiting_command(get_active_manifest, _From, State) ->
+    {Reply, NewState} = active_manifest(State),
+    {reply, Reply, waiting_update_command, NewState};
+waiting_command(mark_active_as_pending_delete, _From, State) ->
+    Reply = set_active_manifest_pending_delete(State),
+    {stop, normal, Reply, State}.
 
 waiting_update_command({update_manifest_with_confirmation, Manifest}, _From,
                                             State=#state{riakc_pid=RiakcPid,
@@ -270,8 +207,6 @@ waiting_update_command({update_manifest_with_confirmation, Manifest}, _From,
     Reply = riakc_pb_socket:put(RiakcPid, RiakObject),
     {reply, Reply, waiting_update_command, State#state{riak_object=undefined,
                                                        manifests=undefined}}.
-
-
 
 %%--------------------------------------------------------------------
 %% @private
@@ -336,8 +271,7 @@ handle_info(_Info, StateName, State) ->
 %% @spec terminate(Reason, StateName, State) -> void()
 %% @end
 %%--------------------------------------------------------------------
-terminate(_Reason, _StateName, #state{riakc_pid=RiakcPid}) ->
-    riak_moss_utils:close_riak_connection(RiakcPid),
+terminate(_Reason, _StateName, _State) ->
     ok.
 
 %%--------------------------------------------------------------------
@@ -355,6 +289,32 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
+
+%% @doc Get the active manifest for an object.
+-spec active_manifest(#state{}) -> {lfs_manifest(), #state{}}.
+active_manifest(State=#state{riakc_pid=RiakcPid,
+                            bucket=Bucket,
+                            key=Key}) ->
+    %% Retrieve the (resolved) value
+    %% from Riak and return the active
+    %% manifest, if there is one. Then
+    %% stash the riak_object in the state
+    %% so that the next time we write
+    %% we write with the correct vector
+    %% clock.
+    case get_manifests(RiakcPid, Bucket, Key) of
+        {ok, RiakObject, Resolved} ->
+            Reply = case riak_moss_manifest:active_manifest(Resolved) of
+                {ok, _Active}=ActiveReply ->
+                    ActiveReply;
+                {error, no_active_manifest} ->
+                    {error, notfound}
+            end,
+            NewState = State#state{riak_object=RiakObject, manifests=Resolved},
+            {Reply, NewState};
+        {error, notfound}=NotFound ->
+            {NotFound, State}
+    end.
 
 %% @doc
 -spec get_manifests(pid(), binary(), binary()) ->
@@ -394,6 +354,28 @@ get_and_update(RiakcPid, Manifest, Bucket, Key) ->
     %% anything to make sure
     %% this call succeeded
     riakc_pb_socket:put(RiakcPid, ObjectToWrite).
+
+%% @doc Set the active manifest to the pending_delete state.
+-spec set_active_manifest_pending_delete(#state{}) -> ok | {error, notfound}.
+set_active_manifest_pending_delete(#state{riakc_pid=RiakcPid,
+                                          bucket=Bucket,
+                                          key=Key}) ->
+    case get_manifests(RiakcPid, Bucket, Key) of
+        {ok, RiakObject, Resolved} ->
+            Marked = orddict:map(fun(_Key, Value) ->
+                        if
+                            Value#lfs_manifest_v2.state == active ->
+                                Value#lfs_manifest_v2{state=pending_delete,
+                                                      delete_marked_time=erlang:now()};
+                            true ->
+                                Value
+                        end end, Resolved),
+            NewRiakObject = riakc_obj:update_value(RiakObject, term_to_binary(Marked)),
+            riakc_pb_socket:put(RiakcPid, NewRiakObject),
+            ok;
+        {error, notfound}=NotFound ->
+            NotFound
+    end.
 
 %% ===================================================================
 %% Test API
