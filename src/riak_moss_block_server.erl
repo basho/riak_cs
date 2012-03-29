@@ -12,6 +12,7 @@
 
 %% API
 -export([start_link/0,
+         start_link/1,
          get_block/5,
          put_block/6,
          delete_block/5,
@@ -27,7 +28,8 @@
 
 -define(SERVER, ?MODULE).
 
--record(state, {riakc_pid :: pid()}).
+-record(state, {riakc_pid :: pid(),
+                close_riak_connection=true :: boolean()}).
 
 %%%===================================================================
 %%% API
@@ -42,6 +44,9 @@
 %%--------------------------------------------------------------------
 start_link() ->
     gen_server:start_link(?MODULE, [], []).
+
+start_link(_RiakPid) ->
+    gen_server:start_link(?MODULE, [_RiakPid], []).
 
 -spec get_block(pid(), binary(), binary(), binary(), pos_integer()) -> ok.
 get_block(Pid, Bucket, Key, UUID, BlockNumber) ->
@@ -73,6 +78,10 @@ stop(Pid) ->
 %%                     {stop, Reason}
 %% @end
 %%--------------------------------------------------------------------
+init([RiakPid]) ->
+    process_flag(trap_exit, true),
+    {ok, #state{riakc_pid=RiakPid,
+                close_riak_connection=false}};
 init([]) ->
     process_flag(trap_exit, true),
     case riak_moss_utils:riak_connection() of
@@ -172,9 +181,15 @@ handle_info(_Info, State) ->
 %% @spec terminate(Reason, State) -> void()
 %% @end
 %%--------------------------------------------------------------------
-terminate(_Reason, #state{riakc_pid=RiakcPid}) ->
-    riak_moss_utils:close_riak_connection(RiakcPid),
-    ok.
+terminate(_Reason, #state{riakc_pid=RiakcPid,
+                          close_riak_connection=CloseConn}) ->
+    case CloseConn of
+        true ->
+            riak_moss_utils:close_riak_connection(RiakcPid),
+            ok;
+        false ->
+            ok
+    end.
 
 %%--------------------------------------------------------------------
 %% @private

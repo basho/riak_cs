@@ -19,7 +19,7 @@
 -endif.
 
 %% API
--export([start_link/2,
+-export([start_link/3,
          get_active_manifest/1,
          add_new_manifest/2,
          update_manifest/2,
@@ -31,8 +31,6 @@
 -export([init/1,
 
          %% async
-         prepare/2,
-         prepare/3,
          waiting_command/2,
          waiting_update_command/2,
 
@@ -77,8 +75,8 @@
 %% @spec start_link() -> {ok, Pid} | ignore | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
-start_link(Bucket, Key) ->
-    gen_fsm:start_link(?MODULE, [Bucket, Key], []).
+start_link(Bucket, Key, RiakPid) ->
+    gen_fsm:start_link(?MODULE, [Bucket, Key, RiakPid], []).
 
 get_active_manifest(Pid) ->
     gen_fsm:sync_send_event(Pid, get_active_manifest, infinity).
@@ -116,12 +114,11 @@ stop(Pid) ->
 %%                     {stop, StopReason}
 %% @end
 %%--------------------------------------------------------------------
-init([Bucket, Key]) ->
+init([Bucket, Key, RiakPid]) ->
     process_flag(trap_exit, true),
-    %% purposely have the timeout happen
-    %% so that we get called in the prepare
-    %% state
-    {ok, prepare, #state{bucket=Bucket, key=Key}, 0};
+    {ok, waiting_command, #state{bucket=Bucket,
+                                 key=Key,
+                                 riakc_pid=RiakPid}};
 init([test, Bucket, Key]) ->
     %% skip the prepare phase
     %% and jump right into waiting command,
@@ -129,57 +126,6 @@ init([test, Bucket, Key]) ->
     %% gen_server here
     {ok, Pid} = riakc_pb_socket_fake:start_link(),
     {ok, waiting_command, #state{bucket=Bucket, key=Key, riakc_pid=Pid}}.
-
-%%--------------------------------------------------------------------
-%% @private
-%% @doc
-%% There should be one instance of this function for each possible
-%% state name. Whenever a gen_fsm receives an event sent using
-%% gen_fsm:send_event/2, the instance of this function with the same
-%% name as the current state name StateName is called to handle
-%% the event. It is also called if a timeout occurs.
-%%
-%% @spec state_name(Event, State) ->
-%%                   {next_state, NextStateName, NextState} |
-%%                   {next_state, NextStateName, NextState, Timeout} |
-%%                   {stop, Reason, NewState}
-%% @end
-%%--------------------------------------------------------------------
-prepare(timeout, State) ->
-    case prepare(State) of
-        {ok, NewState} ->
-            {next_state, waiting_command, NewState};
-        {error, Reason} ->
-            {stop, Reason, State}
-    end;
-prepare({add_new_manifest, Manifest}, State) ->
-    case prepare(State) of
-        {ok, NewState} ->
-            #state{riakc_pid=RiakcPid,
-                   bucket=Bucket,
-                   key=Key} = NewState,
-            get_and_update(RiakcPid, Manifest, Bucket, Key),
-            {next_state, waiting_update_command, NewState};
-        {error, Reason} ->
-            {stop, Reason, State}
-    end.
-
-prepare(get_active_manifest, _From, State) ->
-    case prepare(State) of
-        {ok, NewState0} ->
-            {Reply, NewState} = active_manifest(NewState0),
-            {reply, Reply, waiting_update_command, NewState};
-        {error, Reason} ->
-            {stop, Reason, State}
-    end;
-prepare(mark_active_as_pending_delete, _From, State) ->
-    case prepare(State) of
-        {ok, NewState} ->
-            Reply = set_active_manifest_pending_delete(NewState),
-            {stop, normal, Reply, NewState};
-        {error, Reason} ->
-            {stop, Reason, State}
-    end.
 
 %% This clause is for adding a new
 %% manifest that doesn't exist yet.
@@ -325,8 +271,7 @@ handle_info(_Info, StateName, State) ->
 %% @spec terminate(Reason, StateName, State) -> void()
 %% @end
 %%--------------------------------------------------------------------
-terminate(_Reason, _StateName, #state{riakc_pid=RiakcPid}) ->
-    riak_moss_utils:close_riak_connection(RiakcPid),
+terminate(_Reason, _StateName, _State) ->
     ok.
 
 %%--------------------------------------------------------------------
@@ -409,18 +354,6 @@ get_and_update(RiakcPid, Manifest, Bucket, Key) ->
     %% anything to make sure
     %% this call succeeded
     riakc_pb_socket:put(RiakcPid, ObjectToWrite).
-
-%% @doc Establish a connection to riak.
--spec prepare(#state{}) -> {ok, #state{}} | {error, riak_connect_failed}.
-prepare(State) ->
-    case riak_moss_utils:riak_connection() of
-        {ok, RiakPid} ->
-            {ok, State#state{riakc_pid=RiakPid}};
-        {error, Reason} ->
-            lager:error("Failed to establish connection to Riak. Reason: ~p",
-                        [Reason]),
-            {error, riak_connect_failed}
-    end.
 
 %% @doc Set the active manifest to the pending_delete state.
 -spec set_active_manifest_pending_delete(#state{}) -> ok | {error, notfound}.

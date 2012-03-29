@@ -15,7 +15,8 @@
          allowed_methods/2,
          content_types_accepted/2,
          accept_body/2,
-         delete_resource/2]).
+         delete_resource/2,
+         finish_request/2]).
 
 -include("riak_moss.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
@@ -42,7 +43,8 @@ malformed_request(RD, Ctx) ->
 forbidden(RD, Ctx) ->
     riak_moss_wm_utils:find_and_auth_user(RD, Ctx, fun check_permission/2).
 
-check_permission(RD, #context{user=User}=Ctx) ->
+check_permission(RD, #context{user=User,
+                              riakc_pid=RiakPid}=Ctx) ->
     Method = wrq:method(RD),
     RequestedAccess =
         riak_moss_acl_utils:requested_access(Method, wrq:req_qs(RD)),
@@ -78,7 +80,7 @@ check_permission(RD, #context{user=User}=Ctx) ->
                     %% this operation is allowed, but we need to get
                     %% the owner's record, and log the access against
                     %% them instead of the actor
-                    shift_to_owner(RD, PermCtx, OwnerId);
+                    shift_to_owner(RD, PermCtx, OwnerId, RiakPid);
                 false ->
                     case User of
                         undefined ->
@@ -99,20 +101,23 @@ check_permission(RD, #context{user=User}=Ctx) ->
 %% riak_moss_acl} function to check permissions for this request.
 check_grants(#context{user=undefined,
                       bucket=Bucket,
-                      requested_perm=RequestedAccess}) ->
-    riak_moss_acl:anonymous_bucket_access(Bucket, RequestedAccess);
+                      requested_perm=RequestedAccess,
+                      riakc_pid=RiakPid}) ->
+    riak_moss_acl:anonymous_bucket_access(Bucket, RequestedAccess, RiakPid);
 check_grants(#context{user=User,
                       bucket=Bucket,
-                      requested_perm=RequestedAccess}) ->
+                      requested_perm=RequestedAccess,
+                      riakc_pid=RiakPid}) ->
     riak_moss_acl:bucket_access(Bucket,
                                 RequestedAccess,
-                                User?MOSS_USER.canonical_id).
+                                User?MOSS_USER.canonical_id,
+                                RiakPid).
 
 %% @doc The {@link forbidden/2} decision passed, but the bucket
 %% belongs to someone else.  Switch to it if the owner's record can be
 %% retrieved.
-shift_to_owner(RD, Ctx, OwnerId) ->
-    case riak_moss_utils:get_user(list_to_binary(OwnerId)) of
+shift_to_owner(RD, Ctx, OwnerId, RiakPid) ->
+    case riak_moss_utils:get_user(list_to_binary(OwnerId), RiakPid) of
         {ok, {Owner, OwnerVClock}} ->
             AccessRD = riak_moss_access_logger:set_user(Owner, RD),
             {false, AccessRD, Ctx#context{user=Owner,
@@ -156,14 +161,15 @@ content_types_accepted(RD, Ctx) ->
                     {iolist(), term(), term()}.
 to_xml(RD, Ctx=#context{user=User,
                         bucket=Bucket,
-                        requested_perm='READ'}) ->
+                        requested_perm='READ',
+                        riakc_pid=RiakPid}) ->
     case [B || B <- riak_moss_utils:get_buckets(User),
                B?MOSS_BUCKET.name =:= Bucket] of
         [] ->
             riak_moss_s3_response:api_error(no_such_bucket, RD, Ctx);
         [BucketRecord] ->
             Prefix = list_to_binary(wrq:get_qs_value("prefix", "", RD)),
-            case riak_moss_utils:get_keys_and_manifests(Bucket, Prefix) of
+            case riak_moss_utils:get_keys_and_manifests(Bucket, Prefix, RiakPid) of
                 {ok, KeyObjPairs} ->
                     riak_moss_s3_response:list_bucket_response(User,
                                                                BucketRecord,
@@ -175,8 +181,9 @@ to_xml(RD, Ctx=#context{user=User,
             end
     end;
 to_xml(RD, Ctx=#context{bucket=Bucket,
-                        requested_perm='READ_ACP'}) ->
-    case riak_moss_acl:bucket_acl(Bucket) of
+                        requested_perm='READ_ACP',
+                        riakc_pid=RiakPid}) ->
+    case riak_moss_acl:bucket_acl(Bucket, RiakPid) of
         {ok, Acl} ->
             {riak_moss_acl_utils:acl_to_xml(Acl), RD, Ctx};
         {error, Reason} ->
@@ -187,7 +194,8 @@ to_xml(RD, Ctx=#context{bucket=Bucket,
 accept_body(RD, Ctx=#context{user=User,
                              user_vclock=VClock,
                              bucket=Bucket,
-                             requested_perm='WRITE_ACP'}) ->
+                             requested_perm='WRITE_ACP',
+                             riakc_pid=RiakPid}) ->
     Body = binary_to_list(wrq:req_body(RD)),
     case Body of
         [] ->
@@ -205,7 +213,8 @@ accept_body(RD, Ctx=#context{user=User,
     case riak_moss_utils:set_bucket_acl(User,
                                         VClock,
                                         Bucket,
-                                        ACL) of
+                                        ACL,
+                                        RiakPid) of
         ok ->
             {{halt, 200}, RD, Ctx};
         {error, Reason} ->
@@ -213,7 +222,8 @@ accept_body(RD, Ctx=#context{user=User,
     end;
 accept_body(RD, Ctx=#context{user=User,
                              user_vclock=VClock,
-                             bucket=Bucket}) ->
+                             bucket=Bucket,
+                             riakc_pid=RiakPid}) ->
     %% Check for `x-amz-acl' header to support
     %% non-default ACL at bucket creation time.
     ACL = riak_moss_acl_utils:canned_acl(
@@ -225,7 +235,8 @@ accept_body(RD, Ctx=#context{user=User,
     case riak_moss_utils:create_bucket(User,
                                        VClock,
                                        Bucket,
-                                       ACL) of
+                                       ACL,
+                                       RiakPid) of
         ok ->
             {{halt, 200}, RD, Ctx};
         ignore ->
@@ -238,12 +249,18 @@ accept_body(RD, Ctx=#context{user=User,
 -spec delete_resource(term(), term()) -> boolean().
 delete_resource(RD, Ctx=#context{user=User,
                                  user_vclock=VClock,
-                                 bucket=Bucket}) ->
+                                 bucket=Bucket,
+                                 riakc_pid=RiakPid}) ->
     case riak_moss_utils:delete_bucket(User,
                                        VClock,
-                                       Bucket) of
+                                       Bucket,
+                                       RiakPid) of
         ok ->
             {true, RD, Ctx};
         {error, Reason} ->
             riak_moss_s3_response:api_error(Reason, RD, Ctx)
     end.
+
+finish_request(RD, Ctx=#context{riakc_pid=RiakPid}) ->
+    riak_moss_utils:close_riak_connection(RiakPid),
+    {true, RD, Ctx}.

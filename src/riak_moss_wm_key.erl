@@ -15,7 +15,8 @@
          content_types_accepted/2,
          accept_body/2,
          delete_resource/2,
-         valid_entity_length/2]).
+         valid_entity_length/2,
+         finish_request/2]).
 
 -include("riak_moss.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
@@ -83,6 +84,7 @@ check_permission('HEAD', RD, Ctx=#key_context{manifest=notfound}) ->
 check_permission(Method, RD, Ctx=#key_context{bucket=Bucket,
                                        context=InnerCtx,
                                        manifest=Mfst}) ->
+    RiakPid = InnerCtx#context.riakc_pid,
     RequestedAccess =
         riak_moss_acl_utils:requested_access(Method,
                                              wrq:req_qs(RD)),
@@ -101,7 +103,8 @@ check_permission(Method, RD, Ctx=#key_context{bucket=Bucket,
     case riak_moss_acl:object_access(Bucket,
                                      ObjectAcl,
                                      RequestedAccess,
-                                     CanonicalId) of
+                                     CanonicalId,
+                                     RiakPid) of
         true ->
             %% actor is the owner
             AccessRD = riak_moss_access_logger:set_user(User, RD),
@@ -215,10 +218,14 @@ produce_body(RD, #key_context{get_fsm_pid=GetFsmPid, manifest=Mfst}=Ctx) ->
 
 %% @doc Callback for deleting an object.
 -spec delete_resource(term(), term()) -> boolean().
-delete_resource(RD, Ctx=#key_context{bucket=Bucket, key=Key, get_fsm_pid=GetFsmPid}) ->
+delete_resource(RD, Ctx=#key_context{bucket=Bucket,
+                                     key=Key,
+                                     get_fsm_pid=GetFsmPid,
+                                     context=InnerCtx}) ->
     riak_moss_get_fsm:stop(GetFsmPid),
     BinKey = list_to_binary(Key),
-    riak_moss_delete_marker:delete(Bucket, BinKey),
+    #context{riakc_pid=RiakPid} = InnerCtx,
+    riak_moss_delete_marker:delete(Bucket, BinKey, RiakPid),
     {true, RD, Ctx}.
 
 -spec content_types_accepted(term(), term()) ->
@@ -260,6 +267,7 @@ accept_body(RD, Ctx=#key_context{bucket=Bucket,
                                  owner=Owner,
                                  get_fsm_pid=GetFsmPid,
                                  context=#context{user=User,
+                                                  riakc_pid=RiakPid,
                                                   requested_perm='WRITE_ACP'}}) ->
 
 
@@ -279,7 +287,7 @@ accept_body(RD, Ctx=#key_context{bucket=Bucket,
             Acl = riak_moss_acl_utils:acl_from_xml(Body, User?MOSS_USER.key_id)
     end,
     %% Write new ACL to active manifest
-    case riak_moss_utils:set_object_acl(Bucket, Key, Mfst, Acl) of
+    case riak_moss_utils:set_object_acl(Bucket, Key, Mfst, Acl, RiakPid) of
         ok ->
             {{halt, 200}, RD, Ctx};
         {error, Reason} ->
@@ -291,7 +299,8 @@ accept_body(RD, Ctx=#key_context{bucket=Bucket,
                                  size=Size,
                                  get_fsm_pid=GetFsmPid,
                                  owner=Owner,
-                                 context=#context{user=User}}) ->
+                                 context=#context{user=User,
+                                                  riakc_pid=RiakPid}}) ->
     riak_moss_get_fsm:stop(GetFsmPid),
     %% TODO:
     %% the Metadata
@@ -308,7 +317,7 @@ accept_body(RD, Ctx=#key_context{bucket=Bucket,
              User?MOSS_USER.key_id},
             Owner),
     Args = [Bucket, list_to_binary(Key), Size, list_to_binary(ContentType),
-        Metadata, BlockSize, ACL, timer:seconds(60), self()],
+        Metadata, BlockSize, ACL, timer:seconds(60), self(), RiakPid],
     {ok, Pid} = riak_moss_put_fsm_sup:start_put_fsm(node(), Args),
     accept_streambody(RD, Ctx, Pid, wrq:stream_req_body(RD, riak_moss_lfs_utils:block_size())).
 
@@ -332,3 +341,8 @@ finalize_request(RD, #key_context{size=S}=Ctx, Pid) ->
     {ok, Manifest} = riak_moss_put_fsm:finalize(Pid),
     ETag = "\"" ++ riak_moss_utils:binary_to_hexlist(Manifest#lfs_manifest_v2.content_md5) ++ "\"",
     {true, wrq:set_resp_header("ETag",  ETag, AccessRD), Ctx}.
+
+finish_request(RD, KeyCtx=#key_context{context=InnerCtx}) ->
+    #context{riakc_pid=RiakPid} = InnerCtx,
+    riak_moss_utils:close_riak_connection(RiakPid),
+    {true, RD, KeyCtx}.

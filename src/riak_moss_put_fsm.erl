@@ -13,7 +13,7 @@
 -include("riak_moss.hrl").
 
 %% API
--export([start_link/9,
+-export([start_link/10,
          augment_data/2,
          block_written/2,
          finalize/1]).
@@ -43,6 +43,7 @@
                 md5 :: binary(),
                 reply_pid :: pid(),
                 mani_pid :: pid(),
+                riakc_pid :: pid(),
                 timer_ref :: term(),
                 bucket :: binary(),
                 key :: binary(),
@@ -69,8 +70,18 @@
 %% @spec start_link() -> {ok, Pid} | ignore | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
-start_link(Bucket, Key, ContentLength, ContentType, Metadata, BlockSize, Acl, Timeout, Caller) ->
-    Args = [Bucket, Key, ContentLength, ContentType, Metadata, BlockSize, Acl, Timeout, Caller],
+start_link(Bucket,
+           Key,
+           ContentLength,
+           ContentType,
+           Metadata,
+           BlockSize,
+           Acl,
+           Timeout,
+           Caller,
+           RiakPid) ->
+    Args = [Bucket, Key, ContentLength, ContentType,
+            Metadata, BlockSize, Acl, Timeout, Caller, RiakPid],
     gen_fsm:start_link(?MODULE, Args, []).
 
 augment_data(Pid, Data) ->
@@ -96,7 +107,8 @@ block_written(Pid, BlockID) ->
 %% so that I can be thinking about how it
 %% might be implemented. Does it actually
 %% make things more confusing?
-init([Bucket, Key, ContentLength, ContentType, Metadata, BlockSize, Acl, Timeout, Caller]) ->
+init([Bucket, Key, ContentLength, ContentType,
+      Metadata, BlockSize, Acl, Timeout, Caller, RiakPid]) ->
     %% We need to do this (the monitor) for two reasons
     %% 1. We're started through a supervisor, so the
     %%    proc that actually intends to start us isn't
@@ -115,6 +127,7 @@ init([Bucket, Key, ContentLength, ContentType, Metadata, BlockSize, Acl, Timeout
                          acl=Acl,
                          content_length=ContentLength,
                          content_type=ContentType,
+                         riakc_pid=RiakPid,
                          timeout=Timeout},
                      0}.
 
@@ -286,14 +299,15 @@ prepare(State=#state{bucket=Bucket,
                      content_length=ContentLength,
                      content_type=ContentType,
                      metadata=Metadata,
-                     acl=Acl}) ->
+                     acl=Acl,
+                     riakc_pid=RiakPid}) ->
     %% 1. start the manifest_fsm proc
-    {ok, ManiPid} = riak_moss_manifest_fsm:start_link(Bucket, Key),
+    {ok, ManiPid} = riak_moss_manifest_fsm:start_link(Bucket, Key, RiakPid),
     %% TODO:
     %% this shouldn't be hardcoded.
     %% Also, use poolboy :)
     Md5 = crypto:md5_init(),
-    WriterPids = start_writer_servers(riak_moss_lfs_utils:put_concurrency()),
+    WriterPids = start_writer_servers(RiakPid, riak_moss_lfs_utils:put_concurrency()),
     FreeWriters = ordsets:from_list(WriterPids),
     %% TODO:
     %% we should get this
@@ -434,14 +448,17 @@ state_from_block_written(BlockID, WriterPid, State=#state{unacked_writes=Unacked
 %%      of riak_moss_block_server
 %%      processes and return a list
 %%      of their pids
--spec start_writer_servers(pos_integer()) -> list(pid()).
-start_writer_servers(NumServers) ->
+-spec start_writer_servers(pid(), pos_integer()) -> list(pid()).
+start_writer_servers(RiakPid, NumServers) ->
     %% TODO:
     %% doesn't handle
     %% failure at all
-    [Pid || {ok, Pid} <-
-        [riak_moss_block_server:start_link() ||
-            _ <- lists:seq(1, NumServers)]].
+    {ok, WriterPid} = riak_moss_block_server:start_link(RiakPid),
+    RestWriterPids =
+        [Pid || {ok, Pid} <-
+                    [riak_moss_block_server:start_link() ||
+                        _ <- lists:seq(1, NumServers-1)]],
+    [WriterPid | RestWriterPids].
 
 handle_accept_chunk(NewData, State=#state{buffer_queue=BufferQueue,
                                           remainder_data=RemainderData,

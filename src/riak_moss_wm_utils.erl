@@ -25,18 +25,20 @@
 %% Public API
 %% ===================================================================
 
+service_available(RD, KeyCtx=#key_context{context=Ctx}) ->
+    case service_available(RD, Ctx) of
+        {true, UpdRD, UpdCtx} ->
+            {true, UpdRD, KeyCtx#key_context{context=UpdCtx}};
+        {false, _, _} ->
+            {false, RD, KeyCtx}
+    end;
 service_available(RD, Ctx) ->
-    %% TODO:
-    %% At some point in the future
-    %% this needs to check if we have
-    %% an alive Riak server. Although
-    %% maybe it makes more sense to be
-    %% optimistic and wait untl we actually
-    %% check the ACL?
-
-    %% For now we just always
-    %% return true
-    {true, RD, Ctx}.
+    case riak_moss_utils:riak_connection() of
+        {ok, Pid} ->
+            {true, RD, Ctx#context{riakc_pid=Pid}};
+        {error, _Reason} ->
+            {false, RD, Ctx}
+    end.
 
 %% @doc Parse an authentication header string and determine
 %%      the appropriate module to use to authenticate the request.
@@ -72,8 +74,9 @@ parse_auth_header(_, _) ->
 %% Riak lookup fails), a tuple suitable for returning from a
 %% webmachine resource's `forbidden/2' function is returned, with
 %% appropriate error message included.
-find_and_auth_user(RD, #context{auth_bypass=AuthBypass}=Ctx, Next) ->
-    case find_and_auth_user(RD, AuthBypass) of
+find_and_auth_user(RD, #context{auth_bypass=AuthBypass,
+                                riakc_pid=RiakPid}=Ctx, Next) ->
+    case validate_auth_header(RD, AuthBypass, RiakPid) of
         {ok, User, UserVclock} ->
             %% given keyid and signature matched, proceed
             NewCtx = Ctx#context{user=User,
@@ -93,10 +96,10 @@ find_and_auth_user(RD, #context{auth_bypass=AuthBypass}=Ctx, Next) ->
 %% @doc Look for an Authorization header in the request, and validate
 %% it if it exists.  Returns `{ok, User, UserVclock}' if validation
 %% succeeds, or `{error, KeyId, Reason}' if any step fails.
-find_and_auth_user(RD, AuthBypass) ->
+validate_auth_header(RD, AuthBypass, RiakPid) ->
     AuthHeader = wrq:get_req_header("authorization", RD),
     {AuthMod, KeyId, Signature} = parse_auth_header(AuthHeader, AuthBypass),
-    case riak_moss_utils:get_user(KeyId) of
+    case riak_moss_utils:get_user(KeyId, RiakPid) of
         {ok, {User, UserVclock}} ->
             Secret = User?MOSS_USER.key_secret,
             case AuthMod:authenticate(RD, Secret, Signature) of
@@ -134,10 +137,14 @@ deny_invalid_key(RD, Ctx) ->
 %%      it again if it's already in the
 %%      Ctx
 -spec ensure_doc(term()) -> term().
-ensure_doc(Ctx=#key_context{get_fsm_pid=undefined, bucket=Bucket, key=Key}) ->
+ensure_doc(Ctx=#key_context{get_fsm_pid=undefined,
+                            bucket=Bucket,
+                            key=Key,
+                            context=InnerCtx}) ->
+    RiakPid = InnerCtx#context.riakc_pid,
     %% start the get_fsm
     BinKey = list_to_binary(Key),
-    {ok, Pid} = riak_moss_get_fsm_sup:start_get_fsm(node(), [Bucket, BinKey, self()]),
+    {ok, Pid} = riak_moss_get_fsm_sup:start_get_fsm(node(), [Bucket, BinKey, self(), RiakPid]),
     Manifest = riak_moss_get_fsm:get_manifest(Pid),
     Ctx#key_context{get_fsm_pid=Pid, manifest=Manifest};
 ensure_doc(Ctx) -> Ctx.
