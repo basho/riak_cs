@@ -11,29 +11,25 @@
 %% Public API
 -export([binary_to_hexlist/1,
          close_riak_connection/1,
-         create_bucket/4,
+         create_bucket/5,
          create_user/2,
-         delete_bucket/3,
-         delete_object/2,
+         delete_bucket/4,
+         delete_object/3,
          from_bucket_name/1,
          get_admin_creds/0,
          get_buckets/1,
-         get_keys_and_manifests/2,
-         get_object/2,
+         get_keys_and_manifests/3,
          get_object/3,
-         get_user/1,
          get_user/2,
-         get_user_by_index/2,
+         get_user_by_index/3,
          get_user_index/3,
-         list_keys/1,
          list_keys/2,
          pow/2,
          pow/3,
-         put_object/4,
+         put_object/5,
          riak_connection/0,
-         riak_connection/2,
-         set_bucket_acl/4,
-         set_object_acl/4,
+         set_bucket_acl/5,
+         set_object_acl/5,
          to_bucket_name/2]).
 
 -include("riak_moss.hrl").
@@ -71,20 +67,21 @@ binary_to_hexlist(Bin) ->
 %% @doc Close a protobufs connection to the riak cluster.
 -spec close_riak_connection(pid()) -> ok.
 close_riak_connection(Pid) ->
-    riakc_pb_socket:stop(Pid).
+    poolboy:checkin(riakc_pool, Pid).
 
 %% @doc Create a bucket in the global namespace or return
 %% an error if it already exists.
--spec create_bucket(moss_user(), term(), binary(), acl()) ->
+-spec create_bucket(moss_user(), term(), binary(), acl(), pid()) ->
                            {ok, moss_user()} |
                            {ok, ignore} |
                            {error, term()}.
-create_bucket(User, VClock, Bucket, ACL) ->
+create_bucket(User, VClock, Bucket, ACL, RiakPid) ->
     serialized_bucket_op(Bucket,
                          ACL,
                          User,
                          VClock,
-                         create).
+                         create,
+                         RiakPid).
 
 %% @doc Create a new MOSS user
 -spec create_user(string(), string()) -> {ok, moss_user()}.
@@ -126,17 +123,17 @@ create_user(Name, Email) ->
     end.
 
 %% @doc Delete a bucket
--spec delete_bucket(moss_user(), term(), binary()) ->
+-spec delete_bucket(moss_user(), term(), binary(), pid()) ->
                            {ok, moss_user()} |
                            {ok, ignore} |
                            {error, term()}.
-delete_bucket(User, VClock, Bucket) ->
+delete_bucket(User, VClock, Bucket, RiakPid) ->
     CurrentBuckets = get_buckets(User),
 
     %% Buckets can only be deleted if they exist
     case bucket_exists(CurrentBuckets, Bucket) of
         true ->
-            case bucket_empty(Bucket) of
+            case bucket_empty(Bucket, RiakPid) of
                 true ->
                     AttemptDelete = true,
                     LocalError = ok;
@@ -154,22 +151,16 @@ delete_bucket(User, VClock, Bucket) ->
                                  ?ACL{},
                                  User,
                                  VClock,
-                                 delete);
+                                 delete,
+                                 RiakPid);
         false ->
             LocalError
     end.
 
 %% @doc Delete an object from Riak
--spec delete_object(binary(), binary()) -> ok.
-delete_object(BucketName, Key) ->
-    case riak_connection() of
-        {ok, RiakPid} ->
-            Res = riakc_pb_socket:delete(RiakPid, BucketName, Key),
-            close_riak_connection(RiakPid),
-            Res;
-        {error, Reason} ->
-            {error, {riak_connect_failed, Reason}}
-    end.
+-spec delete_object(binary(), binary(), pid()) -> ok.
+delete_object(BucketName, Key, RiakPid) ->
+    riakc_pb_socket:delete(RiakPid, BucketName, Key).
 
 %% Get the root bucket name for either a MOSS object
 %% bucket or the data block bucket name.
@@ -220,29 +211,22 @@ stanchion_data() ->
 
 %% @doc Return a list of keys for a bucket along
 %% with their associated objects.
--spec get_keys_and_manifests(binary(), binary()) -> {ok, [lfs_manifest()]}.
-get_keys_and_manifests(BucketName, Prefix) ->
-    case riak_connection() of
-        {ok, RiakPid} ->
-            ManifestBucket = riak_moss_utils:to_bucket_name(objects, BucketName),
-            case list_keys(ManifestBucket, RiakPid) of
-                {ok, Keys} ->
-                    KeyObjPairs =
-                        [begin
-                             {ok, ManiPid} = riak_moss_manifest_fsm:start_link(BucketName, Key),
-                             Manifest = riak_moss_manifest_fsm:get_active_manifest(ManiPid),
-                             riak_moss_manifest_fsm:stop(ManiPid),
-                             {Key, Manifest}
-                         end
-                         || Key <- prefix_filter(Keys, Prefix)],
-                    Res = {ok, KeyObjPairs};
-                {error, Reason1} ->
-                    Res = {error, Reason1}
-            end,
-            close_riak_connection(RiakPid),
-            Res;
-        {error, Reason} ->
-            {error, Reason}
+-spec get_keys_and_manifests(binary(), binary(), pid()) -> {ok, [lfs_manifest()]}.
+get_keys_and_manifests(BucketName, Prefix, RiakPid) ->
+    ManifestBucket = riak_moss_utils:to_bucket_name(objects, BucketName),
+    case list_keys(ManifestBucket, RiakPid) of
+        {ok, Keys} ->
+            KeyObjPairs =
+                [begin
+                     {ok, ManiPid} = riak_moss_manifest_fsm:start_link(BucketName, Key, RiakPid),
+                     Manifest = riak_moss_manifest_fsm:get_active_manifest(ManiPid),
+                     riak_moss_manifest_fsm:stop(ManiPid),
+                     {Key, Manifest}
+                 end
+                 || Key <- prefix_filter(Keys, Prefix)],
+            {ok, KeyObjPairs};
+        {error, Reason1} ->
+            {error, Reason1}
     end.
 
 -spec prefix_filter(list(), binary()) -> list().
@@ -280,56 +264,49 @@ get_admin_creds() ->
     end.
 
 %% @doc Get an object from Riak
--spec get_object(binary(), binary()) ->
-                        {ok, binary()} | {error, term()}.
-get_object(BucketName, Key) ->
-    case riak_connection() of
-        {ok, RiakPid} ->
-            Res = get_object(BucketName, Key, RiakPid),
-            close_riak_connection(RiakPid),
-            Res;
-        {error, Reason} ->
-            {error, {riak_connect_failed, Reason}}
-    end.
-
-%% @doc Get an object from Riak
 -spec get_object(binary(), binary(), pid()) ->
                         {ok, binary()} | {error, term()}.
 get_object(BucketName, Key, RiakPid) ->
     riakc_pb_socket:get(RiakPid, BucketName, Key).
 
 %% @doc Retrieve a MOSS user's information based on their id string.
--spec get_user(string() | undefined) -> {ok, term()} | {error, term()}.
-get_user(undefined) ->
-    {error, no_user_key};
-get_user(KeyID) ->
-    case riak_connection() of
-        {ok, RiakPid} ->
-            Res = get_user(KeyID, RiakPid),
-            close_riak_connection(RiakPid),
-            Res;
-        {error, Reason} ->
-            {error, Reason}
+-spec get_user(string(), pid()) -> {ok, {term(), term()}} | {error, term()}.
+get_user(KeyId, RiakPid) ->
+    %% @TODO Check for an resolve siblings to get a
+    %% coherent view of the bucket ownership.
+    BinKey = list_to_binary(KeyId),
+    case fetch_user(BinKey, RiakPid) of
+        {ok, {Obj, KeepDeletedBuckets}} ->
+            case riakc_obj:value_count(Obj) of
+                1 ->
+                    {ok, {binary_to_term(riakc_obj:get_value(Obj)),
+                          riakc_obj:vclock(Obj)}};
+                0 ->
+                    {error, no_value};
+                _ ->
+                    Values = [binary_to_term(Value) ||
+                                 Value <- riakc_obj:get_values(Obj)],
+                    User = hd(Values),
+                    Buckets = resolve_buckets(Values, [], KeepDeletedBuckets),
+                    {ok, {User?MOSS_USER{buckets=Buckets},
+                          riakc_obj:vclock(Obj)}}
+            end;
+        Error ->
+            Error
     end.
 
 %% @doc Retrieve a MOSS user's information based on their
 %% canonical id string.
 %% @TODO May want to use mapreduce job for this.
--spec get_user_by_index(binary(), binary()) -> {ok, {moss_user(), term()}} |
-                                               {error, term()}.
-get_user_by_index(Index, Value) ->
-    case riak_connection() of
-        {ok, RiakPid} ->
-            case get_user_index(Index, Value, RiakPid) of
-                {ok, KeyId} ->
-                    Res = get_user(KeyId, RiakPid);
-                {error, _}=Error1 ->
-                    Res = Error1
-            end,
-            close_riak_connection(RiakPid),
-            Res;
-        {error, _}=Error ->
-            Error
+-spec get_user_by_index(binary(), binary(), pid()) ->
+                               {ok, {moss_user(), term()}} |
+                               {error, term()}.
+get_user_by_index(Index, Value, RiakPid) ->
+    case get_user_index(Index, Value, RiakPid) of
+        {ok, KeyId} ->
+            get_user(KeyId, RiakPid);
+        {error, _}=Error1 ->
+            Error1
     end.
 
 %% @doc Query `Index' for `Value' in the users bucket.
@@ -345,18 +322,6 @@ get_user_index(Index, Value, RiakPid) ->
                                                                                              Index,
                                                                                              Reason]),
             Error
-    end.
-
-%% @doc List the keys from a bucket
--spec list_keys(binary()) -> {ok, [binary()]}.
-list_keys(BucketName) ->
-    case riak_connection() of
-        {ok, RiakPid} ->
-            Res = list_keys(BucketName, RiakPid),
-            close_riak_connection(RiakPid),
-            Res;
-        {error, Reason} ->
-            {error, Reason}
     end.
 
 %% @doc List the keys from a bucket
@@ -390,57 +355,39 @@ pow(Base, Power, Acc) ->
     end.
 
 %% @doc Store an object in Riak
--spec put_object(binary(), binary(), binary(), [term()]) -> ok.
-put_object(BucketName, Key, Value, Metadata) ->
-    case riak_connection() of
-        {ok, RiakPid} ->
-            RiakObject = riakc_obj:new(BucketName, Key, Value),
-            NewObj = riakc_obj:update_metadata(RiakObject, Metadata),
-            Res = riakc_pb_socket:put(RiakPid, NewObj),
-            close_riak_connection(RiakPid),
-            Res;
-        {error, Reason} ->
-            {error, Reason}
-    end.
+-spec put_object(binary(), binary(), binary(), [term()], pid()) -> ok.
+put_object(BucketName, Key, Value, Metadata, RiakPid) ->
+    RiakObject = riakc_obj:new(BucketName, Key, Value),
+    NewObj = riakc_obj:update_metadata(RiakObject, Metadata),
+    riakc_pb_socket:put(RiakPid, NewObj).
 
 %% @doc Get a protobufs connection to the riak cluster
 %% using information from the application environment.
 -spec riak_connection() -> {ok, pid()} | {error, term()}.
 riak_connection() ->
-    case application:get_env(riak_moss, riak_ip) of
-        {ok, Host} ->
-            ok;
-        undefined ->
-            Host = "127.0.0.1"
-    end,
-    case application:get_env(riak_moss, riak_pb_port) of
-        {ok, Port} ->
-            ok;
-        undefined ->
-            Port = 8087
-    end,
-    riak_connection(Host, Port).
-
-%% @doc Get a protobufs connection to the riak cluster.
--spec riak_connection(string(), pos_integer()) -> {ok, pid()} | {error, term()}.
-riak_connection(Host, Port) ->
-    riakc_pb_socket:start_link(Host, Port).
+    case poolboy:checkout(riakc_pool, false) of
+        full ->
+            {error, all_workers_busy};
+        Worker ->
+            {ok, Worker}
+    end.
 
 %% @doc Set the ACL for a bucket. Existing ACLs are only
 %% replaced, they cannot be updated.
--spec set_bucket_acl(moss_user(), term(), binary(), acl()) -> ok.
-set_bucket_acl(User, VClock, Bucket, ACL) ->
+-spec set_bucket_acl(moss_user(), term(), binary(), acl(), pid()) -> ok.
+set_bucket_acl(User, VClock, Bucket, ACL, RiakPid) ->
     serialized_bucket_op(Bucket,
                          ACL,
                          User,
                          VClock,
-                         update_acl).
+                         update_acl,
+                         RiakPid).
 
 %% @doc Set the ACL for an object. Existing ACLs are only
 %% replaced, they cannot be updated.
--spec set_object_acl(binary(), binary(), lfs_manifest(), acl()) -> ok.
-set_object_acl(Bucket, Key, Manifest, Acl) ->
-    {ok, ManiPid} = riak_moss_manifest_fsm:start_link(Bucket, Key),
+-spec set_object_acl(binary(), binary(), lfs_manifest(), acl(), pid()) -> ok.
+set_object_acl(Bucket, Key, Manifest, Acl, RiakPid) ->
+    {ok, ManiPid} = riak_moss_manifest_fsm:start_link(Bucket, Key, RiakPid),
     _ActiveMfst = riak_moss_manifest_fsm:get_active_manifest(ManiPid),
     UpdManifest = Manifest#lfs_manifest_v2{acl=Acl},
     Res = riak_moss_manifest_fsm:update_manifest_with_confirmation(ManiPid, UpdManifest),
@@ -474,37 +421,32 @@ bucket_acl_json(ACL, KeyId)  ->
                                     stanchion_acl_utils:acl_to_json_term(ACL)]}))).
 
 %% @doc Check if a bucket is empty
--spec bucket_empty(binary()) -> boolean().
-bucket_empty(Bucket) ->
-    case riak_connection() of
-        {ok, RiakPid} ->
-            ManifestBucket = to_bucket_name(objects, Bucket),
-            %% @TODO Use `stream_list_keys' instead and
-            %% break out as soon as an active manifest is found.
-            case list_keys(ManifestBucket, RiakPid) of
-                {ok, Keys} ->
-                    FoldFun =
-                        fun(Key, Acc) ->
-                                {ok, ManiPid} = riak_moss_manifest_fsm:start_link(Bucket, Key),
-                                case riak_moss_manifest_fsm:get_active_manifest(ManiPid) of
-                                    {ok, _} ->
-                                        [Key | Acc];
-                                    {error, notfound} ->
-                                        Acc
-                                end
-                        end,
-                    ActiveKeys = lists:foldl(FoldFun, [], Keys),
-                    case ActiveKeys of
-                        [] ->
-                            true;
-                        _ ->
-                            false
-                    end;
+-spec bucket_empty(binary(), pid()) -> boolean().
+bucket_empty(Bucket, RiakPid) ->
+    ManifestBucket = to_bucket_name(objects, Bucket),
+    %% @TODO Use `stream_list_keys' instead and
+    %% break out as soon as an active manifest is found.
+    case list_keys(ManifestBucket, RiakPid) of
+        {ok, Keys} ->
+            FoldFun =
+                fun(Key, Acc) ->
+                        {ok, ManiPid} = riak_moss_manifest_fsm:start_link(Bucket, Key, RiakPid),
+                        case riak_moss_manifest_fsm:get_active_manifest(ManiPid) of
+                            {ok, _} ->
+                                [Key | Acc];
+                            {error, notfound} ->
+                                Acc
+                        end
+                end,
+            ActiveKeys = lists:foldl(FoldFun, [], Keys),
+            case ActiveKeys of
+                [] ->
+                    true;
                 _ ->
                     false
             end;
-        {error, Reason} ->
-            {error, {riak_connect_failed, Reason}}
+        _ ->
+            false
     end.
 
 %% @doc Check if a bucket exists in a list of the user's buckets.
@@ -670,32 +612,6 @@ generate_access_creds(UserId) ->
     Secret = generate_secret(UserBin, KeyId),
     {KeyId, Secret}.
 
-%% @doc Retrieve a MOSS user's information based on their id string.
--spec get_user(string(), pid()) -> {ok, {term(), term()}} | {error, term()}.
-get_user(KeyId, RiakPid) ->
-    %% @TODO Check for an resolve siblings to get a
-    %% coherent view of the bucket ownership.
-    BinKey = list_to_binary(KeyId),
-    case fetch_user(BinKey, RiakPid) of
-        {ok, {Obj, KeepDeletedBuckets}} ->
-            case riakc_obj:value_count(Obj) of
-                1 ->
-                    {ok, {binary_to_term(riakc_obj:get_value(Obj)),
-                          riakc_obj:vclock(Obj)}};
-                0 ->
-                    {error, no_value};
-                _ ->
-                    Values = [binary_to_term(Value) ||
-                                 Value <- riakc_obj:get_values(Obj)],
-                    User = hd(Values),
-                    Buckets = resolve_buckets(Values, [], KeepDeletedBuckets),
-                    {ok, {User?MOSS_USER{buckets=Buckets},
-                          riakc_obj:vclock(Obj)}}
-            end;
-        Error ->
-            Error
-    end.
-
 %% @doc Generate the canonical id for a user.
 -spec generate_canonical_id(string(), string()) -> string().
 generate_canonical_id(KeyID, Secret) ->
@@ -777,18 +693,6 @@ resolve_buckets([HeadUserRec | RestUserRecs], Buckets, _KeepDeleted) ->
     resolve_buckets(RestUserRecs, UpdBuckets, _KeepDeleted).
 
 %% @doc Save information about a MOSS user
--spec save_user(moss_user(), term()) -> ok.
-save_user(User, VClock) ->
-    case riak_connection() of
-        {ok, RiakPid} ->
-            Res = save_user(User, VClock, RiakPid),
-            close_riak_connection(RiakPid),
-            Res;
-        {error, Reason} ->
-            {error, {riak_connect_failed, Reason}}
-    end.
-
-%% @doc Save information about a MOSS user
 -spec save_user(moss_user(), term(), pid()) -> ok.
 save_user(User, VClock, RiakPid) ->
     UserObj0 = riakc_obj:new(?USER_BUCKET,
@@ -813,11 +717,12 @@ save_user(User, VClock, RiakPid) ->
                            acl(),
                            moss_user(),
                            term(),
-                           bucket_action()) ->
+                           bucket_action(),
+                           pid()) ->
                                   {ok, moss_user()} |
                                   {ok, ignore} |
                                   {error, term()}.
-serialized_bucket_op(Bucket, ACL, User, VClock, BucketOp) ->
+serialized_bucket_op(Bucket, ACL, User, VClock, BucketOp, RiakPid) ->
     case get_admin_creds() of
         {ok, AdminCreds} ->
             BucketFun = bucket_fun(BucketOp,
@@ -836,7 +741,7 @@ serialized_bucket_op(Bucket, ACL, User, VClock, BucketOp) ->
                         {ok, ignore} ->
                             OpResult;
                         {ok, UpdUser} ->
-                            save_user(UpdUser, VClock)
+                            save_user(UpdUser, VClock, RiakPid)
                     end;
                 {error, {error_status, _, _, ErrorDoc}} ->
                     ErrorCode = xml_error_code(ErrorDoc),

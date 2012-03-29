@@ -21,7 +21,7 @@
 -include("riak_moss.hrl").
 
 %% API
--export([start_link/3,
+-export([start_link/4,
          stop/1,
          continue/1,
          manifest/2,
@@ -46,6 +46,7 @@
 
 -record(state, {from :: pid(),
                 mani_fsm_pid :: pid(),
+                riakc_pid :: pid(),
                 bucket :: term(),
                 caller :: pid(),
                 key :: term(),
@@ -64,8 +65,8 @@
 %% Public API
 %% ===================================================================
 
-start_link(Bucket, Key, Caller) ->
-    gen_fsm:start_link(?MODULE, [Bucket, Key, Caller], []).
+start_link(Bucket, Key, Caller, RiakPid) ->
+    gen_fsm:start_link(?MODULE, [Bucket, Key, Caller, RiakPid], []).
 
 stop(Pid) ->
     gen_fsm:send_event(Pid, stop).
@@ -89,7 +90,7 @@ chunk(Pid, ChunkSeq, ChunkValue) ->
 %% gen_fsm callbacks
 %% ====================================================================
 
-init([Bucket, Key, Caller]) ->
+init([Bucket, Key, Caller, RiakPid]) ->
     %% We need to do this (the monitor) for two reasons
     %% 1. We're started through a supervisor, so the
     %%    proc that actually intends to start us isn't
@@ -110,10 +111,11 @@ init([Bucket, Key, Caller]) ->
 
     State = #state{bucket=Bucket,
                    caller=CallerRef,
-                   key=Key},
+                   key=Key,
+                   riakc_pid=RiakPid},
     {ok, prepare, State, 0};
 init([test, Bucket, Key, ContentLength, BlockSize]) ->
-    {ok, prepare, State1, 0} = init([Bucket, Key, self()]),
+    {ok, prepare, State1, 0} = init([Bucket, Key, self(), pid]),
 
     %% purposely have the timeout happen
     %% so that we get called in the prepare
@@ -138,7 +140,7 @@ prepare(get_manifest, _From, State) ->
     PreparedState = prepare(State),
     case PreparedState#state.manifest of
         undefined ->
-            {stop, normal, notfound, State};
+            {stop, normal, notfound, PreparedState};
         Mfst ->
             NextStateTimeout = 60000,
             NewState = PreparedState#state{manifest_uuid=Mfst#lfs_manifest_v2.uuid,
@@ -163,7 +165,8 @@ waiting_continue_or_stop(continue, #state{manifest=Manifest,
                                           key=Key,
                                           next_block=NextBlock,
                                           manifest_uuid=UUID,
-                                          free_readers=FreeReaders}=State) ->
+                                          free_readers=Readers,
+                                          riakc_pid=RiakPid}=State) ->
     BlockSequences = riak_moss_lfs_utils:block_sequences_for_manifest(Manifest),
     case BlockSequences of
         [] ->
@@ -175,6 +178,14 @@ waiting_continue_or_stop(continue, #state{manifest=Manifest,
             BlocksLeft = sets:from_list(BlockSequences),
             TotalBlocks = sets:size(BlocksLeft),
 
+            %% Start the block servers
+            case Readers of
+                undefined ->
+                    FreeReaders = start_block_servers(RiakPid),
+                    lager:debug("Block Servers: ~p", [FreeReaders]);
+                _ ->
+                    FreeReaders = Readers
+            end,
             %% start retrieving the first set of blocks
             {LastBlockRequested, UpdFreeReaders} =
                 read_blocks(BucketName, Key, UUID, FreeReaders, NextBlock, TotalBlocks),
@@ -342,7 +353,12 @@ terminate(_Reason, _StateName, #state{test=false,
                                       mani_fsm_pid=ManiPid}) ->
 
     riak_moss_manifest_fsm:stop(ManiPid),
-    [riak_moss_block_server:stop(P) || P <- BlockServerPids],
+    case BlockServerPids of
+        undefined ->
+            ok;
+        _ ->
+            [riak_moss_block_server:stop(P) || P <- BlockServerPids]
+    end,
     ok;
 terminate(_Reason, _StateName, #state{test=true,
                                       free_readers=[ReaderPid | _]}) ->
@@ -360,25 +376,20 @@ block_sorter({A, _}, {B, _}) ->
     A < B.
 
 -spec prepare(#state{}) -> #state{}.
-prepare(#state{bucket=Bucket, key=Key}=State) ->
+prepare(#state{bucket=Bucket,
+               key=Key,
+               riakc_pid=RiakPid}=State) ->
     %% start the process that will
     %% fetch the value, be it manifest
     %% or regular object
-    {ok, ManiPid} = riak_moss_manifest_fsm:start_link(Bucket, Key),
+    {ok, ManiPid} = riak_moss_manifest_fsm:start_link(Bucket, Key, RiakPid),
     case riak_moss_manifest_fsm:get_active_manifest(ManiPid) of
         {ok, Manifest} ->
             lager:debug("Manifest: ~p", [Manifest]),
-            FetchConcurrency = riak_moss_lfs_utils:fetch_concurrency(),
-            lager:debug("Get Concurrency Level: ~p", [FetchConcurrency]),
-            ReaderPids = start_block_servers(FetchConcurrency),
-            lager:debug("Block Servers: ~p", [ReaderPids]),
             State#state{manifest=Manifest,
-                        mani_fsm_pid=ManiPid,
-                        all_reader_pids=ReaderPids,
-                        free_readers=ReaderPids};
+                        mani_fsm_pid=ManiPid};
         {error, notfound} ->
-            State#state{mani_fsm_pid=ManiPid,
-                        all_reader_pids=[]}
+            State#state{mani_fsm_pid=ManiPid}
     end.
 
 -spec read_blocks(binary(), binary(), binary(), [pid()], pos_integer(), pos_integer()) ->
@@ -422,9 +433,17 @@ server_result(_, Acc) ->
             Acc
     end.
 
--spec start_block_servers(pos_integer()) -> [pid()].
-start_block_servers(NumServers) ->
-    lists:foldl(fun server_result/2, [], lists:seq(1, NumServers)).
+-spec start_block_servers(pid()) -> [pid()].
+start_block_servers(RiakPid) ->
+    case riak_moss_block_server:start_link(RiakPid) of
+        {ok, BSPid} ->
+            Acc = [BSPid];
+        {error, Reason} ->
+            lager:warning("Failed to start block server instance. Reason: ~p", [Reason]),
+            Acc = []
+    end,
+    FetchConcurrency = riak_moss_lfs_utils:fetch_concurrency(),
+    lists:foldl(fun server_result/2, Acc, lists:seq(1, FetchConcurrency-1)).
 
 %% ===================================================================
 %% Test API

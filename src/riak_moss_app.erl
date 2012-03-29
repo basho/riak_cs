@@ -26,13 +26,7 @@
 -spec start(start_type(), start_args()) -> {ok, pid()} |
                                            {error, term()}.
 start(_Type, _StartArgs) ->
-    case riak_moss_utils:riak_connection() of
-        {ok, _} ->
-            riak_moss_sup:start_link();
-        {error, Reason} ->
-            lager:error("Couldn't connect to Riak: ~p", [Reason]),
-            {error, Reason}
-    end.
+    riak_moss_sup:start_link().
 
 %% @doc application stop callback for riak_moss.
 -spec stop(term()) -> ok.

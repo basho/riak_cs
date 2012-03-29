@@ -33,7 +33,8 @@
                   user :: moss_user(),
                   user_vclock :: term(),
                   bucket :: binary(),
-                  requested_perm :: acl_perm()
+                  requested_perm :: acl_perm(),
+                  riakc_pid :: pid()
                  }).
 
 -record(key_context, {context :: #context{},

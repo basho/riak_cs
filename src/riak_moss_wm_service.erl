@@ -12,7 +12,8 @@
          content_types_provided/2,
          malformed_request/2,
          to_xml/2,
-         allowed_methods/2]).
+         allowed_methods/2,
+         finish_request/2]).
 
 -include("riak_moss.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
@@ -35,11 +36,12 @@ malformed_request(RD, Ctx) ->
 %%      authenticated. Normally with HTTP
 %%      we'd use the `authorized` callback,
 %%      but this is how S3 does things.
-forbidden(RD, Ctx=#context{auth_bypass=AuthBypass}) ->
+forbidden(RD, Ctx=#context{auth_bypass=AuthBypass,
+                           riakc_pid=RiakPid}) ->
     AuthHeader = wrq:get_req_header("authorization", RD),
     {AuthMod, KeyId, Signature} =
         riak_moss_wm_utils:parse_auth_header(AuthHeader, AuthBypass),
-    case riak_moss_utils:get_user(KeyId) of
+    case riak_moss_utils:get_user(KeyId, RiakPid) of
         {ok, {User, _}} ->
             case AuthMod:authenticate(RD, User?MOSS_USER.key_secret, Signature) of
                 ok ->
@@ -88,3 +90,9 @@ content_types_provided(RD, Ctx) ->
     {iolist(), term(), term()}.
 to_xml(RD, Ctx=#context{user=User}) ->
     riak_moss_s3_response:list_all_my_buckets_response(User, RD, Ctx).
+
+finish_request(RD, Ctx=#context{riakc_pid=undefined}) ->
+    {true, RD, Ctx};
+finish_request(RD, Ctx=#context{riakc_pid=RiakPid}) ->
+    riak_moss_utils:close_riak_connection(RiakPid),
+    {true, RD, Ctx#context{riakc_pid=undefined}}.

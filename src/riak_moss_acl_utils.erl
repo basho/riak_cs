@@ -21,7 +21,7 @@
 -export([acl/4,
          default_acl/3,
          canned_acl/3,
-         acl_from_xml/2,
+         acl_from_xml/3,
          acl_to_xml/1,
          empty_acl_xml/0,
          requested_access/2
@@ -64,11 +64,11 @@ canned_acl(HeaderVal, Owner, BucketOwnerId) ->
 
 %% @doc Convert an XML document representing an ACL into
 %% an internal representation.
--spec acl_from_xml(string(), string()) -> acl().
-acl_from_xml(Xml, KeyId) ->
+-spec acl_from_xml(string(), string(), pid()) -> acl().
+acl_from_xml(Xml, KeyId, RiakPid) ->
     {ParsedData, _Rest} = xmerl_scan:string(Xml, []),
     BareAcl = ?ACL{owner={[], [], KeyId}},
-    process_acl_contents(ParsedData#xmlElement.content, BareAcl).
+    process_acl_contents(ParsedData#xmlElement.content, BareAcl, RiakPid).
 
 %% @doc Convert an internal representation of an ACL
 %% into XML.
@@ -217,10 +217,11 @@ canned_acl_grants(_, {Name, CanonicalId}, _) ->
 
 %% @doc Get the canonical id of the user associated with
 %% a given email address.
--spec canonical_for_email(string()) -> string().
-canonical_for_email(Email) ->
+-spec canonical_for_email(string(), pid()) -> string().
+canonical_for_email(Email, RiakPid) ->
     case riak_moss_utils:get_user_by_index(?EMAIL_INDEX,
-                                           list_to_binary(Email)) of
+                                           list_to_binary(Email),
+                                           RiakPid) of
         {ok, {User, _}} ->
             User?MOSS_USER.canonical_id;
         {error, Reason} ->
@@ -290,10 +291,11 @@ grant_xml(DisplayName, CanonicalId, Permission) ->
 
 %% @doc Get the display name of the user associated with
 %% a given canonical id.
--spec name_for_canonical(string()) -> string().
-name_for_canonical(CanonicalId) ->
+-spec name_for_canonical(string(), pid()) -> string().
+name_for_canonical(CanonicalId, RiakPid) ->
     case riak_moss_utils:get_user_by_index(?ID_INDEX,
-                                           list_to_binary(CanonicalId)) of
+                                           list_to_binary(CanonicalId),
+                                           RiakPid) of
         {ok, {User, _}} ->
             User?MOSS_USER.display_name;
         {error, _} ->
@@ -301,10 +303,10 @@ name_for_canonical(CanonicalId) ->
     end.
 
 %% @doc Process the top-level elements of the
--spec process_acl_contents([xmlElement()], acl()) -> acl().
-process_acl_contents([], Acl) ->
+-spec process_acl_contents([xmlElement()], acl(), pid()) -> acl().
+process_acl_contents([], Acl, _) ->
     Acl;
-process_acl_contents([HeadElement | RestElements], Acl) ->
+process_acl_contents([HeadElement | RestElements], Acl, RiakPid) ->
     Content = HeadElement#xmlElement.content,
     lager:debug("Element name: ~p", [HeadElement#xmlElement.name]),
     ElementName = HeadElement#xmlElement.name,
@@ -312,12 +314,12 @@ process_acl_contents([HeadElement | RestElements], Acl) ->
         'Owner' ->
             UpdAcl = process_owner(Content, Acl);
         'AccessControlList' ->
-            UpdAcl = process_grants(Content, Acl);
+            UpdAcl = process_grants(Content, Acl, RiakPid);
         _ ->
             lager:debug("Encountered unexpected element: ~p", [ElementName]),
             UpdAcl = Acl
     end,
-    process_acl_contents(RestElements, UpdAcl).
+    process_acl_contents(RestElements, UpdAcl, RiakPid).
 
 %% @doc Process an XML element containing acl owner information.
 -spec process_owner([xmlElement()], acl()) -> acl().
@@ -344,53 +346,53 @@ process_owner([HeadElement | RestElements], Acl) ->
     process_owner(RestElements, Acl?ACL{owner=UpdOwner}).
 
 %% @doc Process an XML element containing the grants for the acl.
--spec process_grants([xmlElement()], acl()) -> acl().
-process_grants([], Acl) ->
+-spec process_grants([xmlElement()], acl(), pid()) -> acl().
+process_grants([], Acl, _) ->
     Acl;
-process_grants([HeadElement | RestElements], Acl) ->
+process_grants([HeadElement | RestElements], Acl, RiakPid) ->
     Content = HeadElement#xmlElement.content,
     ElementName = HeadElement#xmlElement.name,
     case ElementName of
         'Grant' ->
-            Grant = process_grant(Content, {{"", ""}, []}),
+            Grant = process_grant(Content, {{"", ""}, []}, RiakPid),
             UpdAcl = Acl?ACL{grants=add_grant(Grant, Acl?ACL.grants)};
         _ ->
             lager:debug("Encountered unexpected grants element: ~p", [ElementName]),
             UpdAcl = Acl
     end,
-    process_grants(RestElements, UpdAcl).
+    process_grants(RestElements, UpdAcl, RiakPid).
 
 %% @doc Process an XML element containing the grants for the acl.
--spec process_grant([xmlElement()], acl_grant()) -> acl_grant().
-process_grant([], Grant) ->
+-spec process_grant([xmlElement()], acl_grant(), pid()) -> acl_grant().
+process_grant([], Grant, _) ->
     Grant;
-process_grant([HeadElement | RestElements], Grant) ->
+process_grant([HeadElement | RestElements], Grant, RiakPid) ->
     Content = HeadElement#xmlElement.content,
     ElementName = HeadElement#xmlElement.name,
     lager:debug("ElementName: ~p", [ElementName]),
     lager:debug("Content: ~p", [Content]),
     case ElementName of
         'Grantee' ->
-            UpdGrant = process_grantee(Content, Grant);
+            UpdGrant = process_grantee(Content, Grant, RiakPid);
         'Permission' ->
             UpdGrant = process_permission(Content, Grant);
         _ ->
             lager:debug("Encountered unexpected grant element: ~p", [ElementName]),
             UpdGrant = Grant
     end,
-    process_grant(RestElements, UpdGrant).
+    process_grant(RestElements, UpdGrant, RiakPid).
 
 %% @doc Process an XML element containing information about
 %% an ACL permission grantee.
--spec process_grantee([xmlElement()], acl_grant()) -> acl_grant().
-process_grantee([], {{[], CanonicalId}, _Perms}) ->
+-spec process_grantee([xmlElement()], acl_grant(), pid()) -> acl_grant().
+process_grantee([], {{[], CanonicalId}, _Perms}, RiakPid) ->
     %% Lookup the display name for the user with the
     %% canonical id of `CanonicalId'.
-    DisplayName = name_for_canonical(CanonicalId),
+    DisplayName = name_for_canonical(CanonicalId, RiakPid),
     {{DisplayName, CanonicalId}, _Perms};
-process_grantee([], Grant) ->
+process_grantee([], Grant, _) ->
     Grant;
-process_grantee([HeadElement | RestElements], Grant) ->
+process_grantee([HeadElement | RestElements], Grant, RiakPid) ->
     [Content] = HeadElement#xmlElement.content,
     Value = Content#xmlText.value,
     ElementName = HeadElement#xmlElement.name,
@@ -405,7 +407,7 @@ process_grantee([HeadElement | RestElements], Grant) ->
             UpdGrant = {{Value, Id}, Perms};
         'EmailAddress' ->
             lager:debug("Email value: ~p", [Value]),
-            Id = canonical_for_email(Value),
+            Id = canonical_for_email(Value, RiakPid),
             %% Get the canonical id for a given email address
             lager:debug("ID value: ~p", [Id]),
             {{Name, _}, Perms} = Grant,
@@ -424,7 +426,7 @@ process_grantee([HeadElement | RestElements], Grant) ->
         _ ->
             UpdGrant = Grant
     end,
-    process_grantee(RestElements, UpdGrant).
+    process_grantee(RestElements, UpdGrant, RiakPid).
 
 %% @doc Process an XML element containing information about
 %% an ACL permission.
@@ -467,7 +469,7 @@ default_acl_test() ->
 acl_from_xml_test() ->
     Xml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><AccessControlPolicy><Owner><ID>TESTID1</ID><DisplayName>tester1</DisplayName></Owner><AccessControlList><Grant><Grantee xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"CanonicalUser\"><ID>TESTID1</ID><DisplayName>tester1</DisplayName></Grantee><Permission>FULL_CONTROL</Permission></Grant></AccessControlList></AccessControlPolicy>",
     DefaultAcl = default_acl("tester1", "TESTID1", "TESTKEYID1"),
-    Acl = acl_from_xml(Xml, "TESTKEYID1"),
+    Acl = acl_from_xml(Xml, "TESTKEYID1", undefined),
     {ExpectedOwnerName, ExpectedOwnerId, _} = DefaultAcl?ACL.owner,
     {ActualOwnerName, ActualOwnerId, _} = Acl?ACL.owner,
     ?assertEqual(DefaultAcl?ACL.grants, Acl?ACL.grants),
@@ -483,8 +485,8 @@ acl_to_xml_test() ->
 roundtrip_test() ->
     Xml1 = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><AccessControlPolicy><Owner><ID>TESTID1</ID><DisplayName>tester1</DisplayName></Owner><AccessControlList><Grant><Grantee xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"CanonicalUser\"><ID>TESTID1</ID><DisplayName>tester1</DisplayName></Grantee><Permission>FULL_CONTROL</Permission></Grant></AccessControlList></AccessControlPolicy>",
     Xml2 = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><AccessControlPolicy><Owner><ID>TESTID1</ID><DisplayName>tester1</DisplayName></Owner><AccessControlList><Grant><Grantee xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"CanonicalUser\"><ID>TESTID1</ID><DisplayName>tester1</DisplayName></Grantee><Permission>FULL_CONTROL</Permission></Grant><Grant><Grantee xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"Group\"><URI>http://acs.amazonaws.com/groups/global/AuthenticatedUsers</URI></Grantee><Permission>READ</Permission></Grant></AccessControlList></AccessControlPolicy>",
-    ?assertEqual(Xml1, binary_to_list(acl_to_xml(acl_from_xml(Xml1, "TESTKEYID1")))),
-    ?assertEqual(Xml2, binary_to_list(acl_to_xml(acl_from_xml(Xml2, "TESTKEYID2")))).
+    ?assertEqual(Xml1, binary_to_list(acl_to_xml(acl_from_xml(Xml1, "TESTKEYID1", undefined)))),
+    ?assertEqual(Xml2, binary_to_list(acl_to_xml(acl_from_xml(Xml2, "TESTKEYID2", undefined)))).
 
 requested_access_test() ->
     ?assertEqual('READ', requested_access('GET', [])),
