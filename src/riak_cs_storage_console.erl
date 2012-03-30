@@ -25,17 +25,29 @@
                 error
         end).
 
+-define(SCRIPT_NAME, "riak-cs-storage").
+-define(BATCH_OPTIONS, [{recalc, $r, "recalc", boolean,
+                         "recalculate all users for this period"
+                         " (default=false)"}]).
+
 %% @doc Kick off a batch of storage calculation, unless one is already
 %% in progress.
-batch(_Opts) ->
+batch(Opts) ->
     ?SAFELY(
-       case riak_moss_storage_d:start_batch() of
-           ok ->
-               io:format("Batch storage calculation started.~n"),
-               ok;
-           {error, already_calculating} ->
-               io:format("Error: A batch storage calculation is already"
-                         " in progress.~n"),
+       case getopt:parse(?BATCH_OPTIONS, Opts) of
+           {ok, {Parsed, _Extra}} -> 
+               case riak_moss_storage_d:start_batch(Parsed) of
+                   ok ->
+                       io:format("Batch storage calculation started.~n"),
+                       ok;
+                   {error, already_calculating} ->
+                       io:format("Error: A batch storage calculation"
+                                 " is already in progress.~n"),
+                       error
+               end;
+           {error, {OptReason, OptMessage}} ->
+               io:format("Error: ~p: ~p~n", [OptReason, OptMessage]),
+               getopt:usage(?BATCH_OPTIONS, [?SCRIPT_NAME, " batch"]),
                error
        end,
        "Starting batch storage calculation").
@@ -116,6 +128,8 @@ human_detail(elapsed, Elapsed) ->
     {"Elapsed time of current run", integer_to_list(Elapsed)};
 human_detail(users_done, Count) -> 
     {"Users completed in current run", integer_to_list(Count)};
+human_detail(users_skipped, Count) -> 
+    {"Users skipped in current run", integer_to_list(Count)};
 human_detail(users_left, Count) -> 
     {"Users left in current run", integer_to_list(Count)};
 human_detail(Name, Value) ->
