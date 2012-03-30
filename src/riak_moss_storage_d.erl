@@ -133,7 +133,7 @@ calculating(continue, #state{batch=[], current=Current}=State) ->
     %% finished with this batch
     lager:info("Finished storage calculation in ~b seconds.",
                [elapsed(State#state.batch_start)]),
-    riak_moss_utils:close_riak_connection(State#state.riak),
+    riak_moss_riakc_pool_worker:stop(State#state.riak),
     NewState = State#state{riak=undefined,
                            last=Current,
                            current=undefined},
@@ -188,7 +188,7 @@ calculating(cancel_batch, _From, #state{current=Current}=State) ->
     %% finished with this batch
     lager:info("Canceled storage calculation after ~b seconds.",
                [elapsed(State#state.batch_start)]),
-    riak_moss_utils:close_riak_connection(State#state.riak),
+    riak_moss_riakc_pool_worker:stop(State#state.riak),
     NewState = State#state{riak=undefined,
                            last=Current,
                            current=undefined,
@@ -309,7 +309,14 @@ start_batch(Options, Time, State) ->
     Recalc = true == proplists:get_value(recalc, Options),
     %% TODO: probably want to do this fetch streaming, to avoid
     %% accidental memory pressure at other points
-    {ok, Riak} = riak_moss_utils:riak_connection(),
+
+    %% this does not check out a worker from the riak connection pool;
+    %% instead it creates a fresh new worker, the idea being that we
+    %% don't want to foul up the storage calculation just because the
+    %% pool is empty; pool workers just happen to be literally the
+    %% socket process, so "starting" one here is the same as opening a
+    %% connection, and avoids duplicating the configuration lookup code
+    {ok, Riak} = riak_moss_riakc_pool_worker:start_link([]),
     Batch = fetch_user_list(Riak),
 
     gen_fsm:send_event(?SERVER, continue),

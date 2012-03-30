@@ -191,10 +191,16 @@ code_change(_OldVsn, State, _Extra) ->
 %% delete the table.  Each user referenced in the table generates one
 %% Riak object.
 do_archive(Table, Slice) ->
-    case riak_moss_utils:riak_connection() of
+    %% this does not check out a worker from the riak connection pool;
+    %% instead it creates a fresh new worker, the idea being that we
+    %% don't want to foul up the access archival just because the pool
+    %% is empty; pool workers just happen to be literally the socket
+    %% process, so "starting" one here is the same as opening a
+    %% connection, and avoids duplicating the configuration lookup code
+    case riak_moss_riakc_pool_worker:start_link([]) of
         {ok, Riak} ->
             archive_user(ets:first(Table), Riak, Table, Slice),
-            riak_moss_utils:close_riak_connection(Riak);
+            riak_moss_riakc_pool_worker:stop(Riak);
         {error, Reason} ->
             lager:error("Access archiver connection to Riak failed (~p), "
                         "stats for ~p were lost",
