@@ -21,7 +21,8 @@ put_fsm_test_() ->
     {setup,
      fun setup/0,
      fun teardown/1,
-     [fun small_put/0]}.
+     [fun small_put/0,
+      fun zero_byte_put/0]}.
 
 small_put() ->
     {ok, RiakPid} = riakc_pb_socket:start_link("127.0.0.1", 8087),
@@ -33,6 +34,18 @@ small_put() ->
     Md5 = make_md5(Data),
     Parts = [<<"0">>, <<"123">>, <<"45">>, <<"678">>, <<"9">>],
     [riak_moss_put_fsm:augment_data(Pid, D) || D <- Parts],
+    {ok, Manifest} = riak_moss_put_fsm:finalize(Pid),
+    ?assert(Manifest#lfs_manifest_v2.state == active andalso
+            Manifest#lfs_manifest_v2.content_md5==Md5).
+
+zero_byte_put() ->
+    {ok, RiakPid} = riakc_pb_socket:start_link("127.0.0.1", 8087),
+    {ok, Pid} =
+        riak_moss_put_fsm:start_link(<<"bucket">>, <<"key">>, 0, <<"ctype">>,
+                                     orddict:new(), 2, riak_moss_acl_utils:default_acl("display", "canonical_id", "key_id"),
+                                     60000, self(), RiakPid),
+    Data = <<>>,
+    Md5 = make_md5(Data),
     {ok, Manifest} = riak_moss_put_fsm:finalize(Pid),
     ?assert(Manifest#lfs_manifest_v2.state == active andalso
             Manifest#lfs_manifest_v2.content_md5==Md5).

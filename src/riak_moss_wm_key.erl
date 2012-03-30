@@ -323,6 +323,8 @@ accept_body(RD, Ctx=#key_context{bucket=Bucket,
     {ok, Pid} = riak_moss_put_fsm_sup:start_put_fsm(node(), Args),
     accept_streambody(RD, Ctx, Pid, wrq:stream_req_body(RD, riak_moss_lfs_utils:block_size())).
 
+accept_streambody(RD, Ctx=#key_context{size=0}, Pid, {_Data, _Next}) ->
+    finalize_request(RD, Ctx, Pid);
 accept_streambody(RD, Ctx=#key_context{}, Pid, {Data, Next}) ->
     riak_moss_put_fsm:augment_data(Pid, Data),
     if is_function(Next) ->
