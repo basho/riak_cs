@@ -43,7 +43,7 @@
          callback/3]).
 
 -define(API_VERSION, 1).
--define(CAPABILITIES, []).
+-define(CAPABILITIES, [async_fold]).
 
 %% Borrowed from bitcask.hrl
 -define(VALSIZEFIELD, 32).
@@ -58,6 +58,10 @@
 -record(state, {dir}).
 -type state() :: #state{}.
 -type config() :: [{atom(), term()}].
+
+%% ===================================================================
+%% Public API
+%% ===================================================================
 
 %% @doc Return the major version of the
 %% current API.
@@ -92,6 +96,7 @@ start(Partition, Config) ->
     Dir = filename:join([ConfigRoot,PartitionName]),
     {filelib:ensure_dir(Dir), #state{dir=Dir}}.
 
+%% @doc Stop the backend
 -spec stop(state()) -> ok.
 stop(_State) -> ok.
 
@@ -116,24 +121,12 @@ get(Bucket, Key, State) ->
             end
     end.
 
-%% @spec atomic_write(File :: string(), Val :: binary()) ->
-%%       ok | {error, Reason :: term()}
-%% @doc store a atomic value to disk. Write to temp file and rename to
-%%       normal path.
-atomic_write(File, Val) ->
-    FakeFile = File ++ ".tmpwrite",
-    case file:write_file(FakeFile, pack_ondisk(Val)) of
-        ok ->
-            file:rename(FakeFile, File);
-        X -> X
-    end.
-
 %% @doc Store Val under Bkey
 -type index_spec() :: {add, Index, SecondaryKey} | {remove, Index, SecondaryKey}.
 -spec put(riak_object:bucket(), riak_object:key(), [index_spec()], binary(), state()) ->
                  {ok, state()} |
                  {error, term(), state()}.
-put(Bucket, PrimaryKey, _IndexSpecs, Val, State) ->       
+put(Bucket, PrimaryKey, _IndexSpecs, Val, State) ->
     File = location(State, {Bucket, PrimaryKey}),
     case filelib:ensure_dir(File) of
         ok         -> {atomic_write(File, Val), State};
@@ -152,101 +145,179 @@ delete(Bucket, Key, _IndexSpecs, State) ->
         {error, Err} -> {error, Err, State}
     end.
 
--ifdef(SLF_COMMENT).
-
-%% @spec list(state()) -> [{Bucket :: riak_object:bucket(),
-%%                          Key :: riak_object:key()}]
-%% @doc Get a list of all bucket/key pairs stored by this backend
-list(State) ->
-    % this is slow slow slow
-    %                                              B,N,N,N,K
-    [location_to_bkey(X) || X <- filelib:wildcard("*/*/*/*/*",
-                                                  State#state.dir)].
-
-
-%% @spec list_bucket(state(), riak_object:bucket()) ->
-%%           [riak_object:key()]
-%% @doc Get a list of the keys in a bucket
-list_bucket(State, Bucket) ->
-    case Bucket of
-        '_' ->
-            lists:usort(lists:map(fun({B, _}) -> B end, list(State)));
-        {filter, B, Fun} ->
-            [ hd(K) || K <-
-                lists:filter(Fun,
-                    [ EV || EV <- lists:map(fun(K) ->
-                                                case K of
-                                                    {B, Key} -> [Key];
-                                                    _ -> []
-                                                end
-                                            end, list(State)),
-                            EV /= [] ]) ];
-        _ ->
-            B64 = encode_bucket(Bucket),
-            L = length(State#state.dir),
-            [ K || {_,K} <- [ location_to_bkey(lists:nthtail(L, X)) ||
-                                X <- filelib:wildcard(
-                                       filename:join([State#state.dir,
-                                                      B64,"*/*/*/*"])) ]]
-    end.
-
-is_empty(State) -> ?MODULE:list(State) =:= [].
-
-fold(State, Fun0, Acc) ->
-    Fun = fun(BKey, AccIn) -> 
-                  case ?MODULE:get(State, BKey) of
-                      {ok, Bin} ->
-                          Fun0(BKey, Bin, AccIn);
-                      _ ->
-                          AccIn
-                  end
-          end,
-    lists:foldl(Fun, Acc, ?MODULE:list(State)).
-
--endif. % SLF_COMMENT
-
 %% @doc Fold over all the buckets.
 -spec fold_buckets(riak_kv_backend:fold_buckets_fun(),
                    any(),
                    [],
                    state()) -> {ok, any()} | {async, fun()} | {error, term()}.
-fold_buckets(_FoldBucketsFun, Acc, _Opts, _S) ->
-    Acc.                                        % lazy!
+fold_buckets(FoldBucketsFun, Acc, Opts, State) ->
+    FoldFun = fold_buckets_fun(FoldBucketsFun),
+    BucketFolder =
+        fun() ->
+                {FoldResult, _} =
+                    lists:foldl(FoldFun, {Acc, sets:new()}, list(State)),
+                FoldResult
+        end,
+    case lists:member(async_fold, Opts) of
+        true ->
+            {async, BucketFolder};
+        false ->
+            {ok, BucketFolder()}
+    end.
 
 %% @doc Fold over all the keys for one or all buckets.
 -spec fold_keys(riak_kv_backend:fold_keys_fun(),
                 any(),
                 [{atom(), term()}],
                 state()) -> {ok, term()} | {async, fun()} | {error, term()}.
-fold_keys(_FoldKeysFun, Acc, _Opts, _S) ->
-    Acc.                                        % lazy!
+fold_keys(FoldKeysFun, Acc, Opts, State) ->
+    Bucket =  proplists:get_value(bucket, Opts),
+    FoldFun = fold_keys_fun(FoldKeysFun, Bucket),
+    KeyFolder =
+        fun() ->
+                lists:foldl(FoldFun, Acc, list(State))
+        end,
+    case lists:member(async_fold, Opts) of
+        true ->
+            {async, KeyFolder};
+        false ->
+            {ok, KeyFolder()}
+    end.
 
 %% @doc Fold over all the objects for one or all buckets.
 -spec fold_objects(riak_kv_backend:fold_objects_fun(),
                    any(),
                    [{atom(), term()}],
                    state()) -> {ok, any()} | {async, fun()} | {error, term()}.
-fold_objects(_FoldObjectsFun, Acc, _Opts, _S) ->
-    Acc.                                        % lazy!
+fold_objects(FoldObjectsFun, Acc, Opts, State) ->
+    %% Warning: This ain't pretty. Hold your nose.
+    Bucket =  proplists:get_value(bucket, Opts),
+    FoldFun = fold_objects_fun(FoldObjectsFun, Bucket),
+    ObjectFolder =
+        fun() ->
+                fold(State, FoldFun, Acc)
+        end,
+    case lists:member(async_fold, Opts) of
+        true ->
+            {async, ObjectFolder};
+        false ->
+            {ok, ObjectFolder()}
+    end.
 
+%% @doc Delete all objects from this backend
+%% and return a fresh reference.
 -spec drop(state()) -> {ok, state()} | {error, term(), state()}.
-drop(State) ->
-    [file:delete(location(State, BK)) || BK <- ?MODULE:list(State)],
-    Cmd = io_lib:format("rm -Rf ~s", [State#state.dir]),
+drop(State=#state{dir=Dir}) ->
+    [file:delete(location(State, BK)) || BK <- list(State)],
+    Cmd = io_lib:format("rm -Rf ~s", [Dir]),
     os:cmd(Cmd),
+    filelib:ensure_dir(Dir),
     {ok, State}.
 
+%% @doc Returns true if this backend contains any
+%% non-tombstone values; otherwise returns false.
 -spec is_empty(state()) -> boolean().
 is_empty(S) ->
-    ?MODULE:list(S) == [].
+    list(S) == [].
 
+%% @doc Get the status information for this fs backend
 -spec status(state()) -> [{atom(), term()}].
 status(_S) ->
     [no_status_sorry].
 
+%% @doc Register an asynchronous callback
 -spec callback(reference(), any(), state()) -> {ok, state()}.
 callback(_Ref, _Term, S) ->
     {ok, S}.
+
+%% ===================================================================
+%% Internal functions
+%% ===================================================================
+
+%% @spec atomic_write(File :: string(), Val :: binary()) ->
+%%       ok | {error, Reason :: term()}
+%% @doc store a atomic value to disk. Write to temp file and rename to
+%%       normal path.
+atomic_write(File, Val) ->
+    FakeFile = File ++ ".tmpwrite",
+    case file:write_file(FakeFile, pack_ondisk(Val)) of
+        ok ->
+            file:rename(FakeFile, File);
+        X -> X
+    end.
+
+%% @private
+%% Fold over the keys and objects on this backend
+fold(State, Fun0, Acc) ->
+    Fun = fun(BKey, AccIn) ->
+                  {Bucket, Key} = BKey,
+                  case get(Bucket, Key, State) of
+                      {ok, Bin, _} ->
+                          Fun0(BKey, Bin, AccIn);
+                      _ ->
+                          AccIn
+                  end
+          end,
+    lists:foldl(Fun, Acc, list(State)).
+
+%% @private
+%% Return a function to fold over the buckets on this backend
+fold_buckets_fun(FoldBucketsFun) ->
+    fun(BKey, {Acc, BucketSet}) ->
+            {Bucket, _} = BKey,
+            case sets:is_element(Bucket, BucketSet) of
+                true ->
+                    {Acc, BucketSet};
+                false ->
+                    {FoldBucketsFun(Bucket, Acc),
+                     sets:add_element(Bucket, BucketSet)}
+            end
+    end.
+
+%% @private
+%% Return a function to fold over keys on this backend
+fold_keys_fun(FoldKeysFun, undefined) ->
+    fun(BKey, Acc) ->
+            {Bucket, Key} = BKey,
+            FoldKeysFun(Bucket, Key, Acc)
+    end;
+fold_keys_fun(FoldKeysFun, Bucket) ->
+    fun(BKey, Acc) ->
+            {B, Key} = BKey,
+            case B =:= Bucket of
+                true ->
+                    FoldKeysFun(Bucket, Key, Acc);
+                false ->
+                    Acc
+            end
+    end.
+
+%% @private
+%% Return a function to fold over the objects on this backend
+fold_objects_fun(FoldObjectsFun, undefined) ->
+    fun(BKey, Value, Acc) ->
+            {Bucket, Key} = BKey,
+            FoldObjectsFun(Bucket, Key, Value, Acc)
+    end;
+fold_objects_fun(FoldObjectsFun, Bucket) ->
+    fun(BKey, Value, Acc) ->
+            {B, Key} = BKey,
+            case B =:= Bucket of
+                true ->
+                    FoldObjectsFun(Bucket, Key, Value, Acc);
+                false ->
+                    Acc
+            end
+    end.
+
+%% @spec list(state()) -> [{Bucket :: riak_object:bucket(),
+%%                          Key :: riak_object:key()}]
+%% @doc Get a list of all bucket/key pairs stored by this backend
+list(#state{dir=Dir}) ->
+    % this is slow slow slow
+    %                                              B,N,N,N,K
+    [location_to_bkey(X) || X <- filelib:wildcard("*/*/*/*/*",
+                                                         Dir)].
 
 %% @spec location(state(), {riak_object:bucket(), riak_object:key()})
 %%          -> string()
@@ -257,8 +328,6 @@ location(State, {Bucket, Key}) ->
     K64 = encode_key(Key),
     [N1,N2,N3] = nest(K64),
     filename:join([State#state.dir, B64, N1, N2, N3, K64]).
-
--ifdef(SLF_COMMENT).
 
 %% @spec location_to_bkey(string()) ->
 %%           {riak_object:bucket(), riak_object:key()}
@@ -280,9 +349,6 @@ decode_bucket(B64) ->
 decode_key(K64) ->
     base64:decode(dirty(K64)).
 
--endif. % SLF_LAZY
-
--ifdef(TEST).
 %% @spec dirty(string()) -> string()
 %% @doc replace filename-troublesome base64 characters
 %% @see clean/1
@@ -293,7 +359,6 @@ dirty(Str64) ->
                  (C)  -> C
               end,
               Str64).
--endif. % TEST
 
 %% @spec encode_bucket(binary()) -> string()
 %% @doc make a filename out of a Riak bucket
@@ -346,16 +411,16 @@ unpack_ondisk(<<Crc32:?CRCSIZEFIELD/unsigned, Bytes/binary>>) ->
             bad_crc
     end.
 
-%%
-%% Test
-%%
+%% ===================================================================
+%% EUnit tests
+%% ===================================================================
 -ifdef(TEST).
 
 %% Broken test:
-%% simple_test() ->
-%%    ?assertCmd("rm -rf test/fs-backend"),
-%%    Config = [{riak_kv_fs_backend_root, "test/fs-backend"}],
-%%    riak_kv_backend:standard_test(?MODULE, Config).
+simple_test_() ->
+   ?assertCmd("rm -rf test/fs-backend"),
+   Config = [{fs2_backend_data_root, "test/fs-backend"}],
+   riak_kv_backend:standard_test(?MODULE, Config).
 
 dirty_clean_test() ->
     Dirty = "abc=+/def",
@@ -380,5 +445,32 @@ nest_test() ->
 %%     Config = [{riak_kv_fs_backend_root, "test/fs-backend"}],
 %%     ?assertCmd("rm -rf test/fs-backend"),
 %%     ?assertEqual(true, backend_eqc:test(?MODULE, false, Config, Cleanup)).
+
+eqc_test_() ->
+    {spawn,
+     [{inorder,
+       [{setup,
+         fun setup/0,
+         fun cleanup/1,
+         [
+          {timeout, 60000,
+           [?_assertEqual(true,
+                          backend_eqc:test(?MODULE,
+                                           false,
+                                           [{fs2_backend_data_root,
+                                             "test/fs-backend"}]))]}
+         ]}]}]}.
+
+setup() ->
+    application:load(sasl),
+    application:set_env(sasl, sasl_error_logger,
+                        {file, "riak_kv_fs2_backend_eqc_sasl.log"}),
+    error_logger:tty(false),
+    error_logger:logfile({open, "riak_kv_fs2_backend_eqc.log"}),
+    ok.
+
+cleanup(_) ->
+    os:cmd("rm -rf test/fs-backend/*").
+
 -endif. % EQC
 -endif. % TEST
