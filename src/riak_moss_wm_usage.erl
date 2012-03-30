@@ -169,7 +169,7 @@ malformed_request(RD, Ctx) ->
 
 resource_exists(RD, #ctx{riak=Riak}=Ctx) ->
     case riak_moss_utils:get_user(user_key(RD), Riak) of
-        {ok, User} ->
+        {ok, {User, _UserVclock}} ->
             {true, RD, Ctx#ctx{user=User}};
         {error, _} ->
             {false, error_msg(RD, <<"Unknown user">>), Ctx}
