@@ -82,7 +82,7 @@ status() ->
 %%   <dd>Recalculate the storage for each user, even if that user
 %%   already has a calculation stored for this time period. Default is
 %%   `false', such that restarting a canceled batch does not require
-%%   redoing the work that happened before cancelation.</dd>
+%%   redoing the work that happened before cancellation.</dd>
 %% </dl>
 start_batch(Options) ->
     gen_fsm:sync_send_event(?SERVER, {manual_batch, Options}, infinity).

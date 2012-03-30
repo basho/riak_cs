@@ -130,7 +130,7 @@ human_detail(elapsed, Elapsed) ->
 human_detail(users_done, Count) -> 
     {"Users completed in current run", integer_to_list(Count)};
 human_detail(users_skipped, Count) -> 
-    {"Users skippeded in current run", integer_to_list(Count)};
+    {"Users skipped in current run", integer_to_list(Count)};
 human_detail(users_left, Count) -> 
     {"Users left in current run", integer_to_list(Count)};
 human_detail(Name, Value) ->
