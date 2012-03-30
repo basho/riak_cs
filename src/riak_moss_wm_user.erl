@@ -19,7 +19,7 @@ init(_Config) ->
 
 -spec service_available(term(), term()) -> {true, term(), term()}.
 service_available(RD, Ctx) ->
-    riak_moss_wm_utils:service_available(RD, Ctx).
+    {true, RD, Ctx}.
 
 -spec allowed_methods(term(), term()) -> {[atom()], term(), term()}.
 allowed_methods(RD, Ctx) ->
