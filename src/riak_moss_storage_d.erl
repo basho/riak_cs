@@ -14,7 +14,7 @@
 %% API
 -export([start_link/0,
          status/0,
-         start_batch/0,
+         start_batch/1,
          cancel_batch/0,
          pause_batch/0,
          resume_batch/0]).
@@ -45,7 +45,9 @@
           riak,          %% client we're currently using
           batch_start,   %% the time we actually started 
           batch_count=0, %% count of users processed so far
-          batch=[]       %% users left to process in this batch
+          batch_skips=0, %% count of users skipped so far
+          batch=[],      %% users left to process in this batch
+          recalc         %% recalculate a user's storage for this period?
          }).
 
 %%%===================================================================
@@ -73,8 +75,17 @@ status() ->
 %% property returned from a {@link status/0} call will show the most
 %% recently passed schedule time, but calculations will be stored with
 %% the time at which they happen, as expected.
-start_batch() ->
-    gen_fsm:sync_send_event(?SERVER, start_batch, infinity).
+%%
+%% Allowed options are:
+%% <dl>
+%%   <dt>`recalc'</dt>
+%%   <dd>Recalculate the storage for each user, even if that user
+%%   already has a calculation stored for this time period. Default is
+%%   `false', such that restarting a canceled batch does not require
+%%   redoing the work that happened before cancellation.</dd>
+%% </dl>
+start_batch(Options) ->
+    gen_fsm:sync_send_event(?SERVER, {manual_batch, Options}, infinity).
 
 %% @doc Cancel the calculation currently in progress.  Returns `ok' if
 %% a batch was canceled, or `{error, no_batch}' if there was no batch
@@ -145,8 +156,8 @@ idle(status, _From, State) ->
              {last, State#state.last},
              {next, State#state.next}],
     {reply, {ok, {idle, Props}}, idle, State};
-idle(start_batch, _From, State) ->
-    NewState = start_batch(calendar:universal_time(), State),
+idle({manual_batch, Options}, _From, State) ->
+    NewState = start_batch(Options, calendar:universal_time(), State),
     {reply, ok, calculating, NewState};
 idle(cancel_batch, _From, State) ->
     {reply, {error, no_batch}, idle, State};
@@ -164,9 +175,10 @@ calculating(status, _From, State) ->
              {next, State#state.next},
              {elapsed, elapsed(State#state.batch_start)},
              {users_done, State#state.batch_count},
+             {users_skipped, State#state.batch_skips},
              {users_left, length(State#state.batch)}],
     {reply, {ok, {calculating, Props}}, calculating, State};
-calculating(start_batch, _From, State) ->
+calculating({manual_batch, _Options}, _From, State) ->
     %% this is the manual user request to begin a batch
     {reply, {error, already_calculating}, calculating, State};
 calculating(pause_batch, _From, State) ->
@@ -209,7 +221,7 @@ handle_sync_event(_Event, _From, StateName, State) ->
 handle_info({start_batch, Next}, idle, #state{next=Next}=State) ->
     %% next is scheduled immediately in order to generate warnings if
     %% the current calculation runs over time (see next clause)
-    NewState = schedule_next(start_batch(Next, State), Next),
+    NewState = schedule_next(start_batch([], Next, State), Next),
     {next_state, calculating, NewState};
 handle_info({start_batch, Next}, InBatch,
             #state{next=Next, current=Current}=State) ->
@@ -292,8 +304,9 @@ parse_time(HHMM) when is_list(HHMM) ->
 
 %% @doc Actually kick off the batch.  After calling this function, you
 %% must advance the FSM state to `calculating'.
-start_batch(Time, State) ->
+start_batch(Options, Time, State) ->
     BatchStart = calendar:universal_time(),
+    Recalc = true == proplists:get_value(recalc, Options),
     %% TODO: probably want to do this fetch streaming, to avoid
     %% accidental memory pressure at other points
     {ok, Riak} = riak_moss_utils:riak_connection(),
@@ -304,7 +317,9 @@ start_batch(Time, State) ->
                 current=Time,
                 riak=Riak,
                 batch=Batch,
-                batch_count=0}.
+                batch_count=0,
+                batch_skips=0,
+                recalc=Recalc}.
 
 %% @doc Grab the whole list of MOSS users.
 fetch_user_list(Riak) ->
@@ -319,17 +334,39 @@ fetch_user_list(Riak) ->
 
 %% @doc Compute storage for the next user in the batch.
 calculate_next_user(#state{riak=Riak,
-                           batch=[User|Rest]}=State) ->
+                           batch=[User|Rest],
+                           recalc=Recalc}=State) ->
     Start = calendar:universal_time(),
-    case riak_moss_storage:sum_user(Riak, User) of
-        {ok, BucketList} ->
-            End = calendar:universal_time(),
-            store_user(State, User, BucketList, Start, End);
-        {error, Error} ->
-            lager:error("Error computing storage for user ~s (~p)", 
-                        [User, Error])
-    end,
-    State#state{batch=Rest, batch_count=1+State#state.batch_count}.
+    case recalc(Recalc, Riak, User, Start) of
+        true ->
+            case riak_moss_storage:sum_user(Riak, User) of
+                {ok, BucketList} ->
+                    End = calendar:universal_time(),
+                    store_user(State, User, BucketList, Start, End);
+                {error, Error} ->
+                    lager:error("Error computing storage for user ~s (~p)", 
+                                [User, Error])
+            end,
+            State#state{batch=Rest, batch_count=1+State#state.batch_count};
+        false ->
+            State#state{batch=Rest, batch_skips=1+State#state.batch_skips}
+    end.
+
+recalc(true, _Riak, _User, _Time) ->
+    %% the user demanded recalculations
+    true;
+recalc(false, Riak, User, Time) ->
+    {ok, Period} = riak_moss_storage:archive_period(),
+    {Start, End} = rts:slice_containing(Time, Period),
+    case riak_moss_storage:get_usage(Riak, User, Start, End) of
+        {[], _} ->
+            %% No samples were found for this time period (or all
+            %% attempts ended in error); calculate
+            true;
+        _ ->
+            %% A sample was found; do not recalc
+            false
+    end.
 
 %% @doc Archive a user's storage calculation.
 store_user(#state{riak=Riak}, User, BucketList, Start, End) ->
