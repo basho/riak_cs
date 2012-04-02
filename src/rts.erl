@@ -196,7 +196,7 @@ check_bucket_props(Bucket) ->
                 riak_moss_utils:close_riak_connection(Riak)
             end;
         {error, Reason} ->
-            lager:warn(
+            lager:warning(
               "Unable to verify ~s bucket settings (~p).",
               [Bucket, Reason]),
             {error, Reason}
@@ -221,14 +221,14 @@ check_bucket_props(Bucket, Riak) ->
                                        [Bucket]),
                             ok;
                         {error, Reason} ->
-                            lager:warn("Unable to configure ~s"
-                                       " bucket settings (~p).",
-                                       [Bucket, Reason]),
+                            lager:warning("Unable to configure ~s"
+                                          " bucket settings (~p).",
+                                          [Bucket, Reason]),
                             {error, Reason}
                     end
             end;
         {error, Reason} ->
-            lager:warn(
+            lager:warning(
               "Unable to verify ~s bucket settings (~p).",
               [Bucket, Reason]),
             {error, Reason}
