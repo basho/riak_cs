@@ -85,7 +85,13 @@ init([]) ->
     Storage = {riak_moss_storage_d,
                {riak_moss_storage_d, start_link, []},
                permanent, 5000, worker, [riak_moss_storage_d]},
-
+    ReaderSup = {riak_moss_reader_sup,
+                {riak_moss_reader_sup, start_link, []},
+                permanent, 5000, worker, dynamic},
+    GetFsmSupLegacy = {riak_moss_get_fsm_sup_legacy,
+             {riak_moss_get_fsm_sup, start_link, []},
+             permanent, 5000, worker, dynamic},
+    
     {ok, {RiakCWorkers, RiakCMaxOverflow}} = application:get_env(riak_moss, riakc_pool),
     RiakCStop = fun(Worker) -> riak_moss_riakc_pool_worker:stop(Worker) end,
     RiakCPool = {riakc_pool,
@@ -102,5 +108,7 @@ init([]) ->
                  DeleteFsmSup,
                  GetFsmSup,
                  PutFsmSup,
-                 Web],
+                 Web,
+                 ReaderSup,
+                 GetFsmSupLegacy],
     {ok, { {one_for_one, 10, 10}, Processes} }.

@@ -22,5 +22,6 @@ dispatch_table() ->
      {["user"], riak_moss_wm_user, []},
      {["usage", '*'], riak_moss_wm_usage, [{auth_bypass, AuthBypass}]},
      {[bucket], riak_moss_wm_bucket, [{auth_bypass, AuthBypass}]},
+     {[bucket, '*'], {riak_moss_legacy_shim, v1metadata_guard}, riak_moss_wm_key_legacy, [{auth_bypass, AuthBypass}]},
      {[bucket, '*'], riak_moss_wm_key, [{auth_bypass, AuthBypass}]}
     ].
