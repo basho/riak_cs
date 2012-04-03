@@ -38,6 +38,7 @@
                  }).
 
 -record(key_context, {context :: #context{},
+                      doc_metadata :: term(),
                       manifest :: lfs_manifest(),
                       get_fsm_pid :: pid(),
                       putctype :: string(),

@@ -29,8 +29,8 @@ v2manifest_guard(RD) ->
     
     case riak_moss_utils:riak_connection() of
         {ok, Pid} ->
-            case riakc_pb_socket:get(RiakcPid, ManifestBucket, Key) of
-                {ok, _Object} -> true
+            case riakc_pb_socket:get(Pid, ManifestBucket, Key) of
+                {ok, _Object} -> true;
                 _ -> false
             end;
         {error, _Reason} -> false
@@ -49,8 +49,8 @@ v1metadata_guard(RD) ->
 
     case riak_moss_utils:riak_connection() of
         {ok, Pid} ->
-            case riakc_pb_socket:get(RiakcPid, PrefixedBucket, Key) of
-                {ok, _Object} -> true
+            case riakc_pb_socket:get(Pid, PrefixedBucket, Key) of
+                {ok, _Object} -> true;
                 _ -> false
             end;
         {error, _Reason} -> false

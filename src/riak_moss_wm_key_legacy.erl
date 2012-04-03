@@ -16,7 +16,8 @@
          accept_body/2,
          delete_resource/2,
          valid_entity_length/2]).
-
+         
+-define(MAX_CONTENT_LENGTH, 5368709120). %% 5 GB
 -include("riak_moss.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
 

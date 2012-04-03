@@ -38,6 +38,9 @@
 -record(state, {riakc_pid :: pid(),
                 caller_pid :: pid()}).
 
+-define(OBJECT_BUCKET_PREFIX, <<"objects:">>).
+-define(BLOCK_BUCKET_PREFIX, <<"blocks:">>).
+
 -type state() :: #state{}.
 
 

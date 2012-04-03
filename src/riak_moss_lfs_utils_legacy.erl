@@ -47,7 +47,7 @@
 -export_type([lfs_manifest/0]).
 
 %% Opaque record for a large-file manifest.
--record(lfs_manifest, {
+-record(lfs_v0manifest, {
     version=1 :: integer(),
     uuid :: binary(),
     block_size :: integer(),
@@ -60,7 +60,7 @@
     active=false :: boolean(),
     blocks_remaining = sets:new()}).
 
--type lfs_manifest() :: #lfs_manifest{}.
+-type lfs_v0manifest() :: #lfs_v0manifest{}.
 
 %% -------------------------------------------------------------------
 %% Public API
@@ -68,12 +68,12 @@
 
 %% @doc The number of blocks that this
 %%      size will be broken up into
--spec block_count(lfs_manifest() | pos_integer()) -> non_neg_integer().
+-spec block_count(lfs_v0manifest() | pos_integer()) -> non_neg_integer().
 block_count(ContentLength) when is_integer(ContentLength) ->
     block_count(ContentLength, block_size());
 block_count(Manifest) ->
-    block_count(Manifest#lfs_manifest.content_length,
-                Manifest#lfs_manifest.block_size).
+    block_count(Manifest#lfs_v0manifest.content_length,
+                Manifest#lfs_v0manifest.block_size).
 
 %% @doc The number of blocks that this
 %%      size will be broken up into
@@ -87,13 +87,13 @@ block_count(ContentLength, BlockSize) ->
             Quotient + 1
     end.
 
-initial_block_keynames(#lfs_manifest{bkey={_, KeyName},
+initial_block_keynames(#lfs_v0manifest{bkey={_, KeyName},
                              uuid=UUID,
                              content_length=ContentLength}) ->
     BlockList = initial_blocks(ContentLength),
     block_keynames(KeyName, UUID, BlockList).
 
-remaining_block_keynames(#lfs_manifest{bkey={_, KeyName},
+remaining_block_keynames(#lfs_v0manifest{bkey={_, KeyName},
                              uuid=UUID}=Manifest) ->
     BlockList = sorted_blocks_remaining(Manifest),
     block_keynames(KeyName, UUID, BlockList).
@@ -125,7 +125,7 @@ block_size() ->
             end
     end.
 
-safe_block_size_from_manifest(#lfs_manifest{block_size=BlockSize}) ->
+safe_block_size_from_manifest(#lfs_v0manifest{block_size=BlockSize}) ->
     case BlockSize of
         undefined ->
             block_size();
@@ -134,15 +134,15 @@ safe_block_size_from_manifest(#lfs_manifest{block_size=BlockSize}) ->
 
 %% @doc Get the file UUID from the manifest.
 -spec file_uuid(lfs_manifest()) -> binary().
-file_uuid(#lfs_manifest{uuid=UUID}) ->
+file_uuid(#lfs_v0manifest{uuid=UUID}) ->
     UUID.
 
 %% @doc Finalize the manifest of a file by
 %% marking it as active, setting a finished time,
 %% and setting blocks_remaining as an empty list.
--spec finalize_manifest(lfs_manifest(), binary()) -> lfs_manifest().
+-spec finalize_manifest(lfs_v0manifest(), binary()) -> lfs_manifest().
 finalize_manifest(Manifest, MD5) ->
-    Manifest#lfs_manifest{active=true,
+    Manifest#lfs_v0manifest{active=true,
                           content_md5=MD5,
                           finished=httpd_util:rfc1123_date(),
                           blocks_remaining=sets:new()}.
@@ -160,7 +160,7 @@ initial_blocks(ContentLength, BlockSize) ->
     UpperBound = block_count(ContentLength, BlockSize),
     lists:seq(0, (UpperBound - 1)).
 
-block_sequences_for_manifest(#lfs_manifest{content_length=ContentLength}=Manifest) ->
+block_sequences_for_manifest(#lfs_v0manifest{content_length=ContentLength}=Manifest) ->
     SafeBlockSize = safe_block_size_from_manifest(Manifest),
     initial_blocks(ContentLength, SafeBlockSize).
 
@@ -169,7 +169,7 @@ block_sequences_for_manifest(#lfs_manifest{content_length=ContentLength}=Manifes
 is_manifest(BinaryValue) ->
     try binary_to_term(BinaryValue) of
         Term ->
-            is_record(Term, lfs_manifest)
+            is_record(Term, lfs_v0manifest)
     catch
         error:badarg ->
             false
@@ -177,7 +177,7 @@ is_manifest(BinaryValue) ->
 
 %% @doc Return the metadata for the object
 %%      represented in the manifest
-metadata_from_manifest(#lfs_manifest{metadata=Metadata}) ->
+metadata_from_manifest(#lfs_v0manifest{metadata=Metadata}) ->
     Metadata.
 
 %% @doc Initialize a new file manifest
@@ -186,11 +186,11 @@ metadata_from_manifest(#lfs_manifest{metadata=Metadata}) ->
                    binary(),
                    pos_integer(),
                    term(),
-                   dict()) -> lfs_manifest().
+                   dict()) -> lfs_v0manifest().
 new_manifest(Bucket, FileName, UUID, ContentLength, ContentMd5, MetaData) ->
     BlockSize = block_size(),
     Blocks = sets:from_list(initial_blocks(ContentLength, BlockSize)),
-    #lfs_manifest{bkey={Bucket, FileName},
+    #lfs_v0manifest{bkey={Bucket, FileName},
                   uuid=UUID,
                   content_length=ContentLength,
                   content_md5=ContentMd5,
@@ -201,38 +201,38 @@ new_manifest(Bucket, FileName, UUID, ContentLength, ContentMd5, MetaData) ->
 %% @doc Remove a chunk from the
 %%      blocks_remaining field of Manifest
 remove_block(Manifest, Chunk) ->
-    Remaining = Manifest#lfs_manifest.blocks_remaining,
+    Remaining = Manifest#lfs_v0manifest.blocks_remaining,
     Updated = sets:del_element(Chunk, Remaining),
-    Manifest#lfs_manifest{blocks_remaining=Updated}.
+    Manifest#lfs_v0manifest{blocks_remaining=Updated}.
 
 %% @doc Mark a file manifest as inactive by setting
 %% the `active' field of the manifest to `false'.
--spec set_inactive(lfs_manifest()) -> lfs_manifest().
+-spec set_inactive(lfs_v0manifest()) -> lfs_v0manifest().
 set_inactive(Manifest) ->
-    Manifest#lfs_manifest{active=false}.
+    Manifest#lfs_v0manifest{active=false}.
 
-sorted_blocks_remaining(#lfs_manifest{blocks_remaining=Remaining}) ->
+sorted_blocks_remaining(#lfs_v0manifest{blocks_remaining=Remaining}) ->
     lists:sort(sets:to_list(Remaining)).
 
 %% @doc Return true or false
 %%      depending on whether
 %%      we're still waiting
 %%      to accumulate more chunks
-still_waiting(#lfs_manifest{blocks_remaining=Remaining}) ->
+still_waiting(#lfs_v0manifest{blocks_remaining=Remaining}) ->
     sets:size(Remaining) =/= 0.
 
--spec content_md5(lfs_manifest()) -> binary().
-content_md5(#lfs_manifest{content_md5=ContentMD5}) ->
+-spec content_md5(lfs_v0manifest()) -> binary().
+content_md5(#lfs_v0manifest{content_md5=ContentMD5}) ->
     ContentMD5.
 
--spec content_length(lfs_manifest()) -> integer().
-content_length(#lfs_manifest{content_length=CL}) ->
+-spec content_length(lfs_v0manifest()) -> integer().
+content_length(#lfs_v0manifest{content_length=CL}) ->
     CL.
 
--spec created(lfs_manifest()) -> string().
-created(#lfs_manifest{created=Created}) ->
+-spec created(lfs_v0manifest()) -> string().
+created(#lfs_v0manifest{created=Created}) ->
     Created.
 
--spec is_active(lfs_manifest()) -> boolean().
-is_active(#lfs_manifest{active=A}) ->
+-spec is_active(lfs_v0manifest()) -> boolean().
+is_active(#lfs_v0manifest{active=A}) ->
     A.
