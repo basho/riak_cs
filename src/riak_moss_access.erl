@@ -11,6 +11,7 @@
 -export([
          archive_period/0,
          log_flush_interval/0,
+         max_flush_size/0,
          make_object/3,
          get_usage/4
         ]).
@@ -68,6 +69,19 @@ log_flush_interval() ->
             end;
         _ ->
             {error, "riak_moss:access_log_flush_interval was not an integer"}
+    end.
+
+%% @doc Retreive the number of seconds that should elapse between
+%% archivings of access stats.  This setting is controlled by the
+%% `access_archive_period' environment variable of the `riak_moss'
+%% application.
+-spec max_flush_size() -> {ok, integer()}|{error, term()}.
+max_flush_size() ->
+    case application:get_env(riak_moss, access_log_flush_size) of
+        {ok, AP} when is_integer(AP), AP > 0 ->
+            {ok, AP};
+        _ ->
+            {error, "riak_moss:access_log_flush_size was not a positive integer"}
     end.
 
 %% @doc Create a Riak object for storing a user/slice's access data.

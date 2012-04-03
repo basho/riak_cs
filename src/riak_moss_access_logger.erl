@@ -58,6 +58,8 @@
 
 -record(state, {
           period :: integer(),         %% time between aggregation archivals
+          max_size :: integer(),       %% max accesses between archivals
+          size :: integer(),           %% num. accesses since last archival
           current :: {calendar:datetime(), calendar:datetime()},
                      %% current agg. slice
           archive :: reference(),      %% reference for archive msg
@@ -106,17 +108,22 @@ set_bytes_in(Count, RD) when is_integer(Count) ->
 %% @end
 %%--------------------------------------------------------------------
 start_link(_BaseDir) ->
-    case riak_moss_access:log_flush_interval() of
-        {ok, LogPeriod} ->
+    case {riak_moss_access:log_flush_interval(),
+          riak_moss_access:max_flush_size()} of
+        {{ok, LogPeriod}, {ok, FlushSize}} ->
             gen_server:start_link({local, ?SERVER}, ?MODULE,
-                                  [{period, LogPeriod}],
+                                  [{period, LogPeriod},
+                                   {max_size, FlushSize}],
                                   []);
-        {error, Reason} ->
+        {{error, Reason}, _} ->
             lager:error("Error starting access logger: ~s", [Reason]),
             %% can't simply {error, Reason} out here, because
             %% webmachine/mochiweb will just ignore the failed
             %% startup; using init:stop/0 here so that the user isn't
             %% suprised later when there are no logs
+            init:stop();
+        {_, {error, Reason}} ->
+            lager:error("Error starting access logger: ~s", [Reason]),
             init:stop()
     end.
 
@@ -151,6 +158,7 @@ flush(Timeout) ->
 %%--------------------------------------------------------------------
 init(Props) ->
     {period, P} = lists:keyfind(period, 1, Props),
+    {max_size, MS} = lists:keyfind(max_size, 1, Props),
     T = fresh_table(),
 
     %% accuracy in recording: say the first slice starts *now*, not
@@ -159,7 +167,7 @@ init(Props) ->
     {_,End} = rts:slice_containing(Start, P),
     C = {Start, End},
 
-    InitState = #state{period=P, table=T, current=C},
+    InitState = #state{period=P, table=T, current=C, max_size=MS, size=0},
     case schedule_archival(InitState) of
         {ok, SchedState} -> ok;
         {error, _Behind} ->
@@ -183,16 +191,9 @@ init(Props) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_call({flush, FlushEnd}, _From, #state{current=C}=State) ->
-    %% record this archive as not filling the whole slice
-    {SliceStart, SliceEnd} = C,
-    NewState = do_archive(State#state{current={SliceStart, FlushEnd}}),
-
-    %% Now continue waiting for the archive message for this slice,
-    %% but mark the next archive as not filling the whole slice as well
-    OldNewState = NewState#state{current={FlushEnd, SliceEnd}},
-
-    {reply, ok, OldNewState};
+handle_call({flush, FlushEnd}, _From, State) ->
+    NewState = force_archive(State, FlushEnd),
+    {reply, ok, NewState};
 handle_call(_Request, _From, State) ->
     Reply = ok,
     {reply, Reply, State}.
@@ -207,14 +208,22 @@ handle_call(_Request, _From, State) ->
 %%                                  {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_cast({log_access, LogData}, #state{table=T}=State) ->
+handle_cast({log_access, LogData},
+            #state{table=T, size=S, max_size=MaxS}=State) ->
     case access_record(LogData) of
-        {ok, Access} -> ets:insert(T, Access);
-        _            -> ok
-    end,
-    %% TODO: probably want to check table size as a trigger for
-    %% archival, in addition to time period
-    {noreply, State};
+        {ok, Access} ->
+            ets:insert(T, Access),
+            case S+1 < MaxS of
+                true ->
+                    %% still a "small" log; keep going
+                    {noreply, State#state{size=S+1}};
+                false ->
+                    %% log is now "big"; flush it
+                    {noreply, force_archive(State, calendar:universal_time())}
+            end;
+        _ ->
+            {noreply, State}
+    end;
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
@@ -304,6 +313,14 @@ schedule_archival(#state{current={_,E}}=State) ->
             {error, -TL}
     end.
 
+force_archive(#state{current=C}=State, FlushEnd) ->
+    %% record this archive as not filling the whole slice
+    {SliceStart, SliceEnd} = C,
+    NewState = do_archive(State#state{current={SliceStart, FlushEnd}}),
+
+    %% Now continue waiting for the archive message for this slice,
+    %% but mark the next archive as not filling the whole slice as well
+    NewState#state{current={FlushEnd, SliceEnd}}.
 
 %% @doc Send the current slice's accumulated accesses to the archiver
 %% for storage.  Create a clean table to store the next slice's accesses.
@@ -316,7 +333,7 @@ do_archive(#state{period=P, table=T, current=C}=State) ->
     %% create a fresh table for use here
     NewT = fresh_table(),
     NewC = rts:next_slice(C, P),
-    State#state{table=NewT, current=NewC}.
+    State#state{table=NewT, current=NewC, size=0}.
 
 %% @doc Digest a Webmachine log data record, and produce a record for
 %% the access table.
