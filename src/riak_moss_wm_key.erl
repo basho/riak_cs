@@ -233,7 +233,10 @@ delete_resource(RD, Ctx=#key_context{bucket=Bucket,
 content_types_accepted(RD, Ctx) ->
     case wrq:get_req_header("Content-Type", RD) of
         undefined ->
-            {[{"application/octet-stream", accept_body}], RD, Ctx};
+            DefaultCType = "application/octet-stream",
+            {[{DefaultCType, accept_body}],
+             RD,
+             Ctx#key_context{putctype=DefaultCType}};
         %% This was shamelessly ripped out of
         %% https://github.com/basho/riak_kv/blob/0d91ca641a309f2962a216daa0cee869c82ffe26/src/riak_kv_wm_object.erl#L492
         CType ->
