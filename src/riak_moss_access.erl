@@ -33,7 +33,7 @@
 
 -define(NODEKEY, <<"MossNode">>).
 
-%% @doc Retreive the number of seconds that should elapse between
+%% @doc Retrieve the number of seconds that should elapse between
 %% archivings of access stats.  This setting is controlled by the
 %% `access_archive_period' environment variable of the `riak_moss'
 %% application.
@@ -46,7 +46,7 @@ archive_period() ->
             {error, "riak_moss:access_archive_period was not an integer"}
     end.
 
-%% @doc Retreive the number of seconds that should elapse between
+%% @doc Retrieve the number of seconds that should elapse between
 %% flushes of access stats.  This setting is controlled by the
 %% `access_log_flush_interval' environment variable of the `riak_moss'
 %% application.
@@ -71,10 +71,10 @@ log_flush_interval() ->
             {error, "riak_moss:access_log_flush_interval was not an integer"}
     end.
 
-%% @doc Retreive the number of seconds that should elapse between
-%% archivings of access stats.  This setting is controlled by the
-%% `access_archive_period' environment variable of the `riak_moss'
-%% application.
+%% @doc Retrieve the maximum number of records that should be added to
+%% the log before the log is automatically archived.  This setting is
+%% controlled by the `access_log_flush_size' environment variable of
+%% the `riak_moss' application.
 -spec max_flush_size() -> {ok, integer()}|{error, term()}.
 max_flush_size() ->
     case application:get_env(riak_moss, access_log_flush_size) of
