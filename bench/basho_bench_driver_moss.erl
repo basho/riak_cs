@@ -1,6 +1,6 @@
 %% -------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2011 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2012 Basho Technologies, Inc.  All Rights Reserved.
 %%
 %% -------------------------------------------------------------------
 
@@ -55,7 +55,7 @@ new(ID) ->
                 bucket = basho_bench_config:get(moss_bucket, "test"),
                 report_fun = ReportFun}}.
 
--spec run(atom(), fun(), fun(), term()) -> {{ok, integer()}, term()} | {error, term(), term()}.
+-spec run(atom(), fun(), fun(), term()) -> {{ok, number()}, term()} | {error, term(), term()}.
 run(insert, KeyGen, ValueGen, #state{bucket = Bucket,
                                      report_fun = ReportFun} = State) ->
     {NextHost, S2} = next_host(State),
