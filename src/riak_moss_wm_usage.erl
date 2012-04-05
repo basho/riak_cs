@@ -344,7 +344,7 @@ xml_storage({Storage, Errors}) ->
     
 %% Internals %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 user_key(RD) ->
-    case wrq:path_tokens(RD) of
+    case path_tokens(RD) of
         [KeyId|_] -> mochiweb_util:unquote(KeyId);
         _         -> []
     end.
@@ -370,12 +370,29 @@ true_param(RD, Param) ->
         true ->
             true;
         false ->
-            case wrq:path_tokens(RD) of
+            case path_tokens(RD) of
                 [_,Options|_] ->
                     0 < string:str(Options, Param);
                 _ ->
                     false
             end
+    end.
+
+%% @doc Support both `/usage/Key/Opts/Start/End' and
+%% `/usage/Key.Opts.Start.End', since some commands assume that you
+%% want extra slashes quoted.
+path_tokens(RD) ->
+    case wrq:path_tokens(RD) of
+        [JustOne] ->
+            case string:chr(JustOne, $.) of
+                0 ->
+                    [JustOne];
+                _ ->
+                    %% URL is dot-separated options
+                    string:tokens(JustOne, ".")
+            end;
+        Many ->
+            Many
     end.
 
 parse_start_time(RD) ->
@@ -387,7 +404,7 @@ parse_end_time(RD, StartTime) ->
 time_param(RD, Param, N, Default) ->
     case wrq:get_qs_value(Param, RD) of
         undefined ->
-            case catch lists:nth(N, wrq:path_tokens(RD)) of
+            case catch lists:nth(N, path_tokens(RD)) of
                 {'EXIT', _} ->
                     {ok, Default};
                 TimeString ->
