@@ -157,9 +157,16 @@ malformed_request(RD, Ctx) ->
         {ok, Start} ->
             case parse_end_time(RD, Start) of
                 {ok, End} ->
-                    {false, RD,
-                     Ctx#ctx{start_time=lists:min([Start, End]),
-                             end_time=lists:max([Start, End])}};
+                    case too_many_periods(Start, End) of
+                        true ->
+                            {true,
+                             error_msg(RD, <<"Too much time requested">>),
+                             Ctx};
+                        false ->
+                            {false, RD,
+                             Ctx#ctx{start_time=lists:min([Start, End]),
+                                     end_time=lists:max([Start, End])}}
+                    end;
                 error ->
                     {true, error_msg(RD, <<"Invalid end-time format">>), Ctx}
             end;
@@ -452,6 +459,19 @@ datetime(String) when is_list(String) ->
         _ ->
             error
     end.
+
+%% @doc Will this request require more reads than the configured limit?
+-spec too_many_periods(calendar:datetime(), calendar:datetime())
+          -> boolean().
+too_many_periods(Start, End) ->
+    Seconds = calendar:datetime_to_gregorian_seconds(End)
+        -calendar:datetime_to_gregorian_seconds(Start),
+    {ok, Limit} = application:get_env(riak_moss, usage_request_limit),
+    
+    {ok, Access} = riak_moss_access:archive_period(),
+    {ok, Storage} = riak_moss_storage:archive_period(),
+    
+    ((Seconds div Access) > Limit) orelse ((Seconds div Storage) > Limit).
 
 -ifdef(TEST).
 -ifdef(EQC).

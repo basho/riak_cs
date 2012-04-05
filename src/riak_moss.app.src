@@ -25,6 +25,7 @@
          {access_log_flush_factor, 1},
          {access_log_flush_size, 1000000},
          {storage_archive_period, 86400},
+         {usage_request_limit, 744},
          %% Size, MaxOverflow
          {riakc_pool, {128, 0}}
         ]}
