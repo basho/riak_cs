@@ -270,3 +270,20 @@
 -define(DT_OBJECT_OP,       703).
 %% perhaps add later? -define(DT_AUTH_OP,         704).
 -define(DT_WM_OP,           705).
+
+%% Number of seconds to leave manifests
+%% in the `pending_delete` state before
+%% actually deleting the blocks
+-define(DEFAULT_DELETE_LEEWAY_TIME, 86400). %% 24-hours
+
+%% Number of seconds to keep manifests
+%% in the `deleted` state before removing
+%% them completely.
+-define(DEFAULT_DELETE_TOMBSTONE_TIME, 86400). %% 24-hours
+
+%% Number of seconds to wait before
+%% retrying to delete (GC) something.
+%% ie. the old delete process hasn't
+%% updated the last_block_deleted_time
+%% in over N seconds
+-define(DEFAULT_RETRY_DELETE_TIME, 3600). %% 1-hour
