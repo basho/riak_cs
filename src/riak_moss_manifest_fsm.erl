@@ -234,6 +234,9 @@ get_manifests(RiakcPid, Bucket, Key) ->
             Siblings = riakc_obj:get_values(Object),
             DecodedSiblings = lists:map(fun erlang:binary_to_term/1, Siblings),
             Resolved = riak_moss_manifest_resolution:resolve(DecodedSiblings),
+            %% TODO:
+            %% this is where the `handle_gc` call
+            %% will go
             {ok, Object, Resolved};
         {error, notfound}=NotFound ->
             NotFound
