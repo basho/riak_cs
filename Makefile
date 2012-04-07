@@ -88,7 +88,7 @@ dialyzer: compile
 	@echo Use "'make build_plt'" to build PLT prior to using this target.
 	@echo
 	@sleep 1
-	dialyzer -Wno_return --plt $(PLT) deps/*/ebin ebin | \
+	dialyzer -Wno_return -Wunmatched_returns --plt $(PLT) deps/*/ebin ebin | \
 	    fgrep -v -f ./dialyzer.ignore-warnings
 
 cleanplt:
