@@ -33,6 +33,7 @@
 -include("riak_moss.hrl").
 
 -define(SERVER, ?MODULE). 
+-define(DEFAULT_MAX_BACKLOG, 2). % 2 ~= forced and next
 
 -record(state,
         {
@@ -40,6 +41,7 @@
           table,     %% the logger table being archived
           slice,     %% the logger slice bieng archived
           next,      %% the next entry in the table to archive
+          max_backlog, %% max number of entries to allow in backlog
           backlog=[] %% tables that need to be archived when we're done
         }).
 
@@ -108,7 +110,17 @@ status(Timeout) ->
 
 init([]) ->
     rts:check_bucket_props(?ACCESS_BUCKET),
-    {ok, idle, #state{}}.
+    MaxBacklog = case application:get_env(
+                        riak_moss, access_archiver_max_backlog) of
+                     {ok, MB} when is_integer(MB) -> MB;
+                     _ ->
+                         lager:warning(
+                           "access_archiver_max_backlog was unset or"
+                           " invalid; overriding with default of ~b",
+                           [?DEFAULT_MAX_BACKLOG]),
+                         ?DEFAULT_MAX_BACKLOG
+                 end,
+    {ok, idle, #state{max_backlog=MaxBacklog}}.
 
 idle(_Request, State) ->
     {next_state, idle, State}.
@@ -119,8 +131,9 @@ archiving(continue, #state{next='$end_of_table', table=OldTable,
     case Backlog of
         [{Table,Slice}|RestBacklog] ->
             %% start working on the pile we were ignoring
-            start_archiving(Table, Slice,
-                            State#state{backlog=RestBacklog});
+            continue(
+              start_archiving(Table, Slice,
+                              State#state{backlog=RestBacklog}));
         [] ->
             %% nothing to do, rest
             riak_moss_riakc_pool_worker:stop(Riak),
@@ -167,7 +180,8 @@ handle_info({'ETS-TRANSFER', Table, _From, Slice}, StateName, State) ->
             %% lookup code
             case riak_moss_riakc_pool_worker:start_link([]) of
                 {ok, Riak} ->
-                    start_archiving(Table, Slice, State#state{riak=Riak});
+                    continue(
+                      start_archiving(Table, Slice, State#state{riak=Riak}));
                 {error, Reason} ->
                     lager:error(
                       "Access archiver connection to Riak failed (~p), "
@@ -176,10 +190,27 @@ handle_info({'ETS-TRANSFER', Table, _From, Slice}, StateName, State) ->
                     {next_state, idle, State}
             end;
         _ ->
-            %% TODO: maybe trigger a timeout of the in-progress archival
             Backlog = State#state.backlog++[{Table, Slice}],
-            NewState = State#state{backlog=Backlog},
-            {next_state, StateName, NewState}
+            case length(Backlog) =< State#state.max_backlog of
+               true ->
+                    %% room in the backlog; put it there
+                    NewState = State#state{backlog=Backlog},
+                    {next_state, StateName, NewState};
+               false ->
+                    %% too much in the backlog; abandon current
+                    %% archival and move on to catch up
+                    lager:error("Skipping archival of accesses ~p to"
+                                " catch up on backlog",
+                                [State#state.slice]),
+                    ets:delete(State#state.table),
+                    [{NT, NS}|RestBacklog] = Backlog,
+                    %% don't have to continue/1 here, because there's
+                    %% already a continue in the inbox for the
+                    %% inflight archival
+                    {next_state, StateName,
+                     start_archiving(
+                       NT, NS, State#state{backlog=RestBacklog})}
+            end
     end;
 handle_info(_Info, StateName, State) ->
     {next_state, StateName, State}.
@@ -187,8 +218,8 @@ handle_info(_Info, StateName, State) ->
 terminate(_Reason, idle, _State) ->
     ok;
 terminate(_Reason, _StateName, _State) ->
-    lager:warn("Access archiver stopping with work left to do;"
-               " logs will be dropped"),
+    lager:warning("Access archiver stopping with work left to do;"
+                  " logs will be dropped"),
     ok.
 
 code_change(_OldVsn, StateName, State, _Extra) ->
@@ -203,7 +234,7 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 %% Riak object.
 start_archiving(Table, Slice, State) ->
     Next = ets:first(Table),
-    continue(State#state{next=Next, table=Table, slice=Slice}).
+    State#state{next=Next, table=Table, slice=Slice}.
 
 continue(State) ->
     gen_fsm:send_event(?SERVER, continue),
@@ -215,9 +246,6 @@ archive_user(User, Riak, Table, Slice) ->
     store(User, Riak, Record, Slice).
 
 store(User, Riak, Record, Slice) ->
-    %% TODO: whole-archive timeout, so we don't get a backup
-    %% from each put being relatively fast, but the sum being
-    %% longer than the period
     case riakc_pb_socket:put(Riak, Record) of
         ok ->
             lager:debug("Archived access stats for ~s ~p",
