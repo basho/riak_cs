@@ -15,7 +15,9 @@
          active_manifest/1,
          mark_overwritten/1,
          need_gc/1,
-         prune/1]).
+         need_gc/2,
+         prune/1,
+         prune/2]).
 
 %%%===================================================================
 %%% API
@@ -63,22 +65,30 @@ mark_overwritten(Manifests) ->
     end.
 
 
-%% @doc Return a <TBD> of the
+%% @doc Return a list of the
 %% manfiests that need to be
 %% garbage collected.
--spec need_gc(term()) -> term().
+-spec need_gc(list(lfs_manifest())) -> list(binary()).
 need_gc(Manifests) ->
+    need_gc(Manifests, erlang:now()).
+
+-spec need_gc(list(lfs_manifest()), erlang:timestamp()) -> list(binary()).
+need_gc(Manifests, Time) ->
     [Id || {Id, Manifest} <- orddict:to_list(Manifests),
-        needs_gc(Manifest)].
+        needs_gc(Manifest, Time)].
 
 %% TODO: for pruning we're likely
 %% going to want to add some app.config
 %% stuff for how long to keep around
 %% fully deleted manifests, just like
 %% we do with vclocks.
--spec prune(term()) -> term().
+-spec prune(list(lfs_manifest())) -> list(lfs_manifest()).
 prune(Manifests) ->
-    [KV || {_K, V}=KV <- Manifests, not (needs_pruning(V))].
+    prune(Manifests, erlang:now()).
+
+-spec prune(list(lfs_manifest()), erlang:timestamp()) -> list(lfs_manifest()).
+prune(Manifests, Time) ->
+    [KV || {_K, V}=KV <- Manifests, not (needs_pruning(V, Time))].
 
 %%%===================================================================
 %%% Internal functions
@@ -104,23 +114,23 @@ most_recent_active_manifest(Man1=#lfs_manifest_v2{state=active}, Man2=#lfs_manif
 most_recent_active_manifest(Man1=#lfs_manifest_v2{state=active}, _Man2) -> Man1;
 most_recent_active_manifest(_Man1, Man2=#lfs_manifest_v2{state=active}) -> Man2.
 
--spec needs_gc(lfs_manifest()) -> boolean().
+-spec needs_gc(lfs_manifest(), erlang:timestamp()) -> boolean().
 needs_gc(#lfs_manifest_v2{state=pending_delete,
-                                  delete_marked_time=DeleteMarkedTime,
-                                  last_block_deleted_time=undefined}) ->
-    seconds_diff(erlang:now(), DeleteMarkedTime) > delete_leeway_time();
+                          delete_marked_time=DeleteMarkedTime,
+                          last_block_deleted_time=undefined}, Time) ->
+    seconds_diff(Time, DeleteMarkedTime) > delete_leeway_time();
 needs_gc(#lfs_manifest_v2{state=pending_delete,
-                                  last_block_deleted_time=LastBlockWrittenTime}) ->
-    seconds_diff(erlang:now(), LastBlockWrittenTime) > retry_delete_time();
-needs_gc(_Manifest) ->
+                          last_block_deleted_time=LastBlockWrittenTime}, Time) ->
+    seconds_diff(Time, LastBlockWrittenTime) > retry_delete_time();
+needs_gc(_Manifest, _Time) ->
     false.
 
--spec needs_pruning(lfs_manifest()) -> boolean().
+-spec needs_pruning(lfs_manifest(), erlang:timestamp()) -> boolean().
 needs_pruning(#lfs_manifest_v2{state=deleted,
                             delete_blocks_remaining=[],
-                            last_block_deleted_time=DeleteTime}) ->
-    seconds_diff(erlang:now(), DeleteTime) > delete_tombstone_time();
-needs_pruning(_Manifest) ->
+                            last_block_deleted_time=DeleteTime}, Time) ->
+    seconds_diff(Time, DeleteTime) > delete_tombstone_time();
+needs_pruning(_Manifest, _Time) ->
     false.
 
 seconds_diff(T2, T1) ->
