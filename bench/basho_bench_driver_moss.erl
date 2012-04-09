@@ -48,6 +48,19 @@ new(ID) ->
             _             -> {op_sec, fun(_) -> 1 end}
         end,
     basho_bench_log:log(info, "Reporting factor = ~p\n", [RF_name]),
+    OpsList = basho_bench_config:get(operations, []),
+    case RF_name /= op_sec andalso
+         lists:keymember(delete, 1, OpsList) andalso
+         length(OpsList) > 1 of
+        true ->
+            basho_bench_log:log(
+              warn,
+              "Mixing delete and non-delete operations together with "
+              "~p measurements unit can yield nonsense results!\n\n",
+              [RF_name]);
+        false ->
+            ok
+    end,
 
     Hosts = [{Ip, Port}],
 
