@@ -14,21 +14,34 @@
 %% the archiving and then deletes the table.
 -module(riak_moss_access_archiver).
 
--behaviour(gen_server).
+-behaviour(gen_fsm).
 
 %% API
 -export([start_link/0, archive/2]).
 -export([status/1]).
 
-%% gen_server callbacks
--export([init/1, handle_call/3, handle_cast/2, handle_info/2,
-         terminate/2, code_change/3]).
+%% gen_fsm callbacks
+-export([init/1,
+         idle/2, idle/3,
+         archiving/2, archiving/3,
+         handle_event/3,
+         handle_sync_event/4,
+         handle_info/3,
+         terminate/3,
+         code_change/4]).
 
 -include("riak_moss.hrl").
 
 -define(SERVER, ?MODULE). 
 
--record(state, {}).
+-record(state,
+        {
+          riak,      %% the riak connection we're using
+          table,     %% the logger table being archived
+          slice,     %% the logger slice bieng archived
+          next,      %% the next entry in the table to archive
+          backlog=[] %% tables that need to be archived when we're done
+        }).
 
 %%%===================================================================
 %%% API
@@ -42,7 +55,7 @@
 %% @end
 %%--------------------------------------------------------------------
 start_link() ->
-    gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
+    gen_fsm:start_link({local, ?SERVER}, ?MODULE, [], []).
 
 %% @doc Interface for riak_moss_access_logger to transfer aggregation
 %% table.  When this function is finished, the caller should assume
@@ -67,14 +80,15 @@ archive(Table, Slice) ->
             false %% opposite of ets:give_away/3 success
     end.
 
-%% @doc Find out what the archiver is up to.  Should return `{ok, N}`
-%% where N is the number of logs waiting to be archived.
+%% @doc Find out what the archiver is up to.  Should return `{ok,
+%% State, Props}` where `State` is `idle` or `archiving` if the
+%% archiver had time to respond, or `busy` if the request timed out.
+%% `Props` will include additional details about what the archiver is
+%% up to.
 status(Timeout) ->
-    case catch gen_server:call(?SERVER, status, Timeout) of
-        idle ->
-            %% the server won't respond while it's archiving, so if it
-            %% does respond, we know there's nothing to archive
-            {ok, 0};
+    case catch gen_fsm:sync_send_all_state_event(?SERVER, status, Timeout) of
+        {State, Props} when State == idle; State == archiving ->
+            {ok, State, Props};
         {'EXIT',{timeout,_}} ->
             %% if the response times out, the number of logs waiting
             %% to be archived (including the currently archiving one)
@@ -83,7 +97,7 @@ status(Timeout) ->
             %% since that's how ETS tables are transfered.
             [{message_queue_len, MessageCount}] =
                 process_info(whereis(?SERVER), [message_queue_len]),
-            {ok, MessageCount};
+            {ok, busy, [{message_queue_len, MessageCount}]};
         {'EXIT',{Reason,_}} ->
             {error, Reason}
     end.
@@ -92,96 +106,93 @@ status(Timeout) ->
 %%% gen_server callbacks
 %%%===================================================================
 
-%%--------------------------------------------------------------------
-%% @private
-%% @doc
-%% Initializes the server
-%%
-%% @spec init(Args) -> {ok, State} |
-%%                     {ok, State, Timeout} |
-%%                     ignore |
-%%                     {stop, Reason}
-%% @end
-%%--------------------------------------------------------------------
 init([]) ->
     rts:check_bucket_props(?ACCESS_BUCKET),
-    {ok, #state{}}.
+    {ok, idle, #state{}}.
 
-%%--------------------------------------------------------------------
-%% @private
-%% @doc
-%% Handling call messages
-%%
-%% @spec handle_call(Request, From, State) ->
-%%                                   {reply, Reply, State} |
-%%                                   {reply, Reply, State, Timeout} |
-%%                                   {noreply, State} |
-%%                                   {noreply, State, Timeout} |
-%%                                   {stop, Reason, Reply, State} |
-%%                                   {stop, Reason, State}
-%% @end
-%%--------------------------------------------------------------------
-handle_call(status, _From, State) ->
-    %% this is used during a request to flush the current access log;
-    %% therefore, if we have time to read this message, we are idle
-    {reply, idle, State};
-handle_call(_Request, _From, State) ->
-    Reply = ok,
-    {reply, Reply, State}.
+idle(_Request, State) ->
+    {next_state, idle, State}.
 
-%%--------------------------------------------------------------------
-%% @private
-%% @doc
-%% Handling cast messages
-%%
-%% @spec handle_cast(Msg, State) -> {noreply, State} |
-%%                                  {noreply, State, Timeout} |
-%%                                  {stop, Reason, State}
-%% @end
-%%--------------------------------------------------------------------
-handle_cast(_Msg, State) ->
-    {noreply, State}.
+archiving(continue, #state{next='$end_of_table', table=OldTable,
+                           backlog=Backlog, riak=Riak}=State) ->
+    ets:delete(OldTable),
+    case Backlog of
+        [{Table,Slice}|RestBacklog] ->
+            %% start working on the pile we were ignoring
+            start_archiving(Table, Slice,
+                            State#state{backlog=RestBacklog});
+        [] ->
+            %% nothing to do, rest
+            riak_moss_riakc_pool_worker:stop(Riak),
+            {next_state, idle, State#state{riak=undefined,
+                                           table=undefined,
+                                           slice=undefined,
+                                           next=undefined}}
+    end;
+archiving(continue, #state{riak=Riak, table=Table,
+                           next=Key, slice=Slice}=State) ->
+    archive_user(Key, Riak, Table, Slice),
+    Next = ets:next(Table, Key),
+    continue(State#state{next=Next});
+archiving(_Request, State) ->
+    {next_state, archiving, State}.
 
-%%--------------------------------------------------------------------
-%% @private
-%% @doc
-%% Handling all non call/cast messages
-%%
-%% @spec handle_info(Info, State) -> {noreply, State} |
-%%                                   {noreply, State, Timeout} |
-%%                                   {stop, Reason, State}
-%% @end
-%%--------------------------------------------------------------------
-handle_info({'ETS-TRANSFER', Table, _From, Slice}, State) ->
-    do_archive(Table, Slice),
-    {noreply, State};
-handle_info(_Info, State) ->
-    {noreply, State}.
+idle(_Request, _From, State) ->
+    {reply, ok, idle, State}.
 
-%%--------------------------------------------------------------------
-%% @private
-%% @doc
-%% This function is called by a gen_server when it is about to
-%% terminate. It should be the opposite of Module:init/1 and do any
-%% necessary cleaning up. When it returns, the gen_server terminates
-%% with Reason. The return value is ignored.
-%%
-%% @spec terminate(Reason, State) -> void()
-%% @end
-%%--------------------------------------------------------------------
-terminate(_Reason, _State) ->
+archiving(_Request, _From, State) ->
+    {reply, ok, archiving, State}.
+
+handle_event(_Event, StateName, State) ->
+    {next_state, StateName, State}.
+
+handle_sync_event(status, _From, StateName,
+                  #state{slice=Slice, backlog=Backlog}=State) ->
+    Props = [{backlog, length(Backlog)}]
+        ++[{slice, Slice} || Slice /= undefined],
+    {reply, {StateName, Props}, StateName, State};
+handle_sync_event(_Event, _From, StateName, State) ->
+    {reply, ok, StateName, State}.
+
+handle_info({'ETS-TRANSFER', Table, _From, Slice}, StateName, State) ->
+    case StateName of
+        idle ->
+            %% this does not check out a worker from the riak
+            %% connection pool; instead it creates a fresh new worker,
+            %% the idea being that we don't want to foul up the access
+            %% archival just because the pool is empty; pool workers
+            %% just happen to be literally the socket process, so
+            %% "starting" one here is the same as opening a
+            %% connection, and avoids duplicating the configuration
+            %% lookup code
+            case riak_moss_riakc_pool_worker:start_link([]) of
+                {ok, Riak} ->
+                    start_archiving(Table, Slice, State#state{riak=Riak});
+                {error, Reason} ->
+                    lager:error(
+                      "Access archiver connection to Riak failed (~p), "
+                      "stats for ~p were lost",
+                      [Reason, Slice]),
+                    {next_state, idle, State}
+            end;
+        _ ->
+            %% TODO: maybe trigger a timeout of the in-progress archival
+            Backlog = State#state.backlog++[{Table, Slice}],
+            NewState = State#state{backlog=Backlog},
+            {next_state, StateName, NewState}
+    end;
+handle_info(_Info, StateName, State) ->
+    {next_state, StateName, State}.
+
+terminate(_Reason, idle, _State) ->
+    ok;
+terminate(_Reason, _StateName, _State) ->
+    lager:warn("Access archiver stopping with work left to do;"
+               " logs will be dropped"),
     ok.
 
-%%--------------------------------------------------------------------
-%% @private
-%% @doc
-%% Convert process state when code is changed
-%%
-%% @spec code_change(OldVsn, State, Extra) -> {ok, NewState}
-%% @end
-%%--------------------------------------------------------------------
-code_change(_OldVsn, State, _Extra) ->
-    {ok, State}.
+code_change(_OldVsn, StateName, State, _Extra) ->
+    {ok, StateName, State}.
 
 %%%===================================================================
 %%% Internal functions
@@ -190,31 +201,18 @@ code_change(_OldVsn, State, _Extra) ->
 %% @doc Fold the data stored in the table, and store it in Riak, then
 %% delete the table.  Each user referenced in the table generates one
 %% Riak object.
-do_archive(Table, Slice) ->
-    %% this does not check out a worker from the riak connection pool;
-    %% instead it creates a fresh new worker, the idea being that we
-    %% don't want to foul up the access archival just because the pool
-    %% is empty; pool workers just happen to be literally the socket
-    %% process, so "starting" one here is the same as opening a
-    %% connection, and avoids duplicating the configuration lookup code
-    case riak_moss_riakc_pool_worker:start_link([]) of
-        {ok, Riak} ->
-            archive_user(ets:first(Table), Riak, Table, Slice),
-            riak_moss_riakc_pool_worker:stop(Riak);
-        {error, Reason} ->
-            lager:error("Access archiver connection to Riak failed (~p), "
-                        "stats for ~p were lost",
-                        [Reason, Slice])
-    end,
-    ets:delete(Table).
+start_archiving(Table, Slice, State) ->
+    Next = ets:first(Table),
+    continue(State#state{next=Next, table=Table, slice=Slice}).
 
-archive_user('$end_of_table', _, _, _) ->
-    ok;
+continue(State) ->
+    gen_fsm:send_event(?SERVER, continue),
+    {next_state, archiving, State}.
+
 archive_user(User, Riak, Table, Slice) ->
     Accesses = [ A || {_, A} <- ets:lookup(Table, User) ],
     Record = riak_moss_access:make_object(User, Accesses, Slice),
-    store(User, Riak, Record, Slice),
-    archive_user(ets:next(Table, User), Riak, Table, Slice).
+    store(User, Riak, Record, Slice).
 
 store(User, Riak, Record, Slice) ->
     %% TODO: whole-archive timeout, so we don't get a backup
@@ -225,6 +223,7 @@ store(User, Riak, Record, Slice) ->
             lager:debug("Archived access stats for ~s ~p",
                         [User, Slice]);
         {error, Reason} ->
+            %% TODO: check for "disconnected" explicitly & attempt reconnect?
             lager:error("Access archiver storage failed (~p), "
                         "stats for ~s ~p:~p were lost",
                         [Reason, User, Slice])

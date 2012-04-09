@@ -88,24 +88,43 @@ wait_for_logger(N, Ref, Pid) ->
 %% that the archiver will have received the logger's roll before it
 %% receives our status request, so it shouldn't say it's idle until it
 %% has archived that roll.
-wait_for_archiver(N) ->
-    wait_for_archiver(N, N).
-
-wait_for_archiver(N, _) when N < 1 ->
-    io:format("~nFlushing archiver timed out.~n"),
+wait_for_archiver(N) when N < 1 ->
+    io:format("Flushing archiver timed out.~n"),
     error;
-wait_for_archiver(N, Max) ->
+wait_for_archiver(N) ->
     case riak_moss_access_archiver:status(?RETRY_TIMEOUT) of
-        {ok, 0} ->
-            io:format("~nAll access logs were flushed.~n"),
+        {ok, idle, _Props} ->
+            io:format("All access logs were flushed.~n"),
             ok;
-        {ok, Left} ->
-            %% first correct for previous status requests, though this
-            %% doesn't really work across consecutive flush runs
-            RealLeft = Left-(Max-N),
-            io:format("~nWaiting for ~b more archive~s to flush.~n",
-                      [RealLeft, if RealLeft == 1 -> ""; true -> "s" end]),
-            wait_for_archiver(N-1, Max);
+        {ok, archiving, Props} ->
+            case lists:keyfind(slice, 1, Props) of
+                {slice, {Start, End}} ->
+                    io:format("Currently archiving ~s-~s~n",
+                              [rts:iso8601(Start), rts:iso8601(End)]);
+                false ->
+                    ok
+            end,
+            case lists:keyfind(backlog, 1, Props) of
+                {backlog, Count} ->
+                    io:format("~b more archives to flush~n", [Count]);
+                false ->
+                    ok
+            end,
+            %% give the archiver some time to do its thing
+            timer:sleep(?RETRY_TIMEOUT),
+            wait_for_archiver(N-1);
+        {ok, busy, Props} ->
+            case lists:keyfind(message_queue_len, 1, Props) of
+                {message_queue_len, Length} ->
+                    io:format("Archiver is busy,"
+                              " with ~b message~s in its inbox.~n",
+                              [Length, if Length == 1 -> ""; true -> "~s" end]);
+                false ->
+                    ok
+            end,
+            %% busy response means the gen_fsm call timed out, so we
+            %% don't need to re-delay this request
+            wait_for_archiver(N-1);
         Error ->
             io:format("Flushing archives failed:~n  ~p~n", [Error]),
             error
