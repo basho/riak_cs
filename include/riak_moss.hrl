@@ -287,3 +287,12 @@
 %% updated the last_block_deleted_time
 %% in over N seconds
 -define(DEFAULT_RETRY_DELETE_TIME, 3600). %% 1-hour
+
+
+%% Number of seconds to wait
+%% before deleting a file
+%% that is in the writing state
+%% but hasn't been updated.
+%% ie. A block hasn't been
+%% written in 24-hours.
+-define(DEFAULT_PARTIAL_UPLOAD_DELETE_TIME, 86400). %% 24-hours
