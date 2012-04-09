@@ -192,7 +192,11 @@ manifest_test_() ->
         fun cleanup/1,
         [fun active_state_no_gc/0,
          fun old_enough_for_gc/0,
-         fun too_young_for_gc/0]
+         fun too_young_for_gc/0,
+         fun wrong_state_for_pruning/0,
+         fun wrong_state_for_pruning_2/0,
+         fun does_need_pruning/0,
+         fun not_old_enough_for_pruning/0]
     }.
 
 setup() ->
@@ -225,5 +229,36 @@ too_young_for_gc() ->
     Mani2 = Mani#lfs_manifest_v2{state=pending_delete,
                                  delete_marked_time=DeleteTime},
     ?assert(not needs_gc(Mani2, Now)).
+
+wrong_state_for_pruning() ->
+    Mani = new_mani_helper(),
+    Mani2 = Mani#lfs_manifest_v2{state=active},
+    ?assert(not needs_pruning(Mani2, erlang:now())).
+
+wrong_state_for_pruning_2() ->
+    Mani = new_mani_helper(),
+    Mani2 = Mani#lfs_manifest_v2{state=pending_delete},
+    ?assert(not needs_pruning(Mani2, erlang:now())).
+
+does_need_pruning() ->
+    application:set_env(riak_moss, delete_tombstone_time, 1),
+    %% 1000000 second diff
+    DeleteTime = {1333,985708,445136},
+    Now = {1334,985708,445136},
+    Mani = new_mani_helper(),
+    Mani2 = Mani#lfs_manifest_v2{state=deleted,
+                                 delete_blocks_remaining=[],
+                                 last_block_deleted_time=DeleteTime},
+    ?assert(needs_pruning(Mani2, Now)).
+
+not_old_enough_for_pruning() ->
+    application:set_env(riak_moss, delete_tombstone_time, 2),
+    %$ 1 second diff
+    DeleteTime = {1333,985708,445136},
+    Now = {1333,985709,445136},
+    Mani = new_mani_helper(),
+    Mani2 = Mani#lfs_manifest_v2{state=deleted,
+                                 last_block_deleted_time=DeleteTime},
+    ?assert(not needs_pruning(Mani2, Now)).
 
 -endif.
