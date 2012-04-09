@@ -23,7 +23,7 @@
 % @doc riak_kv_fs2_backend is filesystem storage system, Mark III
 
 -module(riak_kv_fs2_backend).
--behavior(riak_kv_backend).
+%% -behavior(riak_kv_backend). % Not building within riak_kv
 
 %% KV Backend API
 -export([api_version/0,
