@@ -9,6 +9,10 @@
 -module(riak_moss_manifest).
 
 -include("riak_moss.hrl").
+-ifdef(TEST).
+-compile(export_all).
+-include_lib("eunit/include/eunit.hrl").
+-endif.
 
 %% export Public API
 -export([new/2,
@@ -164,3 +168,62 @@ retry_delete_time() ->
         {ok, Time} ->
             Time
     end.
+
+
+%% ===================================================================
+%% EUnit tests
+%% ===================================================================
+-ifdef(TEST).
+
+new_mani_helper() ->
+    riak_moss_lfs_utils:new_manifest(<<"bucket">>,
+        <<"key">>,
+        <<"uuid">>,
+        100, %% content-length
+        <<"ctype">>,
+        undefined, %% md5
+        orddict:new(),
+        10,
+        undefined).
+
+manifest_test_() ->
+    {setup,
+        fun setup/0,
+        fun cleanup/1,
+        [fun active_state_no_gc/0,
+         fun old_enough_for_gc/0,
+         fun too_young_for_gc/0]
+    }.
+
+setup() ->
+    ok.
+
+cleanup(_Ctx) ->
+    ok.
+
+active_state_no_gc() ->
+    Mani = new_mani_helper(),
+    Mani2 = Mani#lfs_manifest_v2{state=active},
+    ?assert(not needs_gc(Mani2, erlang:now())).
+
+old_enough_for_gc() ->
+    application:set_env(riak_moss, delete_leeway_time, 1),
+    %% 1000000 second diff
+    DeleteTime = {1333,985708,445136},
+    Now = {1334,985708,445136},
+    Mani = new_mani_helper(),
+    Mani2 = Mani#lfs_manifest_v2{state=pending_delete,
+                                 delete_marked_time=DeleteTime},
+    ?assert(needs_gc(Mani2, Now)).
+
+too_young_for_gc() ->
+    application:set_env(riak_moss, delete_leeway_time, 5),
+    %% 1 second diff
+    DeleteTime = {1333,985708,445136},
+    Now = {1333,985709,445136},
+    Mani = new_mani_helper(),
+    Mani2 = Mani#lfs_manifest_v2{state=pending_delete,
+                                 delete_marked_time=DeleteTime},
+    ?assert(not needs_gc(Mani2, Now)).
+
+-endif.
