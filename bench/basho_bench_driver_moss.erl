@@ -1,6 +1,6 @@
 %% -------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2011 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2012 Basho Technologies, Inc.  All Rights Reserved.
 %%
 %% -------------------------------------------------------------------
 
@@ -17,7 +17,8 @@
 
 -record(state, { client_id,
                  hosts,
-                 bucket}).
+                 bucket,
+                 report_fun}).
 
 %% ====================================================================
 %% API
@@ -38,31 +39,59 @@ new(ID) ->
     Disconnect = basho_bench_config:get(moss_disconnect_frequency, infinity),
     erlang:put(disconnect_freq, Disconnect),
 
+    %% Get our measurement units: op/sec, Byte/sec, KByte/sec, MByte/sec
+    {RF_name, ReportFun} =
+        %% We need to be really careful with these custom units things.
+        %% Use floats for everything.
+        case (catch basho_bench_config:get(moss_measurement_units)) of
+            N = byte_sec  -> {N,      fun(X) -> X / 1 end};
+            N = kbyte_sec -> {N,      fun(X) -> X / 1024 end};
+            N = mbyte_sec -> {N,      fun(X) -> X / (1024 * 1024) end};
+            _             -> {op_sec, fun(_) -> 1.0 end}
+        end,
+    basho_bench_log:log(info, "Reporting factor = ~p\n", [RF_name]),
+    OpsList = basho_bench_config:get(operations, []),
+    case RF_name /= op_sec andalso
+         lists:keymember(delete, 1, OpsList) andalso
+         length(OpsList) > 1 of
+        true ->
+            basho_bench_log:log(
+              warn,
+              "Mixing delete and non-delete operations together with "
+              "~p measurements unit can yield nonsense results!\n\n",
+              [RF_name]);
+        false ->
+            ok
+    end,
+
     Hosts = [{Ip, Port}],
 
     {ok, #state{client_id=ID, hosts=Hosts,
-                bucket = basho_bench_config:get(moss_bucket, "test")}}.
+                bucket = basho_bench_config:get(moss_bucket, "test"),
+                report_fun = ReportFun}}.
 
--spec run(atom(), fun(), fun(), term()) -> {ok, term()}.
-run(insert, KeyGen, ValueGen, #state{bucket = Bucket} = State) ->
+-spec run(atom(), fun(), fun(), term()) -> {{ok, number()}, term()} | {error, term(), term()}.
+run(insert, KeyGen, ValueGen, #state{bucket = Bucket,
+                                     report_fun = ReportFun} = State) ->
     {NextHost, S2} = next_host(State),
     ConnInfo = NextHost,
-    case insert(KeyGen, ValueGen, ConnInfo, Bucket) of
-        ok ->
-            {ok, S2};
+    case insert(KeyGen, ValueGen, ConnInfo, Bucket, ReportFun) of
+        {ok, _Size} = Good ->
+            {Good, S2};
         {Error, Reason} ->
             {Error, Reason, S2}
     end;
-run(update, KeyGen, ValueGen, #state{bucket = Bucket} = State) ->
+run(update, KeyGen, ValueGen, #state{bucket = Bucket,
+                                     report_fun = ReportFun} = State) ->
     {NextHost, S2} = next_host(State),
     {Host, Port} = NextHost,
     Key = KeyGen(),
     Url = url(Host, Port, Bucket, Key),
-    case do_get({Host, Port}, Url, []) of
-        ok ->
-            case insert(KeyGen, ValueGen, {Host, Port}, Bucket) of
-                ok ->
-                    {ok, State};
+    case do_get({Host, Port}, Url, [], ReportFun) of
+        {ok, _} ->
+            case insert(KeyGen, ValueGen, {Host, Port}, Bucket, ReportFun) of
+                {ok, _Size} = Good ->
+                    {Good, State};
                 {Error, Reason} ->
                     {Error, Reason, S2}
             end;
@@ -80,29 +109,30 @@ run(delete, KeyGen, _ValueGen, #state{bucket = Bucket} = State) ->
         {Error, Reason} ->
             {Error, Reason, S2}
     end;
-run(get, KeyGen, _ValueGen, #state{bucket = Bucket} = State) ->
+run(get, KeyGen, _ValueGen, #state{bucket = Bucket,
+                                   report_fun = ReportFun} = State) ->
     {NextHost, S2} = next_host(State),
     {Host, Port} = NextHost,
     Key = KeyGen(),
     Url = url(Host, Port, Bucket, Key),
-    case do_get({Host, Port}, Url, []) of
-        ok ->
-            {ok, S2};
+    case do_get({Host, Port}, Url, [], ReportFun) of
+        {ok, _Size} = Good ->
+            {Good, S2};
         {Error, Reason} ->
             {Error, Reason, S2}
     end;
-run(_Operation, _KeyGen, _ValueGen, State) ->
-    {ok, State}.
+run(Op, _KeyGen, _ValueGen, State) ->
+    {error, {unknown_op, Op}, State}.
 
 %% ====================================================================
 %% Internal functions
 %% ====================================================================
 
-insert(KeyGen, ValueGen, {Host, Port}, Bucket) ->
+insert(KeyGen, ValueGen, {Host, Port}, Bucket, ReportFun) ->
     Key = KeyGen(),
     Url = url(Host, Port, Bucket, Key),
     Value = ValueGen(),
-    do_put({Host, Port}, Url, [], Value).
+    do_put({Host, Port}, Url, [], Value, ReportFun).
 
 url(Host, Port, Bucket, Key) ->
     UnparsedUrl = lists:concat(["http://", Host, ":", Port, "/", Bucket, "/", Key]),
@@ -229,13 +259,13 @@ send_request(Host, Url, Headers0, Method, Body, Options, Count) ->
             end
     end.
 
-do_put(Host, Url, Headers, Value) ->
+do_put(Host, Url, Headers, Value, ReportFun) ->
     case send_request(Host, Url, Headers ++ [{'Content-Type', 'application/octet-stream'}],
                       put, Value, proxy_opts()) of
         {ok, "201", _Header, _Body} ->
-            ok;
+            {ok, ReportFun(byte_size(Value))};
         {ok, "204", _Header, _Body} ->
-            ok;
+            {ok, ReportFun(byte_size(Value))};
         {ok, Code, _Header, _Body} ->
             {error, {http_error, Code}};
         {error, Reason} ->
@@ -254,12 +284,12 @@ do_delete(Host, Url, Headers) ->
             {error, Reason}
     end.
 
-do_get(Host, Url, Headers) ->
+do_get(Host, Url, Headers, ReportFun) ->
     case send_request(Host, Url, Headers, get, <<>>, proxy_opts()) of
-        {ok, "200", _Header, _Body} ->
-            ok;
+        {ok, "200", _Header, Body} ->
+            {ok, ReportFun(byte_size(Body))};
         {ok, "404", _Header, _Body} ->
-            ok;
+            {ok, 0.0};
         {ok, Code, _Header, _Body} ->
             {error, {http_error, Code}};
         {error, Reason} ->
