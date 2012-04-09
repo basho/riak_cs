@@ -39,9 +39,9 @@
 
 -record(state, {timeout :: pos_integer(),
                 block_size :: pos_integer(),
-                caller :: pid(),
+                caller :: reference(),
                 md5 :: binary(),
-                reply_pid :: pid(),
+                reply_pid :: {pid(), reference()},
                 mani_pid :: pid(),
                 riakc_pid :: pid(),
                 timer_ref :: term(),
@@ -50,16 +50,16 @@
                 metadata :: term(),
                 acl :: acl(),
                 manifest :: lfs_manifest(),
-                content_length :: pos_integer(),
+                content_length :: non_neg_integer(),
                 content_type :: binary(),
-                num_bytes_received=0,
+                num_bytes_received=0 :: non_neg_integer(),
                 max_buffer_size :: non_neg_integer(),
-                current_buffer_size=0,
+                current_buffer_size=0 :: non_neg_integer(),
                 buffer_queue=[], %% not actually a queue, but we treat it like one
                 remainder_data :: undefined | binary(),
                 free_writers :: ordsets:new(),
                 unacked_writes=ordsets:new(),
-                next_block_id=0,
+                next_block_id=0 :: non_neg_integer(),
                 all_writer_pids :: list(pid())}).
 
 %%%===================================================================
@@ -192,7 +192,7 @@ all_received({block_written, BlockID, WriterPid}, State=#state{mani_pid=ManiPid,
                 ReplyPid ->
                     %% reply with the final
                     %% manifest
-                    timer:cancel(TimerRef),
+                    _ = timer:cancel(TimerRef),
                     case riak_moss_manifest_fsm:update_manifest_with_confirmation(ManiPid, Manifest) of
                         ok ->
                             gen_fsm:reply(ReplyPid, {ok, Manifest}),
@@ -242,7 +242,7 @@ done(finalize, _From, State=#state{manifest=Manifest, mani_pid=ManiPid,
                                    timer_ref=TimerRef}) ->
     %% 1. reply immediately
     %%    with the finished manifest
-    timer:cancel(TimerRef),
+    _ = timer:cancel(TimerRef),
     case riak_moss_manifest_fsm:update_manifest_with_confirmation(ManiPid, Manifest) of
         ok ->
             {stop, normal, {ok, Manifest}, State};
@@ -292,7 +292,7 @@ handle_info({'DOWN', CallerRef, process, _Pid, Reason}, _StateName, State=#state
 terminate(_Reason, _StateName, #state{mani_pid=ManiPid,
                                       all_writer_pids=BlockServerPids}) ->
     riak_moss_manifest_fsm:stop(ManiPid),
-    [riak_moss_block_server:stop(P) || P <- BlockServerPids],
+    _ = [riak_moss_block_server:stop(P) || P <- BlockServerPids],
     ok.
 
 %%--------------------------------------------------------------------
