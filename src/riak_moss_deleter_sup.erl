@@ -28,7 +28,7 @@ start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
 %% @doc Start a `riak_moss_deleter' child process.
--spec start_deleter(node(), supervisor:child_spec()) ->
+-spec start_deleter(node(), []) ->
                           supervisor:startchild_ret().
 start_deleter(Node, Args) ->
     supervisor:start_child({?MODULE, Node}, Args).
