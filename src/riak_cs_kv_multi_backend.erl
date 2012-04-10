@@ -21,7 +21,7 @@
 %% -------------------------------------------------------------------
 
 -module (riak_cs_kv_multi_backend).
--behavior(riak_kv_backend).
+%% -behavior(riak_kv_backend). % Not building within riak_kv
 
 %% KV Backend API
 -export([api_version/0,
