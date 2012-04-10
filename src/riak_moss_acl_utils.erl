@@ -36,7 +36,7 @@
 
 %% @doc Construct an acl. The structure is the same for buckets
 %% and objects.
--spec acl(string(), string(), string(), [acl_grant()]) -> acl().
+-spec acl(string(), string(), string(), [acl_grant()]) -> #acl_v2{}.
 acl(DisplayName, CanonicalId, KeyId, Grants) ->
     OwnerData = {DisplayName, CanonicalId, KeyId},
     ?ACL{owner=OwnerData,
@@ -44,7 +44,7 @@ acl(DisplayName, CanonicalId, KeyId, Grants) ->
 
 %% @doc Construct a default acl. The structure is the same for buckets
 %% and objects.
--spec default_acl(string(), string(), string()) -> acl().
+-spec default_acl(string(), string(), string()) -> #acl_v2{}.
 default_acl(DisplayName, CanonicalId, KeyId) ->
     acl(DisplayName,
         CanonicalId,
@@ -53,7 +53,7 @@ default_acl(DisplayName, CanonicalId, KeyId) ->
 
 %% @doc Map a x-amz-acl header value to an
 %% internal acl representation.
--spec canned_acl(string(), string(), string(), pid()) -> acl().
+-spec canned_acl(undefined | string(), {_,_,_} | string(), string(), pid()) -> #acl_v2{}.
 canned_acl(undefined, {Name, CanonicalId, KeyId}, _, _) ->
     default_acl(Name, CanonicalId, KeyId);
 canned_acl(HeaderVal, Owner, BucketOwnerId, RiakPid) ->
@@ -65,7 +65,7 @@ canned_acl(HeaderVal, Owner, BucketOwnerId, RiakPid) ->
 
 %% @doc Convert an XML document representing an ACL into
 %% an internal representation.
--spec acl_from_xml(string(), string(), pid()) -> acl().
+-spec acl_from_xml(string(), string(), pid()) -> #acl_v2{}.
 acl_from_xml(Xml, KeyId, RiakPid) ->
     {ParsedData, _Rest} = xmerl_scan:string(Xml, []),
     BareAcl = ?ACL{owner={[], [], KeyId}},
@@ -116,7 +116,9 @@ empty_acl_xml() ->
 
 %% @doc Map a request type to the type of ACL permissions needed
 %% to complete the request.
--spec requested_access(atom(), string()) -> acl_perm().
+-type request_method() :: 'GET' | 'HEAD' | 'PUT' | 'POST' |
+                          'DELETE' | 'Dialyzer happiness'.
+-spec requested_access(request_method(), string()) -> acl_perm().
 requested_access(Method, QueryString) ->
     AclRequest = acl_request(QueryString),
     if
@@ -144,6 +146,8 @@ requested_access(Method, QueryString) ->
         orelse
         Method == 'DELETE' ->
             'WRITE';
+        Method == 'Dialyzer happiness' ->
+            'FULL_CONTROL';
         true ->
             undefined
     end.
@@ -227,7 +231,7 @@ canonical_for_email(Email, RiakPid) ->
         {ok, {User, _}} ->
             User?MOSS_USER.canonical_id;
         {error, Reason} ->
-            lager:warning("Failed to retrieve canonical id for ~p. Reason: ~p", [Email, Reason]),
+            _ = lager:warning("Failed to retrieve canonical id for ~p. Reason: ~p", [Email, Reason]),
             []
     end.
 
@@ -249,7 +253,7 @@ grants_xml(Grantees) ->
     grants_xml(Grantees, []).
 
 %% @doc Assemble the xml for the set of grantees for an acl.
--spec grants_xml([acl_grant()], []) -> term().
+-spec grants_xml([acl_grant()], list()) -> list().
 grants_xml([], Acc) ->
     lists:flatten(Acc);
 grants_xml([HeadGrantee | RestGrantees], Acc) ->
@@ -306,12 +310,12 @@ name_for_canonical(CanonicalId, RiakPid) ->
     end.
 
 %% @doc Process the top-level elements of the
--spec process_acl_contents([xmlElement()], acl(), pid()) -> acl().
+-spec process_acl_contents([xmlElement()], acl(), pid()) -> #acl_v2{}.
 process_acl_contents([], Acl, _) ->
     Acl;
 process_acl_contents([HeadElement | RestElements], Acl, RiakPid) ->
     Content = HeadElement#xmlElement.content,
-    lager:debug("Element name: ~p", [HeadElement#xmlElement.name]),
+    _ = lager:debug("Element name: ~p", [HeadElement#xmlElement.name]),
     ElementName = HeadElement#xmlElement.name,
     case ElementName of
         'Owner' ->
@@ -319,13 +323,13 @@ process_acl_contents([HeadElement | RestElements], Acl, RiakPid) ->
         'AccessControlList' ->
             UpdAcl = process_grants(Content, Acl, RiakPid);
         _ ->
-            lager:debug("Encountered unexpected element: ~p", [ElementName]),
+            _ = lager:debug("Encountered unexpected element: ~p", [ElementName]),
             UpdAcl = Acl
     end,
     process_acl_contents(RestElements, UpdAcl, RiakPid).
 
 %% @doc Process an XML element containing acl owner information.
--spec process_owner([xmlElement()], acl()) -> acl().
+-spec process_owner([xmlElement()], acl()) -> #acl_v2{}.
 process_owner([], Acl) ->
     Acl;
 process_owner([HeadElement | RestElements], Acl) ->
@@ -335,21 +339,21 @@ process_owner([HeadElement | RestElements], Acl) ->
     ElementName = HeadElement#xmlElement.name,
     case ElementName of
         'ID' ->
-            lager:debug("Owner ID value: ~p", [Value]),
+            _ = lager:debug("Owner ID value: ~p", [Value]),
             {OwnerName, _, OwnerKeyId} = Owner,
             UpdOwner = {OwnerName, Value, OwnerKeyId};
         'DisplayName' ->
-            lager:debug("Owner Name content: ~p", [Value]),
+            _ = lager:debug("Owner Name content: ~p", [Value]),
             {_, OwnerId, OwnerKeyId} = Owner,
             UpdOwner = {Value, OwnerId, OwnerKeyId};
         _ ->
-            lager:debug("Encountered unexpected element: ~p", [ElementName]),
+            _ = lager:debug("Encountered unexpected element: ~p", [ElementName]),
             UpdOwner = Owner
     end,
     process_owner(RestElements, Acl?ACL{owner=UpdOwner}).
 
 %% @doc Process an XML element containing the grants for the acl.
--spec process_grants([xmlElement()], acl(), pid()) -> acl().
+-spec process_grants([xmlElement()], acl(), pid()) -> #acl_v2{}.
 process_grants([], Acl, _) ->
     Acl;
 process_grants([HeadElement | RestElements], Acl, RiakPid) ->
@@ -360,7 +364,7 @@ process_grants([HeadElement | RestElements], Acl, RiakPid) ->
             Grant = process_grant(Content, {{"", ""}, []}, RiakPid),
             UpdAcl = Acl?ACL{grants=add_grant(Grant, Acl?ACL.grants)};
         _ ->
-            lager:debug("Encountered unexpected grants element: ~p", [ElementName]),
+            _ = lager:debug("Encountered unexpected grants element: ~p", [ElementName]),
             UpdAcl = Acl
     end,
     process_grants(RestElements, UpdAcl, RiakPid).
@@ -372,15 +376,15 @@ process_grant([], Grant, _) ->
 process_grant([HeadElement | RestElements], Grant, RiakPid) ->
     Content = HeadElement#xmlElement.content,
     ElementName = HeadElement#xmlElement.name,
-    lager:debug("ElementName: ~p", [ElementName]),
-    lager:debug("Content: ~p", [Content]),
+    _ = lager:debug("ElementName: ~p", [ElementName]),
+    _ = lager:debug("Content: ~p", [Content]),
     case ElementName of
         'Grantee' ->
             UpdGrant = process_grantee(Content, Grant, RiakPid);
         'Permission' ->
             UpdGrant = process_permission(Content, Grant);
         _ ->
-            lager:debug("Encountered unexpected grant element: ~p", [ElementName]),
+            _ = lager:debug("Encountered unexpected grant element: ~p", [ElementName]),
             UpdGrant = Grant
     end,
     process_grant(RestElements, UpdGrant, RiakPid).
@@ -401,18 +405,18 @@ process_grantee([HeadElement | RestElements], Grant, RiakPid) ->
     ElementName = HeadElement#xmlElement.name,
     case ElementName of
         'ID' ->
-            lager:debug("ID value: ~p", [Value]),
+            _ = lager:debug("ID value: ~p", [Value]),
             {{Name, _}, Perms} = Grant,
             UpdGrant = {{Name, Value}, Perms};
         'DisplayName' ->
-            lager:debug("Name value: ~p", [Value]),
+            _ = lager:debug("Name value: ~p", [Value]),
             {{_, Id}, Perms} = Grant,
             UpdGrant = {{Value, Id}, Perms};
         'EmailAddress' ->
-            lager:debug("Email value: ~p", [Value]),
+            _ = lager:debug("Email value: ~p", [Value]),
             Id = canonical_for_email(Value, RiakPid),
             %% Get the canonical id for a given email address
-            lager:debug("ID value: ~p", [Id]),
+            _ = lager:debug("ID value: ~p", [Id]),
             {{Name, _}, Perms} = Grant,
             UpdGrant = {{Name, Id}, Perms};
         'URI' ->
@@ -433,7 +437,7 @@ process_grantee([HeadElement | RestElements], Grant, RiakPid) ->
 
 %% @doc Process an XML element containing information about
 %% an ACL permission.
--spec process_permission(xmlText(), acl_grant()) -> acl_grant().
+-spec process_permission([xmlText()], acl_grant()) -> acl_grant().
 process_permission([Content], Grant) ->
     Value = list_to_existing_atom(Content#xmlText.value),
     {Grantee, Perms} = Grant,
@@ -450,9 +454,7 @@ process_permission([Content], Grant) ->
 uri_for_group('AllUsers') ->
     ?ALL_USERS_GROUP;
 uri_for_group('AuthUsers') ->
-    ?AUTH_USERS_GROUP;
-uri_for_group(_) ->
-    [].
+    ?AUTH_USERS_GROUP.
 
 %% ===================================================================
 %% Eunit tests
