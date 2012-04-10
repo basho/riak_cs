@@ -52,7 +52,7 @@ anonymous_bucket_access(Bucket, RequestedAccess, RiakPid) ->
         {error, Reason} ->
             %% @TODO Think about bubbling this error up and providing
             %% feedback to requester.
-            lager:error("Anonymous bucket access check failed due to error. Reason: ~p", [Reason]),
+            _ = lager:error("Anonymous bucket access check failed due to error. Reason: ~p", [Reason]),
             false
     end.
 
@@ -72,7 +72,7 @@ anonymous_object_access(Bucket, _ObjAcl, 'WRITE', RiakPid) ->
         {error, Reason} ->
             %% @TODO Think about bubbling this error up and providing
             %% feedback to requester.
-            lager:error("Anonymous object access check failed due to error. Reason: ~p", [Reason]),
+            _ = lager:error("Anonymous object access check failed due to error. Reason: ~p", [Reason]),
             false
     end;
 anonymous_object_access(_Bucket, ObjAcl, RequestedAccess, RiakPid) ->
@@ -112,12 +112,12 @@ bucket_access(Bucket, RequestedAccess, CanonicalId, RiakPid) ->
         {error, Reason} ->
             %% @TODO Think about bubbling this error up and providing
             %% feedback to requester.
-            lager:error("Bucket access check failed due to error. Reason: ~p", [Reason]),
+            _ = lager:error("Bucket access check failed due to error. Reason: ~p", [Reason]),
             false
     end.
 
 %% @doc Get the ACL for a bucket
--spec bucket_acl(binary(), pid()) -> acl().
+-spec bucket_acl(binary(), pid()) -> {ok, acl()} | {error, term()}.
 bucket_acl(Bucket, RiakPid) ->
     case riak_moss_utils:get_object(?BUCKETS_BUCKET, Bucket, RiakPid) of
         {ok, Obj} ->
@@ -156,17 +156,17 @@ object_access(Bucket, _ObjAcl, 'WRITE', CanonicalId, RiakPid) ->
         {error, Reason} ->
             %% @TODO Think about bubbling this error up and providing
             %% feedback to requester.
-            lager:error("Object access check failed due to error. Reason: ~p", [Reason]),
+            _ = lager:error("Object access check failed due to error. Reason: ~p", [Reason]),
             false
     end;
 object_access(_Bucket, ObjAcl, RequestedAccess, CanonicalId, RiakPid) ->
-    lager:debug("ObjAcl: ~p~nCanonicalId: ~p", [ObjAcl, CanonicalId]),
+    _ = lager:debug("ObjAcl: ~p~nCanonicalId: ~p", [ObjAcl, CanonicalId]),
     IsObjOwner = is_owner(ObjAcl, CanonicalId),
     HasObjPerm = has_permission(acl_grants(ObjAcl),
                                 RequestedAccess,
                                 CanonicalId),
-    lager:debug("IsObjOwner: ~p", [IsObjOwner]),
-    lager:debug("HasObjPerm: ~p", [HasObjPerm]),
+    _ = lager:debug("IsObjOwner: ~p", [IsObjOwner]),
+    _ = lager:debug("HasObjPerm: ~p", [HasObjPerm]),
     case HasObjPerm of
         true when IsObjOwner == true ->
             true;
@@ -183,7 +183,7 @@ object_access(_Bucket, ObjAcl, RequestedAccess, CanonicalId, RiakPid) ->
 %% @doc Find the ACL in a list of metadata values and
 %% convert it to an erlang term representation. Return
 %% `undefined' if an ACL is not found.
--spec acl_from_meta([{string(), term()}]) -> undefined | acl().
+-spec acl_from_meta([{string(), term()}]) -> {ok, acl()} | {error, acl_undefined}.
 acl_from_meta([]) ->
     {error, acl_undefined};
 acl_from_meta([{?MD_ACL, Acl} | _]) ->
@@ -211,7 +211,7 @@ owner_id(#acl_v1{owner=OwnerData}, RiakPid) ->
         {ok, {Owner, _}} ->
             Owner?MOSS_USER.key_id;
         {error, _} ->
-            lager:warning("Failed to retrieve key_id for user ~p with canonical_id ~p", [Name, CanonicalId]),
+            _ = lager:warning("Failed to retrieve key_id for user ~p with canonical_id ~p", [Name, CanonicalId]),
             []
     end.
 
@@ -228,7 +228,7 @@ group_grants([_ | RestGrants], _GroupGrants) ->
 
 %% @doc Determine if the ACL grants group access
 %% for the requestsed permission type.
--spec has_group_permission(acl(), atom()) -> boolean().
+-spec has_group_permission([{group_grant() | {term(), term()}, term()}], atom()) -> boolean().
 has_group_permission([], _RequestedAccess) ->
     false;
 has_group_permission([{_, Perms} | RestGrants], RequestedAccess) ->

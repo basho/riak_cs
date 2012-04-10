@@ -202,9 +202,9 @@ do_archive(Table, Slice) ->
             archive_user(ets:first(Table), Riak, Table, Slice),
             riak_moss_riakc_pool_worker:stop(Riak);
         {error, Reason} ->
-            _ = lager:error("Access archiver connection to Riak failed (~p), "
-                            "stats for ~p were lost",
-                            [Reason, Slice])
+            ok = lager:error("Access archiver connection to Riak failed (~p), "
+                             "stats for ~p were lost",
+                             [Reason, Slice])
     end,
     ets:delete(Table).
 
