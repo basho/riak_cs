@@ -96,6 +96,9 @@ find_and_auth_user(RD, #context{auth_bypass=AuthBypass,
 %% @doc Look for an Authorization header in the request, and validate
 %% it if it exists.  Returns `{ok, User, UserVclock}' if validation
 %% succeeds, or `{error, KeyId, Reason}' if any step fails.
+-spec validate_auth_header(#wm_reqdata{}, term(), pid()) ->
+                                  {ok, moss_user(), riakc_obj:vclock()} |
+                                  {error, bad_auth | notfound | no_user_key | term()}.
 validate_auth_header(RD, AuthBypass, RiakPid) ->
     AuthHeader = wrq:get_req_header("authorization", RD),
     {AuthMod, KeyId, Signature} = parse_auth_header(AuthHeader, AuthBypass),
@@ -117,8 +120,8 @@ validate_auth_header(RD, AuthBypass, RiakPid) ->
             {error, NE};
         {error, Reason} ->
             %% other failures, like Riak fetch timeout, be loud about
-            lager:error("Retrieval of user record for ~p failed. Reason: ~p",
-                        [KeyId, Reason]),
+            _ = lager:error("Retrieval of user record for ~p failed. Reason: ~p",
+                            [KeyId, Reason]),
             {error, Reason}
     end.
 
@@ -144,7 +147,7 @@ ensure_doc(Ctx=#key_context{get_fsm_pid=undefined,
     RiakPid = InnerCtx#context.riakc_pid,
     %% start the get_fsm
     BinKey = list_to_binary(Key),
-    {ok, Pid} = riak_moss_get_fsm_sup:start_get_fsm(node(), [Bucket, BinKey, self(), RiakPid]),
+    {ok, Pid} = riak_moss_get_fsm_sup:start_get_fsm(node(), Bucket, BinKey, self(), RiakPid),
     Manifest = riak_moss_get_fsm:get_manifest(Pid),
     Ctx#key_context{get_fsm_pid=Pid, manifest=Manifest};
 ensure_doc(Ctx) -> Ctx.
