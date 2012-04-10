@@ -270,7 +270,7 @@ get_object(BucketName, Key, RiakPid) ->
     riakc_pb_socket:get(RiakPid, BucketName, Key).
 
 %% @doc Retrieve a MOSS user's information based on their id string.
--spec get_user(string(), pid()) -> {ok, {term(), term()}} | {error, term()}.
+-spec get_user('undefined' | string(), pid()) -> {ok, {moss_user(), riakc_obj:vclock()}} | {error, term()}.
 get_user(undefined, _RiakPid) -> 
     {error, no_user_key};
 get_user(KeyId, RiakPid) ->
