@@ -289,7 +289,7 @@ get_object(BucketName, Key, RiakPid) ->
 
 %% @doc Retrieve a MOSS user's information based on their id string.
 -spec get_user('undefined' | list(), pid()) -> {ok, {moss_user(), riakc_obj:vclock()}} | {error, term()}.
-get_user(undefined, _RiakPid) -> 
+get_user(undefined, _RiakPid) ->
     {error, no_user_key};
 get_user(KeyId, RiakPid) ->
     %% @TODO Check for an resolve siblings to get a

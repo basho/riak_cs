@@ -113,9 +113,6 @@
 -include("rts.hrl").
 -include("riak_moss.hrl").
 
--define(JSON_TYPE, "application/json").
--define(XML_TYPE, "application/xml").
-
 %% Keys used in output - defined here to help keep JSON and XML output
 %% as similar as possible.
 -define(KEY_USAGE, 'Usage').
@@ -353,7 +350,7 @@ xml_storage({Storage, Errors}) ->
                      || S <- Storage]},
      {?KEY_ERRORS, [xml_sample_error(E, ?KEY_BUCKET, ?KEY_NAME)
                     || E <- Errors ]}].
-    
+
 %% Internals %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 user_key(RD) ->
     case path_tokens(RD) of
@@ -470,10 +467,10 @@ too_many_periods(Start, End) ->
     Seconds = calendar:datetime_to_gregorian_seconds(End)
         -calendar:datetime_to_gregorian_seconds(Start),
     {ok, Limit} = application:get_env(riak_moss, usage_request_limit),
-    
+
     {ok, Access} = riak_moss_access:archive_period(),
     {ok, Storage} = riak_moss_storage:archive_period(),
-    
+
     ((Seconds div Access) > Limit) orelse ((Seconds div Storage) > Limit).
 
 -ifdef(TEST).
