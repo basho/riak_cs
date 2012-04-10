@@ -116,7 +116,7 @@ check_grants(#context{user=User,
 %% @doc The {@link forbidden/2} decision passed, but the bucket
 %% belongs to someone else.  Switch to it if the owner's record can be
 %% retrieved.
-shift_to_owner(RD, Ctx, OwnerId, RiakPid) ->
+shift_to_owner(RD, Ctx, OwnerId, RiakPid) when RiakPid /= undefined ->
     case riak_moss_utils:get_user(list_to_binary(OwnerId), RiakPid) of
         {ok, {Owner, OwnerVClock}} ->
             AccessRD = riak_moss_access_logger:set_user(Owner, RD),
