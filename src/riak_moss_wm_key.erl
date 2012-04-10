@@ -262,15 +262,15 @@ content_types_accepted(RD, Ctx) ->
 -spec accept_body(term(), term()) ->
     {true, term(), term()}.
 accept_body(RD, Ctx=#key_context{bucket=Bucket,
-                                 key=Key,
+                                 key=KeyStr,
                                  manifest=Mfst,
                                  owner=Owner,
                                  get_fsm_pid=GetFsmPid,
                                  context=#context{user=User,
                                                   riakc_pid=RiakPid,
-                                                  requested_perm='WRITE_ACP'}}) ->
-
-
+                                                  requested_perm='WRITE_ACP'}})
+  when Bucket /= undefined, KeyStr /= undefined,
+       Mfst /= undefined, RiakPid /= undefined ->
     riak_moss_get_fsm:stop(GetFsmPid),
     Body = binary_to_list(wrq:req_body(RD)),
     case Body of
@@ -290,6 +290,7 @@ accept_body(RD, Ctx=#key_context{bucket=Bucket,
                                                    RiakPid)
     end,
     %% Write new ACL to active manifest
+    Key = list_to_binary(KeyStr),
     case riak_moss_utils:set_object_acl(Bucket, Key, Mfst, Acl, RiakPid) of
         ok ->
             {{halt, 200}, RD, Ctx};
