@@ -24,6 +24,10 @@
 {moss_http_proxy_host, "localhost"}.
 {moss_http_proxy_port, 8080}.
 {moss_request_timeout, 999999000}.
+% If using the moss_measurement_units option, you need to change
+% any R graph's labels of the Y axis, e.g. basho_bench's Makefile target
+% "make kbyte_sec-results"
+%{moss_measurement_units, kbyte_sec}.
 
 %{key_generator, {int_to_bin, {uniform_int, 500}}}.
 {key_generator, {uniform_int, 5}}.
