@@ -116,14 +116,14 @@ start_link(_BaseDir) ->
                                    {max_size, FlushSize}],
                                   []);
         {{error, Reason}, _} ->
-            lager:error("Error starting access logger: ~s", [Reason]),
+            _ = lager:error("Error starting access logger: ~s", [Reason]),
             %% can't simply {error, Reason} out here, because
             %% webmachine/mochiweb will just ignore the failed
             %% startup; using init:stop/0 here so that the user isn't
             %% suprised later when there are no logs
             init:stop();
         {_, {error, Reason}} ->
-            lager:error("Error starting access logger: ~s", [Reason]),
+            _ = lager:error("Error starting access logger: ~s", [Reason]),
             init:stop()
     end.
 
@@ -251,9 +251,9 @@ handle_info({archive, Ref}, #state{archive=Ref}=State) ->
             %% simple "missed window" is too lossy
             [{message_queue_len, MessageCount}] =
                 process_info(self(), [message_queue_len]),
-            lager:error("Access logger is running ~b seconds behind,"
-                        " skipping ~p log messages to catch up",
-                        [Behind, MessageCount]),
+            _ = lager:error("Access logger is running ~b seconds behind,"
+                            " skipping ~p log messages to catch up",
+                            [Behind, MessageCount]),
             {stop, behind, NewState}
     end;
 handle_info(_Info, State) ->
@@ -295,7 +295,7 @@ fresh_table() ->
 
 %% @doc Schedule a message to be sent when it's time to archive this
 %% slice's accumulated accesses.
--spec schedule_archival(state()) -> state().
+-spec schedule_archival(state()) -> {ok, state()} | {error, integer()}.
 schedule_archival(#state{current={_,E}}=State) ->
     Ref = make_ref(),
 
@@ -304,7 +304,7 @@ schedule_archival(#state{current={_,E}}=State) ->
     TL = calendar:datetime_to_gregorian_seconds(E)-Now,
     case TL < 0 of
         false ->
-            lager:debug("Next access archival in ~b seconds", [TL]),
+            _ = lager:debug("Next access archival in ~b seconds", [TL]),
 
             %% time left is in seconds, we need milliseconds
             erlang:send_after(TL*1000, self(), {archive, Ref}),
@@ -326,7 +326,7 @@ force_archive(#state{current=C}=State, FlushEnd) ->
 %% for storage.  Create a clean table to store the next slice's accesses.
 -spec do_archive(state()) -> state().
 do_archive(#state{period=P, table=T, current=C}=State) ->
-    lager:debug("Rolling access for ~p", [C]),
+    _ = lager:debug("Rolling access for ~p", [C]),
     %% archiver takes ownership of the table, and deletes it when done
     riak_moss_access_archiver:archive(T, C),
 
@@ -338,7 +338,7 @@ do_archive(#state{period=P, table=T, current=C}=State) ->
 %% @doc Digest a Webmachine log data record, and produce a record for
 %% the access table.
 -spec access_record(#wm_log_data{})
-         -> {ok, {riak_moss:user_key(), [{atom()|binary(), number()}]}}
+         -> {ok, {riak_moss:user_key(), {binary(), list()}}}
           | ignore.
 access_record(#wm_log_data{notes=Notes}=Log) ->
     case lists:keyfind(?STAT(user), 1, Notes) of
