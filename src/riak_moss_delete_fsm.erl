@@ -70,7 +70,7 @@ send_event(Pid, Event) ->
 %% @doc Initialize the fsm.
 -spec init([binary() | timeout()]) ->
                   {ok, initialize, state(), 0} |
-                  {ok, write_root, state()}.
+                  {ok, waiting_file_info, state()}.
 init([Bucket, Name, Timeout]) ->
     %% @TODO Get rid of this once sure that we can
     %% guarantee file name will be passed in as a binary.
@@ -99,7 +99,7 @@ init({test, Args, StateProps}) ->
 
 %% @doc First state of the delete fsm
 -spec initialize(timeout, state()) ->
-                        {next_state, write_root, state(), timeout()} |
+                        {next_state, waiting_file_info, state(), timeout()} |
                         {stop, term(), state()}.
 initialize(timeout, State=#state{bucket=Bucket,
                                  filename=FileName,
@@ -116,8 +116,8 @@ initialize(timeout, State=#state{bucket=Bucket,
             UpdState = State#state{deleter_pid=DeleterPid},
             {next_state, waiting_file_info, UpdState, Timeout};
         {error, Reason} ->
-            lager:error("Failed to start the delete fsm deleter process. Reason: ",
-                        [Reason]),
+            _ = lager:error("Failed to start the delete fsm deleter process. Reason: ",
+                            [Reason]),
             {stop, Reason, State}
     end.
 
@@ -145,7 +145,7 @@ waiting_file_info({deleter_ready, {file, BlockCount}},
     {next_state, waiting_root_update, UpdState, Timeout};
 waiting_file_info({deleter_ready, {error, Reason}},
                   State=#state{deleter_pid=DeleterPid}) ->
-    lager:warning("The deletion process encountered an error. Reason: ~p", [Reason]),
+    _ = lager:warning("The deletion process encountered an error. Reason: ~p", [Reason]),
     riak_moss_deleter:stop(DeleterPid),
     {stop, normal, State}.
 
@@ -165,11 +165,11 @@ waiting_root_update(root_inactive, State=#state{block_count=BlockCount,
     %% all block delete requests will serialize at the `riak_moss_deleter'.
     case BlockCount of
         0 ->
-            riak_moss_deleter:delete_root(DeleterPid),
+            _ = riak_moss_deleter:delete_root(DeleterPid),
             {next_state, waiting_root_delete, State, Timeout};
         _ ->
-            [riak_moss_deleter:delete_block(DeleterPid, BlockID) ||
-                BlockID <- lists:seq(0, BlockCount-1)],
+            _ = [riak_moss_deleter:delete_block(DeleterPid, BlockID) ||
+                    BlockID <- lists:seq(0, BlockCount-1)],
             {next_state, waiting_blocks_delete, State, Timeout}
     end.
 
