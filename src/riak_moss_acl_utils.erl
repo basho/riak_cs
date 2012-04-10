@@ -20,7 +20,7 @@
 %% Public API
 -export([acl/4,
          default_acl/3,
-         canned_acl/3,
+         canned_acl/4,
          acl_from_xml/3,
          acl_to_xml/1,
          empty_acl_xml/0,
@@ -53,14 +53,15 @@ default_acl(DisplayName, CanonicalId, KeyId) ->
 
 %% @doc Map a x-amz-acl header value to an
 %% internal acl representation.
--spec canned_acl(string(), string(), string()) -> acl().
-canned_acl(undefined, {Name, CanonicalId, KeyId}, _) ->
+-spec canned_acl(string(), string(), string(), pid()) -> acl().
+canned_acl(undefined, {Name, CanonicalId, KeyId}, _, _) ->
     default_acl(Name, CanonicalId, KeyId);
-canned_acl(HeaderVal, Owner, BucketOwnerId) ->
+canned_acl(HeaderVal, Owner, BucketOwnerId, RiakPid) ->
     {Name, CanonicalId, KeyId} = Owner,
     acl(Name, CanonicalId, KeyId, canned_acl_grants(HeaderVal,
                                                     {Name, CanonicalId},
-                                                    BucketOwnerId)).
+                                                    BucketOwnerId,
+                                                    RiakPid)).
 
 %% @doc Convert an XML document representing an ACL into
 %% an internal representation.
@@ -190,29 +191,30 @@ add_grant(NewGrant, Grants) ->
 %% @doc Get the list of grants for a canned ACL
 -spec canned_acl_grants(string(),
                         {string(), string()},
-                        undefined | {string(), string()}) -> [acl_grant()].
-canned_acl_grants("public-read", Owner, _) ->
+                        undefined | {string(), string()},
+                        pid()) -> [acl_grant()].
+canned_acl_grants("public-read", Owner, _, _) ->
     [{Owner, ['FULL_CONTROL']},
      {'AllUsers', ['READ']}];
-canned_acl_grants("public-read-write", Owner, _) ->
+canned_acl_grants("public-read-write", Owner, _, _) ->
     [{Owner, ['FULL_CONTROL']},
      {'AllUsers', ['READ', 'WRITE']}];
-canned_acl_grants("authenticated-read", Owner, _) ->
+canned_acl_grants("authenticated-read", Owner, _, _) ->
     [{Owner, ['FULL_CONTROL']},
      {'AuthUsers', ['READ']}];
-canned_acl_grants("bucket-owner-read", Owner, undefined) ->
-    canned_acl_grants("private", Owner, undefined);
-canned_acl_grants("bucket-owner-read", Owner, BucketOwnerId) ->
-    BucketOwner = get_owner_data(BucketOwnerId),
+canned_acl_grants("bucket-owner-read", Owner, undefined, _RiakPid) ->
+    canned_acl_grants("private", Owner, undefined, _RiakPid);
+canned_acl_grants("bucket-owner-read", Owner, BucketOwnerId, RiakPid) ->
+    BucketOwner = get_owner_data(BucketOwnerId, RiakPid),
     [{Owner, ['FULL_CONTROL']},
      {BucketOwner, ['READ']}];
-canned_acl_grants("bucket-owner-full-control", Owner, undefined) ->
-    canned_acl_grants("private", Owner, undefined);
-canned_acl_grants("bucket-owner-full-control", Owner, BucketOwnerId) ->
-    BucketOwner = get_owner_data(BucketOwnerId),
+canned_acl_grants("bucket-owner-full-control", Owner, undefined, _RiakPid) ->
+    canned_acl_grants("private", Owner, undefined, _RiakPid);
+canned_acl_grants("bucket-owner-full-control", Owner, BucketOwnerId, RiakPid) ->
+    BucketOwner = get_owner_data(BucketOwnerId, RiakPid),
     [{Owner, ['FULL_CONTROL']},
      {BucketOwner, ['FULL_CONTROL']}];
-canned_acl_grants(_, {Name, CanonicalId}, _) ->
+canned_acl_grants(_, {Name, CanonicalId}, _, _) ->
     [{{Name, CanonicalId}, ['FULL_CONTROL']}].
 
 %% @doc Get the canonical id of the user associated with
@@ -230,10 +232,11 @@ canonical_for_email(Email, RiakPid) ->
     end.
 
 %% @doc Get user display name and canonical id for a specified key id.
--spec get_owner_data(string()) -> {string(), string()}.
-get_owner_data(KeyId) ->
-    case catch riak_moss_utils:get_user(?ID_INDEX,
-                                  list_to_binary(KeyId)) of
+-spec get_owner_data(string(), pid()) -> {string(), string()}.
+get_owner_data(KeyId, RiakPid) ->
+    case catch riak_moss_utils:get_user_by_index(?ID_INDEX,
+                                                 list_to_binary(KeyId),
+                                                 RiakPid) of
         {ok, {User, _}} ->
             {User?MOSS_USER.display_name, User?MOSS_USER.canonical_id};
         _ ->
