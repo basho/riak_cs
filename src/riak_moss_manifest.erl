@@ -126,6 +126,30 @@ needs_gc(#lfs_manifest_v2{state=pending_delete,
 needs_gc(#lfs_manifest_v2{state=pending_delete,
                           last_block_deleted_time=LastBlockDeletedTime}, Time) ->
     seconds_diff(Time, LastBlockDeletedTime) > retry_delete_time();
+%% TODO:
+%% This clause is a bit dangerous,
+%% because there is a chance with
+%% a sufficiently long network
+%% partition that we could decide to
+%% GC a file that _did_ finish writing,
+%% and hasn't yet been overwritten. This
+%% would remove the only copy of the data.
+%%
+%% The specific case happens when
+%% this side of the network partition
+%% observes the initial
+%% manifest write (or the first
+%% few blocks), but then there
+%% is an extended network partition
+%% that masks us from observing that
+%% the write actually completed.
+%%
+%% The fix will likely involve only
+%% reaping the blocks for what we think
+%% is a failed upload if we haven't
+%% observed the write finishing in N seconds
+%% _and_ a new version has succesfully overwritten,
+%% or a delete has occured.
 needs_gc(#lfs_manifest_v2{state=writing,
                           last_block_written_time=undefined,
                           write_start_time=WriteStartTime}, Time) ->
