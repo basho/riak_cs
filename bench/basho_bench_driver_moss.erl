@@ -39,13 +39,15 @@ new(ID) ->
     Disconnect = basho_bench_config:get(moss_disconnect_frequency, infinity),
     erlang:put(disconnect_freq, Disconnect),
 
-    %% Get our measurement units: op/sec, KByte/Sec, MByte/Sec
+    %% Get our measurement units: op/sec, Byte/sec, KByte/sec, MByte/sec
     {RF_name, ReportFun} =
+        %% We need to be really careful with these custom units things.
+        %% Use floats for everything.
         case (catch basho_bench_config:get(moss_measurement_units)) of
-            N = byte_sec  -> {N,      fun(X) -> X end};
+            N = byte_sec  -> {N,      fun(X) -> X / 1 end};
             N = kbyte_sec -> {N,      fun(X) -> X / 1024 end};
             N = mbyte_sec -> {N,      fun(X) -> X / (1024 * 1024) end};
-            _             -> {op_sec, fun(_) -> 1 end}
+            _             -> {op_sec, fun(_) -> 1.0 end}
         end,
     basho_bench_log:log(info, "Reporting factor = ~p\n", [RF_name]),
     OpsList = basho_bench_config:get(operations, []),
