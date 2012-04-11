@@ -262,7 +262,7 @@ content_types_accepted(RD, Ctx) ->
     end.
 
 -spec accept_body(term(), term()) ->
-    {true, term(), term()}.
+    {boolean() | {halt, term()}, term(), term()}.
 accept_body(RD, Ctx=#key_context{bucket=Bucket,
                                  key=KeyStr,
                                  manifest=Mfst,
@@ -323,8 +323,8 @@ accept_body(RD, Ctx=#key_context{bucket=Bucket,
              User?MOSS_USER.key_id},
             Owner,
             RiakPid),
-    Args = [Bucket, list_to_binary(Key), Size, list_to_binary(ContentType),
-            Metadata, BlockSize, ACL, timer:seconds(60), self(), RiakPid],
+    Args = [{Bucket, list_to_binary(Key), Size, list_to_binary(ContentType),
+             Metadata, BlockSize, ACL, timer:seconds(60), self(), RiakPid}],
     {ok, Pid} = riak_moss_put_fsm_sup:start_put_fsm(node(), Args),
     accept_streambody(RD, Ctx, Pid, wrq:stream_req_body(RD, riak_moss_lfs_utils:block_size())).
 

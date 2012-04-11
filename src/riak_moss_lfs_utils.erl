@@ -42,7 +42,7 @@
 
 %% @doc The number of blocks that this
 %%      size will be broken up into
--spec block_count(pos_integer(), pos_integer()) -> non_neg_integer().
+-spec block_count(non_neg_integer(), pos_integer()) -> non_neg_integer().
 block_count(ContentLength, BlockSize) ->
     Quotient = ContentLength div BlockSize,
     case ContentLength rem BlockSize of
@@ -97,7 +97,7 @@ safe_block_size_from_manifest(#lfs_manifest_v2{block_size=BlockSize}) ->
 
 %% @doc A list of all of the blocks that
 %%      make up the file.
--spec initial_blocks(pos_integer(), pos_integer()) -> list().
+-spec initial_blocks(non_neg_integer(), pos_integer()) -> list().
 initial_blocks(ContentLength, BlockSize) ->
     UpperBound = block_count(ContentLength, BlockSize),
     lists:seq(0, (UpperBound - 1)).
@@ -152,7 +152,7 @@ is_manifest(BinaryValue) ->
 -spec new_manifest(binary(),
                    binary(),
                    binary(),
-                   pos_integer(),
+                   non_neg_integer(),
                    binary(),
                    term(),
                    term(),
@@ -164,7 +164,7 @@ new_manifest(Bucket, FileName, UUID, ContentLength, ContentType, ContentMd5, Met
 -spec new_manifest(binary(),
                    binary(),
                    binary(),
-                   pos_integer(),
+                   non_neg_integer(),
                    binary(),
                    term(),
                    term(),
