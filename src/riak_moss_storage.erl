@@ -46,7 +46,7 @@ sum_user(Riak, User) when is_list(User) ->
 %% The result is a mochijson structure with two fields: `Objects',
 %% which is the number of objects that were counted in the bucket, and
 %% `Bytes', which is the total size of all of those objects.
--spec sum_bucket(pid(), string()) -> term() | {error, term()}.
+-spec sum_bucket(pid(), string() | binary()) -> term() | {error, term()}.
 sum_bucket(Riak, Bucket) when is_list(Bucket) ->
     sum_bucket(Riak, list_to_binary(Bucket));
 sum_bucket(Riak, Bucket) when is_binary(Bucket) ->
