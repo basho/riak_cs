@@ -90,6 +90,7 @@ mark_active_as_pending_delete(Pid) ->
 update_manifest(Pid, Manifest) ->
     gen_fsm:send_event(Pid, {update_manifest, Manifest}).
 
+-spec update_manifest_with_confirmation(term(), lfs_manifest()) -> ok | {error, term()}.
 update_manifest_with_confirmation(Pid, Manifest) ->
     gen_fsm:sync_send_event(Pid, {update_manifest_with_confirmation, Manifest},
                            infinity).

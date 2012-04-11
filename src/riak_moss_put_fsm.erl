@@ -37,7 +37,7 @@
 -define(SERVER, ?MODULE).
 -define(EMPTYORDSET, ordsets:new()).
 
--record(state, {timeout :: pos_integer(),
+-record(state, {timeout :: timeout(),
                 block_size :: pos_integer(),
                 caller :: reference(),
                 md5 :: binary(),
@@ -70,6 +70,9 @@
 %% @spec start_link() -> {ok, Pid} | ignore | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
+-spec start_link(binary(), binary(), non_neg_integer(), binary(),
+                 term(), pos_integer(), acl(), timeout(), pid(), pid()) ->
+                        {ok, pid()} | {error, term()}.
 start_link(Bucket,
            Key,
            ContentLength,
@@ -80,8 +83,8 @@ start_link(Bucket,
            Timeout,
            Caller,
            RiakPid) ->
-    Args = [Bucket, Key, ContentLength, ContentType,
-            Metadata, BlockSize, Acl, Timeout, Caller, RiakPid],
+    Args = {Bucket, Key, ContentLength, ContentType,
+            Metadata, BlockSize, Acl, Timeout, Caller, RiakPid},
     gen_fsm:start_link(?MODULE, Args, []).
 
 augment_data(Pid, Data) ->
@@ -107,8 +110,11 @@ block_written(Pid, BlockID) ->
 %% so that I can be thinking about how it
 %% might be implemented. Does it actually
 %% make things more confusing?
-init([Bucket, Key, ContentLength, ContentType,
-      Metadata, BlockSize, Acl, Timeout, Caller, RiakPid]) ->
+-spec init([{binary(), binary(), non_neg_integer(), binary(),
+             term(), pos_integer(), acl(), timeout(), pid(), pid()}]) ->
+                  {ok, prepare, #state{}, timeout()}.
+init([{Bucket, Key, ContentLength, ContentType,
+       Metadata, BlockSize, Acl, Timeout, Caller, RiakPid}]) ->
     %% We need to do this (the monitor) for two reasons
     %% 1. We're started through a supervisor, so the
     %%    proc that actually intends to start us isn't

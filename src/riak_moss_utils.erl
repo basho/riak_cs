@@ -390,7 +390,8 @@ set_bucket_acl(User, VClock, Bucket, ACL, RiakPid) ->
 
 %% @doc Set the ACL for an object. Existing ACLs are only
 %% replaced, they cannot be updated.
--spec set_object_acl(binary(), binary(), lfs_manifest(), acl(), pid()) -> ok.
+-spec set_object_acl(binary(), binary(), lfs_manifest(), acl(), pid()) ->
+            ok | {error, term()}.
 set_object_acl(Bucket, Key, Manifest, Acl, RiakPid) ->
     {ok, ManiPid} = riak_moss_manifest_fsm:start_link(Bucket, Key, RiakPid),
     _ActiveMfst = riak_moss_manifest_fsm:get_active_manifest(ManiPid),

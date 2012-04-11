@@ -38,12 +38,12 @@
                  }).
 
 -record(key_context, {context :: #context{},
-                      manifest :: lfs_manifest(),
+                      manifest :: 'notfound' | lfs_manifest(),
                       get_fsm_pid :: pid(),
                       putctype :: string(),
                       bucket :: binary(),
                       key :: list(),
-                      owner :: string(),
+                      owner :: 'undefined' | string(),
                       size :: non_neg_integer()}).
 
 -type acl_perm() :: 'READ' | 'WRITE' | 'READ_ACP' | 'WRITE_ACP' | 'FULL_CONTROL'.

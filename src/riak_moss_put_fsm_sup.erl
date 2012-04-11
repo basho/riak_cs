@@ -10,6 +10,8 @@
 
 -behaviour(supervisor).
 
+-include("riak_moss.hrl").
+
 %% API
 -export([start_put_fsm/2]).
 -export([start_link/0]).
@@ -28,10 +30,12 @@ start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
 %% @doc Start a `riak_moss_put_fsm' child process.
--spec start_put_fsm(node(), supervisor:child_spec()) ->
-                           supervisor:startchild_ret().
-start_put_fsm(Node, Args) ->
-    supervisor:start_child({?MODULE, Node}, Args).
+-spec start_put_fsm(node(),
+                    [{binary(), binary(), non_neg_integer(), binary(),
+                      term(), pos_integer(), acl(), timeout(), pid(), pid()}])->
+                           {ok, pid()} | {error, term()}.
+start_put_fsm(Node, ArgList) ->
+    supervisor:start_child({?MODULE, Node}, ArgList).
 
 %% ===================================================================
 %% Supervisor callbacks
