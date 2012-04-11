@@ -131,7 +131,7 @@
 -record(ctx, {
           auth_bypass :: boolean(),
           riak :: pid(),
-          user :: riak_moss:moss_user(),
+          user :: moss_user(),
           start_time :: calendar:datetime(),
           end_time :: calendar:datetime(),
           body :: iodata(),

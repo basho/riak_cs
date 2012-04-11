@@ -57,8 +57,8 @@
                 current_buffer_size=0 :: non_neg_integer(),
                 buffer_queue=[], %% not actually a queue, but we treat it like one
                 remainder_data :: undefined | binary(),
-                free_writers :: ordsets:new(),
-                unacked_writes=ordsets:new(),
+                free_writers :: ordsets:ordset(pid()),
+                unacked_writes=ordsets:new() :: ordsets:ordset(non_neg_integer()),
                 next_block_id=0 :: non_neg_integer(),
                 all_writer_pids :: list(pid())}).
 
