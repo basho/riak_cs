@@ -108,7 +108,8 @@ check_permission(Method, RD, Ctx=#key_context{bucket=Bucket,
         true ->
             %% actor is the owner
             AccessRD = riak_moss_access_logger:set_user(User, RD),
-            {false, AccessRD, Ctx#key_context{owner=User}};
+            UserStr = User?MOSS_USER.canonical_id,
+            {false, AccessRD, Ctx#key_context{owner=UserStr}};
         {true, OwnerId} ->
             %% bill the owner, not the actor
             AccessRD = riak_moss_access_logger:set_user(OwnerId, RD),
@@ -168,8 +169,6 @@ content_types_provided(RD, Ctx=#key_context{manifest=Mfst}) ->
             DocCtx = riak_moss_wm_utils:ensure_doc(Ctx),
             ContentType = binary_to_list(Mfst#lfs_manifest_v2.content_type),
             case ContentType of
-                undefined ->
-                    {[{"application/octet-stream", produce_body}], RD, DocCtx};
                 _ ->
                     {[{ContentType, produce_body}], RD, DocCtx}
             end;
@@ -217,7 +216,7 @@ produce_body(RD, #key_context{get_fsm_pid=GetFsmPid, manifest=Mfst}=Ctx) ->
     {{known_length_stream, ContentLength, {<<>>, StreamFun}}, NewRQ, Ctx}.
 
 %% @doc Callback for deleting an object.
--spec delete_resource(term(), term()) -> boolean().
+-spec delete_resource(term(), term()) -> {true, term(), #key_context{}}.
 delete_resource(RD, Ctx=#key_context{bucket=Bucket,
                                      key=Key,
                                      get_fsm_pid=GetFsmPid,
@@ -225,7 +224,7 @@ delete_resource(RD, Ctx=#key_context{bucket=Bucket,
     riak_moss_get_fsm:stop(GetFsmPid),
     BinKey = list_to_binary(Key),
     #context{riakc_pid=RiakPid} = InnerCtx,
-    riak_moss_delete_marker:delete(Bucket, BinKey, RiakPid),
+    ok = riak_moss_delete_marker:delete(Bucket, BinKey, RiakPid),
     {true, RD, Ctx}.
 
 -spec content_types_accepted(term(), term()) ->
@@ -324,9 +323,9 @@ accept_body(RD, Ctx=#key_context{bucket=Bucket,
              User?MOSS_USER.key_id},
             Owner,
             RiakPid),
-    Args = [Bucket, list_to_binary(Key), Size, list_to_binary(ContentType),
-        Metadata, BlockSize, ACL, timer:seconds(60), self(), RiakPid],
-    {ok, Pid} = riak_moss_put_fsm_sup:start_put_fsm(node(), Args),
+    Args = {Bucket, list_to_binary(Key), Size, list_to_binary(ContentType),
+            Metadata, BlockSize, ACL, timer:seconds(60), self(), RiakPid},
+    {ok, Pid} = riak_moss_put_fsm_sup:start_put_fsm(node(), [Args]),
     accept_streambody(RD, Ctx, Pid, wrq:stream_req_body(RD, riak_moss_lfs_utils:block_size())).
 
 accept_streambody(RD, Ctx=#key_context{size=0}, Pid, {_Data, _Next}) ->
