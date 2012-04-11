@@ -52,7 +52,9 @@
 -define(MAXVALSIZE, 2#11111111111111111111111111111111).
 
 -ifdef(TEST).
+-ifdef(TEST_IN_RIAK_KV).
 -include_lib("eunit/include/eunit.hrl").
+-endif.
 -endif.
 
 -record(state, {dir}).
@@ -415,6 +417,7 @@ unpack_ondisk(<<Crc32:?CRCSIZEFIELD/unsigned, Bytes/binary>>) ->
 %% EUnit tests
 %% ===================================================================
 -ifdef(TEST).
+-ifdef(TEST_IN_RIAK_KV).
 
 %% Broken test:
 simple_test_() ->
@@ -473,4 +476,5 @@ cleanup(_) ->
     os:cmd("rm -rf test/fs-backend/*").
 
 -endif. % EQC
+-endif. % TEST_IN_RIAK_KV
 -endif. % TEST

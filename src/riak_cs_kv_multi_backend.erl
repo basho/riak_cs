@@ -41,7 +41,9 @@
          callback/3]).
 
 -ifdef(TEST).
+-ifdef(TEST_IN_RIAK_KV).
 -include_lib("eunit/include/eunit.hrl").
+-endif.
 -endif.
 
 -define(API_VERSION, 1).
@@ -513,6 +515,7 @@ match_bucket_prefix(Bucket, [{Prefix, Name}|BPrefixList]) ->
 %% EUnit tests
 %% ===================================================================
 -ifdef(TEST).
+-ifdef(TEST_IN_RIAK_KV).
 
 %% @private
 multi_backend_test_() ->
@@ -700,4 +703,5 @@ wait_until_dead(Pid) when is_pid(Pid) ->
 wait_until_dead(_) ->
     ok.
 
+-endif.
 -endif.
