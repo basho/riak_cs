@@ -6,7 +6,7 @@
 
 -module(riak_moss_wm_key_test).
 
--export([key_test_/0]).
+-compile(export_all).
 
 -include("riak_moss.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
@@ -27,8 +27,8 @@ get_object() ->
     %% path info the wm_reqdata because
     %% riak_moss_wm_utils:ensure_doc uses
     %% it.
-    Ctx= #key_context{bucket="keytest", key="foo"},
-    RD = #wm_reqdata{},
+    _Ctx= #key_context{bucket="keytest", key="foo"},
+    _RD = #wm_reqdata{},
     ?assert(true).
 %%    {Object, _, _} = riak_moss_wm_key:produce_body(RD, Ctx),
 %%    ?assertEqual(<<>>, Object).

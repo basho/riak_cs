@@ -6,6 +6,8 @@
 
 -module(riak_moss_utils_test).
 
+-compile(export_all).
+
 -ifdef(TEST).
 
 -include("riak_moss.hrl").
@@ -179,7 +181,7 @@ object_returns() ->
     %% TODO:
     %% it's starting to get kind of annoying
     %% that we need a KeyID to store objects
-    KeyID = "0",
+    _KeyID = "0",
     BucketName = "object_returns",
     KeyName = "testkey",
     Value = <<"value">>,
@@ -201,7 +203,7 @@ object_returns() ->
 %%      object and deleting it that it
 %%      no longer exists
 object_deletes() ->
-    KeyID = "0",
+    _KeyID = "0",
     BucketName = "object_deletes",
     KeyName = "testkey",
     Value = <<"value">>,

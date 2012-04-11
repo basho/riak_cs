@@ -6,7 +6,7 @@
 
 -module(riak_moss_wm_bucket_test).
 
--export([bucket_test_/0]).
+-compile(export_all).
 
 -include("riak_moss.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
@@ -26,8 +26,8 @@ bucket_test_() ->
 %% scares me
 create_bucket_and_list_keys() ->
     PathInfo = dict:from_list([{bucket, "create_bucket_test"}]),
-    RD = #wm_reqdata{path_info = PathInfo},
-    Ctx = #context{},
+    _RD = #wm_reqdata{path_info = PathInfo},
+    _Ctx = #context{},
     ?assert(true).
 %%  {Result, _, _} = riak_moss_wm_bucket:to_json(RD, Ctx),
 %%  ?assertEqual(mochijson2:encode([]), Result).

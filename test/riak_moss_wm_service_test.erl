@@ -6,7 +6,7 @@
 
 -module(riak_moss_wm_service_test).
 
--export([service_test_/0]).
+-compile(export_all).
 
 -include("riak_moss.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
@@ -31,8 +31,8 @@ get_bucket_to_json() ->
     {ok, UpdatedUser} = riak_moss_utils:get_user(User?MOSS_USER.key_id),
     CorrectJsonBucketNames = [list_to_binary(Name) ||
                                      Name <- lists:reverse(BucketNames)],
-    EncodedCorrectNames = mochijson2:encode(CorrectJsonBucketNames),
-    Context = #context{user=UpdatedUser},
+    _EncodedCorrectNames = mochijson2:encode(CorrectJsonBucketNames),
+    _Context = #context{user=UpdatedUser},
     ?assert(true).
     %%{ResultToTest, _, _} = riak_moss_wm_service:to_json(fake_rd, Context),
     %%?assertEqual(EncodedCorrectNames, ResultToTest).
