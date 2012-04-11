@@ -83,8 +83,8 @@ start_link(Bucket,
            Timeout,
            Caller,
            RiakPid) ->
-    Args = {Bucket, Key, ContentLength, ContentType,
-            Metadata, BlockSize, Acl, Timeout, Caller, RiakPid},
+    Args = [{Bucket, Key, ContentLength, ContentType,
+             Metadata, BlockSize, Acl, Timeout, Caller, RiakPid}],
     gen_fsm:start_link(?MODULE, Args, []).
 
 augment_data(Pid, Data) ->
