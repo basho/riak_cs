@@ -60,7 +60,7 @@ forbidden(RD, Ctx=#context{auth_bypass=AuthBypass,
             riak_moss_s3_response:api_error(invalid_access_key_id, RD, Ctx);
         {error, Reason} ->
             %% Access not allowed, deny access and log the reason
-            lager:error("Retrieval of user record for ~p failed. Reason: ~p", [KeyId, Reason]),
+            _ = lager:error("Retrieval of user record for ~p failed. Reason: ~p", [KeyId, Reason]),
             riak_moss_s3_response:api_error(invalid_access_key_id, RD, Ctx)
     end.
 
@@ -87,7 +87,7 @@ content_types_provided(RD, Ctx) ->
 %% when we change this to allow streaming
 %% bodies.
 -spec to_xml(term(), term()) ->
-    {iolist(), term(), term()}.
+    {{'halt', term()}, term(), #context{}}.
 to_xml(RD, Ctx=#context{user=User}) ->
     riak_moss_s3_response:list_all_my_buckets_response(User, RD, Ctx).
 
