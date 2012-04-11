@@ -13,7 +13,7 @@
 -include("riak_moss.hrl").
 
 %% API
--export([start_link/10,
+-export([start_link/1,
          augment_data/2,
          block_written/2,
          finalize/1]).
@@ -55,7 +55,7 @@
                 num_bytes_received=0 :: non_neg_integer(),
                 max_buffer_size :: non_neg_integer(),
                 current_buffer_size=0 :: non_neg_integer(),
-                buffer_queue=[], %% not actually a queue, but we treat it like one
+                buffer_queue=[] :: [binary()], %% not actually a queue, but we treat it like one
                 remainder_data :: undefined | binary(),
                 free_writers :: ordsets:ordset(pid()),
                 unacked_writes=ordsets:new() :: ordsets:ordset(non_neg_integer()),
@@ -70,19 +70,19 @@
 %% @spec start_link() -> {ok, Pid} | ignore | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
--spec start_link(binary(), binary(), non_neg_integer(), binary(),
-                 term(), pos_integer(), acl(), timeout(), pid(), pid()) ->
+-spec start_link({binary(), binary(), non_neg_integer(), binary(),
+                  term(), pos_integer(), acl(), timeout(), pid(), pid()}) ->
                         {ok, pid()} | {error, term()}.
-start_link(Bucket,
-           Key,
-           ContentLength,
-           ContentType,
-           Metadata,
-           BlockSize,
-           Acl,
-           Timeout,
-           Caller,
-           RiakPid) ->
+start_link({Bucket,
+            Key,
+            ContentLength,
+            ContentType,
+            Metadata,
+            BlockSize,
+            Acl,
+            Timeout,
+            Caller,
+            RiakPid}) ->
     Args = [{Bucket, Key, ContentLength, ContentType,
              Metadata, BlockSize, Acl, Timeout, Caller, RiakPid}],
     gen_fsm:start_link(?MODULE, Args, []).
@@ -320,7 +320,8 @@ prepare(State=#state{bucket=Bucket,
                      content_type=ContentType,
                      metadata=Metadata,
                      acl=Acl,
-                     riakc_pid=RiakPid}) ->
+                     riakc_pid=RiakPid})
+  when is_integer(ContentLength), ContentLength >= 0 ->
     %% 1. start the manifest_fsm proc
     {ok, ManiPid} = riak_moss_manifest_fsm:start_link(Bucket, Key, RiakPid),
     %% TODO:
