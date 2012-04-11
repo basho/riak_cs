@@ -118,7 +118,7 @@ init([Bucket, Key, Caller, RiakPid])
                    riakc_pid=RiakPid},
     {ok, prepare, State, 0};
 init([test, Bucket, Key, ContentLength, BlockSize]) ->
-    {ok, prepare, State1, 0} = init([Bucket, Key, self(), pid]),
+    {ok, prepare, State1, 0} = init([Bucket, Key, self(), self()]),
 
     %% purposely have the timeout happen
     %% so that we get called in the prepare
