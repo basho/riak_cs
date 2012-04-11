@@ -134,7 +134,7 @@
           user :: riak_moss:moss_user(),
           start_time :: calendar:datetime(),
           end_time :: calendar:datetime(),
-          body :: iolist(),
+          body :: iodata(),
           etag :: iolist()
          }).
 
@@ -294,7 +294,11 @@ produce_xml(RD, #ctx{body=undefined}=Ctx) ->
     Storage = maybe_storage(RD, Ctx),
     Doc = [{?KEY_USAGE, [{?KEY_ACCESS, xml_access(Access)},
                          {?KEY_STORAGE, xml_storage(Storage)}]}],
-    Body = riak_moss_s3_response:export_xml(Doc),
+    Body = case riak_moss_s3_response:export_xml(Doc) of
+               {error, Bin, _}         -> Bin;
+               {incomplete, Bin, _}    -> Bin;
+               Bin when is_binary(Bin) -> Bin
+           end,
     {Body, RD, Ctx#ctx{body=Body}};
 produce_xml(RD, #ctx{body=Body}=Ctx) ->
     {Body, RD, Ctx}.
@@ -434,8 +438,6 @@ error_msg(RD, Message) ->
     end,
     wrq:set_resp_header("content-type", Type, wrq:set_resp_body(Body, RD)).
 
-json_error_msg(Message) when is_list(Message) ->
-    json_error_msg(list_to_binary(Message));
 json_error_msg(Message) ->
     MJ = {struct, [{?KEY_ERROR, {struct, [{?KEY_MESSAGE, Message}]}}]},
     mochijson2:encode(MJ).
