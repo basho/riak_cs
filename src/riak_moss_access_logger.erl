@@ -338,7 +338,7 @@ do_archive(#state{period=P, table=T, current=C}=State) ->
 %% @doc Digest a Webmachine log data record, and produce a record for
 %% the access table.
 -spec access_record(#wm_log_data{})
-         -> {ok, {riak_moss:user_key(), {binary(), list()}}}
+         -> {ok, {iodata(), {binary(), list()}}}
           | ignore.
 access_record(#wm_log_data{notes=Notes}=Log) ->
     case lists:keyfind(?STAT(user), 1, Notes) of

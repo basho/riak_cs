@@ -69,7 +69,7 @@ object_size_map({error, notfound}, _, _) ->
 object_size_map(Object, _, _) ->
     try
         AllManifests = [ binary_to_term(V)
-                         || V <- riak_object:get_values(Object) ],
+                         || V <- riakc_obj:get_values(Object) ],
         Resolved = riak_moss_manifest_resolution:resolve(AllManifests),
         case riak_moss_manifest:active_manifest(Resolved) of
             {ok, #lfs_manifest_v2{content_length=Length}} ->

@@ -203,4 +203,4 @@ remove_write_block(Manifest, Chunk) ->
                              last_block_written_time=erlang:now()}.
 
 sorted_blocks_remaining(#lfs_manifest_v2{write_blocks_remaining=Remaining}) ->
-    lists:sort(sets:to_list(Remaining)).
+    lists:sort(ordsets:to_list(Remaining)).
