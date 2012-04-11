@@ -83,7 +83,7 @@ create_bucket(User, VClock, Bucket, ACL, RiakPid) ->
                          RiakPid).
 
 %% @doc Create a new MOSS user
--spec create_user(string(), string()) -> {ok, moss_user()}.
+-spec create_user(string(), string()) -> {ok, moss_user()} | {error, term()}.
 create_user(Name, Email) ->
     %% Validate the email address
     case validate_email(Email) of
