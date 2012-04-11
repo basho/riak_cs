@@ -6,6 +6,8 @@
 
 -module(riak_moss_wm_bucket_test).
 
+-compile(export_all).
+
 -include("riak_moss.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
 -include_lib("eunit/include/eunit.hrl").
