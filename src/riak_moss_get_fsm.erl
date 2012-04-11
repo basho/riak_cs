@@ -364,8 +364,13 @@ terminate(_Reason, _StateName, #state{test=false,
         end,
     ok;
 terminate(_Reason, _StateName, #state{test=true,
-                                      free_readers=[ReaderPid | _]}) ->
-    exit(ReaderPid, normal).
+                                      free_readers=ReaderPids}) ->
+    case ReaderPids of
+        [ReaderPid|_] ->
+            exit(ReaderPid, normal);
+        _ ->
+            ok
+    end.
 
 %% @private
 code_change(_OldVsn, StateName, State, _Extra) -> {ok, StateName, State}.
