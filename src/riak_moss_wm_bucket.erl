@@ -157,8 +157,8 @@ content_types_accepted(RD, Ctx) ->
             {[{Media, accept_body}], RD, Ctx}
     end.
 
--spec to_xml(term(), term()) ->
-                    {iolist(), term(), term()}.
+-spec to_xml(term(), #context{}) ->
+                    {binary() | {'halt', term()}, term(), #context{}}.
 to_xml(RD, Ctx=#context{user=User,
                         bucket=Bucket,
                         requested_perm='READ',
@@ -243,14 +243,12 @@ accept_body(RD, Ctx=#context{user=User,
                                        RiakPid) of
         ok ->
             {{halt, 200}, RD, Ctx};
-        ignore ->
-            riak_moss_s3_response:api_error(bucket_already_exists, RD, Ctx);
         {error, Reason} ->
             riak_moss_s3_response:api_error(Reason, RD, Ctx)
     end.
 
 %% @doc Callback for deleting a bucket.
--spec delete_resource(term(), term()) -> boolean().
+-spec delete_resource(term(), term()) -> {boolean() | {'halt', term()}, term, #context{}}.
 delete_resource(RD, Ctx=#context{user=User,
                                  user_vclock=VClock,
                                  bucket=Bucket,

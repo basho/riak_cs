@@ -209,7 +209,7 @@ stanchion_data() ->
 
 %% @doc Return a list of keys for a bucket along
 %% with their associated objects.
--spec get_keys_and_manifests(binary(), binary(), pid()) -> {ok, [lfs_manifest()]}.
+-spec get_keys_and_manifests(binary(), binary(), pid()) -> {ok, [lfs_manifest()]} | {error, term()}.
 get_keys_and_manifests(BucketName, Prefix, RiakPid) ->
     ManifestBucket = riak_moss_utils:to_bucket_name(objects, BucketName),
     case list_keys(ManifestBucket, RiakPid) of
@@ -379,7 +379,7 @@ riak_connection() ->
 
 %% @doc Set the ACL for a bucket. Existing ACLs are only
 %% replaced, they cannot be updated.
--spec set_bucket_acl(moss_user(), term(), binary(), acl(), pid()) -> ok.
+-spec set_bucket_acl(moss_user(), term(), binary(), acl(), pid()) -> ok | {error, term()}.
 set_bucket_acl(User, VClock, Bucket, ACL, RiakPid) ->
     serialized_bucket_op(Bucket,
                          ACL,

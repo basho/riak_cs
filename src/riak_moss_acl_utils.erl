@@ -53,7 +53,7 @@ default_acl(DisplayName, CanonicalId, KeyId) ->
 
 %% @doc Map a x-amz-acl header value to an
 %% internal acl representation.
--spec canned_acl(undefined | string(), {_,_,_} | string(), string(), pid()) -> #acl_v2{}.
+-spec canned_acl(undefined | string(), {_,_,_} | string(), undefined | string(), pid()) -> #acl_v2{}.
 canned_acl(undefined, {Name, CanonicalId, KeyId}, _, _) ->
     default_acl(Name, CanonicalId, KeyId);
 canned_acl(HeaderVal, Owner, BucketOwnerId, RiakPid) ->
