@@ -8,12 +8,14 @@
   {applications, [
                   kernel,
                   stdlib,
+                  sasl,
+                  lager,
                   inets,
                   crypto,
                   mochiweb,
                   webmachine,
                   poolboy,
-                  lager
+                  folsom
                  ]},
   {mod, { riak_moss_app, []}},
   {env, [
