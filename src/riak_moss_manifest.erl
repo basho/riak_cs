@@ -72,11 +72,11 @@ mark_overwritten(Manifests) ->
 %% @doc Return a list of the
 %% manifests that need to be
 %% garbage collected.
--spec need_gc(list(lfs_manifest())) -> list(binary()).
+-spec need_gc([{binary(), lfs_manifest()}]) -> list(binary()).
 need_gc(Manifests) ->
     need_gc(Manifests, erlang:now()).
 
--spec need_gc(list(lfs_manifest()), erlang:timestamp()) -> list(binary()).
+-spec need_gc([{binary(), lfs_manifest()}], erlang:timestamp()) -> list(binary()).
 need_gc(Manifests, Time) ->
     [Id || {Id, Manifest} <- orddict:to_list(Manifests),
         needs_gc(Manifest, Time)].
