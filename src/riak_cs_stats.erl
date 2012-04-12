@@ -1,9 +1,9 @@
 %% -------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2011 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2012 Basho Technologies, Inc.  All Rights Reserved.
 %%
 %% -------------------------------------------------------------------
--module(riak_moss_stats).
+-module(riak_cs_stats).
 
 -behaviour(gen_server).
 

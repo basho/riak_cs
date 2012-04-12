@@ -129,7 +129,7 @@ handle_cast({get_block, ReplyPid, Bucket, Key, UUID, BlockNumber}, State=#state{
         {error, notfound}=NotFound ->
             NotFound
     end,
-    riak_moss_stats:update(block_get, timer:now_diff(os:timestamp(), StartTime)),
+    riak_cs_stats:update(block_get, timer:now_diff(os:timestamp(), StartTime)),
     riak_moss_get_fsm:chunk(ReplyPid, BlockNumber, ChunkValue),
     {noreply, State};
 handle_cast({put_block, ReplyPid, Bucket, Key, UUID, BlockNumber, Value}, State=#state{riakc_pid=RiakcPid}) ->
@@ -144,7 +144,7 @@ handle_cast({put_block, ReplyPid, Bucket, Key, UUID, BlockNumber, Value}, State=
     %% of this put call
     StartTime = os:timestamp(),
     riakc_pb_socket:put(RiakcPid, RiakObject),
-    riak_moss_stats:update(block_put, timer:now_diff(os:timestamp(), StartTime)),
+    riak_cs_stats:update(block_put, timer:now_diff(os:timestamp(), StartTime)),
     riak_moss_put_fsm:block_written(ReplyPid, BlockNumber),
     {noreply, State};
 handle_cast({delete_block, _ReplyPid, Bucket, Key, UUID, BlockNumber}, State=#state{riakc_pid=RiakcPid}) ->
@@ -153,7 +153,7 @@ handle_cast({delete_block, _ReplyPid, Bucket, Key, UUID, BlockNumber}, State=#st
     %% value of this delete call
     StartTime = os:timestamp(),
     riakc_pb_socket:delete(RiakcPid, FullBucket, FullKey),
-    riak_moss_stats:update(block_delete, timer:now_diff(os:timestamp(), StartTime)),
+    riak_cs_stats:update(block_delete, timer:now_diff(os:timestamp(), StartTime)),
     %% TODO:
     %% add a public func to riak_moss_delete_fsm
     %% to send messages back to the fsm
