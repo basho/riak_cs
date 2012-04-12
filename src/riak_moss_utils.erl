@@ -18,6 +18,7 @@
          from_bucket_name/1,
          get_admin_creds/0,
          get_buckets/1,
+         get_env/3,
          get_keys_and_manifests/3,
          get_object/3,
          get_user/2,
@@ -208,6 +209,16 @@ stanchion_data() ->
             SSL = ?DEFAULT_STANCHION_SSL
     end,
     {IP, Port, SSL}.
+
+%% @doc Get an application environment variable or return a default term.
+-spec get_env(atom(), atom(), term()) -> term().
+get_env(App, Key, Default) ->
+    case application:get_env(App, Key) of
+        {ok, Value} ->
+            Value;
+        _ ->
+            Default
+    end.
 
 %% @doc Return a list of keys for a bucket along
 %% with their associated objects.
