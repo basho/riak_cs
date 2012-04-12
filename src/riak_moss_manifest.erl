@@ -70,7 +70,7 @@ mark_overwritten(Manifests) ->
 
 
 %% @doc Return a list of the
-%% manfiests that need to be
+%% manifests that need to be
 %% garbage collected.
 -spec need_gc(list(lfs_manifest())) -> list(binary()).
 need_gc(Manifests) ->
