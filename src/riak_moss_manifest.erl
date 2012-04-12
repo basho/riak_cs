@@ -126,37 +126,6 @@ needs_gc(#lfs_manifest_v2{state=pending_delete,
 needs_gc(#lfs_manifest_v2{state=pending_delete,
                           last_block_deleted_time=LastBlockDeletedTime}, Time) ->
     seconds_diff(Time, LastBlockDeletedTime) > retry_delete_time();
-%% TODO:
-%% This clause is a bit dangerous,
-%% because there is a chance with
-%% a sufficiently long network
-%% partition that we could decide to
-%% GC a file that _did_ finish writing,
-%% and hasn't yet been overwritten. This
-%% would remove the only copy of the data.
-%%
-%% The specific case happens when
-%% this side of the network partition
-%% observes the initial
-%% manifest write (or the first
-%% few blocks), but then there
-%% is an extended network partition
-%% that masks us from observing that
-%% the write actually completed.
-%%
-%% The fix will likely involve only
-%% reaping the blocks for what we think
-%% is a failed upload if we haven't
-%% observed the write finishing in N seconds
-%% _and_ a new version has succesfully overwritten,
-%% or a delete has occured.
-needs_gc(#lfs_manifest_v2{state=writing,
-                          last_block_written_time=undefined,
-                          write_start_time=WriteStartTime}, Time) ->
-    seconds_diff(Time, WriteStartTime) > partial_upload_delete_time();
-needs_gc(#lfs_manifest_v2{state=writing,
-                          last_block_written_time=LastBlockWrittenTime}, Time) ->
-    seconds_diff(Time, LastBlockWrittenTime) > partial_upload_delete_time();
 needs_gc(_Manifest, _Time) ->
     false.
 
@@ -233,10 +202,6 @@ manifest_test_() ->
         [fun active_state_no_gc/0,
          fun old_enough_for_gc/0,
          fun too_young_for_gc/0,
-         fun failed_upload_no_block/0,
-         fun failed_upload_no_block_too_young/0,
-         fun failed_upload_with_block_written/0,
-         fun failed_upload_with_block_written_too_young/0,
          fun wrong_state_for_pruning/0,
          fun wrong_state_for_pruning_2/0,
          fun does_need_pruning/0,
@@ -272,50 +237,6 @@ too_young_for_gc() ->
     Mani = new_mani_helper(),
     Mani2 = Mani#lfs_manifest_v2{state=pending_delete,
                                  delete_marked_time=DeleteTime},
-    ?assert(not needs_gc(Mani2, Now)).
-
-failed_upload_no_block() ->
-    application:set_env(riak_moss, partial_upload_delete_time, 1),
-    %% 10 second diff
-    WriteStartTime = {1333,985708,445136},
-    Now = {1333,985718,445136},
-    Mani = new_mani_helper(),
-    Mani2 = Mani#lfs_manifest_v2{state=writing,
-                                 last_block_written_time=undefined,
-                                 write_start_time=WriteStartTime},
-    ?assert(needs_gc(Mani2, Now)).
-
-failed_upload_no_block_too_young() ->
-    application:set_env(riak_moss, partial_upload_delete_time, 5),
-    %% 1 second diff
-    WriteStartTime = {1333,985708,445136},
-    Now = {1333,985709,445136},
-    Mani = new_mani_helper(),
-    Mani2 = Mani#lfs_manifest_v2{state=writing,
-                                 last_block_written_time=undefined,
-                                 write_start_time=WriteStartTime},
-    ?assert(not needs_gc(Mani2, Now)).
-
-failed_upload_with_block_written() ->
-    application:set_env(riak_moss, partial_upload_delete_time, 5),
-    %% 10 second diff
-    LastBlockWrittenTime = {1333,985708,445136},
-    Now = {1333,985718,445136},
-    Mani = new_mani_helper(),
-    Mani2 = Mani#lfs_manifest_v2{state=writing,
-                                 last_block_written_time=LastBlockWrittenTime,
-                                 write_start_time=LastBlockWrittenTime},
-    ?assert(needs_gc(Mani2, Now)).
-
-failed_upload_with_block_written_too_young() ->
-    application:set_env(riak_moss, partial_upload_delete_time, 5),
-    %% 1 second diff
-    LastBlockWrittenTime = {1333,985708,445136},
-    Now = {1333,985709,445136},
-    Mani = new_mani_helper(),
-    Mani2 = Mani#lfs_manifest_v2{state=writing,
-                                 last_block_written_time=LastBlockWrittenTime,
-                                 write_start_time=LastBlockWrittenTime},
     ?assert(not needs_gc(Mani2, Now)).
 
 wrong_state_for_pruning() ->
