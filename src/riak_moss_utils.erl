@@ -24,6 +24,7 @@
          get_user/2,
          get_user_by_index/3,
          get_user_index/3,
+         json_pp_print/1,
          list_keys/2,
          pow/2,
          pow/3,
@@ -43,6 +44,12 @@
 
 -define(OBJECT_BUCKET_PREFIX, <<"0o:">>).       % Version # = 0
 -define(BLOCK_BUCKET_PREFIX, <<"0b:">>).        % Version # = 0
+
+%% Definitions for json_pp_print, from riak_core's json_pp.erl
+-define(SPACE, 32).
+-define(is_quote(C), (C == $\") orelse (C == $\')).
+-define(is_indent(C), (C == 91) orelse (C == 123)). % [, {
+-define(is_undent(C), (C == 93) orelse (C == 125)). % ], }
 
 -type xmlElement() :: #xmlElement{}.
 
@@ -336,6 +343,31 @@ get_user_index(Index, Value, RiakPid) ->
                                                                                              Reason]),
             Error
     end.
+
+%% @doc Pretty-print a JSON string ... from riak_core's json_pp.erl
+json_pp_print(Str) when is_list(Str) ->
+    json_pp_print(Str, 0, undefined, []).
+
+json_pp_print([$\\, C| Rest], I, C, Acc) -> % in quote
+    json_pp_print(Rest, I, C, [C, $\\| Acc]);
+json_pp_print([C| Rest], I, undefined, Acc) when ?is_quote(C) ->
+    json_pp_print(Rest, I, C, [C| Acc]);
+json_pp_print([C| Rest], I, C, Acc) -> % in quote
+    json_pp_print(Rest, I, undefined, [C| Acc]);
+json_pp_print([C| Rest], I, undefined, Acc) when ?is_indent(C) ->
+    json_pp_print(Rest, I+1, undefined, [json_pp_indent(I+1), $\n, C| Acc]);
+json_pp_print([C| Rest], I, undefined, Acc) when ?is_undent(C) ->
+    json_pp_print(Rest, I-1, undefined, [C, json_pp_indent(I-1), $\n| Acc]);
+json_pp_print([$,| Rest], I, undefined, Acc) ->
+    json_pp_print(Rest, I, undefined, [json_pp_indent(I), $\n, $,| Acc]);
+json_pp_print([$:| Rest], I, undefined, Acc) ->
+    json_pp_print(Rest, I, undefined, [?SPACE, $:| Acc]);
+json_pp_print([C|Rest], I, Q, Acc) ->
+    json_pp_print(Rest, I, Q, [C| Acc]);
+json_pp_print([], _I, _Q, Acc) -> % done
+    lists:reverse(Acc).
+
+json_pp_indent(I) -> lists:duplicate(I*4, ?SPACE).
 
 %% @doc List the keys from a bucket
 -spec list_keys(binary(), pid()) -> {ok, [binary()]}.
