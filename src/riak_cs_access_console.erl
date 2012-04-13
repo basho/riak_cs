@@ -118,7 +118,7 @@ wait_for_archiver(N) ->
                 {message_queue_len, Length} ->
                     io:format("Archiver is busy,"
                               " with ~b message~s in its inbox.~n",
-                              [Length, if Length == 1 -> ""; true -> "~s" end]);
+                              [Length, if Length == 1 -> ""; true -> "s" end]);
                 false ->
                     ok
             end,
