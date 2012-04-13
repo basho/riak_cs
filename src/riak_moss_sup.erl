@@ -80,13 +80,9 @@ init([]) ->
     DeleteFsmSup = {riak_moss_delete_fsm_sup,
                  {riak_moss_delete_fsm_sup, start_link, []},
                  permanent, 5000, worker, dynamic},
-    DeleterSup = {riak_moss_deleter_sup,
-                 {riak_moss_deleter_sup, start_link, []},
-                 permanent, 5000, worker, dynamic},
-    Archiver = {riak_moss_access_archiver_sup,
-                {riak_moss_access_archiver_sup, start_link, []},
-                permanent, 5000, supervisor,
-                [riak_moss_access_archiver_sup]},
+    Archiver = {riak_moss_access_archiver,
+                {riak_moss_access_archiver, start_link, []},
+                permanent, 5000, worker, dynamic},
     Storage = {riak_moss_storage_d,
                {riak_moss_storage_d, start_link, []},
                permanent, 5000, worker, [riak_moss_storage_d]},
@@ -101,7 +97,6 @@ init([]) ->
                                           {stop_fun, WorkerStop}]]},
                   permanent, 5000, worker, [poolboy]}
                  || {Name, {Workers, Overflow}} <- PoolList],
-
     Processes = PoolSpecs ++
         [Archiver,
          Storage,
