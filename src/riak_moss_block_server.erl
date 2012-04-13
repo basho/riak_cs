@@ -122,11 +122,18 @@ handle_call(stop, _From, State) ->
 %%--------------------------------------------------------------------
 handle_cast({get_block, ReplyPid, Bucket, Key, UUID, BlockNumber}, State=#state{riakc_pid=RiakcPid}) ->
     {FullBucket, FullKey} = full_bkey(Bucket, Key, UUID, BlockNumber),
-    ChunkValue = case riakc_pb_socket:get(RiakcPid, FullBucket, FullKey, [{r, 1}]) of
+    ChunkValue = case riakc_pb_socket:get(RiakcPid, FullBucket, FullKey, [{pr, 1}, {random_p_n, 1}]) of
         {ok, RiakObject} ->
             {ok, riakc_obj:get_value(RiakObject)};
-        {error, notfound}=NotFound ->
-            NotFound
+        _ ->
+            %% OK, so trying to fetch a single replica failed, so let's
+            %% try again with a quorum.
+            case riakc_pb_socket:get(RiakcPid, FullBucket, FullKey, [{r, quorum}]) of
+                {ok, RiakObject} ->
+                    {ok, riakc_obj:get_value(RiakObject)};
+                {error, notfound}=NotFound ->
+                    NotFound
+            end
     end,
     riak_moss_get_fsm:chunk(ReplyPid, BlockNumber, ChunkValue),
     {noreply, State};
