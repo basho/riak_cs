@@ -22,6 +22,7 @@
 
 %% gen_fsm callbacks
 -export([init/1,
+         check_bucket_props/2, check_bucket_props/3,
          idle/2, idle/3,
          archiving/2, archiving/3,
          handle_event/3,
@@ -38,6 +39,7 @@
 -record(state,
         {
           riak,      %% the riak connection we're using
+          mon,       %% the monitor watching our riak connection
           table,     %% the logger table being archived
           slice,     %% the logger slice bieng archived
           next,      %% the next entry in the table to archive
@@ -64,9 +66,6 @@ start_link() ->
 %% that the referenced `Table' will be deleted.
 archive(Table, Slice) ->
     try 
-        %% TODO: might be a good idea to check archiver mailbox
-        %% backlog here, in case stats logging is taking much longer
-        %% than expected
         ets:give_away(Table, whereis(?SERVER), Slice)
     catch error:badarg ->
             lager:error("~p was not available, access stats for ~p lost",
@@ -86,10 +85,13 @@ archive(Table, Slice) ->
 %% State, Props}` where `State` is `idle` or `archiving` if the
 %% archiver had time to respond, or `busy` if the request timed out.
 %% `Props` will include additional details about what the archiver is
-%% up to.
+%% up to.  May also return `{error, Reason}` if something else went
+%% wrong.
 status(Timeout) ->
     case catch gen_fsm:sync_send_all_state_event(?SERVER, status, Timeout) of
-        {State, Props} when State == idle; State == archiving ->
+        {State, Props} when State == idle;
+                            State == archiving;
+                            State == check_bucket_props ->
             {ok, State, Props};
         {'EXIT',{timeout,_}} ->
             %% if the response times out, the number of logs waiting
@@ -109,7 +111,6 @@ status(Timeout) ->
 %%%===================================================================
 
 init([]) ->
-    rts:check_bucket_props(?ACCESS_BUCKET),
     MaxBacklog = case application:get_env(
                         riak_moss, access_archiver_max_backlog) of
                      {ok, MB} when is_integer(MB) -> MB;
@@ -120,35 +121,51 @@ init([]) ->
                            [?DEFAULT_MAX_BACKLOG]),
                          ?DEFAULT_MAX_BACKLOG
                  end,
-    {ok, idle, #state{max_backlog=MaxBacklog}}.
+    gen_fsm:send_event(?SERVER, check),
+    {ok, check_bucket_props, #state{max_backlog=MaxBacklog}}.
+
+check_bucket_props(check, State) ->
+    case riak_moss_access_archiver_sup:start_client() of
+        {ok, Riak} ->
+            case rts:check_bucket_props(?ACCESS_BUCKET, Riak) of
+                ok ->
+                    Mon = erlang:monitor(process, Riak),
+                    maybe_idle(State#state{riak=Riak, mon=Mon});
+                 _Error ->
+                    riak_moss_access_archiver_sup:stop_client(),
+                    maybe_idle(State)
+            end;
+        {error, Reason} ->
+            lager:warning("Unable to verify ~s bucket settings (~p).",
+                          [?ACCESS_BUCKET, Reason]),
+            maybe_idle(State)
+    end;
+check_bucket_props(_Request, State) ->
+    {next_state, check_bucket_props, State}.
 
 idle(_Request, State) ->
     {next_state, idle, State}.
 
-archiving(continue, #state{next='$end_of_table', table=OldTable,
-                           backlog=Backlog, riak=Riak}=State) ->
+archiving(continue, #state{next='$end_of_table', table=OldTable}=State) ->
     ets:delete(OldTable),
-    case Backlog of
-        [{Table,Slice}|RestBacklog] ->
-            %% start working on the pile we were ignoring
-            continue(
-              start_archiving(Table, Slice,
-                              State#state{backlog=RestBacklog}));
-        [] ->
-            %% nothing to do, rest
-            riak_moss_riakc_pool_worker:stop(Riak),
-            {next_state, idle, State#state{riak=undefined,
-                                           table=undefined,
-                                           slice=undefined,
-                                           next=undefined}}
-    end;
+    maybe_idle(State#state{table=undefined, slice=undefined, next=undefined});
 archiving(continue, #state{riak=Riak, table=Table,
                            next=Key, slice=Slice}=State) ->
-    archive_user(Key, Riak, Table, Slice),
-    Next = ets:next(Table, Key),
-    continue(State#state{next=Next});
+    case archive_user(Key, Riak, Table, Slice) of
+        retry ->
+            %% wait for 'DOWN' to reconnect client,
+            %% then retry this user
+            continue(State);
+        _ ->
+            %% both ok and error move us on to the next user
+            Next = ets:next(Table, Key),
+            continue(State#state{next=Next})
+    end;
 archiving(_Request, State) ->
     {next_state, archiving, State}.
+
+check_bucket_props(_Request, _From, State) ->
+    {reply, ok, check_bucket_props, State}.
 
 idle(_Request, _From, State) ->
     {reply, ok, idle, State}.
@@ -167,50 +184,53 @@ handle_sync_event(status, _From, StateName,
 handle_sync_event(_Event, _From, StateName, State) ->
     {reply, ok, StateName, State}.
 
-handle_info({'ETS-TRANSFER', Table, _From, Slice}, StateName, State) ->
-    case StateName of
-        idle ->
-            %% this does not check out a worker from the riak
-            %% connection pool; instead it creates a fresh new worker,
-            %% the idea being that we don't want to foul up the access
-            %% archival just because the pool is empty; pool workers
-            %% just happen to be literally the socket process, so
-            %% "starting" one here is the same as opening a
-            %% connection, and avoids duplicating the configuration
-            %% lookup code
-            case riak_moss_riakc_pool_worker:start_link([]) of
-                {ok, Riak} ->
-                    continue(
-                      start_archiving(Table, Slice, State#state{riak=Riak}));
-                {error, Reason} ->
-                    lager:error(
-                      "Access archiver connection to Riak failed (~p), "
-                      "stats for ~p were lost",
-                      [Reason, Slice]),
-                    {next_state, idle, State}
-            end;
-        _ ->
-            Backlog = State#state.backlog++[{Table, Slice}],
-            case length(Backlog) =< State#state.max_backlog of
-               true ->
-                    %% room in the backlog; put it there
-                    NewState = State#state{backlog=Backlog},
-                    {next_state, StateName, NewState};
-               false ->
-                    %% too much in the backlog; abandon current
-                    %% archival and move on to catch up
-                    lager:error("Skipping archival of accesses ~p to"
-                                " catch up on backlog",
-                                [State#state.slice]),
-                    ets:delete(State#state.table),
-                    [{NT, NS}|RestBacklog] = Backlog,
-                    %% don't have to continue/1 here, because there's
-                    %% already a continue in the inbox for the
-                    %% inflight archival
-                    {next_state, StateName,
-                     start_archiving(
-                       NT, NS, State#state{backlog=RestBacklog})}
-            end
+handle_info({'ETS-TRANSFER', Table, _From, Slice}, _StateName, State) ->
+    Backlog = State#state.backlog++[{Table, Slice}],
+    case length(Backlog) =< State#state.max_backlog of
+        true ->
+            %% room in the backlog; leave things be
+            NewState = State#state{backlog=Backlog};
+        false when State#state.table == undefined ->
+            %% too much in the backlog, and we're not working on
+            %% anything; drop the first item in the backlog
+            [{DropTable, DropSlice}|RestBacklog] = Backlog,
+            ets:delete(DropTable),
+            lager:error("Skipping archival of accesses ~p to"
+                        " catch up on backlog",
+                        [DropSlice]),
+            NewState = State#state{backlog=RestBacklog};
+        false ->
+            %% too much in the backlog, drop the work under way to
+            %% make room
+            ets:delete(State#state.table),
+            lager:error("Skipping partial archival of accesses ~p to"
+                        " catch up on backlog",
+                        [State#state.slice]),
+            NewState = State#state{backlog=Backlog,
+                                   table=undefined,
+                                   slice=undefined,
+                                   next=undefined}
+    end,
+    maybe_idle(NewState);
+handle_info({'DOWN', Mon, process, Riak, _Reason},
+            _StateName,
+            #state{riak=Riak, mon=Mon}=State) ->
+    case riak_moss_access_archiver_sup:start_client() of
+        {ok, NewRiak} ->
+            NewMon = erlang:monitor(process, Riak),
+            maybe_idle(State#state{riak=NewRiak, mon=NewMon});
+        {error, Reason} ->
+            case State#state.table of
+                undefined -> ok;
+                Table ->
+                    ets:delete(Table),
+                    lager:error("Access archiver connection to Riak failed"
+                                " (~p), stats for ~p were lost",
+                                [Reason, State#state.slice])
+            end,
+            maybe_idle(
+              State#state{riak=undefined, mon=undefined,
+                          table=undefined, slice=undefined, next=undefined})
     end;
 handle_info(_Info, StateName, State) ->
     {next_state, StateName, State}.
@@ -229,6 +249,44 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
+%% @doc Decide whether to go idle or start processing a log.  If going
+%% idle, disconnect the riak client (if one is open).  If starting
+%% processing, connect the riak client (if it's not already open).
+maybe_idle(#state{table=T}=State) when T =/= undefined ->
+    {next_state, archiving, State};
+maybe_idle(#state{backlog=[_|_], riak=undefined}=State) ->
+    %% things to do, but no client to do them with
+
+    %% this does not check out a worker from the riak
+    %% connection pool; instead it creates a fresh new worker,
+    %% the idea being that we don't want to foul up the access
+    %% archival just because the pool is empty
+    case riak_moss_access_archiver_sup:start_client() of
+        {ok, Riak} ->
+            Mon = erlang:monitor(process, Riak),
+            maybe_idle(State#state{riak=Riak, mon=Mon});
+        {error, Reason} ->
+            [{Table,Slice}|Backlog] = State#state.backlog,
+            ets:delete(Table),
+            lager:error(
+              "Access archiver connection to Riak failed (~p), "
+              "stats for ~p were lost",
+              [Reason, Slice]),
+            maybe_idle(State#state{backlog=Backlog})
+    end;
+maybe_idle(#state{backlog=[{Table, Slice}|Backlog]}=State) ->
+    %% things to do, and we already have a client
+    continue(start_archiving(Table, Slice, State#state{backlog=Backlog}));
+maybe_idle(#state{backlog=[], riak=Riak, mon=Mon}=State)
+  when Riak /= undefined ->
+    %% nothing to do, but we're holding a client
+    erlang:demonitor(Mon, [flush]),
+    riak_moss_access_archiver_sup:stop_client(),
+    {next_state, idle, State#state{riak=undefined, mon=undefined}};
+maybe_idle(State) ->
+    %% nothing to do, no client
+    {next_state, idle, State}.
+
 %% @doc Fold the data stored in the table, and store it in Riak, then
 %% delete the table.  Each user referenced in the table generates one
 %% Riak object.
@@ -246,14 +304,18 @@ archive_user(User, Riak, Table, Slice) ->
     store(User, Riak, Record, Slice).
 
 store(User, Riak, Record, Slice) ->
-    case riakc_pb_socket:put(Riak, Record) of
+    case catch riakc_pb_socket:put(Riak, Record) of
         ok ->
             lager:debug("Archived access stats for ~s ~p",
-                        [User, Slice]);
+                        [User, Slice]),
+            ok;
         {error, Reason} ->
-            %% TODO: check for "disconnected" explicitly & attempt reconnect?
             lager:error("Access archiver storage failed (~p), "
-                        "stats for ~s ~p:~p were lost",
-                        [Reason, User, Slice])
+                        "stats for ~s ~p were lost",
+                        [Reason, User, Slice]),
+            {error, Reason};
+        {'EXIT', {noproc, _}} ->
+            %% just haven't gotten the 'DOWN' yet
+            retry
     end.
 
