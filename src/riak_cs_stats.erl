@@ -11,7 +11,11 @@
 -export([start_link/0,
          update/2,
          update_with_starttime/2,
-         report/0]).
+         report/0,
+         report_json/0,
+         report_pretty_json/0,
+         report_str/0,
+         get_stats/0]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -40,17 +44,44 @@
 %% API
 %% ====================================================================
 
+-spec start_link() -> {ok, pid()} | {error, term()}.
 start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
+-spec update(atom(), integer()) -> ok | {error, {unknown_id, atom()}}.
 update(BaseId, ElapsedUs) ->
     gen_server:call(?MODULE, {update, BaseId, ElapsedUs}).
 
+-spec update_with_starttime(atom(), erlang:timestamp()) ->
+                                   ok | {error, {unknown_id, atom()}}.
 update_with_starttime(BaseId, StartTime) ->
-    gen_server:call(?MODULE, {update, BaseId, timer:now_diff(os:timestamp(), StartTime)}).
+    gen_server:call(?MODULE, {update, BaseId,
+                              timer:now_diff(os:timestamp(), StartTime)}).
 
+-spec report() -> ok.
 report() ->
-    [report_item(I) || I <- ?IDS].
+    [report_item(I) || I <- ?IDS],
+    ok.
+
+-spec report_str() -> [string()].
+report_str() ->
+    [lists:flatten(report_item_str(I)) || I <- ?IDS].
+
+-spec report_json() -> string().
+report_json() ->
+    lists:flatten(mochijson2:encode({struct, get_stats()})).
+
+-spec report_pretty_json() -> string().
+report_pretty_json() ->
+    lists:flatten(riak_moss_utils:json_pp_print(report_json())).
+
+-spec get_stats() -> [{legend, [atom()]} |
+                      {atom(), [number()]}].
+get_stats() ->
+    [{legend, [meter_count, meter_rate, latency_mean, latency_median,
+               latency_95, latency_99]}]
+    ++
+    [raw_report_item(I) || I <- ?IDS].
 
 %% ====================================================================
 %% gen_server callbacks
@@ -104,6 +135,16 @@ init_item(BaseId) ->
     erlang:put(BaseId, {LatencyId, MeterId}).
 
 report_item(BaseId) ->
+    io:format("~s\n", [report_item_str(BaseId)]).
+
+report_item_str(BaseId) ->
+    {BaseId, [MeterCount, MeterRate, LatencyMean, LatencyMedian,
+              Latency95, Latency99]} = raw_report_item(BaseId),
+    io_lib:format("~20s:\t~p\t~p\t~p\t~p\t~p\t~p",
+                  [BaseId, MeterCount, MeterRate, LatencyMean, LatencyMedian,
+                   Latency95, Latency99]).
+
+raw_report_item(BaseId) ->
     case gen_server:call(?MODULE, {get_ids, BaseId}) of
         {LatencyId, MeterId} ->
             Latency = folsom_metrics:get_histogram_statistics(LatencyId),
@@ -115,7 +156,8 @@ report_item(BaseId) ->
             Percentile = proplists:get_value(percentile, Latency),
             Latency95 = proplists:get_value(95, Percentile),
             Latency99 = proplists:get_value(99, Percentile),
-            io:format("~20s:\t~p\t~p\t~p\t~p\t~p\t~p\n", [BaseId, MeterCount, MeterRate, LatencyMean, LatencyMedian, Latency95, Latency99]);
+            {BaseId, [MeterCount, MeterRate, LatencyMean, LatencyMedian,
+             Latency95, Latency99]};
         undefined ->
-            io:format("UNKNOWN: ~p\n", [BaseId])
+            {BaseId, -1, -1, -1, -1, -1, -1}
     end.
