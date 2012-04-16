@@ -18,7 +18,7 @@
 -endif.
 
 %% API
--export([start_link/4,
+-export([start_link/5,
          prepare/2,
          deleting/2]).
 
@@ -34,6 +34,7 @@
                 key :: binary(),
                 uuid :: binary(),
                 manifest :: lfs_manifest(),
+                riakc_pid :: pid(),
                 delete_blocks_remaining :: ordsets:ordset(integer()),
                 unacked_deletes=ordsets:new(),
                 mani_pid :: pid(),
@@ -47,22 +48,24 @@
 %% ===================================================================
 
 %% @doc Start a `riak_moss_delete_fsm'.
-start_link(Bucket, Key, UUID, Options) ->
-    Args = [Bucket, Key, UUID, Options],
+start_link(Bucket, Key, UUID, RiakcPid, Options) ->
+    Args = [Bucket, Key, UUID, RiakcPid, Options],
     gen_fsm:start_link(?MODULE, Args, []).
 
 %% ====================================================================
 %% gen_fsm callbacks
 %% ====================================================================
 
-init([Bucket, Key, UUID, _Options]) ->
+init([Bucket, Key, UUID, RiakcPid, _Options]) ->
     %% Set up our state record
     %% and try to register
     %% ourselves with gproc,
     %% failing if we can't
     {ok, prepare, #state{bucket=Bucket,
                          key=Key,
-                         uuid=UUID}, 0}.
+                         uuid=UUID,
+                         riakc_pid=RiakcPid},
+                     0}.
 
 prepare(timeout, State) ->
     %% Get the latest version
