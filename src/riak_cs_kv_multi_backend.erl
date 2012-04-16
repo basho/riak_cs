@@ -514,190 +514,190 @@ match_bucket_prefix(Bucket, [{Prefix, Name}|BPrefixList]) ->
 %% ===================================================================
 -ifdef(TEST).
 
+%% %% @private
+%% multi_backend_test_() ->
+%%     {foreach,
+%%      fun() ->
+%%              crypto:start(),
+
+%%              %% start the ring manager
+%%              {ok, P1} = riak_core_ring_events:start_link(),
+%%              {ok, P2} = riak_core_ring_manager:start_link(test),
+%%              application:load(riak_core),
+%%              application:set_env(riak_core, default_bucket_props, []),
+
+%%              %% Have to do some prep for bitcask
+%%              application:load(bitcask),
+%%              ?assertCmd("rm -rf test/bitcask-backend"),
+%%              application:set_env(bitcask, data_root, "test/bitcask-backend"),
+
+%%              [P1, P2]
+%%      end,
+%%      fun([P1, P2]) ->
+%%              crypto:stop(),
+%%              ?assertCmd("rm -rf test/bitcask-backend"),
+%%              unlink(P1),
+%%              unlink(P2),
+%%              catch exit(P1, kill),
+%%              catch exit(P2, kill),
+%%              wait_until_dead(P1),
+%%              wait_until_dead(P2)
+%%      end,
+%%      [
+%%       fun(_) ->
+%%               {"simple test",
+%%                fun() ->
+%%                        riak_core_bucket:set_bucket(<<"b1">>, [{backend, first_backend}]),
+%%                        riak_core_bucket:set_bucket(<<"b2">>, [{backend, second_backend}]),
+
+%%                        %% Run the standard backend test...
+%%                        Config = sample_config(),
+%%                        riak_kv_backend:standard_test(?MODULE, Config)
+%%                end
+%%               }
+%%       end,
+%%       fun(_) ->
+%%               {"get_backend_test",
+%%                fun() ->
+%%                        riak_core_bucket:set_bucket(<<"b1">>, [{backend, first_backend}]),
+%%                        riak_core_bucket:set_bucket(<<"b2">>, [{backend, second_backend}]),
+
+%%                        %% Start the backend...
+%%                        {ok, State} = start(42, sample_config()),
+
+%%                        %% Check our buckets...
+%%                        {first_backend, riak_kv_memory_backend, _} = get_backend(<<"b1">>, State),
+%%                        {second_backend, riak_kv_memory_backend, _} = get_backend(<<"b2">>, State),
+
+%%                        %% Check the default...
+%%                        {second_backend, riak_kv_memory_backend, _} = get_backend(<<"b3">>, State),
+%%                        ok
+%%                end
+%%               }
+%%       end,
+%%       fun(_) ->
+%%               {"start error with invalid backend test",
+%%                fun() ->
+%%                        %% Attempt to start the backend with a
+%%                        %% nonexistent backend specified
+%%                        ?assertEqual({error, [{riak_kv_devnull_backend, undef}]},
+%%                                     start(42, bad_backend_config()))
+%%                end
+%%               }
+%%       end
+%%      ]
+%%     }.
+
+%% -ifdef(EQC).
+
 %% @private
-multi_backend_test_() ->
-    {foreach,
-     fun() ->
-             crypto:start(),
+%% eqc_test_() ->
+%%     {spawn,
+%%      [{inorder,
+%%        [{setup,
+%%          fun setup/0,
+%%          fun cleanup/1,
+%%          [?_assertEqual(true,
+%%                         backend_eqc:test(?MODULE, true, sample_config())),
+%%           ?_assertEqual(true,
+%%                         backend_eqc:test(?MODULE, true, async_fold_config()))
+%%          ]}]}]}.
 
-             %% start the ring manager
-             {ok, P1} = riak_core_ring_events:start_link(),
-             {ok, P2} = riak_core_ring_manager:start_link(test),
-             application:load(riak_core),
-             application:set_env(riak_core, default_bucket_props, []),
+%% setup() ->
+%%     %% Start the ring manager...
+%%     crypto:start(),
+%%     {ok, P1} = riak_core_ring_events:start_link(),
+%%     {ok, P2} = riak_core_ring_manager:start_link(test),
 
-             %% Have to do some prep for bitcask
-             application:load(bitcask),
-             ?assertCmd("rm -rf test/bitcask-backend"),
-             application:set_env(bitcask, data_root, "test/bitcask-backend"),
+%%     %% Set some buckets...
+%%     application:load(riak_core), % make sure default_bucket_props is set
+%%     application:set_env(riak_core, default_bucket_props, []),
+%%     riak_core_bucket:set_bucket(<<"b1">>, [{backend, first_backend}]),
+%%     riak_core_bucket:set_bucket(<<"b2">>, [{backend, second_backend}]),
 
-             [P1, P2]
-     end,
-     fun([P1, P2]) ->
-             crypto:stop(),
-             ?assertCmd("rm -rf test/bitcask-backend"),
-             unlink(P1),
-             unlink(P2),
-             catch exit(P1, kill),
-             catch exit(P2, kill),
-             wait_until_dead(P1),
-             wait_until_dead(P2)
-     end,
-     [
-      fun(_) ->
-              {"simple test",
-               fun() ->
-                       riak_core_bucket:set_bucket(<<"b1">>, [{backend, first_backend}]),
-                       riak_core_bucket:set_bucket(<<"b2">>, [{backend, second_backend}]),
+%%     {P1, P2}.
 
-                       %% Run the standard backend test...
-                       Config = sample_config(),
-                       riak_kv_backend:standard_test(?MODULE, Config)
-               end
-              }
-      end,
-      fun(_) ->
-              {"get_backend_test",
-               fun() ->
-                       riak_core_bucket:set_bucket(<<"b1">>, [{backend, first_backend}]),
-                       riak_core_bucket:set_bucket(<<"b2">>, [{backend, second_backend}]),
+%% cleanup({P1, P2}) ->
+%%     crypto:stop(),
+%%     application:stop(riak_core),
 
-                       %% Start the backend...
-                       {ok, State} = start(42, sample_config()),
+%%     unlink(P1),
+%%     unlink(P2),
+%%     catch exit(P1, kill),
+%%     catch exit(P2, kill),
+%%     wait_until_dead(P1),
+%%     wait_until_dead(P2).
 
-                       %% Check our buckets...
-                       {first_backend, riak_kv_memory_backend, _} = get_backend(<<"b1">>, State),
-                       {second_backend, riak_kv_memory_backend, _} = get_backend(<<"b2">>, State),
+%% async_fold_config() ->
+%%     [
+%%      {storage_backend, riak_kv_multi_backend},
+%%      {multi_backend_default, second_backend},
+%%       {multi_backend, [
+%%                       {first_backend, riak_kv_memory_backend, []},
+%%                       {second_backend, riak_kv_memory_backend, []}
+%%                      ]}
+%%     ].
 
-                       %% Check the default...
-                       {second_backend, riak_kv_memory_backend, _} = get_backend(<<"b3">>, State),
-                       ok
-               end
-              }
-      end,
-      fun(_) ->
-              {"start error with invalid backend test",
-               fun() ->
-                       %% Attempt to start the backend with a
-                       %% nonexistent backend specified
-                       ?assertEqual({error, [{riak_kv_devnull_backend, undef}]},
-                                    start(42, bad_backend_config()))
-               end
-              }
-      end
-     ]
-    }.
+%% -endif. % EQC
 
--ifdef(EQC).
+%% %% Check extra callback messages are ignored by backends
+%% extra_callback_test() ->
+%%     %% Have to do some prep for bitcask
+%%     application:load(bitcask),
+%%     ?assertCmd("rm -rf test/bitcask-backend"),
+%%     application:set_env(bitcask, data_root, "test/bitcask-backend"),
 
-%% @private
-eqc_test_() ->
-    {spawn,
-     [{inorder,
-       [{setup,
-         fun setup/0,
-         fun cleanup/1,
-         [?_assertEqual(true,
-                        backend_eqc:test(?MODULE, true, sample_config())),
-          ?_assertEqual(true,
-                        backend_eqc:test(?MODULE, true, async_fold_config()))
-         ]}]}]}.
+%%     %% Have to do some prep for eleveldb
+%%     application:load(eleveldb),
+%%     ?assertCmd("rm -rf test/eleveldb-backend"),
+%%     application:set_env(eleveldb, data_root, "test/eleveldb-backend"),
 
-setup() ->
-    %% Start the ring manager...
-    crypto:start(),
-    {ok, P1} = riak_core_ring_events:start_link(),
-    {ok, P2} = riak_core_ring_manager:start_link(test),
+%%     %% Start up multi backend
+%%     Config = [{storage_backend, riak_kv_multi_backend},
+%%               {multi_backend_default, memory},
+%%               {multi_backend,
+%%                [{bitcask, riak_kv_bitcask_backend, []},
+%%                 {memory, riak_kv_memory_backend, []},
+%%                 {eleveldb, riak_kv_eleveldb_backend, []}]}],
+%%     {ok, State} = start(0, Config),
+%%     callback(make_ref(), ignore_me, State),
+%%     stop(State),
+%%     application:stop(bitcask).
 
-    %% Set some buckets...
-    application:load(riak_core), % make sure default_bucket_props is set
-    application:set_env(riak_core, default_bucket_props, []),
-    riak_core_bucket:set_bucket(<<"b1">>, [{backend, first_backend}]),
-    riak_core_bucket:set_bucket(<<"b2">>, [{backend, second_backend}]),
+%% bad_config_test() ->
+%%     ErrorReason = multi_backend_config_unset,
+%%     ?assertEqual({error, ErrorReason}, start(0, [])).
 
-    {P1, P2}.
+%% sample_config() ->
+%%     [
+%%      {storage_backend, riak_kv_multi_backend},
+%%      {multi_backend_default, second_backend},
+%%       {multi_backend, [
+%%                       {first_backend, riak_kv_memory_backend, []},
+%%                       {second_backend, riak_kv_memory_backend, []}
+%%                      ]}
+%%     ].
 
-cleanup({P1, P2}) ->
-    crypto:stop(),
-    application:stop(riak_core),
+%% bad_backend_config() ->
+%%     [
+%%      {storage_backend, riak_kv_multi_backend},
+%%      {multi_backend_default, second_backend},
+%%       {multi_backend, [
+%%                       {first_backend, riak_kv_devnull_backend, []},
+%%                       {second_backend, riak_kv_memory_backend, []}
+%%                      ]}
+%%     ].
 
-    unlink(P1),
-    unlink(P2),
-    catch exit(P1, kill),
-    catch exit(P2, kill),
-    wait_until_dead(P1),
-    wait_until_dead(P2).
-
-async_fold_config() ->
-    [
-     {storage_backend, riak_kv_multi_backend},
-     {multi_backend_default, second_backend},
-      {multi_backend, [
-                      {first_backend, riak_kv_memory_backend, []},
-                      {second_backend, riak_kv_memory_backend, []}
-                     ]}
-    ].
-
--endif. % EQC
-
-%% Check extra callback messages are ignored by backends
-extra_callback_test() ->
-    %% Have to do some prep for bitcask
-    application:load(bitcask),
-    ?assertCmd("rm -rf test/bitcask-backend"),
-    application:set_env(bitcask, data_root, "test/bitcask-backend"),
-
-    %% Have to do some prep for eleveldb
-    application:load(eleveldb),
-    ?assertCmd("rm -rf test/eleveldb-backend"),
-    application:set_env(eleveldb, data_root, "test/eleveldb-backend"),
-
-    %% Start up multi backend
-    Config = [{storage_backend, riak_kv_multi_backend},
-              {multi_backend_default, memory},
-              {multi_backend,
-               [{bitcask, riak_kv_bitcask_backend, []},
-                {memory, riak_kv_memory_backend, []},
-                {eleveldb, riak_kv_eleveldb_backend, []}]}],
-    {ok, State} = start(0, Config),
-    callback(make_ref(), ignore_me, State),
-    stop(State),
-    application:stop(bitcask).
-
-bad_config_test() ->
-    ErrorReason = multi_backend_config_unset,
-    ?assertEqual({error, ErrorReason}, start(0, [])).
-
-sample_config() ->
-    [
-     {storage_backend, riak_kv_multi_backend},
-     {multi_backend_default, second_backend},
-      {multi_backend, [
-                      {first_backend, riak_kv_memory_backend, []},
-                      {second_backend, riak_kv_memory_backend, []}
-                     ]}
-    ].
-
-bad_backend_config() ->
-    [
-     {storage_backend, riak_kv_multi_backend},
-     {multi_backend_default, second_backend},
-      {multi_backend, [
-                      {first_backend, riak_kv_devnull_backend, []},
-                      {second_backend, riak_kv_memory_backend, []}
-                     ]}
-    ].
-
-%% Minor sin of cut-and-paste....
-wait_until_dead(Pid) when is_pid(Pid) ->
-    Ref = monitor(process, Pid),
-    receive
-        {'DOWN', Ref, process, _Obj, Info} ->
-            Info
-    after 10*1000 ->
-            exit({timeout_waiting_for, Pid})
-    end;
-wait_until_dead(_) ->
-    ok.
+%% %% Minor sin of cut-and-paste....
+%% wait_until_dead(Pid) when is_pid(Pid) ->
+%%     Ref = monitor(process, Pid),
+%%     receive
+%%         {'DOWN', Ref, process, _Obj, Info} ->
+%%             Info
+%%     after 10*1000 ->
+%%             exit({timeout_waiting_for, Pid})
+%%     end;
+%% wait_until_dead(_) ->
+%%     ok.
 
 -endif.
