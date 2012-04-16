@@ -18,7 +18,7 @@
 -endif.
 
 %% API
--export([start_link/3,
+-export([start_link/4,
          prepare/2,
          deleting/2]).
 
@@ -47,8 +47,8 @@
 %% ===================================================================
 
 %% @doc Start a `riak_moss_delete_fsm'.
-start_link(Bucket, Key, Options) ->
-    Args = [Bucket, Key, Options],
+start_link(Bucket, Key, UUID, Options) ->
+    Args = [Bucket, Key, UUID, Options],
     gen_fsm:start_link(?MODULE, Args, []).
 
 %% ====================================================================
@@ -59,12 +59,14 @@ start_link(Bucket, Key, Options) ->
 -spec init([binary() | timeout()]) ->
                   {ok, initialize, state(), 0} |
                   {ok, write_root, state()}.
-init([_Bucket, _Key, _Options]) ->
+init([Bucket, Key, UUID, _Options]) ->
     %% Set up our state record
     %% and try to register
     %% ourselves with gproc,
     %% failing if we can't
-    {ok, prepare, #state{}, 0}.
+    {ok, prepare, #state{bucket=Bucket,
+                         key=Key,
+                         uuid=UUID}, 0}.
 
 prepare(timeout, State) ->
     %% Get the latest version
