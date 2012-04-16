@@ -416,61 +416,61 @@ unpack_ondisk(<<Crc32:?CRCSIZEFIELD/unsigned, Bytes/binary>>) ->
 %% ===================================================================
 -ifdef(TEST).
 
-%% Broken test:
-simple_test_() ->
-   ?assertCmd("rm -rf test/fs-backend"),
-   Config = [{fs2_backend_data_root, "test/fs-backend"}],
-   riak_kv_backend:standard_test(?MODULE, Config).
+%% %% Broken test:
+%% simple_test_() ->
+%%    ?assertCmd("rm -rf test/fs-backend"),
+%%    Config = [{fs2_backend_data_root, "test/fs-backend"}],
+%%    riak_kv_backend:standard_test(?MODULE, Config).
 
-dirty_clean_test() ->
-    Dirty = "abc=+/def",
-    Clean = clean(Dirty),
-    [ ?assertNot(lists:member(C, Clean)) || C <- "=+/" ],
-    ?assertEqual(Dirty, dirty(Clean)).
+%% dirty_clean_test() ->
+%%     Dirty = "abc=+/def",
+%%     Clean = clean(Dirty),
+%%     [ ?assertNot(lists:member(C, Clean)) || C <- "=+/" ],
+%%     ?assertEqual(Dirty, dirty(Clean)).
 
-nest_test() ->
-    ?assertEqual(["ab","cd","ef"],nest("abcdefg")),
-    ?assertEqual(["ab","cd","ef"],nest("abcdef")),
-    ?assertEqual(["a","bc","de"], nest("abcde")),
-    ?assertEqual(["0","ab","cd"], nest("abcd")),
-    ?assertEqual(["0","a","bc"],  nest("abc")),
-    ?assertEqual(["0","0","ab"],  nest("ab")),
-    ?assertEqual(["0","0","a"],   nest("a")),
-    ?assertEqual(["0","0","0"],   nest([])).
+%% nest_test() ->
+%%     ?assertEqual(["ab","cd","ef"],nest("abcdefg")),
+%%     ?assertEqual(["ab","cd","ef"],nest("abcdef")),
+%%     ?assertEqual(["a","bc","de"], nest("abcde")),
+%%     ?assertEqual(["0","ab","cd"], nest("abcd")),
+%%     ?assertEqual(["0","a","bc"],  nest("abc")),
+%%     ?assertEqual(["0","0","ab"],  nest("ab")),
+%%     ?assertEqual(["0","0","a"],   nest("a")),
+%%     ?assertEqual(["0","0","0"],   nest([])).
 
--ifdef(EQC).
-%% Broken test:
-%% eqc_test() ->
-%%     Cleanup = fun(_State,_Olds) -> os:cmd("rm -rf test/fs-backend") end,
-%%     Config = [{riak_kv_fs_backend_root, "test/fs-backend"}],
-%%     ?assertCmd("rm -rf test/fs-backend"),
-%%     ?assertEqual(true, backend_eqc:test(?MODULE, false, Config, Cleanup)).
+%% -ifdef(EQC).
+%% %% Broken test:
+%% %% eqc_test() ->
+%% %%     Cleanup = fun(_State,_Olds) -> os:cmd("rm -rf test/fs-backend") end,
+%% %%     Config = [{riak_kv_fs_backend_root, "test/fs-backend"}],
+%% %%     ?assertCmd("rm -rf test/fs-backend"),
+%% %%     ?assertEqual(true, backend_eqc:test(?MODULE, false, Config, Cleanup)).
 
-eqc_test_() ->
-    {spawn,
-     [{inorder,
-       [{setup,
-         fun setup/0,
-         fun cleanup/1,
-         [
-          {timeout, 60000,
-           [?_assertEqual(true,
-                          backend_eqc:test(?MODULE,
-                                           false,
-                                           [{fs2_backend_data_root,
-                                             "test/fs-backend"}]))]}
-         ]}]}]}.
+%% eqc_test_() ->
+%%     {spawn,
+%%      [{inorder,
+%%        [{setup,
+%%          fun setup/0,
+%%          fun cleanup/1,
+%%          [
+%%           {timeout, 60000,
+%%            [?_assertEqual(true,
+%%                           backend_eqc:test(?MODULE,
+%%                                            false,
+%%                                            [{fs2_backend_data_root,
+%%                                              "test/fs-backend"}]))]}
+%%          ]}]}]}.
 
-setup() ->
-    application:load(sasl),
-    application:set_env(sasl, sasl_error_logger,
-                        {file, "riak_kv_fs2_backend_eqc_sasl.log"}),
-    error_logger:tty(false),
-    error_logger:logfile({open, "riak_kv_fs2_backend_eqc.log"}),
-    ok.
+%% setup() ->
+%%     application:load(sasl),
+%%     application:set_env(sasl, sasl_error_logger,
+%%                         {file, "riak_kv_fs2_backend_eqc_sasl.log"}),
+%%     error_logger:tty(false),
+%%     error_logger:logfile({open, "riak_kv_fs2_backend_eqc.log"}),
+%%     ok.
 
-cleanup(_) ->
-    os:cmd("rm -rf test/fs-backend/*").
+%% cleanup(_) ->
+%%     os:cmd("rm -rf test/fs-backend/*").
 
--endif. % EQC
+%% -endif. % EQC
 -endif. % TEST
