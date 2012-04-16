@@ -32,8 +32,10 @@
 
 -record(state, {bucket :: binary(),
                 key :: binary(),
+                uuid :: binary(),
                 manifest :: lfs_manifest(),
-                delete_blocks_remaining :: ordset:ordset(integer()),
+                delete_blocks_remaining :: ordsets:ordset(integer()),
+                unacked_deletes=ordsets:new(),
                 mani_pid :: pid(),
                 all_delete_works :: list(pid()),
                 free_deleters :: ordsets:new()}).
@@ -81,20 +83,35 @@ prepare(timeout, State) ->
     %% timer
     {next_state, deleting, State}.
 
-deleting(_Event, State) ->
-    %% We just received a delete
-    %% acknowledgement, so depending
-    %% on the value of delete_blocks_remaining
-    %% (after removing this element,
-    %% stay in the deleting state,
-    %% or stop.
-    %% If stopping, we should also
-    %% sync wait to update the manifest.
-    %% Cancel the timer
+deleting({block_delete, BlockID, DeleterPid},
+    State=#state{manifest=Manifest=#lfs_manifest_v2{
+                    delete_blocks_remaining=ManifestDeleteBlocksRemaining},
+                 free_deleters=FreeDeleters,
+                 unacked_deletes=UnackedDeletes}) ->
 
-    %% or
-    %% {stop, normal, State}.
-    {next_state, deleting, State}.
+    NewFreeDeleters = ordsets:add_element(DeleterPid, FreeDeleters),
+    NewUnackedDeletes = ordsets:del_element(BlockID, UnackedDeletes),
+
+    NewDeleteBlocksRemaining = ordsets:del_element(BlockID,
+        ManifestDeleteBlocksRemaining),
+
+    NewManifest = Manifest#lfs_manifest_v2{delete_blocks_remaining=NewDeleteBlocksRemaining},
+
+    State2 = State#state{free_deleters=NewFreeDeleters,
+                         unacked_deletes=NewUnackedDeletes,
+                         manifest=NewManifest},
+
+    if
+        NewDeleteBlocksRemaining==[] andalso NewUnackedDeletes==[] ->
+            %% do stop things
+            %% stop timer
+            State3 = finish(State2),
+            {stop, normal, State3};
+        true ->
+            %% maybe start more deletes
+            State3 = maybe_delete_block(State2),
+            {next_state, deleting, State3}
+    end.
 
 handle_event(_Event, StateName, State) ->
     {next_state, StateName, State}.
@@ -126,6 +143,26 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 %% ====================================================================
 %% Internal functions
 %% ====================================================================
+
+maybe_delete_block(State=#state{free_deleters=[]}) ->
+    State;
+maybe_delete_block(State=#state{bucket=Bucket,
+                                key=Key,
+                                uuid=UUID,
+                                free_deleters=[DeleterPid | _RestDeleters],
+                                unacked_deletes=UnackedDeletes,
+                                manifest=#lfs_manifest_v2{
+                                    delete_blocks_remaining=DeleteBlocksRemaining
+                                    = [BlockID | _RestBlocks]}}) ->
+    NewUnackedDeletes = ordsets:add_element(BlockID, UnackedDeletes),
+    NewDeleteBlocksRemaining = ordsets:del_element(BlockID, DeleteBlocksRemaining),
+    %% start the delete...
+    riak_moss_block_server:delete_block(DeleterPid, Bucket, Key, UUID, BlockID),
+    State#state{unacked_deletes=NewUnackedDeletes,
+                delete_blocks_remaining=NewDeleteBlocksRemaining}.
+
+finish(_State) ->
+    ok.
 
 %% ===================================================================
 %% Test API
