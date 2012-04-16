@@ -55,10 +55,6 @@ start_link(Bucket, Key, UUID, Options) ->
 %% gen_fsm callbacks
 %% ====================================================================
 
-%% @doc Initialize the fsm.
--spec init([binary() | timeout()]) ->
-                  {ok, initialize, state(), 0} |
-                  {ok, write_root, state()}.
 init([Bucket, Key, UUID, _Options]) ->
     %% Set up our state record
     %% and try to register
