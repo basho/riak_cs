@@ -44,7 +44,7 @@
                 reply_pid :: {pid(), reference()},
                 mani_pid :: pid(),
                 riakc_pid :: pid(),
-                timer_ref :: term(),
+                timer_ref :: timer:tref(),
                 bucket :: binary(),
                 key :: binary(),
                 metadata :: term(),
