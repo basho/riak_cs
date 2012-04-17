@@ -162,7 +162,7 @@ slices_filling(Start, End, Period) ->
     lists:reverse(fill(Period, Last, [slice_containing(Start, Period)])).
 
 %% @doc Add slices to `Fill' until we've covered `Last'.
--spec fill(integer(), slice(), [slice()]) -> [slice()].
+-spec fill(integer(), datetime(), [slice()]) -> [slice()].
 fill(_, Last, [{_,Latest}|_]=Fill) when Latest >= Last ->
     %% just in case our iterative math is borked, checking >= instead
     %% of == should guarantee we stop anyway
