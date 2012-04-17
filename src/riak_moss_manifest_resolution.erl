@@ -96,7 +96,8 @@ resolve_manifests(deleted, active, A, B) ->
 resolve_manifests(pending_delete, pending_delete, A, B) ->
     BlocksLeftToDelete = resolve_deleted_blocks(A, B),
     LastDeletedTime = resolve_last_deleted_time(A, B),
-    A#lfs_manifest_v2{delete_blocks_remaining=BlocksLeftToDelete, last_block_deleted_time=LastDeletedTime};
+    A#lfs_manifest_v2{delete_blocks_remaining=BlocksLeftToDelete,
+                      last_block_deleted_time=LastDeletedTime};
 resolve_manifests(pending_delete, deleted, _A, B) -> B;
 resolve_manifests(deleted, pending_delete, A, B) ->
     resolve_manifests(pending_delete, deleted, B, A);
@@ -117,7 +118,24 @@ resolve_written_blocks(A, B) ->
 resolve_deleted_blocks(A, B) ->
     ADeleted = A#lfs_manifest_v2.delete_blocks_remaining,
     BDeleted = B#lfs_manifest_v2.delete_blocks_remaining,
-    ordsets:intersection(ADeleted, BDeleted).
+    safe_intersection(ADeleted, BDeleted).
+
+%% NOTE:
+%% There was a bit of a gaff
+%% and delete_blocks_remaining
+%% was not set to an ordset
+%% when the state was set to
+%% pending_delete, so we have
+%% to account for it being
+%% `undefined`
+safe_intersection(undefined, undefined) ->
+    safe_intersection([], []);
+safe_intersection(A, undefined) ->
+    safe_intersection(A, []);
+safe_intersection(undefined, B) ->
+    safe_intersection([], B);
+safe_intersection(A, B) ->
+    ordsets:intersection(A, B).
 
 resolve_last_written_time(A, B) ->
     ALastWritten = A#lfs_manifest_v2.last_block_written_time,
