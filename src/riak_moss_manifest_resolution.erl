@@ -129,7 +129,14 @@ resolve_deleted_blocks(A, B) ->
 %% to account for it being
 %% `undefined`
 safe_intersection(undefined, undefined) ->
-    safe_intersection([], []);
+    %% if these are both
+    %% undefined, then
+    %% neither have ever had
+    %% delete_blocks_remaining set
+    %% as something meaningful,
+    %% so don't just change it
+    %% to they empty set.
+    undefined;
 safe_intersection(A, undefined) ->
     safe_intersection(A, []);
 safe_intersection(undefined, B) ->
