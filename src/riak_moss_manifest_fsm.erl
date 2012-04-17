@@ -21,6 +21,7 @@
 %% API
 -export([start_link/3,
          get_active_manifest/1,
+         get_specific_manifest/2,
          add_new_manifest/2,
          update_manifest/2,
          mark_active_as_pending_delete/1,
@@ -62,6 +63,8 @@
                 riakc_pid :: pid()
             }).
 
+-type state() :: #state{}.
+
 %%%===================================================================
 %%% API
 %%%===================================================================
@@ -80,6 +83,9 @@ start_link(Bucket, Key, RiakPid) ->
 
 get_active_manifest(Pid) ->
     gen_fsm:sync_send_event(Pid, get_active_manifest, infinity).
+
+get_specific_manifest(Pid, UUID) ->
+    gen_fsm:sync_send_event(Pid, {get_specific_manifest, UUID}, infinity).
 
 add_new_manifest(Pid, Manifest) ->
     gen_fsm:send_event(Pid, {add_new_manifest, Manifest}).
@@ -151,6 +157,9 @@ waiting_update_command({update_manifest, Manifest}, State=#state{riakc_pid=Riakc
 waiting_command(get_active_manifest, _From, State) ->
     {Reply, NewState} = active_manifest(State),
     {reply, Reply, waiting_update_command, NewState};
+waiting_command({get_specific_manifest, UUID}, _From, State) ->
+    {Reply, NewState} = specific_manifest(UUID, State),
+    {reply, Reply, waiting_update_command, NewState};
 waiting_command(mark_active_as_pending_delete, _From, State) ->
     Reply = set_active_manifest_pending_delete(State),
     {stop, normal, Reply, State}.
@@ -220,6 +229,25 @@ active_manifest(State=#state{riakc_pid=RiakcPid,
             end,
             NewState = State#state{riak_object=RiakObject, manifests=Resolved},
             {Reply, NewState};
+        {error, notfound}=NotFound ->
+            {NotFound, State}
+    end.
+
+-spec specific_manifest(binary(), state()) ->
+    {{error, notfound}, state()} | {{ok, lfs_manifest()}, state()}.
+specific_manifest(UUID, State=#state{bucket=Bucket,
+                                     key=Key,
+                                     riakc_pid=RiakcPid}) ->
+
+    case get_manifests(RiakcPid, Bucket, Key) of
+        {ok, RiakObject, Resolved} ->
+            try orddict:fetch(UUID, Resolved) of
+                Value ->
+                    {{ok, Value}, State#state{riak_object=RiakObject,
+                                              manifests=Resolved}}
+                catch error:function_clause ->
+                    {{error, notfound}, State}
+            end;
         {error, notfound}=NotFound ->
             {NotFound, State}
     end.
