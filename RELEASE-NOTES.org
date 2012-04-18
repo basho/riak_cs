@@ -1,3 +1,29 @@
+* MOSS 1.0.1 Release Notes
+** Bugs Fixed
+- Default content-type is not passed into function to handle PUT
+  request body
+- Requests hang when a node in the Riak cluster is unavailable
+- Correct inappropriate use of riak_moss_utils:get_user by
+  riak_moss_acl_utils:get_owner_data
+* MOSS 1.0.0 Release Notes
+** Bugs Fixed
+- Fix PUTs for zero-byte files
+- Fix fsm initialization race conditions
+- Canonicalize the entire path if there is no host header, but there are
+  tokens
+- Fix process and socket leaks in get fsm
+** Other Additions
+- Subsystem for calculating user access and storage usage
+- Fixed-size connection pool of Riak connections
+- Use a single Riak connection per request to avoid deadlock conditions
+- Object ACLs
+- Management for multiple versions of a file manifest
+- Configurable block size and max content length
+- Support specifying non-default ACL at bucket creation time
+* MOSS 0.1.2 Release Notes
+** Bugs Fixed
+- Return 403 instead of 503 for invalid anonymous or signed requests.
+- Properly clean up processes and connections on object requests.
 * MOSS 0.1.1 Release Notes
 ** Bugs Fixed
 - HEAD requests always result in a =403 Forbidden=.
