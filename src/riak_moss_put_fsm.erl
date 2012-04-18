@@ -335,7 +335,8 @@ prepare(State=#state{bucket=Bucket,
             %% to write any blocks
             [];
         _ ->
-            start_writer_servers(RiakPid, riak_moss_lfs_utils:put_concurrency())
+            riak_moss_block_server:start_block_servers(RiakPid,
+                riak_moss_lfs_utils:put_concurrency())
     end,
     FreeWriters = ordsets:from_list(WriterPids),
     %% TODO:
@@ -471,23 +472,6 @@ state_from_block_written(BlockID, WriterPid, State=#state{unacked_writes=Unacked
                                    unacked_writes=NewUnackedWrites,
                                    current_buffer_size=NewCurrentBufferSize,
                                    free_writers=NewFreeWriters}).
-
-%% @private
-%% @doc Start a number
-%%      of riak_moss_block_server
-%%      processes and return a list
-%%      of their pids
--spec start_writer_servers(pid(), pos_integer()) -> list(pid()).
-start_writer_servers(RiakPid, NumServers) ->
-    %% TODO:
-    %% doesn't handle
-    %% failure at all
-    {ok, WriterPid} = riak_moss_block_server:start_link(RiakPid),
-    RestWriterPids =
-        [Pid || {ok, Pid} <-
-                    [riak_moss_block_server:start_link() ||
-                        _ <- lists:seq(1, NumServers-1)]],
-    [WriterPid | RestWriterPids].
 
 handle_accept_chunk(NewData, State=#state{buffer_queue=BufferQueue,
                                           remainder_data=RemainderData,
