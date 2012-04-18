@@ -240,7 +240,7 @@ produce_body(RD, #key_context{get_fsm_pid=GetFsmPid, manifest=Mfst,
                         RD,
                         [{"ETag",  ETag},
                          {"Last-Modified", LastModified}
-                        ]),
+                        ] ++  Mfst#lfs_manifest_v2.metadata),
     Method = wrq:method(RD),
     case Method == 'HEAD'
         orelse
@@ -386,11 +386,7 @@ accept_body(RD, Ctx=#key_context{bucket=Bucket,
     dt_entry(<<"accept_body">>, [], [UserName, BFile_str]),
     dt_entry_object(<<"file_put">>, [], [UserName, BFile_str]),
     riak_moss_get_fsm:stop(GetFsmPid),
-    %% TODO:
-    %% the Metadata
-    %% should be pulled out of the
-    %% headers
-    Metadata = orddict:new(),
+    Metadata = riak_moss_wm_utils:extract_user_metadata(RD),
     BlockSize = riak_moss_lfs_utils:block_size(),
     %% Check for `x-amz-acl' header to support
     %% non-default ACL at bucket creation time.

@@ -142,7 +142,8 @@ extract_amazon_headers(Headers) ->
         fun({K, V}, Acc) ->
                 case lists:prefix("x-amz-", K) of
                     true ->
-                        [[K, ":", V, "\n"] | Acc];
+                        V2 = unicode:characters_to_binary(V, utf8),
+                        [[K, ":", V2, "\n"] | Acc];
                     false ->
                         Acc
                 end
