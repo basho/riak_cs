@@ -169,16 +169,6 @@ retry_delete_time() ->
             Time
     end.
 
--spec partial_upload_delete_time() -> pos_integer().
-partial_upload_delete_time() ->
-    case application:get_env(riak_moss, partial_upload_delete_time) of
-        undefined ->
-            ?DEFAULT_PARTIAL_UPLOAD_DELETE_TIME;
-        {ok, Time} ->
-            Time
-    end.
-
-
 %% ===================================================================
 %% EUnit tests
 %% ===================================================================
