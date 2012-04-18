@@ -9,4 +9,3 @@ application that provides an S3 type interface onto Riak.
    system to compile and run =riak_moss=.
 
    *TODO*
-
