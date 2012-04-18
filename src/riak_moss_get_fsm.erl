@@ -184,7 +184,10 @@ waiting_continue_or_stop(continue, #state{manifest=Manifest,
             %% Start the block servers
             case Readers of
                 undefined ->
-                    FreeReaders = start_block_servers(RiakPid),
+                    FreeReaders =
+                    riak_moss_block_server:start_block_servers(RiakPid,
+                        riak_moss_lfs_utils:fetch_concurrency()),
+                    lager:debug("Block Servers: ~p", [FreeReaders]);
                     _ = lager:debug("Block Servers: ~p", [FreeReaders]);
                 _ ->
                     FreeReaders = Readers
@@ -426,32 +429,6 @@ read_blocks(_Bucket, _Key, _UUID, FreeReaders, _TotalBlocks, _TotalBlocks, Reads
 read_blocks(Bucket, Key, UUID, [ReaderPid | RestFreeReaders], NextBlock, _TotalBlocks, ReadsRequested) ->
     riak_moss_block_server:get_block(ReaderPid, Bucket, Key, UUID, NextBlock),
     read_blocks(Bucket, Key, UUID, RestFreeReaders, NextBlock+1, _TotalBlocks, ReadsRequested+1).
-
-%% @private
-%% @doc Start a number of riak_moss_block_server processes
-%% and return a list of their pids.
-%% @TODO Can probably share this among the fsms.
--spec server_result(pos_integer(), [pid()]) -> [pid()].
-server_result(_, Acc) ->
-    case riak_moss_block_server:start_link() of
-        {ok, Pid} ->
-            [Pid | Acc];
-        {error, Reason} ->
-            _ = lager:warning("Failed to start block server instance. Reason: ~p", [Reason]),
-            Acc
-    end.
-
--spec start_block_servers(pid()) -> [pid()].
-start_block_servers(RiakPid) ->
-    case riak_moss_block_server:start_link(RiakPid) of
-        {ok, BSPid} ->
-            Acc = [BSPid];
-        {error, Reason} ->
-            _ = lager:warning("Failed to start block server instance. Reason: ~p", [Reason]),
-            Acc = []
-    end,
-    FetchConcurrency = riak_moss_lfs_utils:fetch_concurrency(),
-    lists:foldl(fun server_result/2, Acc, lists:seq(1, FetchConcurrency-1)).
 
 %% ===================================================================
 %% Test API
