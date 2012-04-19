@@ -16,6 +16,7 @@
          streaming_get/1,
          user_record_to_proplist/1,
          find_and_auth_user/3,
+         validate_auth_header/3,
          deny_access/2]).
 
 -include("riak_moss.hrl").
