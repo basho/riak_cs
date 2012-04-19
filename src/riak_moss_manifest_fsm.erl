@@ -245,8 +245,8 @@ specific_manifest(UUID, State=#state{bucket=Bucket,
                 Value ->
                     {{ok, Value}, State#state{riak_object=RiakObject,
                                               manifests=Resolved}}
-                catch error:function_clause ->
-                    {{error, notfound}, State}
+            catch error:function_clause ->
+                {{error, notfound}, State}
             end;
         {error, notfound}=NotFound ->
             {NotFound, State}
