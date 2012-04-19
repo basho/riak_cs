@@ -130,12 +130,10 @@ deleting({block_deleted, {ok, BlockID}, DeleterPid},
             State3 = maybe_delete_block(State2),
             {next_state, deleting, State3}
     end;
-deleting({block_deleted, {error, Error}, _DeleterPid},
-    State=#state{manifest=_Manifest,
-                 timer_ref=TRef}) ->
-    timer:cancel(TRef),
-    %% TODO:
-    %% sync manifest one last time
+deleting({block_deleted, {error, Error}, _DeleterPid}, State) ->
+    lager:debug("Stopping delete FSM because of block deleting error:",
+        [Error]),
+    finish(State),
     {stop, Error, State}.
 
 handle_event(_Event, StateName, State) ->
@@ -185,8 +183,11 @@ maybe_delete_block(State=#state{bucket=Bucket,
                 delete_blocks_remaining=NewDeleteBlocksRemaining}.
 
 -spec finish(state()) -> state().
-finish(State=#state{timer_ref=TRef}) ->
+finish(State=#state{timer_ref=TRef,
+                    manifest=Manifest,
+                    mani_pid=ManiPid}) ->
     timer:cancel(TRef),
+    riak_moss_manifest_fsm:update_manifest_with_confirmation(ManiPid, Manifest),
     State.
 
 %% TODO:
