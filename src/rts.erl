@@ -154,7 +154,7 @@ cut_at_midnight({Start,{NextDay,_}}) ->
 
 %% @doc Get all slices covering the period from `Start' to `End'.
 -spec slices_filling(datetime(), datetime(), integer())
-         -> slice().
+         -> [slice()].
 slices_filling(Start, End, Period) when Start > End ->
     slices_filling(End, Start, Period);
 slices_filling(Start, End, Period) ->
@@ -162,7 +162,7 @@ slices_filling(Start, End, Period) ->
     lists:reverse(fill(Period, Last, [slice_containing(Start, Period)])).
 
 %% @doc Add slices to `Fill' until we've covered `Last'.
--spec fill(integer(), slice(), [slice()]) -> [slice()].
+-spec fill(integer(), datetime(), [slice()]) -> [slice()].
 fill(_, Last, [{_,Latest}|_]=Fill) when Latest >= Last ->
     %% just in case our iterative math is borked, checking >= instead
     %% of == should guarantee we stop anyway
@@ -196,9 +196,9 @@ check_bucket_props(Bucket) ->
                 riak_moss_utils:close_riak_connection(Riak)
             end;
         {error, Reason} ->
-            lager:warning(
-              "Unable to verify ~s bucket settings (~p).",
-              [Bucket, Reason]),
+            _ = lager:warning(
+                  "Unable to verify ~s bucket settings (~p).",
+                  [Bucket, Reason]),
             {error, Reason}
     end.
 
@@ -207,30 +207,30 @@ check_bucket_props(Bucket, Riak) ->
         {ok, Props} ->
             case lists:keyfind(allow_mult, 1, Props) of
                 {allow_mult, true} ->
-                    lager:debug("~s bucket was"
-                                " already configured correctly.",
-                                [Bucket]),
+                    _ = lager:debug("~s bucket was"
+                                    " already configured correctly.",
+                                    [Bucket]),
                     ok;
                 _ ->
                     case riakc_pb_socket:set_bucket(
                            Riak, Bucket,
                            [{allow_mult, true}]) of
                         ok ->
-                            lager:info("Configured ~s"
-                                       " bucket settings.",
-                                       [Bucket]),
+                            _ = lager:info("Configured ~s"
+                                           " bucket settings.",
+                                           [Bucket]),
                             ok;
                         {error, Reason} ->
-                            lager:warning("Unable to configure ~s"
-                                          " bucket settings (~p).",
-                                          [Bucket, Reason]),
+                            _ = lager:warning("Unable to configure ~s"
+                                              " bucket settings (~p).",
+                                              [Bucket, Reason]),
                             {error, Reason}
                     end
             end;
         {error, Reason} ->
-            lager:warning(
-              "Unable to verify ~s bucket settings (~p).",
-              [Bucket, Reason]),
+            _ = lager:warning(
+                  "Unable to verify ~s bucket settings (~p).",
+                  [Bucket, Reason]),
             {error, Reason}
     end.
 

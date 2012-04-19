@@ -46,7 +46,7 @@ sum_user(Riak, User) when is_list(User) ->
 %% The result is a mochijson structure with two fields: `Objects',
 %% which is the number of objects that were counted in the bucket, and
 %% `Bytes', which is the total size of all of those objects.
--spec sum_bucket(pid(), string()) -> term() | {error, term()}.
+-spec sum_bucket(pid(), string() | binary()) -> term() | {error, term()}.
 sum_bucket(Riak, Bucket) when is_list(Bucket) ->
     sum_bucket(Riak, list_to_binary(Bucket));
 sum_bucket(Riak, Bucket) when is_binary(Bucket) ->
@@ -69,7 +69,7 @@ object_size_map({error, notfound}, _, _) ->
 object_size_map(Object, _, _) ->
     try
         AllManifests = [ binary_to_term(V)
-                         || V <- riak_object:get_values(Object) ],
+                         || V <- riakc_obj:get_values(Object) ],
         Resolved = riak_moss_manifest_resolution:resolve(AllManifests),
         case riak_moss_manifest:active_manifest(Resolved) of
             {ok, #lfs_manifest_v2{content_length=Length}} ->

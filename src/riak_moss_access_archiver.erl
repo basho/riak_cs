@@ -54,8 +54,8 @@ archive(Table, Slice) ->
         %% than expected
         ets:give_away(Table, whereis(?SERVER), Slice)
     catch error:badarg ->
-            lager:error("~p was not available, access stats for ~p lost",
-                        [?SERVER, Slice]),
+            _ = lager:error("~p was not available, access stats for ~p lost",
+                            [?SERVER, Slice]),
             %% if the archiver had been alive just now, but crashed
             %% during operation, the stats also would have been lost,
             %% so also losing them here is just an efficient way to
@@ -104,7 +104,7 @@ status(Timeout) ->
 %% @end
 %%--------------------------------------------------------------------
 init([]) ->
-    rts:check_bucket_props(?ACCESS_BUCKET),
+    ok = rts:check_bucket_props(?ACCESS_BUCKET),
     {ok, #state{}}.
 
 %%--------------------------------------------------------------------
@@ -202,9 +202,9 @@ do_archive(Table, Slice) ->
             archive_user(ets:first(Table), Riak, Table, Slice),
             riak_moss_riakc_pool_worker:stop(Riak);
         {error, Reason} ->
-            lager:error("Access archiver connection to Riak failed (~p), "
-                        "stats for ~p were lost",
-                        [Reason, Slice])
+            ok = lager:error("Access archiver connection to Riak failed (~p), "
+                             "stats for ~p were lost",
+                             [Reason, Slice])
     end,
     ets:delete(Table).
 
@@ -222,11 +222,11 @@ store(User, Riak, Record, Slice) ->
     %% longer than the period
     case riakc_pb_socket:put(Riak, Record) of
         ok ->
-            lager:debug("Archived access stats for ~s ~p",
-                        [User, Slice]);
+            ok = lager:debug("Archived access stats for ~s ~p",
+                             [User, Slice]);
         {error, Reason} ->
-            lager:error("Access archiver storage failed (~p), "
-                        "stats for ~s ~p:~p were lost",
-                        [Reason, User, Slice])
+            ok = lager:error("Access archiver storage failed (~p), "
+                             "stats for ~s ~p:~p were lost",
+                             [Reason, User, Slice])
     end.
 

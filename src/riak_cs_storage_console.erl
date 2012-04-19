@@ -47,7 +47,7 @@ batch(Opts) ->
                end;
            {error, {OptReason, OptMessage}} ->
                io:format("Error: ~p: ~p~n", [OptReason, OptMessage]),
-               getopt:usage(?BATCH_OPTIONS, [?SCRIPT_NAME, " batch"]),
+               getopt:usage(?BATCH_OPTIONS, lists:flatten([?SCRIPT_NAME, " batch"])),
                error
        end,
        "Starting batch storage calculation").

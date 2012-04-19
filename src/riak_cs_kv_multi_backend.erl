@@ -41,7 +41,9 @@
          callback/3]).
 
 -ifdef(TEST).
+-ifdef(TEST_IN_RIAK_KV).
 -include_lib("eunit/include/eunit.hrl").
+-endif.
 -endif.
 
 -define(API_VERSION, 1).
@@ -218,7 +220,7 @@ start_backend(Name, Module, Partition, Config) ->
 %% @doc Stop the backends
 -spec stop(state()) -> ok.
 stop(#state{backends=Backends}) ->
-    [Module:stop(SubState) || {_, Module, SubState} <- Backends],
+    _ = [Module:stop(SubState) || {_, Module, SubState} <- Backends],
     ok.
 
 %% @doc Retrieve an object from the backend
@@ -344,7 +346,7 @@ status(#state{backends=Backends}) ->
 callback(Ref, Msg, #state{backends=Backends}=State) ->
     %% Pass the callback on to all submodules - their responsbility to
     %% filter out if they need it.
-    [Mod:callback(Ref, Msg, ModState) || {_N, Mod, ModState} <- Backends],
+    _ = [Mod:callback(Ref, Msg, ModState) || {_N, Mod, ModState} <- Backends],
     {ok, State}.
 
 %% ===================================================================
@@ -513,6 +515,7 @@ match_bucket_prefix(Bucket, [{Prefix, Name}|BPrefixList]) ->
 %% EUnit tests
 %% ===================================================================
 -ifdef(TEST).
+-ifdef(TEST_IN_RIAK_KV).
 
 %% %% @private
 %% multi_backend_test_() ->
@@ -700,4 +703,5 @@ match_bucket_prefix(Bucket, [{Prefix, Name}|BPrefixList]) ->
 %% wait_until_dead(_) ->
 %%     ok.
 
+-endif.
 -endif.

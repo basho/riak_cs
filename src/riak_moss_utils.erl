@@ -72,8 +72,7 @@ close_riak_connection(Pid) ->
 %% @doc Create a bucket in the global namespace or return
 %% an error if it already exists.
 -spec create_bucket(moss_user(), term(), binary(), acl(), pid()) ->
-                           {ok, moss_user()} |
-                           {ok, ignore} |
+                           ok |
                            {error, term()}.
 create_bucket(User, VClock, Bucket, ACL, RiakPid) ->
     serialized_bucket_op(Bucket,
@@ -84,7 +83,7 @@ create_bucket(User, VClock, Bucket, ACL, RiakPid) ->
                          RiakPid).
 
 %% @doc Create a new MOSS user
--spec create_user(string(), string()) -> {ok, moss_user()}.
+-spec create_user(string(), string()) -> {ok, moss_user()} | {error, term()}.
 create_user(Name, Email) ->
     %% Validate the email address
     case validate_email(Email) of
@@ -124,14 +123,13 @@ create_user(Name, Email) ->
 
 %% @doc Delete a bucket
 -spec delete_bucket(moss_user(), term(), binary(), pid()) ->
-                           {ok, moss_user()} |
-                           {ok, ignore} |
+                           ok |
                            {error, term()}.
 delete_bucket(User, VClock, Bucket, RiakPid) ->
     CurrentBuckets = get_buckets(User),
 
     %% Buckets can only be deleted if they exist
-    case bucket_exists(CurrentBuckets, Bucket) of
+    case bucket_exists(CurrentBuckets, binary_to_list(Bucket)) of
         true ->
             case bucket_empty(Bucket, RiakPid) of
                 true ->
@@ -164,7 +162,7 @@ delete_object(BucketName, Key, RiakPid) ->
 
 %% Get the root bucket name for either a MOSS object
 %% bucket or the data block bucket name.
--spec from_bucket_name(binary()) -> binary().
+-spec from_bucket_name(binary()) -> {'blocks' | 'objects', binary()}.
 from_bucket_name(BucketNameWithPrefix) ->
     BlocksName = ?BLOCK_BUCKET_PREFIX,
     ObjectsName = ?OBJECT_BUCKET_PREFIX,
@@ -184,34 +182,34 @@ get_buckets(?MOSS_USER{buckets=Buckets}) ->
     [Bucket || Bucket <- Buckets, Bucket?MOSS_BUCKET.last_action /= deleted].
 
 %% @doc Return `stanchion' configuration data.
--spec stanchion_data() -> {string(), pos_integer(), boolean()} | {error, term()}.
+-spec stanchion_data() -> {string(), pos_integer(), boolean()}.
 stanchion_data() ->
     case application:get_env(riak_moss, stanchion_ip) of
         {ok, IP} ->
             ok;
         undefined ->
-            lager:warning("No IP address or host name for stanchion access defined. Using default."),
+            _ = lager:warning("No IP address or host name for stanchion access defined. Using default."),
             IP = ?DEFAULT_STANCHION_IP
     end,
     case application:get_env(riak_moss, stanchion_port) of
         {ok, Port} ->
             ok;
         undefined ->
-            lager:warning("No port for stanchion access defined. Using default."),
+            _ = lager:warning("No port for stanchion access defined. Using default."),
             Port = ?DEFAULT_STANCHION_PORT
     end,
     case application:get_env(riak_moss, stanchion_ssl) of
         {ok, SSL} ->
             ok;
         undefined ->
-            lager:warning("No ssl flag for stanchion access defined. Using default."),
+            _ = lager:warning("No ssl flag for stanchion access defined. Using default."),
             SSL = ?DEFAULT_STANCHION_SSL
     end,
     {IP, Port, SSL}.
 
 %% @doc Return a list of keys for a bucket along
 %% with their associated objects.
--spec get_keys_and_manifests(binary(), binary(), pid()) -> {ok, [lfs_manifest()]}.
+-spec get_keys_and_manifests(binary(), binary(), pid()) -> {ok, [lfs_manifest()]} | {error, term()}.
 get_keys_and_manifests(BucketName, Prefix, RiakPid) ->
     ManifestBucket = riak_moss_utils:to_bucket_name(objects, BucketName),
     case list_keys(ManifestBucket, RiakPid) of
@@ -245,32 +243,32 @@ prefix_filter(Keys, Prefix) ->
 get_admin_creds() ->
     case application:get_env(riak_moss, admin_key) of
         {ok, []} ->
-            lager:warning("The admin user's key id has not been specified."),
+            _ = lager:warning("The admin user's key id has not been specified."),
             {error, admin_key_undefined};
         {ok, KeyId} ->
             case application:get_env(riak_moss, admin_secret) of
                 {ok, []} ->
-                    lager:warning("The admin user's secret has not been specified."),
+                    _ = lager:warning("The admin user's secret has not been specified."),
                     {error, admin_secret_undefined};
                 {ok, Secret} ->
                     {ok, {KeyId, Secret}};
                 undefined ->
-                    lager:warning("The admin user's secret is not defined."),
+                    _ = lager:warning("The admin user's secret is not defined."),
                     {error, admin_secret_undefined}
             end;
         undefined ->
-            lager:warning("The admin user's key id is not defined."),
+            _ = lager:warning("The admin user's key id is not defined."),
             {error, admin_key_undefined}
     end.
 
 %% @doc Get an object from Riak
 -spec get_object(binary(), binary(), pid()) ->
-                        {ok, binary()} | {error, term()}.
+                        {ok, riakc_obj:riakc_obj()} | {error, term()}.
 get_object(BucketName, Key, RiakPid) ->
     riakc_pb_socket:get(RiakPid, BucketName, Key).
 
 %% @doc Retrieve a MOSS user's information based on their id string.
--spec get_user(string(), pid()) -> {ok, {term(), term()}} | {error, term()}.
+-spec get_user('undefined' | list(), pid()) -> {ok, {moss_user(), riakc_obj:vclock()}} | {error, term()}.
 get_user(undefined, _RiakPid) -> 
     {error, no_user_key};
 get_user(KeyId, RiakPid) ->
@@ -312,7 +310,7 @@ get_user_by_index(Index, Value, RiakPid) ->
     end.
 
 %% @doc Query `Index' for `Value' in the users bucket.
--spec get_user_index(binary(), binary(), pid()) -> {ok, binary()} | {error, term()}.
+-spec get_user_index(binary(), binary(), pid()) -> {ok, string()} | {error, term()}.
 get_user_index(Index, Value, RiakPid) ->
     case riakc_pb_socket:get_index(RiakPid, ?USER_BUCKET, Index, Value) of
         {ok, []} ->
@@ -320,14 +318,14 @@ get_user_index(Index, Value, RiakPid) ->
         {ok, [[_, Key]]} ->
             {ok, binary_to_list(Key)};
         {error, Reason}=Error ->
-            lager:warning("Error occurred trying to query ~p in user index ~p. Reason: ~p", [Value,
-                                                                                             Index,
-                                                                                             Reason]),
+            _ = lager:warning("Error occurred trying to query ~p in user index ~p. Reason: ~p", [Value,
+                                                                                                 Index,
+                                                                                                 Reason]),
             Error
     end.
 
 %% @doc List the keys from a bucket
--spec list_keys(binary(), pid()) -> {ok, [binary()]}.
+-spec list_keys(binary(), pid()) -> {ok, [binary()]} | {error, term()}.
 list_keys(BucketName, RiakPid) ->
     case riakc_pb_socket:list_keys(RiakPid, BucketName) of
         {ok, Keys} ->
@@ -357,7 +355,12 @@ pow(Base, Power, Acc) ->
     end.
 
 %% @doc Store an object in Riak
--spec put_object(binary(), binary(), binary(), [term()], pid()) -> ok.
+-spec put_object(binary(), undefined | binary(), binary(), [term()], pid()) -> ok | {error, term()}.
+put_object(BucketName, undefined, Value, Metadata, _RiakPid) ->
+    error_logger:warning_msg("Attempt to put object into ~p with undefined key "
+                             "and value ~P and dict ~p\n",
+                             [BucketName, Value, 30, Metadata]),
+    {error, bad_key};
 put_object(BucketName, Key, Value, Metadata, RiakPid) ->
     RiakObject = riakc_obj:new(BucketName, Key, Value),
     NewObj = riakc_obj:update_metadata(RiakObject, Metadata),
@@ -376,7 +379,7 @@ riak_connection() ->
 
 %% @doc Set the ACL for a bucket. Existing ACLs are only
 %% replaced, they cannot be updated.
--spec set_bucket_acl(moss_user(), term(), binary(), acl(), pid()) -> ok.
+-spec set_bucket_acl(moss_user(), term(), binary(), acl(), pid()) -> ok | {error, term()}.
 set_bucket_acl(User, VClock, Bucket, ACL, RiakPid) ->
     serialized_bucket_op(Bucket,
                          ACL,
@@ -387,7 +390,8 @@ set_bucket_acl(User, VClock, Bucket, ACL, RiakPid) ->
 
 %% @doc Set the ACL for an object. Existing ACLs are only
 %% replaced, they cannot be updated.
--spec set_object_acl(binary(), binary(), lfs_manifest(), acl(), pid()) -> ok.
+-spec set_object_acl(binary(), binary(), lfs_manifest(), acl(), pid()) ->
+            ok | {error, term()}.
 set_object_acl(Bucket, Key, Manifest, Acl, RiakPid) ->
     {ok, ManiPid} = riak_moss_manifest_fsm:start_link(Bucket, Key, RiakPid),
     _ActiveMfst = riak_moss_manifest_fsm:get_active_manifest(ManiPid),
@@ -398,7 +402,7 @@ set_object_acl(Bucket, Key, Manifest, Acl, RiakPid) ->
 
 %% Get the proper bucket name for either the MOSS object
 %% bucket or the data block bucket.
--spec to_bucket_name([objects | blocks], binary()) -> binary().
+-spec to_bucket_name(objects | blocks, binary()) -> binary().
 to_bucket_name(Type, Bucket) ->
     case Type of
         objects ->
@@ -532,7 +536,7 @@ bucket_record(Name, Operation) ->
         _ ->
             Action = undefined
     end,
-    ?MOSS_BUCKET{name=Name,
+    ?MOSS_BUCKET{name=binary_to_list(Name),
                  last_action=Action,
                  creation_date=riak_moss_wm_utils:iso_8601_datetime(),
                  modification_time=erlang:now()}.
@@ -607,7 +611,7 @@ fetch_user(Key, RiakPid) ->
     end.
 
 %% @doc Generate a new set of access credentials for user.
--spec generate_access_creds(string()) -> {binary(), binary()}.
+-spec generate_access_creds(string()) -> {iodata(), iodata()}.
 generate_access_creds(UserId) ->
     UserBin = list_to_binary(UserId),
     KeyId = generate_key(UserBin),
@@ -625,7 +629,7 @@ generate_canonical_id(KeyID, Secret) ->
                           Id2:Bytes/binary >>)).
 
 %% @doc Generate an access key for a user
--spec generate_key(binary()) -> string().
+-spec generate_key(binary()) -> [iodata()].
 generate_key(UserName) ->
     Ctx = crypto:hmac_init(sha, UserName),
     Ctx1 = crypto:hmac_update(Ctx, druuid:v4()),
@@ -633,7 +637,7 @@ generate_key(UserName) ->
     string:to_upper(base64url:encode_to_string(Key)).
 
 %% @doc Generate a secret access token for a user
--spec generate_secret(binary(), string()) -> string().
+-spec generate_secret(binary(), string()) -> iodata().
 generate_secret(UserName, Key) ->
     Bytes = 14,
     Ctx = crypto:hmac_init(sha, UserName),
@@ -671,7 +675,7 @@ keep_existing_bucket(?MOSS_BUCKET{last_action=LastAction1,
 process_xml_error([]) ->
     [];
 process_xml_error([HeadElement | RestElements]) ->
-    lager:debug("Element name: ~p", [HeadElement#xmlElement.name]),
+    _ = lager:debug("Element name: ~p", [HeadElement#xmlElement.name]),
     ElementName = HeadElement#xmlElement.name,
     case ElementName of
         'Code' ->
@@ -699,7 +703,7 @@ resolve_buckets([HeadUserRec | RestUserRecs], Buckets, _KeepDeleted) ->
 save_user(User, VClock, RiakPid) ->
     UserObj0 = riakc_obj:new(?USER_BUCKET,
                              list_to_binary(User?MOSS_USER.key_id),
-                             User),
+                             term_to_binary(User)),
     case VClock of
         undefined ->
             UserObj1 = UserObj0;
@@ -719,10 +723,9 @@ save_user(User, VClock, RiakPid) ->
                            acl(),
                            moss_user(),
                            term(),
-                           bucket_action(),
+                           bucket_operation(),
                            pid()) ->
-                                  {ok, moss_user()} |
-                                  {ok, ignore} |
+                                  ok |
                                   {error, term()}.
 serialized_bucket_op(Bucket, ACL, User, VClock, BucketOp, RiakPid) ->
     case get_admin_creds() of

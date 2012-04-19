@@ -6,6 +6,8 @@
 
 -module(riak_moss_utils_test).
 
+-compile(export_all).
+
 -ifdef(TEST).
 
 -include("riak_moss.hrl").
@@ -47,6 +49,183 @@ riak_moss_utils_test_() ->
                ]
        end
       }]}.
+
+%% @doc Make sure that the name
+%%      of the user created is the
+%%      name that makes it into
+%%      the moss_user record
+name_matches() ->
+    Name = "fooser",
+    Email = "fooser@fooser.com",
+    {ok, User} = riak_moss_utils:create_user(Name, Email),
+    {"name matches test",
+     fun() ->
+             [
+              ?_assertEqual(Name, User?MOSS_USER.name)
+             ]
+     end
+    }.
+
+%% @doc Make sure that when we create
+%%      a new user and one bucket for that
+%%      user, that that bucket is the only
+%%      one owned by that user
+bucket_appears() ->
+    Name = "fooser",
+    Email = "fooser@fooser.com",
+    BucketName = "fooser-bucket",
+    {ok, User} = riak_moss_utils:create_user(Name, Email),
+    KeyID = User?MOSS_USER.key_id,
+    riak_moss_utils:create_bucket(KeyID, BucketName),
+    {ok, UserAfter} = riak_moss_utils:get_user(KeyID),
+    AfterBucketNames = [B#moss_bucket.name ||
+                           B <- riak_moss_utils:get_buckets(UserAfter)],
+    {"bucket appears test",
+     fun() ->
+             [
+              ?_assertEqual([BucketName], AfterBucketNames)
+             ]
+     end
+    }.
+
+%% @doc Make sure that when we create a key
+%%      that is appears in list keys for that
+%%      bucket
+key_appears() ->
+    %% TODO:
+    %% How much of a hack is it
+    %% that we have to pass the
+    %% key in as a list instead
+    %% of a binary?
+    Name = "fooser",
+    Email = "fooser@fooser.com",
+    BucketName = "key_appears",
+    KeyName = "testkey",
+    {ok, User} = riak_moss_utils:create_user(Name, Email),
+    KeyID = User?MOSS_USER.key_id,
+    ok = riak_moss_utils:create_bucket(KeyID, BucketName),
+    riak_moss_utils:put_object(BucketName, KeyName,
+                               "value", dict:new()),
+
+    {ok, ListKeys} = riak_moss_utils:list_keys(BucketName),
+    {"key appears test",
+     fun() ->
+             [
+              ?_assert(lists:member(list_to_binary(KeyName), ListKeys))
+             ]
+     end
+    }.
+
+%% @doc Make sure that storing a doc
+%%      with a content type in the metadata
+%%      keeps the content-type on GET
+content_type_sticks() ->
+    Name = "fooser",
+    Email = "fooser@fooser.com",
+    BucketName = "content_type_sticks",
+    KeyName = "testkey",
+    CType = "x-foo/bar",
+    Metadata = dict:from_list([{<<"content-type">>, CType}]),
+    {ok, User} = riak_moss_utils:create_user(Name, Email),
+    KeyID = User?MOSS_USER.key_id,
+    ok = riak_moss_utils:create_bucket(KeyID, BucketName),
+    riak_moss_utils:put_object(BucketName, KeyName,
+                               <<"value">>, Metadata),
+    {ok, Object} = riak_moss_utils:get_object(BucketName, KeyName),
+    {"content type sticks test",
+     fun() ->
+             [
+              ?_assertEqual(CType, riakc_obj:get_content_type(Object))
+             ]
+     end
+    }.
+
+%% TODO:
+%% This would make a great
+%% EQC test
+keys_are_sorted() ->
+    Name = "fooser",
+    Email = "fooser@fooser.com",
+    BucketName = "keys_are_sorted",
+    Keys = [<<"dog">>, <<"zebra">>, <<"aardvark">>, <<01>>, <<"panda">>],
+
+    {ok, User} = riak_moss_utils:create_user(Name, Email),
+    KeyID = User?MOSS_USER.key_id,
+    ok = riak_moss_utils:create_bucket(KeyID, BucketName),
+
+    [riak_moss_utils:put_object(BucketName, binary_to_list(KeyName),
+                                "value", dict:new()) ||
+        KeyName <- Keys],
+
+    {ok, ListKeys} = riak_moss_utils:list_keys(BucketName),
+    {"keys are sorted test",
+     fun() ->
+             [
+              ?_assertEqual(lists:sort(Keys), ListKeys)
+             ]
+     end
+    }.
+
+%% @doc Make sure that when we save an object,
+%%      we can later retrieve it and get the same
+%%      value
+object_returns() ->
+    %% TODO:
+    %% it's starting to get kind of annoying
+    %% that we need a KeyID to store objects
+    _KeyID = "0",
+    BucketName = "object_returns",
+    KeyName = "testkey",
+    Value = <<"value">>,
+    Metadata = dict:new(),
+
+    riak_moss_utils:put_object(BucketName, KeyName,
+                               Value, Metadata),
+
+    {ok, RetrievedObject} = riak_moss_utils:get_object(BucketName, KeyName),
+    {"object returns test",
+     fun() ->
+             [
+              ?_assertEqual(Value, riakc_obj:get_value(RetrievedObject))
+             ]
+     end
+    }.
+
+%% @doc Make sure that after creating an
+%%      object and deleting it that it
+%%      no longer exists
+object_deletes() ->
+    _KeyID = "0",
+    BucketName = "object_deletes",
+    KeyName = "testkey",
+    Value = <<"value">>,
+    Metadata = dict:new(),
+
+    riak_moss_utils:put_object(BucketName, KeyName,
+                               Value, Metadata),
+
+    ok = riak_moss_utils:delete_object(BucketName, KeyName),
+    {error, Reason} = riak_moss_utils:get_object(BucketName, KeyName),
+    {"object deletes test",
+     fun() ->
+             [
+              ?_assertEqual(Reason, notfound)
+             ]
+     end
+    }.
+
+%% @doc Make sure that an object
+%%      that doesn't exist still
+%%      deletes fine
+nonexistent_deletes() ->
+    Return = riak_moss_utils:delete_object("doesn't", "exist"),
+    {"nonexistenet deletes test",
+     fun() ->
+             [
+              ?_assertEqual(Return, ok)
+             ]
+     end
+    }.
 
 bucket_resolution_test() ->
     %% @TODO Replace or augment this with eqc testing.

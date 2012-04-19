@@ -88,8 +88,8 @@ init([]) ->
         {ok, RiakPid} ->
             {ok, #state{riakc_pid=RiakPid}};
         {error, Reason} ->
-            lager:error("Failed to establish connection to Riak. Reason: ~p",
-                        [Reason]),
+            _ = lager:error("Failed to establish connection to Riak. Reason: ~p",
+                            [Reason]),
             {stop, riak_connect_failed}
     end.
 
@@ -136,20 +136,16 @@ handle_cast({put_block, ReplyPid, Bucket, Key, UUID, BlockNumber, Value}, State=
     RiakObject0 = riakc_obj:new(FullBucket, FullKey, Value),
     MD = dict:from_list([{?MD_USERMETA, [{"RCS-bucket", Bucket},
                                          {"RCS-key", Key}]}]),
-    lager:debug("put_block: Bucket ~p Key ~p UUID ~p", [Bucket, Key, UUID]),
-    lager:debug("put_block: FullBucket: ~p FullKey: ~p", [FullBucket, FullKey]),
+    _ = lager:debug("put_block: Bucket ~p Key ~p UUID ~p", [Bucket, Key, UUID]),
+    _ = lager:debug("put_block: FullBucket: ~p FullKey: ~p", [FullBucket, FullKey]),
     RiakObject = riakc_obj:update_metadata(RiakObject0, MD),
-    %% TODO: note the return value
-    %% of this put call
-    riakc_pb_socket:put(RiakcPid, RiakObject),
+    ok = riakc_pb_socket:put(RiakcPid, RiakObject),
 
     riak_moss_put_fsm:block_written(ReplyPid, BlockNumber),
     {noreply, State};
 handle_cast({delete_block, _ReplyPid, Bucket, Key, UUID, BlockNumber}, State=#state{riakc_pid=RiakcPid}) ->
     {FullBucket, FullKey} = full_bkey(Bucket, Key, UUID, BlockNumber),
-    %% TODO: note the return
-    %% value of this delete call
-    riakc_pb_socket:delete(RiakcPid, FullBucket, FullKey),
+    ok = riakc_pb_socket:delete(RiakcPid, FullBucket, FullKey),
     %% TODO:
     %% add a public func to riak_moss_delete_fsm
     %% to send messages back to the fsm

@@ -117,7 +117,7 @@ init([]) ->
     Schedule = read_storage_schedule(),
     SchedState = schedule_next(#state{schedule=Schedule},
                                calendar:universal_time()),
-    rts:check_bucket_props(?STORAGE_BUCKET),
+    ok = rts:check_bucket_props(?STORAGE_BUCKET),
     {ok, idle, SchedState}.
 
 %% Asynchronous events
@@ -131,8 +131,8 @@ idle(_, State) ->
 %% from the outside world (like `status').
 calculating(continue, #state{batch=[], current=Current}=State) ->
     %% finished with this batch
-    lager:info("Finished storage calculation in ~b seconds.",
-               [elapsed(State#state.batch_start)]),
+    _ = lager:info("Finished storage calculation in ~b seconds.",
+                   [elapsed(State#state.batch_start)]),
     riak_moss_riakc_pool_worker:stop(State#state.riak),
     NewState = State#state{riak=undefined,
                            last=Current,
@@ -182,12 +182,12 @@ calculating({manual_batch, _Options}, _From, State) ->
     %% this is the manual user request to begin a batch
     {reply, {error, already_calculating}, calculating, State};
 calculating(pause_batch, _From, State) ->
-    lager:info("Pausing storage calcluation"),
+    _ = lager:info("Pausing storage calcluation"),
     {reply, ok, paused, State};
 calculating(cancel_batch, _From, #state{current=Current}=State) ->
     %% finished with this batch
-    lager:info("Canceled storage calculation after ~b seconds.",
-               [elapsed(State#state.batch_start)]),
+    _ = lager:info("Canceled storage calculation after ~b seconds.",
+                   [elapsed(State#state.batch_start)]),
     riak_moss_riakc_pool_worker:stop(State#state.riak),
     NewState = State#state{riak=undefined,
                            last=Current,
@@ -201,7 +201,7 @@ paused(status, From, State) ->
     {reply, {ok, {_, Status}}, _, State} = calculating(status, From, State),
     {reply, {ok, {paused, Status}}, paused, State};
 paused(resume_batch, _From, State) ->
-    lager:info("Resuming storage calculation"),
+    _ = lager:info("Resuming storage calculation"),
     gen_fsm:send_event(?SERVER, continue),
     {reply, ok, calculating, State};
 paused(cancel_batch, From, State) ->
@@ -225,9 +225,9 @@ handle_info({start_batch, Next}, idle, #state{next=Next}=State) ->
     {next_state, calculating, NewState};
 handle_info({start_batch, Next}, InBatch,
             #state{next=Next, current=Current}=State) ->
-    lager:error("Unable to start storage calculation for ~p"
-                " because ~p is still working. Skipping forward...",
-                [Next, Current]),
+    _ = lager:error("Unable to start storage calculation for ~p"
+                    " because ~p is still working. Skipping forward...",
+                    [Next, Current]),
     NewState = schedule_next(State, Next),
     {next_state, InBatch, NewState};
 handle_info(_Info, StateName, State) ->
@@ -254,8 +254,8 @@ read_storage_schedule() ->
 read_storage_schedule1() ->
     case application:get_env(riak_moss, storage_schedule) of
         undefined ->
-            lager:warning("No storage schedule defined."
-                          " Calculation must be triggered manually."),
+            _ = lager:warning("No storage schedule defined."
+                              " Calculation must be triggered manually."),
             [];
         {ok, Sched} ->
             case catch parse_time(Sched) of
@@ -264,26 +264,26 @@ read_storage_schedule1() ->
                     [Time];
                 {'EXIT',_} when is_list(Sched) ->
                     Times = [ {S, catch parse_time(S)} || S <- Sched ],
-                    case [ X || {X,{'EXIT',_}} <- Times ] of
-                        [] -> ok;
-                        Bad ->
-                            lager:error(
-                              "Ignoring bad storage schedule elements ~p",
-                              [Bad])
-                    end,
+                    _ = case [ X || {X,{'EXIT',_}} <- Times ] of
+                            [] -> ok;
+                            Bad ->
+                                _ = lager:error(
+                                      "Ignoring bad storage schedule elements ~p",
+                                      [Bad])
+                        end,
                     case [ Parsed || {_, {ok, Parsed}} <- Times] of
                         [] ->
-                            lager:warning(
-                              "No storage schedule defined."
-                              " Calculation must be triggered manually."),
+                            _ = lager:warning(
+                                  "No storage schedule defined."
+                                  " Calculation must be triggered manually."),
                             [];
                         Good ->
                             Good
                     end;
                 _ ->
-                    lager:error(
-                      "Invalid storage schedule defined."
-                      " Calculation must be triggered manually."),
+                    _ = lager:error(
+                          "Invalid storage schedule defined."
+                          " Calculation must be triggered manually."),
                     []
             end
     end.
@@ -333,9 +333,9 @@ fetch_user_list(Riak) ->
     case riakc_pb_socket:list_keys(Riak, ?USER_BUCKET) of
         {ok, Users} -> Users;
         {error, Error} ->
-            lager:error("Storage calculator was unable"
-                        " to fetch list of users (~p)",
-                       [Error]),
+            _ = lager:error("Storage calculator was unable"
+                            " to fetch list of users (~p)",
+                            [Error]),
             []
     end.
 
@@ -346,14 +346,14 @@ calculate_next_user(#state{riak=Riak,
     Start = calendar:universal_time(),
     case recalc(Recalc, Riak, User, Start) of
         true ->
-            case riak_moss_storage:sum_user(Riak, User) of
-                {ok, BucketList} ->
-                    End = calendar:universal_time(),
-                    store_user(State, User, BucketList, Start, End);
-                {error, Error} ->
-                    lager:error("Error computing storage for user ~s (~p)", 
-                                [User, Error])
-            end,
+            _ = case riak_moss_storage:sum_user(Riak, User) of
+                    {ok, BucketList} ->
+                        End = calendar:universal_time(),
+                        store_user(State, User, BucketList, Start, End);
+                    {error, Error} ->
+                        _ = lager:error("Error computing storage for user ~s (~p)", 
+                                        [User, Error])
+                end,
             State#state{batch=Rest, batch_count=1+State#state.batch_count};
         false ->
             State#state{batch=Rest, batch_skips=1+State#state.batch_skips}
@@ -381,8 +381,8 @@ store_user(#state{riak=Riak}, User, BucketList, Start, End) ->
     case riakc_pb_socket:put(Riak, Obj) of
         ok -> ok;
         {error, Error} ->
-            lager:error("Error storing storage for user ~s (~p)",
-                        [User, Error])
+            _ = lager:error("Error storing storage for user ~s (~p)",
+                            [User, Error])
     end.
 
 %% @doc How many seconds have passed from `Time' to now.
@@ -408,14 +408,14 @@ schedule_next(#state{schedule=Schedule}=State, Last) ->
     NextTime = next_target_time(Last, Schedule),
     case elapsed(calendar:universal_time(), NextTime) of
         D when D > 0 ->
-            lager:info("Scheduling next storage calculation for ~p",
-                       [NextTime]),
+            _ = lager:info("Scheduling next storage calculation for ~p",
+                           [NextTime]),
             erlang:send_after(D*1000, self(), {start_batch, NextTime}),
             State#state{next=NextTime};
         _ ->
-            lager:error("Missed start time for storage calculation at ~p,"
-                        " skipping to next scheduled time...",
-                        [NextTime]),
+            _ = lager:error("Missed start time for storage calculation at ~p,"
+                            " skipping to next scheduled time...",
+                            [NextTime]),
             %% just skip everything until the next scheduled time from now
             schedule_next(State, calendar:universal_time())
     end.

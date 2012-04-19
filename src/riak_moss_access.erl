@@ -12,8 +12,7 @@
          archive_period/0,
          log_flush_interval/0,
          max_flush_size/0,
-         make_object/3,
-         get_usage/4
+         make_object/3
         ]).
 
 -include("riak_moss.hrl").
@@ -29,7 +28,6 @@
 
 -type slice() :: {Start :: calendar:datetime(),
                   End :: calendar:datetime()}.
--type riakc_pb_socket() :: pid().
 
 -define(NODEKEY, <<"MossNode">>).
 
@@ -89,7 +87,7 @@ max_flush_size() ->
 %% The keys of the proplist must be either atoms or binaries, to be
 %% encoded as JSON keys.  The values of the proplists must be numbers,
 %% as the values for each key will be summed in the stored object.
--spec make_object(riak_moss:user_key(),
+-spec make_object(iodata(),
                   [[{atom()|binary(), number()}]],
                   slice())
          -> riakc_obj:riakc_obj().
@@ -116,29 +114,6 @@ merge_ops({OpName, Stats}, Acc) ->
 merge_stats(Stats, Acc) ->
     orddict:merge(fun(_K, V1, V2) -> V1+V2 end, Acc, Stats).
 
-%% @doc Produce a usage compilation for the given `User' between
-%% `Start' and `End' times, inclusive.  The result is an orddict in
-%% which the keys are MOSS node names.  The value for each key is a
-%% list of samples.  Each sample is an orddict full of metrics.
--spec get_usage(riakc_pb_socket(),
-                riak_moss:user_key(),
-                calendar:datetime(),
-                calendar:datetime()) ->
-         {Usage::orddict:orddict(), Errors::[{slice(), term()}]}.
-get_usage(Riak, User, Start, End) ->
-    {ok, Period} = archive_period(),
-    {Usage, Errors} = rts:find_samples(Riak, ?ACCESS_BUCKET, User,
-                                       Start, End, Period),
-    {group_by_node(Usage), Errors}.
-
-group_by_node(Samples) ->
-    lists:foldl(fun(Sample, Acc) ->
-                        {value, {?NODEKEY, Node}, Other} =
-                            lists:keytake(?NODEKEY, 1, Sample),
-                        orddict:append(Node, Other, Acc)
-                end,
-                orddict:new(),
-                Samples).
 
 -ifdef(TEST).
 -ifdef(EQC).

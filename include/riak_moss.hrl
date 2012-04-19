@@ -38,12 +38,12 @@
                  }).
 
 -record(key_context, {context :: #context{},
-                      manifest :: lfs_manifest(),
+                      manifest :: 'notfound' | lfs_manifest(),
                       get_fsm_pid :: pid(),
                       putctype :: string(),
                       bucket :: binary(),
                       key :: list(),
-                      owner :: string(),
+                      owner :: 'undefined' | string(),
                       size :: non_neg_integer()}).
 
 -type acl_perm() :: 'READ' | 'WRITE' | 'READ_ACP' | 'WRITE_ACP' | 'FULL_CONTROL'.
@@ -88,7 +88,7 @@
         %% be placed on the riak_object. We avoid
         %% putting it on the riak_object so that
         %% we can use that metadata ourselves
-        metadata :: orddict:new(),
+        metadata :: orddict:orddict(),
 
         %% the date the manifest was created.
         %% not sure if we need both this and
@@ -102,7 +102,7 @@
 
         %% content properties
         %% -----------------------------------------------------------------
-        content_length :: integer(),
+        content_length :: non_neg_integer(),
         content_type :: binary(),
         content_md5 :: term(),
 
@@ -126,7 +126,7 @@
         %% (rather than growing) set to that the
         %% set is empty after the write has completed,
         %% which should be most of the lifespan on disk
-        write_blocks_remaining :: ordsets:new(),
+        write_blocks_remaining :: ordsets:ordset(integer()),
 
         %% pending_delete/deleted state
         %% -----------------------------------------------------------------
@@ -149,7 +149,7 @@
         %% See write_blocks_remaining for
         %% an explanation of why we chose
         %% a shrinking set
-        delete_blocks_remaining :: ordsets:new(),
+        delete_blocks_remaining :: ordsets:ordset(integer()),
 
         %% The ACL for the version of the object represented
         %% by this manifest.

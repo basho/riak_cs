@@ -13,7 +13,7 @@
 -include("riak_moss.hrl").
 
 %% API
--export([start_link/10,
+-export([start_link/1,
          augment_data/2,
          block_written/2,
          finalize/1]).
@@ -37,11 +37,11 @@
 -define(SERVER, ?MODULE).
 -define(EMPTYORDSET, ordsets:new()).
 
--record(state, {timeout :: pos_integer(),
+-record(state, {timeout :: timeout(),
                 block_size :: pos_integer(),
-                caller :: pid(),
+                caller :: reference(),
                 md5 :: binary(),
-                reply_pid :: pid(),
+                reply_pid :: {pid(), reference()},
                 mani_pid :: pid(),
                 riakc_pid :: pid(),
                 timer_ref :: term(),
@@ -50,16 +50,16 @@
                 metadata :: term(),
                 acl :: acl(),
                 manifest :: lfs_manifest(),
-                content_length :: pos_integer(),
+                content_length :: non_neg_integer(),
                 content_type :: binary(),
-                num_bytes_received=0,
+                num_bytes_received=0 :: non_neg_integer(),
                 max_buffer_size :: non_neg_integer(),
-                current_buffer_size=0,
-                buffer_queue=[], %% not actually a queue, but we treat it like one
+                current_buffer_size=0 :: non_neg_integer(),
+                buffer_queue=[] :: [binary()], %% not actually a queue, but we treat it like one
                 remainder_data :: undefined | binary(),
-                free_writers :: ordsets:new(),
-                unacked_writes=ordsets:new(),
-                next_block_id=0,
+                free_writers :: ordsets:ordset(pid()),
+                unacked_writes=ordsets:new() :: ordsets:ordset(non_neg_integer()),
+                next_block_id=0 :: non_neg_integer(),
                 all_writer_pids :: list(pid())}).
 
 %%%===================================================================
@@ -70,18 +70,21 @@
 %% @spec start_link() -> {ok, Pid} | ignore | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
-start_link(Bucket,
-           Key,
-           ContentLength,
-           ContentType,
-           Metadata,
-           BlockSize,
-           Acl,
-           Timeout,
-           Caller,
-           RiakPid) ->
-    Args = [Bucket, Key, ContentLength, ContentType,
-            Metadata, BlockSize, Acl, Timeout, Caller, RiakPid],
+-spec start_link({binary(), binary(), non_neg_integer(), binary(),
+                  term(), pos_integer(), acl(), timeout(), pid(), pid()}) ->
+                        {ok, pid()} | {error, term()}.
+start_link({Bucket,
+            Key,
+            ContentLength,
+            ContentType,
+            Metadata,
+            BlockSize,
+            Acl,
+            Timeout,
+            Caller,
+            RiakPid}) ->
+    Args = [{Bucket, Key, ContentLength, ContentType,
+             Metadata, BlockSize, Acl, Timeout, Caller, RiakPid}],
     gen_fsm:start_link(?MODULE, Args, []).
 
 augment_data(Pid, Data) ->
@@ -107,8 +110,11 @@ block_written(Pid, BlockID) ->
 %% so that I can be thinking about how it
 %% might be implemented. Does it actually
 %% make things more confusing?
-init([Bucket, Key, ContentLength, ContentType,
-      Metadata, BlockSize, Acl, Timeout, Caller, RiakPid]) ->
+-spec init([{binary(), binary(), non_neg_integer(), binary(),
+             term(), pos_integer(), acl(), timeout(), pid(), pid()}]) ->
+                  {ok, prepare, #state{}, timeout()}.
+init([{Bucket, Key, ContentLength, ContentType,
+       Metadata, BlockSize, Acl, Timeout, Caller, RiakPid}]) ->
     %% We need to do this (the monitor) for two reasons
     %% 1. We're started through a supervisor, so the
     %%    proc that actually intends to start us isn't
@@ -192,7 +198,7 @@ all_received({block_written, BlockID, WriterPid}, State=#state{mani_pid=ManiPid,
                 ReplyPid ->
                     %% reply with the final
                     %% manifest
-                    timer:cancel(TimerRef),
+                    _ = timer:cancel(TimerRef),
                     case riak_moss_manifest_fsm:update_manifest_with_confirmation(ManiPid, Manifest) of
                         ok ->
                             gen_fsm:reply(ReplyPid, {ok, Manifest}),
@@ -242,7 +248,7 @@ done(finalize, _From, State=#state{manifest=Manifest, mani_pid=ManiPid,
                                    timer_ref=TimerRef}) ->
     %% 1. reply immediately
     %%    with the finished manifest
-    timer:cancel(TimerRef),
+    _ = timer:cancel(TimerRef),
     case riak_moss_manifest_fsm:update_manifest_with_confirmation(ManiPid, Manifest) of
         ok ->
             {stop, normal, {ok, Manifest}, State};
@@ -292,7 +298,7 @@ handle_info({'DOWN', CallerRef, process, _Pid, Reason}, _StateName, State=#state
 terminate(_Reason, _StateName, #state{mani_pid=ManiPid,
                                       all_writer_pids=BlockServerPids}) ->
     riak_moss_manifest_fsm:stop(ManiPid),
-    [riak_moss_block_server:stop(P) || P <- BlockServerPids],
+    _ = [riak_moss_block_server:stop(P) || P <- BlockServerPids],
     ok.
 
 %%--------------------------------------------------------------------
@@ -314,7 +320,8 @@ prepare(State=#state{bucket=Bucket,
                      content_type=ContentType,
                      metadata=Metadata,
                      acl=Acl,
-                     riakc_pid=RiakPid}) ->
+                     riakc_pid=RiakPid})
+  when is_integer(ContentLength), ContentLength >= 0 ->
     %% 1. start the manifest_fsm proc
     {ok, ManiPid} = riak_moss_manifest_fsm:start_link(Bucket, Key, RiakPid),
     %% TODO:

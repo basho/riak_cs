@@ -44,18 +44,18 @@
          terminate/3,
          code_change/4]).
 
--record(state, {from :: pid(),
+-record(state, {from :: {pid(), reference()},
                 mani_fsm_pid :: pid(),
                 riakc_pid :: pid(),
                 bucket :: term(),
-                caller :: pid(),
+                caller :: reference(),
                 key :: term(),
-                block_buffer=[] :: [{pos_integer, term()}],
+                block_buffer=[] :: [{pos_integer(), term()}],
                 manifest :: term(),
                 manifest_uuid :: term(),
-                blocks_left :: list(),
+                blocks_left :: set(),
                 test=false :: boolean(),
-                next_block=0 :: pos_integer(),
+                next_block=0 :: 0 | pos_integer(),
                 last_block_requested :: pos_integer(),
                 total_blocks :: pos_integer(),
                 free_readers :: [pid()],
@@ -64,6 +64,8 @@
 %% ===================================================================
 %% Public API
 %% ===================================================================
+
+-spec start_link(binary(), binary(), pid(), pid()) -> {ok, pid()} | {error, term()}.
 
 start_link(Bucket, Key, Caller, RiakPid) ->
     gen_fsm:start_link(?MODULE, [Bucket, Key, Caller, RiakPid], []).
@@ -90,7 +92,8 @@ chunk(Pid, ChunkSeq, ChunkValue) ->
 %% gen_fsm callbacks
 %% ====================================================================
 
-init([Bucket, Key, Caller, RiakPid]) ->
+init([Bucket, Key, Caller, RiakPid])
+  when is_binary(Bucket), is_binary(Key), is_pid(Caller), is_pid(RiakPid) ->
     %% We need to do this (the monitor) for two reasons
     %% 1. We're started through a supervisor, so the
     %%    proc that actually intends to start us isn't
@@ -115,7 +118,7 @@ init([Bucket, Key, Caller, RiakPid]) ->
                    riakc_pid=RiakPid},
     {ok, prepare, State, 0};
 init([test, Bucket, Key, ContentLength, BlockSize]) ->
-    {ok, prepare, State1, 0} = init([Bucket, Key, self(), pid]),
+    {ok, prepare, State1, 0} = init([Bucket, Key, self(), self()]),
 
     %% purposely have the timeout happen
     %% so that we get called in the prepare
@@ -172,7 +175,7 @@ waiting_continue_or_stop(continue, #state{manifest=Manifest,
         [] ->
             %% We should never get here because empty
             %% files are handled by the wm resource.
-            lager:warning("~p:~p has no blocks", [BucketName, Key]),
+            _ = lager:warning("~p:~p has no blocks", [BucketName, Key]),
             {stop, normal, State};
         [_|_] ->
             BlocksLeft = sets:from_list(BlockSequences),
@@ -182,7 +185,7 @@ waiting_continue_or_stop(continue, #state{manifest=Manifest,
             case Readers of
                 undefined ->
                     FreeReaders = start_block_servers(RiakPid),
-                    lager:debug("Block Servers: ~p", [FreeReaders]);
+                    _ = lager:debug("Block Servers: ~p", [FreeReaders]);
                 _ ->
                     FreeReaders = Readers
             end,
@@ -207,7 +210,7 @@ waiting_chunks(get_next_chunk,
                _From,
                State=#state{block_buffer=[{NextBlock, Block} | RestBlockBuffer],
                             next_block=NextBlock}) ->
-    lager:debug("Returning block ~p to client", [NextBlock]),
+    _ = lager:debug("Returning block ~p to client", [NextBlock]),
     {reply, {chunk, Block}, waiting_chunks, State#state{block_buffer=RestBlockBuffer,
                                                         next_block=NextBlock+1}};
 waiting_chunks(get_next_chunk, From, State) ->
@@ -223,17 +226,17 @@ waiting_chunks({chunk, Pid, {NextBlock, BlockReturnValue}}, #state{from=From,
                                                                    last_block_requested=LastBlockRequested,
                                                                    total_blocks=TotalBlocks,
                                                                    block_buffer=BlockBuffer}=State) ->
-    lager:debug("Retrieved block ~p", [NextBlock]),
+    _ = lager:debug("Retrieved block ~p", [NextBlock]),
     {ok, BlockValue} = BlockReturnValue,
     NewRemaining = sets:del_element(NextBlock, Remaining),
     BlocksLeft = sets:size(NewRemaining),
-    lager:debug("BlocksLeft: ~p", [BlocksLeft]),
+    _ = lager:debug("BlocksLeft: ~p", [BlocksLeft]),
     case From of
         undefined ->
             UpdBlockBuffer =
                 lists:sort(fun block_sorter/2,
                            [{NextBlock, BlockValue} | BlockBuffer]),
-            lager:debug("BlockBuffer: ~p", [UpdBlockBuffer]),
+            _ = lager:debug("BlockBuffer: ~p", [UpdBlockBuffer]),
             NewState0 = State#state{blocks_left=NewRemaining,
                                    block_buffer=UpdBlockBuffer},
             case BlocksLeft of
@@ -249,7 +252,7 @@ waiting_chunks({chunk, Pid, {NextBlock, BlockReturnValue}}, #state{from=From,
             end,
             {next_state, NextStateName, NewState};
         _ ->
-            lager:debug("Returning block ~p to client", [NextBlock]),
+            _ = lager:debug("Returning block ~p to client", [NextBlock]),
             NewState0 = State#state{blocks_left=NewRemaining,
                                     from=undefined,
                                     free_readers=[Pid | FreeReaders],
@@ -267,7 +270,7 @@ waiting_chunks({chunk, Pid, {NextBlock, BlockReturnValue}}, #state{from=From,
                     gen_fsm:reply(From, {chunk, BlockValue}),
                     {ReadRequests, UpdFreeReaders} =
                         read_blocks(BucketName, Key, UUID, [Pid | FreeReaders], LastBlockRequested+1, TotalBlocks),
-                    lager:debug("Started ~p new readers. Free readers: ~p", [ReadRequests, UpdFreeReaders]),
+                    _ = lager:debug("Started ~p new readers. Free readers: ~p", [ReadRequests, UpdFreeReaders]),
                     NewState = NewState0#state{last_block_requested=LastBlockRequested+ReadRequests,
                                                free_readers=UpdFreeReaders},
                     {next_state, waiting_chunks, NewState}
@@ -285,7 +288,7 @@ waiting_chunks({chunk, Pid, {BlockSeq, BlockReturnValue}}, #state{blocks_left=Re
     %% we don't deal with missing chunks
     %% at all here, so this pattern
     %% match will fail
-    lager:debug("Retrieved block ~p", [BlockSeq]),
+    _ = lager:debug("Retrieved block ~p", [BlockSeq]),
     {ok, BlockValue} = BlockReturnValue,
     NewRemaining = sets:del_element(BlockSeq, Remaining),
     BlocksLeft = sets:size(NewRemaining),
@@ -294,7 +297,7 @@ waiting_chunks({chunk, Pid, {BlockSeq, BlockReturnValue}}, #state{blocks_left=Re
                    [{BlockSeq, BlockValue} | BlockBuffer]),
     NewState0 = State#state{blocks_left=NewRemaining,
                             block_buffer=UpdBlockBuffer},
-    lager:debug("BlocksLeft: ~p", [BlocksLeft]),
+    _ = lager:debug("BlocksLeft: ~p", [BlocksLeft]),
     case BlocksLeft of
         0 ->
             NewState = NewState0#state{free_readers=[Pid | FreeReaders]},
@@ -309,7 +312,7 @@ waiting_chunks({chunk, Pid, {BlockSeq, BlockReturnValue}}, #state{blocks_left=Re
     {next_state, NextStateName, NewState}.
 
 sending_remaining(get_next_chunk, _From, #state{block_buffer=[{BlockSeq, Block} | RestBlockBuffer]}=State) ->
-    lager:debug("Returning block ~p to client", [BlockSeq]),
+    _ = lager:debug("Returning block ~p to client", [BlockSeq]),
     NewState = State#state{block_buffer=RestBlockBuffer},
     case RestBlockBuffer of
         [] ->
@@ -353,16 +356,21 @@ terminate(_Reason, _StateName, #state{test=false,
                                       mani_fsm_pid=ManiPid}) ->
 
     riak_moss_manifest_fsm:stop(ManiPid),
-    case BlockServerPids of
-        undefined ->
-            ok;
-        _ ->
-            [riak_moss_block_server:stop(P) || P <- BlockServerPids]
-    end,
+    _ = case BlockServerPids of
+            undefined ->
+                ok;
+            _ ->
+                [riak_moss_block_server:stop(P) || P <- BlockServerPids]
+        end,
     ok;
 terminate(_Reason, _StateName, #state{test=true,
-                                      free_readers=[ReaderPid | _]}) ->
-    exit(ReaderPid, normal).
+                                      free_readers=ReaderPids}) ->
+    case ReaderPids of
+        [ReaderPid|_] ->
+            exit(ReaderPid, normal);
+        _ ->
+            ok
+    end.
 
 %% @private
 code_change(_OldVsn, StateName, State, _Extra) -> {ok, StateName, State}.
@@ -385,7 +393,7 @@ prepare(#state{bucket=Bucket,
     {ok, ManiPid} = riak_moss_manifest_fsm:start_link(Bucket, Key, RiakPid),
     case riak_moss_manifest_fsm:get_active_manifest(ManiPid) of
         {ok, Manifest} ->
-            lager:debug("Manifest: ~p", [Manifest]),
+            _ = lager:debug("Manifest: ~p", [Manifest]),
             State#state{manifest=Manifest,
                         mani_fsm_pid=ManiPid};
         {error, notfound} ->
@@ -429,7 +437,7 @@ server_result(_, Acc) ->
         {ok, Pid} ->
             [Pid | Acc];
         {error, Reason} ->
-            lager:warning("Failed to start block server instance. Reason: ~p", [Reason]),
+            _ = lager:warning("Failed to start block server instance. Reason: ~p", [Reason]),
             Acc
     end.
 
@@ -439,7 +447,7 @@ start_block_servers(RiakPid) ->
         {ok, BSPid} ->
             Acc = [BSPid];
         {error, Reason} ->
-            lager:warning("Failed to start block server instance. Reason: ~p", [Reason]),
+            _ = lager:warning("Failed to start block server instance. Reason: ~p", [Reason]),
             Acc = []
     end,
     FetchConcurrency = riak_moss_lfs_utils:fetch_concurrency(),

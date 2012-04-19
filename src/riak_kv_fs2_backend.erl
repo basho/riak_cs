@@ -52,7 +52,9 @@
 -define(MAXVALSIZE, 2#11111111111111111111111111111111).
 
 -ifdef(TEST).
+-ifdef(TEST_IN_RIAK_KV).
 -include_lib("eunit/include/eunit.hrl").
+-endif.
 -endif.
 
 -record(state, {dir}).
@@ -83,7 +85,7 @@ capabilities(_, _) ->
 %%      Riak's application environment.  It must be set to a string
 %%      representing the base directory where this backend should
 %%      store its files.
--spec start(integer(), config()) -> {ok, state()} | {error, term()}.
+-spec start(integer(), config()) -> {ok, state()}.
 start(Partition, Config) ->
     PartitionName = integer_to_list(Partition),
     ConfigRoot = app_helper:get_prop_or_env(fs2_backend_data_root, Config, riak_kv),
@@ -94,7 +96,7 @@ start(Partition, Config) ->
             ok
     end,
     Dir = filename:join([ConfigRoot,PartitionName]),
-    {filelib:ensure_dir(Dir), #state{dir=Dir}}.
+    {ok = filelib:ensure_dir(Dir), #state{dir=Dir}}.
 
 %% @doc Stop the backend
 -spec stop(state()) -> ok.
@@ -149,7 +151,7 @@ delete(Bucket, Key, _IndexSpecs, State) ->
 -spec fold_buckets(riak_kv_backend:fold_buckets_fun(),
                    any(),
                    [],
-                   state()) -> {ok, any()} | {async, fun()} | {error, term()}.
+                   state()) -> {ok, any()} | {async, fun()}.
 fold_buckets(FoldBucketsFun, Acc, Opts, State) ->
     FoldFun = fold_buckets_fun(FoldBucketsFun),
     BucketFolder =
@@ -169,7 +171,7 @@ fold_buckets(FoldBucketsFun, Acc, Opts, State) ->
 -spec fold_keys(riak_kv_backend:fold_keys_fun(),
                 any(),
                 [{atom(), term()}],
-                state()) -> {ok, term()} | {async, fun()} | {error, term()}.
+                state()) -> {ok, term()} | {async, fun()}.
 fold_keys(FoldKeysFun, Acc, Opts, State) ->
     Bucket =  proplists:get_value(bucket, Opts),
     FoldFun = fold_keys_fun(FoldKeysFun, Bucket),
@@ -188,7 +190,7 @@ fold_keys(FoldKeysFun, Acc, Opts, State) ->
 -spec fold_objects(riak_kv_backend:fold_objects_fun(),
                    any(),
                    [{atom(), term()}],
-                   state()) -> {ok, any()} | {async, fun()} | {error, term()}.
+                   state()) -> {ok, any()} | {async, fun()}.
 fold_objects(FoldObjectsFun, Acc, Opts, State) ->
     %% Warning: This ain't pretty. Hold your nose.
     Bucket =  proplists:get_value(bucket, Opts),
@@ -206,12 +208,12 @@ fold_objects(FoldObjectsFun, Acc, Opts, State) ->
 
 %% @doc Delete all objects from this backend
 %% and return a fresh reference.
--spec drop(state()) -> {ok, state()} | {error, term(), state()}.
+-spec drop(state()) -> {ok, state()}.
 drop(State=#state{dir=Dir}) ->
-    [file:delete(location(State, BK)) || BK <- list(State)],
+    _ = [file:delete(location(State, BK)) || BK <- list(State)],
     Cmd = io_lib:format("rm -Rf ~s", [Dir]),
-    os:cmd(Cmd),
-    filelib:ensure_dir(Dir),
+    _ = os:cmd(Cmd),
+    ok = filelib:ensure_dir(Dir),
     {ok, State}.
 
 %% @doc Returns true if this backend contains any
@@ -221,7 +223,7 @@ is_empty(S) ->
     list(S) == [].
 
 %% @doc Get the status information for this fs backend
--spec status(state()) -> [{atom(), term()}].
+-spec status(state()) -> [no_status_sorry | {atom(), term()}].
 status(_S) ->
     [no_status_sorry].
 
@@ -394,7 +396,7 @@ nest([],N,Acc) ->
     nest([],N-1,["0"|Acc]).
 
 %% Borrowed from bitcask_fileops.erl and then mangled
--spec pack_ondisk(binary()) -> binary().
+-spec pack_ondisk(binary()) -> [binary()].
 pack_ondisk(Bin) ->
     ValueSz = size(Bin),
     true = (ValueSz =< ?MAXVALSIZE),
@@ -415,62 +417,64 @@ unpack_ondisk(<<Crc32:?CRCSIZEFIELD/unsigned, Bytes/binary>>) ->
 %% EUnit tests
 %% ===================================================================
 -ifdef(TEST).
+-ifdef(TEST_IN_RIAK_KV).
 
-%% %% Broken test:
-%% simple_test_() ->
-%%    ?assertCmd("rm -rf test/fs-backend"),
-%%    Config = [{fs2_backend_data_root, "test/fs-backend"}],
-%%    riak_kv_backend:standard_test(?MODULE, Config).
+%% Broken test:
+simple_test_() ->
+   ?assertCmd("rm -rf test/fs-backend"),
+   Config = [{fs2_backend_data_root, "test/fs-backend"}],
+   riak_kv_backend:standard_test(?MODULE, Config).
 
-%% dirty_clean_test() ->
-%%     Dirty = "abc=+/def",
-%%     Clean = clean(Dirty),
-%%     [ ?assertNot(lists:member(C, Clean)) || C <- "=+/" ],
-%%     ?assertEqual(Dirty, dirty(Clean)).
+dirty_clean_test() ->
+    Dirty = "abc=+/def",
+    Clean = clean(Dirty),
+    [ ?assertNot(lists:member(C, Clean)) || C <- "=+/" ],
+    ?assertEqual(Dirty, dirty(Clean)).
 
-%% nest_test() ->
-%%     ?assertEqual(["ab","cd","ef"],nest("abcdefg")),
-%%     ?assertEqual(["ab","cd","ef"],nest("abcdef")),
-%%     ?assertEqual(["a","bc","de"], nest("abcde")),
-%%     ?assertEqual(["0","ab","cd"], nest("abcd")),
-%%     ?assertEqual(["0","a","bc"],  nest("abc")),
-%%     ?assertEqual(["0","0","ab"],  nest("ab")),
-%%     ?assertEqual(["0","0","a"],   nest("a")),
-%%     ?assertEqual(["0","0","0"],   nest([])).
+nest_test() ->
+    ?assertEqual(["ab","cd","ef"],nest("abcdefg")),
+    ?assertEqual(["ab","cd","ef"],nest("abcdef")),
+    ?assertEqual(["a","bc","de"], nest("abcde")),
+    ?assertEqual(["0","ab","cd"], nest("abcd")),
+    ?assertEqual(["0","a","bc"],  nest("abc")),
+    ?assertEqual(["0","0","ab"],  nest("ab")),
+    ?assertEqual(["0","0","a"],   nest("a")),
+    ?assertEqual(["0","0","0"],   nest([])).
 
-%% -ifdef(EQC).
-%% %% Broken test:
-%% %% eqc_test() ->
-%% %%     Cleanup = fun(_State,_Olds) -> os:cmd("rm -rf test/fs-backend") end,
-%% %%     Config = [{riak_kv_fs_backend_root, "test/fs-backend"}],
-%% %%     ?assertCmd("rm -rf test/fs-backend"),
-%% %%     ?assertEqual(true, backend_eqc:test(?MODULE, false, Config, Cleanup)).
+-ifdef(EQC).
+%% Broken test:
+%% eqc_test() ->
+%%     Cleanup = fun(_State,_Olds) -> os:cmd("rm -rf test/fs-backend") end,
+%%     Config = [{riak_kv_fs_backend_root, "test/fs-backend"}],
+%%     ?assertCmd("rm -rf test/fs-backend"),
+%%     ?assertEqual(true, backend_eqc:test(?MODULE, false, Config, Cleanup)).
 
-%% eqc_test_() ->
-%%     {spawn,
-%%      [{inorder,
-%%        [{setup,
-%%          fun setup/0,
-%%          fun cleanup/1,
-%%          [
-%%           {timeout, 60000,
-%%            [?_assertEqual(true,
-%%                           backend_eqc:test(?MODULE,
-%%                                            false,
-%%                                            [{fs2_backend_data_root,
-%%                                              "test/fs-backend"}]))]}
-%%          ]}]}]}.
+eqc_test_() ->
+    {spawn,
+     [{inorder,
+       [{setup,
+         fun setup/0,
+         fun cleanup/1,
+         [
+          {timeout, 60000,
+           [?_assertEqual(true,
+                          backend_eqc:test(?MODULE,
+                                           false,
+                                           [{fs2_backend_data_root,
+                                             "test/fs-backend"}]))]}
+         ]}]}]}.
 
-%% setup() ->
-%%     application:load(sasl),
-%%     application:set_env(sasl, sasl_error_logger,
-%%                         {file, "riak_kv_fs2_backend_eqc_sasl.log"}),
-%%     error_logger:tty(false),
-%%     error_logger:logfile({open, "riak_kv_fs2_backend_eqc.log"}),
-%%     ok.
+setup() ->
+    application:load(sasl),
+    application:set_env(sasl, sasl_error_logger,
+                        {file, "riak_kv_fs2_backend_eqc_sasl.log"}),
+    error_logger:tty(false),
+    error_logger:logfile({open, "riak_kv_fs2_backend_eqc.log"}),
+    ok.
 
-%% cleanup(_) ->
-%%     os:cmd("rm -rf test/fs-backend/*").
+cleanup(_) ->
+    os:cmd("rm -rf test/fs-backend/*").
 
-%% -endif. % EQC
+-endif. % EQC
+-endif. % TEST_IN_RIAK_KV
 -endif. % TEST

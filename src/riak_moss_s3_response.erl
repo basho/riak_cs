@@ -14,6 +14,10 @@
 
 -include("riak_moss.hrl").
 
+-spec error_message(atom() | {'riak_connect_failed', term()}) -> string().
+-spec error_code(atom() | {'riak_connect_failed', term()}) -> string().
+-spec status_code(atom() | {'riak_connect_failed', term()}) -> pos_integer().
+
 error_message(invalid_access_key_id) ->
     "The AWS Access Key Id you provided does not exist in our records.";
 error_message(invalid_email_address) ->
@@ -71,7 +75,7 @@ status_code(_) -> 503.
 respond(StatusCode, Body, ReqData, Ctx) ->
     {{halt, StatusCode}, wrq:set_resp_body(Body, ReqData), Ctx}.
 
-api_error(Error, ReqData, Ctx) when is_atom(Error) ->
+api_error(Error, ReqData, Ctx) when is_atom(Error); is_tuple(Error) ->
     error_response(status_code(Error), error_code(Error), error_message(Error),
                    ReqData, Ctx).
 
@@ -87,8 +91,6 @@ list_all_my_buckets_response(User, RD, Ctx) ->
     BucketsDoc =
         [begin
              case is_binary(B?MOSS_BUCKET.name) of
-                 true ->
-                     Name = binary_to_list(B?MOSS_BUCKET.name);
                  false ->
                      Name = B?MOSS_BUCKET.name
              end,
@@ -123,13 +125,13 @@ list_bucket_response(User, Bucket, KeyObjPairs, RD, Ctx) ->
                                           {'ETag', [ETag]},
                                           {'Owner', [user_to_xml_owner(User)]}]};
                         {error, Reason} ->
-                            lager:debug("Unable to fetch manifest for ~p. Reason: ~p",
-                                          [Key, Reason]),
+                            _ = lager:debug("Unable to fetch manifest for ~p. Reason: ~p",
+                                            [Key, Reason]),
                             undefined
                     end
                 end
                 || {Key, ObjResp} <- KeyObjPairs],
-    BucketProps = [{'Name', [binary_to_list(Bucket?MOSS_BUCKET.name)]},
+    BucketProps = [{'Name', [Bucket?MOSS_BUCKET.name]},
                    {'Prefix', []},
                    {'Marker', []},
                    {'MaxKeys', ["1000"]},

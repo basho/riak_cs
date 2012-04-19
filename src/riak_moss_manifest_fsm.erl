@@ -90,6 +90,7 @@ mark_active_as_pending_delete(Pid) ->
 update_manifest(Pid, Manifest) ->
     gen_fsm:send_event(Pid, {update_manifest, Manifest}).
 
+-spec update_manifest_with_confirmation(term(), lfs_manifest()) -> ok | {error, term()}.
 update_manifest_with_confirmation(Pid, Manifest) ->
     gen_fsm:sync_send_event(Pid, {update_manifest_with_confirmation, Manifest},
                            infinity).
@@ -135,7 +136,7 @@ init([test, Bucket, Key]) ->
 waiting_command({add_new_manifest, Manifest}, State=#state{riakc_pid=RiakcPid,
                                                            bucket=Bucket,
                                                            key=Key}) ->
-    get_and_update(RiakcPid, Manifest, Bucket, Key),
+    ok = get_and_update(RiakcPid, Manifest, Bucket, Key),
     {next_state, waiting_update_command, State}.
 
 waiting_update_command({update_manifest, Manifest}, State=#state{riakc_pid=RiakcPid,
@@ -143,7 +144,7 @@ waiting_update_command({update_manifest, Manifest}, State=#state{riakc_pid=Riakc
                                                                  key=Key,
                                                                  riak_object=undefined,
                                                                  manifests=undefined}) ->
-    get_and_update(RiakcPid, Manifest, Bucket, Key),
+    ok = get_and_update(RiakcPid, Manifest, Bucket, Key),
     {next_state, waiting_update_command, State};
 waiting_update_command({update_manifest, Manifest}, State=#state{riakc_pid=RiakcPid,
                                                                  riak_object=PreviousRiakObject,
@@ -156,7 +157,7 @@ waiting_update_command({update_manifest, Manifest}, State=#state{riakc_pid=Riakc
     %% currently we don't do
     %% anything to make sure
     %% this call succeeded
-    riakc_pb_socket:put(RiakcPid, RiakObject),
+    ok = riakc_pb_socket:put(RiakcPid, RiakObject),
     {next_state, waiting_update_command, State#state{riak_object=undefined, manifests=undefined}}.
 
 
@@ -291,7 +292,7 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 %%%===================================================================
 
 %% @doc Get the active manifest for an object.
--spec active_manifest(#state{}) -> {lfs_manifest(), #state{}}.
+-spec active_manifest(#state{}) -> {{ok, lfs_manifest()}, #state{}} | {{error, notfound}, #state{}}.
 active_manifest(State=#state{riakc_pid=RiakcPid,
                             bucket=Bucket,
                             key=Key}) ->
@@ -371,7 +372,7 @@ set_active_manifest_pending_delete(#state{riakc_pid=RiakcPid,
                                 Value
                         end end, Resolved),
             NewRiakObject = riakc_obj:update_value(RiakObject, term_to_binary(Marked)),
-            riakc_pb_socket:put(RiakcPid, NewRiakObject),
+            ok = riakc_pb_socket:put(RiakcPid, NewRiakObject),
             ok;
         {error, notfound}=NotFound ->
             NotFound

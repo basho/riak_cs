@@ -19,6 +19,46 @@ leexinc.hrl:248: The pattern <Rest, Line, {'end_token', _T, Push}, Error> can ne
 leexinc.hrl:253: The pattern <Rest, Line, {'skip_token', Push}, Error> can never match the type <_,_,'error',_>
 leexinc.hrl:256: The pattern <Rest, Line, {'error', _S}, Error> can never match the type <_,_,'error',_>
 leexinc.hrl:260: Function yyrev/2 will never be called
+bread.erl:51: Expression produces a value of type 'ok' | {'error',atom()}, but this value is unmatched
+bread.erl:117: Expression produces a value of type ['ok'], but this value is unmatched
+dtop.erl:29: Expression produces a value of type {atom(),'not_running' | {_,_}}, but this value is unmatched
+dtopConsumer.erl:33: Expression produces a value of type ['ok'], but this value is unmatched
+eper.erl:59: Expression produces a value of type {'ok','undefined' | pid()}, but this value is unmatched
+folsom_ets.erl:238: Expression produces a value of type [integer()] | integer(), but this value is unmatched
+folsom_ets.erl:241: Expression produces a value of type 'ok' | {'error',_,'metric_already_exists' | 'unsupported_metric_type'}, but this value is unmatched
+folsom_ets.erl:242: Expression produces a value of type [integer()] | integer(), but this value is unmatched
+folsom_ets.erl:248: Expression produces a value of type 'ok' | {'error',_,'metric_already_exists' | 'unsupported_metric_type'}, but this value is unmatched
+folsom_ets.erl:255: Expression produces a value of type 'ok' | {'error',_,'metric_already_exists' | 'unsupported_metric_type'}, but this value is unmatched
+folsom_ets.erl:262: Expression produces a value of type 'ok' | {'error',_,'metric_already_exists' | 'unsupported_metric_type'}, but this value is unmatched
+folsom_ets.erl:270: Expression produces a value of type 'ok' | {'error',_,'metric_already_exists' | 'unsupported_metric_type'}, but this value is unmatched
+folsom_ets.erl:278: Expression produces a value of type 'ok' | {'error',_,'metric_already_exists' | 'unsupported_metric_type'}, but this value is unmatched
+folsom_metrics_history.erl:60: Call to missing or unexported function folsom_utils:to_atom/2
+folsom_sup.erl:107: Expression produces a value of type [atom() | tid()], but this value is unmatched
+folsom_vm_metrics.erl:66: The pattern {'exact_reductions', {TotalExactReductions, ExactReductionsSinceLastCall}} can never match the type {'context_switches' | 'garbage_collection' | 'io' | 'reductions' | 'run_queue' | 'runtime' | 'wall_clock',non_neg_integer() | {non_neg_integer() | {_,_},non_neg_integer() | {_,_}} | {non_neg_integer(),non_neg_integer(),non_neg_integer()}}
+gperfGtk.erl:121: Expression produces a value of type ['true' | {atom(),'not_running' | {_,_}}], but this value is unmatched
+gperfGtk.erl:134: Expression produces a value of type ['true' | {atom(),'not_running' | {_,_}}], but this value is unmatched
+gperfGtk.erl:150: Expression produces a value of type 'ok' | ['true' | {_,_}], but this value is unmatched
+gperfGtk.erl:198: Expression produces a value of type pid() | port(), but this value is unmatched
+logReader.erl:15: Expression produces a value of type 'ok' | {'error',atom()}, but this value is unmatched
+mochiglobal.erl:33: Expression produces a value of type {'error','badfile' | 'native_code' | 'nofile' | 'not_purged' | 'sticky_directory'} | {'module',atom()}, but this value is unmatched
+mochiweb.erl:23: Expression produces a value of type 'ok' | {'error',_}, but this value is unmatched
+mochiweb_http.erl:99: Expression produces a value of type 'ok' | {'error',_}, but this value is unmatched
+mochiweb_http.erl:103: Expression produces a value of type 'ok' | {'error',_}, but this value is unmatched
+mochiweb_http.erl:106: Expression produces a value of type 'ok' | {'error',_}, but this value is unmatched
+mochiweb_http.erl:129: Expression produces a value of type 'ok' | {'error',_}, but this value is unmatched
+mochiweb_http.erl:132: Expression produces a value of type 'ok' | {'error',_}, but this value is unmatched
+mochiweb_http.erl:169: Expression produces a value of type 'ok' | {'error',_}, but this value is unmatched
+mochiweb_request.erl:224: Expression produces a value of type 'ok' | {'mochiweb_response',_,_,_}, but this value is unmatched
+mochiweb_request.erl:402: Expression produces a value of type [any()], but this value is unmatched
+mochiweb_request.erl:501: Expression produces a value of type 'ok' | {'error',_}, but this value is unmatched
+mochiweb_request.erl:504: Expression produces a value of type 'ok' | {'error',_}, but this value is unmatched
+mochiweb_request.erl:518: Expression produces a value of type 'ok' | {'error',_}, but this value is unmatched
+mochiweb_request.erl:530: Expression produces a value of type 'ok' | {'error',_}, but this value is unmatched
+mochiweb_request.erl:615: Expression produces a value of type 'ok' | {'error',atom()}, but this value is unmatched
+mochiweb_socket_server.erl:120: Expression produces a value of type 'ok' | 'void' | {'error',_}, but this value is unmatched
+mochiweb_socket_server.erl:122: Expression produces a value of type 'ok' | {'error',_}, but this value is unmatched
+mochiweb_socket_server.erl:123: Expression produces a value of type 'ok' | {'error',_}, but this value is unmatched
+ntopConsumer.erl:31: Expression produces a value of type ['ok'], but this value is unmatched
 pokemon_pb.erl:47: The pattern <_, 'optional', 'undefined', _, _> can never match the type <1,'required',_,'string',[]>
 pokemon_pb.erl:49: The pattern <_, 'repeated', 'undefined', _, _> can never match the type <1,'required',_,'string',[]>
 pokemon_pb.erl:51: The pattern <_, 'repeated_packed', 'undefined', _, _> can never match the type <1,'required',_,'string',[]>
@@ -32,10 +72,83 @@ pokemon_pb.erl:102: The pattern 'true' can never match the type 'false'
 pokemon_pb.erl:108: The pattern 'true' can never match the type 'false'
 pokemon_pb.erl:118: The pattern 'true' can never match the type 'false'
 pokemon_pb.erl:132: The pattern <Binary, 'string'> can never match the type <'-infinity' | 'false' | 'infinity' | 'nan' | 'true' | binary() | [byte()] | number(),'double' | 'int32'>
+prfDog.erl:21: Expression produces a value of type 'ignore' | 'ok' | {'error',_} | {'ok',pid()}, but this value is unmatched
+prfDog.erl:56: Expression produces a value of type 'ok' | {'error',atom()}, but this value is unmatched
+prfDog.erl:91: Expression produces a value of type 'ok' | {'error',atom()}, but this value is unmatched
+prfHost.erl:114: Expression produces a value of type [{'config',_}], but this value is unmatched
+prfHost.erl:157: Expression produces a value of type {'unsubscribe',{_}}, but this value is unmatched
+prfHost.erl:180: Expression produces a value of type 'change_initiated' | 'ok' | 'unchanged' | {'ongoing_change_to',integer()}, but this value is unmatched
+prfSys.erl:203: Expression produces a value of type 'ok' | {'error',atom()}, but this value is unmatched
+prfTarg.erl:21: The pattern 'underfined' can never match the type 'undefined' | pid() | port()
+prfTarg.erl:46: Expression produces a value of type {'module',atom()}, but this value is unmatched
+prfTarg.erl:55: Expression produces a value of type {'module',atom()}, but this value is unmatched
+prfTrc.erl:34: Expression produces a value of type {'start',_}, but this value is unmatched
+prfTrc.erl:35: Expression produces a value of type {'stop',_}, but this value is unmatched
+prfTrc.erl:83: Expression produces a value of type {'prfTrc',{'stopping',pid(),_}}, but this value is unmatched
+prfTrc.erl:84: Expression produces a value of type {'prfTrc',{'stopping',pid(),_}}, but this value is unmatched
+prfTrc.erl:120: Expression produces a value of type 'ok' | [{'error','badfile' | 'native_code' | 'nofile' | 'not_purged' | 'sticky_directory'} | {'module',atom()}], but this value is unmatched
+prfTrc.erl:143: Expression produces a value of type ['true' | integer()], but this value is unmatched
+prfTrc.erl:244: Expression produces a value of type 'ok' | {'error','no_trace_driver' | 'not_supported_by_trace_driver'} | {'ok',char()}, but this value is unmatched
+prfTrc.erl:247: Expression produces a value of type 'ok' | {'error','no_trace_driver' | 'not_supported_by_trace_driver'} | {'ok',char()}, but this value is unmatched
+prfTrc.erl:294: Expression produces a value of type 'ok' | [{'call',{_,_},atom() | pid() | nonempty_string() | {atom(),atom()} | {atom() | tuple(),atom(),byte()},{byte(),byte(),byte(),non_neg_integer()}} | {'recv',_,atom() | pid() | nonempty_string() | {atom(),atom()} | {atom() | tuple(),atom(),byte()},{byte(),byte(),byte(),non_neg_integer()}} | {'retn',{_,_},atom() | pid() | nonempty_string() | {atom(),atom()} | {atom() | tuple(),atom(),byte()},{byte(),byte(),byte(),non_neg_integer()}} | {'send',{_,atom() | pid() | [any(),...] | {_,_} | {_,_,_}},atom() | pid() | nonempty_string() | {atom(),atom()} | {atom() | tuple(),atom(),byte()},{byte(),byte(),byte(),non_neg_integer()}}], but this value is unmatched
+prfTrc.erl:295: Expression produces a value of type 'ok' | [{'call',{_,_},atom() | pid() | nonempty_string() | {atom(),atom()} | {atom() | tuple(),atom(),byte()},{byte(),byte(),byte(),non_neg_integer()}} | {'recv',_,atom() | pid() | nonempty_string() | {atom(),atom()} | {atom() | tuple(),atom(),byte()},{byte(),byte(),byte(),non_neg_integer()}} | {'retn',{_,_},atom() | pid() | nonempty_string() | {atom(),atom()} | {atom() | tuple(),atom(),byte()},{byte(),byte(),byte(),non_neg_integer()}} | {'send',{_,atom() | pid() | [any(),...] | {_,_} | {_,_,_}},atom() | pid() | nonempty_string() | {atom(),atom()} | {atom() | tuple(),atom(),byte()},{byte(),byte(),byte(),non_neg_integer()}}], but this value is unmatched
+prfTrc.erl:306: Expression produces a value of type [{'call',{_,_},atom() | pid() | nonempty_string() | {atom(),atom()} | {atom() | tuple(),atom(),byte()},{byte(),byte(),byte(),non_neg_integer()}} | {'recv',_,atom() | pid() | nonempty_string() | {atom(),atom()} | {atom() | tuple(),atom(),byte()},{byte(),byte(),byte(),non_neg_integer()}} | {'retn',{_,_},atom() | pid() | nonempty_string() | {atom(),atom()} | {atom() | tuple(),atom(),byte()},{byte(),byte(),byte(),non_neg_integer()}} | {'send',{_,atom() | pid() | [any(),...] | {_,_} | {_,_,_}},atom() | pid() | nonempty_string() | {atom(),atom()} | {atom() | tuple(),atom(),byte()},{byte(),byte(),byte(),non_neg_integer()}},...], but this value is unmatched
+prfTrc.erl:310: Expression produces a value of type 'ok' | [{'call',{_,_},atom() | pid() | nonempty_string() | {atom(),atom()} | {atom() | tuple(),atom(),byte()},{byte(),byte(),byte(),non_neg_integer()}} | {'recv',_,atom() | pid() | nonempty_string() | {atom(),atom()} | {atom() | tuple(),atom(),byte()},{byte(),byte(),byte(),non_neg_integer()}} | {'retn',{_,_},atom() | pid() | nonempty_string() | {atom(),atom()} | {atom() | tuple(),atom(),byte()},{byte(),byte(),byte(),non_neg_integer()}} | {'send',{_,atom() | pid() | [any(),...] | {_,_} | {_,_,_}},atom() | pid() | nonempty_string() | {atom(),atom()} | {atom() | tuple(),atom(),byte()},{byte(),byte(),byte(),non_neg_integer()}}], but this value is unmatched
+prf_crypto.erl:16: Expression produces a value of type 'ok' | {'error',_}, but this value is unmatched
+prf_crypto.erl:23: Expression produces a value of type 'ok' | {'error',_}, but this value is unmatched
+protobuffs_compile.erl:90: Expression produces a value of type 'ok' | {'error',atom()}, but this value is unmatched
+protobuffs_compile.erl:155: Expression produces a value of type 'ok' | {'error',atom()}, but this value is unmatched
 protobuffs_compile.erl:286: The pattern 'true' can never match the type 'false'
-riakclient_pb.erl:51: The pattern <_, 'repeated_packed', 'undefined', _, _> can never match the type <1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11,'optional' | 'repeated' | 'required',_,'bool' | 'bytes' | 'rpbbucketprops' | 'rpbcontent' | 'rpblink' | 'rpbpair' | 'uint32',[binary() | [binary() | [any()]]]>
-riakclient_pb.erl:52: The pattern <_, 'repeated_packed', [], _, _> can never match the type <1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11,'optional' | 'repeated' | 'required',_,'bool' | 'bytes' | 'rpbbucketprops' | 'rpbcontent' | 'rpblink' | 'rpbpair' | 'uint32',[binary() | [binary() | [any()]]]>
-riakclient_pb.erl:63: The pattern <FNum, 'repeated_packed', Data, Type, _> can never match the type <1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11,'optional' | 'repeated' | 'required',_,'bool' | 'bytes' | 'rpbbucketprops' | 'rpbcontent' | 'rpblink' | 'rpbpair' | 'uint32',[binary() | [binary() | [any()]]]>
-riakclient_pb.erl:78: The call riakclient_pb:enum_to_int(Type::'bool' | 'bytes' | 'rpbbucketprops' | 'rpbcontent' | 'rpblink' | 'rpbpair' | 'uint32',Data::atom()) will never return since it differs in the 1st argument from the success typing arguments: ('pikachu','value')
-riakclient_pb.erl:80: The pattern <'pikachu', 'value'> can never match the type <'bool' | 'bytes' | 'rpbbucketprops' | 'rpbcontent' | 'rpblink' | 'rpbpair' | 'uint32',atom()>
-riakclient_pb.erl:132: The pattern <Binary, 'string'> can never match the type <'-infinity' | 'false' | 'infinity' | 'nan' | 'true' | binary() | [byte()] | number(),'bool' | 'bytes' | 'rpbbucketprops' | 'rpbcontent' | 'rpblink' | 'rpbpair' | 'uint32'>
+protobuffs_compile.erl:475: Expression produces a value of type ['ok'], but this value is unmatched
+redbug.erl:208: Expression produces a value of type 'ok' | {atom(),'not_running' | {_,_}}, but this value is unmatched
+redbug.erl:229: Expression produces a value of type {'trace_consumer',_}, but this value is unmatched
+redbug.erl:231: Expression produces a value of type {atom(),'not_running' | {_,_}}, but this value is unmatched
+redbug.erl:256: Expression produces a value of type pid() | port(), but this value is unmatched
+redbug.erl:257: Expression produces a value of type {atom(),'not_running' | {_,_}}, but this value is unmatched
+reloader.erl:62: Expression produces a value of type ['error' | 'gone' | 'reload' | 'reload_but_test_failed' | 'unmodified'], but this value is unmatched
+sherk.erl:167: Expression produces a value of type [46 | 114 | 116 | 122,...], but this value is unmatched
+sherk.erl:197: Expression produces a value of type 'change_initiated' | 'unchanged' | {'ongoing_change_to',integer()}, but this value is unmatched
+sherk.erl:258: Expression produces a value of type {'ok',{'file_info','undefined' | non_neg_integer(),'directory','read_write','undefined' | {{_,_,_},{_,_,_}},'undefined' | {{_,_,_},{_,_,_}},'undefined' | {{_,_,_},{_,_,_}},'undefined' | integer(),'undefined' | non_neg_integer(),'undefined' | integer(),'undefined' | integer(),'undefined' | integer(),'undefined' | integer(),'undefined' | integer()}}, but this value is unmatched
+sherk.erl:401: Expression produces a value of type [any()], but this value is unmatched
+sherk.erl:405: Expression produces a value of type [any()], but this value is unmatched
+sherk.erl:426: Function init_tree_view_cols/1 will never be called
+sherk.erl:427: Function will never be called
+sherk.erl:429: Function init_tree_view_col/2 will never be called
+sherk.erl:445: Function init_list_store/1 will never be called
+sherk.erl:468: Function init_combobox/1 will never be called
+sherk.erl:479: Function init_tree_store/1 will never be called
+sherk.erl:522: Function set_selection_mode/2 will never be called
+sherk_aquire.erl:112: Expression produces a value of type [{'init',dict()}], but this value is unmatched
+sherk_aquire.erl:134: Expression produces a value of type ['stop'], but this value is unmatched
+sherk_aquire.erl:155: Expression produces a value of type 'ok' | {'error',atom()}, but this value is unmatched
+sherk_aquire.erl:160: Expression produces a value of type 'ok' | {'error',atom()}, but this value is unmatched
+sherk_aquire.erl:169: Expression produces a value of type 'ok' | {'error',atom()}, but this value is unmatched
+sherk_aquire.erl:183: Expression produces a value of type {'module',atom()}, but this value is unmatched
+sherk_aquire.erl:192: Expression produces a value of type {'module',atom()}, but this value is unmatched
+sherk_ets.erl:31: Expression produces a value of type atom() | tid(), but this value is unmatched
+sherk_ets.erl:73: Expression produces a value of type 'ok' | {'error',atom()}, but this value is unmatched
+sherk_ets.erl:79: Expression produces a value of type atom() | pid() | {'file_descriptor',atom() | tuple(),_}, but this value is unmatched
+sherk_ets.erl:81: Expression produces a value of type 'ok' | {'error',atom()}, but this value is unmatched
+sherk_ets.erl:95: Expression produces a value of type 'ok' | {'error',atom()}, but this value is unmatched
+sherk_ets.erl:104: Expression produces a value of type 'ok' | {'error',atom()}, but this value is unmatched
+sherk_scan.erl:54: Expression produces a value of type 'ok' | {'error',atom()}, but this value is unmatched
+sherk_scan.erl:94: Expression produces a value of type 'true' | {'arity',3}, but this value is unmatched
+sherk_scan.erl:95: Expression produces a value of type 'true' | {'arity',3}, but this value is unmatched
+sherk_tab.erl:19: Expression produces a value of type 'ok' | [{_,non_neg_integer()}] | non_neg_integer(), but this value is unmatched
+sherk_tab.erl:30: Expression produces a value of type 'ok' | {'error',atom()}, but this value is unmatched
+sherk_tab.erl:37: Expression produces a value of type 'ok' | {'error',atom()} | {'hits',_}, but this value is unmatched
+sherk_target.erl:88: Expression produces a value of type 'ok' | {'error',atom()}, but this value is unmatched
+sherk_target.erl:125: Expression produces a value of type 'ok' | {'error',atom()}, but this value is unmatched
+sherk_target.erl:133: Expression produces a value of type {pid(),'chunk',_}, but this value is unmatched
+sherk_target.erl:137: Expression produces a value of type {pid(),'chunk',_}, but this value is unmatched
+watchdog.erl:128: Expression produces a value of type 'undefined' | {pid(),['busy_dist_port' | 'busy_port' | {'large_heap',integer()} | {'long_gc',integer()}]}, but this value is unmatched
+watchdog.erl:147: Expression produces a value of type [any()], but this value is unmatched
+watchdog.erl:168: Expression produces a value of type 'undefined' | {pid(),['busy_dist_port' | 'busy_port' | {'large_heap',integer()} | {'long_gc',integer()}]}, but this value is unmatched
+watchdog.erl:209: Expression produces a value of type 'ok' | 'undefined' | {pid(),['busy_dist_port' | 'busy_port' | {'large_heap',integer()} | {'long_gc',integer()}]}, but this value is unmatched
+watchdog.erl:210: Expression produces a value of type 'undefined' | {pid(),['busy_dist_port' | 'busy_port' | {'large_heap',integer()} | {'long_gc',integer()}]}, but this value is unmatched
+watchdog.erl:221: Expression produces a value of type 'undefined' | {pid(),['busy_dist_port' | 'busy_port' | {'large_heap',integer()} | {'long_gc',integer()}]}, but this value is unmatched
+watchdog.erl:234: Expression produces a value of type [any()], but this value is unmatched
+watchdog.erl:238: Expression produces a value of type [any()], but this value is unmatched
+watchdog.erl:243: Expression produces a value of type [[any()]], but this value is unmatched
+watchdog.erl:272: The call lists:keyreplace(Key::{'log' | 'pid' | 'tcp' | 'udp' | integer(),_},1,Subs::maybe_improper_list(),Sub::fun((_) -> any())) will never return since it differs in the 4th argument from the success typing arguments: (any(),pos_integer(),maybe_improper_list(),tuple())
+watchdog.erl:352: Expression produces a value of type 'ok' | {'error',atom()}, but this value is unmatched
