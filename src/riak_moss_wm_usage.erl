@@ -284,9 +284,8 @@ mochijson_reason(Reason) ->
 mochijson_storage(Msg) when is_atom(Msg) ->
     Msg;
 mochijson_storage({Storage, Errors}) ->
-    [ mochijson_storage_sample(S) || S <- Storage ]
-        ++ [{struct, [{?KEY_ERRORS, [mochijson_sample_error(E)
-                                     || E <- Errors]}]}].
+    [{?KEY_SAMPLES, [ mochijson_storage_sample(S) || S <- Storage ]},
+     {?KEY_ERRORS, [ mochijson_sample_error(E)|| E <- Errors ]}].
 
 mochijson_storage_sample(Sample) ->
     {struct, Sample}.
@@ -346,9 +345,10 @@ xml_reason(Reason) ->
 xml_storage(Msg) when is_atom(Msg) ->
     [atom_to_list(Msg)];
 xml_storage({Storage, Errors}) ->
-    [xml_sample(S, ?KEY_BUCKET, ?KEY_NAME) || S <- Storage]
-        ++ [{?KEY_ERRORS, [xml_sample_error(E, ?KEY_BUCKET, ?KEY_NAME)
-                           || E <- Errors ]}].
+    [{?KEY_SAMPLES, [xml_sample(S, ?KEY_BUCKET, ?KEY_NAME)
+                     || S <- Storage]},
+     {?KEY_ERRORS, [xml_sample_error(E, ?KEY_BUCKET, ?KEY_NAME)
+                    || E <- Errors ]}].
     
 %% Internals %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 user_key(RD) ->
