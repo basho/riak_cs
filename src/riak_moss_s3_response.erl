@@ -75,7 +75,7 @@ status_code(_) -> 503.
 respond(StatusCode, Body, ReqData, Ctx) ->
     {{halt, StatusCode}, wrq:set_resp_body(Body, ReqData), Ctx}.
 
-api_error(Error, ReqData, Ctx) when is_atom(Error) ->
+api_error(Error, ReqData, Ctx) when is_atom(Error); is_tuple(Error) ->
     error_response(status_code(Error), error_code(Error), error_message(Error),
                    ReqData, Ctx).
 
