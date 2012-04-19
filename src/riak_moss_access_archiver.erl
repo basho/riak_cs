@@ -41,7 +41,7 @@
           riak,      %% the riak connection we're using
           mon,       %% the monitor watching our riak connection
           table,     %% the logger table being archived
-          slice,     %% the logger slice bieng archived
+          slice,     %% the logger slice being archived
           next,      %% the next entry in the table to archive
           max_backlog, %% max number of entries to allow in backlog
           backlog=[] %% tables that need to be archived when we're done
@@ -82,10 +82,10 @@ archive(Table, Slice) ->
     end.
 
 %% @doc Find out what the archiver is up to.  Should return `{ok,
-%% State, Props}` where `State` is `idle` or `archiving` if the
-%% archiver had time to respond, or `busy` if the request timed out.
-%% `Props` will include additional details about what the archiver is
-%% up to.  May also return `{error, Reason}` if something else went
+%% State, Props}' where `State' is `idle' or `archiving' if the
+%% archiver had time to respond, or `busy' if the request timed out.
+%% `Props' will include additional details about what the archiver is
+%% up to.  May also return `{error, Reason}' if something else went
 %% wrong.
 status(Timeout) ->
     case catch gen_fsm:sync_send_all_state_event(?SERVER, status, Timeout) of
