@@ -83,17 +83,18 @@ prepare(timeout, State=#state{bucket=Bucket,
                               riakc_pid=RiakcPid}) ->
 
     {ok, ManiPid} = riak_moss_manifest_fsm:start_link(Bucket, Key, RiakcPid),
+    NewState = State#state{mani_pid=ManiPid},
 
     %% TODO:
     %% handle the case where the manifest
     %% is not found
     case riak_moss_manifest_fsm:get_specific_manifest(ManiPid, UUID) of
         {ok, Manifest} ->
-            handle_receiving_manifest(Manifest, State);
+            handle_receiving_manifest(Manifest, NewState);
         {error, notfound} ->
             lager:debug("Couldn't delete bucket: ~p key: ~p uuid: ~p",
                 [Bucket, Key, UUID]),
-            {stop, normal, State}
+            {stop, normal, NewState}
     end.
 
 deleting({block_deleted, {ok, BlockID}, DeleterPid},
@@ -116,7 +117,7 @@ deleting({block_deleted, {ok, BlockID}, DeleterPid},
             {stop, normal, State3};
         true ->
             %% maybe start more deletes
-            State3 = maybe_delete_block(State2),
+            State3 = maybe_delete_blocks(State2),
             {next_state, deleting, State3}
     end;
 deleting({block_deleted, {error, Error}, _DeleterPid}, State) ->
@@ -134,13 +135,7 @@ handle_sync_event(_Event, _From, StateName, State) ->
 
 handle_info(save_manifest, StateName, State=#state{mani_pid=ManiPid,
                                                    manifest=Manifest}) ->
-    %% 1. save the manifest
-
-    %% TODO:
-    %% are there any times where
-    %% we should be cancelling the
-    %% timer here, depending on the
-    %% state we're in?
+    lager:debug("got a save manifest call"),
     riak_moss_manifest_fsm:update_manifest(ManiPid, Manifest),
     {next_state, StateName, State};
 handle_info(_Info, StateName, State) ->
@@ -163,10 +158,13 @@ handle_receiving_manifest(Manifest, State=#state{riakc_pid=RiakcPid,
     %% Based on the manifest,
     %% fill in the delete_blocks_remaining
     {NewManifest, BlocksToDelete} = blocks_to_delete_from_manifest(Manifest),
+    lager:debug("the blocks to delete are ~p", [BlocksToDelete]),
 
     AllDeleteWorkers =
     riak_moss_block_server:start_block_servers(RiakcPid,
         riak_moss_lfs_utils:delete_concurrency()),
+
+    FreeDeleters = ordsets:from_list(AllDeleteWorkers),
 
     %% start the save_manifest
     %% timer
@@ -175,15 +173,28 @@ handle_receiving_manifest(Manifest, State=#state{riakc_pid=RiakcPid,
     %% shouldn't be hardcoded,
     %% and if it is, what should
     %% it be?
-    {ok, TRef} = timer:send_interval(60000, self(), save_manifest),
 
-    {next_state, deleting, State#state{mani_pid=ManiPid,
-                                       manifest=NewManifest,
-                                       all_delete_works=AllDeleteWorkers,
-                                       delete_blocks_remaining=BlocksToDelete,
-                                       timer_ref=TRef}}.
+    %% TODO:
+    %% this is at 1 second just
+    %% for testing, should
+    %% be 1-minute
+    {ok, TRef} = timer:send_interval(1000, self(), save_manifest),
 
-maybe_delete_block(State=#state{bucket=Bucket,
+    NewState = State#state{mani_pid=ManiPid,
+                           manifest=NewManifest,
+                           all_delete_works=AllDeleteWorkers,
+                           free_deleters=FreeDeleters,
+                           unacked_deletes=[],
+                           delete_blocks_remaining=BlocksToDelete,
+                           timer_ref=TRef},
+
+    StateAfterDeleteStart = maybe_delete_blocks(NewState),
+
+    {next_state, deleting, StateAfterDeleteStart}.
+
+maybe_delete_blocks(State=#state{free_deleters=[]}) ->
+    State;
+maybe_delete_blocks(State=#state{bucket=Bucket,
                                 key=Key,
                                 uuid=UUID,
                                 free_deleters=[DeleterPid | _RestDeleters],
