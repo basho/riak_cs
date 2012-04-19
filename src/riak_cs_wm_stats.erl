@@ -25,6 +25,7 @@
 %% webmachine resource exports
 -export([
          init/1,
+         ping/2,
          encodings_provided/2,
          content_types_provided/2,
          service_available/2,
@@ -32,26 +33,28 @@
          pretty_print/2
         ]).
 
--include_lib("webmachine/include/webmachine.hrl").
+-include_lib("webmachine/include/wm_reqdata.hrl").
 
--record(ctx, {}).
+-record(ctx, {
+          props,                                 % Static properties
+          path_tokens :: [string()]
+         }).
 
-init(_X) ->
-    error_logger:info_msg("~s:init got ~p\n", [?MODULE, _X]),
-    {ok, #ctx{}}.
+init(Props) ->
+    {ok, #ctx{props = Props}}.
 
 %% @spec encodings_provided(webmachine:wrq(), context()) ->
 %%         {[encoding()], webmachine:wrq(), context()}
 %% @doc Get the list of encodings this resource provides.
 %%      "identity" is provided for all methods, and "gzip" is
 %%      provided for GET as well
-encodings_provided(ReqData, Context) ->
-    case wrq:method(ReqData) of
+encodings_provided(RD, Context) ->
+    case wrq:method(RD) of
         'GET' ->
             {[{"identity", fun(X) -> X end},
-              {"gzip", fun(X) -> zlib:gzip(X) end}], ReqData, Context};
+              {"gzip", fun(X) -> zlib:gzip(X) end}], RD, Context};
         _ ->
-            {[{"identity", fun(X) -> X end}], ReqData, Context}
+            {[{"identity", fun(X) -> X end}], RD, Context}
     end.
 
 %% @spec content_types_provided(webmachine:wrq(), context()) ->
@@ -60,24 +63,28 @@ encodings_provided(ReqData, Context) ->
 %%      "application/json" and "text/plain" are both provided
 %%      for all requests.  "text/plain" is a "pretty-printed"
 %%      version of the "application/json" content.
-content_types_provided(ReqData, Context) ->
+content_types_provided(RD, Context) ->
     {[{"application/json", produce_body},
       {"text/plain", pretty_print}],
-     ReqData, Context}.
+     RD, Context}.
 
+ping(RD, Ctx) ->
+    {pong, RD, Ctx#ctx{path_tokens = path_tokens(RD)}}.
 
-service_available(ReqData, Ctx) ->
+service_available(RD, #ctx{path_tokens = ["stats"]} = Ctx) ->
     case riak_moss_utils:get_env(riak_moss, riak_cs_stat, false) of
         false ->
-            {false, wrq:append_to_response_body("riak_cs_stat is disabled on this node.\n", ReqData),
+            {false, wrq:append_to_response_body("riak_cs_stat is disabled on this node.\n", RD),
              Ctx};
         true ->
-            {true, ReqData, Ctx}
-    end.
+            {true, RD, Ctx}
+    end;
+service_available(RD, Ctx) ->
+    {false, wrq:append_to_response_body("Unrecognized path.\n", RD), Ctx}.
 
-produce_body(ReqData, Ctx) ->
+produce_body(RD, Ctx) ->
     Body = mochijson2:encode({struct, get_stats()}),
-    {Body, ReqData, Ctx}.
+    {Body, RD, Ctx}.
 
 %% @spec pretty_print(webmachine:wrq(), context()) ->
 %%          {string(), webmachine:wrq(), context()}
@@ -88,3 +95,6 @@ pretty_print(RD1, C1=#ctx{}) ->
 
 get_stats() ->
     riak_cs_stats:get_stats().
+
+path_tokens(RD) ->
+    wrq:path_tokens(RD).
