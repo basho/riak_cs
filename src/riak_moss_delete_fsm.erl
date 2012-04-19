@@ -82,12 +82,12 @@ prepare(timeout, State=#state{bucket=Bucket,
                               uuid=UUID,
                               riakc_pid=RiakcPid}) ->
 
-    ManiPid = riak_moss_manifest_fsm:start_link(Bucket, Key, RiakcPid),
+    {ok, ManiPid} = riak_moss_manifest_fsm:start_link(Bucket, Key, RiakcPid),
 
     %% TODO:
     %% handle the case where the manifest
     %% is not found
-    {ok, Manifest} = riak_moss_manifest_fsm:get_specific_manifest(UUID),
+    {ok, Manifest} = riak_moss_manifest_fsm:get_specific_manifest(ManiPid, UUID),
 
     %% Based on the manifest,
     %% fill in the delete_blocks_remaining
