@@ -8,10 +8,11 @@
 
 -module(riak_moss_riakc_pool_worker).
 
--export([start_link/1,
+-export([riak_host_port/0,
+         start_link/1,
          stop/1]).
 
-start_link(_Args) ->
+riak_host_port() ->
     case application:get_env(riak_moss, riak_ip) of
         {ok, Host} ->
             ok;
@@ -24,6 +25,10 @@ start_link(_Args) ->
         undefined ->
             Port = 8087
     end,
+    {Host, Port}.
+
+start_link(_Args) ->
+    {Host, Port} = riak_host_port(),
     riakc_pb_socket:start_link(Host, Port).
 
 stop(Worker) ->

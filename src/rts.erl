@@ -33,7 +33,8 @@
          slice_containing/2,
          next_slice/2,
          iso8601/1,
-         check_bucket_props/1
+         check_bucket_props/1,
+         check_bucket_props/2
         ]).
 
 -include("rts.hrl").
@@ -203,7 +204,7 @@ check_bucket_props(Bucket) ->
     end.
 
 check_bucket_props(Bucket, Riak) ->
-    case riakc_pb_socket:get_bucket(Riak, Bucket) of
+    case catch riakc_pb_socket:get_bucket(Riak, Bucket) of
         {ok, Props} ->
             case lists:keyfind(allow_mult, 1, Props) of
                 {allow_mult, true} ->
@@ -212,7 +213,7 @@ check_bucket_props(Bucket, Riak) ->
                                 [Bucket]),
                     ok;
                 _ ->
-                    case riakc_pb_socket:set_bucket(
+                    case catch riakc_pb_socket:set_bucket(
                            Riak, Bucket,
                            [{allow_mult, true}]) of
                         ok ->
@@ -220,14 +221,14 @@ check_bucket_props(Bucket, Riak) ->
                                        " bucket settings.",
                                        [Bucket]),
                             ok;
-                        {error, Reason} ->
+                        {_error, Reason} ->
                             lager:warning("Unable to configure ~s"
                                           " bucket settings (~p).",
                                           [Bucket, Reason]),
                             {error, Reason}
                     end
             end;
-        {error, Reason} ->
+        {_error, Reason} ->
             lager:warning(
               "Unable to verify ~s bucket settings (~p).",
               [Bucket, Reason]),
