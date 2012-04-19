@@ -17,16 +17,17 @@ dispatch_table() ->
         undefined ->
             AuthBypass = false
     end,
-    StatsProps = stats_props(),
+    StatsProps = stats_props(AuthBypass),
 
     [
      {[], riak_moss_wm_service, [{auth_bypass, AuthBypass}]},
+     {["RiakCS", '*'], riak_cs_wm_stats, StatsProps},
+     {["stats"], riak_cs_wm_stats, StatsProps},
      {["user"], riak_moss_wm_user, []},
      {["usage", '*'], riak_moss_wm_usage, [{auth_bypass, AuthBypass}]},
      {[bucket], riak_moss_wm_bucket, [{auth_bypass, AuthBypass}]},
-     {[bucket, '*'], riak_moss_wm_key, [{auth_bypass, AuthBypass}]},
-     {[proplists:get_value(prefix, StatsProps)], riak_cs_wm_stats, StatsProps}
+     {[bucket, '*'], riak_moss_wm_key, [{auth_bypass, AuthBypass}]}
     ].
 
-stats_props() ->
-    [{prefix, riak_moss_utils:get_env(riak_moss, stats_urlpath, "stats")}].
+stats_props(AuthBypass) ->
+    [{auth_bypass, AuthBypass}].
