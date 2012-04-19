@@ -63,14 +63,19 @@ block_deleted(Pid, Response) ->
 %% ====================================================================
 
 init([Bucket, Key, UUID, RiakcPid, _Options]) ->
-    %% TODO:
-    %% gproc register
-    %% or fail
-    {ok, prepare, #state{bucket=Bucket,
-                         key=Key,
-                         uuid=UUID,
-                         riakc_pid=RiakcPid},
-                     0}.
+    try gproc:add_local_name(UUID) of
+        true ->
+            {ok, prepare, #state{bucket=Bucket,
+                                 key=Key,
+                                 uuid=UUID,
+                                 riakc_pid=RiakcPid},
+                             0}
+    catch error:badarg ->
+        %% TODO:
+        %% should the exit
+        %% reason here be normal?
+        {stop, normal}
+    end.
 
 prepare(timeout, State=#state{bucket=Bucket,
                               key=Key,
