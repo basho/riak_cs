@@ -32,21 +32,23 @@
 %%
 %% JSON response looks like:
 %% ```
-%% {"Access":[{"Node":"riak_moss@127.0.0.1",
-%%             "Samples":[{"StartTime":"20120113T194510Z",
-%%                         "EndTime":"20120113T194520Z",
-%%                         "KeyRead":{"Count":1,
-%%                                    "BytesOut":22},
-%%                         "KeyWrite":{"Count":2,
-%%                                     "BytesIn":44},
-%%                        {"StartTime":"20120113T194520Z",
-%%                         "EndTime":"20120113T194530Z",
-%%                         "KeyRead":{"Count":3,
-%%                                    "BytesOut":66},
-%%                         "KeyWrite":{"Count":4,
-%%                                     "BytesIn":88}
-%%                       ]}
-%%           ],
+%% {"Access":{
+%%            "Nodes":[{"Node":"riak_moss@127.0.0.1",
+%%                      "Samples":[{"StartTime":"20120113T194510Z",
+%%                                  "EndTime":"20120113T194520Z",
+%%                                  "KeyRead":{"Count":1,
+%%                                             "BytesOut":22},
+%%                                  "KeyWrite":{"Count":2,
+%%                                              "BytesIn":44}},
+%%                                 {"StartTime":"20120113T194520Z",
+%%                                  "EndTime":"20120113T194530Z",
+%%                                  "KeyRead":{"Count":3,
+%%                                             "BytesOut":66},
+%%                                  "KeyWrite":{"Count":4,
+%%                                              "BytesIn":88}}
+%%                                ]}],
+%%            "Errors":[]
+%%           },
 %%  "Storage":"not_requested"}
 %% '''
 %%
@@ -55,28 +57,31 @@
 %% <?xml version="1.0" encoding="UTF-8"?>
 %%   <Usage>
 %%     <Access>
-%%       <Node name="riak_moss@127.0.0.1">
-%%         <Sample StartTime="20120113T194510Z" EndTime="20120113T194520Z">
-%%           <Operation type="KeyRead">
-%%             <Count>1</Count>
-%%             <BytesOut>22</BytesOut>
-%%           </Operation>
-%%           <Operation type="KeyWrite">
-%%             <Count>2</Count>
-%%             <BytesIn>44</BytesIn>
-%%           </Operation>
-%%         </Sample>
-%%         <Sample StartTime="20120113T194520Z" EndTime="20120113T194530Z">
-%%           <Operation type="KeyRead">
-%%             <Count>3</Count>
-%%             <BytesOut>66</BytesOut>
-%%           </Operation>
-%%           <Operation type="KeyWrite">
-%%             <Count>4</Count>
-%%             <BytesIn>88</BytesIn>
-%%           </Operation>
-%%         </Sample>
-%%       </Node>
+%%       <Nodes>
+%%         <Node name="riak_moss@127.0.0.1">
+%%           <Sample StartTime="20120113T194510Z" EndTime="20120113T194520Z">
+%%             <Operation type="KeyRead">
+%%               <Count>1</Count>
+%%               <BytesOut>22</BytesOut>
+%%             </Operation>
+%%             <Operation type="KeyWrite">
+%%               <Count>2</Count>
+%%               <BytesIn>44</BytesIn>
+%%             </Operation>
+%%           </Sample>
+%%           <Sample StartTime="20120113T194520Z" EndTime="20120113T194530Z">
+%%             <Operation type="KeyRead">
+%%               <Count>3</Count>
+%%               <BytesOut>66</BytesOut>
+%%             </Operation>
+%%             <Operation type="KeyWrite">
+%%               <Count>4</Count>
+%%               <BytesIn>88</BytesIn>
+%%             </Operation>
+%%           </Sample>
+%%         </Node>
+%%       </Nodes>
+%%       <Errors/>
 %%     </Access>
 %%   <Storage>not_requested</Storage>
 %% </Usage>
@@ -117,6 +122,7 @@
 -define(KEY_ACCESS, 'Access').
 -define(KEY_STORAGE, 'Storage').
 -define(KEY_NODE, 'Node').
+-define(KEY_NODES, 'Nodes').
 -define(KEY_SAMPLE,  'Sample').
 -define(KEY_SAMPLES, 'Samples').
 -define(KEY_OPERATION, 'Operation').
@@ -257,15 +263,12 @@ produce_json(RD, #ctx{body=Body}=Ctx) ->
 mochijson_access(Msg) when is_atom(Msg) ->
     Msg;
 mochijson_access({Access, Errors}) ->
-    orddict:fold(
-      fun(Node, Samples, Acc) ->
-              [{struct, [{?KEY_NODE, Node},
-                         {?KEY_SAMPLES, [{struct, S} || S <- Samples]}]}
-               |Acc]
-      end,
-      [{struct, [{?KEY_ERRORS, [ {struct, mochijson_sample_error(E)}
-                                 || E <- Errors ]}]}],
-      Access).
+    Nodes = [{struct, [{?KEY_NODE, Node},
+                       {?KEY_SAMPLES, [{struct, S} || S <- Samples]}]}
+             || {Node, Samples} <- Access],
+    Errs = [ {struct, mochijson_sample_error(E)} || E <- Errors ],
+    [{?KEY_NODES, Nodes},
+     {?KEY_ERRORS, Errs}].
 
 mochijson_sample_error({{Start, End}, Reason}) ->
     [{?START_TIME, rts:iso8601(Start)},
@@ -302,15 +305,13 @@ produce_xml(RD, #ctx{body=Body}=Ctx) ->
 xml_access(Msg) when is_atom(Msg) ->
     [atom_to_list(Msg)];
 xml_access({Access, Errors}) ->
-    orddict:fold(
-      fun(Node, Samples, Acc) ->
-              [{?KEY_NODE, [{name, Node}],
-                [xml_sample(S, ?KEY_OPERATION, ?KEY_TYPE) || S <- Samples]}
-               |Acc]
-      end,
-      [{?KEY_ERRORS, [ xml_sample_error(E, ?KEY_OPERATION, ?KEY_TYPE)
-                       || E <- Errors ]}],
-      Access).
+    Nodes = [{?KEY_NODE, [{name, Node}],
+              [xml_sample(S, ?KEY_OPERATION, ?KEY_TYPE) || S <- Samples]}
+             || {Node, Samples} <- Access],
+    Errs = [ xml_sample_error(E, ?KEY_OPERATION, ?KEY_TYPE)
+             || E <- Errors ],
+    [{?KEY_NODES, Nodes},
+     {?KEY_ERRORS, Errs}].
 
 xml_sample(Sample, SubType, TypeLabel) ->
     {value, {?START_TIME,S}, SampleS} =
