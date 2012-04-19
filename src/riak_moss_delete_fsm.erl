@@ -54,8 +54,9 @@ start_link(Bucket, Key, UUID, RiakcPid, Options) ->
     Args = [Bucket, Key, UUID, RiakcPid, Options],
     gen_fsm:start_link(?MODULE, Args, []).
 
-block_deleted(Pid, BlockID) ->
-    gen_fsm:send_event(Pid, {block_deleted, BlockID, self()}).
+-spec block_deleted(pid(), {ok, integer()} | {error, binary()}) -> ok.
+block_deleted(Pid, Response) ->
+    gen_fsm:send_event(Pid, {block_deleted, Response, self()}).
 
 %% ====================================================================
 %% gen_fsm callbacks
@@ -106,7 +107,7 @@ prepare(timeout, State=#state{bucket=Bucket,
                                        delete_blocks_remaining=BlocksToDelete,
                                        timer_ref=TRef}}.
 
-deleting({block_deleted, BlockID, DeleterPid},
+deleting({block_deleted, {ok, BlockID}, DeleterPid},
     State=#state{manifest=Manifest,
                  free_deleters=FreeDeleters,
                  unacked_deletes=UnackedDeletes}) ->
@@ -128,7 +129,14 @@ deleting({block_deleted, BlockID, DeleterPid},
             %% maybe start more deletes
             State3 = maybe_delete_block(State2),
             {next_state, deleting, State3}
-    end.
+    end;
+deleting({block_deleted, {error, Error}, _DeleterPid},
+    State=#state{manifest=_Manifest,
+                 timer_ref=TRef}) ->
+    timer:cancel(TRef),
+    %% TODO:
+    %% sync manifest one last time
+    {stop, Error, State}.
 
 handle_event(_Event, StateName, State) ->
     {next_state, StateName, State}.
