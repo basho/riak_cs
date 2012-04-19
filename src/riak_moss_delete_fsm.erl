@@ -87,8 +87,6 @@ prepare(timeout, State=#state{bucket=Bucket,
     %% fill in the delete_blocks_remaining
     {NewManifest, BlocksToDelete} = blocks_to_delete_from_manifest(Manifest),
 
-    %% TODO:
-    %% launch the delete workers
     AllDeleteWorkers =
     riak_moss_block_server:start_block_servers(RiakcPid,
         riak_moss_lfs_utils:delete_concurrency()),
