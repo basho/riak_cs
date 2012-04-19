@@ -87,30 +87,14 @@ prepare(timeout, State=#state{bucket=Bucket,
     %% TODO:
     %% handle the case where the manifest
     %% is not found
-    {ok, Manifest} = riak_moss_manifest_fsm:get_specific_manifest(ManiPid, UUID),
-
-    %% Based on the manifest,
-    %% fill in the delete_blocks_remaining
-    {NewManifest, BlocksToDelete} = blocks_to_delete_from_manifest(Manifest),
-
-    AllDeleteWorkers =
-    riak_moss_block_server:start_block_servers(RiakcPid,
-        riak_moss_lfs_utils:delete_concurrency()),
-
-    %% start the save_manifest
-    %% timer
-    %% TODO:
-    %% this time probably
-    %% shouldn't be hardcoded,
-    %% and if it is, what should
-    %% it be?
-    {ok, TRef} = timer:send_interval(60000, self(), save_manifest),
-
-    {next_state, deleting, State#state{mani_pid=ManiPid,
-                                       manifest=NewManifest,
-                                       all_delete_works=AllDeleteWorkers,
-                                       delete_blocks_remaining=BlocksToDelete,
-                                       timer_ref=TRef}}.
+    case riak_moss_manifest_fsm:get_specific_manifest(ManiPid, UUID) of
+        {ok, Manifest} ->
+            handle_receiving_manifest(Manifest, State);
+        {error, notfound} ->
+            lager:debug("Couldn't delete bucket: ~p key: ~p uuid: ~p",
+                [Bucket, Key, UUID]),
+            {stop, normal, State}
+    end.
 
 deleting({block_deleted, {ok, BlockID}, DeleterPid},
     State=#state{manifest=Manifest,
@@ -171,6 +155,33 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 %% ====================================================================
 %% Internal functions
 %% ====================================================================
+
+-spec handle_receiving_manifest(lfs_manifest(), state()) ->
+    {next_state, atom(), state()}.
+handle_receiving_manifest(Manifest, State=#state{riakc_pid=RiakcPid,
+                                                 mani_pid=ManiPid}) ->
+    %% Based on the manifest,
+    %% fill in the delete_blocks_remaining
+    {NewManifest, BlocksToDelete} = blocks_to_delete_from_manifest(Manifest),
+
+    AllDeleteWorkers =
+    riak_moss_block_server:start_block_servers(RiakcPid,
+        riak_moss_lfs_utils:delete_concurrency()),
+
+    %% start the save_manifest
+    %% timer
+    %% TODO:
+    %% this time probably
+    %% shouldn't be hardcoded,
+    %% and if it is, what should
+    %% it be?
+    {ok, TRef} = timer:send_interval(60000, self(), save_manifest),
+
+    {next_state, deleting, State#state{mani_pid=ManiPid,
+                                       manifest=NewManifest,
+                                       all_delete_works=AllDeleteWorkers,
+                                       delete_blocks_remaining=BlocksToDelete,
+                                       timer_ref=TRef}}.
 
 maybe_delete_block(State=#state{bucket=Bucket,
                                 key=Key,
