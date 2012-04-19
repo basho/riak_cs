@@ -169,16 +169,19 @@ handle_cast({put_block, ReplyPid, Bucket, Key, UUID, BlockNumber, Value}, State=
     riak_moss_put_fsm:block_written(ReplyPid, BlockNumber),
     dt_return(<<"put_block">>, [BlockNumber], [Bucket, Key]),
     {noreply, State};
-handle_cast({delete_block, _ReplyPid, Bucket, Key, UUID, BlockNumber}, State=#state{riakc_pid=RiakcPid}) ->
+handle_cast({delete_block, ReplyPid, Bucket, Key, UUID, BlockNumber}, State=#state{riakc_pid=RiakcPid}) ->
     dt_entry(<<"delete_block">>, [BlockNumber], [Bucket, Key]),
     {FullBucket, FullKey} = full_bkey(Bucket, Key, UUID, BlockNumber),
     StartTime = os:timestamp(),
-    ok = riakc_pb_socket:delete(RiakcPid, FullBucket, FullKey),
+    DeleteOptions = [{r, all}, {pr, all}, {w, all}, {pw, all}],
+    Response = riakc_pb_socket:delete(RiakcPid, FullBucket, FullKey, DeleteOptions),
+    case Response of
+        ok ->
+            riak_moss_delete_fsm:block_deleted(ReplyPid, {ok, BlockNumber});
+        {error, _Error}=Error ->
+            riak_moss_delete_fsm:block_deleted(ReplyPid, Error)
+    end,
     ok = riak_cs_stats:update_with_start(block_delete, StartTime),
-    %% TODO:
-    %% add a public func to riak_moss_delete_fsm
-    %% to send messages back to the fsm
-    %% saying that the block was deleted
     dt_return(<<"delete_block">>, [BlockNumber], [Bucket, Key]),
     {noreply, State};
 handle_cast(_Msg, State) ->
