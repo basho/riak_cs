@@ -26,6 +26,7 @@
          max_content_len/0,
          fetch_concurrency/0,
          put_concurrency/0,
+         delete_concurrency/0,
          put_fsm_buffer_size_factor/0,
          safe_block_size_from_manifest/1,
          initial_blocks/2,
@@ -123,6 +124,16 @@ put_concurrency() ->
     case application:get_env(riak_moss, put_concurrency) of
         undefined ->
             ?DEFAULT_PUT_CONCURRENCY;
+        {ok, Concurrency} ->
+            Concurrency
+    end.
+
+%% @doc Return the configured file block delete concurrency .
+-spec delete_concurrency() -> pos_integer().
+delete_concurrency() ->
+    case application:get_env(riak_moss, delete_concurrency) of
+        undefined ->
+            ?DEFAULT_DELETE_CONCURRENCY;
         {ok, Concurrency} ->
             Concurrency
     end.
