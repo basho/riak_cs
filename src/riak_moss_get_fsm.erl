@@ -260,12 +260,12 @@ waiting_chunks({chunk, Pid, {NextBlock, BlockReturnValue}}, #state{from=From,
                 0 ->
                     NewState = NewState0#state{free_readers=[Pid | FreeReaders]},
                     NextStateName = sending_remaining;
-                _ when length(BlockBuffer) >= ?BLOCK_BUFFER_LIMIT ->
+                _ when length(UpdBlockBuffer) >= ?BLOCK_BUFFER_LIMIT ->
                     NewState = NewState0#state{free_readers=[Pid | FreeReaders]},
                     NextStateName = waiting_chunks;
                 _ ->
                     {ReadRequests, UpdFreeReaders} =
-                        read_blocks(BucketName, Key, UUID, [Pid | FreeReaders], NextBlock+1, TotalBlocks),
+                        read_blocks(BucketName, Key, UUID, [Pid | FreeReaders], LastBlockRequested+1, TotalBlocks),
                     NewState = NewState0#state{last_block_requested=LastBlockRequested+ReadRequests,
                                                free_readers=UpdFreeReaders},
                     NextStateName = waiting_chunks
@@ -302,7 +302,6 @@ waiting_chunks({chunk, Pid, {NextBlock, BlockReturnValue}}, #state{from=From,
     end;
 
 waiting_chunks({chunk, Pid, {BlockSeq, BlockReturnValue}}, #state{blocks_left=Remaining,
-                                                                  next_block=NextBlock,
                                                                   free_readers=FreeReaders,
                                                                   last_block_requested=LastBlockRequested,
                                                                   block_buffer=BlockBuffer}=State) ->
