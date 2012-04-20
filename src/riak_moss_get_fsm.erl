@@ -61,7 +61,7 @@
                 free_readers :: [pid()],
                 all_reader_pids :: [pid()]}).
 
--define(BLOCK_BUFFER_LIMIT, 1).
+-define(BLOCK_BUFFER_LIMIT, 8).
 
 %% ===================================================================
 %% Public API
@@ -216,7 +216,7 @@ waiting_chunks(get_next_chunk,
                             last_block_requested=LastBlockRequested,
                             total_blocks=TotalBlocks}) ->
     lager:debug("Returning block ~p to client", [NextBlock]),
-    case length(RestBlockBuffer) < ?BLOCK_BUFFER_LIMIT of
+    case length(RestBlockBuffer) =:= 0 of
         true ->
             {ReadRequests, UpdFreeReaders} =
                 read_blocks(BucketName, Key, UUID, FreeReaders, LastBlockRequested+1, TotalBlocks),
@@ -260,6 +260,9 @@ waiting_chunks({chunk, Pid, {NextBlock, BlockReturnValue}}, #state{from=From,
                 0 ->
                     NewState = NewState0#state{free_readers=[Pid | FreeReaders]},
                     NextStateName = sending_remaining;
+                _ when length(BlockBuffer) >= ?BLOCK_BUFFER_LIMIT ->
+                    NewState = NewState0#state{free_readers=[Pid | FreeReaders]},
+                    NextStateName = waiting_chunks;
                 _ ->
                     {ReadRequests, UpdFreeReaders} =
                         read_blocks(BucketName, Key, UUID, [Pid | FreeReaders], NextBlock+1, TotalBlocks),
@@ -283,6 +286,10 @@ waiting_chunks({chunk, Pid, {NextBlock, BlockReturnValue}}, #state{from=From,
                     gen_fsm:reply(From, {done, BlockValue}),
                     NewState=NewState0,
                     {stop, normal, NewState};
+                _ when length(BlockBuffer) >= 1 ->
+                    gen_fsm:reply(From, {chunk, BlockValue}),
+                    NewState=NewState0,
+                    {next_state, waiting_chunks, NewState};
                 _ ->
                     gen_fsm:reply(From, {chunk, BlockValue}),
                     {ReadRequests, UpdFreeReaders} =
@@ -295,13 +302,10 @@ waiting_chunks({chunk, Pid, {NextBlock, BlockReturnValue}}, #state{from=From,
     end;
 
 waiting_chunks({chunk, Pid, {BlockSeq, BlockReturnValue}}, #state{blocks_left=Remaining,
-                                                                   manifest_uuid=UUID,
-                                                                   key=Key,
-                                                                   bucket=BucketName,
-                                                                   free_readers=FreeReaders,
-                                                                   last_block_requested=LastBlockRequested,
-                                                                   total_blocks=TotalBlocks,
-                                                                   block_buffer=BlockBuffer}=State) ->
+                                                                  next_block=NextBlock,
+                                                                  free_readers=FreeReaders,
+                                                                  last_block_requested=LastBlockRequested,
+                                                                  block_buffer=BlockBuffer}=State) ->
     %% we don't deal with missing chunks
     %% at all here, so this pattern
     %% match will fail
@@ -319,15 +323,9 @@ waiting_chunks({chunk, Pid, {BlockSeq, BlockReturnValue}}, #state{blocks_left=Re
         0 ->
             NewState = NewState0#state{free_readers=[Pid | FreeReaders]},
             NextStateName = sending_remaining;
-        _ when length(UpdBlockBuffer) >= ?BLOCK_BUFFER_LIMIT ->
+        _ ->
             NewState = NewState0#state{last_block_requested=LastBlockRequested,
                                        free_readers=[Pid | FreeReaders]},
-            NextStateName = waiting_chunks;
-        _ ->
-            {ReadRequests, UpdFreeReaders} =
-                read_blocks(BucketName, Key, UUID, [Pid | FreeReaders], LastBlockRequested+1, TotalBlocks),
-            NewState = NewState0#state{last_block_requested=LastBlockRequested+ReadRequests,
-                                       free_readers=UpdFreeReaders},
             NextStateName = waiting_chunks
     end,
     {next_state, NextStateName, NewState}.
