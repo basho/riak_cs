@@ -154,6 +154,10 @@ handle_receiving_manifest(Manifest, State=#state{riakc_pid=RiakcPid,
                                                  mani_pid=ManiPid}) ->
     %% Based on the manifest,
     %% fill in the delete_blocks_remaining
+    %% TODO:
+    %% need to handle the case
+    %% where there are 0 blocks to
+    %% delete, ie. content length of 0
     {NewManifest, BlocksToDelete} = blocks_to_delete_from_manifest(Manifest),
 
     AllDeleteWorkers =
