@@ -105,7 +105,7 @@ deleting({block_deleted, {ok, BlockID}, DeleterPid},
     NewFreeDeleters = ordsets:add_element(DeleterPid, FreeDeleters),
     NewUnackedDeletes = ordsets:del_element(BlockID, UnackedDeletes),
 
-    NewManifest = riak_moss_lfs_utils:remove_write_block(Manifest, BlockID),
+    NewManifest = riak_moss_lfs_utils:remove_delete_block(Manifest, BlockID),
 
     State2 = State#state{free_deleters=NewFreeDeleters,
                          unacked_deletes=NewUnackedDeletes,
@@ -121,8 +121,6 @@ deleting({block_deleted, {ok, BlockID}, DeleterPid},
             {next_state, deleting, State3}
     end;
 deleting({block_deleted, {error, Error}, _DeleterPid}, State) ->
-    lager:debug("Stopping delete FSM because of block deleting error:",
-        [Error]),
     finish(State),
     {stop, Error, State}.
 
@@ -135,7 +133,6 @@ handle_sync_event(_Event, _From, StateName, State) ->
 
 handle_info(save_manifest, StateName, State=#state{mani_pid=ManiPid,
                                                    manifest=Manifest}) ->
-    lager:debug("got a save manifest call"),
     riak_moss_manifest_fsm:update_manifest(ManiPid, Manifest),
     {next_state, StateName, State};
 handle_info(_Info, StateName, State) ->
@@ -158,7 +155,6 @@ handle_receiving_manifest(Manifest, State=#state{riakc_pid=RiakcPid,
     %% Based on the manifest,
     %% fill in the delete_blocks_remaining
     {NewManifest, BlocksToDelete} = blocks_to_delete_from_manifest(Manifest),
-    lager:debug("the blocks to delete are ~p", [BlocksToDelete]),
 
     AllDeleteWorkers =
     riak_moss_block_server:start_block_servers(RiakcPid,
