@@ -152,8 +152,6 @@ code_change(_OldVsn, StateName, State, _Extra) ->
     {next_state, atom(), state()}.
 handle_receiving_manifest(Manifest, State=#state{riakc_pid=RiakcPid,
                                                  mani_pid=ManiPid}) ->
-    %% Based on the manifest,
-    %% fill in the delete_blocks_remaining
     %% TODO:
     %% need to handle the case
     %% where there are 0 blocks to
@@ -174,11 +172,7 @@ handle_receiving_manifest(Manifest, State=#state{riakc_pid=RiakcPid,
     %% and if it is, what should
     %% it be?
 
-    %% TODO:
-    %% this is at 1 second just
-    %% for testing, should
-    %% be 1-minute
-    {ok, TRef} = timer:send_interval(1000, self(), save_manifest),
+    {ok, TRef} = timer:send_interval(timer:seconds(60), self(), save_manifest),
 
     NewState = State#state{mani_pid=ManiPid,
                            manifest=NewManifest,
@@ -194,20 +188,23 @@ handle_receiving_manifest(Manifest, State=#state{riakc_pid=RiakcPid,
 
 maybe_delete_blocks(State=#state{free_deleters=[]}) ->
     State;
+maybe_delete_blocks(State=#state{delete_blocks_remaining=[]}) ->
+    State;
 maybe_delete_blocks(State=#state{bucket=Bucket,
                                 key=Key,
                                 uuid=UUID,
-                                free_deleters=[DeleterPid | _RestDeleters],
+                                free_deleters=[DeleterPid | RestDeleters],
                                 unacked_deletes=UnackedDeletes,
-                                manifest=#lfs_manifest_v2{
-                                    delete_blocks_remaining=DeleteBlocksRemaining
-                                    = [BlockID | _RestBlocks]}}) ->
+                                delete_blocks_remaining=DeleteBlocksRemaining=
+                                    [BlockID | _RestBlocks]}) ->
+
     NewUnackedDeletes = ordsets:add_element(BlockID, UnackedDeletes),
     NewDeleteBlocksRemaining = ordsets:del_element(BlockID, DeleteBlocksRemaining),
-    %% start the delete...
     riak_moss_block_server:delete_block(DeleterPid, Bucket, Key, UUID, BlockID),
-    State#state{unacked_deletes=NewUnackedDeletes,
-                delete_blocks_remaining=NewDeleteBlocksRemaining}.
+    NewFreeDeleters = ordsets:del_element(DeleterPid, RestDeleters),
+    maybe_delete_blocks(State#state{unacked_deletes=NewUnackedDeletes,
+                                    free_deleters=NewFreeDeleters,
+                                    delete_blocks_remaining=NewDeleteBlocksRemaining}).
 
 -spec finish(state()) -> state().
 finish(State=#state{timer_ref=TRef,
