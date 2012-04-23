@@ -71,8 +71,7 @@ ping(RD, Ctx) ->
 service_available(RD, #ctx{path_tokens = ["stats"]} = Ctx) ->
     case riak_moss_utils:get_env(riak_moss, riak_cs_stat, false) of
         false ->
-            {false, wrq:append_to_response_body("riak_cs_stat is disabled on this node.\n", RD),
-             Ctx};
+            {false, RD, Ctx};
         true ->
             case riak_moss_utils:riak_connection() of
                 {ok, Pid} ->
@@ -82,7 +81,7 @@ service_available(RD, #ctx{path_tokens = ["stats"]} = Ctx) ->
             end
     end;
 service_available(RD, Ctx) ->
-    {false, wrq:append_to_response_body("Unrecognized path.\n", RD), Ctx}.
+    {false, RD, Ctx}.
 
 produce_body(RD, Ctx) ->
     Body = mochijson2:encode({struct, get_stats()}),
