@@ -163,8 +163,9 @@ to_xml(RD, Ctx=#context{user=User,
                         bucket=Bucket,
                         requested_perm='READ',
                         riakc_pid=RiakPid}) ->
+    StrBucket = binary_to_list(Bucket),
     case [B || B <- riak_moss_utils:get_buckets(User),
-               B?MOSS_BUCKET.name =:= Bucket] of
+               B?MOSS_BUCKET.name =:= StrBucket] of
         [] ->
             riak_moss_s3_response:api_error(no_such_bucket, RD, Ctx);
         [BucketRecord] ->
