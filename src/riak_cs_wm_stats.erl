@@ -68,7 +68,7 @@ content_types_provided(RD, Context) ->
 ping(RD, Ctx) ->
     {pong, RD, Ctx#ctx{path_tokens = path_tokens(RD)}}.
 
-service_available(RD, #ctx{path_tokens = ["stats"]} = Ctx) ->
+service_available(RD, #ctx{path_tokens = []} = Ctx) ->
     case riak_moss_utils:get_env(riak_moss, riak_cs_stat, false) of
         false ->
             {false, RD, Ctx};
