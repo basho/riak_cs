@@ -126,16 +126,18 @@ handle_cast({get_block, ReplyPid, Bucket, Key, UUID, BlockNumber}, State=#state{
     GetOptions = [{r, 1}, {notfound_ok, false}, {basic_quorum, false}],
     ChunkValue = case riakc_pb_socket:get(RiakcPid, FullBucket, FullKey, GetOptions) of
         {ok, RiakObject} ->
-            {ok, riakc_obj:get_value(RiakObject)};
-        {error, notfound}=NotFound ->
-            NotFound
+                         {ok, DecompressedVal} = snappy:decompress(riakc_obj:get_value(RiakObject)),
+                         {ok, DecompressedVal};
+                     {error, notfound}=NotFound ->
+                         NotFound
     end,
     ok = riak_cs_stats:update_with_start(block_get, StartTime),
     ok = riak_moss_get_fsm:chunk(ReplyPid, BlockNumber, ChunkValue),
     {noreply, State};
 handle_cast({put_block, ReplyPid, Bucket, Key, UUID, BlockNumber, Value}, State=#state{riakc_pid=RiakcPid}) ->
     {FullBucket, FullKey} = full_bkey(Bucket, Key, UUID, BlockNumber),
-    RiakObject0 = riakc_obj:new(FullBucket, FullKey, Value),
+    {ok, CompressedVal} = snappy:compress(Value),
+    RiakObject0 = riakc_obj:new(FullBucket, FullKey, CompressedVal),
     MD = dict:from_list([{?MD_USERMETA, [{"RCS-bucket", Bucket},
                                          {"RCS-key", Key}]}]),
     _ = lager:debug("put_block: Bucket ~p Key ~p UUID ~p", [Bucket, Key, UUID]),
