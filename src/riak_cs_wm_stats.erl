@@ -84,7 +84,7 @@ service_available(RD, Ctx) ->
     {false, RD, Ctx}.
 
 produce_body(RD, Ctx) ->
-    Body = mochijson2:encode({struct, get_stats()}),
+    Body = mochijson2:encode(get_stats()),
     ETag = riak_moss_utils:binary_to_hexlist(crypto:md5(Body)),
     RD2 = wrq:set_resp_header("ETag", ETag, RD),
     {Body, RD2, Ctx}.
