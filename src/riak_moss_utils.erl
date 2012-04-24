@@ -19,6 +19,7 @@
          get_admin_creds/0,
          get_buckets/1,
          get_keys_and_manifests/3,
+         map_keys_and_manifests/3,
          get_object/3,
          get_user/2,
          get_user_by_index/3,
@@ -212,31 +213,46 @@ stanchion_data() ->
 -spec get_keys_and_manifests(binary(), binary(), pid()) -> {ok, [lfs_manifest()]} | {error, term()}.
 get_keys_and_manifests(BucketName, Prefix, RiakPid) ->
     ManifestBucket = riak_moss_utils:to_bucket_name(objects, BucketName),
-    case list_keys(ManifestBucket, RiakPid) of
-        {ok, Keys} ->
-            KeyObjPairs =
-                [begin
-                     {ok, ManiPid} = riak_moss_manifest_fsm:start_link(BucketName, Key, RiakPid),
-                     Manifest = riak_moss_manifest_fsm:get_active_manifest(ManiPid),
-                     riak_moss_manifest_fsm:stop(ManiPid),
-                     {Key, Manifest}
-                 end
-                 || Key <- prefix_filter(Keys, Prefix)],
-            {ok, KeyObjPairs};
-        {error, Reason1} ->
-            {error, Reason1}
+    case active_manifests(ManifestBucket, Prefix, RiakPid) of
+        {ok, [{0,KeyManifests}]} ->
+            {ok, lists:keysort(1, KeyManifests)};
+        {error, Reason} ->
+            {error, Reason}
     end.
 
--spec prefix_filter(list(), binary()) -> list().
-prefix_filter(Keys, <<>>) ->
-    Keys;
-prefix_filter(Keys, Prefix) ->
-    PL = size(Prefix),
-    lists:filter(
-      fun(<<P:PL/binary,_/binary>>) when P =:= Prefix -> true;
-         (_) -> false
-      end, Keys).
+active_manifests(ManifestBucket, Prefix, RiakPid) ->
+    Input = case Prefix of
+                <<>> -> ManifestBucket;
+                %% TODO: use 2i range query instead?
+                _ -> {ManifestBucket, [[<<"starts_with">>, Prefix]]}
+            end,
+    Query = [{map, {modfun, riak_moss_utils, map_keys_and_manifests},
+              undefined, true}],
+    case riakc_pb_socket:mapred(RiakPid, Input, Query) of
+        {ok, Results} ->
+            {ok, Results};
+        {error, Reason} ->
+            {error, Reason}
+    end.
 
+%% MapReduce function, runs on the Riak nodes, should therefor use
+%% riak_object, not riakc_obj.
+map_keys_and_manifests({error, notfound}, _, _) ->
+    [];
+map_keys_and_manifests(Object, _, _) ->
+    try
+        AllManifests = [ binary_to_term(V)
+                         || V <- riak_object:get_values(Object) ],
+        Resolved = riak_moss_manifest_resolution:resolve(AllManifests),
+        case riak_moss_manifest:active_manifest(Resolved) of
+            {ok, Manifest} ->
+                [{riak_object:key(Object), {ok, Manifest}}];
+            _ ->
+                []
+        end
+    catch _:_ ->
+            []
+    end.
 
 %% @doc Return the credentials of the admin user
 -spec get_admin_creds() -> {ok, {string(), string()}} | {error, term()}.
