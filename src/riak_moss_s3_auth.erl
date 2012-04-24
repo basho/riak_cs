@@ -171,7 +171,21 @@ canonicalize_resource(RD) ->
           wrq:path_tokens(RD)} of
         {undefined, []} -> ["/"];
         {undefined, _} -> [wrq:path(RD)];
-        {Bucket, []} -> ["/", Bucket, "/"];
+        {Bucket, []} ->
+            %% SLF: imho, this sucks.  If we tell WM to route via
+            %%      ["riak-cs", '*'], then we don't end up at this
+            %%      clause.  But if we use ["riak-cs", "stats"], then
+            %%      wrq:path_tokens(RD) will return [], and we end up
+            %%      in this clause, and then we do The Wrong Thing(tm).
+            SlashBucket = "/" ++ Bucket,
+            WrqPath = wrq:path(RD),
+            case string:str(WrqPath, SlashBucket) of
+                1 ->
+                    Rest = string:substr(WrqPath, length(SlashBucket) + 1),
+                   ["/", Bucket, Rest];
+                _ ->
+                    ["/", Bucket, "/"]
+            end;
         {Bucket, KeyTokens} ->
             ["/", Bucket, "/", string:join(KeyTokens, "/")]
     end.
