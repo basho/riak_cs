@@ -37,8 +37,7 @@
               object_head,
               object_delete,
               object_get_acl,
-              object_put_acl,
-              object_delete]).
+              object_put_acl]).
 
 %% ====================================================================
 %% API
@@ -60,7 +59,7 @@ update_with_starttime(BaseId, StartTime) ->
 
 -spec report() -> ok.
 report() ->
-    [report_item(I) || I <- ?IDS],
+    _ = [report_item(I) || I <- ?IDS],
     ok.
 
 -spec report_str() -> [string()].
@@ -89,11 +88,11 @@ get_stats() ->
 
 init([]) ->
     %% Not sure why folsom doesn't use app module to spin up...
-    folsom_sup:start_link(),
+    {ok, _} = folsom_sup:start_link(),
 
     %% Setup a list of all the values we want to track. For each of these, we will
     %% have a latency histogram and meter
-    [init_item(I) || I <- ?IDS],
+    _ = [init_item(I) || I <- ?IDS],
     {ok, #state{}}.
 
 handle_call({get_ids, BaseId}, _From, State) ->
@@ -101,8 +100,8 @@ handle_call({get_ids, BaseId}, _From, State) ->
 handle_call({update, BaseId, ElapsedUs}, _From, State) ->
     Reply = case erlang:get(BaseId) of
                 {LatencyId, MeterId} ->
-                    folsom_metrics:notify({LatencyId, ElapsedUs}),
-                    folsom_metrics:notify({MeterId, 1}),
+                    ok = folsom_metrics:notify({LatencyId, ElapsedUs}),
+                    ok = folsom_metrics:notify({MeterId, 1}),
                     ok;
                 undefined ->
                     {error, {unknown_id, BaseId}}
@@ -127,9 +126,9 @@ code_change(_OldVsn, State, _Extra) ->
 
 init_item(BaseId) ->
     LatencyId = list_to_atom(atom_to_list(BaseId) ++ "_latency"),
-    folsom_metrics:new_histogram(LatencyId),
+    ok = folsom_metrics:new_histogram(LatencyId),
     MeterId = list_to_atom(atom_to_list(BaseId) ++ "_meter"),
-    folsom_metrics:new_meter(MeterId),
+    ok = folsom_metrics:new_meter(MeterId),
     %% Cache the two atom-ized Ids for this counter to avoid doing the
     %% conversion per update
     erlang:put(BaseId, {LatencyId, MeterId}).
