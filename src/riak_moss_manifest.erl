@@ -18,8 +18,6 @@
 -export([new/2,
          active_manifest/1,
          mark_overwritten/1,
-         need_gc/1,
-         need_gc/2,
          prune/1,
          prune/2]).
 
@@ -68,24 +66,6 @@ mark_overwritten(Manifests) ->
                     Manifests)
     end.
 
-
-%% @doc Return a list of the
-%% manifests that need to be
-%% garbage collected.
--spec need_gc([{binary(), lfs_manifest()}]) -> list(binary()).
-need_gc(Manifests) ->
-    need_gc(Manifests, erlang:now()).
-
--spec need_gc([{binary(), lfs_manifest()}], erlang:timestamp()) -> list(binary()).
-need_gc(Manifests, Time) ->
-    [Id || {Id, Manifest} <- orddict:to_list(Manifests),
-        needs_gc(Manifest, Time)].
-
-%% TODO: for pruning we're likely
-%% going to want to add some app.config
-%% stuff for how long to keep around
-%% fully deleted manifests, just like
-%% we do with vclocks.
 -spec prune(list(lfs_manifest())) -> list(lfs_manifest()).
 prune(Manifests) ->
     prune(Manifests, erlang:now()).
@@ -118,17 +98,6 @@ most_recent_active_manifest(Man1=#lfs_manifest_v2{state=active}, Man2=#lfs_manif
 most_recent_active_manifest(Man1=#lfs_manifest_v2{state=active}, _Man2) -> Man1;
 most_recent_active_manifest(_Man1, Man2=#lfs_manifest_v2{state=active}) -> Man2.
 
--spec needs_gc(lfs_manifest(), erlang:timestamp()) -> boolean().
-needs_gc(#lfs_manifest_v2{state=pending_delete,
-                          delete_marked_time=DeleteMarkedTime,
-                          last_block_deleted_time=undefined}, Time) ->
-    seconds_diff(Time, DeleteMarkedTime) > delete_leeway_time();
-needs_gc(#lfs_manifest_v2{state=pending_delete,
-                          last_block_deleted_time=LastBlockDeletedTime}, Time) ->
-    seconds_diff(Time, LastBlockDeletedTime) > retry_delete_time();
-needs_gc(_Manifest, _Time) ->
-    false.
-
 -spec needs_pruning(lfs_manifest(), erlang:timestamp()) -> boolean().
 needs_pruning(#lfs_manifest_v2{state=deleted,
                             delete_blocks_remaining=[],
@@ -142,29 +111,11 @@ seconds_diff(T2, T1) ->
     SecondsTime = TimeDiffMicrosends / (1000 * 1000),
     erlang:trunc(SecondsTime).
 
--spec delete_leeway_time() -> pos_integer().
-delete_leeway_time() ->
-    case application:get_env(riak_moss, delete_leeway_time) of
-        undefined ->
-            ?DEFAULT_DELETE_LEEWAY_TIME;
-        {ok, Time} ->
-            Time
-    end.
-
 -spec delete_tombstone_time() -> pos_integer().
 delete_tombstone_time() ->
     case application:get_env(riak_moss, delete_tombstone_time) of
         undefined ->
             ?DEFAULT_DELETE_TOMBSTONE_TIME;
-        {ok, Time} ->
-            Time
-    end.
-
--spec retry_delete_time() -> pos_integer().
-retry_delete_time() ->
-    case application:get_env(riak_moss, retry_delete_time) of
-        undefined ->
-            ?DEFAULT_RETRY_DELETE_TIME;
         {ok, Time} ->
             Time
     end.
@@ -189,10 +140,7 @@ manifest_test_() ->
     {setup,
         fun setup/0,
         fun cleanup/1,
-        [fun active_state_no_gc/0,
-         fun old_enough_for_gc/0,
-         fun too_young_for_gc/0,
-         fun wrong_state_for_pruning/0,
+        [fun wrong_state_for_pruning/0,
          fun wrong_state_for_pruning_2/0,
          fun does_need_pruning/0,
          fun not_old_enough_for_pruning/0]
@@ -203,31 +151,6 @@ setup() ->
 
 cleanup(_Ctx) ->
     ok.
-
-active_state_no_gc() ->
-    Mani = new_mani_helper(),
-    Mani2 = Mani#lfs_manifest_v2{state=active},
-    ?assert(not needs_gc(Mani2, erlang:now())).
-
-old_enough_for_gc() ->
-    application:set_env(riak_moss, delete_leeway_time, 1),
-    %% 1000000 second diff
-    DeleteTime = {1333,985708,445136},
-    Now = {1334,985708,445136},
-    Mani = new_mani_helper(),
-    Mani2 = Mani#lfs_manifest_v2{state=pending_delete,
-                                 delete_marked_time=DeleteTime},
-    ?assert(needs_gc(Mani2, Now)).
-
-too_young_for_gc() ->
-    application:set_env(riak_moss, delete_leeway_time, 5),
-    %% 1 second diff
-    DeleteTime = {1333,985708,445136},
-    Now = {1333,985709,445136},
-    Mani = new_mani_helper(),
-    Mani2 = Mani#lfs_manifest_v2{state=pending_delete,
-                                 delete_marked_time=DeleteTime},
-    ?assert(not needs_gc(Mani2, Now)).
 
 wrong_state_for_pruning() ->
     Mani = new_mani_helper(),

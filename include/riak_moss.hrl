@@ -272,33 +272,14 @@
 %% perhaps add later? -define(DT_AUTH_OP,         704).
 -define(DT_WM_OP,           705).
 
-%% Number of seconds to leave manifests
-%% in the `pending_delete` state before
-%% actually deleting the blocks
--define(DEFAULT_DELETE_LEEWAY_TIME, 86400). %% 24-hours
-
 %% Number of seconds to keep manifests
 %% in the `deleted` state before removing
 %% them completely.
 -define(DEFAULT_DELETE_TOMBSTONE_TIME, 86400). %% 24-hours
 
-%% Number of seconds to wait before
-%% retrying to delete (GC) something.
-%% ie. the old delete process hasn't
-%% updated the last_block_deleted_time
-%% in over N seconds
--define(DEFAULT_RETRY_DELETE_TIME, 3600). %% 1-hour
-
-
-%% Number of seconds to wait
-%% before deleting a file
-%% that is in the writing state
-%% but hasn't been updated.
-%% ie. A block hasn't been
-%% written in 24-hours.
--define(DEFAULT_PARTIAL_UPLOAD_DELETE_TIME, 86400). %% 24-hours
-
 -define(DEFAULT_GC_SECONDS_PER_SLICE, 60). %% 1-minute
 %% with 60-second slice, this
 %% equals 24-hours
 -define(DEFAULT_NUM_LEEWAY_SLICES, 1440).
+
+-define(DEFAULT_RETRY_MOVE_FOR_GC_TIME, 60). %% 60 seconds
