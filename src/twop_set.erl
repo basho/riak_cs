@@ -95,4 +95,13 @@ item_is_deleted_test() ->
     Set2 = del_element(foo, Set),
     ?assertNot(is_element(foo, Set2)).
 
+resolution_test() ->
+    O = new(),
+    WithFoo = add_element(foo, O),
+    WithOutFoo = del_element(foo, O),
+    WithBar = add_element(bar, O),
+    Resolved = resolve([WithBar, WithFoo, WithOutFoo]),
+    ?assert(is_element(bar, Resolved)),
+    ?assertNot(is_element(foo, Resolved)).
+
 -endif.
