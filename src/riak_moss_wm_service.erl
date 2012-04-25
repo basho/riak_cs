@@ -22,7 +22,7 @@ init(Config) ->
     %% Check if authentication is disabled and
     %% set that in the context.
     AuthBypass = proplists:get_value(auth_bypass, Config),
-    {ok, #context{auth_bypass=AuthBypass}}.
+    {ok, #context{start_time=now(), auth_bypass=AuthBypass}}.
 
 -spec service_available(term(), term()) -> {true, term(), term()}.
 service_available(RD, Ctx) ->
@@ -88,8 +88,11 @@ content_types_provided(RD, Ctx) ->
 %% bodies.
 -spec to_xml(term(), term()) ->
     {{'halt', term()}, term(), #context{}}.
-to_xml(RD, Ctx=#context{user=User}) ->
-    riak_moss_s3_response:list_all_my_buckets_response(User, RD, Ctx).
+to_xml(RD, Ctx=#context{start_time=StartTime,user=User}) ->
+    Res = riak_moss_s3_response:list_all_my_buckets_response(User, RD, Ctx),
+    riak_cs_stats:update(
+      service_get_buckets, timer:now_diff(os:timestamp(), StartTime)),
+    Res.
 
 finish_request(RD, Ctx=#context{riakc_pid=undefined}) ->
     {true, RD, Ctx};

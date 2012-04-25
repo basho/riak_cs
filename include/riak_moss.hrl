@@ -29,7 +29,8 @@
 -type bucket_operation() :: create | delete | update_acl.
 -type bucket_action() :: created | deleted.
 
--record(context, {auth_bypass :: atom(),
+-record(context, {start_time :: erlang:timestamp(),
+                  auth_bypass :: atom(),
                   user :: moss_user(),
                   user_vclock :: term(),
                   bucket :: binary(),

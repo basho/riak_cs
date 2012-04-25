@@ -88,6 +88,7 @@ create_bucket(User, VClock, Bucket, ACL, RiakPid) ->
                          User,
                          VClock,
                          create,
+                         bucket_create,
                          RiakPid).
 
 %% @doc Create a new MOSS user
@@ -158,6 +159,7 @@ delete_bucket(User, VClock, Bucket, RiakPid) ->
                                  User,
                                  VClock,
                                  delete,
+                                 bucket_delete,
                                  RiakPid);
         false ->
             LocalError
@@ -429,6 +431,7 @@ set_bucket_acl(User, VClock, Bucket, ACL, RiakPid) ->
                          User,
                          VClock,
                          update_acl,
+                         bucket_put_acl,
                          RiakPid).
 
 %% @doc Set the ACL for an object. Existing ACLs are only
@@ -436,11 +439,18 @@ set_bucket_acl(User, VClock, Bucket, ACL, RiakPid) ->
 -spec set_object_acl(binary(), binary(), lfs_manifest(), acl(), pid()) ->
             ok | {error, term()}.
 set_object_acl(Bucket, Key, Manifest, Acl, RiakPid) ->
+    StartTime = now(),
     {ok, ManiPid} = riak_moss_manifest_fsm:start_link(Bucket, Key, RiakPid),
     _ActiveMfst = riak_moss_manifest_fsm:get_active_manifest(ManiPid),
     UpdManifest = Manifest#lfs_manifest_v2{acl=Acl},
     Res = riak_moss_manifest_fsm:update_manifest_with_confirmation(ManiPid, UpdManifest),
     riak_moss_manifest_fsm:stop(ManiPid),
+    if Res == ok ->
+            riak_cs_stats:update(
+              object_put_acl, timer:now_diff(os:timestamp(), StartTime));
+       true ->
+            ok
+    end,
     Res.
 
 %% Get the proper bucket name for either the MOSS object
@@ -767,10 +777,12 @@ save_user(User, VClock, RiakPid) ->
                            moss_user(),
                            term(),
                            bucket_operation(),
+                           atom(),
                            pid()) ->
                                   ok |
                                   {error, term()}.
-serialized_bucket_op(Bucket, ACL, User, VClock, BucketOp, RiakPid) ->
+serialized_bucket_op(Bucket, ACL, User, VClock, BucketOp, StatName, RiakPid) ->
+    StartTime = now(),
     case get_admin_creds() of
         {ok, AdminCreds} ->
             BucketFun = bucket_fun(BucketOp,
@@ -790,7 +802,9 @@ serialized_bucket_op(Bucket, ACL, User, VClock, BucketOp, RiakPid) ->
                             OpResult;
                         {ok, UpdUser} ->
                             save_user(UpdUser, VClock, RiakPid)
-                    end;
+                    end,
+                    riak_cs_stats:update(
+                      StatName, timer:now_diff(os:timestamp(), StartTime));
                 {error, {error_status, _, _, ErrorDoc}} ->
                     ErrorCode = xml_error_code(ErrorDoc),
                     {error, riak_moss_s3_response:error_code_to_atom(ErrorCode)};
