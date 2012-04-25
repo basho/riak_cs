@@ -83,4 +83,16 @@ minus_deletes({Adds, Dels}) ->
 %% ===================================================================
 -ifdef(TEST).
 
+empty_resolve_test() ->
+    ?assertEqual(new(), resolve([])).
+
+item_shows_up_test() ->
+    Set = add_element(foo, new()),
+    ?assert(is_element(foo, Set)).
+
+item_is_deleted_test() ->
+    Set = add_element(foo, new()),
+    Set2 = del_element(foo, Set),
+    ?assert(not is_element(foo, Set2)).
+
 -endif.
