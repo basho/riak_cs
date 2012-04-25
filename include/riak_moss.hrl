@@ -297,3 +297,8 @@
 %% ie. A block hasn't been
 %% written in 24-hours.
 -define(DEFAULT_PARTIAL_UPLOAD_DELETE_TIME, 86400). %% 24-hours
+
+-define(DEFAULT_GC_SECONDS_PER_SLICE, 60). %% 1-minute
+%% with 60-second slice, this
+%% equals 24-hours
+-define(DEFAULT_NUM_LEEWAY_SLICES, 1440).
