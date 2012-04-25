@@ -93,6 +93,6 @@ item_shows_up_test() ->
 item_is_deleted_test() ->
     Set = add_element(foo, new()),
     Set2 = del_element(foo, Set),
-    ?assert(not is_element(foo, Set2)).
+    ?assertNot(is_element(foo, Set2)).
 
 -endif.
