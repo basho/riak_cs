@@ -22,5 +22,13 @@
 %% up and maybe slow things down?
 -spec delete(binary(), binary(), pid()) -> ok | {error, notfound}.
 delete(Bucket, Key, RiakPid) ->
+    StartTime = now(),
     {ok, Pid} = riak_moss_manifest_fsm:start_link(Bucket, Key, RiakPid),
-    riak_moss_manifest_fsm:mark_active_as_pending_delete(Pid).
+    Res = riak_moss_manifest_fsm:mark_active_as_pending_delete(Pid),
+    if Res == ok ->
+            riak_cs_stats:update(object_delete,
+                                 timer:now_diff(os:timestamp(), StartTime));
+       true ->
+            ok
+    end,
+    Res.
