@@ -794,6 +794,9 @@ serialized_bucket_op(Bucket, ACL, User, VClock, BucketOp, StatName, RiakPid) ->
                 ok ->
                     BucketRecord = bucket_record(Bucket, BucketOp),
                     case update_user_buckets(User, BucketRecord) of
+                        {ok, ignore} when BucketOp == update_acl ->
+                            riak_cs_stats:update_with_start(StatName, StartTime),
+                            OpResult;
                         {ok, ignore} ->
                             OpResult;
                         {ok, UpdUser} ->
