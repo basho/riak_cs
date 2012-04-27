@@ -26,8 +26,7 @@ delete(Bucket, Key, RiakPid) ->
     {ok, Pid} = riak_moss_manifest_fsm:start_link(Bucket, Key, RiakPid),
     Res = riak_moss_manifest_fsm:mark_active_as_pending_delete(Pid),
     if Res == ok ->
-            riak_cs_stats:update(object_delete,
-                                 timer:now_diff(os:timestamp(), StartTime));
+            riak_cs_stats:update_with_start(object_delete, StartTime);
        true ->
             ok
     end,

@@ -10,7 +10,7 @@
 %% API
 -export([start_link/0,
          update/2,
-         update_with_starttime/2,
+         update_with_start/2,
          report/0,
          report_json/0,
          report_pretty_json/0,
@@ -51,9 +51,9 @@ start_link() ->
 update(BaseId, ElapsedUs) ->
     gen_server:call(?MODULE, {update, BaseId, ElapsedUs}).
 
--spec update_with_starttime(atom(), erlang:timestamp()) ->
+-spec update_with_start(atom(), erlang:timestamp()) ->
                                    ok | {error, {unknown_id, atom()}}.
-update_with_starttime(BaseId, StartTime) ->
+update_with_start(BaseId, StartTime) ->
     gen_server:call(?MODULE, {update, BaseId,
                               timer:now_diff(os:timestamp(), StartTime)}).
 
