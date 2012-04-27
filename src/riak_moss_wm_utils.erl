@@ -153,8 +153,7 @@ ensure_doc(Ctx) -> Ctx.
 streaming_get(FsmPid, StartTime) ->
     case riak_moss_get_fsm:get_next_chunk(FsmPid) of
         {done, Chunk} ->
-            riak_cs_stats:update(object_get,
-                                 timer:now_diff(os:timestamp(), StartTime)),
+            riak_cs_stats:update_with_start(object_get, StartTime),
             {Chunk, done};
         {chunk, Chunk} ->
             {Chunk, fun() -> streaming_get(FsmPid, StartTime) end}
