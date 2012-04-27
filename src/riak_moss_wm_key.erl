@@ -224,7 +224,15 @@ delete_resource(RD, Ctx=#key_context{bucket=Bucket,
     riak_moss_get_fsm:stop(GetFsmPid),
     BinKey = list_to_binary(Key),
     #context{riakc_pid=RiakPid} = InnerCtx,
-    ok = riak_moss_delete_marker:delete(Bucket, BinKey, RiakPid),
+    case riak_moss_delete_marker:delete(Bucket, BinKey, RiakPid) of
+        ok ->
+            %% successfully marked for deletion
+            ok;
+        {error, notfound} ->
+            %% it's not there; consider the delete successful
+            ok
+%%% other errors: bomb for now, handle better later?
+    end,
     {true, RD, Ctx}.
 
 -spec content_types_accepted(term(), term()) ->
