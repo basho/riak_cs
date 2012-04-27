@@ -214,7 +214,7 @@ stanchion_data() ->
 get_keys_and_manifests(BucketName, Prefix, RiakPid) ->
     ManifestBucket = riak_moss_utils:to_bucket_name(objects, BucketName),
     case active_manifests(ManifestBucket, Prefix, RiakPid) of
-        {ok, [{0,KeyManifests}]} ->
+        {ok, KeyManifests} ->
             {ok, lists:keysort(1, KeyManifests)};
         {error, Reason} ->
             {error, Reason}
@@ -228,11 +228,28 @@ active_manifests(ManifestBucket, Prefix, RiakPid) ->
             end,
     Query = [{map, {modfun, riak_moss_utils, map_keys_and_manifests},
               undefined, true}],
-    case riakc_pb_socket:mapred(RiakPid, Input, Query) of
-        {ok, Results} ->
-            {ok, Results};
-        {error, Reason} ->
+    {ok, ReqId} = riakc_pb_socket:mapred_stream(RiakPid, Input, Query, self()),
+    receive_keys_and_manifests(ReqId, []).
+
+%% Stream keys to avoid riakc_pb_socket:wait_for_mapred/2's use of
+%% orddict:append_list/3, because it's mega-inefficient, to the point
+%% of unusability for large buckets (memory allocation exit of the
+%% erlang vm for a 100k-object bucket observed in testing).
+receive_keys_and_manifests(ReqId, Acc) ->
+    receive
+        {ReqId, done} ->
+            {ok, Acc};
+        {ReqId, {mapred, _Phase, Res}} ->
+            %% The use of ++ here shouldn't be *too* bad, especially
+            %% since Res is always a single list element in Riak 1.1
+            receive_keys_and_manifests(ReqId, Res++Acc);
+        {ReqId, {error, Reason}} ->
             {error, Reason}
+    after 60000 ->
+            %% timing out after complete inactivity for 1min
+            %% TODO: would shorter be better? should there be an
+            %% overall timeout?
+            {error, timeout}
     end.
 
 %% MapReduce function, runs on the Riak nodes, should therefor use
