@@ -801,10 +801,11 @@ serialized_bucket_op(Bucket, ACL, User, VClock, BucketOp, StatName, RiakPid) ->
                         {ok, ignore} ->
                             OpResult;
                         {ok, UpdUser} ->
-                            save_user(UpdUser, VClock, RiakPid)
-                    end,
-                    riak_cs_stats:update(
-                      StatName, timer:now_diff(os:timestamp(), StartTime));
+                            X = save_user(UpdUser, VClock, RiakPid),
+                            riak_cs_stats:update(
+                              StatName, timer:now_diff(os:timestamp(), StartTime)),
+                            X
+                    end;
                 {error, {error_status, _, _, ErrorDoc}} ->
                     ErrorCode = xml_error_code(ErrorDoc),
                     {error, riak_moss_s3_response:error_code_to_atom(ErrorCode)};
