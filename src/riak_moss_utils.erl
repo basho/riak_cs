@@ -223,8 +223,13 @@ get_keys_and_manifests(BucketName, Prefix, RiakPid) ->
 active_manifests(ManifestBucket, Prefix, RiakPid) ->
     Input = case Prefix of
                 <<>> -> ManifestBucket;
-                %% TODO: use 2i range query instead?
-                _ -> {ManifestBucket, [[<<"starts_with">>, Prefix]]}
+                _ ->
+                    %% using filtered listkeys instead of 2i here
+                    %% because 2i seems no more than a 10% performance
+                    %% increase, and it requires extra finagling to
+                    %% deal with its range query being inclusive
+                    %% instead of exclusive
+                    {ManifestBucket, [[<<"starts_with">>, Prefix]]}
             end,
     Query = [{map, {modfun, riak_moss_utils, map_keys_and_manifests},
               undefined, true}],
