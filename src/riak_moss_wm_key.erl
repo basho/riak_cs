@@ -368,7 +368,7 @@ finalize_request(RD, #key_context{size=S,context=#context{start_time=StartTime}}
     {ok, Manifest} = riak_moss_put_fsm:finalize(Pid),
     ETag = "\"" ++ riak_moss_utils:binary_to_hexlist(Manifest#lfs_manifest_v2.content_md5) ++ "\"",
     ok = riak_cs_stats:update_with_start(object_put, StartTime),
-    {true, wrq:set_resp_header("ETag",  ETag, AccessRD), Ctx}.
+    {{halt, 200}, wrq:set_resp_header("ETag",  ETag, AccessRD), Ctx}.
 
 finish_request(RD, KeyCtx=#key_context{context=InnerCtx}) ->
     #context{riakc_pid=RiakPid} = InnerCtx,
