@@ -187,8 +187,7 @@ produce_body(RD, #key_context{get_fsm_pid=GetFsmPid,
                               context=#context{start_time=StartTime,
                                                requested_perm='READ_ACP'}}=KeyCtx) ->
     riak_moss_get_fsm:stop(GetFsmPid),
-    riak_cs_stats:update(object_get_acl,
-                         timer:now_diff(os:timestamp(), StartTime)),
+    ok = riak_cs_stats:update_with_start(object_get_acl, StartTime),
     Acl = Mfst#lfs_manifest_v2.acl,
     case Acl of
         undefined ->
@@ -220,8 +219,7 @@ produce_body(RD, #key_context{get_fsm_pid=GetFsmPid, manifest=Mfst,
                                                                   StartTime) end
     end,
     if Method == 'HEAD' ->
-            riak_cs_stats:update(object_head,
-                                 timer:now_diff(os:timestamp(), StartTime));
+            ok = riak_cs_stats:update_with_start(object_head, StartTime);
        true ->
             ok
     end,
@@ -361,8 +359,7 @@ finalize_request(RD, #key_context{size=S,context=#context{start_time=StartTime}}
 
     {ok, Manifest} = riak_moss_put_fsm:finalize(Pid),
     ETag = "\"" ++ riak_moss_utils:binary_to_hexlist(Manifest#lfs_manifest_v2.content_md5) ++ "\"",
-    riak_cs_stats:update(object_put,
-                         timer:now_diff(os:timestamp(), StartTime)),
+    ok = riak_cs_stats:update_with_start(object_put, StartTime),
     {true, wrq:set_resp_header("ETag",  ETag, AccessRD), Ctx}.
 
 finish_request(RD, KeyCtx=#key_context{context=InnerCtx}) ->

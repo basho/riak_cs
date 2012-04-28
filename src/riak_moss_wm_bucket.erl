@@ -178,7 +178,8 @@ to_xml(RD, Ctx=#context{start_time=StartTime,
                                                                    KeyObjPairs,
                                                                    RD,
                                                                    Ctx),
-                    riak_cs_stats:update_with_start(bucket_list_keys, StartTime),
+                    ok = riak_cs_stats:update_with_start(bucket_list_keys,
+                                                         StartTime),
                     X;
                 {error, Reason} ->
                     riak_moss_s3_response:api_error(Reason, RD, Ctx)
@@ -191,7 +192,7 @@ to_xml(RD, Ctx=#context{start_time=StartTime,
     case riak_moss_acl:bucket_acl(Bucket, RiakPid) of
         {ok, Acl} ->
             X = {riak_moss_acl_utils:acl_to_xml(Acl), RD, Ctx},
-            riak_cs_stats:update_with_start(bucket_get_acl, StartTime),
+            ok = riak_cs_stats:update_with_start(bucket_get_acl, StartTime),
             X;
         {error, Reason} ->
             riak_moss_s3_response:api_error(Reason, RD, Ctx)

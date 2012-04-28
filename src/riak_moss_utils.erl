@@ -446,7 +446,7 @@ set_object_acl(Bucket, Key, Manifest, Acl, RiakPid) ->
     Res = riak_moss_manifest_fsm:update_manifest_with_confirmation(ManiPid, UpdManifest),
     riak_moss_manifest_fsm:stop(ManiPid),
     if Res == ok ->
-            riak_cs_stats:update_with_start(object_put_acl, StartTime);
+            ok = riak_cs_stats:update_with_start(object_put_acl, StartTime);
        true ->
             ok
     end,
@@ -798,13 +798,15 @@ serialized_bucket_op(Bucket, ACL, User, VClock, BucketOp, StatName, RiakPid) ->
                     BucketRecord = bucket_record(Bucket, BucketOp),
                     case update_user_buckets(User, BucketRecord) of
                         {ok, ignore} when BucketOp == update_acl ->
-                            riak_cs_stats:update_with_start(StatName, StartTime),
+                            ok = riak_cs_stats:update_with_start(StatName,
+                                                                 StartTime),
                             OpResult;
                         {ok, ignore} ->
                             OpResult;
                         {ok, UpdUser} ->
                             X = save_user(UpdUser, VClock, RiakPid),
-                            riak_cs_stats:update_with_start(StatName, StartTime),
+                            ok = riak_cs_stats:update_with_start(StatName,
+                                                                 StartTime),
                             X
                     end;
                 {error, {error_status, _, _, ErrorDoc}} ->

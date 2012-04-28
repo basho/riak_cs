@@ -130,7 +130,7 @@ handle_cast({get_block, ReplyPid, Bucket, Key, UUID, BlockNumber}, State=#state{
         {error, notfound}=NotFound ->
             NotFound
     end,
-    riak_cs_stats:update_with_start(block_get, StartTime),
+    ok = riak_cs_stats:update_with_start(block_get, StartTime),
     ok = riak_moss_get_fsm:chunk(ReplyPid, BlockNumber, ChunkValue),
     {noreply, State};
 handle_cast({put_block, ReplyPid, Bucket, Key, UUID, BlockNumber, Value}, State=#state{riakc_pid=RiakcPid}) ->

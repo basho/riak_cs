@@ -90,7 +90,7 @@ content_types_provided(RD, Ctx) ->
     {{'halt', term()}, term(), #context{}}.
 to_xml(RD, Ctx=#context{start_time=StartTime,user=User}) ->
     Res = riak_moss_s3_response:list_all_my_buckets_response(User, RD, Ctx),
-    riak_cs_stats:update_with_start(service_get_buckets, StartTime),
+    ok = riak_cs_stats:update_with_start(service_get_buckets, StartTime),
     Res.
 
 finish_request(RD, Ctx=#context{riakc_pid=undefined}) ->
