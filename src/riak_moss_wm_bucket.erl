@@ -26,7 +26,7 @@ init(Config) ->
     %% Check if authentication is disabled and
     %% set that in the context.
     AuthBypass = proplists:get_value(auth_bypass, Config),
-    {ok, #context{auth_bypass=AuthBypass}}.
+    {ok, #context{start_time=now(), auth_bypass=AuthBypass}}.
 
 -spec service_available(term(), term()) -> {true, term(), term()}.
 service_available(RD, Ctx) ->
@@ -159,7 +159,8 @@ content_types_accepted(RD, Ctx) ->
 
 -spec to_xml(term(), #context{}) ->
                     {binary() | {'halt', term()}, term(), #context{}}.
-to_xml(RD, Ctx=#context{user=User,
+to_xml(RD, Ctx=#context{start_time=StartTime,
+                        user=User,
                         bucket=Bucket,
                         requested_perm='READ',
                         riakc_pid=RiakPid}) ->
@@ -172,21 +173,27 @@ to_xml(RD, Ctx=#context{user=User,
             Prefix = list_to_binary(wrq:get_qs_value("prefix", "", RD)),
             case riak_moss_utils:get_keys_and_manifests(Bucket, Prefix, RiakPid) of
                 {ok, KeyObjPairs} ->
-                    riak_moss_s3_response:list_bucket_response(User,
-                                                               BucketRecord,
-                                                               KeyObjPairs,
-                                                               RD,
-                                                               Ctx);
+                    X = riak_moss_s3_response:list_bucket_response(User,
+                                                                   BucketRecord,
+                                                                   KeyObjPairs,
+                                                                   RD,
+                                                                   Ctx),
+                    ok = riak_cs_stats:update_with_start(bucket_list_keys,
+                                                         StartTime),
+                    X;
                 {error, Reason} ->
                     riak_moss_s3_response:api_error(Reason, RD, Ctx)
             end
     end;
-to_xml(RD, Ctx=#context{bucket=Bucket,
+to_xml(RD, Ctx=#context{start_time=StartTime,
+                        bucket=Bucket,
                         requested_perm='READ_ACP',
                         riakc_pid=RiakPid}) ->
     case riak_moss_acl:bucket_acl(Bucket, RiakPid) of
         {ok, Acl} ->
-            {riak_moss_acl_utils:acl_to_xml(Acl), RD, Ctx};
+            X = {riak_moss_acl_utils:acl_to_xml(Acl), RD, Ctx},
+            ok = riak_cs_stats:update_with_start(bucket_get_acl, StartTime),
+            X;
         {error, Reason} ->
             riak_moss_s3_response:api_error(Reason, RD, Ctx)
     end.

@@ -18,11 +18,13 @@
          from_bucket_name/1,
          get_admin_creds/0,
          get_buckets/1,
+         get_env/3,
          get_keys_and_manifests/3,
          get_object/3,
          get_user/2,
          get_user_by_index/3,
          get_user_index/3,
+         json_pp_print/1,
          list_keys/2,
          pow/2,
          pow/3,
@@ -42,6 +44,12 @@
 
 -define(OBJECT_BUCKET_PREFIX, <<"0o:">>).       % Version # = 0
 -define(BLOCK_BUCKET_PREFIX, <<"0b:">>).        % Version # = 0
+
+%% Definitions for json_pp_print, from riak_core's json_pp.erl
+-define(SPACE, 32).
+-define(is_quote(C), (C == $\") orelse (C == $\')).
+-define(is_indent(C), (C == 91) orelse (C == 123)). % [, {
+-define(is_undent(C), (C == 93) orelse (C == 125)). % ], }
 
 -type xmlElement() :: #xmlElement{}.
 
@@ -80,6 +88,7 @@ create_bucket(User, VClock, Bucket, ACL, RiakPid) ->
                          User,
                          VClock,
                          create,
+                         bucket_create,
                          RiakPid).
 
 %% @doc Create a new MOSS user
@@ -150,6 +159,7 @@ delete_bucket(User, VClock, Bucket, RiakPid) ->
                                  User,
                                  VClock,
                                  delete,
+                                 bucket_delete,
                                  RiakPid);
         false ->
             LocalError
@@ -206,6 +216,16 @@ stanchion_data() ->
             SSL = ?DEFAULT_STANCHION_SSL
     end,
     {IP, Port, SSL}.
+
+%% @doc Get an application environment variable or return a default term.
+-spec get_env(atom(), atom(), term()) -> term().
+get_env(App, Key, Default) ->
+    case application:get_env(App, Key) of
+        {ok, Value} ->
+            Value;
+        _ ->
+            Default
+    end.
 
 %% @doc Return a list of keys for a bucket along
 %% with their associated objects.
@@ -324,6 +344,31 @@ get_user_index(Index, Value, RiakPid) ->
             Error
     end.
 
+%% @doc Pretty-print a JSON string ... from riak_core's json_pp.erl
+json_pp_print(Str) when is_list(Str) ->
+    json_pp_print(Str, 0, undefined, []).
+
+json_pp_print([$\\, C| Rest], I, C, Acc) -> % in quote
+    json_pp_print(Rest, I, C, [C, $\\| Acc]);
+json_pp_print([C| Rest], I, undefined, Acc) when ?is_quote(C) ->
+    json_pp_print(Rest, I, C, [C| Acc]);
+json_pp_print([C| Rest], I, C, Acc) -> % in quote
+    json_pp_print(Rest, I, undefined, [C| Acc]);
+json_pp_print([C| Rest], I, undefined, Acc) when ?is_indent(C) ->
+    json_pp_print(Rest, I+1, undefined, [json_pp_indent(I+1), $\n, C| Acc]);
+json_pp_print([C| Rest], I, undefined, Acc) when ?is_undent(C) ->
+    json_pp_print(Rest, I-1, undefined, [C, json_pp_indent(I-1), $\n| Acc]);
+json_pp_print([$,| Rest], I, undefined, Acc) ->
+    json_pp_print(Rest, I, undefined, [json_pp_indent(I), $\n, $,| Acc]);
+json_pp_print([$:| Rest], I, undefined, Acc) ->
+    json_pp_print(Rest, I, undefined, [?SPACE, $:| Acc]);
+json_pp_print([C|Rest], I, Q, Acc) ->
+    json_pp_print(Rest, I, Q, [C| Acc]);
+json_pp_print([], _I, _Q, Acc) -> % done
+    lists:reverse(Acc).
+
+json_pp_indent(I) -> lists:duplicate(I*4, ?SPACE).
+
 %% @doc List the keys from a bucket
 -spec list_keys(binary(), pid()) -> {ok, [binary()]} | {error, term()}.
 list_keys(BucketName, RiakPid) ->
@@ -386,6 +431,7 @@ set_bucket_acl(User, VClock, Bucket, ACL, RiakPid) ->
                          User,
                          VClock,
                          update_acl,
+                         bucket_put_acl,
                          RiakPid).
 
 %% @doc Set the ACL for an object. Existing ACLs are only
@@ -393,11 +439,17 @@ set_bucket_acl(User, VClock, Bucket, ACL, RiakPid) ->
 -spec set_object_acl(binary(), binary(), lfs_manifest(), acl(), pid()) ->
             ok | {error, term()}.
 set_object_acl(Bucket, Key, Manifest, Acl, RiakPid) ->
+    StartTime = now(),
     {ok, ManiPid} = riak_moss_manifest_fsm:start_link(Bucket, Key, RiakPid),
     _ActiveMfst = riak_moss_manifest_fsm:get_active_manifest(ManiPid),
     UpdManifest = Manifest#lfs_manifest_v2{acl=Acl},
     Res = riak_moss_manifest_fsm:update_manifest_with_confirmation(ManiPid, UpdManifest),
     riak_moss_manifest_fsm:stop(ManiPid),
+    if Res == ok ->
+            ok = riak_cs_stats:update_with_start(object_put_acl, StartTime);
+       true ->
+            ok
+    end,
     Res.
 
 %% Get the proper bucket name for either the MOSS object
@@ -724,10 +776,12 @@ save_user(User, VClock, RiakPid) ->
                            moss_user(),
                            term(),
                            bucket_operation(),
+                           atom(),
                            pid()) ->
                                   ok |
                                   {error, term()}.
-serialized_bucket_op(Bucket, ACL, User, VClock, BucketOp, RiakPid) ->
+serialized_bucket_op(Bucket, ACL, User, VClock, BucketOp, StatName, RiakPid) ->
+    StartTime = now(),
     case get_admin_creds() of
         {ok, AdminCreds} ->
             BucketFun = bucket_fun(BucketOp,
@@ -743,10 +797,17 @@ serialized_bucket_op(Bucket, ACL, User, VClock, BucketOp, RiakPid) ->
                 ok ->
                     BucketRecord = bucket_record(Bucket, BucketOp),
                     case update_user_buckets(User, BucketRecord) of
+                        {ok, ignore} when BucketOp == update_acl ->
+                            ok = riak_cs_stats:update_with_start(StatName,
+                                                                 StartTime),
+                            OpResult;
                         {ok, ignore} ->
                             OpResult;
                         {ok, UpdUser} ->
-                            save_user(UpdUser, VClock, RiakPid)
+                            X = save_user(UpdUser, VClock, RiakPid),
+                            ok = riak_cs_stats:update_with_start(StatName,
+                                                                 StartTime),
+                            X
                     end;
                 {error, {error_status, _, _, ErrorDoc}} ->
                     ErrorCode = xml_error_code(ErrorDoc),

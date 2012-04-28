@@ -132,6 +132,15 @@ canonicalize_qs([{K, V}|T], Acc) ->
             canonicalize_qs(T)
     end.
 
+%% XXX TODO:  this is conditional to make unit tests pass.
+%%            the webmachine resources need to support
+%%            vhost-style bucket addressing so that things
+%%            like path_info([key|bucket]) work properly.
+%%
+%%            the test version of canonicalize_resource
+%%            doesn't use path_info, allowing the unit
+%%            tests to pass.
+-ifdef(TEST).
 bucket_from_host(undefined, RD) ->
     wrq:path_info(bucket, RD);
 bucket_from_host(HostHeader, RD) ->
@@ -149,15 +158,6 @@ bucket_from_host(HostHeader, RD) ->
             end
     end.
 
-%% XXX TODO:  this is conditional to make unit tests pass.
-%%            the webmachine resources need to support
-%%            vhost-style bucket addressing so that things
-%%            like path_info([key|bucket]) work properly.
-%%
-%%            the test version of canonicalize_resource
-%%            doesn't use path_info, allowing the unit
-%%            tests to pass.
--ifdef(TEST).
 canonicalize_resource(RD) ->
     case bucket_from_host(wrq:get_req_header("host", RD), RD) of
         undefined ->
@@ -167,14 +167,7 @@ canonicalize_resource(RD) ->
     end.
 -else.
 canonicalize_resource(RD) ->
-    case {bucket_from_host(wrq:get_req_header("host", RD), RD),
-          wrq:path_tokens(RD)} of
-        {undefined, []} -> ["/"];
-        {undefined, _} -> [wrq:path(RD)];
-        {Bucket, []} -> ["/", Bucket, "/"];
-        {Bucket, KeyTokens} ->
-            ["/", Bucket, "/", string:join(KeyTokens, "/")]
-    end.
+    wrq:path(RD).
 -endif.
 
 %% ===================================================================

@@ -25,7 +25,8 @@ init(Config) ->
     %% Check if authentication is disabled and
     %% set that in the context.
     AuthBypass = proplists:get_value(auth_bypass, Config),
-    {ok, #key_context{context=#context{auth_bypass=AuthBypass}}}.
+    {ok, #key_context{context=#context{auth_bypass=AuthBypass,
+                                       start_time=now()}}}.
 
 -spec extract_paths(term(), term()) -> term().
 extract_paths(RD, Ctx) ->
@@ -183,8 +184,10 @@ content_types_provided(RD, Ctx=#key_context{manifest=Mfst}) ->
 -spec produce_body(term(), term()) -> {iolist()|binary(), term(), term()}.
 produce_body(RD, #key_context{get_fsm_pid=GetFsmPid,
                               manifest=Mfst,
-                              context=#context{requested_perm='READ_ACP'}}=KeyCtx) ->
+                              context=#context{start_time=StartTime,
+                                               requested_perm='READ_ACP'}}=KeyCtx) ->
     riak_moss_get_fsm:stop(GetFsmPid),
+    ok = riak_cs_stats:update_with_start(object_get_acl, StartTime),
     Acl = Mfst#lfs_manifest_v2.acl,
     case Acl of
         undefined ->
@@ -192,7 +195,8 @@ produce_body(RD, #key_context{get_fsm_pid=GetFsmPid,
         _ ->
             {riak_moss_acl_utils:acl_to_xml(Acl), RD, KeyCtx}
     end;
-produce_body(RD, #key_context{get_fsm_pid=GetFsmPid, manifest=Mfst}=Ctx) ->
+produce_body(RD, #key_context{get_fsm_pid=GetFsmPid, manifest=Mfst,
+                              context=#context{start_time=StartTime}}=Ctx) ->
     ContentLength = Mfst#lfs_manifest_v2.content_length,
     ContentMd5 = Mfst#lfs_manifest_v2.content_md5,
     LastModified = riak_moss_wm_utils:to_rfc_1123(Mfst#lfs_manifest_v2.created),
@@ -211,7 +215,13 @@ produce_body(RD, #key_context{get_fsm_pid=GetFsmPid, manifest=Mfst}=Ctx) ->
             StreamFun = fun() -> {<<>>, done} end;
         false ->
             riak_moss_get_fsm:continue(GetFsmPid),
-            StreamFun = fun() -> riak_moss_wm_utils:streaming_get(GetFsmPid) end
+            StreamFun = fun() -> riak_moss_wm_utils:streaming_get(GetFsmPid,
+                                                                  StartTime) end
+    end,
+    if Method == 'HEAD' ->
+            ok = riak_cs_stats:update_with_start(object_head, StartTime);
+       true ->
+            ok
     end,
     {{known_length_stream, ContentLength, {<<>>, StreamFun}}, NewRQ, Ctx}.
 
@@ -350,13 +360,14 @@ accept_streambody(RD, Ctx=#key_context{}, Pid, {Data, Next}) ->
 %% We need to do some checking to make sure
 %% the bucket exists for the user who is doing
 %% this PUT
-finalize_request(RD, #key_context{size=S}=Ctx, Pid) ->
+finalize_request(RD, #key_context{size=S,context=#context{start_time=StartTime}}=Ctx, Pid) ->
     %% TODO: probably want something that counts actual bytes uploaded
     %% instead, to record partial/aborted uploads
     AccessRD = riak_moss_access_logger:set_bytes_in(S, RD),
 
     {ok, Manifest} = riak_moss_put_fsm:finalize(Pid),
     ETag = "\"" ++ riak_moss_utils:binary_to_hexlist(Manifest#lfs_manifest_v2.content_md5) ++ "\"",
+    ok = riak_cs_stats:update_with_start(object_put, StartTime),
     {true, wrq:set_resp_header("ETag",  ETag, AccessRD), Ctx}.
 
 finish_request(RD, KeyCtx=#key_context{context=InnerCtx}) ->
