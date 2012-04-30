@@ -20,6 +20,7 @@
          get_buckets/1,
          get_env/3,
          get_keys_and_manifests/3,
+         map_keys_and_manifests/3,
          get_object/3,
          get_user/2,
          get_user_by_index/3,
@@ -232,31 +233,70 @@ get_env(App, Key, Default) ->
 -spec get_keys_and_manifests(binary(), binary(), pid()) -> {ok, [lfs_manifest()]} | {error, term()}.
 get_keys_and_manifests(BucketName, Prefix, RiakPid) ->
     ManifestBucket = riak_moss_utils:to_bucket_name(objects, BucketName),
-    case list_keys(ManifestBucket, RiakPid) of
-        {ok, Keys} ->
-            KeyObjPairs =
-                [begin
-                     {ok, ManiPid} = riak_moss_manifest_fsm:start_link(BucketName, Key, RiakPid),
-                     Manifest = riak_moss_manifest_fsm:get_active_manifest(ManiPid),
-                     riak_moss_manifest_fsm:stop(ManiPid),
-                     {Key, Manifest}
-                 end
-                 || Key <- prefix_filter(Keys, Prefix)],
-            {ok, KeyObjPairs};
-        {error, Reason1} ->
-            {error, Reason1}
+    case active_manifests(ManifestBucket, Prefix, RiakPid) of
+        {ok, KeyManifests} ->
+            {ok, lists:keysort(1, KeyManifests)};
+        {error, Reason} ->
+            {error, Reason}
     end.
 
--spec prefix_filter(list(), binary()) -> list().
-prefix_filter(Keys, <<>>) ->
-    Keys;
-prefix_filter(Keys, Prefix) ->
-    PL = size(Prefix),
-    lists:filter(
-      fun(<<P:PL/binary,_/binary>>) when P =:= Prefix -> true;
-         (_) -> false
-      end, Keys).
+active_manifests(ManifestBucket, Prefix, RiakPid) ->
+    Input = case Prefix of
+                <<>> -> ManifestBucket;
+                _ ->
+                    %% using filtered listkeys instead of 2i here
+                    %% because 2i seems no more than a 10% performance
+                    %% increase, and it requires extra finagling to
+                    %% deal with its range query being inclusive
+                    %% instead of exclusive
+                    {ManifestBucket, [[<<"starts_with">>, Prefix]]}
+            end,
+    Query = [{map, {modfun, riak_moss_utils, map_keys_and_manifests},
+              undefined, true}],
+    {ok, ReqId} = riakc_pb_socket:mapred_stream(RiakPid, Input, Query, self()),
+    receive_keys_and_manifests(ReqId, []).
 
+%% Stream keys to avoid riakc_pb_socket:wait_for_mapred/2's use of
+%% orddict:append_list/3, because it's mega-inefficient, to the point
+%% of unusability for large buckets (memory allocation exit of the
+%% erlang vm for a 100k-object bucket observed in testing).
+receive_keys_and_manifests(ReqId, Acc) ->
+    receive
+        {ReqId, done} ->
+            {ok, Acc};
+        {ReqId, {mapred, _Phase, Res}} ->
+            %% The use of ++ here shouldn't be *too* bad, especially
+            %% since Res is always a single list element in Riak 1.1
+            receive_keys_and_manifests(ReqId, Res++Acc);
+        {ReqId, {error, Reason}} ->
+            {error, Reason}
+    after 60000 ->
+            %% timing out after complete inactivity for 1min
+            %% TODO: would shorter be better? should there be an
+            %% overall timeout?
+            {error, timeout}
+    end.
+
+%% MapReduce function, runs on the Riak nodes, should therefore use
+%% riak_object, not riakc_obj.
+map_keys_and_manifests({error, notfound}, _, _) ->
+    [];
+map_keys_and_manifests(Object, _, _) ->
+    try
+        AllManifests = [ binary_to_term(V)
+                         || V <- riak_object:get_values(Object) ],
+        Resolved = riak_moss_manifest_resolution:resolve(AllManifests),
+        case riak_moss_manifest:active_manifest(Resolved) of
+            {ok, Manifest} ->
+                [{riak_object:key(Object), {ok, Manifest}}];
+            _ ->
+                []
+        end
+    catch Type:Reason ->
+            lager:warning("Riak CS object list map failed: ~p:~p",
+                          [Type, Reason]),
+            []
+    end.
 
 %% @doc Return the credentials of the admin user
 -spec get_admin_creds() -> {ok, {string(), string()}} | {error, term()}.
