@@ -257,7 +257,7 @@ receive_keys_and_manifests(ReqId, Acc) ->
             {error, timeout}
     end.
 
-%% MapReduce function, runs on the Riak nodes, should therefor use
+%% MapReduce function, runs on the Riak nodes, should therefore use
 %% riak_object, not riakc_obj.
 map_keys_and_manifests({error, notfound}, _, _) ->
     [];
