@@ -87,9 +87,6 @@ get_stats() ->
 %% ====================================================================
 
 init([]) ->
-    %% Not sure why folsom doesn't use app module to spin up...
-    {ok, _} = folsom_sup:start_link(),
-
     %% Setup a list of all the values we want to track. For each of these, we will
     %% have a latency histogram and meter
     _ = [init_item(I) || I <- ?IDS],
