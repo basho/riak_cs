@@ -9,11 +9,6 @@
 
 -define(MAGIC, '**DTRACE*SUPPORT**').
 
-%% timing:
-%%
-%% f(Xs), begin [_|Xs] = [begin put('**DYNTRACE', undefined), timer:tc(riak_cs_dtrace, dtrace, [[42]]) end || _ <- lists:seq(1,10000)], lists:sum([X || {X, _} <- Xs]) / (length(Xs)-1) end.
-%% -> 0.21024204840968194
-
 dtrace(ArgList) ->
     case get(?MAGIC) of
         undefined ->
