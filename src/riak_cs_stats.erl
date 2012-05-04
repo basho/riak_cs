@@ -7,6 +7,8 @@
 
 -behaviour(gen_server).
 
+-compile(export_all).
+
 %% API
 -export([start_link/0,
          update/2,
@@ -156,4 +158,62 @@ raw_report_item(BaseId) ->
              Latency95, Latency99]};
         undefined ->
             {BaseId, -1, -1, -1, -1, -1, -1}
+    end.
+
+-define(MAGIC, '**DYNTRACE').
+
+dyntrace(ArgList) ->
+    case application:get_env(riak_moss, dyntrace) of
+        undefined ->
+            false;
+        dyntrace ->
+            erlang:apply(dyntrace, p, ArgList);
+        dtrace ->
+            erlang:apply(dtrace, p, ArgList)
+    end.
+
+%% On an unloaded/idle MacBook Pro:
+%% 
+%% dyntrace0:
+%%
+%% f(Xs), begin [_|Xs] = [begin put('**DYNTRACE', undefined), timer:tc(riak_cs_stats, dyntrace0, [[42]]) end || _ <- lists:seq(1,500)], lists:sum([X || {X, _} <- Xs]) / (length(Xs)-1) end.  
+%% -> 5013.883534136547
+%%
+%% dyntrace2:
+%%
+%% riak_cs_stats:dyntrace2_setup(undefined).
+%% f(Xs), begin [_|Xs] = [begin put('**DYNTRACE', undefined), timer:tc(riak_cs_stats, dyntrace2, [[42]]) end || _ <- lists:seq(1,10000)], lists:sum([X || {X, _} <- Xs]) / (length(Xs)-1) end.
+%% -> 1.0608121624324864
+%%
+%% dyntrace:
+%%
+%% f(Xs), begin [_|Xs] = [begin put('**DYNTRACE', undefined), timer:tc(riak_cs_stats, dyntrace, [[42]]) end || _ <- lists:seq(1,10000)], lists:sum([X || {X, _} <- Xs]) / (length(Xs)-1) end. 
+%% -> 0.5754150830166033
+
+dyntrace0(ArgList) ->
+    try
+        erlang:apply(dyntrace, p, ArgList)
+    catch
+        error:undef ->
+            try
+                erlang:apply(dtrace, p, ArgList)
+            catch
+                error:undef ->
+                    false
+            end
+    end.
+
+dyntrace2_setup(Val)
+  when Val == undefined; Val == dyntrace; Val == dtrace ->
+    code:add_pathz("/Users/fritchie/b/src/riak/deps/mochiweb/ebin"),
+    mochiglobal:put(?MAGIC, Val).
+
+dyntrace2(ArgList) ->
+    case mochiglobal:get(?MAGIC) of
+        undefined ->
+            false;
+        dyntrace ->
+            erlang:apply(dyntrace, p, ArgList);
+        dtrace ->
+            erlang:apply(dtrace, p, ArgList)
     end.
