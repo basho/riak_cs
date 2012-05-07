@@ -6,7 +6,10 @@
 -module(riak_moss_wm_error_handler).
 -export([render_error/3]).
 
+-include("riak_moss.hrl").
+
 render_error(500, Req, Reason) ->
+    dt_entry(<<"render_error">>),
     {ok, ReqState} = Req:add_response_header("Content-Type", "text/html"),
     {Path,_} = Req:path(),
     error_logger:error_msg("webmachine error: path=~p~n~p~n", [Path, Reason]),
@@ -16,4 +19,9 @@ render_error(500, Req, Reason) ->
     ErrorIOList = [ErrorStart,STString,ErrorEnd],
     {erlang:iolist_to_binary(ErrorIOList), ReqState};
 render_error(_Code, Req, _Reason) ->
+    dt_entry(<<"render_error">>),
     Req:response_body().
+
+dt_entry(Name) ->
+    riak_cs_dtrace:dtrace(?DT_WM_OP, 1, [], ?MODULE, Name, []).
+    

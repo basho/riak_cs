@@ -17,7 +17,8 @@
          user_record_to_proplist/1,
          find_and_auth_user/3,
          validate_auth_header/3,
-         deny_access/2]).
+         deny_access/2,
+         extract_name/1]).
 
 -include("riak_moss.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
@@ -227,6 +228,13 @@ iso_8601_to_rfc_1123(Date) when is_binary(Date) ->
       _/binary>> = Date,
     httpd_util:rfc1123_date({{b2i(Yr), b2i(Mo), b2i(Da)},
                              {b2i(Hr), b2i(Mn), b2i(Sc)}}).
+
+extract_name(User) when is_list(User) ->
+    User;
+extract_name(?MOSS_USER{name=Name}) ->
+    Name;
+extract_name(_) ->
+    "-unknown-".
 
 %% ===================================================================
 %% Internal functions

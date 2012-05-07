@@ -326,12 +326,8 @@ finish_request(RD, Ctx=#context{riakc_pid=RiakPid}) ->
     dt_return(<<"finish_request">>, [1], []),
     {true, RD, Ctx#context{riakc_pid=undefined}}.
 
-extract_name(User) when is_list(User) ->
-    User;
-extract_name(?MOSS_USER{name=Name}) ->
-    Name;
-extract_name(_) ->
-    "-unknown-".
+extract_name(X) ->
+    riak_moss_wm_utils:extract_name(X).
 
 dt_entry(Func) ->
     dt_entry(Func, [], []).
