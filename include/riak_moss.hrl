@@ -253,5 +253,5 @@
 -define(DT_SERVICE_OP,      701).
 -define(DT_BUCKET_OP,       702).
 -define(DT_OBJECT_OP,       703).
--define(DT_AUTH_OP,         704).
+%%-define(DT_AUTH_OP,         704).
 -define(DT_WM_OP,           705).
