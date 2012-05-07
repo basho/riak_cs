@@ -262,7 +262,7 @@ accept_body(RD, Ctx=#context{user=User,
                                         ACL,
                                         RiakPid) of
         ok ->
-            dt_return(<<"accept_body">>, [200, size(Body)], [extract_name(User)]),
+            dt_return(<<"accept_body">>, [200], [extract_name(User)]),
             {{halt, 200}, RD, Ctx};
         {error, Reason} ->
             Code = riak_moss_s3_response:status_code(Reason),
