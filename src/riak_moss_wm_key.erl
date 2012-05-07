@@ -458,8 +458,5 @@ dt_entry(Func) ->
 dt_entry(Func, Ints, Strings) ->
     riak_cs_dtrace:dtrace(?DT_WM_OP, 1, Ints, ?MODULE, Func, Strings).
 
-%% dt_return(Func) ->
-%%     dt_return(Func, [], []).
-
 dt_return(Func, Ints, Strings) ->
     riak_cs_dtrace:dtrace(?DT_WM_OP, 2, Ints, ?MODULE, Func, Strings).
