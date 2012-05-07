@@ -213,3 +213,11 @@
 %% to determine the PUT buffer size.
 %% ex. 2 would mean BlockSize * 2
 -define(DEFAULT_PUT_BUFFER_FACTOR, 1).
+
+%% Major categories of Erlang-triggered DTrace probes
+-define(DT_BLOCK_OP,        1).
+-define(DT_SERVICE_OP,      2).
+-define(DT_BUCKET_OP,       3).
+-define(DT_OBJECT_OP,       4).
+-define(DT_AUTH_OP,         5).
+-define(DT_WM_OP,           6).
