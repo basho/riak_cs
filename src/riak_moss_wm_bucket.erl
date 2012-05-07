@@ -185,13 +185,16 @@ to_xml(RD, Ctx=#context{start_time=StartTime,
                         requested_perm='READ',
                         riakc_pid=RiakPid}) ->
     dt_entry(<<"to_xml">>, [], [extract_name(User), Bucket]),
+    dt_entry_bucket(<<"list_keys">>, [], [extract_name(User), Bucket]),
     StrBucket = binary_to_list(Bucket),
     case [B || B <- riak_moss_utils:get_buckets(User),
                B?MOSS_BUCKET.name =:= StrBucket] of
         [] ->
             CodeName = no_such_bucket,
             Res = riak_moss_s3_response:api_error(CodeName, RD, Ctx),
-            dt_return(<<"to_xml">>, [riak_moss_s3_response:status_code(CodeName)], [extract_name(User), Bucket]),
+            Code = riak_moss_s3_response:status_code(CodeName),
+            dt_return(<<"to_xml">>, [Code], [extract_name(User), Bucket]),
+            dt_return_bucket(<<"list_keys">>, [Code], [extract_name(User), Bucket]),
             Res;
         [BucketRecord] ->
             Prefix = list_to_binary(wrq:get_qs_value("prefix", "", RD)),
@@ -205,11 +208,13 @@ to_xml(RD, Ctx=#context{start_time=StartTime,
                     ok = riak_cs_stats:update_with_start(bucket_list_keys,
                                                          StartTime),
                     dt_return(<<"to_xml">>, [200], [extract_name(User), Bucket]),
+                    dt_return_bucket(<<"list_keys">>, [200], [extract_name(User), Bucket]),
                     X;
                 {error, Reason} ->
                     Code = riak_moss_s3_response:status_code(Reason),
                     X = riak_moss_s3_response:api_error(Reason, RD, Ctx),
                     dt_return(<<"to_xml">>, [Code], [extract_name(User), Bucket]),
+                    dt_return_bucket(<<"list_keys">>, [Code], [extract_name(User), Bucket]),
                     X
             end
     end;
@@ -219,16 +224,19 @@ to_xml(RD, Ctx=#context{start_time=StartTime,
                         requested_perm='READ_ACP',
                         riakc_pid=RiakPid}) ->
     dt_entry(<<"to_xml">>, [], [extract_name(User), Bucket]),
+    dt_entry_bucket(<<"get_acl">>, [], [extract_name(User), Bucket]),
     case riak_moss_acl:bucket_acl(Bucket, RiakPid) of
         {ok, Acl} ->
             X = {riak_moss_acl_utils:acl_to_xml(Acl), RD, Ctx},
             ok = riak_cs_stats:update_with_start(bucket_get_acl, StartTime),
             dt_return(<<"to_xml">>, [200], [extract_name(User), Bucket]),
+            dt_return_bucket(<<"get_acl">>, [200], [extract_name(User), Bucket]),
             X;
         {error, Reason} ->
             Code = riak_moss_s3_response:status_code(Reason),
             X = riak_moss_s3_response:api_error(Reason, RD, Ctx),
             dt_return(<<"to_xml">>, [Code], [extract_name(User), Bucket]),
+            dt_return_bucket(<<"get_acl">>, [Code], [extract_name(User), Bucket]),
             X
     end.
 
@@ -239,6 +247,7 @@ accept_body(RD, Ctx=#context{user=User,
                              requested_perm='WRITE_ACP',
                              riakc_pid=RiakPid}) ->
     dt_entry(<<"accept_body">>, [], [extract_name(User), Bucket]),
+    dt_entry_bucket(<<"put_acl">>, [], [extract_name(User), Bucket]),
     Body = binary_to_list(wrq:req_body(RD)),
     case Body of
         [] ->
@@ -262,11 +271,13 @@ accept_body(RD, Ctx=#context{user=User,
                                         ACL,
                                         RiakPid) of
         ok ->
-            dt_return(<<"accept_body">>, [200], [extract_name(User)]),
+            dt_return(<<"accept_body">>, [200], [extract_name(User), Bucket]),
+            dt_return_bucket(<<"put_acl">>, [200], [extract_name(User), Bucket]),
             {{halt, 200}, RD, Ctx};
         {error, Reason} ->
             Code = riak_moss_s3_response:status_code(Reason),
-            dt_return(<<"accept_body">>, [Code], [extract_name(User)]),
+            dt_return(<<"accept_body">>, [Code], [extract_name(User), Bucket]),
+            dt_return_bucket(<<"put_acl">>, [Code], [extract_name(User), Bucket]),
             riak_moss_s3_response:api_error(Reason, RD, Ctx)
     end;
 accept_body(RD, Ctx=#context{user=User,
@@ -274,6 +285,7 @@ accept_body(RD, Ctx=#context{user=User,
                              bucket=Bucket,
                              riakc_pid=RiakPid}) ->
     dt_entry(<<"accept_body">>, [], [extract_name(User), Bucket]),
+    dt_entry_bucket(<<"create">>, [], [extract_name(User), Bucket]),
     %% Check for `x-amz-acl' header to support
     %% non-default ACL at bucket creation time.
     ACL = riak_moss_acl_utils:canned_acl(
@@ -290,10 +302,12 @@ accept_body(RD, Ctx=#context{user=User,
                                        RiakPid) of
         ok ->
             dt_return(<<"accept_body">>, [200], [extract_name(User), Bucket]),
+            dt_return_bucket(<<"create">>, [200], [extract_name(User), Bucket]),
             {{halt, 200}, RD, Ctx};
         {error, Reason} ->
             Code = riak_moss_s3_response:status_code(Reason),
-            dt_return(<<"accept_body">>, [Code], [extract_name(User)]),
+            dt_return(<<"accept_body">>, [Code], [extract_name(User), Bucket]),
+            dt_return_bucket(<<"create">>, [Code], [extract_name(User), Bucket]),
             riak_moss_s3_response:api_error(Reason, RD, Ctx)
     end.
 
@@ -304,16 +318,19 @@ delete_resource(RD, Ctx=#context{user=User,
                                  bucket=Bucket,
                                  riakc_pid=RiakPid}) ->
     dt_entry(<<"delete_resource">>, [], [extract_name(User), Bucket]),
+    dt_entry_bucket(<<"delete">>, [], [extract_name(User), Bucket]),
     case riak_moss_utils:delete_bucket(User,
                                        VClock,
                                        Bucket,
                                        RiakPid) of
         ok ->
             dt_return(<<"delete_resource">>, [200], [extract_name(User), Bucket]),
+            dt_return_bucket(<<"delete">>, [200], [extract_name(User), Bucket]),
             {true, RD, Ctx};
         {error, Reason} ->
             Code = riak_moss_s3_response:status_code(Reason),
             dt_return(<<"delete_resource">>, [Code], [extract_name(User), Bucket]),
+            dt_return_bucket(<<"delete">>, [Code], [extract_name(User), Bucket]),
             riak_moss_s3_response:api_error(Reason, RD, Ctx)
     end.
 
@@ -335,8 +352,14 @@ dt_entry(Func) ->
 dt_entry(Func, Ints, Strings) ->
     riak_cs_dtrace:dtrace(?DT_WM_OP, 1, Ints, ?MODULE, Func, Strings).
 
+dt_entry_bucket(Func, Ints, Strings) ->
+    riak_cs_dtrace:dtrace(?DT_BUCKET_OP, 1, Ints, ?MODULE, Func, Strings).
+
 dt_return(Func) ->
     dt_return(Func, [], []).
 
 dt_return(Func, Ints, Strings) ->
     riak_cs_dtrace:dtrace(?DT_WM_OP, 2, Ints, ?MODULE, Func, Strings).
+
+dt_return_bucket(Func, Ints, Strings) ->
+    riak_cs_dtrace:dtrace(?DT_BUCKET_OP, 2, Ints, ?MODULE, Func, Strings).
