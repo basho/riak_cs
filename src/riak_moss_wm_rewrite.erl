@@ -6,9 +6,13 @@
 -module(riak_moss_wm_rewrite).
 -export([rewrite/2]).
 
+-include("riak_moss.hrl").
+
 bucket_from_host(undefined) ->
+    riak_cs_dtrace:dtrace(?DT_WM_OP, 1, [], ?MODULE, <<"bucket_from_host">>, []),
     undefined;
 bucket_from_host(HostHeader) ->
+    riak_cs_dtrace:dtrace(?DT_WM_OP, 1, [], ?MODULE, <<"bucket_from_host">>, []),
     HostNoPort = hd(string:tokens(HostHeader, ":")),
     {ok, RootHost} = application:get_env(riak_moss, moss_root_host),
     case HostNoPort of
@@ -24,6 +28,7 @@ bucket_from_host(HostHeader) ->
     end.
 
 rewrite(Headers, Path) ->
+    riak_cs_dtrace:dtrace(?DT_WM_OP, 1, [], ?MODULE, <<"bucket_from_host">>, []),
     HostHeader = mochiweb_headers:get_value("host", Headers),
     case bucket_from_host(HostHeader) of
         undefined ->
