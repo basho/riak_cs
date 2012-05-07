@@ -17,6 +17,7 @@
          delete_resource/2,
          valid_entity_length/2,
          finish_request/2]).
+-export([dt_return_object/3]).
 
 -include("riak_moss.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
@@ -209,15 +210,18 @@ produce_body(RD, #key_context{get_fsm_pid=GetFsmPid,
     BFile_str = [Bucket, $,, File],
     UserName = extract_name(User),
     dt_entry(<<"produce_body">>, [], [UserName, BFile_str]),
+    dt_entry_object(<<"get_acl">>, [], [UserName, BFile_str]),
     riak_moss_get_fsm:stop(GetFsmPid),
     ok = riak_cs_stats:update_with_start(object_get_acl, StartTime),
     Acl = Mfst#lfs_manifest_v2.acl,
     case Acl of
         undefined ->
             dt_return(<<"produce_body">>, [-1], [UserName, BFile_str]),
+            dt_return_object(<<"get_acl">>, [-1], [UserName, BFile_str]),
             {riak_moss_acl_utils:empty_acl_xml(), RD, KeyCtx};
         _ ->
             dt_return(<<"produce_body">>, [-2], [UserName, BFile_str]),
+            dt_return_object(<<"get_acl">>, [-2], [UserName, BFile_str]),
             {riak_moss_acl_utils:acl_to_xml(Acl), RD, KeyCtx}
     end;
 produce_body(RD, #key_context{get_fsm_pid=GetFsmPid, manifest=Mfst,
@@ -227,6 +231,7 @@ produce_body(RD, #key_context{get_fsm_pid=GetFsmPid, manifest=Mfst,
     BFile_str = [Bucket, $,, File],
     UserName = extract_name(User),
     dt_entry(<<"produce_body">>, [], [UserName, BFile_str]),
+    dt_entry_object(<<"file_get">>, [], [UserName, BFile_str]),
     ContentLength = Mfst#lfs_manifest_v2.content_length,
     ContentMd5 = Mfst#lfs_manifest_v2.content_md5,
     LastModified = riak_moss_wm_utils:to_rfc_1123(Mfst#lfs_manifest_v2.created),
@@ -245,10 +250,12 @@ produce_body(RD, #key_context{get_fsm_pid=GetFsmPid, manifest=Mfst,
             StreamFun = fun() -> {<<>>, done} end;
         false ->
             riak_moss_get_fsm:continue(GetFsmPid),
-            StreamFun = fun() -> riak_moss_wm_utils:streaming_get(GetFsmPid,
-                                                                  StartTime) end
+            StreamFun = fun() -> riak_moss_wm_utils:streaming_get(
+                                   GetFsmPid, StartTime, UserName, BFile_str)
+                        end
     end,
     if Method == 'HEAD' ->
+            dt_return_object(<<"file_head">>, [], [UserName, BFile_str]),
             ok = riak_cs_stats:update_with_start(object_head, StartTime);
        true ->
             ok
@@ -265,6 +272,7 @@ delete_resource(RD, Ctx=#key_context{bucket=Bucket,
     BFile_str = [Bucket, $,, Key],
     UserName = extract_name(InnerCtx#context.user),
     dt_entry(<<"delete_resource">>, [], [UserName, BFile_str]),
+    dt_entry_object(<<"file_delete">>, [], [UserName, BFile_str]),
     riak_moss_get_fsm:stop(GetFsmPid),
     BinKey = list_to_binary(Key),
     #context{riakc_pid=RiakPid} = InnerCtx,
@@ -280,6 +288,7 @@ delete_resource(RD, Ctx=#key_context{bucket=Bucket,
 %%% other errors: bomb for now, handle better later?
     end,
     dt_return(<<"delete_resource">>, [DCode], [UserName, BFile_str]),
+    dt_return_object(<<"file_delete">>, [DCode], [UserName, BFile_str]),
     {true, RD, Ctx}.
 
 -spec content_types_accepted(term(), term()) ->
@@ -332,6 +341,7 @@ accept_body(RD, Ctx=#key_context{bucket=Bucket,
     BFile_str = [Bucket, $,, KeyStr],
     UserName = extract_name(User),
     dt_entry(<<"accept_body">>, [], [UserName, BFile_str]),
+    dt_entry_object(<<"file_put_acl">>, [], [UserName, BFile_str]),
     riak_moss_get_fsm:stop(GetFsmPid),
     Body = binary_to_list(wrq:req_body(RD)),
     case Body of
@@ -355,10 +365,12 @@ accept_body(RD, Ctx=#key_context{bucket=Bucket,
     case riak_moss_utils:set_object_acl(Bucket, Key, Mfst, Acl, RiakPid) of
         ok ->
             dt_return(<<"accept_body">>, [200], [UserName, BFile_str]),
+            dt_return_object(<<"file_put_acl">>, [200], [UserName, BFile_str]),
             {{halt, 200}, RD, Ctx};
         {error, Reason} ->
             Code = riak_moss_s3_response:status_code(Reason),
             dt_return(<<"accept_body">>, [Code], [UserName, BFile_str]),
+            dt_return_object(<<"file_put_acl">>, [Code], [UserName, BFile_str]),
             riak_moss_s3_response:api_error(Reason, RD, Ctx)
     end;
 accept_body(RD, Ctx=#key_context{bucket=Bucket,
@@ -372,6 +384,7 @@ accept_body(RD, Ctx=#key_context{bucket=Bucket,
     BFile_str = [Bucket, $,, Key],
     UserName = extract_name(User),
     dt_entry(<<"accept_body">>, [], [UserName, BFile_str]),
+    dt_entry_object(<<"file_put">>, [], [UserName, BFile_str]),
     riak_moss_get_fsm:stop(GetFsmPid),
     %% TODO:
     %% the Metadata
@@ -421,6 +434,7 @@ finalize_request(RD, #key_context{bucket=Bucket,
     BFile_str = [Bucket, $,, Key],
     UserName = extract_name(User),
     dt_entry(<<"finalize_request">>, [S], [UserName, BFile_str]),
+    dt_entry_object(<<"file_put">>, [S], [UserName, BFile_str]),
     %% TODO: probably want something that counts actual bytes uploaded
     %% instead, to record partial/aborted uploads
     AccessRD = riak_moss_access_logger:set_bytes_in(S, RD),
@@ -458,5 +472,11 @@ dt_entry(Func) ->
 dt_entry(Func, Ints, Strings) ->
     riak_cs_dtrace:dtrace(?DT_WM_OP, 1, Ints, ?MODULE, Func, Strings).
 
+dt_entry_object(Func, Ints, Strings) ->
+    riak_cs_dtrace:dtrace(?DT_OBJECT_OP, 1, Ints, ?MODULE, Func, Strings).
+
 dt_return(Func, Ints, Strings) ->
     riak_cs_dtrace:dtrace(?DT_WM_OP, 2, Ints, ?MODULE, Func, Strings).
+
+dt_return_object(Func, Ints, Strings) ->
+    riak_cs_dtrace:dtrace(?DT_OBJECT_OP, 2, Ints, ?MODULE, Func, Strings).
