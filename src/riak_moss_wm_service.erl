@@ -102,9 +102,11 @@ content_types_provided(RD, Ctx) ->
     {{'halt', term()}, term(), #context{}}.
 to_xml(RD, Ctx=#context{start_time=StartTime,user=User}) ->
     dt_entry(<<"to_xml">>),
+    dt_entry_service(<<"to_xml">>),
     Res = riak_moss_s3_response:list_all_my_buckets_response(User, RD, Ctx),
     ok = riak_cs_stats:update_with_start(service_get_buckets, StartTime),
-    dt_entry(<<"to_xml">>, [], [extract_name(User), <<"service_get_buckets">>]),
+    dt_return(<<"to_xml">>, [], [extract_name(User), <<"service_get_buckets">>]),
+    dt_return_service(<<"service_get_buckets">>, [], [extract_name(User)]),
     Res.
 
 finish_request(RD, Ctx=#context{riakc_pid=undefined}) ->
@@ -125,5 +127,14 @@ dt_entry(Func) ->
 dt_entry(Func, Ints, Strings) ->
     riak_cs_dtrace:dtrace(?DT_WM_OP, 1, Ints, ?MODULE, Func, Strings).
 
+dt_entry_service(Func) ->
+    dt_entry_service(Func, [], []).
+
+dt_entry_service(Func, Ints, Strings) ->
+    riak_cs_dtrace:dtrace(?DT_SERVICE_OP, 1, Ints, ?MODULE, Func, Strings).
+
 dt_return(Func, Ints, Strings) ->
     riak_cs_dtrace:dtrace(?DT_WM_OP, 2, Ints, ?MODULE, Func, Strings).
+
+dt_return_service(Func, Ints, Strings) ->
+    riak_cs_dtrace:dtrace(?DT_SERVICE_OP, 2, Ints, ?MODULE, Func, Strings).
