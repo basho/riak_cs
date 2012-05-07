@@ -207,7 +207,7 @@ waiting_chunks(get_next_chunk, From, #state{block_buffer=[], from=PreviousFrom}=
     {next_state, waiting_chunks, State#state{from=From}};
 waiting_chunks(get_next_chunk,
                _From,
-               State=#state{block_buffer=[{NextBlock, Block} | RestBlockBuffer],
+               State=#state{block_buffer=[{NextBlock, Block} | _RestBlockBuffer],
                             next_block=NextBlock,
                             manifest_uuid=UUID,
                             key=Key,
@@ -216,19 +216,19 @@ waiting_chunks(get_next_chunk,
                             last_block_requested=LastBlockRequested,
                             total_blocks=TotalBlocks}) ->
     lager:debug("Returning block ~p to client", [NextBlock]),
-    case length(RestBlockBuffer) =:= 0 of
-        true ->
-            {ReadRequests, UpdFreeReaders} =
-                read_blocks(BucketName, Key, UUID, FreeReaders, LastBlockRequested+1, TotalBlocks),
-            _ = lager:debug("Started ~p new readers. Free readers: ~p", [ReadRequests, UpdFreeReaders]),
-            NewState = State#state{block_buffer=RestBlockBuffer,
-                                   last_block_requested=LastBlockRequested+ReadRequests,
-                                   next_block=NextBlock+1,
-                                   free_readers=UpdFreeReaders};
-        false ->
-            NewState = State#state{block_buffer=RestBlockBuffer,
-                                   next_block=NextBlock+1}
-    end,
+    %% case length(RestBlockBuffer) =< ?BLOCK_BUFFER_LIMIT of
+    %%     true ->
+    %%         {ReadRequests, UpdFreeReaders} =
+    %%             read_blocks(BucketName, Key, UUID, FreeReaders, LastBlockRequested+1, TotalBlocks),
+    %%         _ = lager:debug("Started ~p new readers. Free readers: ~p", [ReadRequests, UpdFreeReaders]),
+    %%         NewState = State#state{block_buffer=RestBlockBuffer,
+    %%                                last_block_requested=LastBlockRequested+ReadRequests,
+    %%                                next_block=NextBlock+1,
+    %%                                free_readers=UpdFreeReaders};
+        %% false ->
+            NewState = State#state{block_buffer=[{NextBlock+1, Block}],
+                                   next_block=NextBlock+1},
+    %% end,
     {reply, {chunk, Block}, waiting_chunks, NewState};
 waiting_chunks(get_next_chunk, From, State) ->
     {next_state, waiting_chunks, State#state{from=From}}.
@@ -260,20 +260,22 @@ waiting_chunks({chunk, Pid, {NextBlock, BlockReturnValue}}, #state{from=From,
                 0 ->
                     NewState = NewState0#state{free_readers=[Pid | FreeReaders]},
                     NextStateName = sending_remaining;
-                _ when length(UpdBlockBuffer) >= ?BLOCK_BUFFER_LIMIT ->
-                    NewState = NewState0#state{free_readers=[Pid | FreeReaders]},
-                    NextStateName = waiting_chunks;
+                %% _ when length(UpdBlockBuffer) >= ?BLOCK_BUFFER_LIMIT ->
                 _ ->
-                    {ReadRequests, UpdFreeReaders} =
-                        read_blocks(BucketName, Key, UUID, [Pid | FreeReaders], LastBlockRequested+1, TotalBlocks),
-                    NewState = NewState0#state{last_block_requested=LastBlockRequested+ReadRequests,
-                                               free_readers=UpdFreeReaders},
+                    NewState = NewState0#state{free_readers=[Pid | FreeReaders]},
                     NextStateName = waiting_chunks
+                %% _ ->
+                %%     {ReadRequests, UpdFreeReaders} =
+                %%         read_blocks(BucketName, Key, UUID, [Pid | FreeReaders], LastBlockRequested+1, TotalBlocks),
+                %%     NewState = NewState0#state{last_block_requested=LastBlockRequested+ReadRequests,
+                %%                                free_readers=UpdFreeReaders},
+                %%     NextStateName = waiting_chunks
             end,
             {next_state, NextStateName, NewState};
         _ ->
             lager:debug("Returning block ~p to client", [NextBlock]),
             NewState0 = State#state{blocks_left=NewRemaining,
+                                    block_buffer=[{NextBlock+1, BlockValue}],
                                     from=undefined,
                                     free_readers=[Pid | FreeReaders],
                                     next_block=NextBlock+1},
@@ -286,18 +288,19 @@ waiting_chunks({chunk, Pid, {NextBlock, BlockReturnValue}}, #state{from=From,
                     gen_fsm:reply(From, {done, BlockValue}),
                     NewState=NewState0,
                     {stop, normal, NewState};
-                _ when length(BlockBuffer) >= 1 ->
-                    gen_fsm:reply(From, {chunk, BlockValue}),
-                    NewState=NewState0,
-                    {next_state, waiting_chunks, NewState};
+                %% _ when length(BlockBuffer) >= ?BLOCK_BUFFER_LIMIT ->
                 _ ->
                     gen_fsm:reply(From, {chunk, BlockValue}),
-                    {ReadRequests, UpdFreeReaders} =
-                        read_blocks(BucketName, Key, UUID, [Pid | FreeReaders], LastBlockRequested+1, TotalBlocks),
-                    lager:debug("Started ~p new readers. Free readers: ~p", [ReadRequests, UpdFreeReaders]),
-                    NewState = NewState0#state{last_block_requested=LastBlockRequested+ReadRequests,
-                                               free_readers=UpdFreeReaders},
+                    NewState=NewState0,
                     {next_state, waiting_chunks, NewState}
+                %% _ ->
+                %%     gen_fsm:reply(From, {chunk, BlockValue}),
+                %%     {ReadRequests, UpdFreeReaders} =
+                %%         read_blocks(BucketName, Key, UUID, [Pid | FreeReaders], LastBlockRequested+1, TotalBlocks),
+                %%     lager:debug("Started ~p new readers. Free readers: ~p", [ReadRequests, UpdFreeReaders]),
+                %%     NewState = NewState0#state{last_block_requested=LastBlockRequested+ReadRequests,
+                %%                                free_readers=UpdFreeReaders},
+                %%     {next_state, waiting_chunks, NewState}
             end
     end;
 
