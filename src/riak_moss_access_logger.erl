@@ -352,6 +352,8 @@ operation(#wm_log_data{resource_module=riak_moss_wm_usage}) ->
     <<"UsageRead">>;
 operation(#wm_log_data{resource_module=riak_moss_wm_service}) ->
     <<"ListBuckets">>;
+operation(#wm_log_data{resource_module=riak_moss_wm_user}) ->
+    <<"AccountRead">>;
 operation(#wm_log_data{resource_module=riak_moss_wm_bucket,
                        path=Path,
                        method=Method}) ->

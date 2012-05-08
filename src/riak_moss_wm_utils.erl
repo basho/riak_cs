@@ -109,7 +109,8 @@ validate_auth_header(RD, AuthBypass, RiakPid) ->
             case AuthMod:authenticate(RD, Secret, Signature) of
                 ok ->
                     {ok, User, UserVclock};
-                {error, _Reason} ->
+                {error, Reason} ->
+                    lager:info("Reason: ~p", [Reason]),
                     %% TODO: are the errors here of small enough
                     %% number that we could just handle them in
                     %% forbidden/2?
@@ -172,20 +173,20 @@ user_record_to_proplist(?MOSS_USER{email=Email,
                                    key_id=KeyID,
                                    key_secret=KeySecret,
                                    canonical_id=CanonicalID}) ->
-    [{<<"email">>, list_to_binary(Email)},
-     {<<"display_name">>, list_to_binary(DisplayName)},
-     {<<"name">>, list_to_binary(Name)},
-     {<<"key_id">>, list_to_binary(KeyID)},
-     {<<"key_secret">>, list_to_binary(KeySecret)},
-     {<<"id">>, list_to_binary(CanonicalID)}];
+    [{'Email', list_to_binary(Email)},
+     {'DisplayName', list_to_binary(DisplayName)},
+     {'Name', list_to_binary(Name)},
+     {'KeyId', list_to_binary(KeyID)},
+     {'KeySecret', list_to_binary(KeySecret)},
+     {'Id', list_to_binary(CanonicalID)}];
 user_record_to_proplist(#moss_user{name=Name,
                                    key_id=KeyID,
                                    key_secret=KeySecret,
                                    buckets = Buckets}) ->
-    [{<<"name">>, list_to_binary(Name)},
-     {<<"key_id">>, list_to_binary(KeyID)},
-     {<<"key_secret">>, list_to_binary(KeySecret)},
-     {<<"buckets">>, Buckets}].
+    [{'Name', list_to_binary(Name)},
+     {'KeyId', list_to_binary(KeyID)},
+     {'KeySecret', list_to_binary(KeySecret)},
+     {'Buckets', Buckets}].
 
 %% @doc Get an ISO 8601 formatted timestamp representing
 %% current time.

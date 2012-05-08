@@ -10,7 +10,8 @@
 -include_lib("eunit/include/eunit.hrl").
 
 setup() ->
-    application:start(lager).
+    application:start(lager),
+    {ok, _} = riak_cs_stats:start_link().
 
 %% TODO:
 %% Implement this

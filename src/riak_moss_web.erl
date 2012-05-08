@@ -1,6 +1,6 @@
 %% -------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2011 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2012 Basho Technologies, Inc.  All Rights Reserved.
 %%
 %% -------------------------------------------------------------------
 
@@ -23,6 +23,8 @@ dispatch_table() ->
      {[], riak_moss_wm_service, [{auth_bypass, AuthBypass}]},
      {["riak-cs", "stats"], riak_cs_wm_stats, StatsProps},
      {["user"], riak_moss_wm_user, []},
+     {["riak-cs", "users"], riak_moss_wm_users, [{auth_bypass, AuthBypass}]},
+     {["riak-cs", "user", '*'], riak_moss_wm_user, [{auth_bypass, AuthBypass}]},
      {["usage", '*'], riak_moss_wm_usage, [{auth_bypass, AuthBypass}]},
      {[bucket], riak_moss_wm_bucket, [{auth_bypass, AuthBypass}]},
      {[bucket, '*'], riak_moss_wm_key, [{auth_bypass, AuthBypass}]}

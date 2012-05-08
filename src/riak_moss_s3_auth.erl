@@ -38,7 +38,7 @@ authenticate(RD, KeyData, Signature) ->
 calculate_signature(KeyData, RD) ->
     Headers = normalize_headers(get_request_headers(RD)),
     AmazonHeaders = extract_amazon_headers(Headers),
-    Resource = [canonicalize_resource(RD),
+    Resource = [wrq:path(RD),
                 canonicalize_qs(lists:sort(wrq:req_qs(RD)))],
     case proplists:is_defined("x-amz-date", Headers) of
         true ->
@@ -131,44 +131,6 @@ canonicalize_qs([{K, V}|T], Acc) ->
         false ->
             canonicalize_qs(T)
     end.
-
-%% XXX TODO:  this is conditional to make unit tests pass.
-%%            the webmachine resources need to support
-%%            vhost-style bucket addressing so that things
-%%            like path_info([key|bucket]) work properly.
-%%
-%%            the test version of canonicalize_resource
-%%            doesn't use path_info, allowing the unit
-%%            tests to pass.
--ifdef(TEST).
-bucket_from_host(undefined, RD) ->
-    wrq:path_info(bucket, RD);
-bucket_from_host(HostHeader, RD) ->
-    HostNoPort = hd(string:tokens(HostHeader, ":")),
-    {ok, RootHost} = application:get_env(riak_moss, moss_root_host),
-    case HostNoPort of
-        RootHost ->
-            wrq:path_info(bucket, RD);
-        Host ->
-            case string:str(HostNoPort, RootHost) of
-                0 ->
-                    wrq:path_info(bucket, RD);
-                I ->
-                    string:substr(Host, 1, I-2)
-            end
-    end.
-
-canonicalize_resource(RD) ->
-    case bucket_from_host(wrq:get_req_header("host", RD), RD) of
-        undefined ->
-            [wrq:path(RD)];
-        Bucket ->
-            ["/", Bucket, wrq:path(RD)]
-    end.
--else.
-canonicalize_resource(RD) ->
-    wrq:path(RD).
--endif.
 
 %% ===================================================================
 %% Eunit tests
