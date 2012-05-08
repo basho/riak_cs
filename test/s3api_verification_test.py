@@ -62,7 +62,7 @@ class S3ApiVerificationTest(unittest.TestCase):
 
 
     def make_connection(self, user):
-        return S3Connection(user['key_id'], user['key_secret'], is_secure=False,
+        return S3Connection(user['KeyId'], user['KeySecret'], is_secure=False,
                             host=self.host, port=self.port, debug=True,
                             calling_format=OrdinaryCallingFormat() )
 
@@ -80,16 +80,16 @@ class S3ApiVerificationTest(unittest.TestCase):
         self.data = file("/dev/random").read(1024)
 
     def defaultAcl(self, user):
-        return self.SimpleAcl % (user['id'], user['display_name'], user['id'], user['display_name'], 'FULL_CONTROL')
+        return self.SimpleAcl % (user['Id'], user['DisplayName'], user['Id'], user['DisplayName'], 'FULL_CONTROL')
 
     def prAcl(self, user):
-        return self.PublicReadAcl % (user['id'], user['display_name'], user['id'], user['display_name'], 'FULL_CONTROL')
+        return self.PublicReadAcl % (user['Id'], user['DisplayName'], user['Id'], user['DisplayName'], 'FULL_CONTROL')
 
     def setUp(self):
         self.conn = self.make_connection(self.user1)
 
     def test_auth(self):
-        bad_user = json.loads('{"email":"baduser@example.me","display_name":"baduser","name":"user1","key_id":"bad_key","key_secret":"bad_secret","id":"bad_canonical_id"}')
+        bad_user = json.loads('{"Email":"baduser@example.me","DisplayName":"baduser","Name":"user1","KeyId":"bad_key","KeySecret":"BadSecret","Id":"bad_canonical_id"}')
         conn = self.make_connection(bad_user)
         self.assertRaises(S3ResponseError, conn.get_canonical_user_id)
 
