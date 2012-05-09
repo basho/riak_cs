@@ -14,8 +14,7 @@
                   webmachine,
                   poolboy,
                   lager,
-                  folsom,
-                  gproc
+                  folsom
                  ]},
   {mod, { riak_moss_app, []}},
   {env, [
