@@ -187,7 +187,6 @@ waiting_continue_or_stop(continue, #state{manifest=Manifest,
                     FreeReaders =
                     riak_moss_block_server:start_block_servers(RiakPid,
                         riak_moss_lfs_utils:fetch_concurrency()),
-                    lager:debug("Block Servers: ~p", [FreeReaders]);
                     _ = lager:debug("Block Servers: ~p", [FreeReaders]);
                 _ ->
                     FreeReaders = Readers
