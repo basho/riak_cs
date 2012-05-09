@@ -11,11 +11,14 @@
 
 setup() ->
     application:start(lager),
+    application:start(folsom),
     {ok, _} = riak_cs_stats:start_link().
 
 %% TODO:
 %% Implement this
 teardown(_) ->
+    application:stop(folsom),
+    application:stop(lager),
     ok.
 
 put_fsm_test_() ->

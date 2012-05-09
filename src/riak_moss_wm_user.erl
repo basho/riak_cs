@@ -24,6 +24,7 @@
 %% -------------------------------------------------------------------
 
 init(Config) ->
+    dt_entry(<<"init">>),
     %% Check if authentication is disabled and
     %% set that in the context.
     AuthBypass = proplists:get_value(auth_bypass, Config),
@@ -31,28 +32,45 @@ init(Config) ->
 
 -spec service_available(term(), term()) -> {true, term(), term()}.
 service_available(RD, Ctx) ->
+    dt_entry(<<"service_available">>),
     riak_moss_wm_utils:service_available(RD, Ctx).
 
 -spec allowed_methods(term(), term()) -> {[atom()], term(), term()}.
 allowed_methods(RD, Ctx) ->
+    dt_entry(<<"allowed_methods">>),
     {['GET', 'HEAD', 'POST'], RD, Ctx}.
 
 forbidden(RD, Ctx) ->
+    dt_entry(<<"forbidden">>),
     case wrq:method(RD) of
         'POST' ->
+            dt_return(<<"forbidden">>, [], [<<"POST method">>]),
             {false, RD, Ctx};
         _ ->
             Next = fun(NewRD, NewCtx=#context{user=User}) ->
                            AccessRD = riak_moss_access_logger:set_user(User, NewRD),
                            forbidden(AccessRD, NewCtx, User)
                    end,
-            riak_moss_wm_utils:find_and_auth_user(RD, Ctx, Next)
+            case riak_moss_wm_utils:find_and_auth_user(RD, Ctx, Next) of
+                {false, _RD2, Ctx2} = FalseRet ->
+                    dt_return(<<"forbidden">>, [], [extract_name((Ctx2#key_context.context)#context.user), <<"false">>]),
+                    FalseRet;
+                {Rsn, _RD2, Ctx2} = Ret ->
+                    Reason = case Rsn of
+                                 {halt, Code} -> Code;
+                                 _            -> -1
+                             end,
+                    dt_return(<<"forbidden">>, [Reason], [extract_name(Ctx2#context.user), <<"true">>]),
+                    Ret
+            end
     end.
 
 content_types_provided(RD, Ctx) ->
+    dt_entry(<<"content_types_provided">>),
     {[{?XML_TYPE, produce_xml}, {?JSON_TYPE, produce_json}], RD, Ctx}.
 
 produce_json(RD, #context{user=User}=Ctx) ->
+    dt_entry(<<"produce_json">>),
     MJ = {struct, riak_moss_wm_utils:user_record_to_proplist(User)},
     Body = mochijson2:encode(MJ),
     Etag = etag(Body),
@@ -60,6 +78,7 @@ produce_json(RD, #context{user=User}=Ctx) ->
     {Body, RD2, Ctx}.
 
 produce_xml(RD, #context{user=User}=Ctx) ->
+    dt_entry(<<"produce_xml">>),
     XmlUserRec =
         [{Key, [binary_to_list(Value)]} ||
             {Key, Value} <- riak_moss_wm_utils:user_record_to_proplist(User)],
@@ -74,6 +93,7 @@ produce_xml(RD, #context{user=User}=Ctx) ->
 %%      as JSON
 -spec process_post(term(), term()) -> {true, term(), term}.
 process_post(RD, Ctx) ->
+    dt_entry(<<"process_post">>),
     Body = wrq:req_body(RD),
     ParsedBody = mochiweb_util:parse_qs(binary_to_list(Body)),
     UserName = proplists:get_value("name", ParsedBody, ""),
@@ -91,9 +111,12 @@ process_post(RD, Ctx) ->
     end.
 
 finish_request(RD, Ctx=#context{riakc_pid=undefined}) ->
+    dt_entry(<<"finish_request">>, [0], []),
     {true, RD, Ctx};
 finish_request(RD, Ctx=#context{riakc_pid=RiakPid}) ->
+    dt_entry(<<"finish_request">>, [1], []),
     riak_moss_utils:close_riak_connection(RiakPid),
+    dt_return(<<"finish_request">>, [1], []),
     {true, RD, Ctx#context{riakc_pid=undefined}}.
 
 %% -------------------------------------------------------------------
@@ -148,3 +171,15 @@ user_key(RD) ->
         [KeyId|_] -> mochiweb_util:unquote(KeyId);
         _         -> []
     end.
+
+extract_name(X) ->
+    riak_moss_wm_utils:extract_name(X).
+
+dt_entry(Func) ->
+    dt_entry(Func, [], []).
+
+dt_entry(Func, Ints, Strings) ->
+    riak_cs_dtrace:dtrace(?DT_WM_OP, 1, Ints, ?MODULE, Func, Strings).
+
+dt_return(Func, Ints, Strings) ->
+    riak_cs_dtrace:dtrace(?DT_WM_OP, 2, Ints, ?MODULE, Func, Strings).

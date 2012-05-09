@@ -293,8 +293,8 @@ map_keys_and_manifests(Object, _, _) ->
                 []
         end
     catch Type:Reason ->
-            lager:warning("Riak CS object list map failed: ~p:~p",
-                          [Type, Reason]),
+            _ = lager:warning("Riak CS object list map failed: ~p:~p",
+                              [Type, Reason]),
             []
     end.
 

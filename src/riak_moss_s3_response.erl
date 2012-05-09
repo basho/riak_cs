@@ -5,6 +5,7 @@
 %% -------------------------------------------------------------------
 -module(riak_moss_s3_response).
 -export([api_error/3,
+         status_code/1,
          respond/4,
          export_xml/1,
          error_response/5,

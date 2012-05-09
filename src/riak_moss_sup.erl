@@ -34,6 +34,8 @@ start_link() ->
                          integer()},
                         [supervisor:child_spec()]}}.
 init([]) ->
+    catch dtrace:init(),                   % NIF load trigger (R14B04)
+    catch dyntrace:p(),                    % NIF load trigger (R15B01+)
     case application:get_env(riak_moss, moss_ip) of
         {ok, Ip} ->
             ok;

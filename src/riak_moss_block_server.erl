@@ -8,6 +8,7 @@
 
 -behaviour(gen_server).
 
+-include("riak_moss.hrl").
 -include_lib("riakc/include/riakc_obj.hrl").
 
 %% API
@@ -121,6 +122,7 @@ handle_call(stop, _From, State) ->
 %% @end
 %%--------------------------------------------------------------------
 handle_cast({get_block, ReplyPid, Bucket, Key, UUID, BlockNumber}, State=#state{riakc_pid=RiakcPid}) ->
+    dt_entry(<<"get_block">>, [BlockNumber], [Bucket, Key]),
     {FullBucket, FullKey} = full_bkey(Bucket, Key, UUID, BlockNumber),
     StartTime = os:timestamp(),
     GetOptions = [{r, 1}, {notfound_ok, false}, {basic_quorum, false}],
@@ -132,8 +134,10 @@ handle_cast({get_block, ReplyPid, Bucket, Key, UUID, BlockNumber}, State=#state{
     end,
     ok = riak_cs_stats:update_with_start(block_get, StartTime),
     ok = riak_moss_get_fsm:chunk(ReplyPid, BlockNumber, ChunkValue),
+    dt_return(<<"get_block">>, [BlockNumber], [Bucket, Key]),
     {noreply, State};
 handle_cast({put_block, ReplyPid, Bucket, Key, UUID, BlockNumber, Value}, State=#state{riakc_pid=RiakcPid}) ->
+    dt_entry(<<"put_block">>, [BlockNumber], [Bucket, Key]),
     {FullBucket, FullKey} = full_bkey(Bucket, Key, UUID, BlockNumber),
     RiakObject0 = riakc_obj:new(FullBucket, FullKey, Value),
     MD = dict:from_list([{?MD_USERMETA, [{"RCS-bucket", Bucket},
@@ -145,8 +149,10 @@ handle_cast({put_block, ReplyPid, Bucket, Key, UUID, BlockNumber, Value}, State=
     ok = riakc_pb_socket:put(RiakcPid, RiakObject),
     ok = riak_cs_stats:update_with_start(block_put, StartTime),
     riak_moss_put_fsm:block_written(ReplyPid, BlockNumber),
+    dt_return(<<"put_block">>, [BlockNumber], [Bucket, Key]),
     {noreply, State};
 handle_cast({delete_block, _ReplyPid, Bucket, Key, UUID, BlockNumber}, State=#state{riakc_pid=RiakcPid}) ->
+    dt_entry(<<"delete_block">>, [BlockNumber], [Bucket, Key]),
     {FullBucket, FullKey} = full_bkey(Bucket, Key, UUID, BlockNumber),
     StartTime = os:timestamp(),
     ok = riakc_pb_socket:delete(RiakcPid, FullBucket, FullKey),
@@ -155,6 +161,7 @@ handle_cast({delete_block, _ReplyPid, Bucket, Key, UUID, BlockNumber}, State=#st
     %% add a public func to riak_moss_delete_fsm
     %% to send messages back to the fsm
     %% saying that the block was deleted
+    dt_return(<<"delete_block">>, [BlockNumber], [Bucket, Key]),
     {noreply, State};
 handle_cast(_Msg, State) ->
     {noreply, State}.
@@ -214,3 +221,9 @@ full_bkey(Bucket, Key, UUID, BlockNumber) ->
     PrefixedBucket = riak_moss_utils:to_bucket_name(blocks, Bucket),
     FullKey = riak_moss_lfs_utils:block_name(Key, UUID, BlockNumber),
     {PrefixedBucket, FullKey}.
+
+dt_entry(Func, Ints, Strings) ->
+    riak_cs_dtrace:dtrace(?DT_BLOCK_OP, 1, Ints, ?MODULE, Func, Strings).
+
+dt_return(Func, Ints, Strings) ->
+    riak_cs_dtrace:dtrace(?DT_BLOCK_OP, 2, Ints, ?MODULE, Func, Strings).

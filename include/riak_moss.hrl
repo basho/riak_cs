@@ -213,5 +213,48 @@
 %% to determine the PUT buffer size.
 %% ex. 2 would mean BlockSize * 2
 -define(DEFAULT_PUT_BUFFER_FACTOR, 1).
+
 -define(JSON_TYPE, "application/json").
 -define(XML_TYPE, "application/xml").
+
+%% Major categories of Erlang-triggered DTrace probes
+%%
+%% The main R15B01 USDT probe that can be triggered by Erlang code is defined
+%% like this:
+%%
+%% /**
+%%  * Multi-purpose probe: up to 4 NUL-terminated strings and 4
+%%  * 64-bit integer arguments.
+%%  *
+%%  * @param proc, the PID (string form) of the sending process
+%%  * @param user_tag, the user tag of the sender
+%%  * @param i1, integer
+%%  * @param i2, integer
+%%  * @param i3, integer
+%%  * @param i4, integer
+%%  * @param s1, string/iolist. D's arg6 is NULL if not given by Erlang
+%%  * @param s2, string/iolist. D's arg7 is NULL if not given by Erlang
+%%  * @param s3, string/iolist. D's arg8 is NULL if not given by Erlang
+%%  * @param s4, string/iolist. D's arg9 is NULL if not given by Erlang
+%%  */
+%% probe user_trace__i4s4(char *proc, char *user_tag,
+%%                        int i1, int i2, int i3, int i4,
+%%                        char *s1, char *s2, char *s3, char *s4);
+%%
+%% The convention that we'll use of these probes is:
+%%   param  D arg name  use
+%%   -----  ----------  ---
+%%   i1     arg2        Application category (see below)
+%%   i2     arg3        1 = function entry, 2 = function return
+%%                      NOTE! Not all function entry probes have a return probe
+%%   i3-i4  arg4-arg5   Varies, zero usually means unused (but not always!)
+%%   s1     arg6        Module name
+%%   s2     arg7        Function name
+%%   s3-4   arg8-arg9   Varies, NULL means unused
+%%
+-define(DT_BLOCK_OP,        700).
+-define(DT_SERVICE_OP,      701).
+-define(DT_BUCKET_OP,       702).
+-define(DT_OBJECT_OP,       703).
+%% perhaps add later? -define(DT_AUTH_OP,         704).
+-define(DT_WM_OP,           705).

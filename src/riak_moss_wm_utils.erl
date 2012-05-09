@@ -13,11 +13,12 @@
          to_iso_8601/1,
          iso_8601_to_rfc_1123/1,
          to_rfc_1123/1,
-         streaming_get/2,
+         streaming_get/4,
          user_record_to_proplist/1,
          find_and_auth_user/3,
          validate_auth_header/3,
-         deny_access/2]).
+         deny_access/2,
+         extract_name/1]).
 
 -include("riak_moss.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
@@ -154,13 +155,15 @@ ensure_doc(Ctx=#key_context{get_fsm_pid=undefined,
     Ctx#key_context{get_fsm_pid=Pid, manifest=Manifest};
 ensure_doc(Ctx) -> Ctx.
 
-streaming_get(FsmPid, StartTime) ->
+streaming_get(FsmPid, StartTime, UserName, BFile_str) ->
     case riak_moss_get_fsm:get_next_chunk(FsmPid) of
         {done, Chunk} ->
             ok = riak_cs_stats:update_with_start(object_get, StartTime),
+            riak_moss_wm_key:dt_return_object(<<"file_get">>, [],
+                                              [UserName, BFile_str]),
             {Chunk, done};
         {chunk, Chunk} ->
-            {Chunk, fun() -> streaming_get(FsmPid, StartTime) end}
+            {Chunk, fun() -> streaming_get(FsmPid, StartTime, UserName, BFile_str) end}
     end.
 
 %% @doc Convert a moss_user record
@@ -228,6 +231,13 @@ iso_8601_to_rfc_1123(Date) when is_binary(Date) ->
       _/binary>> = Date,
     httpd_util:rfc1123_date({{b2i(Yr), b2i(Mo), b2i(Da)},
                              {b2i(Hr), b2i(Mn), b2i(Sc)}}).
+
+extract_name(User) when is_list(User) ->
+    User;
+extract_name(?MOSS_USER{name=Name}) ->
+    Name;
+extract_name(_) ->
+    "-unknown-".
 
 %% ===================================================================
 %% Internal functions
