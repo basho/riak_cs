@@ -126,7 +126,6 @@ deleting({block_deleted, {error, Error}, _DeleterPid}, State) ->
 
 handle_event(_Event, StateName, State) ->
     {next_state, StateName, State}.
->>>>>>> Skeleton for new delete fsm
 
 handle_sync_event(_Event, _From, StateName, State) ->
     {next_state, StateName, State}.
