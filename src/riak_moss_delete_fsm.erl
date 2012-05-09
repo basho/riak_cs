@@ -63,25 +63,18 @@ block_deleted(Pid, Response) ->
 %% ====================================================================
 
 init([Bucket, Key, UUID, RiakcPid, _Options]) ->
-    try gproc:add_local_name(UUID) of
-        true ->
-            {ok, prepare, #state{bucket=Bucket,
-                                 key=Key,
-                                 uuid=UUID,
-                                 riakc_pid=RiakcPid},
-                             0}
-    catch error:badarg ->
-        %% TODO:
-        %% should the exit
-        %% reason here be normal?
-        {stop, normal}
-    end.
+    State = #state{bucket=Bucket,
+                   key=Key,
+                   uuid=UUID,
+                   riakc_pid=RiakcPid},
+    {ok, prepare, State, 0}.
 
+%% @TODO Make sure we avoid any race conditions here
+%% like we had in the other fsms.
 prepare(timeout, State=#state{bucket=Bucket,
                               key=Key,
                               uuid=UUID,
                               riakc_pid=RiakcPid}) ->
-
     {ok, ManiPid} = riak_moss_manifest_fsm:start_link(Bucket, Key, RiakcPid),
     NewState = State#state{mani_pid=ManiPid},
 
