@@ -186,10 +186,18 @@ delete_bucket(User, VClock, Bucket, RiakPid) ->
             LocalError
     end.
 
-%% @doc Delete an object from Riak
--spec delete_object(binary(), binary(), pid()) -> ok.
-delete_object(BucketName, Key, RiakPid) ->
-    riakc_pb_socket:delete(RiakPid, BucketName, Key).
+%% @doc Mark all active manifests as pending_delete.
+-spec delete_object(binary(), binary(), pid()) -> ok | {error, notfound}.
+delete_object(Bucket, Key, RiakPid) ->
+    StartTime = now(),
+    {ok, Pid} = riak_moss_manifest_fsm:start_link(Bucket, Key, RiakPid),
+    Res = riak_moss_manifest_fsm:mark_active_as_pending_delete(Pid),
+    if Res == ok ->
+            ok = riak_cs_stats:update_with_start(object_delete, StartTime);
+       true ->
+            ok
+    end,
+    Res.
 
 %% Get the root bucket name for either a MOSS object
 %% bucket or the data block bucket name.
