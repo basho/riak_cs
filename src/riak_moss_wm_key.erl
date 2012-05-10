@@ -276,7 +276,7 @@ delete_resource(RD, Ctx=#key_context{bucket=Bucket,
     riak_moss_get_fsm:stop(GetFsmPid),
     BinKey = list_to_binary(Key),
     #context{riakc_pid=RiakPid} = InnerCtx,
-    case riak_moss_delete_marker:delete(Bucket, BinKey, RiakPid) of
+    case riak_moss_utils:delete_object(Bucket, BinKey, RiakPid) of
         ok ->
             %% successfully marked for deletion
             DCode = 1,
