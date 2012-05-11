@@ -11,6 +11,7 @@
 %% Public API
 -export([binary_to_hexlist/1,
          close_riak_connection/1,
+         close_riak_connection/2,
          create_bucket/5,
          create_user/2,
          delete_bucket/4,
@@ -31,6 +32,7 @@
          pow/3,
          put_object/5,
          riak_connection/0,
+         riak_connection/1,
          set_bucket_acl/5,
          set_object_acl/5,
          to_bucket_name/2]).
@@ -73,10 +75,17 @@ binary_to_hexlist(Bin) ->
           end || X <- binary_to_list(Bin)],
     string:to_lower(lists:flatten(XBin)).
 
-%% @doc Close a protobufs connection to the riak cluster.
+%% @doc Release a protobufs connection from the specified
+%% connection pool.
 -spec close_riak_connection(pid()) -> ok.
 close_riak_connection(Pid) ->
-    poolboy:checkin(riakc_pool, Pid).
+    close_riak_connection(request_pool, Pid).
+
+%% @doc Release a protobufs connection from the specified
+%% connection pool.
+-spec close_riak_connection(atom(), pid()) -> ok.
+close_riak_connection(Pool, Pid) ->
+    poolboy:checkin(Pool, Pid).
 
 %% @doc Create a bucket in the global namespace or return
 %% an error if it already exists.
@@ -452,10 +461,16 @@ put_object(BucketName, Key, Value, Metadata, RiakPid) ->
     riakc_pb_socket:put(RiakPid, NewObj).
 
 %% @doc Get a protobufs connection to the riak cluster
-%% using information from the application environment.
+%% from the default connection pool.
 -spec riak_connection() -> {ok, pid()} | {error, term()}.
 riak_connection() ->
-    case poolboy:checkout(riakc_pool, false) of
+    riak_connection(request_pool).
+
+%% @doc Get a protobufs connection to the riak cluster
+%% from the specified connection pool.
+-spec riak_connection(atom()) -> {ok, pid()} | {error, term()}.
+riak_connection(Pool) ->
+    case poolboy:checkout(Pool, false) of
         full ->
             {error, all_workers_busy};
         Worker ->

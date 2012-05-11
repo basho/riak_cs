@@ -30,8 +30,8 @@ start_link() ->
 
 %% @doc supervisor callback.
 -spec init([]) -> {ok, {{supervisor:strategy(),
-                         integer(),
-                         integer()},
+                         non_neg_integer(),
+                         non_neg_integer()},
                         [supervisor:child_spec()]}}.
 init([]) ->
     catch dtrace:init(),                   % NIF load trigger (R14B04)
@@ -91,22 +91,24 @@ init([]) ->
                {riak_moss_storage_d, start_link, []},
                permanent, 5000, worker, [riak_moss_storage_d]},
 
-    {ok, {RiakCWorkers, RiakCMaxOverflow}} = application:get_env(riak_moss, riakc_pool),
-    RiakCStop = fun(Worker) -> riak_moss_riakc_pool_worker:stop(Worker) end,
-    RiakCPool = {riakc_pool,
-                 {poolboy, start_link, [[{name, {local, riakc_pool}},
-                                         {worker_module, riak_moss_riakc_pool_worker},
-                                         {size, RiakCWorkers},
-                                         {max_overflow, RiakCMaxOverflow},
-                                         {stop_fun, RiakCStop}]]},
-                 permanent, 5000, worker, [poolboy]},
-    Processes = [RiakCPool,
-                 Archiver,
-                 Storage,
-                 Stats,
-                 DeleterSup,
-                 DeleteFsmSup,
-                 GetFsmSup,
-                 PutFsmSup,
-                 Web],
+    {ok, PoolList} = application:get_env(riak_moss, connection_pools),
+    WorkerStop = fun(Worker) -> riak_moss_riakc_pool_worker:stop(Worker) end,
+    PoolSpecs = [{Name,
+                  {poolboy, start_link, [[{name, {local, Name}},
+                                          {worker_module, riak_moss_riakc_pool_worker},
+                                          {size, Workers},
+                                          {max_overflow, Overflow},
+                                          {stop_fun, WorkerStop}]]},
+                  permanent, 5000, worker, [poolboy]}
+                 || {Name, {Workers, Overflow}} <- PoolList],
+
+    Processes = PoolSpecs ++
+        [Archiver,
+         Storage,
+         Stats,
+         DeleterSup,
+         DeleteFsmSup,
+         GetFsmSup,
+         PutFsmSup,
+         Web],
     {ok, { {one_for_one, 10, 10}, Processes} }.
