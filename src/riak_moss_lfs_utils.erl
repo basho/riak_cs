@@ -223,7 +223,7 @@ remove_delete_block(Manifest, Chunk) ->
                     [] ->
                         deleted;
                     _ ->
-                        pending_delete
+                        scheduled_delete
                 end,
     Manifest#lfs_manifest_v2{delete_blocks_remaining=Updated,
                              state=ManiState,
