@@ -67,6 +67,10 @@ resolve_manifests(writing, pending_delete, _A, B) -> B;
 resolve_manifests(pending_delete, writing, A, B) ->
     resolve_manifests(writing, pending_delete, B, A);
 
+resolve_manifests(writing, scheduled_delete, _A, B) -> B;
+resolve_manifests(scheduled_delete, writing, A, B) ->
+    resolve_manifests(writing, scheduled_delete, B, A);
+
 resolve_manifests(writing, deleted, _A, B) -> B;
 resolve_manifests(deleted, writing, A, B) ->
    resolve_manifests(writing, deleted, B, A);
@@ -89,6 +93,10 @@ resolve_manifests(active, pending_delete, _A, B) -> B;
 resolve_manifests(pending_delete, active, A, B) ->
     resolve_manifests(active, pending_delete, B, A);
 
+resolve_manifests(active, scheduled_delete, _A, B) -> B;
+resolve_manifests(scheduled_delete, active, A, B) ->
+    resolve_manifests(active, scheduled_delete, B, A);
+
 resolve_manifests(active, deleted, _A, B) -> B;
 resolve_manifests(deleted, active, A, B) ->
     resolve_manifests(active, deleted, B, A);
@@ -98,9 +106,21 @@ resolve_manifests(pending_delete, pending_delete, A, B) ->
     LastDeletedTime = resolve_last_deleted_time(A, B),
     A#lfs_manifest_v2{delete_blocks_remaining=BlocksLeftToDelete,
                       last_block_deleted_time=LastDeletedTime};
+resolve_manifests(pending_delete, scheduled_delete, _A, B) -> B;
+resolve_manifests(scheduled_delete, pending_delete, A, B) ->
+    resolve_manifests(pending_delete, scheduled_delete, B, A);
 resolve_manifests(pending_delete, deleted, _A, B) -> B;
 resolve_manifests(deleted, pending_delete, A, B) ->
     resolve_manifests(pending_delete, deleted, B, A);
+
+resolve_manifests(scheduled_delete, scheduled_delete, A, B) ->
+    BlocksLeftToDelete = resolve_deleted_blocks(A, B),
+    LastDeletedTime = resolve_last_deleted_time(A, B),
+    A#lfs_manifest_v2{delete_blocks_remaining=BlocksLeftToDelete,
+                      last_block_deleted_time=LastDeletedTime};
+resolve_manifests(scheduled_delete, deleted, _A, B) -> B;
+resolve_manifests(deleted, scheduled_delete, A, B) ->
+    resolve_manifests(scheduled_delete, deleted, B, A);
 
 resolve_manifests(deleted, deleted, A, A) -> A;
 resolve_manifests(deleted, deleted, A, B) ->

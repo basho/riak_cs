@@ -91,6 +91,9 @@ process_manifest(Manifest=#lfs_manifest_v2{state=State}) ->
         pending_delete ->
             Manifest#lfs_manifest_v2{last_block_deleted_time=erlang:now(),
                                      delete_blocks_remaining=blocks_set()};
+        scheduled_delete ->
+            Manifest#lfs_manifest_v2{last_block_deleted_time=erlang:now(),
+                                     delete_blocks_remaining=blocks_set()};
         deleted ->
             Manifest#lfs_manifest_v2{last_block_deleted_time=erlang:now()}
     end.
@@ -123,4 +126,3 @@ only_one_active_helper(Manifest=#lfs_manifest_v2{state=active}, {not_found, List
     {found, [Manifest | List]};
 only_one_active_helper(Manifest, {not_found, List}) ->
     {not_found, [Manifest | List]}.
-
