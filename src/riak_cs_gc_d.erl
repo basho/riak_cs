@@ -44,7 +44,7 @@
           batch_start,   %% the time we actually started
           batch_count=0, %% count of objects processed so far
           batch_skips=0, %% count of objects skipped so far
-          batch=[],      %% objects left to process in this batch
+          batch=[]      %% objects left to process in this batch
          }).
 
 %%%===================================================================
@@ -111,7 +111,7 @@ resume_batch() ->
 
 %% @doc Read the storage schedule and go to idle.
 init([]) ->
-    Schedule = read_storage_schedule(),
+    Schedule = read_gc_schedule(),
     SchedState = schedule_next(#state{schedule=Schedule},
                                calendar:universal_time()),
     ok = rts:check_bucket_props(?STORAGE_BUCKET),
@@ -123,10 +123,10 @@ init([]) ->
 idle(_, State) ->
     {next_state, idle, State}.
 
-%% @doc Async transitions from calculating are all due to messages the
+%% @doc Async transitions from deleting are all due to messages the
 %% FSM sends itself, in order to have opportunities to handle messages
 %% from the outside world (like `status').
-calculating(continue, #state{batch=[], current=Current}=State) ->
+deleting(continue, #state{batch=[], current=Current}=State) ->
     %% finished with this batch
     _ = lager:info("Finished storage calculation in ~b seconds.",
                    [elapsed(State#state.batch_start)]),
@@ -135,12 +135,14 @@ calculating(continue, #state{batch=[], current=Current}=State) ->
                            last=Current,
                            current=undefined},
     {next_state, idle, NewState};
-calculating(continue, State) ->
+deleting(continue, State) ->
     %% more to do yet
-    NewState = calculate_next_user(State),
+    %% @TODO Continue file deletion
+    %% NewState = delete_next_file(State),
+    NewState = State,
     gen_fsm:send_event(?SERVER, continue),
     {next_state, calculating, NewState};
-calculating(_, State) ->
+deleting(_, State) ->
     {next_state, calculating, State}.
 
 paused(_, State) ->
@@ -165,7 +167,7 @@ idle(resume_batch, _From, State) ->
 idle(_, _From, State) ->
     {reply, ok, idle, State}.
 
-calculating(status, _From, State) ->
+deleting(status, _From, State) ->
     Props = [{schedule, State#state.schedule},
              {last, State#state.last},
              {current, State#state.current},
@@ -175,15 +177,15 @@ calculating(status, _From, State) ->
              {users_skipped, State#state.batch_skips},
              {users_left, length(State#state.batch)}],
     {reply, {ok, {calculating, Props}}, calculating, State};
-calculating({manual_batch, _Options}, _From, State) ->
+deleting({manual_batch, _Options}, _From, State) ->
     %% this is the manual user request to begin a batch
-    {reply, {error, already_calculating}, calculating, State};
-calculating(pause_batch, _From, State) ->
-    _ = lager:info("Pausing storage calcluation"),
+    {reply, {error, already_deleting}, deleting, State};
+deleting(pause_batch, _From, State) ->
+    _ = lager:info("Pausing file block deletion"),
     {reply, ok, paused, State};
-calculating(cancel_batch, _From, #state{current=Current}=State) ->
+deleting(cancel_batch, _From, #state{current=Current}=State) ->
     %% finished with this batch
-    _ = lager:info("Canceled storage calculation after ~b seconds.",
+    _ = lager:info("Canceled deletion after ~b seconds.",
                    [elapsed(State#state.batch_start)]),
     riak_moss_riakc_pool_worker:stop(State#state.riak),
     NewState = State#state{riak=undefined,
@@ -191,18 +193,18 @@ calculating(cancel_batch, _From, #state{current=Current}=State) ->
                            current=undefined,
                            batch=[]},
     {reply, ok, idle, NewState};
-calculating(_, _From, State) ->
-    {reply, ok, calculating, State}.
+deleting(_, _From, State) ->
+    {reply, ok, deleting, State}.
 
 paused(status, From, State) ->
-    {reply, {ok, {_, Status}}, _, State} = calculating(status, From, State),
+    {reply, {ok, {_, Status}}, _, State} = deleting(status, From, State),
     {reply, {ok, {paused, Status}}, paused, State};
 paused(resume_batch, _From, State) ->
     _ = lager:info("Resuming storage calculation"),
     gen_fsm:send_event(?SERVER, continue),
     {reply, ok, calculating, State};
 paused(cancel_batch, From, State) ->
-    calculating(cancel_batch, From, State);
+    deleting(cancel_batch, From, State);
 paused(_, _From, State) ->
     {reply, ok, paused, State}.
 
@@ -287,7 +289,7 @@ read_gc_schedule1() ->
 
 %% @doc Time is allowed as a `{Hour, Minute}' tuple, or as an `"HHMM"'
 %% string.  This function purposely fails (with function or case
-%% clause currently) to allow {@link read_storage_schedule1/0} to pick
+%% clause currently) to allow {@link read_gc_schedule1/0} to pick
 %% out the bad eggs.
 parse_time({Hour, Min}) when (Hour >= 0 andalso Hour =< 23),
                              (Min >= 0 andalso Min =< 59) ->
@@ -301,9 +303,8 @@ parse_time(HHMM) when is_list(HHMM) ->
 
 %% @doc Actually kick off the batch.  After calling this function, you
 %% must advance the FSM state to `calculating'.
-start_batch(Options, Time, State) ->
+start_batch(_Options, Time, State) ->
     BatchStart = calendar:universal_time(),
-    Recalc = true == proplists:get_value(recalc, Options),
     %% TODO: probably want to do this fetch streaming, to avoid
     %% accidental memory pressure at other points
 
@@ -314,7 +315,9 @@ start_batch(Options, Time, State) ->
     %% socket process, so "starting" one here is the same as opening a
     %% connection, and avoids duplicating the configuration lookup code
     {ok, Riak} = riak_moss_riakc_pool_worker:start_link([]),
-    Batch = fetch_user_list(Riak),
+    %% @TODO Write function to fetch file list
+    %% Batch = fetch_file_list(Riak),
+    Batch = [],
 
     gen_fsm:send_event(?SERVER, continue),
     State#state{batch_start=BatchStart,
@@ -323,22 +326,6 @@ start_batch(Options, Time, State) ->
                 batch=Batch,
                 batch_count=0,
                 batch_skips=0}.
-
-recalc(true, _Riak, _User, _Time) ->
-    %% the user demanded recalculations
-    true;
-recalc(false, Riak, User, Time) ->
-    {ok, Period} = riak_moss_storage:archive_period(),
-    {Start, End} = rts:slice_containing(Time, Period),
-    case riak_moss_storage:get_usage(Riak, User, Start, End) of
-        {[], _} ->
-            %% No samples were found for this time period (or all
-            %% attempts ended in error); calculate
-            true;
-        _ ->
-            %% A sample was found; do not recalc
-            false
-    end.
 
 %% @doc How many seconds have passed from `Time' to now.
 elapsed(Time) ->
