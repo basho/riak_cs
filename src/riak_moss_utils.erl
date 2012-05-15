@@ -192,12 +192,17 @@ delete_object(Bucket, Key, RiakPid) ->
     StartTime = now(),
     {ok, Pid} = riak_moss_manifest_fsm:start_link(Bucket, Key, RiakPid),
     Res = riak_moss_manifest_fsm:mark_active_as_pending_delete(Pid),
-    if Res == ok ->
-            ok = riak_cs_stats:update_with_start(object_delete, StartTime);
-       true ->
+    case Res of
+        ok ->
+            ok = riak_cs_stats:update_with_start(object_delete, StartTime),
+            %% Get the list of `pending_delete' manifests for the object
+            PDManifests = riak_moss_manifest_fsm:get_pending_delete_manifests(Pid),
+            %% Schedule `pending_delete' manifests for deletion and
+            %% update each manifest to `scheduled_delete' state.
+            riak_cs_gc:schedule_manifests(PDManifests);
+       _ ->
             ok
-    end,
-    Res.
+    end.
 
 %% Get the root bucket name for either a MOSS object
 %% bucket or the data block bucket name.
