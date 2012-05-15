@@ -90,6 +90,7 @@ get_specific_manifest(Pid, UUID) ->
 add_new_manifest(Pid, Manifest) ->
     gen_fsm:send_event(Pid, {add_new_manifest, Manifest}).
 
+-spec mark_active_as_pending_delete(pid()) -> ok | {error, notfound}.
 mark_active_as_pending_delete(Pid) ->
     gen_fsm:sync_send_event(Pid, mark_active_as_pending_delete, infinity).
 
