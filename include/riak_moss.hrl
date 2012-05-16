@@ -278,10 +278,4 @@
 %% in the `deleted` state before removing
 %% them completely.
 -define(DEFAULT_DELETE_TOMBSTONE_TIME, 86400). %% 24-hours
-
--define(DEFAULT_GC_SECONDS_PER_SLICE, 60). %% 1-minute
-%% with 60-second slice, this
-%% equals 24-hours
--define(DEFAULT_NUM_LEEWAY_SLICES, 1440).
-
--define(DEFAULT_RETRY_MOVE_FOR_GC_TIME, 60). %% 60 seconds
+-define(DEFAULT_LEEWAY_SECONDS, 86400). %% 24-hours
