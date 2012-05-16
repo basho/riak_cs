@@ -71,7 +71,7 @@ mark_overwritten(Manifests) ->
 %% from an orddict of manifests.
 -spec pending_delete_manifests(term()) -> [lfs_manifest()].
 pending_delete_manifests(Manifests) ->
-    lists:foldl(fun pending_delete_manifest/2, [], Manifests).
+    lists:filter(fun pending_delete_manifest/1, Manifests).
 
 -spec prune(list(lfs_manifest())) -> list(lfs_manifest()).
 prune(Manifests) ->
@@ -113,11 +113,10 @@ needs_pruning(#lfs_manifest_v2{state=deleted,
 needs_pruning(_Manifest, _Time) ->
     false.
 
-pending_delete_manifest({_, Manifest=#lfs_manifest_v2{state=pending_delete}},
-                        PDManifests) ->
-    [Manifest | PDManifests];
-pending_delete_manifest(_, _PDManifests) ->
-    _PDManifests.
+pending_delete_manifest({_, #lfs_manifest_v2{state=pending_delete}}) ->
+    true;
+pending_delete_manifest(_) ->
+    false.
 
 seconds_diff(T2, T1) ->
     TimeDiffMicrosends = timer:now_diff(T2, T1),
