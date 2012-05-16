@@ -18,6 +18,7 @@
 -export([new/2,
          active_manifest/1,
          mark_overwritten/1,
+         pending_delete_manifests/1,
          prune/1,
          prune/2]).
 
@@ -66,6 +67,12 @@ mark_overwritten(Manifests) ->
                     Manifests)
     end.
 
+%% @doc Return the current `pending_delete' manifests
+%% from an orddict of manifests.
+-spec pending_delete_manifests(term()) -> [lfs_manifest()].
+pending_delete_manifests(Manifests) ->
+    lists:foldl(fun pending_delete_manifest/2, [], Manifests).
+
 -spec prune(list(lfs_manifest())) -> list(lfs_manifest()).
 prune(Manifests) ->
     prune(Manifests, erlang:now()).
@@ -105,6 +112,12 @@ needs_pruning(#lfs_manifest_v2{state=deleted,
     seconds_diff(Time, DeleteTime) > delete_tombstone_time();
 needs_pruning(_Manifest, _Time) ->
     false.
+
+pending_delete_manifest({_, Manifest=#lfs_manifest_v2{state=pending_delete}},
+                        PDManifests) ->
+    [Manifest | PDManifests];
+pending_delete_manifest(_, _PDManifests) ->
+    _PDManifests.
 
 seconds_diff(T2, T1) ->
     TimeDiffMicrosends = timer:now_diff(T2, T1),
