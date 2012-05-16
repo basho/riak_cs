@@ -275,7 +275,10 @@
 -define(DT_WM_OP,           705).
 
 %% Number of seconds to keep manifests
-%% in the `deleted` state before removing
+%% in the `deleted' state before removing
 %% them completely.
 -define(DEFAULT_DELETE_TOMBSTONE_TIME, 86400). %% 24-hours
+%% Number of seconds to keep manifests
+%% in the `scheduled_delete' state before
+%% beginning to delete the file blocks.
 -define(DEFAULT_LEEWAY_SECONDS, 86400). %% 24-hours
