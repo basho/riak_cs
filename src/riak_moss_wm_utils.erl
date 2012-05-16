@@ -7,6 +7,7 @@
 -module(riak_moss_wm_utils).
 
 -export([service_available/2,
+         service_available/3,
          parse_auth_header/2,
          ensure_doc/1,
          iso_8601_datetime/0,
@@ -36,6 +37,14 @@ service_available(RD, KeyCtx=#key_context{context=Ctx}) ->
     end;
 service_available(RD, Ctx) ->
     case riak_moss_utils:riak_connection() of
+        {ok, Pid} ->
+            {true, RD, Ctx#context{riakc_pid=Pid}};
+        {error, _Reason} ->
+            {false, RD, Ctx}
+    end.
+
+service_available(Pool, RD, Ctx) ->
+    case riak_moss_utils:riak_connection(Pool) of
         {ok, Pid} ->
             {true, RD, Ctx#context{riakc_pid=Pid}};
         {error, _Reason} ->
@@ -110,8 +119,7 @@ validate_auth_header(RD, AuthBypass, RiakPid) ->
             case AuthMod:authenticate(RD, Secret, Signature) of
                 ok ->
                     {ok, User, UserVclock};
-                {error, Reason} ->
-                    lager:info("Reason: ~p", [Reason]),
+                {error, _Reason} ->
                     %% TODO: are the errors here of small enough
                     %% number that we could just handle them in
                     %% forbidden/2?

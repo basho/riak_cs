@@ -21,6 +21,7 @@
 -include("riak_moss.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
 
+-define(RIAKCPOOL, bucket_list_pool).
 
 init(Config) ->
     dt_entry(<<"init">>),
@@ -32,7 +33,7 @@ init(Config) ->
 -spec service_available(term(), term()) -> {true, term(), term()}.
 service_available(RD, Ctx) ->
     dt_entry(<<"service_available">>),
-    Res = riak_moss_wm_utils:service_available(RD, Ctx),
+    Res = riak_moss_wm_utils:service_available(?RIAKCPOOL, RD, Ctx),
     dt_return(<<"service_available">>),
     Res.
 
@@ -339,7 +340,7 @@ finish_request(RD, Ctx=#context{riakc_pid=undefined}) ->
     {true, RD, Ctx};
 finish_request(RD, Ctx=#context{riakc_pid=RiakPid}) ->
     dt_entry(<<"finish_request">>, [1], []),
-    riak_moss_utils:close_riak_connection(RiakPid),
+    riak_moss_utils:close_riak_connection(?RIAKCPOOL, RiakPid),
     dt_return(<<"finish_request">>, [1], []),
     {true, RD, Ctx#context{riakc_pid=undefined}}.
 
