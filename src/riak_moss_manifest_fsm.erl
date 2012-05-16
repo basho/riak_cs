@@ -25,6 +25,7 @@
          add_new_manifest/2,
          update_manifest/2,
          mark_active_as_pending_delete/1,
+         mark_as_scheduled_delete/2,
          update_manifest_with_confirmation/2,
          stop/1]).
 
@@ -93,6 +94,10 @@ add_new_manifest(Pid, Manifest) ->
 -spec mark_active_as_pending_delete(pid()) -> ok | {error, notfound}.
 mark_active_as_pending_delete(Pid) ->
     gen_fsm:sync_send_event(Pid, mark_active_as_pending_delete, infinity).
+
+-spec mark_as_scheduled_delete(pid(), [lfs_manifest()]) -> ok | {error, notfound}.
+mark_as_scheduled_delete(Pid, Manifests) ->
+    gen_fsm:sync_send_event(Pid, {mark_as_scheduled_delete, Manifests}, infinity).
 
 update_manifest(Pid, Manifest) ->
     gen_fsm:send_event(Pid, {update_manifest, Manifest}).
@@ -163,6 +168,9 @@ waiting_command({get_specific_manifest, UUID}, _From, State) ->
     {reply, Reply, waiting_update_command, NewState};
 waiting_command(mark_active_as_pending_delete, _From, State) ->
     Reply = set_active_manifest_pending_delete(State),
+    {stop, normal, Reply, State};
+waiting_command({mark_as_scheduled_delete, Manifests}, _From, State) ->
+    Reply = set_manifests_scheduled_delete(Manifests, State),
     {stop, normal, Reply, State}.
 
 waiting_update_command({update_manifest_with_confirmation, Manifest}, _From,
@@ -211,8 +219,8 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 %% @doc Get the active manifest for an object.
 -spec active_manifest(#state{}) -> {{ok, lfs_manifest()}, #state{}} | {{error, notfound}, #state{}}.
 active_manifest(State=#state{riakc_pid=RiakcPid,
-                            bucket=Bucket,
-                            key=Key}) ->
+                             bucket=Bucket,
+                             key=Key}) ->
     %% Retrieve the (resolved) value
     %% from Riak and return the active
     %% manifest, if there is one. Then
@@ -312,6 +320,28 @@ set_active_manifest_pending_delete(#state{riakc_pid=RiakcPid,
             ok;
         {error, notfound}=NotFound ->
             NotFound
+    end.
+
+-spec set_manifests_scheduled_delete([lfs_manifest()], state()) ->
+                                            {ok, state()} |
+                                            {{error, notfound}, state()}.
+
+set_manifests_scheduled_delete(_Manifests, State=#state{bucket=Bucket,
+                                                       key=Key,
+                                                       riakc_pid=RiakcPid}) ->
+
+    case get_manifests(RiakcPid, Bucket, Key) of
+        {ok, RiakObject, Resolved} ->
+            UUID = ok,
+            try orddict:fetch(UUID, Resolved) of
+                Value ->
+                    {{ok, Value}, State#state{riak_object=RiakObject,
+                                              manifests=Resolved}}
+            catch error:function_clause ->
+                {{error, notfound}, State}
+            end;
+        {error, notfound}=NotFound ->
+            {NotFound, State}
     end.
 
 %% ===================================================================

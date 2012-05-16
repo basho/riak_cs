@@ -15,18 +15,23 @@
 -endif.
 
 %% export Public API
--export([key_to_slice/1,
-         schedule_manifests/2,
-         slice_from_time/1,
-         slice_from_time_with_leeway/1,
-         slice_to_key/1]).
+-export([delete_tombstone_time/0,
+         schedule_manifests/2]).
 
 %%%===================================================================
 %%% Public API
 %%%===================================================================
 
-key_to_slice(<<Slice:64>>) ->
-    Slice.
+%% @doc Return the minimum number of seconds a file manifest waits in
+%% the `deleted' state before being removed from the file record.
+-spec delete_tombstone_time() -> non_neg_integer().
+delete_tombstone_time() ->
+    case application:get_env(riak_moss, delete_tombstone_time) of
+        undefined ->
+            ?DEFAULT_DELETE_TOMBSTONE_TIME;
+        {ok, TombstoneTime} ->
+            TombstoneTime
+    end.
 
 %% @doc Copy data for a list of manifests to the
 %% `riak-cs-gc' bucket to schedule them for deletion.
@@ -36,19 +41,9 @@ schedule_manifests(Manifests, RiakPid) ->
     ManifestSet = build_manifest_set(twop_set:new(), Manifests),
     _ = lager:debug("Manifests scheduled for deletion: ~p", [ManifestSet]),
     %% Write the set to a timestamped key in the `riak-cs-gc' bucket
-    Key = term_to_binary(erlang:now()),
+    Key = generate_key(),
     RiakObject = riakc_obj:new(?GC_BUCKET, Key, term_to_binary(ManifestSet)),
     riakc_pb_socket:put(RiakPid, RiakObject).
-
-slice_from_time(Time) ->
-    Secs = timestamp_to_seconds(Time),
-    slice_from_seconds(Secs).
-
-slice_from_time_with_leeway(Time) ->
-    slice_from_time_with_leeway(Time, delete_leeway_slices()).
-
-slice_to_key(Slice) ->
-    <<Slice:64>>.
 
 %%%===================================================================
 %%% Internal functions
@@ -61,33 +56,27 @@ build_manifest_set(Set, [HeadManifest | RestManifests]) ->
     UpdSet = twop_set:add_element(HeadManifest, Set),
     build_manifest_set(UpdSet, RestManifests).
 
-delete_leeway_slices() ->
-    case application:get_env(riak_moss, num_leeway_slices) of
+%% @doc Generate a key for storing a set of manifests in the
+%% garbage collection bucket.
+-spec generate_key() -> non_neg_integer().
+generate_key() ->
+    timestamp() + leeway_seconds().
+
+%% @doc Return the minimum number of seconds a file manifest waits in
+%% the `scheduled_delete' state before being garbage collected.
+-spec leeway_seconds() -> non_neg_integer().
+leeway_seconds() ->
+    case application:get_env(riak_moss, leeway_seconds) of
         undefined ->
-            ?DEFAULT_NUM_LEEWAY_SLICES;
-        {ok, NumLeewaySlices} ->
-            NumLeewaySlices
+            ?DEFAULT_LEEWAY_SECONDS;
+        {ok, LeewaySeconds} ->
+            LeewaySeconds
     end.
 
-
-seconds_per_slice() ->
-    case application:get_env(riak_moss, gc_seconds_per_slice) of
-        undefined ->
-            ?DEFAULT_GC_SECONDS_PER_SLICE;
-        {ok, Seconds} ->
-            Seconds
-    end.
-
-slice_from_seconds(Secs) ->
-    Secs div seconds_per_slice().
-
-slice_from_time_with_leeway(Time, NumLeewaySlices) ->
-    SecondsAddition = NumLeewaySlices * seconds_per_slice(),
-    TimeInSeconds = timestamp_to_seconds(Time),
-    slice_from_seconds(TimeInSeconds + SecondsAddition).
-
-timestamp_to_seconds({MegaSecs, Secs, _MicroSecs}) ->
-    (MegaSecs * (1000 * 1000)) + Secs.
+%% @doc Generate a key for storing a set of manifests for deletion.
+timestamp() ->
+    {MegaSecs, Secs, _MicroSecs} = erlang:now(),
+    (MegaSecs * 1000000) + Secs.
 
 %% ===================================================================
 %% EUnit tests

@@ -199,7 +199,12 @@ delete_object(Bucket, Key, RiakPid) ->
             PDManifests = riak_moss_manifest_fsm:get_pending_delete_manifests(Pid),
             %% Schedule `pending_delete' manifests for deletion and
             %% update each manifest to `scheduled_delete' state.
-            riak_cs_gc:schedule_manifests(PDManifests);
+            case riak_cs_gc:schedule_manifests(PDManifests) of
+                ok ->
+                    riak_moss_manifest_fsm:set_manifests_scheduled_delete(PDManifests);
+                Error ->
+                    Error
+            end;
        _ ->
             ok
     end.
