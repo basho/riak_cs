@@ -21,6 +21,7 @@
 %% API
 -export([start_link/3,
          get_active_manifest/1,
+         get_pending_delete_manifests/1,
          get_specific_manifest/2,
          add_new_manifest/2,
          update_manifest/2,
@@ -52,15 +53,7 @@
 -record(state, {bucket :: binary(),
                 key :: binary(),
                 riak_object :: term(),
-
-                %% an orddict mapping
-                %% UUID -> Manifest
-                %% TODO:
-                %% maybe this can just
-                %% be pulled out of the
-                %% riak object every time?
-                manifests :: term(),
-
+                manifests :: term(), % an orddict mapping UUID -> Manifest
                 riakc_pid :: pid()
             }).
 
@@ -79,11 +72,16 @@
 %% @spec start_link() -> {ok, Pid} | ignore | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
-start_link(Bucket, Key, RiakPid) ->
-    gen_fsm:start_link(?MODULE, [Bucket, Key, RiakPid], []).
+start_link(Bucket, Key, RiakcPid) ->
+    gen_fsm:start_link(?MODULE, [Bucket, Key, RiakcPid], []).
 
 get_active_manifest(Pid) ->
     gen_fsm:sync_send_event(Pid, get_active_manifest, infinity).
+
+-spec get_pending_delete_manifests(pid()) -> {ok, [lfs_manifest()]} |
+                                             {error, term()}.
+get_pending_delete_manifests(Pid) ->
+    gen_fsm:sync_send_event(Pid, pending_delete_manifests, infinity).
 
 get_specific_manifest(Pid, UUID) ->
     gen_fsm:sync_send_event(Pid, {get_specific_manifest, UUID}, infinity).
@@ -95,9 +93,9 @@ add_new_manifest(Pid, Manifest) ->
 mark_active_as_pending_delete(Pid) ->
     gen_fsm:sync_send_event(Pid, mark_active_as_pending_delete, infinity).
 
--spec mark_as_scheduled_delete(pid(), [lfs_manifest()]) -> ok | {error, notfound}.
-mark_as_scheduled_delete(Pid, Manifests) ->
-    gen_fsm:sync_send_event(Pid, {mark_as_scheduled_delete, Manifests}, infinity).
+-spec mark_as_scheduled_delete(pid(), [binary()]) -> ok | {error, notfound}.
+mark_as_scheduled_delete(Pid, UUIDS) ->
+    gen_fsm:sync_send_event(Pid, {mark_as_scheduled_delete, UUIDS}, infinity).
 
 update_manifest(Pid, Manifest) ->
     gen_fsm:send_event(Pid, {update_manifest, Manifest}).
@@ -114,11 +112,11 @@ stop(Pid) ->
 %%% gen_fsm callbacks
 %%%===================================================================
 
-init([Bucket, Key, RiakPid]) ->
+init([Bucket, Key, RiakcPid]) ->
     process_flag(trap_exit, true),
     {ok, waiting_command, #state{bucket=Bucket,
                                  key=Key,
-                                 riakc_pid=RiakPid}};
+                                 riakc_pid=RiakcPid}};
 init([test, Bucket, Key]) ->
     %% skip the prepare phase
     %% and jump right into waiting command,
@@ -166,12 +164,17 @@ waiting_command(get_active_manifest, _From, State) ->
 waiting_command({get_specific_manifest, UUID}, _From, State) ->
     {Reply, NewState} = specific_manifest(UUID, State),
     {reply, Reply, waiting_update_command, NewState};
+waiting_command(pending_delete_manifests, _From, State) ->
+    {Reply, NewState} = pending_delete_manifests(State),
+    {reply, Reply, waiting_update_command, NewState};
 waiting_command(mark_active_as_pending_delete, _From, State) ->
     Reply = set_active_manifest_pending_delete(State),
-    {stop, normal, Reply, State};
-waiting_command({mark_as_scheduled_delete, Manifests}, _From, State) ->
-    Reply = set_manifests_scheduled_delete(Manifests, State),
-    {stop, normal, Reply, State}.
+    %% @TODO Could return an updated state and not
+    %% have to read the manifests again.
+    {reply, Reply, waiting_command, State};
+waiting_command({mark_as_scheduled_delete, UUIDS}, _From, State) ->
+    {Reply, UpdState} = set_manifests_scheduled_delete(UUIDS, State),
+    {stop, normal, Reply, UpdState}.
 
 waiting_update_command({update_manifest_with_confirmation, Manifest}, _From,
                                             State=#state{riakc_pid=RiakcPid,
@@ -194,7 +197,10 @@ waiting_update_command({update_manifest_with_confirmation, Manifest}, _From,
     %% this call succeeded
     Reply = riakc_pb_socket:put(RiakcPid, RiakObject),
     {reply, Reply, waiting_update_command, State#state{riak_object=undefined,
-                                                       manifests=undefined}}.
+                                                       manifests=undefined}};
+waiting_update_command({mark_as_scheduled_delete, UUIDS}, _From, State) ->
+    {Reply, UpdState} = set_manifests_scheduled_delete(UUIDS, State),
+    {stop, normal, Reply, UpdState}.
 
 handle_event(_Event, StateName, State) ->
     {next_state, StateName, State}.
@@ -235,6 +241,30 @@ active_manifest(State=#state{riakc_pid=RiakcPid,
                     ActiveReply;
                 {error, no_active_manifest} ->
                     {error, notfound}
+            end,
+            NewState = State#state{riak_object=RiakObject, manifests=Resolved},
+            {Reply, NewState};
+        {error, notfound}=NotFound ->
+            {NotFound, State}
+    end.
+
+%% @doc Get the `pending_delete' manifests for an object.
+-spec pending_delete_manifests(#state{}) -> {{ok, [lfs_manifest()]}, #state{}} |
+                                            {{error, notfound}, #state{}}.
+pending_delete_manifests(State=#state{riakc_pid=RiakcPid,
+                                      bucket=Bucket,
+                                      key=Key}) ->
+    %% Retrieve the (resolved) value from Riak and return any `pending_delete'
+    %% manifests if there are any. Then stash the riak_object in the
+    %% state so that the next time we write we write with the correct
+    %% vector clock.
+    case get_manifests(RiakcPid, Bucket, Key) of
+        {ok, RiakObject, Resolved} ->
+            case riak_moss_manifest:pending_delete_manifests(Resolved) of
+                [] ->
+                    Reply = {error, notfound};
+                Manifests ->
+                    Reply = {ok, Manifests}
             end,
             NewState = State#state{riak_object=RiakObject, manifests=Resolved},
             {Reply, NewState};
@@ -322,26 +352,51 @@ set_active_manifest_pending_delete(#state{riakc_pid=RiakcPid,
             NotFound
     end.
 
--spec set_manifests_scheduled_delete([lfs_manifest()], state()) ->
+-spec set_manifests_scheduled_delete([binary()], state()) ->
                                             {ok, state()} |
                                             {{error, notfound}, state()}.
-
-set_manifests_scheduled_delete(_Manifests, State=#state{bucket=Bucket,
-                                                       key=Key,
-                                                       riakc_pid=RiakcPid}) ->
-
+set_manifests_scheduled_delete(_UUIDS, State=#state{bucket=Bucket,
+                                                    key=Key,
+                                                    manifests=undefined,
+                                                    riakc_pid=RiakcPid}) ->
     case get_manifests(RiakcPid, Bucket, Key) of
         {ok, RiakObject, Resolved} ->
-            UUID = ok,
-            try orddict:fetch(UUID, Resolved) of
-                Value ->
-                    {{ok, Value}, State#state{riak_object=RiakObject,
-                                              manifests=Resolved}}
-            catch error:function_clause ->
-                {{error, notfound}, State}
-            end;
+            UpdState = State#state{riak_object=RiakObject,
+                                   manifests=Resolved},
+            set_manifests_scheduled_delete(_UUIDS, UpdState);
         {error, notfound}=NotFound ->
             {NotFound, State}
+    end;
+set_manifests_scheduled_delete([], State=#state{manifests=Manifests,
+                                                riak_object=RiakObject,
+                                                riakc_pid=RiakcPid}) ->
+    UpdRiakObject = riakc_obj:update_value(RiakObject,
+                                           term_to_binary(Manifests)),
+    Result = riakc_pb_socket:put(RiakcPid, UpdRiakObject),
+    {Result, State};
+set_manifests_scheduled_delete([UUID | RestUUIDS], State=#state{manifests=Manifests}) ->
+    case orddict:is_key(UUID, Manifests) of
+        true ->
+            UpdManifests = orddict:update(UUID,
+                                          fun set_scheduled_delete/1,
+                                          Manifests);
+        false ->
+            UpdManifests = Manifests
+    end,
+    UpdState = State#state{manifests=UpdManifests},
+    set_manifests_scheduled_delete(RestUUIDS, UpdState).
+
+%% @doc Check if a manifest is in the `pending_delete' state
+%% and set it to the `scheduled_delete' state if so. This
+%% function is used by the calls to `orddict:update' in
+%% `set_manifests_scheduled_delete'.
+-spec set_scheduled_delete(lfs_manifest()) -> lfs_manifest().
+set_scheduled_delete(Manifest) ->
+    case Manifest#lfs_manifest_v2.state =:= pending_delete of
+        true ->
+            Manifest#lfs_manifest_v2{state=scheduled_delete};
+        false ->
+            Manifest
     end.
 
 %% ===================================================================
