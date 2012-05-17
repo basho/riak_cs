@@ -21,7 +21,7 @@
 %% API
 -export([start_link/3,
          get_active_manifest/1,
-         get_pending_delete_manifests/1,
+         get_pending_delete_manifest_ids/1,
          get_specific_manifest/2,
          add_new_manifest/2,
          update_manifest/2,
@@ -78,10 +78,10 @@ start_link(Bucket, Key, RiakcPid) ->
 get_active_manifest(Pid) ->
     gen_fsm:sync_send_event(Pid, get_active_manifest, infinity).
 
--spec get_pending_delete_manifests(pid()) -> {ok, [lfs_manifest()]} |
+-spec get_pending_delete_manifest_ids(pid()) -> {ok, [binary()]} |
                                              {error, term()}.
-get_pending_delete_manifests(Pid) ->
-    gen_fsm:sync_send_event(Pid, pending_delete_manifests, infinity).
+get_pending_delete_manifest_ids(Pid) ->
+    gen_fsm:sync_send_event(Pid, pending_delete_manifest_ids, infinity).
 
 get_specific_manifest(Pid, UUID) ->
     gen_fsm:sync_send_event(Pid, {get_specific_manifest, UUID}, infinity).
@@ -164,8 +164,8 @@ waiting_command(get_active_manifest, _From, State) ->
 waiting_command({get_specific_manifest, UUID}, _From, State) ->
     {Reply, NewState} = specific_manifest(UUID, State),
     {reply, Reply, waiting_update_command, NewState};
-waiting_command(pending_delete_manifests, _From, State) ->
-    {Reply, NewState} = pending_delete_manifests(State),
+waiting_command(pending_delete_manifest_ids, _From, State) ->
+    {Reply, NewState} = pending_delete_manifest_ids(State),
     {reply, Reply, waiting_update_command, NewState};
 waiting_command(mark_active_as_pending_delete, _From, State) ->
     Reply = set_active_manifest_pending_delete(State),
@@ -248,23 +248,27 @@ active_manifest(State=#state{riakc_pid=RiakcPid,
             {NotFound, State}
     end.
 
-%% @doc Get the `pending_delete' manifests for an object.
--spec pending_delete_manifests(#state{}) -> {{ok, [lfs_manifest()]}, #state{}} |
-                                            {{error, notfound}, #state{}}.
-pending_delete_manifests(State=#state{riakc_pid=RiakcPid,
-                                      bucket=Bucket,
-                                      key=Key}) ->
-    %% Retrieve the (resolved) value from Riak and return any `pending_delete'
-    %% manifests if there are any. Then stash the riak_object in the
-    %% state so that the next time we write we write with the correct
-    %% vector clock.
+%% @doc Get the UUIDs for the `pending_delete' manifests for an
+%% object.
+-spec pending_delete_manifest_ids(#state{}) -> {{ok, [binary()]}, #state{}} |
+                                               {{error, notfound}, #state{}}.
+pending_delete_manifest_ids(State=#state{riakc_pid=RiakcPid,
+                                         bucket=Bucket,
+                                         key=Key}) ->
+    %% Retrieve the (resolved) value from Riak and return the UUID for
+    %% any `pending_delete' manifests if there are any. Then stash the
+    %% riak_object in the state so that the next time we write we
+    %% write with the correct vector clock.
     case get_manifests(RiakcPid, Bucket, Key) of
         {ok, RiakObject, Resolved} ->
+            %% The call to `riak_moss_manifest:pending_delete_manifests' returns
+            %% a list of pairs of the form `{UUID, Manifest}'.
             case riak_moss_manifest:pending_delete_manifests(Resolved) of
                 [] ->
                     Reply = {error, notfound};
-                Manifests ->
-                    Reply = {ok, Manifests}
+                ManifestPairs ->
+                    {UUIDS, _} = lists:unzip(ManifestPairs),
+                    Reply = {ok, UUIDS}
             end,
             NewState = State#state{riak_object=RiakObject, manifests=Resolved},
             {Reply, NewState};
