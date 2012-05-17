@@ -144,39 +144,38 @@ code_change(_OldVsn, StateName, State, _Extra) ->
     {next_state, atom(), state()}.
 handle_receiving_manifest(Manifest, State=#state{riakc_pid=RiakcPid,
                                                  mani_pid=ManiPid}) ->
-    %% TODO:
-    %% need to handle the case
-    %% where there are 0 blocks to
-    %% delete, ie. content length of 0
     {NewManifest, BlocksToDelete} = blocks_to_delete_from_manifest(Manifest),
 
-    AllDeleteWorkers =
-    riak_moss_block_server:start_block_servers(RiakcPid,
-        riak_moss_lfs_utils:delete_concurrency()),
-
-    FreeDeleters = ordsets:from_list(AllDeleteWorkers),
-
-    %% start the save_manifest
-    %% timer
-    %% TODO:
-    %% this time probably
-    %% shouldn't be hardcoded,
-    %% and if it is, what should
-    %% it be?
-
+    %% start the save_manifest timer TODO: this time probably
+    %% shouldn't be hardcoded, and if it is, what should it be?
     {ok, TRef} = timer:send_interval(timer:seconds(60), self(), save_manifest),
 
     NewState = State#state{mani_pid=ManiPid,
                            manifest=NewManifest,
-                           all_delete_works=AllDeleteWorkers,
-                           free_deleters=FreeDeleters,
                            unacked_deletes=[],
                            delete_blocks_remaining=BlocksToDelete,
                            timer_ref=TRef},
 
-    StateAfterDeleteStart = maybe_delete_blocks(NewState),
+    %% Handle the case where there are 0 blocks to delete,
+    %% i.e. content length of 0
+    case BlocksToDelete > 0 of
+        true ->
+            AllDeleteWorkers =
+                riak_moss_block_server:start_block_servers(RiakcPid,
+                                                           riak_moss_lfs_utils:delete_concurrency()),
+            FreeDeleters = ordsets:from_list(AllDeleteWorkers),
 
-    {next_state, deleting, StateAfterDeleteStart}.
+
+            NewState1 = NewState#state{all_delete_works=AllDeleteWorkers,
+                                       free_deleters=FreeDeleters},
+
+            StateAfterDeleteStart = maybe_delete_blocks(NewState1),
+
+            {next_state, deleting, StateAfterDeleteStart};
+        false ->
+            finish(NewState),
+            {stop, normal, NewState}
+    end.
 
 maybe_delete_blocks(State=#state{free_deleters=[]}) ->
     State;
@@ -212,11 +211,16 @@ finish(State=#state{timer_ref=TRef,
 %% pending_delete state
 -spec blocks_to_delete_from_manifest(lfs_manifest()) ->
     {lfs_manifest(), ordsets:ordset(integer())}.
-blocks_to_delete_from_manifest(Manifest=#lfs_manifest_v2{state=pending_delete,
+blocks_to_delete_from_manifest(Manifest=#lfs_manifest_v2{state=scheduled_delete,
                                                          delete_blocks_remaining=undefined}) ->
-    Blocks = riak_moss_lfs_utils:block_sequences_for_manifest(Manifest),
-    {Manifest#lfs_manifest_v2{delete_blocks_remaining=Blocks},
-        Blocks};
+    case riak_moss_lfs_utils:block_sequences_for_manifest(Manifest) of
+        []=Blocks ->
+            UpdManifest = Manifest#lfs_manifest_v2{delete_blocks_remaining=[],
+                                                   state=deleted};
+        Blocks ->
+            UpdManifest = Manifest#lfs_manifest_v2{delete_blocks_remaining=Blocks}
+    end,
+    {UpdManifest, Blocks};
 blocks_to_delete_from_manifest(Manifest) ->
     {Manifest,
         Manifest#lfs_manifest_v2.delete_blocks_remaining}.

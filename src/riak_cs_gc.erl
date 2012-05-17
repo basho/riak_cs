@@ -16,7 +16,8 @@
 
 %% export Public API
 -export([delete_tombstone_time/0,
-         schedule_manifests/2]).
+         schedule_manifests/2,
+         timestamp/0]).
 
 %%%===================================================================
 %%% Public API
@@ -45,6 +46,11 @@ schedule_manifests(Manifests, RiakPid) ->
     RiakObject = riakc_obj:new(?GC_BUCKET, Key, term_to_binary(ManifestSet)),
     riakc_pb_socket:put(RiakPid, RiakObject).
 
+%% @doc Generate a key for storing a set of manifests for deletion.
+timestamp() ->
+    {MegaSecs, Secs, _MicroSecs} = erlang:now(),
+    (MegaSecs * 1000000) + Secs.
+
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
@@ -72,11 +78,6 @@ leeway_seconds() ->
         {ok, LeewaySeconds} ->
             LeewaySeconds
     end.
-
-%% @doc Generate a key for storing a set of manifests for deletion.
-timestamp() ->
-    {MegaSecs, Secs, _MicroSecs} = erlang:now(),
-    (MegaSecs * 1000000) + Secs.
 
 %% ===================================================================
 %% EUnit tests

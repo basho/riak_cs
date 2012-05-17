@@ -218,6 +218,7 @@
 -define(MD_ACL, "X-Moss-Acl").
 -define(EMAIL_INDEX, <<"email_bin">>).
 -define(ID_INDEX, <<"c_id_bin">>).
+-define(KEY_INDEX, <<"$key">>).
 -define(AUTH_USERS_GROUP, "http://acs.amazonaws.com/groups/global/AuthenticatedUsers").
 -define(ALL_USERS_GROUP, "http://acs.amazonaws.com/groups/global/AllUsers").
 -define(LOG_DELIVERY_GROUP, "http://acs.amazonaws.com/groups/s3/LogDelivery").
@@ -282,3 +283,5 @@
 %% in the `scheduled_delete' state before
 %% beginning to delete the file blocks.
 -define(DEFAULT_LEEWAY_SECONDS, 86400). %% 24-hours
+-define(DEFAULT_GC_INTERVAL, 900). %% 15 minutes
+-define(EPOCH_START, <<"0">>).
