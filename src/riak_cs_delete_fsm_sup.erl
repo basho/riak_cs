@@ -1,12 +1,12 @@
 %% -------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2011 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2012 Basho Technologies, Inc.  All Rights Reserved.
 %%
 %% -------------------------------------------------------------------
 
-%% @doc Supervisor for `riak_moss_delete_fsm'
+%% @doc Supervisor for `riak_cs_delete_fsm'
 
--module(riak_moss_delete_fsm_sup).
+-module(riak_cs_delete_fsm_sup).
 
 -behaviour(supervisor).
 
@@ -27,7 +27,7 @@
 start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
-%% @doc Start a `riak_moss_delete_fsm' child process.
+%% @doc Start a `riak_cs_delete_fsm' child process.
 -spec start_delete_fsm(node(), supervisor:child_spec()) ->
                               supervisor:startchild_ret().
 start_delete_fsm(Node, Args) ->
@@ -38,7 +38,7 @@ start_delete_fsm(Node, Args) ->
 %% ===================================================================
 
 %% @doc Initialize this supervisor. This is a `simple_one_for_one',
-%%      whose child spec is for starting `riak_moss_delete_fsm' processes.
+%%      whose child spec is for starting `riak_cs_delete_fsm' processes.
 -spec init([]) -> {ok, {{supervisor:strategy(),
                          pos_integer(),
                          pos_integer()},
@@ -55,8 +55,7 @@ init([]) ->
     Type = worker,
 
     DeleteFsmSpec = {undefined,
-                     {riak_moss_delete_fsm, start_link, []},
-                     Restart, Shutdown, Type, [riak_moss_delete_fsm]},
+                     {riak_cs_delete_fsm, start_link, []},
+                     Restart, Shutdown, Type, [riak_cs_delete_fsm]},
 
     {ok, {SupFlags, [DeleteFsmSpec]}}.
-

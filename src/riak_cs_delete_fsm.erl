@@ -1,12 +1,12 @@
 %% -------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2011 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2012 Basho Technologies, Inc.  All Rights Reserved.
 %%
 %% -------------------------------------------------------------------
 
 %% @doc Module to manage storage of objects and files
 
--module(riak_moss_delete_fsm).
+-module(riak_cs_delete_fsm).
 
 -behaviour(gen_fsm).
 
@@ -49,7 +49,7 @@
 %% Public API
 %% ===================================================================
 
-%% @doc Start a `riak_moss_delete_fsm'.
+%% @doc Start a `riak_cs_delete_fsm'.
 start_link(Bucket, Key, UUID, RiakcPid, Options) ->
     Args = [Bucket, Key, UUID, RiakcPid, Options],
     gen_fsm:start_link(?MODULE, Args, []).

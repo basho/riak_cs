@@ -317,7 +317,7 @@ delete_next_fileset(#state{riak=Riak,
     case riak_moss_utils:get_object(?GC_BUCKET, Key, Riak) of
         {ok, _RiakObj} ->
             %% @TODO Iterate over the set members using an instance of
-            %% `riak_moss_delete_fsm' to handle the deletion of the
+            %% `riak_cs_delete_fsm' to handle the deletion of the
             %% file blocks.
 
             %% Delete the key from the GC bucket

@@ -177,9 +177,9 @@ handle_cast({delete_block, ReplyPid, Bucket, Key, UUID, BlockNumber}, State=#sta
     Response = riakc_pb_socket:delete(RiakcPid, FullBucket, FullKey, DeleteOptions),
     case Response of
         ok ->
-            riak_moss_delete_fsm:block_deleted(ReplyPid, {ok, BlockNumber});
+            riak_cs_delete_fsm:block_deleted(ReplyPid, {ok, BlockNumber});
         {error, _Error}=Error ->
-            riak_moss_delete_fsm:block_deleted(ReplyPid, Error)
+            riak_cs_delete_fsm:block_deleted(ReplyPid, Error)
     end,
     ok = riak_cs_stats:update_with_start(block_delete, StartTime),
     dt_return(<<"delete_block">>, [BlockNumber], [Bucket, Key]),
