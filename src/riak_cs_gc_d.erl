@@ -35,7 +35,7 @@
 -define(SERVER, ?MODULE).
 
 -record(state, {
-          schedule,      %% the times that storage is calculated
+          interval,      %% how often the gc daemon will run (s)
           last,          %% the last time a deletion was scheduled
           current,       %% what schedule we're calculating for now
           next,          %% the next scheduled time
@@ -44,21 +44,19 @@
           batch_start,   %% the time we actually started
           batch_count=0, %% count of objects processed so far
           batch_skips=0, %% count of objects skipped so far
-          batch=[]      %% objects left to process in this batch
+          batch=[]       %% objects left to process in this batch
          }).
 
 %%%===================================================================
 %%% API
 %%%===================================================================
 
-%% @doc Starting the server also verifies the storage schedule.  If
-%% the schedule contains invalid elements, an error will be printed in
-%% the logs.
+%% @doc Start the garbage collection server
 start_link() ->
     gen_fsm:start_link({local, ?SERVER}, ?MODULE, [], []).
 
 %% @doc Status is returned as a 2-tuple of `{State, Details}'.  State
-%% should be `idle', `calculating', or `paused'.  When `idle' the
+%% should be `idle', `deleting', or `paused'.  When `idle' the
 %% details (a proplist) will include the schedule, as well as the
 %% times of the last calculation and the next planned calculation.
 %% When `calculating' or `paused' details also the scheduled time of
@@ -111,10 +109,13 @@ resume_batch() ->
 
 %% @doc Read the storage schedule and go to idle.
 init([]) ->
-    Schedule = read_gc_schedule(),
-    SchedState = schedule_next(#state{schedule=Schedule},
+    %% Schedule = read_gc_schedule(),
+    Interval = ?DEFAULT_GC_INTERVAL,
+    SchedState = schedule_next(#state{interval=Interval},
                                calendar:universal_time()),
-    ok = rts:check_bucket_props(?STORAGE_BUCKET),
+    %% @TODO Handle this in more general way. Maybe break out the
+    %% function from the rts module?
+    ok = rts:check_bucket_props(?GC_BUCKET),
     {ok, idle, SchedState}.
 
 %% Asynchronous events
@@ -136,10 +137,8 @@ deleting(continue, #state{batch=[], current=Current}=State) ->
                            current=undefined},
     {next_state, idle, NewState};
 deleting(continue, State) ->
-    %% more to do yet
-    %% @TODO Continue file deletion
-    %% NewState = delete_next_file(State),
-    NewState = State,
+    %% Continue file deletion
+    NewState = delete_next_fileset(State),
     gen_fsm:send_event(?SERVER, continue),
     {next_state, calculating, NewState};
 deleting(_, State) ->
@@ -151,7 +150,7 @@ paused(_, State) ->
 %% Synchronous events
 
 idle(status, _From, State) ->
-    Props = [{schedule, State#state.schedule},
+    Props = [{schedule, State#state.interval},
              {last, State#state.last},
              {next, State#state.next}],
     {reply, {ok, {idle, Props}}, idle, State};
@@ -168,7 +167,7 @@ idle(_, _From, State) ->
     {reply, ok, idle, State}.
 
 deleting(status, _From, State) ->
-    Props = [{schedule, State#state.schedule},
+    Props = [{schedule, State#state.interval},
              {last, State#state.last},
              {current, State#state.current},
              {next, State#state.next},
@@ -247,108 +246,133 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 
 %% @doc The schedule will contain all valid times found in the
 %% configuration, and will be sorted in day order.
-read_gc_schedule() ->
-    lists:usort(read_gc_schedule1()).
+%% read_gc_schedule() ->
+%%     lists:usort(read_gc_schedule1()).
 
-read_gc_schedule1() ->
-    case application:get_env(riak_moss, gc_schedule) of
-        undefined ->
-            _ = lager:warning("No storage schedule defined."
-                              " Calculation must be triggered manually."),
-            [];
-        {ok, Sched} ->
-            case catch parse_time(Sched) of
-                {ok, Time} ->
-                    %% user provided just one time
-                    [Time];
-                {'EXIT',_} when is_list(Sched) ->
-                    Times = [ {S, catch parse_time(S)} || S <- Sched ],
-                    _ = case [ X || {X,{'EXIT',_}} <- Times ] of
-                            [] -> ok;
-                            Bad ->
-                                _ = lager:error(
-                                      "Ignoring bad storage schedule elements ~p",
-                                      [Bad])
-                        end,
-                    case [ Parsed || {_, {ok, Parsed}} <- Times] of
-                        [] ->
-                            _ = lager:warning(
-                                  "No storage schedule defined."
-                                  " Calculation must be triggered manually."),
-                            [];
-                        Good ->
-                            Good
-                    end;
-                _ ->
-                    _ = lager:error(
-                          "Invalid storage schedule defined."
-                          " Calculation must be triggered manually."),
-                    []
-            end
-    end.
-
-%% @doc Time is allowed as a `{Hour, Minute}' tuple, or as an `"HHMM"'
-%% string.  This function purposely fails (with function or case
-%% clause currently) to allow {@link read_gc_schedule1/0} to pick
-%% out the bad eggs.
-parse_time({Hour, Min}) when (Hour >= 0 andalso Hour =< 23),
-                             (Min >= 0 andalso Min =< 59) ->
-    {ok, {Hour, Min}};
-parse_time(HHMM) when is_list(HHMM) ->
-    case io_lib:fread("~2d~2d", HHMM) of
-        {ok, [Hour, Min], []} ->
-            %% make sure numeric bounds apply
-            parse_time({Hour, Min})
-    end.
+%% read_gc_schedule1() ->
+%%     case application:get_env(riak_moss, gc_schedule) of
+%%         undefined ->
+%%             _ = lager:warning("No storage schedule defined."
+%%                               " Calculation must be triggered manually."),
+%%             [];
+%%         {ok, Sched} ->
+%%             case catch parse_time(Sched) of
+%%                 {ok, Time} ->
+%%                     %% user provided just one time
+%%                     [Time];
+%%                 {'EXIT',_} when is_list(Sched) ->
+%%                     Times = [ {S, catch parse_time(S)} || S <- Sched ],
+%%                     _ = case [ X || {X,{'EXIT',_}} <- Times ] of
+%%                             [] -> ok;
+%%                             Bad ->
+%%                                 _ = lager:error(
+%%                                       "Ignoring bad storage schedule elements ~p",
+%%                                       [Bad])
+%%                         end,
+%%                     case [ Parsed || {_, {ok, Parsed}} <- Times] of
+%%                         [] ->
+%%                             _ = lager:warning(
+%%                                   "No storage schedule defined."
+%%                                   " Calculation must be triggered manually."),
+%%                             [];
+%%                         Good ->
+%%                             Good
+%%                     end;
+%%                 _ ->
+%%                     _ = lager:error(
+%%                           "Invalid storage schedule defined."
+%%                           " Calculation must be triggered manually."),
+%%                     []
+%%             end
+%%     end.
 
 %% @doc Actually kick off the batch.  After calling this function, you
 %% must advance the FSM state to `calculating'.
-start_batch(_Options, Time, State) ->
-    BatchStart = calendar:universal_time(),
-    %% TODO: probably want to do this fetch streaming, to avoid
-    %% accidental memory pressure at other points
+start_batch(_Options, _Time, State) ->
+    BatchStart = riak_cs_gc:timestamp(),
 
     %% this does not check out a worker from the riak connection pool;
     %% instead it creates a fresh new worker, the idea being that we
-    %% don't want to foul up the storage calculation just because the
+    %% don't want to delay deletion just because the normal request
     %% pool is empty; pool workers just happen to be literally the
     %% socket process, so "starting" one here is the same as opening a
     %% connection, and avoids duplicating the configuration lookup code
     {ok, Riak} = riak_moss_riakc_pool_worker:start_link([]),
-    %% @TODO Write function to fetch file list
-    %% Batch = fetch_file_list(Riak),
-    Batch = [],
+    Batch = fetch_eligible_manifest_keys(Riak, BatchStart),
 
     gen_fsm:send_event(?SERVER, continue),
     State#state{batch_start=BatchStart,
-                current=Time,
+                current=BatchStart,
                 riak=Riak,
                 batch=Batch,
                 batch_count=0,
                 batch_skips=0}.
 
+%% @doc Delete the blocks for the next set of manifests in the batch
+delete_next_fileset(#state{riak=Riak,
+                           batch=[Key|Rest],
+                           batch_count=BatchCount,
+                           batch_skips=BatchSkips}=State) ->
+    %% Get the set of manifests represented by the key
+    case riak_moss_utils:get_object(?GC_BUCKET, Key, Riak) of
+        {ok, _RiakObj} ->
+            %% @TODO Iterate over the set members using an instance of
+            %% `riak_moss_delete_fsm' to handle the deletion of the
+            %% file blocks.
+
+            %% Delete the key from the GC bucket
+            riakc_pb_socket:delete(Riak, ?GC_BUCKET, Key),
+            State#state{batch=Rest,
+                        batch_count=1+BatchCount};
+        {error, notfound} ->
+            State#state{batch=Rest,
+                        batch_skips=1+BatchSkips};
+        {error, Reason} ->
+            _ = lager:warning("Error occurred trying to read the fileset"
+                              "for ~p for gc. Reason: ~p",
+                              [Key, Reason]),
+            State#state{batch=Rest,
+                        batch_skips=1+BatchSkips}
+    end.
+
 %% @doc How many seconds have passed from `Time' to now.
 elapsed(Time) ->
-    elapsed(Time, calendar:universal_time()).
+    riak_cs_gc:timestamp() - Time.
 
-%% @doc How many seconds are between `Early' and `Late'.  Warning:
-%% this will be negative if `Early' is later than `Late'.
-elapsed(Early, Late) ->
-    calendar:datetime_to_gregorian_seconds(Late)
-        -calendar:datetime_to_gregorian_seconds(Early).
+%% @doc Fetch the list of keys for file manifests that are eligible
+%% for delete.
+-spec fetch_eligible_manifest_keys(pid(), non_neg_integer()) -> [binary()].
+fetch_eligible_manifest_keys(RiakPid, IntervalStart) ->
+    EndTime = list_to_binary(integer_to_list(IntervalStart)),
+    case riakc_pb_socket:get_index(RiakPid,
+                                   ?GC_BUCKET,
+                                   ?KEY_INDEX,
+                                   ?EPOCH_START,
+                                   EndTime) of
+        {ok, []} ->
+            [];
+        {ok, Keys} ->
+            Keys;
+        {error, Reason} ->
+            _ = lager:warning("Error occurred trying to query from time 0 to ~p"
+                              "in gc key index. Reason: ~p",
+                              [EndTime, Reason]),
+            []
+    end.
 
-%% @doc Setup the automatic trigger to start the next scheduled batch
-%% calculation.  "Next" is defined as the scheduled time occurring
-%% soonest after the `Last' parameter, that has not also already
-%% passed by the wall clock.  If the next scheduled time <em>has</em>
-%% already passed, an error is printed to the logs, and the next time
-%% that has not already passed is found and scheduled instead.
-schedule_next(#state{schedule=[]}=State, _) ->
+%% @doc Setup the automatic trigger to start the next
+%% scheduled batch calculation.  "Next" is defined as the scheduled
+%% time occurring soonest after the `Last' parameter, that has not
+%% also already passed by the wall clock.  If the next scheduled time
+%% <em>has</em> already passed, an error is printed to the logs, and
+%% the next time that has not already passed is found and scheduled
+%% instead.
+schedule_next(#state{interval=[]}=State, _) ->
     %% nothing to schedule, all triggers manual
     State;
-schedule_next(#state{schedule=Schedule}=State, Last) ->
+schedule_next(#state{interval=Schedule}=State, Last) ->
     NextTime = next_target_time(Last, Schedule),
-    case elapsed(calendar:universal_time(), NextTime) of
+    case elapsed(NextTime) of
         D when D > 0 ->
             _ = lager:info("Scheduling next storage calculation for ~p",
                            [NextTime]),
