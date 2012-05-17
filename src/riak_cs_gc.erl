@@ -16,7 +16,7 @@
 
 %% export Public API
 -export([delete_tombstone_time/0,
-         schedule_manifests/4,
+         schedule_manifests/2,
          timestamp/0]).
 
 %%%===================================================================
@@ -36,16 +36,14 @@ delete_tombstone_time() ->
 
 %% @doc Copy data for a list of manifests to the
 %% `riak-cs-gc' bucket to schedule them for deletion.
--spec schedule_manifests(binary(), binary(), [binary()], pid()) -> ok | {error, term()}.
-schedule_manifests(Bucket, Key, ManifestIds, RiakPid) ->
-    %% Create a set from the list of manifest UUIDs
-    ManifestSet = build_manifest_set(twop_set:new(), ManifestIds),
+-spec schedule_manifests([lfs_manifest()], pid()) -> ok | {error, term()}.
+schedule_manifests(Manifests, RiakPid) ->
+    %% Create a set from the list of manifests
+    ManifestSet = build_manifest_set(twop_set:new(), Manifests),
     _ = lager:debug("Manifests scheduled for deletion: ~p", [ManifestSet]),
     %% Write the set to a timestamped key in the `riak-cs-gc' bucket
     Key = generate_key(),
-    RiakObject = riakc_obj:new(?GC_BUCKET,
-                               Key,
-                               term_to_binary({Bucket, Key, ManifestSet})),
+    RiakObject = riakc_obj:new(?GC_BUCKET, Key, term_to_binary(ManifestSet)),
     riakc_pb_socket:put(RiakPid, RiakObject).
 
 %% @doc Generate a key for storing a set of manifests for deletion.
