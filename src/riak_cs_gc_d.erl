@@ -22,7 +22,10 @@
 %% gen_fsm callbacks
 -export([init/1,
          idle/2, idle/3,
-         deleting/2, deleting/3,
+         fetching_next_fileset/2,
+         fetching_next_fileset/3,
+         initiating_file_delete/2,
+         waiting_file_delete/3,
          paused/2, paused/3,
          handle_event/3,
          handle_sync_event/4,
@@ -35,16 +38,16 @@
 -define(SERVER, ?MODULE).
 
 -record(state, {
-          interval,      %% how often the gc daemon will run (s)
+          interval :: non_neg_integer(),
           last,          %% the last time a deletion was scheduled
           current,       %% what schedule we're calculating for now
           next,          %% the next scheduled time
-
-          riak,          %% client we're currently using
+          riak :: pid(),
+          current_fileset :: [lfs_manifest()],
           batch_start,   %% the time we actually started
-          batch_count=0, %% count of objects processed so far
-          batch_skips=0, %% count of objects skipped so far
-          batch=[]       %% objects left to process in this batch
+          batch_count=0 :: non_neg_integer(),
+          batch_skips=0 :: non_neg_integer(),
+          batch=[] :: [twop_set:twop_set()]
          }).
 
 %%%===================================================================
@@ -110,9 +113,8 @@ resume_batch() ->
 %% @doc Read the storage schedule and go to idle.
 init([]) ->
     %% Schedule = read_gc_schedule(),
-    Interval = ?DEFAULT_GC_INTERVAL,
-    SchedState = schedule_next(#state{interval=Interval},
-                               calendar:universal_time()),
+    Interval = riak_cs_gc:gc_interval(),
+    SchedState = schedule_next(#state{interval=Interval}),
     %% @TODO Handle this in more general way. Maybe break out the
     %% function from the rts module?
     ok = rts:check_bucket_props(?GC_BUCKET),
@@ -127,22 +129,61 @@ idle(_, State) ->
 %% @doc Async transitions from deleting are all due to messages the
 %% FSM sends itself, in order to have opportunities to handle messages
 %% from the outside world (like `status').
-deleting(continue, #state{batch=[], current=Current}=State) ->
+fetching_next_fileset(continue, #state{batch=[], current=Current}=State) ->
     %% finished with this batch
-    _ = lager:info("Finished storage calculation in ~b seconds.",
+    _ = lager:info("Finished garbage collection in ~b seconds.",
                    [elapsed(State#state.batch_start)]),
     riak_moss_riakc_pool_worker:stop(State#state.riak),
     NewState = State#state{riak=undefined,
                            last=Current,
                            current=undefined},
     {next_state, idle, NewState};
-deleting(continue, State) ->
-    %% Continue file deletion
-    NewState = delete_next_fileset(State),
+fetching_next_fileset(continue, State=#state{batch=[FileSetKey | RestKeys],
+                                             batch_skips=BatchSkips,
+                                             riak=RiakPid
+                                            }) ->
+    %% Fetch the next set of manifests for deletion
+    case fetch_next_fileset(FileSetKey, RiakPid) of
+        {ok, FileSet} ->
+            NewStateData = State#state{current_fileset=FileSet},
+            NextState = initiating_file_delete;
+        {error, _} ->
+            NewStateData = State#state{batch=RestKeys,
+                                       batch_skips=BatchSkips+1},
+            NextState = fetching_next_fileset
+    end,
     gen_fsm:send_event(?SERVER, continue),
-    {next_state, deleting, NewState};
-deleting(_, State) ->
-    {next_state, deleting, State}.
+    {next_state, NextState, NewStateData};
+fetching_next_fileset(_, State) ->
+    {next_state, fetching_next_fileset, State}.
+
+%% @doc This state initiates the deletion of a file from
+%% a set of manifests stored for a particular key in the
+%% garbage collection bucket.
+initiating_file_delete(continue, #state{batch=[ManiSetKey | RestKeys],
+                                        batch_count=BatchCount,
+                                        current_fileset=[],
+                                        riak=RiakPid}=State) ->
+    %% Delete the key from the GC bucket
+    riakc_pb_socket:delete(RiakPid, ?GC_BUCKET, ManiSetKey),
+    gen_fsm:send_event(?SERVER, continue),
+    {next_state, fetching_next_fileset, State#state{batch=RestKeys,
+                                                    batch_count=1+BatchCount}};
+initiating_file_delete(continue, #state{current_fileset=[NextManifest | RestManifests],
+                                        riak=RiakPid}=State) ->
+    %% @TODO Don't worry about delete_fsm failures, will handle retry
+    %% in by allowing manifests to be rescheduled after a certain
+    %% time.
+
+    %% Use an instance of `riak_cs_delete_fsm' to handle the
+    %% deletion of the file blocks.
+    {Bucket, Key} = NextManifest#lfs_manifest_v2.bkey,
+    UUID = NextManifest#lfs_manifest_v2.uuid,
+    Args = [Bucket, Key, UUID, RiakPid, []],
+    riak_cs_delete_fsm_sup:start_delete_fsm(node(), Args),
+    {next_state, waiting_file_delete, State#state{current_fileset=RestManifests}};
+initiating_file_delete(_, State) ->
+    {next_state, initiating_file_delete, State}.
 
 paused(_, State) ->
     {next_state, paused, State}.
@@ -150,12 +191,12 @@ paused(_, State) ->
 %% Synchronous events
 
 idle(status, _From, State) ->
-    Props = [{schedule, State#state.interval},
+    Props = [{interval, State#state.interval},
              {last, State#state.last},
              {next, State#state.next}],
     {reply, {ok, {idle, Props}}, idle, State};
 idle({manual_batch, Options}, _From, State) ->
-    NewState = start_batch(Options, calendar:universal_time(), State),
+    NewState = start_batch(Options, State),
     {reply, ok, calculating, NewState};
 idle(cancel_batch, _From, State) ->
     {reply, {error, no_batch}, idle, State};
@@ -166,25 +207,25 @@ idle(resume_batch, _From, State) ->
 idle(_, _From, State) ->
     {reply, ok, idle, State}.
 
-deleting(status, _From, State) ->
-    Props = [{schedule, State#state.interval},
+fetching_next_fileset(status, _From, State) ->
+    Props = [{interval, State#state.interval},
              {last, State#state.last},
              {current, State#state.current},
              {next, State#state.next},
              {elapsed, elapsed(State#state.batch_start)},
-             {users_done, State#state.batch_count},
-             {users_skipped, State#state.batch_skips},
-             {users_left, length(State#state.batch)}],
+             {files_deleted, State#state.batch_count},
+             {files_skipped, State#state.batch_skips},
+             {files_left, length(State#state.batch)}],
     {reply, {ok, {calculating, Props}}, calculating, State};
-deleting({manual_batch, _Options}, _From, State) ->
+fetching_next_fileset({manual_batch, _Options}, _From, State) ->
     %% this is the manual user request to begin a batch
     {reply, {error, already_deleting}, deleting, State};
-deleting(pause_batch, _From, State) ->
-    _ = lager:info("Pausing file block deletion"),
+fetching_next_fileset(pause_batch, _From, State) ->
+    _ = lager:info("Pausing garbage collection"),
     {reply, ok, paused, State};
-deleting(cancel_batch, _From, #state{current=Current}=State) ->
+fetching_next_fileset(cancel_batch, _From, #state{current=Current}=State) ->
     %% finished with this batch
-    _ = lager:info("Canceled deletion after ~b seconds.",
+    _ = lager:info("Canceled garbage collection batch after ~b seconds.",
                    [elapsed(State#state.batch_start)]),
     riak_moss_riakc_pool_worker:stop(State#state.riak),
     NewState = State#state{riak=undefined,
@@ -192,21 +233,27 @@ deleting(cancel_batch, _From, #state{current=Current}=State) ->
                            current=undefined,
                            batch=[]},
     {reply, ok, idle, NewState};
-deleting(_, _From, State) ->
+fetching_next_fileset(_, _From, State) ->
     {reply, ok, deleting, State}.
 
 
 paused(status, From, State) ->
-    {reply, {ok, {_, Status}}, _, State} = deleting(status, From, State),
+    {reply, {ok, {_, Status}}, _, State} = fetching_next_fileset(status, From, State),
     {reply, {ok, {paused, Status}}, paused, State};
 paused(resume_batch, _From, State) ->
-    _ = lager:info("Resuming storage calculation"),
+    _ = lager:info("Resuming garbage collection"),
     gen_fsm:send_event(?SERVER, continue),
     {reply, ok, calculating, State};
 paused(cancel_batch, From, State) ->
-    deleting(cancel_batch, From, State);
+    fetching_next_fileset(cancel_batch, From, State);
 paused(_, _From, State) ->
     {reply, ok, paused, State}.
+
+waiting_file_delete(done, _From, State) ->
+    gen_fsm:send_event(?SERVER, continue),
+    {reply, ok, initiating_file_delete, State};
+waiting_file_delete(_, _From, State) ->
+    {reply, ok, waiting_file_delete, State}.
 
 %% @doc there are no all-state events for this fsm
 handle_event(_Event, StateName, State) ->
@@ -217,18 +264,13 @@ handle_sync_event(_Event, _From, StateName, State) ->
     Reply = ok,
     {reply, Reply, StateName, State}.
 
-handle_info({start_batch, Next}, idle, #state{next=Next}=State) ->
-    %% next is scheduled immediately in order to generate warnings if
-    %% the current calculation runs over time (see next clause)
-    NewState = schedule_next(start_batch([], Next, State), Next),
-    {next_state, calculating, NewState};
-handle_info({start_batch, Next}, InBatch,
-            #state{next=Next, current=Current}=State) ->
-    _ = lager:error("Unable to start storage calculation for ~p"
-                    " because ~p is still working. Skipping forward...",
-                    [Next, Current]),
-    NewState = schedule_next(State, Next),
-    {next_state, InBatch, NewState};
+handle_info(start_batch, idle, State) ->
+    NewState = start_batch([], State),
+    {next_state, fetching_next_fileset, NewState};
+handle_info(start_batch, InBatch, State) ->
+    _ = lager:error("Unable to start garbage collection batch"
+                    " because a previous batch is still working."),
+    {next_state, InBatch, State};
 handle_info(_Info, StateName, State) ->
     {next_state, StateName, State}.
 
@@ -245,51 +287,9 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
-%% @doc The schedule will contain all valid times found in the
-%% configuration, and will be sorted in day order.
-%% read_gc_schedule() ->
-%%     lists:usort(read_gc_schedule1()).
-
-%% read_gc_schedule1() ->
-%%     case application:get_env(riak_moss, gc_schedule) of
-%%         undefined ->
-%%             _ = lager:warning("No storage schedule defined."
-%%                               " Calculation must be triggered manually."),
-%%             [];
-%%         {ok, Sched} ->
-%%             case catch parse_time(Sched) of
-%%                 {ok, Time} ->
-%%                     %% user provided just one time
-%%                     [Time];
-%%                 {'EXIT',_} when is_list(Sched) ->
-%%                     Times = [ {S, catch parse_time(S)} || S <- Sched ],
-%%                     _ = case [ X || {X,{'EXIT',_}} <- Times ] of
-%%                             [] -> ok;
-%%                             Bad ->
-%%                                 _ = lager:error(
-%%                                       "Ignoring bad storage schedule elements ~p",
-%%                                       [Bad])
-%%                         end,
-%%                     case [ Parsed || {_, {ok, Parsed}} <- Times] of
-%%                         [] ->
-%%                             _ = lager:warning(
-%%                                   "No storage schedule defined."
-%%                                   " Calculation must be triggered manually."),
-%%                             [];
-%%                         Good ->
-%%                             Good
-%%                     end;
-%%                 _ ->
-%%                     _ = lager:error(
-%%                           "Invalid storage schedule defined."
-%%                           " Calculation must be triggered manually."),
-%%                     []
-%%             end
-%%     end.
-
 %% @doc Actually kick off the batch.  After calling this function, you
 %% must advance the FSM state to `calculating'.
-start_batch(_Options, _Time, State) ->
+start_batch(_Options, State) ->
     BatchStart = riak_cs_gc:timestamp(),
 
     %% this does not check out a worker from the riak connection pool;
@@ -310,46 +310,22 @@ start_batch(_Options, _Time, State) ->
                 batch_skips=0}.
 
 %% @doc Delete the blocks for the next set of manifests in the batch
-delete_next_fileset(#state{riak=Riak,
-                           batch=[ManiSetKey | RestKeys],
-                           batch_count=BatchCount,
-                           batch_skips=BatchSkips}=State) ->
+-spec fetch_next_fileset(non_neg_integer(), pid()) -> {ok, [lfs_manifest()]} | {error, term()}.
+fetch_next_fileset(ManifestSetKey, RiakPid) ->
     %% Get the set of manifests represented by the key
-    case riak_moss_utils:get_object(?GC_BUCKET, ManiSetKey, Riak) of
+    case riak_moss_utils:get_object(?GC_BUCKET, ManifestSetKey, RiakPid) of
         {ok, RiakObj} ->
             %% Get any values from the riak object and resolve them
             %% into a single set.
-            _ManifestSet = twop_set:resolve(riakc_obj:get_values(RiakObj)),
-            %% Iterate over the set members using an instance of
-            %% `riak_cs_delete_fsm' to handle the deletion of the
-            %% file blocks.
-
-            %% @TODO Rip this out. Don't worry about delete_fsm failures,
-            %% will handle retry in by allowing manifests to be
-            %% rescheduled after a certain time.
-            %% FoldFun = fun(M, Set) ->
-            %%                   case delete_file_version(M) of
-            %%                       ok ->
-            %%                           twop_set:del_element(M, Set);
-            %%                       {error, _} ->
-            %%                           Set
-            %%                   end
-            %%           end,
-            %% lists:foldl(FoldFun, ManifestSet, twop_set:to_list(ManifestSet)),
-
-            %% Delete the key from the GC bucket
-            riakc_pb_socket:delete(Riak, ?GC_BUCKET, ManiSetKey),
-            State#state{batch=RestKeys,
-                        batch_count=1+BatchCount};
-        {error, notfound} ->
-            State#state{batch=RestKeys,
-                        batch_skips=1+BatchSkips};
-        {error, Reason} ->
+            ManifestSet = twop_set:resolve(riakc_obj:get_values(RiakObj)),
+            {ok, twop_set:to_list(ManifestSet)};
+        {error, notfound}=Error ->
+            Error;
+        {error, Reason}=Error ->
             _ = lager:warning("Error occurred trying to read the fileset"
                               "for ~p for gc. Reason: ~p",
-                              [ManiSetKey, Reason]),
-            State#state{batch=RestKeys,
-                        batch_skips=1+BatchSkips}
+                              [ManifestSetKey, Reason]),
+            Error
     end.
 
 %% @doc How many seconds have passed from `Time' to now.
@@ -384,39 +360,12 @@ fetch_eligible_manifest_keys(RiakPid, IntervalStart) ->
 %% <em>has</em> already passed, an error is printed to the logs, and
 %% the next time that has not already passed is found and scheduled
 %% instead.
-schedule_next(#state{interval=[]}=State, _) ->
+schedule_next(#state{interval=infinity}=State) ->
     %% nothing to schedule, all triggers manual
     State;
-schedule_next(#state{interval=Schedule}=State, Last) ->
-    NextTime = next_target_time(Last, Schedule),
-    case elapsed(NextTime) of
-        D when D > 0 ->
-            _ = lager:info("Scheduling next storage calculation for ~p",
-                           [NextTime]),
-            erlang:send_after(D*1000, self(), {start_batch, NextTime}),
-            State#state{next=NextTime};
-        _ ->
-            _ = lager:error("Missed start time for storage calculation at ~p,"
-                            " skipping to next scheduled time...",
-                            [NextTime]),
-            %% just skip everything until the next scheduled time from now
-            schedule_next(State, calendar:universal_time())
-    end.
-
-%% @doc Find the next scheduled time after the given time.
-next_target_time({Day, {LH, LM,_}}, Schedule) ->
-    RemainingInDay = lists:dropwhile(
-                       fun(Sched) -> Sched =< {LH, LM} end, Schedule),
-    case RemainingInDay of
-        [] ->
-            [{NH, NM}|_] = Schedule,
-            {next_day(Day), {NH, NM, 0}};
-        [{NH, NM}|_] ->
-            {Day, {NH, NM, 0}}
-    end.
-
-next_day(Day) ->
-    {DayP,_} = calendar:gregorian_seconds_to_datetime(
-                 86400+calendar:datetime_to_gregorian_seconds(
-                         {Day, {0,0,1}})),
-    DayP.
+schedule_next(#state{interval=Interval}=State) ->
+    %% _ = lager:info("Scheduling next garbage collection for ~p",
+    %%                [NextTime]),
+    erlang:send_after(Interval*1000, self(), start_batch),
+    %% @TODO Set Next time in state
+    State.
