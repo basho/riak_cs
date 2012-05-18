@@ -86,6 +86,9 @@ init([]) ->
     Storage = {riak_moss_storage_d,
                {riak_moss_storage_d, start_link, []},
                permanent, 5000, worker, [riak_moss_storage_d]},
+    GC = {riak_cs_gc_d,
+          {riak_cs_gc_d, start_link, []},
+          permanent, 5000, worker, [riak_cs_gc_d]},
 
     {ok, PoolList} = application:get_env(riak_moss, connection_pools),
     WorkerStop = fun(Worker) -> riak_moss_riakc_pool_worker:stop(Worker) end,
@@ -98,12 +101,12 @@ init([]) ->
                   permanent, 5000, worker, [poolboy]}
                  || {Name, {Workers, Overflow}} <- PoolList],
     Processes = PoolSpecs ++
-        [Archiver,
-         Storage,
-         Stats,
-         DeleterSup,
-         DeleteFsmSup,
-         GetFsmSup,
-         PutFsmSup,
-         Web],
+      [Archiver,
+       Storage,
+       GC,
+       Stats,
+       DeleteFsmSup,
+       GetFsmSup,
+       PutFsmSup,
+       Web],
     {ok, { {one_for_one, 10, 10}, Processes} }.
