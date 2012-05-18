@@ -16,6 +16,7 @@
 
 %% export Public API
 -export([delete_tombstone_time/0,
+         gc_interval/0,
          gc_retry_interval/0,
          schedule_manifests/2,
          timestamp/0]).
