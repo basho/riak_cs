@@ -16,6 +16,7 @@
 
 %% export Public API
 -export([delete_tombstone_time/0,
+         gc_retry_interval/0,
          schedule_manifests/2,
          timestamp/0]).
 
@@ -34,6 +35,17 @@ delete_tombstone_time() ->
             TombstoneTime
     end.
 
+%% @doc Return the number of seconds to wait before rescheduling a
+%% `pending_delete' manifest for garbage collection.
+-spec gc_retry_interval() -> non_neg_integer().
+gc_retry_interval() ->
+    case application:get_env(riak_moss, gc_retry_interval) of
+        undefined ->
+            ?DEFAULT_GC_RETRY_INTERVAL;
+        {ok, RetryInterval} ->
+            RetryInterval
+    end.
+
 %% @doc Copy data for a list of manifests to the
 %% `riak-cs-gc' bucket to schedule them for deletion.
 -spec schedule_manifests([lfs_manifest()], pid()) -> ok | {error, term()}.
@@ -47,9 +59,9 @@ schedule_manifests(Manifests, RiakPid) ->
     riakc_pb_socket:put(RiakPid, RiakObject).
 
 %% @doc Generate a key for storing a set of manifests for deletion.
+-spec timestamp() -> non_neg_integer().
 timestamp() ->
-    {MegaSecs, Secs, _MicroSecs} = erlang:now(),
-    (MegaSecs * 1000000) + Secs.
+    riak_moss_utils:timestamp(erlang:now()).
 
 %%%===================================================================
 %%% Internal functions

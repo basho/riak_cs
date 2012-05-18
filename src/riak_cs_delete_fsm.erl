@@ -131,6 +131,7 @@ handle_info(_Info, StateName, State) ->
     {next_state, StateName, State}.
 
 terminate(_Reason, _StateName, _State) ->
+    gen_fsm:sync_send_event(riak_cs_gc_d, done, 5000),
     ok.
 
 code_change(_OldVsn, StateName, State, _Extra) ->
