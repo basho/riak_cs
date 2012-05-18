@@ -284,4 +284,5 @@
 %% beginning to delete the file blocks.
 -define(DEFAULT_LEEWAY_SECONDS, 86400). %% 24-hours
 -define(DEFAULT_GC_INTERVAL, 900). %% 15 minutes
+-define(DEFAULT_GC_RETRY_INTERVAL, 21600). %% 6 hours
 -define(EPOCH_START, <<"0">>).

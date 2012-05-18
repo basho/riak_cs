@@ -38,6 +38,7 @@
          save_user/3,
          set_bucket_acl/5,
          set_object_acl/5,
+         timestamp/1,
          to_bucket_name/2,
          update_key_secret/1]).
 
@@ -556,6 +557,11 @@ set_object_acl(Bucket, Key, Manifest, Acl, RiakPid) ->
             ok
     end,
     Res.
+
+%% @doc Generate a key for storing a set of manifests for deletion.
+-spec timestamp(term()) -> non_neg_integer().
+timestamp({MegaSecs, Secs, _MicroSecs}) ->
+    (MegaSecs * 1000000) + Secs.
 
 %% Get the proper bucket name for either the MOSS object
 %% bucket or the data block bucket.

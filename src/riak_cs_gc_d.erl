@@ -140,9 +140,9 @@ deleting(continue, State) ->
     %% Continue file deletion
     NewState = delete_next_fileset(State),
     gen_fsm:send_event(?SERVER, continue),
-    {next_state, calculating, NewState};
+    {next_state, deleting, NewState};
 deleting(_, State) ->
-    {next_state, calculating, State}.
+    {next_state, deleting, State}.
 
 paused(_, State) ->
     {next_state, paused, State}.
@@ -194,6 +194,7 @@ deleting(cancel_batch, _From, #state{current=Current}=State) ->
     {reply, ok, idle, NewState};
 deleting(_, _From, State) ->
     {reply, ok, deleting, State}.
+
 
 paused(status, From, State) ->
     {reply, {ok, {_, Status}}, _, State} = deleting(status, From, State),
@@ -310,28 +311,44 @@ start_batch(_Options, _Time, State) ->
 
 %% @doc Delete the blocks for the next set of manifests in the batch
 delete_next_fileset(#state{riak=Riak,
-                           batch=[Key|Rest],
+                           batch=[ManiSetKey | RestKeys],
                            batch_count=BatchCount,
                            batch_skips=BatchSkips}=State) ->
     %% Get the set of manifests represented by the key
-    case riak_moss_utils:get_object(?GC_BUCKET, Key, Riak) of
-        {ok, _RiakObj} ->
-            %% @TODO Iterate over the set members using an instance of
+    case riak_moss_utils:get_object(?GC_BUCKET, ManiSetKey, Riak) of
+        {ok, RiakObj} ->
+            %% Get any values from the riak object and resolve them
+            %% into a single set.
+            _ManifestSet = twop_set:resolve(riakc_obj:get_values(RiakObj)),
+            %% Iterate over the set members using an instance of
             %% `riak_cs_delete_fsm' to handle the deletion of the
             %% file blocks.
 
+            %% @TODO Rip this out. Don't worry about delete_fsm failures,
+            %% will handle retry in by allowing manifests to be
+            %% rescheduled after a certain time.
+            %% FoldFun = fun(M, Set) ->
+            %%                   case delete_file_version(M) of
+            %%                       ok ->
+            %%                           twop_set:del_element(M, Set);
+            %%                       {error, _} ->
+            %%                           Set
+            %%                   end
+            %%           end,
+            %% lists:foldl(FoldFun, ManifestSet, twop_set:to_list(ManifestSet)),
+
             %% Delete the key from the GC bucket
-            riakc_pb_socket:delete(Riak, ?GC_BUCKET, Key),
-            State#state{batch=Rest,
+            riakc_pb_socket:delete(Riak, ?GC_BUCKET, ManiSetKey),
+            State#state{batch=RestKeys,
                         batch_count=1+BatchCount};
         {error, notfound} ->
-            State#state{batch=Rest,
+            State#state{batch=RestKeys,
                         batch_skips=1+BatchSkips};
         {error, Reason} ->
             _ = lager:warning("Error occurred trying to read the fileset"
                               "for ~p for gc. Reason: ~p",
-                              [Key, Reason]),
-            State#state{batch=Rest,
+                              [ManiSetKey, Reason]),
+            State#state{batch=RestKeys,
                         batch_skips=1+BatchSkips}
     end.
 

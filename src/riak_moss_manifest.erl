@@ -113,8 +113,19 @@ needs_pruning(#lfs_manifest_v2{state=deleted,
 needs_pruning(_Manifest, _Time) ->
     false.
 
-pending_delete_manifest({_, #lfs_manifest_v2{state=pending_delete}}) ->
+pending_delete_manifest({_, #lfs_manifest_v2{state=pending_delete,
+                                             last_block_deleted_time=undefined}}) ->
     true;
+pending_delete_manifest({_, #lfs_manifest_v2{last_block_deleted_time=undefined}}) ->
+    false;
+pending_delete_manifest({_, #lfs_manifest_v2{state=scheduled_delete,
+                                             last_block_deleted_time=LBDTime}}) ->
+    %% If a manifest is `scheduled_delete' and the amount of time
+    %% specified by the retry interval has elapsed since a file block
+    %% was last deleted, then reschedule it for deletion.
+    LBDSeconds = riak_moss_utils:timestamp(LBDTime),
+    Now = riak_moss_utils:timestamp(erlang:now()),
+    Now > (LBDSeconds + riak_cs_gc:gc_retry_interval());
 pending_delete_manifest(_) ->
     false.
 
