@@ -198,15 +198,14 @@ delete_object(Bucket, Key, RiakPid) ->
             ok = riak_cs_stats:update_with_start(object_delete, StartTime),
             %% Get the list of `pending_delete' manifests for the object
             case riak_moss_manifest_fsm:get_pending_delete_manifests(Pid) of
-                {ok, PDManifests} ->
+                {ok, ManifestData} ->
+                    %% `ManifestData' is a list of {UUID, Manifest} pairs
+                    {UUIDS, PDManifests} = lists:unzip(ManifestData),
                     %% Schedule `pending_delete' manifests for deletion and
                     %% update each manifest to `scheduled_delete' state.
-                    case riak_cs_gc:schedule_manifests(PDManifests) of
+                    case riak_cs_gc:schedule_manifests(PDManifests, RiakPid) of
                         ok ->
-                            %% Generate the list of UUIDs for the
-                            %% `pending_delete' manifests
-                            UUIDS = [Manifest#lfs_manifest_v2.uuid ||
-                                        Manifest <- PDManifests],
+                            _ = lager:debug("Marking ids as s_d: ~p", [UUIDS]),
                             riak_moss_manifest_fsm:mark_as_scheduled_delete(Pid, UUIDS);
                         Error1 ->
                             Error1
