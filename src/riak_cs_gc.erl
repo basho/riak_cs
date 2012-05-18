@@ -88,9 +88,11 @@ build_manifest_set(Set, [HeadManifest | RestManifests]) ->
 
 %% @doc Generate a key for storing a set of manifests in the
 %% garbage collection bucket.
--spec generate_key() -> non_neg_integer().
+-spec generate_key() -> binary().
 generate_key() ->
-    timestamp() + leeway_seconds().
+    list_to_binary(
+      integer_to_list(
+        timestamp() + leeway_seconds())).
 
 %% @doc Return the minimum number of seconds a file manifest waits in
 %% the `scheduled_delete' state before being garbage collected.

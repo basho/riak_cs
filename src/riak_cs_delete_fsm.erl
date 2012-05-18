@@ -192,6 +192,7 @@ maybe_delete_blocks(State=#state{bucket=Bucket,
 
     NewUnackedDeletes = ordsets:add_element(BlockID, UnackedDeletes),
     NewDeleteBlocksRemaining = ordsets:del_element(BlockID, DeleteBlocksRemaining),
+    _ = lager:debug("Deleting block: ~p ~p ~p ~p", [Bucket, Key, UUID, BlockID]),
     riak_moss_block_server:delete_block(DeleterPid, Bucket, Key, UUID, BlockID),
     NewFreeDeleters = ordsets:del_element(DeleterPid, RestDeleters),
     maybe_delete_blocks(State#state{unacked_deletes=NewUnackedDeletes,

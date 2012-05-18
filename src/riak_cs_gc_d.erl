@@ -117,7 +117,7 @@ init([]) ->
     SchedState = schedule_next(#state{interval=Interval}),
     %% @TODO Handle this in more general way. Maybe break out the
     %% function from the rts module?
-    ok = rts:check_bucket_props(?GC_BUCKET),
+    %% ok = rts:check_bucket_props(?GC_BUCKET),
     {ok, idle, SchedState}.
 
 %% Asynchronous events
@@ -317,7 +317,9 @@ fetch_next_fileset(ManifestSetKey, RiakPid) ->
         {ok, RiakObj} ->
             %% Get any values from the riak object and resolve them
             %% into a single set.
-            ManifestSet = twop_set:resolve(riakc_obj:get_values(RiakObj)),
+            BinValues = riakc_obj:get_values(RiakObj),
+            Values = [binary_to_term(BinValue) || BinValue <- BinValues],
+            ManifestSet = twop_set:resolve(Values),
             {ok, twop_set:to_list(ManifestSet)};
         {error, notfound}=Error ->
             Error;
@@ -342,10 +344,8 @@ fetch_eligible_manifest_keys(RiakPid, IntervalStart) ->
                                    ?KEY_INDEX,
                                    ?EPOCH_START,
                                    EndTime) of
-        {ok, []} ->
-            [];
-        {ok, Keys} ->
-            Keys;
+        {ok, BKeys} ->
+            [Key || [_, Key] <- BKeys];
         {error, Reason} ->
             _ = lager:warning("Error occurred trying to query from time 0 to ~p"
                               "in gc key index. Reason: ~p",
