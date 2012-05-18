@@ -35,6 +35,17 @@ delete_tombstone_time() ->
             TombstoneTime
     end.
 
+%% @doc Return the number of seconds to wait after finishing garbage
+%% collection of a set of files before starting the next.
+-spec gc_interval() -> non_neg_integer().
+gc_interval() ->
+    case application:get_env(riak_moss, gc_interval) of
+        undefined ->
+            ?DEFAULT_GC_INTERVAL;
+        {ok, Interval} ->
+            Interval
+    end.
+
 %% @doc Return the number of seconds to wait before rescheduling a
 %% `pending_delete' manifest for garbage collection.
 -spec gc_retry_interval() -> non_neg_integer().
