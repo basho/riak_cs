@@ -114,7 +114,6 @@ resume_batch() ->
 
 %% @doc Read the storage schedule and go to idle.
 init([]) ->
-    %% Schedule = read_gc_schedule(),
     Interval = riak_cs_gc:gc_interval(),
     SchedState = schedule_next(#state{interval=Interval}),
     %% @TODO Handle this in more general way. Maybe break out the
@@ -209,78 +208,53 @@ idle(_, _From, State) ->
     {reply, ok, idle, State}.
 
 fetching_next_fileset(status, _From, State) ->
-    Props = [{interval, State#state.interval},
-             {last, State#state.last},
-             {current, State#state.batch_start},
-             {next, State#state.next},
-             {elapsed, elapsed(State#state.batch_start)},
-             {files_deleted, State#state.batch_count},
-             {files_skipped, State#state.batch_skips},
-             {files_left, length(State#state.batch)}],
-    {reply, {ok, {fetching_next_fileset, Props}}, fetching_next_fileset, State};
+    Reply = {ok, {fetching_next_fileset, status(State)}},
+    {reply, Reply, fetching_next_fileset, State};
 fetching_next_fileset({manual_batch, _Options}, _From, State) ->
     %% this is the manual user request to begin a batch
     {reply, {error, already_deleting}, fetching_next_fileset, State};
 fetching_next_fileset(pause_batch, _From, State) ->
     _ = lager:info("Pausing garbage collection"),
     {reply, ok, paused, State#state{pause_state=fetching_next_fileset}};
-fetching_next_fileset(cancel_batch, _From, #state{batch_start=BatchStart}=State) ->
-    %% Interrupt the batch of deletes
-    _ = lager:info("Canceled garbage collection batch after ~b seconds.",
-                   [elapsed(BatchStart)]),
-    riak_moss_riakc_pool_worker:stop(State#state.riak),
-    NewState = schedule_next(State#state{batch=[],
-                                         riak=undefined}),
-    {reply, ok, idle, NewState};
+fetching_next_fileset(cancel_batch, _From, State) ->
+    cancel_batch(State);
 fetching_next_fileset(_, _From, State) ->
     {reply, ok, fetching_next_fileset, State}.
 
-initiating_file_delete(status, From, State) ->
-    {reply, {ok, {_, Status}}, _, State} = fetching_next_fileset(status, From, State),
-    {reply, {ok, {initiating_file_delete, Status}}, initiating_file_delete, State};
+initiating_file_delete(status, _From, State) ->
+    Reply = {ok, {initiating_file_delete, status(State)}},
+    {reply, Reply, initiating_file_delete, State};
 initiating_file_delete({manual_batch, _Options}, _From, State) ->
     %% this is the manual user request to begin a batch
     {reply, {error, already_deleting}, initiating_file_delete, State};
 initiating_file_delete(pause_batch, _From, State) ->
     _ = lager:info("Pausing garbage collection"),
     {reply, ok, paused, State#state{pause_state=initiating_file_delete}};
-initiating_file_delete(cancel_batch, _From, #state{batch_start=BatchStart}=State) ->
-    %% Interrupt the batch of deletes
-    _ = lager:info("Canceled garbage collection batch after ~b seconds.",
-                   [elapsed(BatchStart)]),
-    riak_moss_riakc_pool_worker:stop(State#state.riak),
-    NewState = schedule_next(State#state{batch=[],
-                                         riak=undefined}),
-    {reply, ok, idle, NewState};
+initiating_file_delete(cancel_batch, _From, State) ->
+    cancel_batch(State);
 initiating_file_delete(_, _From, State) ->
     {reply, ok, initiating_file_delete, State}.
 
 waiting_file_delete({Pid, done}, _From, State=#state{delete_fsm_pid=Pid}) ->
     gen_fsm:send_event(?SERVER, continue),
     {reply, ok, initiating_file_delete, State};
-waiting_file_delete(status, From, State) ->
-    {reply, {ok, {_, Status}}, _, State} = fetching_next_fileset(status, From, State),
-    {reply, {ok, {waiting_file_delete, Status}}, waiting_file_delete, State};
+waiting_file_delete(status, _From, State) ->
+    Reply = {ok, {waiting_file_delete, status(State)}},
+    {reply, Reply, waiting_file_delete, State};
 waiting_file_delete({manual_batch, _Options}, _From, State) ->
     %% this is the manual user request to begin a batch
     {reply, {error, already_deleting}, waiting_file_delete, State};
 waiting_file_delete(pause_batch, _From, State) ->
     _ = lager:info("Pausing garbage collection"),
     {reply, ok, paused, State#state{pause_state=waiting_file_delete}};
-waiting_file_delete(cancel_batch, _From, #state{batch_start=BatchStart}=State) ->
-    %% Interrupt the batch of deletes
-    _ = lager:info("Canceled garbage collection batch after ~b seconds.",
-                   [elapsed(BatchStart)]),
-    riak_moss_riakc_pool_worker:stop(State#state.riak),
-    NewState = schedule_next(State#state{batch=[],
-                                         riak=undefined}),
-    {reply, ok, idle, NewState};
+waiting_file_delete(cancel_batch, _From, State) ->
+    cancel_batch(State);
 waiting_file_delete(_, _From, State) ->
     {reply, ok, waiting_file_delete, State}.
 
-paused(status, From, State) ->
-    {reply, {ok, {_, Status}}, _, State} = fetching_next_fileset(status, From, State),
-    {reply, {ok, {paused, Status}}, paused, State};
+paused(status, _From, State) ->
+    Reply = {ok, {paused, status(State)}},
+    {reply, Reply, paused, State};
 paused(resume_batch, _From, State=#state{pause_state=PauseState}) ->
     _ = lager:info("Resuming garbage collection"),
     gen_fsm:send_event(?SERVER, continue),
@@ -324,49 +298,20 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
-%% @doc Actually kick off the batch.  After calling this function, you
-%% must advance the FSM state to `fetching_next_fileset'.
-start_batch(_Options, State) ->
-    BatchStart = riak_cs_gc:timestamp(),
-
-    %% this does not check out a worker from the riak connection pool;
-    %% instead it creates a fresh new worker, the idea being that we
-    %% don't want to delay deletion just because the normal request
-    %% pool is empty; pool workers just happen to be literally the
-    %% socket process, so "starting" one here is the same as opening a
-    %% connection, and avoids duplicating the configuration lookup code
-    {ok, Riak} = riak_moss_riakc_pool_worker:start_link([]),
-    Batch = fetch_eligible_manifest_keys(Riak, BatchStart),
-
-    gen_fsm:send_event(?SERVER, continue),
-    State#state{batch_start=BatchStart,
-                riak=Riak,
-                batch=Batch,
-                batch_count=0,
-                batch_skips=0}.
-
-%% @doc Delete the blocks for the next set of manifests in the batch
--spec fetch_next_fileset(non_neg_integer(), pid()) -> {ok, [lfs_manifest()]} | {error, term()}.
-fetch_next_fileset(ManifestSetKey, RiakPid) ->
-    %% Get the set of manifests represented by the key
-    case riak_moss_utils:get_object(?GC_BUCKET, ManifestSetKey, RiakPid) of
-        {ok, RiakObj} ->
-            %% Get any values from the riak object and resolve them
-            %% into a single set.
-            BinValues = riakc_obj:get_values(RiakObj),
-            Values = [binary_to_term(BinValue) || BinValue <- BinValues],
-            ManifestSet = twop_set:resolve(Values),
-            {ok, twop_set:to_list(ManifestSet)};
-        {error, notfound}=Error ->
-            Error;
-        {error, Reason}=Error ->
-            _ = lager:warning("Error occurred trying to read the fileset"
-                              "for ~p for gc. Reason: ~p",
-                              [ManifestSetKey, Reason]),
-            Error
-    end.
+%% @doc Cancel the current batch of files set for garbage collection.
+-spec cancel_batch(#state{}) -> {reply, ok, idle, #state{}}.
+cancel_batch(#state{batch_start=BatchStart,
+                    riak=RiakPid}=State) ->
+    %% Interrupt the batch of deletes
+    _ = lager:info("Canceled garbage collection batch after ~b seconds.",
+                   [elapsed(BatchStart)]),
+    riak_moss_riakc_pool_worker:stop(RiakPid),
+    NewState = schedule_next(State#state{batch=[],
+                                         riak=undefined}),
+    {reply, ok, idle, NewState}.
 
 %% @doc How many seconds have passed from `Time' to now.
+-spec elapsed(non_neg_integer()) -> integer().
 elapsed(Time) ->
     riak_cs_gc:timestamp() - Time.
 
@@ -389,6 +334,27 @@ fetch_eligible_manifest_keys(RiakPid, IntervalStart) ->
             []
     end.
 
+%% @doc Delete the blocks for the next set of manifests in the batch
+-spec fetch_next_fileset(non_neg_integer(), pid()) -> {ok, [lfs_manifest()]} | {error, term()}.
+fetch_next_fileset(ManifestSetKey, RiakPid) ->
+    %% Get the set of manifests represented by the key
+    case riak_moss_utils:get_object(?GC_BUCKET, ManifestSetKey, RiakPid) of
+        {ok, RiakObj} ->
+            %% Get any values from the riak object and resolve them
+            %% into a single set.
+            BinValues = riakc_obj:get_values(RiakObj),
+            Values = [binary_to_term(BinValue) || BinValue <- BinValues],
+            ManifestSet = twop_set:resolve(Values),
+            {ok, twop_set:to_list(ManifestSet)};
+        {error, notfound}=Error ->
+            Error;
+        {error, Reason}=Error ->
+            _ = lager:warning("Error occurred trying to read the fileset"
+                              "for ~p for gc. Reason: ~p",
+                              [ManifestSetKey, Reason]),
+            Error
+    end.
+
 %% @doc Setup the automatic trigger to start the next
 %% scheduled batch calculation.  "Next" is defined as the scheduled
 %% time occurring soonest after the `Last' parameter, that has not
@@ -409,3 +375,36 @@ schedule_next(#state{batch_start=Current,
     State#state{batch_start=undefined,
                 last=Current,
                 next=Next}.
+
+%% @doc Actually kick off the batch.  After calling this function, you
+%% must advance the FSM state to `fetching_next_fileset'.
+start_batch(_Options, State) ->
+    BatchStart = riak_cs_gc:timestamp(),
+
+    %% this does not check out a worker from the riak connection pool;
+    %% instead it creates a fresh new worker, the idea being that we
+    %% don't want to delay deletion just because the normal request
+    %% pool is empty; pool workers just happen to be literally the
+    %% socket process, so "starting" one here is the same as opening a
+    %% connection, and avoids duplicating the configuration lookup code
+    {ok, Riak} = riak_moss_riakc_pool_worker:start_link([]),
+    Batch = fetch_eligible_manifest_keys(Riak, BatchStart),
+
+    gen_fsm:send_event(?SERVER, continue),
+    State#state{batch_start=BatchStart,
+                riak=Riak,
+                batch=Batch,
+                batch_count=0,
+                batch_skips=0}.
+
+%% @doc Extract a list of status information from a state record.
+-spec status(#state{}) -> [{atom(), term()}].
+status(State) ->
+    [{interval, State#state.interval},
+     {last, State#state.last},
+     {current, State#state.batch_start},
+     {next, State#state.next},
+     {elapsed, elapsed(State#state.batch_start)},
+     {files_deleted, State#state.batch_count},
+     {files_skipped, State#state.batch_skips},
+     {files_left, length(State#state.batch)}].
