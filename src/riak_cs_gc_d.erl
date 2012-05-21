@@ -17,7 +17,8 @@
          start_batch/1,
          cancel_batch/0,
          pause_batch/0,
-         resume_batch/0]).
+         resume_batch/0,
+         set_interval/1]).
 
 %% gen_fsm callbacks
 -export([init/1,
@@ -107,6 +108,13 @@ pause_batch() ->
 resume_batch() ->
     gen_fsm:sync_send_event(?SERVER, resume_batch, infinity).
 
+%% @doc Adjust the interval at which the daemon attempts to perform
+%% a garbage collection sweep. Setting the interval to a value of
+%% `infinity' effectively disable garbage collection. The daemon still
+%% runs, but does not carry out any file deletion.
+-spec set_interval(infinity | non_neg_integer()) -> ok | {error, term()}.
+set_interval(Interval) ->
+    gen_fsm:sync_send_event(?SERVER, {set_interval, Interval}, infinity).
 
 %%%===================================================================
 %%% gen_fsm callbacks
@@ -204,6 +212,8 @@ idle(pause_batch, _From, State) ->
     {reply, {error, no_batch}, idle, State};
 idle(resume_batch, _From, State) ->
     {reply, {error, no_batch}, idle, State};
+idle({set_interval, Interval}, _From, State) ->
+    {reply, {error, no_batch}, idle, State#state{interval=Interval}};
 idle(_, _From, State) ->
     {reply, ok, idle, State}.
 
@@ -218,6 +228,8 @@ fetching_next_fileset(pause_batch, _From, State) ->
     {reply, ok, paused, State#state{pause_state=fetching_next_fileset}};
 fetching_next_fileset(cancel_batch, _From, State) ->
     cancel_batch(State);
+fetching_next_fileset({set_interval, Interval}, _From, State) ->
+    {reply, {error, no_batch}, fetching_next_fileset, State#state{interval=Interval}};
 fetching_next_fileset(_, _From, State) ->
     {reply, ok, fetching_next_fileset, State}.
 
@@ -232,6 +244,8 @@ initiating_file_delete(pause_batch, _From, State) ->
     {reply, ok, paused, State#state{pause_state=initiating_file_delete}};
 initiating_file_delete(cancel_batch, _From, State) ->
     cancel_batch(State);
+initiating_file_delete({set_interval, Interval}, _From, State) ->
+    {reply, {error, no_batch}, initiating_file_delete, State#state{interval=Interval}};
 initiating_file_delete(_, _From, State) ->
     {reply, ok, initiating_file_delete, State}.
 
@@ -249,6 +263,8 @@ waiting_file_delete(pause_batch, _From, State) ->
     {reply, ok, paused, State#state{pause_state=waiting_file_delete}};
 waiting_file_delete(cancel_batch, _From, State) ->
     cancel_batch(State);
+waiting_file_delete({set_interval, Interval}, _From, State) ->
+    {reply, {error, no_batch}, waiting_file_delete, State#state{interval=Interval}};
 waiting_file_delete(_, _From, State) ->
     {reply, ok, waiting_file_delete, State}.
 
@@ -263,6 +279,8 @@ paused(resume_batch, _From, State=#state{pause_state=PauseState}) ->
     {reply, ok, PauseState, State};
 paused(cancel_batch, From, State) ->
     fetching_next_fileset(cancel_batch, From, State);
+paused({set_interval, Interval}, _From, State) ->
+    {reply, {error, no_batch}, paused, State#state{interval=Interval}};
 paused(_, _From, State) ->
     {reply, ok, paused, State}.
 
@@ -356,12 +374,8 @@ fetch_next_fileset(ManifestSetKey, RiakPid) ->
     end.
 
 %% @doc Setup the automatic trigger to start the next
-%% scheduled batch calculation.  "Next" is defined as the scheduled
-%% time occurring soonest after the `Last' parameter, that has not
-%% also already passed by the wall clock.  If the next scheduled time
-%% <em>has</em> already passed, an error is printed to the logs, and
-%% the next time that has not already passed is found and scheduled
-%% instead.
+%% scheduled batch calculation.
+-spec schedule_next(#state{}) -> #state{}.
 schedule_next(#state{interval=infinity}=State) ->
     %% nothing to schedule, all triggers manual
     State;
