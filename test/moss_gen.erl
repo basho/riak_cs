@@ -22,7 +22,8 @@
          uuid/0,
          metadata/0,
          bounded_uuid/0,
-         manifest_state/0]).
+         manifest_state/0,
+         datetime/0]).
 
 %%====================================================================
 %% Generators
@@ -61,6 +62,10 @@ bounded_uuid() ->
 manifest_state() ->
     oneof([writing, active, pending_delete, scheduled_delete]).
 
+datetime() ->
+    {{choose(1,5000), choose(1,12), choose(1,28)},
+     {choose(0, 23), choose(0, 59), choose(0, 59)}}.
+
 %%====================================================================
 %% Helpers
 %%====================================================================
@@ -83,7 +88,7 @@ not_empty(G) ->
     ?SUCHTHAT(X, G, X /= [] andalso X /= <<>>).
 
 not_zero(G) ->
-    ?SUCHTHAT(X, G, X =/= 0).
+    ?SUCHTHAT(X, G, X > 0).
 
 bs(Power) ->
     trunc(math:pow(2, Power)).
