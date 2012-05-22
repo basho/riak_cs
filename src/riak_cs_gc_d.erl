@@ -37,6 +37,15 @@
 
 -include("riak_moss.hrl").
 
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+
+%% Test API
+%% -export([test_link/4]).
+-compile(export_all).
+
+-endif.
+
 -define(SERVER, ?MODULE).
 
 -record(state, {
@@ -403,7 +412,7 @@ start_batch(_Options, State) ->
     %% connection, and avoids duplicating the configuration lookup code
     {ok, Riak} = riak_moss_riakc_pool_worker:start_link([]),
     Batch = fetch_eligible_manifest_keys(Riak, BatchStart),
-
+    _ = lager:debug("Batch keys: ~p", [Batch]),
     gen_fsm:send_event(?SERVER, continue),
     State#state{batch_start=BatchStart,
                 riak=Riak,
