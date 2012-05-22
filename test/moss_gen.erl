@@ -59,7 +59,7 @@ bounded_uuid() ->
     oneof([<<"uuid-1">>, <<"uuid-2">>, <<"uuid-3">>, <<"uuid-4">>]).
 
 manifest_state() ->
-    oneof([writing, active, pending_delete, scheduled_delete, deleted]).
+    oneof([writing, active, pending_delete, scheduled_delete]).
 
 %%====================================================================
 %% Helpers
