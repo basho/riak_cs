@@ -301,7 +301,9 @@ get_manifests(RiakcPid, Bucket, Key) ->
             Siblings = riakc_obj:get_values(Object),
             DecodedSiblings = lists:map(fun erlang:binary_to_term/1, Siblings),
             Resolved = riak_moss_manifest_resolution:resolve(DecodedSiblings),
-            {ok, Object, Resolved};
+            %% remove any tombstones that have expired
+            Pruned = riak_moss_manifest:prune(Resolved),
+            {ok, Object, Pruned};
         {error, notfound}=NotFound ->
             NotFound
     end.

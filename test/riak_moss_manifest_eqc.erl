@@ -98,8 +98,8 @@ process_manifest(Manifest=#lfs_manifest_v2{state=State}) ->
         pending_delete ->
             Manifest#lfs_manifest_v2{last_block_deleted_time=erlang:now(),
                                      delete_blocks_remaining=blocks_set()};
-        deleted ->
-            Manifest#lfs_manifest_v2{last_block_deleted_time=erlang:now()}
+        scheduled_delete ->
+            Manifest#lfs_manifest_v2{delete_marked_time=erlang:now()}
     end.
 
 manifests() ->

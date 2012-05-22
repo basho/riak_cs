@@ -106,9 +106,15 @@ most_recent_active_manifest(Man1=#lfs_manifest_v2{state=active}, _Man2) -> Man1;
 most_recent_active_manifest(_Man1, Man2=#lfs_manifest_v2{state=active}) -> Man2.
 
 -spec needs_pruning(lfs_manifest(), erlang:timestamp()) -> boolean().
-needs_pruning(#lfs_manifest_v2{state=deleted,
-                            delete_blocks_remaining=[],
-                            last_block_deleted_time=DeleteTime}, Time) ->
+%% TODO:
+%% We should be basing this off of the
+%% (yet to be added) `scheduled_delete_time'
+%% instead of `delete_marked_time', as they are
+%% not the same, and if something has to be
+%% attempted to moved several times, they could
+%% differ in time by quite a bit
+needs_pruning(#lfs_manifest_v2{state=scheduled_delete,
+                               delete_marked_time=DeleteTime}, Time) ->
     seconds_diff(Time, DeleteTime) > delete_tombstone_time();
 needs_pruning(_Manifest, _Time) ->
     false.
@@ -191,9 +197,8 @@ does_need_pruning() ->
     DeleteTime = {1333,985708,445136},
     Now = {1334,985708,445136},
     Mani = new_mani_helper(),
-    Mani2 = Mani#lfs_manifest_v2{state=deleted,
-                                 delete_blocks_remaining=[],
-                                 last_block_deleted_time=DeleteTime},
+    Mani2 = Mani#lfs_manifest_v2{state=scheduled_delete,
+                                 delete_marked_time=DeleteTime},
     ?assert(needs_pruning(Mani2, Now)).
 
 not_old_enough_for_pruning() ->
@@ -202,8 +207,8 @@ not_old_enough_for_pruning() ->
     DeleteTime = {1333,985708,445136},
     Now = {1333,985709,445136},
     Mani = new_mani_helper(),
-    Mani2 = Mani#lfs_manifest_v2{state=deleted,
-                                 last_block_deleted_time=DeleteTime},
+    Mani2 = Mani#lfs_manifest_v2{state=scheduled_delete,
+                                 delete_marked_time=DeleteTime},
     ?assert(not needs_pruning(Mani2, Now)).
 
 -endif.
