@@ -105,7 +105,7 @@ deleting({block_deleted, {ok, BlockID}, DeleterPid},
                          manifest=NewManifest},
 
     if
-        NewManifest#lfs_manifest_v2.state == deleted ->
+        NewManifest?MANIFEST.state == deleted ->
             State3 = finish(State2),
             {stop, normal, State3};
         true ->
@@ -213,19 +213,19 @@ finish(State=#state{timer_ref=TRef,
 %% pending_delete state
 -spec blocks_to_delete_from_manifest(lfs_manifest()) ->
     {lfs_manifest(), ordsets:ordset(integer())}.
-blocks_to_delete_from_manifest(Manifest=#lfs_manifest_v2{state=scheduled_delete,
+blocks_to_delete_from_manifest(Manifest=?MANIFEST{state=scheduled_delete,
                                                          delete_blocks_remaining=undefined}) ->
     case riak_moss_lfs_utils:block_sequences_for_manifest(Manifest) of
         []=Blocks ->
-            UpdManifest = Manifest#lfs_manifest_v2{delete_blocks_remaining=[],
+            UpdManifest = Manifest?MANIFEST{delete_blocks_remaining=[],
                                                    state=deleted};
         Blocks ->
-            UpdManifest = Manifest#lfs_manifest_v2{delete_blocks_remaining=Blocks}
+            UpdManifest = Manifest?MANIFEST{delete_blocks_remaining=Blocks}
     end,
     {UpdManifest, Blocks};
 blocks_to_delete_from_manifest(Manifest) ->
     {Manifest,
-        Manifest#lfs_manifest_v2.delete_blocks_remaining}.
+        Manifest?MANIFEST.delete_blocks_remaining}.
 
 %% ===================================================================
 %% Test API

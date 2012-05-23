@@ -58,8 +58,8 @@ mark_overwritten(Manifests) ->
                     if
                         Value == Active ->
                             Active;
-                        Value#lfs_manifest_v2.state == active ->
-                            Value#lfs_manifest_v2{state=pending_delete,
+                        Value?MANIFEST.state == active ->
+                            Value?MANIFEST{state=pending_delete,
                                                   delete_marked_time=erlang:now()};
                         true ->
                             Value
@@ -93,17 +93,17 @@ orddict_values(OrdDict) ->
     %% func
     [V || {_K, V} <- OrdDict].
 
-most_recent_active_manifest(Manifest=#lfs_manifest_v2{state=active}, no_active_manifest) ->
+most_recent_active_manifest(Manifest=?MANIFEST{state=active}, no_active_manifest) ->
     Manifest;
 most_recent_active_manifest(_Manfest, no_active_manifest) ->
     no_active_manifest;
-most_recent_active_manifest(Man1=#lfs_manifest_v2{state=active}, Man2=#lfs_manifest_v2{state=active}) ->
-    case Man1#lfs_manifest_v2.write_start_time > Man2#lfs_manifest_v2.write_start_time of
+most_recent_active_manifest(Man1=?MANIFEST{state=active}, Man2=?MANIFEST{state=active}) ->
+    case Man1?MANIFEST.write_start_time > Man2?MANIFEST.write_start_time of
         true -> Man1;
         false -> Man2
     end;
-most_recent_active_manifest(Man1=#lfs_manifest_v2{state=active}, _Man2) -> Man1;
-most_recent_active_manifest(_Man1, Man2=#lfs_manifest_v2{state=active}) -> Man2.
+most_recent_active_manifest(Man1=?MANIFEST{state=active}, _Man2) -> Man1;
+most_recent_active_manifest(_Man1, Man2=?MANIFEST{state=active}) -> Man2.
 
 -spec needs_pruning(lfs_manifest(), erlang:timestamp()) -> boolean().
 %% TODO:
@@ -113,18 +113,18 @@ most_recent_active_manifest(_Man1, Man2=#lfs_manifest_v2{state=active}) -> Man2.
 %% not the same, and if something has to be
 %% attempted to moved several times, they could
 %% differ in time by quite a bit
-needs_pruning(#lfs_manifest_v2{state=scheduled_delete,
+needs_pruning(?MANIFEST{state=scheduled_delete,
                                delete_marked_time=DeleteTime}, Time) ->
     seconds_diff(Time, DeleteTime) > delete_tombstone_time();
 needs_pruning(_Manifest, _Time) ->
     false.
 
-pending_delete_manifest({_, #lfs_manifest_v2{state=pending_delete,
+pending_delete_manifest({_, ?MANIFEST{state=pending_delete,
                                              last_block_deleted_time=undefined}}) ->
     true;
-pending_delete_manifest({_, #lfs_manifest_v2{last_block_deleted_time=undefined}}) ->
+pending_delete_manifest({_, ?MANIFEST{last_block_deleted_time=undefined}}) ->
     false;
-pending_delete_manifest({_, #lfs_manifest_v2{state=scheduled_delete,
+pending_delete_manifest({_, ?MANIFEST{state=scheduled_delete,
                                              last_block_deleted_time=LBDTime}}) ->
     %% If a manifest is `scheduled_delete' and the amount of time
     %% specified by the retry interval has elapsed since a file block
@@ -183,12 +183,12 @@ cleanup(_Ctx) ->
 
 wrong_state_for_pruning() ->
     Mani = new_mani_helper(),
-    Mani2 = Mani#lfs_manifest_v2{state=active},
+    Mani2 = Mani?MANIFEST{state=active},
     ?assert(not needs_pruning(Mani2, erlang:now())).
 
 wrong_state_for_pruning_2() ->
     Mani = new_mani_helper(),
-    Mani2 = Mani#lfs_manifest_v2{state=pending_delete},
+    Mani2 = Mani?MANIFEST{state=pending_delete},
     ?assert(not needs_pruning(Mani2, erlang:now())).
 
 does_need_pruning() ->
@@ -197,7 +197,7 @@ does_need_pruning() ->
     DeleteTime = {1333,985708,445136},
     Now = {1334,985708,445136},
     Mani = new_mani_helper(),
-    Mani2 = Mani#lfs_manifest_v2{state=scheduled_delete,
+    Mani2 = Mani?MANIFEST{state=scheduled_delete,
                                  delete_marked_time=DeleteTime},
     ?assert(needs_pruning(Mani2, Now)).
 
@@ -207,7 +207,7 @@ not_old_enough_for_pruning() ->
     DeleteTime = {1333,985708,445136},
     Now = {1333,985709,445136},
     Mani = new_mani_helper(),
-    Mani2 = Mani#lfs_manifest_v2{state=scheduled_delete,
+    Mani2 = Mani?MANIFEST{state=scheduled_delete,
                                  delete_marked_time=DeleteTime},
     ?assert(not needs_pruning(Mani2, Now)).
 

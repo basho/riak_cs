@@ -72,7 +72,7 @@ object_size_map(Object, _, _) ->
                          || V <- riak_object:get_values(Object) ],
         Resolved = riak_moss_manifest_resolution:resolve(AllManifests),
         case riak_moss_manifest:active_manifest(Resolved) of
-            {ok, #lfs_manifest_v2{content_length=Length}} ->
+            {ok, ?MANIFEST{content_length=Length}} ->
                 [{1,Length}];
             _ ->
                 []

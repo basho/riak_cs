@@ -147,7 +147,7 @@ waiting_update_command({update_manifest, Manifest}, State=#state{riakc_pid=Riakc
                                                                  riak_object=PreviousRiakObject,
                                                                  manifests=PreviousManifests}) ->
 
-    WrappedManifest = riak_moss_manifest:new(Manifest#lfs_manifest_v2.uuid, Manifest),
+    WrappedManifest = riak_moss_manifest:new(Manifest?MANIFEST.uuid, Manifest),
     Resolved = riak_moss_manifest_resolution:resolve([PreviousManifests, WrappedManifest]),
     RiakObject = riakc_obj:update_value(PreviousRiakObject, term_to_binary(Resolved)),
     %% TODO:
@@ -188,7 +188,7 @@ waiting_update_command({update_manifest_with_confirmation, Manifest}, _From,
                                             State=#state{riakc_pid=RiakcPid,
                                             riak_object=PreviousRiakObject,
                                             manifests=PreviousManifests}) ->
-    WrappedManifest = riak_moss_manifest:new(Manifest#lfs_manifest_v2.uuid, Manifest),
+    WrappedManifest = riak_moss_manifest:new(Manifest?MANIFEST.uuid, Manifest),
     Resolved = riak_moss_manifest_resolution:resolve([PreviousManifests, WrappedManifest]),
     RiakObject = riakc_obj:update_value(PreviousRiakObject, term_to_binary(Resolved)),
     %% TODO:
@@ -315,7 +315,7 @@ get_and_update(RiakcPid, Manifest, Bucket, Key) ->
     %% NOTE: it would also be nice to assert that the
     %% UUID being added doesn't already exist in the
     %% dict
-    WrappedManifest = riak_moss_manifest:new(Manifest#lfs_manifest_v2.uuid, Manifest),
+    WrappedManifest = riak_moss_manifest:new(Manifest?MANIFEST.uuid, Manifest),
     ObjectToWrite = case get_manifests(RiakcPid, Bucket, Key) of
         {ok, RiakObject, Manifests} ->
             NewManiAdded = riak_moss_manifest_resolution:resolve([WrappedManifest, Manifests]),
@@ -341,8 +341,8 @@ set_active_manifest_pending_delete(#state{riakc_pid=RiakcPid,
         {ok, RiakObject, Resolved} ->
             Marked = orddict:map(fun(_Key, Value) ->
                         if
-                            Value#lfs_manifest_v2.state == active ->
-                                Value#lfs_manifest_v2{state=pending_delete,
+                            Value?MANIFEST.state == active ->
+                                Value?MANIFEST{state=pending_delete,
                                                       delete_marked_time=erlang:now()};
                             true ->
                                 Value
@@ -394,9 +394,9 @@ set_manifests_scheduled_delete([UUID | RestUUIDS], State=#state{manifests=Manife
 %% `set_manifests_scheduled_delete'.
 -spec set_scheduled_delete(lfs_manifest()) -> lfs_manifest().
 set_scheduled_delete(Manifest) ->
-    case Manifest#lfs_manifest_v2.state =:= pending_delete of
+    case Manifest?MANIFEST.state =:= pending_delete of
         true ->
-            Manifest#lfs_manifest_v2{state=scheduled_delete};
+            Manifest?MANIFEST{state=scheduled_delete};
         false ->
             Manifest
     end.

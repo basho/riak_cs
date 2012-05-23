@@ -117,7 +117,7 @@ check_permission(Method, RD, Ctx=#key_context{bucket=Bucket,
         notfound ->
             ObjectAcl = undefined;
         _ ->
-            ObjectAcl = Mfst#lfs_manifest_v2.acl
+            ObjectAcl = Mfst?MANIFEST.acl
     end,
     case riak_moss_acl:object_access(Bucket,
                                      ObjectAcl,
@@ -187,7 +187,7 @@ content_types_provided(RD, Ctx=#key_context{manifest=Mfst}) ->
     Method = wrq:method(RD),
     if Method == 'GET'; Method == 'HEAD' ->
             DocCtx = riak_moss_wm_utils:ensure_doc(Ctx),
-            ContentType = binary_to_list(Mfst#lfs_manifest_v2.content_type),
+            ContentType = binary_to_list(Mfst?MANIFEST.content_type),
             case ContentType of
                 _ ->
                     {[{ContentType, produce_body}], RD, DocCtx}
@@ -206,14 +206,14 @@ produce_body(RD, #key_context{get_fsm_pid=GetFsmPid,
                               context=#context{start_time=StartTime,
                                                user=User,
                                                requested_perm='READ_ACP'}}=KeyCtx) ->
-    {Bucket, File} = Mfst#lfs_manifest_v2.bkey,
+    {Bucket, File} = Mfst?MANIFEST.bkey,
     BFile_str = [Bucket, $,, File],
     UserName = extract_name(User),
     dt_entry(<<"produce_body">>, [], [UserName, BFile_str]),
     dt_entry_object(<<"get_acl">>, [], [UserName, BFile_str]),
     riak_moss_get_fsm:stop(GetFsmPid),
     ok = riak_cs_stats:update_with_start(object_get_acl, StartTime),
-    Acl = Mfst#lfs_manifest_v2.acl,
+    Acl = Mfst?MANIFEST.acl,
     case Acl of
         undefined ->
             dt_return(<<"produce_body">>, [-1], [UserName, BFile_str]),
@@ -227,14 +227,14 @@ produce_body(RD, #key_context{get_fsm_pid=GetFsmPid,
 produce_body(RD, #key_context{get_fsm_pid=GetFsmPid, manifest=Mfst,
                               context=#context{start_time=StartTime,
                                                user=User}}=Ctx) ->
-    {Bucket, File} = Mfst#lfs_manifest_v2.bkey,
+    {Bucket, File} = Mfst?MANIFEST.bkey,
     BFile_str = [Bucket, $,, File],
     UserName = extract_name(User),
     dt_entry(<<"produce_body">>, [], [UserName, BFile_str]),
     dt_entry_object(<<"file_get">>, [], [UserName, BFile_str]),
-    ContentLength = Mfst#lfs_manifest_v2.content_length,
-    ContentMd5 = Mfst#lfs_manifest_v2.content_md5,
-    LastModified = riak_moss_wm_utils:to_rfc_1123(Mfst#lfs_manifest_v2.created),
+    ContentLength = Mfst?MANIFEST.content_length,
+    ContentMd5 = Mfst?MANIFEST.content_md5,
+    LastModified = riak_moss_wm_utils:to_rfc_1123(Mfst?MANIFEST.created),
     ETag = "\"" ++ riak_moss_utils:binary_to_hexlist(ContentMd5) ++ "\"",
     NewRQ = lists:foldl(fun({K, V}, Rq) -> wrq:set_resp_header(K, V, Rq) end,
                         RD,
@@ -438,7 +438,7 @@ finalize_request(RD, #key_context{bucket=Bucket,
     AccessRD = riak_moss_access_logger:set_bytes_in(S, RD),
 
     {ok, Manifest} = riak_moss_put_fsm:finalize(Pid),
-    ETag = "\"" ++ riak_moss_utils:binary_to_hexlist(Manifest#lfs_manifest_v2.content_md5) ++ "\"",
+    ETag = "\"" ++ riak_moss_utils:binary_to_hexlist(Manifest?MANIFEST.content_md5) ++ "\"",
     ok = riak_cs_stats:update_with_start(object_put, StartTime),
     dt_return(<<"finalize_request">>, [S], [UserName, BFile_str]),
     {{halt, 200}, wrq:set_resp_header("ETag",  ETag, AccessRD), Ctx}.

@@ -31,7 +31,6 @@
          safe_block_size_from_manifest/1,
          initial_blocks/2,
          block_sequences_for_manifest/1,
-         is_manifest/1,
          new_manifest/9,
          new_manifest/11,
          remove_write_block/2,
@@ -90,7 +89,7 @@ max_content_len() ->
             MaxContentLen
     end.
 
-safe_block_size_from_manifest(#lfs_manifest_v2{block_size=BlockSize}) ->
+safe_block_size_from_manifest(?MANIFEST{block_size=BlockSize}) ->
     case BlockSize of
         undefined ->
             block_size();
@@ -104,7 +103,7 @@ initial_blocks(ContentLength, BlockSize) ->
     UpperBound = block_count(ContentLength, BlockSize),
     lists:seq(0, (UpperBound - 1)).
 
-block_sequences_for_manifest(#lfs_manifest_v2{content_length=ContentLength}=Manifest) ->
+block_sequences_for_manifest(?MANIFEST{content_length=ContentLength}=Manifest) ->
     SafeBlockSize = safe_block_size_from_manifest(Manifest),
     initial_blocks(ContentLength, SafeBlockSize).
 
@@ -149,17 +148,6 @@ put_fsm_buffer_size_factor() ->
             Factor
     end.
 
-%% @doc Returns true if Value is
-%%      a manifest record
-is_manifest(BinaryValue) ->
-    try binary_to_term(BinaryValue) of
-        Term ->
-            is_record(Term, lfs_manifest_v2)
-    catch
-        error:badarg ->
-            false
-    end.
-
 %% @doc Initialize a new file manifest
 -spec new_manifest(binary(),
                    binary(),
@@ -186,7 +174,7 @@ new_manifest(Bucket, FileName, UUID, ContentLength, ContentType, ContentMd5, Met
                    cluster_id()) -> lfs_manifest().
 new_manifest(Bucket, FileName, UUID, ContentLength, ContentType, ContentMd5, MetaData, BlockSize, Acl, Props, ClusterID) ->
     Blocks = ordsets:from_list(initial_blocks(ContentLength, BlockSize)),
-    #lfs_manifest_v2{bkey={Bucket, FileName},
+    ?MANIFEST{bkey={Bucket, FileName},
                      uuid=UUID,
                      state=writing,
                      content_length=ContentLength,
@@ -202,7 +190,7 @@ new_manifest(Bucket, FileName, UUID, ContentLength, ContentType, ContentMd5, Met
 %% @doc Remove a chunk from the
 %%      write_blocks_remaining field of Manifest
 remove_write_block(Manifest, Chunk) ->
-    Remaining = Manifest#lfs_manifest_v2.write_blocks_remaining,
+    Remaining = Manifest?MANIFEST.write_blocks_remaining,
     Updated = ordsets:del_element(Chunk, Remaining),
     ManiState = case Updated of
                     [] ->
@@ -210,14 +198,14 @@ remove_write_block(Manifest, Chunk) ->
                     _ ->
                         writing
                 end,
-    Manifest#lfs_manifest_v2{write_blocks_remaining=Updated,
+    Manifest?MANIFEST{write_blocks_remaining=Updated,
                              state=ManiState,
                              last_block_written_time=erlang:now()}.
 
 %% @doc Remove a chunk from the
 %%      delete_blocks_remaining field of Manifest
 remove_delete_block(Manifest, Chunk) ->
-    Remaining = Manifest#lfs_manifest_v2.delete_blocks_remaining,
+    Remaining = Manifest?MANIFEST.delete_blocks_remaining,
     Updated = ordsets:del_element(Chunk, Remaining),
     ManiState = case Updated of
                     [] ->
@@ -225,9 +213,9 @@ remove_delete_block(Manifest, Chunk) ->
                     _ ->
                         scheduled_delete
                 end,
-    Manifest#lfs_manifest_v2{delete_blocks_remaining=Updated,
+    Manifest?MANIFEST{delete_blocks_remaining=Updated,
                              state=ManiState,
                              last_block_deleted_time=erlang:now()}.
 
-sorted_blocks_remaining(#lfs_manifest_v2{write_blocks_remaining=Remaining}) ->
+sorted_blocks_remaining(?MANIFEST{write_blocks_remaining=Remaining}) ->
     lists:sort(ordsets:to_list(Remaining)).

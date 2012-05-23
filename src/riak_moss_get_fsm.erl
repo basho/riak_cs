@@ -146,7 +146,7 @@ prepare(get_manifest, _From, State) ->
             {stop, normal, notfound, PreparedState};
         Mfst ->
             NextStateTimeout = 60000,
-            NewState = PreparedState#state{manifest_uuid=Mfst#lfs_manifest_v2.uuid,
+            NewState = PreparedState#state{manifest_uuid=Mfst?MANIFEST.uuid,
                                            from=undefined},
             {reply, Mfst, waiting_continue_or_stop, NewState, NextStateTimeout}
     end.
@@ -155,7 +155,7 @@ waiting_value(get_manifest, _From, State=#state{manifest=undefined}) ->
     {stop, normal, notfound, State};
 waiting_value(get_manifest, _From, State=#state{manifest=Mfst}) ->
     NextStateTimeout = 60000,
-    NewState = State#state{manifest_uuid=Mfst#lfs_manifest_v2.uuid,
+    NewState = State#state{manifest_uuid=Mfst?MANIFEST.uuid,
                            from=undefined},
     {reply, Mfst, waiting_continue_or_stop, NewState, NextStateTimeout}.
 
