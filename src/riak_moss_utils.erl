@@ -547,7 +547,7 @@ set_object_acl(Bucket, Key, Manifest, Acl, RiakPid) ->
     StartTime = now(),
     {ok, ManiPid} = riak_moss_manifest_fsm:start_link(Bucket, Key, RiakPid),
     _ActiveMfst = riak_moss_manifest_fsm:get_active_manifest(ManiPid),
-    UpdManifest = Manifest#lfs_manifest_v2{acl=Acl},
+    UpdManifest = Manifest?MANIFEST{acl=Acl},
     Res = riak_moss_manifest_fsm:update_manifest_with_confirmation(ManiPid, UpdManifest),
     riak_moss_manifest_fsm:stop(ManiPid),
     if Res == ok ->

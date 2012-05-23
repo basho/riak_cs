@@ -193,8 +193,8 @@ initiating_file_delete(continue, #state{current_fileset=[NextManifest | RestMani
 
     %% Use an instance of `riak_cs_delete_fsm' to handle the
     %% deletion of the file blocks.
-    {Bucket, Key} = NextManifest#lfs_manifest_v2.bkey,
-    UUID = NextManifest#lfs_manifest_v2.uuid,
+    {Bucket, Key} = NextManifest?MANIFEST.bkey,
+    UUID = NextManifest?MANIFEST.uuid,
     Args = [Bucket, Key, UUID, RiakPid, []],
     {ok, Pid} = riak_cs_delete_fsm_sup:start_delete_fsm(node(), Args),
     {next_state, waiting_file_delete, State#state{current_fileset=RestManifests,

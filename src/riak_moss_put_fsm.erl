@@ -143,7 +143,7 @@ init([{Bucket, Key, ContentLength, ContentType,
 prepare(timeout, State=#state{content_length=0}) ->
     NewState = prepare(State),
     Md5 = crypto:md5_final(NewState#state.md5),
-    NewManifest = NewState#state.manifest#lfs_manifest_v2{content_md5=Md5,
+    NewManifest = NewState#state.manifest?MANIFEST{content_md5=Md5,
                                                           state=active,
                                                           last_block_written_time=erlang:now()},
     {next_state, done, NewState#state{md5=Md5, manifest=NewManifest}};
@@ -154,7 +154,7 @@ prepare(timeout, State) ->
 prepare(finalize, From, State=#state{content_length=0}) ->
     NewState = prepare(State),
     Md5 = crypto:md5_final(NewState#state.md5),
-    NewManifest = NewState#state.manifest#lfs_manifest_v2{content_md5=Md5,
+    NewManifest = NewState#state.manifest?MANIFEST{content_md5=Md5,
                                                           state=active,
                                                           last_block_written_time=erlang:now()},
     done(finalize, From, NewState#state{md5=Md5, manifest=NewManifest});
@@ -355,7 +355,7 @@ prepare(State=#state{bucket=Bucket,
                                      Metadata,
                                      BlockSize,
                                      Acl),
-    NewManifest = Manifest#lfs_manifest_v2{write_start_time=erlang:now()},
+    NewManifest = Manifest?MANIFEST{write_start_time=erlang:now()},
 
     %% TODO:
     %% this time probably
@@ -439,7 +439,7 @@ maybe_write_blocks(State=#state{buffer_queue=[ToWrite | RestBuffer],
                                 manifest=Manifest,
                                 next_block_id=NextBlockID}) ->
 
-    UUID = Manifest#lfs_manifest_v2.uuid,
+    UUID = Manifest?MANIFEST.uuid,
     WriterPid = hd(ordsets:to_list(FreeWriters)),
     NewFreeWriters = ordsets:del_element(WriterPid, FreeWriters),
     NewUnackedWrites = ordsets:add_element(NextBlockID, UnackedWrites),
@@ -536,7 +536,7 @@ handle_receiving_last_chunk(NewData, State=#state{buffer_queue=BufferQueue,
                                                   content_length=ContentLength}) ->
 
     NewMd5 = crypto:md5_final(crypto:md5_update(Md5, NewData)),
-    NewManifest = Manifest#lfs_manifest_v2{content_md5=NewMd5},
+    NewManifest = Manifest?MANIFEST{content_md5=NewMd5},
     NewRemainderData = combine_new_and_remainder_data(NewData, RemainderData),
     UpdatedBytesReceived = PreviousBytesReceived + size(NewData),
 

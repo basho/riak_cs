@@ -199,6 +199,8 @@
     }).
 -type lfs_manifest() :: #lfs_manifest_v2{}.
 
+-define(MANIFEST, #lfs_manifest_v2).
+
 -define(ACL, #acl_v2).
 -define(MOSS_BUCKET, #moss_bucket_v1).
 -define(MOSS_USER, #rcs_user_v2).

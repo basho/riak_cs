@@ -43,8 +43,8 @@ resolve_dicts(A, B) ->
 %% @private
 -spec resolve_manifests(term(), term(), term()) -> term().
 resolve_manifests(_Key, A, B) ->
-    AState = A#lfs_manifest_v2.state,
-    BState = B#lfs_manifest_v2.state,
+    AState = A?MANIFEST.state,
+    BState = B?MANIFEST.state,
     resolve_manifests(AState, BState, A, B).
 
 %% @doc Return a new, resolved manifest.
@@ -57,7 +57,7 @@ resolve_manifests(_Key, A, B) ->
 resolve_manifests(writing, writing, A, B) ->
     WriteBlocksRemaining = resolve_written_blocks(A, B),
     LastBlockWrittenTime = resolve_last_written_time(A, B),
-    A#lfs_manifest_v2{write_blocks_remaining=WriteBlocksRemaining, last_block_written_time=LastBlockWrittenTime};
+    A?MANIFEST{write_blocks_remaining=WriteBlocksRemaining, last_block_written_time=LastBlockWrittenTime};
 
 resolve_manifests(writing, active, _A, B) -> B;
 resolve_manifests(active, writing, A, B) ->
@@ -80,8 +80,8 @@ resolve_manifests(deleted, writing, A, B) ->
 resolve_manifests(active, active, A, A) -> A;
 resolve_manifests(active,
                   active,
-                  A1=#lfs_manifest_v2{acl=A1Acl},
-                  A2=#lfs_manifest_v2{acl=A2Acl}) when A1Acl =/= A2Acl ->
+                  A1=?MANIFEST{acl=A1Acl},
+                  A2=?MANIFEST{acl=A2Acl}) when A1Acl =/= A2Acl ->
     case A1Acl?ACL.creation_time >= A2Acl?ACL.creation_time of
         true ->
             A1;
@@ -104,7 +104,7 @@ resolve_manifests(deleted, active, A, B) ->
 resolve_manifests(pending_delete, pending_delete, A, B) ->
     BlocksLeftToDelete = resolve_deleted_blocks(A, B),
     LastDeletedTime = resolve_last_deleted_time(A, B),
-    A#lfs_manifest_v2{delete_blocks_remaining=BlocksLeftToDelete,
+    A?MANIFEST{delete_blocks_remaining=BlocksLeftToDelete,
                       last_block_deleted_time=LastDeletedTime};
 resolve_manifests(pending_delete, scheduled_delete, _A, B) -> B;
 resolve_manifests(scheduled_delete, pending_delete, A, B) ->
@@ -116,7 +116,7 @@ resolve_manifests(deleted, pending_delete, A, B) ->
 resolve_manifests(scheduled_delete, scheduled_delete, A, B) ->
     BlocksLeftToDelete = resolve_deleted_blocks(A, B),
     LastDeletedTime = resolve_last_deleted_time(A, B),
-    A#lfs_manifest_v2{delete_blocks_remaining=BlocksLeftToDelete,
+    A?MANIFEST{delete_blocks_remaining=BlocksLeftToDelete,
                       last_block_deleted_time=LastDeletedTime};
 resolve_manifests(scheduled_delete, deleted, _A, B) -> B;
 resolve_manifests(deleted, scheduled_delete, A, B) ->
@@ -128,16 +128,16 @@ resolve_manifests(deleted, deleted, A, B) ->
     %% be different than the last block
     %% deleted date? I'm think yes, technically.
     LastBlockDeletedTime = resolve_last_deleted_time(A, B),
-    A#lfs_manifest_v2{last_block_deleted_time=LastBlockDeletedTime}.
+    A?MANIFEST{last_block_deleted_time=LastBlockDeletedTime}.
 
 resolve_written_blocks(A, B) ->
-    AWritten = A#lfs_manifest_v2.write_blocks_remaining,
-    BWritten = B#lfs_manifest_v2.write_blocks_remaining,
+    AWritten = A?MANIFEST.write_blocks_remaining,
+    BWritten = B?MANIFEST.write_blocks_remaining,
     ordsets:intersection(AWritten, BWritten).
 
 resolve_deleted_blocks(A, B) ->
-    ADeleted = A#lfs_manifest_v2.delete_blocks_remaining,
-    BDeleted = B#lfs_manifest_v2.delete_blocks_remaining,
+    ADeleted = A?MANIFEST.delete_blocks_remaining,
+    BDeleted = B?MANIFEST.delete_blocks_remaining,
     safe_intersection(ADeleted, BDeleted).
 
 %% NOTE:
@@ -165,13 +165,13 @@ safe_intersection(A, B) ->
     ordsets:intersection(A, B).
 
 resolve_last_written_time(A, B) ->
-    ALastWritten = A#lfs_manifest_v2.last_block_written_time,
-    BLastWritten = B#lfs_manifest_v2.last_block_written_time,
+    ALastWritten = A?MANIFEST.last_block_written_time,
+    BLastWritten = B?MANIFEST.last_block_written_time,
     latest_date(ALastWritten, BLastWritten).
 
 resolve_last_deleted_time(A, B) ->
-    ALastDeleted = A#lfs_manifest_v2.last_block_deleted_time,
-    BLastDeleted = B#lfs_manifest_v2.last_block_deleted_time,
+    ALastDeleted = A?MANIFEST.last_block_deleted_time,
+    BLastDeleted = B?MANIFEST.last_block_deleted_time,
     latest_date(ALastDeleted, BLastDeleted).
 
 latest_date(A, B) -> erlang:max(A, B).
