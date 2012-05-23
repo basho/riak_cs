@@ -88,7 +88,7 @@ not_empty(G) ->
     ?SUCHTHAT(X, G, X /= [] andalso X /= <<>>).
 
 not_zero(G) ->
-    ?SUCHTHAT(X, G, X > 0).
+    ?SUCHTHAT(X, G, X /= 0).
 
 bs(Power) ->
     trunc(math:pow(2, Power)).
