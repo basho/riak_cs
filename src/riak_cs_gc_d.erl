@@ -28,7 +28,8 @@
          initiating_file_delete/2,
          initiating_file_delete/3,
          waiting_file_delete/3,
-         paused/2, paused/3,
+         paused/2,
+         paused/3,
          handle_event/3,
          handle_sync_event/4,
          handle_info/3,
@@ -41,8 +42,8 @@
 -include_lib("eunit/include/eunit.hrl").
 
 %% Test API
-%% -export([test_link/4]).
--compile(export_all).
+-export([current_state/0,
+         status_data/1]).
 
 -endif.
 
@@ -193,8 +194,8 @@ initiating_file_delete(continue, #state{current_fileset=[NextManifest | RestMani
 
     %% Use an instance of `riak_cs_delete_fsm' to handle the
     %% deletion of the file blocks.
-    {Bucket, Key} = NextManifest?MANIFEST.bkey,
-    UUID = NextManifest?MANIFEST.uuid,
+    {Bucket, Key} = NextManifest#lfs_manifest_v2.bkey,
+    UUID = NextManifest#lfs_manifest_v2.uuid,
     Args = [Bucket, Key, UUID, RiakPid, []],
     {ok, Pid} = riak_cs_delete_fsm_sup:start_delete_fsm(node(), Args),
     {next_state, waiting_file_delete, State#state{current_fileset=RestManifests,
@@ -227,7 +228,7 @@ idle(_, _From, State) ->
     {reply, ok, idle, State}.
 
 fetching_next_fileset(status, _From, State) ->
-    Reply = {ok, {fetching_next_fileset, status(State)}},
+    Reply = {ok, {fetching_next_fileset, status_data(State)}},
     {reply, Reply, fetching_next_fileset, State};
 fetching_next_fileset({manual_batch, _Options}, _From, State) ->
     %% this is the manual user request to begin a batch
@@ -243,7 +244,7 @@ fetching_next_fileset(_, _From, State) ->
     {reply, ok, fetching_next_fileset, State}.
 
 initiating_file_delete(status, _From, State) ->
-    Reply = {ok, {initiating_file_delete, status(State)}},
+    Reply = {ok, {initiating_file_delete, status_data(State)}},
     {reply, Reply, initiating_file_delete, State};
 initiating_file_delete({manual_batch, _Options}, _From, State) ->
     %% this is the manual user request to begin a batch
@@ -262,7 +263,7 @@ waiting_file_delete({Pid, done}, _From, State=#state{delete_fsm_pid=Pid}) ->
     gen_fsm:send_event(?SERVER, continue),
     {reply, ok, initiating_file_delete, State};
 waiting_file_delete(status, _From, State) ->
-    Reply = {ok, {waiting_file_delete, status(State)}},
+    Reply = {ok, {waiting_file_delete, status_data(State)}},
     {reply, Reply, waiting_file_delete, State};
 waiting_file_delete({manual_batch, _Options}, _From, State) ->
     %% this is the manual user request to begin a batch
@@ -278,7 +279,7 @@ waiting_file_delete(_, _From, State) ->
     {reply, ok, waiting_file_delete, State}.
 
 paused(status, _From, State) ->
-    Reply = {ok, {paused, status(State)}},
+    Reply = {ok, {paused, status_data(State)}},
     {reply, Reply, paused, State};
 paused(resume_batch, _From, State=#state{pause_state=PauseState}) ->
     _ = lager:info("Resuming garbage collection"),
@@ -426,8 +427,8 @@ start_batch(_Options, State) ->
                 batch_skips=0}.
 
 %% @doc Extract a list of status information from a state record.
--spec status(#state{}) -> [{atom(), term()}].
-status(State) ->
+-spec status_data(#state{}) -> [{atom(), term()}].
+status_data(State) ->
     [{interval, State#state.interval},
      {last, State#state.last},
      {current, State#state.batch_start},

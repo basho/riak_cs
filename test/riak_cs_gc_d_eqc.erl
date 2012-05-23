@@ -89,7 +89,7 @@ prop_status() ->
                            batch_count=Count,
                            batch_skips=Skips,
                            batch=Batch},
-            Status = orddict:from_list(riak_cs_gc_d:status(State)),
+            Status = orddict:from_list(riak_cs_gc_d:status_data(State)),
             conjunction([{interval, equals(orddict:fetch(interval, Status), Interval)},
                          {current, equals(orddict:fetch(current, Status), Start)},
                          {next, equals(orddict:fetch(next, Status), Next)},
