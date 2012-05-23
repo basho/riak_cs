@@ -47,7 +47,8 @@
 eqc_test_() ->
     {spawn,
         [
-            %% {timeout, 20, ?_assertEqual(true, quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_block_count()))))},
+            {timeout, 20, ?_assertEqual(true, quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_set_interval()))))},
+            %% {timeout, 20, ?_assertEqual(true, quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_manual_commands()))))},
             {timeout, 20, ?_assertEqual(true, quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_status()))))}
         ]
     }.
@@ -55,6 +56,23 @@ eqc_test_() ->
 %% ====================================================================
 %% EQC Properties
 %% ====================================================================
+
+prop_set_interval() ->
+    ?FORALL(Interval, eqc_gen:int(),
+            begin
+                case whereis(riak_cs_gc_d) of
+                    undefined ->
+                        {ok, _} = riak_cs_gc_d:start_link();
+                    _Pid ->
+                        riak_cs_gc_d:set_interval(?DEFAULT_GC_INTERVAL)
+                end,
+                {_, State1} = riak_cs_gc_d:current_state(),
+                riak_cs_gc_d:set_interval(Interval),
+                {_, State2} = riak_cs_gc_d:current_state(),
+                conjunction([{initial_interval, equals(?DEFAULT_GC_INTERVAL, State1#state.interval)},
+                             {updated_interval, equals(Interval, State2#state.interval)}
+                            ])
+            end).
 
 prop_status() ->
     ?FORALL({Interval, Last, Next,
@@ -72,12 +90,12 @@ prop_status() ->
                            batch_skips=Skips,
                            batch=Batch},
             Status = orddict:from_list(riak_cs_gc_d:status(State)),
-            conjunction([{interval, eqc:equals(orddict:fetch(interval, Status), Interval)},
-                         {current, eqc:equals(orddict:fetch(current, Status), Start)},
-                         {next, eqc:equals(orddict:fetch(next, Status), Next)},
-                         {files_deleted, eqc:equals(orddict:fetch(files_deleted, Status), Count)},
-                         {files_skipped, eqc:equals(orddict:fetch(files_skipped, Status), Skips)},
-                         {files_left, eqc:equals(orddict:fetch(files_left, Status), length(Batch)) }
+            conjunction([{interval, equals(orddict:fetch(interval, Status), Interval)},
+                         {current, equals(orddict:fetch(current, Status), Start)},
+                         {next, equals(orddict:fetch(next, Status), Next)},
+                         {files_deleted, equals(orddict:fetch(files_deleted, Status), Count)},
+                         {files_skipped, equals(orddict:fetch(files_skipped, Status), Skips)},
+                         {files_left, equals(orddict:fetch(files_left, Status), length(Batch)) }
                         ])
         end).
 
