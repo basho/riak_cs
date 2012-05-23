@@ -297,7 +297,12 @@ paused(_, _From, State) ->
 handle_event(_Event, StateName, State) ->
     {next_state, StateName, State}.
 
-%% @doc there are no all-state events for this fsm
+%% @doc Handle synchronous events that should be handled
+%% the same regardless of the current state.
+-spec handle_sync_event(term(), term(), atom(), #state{}) ->
+                               {reply, term(), atom(), #state{}}.
+handle_sync_event(current_state, _From, StateName, State) ->
+    {reply, {StateName, State}, StateName, State};
 handle_sync_event(_Event, _From, StateName, State) ->
     Reply = ok,
     {reply, Reply, StateName, State}.
@@ -431,3 +436,16 @@ status(State) ->
      {files_deleted, State#state.batch_count},
      {files_skipped, State#state.batch_skips},
      {files_left, length(State#state.batch)}].
+
+%% ===================================================================
+%% Test API
+%% ===================================================================
+
+-ifdef(TEST).
+
+%% @doc Get the current state of the fsm for testing inspection
+-spec current_state() -> {atom(), #state{}} | {error, term()}.
+current_state() ->
+    gen_fsm:sync_send_all_state_event(?SERVER, current_state).
+
+-endif.
