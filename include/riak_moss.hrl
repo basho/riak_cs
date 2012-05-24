@@ -187,6 +187,11 @@
         %% a shrinking set
         delete_blocks_remaining :: ordsets:ordset(integer()),
 
+        %% the time the manifest was put
+        %% into the scheduled_delete
+        %% state
+        scheduled_delete_time :: term(),
+
         %% The ACL for the version of the object represented
         %% by this manifest.
         acl :: acl(),

@@ -175,17 +175,17 @@ new_manifest(Bucket, FileName, UUID, ContentLength, ContentType, ContentMd5, Met
 new_manifest(Bucket, FileName, UUID, ContentLength, ContentType, ContentMd5, MetaData, BlockSize, Acl, Props, ClusterID) ->
     Blocks = ordsets:from_list(initial_blocks(ContentLength, BlockSize)),
     ?MANIFEST{bkey={Bucket, FileName},
-                     uuid=UUID,
-                     state=writing,
-                     content_length=ContentLength,
-                     content_type=ContentType,
-                     content_md5=ContentMd5,
-                     block_size=BlockSize,
-                     write_blocks_remaining=Blocks,
-                     metadata=MetaData,
-                     acl=Acl,
-                     props=Props,
-                     cluster_id=ClusterID}.
+              uuid=UUID,
+              state=writing,
+              content_length=ContentLength,
+              content_type=ContentType,
+              content_md5=ContentMd5,
+              block_size=BlockSize,
+              write_blocks_remaining=Blocks,
+              metadata=MetaData,
+              acl=Acl,
+              props=Props,
+              cluster_id=ClusterID}.
 
 %% @doc Remove a chunk from the
 %%      write_blocks_remaining field of Manifest
