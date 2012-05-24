@@ -20,7 +20,9 @@
          mark_overwritten/1,
          pending_delete_manifests/1,
          prune/1,
-         prune/2]).
+         prune/2,
+         upgrade_wrapped_manifests/1,
+         upgrade_manifest/1]).
 
 %%%===================================================================
 %%% API
@@ -80,6 +82,24 @@ prune(Manifests) ->
 -spec prune(list(lfs_manifest()), erlang:timestamp()) -> list(lfs_manifest()).
 prune(Manifests, Time) ->
     [KV || {_K, V}=KV <- Manifests, not (needs_pruning(V, Time))].
+
+upgrade_wrapped_manifests(ListofOrdDicts) ->
+    DictMapFun = fun (_Key, Value) -> upgrade_manifest(Value) end,
+    MapFun = fun (Value) -> orddict:map(DictMapFun, Value) end,
+    lists:map(MapFun, ListofOrdDicts).
+
+%% TODO:
+%% not sure if there is a better spec for this,
+%% since the input record could be one of several
+%% versions.
+
+%% @doc Upgrade the manifest to the most recent
+%% version of the manifest record. This is so that
+%% _most_ of the codebase only has to deal with
+%% the most recent version of the record.
+-spec upgrade_manifest(term()) -> lfs_manifest().
+upgrade_manifest(?MANIFEST{}=M) ->
+    M.
 
 %%%===================================================================
 %%% Internal functions
