@@ -51,7 +51,7 @@ test_n_chunks_builder(N) ->
             application:set_env(riak_moss, lfs_block_size, BlockSize),
             {ok, Pid} = riak_moss_get_fsm:test_link(<<"bucket">>, <<"key">>, ContentLength, BlockSize),
             Manifest = riak_moss_get_fsm:get_manifest(Pid),
-            ?assertEqual(ContentLength, Manifest#lfs_manifest_v2.content_length),
+            ?assertEqual(ContentLength, Manifest?MANIFEST.content_length),
             riak_moss_get_fsm:continue(Pid),
             expect_n_chunks(Pid, N)
     end.
@@ -59,7 +59,7 @@ test_n_chunks_builder(N) ->
 receives_manifest() ->
     {ok, Pid} = riak_moss_get_fsm:test_link(<<"bucket">>, <<"key">>, 100, 10),
     Manifest = riak_moss_get_fsm:get_manifest(Pid),
-    ?assertEqual(100, Manifest#lfs_manifest_v2.content_length),
+    ?assertEqual(100, Manifest?MANIFEST.content_length),
     riak_moss_get_fsm:stop(Pid).
 
 %% ===================================================================

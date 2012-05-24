@@ -84,7 +84,7 @@ prop_manifest_manipulation() ->
             %% TODO: maybe we should shuffle blocks?
             FoldFun = fun (Chunk, Mani) -> riak_moss_lfs_utils:remove_write_block(Mani, Chunk) end,
             EmptyMani = lists:foldl(FoldFun, Manifest, Blocks),
-            EmptyMani#lfs_manifest_v2.state == active
+            EmptyMani?MANIFEST.state == active
         end).
 
 
