@@ -39,8 +39,8 @@ small_put() ->
     Parts = [<<"0">>, <<"123">>, <<"45">>, <<"678">>, <<"9">>],
     [riak_moss_put_fsm:augment_data(Pid, D) || D <- Parts],
     {ok, Manifest} = riak_moss_put_fsm:finalize(Pid),
-    ?assert(Manifest#lfs_manifest_v2.state == active andalso
-            Manifest#lfs_manifest_v2.content_md5==Md5).
+    ?assert(Manifest?MANIFEST.state == active andalso
+            Manifest?MANIFEST.content_md5==Md5).
 
 zero_byte_put() ->
     {ok, RiakPid} = riakc_pb_socket:start_link("127.0.0.1", 8087),
@@ -51,8 +51,8 @@ zero_byte_put() ->
     Data = <<>>,
     Md5 = make_md5(Data),
     {ok, Manifest} = riak_moss_put_fsm:finalize(Pid),
-    ?assert(Manifest#lfs_manifest_v2.state == active andalso
-            Manifest#lfs_manifest_v2.content_md5==Md5).
+    ?assert(Manifest?MANIFEST.state == active andalso
+            Manifest?MANIFEST.content_md5==Md5).
 
 %%%===================================================================
 %%% Internal functions

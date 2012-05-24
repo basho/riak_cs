@@ -75,6 +75,29 @@
 -type cluster_id() :: undefined | term().  % Type still in flux.
 
 -record(lfs_manifest_v2, {
+        version=2 :: integer(),
+        block_size :: integer(),
+        bkey :: {binary(), binary()},
+        metadata :: orddict:orddict(),
+        created=riak_moss_wm_utils:iso_8601_datetime(),
+        uuid :: binary(),
+        content_length :: non_neg_integer(),
+        content_type :: binary(),
+        content_md5 :: term(),
+        state=undefined :: undefined | writing | active |
+                           pending_delete | scheduled_delete | deleted,
+        write_start_time :: term(), %% immutable
+        last_block_written_time :: term(),
+        write_blocks_remaining :: ordsets:ordset(integer()),
+        delete_marked_time :: term(),
+        last_block_deleted_time :: term(),
+        delete_blocks_remaining :: ordsets:ordset(integer()),
+        acl :: acl(),
+        props = [] :: proplists:proplist(),
+        cluster_id :: cluster_id()
+    }).
+
+-record(lfs_manifest_v3, {
         %% "global" properties
         %% -----------------------------------------------------------------
 
@@ -84,7 +107,7 @@
         %% but I figured it's worth keeping
         %% in case we change serialization
         %% formats in the future.
-        version=2 :: integer(),
+        version=3 :: integer(),
 
         %% the block_size setting when this manifest
         %% was written. Needed if the user
@@ -197,9 +220,9 @@
         %%     fetch us the missing data.
         cluster_id :: cluster_id()
     }).
--type lfs_manifest() :: #lfs_manifest_v2{}.
+-type lfs_manifest() :: #lfs_manifest_v3{}.
 
--define(MANIFEST, #lfs_manifest_v2).
+-define(MANIFEST, #lfs_manifest_v3).
 
 -define(ACL, #acl_v2).
 -define(MOSS_BUCKET, #moss_bucket_v1).

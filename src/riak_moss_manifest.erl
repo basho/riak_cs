@@ -98,6 +98,44 @@ upgrade_wrapped_manifests(ListofOrdDicts) ->
 %% _most_ of the codebase only has to deal with
 %% the most recent version of the record.
 -spec upgrade_manifest(term()) -> lfs_manifest().
+upgrade_manifest(#lfs_manifest_v2{block_size=BlockSize,
+                                 bkey=Bkey,
+                                 metadata=Metadata,
+                                 created=Created,
+                                 uuid=UUID,
+                                 content_length=ContentLength,
+                                 content_type=ContentType,
+                                 content_md5=ContentMd5,
+                                 state=State,
+                                 write_start_time=WriteStartTime,
+                                 last_block_written_time=LastBlockWrittenTime,
+                                 write_blocks_remaining=WriteBlocksRemaining,
+                                 delete_marked_time=DeleteMarkedTime,
+                                 last_block_deleted_time=LastBlockDeletedTime,
+                                 delete_blocks_remaining=DeleteBlocksRemaining,
+                                 acl=Acl,
+                                 props=Properties,
+                                 cluster_id=ClusterID}) ->
+
+    ?MANIFEST{block_size=BlockSize,
+              bkey=Bkey,
+              metadata=Metadata,
+              created=Created,
+              uuid=UUID,
+              content_length=ContentLength,
+              content_type=ContentType,
+              content_md5=ContentMd5,
+              state=State,
+              write_start_time=WriteStartTime,
+              last_block_written_time=LastBlockWrittenTime,
+              write_blocks_remaining=WriteBlocksRemaining,
+              delete_marked_time=DeleteMarkedTime,
+              last_block_deleted_time=LastBlockDeletedTime,
+              delete_blocks_remaining=DeleteBlocksRemaining,
+              acl=Acl,
+              props=Properties,
+              cluster_id=ClusterID};
+              
 upgrade_manifest(?MANIFEST{}=M) ->
     M.
 
