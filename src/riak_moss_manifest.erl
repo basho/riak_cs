@@ -62,7 +62,7 @@ mark_overwritten(Manifests) ->
                             Active;
                         Value?MANIFEST.state == active ->
                             Value?MANIFEST{state=pending_delete,
-                                                  delete_marked_time=erlang:now()};
+                                                 delete_marked_time=erlang:now()};
                         true ->
                             Value
                     end end,
@@ -172,8 +172,8 @@ most_recent_active_manifest(_Man1, Man2=?MANIFEST{state=active}) -> Man2.
 %% attempted to moved several times, they could
 %% differ in time by quite a bit
 needs_pruning(?MANIFEST{state=scheduled_delete,
-                               delete_marked_time=DeleteTime}, Time) ->
-    seconds_diff(Time, DeleteTime) > delete_tombstone_time();
+                              scheduled_delete_time=ScheduledDeleteTime}, Time) ->
+    seconds_diff(Time, ScheduledDeleteTime) > delete_tombstone_time();
 needs_pruning(_Manifest, _Time) ->
     false.
 
@@ -252,21 +252,21 @@ wrong_state_for_pruning_2() ->
 does_need_pruning() ->
     application:set_env(riak_moss, delete_tombstone_time, 1),
     %% 1000000 second diff
-    DeleteTime = {1333,985708,445136},
+    ScheduledDeleteTime = {1333,985708,445136},
     Now = {1334,985708,445136},
     Mani = new_mani_helper(),
     Mani2 = Mani?MANIFEST{state=scheduled_delete,
-                                 delete_marked_time=DeleteTime},
+                                scheduled_delete_time=ScheduledDeleteTime},
     ?assert(needs_pruning(Mani2, Now)).
 
 not_old_enough_for_pruning() ->
     application:set_env(riak_moss, delete_tombstone_time, 2),
     %$ 1 second diff
-    DeleteTime = {1333,985708,445136},
+    ScheduledDeleteTime = {1333,985708,445136},
     Now = {1333,985709,445136},
     Mani = new_mani_helper(),
     Mani2 = Mani?MANIFEST{state=scheduled_delete,
-                                 delete_marked_time=DeleteTime},
+                                scheduled_delete_time=ScheduledDeleteTime},
     ?assert(not needs_pruning(Mani2, Now)).
 
 -endif.
