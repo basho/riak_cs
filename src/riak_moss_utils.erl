@@ -331,7 +331,8 @@ map_keys_and_manifests(Object, _, _) ->
     try
         AllManifests = [ binary_to_term(V)
                          || V <- riak_object:get_values(Object) ],
-        Resolved = riak_moss_manifest_resolution:resolve(AllManifests),
+        Upgraded = riak_moss_manifest:upgrade_wrapped_manifests(AllManifests),
+        Resolved = riak_moss_manifest_resolution:resolve(Upgraded),
         case riak_moss_manifest:active_manifest(Resolved) of
             {ok, Manifest} ->
                 [{riak_object:key(Object), {ok, Manifest}}];
