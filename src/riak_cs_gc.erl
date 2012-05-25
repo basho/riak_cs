@@ -62,6 +62,10 @@ gc_retry_interval() ->
 %% `riak-cs-gc' bucket to schedule them for deletion.
 -spec schedule_manifests([lfs_manifest()], pid()) -> ok | {error, term()}.
 schedule_manifests(Manifests, RiakPid) ->
+    %% TODO:
+    %% we should be reading the key first
+    %% before writing it
+
     %% Create a set from the list of manifests
     ManifestSet = build_manifest_set(twop_set:new(), Manifests),
     _ = lager:debug("Manifests scheduled for deletion: ~p", [ManifestSet]),
