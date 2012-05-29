@@ -118,8 +118,6 @@ init([Bucket, Key, RiakcPid]) ->
                                  key=Key,
                                  riakc_pid=RiakcPid}};
 init([test, Bucket, Key]) ->
-    %% skip the prepare phase
-    %% and jump right into waiting command,
     %% creating the "mock" riakc_pb_socket
     %% gen_server here
     {ok, Pid} = riakc_pb_socket_fake:start_link(),
