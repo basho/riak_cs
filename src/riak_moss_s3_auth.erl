@@ -14,7 +14,8 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
--export([authenticate/3]).
+-export([authenticate/3,
+         calculate_qs_signature/5]).
 
 %% ===================================================================
 %% Public API
@@ -26,10 +27,57 @@ authenticate(RD, KeyData, Signature) ->
         calculate_signature(KeyData, RD),
     case check_auth(Signature, CalculatedSignature) of
         true ->
-            ok;
+            Expires = wrq:get_qs_value("Expires", RD),
+            case Expires of
+                undefined ->
+                    ok;
+                _ ->
+                    {MegaSecs, Secs, _} = os:timestamp(),
+                    Now = (MegaSecs * 1000000) + Secs,
+                    case Now > list_to_integer(Expires) of
+                        true ->
+                            %% @TODO Not sure if this is the proper error
+                            %% to return; will have to check after testing.
+                            {error, invalid_authentication};
+                        false ->
+                            ok
+                    end
+            end;
         _ ->
             {error, invalid_authentication}
     end.
+
+%% @TODO To be removed before merge. Just for testing.
+-spec calculate_qs_signature(string(), string(), string(), string(), [{string(), string()}]) -> string() | {error, term()}.
+calculate_qs_signature(KeyData, Verb, Resource, Expires, RawHeaders) when is_list(Verb) ->
+    Headers = normalize_headers(RawHeaders),
+    AmazonHeaders = extract_amazon_headers(Headers),
+    case proplists:get_value("content-md5", Headers) of
+        undefined ->
+            CMD5 = [];
+        CMD5 ->
+            ok
+    end,
+    case proplists:get_value("content-type", Headers) of
+        undefined ->
+            ContentType = [];
+        ContentType ->
+            ok
+    end,
+    STS = [Verb, "\n",
+           CMD5,
+           "\n",
+           ContentType,
+           "\n",
+           Expires,
+           "\n",
+           AmazonHeaders,
+           Resource],
+    mochiweb_util:quote_plus(base64:encode_to_string(
+                               crypto:sha_mac(KeyData, STS)));
+calculate_qs_signature(_KeyData, _Verb, _Resource, _, _Headers)  ->
+    lager:error("HTTP verb must be a string"),
+    {error, badarg}.
 
 %% ===================================================================
 %% Internal functions
@@ -40,11 +88,17 @@ calculate_signature(KeyData, RD) ->
     AmazonHeaders = extract_amazon_headers(Headers),
     Resource = [wrq:path(RD),
                 canonicalize_qs(lists:sort(wrq:req_qs(RD)))],
-    case proplists:is_defined("x-amz-date", Headers) of
-        true ->
-            Date = "\n";
-        false ->
-            Date = [wrq:get_req_header("date", RD), "\n"]
+    Expires = wrq:get_qs_value("Expires", RD),
+    case Expires of
+        undefined ->
+            case proplists:is_defined("x-amz-date", Headers) of
+                true ->
+                    Date = "\n";
+                false ->
+                    Date = [wrq:get_req_header("date", RD), "\n"]
+            end;
+        _ ->
+            Date = Expires ++ "\n"
     end,
     case wrq:get_req_header("content-md5", RD) of
         undefined ->
