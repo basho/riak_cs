@@ -21,6 +21,9 @@
 -include("riak_moss.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
 
+-define(QS_KEYID, "AWSAccessKeyId").
+-define(QS_SIGNATURE, "Signature").
+
 %% ===================================================================
 %% Public API
 %% ===================================================================
@@ -62,6 +65,24 @@ parse_auth_header("AWS " ++ Key, _) ->
 parse_auth_header(_, _) ->
     {riak_moss_blockall_auth, undefined, undefined}.
 
+%% @doc Parse authentication query parameters and determine
+%%      the appropriate module to use to authenticate the request.
+%%      The passthru auth can be used either with a KeyID or
+%%      anonymously by leving the header empty.
+-spec parse_auth_params(string(), string(), boolean()) -> {atom(),
+                                                           string() | undefined,
+                                                           string() | undefined}.
+parse_auth_params(KeyId, _, true) when KeyId =/= undefined ->
+    {riak_moss_passthru_auth, KeyId, undefined};
+parse_auth_params(_, _, true) ->
+    {riak_moss_passthru_auth, [], undefined};
+parse_auth_params(undefined, _, false) ->
+    {riak_moss_blockall_auth, undefined, undefined};
+parse_auth_params(_, undefined, _) ->
+    {riak_moss_blockall_auth, undefined, undefined};
+parse_auth_params(KeyId, Signature, _) ->
+    {riak_moss_s3_auth, KeyId, Signature}.
+
 %% @doc Lookup the user specified by the access headers, and call
 %% `Next(RD, NewCtx)' if there is no auth error.
 %%
@@ -98,7 +119,17 @@ find_and_auth_user(RD, #context{auth_bypass=AuthBypass,
 %% succeeds, or `{error, KeyId, Reason}' if any step fails.
 validate_auth_header(RD, AuthBypass, RiakPid) ->
     AuthHeader = wrq:get_req_header("authorization", RD),
-    {AuthMod, KeyId, Signature} = parse_auth_header(AuthHeader, AuthBypass),
+    case AuthHeader of
+        undefined ->
+            %% Check for auth info presented as query params
+            KeyId = wrq:get_qs_value(?QS_KEYID, RD),
+            EncodedSig = wrq:get_qs_value(?QS_SIGNATURE, RD),
+            {AuthMod, KeyId, Signature} = parse_auth_params(KeyId,
+                                                            EncodedSig,
+                                                            AuthBypass);
+        _ ->
+            {AuthMod, KeyId, Signature} = parse_auth_header(AuthHeader, AuthBypass)
+    end,
     case riak_moss_utils:get_user(KeyId, RiakPid) of
         {ok, {User, UserVclock}} ->
             Secret = User?MOSS_USER.key_secret,

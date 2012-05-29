@@ -1,3 +1,6 @@
+* MOSS 1.0.2 Release Notes
+** Additions
+- Support query parameter authentication as specified in [[http://docs.amazonwebservices.com/AmazonS3/latest/dev/RESTAuthentication.html][Signing and Authenticating REST Requests]].
 * MOSS 1.0.1 Release Notes
 ** Bugs Fixed
 - Default content-type is not passed into function to handle PUT
