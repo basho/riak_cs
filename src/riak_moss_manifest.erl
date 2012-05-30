@@ -17,7 +17,10 @@
 %% export Public API
 -export([new/2,
          active_manifest/1,
+         active_manifests/1,
          mark_overwritten/1,
+         mark_pending_delete/2,
+         mark_scheduled_delete/2,
          pending_delete_manifests/1,
          prune/1,
          prune/2,
@@ -47,6 +50,13 @@ active_manifest(Manifests) ->
             {ok, Manifest}
     end.
 
+%% @doc Return a list of all manifests in the
+%% active state
+-spec active_manifests(term()) -> [lfs_manifest()].
+active_manifests(Manifests) ->
+    IsActive = fun (?MANIFEST{state=State}) -> State == active end,
+    lists:filter(IsActive, orddict_values(Manifests)).
+
 %% @doc Mark all active manifests
 %% that are not "the most active"
 %% as pending_delete
@@ -68,6 +78,32 @@ mark_overwritten(Manifests) ->
                     end end,
                     Manifests)
     end.
+
+-spec mark_pending_delete(orddict:orddict(), list(binary())) ->
+    orddict:orddict().
+mark_pending_delete(Manifests, UUIDsToMark) ->
+    MapFun = fun(K, V) ->
+            case lists:member(K, UUIDsToMark) of
+                true ->
+                    V?MANIFEST{state=pending_delete};
+                false ->
+                    V
+            end
+    end,
+    orddict:map(MapFun, Manifests).
+
+-spec mark_scheduled_delete(orddict:orddict(), list(binary())) ->
+    orddict:orddict().
+mark_scheduled_delete(Manifests, UUIDsToMark) ->
+    MapFun = fun(K, V) ->
+            case lists:member(K, UUIDsToMark) of
+                true ->
+                    V?MANIFEST{state=scheduled_delete};
+                false ->
+                    V
+            end
+    end,
+    orddict:map(MapFun, Manifests).
 
 %% @doc Return the current `pending_delete' manifests
 %% from an orddict of manifests.
