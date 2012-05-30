@@ -21,7 +21,6 @@
 %% API
 -export([start_link/3,
          get_active_manifest/1,
-         get_pending_delete_manifests/1,
          get_specific_manifest/2,
          add_new_manifest/2,
          update_manifest/2,
@@ -76,15 +75,30 @@ start_link(Bucket, Key, RiakcPid) ->
     gen_fsm:start_link(?MODULE, [Bucket, Key, RiakcPid], []).
 
 get_active_manifest(Pid) ->
-    gen_fsm:sync_send_event(Pid, get_active_manifest, infinity).
-
--spec get_pending_delete_manifests(pid()) -> {ok, [lfs_manifest()]} |
-                                             {error, term()}.
-get_pending_delete_manifests(Pid) ->
-    gen_fsm:sync_send_event(Pid, pending_delete_manifests, infinity).
+    case gen_fsm:sync_send_event(Pid, get_manifests, infinity) of
+        {ok, Manifests} ->
+            case riak_moss_manifest:active_manifest(Manifests) of
+                {ok, _Active}=ActiveReply ->
+                    ActiveReply;
+                {error, no_active_manifest} ->
+                    {error, notfound}
+            end;
+        {error, notfound}=NotFound ->
+            NotFound
+    end.
 
 get_specific_manifest(Pid, UUID) ->
-    gen_fsm:sync_send_event(Pid, {get_specific_manifest, UUID}, infinity).
+    case gen_fsm:sync_send_event(Pid, get_manifests, infinity) of
+        {ok, Manifests} ->
+            try orddict:fetch(UUID, Manifests) of
+                Value ->
+                    {ok, Value}
+            catch error:function_clause ->
+                {error, notfound}
+            end;
+        {error, notfound}=NotFound ->
+            NotFound
+    end.
 
 add_new_manifest(Pid, Manifest) ->
     gen_fsm:send_event(Pid, {add_new_manifest, Manifest}).
@@ -156,14 +170,8 @@ waiting_update_command({update_manifest, Manifest}, State=#state{riakc_pid=Riakc
     {next_state, waiting_update_command, State#state{riak_object=undefined, manifests=undefined}}.
 
 
-waiting_command(get_active_manifest, _From, State) ->
-    {Reply, NewState} = active_manifest(State),
-    {reply, Reply, waiting_update_command, NewState};
-waiting_command({get_specific_manifest, UUID}, _From, State) ->
-    {Reply, NewState} = specific_manifest(UUID, State),
-    {reply, Reply, waiting_update_command, NewState};
-waiting_command(pending_delete_manifests, _From, State) ->
-    {Reply, NewState} = pending_delete_manifests(State),
+waiting_command(get_manifests, _From, State) ->
+    {Reply, NewState} = handle_get_manifests(State),
     {reply, Reply, waiting_update_command, NewState};
 waiting_command(mark_active_as_pending_delete, _From, State) ->
     Reply = set_active_manifest_pending_delete(State),
@@ -220,71 +228,17 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
-%% @doc Get the active manifest for an object.
--spec active_manifest(#state{}) -> {{ok, lfs_manifest()}, #state{}} | {{error, notfound}, #state{}}.
-active_manifest(State=#state{riakc_pid=RiakcPid,
-                             bucket=Bucket,
-                             key=Key}) ->
-    %% Retrieve the (resolved) value
-    %% from Riak and return the active
-    %% manifest, if there is one. Then
-    %% stash the riak_object in the state
-    %% so that the next time we write
-    %% we write with the correct vector
-    %% clock.
+%% @doc Return all (resolved) manifests, or notfound
+-spec handle_get_manifests(#state{}) ->
+    {{ok, [lfs_manifest()]}, #state{}} | {{error, notfound}, #state{}}.
+handle_get_manifests(State=#state{riakc_pid=RiakcPid,
+                           bucket=Bucket,
+                           key=Key}) ->
     case get_manifests(RiakcPid, Bucket, Key) of
         {ok, RiakObject, Resolved} ->
-            Reply = case riak_moss_manifest:active_manifest(Resolved) of
-                {ok, _Active}=ActiveReply ->
-                    ActiveReply;
-                {error, no_active_manifest} ->
-                    {error, notfound}
-            end,
+            Reply = {ok, Resolved},
             NewState = State#state{riak_object=RiakObject, manifests=Resolved},
             {Reply, NewState};
-        {error, notfound}=NotFound ->
-            {NotFound, State}
-    end.
-
-%% @doc Get the `pending_delete' manifests for an object.
--spec pending_delete_manifests(#state{}) -> {{ok, [lfs_manifest()]}, #state{}} |
-                                            {{error, notfound}, #state{}}.
-pending_delete_manifests(State=#state{riakc_pid=RiakcPid,
-                                      bucket=Bucket,
-                                      key=Key}) ->
-    %% Retrieve the (resolved) value from Riak and return any `pending_delete'
-    %% manifests if there are any. Then stash the riak_object in the
-    %% state so that the next time we write we write with the correct
-    %% vector clock.
-    case get_manifests(RiakcPid, Bucket, Key) of
-        {ok, RiakObject, Resolved} ->
-            case riak_moss_manifest:pending_delete_manifests(Resolved) of
-                [] ->
-                    Reply = {error, notfound};
-                Manifests ->
-                    Reply = {ok, Manifests}
-            end,
-            NewState = State#state{riak_object=RiakObject, manifests=Resolved},
-            {Reply, NewState};
-        {error, notfound}=NotFound ->
-            {NotFound, State}
-    end.
-
--spec specific_manifest(binary(), state()) ->
-    {{error, notfound}, state()} | {{ok, lfs_manifest()}, state()}.
-specific_manifest(UUID, State=#state{bucket=Bucket,
-                                     key=Key,
-                                     riakc_pid=RiakcPid}) ->
-
-    case get_manifests(RiakcPid, Bucket, Key) of
-        {ok, RiakObject, Resolved} ->
-            try orddict:fetch(UUID, Resolved) of
-                Value ->
-                    {{ok, Value}, State#state{riak_object=RiakObject,
-                                              manifests=Resolved}}
-            catch error:function_clause ->
-                {{error, notfound}, State}
-            end;
         {error, notfound}=NotFound ->
             {NotFound, State}
     end.
@@ -298,6 +252,9 @@ get_manifests(RiakcPid, Bucket, Key) ->
         {ok, Object} ->
             Siblings = riakc_obj:get_values(Object),
             DecodedSiblings = lists:map(fun erlang:binary_to_term/1, Siblings),
+
+            %% Upgrade the manifests to be the latest erlang
+            %% record version
             Upgraded = riak_moss_manifest:upgrade_wrapped_manifests(DecodedSiblings),
             Resolved = riak_moss_manifest_resolution:resolve(Upgraded),
             %% remove any tombstones that have expired

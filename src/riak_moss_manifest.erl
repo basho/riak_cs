@@ -41,7 +41,7 @@ new(UUID, Manifest) ->
 
 %% @doc Return the current active manifest
 %% from an orddict of manifests.
--spec active_manifest(term()) -> {ok, lfs_manifest()} | {error, no_active_manifest}.
+-spec active_manifest(orddict:orddict()) -> {ok, lfs_manifest()} | {error, no_active_manifest}.
 active_manifest(Manifests) ->
     case lists:foldl(fun most_recent_active_manifest/2, no_active_manifest, orddict_values(Manifests)) of
         no_active_manifest ->
