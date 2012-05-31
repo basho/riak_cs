@@ -1,6 +1,6 @@
 %% -------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2011 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2012 Basho Technologies, Inc.  All Rights Reserved.
 %%
 %% -------------------------------------------------------------------
 
@@ -106,5 +106,17 @@ resolution_test() ->
     Resolved = resolve([WithBar, WithFoo, WithOutFoo]),
     ?assert(is_element(bar, Resolved)),
     ?assertNot(is_element(foo, Resolved)).
+
+%%%===================================================================
+%%% Test API
+%%%===================================================================
+
+-spec adds(twop_set()) -> set().
+adds({Adds, _}) ->
+    Adds.
+
+-spec dels(twop_set()) -> set().
+dels({_, Dels}) ->
+    Dels.
 
 -endif.
