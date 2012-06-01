@@ -1,6 +1,6 @@
 %% -------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2011 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2012 Basho Technologies, Inc.  All Rights Reserved.
 %%
 %% -------------------------------------------------------------------
 
@@ -31,5 +31,7 @@ start_link(_Args) ->
     {Host, Port} = riak_host_port(),
     riakc_pb_socket:start_link(Host, Port, [{connect_timeout, 10000}]).
 
+stop(undefined) ->
+    ok;
 stop(Worker) ->
     riakc_pb_socket:stop(Worker).

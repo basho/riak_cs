@@ -14,7 +14,7 @@
 -include_lib("eqc/include/eqc_fsm.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
-%% eqc property
+%% eqc properties
 -export([prop_twop_set_api/0,
          prop_twop_set_resolution/0]).
 
