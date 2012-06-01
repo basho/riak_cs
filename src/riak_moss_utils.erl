@@ -471,9 +471,11 @@ riak_connection() ->
 %% from the specified connection pool.
 -spec riak_connection(atom()) -> {ok, pid()} | {error, term()}.
 riak_connection(Pool) ->
-    case poolboy:checkout(Pool, false) of
+    case catch poolboy:checkout(Pool, false) of
         full ->
             {error, all_workers_busy};
+        {'EXIT', _Error} ->
+            {error, poolboy_error};
         Worker ->
             {ok, Worker}
     end.

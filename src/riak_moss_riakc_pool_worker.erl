@@ -29,7 +29,7 @@ riak_host_port() ->
 
 start_link(_Args) ->
     {Host, Port} = riak_host_port(),
-    riakc_pb_socket:start_link(Host, Port).
+    riakc_pb_socket:start_link(Host, Port, [{connect_timeout, 10000}]).
 
 stop(Worker) ->
     riakc_pb_socket:stop(Worker).
