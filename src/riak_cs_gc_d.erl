@@ -14,7 +14,7 @@
 %% API
 -export([start_link/0,
          status/0,
-         start_batch/1,
+         manual_batch/1,
          cancel_batch/0,
          pause_batch/0,
          resume_batch/0,
@@ -22,7 +22,8 @@
 
 %% gen_fsm callbacks
 -export([init/1,
-         idle/2, idle/3,
+         idle/2,
+         idle/3,
          fetching_next_fileset/2,
          fetching_next_fileset/3,
          initiating_file_delete/2,
@@ -43,6 +44,7 @@
 
 %% Test API
 -export([current_state/0,
+         change_state/1,
          status_data/1]).
 
 -endif.
@@ -53,7 +55,7 @@
           interval :: non_neg_integer(),
           last :: undefined | calendar:datetime(), % the last time a deletion was scheduled
           next :: undefined | calendar:datetime(), % the next scheduled gc time
-          riak :: pid(), % Riak connection pid
+          riak :: undefined | pid(), % Riak connection pid
           current_fileset :: [lfs_manifest()],
           batch_start :: undefined | calendar:datetime(), % start of the current gc interval
           batch_count=0 :: non_neg_integer(),
@@ -82,20 +84,14 @@ start_link() ->
 status() ->
     gen_fsm:sync_send_event(?SERVER, status).
 
-%% @doc Force a calculation and archival manually.  The `current'
-%% property returned from a {@link status/0} call will show the most
-%% recently passed schedule time, but calculations will be stored with
-%% the time at which they happen, as expected.
+%% @doc Force a garbage collection sweep manually.
 %%
 %% Allowed options are:
 %% <dl>
-%%   <dt>`recalc'</dt>
-%%   <dd>Recalculate the storage for each user, even if that user
-%%   already has a calculation stored for this time period. Default is
-%%   `false', such that restarting a canceled batch does not require
-%%   redoing the work that happened before cancellation.</dd>
+%%   <dt>`testing'</dt>
+%%   <dd>Indicate the daemon is started as part of a test suite.</dd>
 %% </dl>
-start_batch(Options) ->
+manual_batch(Options) ->
     gen_fsm:sync_send_event(?SERVER, {manual_batch, Options}, infinity).
 
 %% @doc Cancel the calculation currently in progress.  Returns `ok' if
@@ -214,7 +210,21 @@ idle(status, _From, State) ->
              {next, State#state.next}],
     {reply, {ok, {idle, Props}}, idle, State};
 idle({manual_batch, Options}, _From, State) ->
-    NewState = start_batch(Options, State),
+    case lists:member(testing, Options) of
+        true ->
+            %% this does not check out a worker from the riak
+            %% connection pool; instead it creates a fresh new worker,
+            %% the idea being that we don't want to delay deletion
+            %% just because the normal request pool is empty; pool
+            %% workers just happen to be literally the socket process,
+            %% so "starting" one here is the same as opening a
+            %% connection, and avoids duplicating the configuration
+            %% lookup code
+            {ok, Riak} = riak_moss_riakc_pool_worker:start_link([]),
+            NewState = start_batch(State#state{riak=Riak});
+        false ->
+            NewState = State#state{batch=[]}
+    end,
     {reply, ok, fetching_next_fileset, NewState};
 idle(cancel_batch, _From, State) ->
     {reply, {error, no_batch}, idle, State};
@@ -287,8 +297,8 @@ paused(resume_batch, _From, State=#state{pause_state=PauseState}) ->
     %% @TODO Differences in the fsm state and the state record
     %% get confusing. Maybe s/State/StateData.
     {reply, ok, PauseState, State};
-paused(cancel_batch, From, State) ->
-    fetching_next_fileset(cancel_batch, From, State);
+paused(cancel_batch, _From, State) ->
+    cancel_batch(State);
 paused({set_interval, Interval}, _From, State) ->
     {reply, {error, no_batch}, paused, State#state{interval=Interval}};
 paused(_, _From, State) ->
@@ -304,12 +314,13 @@ handle_event(_Event, StateName, State) ->
                                {reply, term(), atom(), #state{}}.
 handle_sync_event(current_state, _From, StateName, State) ->
     {reply, {StateName, State}, StateName, State};
+handle_sync_event({change_state, NewStateName}, _From, _StateName, State) ->
+    {reply, ok, NewStateName, State};
 handle_sync_event(_Event, _From, StateName, State) ->
-    Reply = ok,
-    {reply, Reply, StateName, State}.
+    {reply, ok, StateName, State}.
 
 handle_info(start_batch, idle, State) ->
-    NewState = start_batch([], State),
+    NewState = start_batch(State),
     {next_state, fetching_next_fileset, NewState};
 handle_info(start_batch, InBatch, State) ->
     _ = lager:error("Unable to start garbage collection batch"
@@ -407,21 +418,12 @@ schedule_next(#state{batch_start=Current,
 
 %% @doc Actually kick off the batch.  After calling this function, you
 %% must advance the FSM state to `fetching_next_fileset'.
-start_batch(_Options, State) ->
+start_batch(State=#state{riak=Riak}) ->
     BatchStart = riak_cs_gc:timestamp(),
-
-    %% this does not check out a worker from the riak connection pool;
-    %% instead it creates a fresh new worker, the idea being that we
-    %% don't want to delay deletion just because the normal request
-    %% pool is empty; pool workers just happen to be literally the
-    %% socket process, so "starting" one here is the same as opening a
-    %% connection, and avoids duplicating the configuration lookup code
-    {ok, Riak} = riak_moss_riakc_pool_worker:start_link([]),
     Batch = fetch_eligible_manifest_keys(Riak, BatchStart),
     _ = lager:debug("Batch keys: ~p", [Batch]),
     gen_fsm:send_event(?SERVER, continue),
     State#state{batch_start=BatchStart,
-                riak=Riak,
                 batch=Batch,
                 batch_count=0,
                 batch_skips=0}.
@@ -448,5 +450,9 @@ status_data(State) ->
 -spec current_state() -> {atom(), #state{}} | {error, term()}.
 current_state() ->
     gen_fsm:sync_send_all_state_event(?SERVER, current_state).
+
+%% @doc Manipulate the current state of the fsm for testing
+change_state(State) ->
+    gen_fsm:sync_send_all_state_event(?SERVER, {change_state, State}).
 
 -endif.

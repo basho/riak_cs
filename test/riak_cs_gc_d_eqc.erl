@@ -12,10 +12,27 @@
 
 -ifdef(EQC).
 -include_lib("eqc/include/eqc.hrl").
+-include_lib("eqc/include/eqc_fsm.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
-%% eqc property
--export([prop_status/0]).
+%% eqc properties
+-export([prop_set_interval/0,
+         prop_manual_commands/0,
+         prop_status/0]).
+
+%% States
+-export([idle/1,
+         fetching_next_fileset/1,
+         initiating_file_delete/1,
+         waiting_file_delete/1,
+         paused/1]).
+
+%% eqc_fsm callbacks
+-export([initial_state/0,
+         initial_state_data/0,
+         next_state_data/5,
+         precondition/4,
+         postcondition/5]).
 
 %% Helpers
 -export([test/0,
@@ -25,6 +42,7 @@
         eqc:on_output(fun(Str, Args) ->
                               io:format(user, Str, Args) end, P)).
 -define(TEST_ITERATIONS, 500).
+-define(GCD_MODULE, riak_cs_gc_d).
 
 -record(state, {
           interval :: non_neg_integer(),
@@ -40,6 +58,10 @@
           delete_fsm_pid :: pid()
          }).
 
+-record(mc_state, {current_state :: atom(),
+                   pause_state :: atom(),
+                   previous_state :: atom()}).
+
 %%====================================================================
 %% Eunit tests
 %%====================================================================
@@ -47,9 +69,9 @@
 eqc_test_() ->
     {spawn,
         [
-            {timeout, 20, ?_assertEqual(true, quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_set_interval()))))},
-            %% {timeout, 20, ?_assertEqual(true, quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_manual_commands()))))},
-            {timeout, 20, ?_assertEqual(true, quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_status()))))}
+            %% {timeout, 20, ?_assertEqual(true, quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_set_interval()))))},
+            {timeout, 20, ?_assertEqual(true, quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_manual_commands()))))}
+            %% {timeout, 20, ?_assertEqual(true, quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_status()))))}
         ]
     }.
 
@@ -58,7 +80,7 @@ eqc_test_() ->
 %% ====================================================================
 
 prop_set_interval() ->
-    ?FORALL(Interval, eqc_gen:int(),
+    ?FORALL(Interval, int(),
             begin
                 case whereis(riak_cs_gc_d) of
                     undefined ->
@@ -73,6 +95,30 @@ prop_set_interval() ->
                              {updated_interval, equals(Interval, State2#state.interval)}
                             ])
             end).
+
+prop_manual_commands() ->
+    ?FORALL(Cmds,
+            commands(?MODULE),
+            begin
+                case whereis(riak_cs_gc_d) of
+                    undefined ->
+                        {ok, _} = riak_cs_gc_d:start_link();
+                    _Pid ->
+                        riak_cs_gc_d:set_interval(infinity)
+                end,
+                {H, {_F, _S}, Res} = run_commands(?MODULE, Cmds),
+                aggregate(zip(state_names(H), command_names(Cmds)),
+                          ?WHENFAIL(
+                             begin
+                                 ?debugFmt("Cmds: ~p~n",
+                                           [zip(state_names(H),
+                                                command_names(Cmds))]),
+                                 ?debugFmt("Result: ~p~n", [Res]),
+                                 ?debugFmt("History: ~p~n", [H])
+                             end,
+                             equals(ok, Res)))
+            end
+           ).
 
 prop_status() ->
     ?FORALL({Interval, Last, Next,
@@ -98,6 +144,83 @@ prop_status() ->
                          {files_left, equals(orddict:fetch(files_left, Status), length(Batch)) }
                         ])
         end).
+
+%%====================================================================
+%% eqc_fsm callbacks
+%%====================================================================
+
+idle(_S) ->
+    [
+     {history, {call, ?GCD_MODULE, pause_batch, []}},
+     {history, {call, ?GCD_MODULE, cancel_batch, []}},
+     {history, {call, ?GCD_MODULE, resume_batch, []}},
+     {history, {call, ?GCD_MODULE, set_interval, [infinity]}},
+     {fetching_next_fileset, {call, ?GCD_MODULE, manual_batch, [[testing]]}}
+    ].
+
+fetching_next_fileset(_S) ->
+    [
+     {history, {call, ?GCD_MODULE, manual_batch, [[testing]]}},
+     {history, {call, ?GCD_MODULE, resume_batch, []}},
+     {history, {call, ?GCD_MODULE, set_interval, [infinity]}},
+     {idle, {call, ?GCD_MODULE, cancel_batch, []}},
+     {paused, {call, ?GCD_MODULE, pause_batch, []}},
+     {initiating_file_delete, {call, ?GCD_MODULE, change_state, [initiating_file_delete]}}
+    ].
+
+initiating_file_delete(_S) ->
+    [
+     {history, {call, ?GCD_MODULE, manual_batch, [[testing]]}},
+     {history, {call, ?GCD_MODULE, resume_batch, []}},
+     {history, {call, ?GCD_MODULE, set_interval, [infinity]}},
+     {idle, {call, ?GCD_MODULE, cancel_batch, []}},
+     {paused, {call, ?GCD_MODULE, pause_batch, []}},
+     {waiting_file_delete, {call, ?GCD_MODULE, change_state, [waiting_file_delete]}}
+    ].
+
+waiting_file_delete(_S) ->
+    [
+     {history, {call, ?GCD_MODULE, manual_batch, [[testing]]}},
+     {history, {call, ?GCD_MODULE, resume_batch, []}},
+     {history, {call, ?GCD_MODULE, set_interval, [infinity]}},
+     {idle, {call, ?GCD_MODULE, cancel_batch, []}},
+     {paused, {call, ?GCD_MODULE, pause_batch, []}},
+     {initiating_file_delete, {call, ?GCD_MODULE, change_state, [initiating_file_delete]}}
+    ].
+
+paused(#mc_state{pause_state=PauseState}) ->
+    [
+     {history, {call, ?GCD_MODULE, manual_batch, [[testing]]}},
+     {history, {call, ?GCD_MODULE, pause_batch, []}},
+     {history, {call, ?GCD_MODULE, set_interval, [infinity]}},
+     {idle, {call, ?GCD_MODULE, cancel_batch, []}},
+     {PauseState, {call, ?GCD_MODULE, resume_batch, []}}
+    ].
+
+initial_state() ->
+    idle.
+
+initial_state_data() ->
+    #mc_state{}.
+
+next_state_data(From, From, S, _R, _C) ->
+    S;
+next_state_data(From, paused, S, _R, _C) ->
+    #mc_state{current_state=CurrentState} = S,
+   #mc_state{current_state=paused,
+             pause_state=From,
+             previous_state=CurrentState};
+next_state_data(From, To, S, _R, _C) ->
+   S#mc_state{current_state=To,
+              previous_state=From}.
+
+precondition(_From, _To, _S, _C) ->
+    true.
+
+%% postcondition(_From, _To, #mc_state{size=Size} ,{call, _M, size, _}, R) ->
+%%     R =:= Size;
+postcondition(_From, _To, _S, _C, _R) ->
+    true.
 
 %%====================================================================
 %% Helpers
