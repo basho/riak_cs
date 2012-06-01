@@ -15,7 +15,8 @@
 -include_lib("eunit/include/eunit.hrl").
 
 %% eqc property
--export([prop_twop_set_api/0]).
+-export([prop_twop_set_api/0,
+         prop_twop_set_resolution/0]).
 
 %% States
 -export([stopped/1,
@@ -51,7 +52,8 @@
 eqc_test_() ->
     {spawn,
         [
-            {timeout, 20, ?_assertEqual(true, quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_twop_set_api()))))}
+            {timeout, 20, ?_assertEqual(true, quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_twop_set_api()))))},
+            {timeout, 20, ?_assertEqual(true, quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_twop_set_resolution()))))}
         ]
     }.
 
@@ -83,6 +85,41 @@ prop_twop_set_api() ->
                              equals(ok, Res)))
             end
            ).
+
+prop_twop_set_resolution() ->
+    ?FORALL(Siblings,
+            siblings(),
+            ?TRAPEXIT(
+               begin
+                   SiblingSets = sibling_sets(Siblings),
+                   {ExpectedAdds, ExpectedDels} = expected_adds_and_dels(Siblings),
+                   Res = twop_set:resolve(SiblingSets),
+                   Adds = twop_set:adds(Res),
+                   Dels = twop_set:dels(Res),
+                   ?WHENFAIL(
+                      begin
+                          ?debugFmt("Adds: ~p~n", [sets:to_list(Adds)]),
+                          ?debugFmt("Deletes: ~p~n", [sets:to_list(Dels)]),
+                          ?debugFmt("Expected Adds: ~p~n", [sets:to_list(ExpectedAdds)]),
+                          ?debugFmt("Expected Deletes: ~p~n", [sets:to_list(ExpectedDels)])
+                      end,
+                      conjunction(
+                        [
+                         {adds1, equals(lists:sort(sets:to_list(sets:union(Adds, ExpectedAdds))),
+                                        lists:sort(sets:to_list(sets:union(ExpectedAdds, Adds))))},
+                         {adds2, equals(lists:sort(sets:to_list(sets:union(Adds, ExpectedAdds))),
+                                        lists:sort(sets:to_list(Adds)))},
+                         {adds3, equals(lists:sort(sets:to_list(sets:union(Adds, ExpectedAdds))),
+                                        lists:sort(sets:to_list(ExpectedAdds)))},
+                         {deletes1, equals(lists:sort(sets:to_list(sets:union(Dels, ExpectedDels))),
+                                        lists:sort(sets:to_list(sets:union(ExpectedDels, Dels))))},
+                         {deletes2, equals(lists:sort(sets:to_list(sets:union(Dels, ExpectedDels))),
+                                        lists:sort(sets:to_list(Dels)))},
+                         {deletes3, equals(lists:sort(sets:to_list(sets:union(Dels, ExpectedDels))),
+                                        lists:sort(sets:to_list(ExpectedDels)))}
+                        ]))
+               end
+              )).
 
 %%====================================================================
 %% eqc_fsm callbacks
@@ -209,8 +246,31 @@ test() ->
 test(Iterations) ->
     eqc:quickcheck(eqc:numtests(Iterations, prop_twop_set_api())).
 
+-spec sibling_sets([{[term()], [term()]}]) -> [twop_set:twop_set()].
+sibling_sets(Siblings) ->
+    [list_pair_to_twop_set(Sibling) || Sibling <- Siblings].
+
+-spec list_pair_to_twop_set({[term()], [term()]}) -> twop_set:twop_set().
+list_pair_to_twop_set({AddList, DelList}) ->
+    {sets:from_list(AddList), sets:from_list(DelList)}.
+
+%% @doc Take the raw lists from the `siblings' generator and generate
+%% the expected sets of adds and deletes for the `twop_set'. It would
+%% be more direct to use the result of a call to `sibling_sets', but
+%% this way the resulting set is arrived at by a different manner than
+%% that used by the module under test.
+-spec expected_adds_and_dels([{[term()], [term()]}]) -> twop_set:twop_set().
+expected_adds_and_dels(Siblings) ->
+    {Adds, Dels} = lists:unzip(Siblings),
+    DelSet = sets:from_list(lists:flatten(Dels)),
+    AddSet = sets:subtract(sets:from_list(lists:flatten(Adds)), DelSet),
+    {AddSet, DelSet}.
+
 %%====================================================================
 %% Generators
 %%====================================================================
+
+siblings() ->
+    list({list(int()), list(int())}).
 
 -endif.
