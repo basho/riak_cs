@@ -18,7 +18,7 @@
 -export([new/2,
          active_manifest/1,
          active_manifests/1,
-         mark_overwritten/1,
+         overwritten_UUIDs/1,
          mark_pending_delete/2,
          mark_scheduled_delete/2,
          pending_delete_manifests/1,
@@ -60,23 +60,23 @@ active_manifests(Manifests) ->
 %% @doc Mark all active manifests
 %% that are not "the most active"
 %% as pending_delete
--spec mark_overwritten(term()) -> term().
-mark_overwritten(Manifests) ->
+-spec overwritten_UUIDs(term()) -> term().
+overwritten_UUIDs(Manifests) ->
     case active_manifest(Manifests) of
         {error, no_active_manifest} ->
             Manifests;
         {ok, Active} ->
-            orddict:map(fun(_Key, Value) ->
-                    if
-                        Value == Active ->
-                            Active;
-                        Value?MANIFEST.state == active ->
-                            Value?MANIFEST{state=pending_delete,
-                                                 delete_marked_time=erlang:now()};
-                        true ->
-                            Value
-                    end end,
-                    Manifests)
+            FoldFun = fun ({UUID, Elem}, Acc) ->
+                    case Elem of
+                        Active ->
+                            Acc;
+                        Elem=?MANIFEST{state=active} ->
+                            [UUID | Acc];
+                        _ ->
+                            Acc
+                    end
+            end,
+            lists:foldl(FoldFun, [], orddict:to_list(Manifests))
     end.
 
 -spec mark_pending_delete(orddict:orddict(), list(binary())) ->
@@ -85,7 +85,8 @@ mark_pending_delete(Manifests, UUIDsToMark) ->
     MapFun = fun(K, V) ->
             case lists:member(K, UUIDsToMark) of
                 true ->
-                    V?MANIFEST{state=pending_delete};
+                    V?MANIFEST{state=pending_delete,
+                               delete_marked_time=os:timestamp()};
                 false ->
                     V
             end
@@ -98,7 +99,8 @@ mark_scheduled_delete(Manifests, UUIDsToMark) ->
     MapFun = fun(K, V) ->
             case lists:member(K, UUIDsToMark) of
                 true ->
-                    V?MANIFEST{state=scheduled_delete};
+                    V?MANIFEST{state=scheduled_delete,
+                               scheduled_delete_time=os:timestamp()};
                 false ->
                     V
             end
