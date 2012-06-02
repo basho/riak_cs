@@ -20,13 +20,14 @@
 
 %% API
 -export([start_link/3,
+         get_all_manifests/1,
          get_active_manifest/1,
          get_specific_manifest/2,
          add_new_manifest/2,
          update_manifest/2,
-         mark_active_as_pending_delete/1,
-         mark_as_scheduled_delete/2,
+         update_manifests/2,
          update_manifest_with_confirmation/2,
+         update_manifests_with_confirmation/2,
          stop/1]).
 
 %% gen_fsm callbacks
@@ -56,8 +57,6 @@
                 riakc_pid :: pid()
             }).
 
--type state() :: #state{}.
-
 %%%===================================================================
 %%% API
 %%%===================================================================
@@ -73,6 +72,9 @@
 %%--------------------------------------------------------------------
 start_link(Bucket, Key, RiakcPid) ->
     gen_fsm:start_link(?MODULE, [Bucket, Key, RiakcPid], []).
+
+get_all_manifests(Pid) ->
+    gen_fsm:sync_send_event(Pid, get_manifests, infinity).
 
 get_active_manifest(Pid) ->
     case gen_fsm:sync_send_event(Pid, get_manifests, infinity) of
@@ -101,23 +103,26 @@ get_specific_manifest(Pid, UUID) ->
     end.
 
 add_new_manifest(Pid, Manifest) ->
-    gen_fsm:send_event(Pid, {add_new_manifest, Manifest}).
+    WrappedManifest = riak_moss_manifest:new(Manifest?MANIFEST.uuid, Manifest),
+    gen_fsm:send_event(Pid, {add_new_manifest, WrappedManifest}).
 
--spec mark_active_as_pending_delete(pid()) -> ok | {error, notfound}.
-mark_active_as_pending_delete(Pid) ->
-    gen_fsm:sync_send_event(Pid, mark_active_as_pending_delete, infinity).
 
--spec mark_as_scheduled_delete(pid(), [binary()]) -> ok | {error, notfound}.
-mark_as_scheduled_delete(Pid, UUIDS) ->
-    gen_fsm:sync_send_event(Pid, {mark_as_scheduled_delete, UUIDS}, infinity).
+update_manifests(Pid, Manifests) ->
+    gen_fsm:send_event(Pid, {update_manifests, Manifests}).
 
 update_manifest(Pid, Manifest) ->
-    gen_fsm:send_event(Pid, {update_manifest, Manifest}).
+    WrappedManifest = riak_moss_manifest:new(Manifest?MANIFEST.uuid, Manifest),
+    update_manifests(Pid, WrappedManifest).
 
--spec update_manifest_with_confirmation(term(), lfs_manifest()) -> ok | {error, term()}.
-update_manifest_with_confirmation(Pid, Manifest) ->
-    gen_fsm:sync_send_event(Pid, {update_manifest_with_confirmation, Manifest},
+-spec update_manifests_with_confirmation(pid(), orddict:orddict()) -> ok | {error, term()}.
+update_manifests_with_confirmation(Pid, Manifests) ->
+    gen_fsm:sync_send_event(Pid, {update_manifests_with_confirmation, Manifests},
                            infinity).
+
+-spec update_manifest_with_confirmation(pid(), lfs_manifest()) -> ok | {error, term()}.
+update_manifest_with_confirmation(Pid, Manifest) ->
+    WrappedManifest = riak_moss_manifest:new(Manifest?MANIFEST.uuid, Manifest),
+    update_manifests_with_confirmation(Pid, WrappedManifest).
 
 stop(Pid) ->
     gen_fsm:sync_send_all_state_event(Pid, stop, infinity).
@@ -142,72 +147,50 @@ init([test, Bucket, Key]) ->
 %% Once it has been called _once_
 %% with a particular UUID, update_manifest
 %% should be used from then on out.
-waiting_command({add_new_manifest, Manifest}, State=#state{riakc_pid=RiakcPid,
+waiting_command({add_new_manifest, WrappedManifest}, State=#state{riakc_pid=RiakcPid,
                                                            bucket=Bucket,
                                                            key=Key}) ->
-    ok = get_and_update(RiakcPid, Manifest, Bucket, Key),
+    ok = get_and_update(RiakcPid, WrappedManifest, Bucket, Key),
     {next_state, waiting_update_command, State}.
 
-waiting_update_command({update_manifest, Manifest}, State=#state{riakc_pid=RiakcPid,
+waiting_update_command({update_manifests, WrappedManifests}, State=#state{riakc_pid=RiakcPid,
                                                                  bucket=Bucket,
                                                                  key=Key,
                                                                  riak_object=undefined,
                                                                  manifests=undefined}) ->
-    ok = get_and_update(RiakcPid, Manifest, Bucket, Key),
+    ok = get_and_update(RiakcPid, WrappedManifests, Bucket, Key),
     {next_state, waiting_update_command, State};
-waiting_update_command({update_manifest, Manifest}, State=#state{riakc_pid=RiakcPid,
+waiting_update_command({update_manifests, WrappedManifests}, State=#state{riakc_pid=RiakcPid,
                                                                  riak_object=PreviousRiakObject,
                                                                  manifests=PreviousManifests}) ->
 
-    WrappedManifest = riak_moss_manifest:new(Manifest?MANIFEST.uuid, Manifest),
-    Resolved = riak_moss_manifest_resolution:resolve([PreviousManifests, WrappedManifest]),
-    RiakObject = riakc_obj:update_value(PreviousRiakObject, term_to_binary(Resolved)),
-    %% TODO:
-    %% currently we don't do
-    %% anything to make sure
-    %% this call succeeded
-    ok = riakc_pb_socket:put(RiakcPid, RiakObject),
+
+    update_from_previous_read(RiakcPid, PreviousRiakObject,
+                                  PreviousManifests, WrappedManifests),
     {next_state, waiting_update_command, State#state{riak_object=undefined, manifests=undefined}}.
 
 
 waiting_command(get_manifests, _From, State) ->
     {Reply, NewState} = handle_get_manifests(State),
-    {reply, Reply, waiting_update_command, NewState};
-waiting_command(mark_active_as_pending_delete, _From, State) ->
-    Reply = set_active_manifest_pending_delete(State),
-    %% @TODO Could return an updated state and not
-    %% have to read the manifests again.
-    {reply, Reply, waiting_command, State};
-waiting_command({mark_as_scheduled_delete, UUIDS}, _From, State) ->
-    {Reply, UpdState} = set_manifests_scheduled_delete(UUIDS, State),
-    {stop, normal, Reply, UpdState}.
+    {reply, Reply, waiting_update_command, NewState}.
 
-waiting_update_command({update_manifest_with_confirmation, Manifest}, _From,
+waiting_update_command({update_manifests_with_confirmation, WrappedManifests}, _From,
                                             State=#state{riakc_pid=RiakcPid,
                                             bucket=Bucket,
                                             key=Key,
                                             riak_object=undefined,
                                             manifests=undefined}) ->
-    Reply = get_and_update(RiakcPid, Manifest, Bucket, Key),
+    Reply = get_and_update(RiakcPid, WrappedManifests, Bucket, Key),
     {reply, Reply, waiting_update_command, State};
-waiting_update_command({update_manifest_with_confirmation, Manifest}, _From,
+waiting_update_command({update_manifests_with_confirmation, WrappedManifests}, _From,
                                             State=#state{riakc_pid=RiakcPid,
                                             riak_object=PreviousRiakObject,
                                             manifests=PreviousManifests}) ->
-    WrappedManifest = riak_moss_manifest:new(Manifest?MANIFEST.uuid, Manifest),
-    Resolved = riak_moss_manifest_resolution:resolve([PreviousManifests, WrappedManifest]),
-    RiakObject = riakc_obj:update_value(PreviousRiakObject, term_to_binary(Resolved)),
-    %% TODO:
-    %% currently we don't do
-    %% anything to make sure
-    %% this call succeeded
-    Reply = riakc_pb_socket:put(RiakcPid, RiakObject),
-    {reply, Reply, waiting_update_command, State#state{riak_object=undefined,
-                                                       manifests=undefined}};
-waiting_update_command({mark_as_scheduled_delete, UUIDS}, _From, State) ->
-    {Reply, UpdState} = set_manifests_scheduled_delete(UUIDS, State),
-    {stop, normal, Reply, UpdState}.
+    Reply = update_from_previous_read(RiakcPid, PreviousRiakObject,
+                                  PreviousManifests, WrappedManifests),
 
+    {reply, Reply, waiting_update_command, State#state{riak_object=undefined,
+                                                       manifests=undefined}}.
 handle_event(_Event, StateName, State) ->
     {next_state, StateName, State}.
 
@@ -234,7 +217,7 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 handle_get_manifests(State=#state{riakc_pid=RiakcPid,
                            bucket=Bucket,
                            key=Key}) ->
-    case get_manifests(RiakcPid, Bucket, Key) of
+    case riak_moss_utils:get_manifests(RiakcPid, Bucket, Key) of
         {ok, RiakObject, Resolved} ->
             Reply = {ok, Resolved},
             NewState = State#state{riak_object=RiakObject, manifests=Resolved},
@@ -243,119 +226,47 @@ handle_get_manifests(State=#state{riakc_pid=RiakcPid,
             {NotFound, State}
     end.
 
-%% @doc
--spec get_manifests(pid(), binary(), binary()) ->
-    {ok, term(), term()} | {error, notfound}.
-get_manifests(RiakcPid, Bucket, Key) ->
-    ManifestBucket = riak_moss_utils:to_bucket_name(objects, Bucket),
-    case riakc_pb_socket:get(RiakcPid, ManifestBucket, Key) of
-        {ok, Object} ->
-            Siblings = riakc_obj:get_values(Object),
-            DecodedSiblings = lists:map(fun erlang:binary_to_term/1, Siblings),
-
-            %% Upgrade the manifests to be the latest erlang
-            %% record version
-            Upgraded = riak_moss_manifest:upgrade_wrapped_manifests(DecodedSiblings),
-            Resolved = riak_moss_manifest_resolution:resolve(Upgraded),
-            %% remove any tombstones that have expired
-            Pruned = riak_moss_manifest:prune(Resolved),
-            {ok, Object, Pruned};
-        {error, notfound}=NotFound ->
-            NotFound
-    end.
-
-get_and_update(RiakcPid, Manifest, Bucket, Key) ->
+get_and_update(RiakcPid, WrappedManifests, Bucket, Key) ->
     %% retrieve the current (resolved) value at {Bucket, Key},
     %% add the new manifest, and then write the value
     %% back to Riak
     %% NOTE: it would also be nice to assert that the
     %% UUID being added doesn't already exist in the
     %% dict
-    WrappedManifest = riak_moss_manifest:new(Manifest?MANIFEST.uuid, Manifest),
-    ObjectToWrite = case get_manifests(RiakcPid, Bucket, Key) of
+    case riak_moss_utils:get_manifests(RiakcPid, Bucket, Key) of
         {ok, RiakObject, Manifests} ->
-            NewManiAdded = riak_moss_manifest_resolution:resolve([WrappedManifest, Manifests]),
-            OverwrittenMarkedAsPendingDelete = riak_moss_manifest:mark_overwritten(NewManiAdded),
-            riakc_obj:update_value(RiakObject, term_to_binary(OverwrittenMarkedAsPendingDelete));
+            NewManiAdded = riak_moss_manifest_resolution:resolve([WrappedManifests, Manifests]),
+            OverwrittenUUIDs = riak_moss_manifest:overwritten_UUIDs(NewManiAdded),
+            case OverwrittenUUIDs of
+                [] ->
+                    ObjectToWrite = riakc_obj:update_value(RiakObject,
+                        term_to_binary(NewManiAdded)),
+                    riakc_pb_socket:put(RiakcPid, ObjectToWrite);
+                _ ->
+                    riak_cs_gc:gc_manifests(Bucket, Key,
+                        NewManiAdded, OverwrittenUUIDs, RiakObject, RiakcPid)
+            end;
         {error, notfound} ->
             ManifestBucket = riak_moss_utils:to_bucket_name(objects, Bucket),
-            riakc_obj:new(ManifestBucket, Key, term_to_binary(WrappedManifest))
-    end,
+            ObjectToWrite = riakc_obj:new(ManifestBucket, Key, term_to_binary(WrappedManifests)),
+            riakc_pb_socket:put(RiakcPid, ObjectToWrite)
+    end.
 
+
+-spec update_from_previous_read(pid(), riakc_obj:riakc_obj(),
+                                    orddict:orddict(), orddict:orddict()) ->
+    ok | {error, term()}.
+update_from_previous_read(RiakcPid, RiakObject,
+                              PreviousManifests, NewManifests) ->
+    Resolved = riak_moss_manifest_resolution:resolve([PreviousManifests,
+            NewManifests]),
+    NewRiakObject = riakc_obj:update_value(RiakObject,
+        term_to_binary(Resolved)),
     %% TODO:
     %% currently we don't do
     %% anything to make sure
     %% this call succeeded
-    riakc_pb_socket:put(RiakcPid, ObjectToWrite).
-
-%% @doc Set the active manifest to the pending_delete state.
--spec set_active_manifest_pending_delete(#state{}) -> ok | {error, notfound}.
-set_active_manifest_pending_delete(#state{riakc_pid=RiakcPid,
-                                          bucket=Bucket,
-                                          key=Key}) ->
-    case get_manifests(RiakcPid, Bucket, Key) of
-        {ok, RiakObject, Resolved} ->
-            Marked = orddict:map(fun(_Key, Value) ->
-                        if
-                            Value?MANIFEST.state == active ->
-                                Value?MANIFEST{state=pending_delete,
-                                                      delete_marked_time=erlang:now()};
-                            true ->
-                                Value
-                        end end, Resolved),
-            NewRiakObject = riakc_obj:update_value(RiakObject, term_to_binary(Marked)),
-            ok = riakc_pb_socket:put(RiakcPid, NewRiakObject),
-            ok;
-        {error, notfound}=NotFound ->
-            NotFound
-    end.
-
--spec set_manifests_scheduled_delete([binary()], state()) ->
-                                            {ok, state()} |
-                                            {{error, notfound}, state()}.
-set_manifests_scheduled_delete(_UUIDS, State=#state{bucket=Bucket,
-                                                    key=Key,
-                                                    manifests=undefined,
-                                                    riakc_pid=RiakcPid}) ->
-    case get_manifests(RiakcPid, Bucket, Key) of
-        {ok, RiakObject, Resolved} ->
-            UpdState = State#state{riak_object=RiakObject,
-                                   manifests=Resolved},
-            set_manifests_scheduled_delete(_UUIDS, UpdState);
-        {error, notfound}=NotFound ->
-            {NotFound, State}
-    end;
-set_manifests_scheduled_delete([], State=#state{manifests=Manifests,
-                                                riak_object=RiakObject,
-                                                riakc_pid=RiakcPid}) ->
-    UpdRiakObject = riakc_obj:update_value(RiakObject,
-                                           term_to_binary(Manifests)),
-    Result = riakc_pb_socket:put(RiakcPid, UpdRiakObject),
-    {Result, State};
-set_manifests_scheduled_delete([UUID | RestUUIDS], State=#state{manifests=Manifests}) ->
-    case orddict:is_key(UUID, Manifests) of
-        true ->
-            UpdManifests = orddict:update(UUID,
-                                          fun set_scheduled_delete/1,
-                                          Manifests);
-        false ->
-            UpdManifests = Manifests
-    end,
-    UpdState = State#state{manifests=UpdManifests},
-    set_manifests_scheduled_delete(RestUUIDS, UpdState).
-
-%% @doc Check if a manifest is in the `pending_delete' state
-%% and set it to the `scheduled_delete' state if so. This
-%% function is used by the calls to `orddict:update' in
-%% `set_manifests_scheduled_delete'.
--spec set_scheduled_delete(lfs_manifest()) -> lfs_manifest().
-set_scheduled_delete(Manifest) ->
-    case Manifest?MANIFEST.state =:= pending_delete of
-        true ->
-            Manifest?MANIFEST{state=scheduled_delete};
-        false ->
-            Manifest
-    end.
+    riakc_pb_socket:put(RiakcPid, NewRiakObject).
 
 %% ===================================================================
 %% Test API

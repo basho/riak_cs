@@ -25,6 +25,7 @@
          is_admin/1,
          map_keys_and_manifests/3,
          get_object/3,
+         get_manifests/3,
          get_user/2,
          get_user_by_index/3,
          get_user_index/3,
@@ -189,31 +190,16 @@ delete_bucket(User, VClock, Bucket, RiakPid) ->
 
 %% @doc Mark all active manifests as pending_delete.
 -spec delete_object(binary(), binary(), pid()) -> ok | {error, notfound}.
-delete_object(Bucket, Key, RiakPid) ->
-    StartTime = now(),
-    {ok, Pid} = riak_moss_manifest_fsm:start_link(Bucket, Key, RiakPid),
-    Res = riak_moss_manifest_fsm:mark_active_as_pending_delete(Pid),
-    case Res of
-        ok ->
-            ok = riak_cs_stats:update_with_start(object_delete, StartTime),
-            %% Get the list of `pending_delete' manifests for the object
-            case riak_moss_manifest_fsm:get_pending_delete_manifests(Pid) of
-                {ok, ManifestData} ->
-                    %% `ManifestData' is a list of {UUID, Manifest} pairs
-                    {UUIDS, PDManifests} = lists:unzip(ManifestData),
-                    %% Schedule `pending_delete' manifests for deletion and
-                    %% update each manifest to `scheduled_delete' state.
-                    case riak_cs_gc:schedule_manifests(PDManifests, RiakPid) of
-                        ok ->
-                            _ = lager:debug("Marking ids as s_d: ~p", [UUIDS]),
-                            riak_moss_manifest_fsm:mark_as_scheduled_delete(Pid, UUIDS);
-                        Error1 ->
-                            Error1
-                    end;
-                Error ->
-                    Error
-            end;
-       _ ->
+delete_object(Bucket, Key, RiakcPid) ->
+    StartTime = os:timestamp(),
+    case get_manifests(RiakcPid, Bucket, Key) of
+        {ok, RiakObject, Manifests} ->
+            ActiveManifests = riak_moss_manifest:active_manifests(Manifests),
+            ActiveUUIDs = [M?MANIFEST.uuid || M <- ActiveManifests],
+            riak_cs_gc:gc_manifests(Bucket, Key, Manifests, ActiveUUIDs,
+                                        RiakObject, RiakcPid),
+            ok = riak_cs_stats:update_with_start(object_delete, StartTime);
+        {error, notfound} ->
             ok
     end.
 
@@ -278,7 +264,7 @@ get_env(App, Key, Default) ->
 %% with their associated objects.
 -spec get_keys_and_manifests(binary(), binary(), pid()) -> {ok, [lfs_manifest()]} | {error, term()}.
 get_keys_and_manifests(BucketName, Prefix, RiakPid) ->
-    ManifestBucket = riak_moss_utils:to_bucket_name(objects, BucketName),
+    ManifestBucket = to_bucket_name(objects, BucketName),
     case active_manifests(ManifestBucket, Prefix, RiakPid) of
         {ok, KeyManifests} ->
             {ok, lists:keysort(1, KeyManifests)};
@@ -359,6 +345,27 @@ get_admin_creds() ->
                         {ok, riakc_obj:riakc_obj()} | {error, term()}.
 get_object(BucketName, Key, RiakPid) ->
     riakc_pb_socket:get(RiakPid, BucketName, Key).
+
+%% @doc
+-spec get_manifests(pid(), binary(), binary()) ->
+    {ok, term(), term()} | {error, notfound}.
+get_manifests(RiakcPid, Bucket, Key) ->
+    ManifestBucket = to_bucket_name(objects, Bucket),
+    case riakc_pb_socket:get(RiakcPid, ManifestBucket, Key) of
+        {ok, Object} ->
+            Siblings = riakc_obj:get_values(Object),
+            DecodedSiblings = lists:map(fun erlang:binary_to_term/1, Siblings),
+
+            %% Upgrade the manifests to be the latest erlang
+            %% record version
+            Upgraded = riak_moss_manifest:upgrade_wrapped_manifests(DecodedSiblings),
+            Resolved = riak_moss_manifest_resolution:resolve(Upgraded),
+            %% remove any tombstones that have expired
+            Pruned = riak_moss_manifest:prune(Resolved),
+            {ok, Object, Pruned};
+        {error, notfound}=NotFound ->
+            NotFound
+    end.
 
 %% @doc Retrieve a MOSS user's information based on their id string.
 -spec get_user('undefined' | list(), pid()) -> {ok, {moss_user(), riakc_obj:vclock()}} | {error, term()}.
