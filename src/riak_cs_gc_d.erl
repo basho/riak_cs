@@ -28,6 +28,7 @@
          fetching_next_fileset/3,
          initiating_file_delete/2,
          initiating_file_delete/3,
+         waiting_file_delete/2,
          waiting_file_delete/3,
          paused/2,
          paused/3,
@@ -199,6 +200,9 @@ initiating_file_delete(continue, #state{current_fileset=[NextManifest | RestMani
 initiating_file_delete(_, State) ->
     {next_state, initiating_file_delete, State}.
 
+waiting_file_delete(_, State) ->
+    {next_state, waiting_file_delete, State}.
+
 paused(_, State) ->
     {next_state, paused, State}.
 
@@ -288,6 +292,11 @@ waiting_file_delete({set_interval, Interval}, _From, State) ->
 waiting_file_delete(_, _From, State) ->
     {reply, ok, waiting_file_delete, State}.
 
+paused({Pid, done}, _From, State=#state{delete_fsm_pid=Pid,
+                                        pause_state=waiting_file_delete}) ->
+    UpdState = State#state{delete_fsm_pid=undefined,
+                           pause_state=initiating_file_delete},
+    {reply, ok, paused, UpdState};
 paused(status, _From, State) ->
     Reply = {ok, {paused, status_data(State)}},
     {reply, Reply, paused, State};
