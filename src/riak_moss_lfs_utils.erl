@@ -4,16 +4,6 @@
 %%
 %% -------------------------------------------------------------------
 
-%% TODO:
-%% We're evenutally going to have to start storing more
-%% than just a single lfs_manifest record at a key, and store
-%% a list of them. This will be used so that we can still have
-%% pointers to the chunks to do GC when an update has been made.
-%% We also want to be able to continue to serve the "current"
-%% version of an object as a new one is being streamed in. While
-%% the new one is being streamed in, we're going to want to check point
-%% the chunks so that we can do GC is the PUT fails.
-
 -module(riak_moss_lfs_utils).
 
 -include("riak_moss.hrl").
