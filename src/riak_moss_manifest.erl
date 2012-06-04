@@ -79,6 +79,9 @@ overwritten_UUIDs(Manifests) ->
             lists:foldl(FoldFun, [], orddict:to_list(Manifests))
     end.
 
+%% @doc Return `Manifests' with the manifests in
+%% `UUIDsToMark' with their state changed to
+%% `pending_delete'
 -spec mark_pending_delete(orddict:orddict(), list(binary())) ->
     orddict:orddict().
 mark_pending_delete(Manifests, UUIDsToMark) ->
@@ -93,6 +96,9 @@ mark_pending_delete(Manifests, UUIDsToMark) ->
     end,
     orddict:map(MapFun, Manifests).
 
+%% @doc Return `Manifests' with the manifests in
+%% `UUIDsToMark' with their state changed to
+%% `scheduled_delete'
 -spec mark_scheduled_delete(orddict:orddict(), list(binary())) ->
     orddict:orddict().
 mark_scheduled_delete(Manifests, UUIDsToMark) ->
