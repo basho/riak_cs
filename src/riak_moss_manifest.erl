@@ -208,13 +208,6 @@ most_recent_active_manifest(Man1=?MANIFEST{state=active}, _Man2) -> Man1;
 most_recent_active_manifest(_Man1, Man2=?MANIFEST{state=active}) -> Man2.
 
 -spec needs_pruning(lfs_manifest(), erlang:timestamp()) -> boolean().
-%% TODO:
-%% We should be basing this off of the
-%% (yet to be added) `scheduled_delete_time'
-%% instead of `delete_marked_time', as they are
-%% not the same, and if something has to be
-%% attempted to moved several times, they could
-%% differ in time by quite a bit
 needs_pruning(?MANIFEST{state=scheduled_delete,
                               scheduled_delete_time=ScheduledDeleteTime}, Time) ->
     seconds_diff(Time, ScheduledDeleteTime) > delete_tombstone_time();
