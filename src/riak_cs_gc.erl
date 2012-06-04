@@ -103,19 +103,31 @@ timestamp() ->
 
 %% @doc Copy data for a list of manifests to the
 %% `riak-cs-gc' bucket to schedule them for deletion.
--spec move_manifests_to_gc_bucket([lfs_manifest()], pid()) -> ok | {error, term()}.
-move_manifests_to_gc_bucket(Manifests, RiakPid) ->
-    %% TODO:
-    %% we should be reading the key first
-    %% before writing it
+-spec move_manifests_to_gc_bucket([lfs_manifest()], pid()) ->
+    ok | {error, term()}.
+move_manifests_to_gc_bucket(Manifests, RiakcPid) ->
+    Key = generate_key(),
+    ManifestSet = build_manifest_set(twop_set:new(), Manifests),
+    ObjectToWrite = case riakc_pb_socket:get(RiakcPid, ?GC_BUCKET, Key) of
+        {error, notfound} ->
+            %% There was no previous value, so we'll
+            %% create a new riak object and write it
+            riakc_obj:new(?GC_BUCKET, Key, term_to_binary(ManifestSet));
+        {ok, PreviousObject} ->
+            %% There is a value currently stored here,
+            %% so resolve all the siblings and add the
+            %% new set in as well. Write this
+            %% value back to riak
+            DecodedPrevious = [binary_to_term(V) ||
+                V <- riakc_obj:get_values(PreviousObject)],
+            SetsToResolve = [ManifestSet | DecodedPrevious],
+            Resolved = twop_set:resolve(SetsToResolve),
+            riakc_obj:update_value(PreviousObject, term_to_binary(Resolved))
+    end,
 
     %% Create a set from the list of manifests
-    ManifestSet = build_manifest_set(twop_set:new(), Manifests),
     _ = lager:debug("Manifests scheduled for deletion: ~p", [ManifestSet]),
-    %% Write the set to a timestamped key in the `riak-cs-gc' bucket
-    Key = generate_key(),
-    RiakObject = riakc_obj:new(?GC_BUCKET, Key, term_to_binary(ManifestSet)),
-    riakc_pb_socket:put(RiakPid, RiakObject).
+    riakc_pb_socket:put(RiakcPid, ObjectToWrite).
 
 -spec build_manifest_set(twop_set:twop_set(), [lfs_manifest()]) -> twop_set:twop_set().
 build_manifest_set(Set, []) ->
