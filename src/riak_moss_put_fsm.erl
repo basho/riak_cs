@@ -326,7 +326,6 @@ prepare(State=#state{bucket=Bucket,
     {ok, ManiPid} = riak_moss_manifest_fsm:start_link(Bucket, Key, RiakPid),
     %% TODO:
     %% this shouldn't be hardcoded.
-    %% Also, use poolboy :)
     Md5 = crypto:md5_init(),
     WriterPids = case ContentLength of
         0 ->
@@ -339,9 +338,6 @@ prepare(State=#state{bucket=Bucket,
                 riak_moss_lfs_utils:put_concurrency())
     end,
     FreeWriters = ordsets:from_list(WriterPids),
-    %% TODO:
-    %% we should get this
-    %% from the app.config
     MaxBufferSize = (riak_moss_lfs_utils:put_fsm_buffer_size_factor() * BlockSize),
     UUID = druuid:v4(),
     Manifest =
