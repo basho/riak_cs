@@ -145,7 +145,7 @@ validate_auth_header(RD, AuthBypass, RiakPid) ->
             {AuthMod, KeyId, Signature} = parse_auth_header(AuthHeader, AuthBypass)
     end,
     case riak_moss_utils:get_user(KeyId, RiakPid) of
-        {ok, {User, UserVclock}} ->
+        {ok, {User, UserVclock}} when User?MOSS_USER.status =:= enabled ->
             Secret = User?MOSS_USER.key_secret,
             case AuthMod:authenticate(RD, Secret, Signature) of
                 ok ->
@@ -156,9 +156,12 @@ validate_auth_header(RD, AuthBypass, RiakPid) ->
                     %% forbidden/2?
                     {error, bad_auth}
             end;
+        {ok, _} ->
+            %% Disabled account so return 403
+            {error, bad_auth};
         {error, NE} when NE == notfound; NE == no_user_key ->
             %% anonymous access lookups don't need to be logged, and
-            %% auth failures are logged by other meands
+            %% auth failures are logged by other means
             {error, NE};
         {error, Reason} ->
             %% other failures, like Riak fetch timeout, be loud about

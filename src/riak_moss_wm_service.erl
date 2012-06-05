@@ -46,7 +46,7 @@ forbidden(RD, Ctx=#context{auth_bypass=AuthBypass,
     {AuthMod, KeyId, Signature} =
         riak_moss_wm_utils:parse_auth_header(AuthHeader, AuthBypass),
     case riak_moss_utils:get_user(KeyId, RiakPid) of
-        {ok, {User, _}} ->
+        {ok, {User, _}} when User?MOSS_USER.status =:= enabled ->
             case AuthMod:authenticate(RD, User?MOSS_USER.key_secret, Signature) of
                 ok ->
                     %% Authentication succeeded
@@ -58,6 +58,10 @@ forbidden(RD, Ctx=#context{auth_bypass=AuthBypass,
                     dt_return(<<"forbidden">>, [403], [extract_name(User), <<"true">>]),
                     riak_moss_s3_response:api_error(access_denied, RD, Ctx)
             end;
+        {ok, {User, _}} ->
+            %% Account is disabled, deny access
+            dt_return(<<"forbidden">>, [403], [extract_name(User), <<"true">>]),
+            riak_moss_s3_response:api_error(access_denied, RD, Ctx);
         {error, no_user_key} ->
             %% Anonymous access not allowed, deny access
             dt_return(<<"forbidden">>, [403], [extract_name(KeyId), <<"true">>]),

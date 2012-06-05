@@ -12,7 +12,18 @@
           key_secret :: string(),
           canonical_id :: string(),
           buckets=[] :: [moss_bucket()]}).
--type moss_user() :: #moss_user_v1{}.
+
+-record(rcs_user_v2, {
+          name :: string(),
+          display_name :: string(),
+          email :: string(),
+          key_id :: string(),
+          key_secret :: string(),
+          canonical_id :: string(),
+          buckets=[] :: [moss_bucket()],
+          status=enabled :: enabled | disabled}).
+-type moss_user() :: #rcs_user_v2{} | #moss_user_v1{}.
+-type rcs_user() :: #rcs_user_v2{} | #moss_user_v1{}.
 
 -record(moss_bucket, {
           name :: string(),
@@ -189,7 +200,8 @@
 
 -define(ACL, #acl_v2).
 -define(MOSS_BUCKET, #moss_bucket_v1).
--define(MOSS_USER, #moss_user_v1).
+-define(MOSS_USER, #rcs_user_v2).
+-define(RCS_USER, #rcs_user_v2).
 -define(USER_BUCKET, <<"moss.users">>).
 -define(ACCESS_BUCKET, <<"moss.access">>).
 -define(STORAGE_BUCKET, <<"moss.storage">>).

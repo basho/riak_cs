@@ -10,6 +10,9 @@
          service_available/2,
          forbidden/2,
          content_types_provided/2,
+         content_types_accepted/2,
+         accept_json/2,
+         accept_xml/2,
          allowed_methods/2,
          produce_json/2,
          produce_xml/2,
@@ -18,6 +21,7 @@
 
 -include("riak_moss.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
+-include_lib("xmerl/include/xmerl.hrl").
 
 %% -------------------------------------------------------------------
 %% Webmachine callbacks
@@ -38,7 +42,7 @@ service_available(RD, Ctx) ->
 -spec allowed_methods(term(), term()) -> {[atom()], term(), term()}.
 allowed_methods(RD, Ctx) ->
     dt_entry(<<"allowed_methods">>),
-    {['GET', 'HEAD', 'POST'], RD, Ctx}.
+    {['GET', 'HEAD', 'POST', 'PUT'], RD, Ctx}.
 
 forbidden(RD, Ctx) ->
     dt_entry(<<"forbidden">>),
@@ -65,9 +69,43 @@ forbidden(RD, Ctx) ->
             end
     end.
 
+-spec content_types_accepted(term(), term()) ->
+    {[{string(), atom()}], term(), term()}.
+content_types_accepted(RD, Ctx) ->
+    dt_entry(<<"content_types_accepted">>),
+    {[{?XML_TYPE, accept_xml}, {?JSON_TYPE, accept_json}], RD, Ctx}.
+
 content_types_provided(RD, Ctx) ->
     dt_entry(<<"content_types_provided">>),
     {[{?XML_TYPE, produce_xml}, {?JSON_TYPE, produce_json}], RD, Ctx}.
+
+-spec accept_json(term(), term()) ->
+    {boolean() | {halt, term()}, term(), term()}.
+accept_json(RD, Ctx) ->
+    dt_entry(<<"accept_json">>),
+    Body = wrq:req_body(RD),
+    case catch mochijson2:decode(Body) of
+        {struct, UserItems} ->
+            UpdateItems = lists:foldl(fun user_json_filter/2, [], UserItems),
+            update_user(UpdateItems, RD, Ctx);
+        {'EXIT', _} ->
+            riak_moss_s3_response:api_error(invalid_user_update, RD, Ctx)
+    end.
+
+-spec accept_xml(term(), term()) ->
+    {boolean() | {halt, term()}, term(), term()}.
+accept_xml(RD, Ctx) ->
+    dt_entry(<<"accept_xml">>),
+    Body = binary_to_list(wrq:req_body(RD)),
+    case catch xmerl_scan:string(Body, []) of
+        {'EXIT', _} ->
+            riak_moss_s3_response:api_error(invalid_user_update, RD, Ctx);
+        {ParsedData, _Rest} ->
+            UpdateItems = lists:foldl(fun user_xml_filter/2,
+                                      [],
+                                      ParsedData#xmlElement.content),
+            update_user(UpdateItems, RD, Ctx)
+    end.
 
 produce_json(RD, #context{user=User}=Ctx) ->
     dt_entry(<<"produce_json">>),
@@ -166,10 +204,83 @@ forbidden(RD, Ctx, User) ->
             end
     end.
 
+-spec update_user([{binary(), binary()}], term(), term()) ->
+    {boolean() | {halt, term()}, term(), term()}.
+update_user(UpdateItems, RD, Ctx=#context{user=User,
+                                      user_vclock=VClock,
+                                      riakc_pid=RiakPid}) ->
+    dt_entry(<<"update_user">>),
+    case lists:keyfind(status, 1, UpdateItems) of
+        {status, Status} ->
+            case Status =:= User?MOSS_USER.status of
+                true ->
+                    {{halt, 200}, RD, Ctx};
+                false ->
+                    case riak_moss_utils:save_user(User?MOSS_USER{status=Status},
+                                                   VClock,
+                                                   RiakPid) of
+                        ok ->
+                            {{halt, 200}, RD, Ctx};
+                        {error, Reason} ->
+                            riak_moss_s3_response:api_error(Reason, RD, Ctx)
+                    end
+            end;
+        false ->
+            riak_moss_s3_response:api_error(invalid_user_update, RD, Ctx)
+    end.
+
+-spec user_json_filter({binary(), binary()}, [{atom(), term()}]) -> [{atom(), term()}].
+user_json_filter({ItemKey, ItemValue}, Acc) ->
+    case ItemKey of
+        <<"email">> ->
+            Acc;
+        <<"name">> ->
+            Acc;
+        <<"status">> ->
+            case ItemValue of
+                <<"enabled">> ->
+                    [{status, enabled} | Acc];
+                <<"disabled">> ->
+                    [{status, disabled} | Acc];
+                _ ->
+                    Acc
+            end;
+        _ ->
+            Acc
+    end.
+
 user_key(RD) ->
     case wrq:path_tokens(RD) of
         [KeyId|_] -> mochiweb_util:unquote(KeyId);
         _         -> []
+    end.
+
+-spec user_xml_filter(#xmlText{} | #xmlElement{}, [{atom(), term()}]) -> [{atom(), term()}].
+user_xml_filter(#xmlText{}, Acc) ->
+    Acc;
+user_xml_filter(Element, Acc) ->
+    case Element#xmlElement.name of
+        'Email' ->
+            Acc;
+        'Name' ->
+            Acc;
+        'Status' ->
+            [Content | _] = Element#xmlElement.content,
+            case is_record(Content, xmlText) of
+                true ->
+                    case Content#xmlText.value of
+                        "enabled" ->
+                            [{status, enabled} | Acc];
+                        "disabled" ->
+                            [{status, disabled} | Acc];
+                        _ ->
+                            Acc
+                    end;
+                false ->
+                    Acc
+            end;
+        _ ->
+            Acc
     end.
 
 extract_name(X) ->
