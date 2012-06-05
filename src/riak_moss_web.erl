@@ -22,6 +22,7 @@ dispatch_table() ->
     [
      {[], riak_moss_wm_service, [{auth_bypass, AuthBypass}]},
      {["riak-cs", "stats"], riak_cs_wm_stats, StatsProps},
+     {["riak-cs", "ping"], riak_cs_wm_ping, []},
      {["user"], riak_moss_wm_user, []},
      {["riak-cs", "users"], riak_moss_wm_users, [{auth_bypass, AuthBypass}]},
      {["riak-cs", "user", '*'], riak_moss_wm_user, [{auth_bypass, AuthBypass}]},

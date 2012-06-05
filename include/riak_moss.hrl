@@ -225,7 +225,7 @@
 %% to determine the PUT buffer size.
 %% ex. 2 would mean BlockSize * 2
 -define(DEFAULT_PUT_BUFFER_FACTOR, 1).
-
+-define(DEFAULT_PING_TIMEOUT, 5000).
 -define(JSON_TYPE, "application/json").
 -define(XML_TYPE, "application/xml").
 
