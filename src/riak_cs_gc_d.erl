@@ -216,6 +216,8 @@ idle(status, _From, State) ->
 idle({manual_batch, Options}, _From, State) ->
     case lists:member(testing, Options) of
         true ->
+            NewState = State#state{batch=undefined};
+        false ->
             %% this does not check out a worker from the riak
             %% connection pool; instead it creates a fresh new worker,
             %% the idea being that we don't want to delay deletion
@@ -225,9 +227,7 @@ idle({manual_batch, Options}, _From, State) ->
             %% connection, and avoids duplicating the configuration
             %% lookup code
             {ok, Riak} = riak_moss_riakc_pool_worker:start_link([]),
-            NewState = start_batch(State#state{riak=Riak});
-        false ->
-            NewState = State#state{batch=[]}
+            NewState = start_batch(State#state{riak=Riak})
     end,
     {reply, ok, fetching_next_fileset, NewState};
 idle(cancel_batch, _From, State) ->
@@ -237,7 +237,7 @@ idle(pause_batch, _From, State) ->
 idle(resume_batch, _From, State) ->
     {reply, {error, no_batch}, idle, State};
 idle({set_interval, Interval}, _From, State) ->
-    {reply, {error, no_batch}, idle, State#state{interval=Interval}};
+    {reply, ok, idle, State#state{interval=Interval}};
 idle(_, _From, State) ->
     {reply, ok, idle, State}.
 
@@ -253,7 +253,7 @@ fetching_next_fileset(pause_batch, _From, State) ->
 fetching_next_fileset(cancel_batch, _From, State) ->
     cancel_batch(State);
 fetching_next_fileset({set_interval, Interval}, _From, State) ->
-    {reply, {error, no_batch}, fetching_next_fileset, State#state{interval=Interval}};
+    {reply, ok, fetching_next_fileset, State#state{interval=Interval}};
 fetching_next_fileset(_, _From, State) ->
     {reply, ok, fetching_next_fileset, State}.
 
@@ -269,7 +269,7 @@ initiating_file_delete(pause_batch, _From, State) ->
 initiating_file_delete(cancel_batch, _From, State) ->
     cancel_batch(State);
 initiating_file_delete({set_interval, Interval}, _From, State) ->
-    {reply, {error, no_batch}, initiating_file_delete, State#state{interval=Interval}};
+    {reply, ok, initiating_file_delete, State#state{interval=Interval}};
 initiating_file_delete(_, _From, State) ->
     {reply, ok, initiating_file_delete, State}.
 
@@ -288,7 +288,7 @@ waiting_file_delete(pause_batch, _From, State) ->
 waiting_file_delete(cancel_batch, _From, State) ->
     cancel_batch(State);
 waiting_file_delete({set_interval, Interval}, _From, State) ->
-    {reply, {error, no_batch}, waiting_file_delete, State#state{interval=Interval}};
+    {reply, ok, waiting_file_delete, State#state{interval=Interval}};
 waiting_file_delete(_, _From, State) ->
     {reply, ok, waiting_file_delete, State}.
 
@@ -309,7 +309,7 @@ paused(resume_batch, _From, State=#state{pause_state=PauseState}) ->
 paused(cancel_batch, _From, State) ->
     cancel_batch(State);
 paused({set_interval, Interval}, _From, State) ->
-    {reply, {error, no_batch}, paused, State#state{interval=Interval}};
+    {reply, ok, paused, State#state{interval=Interval}};
 paused(_, _From, State) ->
     {reply, ok, paused, State}.
 
@@ -364,7 +364,9 @@ cancel_batch(#state{batch_start=BatchStart,
     {reply, ok, idle, NewState}.
 
 %% @doc How many seconds have passed from `Time' to now.
--spec elapsed(non_neg_integer()) -> integer().
+-spec elapsed(undefined | non_neg_integer()) -> integer().
+elapsed(undefined) ->
+    riak_cs_gc:timestamp();
 elapsed(Time) ->
     riak_cs_gc:timestamp() - Time.
 
