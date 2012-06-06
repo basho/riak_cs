@@ -76,7 +76,7 @@ forbidden(RD, #key_context{context=ICtx}=Ctx) ->
                          {halt, Code} -> Code;
                          _            -> -1
                      end,
-            dt_return(<<"forbidden">>, [Reason], [extract_name(Ctx2#context.user), <<"true">>]),
+            dt_return(<<"forbidden">>, [Reason], [extract_name((Ctx2#key_context.context)#context.user), <<"true">>]),
             Ret
     end.
 
