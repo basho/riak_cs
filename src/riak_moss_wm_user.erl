@@ -53,7 +53,7 @@ forbidden(RD, Ctx) ->
                    end,
             case riak_moss_wm_utils:find_and_auth_user(RD, Ctx, Next) of
                 {false, _RD2, Ctx2} = FalseRet ->
-                    dt_return(<<"forbidden">>, [], [extract_name((Ctx2#key_context.context)#context.user), <<"false">>]),
+                    dt_return(<<"forbidden">>, [], [extract_name(Ctx2#context.user), <<"false">>]),
                     FalseRet;
                 {Rsn, _RD2, Ctx2} = Ret ->
                     Reason = case Rsn of
