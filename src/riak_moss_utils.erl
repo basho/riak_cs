@@ -358,8 +358,15 @@ get_user(KeyId, RiakPid) ->
                     Values = [binary_to_term(Value) ||
                                  Value <- riakc_obj:get_values(Obj)],
                     User = update_user_record(hd(Values)),
-                    Buckets = resolve_buckets(Values, [], KeepDeletedBuckets),
-                    {ok, {User?RCS_USER{buckets=Buckets}, riakc_obj:vclock(Obj)}}
+                    %% Make sure the user account is enabled
+                    case User?RCS_USER.status of
+                        enabled ->
+                            Buckets = resolve_buckets(Values, [], KeepDeletedBuckets),
+                            {ok, {User?RCS_USER{buckets=Buckets},
+                                  riakc_obj:vclock(Obj)}};
+                        _ ->
+                            {error, disabled}
+                    end
             end;
         Error ->
             Error
