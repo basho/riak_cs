@@ -96,7 +96,7 @@ accept_json(RD, Ctx) ->
     {boolean() | {halt, term()}, term(), term()}.
 accept_xml(RD, Ctx) ->
     dt_entry(<<"accept_xml">>),
-    Body = wrq:req_body(RD),
+    Body = binary_to_list(wrq:req_body(RD)),
     case catch xmerl_scan:string(Body, []) of
         {'EXIT', _} ->
             riak_moss_s3_response:api_error(invalid_user_status, RD, Ctx);
