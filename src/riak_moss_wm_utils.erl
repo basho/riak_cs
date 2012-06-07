@@ -20,6 +20,8 @@
          validate_auth_header/3,
          deny_access/2,
          extract_name/1,
+         normalize_headers/1,
+         extract_amazon_headers/1,
          extract_user_metadata/1]).
 
 -include("riak_moss.hrl").
@@ -279,10 +281,24 @@ extract_name(?MOSS_USER{name=Name}) ->
 extract_name(_) ->
     "-unknown-".
 
+extract_amazon_headers(RD) ->
+    Headers = get_request_headers(RD),
+    FilterFun =
+        fun({K, V}, Acc) ->
+                case lists:prefix("x-amz-", K) of
+                    true ->
+                        V2 = unicode:characters_to_binary(V, utf8),
+                        [[K, ":", V2, "\n"] | Acc];
+                    false ->
+                        Acc
+                end
+        end,
+    ordsets:from_list(lists:foldl(FilterFun, [], Headers)).
+
 %% @doc Extract user metadata ("x-amz-meta") from request header
 %% copied from riak_moss_s3_auth.erl
-extract_user_metadata(Request) ->
-    extract_metadata(normalize_headers(get_request_headers(Request))).
+extract_user_metadata(RD) ->
+    extract_metadata(normalize_headers(get_request_headers(RD))).
 
 get_request_headers(RD) ->
     mochiweb_headers:to_list(wrq:req_headers(RD)).
@@ -315,8 +331,6 @@ extract_metadata(Headers) ->
                 end
         end,
     ordsets:from_list(lists:foldl(FilterFun, [], Headers)).
-
->>>>>>> 0707b3f... Added support for handling of user-metadata .. includes fix for signature calculation #175
 
 %% ===================================================================
 %% Internal functions

@@ -14,8 +14,7 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
--export([authenticate/3,
-         calculate_qs_signature/5]).
+-export([authenticate/3]).
 
 %% ===================================================================
 %% Public API
@@ -47,45 +46,13 @@ authenticate(RD, KeyData, Signature) ->
             {error, invalid_authentication}
     end.
 
-%% @TODO To be removed before merge. Just for testing.
--spec calculate_qs_signature(string(), string(), string(), string(), [{string(), string()}]) -> string() | {error, term()}.
-calculate_qs_signature(KeyData, Verb, Resource, Expires, RawHeaders) when is_list(Verb) ->
-    Headers = normalize_headers(RawHeaders),
-    AmazonHeaders = extract_amazon_headers(Headers),
-    case proplists:get_value("content-md5", Headers) of
-        undefined ->
-            CMD5 = [];
-        CMD5 ->
-            ok
-    end,
-    case proplists:get_value("content-type", Headers) of
-        undefined ->
-            ContentType = [];
-        ContentType ->
-            ok
-    end,
-    STS = [Verb, "\n",
-           CMD5,
-           "\n",
-           ContentType,
-           "\n",
-           Expires,
-           "\n",
-           AmazonHeaders,
-           Resource],
-    mochiweb_util:quote_plus(base64:encode_to_string(
-                               crypto:sha_mac(KeyData, STS)));
-calculate_qs_signature(_KeyData, _Verb, _Resource, _, _Headers)  ->
-    lager:error("HTTP verb must be a string"),
-    {error, badarg}.
-
 %% ===================================================================
 %% Internal functions
 %% ===================================================================
 
 calculate_signature(KeyData, RD) ->
-    Headers = normalize_headers(get_request_headers(RD)),
-    AmazonHeaders = extract_amazon_headers(Headers),
+    Headers = riak_moss_wm_utils:normalize_headers(RD),
+    AmazonHeaders = riak_moss_wm_utils:extract_amazon_headers(Headers),
     Resource = [wrq:path(RD),
                 canonicalize_qs(lists:sort(wrq:req_qs(RD)))],
     Expires = wrq:get_qs_value("Expires", RD),
@@ -125,40 +92,6 @@ calculate_signature(KeyData, RD) ->
 
 check_auth(PresentedSignature, CalculatedSignature) ->
     PresentedSignature == CalculatedSignature.
-
-get_request_headers(RD) ->
-    mochiweb_headers:to_list(wrq:req_headers(RD)).
-
-normalize_headers(Headers) ->
-    FilterFun =
-        fun({K, V}, Acc) ->
-                LowerKey = string:to_lower(any_to_list(K)),
-                [{LowerKey, V} | Acc]
-        end,
-    ordsets:from_list(lists:foldl(FilterFun, [], Headers)).
-
-extract_amazon_headers(Headers) ->
-    FilterFun =
-        fun({K, V}, Acc) ->
-                case lists:prefix("x-amz-", K) of
-                    true ->
-                        V2 = unicode:characters_to_binary(V, utf8),
-                        [[K, ":", V2, "\n"] | Acc];
-                    false ->
-                        Acc
-                end
-        end,
-    ordsets:from_list(lists:foldl(FilterFun, [], Headers)).
-
-any_to_list(V) when is_list(V) ->
-    V;
-any_to_list(V) when is_atom(V) ->
-    atom_to_list(V);
-any_to_list(V) when is_binary(V) ->
-    binary_to_list(V);
-any_to_list(V) when is_integer(V) ->
-    integer_to_list(V).
-
 
 -define(ROOT_HOST, "s3.amazonaws.com").
 -define(SUBRESOURCES, ["acl", "location", "logging", "notification", "partNumber",
