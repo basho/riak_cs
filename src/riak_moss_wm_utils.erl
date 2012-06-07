@@ -281,8 +281,7 @@ extract_name(?MOSS_USER{name=Name}) ->
 extract_name(_) ->
     "-unknown-".
 
-extract_amazon_headers(RD) ->
-    Headers = get_request_headers(RD),
+extract_amazon_headers(Headers) ->
     FilterFun =
         fun({K, V}, Acc) ->
                 case lists:prefix("x-amz-", K) of
@@ -298,12 +297,13 @@ extract_amazon_headers(RD) ->
 %% @doc Extract user metadata ("x-amz-meta") from request header
 %% copied from riak_moss_s3_auth.erl
 extract_user_metadata(RD) ->
-    extract_metadata(normalize_headers(get_request_headers(RD))).
+    extract_metadata(normalize_headers(RD)).
 
 get_request_headers(RD) ->
     mochiweb_headers:to_list(wrq:req_headers(RD)).
 
-normalize_headers(Headers) ->
+normalize_headers(RD) ->
+    Headers = get_request_headers(RD),
     FilterFun =
         fun({K, V}, Acc) ->
                 LowerKey = string:to_lower(any_to_list(K)),
@@ -311,21 +311,13 @@ normalize_headers(Headers) ->
         end,
     ordsets:from_list(lists:foldl(FilterFun, [], Headers)).
 
-any_to_list(V) when is_list(V) ->
-    V;
-any_to_list(V) when is_atom(V) ->
-    atom_to_list(V);
-any_to_list(V) when is_binary(V) ->
-    binary_to_list(V);
-any_to_list(V) when is_integer(V) ->
-    integer_to_list(V).
-
 extract_metadata(Headers) ->
     FilterFun =
         fun({K, V}, Acc) ->
-                case lists:prefix("x-amz-meta", K) of
+                case lists:prefix("x-amz-meta-", K) of
                     true ->
-                        [{K, V} | Acc];
+                        V2 = unicode:characters_to_list(V, utf8),
+                        [{K, V2} | Acc];
                     false ->
                         Acc
                 end
@@ -335,6 +327,15 @@ extract_metadata(Headers) ->
 %% ===================================================================
 %% Internal functions
 %% ===================================================================
+
+any_to_list(V) when is_list(V) ->
+    V;
+any_to_list(V) when is_atom(V) ->
+    atom_to_list(V);
+any_to_list(V) when is_binary(V) ->
+    binary_to_list(V);
+any_to_list(V) when is_integer(V) ->
+    integer_to_list(V).
 
 %% @doc Get an ISO 8601 formatted timestamp representing
 %% current time.
