@@ -89,17 +89,17 @@ accept_json(RD, Ctx) ->
             UpdateItems = lists:foldl(fun user_json_filter/2, [], UserItems),
             update_user(UpdateItems, RD, Ctx);
         {'EXIT', _} ->
-            riak_moss_s3_response:api_error(invalid_user_update, RD, Ctx)
+            riak_moss_s3_response:api_error(invalid_user_status, RD, Ctx)
     end.
 
 -spec accept_xml(term(), term()) ->
     {boolean() | {halt, term()}, term(), term()}.
 accept_xml(RD, Ctx) ->
     dt_entry(<<"accept_xml">>),
-    Body = binary_to_list(wrq:req_body(RD)),
+    Body = wrq:req_body(RD),
     case catch xmerl_scan:string(Body, []) of
         {'EXIT', _} ->
-            riak_moss_s3_response:api_error(invalid_user_update, RD, Ctx);
+            riak_moss_s3_response:api_error(invalid_user_status, RD, Ctx);
         {ParsedData, _Rest} ->
             UpdateItems = lists:foldl(fun user_xml_filter/2,
                                       [],
@@ -226,7 +226,7 @@ update_user(UpdateItems, RD, Ctx=#context{user=User,
                     end
             end;
         false ->
-            riak_moss_s3_response:api_error(invalid_user_update, RD, Ctx)
+            riak_moss_s3_response:api_error(invalid_user_status, RD, Ctx)
     end.
 
 -spec user_json_filter({binary(), binary()}, [{atom(), term()}]) -> [{atom(), term()}].

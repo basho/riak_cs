@@ -33,8 +33,8 @@ error_message(user_already_exists) ->
     "The specified email address has already been registered. Email addresses must be unique among all users of the system. Please try again with a different email address.";
 error_message(entity_too_large) ->
     "Your proposed upload exceeds the maximum allowed object size.";
-error_message(invalid_user_update) ->
-    "The user update you request was invalid.";
+error_message(invalid_user_status) ->
+    "Bad Request";
 error_message(no_such_bucket) ->
     "The specified bucket does not exist.";
 error_message({riak_connect_failed, Reason}) ->
@@ -51,7 +51,7 @@ error_code(bucket_not_empty) -> "BucketNotEmpty";
 error_code(bucket_already_exists) -> "BucketAlreadyExists";
 error_code(user_already_exists) -> "UserAlreadyExists";
 error_code(entity_too_large) -> "EntityTooLarge";
-error_code(invalid_user_update) -> "InvalidUserUpdate";
+error_code(invalid_user_status) -> "InvalidUserStatus";
 error_code(no_such_bucket) -> "NoSuchBucket";
 error_code({riak_connect_failed, _}) -> "RiakConnectFailed";
 error_code(admin_key_undefined) -> "ServiceUnavailable";
@@ -67,7 +67,7 @@ status_code(bucket_not_empty) ->  409;
 status_code(bucket_already_exists) -> 409;
 status_code(user_already_exists) -> 409;
 status_code(entity_too_large) -> 400;
-status_code(invalid_user_update) -> 400;
+status_code(invalid_user_status) -> 400;
 status_code(no_such_bucket) -> 404;
 status_code({riak_connect_failed, _}) -> 503;
 status_code(admin_key_undefined) -> 503;
