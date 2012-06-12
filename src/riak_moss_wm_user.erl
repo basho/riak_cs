@@ -97,9 +97,9 @@ accept_json(RD, Ctx=#context{user=undefined}) ->
             case riak_moss_utils:create_user(UserName, Email) of
                 {ok, User} ->
                     CTypeWritten = wrq:set_resp_header("Content-Type", ?JSON_TYPE, RD),
-                    WrittenRD = wrq:set_resp_body(
-                                  riak_moss_wm_utils:user_record_to_json(User),
-                                  CTypeWritten),
+                    UserData = riak_moss_wm_utils:user_record_to_json(User),
+                    JsonDoc = list_to_binary(mochijson2:encode(UserData)),
+                    WrittenRD = wrq:set_resp_body(JsonDoc, CTypeWritten),
                     {true, WrittenRD, Ctx};
                 {error, Reason} ->
                     riak_moss_s3_response:api_error(Reason, RD, Ctx)
@@ -135,9 +135,9 @@ accept_xml(RD, Ctx=#context{user=undefined}) ->
             case riak_moss_utils:create_user(UserName, Email) of
                 {ok, User} ->
                     CTypeWritten = wrq:set_resp_header("Content-Type", ?XML_TYPE, RD),
-                    WrittenRD = wrq:set_resp_body(
-                                  riak_moss_wm_utils:user_record_to_xml(User),
-                                  CTypeWritten),
+                    UserData = riak_moss_wm_utils:user_record_to_xml(User),
+                    XmlDoc = riak_moss_s3_response:export_xml([UserData]),
+                    WrittenRD = wrq:set_resp_body(XmlDoc, CTypeWritten),
                     {true, WrittenRD, Ctx};
                 {error, Reason} ->
                     riak_moss_s3_response:api_error(Reason, RD, Ctx)
@@ -158,19 +158,16 @@ accept_xml(RD, Ctx) ->
 
 produce_json(RD, #context{user=User}=Ctx) ->
     dt_entry(<<"produce_json">>),
-    MJ = {struct, riak_moss_wm_utils:user_record_to_proplist(User)},
-    Body = mochijson2:encode(MJ),
+    Body = mochijson2:encode(
+             riak_moss_wm_utils:user_record_to_json(User)),
     Etag = etag(Body),
     RD2 = wrq:set_resp_header("ETag", Etag, RD),
     {Body, RD2, Ctx}.
 
 produce_xml(RD, #context{user=User}=Ctx) ->
     dt_entry(<<"produce_xml">>),
-    XmlUserRec =
-        [{Key, [binary_to_list(Value)]} ||
-            {Key, Value} <- riak_moss_wm_utils:user_record_to_proplist(User)],
-    Doc = [{'User', XmlUserRec}],
-    Body = riak_moss_s3_response:export_xml(Doc),
+    XmlDoc = riak_moss_wm_utils:user_record_to_xml(User),
+    Body = riak_moss_s3_response:export_xml([XmlDoc]),
     Etag = etag(Body),
     RD2 = wrq:set_resp_header("ETag", Etag, RD),
     {Body, RD2, Ctx}.

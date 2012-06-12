@@ -231,7 +231,7 @@ user_record_to_json(?RCS_USER{email=Email,
                 {key_secret, list_to_binary(KeySecret)},
                 {id, list_to_binary(CanonicalID)},
                 {status, StatusBin}],
-    list_to_binary(mochijson2:encode(UserData)).
+    {struct, UserData}.
 
 %% @doc Convert a Riak CS user record to XML
 -spec user_record_to_xml(term()) -> binary().
@@ -248,18 +248,16 @@ user_record_to_xml(?RCS_USER{email=Email,
         _ ->
             StatusStr = "disabled"
     end,
-    UserData = [{'User',
-                 [
-                  {'Email', [Email]},
-                  {'DisplayName', [DisplayName]},
-                  {'Name', [Name]},
-                  {'KeyId', [KeyID]},
-                  {'KeySecret', [KeySecret]},
-                  {'Id', [CanonicalID]},
-                  {'Status', [StatusStr]}
-                ]}],
-    unicode:characters_to_binary(
-      xmerl:export_simple(UserData, xmerl_xml, [{prolog, ?XML_PROLOG}])).
+    {'User',
+      [
+       {'Email', [Email]},
+       {'DisplayName', [DisplayName]},
+       {'Name', [Name]},
+       {'KeyId', [KeyID]},
+       {'KeySecret', [KeySecret]},
+       {'Id', [CanonicalID]},
+       {'Status', [StatusStr]}
+      ]}.
 
 %% @doc Get an ISO 8601 formatted timestamp representing
 %% current time.
