@@ -33,6 +33,7 @@
          put_object/5,
          riak_connection/0,
          riak_connection/1,
+         save_user/3,
          set_bucket_acl/5,
          set_object_acl/5,
          to_bucket_name/2]).
@@ -348,17 +349,17 @@ get_user(KeyId, RiakPid) ->
         {ok, {Obj, KeepDeletedBuckets}} ->
             case riakc_obj:value_count(Obj) of
                 1 ->
-                    {ok, {binary_to_term(riakc_obj:get_value(Obj)),
-                          riakc_obj:vclock(Obj)}};
+                    Value = binary_to_term(riakc_obj:get_value(Obj)),
+                    User = update_user_record(Value),
+                    {ok, {User, riakc_obj:vclock(Obj)}};
                 0 ->
                     {error, no_value};
                 _ ->
                     Values = [binary_to_term(Value) ||
                                  Value <- riakc_obj:get_values(Obj)],
-                    User = hd(Values),
+                    User = update_user_record(hd(Values)),
                     Buckets = resolve_buckets(Values, [], KeepDeletedBuckets),
-                    {ok, {User?MOSS_USER{buckets=Buckets},
-                          riakc_obj:vclock(Obj)}}
+                    {ok, {User?RCS_USER{buckets=Buckets}, riakc_obj:vclock(Obj)}}
             end;
         Error ->
             Error
@@ -476,6 +477,26 @@ riak_connection(Pool) ->
         Worker ->
             {ok, Worker}
     end.
+
+%% @doc Save information about a MOSS user
+-spec save_user(moss_user(), term(), pid()) -> ok.
+save_user(User, VClock, RiakPid) ->
+    UserObj0 = riakc_obj:new(?USER_BUCKET,
+                             list_to_binary(User?MOSS_USER.key_id),
+                             term_to_binary(User)),
+    case VClock of
+        undefined ->
+            UserObj1 = UserObj0;
+        _ ->
+            UserObj1 = riakc_obj:set_vclock(UserObj0, VClock)
+    end,
+    Indexes = [{?EMAIL_INDEX, User?MOSS_USER.email},
+               {?ID_INDEX, User?MOSS_USER.canonical_id}],
+    Meta = dict:store(?MD_INDEX, Indexes, dict:new()),
+    UserObj = riakc_obj:update_metadata(UserObj1, Meta),
+
+    %% @TODO Error handling
+    riakc_pb_socket:put(RiakPid, UserObj).
 
 %% @doc Set the ACL for a bucket. Existing ACLs are only
 %% replaced, they cannot be updated.
@@ -805,26 +826,6 @@ resolve_buckets([HeadUserRec | RestUserRecs], Buckets, _KeepDeleted) ->
     UpdBuckets = lists:foldl(fun bucket_resolver/2, Buckets, HeadBuckets),
     resolve_buckets(RestUserRecs, UpdBuckets, _KeepDeleted).
 
-%% @doc Save information about a MOSS user
--spec save_user(moss_user(), term(), pid()) -> ok.
-save_user(User, VClock, RiakPid) ->
-    UserObj0 = riakc_obj:new(?USER_BUCKET,
-                             list_to_binary(User?MOSS_USER.key_id),
-                             term_to_binary(User)),
-    case VClock of
-        undefined ->
-            UserObj1 = UserObj0;
-        _ ->
-            UserObj1 = riakc_obj:set_vclock(UserObj0, VClock)
-    end,
-    Indexes = [{?EMAIL_INDEX, User?MOSS_USER.email},
-               {?ID_INDEX, User?MOSS_USER.canonical_id}],
-    Meta = dict:store(?MD_INDEX, Indexes, dict:new()),
-    UserObj = riakc_obj:update_metadata(UserObj1, Meta),
-
-    %% @TODO Error handling
-    riakc_pb_socket:put(RiakPid, UserObj).
-
 %% @doc Shared code used when doing a bucket creation or deletion.
 -spec serialized_bucket_op(binary(),
                            acl(),
@@ -939,6 +940,19 @@ update_user_buckets(User, Bucket) ->
                     {ok, ignore}
             end
     end.
+
+%% @doc Update a user record from a previous version if necessary.
+-spec update_user_record(rcs_user()) -> rcs_user().
+update_user_record(User=?RCS_USER{}) ->
+    User;
+update_user_record(User=#moss_user_v1{}) ->
+    ?RCS_USER{name=User#moss_user_v1.name,
+              display_name=User#moss_user_v1.display_name,
+              email=User#moss_user_v1.email,
+              key_id=User#moss_user_v1.key_id,
+              key_secret=User#moss_user_v1.key_secret,
+              canonical_id=User#moss_user_v1.canonical_id,
+              buckets=User#moss_user_v1.buckets}.
 
 %% @doc Return a user record for the specified user name and
 %% email address.

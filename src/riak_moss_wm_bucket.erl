@@ -136,10 +136,12 @@ check_grants(#context{user=User,
 %% retrieved.
 shift_to_owner(RD, Ctx, OwnerId, RiakPid) when RiakPid /= undefined ->
     case riak_moss_utils:get_user(OwnerId, RiakPid) of
-        {ok, {Owner, OwnerVClock}} ->
+        {ok, {Owner, OwnerVClock}} when Owner?MOSS_USER.status =:= enabled ->
             AccessRD = riak_moss_access_logger:set_user(Owner, RD),
             {false, AccessRD, Ctx#context{user=Owner,
                                           user_vclock=OwnerVClock}};
+        {ok, _} ->
+            riak_moss_wm_utils:deny_access(RD, Ctx);
         {error, _} ->
             riak_moss_s3_response:api_error(bucket_owner_unavailable, RD, Ctx)
     end.
