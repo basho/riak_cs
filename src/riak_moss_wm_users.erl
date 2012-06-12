@@ -150,9 +150,9 @@ user_doc(Format, RiakPid, UserId, Status) ->
                              Status =:= undefined ->
             case Format of
                 xml ->
-                    produce_user_xml(User);
+                    riak_moss_wm_utils:user_record_to_xml(User);
                 json ->
-                    produce_user_json(User)
+                    riak_moss_wm_utils:user_record_to_json(User)
             end;
         {ok, _} ->
             %% Status is defined and does not match the account status
@@ -162,15 +162,6 @@ user_doc(Format, RiakPid, UserId, Status) ->
                           " Reason: ~p", [UserId, Reason]),
             []
     end.
-
-produce_user_json(User) ->
-      {struct, riak_moss_wm_utils:user_record_to_proplist(User)}.
-
-produce_user_xml(User) ->
-    XmlUserRec =
-        [{Key, [binary_to_list(Value)]} ||
-            {Key, Value} <- riak_moss_wm_utils:user_record_to_proplist(User)],
-    {'User', XmlUserRec}.
 
 unique_id() ->
     Rand = crypto:sha(term_to_binary({make_ref(), now()})),

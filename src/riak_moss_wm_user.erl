@@ -14,9 +14,10 @@
          accept_json/2,
          accept_xml/2,
          allowed_methods/2,
+         post_is_create/2,
+         create_path/2,
          produce_json/2,
          produce_xml/2,
-         process_post/2,
          finish_request/2]).
 
 -include("riak_moss.hrl").
@@ -79,8 +80,33 @@ content_types_provided(RD, Ctx) ->
     dt_entry(<<"content_types_provided">>),
     {[{?XML_TYPE, produce_xml}, {?JSON_TYPE, produce_json}], RD, Ctx}.
 
+post_is_create(RD, Ctx) -> {true, RD, Ctx}.
+
+create_path(RD, Ctx) -> {"/riak-cs/user", RD, Ctx}.
+
 -spec accept_json(term(), term()) ->
     {boolean() | {halt, term()}, term(), term()}.
+accept_json(RD, Ctx=#context{user=undefined}) ->
+    dt_entry(<<"accept_json">>),
+    Body = wrq:req_body(RD),
+    case catch mochijson2:decode(Body) of
+        {struct, UserItems} ->
+            ValidItems = lists:foldl(fun user_json_filter/2, [], UserItems),
+            UserName = proplists:get_value(name, ValidItems, ""),
+            Email= proplists:get_value(email, ValidItems, ""),
+            case riak_moss_utils:create_user(UserName, Email) of
+                {ok, User} ->
+                    CTypeWritten = wrq:set_resp_header("Content-Type", ?JSON_TYPE, RD),
+                    UserData = riak_moss_wm_utils:user_record_to_json(User),
+                    JsonDoc = list_to_binary(mochijson2:encode(UserData)),
+                    WrittenRD = wrq:set_resp_body(JsonDoc, CTypeWritten),
+                    {true, WrittenRD, Ctx};
+                {error, Reason} ->
+                    riak_moss_s3_response:api_error(Reason, RD, Ctx)
+            end;
+        {'EXIT', _} ->
+            riak_moss_s3_response:api_error(invalid_user_update, RD, Ctx)
+    end;
 accept_json(RD, Ctx) ->
     dt_entry(<<"accept_json">>),
     Body = wrq:req_body(RD),
@@ -94,6 +120,29 @@ accept_json(RD, Ctx) ->
 
 -spec accept_xml(term(), term()) ->
     {boolean() | {halt, term()}, term(), term()}.
+accept_xml(RD, Ctx=#context{user=undefined}) ->
+    dt_entry(<<"accept_xml">>),
+    Body = binary_to_list(wrq:req_body(RD)),
+    case catch xmerl_scan:string(Body, []) of
+        {'EXIT', _} ->
+            riak_moss_s3_response:api_error(invalid_user_update, RD, Ctx);
+        {ParsedData, _Rest} ->
+            ValidItems = lists:foldl(fun user_xml_filter/2,
+                                     [],
+                                     ParsedData#xmlElement.content),
+            UserName = proplists:get_value(name, ValidItems, ""),
+            Email= proplists:get_value(email, ValidItems, ""),
+            case riak_moss_utils:create_user(UserName, Email) of
+                {ok, User} ->
+                    CTypeWritten = wrq:set_resp_header("Content-Type", ?XML_TYPE, RD),
+                    UserData = riak_moss_wm_utils:user_record_to_xml(User),
+                    XmlDoc = riak_moss_s3_response:export_xml([UserData]),
+                    WrittenRD = wrq:set_resp_body(XmlDoc, CTypeWritten),
+                    {true, WrittenRD, Ctx};
+                {error, Reason} ->
+                    riak_moss_s3_response:api_error(Reason, RD, Ctx)
+            end
+    end;
 accept_xml(RD, Ctx) ->
     dt_entry(<<"accept_xml">>),
     Body = binary_to_list(wrq:req_body(RD)),
@@ -109,44 +158,19 @@ accept_xml(RD, Ctx) ->
 
 produce_json(RD, #context{user=User}=Ctx) ->
     dt_entry(<<"produce_json">>),
-    MJ = {struct, riak_moss_wm_utils:user_record_to_proplist(User)},
-    Body = mochijson2:encode(MJ),
+    Body = mochijson2:encode(
+             riak_moss_wm_utils:user_record_to_json(User)),
     Etag = etag(Body),
     RD2 = wrq:set_resp_header("ETag", Etag, RD),
     {Body, RD2, Ctx}.
 
 produce_xml(RD, #context{user=User}=Ctx) ->
     dt_entry(<<"produce_xml">>),
-    XmlUserRec =
-        [{Key, [binary_to_list(Value)]} ||
-            {Key, Value} <- riak_moss_wm_utils:user_record_to_proplist(User)],
-    Doc = [{'User', XmlUserRec}],
-    Body = riak_moss_s3_response:export_xml(Doc),
+    XmlDoc = riak_moss_wm_utils:user_record_to_xml(User),
+    Body = riak_moss_s3_response:export_xml([XmlDoc]),
     Etag = etag(Body),
     RD2 = wrq:set_resp_header("ETag", Etag, RD),
     {Body, RD2, Ctx}.
-
-%% @doc Create a user from a POST.
-%%      and return the user object
-%%      as JSON
--spec process_post(term(), term()) -> {true, term(), term}.
-process_post(RD, Ctx) ->
-    dt_entry(<<"process_post">>),
-    Body = wrq:req_body(RD),
-    ParsedBody = mochiweb_util:parse_qs(binary_to_list(Body)),
-    UserName = proplists:get_value("name", ParsedBody, ""),
-    Email= proplists:get_value("email", ParsedBody, ""),
-    case riak_moss_utils:create_user(UserName, Email) of
-        {ok, UserRecord} ->
-            PropListUser = riak_moss_wm_utils:user_record_to_proplist(UserRecord),
-            CTypeWritten = wrq:set_resp_header("Content-Type", ?JSON_TYPE, RD),
-            WrittenRD = wrq:set_resp_body(list_to_binary(
-                                            mochijson2:encode(PropListUser)),
-                                          CTypeWritten),
-            {true, WrittenRD, Ctx};
-        {error, Reason} ->
-            riak_moss_s3_response:api_error(Reason, RD, Ctx)
-    end.
 
 finish_request(RD, Ctx=#context{riakc_pid=undefined}) ->
     dt_entry(<<"finish_request">>, [0], []),
@@ -207,8 +231,8 @@ forbidden(RD, Ctx, User) ->
 -spec update_user([{binary(), binary()}], term(), term()) ->
     {boolean() | {halt, term()}, term(), term()}.
 update_user(UpdateItems, RD, Ctx=#context{user=User,
-                                      user_vclock=VClock,
-                                      riakc_pid=RiakPid}) ->
+                                          user_vclock=VClock,
+                                          riakc_pid=RiakPid}) ->
     dt_entry(<<"update_user">>),
     case lists:keyfind(status, 1, UpdateItems) of
         {status, Status} ->
@@ -233,9 +257,9 @@ update_user(UpdateItems, RD, Ctx=#context{user=User,
 user_json_filter({ItemKey, ItemValue}, Acc) ->
     case ItemKey of
         <<"email">> ->
-            Acc;
+            [{email, binary_to_list(ItemValue)} | Acc];
         <<"name">> ->
-            Acc;
+            [{name, binary_to_list(ItemValue)} | Acc];
         <<"status">> ->
             case ItemValue of
                 <<"enabled">> ->
@@ -261,9 +285,21 @@ user_xml_filter(#xmlText{}, Acc) ->
 user_xml_filter(Element, Acc) ->
     case Element#xmlElement.name of
         'Email' ->
-            Acc;
+            [Content | _] = Element#xmlElement.content,
+            case is_record(Content, xmlText) of
+                true ->
+                    [{email, Content#xmlText.value} | Acc];
+                false ->
+                    Acc
+            end;
         'Name' ->
-            Acc;
+            [Content | _] = Element#xmlElement.content,
+            case is_record(Content, xmlText) of
+                true ->
+                    [{name, Content#xmlText.value} | Acc];
+                false ->
+                    Acc
+            end;
         'Status' ->
             [Content | _] = Element#xmlElement.content,
             case is_record(Content, xmlText) of

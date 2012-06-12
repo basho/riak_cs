@@ -15,7 +15,8 @@
          iso_8601_to_rfc_1123/1,
          to_rfc_1123/1,
          streaming_get/4,
-         user_record_to_proplist/1,
+         user_record_to_json/1,
+         user_record_to_xml/1,
          find_and_auth_user/3,
          validate_auth_header/3,
          deny_access/2,
@@ -208,30 +209,55 @@ streaming_get(FsmPid, StartTime, UserName, BFile_str) ->
             {Chunk, fun() -> streaming_get(FsmPid, StartTime, UserName, BFile_str) end}
     end.
 
-%% @doc Convert a moss_user record
-%%      into a property list, likely
-%%      for json encoding
--spec user_record_to_proplist(term()) -> list().
-user_record_to_proplist(?MOSS_USER{email=Email,
-                                   display_name=DisplayName,
-                                   name=Name,
-                                   key_id=KeyID,
-                                   key_secret=KeySecret,
-                                   canonical_id=CanonicalID}) ->
-    [{'Email', list_to_binary(Email)},
-     {'DisplayName', list_to_binary(DisplayName)},
-     {'Name', list_to_binary(Name)},
-     {'KeyId', list_to_binary(KeyID)},
-     {'KeySecret', list_to_binary(KeySecret)},
-     {'Id', list_to_binary(CanonicalID)}];
-user_record_to_proplist(#moss_user{name=Name,
-                                   key_id=KeyID,
-                                   key_secret=KeySecret,
-                                   buckets = Buckets}) ->
-    [{'Name', list_to_binary(Name)},
-     {'KeyId', list_to_binary(KeyID)},
-     {'KeySecret', list_to_binary(KeySecret)},
-     {'Buckets', Buckets}].
+%% @doc Convert a Riak CS user record to JSON
+-spec user_record_to_json(term()) -> binary().
+user_record_to_json(?RCS_USER{email=Email,
+                              display_name=DisplayName,
+                              name=Name,
+                              key_id=KeyID,
+                              key_secret=KeySecret,
+                              canonical_id=CanonicalID,
+                              status=Status}) ->
+    case Status of
+        enabled ->
+            StatusBin = <<"enabled">>;
+        _ ->
+            StatusBin = <<"disabled">>
+    end,
+    UserData = [{email, list_to_binary(Email)},
+                {display_name, list_to_binary(DisplayName)},
+                {name, list_to_binary(Name)},
+                {key_id, list_to_binary(KeyID)},
+                {key_secret, list_to_binary(KeySecret)},
+                {id, list_to_binary(CanonicalID)},
+                {status, StatusBin}],
+    {struct, UserData}.
+
+%% @doc Convert a Riak CS user record to XML
+-spec user_record_to_xml(term()) -> binary().
+user_record_to_xml(?RCS_USER{email=Email,
+                              display_name=DisplayName,
+                              name=Name,
+                              key_id=KeyID,
+                              key_secret=KeySecret,
+                              canonical_id=CanonicalID,
+                              status=Status}) ->
+    case Status of
+        enabled ->
+            StatusStr = "enabled";
+        _ ->
+            StatusStr = "disabled"
+    end,
+    {'User',
+      [
+       {'Email', [Email]},
+       {'DisplayName', [DisplayName]},
+       {'Name', [Name]},
+       {'KeyId', [KeyID]},
+       {'KeySecret', [KeySecret]},
+       {'Id', [CanonicalID]},
+       {'Status', [StatusStr]}
+      ]}.
 
 %% @doc Get an ISO 8601 formatted timestamp representing
 %% current time.
