@@ -50,14 +50,32 @@ produce_json(RD, Ctx=#context{riakc_pid=RiakPid}) ->
     UpdRD = wrq:set_resp_header("Content-Type",
                                 "multipart/mixed; boundary="++Boundary,
                                 RD),
-    {{stream, {<<>>, fun() -> stream_users(json, RiakPid, Boundary) end}}, UpdRD, Ctx}.
+    StatusQsVal = wrq:get_qs_value("status", RD),
+    case StatusQsVal of
+        "enabled" ->
+            Status = enabled;
+        "disabled" ->
+            Status = disabled;
+        _ ->
+            Status = undefined
+    end,
+    {{stream, {<<>>, fun() -> stream_users(json, RiakPid, Boundary, Status) end}}, UpdRD, Ctx}.
 
 produce_xml(RD, Ctx=#context{riakc_pid=RiakPid}) ->
     Boundary = unique_id(),
     UpdRD = wrq:set_resp_header("Content-Type",
                                 "multipart/mixed; boundary="++Boundary,
                                 RD),
-    {{stream, {<<>>, fun() -> stream_users(xml, RiakPid, Boundary) end}}, UpdRD, Ctx}.
+    StatusQsVal = wrq:get_qs_value("status", RD),
+    case StatusQsVal of
+        "enabled" ->
+            Status = enabled;
+        "disabled" ->
+            Status = disabled;
+        _ ->
+            Status = undefined
+    end,
+    {{stream, {<<>>, fun() -> stream_users(xml, RiakPid, Boundary, Status) end}}, UpdRD, Ctx}.
 
 finish_request(RD, Ctx=#context{riakc_pid=undefined}) ->
     {true, RD, Ctx};
@@ -83,32 +101,32 @@ forbidden(RD, Ctx, User) ->
             riak_moss_wm_utils:deny_access(RD, Ctx)
     end.
 
-stream_users(Format, RiakPid, Boundary) ->
+stream_users(Format, RiakPid, Boundary, Status) ->
     case riakc_pb_socket:stream_list_keys(RiakPid, ?USER_BUCKET) of
         {ok, ReqId} ->
             case riak_moss_utils:riak_connection() of
                 {ok, RiakPid2} ->
-                    Res = wait_for_users(Format, RiakPid2, ReqId, Boundary),
+                    Res = wait_for_users(Format, RiakPid2, ReqId, Boundary, Status),
                     riak_moss_utils:close_riak_connection(RiakPid2),
                     Res;
                 {error, _Reason} ->
-                    wait_for_users(Format, RiakPid, ReqId, Boundary)
+                    wait_for_users(Format, RiakPid, ReqId, Boundary, Status)
             end;
         {error, _Reason} ->
             {<<>>, done}
     end.
 
-wait_for_users(Format, RiakPid, ReqId, Boundary) ->
+wait_for_users(Format, RiakPid, ReqId, Boundary, Status) ->
     receive
         {ReqId, {keys, UserIds}} ->
-            UserDocs = [user_doc(Format, RiakPid, binary_to_list(UserId)) ||
-                           UserId <- UserIds],
+            UserDocs = lists:flatten([user_doc(Format, RiakPid, binary_to_list(UserId), Status) ||
+                           UserId <- UserIds]),
             Doc = users_doc(UserDocs, Format, Boundary),
-            {Doc, fun() -> wait_for_users(Format, RiakPid, ReqId, Boundary) end};
+            {Doc, fun() -> wait_for_users(Format, RiakPid, ReqId, Boundary, Status) end};
         {ReqId, done} ->
             {list_to_binary(["\r\n--", Boundary, "--"]), done};
         _ ->
-            wait_for_users(Format, RiakPid, ReqId, Boundary)
+            wait_for_users(Format, RiakPid, ReqId, Boundary, Status)
     end.
 
 %% @doc Compile a multipart entity for a set of user documents.
@@ -126,15 +144,19 @@ users_doc(UserDocs, json, Boundary) ->
 
 %% @doc Generate xml or json terms representing
 %% the information for a given user.
-user_doc(Format, RiakPid, UserId) ->
+user_doc(Format, RiakPid, UserId, Status) ->
     case riak_moss_utils:get_user(UserId, RiakPid) of
-        {ok, {User, _}} ->
+        {ok, {User, _}} when User?MOSS_USER.status =:= Status;
+                             Status =:= undefined ->
             case Format of
                 xml ->
                     produce_user_xml(User);
                 json ->
                     produce_user_json(User)
             end;
+        {ok, _} ->
+            %% Status is defined and does not match the account status
+            [];
         {error, Reason} ->
             _ = lager:warning("Failed to fetch user record. KeyId: ~p"
                           " Reason: ~p", [UserId, Reason]),
