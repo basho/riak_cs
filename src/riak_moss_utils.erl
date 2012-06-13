@@ -9,7 +9,8 @@
 -module(riak_moss_utils).
 
 %% Public API
--export([binary_to_hexlist/1,
+-export([anonymous_user_creation/0,
+         binary_to_hexlist/1,
          close_riak_connection/1,
          close_riak_connection/2,
          create_bucket/5,
@@ -60,6 +61,13 @@
 %% ===================================================================
 %% Public API
 %% ===================================================================
+
+%% @doc Return the value of the `anonymous_user_creation' application
+%% environment variable.
+-spec anonymous_user_creation() -> boolean().
+anonymous_user_creation() ->
+    EnvResponse = application:get_env(riak_moss, anonymous_user_creation),
+    handle_env_response(EnvResponse, false).
 
 %% @doc Convert the passed binary into a string where the numbers are represented in hexadecimal (lowercase and 0 prefilled).
 -spec binary_to_hexlist(binary()) -> string().
@@ -311,25 +319,11 @@ map_keys_and_manifests(Object, _, _) ->
 %% @doc Return the credentials of the admin user
 -spec get_admin_creds() -> {ok, {string(), string()}} | {error, term()}.
 get_admin_creds() ->
-    case application:get_env(riak_moss, admin_key) of
-        {ok, []} ->
-            _ = lager:warning("The admin user's key id has not been specified."),
-            {error, admin_key_undefined};
-        {ok, KeyId} ->
-            case application:get_env(riak_moss, admin_secret) of
-                {ok, []} ->
-                    _ = lager:warning("The admin user's secret has not been specified."),
-                    {error, admin_secret_undefined};
-                {ok, Secret} ->
-                    {ok, {KeyId, Secret}};
-                undefined ->
-                    _ = lager:warning("The admin user's secret is not defined."),
-                    {error, admin_secret_undefined}
-            end;
-        undefined ->
-            _ = lager:warning("The admin user's key id is not defined."),
-            {error, admin_key_undefined}
-    end.
+    KeyEnvResult = application:get_env(riak_moss, admin_key),
+    SecretEnvResult = application:get_env(riak_moss, admin_secret),
+    admin_creds_response(
+      handle_env_response(KeyEnvResult, undefined),
+      handle_env_response(SecretEnvResult, undefined)).
 
 %% @doc Get an object from Riak
 -spec get_object(binary(), binary(), pid()) ->
@@ -546,6 +540,27 @@ to_bucket_name(Type, Bucket) ->
 %% ===================================================================
 %% Internal functions
 %% ===================================================================
+
+-spec admin_creds_response(term(), term()) -> {ok, {term(), term()}} |
+                                              {error, atom()}.
+admin_creds_response(undefined, _) ->
+    _ = lager:warning("The admin user's key id"
+                      "has not been specified."),
+    {error, admin_key_undefined};
+admin_creds_response([], _) ->
+    _ = lager:warning("The admin user's key id"
+                      "has not been specified."),
+    {error, admin_key_undefined};
+admin_creds_response(_, undefined) ->
+    _ = lager:warning("The admin user's secret"
+                      "has not been specified."),
+    {error, admin_secret_undefined};
+admin_creds_response(_, []) ->
+    _ = lager:warning("The admin user's secret"
+                      "has not been specified."),
+    {error, admin_secret_undefined};
+admin_creds_response(Key, Secret) ->
+    {ok, {Key, Secret}}.
 
 %% @doc Generate a JSON document to use for a bucket
 %% ACL request.
@@ -779,6 +794,12 @@ generate_secret(UserName, Key) ->
     base64url:encode_to_string(
       iolist_to_binary(<< SecretPart1:Bytes/binary,
                           SecretPart2:Bytes/binary >>)).
+
+-spec handle_env_response(undefined | {ok, term()}, term()) -> term().
+handle_env_response(undefined, Default) ->
+    Default;
+handle_env_response({ok, Value}, _) ->
+    Value.
 
 %% @doc Determine if an existing bucket from the resolution list
 %% should be kept or replaced when a conflict occurs.
