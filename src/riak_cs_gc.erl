@@ -38,13 +38,16 @@ gc_manifests(Bucket, Key, Manifests, UUIDsToGc, RiakObject, RiakcPid) ->
 
     riakc_pb_socket:put(RiakcPid, NewRiakObject),
 
-    case move_manifests_to_gc_bucket(Manifests, RiakcPid) of
+    PDManifests = riak_moss_manifest:pending_delete_manifests(Manifests) ++
+        MarkedAsPendingDelete,
+    case move_manifests_to_gc_bucket(PDManifests, RiakcPid) of
         ok ->
             case riak_moss_utils:get_manifests(RiakcPid, Bucket, Key) of
                 {ok, RiakObjectAfterPD, NewManifests} ->
+                    UUIDsToMark = [UUID || {UUID, _} <- PDManifests],
                     MarkedAsScheduledDelete =
-                    riak_moss_manifest:mark_scheduled_delete(NewManifests,
-                        UUIDsToGc),
+                        riak_moss_manifest:mark_scheduled_delete(NewManifests,
+                                                                 UUIDsToMark),
                     NewNewRiakObject = riakc_obj:update_value(RiakObjectAfterPD,
                         term_to_binary(MarkedAsScheduledDelete)),
                     riakc_pb_socket:put(RiakcPid, NewNewRiakObject),
