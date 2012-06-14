@@ -327,7 +327,16 @@ handle_sync_event(_Event, _From, StateName, State) ->
     {reply, ok, StateName, State}.
 
 handle_info(start_batch, idle, State) ->
-    NewState = start_batch(State),
+    %% this does not check out a worker from the riak
+    %% connection pool; instead it creates a fresh new worker,
+    %% the idea being that we don't want to delay deletion
+    %% just because the normal request pool is empty; pool
+    %% workers just happen to be literally the socket process,
+    %% so "starting" one here is the same as opening a
+    %% connection, and avoids duplicating the configuration
+    %% lookup code
+    {ok, Riak} = riak_moss_riakc_pool_worker:start_link([]),
+    NewState = start_batch(State#state{riak=Riak}),
     {next_state, fetching_next_fileset, NewState};
 handle_info(start_batch, InBatch, State) ->
     _ = lager:error("Unable to start garbage collection batch"
