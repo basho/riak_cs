@@ -195,7 +195,7 @@ delete_object(Bucket, Key, RiakcPid) ->
     case get_manifests(RiakcPid, Bucket, Key) of
         {ok, RiakObject, Manifests} ->
             ActiveManifests = riak_moss_manifest:active_manifests(Manifests),
-            ActiveUUIDs = [M?MANIFEST.uuid || M <- ActiveManifests],
+            ActiveUUIDs = [UUID || {UUID, _} <- ActiveManifests],
             riak_cs_gc:gc_manifests(Bucket, Key, Manifests, ActiveUUIDs,
                                         RiakObject, RiakcPid),
             ok = riak_cs_stats:update_with_start(object_delete, StartTime);
