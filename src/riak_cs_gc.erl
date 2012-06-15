@@ -29,35 +29,18 @@
 -spec gc_manifests(binary(), binary(), [lfs_manifest()], [binary()],
     riakc_obj:riakc_obj(), pid()) ->
     ok | {error, term()}.
-gc_manifests(Bucket, Key, Manifests, UUIDsToGc, RiakObject, RiakcPid) ->
-    MarkedAsPendingDelete =
-    riak_moss_manifest:mark_pending_delete(Manifests, UUIDsToGc),
-
-    NewRiakObject = riakc_obj:update_value(RiakObject,
-        term_to_binary(MarkedAsPendingDelete)),
-
-    riakc_pb_socket:put(RiakcPid, NewRiakObject),
-
-    PDManifests = riak_moss_manifest:pending_delete_manifests(Manifests) ++
-        MarkedAsPendingDelete,
-    case move_manifests_to_gc_bucket(PDManifests, RiakcPid) of
-        ok ->
-            case riak_moss_utils:get_manifests(RiakcPid, Bucket, Key) of
-                {ok, RiakObjectAfterPD, NewManifests} ->
-                    UUIDsToMark = [UUID || {UUID, _} <- PDManifests],
-                    MarkedAsScheduledDelete =
-                        riak_moss_manifest:mark_scheduled_delete(NewManifests,
-                                                                 UUIDsToMark),
-                    NewNewRiakObject = riakc_obj:update_value(RiakObjectAfterPD,
-                        term_to_binary(MarkedAsScheduledDelete)),
-                    riakc_pb_socket:put(RiakcPid, NewNewRiakObject),
-                    ok;
-                {error, notfound}=Error ->
-                    Error
-            end;
-        Error1 ->
-            Error1
-    end.
+gc_manifests(Bucket, Key, Manifests, UUIDsToMark, RiakObject, RiakcPid) ->
+    MarkResult = mark_as_pending_delete(Manifests,
+                                        UUIDsToMark,
+                                        RiakObject,
+                                        RiakcPid),
+    PDManifests = get_pending_delete_manifests(Manifests, MarkResult),
+    MoveResult = move_manifests_to_gc_bucket(PDManifests, RiakcPid),
+    mark_as_scheduled_delete(MoveResult,
+                             Bucket,
+                             Key,
+                             [UUID || {UUID, _} <- PDManifests],
+                             RiakcPid).
 
 %% @doc Return the minimum number of seconds a file manifest waits in
 %% the `deleted' state before being removed from the file record.
@@ -103,6 +86,41 @@ timestamp() ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
+
+%% @doc Mark a list of manifests as `pending_delete' based upon the
+%% UUIDs specified.
+mark_as_pending_delete(Manifests, UUIDsToMark, RiakObject, RiakcPid) ->
+    mark_manifests({ok, RiakObject, Manifests},
+                   UUIDsToMark,
+                   mark_pending_delete,
+                   RiakcPid).
+
+%% @doc Mark a list of manifests as `scheduled_delete' based upon the
+%% UUIDs specified.
+mark_as_scheduled_delete(ok, Bucket, Key, UUIDsToMark, RiakcPid) ->
+    mark_manifests(riak_moss_utils:get_manifests(RiakcPid, Bucket, Key),
+                   UUIDsToMark,
+                   mark_scheduled_delete,
+                   RiakcPid);
+mark_as_scheduled_delete({error, _}=Error, _, _, _, _) ->
+    Error.
+
+%% @doc Call a `riak_moss_manifest' function on a set of manifests
+%% to update the state of the manifests specified by `UUIDsToMark'
+%% and then write the updated values to riak.
+mark_manifests({ok, RiakObject, Manifests}, UUIDsToMark, ManiFunction, RiakcPid) ->
+    Marked = riak_moss_manifest:ManiFunction(Manifests, UUIDsToMark),
+    riakc_pb_socket:put(RiakcPid,
+                        riakc_obj:update_value(RiakObject,
+                                               term_to_binary(Marked)));
+mark_manifests({error, _Reason}=Error, _, _, _) ->
+    Error.
+
+%% @doc Compile a list of `pending_delete' manifests.
+get_pending_delete_manifests(Manifests, {ok, MarkedManifests}) ->
+    riak_moss_manifest:pending_delete_manifests(Manifests) ++ MarkedManifests;
+get_pending_delete_manifests(_, {{error, _Reason}=Error, _}) ->
+    Error.
 
 %% @doc Copy data for a list of manifests to the
 %% `riak-cs-gc' bucket to schedule them for deletion.
