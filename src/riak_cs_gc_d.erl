@@ -382,19 +382,23 @@ elapsed(Time) ->
 -spec fetch_eligible_manifest_keys(pid(), non_neg_integer()) -> [binary()].
 fetch_eligible_manifest_keys(RiakPid, IntervalStart) ->
     EndTime = list_to_binary(integer_to_list(IntervalStart)),
-    case riakc_pb_socket:get_index(RiakPid,
-                                   ?GC_BUCKET,
-                                   ?KEY_INDEX,
-                                   ?EPOCH_START,
-                                   EndTime) of
-        {ok, BKeys} ->
-            [Key || [_, Key] <- BKeys];
-        {error, Reason} ->
-            _ = lager:warning("Error occurred trying to query from time 0 to ~p"
-                              "in gc key index. Reason: ~p",
-                              [EndTime, Reason]),
-            []
-    end.
+    eligible_manifest_keys(gc_index_query(RiakPid, EndTime)).
+
+eligible_manifest_keys({{ok, BKeys}, _}) ->
+    [Key || [_, Key] <- BKeys];
+eligible_manifest_keys({{error, Reason}, EndTime}) ->
+    _ = lager:warning("Error occurred trying to query from time 0 to ~p"
+                      "in gc key index. Reason: ~p",
+                      [EndTime, Reason]),
+    [].
+
+gc_index_query(RiakPid, EndTime) ->
+    QueryResult = riakc_pb_socket:get_index(RiakPid,
+                                            ?GC_BUCKET,
+                                            ?KEY_INDEX,
+                                            ?EPOCH_START,
+                                            EndTime),
+    {QueryResult, EndTime}.
 
 %% @doc Delete the blocks for the next set of manifests in the batch
 -spec fetch_next_fileset(non_neg_integer(), pid()) -> {ok, [lfs_manifest()]} | {error, term()}.
