@@ -47,28 +47,26 @@ allowed_methods(RD, Ctx) ->
 
 forbidden(RD, Ctx) ->
     dt_entry(<<"forbidden">>),
-    case wrq:method(RD) of
-        'POST' ->
-            dt_return(<<"forbidden">>, [], [<<"POST method">>]),
-            {false, RD, Ctx};
-        _ ->
-            Next = fun(NewRD, NewCtx=#context{user=User}) ->
-                           AccessRD = riak_moss_access_logger:set_user(User, NewRD),
-                           forbidden(AccessRD, NewCtx, User)
-                   end,
-            case riak_moss_wm_utils:find_and_auth_user(RD, Ctx, Next) of
-                {false, _RD2, Ctx2} = FalseRet ->
-                    dt_return(<<"forbidden">>, [], [extract_name(Ctx2#context.user), <<"false">>]),
-                    FalseRet;
-                {Rsn, _RD2, Ctx2} = Ret ->
-                    Reason = case Rsn of
-                                 {halt, Code} -> Code;
-                                 _            -> -1
-                             end,
-                    dt_return(<<"forbidden">>, [Reason], [extract_name(Ctx2#context.user), <<"true">>]),
-                    Ret
-            end
-    end.
+    Next = fun(NewRD, NewCtx=#context{user=User}) ->
+                   forbidden(wrq:method(RD),
+                             NewRD,
+                             NewCtx,
+                             User,
+                             user_key(RD),
+                             riak_moss_utils:anonymous_user_creation())
+           end,
+    UserAuthResponse = riak_moss_wm_utils:find_and_auth_user(RD, Ctx, Next),
+    handle_user_auth_response(UserAuthResponse).
+
+handle_user_auth_response({false, _RD, Ctx} = Ret) ->
+    dt_return(<<"forbidden">>, [], [extract_name(Ctx#context.user), <<"false">>]),
+    Ret;
+handle_user_auth_response({{halt, Code}, _RD, Ctx} = Ret) ->
+    dt_return(<<"forbidden">>, [Code], [extract_name(Ctx#context.user), <<"true">>]),
+    Ret;
+handle_user_auth_response({_Reason, _RD, Ctx} = Ret) ->
+    dt_return(<<"forbidden">>, [-1], [extract_name(Ctx#context.user), <<"true">>]),
+    Ret.
 
 -spec content_types_accepted(term(), term()) ->
     {[{string(), atom()}], term(), term()}.
@@ -185,47 +183,80 @@ finish_request(RD, Ctx=#context{riakc_pid=RiakPid}) ->
 %% Internal functions
 %% -------------------------------------------------------------------
 
+-spec admin_check(boolean(), term(), term()) -> {boolean(), term(), term()}.
+admin_check(true, RD, Ctx) ->
+    {false, RD, Ctx#context{user=undefined}};
+admin_check(false, RD, Ctx) ->
+    riak_moss_wm_utils:deny_access(RD, Ctx).
+
 %% @doc Calculate the etag of a response body
 etag(Body) ->
     webmachine_util:quoted_string(
       riak_moss_utils:binary_to_hexlist(
         crypto:md5(Body))).
 
-forbidden(RD, Ctx, undefined) ->
+-spec forbidden(atom(),
+                term(),
+                term(),
+                undefined | rcs_user(),
+                string(),
+                boolean()) ->
+                       {boolean() | {halt, term()}, term(), term()}.
+forbidden(_Method, RD, Ctx, undefined, _UserPathKey, false) ->
     %% anonymous access disallowed
     riak_moss_wm_utils:deny_access(RD, Ctx);
-forbidden(RD, Ctx, User) ->
-    UserKeyId = User?MOSS_USER.key_id,
-    UserPathKey = user_key(RD),
-    case UserPathKey of
-        [] ->
-            %% user is accessing own account
-            %% @TODO Determine if logging this is appropriate
-            %% and if we need to classify it differently.
-            AccessRD = riak_moss_access_logger:set_user(User, RD),
-            {false, AccessRD, Ctx};
-         UserKeyId ->
-            %% user is accessing own account
-            %% @TODO Determine if logging this is appropriate
-            %% and if we need to classify it differently.
-            AccessRD = riak_moss_access_logger:set_user(User, RD),
-            {false, AccessRD, Ctx};
+forbidden('POST', _RD, _Ctx, undefined, [], true) ->
+    {false, _RD, _Ctx};
+forbidden('PUT', _RD, _Ctx, undefined, [], true) ->
+    {false, _RD, _Ctx};
+forbidden('POST', RD, Ctx, User, [], true) ->
+    %% Admin is creating a new user
+    %% @TODO Replace the call to `is_admin' with a call to
+    %% `riak_moss_utils:is_admin' before merging to master.
+    admin_check(is_admin(User), RD, Ctx);
+forbidden('PUT', RD, Ctx, User, [], true) ->
+    admin_check(riak_moss_utils:is_admin(User), RD, Ctx);
+forbidden(_Method, RD, Ctx, User, UserPathKey, true) when
+      UserPathKey =:= User?RCS_USER.key_id ->
+    %% User is accessing own account
+    AccessRD = riak_moss_access_logger:set_user(User, RD),
+    {false, AccessRD, Ctx};
+forbidden(_Method, RD, Ctx, User, UserPathKey, true) ->
+    %% @TODO Replace the call to `is_admin' with a call to
+    %% `riak_moss_utils:is_admin' before merging to master.
+    AdminCheckResult = admin_check(is_admin(User), RD, Ctx),
+    get_user(AdminCheckResult, UserPathKey).
+
+-spec get_user({boolean() | {halt, term()}, term(), term()}, string()) ->
+                      {boolean() | {halt, term()}, term(), term()}.
+get_user({false, RD, Ctx}, UserPathKey) ->
+    handle_get_user_result(
+      riak_moss_utils:get_user(UserPathKey, Ctx#context.riakc_pid),
+      RD,
+      Ctx);
+get_user(AdminCheckResult, _) ->
+    AdminCheckResult.
+
+-spec handle_get_user_result({ok, {rcs_user(), term()}} | {error, term()},
+                             term(),
+                             term()) ->
+                                    {boolean() | {halt, term()}, term(), term()}.
+
+handle_get_user_result({ok, {User, _}}, RD, Ctx) ->
+    {false, RD, Ctx#context{user=User}};
+handle_get_user_result({error, Reason}, RD, Ctx) ->
+    _ = lager:warning("Failed to fetch user record. KeyId: ~p"
+                      " Reason: ~p", [user_key(RD), Reason]),
+    riak_moss_s3_response:api_error(invalid_access_key_id, RD, Ctx).
+
+%% @TODO Already add `riak_moss_utils:is_admin' in a later branch
+%% so this will be removed in favor of that before merge to master.
+is_admin(User) ->
+    case riak_moss_utils:get_admin_creds() of
+        {ok, {Admin, _}} when Admin == User?RCS_USER.key_id ->
+            true;
         _ ->
-            case riak_moss_utils:get_admin_creds() of
-                {ok, {Admin, _}} when Admin == UserKeyId ->
-                    %% admin can access any account
-                    case riak_moss_utils:get_user(UserPathKey, Ctx#context.riakc_pid) of
-                        {ok, {ReqUser, _}} ->
-                            {false, RD, Ctx#context{user=ReqUser}};
-                        {error, Reason} ->
-                            _ = lager:warning("Failed to fetch user record. KeyId: ~p"
-                                          " Reason: ~p", [UserPathKey, Reason]),
-                            riak_moss_s3_response:api_error(invalid_access_key_id, RD, Ctx)
-                    end;
-                _ ->
-                    %% no one else is allowed
-                    riak_moss_wm_utils:deny_access(RD, Ctx)
-            end
+            false
     end.
 
 -spec update_user([{binary(), binary()}], term(), term()) ->
