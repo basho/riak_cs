@@ -111,7 +111,8 @@ accept_json(RD, Ctx) ->
     case catch mochijson2:decode(Body) of
         {struct, UserItems} ->
             UpdateItems = lists:foldl(fun user_json_filter/2, [], UserItems),
-            update_user(UpdateItems, RD, Ctx);
+            UpdRD = wrq:set_resp_header("Content-Type", ?JSON_TYPE, RD),
+            update_user(UpdateItems, UpdRD, Ctx);
         {'EXIT', _} ->
             riak_moss_s3_response:api_error(invalid_user_update, RD, Ctx)
     end.
@@ -151,7 +152,8 @@ accept_xml(RD, Ctx) ->
             UpdateItems = lists:foldl(fun user_xml_filter/2,
                                       [],
                                       ParsedData#xmlElement.content),
-            update_user(UpdateItems, RD, Ctx)
+            UpdRD = wrq:set_resp_header("Content-Type", ?XML_TYPE, RD),
+            update_user(UpdateItems, UpdRD, Ctx)
     end.
 
 produce_json(RD, #context{user=User}=Ctx) ->
@@ -209,22 +211,18 @@ forbidden('POST', _RD, _Ctx, undefined, [], true) ->
     {false, _RD, _Ctx};
 forbidden('PUT', _RD, _Ctx, undefined, [], true) ->
     {false, _RD, _Ctx};
-forbidden('POST', RD, Ctx, User, [], true) ->
+forbidden('POST', RD, Ctx, User, [], _) ->
     %% Admin is creating a new user
-    %% @TODO Replace the call to `is_admin' with a call to
-    %% `riak_moss_utils:is_admin' before merging to master.
-    admin_check(is_admin(User), RD, Ctx);
-forbidden('PUT', RD, Ctx, User, [], true) ->
     admin_check(riak_moss_utils:is_admin(User), RD, Ctx);
-forbidden(_Method, RD, Ctx, User, UserPathKey, true) when
+forbidden('PUT', RD, Ctx, User, [], _) ->
+    admin_check(riak_moss_utils:is_admin(User), RD, Ctx);
+forbidden(_Method, RD, Ctx, User, UserPathKey, _) when
       UserPathKey =:= User?RCS_USER.key_id ->
     %% User is accessing own account
     AccessRD = riak_moss_access_logger:set_user(User, RD),
     {false, AccessRD, Ctx};
-forbidden(_Method, RD, Ctx, User, UserPathKey, true) ->
-    %% @TODO Replace the call to `is_admin' with a call to
-    %% `riak_moss_utils:is_admin' before merging to master.
-    AdminCheckResult = admin_check(is_admin(User), RD, Ctx),
+forbidden(_Method, RD, Ctx, User, UserPathKey, _) ->
+    AdminCheckResult = admin_check(riak_moss_utils:is_admin(User), RD, Ctx),
     get_user(AdminCheckResult, UserPathKey).
 
 -spec get_user({boolean() | {halt, term()}, term(), term()}, string()) ->
@@ -249,40 +247,57 @@ handle_get_user_result({error, Reason}, RD, Ctx) ->
                       " Reason: ~p", [user_key(RD), Reason]),
     riak_moss_s3_response:api_error(invalid_access_key_id, RD, Ctx).
 
-%% @TODO Already add `riak_moss_utils:is_admin' in a later branch
-%% so this will be removed in favor of that before merge to master.
-is_admin(User) ->
-    case riak_moss_utils:get_admin_creds() of
-        {ok, {Admin, _}} when Admin == User?RCS_USER.key_id ->
-            true;
-        _ ->
-            false
-    end.
-
 -spec update_user([{binary(), binary()}], term(), term()) ->
     {boolean() | {halt, term()}, term(), term()}.
-update_user(UpdateItems, RD, Ctx=#context{user=User,
-                                          user_vclock=VClock,
-                                          riakc_pid=RiakPid}) ->
+update_user(UpdateItems, RD, Ctx=#context{user=User}) ->
     dt_entry(<<"update_user">>),
-    case lists:keyfind(status, 1, UpdateItems) of
-        {status, Status} ->
-            case Status =:= User?MOSS_USER.status of
-                true ->
-                    {{halt, 200}, RD, Ctx};
-                false ->
-                    case riak_moss_utils:save_user(User?MOSS_USER{status=Status},
-                                                   VClock,
-                                                   RiakPid) of
-                        ok ->
-                            {{halt, 200}, RD, Ctx};
-                        {error, Reason} ->
-                            riak_moss_s3_response:api_error(Reason, RD, Ctx)
-                    end
-            end;
-        false ->
-            riak_moss_s3_response:api_error(invalid_user_update, RD, Ctx)
-    end.
+    UpdateUserResult = update_user_record(User, UpdateItems, false),
+    handle_update_result(UpdateUserResult, RD, Ctx).
+
+-spec update_user_record(rcs_user(), {atom(), term()}, boolean())
+                        -> {boolean(), rcs_user()}.
+update_user_record(_User, [], RecordUpdated) ->
+    {RecordUpdated, _User};
+update_user_record(User=?RCS_USER{status=Status},
+                   [{status, Status} | RestUpdates],
+                   _RecordUpdated) ->
+    update_user_record(User, RestUpdates, _RecordUpdated);
+update_user_record(User, [{status, Status} | RestUpdates], _RecordUpdated) ->
+    update_user_record(User?RCS_USER{status=Status}, RestUpdates, true);
+update_user_record(User=?RCS_USER{}, [{new_key_secret, true} | RestUpdates], _) ->
+    update_user_record(riak_moss_utils:update_key_secret(User), RestUpdates, true);
+update_user_record(_User, [_ | RestUpdates], _RecordUpdated) ->
+    update_user_record(_User, RestUpdates, _RecordUpdated).
+
+-spec handle_update_result({boolean(), rcs_user()}, term(), term()) ->
+    {boolean() | {halt, term()}, term(), term()}.
+handle_update_result({false, _User}, RD, Ctx) ->
+    ContentType = wrq:get_resp_header("Content-Type", RD),
+    {{halt, 200}, set_resp_data(ContentType, RD, Ctx), Ctx};
+handle_update_result({true, User}, RD, Ctx) ->
+    #context{user_vclock=VClock,
+             riakc_pid=RiakPid} = Ctx,
+    handle_save_user_result(
+      riak_moss_utils:save_user(User, VClock, RiakPid), User, RD, Ctx).
+
+-spec handle_save_user_result(ok | {error, term()}, rcs_user(), term(), term()) ->
+    {boolean() | {halt, term()}, term(), term()}.
+handle_save_user_result(ok, User, RD, Ctx) ->
+    ContentType = wrq:get_resp_header("Content-Type", RD),
+    UpdCtx = Ctx#context{user=User},
+    {{halt, 200}, set_resp_data(ContentType, RD, UpdCtx), UpdCtx};
+handle_save_user_result({error, Reason}, _, RD, Ctx) ->
+    riak_moss_s3_response:api_error(Reason, RD, Ctx).
+
+-spec set_resp_data(string(), term(), term()) -> term().
+set_resp_data(?JSON_TYPE, RD, #context{user=User}) ->
+    UserData = riak_moss_wm_utils:user_record_to_json(User),
+    JsonDoc = list_to_binary(mochijson2:encode(UserData)),
+    wrq:set_resp_body(JsonDoc, RD);
+set_resp_data(?XML_TYPE, RD, #context{user=User}) ->
+    UserData = riak_moss_wm_utils:user_record_to_xml(User),
+    XmlDoc = riak_moss_s3_response:export_xml([UserData]),
+    wrq:set_resp_body(XmlDoc, RD).
 
 -spec user_json_filter({binary(), binary()}, [{atom(), term()}]) -> [{atom(), term()}].
 user_json_filter({ItemKey, ItemValue}, Acc) ->
@@ -300,6 +315,8 @@ user_json_filter({ItemKey, ItemValue}, Acc) ->
                 _ ->
                     Acc
             end;
+        <<"new_key_secret">> ->
+            [{new_key_secret, ItemValue} | Acc];
         _ ->
             Acc
     end.
@@ -340,6 +357,21 @@ user_xml_filter(Element, Acc) ->
                             [{status, enabled} | Acc];
                         "disabled" ->
                             [{status, disabled} | Acc];
+                        _ ->
+                            Acc
+                    end;
+                false ->
+                    Acc
+            end;
+        'NewKeySecret' ->
+            [Content | _] = Element#xmlElement.content,
+            case is_record(Content, xmlText) of
+                true ->
+                    case Content#xmlText.value of
+                        "true" ->
+                            [{new_key_secret, true} | Acc];
+                        "false" ->
+                            [{new_key_secret, false} | Acc];
                         _ ->
                             Acc
                     end;
