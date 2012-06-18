@@ -54,7 +54,10 @@ active_manifest(Manifests) ->
 %% active state
 -spec active_manifests(term()) -> [lfs_manifest()].
 active_manifests(Manifests) ->
-    IsActive = fun (?MANIFEST{state=State}) -> State == active end,
+    IsActive =
+        fun (?MANIFEST{state=State}) ->
+                State == active orelse State == writing
+        end,
     lists:filter(IsActive, orddict_values(Manifests)).
 
 %% @doc Mark all active manifests
@@ -71,6 +74,8 @@ overwritten_UUIDs(Manifests) ->
                         Active ->
                             Acc;
                         Elem=?MANIFEST{state=active} ->
+                            [UUID | Acc];
+                        Elem=?MANIFEST{state=writing} ->
                             [UUID | Acc];
                         _ ->
                             Acc
@@ -179,7 +184,7 @@ upgrade_manifest(#lfs_manifest_v2{block_size=BlockSize,
               acl=Acl,
               props=Properties,
               cluster_id=ClusterID};
-              
+
 upgrade_manifest(?MANIFEST{}=M) ->
     M.
 
