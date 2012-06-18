@@ -22,6 +22,7 @@
          get_buckets/1,
          get_env/3,
          get_keys_and_manifests/3,
+         is_admin/1,
          map_keys_and_manifests/3,
          get_object/3,
          get_user/2,
@@ -37,7 +38,8 @@
          save_user/3,
          set_bucket_acl/5,
          set_object_acl/5,
-         to_bucket_name/2]).
+         to_bucket_name/2,
+         update_key_secret/1]).
 
 -include("riak_moss.hrl").
 -include_lib("riakc/include/riakc_obj.hrl").
@@ -388,6 +390,11 @@ get_user_index(Index, Value, RiakPid) ->
             Error
     end.
 
+%% @doc Determine if the specified user account is a system admin.
+-spec is_admin(rcs_user()) -> boolean().
+is_admin(User) ->
+    is_admin(User, get_admin_creds()).
+
 %% @doc Pretty-print a JSON string ... from riak_core's json_pp.erl
 json_pp_print(Str) when is_list(Str) ->
     json_pp_print(Str, 0, undefined, []).
@@ -536,6 +543,14 @@ to_bucket_name(Type, Bucket) ->
     end,
     BucketHash = crypto:md5(Bucket),
     <<Prefix/binary, BucketHash/binary>>.
+
+
+%% @doc Generate a new `key_secret' for a user record.
+-spec update_key_secret(rcs_user()) -> rcs_user().
+update_key_secret(User=?RCS_USER{email=Email,
+                                 key_id=KeyId}) ->
+    EmailBin = list_to_binary(Email),
+    User?RCS_USER{key_secret=generate_secret(EmailBin, KeyId)}.
 
 %% ===================================================================
 %% Internal functions
@@ -801,6 +816,15 @@ handle_env_response(undefined, Default) ->
 handle_env_response({ok, Value}, _) ->
     Value.
 
+%% @doc Determine if the specified user account is a system admin.
+-spec is_admin(rcs_user(), {ok, {string(), string()}} |
+               {error, term()}) -> boolean().
+is_admin(?MOSS_USER{key_id=KeyId, key_secret=KeySecret},
+         {ok, {KeyId, KeySecret}}) ->
+    true;
+is_admin(_, _) ->
+    false.
+
 %% @doc Determine if an existing bucket from the resolution list
 %% should be kept or replaced when a conflict occurs.
 -spec keep_existing_bucket(moss_bucket(), moss_bucket()) -> boolean().
@@ -987,7 +1011,7 @@ user_record(Name, Email) ->
 %% email address.
 -spec user_record(string(), string(), [moss_bucket()]) -> moss_user().
 user_record(Name, Email, Buckets) ->
-    {KeyId, Secret} = generate_access_creds(Name),
+    {KeyId, Secret} = generate_access_creds(Email),
     CanonicalId = generate_canonical_id(KeyId, Secret),
     DisplayName = display_name(Email),
     ?MOSS_USER{name=Name,

@@ -78,7 +78,11 @@ status_code(_) -> 503.
 
 
 respond(StatusCode, Body, ReqData, Ctx) ->
-    {{halt, StatusCode}, wrq:set_resp_body(Body, ReqData), Ctx}.
+     UpdReqData = wrq:set_resp_body(Body,
+                                    wrq:set_resp_header("Content-Type",
+                                                        ?XML_TYPE,
+                                                        ReqData)),
+    {{halt, StatusCode}, UpdReqData, Ctx}.
 
 api_error(Error, ReqData, Ctx) when is_atom(Error); is_tuple(Error) ->
     error_response(status_code(Error), error_code(Error), error_message(Error),
