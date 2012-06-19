@@ -174,13 +174,16 @@ maybe_delete_blocks(State=#state{bucket=Bucket,
                                     delete_blocks_remaining=NewDeleteBlocksRemaining}).
 
 -spec finish(state()) -> state().
-finish(State) ->
-    State.
+finish(#state{manifest=?MANIFEST{state=deleted},
+              bucket=Bucket,
+              key=Key,
+              uuid=UUID,
+              riakc_pid=RiakcPid}) ->
+    {ok, ManiFsmPid} = riak_moss_manifest_fsm:start_link(Bucket, Key, RiakcPid),
+    riak_moss_manifest_fsm:delete_specific_manifest(ManiFsmPid, UUID);
+finish(_State) ->
+    _State.
 
-%% TODO:
-%% for now we're only dealing
-%% with manifests that are in the
-%% pending_delete state
 -spec blocks_to_delete_from_manifest(lfs_manifest()) ->
     {lfs_manifest(), ordsets:ordset(integer())}.
 blocks_to_delete_from_manifest(Manifest=?MANIFEST{state=scheduled_delete,

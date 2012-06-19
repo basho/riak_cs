@@ -305,13 +305,9 @@
 %% perhaps add later? -define(DT_AUTH_OP,         704).
 -define(DT_WM_OP,           705).
 
-%% Number of seconds to keep manifests
-%% in the `deleted' state before removing
-%% them completely.
--define(DEFAULT_DELETE_TOMBSTONE_TIME, 86400). %% 24-hours
-%% Number of seconds to keep manifests
-%% in the `scheduled_delete' state before
-%% beginning to delete the file blocks.
+%% Number of seconds to keep manifests in the `scheduled_delete' state
+%% before beginning to delete the file blocks and before the file
+%% manifest may be pruned.
 -define(DEFAULT_LEEWAY_SECONDS, 86400). %% 24-hours
 -define(DEFAULT_GC_INTERVAL, 900). %% 15 minutes
 -define(DEFAULT_GC_RETRY_INTERVAL, 21600). %% 6 hours

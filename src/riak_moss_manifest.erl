@@ -215,7 +215,7 @@ most_recent_active_manifest(_Man1, Man2=?MANIFEST{state=active}) -> Man2.
 -spec needs_pruning(lfs_manifest(), erlang:timestamp()) -> boolean().
 needs_pruning(?MANIFEST{state=scheduled_delete,
                               scheduled_delete_time=ScheduledDeleteTime}, Time) ->
-    seconds_diff(Time, ScheduledDeleteTime) > delete_tombstone_time();
+    seconds_diff(Time, ScheduledDeleteTime) > riak_cs_gc:leeway_seconds();
 needs_pruning(_Manifest, _Time) ->
     false.
 
@@ -239,15 +239,6 @@ seconds_diff(T2, T1) ->
     TimeDiffMicrosends = timer:now_diff(T2, T1),
     SecondsTime = TimeDiffMicrosends / (1000 * 1000),
     erlang:trunc(SecondsTime).
-
--spec delete_tombstone_time() -> pos_integer().
-delete_tombstone_time() ->
-    case application:get_env(riak_moss, delete_tombstone_time) of
-        undefined ->
-            ?DEFAULT_DELETE_TOMBSTONE_TIME;
-        {ok, Time} ->
-            Time
-    end.
 
 %% ===================================================================
 %% EUnit tests
@@ -292,7 +283,7 @@ wrong_state_for_pruning_2() ->
     ?assert(not needs_pruning(Mani2, erlang:now())).
 
 does_need_pruning() ->
-    application:set_env(riak_moss, delete_tombstone_time, 1),
+    application:set_env(riak_moss, leeway_seconds, 1),
     %% 1000000 second diff
     ScheduledDeleteTime = {1333,985708,445136},
     Now = {1334,985708,445136},
@@ -302,7 +293,7 @@ does_need_pruning() ->
     ?assert(needs_pruning(Mani2, Now)).
 
 not_old_enough_for_pruning() ->
-    application:set_env(riak_moss, delete_tombstone_time, 2),
+    application:set_env(riak_moss, leeway_seconds, 2),
     %$ 1 second diff
     ScheduledDeleteTime = {1333,985708,445136},
     Now = {1333,985709,445136},
