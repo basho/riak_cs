@@ -1,6 +1,6 @@
 %% -------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2011 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2012 Basho Technologies, Inc.  All Rights Reserved.
 %%
 %% -------------------------------------------------------------------
 
@@ -26,6 +26,7 @@
          add_new_manifest/2,
          update_manifest/2,
          update_manifests/2,
+         delete_specific_manifest/2,
          update_manifest_with_confirmation/2,
          update_manifests_with_confirmation/2,
          stop/1]).
@@ -114,6 +115,13 @@ update_manifest(Pid, Manifest) ->
     WrappedManifest = riak_moss_manifest:new(Manifest?MANIFEST.uuid, Manifest),
     update_manifests(Pid, WrappedManifest).
 
+%% @doc Delete a specific manifest version from a manifest and
+%% update the manifest value in riak or delete the manifest key from
+%% riak if there are no manifest versions remaining.
+-spec delete_specific_manifest(pid(), string()) -> ok | {error, term()}.
+delete_specific_manifest(Pid, UUID) ->
+    gen_fsm:sync_send_event(Pid, {delete_manifest, UUID}, infinity).
+
 -spec update_manifests_with_confirmation(pid(), orddict:orddict()) -> ok | {error, term()}.
 update_manifests_with_confirmation(Pid, Manifests) ->
     gen_fsm:sync_send_event(Pid, {update_manifests_with_confirmation, Manifests},
@@ -174,6 +182,15 @@ waiting_command(get_manifests, _From, State) ->
     {Reply, NewState} = handle_get_manifests(State),
     {reply, Reply, waiting_update_command, NewState}.
 
+waiting_update_command({delete_manifest, UUID},
+                       _From,
+                       State=#state{riakc_pid=RiakcPid,
+                                    bucket=Bucket,
+                                    key=Key,
+                                    riak_object=undefined,
+                                    manifests=undefined}) ->
+    Reply = get_and_delete(RiakcPid, UUID, Bucket, Key),
+    {reply, Reply, waiting_update_command, State};
 waiting_update_command({update_manifests_with_confirmation, WrappedManifests}, _From,
                                             State=#state{riakc_pid=RiakcPid,
                                             bucket=Bucket,
@@ -226,6 +243,29 @@ handle_get_manifests(State=#state{riakc_pid=RiakcPid,
             {NotFound, State}
     end.
 
+-spec get_and_delete(pid(), string(), binary(), binary()) -> ok |
+                                                             {error, term()}.
+get_and_delete(RiakcPid, UUID, Bucket, Key) ->
+    %% Retrieve the current (resolved) value at {Bucket, Key},
+    %% delete the manifest corresponding to `UUID', and then
+    %% write the value back to Riak
+    case riak_moss_utils:get_manifests(RiakcPid, Bucket, Key) of
+        {ok, RiakObject, Manifests} ->
+            ResolvedManifests = riak_moss_manifest_resolution:resolve([Manifests]),
+            UpdatedManifests = orddict:erase(UUID, ResolvedManifests),
+            case UpdatedManifests of
+                [] ->
+                    riakc_pb_socket:delete(RiakcPid, Bucket, Key);
+                _ ->
+                    ObjectToWrite =
+                        riakc_obj:update_value(RiakObject,
+                                               term_to_binary(UpdatedManifests)),
+                    riakc_pb_socket:put(RiakcPid, ObjectToWrite)
+            end;
+        {error, notfound} ->
+            ok
+    end.
+
 get_and_update(RiakcPid, WrappedManifests, Bucket, Key) ->
     %% retrieve the current (resolved) value at {Bucket, Key},
     %% add the new manifest, and then write the value
@@ -251,7 +291,6 @@ get_and_update(RiakcPid, WrappedManifests, Bucket, Key) ->
             ObjectToWrite = riakc_obj:new(ManifestBucket, Key, term_to_binary(WrappedManifests)),
             riakc_pb_socket:put(RiakcPid, ObjectToWrite)
     end.
-
 
 -spec update_from_previous_read(pid(), riakc_obj:riakc_obj(),
                                     orddict:orddict(), orddict:orddict()) ->

@@ -15,8 +15,7 @@
 -endif.
 
 %% export Public API
--export([delete_tombstone_time/0,
-         gc_interval/0,
+-export([gc_interval/0,
          gc_retry_interval/0,
          gc_manifests/6,
          move_manifests_to_gc_bucket/2,
@@ -41,17 +40,6 @@ gc_manifests(Bucket, Key, Manifests, UUIDsToMark, RiakObject, RiakcPid) ->
                              Key,
                              [UUID || {UUID, _} <- PDManifests],
                              RiakcPid).
-
-%% @doc Return the minimum number of seconds a file manifest waits in
-%% the `deleted' state before being removed from the file record.
--spec delete_tombstone_time() -> non_neg_integer().
-delete_tombstone_time() ->
-    case application:get_env(riak_moss, delete_tombstone_time) of
-        undefined ->
-            ?DEFAULT_DELETE_TOMBSTONE_TIME;
-        {ok, TombstoneTime} ->
-            TombstoneTime
-    end.
 
 %% @doc Return the number of seconds to wait after finishing garbage
 %% collection of a set of files before starting the next.
@@ -166,7 +154,9 @@ generate_key() ->
         timestamp() + leeway_seconds())).
 
 %% @doc Return the minimum number of seconds a file manifest waits in
-%% the `scheduled_delete' state before being garbage collected.
+%% the `scheduled_delete' state before being garbage collected. Also
+%% the number of seconds before a file manifest may be pruned from
+%% the orddict of all manifest versions for the file.
 -spec leeway_seconds() -> non_neg_integer().
 leeway_seconds() ->
     case application:get_env(riak_moss, leeway_seconds) of
