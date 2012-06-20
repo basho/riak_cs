@@ -192,8 +192,8 @@ remove_write_block(Manifest, Chunk) ->
                              state=ManiState,
                              last_block_written_time=erlang:now()}.
 
-%% @doc Remove a chunk from the
-%%      delete_blocks_remaining field of Manifest
+%% @doc Remove a chunk from the `delete_blocks_remaining'
+%% field of `Manifest'
 remove_delete_block(Manifest, Chunk) ->
     Remaining = Manifest?MANIFEST.delete_blocks_remaining,
     Updated = ordsets:del_element(Chunk, Remaining),

@@ -107,7 +107,6 @@ add_new_manifest(Pid, Manifest) ->
     WrappedManifest = riak_moss_manifest:new(Manifest?MANIFEST.uuid, Manifest),
     gen_fsm:send_event(Pid, {add_new_manifest, WrappedManifest}).
 
-
 update_manifests(Pid, Manifests) ->
     gen_fsm:send_event(Pid, {update_manifests, Manifests}).
 
@@ -158,7 +157,7 @@ init([test, Bucket, Key]) ->
 waiting_command({add_new_manifest, WrappedManifest}, State=#state{riakc_pid=RiakcPid,
                                                            bucket=Bucket,
                                                            key=Key}) ->
-    ok = get_and_update(RiakcPid, WrappedManifest, Bucket, Key),
+    _Res = get_and_update(RiakcPid, WrappedManifest, Bucket, Key),
     {next_state, waiting_update_command, State}.
 
 waiting_update_command({update_manifests, WrappedManifests}, State=#state{riakc_pid=RiakcPid,
@@ -166,7 +165,7 @@ waiting_update_command({update_manifests, WrappedManifests}, State=#state{riakc_
                                                                  key=Key,
                                                                  riak_object=undefined,
                                                                  manifests=undefined}) ->
-    ok = get_and_update(RiakcPid, WrappedManifests, Bucket, Key),
+    _Res = get_and_update(RiakcPid, WrappedManifests, Bucket, Key),
     {next_state, waiting_update_command, State};
 waiting_update_command({update_manifests, WrappedManifests}, State=#state{riakc_pid=RiakcPid,
                                                                  riak_object=PreviousRiakObject,
@@ -180,9 +179,8 @@ waiting_update_command({update_manifests, WrappedManifests}, State=#state{riakc_
 
 waiting_command(get_manifests, _From, State) ->
     {Reply, NewState} = handle_get_manifests(State),
-    {reply, Reply, waiting_update_command, NewState}.
-
-waiting_update_command({delete_manifest, UUID},
+    {reply, Reply, waiting_update_command, NewState};
+waiting_command({delete_manifest, UUID},
                        _From,
                        State=#state{riakc_pid=RiakcPid,
                                     bucket=Bucket,
@@ -190,7 +188,9 @@ waiting_update_command({delete_manifest, UUID},
                                     riak_object=undefined,
                                     manifests=undefined}) ->
     Reply = get_and_delete(RiakcPid, UUID, Bucket, Key),
-    {reply, Reply, waiting_update_command, State};
+    {reply, Reply, waiting_update_command, State}.
+
+
 waiting_update_command({update_manifests_with_confirmation, WrappedManifests}, _From,
                                             State=#state{riakc_pid=RiakcPid,
                                             bucket=Bucket,
@@ -243,19 +243,21 @@ handle_get_manifests(State=#state{riakc_pid=RiakcPid,
             {NotFound, State}
     end.
 
+%% @doc Retrieve the current (resolved) value at {Bucket, Key},
+%% delete the manifest corresponding to `UUID', and then
+%% write the value back to Riak or delete the manifest value
+%% if there are no manifests remaining.
 -spec get_and_delete(pid(), string(), binary(), binary()) -> ok |
                                                              {error, term()}.
 get_and_delete(RiakcPid, UUID, Bucket, Key) ->
-    %% Retrieve the current (resolved) value at {Bucket, Key},
-    %% delete the manifest corresponding to `UUID', and then
-    %% write the value back to Riak
     case riak_moss_utils:get_manifests(RiakcPid, Bucket, Key) of
         {ok, RiakObject, Manifests} ->
             ResolvedManifests = riak_moss_manifest_resolution:resolve([Manifests]),
             UpdatedManifests = orddict:erase(UUID, ResolvedManifests),
             case UpdatedManifests of
                 [] ->
-                    riakc_pb_socket:delete(RiakcPid, Bucket, Key);
+                    ManifestBucket = riak_moss_utils:to_bucket_name(objects, Bucket),
+                    riakc_pb_socket:delete(RiakcPid, ManifestBucket, Key);
                 _ ->
                     ObjectToWrite =
                         riakc_obj:update_value(RiakObject,

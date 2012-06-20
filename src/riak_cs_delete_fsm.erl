@@ -60,8 +60,7 @@ block_deleted(Pid, Response) ->
 %% gen_fsm callbacks
 %% ====================================================================
 
-init([RiakcPid, Manifest, _Options]) ->
-    UUID = Manifest?MANIFEST.uuid,
+init([RiakcPid, {UUID, Manifest}, _Options]) ->
     {Bucket, Key} = Manifest?MANIFEST.bkey,
     State = #state{bucket=Bucket,
                    key=Key,
@@ -157,13 +156,12 @@ maybe_delete_blocks(State=#state{free_deleters=[]}) ->
 maybe_delete_blocks(State=#state{delete_blocks_remaining=[]}) ->
     State;
 maybe_delete_blocks(State=#state{bucket=Bucket,
-                                key=Key,
-                                uuid=UUID,
-                                free_deleters=FreeDeleters=[DeleterPid | _Rest],
-                                unacked_deletes=UnackedDeletes,
-                                delete_blocks_remaining=DeleteBlocksRemaining=
-                                    [BlockID | _RestBlocks]}) ->
-
+                                 key=Key,
+                                 uuid=UUID,
+                                 free_deleters=FreeDeleters=[DeleterPid | _Rest],
+                                 unacked_deletes=UnackedDeletes,
+                                 delete_blocks_remaining=DeleteBlocksRemaining=
+                                     [BlockID | _RestBlocks]}) ->
     NewUnackedDeletes = ordsets:add_element(BlockID, UnackedDeletes),
     NewDeleteBlocksRemaining = ordsets:del_element(BlockID, DeleteBlocksRemaining),
     _ = lager:debug("Deleting block: ~p ~p ~p ~p", [Bucket, Key, UUID, BlockID]),
@@ -172,6 +170,7 @@ maybe_delete_blocks(State=#state{bucket=Bucket,
     maybe_delete_blocks(State#state{unacked_deletes=NewUnackedDeletes,
                                     free_deleters=NewFreeDeleters,
                                     delete_blocks_remaining=NewDeleteBlocksRemaining}).
+
 
 -spec finish(state()) -> state().
 finish(#state{manifest=?MANIFEST{state=deleted},
@@ -186,8 +185,9 @@ finish(_State) ->
 
 -spec blocks_to_delete_from_manifest(lfs_manifest()) ->
     {lfs_manifest(), ordsets:ordset(integer())}.
-blocks_to_delete_from_manifest(Manifest=?MANIFEST{state=scheduled_delete,
-                                                  delete_blocks_remaining=undefined}) ->
+blocks_to_delete_from_manifest(Manifest=?MANIFEST{state=State,
+                                                  delete_blocks_remaining=undefined})
+  when State =:= pending_delete;State =:= writing; State =:= scheduled_delete ->
     case riak_moss_lfs_utils:block_sequences_for_manifest(Manifest) of
         []=Blocks ->
             UpdManifest = Manifest?MANIFEST{delete_blocks_remaining=[],
