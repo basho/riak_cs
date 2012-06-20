@@ -185,12 +185,10 @@ initiating_file_delete(continue, #state{batch=[ManiSetKey | RestKeys],
                                                     batch_count=1+BatchCount}};
 initiating_file_delete(continue, #state{current_fileset=[NextManifest | RestManifests],
                                         riak=RiakPid}=State) ->
-    %% @TODO Don't worry about delete_fsm failures, will handle retry
-    %% in by allowing manifests to be rescheduled after a certain
-    %% time.
-
     %% Use an instance of `riak_cs_delete_fsm' to handle the
     %% deletion of the file blocks.
+    %% Don't worry about delete_fsm failures. Manifests are
+    %% rescheduled after a certain time.
     Args = [RiakPid, NextManifest, []],
     {ok, Pid} = riak_cs_delete_fsm_sup:start_delete_fsm(node(), Args),
     {next_state, waiting_file_delete, State#state{current_fileset=RestManifests,

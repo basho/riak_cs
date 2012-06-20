@@ -360,9 +360,7 @@ get_manifests(RiakcPid, Bucket, Key) ->
             %% record version
             Upgraded = riak_moss_manifest:upgrade_wrapped_manifests(DecodedSiblings),
             Resolved = riak_moss_manifest_resolution:resolve(Upgraded),
-            %% remove any tombstones that have expired
-            Pruned = riak_moss_manifest:prune(Resolved),
-            {ok, Object, Pruned};
+            {ok, Object, Resolved};
         {error, notfound}=NotFound ->
             NotFound
     end.

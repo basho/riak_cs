@@ -135,7 +135,7 @@ init([{Bucket, Key, ContentLength, ContentType,
                          content_type=ContentType,
                          riakc_pid=RiakPid,
                          timeout=Timeout},
-                     0}.
+     0}.
 
 %%--------------------------------------------------------------------
 %%
@@ -144,8 +144,8 @@ prepare(timeout, State=#state{content_length=0}) ->
     NewState = prepare(State),
     Md5 = crypto:md5_final(NewState#state.md5),
     NewManifest = NewState#state.manifest?MANIFEST{content_md5=Md5,
-                                                          state=active,
-                                                          last_block_written_time=erlang:now()},
+                                                   state=active,
+                                                   last_block_written_time=erlang:now()},
     {next_state, done, NewState#state{md5=Md5, manifest=NewManifest}};
 prepare(timeout, State) ->
     NewState = prepare(State),
@@ -155,8 +155,8 @@ prepare(finalize, From, State=#state{content_length=0}) ->
     NewState = prepare(State),
     Md5 = crypto:md5_final(NewState#state.md5),
     NewManifest = NewState#state.manifest?MANIFEST{content_md5=Md5,
-                                                          state=active,
-                                                          last_block_written_time=erlang:now()},
+                                                   state=active,
+                                                   last_block_written_time=erlang:now()},
     done(finalize, From, NewState#state{md5=Md5, manifest=NewManifest});
 prepare({augment_data, NewData}, From, State) ->
     #state{content_length=CLength,
@@ -189,7 +189,7 @@ all_received({block_written, BlockID, WriterPid}, State=#state{mani_pid=ManiPid,
                                                                timer_ref=TimerRef}) ->
 
     NewState = state_from_block_written(BlockID, WriterPid, State),
-    Manifest = NewState#state.manifest,
+    Manifest = NewState#state.manifest?MANIFEST{state=active},
     case ordsets:size(NewState#state.unacked_writes) of
         0 ->
             case State#state.reply_pid of
@@ -223,13 +223,13 @@ all_received({block_written, BlockID, WriterPid}, State=#state{mani_pid=ManiPid,
 %% when we transitioned from not_full => full
 
 not_full({augment_data, NewData}, From,
-                State=#state{content_length=CLength,
-                             num_bytes_received=NumBytesReceived,
-                             current_buffer_size=CurrentBufferSize,
-                             max_buffer_size=MaxBufferSize}) ->
+         State=#state{content_length=CLength,
+                      num_bytes_received=NumBytesReceived,
+                      current_buffer_size=CurrentBufferSize,
+                      max_buffer_size=MaxBufferSize}) ->
 
     case handle_chunk(CLength, NumBytesReceived, size(NewData),
-                             CurrentBufferSize, MaxBufferSize) of
+                      CurrentBufferSize, MaxBufferSize) of
         accept ->
             handle_accept_chunk(NewData, State);
         backpressure ->
@@ -244,7 +244,8 @@ all_received(finalize, From, State) ->
     %%    later with the finished manifest
     {next_state, all_received, State#state{reply_pid=From}}.
 
-done(finalize, _From, State=#state{manifest=Manifest, mani_pid=ManiPid,
+done(finalize, _From, State=#state{manifest=Manifest,
+                                   mani_pid=ManiPid,
                                    timer_ref=TimerRef}) ->
     %% 1. reply immediately
     %%    with the finished manifest
@@ -328,29 +329,29 @@ prepare(State=#state{bucket=Bucket,
     %% this shouldn't be hardcoded.
     Md5 = crypto:md5_init(),
     WriterPids = case ContentLength of
-        0 ->
-            %% Don't start any writers
-            %% if we're not going to need
-            %% to write any blocks
-            [];
-        _ ->
-            riak_moss_block_server:start_block_servers(RiakPid,
-                riak_moss_lfs_utils:put_concurrency())
-    end,
+                     0 ->
+                         %% Don't start any writers
+                         %% if we're not going to need
+                         %% to write any blocks
+                         [];
+                     _ ->
+                         riak_moss_block_server:start_block_servers(RiakPid,
+                                                                    riak_moss_lfs_utils:put_concurrency())
+                 end,
     FreeWriters = ordsets:from_list(WriterPids),
     MaxBufferSize = (riak_moss_lfs_utils:put_fsm_buffer_size_factor() * BlockSize),
     UUID = druuid:v4(),
     Manifest =
-    riak_moss_lfs_utils:new_manifest(Bucket,
-                                     Key,
-                                     UUID,
-                                     ContentLength,
-                                     ContentType,
-                                     %% we don't know the md5 yet
-                                     undefined,
-                                     Metadata,
-                                     BlockSize,
-                                     Acl),
+        riak_moss_lfs_utils:new_manifest(Bucket,
+                                         Key,
+                                         UUID,
+                                         ContentLength,
+                                         ContentType,
+                                         %% we don't know the md5 yet
+                                         undefined,
+                                         Metadata,
+                                         BlockSize,
+                                         Acl),
     NewManifest = Manifest?MANIFEST{write_start_time=erlang:now()},
 
     %% TODO:
@@ -424,9 +425,9 @@ append_data_block(BlockData, Blocks) ->
 %%      and then return the updated func inputs
 -spec maybe_write_blocks(term()) -> term().
 maybe_write_blocks(State=#state{buffer_queue=[]}) ->
-        State;
+    State;
 maybe_write_blocks(State=#state{free_writers=[]}) ->
-        State;
+    State;
 maybe_write_blocks(State=#state{buffer_queue=[ToWrite | RestBuffer],
                                 free_writers=FreeWriters,
                                 unacked_writes=UnackedWrites,
@@ -484,7 +485,7 @@ handle_accept_chunk(NewData, State=#state{buffer_queue=BufferQueue,
     NewCurrentBufferSize = CurrentBufferSize + size(NewData),
 
     {NewBufferQueue, NewRemainderData2} =
-    data_blocks(NewRemainderData, ContentLength, UpdatedBytesReceived, BlockSize, BufferQueue),
+        data_blocks(NewRemainderData, ContentLength, UpdatedBytesReceived, BlockSize, BufferQueue),
 
     NewStateData = maybe_write_blocks(State#state{buffer_queue=NewBufferQueue,
                                                   remainder_data=NewRemainderData2,
@@ -512,7 +513,7 @@ handle_backpressure_for_chunk(NewData, From, State=#state{reply_pid=undefined,
     NewCurrentBufferSize = CurrentBufferSize + size(NewData),
 
     {NewBufferQueue, NewRemainderData2} =
-    data_blocks(NewRemainderData, ContentLength, UpdatedBytesReceived, BlockSize, BufferQueue),
+        data_blocks(NewRemainderData, ContentLength, UpdatedBytesReceived, BlockSize, BufferQueue),
 
     NewStateData = maybe_write_blocks(State#state{buffer_queue=NewBufferQueue,
                                                   remainder_data=NewRemainderData2,
@@ -539,7 +540,7 @@ handle_receiving_last_chunk(NewData, State=#state{buffer_queue=BufferQueue,
     NewCurrentBufferSize = CurrentBufferSize + size(NewData),
 
     {NewBufferQueue, NewRemainderData2} =
-    data_blocks(NewRemainderData, ContentLength, UpdatedBytesReceived, BlockSize, BufferQueue),
+        data_blocks(NewRemainderData, ContentLength, UpdatedBytesReceived, BlockSize, BufferQueue),
 
     NewStateData = maybe_write_blocks(State#state{buffer_queue=NewBufferQueue,
                                                   remainder_data=NewRemainderData2,

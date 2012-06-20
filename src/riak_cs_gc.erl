@@ -27,13 +27,13 @@
 
 -spec gc_manifests(binary(), binary(), [lfs_manifest()], [binary()],
     riakc_obj:riakc_obj(), pid()) ->
-    ok | {error, term()}.
+    {ok, term()} | {error, term()}.
 gc_manifests(Bucket, Key, Manifests, UUIDsToMark, RiakObject, RiakcPid) ->
-    MarkResult = mark_as_pending_delete(Manifests,
-                                        UUIDsToMark,
-                                        RiakObject,
-                                        RiakcPid),
-    PDManifests = get_pending_delete_manifests(Manifests, MarkResult),
+    MarkedResult = mark_as_pending_delete(Manifests,
+                                          UUIDsToMark,
+                                          RiakObject,
+                                          RiakcPid),
+    PDManifests = get_pending_delete_manifests(MarkedResult),
     MoveResult = move_manifests_to_gc_bucket(PDManifests, RiakcPid),
     mark_as_scheduled_delete(MoveResult,
                              Bucket,
@@ -86,10 +86,12 @@ mark_as_pending_delete(Manifests, UUIDsToMark, RiakObject, RiakcPid) ->
 %% @doc Mark a list of manifests as `scheduled_delete' based upon the
 %% UUIDs specified.
 mark_as_scheduled_delete(ok, Bucket, Key, UUIDsToMark, RiakcPid) ->
-    mark_manifests(riak_moss_utils:get_manifests(RiakcPid, Bucket, Key),
-                   UUIDsToMark,
-                   mark_scheduled_delete,
-                   RiakcPid);
+    Manifests = riak_moss_utils:get_manifests(RiakcPid, Bucket, Key),
+    {Result, _} = mark_manifests(Manifests,
+                                 UUIDsToMark,
+                                 mark_scheduled_delete,
+                                 RiakcPid),
+    Result;
 mark_as_scheduled_delete({error, _}=Error, _, _, _, _) ->
     Error.
 
@@ -98,16 +100,16 @@ mark_as_scheduled_delete({error, _}=Error, _, _, _, _) ->
 %% and then write the updated values to riak.
 mark_manifests({ok, RiakObject, Manifests}, UUIDsToMark, ManiFunction, RiakcPid) ->
     Marked = riak_moss_manifest:ManiFunction(Manifests, UUIDsToMark),
-    riakc_pb_socket:put(RiakcPid,
-                        riakc_obj:update_value(RiakObject,
-                                               term_to_binary(Marked)));
+    UpdObj = riakc_obj:update_value(RiakObject, term_to_binary(Marked)),
+    PutResult = riakc_pb_socket:put(RiakcPid, UpdObj),
+    {PutResult, Marked};
 mark_manifests({error, _Reason}=Error, _, _, _) ->
     Error.
 
 %% @doc Compile a list of `pending_delete' manifests.
-get_pending_delete_manifests(Manifests, {ok, MarkedManifests}) ->
-    riak_moss_manifest:pending_delete_manifests(Manifests) ++ MarkedManifests;
-get_pending_delete_manifests(_, {{error, _Reason}=Error, _}) ->
+get_pending_delete_manifests({ok, MarkedManifests}) ->
+    riak_moss_manifest:pending_delete_manifests(MarkedManifests);
+get_pending_delete_manifests({error, _Reason}=Error) ->
     Error.
 
 %% @doc Copy data for a list of manifests to the
@@ -154,9 +156,7 @@ generate_key() ->
         timestamp() + leeway_seconds())).
 
 %% @doc Return the minimum number of seconds a file manifest waits in
-%% the `scheduled_delete' state before being garbage collected. Also
-%% the number of seconds before a file manifest may be pruned from
-%% the orddict of all manifest versions for the file.
+%% the `scheduled_delete' state before being garbage collected.
 -spec leeway_seconds() -> non_neg_integer().
 leeway_seconds() ->
     case application:get_env(riak_moss, leeway_seconds) of
