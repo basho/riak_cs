@@ -22,8 +22,6 @@
          mark_pending_delete/2,
          mark_scheduled_delete/2,
          pending_delete_manifests/1,
-         prune/1,
-         prune/2,
          upgrade_wrapped_manifests/1,
          upgrade_manifest/1]).
 
@@ -129,14 +127,6 @@ mark_scheduled_delete(Manifests, UUIDsToMark) ->
 pending_delete_manifests(Manifests) ->
     lists:filter(fun pending_delete_manifest/1, Manifests).
 
--spec prune(list(lfs_manifest())) -> list(lfs_manifest()).
-prune(Manifests) ->
-    prune(Manifests, erlang:now()).
-
--spec prune(list(lfs_manifest()), erlang:timestamp()) -> list(lfs_manifest()).
-prune(Manifests, Time) ->
-    [KV || {_K, V}=KV <- Manifests, not (needs_pruning(V, Time))].
-
 upgrade_wrapped_manifests(ListofOrdDicts) ->
     DictMapFun = fun (_Key, Value) -> upgrade_manifest(Value) end,
     MapFun = fun (Value) -> orddict:map(DictMapFun, Value) end,
@@ -217,13 +207,6 @@ most_recent_active_manifest(Man1=?MANIFEST{state=active}, Man2=?MANIFEST{state=a
 most_recent_active_manifest(Man1=?MANIFEST{state=active}, _Man2) -> Man1;
 most_recent_active_manifest(_Man1, Man2=?MANIFEST{state=active}) -> Man2.
 
--spec needs_pruning(lfs_manifest(), erlang:timestamp()) -> boolean().
-needs_pruning(?MANIFEST{state=scheduled_delete,
-                              scheduled_delete_time=ScheduledDeleteTime}, Time) ->
-    seconds_diff(Time, ScheduledDeleteTime) > riak_cs_gc:leeway_seconds();
-needs_pruning(_Manifest, _Time) ->
-    false.
-
 pending_delete_manifest({_, ?MANIFEST{state=pending_delete,
                                       last_block_deleted_time=undefined}}) ->
     true;
@@ -240,71 +223,8 @@ pending_delete_manifest({_, ?MANIFEST{state=scheduled_delete,
 pending_delete_manifest(_) ->
     false.
 
-seconds_diff(T2, T1) ->
-    TimeDiffMicrosends = timer:now_diff(T2, T1),
-    SecondsTime = TimeDiffMicrosends / (1000 * 1000),
-    erlang:trunc(SecondsTime).
-
 %% ===================================================================
 %% EUnit tests
 %% ===================================================================
 -ifdef(TEST).
-
-new_mani_helper() ->
-    riak_moss_lfs_utils:new_manifest(<<"bucket">>,
-        <<"key">>,
-        <<"uuid">>,
-        100, %% content-length
-        <<"ctype">>,
-        undefined, %% md5
-        orddict:new(),
-        10,
-        undefined).
-
-manifest_test_() ->
-    {setup,
-        fun setup/0,
-        fun cleanup/1,
-        [fun wrong_state_for_pruning/0,
-         fun wrong_state_for_pruning_2/0,
-         fun does_need_pruning/0,
-         fun not_old_enough_for_pruning/0]
-    }.
-
-setup() ->
-    ok.
-
-cleanup(_Ctx) ->
-    ok.
-
-wrong_state_for_pruning() ->
-    Mani = new_mani_helper(),
-    Mani2 = Mani?MANIFEST{state=active},
-    ?assert(not needs_pruning(Mani2, erlang:now())).
-
-wrong_state_for_pruning_2() ->
-    Mani = new_mani_helper(),
-    Mani2 = Mani?MANIFEST{state=pending_delete},
-    ?assert(not needs_pruning(Mani2, erlang:now())).
-
-does_need_pruning() ->
-    application:set_env(riak_moss, leeway_seconds, 1),
-    %% 1000000 second diff
-    ScheduledDeleteTime = {1333,985708,445136},
-    Now = {1334,985708,445136},
-    Mani = new_mani_helper(),
-    Mani2 = Mani?MANIFEST{state=scheduled_delete,
-                                scheduled_delete_time=ScheduledDeleteTime},
-    ?assert(needs_pruning(Mani2, Now)).
-
-not_old_enough_for_pruning() ->
-    application:set_env(riak_moss, leeway_seconds, 2),
-    %$ 1 second diff
-    ScheduledDeleteTime = {1333,985708,445136},
-    Now = {1333,985709,445136},
-    Mani = new_mani_helper(),
-    Mani2 = Mani?MANIFEST{state=scheduled_delete,
-                                scheduled_delete_time=ScheduledDeleteTime},
-    ?assert(not needs_pruning(Mani2, Now)).
-
 -endif.
