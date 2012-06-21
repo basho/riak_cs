@@ -42,7 +42,7 @@ resolve_dicts(A, B) ->
 %% the same UUID and resolve them
 %% @private
 -spec resolve_manifests(term(), term(), term()) -> term().
-resolve_manifests(Key, A, B) ->
+resolve_manifests(_Key, A, B) ->
     AState = A?MANIFEST.state,
     BState = B?MANIFEST.state,
     resolve_manifests(AState, BState, A, B).
