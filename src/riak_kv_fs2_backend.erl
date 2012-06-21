@@ -48,6 +48,8 @@
 -define(API_VERSION, 1).
 -define(CAPABILITIES, [async_fold]).
 
+%% -define(TEST_IN_RIAK_KV, true).
+
 %% Borrowed from bitcask.hrl
 -define(VALSIZEFIELD, 32).
 -define(CRCSIZEFIELD, 32).
@@ -55,9 +57,7 @@
 -define(MAXVALSIZE, 2#11111111111111111111111111111111).
 
 -ifdef(TEST).
--ifdef(TEST_IN_RIAK_KV).
 -include_lib("eunit/include/eunit.hrl").
--endif.
 -endif.
 
 -record(state, {
@@ -94,15 +94,26 @@ capabilities(_, _) ->
 -spec start(integer(), config()) -> {ok, state()}.
 start(Partition, Config) ->
     PartitionName = integer_to_list(Partition),
-    ConfigRoot = app_helper:get_prop_or_env(fs2_backend_data_root, Config, riak_kv),
-    if
-        ConfigRoot =:= undefined ->
-            riak:stop("fs_backend_data_root unset, failing");
-        true ->
-            ok
-    end,
-    Dir = filename:join([ConfigRoot,PartitionName]),
-    {ok = filelib:ensure_dir(Dir), #state{dir=Dir}}.
+    try
+        ConfigRoot = case get_prop_or_env(
+                            fs2_backend_data_root, Config, riak_kv) of
+                         undefined ->
+                             throw("fs2_backend_data_root unset, failing");
+                         Else1 ->
+                             Else1
+                     end,
+        BlockSize = case get_prop_or_env(
+                           fs2_backend_block_size, Config, riak_kv) of
+                        undefined ->
+                            throw("fs2_backend_block_size unset, failing");
+                        Else2 ->
+                            Else2
+                    end,
+        Dir = filename:join([ConfigRoot,PartitionName]),
+        {filelib:ensure_dir(Dir), #state{dir = Dir, block_size = BlockSize}}
+    catch throw:Error ->
+            {error, Error}
+    end.
 
 %% @doc Stop the backend
 -spec stop(state()) -> ok.
@@ -478,9 +489,17 @@ calc_block_offset(BlockNum, #state{block_size = BlockSize}) ->
     %% MOSS block numbers start at zero.
     (BlockNum rem ?CONTIGUOUS_BLOCKS) * (?HEADER_SIZE + BlockSize).
 
+get_prop_or_env(Key, Properties, App) ->
+    case proplists:get_value(Key, Properties) of
+        undefined ->
+            application:get_env(App, Key);
+        Value ->
+            Value
+    end.
+
 t0() ->
     TestDir = "./delme",
-    Bucket = <<"b:delme">>,
+    Bucket = <<?BLOCK_BUCKET_PREFIX, "delme">>,
     K0 = <<0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0>>,
     V0 = <<42:64>>,
     K1 = <<0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1>>,
@@ -498,12 +517,17 @@ t0() ->
 %% EUnit tests
 %% ===================================================================
 -ifdef(TEST).
+
+t0_test() ->
+    t0().
+
 -ifdef(TEST_IN_RIAK_KV).
 
 %% Broken test:
 simple_test_() ->
    ?assertCmd("rm -rf test/fs-backend"),
-   Config = [{fs2_backend_data_root, "test/fs-backend"}],
+   Config = [{fs2_backend_data_root, "test/fs-backend"},
+             {fs2_backend_block_size, 8}],
    riak_kv_backend:standard_test(?MODULE, Config).
 
 dirty_clean_test() ->
@@ -542,7 +566,8 @@ eqc_test_() ->
                           backend_eqc:test(?MODULE,
                                            false,
                                            [{fs2_backend_data_root,
-                                             "test/fs-backend"}]))]}
+                                             "test/fs-backend"},
+                                           {fs2_backend_block_size, 8}]))]}
          ]}]}]}.
 
 setup() ->
