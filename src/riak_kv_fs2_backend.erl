@@ -113,7 +113,7 @@ stop(_State) -> ok.
                  {ok, any(), state()} |
                  {ok, not_found, state()} |
                  {error, term(), state()}.
-get(<<"b:", _/binary>> = Bucket,
+get(<<?BLOCK_BUCKET_PREFIX, _/binary>> = Bucket,
     <<UUID:?UUID_BYTES/binary, BlockNum:?BLOCK_FIELD_SIZE>>,
     #state{block_size = BlockSize} = State) ->
     File = location(State, {Bucket, UUID}),
@@ -160,7 +160,7 @@ get(Bucket, Key, State) ->
 -spec put(riak_object:bucket(), riak_object:key(), [index_spec()], binary(), state()) ->
                  {ok, state()} |
                  {error, term(), state()}.
-put(<<"b:", _/binary>> = Bucket,
+put(<<?BLOCK_BUCKET_PREFIX, _/binary>> = Bucket,
     <<UUID:?UUID_BYTES/binary, BlockNum:?BLOCK_FIELD_SIZE>>,
     _IndexSpecs, Val, #state{block_size = BlockSize} = State)
   when size(Val) =< BlockSize ->

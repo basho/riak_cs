@@ -42,15 +42,13 @@
          update_key_secret/1]).
 
 -include("riak_moss.hrl").
+-include("riak_moss_lfs.hrl").
 -include_lib("riakc/include/riakc_obj.hrl").
 -include_lib("xmerl/include/xmerl.hrl").
 
 -ifdef(TEST).
 -compile(export_all).
 -endif.
-
--define(OBJECT_BUCKET_PREFIX, <<"0o:">>).       % Version # = 0
--define(BLOCK_BUCKET_PREFIX, <<"0b:">>).        % Version # = 0
 
 %% Definitions for json_pp_print, from riak_core's json_pp.erl
 -define(SPACE, 32).
@@ -195,8 +193,8 @@ delete_object(BucketName, Key, RiakPid) ->
 %% bucket or the data block bucket name.
 -spec from_bucket_name(binary()) -> {'blocks' | 'objects', binary()}.
 from_bucket_name(BucketNameWithPrefix) ->
-    BlocksName = ?BLOCK_BUCKET_PREFIX,
-    ObjectsName = ?OBJECT_BUCKET_PREFIX,
+    BlocksName = <<?BLOCK_BUCKET_PREFIX>>,
+    ObjectsName = <<?OBJECT_BUCKET_PREFIX>>,
     BlockByteSize = byte_size(BlocksName),
     ObjectsByteSize = byte_size(ObjectsName),
 
@@ -537,9 +535,9 @@ set_object_acl(Bucket, Key, Manifest, Acl, RiakPid) ->
 to_bucket_name(Type, Bucket) ->
     case Type of
         objects ->
-            Prefix = ?OBJECT_BUCKET_PREFIX;
+            Prefix = <<?OBJECT_BUCKET_PREFIX>>;
         blocks ->
-            Prefix = ?BLOCK_BUCKET_PREFIX
+            Prefix = <<?BLOCK_BUCKET_PREFIX>>
     end,
     BucketHash = crypto:md5(Bucket),
     <<Prefix/binary, BucketHash/binary>>.

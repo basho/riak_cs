@@ -26,6 +26,9 @@
 %% druuid:v4() uses 16 bytes in raw form.
 -define(UUID_BYTES, 16).
 
+-define(OBJECT_BUCKET_PREFIX, "0o:").       % Version # = 0
+-define(BLOCK_BUCKET_PREFIX, "0b:").        % Version # = 0
+
 %% TODO: Make this configurable via app env?
 -define(CONTIGUOUS_BLOCKS, 16).
 
