@@ -84,7 +84,7 @@
 -define(API_VERSION, 1).
 -define(CAPABILITIES, [async_fold]).
 
-%% -define(TEST_IN_RIAK_KV, true).
+-define(TEST_IN_RIAK_KV, true).
 
 %% Borrowed from bitcask.hrl
 -define(VALSIZEFIELD, 32).
@@ -163,6 +163,7 @@ stop(_State) -> ok.
 get(<<?BLOCK_BUCKET_PREFIX, _/binary>> = Bucket,
     <<UUID:?UUID_BYTES/binary, BlockNum:?BLOCK_FIELD_SIZE>>,
     #state{block_size = BlockSize} = State) ->
+    %%io:format(user, "LINE ~p: ~p ~p ~p\n", [?LINE, Bucket, UUID, BlockNum]),
     File = location(State, {Bucket, UUID}),
     Offset = calc_block_offset(BlockNum, State),
     io:format("DBG line ~p block ~p offset ~p uuid ~p\n",
@@ -210,7 +211,8 @@ get(Bucket, Key, State) ->
 put(<<?BLOCK_BUCKET_PREFIX, _/binary>> = Bucket,
     <<UUID:?UUID_BYTES/binary, BlockNum:?BLOCK_FIELD_SIZE>>,
     _IndexSpecs, Val, #state{block_size = BlockSize} = State)
-  when size(Val) =< BlockSize ->
+  when size(Val) =< BlockSize ->                % TODO ZZZ FIXME do not fall through!
+    %%io:format(user, "LINE ~p: ~p ~p ~p\n", [?LINE, Bucket, UUID, BlockNum]),% TODO reminder fix above clause!
     File = location(State, {Bucket, UUID}),
     Offset = calc_block_offset(BlockNum, State),
     io:format("DBG line ~p block ~p offset ~p uuid ~p\n",
@@ -603,7 +605,7 @@ eqc_test_() ->
                                            false,
                                            [{fs2_backend_data_root,
                                              "test/fs-backend"},
-                                           {fs2_backend_block_size, 8}]))]}
+                                           {fs2_backend_block_size, 1024}]))]}
          ]}]}]}.
 
 setup() ->
