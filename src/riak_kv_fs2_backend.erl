@@ -19,6 +19,42 @@
 %% under the License.
 %%
 %% -------------------------------------------------------------------
+%%
+%% TODO list for the multiple-chunk-in-single-file scheme:
+%%
+%% __ Test-first: create EQC model, test it ruthlessly
+%%    __ Include all ops, including folding!
+%%
+%% __ Make certain that max chunk size is strictly enforced.
+%% __ Add unit test to make certain that the backend gives graceful
+%%    error when chunk size limit is exceeded.
+%%
+%% __ When using with RCS, add a programmatic check for the LFS block size.
+%%    Then add extra cushion (e.g. 512 bytes??) and use that for block size?
+%%
+%% __ Create & write a real header block on first data chunk write
+%%    __ Add space in the header to track deleted chunks.
+%%
+%% __ Check the header block on all chunk read ops?  (or at least 0th chunk?)
+%%
+%% __ Implement the delete op:
+%%    __ Update the deleted chunk map:
+%%        if undeleted chunks, write new map
+%%        if all chunks are deleted, delete file
+%%    HRRRMMMMM, this kind of update-in-place is by definition not append-only.
+%%    WHAT IF?  1. A fixed size deleted trailer block were appended
+%%                 at the offset of the Max+1 block?
+%%                 A stat(2) call can tell us if any blocks have been
+%%                 deleted yet.  (Or if pread(2) returns EOF)
+%%              2. If trailer is present, check last trailer for latest map.
+%%
+%% __ Read cache: if reading 0th chunk, create read-ahead that will
+%%    read entire file async'ly and send it as a message to be recieved
+%%    later.  When reading 1st chunk, wait for arrival of read-ahead block.
+%%    __ Needs a real cache though.  Steal the cache from the memory backend?
+%%       Use the entire riak_memory_backend as-is??  Except that using ETS
+%%       is going to copy binaries, and we don't want those shared off-heap
+%%       binaries copied.  Hrm....
 
 % @doc riak_kv_fs2_backend is filesystem storage system, Mark III
 
