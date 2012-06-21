@@ -583,12 +583,6 @@ nest_test() ->
     ?assertEqual(["0","0","0"],   nest([])).
 
 -ifdef(EQC).
-%% Broken test:
-%% eqc_test() ->
-%%     Cleanup = fun(_State,_Olds) -> os:cmd("rm -rf test/fs-backend") end,
-%%     Config = [{riak_kv_fs_backend_root, "test/fs-backend"}],
-%%     ?assertCmd("rm -rf test/fs-backend"),
-%%     ?assertEqual(true, backend_eqc:test(?MODULE, false, Config, Cleanup)).
 
 eqc_test_() ->
     {spawn,
@@ -597,6 +591,12 @@ eqc_test_() ->
          fun setup/0,
          fun cleanup/1,
          [
+          ?_assertEqual(?BLOCK_BUCKET_PREFIX,
+                        backend_eqc:bucket_prefix_1()),
+          ?_assertEqual(?UUID_BYTES,
+                        backend_eqc:key_prefix_1()),
+          ?_assertEqual(?BLOCK_FIELD_SIZE,
+                        backend_eqc:key_suffix_1()),
           {timeout, 60000,
            [?_assertEqual(true,
                           backend_eqc:test(?MODULE,
