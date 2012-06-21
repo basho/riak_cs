@@ -17,6 +17,7 @@
 -module(riak_moss_lfs_utils).
 
 -include("riak_moss.hrl").
+-include("riak_moss_lfs.hrl").
 
 -export([block_count/2,
          block_keynames/3,
@@ -35,6 +36,7 @@
          new_manifest/11,
          remove_write_block/2,
          sorted_blocks_remaining/1]).
+-export([chash_moss_keyfun/1]).
 
 %% -------------------------------------------------------------------
 %% Public API
@@ -204,3 +206,12 @@ remove_write_block(Manifest, Chunk) ->
 
 sorted_blocks_remaining(#lfs_manifest_v2{write_blocks_remaining=Remaining}) ->
     lists:sort(ordsets:to_list(Remaining)).
+
+-spec chash_moss_keyfun({binary(), binary()}) -> binary().
+chash_moss_keyfun({<<"b:", _/binary>> = Bucket,
+                   <<UUID:?UUID_BYTES/binary, BlockNum:?BLOCK_FIELD_SIZE>>}) ->
+    Contig = BlockNum div ?CONTIGUOUS_BLOCKS,
+    chash:key_of({Bucket, <<UUID/binary, Contig:?BLOCK_FIELD_SIZE>>});
+chash_moss_keyfun({Bucket, Key}) ->
+    %% Default object/ring hashing fun, direct passthrough of bkey.
+    chash:key_of({Bucket, Key}).
