@@ -82,7 +82,7 @@
 -include("riak_moss_lfs.hrl").
 
 -define(API_VERSION, 1).
--define(CAPABILITIES, [async_fold]).
+-define(CAPABILITIES, [async_fold, write_once_keys]).
 
 -define(TEST_IN_RIAK_KV, true).
 
