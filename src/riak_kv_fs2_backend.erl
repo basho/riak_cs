@@ -194,21 +194,14 @@ put(<<?BLOCK_BUCKET_PREFIX, _/binary>> = Bucket,
     <<UUID:?UUID_BYTES/binary, BlockNum:?BLOCK_FIELD_SIZE>>,
     _IndexSpecs, Val, #state{block_size = BlockSize} = State)
   when size(Val) =< BlockSize ->                % TODO ZZZ FIXME do not fall through!
-    %%io:format(user, "LINE ~p: ~p ~p ~p\n", [?LINE, Bucket, UUID, BlockNum]),% TODO reminder fix above clause!
     File = location(State, {Bucket, UUID}),
     Offset = calc_block_offset(BlockNum, State),
-    %% io:format("DBG line ~p block ~p offset ~p uuid ~p\n",
-    %%           [?LINE, BlockNum, Offset, UUID]),
     try
         ok = filelib:ensure_dir(File),
-        %% io:format("DBG line ~p file ~s\n", [?LINE, File]),
         {ok, FH} = file:open(File, [write, read, raw, binary]),
         try
-            %% io:format("DBG line ~p\n", [?LINE]),
             PackedBin = pack_ondisk(Val),
-            %% io:format("DBG line ~p packed ~P\n", [?LINE, PackedBin, 20]),
             ok = file:pwrite(FH, Offset, PackedBin),
-            %% io:format("DBG line ~p offset ~p size ~p\n", [?LINE, Offset, size(iolist_to_binary(PackedBin))]),
             {ok, State}
         catch _X:_Y ->
                 io:format("DBG line ~p err ~p ~p\n", [?LINE, _X, _Y]),
@@ -534,21 +527,14 @@ calc_max_block(FileSize, #state{block_size = BlockSize}) ->
     FileSize div (?HEADER_SIZE + BlockSize).
 
 read_block(Bucket, UUID, BlockNum, #state{block_size = BlockSize} = State) ->
-    %% io:format(user, "LINE ~p: ~p ~p ~p\n", [?LINE, Bucket, UUID, BlockNum]),
     File = location(State, {Bucket, UUID}),
     Offset = calc_block_offset(BlockNum, State),
-    %% io:format("DBG line ~p block ~p offset ~p uuid ~p\n",
-    %%           [?LINE, BlockNum, Offset, UUID]),
     try
-        %% io:format("DBG line ~p file ~s\n", [?LINE, File]),
         {ok, FH} = file:open(File, [read, raw, binary]),
         try
-            %% io:format("DBG line ~p\n", [?LINE]),
             {ok, PackedBin} = file:pread(FH, Offset, ?HEADER_SIZE + BlockSize),
-            %% io:format("DBG line ~p packed ~P\n", [?LINE, PackedBin, 20]),
             try
                 Bin = unpack_ondisk(PackedBin),
-                %% io:format("DBG line ~p bin ~P\n", [?LINE, Bin, 20]),
                 Bin
             catch _A:_B ->
                     bad_crc
