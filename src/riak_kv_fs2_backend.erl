@@ -267,7 +267,7 @@ fold_buckets(FoldBucketsFun, Acc, Opts, State) ->
     BucketFolder =
         fun() ->
                 {FoldResult, _} =
-                    lists:foldl(FoldFun, {Acc, sets:new()}, list(State)),
+                    lists:foldl(FoldFun, {Acc, sets:new()}, list_all_files(State)),
                 FoldResult
         end,
     case lists:member(async_fold, Opts) of
@@ -287,7 +287,7 @@ fold_keys(FoldKeysFun, Acc, Opts, State) ->
     FoldFun = fold_keys_fun(FoldKeysFun, Bucket),
     KeyFolder =
         fun() ->
-                lists:foldl(FoldFun, Acc, list(State))
+                lists:foldl(FoldFun, Acc, list_all_files(State))
         end,
     case lists:member(async_fold, Opts) of
         true ->
@@ -320,7 +320,7 @@ fold_objects(FoldObjectsFun, Acc, Opts, State) ->
 %% and return a fresh reference.
 -spec drop(state()) -> {ok, state()}.
 drop(State=#state{dir=Dir}) ->
-    _ = [file:delete(location(State, BK)) || BK <- list(State)],
+    _ = [file:delete(location(State, BK)) || BK <- list_all_files(State)],
     Cmd = io_lib:format("rm -Rf ~s", [Dir]),
     _ = os:cmd(Cmd),
     ok = filelib:ensure_dir(Dir),
@@ -330,7 +330,7 @@ drop(State=#state{dir=Dir}) ->
 %% non-tombstone values; otherwise returns false.
 -spec is_empty(state()) -> boolean().
 is_empty(S) ->
-    list(S) == [].
+    list_all_files(S) == [].
 
 %% @doc Get the status information for this fs backend
 -spec status(state()) -> [no_status_sorry | {atom(), term()}].
@@ -370,7 +370,7 @@ fold(State, Fun0, Acc) ->
                           AccIn
                   end
           end,
-    lists:foldl(Fun, Acc, list(State)).
+    lists:foldl(Fun, Acc, list_all_files(State)).
 
 %% @private
 %% Return a function to fold over the buckets on this backend
@@ -422,10 +422,10 @@ fold_objects_fun(FoldObjectsFun, Bucket) ->
             end
     end.
 
-%% @spec list(state()) -> [{Bucket :: riak_object:bucket(),
-%%                          Key :: riak_object:key()}]
+%% @spec list_all_files(state()) -> [{Bucket :: riak_object:bucket(),
+%%                                    Key :: riak_object:key()}]
 %% @doc Get a list of all bucket/key pairs stored by this backend
-list(#state{dir=Dir}) ->
+list_all_files(#state{dir=Dir}) ->
     % this is slow slow slow
     %                                              B,N,N,N,K
     [location_to_bkey(X) || X <- filelib:wildcard("*/*/*/*/*",
