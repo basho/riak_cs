@@ -6,6 +6,24 @@
 %%
 %% -------------------------------------------------------------------
 %%
+%% Features:
+%%
+%% * The behavior & features of this backend are closely tied to
+%%   the RiakCS application.
+%%
+%% * We assume that RiakCS's LFS chunks will be written in ascending order.
+%%
+%% * We assume that it is not a fatal flaw if folding over BKeys/whatever
+%%   is not 100% accurate: we might say that a LFS chunk exists in a fold
+%%   but sometime later cannot read that chunk.  (RiakCS is expected to
+%%   do very few such folds, and very occasionally reporting chunks that
+%%   don't really exist is OK.)
+%%
+%% * We assume that if someone deletes one LFS chunk from an LFS UUID,
+%%   then it may or may not be possible to fetch other chunks that
+%%   belong to that same UUID.  (If RiakCS deletes a chunk, it's going
+%%   to delete the rest of them soon.)
+%%
 %% TODO list for the multiple-chunk-in-single-file scheme:
 %%
 %% __ Test-first: create EQC model, test it ruthlessly
@@ -85,8 +103,15 @@
 
 -record(state, {
           dir        :: string(),
-          block_size :: integer()
+          block_size :: integer(),
+          max_blocks :: integer()
          }).
+
+%% File trailer
+-record(t, {
+          written_sequentially :: boolean()
+         }).
+
 -type state() :: #state{}.
 -type config() :: [{atom(), term()}].
 
@@ -132,10 +157,27 @@ start(Partition, Config) ->
                         Else2 ->
                             Else2
                     end,
+        %% If the value of DefaultMaxB increases beyond 64, 
+        %% please see the delete code _before_ doing so.
+        DefaultMaxB = 64,
+        MaxBlocks = case get_prop_or_env(fs2_backend_max_blocks_per_file,
+                                         Config, riak_kv) of
+                        N when is_integer(N), 0 =< N, N =< DefaultMaxB ->
+                            N;
+                        undefined ->
+                            DefaultMaxB;
+                        _ ->
+                            error_logger:warning_msg("~s: invalid max blocks "
+                                                     "value, using ~p\n",
+                                                     [?MODULE, DefaultMaxB]),
+                            DefaultMaxB
+                    end,
         Dir = filename:join([ConfigRoot,PartitionName]),
-        {filelib:ensure_dir(Dir), #state{dir = Dir, block_size = BlockSize}}
+        {ok = filelib:ensure_dir(Dir), #state{dir = Dir,
+                                              block_size = BlockSize,
+                                              max_blocks = MaxBlocks}}
     catch throw:Error ->
-            {error, Error}
+        {error, Error}
     end.
 
 %% @doc Stop the backend
@@ -153,7 +195,7 @@ get(<<?BLOCK_BUCKET_PREFIX, _/binary>> = Bucket,
         Bin when is_binary(Bin) ->
             {ok, Bin, State};
         Reason when is_atom(Reason) ->
-            {error, Reason, State}
+            {error, not_found, State}
     end;
 get(Bucket, Key, State) ->
     File = location(State, {Bucket, Key}),
@@ -176,28 +218,21 @@ get(Bucket, Key, State) ->
 -spec put(riak_object:bucket(), riak_object:key(), [index_spec()], binary(), state()) ->
                  {ok, state()} |
                  {error, term(), state()}.
+put(<<?BLOCK_BUCKET_PREFIX, _/binary>>,
+    <<_:?UUID_BYTES/binary, BlockNum:?BLOCK_FIELD_SIZE>>,
+    _IndexSpecs, Val,
+    #state{block_size = BlockSize, max_blocks = MaxBlocks} = State)
+  when size(Val) > BlockSize orelse
+       BlockNum > (MaxBlocks-1) ->
+    {error, invalid_user_argument, State};
 put(<<?BLOCK_BUCKET_PREFIX, _/binary>> = Bucket,
     <<UUID:?UUID_BYTES/binary, BlockNum:?BLOCK_FIELD_SIZE>>,
-    _IndexSpecs, Val, #state{block_size = BlockSize} = State)
-  when size(Val) =< BlockSize ->                % TODO ZZZ FIXME do not fall through!
-    File = location(State, {Bucket, UUID}),
-    Offset = calc_block_offset(BlockNum, State),
-    try
-        ok = filelib:ensure_dir(File),
-        {ok, FH} = file:open(File, [write, read, raw, binary]),
-        try
-            PackedBin = pack_ondisk(Val),
-            ok = file:pwrite(FH, Offset, PackedBin),
-            {ok, State}
-        catch _X:_Y ->
-                io:format("DBG line ~p err ~p ~p\n", [?LINE, _X, _Y]),
-                {error, eBummer, State}
-        after
-            file:close(FH)
-        end
-    catch _A:_B ->
-            io:format("DBG line ~p err ~p ~p\n", [?LINE, _A, _B]),
-            {error, not_found, State}
+    _IndexSpecs, Val, State) ->
+    case put_block(Bucket, UUID, BlockNum, Val, State) of
+        ok ->
+            {ok, State};
+        Reason ->
+            {error, Reason, State}
     end;
 put(Bucket, PrimaryKey, _IndexSpecs, Val, State) ->
     File = location(State, {Bucket, PrimaryKey}),
@@ -397,9 +432,9 @@ list_all_files_naive_bkeys(#state{dir=Dir}) ->
 %% @doc Get a list of all bucket/key pairs stored by this backend
 list_all_keys(State) ->
     L = lists:foldl(fun({<<?BLOCK_BUCKET_PREFIX, _/binary>> = Bucket,
-                         <<UUID:?UUID_BYTES/binary>> = Key}, Acc) ->
-                            Chunks = enumerate_chunks_in_file(Bucket, Key,
-                                                              UUID, State),
+                         <<UUID:?UUID_BYTES/binary>> = _Key}, Acc) ->
+                            Chunks = enumerate_chunks_in_file(Bucket, UUID,
+                                                              State),
                             ChunkBKeys = [{Bucket, <<UUID:?UUID_BYTES/binary,
                                                      C:?BLOCK_FIELD_SIZE>>} ||
                                              C <- Chunks],
@@ -502,15 +537,35 @@ unpack_ondisk(<<Crc32:?CRCSIZEFIELD/unsigned,
     catch _:_ ->
             bad_crc
     end;
-unpack_ondisk(_) ->
+unpack_ondisk(_Bin) ->
     bad_crc.
 
 calc_block_offset(BlockNum, #state{block_size = BlockSize}) ->
     %% MOSS block numbers start at zero.
-    (BlockNum rem ?CONTIGUOUS_BLOCKS) * (?HEADER_SIZE + BlockSize).
+    BlockNum * (?HEADER_SIZE + BlockSize).
 
-calc_max_block(FileSize, #state{block_size = BlockSize}) ->
-    FileSize div (?HEADER_SIZE + BlockSize).
+%% @doc Calculate the largest possible valid block number stored in
+%%      this file.  Return -1 if the file's size is zero.
+%%
+%%      This function isn't meant to be 100% correct in all instances:
+%%      it only needs to be good enough.  It might be confused by partial
+%%      file writes (which shouldn't be possible, except that a system
+%%      crash could cause data loss and so it is possible).
+%%      The caller should be tolerant in cases where we return a value
+%%      larger than as in a Fully Correct Universe.
+
+calc_max_block(0, _) ->
+    -1;
+calc_max_block(FileSize, #state{block_size = BlockSize,
+                                max_blocks = MaxBlocks}) ->
+    case (FileSize - 1) div (?HEADER_SIZE + BlockSize) of
+        X when X > (MaxBlocks - 1) ->
+            %% Anything written at or beyond MaxBlocks's offset is
+            %% in the realm of trailers and is hereby ignored.
+            MaxBlocks;
+        N ->
+            N
+    end.
 
 read_block(Bucket, UUID, BlockNum, #state{block_size = BlockSize} = State) ->
     File = location(State, {Bucket, UUID}),
@@ -526,7 +581,9 @@ read_block(Bucket, UUID, BlockNum, #state{block_size = BlockSize} = State) ->
                     bad_crc
             end
         catch _X:_Y ->
-                io:format("DBG line ~p err ~p ~p\n", [?LINE, _X, _Y]),
+                %% The pread failed, which means we're in a situation
+                %% where we've written only as far as block N but we're
+                %% attempting to read ahead, i.e., N+e, where e > 0.
                 not_found
         after
             file:close(FH)
@@ -535,16 +592,70 @@ read_block(Bucket, UUID, BlockNum, #state{block_size = BlockSize} = State) ->
             not_found
     end.
 
-enumerate_chunks_in_file(Bucket, _Key, UUID, State) ->
+put_block(Bucket, UUID, BlockNum, Val, #state{max_blocks=MaxBlocks} = State) ->
+    File = location(State, {Bucket, UUID}),
+    Offset = calc_block_offset(BlockNum, State),
+    try
+        ok = filelib:ensure_dir(File),
+        OutOfOrder_p = check_trailer_ooo(File, BlockNum, State),
+        {ok, FH} = file:open(File, [write, read, raw, binary]),
+        try
+            PackedBin = pack_ondisk(Val),
+            ok = file:pwrite(FH, Offset, PackedBin),
+            if OutOfOrder_p ->
+                    %% It's not an error to write more than one trailer
+                    Tr = make_trailer(#t{written_sequentially = false}),
+                    TrOffset = calc_block_offset(MaxBlocks, State),
+                    {ok, TrOffset} = file:position(FH, {bof, TrOffset}),
+                    ok = file:write(FH, Tr);
+               true ->
+                   ok
+            end
+        catch _X:Y ->
+                io:format(user, "DBG line ~p err ~p ~p\n", [?LINE, _X, Y]),
+                {error, Y}
+        after
+            file:close(FH)
+        end
+    catch _A:_B ->
+            io:format(user, "DBG line ~p err ~p ~p\n", [?LINE, _A, _B]),
+            {error, not_found}
+    end.
+
+enumerate_chunks_in_file(Bucket, UUID, #state{max_blocks=MaxBlocks} = State) ->
     Path = location(State, {Bucket, UUID}),
     case file:read_file_info(Path) of
         {error, _} ->
             [];
         {ok, FI} ->
-            MaxBlock = calc_max_block(FI#file_info.size, State),
+            MaxBlock = case calc_max_block(FI#file_info.size, State) of
+                           X when X == MaxBlocks ->
+                               %% A trailer exists, so we need to assume that
+                               %% perhaps there might be holes in 
+                               MaxBlocks - 1;
+                           N ->
+                               N
+                       end,
             [BlockNum || BlockNum <- lists:seq(0, MaxBlock),
                          is_binary(read_block(Bucket, UUID, BlockNum, State))]
     end.
+
+%% @doc Is the next block number we wish to write out-of-order?
+
+check_trailer_ooo(File, BlockNum, State) ->
+    case file:read_file_info(File) of
+        {error, enoent} ->
+            % BlockNum 0 is ok, all others are out of order
+            BlockNum /= 0;
+        {ok, FI} ->
+            MaxBlock = calc_max_block(FI#file_info.size, State),
+            BlockNum == MaxBlock - 1
+    end.            
+
+make_trailer(Term) ->
+    Bin = iolist_to_binary(pack_ondisk(term_to_binary(Term))),
+    Sz = size(Bin),
+    [Bin, <<Sz:32>>].
 
 get_prop_or_env(Key, Properties, App) ->
     case proplists:get_value(Key, Properties) of
@@ -564,13 +675,14 @@ t0() ->
     os:cmd("rm -rf " ++ TestDir),
     {ok, S} = start(-1, [{fs2_backend_data_root, TestDir},
                          {fs2_backend_block_size, 8}]),
-    {ok, S} = put(Bucket, K0, [], V0, S),
     {ok, S} = put(Bucket, K1, [], V1, S),
+    {ok, S} = put(Bucket, K0, [], V0, S),
     {ok, V0, S} = get(Bucket, K0, S),
     {ok, V1, S} = get(Bucket, K1, S),
     ok.
 
 t1() ->
+    #t{} = #t{},
     TestDir = "./delme",
     Bucket = <<?BLOCK_BUCKET_PREFIX, "delme">>,
     K0 = <<0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0>>,
@@ -580,9 +692,6 @@ t1() ->
     os:cmd("rm -rf " ++ TestDir),
     {ok, S} = start(-1, [{fs2_backend_data_root, TestDir},
                          {fs2_backend_block_size, 1024}]),
-    %% {ok, S1} = drop(S),
-    %% {ok, S2} = drop(S1),
-    %% {ok, S3} = drop(S2),
     {ok, S4} = put(Bucket, K0, [], V0, S),
     {ok, S5} = put(Bucket, K1, [], V1, S4),
     {ok, V0, _} = get(Bucket, K0, S5),
@@ -600,6 +709,9 @@ t1() ->
 
 t0_test() ->
     t0().
+
+t1_test() ->
+    t1().
 
 -ifdef(TEST_IN_RIAK_KV).
 
