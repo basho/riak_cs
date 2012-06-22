@@ -77,9 +77,10 @@
          is_empty/1,
          status/1,
          callback/3]).
--export([t0/0]).
+-export([t0/0, t1/0]).
 
 -include("riak_moss_lfs.hrl").
+-include_lib("kernel/include/file.hrl").
 
 -define(API_VERSION, 1).
 -define(CAPABILITIES, [async_fold, write_once_keys]).
@@ -161,31 +162,12 @@ stop(_State) -> ok.
                  {ok, not_found, state()} |
                  {error, term(), state()}.
 get(<<?BLOCK_BUCKET_PREFIX, _/binary>> = Bucket,
-    <<UUID:?UUID_BYTES/binary, BlockNum:?BLOCK_FIELD_SIZE>>,
-    #state{block_size = BlockSize} = State) ->
-    %%io:format(user, "LINE ~p: ~p ~p ~p\n", [?LINE, Bucket, UUID, BlockNum]),
-    File = location(State, {Bucket, UUID}),
-    Offset = calc_block_offset(BlockNum, State),
-    io:format("DBG line ~p block ~p offset ~p uuid ~p\n",
-              [?LINE, BlockNum, Offset, UUID]),
-    try
-        io:format("DBG line ~p file ~s\n", [?LINE, File]),
-        {ok, FH} = file:open(File, [read, raw, binary]),
-        try
-            io:format("DBG line ~p\n", [?LINE]),
-            {ok, PackedBin} = file:pread(FH, Offset, ?HEADER_SIZE + BlockSize),
-            io:format("DBG line ~p packed ~P\n", [?LINE, PackedBin, 20]),
-            Bin = unpack_ondisk(PackedBin),
-            io:format("DBG line ~p bin ~P\n", [?LINE, Bin, 20]),
-            {ok, Bin, State}
-        catch _X:_Y ->
-                io:format("DBG line ~p err ~p ~p\n", [?LINE, _X, _Y]),
-                {error, not_found, State}
-        after
-            file:close(FH)
-        end
-    catch _:_ ->
-            {error, not_found, State}
+    <<UUID:?UUID_BYTES/binary, BlockNum:?BLOCK_FIELD_SIZE>>, State) ->
+    case read_block(Bucket, UUID, BlockNum, State) of
+        Bin when is_binary(Bin) ->
+            {ok, Bin, State};
+        Reason when is_atom(Reason) ->
+            {error, Reason, State}
     end;
 get(Bucket, Key, State) ->
     File = location(State, {Bucket, Key}),
@@ -215,19 +197,18 @@ put(<<?BLOCK_BUCKET_PREFIX, _/binary>> = Bucket,
     %%io:format(user, "LINE ~p: ~p ~p ~p\n", [?LINE, Bucket, UUID, BlockNum]),% TODO reminder fix above clause!
     File = location(State, {Bucket, UUID}),
     Offset = calc_block_offset(BlockNum, State),
-    io:format("DBG line ~p block ~p offset ~p uuid ~p\n",
-              [?LINE, BlockNum, Offset, UUID]),
+    %% io:format("DBG line ~p block ~p offset ~p uuid ~p\n",
+    %%           [?LINE, BlockNum, Offset, UUID]),
     try
         ok = filelib:ensure_dir(File),
-        io:format("DBG line ~p file ~s\n", [?LINE, File]),
+        %% io:format("DBG line ~p file ~s\n", [?LINE, File]),
         {ok, FH} = file:open(File, [write, read, raw, binary]),
         try
-            io:format("DBG line ~p\n", [?LINE]),
+            %% io:format("DBG line ~p\n", [?LINE]),
             PackedBin = pack_ondisk(Val),
-            io:format("DBG line ~p packed ~P\n", [?LINE, PackedBin, 20]),
+            %% io:format("DBG line ~p packed ~P\n", [?LINE, PackedBin, 20]),
             ok = file:pwrite(FH, Offset, PackedBin),
-            io:format("DBG line ~p\n", [?LINE]),
-            io:format("DBG line ~p\n", [?LINE]),
+            %% io:format("DBG line ~p offset ~p size ~p\n", [?LINE, Offset, size(iolist_to_binary(PackedBin))]),
             {ok, State}
         catch _X:_Y ->
                 io:format("DBG line ~p err ~p ~p\n", [?LINE, _X, _Y]),
@@ -235,7 +216,8 @@ put(<<?BLOCK_BUCKET_PREFIX, _/binary>> = Bucket,
         after
             file:close(FH)
         end
-    catch _:_ ->
+    catch _A:_B ->
+            io:format("DBG line ~p err ~p ~p\n", [?LINE, _A, _B]),
             {error, not_found, State}
     end;
 put(Bucket, PrimaryKey, _IndexSpecs, Val, State) ->
@@ -267,7 +249,7 @@ fold_buckets(FoldBucketsFun, Acc, Opts, State) ->
     BucketFolder =
         fun() ->
                 {FoldResult, _} =
-                    lists:foldl(FoldFun, {Acc, sets:new()}, list_all_files(State)),
+                    lists:foldl(FoldFun, {Acc, sets:new()}, list_all_keys(State)),
                 FoldResult
         end,
     case lists:member(async_fold, Opts) of
@@ -287,7 +269,7 @@ fold_keys(FoldKeysFun, Acc, Opts, State) ->
     FoldFun = fold_keys_fun(FoldKeysFun, Bucket),
     KeyFolder =
         fun() ->
-                lists:foldl(FoldFun, Acc, list_all_files(State))
+                lists:foldl(FoldFun, Acc, list_all_keys(State))
         end,
     case lists:member(async_fold, Opts) of
         true ->
@@ -320,7 +302,7 @@ fold_objects(FoldObjectsFun, Acc, Opts, State) ->
 %% and return a fresh reference.
 -spec drop(state()) -> {ok, state()}.
 drop(State=#state{dir=Dir}) ->
-    _ = [file:delete(location(State, BK)) || BK <- list_all_files(State)],
+    _ = [file:delete(location(State, BK)) || BK <- list_all_keys(State)],
     Cmd = io_lib:format("rm -Rf ~s", [Dir]),
     _ = os:cmd(Cmd),
     ok = filelib:ensure_dir(Dir),
@@ -330,7 +312,7 @@ drop(State=#state{dir=Dir}) ->
 %% non-tombstone values; otherwise returns false.
 -spec is_empty(state()) -> boolean().
 is_empty(S) ->
-    list_all_files(S) == [].
+    list_all_keys(S) == [].
 
 %% @doc Get the status information for this fs backend
 -spec status(state()) -> [no_status_sorry | {atom(), term()}].
@@ -370,7 +352,7 @@ fold(State, Fun0, Acc) ->
                           AccIn
                   end
           end,
-    lists:foldl(Fun, Acc, list_all_files(State)).
+    lists:foldl(Fun, Acc, list_all_keys(State)).
 
 %% @private
 %% Return a function to fold over the buckets on this backend
@@ -422,14 +404,31 @@ fold_objects_fun(FoldObjectsFun, Bucket) ->
             end
     end.
 
-%% @spec list_all_files(state()) -> [{Bucket :: riak_object:bucket(),
+%% @spec list_all_files_naive_bkeys(state()) -> [{Bucket :: riak_object:bucket(),
 %%                                    Key :: riak_object:key()}]
 %% @doc Get a list of all bucket/key pairs stored by this backend
-list_all_files(#state{dir=Dir}) ->
+list_all_files_naive_bkeys(#state{dir=Dir}) ->
     % this is slow slow slow
     %                                              B,N,N,N,K
     [location_to_bkey(X) || X <- filelib:wildcard("*/*/*/*/*",
                                                          Dir)].
+
+%% @spec list_all_keys([string()]) -> [{Bucket :: riak_object:bucket(),
+%%                                      Key :: riak_object:key()}]
+%% @doc Get a list of all bucket/key pairs stored by this backend
+list_all_keys(State) ->
+    L = lists:foldl(fun({<<?BLOCK_BUCKET_PREFIX, _/binary>> = Bucket,
+                         <<UUID:?UUID_BYTES/binary>> = Key}, Acc) ->
+                            Chunks = enumerate_chunks_in_file(Bucket, Key,
+                                                              UUID, State),
+                            ChunkBKeys = [{Bucket, <<UUID:?UUID_BYTES/binary,
+                                                     C:?BLOCK_FIELD_SIZE>>} ||
+                                             C <- Chunks],
+                            lists:reverse(ChunkBKeys, Acc);
+                       (BKey, Acc) ->
+                            [BKey|Acc]
+                    end, [], list_all_files_naive_bkeys(State)),
+    lists:reverse(L).
 
 %% @spec location(state(), {riak_object:bucket(), riak_object:key()})
 %%          -> string()
@@ -514,18 +513,66 @@ pack_ondisk(Bin) ->
     [<<(erlang:crc32(Bytes0)):?CRCSIZEFIELD>> | Bytes0].
 
 -spec unpack_ondisk(binary()) -> binary() | bad_crc.
-unpack_ondisk(<<Crc32:?CRCSIZEFIELD/unsigned, Bytes/binary>>) ->
-    case erlang:crc32(Bytes) of
-        Crc32 ->
-            <<ValueSz:?VALSIZEFIELD, Value:ValueSz/bytes>> = Bytes,
-            Value;
-        _BadCrc ->
+unpack_ondisk(<<Crc32:?CRCSIZEFIELD/unsigned,
+                ValueSz:?VALSIZEFIELD, Rest/binary>>)
+  when size(Rest) >= ValueSz ->
+    try
+        <<Value:ValueSz/binary, _Tail/binary>> = Rest,
+        Crc32 = erlang:crc32([<<ValueSz:?VALSIZEFIELD>>, Value]),
+        Value
+    catch _:_ ->
             bad_crc
-    end.
+    end;
+unpack_ondisk(_) ->
+    bad_crc.
 
 calc_block_offset(BlockNum, #state{block_size = BlockSize}) ->
     %% MOSS block numbers start at zero.
     (BlockNum rem ?CONTIGUOUS_BLOCKS) * (?HEADER_SIZE + BlockSize).
+
+calc_max_block(FileSize, #state{block_size = BlockSize}) ->
+    FileSize div (?HEADER_SIZE + BlockSize).
+
+read_block(Bucket, UUID, BlockNum, #state{block_size = BlockSize} = State) ->
+    %% io:format(user, "LINE ~p: ~p ~p ~p\n", [?LINE, Bucket, UUID, BlockNum]),
+    File = location(State, {Bucket, UUID}),
+    Offset = calc_block_offset(BlockNum, State),
+    %% io:format("DBG line ~p block ~p offset ~p uuid ~p\n",
+    %%           [?LINE, BlockNum, Offset, UUID]),
+    try
+        %% io:format("DBG line ~p file ~s\n", [?LINE, File]),
+        {ok, FH} = file:open(File, [read, raw, binary]),
+        try
+            %% io:format("DBG line ~p\n", [?LINE]),
+            {ok, PackedBin} = file:pread(FH, Offset, ?HEADER_SIZE + BlockSize),
+            %% io:format("DBG line ~p packed ~P\n", [?LINE, PackedBin, 20]),
+            try
+                Bin = unpack_ondisk(PackedBin),
+                %% io:format("DBG line ~p bin ~P\n", [?LINE, Bin, 20]),
+                Bin
+            catch _A:_B ->
+                    bad_crc
+            end
+        catch _X:_Y ->
+                io:format("DBG line ~p err ~p ~p\n", [?LINE, _X, _Y]),
+                not_found
+        after
+            file:close(FH)
+        end
+    catch _:_ ->
+            not_found
+    end.
+
+enumerate_chunks_in_file(Bucket, _Key, UUID, State) ->
+    Path = location(State, {Bucket, UUID}),
+    case file:read_file_info(Path) of
+        {error, _} ->
+            [];
+        {ok, FI} ->
+            MaxBlock = calc_max_block(FI#file_info.size, State),
+            [BlockNum || BlockNum <- lists:seq(0, MaxBlock),
+                         is_binary(read_block(Bucket, UUID, BlockNum, State))]
+    end.
 
 get_prop_or_env(Key, Properties, App) ->
     case proplists:get_value(Key, Properties) of
@@ -549,6 +596,29 @@ t0() ->
     {ok, S} = put(Bucket, K1, [], V1, S),
     {ok, V0, S} = get(Bucket, K0, S),
     {ok, V1, S} = get(Bucket, K1, S),
+    ok.
+
+t1() ->
+    TestDir = "./delme",
+    Bucket = <<?BLOCK_BUCKET_PREFIX, "delme">>,
+    K0 = <<0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0>>,
+    V0 = <<100:64>>,
+    K1 = <<0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1>>,
+    V1 = <<101:64>>,
+    os:cmd("rm -rf " ++ TestDir),
+    {ok, S} = start(-1, [{fs2_backend_data_root, TestDir},
+                         {fs2_backend_block_size, 1024}]),
+    %% {ok, S1} = drop(S),
+    %% {ok, S2} = drop(S1),
+    %% {ok, S3} = drop(S2),
+    {ok, S4} = put(Bucket, K0, [], V0, S),
+    {ok, S5} = put(Bucket, K1, [], V1, S4),
+    {ok, V0, _} = get(Bucket, K0, S5),
+    {ok, V1, _} = get(Bucket, K1, S5),
+    {ok, X} = fold_objects(fun(B, K, V, Acc) ->
+                                   [{{B, K}, V}|Acc]
+                           end, [], [], S5),
+    [{{Bucket, K0}, V0}, {{Bucket, K1}, V1}] = lists:reverse(X),
     ok.
 
 %% ===================================================================
