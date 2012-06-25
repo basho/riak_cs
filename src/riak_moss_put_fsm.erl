@@ -44,7 +44,7 @@
                 reply_pid :: {pid(), reference()},
                 mani_pid :: pid(),
                 riakc_pid :: pid(),
-                timer_ref :: timer:tref(),
+                timer_ref :: reference(),
                 bucket :: binary(),
                 key :: binary(),
                 metadata :: term(),
@@ -196,9 +196,8 @@ all_received({block_written, BlockID, WriterPid}, State=#state{mani_pid=ManiPid,
                 undefined ->
                     {next_state, done, NewState};
                 ReplyPid ->
-                    %% reply with the final
-                    %% manifest
-                    _ = timer:cancel(TimerRef),
+                    %% reply with the final manifest
+                    _ = erlang:cancel_timer(TimerRef),
                     case riak_moss_manifest_fsm:update_manifest_with_confirmation(ManiPid, Manifest) of
                         ok ->
                             gen_fsm:reply(ReplyPid, {ok, Manifest}),
@@ -249,7 +248,7 @@ done(finalize, _From, State=#state{manifest=Manifest,
                                    timer_ref=TimerRef}) ->
     %% 1. reply immediately
     %%    with the finished manifest
-    _ = timer:cancel(TimerRef),
+    _ = erlang:cancel_timer(TimerRef),
     case riak_moss_manifest_fsm:update_manifest_with_confirmation(ManiPid, Manifest) of
         ok ->
             {stop, normal, {ok, Manifest}, State};
@@ -279,14 +278,9 @@ handle_sync_event(_Event, _From, StateName, State) ->
 handle_info(save_manifest, StateName, State=#state{mani_pid=ManiPid,
                                                    manifest=Manifest}) ->
     %% 1. save the manifest
-
-    %% TODO:
-    %% are there any times where
-    %% we should be cancelling the
-    %% timer here, depending on the
-    %% state we're in?
     riak_moss_manifest_fsm:update_manifest(ManiPid, Manifest),
-    {next_state, StateName, State};
+    TRef = erlang:send_after(60000, self(), save_manifest),
+    {next_state, StateName, State#state{timer_ref=TRef}};
 %% TODO:
 %% add a clause for handling down
 %% messages from the blocks gen_servers
@@ -359,7 +353,7 @@ prepare(State=#state{bucket=Bucket,
     %% shouldn't be hardcoded,
     %% and if it is, what should
     %% it be?
-    {ok, TRef} = timer:send_interval(60000, self(), save_manifest),
+    TRef = erlang:send_after(60000, self(), save_manifest),
     riak_moss_manifest_fsm:add_new_manifest(ManiPid, NewManifest),
     State#state{manifest=NewManifest,
                 md5=Md5,
