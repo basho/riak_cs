@@ -18,6 +18,7 @@
 -export([gc_interval/0,
          gc_retry_interval/0,
          gc_manifests/6,
+         leeway_seconds/0,
          move_manifests_to_gc_bucket/2,
          timestamp/0]).
 
@@ -61,6 +62,17 @@ gc_retry_interval() ->
             ?DEFAULT_GC_RETRY_INTERVAL;
         {ok, RetryInterval} ->
             RetryInterval
+    end.
+
+%% @doc Return the minimum number of seconds a file manifest waits in
+%% the `scheduled_delete' state before being garbage collected.
+-spec leeway_seconds() -> non_neg_integer().
+leeway_seconds() ->
+    case application:get_env(riak_moss, leeway_seconds) of
+        undefined ->
+            ?DEFAULT_LEEWAY_SECONDS;
+        {ok, LeewaySeconds} ->
+            LeewaySeconds
     end.
 
 %% @doc Generate a key for storing a set of manifests for deletion.
@@ -154,17 +166,6 @@ generate_key() ->
     list_to_binary(
       integer_to_list(
         timestamp() + leeway_seconds())).
-
-%% @doc Return the minimum number of seconds a file manifest waits in
-%% the `scheduled_delete' state before being garbage collected.
--spec leeway_seconds() -> non_neg_integer().
-leeway_seconds() ->
-    case application:get_env(riak_moss, leeway_seconds) of
-        undefined ->
-            ?DEFAULT_LEEWAY_SECONDS;
-        {ok, LeewaySeconds} ->
-            LeewaySeconds
-    end.
 
 %% ===================================================================
 %% EUnit tests

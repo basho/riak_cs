@@ -76,6 +76,15 @@ overwritten_UUIDs(Manifests) ->
                             Elem=?MANIFEST{state=active} ->
                                 [UUID | Acc];
                             Elem=?MANIFEST{state=writing,
+                                           last_block_written_time=undefined,
+                                           write_start_time=WST} ->
+                                case leeway_elapsed(WST) of
+                                    true ->
+                                        [UUID | Acc];
+                                    false ->
+                                        Acc
+                                end;
+                            Elem=?MANIFEST{state=writing,
                                            last_block_written_time=LBWT} ->
                                 case leeway_elapsed(LBWT) of
                                     true ->
@@ -200,10 +209,12 @@ filter_manifests_by_state(Manifests, AcceptedStates) ->
         end,
     lists:filter(AcceptManifest, Manifests).
 
--spec leeway_elapsed(non_neg_integer()) -> boolean().
+-spec leeway_elapsed(undefined | erlang:timestamp()) -> boolean().
+leeway_elapsed(undefined) ->
+    false;
 leeway_elapsed(Timestamp) ->
     Now = riak_moss_utils:timestamp(os:timestamp()),
-    Now > (Timestamp + riak_cs_gc:leeway_seconds()).
+    Now > (riak_moss_utils:timestamp(Timestamp) + riak_cs_gc:leeway_seconds()).
 
 orddict_values(OrdDict) ->
     %% orddict's are by definition
