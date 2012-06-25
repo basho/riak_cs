@@ -17,7 +17,7 @@
 %% export Public API
 -export([new/2,
          active_manifest/1,
-         active_manifests/1,
+         active_and_writing_manifests/1,
          overwritten_UUIDs/1,
          mark_pending_delete/2,
          mark_scheduled_delete/2,
@@ -49,14 +49,10 @@ active_manifest(Manifests) ->
     end.
 
 %% @doc Return a list of all manifests in the
-%% active state
--spec active_manifests(term()) -> [lfs_manifest()].
-active_manifests(Manifests) ->
-    IsActive =
-        fun ({_, ?MANIFEST{state=State}}) ->
-                State == active orelse State == writing
-        end,
-    lists:filter(IsActive, Manifests).
+%% `active' or `writing' state
+-spec active_and_writing_manifests(term()) -> [lfs_manifest()].
+active_and_writing_manifests(Manifests) ->
+    filter_manifests_by_state(Manifests, [active, writing]).
 
 %% @doc Mark all active manifests
 %% that are not "the most active"
@@ -186,6 +182,16 @@ upgrade_manifest(?MANIFEST{}=M) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
+
+%% @doc Filter a list of manifests and accept only manifests whose
+%% current state is specified in the `AcceptedStates' list.
+-spec filter_manifests_by_state([lfs_manifest()], [atom()]) -> [lfs_manifest()].
+filter_manifests_by_state(Manifests, AcceptedStates) ->
+    AcceptManifest =
+        fun ({_, ?MANIFEST{state=State}}) ->
+                lists:member(State, AcceptedStates)
+        end,
+    lists:filter(AcceptManifest, Manifests).
 
 orddict_values(OrdDict) ->
     %% orddict's are by definition
