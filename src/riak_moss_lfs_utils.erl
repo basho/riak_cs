@@ -190,7 +190,7 @@ remove_write_block(Manifest, Chunk) ->
                 end,
     Manifest?MANIFEST{write_blocks_remaining=Updated,
                              state=ManiState,
-                             last_block_written_time=erlang:now()}.
+                             last_block_written_time=os:timestamp()}.
 
 %% @doc Remove a chunk from the `delete_blocks_remaining'
 %% field of `Manifest'
@@ -205,7 +205,7 @@ remove_delete_block(Manifest, Chunk) ->
                 end,
     Manifest?MANIFEST{delete_blocks_remaining=Updated,
                              state=ManiState,
-                             last_block_deleted_time=erlang:now()}.
+                             last_block_deleted_time=os:timestamp()}.
 
 sorted_blocks_remaining(?MANIFEST{write_blocks_remaining=Remaining}) ->
     lists:sort(ordsets:to_list(Remaining)).

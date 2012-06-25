@@ -550,7 +550,7 @@ set_bucket_acl(User, VClock, Bucket, ACL, RiakPid) ->
 -spec set_object_acl(binary(), binary(), lfs_manifest(), acl(), pid()) ->
             ok | {error, term()}.
 set_object_acl(Bucket, Key, Manifest, Acl, RiakPid) ->
-    StartTime = now(),
+    StartTime = os:timestamp(),
     {ok, ManiPid} = riak_moss_manifest_fsm:start_link(Bucket, Key, RiakPid),
     _ActiveMfst = riak_moss_manifest_fsm:get_active_manifest(ManiPid),
     UpdManifest = Manifest?MANIFEST{acl=Acl},
@@ -736,7 +736,7 @@ bucket_record(Name, Operation) ->
     ?MOSS_BUCKET{name=binary_to_list(Name),
                  last_action=Action,
                  creation_date=riak_moss_wm_utils:iso_8601_datetime(),
-                 modification_time=erlang:now()}.
+                 modification_time=os:timestamp()}.
 
 %% @doc Check for and resolve any conflict between
 %% a bucket record from a user record sibling and
@@ -778,7 +778,7 @@ cleanup_bucket(?MOSS_BUCKET{last_action=created}) ->
     false;
 cleanup_bucket(?MOSS_BUCKET{last_action=deleted,
                             modification_time=ModTime}) ->
-    timer:now_diff(erlang:now(), ModTime) > 86400.
+    timer:now_diff(os:timestamp(), ModTime) > 86400.
 
 %% @doc Strip off the user name portion of an email address
 -spec display_name(string()) -> string().
@@ -921,7 +921,7 @@ resolve_buckets([HeadUserRec | RestUserRecs], Buckets, _KeepDeleted) ->
                                   ok |
                                   {error, term()}.
 serialized_bucket_op(Bucket, ACL, User, VClock, BucketOp, StatName, RiakPid) ->
-    StartTime = now(),
+    StartTime = os:timestamp(),
     case get_admin_creds() of
         {ok, AdminCreds} ->
             BucketFun = bucket_fun(BucketOp,

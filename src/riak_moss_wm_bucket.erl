@@ -28,7 +28,7 @@ init(Config) ->
     %% Check if authentication is disabled and
     %% set that in the context.
     AuthBypass = proplists:get_value(auth_bypass, Config),
-    {ok, #context{start_time=now(), auth_bypass=AuthBypass}}.
+    {ok, #context{start_time=os:timestamp(), auth_bypass=AuthBypass}}.
 
 -spec service_available(term(), term()) -> {true, term(), term()}.
 service_available(RD, Ctx) ->

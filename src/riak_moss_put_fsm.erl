@@ -145,7 +145,7 @@ prepare(timeout, State=#state{content_length=0}) ->
     Md5 = crypto:md5_final(NewState#state.md5),
     NewManifest = NewState#state.manifest?MANIFEST{content_md5=Md5,
                                                    state=active,
-                                                   last_block_written_time=erlang:now()},
+                                                   last_block_written_time=os:timestamp()},
     {next_state, done, NewState#state{md5=Md5, manifest=NewManifest}};
 prepare(timeout, State) ->
     NewState = prepare(State),
@@ -156,7 +156,7 @@ prepare(finalize, From, State=#state{content_length=0}) ->
     Md5 = crypto:md5_final(NewState#state.md5),
     NewManifest = NewState#state.manifest?MANIFEST{content_md5=Md5,
                                                    state=active,
-                                                   last_block_written_time=erlang:now()},
+                                                   last_block_written_time=os:timestamp()},
     done(finalize, From, NewState#state{md5=Md5, manifest=NewManifest});
 prepare({augment_data, NewData}, From, State) ->
     #state{content_length=CLength,
@@ -352,7 +352,7 @@ prepare(State=#state{bucket=Bucket,
                                          Metadata,
                                          BlockSize,
                                          Acl),
-    NewManifest = Manifest?MANIFEST{write_start_time=erlang:now()},
+    NewManifest = Manifest?MANIFEST{write_start_time=os:timestamp()},
 
     %% TODO:
     %% this time probably
