@@ -133,7 +133,7 @@ init([]) ->
     SchedState = schedule_next(#state{interval=Interval}),
     %% @TODO Handle this in more general way. Maybe break out the
     %% function from the rts module?
-    %% ok = rts:check_bucket_props(?GC_BUCKET),
+    ok = rts:check_bucket_props(?GC_BUCKET),
     {ok, idle, SchedState}.
 
 %% Asynchronous events
