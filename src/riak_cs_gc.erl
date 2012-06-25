@@ -81,7 +81,7 @@ timestamp() ->
     %% TODO:
     %% could this be os:timestamp,
     %% which doesn't have a lock around it?
-    riak_moss_utils:timestamp(erlang:now()).
+    riak_moss_utils:timestamp(os:timestamp()).
 
 %%%===================================================================
 %%% Internal functions

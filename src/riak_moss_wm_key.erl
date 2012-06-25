@@ -28,7 +28,7 @@ init(Config) ->
     %% set that in the context.
     AuthBypass = proplists:get_value(auth_bypass, Config),
     {ok, #key_context{context=#context{auth_bypass=AuthBypass,
-                                       start_time=now()}}}.
+                                       start_time=os:timestamp()}}}.
 
 -spec extract_paths(term(), term()) -> term().
 extract_paths(RD, Ctx) ->
