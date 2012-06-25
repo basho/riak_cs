@@ -68,18 +68,25 @@ overwritten_UUIDs(Manifests) ->
                         [UUID | Acc]
                 end;
         {ok, Active} ->
-            FoldFun = fun ({UUID, Elem}, Acc) ->
-                              case Elem of
-                                  Active ->
-                                      Acc;
-                                  Elem=?MANIFEST{state=active} ->
-                                      [UUID | Acc];
-                                  Elem=?MANIFEST{state=writing} ->
-                                      [UUID | Acc];
-                                  _ ->
-                                      Acc
-                              end
-                      end
+            FoldFun =
+                fun ({UUID, Elem}, Acc) ->
+                        case Elem of
+                            Active ->
+                                Acc;
+                            Elem=?MANIFEST{state=active} ->
+                                [UUID | Acc];
+                            Elem=?MANIFEST{state=writing,
+                                           last_block_written_time=LBWT} ->
+                                case leeway_elapsed(LBWT) of
+                                    true ->
+                                        [UUID | Acc];
+                                    false ->
+                                        Acc
+                                end;
+                            _ ->
+                                Acc
+                        end
+                end
     end,
     lists:foldl(FoldFun, [], orddict:to_list(Manifests)).
 
@@ -192,6 +199,11 @@ filter_manifests_by_state(Manifests, AcceptedStates) ->
                 lists:member(State, AcceptedStates)
         end,
     lists:filter(AcceptManifest, Manifests).
+
+-spec leeway_elapsed(non_neg_integer()) -> boolean().
+leeway_elapsed(Timestamp) ->
+    Now = riak_moss_utils:timestamp(os:timestamp()),
+    Now > (Timestamp + riak_cs_gc:leeway_seconds()).
 
 orddict_values(OrdDict) ->
     %% orddict's are by definition
