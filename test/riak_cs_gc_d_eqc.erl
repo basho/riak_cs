@@ -83,7 +83,7 @@ prop_set_interval() ->
             begin
                 case whereis(riak_cs_gc_d) of
                     undefined ->
-                        {ok, _} = riak_cs_gc_d:start_link();
+                        {ok, _} = riak_cs_gc_d:test_link();
                     _Pid ->
                         riak_cs_gc_d:set_interval(?DEFAULT_GC_INTERVAL)
                 end,
@@ -101,7 +101,7 @@ prop_manual_commands() ->
             begin
                 case whereis(riak_cs_gc_d) of
                     undefined ->
-                        {ok, _} = riak_cs_gc_d:start_link();
+                        {ok, _} = riak_cs_gc_d:test_link();
                     _Pid ->
                         riak_cs_gc_d:set_interval(infinity),
                         riak_cs_gc_d:change_state(idle)
