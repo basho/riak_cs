@@ -44,7 +44,8 @@
 -include_lib("eunit/include/eunit.hrl").
 
 %% Test API
--export([current_state/0,
+-export([test_link/0,
+         current_state/0,
          change_state/1,
          status_data/1]).
 
@@ -61,7 +62,7 @@
           batch_start :: undefined | calendar:datetime(), % start of the current gc interval
           batch_count=0 :: non_neg_integer(),
           batch_skips=0 :: non_neg_integer(),
-          batch=[] :: [twop_set:twop_set()],
+          batch=[] :: undefined | [twop_set:twop_set()], % `undefined' only for testing
           pause_state :: atom(), % state of the fsm when a delete batch was paused
           delete_fsm_pid :: pid()
          }).
@@ -128,12 +129,11 @@ set_interval(Interval) ->
 %%%===================================================================
 
 %% @doc Read the storage schedule and go to idle.
-init([]) ->
+
+init(Args) ->
     Interval = riak_cs_gc:gc_interval(),
     SchedState = schedule_next(#state{interval=Interval}),
-    %% @TODO Handle this in more general way. Maybe break out the
-    %% function from the rts module?
-    ok = rts:check_bucket_props(?GC_BUCKET),
+    _ = check_bucket_props(Args),
     {ok, idle, SchedState}.
 
 %% Asynchronous events
@@ -368,12 +368,27 @@ cancel_batch(#state{batch_start=BatchStart,
                                          riak=undefined}),
     {reply, ok, idle, NewState}.
 
+
+-spec check_bucket_props([term()]) -> ok | {error, term()}.
+check_bucket_props([testing]) ->
+    ok;
+check_bucket_props([]) ->
+    %% @TODO Handle this in more general way. Maybe break out the
+    %% function from the rts module?
+    rts:check_bucket_props(?GC_BUCKET).
+
 %% @doc How many seconds have passed from `Time' to now.
--spec elapsed(undefined | non_neg_integer()) -> integer().
+-spec elapsed(undefined | non_neg_integer()) -> non_neg_integer().
 elapsed(undefined) ->
     riak_cs_gc:timestamp();
 elapsed(Time) ->
-    riak_cs_gc:timestamp() - Time.
+    Now = riak_cs_gc:timestamp(),
+    case (Diff = Now - Time) > 0 of
+        true ->
+            Diff;
+        false ->
+            0
+    end.
 
 %% @doc Fetch the list of keys for file manifests that are eligible
 %% for delete.
@@ -399,7 +414,7 @@ gc_index_query(RiakPid, EndTime) ->
     {QueryResult, EndTime}.
 
 %% @doc Delete the blocks for the next set of manifests in the batch
--spec fetch_next_fileset(non_neg_integer(), pid()) -> {ok, [lfs_manifest()]} | {error, term()}.
+-spec fetch_next_fileset(binary(), pid()) -> {ok, [lfs_manifest()]} | {error, term()}.
 fetch_next_fileset(ManifestSetKey, RiakPid) ->
     %% Get the set of manifests represented by the key
     case riak_moss_utils:get_object(?GC_BUCKET, ManifestSetKey, RiakPid) of
@@ -465,6 +480,10 @@ status_data(State) ->
 %% ===================================================================
 
 -ifdef(TEST).
+
+%% @doc Start the garbage collection server
+test_link() ->
+    gen_fsm:start_link({local, ?SERVER}, ?MODULE, [testing], []).
 
 %% @doc Get the current state of the fsm for testing inspection
 -spec current_state() -> {atom(), #state{}} | {error, term()}.
