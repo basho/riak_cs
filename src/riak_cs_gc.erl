@@ -26,7 +26,7 @@
 %%% Public API
 %%%===================================================================
 
--spec gc_manifests(binary(), binary(), [lfs_manifest()], [binary()],
+-spec gc_manifests(binary(), binary(), [{binary(), lfs_manifest()}], [binary()],
     riakc_obj:riakc_obj(), pid()) ->
     {ok, term()} | {error, term()}.
 gc_manifests(Bucket, Key, Manifests, UUIDsToMark, RiakObject, RiakcPid) ->
@@ -78,9 +78,6 @@ leeway_seconds() ->
 %% @doc Generate a key for storing a set of manifests for deletion.
 -spec timestamp() -> non_neg_integer().
 timestamp() ->
-    %% TODO:
-    %% could this be os:timestamp,
-    %% which doesn't have a lock around it?
     riak_moss_utils:timestamp(os:timestamp()).
 
 %%%===================================================================
@@ -119,10 +116,15 @@ mark_manifests({error, _Reason}=Error, _, _, _) ->
     Error.
 
 %% @doc Compile a list of `pending_delete' manifests.
+-spec get_pending_delete_manifests({ok, [{binary(), lfs_manifest()}]} |
+                                   {error, term()}) ->
+                                          [{binary(), lfs_manifest()}].
 get_pending_delete_manifests({ok, MarkedManifests}) ->
     riak_moss_manifest:pending_delete_manifests(MarkedManifests);
-get_pending_delete_manifests({error, _Reason}=Error) ->
-    Error.
+get_pending_delete_manifests({error, Reason}) ->
+    _ = lager:warning("Failed to get pending_delete manifests. Reason: ~p",
+                      [Reason]),
+    [].
 
 %% @doc Copy data for a list of manifests to the
 %% `riak-cs-gc' bucket to schedule them for deletion.

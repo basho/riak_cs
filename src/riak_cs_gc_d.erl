@@ -54,15 +54,15 @@
 -define(SERVER, ?MODULE).
 
 -record(state, {
-          interval :: non_neg_integer(),
+          interval :: infinity | non_neg_integer(),
           last :: undefined | calendar:datetime(), % the last time a deletion was scheduled
           next :: undefined | calendar:datetime(), % the next scheduled gc time
           riak :: undefined | pid(), % Riak connection pid
           current_fileset :: [lfs_manifest()],
-          batch_start :: undefined | calendar:datetime(), % start of the current gc interval
+          batch_start :: undefined | non_neg_integer(), % start of the current gc interval
           batch_count=0 :: non_neg_integer(),
           batch_skips=0 :: non_neg_integer(),
-          batch=[] :: undefined | [twop_set:twop_set()], % `undefined' only for testing
+          batch=[] :: undefined | [binary()], % `undefined' only for testing
           pause_state :: atom(), % state of the fsm when a delete batch was paused
           delete_fsm_pid :: pid()
          }).
@@ -179,7 +179,7 @@ initiating_file_delete(continue, #state{batch=[ManiSetKey | RestKeys],
                                         current_fileset=[],
                                         riak=RiakPid}=State) ->
     %% Delete the key from the GC bucket
-    riakc_pb_socket:delete(RiakPid, ?GC_BUCKET, ManiSetKey),
+    _ = riakc_pb_socket:delete(RiakPid, ?GC_BUCKET, ManiSetKey),
     gen_fsm:send_event(?SERVER, continue),
     {next_state, fetching_next_fileset, State#state{batch=RestKeys,
                                                     batch_count=1+BatchCount}};

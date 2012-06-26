@@ -135,7 +135,7 @@ mark_scheduled_delete(Manifests, UUIDsToMark) ->
 
 %% @doc Return the current `pending_delete' manifests
 %% from an orddict of manifests.
--spec pending_delete_manifests(term()) -> [lfs_manifest()].
+-spec pending_delete_manifests(term()) -> [{binary(), lfs_manifest()}].
 pending_delete_manifests(Manifests) ->
     lists:filter(fun pending_delete_manifest/1, Manifests).
 
