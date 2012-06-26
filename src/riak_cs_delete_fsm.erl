@@ -128,11 +128,12 @@ handle_receiving_manifest(State=#state{riakc_pid=RiakcPid,
     {NewManifest, BlocksToDelete} = blocks_to_delete_from_manifest(Manifest),
 
     NewState = State#state{manifest=NewManifest,
-                           unacked_deletes=[]},
+                           unacked_deletes=[],
+                           delete_blocks_remaining=BlocksToDelete},
 
     %% Handle the case where there are 0 blocks to delete,
     %% i.e. content length of 0
-    case BlocksToDelete > 0 of
+    case ordsets:size(BlocksToDelete) > 0 of
         true ->
             AllDeleteWorkers =
                 riak_moss_block_server:start_block_servers(RiakcPid,
@@ -184,7 +185,7 @@ finish(_State) ->
     _State.
 
 -spec blocks_to_delete_from_manifest(lfs_manifest()) ->
-    {lfs_manifest(), non_neg_integer()}.
+    {lfs_manifest(), ordsets:ordset(integer())}.
 blocks_to_delete_from_manifest(Manifest=?MANIFEST{state=State,
                                                   delete_blocks_remaining=undefined})
   when State =:= pending_delete;State =:= writing; State =:= scheduled_delete ->
@@ -195,7 +196,7 @@ blocks_to_delete_from_manifest(Manifest=?MANIFEST{state=State,
         Blocks ->
             UpdManifest = Manifest?MANIFEST{delete_blocks_remaining=Blocks}
     end,
-    {UpdManifest, orddict:size(Blocks)};
+    {UpdManifest, Blocks};
 blocks_to_delete_from_manifest(Manifest) ->
     {Manifest,
         Manifest?MANIFEST.delete_blocks_remaining}.
