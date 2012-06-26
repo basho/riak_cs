@@ -210,7 +210,7 @@ streaming_get(FsmPid, StartTime, UserName, BFile_str) ->
     end.
 
 %% @doc Convert a Riak CS user record to JSON
--spec user_record_to_json(term()) -> binary().
+-spec user_record_to_json(term()) -> {struct, [{atom(), term()}]}.
 user_record_to_json(?RCS_USER{email=Email,
                               display_name=DisplayName,
                               name=Name,
@@ -234,7 +234,7 @@ user_record_to_json(?RCS_USER{email=Email,
     {struct, UserData}.
 
 %% @doc Convert a Riak CS user record to XML
--spec user_record_to_xml(term()) -> binary().
+-spec user_record_to_xml(term()) -> {atom(), [{atom(), term()}]}.
 user_record_to_xml(?RCS_USER{email=Email,
                               display_name=DisplayName,
                               name=Name,

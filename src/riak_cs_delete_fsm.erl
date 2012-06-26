@@ -98,7 +98,7 @@ deleting({block_deleted, {ok, BlockID}, DeleterPid},
             {next_state, deleting, State3}
     end;
 deleting({block_deleted, {error, Error}, _DeleterPid}, State) ->
-    finish(State),
+    _ = finish(State),
     {stop, Error, State}.
 
 handle_event(_Event, StateName, State) ->
@@ -128,8 +128,7 @@ handle_receiving_manifest(State=#state{riakc_pid=RiakcPid,
     {NewManifest, BlocksToDelete} = blocks_to_delete_from_manifest(Manifest),
 
     NewState = State#state{manifest=NewManifest,
-                           unacked_deletes=[],
-                           delete_blocks_remaining=BlocksToDelete},
+                           unacked_deletes=[]},
 
     %% Handle the case where there are 0 blocks to delete,
     %% i.e. content length of 0
@@ -147,7 +146,7 @@ handle_receiving_manifest(State=#state{riakc_pid=RiakcPid,
 
             {next_state, deleting, StateAfterDeleteStart};
         false ->
-            finish(NewState),
+            _ = finish(NewState),
             {stop, normal, NewState}
     end.
 
@@ -173,18 +172,19 @@ maybe_delete_blocks(State=#state{bucket=Bucket,
 
 
 -spec finish(state()) -> state().
-finish(#state{manifest=?MANIFEST{state=deleted},
-              bucket=Bucket,
-              key=Key,
-              uuid=UUID,
-              riakc_pid=RiakcPid}) ->
+finish(State=#state{manifest=?MANIFEST{state=deleted},
+                    bucket=Bucket,
+                    key=Key,
+                    uuid=UUID,
+                    riakc_pid=RiakcPid}) ->
     {ok, ManiFsmPid} = riak_moss_manifest_fsm:start_link(Bucket, Key, RiakcPid),
-    riak_moss_manifest_fsm:delete_specific_manifest(ManiFsmPid, UUID);
+    _ = riak_moss_manifest_fsm:delete_specific_manifest(ManiFsmPid, UUID),
+    State;
 finish(_State) ->
     _State.
 
 -spec blocks_to_delete_from_manifest(lfs_manifest()) ->
-    {lfs_manifest(), ordsets:ordset(integer())}.
+    {lfs_manifest(), non_neg_integer()}.
 blocks_to_delete_from_manifest(Manifest=?MANIFEST{state=State,
                                                   delete_blocks_remaining=undefined})
   when State =:= pending_delete;State =:= writing; State =:= scheduled_delete ->
@@ -195,7 +195,7 @@ blocks_to_delete_from_manifest(Manifest=?MANIFEST{state=State,
         Blocks ->
             UpdManifest = Manifest?MANIFEST{delete_blocks_remaining=Blocks}
     end,
-    {UpdManifest, Blocks};
+    {UpdManifest, orddict:size(Blocks)};
 blocks_to_delete_from_manifest(Manifest) ->
     {Manifest,
         Manifest?MANIFEST.delete_blocks_remaining}.

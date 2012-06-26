@@ -117,7 +117,7 @@ update_manifest(Pid, Manifest) ->
 %% @doc Delete a specific manifest version from a manifest and
 %% update the manifest value in riak or delete the manifest key from
 %% riak if there are no manifest versions remaining.
--spec delete_specific_manifest(pid(), string()) -> ok | {error, term()}.
+-spec delete_specific_manifest(pid(), binary()) -> ok | {error, term()}.
 delete_specific_manifest(Pid, UUID) ->
     gen_fsm:sync_send_event(Pid, {delete_manifest, UUID}, infinity).
 
@@ -172,8 +172,10 @@ waiting_update_command({update_manifests, WrappedManifests}, State=#state{riakc_
                                                                  manifests=PreviousManifests}) ->
 
 
-    update_from_previous_read(RiakcPid, PreviousRiakObject,
-                                  PreviousManifests, WrappedManifests),
+    _ = update_from_previous_read(RiakcPid,
+                                  PreviousRiakObject,
+                                  PreviousManifests,
+                                  WrappedManifests),
     {next_state, waiting_update_command, State#state{riak_object=undefined, manifests=undefined}}.
 
 
@@ -247,7 +249,7 @@ handle_get_manifests(State=#state{riakc_pid=RiakcPid,
 %% delete the manifest corresponding to `UUID', and then
 %% write the value back to Riak or delete the manifest value
 %% if there are no manifests remaining.
--spec get_and_delete(pid(), string(), binary(), binary()) -> ok |
+-spec get_and_delete(pid(), binary(), binary(), binary()) -> ok |
                                                              {error, term()}.
 get_and_delete(RiakcPid, UUID, Bucket, Key) ->
     case riak_moss_utils:get_manifests(RiakcPid, Bucket, Key) of

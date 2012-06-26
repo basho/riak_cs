@@ -189,18 +189,22 @@ delete_bucket(User, VClock, Bucket, RiakPid) ->
     end.
 
 %% @doc Mark all active manifests as pending_delete.
--spec delete_object(binary(), binary(), pid()) -> ok | {error, notfound}.
+-spec delete_object(binary(), binary(), pid()) -> ok | {error, term()}.
 delete_object(Bucket, Key, RiakcPid) ->
     StartTime = os:timestamp(),
     case get_manifests(RiakcPid, Bucket, Key) of
         {ok, RiakObject, Manifests} ->
-            ActiveManifests = riak_moss_manifest:active_manifests(Manifests),
+            ActiveManifests = riak_moss_manifest:active_and_writing_manifests(Manifests),
             ActiveUUIDs = [UUID || {UUID, _} <- ActiveManifests],
-            riak_cs_gc:gc_manifests(Bucket, Key, Manifests, ActiveUUIDs,
-                                        RiakObject, RiakcPid),
+            _ = riak_cs_gc:gc_manifests(Bucket,
+                                    Key,
+                                    Manifests,
+                                    ActiveUUIDs,
+                                    RiakObject,
+                                    RiakcPid),
             ok = riak_cs_stats:update_with_start(object_delete, StartTime);
-        {error, notfound} ->
-            ok
+        {error, _}=Error ->
+            Error
     end.
 
 %% Get the root bucket name for either a MOSS object
@@ -463,8 +467,8 @@ list_keys(BucketName, RiakPid) ->
             %% going to involve 2i and merging the
             %% results from each of the vnodes.
             {ok, lists:sort(Keys)};
-        {error, Reason} ->
-            {error, Reason}
+        {error, _}=Error ->
+            Error
     end.
 
 %% @doc Integer version of the standard pow() function; call the recursive accumulator to calculate.
@@ -564,7 +568,7 @@ set_object_acl(Bucket, Key, Manifest, Acl, RiakPid) ->
     Res.
 
 %% @doc Generate a key for storing a set of manifests for deletion.
--spec timestamp(term()) -> non_neg_integer().
+-spec timestamp(erlang:timestamp()) -> non_neg_integer().
 timestamp({MegaSecs, Secs, _MicroSecs}) ->
     (MegaSecs * 1000000) + Secs.
 

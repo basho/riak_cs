@@ -76,7 +76,7 @@ calculate_qs_signature(KeyData, Verb, Resource, Expires, RawHeaders) when is_lis
     mochiweb_util:quote_plus(base64:encode_to_string(
                                crypto:sha_mac(KeyData, STS)));
 calculate_qs_signature(_KeyData, _Verb, _Resource, _, _Headers)  ->
-    lager:error("HTTP verb must be a string"),
+    _  = lager:error("HTTP verb must be a string"),
     {error, badarg}.
 
 %% ===================================================================

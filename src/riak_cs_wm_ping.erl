@@ -26,7 +26,7 @@ init(_Config) ->
     dt_entry(<<"init">>),
     {ok, #ping_context{}}.
 
--spec service_available(term(), term()) -> {true, term(), term()}.
+-spec service_available(term(), term()) -> {boolean(), term(), term()}.
 service_available(RD, Ctx) ->
     dt_entry(<<"service_available">>),
     case poolboy:checkout(request_pool, true, ping_timeout()) of
@@ -34,7 +34,7 @@ service_available(RD, Ctx) ->
             case riak_moss_riakc_pool_worker:start_link([]) of
                 {ok, Pid} ->
                     UpdCtx = Ctx#ping_context{riakc_pid=Pid,
-                                         pool_pid=false};
+                                              pool_pid=false};
                 {error, _} ->
                     Pid = undefined,
                     UpdCtx = Ctx
