@@ -60,7 +60,7 @@
 %%       is going to copy binaries, and we don't want those shared off-heap
 %%       binaries copied.  Hrm....
 
-% @doc riak_kv_fs2_backend is filesystem storage system, Mark III
+%% @doc riak_kv_fs2_backend is filesystem storage system, Mark III
 
 -module(riak_kv_fs2_backend).
 %% -behavior(riak_kv_backend). % Not building within riak_kv
@@ -72,7 +72,7 @@
          start/2,
          stop/1,
          get/3,
-         put/5,
+         put/5,                 % deprecated in favor of put/6
          delete/4,
          drop/1,
          fold_buckets/4,
@@ -81,13 +81,18 @@
          is_empty/1,
          status/1,
          callback/3]).
+%% KV Backend API based on capabilities
+-export([put/6]).
+%% EQC testing assistants
+-export([eqc_filter_delete/3]).
+%% Testing
 -export([t0/0, t1/0]).
 
 -include("riak_moss_lfs.hrl").
 -include_lib("kernel/include/file.hrl").
 
 -define(API_VERSION, 1).
--define(CAPABILITIES, [async_fold, write_once_keys]).
+-define(CAPABILITIES, [async_fold, write_once_keys, put_plus_object]).
 
 -define(TEST_IN_RIAK_KV, true).
 
@@ -96,6 +101,10 @@
 -define(CRCSIZEFIELD, 32).
 -define(HEADER_SIZE,  8). % Differs from bitcask.hrl!
 -define(MAXVALSIZE, 2#11111111111111111111111111111111).
+
+%% !@#$!!@#$!@#$!@#$! Erlang's efile_drv does not support the sticky bit.
+%% So, we use something else: the setgid bit.
+-define(TOMBSTONE_MODE_MARKER, 8#2000).
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -213,28 +222,31 @@ get(Bucket, Key, State) ->
             end
     end.
 
+put(Bucket, Key, IndexSpecs, Val, State) ->
+    put(Bucket, Key, IndexSpecs, Val, binary_to_term(Val), State).
+
 %% @doc Store Val under Bkey
 -type index_spec() :: {add, Index, SecondaryKey} | {remove, Index, SecondaryKey}.
--spec put(riak_object:bucket(), riak_object:key(), [index_spec()], binary(), state()) ->
+-spec put(riak_object:bucket(), riak_object:key(), [index_spec()], binary(), riak_object:riak_object(), state()) ->
                  {ok, state()} |
                  {error, term(), state()}.
 put(<<?BLOCK_BUCKET_PREFIX, _/binary>>,
     <<_:?UUID_BYTES/binary, BlockNum:?BLOCK_FIELD_SIZE>>,
-    _IndexSpecs, Val,
+    _IndexSpecs, Val, _ValRObj,
     #state{block_size = BlockSize, max_blocks = MaxBlocks} = State)
   when size(Val) > BlockSize orelse
        BlockNum > (MaxBlocks-1) ->
     {error, invalid_user_argument, State};
 put(<<?BLOCK_BUCKET_PREFIX, _/binary>> = Bucket,
     <<UUID:?UUID_BYTES/binary, BlockNum:?BLOCK_FIELD_SIZE>>,
-    _IndexSpecs, Val, State) ->
-    case put_block(Bucket, UUID, BlockNum, Val, State) of
+    _IndexSpecs, Val, ValRObj, State) ->
+    case put_block(Bucket, UUID, BlockNum, Val, ValRObj, State) of
         ok ->
             {ok, State};
         Reason ->
             {error, Reason, State}
     end;
-put(Bucket, PrimaryKey, _IndexSpecs, Val, State) ->
+put(Bucket, PrimaryKey, _IndexSpecs, Val, _ValRObj, State) ->
     File = location(State, {Bucket, PrimaryKey}),
     case filelib:ensure_dir(File) of
         ok         -> {atomic_write(File, Val), State};
@@ -245,6 +257,17 @@ put(Bucket, PrimaryKey, _IndexSpecs, Val, State) ->
 -spec delete(riak_object:bucket(), riak_object:key(), [index_spec()], state()) ->
                     {ok, state()} |
                     {error, term(), state()}.
+delete(<<?BLOCK_BUCKET_PREFIX, _/binary>>,
+    <<_:?UUID_BYTES/binary, BlockNum:?BLOCK_FIELD_SIZE>>,
+    _IndexSpecs,
+    #state{max_blocks = MaxBlocks} = State)
+  when BlockNum > (MaxBlocks-1) ->
+    {error, invalid_user_argument, State};
+delete(<<?BLOCK_BUCKET_PREFIX, _/binary>> = Bucket,
+    <<UUID:?UUID_BYTES/binary, _:?BLOCK_FIELD_SIZE>>, _IndexSpecs, State) ->
+    File = location(State, {Bucket, UUID}),
+    _ = file:delete(File),
+    {ok, State};
 delete(Bucket, Key, _IndexSpecs, State) ->
     File = location(State, {Bucket, Key}),
     case file:delete(File) of
@@ -592,40 +615,94 @@ read_block(Bucket, UUID, BlockNum, #state{block_size = BlockSize} = State) ->
             not_found
     end.
 
-put_block(Bucket, UUID, BlockNum, Val, #state{max_blocks=MaxBlocks} = State) ->
+put_block(Bucket, UUID, BlockNum, Val, ValRObj, State) ->
+    put_block_t_marker_check(Bucket, UUID, BlockNum, Val, ValRObj, State).
+
+put_block_t_marker_check(Bucket, UUID, BlockNum, Val, ValRObj, State) ->
     File = location(State, {Bucket, UUID}),
-    Offset = calc_block_offset(BlockNum, State),
-    try
-        ok = filelib:ensure_dir(File),
-        OutOfOrder_p = check_trailer_ooo(File, BlockNum, State),
-        {ok, FH} = file:open(File, [write, read, raw, binary]),
-        try
-            PackedBin = pack_ondisk(Val),
-            ok = file:pwrite(FH, Offset, PackedBin),
-            if OutOfOrder_p ->
-                    %% It's not an error to write more than one trailer
-                    Tr = make_trailer(#t{written_sequentially = false}),
-                    TrOffset = calc_block_offset(MaxBlocks, State),
-                    {ok, TrOffset} = file:position(FH, {bof, TrOffset}),
-                    ok = file:write(FH, Tr);
+    FI_perhaps = file:read_file_info(File),
+    case FI_perhaps of
+        {ok, FI} ->
+            if FI#file_info.mode band ?TOMBSTONE_MODE_MARKER == 1 ->
+                    %% This UUID + block of chunks has got a tombstone
+                    %% marker set, so there's nothing more to do here.
+                    ok;
                true ->
-                   ok
-            end
-        catch _X:Y ->
-                io:format(user, "DBG line ~p err ~p ~p\n", [?LINE, _X, Y]),
-                {error, Y}
-        after
-            file:close(FH)
-        end
-    catch _A:_B ->
-            io:format(user, "DBG line ~p err ~p ~p\n", [?LINE, _A, _B]),
-            {error, not_found}
+                    put_block_t_check(BlockNum, Val, ValRObj, File, FI_perhaps,
+                                      State)
+            end;
+        _ ->
+            put_block_t_check(BlockNum, Val, ValRObj, File, FI_perhaps, State)
     end.
+
+put_block_t_check(BlockNum, Val, ValRObj, File, FI_perhaps, State) ->
+    NewMode = fun(FI) ->
+                      NewMode = FI#file_info.mode bor ?TOMBSTONE_MODE_MARKER,
+                      ok = file:change_mode(File, NewMode)
+              end,
+    case riak_object_is_deleted(ValRObj) of
+        true ->
+            case FI_perhaps of
+                {ok, FI} ->
+                    ok = NewMode(FI);
+                {error, enoent} ->
+                    ok = filelib:ensure_dir(File),
+                    {ok, FH} = file:open(File, [write, raw]),
+                    ok = file:close(FH),
+                    ok = NewMode(#file_info{mode = 8#600})
+            end;
+        _ ->
+            put_block3(BlockNum, Val, File, FI_perhaps, State)
+    end.
+
+put_block3(BlockNum, Val, File, FI_perhaps,
+           #state{max_blocks = MaxBlocks} = State) ->
+    Offset = calc_block_offset(BlockNum, State),
+    OutOfOrder_p = check_trailer_ooo(FI_perhaps, BlockNum, State),
+    try
+        case file:open(File, [write, read, raw, binary]) of
+            {ok, FH} ->
+                try
+                    PackedBin = pack_ondisk(Val),
+                    ok = file:pwrite(FH, Offset, PackedBin),
+                    if OutOfOrder_p ->
+                            %% It's not an error to write more than one trailer
+                            Tr = make_trailer(#t{written_sequentially = false}),
+                            TrOffset = calc_block_offset(MaxBlocks, State),
+                            {ok, TrOffset} = file:position(FH, {bof, TrOffset}),
+                            ok = file:write(FH, Tr);
+                       true ->
+                            ok
+                    end
+                after
+                        file:close(FH)
+                end;
+            {error, enoent} ->
+                ok = filelib:ensure_dir(File),
+                put_block3(BlockNum, Val, File, FI_perhaps, State);
+            {error, _} = Res ->
+                Res
+        end
+    catch
+        error:{badmatch, _Y} ->
+            io:format(user, "DBG line ~p badmatch1 err ~p\n", [?LINE, _Y]),
+            {error, badmatch1};
+        _X:Y ->
+            io:format(user, "DBG line ~p badmatch2 ~p ~p\n", [?LINE, _X, Y]),
+            {error, badmatch2}
+    end.
+
+riak_object_is_deleted(delete_op_requested) ->
+    true;
+riak_object_is_deleted(ValRObj) ->
+    catch riak_kv_util:is_x_deleted(ValRObj).
 
 enumerate_chunks_in_file(Bucket, UUID, #state{max_blocks=MaxBlocks} = State) ->
     Path = location(State, {Bucket, UUID}),
     case file:read_file_info(Path) of
         {error, _} ->
+            [];
+        {ok, FI} when FI#file_info.mode band ?TOMBSTONE_MODE_MARKER > 0 ->
             [];
         {ok, FI} ->
             MaxBlock = case calc_max_block(FI#file_info.size, State) of
@@ -642,15 +719,12 @@ enumerate_chunks_in_file(Bucket, UUID, #state{max_blocks=MaxBlocks} = State) ->
 
 %% @doc Is the next block number we wish to write out-of-order?
 
-check_trailer_ooo(File, BlockNum, State) ->
-    case file:read_file_info(File) of
-        {error, enoent} ->
-            % BlockNum 0 is ok, all others are out of order
-            BlockNum /= 0;
-        {ok, FI} ->
-            MaxBlock = calc_max_block(FI#file_info.size, State),
-            BlockNum == MaxBlock - 1
-    end.            
+check_trailer_ooo({error, enoent}, BlockNum, _State) ->
+    %% BlockNum 0 is ok, all others are out of order
+    BlockNum /= 0;
+check_trailer_ooo({ok, FI}, BlockNum, State) ->
+    MaxBlock = calc_max_block(FI#file_info.size, State),
+    BlockNum == MaxBlock - 1.
 
 make_trailer(Term) ->
     Bin = iolist_to_binary(pack_ondisk(term_to_binary(Term))),
@@ -675,8 +749,8 @@ t0() ->
     os:cmd("rm -rf " ++ TestDir),
     {ok, S} = start(-1, [{fs2_backend_data_root, TestDir},
                          {fs2_backend_block_size, 8}]),
-    {ok, S} = put(Bucket, K1, [], V1, S),
-    {ok, S} = put(Bucket, K0, [], V0, S),
+    {ok, S} = put(Bucket, K1, [], V1, ignored, S),
+    {ok, S} = put(Bucket, K0, [], V0, ignored, S),
     {ok, V0, S} = get(Bucket, K0, S),
     {ok, V1, S} = get(Bucket, K1, S),
     ok.
@@ -692,14 +766,22 @@ t1() ->
     os:cmd("rm -rf " ++ TestDir),
     {ok, S} = start(-1, [{fs2_backend_data_root, TestDir},
                          {fs2_backend_block_size, 1024}]),
-    {ok, S4} = put(Bucket, K0, [], V0, S),
-    {ok, S5} = put(Bucket, K1, [], V1, S4),
+    {ok, S4} = put(Bucket, K0, [], V0, ignored, S),
+    {ok, [{{Bucket, K0}, V0}]} = fold_objects(fun(B, K, V, Acc) ->
+                                                      [{{B, K}, V}|Acc]
+                                              end, [], [], S4),
+    {ok, S5} = put(Bucket, K1, [], V1, ignored, S4),
     {ok, V0, _} = get(Bucket, K0, S5),
     {ok, V1, _} = get(Bucket, K1, S5),
     {ok, X} = fold_objects(fun(B, K, V, Acc) ->
                                    [{{B, K}, V}|Acc]
                            end, [], [], S5),
     [{{Bucket, K0}, V0}, {{Bucket, K1}, V1}] = lists:reverse(X),
+
+    {ok, S6} = delete(Bucket, K1, unused, S5),
+    {ok, []} = fold_objects(fun(B, K, V, Acc) ->
+                                    [{{B, K}, V}|Acc]
+                            end, [], [], S6),
     ok.
 
 %% ===================================================================
@@ -712,6 +794,21 @@ t0_test() ->
 
 t1_test() ->
     t1().
+
+eqc_filter_delete(Bucket, Key, BKVs) ->
+    try
+        Extract = fun(B, K) ->
+                          <<?BLOCK_BUCKET_PREFIX, _/binary>> = B,
+                          <<UUID:?UUID_BYTES/binary, _:?BLOCK_FIELD_SIZE>> = K,
+                          {B, UUID}
+                  end,
+        {Bucket, UUID} = Extract(Bucket, Key),
+        [BKV || {{B, K}, _V} = BKV <- BKVs,
+                {Bx, UUIDx} <- [catch Extract(B, K)],
+                not (Bx == Bucket andalso UUIDx == UUID)]
+    catch error:{badmatch, _} ->
+            BKVs
+    end.
 
 -ifdef(TEST_IN_RIAK_KV).
 
