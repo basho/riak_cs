@@ -107,6 +107,10 @@
 -define(TOMBSTONE_MODE_MARKER, 8#2000).
 
 -ifdef(TEST).
+-ifdef(EQC).
+-export([prop_nest_ordered/0, eqc_nest_tester/0]).
+-include_lib("eqc/include/eqc.hrl").
+-endif.
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
@@ -474,7 +478,7 @@ list_all_keys(State) ->
 location(State, {Bucket, Key}) ->
     B64 = encode_bucket(Bucket),
     K64 = encode_key(Key),
-    [N1,N2,N3] = nest(K64),
+    [N1,N2,N3] = nest3(K64),
     filename:join([State#state.dir, B64, N1, N2, N3, K64]).
 
 %% @spec location_to_bkey(string()) ->
@@ -529,10 +533,13 @@ clean(Str64) ->
               end,
               Str64).
 
-%% @spec nest(string()) -> [string()]
+%% @spec nest3(string()) -> [string()]
 %% @doc create a directory nesting, to keep the number of
 %%      files in a directory smaller
-nest(Key) -> nest(lists:reverse(string:substr(Key, 1, 6)), 3, []).
+nest3(Key) -> nest(Key, 3).
+
+nest(Key, Groups) -> nest(lists:reverse(string:substr(Key, 1, 2*Groups)),
+                          Groups, []).
 nest(_, 0, Parts) -> Parts;
 nest([Nb,Na|Rest],N,Acc) ->
     nest(Rest, N-1, [[Na,Nb]|Acc]);
@@ -821,7 +828,7 @@ eqc_filter_delete(Bucket, Key, BKVs) ->
 
 %% Broken test:
 simple_test_() ->
-   ?assertCmd("rm -rf test/fs-backend"),
+   ?assertCmd("rm -rf test/fs-backend/*"),
    Config = [{fs2_backend_data_root, "test/fs-backend"},
              {fs2_backend_block_size, 8}],
    riak_kv_backend:standard_test(?MODULE, Config).
@@ -833,16 +840,20 @@ dirty_clean_test() ->
     ?assertEqual(Dirty, dirty(Clean)).
 
 nest_test() ->
-    ?assertEqual(["ab","cd","ef"],nest("abcdefg")),
-    ?assertEqual(["ab","cd","ef"],nest("abcdef")),
-    ?assertEqual(["a","bc","de"], nest("abcde")),
-    ?assertEqual(["0","ab","cd"], nest("abcd")),
-    ?assertEqual(["0","a","bc"],  nest("abc")),
-    ?assertEqual(["0","0","ab"],  nest("ab")),
-    ?assertEqual(["0","0","a"],   nest("a")),
-    ?assertEqual(["0","0","0"],   nest([])).
+    ?assertEqual(["ab","cd","ef"],nest3("abcdefg")),
+    ?assertEqual(["ab","cd","ef"],nest3("abcdef")),
+    ?assertEqual(["a","bc","de"], nest3("abcde")),
+    ?assertEqual(["0","ab","cd"], nest3("abcd")),
+    ?assertEqual(["0","a","bc"],  nest3("abc")),
+    ?assertEqual(["0","0","ab"],  nest3("ab")),
+    ?assertEqual(["0","0","a"],   nest3("a")),
+    ?assertEqual(["0","0","0"],   nest3([])).
 
 -ifdef(EQC).
+
+basic_props() ->
+    [{fs2_backend_data_root,  "test/fs-backend"},
+     {fs2_backend_block_size, 1024}].
 
 eqc_test_() ->
     {spawn,
@@ -861,10 +872,27 @@ eqc_test_() ->
            [?_assertEqual(true,
                           backend_eqc:test(?MODULE,
                                            false,
-                                           [{fs2_backend_data_root,
-                                             "test/fs-backend"},
-                                           {fs2_backend_block_size, 1024}]))]}
+                                           basic_props()))]},
+          {timeout, 60000,
+           [?_assertEqual(true,
+                          eqc_nest_tester())]}
          ]}]}]}.
+
+eqc_nest_tester() ->
+    setup(),
+    os:cmd("mkdir -p test/fs-backend"),
+    rm_rf_test_dir_contents(),
+    ok = file:make_dir("test/fs-backend/foo"),
+    case file:make_dir("test/fs-backend/Foo") of
+        ok ->
+            X = eqc:quickcheck(eqc:numtests(250, prop_nest_ordered())),
+            cleanup(x),
+            X == true;
+        {error, eexist} ->
+            io:format(user, "SKIP ~s:eqc_nest_tester: using case insensitive file system\n", [?MODULE]),
+            %% cleanup(x),
+            true
+    end.
 
 setup() ->
     application:load(sasl),
@@ -875,7 +903,47 @@ setup() ->
     ok.
 
 cleanup(_) ->
+    rm_rf_test_dir_contents().
+
+rm_rf_test_dir_contents() ->
     os:cmd("rm -rf test/fs-backend/*").
+
+prop_nest_ordered() ->
+    ?FORALL(BucketList, list(gen_bucket()),
+            begin
+                rm_rf_test_dir_contents(),
+                {ok, S} = ?MODULE:start(0, basic_props()),
+                [ok = insert_sample_key(Bucket, S) || Bucket <- BucketList],
+                {ok, Bs} = ?MODULE:fold_buckets(fun(B, Acc) -> [B|Acc] end, [],
+                                                [], S),
+                %% rm_rf_test_dir_contents(),
+                case lists:usort(BucketList) == lists:usort(Bs) of
+                    true -> true;
+                    _ -> {wanted, lists:usort(BucketList),
+                          got, lists:usort(Bs)}
+                end
+            end).
+
+gen_bucket() ->
+    ?LET(Bucket, frequency([
+                            %% base64:encode([0])  -> <<"AA==">>
+                            %% base64:encode([$h]) -> <<"aA==">>
+                            %% A weight of this case ~10:1 will almost always
+                            %% find the counterexample within 50 tests.
+                            {50, oneof([[0], [$h]])},
+                            {5, vector(2, char())},
+                            {5, vector(3, char())},
+                            {5, vector(4, char())},
+                            {5, vector(5, char())},
+                            {5, vector(6, char())},
+                            {5, vector(16, char())},
+                            {5, non_empty(list(char()))}
+                           ]),
+         iolist_to_binary(Bucket)).
+
+insert_sample_key(Bucket, S) ->
+    {ok, _} = ?MODULE:put(Bucket, <<"key">>, [], <<"val">>, unused, S),
+    ok.
 
 -endif. % EQC
 -endif. % TEST_IN_RIAK_KV
