@@ -351,12 +351,19 @@ get_admin_creds() ->
 get_object(BucketName, Key, RiakPid) ->
     riakc_pb_socket:get(RiakPid, BucketName, Key).
 
+%% internal fun to retrieve the riak object
+%% at a bucket/key
+-spec get_manifests_raw(pid(), binary(), binary()) ->
+    {ok, riakc_obj:riakc_obj()} | {error, notfound}.
+get_manifests_raw(RiakcPid, Bucket, Key) ->
+    ManifestBucket = to_bucket_name(objects, Bucket),
+    riakc_pb_socket:get(RiakcPid, ManifestBucket, Key).
+
 %% @doc
 -spec get_manifests(pid(), binary(), binary()) ->
     {ok, term(), term()} | {error, notfound}.
 get_manifests(RiakcPid, Bucket, Key) ->
-    ManifestBucket = to_bucket_name(objects, Bucket),
-    case riakc_pb_socket:get(RiakcPid, ManifestBucket, Key) of
+    case get_manifests_raw(RiakcPid, Bucket, Key) of
         {ok, Object} ->
             Siblings = riakc_obj:get_values(Object),
             DecodedSiblings = lists:map(fun erlang:binary_to_term/1, Siblings),
@@ -364,8 +371,13 @@ get_manifests(RiakcPid, Bucket, Key) ->
             %% Upgrade the manifests to be the latest erlang
             %% record version
             Upgraded = riak_moss_manifest:upgrade_wrapped_manifests(DecodedSiblings),
+
+            %% resolve the siblings
             Resolved = riak_moss_manifest_resolution:resolve(Upgraded),
-            {ok, Object, Resolved};
+
+            %% prune old scheduled_delete manifests
+            Pruned = riak_moss_manifest:prune(Resolved),
+            {ok, Object, Pruned};
         {error, notfound}=NotFound ->
             NotFound
     end.
