@@ -110,7 +110,7 @@ mark_as_scheduled_delete({error, _}=Error, _, _, _, _) ->
 mark_manifests({ok, RiakObject, Manifests}, UUIDsToMark, ManiFunction, RiakcPid) ->
     Marked = riak_moss_manifest:ManiFunction(Manifests, UUIDsToMark),
     UpdObj = riakc_obj:update_value(RiakObject, term_to_binary(Marked)),
-    PutResult = riakc_pb_socket:put(RiakcPid, UpdObj),
+    PutResult = riak_moss_utils:put_with_no_meta(RiakcPid, UpdObj),
     {PutResult, Marked};
 mark_manifests({error, _Reason}=Error, _, _, _) ->
     Error.

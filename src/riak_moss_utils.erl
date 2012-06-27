@@ -34,6 +34,7 @@
          pow/2,
          pow/3,
          put_object/5,
+         put_with_no_meta/2,
          riak_connection/0,
          riak_connection/1,
          save_user/3,
@@ -497,6 +498,19 @@ put_object(BucketName, Key, Value, Metadata, RiakPid) ->
     RiakObject = riakc_obj:new(BucketName, Key, Value),
     NewObj = riakc_obj:update_metadata(RiakObject, Metadata),
     riakc_pb_socket:put(RiakPid, NewObj).
+
+%% @doc Put an object in Riak with empty
+%% metadata. This is likely used when because
+%% you want to avoid manually setting the metadata
+%% to an empty dict. You'd want to do this because
+%% if the previous object had metadata siblings,
+%% not explicitly setting the metadata will
+%% cause a siblings exception to be raised.
+-spec put_with_no_meta(pid(), riakc_obj:riakc_obj()) ->
+    ok | {ok, riakc_obj:riakc_obj()} | {ok, riakc_obj:key()} | {error, term()}.
+put_with_no_meta(RiakcPid, RiakcObject) ->
+    WithMeta = riakc_obj:update_metadata(RiakcObject, dict:new()),
+    riakc_pb_socket:put(RiakcPid, WithMeta).
 
 %% @doc Get a protobufs connection to the riak cluster
 %% from the default connection pool.

@@ -264,7 +264,7 @@ get_and_delete(RiakcPid, UUID, Bucket, Key) ->
                     ObjectToWrite =
                         riakc_obj:update_value(RiakObject,
                                                term_to_binary(UpdatedManifests)),
-                    riakc_pb_socket:put(RiakcPid, ObjectToWrite)
+                    riakc_moss_utils:put_with_no_meta(RiakcPid, ObjectToWrite)
             end;
         {error, notfound} ->
             ok
@@ -285,7 +285,8 @@ get_and_update(RiakcPid, WrappedManifests, Bucket, Key) ->
                 [] ->
                     ObjectToWrite = riakc_obj:update_value(RiakObject,
                         term_to_binary(NewManiAdded)),
-                    riakc_pb_socket:put(RiakcPid, ObjectToWrite);
+
+                    riakc_moss_utils:put_with_no_meta(RiakcPid, ObjectToWrite);
                 _ ->
                     riak_cs_gc:gc_manifests(Bucket, Key,
                         NewManiAdded, OverwrittenUUIDs, RiakObject, RiakcPid)
@@ -293,7 +294,7 @@ get_and_update(RiakcPid, WrappedManifests, Bucket, Key) ->
         {error, notfound} ->
             ManifestBucket = riak_moss_utils:to_bucket_name(objects, Bucket),
             ObjectToWrite = riakc_obj:new(ManifestBucket, Key, term_to_binary(WrappedManifests)),
-            riakc_pb_socket:put(RiakcPid, ObjectToWrite)
+            riak_moss_utils:put_with_no_meta(RiakcPid, ObjectToWrite)
     end.
 
 -spec update_from_previous_read(pid(), riakc_obj:riakc_obj(),
@@ -309,7 +310,8 @@ update_from_previous_read(RiakcPid, RiakObject,
     %% currently we don't do
     %% anything to make sure
     %% this call succeeded
-    riakc_pb_socket:put(RiakcPid, NewRiakObject).
+
+    riak_moss_utils:put_with_no_meta(RiakcPid, NewRiakObject).
 
 %% ===================================================================
 %% Test API
