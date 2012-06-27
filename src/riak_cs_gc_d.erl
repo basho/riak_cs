@@ -58,10 +58,12 @@
           last :: undefined | calendar:datetime(), % the last time a deletion was scheduled
           next :: undefined | calendar:datetime(), % the next scheduled gc time
           riak :: undefined | pid(), % Riak connection pid
-          current_fileset :: [lfs_manifest()],
+          current_files :: [lfs_manifest()],
+          current_fileset :: twop_set:twop_set(),
+          current_riak_object :: riakc_obj:riakc_obj(),
           batch_start :: undefined | non_neg_integer(), % start of the current gc interval
           batch_count=0 :: non_neg_integer(),
-          batch_skips=0 :: non_neg_integer(),
+          batch_skips=0 :: non_neg_integer(), % Count of filesets skipped in this batch
           batch=[] :: undefined | [binary()], % `undefined' only for testing
           pause_state :: atom(), % state of the fsm when a delete batch was paused
           delete_fsm_pid :: pid()
@@ -158,8 +160,10 @@ fetching_next_fileset(continue, State=#state{batch=[FileSetKey | RestKeys],
                                             }) ->
     %% Fetch the next set of manifests for deletion
     case fetch_next_fileset(FileSetKey, RiakPid) of
-        {ok, FileSet} ->
-            NewStateData = State#state{current_fileset=FileSet},
+        {ok, FileSet, RiakObj} ->
+            NewStateData = State#state{current_files=twop_set:to_list(FileSet),
+                                       current_fileset=FileSet,
+                                       current_riak_object=RiakObj},
             NextState = initiating_file_delete;
         {error, _} ->
             NewStateData = State#state{batch=RestKeys,
@@ -174,16 +178,17 @@ fetching_next_fileset(_, State) ->
 %% @doc This state initiates the deletion of a file from
 %% a set of manifests stored for a particular key in the
 %% garbage collection bucket.
-initiating_file_delete(continue, #state{batch=[ManiSetKey | RestKeys],
+initiating_file_delete(continue, #state{batch=[_ManiSetKey | RestKeys],
                                         batch_count=BatchCount,
-                                        current_fileset=[],
+                                        current_files=[],
+                                        current_fileset=FileSet,
+                                        current_riak_object=RiakObj,
                                         riak=RiakPid}=State) ->
-    %% Delete the key from the GC bucket
-    _ = riakc_pb_socket:delete(RiakPid, ?GC_BUCKET, ManiSetKey),
+    finish_file_delete(twop_set:size(FileSet), FileSet, RiakObj, RiakPid),
     gen_fsm:send_event(?SERVER, continue),
     {next_state, fetching_next_fileset, State#state{batch=RestKeys,
                                                     batch_count=1+BatchCount}};
-initiating_file_delete(continue, #state{current_fileset=[NextManifest | RestManifests],
+initiating_file_delete(continue, #state{current_files=[NextManifest | _RestManifests],
                                         riak=RiakPid}=State) ->
     %% Use an instance of `riak_cs_delete_fsm' to handle the
     %% deletion of the file blocks.
@@ -191,8 +196,7 @@ initiating_file_delete(continue, #state{current_fileset=[NextManifest | RestMani
     %% rescheduled after a certain time.
     Args = [RiakPid, NextManifest, []],
     {ok, Pid} = riak_cs_delete_fsm_sup:start_delete_fsm(node(), Args),
-    {next_state, waiting_file_delete, State#state{current_fileset=RestManifests,
-                                                  delete_fsm_pid = Pid}};
+    {next_state, waiting_file_delete, State#state{delete_fsm_pid = Pid}};
 initiating_file_delete(_, State) ->
     {next_state, initiating_file_delete, State}.
 
@@ -269,9 +273,23 @@ initiating_file_delete({set_interval, Interval}, _From, State) ->
 initiating_file_delete(_, _From, State) ->
     {reply, ok, initiating_file_delete, State}.
 
-waiting_file_delete({Pid, done}, _From, State=#state{delete_fsm_pid=Pid}) ->
+waiting_file_delete({Pid, ok},
+                    _From,
+                    State=#state{delete_fsm_pid=Pid,
+                                 current_files=[CurrentManifest | RestManifests],
+                                 current_fileset=FileSet}) ->
+    UpdFileSet = twop_set:del_element(CurrentManifest, FileSet),
+    UpdState = State#state{current_fileset=UpdFileSet,
+                           current_files=RestManifests},
     gen_fsm:send_event(?SERVER, continue),
-    {reply, ok, initiating_file_delete, State};
+    {reply, ok, initiating_file_delete, UpdState};
+waiting_file_delete({Pid, {error, _Reason}},
+                    _From,
+                    State=#state{delete_fsm_pid=Pid,
+                                 current_files=[_ | RestManifests]}) ->
+    UpdState = State#state{current_files=RestManifests},
+    gen_fsm:send_event(?SERVER, continue),
+    {reply, ok, initiating_file_delete, UpdState};
 waiting_file_delete(status, _From, State) ->
     Reply = {ok, {waiting_file_delete, status_data(State)}},
     {reply, Reply, waiting_file_delete, State};
@@ -288,10 +306,24 @@ waiting_file_delete({set_interval, Interval}, _From, State) ->
 waiting_file_delete(_, _From, State) ->
     {reply, ok, waiting_file_delete, State}.
 
-paused({Pid, done}, _From, State=#state{delete_fsm_pid=Pid,
-                                        pause_state=waiting_file_delete}) ->
+paused({Pid, ok}, _From, State=#state{delete_fsm_pid=Pid,
+                                      pause_state=waiting_file_delete,
+                                      current_files=[CurrentManifest | RestManifests],
+                                      current_fileset=FileSet}) ->
+    UpdFileSet = twop_set:del_element(CurrentManifest, FileSet),
     UpdState = State#state{delete_fsm_pid=undefined,
-                           pause_state=initiating_file_delete},
+                           pause_state=initiating_file_delete,
+                           current_fileset=UpdFileSet,
+                           current_files=RestManifests},
+    gen_fsm:send_event(?SERVER, continue),
+    {reply, ok, paused, UpdState};
+paused({Pid, {error, _Reason}}, _From, State=#state{delete_fsm_pid=Pid,
+                                                    pause_state=waiting_file_delete,
+                                                    current_files=[_ | RestManifests]}) ->
+    UpdState = State#state{delete_fsm_pid=undefined,
+                           pause_state=initiating_file_delete,
+                           current_files=RestManifests},
+    gen_fsm:send_event(?SERVER, continue),
     {reply, ok, paused, UpdState};
 paused(status, _From, State) ->
     Reply = {ok, {paused, status_data(State)}},
@@ -414,7 +446,9 @@ gc_index_query(RiakPid, EndTime) ->
     {QueryResult, EndTime}.
 
 %% @doc Delete the blocks for the next set of manifests in the batch
--spec fetch_next_fileset(binary(), pid()) -> {ok, [lfs_manifest()]} | {error, term()}.
+-spec fetch_next_fileset(binary(), pid()) ->
+                                {ok, twop_set:twop_set(), riakc_obj:riakc_obj()} |
+                                {error, term()}.
 fetch_next_fileset(ManifestSetKey, RiakPid) ->
     %% Get the set of manifests represented by the key
     case riak_moss_utils:get_object(?GC_BUCKET, ManifestSetKey, RiakPid) of
@@ -424,7 +458,7 @@ fetch_next_fileset(ManifestSetKey, RiakPid) ->
             BinValues = riakc_obj:get_values(RiakObj),
             Values = [binary_to_term(BinValue) || BinValue <- BinValues],
             ManifestSet = twop_set:resolve(Values),
-            {ok, twop_set:to_list(ManifestSet)};
+            {ok, ManifestSet, RiakObj};
         {error, notfound}=Error ->
             Error;
         {error, Reason}=Error ->
@@ -433,6 +467,25 @@ fetch_next_fileset(ManifestSetKey, RiakPid) ->
                               [ManifestSetKey, Reason]),
             Error
     end.
+
+%% @doc Finish a file set delete process by either deleting the file
+%% set from the GC bucket or updating the value to remove file set
+%% members that were succesfully deleted.
+-spec finish_file_delete(non_neg_integer(),
+                         twop_set:twop_set(),
+                         riakc_obj:riakc_obj(),
+                         pid()) -> ok.
+finish_file_delete(0, _, RiakObj, RiakPid) ->
+    %% Delete the key from the GC bucket
+    _ = riakc_pb_socket:delete_obj(RiakPid, RiakObj),
+    ok;
+finish_file_delete(_, FileSet, RiakObj, RiakPid) ->
+    _ = lager:info("Remaining file keys: ~p", [twop_set:to_list(FileSet)]),
+    UpdRiakObj = riakc_obj:update_value(RiakObj, FileSet),
+    %% Not a big deal if the put fails. Worst case is attempts
+    %% to delete some of the file set members are already deleted.
+    _ = riak_moss_utils:put_with_no_meta(RiakPid, UpdRiakObj),
+    ok.
 
 %% @doc Setup the automatic trigger to start the next
 %% scheduled batch calculation.
@@ -445,7 +498,7 @@ schedule_next(#state{batch_start=Current,
     Next = calendar:gregorian_seconds_to_datetime(
              riak_cs_gc:timestamp() + Interval),
     _ = lager:debug("Scheduling next garbage collection for ~p",
-                   [Next]),
+                    [Next]),
     erlang:send_after(Interval*1000, self(), start_batch),
     State#state{batch_start=undefined,
                 last=Current,
