@@ -264,7 +264,7 @@ get_and_delete(RiakcPid, UUID, Bucket, Key) ->
                     ObjectToWrite =
                         riakc_obj:update_value(RiakObject,
                                                term_to_binary(UpdatedManifests)),
-                    riakc_moss_utils:put_with_no_meta(RiakcPid, ObjectToWrite)
+                    riak_moss_utils:put_with_no_meta(RiakcPid, ObjectToWrite)
             end;
         {error, notfound} ->
             ok
@@ -286,7 +286,7 @@ get_and_update(RiakcPid, WrappedManifests, Bucket, Key) ->
                     ObjectToWrite = riakc_obj:update_value(RiakObject,
                         term_to_binary(NewManiAdded)),
 
-                    riakc_moss_utils:put_with_no_meta(RiakcPid, ObjectToWrite);
+                    riak_moss_utils:put_with_no_meta(RiakcPid, ObjectToWrite);
                 _ ->
                     riak_cs_gc:gc_manifests(Bucket, Key,
                         NewManiAdded, OverwrittenUUIDs, RiakObject, RiakcPid)
