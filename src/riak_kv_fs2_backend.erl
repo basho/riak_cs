@@ -705,16 +705,23 @@ enumerate_chunks_in_file(Bucket, UUID, #state{max_blocks=MaxBlocks} = State) ->
         {ok, FI} when FI#file_info.mode band ?TOMBSTONE_MODE_MARKER > 0 ->
             [];
         {ok, FI} ->
-            MaxBlock = case calc_max_block(FI#file_info.size, State) of
-                           X when X == MaxBlocks ->
-                               %% A trailer exists, so we need to assume that
-                               %% perhaps there might be holes in 
-                               MaxBlocks - 1;
-                           N ->
-                               N
-                       end,
+            case calc_max_block(FI#file_info.size, State) of
+                X when X >= MaxBlocks ->
+                    %% A trailer exists, so we need to assume that
+                    %% perhaps there might be holes in this file.
+                    MaxBlock = MaxBlocks - 1,
+                    Filt = fun(BlNum) ->
+                                   is_binary(read_block(Bucket, UUID, BlNum,
+                                                        State))
+                           end;
+                N ->
+                    MaxBlock = N,
+                    Filt = fun(_BlNum) ->
+                                   true
+                           end
+            end,
             [BlockNum || BlockNum <- lists:seq(0, MaxBlock),
-                         is_binary(read_block(Bucket, UUID, BlockNum, State))]
+                         Filt(BlockNum)]
     end.
 
 %% @doc Is the next block number we wish to write out-of-order?
