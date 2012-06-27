@@ -141,11 +141,13 @@ mark_scheduled_delete(Manifests, UUIDsToMark) ->
 pending_delete_manifests(Manifests) ->
     lists:filter(fun pending_delete_manifest/1, Manifests).
 
--spec prune(list(lfs_manifest())) -> list(lfs_manifest()).
+-spec prune(orddict:orddict(binary(), lfs_manifest())) ->
+    orddict:orddict(binary(), lfs_manifest()).
 prune(Manifests) ->
     prune(Manifests, erlang:now()).
 
--spec prune(list(lfs_manifest()), erlang:timestamp()) -> list(lfs_manifest()).
+-spec prune(orddict:orddict(binary(), lfs_manifest()), erlang:timestamp()) ->
+    orddict:orddict(binary(), lfs_manifest()).
 prune(Manifests, Time) ->
     [KV || {_K, V}=KV <- Manifests, not (needs_pruning(V, Time))].
 
