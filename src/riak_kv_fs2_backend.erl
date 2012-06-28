@@ -917,10 +917,10 @@ prop_nest_ordered() ->
                 {ok, Bs} = ?MODULE:fold_buckets(fun(B, Acc) -> [B|Acc] end, [],
                                                 [], S),
                 %% rm_rf_test_dir_contents(),
-                case lists:usort(BucketList) == lists:usort(Bs) of
+                case lists:usort(BucketList) == lists:reverse(Bs) of
                     true -> true;
                     _ -> {wanted, lists:usort(BucketList),
-                          got, lists:usort(Bs)}
+                          got, lists:reverse(Bs)}
                 end
             end).
 
