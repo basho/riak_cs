@@ -286,6 +286,8 @@ extract_amazon_headers(Headers) ->
         fun({K, V}, Acc) ->
                 case lists:prefix("x-amz-", K) of
                     true ->
+                        %% HTTP headers aren't supposed to support
+                        %% anything but US-ASCII, but AWS does :(
                         V2 = unicode:characters_to_binary(V, utf8),
                         [[K, ":", V2, "\n"] | Acc];
                     false ->
@@ -316,6 +318,8 @@ extract_metadata(Headers) ->
         fun({K, V}, Acc) ->
                 case lists:prefix("x-amz-meta-", K) of
                     true ->
+                        %% HTTP headers aren't supposed to support
+                        %% anything but US-ASCII, but AWS does :(
                         V2 = unicode:characters_to_list(V, utf8),
                         [{K, V2} | Acc];
                     false ->
