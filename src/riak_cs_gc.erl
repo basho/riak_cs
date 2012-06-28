@@ -152,7 +152,7 @@ move_manifests_to_gc_bucket(Manifests, RiakcPid) ->
 
     %% Create a set from the list of manifests
     _ = lager:debug("Manifests scheduled for deletion: ~p", [ManifestSet]),
-    riakc_pb_socket:put(RiakcPid, ObjectToWrite).
+    riak_moss_utils:put_with_no_meta(RiakcPid, ObjectToWrite).
 
 -spec build_manifest_set(twop_set:twop_set(), [lfs_manifest()]) -> twop_set:twop_set().
 build_manifest_set(Set, []) ->
