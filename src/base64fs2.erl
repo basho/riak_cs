@@ -380,11 +380,24 @@ regression0_test() ->
     true = (encode([186]) < encode([186,0,97,97,97,97,97,97,97,97,97,97,97,97,97,97])).
 
 identity_test() ->
-    eqc:quickcheck(eqc:numtests(500, prop_identity())).
+    eqc:quickcheck(eqc:numtests(1000, prop_identity_and_sort_order())).
 
-prop_identity() ->
-    ?FORALL(Str, list(char()),
-            Str == decode_to_string(encode(Str))).
+prop_identity_and_sort_order() ->
+    ?FORALL({Str1, Str2}, {gen_string(), gen_string()},
+            conjunction([
+                         {str1, Str1 == decode_to_string(encode(Str1))},
+                         {str2, Str2 == decode_to_string(encode(Str2))},
+                         {eq, (Str1 == Str2) == (encode(Str1) == encode(Str2))},
+                         {lt, (Str1 <  Str2) == (encode(Str1) <  encode(Str2))}
+                        ])).
+
+gen_string() ->
+    frequency([
+               {5, vector(1, char())},
+               {5, vector(2, char())},
+               {5, vector(3, char())},
+               {5, non_empty(list(char()))}
+              ]).
 
 -endif. %EQC
 -endif. %TEST

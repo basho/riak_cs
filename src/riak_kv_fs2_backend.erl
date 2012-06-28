@@ -899,19 +899,10 @@ prop_nest_ordered() ->
 
 gen_bucket() ->
     ?LET(Bucket, frequency([
-                            %% %% base64:encode([0])  -> <<"AA==">>
-                            %% %% base64:encode([$h]) -> <<"aA==">>
-                            %% %% A weight of this case ~10:1 will almost always
-                            %% %% find the counterexample within 50 tests.
-                            %% {50, oneof([[0], [$h]])},
                             {50, vector(1, char())},
                             {5, vector(2, char())},
                             {5, vector(3, char())},
-                            {5, vector(4, char())} %%,
-                            %% {5, vector(5, char())},
-                            %% {5, vector(6, char())},
-                            %% {5, vector(16, char())},
-                            %% {5, non_empty(list(char()))}
+                            {5, non_empty(list(char()))}
                            ]),
          iolist_to_binary(Bucket)).
 
