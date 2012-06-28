@@ -90,15 +90,13 @@ deleting({block_deleted, {ok, BlockID}, DeleterPid},
 
     if
         NewManifest?MANIFEST.state == deleted ->
-            State3 = finish(State2),
-            {stop, normal, State3};
+            {stop, normal, State2};
         true ->
             %% maybe start more deletes
             State3 = maybe_delete_blocks(State2),
             {next_state, deleting, State3}
     end;
 deleting({block_deleted, {error, Error}, _DeleterPid}, State) ->
-    _ = finish(State),
     {stop, Error, State}.
 
 handle_event(_Event, StateName, State) ->
@@ -110,11 +108,15 @@ handle_sync_event(_Event, _From, StateName, State) ->
 handle_info(_Info, StateName, State) ->
     {next_state, StateName, State}.
 
-terminate(normal, _StateName, _State) ->
-    gen_fsm:sync_send_event(riak_cs_gc_d, {self(), ok}, 5000),
-    ok;
-terminate(Reason, _StateName, _State) ->
-    gen_fsm:sync_send_event(riak_cs_gc_d, {self(), {error, Reason}}, 5000),
+terminate(Reason, _StateName, #state{all_delete_workers=AllDeleteWorkers,
+                                     manifest=?MANIFEST{state=ManifestState},
+                                     bucket=Bucket,
+                                     key=Key,
+                                     uuid=UUID,
+                                     riakc_pid=RiakcPid}) ->
+    manifest_cleanup(ManifestState, Bucket, Key, UUID, RiakcPid),
+    _ = [riak_moss_block_server:stop(P) || P <- AllDeleteWorkers],
+    notify_gc_daemon(Reason),
     ok.
 
 code_change(_OldVsn, StateName, State, _Extra) ->
@@ -131,7 +133,6 @@ handle_receiving_manifest(State=#state{riakc_pid=RiakcPid,
     {NewManifest, BlocksToDelete} = blocks_to_delete_from_manifest(Manifest),
 
     NewState = State#state{manifest=NewManifest,
-                           unacked_deletes=[],
                            delete_blocks_remaining=BlocksToDelete},
 
     %% Handle the case where there are 0 blocks to delete,
@@ -150,7 +151,6 @@ handle_receiving_manifest(State=#state{riakc_pid=RiakcPid,
 
             {next_state, deleting, StateAfterDeleteStart};
         false ->
-            _ = finish(NewState),
             {stop, normal, NewState}
     end.
 
@@ -174,18 +174,24 @@ maybe_delete_blocks(State=#state{bucket=Bucket,
                                     free_deleters=NewFreeDeleters,
                                     delete_blocks_remaining=NewDeleteBlocksRemaining}).
 
+-spec notify_gc_daemon(term()) -> term().
+notify_gc_daemon(Reason) ->
+    gen_fsm:sync_send_event(riak_cs_gc_d, notification_msg(Reason), infinity).
 
--spec finish(state()) -> state().
-finish(State=#state{manifest=?MANIFEST{state=deleted},
-                    bucket=Bucket,
-                    key=Key,
-                    uuid=UUID,
-                    riakc_pid=RiakcPid}) ->
+-spec notification_msg(term()) -> {pid(), ok | {error, term()}}.
+notification_msg(normal) ->
+    {self(), ok};
+notification_msg(Reason) ->
+    {self(), {error, Reason}}.
+
+-spec manifest_cleanup(atom(), binary(), binary(), binary(), pid()) -> ok.
+manifest_cleanup(deleted, Bucket, Key, UUID, RiakcPid) ->
     {ok, ManiFsmPid} = riak_moss_manifest_fsm:start_link(Bucket, Key, RiakcPid),
     _ = riak_moss_manifest_fsm:delete_specific_manifest(ManiFsmPid, UUID),
-    State;
-finish(_State) ->
-    _State.
+    _ = riak_moss_manifest_fsm:stop(ManiFsmPid),
+    ok;
+manifest_cleanup(_, _, _, _, _) ->
+    ok.
 
 -spec blocks_to_delete_from_manifest(lfs_manifest()) ->
     {lfs_manifest(), ordsets:ordset(integer())}.
