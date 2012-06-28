@@ -43,9 +43,14 @@ resolve_dicts(A, B) ->
 %% @private
 -spec resolve_manifests(term(), term(), term()) -> term().
 resolve_manifests(_Key, A, B) ->
-    AState = A?MANIFEST.state,
-    BState = B?MANIFEST.state,
+    AState = state_to_stage_number(A?MANIFEST.state),
+    BState = state_to_stage_number(B?MANIFEST.state),
     resolve_manifests(AState, BState, A, B).
+
+state_to_stage_number(writing)          -> 10;
+state_to_stage_number(active)           -> 20;
+state_to_stage_number(pending_delete)   -> 30;
+state_to_stage_number(scheduled_delete) -> 40.
 
 %% @doc Return a new, resolved manifest.
 %% The first two args are the state that
@@ -53,33 +58,24 @@ resolve_manifests(_Key, A, B) ->
 %% The third and fourth args, A, B, are the
 %% manifests themselves.
 %% @private
--spec resolve_manifests(atom(), atom(), term(), term()) -> term().
-resolve_manifests(writing, writing, A, B) ->
+-spec resolve_manifests(integer(), integer(), term(), term()) -> term().
+
+resolve_manifests(StageA, StageB, A, _B) when StageA > StageB ->
+    A;
+resolve_manifests(StageA, StageB, _A, B) when StageB > StageA ->
+    B;
+resolve_manifests(StageX, StageX, A, A) ->
+    A;
+resolve_manifests(_, _,
+                  ?MANIFEST{state = writing} = A,
+                  ?MANIFEST{state = writing} = B) ->
     WriteBlocksRemaining = resolve_written_blocks(A, B),
     LastBlockWrittenTime = resolve_last_written_time(A, B),
     A?MANIFEST{write_blocks_remaining=WriteBlocksRemaining, last_block_written_time=LastBlockWrittenTime};
 
-resolve_manifests(writing, active, _A, B) -> B;
-resolve_manifests(active, writing, A, B) ->
-    resolve_manifests(writing, active, B, A);
-
-resolve_manifests(writing, pending_delete, _A, B) -> B;
-resolve_manifests(pending_delete, writing, A, B) ->
-    resolve_manifests(writing, pending_delete, B, A);
-
-resolve_manifests(writing, scheduled_delete, _A, B) -> B;
-resolve_manifests(scheduled_delete, writing, A, B) ->
-    resolve_manifests(writing, scheduled_delete, B, A);
-
-resolve_manifests(writing, deleted, _A, B) -> B;
-resolve_manifests(deleted, writing, A, B) ->
-   resolve_manifests(writing, deleted, B, A);
-
 %% Check for and handle differing ACLs, but otherwise purposely throw
 %% a function clause exception if the manifests aren't equivalent
-resolve_manifests(active, active, A, A) -> A;
-resolve_manifests(active,
-                  active,
+resolve_manifests(_, _,
                   A1=?MANIFEST{acl=A1Acl},
                   A2=?MANIFEST{acl=A2Acl}) when A1Acl =/= A2Acl ->
     case A1Acl?ACL.creation_time >= A2Acl?ACL.creation_time of
@@ -89,46 +85,21 @@ resolve_manifests(active,
             A2
     end;
 
-resolve_manifests(active, pending_delete, _A, B) -> B;
-resolve_manifests(pending_delete, active, A, B) ->
-    resolve_manifests(active, pending_delete, B, A);
-
-resolve_manifests(active, scheduled_delete, _A, B) -> B;
-resolve_manifests(scheduled_delete, active, A, B) ->
-    resolve_manifests(active, scheduled_delete, B, A);
-
-resolve_manifests(active, deleted, _A, B) -> B;
-resolve_manifests(deleted, active, A, B) ->
-    resolve_manifests(active, deleted, B, A);
-
-resolve_manifests(pending_delete, pending_delete, A, B) ->
+resolve_manifests(_, _,
+                  ?MANIFEST{state = pending_delete} = A,
+                  ?MANIFEST{state = pending_delete} = B) ->
     BlocksLeftToDelete = resolve_deleted_blocks(A, B),
     LastDeletedTime = resolve_last_deleted_time(A, B),
     A?MANIFEST{delete_blocks_remaining=BlocksLeftToDelete,
                       last_block_deleted_time=LastDeletedTime};
-resolve_manifests(pending_delete, scheduled_delete, _A, B) -> B;
-resolve_manifests(scheduled_delete, pending_delete, A, B) ->
-    resolve_manifests(pending_delete, scheduled_delete, B, A);
-resolve_manifests(pending_delete, deleted, _A, B) -> B;
-resolve_manifests(deleted, pending_delete, A, B) ->
-    resolve_manifests(pending_delete, deleted, B, A);
 
-resolve_manifests(scheduled_delete, scheduled_delete, A, B) ->
+resolve_manifests(_, _,
+                  ?MANIFEST{state = scheduled_delete} = A,
+                  ?MANIFEST{state = scheduled_delete} = B) ->
     BlocksLeftToDelete = resolve_deleted_blocks(A, B),
     LastDeletedTime = resolve_last_deleted_time(A, B),
     A?MANIFEST{delete_blocks_remaining=BlocksLeftToDelete,
-                      last_block_deleted_time=LastDeletedTime};
-resolve_manifests(scheduled_delete, deleted, _A, B) -> B;
-resolve_manifests(deleted, scheduled_delete, A, B) ->
-    resolve_manifests(scheduled_delete, deleted, B, A);
-
-resolve_manifests(deleted, deleted, A, A) -> A;
-resolve_manifests(deleted, deleted, A, B) ->
-    %% should this deleted date
-    %% be different than the last block
-    %% deleted date? I'm think yes, technically.
-    LastBlockDeletedTime = resolve_last_deleted_time(A, B),
-    A?MANIFEST{last_block_deleted_time=LastBlockDeletedTime}.
+                      last_block_deleted_time=LastDeletedTime}.
 
 resolve_written_blocks(A, B) ->
     AWritten = A?MANIFEST.write_blocks_remaining,
