@@ -83,8 +83,6 @@
          callback/3]).
 %% KV Backend API based on capabilities
 -export([put/6]).
-%% EQC testing assistants
--export([eqc_filter_delete/3]).
 %% Testing
 -export([t0/0, t1/0]).
 
@@ -108,6 +106,8 @@
 
 -ifdef(TEST).
 -ifdef(EQC).
+%% EQC testing assistants
+-export([eqc_filter_delete/3]).
 -export([prop_nest_ordered/0, eqc_nest_tester/0]).
 -include_lib("eqc/include/eqc.hrl").
 -endif.
@@ -493,45 +493,23 @@ location_to_bkey(Path) ->
 %% @doc reconstruct a Riak bucket, given a filename
 %% @see encode_bucket/1
 decode_bucket(B64) ->
-    base64:decode(dirty(B64)).
+    base64fs2:decode(B64).
 
 %% @spec decode_key(string()) -> binary()
 %% @doc reconstruct a Riak object key, given a filename
 %% @see encode_key/1
 decode_key(K64) ->
-    base64:decode(dirty(K64)).
-
-%% @spec dirty(string()) -> string()
-%% @doc replace filename-troublesome base64 characters
-%% @see clean/1
-dirty(Str64) ->
-    lists:map(fun($-) -> $=;
-                 ($_) -> $+;
-                 ($,) -> $/;
-                 (C)  -> C
-              end,
-              Str64).
+    base64fs2:decode(K64).
 
 %% @spec encode_bucket(binary()) -> string()
 %% @doc make a filename out of a Riak bucket
 encode_bucket(Bucket) ->
-    clean(base64:encode_to_string(Bucket)).
+    base64fs2:encode_to_string(Bucket).
 
 %% @spec encode_key(binary()) -> string()
 %% @doc make a filename out of a Riak object key
 encode_key(Key) ->
-    clean(base64:encode_to_string(Key)).
-
-%% @spec clean(string()) -> string()
-%% @doc remove characters from base64 encoding, which may
-%%      cause trouble with filenames
-clean(Str64) ->
-    lists:map(fun($=) -> $-;
-                 ($+) -> $_;
-                 ($/) -> $,;
-                 (C)  -> C
-              end,
-              Str64).
+    base64fs2:encode_to_string(Key).
 
 %% @spec nest3(string()) -> [string()]
 %% @doc create a directory nesting, to keep the number of
@@ -833,12 +811,6 @@ simple_test_() ->
              {fs2_backend_block_size, 8}],
    riak_kv_backend:standard_test(?MODULE, Config).
 
-dirty_clean_test() ->
-    Dirty = "abc=+/def",
-    Clean = clean(Dirty),
-    [ ?assertNot(lists:member(C, Clean)) || C <- "=+/" ],
-    ?assertEqual(Dirty, dirty(Clean)).
-
 nest_test() ->
     ?assertEqual(["ab","cd","ef"],nest3("abcdefg")),
     ?assertEqual(["ab","cd","ef"],nest3("abcdef")),
@@ -909,7 +881,8 @@ rm_rf_test_dir_contents() ->
     os:cmd("rm -rf test/fs-backend/*").
 
 prop_nest_ordered() ->
-    ?FORALL(BucketList, list(gen_bucket()),
+    ?FORALL(BucketList, non_empty(list(gen_bucket())),
+            collect(length(BucketList),
             begin
                 rm_rf_test_dir_contents(),
                 {ok, S} = ?MODULE:start(0, basic_props()),
@@ -922,22 +895,23 @@ prop_nest_ordered() ->
                     _ -> {wanted, lists:usort(BucketList),
                           got, lists:reverse(Bs)}
                 end
-            end).
+            end)).
 
 gen_bucket() ->
     ?LET(Bucket, frequency([
-                            %% base64:encode([0])  -> <<"AA==">>
-                            %% base64:encode([$h]) -> <<"aA==">>
-                            %% A weight of this case ~10:1 will almost always
-                            %% find the counterexample within 50 tests.
-                            {50, oneof([[0], [$h]])},
+                            %% %% base64:encode([0])  -> <<"AA==">>
+                            %% %% base64:encode([$h]) -> <<"aA==">>
+                            %% %% A weight of this case ~10:1 will almost always
+                            %% %% find the counterexample within 50 tests.
+                            %% {50, oneof([[0], [$h]])},
+                            {50, vector(1, char())},
                             {5, vector(2, char())},
                             {5, vector(3, char())},
-                            {5, vector(4, char())},
-                            {5, vector(5, char())},
-                            {5, vector(6, char())},
-                            {5, vector(16, char())},
-                            {5, non_empty(list(char()))}
+                            {5, vector(4, char())} %%,
+                            %% {5, vector(5, char())},
+                            %% {5, vector(6, char())},
+                            %% {5, vector(16, char())},
+                            %% {5, non_empty(list(char()))}
                            ]),
          iolist_to_binary(Bucket)).
 
