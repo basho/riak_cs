@@ -196,6 +196,9 @@ initiating_file_delete(continue, #state{current_files=[Manifest | _RestManifests
     %% Don't worry about delete_fsm failures. Manifests are
     %% rescheduled after a certain time.
     Args = [RiakPid, Manifest, []],
+    %% The delete FSM is hard-coded to send a sync event to our registered
+    %% name upon terminate(), so we do not have to pass our pid to it
+    %% in order to get a reply.
     {ok, Pid} = riak_cs_delete_fsm_sup:start_delete_fsm(node(), Args),
     {next_state, waiting_file_delete, State#state{delete_fsm_pid = Pid}};
 initiating_file_delete(_, State) ->
