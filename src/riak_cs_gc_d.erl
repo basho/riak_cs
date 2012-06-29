@@ -462,7 +462,7 @@ fetch_next_fileset(ManifestSetKey, RiakPid) ->
         {error, notfound}=Error ->
             Error;
         {error, Reason}=Error ->
-            _ = lager:warning("Error occurred trying to read the fileset"
+            _ = lager:info("Error occurred trying to read the fileset"
                               "for ~p for gc. Reason: ~p",
                               [ManifestSetKey, Reason]),
             Error
