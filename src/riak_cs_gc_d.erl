@@ -86,7 +86,7 @@ start_link() ->
 %% calculating so far, and counts of how many users have been
 %% processed and how many are left.
 status() ->
-    gen_fsm:sync_send_event(?SERVER, status).
+    gen_fsm:sync_send_event(?SERVER, status, infinity).
 
 %% @doc Force a garbage collection sweep manually.
 %%
