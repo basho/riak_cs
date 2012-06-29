@@ -88,7 +88,7 @@ timestamp() ->
 mark_as_pending_delete(Manifests, UUIDsToMark, RiakObject, RiakcPid) ->
     mark_manifests({ok, RiakObject, Manifests},
                    UUIDsToMark,
-                   mark_pending_delete,
+                   fun riak_cs_manifest_utils:mark_pending_delete/2,
                    RiakcPid).
 
 %% @doc Mark a list of manifests as `scheduled_delete' based upon the
@@ -97,7 +97,7 @@ mark_as_scheduled_delete(ok, Bucket, Key, UUIDsToMark, RiakcPid) ->
     Manifests = riak_moss_utils:get_manifests(RiakcPid, Bucket, Key),
     {Result, _} = mark_manifests(Manifests,
                                  UUIDsToMark,
-                                 mark_scheduled_delete,
+                                 fun riak_cs_manifest_utils:mark_scheduled_delete/2,
                                  RiakcPid),
     Result;
 mark_as_scheduled_delete({error, _}=Error, _, _, _, _) ->
@@ -107,7 +107,7 @@ mark_as_scheduled_delete({error, _}=Error, _, _, _, _) ->
 %% to update the state of the manifests specified by `UUIDsToMark'
 %% and then write the updated values to riak.
 mark_manifests({ok, RiakObject, Manifests}, UUIDsToMark, ManiFunction, RiakcPid) ->
-    Marked = riak_cs_manifest_utils:ManiFunction(Manifests, UUIDsToMark),
+    Marked = ManiFunction(Manifests, UUIDsToMark),
     UpdObj = riakc_obj:update_value(RiakObject, term_to_binary(Marked)),
     PutResult = riak_moss_utils:put_with_no_meta(RiakcPid, UpdObj),
     {PutResult, Marked};
@@ -115,11 +115,11 @@ mark_manifests({error, _Reason}=Error, _, _, _) ->
     Error.
 
 %% @doc Compile a list of `pending_delete' manifests.
--spec get_pending_delete_manifests({ok, [{binary(), lfs_manifest()}]} |
+-spec get_pending_delete_manifests({ok, orddict:orddict()} |
                                    {error, term()}) ->
-                                          [{binary(), lfs_manifest()}].
+                                          [cs_uuid_and_manifest()].
 get_pending_delete_manifests({ok, MarkedManifests}) ->
-    riak_cs_manifest_utils:pending_delete_manifests(MarkedManifests);
+    riak_cs_manifest_utils:filter_pending_delete_manifests(MarkedManifests);
 get_pending_delete_manifests({error, Reason}) ->
     _ = lager:warning("Failed to get pending_delete manifests. Reason: ~p",
                       [Reason]),

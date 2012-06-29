@@ -74,13 +74,15 @@
 
 -type cluster_id() :: undefined | term().  % Type still in flux.
 
+-type cs_uuid() :: binary().
+
 -record(lfs_manifest_v2, {
         version=2 :: integer(),
         block_size :: integer(),
         bkey :: {binary(), binary()},
         metadata :: orddict:orddict(),
         created=riak_moss_wm_utils:iso_8601_datetime(),
-        uuid :: binary(),
+        uuid :: cs_uuid(),
         content_length :: non_neg_integer(),
         content_type :: binary(),
         content_md5 :: term(),
@@ -133,7 +135,7 @@
         %% reason we can't change created
         %% to have millisecond as well.
         created=riak_moss_wm_utils:iso_8601_datetime(),
-        uuid :: binary(),
+        uuid :: cs_uuid(),
 
         %% content properties
         %% -----------------------------------------------------------------
@@ -226,6 +228,8 @@
         cluster_id :: cluster_id()
     }).
 -type lfs_manifest() :: #lfs_manifest_v3{}.
+
+-type cs_uuid_and_manifest() :: {cs_uuid(), lfs_manifest()}.
 
 -define(MANIFEST, #lfs_manifest_v3).
 
