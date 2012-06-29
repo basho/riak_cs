@@ -241,7 +241,7 @@ fetching_next_fileset({set_interval, Interval}, _From, State) ->
 fetching_next_fileset(Msg, _From, State) ->
     Common = [{status, {ok, {fetching_next_fileset, status_data(State)}}},
               {manual_batch, {error, already_deleting}},
-              {resume_batch, ok}],      % error? But EQC test is simpler with ok
+              {resume_batch, ok}],
     {reply, handle_common_sync_reply(Msg, Common, State), fetching_next_fileset, State}.
 
 initiating_file_delete(pause_batch, _From, State) ->
@@ -254,7 +254,7 @@ initiating_file_delete({set_interval, Interval}, _From, State) ->
 initiating_file_delete(Msg, _From, State) ->
     Common = [{status, {ok, {initiating_file_delete, status_data(State)}}},
               {manual_batch, {error, already_deleting}},
-              {resume_batch, ok}],      % error? But EQC test is simpler with ok
+              {resume_batch, ok}],
     {reply, handle_common_sync_reply(Msg, Common, State), initiating_file_delete, State}.
 
 waiting_file_delete({Pid, ok}, _From,
@@ -273,7 +273,7 @@ waiting_file_delete({set_interval, Interval}, _From, State) ->
 waiting_file_delete(Msg, _From, State) ->
     Common = [{status, {ok, {waiting_file_delete, status_data(State)}}},
               {manual_batch, {error, already_deleting}},
-              {resume_batch, ok}],      % error? But EQC test is simpler with ok
+              {resume_batch, ok}],
     {reply, handle_common_sync_reply(Msg, Common, State), waiting_file_delete, State}.
 
 paused({Pid, ok}, _From, State=#state{delete_fsm_pid=Pid}) ->
@@ -293,7 +293,7 @@ paused({set_interval, Interval}, _From, State) ->
 paused(Msg, _From, State) ->
     Common = [{status, {ok, {paused, status_data(State)}}},
               {pause_batch, {error, already_paused}},
-              {manual_batch, ok}],      % error? But EQC test is simpler with ok
+              {manual_batch, ok}],
     {reply, handle_common_sync_reply(Msg, Common, State), paused, State}.
 
 %% @doc there are no all-state events for this fsm
