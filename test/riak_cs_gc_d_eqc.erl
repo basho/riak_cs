@@ -44,16 +44,19 @@
 -define(TEST_ITERATIONS, 500).
 -define(GCD_MODULE, riak_cs_gc_d).
 
+%% WARNING: This is cut-and-paste of #state record from riak_cs_gc_d.erl
 -record(state, {
-          interval :: non_neg_integer(),
+          interval :: infinity | non_neg_integer(),
           last :: undefined | calendar:datetime(), % the last time a deletion was scheduled
           next :: undefined | calendar:datetime(), % the next scheduled gc time
-          riak :: pid(), % Riak connection pid
-          current_fileset :: [lfs_manifest()],
-          batch_start :: undefined | calendar:datetime(), % start of the current gc interval
+          riak :: undefined | pid(), % Riak connection pid
+          current_files :: [lfs_manifest()],
+          current_fileset :: twop_set:twop_set(),
+          current_riak_object :: riakc_obj:riakc_obj(),
+          batch_start :: undefined | non_neg_integer(), % start of the current gc interval
           batch_count=0 :: non_neg_integer(),
-          batch_skips=0 :: non_neg_integer(),
-          batch=[] :: [twop_set:twop_set()],
+          batch_skips=0 :: non_neg_integer(), % Count of filesets skipped in this batch
+          batch=[] :: undefined | [binary()], % `undefined' only for testing
           pause_state :: atom(), % state of the fsm when a delete batch was paused
           delete_fsm_pid :: pid()
          }).

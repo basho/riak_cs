@@ -53,6 +53,7 @@
 
 -define(SERVER, ?MODULE).
 
+%% WARNING: Changes to #state must also go into test/riak_cs_gc_d_eqc.erl
 -record(state, {
           interval :: infinity | non_neg_integer(),
           last :: undefined | calendar:datetime(), % the last time a deletion was scheduled
