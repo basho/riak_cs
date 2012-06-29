@@ -45,6 +45,8 @@
 -define(TEST_ITERATIONS, 500).
 -define(GCD_MODULE, riak_cs_gc_d).
 
+-define(P(EXPR), PPP = (EXPR), case PPP of true -> ok; _ -> io:format(user, "PPP ~p at line ~p\n", [PPP, ?LINE]) end, PPP).
+
 -record(mc_state, {current_state :: atom(),
                    previous_state :: atom()}).
 
@@ -202,71 +204,71 @@ precondition(_From, _To, _S, _C) ->
 %% `idle' state transitions
 postcondition(idle, idle, _S ,{call, _M, cancel_batch, _}, R) ->
     {ActualState, _} = riak_cs_gc_d:current_state(),
-    ActualState =:= idle andalso R =:= {error, no_batch};
+    ?P(ActualState =:= idle andalso R =:= {error, no_batch});
 postcondition(idle, paused, _S ,{call, _M, pause, _}, R) ->
     {ActualState, _} = riak_cs_gc_d:current_state(),
-    ActualState =:= paused andalso R =:= ok;
+    ?P(ActualState =:= paused andalso R =:= ok);
 %% `fetching_next_fileset' state transitions
 postcondition(idle, fetching_next_fileset, _S ,{call, _M, manual_batch, _}, R) ->
     {ActualState, _} = riak_cs_gc_d:current_state(),
-    ActualState =:= fetching_next_fileset andalso R =:= ok;
+    ?P(ActualState =:= fetching_next_fileset andalso R =:= ok);
 postcondition(_From, fetching_next_fileset, _S ,{call, _M, manual_batch, _}, R) ->
     {ActualState, _} = riak_cs_gc_d:current_state(),
-    ActualState =:= fetching_next_fileset andalso R =:= {error, already_deleting};
+    ?P(ActualState =:= fetching_next_fileset andalso R =:= {error, already_deleting});
 postcondition(fetching_next_fileset, paused, _S ,{call, _M, pause, _}, R) ->
     {ActualState, _} = riak_cs_gc_d:current_state(),
-    ActualState =:= paused andalso R =:= ok;
+    ?P(ActualState =:= paused andalso R =:= ok);
 postcondition(fetching_next_fileset, idle, _S ,{call, _M, cancel_batch, _}, R) ->
     {ActualState, _} = riak_cs_gc_d:current_state(),
-    ActualState =:= idle andalso R =:= ok;
+    ?P(ActualState =:= idle andalso R =:= ok);
 postcondition(fetching_next_fileset, initiating_file_delete, _S ,{call, _M, change_state, _}, R) ->
     {ActualState, _} = riak_cs_gc_d:current_state(),
-    ActualState =:= initiating_file_delete andalso R =:= ok;
+    ?P(ActualState =:= initiating_file_delete andalso R =:= ok);
 %% Transitions to `initiating_file_delete' state
 postcondition(_From, initiating_file_delete, #mc_state{current_state=initiating_file_delete} ,{call, _M, manual_batch, _}, R) ->
     {ActualState, _} = riak_cs_gc_d:current_state(),
-    ActualState =:= initiating_file_delete andalso R =:= {error, already_deleting};
+    ?P(ActualState =:= initiating_file_delete andalso R =:= {error, already_deleting});
 postcondition(initiating_file_delete, paused, _S ,{call, _M, pause, _}, R) ->
     {ActualState, _} = riak_cs_gc_d:current_state(),
-    ActualState =:= paused andalso R =:= ok;
+    ?P(ActualState =:= paused andalso R =:= ok);
 postcondition(initiating_file_delete, idle, _S ,{call, _M, cancel_batch, _}, R) ->
     {ActualState, _} = riak_cs_gc_d:current_state(),
-    ActualState =:= idle andalso R =:= ok;
+    ?P(ActualState =:= idle andalso R =:= ok);
 postcondition(initiating_file_delete, waiting_file_delete, _S ,{call, _M, change_state, _}, R) ->
     {ActualState, _} = riak_cs_gc_d:current_state(),
-    ActualState =:= waiting_file_delete andalso R =:= ok;
+    ?P(ActualState =:= waiting_file_delete andalso R =:= ok);
 %% `waiting_file_delete' transitions
 postcondition(_From, waiting_file_delete, _S ,{call, _M, manual_batch, _}, R) ->
     {ActualState, _} = riak_cs_gc_d:current_state(),
-    ActualState =:= waiting_file_delete andalso R =:= {error, already_deleting};
+    ?P(ActualState =:= waiting_file_delete andalso R =:= {error, already_deleting});
 postcondition(waiting_file_delete, paused, _S ,{call, _M, pause, _}, R) ->
     {ActualState, _} = riak_cs_gc_d:current_state(),
-    ActualState =:= paused andalso R =:= ok;
+    ?P(ActualState =:= paused andalso R =:= ok);
 postcondition(waiting_file_delete, idle, _S ,{call, _M, cancel_batch, _}, R) ->
     {ActualState, _} = riak_cs_gc_d:current_state(),
-    ActualState =:= idle andalso R =:= ok;
+    ?P(ActualState =:= idle andalso R =:= ok);
 postcondition(waiting_file_delete, initiating_file_delete, _S ,{call, _M, change_state, _}, R) ->
     {ActualState, _} = riak_cs_gc_d:current_state(),
-    ActualState =:= initiating_file_delete andalso R =:= ok;
+    ?P(ActualState =:= initiating_file_delete andalso R =:= ok);
 %% `paused' transitions
 postcondition(paused, idle, _S ,{call, _M, cancel_batch, _}, R) ->
     {ActualState, _} = riak_cs_gc_d:current_state(),
-    ActualState =:= idle andalso R =:= ok;
+    ?P(ActualState =:= idle andalso R =:= ok);
 postcondition(paused, paused, _S ,{call, _M, pause, _}, R) ->
     {ActualState, _} = riak_cs_gc_d:current_state(),
-    ActualState =:= paused andalso R =:= {error, already_paused};
+    ?P(ActualState =:= paused andalso R =:= {error, already_paused});
 postcondition(paused, PrevState, #mc_state{previous_state=PrevState} ,{call, _M, resume, _}, R) ->
     {ActualState, _} = riak_cs_gc_d:current_state(),
-    ActualState =:= PrevState andalso R =:= ok;
+    ?P(ActualState =:= PrevState andalso R =:= ok);
 %% General handling of `resume' calls when the `From' state
 %% is not `paused'.
 postcondition(_From, To, _S ,{call, _M, resume, _}, R) ->
     {ActualState, _} = riak_cs_gc_d:current_state(),
-    ActualState =:= To andalso R =:= {error, not_paused};
+    ?P(ActualState =:= To andalso R =:= {error, not_paused});
 %% Handling of arbitrary calls that should return `ok'.
 postcondition(_From, To, _S ,{call, _M, _F, _}, R) ->
     {ActualState, _} = riak_cs_gc_d:current_state(),
-    ActualState =:= To andalso R =:= ok;
+    ?P(ActualState =:= To andalso R =:= ok);
 %% Catch all
 postcondition(_From, _To, _S , _C, _R) ->
     true.
