@@ -197,11 +197,6 @@ paused(_, State) ->
 
 %% Synchronous events
 
-idle(status, _From, State) ->
-    Props = [{interval, State#state.interval},
-             {last, State#state.last},
-             {next, State#state.next}],
-    {reply, {ok, {idle, Props}}, idle, State};
 idle({manual_batch, Options}, _From, State) ->
     case lists:member(testing, Options) of
         true ->
@@ -210,25 +205,20 @@ idle({manual_batch, Options}, _From, State) ->
             NewState = start_batch(State)
     end,
     {reply, ok, fetching_next_fileset, NewState};
-idle(cancel_batch, _From, State) ->
-    {reply, {error, no_batch}, idle, State};
 idle(pause, _From, State) ->
     _ = lager:info("Pausing garbage collection"),
     UpdState = idle_pause_state(State),
     {reply, ok, paused, UpdState};
-idle(resume, _From, State) ->
-    {reply, {error, not_paused}, idle, State};
 idle({set_interval, Interval}, _From, State) ->
     {reply, ok, idle, State#state{interval=Interval}};
-idle(_, _From, State) ->
-    {reply, ok, idle, State}.
+idle(Msg, _From, State) ->
+    Common = [{status, {ok, {idle, [{interval, State#state.interval},
+                                    {last, State#state.last},
+                                    {next, State#state.next}]}}},
+              {cancel_batch, {error, no_batch}},
+              {resume, {error, not_paused}}],
+    {reply, handle_common_sync_reply(Msg, Common, State), idle, State}.
 
-fetching_next_fileset(status, _From, State) ->
-    Reply = {ok, {fetching_next_fileset, status_data(State)}},
-    {reply, Reply, fetching_next_fileset, State};
-fetching_next_fileset({manual_batch, _Options}, _From, State) ->
-    %% this is the manual user request to begin a batch
-    {reply, {error, already_deleting}, fetching_next_fileset, State};
 fetching_next_fileset(pause, _From, State) ->
     _ = lager:info("Pausing garbage collection"),
     {reply, ok, paused, State#state{pause_state=fetching_next_fileset}};
@@ -238,15 +228,11 @@ fetching_next_fileset(cancel_batch, _From, State) ->
     cancel_batch(State);
 fetching_next_fileset({set_interval, Interval}, _From, State) ->
     {reply, ok, fetching_next_fileset, State#state{interval=Interval}};
-fetching_next_fileset(_, _From, State) ->
-    {reply, ok, fetching_next_fileset, State}.
+fetching_next_fileset(Msg, _From, State) ->
+    Common = [{status, {ok, {fetching_next_fileset, status_data(State)}}},
+              {manual_batch, {error, already_deleting}}],
+    {reply, handle_common_sync_reply(Msg, Common, State), fetching_next_fileset, State}.
 
-initiating_file_delete(status, _From, State) ->
-    Reply = {ok, {initiating_file_delete, status_data(State)}},
-    {reply, Reply, initiating_file_delete, State};
-initiating_file_delete({manual_batch, _Options}, _From, State) ->
-    %% this is the manual user request to begin a batch
-    {reply, {error, already_deleting}, initiating_file_delete, State};
 initiating_file_delete(pause, _From, State) ->
     _ = lager:info("Pausing garbage collection"),
     {reply, ok, paused, State#state{pause_state=initiating_file_delete}};
@@ -256,14 +242,17 @@ initiating_file_delete(cancel_batch, _From, State) ->
     cancel_batch(State);
 initiating_file_delete({set_interval, Interval}, _From, State) ->
     {reply, ok, initiating_file_delete, State#state{interval=Interval}};
-initiating_file_delete(_, _From, State) ->
-    {reply, ok, initiating_file_delete, State}.
+initiating_file_delete(Msg, _From, State) ->
+    Common = [{status, {ok, {initiating_file_delete, status_data(State)}}},
+              {manual_batch, {error, already_deleting}}],
+    {reply, handle_common_sync_reply(Msg, Common, State), initiating_file_delete, State}.
 
 waiting_file_delete({Pid, ok},
                     _From,
                     State=#state{delete_fsm_pid=Pid,
                                  current_files=[CurrentManifest | RestManifests],
                                  current_fileset=FileSet}) ->
+    %% SLF TODO: common stuff here to refactor??
     UpdFileSet = twop_set:del_element(CurrentManifest, FileSet),
     UpdState = State#state{current_fileset=UpdFileSet,
                            current_files=RestManifests},
@@ -276,12 +265,6 @@ waiting_file_delete({Pid, {error, _Reason}},
     UpdState = State#state{current_files=RestManifests},
     gen_fsm:send_event(self(), continue),
     {reply, ok, initiating_file_delete, UpdState};
-waiting_file_delete(status, _From, State) ->
-    Reply = {ok, {waiting_file_delete, status_data(State)}},
-    {reply, Reply, waiting_file_delete, State};
-waiting_file_delete({manual_batch, _Options}, _From, State) ->
-    %% this is the manual user request to begin a batch
-    {reply, {error, already_deleting}, waiting_file_delete, State};
 waiting_file_delete(pause, _From, State) ->
     _ = lager:info("Pausing garbage collection"),
     {reply, ok, paused, State#state{pause_state=waiting_file_delete}};
@@ -291,8 +274,10 @@ waiting_file_delete(cancel_batch, _From, State) ->
     cancel_batch(State);
 waiting_file_delete({set_interval, Interval}, _From, State) ->
     {reply, ok, waiting_file_delete, State#state{interval=Interval}};
-waiting_file_delete(_, _From, State) ->
-    {reply, ok, waiting_file_delete, State}.
+waiting_file_delete(Msg, _From, State) ->
+    Common = [{status, {ok, {waiting_file_delete, status_data(State)}}},
+              {manual_batch, {error, already_deleting}}],
+    {reply, handle_common_sync_reply(Msg, Common, State), waiting_file_delete, State}.
 
 paused({Pid, ok}, _From, State=#state{delete_fsm_pid=Pid,
                                       pause_state=waiting_file_delete,
@@ -313,11 +298,6 @@ paused({Pid, {error, _Reason}}, _From, State=#state{delete_fsm_pid=Pid,
                            current_files=RestManifests},
     gen_fsm:send_event(self(), continue),
     {reply, ok, paused, UpdState};
-paused(status, _From, State) ->
-    Reply = {ok, {paused, status_data(State)}},
-    {reply, Reply, paused, State};
-paused(pause, _From, State) ->
-    {reply, {error, already_paused}, paused, State};
 paused(resume, _From, State=#state{pause_state=PauseState}) ->
     _ = lager:info("Resuming garbage collection"),
     gen_fsm:send_event(self(), continue),
@@ -328,8 +308,11 @@ paused(cancel_batch, _From, State) ->
     cancel_batch(State);
 paused({set_interval, Interval}, _From, State) ->
     {reply, ok, paused, State#state{interval=Interval}};
-paused(_, _From, State) ->
-    {reply, ok, paused, State}.
+paused(Msg, _From, State) ->
+    Common = [{status, {ok, {paused, status_data(State)}}},
+              {pause, {error, already_paused}},
+              {manual_batch, ok}],      % error? But EQC test is simpler with ok
+    {reply, handle_common_sync_reply(Msg, Common, State), paused, State}.
 
 %% @doc there are no all-state events for this fsm
 handle_event(_Event, StateName, State) ->
@@ -530,6 +513,8 @@ start_batch(State=#state{riak=undefined}) ->
                 riak=Riak}.
 
 %% @doc Extract a list of status information from a state record.
+%%
+%% CAUTION: Do not add side-effects to this function: it is called specutively.
 -spec status_data(#state{}) -> [{atom(), term()}].
 status_data(State) ->
     [{interval, State#state.interval},
@@ -539,7 +524,14 @@ status_data(State) ->
      {elapsed, elapsed(State#state.batch_start)},
      {files_deleted, State#state.batch_count},
      {files_skipped, State#state.batch_skips},
-     {files_left, length(State#state.batch)}].
+     {files_left, if is_list(State#state.batch) -> length(State#state.batch);
+                     true                       -> 0
+                  end}].
+
+handle_common_sync_reply(Msg, Common, _State) when is_atom(Msg) ->
+    proplists:get_value(Msg, Common, unknown_command);
+handle_common_sync_reply({MsgBase, _}, Common, State) when is_atom(MsgBase) ->
+    handle_common_sync_reply(MsgBase, Common, State).
 
 %% ===================================================================
 %% Test API
