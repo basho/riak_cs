@@ -171,7 +171,7 @@ fetching_next_fileset(continue, State=#state{batch=[FileSetKey | RestKeys],
                                        batch_skips=BatchSkips+1},
             NextState = fetching_next_fileset
     end,
-    gen_fsm:send_event(?SERVER, continue),
+    gen_fsm:send_event(self(), continue),
     {next_state, NextState, NewStateData};
 fetching_next_fileset(_, State) ->
     {next_state, fetching_next_fileset, State}.
@@ -186,7 +186,7 @@ initiating_file_delete(continue, #state{batch=[_ManiSetKey | RestKeys],
                                         current_riak_object=RiakObj,
                                         riak=RiakPid}=State) ->
     finish_file_delete(twop_set:size(FileSet), FileSet, RiakObj, RiakPid),
-    gen_fsm:send_event(?SERVER, continue),
+    gen_fsm:send_event(self(), continue),
     {next_state, fetching_next_fileset, State#state{batch=RestKeys,
                                                     batch_count=1+BatchCount}};
 initiating_file_delete(continue, #state{current_files=[NextManifest | _RestManifests],
@@ -273,14 +273,14 @@ waiting_file_delete({Pid, ok},
     UpdFileSet = twop_set:del_element(CurrentManifest, FileSet),
     UpdState = State#state{current_fileset=UpdFileSet,
                            current_files=RestManifests},
-    gen_fsm:send_event(?SERVER, continue),
+    gen_fsm:send_event(self(), continue),
     {reply, ok, initiating_file_delete, UpdState};
 waiting_file_delete({Pid, {error, _Reason}},
                     _From,
                     State=#state{delete_fsm_pid=Pid,
                                  current_files=[_ | RestManifests]}) ->
     UpdState = State#state{current_files=RestManifests},
-    gen_fsm:send_event(?SERVER, continue),
+    gen_fsm:send_event(self(), continue),
     {reply, ok, initiating_file_delete, UpdState};
 waiting_file_delete(status, _From, State) ->
     Reply = {ok, {waiting_file_delete, status_data(State)}},
@@ -307,7 +307,7 @@ paused({Pid, ok}, _From, State=#state{delete_fsm_pid=Pid,
                            pause_state=initiating_file_delete,
                            current_fileset=UpdFileSet,
                            current_files=RestManifests},
-    gen_fsm:send_event(?SERVER, continue),
+    gen_fsm:send_event(self(), continue),
     {reply, ok, paused, UpdState};
 paused({Pid, {error, _Reason}}, _From, State=#state{delete_fsm_pid=Pid,
                                                     pause_state=waiting_file_delete,
@@ -315,14 +315,14 @@ paused({Pid, {error, _Reason}}, _From, State=#state{delete_fsm_pid=Pid,
     UpdState = State#state{delete_fsm_pid=undefined,
                            pause_state=initiating_file_delete,
                            current_files=RestManifests},
-    gen_fsm:send_event(?SERVER, continue),
+    gen_fsm:send_event(self(), continue),
     {reply, ok, paused, UpdState};
 paused(status, _From, State) ->
     Reply = {ok, {paused, status_data(State)}},
     {reply, Reply, paused, State};
 paused(resume_batch, _From, State=#state{pause_state=PauseState}) ->
     _ = lager:info("Resuming garbage collection"),
-    gen_fsm:send_event(?SERVER, continue),
+    gen_fsm:send_event(self(), continue),
     %% @TODO Differences in the fsm state and the state record
     %% get confusing. Maybe s/State/StateData.
     {reply, ok, PauseState, State};
@@ -503,7 +503,7 @@ start_batch(State=#state{riak=undefined}) ->
     BatchStart = riak_cs_gc:timestamp(),
     Batch = fetch_eligible_manifest_keys(Riak, BatchStart),
     _ = lager:debug("Batch keys: ~p", [Batch]),
-    gen_fsm:send_event(?SERVER, continue),
+    gen_fsm:send_event(self(), continue),
     State#state{batch_start=BatchStart,
                 batch=Batch,
                 batch_count=0,
