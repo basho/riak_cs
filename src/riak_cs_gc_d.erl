@@ -247,24 +247,12 @@ initiating_file_delete(Msg, _From, State) ->
               {manual_batch, {error, already_deleting}}],
     {reply, handle_common_sync_reply(Msg, Common, State), initiating_file_delete, State}.
 
-waiting_file_delete({Pid, ok},
-                    _From,
-                    State=#state{delete_fsm_pid=Pid,
-                                 current_files=[CurrentManifest | RestManifests],
-                                 current_fileset=FileSet}) ->
-    %% SLF TODO: common stuff here to refactor??
-    UpdFileSet = twop_set:del_element(CurrentManifest, FileSet),
-    UpdState = State#state{current_fileset=UpdFileSet,
-                           current_files=RestManifests},
-    gen_fsm:send_event(self(), continue),
-    {reply, ok, initiating_file_delete, UpdState};
-waiting_file_delete({Pid, {error, _Reason}},
-                    _From,
-                    State=#state{delete_fsm_pid=Pid,
-                                 current_files=[_ | RestManifests]}) ->
-    UpdState = State#state{current_files=RestManifests},
-    gen_fsm:send_event(self(), continue),
-    {reply, ok, initiating_file_delete, UpdState};
+waiting_file_delete({Pid, ok}, _From,
+                    #state{delete_fsm_pid=Pid} = State) ->
+    {reply, ok, initiating_file_delete, handle_delete_fsm_reply(ok, State)};
+waiting_file_delete({Pid, {error, _Reason}}, _From,
+                    #state{delete_fsm_pid=Pid} = State) ->
+    {reply, ok, initiating_file_delete, handle_delete_fsm_reply(error, State)};
 waiting_file_delete(pause, _From, State) ->
     _ = lager:info("Pausing garbage collection"),
     {reply, ok, paused, State#state{pause_state=waiting_file_delete}};
@@ -279,25 +267,10 @@ waiting_file_delete(Msg, _From, State) ->
               {manual_batch, {error, already_deleting}}],
     {reply, handle_common_sync_reply(Msg, Common, State), waiting_file_delete, State}.
 
-paused({Pid, ok}, _From, State=#state{delete_fsm_pid=Pid,
-                                      pause_state=waiting_file_delete,
-                                      current_files=[CurrentManifest | RestManifests],
-                                      current_fileset=FileSet}) ->
-    UpdFileSet = twop_set:del_element(CurrentManifest, FileSet),
-    UpdState = State#state{delete_fsm_pid=undefined,
-                           pause_state=initiating_file_delete,
-                           current_fileset=UpdFileSet,
-                           current_files=RestManifests},
-    gen_fsm:send_event(self(), continue),
-    {reply, ok, paused, UpdState};
-paused({Pid, {error, _Reason}}, _From, State=#state{delete_fsm_pid=Pid,
-                                                    pause_state=waiting_file_delete,
-                                                    current_files=[_ | RestManifests]}) ->
-    UpdState = State#state{delete_fsm_pid=undefined,
-                           pause_state=initiating_file_delete,
-                           current_files=RestManifests},
-    gen_fsm:send_event(self(), continue),
-    {reply, ok, paused, UpdState};
+paused({Pid, ok}, _From, State=#state{delete_fsm_pid=Pid}) ->
+    {reply, ok, paused, handle_delete_fsm_reply(ok, State)};
+paused({Pid, {error, _Reason}}, _From, State=#state{delete_fsm_pid=Pid}) ->
+    {reply, ok, paused, handle_delete_fsm_reply(error, State)};
 paused(resume, _From, State=#state{pause_state=PauseState}) ->
     _ = lager:info("Resuming garbage collection"),
     gen_fsm:send_event(self(), continue),
@@ -532,6 +505,21 @@ handle_common_sync_reply(Msg, Common, _State) when is_atom(Msg) ->
     proplists:get_value(Msg, Common, unknown_command);
 handle_common_sync_reply({MsgBase, _}, Common, State) when is_atom(MsgBase) ->
     handle_common_sync_reply(MsgBase, Common, State).
+
+%% Refactor TODO:
+%%   1. delete_fsm_pid=undefined is desirable in both ok & error cases?
+%%   2. It's correct to *not* change pause_state?
+handle_delete_fsm_reply(ok, #state{current_files=[CurrentManifest | RestManifests],
+                                   current_fileset=FileSet} = State) ->
+    gen_fsm:send_event(self(), continue),
+    UpdFileSet = twop_set:del_element(CurrentManifest, FileSet),
+    State#state{delete_fsm_pid=undefined,
+                current_fileset=UpdFileSet,
+                current_files=RestManifests};
+handle_delete_fsm_reply(error, #state{current_files=[_ | RestManifests]} = State) ->
+    gen_fsm:send_event(self(), continue),
+    State#state{delete_fsm_pid=undefined,
+                current_files=RestManifests}.
 
 %% ===================================================================
 %% Test API
