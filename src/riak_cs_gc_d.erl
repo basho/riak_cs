@@ -369,7 +369,7 @@ handle_info(start_batch, idle, State) ->
     NewState = start_batch(State#state{riak=Riak}),
     {next_state, fetching_next_fileset, NewState};
 handle_info(start_batch, InBatch, State) ->
-    _ = lager:error("Unable to start garbage collection batch"
+    _ = lager:info("Unable to start garbage collection batch"
                     " because a previous batch is still working."),
     {next_state, InBatch, State};
 handle_info(_Info, StateName, State) ->
