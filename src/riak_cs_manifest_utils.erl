@@ -1,12 +1,12 @@
 %% -------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2011 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2012 Basho Technologies, Inc.  All Rights Reserved.
 %%
 %% -------------------------------------------------------------------
 
 %% @doc Module for choosing and manipulating lists (well, orddict) of manifests
 
--module(riak_moss_manifest).
+-module(riak_cs_manifest_utils).
 
 -include("riak_moss.hrl").
 -ifdef(TEST).
