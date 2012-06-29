@@ -189,13 +189,13 @@ initiating_file_delete(continue, #state{batch=[_ManiSetKey | RestKeys],
     gen_fsm:send_event(self(), continue),
     {next_state, fetching_next_fileset, State#state{batch=RestKeys,
                                                     batch_count=1+BatchCount}};
-initiating_file_delete(continue, #state{current_files=[NextManifest | _RestManifests],
+initiating_file_delete(continue, #state{current_files=[Manifest | _RestManifests],
                                         riak=RiakPid}=State) ->
     %% Use an instance of `riak_cs_delete_fsm' to handle the
     %% deletion of the file blocks.
     %% Don't worry about delete_fsm failures. Manifests are
     %% rescheduled after a certain time.
-    Args = [RiakPid, NextManifest, []],
+    Args = [RiakPid, Manifest, []],
     {ok, Pid} = riak_cs_delete_fsm_sup:start_delete_fsm(node(), Args),
     {next_state, waiting_file_delete, State#state{delete_fsm_pid = Pid}};
 initiating_file_delete(_, State) ->
