@@ -480,7 +480,7 @@ finish_file_delete(0, _, RiakObj, RiakPid) ->
     _ = riakc_pb_socket:delete_obj(RiakPid, RiakObj),
     ok;
 finish_file_delete(_, FileSet, RiakObj, RiakPid) ->
-    _ = lager:info("Remaining file keys: ~p", [twop_set:to_list(FileSet)]),
+    _ = lager:debug("Remaining file keys: ~p", [twop_set:to_list(FileSet)]),
     UpdRiakObj = riakc_obj:update_value(RiakObj, FileSet),
     %% Not a big deal if the put fails. Worst case is attempts
     %% to delete some of the file set members are already deleted.
