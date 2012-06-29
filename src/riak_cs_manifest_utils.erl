@@ -21,7 +21,7 @@
          overwritten_UUIDs/1,
          mark_pending_delete/2,
          mark_scheduled_delete/2,
-         pending_delete_manifests/1,
+         filter_pending_delete_uuid_manifests/1,
          prune/1,
          prune/2,
          upgrade_wrapped_manifests/1,
@@ -136,9 +136,9 @@ mark_scheduled_delete(Dict, UUIDsToMark) ->
 
 %% @doc Return the current `pending_delete' manifests
 %% from an orddict of manifests.
--spec pending_delete_manifests(orddict:orddict()) -> [lfs_manifest()].
-pending_delete_manifests(Dict) ->
-    orddict_values(orddict:filter(fun pending_delete_manifest/2, Dict)).
+-spec filter_pending_delete_uuid_manifests(orddict:orddict()) -> [cs_uuid_and_manifest()].
+filter_pending_delete_uuid_manifests(Dict) ->
+    orddict:to_list(orddict:filter(fun pending_delete_manifest/2, Dict)).
 
 %% @doc Remove all manifests that require pruning,
 %%      see needs_pruning() for definition of needing pruning.
