@@ -204,16 +204,7 @@ idle({manual_batch, Options}, _From, State) ->
         true ->
             NewState = State#state{batch=undefined};
         false ->
-            %% this does not check out a worker from the riak
-            %% connection pool; instead it creates a fresh new worker,
-            %% the idea being that we don't want to delay deletion
-            %% just because the normal request pool is empty; pool
-            %% workers just happen to be literally the socket process,
-            %% so "starting" one here is the same as opening a
-            %% connection, and avoids duplicating the configuration
-            %% lookup code
-            {ok, Riak} = riak_moss_riakc_pool_worker:start_link([]),
-            NewState = start_batch(State#state{riak=Riak})
+            NewState = start_batch(State)
     end,
     {reply, ok, fetching_next_fileset, NewState};
 idle(cancel_batch, _From, State) ->
@@ -353,16 +344,7 @@ handle_sync_event(_Event, _From, StateName, State) ->
     {reply, ok, StateName, State}.
 
 handle_info(start_batch, idle, State) ->
-    %% this does not check out a worker from the riak
-    %% connection pool; instead it creates a fresh new worker,
-    %% the idea being that we don't want to delay deletion
-    %% just because the normal request pool is empty; pool
-    %% workers just happen to be literally the socket process,
-    %% so "starting" one here is the same as opening a
-    %% connection, and avoids duplicating the configuration
-    %% lookup code
-    {ok, Riak} = riak_moss_riakc_pool_worker:start_link([]),
-    NewState = start_batch(State#state{riak=Riak}),
+    NewState = start_batch(State),
     {next_state, fetching_next_fileset, NewState};
 handle_info(start_batch, InBatch, State) ->
     _ = lager:info("Unable to start garbage collection batch"
@@ -523,7 +505,17 @@ schedule_next(#state{batch_start=Current,
 
 %% @doc Actually kick off the batch.  After calling this function, you
 %% must advance the FSM state to `fetching_next_fileset'.
-start_batch(State=#state{riak=Riak}) ->
+%% Intentionally pattern match on an undefined Riak handle.
+start_batch(State=#state{riak=undefined}) ->
+    %% this does not check out a worker from the riak
+    %% connection pool; instead it creates a fresh new worker,
+    %% the idea being that we don't want to delay deletion
+    %% just because the normal request pool is empty; pool
+    %% workers just happen to be literally the socket process,
+    %% so "starting" one here is the same as opening a
+    %% connection, and avoids duplicating the configuration
+    %% lookup code
+    {ok, Riak} = riak_moss_riakc_pool_worker:start_link([]),
     BatchStart = riak_cs_gc:timestamp(),
     Batch = fetch_eligible_manifest_keys(Riak, BatchStart),
     _ = lager:debug("Batch keys: ~p", [Batch]),
@@ -531,7 +523,8 @@ start_batch(State=#state{riak=Riak}) ->
     State#state{batch_start=BatchStart,
                 batch=Batch,
                 batch_count=0,
-                batch_skips=0}.
+                batch_skips=0,
+                riak=Riak}.
 
 %% @doc Extract a list of status information from a state record.
 -spec status_data(#state{}) -> [{atom(), term()}].
