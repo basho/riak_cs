@@ -19,7 +19,6 @@
          gc_retry_interval/0,
          gc_manifests/6,
          leeway_seconds/0,
-         move_manifests_to_gc_bucket/2,
          timestamp/0]).
 
 %%%===================================================================
