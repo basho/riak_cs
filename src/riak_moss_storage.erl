@@ -71,7 +71,7 @@ object_size_map(Object, _, _) ->
         AllManifests = [ binary_to_term(V)
                          || V <- riak_object:get_values(Object) ],
         Resolved = riak_moss_manifest_resolution:resolve(AllManifests),
-        case riak_moss_manifest:active_manifest(Resolved) of
+        case riak_cs_manifest_utils:active_manifest(Resolved) of
             {ok, ?MANIFEST{content_length=Length}} ->
                 [{1,Length}];
             _ ->

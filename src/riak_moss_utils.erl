@@ -195,7 +195,7 @@ delete_object(Bucket, Key, RiakcPid) ->
     StartTime = os:timestamp(),
     case get_manifests(RiakcPid, Bucket, Key) of
         {ok, RiakObject, Manifests} ->
-            ActiveManifests = riak_moss_manifest:active_and_writing_manifests(Manifests),
+            ActiveManifests = riak_cs_manifest_utils:active_and_writing_manifests(Manifests),
             ActiveUUIDs = [UUID || {UUID, _} <- ActiveManifests],
             _ = riak_cs_gc:gc_manifests(Bucket,
                                     Key,
@@ -322,9 +322,9 @@ map_keys_and_manifests(Object, _, _) ->
     try
         AllManifests = [ binary_to_term(V)
                          || V <- riak_object:get_values(Object) ],
-        Upgraded = riak_moss_manifest:upgrade_wrapped_manifests(AllManifests),
+        Upgraded = riak_cs_manifest_utils:upgrade_wrapped_manifests(AllManifests),
         Resolved = riak_moss_manifest_resolution:resolve(Upgraded),
-        case riak_moss_manifest:active_manifest(Resolved) of
+        case riak_cs_manifest_utils:active_manifest(Resolved) of
             {ok, Manifest} ->
                 [{riak_object:key(Object), {ok, Manifest}}];
             _ ->
@@ -370,13 +370,13 @@ get_manifests(RiakcPid, Bucket, Key) ->
 
             %% Upgrade the manifests to be the latest erlang
             %% record version
-            Upgraded = riak_moss_manifest:upgrade_wrapped_manifests(DecodedSiblings),
+            Upgraded = riak_cs_manifest_utils:upgrade_wrapped_manifests(DecodedSiblings),
 
             %% resolve the siblings
             Resolved = riak_moss_manifest_resolution:resolve(Upgraded),
 
             %% prune old scheduled_delete manifests
-            Pruned = riak_moss_manifest:prune(Resolved),
+            Pruned = riak_cs_manifest_utils:prune(Resolved),
             {ok, Object, Pruned};
         {error, notfound}=NotFound ->
             NotFound

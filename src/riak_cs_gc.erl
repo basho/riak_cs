@@ -103,11 +103,11 @@ mark_as_scheduled_delete(ok, Bucket, Key, UUIDsToMark, RiakcPid) ->
 mark_as_scheduled_delete({error, _}=Error, _, _, _, _) ->
     Error.
 
-%% @doc Call a `riak_moss_manifest' function on a set of manifests
+%% @doc Call a `riak_cs_manifest_utils' function on a set of manifests
 %% to update the state of the manifests specified by `UUIDsToMark'
 %% and then write the updated values to riak.
 mark_manifests({ok, RiakObject, Manifests}, UUIDsToMark, ManiFunction, RiakcPid) ->
-    Marked = riak_moss_manifest:ManiFunction(Manifests, UUIDsToMark),
+    Marked = riak_cs_manifest_utils:ManiFunction(Manifests, UUIDsToMark),
     UpdObj = riakc_obj:update_value(RiakObject, term_to_binary(Marked)),
     PutResult = riak_moss_utils:put_with_no_meta(RiakcPid, UpdObj),
     {PutResult, Marked};
@@ -119,7 +119,7 @@ mark_manifests({error, _Reason}=Error, _, _, _) ->
                                    {error, term()}) ->
                                           [{binary(), lfs_manifest()}].
 get_pending_delete_manifests({ok, MarkedManifests}) ->
-    riak_moss_manifest:pending_delete_manifests(MarkedManifests);
+    riak_cs_manifest_utils:pending_delete_manifests(MarkedManifests);
 get_pending_delete_manifests({error, Reason}) ->
     _ = lager:warning("Failed to get pending_delete manifests. Reason: ~p",
                       [Reason]),
