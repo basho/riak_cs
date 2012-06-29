@@ -284,7 +284,7 @@ paused({set_interval, Interval}, _From, State) ->
 paused(Msg, _From, State) ->
     Common = [{status, {ok, {paused, status_data(State)}}},
               {pause, {error, already_paused}},
-              {manual_batch, ok}],      % error? But EQC test is simpler with ok
+              {manual_batch, ok}],
     {reply, handle_common_sync_reply(Msg, Common, State), paused, State}.
 
 %% @doc there are no all-state events for this fsm
