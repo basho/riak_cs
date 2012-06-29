@@ -53,6 +53,7 @@
 
 -define(SERVER, ?MODULE).
 
+%% WARNING: Changes to #state must also go into test/riak_cs_gc_d_eqc.erl
 -record(state, {
           interval :: infinity | non_neg_integer(),
           last :: undefined | calendar:datetime(), % the last time a deletion was scheduled
@@ -170,7 +171,7 @@ fetching_next_fileset(continue, State=#state{batch=[FileSetKey | RestKeys],
                                        batch_skips=BatchSkips+1},
             NextState = fetching_next_fileset
     end,
-    gen_fsm:send_event(?SERVER, continue),
+    gen_fsm:send_event(self(), continue),
     {next_state, NextState, NewStateData};
 fetching_next_fileset(_, State) ->
     {next_state, fetching_next_fileset, State}.
@@ -185,16 +186,19 @@ initiating_file_delete(continue, #state{batch=[_ManiSetKey | RestKeys],
                                         current_riak_object=RiakObj,
                                         riak=RiakPid}=State) ->
     finish_file_delete(twop_set:size(FileSet), FileSet, RiakObj, RiakPid),
-    gen_fsm:send_event(?SERVER, continue),
+    gen_fsm:send_event(self(), continue),
     {next_state, fetching_next_fileset, State#state{batch=RestKeys,
                                                     batch_count=1+BatchCount}};
-initiating_file_delete(continue, #state{current_files=[NextManifest | _RestManifests],
+initiating_file_delete(continue, #state{current_files=[Manifest | _RestManifests],
                                         riak=RiakPid}=State) ->
     %% Use an instance of `riak_cs_delete_fsm' to handle the
     %% deletion of the file blocks.
     %% Don't worry about delete_fsm failures. Manifests are
     %% rescheduled after a certain time.
-    Args = [RiakPid, NextManifest, []],
+    Args = [RiakPid, Manifest, []],
+    %% The delete FSM is hard-coded to send a sync event to our registered
+    %% name upon terminate(), so we do not have to pass our pid to it
+    %% in order to get a reply.
     {ok, Pid} = riak_cs_delete_fsm_sup:start_delete_fsm(node(), Args),
     {next_state, waiting_file_delete, State#state{delete_fsm_pid = Pid}};
 initiating_file_delete(_, State) ->
@@ -208,45 +212,25 @@ paused(_, State) ->
 
 %% Synchronous events
 
-idle(status, _From, State) ->
-    Props = [{interval, State#state.interval},
-             {last, State#state.last},
-             {next, State#state.next}],
-    {reply, {ok, {idle, Props}}, idle, State};
 idle({manual_batch, Options}, _From, State) ->
     case lists:member(testing, Options) of
         true ->
             NewState = State#state{batch=undefined};
         false ->
-            %% this does not check out a worker from the riak
-            %% connection pool; instead it creates a fresh new worker,
-            %% the idea being that we don't want to delay deletion
-            %% just because the normal request pool is empty; pool
-            %% workers just happen to be literally the socket process,
-            %% so "starting" one here is the same as opening a
-            %% connection, and avoids duplicating the configuration
-            %% lookup code
-            {ok, Riak} = riak_moss_riakc_pool_worker:start_link([]),
-            NewState = start_batch(State#state{riak=Riak})
+            NewState = start_batch(State)
     end,
     {reply, ok, fetching_next_fileset, NewState};
-idle(cancel_batch, _From, State) ->
-    {reply, {error, no_batch}, idle, State};
-idle(pause_batch, _From, State) ->
-    {reply, {error, no_batch}, idle, State};
-idle(resume_batch, _From, State) ->
-    {reply, {error, no_batch}, idle, State};
 idle({set_interval, Interval}, _From, State) ->
     {reply, ok, idle, State#state{interval=Interval}};
-idle(_, _From, State) ->
-    {reply, ok, idle, State}.
+idle(Msg, _From, State) ->
+    Common = [{status, {ok, {idle, [{interval, State#state.interval},
+                                    {last, State#state.last},
+                                    {next, State#state.next}]}}},
+              {cancel_batch, {error, no_batch}},
+              {pause_batch,  {error, no_batch}},
+              {resume_batch, {error, no_batch}}],
+    {reply, handle_common_sync_reply(Msg, Common, State), idle, State}.
 
-fetching_next_fileset(status, _From, State) ->
-    Reply = {ok, {fetching_next_fileset, status_data(State)}},
-    {reply, Reply, fetching_next_fileset, State};
-fetching_next_fileset({manual_batch, _Options}, _From, State) ->
-    %% this is the manual user request to begin a batch
-    {reply, {error, already_deleting}, fetching_next_fileset, State};
 fetching_next_fileset(pause_batch, _From, State) ->
     _ = lager:info("Pausing garbage collection"),
     {reply, ok, paused, State#state{pause_state=fetching_next_fileset}};
@@ -254,15 +238,12 @@ fetching_next_fileset(cancel_batch, _From, State) ->
     cancel_batch(State);
 fetching_next_fileset({set_interval, Interval}, _From, State) ->
     {reply, ok, fetching_next_fileset, State#state{interval=Interval}};
-fetching_next_fileset(_, _From, State) ->
-    {reply, ok, fetching_next_fileset, State}.
+fetching_next_fileset(Msg, _From, State) ->
+    Common = [{status, {ok, {fetching_next_fileset, status_data(State)}}},
+              {manual_batch, {error, already_deleting}},
+              {resume_batch, ok}],
+    {reply, handle_common_sync_reply(Msg, Common, State), fetching_next_fileset, State}.
 
-initiating_file_delete(status, _From, State) ->
-    Reply = {ok, {initiating_file_delete, status_data(State)}},
-    {reply, Reply, initiating_file_delete, State};
-initiating_file_delete({manual_batch, _Options}, _From, State) ->
-    %% this is the manual user request to begin a batch
-    {reply, {error, already_deleting}, initiating_file_delete, State};
 initiating_file_delete(pause_batch, _From, State) ->
     _ = lager:info("Pausing garbage collection"),
     {reply, ok, paused, State#state{pause_state=initiating_file_delete}};
@@ -270,32 +251,18 @@ initiating_file_delete(cancel_batch, _From, State) ->
     cancel_batch(State);
 initiating_file_delete({set_interval, Interval}, _From, State) ->
     {reply, ok, initiating_file_delete, State#state{interval=Interval}};
-initiating_file_delete(_, _From, State) ->
-    {reply, ok, initiating_file_delete, State}.
+initiating_file_delete(Msg, _From, State) ->
+    Common = [{status, {ok, {initiating_file_delete, status_data(State)}}},
+              {manual_batch, {error, already_deleting}},
+              {resume_batch, ok}],
+    {reply, handle_common_sync_reply(Msg, Common, State), initiating_file_delete, State}.
 
-waiting_file_delete({Pid, ok},
-                    _From,
-                    State=#state{delete_fsm_pid=Pid,
-                                 current_files=[CurrentManifest | RestManifests],
-                                 current_fileset=FileSet}) ->
-    UpdFileSet = twop_set:del_element(CurrentManifest, FileSet),
-    UpdState = State#state{current_fileset=UpdFileSet,
-                           current_files=RestManifests},
-    gen_fsm:send_event(?SERVER, continue),
-    {reply, ok, initiating_file_delete, UpdState};
-waiting_file_delete({Pid, {error, _Reason}},
-                    _From,
-                    State=#state{delete_fsm_pid=Pid,
-                                 current_files=[_ | RestManifests]}) ->
-    UpdState = State#state{current_files=RestManifests},
-    gen_fsm:send_event(?SERVER, continue),
-    {reply, ok, initiating_file_delete, UpdState};
-waiting_file_delete(status, _From, State) ->
-    Reply = {ok, {waiting_file_delete, status_data(State)}},
-    {reply, Reply, waiting_file_delete, State};
-waiting_file_delete({manual_batch, _Options}, _From, State) ->
-    %% this is the manual user request to begin a batch
-    {reply, {error, already_deleting}, waiting_file_delete, State};
+waiting_file_delete({Pid, ok}, _From,
+                    #state{delete_fsm_pid=Pid} = State) ->
+    {reply, ok, initiating_file_delete, handle_delete_fsm_reply(ok, State)};
+waiting_file_delete({Pid, {error, _Reason}}, _From,
+                    #state{delete_fsm_pid=Pid} = State) ->
+    {reply, ok, initiating_file_delete, handle_delete_fsm_reply(error, State)};
 waiting_file_delete(pause_batch, _From, State) ->
     _ = lager:info("Pausing garbage collection"),
     {reply, ok, paused, State#state{pause_state=waiting_file_delete}};
@@ -303,34 +270,19 @@ waiting_file_delete(cancel_batch, _From, State) ->
     cancel_batch(State);
 waiting_file_delete({set_interval, Interval}, _From, State) ->
     {reply, ok, waiting_file_delete, State#state{interval=Interval}};
-waiting_file_delete(_, _From, State) ->
-    {reply, ok, waiting_file_delete, State}.
+waiting_file_delete(Msg, _From, State) ->
+    Common = [{status, {ok, {waiting_file_delete, status_data(State)}}},
+              {manual_batch, {error, already_deleting}},
+              {resume_batch, ok}],
+    {reply, handle_common_sync_reply(Msg, Common, State), waiting_file_delete, State}.
 
-paused({Pid, ok}, _From, State=#state{delete_fsm_pid=Pid,
-                                      pause_state=waiting_file_delete,
-                                      current_files=[CurrentManifest | RestManifests],
-                                      current_fileset=FileSet}) ->
-    UpdFileSet = twop_set:del_element(CurrentManifest, FileSet),
-    UpdState = State#state{delete_fsm_pid=undefined,
-                           pause_state=initiating_file_delete,
-                           current_fileset=UpdFileSet,
-                           current_files=RestManifests},
-    gen_fsm:send_event(?SERVER, continue),
-    {reply, ok, paused, UpdState};
-paused({Pid, {error, _Reason}}, _From, State=#state{delete_fsm_pid=Pid,
-                                                    pause_state=waiting_file_delete,
-                                                    current_files=[_ | RestManifests]}) ->
-    UpdState = State#state{delete_fsm_pid=undefined,
-                           pause_state=initiating_file_delete,
-                           current_files=RestManifests},
-    gen_fsm:send_event(?SERVER, continue),
-    {reply, ok, paused, UpdState};
-paused(status, _From, State) ->
-    Reply = {ok, {paused, status_data(State)}},
-    {reply, Reply, paused, State};
+paused({Pid, ok}, _From, State=#state{delete_fsm_pid=Pid}) ->
+    {reply, ok, paused, handle_delete_fsm_reply(ok, State)};
+paused({Pid, {error, _Reason}}, _From, State=#state{delete_fsm_pid=Pid}) ->
+    {reply, ok, paused, handle_delete_fsm_reply(error, State)};
 paused(resume_batch, _From, State=#state{pause_state=PauseState}) ->
     _ = lager:info("Resuming garbage collection"),
-    gen_fsm:send_event(?SERVER, continue),
+    gen_fsm:send_event(self(), continue),
     %% @TODO Differences in the fsm state and the state record
     %% get confusing. Maybe s/State/StateData.
     {reply, ok, PauseState, State};
@@ -338,8 +290,11 @@ paused(cancel_batch, _From, State) ->
     cancel_batch(State);
 paused({set_interval, Interval}, _From, State) ->
     {reply, ok, paused, State#state{interval=Interval}};
-paused(_, _From, State) ->
-    {reply, ok, paused, State}.
+paused(Msg, _From, State) ->
+    Common = [{status, {ok, {paused, status_data(State)}}},
+              {pause_batch, {error, already_paused}},
+              {manual_batch, ok}],
+    {reply, handle_common_sync_reply(Msg, Common, State), paused, State}.
 
 %% @doc there are no all-state events for this fsm
 handle_event(_Event, StateName, State) ->
@@ -357,16 +312,7 @@ handle_sync_event(_Event, _From, StateName, State) ->
     {reply, ok, StateName, State}.
 
 handle_info(start_batch, idle, State) ->
-    %% this does not check out a worker from the riak
-    %% connection pool; instead it creates a fresh new worker,
-    %% the idea being that we don't want to delay deletion
-    %% just because the normal request pool is empty; pool
-    %% workers just happen to be literally the socket process,
-    %% so "starting" one here is the same as opening a
-    %% connection, and avoids duplicating the configuration
-    %% lookup code
-    {ok, Riak} = riak_moss_riakc_pool_worker:start_link([]),
-    NewState = start_batch(State#state{riak=Riak}),
+    NewState = start_batch(State),
     {next_state, fetching_next_fileset, NewState};
 handle_info(start_batch, InBatch, State) ->
     _ = lager:info("Unable to start garbage collection batch"
@@ -506,17 +452,30 @@ schedule_next(#state{batch_start=Current,
 
 %% @doc Actually kick off the batch.  After calling this function, you
 %% must advance the FSM state to `fetching_next_fileset'.
-start_batch(State=#state{riak=Riak}) ->
+%% Intentionally pattern match on an undefined Riak handle.
+start_batch(State=#state{riak=undefined}) ->
+    %% this does not check out a worker from the riak
+    %% connection pool; instead it creates a fresh new worker,
+    %% the idea being that we don't want to delay deletion
+    %% just because the normal request pool is empty; pool
+    %% workers just happen to be literally the socket process,
+    %% so "starting" one here is the same as opening a
+    %% connection, and avoids duplicating the configuration
+    %% lookup code
+    {ok, Riak} = riak_moss_riakc_pool_worker:start_link([]),
     BatchStart = riak_cs_gc:timestamp(),
     Batch = fetch_eligible_manifest_keys(Riak, BatchStart),
     _ = lager:debug("Batch keys: ~p", [Batch]),
-    gen_fsm:send_event(?SERVER, continue),
+    gen_fsm:send_event(self(), continue),
     State#state{batch_start=BatchStart,
                 batch=Batch,
                 batch_count=0,
-                batch_skips=0}.
+                batch_skips=0,
+                riak=Riak}.
 
 %% @doc Extract a list of status information from a state record.
+%%
+%% CAUTION: Do not add side-effects to this function: it is called specutively.
 -spec status_data(#state{}) -> [{atom(), term()}].
 status_data(State) ->
     [{interval, State#state.interval},
@@ -526,7 +485,29 @@ status_data(State) ->
      {elapsed, elapsed(State#state.batch_start)},
      {files_deleted, State#state.batch_count},
      {files_skipped, State#state.batch_skips},
-     {files_left, length(State#state.batch)}].
+     {files_left, if is_list(State#state.batch) -> length(State#state.batch);
+                     true                       -> 0
+                  end}].
+
+handle_common_sync_reply(Msg, Common, _State) when is_atom(Msg) ->
+    proplists:get_value(Msg, Common, unknown_command);
+handle_common_sync_reply({MsgBase, _}, Common, State) when is_atom(MsgBase) ->
+    handle_common_sync_reply(MsgBase, Common, State).
+
+%% Refactor TODO:
+%%   1. delete_fsm_pid=undefined is desirable in both ok & error cases?
+%%   2. It's correct to *not* change pause_state?
+handle_delete_fsm_reply(ok, #state{current_files=[CurrentManifest | RestManifests],
+                                   current_fileset=FileSet} = State) ->
+    gen_fsm:send_event(self(), continue),
+    UpdFileSet = twop_set:del_element(CurrentManifest, FileSet),
+    State#state{delete_fsm_pid=undefined,
+                current_fileset=UpdFileSet,
+                current_files=RestManifests};
+handle_delete_fsm_reply(error, #state{current_files=[_ | RestManifests]} = State) ->
+    gen_fsm:send_event(self(), continue),
+    State#state{delete_fsm_pid=undefined,
+                current_files=RestManifests}.
 
 %% ===================================================================
 %% Test API
