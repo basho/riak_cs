@@ -131,7 +131,7 @@ get_pending_delete_manifests({error, Reason}) ->
     ok | {error, term()}.
 move_manifests_to_gc_bucket(Manifests, RiakcPid) ->
     Key = generate_key(),
-    ManifestSet = build_manifest_set(twop_set:new(), Manifests),
+    ManifestSet = build_manifest_set(Manifests),
     ObjectToWrite = case riakc_pb_socket:get(RiakcPid, ?GC_BUCKET, Key) of
         {error, notfound} ->
             %% There was no previous value, so we'll
@@ -153,12 +153,9 @@ move_manifests_to_gc_bucket(Manifests, RiakcPid) ->
     _ = lager:debug("Manifests scheduled for deletion: ~p", [ManifestSet]),
     riak_moss_utils:put_with_no_meta(RiakcPid, ObjectToWrite).
 
--spec build_manifest_set(twop_set:twop_set(), [lfs_manifest()]) -> twop_set:twop_set().
-build_manifest_set(Set, []) ->
-    Set;
-build_manifest_set(Set, [HeadManifest | RestManifests]) ->
-    UpdSet = twop_set:add_element(HeadManifest, Set),
-    build_manifest_set(UpdSet, RestManifests).
+-spec build_manifest_set([lfs_manifest()]) -> twop_set:twop_set().
+build_manifest_set(Manifests) ->
+    lists:foldl(fun twop_set:add_element/2, twop_set:new(), Manifests).
 
 %% @doc Generate a key for storing a set of manifests in the
 %% garbage collection bucket.
