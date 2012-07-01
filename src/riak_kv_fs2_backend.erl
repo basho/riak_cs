@@ -105,6 +105,7 @@
 -define(TOMBSTONE_MODE_MARKER, 8#2000).
 
 -ifdef(TEST).
+-compile(export_all).
 -ifdef(EQC).
 %% EQC testing assistants
 -export([eqc_filter_delete/3]).
@@ -116,8 +117,10 @@
 
 -record(state, {
           dir        :: string(),
-          block_size :: integer(),
-          max_blocks :: integer()
+          block_size :: non_neg_integer(),
+          max_blocks :: non_neg_integer(),
+          b_depth    :: non_neg_integer(),
+          k_depth    :: non_neg_integer()
          }).
 
 %% File trailer
@@ -186,9 +189,23 @@ start(Partition, Config) ->
                             DefaultMaxB
                     end,
         Dir = filename:join([ConfigRoot,PartitionName]),
+        BDepth = case get_prop_or_env(
+                        fs2_backend_b_depth, Config, riak_kv) of
+                     undefined -> 2;
+                     Else3     -> Else3
+                 end,
+        KDepth = case get_prop_or_env(
+                        fs2_backend_k_depth, Config, riak_kv) of
+                     undefined -> 2;
+                     Else4     -> Else4
+                 end,
+        ok = create_or_sanity_check_version_file(Dir, BlockSize, MaxBlocks,
+                                                 BDepth, KDepth),
         {ok = filelib:ensure_dir(Dir), #state{dir = Dir,
                                               block_size = BlockSize,
-                                              max_blocks = MaxBlocks}}
+                                              max_blocks = MaxBlocks,
+                                              b_depth = BDepth,
+                                              k_depth = KDepth}}
     catch throw:Error ->
         {error, Error}
     end.
@@ -448,11 +465,16 @@ fold_objects_fun(FoldObjectsFun, Bucket) ->
 %% @spec list_all_files_naive_bkeys(state()) -> [{Bucket :: riak_object:bucket(),
 %%                                    Key :: riak_object:key()}]
 %% @doc Get a list of all bucket/key pairs stored by this backend
-list_all_files_naive_bkeys(#state{dir=Dir}) ->
+list_all_files_naive_bkeys(#state{dir=Dir, b_depth = BDepth,
+                                  k_depth = KDepth} = State) ->
+    Glob = lists:flatten([
+                          lists:duplicate(BDepth, "*/"), % bucket intermediates
+                          "*/",                          % bucket
+                          lists:duplicate(KDepth, "*/"), % key intermediates
+                          "*"                            % key
+                         ]),
     % this is slow slow slow
-    %                                              B,N,N,N,K
-    [location_to_bkey(X) || X <- filelib:wildcard("*/*/*/*/*",
-                                                         Dir)].
+    [location_to_bkey(State, X) || X <- filelib:wildcard(Glob, Dir)].
 
 %% @spec list_all_keys([string()]) -> [{Bucket :: riak_object:bucket(),
 %%                                      Key :: riak_object:key()}]
@@ -475,18 +497,24 @@ list_all_keys(State) ->
 %%          -> string()
 %% @doc produce the file-path at which the object for the given Bucket
 %%      and Key should be stored
-location(State, {Bucket, Key}) ->
+location(#state{dir = Dir, b_depth = BDepth, k_depth = KDepth}, {Bucket, Key}) ->
     B64 = encode_bucket(Bucket),
     K64 = encode_key(Key),
-    [N1,N2,N3] = nest3(K64),
-    filename:join([State#state.dir, B64, N1, N2, N3, K64]).
+    BDirs = if BDepth > 0 -> filename:join(nest(B64, BDepth));
+               true       -> ""
+            end,
+    KDirs = if KDepth > 0 -> filename:join(nest(K64, KDepth));
+               true       -> ""
+            end,
+    filename:join([Dir, BDirs, B64, KDirs, K64]).
 
-%% @spec location_to_bkey(string()) ->
+%% @spec location_to_bkey(state(), string()) ->
 %%           {riak_object:bucket(), riak_object:key()}
 %% @doc reconstruct a Riak bucket/key pair, given the location at
 %%      which its object is stored on-disk
-location_to_bkey(Path) ->
-    [B64,_,_,_,K64] = string:tokens(Path, "/"),
+location_to_bkey(#state{b_depth = BDepth, k_depth = KDepth}, Path) ->
+    [B64|Rest] = drop_from_list(BDepth, string:tokens(Path, "/")),
+    [K64] = drop_from_list(KDepth, Rest),
     {decode_bucket(B64), decode_key(K64)}.
 
 %% @spec decode_bucket(string()) -> binary()
@@ -511,11 +539,8 @@ encode_bucket(Bucket) ->
 encode_key(Key) ->
     base64fs2:encode_to_string(Key).
 
-%% @spec nest3(string()) -> [string()]
 %% @doc create a directory nesting, to keep the number of
 %%      files in a directory smaller
-nest3(Key) -> nest(Key, 3).
-
 nest(Key, Groups) -> nest(lists:reverse(string:substr(Key, 1, 2*Groups)),
                           Groups, []).
 nest(_, 0, Parts) -> Parts;
@@ -731,6 +756,53 @@ get_prop_or_env(Key, Properties, App) ->
             Value
     end.
 
+create_or_sanity_check_version_file(Dir, BlockSize, MaxBlocks,
+                                    BDepth, KDepth) ->
+    VersionFile = make_version_path(Dir),
+    case file:consult(VersionFile) of
+        {ok, Terms} ->
+            ok = sanity_check_terms(Terms, BlockSize, MaxBlocks,
+                                    BDepth, KDepth);
+        {error, enoent} ->
+            ok = make_version_file(VersionFile, BlockSize, MaxBlocks,
+                                   BDepth, KDepth)
+    end.
+
+make_version_path(Dir) ->
+    Dir ++ "/version.data".
+
+make_version_file(File, BlockSize, MaxBlocks, BDepth, KDepth) ->
+    ok = filelib:ensure_dir(File),
+    {ok, FH} = file:open(File, [write]),
+    [ok = io:format(FH, "~p.\n", [X]) ||
+        X <- [{backend, ?MODULE},
+              {version_number, 1},
+              {block_size, BlockSize},
+              {max_blocks, MaxBlocks},
+              {b_depth, BDepth},
+              {k_depth, KDepth}]],
+    ok = file:close(FH).
+
+sanity_check_terms(Terms, BlockSize, MaxBlocks, BDepth, KDepth) ->
+    ?MODULE = proplists:get_value(backend, Terms),
+    1 = proplists:get_value(version_number, Terms),
+    %% Use negative number below because if we use the default
+    %% 'undefined' for a value that is not present, Erlang term
+    %% ordering says integer() < atom().
+    Bogus = -9999999999999999999999999999,
+    true = (BlockSize =< proplists:get_value(block_size, Terms, Bogus)),
+    true = (MaxBlocks =< proplists:get_value(max_blocks, Terms, Bogus)),
+    BDepth = proplists:get_value(b_depth, Terms),
+    KDepth = proplists:get_value(k_depth, Terms),
+    ok.
+
+drop_from_list(0, L) ->
+    L;
+drop_from_list(N, [_|T]) ->
+    drop_from_list(N - 1, T);
+drop_from_list(_N, []) ->
+    [].
+
 t0() ->
     TestDir = "./delme",
     Bucket = <<?BLOCK_BUCKET_PREFIX, "delme">>,
@@ -812,14 +884,14 @@ simple_test_() ->
    riak_kv_backend:standard_test(?MODULE, Config).
 
 nest_test() ->
-    ?assertEqual(["ab","cd","ef"],nest3("abcdefg")),
-    ?assertEqual(["ab","cd","ef"],nest3("abcdef")),
-    ?assertEqual(["a","bc","de"], nest3("abcde")),
-    ?assertEqual(["0","ab","cd"], nest3("abcd")),
-    ?assertEqual(["0","a","bc"],  nest3("abc")),
-    ?assertEqual(["0","0","ab"],  nest3("ab")),
-    ?assertEqual(["0","0","a"],   nest3("a")),
-    ?assertEqual(["0","0","0"],   nest3([])).
+    ?assertEqual(["ab","cd","ef"],nest("abcdefg", 3)),
+    ?assertEqual(["ab","cd","ef"],nest("abcdef", 3)),
+    ?assertEqual(["a","bc","de"], nest("abcde", 3)),
+    ?assertEqual(["0","ab","cd"], nest("abcd", 3)),
+    ?assertEqual(["0","a","bc"],  nest("abc", 3)),
+    ?assertEqual(["0","0","ab"],  nest("ab", 3)),
+    ?assertEqual(["0","0","a"],   nest("a", 3)),
+    ?assertEqual(["0","0","0"],   nest([], 3)).
 
 -ifdef(EQC).
 
