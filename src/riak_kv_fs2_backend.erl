@@ -884,8 +884,7 @@ exec_stack_op({key_file, File},  _FoldFun, Acc, State) ->
         {<<?BLOCK_BUCKET_PREFIX, _/binary>> = Bucket,
          <<UUID:?UUID_BYTES/binary>>} = location_to_bkey(File, State),
         BKeys = [{Bucket, <<UUID/binary, Block:?BLOCK_FIELD_SIZE>>} ||
-                    Block <- lists:reverse(
-                               enumerate_chunks_in_file(Bucket, UUID, State))],
+                    Block <- enumerate_chunks_in_file(Bucket, UUID, State)],
         {BKeys, Acc}
     catch error:_Y ->
             %% Binary pattern matching or base64 decoding failed, or
@@ -913,7 +912,7 @@ exec_stack_op({Bucket, Key} = BKey, FoldFun, Acc, State) ->
 
 %% Remember: all paths on the stack start with "/" but are not absolute.
 do_glob(Glob, Dir, #state{dir = PrefixDir}) ->
-    lists:reverse(filelib:wildcard(Glob, PrefixDir ++ Dir)).
+    filelib:wildcard(Glob, PrefixDir ++ Dir).
 
 t0() ->
     TestDir = "./delme",
@@ -966,14 +965,16 @@ t2() ->
     B1 = <<?BLOCK_BUCKET_PREFIX, "delme">>,
     B2 = <<?BLOCK_BUCKET_PREFIX, "delme2">>,
     B3 = <<?BLOCK_BUCKET_PREFIX, "delme22">>,
-    V0 = <<"value, eh?">>,
     os:cmd("rm -rf " ++ TestDir),
     {ok, S} = start(-1, [{fs2_backend_data_root, TestDir},
                          {fs2_backend_block_size, 1024}]),
-    [{ok, _} = put(B, <<UUID:(16*8), Seq:(2*8)>>, [], V0, ignored, S) ||
+    [{ok, _} = put(B, <<UUID:(16*8), Seq:(2*8)>>, [],
+                   list_to_binary(["val ", integer_to_list(Seq)]),
+                   ignored, S) ||
         B <- [B1, B2, B3],
         UUID <- [44, 88],
-        Seq <- [0,1,2,3]],
+        Seq <- lists:seq(0,20)],
+        %% Seq <- [0,1,2,3]],
     fold_objects(fun(B, K, V, _Acc) ->
                          io:format("~p\n", [{B, K, V}])
                          %% [{B, K, V}|Acc]
