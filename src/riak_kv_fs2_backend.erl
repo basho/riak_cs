@@ -84,7 +84,7 @@
 %% KV Backend API based on capabilities
 -export([put/6]).
 %% Testing
--export([t0/0, t1/0]).
+-export([t0/0, t1/0, t2/0]).
 
 -include("riak_moss_lfs.hrl").
 -include_lib("kernel/include/file.hrl").
@@ -297,6 +297,26 @@ delete(Bucket, Key, _IndexSpecs, State) ->
         {error, Err} -> {error, Err, State}
     end.
 
+%% Notes about folding refactoring:
+%%
+%% 1. Avoid requiring tremendous amounts of RAM.  lists:foldl/3 requires
+%%    knowing all foldable items in advance.
+%% 2. We need to move away from */*/*/*/* style globbing, also for RAM
+%%    reasons.
+%% 3. It would be nice to be able to stream items, e.g. key listing,
+%%    in real-time, rather than waiting for something like lists:foldl/3
+%%    to finish processing the last key.
+%%    * Implementing this requirement can wait a while.
+%%
+%% Implementation notes/steps
+%%
+%% a. Create all objects fold first
+%% b. The limit object fold on a single bucket by limiting the initial glob.
+%% c. Then write key fold
+%% d. Then write key fold on a single bucket, using same trick as b.
+%% e. Write all buckets fold, using limited glob PLUS a check for a single
+%%    undeleted key inside that bucket.
+
 %% @doc Fold over all the buckets.
 -spec fold_buckets(riak_kv_backend:fold_buckets_fun(),
                    any(),
@@ -342,12 +362,12 @@ fold_keys(FoldKeysFun, Acc, Opts, State) ->
                    [{atom(), term()}],
                    state()) -> {ok, any()} | {async, fun()}.
 fold_objects(FoldObjectsFun, Acc, Opts, State) ->
-    %% Warning: This ain't pretty. Hold your nose.
     Bucket =  proplists:get_value(bucket, Opts),
+    Stack = make_start_stack_objects(Bucket, State),
     FoldFun = fold_objects_fun(FoldObjectsFun, Bucket),
     ObjectFolder =
         fun() ->
-                fold(State, FoldFun, Acc)
+                reduce_stack(Stack, FoldFun, Acc, State)
         end,
     case lists:member(async_fold, Opts) of
         true ->
@@ -474,7 +494,7 @@ list_all_files_naive_bkeys(#state{dir=Dir, b_depth = BDepth,
                           "*"                            % key
                          ]),
     % this is slow slow slow
-    [location_to_bkey(State, X) || X <- filelib:wildcard(Glob, Dir)].
+    [location_to_bkey(X, State) || X <- filelib:wildcard(Glob, Dir)].
 
 %% @spec list_all_keys([string()]) -> [{Bucket :: riak_object:bucket(),
 %%                                      Key :: riak_object:key()}]
@@ -508,11 +528,13 @@ location(#state{dir = Dir, b_depth = BDepth, k_depth = KDepth}, {Bucket, Key}) -
             end,
     filename:join([Dir, BDirs, B64, KDirs, K64]).
 
-%% @spec location_to_bkey(state(), string()) ->
+%% @spec location_to_bkey(string(), state()) ->
 %%           {riak_object:bucket(), riak_object:key()}
 %% @doc reconstruct a Riak bucket/key pair, given the location at
 %%      which its object is stored on-disk
-location_to_bkey(#state{b_depth = BDepth, k_depth = KDepth}, Path) ->
+location_to_bkey("/" ++ Path, State) ->
+    location_to_bkey(Path, State);
+location_to_bkey(Path, #state{b_depth = BDepth, k_depth = KDepth}) ->
     [B64|Rest] = drop_from_list(BDepth, string:tokens(Path, "/")),
     [K64] = drop_from_list(KDepth, Rest),
     {decode_bucket(B64), decode_key(K64)}.
@@ -769,7 +791,7 @@ create_or_sanity_check_version_file(Dir, BlockSize, MaxBlocks,
     end.
 
 make_version_path(Dir) ->
-    Dir ++ "/version.data".
+    Dir ++ "/.version.data".                    % Must hide name from globbing!
 
 make_version_file(File, BlockSize, MaxBlocks, BDepth, KDepth) ->
     ok = filelib:ensure_dir(File),
@@ -802,6 +824,96 @@ drop_from_list(N, [_|T]) ->
     drop_from_list(N - 1, T);
 drop_from_list(_N, []) ->
     [].
+
+%% Manual stack management for fold operations.
+%%
+%% * Paths on the stack are relative to #state.dir.
+%% * Paths on the stack all start with "/", but they are not absolute paths!
+
+make_start_stack_objects(_Bucket, #state{b_depth = BDepth}) ->
+    case BDepth of
+        0 ->
+            %% TODO: We have a problem with the version name file here,
+            %%       which could collide with a real bucket name.
+            [glob_buckets];
+        N ->
+            [{glob_bucket_intermediate, 1, N, ""}]
+    end.
+
+%% @doc Reduce (or fold, pick your name) over items in a work stack
+reduce_stack([], _FoldFun, Acc, _State) ->
+    Acc;
+reduce_stack([Op|Rest], FoldFun, Acc, State) ->
+    {PushOps, Acc2} = exec_stack_op(Op, FoldFun, Acc, State),
+    reduce_stack(PushOps ++ Rest, FoldFun, Acc2, State).
+
+exec_stack_op({glob_bucket_intermediate, Level, MaxLevel, MidDir},
+              _FoldFun, Acc, State)
+  when Level < MaxLevel ->
+    Ops = [{glob_bucket_intermediate, Level+1, MaxLevel, MidDir ++ "/" ++Dir}||
+              Dir <- do_glob("*", MidDir, State)],
+    {Ops, Acc};
+exec_stack_op({glob_bucket_intermediate, Level, MaxLevel, MidDir},
+              _FoldFun, Acc, State)
+  when Level == MaxLevel ->
+    Ops = [{glob_bucket, MidDir ++ "/" ++ Dir} ||
+              Dir <- do_glob("*", MidDir, State)],
+    {Ops, Acc};
+exec_stack_op({glob_bucket, MidDir}, _FoldFun, Acc, #state{k_depth = KDepth} = State) ->
+    Ops = [{glob_key_intermediate, 1, KDepth, MidDir ++ "/" ++ Dir} ||
+              Dir <- do_glob("*", MidDir, State)],
+    {Ops, Acc};
+exec_stack_op({glob_key_intermediate, Level, MaxLevel, MidDir},
+              _FoldFun, Acc, State)
+  when Level < MaxLevel ->
+    Ops = [{glob_key_intermediate, Level+1, MaxLevel, MidDir ++ "/" ++ Dir} ||
+              Dir <- do_glob("*", MidDir, State)],
+    {Ops, Acc};
+exec_stack_op({glob_key_intermediate, Level, MaxLevel, MidDir},
+              _FoldFun, Acc, State)
+  when Level == MaxLevel ->
+    Ops = [{glob_key_file, MidDir ++ "/" ++ Dir} ||
+              Dir <- do_glob("*", MidDir, State)],
+    {Ops, Acc};
+exec_stack_op({glob_key_file, MidDir},  _FoldFun, Acc, State) ->
+    Ops = [{key_file, MidDir ++ "/" ++ File} ||
+              File <- do_glob("*", MidDir, State)],
+    {Ops, Acc};
+exec_stack_op({key_file, File},  _FoldFun, Acc, State) ->
+    try
+        {<<?BLOCK_BUCKET_PREFIX, _/binary>> = Bucket,
+         <<UUID:?UUID_BYTES/binary>>} = location_to_bkey(File, State),
+        BKeys = [{Bucket, <<UUID/binary, Block:?BLOCK_FIELD_SIZE>>} ||
+                    Block <- lists:reverse(
+                               enumerate_chunks_in_file(Bucket, UUID, State))],
+        {BKeys, Acc}
+    catch error:_Y ->
+            %% Binary pattern matching or base64 decoding failed, or
+            %% enumerate_chunks_in_file() did something bad.
+            %% TODO: can enumerate_chunks_in_file() fail in a way that will
+            %%       make us skip over useful data?
+            try
+                BKey = location_to_bkey(File, State),
+                {[BKey], Acc}
+            catch _X2:_Y2 ->
+                    %% TODO: shouldn't happen, because all filenames
+                    %% should be encoded with base64fs2, so decoding
+                    %% them should also always work.
+                    io:format("ERROR: key_file ~p: ~p ~p\n", [File, _X2, _Y2]),
+                    {[], Acc}
+            end
+    end;
+exec_stack_op({Bucket, Key} = BKey, FoldFun, Acc, State) ->
+    case get(Bucket, Key, State) of
+        {ok, Value, _S} ->
+            {[], FoldFun(BKey, Value, Acc)};
+        _ ->
+            {[], Acc}
+    end.
+
+%% Remember: all paths on the stack start with "/" but are not absolute.
+do_glob(Glob, Dir, #state{dir = PrefixDir}) ->
+    lists:reverse(filelib:wildcard(Glob, PrefixDir ++ Dir)).
 
 t0() ->
     TestDir = "./delme",
@@ -847,6 +959,25 @@ t1() ->
                                     [{{B, K}, V}|Acc]
                             end, [], [], S6),
     ok.
+
+t2() ->
+    TestDir = "./delme",
+    %% Scribble nonsense stuff for SLF temp debugging purposes
+    B1 = <<?BLOCK_BUCKET_PREFIX, "delme">>,
+    B2 = <<?BLOCK_BUCKET_PREFIX, "delme2">>,
+    B3 = <<?BLOCK_BUCKET_PREFIX, "delme22">>,
+    V0 = <<"value, eh?">>,
+    os:cmd("rm -rf " ++ TestDir),
+    {ok, S} = start(-1, [{fs2_backend_data_root, TestDir},
+                         {fs2_backend_block_size, 1024}]),
+    [{ok, _} = put(B, <<UUID:(16*8), Seq:(2*8)>>, [], V0, ignored, S) ||
+        B <- [B1, B2, B3],
+        UUID <- [44, 88],
+        Seq <- [0,1,2,3]],
+    fold_objects(fun(B, K, V, _Acc) ->
+                         io:format("~p\n", [{B, K, V}])
+                         %% [{B, K, V}|Acc]
+                 end, [], [], S).
 
 %% ===================================================================
 %% EUnit tests
