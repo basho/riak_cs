@@ -156,16 +156,11 @@ upgrade_wrapped_manifests(ListofOrdDicts) ->
     MapFun = fun (Value) -> orddict:map(DictMapFun, Value) end,
     lists:map(MapFun, ListofOrdDicts).
 
-%% TODO:
-%% not sure if there is a better spec for this,
-%% since the input record could be one of several
-%% versions.
-
 %% @doc Upgrade the manifest to the most recent
 %% version of the manifest record. This is so that
 %% _most_ of the codebase only has to deal with
 %% the most recent version of the record.
--spec upgrade_manifest(term()) -> lfs_manifest().
+-spec upgrade_manifest(lfs_manifest() | #lfs_manifest_v2{}) -> lfs_manifest().
 upgrade_manifest(#lfs_manifest_v2{block_size=BlockSize,
                                  bkey=Bkey,
                                  metadata=Metadata,
