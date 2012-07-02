@@ -173,20 +173,17 @@ start(Partition, Config) ->
                         Else2 ->
                             Else2
                     end,
-        %% If the value of DefaultMaxB increases beyond 64, 
-        %% please see the delete code _before_ doing so.
-        DefaultMaxB = 64,
         MaxBlocks = case get_prop_or_env(fs2_backend_max_blocks_per_file,
                                          Config, riak_kv) of
-                        N when is_integer(N), 0 =< N, N =< DefaultMaxB ->
+                        N when is_integer(N), 1 =< N ->
                             N;
                         undefined ->
-                            DefaultMaxB;
+                            ?DEFAULT_MAX_BLOCKS;
                         _ ->
-                            error_logger:warning_msg("~s: invalid max blocks "
-                                                     "value, using ~p\n",
-                                                     [?MODULE, DefaultMaxB]),
-                            DefaultMaxB
+                            error_logger:warning_msg(
+                              "~s: invalid max blocks value, using ~p\n",
+                              [?MODULE, ?DEFAULT_MAX_BLOCKS]),
+                            ?DEFAULT_MAX_BLOCKS
                     end,
         Dir = filename:join([ConfigRoot,PartitionName]),
         BDepth = case get_prop_or_env(
@@ -228,7 +225,7 @@ get(<<?BLOCK_BUCKET_PREFIX, _/binary>> = Bucket,
             {error, not_found, State}
     end;
 get(Bucket, Key, State) ->
-    File = location(State, {Bucket, Key}),
+    File = location(State, Bucket, Key),
     case filelib:is_file(File) of
         false ->
             {error, not_found, State};
@@ -252,11 +249,9 @@ put(Bucket, Key, IndexSpecs, Val, State) ->
                  {ok, state()} |
                  {error, term(), state()}.
 put(<<?BLOCK_BUCKET_PREFIX, _/binary>>,
-    <<_:?UUID_BYTES/binary, BlockNum:?BLOCK_FIELD_SIZE>>,
-    _IndexSpecs, Val, _ValRObj,
-    #state{block_size = BlockSize, max_blocks = MaxBlocks} = State)
-  when size(Val) > BlockSize orelse
-       BlockNum > (MaxBlocks-1) ->
+    <<_:?UUID_BYTES/binary, _:?BLOCK_FIELD_SIZE>>,
+    _IndexSpecs, Val, _ValRObj, #state{block_size = BlockSize} = State)
+  when size(Val) > BlockSize ->
     {error, invalid_user_argument, State};
 put(<<?BLOCK_BUCKET_PREFIX, _/binary>> = Bucket,
     <<UUID:?UUID_BYTES/binary, BlockNum:?BLOCK_FIELD_SIZE>>,
@@ -268,7 +263,7 @@ put(<<?BLOCK_BUCKET_PREFIX, _/binary>> = Bucket,
             {error, Reason, State}
     end;
 put(Bucket, PrimaryKey, _IndexSpecs, Val, _ValRObj, State) ->
-    File = location(State, {Bucket, PrimaryKey}),
+    File = location(State, Bucket, PrimaryKey),
     case filelib:ensure_dir(File) of
         ok         -> {atomic_write(File, Val), State};
         {error, X} -> {error, X, State}
@@ -278,19 +273,15 @@ put(Bucket, PrimaryKey, _IndexSpecs, Val, _ValRObj, State) ->
 -spec delete(riak_object:bucket(), riak_object:key(), [index_spec()], state()) ->
                     {ok, state()} |
                     {error, term(), state()}.
-delete(<<?BLOCK_BUCKET_PREFIX, _/binary>>,
-    <<_:?UUID_BYTES/binary, BlockNum:?BLOCK_FIELD_SIZE>>,
-    _IndexSpecs,
-    #state{max_blocks = MaxBlocks} = State)
-  when BlockNum > (MaxBlocks-1) ->
-    {error, invalid_user_argument, State};
 delete(<<?BLOCK_BUCKET_PREFIX, _/binary>> = Bucket,
-    <<UUID:?UUID_BYTES/binary, _:?BLOCK_FIELD_SIZE>>, _IndexSpecs, State) ->
-    File = location(State, {Bucket, UUID}),
+       <<UUID:?UUID_BYTES/binary, BlockNum:?BLOCK_FIELD_SIZE>>,
+       _IndexSpecs, State) ->
+    Key = convert_blocknum2key(UUID, BlockNum, State),
+    File = location(State, Bucket, Key),
     _ = file:delete(File),
     {ok, State};
 delete(Bucket, Key, _IndexSpecs, State) ->
-    File = location(State, {Bucket, Key}),
+    File = location(State, Bucket, Key),
     case file:delete(File) of
         ok -> {ok, State};
         {error, enoent} -> {ok, State};
@@ -380,8 +371,7 @@ fold_objects(FoldObjectsFun, Acc, Opts, State) ->
 %% and return a fresh reference.
 -spec drop(state()) -> {ok, state()}.
 drop(State=#state{dir=Dir}) ->
-    _ = [file:delete(location(State, BK)) || BK <- list_all_keys(State)],
-    Cmd = io_lib:format("rm -Rf ~s", [Dir]),
+    Cmd = io_lib:format("rm -rf ~s", [Dir]),
     _ = os:cmd(Cmd),
     ok = filelib:ensure_dir(Dir),
     {ok, State}.
@@ -501,9 +491,10 @@ list_all_files_naive_bkeys(#state{dir=Dir, b_depth = BDepth,
 %% @doc Get a list of all bucket/key pairs stored by this backend
 list_all_keys(State) ->
     L = lists:foldl(fun({<<?BLOCK_BUCKET_PREFIX, _/binary>> = Bucket,
-                         <<UUID:?UUID_BYTES/binary>> = _Key}, Acc) ->
-                            Chunks = enumerate_chunks_in_file(Bucket, UUID,
-                                                              State),
+                         <<UUID:?UUID_BYTES/binary,
+                           BlockBase:?BLOCK_FIELD_SIZE>>}, Acc) ->
+                            Chunks = enumerate_chunks_in_file(
+                                       Bucket, UUID, BlockBase, State),
                             ChunkBKeys = [{Bucket, <<UUID:?UUID_BYTES/binary,
                                                      C:?BLOCK_FIELD_SIZE>>} ||
                                              C <- Chunks],
@@ -513,11 +504,11 @@ list_all_keys(State) ->
                     end, [], list_all_files_naive_bkeys(State)),
     lists:reverse(L).
 
-%% @spec location(state(), {riak_object:bucket(), riak_object:key()})
+%% @spec location(state(), riak_object:bucket(), riak_object:key())
 %%          -> string()
 %% @doc produce the file-path at which the object for the given Bucket
 %%      and Key should be stored
-location(#state{dir = Dir, b_depth = BDepth, k_depth = KDepth}, {Bucket, Key}) ->
+location(#state{dir = Dir, b_depth = BDepth, k_depth = KDepth}, Bucket, Key) ->
     B64 = encode_bucket(Bucket),
     K64 = encode_key(Key),
     BDirs = if BDepth > 0 -> filename:join(nest(B64, BDepth));
@@ -595,8 +586,12 @@ unpack_ondisk(<<Crc32:?CRCSIZEFIELD/unsigned,
 unpack_ondisk(_Bin) ->
     bad_crc.
 
-calc_block_offset(BlockNum, #state{block_size = BlockSize}) ->
+calc_block_offset(BlockNum_x, #state{max_blocks = MaxBlocks,
+                                     block_size = BlockSize}) ->
     %% MOSS block numbers start at zero.
+    BlockNum = if BlockNum_x == trailer -> MaxBlocks;
+                  true                  -> (BlockNum_x rem MaxBlocks)
+               end,
     BlockNum * (?HEADER_SIZE + BlockSize).
 
 %% @doc Calculate the largest possible valid block number stored in
@@ -623,7 +618,8 @@ calc_max_block(FileSize, #state{block_size = BlockSize,
     end.
 
 read_block(Bucket, UUID, BlockNum, #state{block_size = BlockSize} = State) ->
-    File = location(State, {Bucket, UUID}),
+    Key = convert_blocknum2key(UUID, BlockNum, State),
+    File = location(State, Bucket, Key),
     Offset = calc_block_offset(BlockNum, State),
     try
         {ok, FH} = file:open(File, [read, raw, binary]),
@@ -651,11 +647,12 @@ put_block(Bucket, UUID, BlockNum, Val, ValRObj, State) ->
     put_block_t_marker_check(Bucket, UUID, BlockNum, Val, ValRObj, State).
 
 put_block_t_marker_check(Bucket, UUID, BlockNum, Val, ValRObj, State) ->
-    File = location(State, {Bucket, UUID}),
+    Key = convert_blocknum2key(UUID, BlockNum, State),
+    File = location(State, Bucket, Key),
     FI_perhaps = file:read_file_info(File),
     case FI_perhaps of
         {ok, FI} ->
-            if FI#file_info.mode band ?TOMBSTONE_MODE_MARKER == 1 ->
+            if FI#file_info.mode band ?TOMBSTONE_MODE_MARKER > 0 ->
                     %% This UUID + block of chunks has got a tombstone
                     %% marker set, so there's nothing more to do here.
                     ok;
@@ -687,8 +684,7 @@ put_block_t_check(BlockNum, Val, ValRObj, File, FI_perhaps, State) ->
             put_block3(BlockNum, Val, File, FI_perhaps, State)
     end.
 
-put_block3(BlockNum, Val, File, FI_perhaps,
-           #state{max_blocks = MaxBlocks} = State) ->
+put_block3(BlockNum, Val, File, FI_perhaps, State) ->
     Offset = calc_block_offset(BlockNum, State),
     OutOfOrder_p = check_trailer_ooo(FI_perhaps, BlockNum, State),
     try
@@ -700,7 +696,7 @@ put_block3(BlockNum, Val, File, FI_perhaps,
                     if OutOfOrder_p ->
                             %% It's not an error to write more than one trailer
                             Tr = make_trailer(#t{written_sequentially = false}),
-                            TrOffset = calc_block_offset(MaxBlocks, State),
+                            TrOffset = calc_block_offset(trailer, State),
                             {ok, TrOffset} = file:position(FH, {bof, TrOffset}),
                             ok = file:write(FH, Tr);
                        true ->
@@ -729,8 +725,10 @@ riak_object_is_deleted(delete_op_requested) ->
 riak_object_is_deleted(ValRObj) ->
     catch riak_kv_util:is_x_deleted(ValRObj).
 
-enumerate_chunks_in_file(Bucket, UUID, #state{max_blocks=MaxBlocks} = State) ->
-    Path = location(State, {Bucket, UUID}),
+enumerate_chunks_in_file(Bucket, UUID, BlockBase,
+                         #state{max_blocks=MaxBlocks} = State) ->
+    Key = convert_blocknum2key(UUID, BlockBase, State),
+    Path = location(State, Bucket, Key),
     case file:read_file_info(Path) of
         {error, _} ->
             [];
@@ -752,18 +750,18 @@ enumerate_chunks_in_file(Bucket, UUID, #state{max_blocks=MaxBlocks} = State) ->
                                    true
                            end
             end,
-            [BlockNum || BlockNum <- lists:seq(0, MaxBlock),
-                         Filt(BlockNum)]
+            [BlockBase + BlockNum || BlockNum <- lists:seq(0, MaxBlock),
+                                     Filt(BlockNum)]
     end.
 
 %% @doc Is the next block number we wish to write out-of-order?
 
-check_trailer_ooo({error, enoent}, BlockNum, _State) ->
+check_trailer_ooo({error, enoent}, BlockNum, #state{max_blocks = MaxBlocks}) ->
     %% BlockNum 0 is ok, all others are out of order
-    BlockNum /= 0;
-check_trailer_ooo({ok, FI}, BlockNum, State) ->
+    (BlockNum rem MaxBlocks) /= 0;
+check_trailer_ooo({ok, FI}, BlockNum, #state{max_blocks = MaxBlocks} = State) ->
     MaxBlock = calc_max_block(FI#file_info.size, State),
-    BlockNum == MaxBlock - 1.
+    (BlockNum rem MaxBlocks) == MaxBlock - 1.
 
 make_trailer(Term) ->
     Bin = iolist_to_binary(pack_ondisk(term_to_binary(Term))),
@@ -882,9 +880,11 @@ exec_stack_op({glob_key_file, MidDir},  _FoldFun, Acc, State) ->
 exec_stack_op({key_file, File},  _FoldFun, Acc, State) ->
     try
         {<<?BLOCK_BUCKET_PREFIX, _/binary>> = Bucket,
-         <<UUID:?UUID_BYTES/binary>>} = location_to_bkey(File, State),
+         <<UUID:?UUID_BYTES/binary, BlockBase:?BLOCK_FIELD_SIZE>>} =
+            location_to_bkey(File, State),
         BKeys = [{Bucket, <<UUID/binary, Block:?BLOCK_FIELD_SIZE>>} ||
-                    Block <- enumerate_chunks_in_file(Bucket, UUID, State)],
+                    Block <- enumerate_chunks_in_file(Bucket, UUID, BlockBase,
+                                                      State)],
         {BKeys, Acc}
     catch error:_Y ->
             %% Binary pattern matching or base64 decoding failed, or
@@ -914,12 +914,15 @@ exec_stack_op({Bucket, Key} = BKey, FoldFun, Acc, State) ->
 do_glob(Glob, Dir, #state{dir = PrefixDir}) ->
     filelib:wildcard(Glob, PrefixDir ++ Dir).
 
+convert_blocknum2key(UUID, BlockNum, #state{max_blocks = MaxBlocks}) ->
+    <<UUID/binary, ((BlockNum div MaxBlocks) * MaxBlocks):?BLOCK_FIELD_SIZE>>.
+
 t0() ->
     TestDir = "./delme",
     Bucket = <<?BLOCK_BUCKET_PREFIX, "delme">>,
-    K0 = <<0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0>>,
+    K0 = <<0:(?UUID_BYTES*8), 0:?BLOCK_FIELD_SIZE>>,
     V0 = <<42:64>>,
-    K1 = <<0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1>>,
+    K1 = <<0:(?UUID_BYTES*8), 1:?BLOCK_FIELD_SIZE>>,
     V1 = <<43:64>>,
     os:cmd("rm -rf " ++ TestDir),
     {ok, S} = start(-1, [{fs2_backend_data_root, TestDir},
@@ -934,9 +937,9 @@ t1() ->
     #t{} = #t{},
     TestDir = "./delme",
     Bucket = <<?BLOCK_BUCKET_PREFIX, "delme">>,
-    K0 = <<0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0>>,
+    K0 = <<0:(?UUID_BYTES*8), 0:?BLOCK_FIELD_SIZE>>,
     V0 = <<100:64>>,
-    K1 = <<0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1>>,
+    K1 = <<0:(?UUID_BYTES*8), 1:?BLOCK_FIELD_SIZE>>,
     V1 = <<101:64>>,
     os:cmd("rm -rf " ++ TestDir),
     {ok, S} = start(-1, [{fs2_backend_data_root, TestDir},
@@ -968,20 +971,22 @@ t2() ->
     os:cmd("rm -rf " ++ TestDir),
     {ok, S} = start(-1, [{fs2_backend_data_root, TestDir},
                          {fs2_backend_block_size, 1024}]),
-    BKVs = [{B, <<UUID:(16*8), Seq:(2*8)>>,
+    BKVs = [{B, <<UUID:(?UUID_BYTES*8), Seq:?BLOCK_FIELD_SIZE>>,
              list_to_binary(["val ", integer_to_list(Seq)])} ||
                B <- [B1, B2, B3],
                UUID <- [44, 88],
-               Seq <- lists:seq(0,100)],
+               %% Seq <- lists:seq(0, 5)],
+               Seq <- lists:seq(0, ?DEFAULT_MAX_BLOCKS + 5)],
     [{ok, _} = put(B, K, [], V, ignored, S) || {B, K, V} <- BKVs],
     {ok, Res} = fold_objects(fun(B, K, V, Acc) ->
                                      [{B, K, V}|Acc]
                              end, [], [], S),
-    io:format("length(BKVs) ~p length(Res) ~p\n", [length(BKVs), length(Res)]),
+    %% Lengths are the same
     true = (length(BKVs) == length(Res)),
-    io:format("BKVs ~p\n", [lists:sort(BKVs)]),
-    io:format("Res  ~p\n", [lists:reverse(Res)]),
-    true = (lists:sort(BKVs) == lists:reverse(Res)).
+    %% The original data's sorted order is the same as our traversal
+    %% order (once we reverse the fold).
+    true = (lists:sort(BKVs) == lists:reverse(Res)),
+    ok.
 
 %% ===================================================================
 %% EUnit tests
@@ -993,6 +998,9 @@ t0_test() ->
 
 t1_test() ->
     t1().
+
+t2_test() ->
+    t2().
 
 eqc_filter_delete(Bucket, Key, BKVs) ->
     try
