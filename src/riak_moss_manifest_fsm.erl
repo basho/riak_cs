@@ -93,11 +93,11 @@ get_active_manifest(Pid) ->
 get_specific_manifest(Pid, UUID) ->
     case gen_fsm:sync_send_event(Pid, get_manifests, infinity) of
         {ok, Manifests} ->
-            try orddict:fetch(UUID, Manifests) of
-                Value ->
-                    {ok, Value}
-            catch error:function_clause ->
-                {error, notfound}
+            case orddict:fetch(UUID, Manifests) of
+                {ok, _}=Result ->
+                    Result;
+                error ->
+                    {error, notfound}
             end;
         {error, notfound}=NotFound ->
             NotFound
