@@ -119,7 +119,7 @@ mark_manifests({error, _Reason}=Error, _, _, _) ->
                                    {error, term()}) ->
                                           [cs_uuid_and_manifest()].
 get_pending_delete_manifests({ok, MarkedManifests}) ->
-    riak_cs_manifest_utils:filter_pending_delete_manifests(MarkedManifests);
+    riak_cs_manifest_utils:filter_pending_delete_uuid_manifests(MarkedManifests);
 get_pending_delete_manifests({error, Reason}) ->
     _ = lager:warning("Failed to get pending_delete manifests. Reason: ~p",
                       [Reason]),

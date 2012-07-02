@@ -28,7 +28,7 @@ start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
 %% @doc Start a `riak_cs_delete_fsm' child process.
--spec start_delete_fsm(node(), supervisor:child_spec()) ->
+-spec start_delete_fsm(node(), list()) ->
                               supervisor:startchild_ret().
 start_delete_fsm(Node, Args) ->
     supervisor:start_child({?MODULE, Node}, Args).
