@@ -213,7 +213,7 @@ upgrade_manifest(?MANIFEST{}=M) ->
 -spec filter_manifests_by_state(orddict:orddict(), [atom()]) -> orddict:orddict().
 filter_manifests_by_state(Dict, AcceptedStates) ->
     AcceptManifest =
-        fun ({_, ?MANIFEST{state=State}}) ->
+        fun (_, ?MANIFEST{state=State}) ->
                 lists:member(State, AcceptedStates)
         end,
     orddict:filter(AcceptManifest, Dict).
