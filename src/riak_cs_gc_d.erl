@@ -16,8 +16,8 @@
          status/0,
          manual_batch/1,
          cancel_batch/0,
-         pause_batch/0,
-         resume_batch/0,
+         pause/0,
+         resume/0,
          set_interval/1]).
 
 %% gen_fsm callbacks
@@ -39,6 +39,7 @@
          code_change/4]).
 
 -include("riak_moss.hrl").
+-include("riak_cs_gc_d.hrl").
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -52,22 +53,6 @@
 -endif.
 
 -define(SERVER, ?MODULE).
-
--record(state, {
-          interval :: infinity | non_neg_integer(),
-          last :: undefined | calendar:datetime(), % the last time a deletion was scheduled
-          next :: undefined | calendar:datetime(), % the next scheduled gc time
-          riak :: undefined | pid(), % Riak connection pid
-          current_files :: [lfs_manifest()],
-          current_fileset :: twop_set:twop_set(),
-          current_riak_object :: riakc_obj:riakc_obj(),
-          batch_start :: undefined | non_neg_integer(), % start of the current gc interval
-          batch_count=0 :: non_neg_integer(),
-          batch_skips=0 :: non_neg_integer(), % Count of filesets skipped in this batch
-          batch=[] :: undefined | [binary()], % `undefined' only for testing
-          pause_state :: atom(), % state of the fsm when a delete batch was paused
-          delete_fsm_pid :: pid()
-         }).
 
 %%%===================================================================
 %%% API
@@ -104,19 +89,17 @@ manual_batch(Options) ->
 cancel_batch() ->
     gen_fsm:sync_send_event(?SERVER, cancel_batch, infinity).
 
-%% @doc Pause the calculation currently in progress.  Returns `ok' if
-%% a batch was paused, or `{error, no_batch}' if there was no batch in
-%% progress.  Also returns `ok' if there was a batch in progress that
+%% @doc Pause the garbage collection daemon.  Returns `ok' if
+%% the daemon was paused, or `{error, already_paused}' if the daemon
 %% was already paused.
-pause_batch() ->
-    gen_fsm:sync_send_event(?SERVER, pause_batch, infinity).
+pause() ->
+    gen_fsm:sync_send_event(?SERVER, pause, infinity).
 
-%% @doc Resume the batch currently in progress.  Returns `ok' if a
-%% batch was resumed, or `{error, no_batch}' if there was no batch in
-%% progress.  Also returns `ok' if there was a batch in progress that
-%% was not paused.
-resume_batch() ->
-    gen_fsm:sync_send_event(?SERVER, resume_batch, infinity).
+%% @doc Resume the garbage collection daemon.  Returns `ok' if the
+%% daemon was resumed, or `{error, not_paused}' if the daemon was
+%% not paused.
+resume() ->
+    gen_fsm:sync_send_event(?SERVER, resume, infinity).
 
 %% @doc Adjust the interval at which the daemon attempts to perform
 %% a garbage collection sweep. Setting the interval to a value of
@@ -141,8 +124,11 @@ init(Args) ->
 %% Asynchronous events
 
 %% @doc Transitions out of idle are all synchronous events
-idle(_, State) ->
-    {next_state, idle, State}.
+idle(_, State=#state{interval_remaining=undefined}) ->
+    {next_state, idle, State};
+idle(_, State=#state{interval_remaining=IntervalRemaining}) ->
+    TimerRef = erlang:send_after(IntervalRemaining, self(), start_batch),
+    {next_state, idle, State#state{timer_ref=TimerRef}}.
 
 %% @doc Async transitions from `fetching_next_fileset' are all due to
 %% messages the FSM sends itself, in order to have opportunities to
@@ -232,10 +218,12 @@ idle({manual_batch, Options}, _From, State) ->
     {reply, ok, fetching_next_fileset, NewState};
 idle(cancel_batch, _From, State) ->
     {reply, {error, no_batch}, idle, State};
-idle(pause_batch, _From, State) ->
-    {reply, {error, no_batch}, idle, State};
-idle(resume_batch, _From, State) ->
-    {reply, {error, no_batch}, idle, State};
+idle(pause, _From, State) ->
+    _ = lager:info("Pausing garbage collection"),
+    UpdState = idle_pause_state(State),
+    {reply, ok, paused, UpdState};
+idle(resume, _From, State) ->
+    {reply, {error, not_paused}, idle, State};
 idle({set_interval, Interval}, _From, State) ->
     {reply, ok, idle, State#state{interval=Interval}};
 idle(_, _From, State) ->
@@ -247,9 +235,11 @@ fetching_next_fileset(status, _From, State) ->
 fetching_next_fileset({manual_batch, _Options}, _From, State) ->
     %% this is the manual user request to begin a batch
     {reply, {error, already_deleting}, fetching_next_fileset, State};
-fetching_next_fileset(pause_batch, _From, State) ->
+fetching_next_fileset(pause, _From, State) ->
     _ = lager:info("Pausing garbage collection"),
     {reply, ok, paused, State#state{pause_state=fetching_next_fileset}};
+fetching_next_fileset(resume, _From, State) ->
+    {reply, {error, not_paused}, fetching_next_fileset, State};
 fetching_next_fileset(cancel_batch, _From, State) ->
     cancel_batch(State);
 fetching_next_fileset({set_interval, Interval}, _From, State) ->
@@ -263,9 +253,11 @@ initiating_file_delete(status, _From, State) ->
 initiating_file_delete({manual_batch, _Options}, _From, State) ->
     %% this is the manual user request to begin a batch
     {reply, {error, already_deleting}, initiating_file_delete, State};
-initiating_file_delete(pause_batch, _From, State) ->
+initiating_file_delete(pause, _From, State) ->
     _ = lager:info("Pausing garbage collection"),
     {reply, ok, paused, State#state{pause_state=initiating_file_delete}};
+initiating_file_delete(resume, _From, State) ->
+    {reply, {error, not_paused}, initiating_file_delete, State};
 initiating_file_delete(cancel_batch, _From, State) ->
     cancel_batch(State);
 initiating_file_delete({set_interval, Interval}, _From, State) ->
@@ -296,9 +288,11 @@ waiting_file_delete(status, _From, State) ->
 waiting_file_delete({manual_batch, _Options}, _From, State) ->
     %% this is the manual user request to begin a batch
     {reply, {error, already_deleting}, waiting_file_delete, State};
-waiting_file_delete(pause_batch, _From, State) ->
+waiting_file_delete(pause, _From, State) ->
     _ = lager:info("Pausing garbage collection"),
     {reply, ok, paused, State#state{pause_state=waiting_file_delete}};
+waiting_file_delete(resume, _From, State) ->
+    {reply, {error, not_paused}, waiting_file_delete, State};
 waiting_file_delete(cancel_batch, _From, State) ->
     cancel_batch(State);
 waiting_file_delete({set_interval, Interval}, _From, State) ->
@@ -328,7 +322,9 @@ paused({Pid, {error, _Reason}}, _From, State=#state{delete_fsm_pid=Pid,
 paused(status, _From, State) ->
     Reply = {ok, {paused, status_data(State)}},
     {reply, Reply, paused, State};
-paused(resume_batch, _From, State=#state{pause_state=PauseState}) ->
+paused(pause, _From, State) ->
+    {reply, {error, already_paused}, paused, State};
+paused(resume, _From, State=#state{pause_state=PauseState}) ->
     _ = lager:info("Resuming garbage collection"),
     gen_fsm:send_event(?SERVER, continue),
     %% @TODO Differences in the fsm state and the state record
@@ -487,6 +483,26 @@ finish_file_delete(_, FileSet, RiakObj, RiakPid) ->
     _ = riak_moss_utils:put_with_no_meta(RiakPid, UpdRiakObj),
     ok.
 
+%% @doc Update the state record for a transition from `idle' to
+%% `paused'.
+-spec idle_pause_state(#state{}) -> #state{}.
+idle_pause_state(State=#state{interval=infinity,
+                              timer_ref=TimerRef}) ->
+    %% Cancel the timer in case the interval has
+    %% recently be set to `infinity'.
+    erlang:cancel_timer(TimerRef),
+    State#state{pause_state=idle,
+                interval_remaining=undefined};
+idle_pause_state(State=#state{timer_ref=TimerRef}) ->
+    case erlang:cancel_timer(TimerRef) of
+        false ->
+            Remainder = 0;
+        Remainder ->
+            ok
+    end,
+    State#state{pause_state=idle,
+                interval_remaining=Remainder}.
+
 %% @doc Setup the automatic trigger to start the next
 %% scheduled batch calculation.
 -spec schedule_next(#state{}) -> #state{}.
@@ -499,10 +515,11 @@ schedule_next(#state{batch_start=Current,
              riak_cs_gc:timestamp() + Interval),
     _ = lager:debug("Scheduling next garbage collection for ~p",
                     [Next]),
-    erlang:send_after(Interval*1000, self(), start_batch),
+    TimerRef = erlang:send_after(Interval*1000, self(), start_batch),
     State#state{batch_start=undefined,
                 last=Current,
-                next=Next}.
+                next=Next,
+                timer_ref=TimerRef}.
 
 %% @doc Actually kick off the batch.  After calling this function, you
 %% must advance the FSM state to `fetching_next_fileset'.
