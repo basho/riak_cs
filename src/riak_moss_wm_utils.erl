@@ -20,7 +20,10 @@
          find_and_auth_user/3,
          validate_auth_header/3,
          deny_access/2,
-         extract_name/1]).
+         extract_name/1,
+         normalize_headers/1,
+         extract_amazon_headers/1,
+         extract_user_metadata/1]).
 
 -include("riak_moss.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
@@ -307,9 +310,61 @@ extract_name(?MOSS_USER{name=Name}) ->
 extract_name(_) ->
     "-unknown-".
 
+extract_amazon_headers(Headers) ->
+    FilterFun =
+        fun({K, V}, Acc) ->
+                case lists:prefix("x-amz-", K) of
+                    true ->
+                        V2 = unicode:characters_to_binary(V, utf8),
+                        [[K, ":", V2, "\n"] | Acc];
+                    false ->
+                        Acc
+                end
+        end,
+    ordsets:from_list(lists:foldl(FilterFun, [], Headers)).
+
+%% @doc Extract user metadata ("x-amz-meta") from request header
+%% copied from riak_moss_s3_auth.erl
+extract_user_metadata(RD) ->
+    extract_metadata(normalize_headers(RD)).
+
+get_request_headers(RD) ->
+    mochiweb_headers:to_list(wrq:req_headers(RD)).
+
+normalize_headers(RD) ->
+    Headers = get_request_headers(RD),
+    FilterFun =
+        fun({K, V}, Acc) ->
+                LowerKey = string:to_lower(any_to_list(K)),
+                [{LowerKey, V} | Acc]
+        end,
+    ordsets:from_list(lists:foldl(FilterFun, [], Headers)).
+
+extract_metadata(Headers) ->
+    FilterFun =
+        fun({K, V}, Acc) ->
+                case lists:prefix("x-amz-meta-", K) of
+                    true ->
+                        V2 = unicode:characters_to_list(V, utf8),
+                        [{K, V2} | Acc];
+                    false ->
+                        Acc
+                end
+        end,
+    ordsets:from_list(lists:foldl(FilterFun, [], Headers)).
+
 %% ===================================================================
 %% Internal functions
 %% ===================================================================
+
+any_to_list(V) when is_list(V) ->
+    V;
+any_to_list(V) when is_atom(V) ->
+    atom_to_list(V);
+any_to_list(V) when is_binary(V) ->
+    binary_to_list(V);
+any_to_list(V) when is_integer(V) ->
+    integer_to_list(V).
 
 %% @doc Get an ISO 8601 formatted timestamp representing
 %% current time.
