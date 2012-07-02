@@ -222,29 +222,27 @@ idle(Msg, _From, State) ->
 fetching_next_fileset(pause, _From, State) ->
     _ = lager:info("Pausing garbage collection"),
     {reply, ok, paused, State#state{pause_state=fetching_next_fileset}};
-fetching_next_fileset(resume, _From, State) ->
-    {reply, {error, not_paused}, fetching_next_fileset, State};
 fetching_next_fileset(cancel_batch, _From, State) ->
     cancel_batch(State);
 fetching_next_fileset({set_interval, Interval}, _From, State) ->
     {reply, ok, fetching_next_fileset, State#state{interval=Interval}};
 fetching_next_fileset(Msg, _From, State) ->
     Common = [{status, {ok, {fetching_next_fileset, status_data(State)}}},
-              {manual_batch, {error, already_deleting}}],
+              {manual_batch, {error, already_deleting}},
+              {resume, {error, not_paused}}],
     {reply, handle_common_sync_reply(Msg, Common, State), fetching_next_fileset, State}.
 
 initiating_file_delete(pause, _From, State) ->
     _ = lager:info("Pausing garbage collection"),
     {reply, ok, paused, State#state{pause_state=initiating_file_delete}};
-initiating_file_delete(resume, _From, State) ->
-    {reply, {error, not_paused}, initiating_file_delete, State};
 initiating_file_delete(cancel_batch, _From, State) ->
     cancel_batch(State);
 initiating_file_delete({set_interval, Interval}, _From, State) ->
     {reply, ok, initiating_file_delete, State#state{interval=Interval}};
 initiating_file_delete(Msg, _From, State) ->
     Common = [{status, {ok, {initiating_file_delete, status_data(State)}}},
-              {manual_batch, {error, already_deleting}}],
+              {manual_batch, {error, already_deleting}},
+              {resume, {error, not_paused}}],
     {reply, handle_common_sync_reply(Msg, Common, State), initiating_file_delete, State}.
 
 waiting_file_delete({Pid, ok}, _From,
@@ -256,15 +254,14 @@ waiting_file_delete({Pid, {error, _Reason}}, _From,
 waiting_file_delete(pause, _From, State) ->
     _ = lager:info("Pausing garbage collection"),
     {reply, ok, paused, State#state{pause_state=waiting_file_delete}};
-waiting_file_delete(resume, _From, State) ->
-    {reply, {error, not_paused}, waiting_file_delete, State};
 waiting_file_delete(cancel_batch, _From, State) ->
     cancel_batch(State);
 waiting_file_delete({set_interval, Interval}, _From, State) ->
     {reply, ok, waiting_file_delete, State#state{interval=Interval}};
 waiting_file_delete(Msg, _From, State) ->
     Common = [{status, {ok, {waiting_file_delete, status_data(State)}}},
-              {manual_batch, {error, already_deleting}}],
+              {manual_batch, {error, already_deleting}},
+              {resume, {error, not_paused}}],
     {reply, handle_common_sync_reply(Msg, Common, State), waiting_file_delete, State}.
 
 paused({Pid, ok}, _From, State=#state{delete_fsm_pid=Pid}) ->
