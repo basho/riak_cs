@@ -142,13 +142,11 @@ filter_pending_delete_uuid_manifests(Dict) ->
 
 %% @doc Remove all manifests that require pruning,
 %%      see needs_pruning() for definition of needing pruning.
--spec prune(orddict:orddict(binary(), lfs_manifest())) ->
-    orddict:orddict(binary(), lfs_manifest()).
+-spec prune(orddict:orddict()) -> orddict:orddict().
 prune(Dict) ->
     prune(Dict, erlang:now()).
 
--spec prune(orddict:orddict(binary(), lfs_manifest()), erlang:timestamp()) ->
-    orddict:orddict(binary(), lfs_manifest()).
+-spec prune(orddict:orddict(), erlang:timestamp()) -> orddict:orddict().
 prune(Dict, Time) ->
     orddict:from_list(
       [KV || {_K, V}=KV <- orddict:to_list(Dict), not (needs_pruning(V, Time))]
