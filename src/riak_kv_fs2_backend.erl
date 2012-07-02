@@ -968,17 +968,20 @@ t2() ->
     os:cmd("rm -rf " ++ TestDir),
     {ok, S} = start(-1, [{fs2_backend_data_root, TestDir},
                          {fs2_backend_block_size, 1024}]),
-    [{ok, _} = put(B, <<UUID:(16*8), Seq:(2*8)>>, [],
-                   list_to_binary(["val ", integer_to_list(Seq)]),
-                   ignored, S) ||
-        B <- [B1, B2, B3],
-        UUID <- [44, 88],
-        Seq <- lists:seq(0,20)],
-        %% Seq <- [0,1,2,3]],
-    fold_objects(fun(B, K, V, _Acc) ->
-                         io:format("~p\n", [{B, K, V}])
-                         %% [{B, K, V}|Acc]
-                 end, [], [], S).
+    BKVs = [{B, <<UUID:(16*8), Seq:(2*8)>>,
+             list_to_binary(["val ", integer_to_list(Seq)])} ||
+               B <- [B1, B2, B3],
+               UUID <- [44, 88],
+               Seq <- lists:seq(0,100)],
+    [{ok, _} = put(B, K, [], V, ignored, S) || {B, K, V} <- BKVs],
+    {ok, Res} = fold_objects(fun(B, K, V, Acc) ->
+                                     [{B, K, V}|Acc]
+                             end, [], [], S),
+    io:format("length(BKVs) ~p length(Res) ~p\n", [length(BKVs), length(Res)]),
+    true = (length(BKVs) == length(Res)),
+    io:format("BKVs ~p\n", [lists:sort(BKVs)]),
+    io:format("Res  ~p\n", [lists:reverse(Res)]),
+    true = (lists:sort(BKVs) == lists:reverse(Res)).
 
 %% ===================================================================
 %% EUnit tests
