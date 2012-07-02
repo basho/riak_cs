@@ -11,7 +11,7 @@ cd $RUNNER_RUN_DIR
 
 # Check the first argument for instructions
 case "$1" in
-    batch|status|pause|resume|cancel)
+    batch|status|pause|resume|cancel|set-interval)
         # Make sure the local node IS running
         RES=`$NODETOOL ping`
         if [ "$RES" != "pong" ]; then
@@ -22,7 +22,7 @@ case "$1" in
         $NODETOOL rpc riak_cs_gc_console $@
         ;;
     *)
-        echo "Usage: $SCRIPT { batch|status|pause|resume|cancel }"
+        echo "Usage: $SCRIPT { batch|status|pause|resume|cancel|set-interval }"
         exit 1
         ;;
 esac
