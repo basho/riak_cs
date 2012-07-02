@@ -102,7 +102,7 @@ handle_batch_cancellation({error, no_batch}) ->
 handle_pause(ok) ->
     output("The garbage collection daemon was paused.");
 handle_pause({error, already_paused}) ->
-    output("No garbage collection daemon was already paused.").
+    output("The garbage collection daemon was already paused.").
 
 handle_resumption(ok) ->
     output("The garbage collection daemon was resumed.");
@@ -122,7 +122,7 @@ print_state(fetching_next_filest) ->
     output("A garbage collection batch is in progress");
 print_state(initiating_file_delete) ->
     output("A garbage collection batch is in progress");
-print_state(waiting_filel_delete) ->
+print_state(waiting_file_delete) ->
     output("A garbage collection batch is in progress");
 print_state(paused) ->
     output("A garbage collection batch is currently paused").
