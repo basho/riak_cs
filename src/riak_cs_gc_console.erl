@@ -12,7 +12,8 @@
          status/1,
          pause/1,
          resume/1,
-         cancel/1
+         cancel/1,
+         'set-interval'/1
         ]).
 
 -define(SAFELY(Code, Description),
@@ -44,10 +45,13 @@ cancel(_Opts) ->
     ?SAFELY(cancel_batch(), "Canceling the garbage collection batch").
 
 pause(_Opts) ->
-    ?SAFELY(pause_batch(), "Pausing the garbage collection batch").
+    ?SAFELY(pause(), "Pausing the garbage collection daemon").
 
 resume(_Opts) ->
-    ?SAFELY(resume_batch(), "Resuming the garbage collection batch").
+    ?SAFELY(resume(), "Resuming the garbage collection daemon").
+
+'set-interval'(Opts) ->
+    ?SAFELY(set_interval(parse_interval_opts(Opts)), "Setting the garbage collection interval").
 
 %%%===================================================================
 %%% Internal functions
@@ -59,14 +63,23 @@ start_batch() ->
 get_status() ->
     handle_status(riak_cs_gc_d:status()).
 
-pause_batch() ->
-    handle_batch_pause(riak_cs_gc_d:pause_batch()).
-
 cancel_batch() ->
     handle_batch_cancellation(riak_cs_gc_d:cancel_batch()).
 
-resume_batch() ->
-    handle_batch_resumption(riak_cs_gc_d:resume_batch()).
+pause() ->
+    handle_pause(riak_cs_gc_d:pause()).
+
+resume() ->
+    handle_resumption(riak_cs_gc_d:resume()).
+
+set_interval(undefined) ->
+    output("Error: No interval value specified");
+set_interval(Interval) when is_integer(Interval) ->
+    output("The garbage collection interval was updated."),
+    riak_cs_gc_d:set_interval(Interval);
+set_interval({'EXIT', _}) ->
+    output("Error: Invalid interval specified.").
+
 
 handle_batch_start(ok) ->
     output("Garbage collection batch started."),
@@ -81,20 +94,20 @@ handle_status({ok, {State, Details}}) ->
 handle_status(_) ->
     ok.
 
-handle_batch_pause(ok) ->
-    output("The garbage collection batch was paused.");
-handle_batch_pause({error, no_batch}) ->
-    output("No garbage collection batch was running.").
-
 handle_batch_cancellation(ok) ->
     output("The garbage collection batch was canceled.");
 handle_batch_cancellation({error, no_batch}) ->
     output("No garbage collection batch was running.").
 
-handle_batch_resumption(ok) ->
-    output("The garbage collection batch was resumed.");
-handle_batch_resumption({error, no_batch}) ->
-    output("No garbage collection batch was running.").
+handle_pause(ok) ->
+    output("The garbage collection daemon was paused.");
+handle_pause({error, already_paused}) ->
+    output("No garbage collection daemon was already paused.").
+
+handle_resumption(ok) ->
+    output("The garbage collection daemon was resumed.");
+handle_resumption({error, not_paused}) ->
+    output("The garbage collection daemon was not paused.").
 
 output(Output) ->
     io:format(Output ++ "~n").
@@ -146,3 +159,8 @@ human_time(undefined) -> "unknown/never";
 human_time(Seconds) when is_integer(Seconds) ->
     human_time(calendar:gregorian_seconds_to_datetime(Seconds));
 human_time(Datetime)  -> rts:iso8601(Datetime).
+
+parse_interval_opts([]) ->
+    undefined;
+parse_interval_opts([Interval | _]) ->
+    catch list_to_integer(Interval).
