@@ -21,7 +21,7 @@
 %% 16 bits & 1MB block size = 64GB max object size
 %% 24 bits & 1MB block size = 16TB max object size
 %% 32 bits & 1MB block size = 4PB max object size
--define(BLOCK_FIELD_SIZE, 16).
+-define(BLOCK_FIELD_SIZE, 32).
 
 %% druuid:v4() uses 16 bytes in raw form.
 -define(UUID_BYTES, 16).
@@ -29,6 +29,8 @@
 -define(OBJECT_BUCKET_PREFIX, "0o:").       % Version # = 0
 -define(BLOCK_BUCKET_PREFIX, "0b:").        % Version # = 0
 
-%% TODO: Make this configurable via app env?
--define(CONTIGUOUS_BLOCKS, 16).
-
+%% Default maximum number of fixed-size chunks per on-disk file
+%% Overridden by 'fs2_backend_max_blocks_per_file' app env var.
+-define(DEFAULT_MAX_BLOCKS, 64).
+%% (N.B.: The block size ('fs2_backend_block_size' app env var)
+%% does not have a predefined size yet.)
