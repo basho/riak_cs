@@ -37,9 +37,9 @@
                 manifest :: lfs_manifest(),
                 riakc_pid :: pid(),
                 delete_blocks_remaining :: ordsets:ordset(integer()),
-                unacked_deletes=ordsets:new(),
+                unacked_deletes=ordsets:new() :: ordsets:ordset(integer()),
                 all_delete_workers :: list(pid()),
-                free_deleters :: ordsets:new()}).
+                free_deleters = ordsets:new() :: ordsets:ordset(pid())}).
 
 -type state() :: #state{}.
 
