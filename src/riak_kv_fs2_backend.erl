@@ -110,7 +110,7 @@
 -compile(export_all).
 -ifdef(EQC).
 %% EQC testing assistants
--export([eqc_filter_delete/3]).
+-export([eqc_filter_delete/3, eqc_filter_list_keys/2]).
 -export([prop_nest_ordered/0, eqc_nest_tester/0]).
 -include_lib("eqc/include/eqc.hrl").
 -endif.
@@ -1043,6 +1043,10 @@ eqc_filter_delete(Bucket, Key, BKVs) ->
     catch error:{badmatch, _} ->
             BKVs
     end.
+
+eqc_filter_list_keys(Keys, S) ->
+    [BKey || {Bucket, Key} = BKey <- Keys,
+             (catch element(1, get(Bucket, Key, S))) == ok].
 
 -ifdef(TEST_IN_RIAK_KV).
 
