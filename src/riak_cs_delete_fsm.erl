@@ -39,7 +39,8 @@
                 delete_blocks_remaining :: ordsets:ordset(integer()),
                 unacked_deletes=ordsets:new() :: ordsets:ordset(integer()),
                 all_delete_workers :: list(pid()),
-                free_deleters = ordsets:new() :: ordsets:ordset(pid())}).
+                free_deleters = ordsets:new() :: ordsets:ordset(pid()),
+                deleted_blocks = 0 :: non_neg_integer()}).
 
 -type state() :: #state{}.
 
@@ -77,7 +78,8 @@ prepare(timeout, State) ->
 deleting({block_deleted, {ok, BlockID}, DeleterPid},
     State=#state{manifest=Manifest,
                  free_deleters=FreeDeleters,
-                 unacked_deletes=UnackedDeletes}) ->
+                 unacked_deletes=UnackedDeletes,
+                 deleted_blocks=Num}) ->
 
     NewFreeDeleters = ordsets:add_element(DeleterPid, FreeDeleters),
     NewUnackedDeletes = ordsets:del_element(BlockID, UnackedDeletes),
@@ -86,7 +88,8 @@ deleting({block_deleted, {ok, BlockID}, DeleterPid},
 
     State2 = State#state{free_deleters=NewFreeDeleters,
                          unacked_deletes=NewUnackedDeletes,
-                         manifest=NewManifest},
+                         manifest=NewManifest,
+                         deleted_blocks=Num+1},
 
     if
         NewManifest?MANIFEST.state == deleted ->
@@ -113,10 +116,10 @@ terminate(Reason, _StateName, #state{all_delete_workers=AllDeleteWorkers,
                                      bucket=Bucket,
                                      key=Key,
                                      uuid=UUID,
-                                     riakc_pid=RiakcPid}) ->
+                                     riakc_pid=RiakcPid} = State) ->
     manifest_cleanup(ManifestState, Bucket, Key, UUID, RiakcPid),
     _ = [riak_moss_block_server:stop(P) || P <- AllDeleteWorkers],
-    notify_gc_daemon(Reason),
+    notify_gc_daemon(Reason, State),
     ok.
 
 code_change(_OldVsn, StateName, State, _Extra) ->
@@ -174,14 +177,14 @@ maybe_delete_blocks(State=#state{bucket=Bucket,
                                     free_deleters=NewFreeDeleters,
                                     delete_blocks_remaining=NewDeleteBlocksRemaining}).
 
--spec notify_gc_daemon(term()) -> term().
-notify_gc_daemon(Reason) ->
-    gen_fsm:sync_send_event(riak_cs_gc_d, notification_msg(Reason), infinity).
+-spec notify_gc_daemon(term(), state()) -> term().
+notify_gc_daemon(Reason, State) ->
+    gen_fsm:sync_send_event(riak_cs_gc_d, notification_msg(Reason, State), infinity).
 
--spec notification_msg(term()) -> {pid(), ok | {error, term()}}.
-notification_msg(normal) ->
-    {self(), ok};
-notification_msg(Reason) ->
+-spec notification_msg(term(), state()) -> {pid(), ok | {error, term()}}.
+notification_msg(normal, #state{deleted_blocks = DeletedBlocks}) ->
+    {self(), {ok, DeletedBlocks}};
+notification_msg(Reason, _State) ->
     {self(), {error, Reason}}.
 
 -spec manifest_cleanup(atom(), binary(), binary(), binary(), pid()) -> ok.

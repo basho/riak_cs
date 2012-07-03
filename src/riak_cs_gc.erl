@@ -142,8 +142,16 @@ move_manifests_to_gc_bucket(Manifests, RiakcPid) ->
             %% so resolve all the siblings and add the
             %% new set in as well. Write this
             %% value back to riak
+            %%
+            %% NOTE: If a prior GC daemon deleted this key as part of
+            %%       it work, then our get above can return siblings
+            %%       where one siblings is the tombstone.  In that case,
+            %%       we assume that that tombstone has a value <<>>,
+            %%       and we will skip looking in the value's metadata
+            %%       dict for the tombstone.
             DecodedPrevious = [binary_to_term(V) ||
-                V <- riakc_obj:get_values(PreviousObject)],
+                                  V <- riakc_obj:get_values(PreviousObject),
+                                  V /= <<>>],
             SetsToResolve = [ManifestSet | DecodedPrevious],
             Resolved = twop_set:resolve(SetsToResolve),
             riakc_obj:update_value(PreviousObject, term_to_binary(Resolved))

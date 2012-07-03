@@ -138,13 +138,18 @@ idle(_, State=#state{interval_remaining=IntervalRemaining}) ->
 %% handle messages from the outside world (like `status').
 fetching_next_fileset(continue, #state{batch=[]}=State) ->
     %% finished with this batch
-    _ = lager:info("Finished garbage collection in ~b seconds.",
-                   [elapsed(State#state.batch_start)]),
+    _ = lager:info("Finished garbage collection: "
+                   "~b seconds, ~p batch_count, ~p batch_skips, "
+                   "~p manif_count, ~p block_count\n",
+                   [elapsed(State#state.batch_start), State#state.batch_count,
+                    State#state.batch_skips, State#state.manif_count,
+                    State#state.block_count]),
     riak_moss_riakc_pool_worker:stop(State#state.riak),
     NewState = schedule_next(State#state{riak=undefined}),
     {next_state, idle, NewState};
 fetching_next_fileset(continue, State=#state{batch=[FileSetKey | RestKeys],
                                              batch_skips=BatchSkips,
+                                             manif_count=ManifCount,
                                              riak=RiakPid
                                             }) ->
     %% Fetch the next set of manifests for deletion
@@ -152,7 +157,8 @@ fetching_next_fileset(continue, State=#state{batch=[FileSetKey | RestKeys],
         {ok, FileSet, RiakObj} ->
             NewStateData = State#state{current_files=twop_set:to_list(FileSet),
                                        current_fileset=FileSet,
-                                       current_riak_object=RiakObj},
+                                       current_riak_object=RiakObj,
+                                       manif_count=ManifCount+twop_set:size(FileSet)},
             NextState = initiating_file_delete;
         {error, _} ->
             NewStateData = State#state{batch=RestKeys,
@@ -478,6 +484,8 @@ start_batch(State=#state{riak=undefined}) ->
                 batch=Batch,
                 batch_count=0,
                 batch_skips=0,
+                manif_count=0,
+                block_count=0,
                 riak=Riak}.
 
 -spec start_manual_batch(boolean(), #state{}) -> #state{}.
@@ -510,13 +518,16 @@ handle_common_sync_reply({MsgBase, _}, Common, State) when is_atom(MsgBase) ->
 %% Refactor TODO:
 %%   1. delete_fsm_pid=undefined is desirable in both ok & error cases?
 %%   2. It's correct to *not* change pause_state?
-handle_delete_fsm_reply(ok, #state{current_files=[CurrentManifest | RestManifests],
-                                   current_fileset=FileSet} = State) ->
+handle_delete_fsm_reply({ok, NumDeleted},
+                        #state{current_files=[CurrentManifest | RestManifests],
+                               current_fileset=FileSet,
+                               block_count=BlockCount} = State) ->
     gen_fsm:send_event(self(), continue),
     UpdFileSet = twop_set:del_element(CurrentManifest, FileSet),
     State#state{delete_fsm_pid=undefined,
                 current_fileset=UpdFileSet,
-                current_files=RestManifests};
+                current_files=RestManifests,
+                block_count=BlockCount+NumDeleted};
 handle_delete_fsm_reply({error, _}, #state{current_files=[_ | RestManifests]} = State) ->
     gen_fsm:send_event(self(), continue),
     State#state{delete_fsm_pid=undefined,
