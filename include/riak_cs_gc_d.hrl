@@ -10,6 +10,8 @@
           batch_count=0 :: non_neg_integer(),
           batch_skips=0 :: non_neg_integer(), % Count of filesets skipped in this batch
           batch=[] :: undefined | [binary()], % `undefined' only for testing
+          manif_count=0 :: non_neg_integer(),
+          block_count=0 :: non_neg_integer(),
           pause_state :: undefined | atom(), % state of the fsm when a delete batch was paused
           interval_remaining :: undefined | non_neg_integer(), % used when moving from paused -> idle
           timer_ref :: reference(),
