@@ -34,8 +34,8 @@
 %% XX Add unit test to make certain that the backend gives graceful
 %%    error when chunk size limit is exceeded. DONE: t3_test()
 %%
-%% __ Add a version number to the ?HEADER_SIZE for all put(),
-%%    check it on get()s.
+%% XX Add a version number to the ?HEADER_SIZE for all put(),
+%% XX Check it on get()s.
 %%
 %% __ When using with RCS, add a programmatic check for the LFS block size.
 %%    Then add extra cushion (e.g. 512 bytes??) and use that for block size?
@@ -96,8 +96,11 @@
 %% Borrowed from bitcask.hrl
 -define(VALSIZEFIELD, 32).
 -define(CRCSIZEFIELD, 32).
--define(HEADER_SIZE,  8). % Differs from bitcask.hrl!
+%% 8 = header cookie & version number, 4 = Value size, 4 = Erlang CRC32,
+-define(HEADER_SIZE,  (8+4+4)). % Differs from bitcask.hrl!
 -define(MAXVALSIZE, 2#11111111111111111111111111111111).
+-define(COOKIE_SIZE, 64).
+-define(COOKIE_V1, 16#c0c00101c00101c0).
 
 %% !@#$!!@#$!@#$!@#$! Erlang's efile_drv does not support the sticky bit.
 %% So, we use something else: the setgid bit.
@@ -566,14 +569,17 @@ nest([],N,Acc) ->
 
 %% Borrowed from bitcask_fileops.erl and then mangled
 -spec pack_ondisk(binary(), state()) -> [binary()].
-pack_ondisk(Bin, #state{block_size = BlockSize}) ->
+pack_ondisk(Bin, State) ->
+    pack_ondisk_v1(Bin, State).
+
+pack_ondisk_v1(Bin, #state{block_size = BlockSize}) ->
     ValueSz = size(Bin),
     true = (ValueSz =< BlockSize),
     Bytes0 = [<<ValueSz:?VALSIZEFIELD>>, Bin],
-    [<<(erlang:crc32(Bytes0)):?CRCSIZEFIELD>> | Bytes0].
+    [<<?COOKIE_V1:?COOKIE_SIZE, (erlang:crc32(Bytes0)):?CRCSIZEFIELD>>, Bytes0].
 
 -spec unpack_ondisk(binary()) -> binary() | bad_crc.
-unpack_ondisk(<<Crc32:?CRCSIZEFIELD/unsigned,
+unpack_ondisk(<<?COOKIE_V1:?COOKIE_SIZE, Crc32:?CRCSIZEFIELD/unsigned,
                 ValueSz:?VALSIZEFIELD, Rest/binary>>)
   when size(Rest) >= ValueSz ->
     try
