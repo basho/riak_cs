@@ -375,11 +375,8 @@ fetch_next_fileset(ManifestSetKey, RiakPid) ->
     %% Get the set of manifests represented by the key
     case riak_moss_utils:get_object(?GC_BUCKET, ManifestSetKey, RiakPid) of
         {ok, RiakObj} ->
-            %% Get any values from the riak object and resolve them
-            %% into a single set.
-            BinValues = riakc_obj:get_values(RiakObj),
-            Values = [binary_to_term(BinValue) || BinValue <- BinValues],
-            ManifestSet = twop_set:resolve(Values),
+            ManifestSet = riak_cs_gc:decode_and_merge_siblings(
+                            RiakObj, twop_set:new()),
             {ok, ManifestSet, RiakObj};
         {error, notfound}=Error ->
             Error;

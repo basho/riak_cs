@@ -15,7 +15,8 @@
 -endif.
 
 %% export Public API
--export([gc_interval/0,
+-export([decode_and_merge_siblings/2,
+         gc_interval/0,
          gc_retry_interval/0,
          gc_manifests/6,
          leeway_seconds/0,
@@ -142,18 +143,7 @@ move_manifests_to_gc_bucket(Manifests, RiakcPid) ->
             %% so resolve all the siblings and add the
             %% new set in as well. Write this
             %% value back to riak
-            %%
-            %% NOTE: If a prior GC daemon deleted this key as part of
-            %%       it work, then our get above can return siblings
-            %%       where one siblings is the tombstone.  In that case,
-            %%       we assume that that tombstone has a value <<>>,
-            %%       and we will skip looking in the value's metadata
-            %%       dict for the tombstone.
-            DecodedPrevious = [binary_to_term(V) ||
-                                  V <- riakc_obj:get_values(PreviousObject),
-                                  V /= <<>>],
-            SetsToResolve = [ManifestSet | DecodedPrevious],
-            Resolved = twop_set:resolve(SetsToResolve),
+            Resolved = decode_and_merge_siblings(PreviousObject, ManifestSet),
             riakc_obj:update_value(PreviousObject, term_to_binary(Resolved))
     end,
 
@@ -172,6 +162,19 @@ generate_key() ->
     list_to_binary(
       integer_to_list(
         timestamp() + leeway_seconds())).
+
+%% @doc Given a list of riakc_obj-flavored object (with potentially
+%%      many siblings and perhaps a tombstone), decode and merge them.
+-spec decode_and_merge_siblings(riakc_obj:riakc_obj(), twop_set:twop_set()) ->
+      twop_set:twop_set().
+decode_and_merge_siblings(Obj, OtherManifestSets) ->
+    Some = [binary_to_term(V) || {MD, V} <- riakc_obj:get_contents(Obj),
+                                 not has_tombstone(MD),
+                                 V /= <<>>],
+    twop_set:resolve([OtherManifestSets | Some]).
+
+has_tombstone(MD) ->
+    dict:is_key(<<"X-Riak-Deleted">>, MD) =:= true.
 
 %% ===================================================================
 %% EUnit tests
