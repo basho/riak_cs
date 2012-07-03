@@ -26,20 +26,19 @@
 %%
 %% TODO list for the multiple-chunk-in-single-file scheme:
 %%
-%% __ Test-first: create EQC model, test it ruthlessly
-%%    __ Include all ops, including folding!
+%% XX Test-first: create EQC model, test it ruthlessly
+%%    XX Include all ops, including folding!
+%%       DONE via backend_eqc
 %%
-%% __ Make certain that max chunk size is strictly enforced.
-%% __ Add unit test to make certain that the backend gives graceful
-%%    error when chunk size limit is exceeded.
+%% XX Make certain that max chunk size is strictly enforced.
+%% XX Add unit test to make certain that the backend gives graceful
+%%    error when chunk size limit is exceeded. DONE: t3_test()
+%%
+%% __ Add a version number to the ?HEADER_SIZE for all put(),
+%%    check it on get()s.
 %%
 %% __ When using with RCS, add a programmatic check for the LFS block size.
 %%    Then add extra cushion (e.g. 512 bytes??) and use that for block size?
-%%
-%% __ Create & write a real header block on first data chunk write
-%%    __ Add space in the header to track deleted chunks.
-%%
-%% __ Check the header block on all chunk read ops?  (or at least 0th chunk?)
 %%
 %% __ Implement the delete op:
 %%    __ Update the deleted chunk map:
@@ -173,6 +172,7 @@ start(Partition, Config) ->
                         Else2 ->
                             Else2
                     end,
+        true = (BlockSize < ?MAXVALSIZE),
         MaxBlocks = case get_prop_or_env(fs2_backend_max_blocks_per_file,
                                          Config, riak_kv) of
                         N when is_integer(N), 1 =< N ->
@@ -265,7 +265,7 @@ put(<<?BLOCK_BUCKET_PREFIX, _/binary>> = Bucket,
 put(Bucket, PrimaryKey, _IndexSpecs, Val, _ValRObj, State) ->
     File = location(State, Bucket, PrimaryKey),
     case filelib:ensure_dir(File) of
-        ok         -> {atomic_write(File, Val), State};
+        ok         -> {atomic_write(File, Val, State), State};
         {error, X} -> {error, X, State}
     end.
 
@@ -400,9 +400,9 @@ callback(_Ref, _Term, S) ->
 %%       ok | {error, Reason :: term()}
 %% @doc store a atomic value to disk. Write to temp file and rename to
 %%       normal path.
-atomic_write(File, Val) ->
+atomic_write(File, Val, State) ->
     FakeFile = File ++ ".tmpwrite",
-    case file:write_file(FakeFile, pack_ondisk(Val)) of
+    case file:write_file(FakeFile, pack_ondisk(Val, State)) of
         ok ->
             file:rename(FakeFile, File);
         X -> X
@@ -565,10 +565,10 @@ nest([],N,Acc) ->
     nest([],N-1,["0"|Acc]).
 
 %% Borrowed from bitcask_fileops.erl and then mangled
--spec pack_ondisk(binary()) -> [binary()].
-pack_ondisk(Bin) ->
+-spec pack_ondisk(binary(), state()) -> [binary()].
+pack_ondisk(Bin, #state{block_size = BlockSize}) ->
     ValueSz = size(Bin),
-    true = (ValueSz =< ?MAXVALSIZE),
+    true = (ValueSz =< BlockSize),
     Bytes0 = [<<ValueSz:?VALSIZEFIELD>>, Bin],
     [<<(erlang:crc32(Bytes0)):?CRCSIZEFIELD>> | Bytes0].
 
@@ -691,11 +691,12 @@ put_block3(BlockNum, Val, File, FI_perhaps, State) ->
         case file:open(File, [write, read, raw, binary]) of
             {ok, FH} ->
                 try
-                    PackedBin = pack_ondisk(Val),
+                    PackedBin = pack_ondisk(Val, State),
                     ok = file:pwrite(FH, Offset, PackedBin),
                     if OutOfOrder_p ->
                             %% It's not an error to write more than one trailer
-                            Tr = make_trailer(#t{written_sequentially = false}),
+                            Tr = make_trailer(#t{written_sequentially = false},
+                                              State),
                             TrOffset = calc_block_offset(trailer, State),
                             {ok, TrOffset} = file:position(FH, {bof, TrOffset}),
                             ok = file:write(FH, Tr);
@@ -763,8 +764,8 @@ check_trailer_ooo({ok, FI}, BlockNum, #state{max_blocks = MaxBlocks} = State) ->
     MaxBlock = calc_max_block(FI#file_info.size, State),
     (BlockNum rem MaxBlocks) == MaxBlock - 1.
 
-make_trailer(Term) ->
-    Bin = iolist_to_binary(pack_ondisk(term_to_binary(Term))),
+make_trailer(Term, State) ->
+    Bin = iolist_to_binary(pack_ondisk(term_to_binary(Term), State)),
     Sz = size(Bin),
     [Bin, <<Sz:32>>].
 
@@ -918,15 +919,20 @@ convert_blocknum2key(UUID, BlockNum, #state{max_blocks = MaxBlocks}) ->
     <<UUID/binary, ((BlockNum div MaxBlocks) * MaxBlocks):?BLOCK_FIELD_SIZE>>.
 
 t0() ->
+    %% Blocksize must be at last 15 or so: this test writes two blocks
+    %% for the same UUID, but it does them out of order, so a trailer
+    %% will be created ... and if the block size is too small to
+    %% accomodate the trailer, bad things happen.
+    BlockSize = 22,
     TestDir = "./delme",
     Bucket = <<?BLOCK_BUCKET_PREFIX, "delme">>,
     K0 = <<0:(?UUID_BYTES*8), 0:?BLOCK_FIELD_SIZE>>,
-    V0 = <<42:64>>,
+    V0 = <<42:(BlockSize*8)>>,
     K1 = <<0:(?UUID_BYTES*8), 1:?BLOCK_FIELD_SIZE>>,
-    V1 = <<43:64>>,
+    V1 = <<43:(BlockSize*8)>>,
     os:cmd("rm -rf " ++ TestDir),
     {ok, S} = start(-1, [{fs2_backend_data_root, TestDir},
-                         {fs2_backend_block_size, 8}]),
+                         {fs2_backend_block_size, BlockSize}]),
     {ok, S} = put(Bucket, K1, [], V1, ignored, S),
     {ok, S} = put(Bucket, K0, [], V0, ignored, S),
     {ok, V0, S} = get(Bucket, K0, S),
@@ -988,6 +994,18 @@ t2() ->
     true = (lists:sort(BKVs) == lists:reverse(Res)),
     ok.
 
+t3() ->
+    TestDir = "./delme",
+    Bucket = <<?BLOCK_BUCKET_PREFIX, "delme">>,
+    K0 = <<0:(?UUID_BYTES*8), 0:?BLOCK_FIELD_SIZE>>,
+    BlockSize = 10,
+    V0 = <<42:((BlockSize+1)*8)>>,
+    os:cmd("rm -rf " ++ TestDir),
+    {ok, S} = start(-1, [{fs2_backend_data_root, TestDir},
+                         {fs2_backend_block_size, BlockSize}]),
+    {error, invalid_user_argument, S} = put(Bucket, K0, [], V0, ignored, S),
+    ok.
+
 %% ===================================================================
 %% EUnit tests
 %% ===================================================================
@@ -1001,6 +1019,9 @@ t1_test() ->
 
 t2_test() ->
     t2().
+
+t3_test() ->
+    t3().
 
 eqc_filter_delete(Bucket, Key, BKVs) ->
     try
