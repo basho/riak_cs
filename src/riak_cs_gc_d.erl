@@ -207,7 +207,7 @@ idle({manual_batch, Options}, _From, State) ->
 idle(pause, _From, State) ->
     ok_reply(paused, pause_gc(idle, State));
 idle({set_interval, Interval}, _From, State) ->
-    ok_reply(idle, set_interval(Interval, State));
+    ok_reply(idle, State#state{interval=Interval});
 idle(Msg, _From, State) ->
     Common = [{status, {ok, {idle, [{interval, State#state.interval},
                                     {last, State#state.last},
@@ -221,7 +221,7 @@ fetching_next_fileset(pause, _From, State) ->
 fetching_next_fileset(cancel_batch, _From, State) ->
     ok_reply(idle, cancel_batch(State));
 fetching_next_fileset({set_interval, Interval}, _From, State) ->
-    ok_reply(fetching_next_fileset, set_interval(Interval, State));
+    ok_reply(fetching_next_fileset, State#state{interval=Interval});
 fetching_next_fileset(Msg, _From, State) ->
     Common = [{status, {ok, {fetching_next_fileset, status_data(State)}}},
               {manual_batch, {error, already_deleting}},
@@ -233,7 +233,7 @@ initiating_file_delete(pause, _From, State) ->
 initiating_file_delete(cancel_batch, _From, State) ->
     ok_reply(idle, cancel_batch(State));
 initiating_file_delete({set_interval, Interval}, _From, State) ->
-    ok_reply(initiating_file_delete, set_interval(Interval, State));
+    ok_reply(initiating_file_delete, State#state{interval=Interval});
 initiating_file_delete(Msg, _From, State) ->
     Common = [{status, {ok, {initiating_file_delete, status_data(State)}}},
               {manual_batch, {error, already_deleting}},
@@ -247,7 +247,7 @@ waiting_file_delete(pause, _From, State) ->
 waiting_file_delete(cancel_batch, _From, State) ->
     ok_reply(idle, cancel_batch(State));
 waiting_file_delete({set_interval, Interval}, _From, State) ->
-    ok_reply(waiting_file_delete, set_interval(Interval, State));
+    ok_reply(waiting_file_delete, State#state{interval=Interval});
 waiting_file_delete(Msg, _From, State) ->
     Common = [{status, {ok, {waiting_file_delete, status_data(State)}}},
               {manual_batch, {error, already_deleting}},
@@ -259,9 +259,9 @@ paused({Pid, DelFsmReply}, _From, State=#state{delete_fsm_pid=Pid}) ->
 paused(resume, _From, State=#state{pause_state=PauseState}) ->
     ok_reply(PauseState, resume_gc(State));
 paused(cancel_batch, _From, State) ->
-    ok_reply(paused, cancel_batch(State));
+    ok_reply(paused, cancel_batch(State#state{pause_state=idle}));
 paused({set_interval, Interval}, _From, State) ->
-    ok_reply(paused, set_interval(Interval, State));
+    ok_reply(paused, State#state{interval=Interval});
 paused(Msg, _From, State) ->
     Common = [{status, {ok, {paused, status_data(State)}}},
               {pause, {error, already_paused}},
@@ -456,10 +456,6 @@ schedule_next(#state{batch_start=Current,
                 last=Current,
                 next=Next,
                 timer_ref=TimerRef}.
-
--spec set_interval(infinity | non_neg_integer(), #state{}) -> #state{}.
-set_interval(Interval, State) ->
-    State#state{interval=Interval}.
 
 %% @doc Actually kick off the batch.  After calling this function, you
 %% must advance the FSM state to `fetching_next_fileset'.
