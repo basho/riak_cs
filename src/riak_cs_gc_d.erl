@@ -6,6 +6,9 @@
 
 %% @doc The daemon that handles garbage collection of deleted file
 %% manifests and blocks.
+%%
+%% @TODO Differences in the fsm state and the state record
+%% get confusing. Maybe s/State/StateData.
 
 -module(riak_cs_gc_d).
 
@@ -198,19 +201,13 @@ paused(_, State) ->
 %% Synchronous events
 
 idle({manual_batch, Options}, _From, State) ->
-    case lists:member(testing, Options) of
-        true ->
-            NewState = State#state{batch=undefined};
-        false ->
-            NewState = start_batch(State)
-    end,
-    {reply, ok, fetching_next_fileset, NewState};
+    ok_reply(fetching_next_fileset, start_manual_batch(
+                                       lists:member(testing, Options),
+                                       State));
 idle(pause, _From, State) ->
-    _ = lager:info("Pausing garbage collection"),
-    UpdState = idle_pause_state(State),
-    {reply, ok, paused, UpdState};
+    ok_reply(paused, pause_gc(idle, State));
 idle({set_interval, Interval}, _From, State) ->
-    {reply, ok, idle, State#state{interval=Interval}};
+    ok_reply(idle, State#state{interval=Interval});
 idle(Msg, _From, State) ->
     Common = [{status, {ok, {idle, [{interval, State#state.interval},
                                     {last, State#state.last},
@@ -220,12 +217,11 @@ idle(Msg, _From, State) ->
     {reply, handle_common_sync_reply(Msg, Common, State), idle, State}.
 
 fetching_next_fileset(pause, _From, State) ->
-    _ = lager:info("Pausing garbage collection"),
-    {reply, ok, paused, State#state{pause_state=fetching_next_fileset}};
+    ok_reply(paused, pause_gc(fetching_next_fileset, State));
 fetching_next_fileset(cancel_batch, _From, State) ->
-    cancel_batch(State);
+    ok_reply(idle, cancel_batch(State));
 fetching_next_fileset({set_interval, Interval}, _From, State) ->
-    {reply, ok, fetching_next_fileset, State#state{interval=Interval}};
+    ok_reply(fetching_next_fileset, State#state{interval=Interval});
 fetching_next_fileset(Msg, _From, State) ->
     Common = [{status, {ok, {fetching_next_fileset, status_data(State)}}},
               {manual_batch, {error, already_deleting}},
@@ -233,51 +229,39 @@ fetching_next_fileset(Msg, _From, State) ->
     {reply, handle_common_sync_reply(Msg, Common, State), fetching_next_fileset, State}.
 
 initiating_file_delete(pause, _From, State) ->
-    _ = lager:info("Pausing garbage collection"),
-    {reply, ok, paused, State#state{pause_state=initiating_file_delete}};
+    ok_reply(paused, pause_gc(initiating_file_delete, State));
 initiating_file_delete(cancel_batch, _From, State) ->
-    cancel_batch(State);
+    ok_reply(idle, cancel_batch(State));
 initiating_file_delete({set_interval, Interval}, _From, State) ->
-    {reply, ok, initiating_file_delete, State#state{interval=Interval}};
+    ok_reply(initiating_file_delete, State#state{interval=Interval});
 initiating_file_delete(Msg, _From, State) ->
     Common = [{status, {ok, {initiating_file_delete, status_data(State)}}},
               {manual_batch, {error, already_deleting}},
               {resume, {error, not_paused}}],
     {reply, handle_common_sync_reply(Msg, Common, State), initiating_file_delete, State}.
 
-waiting_file_delete({Pid, ok}, _From,
-                    #state{delete_fsm_pid=Pid} = State) ->
-    {reply, ok, initiating_file_delete, handle_delete_fsm_reply(ok, State)};
-waiting_file_delete({Pid, {error, _Reason}}, _From,
-                    #state{delete_fsm_pid=Pid} = State) ->
-    {reply, ok, initiating_file_delete, handle_delete_fsm_reply(error, State)};
+waiting_file_delete({Pid, DelFsmReply}, _From, State=#state{delete_fsm_pid=Pid}) ->
+    ok_reply(initiating_file_delete, handle_delete_fsm_reply(DelFsmReply, State));
 waiting_file_delete(pause, _From, State) ->
-    _ = lager:info("Pausing garbage collection"),
-    {reply, ok, paused, State#state{pause_state=waiting_file_delete}};
+    ok_reply(paused, pause_gc(waiting_file_delete, State));
 waiting_file_delete(cancel_batch, _From, State) ->
-    cancel_batch(State);
+    ok_reply(idle, cancel_batch(State));
 waiting_file_delete({set_interval, Interval}, _From, State) ->
-    {reply, ok, waiting_file_delete, State#state{interval=Interval}};
+    ok_reply(waiting_file_delete, State#state{interval=Interval});
 waiting_file_delete(Msg, _From, State) ->
     Common = [{status, {ok, {waiting_file_delete, status_data(State)}}},
               {manual_batch, {error, already_deleting}},
               {resume, {error, not_paused}}],
     {reply, handle_common_sync_reply(Msg, Common, State), waiting_file_delete, State}.
 
-paused({Pid, ok}, _From, State=#state{delete_fsm_pid=Pid}) ->
-    {reply, ok, paused, handle_delete_fsm_reply(ok, State)};
-paused({Pid, {error, _Reason}}, _From, State=#state{delete_fsm_pid=Pid}) ->
-    {reply, ok, paused, handle_delete_fsm_reply(error, State)};
+paused({Pid, DelFsmReply}, _From, State=#state{delete_fsm_pid=Pid}) ->
+    ok_reply(paused, handle_delete_fsm_reply(DelFsmReply, State));
 paused(resume, _From, State=#state{pause_state=PauseState}) ->
-    _ = lager:info("Resuming garbage collection"),
-    gen_fsm:send_event(self(), continue),
-    %% @TODO Differences in the fsm state and the state record
-    %% get confusing. Maybe s/State/StateData.
-    {reply, ok, PauseState, State};
+    ok_reply(PauseState, resume_gc(State));
 paused(cancel_batch, _From, State) ->
-    cancel_batch(State);
+    ok_reply(paused, cancel_batch(State#state{pause_state=idle}));
 paused({set_interval, Interval}, _From, State) ->
-    {reply, ok, paused, State#state{interval=Interval}};
+    ok_reply(paused, State#state{interval=Interval});
 paused(Msg, _From, State) ->
     Common = [{status, {ok, {paused, status_data(State)}}},
               {pause, {error, already_paused}},
@@ -295,9 +279,9 @@ handle_event(_Event, StateName, State) ->
 handle_sync_event(current_state, _From, StateName, State) ->
     {reply, {StateName, State}, StateName, State};
 handle_sync_event({change_state, NewStateName}, _From, _StateName, State) ->
-    {reply, ok, NewStateName, State};
+    ok_reply(NewStateName, State);
 handle_sync_event(_Event, _From, StateName, State) ->
-    {reply, ok, StateName, State}.
+    ok_reply(StateName, State).
 
 handle_info(start_batch, idle, State) ->
     NewState = start_batch(State),
@@ -323,17 +307,15 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 %%%===================================================================
 
 %% @doc Cancel the current batch of files set for garbage collection.
--spec cancel_batch(#state{}) -> {reply, ok, idle, #state{}}.
+-spec cancel_batch(#state{}) -> #state{}.
 cancel_batch(#state{batch_start=BatchStart,
                     riak=RiakPid}=State) ->
     %% Interrupt the batch of deletes
     _ = lager:info("Canceled garbage collection batch after ~b seconds.",
                    [elapsed(BatchStart)]),
     riak_moss_riakc_pool_worker:stop(RiakPid),
-    NewState = schedule_next(State#state{batch=[],
-                                         riak=undefined}),
-    {reply, ok, idle, NewState}.
-
+    schedule_next(State#state{batch=[],
+                              riak=undefined}).
 
 -spec check_bucket_props([term()]) -> ok | {error, term()}.
 check_bucket_props([testing]) ->
@@ -421,25 +403,41 @@ finish_file_delete(_, FileSet, RiakObj, RiakPid) ->
     _ = riak_moss_utils:put_with_no_meta(RiakPid, UpdRiakObj),
     ok.
 
-%% @doc Update the state record for a transition from `idle' to
-%% `paused'.
--spec idle_pause_state(#state{}) -> #state{}.
-idle_pause_state(State=#state{interval=infinity,
-                              timer_ref=TimerRef}) ->
+%% @doc Take required actions to pause garbage collection and update
+%% the state record for the transition to `paused'.
+-spec pause_gc(atom(), #state{}) -> #state{}.
+pause_gc(idle, State=#state{interval=Interval,
+                            timer_ref=TimerRef}) ->
+    _ = lager:info("Pausing garbage collection"),
+    Remainder = cancel_timer(Interval, TimerRef),
+    State#state{pause_state=idle,
+                interval_remaining=Remainder};
+pause_gc(State, StateData) ->
+    _ = lager:info("Pausing garbage collection"),
+    StateData#state{pause_state=State}.
+
+cancel_timer(infinity, TimerRef) ->
     %% Cancel the timer in case the interval has
     %% recently be set to `infinity'.
     erlang:cancel_timer(TimerRef),
-    State#state{pause_state=idle,
-                interval_remaining=undefined};
-idle_pause_state(State=#state{timer_ref=TimerRef}) ->
-    case erlang:cancel_timer(TimerRef) of
-        false ->
-            Remainder = 0;
-        Remainder ->
-            ok
-    end,
-    State#state{pause_state=idle,
-                interval_remaining=Remainder}.
+    undefined;
+cancel_timer(_, TimerRef) ->
+    handle_cancel_timer(erlang:cancel_timer(TimerRef)).
+
+handle_cancel_timer(false) ->
+    0;
+handle_cancel_timer(RemainderMillis) ->
+    RemainderMillis.
+
+-spec resume_gc(#state{}) -> #state{}.
+resume_gc(State) ->
+    _ = lager:info("Resuming garbage collection"),
+    gen_fsm:send_event(self(), continue),
+    State#state{pause_state=undefined}.
+
+-spec ok_reply(atom(), function()) -> {reply, ok, atom(), #state{}}.
+ok_reply(NextState, NextStateData) ->
+    {reply, ok, NextState, NextStateData}.
 
 %% @doc Setup the automatic trigger to start the next
 %% scheduled batch calculation.
@@ -482,6 +480,12 @@ start_batch(State=#state{riak=undefined}) ->
                 batch_skips=0,
                 riak=Riak}.
 
+-spec start_manual_batch(boolean(), #state{}) -> #state{}.
+start_manual_batch(true, State) ->
+    State#state{batch=undefined};
+start_manual_batch(false, State) ->
+    start_batch(State).
+
 %% @doc Extract a list of status information from a state record.
 %%
 %% CAUTION: Do not add side-effects to this function: it is called specutively.
@@ -513,7 +517,7 @@ handle_delete_fsm_reply(ok, #state{current_files=[CurrentManifest | RestManifest
     State#state{delete_fsm_pid=undefined,
                 current_fileset=UpdFileSet,
                 current_files=RestManifests};
-handle_delete_fsm_reply(error, #state{current_files=[_ | RestManifests]} = State) ->
+handle_delete_fsm_reply({error, _}, #state{current_files=[_ | RestManifests]} = State) ->
     gen_fsm:send_event(self(), continue),
     State#state{delete_fsm_pid=undefined,
                 current_files=RestManifests}.
