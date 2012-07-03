@@ -192,10 +192,11 @@ initial_state() ->
 initial_state_data() ->
     #mc_state{}.
 
+next_state_data(paused, paused, S, _R, {call, ?GCD_MODULE, cancel_batch, []}) ->
+    S#mc_state{previous_state=idle};
 next_state_data(_From, _From, S, _R, _C) ->
     S;
 next_state_data(From, To, S, _R, _C) ->
-    ?debugFmt("From ~p To ~p", [From, To]),
     S#mc_state{current_state=To,
                previous_state=From}.
 
@@ -260,7 +261,6 @@ postcondition(paused, paused, _S ,{call, _M, pause, _}, R) ->
     ?P(ActualState =:= paused andalso R =:= {error, already_paused});
 postcondition(paused, PrevState, #mc_state{previous_state=PrevState} ,{call, _M, resume, _}, R) ->
     {ActualState, _} = riak_cs_gc_d:current_state(),
-?debugFmt("AS: ~p To: ~p R: ~p", [ActualState, PrevState, R]),
     ?P(ActualState =:= PrevState andalso R =:= ok);
 %% General handling of `resume' calls when the `From' state
 %% is not `paused'.
