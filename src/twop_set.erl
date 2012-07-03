@@ -4,7 +4,22 @@
 %%
 %% -------------------------------------------------------------------
 
-%% @doc Module for choosing and manipulating lists (well, orddict) of manifests
+%% @doc This module implements the two-phase CRDT set.
+%% This implementation has one notable difference from
+%% the Comprehensive CRDT Paper [1]. The CRDT paper
+%% has the precondition that deletes are only allowed
+%% if the element is present in the local replica
+%% of the set already. This implementation does not
+%% have that restriction. This can lead to a situation
+%% where an item is added, but that item has been previously
+%% deleted and it not visible.
+%% For Riak CS, we opt for this implementation because
+%% we _only_ delete items that we have previously observed
+%% in another replica of the same set. This allows
+%% to be sure that the item is only missing in our
+%% local replica because it hasn't been replicated
+%% to it yet.
+%% [1]: [http://hal.inria.fr/docs/00/55/55/88/PDF/techreport.pdf]
 
 -module(twop_set).
 
