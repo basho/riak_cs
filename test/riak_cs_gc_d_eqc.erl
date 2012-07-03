@@ -182,7 +182,7 @@ paused(#mc_state{previous_state=PauseState}) ->
      {history, {call, ?GCD_MODULE, manual_batch, [[testing]]}},
      {history, {call, ?GCD_MODULE, pause, []}},
      {history, {call, ?GCD_MODULE, set_interval, [infinity]}},
-     {idle, {call, ?GCD_MODULE, cancel_batch, []}},
+     {history, {call, ?GCD_MODULE, cancel_batch, []}},
      {PauseState, {call, ?GCD_MODULE, resume, []}}
     ].
 
@@ -192,6 +192,8 @@ initial_state() ->
 initial_state_data() ->
     #mc_state{}.
 
+next_state_data(paused, paused, S, _R, {call, ?GCD_MODULE, cancel_batch, []}) ->
+    S#mc_state{previous_state=idle};
 next_state_data(_From, _From, S, _R, _C) ->
     S;
 next_state_data(From, To, S, _R, _C) ->
@@ -251,9 +253,9 @@ postcondition(waiting_file_delete, initiating_file_delete, _S ,{call, _M, change
     {ActualState, _} = riak_cs_gc_d:current_state(),
     ?P(ActualState =:= initiating_file_delete andalso R =:= ok);
 %% `paused' transitions
-postcondition(paused, idle, _S ,{call, _M, cancel_batch, _}, R) ->
+postcondition(paused, paused, _S ,{call, _M, cancel_batch, _}, R) ->
     {ActualState, _} = riak_cs_gc_d:current_state(),
-    ?P(ActualState =:= idle andalso R =:= ok);
+    ?P(ActualState =:= paused andalso R =:= ok);
 postcondition(paused, paused, _S ,{call, _M, pause, _}, R) ->
     {ActualState, _} = riak_cs_gc_d:current_state(),
     ?P(ActualState =:= paused andalso R =:= {error, already_paused});
