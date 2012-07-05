@@ -3,14 +3,15 @@
 from boto.exception import S3ResponseError
 from boto.s3.connection import S3Connection, OrdinaryCallingFormat
 from boto.s3.key import Key
-import urllib2, httplib, json
+import httplib, json
 import unittest, time, uuid
 
 def create_user(host, port, name, email):
     url = '/user'
-    body = "email=%s&name=%s" % (email, name)
+    body = json.dumps({"email": email, "name": name})
     conn = httplib.HTTPConnection(host, port)
-    conn.request("POST", url, body)
+    headers = {"Content-Type": "application/json"}
+    conn.request("POST", url, body, headers)
     response = conn.getresponse()
     data = response.read()
     conn.close()
@@ -62,8 +63,8 @@ class S3ApiVerificationTest(unittest.TestCase):
 
 
     def make_connection(self, user):
-        return S3Connection(user['KeyId'], user['KeySecret'], is_secure=False,
-                            host=self.host, port=self.port, debug=True,
+        return S3Connection(user['key_id'], user['key_secret'], is_secure=False,
+                            host=self.host, port=self.port, debug=False,
                             calling_format=OrdinaryCallingFormat() )
 
     @classmethod
@@ -73,6 +74,7 @@ class S3ApiVerificationTest(unittest.TestCase):
         # TODO: Once changes are in place so users can be deleted, use
         # userX@example.me for email addresses and clean up at the end of
         # the test run.
+        self.maxDiff = 10000000000
         self.user1 = create_user(self.host, self.port, "user1", str(uuid.uuid4()) + "@example.me")
         self.user2 = create_user(self.host, self.port, "user2", str(uuid.uuid4()) + "@example.me")
         self.bucket_name = str(uuid.uuid4())
@@ -80,16 +82,16 @@ class S3ApiVerificationTest(unittest.TestCase):
         self.data = file("/dev/random").read(1024)
 
     def defaultAcl(self, user):
-        return self.SimpleAcl % (user['Id'], user['DisplayName'], user['Id'], user['DisplayName'], 'FULL_CONTROL')
+        return self.SimpleAcl % (user['id'], user['display_name'], user['id'], user['display_name'], 'FULL_CONTROL')
 
     def prAcl(self, user):
-        return self.PublicReadAcl % (user['Id'], user['DisplayName'], user['Id'], user['DisplayName'], 'FULL_CONTROL')
+        return self.PublicReadAcl % (user['id'], user['display_name'], user['id'], user['display_name'], 'FULL_CONTROL')
 
     def setUp(self):
         self.conn = self.make_connection(self.user1)
 
     def test_auth(self):
-        bad_user = json.loads('{"Email":"baduser@example.me","DisplayName":"baduser","Name":"user1","KeyId":"bad_key","KeySecret":"BadSecret","Id":"bad_canonical_id"}')
+        bad_user = json.loads('{"email":"baduser@example.me","display_name":"baduser","name":"user1","key_id":"bad_key","key_secret":"BadSecret","id":"bad_canonical_id"}')
         conn = self.make_connection(bad_user)
         self.assertRaises(S3ResponseError, conn.get_canonical_user_id)
 
