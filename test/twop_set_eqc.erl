@@ -105,17 +105,9 @@ prop_twop_set_resolution() ->
                       end,
                       conjunction(
                         [
-                         {adds1, equals(lists:sort(sets:to_list(sets:union(Adds, ExpectedAdds))),
-                                        lists:sort(sets:to_list(sets:union(ExpectedAdds, Adds))))},
-                         {adds2, equals(lists:sort(sets:to_list(sets:union(Adds, ExpectedAdds))),
-                                        lists:sort(sets:to_list(Adds)))},
-                         {adds3, equals(lists:sort(sets:to_list(sets:union(Adds, ExpectedAdds))),
+                         {adds, equals(lists:sort(sets:to_list(Adds)),
                                         lists:sort(sets:to_list(ExpectedAdds)))},
-                         {deletes1, equals(lists:sort(sets:to_list(sets:union(Dels, ExpectedDels))),
-                                        lists:sort(sets:to_list(sets:union(ExpectedDels, Dels))))},
-                         {deletes2, equals(lists:sort(sets:to_list(sets:union(Dels, ExpectedDels))),
-                                        lists:sort(sets:to_list(Dels)))},
-                         {deletes3, equals(lists:sort(sets:to_list(sets:union(Dels, ExpectedDels))),
+                         {deletes, equals(lists:sort(sets:to_list(Dels)),
                                         lists:sort(sets:to_list(ExpectedDels)))}
                         ]))
                end
