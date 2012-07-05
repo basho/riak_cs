@@ -18,6 +18,7 @@
 -export([gc_interval/0,
          gc_retry_interval/0,
          gc_manifests/6,
+         epoch_start/0,
          leeway_seconds/0,
          timestamp/0]).
 
@@ -61,6 +62,18 @@ gc_retry_interval() ->
             ?DEFAULT_GC_RETRY_INTERVAL;
         {ok, RetryInterval} ->
             RetryInterval
+    end.
+
+%% @doc Return the start of GC epoch represented as a binary.
+%% This is the time that the GC daemon uses to  begin collecting keys
+%% from the `riak-cs-gc' bucket.
+-spec epoch_start() -> binary().
+epoch_start() ->
+    case application:get_env(riak_moss, epoch_start) of
+        undefined ->
+            ?EPOCH_START;
+        {ok, EpochStart} ->
+            EpochStart
     end.
 
 %% @doc Return the minimum number of seconds a file manifest waits in

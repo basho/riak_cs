@@ -357,7 +357,7 @@ gc_index_query(RiakPid, EndTime) ->
     QueryResult = riakc_pb_socket:get_index(RiakPid,
                                             ?GC_BUCKET,
                                             ?KEY_INDEX,
-                                            ?EPOCH_START,
+                                            riak_cs_gc:epoch_start(),
                                             EndTime),
     {QueryResult, EndTime}.
 
