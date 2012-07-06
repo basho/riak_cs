@@ -57,7 +57,7 @@ prop_resolution_commutative() ->
     ?FORALL(Manifests, eqc_gen:resize(50, manifests()),
         begin
             MapFun = fun(Mani) ->
-                riak_moss_manifest:new(Mani?MANIFEST.uuid, Mani)
+                riak_cs_manifest_utils:new_dict(Mani?MANIFEST.uuid, Mani)
             end,
             Filtered = only_one_active(Manifests),
             WrappedManifests = lists:map(MapFun, Filtered),

@@ -1,12 +1,12 @@
 %% -------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2011 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2012 Basho Technologies, Inc.  All Rights Reserved.
 %%
 %% -------------------------------------------------------------------
 
 %% @doc Module for choosing and manipulating lists (well, orddict) of manifests
 
--module(riak_moss_manifest).
+-module(riak_cs_manifest_utils).
 
 -include("riak_moss.hrl").
 -ifdef(TEST).
@@ -15,13 +15,13 @@
 -endif.
 
 %% export Public API
--export([new/2,
+-export([new_dict/2,
          active_manifest/1,
          active_and_writing_manifests/1,
          overwritten_UUIDs/1,
          mark_pending_delete/2,
          mark_scheduled_delete/2,
-         pending_delete_manifests/1,
+         filter_pending_delete_uuid_manifests/1,
          prune/1,
          prune/2,
          upgrade_wrapped_manifests/1,
@@ -35,15 +35,15 @@
 %% one in this case). Used when storing something
 %% in Riak when the previous GET returned notfound,
 %% so we're (maybe) creating a new object.
--spec new(binary(), lfs_manifest()) -> term().
-new(UUID, Manifest) ->
+-spec new_dict(binary(), lfs_manifest()) -> orddict:orddict().
+new_dict(UUID, Manifest) ->
     orddict:store(UUID, Manifest, orddict:new()).
 
 %% @doc Return the current active manifest
 %% from an orddict of manifests.
 -spec active_manifest(orddict:orddict()) -> {ok, lfs_manifest()} | {error, no_active_manifest}.
-active_manifest(Manifests) ->
-    case lists:foldl(fun most_recent_active_manifest/2, no_active_manifest, orddict_values(Manifests)) of
+active_manifest(Dict) ->
+    case lists:foldl(fun most_recent_active_manifest/2, no_active_manifest, orddict_values(Dict)) of
         no_active_manifest ->
             {error, no_active_manifest};
         Manifest ->
@@ -52,16 +52,15 @@ active_manifest(Manifests) ->
 
 %% @doc Return a list of all manifests in the
 %% `active' or `writing' state
--spec active_and_writing_manifests(term()) -> [lfs_manifest()].
-active_and_writing_manifests(Manifests) ->
-    filter_manifests_by_state(Manifests, [active, writing]).
+-spec active_and_writing_manifests(orddict:orddict()) -> [lfs_manifest()].
+active_and_writing_manifests(Dict) ->
+    orddict:to_list(filter_manifests_by_state(Dict, [active, writing])).
 
-%% @doc Mark all active manifests
-%% that are not "the most active"
-%% as pending_delete
--spec overwritten_UUIDs(term()) -> term().
-overwritten_UUIDs(Manifests) ->
-    case active_manifest(Manifests) of
+%% @doc Extract all manifests that are not "the most active"
+%%      and not actively writing (within the leeway period).
+-spec overwritten_UUIDs(orddict:orddict()) -> term().
+overwritten_UUIDs(Dict) ->
+    case active_manifest(Dict) of
         {error, no_active_manifest} ->
             FoldFun =
                 fun ({_, ?MANIFEST{state=State}}, Acc) when State =:= writing ->
@@ -99,14 +98,14 @@ overwritten_UUIDs(Manifests) ->
                         end
                 end
     end,
-    lists:foldl(FoldFun, [], orddict:to_list(Manifests)).
+    lists:foldl(FoldFun, [], orddict:to_list(Dict)).
 
-%% @doc Return `Manifests' with the manifests in
+%% @doc Return `Dict' with the manifests in
 %% `UUIDsToMark' with their state changed to
 %% `pending_delete'
 -spec mark_pending_delete(orddict:orddict(), list(binary())) ->
     orddict:orddict().
-mark_pending_delete(Manifests, UUIDsToMark) ->
+mark_pending_delete(Dict, UUIDsToMark) ->
     MapFun = fun(K, V) ->
             case lists:member(K, UUIDsToMark) of
                 true ->
@@ -116,14 +115,14 @@ mark_pending_delete(Manifests, UUIDsToMark) ->
                     V
             end
     end,
-    orddict:map(MapFun, Manifests).
+    orddict:map(MapFun, Dict).
 
-%% @doc Return `Manifests' with the manifests in
+%% @doc Return `Dict' with the manifests in
 %% `UUIDsToMark' with their state changed to
 %% `scheduled_delete'
 -spec mark_scheduled_delete(orddict:orddict(), list(binary())) ->
     orddict:orddict().
-mark_scheduled_delete(Manifests, UUIDsToMark) ->
+mark_scheduled_delete(Dict, UUIDsToMark) ->
     MapFun = fun(K, V) ->
             case lists:member(K, UUIDsToMark) of
                 true ->
@@ -133,24 +132,27 @@ mark_scheduled_delete(Manifests, UUIDsToMark) ->
                     V
             end
     end,
-    orddict:map(MapFun, Manifests).
+    orddict:map(MapFun, Dict).
 
 %% @doc Return the current `pending_delete' manifests
 %% from an orddict of manifests.
--spec pending_delete_manifests(term()) -> [{binary(), lfs_manifest()}].
-pending_delete_manifests(Manifests) ->
-    lists:filter(fun pending_delete_manifest/1, Manifests).
+-spec filter_pending_delete_uuid_manifests(orddict:orddict()) -> [cs_uuid_and_manifest()].
+filter_pending_delete_uuid_manifests(Dict) ->
+    orddict:to_list(orddict:filter(fun pending_delete_manifest/2, Dict)).
 
--spec prune(orddict:orddict(binary(), lfs_manifest())) ->
-    orddict:orddict(binary(), lfs_manifest()).
-prune(Manifests) ->
-    prune(Manifests, erlang:now()).
+%% @doc Remove all manifests that require pruning,
+%%      see needs_pruning() for definition of needing pruning.
+-spec prune(orddict:orddict()) -> orddict:orddict().
+prune(Dict) ->
+    prune(Dict, erlang:now()).
 
--spec prune(orddict:orddict(binary(), lfs_manifest()), erlang:timestamp()) ->
-    orddict:orddict(binary(), lfs_manifest()).
-prune(Manifests, Time) ->
-    [KV || {_K, V}=KV <- Manifests, not (needs_pruning(V, Time))].
+-spec prune(orddict:orddict(), erlang:timestamp()) -> orddict:orddict().
+prune(Dict, Time) ->
+    orddict:from_list(
+      [KV || {_K, V}=KV <- orddict:to_list(Dict), not (needs_pruning(V, Time))]
+     ).
 
+-spec upgrade_wrapped_manifests([orddict:orddict()]) -> [orddict:orddict()].
 upgrade_wrapped_manifests(ListofOrdDicts) ->
     DictMapFun = fun (_Key, Value) -> upgrade_manifest(Value) end,
     MapFun = fun (Value) -> orddict:map(DictMapFun, Value) end,
@@ -206,15 +208,15 @@ upgrade_manifest(?MANIFEST{}=M) ->
 %%% Internal functions
 %%%===================================================================
 
-%% @doc Filter a list of manifests and accept only manifests whose
+%% @doc Filter an orddict manifests and accept only manifests whose
 %% current state is specified in the `AcceptedStates' list.
--spec filter_manifests_by_state([lfs_manifest()], [atom()]) -> [lfs_manifest()].
-filter_manifests_by_state(Manifests, AcceptedStates) ->
+-spec filter_manifests_by_state(orddict:orddict(), [atom()]) -> orddict:orddict().
+filter_manifests_by_state(Dict, AcceptedStates) ->
     AcceptManifest =
-        fun ({_, ?MANIFEST{state=State}}) ->
+        fun (_, ?MANIFEST{state=State}) ->
                 lists:member(State, AcceptedStates)
         end,
-    lists:filter(AcceptManifest, Manifests).
+    orddict:filter(AcceptManifest, Dict).
 
 -spec leeway_elapsed(undefined | erlang:timestamp()) -> boolean().
 leeway_elapsed(undefined) ->
@@ -224,13 +226,9 @@ leeway_elapsed(Timestamp) ->
     Now > (riak_moss_utils:timestamp(Timestamp) + riak_cs_gc:leeway_seconds()).
 
 orddict_values(OrdDict) ->
-    %% orddict's are by definition
-    %% represented as lists, so no
-    %% need to call orddict:to_list,
-    %% which actually is the identity
-    %% func
-    [V || {_K, V} <- OrdDict].
+    [V || {_K, V} <- orddict:to_list(OrdDict)].
 
+%% NOTE: This is a foldl function, initial acc = no_active_manifest
 most_recent_active_manifest(Manifest=?MANIFEST{state=active}, no_active_manifest) ->
     Manifest;
 most_recent_active_manifest(_Manfest, no_active_manifest) ->
@@ -250,20 +248,21 @@ needs_pruning(?MANIFEST{state=scheduled_delete,
 needs_pruning(_Manifest, _Time) ->
     false.
 
-pending_delete_manifest({_, ?MANIFEST{state=pending_delete,
-                                      last_block_deleted_time=undefined}}) ->
+%% NOTE: This is a orddict filter fun.
+pending_delete_manifest(_, ?MANIFEST{state=pending_delete,
+                                     last_block_deleted_time=undefined}) ->
     true;
-pending_delete_manifest({_, ?MANIFEST{last_block_deleted_time=undefined}}) ->
+pending_delete_manifest(_, ?MANIFEST{last_block_deleted_time=undefined}) ->
     false;
-pending_delete_manifest({_, ?MANIFEST{state=scheduled_delete,
-                                      last_block_deleted_time=LBDTime}}) ->
+pending_delete_manifest(_, ?MANIFEST{state=scheduled_delete,
+                                     last_block_deleted_time=LBDTime}) ->
     %% If a manifest is `scheduled_delete' and the amount of time
     %% specified by the retry interval has elapsed since a file block
     %% was last deleted, then reschedule it for deletion.
     LBDSeconds = riak_moss_utils:timestamp(LBDTime),
     Now = riak_moss_utils:timestamp(os:timestamp()),
     Now > (LBDSeconds + riak_cs_gc:gc_retry_interval());
-pending_delete_manifest(_) ->
+pending_delete_manifest(_, _) ->
     false.
 
 seconds_diff(T2, T1) ->
