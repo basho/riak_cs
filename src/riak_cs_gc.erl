@@ -15,7 +15,8 @@
 -endif.
 
 %% export Public API
--export([gc_interval/0,
+-export([decode_and_merge_siblings/2,
+         gc_interval/0,
          gc_retry_interval/0,
          gc_manifests/6,
          leeway_seconds/0,
@@ -88,7 +89,7 @@ timestamp() ->
 mark_as_pending_delete(Manifests, UUIDsToMark, RiakObject, RiakcPid) ->
     mark_manifests({ok, RiakObject, Manifests},
                    UUIDsToMark,
-                   mark_pending_delete,
+                   fun riak_cs_manifest_utils:mark_pending_delete/2,
                    RiakcPid).
 
 %% @doc Mark a list of manifests as `scheduled_delete' based upon the
@@ -97,17 +98,17 @@ mark_as_scheduled_delete(ok, Bucket, Key, UUIDsToMark, RiakcPid) ->
     Manifests = riak_moss_utils:get_manifests(RiakcPid, Bucket, Key),
     {Result, _} = mark_manifests(Manifests,
                                  UUIDsToMark,
-                                 mark_scheduled_delete,
+                                 fun riak_cs_manifest_utils:mark_scheduled_delete/2,
                                  RiakcPid),
     Result;
 mark_as_scheduled_delete({error, _}=Error, _, _, _, _) ->
     Error.
 
-%% @doc Call a `riak_moss_manifest' function on a set of manifests
+%% @doc Call a `riak_cs_manifest_utils' function on a set of manifests
 %% to update the state of the manifests specified by `UUIDsToMark'
 %% and then write the updated values to riak.
 mark_manifests({ok, RiakObject, Manifests}, UUIDsToMark, ManiFunction, RiakcPid) ->
-    Marked = riak_moss_manifest:ManiFunction(Manifests, UUIDsToMark),
+    Marked = ManiFunction(Manifests, UUIDsToMark),
     UpdObj = riakc_obj:update_value(RiakObject, term_to_binary(Marked)),
     PutResult = riak_moss_utils:put_with_no_meta(RiakcPid, UpdObj),
     {PutResult, Marked};
@@ -115,11 +116,11 @@ mark_manifests({error, _Reason}=Error, _, _, _) ->
     Error.
 
 %% @doc Compile a list of `pending_delete' manifests.
--spec get_pending_delete_manifests({ok, [{binary(), lfs_manifest()}]} |
+-spec get_pending_delete_manifests({ok, orddict:orddict()} |
                                    {error, term()}) ->
-                                          [{binary(), lfs_manifest()}].
+                                          [cs_uuid_and_manifest()].
 get_pending_delete_manifests({ok, MarkedManifests}) ->
-    riak_moss_manifest:pending_delete_manifests(MarkedManifests);
+    riak_cs_manifest_utils:filter_pending_delete_uuid_manifests(MarkedManifests);
 get_pending_delete_manifests({error, Reason}) ->
     _ = lager:warning("Failed to get pending_delete manifests. Reason: ~p",
                       [Reason]),
@@ -142,10 +143,7 @@ move_manifests_to_gc_bucket(Manifests, RiakcPid) ->
             %% so resolve all the siblings and add the
             %% new set in as well. Write this
             %% value back to riak
-            DecodedPrevious = [binary_to_term(V) ||
-                V <- riakc_obj:get_values(PreviousObject)],
-            SetsToResolve = [ManifestSet | DecodedPrevious],
-            Resolved = twop_set:resolve(SetsToResolve),
+            Resolved = decode_and_merge_siblings(PreviousObject, ManifestSet),
             riakc_obj:update_value(PreviousObject, term_to_binary(Resolved))
     end,
 
@@ -164,6 +162,19 @@ generate_key() ->
     list_to_binary(
       integer_to_list(
         timestamp() + leeway_seconds())).
+
+%% @doc Given a list of riakc_obj-flavored object (with potentially
+%%      many siblings and perhaps a tombstone), decode and merge them.
+-spec decode_and_merge_siblings(riakc_obj:riakc_obj(), twop_set:twop_set()) ->
+      twop_set:twop_set().
+decode_and_merge_siblings(Obj, OtherManifestSets) ->
+    Some = [binary_to_term(V) || {MD, V} <- riakc_obj:get_contents(Obj),
+                                 not has_tombstone(MD),
+                                 V /= <<>>],
+    twop_set:resolve([OtherManifestSets | Some]).
+
+has_tombstone(MD) ->
+    dict:is_key(<<"X-Riak-Deleted">>, MD) =:= true.
 
 %% ===================================================================
 %% EUnit tests

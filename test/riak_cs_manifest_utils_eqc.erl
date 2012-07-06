@@ -5,7 +5,7 @@
 %% -------------------------------------------------------------------
 
 
--module(riak_moss_manifest_eqc).
+-module(riak_cs_manifest_utils_eqc).
 
 -include_lib("eqc/include/eqc.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -58,7 +58,7 @@ prop_choose_active_commutative() ->
         begin
             AlteredManifests = lists:map(fun(M) -> M?MANIFEST{uuid=druuid:v4()} end, Manifests),
             AsDict = orddict:from_list([{M?MANIFEST.uuid, M} || M <- AlteredManifests]),
-            Active = riak_moss_manifest:active_manifest(AsDict),
+            Active = riak_cs_manifest_utils:active_manifest(AsDict),
             case Active of
                 {error, no_active_manifest} ->
                     %% if no manifest is returned then there should

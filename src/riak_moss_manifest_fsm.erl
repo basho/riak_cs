@@ -80,7 +80,7 @@ get_all_manifests(Pid) ->
 get_active_manifest(Pid) ->
     case gen_fsm:sync_send_event(Pid, get_manifests, infinity) of
         {ok, Manifests} ->
-            case riak_moss_manifest:active_manifest(Manifests) of
+            case riak_cs_manifest_utils:active_manifest(Manifests) of
                 {ok, _Active}=ActiveReply ->
                     ActiveReply;
                 {error, no_active_manifest} ->
@@ -104,15 +104,15 @@ get_specific_manifest(Pid, UUID) ->
     end.
 
 add_new_manifest(Pid, Manifest) ->
-    WrappedManifest = riak_moss_manifest:new(Manifest?MANIFEST.uuid, Manifest),
-    gen_fsm:send_event(Pid, {add_new_manifest, WrappedManifest}).
+    Dict = riak_cs_manifest_utils:new_dict(Manifest?MANIFEST.uuid, Manifest),
+    gen_fsm:send_event(Pid, {add_new_dict, Dict}).
 
 update_manifests(Pid, Manifests) ->
     gen_fsm:send_event(Pid, {update_manifests, Manifests}).
 
 update_manifest(Pid, Manifest) ->
-    WrappedManifest = riak_moss_manifest:new(Manifest?MANIFEST.uuid, Manifest),
-    update_manifests(Pid, WrappedManifest).
+    Dict = riak_cs_manifest_utils:new_dict(Manifest?MANIFEST.uuid, Manifest),
+    update_manifests(Pid, Dict).
 
 %% @doc Delete a specific manifest version from a manifest and
 %% update the manifest value in riak or delete the manifest key from
@@ -128,8 +128,8 @@ update_manifests_with_confirmation(Pid, Manifests) ->
 
 -spec update_manifest_with_confirmation(pid(), lfs_manifest()) -> ok | {error, term()}.
 update_manifest_with_confirmation(Pid, Manifest) ->
-    WrappedManifest = riak_moss_manifest:new(Manifest?MANIFEST.uuid, Manifest),
-    update_manifests_with_confirmation(Pid, WrappedManifest).
+    Dict = riak_cs_manifest_utils:new_dict(Manifest?MANIFEST.uuid, Manifest),
+    update_manifests_with_confirmation(Pid, Dict).
 
 stop(Pid) ->
     gen_fsm:sync_send_all_state_event(Pid, stop, infinity).
@@ -154,7 +154,7 @@ init([test, Bucket, Key]) ->
 %% Once it has been called _once_
 %% with a particular UUID, update_manifest
 %% should be used from then on out.
-waiting_command({add_new_manifest, WrappedManifest}, State=#state{riakc_pid=RiakcPid,
+waiting_command({add_new_dict, WrappedManifest}, State=#state{riakc_pid=RiakcPid,
                                                            bucket=Bucket,
                                                            key=Key}) ->
     _Res = get_and_update(RiakcPid, WrappedManifest, Bucket, Key),
@@ -280,7 +280,7 @@ get_and_update(RiakcPid, WrappedManifests, Bucket, Key) ->
     case riak_moss_utils:get_manifests(RiakcPid, Bucket, Key) of
         {ok, RiakObject, Manifests} ->
             NewManiAdded = riak_moss_manifest_resolution:resolve([WrappedManifests, Manifests]),
-            OverwrittenUUIDs = riak_moss_manifest:overwritten_UUIDs(NewManiAdded),
+            OverwrittenUUIDs = riak_cs_manifest_utils:overwritten_UUIDs(NewManiAdded),
             case OverwrittenUUIDs of
                 [] ->
                     ObjectToWrite = riakc_obj:update_value(RiakObject,

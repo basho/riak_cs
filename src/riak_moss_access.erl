@@ -120,7 +120,7 @@ merge_stats(Stats, Acc) ->
 %% which the keys are MOSS node names.  The value for each key is a
 %% list of samples.  Each sample is an orddict full of metrics.
 -spec get_usage(pid(),
-                riak_moss:user_key(),
+                term(), %% TODO: riak_moss:user_key() type doesn't exist
                 calendar:datetime(),
                 calendar:datetime()) ->
          {Usage::orddict:orddict(), Errors::[{slice(), term()}]}.
