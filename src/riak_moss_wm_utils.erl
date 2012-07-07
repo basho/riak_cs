@@ -18,6 +18,7 @@
          user_record_to_json/1,
          user_record_to_xml/1,
          find_and_auth_user/3,
+         find_and_auth_user/4,
          validate_auth_header/3,
          deny_access/2,
          extract_name/1]).
@@ -107,23 +108,26 @@ parse_auth_params(KeyId, Signature, _) ->
 %% Riak lookup fails), a tuple suitable for returning from a
 %% webmachine resource's `forbidden/2' function is returned, with
 %% appropriate error message included.
+find_and_auth_user(Rd, ICtx, Next) ->
+    find_and_auth_user(Rd, ICtx, Next, fun(X) -> X end).
+
 find_and_auth_user(RD, #context{auth_bypass=AuthBypass,
-                                riakc_pid=RiakPid}=Ctx, Next) ->
+                                riakc_pid=RiakPid}=ICtx, Next, Conv2KeyCtx) ->
     case validate_auth_header(RD, AuthBypass, RiakPid) of
         {ok, User, UserVclock} ->
             %% given keyid and signature matched, proceed
-            NewCtx = Ctx#context{user=User,
-                                 user_vclock=UserVclock},
-            Next(RD, NewCtx);
+            NewICtx = ICtx#context{user=User,
+                                   user_vclock=UserVclock},
+            Next(RD, NewICtx);
         {error, no_user_key} ->
             %% no keyid was given, proceed anonymously
-            Next(RD, Ctx);
+            Next(RD, ICtx);
         {error, bad_auth} ->
             %% given keyid was found, but signature didn't match
-            deny_access(RD, Ctx);
+            deny_access(RD, Conv2KeyCtx(ICtx));
         {error, _Reason} ->
             %% no matching keyid was found, or lookup failed
-            deny_invalid_key(RD, Ctx)
+            deny_invalid_key(RD, Conv2KeyCtx(ICtx))
     end.
 
 %% @doc Look for an Authorization header in the request, and validate
