@@ -493,18 +493,19 @@ list_all_files_naive_bkeys(#state{dir=Dir, b_depth = BDepth,
 %%                                      Key :: riak_object:key()}]
 %% @doc Get a list of all bucket/key pairs stored by this backend
 list_all_keys(State) ->
-    L = lists:foldl(fun({<<?BLOCK_BUCKET_PREFIX, _/binary>> = Bucket,
-                         <<UUID:?UUID_BYTES/binary,
-                           BlockBase:?BLOCK_FIELD_SIZE>>}, Acc) ->
-                            Chunks = enumerate_chunks_in_file(
-                                       Bucket, UUID, BlockBase, State),
-                            ChunkBKeys = [{Bucket, <<UUID:?UUID_BYTES/binary,
-                                                     C:?BLOCK_FIELD_SIZE>>} ||
-                                             C <- Chunks],
-                            lists:reverse(ChunkBKeys, Acc);
-                       (BKey, Acc) ->
-                            [BKey|Acc]
-                    end, [], list_all_files_naive_bkeys(State)),
+    L = lists:foldl(
+          fun({<<?BLOCK_BUCKET_PREFIX, _/binary>> = Bucket,
+               <<UUID:?UUID_BYTES/binary,
+                 BlockBase:?BLOCK_FIELD_SIZE>>}, Acc) ->
+                  Chunks = enumerate_chunks_in_file(
+                             Bucket, UUID, BlockBase, State),
+                  ChunkBKeys = [{Bucket, <<UUID:?UUID_BYTES/binary,
+                                           (BlockBase+C):?BLOCK_FIELD_SIZE>>} ||
+                                   C <- Chunks],
+                  lists:reverse(ChunkBKeys, Acc);
+             (BKey, Acc) ->
+                  [BKey|Acc]
+          end, [], list_all_files_naive_bkeys(State)),
     lists:reverse(L).
 
 %% @spec location(state(), riak_object:bucket(), riak_object:key())
@@ -574,7 +575,11 @@ pack_ondisk(Bin, State) ->
 
 pack_ondisk_v1(Bin, #state{block_size = BlockSize}) ->
     ValueSz = size(Bin),
-    true = (ValueSz =< BlockSize),
+    if ValueSz =< BlockSize ->
+            ok;
+       true ->
+            exit({size_violation, ?MODULE, ValueSz, '>', BlockSize})
+    end,
     Bytes0 = [<<ValueSz:?VALSIZEFIELD>>, Bin],
     [<<?COOKIE_V1:?COOKIE_SIZE, (erlang:crc32(Bytes0)):?CRCSIZEFIELD>>, Bytes0].
 
@@ -720,10 +725,10 @@ put_block3(BlockNum, Val, File, FI_perhaps, State) ->
         end
     catch
         error:{badmatch, _Y} ->
-            io:format(user, "DBG line ~p badmatch1 err ~p\n", [?LINE, _Y]),
+            lager:warning("~s: badmatch1 err ~p\n", [?MODULE, _Y]),
             {error, badmatch1};
         _X:Y ->
-            io:format(user, "DBG line ~p badmatch2 ~p ~p\n", [?LINE, _X, Y]),
+            lager:warning("~s: badmatch2 ~p ~p\n", [?MODULE, _X, Y]),
             {error, badmatch2}
     end.
 
@@ -748,7 +753,8 @@ enumerate_chunks_in_file(Bucket, UUID, BlockBase,
                     %% perhaps there might be holes in this file.
                     MaxBlock = MaxBlocks - 1,
                     Filt = fun(BlNum) ->
-                                   is_binary(read_block(Bucket, UUID, BlNum,
+                                   is_binary(read_block(Bucket, UUID,
+                                                        BlockBase + BlNum,
                                                         State))
                            end;
                 N ->
@@ -757,8 +763,8 @@ enumerate_chunks_in_file(Bucket, UUID, BlockBase,
                                    true
                            end
             end,
-            [BlockBase + BlockNum || BlockNum <- lists:seq(0, MaxBlock),
-                                     Filt(BlockNum)]
+            [BlockNum || BlockNum <- lists:seq(0, MaxBlock),
+                         Filt(BlockNum)]
     end.
 
 %% @doc Is the next block number we wish to write out-of-order?
@@ -889,8 +895,8 @@ exec_stack_op({key_file, File},  _FoldFun, Acc, State) ->
         {<<?BLOCK_BUCKET_PREFIX, _/binary>> = Bucket,
          <<UUID:?UUID_BYTES/binary, BlockBase:?BLOCK_FIELD_SIZE>>} =
             location_to_bkey(File, State),
-        BKeys = [{Bucket, <<UUID/binary, Block:?BLOCK_FIELD_SIZE>>} ||
-                    Block <- enumerate_chunks_in_file(Bucket, UUID, BlockBase,
+        BKeys = [{Bucket, <<UUID/binary, (BlockBase+Block):?BLOCK_FIELD_SIZE>>}
+                 || Block <- enumerate_chunks_in_file(Bucket, UUID, BlockBase,
                                                       State)],
         {BKeys, Acc}
     catch error:_Y ->
@@ -1012,6 +1018,34 @@ t3() ->
     {error, invalid_user_argument, S} = put(Bucket, K0, [], V0, ignored, S),
     ok.
 
+t4() ->
+    t4(1, 3, 2, fun lists:reverse/1).
+
+t4(SmallestBlock, BiggestBlock, BlocksPerFile, OrderFun)
+  when SmallestBlock >= 0, SmallestBlock =< BiggestBlock ->
+    TestDir = "./delme",
+    B1 = <<?BLOCK_BUCKET_PREFIX, "delme1">>,
+    B2 = <<?BLOCK_BUCKET_PREFIX, "delme2">>,
+    BlockSize = 20,
+    V = <<42:((BlockSize-1)*8)>>,
+    os:cmd("rm -rf " ++ TestDir),
+    {ok, S} = start(-1, [{fs2_backend_data_root, TestDir},
+                         {fs2_backend_block_size, BlockSize},
+                         {fs2_backend_max_blocks_per_file, BlocksPerFile}]),
+    BKs = [{<<?BLOCK_BUCKET_PREFIX, "delme", Bp:8>>,
+            <<0:(?UUID_BYTES*8), X:?BLOCK_FIELD_SIZE>>} ||
+              %% Bp <- [$1, $2],
+              Bp <- [$1],
+              X <- lists:seq(SmallestBlock, BiggestBlock)],
+    [{ok, S} = put(B, K, [], V, ignored, S) || {B, K} <- OrderFun(BKs)],
+
+    {ok, Found} = fold_objects(fun(B, K, _V, Acc) ->
+                                       [{B, K}|Acc]
+                               end, [], [], S),
+    true = (B1 /= B2),
+    true = (lists:sort(BKs) == lists:sort(Found)),
+    ok.
+
 %% ===================================================================
 %% EUnit tests
 %% ===================================================================
@@ -1028,6 +1062,14 @@ t2_test() ->
 
 t3_test() ->
     t3().
+
+t4_test() ->
+    t4().
+
+t4_eqc_test() ->
+    eqc:quickcheck(eqc:numtests(250, prop_t4())).
+
+%% Callbacks for backend_eqc test.
 
 eqc_filter_delete(Bucket, Key, BKVs) ->
     try
@@ -1111,6 +1153,18 @@ eqc_nest_tester() ->
             %% cleanup(x),
             true
     end.
+
+prop_t4() ->
+    ?FORALL({SmallestBlock, N, BlocksPerFile, OrderFun},
+            {choose(0, 20), choose(0, 20), choose(1, 5),
+             oneof([fun identity/1, fun lists:reverse/1, fun random/1])},
+            true = (ok == t4(SmallestBlock, SmallestBlock + N,
+                             BlocksPerFile, OrderFun))).
+
+identity(L) -> L.
+
+random(L) ->
+    [X || {_Rnd, X} <- lists:sort([{random:uniform(1000), Y} || Y <- L])].
 
 setup() ->
     application:load(sasl),
