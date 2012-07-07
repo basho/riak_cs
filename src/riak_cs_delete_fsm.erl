@@ -38,7 +38,7 @@
                 riakc_pid :: pid(),
                 delete_blocks_remaining :: ordsets:ordset(integer()),
                 unacked_deletes=ordsets:new() :: ordsets:ordset(integer()),
-                all_delete_workers :: list(pid()),
+                all_delete_workers=[] :: list(pid()),
                 free_deleters = ordsets:new() :: ordsets:ordset(pid()),
                 deleted_blocks = 0 :: non_neg_integer()}).
 

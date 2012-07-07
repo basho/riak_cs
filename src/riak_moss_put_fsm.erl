@@ -60,7 +60,7 @@
                 free_writers :: ordsets:ordset(pid()),
                 unacked_writes=ordsets:new() :: ordsets:ordset(non_neg_integer()),
                 next_block_id=0 :: non_neg_integer(),
-                all_writer_pids :: list(pid())}).
+                all_writer_pids=[] :: list(pid())}).
 
 %%%===================================================================
 %%% API
