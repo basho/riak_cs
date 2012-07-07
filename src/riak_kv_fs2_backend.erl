@@ -1027,23 +1027,22 @@ t4(SmallestBlock, BiggestBlock, BlocksPerFile, OrderFun)
     B1 = <<?BLOCK_BUCKET_PREFIX, "delme1">>,
     B2 = <<?BLOCK_BUCKET_PREFIX, "delme2">>,
     BlockSize = 20,
-    V = <<42:((BlockSize-1)*8)>>,
     os:cmd("rm -rf " ++ TestDir),
     {ok, S} = start(-1, [{fs2_backend_data_root, TestDir},
                          {fs2_backend_block_size, BlockSize},
                          {fs2_backend_max_blocks_per_file, BlocksPerFile}]),
-    BKs = [{<<?BLOCK_BUCKET_PREFIX, "delme", Bp:8>>,
-            <<0:(?UUID_BYTES*8), X:?BLOCK_FIELD_SIZE>>} ||
-              %% Bp <- [$1, $2],
-              Bp <- [$1],
-              X <- lists:seq(SmallestBlock, BiggestBlock)],
-    [{ok, S} = put(B, K, [], V, ignored, S) || {B, K} <- OrderFun(BKs)],
+    BKVs = [{<<?BLOCK_BUCKET_PREFIX, "delme", Bp:8>>,
+             <<0:(?UUID_BYTES*8), X:?BLOCK_FIELD_SIZE>>,
+             <<X:((BlockSize)*8)>>} ||
+               Bp <- [$1, $2],
+               X <- lists:seq(SmallestBlock, BiggestBlock)],
+    [{ok, S} = put(B, K, [], V, ignored, S) || {B, K, V} <- OrderFun(BKVs)],
 
-    {ok, Found} = fold_objects(fun(B, K, _V, Acc) ->
-                                       [{B, K}|Acc]
+    {ok, Found} = fold_objects(fun(B, K, V, Acc) ->
+                                       [{B, K, V}|Acc]
                                end, [], [], S),
     true = (B1 /= B2),
-    true = (lists:sort(BKs) == lists:sort(Found)),
+    true = (lists:sort(BKVs) == lists:sort(Found)),
     ok.
 
 %% ===================================================================
