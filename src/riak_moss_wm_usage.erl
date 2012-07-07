@@ -218,7 +218,8 @@ forbidden(RD, #ctx{auth_bypass=AuthBypass, riak=Riak}=Ctx) ->
     Next = fun(NewRD, #context{user=User}) ->
                    forbidden(NewRD, Ctx, User)
            end,
-    riak_moss_wm_utils:find_and_auth_user(RD, BogusContext, Next).
+    Conv2Ctx = fun(_) -> Ctx end,
+    riak_moss_wm_utils:find_and_auth_user(RD, BogusContext, Next, Conv2Ctx).
 
 forbidden(RD, Ctx, undefined) ->
     %% anonymous access disallowed
