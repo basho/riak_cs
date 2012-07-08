@@ -122,7 +122,9 @@
           block_size :: non_neg_integer(),
           max_blocks :: non_neg_integer(),
           b_depth    :: non_neg_integer(),
-          k_depth    :: non_neg_integer()
+          k_depth    :: non_neg_integer(),
+          %% Items below used by key listing stack only
+          fold_type = object :: 'buckets' | 'keys' | 'objects'
          }).
 
 %% File trailer
@@ -337,18 +339,8 @@ fold_buckets(FoldBucketsFun, Acc, Opts, State) ->
                 [{atom(), term()}],
                 state()) -> {ok, term()} | {async, fun()}.
 fold_keys(FoldKeysFun, Acc, Opts, State) ->
-    Bucket =  proplists:get_value(bucket, Opts),
-    FoldFun = fold_keys_fun(FoldKeysFun, Bucket),
-    KeyFolder =
-        fun() ->
-                lists:foldl(FoldFun, Acc, list_all_keys(State))
-        end,
-    case lists:member(async_fold, Opts) of
-        true ->
-            {async, KeyFolder};
-        false ->
-            {ok, KeyFolder()}
-    end.
+    fold_common(fold_keys_fun(FoldKeysFun), Acc, Opts,
+                State#state{fold_type = keys}).
 
 %% @doc Fold over all the objects for one or all buckets.
 -spec fold_objects(riak_kv_backend:fold_objects_fun(),
@@ -356,12 +348,15 @@ fold_keys(FoldKeysFun, Acc, Opts, State) ->
                    [{atom(), term()}],
                    state()) -> {ok, any()} | {async, fun()}.
 fold_objects(FoldObjectsFun, Acc, Opts, State) ->
+    fold_common(fold_objects_fun(FoldObjectsFun), Acc, Opts,
+                State#state{fold_type = objects}).
+
+fold_common(ThisFoldFun, Acc, Opts, State) ->
     Bucket =  proplists:get_value(bucket, Opts),
     Stack = make_start_stack_objects(Bucket, State),
-    FoldFun = fold_objects_fun(FoldObjectsFun),
     ObjectFolder =
         fun() ->
-                reduce_stack(Stack, FoldFun, Acc, State)
+                reduce_stack(Stack, ThisFoldFun, Acc, State)
         end,
     case lists:member(async_fold, Opts) of
         true ->
@@ -441,20 +436,10 @@ fold_buckets_fun(FoldBucketsFun) ->
 
 %% @private
 %% Return a function to fold over keys on this backend
-fold_keys_fun(FoldKeysFun, undefined) ->
-    fun(BKey, Acc) ->
+fold_keys_fun(FoldKeysFun) ->
+    fun(BKey, _Value, Acc) ->
             {Bucket, Key} = BKey,
             FoldKeysFun(Bucket, Key, Acc)
-    end;
-fold_keys_fun(FoldKeysFun, Bucket) ->
-    fun(BKey, Acc) ->
-            {B, Key} = BKey,
-            case B =:= Bucket of
-                true ->
-                    FoldKeysFun(Bucket, Key, Acc);
-                false ->
-                    Acc
-            end
     end.
 
 %% @private
@@ -917,7 +902,11 @@ exec_stack_op({key_file, File},  _FoldFun, Acc, State) ->
                     {[], Acc}
             end
     end;
-exec_stack_op({Bucket, Key} = BKey, FoldFun, Acc, State) ->
+exec_stack_op({_Bucket, _Key} = BKey, FoldFun, Acc,
+              #state{fold_type = keys}) ->
+    {[], FoldFun(BKey, value_unused_by_this_modules_fold_wrapper, Acc)};
+exec_stack_op({Bucket, Key} = BKey, FoldFun, Acc,
+              #state{fold_type = objects} = State) ->
     case get(Bucket, Key, State) of
         {ok, Value, _S} ->
             {[], FoldFun(BKey, Value, Acc)};
@@ -1028,7 +1017,6 @@ t4(SmallestBlock, BiggestBlock, BlocksPerFile, OrderFun)
     TestDir = "./delme",
     B1 = <<?BLOCK_BUCKET_PREFIX, "delme1">>,
     B2 = <<?BLOCK_BUCKET_PREFIX, "delme2">>,
-    Bs = [B1, B2],
     BlockSize = 20,
     os:cmd("rm -rf " ++ TestDir),
     {ok, S} = start(-1, [{fs2_backend_data_root, TestDir},
@@ -1041,20 +1029,26 @@ t4(SmallestBlock, BiggestBlock, BlocksPerFile, OrderFun)
                X <- lists:seq(SmallestBlock, BiggestBlock)],
     [{ok, S} = put(B, K, [], V, ignored, S) || {B, K, V} <- OrderFun(BKVs)],
 
-    {ok, Found} = fold_objects(fun(B, K, V, Acc) ->
-                                       [{B, K, V}|Acc]
-                               end, [], [], S),
-    true = (lists:sort(BKVs) == lists:sort(Found)),
-
+    BKs = [{B, K} || {B, K, _V} <- BKVs],
     [begin
+         OnlyB = proplists:get_value(bucket, FoldOpts, all_buckets),
+         BucketFilt = fun(B) -> OnlyB == all_buckets orelse B == OnlyB end,
+
+         %% Fold objects
          {ok, FoundBKVs} = fold_objects(fun(B, K, V, Acc) ->
                                                 [{B, K, V}|Acc]
-                                        end, [], [{bucket, OnlyB}], S),
+                                        end, [], FoldOpts, S),
          OnlyBKVs = [BKV || {B, _, _} = BKV <- BKVs,
-                             B == OnlyB],
-         {OnlyB, true} = {OnlyB, (lists:sort(OnlyBKVs) == lists:sort(FoundBKVs))}
-     end || OnlyB <- Bs],
-
+                            BucketFilt(B)],
+         {OnlyB, true} = {OnlyB, (lists:sort(OnlyBKVs) == lists:sort(FoundBKVs))},
+         %% Fold keys
+         {ok, FoundBKs} = fold_keys(fun(B, K, Acc) ->
+                                            [{B, K}|Acc]
+                                    end, [], FoldOpts, S),
+         OnlyBKs = [BK || {B, _} = BK <- BKs,
+                          BucketFilt(B)],
+         {OnlyB, true} = {OnlyB, (lists:sort(OnlyBKs) == lists:sort(FoundBKs))}
+     end || FoldOpts <- [[], [{bucket, B1}], [{bucket, B2}]] ],
     ok.
 
 %% ===================================================================
@@ -1077,7 +1071,9 @@ t3_test() ->
 t4_test() ->
     t4().
 
-t4_eqc_test() ->
+%% t4_eqc_test() is now run by eqc_test_(), below, to avoid EUnit timeouts.
+
+eqc_t4_wrapper() ->
     eqc:quickcheck(eqc:numtests(250, prop_t4())).
 
 %% Callbacks for backend_eqc test.
@@ -1146,7 +1142,10 @@ eqc_test_() ->
                                            basic_props()))]},
           {timeout, 60000,
            [?_assertEqual(true,
-                          eqc_nest_tester())]}
+                          eqc_nest_tester())]},
+          {timeout, 60000,
+           [?_assertEqual(true,
+                          eqc_t4_wrapper())]}
          ]}]}]}.
 
 eqc_nest_tester() ->
