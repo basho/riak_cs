@@ -358,7 +358,7 @@ fold_keys(FoldKeysFun, Acc, Opts, State) ->
 fold_objects(FoldObjectsFun, Acc, Opts, State) ->
     Bucket =  proplists:get_value(bucket, Opts),
     Stack = make_start_stack_objects(Bucket, State),
-    FoldFun = fold_objects_fun(FoldObjectsFun, Bucket),
+    FoldFun = fold_objects_fun(FoldObjectsFun),
     ObjectFolder =
         fun() ->
                 reduce_stack(Stack, FoldFun, Acc, State)
@@ -459,20 +459,10 @@ fold_keys_fun(FoldKeysFun, Bucket) ->
 
 %% @private
 %% Return a function to fold over the objects on this backend
-fold_objects_fun(FoldObjectsFun, undefined) ->
+fold_objects_fun(FoldObjectsFun) ->
     fun(BKey, Value, Acc) ->
             {Bucket, Key} = BKey,
             FoldObjectsFun(Bucket, Key, Value, Acc)
-    end;
-fold_objects_fun(FoldObjectsFun, Bucket) ->
-    fun(BKey, Value, Acc) ->
-            {B, Key} = BKey,
-            case B =:= Bucket of
-                true ->
-                    FoldObjectsFun(Bucket, Key, Value, Acc);
-                false ->
-                    Acc
-            end
     end.
 
 %% @spec list_all_files_naive_bkeys(state()) -> [{Bucket :: riak_object:bucket(),
@@ -512,16 +502,23 @@ list_all_keys(State) ->
 %%          -> string()
 %% @doc produce the file-path at which the object for the given Bucket
 %%      and Key should be stored
+location(State, Bucket) ->
+    location(State, Bucket, no_key_provided).
+
 location(#state{dir = Dir, b_depth = BDepth, k_depth = KDepth}, Bucket, Key) ->
     B64 = encode_bucket(Bucket),
-    K64 = encode_key(Key),
     BDirs = if BDepth > 0 -> filename:join(nest(B64, BDepth));
                true       -> ""
             end,
-    KDirs = if KDepth > 0 -> filename:join(nest(K64, KDepth));
-               true       -> ""
-            end,
-    filename:join([Dir, BDirs, B64, KDirs, K64]).
+    if Key == no_key_provided ->
+            filename:join([Dir, BDirs, B64]);
+       true ->
+            K64 = encode_key(Key),
+            KDirs = if KDepth > 0 -> filename:join(nest(K64, KDepth));
+                       true       -> ""
+                    end,
+            filename:join([Dir, BDirs, B64, KDirs, K64])
+    end.
 
 %% @spec location_to_bkey(string(), state()) ->
 %%           {riak_object:bucket(), riak_object:key()}
@@ -841,7 +838,7 @@ drop_from_list(_N, []) ->
 %% * Paths on the stack are relative to #state.dir.
 %% * Paths on the stack all start with "/", but they are not absolute paths!
 
-make_start_stack_objects(_Bucket, #state{b_depth = BDepth}) ->
+make_start_stack_objects(undefined, #state{b_depth = BDepth}) ->
     case BDepth of
         0 ->
             %% TODO: We have a problem with the version name file here,
@@ -849,7 +846,12 @@ make_start_stack_objects(_Bucket, #state{b_depth = BDepth}) ->
             [glob_buckets];
         N ->
             [{glob_bucket_intermediate, 1, N, ""}]
-    end.
+    end;
+make_start_stack_objects(OnlyBucket, #state{k_depth = KDepth} = State) ->
+    Path = location(State, OnlyBucket),
+    %% Now mangle to stack path format
+    Start = string:sub_string(Path, length(State#state.dir) + 1),
+    [{glob_key_intermediate, 1, KDepth, Start}].
 
 %% @doc Reduce (or fold, pick your name) over items in a work stack
 reduce_stack([], _FoldFun, Acc, _State) ->
@@ -870,9 +872,9 @@ exec_stack_op({glob_bucket_intermediate, Level, MaxLevel, MidDir},
     Ops = [{glob_bucket, MidDir ++ "/" ++ Dir} ||
               Dir <- do_glob("*", MidDir, State)],
     {Ops, Acc};
-exec_stack_op({glob_bucket, MidDir}, _FoldFun, Acc, #state{k_depth = KDepth} = State) ->
-    Ops = [{glob_key_intermediate, 1, KDepth, MidDir ++ "/" ++ Dir} ||
-              Dir <- do_glob("*", MidDir, State)],
+exec_stack_op({glob_bucket, BDir}, _FoldFun, Acc, #state{k_depth = KDepth} = State) ->
+    Ops = [{glob_key_intermediate, 1, KDepth, BDir ++ "/" ++ Dir} ||
+              Dir <- do_glob("*", BDir, State)],
     {Ops, Acc};
 exec_stack_op({glob_key_intermediate, Level, MaxLevel, MidDir},
               _FoldFun, Acc, State)
@@ -1026,6 +1028,7 @@ t4(SmallestBlock, BiggestBlock, BlocksPerFile, OrderFun)
     TestDir = "./delme",
     B1 = <<?BLOCK_BUCKET_PREFIX, "delme1">>,
     B2 = <<?BLOCK_BUCKET_PREFIX, "delme2">>,
+    Bs = [B1, B2],
     BlockSize = 20,
     os:cmd("rm -rf " ++ TestDir),
     {ok, S} = start(-1, [{fs2_backend_data_root, TestDir},
@@ -1041,8 +1044,17 @@ t4(SmallestBlock, BiggestBlock, BlocksPerFile, OrderFun)
     {ok, Found} = fold_objects(fun(B, K, V, Acc) ->
                                        [{B, K, V}|Acc]
                                end, [], [], S),
-    true = (B1 /= B2),
     true = (lists:sort(BKVs) == lists:sort(Found)),
+
+    [begin
+         {ok, FoundBKVs} = fold_objects(fun(B, K, V, Acc) ->
+                                                [{B, K, V}|Acc]
+                                        end, [], [{bucket, OnlyB}], S),
+         OnlyBKVs = [BKV || {B, _, _} = BKV <- BKVs,
+                             B == OnlyB],
+         {OnlyB, true} = {OnlyB, (lists:sort(OnlyBKVs) == lists:sort(FoundBKVs))}
+     end || OnlyB <- Bs],
+
     ok.
 
 %% ===================================================================
