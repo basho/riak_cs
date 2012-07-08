@@ -124,7 +124,7 @@
           b_depth    :: non_neg_integer(),
           k_depth    :: non_neg_integer(),
           %% Items below used by key listing stack only
-          fold_type = object :: 'buckets' | 'keys' | 'objects'
+          fold_type  :: 'undefined' | 'buckets' | 'keys' | 'objects'
          }).
 
 %% File trailer
@@ -319,19 +319,8 @@ delete(Bucket, Key, _IndexSpecs, State) ->
                    [],
                    state()) -> {ok, any()} | {async, fun()}.
 fold_buckets(FoldBucketsFun, Acc, Opts, State) ->
-    FoldFun = fold_buckets_fun(FoldBucketsFun),
-    BucketFolder =
-        fun() ->
-                {FoldResult, _} =
-                    lists:foldl(FoldFun, {Acc, sets:new()}, list_all_keys(State)),
-                FoldResult
-        end,
-    case lists:member(async_fold, Opts) of
-        true ->
-            {async, BucketFolder};
-        false ->
-            {ok, BucketFolder()}
-    end.
+    fold_common(fold_buckets_fun(FoldBucketsFun), Acc, Opts,
+                State#state{fold_type = buckets}).
 
 %% @doc Fold over all the keys for one or all buckets.
 -spec fold_keys(riak_kv_backend:fold_keys_fun(),
@@ -423,15 +412,8 @@ fold(State, Fun0, Acc) ->
 %% @private
 %% Return a function to fold over the buckets on this backend
 fold_buckets_fun(FoldBucketsFun) ->
-    fun(BKey, {Acc, BucketSet}) ->
-            {Bucket, _} = BKey,
-            case sets:is_element(Bucket, BucketSet) of
-                true ->
-                    {Acc, BucketSet};
-                false ->
-                    {FoldBucketsFun(Bucket, Acc),
-                     sets:add_element(Bucket, BucketSet)}
-            end
+    fun({Bucket, _Nosuchkey}, _Nosuchvalue, Acc) ->
+            FoldBucketsFun(Bucket, Acc)
     end.
 
 %% @private
@@ -714,7 +696,7 @@ put_block3(BlockNum, Val, File, FI_perhaps, State) ->
             {error, badmatch2}
     end.
 
-riak_object_is_deleted(delete_op_requested) ->
+riak_object_is_deleted(eunit_delete_op_requested) ->
     true;
 riak_object_is_deleted(ValRObj) ->
     catch riak_kv_util:is_x_deleted(ValRObj).
@@ -842,8 +824,15 @@ make_start_stack_objects(OnlyBucket, #state{k_depth = KDepth} = State) ->
 reduce_stack([], _FoldFun, Acc, _State) ->
     Acc;
 reduce_stack([Op|Rest], FoldFun, Acc, State) ->
-    {PushOps, Acc2} = exec_stack_op(Op, FoldFun, Acc, State),
-    reduce_stack(PushOps ++ Rest, FoldFun, Acc2, State).
+    try
+        {PushOps, Acc2} = exec_stack_op(Op, FoldFun, Acc, State),
+        reduce_stack(PushOps ++ Rest, FoldFun, Acc2, State)
+    catch throw:{found_a_bucket, NewAcc} ->
+            NewStack = lists:dropwhile(fun(pop_back_to_here) -> false;
+                                          (_)                -> true
+                                       end, Rest),
+            reduce_stack(NewStack, FoldFun, NewAcc, State)
+    end.
 
 exec_stack_op({glob_bucket_intermediate, Level, MaxLevel, MidDir},
               _FoldFun, Acc, State)
@@ -858,9 +847,12 @@ exec_stack_op({glob_bucket_intermediate, Level, MaxLevel, MidDir},
               Dir <- do_glob("*", MidDir, State)],
     {Ops, Acc};
 exec_stack_op({glob_bucket, BDir}, _FoldFun, Acc, #state{k_depth = KDepth} = State) ->
-    Ops = [{glob_key_intermediate, 1, KDepth, BDir ++ "/" ++ Dir} ||
+    Optional = if State#state.fold_type == buckets -> [pop_back_to_here];
+                  true                             -> []
+               end,
+    Ops = [[{glob_key_intermediate, 1, KDepth, BDir ++ "/" ++ Dir}|Optional] ||
               Dir <- do_glob("*", BDir, State)],
-    {Ops, Acc};
+    {lists:flatten(Ops), Acc};
 exec_stack_op({glob_key_intermediate, Level, MaxLevel, MidDir},
               _FoldFun, Acc, State)
   when Level < MaxLevel ->
@@ -902,6 +894,21 @@ exec_stack_op({key_file, File},  _FoldFun, Acc, State) ->
                     {[], Acc}
             end
     end;
+exec_stack_op(pop_back_to_here, _FoldFun, Acc, _State) ->
+    %% If we encounter this in normal processing, then treat it as a
+    %% no-op: we didn't find any files that contained at least one
+    %% non-tombstone block.
+    {[], Acc};
+exec_stack_op({_Bucket, _Key} = BKey, FoldFun, Acc,
+              #state{fold_type = buckets}) ->
+    %% enumerate_chunks_in_file() has figured out for us that the
+    %% file doesn't contain tombstones and contains at least one key
+    %% (probably).  If those facts weren't true, we couldn't be here.
+    %% So, we have high confidence (but not 100% certain) that at least
+    %% one key exists in this bucket.  So, let's skip all other keys
+    %% in the bucket via a 'throw'
+    NewAcc = FoldFun(BKey, value_unused_by_this_modules_fold_wrapper, Acc),
+    throw({found_a_bucket, NewAcc});
 exec_stack_op({_Bucket, _Key} = BKey, FoldFun, Acc,
               #state{fold_type = keys}) ->
     {[], FoldFun(BKey, value_unused_by_this_modules_fold_wrapper, Acc)};
@@ -1009,6 +1016,8 @@ t3() ->
     {error, invalid_user_argument, S} = put(Bucket, K0, [], V0, ignored, S),
     ok.
 
+%% t4() = folding tests
+
 t4() ->
     t4(1, 3, 2, fun lists:reverse/1).
 
@@ -1017,6 +1026,7 @@ t4(SmallestBlock, BiggestBlock, BlocksPerFile, OrderFun)
     TestDir = "./delme",
     B1 = <<?BLOCK_BUCKET_PREFIX, "delme1">>,
     B2 = <<?BLOCK_BUCKET_PREFIX, "delme2">>,
+    TheTwoBs = [B1, B2],
     BlockSize = 20,
     os:cmd("rm -rf " ++ TestDir),
     {ok, S} = start(-1, [{fs2_backend_data_root, TestDir},
@@ -1040,15 +1050,60 @@ t4(SmallestBlock, BiggestBlock, BlocksPerFile, OrderFun)
                                         end, [], FoldOpts, S),
          OnlyBKVs = [BKV || {B, _, _} = BKV <- BKVs,
                             BucketFilt(B)],
-         {OnlyB, true} = {OnlyB, (lists:sort(OnlyBKVs) == lists:sort(FoundBKVs))},
+         {OnlyB, true} = {OnlyB, (lists:sort(OnlyBKVs) == lists:reverse(FoundBKVs))},
          %% Fold keys
          {ok, FoundBKs} = fold_keys(fun(B, K, Acc) ->
                                             [{B, K}|Acc]
                                     end, [], FoldOpts, S),
          OnlyBKs = [BK || {B, _} = BK <- BKs,
                           BucketFilt(B)],
-         {OnlyB, true} = {OnlyB, (lists:sort(OnlyBKs) == lists:sort(FoundBKs))}
+         {OnlyB, true} = {OnlyB, (lists:sort(OnlyBKs) == lists:reverse(FoundBKs))}
      end || FoldOpts <- [[], [{bucket, B1}], [{bucket, B2}]] ],
+
+    %% Set up for fold buckets
+    RestBegin = $3,             % We already have buckets ending with $1 & $2
+    RestEnd = $9,
+    RestBlocks = 5,
+    RestStatus =
+        [begin
+             RestB = <<?BLOCK_BUCKET_PREFIX, "delme", Bp:8>>,
+             %% Using X like for both UUID and block # will give us one
+             %% file that's written in order, UUID=0, and the rest will be
+             %% files written out of order.
+             [{ok, S} = put(RestB, <<X:(?UUID_BYTES*8), X:?BLOCK_FIELD_SIZE>>,
+                            [], <<"val!">>, ignored, S) ||
+                 X <- lists:seq(0, RestBlocks)],
+             if Bp rem 3 == 0 ->
+                     {exists, RestB};
+                Bp rem 3 == 1 ->
+                     [{ok, S} = put(RestB,
+                                    <<X:(?UUID_BYTES*8),X:?BLOCK_FIELD_SIZE>>,
+                                    [], <<>>, eunit_delete_op_requested, S) ||
+                         X <- lists:seq(0, RestBlocks)],
+                     {tombstone, RestB};
+                Bp rem 3 == 2 ->
+                     [{ok, S} = delete(RestB,
+                                      <<X:(?UUID_BYTES*8),X:?BLOCK_FIELD_SIZE>>,
+                                      unused, S) ||
+                         X <- lists:seq(0, RestBlocks)],
+                     {deleted, RestB}
+             end
+         end || Bp <- lists:seq(RestBegin, RestEnd)],
+    RestRemainingBuckets = [B || {exists, B} <- RestStatus],
+
+    %% Fold buckets
+    {ok, FoundBs} = fold_buckets(fun(B, Acc) -> [B|Acc] end, [], [], S),
+    %% FoundBs should contain only the buckets in TheTwoBs and
+    %% the buckets in RestStatus that are 'exists' status.  And
+    %% FoundBs should come out in the proper order (don't sort it!).
+    true = (lists:sort(TheTwoBs ++ RestRemainingBuckets) == lists:reverse(FoundBs)),
+
+    %% TODO? In the section for setup of the fold buckets, perhaps
+    %% use bucket names of varying lengths to try to find an error in
+    %% the order that the fold provides (i.e. not in reverse
+    %% lexicographic order)?
+    %% TODO? In the fold objects and fold keys tests, use bucket names of
+    %% different lengths, for the same reason as above?
     ok.
 
 %% ===================================================================
