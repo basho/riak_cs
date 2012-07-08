@@ -40,7 +40,7 @@
 %% __ When using with RCS, add a programmatic check for the LFS block size.
 %%    Then add extra cushion (e.g. 512 bytes??) and use that for block size?
 %%
-%% __ Implement the delete op:
+%% no Implement the delete op:
 %%    __ Update the deleted chunk map:
 %%        if undeleted chunks, write new map
 %%        if all chunks are deleted, delete file
@@ -50,6 +50,7 @@
 %%                 A stat(2) call can tell us if any blocks have been
 %%                 deleted yet.  (Or if pread(2) returns EOF)
 %%              2. If trailer is present, check last trailer for latest map.
+%%    INSTEAD, use hack of one-tombstone-for-all and one-delete-for-all.
 %%
 %% __ Read cache: if reading 0th chunk, create read-ahead that will
 %%    read entire file async'ly and send it as a message to be recieved
