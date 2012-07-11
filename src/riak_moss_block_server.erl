@@ -9,7 +9,7 @@
 -behaviour(gen_server).
 
 -include("riak_moss.hrl").
--include_lib("riakc/include/riakc_obj.hrl").
+-include_lib("riak_pb/include/riak_pb_kv_codec.hrl").
 
 %% API
 -export([start_link/0,

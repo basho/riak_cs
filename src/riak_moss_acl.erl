@@ -10,7 +10,7 @@
 -module(riak_moss_acl).
 
 -include("riak_moss.hrl").
--include_lib("riakc/include/riakc_obj.hrl").
+-include_lib("riak_pb/include/riak_pb_kv_codec.hrl").
 
 -ifdef(TEST).
 
