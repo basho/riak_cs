@@ -8,7 +8,8 @@
 
 -behaviour(gen_server).
 
--include_lib("riakc/include/riakclient_pb.hrl").
+-include_lib("riak_pb/include/riak_pb.hrl").
+-include_lib("riak_pb/include/riak_kv_pb.hrl").
 
 %% API
 -export([start_link/0]).
