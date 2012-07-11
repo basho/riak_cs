@@ -38,6 +38,7 @@ setup() ->
     %% Helpers to work around Stanchion
     meck:new(riak_moss_utils, [passthrough]),
     meck:expect(riak_moss_utils, create_bucket, fun create_bucket/5),
+    meck:expect(riak_moss_utils, delete_bucket, fun delete_bucket/4),
     meck:expect(riak_moss_utils, riak_connection, fun() -> {ok, spawn(fun() -> timer:sleep(5000) end)} end),
     meck:expect(riak_moss_utils, close_riak_connection, fun(_) -> ok end),
 
@@ -45,10 +46,10 @@ setup() ->
     %% (to check ACL of existing object??)
     meck:new(riak_moss_wm_key, [passthrough]),
     meck:expect(riak_moss_wm_key, get_access_and_manifest, fun(X, Y) -> {false, X, Y} end),
-    meck:new(riak_moss_get_fsm, [passthrough]),
-    meck:expect(riak_moss_get_fsm, get_manifest, fun(_) -> notfound end),
-    meck:new(riak_moss_acl, [passthrough]),
-    meck:expect(riak_moss_acl, object_access, fun(_,_,_,_,_) -> true end),
+    %% meck:new(riak_moss_get_fsm, [passthrough]),
+    %% %% meck:expect(riak_moss_get_fsm, get_manifest, fun(_) -> notfound end),
+    %% meck:new(riak_moss_acl, [passthrough]),
+    %% %% meck:expect(riak_moss_acl, object_access, fun(_,_,_,_,_) -> true end),
 
     ok.
 
@@ -101,8 +102,9 @@ put(_Pid, Obj0, _Options, _Timeout) ->
                           fun({<<"X-Riak-Meta">>, XRMList}) ->
                                   {<<"X-Riak-Meta">>,
                                    lists:map(
-                                     fun({MK,MV}=_XX) when is_binary(MV) ->
-                                             {MK, binary_to_list(MV)};
+                                     fun({MK,MV}) when is_binary(MK) ->
+                                             {binary_to_list(MK),
+                                              binary_to_list(MV)};
                                         (Else) ->
                                              Else
                                      end, XRMList)};
@@ -133,6 +135,10 @@ delete(_Pid, Bucket, Key, _Options, _Timeout) ->
 create_bucket(User, _VClock, Bucket, ACL, _RiakPid) ->
     KeyId = User?RCS_USER.key_id,
     stanchion_utils:do_bucket_op(Bucket, list_to_binary(KeyId), ACL, create).
+
+delete_bucket(User, _VClock, Bucket, _RiakPid) ->
+    KeyId = User?RCS_USER.key_id,
+    stanchion_utils:do_bucket_op(Bucket, list_to_binary(KeyId), ?ACL{}, delete).
 
 user1_details() ->
     [{display_name, "foobar"},
