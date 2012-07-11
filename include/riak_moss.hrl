@@ -213,7 +213,7 @@
 -define(DEFAULT_STANCHION_IP, "127.0.0.1").
 -define(DEFAULT_STANCHION_PORT, 8085).
 -define(DEFAULT_STANCHION_SSL, true).
--define(MD_ACL, "X-Moss-Acl").
+-define(MD_ACL, <<"X-Moss-Acl">>).
 -define(EMAIL_INDEX, <<"email_bin">>).
 -define(ID_INDEX, <<"c_id_bin">>).
 -define(AUTH_USERS_GROUP, "http://acs.amazonaws.com/groups/global/AuthenticatedUsers").

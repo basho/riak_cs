@@ -187,7 +187,7 @@ object_access(_Bucket, ObjAcl, RequestedAccess, CanonicalId, RiakPid) ->
 acl_from_meta([]) ->
     {error, acl_undefined};
 acl_from_meta([{?MD_ACL, Acl} | _]) ->
-    {ok, binary_to_term(list_to_binary(Acl))};
+    {ok, binary_to_term(Acl)};
 acl_from_meta([_ | RestMD]) ->
     acl_from_meta(RestMD).
 
