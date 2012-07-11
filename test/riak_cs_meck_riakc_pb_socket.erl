@@ -13,8 +13,6 @@
 
 -compile(export_all).
 -export([setup/0, teardown/0]).
--export([start/3, start_link/3, stop/1,
-         get/5, put/4]).
 
 %% Cut-and-paste from riakc_obj.erl, naughty but fun
 -record(riakc_obj, {
@@ -28,10 +26,13 @@
 
 setup() ->
     meck:new(?PBS, [passthrough]),
-    Es = [{get, fun get/3}, {get, fun get/4}, {get, fun get/5},
+    Es = [{start, fun start/2}, {start, fun start/3},
+          %% yes, same as start
+          {start_link, fun start/2},  {start_link, fun start/3},
+          {get, fun get/3}, {get, fun get/4}, {get, fun get/5},
           {put, fun put/2}, {put, fun put/3}, {put, fun put/4},
           {delete, fun delete/3}, {delete, fun delete/4},
-          {delete, fun delete/5}],
+          {delete, fun delete/5}, {list_keys, fun list_keys/2}],
     [meck:expect(?PBS, Name, Fun) || {Name, Fun} <- Es],
     ets:new(?TAB, [named_table, public, ordered_set]),
 
@@ -39,34 +40,29 @@ setup() ->
     meck:new(riak_moss_utils, [passthrough]),
     meck:expect(riak_moss_utils, create_bucket, fun create_bucket/5),
     meck:expect(riak_moss_utils, delete_bucket, fun delete_bucket/4),
-    meck:expect(riak_moss_utils, riak_connection, fun() -> {ok, spawn(fun() -> timer:sleep(5000) end)} end),
-    meck:expect(riak_moss_utils, close_riak_connection, fun(_) -> ok end),
+    StartFakeRiakC = fun() -> {ok, spawn(fun() -> timer:sleep(500) end)} end,
+    StopFakeRiakC = fun(_) -> ok end,
+    meck:expect(riak_moss_utils, riak_connection, StartFakeRiakC),
+    meck:expect(riak_moss_utils, close_riak_connection, StopFakeRiakC),
 
-    %% Temp helper to avoid spinning up a GET fsm on a put operation
-    %% (to check ACL of existing object??)
-    meck:new(riak_moss_wm_key, [passthrough]),
-    meck:expect(riak_moss_wm_key, get_access_and_manifest, fun(X, Y) -> {false, X, Y} end),
-    %% meck:new(riak_moss_get_fsm, [passthrough]),
-    %% %% meck:expect(riak_moss_get_fsm, get_manifest, fun(_) -> notfound end),
-    %% meck:new(riak_moss_acl, [passthrough]),
-    %% %% meck:expect(riak_moss_acl, object_access, fun(_,_,_,_,_) -> true end),
+    meck:new(stanchion_utils, [passthrough]),
+    meck:expect(stanchion_utils, riak_connection, StartFakeRiakC),
+    meck:expect(stanchion_utils, close_riak_connection, StopFakeRiakC),
 
     ok.
 
 teardown() ->
     catch meck:unload(?PBS),
     catch meck:unload(riak_moss_utils),
-    catch meck:unload(riak_moss_wm_key),
-    catch meck:unload(riak_moss_get_fsm),
-    catch meck:unload(riak_moss_acl),
+    catch meck:unload(stanchion_utils),
     catch ets:delete(?TAB),
     ok.
 
-start(_Address, _Port, _Options) ->
-    {ok, ?MODULE}.
+start(Address, Port) ->
+    start(Address, Port, []).
 
-start_link(Address, Port, Options) ->
-    start(Address, Port, Options).
+start(_Address, _Port, _Options) ->
+    {ok, spawn(fun() -> timer:sleep(500) end)}.
 
 stop(_Pid) ->
     ok.
@@ -78,7 +74,6 @@ get(_Pid, Bucket, Key, X) ->
     get(_Pid, Bucket, Key, X, x).
 
 get(_Pid, Bucket, Key, _Options, _Timeout) ->
-    io:format("get, "),
     case ets:lookup(?TAB, {Bucket, Key}) of
         [] ->
             {error, notfound};
@@ -93,7 +88,6 @@ put(_Pid, Obj, X) ->
     put(_Pid, Obj, X, x).
 
 put(_Pid, Obj0, _Options, _Timeout) ->
-    io:format("put, "),
     Bucket = riakc_obj:bucket(Obj0),
     Key = riakc_obj:key(Obj0),
     V = riakc_obj:get_update_value(Obj0),
@@ -123,7 +117,6 @@ delete(_Pid, Bucket, Key, X) ->
     delete(_Pid, Bucket, Key, X, x).
 
 delete(_Pid, Bucket, Key, _Options, _Timeout) ->
-    io:format("delete, "),
     case ets:member(?TAB, {Bucket, Key}) of
         false ->
             {error, notfound};
@@ -131,6 +124,9 @@ delete(_Pid, Bucket, Key, _Options, _Timeout) ->
             ets:delete(?TAB, {Bucket, Key}),
             ok
     end.
+
+list_keys(_Pid, Bucket) ->
+    {ok, [K || {{B, K}, _Obj} <- ets:tab2list(?TAB), B == Bucket]}.
 
 create_bucket(User, _VClock, Bucket, ACL, _RiakPid) ->
     KeyId = User?RCS_USER.key_id,
