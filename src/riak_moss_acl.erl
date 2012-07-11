@@ -10,7 +10,7 @@
 -module(riak_moss_acl).
 
 -include("riak_moss.hrl").
--include_lib("riakc/include/riakc_obj.hrl").
+-include_lib("riak_pb/include/riak_pb_kv_codec.hrl").
 
 -ifdef(TEST).
 
@@ -187,7 +187,7 @@ object_access(_Bucket, ObjAcl, RequestedAccess, CanonicalId, RiakPid) ->
 acl_from_meta([]) ->
     {error, acl_undefined};
 acl_from_meta([{?MD_ACL, Acl} | _]) ->
-    {ok, binary_to_term(list_to_binary(Acl))};
+    {ok, binary_to_term(Acl)};
 acl_from_meta([_ | RestMD]) ->
     acl_from_meta(RestMD).
 
