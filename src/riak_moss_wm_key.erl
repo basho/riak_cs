@@ -28,7 +28,7 @@ init(Config) ->
     %% set that in the context.
     AuthBypass = proplists:get_value(auth_bypass, Config),
     {ok, #key_context{context=#context{auth_bypass=AuthBypass,
-                                       start_time=now()}}}.
+                                       start_time=os:timestamp()}}}.
 
 -spec extract_paths(term(), term()) -> term().
 extract_paths(RD, Ctx) ->
@@ -64,10 +64,11 @@ service_available(RD, Ctx) ->
 %%      but this is how S3 does things.
 forbidden(RD, #key_context{context=ICtx}=Ctx) ->
     dt_entry(<<"forbidden">>),
-    Next = fun(NewRD, NewCtx) ->
-                   get_access_and_manifest(NewRD, Ctx#key_context{context=NewCtx})
+    Next = fun(NewRD, NewICtx) ->
+                   get_access_and_manifest(NewRD, Ctx#key_context{context=NewICtx})
            end,
-    case riak_moss_wm_utils:find_and_auth_user(RD, ICtx, Next) of
+    Conv2KeyCtx = fun(NewICtx) -> Ctx#key_context{context=NewICtx} end,
+    case riak_moss_wm_utils:find_and_auth_user(RD, ICtx, Next, Conv2KeyCtx) of
         {false, _RD2, Ctx2} = FalseRet ->
             dt_return(<<"forbidden">>, [], [extract_name((Ctx2#key_context.context)#context.user), <<"false">>]),
             FalseRet;
@@ -117,7 +118,7 @@ check_permission(Method, RD, Ctx=#key_context{bucket=Bucket,
         notfound ->
             ObjectAcl = undefined;
         _ ->
-            ObjectAcl = Mfst#lfs_manifest_v2.acl
+            ObjectAcl = Mfst?MANIFEST.acl
     end,
     case riak_moss_acl:object_access(Bucket,
                                      ObjectAcl,
@@ -187,7 +188,7 @@ content_types_provided(RD, Ctx=#key_context{manifest=Mfst}) ->
     Method = wrq:method(RD),
     if Method == 'GET'; Method == 'HEAD' ->
             DocCtx = riak_moss_wm_utils:ensure_doc(Ctx),
-            ContentType = binary_to_list(Mfst#lfs_manifest_v2.content_type),
+            ContentType = binary_to_list(Mfst?MANIFEST.content_type),
             case ContentType of
                 _ ->
                     {[{ContentType, produce_body}], RD, DocCtx}
@@ -206,14 +207,14 @@ produce_body(RD, #key_context{get_fsm_pid=GetFsmPid,
                               context=#context{start_time=StartTime,
                                                user=User,
                                                requested_perm='READ_ACP'}}=KeyCtx) ->
-    {Bucket, File} = Mfst#lfs_manifest_v2.bkey,
+    {Bucket, File} = Mfst?MANIFEST.bkey,
     BFile_str = [Bucket, $,, File],
     UserName = extract_name(User),
     dt_entry(<<"produce_body">>, [], [UserName, BFile_str]),
     dt_entry_object(<<"get_acl">>, [], [UserName, BFile_str]),
     riak_moss_get_fsm:stop(GetFsmPid),
     ok = riak_cs_stats:update_with_start(object_get_acl, StartTime),
-    Acl = Mfst#lfs_manifest_v2.acl,
+    Acl = Mfst?MANIFEST.acl,
     case Acl of
         undefined ->
             dt_return(<<"produce_body">>, [-1], [UserName, BFile_str]),
@@ -227,14 +228,14 @@ produce_body(RD, #key_context{get_fsm_pid=GetFsmPid,
 produce_body(RD, #key_context{get_fsm_pid=GetFsmPid, manifest=Mfst,
                               context=#context{start_time=StartTime,
                                                user=User}}=Ctx) ->
-    {Bucket, File} = Mfst#lfs_manifest_v2.bkey,
+    {Bucket, File} = Mfst?MANIFEST.bkey,
     BFile_str = [Bucket, $,, File],
     UserName = extract_name(User),
     dt_entry(<<"produce_body">>, [], [UserName, BFile_str]),
     dt_entry_object(<<"file_get">>, [], [UserName, BFile_str]),
-    ContentLength = Mfst#lfs_manifest_v2.content_length,
-    ContentMd5 = Mfst#lfs_manifest_v2.content_md5,
-    LastModified = riak_moss_wm_utils:to_rfc_1123(Mfst#lfs_manifest_v2.created),
+    ContentLength = Mfst?MANIFEST.content_length,
+    ContentMd5 = Mfst?MANIFEST.content_md5,
+    LastModified = riak_moss_wm_utils:to_rfc_1123(Mfst?MANIFEST.created),
     ETag = "\"" ++ riak_moss_utils:binary_to_hexlist(ContentMd5) ++ "\"",
     NewRQ = lists:foldl(fun({K, V}, Rq) -> wrq:set_resp_header(K, V, Rq) end,
                         RD,
@@ -276,7 +277,7 @@ delete_resource(RD, Ctx=#key_context{bucket=Bucket,
     riak_moss_get_fsm:stop(GetFsmPid),
     BinKey = list_to_binary(Key),
     #context{riakc_pid=RiakPid} = InnerCtx,
-    case riak_moss_delete_marker:delete(Bucket, BinKey, RiakPid) of
+    case riak_moss_utils:delete_object(Bucket, BinKey, RiakPid) of
         ok ->
             %% successfully marked for deletion
             DCode = 1,
@@ -284,8 +285,10 @@ delete_resource(RD, Ctx=#key_context{bucket=Bucket,
         {error, notfound} ->
             %% it's not there; consider the delete successful
             DCode = 0,
-            ok
-%%% other errors: bomb for now, handle better later?
+            ok;
+        {error, _Reason} ->
+            DCode = -1,
+            riak_moss_s3_response:api_error(delete_failed, RD, Ctx)
     end,
     dt_return(<<"delete_resource">>, [DCode], [UserName, BFile_str]),
     dt_return_object(<<"file_delete">>, [DCode], [UserName, BFile_str]),
@@ -436,7 +439,7 @@ finalize_request(RD, #key_context{bucket=Bucket,
     AccessRD = riak_moss_access_logger:set_bytes_in(S, RD),
 
     {ok, Manifest} = riak_moss_put_fsm:finalize(Pid),
-    ETag = "\"" ++ riak_moss_utils:binary_to_hexlist(Manifest#lfs_manifest_v2.content_md5) ++ "\"",
+    ETag = "\"" ++ riak_moss_utils:binary_to_hexlist(Manifest?MANIFEST.content_md5) ++ "\"",
     ok = riak_cs_stats:update_with_start(object_put, StartTime),
     dt_return(<<"finalize_request">>, [S], [UserName, BFile_str]),
     {{halt, 200}, wrq:set_resp_header("ETag",  ETag, AccessRD), Ctx}.

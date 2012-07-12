@@ -121,12 +121,12 @@ list_bucket_response(User, Bucket, KeyObjPairs, RD, Ctx) ->
                     case ObjResp of
                         {ok, Manifest} ->
                             Size = integer_to_list(
-                                     Manifest#lfs_manifest_v2.content_length),
+                                     Manifest?MANIFEST.content_length),
                             LastModified =
                                 riak_moss_wm_utils:to_iso_8601(
-                                  Manifest#lfs_manifest_v2.created),
+                                  Manifest?MANIFEST.created),
                             ETag = "\"" ++ riak_moss_utils:binary_to_hexlist(
-                                             Manifest#lfs_manifest_v2.content_md5)
+                                             Manifest?MANIFEST.content_md5)
                                 ++ "\"",
                             {'Contents', [{'Key', [KeyString]},
                                           {'Size', [Size]},

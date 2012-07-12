@@ -262,6 +262,8 @@ send_request(Host, Url, Headers0, Method, Body, Options, Count) ->
 do_put(Host, Url, Headers, Value, ReportFun) ->
     case send_request(Host, Url, Headers ++ [{'Content-Type', 'application/octet-stream'}],
                       put, Value, proxy_opts()) of
+        {ok, "200", _Header, _Body} ->
+            {ok, ReportFun(byte_size(Value))};
         {ok, "201", _Header, _Body} ->
             {ok, ReportFun(byte_size(Value))};
         {ok, "204", _Header, _Body} ->

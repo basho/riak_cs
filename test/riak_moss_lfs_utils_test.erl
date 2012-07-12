@@ -21,31 +21,11 @@ lfs_utils_test_() ->
      fun setup/0,
      fun teardown/1,
      [
-      fun test_not_manifest/0,
-      fun test_is_manifest/0,
       fun test_block_count_1/0,
       fun test_block_count_2/0,
       fun test_block_count_3/0,
       fun test_block_count_4/0
      ]}.
-
-test_not_manifest() ->
-    ?assertNot(riak_moss_lfs_utils:is_manifest(term_to_binary(foo))).
-
-test_is_manifest() ->
-    Manifest =
-        riak_moss_lfs_utils:new_manifest(<<"foo">>,
-                                         <<"bar">>,
-                                         <<"uuid">>,
-                                         1024,
-                                         <<"ctype">>,
-                                         <<"2522ccc1ca2a458eca94a9576d4b71c2">>,
-                                         orddict:new(),
-                                         riak_moss_lfs_utils:block_size(),
-                                         riak_moss_acl_utils:default_acl("tester",
-                                                                         "tester_id",
-                                                                         "tester_key_id")),
-    ?assert(riak_moss_lfs_utils:is_manifest(term_to_binary(Manifest))).
 
 test_block_count_1() ->
     ?assertEqual(riak_moss_lfs_utils:block_count(2, 1), 2).
