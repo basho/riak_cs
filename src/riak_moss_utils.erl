@@ -25,6 +25,7 @@
          is_admin/1,
          map_keys_and_manifests/3,
          get_object/3,
+         get_manifests/3,
          get_user/2,
          get_user_by_index/3,
          get_user_index/3,
@@ -33,11 +34,13 @@
          pow/2,
          pow/3,
          put_object/5,
+         put_with_no_meta/2,
          riak_connection/0,
          riak_connection/1,
          save_user/3,
          set_bucket_acl/5,
          set_object_acl/5,
+         timestamp/1,
          to_bucket_name/2,
          update_key_secret/1]).
 
@@ -186,10 +189,24 @@ delete_bucket(User, VClock, Bucket, RiakPid) ->
             LocalError
     end.
 
-%% @doc Delete an object from Riak
--spec delete_object(binary(), binary(), pid()) -> ok.
-delete_object(BucketName, Key, RiakPid) ->
-    riakc_pb_socket:delete(RiakPid, BucketName, Key).
+%% @doc Mark all active manifests as pending_delete.
+-spec delete_object(binary(), binary(), pid()) -> ok | {error, term()}.
+delete_object(Bucket, Key, RiakcPid) ->
+    StartTime = os:timestamp(),
+    case get_manifests(RiakcPid, Bucket, Key) of
+        {ok, RiakObject, Manifests} ->
+            ActiveManifests = riak_cs_manifest_utils:active_and_writing_manifests(Manifests),
+            ActiveUUIDs = [UUID || {UUID, _} <- ActiveManifests],
+            _ = riak_cs_gc:gc_manifests(Bucket,
+                                    Key,
+                                    Manifests,
+                                    ActiveUUIDs,
+                                    RiakObject,
+                                    RiakcPid),
+            ok = riak_cs_stats:update_with_start(object_delete, StartTime);
+        {error, _}=Error ->
+            Error
+    end.
 
 %% Get the root bucket name for either a MOSS object
 %% bucket or the data block bucket name.
@@ -252,7 +269,7 @@ get_env(App, Key, Default) ->
 %% with their associated objects.
 -spec get_keys_and_manifests(binary(), binary(), pid()) -> {ok, [lfs_manifest()]} | {error, term()}.
 get_keys_and_manifests(BucketName, Prefix, RiakPid) ->
-    ManifestBucket = riak_moss_utils:to_bucket_name(objects, BucketName),
+    ManifestBucket = to_bucket_name(objects, BucketName),
     case active_manifests(ManifestBucket, Prefix, RiakPid) of
         {ok, KeyManifests} ->
             {ok, lists:keysort(1, KeyManifests)};
@@ -305,8 +322,9 @@ map_keys_and_manifests(Object, _, _) ->
     try
         AllManifests = [ binary_to_term(V)
                          || V <- riak_object:get_values(Object) ],
-        Resolved = riak_moss_manifest_resolution:resolve(AllManifests),
-        case riak_moss_manifest:active_manifest(Resolved) of
+        Upgraded = riak_cs_manifest_utils:upgrade_wrapped_manifests(AllManifests),
+        Resolved = riak_moss_manifest_resolution:resolve(Upgraded),
+        case riak_cs_manifest_utils:active_manifest(Resolved) of
             {ok, Manifest} ->
                 [{riak_object:key(Object), {ok, Manifest}}];
             _ ->
@@ -332,6 +350,37 @@ get_admin_creds() ->
                         {ok, riakc_obj:riakc_obj()} | {error, term()}.
 get_object(BucketName, Key, RiakPid) ->
     riakc_pb_socket:get(RiakPid, BucketName, Key).
+
+%% internal fun to retrieve the riak object
+%% at a bucket/key
+-spec get_manifests_raw(pid(), binary(), binary()) ->
+    {ok, riakc_obj:riakc_obj()} | {error, notfound}.
+get_manifests_raw(RiakcPid, Bucket, Key) ->
+    ManifestBucket = to_bucket_name(objects, Bucket),
+    riakc_pb_socket:get(RiakcPid, ManifestBucket, Key).
+
+%% @doc
+-spec get_manifests(pid(), binary(), binary()) ->
+    {ok, term(), term()} | {error, notfound}.
+get_manifests(RiakcPid, Bucket, Key) ->
+    case get_manifests_raw(RiakcPid, Bucket, Key) of
+        {ok, Object} ->
+            Siblings = riakc_obj:get_values(Object),
+            DecodedSiblings = lists:map(fun erlang:binary_to_term/1, Siblings),
+
+            %% Upgrade the manifests to be the latest erlang
+            %% record version
+            Upgraded = riak_cs_manifest_utils:upgrade_wrapped_manifests(DecodedSiblings),
+
+            %% resolve the siblings
+            Resolved = riak_moss_manifest_resolution:resolve(Upgraded),
+
+            %% prune old scheduled_delete manifests
+            Pruned = riak_cs_manifest_utils:prune(Resolved),
+            {ok, Object, Pruned};
+        {error, notfound}=NotFound ->
+            NotFound
+    end.
 
 %% @doc Retrieve a MOSS user's information based on their id string.
 -spec get_user('undefined' | list(), pid()) -> {ok, {moss_user(), riakc_obj:vclock()}} | {error, term()}.
@@ -431,8 +480,8 @@ list_keys(BucketName, RiakPid) ->
             %% going to involve 2i and merging the
             %% results from each of the vnodes.
             {ok, lists:sort(Keys)};
-        {error, Reason} ->
-            {error, Reason}
+        {error, _}=Error ->
+            Error
     end.
 
 %% @doc Integer version of the standard pow() function; call the recursive accumulator to calculate.
@@ -461,6 +510,19 @@ put_object(BucketName, Key, Value, Metadata, RiakPid) ->
     RiakObject = riakc_obj:new(BucketName, Key, Value),
     NewObj = riakc_obj:update_metadata(RiakObject, Metadata),
     riakc_pb_socket:put(RiakPid, NewObj).
+
+%% @doc Put an object in Riak with empty
+%% metadata. This is likely used when because
+%% you want to avoid manually setting the metadata
+%% to an empty dict. You'd want to do this because
+%% if the previous object had metadata siblings,
+%% not explicitly setting the metadata will
+%% cause a siblings exception to be raised.
+-spec put_with_no_meta(pid(), riakc_obj:riakc_obj()) ->
+    ok | {ok, riakc_obj:riakc_obj()} | {ok, riakc_obj:key()} | {error, term()}.
+put_with_no_meta(RiakcPid, RiakcObject) ->
+    WithMeta = riakc_obj:update_metadata(RiakcObject, dict:new()),
+    riakc_pb_socket:put(RiakcPid, WithMeta).
 
 %% @doc Get a protobufs connection to the riak cluster
 %% from the default connection pool.
@@ -518,10 +580,10 @@ set_bucket_acl(User, VClock, Bucket, ACL, RiakPid) ->
 -spec set_object_acl(binary(), binary(), lfs_manifest(), acl(), pid()) ->
             ok | {error, term()}.
 set_object_acl(Bucket, Key, Manifest, Acl, RiakPid) ->
-    StartTime = now(),
+    StartTime = os:timestamp(),
     {ok, ManiPid} = riak_moss_manifest_fsm:start_link(Bucket, Key, RiakPid),
     _ActiveMfst = riak_moss_manifest_fsm:get_active_manifest(ManiPid),
-    UpdManifest = Manifest#lfs_manifest_v2{acl=Acl},
+    UpdManifest = Manifest?MANIFEST{acl=Acl},
     Res = riak_moss_manifest_fsm:update_manifest_with_confirmation(ManiPid, UpdManifest),
     riak_moss_manifest_fsm:stop(ManiPid),
     if Res == ok ->
@@ -530,6 +592,11 @@ set_object_acl(Bucket, Key, Manifest, Acl, RiakPid) ->
             ok
     end,
     Res.
+
+%% @doc Generate a key for storing a set of manifests for deletion.
+-spec timestamp(erlang:timestamp()) -> non_neg_integer().
+timestamp({MegaSecs, Secs, _MicroSecs}) ->
+    (MegaSecs * 1000000) + Secs.
 
 %% Get the proper bucket name for either the MOSS object
 %% bucket or the data block bucket.
@@ -699,7 +766,7 @@ bucket_record(Name, Operation) ->
     ?MOSS_BUCKET{name=binary_to_list(Name),
                  last_action=Action,
                  creation_date=riak_moss_wm_utils:iso_8601_datetime(),
-                 modification_time=erlang:now()}.
+                 modification_time=os:timestamp()}.
 
 %% @doc Check for and resolve any conflict between
 %% a bucket record from a user record sibling and
@@ -741,7 +808,7 @@ cleanup_bucket(?MOSS_BUCKET{last_action=created}) ->
     false;
 cleanup_bucket(?MOSS_BUCKET{last_action=deleted,
                             modification_time=ModTime}) ->
-    timer:now_diff(erlang:now(), ModTime) > 86400.
+    timer:now_diff(os:timestamp(), ModTime) > 86400.
 
 %% @doc Strip off the user name portion of an email address
 -spec display_name(string()) -> string().
@@ -884,7 +951,7 @@ resolve_buckets([HeadUserRec | RestUserRecs], Buckets, _KeepDeleted) ->
                                   ok |
                                   {error, term()}.
 serialized_bucket_op(Bucket, ACL, User, VClock, BucketOp, StatName, RiakPid) ->
-    StartTime = now(),
+    StartTime = os:timestamp(),
     case get_admin_creds() of
         {ok, AdminCreds} ->
             BucketFun = bucket_fun(BucketOp,

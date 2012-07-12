@@ -5,7 +5,7 @@
 %% -------------------------------------------------------------------
 
 
--module(riak_moss_manifest_eqc).
+-module(riak_cs_manifest_utils_eqc).
 
 -include_lib("eqc/include/eqc.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -56,20 +56,20 @@ cleanup(_) ->
 prop_choose_active_commutative() ->
     ?FORALL(Manifests, eqc_gen:resize(50, manifests()),
         begin
-            AlteredManifests = lists:map(fun(M) -> M#lfs_manifest_v2{uuid=druuid:v4()} end, Manifests),
-            AsDict = orddict:from_list([{M#lfs_manifest_v2.uuid, M} || M <- AlteredManifests]),
-            Active = riak_moss_manifest:active_manifest(AsDict),
+            AlteredManifests = lists:map(fun(M) -> M?MANIFEST{uuid=druuid:v4()} end, Manifests),
+            AsDict = orddict:from_list([{M?MANIFEST.uuid, M} || M <- AlteredManifests]),
+            Active = riak_cs_manifest_utils:active_manifest(AsDict),
             case Active of
                 {error, no_active_manifest} ->
                     %% if no manifest is returned then there should
                     %% not be an active manifest in the list _at_ _all_
-                    [] == lists:filter(fun(#lfs_manifest_v2{state=State}) ->
+                    [] == lists:filter(fun(?MANIFEST{state=State}) ->
                                 State == active end,
                             Manifests);
                 {ok, AMani} ->
                     %% if a manifest is returned,
                     %% its state should be active
-                    AMani#lfs_manifest_v2.state == active
+                    AMani?MANIFEST.state == active
             end
         end).
 
@@ -78,28 +78,28 @@ prop_choose_active_commutative() ->
 %%====================================================================
 
 raw_manifest() ->
-    #lfs_manifest_v2{uuid = <<"this-uuid-will-be-replaced-later">>,
+    ?MANIFEST{uuid = <<"this-uuid-will-be-replaced-later">>,
                      bkey={<<"bucket">>, <<"key">>},
                      state=moss_gen:manifest_state()}.
 
 manifest() ->
     ?LET(Manifest, raw_manifest(), process_manifest(Manifest)).
 
-process_manifest(Manifest=#lfs_manifest_v2{state=State}) ->
+process_manifest(Manifest=?MANIFEST{state=State}) ->
     case State of
         writing ->
-            Manifest#lfs_manifest_v2{last_block_written_time=erlang:now(),
+            Manifest?MANIFEST{last_block_written_time=erlang:now(),
                                      write_blocks_remaining=blocks_set()};
         active ->
             %% this clause isn't
             %% needed but it makes
             %% things more clear imho
-            Manifest#lfs_manifest_v2{last_block_deleted_time=erlang:now()};
+            Manifest?MANIFEST{last_block_deleted_time=erlang:now()};
         pending_delete ->
-            Manifest#lfs_manifest_v2{last_block_deleted_time=erlang:now(),
+            Manifest?MANIFEST{last_block_deleted_time=erlang:now(),
                                      delete_blocks_remaining=blocks_set()};
-        deleted ->
-            Manifest#lfs_manifest_v2{last_block_deleted_time=erlang:now()}
+        scheduled_delete ->
+            Manifest?MANIFEST{delete_marked_time=erlang:now()}
     end.
 
 manifests() ->

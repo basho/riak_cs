@@ -14,6 +14,7 @@
 %% API
 -export([start_link/0,
          start_link/1,
+         start_block_servers/2,
          get_block/5,
          put_block/6,
          delete_block/5,
@@ -49,6 +50,36 @@ start_link() ->
 start_link(RiakPid) ->
     gen_server:start_link(?MODULE, [RiakPid], []).
 
+%% @doc Start (up to) 'MaxNumServers'
+%% riak_moss_block_server procs.
+%% 'RiakcPid' must be a Pid you already
+%% have for a riakc_pb_socket proc. If the
+%% poolboy boy returns full, you will be given
+%% a list of less than 'MaxNumServers'.
+
+%% TODO: this doesn't guarantee any minimum
+%% number of workers. I could also imagine
+%% this function looking something
+%% like:
+%% start_block_servers(RiakcPid, MinWorkers, MaxWorkers, MinWorkerTimeout)
+%% Where the function works something like:
+%% Give me between MinWorkers and MaxWorkers,
+%% waiting up to MinWorkerTimeout to get at least
+%% MinWorkers. If the timeout occurs, this function
+%% could return an error, or the pids it has
+%% so far (which might be less than MinWorkers).
+-spec start_block_servers(pid(), pos_integer()) -> [pid()].
+start_block_servers(RiakcPid, 1) ->
+    {ok, Pid} = start_link(RiakcPid),
+    [Pid];
+start_block_servers(RiakcPid, MaxNumServers) ->
+    case start_link() of
+        {ok, Pid} ->
+            [Pid | start_block_servers(RiakcPid, (MaxNumServers - 1))];
+        {error, normal} ->
+            start_block_servers(RiakcPid, 1)
+    end.
+
 -spec get_block(pid(), binary(), binary(), binary(), pos_integer()) -> ok.
 get_block(Pid, Bucket, Key, UUID, BlockNumber) ->
     gen_server:cast(Pid, {get_block, self(), Bucket, Key, UUID, BlockNumber}).
@@ -68,17 +99,6 @@ stop(Pid) ->
 %%% gen_server callbacks
 %%%===================================================================
 
-%%--------------------------------------------------------------------
-%% @private
-%% @doc
-%% Initializes the server
-%%
-%% @spec init(Args) -> {ok, State} |
-%%                     {ok, State, Timeout} |
-%%                     ignore |
-%%                     {stop, Reason}
-%% @end
-%%--------------------------------------------------------------------
 init([RiakPid]) ->
     process_flag(trap_exit, true),
     {ok, #state{riakc_pid=RiakPid,
@@ -88,10 +108,8 @@ init([]) ->
     case riak_moss_utils:riak_connection() of
         {ok, RiakPid} ->
             {ok, #state{riakc_pid=RiakPid}};
-        {error, Reason} ->
-            _ = lager:error("Failed to establish connection to Riak. Reason: ~p",
-                            [Reason]),
-            {stop, riak_connect_failed}
+        {error, all_workers_busy} ->
+            {stop, normal}
     end.
 
 %%--------------------------------------------------------------------
@@ -151,16 +169,19 @@ handle_cast({put_block, ReplyPid, Bucket, Key, UUID, BlockNumber, Value}, State=
     riak_moss_put_fsm:block_written(ReplyPid, BlockNumber),
     dt_return(<<"put_block">>, [BlockNumber], [Bucket, Key]),
     {noreply, State};
-handle_cast({delete_block, _ReplyPid, Bucket, Key, UUID, BlockNumber}, State=#state{riakc_pid=RiakcPid}) ->
+handle_cast({delete_block, ReplyPid, Bucket, Key, UUID, BlockNumber}, State=#state{riakc_pid=RiakcPid}) ->
     dt_entry(<<"delete_block">>, [BlockNumber], [Bucket, Key]),
     {FullBucket, FullKey} = full_bkey(Bucket, Key, UUID, BlockNumber),
     StartTime = os:timestamp(),
-    ok = riakc_pb_socket:delete(RiakcPid, FullBucket, FullKey),
+    DeleteOptions = [{r, all}, {pr, all}, {w, all}, {pw, all}],
+    Response = riakc_pb_socket:delete(RiakcPid, FullBucket, FullKey, DeleteOptions),
+    case Response of
+        ok ->
+            riak_cs_delete_fsm:block_deleted(ReplyPid, {ok, BlockNumber});
+        {error, _Error}=Error ->
+            riak_cs_delete_fsm:block_deleted(ReplyPid, Error)
+    end,
     ok = riak_cs_stats:update_with_start(block_delete, StartTime),
-    %% TODO:
-    %% add a public func to riak_moss_delete_fsm
-    %% to send messages back to the fsm
-    %% saying that the block was deleted
     dt_return(<<"delete_block">>, [BlockNumber], [Bucket, Key]),
     {noreply, State};
 handle_cast(_Msg, State) ->

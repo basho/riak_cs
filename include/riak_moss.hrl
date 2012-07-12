@@ -74,7 +74,32 @@
 
 -type cluster_id() :: undefined | term().  % Type still in flux.
 
+-type cs_uuid() :: binary().
+
 -record(lfs_manifest_v2, {
+        version=2 :: integer(),
+        block_size :: integer(),
+        bkey :: {binary(), binary()},
+        metadata :: orddict:orddict(),
+        created=riak_moss_wm_utils:iso_8601_datetime(),
+        uuid :: cs_uuid(),
+        content_length :: non_neg_integer(),
+        content_type :: binary(),
+        content_md5 :: term(),
+        state=undefined :: undefined | writing | active |
+                           pending_delete | scheduled_delete | deleted,
+        write_start_time :: term(), %% immutable
+        last_block_written_time :: term(),
+        write_blocks_remaining :: ordsets:ordset(integer()),
+        delete_marked_time :: term(),
+        last_block_deleted_time :: term(),
+        delete_blocks_remaining :: ordsets:ordset(integer()),
+        acl :: acl(),
+        props = [] :: proplists:proplist(),
+        cluster_id :: cluster_id()
+    }).
+
+-record(lfs_manifest_v3, {
         %% "global" properties
         %% -----------------------------------------------------------------
 
@@ -84,7 +109,7 @@
         %% but I figured it's worth keeping
         %% in case we change serialization
         %% formats in the future.
-        version=2 :: integer(),
+        version=3 :: integer(),
 
         %% the block_size setting when this manifest
         %% was written. Needed if the user
@@ -110,7 +135,7 @@
         %% reason we can't change created
         %% to have millisecond as well.
         created=riak_moss_wm_utils:iso_8601_datetime(),
-        uuid :: binary(),
+        uuid :: cs_uuid(),
 
         %% content properties
         %% -----------------------------------------------------------------
@@ -120,7 +145,8 @@
 
         %% state properties
         %% -----------------------------------------------------------------
-        state=undefined :: undefined | writing | active | pending_delete | deleted,
+        state=undefined :: undefined | writing | active |
+                           pending_delete | scheduled_delete | deleted,
 
         %% writing/active state
         %% -----------------------------------------------------------------
@@ -163,6 +189,11 @@
         %% a shrinking set
         delete_blocks_remaining :: ordsets:ordset(integer()),
 
+        %% the time the manifest was put
+        %% into the scheduled_delete
+        %% state
+        scheduled_delete_time :: term(),
+
         %% The ACL for the version of the object represented
         %% by this manifest.
         acl :: acl(),
@@ -196,7 +227,11 @@
         %%     fetch us the missing data.
         cluster_id :: cluster_id()
     }).
--type lfs_manifest() :: #lfs_manifest_v2{}.
+-type lfs_manifest() :: #lfs_manifest_v3{}.
+
+-type cs_uuid_and_manifest() :: {cs_uuid(), lfs_manifest()}.
+
+-define(MANIFEST, #lfs_manifest_v3).
 
 -define(ACL, #acl_v2).
 -define(MOSS_BUCKET, #moss_bucket_v1).
@@ -206,6 +241,7 @@
 -define(ACCESS_BUCKET, <<"moss.access">>).
 -define(STORAGE_BUCKET, <<"moss.storage">>).
 -define(BUCKETS_BUCKET, <<"moss.buckets">>).
+-define(GC_BUCKET, <<"riak-cs-gc">>).
 -define(FREE_BUCKET_MARKER, <<"0">>).
 -define(DEFAULT_MAX_CONTENT_LENGTH, 5368709120). %% 5 GB
 -define(DEFAULT_LFS_BLOCK_SIZE, 1048576).%% 1 MB
@@ -216,11 +252,13 @@
 -define(MD_ACL, <<"X-Moss-Acl">>).
 -define(EMAIL_INDEX, <<"email_bin">>).
 -define(ID_INDEX, <<"c_id_bin">>).
+-define(KEY_INDEX, <<"$key">>).
 -define(AUTH_USERS_GROUP, "http://acs.amazonaws.com/groups/global/AuthenticatedUsers").
 -define(ALL_USERS_GROUP, "http://acs.amazonaws.com/groups/global/AllUsers").
 -define(LOG_DELIVERY_GROUP, "http://acs.amazonaws.com/groups/s3/LogDelivery").
 -define(DEFAULT_FETCH_CONCURRENCY, 1).
 -define(DEFAULT_PUT_CONCURRENCY, 1).
+-define(DEFAULT_DELETE_CONCURRENCY, 1).
 %% A number to multiplied with the block size
 %% to determine the PUT buffer size.
 %% ex. 2 would mean BlockSize * 2
@@ -270,3 +308,11 @@
 -define(DT_OBJECT_OP,       703).
 %% perhaps add later? -define(DT_AUTH_OP,         704).
 -define(DT_WM_OP,           705).
+
+%% Number of seconds to keep manifests in the `scheduled_delete' state
+%% before beginning to delete the file blocks and before the file
+%% manifest may be pruned.
+-define(DEFAULT_LEEWAY_SECONDS, 86400). %% 24-hours
+-define(DEFAULT_GC_INTERVAL, 900). %% 15 minutes
+-define(DEFAULT_GC_RETRY_INTERVAL, 21600). %% 6 hours
+-define(EPOCH_START, <<"0">>).
