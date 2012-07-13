@@ -241,7 +241,7 @@ produce_body(RD, #key_context{get_fsm_pid=GetFsmPid, manifest=Mfst,
                         RD,
                         [{"ETag",  ETag},
                          {"Last-Modified", LastModified}
-                        ] ++  Mfst#lfs_manifest_v2.metadata),
+                        ] ++  Mfst?MANIFEST.metadata),
     Method = wrq:method(RD),
     case Method == 'HEAD'
         orelse
