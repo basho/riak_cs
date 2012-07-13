@@ -100,6 +100,8 @@ list_all_my_buckets_response(User, RD, Ctx) ->
     BucketsDoc =
         [begin
              case is_binary(B?MOSS_BUCKET.name) of
+                 true ->
+                     Name = binary_to_list(B?MOSS_BUCKET.name);
                  false ->
                      Name = B?MOSS_BUCKET.name
              end,
