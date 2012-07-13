@@ -81,23 +81,6 @@ run(insert, KeyGen, ValueGen, #state{bucket = Bucket,
         {Error, Reason} ->
             {Error, Reason, S2}
     end;
-run(update, KeyGen, ValueGen, #state{bucket = Bucket,
-                                     report_fun = ReportFun} = State) ->
-    {NextHost, S2} = next_host(State),
-    {Host, Port} = NextHost,
-    Key = KeyGen(),
-    Url = url(Host, Port, Bucket, Key),
-    case do_get({Host, Port}, Url, [], ReportFun) of
-        {ok, _} ->
-            case insert(KeyGen, ValueGen, {Host, Port}, Bucket, ReportFun) of
-                {ok, _Size} = Good ->
-                    {Good, State};
-                {Error, Reason} ->
-                    {Error, Reason, S2}
-            end;
-        {Error, Reason} ->
-            {Error, Reason, S2}
-    end;
 run(delete, KeyGen, _ValueGen, #state{bucket = Bucket} = State) ->
     {NextHost, S2} = next_host(State),
     {Host, Port} = NextHost,
@@ -222,27 +205,17 @@ clear_disconnect_freq(ConnInfo) ->
     end.
 
 send_request(Host, Url, Headers, Method, Body, Options) ->
-    send_request(Host, Url, Headers, Method, Body, Options, 3).
+    send_request(Host, Url, Headers, Method, Body, Options, send_req, 3).
 
-send_request(_Host, _Url, _Headers, _Method, _Body, _Options, 0) ->
+send_request(Host, Url, Headers, Method, Body, Options, IbrowseFunc)
+  when is_atom(IbrowseFunc) ->
+    send_request(Host, Url, Headers, Method, Body, Options, IbrowseFunc, 3).
+
+send_request(_Host, _Url, _Headers, _Method, _Body, _Options, _IBF, 0) ->
     {error, max_retries};
-send_request(Host, Url, Headers0, Method, Body, Options, Count) ->
-    Pid = connect(Host),
-    ContentTypeStr = to_list(proplists:get_value(
-                               'Content-Type', Headers0,
-                               'application/octet-stream')),
-    Date = httpd_util:rfc1123_date(),
-    Headers = [{'Content-Type', ContentTypeStr},
-               {'Date', Date}|lists:keydelete('Content-Type', 1, Headers0)],
-    Uri = element(7, Url),
-    Sig = stanchion_auth:request_signature(
-            uppercase_verb(Method), Headers, Uri,
-            basho_bench_config:get(moss_secret_key)),
-    AuthStr = ["AWS ", basho_bench_config:get(moss_access_key), ":", Sig],
-    HeadersWithAuth = [{'Authorization', AuthStr}|Headers],
-    Timeout = basho_bench_config:get(moss_request_timeout, 5000),
-    case catch(ibrowse_http_client:send_req(Pid, Url, HeadersWithAuth, Method,
-                                            Body, Options, Timeout)) of
+send_request(Host, Url, Headers0, Method, Body, Options, IbrowseFunc, Count) ->
+    case (catch initiate_request(Host, Url, Headers0, Method, Body, Options,
+                                 send_req)) of
         {ok, Status, RespHeaders, RespBody} ->
             maybe_disconnect(Host),
             {ok, Status, RespHeaders, RespBody};
@@ -252,8 +225,8 @@ send_request(Host, Url, Headers0, Method, Body, Options, Count) ->
             disconnect(Host),
             case should_retry(Error) of
                 true ->
-                    send_request(Host, Url, Headers, Method, Body, Options, Count-1);
-
+                    send_request(Host, Url, Headers0, Method, Body, Options,
+                                 IbrowseFunc, Count-1);
                 false ->
                     normalize_error(Method, Error)
             end
@@ -324,3 +297,21 @@ to_list(A) when is_atom(A) ->
     atom_to_list(A);
 to_list(L) when is_list(L) ->
     L.
+
+initiate_request(Host, Url, Headers0, Method, Body, Options, IbrowseFunc) ->
+    Pid = connect(Host),
+    ContentTypeStr = to_list(proplists:get_value(
+                               'Content-Type', Headers0,
+                               'application/octet-stream')),
+    Date = httpd_util:rfc1123_date(),
+    Headers = [{'Content-Type', ContentTypeStr},
+               {'Date', Date}|lists:keydelete('Content-Type', 1, Headers0)],
+    Uri = element(7, Url),
+    Sig = stanchion_auth:request_signature(
+            uppercase_verb(Method), Headers, Uri,
+            basho_bench_config:get(moss_secret_key)),
+    AuthStr = ["AWS ", basho_bench_config:get(moss_access_key), ":", Sig],
+    HeadersWithAuth = [{'Authorization', AuthStr}|Headers],
+    Timeout = basho_bench_config:get(moss_request_timeout, 5000),
+    ibrowse_http_client:IbrowseFunc(Pid, Url, HeadersWithAuth, Method,
+                                    Body, Options, Timeout).

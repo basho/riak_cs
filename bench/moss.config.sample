@@ -35,5 +35,5 @@
 %{value_generator, {fixed_bin, 12100100}}.
 {value_generator, {fixed_bin, 1024}}.
 
-{operations, [{insert, 1}, {update, 1}, {delete, 1}, {get, 1}]}.
+{operations, [{insert, 1}, {delete, 1}, {get, 1}]}.
 
