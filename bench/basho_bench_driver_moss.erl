@@ -12,13 +12,19 @@
 
 -module(basho_bench_driver_moss).
 
+-define(BLOCK, (1024*1024)).
+-define(VERYLONG_TIMEOUT, (300*1000)).
+
 -export([new/1,
          run/4]).
 
 -record(state, { client_id,
                  hosts,
                  bucket,
-                 report_fun}).
+                 report_fun,
+                 working_op,
+                 req_id
+               }).
 
 %% ====================================================================
 %% API
@@ -49,7 +55,11 @@ new(ID) ->
             N = mbyte_sec -> {N,      fun(X) -> X / (1024 * 1024) end};
             _             -> {op_sec, fun(_) -> 1.0 end}
         end,
-    basho_bench_log:log(info, "Reporting factor = ~p\n", [RF_name]),
+    if ID == 1 ->
+            basho_bench_log:log(info, "Reporting factor = ~p\n", [RF_name]);
+       true ->
+            ok
+    end,
     OpsList = basho_bench_config:get(operations, []),
     case RF_name /= op_sec andalso
          lists:keymember(delete, 1, OpsList) andalso
@@ -70,18 +80,60 @@ new(ID) ->
                 bucket = basho_bench_config:get(moss_bucket, "test"),
                 report_fun = ReportFun}}.
 
+%% This module does some crazy stuff, but it's there for a reason.
+%% The reason is that basho_bench is expecting the run() function to
+%% do something that takes a few/several seconds at most.  It is not
+%% expeciting run() to finish after minutes/hours/days of runtime,
+%% which is quite possible when testing 5GB files or larger.
+%%
+%% So, we adopt a strategy where run() will return after ?BLOCK of
+%% data received/sent.  That will allow R to create graphs of the
+%% latency of ?BLOCK chunk retrievals.  We will do our own throughput
+%% reporting to allow R to graph total throughput in terms of
+%% KByte/sec or MByte/sec -- we do it via a kludge, but at least it
+%% works.
+%%
+%% This scheme will also allow b_b's built-in rate-limiting scheme to
+%% work, though on a granularity of ?BLOCK increments per second,
+%% which is probably still too sucky and may need finer control.
+
 -spec run(atom(), fun(), fun(), term()) -> {{ok, number()}, term()} | {error, term(), term()}.
-run(insert, KeyGen, ValueGen, #state{bucket = Bucket,
-                                     report_fun = ReportFun} = State) ->
+
+run(get, KeyGen, _ValueGen, #state{working_op = undefined,
+                                   bucket = Bucket} = State) ->
+    case get(qwerty) of undefined -> timer:sleep(State#state.client_id * 25), io:format("x"); _ -> ok end,
+    put(qwerty, yo_keep_going),
+    {NextHost, S2} = next_host(State),
+    {Host, Port} = NextHost,
+    Key = KeyGen(),
+    Url = url(Host, Port, Bucket, Key),
+    case do_get_first_unit({Host, Port}, Url, [], S2) of
+        {ok, S3} ->
+            {{silent, ok}, S3};
+        Else ->
+            Else
+    end;
+run(_, _KeyGen, _ValueGen, #state{working_op = get} = State) ->
+    case do_get_loop(State) of
+        {ok, S2} ->
+            {{silent, ok}, S2};
+        Else ->
+            Else
+    end;
+run(Op, KeyGen, ValueGen, State) ->
+    run2(Op, KeyGen, ValueGen, State).
+
+run2(insert, KeyGen, ValueGen, #state{bucket = Bucket,
+                                      report_fun = ReportFun} = State) ->
     {NextHost, S2} = next_host(State),
     ConnInfo = NextHost,
     case insert(KeyGen, ValueGen, ConnInfo, Bucket, ReportFun) of
         {ok, _Size} = Good ->
             {Good, S2};
-        {Error, Reason} ->
-            {Error, Reason, S2}
+        {error, Reason} ->
+            {error, Reason, S2}
     end;
-run(delete, KeyGen, _ValueGen, #state{bucket = Bucket} = State) ->
+run2(delete, KeyGen, _ValueGen, #state{bucket = Bucket} = State) ->
     {NextHost, S2} = next_host(State),
     {Host, Port} = NextHost,
     Key = KeyGen(),
@@ -89,22 +141,10 @@ run(delete, KeyGen, _ValueGen, #state{bucket = Bucket} = State) ->
     case do_delete({Host, Port}, Url, []) of
         ok ->
             {ok, S2};
-        {Error, Reason} ->
-            {Error, Reason, S2}
+        {error, Reason} ->
+            {error, Reason, S2}
     end;
-run(get, KeyGen, _ValueGen, #state{bucket = Bucket,
-                                   report_fun = ReportFun} = State) ->
-    {NextHost, S2} = next_host(State),
-    {Host, Port} = NextHost,
-    Key = KeyGen(),
-    Url = url(Host, Port, Bucket, Key),
-    case do_get({Host, Port}, Url, [], ReportFun) of
-        {ok, _Size} = Good ->
-            {Good, S2};
-        {Error, Reason} ->
-            {Error, Reason, S2}
-    end;
-run(Op, _KeyGen, _ValueGen, State) ->
+run2(Op, _KeyGen, _ValueGen, State) ->
     {error, {unknown_op, Op}, State}.
 
 %% ====================================================================
@@ -205,17 +245,12 @@ clear_disconnect_freq(ConnInfo) ->
     end.
 
 send_request(Host, Url, Headers, Method, Body, Options) ->
-    send_request(Host, Url, Headers, Method, Body, Options, send_req, 3).
+    send_request(Host, Url, Headers, Method, Body, Options, 3).
 
-send_request(Host, Url, Headers, Method, Body, Options, IbrowseFunc)
-  when is_atom(IbrowseFunc) ->
-    send_request(Host, Url, Headers, Method, Body, Options, IbrowseFunc, 3).
-
-send_request(_Host, _Url, _Headers, _Method, _Body, _Options, _IBF, 0) ->
+send_request(_Host, _Url, _Headers, _Method, _Body, _Options, 0) ->
     {error, max_retries};
-send_request(Host, Url, Headers0, Method, Body, Options, IbrowseFunc, Count) ->
-    case (catch initiate_request(Host, Url, Headers0, Method, Body, Options,
-                                 send_req)) of
+send_request(Host, Url, Headers0, Method, Body, Options, Count) ->
+    case (catch initiate_request(Host, Url, Headers0, Method, Body, Options)) of
         {ok, Status, RespHeaders, RespBody} ->
             maybe_disconnect(Host),
             {ok, Status, RespHeaders, RespBody};
@@ -226,7 +261,7 @@ send_request(Host, Url, Headers0, Method, Body, Options, IbrowseFunc, Count) ->
             case should_retry(Error) of
                 true ->
                     send_request(Host, Url, Headers0, Method, Body, Options,
-                                 IbrowseFunc, Count-1);
+                                 Count-1);
                 false ->
                     normalize_error(Method, Error)
             end
@@ -259,16 +294,64 @@ do_delete(Host, Url, Headers) ->
             {error, Reason}
     end.
 
-do_get(Host, Url, Headers, ReportFun) ->
-    case send_request(Host, Url, Headers, get, <<>>, proxy_opts()) of
-        {ok, "200", _Header, Body} ->
-            {ok, ReportFun(byte_size(Body))};
-        {ok, "404", _Header, _Body} ->
-            {ok, 0.0};
-        {ok, Code, _Header, _Body} ->
-            {error, {http_error, Code}};
-        {error, Reason} ->
-            {error, Reason}
+do_get_first_unit(Host, Url, Headers, State) ->
+    BufSize = 128*1024,
+    Opts = [{max_pipeline_size, 9999999},
+            {socket_options, [{recbuf, BufSize}]},
+            {stream_chunk_size, BufSize},
+            {stream_to, {self(), once}},
+            {response_format, binary},
+            {connect_timeout, 300*1000},
+            {inactivity_timeout, 300*1000}],
+    case initiate_request(Host, Url, Headers, get, <<>>, Opts++proxy_opts()) of
+        {ibrowse_req_id, ReqId} ->
+            receive
+                {ibrowse_async_headers, ReqId, HTTPCode, _}
+                  when HTTPCode == "200"; HTTPCode == "404" ->
+                    do_get_loop(State#state{req_id = ReqId});
+                {ibrowse_async_headers, ReqId, HTTPCode, _} ->
+                    {error, {http_error, HTTPCode},
+                     State#state{working_op = undefined}}
+                %% Shouldn't happen at this time?
+                %% {ibrowse_async_response, ReqId, Bin} ->
+                %%     size(B);
+                %% Shouldn't happen at this time?
+                %% {ibrowse_async_response_end, ReqId} ->
+                %%     all_done
+            after ?VERYLONG_TIMEOUT ->
+                    {error, ibrowse_timed_out,
+                     State#state{working_op = undefined}}
+            end;
+        Else ->
+            {error, Else, State#state{working_op = undefined}}
+    end.
+
+do_get_loop(#state{req_id = ReqId} = State) ->
+    ibrowse:stream_next(ReqId),
+    do_get_loop(0, now(), State).
+
+do_get_loop(Sum, StartT,
+            #state{req_id = ReqId, report_fun = ReportFun} = State) ->
+    receive
+        {ibrowse_async_response, ReqId, Bin} ->
+            ibrowse:stream_next(ReqId),
+            NewSum = Sum + size(Bin),
+            if NewSum > ?BLOCK ->
+                    DiffT = timer:now_diff(now(), StartT),
+                    basho_bench_stats:op_complete(
+                      {get,get}, {ok, ReportFun(NewSum)}, DiffT),
+                    {ok, State#state{working_op = get}};
+               true ->
+                    do_get_loop(NewSum, StartT, State)
+            end;
+        {ibrowse_async_response_end, ReqId} ->
+    %%%%%record extra stats ehere!!!!!!!!!!!!!
+            DiffT = timer:now_diff(now(), StartT),
+            basho_bench_stats:op_complete(
+              {get,get}, {ok, ReportFun(Sum)}, DiffT),
+            {ok, State#state{working_op = undefined}}
+    after ?VERYLONG_TIMEOUT ->
+            {error, do_get_loop_timed_out, State#state{working_op = undefined}}
     end.
 
 should_retry({error, send_failed})       -> true;
@@ -298,7 +381,7 @@ to_list(A) when is_atom(A) ->
 to_list(L) when is_list(L) ->
     L.
 
-initiate_request(Host, Url, Headers0, Method, Body, Options, IbrowseFunc) ->
+initiate_request(Host, Url, Headers0, Method, Body, Options) ->
     Pid = connect(Host),
     ContentTypeStr = to_list(proplists:get_value(
                                'Content-Type', Headers0,
@@ -313,5 +396,5 @@ initiate_request(Host, Url, Headers0, Method, Body, Options, IbrowseFunc) ->
     AuthStr = ["AWS ", basho_bench_config:get(moss_access_key), ":", Sig],
     HeadersWithAuth = [{'Authorization', AuthStr}|Headers],
     Timeout = basho_bench_config:get(moss_request_timeout, 5000),
-    ibrowse_http_client:IbrowseFunc(Pid, Url, HeadersWithAuth, Method,
-                                    Body, Options, Timeout).
+    ibrowse_http_client:send_req(Pid, Url, HeadersWithAuth, Method,
+                                 Body, Options, Timeout).
