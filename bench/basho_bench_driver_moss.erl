@@ -101,8 +101,6 @@ new(ID) ->
 
 run(get, KeyGen, _ValueGen, #state{working_op = undefined,
                                    bucket = Bucket} = State) ->
-    case get(qwerty) of undefined -> timer:sleep(State#state.client_id * 25), io:format("x"); _ -> ok end,
-    put(qwerty, yo_keep_going),
     {NextHost, S2} = next_host(State),
     {Host, Port} = NextHost,
     Key = KeyGen(),
