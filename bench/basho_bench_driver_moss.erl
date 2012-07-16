@@ -169,7 +169,10 @@ run2(Op, _KeyGen, _ValueGen, State) ->
 %%              to do it.  No default: this property *must* be defined.
 %% max_rate_per_chunk -- Maximum rate per second that an
 %%                       'ibrowse_chunk_size' sized piece of data will
-%%                       be transmitted.  Default = no limit.
+%%                       be transmitted.
+%%                       NOTE: This rate is global/shared across all
+%%                             worker processes.
+%%                       Default = no limit.
 %% ibrowse_chunk_size -- Amount of data that the ibrowse data chunk
 %%                       creation function will create.  Default = 1MByte.
 
@@ -181,7 +184,8 @@ bigfile_valgen(Id, Props) ->
     end,
     FileSize = proplists:get_value(file_size, Props, file_size_undefined),
     ChunkSize = proplists:get_value(ibrowse_chunk_size, Props, 1024*1024),
-    MaxRate = proplists:get_value(max_rate_per_chunk, Props, 9999999),
+    MaxRate = proplists:get_value(max_rate_per_chunk, Props, 9999999) /
+        basho_bench_config:get(concurrent),
     MaxRateSleepUS = trunc((1 / MaxRate) * 1000000),
 
     Chunk = list_to_binary(lists:duplicate(ChunkSize, 42)),
@@ -430,7 +434,6 @@ do_get_loop(Sum, StartT,
                     do_get_loop(NewSum, StartT, State)
             end;
         {ibrowse_async_response_end, ReqId} ->
-    %%%%%record extra stats ehere!!!!!!!!!!!!!
             DiffT = timer:now_diff(now(), StartT),
             basho_bench_stats:op_complete(
               {get,get}, {ok, ReportFun(Sum)}, DiffT),
