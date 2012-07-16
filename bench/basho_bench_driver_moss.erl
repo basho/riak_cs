@@ -14,9 +14,13 @@
 
 -define(BLOCK, (1024*1024)).
 -define(VERYLONG_TIMEOUT, (300*1000)).
+-define(REPORTFUN_APPKEY, report_fun).
+-define(START_KEY, {?MODULE, start}).
+-define(BLOCKSIZE_KEY, {?MODULE, block_size}).
 
 -export([new/1,
          run/4]).
+-export([bigfile_valgen/2]).
 
 -record(state, { client_id,
                  hosts,
@@ -32,6 +36,11 @@
 
 -spec new(integer()) -> {ok, term()}.
 new(ID) ->
+    %% For large numbers of load generators, it's a good idea to
+    %% stagger things out a little bit to avoid thundering herd
+    %% problems at the server side.
+    timer:sleep(basho_bench_config:get(moss_new_delay, 10) * (ID - 1)),
+
     application:start(ibrowse),
     application:start(crypto),
 
@@ -60,6 +69,11 @@ new(ID) ->
        true ->
             ok
     end,
+    %% For ops other than get, basho_bench doesn't give us an explicit
+    %% way to pass ReportFun to the necessary place in a purely
+    %% functional way.  Alas, this function isn't executed by the same
+    application:set_env(?MODULE, ?REPORTFUN_APPKEY, ReportFun),
+
     OpsList = basho_bench_config:get(operations, []),
     case RF_name /= op_sec andalso
          lists:keymember(delete, 1, OpsList) andalso
@@ -121,13 +135,12 @@ run(_, _KeyGen, _ValueGen, #state{working_op = get} = State) ->
 run(Op, KeyGen, ValueGen, State) ->
     run2(Op, KeyGen, ValueGen, State).
 
-run2(insert, KeyGen, ValueGen, #state{bucket = Bucket,
-                                      report_fun = ReportFun} = State) ->
+run2(insert, KeyGen, ValueGen, #state{bucket = Bucket} = State) ->
     {NextHost, S2} = next_host(State),
     ConnInfo = NextHost,
-    case insert(KeyGen, ValueGen, ConnInfo, Bucket, ReportFun) of
-        {ok, _Size} = Good ->
-            {Good, S2};
+    case insert(KeyGen, ValueGen, ConnInfo, Bucket) of
+        ok ->
+            {{silent, ok}, S2};
         {error, Reason} ->
             {error, Reason, S2}
     end;
@@ -145,15 +158,89 @@ run2(delete, KeyGen, _ValueGen, #state{bucket = Bucket} = State) ->
 run2(Op, _KeyGen, _ValueGen, State) ->
     {error, {unknown_op, Op}, State}.
 
+%% The ibrowse client can take a {fun-arity-1, Arg::term()} tuple for
+%% a value and use the fun to generate body bytes on-the-fly.
+%%
+%% Proplist:
+%%
+%% file_size -- Size of the S3 file that we'll be uploading to the
+%%              S3/S3-like service.  Right now, this is a constant value.
+%%              If a variable file size is needed, we'll have to add code
+%%              to do it.  No default: this property *must* be defined.
+%% max_rate_per_chunk -- Maximum rate per second that an
+%%                       'ibrowse_chunk_size' sized piece of data will
+%%                       be transmitted.  Default = no limit.
+%% ibrowse_chunk_size -- Amount of data that the ibrowse data chunk
+%%                       creation function will create.  Default = 1MByte.
+
+bigfile_valgen(Id, Props) ->
+    if Id == 1 ->
+            basho_bench_log:log(info, "~s value gen props: ~p\n", [?MODULE, Props]);
+       true ->
+            ok
+    end,
+    FileSize = proplists:get_value(file_size, Props, file_size_undefined),
+    ChunkSize = proplists:get_value(ibrowse_chunk_size, Props, 1024*1024),
+    MaxRate = proplists:get_value(max_rate_per_chunk, Props, 9999999),
+    MaxRateSleepUS = trunc((1 / MaxRate) * 1000000),
+
+    Chunk = list_to_binary(lists:duplicate(ChunkSize, 42)),
+    {fun(get_content_length) ->
+             FileSize;
+        (Start) when Start < FileSize ->
+             case erlang:get(?START_KEY) of
+                 undefined ->
+                     ok; %% This is our first call, so no timing to report.
+                 StartT ->
+                     DiffT = timer:now_diff(now(), StartT),
+                     ReportFun = element(2, application:get_env(
+                                              ?MODULE, ?REPORTFUN_APPKEY)),
+                     SleepUS = erlang:max(0, MaxRateSleepUS - DiffT),
+                     %% io:format(user, "LINE ~p time ~p\n", [?LINE, SleepUS div 1000]),
+                     timer:sleep(SleepUS div 1000),
+                     LastChunkSize = erlang:get(?BLOCKSIZE_KEY),
+                     basho_bench_stats:op_complete(
+                       {insert,insert}, {ok, ReportFun(LastChunkSize)}, DiffT)
+             end,
+             %% Alright, now set up for the next block to write.
+             PrefixSize = erlang:min(FileSize - Start, ChunkSize),
+             erlang:put(?START_KEY, now()),
+             erlang:put(?BLOCKSIZE_KEY, PrefixSize),
+             <<Prefix:PrefixSize/binary, _/binary>> = Chunk,
+             {ok, Prefix, Start + PrefixSize};
+        (_Start) ->
+             eof
+     end, 0}.
+
 %% ====================================================================
 %% Internal functions
 %% ====================================================================
 
-insert(KeyGen, ValueGen, {Host, Port}, Bucket, ReportFun) ->
+insert(KeyGen, ValueGen, {Host, Port}, Bucket) ->
     Key = KeyGen(),
     Url = url(Host, Port, Bucket, Key),
-    Value = ValueGen(),
-    do_put({Host, Port}, Url, [], Value, ReportFun).
+    {ValueT, CL} =
+        case ValueGen of
+            {ValFunc, _ValArg} when is_function(ValFunc, 1) ->
+                %% Ibrowse can be given a Value that is a tuple of
+                %% {func-arity-1, term()} that will generate an
+                %% partial amount of data at a time.  That fun
+                %% should return:
+                %% a. {ok, Data, ArgForNextCall}
+                %% b. eof
+                %%
+                %% However, we've augmented that function to be able to
+                %% tell us its content length.
+                {ValueGen, ValFunc(get_content_length)};
+            _ ->
+                basho_bench_log:log(
+                  error,
+                  "This driver cannot use the standard basho_bench "
+                  "generator functions, please see refer to "
+                  "'moss.config.sample' file for an example.\n", []),
+                exit(bad_generator)
+        end,
+    do_put({Host, Port}, Url, [{"content-length", integer_to_list(CL)}], ValueT).
 
 url(Host, Port, Bucket, Key) ->
     UnparsedUrl = lists:concat(["http://", Host, ":", Port, "/", Bucket, "/", Key]),
@@ -265,15 +352,15 @@ send_request(Host, Url, Headers0, Method, Body, Options, Count) ->
             end
     end.
 
-do_put(Host, Url, Headers, Value, ReportFun) ->
+do_put(Host, Url, Headers, Value) ->
     case send_request(Host, Url, Headers ++ [{'Content-Type', 'application/octet-stream'}],
                       put, Value, proxy_opts()) of
         {ok, "200", _Header, _Body} ->
-            {ok, ReportFun(byte_size(Value))};
+            ok;
         {ok, "201", _Header, _Body} ->
-            {ok, ReportFun(byte_size(Value))};
+            ok;
         {ok, "204", _Header, _Body} ->
-            {ok, ReportFun(byte_size(Value))};
+            ok;
         {ok, Code, _Header, _Body} ->
             {error, {http_error, Code}};
         {error, Reason} ->
