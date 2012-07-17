@@ -74,6 +74,7 @@ get(_Pid, Bucket, Key, X) ->
     get(_Pid, Bucket, Key, X, x).
 
 get(_Pid, Bucket, Key, _Options, _Timeout) ->
+    io:format("get, "),
     case ets:lookup(?TAB, {Bucket, Key}) of
         [] ->
             {error, notfound};
@@ -88,6 +89,7 @@ put(_Pid, Obj, X) ->
     put(_Pid, Obj, X, x).
 
 put(_Pid, Obj0, _Options, _Timeout) ->
+    io:format("put, "),
     Bucket = riakc_obj:bucket(Obj0),
     Key = riakc_obj:key(Obj0),
     V = riakc_obj:get_update_value(Obj0),
@@ -105,8 +107,10 @@ put(_Pid, Obj0, _Options, _Timeout) ->
                              (Else2) ->
                                   Else2
                           end, MDL)),
+    io:format("Obj0 ~P\n", [Obj0, 12]),
     Obj = Obj0#riakc_obj{contents = [{MD, V}],
                          updatemetadata = undefined, updatevalue = undefined},
+    io:format("Obj  ~P\n", [Obj, 12]),
     ets:insert(?TAB, {{Bucket, Key}, Obj}),
     ok.
 
@@ -117,6 +121,7 @@ delete(_Pid, Bucket, Key, X) ->
     delete(_Pid, Bucket, Key, X, x).
 
 delete(_Pid, Bucket, Key, _Options, _Timeout) ->
+    io:format("delete, "),
     case ets:member(?TAB, {Bucket, Key}) of
         false ->
             {error, notfound};
@@ -126,6 +131,7 @@ delete(_Pid, Bucket, Key, _Options, _Timeout) ->
     end.
 
 list_keys(_Pid, Bucket) ->
+    io:format("list_keys ~p, ", [Bucket]),
     {ok, [K || {{B, K}, _Obj} <- ets:tab2list(?TAB), B == Bucket]}.
 
 create_bucket(User, _VClock, Bucket, ACL, _RiakPid) ->

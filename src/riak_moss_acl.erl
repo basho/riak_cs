@@ -99,10 +99,13 @@ bucket_access(Bucket, RequestedAccess, CanonicalId, RiakPid) ->
                                      CanonicalId),
             case HasPerm of
                 true when IsOwner == true ->
+io:format("~s LINE ~p\n", [?MODULE, ?LINE]),
                     true;
                 true ->
+io:format("~s LINE ~p\n", [?MODULE, ?LINE]),
                     {true, owner_id(Acl, RiakPid)};
                 _ ->
+io:format("~s LINE ~p\n", [?MODULE, ?LINE]),
                     false
             end;
         {error, notfound} ->

@@ -193,6 +193,7 @@ to_xml(RD, Ctx=#context{start_time=StartTime,
     case [B || B <- riak_moss_utils:get_buckets(User),
                B?MOSS_BUCKET.name =:= StrBucket] of
         [] ->
+io:format("~s LINE ~p\nBs = ~p\nStr = ~p\n", [?MODULE, ?LINE, riak_moss_utils:get_buckets(User), StrBucket]),
             CodeName = no_such_bucket,
             Res = riak_moss_s3_response:api_error(CodeName, RD, Ctx),
             Code = riak_moss_s3_response:status_code(CodeName),
@@ -200,9 +201,11 @@ to_xml(RD, Ctx=#context{start_time=StartTime,
             dt_return_bucket(<<"list_keys">>, [Code], [extract_name(User), Bucket]),
             Res;
         [BucketRecord] ->
+io:format("~s LINE ~p\n", [?MODULE, ?LINE]),
             Prefix = list_to_binary(wrq:get_qs_value("prefix", "", RD)),
             case riak_moss_utils:get_keys_and_manifests(Bucket, Prefix, RiakPid) of
                 {ok, KeyObjPairs} ->
+io:format("~s LINE ~p\n", [?MODULE, ?LINE]),
                     X = riak_moss_s3_response:list_bucket_response(User,
                                                                    BucketRecord,
                                                                    KeyObjPairs,
@@ -214,6 +217,7 @@ to_xml(RD, Ctx=#context{start_time=StartTime,
                     dt_return_bucket(<<"list_keys">>, [200], [extract_name(User), Bucket]),
                     X;
                 {error, Reason} ->
+io:format("~s LINE ~p\n", [?MODULE, ?LINE]),
                     Code = riak_moss_s3_response:status_code(Reason),
                     X = riak_moss_s3_response:api_error(Reason, RD, Ctx),
                     dt_return(<<"to_xml">>, [Code], [extract_name(User), Bucket]),
