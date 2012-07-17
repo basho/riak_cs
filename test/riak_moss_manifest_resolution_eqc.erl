@@ -7,6 +7,8 @@
 
 -module(riak_moss_manifest_resolution_eqc).
 
+-ifdef(EQC).
+
 -include_lib("eqc/include/eqc.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -126,3 +128,5 @@ only_one_active_helper(Manifest=?MANIFEST{state=active}, {not_found, List}) ->
     {found, [Manifest | List]};
 only_one_active_helper(Manifest, {not_found, List}) ->
     {not_found, [Manifest | List]}.
+
+-endif. %EQC

@@ -7,6 +7,8 @@
 
 -module(riak_cs_manifest_utils_eqc).
 
+-ifdef(EQC).
+
 -include_lib("eqc/include/eqc.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -117,3 +119,5 @@ test() ->
 
 test(Iterations) ->
     eqc:quickcheck(eqc:numtests(Iterations, prop_choose_active_commutative())).
+
+-endif. %EQC
