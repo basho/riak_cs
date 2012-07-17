@@ -15,7 +15,7 @@
 -export([start_link/0,
          start_link/1,
          start_block_servers/2,
-         get_block/5,
+         get_block/5, get_block/6,
          put_block/6,
          delete_block/5,
          stop/1]).
@@ -82,7 +82,14 @@ start_block_servers(RiakcPid, MaxNumServers) ->
 
 -spec get_block(pid(), binary(), binary(), binary(), pos_integer()) -> ok.
 get_block(Pid, Bucket, Key, UUID, BlockNumber) ->
-    gen_server:cast(Pid, {get_block, self(), Bucket, Key, UUID, BlockNumber}).
+    gen_server:cast(Pid, {get_block, self(), Bucket, Key, undefined, UUID, BlockNumber}).
+
+%% @doc get a block which is know to have originated on cluster ClusterID.
+%% If it's not found locally, it might get returned from the replication
+%% cluster if a connection exists to that cluster. This is proxy-get().
+-spec get_block(pid(), binary(), binary(), binary(), binary(), pos_integer()) -> ok.
+get_block(Pid, Bucket, Key, ClusterID, UUID, BlockNumber) ->
+    gen_server:cast(Pid, {get_block, self(), Bucket, Key, ClusterID, UUID, BlockNumber}).
 
 -spec put_block(pid(), binary(), binary(), binary(), pos_integer(), binary()) -> ok.
 put_block(Pid, Bucket, Key, UUID, BlockNumber, Value) ->
@@ -139,12 +146,26 @@ handle_call(stop, _From, State) ->
 %%                                  {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_cast({get_block, ReplyPid, Bucket, Key, UUID, BlockNumber}, State=#state{riakc_pid=RiakcPid}) ->
+
+handle_cast({get_block, ReplyPid, Bucket, Key, ClusterID, UUID, BlockNumber}, State=#state{riakc_pid=RiakcPid}) ->
     dt_entry(<<"get_block">>, [BlockNumber], [Bucket, Key]),
     {FullBucket, FullKey} = full_bkey(Bucket, Key, UUID, BlockNumber),
     StartTime = os:timestamp(),
     GetOptions = [{r, 1}, {notfound_ok, false}, {basic_quorum, false}],
-    ChunkValue = case riakc_pb_socket:get(RiakcPid, FullBucket, FullKey, GetOptions) of
+    LocalClusterID = riak_moss_utils:get_cluster_id(RiakcPid),
+    %% don't use proxy get if it's a local get
+    %% or proxy get is disabled
+    UseProxyGet = ClusterID /= undefined
+                    andalso riak_moss_utils:proxy_get_active()
+                    andalso LocalClusterID /= ClusterID,
+    Object =
+        case UseProxyGet of
+            false ->
+                riakc_pb_socket:get(RiakcPid, FullBucket, FullKey, GetOptions);
+            true ->
+                riak_repl_pb_api:get(RiakcPid, FullBucket, FullKey, ClusterID, GetOptions)
+        end,
+    ChunkValue = case Object of
         {ok, RiakObject} ->
             {ok, riakc_obj:get_value(RiakObject)};
         {error, notfound}=NotFound ->
