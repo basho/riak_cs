@@ -72,7 +72,7 @@
                  creation_time=now() :: erlang:timestamp()}).
 -type acl() :: #acl_v1{} | #acl_v2{}.
 
--type cluster_id() :: undefined | term().  % Type still in flux.
+-type cluster_id() :: undefined | binary(). %% flattened string as binary
 
 -type cs_uuid() :: binary().
 
@@ -316,3 +316,4 @@
 -define(DEFAULT_GC_INTERVAL, 900). %% 15 minutes
 -define(DEFAULT_GC_RETRY_INTERVAL, 21600). %% 6 hours
 -define(EPOCH_START, <<"0">>).
+-define(DEFAULT_CLUSTER_ID_TIMEOUT,5000).
