@@ -41,7 +41,8 @@ setup() ->
     %% meck:expect(riak_moss_utils, create_bucket, fun create_bucket/5),
     meck:expect(riak_moss_utils, update_key_secret, fun(X) -> {gotcha, X} end),
     meck:expect(riak_moss_utils, bucket_fun, fun utils_bucket_fun/6),
-    meck:expect(riak_moss_utils, delete_bucket, fun delete_bucket/4),
+    %% meck:expect(riak_moss_utils, delete_bucket, fun delete_bucket/4),
+    meck:expect(riak_moss_utils, active_manifests, fun utils_active_manifests/3),
     StartFakeRiakC = fun() -> {ok, spawn(fun() -> timer:sleep(500) end)} end,
     StopFakeRiakC = fun(_) -> ok end,
     meck:expect(riak_moss_utils, riak_connection, StartFakeRiakC),
@@ -134,17 +135,47 @@ list_keys(_Pid, Bucket) ->
     io:format("list_keys ~p, ", [Bucket]),
     {ok, [K || {{B, K}, _Obj} <- ets:tab2list(?TAB), B == Bucket]}.
 
-utils_bucket_fun(create, Bucket, ACL, KeyId, _AdminCreds, _StanchionData) ->
+utils_bucket_fun(BucketOp, Bucket, ACL, KeyId, _AdminCreds, _StanchionData) ->
     fun() ->
             stanchion_utils:do_bucket_op(Bucket, list_to_binary(KeyId), ACL,
-                                         create)
+                                         BucketOp)
     end.
 
-delete_bucket(User, _VClock, Bucket, _RiakPid) ->
-    io:format("FIXME by adding delete and acl_change functions to utils_bucket_fun!!!!!!\n"),
-    io:format("delete_bucket, "),
-    KeyId = User?RCS_USER.key_id,
-    stanchion_utils:do_bucket_op(Bucket, list_to_binary(KeyId), ?ACL{}, delete).
+%% delete_bucket(User, _VClock, Bucket, _RiakPid) ->
+%%     io:format("delete_bucket, "),
+%%     KeyId = User?RCS_USER.key_id,
+%%     stanchion_utils:do_bucket_op(Bucket, list_to_binary(KeyId), ?ACL{}, delete).
+
+utils_active_manifests(ManifestBucket, Prefix, _RiakPid) ->
+    PrefixLen = size(Prefix),
+    Objs = [Obj || {{Bucket, Key}, Obj} <- ets:tab2list(?TAB),
+                   Bucket == ManifestBucket,
+                   begin <<KP:PrefixLen/binary, _/binary>> = Key,
+                         KP == Prefix end],
+    try
+        %% Half of the map below is necessary: we need to call
+        %% map_keys_and_manifests().  However, the ?PBS:get() call
+        %% is there only for the reason to allow a fault-injection
+        %% framework to have the option of interrupting our work
+        %% (by screwing up a Riak client get()) so that we in turn
+        %% can return an error tuple.
+        AMs = lists:flatten(
+                lists:map(
+                  fun(O) ->
+                          B = riakc_obj:bucket(O),
+                          K = riakc_obj:key(O),
+                          case ?PBS:get(foopid, B, K, [], infinity) of
+                              {ok, _} ->
+                                  riak_moss_utils:map_keys_and_manifests(
+                                    O, unused, meck_testing);
+                              Else ->
+                                  throw({sim_riak_failure, Else})
+                          end
+                  end, Objs)),
+        {ok, AMs}
+    catch throw:{sim_riak_failure, Error} ->
+            Error
+    end.
 
 user1_details() ->
     [{display_name, "foobar"},

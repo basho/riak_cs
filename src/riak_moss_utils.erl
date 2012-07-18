@@ -43,7 +43,7 @@
          timestamp/1,
          to_bucket_name/2,
          update_key_secret/1]).
--export([bucket_fun/6]). % export for Meck-based testing
+-export([bucket_fun/6, active_manifests/3]). % export for Meck-based testing
 
 -include("riak_moss.hrl").
 -include_lib("riak_pb/include/riak_pb_kv_codec.hrl").
@@ -271,7 +271,7 @@ get_env(App, Key, Default) ->
 -spec get_keys_and_manifests(binary(), binary(), pid()) -> {ok, [lfs_manifest()]} | {error, term()}.
 get_keys_and_manifests(BucketName, Prefix, RiakPid) ->
     ManifestBucket = to_bucket_name(objects, BucketName),
-    case active_manifests(ManifestBucket, Prefix, RiakPid) of
+    case ?MODULE:active_manifests(ManifestBucket, Prefix, RiakPid) of
         {ok, KeyManifests} ->
             {ok, lists:keysort(1, KeyManifests)};
         {error, Reason} ->
@@ -319,21 +319,24 @@ receive_keys_and_manifests(ReqId, Acc) ->
 %% riak_object, not riakc_obj.
 map_keys_and_manifests({error, notfound}, _, _) ->
     [];
-map_keys_and_manifests(Object, _, _) ->
+map_keys_and_manifests(Object, _, PerhapsTesting) ->
     try
+        ObjMod = if PerhapsTesting == meck_testing -> riakc_obj;
+                    true                           -> riak_object
+                 end,
         AllManifests = [ binary_to_term(V)
-                         || V <- riak_object:get_values(Object) ],
+                         || V <- ObjMod:get_values(Object) ],
         Upgraded = riak_cs_manifest_utils:upgrade_wrapped_manifests(AllManifests),
         Resolved = riak_moss_manifest_resolution:resolve(Upgraded),
         case riak_cs_manifest_utils:active_manifest(Resolved) of
             {ok, Manifest} ->
-                [{riak_object:key(Object), {ok, Manifest}}];
+                [{ObjMod:key(Object), {ok, Manifest}}];
             _ ->
                 []
         end
     catch Type:Reason ->
-            _ = lager:warning("Riak CS object list map failed: ~p:~p",
-                              [Type, Reason]),
+            _ = lager:warning("Riak CS object list map failed: ~p:~p @ ~p",
+                              [Type, Reason, erlang:get_stacktrace()]),
             []
     end.
 
