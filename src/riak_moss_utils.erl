@@ -108,7 +108,6 @@ close_riak_connection(Pool, Pid) ->
                            ok |
                            {error, term()}.
 create_bucket(User, VClock, Bucket, ACL, RiakPid) ->
-    io:format("~s LINE ~p\n", [?MODULE, ?LINE]),
     serialized_bucket_op(Bucket,
                          ACL,
                          User,
@@ -956,7 +955,6 @@ serialized_bucket_op(Bucket, ACL, User, VClock, BucketOp, StatName, RiakPid) ->
     StartTime = os:timestamp(),
     case get_admin_creds() of
         {ok, AdminCreds} ->
-    io:format("~s LINE ~p BucketOp ~p\n", [?MODULE, ?LINE, BucketOp]),
             BucketFun = ?MODULE:bucket_fun(BucketOp,
                                    Bucket,
                                    ACL,
@@ -965,40 +963,30 @@ serialized_bucket_op(Bucket, ACL, User, VClock, BucketOp, StatName, RiakPid) ->
                                    stanchion_data()),
             %% Make a call to the bucket request
             %% serialization service.
-    io:format("~s LINE ~p\n", [?MODULE, ?LINE]),
             OpResult = BucketFun(),
-    io:format("~s LINE ~p\n", [?MODULE, ?LINE]),
             case OpResult of
                 ok ->
-    io:format("~s LINE ~p\n", [?MODULE, ?LINE]),
                     BucketRecord = bucket_record(Bucket, BucketOp),
-    io:format("~s LINE ~p ~p\n", [?MODULE, ?LINE, BucketRecord]),
                     case update_user_buckets(User, BucketRecord) of
                         {ok, ignore} when BucketOp == update_acl ->
-    io:format("~s LINE ~p\n", [?MODULE, ?LINE]),
                             ok = riak_cs_stats:update_with_start(StatName,
                                                                  StartTime),
                             OpResult;
                         {ok, ignore} ->
-    io:format("~s LINE ~p\n", [?MODULE, ?LINE]),
                             OpResult;
                         {ok, UpdUser} ->
-    io:format("~s LINE ~p\n", [?MODULE, ?LINE]),
                             X = save_user(UpdUser, VClock, RiakPid),
                             ok = riak_cs_stats:update_with_start(StatName,
                                                                  StartTime),
                             X
                     end;
                 {error, {error_status, _, _, ErrorDoc}} ->
-    io:format("~s LINE ~p\n", [?MODULE, ?LINE]),
                     ErrorCode = xml_error_code(ErrorDoc),
                     {error, riak_moss_s3_response:error_code_to_atom(ErrorCode)};
                 {error, _} ->
-    io:format("~s LINE ~p\n", [?MODULE, ?LINE]),
                     OpResult
             end;
         {error, Reason1} ->
-    io:format("~s LINE ~p\n", [?MODULE, ?LINE]),
             {error, Reason1}
     end.
 
@@ -1054,9 +1042,6 @@ update_user_buckets(User, Bucket) ->
         [] ->
             {ok, User?MOSS_USER{buckets=[Bucket | Buckets]}};
         [ExistingBucket] ->
-    io:format("~s LINE ~p exist ~p\n", [?MODULE, ?LINE, ExistingBucket]),
-    io:format("~s LINE ~p B l_a ~p\n", [?MODULE, ?LINE, Bucket?MOSS_BUCKET.last_action]),
-    io:format("~s LINE ~p EB l_a ~p\n", [?MODULE, ?LINE, ExistingBucket?MOSS_BUCKET.last_action]),
             case
                 (Bucket?MOSS_BUCKET.last_action == deleted andalso
                  ExistingBucket?MOSS_BUCKET.last_action == created)

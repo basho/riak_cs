@@ -109,10 +109,8 @@ put(_Pid, Obj0, _Options, _Timeout) ->
                             (Else2) ->
                                   Else2
                           end, MDL)),
-    io:format("Obj0 ~P\n", [Obj0, 12]),
     Obj = Obj0#riakc_obj{contents = [{MD, V}],
                          updatemetadata = undefined, updatevalue = undefined},
-    io:format("Obj  ~P\n", [Obj, 12]),
     ets:insert(?TAB, {{Bucket, Key}, Obj}),
     ok.
 
@@ -138,17 +136,12 @@ list_keys(_Pid, Bucket) ->
 
 utils_bucket_fun(create, Bucket, ACL, KeyId, _AdminCreds, _StanchionData) ->
     fun() ->
-            io:format("utils_bucket_fun RUNNING create, "),
-            io:format("ACLACL ~p\n", [ACL]),
             stanchion_utils:do_bucket_op(Bucket, list_to_binary(KeyId), ACL,
                                          create)
     end.
 
-%% create_bucket(User, _VClock, Bucket, ACL, _RiakPid) ->
-%%     KeyId = User?RCS_USER.key_id,
-%%     stanchion_utils:do_bucket_op(Bucket, list_to_binary(KeyId), ACL, create).
-
 delete_bucket(User, _VClock, Bucket, _RiakPid) ->
+    io:format("FIXME by adding delete and acl_change functions to utils_bucket_fun!!!!!!\n"),
     io:format("delete_bucket, "),
     KeyId = User?RCS_USER.key_id,
     stanchion_utils:do_bucket_op(Bucket, list_to_binary(KeyId), ?ACL{}, delete).
