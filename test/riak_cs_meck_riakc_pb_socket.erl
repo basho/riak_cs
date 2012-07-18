@@ -38,7 +38,9 @@ setup() ->
 
     %% Helpers to work around Stanchion
     meck:new(riak_moss_utils, [passthrough]),
-    meck:expect(riak_moss_utils, create_bucket, fun create_bucket/5),
+    %% meck:expect(riak_moss_utils, create_bucket, fun create_bucket/5),
+    meck:expect(riak_moss_utils, update_key_secret, fun(X) -> {gotcha, X} end),
+    meck:expect(riak_moss_utils, bucket_fun, fun utils_bucket_fun/6),
     meck:expect(riak_moss_utils, delete_bucket, fun delete_bucket/4),
     StartFakeRiakC = fun() -> {ok, spawn(fun() -> timer:sleep(500) end)} end,
     StopFakeRiakC = fun(_) -> ok end,
@@ -96,15 +98,15 @@ put(_Pid, Obj0, _Options, _Timeout) ->
     MDL = dict:to_list(riakc_obj:get_update_metadata(Obj0)),
     MD = dict:from_list(lists:map(
                           fun({<<"X-Riak-Meta">>, XRMList}) ->
-                                  {<<"X-Riak-Meta">>,
-                                   lists:map(
-                                     fun({MK,MV}) when is_binary(MK) ->
-                                             {binary_to_list(MK),
-                                              binary_to_list(MV)};
-                                        (Else) ->
-                                             Else
-                                     end, XRMList)};
-                             (Else2) ->
+                                  {<<"X-Riak-Meta">>, XRMList};
+                                   %% lists:map(
+                                   %%   %% fun({MK,MV}) when is_binary(MK) ->
+                                   %%   %%         {binary_to_list(MK),
+                                   %%   %%          binary_to_list(MV)};
+                                   %%   fun(Else) ->
+                                   %%           Else
+                                   %%   end, XRMList)}; 
+                            (Else2) ->
                                   Else2
                           end, MDL)),
     io:format("Obj0 ~P\n", [Obj0, 12]),
@@ -134,11 +136,20 @@ list_keys(_Pid, Bucket) ->
     io:format("list_keys ~p, ", [Bucket]),
     {ok, [K || {{B, K}, _Obj} <- ets:tab2list(?TAB), B == Bucket]}.
 
-create_bucket(User, _VClock, Bucket, ACL, _RiakPid) ->
-    KeyId = User?RCS_USER.key_id,
-    stanchion_utils:do_bucket_op(Bucket, list_to_binary(KeyId), ACL, create).
+utils_bucket_fun(create, Bucket, ACL, KeyId, _AdminCreds, _StanchionData) ->
+    fun() ->
+            io:format("utils_bucket_fun RUNNING create, "),
+            io:format("ACLACL ~p\n", [ACL]),
+            stanchion_utils:do_bucket_op(Bucket, list_to_binary(KeyId), ACL,
+                                         create)
+    end.
+
+%% create_bucket(User, _VClock, Bucket, ACL, _RiakPid) ->
+%%     KeyId = User?RCS_USER.key_id,
+%%     stanchion_utils:do_bucket_op(Bucket, list_to_binary(KeyId), ACL, create).
 
 delete_bucket(User, _VClock, Bucket, _RiakPid) ->
+    io:format("delete_bucket, "),
     KeyId = User?RCS_USER.key_id,
     stanchion_utils:do_bucket_op(Bucket, list_to_binary(KeyId), ?ACL{}, delete).
 
@@ -164,30 +175,6 @@ user1() ->
         "59363e3467cea950d5889d1db9d291f4ee22c64083687ff59ecb24880ea6b767"},
         {"email_bin", "foobar@foobar.com"}]], [],
         [[<<"X-Riak-Last-Modified">>| {1341, 962003, 474895}]], [],
-        []}}}, <<131,104, 9,100,0, 11,114, 99,115, 95,117, 115,101,
-        114,95, 118,50, 107,0,7, 102,111, 111,32, 98,97, 114,107,
-        0,6,102, 111,111, 98,97, 114,107, 0,17, 102,111, 111,98,
-        97,114, 64,102, 111,111, 98,97, 114,46, 99,111, 109,107,
-        0,20,78, 80,51, 90,69, 72,75, 95,72, 57,77, 66,83, 72,69,
-        80,50, 88,87, 83,107, 0,40,78, 110,99, 52,87, 102,71, 111,109,
-        68,48, 88,66, 65,118, 105,80, 48,102, 98,114, 45,121, 79,105,
-        75,82, 114,104, 90,72, 53,75, 68,88, 95,78, 119,61, 61,107,
-        0,64,53, 57,51, 54,51, 101,51, 52,54, 55,99, 101,97, 57,53,
-        48,100, 53,56, 56,57, 100,49, 100,98, 57,100, 50,57, 49,102,
-        52,101, 101,50, 50,99, 54,52, 48,56, 51,54, 56,55, 102,102,
-        53,57, 101,99, 98,50, 52,56, 56,48, 101,97, 54,98, 55,54,
-        55,108, 0,0,0,2, 104,6, 100,0, 14,109, 111,115, 115,95,
-        98,117, 99,107, 101,116, 95,118, 49,107, 0,5,116, 101,115,
-        116,50, 100,0,7, 99,114, 101,97, 116,101, 100,107, 0,24,50,
-        48,49, 50,45, 48,55, 45,49, 48,84, 50,51, 58,49, 51,58, 50,51,
-        46,48, 48,48, 90,104, 3,98,0, 0,5,61, 98,0,14, 173,211,
-        98,0,7, 61,85, 100,0,9, 117,110, 100,101, 102,105, 110,101,
-        100,104, 6,100,0, 14,109, 111,115, 115,95, 98,117, 99,107,
-        101,116, 95,118, 49,107, 0,4,116, 101,115, 116,100, 0,7,99,
-        114,101, 97,116, 101,100, 107,0, 24,50, 48,49, 50,45, 48,55,
-        45,48, 50,84, 50,51, 58,52, 56,58, 51,52, 46,48, 48,48,
-        90,104, 3,98,0, 0,5,61, 98,0,4, 42,18, 98,0,14, 7,249,
-        100,0,9, 117,110, 100,101, 102,105, 110,101, 100,106, 100,0,7,
-        101,110, 97,98, 108,101, 100>>}],
+        []}}}, <<131,104,9,100,0,11,114,99,115,95,117,115,101,114,95,118,50,107,0,7,102,111,111,32,98,97,114,107,0,6,102,111,111,98,97,114,107,0,17,102,111,111,98,97,114,64,102,111,111,98,97,114,46,99,111,109,107,0,20,78,80,51,90,69,72,75,95,72,57,77,66,83,72,69,80,50,88,87,83,107,0,40,78,110,99,52,87,102,71,111,109,68,48,88,66,65,118,105,80,48,102,98,114,45,121,79,105,75,82,114,104,90,72,53,75,68,88,95,78,119,61,61,107,0,64,53,57,51,54,51,101,51,52,54,55,99,101,97,57,53,48,100,53,56,56,57,100,49,100,98,57,100,50,57,49,102,52,101,101,50,50,99,54,52,48,56,51,54,56,55,102,102,53,57,101,99,98,50,52,56,56,48,101,97,54,98,55,54,55,106,100,0,7,101,110,97,98,108,101,100>>}],
      undefined,
      undefined}.
