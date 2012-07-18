@@ -19,6 +19,8 @@
 -include("riak_moss.hrl").
 -include("riak_moss_lfs.hrl").
 
+-define(CONTIGUOUS_BLOCKS, ?DEFAULT_MAX_BLOCKS). %SLF hack, fix me.
+
 -export([block_count/2,
          block_keynames/3,
          block_name/3,
@@ -208,7 +210,7 @@ sorted_blocks_remaining(#lfs_manifest_v2{write_blocks_remaining=Remaining}) ->
     lists:sort(ordsets:to_list(Remaining)).
 
 -spec chash_moss_keyfun({binary(), binary()}) -> binary().
-chash_moss_keyfun({<<"b:", _/binary>> = Bucket,
+chash_moss_keyfun({<<?BLOCK_BUCKET_PREFIX, _/binary>> = Bucket,
                    <<UUID:?UUID_BYTES/binary, BlockNum:?BLOCK_FIELD_SIZE>>}) ->
     Contig = BlockNum div ?CONTIGUOUS_BLOCKS,
     chash:key_of({Bucket, <<UUID/binary, Contig:?BLOCK_FIELD_SIZE>>});

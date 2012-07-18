@@ -84,7 +84,7 @@
 %% KV Backend API based on capabilities
 -export([put/6]).
 %% Testing
--export([t0/0, t1/0, t2/0]).
+-export([t0/0, t1/0, t2/0, t3/0, t4/0]).
 
 -include("riak_moss_lfs.hrl").
 -include_lib("kernel/include/file.hrl").
@@ -395,20 +395,6 @@ atomic_write(File, Val, State) ->
             file:rename(FakeFile, File);
         X -> X
     end.
-
-%% @private
-%% Fold over the keys and objects on this backend
-fold(State, Fun0, Acc) ->
-    Fun = fun(BKey, AccIn) ->
-                  {Bucket, Key} = BKey,
-                  case get(Bucket, Key, State) of
-                      {ok, Bin, _} ->
-                          Fun0(BKey, Bin, AccIn);
-                      _ ->
-                          AccIn
-                  end
-          end,
-    lists:foldl(Fun, Acc, list_all_keys(State)).
 
 %% @private
 %% Return a function to fold over the buckets on this backend
