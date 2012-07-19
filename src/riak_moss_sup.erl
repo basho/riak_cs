@@ -36,6 +36,14 @@ start_link() ->
 init([]) ->
     catch dtrace:init(),                   % NIF load trigger (R14B04)
     catch dyntrace:p(),                    % NIF load trigger (R15B01+)
+
+    %% The riak_cs_meck_riakc_pb_socket module is only available in
+    %% testing environments, so I don't mind making this function call
+    %% unconditionally.  Reviewer: if you believe that there should be
+    %% an additional something to avoid an unconditional function
+    %% call, e.g., an app env var check, speak up.
+    catch riak_cs_meck_riakc_pb_socket:setup_verbose(),
+
     case application:get_env(riak_moss, moss_ip) of
         {ok, Ip} ->
             ok;
