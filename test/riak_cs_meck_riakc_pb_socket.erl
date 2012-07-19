@@ -12,7 +12,8 @@
 -define(TAB, ?MODULE).
 
 -compile(export_all).
--export([setup/0, teardown/0]).
+-export([setup/0, teardown/0,
+         user1/0, user1_details/0]).
 
 %% Cut-and-paste from riakc_obj.erl, naughty but fun
 -record(riakc_obj, {
