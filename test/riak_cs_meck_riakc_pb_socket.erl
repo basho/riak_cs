@@ -12,7 +12,8 @@
 -define(TAB, ?MODULE).
 
 -compile(export_all).
--export([setup/0, teardown/0,
+-export([get_injectable_faults/0,
+         setup_verbose/0, setup/0, teardown/0,
          user1/0, user1_details/0]).
 
 %% Cut-and-paste from riakc_obj.erl, naughty but fun
@@ -25,15 +26,17 @@
           updatevalue
          }).
 
+get_injectable_faults() ->
+    lists:usort([Op || {Op, _Fun} <- get_expects()]).
+
+setup_verbose() ->
+    error_logger:warning_msg("Starting testing mode via ~s\n", [?MODULE]),
+    setup(),
+    riakc_pb_socket:put(x, riak_cs_meck_riakc_pb_socket:user1()).
+
 setup() ->
     meck:new(?PBS, [passthrough]),
-    Es = [{start, fun start/2}, {start, fun start/3},
-          %% yes, same as start
-          {start_link, fun start/2},  {start_link, fun start/3},
-          {get, fun get/3}, {get, fun get/4}, {get, fun get/5},
-          {put, fun put/2}, {put, fun put/3}, {put, fun put/4},
-          {delete, fun delete/3}, {delete, fun delete/4},
-          {delete, fun delete/5}, {list_keys, fun list_keys/2}],
+    Es = get_expects(),
     [meck:expect(?PBS, Name, Fun) || {Name, Fun} <- Es],
     ets:new(?TAB, [named_table, public, ordered_set]),
 
@@ -44,7 +47,7 @@ setup() ->
     meck:expect(riak_moss_utils, bucket_fun, fun utils_bucket_fun/6),
     %% meck:expect(riak_moss_utils, delete_bucket, fun delete_bucket/4),
     meck:expect(riak_moss_utils, active_manifests, fun utils_active_manifests/3),
-    StartFakeRiakC = fun() -> {ok, spawn(fun() -> timer:sleep(500) end)} end,
+    StartFakeRiakC = fun() -> {ok, spawn(fun() -> timer:sleep(15000) end)} end,
     StopFakeRiakC = fun(_) -> ok end,
     meck:expect(riak_moss_utils, riak_connection, StartFakeRiakC),
     meck:expect(riak_moss_utils, close_riak_connection, StopFakeRiakC),
@@ -55,6 +58,16 @@ setup() ->
 
     ok.
 
+get_expects() ->
+    [{start, fun start/2}, {start, fun start/3},
+     %% yes, same as start
+     {start_link, fun start/2},  {start_link, fun start/3},
+     {get, fun get/3}, {get, fun get/4}, {get, fun get/5},
+     {put, fun put/2}, {put, fun put/3}, {put, fun put/4},
+     {delete, fun delete/3}, {delete, fun delete/4},
+     {delete, fun delete/5}, {list_keys, fun list_keys/2},
+     {get_bucket, fun get_bucket/2}].
+
 teardown() ->
     catch meck:unload(?PBS),
     catch meck:unload(riak_moss_utils),
@@ -63,10 +76,19 @@ teardown() ->
     ok.
 
 start(Address, Port) ->
-    start(Address, Port, []).
+    maybe_fault(start, fun() -> start3(Address, Port, []) end).
 
-start(_Address, _Port, _Options) ->
-    {ok, spawn(fun() -> timer:sleep(500) end)}.
+start(Address, Port, Options) ->
+    maybe_fault(start, fun() -> start3(Address, Port, Options) end).
+
+start_link(Address, Port) ->
+    maybe_fault(start_link, fun() -> start3(Address, Port, []) end).
+
+start_link(Address, Port, Options) ->
+    maybe_fault(start_link, fun() -> start3(Address, Port, Options) end).
+
+start3(_Address, _Port, _Options) ->
+    {ok, spawn(fun() -> timer:sleep(15000) end)}.
 
 stop(_Pid) ->
     ok.
@@ -78,13 +100,16 @@ get(_Pid, Bucket, Key, X) ->
     get(_Pid, Bucket, Key, X, x).
 
 get(_Pid, Bucket, Key, _Options, _Timeout) ->
-    io:format("get, "),
-    case ets:lookup(?TAB, {Bucket, Key}) of
-        [] ->
-            {error, notfound};
-        [{_, Obj}] ->
-            {ok, Obj}
-    end.
+    NoFault =
+        fun() ->
+                case ets:lookup(?TAB, {Bucket, Key}) of
+                    [] ->
+                        {error, notfound};
+                    [{_, Obj}] ->
+                        {ok, Obj}
+                end
+        end,
+    maybe_fault(get, NoFault).
 
 put(_Pid, Obj) ->
     put(_Pid, Obj, x).
@@ -93,28 +118,25 @@ put(_Pid, Obj, X) ->
     put(_Pid, Obj, X, x).
 
 put(_Pid, Obj0, _Options, _Timeout) ->
-    io:format("put, "),
-    Bucket = riakc_obj:bucket(Obj0),
-    Key = riakc_obj:key(Obj0),
-    V = riakc_obj:get_update_value(Obj0),
-    MDL = dict:to_list(riakc_obj:get_update_metadata(Obj0)),
-    MD = dict:from_list(lists:map(
-                          fun({<<"X-Riak-Meta">>, XRMList}) ->
-                                  {<<"X-Riak-Meta">>, XRMList};
-                                   %% lists:map(
-                                   %%   %% fun({MK,MV}) when is_binary(MK) ->
-                                   %%   %%         {binary_to_list(MK),
-                                   %%   %%          binary_to_list(MV)};
-                                   %%   fun(Else) ->
-                                   %%           Else
-                                   %%   end, XRMList)}; 
-                            (Else2) ->
-                                  Else2
-                          end, MDL)),
-    Obj = Obj0#riakc_obj{contents = [{MD, V}],
-                         updatemetadata = undefined, updatevalue = undefined},
-    ets:insert(?TAB, {{Bucket, Key}, Obj}),
-    ok.
+    NoFault =
+        fun() ->
+                Bucket = riakc_obj:bucket(Obj0),
+                Key = riakc_obj:key(Obj0),
+                V = riakc_obj:get_update_value(Obj0),
+                MDL = dict:to_list(riakc_obj:get_update_metadata(Obj0)),
+                MD = dict:from_list(lists:map(
+                                      fun({<<"X-Riak-Meta">>, XRMList}) ->
+                                              {<<"X-Riak-Meta">>, XRMList};
+                                         (Else2) ->
+                                              Else2
+                                      end, MDL)),
+                Obj = Obj0#riakc_obj{contents = [{MD, V}],
+                                     updatemetadata = undefined,
+                                     updatevalue = undefined},
+                ets:insert(?TAB, {{Bucket, Key}, Obj}),
+                ok
+        end,
+    maybe_fault(put, NoFault).
 
 delete(_Pid, Bucket, Key) ->
     delete(_Pid, Bucket, Key, x).
@@ -123,18 +145,31 @@ delete(_Pid, Bucket, Key, X) ->
     delete(_Pid, Bucket, Key, X, x).
 
 delete(_Pid, Bucket, Key, _Options, _Timeout) ->
-    io:format("delete, "),
-    case ets:member(?TAB, {Bucket, Key}) of
-        false ->
-            {error, notfound};
-        true ->
-            ets:delete(?TAB, {Bucket, Key}),
-            ok
-    end.
+    NoFault =
+        fun() ->
+                case ets:member(?TAB, {Bucket, Key}) of
+                    false ->
+                        {error, notfound};
+                    true ->
+                        ets:delete(?TAB, {Bucket, Key}),
+                        ok
+                end
+        end,
+    maybe_fault(delete, NoFault).
 
 list_keys(_Pid, Bucket) ->
-    io:format("list_keys ~p, ", [Bucket]),
-    {ok, [K || {{B, K}, _Obj} <- ets:tab2list(?TAB), B == Bucket]}.
+    NoFault =
+        fun() ->
+                {ok, [K || {{B, K}, _Obj} <- ets:tab2list(?TAB), B == Bucket]}
+        end,
+    maybe_fault(list_keys, NoFault).
+
+get_bucket(_Pid, _Bucket) ->
+    NoFault =
+        fun() ->
+                {ok,[{n_val,3},{allow_mult,true}]}
+        end,
+    maybe_fault(get_bucket, NoFault).
 
 utils_bucket_fun(BucketOp, Bucket, ACL, KeyId, _AdminCreds, _StanchionData) ->
     fun() ->
@@ -176,6 +211,15 @@ utils_active_manifests(ManifestBucket, Prefix, _RiakPid) ->
         {ok, AMs}
     catch throw:{sim_riak_failure, Error} ->
             Error
+    end.
+
+maybe_fault(FaultType, NoFaultFun) ->
+    io:format("~p, ", [FaultType]),
+    case riak_cs_fault_injection:get_fault(get) of
+        none ->
+            NoFaultFun();
+        Fault ->
+            riak_cs_fault_injection:apply(Fault)
     end.
 
 user1_details() ->
