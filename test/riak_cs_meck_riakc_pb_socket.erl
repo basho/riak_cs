@@ -177,11 +177,6 @@ utils_bucket_fun(BucketOp, Bucket, ACL, KeyId, _AdminCreds, _StanchionData) ->
                                          BucketOp)
     end.
 
-%% delete_bucket(User, _VClock, Bucket, _RiakPid) ->
-%%     io:format("delete_bucket, "),
-%%     KeyId = User?RCS_USER.key_id,
-%%     stanchion_utils:do_bucket_op(Bucket, list_to_binary(KeyId), ?ACL{}, delete).
-
 utils_active_manifests(ManifestBucket, Prefix, _RiakPid) ->
     PrefixLen = size(Prefix),
     Objs = [Obj || {{Bucket, Key}, Obj} <- ets:tab2list(?TAB),
@@ -214,8 +209,7 @@ utils_active_manifests(ManifestBucket, Prefix, _RiakPid) ->
     end.
 
 maybe_fault(FaultType, NoFaultFun) ->
-    io:format("~p, ", [FaultType]),
-    case riak_cs_fault_injection:get_fault(get) of
+    case riak_cs_fault_injection:get_fault(FaultType) of
         none ->
             NoFaultFun();
         Fault ->

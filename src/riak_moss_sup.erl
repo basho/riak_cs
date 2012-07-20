@@ -117,4 +117,4 @@ init([]) ->
        GetFsmSup,
        PutFsmSup,
        Web],
-    {ok, { {one_for_one, 10, 10}, Processes} }.
+    {ok, { {one_for_one, 10*10000, 10*10000}, Processes} }.

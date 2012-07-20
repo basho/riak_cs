@@ -18,7 +18,7 @@
 %% API
 -export([start_link/0, clear_fault_list/0,
          set_fault_list/1, get_fault_list/0,
-         get_fault/1,
+         get_fault/1, get_step/0, reset_step/0, set_step/1,
          apply/1]).
 
 %% gen_server callbacks
@@ -71,7 +71,17 @@ get_fault(Fault) ->
             none
     end.
 
-apply(F) when is_function(F, 0) ->
+get_step() ->
+    gen_server:call(?SERVER, {get_step}, infinity).
+
+reset_step() ->
+    set_step(1).
+
+set_step(N) when is_integer(N), N >= 1 ->
+    gen_server:call(?SERVER, {set_step, N}, infinity).
+
+apply(F) when is_function(F, 0), not is_tuple(F)  ->
+    %% !@#$! you 2-tuple fun-not-fun
     F();
 apply({mfa, M, F, A}) ->
     erlang:apply(M, F, A);
@@ -111,13 +121,6 @@ init([]) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_call({set_fault_list, List}, _From, State) ->
-    {reply, ok, State#state{d = dict:from_list(List)}};
-handle_call({get_fault_list}, _From, #state{d = Dict} = State) ->
-    Res = lists:sort(fun({{_,X},_}, {{_, Y},_}) ->
-                             X < Y
-                     end, dict:to_list(Dict)),
-    {reply, Res, State};
 handle_call({get_fault, Fault}, _From,
             #state{d = Dict, step = Step} = State) ->
     Reply = case dict:find({Fault, Step}, Dict) of
@@ -126,7 +129,18 @@ handle_call({get_fault, Fault}, _From,
                 {ok, Val} ->
                     Val
             end,
-    {ok, Reply, State#state{step = Step + 1}}.
+    {reply, Reply, State#state{step = Step + 1}};
+handle_call({set_fault_list, List}, _From, State) ->
+    {reply, ok, State#state{d = dict:from_list(List)}};
+handle_call({get_fault_list}, _From, #state{d = Dict} = State) ->
+    Res = lists:sort(fun({{_,X},_}, {{_, Y},_}) ->
+                             X < Y
+                     end, dict:to_list(Dict)),
+    {reply, Res, State};
+handle_call({get_step}, _From, State) ->
+    {reply, State#state.step, State};
+handle_call({set_step, N}, _From, State) ->
+    {reply, N, State#state{step = N}}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -183,6 +197,29 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
+get_set_faults_test() ->
+    Cleanup = fun() -> catch exit(whereis(?SERVER), kill), timer:sleep(50) end,
+    Cleanup(),
+    Fs = [{{get, 1}, {error,notfound}},
+          {{get, 3}, {error,notfound3}}, {{put, 2}, bummer}],
+    try
+        spawn(fun() -> {ok, _} = ?MODULE:start_link(), timer:sleep(1000) end),
+        timer:sleep(50),
+        ok = ?MODULE:set_fault_list(Fs),
+        true = (lists:usort(Fs) == lists:usort(?MODULE:get_fault_list())),
+        {error,notfound} = ?MODULE:get_fault(get),
+        bummer = ?MODULE:get_fault(put),
+        {error,notfound3} = ?MODULE:get_fault(get),
+        none = ?MODULE:get_fault(get),
+        none = ?MODULE:get_fault(put),
+        none = ?MODULE:get_fault(zaweeeeeeeeee),
+        _= ?MODULE:reset_step(),
+        {error,notfound9} = ?MODULE:get_fault(get)
+    catch X:Y ->
+            exit({error, X, Y, erlang:get_stacktrace()})
+    after
+            Cleanup()
+    end.
 
 -ifdef(FOOFOO).
 
