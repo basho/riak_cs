@@ -31,8 +31,8 @@
 {moss_request_timeout, 999999000}.
 % If using the moss_measurement_units option, you need to change
 % any R graph's labels of the Y axis, e.g. basho_bench's Makefile target
-% "make kbyte_sec-results"
-%{moss_measurement_units, kbyte_sec}.
+% "make mbyte_sec-results"
+{moss_measurement_units, mbyte_sec}.
 
 {key_generator, {int_to_str, {partitioned_sequential_int, 1000, 100}}}.
 %{key_generator, {int_to_str, {uniform_int, 1000}}}.
