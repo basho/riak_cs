@@ -5,8 +5,8 @@
 %% The `mode` rate does *not* apply to `insert` operations.
 %% The driver does *not* support `update` operations
 
-%{mode, max}.
-{mode, {rate,4}}.
+{mode, max}.
+%{mode, {rate,4}}.
 {duration, 1}.
 {concurrent, 1}.
 
@@ -34,8 +34,8 @@
 % "make kbyte_sec-results"
 %{moss_measurement_units, kbyte_sec}.
 
-%{key_generator, {int_to_str, {uniform_int, 500}}}.
-{key_generator, {int_to_str, {uniform_int, 5}}}.
+{key_generator, {int_to_str, {partitioned_sequential_int, 1000, 100}}}.
+%{key_generator, {int_to_str, {uniform_int, 1000}}}.
 %% See comments in source code for bigfile_valgen() function for full
 %% explanation of the proplist below.
 {value_generator, {function, basho_bench_driver_moss, bigfile_valgen,
