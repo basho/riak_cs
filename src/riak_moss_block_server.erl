@@ -173,13 +173,24 @@ handle_cast({delete_block, ReplyPid, Bucket, Key, UUID, BlockNumber}, State=#sta
     dt_entry(<<"delete_block">>, [BlockNumber], [Bucket, Key]),
     {FullBucket, FullKey} = full_bkey(Bucket, Key, UUID, BlockNumber),
     StartTime = os:timestamp(),
-    DeleteOptions = [{r, all}, {pr, all}, {w, all}, {pw, all}],
-    Response = riakc_pb_socket:delete(RiakcPid, FullBucket, FullKey, DeleteOptions),
-    case Response of
-        ok ->
-            riak_cs_delete_fsm:block_deleted(ReplyPid, {ok, BlockNumber});
-        {error, _Error}=Error ->
-            riak_cs_delete_fsm:block_deleted(ReplyPid, Error)
+
+    %% do a get first to get the vclock (only do a head request though)
+    GetOptions = [{r, 1}, {notfound_ok, false}, {basic_quorum, false}, head],
+    _ = case riakc_pb_socket:get(RiakcPid, FullBucket, FullKey, GetOptions) of
+        {ok, RiakObject} ->
+            DeleteOptions = [{r, all}, {pr, all}, {w, all}, {pw, all}],
+            Response = riakc_pb_socket:delete_obj(RiakcPid, RiakObject, DeleteOptions),
+            case Response of
+                ok ->
+                    riak_cs_delete_fsm:block_deleted(ReplyPid, {ok, BlockNumber});
+                {error, _Error}=Error ->
+                    riak_cs_delete_fsm:block_deleted(ReplyPid, Error)
+            end;
+        {error, notfound} ->
+            %% If the block isn't found, assume it's been
+            %% previously deleted by another delete FSM, and
+            %% move on to the next block.
+            riak_cs_delete_fsm:block_deleted(ReplyPid, {ok, BlockNumber})
     end,
     ok = riak_cs_stats:update_with_start(block_delete, StartTime),
     dt_return(<<"delete_block">>, [BlockNumber], [Bucket, Key]),
