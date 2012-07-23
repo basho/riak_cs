@@ -48,9 +48,11 @@ stage : rel
 	$(foreach dep,$(wildcard deps/*), rm -rf rel/riak-cs/lib/$(shell basename $(dep))-* && ln -sf $(abspath $(dep)) rel/riak-cs/lib;)
 	$(foreach app,$(wildcard apps/*), rm -rf rel/riak-cs/lib/$(shell basename $(app))-* && ln -sf $(abspath $(app)) rel/riak-cs/lib;)
 
-devrel:
+devrel: dev1 dev2 dev3
+
+dev1 dev2 dev3:
 	mkdir -p dev
-	(cd rel && ../rebar generate skip_deps=true target_dir=../dev/$(PKG_NAME) overlay_vars=vars/dev_vars.config)
+	(cd rel && ../rebar generate skip_deps=true target_dir=../dev/$@ overlay_vars=vars/$@_vars.config)
 
 devclean: clean
 	rm -rf dev
