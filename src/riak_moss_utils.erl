@@ -22,6 +22,7 @@
          get_buckets/1,
          get_env/3,
          get_keys_and_manifests/3,
+         has_tombstone/1,
          is_admin/1,
          map_keys_and_manifests/3,
          get_object/3,
@@ -365,8 +366,9 @@ get_manifests_raw(RiakcPid, Bucket, Key) ->
 get_manifests(RiakcPid, Bucket, Key) ->
     case get_manifests_raw(RiakcPid, Bucket, Key) of
         {ok, Object} ->
-            Siblings = riakc_obj:get_values(Object),
-            DecodedSiblings = lists:map(fun erlang:binary_to_term/1, Siblings),
+            DecodedSiblings = [binary_to_term(V) ||
+                                  {_, V}=Content <- riakc_obj:get_contents(Object),
+                                  not has_tombstone(Content)],
 
             %% Upgrade the manifests to be the latest erlang
             %% record version
@@ -438,6 +440,13 @@ get_user_index(Index, Value, RiakPid) ->
                                                                                                  Reason]),
             Error
     end.
+
+%% @doc Determine if a set of contents of a riak object has a tombstone.
+-spec has_tombstone({dict(), binary()}) -> boolean().
+has_tombstone({_, <<>>}) ->
+    true;
+has_tombstone({MD, _V}) ->
+    dict:is_key(<<"X-Riak-Deleted">>, MD) =:= true.
 
 %% @doc Determine if the specified user account is a system admin.
 -spec is_admin(rcs_user()) -> boolean().

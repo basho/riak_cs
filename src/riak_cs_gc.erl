@@ -181,13 +181,9 @@ generate_key() ->
 -spec decode_and_merge_siblings(riakc_obj:riakc_obj(), twop_set:twop_set()) ->
       twop_set:twop_set().
 decode_and_merge_siblings(Obj, OtherManifestSets) ->
-    Some = [binary_to_term(V) || {MD, V} <- riakc_obj:get_contents(Obj),
-                                 not has_tombstone(MD),
-                                 V /= <<>>],
+    Some = [binary_to_term(V) || {_, V}=Content <- riakc_obj:get_contents(Obj),
+                                 not riak_moss_utils:has_tombstone(Content)],
     twop_set:resolve([OtherManifestSets | Some]).
-
-has_tombstone(MD) ->
-    dict:is_key(<<"X-Riak-Deleted">>, MD) =:= true.
 
 %% ===================================================================
 %% EUnit tests
