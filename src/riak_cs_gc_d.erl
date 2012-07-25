@@ -194,6 +194,11 @@ initiating_file_delete(continue, #state{current_files=[Manifest | _RestManifests
     %% name upon terminate(), so we do not have to pass our pid to it
     %% in order to get a reply.
     {ok, Pid} = riak_cs_delete_fsm_sup:start_delete_fsm(node(), Args),
+
+    %% Link to the delete fsm, so that if it dies,
+    %% we go down too. If the link fails, we should
+    %% also receive an 'EXIT' message.
+    catch link(Pid),
     {next_state, waiting_file_delete, State#state{delete_fsm_pid = Pid}};
 initiating_file_delete(_, State) ->
     {next_state, initiating_file_delete, State}.
