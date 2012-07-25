@@ -196,9 +196,13 @@ initiating_file_delete(continue, #state{current_files=[Manifest | _RestManifests
     {ok, Pid} = riak_cs_delete_fsm_sup:start_delete_fsm(node(), Args),
 
     %% Link to the delete fsm, so that if it dies,
-    %% we go down too. If the link fails, we should
-    %% also receive an 'EXIT' message.
-    catch link(Pid),
+    %% we go down too. In the future we might want to do
+    %% something more complicated like retry
+    %% a particular key N times before moving on, but for
+    %% now this is the easiest thing to do. If we need to manually
+    %% skip an object to GC, we can change the epoch start
+    %% time in app.config
+    link(Pid),
     {next_state, waiting_file_delete, State#state{delete_fsm_pid = Pid}};
 initiating_file_delete(_, State) ->
     {next_state, initiating_file_delete, State}.
