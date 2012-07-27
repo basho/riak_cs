@@ -71,7 +71,7 @@ new(ID) ->
     end,
     %% For ops other than get, basho_bench doesn't give us an explicit
     %% way to pass ReportFun to the necessary place in a purely
-    %% functional way.  Alas, this function isn't executed by the same
+    %% functional way.
     application:set_env(?MODULE, ?REPORTFUN_APPKEY, ReportFun),
 
     OpsList = basho_bench_config:get(operations, []),
@@ -97,7 +97,7 @@ new(ID) ->
 %% This module does some crazy stuff, but it's there for a reason.
 %% The reason is that basho_bench is expecting the run() function to
 %% do something that takes a few/several seconds at most.  It is not
-%% expeciting run() to finish after minutes/hours/days of runtime,
+%% expecting run() to finish after minutes/hours/days of runtime,
 %% which is quite possible when testing 5GB files or larger.
 %%
 %% So, we adopt a strategy where run() will return after ?BLOCK of
