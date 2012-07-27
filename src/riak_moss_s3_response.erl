@@ -134,7 +134,7 @@ list_bucket_response(User, Bucket, KeyObjPairs, RD, Ctx) ->
                                           {'Size', [Size]},
                                           {'LastModified', [LastModified]},
                                           {'ETag', [ETag]},
-                                          {'Owner', [user_to_xml_owner(User)]}]};
+                                          user_to_xml_owner(User)]};
                         {error, Reason} ->
                             _ = lager:debug("Unable to fetch manifest for ~p. Reason: ~p",
                                             [Key, Reason]),
