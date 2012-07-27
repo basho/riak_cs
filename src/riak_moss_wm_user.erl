@@ -217,7 +217,8 @@ forbidden('POST', RD, Ctx, User, [], _) ->
 forbidden('PUT', RD, Ctx, User, [], _) ->
     admin_check(riak_moss_utils:is_admin(User), RD, Ctx);
 forbidden(_Method, RD, Ctx, User, UserPathKey, _) when
-      UserPathKey =:= User?RCS_USER.key_id ->
+      UserPathKey =:= User?RCS_USER.key_id;
+      UserPathKey =:= [] ->
     %% User is accessing own account
     AccessRD = riak_moss_access_logger:set_user(User, RD),
     {false, AccessRD, Ctx};
