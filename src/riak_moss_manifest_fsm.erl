@@ -157,8 +157,9 @@ init([test, Bucket, Key]) ->
 waiting_command({add_new_dict, WrappedManifest}, State=#state{riakc_pid=RiakcPid,
                                                            bucket=Bucket,
                                                            key=Key}) ->
-    _Res = get_and_update(RiakcPid, WrappedManifest, Bucket, Key),
-    {next_state, waiting_update_command, State}.
+    {_, RiakObj, Manifests} = get_and_update(RiakcPid, WrappedManifest, Bucket, Key),
+    UpdState = State#state{riak_object=RiakObj, manifests=Manifests},
+    {next_state, waiting_update_command, UpdState}.
 
 waiting_update_command({update_manifests, WrappedManifests}, State=#state{riakc_pid=RiakcPid,
                                                                  bucket=Bucket,
@@ -199,7 +200,7 @@ waiting_update_command({update_manifests_with_confirmation, WrappedManifests}, _
                                             key=Key,
                                             riak_object=undefined,
                                             manifests=undefined}) ->
-    Reply = get_and_update(RiakcPid, WrappedManifests, Bucket, Key),
+    {Reply, _, _} = get_and_update(RiakcPid, WrappedManifests, Bucket, Key),
     {reply, Reply, waiting_update_command, State};
 waiting_update_command({update_manifests_with_confirmation, WrappedManifests}, _From,
                                             State=#state{riakc_pid=RiakcPid,
@@ -280,22 +281,28 @@ get_and_update(RiakcPid, WrappedManifests, Bucket, Key) ->
     case riak_moss_utils:get_manifests(RiakcPid, Bucket, Key) of
         {ok, RiakObject, Manifests} ->
             NewManiAdded = riak_moss_manifest_resolution:resolve([WrappedManifests, Manifests]),
-            OverwrittenUUIDs = riak_cs_manifest_utils:overwritten_UUIDs(NewManiAdded),
+            OverwrittenUUIDs = riak_cs_manifest_utils:overwritten_UUIDs(Manifests),
             case OverwrittenUUIDs of
                 [] ->
                     ObjectToWrite = riakc_obj:update_value(RiakObject,
                         term_to_binary(NewManiAdded)),
 
-                    riak_moss_utils:put_with_no_meta(RiakcPid, ObjectToWrite);
+                    Result = riak_moss_utils:put_with_no_meta(RiakcPid, ObjectToWrite);
                 _ ->
-                    riak_cs_gc:gc_manifests(Bucket, Key,
-                        NewManiAdded, OverwrittenUUIDs, RiakObject, RiakcPid)
-            end;
+                    Result = riak_cs_gc:gc_manifests(Bucket,
+                                                    Key,                                                                                     NewManiAdded,
+                                                    OverwrittenUUIDs,
+                                                    RiakObject,
+                                                    RiakcPid)
+            end,
+            {Result, RiakObject, Manifests};
         {error, notfound} ->
             ManifestBucket = riak_moss_utils:to_bucket_name(objects, Bucket),
             ObjectToWrite = riakc_obj:new(ManifestBucket, Key, term_to_binary(WrappedManifests)),
-            riak_moss_utils:put_with_no_meta(RiakcPid, ObjectToWrite)
+            PutResult = riak_moss_utils:put_with_no_meta(RiakcPid, ObjectToWrite),
+            {PutResult, undefined, undefined}
     end.
+
 
 -spec update_from_previous_read(pid(), riakc_obj:riakc_obj(),
                                     orddict:orddict(), orddict:orddict()) ->
