@@ -12,13 +12,23 @@
 
 -module(basho_bench_driver_moss).
 
+-define(BLOCK, (1024*1024)).
+-define(VERYLONG_TIMEOUT, (300*1000)).
+-define(REPORTFUN_APPKEY, report_fun).
+-define(START_KEY, {?MODULE, start}).
+-define(BLOCKSIZE_KEY, {?MODULE, block_size}).
+
 -export([new/1,
          run/4]).
+-export([bigfile_valgen/2]).
 
 -record(state, { client_id,
                  hosts,
                  bucket,
-                 report_fun}).
+                 report_fun,
+                 working_op,
+                 req_id
+               }).
 
 %% ====================================================================
 %% API
@@ -26,6 +36,11 @@
 
 -spec new(integer()) -> {ok, term()}.
 new(ID) ->
+    %% For large numbers of load generators, it's a good idea to
+    %% stagger things out a little bit to avoid thundering herd
+    %% problems at the server side.
+    timer:sleep(basho_bench_config:get(moss_new_delay, 10) * (ID - 1)),
+
     application:start(ibrowse),
     application:start(crypto),
 
@@ -49,7 +64,16 @@ new(ID) ->
             N = mbyte_sec -> {N,      fun(X) -> X / (1024 * 1024) end};
             _             -> {op_sec, fun(_) -> 1.0 end}
         end,
-    basho_bench_log:log(info, "Reporting factor = ~p\n", [RF_name]),
+    if ID == 1 ->
+            basho_bench_log:log(info, "Reporting factor = ~p\n", [RF_name]);
+       true ->
+            ok
+    end,
+    %% For ops other than get, basho_bench doesn't give us an explicit
+    %% way to pass ReportFun to the necessary place in a purely
+    %% functional way.
+    application:set_env(?MODULE, ?REPORTFUN_APPKEY, ReportFun),
+
     OpsList = basho_bench_config:get(operations, []),
     case RF_name /= op_sec andalso
          lists:keymember(delete, 1, OpsList) andalso
@@ -70,35 +94,57 @@ new(ID) ->
                 bucket = basho_bench_config:get(moss_bucket, "test"),
                 report_fun = ReportFun}}.
 
+%% This module does some crazy stuff, but it's there for a reason.
+%% The reason is that basho_bench is expecting the run() function to
+%% do something that takes a few/several seconds at most.  It is not
+%% expecting run() to finish after minutes/hours/days of runtime,
+%% which is quite possible when testing 5GB files or larger.
+%%
+%% So, we adopt a strategy where run() will return after ?BLOCK of
+%% data received/sent.  That will allow R to create graphs of the
+%% latency of ?BLOCK chunk retrievals.  We will do our own throughput
+%% reporting to allow R to graph total throughput in terms of
+%% KByte/sec or MByte/sec -- we do it via a kludge, but at least it
+%% works.
+%%
+%% This scheme will also allow b_b's built-in rate-limiting scheme to
+%% work, though on a granularity of ?BLOCK increments per second,
+%% which is probably still too sucky and may need finer control.
+
 -spec run(atom(), fun(), fun(), term()) -> {{ok, number()}, term()} | {error, term(), term()}.
-run(insert, KeyGen, ValueGen, #state{bucket = Bucket,
-                                     report_fun = ReportFun} = State) ->
-    {NextHost, S2} = next_host(State),
-    ConnInfo = NextHost,
-    case insert(KeyGen, ValueGen, ConnInfo, Bucket, ReportFun) of
-        {ok, _Size} = Good ->
-            {Good, S2};
-        {Error, Reason} ->
-            {Error, Reason, S2}
-    end;
-run(update, KeyGen, ValueGen, #state{bucket = Bucket,
-                                     report_fun = ReportFun} = State) ->
+
+run(get, KeyGen, _ValueGen, #state{working_op = undefined,
+                                   bucket = Bucket} = State) ->
     {NextHost, S2} = next_host(State),
     {Host, Port} = NextHost,
     Key = KeyGen(),
     Url = url(Host, Port, Bucket, Key),
-    case do_get({Host, Port}, Url, [], ReportFun) of
-        {ok, _} ->
-            case insert(KeyGen, ValueGen, {Host, Port}, Bucket, ReportFun) of
-                {ok, _Size} = Good ->
-                    {Good, State};
-                {Error, Reason} ->
-                    {Error, Reason, S2}
-            end;
-        {Error, Reason} ->
-            {Error, Reason, S2}
+    case do_get_first_unit({Host, Port}, Url, [], S2) of
+        {ok, S3} ->
+            {{silent, ok}, S3};
+        Else ->
+            Else
     end;
-run(delete, KeyGen, _ValueGen, #state{bucket = Bucket} = State) ->
+run(_, _KeyGen, _ValueGen, #state{working_op = get} = State) ->
+    case do_get_loop(State) of
+        {ok, S2} ->
+            {{silent, ok}, S2};
+        Else ->
+            Else
+    end;
+run(Op, KeyGen, ValueGen, State) ->
+    run2(Op, KeyGen, ValueGen, State).
+
+run2(insert, KeyGen, ValueGen, #state{bucket = Bucket} = State) ->
+    {NextHost, S2} = next_host(State),
+    ConnInfo = NextHost,
+    case insert(KeyGen, ValueGen, ConnInfo, Bucket) of
+        ok ->
+            {{silent, ok}, S2};
+        {error, Reason} ->
+            {error, Reason, S2}
+    end;
+run2(delete, KeyGen, _ValueGen, #state{bucket = Bucket} = State) ->
     {NextHost, S2} = next_host(State),
     {Host, Port} = NextHost,
     Key = KeyGen(),
@@ -106,33 +152,99 @@ run(delete, KeyGen, _ValueGen, #state{bucket = Bucket} = State) ->
     case do_delete({Host, Port}, Url, []) of
         ok ->
             {ok, S2};
-        {Error, Reason} ->
-            {Error, Reason, S2}
+        {error, Reason} ->
+            {error, Reason, S2}
     end;
-run(get, KeyGen, _ValueGen, #state{bucket = Bucket,
-                                   report_fun = ReportFun} = State) ->
-    {NextHost, S2} = next_host(State),
-    {Host, Port} = NextHost,
-    Key = KeyGen(),
-    Url = url(Host, Port, Bucket, Key),
-    case do_get({Host, Port}, Url, [], ReportFun) of
-        {ok, _Size} = Good ->
-            {Good, S2};
-        {Error, Reason} ->
-            {Error, Reason, S2}
-    end;
-run(Op, _KeyGen, _ValueGen, State) ->
+run2(Op, _KeyGen, _ValueGen, State) ->
     {error, {unknown_op, Op}, State}.
+
+%% The ibrowse client can take a {fun-arity-1, Arg::term()} tuple for
+%% a value and use the fun to generate body bytes on-the-fly.
+%%
+%% Proplist:
+%%
+%% file_size -- Size of the S3 file that we'll be uploading to the
+%%              S3/S3-like service.  Right now, this is a constant value.
+%%              If a variable file size is needed, we'll have to add code
+%%              to do it.  No default: this property *must* be defined.
+%% max_rate_per_chunk -- Maximum rate per second that an
+%%                       'ibrowse_chunk_size' sized piece of data will
+%%                       be transmitted.
+%%                       NOTE: This rate is global/shared across all
+%%                             worker processes.
+%%                       Default = no limit.
+%% ibrowse_chunk_size -- Amount of data that the ibrowse data chunk
+%%                       creation function will create.  Default = 1MByte.
+
+bigfile_valgen(Id, Props) ->
+    if Id == 1 ->
+            basho_bench_log:log(info, "~s value gen props: ~p\n", [?MODULE, Props]);
+       true ->
+            ok
+    end,
+    FileSize = proplists:get_value(file_size, Props, file_size_undefined),
+    ChunkSize = proplists:get_value(ibrowse_chunk_size, Props, 1024*1024),
+    MaxRate = proplists:get_value(max_rate_per_chunk, Props, 9999999) /
+        basho_bench_config:get(concurrent),
+    MaxRateSleepUS = trunc((1 / MaxRate) * 1000000),
+
+    Chunk = list_to_binary(lists:duplicate(ChunkSize, 42)),
+    {fun(get_content_length) ->
+             FileSize;
+        (Start) when Start < FileSize ->
+             case erlang:get(?START_KEY) of
+                 undefined ->
+                     ok; %% This is our first call, so no timing to report.
+                 StartT ->
+                     DiffT = timer:now_diff(now(), StartT),
+                     ReportFun = element(2, application:get_env(
+                                              ?MODULE, ?REPORTFUN_APPKEY)),
+                     SleepUS = erlang:max(0, MaxRateSleepUS - DiffT),
+                     %% io:format(user, "LINE ~p time ~p\n", [?LINE, SleepUS div 1000]),
+                     timer:sleep(SleepUS div 1000),
+                     LastChunkSize = erlang:get(?BLOCKSIZE_KEY),
+                     basho_bench_stats:op_complete(
+                       {insert,insert}, {ok, ReportFun(LastChunkSize)}, DiffT)
+             end,
+             %% Alright, now set up for the next block to write.
+             PrefixSize = erlang:min(FileSize - Start, ChunkSize),
+             erlang:put(?START_KEY, now()),
+             erlang:put(?BLOCKSIZE_KEY, PrefixSize),
+             <<Prefix:PrefixSize/binary, _/binary>> = Chunk,
+             {ok, Prefix, Start + PrefixSize};
+        (_Start) ->
+             eof
+     end, 0}.
 
 %% ====================================================================
 %% Internal functions
 %% ====================================================================
 
-insert(KeyGen, ValueGen, {Host, Port}, Bucket, ReportFun) ->
+insert(KeyGen, ValueGen, {Host, Port}, Bucket) ->
     Key = KeyGen(),
     Url = url(Host, Port, Bucket, Key),
-    Value = ValueGen(),
-    do_put({Host, Port}, Url, [], Value, ReportFun).
+    {ValueT, CL} =
+        case ValueGen of
+            {ValFunc, _ValArg} when is_function(ValFunc, 1) ->
+                %% Ibrowse can be given a Value that is a tuple of
+                %% {func-arity-1, term()} that will generate an
+                %% partial amount of data at a time.  That fun
+                %% should return:
+                %% a. {ok, Data, ArgForNextCall}
+                %% b. eof
+                %%
+                %% However, we've augmented that function to be able to
+                %% tell us its content length.
+                {ValueGen, ValFunc(get_content_length)};
+            _ ->
+                basho_bench_log:log(
+                  error,
+                  "This driver cannot use the standard basho_bench "
+                  "generator functions, please see refer to "
+                  "'moss.config.sample' file for an example.\n", []),
+                exit(bad_generator)
+        end,
+    do_put({Host, Port}, Url, [{"content-length", integer_to_list(CL)}], ValueT).
 
 url(Host, Port, Bucket, Key) ->
     UnparsedUrl = lists:concat(["http://", Host, ":", Port, "/", Bucket, "/", Key]),
@@ -227,22 +339,7 @@ send_request(Host, Url, Headers, Method, Body, Options) ->
 send_request(_Host, _Url, _Headers, _Method, _Body, _Options, 0) ->
     {error, max_retries};
 send_request(Host, Url, Headers0, Method, Body, Options, Count) ->
-    Pid = connect(Host),
-    ContentTypeStr = to_list(proplists:get_value(
-                               'Content-Type', Headers0,
-                               'application/octet-stream')),
-    Date = httpd_util:rfc1123_date(),
-    Headers = [{'Content-Type', ContentTypeStr},
-               {'Date', Date}|lists:keydelete('Content-Type', 1, Headers0)],
-    Uri = element(7, Url),
-    Sig = stanchion_auth:request_signature(
-            uppercase_verb(Method), Headers, Uri,
-            basho_bench_config:get(moss_secret_key)),
-    AuthStr = ["AWS ", basho_bench_config:get(moss_access_key), ":", Sig],
-    HeadersWithAuth = [{'Authorization', AuthStr}|Headers],
-    Timeout = basho_bench_config:get(moss_request_timeout, 5000),
-    case catch(ibrowse_http_client:send_req(Pid, Url, HeadersWithAuth, Method,
-                                            Body, Options, Timeout)) of
+    case (catch initiate_request(Host, Url, Headers0, Method, Body, Options)) of
         {ok, Status, RespHeaders, RespBody} ->
             maybe_disconnect(Host),
             {ok, Status, RespHeaders, RespBody};
@@ -252,22 +349,22 @@ send_request(Host, Url, Headers0, Method, Body, Options, Count) ->
             disconnect(Host),
             case should_retry(Error) of
                 true ->
-                    send_request(Host, Url, Headers, Method, Body, Options, Count-1);
-
+                    send_request(Host, Url, Headers0, Method, Body, Options,
+                                 Count-1);
                 false ->
                     normalize_error(Method, Error)
             end
     end.
 
-do_put(Host, Url, Headers, Value, ReportFun) ->
+do_put(Host, Url, Headers, Value) ->
     case send_request(Host, Url, Headers ++ [{'Content-Type', 'application/octet-stream'}],
                       put, Value, proxy_opts()) of
         {ok, "200", _Header, _Body} ->
-            {ok, ReportFun(byte_size(Value))};
+            ok;
         {ok, "201", _Header, _Body} ->
-            {ok, ReportFun(byte_size(Value))};
+            ok;
         {ok, "204", _Header, _Body} ->
-            {ok, ReportFun(byte_size(Value))};
+            ok;
         {ok, Code, _Header, _Body} ->
             {error, {http_error, Code}};
         {error, Reason} ->
@@ -286,16 +383,63 @@ do_delete(Host, Url, Headers) ->
             {error, Reason}
     end.
 
-do_get(Host, Url, Headers, ReportFun) ->
-    case send_request(Host, Url, Headers, get, <<>>, proxy_opts()) of
-        {ok, "200", _Header, Body} ->
-            {ok, ReportFun(byte_size(Body))};
-        {ok, "404", _Header, _Body} ->
-            {ok, 0.0};
-        {ok, Code, _Header, _Body} ->
-            {error, {http_error, Code}};
-        {error, Reason} ->
-            {error, Reason}
+do_get_first_unit(Host, Url, Headers, State) ->
+    BufSize = 128*1024,
+    Opts = [{max_pipeline_size, 9999999},
+            {socket_options, [{recbuf, BufSize}]},
+            {stream_chunk_size, BufSize},
+            {stream_to, {self(), once}},
+            {response_format, binary},
+            {connect_timeout, 300*1000},
+            {inactivity_timeout, 300*1000}],
+    case initiate_request(Host, Url, Headers, get, <<>>, Opts++proxy_opts()) of
+        {ibrowse_req_id, ReqId} ->
+            receive
+                {ibrowse_async_headers, ReqId, HTTPCode, _}
+                  when HTTPCode == "200"; HTTPCode == "404" ->
+                    do_get_loop(State#state{req_id = ReqId});
+                {ibrowse_async_headers, ReqId, HTTPCode, _} ->
+                    {error, {http_error, HTTPCode},
+                     State#state{working_op = undefined}}
+                %% Shouldn't happen at this time?
+                %% {ibrowse_async_response, ReqId, Bin} ->
+                %%     size(B);
+                %% Shouldn't happen at this time?
+                %% {ibrowse_async_response_end, ReqId} ->
+                %%     all_done
+            after ?VERYLONG_TIMEOUT ->
+                    {error, ibrowse_timed_out,
+                     State#state{working_op = undefined}}
+            end;
+        Else ->
+            {error, Else, State#state{working_op = undefined}}
+    end.
+
+do_get_loop(#state{req_id = ReqId} = State) ->
+    ibrowse:stream_next(ReqId),
+    do_get_loop(0, now(), State).
+
+do_get_loop(Sum, StartT,
+            #state{req_id = ReqId, report_fun = ReportFun} = State) ->
+    receive
+        {ibrowse_async_response, ReqId, Bin} ->
+            ibrowse:stream_next(ReqId),
+            NewSum = Sum + size(Bin),
+            if NewSum > ?BLOCK ->
+                    DiffT = timer:now_diff(now(), StartT),
+                    basho_bench_stats:op_complete(
+                      {get,get}, {ok, ReportFun(NewSum)}, DiffT),
+                    {ok, State#state{working_op = get}};
+               true ->
+                    do_get_loop(NewSum, StartT, State)
+            end;
+        {ibrowse_async_response_end, ReqId} ->
+            DiffT = timer:now_diff(now(), StartT),
+            basho_bench_stats:op_complete(
+              {get,get}, {ok, ReportFun(Sum)}, DiffT),
+            {ok, State#state{working_op = undefined}}
+    after ?VERYLONG_TIMEOUT ->
+            {error, do_get_loop_timed_out, State#state{working_op = undefined}}
     end.
 
 should_retry({error, send_failed})       -> true;
@@ -324,3 +468,21 @@ to_list(A) when is_atom(A) ->
     atom_to_list(A);
 to_list(L) when is_list(L) ->
     L.
+
+initiate_request(Host, Url, Headers0, Method, Body, Options) ->
+    Pid = connect(Host),
+    ContentTypeStr = to_list(proplists:get_value(
+                               'Content-Type', Headers0,
+                               'application/octet-stream')),
+    Date = httpd_util:rfc1123_date(),
+    Headers = [{'Content-Type', ContentTypeStr},
+               {'Date', Date}|lists:keydelete('Content-Type', 1, Headers0)],
+    Uri = element(7, Url),
+    Sig = stanchion_auth:request_signature(
+            uppercase_verb(Method), Headers, Uri,
+            basho_bench_config:get(moss_secret_key)),
+    AuthStr = ["AWS ", basho_bench_config:get(moss_access_key), ":", Sig],
+    HeadersWithAuth = [{'Authorization', AuthStr}|Headers],
+    Timeout = basho_bench_config:get(moss_request_timeout, 5000),
+    ibrowse_http_client:send_req(Pid, Url, HeadersWithAuth, Method,
+                                 Body, Options, Timeout).

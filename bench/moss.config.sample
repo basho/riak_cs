@@ -1,7 +1,12 @@
 %% Sample config file for Riak CS basho_bench benchmarking
 
-%{mode, max}.
-{mode, {rate,4}}.
+%% About rate limiting via the `mode` setting: the `mode` rate is
+%% valid for the basho_bench_driver_moss plugin for `get` operations.
+%% The `mode` rate does *not* apply to `insert` operations.
+%% The driver does *not* support `update` operations
+
+{mode, max}.
+%{mode, {rate,4}}.
 {duration, 1}.
 {concurrent, 1}.
 
@@ -26,14 +31,19 @@
 {moss_request_timeout, 999999000}.
 % If using the moss_measurement_units option, you need to change
 % any R graph's labels of the Y axis, e.g. basho_bench's Makefile target
-% "make kbyte_sec-results"
-%{moss_measurement_units, kbyte_sec}.
+% "make mbyte_sec-results"
+{moss_measurement_units, mbyte_sec}.
 
-%{key_generator, {int_to_bin, {uniform_int, 500}}}.
-{key_generator, {uniform_int, 5}}.
-%{value_generator_source_size, 12100105}. %% Must be larger than val gen max size.
-%{value_generator, {fixed_bin, 12100100}}.
-{value_generator, {fixed_bin, 1024}}.
+{key_generator, {int_to_str, {partitioned_sequential_int, 1000, 100}}}.
+%{key_generator, {int_to_str, {uniform_int, 1000}}}.
+%% See comments in source code for bigfile_valgen() function for full
+%% explanation of the proplist below.
+{value_generator, {function, basho_bench_driver_moss, bigfile_valgen,
+                  [[{file_size, 8001001},
+                    {ibrowse_block_size, 1000000},
+                    {max_rate_per_chunk, 50}]]}}.
 
-{operations, [{insert, 1}, {update, 1}, {delete, 1}, {get, 1}]}.
-
+%% NOTE: It's not a good idea to mix insert & get ops in a single
+%%       basho_bench instance.  Use separate ones instead!
+%% bad idea: {operations, [{insert, 1}, {delete, 1}, {get, 1}]}.
+{operations, [{insert, 1}]}.
