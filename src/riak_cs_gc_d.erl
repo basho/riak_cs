@@ -524,7 +524,7 @@ handle_common_sync_reply({MsgBase, _}, Common, State) when is_atom(MsgBase) ->
 %% Refactor TODO:
 %%   1. delete_fsm_pid=undefined is desirable in both ok & error cases?
 %%   2. It's correct to *not* change pause_state?
-handle_delete_fsm_reply({ok, NumDeleted},
+handle_delete_fsm_reply({ok, {TotalBlocks, TotalBlocks}},
                         #state{current_files=[CurrentManifest | RestManifests],
                                current_fileset=FileSet,
                                block_count=BlockCount} = State) ->
@@ -532,6 +532,13 @@ handle_delete_fsm_reply({ok, NumDeleted},
     UpdFileSet = twop_set:del_element(CurrentManifest, FileSet),
     State#state{delete_fsm_pid=undefined,
                 current_fileset=UpdFileSet,
+                current_files=RestManifests,
+                block_count=BlockCount+TotalBlocks};
+handle_delete_fsm_reply({ok, {NumDeleted, _TotalBlocks}},
+                        #state{current_files=[_CurrentManifest | RestManifests],
+                               block_count=BlockCount} = State) ->
+    gen_fsm:send_event(self(), continue),
+    State#state{delete_fsm_pid=undefined,
                 current_files=RestManifests,
                 block_count=BlockCount+NumDeleted};
 handle_delete_fsm_reply({error, _}, #state{current_files=[_ | RestManifests]} = State) ->
