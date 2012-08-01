@@ -40,7 +40,8 @@
                 unacked_deletes=ordsets:new() :: ordsets:ordset(integer()),
                 all_delete_workers=[] :: list(pid()),
                 free_deleters = ordsets:new() :: ordsets:ordset(pid()),
-                deleted_blocks = 0 :: non_neg_integer()}).
+                deleted_blocks = 0 :: non_neg_integer(),
+                failed_blocks = 0 :: non_neg_integer()}).
 
 -type state() :: #state{}.
 
@@ -90,6 +91,30 @@ deleting({block_deleted, {ok, BlockID}, DeleterPid},
                          unacked_deletes=NewUnackedDeletes,
                          manifest=NewManifest,
                          deleted_blocks=Num+1},
+
+    if
+        NewManifest?MANIFEST.state == deleted ->
+            {stop, normal, State2};
+        true ->
+            %% maybe start more deletes
+            State3 = maybe_delete_blocks(State2),
+            {next_state, deleting, State3}
+    end;
+deleting({block_deleted, {error, {unsatisfied_constraint, _, BlockID}}, DeleterPid},
+    State=#state{manifest=Manifest,
+                 free_deleters=FreeDeleters,
+                 unacked_deletes=UnackedDeletes,
+                 failed_blocks=Num}) ->
+
+    NewFreeDeleters = ordsets:add_element(DeleterPid, FreeDeleters),
+    NewUnackedDeletes = ordsets:del_element(BlockID, UnackedDeletes),
+
+    NewManifest = riak_moss_lfs_utils:remove_delete_block(Manifest, BlockID),
+
+    State2 = State#state{free_deleters=NewFreeDeleters,
+                         unacked_deletes=NewUnackedDeletes,
+                         manifest=NewManifest,
+                         failed_blocks=Num+1},
 
     if
         NewManifest?MANIFEST.state == deleted ->
