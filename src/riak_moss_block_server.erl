@@ -177,15 +177,8 @@ handle_cast({delete_block, ReplyPid, Bucket, Key, UUID, BlockNumber}, State=#sta
     %% do a get first to get the vclock (only do a head request though)
     GetOptions = [{r, 1}, {notfound_ok, false}, {basic_quorum, false}, head],
     _ = case riakc_pb_socket:get(RiakcPid, FullBucket, FullKey, GetOptions) of
-        {ok, RiakObject} ->
-            DeleteOptions = [{r, all}, {pr, all}, {w, all}, {pw, all}],
-            Response = riakc_pb_socket:delete_obj(RiakcPid, RiakObject, DeleteOptions),
-            case Response of
-                ok ->
-                    riak_cs_delete_fsm:block_deleted(ReplyPid, {ok, BlockNumber});
-                {error, _Error}=Error ->
-                    riak_cs_delete_fsm:block_deleted(ReplyPid, Error)
-            end;
+            {ok, RiakObject} ->
+                ok = delete_block(RiakcPid, ReplyPid, RiakObject, BlockNumber);
         {error, notfound} ->
             %% If the block isn't found, assume it's been
             %% previously deleted by another delete FSM, and
@@ -197,6 +190,39 @@ handle_cast({delete_block, ReplyPid, Bucket, Key, UUID, BlockNumber}, State=#sta
     {noreply, State};
 handle_cast(_Msg, State) ->
     {noreply, State}.
+
+delete_block(RiakcPid, ReplyPid, RiakObject, BlockNumber) ->
+    Result = constrained_delete(RiakcPid, RiakObject, BlockNumber),
+    secondary_delete_check(Result, RiakcPid, RiakObject),
+    riak_cs_delete_fsm:block_deleted(ReplyPid, Result),
+    ok.
+
+constrained_delete(RiakcPid, RiakObject, BlockNumber) ->
+    DeleteOptions = [{r, all}, {pr, all}, {w, all}, {pw, all}],
+    format_delete_result(
+      riakc_pb_socket:delete_obj(RiakcPid, RiakObject, DeleteOptions),
+      BlockNumber).
+
+secondary_delete_check({error, {unsatisfied_constraint, _, _}}, RiakcPid, RiakObject) ->
+    riakc_pb_socket:delete_obj(RiakcPid, RiakObject);
+secondary_delete_check(_, _, _) ->
+    ok.
+
+format_delete_result(ok, BlockNumber) ->
+    {ok, BlockNumber};
+format_delete_result({error, Reason}, BlockNumber) when is_binary(Reason) ->
+    %% Riak client sends back oddly formatted errors
+    format_delete_result({error, binary_to_list(Reason)}, BlockNumber);
+format_delete_result({error, "{r_val_unsatisfied," ++ _}, BlockNumber) ->
+    {error, {unsatisfied_constraint, r, BlockNumber}};
+format_delete_result({error, "{w_val_unsatisfied," ++ _}, BlockNumber) ->
+    {error, {unsatisfied_constraint, w, BlockNumber}};
+format_delete_result({error, "{pr_val_unsatisfied," ++ _}, BlockNumber) ->
+    {error, {unsatisfied_constraint, pr, BlockNumber}};
+format_delete_result({error, "{pw_val_unsatisfied," ++ _}, BlockNumber) ->
+    {error, {unsatisfied_constraint, pw, BlockNumber}};
+format_delete_result(Result, _) ->
+    Result.
 
 %%--------------------------------------------------------------------
 %% @private
