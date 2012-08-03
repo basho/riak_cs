@@ -40,7 +40,8 @@
                 unacked_deletes=ordsets:new() :: ordsets:ordset(integer()),
                 all_delete_workers=[] :: list(pid()),
                 free_deleters = ordsets:new() :: ordsets:ordset(pid()),
-                deleted_blocks = 0 :: non_neg_integer()}).
+                deleted_blocks = 0 :: non_neg_integer(),
+                total_blocks = 0 :: non_neg_integer()}).
 
 -type state() :: #state{}.
 
@@ -76,29 +77,15 @@ prepare(timeout, State) ->
     handle_receiving_manifest(State).
 
 deleting({block_deleted, {ok, BlockID}, DeleterPid},
-    State=#state{manifest=Manifest,
-                 free_deleters=FreeDeleters,
-                 unacked_deletes=UnackedDeletes,
-                 deleted_blocks=Num}) ->
-
-    NewFreeDeleters = ordsets:add_element(DeleterPid, FreeDeleters),
-    NewUnackedDeletes = ordsets:del_element(BlockID, UnackedDeletes),
-
-    NewManifest = riak_moss_lfs_utils:remove_delete_block(Manifest, BlockID),
-
-    State2 = State#state{free_deleters=NewFreeDeleters,
-                         unacked_deletes=NewUnackedDeletes,
-                         manifest=NewManifest,
-                         deleted_blocks=Num+1},
-
-    if
-        NewManifest?MANIFEST.state == deleted ->
-            {stop, normal, State2};
-        true ->
-            %% maybe start more deletes
-            State3 = maybe_delete_blocks(State2),
-            {next_state, deleting, State3}
-    end;
+         State=#state{deleted_blocks=DeletedBlocks}) ->
+    UpdState = deleting_state_update(BlockID, DeleterPid, DeletedBlocks+1, State),
+    ManifestState = UpdState#state.manifest?MANIFEST.state,
+    deleting_state_result(ManifestState, UpdState);
+deleting({block_deleted, {error, {unsatisfied_constraint, _, BlockID}}, DeleterPid},
+         State=#state{deleted_blocks=DeletedBlocks}) ->
+    UpdState = deleting_state_update(BlockID, DeleterPid, DeletedBlocks, State),
+    ManifestState = UpdState#state.manifest?MANIFEST.state,
+    deleting_state_result(ManifestState, UpdState);
 deleting({block_deleted, {error, Error}, _DeleterPid}, State) ->
     {stop, Error, State}.
 
@@ -129,14 +116,42 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 %% Internal functions
 %% ====================================================================
 
+%% @doc Update the state record following notification of the
+%% completion of a block deletion.
+-spec deleting_state_update(pos_integer(), pid(), non_neg_integer(), #state{}) ->
+                                   #state{}.
+deleting_state_update(BlockID,
+                      DeleterPid,
+                      DeletedBlocks,
+                      State=#state{manifest=Manifest,
+                                   free_deleters=FreeDeleters,
+                                   unacked_deletes=UnackedDeletes}) ->
+    NewManifest = riak_moss_lfs_utils:remove_delete_block(Manifest, BlockID),
+    State#state{free_deleters=ordsets:add_element(DeleterPid,
+                                                  FreeDeleters),
+                unacked_deletes=ordsets:del_element(BlockID,
+                                                    UnackedDeletes),
+                manifest=NewManifest,
+                deleted_blocks=DeletedBlocks}.
+
+%% @doc Determine the appropriate `deleting' state
+%% fsm callback result based on the given manifest state.
+-spec deleting_state_result(atom(), #state{}) -> {atom(), atom(), #state{}}.
+deleting_state_result(deleted, State) ->
+    {stop, normal, State};
+deleting_state_result(_, State) ->
+    UpdState = maybe_delete_blocks(State),
+    {next_state, deleting, UpdState}.
+
 -spec handle_receiving_manifest(state()) ->
     {next_state, atom(), state()}.
 handle_receiving_manifest(State=#state{riakc_pid=RiakcPid,
                                        manifest=Manifest}) ->
     {NewManifest, BlocksToDelete} = blocks_to_delete_from_manifest(Manifest),
-
+    BlockCount = ordsets:size(BlocksToDelete),
     NewState = State#state{manifest=NewManifest,
-                           delete_blocks_remaining=BlocksToDelete},
+                           delete_blocks_remaining=BlocksToDelete,
+                           total_blocks=BlockCount},
 
     %% Handle the case where there are 0 blocks to delete,
     %% i.e. content length of 0
@@ -181,9 +196,12 @@ maybe_delete_blocks(State=#state{bucket=Bucket,
 notify_gc_daemon(Reason, State) ->
     gen_fsm:sync_send_event(riak_cs_gc_d, notification_msg(Reason, State), infinity).
 
--spec notification_msg(term(), state()) -> {pid(), ok | {error, term()}}.
-notification_msg(normal, #state{deleted_blocks = DeletedBlocks}) ->
-    {self(), {ok, DeletedBlocks}};
+-spec notification_msg(term(), state()) -> {pid(),
+                                            {ok, {non_neg_integer(), non_neg_integer()}} |
+                                            {error, term()}}.
+notification_msg(normal, #state{deleted_blocks = DeletedBlocks,
+                                total_blocks = TotalBlocks}) ->
+    {self(), {ok, {DeletedBlocks, TotalBlocks}}};
 notification_msg(Reason, _State) ->
     {self(), {error, Reason}}.
 
