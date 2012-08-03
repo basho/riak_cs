@@ -29,8 +29,15 @@ distclean: clean
 test: all
 	@./rebar skip_deps=true eunit
 
-parity-test:
-	@python test/prototype_parity.py -v
+test-client: test-clojure test-python
+
+test-python:
+	@python test/s3api_verification_test.py
+
+test-clojure:
+	@command -v lein >/dev/null 2>&1 || { echo >&2 "I require lein but it's not installed. \
+	Please read client_tests/clojure/clj-s3/README."; exit 1; }
+	@cd client_tests/clojure/clj-s3 && lein deps, midje
 
 ##
 ## Release targets
