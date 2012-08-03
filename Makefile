@@ -9,7 +9,7 @@ ERLANG_BIN       = $(shell dirname $(shell which erl))
 REBAR           ?= $(BASE_DIR)/rebar
 OVERLAY_VARS    ?=
 
-.PHONY: rel stagedevrel deps test test-python test-clojure test-client
+.PHONY: rel stagedevrel deps test
 
 all: deps compile
 
