@@ -203,20 +203,23 @@ constrained_delete(RiakcPid, RiakObject, BlockNumber) ->
       riakc_pb_socket:delete_obj(RiakcPid, RiakObject, DeleteOptions),
       BlockNumber).
 
-secondary_delete_check({error, {unsatisified_constraint, _}}, RiakcPid, RiakObject) ->
+secondary_delete_check({error, {unsatisfied_constraint, _, _}}, RiakcPid, RiakObject) ->
     riakc_pb_socket:delete_obj(RiakcPid, RiakObject);
 secondary_delete_check(_, _, _) ->
     ok.
 
 format_delete_result(ok, BlockNumber) ->
     {ok, BlockNumber};
-format_delete_result({error, {r_val_unsatisfied, _, _}}, BlockNumber) ->
+format_delete_result({error, Reason}, BlockNumber) when is_binary(Reason) ->
+    %% Riak client sends back oddly formatted errors
+    format_delete_result({error, binary_to_list(Reason)}, BlockNumber);
+format_delete_result({error, "{r_val_unsatisfied," ++ _}, BlockNumber) ->
     {error, {unsatisfied_constraint, r, BlockNumber}};
-format_delete_result({error, {w_val_unsatisfied, _, _}}, BlockNumber) ->
+format_delete_result({error, "{w_val_unsatisfied," ++ _}, BlockNumber) ->
     {error, {unsatisfied_constraint, w, BlockNumber}};
-format_delete_result({error, {pr_val_unsatisfied, _, _}}, BlockNumber) ->
+format_delete_result({error, "{pr_val_unsatisfied," ++ _}, BlockNumber) ->
     {error, {unsatisfied_constraint, pr, BlockNumber}};
-format_delete_result({error, {pw_val_unsatisfied, _, _}}, BlockNumber) ->
+format_delete_result({error, "{pw_val_unsatisfied," ++ _}, BlockNumber) ->
     {error, {unsatisfied_constraint, pw, BlockNumber}};
 format_delete_result(Result, _) ->
     Result.
