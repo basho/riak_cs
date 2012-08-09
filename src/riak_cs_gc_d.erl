@@ -360,8 +360,8 @@ fetch_eligible_manifest_keys(RiakPid, IntervalStart) ->
     EndTime = list_to_binary(integer_to_list(IntervalStart)),
     eligible_manifest_keys(gc_index_query(RiakPid, EndTime)).
 
-eligible_manifest_keys({{ok, BKeys}, _}) ->
-    [Key || [_, Key] <- BKeys];
+eligible_manifest_keys({{ok, Keys}, _}) ->
+    Keys;
 eligible_manifest_keys({{error, Reason}, EndTime}) ->
     _ = lager:warning("Error occurred trying to query from time 0 to ~p"
                       "in gc key index. Reason: ~p",
