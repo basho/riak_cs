@@ -1036,6 +1036,14 @@ xml_error_code(Xml) ->
     {ParsedData, _Rest} = xmerl_scan:string(Xml, []),
     process_xml_error(ParsedData#xmlElement.content).
 
+%% @doc Update a bucket record to convert the name from binary
+%% to string if necessary.
+-spec update_bucket_record(term()) -> moss_bucket().
+update_bucket_record(Bucket=?MOSS_BUCKET{name=Name}) when is_binary(Name) ->
+    Bucket?MOSS_BUCKET{name=binary_to_list(Name)};
+update_bucket_record(Bucket) ->
+    Bucket.
+
 %% @doc Check if a user already has an ownership of
 %% a bucket and update the bucket list if needed.
 -spec update_user_buckets(moss_user(), moss_bucket()) ->
@@ -1075,7 +1083,8 @@ update_user_record(User=#moss_user_v1{}) ->
               key_id=User#moss_user_v1.key_id,
               key_secret=User#moss_user_v1.key_secret,
               canonical_id=User#moss_user_v1.canonical_id,
-              buckets=User#moss_user_v1.buckets}.
+              buckets=[update_bucket_record(Bucket) ||
+                          Bucket <- User#moss_user_v1.buckets]}.
 
 %% @doc Return a user record for the specified user name and
 %% email address.
