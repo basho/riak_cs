@@ -2,7 +2,7 @@
 {application, riak_moss,
  [
   {description, "riak_moss"},
-  {vsn, "1.0.1"},
+  {vsn, "1.1.0"},
   {modules, []},
   {registered, []},
   {applications, [
