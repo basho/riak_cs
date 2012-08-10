@@ -4,10 +4,13 @@
 If you don't have a Clojure environment set up, follow these
 steps first.
 
+(Note, if you have leingingen 1.x, you'll need leiningen2, instructions
+for upgrading are [here](https://github.com/technomancy/leiningen/wiki/Upgrading).
+
 ```shell
 # this will in Leiningen (often called lein), this Clojure build tool
 INSTALL_DIR=/usr/local/bin
-curl "https://raw.github.com/technomancy/leiningen/1.x/bin/lein" > $INSTALL_DIR/lein
+curl "https://raw.github.com/technomancy/leiningen/preview/bin/lein" > $INSTALL_DIR/lein
 chmod +x $INSTALL_DIR/lein
 ```
 
