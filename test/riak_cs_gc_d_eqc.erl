@@ -79,6 +79,7 @@ prop_set_interval() ->
                 {_, State1} = riak_cs_gc_d:current_state(),
                 riak_cs_gc_d:set_interval(Interval),
                 {_, State2} = riak_cs_gc_d:current_state(),
+                riak_cs_gc_d:stop(),
                 conjunction([{initial_interval, equals(?DEFAULT_GC_INTERVAL, State1#state.interval)},
                              {updated_interval, equals(Interval, State2#state.interval)}
                             ])
@@ -90,12 +91,13 @@ prop_manual_commands() ->
             begin
                 case whereis(riak_cs_gc_d) of
                     undefined ->
-                        {ok, _} = riak_cs_gc_d:test_link();
+                        {ok, _} = riak_cs_gc_d:test_link(infinity);
                     _Pid ->
                         riak_cs_gc_d:set_interval(infinity),
                         riak_cs_gc_d:change_state(idle)
                 end,
                 {H, {_F, _S}, Res} = run_commands(?MODULE, Cmds),
+                riak_cs_gc_d:stop(),
                 aggregate(zip(state_names(H), command_names(Cmds)),
                           ?WHENFAIL(
                              begin
