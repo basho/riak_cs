@@ -135,10 +135,18 @@ print_details(Details) ->
       end
       || {K, V} <- Details ].
 
-human_detail(interval, Interval) ->
+human_detail(interval, infinity) ->
+    {"The current garbage collection interval is", "infinity (i.e. gc is disabled)"};
+human_detail(interval, Interval) when is_integer(Interval) ->
     {"The current garbage collection interval is", integer_to_list(Interval)};
+human_detail(interval, _) ->
+    {"The current garbage collection interval is", "undefined"};
+human_detail(next, undefined) ->
+    {"Next run scheduled for", "undefined"};
 human_detail(next, Time) ->
     {"Next run scheduled for", human_time(Time)};
+human_detail(last, undefined) ->
+    {"Last run started at", "undefined"};
 human_detail(last, Time) ->
     {"Last run started at", human_time(Time)};
 human_detail(current, Time) ->

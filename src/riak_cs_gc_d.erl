@@ -21,7 +21,8 @@
          cancel_batch/0,
          pause/0,
          resume/0,
-         set_interval/1]).
+         set_interval/1,
+         stop/0]).
 
 %% gen_fsm callbacks
 -export([init/1,
@@ -49,6 +50,7 @@
 
 %% Test API
 -export([test_link/0,
+         test_link/1,
          current_state/0,
          change_state/1,
          status_data/1]).
@@ -111,6 +113,11 @@ resume() ->
 -spec set_interval(infinity | non_neg_integer()) -> ok | {error, term()}.
 set_interval(Interval) ->
     gen_fsm:sync_send_event(?SERVER, {set_interval, Interval}, infinity).
+
+%% @doc Stop the daemon
+-spec stop() -> ok | {error, term()}.
+stop() ->
+    gen_fsm:sync_send_all_state_event(?SERVER, stop, infinity).
 
 %%%===================================================================
 %%% gen_fsm callbacks
@@ -295,6 +302,8 @@ handle_sync_event(current_state, _From, StateName, State) ->
     {reply, {StateName, State}, StateName, State};
 handle_sync_event({change_state, NewStateName}, _From, _StateName, State) ->
     ok_reply(NewStateName, State);
+handle_sync_event(stop, _From, _StateName, State) ->
+    {stop, normal, ok, State};
 handle_sync_event(_Event, _From, StateName, State) ->
     ok_reply(StateName, State).
 
@@ -428,6 +437,8 @@ pause_gc(State, StateData) ->
     _ = lager:info("Pausing garbage collection"),
     StateData#state{pause_state=State}.
 
+cancel_timer(_, undefined) ->
+    undefined;
 cancel_timer(infinity, TimerRef) ->
     %% Cancel the timer in case the interval has
     %% recently be set to `infinity'.
@@ -555,6 +566,11 @@ handle_delete_fsm_reply({error, _}, #state{current_files=[_ | RestManifests]} = 
 %% @doc Start the garbage collection server
 test_link() ->
     gen_fsm:start_link({local, ?SERVER}, ?MODULE, [testing], []).
+
+%% @doc Start the garbage collection server
+test_link(Interval) ->
+    application:set_env(riak_moss, gc_interval, Interval),
+    test_link().
 
 %% @doc Get the current state of the fsm for testing inspection
 -spec current_state() -> {atom(), #state{}} | {error, term()}.
