@@ -31,8 +31,10 @@ test: all
 
 test-client: test-clojure test-python
 
-test-python:
-	@python test/s3api_verification_test.py
+test-python: test-boto
+
+test-boto:
+	@python client_tests/python/boto_test.py
 
 test-clojure:
 	@command -v lein >/dev/null 2>&1 || { echo >&2 "I require lein but it's not installed. \
