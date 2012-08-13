@@ -39,7 +39,7 @@ test-boto:
 test-clojure:
 	@command -v lein >/dev/null 2>&1 || { echo >&2 "I require lein but it's not installed. \
 	Please read client_tests/clojure/clj-s3/README."; exit 1; }
-	@cd client_tests/clojure/clj-s3 && lein deps, midje
+	@cd client_tests/clojure/clj-s3 && lein do deps, midje
 
 ##
 ## Release targets
