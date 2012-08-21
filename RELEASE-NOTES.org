@@ -1,14 +1,38 @@
-* MOSS 1.0.2 Release Notes
+* Riak CS 1.1.0 Release Notes
+** Bugs Fixed
+- Check for timeout when checking out a connection from poolboy.
+- PUT object now returns 200 instead of 204.
+- Fixes for Dialyzer errors and warnings.
+- Return readable error message with 500 errors instead of large webmachine backtraces.
+** Additions
+- Update user creation to accept a JSON or XML document for user
+  creation instead of URL encoded text string.
+- Configuration option to allow anonymous users to create accounts. In
+  the default mode, only the administrator is allowed to create
+  accounts.
+- Ping resource for health checks.
+- Support for user-specified metadata headers.
+- User accounts may be disabled by the administrator.
+- A new key_secret can be issued for a user by the administrator.
+- Administrator can now list all system users and optionally filter by
+  enabled or disabled account status.
+- Garbage collection for deleted and overwritten objects.
+- Separate connection pool for object listings with a default of 5
+  connections.
+- Improved performance for listing all objects in a bucket.
+- Statistics collection and querying.
+- DTrace probing.
+* Riak CS 1.0.2 Release Notes
 ** Additions
 - Support query parameter authentication as specified in [[http://docs.amazonwebservices.com/AmazonS3/latest/dev/RESTAuthentication.html][Signing and Authenticating REST Requests]].
-* MOSS 1.0.1 Release Notes
+* Riak CS 1.0.1 Release Notes
 ** Bugs Fixed
 - Default content-type is not passed into function to handle PUT
   request body
 - Requests hang when a node in the Riak cluster is unavailable
 - Correct inappropriate use of riak_moss_utils:get_user by
   riak_moss_acl_utils:get_owner_data
-* MOSS 1.0.0 Release Notes
+* Riak CS 1.0.0 Release Notes
 ** Bugs Fixed
 - Fix PUTs for zero-byte files
 - Fix fsm initialization race conditions
@@ -23,11 +47,11 @@
 - Management for multiple versions of a file manifest
 - Configurable block size and max content length
 - Support specifying non-default ACL at bucket creation time
-* MOSS 0.1.2 Release Notes
+* Riak CS 0.1.2 Release Notes
 ** Bugs Fixed
 - Return 403 instead of 503 for invalid anonymous or signed requests.
 - Properly clean up processes and connections on object requests.
-* MOSS 0.1.1 Release Notes
+* Riak CS 0.1.1 Release Notes
 ** Bugs Fixed
 - HEAD requests always result in a =403 Forbidden=.
 - =s3cmd info= on a bucket object results in an error due to missing
@@ -35,7 +59,7 @@
 - Incorrect atom specified in =riak_moss_wm_utils:parse_auth_header=.
 - Bad match condition used in =riak_moss_acl:has_permission/2=.
 
-* MOSS 0.1.0 Release Notes
+* Riak CS 0.1.0 Release Notes
 ** Bugs Fixed
 - =s3cmd info= fails due to missing ='last-modified= key in return document.
 - =s3cmd get= of 0 byte file fails.
@@ -56,7 +80,7 @@
 ** Known Issues
 - Object-level access control lists have not yet been implemented.
 
-* MOSS 0.0.3 Release Notes
+* Riak CS 0.0.3 Release Notes
 ** Bugs Fixed
 - URL decode keys on put so they are represented correctly. This
   eliminates confusion when objects with spaces in their names are
