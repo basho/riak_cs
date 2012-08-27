@@ -32,10 +32,10 @@
 
 eqc_test_() ->
     {spawn,
-        [
-            {timeout, 20, ?_assertEqual(true, quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_block_count()))))},
-            {timeout, 60, ?_assertEqual(true, quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_manifest_manipulation()))))}
-        ]
+     [
+      {timeout, 20, ?_assertEqual(true, quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_block_count()))))},
+      {timeout, 60, ?_assertEqual(true, quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_manifest_manipulation()))))}
+     ]
     }.
 
 %% ====================================================================
@@ -44,12 +44,12 @@ eqc_test_() ->
 
 prop_block_count() ->
     ?FORALL({CLength, BlockSize},{riak_cs_gen:block_size(), riak_cs_gen:content_length()},
-        begin
-            NumBlocks = riak_cs_lfs_utils:block_count(CLength, BlockSize),
-            Product = NumBlocks * BlockSize,
-            conjunction([{greater, Product >= CLength},
-                         {lesser, (Product - BlockSize) < CLength}])
-        end).
+            begin
+                NumBlocks = riak_cs_lfs_utils:block_count(CLength, BlockSize),
+                Product = NumBlocks * BlockSize,
+                conjunction([{greater, Product >= CLength},
+                             {lesser, (Product - BlockSize) < CLength}])
+            end).
 
 %% @doc EQC property for manipulating manifests
 %% with `riak_cs_lfs_utils`. Tests:
@@ -59,33 +59,33 @@ prop_block_count() ->
 %% have been removed from the manifest
 prop_manifest_manipulation() ->
     ?FORALL({Bucket, FileName, UUID, CLength, Md5, MD},
-                    {riak_cs_gen:bucket(),
-                     riak_cs_gen:file_name(),
-                     riak_cs_gen:uuid(),
-                     riak_cs_gen:content_length(),
-                     riak_cs_gen:md5(),
-                     riak_cs_gen:metadata()},
+            {riak_cs_gen:bucket(),
+             riak_cs_gen:file_name(),
+             riak_cs_gen:uuid(),
+             riak_cs_gen:content_length(),
+             riak_cs_gen:md5(),
+             riak_cs_gen:metadata()},
 
-        begin
-            application:set_env(riak_cs, lfs_block_size, 1048576),
-            Manifest = riak_cs_lfs_utils:new_manifest(Bucket,
-                                                        FileName,
-                                                        UUID,
-                                                        CLength,
-                                                        <<"ctype">>,
-                                                        Md5,
-                                                        MD,
-                                                        riak_cs_lfs_utils:block_size(),
-                                                        riak_cs_acl_utils:default_acl("tester",
+            begin
+                application:set_env(riak_moss, lfs_block_size, 1048576),
+                Manifest = riak_cs_lfs_utils:new_manifest(Bucket,
+                                                          FileName,
+                                                          UUID,
+                                                          CLength,
+                                                          <<"ctype">>,
+                                                          Md5,
+                                                          MD,
+                                                          riak_cs_lfs_utils:block_size(),
+                                                          riak_cs_acl_utils:default_acl("tester",
                                                                                         "tester_id",
                                                                                         "tester_key_id")),
 
-            Blocks = riak_cs_lfs_utils:initial_blocks(CLength, riak_cs_lfs_utils:block_size()),
-            %% TODO: maybe we should shuffle blocks?
-            FoldFun = fun (Chunk, Mani) -> riak_cs_lfs_utils:remove_write_block(Mani, Chunk) end,
-            EmptyMani = lists:foldl(FoldFun, Manifest, Blocks),
-            EmptyMani?MANIFEST.state == active
-        end).
+                Blocks = riak_cs_lfs_utils:initial_blocks(CLength, riak_cs_lfs_utils:block_size()),
+                %% TODO: maybe we should shuffle blocks?
+                FoldFun = fun (Chunk, Mani) -> riak_cs_lfs_utils:remove_write_block(Mani, Chunk) end,
+                EmptyMani = lists:foldl(FoldFun, Manifest, Blocks),
+                EmptyMani?MANIFEST.state == active
+            end).
 
 
 %%====================================================================
