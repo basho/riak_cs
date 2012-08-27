@@ -16,6 +16,12 @@ all: deps compile
 compile:
 	@./rebar compile
 
+compile-client-test:
+	@./rebar client_test_compile
+
+compile-int-test:
+	@./rebar int_test_compile
+
 deps:
 	@./rebar get-deps
 
@@ -29,18 +35,23 @@ distclean: clean
 test: all
 	@./rebar skip_deps=true eunit
 
-test-client: test-clojure test-python
+test-client: test-clojure test-python test-erlang
 
 test-python: test-boto
 
 test-boto:
 	@python client_tests/python/boto_test.py
 
+test-erlang: compile-client-test
+	@./rebar skip_deps=true client_test_run
+
 test-clojure:
 	@command -v lein >/dev/null 2>&1 || { echo >&2 "I require lein but it's not installed. \
 	Please read client_tests/clojure/clj-s3/README."; exit 1; }
 	@cd client_tests/clojure/clj-s3 && lein do deps, midje
 
+test-int: compile-int-test
+	@./rebar skip_deps=true int_test_run
 ##
 ## Release targets
 ##
