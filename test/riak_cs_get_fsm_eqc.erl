@@ -4,9 +4,9 @@
 %%
 %% -------------------------------------------------------------------
 
-%% @doc Quickcheck test module for `riak_moss_get_fsm'.
+%% @doc Quickcheck test module for `riak_cs_get_fsm'.
 
--module(riak_moss_get_fsm_eqc).
+-module(riak_cs_get_fsm_eqc).
 
 -ifdef(EQC).
 
@@ -88,7 +88,7 @@ test(Iterations) ->
 
 prop_get_fsm() ->
     application:set_env(riak_moss, lfs_block_size, 1048576),
-    ?FORALL(State, #state{content_length=?LET(X, moss_gen:bounded_content_length(), X * 10)},
+    ?FORALL(State, #state{content_length=?LET(X, riak_cs_gen:bounded_content_length(), X * 10)},
         ?FORALL(Cmds, eqc_statem:more_commands(10, commands(?MODULE, {start, State})),
                 begin
                     {H,{_F,_S},Res} = run_commands(?MODULE, Cmds),
@@ -100,13 +100,13 @@ prop_get_fsm() ->
 %%====================================================================
 
 start_fsm(ContentLength, BlockSize) ->
-    {ok, FSMPid} = riak_moss_get_fsm:test_link(<<"bucket">>, <<"key">>, ContentLength, BlockSize),
-    _Manifest = riak_moss_get_fsm:get_manifest(FSMPid),
-    riak_moss_get_fsm:continue(FSMPid),
+    {ok, FSMPid} = riak_cs_get_fsm:test_link(<<"bucket">>, <<"key">>, ContentLength, BlockSize),
+    _Manifest = riak_cs_get_fsm:get_manifest(FSMPid),
+    riak_cs_get_fsm:continue(FSMPid),
     FSMPid.
 
 get_chunk(FSMPid) ->
-    riak_moss_get_fsm:get_next_chunk(FSMPid).
+    riak_cs_get_fsm:get_next_chunk(FSMPid).
 
 stop_fsm() -> ok.
 
@@ -126,8 +126,8 @@ initial_state() ->
     {start, true}.
 
 next_state_data(start, waiting_chunk, #state{content_length=ContentLength}=S, R, _C) ->
-    BlockSize = riak_moss_lfs_utils:block_size(),
-    BlockCount = riak_moss_lfs_utils:block_count(ContentLength, BlockSize),
+    BlockSize = riak_cs_lfs_utils:block_size(),
+    BlockCount = riak_cs_lfs_utils:block_count(ContentLength, BlockSize),
     S#state{total_blocks=(BlockCount-1), fsm_pid=R};
 next_state_data(waiting_chunk, waiting_chunk, #state{counter=Counter}=S, R, _C) ->
     S#state{counter=Counter+1,last_chunk=R};
@@ -135,7 +135,7 @@ next_state_data(_From, _To, S, _R, _C) ->
     S.
 
 start(#state{content_length=ContentLength}) ->
-    [{waiting_chunk, {call, ?MODULE, start_fsm, [ContentLength, riak_moss_lfs_utils:block_size()]}}].
+    [{waiting_chunk, {call, ?MODULE, start_fsm, [ContentLength, riak_cs_lfs_utils:block_size()]}}].
 
 waiting_chunk(#state{fsm_pid=Pid}) ->
     [{waiting_chunk, {call, ?MODULE, get_chunk, [Pid]}},

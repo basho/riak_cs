@@ -6,11 +6,11 @@
 
 %% @doc Module to write data to Riak.
 
--module(riak_moss_dummy_reader).
+-module(riak_cs_dummy_reader).
 
 -behaviour(gen_server).
 
--include("riak_moss.hrl").
+-include("riak_cs.hrl").
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -42,7 +42,7 @@
 %% Public API
 %% ===================================================================
 
-%% @doc Start a `riak_moss_reader'.
+%% @doc Start a `riak_cs_reader'.
 -spec start_link(list()) -> {ok, pid()} | {error, term()}.
 start_link(Args) ->
     gen_server:start_link(?MODULE, Args, []).
@@ -73,23 +73,23 @@ init([CallerPid, Bucket, Key, ContentLength, BlockSize]) ->
 handle_call(get_manifest, _From, #state{bucket=Bucket,
                                                key=Key,
                                                content_length=ContentLength}=State) ->
-    Manifest = riak_moss_lfs_utils:new_manifest(Bucket,
+    Manifest = riak_cs_lfs_utils:new_manifest(Bucket,
                                                 Key,
                                                 <<"uuid">>,
                                                 ContentLength,
                                                 "application/test",
                                                 <<"md5">>,
                                                 orddict:new(),
-                                                riak_moss_lfs_utils:block_size(),
-                                                riak_moss_acl_utils:default_acl("tester", "id123", "keyid123")),
+                                                riak_cs_lfs_utils:block_size(),
+                                                riak_cs_acl_utils:default_acl("tester", "id123", "keyid123")),
     {reply, {ok, Manifest}, State};
 handle_call(_Msg, _From, State) ->
     {reply, ok, State}.
 
 handle_cast({get_block, _From, Bucket, Key, UUID, BlockNumber}, #state{caller_pid=CallerPid}=State) ->
     FakeData = <<BlockNumber:32/integer>>,
-    RiakObject = riakc_obj:new_obj(Bucket,riak_moss_lfs_utils:block_name(Key, UUID, BlockNumber), [], [{dict:new(),FakeData}]),
-    riak_moss_get_fsm:chunk(CallerPid, BlockNumber, {ok, RiakObject}),
+    RiakObject = riakc_obj:new_obj(Bucket,riak_cs_lfs_utils:block_name(Key, UUID, BlockNumber), [], [{dict:new(),FakeData}]),
+    riak_cs_get_fsm:chunk(CallerPid, BlockNumber, {ok, RiakObject}),
     {noreply, State};
 handle_cast({get_block, _From, Bucket, Key, _CLusterID, UUID, BlockNumber}, #state{caller_pid=CallerPid}=State) ->
     FakeData = <<BlockNumber:32/integer>>,

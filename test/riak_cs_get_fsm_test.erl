@@ -4,9 +4,9 @@
 %%
 %% -------------------------------------------------------------------
 
--module(riak_moss_get_fsm_test).
+-module(riak_cs_get_fsm_test).
 
--include("riak_moss.hrl").
+-include("riak_cs.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 setup() ->
@@ -14,15 +14,15 @@ setup() ->
 %                                "@localhost"),
 %    {ok, _} = net_kernel:start([TestNode, longnames]),
     application:load(sasl),
-    application:load(riak_moss),
-    application:set_env(sasl, sasl_error_logger, {file, "moss_get_fsm_sasl.log"}),
+    application:load(riak_cs),
+    application:set_env(sasl, sasl_error_logger, {file, "cs_get_fsm_sasl.log"}),
     error_logger:tty(false),
     application:start(lager).
 
 %% TODO:
 %% Implement this
 teardown(_) ->
-    application:stop(riak_moss),
+    application:stop(riak_cs),
     application:stop(sasl),
     net_kernel:stop().
 
@@ -49,18 +49,18 @@ test_n_chunks_builder(N) ->
             ContentLength = 10000,
             BlockSize = calc_block_size(ContentLength, N),
             application:set_env(riak_moss, lfs_block_size, BlockSize),
-            {ok, Pid} = riak_moss_get_fsm:test_link(<<"bucket">>, <<"key">>, ContentLength, BlockSize),
-            Manifest = riak_moss_get_fsm:get_manifest(Pid),
+            {ok, Pid} = riak_cs_get_fsm:test_link(<<"bucket">>, <<"key">>, ContentLength, BlockSize),
+            Manifest = riak_cs_get_fsm:get_manifest(Pid),
             ?assertEqual(ContentLength, Manifest?MANIFEST.content_length),
-            riak_moss_get_fsm:continue(Pid),
+            riak_cs_get_fsm:continue(Pid),
             expect_n_chunks(Pid, N)
     end.
 
 receives_manifest() ->
-    {ok, Pid} = riak_moss_get_fsm:test_link(<<"bucket">>, <<"key">>, 100, 10),
-    Manifest = riak_moss_get_fsm:get_manifest(Pid),
+    {ok, Pid} = riak_cs_get_fsm:test_link(<<"bucket">>, <<"key">>, 100, 10),
+    Manifest = riak_cs_get_fsm:get_manifest(Pid),
     ?assertEqual(100, Manifest?MANIFEST.content_length),
-    riak_moss_get_fsm:stop(Pid).
+    riak_cs_get_fsm:stop(Pid).
 
 %% ===================================================================
 %% Helper Funcs
@@ -69,5 +69,5 @@ receives_manifest() ->
 expect_n_chunks(FsmPid, N) ->
     %% subtract 1 from N because the last
     %% chunk will have a different pattern
-    [?assertMatch({chunk, _}, riak_moss_get_fsm:get_next_chunk(FsmPid)) || _ <- lists:seq(1, N-1)],
-    ?assertMatch({done, _}, riak_moss_get_fsm:get_next_chunk(FsmPid)).
+    [?assertMatch({chunk, _}, riak_cs_get_fsm:get_next_chunk(FsmPid)) || _ <- lists:seq(1, N-1)],
+    ?assertMatch({done, _}, riak_cs_get_fsm:get_next_chunk(FsmPid)).

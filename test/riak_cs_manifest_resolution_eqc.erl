@@ -5,14 +5,14 @@
 %% -------------------------------------------------------------------
 
 
--module(riak_moss_manifest_resolution_eqc).
+-module(riak_cs_manifest_resolution_eqc).
 
 -ifdef(EQC).
 
 -include_lib("eqc/include/eqc.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
--include_lib("riak_moss.hrl").
+-include_lib("riak_cs.hrl").
 
 -compile(export_all).
 
@@ -63,8 +63,8 @@ prop_resolution_commutative() ->
             end,
             Filtered = only_one_active(Manifests),
             WrappedManifests = lists:map(MapFun, Filtered),
-            Resolved = riak_moss_manifest_resolution:resolve(WrappedManifests),
-            ReversedResolved = riak_moss_manifest_resolution:resolve(lists:reverse(WrappedManifests)),
+            Resolved = riak_cs_manifest_resolution:resolve(WrappedManifests),
+            ReversedResolved = riak_cs_manifest_resolution:resolve(lists:reverse(WrappedManifests)),
             Resolved == ReversedResolved
         end).
 

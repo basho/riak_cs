@@ -4,7 +4,7 @@
 %%
 %% -------------------------------------------------------------------
 
--module(riak_moss_wm_test_utils).
+-module(riak_cs_wm_test_utils).
 
 -export([setup/0, teardown/1]).
 
@@ -19,7 +19,7 @@ setup() ->
     application:start(mochiweb),
     application:start(crypto),
     application:start(webmachine),
-    application:start(riak_moss).
+    application:start(riak_cs).
 
 %% TODO:
 %% Implement this

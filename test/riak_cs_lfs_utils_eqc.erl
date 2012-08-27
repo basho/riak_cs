@@ -4,11 +4,11 @@
 %%
 %% -------------------------------------------------------------------
 
-%% @doc Quickcheck test module for `riak_moss_lfs_utils'.
+%% @doc Quickcheck test module for `riak_cs_lfs_utils'.
 
--module(riak_moss_lfs_utils_eqc).
+-module(riak_cs_lfs_utils_eqc).
 
--include("riak_moss.hrl").
+-include("riak_cs.hrl").
 
 -ifdef(EQC).
 -include_lib("eqc/include/eqc.hrl").
@@ -43,16 +43,16 @@ eqc_test_() ->
 %% ====================================================================
 
 prop_block_count() ->
-    ?FORALL({CLength, BlockSize},{moss_gen:block_size(), moss_gen:content_length()},
+    ?FORALL({CLength, BlockSize},{riak_cs_gen:block_size(), moss_gen:content_length()},
         begin
-            NumBlocks = riak_moss_lfs_utils:block_count(CLength, BlockSize),
+            NumBlocks = riak_cs_lfs_utils:block_count(CLength, BlockSize),
             Product = NumBlocks * BlockSize,
             conjunction([{greater, Product >= CLength},
                          {lesser, (Product - BlockSize) < CLength}])
         end).
 
 %% @doc EQC property for manipulating manifests
-%% with `riak_moss_lfs_utils`. Tests:
+%% with `riak_cs_lfs_utils`. Tests:
 %%
 %% 2. `still_waiting` correctly returns false when
 %% all of the blocks calculated by `initial_blocks`
@@ -67,22 +67,22 @@ prop_manifest_manipulation() ->
                      moss_gen:metadata()},
 
         begin
-            application:set_env(riak_moss, lfs_block_size, 1048576),
-            Manifest = riak_moss_lfs_utils:new_manifest(Bucket,
+            application:set_env(riak_cs, lfs_block_size, 1048576),
+            Manifest = riak_cs_lfs_utils:new_manifest(Bucket,
                                                         FileName,
                                                         UUID,
                                                         CLength,
                                                         <<"ctype">>,
                                                         Md5,
                                                         MD,
-                                                        riak_moss_lfs_utils:block_size(),
-                                                        riak_moss_acl_utils:default_acl("tester",
+                                                        riak_cs_lfs_utils:block_size(),
+                                                        riak_cs_acl_utils:default_acl("tester",
                                                                                         "tester_id",
                                                                                         "tester_key_id")),
 
-            Blocks = riak_moss_lfs_utils:initial_blocks(CLength, riak_moss_lfs_utils:block_size()),
+            Blocks = riak_cs_lfs_utils:initial_blocks(CLength, riak_cs_lfs_utils:block_size()),
             %% TODO: maybe we should shuffle blocks?
-            FoldFun = fun (Chunk, Mani) -> riak_moss_lfs_utils:remove_write_block(Mani, Chunk) end,
+            FoldFun = fun (Chunk, Mani) -> riak_cs_lfs_utils:remove_write_block(Mani, Chunk) end,
             EmptyMani = lists:foldl(FoldFun, Manifest, Blocks),
             EmptyMani?MANIFEST.state == active
         end).

@@ -4,20 +4,20 @@
 %%
 %% -------------------------------------------------------------------
 
--module(riak_moss_utils_test).
+-module(riak_cs_utils_test).
 
 -compile(export_all).
 
 -ifdef(TEST).
 
--include("riak_moss.hrl").
+-include("riak_cs.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 setup() ->
     %% Silence logging
     application:load(sasl),
-    application:load(riak_moss),
-    application:set_env(sasl, sasl_error_logger, {file, "riak_moss_utils_sasl.log"}),
+    application:load(riak_cs),
+    application:set_env(sasl, sasl_error_logger, {file, "riak_cs_utils_sasl.log"}),
     error_logger:tty(false),
 
     %% Start erlang node
@@ -31,14 +31,14 @@ setup() ->
     application:start(webmachine),
     application:start(crypto),
     application:start(riakc),
-    application:start(riak_moss).
+    application:start(riak_cs).
 
 %% TODO:
 %% Implement this
 teardown(_) ->
     ok.
 
-riak_moss_utils_test_() ->
+riak_cs_utils_test_() ->
     {spawn,
      [
       {setup,
@@ -57,11 +57,11 @@ riak_moss_utils_test_() ->
 name_matches() ->
     Name = "fooser",
     Email = "fooser@fooser.com",
-    {ok, User} = riak_moss_utils:create_user(Name, Email),
+    {ok, User} = riak_cs_utils:create_user(Name, Email),
     {"name matches test",
      fun() ->
              [
-              ?_assertEqual(Name, User?MOSS_USER.name)
+              ?_assertEqual(Name, User?RCS_USER.name)
              ]
      end
     }.
@@ -74,12 +74,12 @@ bucket_appears() ->
     Name = "fooser",
     Email = "fooser@fooser.com",
     BucketName = "fooser-bucket",
-    {ok, User} = riak_moss_utils:create_user(Name, Email),
-    KeyID = User?MOSS_USER.key_id,
-    riak_moss_utils:create_bucket(KeyID, BucketName),
-    {ok, UserAfter} = riak_moss_utils:get_user(KeyID),
+    {ok, User} = riak_cs_utils:create_user(Name, Email),
+    KeyID = User?RCS_USER.key_id,
+    riak_cs_utils:create_bucket(KeyID, BucketName),
+    {ok, UserAfter} = riak_cs_utils:get_user(KeyID),
     AfterBucketNames = [B#moss_bucket.name ||
-                           B <- riak_moss_utils:get_buckets(UserAfter)],
+                           B <- riak_cs_utils:get_buckets(UserAfter)],
     {"bucket appears test",
      fun() ->
              [
@@ -101,13 +101,13 @@ key_appears() ->
     Email = "fooser@fooser.com",
     BucketName = "key_appears",
     KeyName = "testkey",
-    {ok, User} = riak_moss_utils:create_user(Name, Email),
-    KeyID = User?MOSS_USER.key_id,
-    ok = riak_moss_utils:create_bucket(KeyID, BucketName),
-    riak_moss_utils:put_object(BucketName, KeyName,
+    {ok, User} = riak_cs_utils:create_user(Name, Email),
+    KeyID = User?RCS_USER.key_id,
+    ok = riak_cs_utils:create_bucket(KeyID, BucketName),
+    riak_cs_utils:put_object(BucketName, KeyName,
                                "value", dict:new()),
 
-    {ok, ListKeys} = riak_moss_utils:list_keys(BucketName),
+    {ok, ListKeys} = riak_cs_utils:list_keys(BucketName),
     {"key appears test",
      fun() ->
              [
@@ -126,12 +126,12 @@ content_type_sticks() ->
     KeyName = "testkey",
     CType = "x-foo/bar",
     Metadata = dict:from_list([{<<"content-type">>, CType}]),
-    {ok, User} = riak_moss_utils:create_user(Name, Email),
-    KeyID = User?MOSS_USER.key_id,
-    ok = riak_moss_utils:create_bucket(KeyID, BucketName),
-    riak_moss_utils:put_object(BucketName, KeyName,
+    {ok, User} = riak_cs_utils:create_user(Name, Email),
+    KeyID = User?RCS_USER.key_id,
+    ok = riak_cs_utils:create_bucket(KeyID, BucketName),
+    riak_cs_utils:put_object(BucketName, KeyName,
                                <<"value">>, Metadata),
-    {ok, Object} = riak_moss_utils:get_object(BucketName, KeyName),
+    {ok, Object} = riak_cs_utils:get_object(BucketName, KeyName),
     {"content type sticks test",
      fun() ->
              [
@@ -149,15 +149,15 @@ keys_are_sorted() ->
     BucketName = "keys_are_sorted",
     Keys = [<<"dog">>, <<"zebra">>, <<"aardvark">>, <<01>>, <<"panda">>],
 
-    {ok, User} = riak_moss_utils:create_user(Name, Email),
-    KeyID = User?MOSS_USER.key_id,
-    ok = riak_moss_utils:create_bucket(KeyID, BucketName),
+    {ok, User} = riak_cs_utils:create_user(Name, Email),
+    KeyID = User?RCS_USER.key_id,
+    ok = riak_cs_utils:create_bucket(KeyID, BucketName),
 
-    [riak_moss_utils:put_object(BucketName, binary_to_list(KeyName),
+    [riak_cs_utils:put_object(BucketName, binary_to_list(KeyName),
                                 "value", dict:new()) ||
         KeyName <- Keys],
 
-    {ok, ListKeys} = riak_moss_utils:list_keys(BucketName),
+    {ok, ListKeys} = riak_cs_utils:list_keys(BucketName),
     {"keys are sorted test",
      fun() ->
              [
@@ -179,10 +179,10 @@ object_returns() ->
     Value = <<"value">>,
     Metadata = dict:new(),
 
-    riak_moss_utils:put_object(BucketName, KeyName,
+    riak_cs_utils:put_object(BucketName, KeyName,
                                Value, Metadata),
 
-    {ok, RetrievedObject} = riak_moss_utils:get_object(BucketName, KeyName),
+    {ok, RetrievedObject} = riak_cs_utils:get_object(BucketName, KeyName),
     {"object returns test",
      fun() ->
              [
@@ -201,11 +201,11 @@ object_deletes() ->
     Value = <<"value">>,
     Metadata = dict:new(),
 
-    riak_moss_utils:put_object(BucketName, KeyName,
+    riak_cs_utils:put_object(BucketName, KeyName,
                                Value, Metadata),
 
-    ok = riak_moss_utils:delete_object(BucketName, KeyName),
-    {error, Reason} = riak_moss_utils:get_object(BucketName, KeyName),
+    ok = riak_cs_utils:delete_object(BucketName, KeyName),
+    {error, Reason} = riak_cs_utils:get_object(BucketName, KeyName),
     {"object deletes test",
      fun() ->
              [
@@ -218,7 +218,7 @@ object_deletes() ->
 %%      that doesn't exist still
 %%      deletes fine
 nonexistent_deletes() ->
-    Return = riak_moss_utils:delete_object("doesn't", "exist"),
+    Return = riak_cs_utils:delete_object("doesn't", "exist"),
     {"nonexistenet deletes test",
      fun() ->
              [
@@ -229,57 +229,57 @@ nonexistent_deletes() ->
 
 bucket_resolution_test() ->
     %% @TODO Replace or augment this with eqc testing.
-    UserRecord = riak_moss_utils:user_record("uncle fester", "fester@tester.com"),
-    BucketList1 = [riak_moss_utils:bucket_record(<<"bucket1">>, create),
-                   riak_moss_utils:bucket_record(<<"bucket2">>, create),
-                   riak_moss_utils:bucket_record(<<"bucket3">>, create)],
-    BucketList2 = [riak_moss_utils:bucket_record(<<"bucket1">>, create),
-                   riak_moss_utils:bucket_record(<<"bucket1">>, create),
-                   riak_moss_utils:bucket_record(<<"bucket1">>, create)],
-    BucketList3 = [riak_moss_utils:bucket_record(<<"bucket1">>, create),
-                   riak_moss_utils:bucket_record(<<"bucket1">>, delete),
-                   riak_moss_utils:bucket_record(<<"bucket1">>, create)],
-    BucketList4 = [riak_moss_utils:bucket_record(<<"bucket1">>, create),
-                   riak_moss_utils:bucket_record(<<"bucket1">>, create),
-                   riak_moss_utils:bucket_record(<<"bucket1">>, delete)],
-    BucketList5 = [riak_moss_utils:bucket_record(<<"bucket1">>, delete),
-                   riak_moss_utils:bucket_record(<<"bucket1">>, delete),
-                   riak_moss_utils:bucket_record(<<"bucket1">>, delete)],
+    UserRecord = riak_cs_utils:user_record("uncle fester", "fester@tester.com"),
+    BucketList1 = [riak_cs_utils:bucket_record(<<"bucket1">>, create),
+                   riak_cs_utils:bucket_record(<<"bucket2">>, create),
+                   riak_cs_utils:bucket_record(<<"bucket3">>, create)],
+    BucketList2 = [riak_cs_utils:bucket_record(<<"bucket1">>, create),
+                   riak_cs_utils:bucket_record(<<"bucket1">>, create),
+                   riak_cs_utils:bucket_record(<<"bucket1">>, create)],
+    BucketList3 = [riak_cs_utils:bucket_record(<<"bucket1">>, create),
+                   riak_cs_utils:bucket_record(<<"bucket1">>, delete),
+                   riak_cs_utils:bucket_record(<<"bucket1">>, create)],
+    BucketList4 = [riak_cs_utils:bucket_record(<<"bucket1">>, create),
+                   riak_cs_utils:bucket_record(<<"bucket1">>, create),
+                   riak_cs_utils:bucket_record(<<"bucket1">>, delete)],
+    BucketList5 = [riak_cs_utils:bucket_record(<<"bucket1">>, delete),
+                   riak_cs_utils:bucket_record(<<"bucket1">>, delete),
+                   riak_cs_utils:bucket_record(<<"bucket1">>, delete)],
     Obj1 = riakc_obj:new_obj(<<"bucket">>,
                             <<"key">>,
                             <<"value">>,
-                            [{[], UserRecord?MOSS_USER{buckets=[Buckets]}} ||
+                            [{[], UserRecord?RCS_USER{buckets=[Buckets]}} ||
                                 Buckets <- BucketList1]),
     Obj2 = riakc_obj:new_obj(<<"bucket">>,
                             <<"key">>,
                             <<"value">>,
-                            [{[], UserRecord?MOSS_USER{buckets=[Buckets]}} ||
+                            [{[], UserRecord?RCS_USER{buckets=[Buckets]}} ||
                                 Buckets <- BucketList2]),
     Obj3 = riakc_obj:new_obj(<<"bucket">>,
                             <<"key">>,
                             <<"value">>,
-                            [{[], UserRecord?MOSS_USER{buckets=[Buckets]}} ||
+                            [{[], UserRecord?RCS_USER{buckets=[Buckets]}} ||
                                 Buckets <- BucketList3]),
     Obj4 = riakc_obj:new_obj(<<"bucket">>,
                             <<"key">>,
                             <<"value">>,
-                            [{[], UserRecord?MOSS_USER{buckets=[Buckets]}} ||
+                            [{[], UserRecord?RCS_USER{buckets=[Buckets]}} ||
                                 Buckets <- BucketList4]),
     Obj5 = riakc_obj:new_obj(<<"bucket">>,
                             <<"key">>,
                             <<"value">>,
-                            [{[], UserRecord?MOSS_USER{buckets=[Buckets]}} ||
+                            [{[], UserRecord?RCS_USER{buckets=[Buckets]}} ||
                                 Buckets <- BucketList5]),
     Values1 = riakc_obj:get_values(Obj1),
     Values2 = riakc_obj:get_values(Obj2),
     Values3 = riakc_obj:get_values(Obj3),
     Values4 = riakc_obj:get_values(Obj4),
     Values5 = riakc_obj:get_values(Obj5),
-    ResBuckets1 = riak_moss_utils:resolve_buckets(Values1, [], true),
-    ResBuckets2 = riak_moss_utils:resolve_buckets(Values2, [], true),
-    ResBuckets3 = riak_moss_utils:resolve_buckets(Values3, [], true),
-    ResBuckets4 = riak_moss_utils:resolve_buckets(Values4, [], true),
-    ResBuckets5 = riak_moss_utils:resolve_buckets(Values5, [], true),
+    ResBuckets1 = riak_cs_utils:resolve_buckets(Values1, [], true),
+    ResBuckets2 = riak_cs_utils:resolve_buckets(Values2, [], true),
+    ResBuckets3 = riak_cs_utils:resolve_buckets(Values3, [], true),
+    ResBuckets4 = riak_cs_utils:resolve_buckets(Values4, [], true),
+    ResBuckets5 = riak_cs_utils:resolve_buckets(Values5, [], true),
     ?assertEqual(BucketList1, ResBuckets1),
     ?assertEqual([hd(BucketList2)], ResBuckets2),
     ?assertEqual([hd(lists:reverse(BucketList3))], ResBuckets3),

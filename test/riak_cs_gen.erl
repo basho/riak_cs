@@ -4,9 +4,9 @@
 %%
 %% -------------------------------------------------------------------
 
-%% @doc Common QuickCheck generators for Riak Moss
+%% @doc Common QuickCheck generators for Riak CS
 
--module(moss_gen).
+-module(riak_cs_gen).
 
 -ifdef(EQC).
 

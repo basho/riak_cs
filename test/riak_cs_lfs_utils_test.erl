@@ -4,7 +4,7 @@
 %%
 %% -------------------------------------------------------------------
 
--module(riak_moss_lfs_utils_test).
+-module(riak_cs_lfs_utils_test).
 
 -include_lib("eunit/include/eunit.hrl").
 
@@ -28,13 +28,13 @@ lfs_utils_test_() ->
      ]}.
 
 test_block_count_1() ->
-    ?assertEqual(riak_moss_lfs_utils:block_count(2, 1), 2).
+    ?assertEqual(riak_cs_lfs_utils:block_count(2, 1), 2).
 
 test_block_count_2() ->
-    ?assertEqual(riak_moss_lfs_utils:block_count(11, 2), 6).
+    ?assertEqual(riak_cs_lfs_utils:block_count(11, 2), 6).
 
 test_block_count_3() ->
-    ?assertEqual(riak_moss_lfs_utils:block_count(100, 100), 1).
+    ?assertEqual(riak_cs_lfs_utils:block_count(100, 100), 1).
 
 test_block_count_4() ->
-    ?assertEqual(riak_moss_lfs_utils:block_count(50, 100), 1).
+    ?assertEqual(riak_cs_lfs_utils:block_count(50, 100), 1).

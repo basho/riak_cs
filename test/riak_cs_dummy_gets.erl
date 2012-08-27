@@ -4,7 +4,7 @@
 %%
 %% -------------------------------------------------------------------
 
--module(riak_moss_dummy_gets).
+-module(riak_cs_dummy_gets).
 
 %% API
 -export([get_object/2,
@@ -12,13 +12,13 @@
 
 %% @doc Dummy get function
 get_object(Bucket, Key) ->
-    Manifest = riak_moss_lfs_utils:new_manifest(<<"dummy">>,
+    Manifest = riak_cs_lfs_utils:new_manifest(<<"dummy">>,
                                                 <<"dummy">>,
                                                 <<"uuid">>,
                                                 10000, % content length
                                                 <<"md5">>,
                                                 dict:new(),
-                                                riak_moss_lfs_utils:block_size()), % metadata
+                                                riak_cs_lfs_utils:block_size()), % metadata
     RiakObj = riakc_obj:new_obj(Bucket, Key, [], [{dict:new(), term_to_binary(Manifest)}]),
     {ok, RiakObj}.
 
