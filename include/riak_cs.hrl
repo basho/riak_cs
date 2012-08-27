@@ -11,7 +11,7 @@
           key_id :: string(),
           key_secret :: string(),
           canonical_id :: string(),
-          buckets=[] :: [moss_bucket()]}).
+          buckets=[] :: [cs_bucket()]}).
 
 -record(rcs_user_v2, {
           name :: string(),
@@ -20,7 +20,7 @@
           key_id :: string(),
           key_secret :: string(),
           canonical_id :: string(),
-          buckets=[] :: [moss_bucket()],
+          buckets=[] :: [cs_bucket()],
           status=enabled :: enabled | disabled}).
 -type moss_user() :: #rcs_user_v2{} | #moss_user_v1{}.
 -type rcs_user() :: #rcs_user_v2{} | #moss_user_v1{}.
@@ -36,7 +36,7 @@
           creation_date :: string(),
           modification_time :: erlang:timestamp(),
           acl :: acl()}).
--type moss_bucket() :: #moss_bucket_v1{}.
+-type cs_bucket() :: #moss_bucket_v1{}.
 -type bucket_operation() :: create | delete | update_acl.
 -type bucket_action() :: created | deleted.
 
@@ -234,7 +234,7 @@
 -define(MANIFEST, #lfs_manifest_v3).
 
 -define(ACL, #acl_v2).
--define(MOSS_BUCKET, #moss_bucket_v1).
+-define(RCS_BUCKET, #moss_bucket_v1).
 -define(MOSS_USER, #rcs_user_v2).
 -define(RCS_USER, #rcs_user_v2).
 -define(USER_BUCKET, <<"moss.users">>).

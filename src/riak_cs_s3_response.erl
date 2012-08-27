@@ -99,15 +99,15 @@ error_response(StatusCode, Code, Message, RD, Ctx) ->
 list_all_my_buckets_response(User, RD, Ctx) ->
     BucketsDoc =
         [begin
-             case is_binary(B?MOSS_BUCKET.name) of
+             case is_binary(B?RCS_BUCKET.name) of
                  true ->
-                     Name = binary_to_list(B?MOSS_BUCKET.name);
+                     Name = binary_to_list(B?RCS_BUCKET.name);
                  false ->
-                     Name = B?MOSS_BUCKET.name
+                     Name = B?RCS_BUCKET.name
              end,
              {'Bucket',
               [{'Name', [Name]},
-               {'CreationDate', [B?MOSS_BUCKET.creation_date]}]}
+               {'CreationDate', [B?RCS_BUCKET.creation_date]}]}
          end || B <- riak_cs_utils:get_buckets(User)],
     Contents =  [user_to_xml_owner(User)] ++ [{'Buckets', BucketsDoc}],
     XmlDoc = [{'ListAllMyBucketsResult',  Contents}],
@@ -142,7 +142,7 @@ list_bucket_response(User, Bucket, KeyObjPairs, RD, Ctx) ->
                     end
                 end
                 || {Key, ObjResp} <- KeyObjPairs],
-    BucketProps = [{'Name', [Bucket?MOSS_BUCKET.name]},
+    BucketProps = [{'Name', [Bucket?RCS_BUCKET.name]},
                    {'Prefix', []},
                    {'Marker', []},
                    {'MaxKeys', ["1000"]},

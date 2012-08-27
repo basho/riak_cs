@@ -191,7 +191,7 @@ to_xml(RD, Ctx=#context{start_time=StartTime,
     dt_entry_bucket(<<"list_keys">>, [], [extract_name(User), Bucket]),
     StrBucket = binary_to_list(Bucket),
     case [B || B <- riak_cs_utils:get_buckets(User),
-               B?MOSS_BUCKET.name =:= StrBucket] of
+               B?RCS_BUCKET.name =:= StrBucket] of
         [] ->
             CodeName = no_such_bucket,
             Res = riak_cs_s3_response:api_error(CodeName, RD, Ctx),

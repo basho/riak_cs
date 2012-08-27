@@ -33,7 +33,7 @@ sum_user(Riak, User) when is_list(User) ->
     case riak_cs_utils:get_user(User, Riak) of
         {ok, {?RCS_USER{buckets=Buckets}, _UserObj}} ->
             {ok, [ {B, sum_bucket(Riak, B)}
-                   || ?MOSS_BUCKET{name=B} <- Buckets ]};
+                   || ?RCS_BUCKET{name=B} <- Buckets ]};
         {error, Error} ->
             {error, Error}
     end.

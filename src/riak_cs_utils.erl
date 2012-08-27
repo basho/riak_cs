@@ -228,9 +228,9 @@ from_bucket_name(BucketNameWithPrefix) ->
     end.
 
 %% @doc Return a user's buckets.
--spec get_buckets(moss_user()) -> [moss_bucket()].
+-spec get_buckets(moss_user()) -> [cs_bucket()].
 get_buckets(?RCS_USER{buckets=Buckets}) ->
-    [Bucket || Bucket <- Buckets, Bucket?MOSS_BUCKET.last_action /= deleted].
+    [Bucket || Bucket <- Buckets, Bucket?RCS_BUCKET.last_action /= deleted].
 
 %% @doc Return `stanchion' configuration data.
 -spec stanchion_data() -> {string(), pos_integer(), boolean()}.
@@ -688,11 +688,11 @@ bucket_empty(Bucket, RiakPid) ->
 %% @doc Check if a bucket exists in a list of the user's buckets.
 %% @TODO This will need to change once globally unique buckets
 %% are enforced.
--spec bucket_exists([moss_bucket()], string()) -> boolean().
+-spec bucket_exists([cs_bucket()], string()) -> boolean().
 bucket_exists(Buckets, CheckBucket) ->
     SearchResults = [Bucket || Bucket <- Buckets,
-                               Bucket?MOSS_BUCKET.name =:= CheckBucket andalso
-                                   Bucket?MOSS_BUCKET.last_action =:= created],
+                               Bucket?RCS_BUCKET.name =:= CheckBucket andalso
+                                   Bucket?RCS_BUCKET.last_action =:= created],
     case SearchResults of
         [] ->
             false;
@@ -756,7 +756,7 @@ bucket_json(Bucket, ACL, KeyId)  ->
                                     stanchion_acl_utils:acl_to_json_term(ACL)]}))).
 
 %% @doc Return a bucket record for the specified bucket name.
--spec bucket_record(binary(), bucket_operation()) -> moss_bucket().
+-spec bucket_record(binary(), bucket_operation()) -> cs_bucket().
 bucket_record(Name, Operation) ->
     case Operation of
         create ->
@@ -766,7 +766,7 @@ bucket_record(Name, Operation) ->
         _ ->
             Action = undefined
     end,
-    ?MOSS_BUCKET{name=binary_to_list(Name),
+    ?RCS_BUCKET{name=binary_to_list(Name),
                  last_action=Action,
                  creation_date=riak_cs_wm_utils:iso_8601_datetime(),
                  modification_time=os:timestamp()}.
@@ -774,15 +774,15 @@ bucket_record(Name, Operation) ->
 %% @doc Check for and resolve any conflict between
 %% a bucket record from a user record sibling and
 %% a list of resolved bucket records.
--spec bucket_resolver(moss_bucket(), [moss_bucket()]) -> [moss_bucket()].
+-spec bucket_resolver(cs_bucket(), [cs_bucket()]) -> [cs_bucket()].
 bucket_resolver(Bucket, ResolvedBuckets) ->
     case lists:member(Bucket, ResolvedBuckets) of
         true ->
             ResolvedBuckets;
         false ->
             case [RB || RB <- ResolvedBuckets,
-                        RB?MOSS_BUCKET.name =:=
-                            Bucket?MOSS_BUCKET.name] of
+                        RB?RCS_BUCKET.name =:=
+                            Bucket?RCS_BUCKET.name] of
                 [] ->
                     [Bucket | ResolvedBuckets];
                 [ExistingBucket] ->
@@ -799,17 +799,17 @@ bucket_resolver(Bucket, ResolvedBuckets) ->
 
 %% @doc Ordering function for sorting a list of bucket records
 %% according to bucket name.
--spec bucket_sorter(moss_bucket(), moss_bucket()) -> boolean().
-bucket_sorter(?MOSS_BUCKET{name=Bucket1},
-              ?MOSS_BUCKET{name=Bucket2}) ->
+-spec bucket_sorter(cs_bucket(), cs_bucket()) -> boolean().
+bucket_sorter(?RCS_BUCKET{name=Bucket1},
+              ?RCS_BUCKET{name=Bucket2}) ->
     Bucket1 =< Bucket2.
 
 %% @doc Return true if the last action for the bucket
 %% is deleted and the action occurred over 24 hours ago.
--spec cleanup_bucket(moss_bucket()) -> boolean().
-cleanup_bucket(?MOSS_BUCKET{last_action=created}) ->
+-spec cleanup_bucket(cs_bucket()) -> boolean().
+cleanup_bucket(?RCS_BUCKET{last_action=created}) ->
     false;
-cleanup_bucket(?MOSS_BUCKET{last_action=deleted,
+cleanup_bucket(?RCS_BUCKET{last_action=deleted,
                             modification_time=ModTime}) ->
     timer:now_diff(os:timestamp(), ModTime) > 86400.
 
@@ -897,10 +897,10 @@ is_admin(_, _) ->
 
 %% @doc Determine if an existing bucket from the resolution list
 %% should be kept or replaced when a conflict occurs.
--spec keep_existing_bucket(moss_bucket(), moss_bucket()) -> boolean().
-keep_existing_bucket(?MOSS_BUCKET{last_action=LastAction1,
+-spec keep_existing_bucket(cs_bucket(), cs_bucket()) -> boolean().
+keep_existing_bucket(?RCS_BUCKET{last_action=LastAction1,
                                   modification_time=ModTime1},
-                     ?MOSS_BUCKET{last_action=LastAction2,
+                     ?RCS_BUCKET{last_action=LastAction2,
                                   modification_time=ModTime2}) ->
     if
         LastAction1 == LastAction2
@@ -932,8 +932,8 @@ process_xml_error([HeadElement | RestElements]) ->
 
 %% @doc Resolve the set of buckets for a user when
 %% siblings are encountered on a read of a user record.
--spec resolve_buckets([moss_user()], [moss_bucket()], boolean()) ->
-                             [moss_bucket()].
+-spec resolve_buckets([moss_user()], [cs_bucket()], boolean()) ->
+                             [cs_bucket()].
 resolve_buckets([], Buckets, true) ->
     lists:sort(fun bucket_sorter/2, Buckets);
 resolve_buckets([], Buckets, false) ->
@@ -1032,15 +1032,15 @@ xml_error_code(Xml) ->
 
 %% @doc Update a bucket record to convert the name from binary
 %% to string if necessary.
--spec update_bucket_record(term()) -> moss_bucket().
-update_bucket_record(Bucket=?MOSS_BUCKET{name=Name}) when is_binary(Name) ->
-    Bucket?MOSS_BUCKET{name=binary_to_list(Name)};
+-spec update_bucket_record(term()) -> cs_bucket().
+update_bucket_record(Bucket=?RCS_BUCKET{name=Name}) when is_binary(Name) ->
+    Bucket?RCS_BUCKET{name=binary_to_list(Name)};
 update_bucket_record(Bucket) ->
     Bucket.
 
 %% @doc Check if a user already has an ownership of
 %% a bucket and update the bucket list if needed.
--spec update_user_buckets(moss_user(), moss_bucket()) ->
+-spec update_user_buckets(moss_user(), cs_bucket()) ->
                                  {ok, ignore} | {ok, moss_user()}.
 update_user_buckets(User, Bucket) ->
     Buckets = User?RCS_USER.buckets,
@@ -1048,16 +1048,16 @@ update_user_buckets(User, Bucket) ->
     %% user record have been resolved so the user bucket
     %% list should have 0 or 1 buckets that share a name
     %% with `Bucket'.
-    case [B || B <- Buckets, B?MOSS_BUCKET.name =:= Bucket?MOSS_BUCKET.name] of
+    case [B || B <- Buckets, B?RCS_BUCKET.name =:= Bucket?RCS_BUCKET.name] of
         [] ->
             {ok, User?RCS_USER{buckets=[Bucket | Buckets]}};
         [ExistingBucket] ->
             case
-                (Bucket?MOSS_BUCKET.last_action == deleted andalso
-                 ExistingBucket?MOSS_BUCKET.last_action == created)
+                (Bucket?RCS_BUCKET.last_action == deleted andalso
+                 ExistingBucket?RCS_BUCKET.last_action == created)
                 orelse
-                (Bucket?MOSS_BUCKET.last_action == created andalso
-                 ExistingBucket?MOSS_BUCKET.last_action == deleted) of
+                (Bucket?RCS_BUCKET.last_action == created andalso
+                 ExistingBucket?RCS_BUCKET.last_action == deleted) of
                 true ->
                     UpdBuckets = [Bucket | lists:delete(ExistingBucket, Buckets)],
                     {ok, User?RCS_USER{buckets=UpdBuckets}};
@@ -1088,7 +1088,7 @@ user_record(Name, Email) ->
 
 %% @doc Return a user record for the specified user name and
 %% email address.
--spec user_record(string(), string(), [moss_bucket()]) -> moss_user().
+-spec user_record(string(), string(), [cs_bucket()]) -> moss_user().
 user_record(Name, Email, Buckets) ->
     {KeyId, Secret} = generate_access_creds(Email),
     CanonicalId = generate_canonical_id(KeyId, Secret),
