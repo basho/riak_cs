@@ -1,4 +1,4 @@
-REPO		?= riak_moss
+REPO		?= riak_cs
 PKG_NAME        ?= riak-cs
 PKG_REVISION    ?= $(shell git describe --tags)
 PKG_VERSION	?= $(shell git describe --tags | tr - .)
