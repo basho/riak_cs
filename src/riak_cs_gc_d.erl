@@ -416,12 +416,14 @@ finish_file_delete(0, _, RiakObj, RiakPid) ->
     %% Delete the key from the GC bucket
     _ = riakc_pb_socket:delete_obj(RiakPid, RiakObj),
     ok;
-finish_file_delete(_, FileSet, RiakObj, RiakPid) ->
+finish_file_delete(_, FileSet, _RiakObj, _RiakPid) ->
     _ = lager:debug("Remaining file keys: ~p", [twop_set:to_list(FileSet)]),
-    UpdRiakObj = riakc_obj:update_value(RiakObj, FileSet),
-    %% Not a big deal if the put fails. Worst case is attempts
-    %% to delete some of the file set members are already deleted.
-    _ = riak_moss_utils:put_with_no_meta(RiakPid, UpdRiakObj),
+
+    %% NOTE: we used to do a PUT here, but now with multidc replication
+    %% we run garbage collection seprarately on each cluster, so we don't
+    %% want to send this update to another data center. When we delete this
+    %% key in its entirety later, that delete will _not_ be replicated,
+    %% as we explicitly do not replicate tombstones in Riak CS.
     ok.
 
 %% @doc Take required actions to pause garbage collection and update
