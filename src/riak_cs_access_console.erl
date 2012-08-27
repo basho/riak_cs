@@ -55,7 +55,7 @@ wait_for_logger(Retries) ->
     Ref = erlang:make_ref(),
     Pid = erlang:spawn_link(
             fun() ->
-                    Result = riak_moss_access_logger:flush(
+                    Result = riak_cs_access_logger:flush(
                                Retries*?RETRY_TIMEOUT),
                     Self ! {Ref, Result}
             end),
@@ -92,7 +92,7 @@ wait_for_archiver(N) when N < 1 ->
     io:format("Flushing archiver timed out.~n"),
     error;
 wait_for_archiver(N) ->
-    case riak_moss_access_archiver:status(?RETRY_TIMEOUT) of
+    case riak_cs_access_archiver:status(?RETRY_TIMEOUT) of
         {ok, idle, _Props} ->
             io:format("All access logs were flushed.~n"),
             ok;

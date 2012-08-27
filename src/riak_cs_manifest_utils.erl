@@ -8,7 +8,7 @@
 
 -module(riak_cs_manifest_utils).
 
--include("riak_moss.hrl").
+-include("riak_cs.hrl").
 -ifdef(TEST).
 -compile(export_all).
 -include_lib("eunit/include/eunit.hrl").
@@ -237,8 +237,8 @@ pending_delete_manifest(_, ?MANIFEST{state=scheduled_delete,
     %% If a manifest is `scheduled_delete' and the amount of time
     %% specified by the retry interval has elapsed since a file block
     %% was last deleted, then reschedule it for deletion.
-    LBDSeconds = riak_moss_utils:timestamp(LBDTime),
-    Now = riak_moss_utils:timestamp(os:timestamp()),
+    LBDSeconds = riak_cs_utils:timestamp(LBDTime),
+    Now = riak_cs_utils:timestamp(os:timestamp()),
     Now > (LBDSeconds + riak_cs_gc:gc_retry_interval());
 pending_delete_manifest(_, _) ->
     false.
@@ -254,7 +254,7 @@ seconds_diff(T2, T1) ->
 -ifdef(TEST).
 
 new_mani_helper() ->
-    riak_moss_lfs_utils:new_manifest(<<"bucket">>,
+    riak_cs_lfs_utils:new_manifest(<<"bucket">>,
         <<"key">>,
         <<"uuid">>,
         100, %% content-length

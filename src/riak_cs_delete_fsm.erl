@@ -10,7 +10,7 @@
 
 -behaviour(gen_fsm).
 
--include("riak_moss.hrl").
+-include("riak_cs.hrl").
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -105,7 +105,7 @@ terminate(Reason, _StateName, #state{all_delete_workers=AllDeleteWorkers,
                                      uuid=UUID,
                                      riakc_pid=RiakcPid} = State) ->
     manifest_cleanup(ManifestState, Bucket, Key, UUID, RiakcPid),
-    _ = [riak_moss_block_server:stop(P) || P <- AllDeleteWorkers],
+    _ = [riak_cs_block_server:stop(P) || P <- AllDeleteWorkers],
     notify_gc_daemon(Reason, State),
     ok.
 
@@ -126,7 +126,7 @@ deleting_state_update(BlockID,
                       State=#state{manifest=Manifest,
                                    free_deleters=FreeDeleters,
                                    unacked_deletes=UnackedDeletes}) ->
-    NewManifest = riak_moss_lfs_utils:remove_delete_block(Manifest, BlockID),
+    NewManifest = riak_cs_lfs_utils:remove_delete_block(Manifest, BlockID),
     State#state{free_deleters=ordsets:add_element(DeleterPid,
                                                   FreeDeleters),
                 unacked_deletes=ordsets:del_element(BlockID,
@@ -158,8 +158,8 @@ handle_receiving_manifest(State=#state{riakc_pid=RiakcPid,
     case ordsets:size(BlocksToDelete) > 0 of
         true ->
             AllDeleteWorkers =
-                riak_moss_block_server:start_block_servers(RiakcPid,
-                    riak_moss_lfs_utils:delete_concurrency()),
+                riak_cs_block_server:start_block_servers(RiakcPid,
+                    riak_cs_lfs_utils:delete_concurrency()),
             FreeDeleters = ordsets:from_list(AllDeleteWorkers),
 
             NewState1 = NewState#state{all_delete_workers=AllDeleteWorkers,
@@ -186,7 +186,7 @@ maybe_delete_blocks(State=#state{bucket=Bucket,
     NewUnackedDeletes = ordsets:add_element(BlockID, UnackedDeletes),
     NewDeleteBlocksRemaining = ordsets:del_element(BlockID, DeleteBlocksRemaining),
     _ = lager:debug("Deleting block: ~p ~p ~p ~p", [Bucket, Key, UUID, BlockID]),
-    riak_moss_block_server:delete_block(DeleterPid, Bucket, Key, UUID, BlockID),
+    riak_cs_block_server:delete_block(DeleterPid, Bucket, Key, UUID, BlockID),
     NewFreeDeleters = ordsets:del_element(DeleterPid, FreeDeleters),
     maybe_delete_blocks(State#state{unacked_deletes=NewUnackedDeletes,
                                     free_deleters=NewFreeDeleters,
@@ -207,9 +207,9 @@ notification_msg(Reason, _State) ->
 
 -spec manifest_cleanup(atom(), binary(), binary(), binary(), pid()) -> ok.
 manifest_cleanup(deleted, Bucket, Key, UUID, RiakcPid) ->
-    {ok, ManiFsmPid} = riak_moss_manifest_fsm:start_link(Bucket, Key, RiakcPid),
-    _ = riak_moss_manifest_fsm:delete_specific_manifest(ManiFsmPid, UUID),
-    _ = riak_moss_manifest_fsm:stop(ManiFsmPid),
+    {ok, ManiFsmPid} = riak_cs_manifest_fsm:start_link(Bucket, Key, RiakcPid),
+    _ = riak_cs_manifest_fsm:delete_specific_manifest(ManiFsmPid, UUID),
+    _ = riak_cs_manifest_fsm:stop(ManiFsmPid),
     ok;
 manifest_cleanup(_, _, _, _, _) ->
     ok.
@@ -219,7 +219,7 @@ manifest_cleanup(_, _, _, _, _) ->
 blocks_to_delete_from_manifest(Manifest=?MANIFEST{state=State,
                                                   delete_blocks_remaining=undefined})
   when State =:= pending_delete;State =:= writing; State =:= scheduled_delete ->
-    case riak_moss_lfs_utils:block_sequences_for_manifest(Manifest) of
+    case riak_cs_lfs_utils:block_sequences_for_manifest(Manifest) of
         []=Blocks ->
             UpdManifest = Manifest?MANIFEST{delete_blocks_remaining=[],
                                             state=deleted};

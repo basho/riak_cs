@@ -42,7 +42,7 @@
          terminate/3,
          code_change/4]).
 
--include("riak_moss.hrl").
+-include("riak_cs.hrl").
 -include("riak_cs_gc_d.hrl").
 
 -ifdef(TEST).
@@ -151,7 +151,7 @@ fetching_next_fileset(continue, #state{batch=[]}=State) ->
                    [elapsed(State#state.batch_start), State#state.batch_count,
                     State#state.batch_skips, State#state.manif_count,
                     State#state.block_count]),
-    riak_moss_riakc_pool_worker:stop(State#state.riak),
+    riak_cs_riakc_pool_worker:stop(State#state.riak),
     NewState = schedule_next(State#state{riak=undefined}),
     {next_state, idle, NewState};
 fetching_next_fileset(continue, State=#state{batch=[FileSetKey | RestKeys],
@@ -337,7 +337,7 @@ cancel_batch(#state{batch_start=BatchStart,
     %% Interrupt the batch of deletes
     _ = lager:info("Canceled garbage collection batch after ~b seconds.",
                    [elapsed(BatchStart)]),
-    riak_moss_riakc_pool_worker:stop(RiakPid),
+    riak_cs_riakc_pool_worker:stop(RiakPid),
     schedule_next(State#state{batch=[],
                               riak=undefined}).
 
@@ -391,7 +391,7 @@ gc_index_query(RiakPid, EndTime) ->
                                 {error, term()}.
 fetch_next_fileset(ManifestSetKey, RiakPid) ->
     %% Get the set of manifests represented by the key
-    case riak_moss_utils:get_object(?GC_BUCKET, ManifestSetKey, RiakPid) of
+    case riak_cs_utils:get_object(?GC_BUCKET, ManifestSetKey, RiakPid) of
         {ok, RiakObj} ->
             ManifestSet = riak_cs_gc:decode_and_merge_siblings(
                             RiakObj, twop_set:new()),
@@ -494,7 +494,7 @@ start_batch(State=#state{riak=undefined}) ->
     %% so "starting" one here is the same as opening a
     %% connection, and avoids duplicating the configuration
     %% lookup code
-    {ok, Riak} = riak_moss_riakc_pool_worker:start_link([]),
+    {ok, Riak} = riak_cs_riakc_pool_worker:start_link([]),
     BatchStart = riak_cs_gc:timestamp(),
     Batch = fetch_eligible_manifest_keys(Riak, BatchStart),
     _ = lager:debug("Batch keys: ~p", [Batch]),

@@ -12,7 +12,7 @@
          to_html/2,
          finish_request/2]).
 
--include("riak_moss.hrl").
+-include("riak_cs.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
 
 -record(ping_context, {pool_pid=true :: boolean(),
@@ -31,7 +31,7 @@ service_available(RD, Ctx) ->
     dt_entry(<<"service_available">>),
     case poolboy:checkout(request_pool, true, ping_timeout()) of
         full ->
-            case riak_moss_riakc_pool_worker:start_link([]) of
+            case riak_cs_riakc_pool_worker:start_link([]) of
                 {ok, Pid} ->
                     UpdCtx = Ctx#ping_context{riakc_pid=Pid,
                                               pool_pid=false};
@@ -71,9 +71,9 @@ finish_request(RD, Ctx=#ping_context{riakc_pid=RiakPid,
     dt_entry(<<"finish_request">>, [1], []),
     case PoolPid of
         true ->
-            riak_moss_utils:close_riak_connection(RiakPid);
+            riak_cs_utils:close_riak_connection(RiakPid);
         false ->
-            riak_moss_riakc_pool_worker:stop(RiakPid)
+            riak_cs_riakc_pool_worker:stop(RiakPid)
     end,
     dt_return(<<"finish_request">>, [1], []),
     {true, RD, Ctx#ping_context{riakc_pid=undefined}}.

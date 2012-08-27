@@ -22,7 +22,7 @@
          pretty_print/2
         ]).
 
--include("riak_moss.hrl").
+-include("riak_cs.hrl").
 -include_lib("webmachine/include/wm_reqdata.hrl").
 
 -record(ctx, {
@@ -74,11 +74,11 @@ ping(RD, Ctx) ->
 
 service_available(RD, #ctx{path_tokens = []} = Ctx) ->
     dt_entry(<<"service_available">>, [], []),
-    case riak_moss_utils:get_env(riak_moss, riak_cs_stat, false) of
+    case riak_cs_utils:get_env(riak_moss, riak_cs_stat, false) of
         false ->
             {false, RD, Ctx};
         true ->
-            case riak_moss_utils:riak_connection() of
+            case riak_cs_utils:riak_connection() of
                 {ok, Pid} ->
                     {true, RD, Ctx#ctx{riakc_pid = Pid}};
                 _ ->
@@ -92,28 +92,28 @@ service_available(RD, Ctx) ->
 produce_body(RD, Ctx) ->
     dt_entry(<<"produce_body">>, [], []),
     Body = mochijson2:encode(get_stats()),
-    ETag = riak_moss_utils:binary_to_hexlist(crypto:md5(Body)),
+    ETag = riak_cs_utils:binary_to_hexlist(crypto:md5(Body)),
     RD2 = wrq:set_resp_header("ETag", ETag, RD),
     dt_return(<<"produce_body">>, [], []),
     {Body, RD2, Ctx}.
 
 forbidden(RD, #ctx{auth_bypass = AuthBypass, riakc_pid = RiakPid} = Ctx) ->
     dt_entry(<<"forbidden">>, [], []),
-    case riak_moss_wm_utils:validate_auth_header(RD, AuthBypass, RiakPid) of
+    case riak_cs_wm_utils:validate_auth_header(RD, AuthBypass, RiakPid) of
         {ok, User, _UserObj} ->
             UserKeyId = User?MOSS_USER.key_id,
-            case riak_moss_utils:get_admin_creds() of
+            case riak_cs_utils:get_admin_creds() of
                 {ok, {Admin, _}} when Admin == UserKeyId ->
                     %% admin account is allowed
                     dt_return(<<"forbidden">>, [], [<<"false">>, Admin]),
                     {false, RD, Ctx};
                 _ ->
-                    Res = riak_moss_wm_utils:deny_access(RD, Ctx),
+                    Res = riak_cs_wm_utils:deny_access(RD, Ctx),
                     dt_return(<<"forbidden">>, [], [<<"true">>]),
                     Res
             end;
         _ ->
-            Res = riak_moss_wm_utils:deny_access(RD, Ctx),
+            Res = riak_cs_wm_utils:deny_access(RD, Ctx),
             dt_return(<<"forbidden">>, [], [<<"true">>]),
             Res
     end.
@@ -123,7 +123,7 @@ finish_request(RD, #ctx{riakc_pid=undefined}=Ctx) ->
     {true, RD, Ctx};
 finish_request(RD, #ctx{riakc_pid=RiakPid}=Ctx) ->
     dt_entry(<<"finish_request">>, [1], []),
-    riak_moss_utils:close_riak_connection(RiakPid),
+    riak_cs_utils:close_riak_connection(RiakPid),
     dt_return(<<"finish_request">>, [1], []),
     {true, RD, Ctx#ctx{riakc_pid=undefined}}.
 
@@ -132,8 +132,8 @@ finish_request(RD, #ctx{riakc_pid=RiakPid}=Ctx) ->
 %% @doc Format the respons JSON object is a "pretty-printed" style.
 pretty_print(RD1, C1=#ctx{}) ->
     {Json, RD2, C2} = produce_body(RD1, C1),
-    Body = riak_moss_utils:json_pp_print(lists:flatten(Json)),
-    ETag = riak_moss_utils:binary_to_hexlist(crypto:md5(term_to_binary(Body))),
+    Body = riak_cs_utils:json_pp_print(lists:flatten(Json)),
+    ETag = riak_cs_utils:binary_to_hexlist(crypto:md5(term_to_binary(Body))),
     RD3 = wrq:set_resp_header("ETag", ETag, RD2),
     {Body, RD3, C2}.
 
