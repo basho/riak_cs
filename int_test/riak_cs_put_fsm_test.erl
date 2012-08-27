@@ -4,9 +4,9 @@
 %%
 %% -------------------------------------------------------------------
 
--module(riak_moss_put_fsm_test).
+-module(riak_cs_put_fsm_test).
 
--include("riak_moss.hrl").
+-include("riak_cs.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 setup() ->
@@ -31,26 +31,26 @@ put_fsm_test_() ->
 small_put() ->
     {ok, RiakPid} = riakc_pb_socket:start_link("127.0.0.1", 8087),
     {ok, Pid} =
-        riak_moss_put_fsm:start_link({<<"bucket">>, <<"key">>, 10, <<"ctype">>,
-                                      orddict:new(), 2, riak_moss_acl_utils:default_acl("display", "canonical_id", "key_id"),
+        riak_cs_put_fsm:start_link({<<"bucket">>, <<"key">>, 10, <<"ctype">>,
+                                      orddict:new(), 2, riak_cs_acl_utils:default_acl("display", "canonical_id", "key_id"),
                                      60000, self(), RiakPid}),
     Data = <<"0123456789">>,
     Md5 = make_md5(Data),
     Parts = [<<"0">>, <<"123">>, <<"45">>, <<"678">>, <<"9">>],
-    [riak_moss_put_fsm:augment_data(Pid, D) || D <- Parts],
-    {ok, Manifest} = riak_moss_put_fsm:finalize(Pid),
+    [riak_cs_put_fsm:augment_data(Pid, D) || D <- Parts],
+    {ok, Manifest} = riak_cs_put_fsm:finalize(Pid),
     ?assert(Manifest?MANIFEST.state == active andalso
             Manifest?MANIFEST.content_md5==Md5).
 
 zero_byte_put() ->
     {ok, RiakPid} = riakc_pb_socket:start_link("127.0.0.1", 8087),
     {ok, Pid} =
-        riak_moss_put_fsm:start_link({<<"bucket">>, <<"key">>, 0, <<"ctype">>,
-                                      orddict:new(), 2, riak_moss_acl_utils:default_acl("display", "canonical_id", "key_id"),
+        riak_cs_put_fsm:start_link({<<"bucket">>, <<"key">>, 0, <<"ctype">>,
+                                      orddict:new(), 2, riak_cs_acl_utils:default_acl("display", "canonical_id", "key_id"),
                                      60000, self(), RiakPid}),
     Data = <<>>,
     Md5 = make_md5(Data),
-    {ok, Manifest} = riak_moss_put_fsm:finalize(Pid),
+    {ok, Manifest} = riak_cs_put_fsm:finalize(Pid),
     ?assert(Manifest?MANIFEST.state == active andalso
             Manifest?MANIFEST.content_md5==Md5).
 
