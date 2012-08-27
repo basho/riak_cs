@@ -27,7 +27,7 @@ get_bucket_to_json() ->
     {ok, User} = riak_cs_utils:create_user(UserName, Email),
     KeyID = User?RCS_USER.key_id,
     [riak_cs_utils:create_bucket(KeyID, Name) || Name <- BucketNames],
-    {ok, UpdatedUser} = riak_cs_utils:get_user(User?MOSS_USER.key_id),
+    {ok, UpdatedUser} = riak_cs_utils:get_user(User?RCS_USER.key_id),
     CorrectJsonBucketNames = [list_to_binary(Name) ||
                                      Name <- lists:reverse(BucketNames)],
     _EncodedCorrectNames = mochijson2:encode(CorrectJsonBucketNames),

@@ -112,7 +112,7 @@ check_permission(Method, RD, Ctx=#key_context{bucket=Bucket,
         undefined ->
             User = CanonicalId = undefined;
         User ->
-            CanonicalId = User?MOSS_USER.canonical_id
+            CanonicalId = User?RCS_USER.canonical_id
     end,
     case Mfst of
         notfound ->
@@ -128,7 +128,7 @@ check_permission(Method, RD, Ctx=#key_context{bucket=Bucket,
         true ->
             %% actor is the owner
             AccessRD = riak_cs_access_logger:set_user(User, RD),
-            UserStr = User?MOSS_USER.canonical_id,
+            UserStr = User?RCS_USER.canonical_id,
             {false, AccessRD, Ctx#key_context{owner=UserStr}};
         {true, OwnerId} ->
             %% bill the owner, not the actor
@@ -353,14 +353,14 @@ accept_body(RD, Ctx=#key_context{bucket=Bucket,
             %% the use of a canned ACL.
             Acl = riak_cs_acl_utils:canned_acl(
                     wrq:get_req_header("x-amz-acl", RD),
-                    {User?MOSS_USER.display_name,
-                     User?MOSS_USER.canonical_id,
-                     User?MOSS_USER.key_id},
+                    {User?RCS_USER.display_name,
+                     User?RCS_USER.canonical_id,
+                     User?RCS_USER.key_id},
                     Owner,
                     RiakPid);
         _ ->
             Acl = riak_cs_acl_utils:acl_from_xml(Body,
-                                                   User?MOSS_USER.key_id,
+                                                   User?RCS_USER.key_id,
                                                    RiakPid)
     end,
     %% Write new ACL to active manifest
@@ -395,9 +395,9 @@ accept_body(RD, Ctx=#key_context{bucket=Bucket,
     %% non-default ACL at bucket creation time.
     ACL = riak_cs_acl_utils:canned_acl(
             wrq:get_req_header("x-amz-acl", RD),
-            {User?MOSS_USER.display_name,
-             User?MOSS_USER.canonical_id,
-             User?MOSS_USER.key_id},
+            {User?RCS_USER.display_name,
+             User?RCS_USER.canonical_id,
+             User?RCS_USER.key_id},
             Owner,
             RiakPid),
     Args = [{Bucket, list_to_binary(Key), Size, list_to_binary(ContentType),

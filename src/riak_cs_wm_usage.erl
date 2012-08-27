@@ -225,14 +225,14 @@ forbidden(RD, Ctx, undefined) ->
     %% anonymous access disallowed
     riak_cs_wm_utils:deny_access(RD, Ctx);
 forbidden(RD, Ctx, User) ->
-    case user_key(RD) == User?MOSS_USER.key_id of
+    case user_key(RD) == User?RCS_USER.key_id of
         true ->
             %% user is accessing own stats
             AccessRD = riak_cs_access_logger:set_user(User, RD),
             {false, AccessRD, Ctx};
         false ->
             case riak_cs_utils:get_admin_creds() of
-                {ok, {Admin, _}} when Admin == User?MOSS_USER.key_id ->
+                {ok, {Admin, _}} when Admin == User?RCS_USER.key_id ->
                     %% admin can access anyone's stats
                     {false, RD, Ctx};
                 _ ->

@@ -229,7 +229,7 @@ from_bucket_name(BucketNameWithPrefix) ->
 
 %% @doc Return a user's buckets.
 -spec get_buckets(moss_user()) -> [moss_bucket()].
-get_buckets(?MOSS_USER{buckets=Buckets}) ->
+get_buckets(?RCS_USER{buckets=Buckets}) ->
     [Bucket || Bucket <- Buckets, Bucket?MOSS_BUCKET.last_action /= deleted].
 
 %% @doc Return `stanchion' configuration data.
@@ -889,7 +889,7 @@ handle_env_response({ok, Value}, _) ->
 %% @doc Determine if the specified user account is a system admin.
 -spec is_admin(rcs_user(), {ok, {string(), string()}} |
                {error, term()}) -> boolean().
-is_admin(?MOSS_USER{key_id=KeyId, key_secret=KeySecret},
+is_admin(?RCS_USER{key_id=KeyId, key_secret=KeySecret},
          {ok, {KeyId, KeySecret}}) ->
     true;
 is_admin(_, _) ->
@@ -939,7 +939,7 @@ resolve_buckets([], Buckets, true) ->
 resolve_buckets([], Buckets, false) ->
     lists:sort(fun bucket_sorter/2, [Bucket || Bucket <- Buckets, not cleanup_bucket(Bucket)]);
 resolve_buckets([HeadUserRec | RestUserRecs], Buckets, _KeepDeleted) ->
-    HeadBuckets = HeadUserRec?MOSS_USER.buckets,
+    HeadBuckets = HeadUserRec?RCS_USER.buckets,
     UpdBuckets = lists:foldl(fun bucket_resolver/2, Buckets, HeadBuckets),
     resolve_buckets(RestUserRecs, UpdBuckets, _KeepDeleted).
 
@@ -960,7 +960,7 @@ serialized_bucket_op(Bucket, ACL, User, UserObj, BucketOp, StatName, RiakPid) ->
             BucketFun = bucket_fun(BucketOp,
                                    Bucket,
                                    ACL,
-                                   User?MOSS_USER.key_id,
+                                   User?RCS_USER.key_id,
                                    AdminCreds,
                                    stanchion_data()),
             %% Make a call to the bucket request
@@ -996,7 +996,7 @@ serialized_bucket_op(Bucket, ACL, User, UserObj, BucketOp, StatName, RiakPid) ->
 %% creation request.
 -spec user_json(moss_user()) -> string().
 user_json(User) ->
-    ?MOSS_USER{name=UserName,
+    ?RCS_USER{name=UserName,
                display_name=DisplayName,
                email=Email,
                key_id=KeyId,
@@ -1043,14 +1043,14 @@ update_bucket_record(Bucket) ->
 -spec update_user_buckets(moss_user(), moss_bucket()) ->
                                  {ok, ignore} | {ok, moss_user()}.
 update_user_buckets(User, Bucket) ->
-    Buckets = User?MOSS_USER.buckets,
+    Buckets = User?RCS_USER.buckets,
     %% At this point any siblings from the read of the
     %% user record have been resolved so the user bucket
     %% list should have 0 or 1 buckets that share a name
     %% with `Bucket'.
     case [B || B <- Buckets, B?MOSS_BUCKET.name =:= Bucket?MOSS_BUCKET.name] of
         [] ->
-            {ok, User?MOSS_USER{buckets=[Bucket | Buckets]}};
+            {ok, User?RCS_USER{buckets=[Bucket | Buckets]}};
         [ExistingBucket] ->
             case
                 (Bucket?MOSS_BUCKET.last_action == deleted andalso
@@ -1060,7 +1060,7 @@ update_user_buckets(User, Bucket) ->
                  ExistingBucket?MOSS_BUCKET.last_action == deleted) of
                 true ->
                     UpdBuckets = [Bucket | lists:delete(ExistingBucket, Buckets)],
-                    {ok, User?MOSS_USER{buckets=UpdBuckets}};
+                    {ok, User?RCS_USER{buckets=UpdBuckets}};
                 false ->
                     {ok, ignore}
             end
@@ -1093,7 +1093,7 @@ user_record(Name, Email, Buckets) ->
     {KeyId, Secret} = generate_access_creds(Email),
     CanonicalId = generate_canonical_id(KeyId, Secret),
     DisplayName = display_name(Email),
-    ?MOSS_USER{name=Name,
+    ?RCS_USER{name=Name,
                display_name=DisplayName,
                email=Email,
                key_id=KeyId,

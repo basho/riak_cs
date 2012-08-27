@@ -91,7 +91,7 @@ forbidden(RD, Ctx, undefined) ->
     %% anonymous access disallowed
     riak_cs_wm_utils:deny_access(RD, Ctx);
 forbidden(RD, Ctx, User) ->
-    UserKeyId = User?MOSS_USER.key_id,
+    UserKeyId = User?RCS_USER.key_id,
     case riak_cs_utils:get_admin_creds() of
         {ok, {Admin, _}} when Admin == UserKeyId ->
             %% admin account is allowed
@@ -146,7 +146,7 @@ users_doc(UserDocs, json, Boundary) ->
 %% the information for a given user.
 user_doc(Format, RiakPid, UserId, Status) ->
     case riak_cs_utils:get_user(UserId, RiakPid) of
-        {ok, {User, _}} when User?MOSS_USER.status =:= Status;
+        {ok, {User, _}} when User?RCS_USER.status =:= Status;
                              Status =:= undefined ->
             case Format of
                 xml ->

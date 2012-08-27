@@ -80,7 +80,7 @@
 %% the user is not set.
 set_user(KeyID, RD) when is_list(KeyID) ->
     wrq:add_note(?STAT(user), KeyID, RD);
-set_user(?MOSS_USER{key_id=KeyID}, RD) ->
+set_user(?RCS_USER{key_id=KeyID}, RD) ->
     wrq:add_note(?STAT(user), KeyID, RD);
 set_user(unknown, RD) ->
     RD.

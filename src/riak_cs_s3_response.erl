@@ -153,7 +153,7 @@ list_bucket_response(User, Bucket, KeyObjPairs, RD, Ctx) ->
                                 Contents)}],
     respond(200, export_xml(XmlDoc), RD, Ctx).
 
-user_to_xml_owner(?MOSS_USER{canonical_id=CanonicalId, display_name=Name}) ->
+user_to_xml_owner(?RCS_USER{canonical_id=CanonicalId, display_name=Name}) ->
     {'Owner', [{'ID', [CanonicalId]},
                {'DisplayName', [Name]}]}.
 

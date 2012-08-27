@@ -101,7 +101,7 @@ forbidden(RD, #ctx{auth_bypass = AuthBypass, riakc_pid = RiakPid} = Ctx) ->
     dt_entry(<<"forbidden">>, [], []),
     case riak_cs_wm_utils:validate_auth_header(RD, AuthBypass, RiakPid) of
         {ok, User, _UserObj} ->
-            UserKeyId = User?MOSS_USER.key_id,
+            UserKeyId = User?RCS_USER.key_id,
             case riak_cs_utils:get_admin_creds() of
                 {ok, {Admin, _}} when Admin == UserKeyId ->
                     %% admin account is allowed

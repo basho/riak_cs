@@ -128,7 +128,7 @@ check_grants(#context{user=User,
                       riakc_pid=RiakPid}) ->
     riak_cs_acl:bucket_access(Bucket,
                                 RequestedAccess,
-                                User?MOSS_USER.canonical_id,
+                                User?RCS_USER.canonical_id,
                                 RiakPid).
 
 %% @doc The {@link forbidden/2} decision passed, but the bucket
@@ -258,14 +258,14 @@ accept_body(RD, Ctx=#context{user=User,
             %% the use of a canned ACL.
             ACL = riak_cs_acl_utils:canned_acl(
                     wrq:get_req_header("x-amz-acl", RD),
-                    {User?MOSS_USER.display_name,
-                     User?MOSS_USER.canonical_id,
-                     User?MOSS_USER.key_id},
+                    {User?RCS_USER.display_name,
+                     User?RCS_USER.canonical_id,
+                     User?RCS_USER.key_id},
                     undefined,
                     RiakPid);
         _ ->
             ACL = riak_cs_acl_utils:acl_from_xml(Body,
-                                                   User?MOSS_USER.key_id,
+                                                   User?RCS_USER.key_id,
                                                    RiakPid)
     end,
     case riak_cs_utils:set_bucket_acl(User,
@@ -293,9 +293,9 @@ accept_body(RD, Ctx=#context{user=User,
     %% non-default ACL at bucket creation time.
     ACL = riak_cs_acl_utils:canned_acl(
             wrq:get_req_header("x-amz-acl", RD),
-            {User?MOSS_USER.display_name,
-             User?MOSS_USER.canonical_id,
-             User?MOSS_USER.key_id},
+            {User?RCS_USER.display_name,
+             User?RCS_USER.canonical_id,
+             User?RCS_USER.key_id},
             undefined,
             RiakPid),
     case riak_cs_utils:create_bucket(User,
