@@ -81,7 +81,7 @@
         block_size :: integer(),
         bkey :: {binary(), binary()},
         metadata :: orddict:orddict(),
-        created=riak_moss_wm_utils:iso_8601_datetime(),
+        created=riak_cs_wm_utils:iso_8601_datetime(),
         uuid :: cs_uuid(),
         content_length :: non_neg_integer(),
         content_type :: binary(),
@@ -134,7 +134,7 @@
         %% resolution, but I suppose there's no
         %% reason we can't change created
         %% to have millisecond as well.
-        created=riak_moss_wm_utils:iso_8601_datetime(),
+        created=riak_cs_wm_utils:iso_8601_datetime(),
         uuid :: cs_uuid(),
 
         %% content properties
