@@ -72,7 +72,7 @@ report_json() ->
 
 -spec report_pretty_json() -> string().
 report_pretty_json() ->
-    lists:flatten(riak_moss_utils:json_pp_print(report_json())).
+    lists:flatten(riak_cs_utils:json_pp_print(report_json())).
 
 -spec get_stats() -> [{legend, [atom()]} |
                       {atom(), [number()]}].
