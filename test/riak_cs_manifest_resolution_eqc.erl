@@ -73,9 +73,9 @@ prop_resolution_commutative() ->
 %%====================================================================
 
 raw_manifest() ->
-    ?MANIFEST{uuid=moss_gen:bounded_uuid(),
+    ?MANIFEST{uuid=riak_cs_gen:bounded_uuid(),
                      bkey={<<"bucket">>, <<"key">>},
-                     state=moss_gen:manifest_state()}.
+                     state=riak_cs_gen:manifest_state()}.
 
 manifest() ->
     ?LET(Manifest, raw_manifest(), process_manifest(Manifest)).

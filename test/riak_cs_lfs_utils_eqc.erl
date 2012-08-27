@@ -43,7 +43,7 @@ eqc_test_() ->
 %% ====================================================================
 
 prop_block_count() ->
-    ?FORALL({CLength, BlockSize},{riak_cs_gen:block_size(), moss_gen:content_length()},
+    ?FORALL({CLength, BlockSize},{riak_cs_gen:block_size(), riak_cs_gen:content_length()},
         begin
             NumBlocks = riak_cs_lfs_utils:block_count(CLength, BlockSize),
             Product = NumBlocks * BlockSize,
@@ -59,12 +59,12 @@ prop_block_count() ->
 %% have been removed from the manifest
 prop_manifest_manipulation() ->
     ?FORALL({Bucket, FileName, UUID, CLength, Md5, MD},
-                    {moss_gen:bucket(),
-                     moss_gen:file_name(),
-                     moss_gen:uuid(),
-                     moss_gen:content_length(),
-                     moss_gen:md5(),
-                     moss_gen:metadata()},
+                    {riak_cs_gen:bucket(),
+                     riak_cs_gen:file_name(),
+                     riak_cs_gen:uuid(),
+                     riak_cs_gen:content_length(),
+                     riak_cs_gen:md5(),
+                     riak_cs_gen:metadata()},
 
         begin
             application:set_env(riak_cs, lfs_block_size, 1048576),

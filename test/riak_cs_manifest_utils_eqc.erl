@@ -82,7 +82,7 @@ prop_choose_active_commutative() ->
 raw_manifest() ->
     ?MANIFEST{uuid = <<"this-uuid-will-be-replaced-later">>,
                      bkey={<<"bucket">>, <<"key">>},
-                     state=moss_gen:manifest_state()}.
+                     state=riak_cs_gen:manifest_state()}.
 
 manifest() ->
     ?LET(Manifest, raw_manifest(), process_manifest(Manifest)).
