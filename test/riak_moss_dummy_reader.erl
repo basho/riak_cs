@@ -19,8 +19,7 @@
 
 %% API
 -export([start_link/1,
-         get_manifest/1,
-         get_chunk/5]).
+         get_manifest/1]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -50,9 +49,6 @@ start_link(Args) ->
 
 get_manifest(Pid) ->
     gen_server:call(Pid, get_manifest, infinity).
-
-get_chunk(Pid, Bucket, Key, UUID, ChunkSeq) ->
-    gen_server:cast(Pid, {get_chunk, Bucket, Key, UUID, ChunkSeq}).
 
 %% TODO:
 %% Add shutdown public function
@@ -91,6 +87,11 @@ handle_call(_Msg, _From, State) ->
     {reply, ok, State}.
 
 handle_cast({get_block, _From, Bucket, Key, UUID, BlockNumber}, #state{caller_pid=CallerPid}=State) ->
+    FakeData = <<BlockNumber:32/integer>>,
+    RiakObject = riakc_obj:new_obj(Bucket,riak_moss_lfs_utils:block_name(Key, UUID, BlockNumber), [], [{dict:new(),FakeData}]),
+    riak_moss_get_fsm:chunk(CallerPid, BlockNumber, {ok, RiakObject}),
+    {noreply, State};
+handle_cast({get_block, _From, Bucket, Key, _CLusterID, UUID, BlockNumber}, #state{caller_pid=CallerPid}=State) ->
     FakeData = <<BlockNumber:32/integer>>,
     RiakObject = riakc_obj:new_obj(Bucket,riak_moss_lfs_utils:block_name(Key, UUID, BlockNumber), [], [{dict:new(),FakeData}]),
     riak_moss_get_fsm:chunk(CallerPid, BlockNumber, {ok, RiakObject}),
