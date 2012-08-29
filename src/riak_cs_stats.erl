@@ -123,12 +123,23 @@ code_change(_OldVsn, State, _Extra) ->
 
 init_item(BaseId) ->
     LatencyId = list_to_atom(atom_to_list(BaseId) ++ "_latency"),
-    ok = folsom_metrics:new_histogram(LatencyId),
+    ok = handle_folsom_response(folsom_metrics:new_histogram(LatencyId), histogram),
     MeterId = list_to_atom(atom_to_list(BaseId) ++ "_meter"),
-    ok = folsom_metrics:new_meter(MeterId),
+    ok = handle_folsom_response(folsom_metrics:new_meter(MeterId), meter),
     %% Cache the two atom-ized Ids for this counter to avoid doing the
     %% conversion per update
     erlang:put(BaseId, {LatencyId, MeterId}).
+
+handle_folsom_response(ok, _) ->
+    ok;
+handle_folsom_response({error, Name, metric_already_exists}, histogram) ->
+    folsom_metrics:delete_metric(Name),
+    folsom_metrics:new_histogram(Name);
+handle_folsom_response({error, Name, metric_already_exists}, meter) ->
+    folsom_metrics:delete_metric(Name),
+    folsom_metrics:new_meter(Name);
+handle_folsom_response(Error, _) ->
+    Error.
 
 report_item(BaseId) ->
     io:format("~s\n", [report_item_str(BaseId)]).
