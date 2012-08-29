@@ -43,7 +43,9 @@
          set_object_acl/5,
          timestamp/1,
          to_bucket_name/2,
-         update_key_secret/1]).
+         update_key_secret/1,
+         get_cluster_id/1,
+         proxy_get_active/0]).
 
 -include("riak_moss.hrl").
 -include_lib("riak_pb/include/riak_pb_kv_codec.hrl").
@@ -1106,3 +1108,40 @@ user_record(Name, Email, Buckets) ->
                key_secret=Secret,
                canonical_id=CanonicalId,
                buckets=Buckets}.
+
+%% doc Return the current cluster ID. Used for repl
+%% After obtaining the clusterid the first time,
+%% store the value in app:set_env
+-spec get_cluster_id(pid()) -> binary().
+get_cluster_id(Pid) ->
+    case application:get_env(riak_moss, cluster_id) of
+        {ok, ClusterID} ->
+            ClusterID;
+        undefined ->
+            Timeout = case application:get_env(riak_moss,cluster_id_timeout) of
+                          {ok, Value} -> Value;
+                          undefined   -> ?DEFAULT_CLUSTER_ID_TIMEOUT
+                      end,
+            case riak_repl_pb_api:get_clusterid(Pid, Timeout) of
+                {ok, ClusterID} ->
+                    application:set_env(riak_moss, cluster_id, ClusterID),
+                    ClusterID;
+                _ ->
+                    lager:warning("Unable to obtain cluster ID"),
+                    undefined
+            end
+    end.
+
+%% doc Check app.config to see if repl proxy_get is enabled
+%% Defaults to false.
+proxy_get_active() ->
+    case application:get_env(riak_moss, proxy_get) of
+        {ok, enabled} ->
+            true;
+        {ok, disabled} ->
+            false;
+        {ok, _} ->
+            lager:warning("proxy_get value in app.config is invalid"),
+            false;
+        undefined -> false
+    end.

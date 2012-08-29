@@ -171,6 +171,7 @@ waiting_continue_or_stop(continue, #state{manifest=Manifest,
                                           free_readers=Readers,
                                           riakc_pid=RiakPid}=State) ->
     BlockSequences = riak_moss_lfs_utils:block_sequences_for_manifest(Manifest),
+    ClusterID = Manifest?MANIFEST.cluster_id,
     case BlockSequences of
         [] ->
             %% We should never get here because empty
@@ -193,7 +194,7 @@ waiting_continue_or_stop(continue, #state{manifest=Manifest,
             end,
             %% start retrieving the first set of blocks
             {LastBlockRequested, UpdFreeReaders} =
-                read_blocks(BucketName, Key, UUID, FreeReaders, NextBlock, TotalBlocks),
+                read_blocks(BucketName, Key, ClusterID, UUID, FreeReaders, NextBlock, TotalBlocks),
             NewState = State#state{blocks_left=BlocksLeft,
                                    last_block_requested=LastBlockRequested-1,
                                    total_blocks=TotalBlocks,
@@ -221,6 +222,7 @@ waiting_chunks(get_next_chunk, From, State) ->
 waiting_chunks({chunk, Pid, {NextBlock, BlockReturnValue}}, #state{from=From,
                                                                    blocks_left=Remaining,
                                                                    manifest_uuid=UUID,
+                                                                   manifest=Manifest,
                                                                    key=Key,
                                                                    bucket=BucketName,
                                                                    next_block=NextBlock,
@@ -229,6 +231,7 @@ waiting_chunks({chunk, Pid, {NextBlock, BlockReturnValue}}, #state{from=From,
                                                                    total_blocks=TotalBlocks,
                                                                    block_buffer=BlockBuffer}=State) ->
     _ = lager:debug("Retrieved block ~p", [NextBlock]),
+    ClusterID = Manifest?MANIFEST.cluster_id,
     {ok, BlockValue} = BlockReturnValue,
     NewRemaining = sets:del_element(NextBlock, Remaining),
     BlocksLeft = sets:size(NewRemaining),
@@ -247,7 +250,7 @@ waiting_chunks({chunk, Pid, {NextBlock, BlockReturnValue}}, #state{from=From,
                     NextStateName = sending_remaining;
                 _ ->
                     {ReadRequests, UpdFreeReaders} =
-                        read_blocks(BucketName, Key, UUID, [Pid | FreeReaders], NextBlock+1, TotalBlocks),
+                        read_blocks(BucketName, Key, ClusterID, UUID, [Pid | FreeReaders], NextBlock+1, TotalBlocks),
                     NewState = NewState0#state{last_block_requested=LastBlockRequested+ReadRequests,
                                                free_readers=UpdFreeReaders},
                     NextStateName = waiting_chunks
@@ -271,7 +274,8 @@ waiting_chunks({chunk, Pid, {NextBlock, BlockReturnValue}}, #state{from=From,
                 _ ->
                     gen_fsm:reply(From, {chunk, BlockValue}),
                     {ReadRequests, UpdFreeReaders} =
-                        read_blocks(BucketName, Key, UUID, [Pid | FreeReaders], LastBlockRequested+1, TotalBlocks),
+                        read_blocks(BucketName, Key, ClusterID, UUID,
+                                    [Pid | FreeReaders], LastBlockRequested+1, TotalBlocks),
                     _ = lager:debug("Started ~p new readers. Free readers: ~p", [ReadRequests, UpdFreeReaders]),
                     NewState = NewState0#state{last_block_requested=LastBlockRequested+ReadRequests,
                                                free_readers=UpdFreeReaders},
@@ -281,6 +285,7 @@ waiting_chunks({chunk, Pid, {NextBlock, BlockReturnValue}}, #state{from=From,
 
 waiting_chunks({chunk, Pid, {BlockSeq, BlockReturnValue}}, #state{blocks_left=Remaining,
                                                                    manifest_uuid=UUID,
+                                                                   manifest=Manifest,
                                                                    key=Key,
                                                                    bucket=BucketName,
                                                                    free_readers=FreeReaders,
@@ -291,6 +296,7 @@ waiting_chunks({chunk, Pid, {BlockSeq, BlockReturnValue}}, #state{blocks_left=Re
     %% at all here, so this pattern
     %% match will fail
     _ = lager:debug("Retrieved block ~p", [BlockSeq]),
+    ClusterID = Manifest?MANIFEST.cluster_id,
     {ok, BlockValue} = BlockReturnValue,
     NewRemaining = sets:del_element(BlockSeq, Remaining),
     BlocksLeft = sets:size(NewRemaining),
@@ -306,7 +312,8 @@ waiting_chunks({chunk, Pid, {BlockSeq, BlockReturnValue}}, #state{blocks_left=Re
             NextStateName = sending_remaining;
         _ ->
             {ReadRequests, UpdFreeReaders} =
-                read_blocks(BucketName, Key, UUID, [Pid | FreeReaders], LastBlockRequested+1, TotalBlocks),
+                read_blocks(BucketName, Key, ClusterID, UUID,
+                            [Pid | FreeReaders], LastBlockRequested+1, TotalBlocks),
             NewState = NewState0#state{last_block_requested=LastBlockRequested+ReadRequests,
                                        free_readers=UpdFreeReaders},
             NextStateName = waiting_chunks
@@ -402,11 +409,12 @@ prepare(#state{bucket=Bucket,
             State#state{mani_fsm_pid=ManiPid}
     end.
 
--spec read_blocks(binary(), binary(), binary(), [pid()], pos_integer(), pos_integer()) ->
+-spec read_blocks(binary(), binary(), binary(), binary(), [pid()], pos_integer(), pos_integer()) ->
                          {pos_integer(), [pid()]}.
-read_blocks(Bucket, Key, UUID, FreeReaders, NextBlock, TotalBlocks) ->
+read_blocks(Bucket, Key, ClusterID, UUID, FreeReaders, NextBlock, TotalBlocks) ->
     read_blocks(Bucket,
                 Key,
+                ClusterID,
                 UUID,
                 FreeReaders,
                 NextBlock,
@@ -416,18 +424,19 @@ read_blocks(Bucket, Key, UUID, FreeReaders, NextBlock, TotalBlocks) ->
 -spec read_blocks(binary(),
                   binary(),
                   binary(),
+                  binary(),
                   [pid()],
                   pos_integer(),
                   pos_integer(),
                   non_neg_integer()) ->
                          {pos_integer(), [pid()]}.
-read_blocks(_Bucket, _Key, _UUID, [], _, _, ReadsRequested) ->
+read_blocks(_Bucket, _Key, _ClusterID, _UUID, [], _, _, ReadsRequested) ->
     {ReadsRequested, []};
-read_blocks(_Bucket, _Key, _UUID, FreeReaders, _TotalBlocks, _TotalBlocks, ReadsRequested) ->
+read_blocks(_Bucket, _Key, _ClusterID, _UUID, FreeReaders, _TotalBlocks, _TotalBlocks, ReadsRequested) ->
     {ReadsRequested, FreeReaders};
-read_blocks(Bucket, Key, UUID, [ReaderPid | RestFreeReaders], NextBlock, _TotalBlocks, ReadsRequested) ->
-    riak_moss_block_server:get_block(ReaderPid, Bucket, Key, UUID, NextBlock),
-    read_blocks(Bucket, Key, UUID, RestFreeReaders, NextBlock+1, _TotalBlocks, ReadsRequested+1).
+read_blocks(Bucket, Key, ClusterID, UUID, [ReaderPid | RestFreeReaders], NextBlock, _TotalBlocks, ReadsRequested) ->
+    riak_moss_block_server:get_block(ReaderPid, Bucket, Key, ClusterID, UUID, NextBlock),
+    read_blocks(Bucket, Key, ClusterID, UUID, RestFreeReaders, NextBlock+1, _TotalBlocks, ReadsRequested+1).
 
 %% ===================================================================
 %% Test API
