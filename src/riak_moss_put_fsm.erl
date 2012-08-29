@@ -335,6 +335,9 @@ prepare(State=#state{bucket=Bucket,
     FreeWriters = ordsets:from_list(WriterPids),
     MaxBufferSize = (riak_moss_lfs_utils:put_fsm_buffer_size_factor() * BlockSize),
     UUID = druuid:v4(),
+
+    %% for now, always populate cluster_id
+    ClusterID = riak_moss_utils:get_cluster_id(RiakPid),
     Manifest =
         riak_moss_lfs_utils:new_manifest(Bucket,
                                          Key,
@@ -345,7 +348,9 @@ prepare(State=#state{bucket=Bucket,
                                          undefined,
                                          Metadata,
                                          BlockSize,
-                                         Acl),
+                                         Acl,
+                                         undefined,
+                                         ClusterID),
     NewManifest = Manifest?MANIFEST{write_start_time=os:timestamp()},
 
     %% TODO:
