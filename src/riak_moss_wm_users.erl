@@ -40,7 +40,7 @@ forbidden(RD, Ctx) ->
     Next = fun(NewRD, NewCtx=#context{user=User}) ->
                    forbidden(NewRD, NewCtx, User)
            end,
-    riak_moss_wm_utils:find_and_auth_user(RD, Ctx, Next).
+    riak_moss_wm_utils:find_and_auth_user(RD, Ctx, Next, false).
 
 content_types_provided(RD, Ctx) ->
     {[{?XML_TYPE, produce_xml}, {?JSON_TYPE, produce_json}], RD, Ctx}.

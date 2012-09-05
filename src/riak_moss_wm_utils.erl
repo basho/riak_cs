@@ -19,6 +19,7 @@
          user_record_to_xml/1,
          find_and_auth_user/3,
          find_and_auth_user/4,
+         find_and_auth_user/5,
          validate_auth_header/3,
          deny_access/2,
          extract_name/1,
@@ -111,27 +112,42 @@ parse_auth_params(KeyId, Signature, _) ->
 %% Riak lookup fails), a tuple suitable for returning from a
 %% webmachine resource's `forbidden/2' function is returned, with
 %% appropriate error message included.
-find_and_auth_user(Rd, ICtx, Next) ->
-    find_and_auth_user(Rd, ICtx, Next, fun(X) -> X end).
+find_and_auth_user(RD, ICtx, Next) ->
+    find_and_auth_user(RD, ICtx, Next, true).
 
-find_and_auth_user(RD, #context{auth_bypass=AuthBypass,
-                                riakc_pid=RiakPid}=ICtx, Next, Conv2KeyCtx) ->
-    case validate_auth_header(RD, AuthBypass, RiakPid) of
-        {ok, User, UserVclock} ->
-            %% given keyid and signature matched, proceed
-            NewICtx = ICtx#context{user=User,
-                                   user_vclock=UserVclock},
-            Next(RD, NewICtx);
-        {error, no_user_key} ->
-            %% no keyid was given, proceed anonymously
-            Next(RD, ICtx);
-        {error, bad_auth} ->
-            %% given keyid was found, but signature didn't match
-            deny_access(RD, Conv2KeyCtx(ICtx));
-        {error, _Reason} ->
-            %% no matching keyid was found, or lookup failed
-            deny_invalid_key(RD, Conv2KeyCtx(ICtx))
-    end.
+find_and_auth_user(RD, ICtx, Next, AnonymousOk) ->
+    find_and_auth_user(RD, ICtx, Next, fun(X) -> X end, AnonymousOk).
+
+find_and_auth_user(RD,
+                   #context{auth_bypass=AuthBypass,
+                            riakc_pid=RiakPid}=ICtx,
+                   Next,
+                   Conv2KeyCtx,
+                   AnonymousOk) ->
+    handle_validation_response(
+      validate_auth_header(RD, AuthBypass, RiakPid),
+      RD,
+      ICtx,
+      Next,
+      Conv2KeyCtx,
+      AnonymousOk).
+
+handle_validation_response({ok, User, Vclock}, RD, Ctx, Next, _, _) ->
+    %% given keyid and signature matched, proceed
+    Next(RD, Ctx#context{user=User,
+                         user_vclock=Vclock});
+handle_validation_response({error, no_user_key}, RD, Ctx, Next, _, true) ->
+    %% no keyid was given, proceed anonymously
+    Next(RD, Ctx);
+handle_validation_response({error, no_user_key}, RD, Ctx, _, Conv2KeyCtx, false) ->
+    %% no keyid was given, deny access
+    deny_access(RD, Conv2KeyCtx(Ctx));
+handle_validation_response({error, bad_auth}, RD, Ctx, _, Conv2KeyCtx, _) ->
+    %% given keyid was found, but signature didn't match
+    deny_access(RD, Conv2KeyCtx(Ctx));
+handle_validation_response({error, _Reason}, RD, Ctx, _, Conv2KeyCtx, _) ->
+    %% no matching keyid was found, or lookup failed
+    deny_invalid_key(RD, Conv2KeyCtx(Ctx)).
 
 %% @doc Look for an Authorization header in the request, and validate
 %% it if it exists.  Returns `{ok, User, UserVclock}' if validation
