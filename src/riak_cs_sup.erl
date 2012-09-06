@@ -73,7 +73,7 @@ init([]) ->
            permanent, 5000, worker, dynamic},
     PutFsmSup = {riak_cs_put_fsm_sup,
                  {riak_cs_put_fsm_sup, start_link, []},
-                 permanet, 5000, worker, dynamic},
+                 permanent, 5000, worker, dynamic},
     GetFsmSup = {riak_cs_get_fsm_sup,
              {riak_cs_get_fsm_sup, start_link, []},
              permanent, 5000, worker, dynamic},
