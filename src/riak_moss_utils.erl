@@ -1127,7 +1127,7 @@ get_cluster_id(Pid) ->
                     application:set_env(riak_moss, cluster_id, ClusterID),
                     ClusterID;
                 _ ->
-                    lager:warning("Unable to obtain cluster ID"),
+                    lager:debug("Unable to obtain cluster ID"),
                     undefined
             end
     end.
