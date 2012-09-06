@@ -31,7 +31,7 @@ sum_user(Riak, User) when is_binary(User) ->
     sum_user(Riak, binary_to_list(User));
 sum_user(Riak, User) when is_list(User) ->
     case riak_moss_utils:get_user(User, Riak) of
-        {ok, {?MOSS_USER{buckets=Buckets}, _VClock}} ->
+        {ok, {?MOSS_USER{buckets=Buckets}, _UserObj}} ->
             {ok, [ {B, sum_bucket(Riak, B)}
                    || ?MOSS_BUCKET{name=B} <- Buckets ]};
         {error, Error} ->

@@ -136,10 +136,10 @@ check_grants(#context{user=User,
 %% retrieved.
 shift_to_owner(RD, Ctx, OwnerId, RiakPid) when RiakPid /= undefined ->
     case riak_moss_utils:get_user(OwnerId, RiakPid) of
-        {ok, {Owner, OwnerVClock}} when Owner?MOSS_USER.status =:= enabled ->
+        {ok, {Owner, OwnerObject}} when Owner?MOSS_USER.status =:= enabled ->
             AccessRD = riak_moss_access_logger:set_user(Owner, RD),
             {false, AccessRD, Ctx#context{user=Owner,
-                                          user_vclock=OwnerVClock}};
+                                          user_object=OwnerObject}};
         {ok, _} ->
             riak_moss_wm_utils:deny_access(RD, Ctx);
         {error, _} ->
@@ -245,7 +245,7 @@ to_xml(RD, Ctx=#context{start_time=StartTime,
 
 %% @doc Process request body on `PUT' request.
 accept_body(RD, Ctx=#context{user=User,
-                             user_vclock=VClock,
+                             user_object=UserObj,
                              bucket=Bucket,
                              requested_perm='WRITE_ACP',
                              riakc_pid=RiakPid}) ->
@@ -269,7 +269,7 @@ accept_body(RD, Ctx=#context{user=User,
                                                    RiakPid)
     end,
     case riak_moss_utils:set_bucket_acl(User,
-                                        VClock,
+                                        UserObj,
                                         Bucket,
                                         ACL,
                                         RiakPid) of
@@ -284,7 +284,7 @@ accept_body(RD, Ctx=#context{user=User,
             riak_moss_s3_response:api_error(Reason, RD, Ctx)
     end;
 accept_body(RD, Ctx=#context{user=User,
-                             user_vclock=VClock,
+                             user_object=UserObj,
                              bucket=Bucket,
                              riakc_pid=RiakPid}) ->
     dt_entry(<<"accept_body">>, [], [extract_name(User), Bucket]),
@@ -299,7 +299,7 @@ accept_body(RD, Ctx=#context{user=User,
             undefined,
             RiakPid),
     case riak_moss_utils:create_bucket(User,
-                                       VClock,
+                                       UserObj,
                                        Bucket,
                                        ACL,
                                        RiakPid) of
@@ -317,13 +317,13 @@ accept_body(RD, Ctx=#context{user=User,
 %% @doc Callback for deleting a bucket.
 -spec delete_resource(term(), term()) -> {boolean() | {'halt', term()}, term, #context{}}.
 delete_resource(RD, Ctx=#context{user=User,
-                                 user_vclock=VClock,
+                                 user_object=UserObj,
                                  bucket=Bucket,
                                  riakc_pid=RiakPid}) ->
     dt_entry(<<"delete_resource">>, [], [extract_name(User), Bucket]),
     dt_entry_bucket(<<"delete">>, [], [extract_name(User), Bucket]),
     case riak_moss_utils:delete_bucket(User,
-                                       VClock,
+                                       UserObj,
                                        Bucket,
                                        RiakPid) of
         ok ->
