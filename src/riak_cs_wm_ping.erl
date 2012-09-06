@@ -97,7 +97,7 @@ dt_return(Func, Ints, Strings) ->
 %% timeout could be up to 2 * `ping_timeout()'.
 -spec ping_timeout() -> pos_integer().
 ping_timeout() ->
-    case application:get_env(riak_moss, ping_timeout) of
+    case application:get_env(riak_cs, ping_timeout) of
         undefined ->
             ?DEFAULT_PING_TIMEOUT;
         {ok, Timeout} ->

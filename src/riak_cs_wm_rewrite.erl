@@ -14,7 +14,7 @@ bucket_from_host(undefined) ->
 bucket_from_host(HostHeader) ->
     riak_cs_dtrace:dtrace(?DT_WM_OP, 1, [], ?MODULE, <<"bucket_from_host">>, []),
     HostNoPort = hd(string:tokens(HostHeader, ":")),
-    {ok, RootHost} = application:get_env(riak_moss, moss_root_host),
+    {ok, RootHost} = application:get_env(riak_cs, cs_root_host),
     case HostNoPort of
         RootHost ->
             undefined;

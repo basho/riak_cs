@@ -14,7 +14,7 @@
 dtrace(ArgList) ->
     case get(?MAGIC) of
         undefined ->
-            case application:get_env(riak_moss, dtrace_support) of
+            case application:get_env(riak_cs, dtrace_support) of
                 {ok, true} ->
                     case string:to_float(erlang:system_info(version)) of
                         {5.8, _} ->

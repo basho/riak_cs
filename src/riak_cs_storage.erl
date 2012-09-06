@@ -91,7 +91,7 @@ object_size_reduce(Sizes, _) ->
 %% application.
 -spec archive_period() -> {ok, integer()}|{error, term()}.
 archive_period() ->
-    case application:get_env(riak_moss, storage_archive_period) of
+    case application:get_env(riak_cs, storage_archive_period) of
         {ok, AP} when is_integer(AP), AP > 0 ->
             {ok, AP};
         _ ->

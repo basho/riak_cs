@@ -60,7 +60,7 @@ block_name_to_term(<<UUID:16/binary, Number:32>>) ->
 %% @doc Return the configured block size
 -spec block_size() -> pos_integer().
 block_size() ->
-    case application:get_env(riak_moss, lfs_block_size) of
+    case application:get_env(riak_cs, lfs_block_size) of
         undefined ->
             ?DEFAULT_LFS_BLOCK_SIZE;
         {ok, BlockSize} ->
@@ -71,7 +71,7 @@ block_size() ->
 -spec max_content_len() -> pos_integer().
 max_content_len() ->
 
-    case application:get_env(riak_moss, max_content_length) of
+    case application:get_env(riak_cs, max_content_length) of
         undefined ->
 
             ?DEFAULT_MAX_CONTENT_LENGTH;
@@ -100,7 +100,7 @@ block_sequences_for_manifest(?MANIFEST{content_length=ContentLength}=Manifest) -
 %% @doc Return the configured file block fetch concurrency .
 -spec fetch_concurrency() -> pos_integer().
 fetch_concurrency() ->
-    case application:get_env(riak_moss, fetch_concurrency) of
+    case application:get_env(riak_cs, fetch_concurrency) of
         undefined ->
             ?DEFAULT_FETCH_CONCURRENCY;
         {ok, Concurrency} ->
@@ -110,7 +110,7 @@ fetch_concurrency() ->
 %% @doc Return the configured file block put concurrency .
 -spec put_concurrency() -> pos_integer().
 put_concurrency() ->
-    case application:get_env(riak_moss, put_concurrency) of
+    case application:get_env(riak_cs, put_concurrency) of
         undefined ->
             ?DEFAULT_PUT_CONCURRENCY;
         {ok, Concurrency} ->
@@ -120,7 +120,7 @@ put_concurrency() ->
 %% @doc Return the configured file block delete concurrency .
 -spec delete_concurrency() -> pos_integer().
 delete_concurrency() ->
-    case application:get_env(riak_moss, delete_concurrency) of
+    case application:get_env(riak_cs, delete_concurrency) of
         undefined ->
             ?DEFAULT_DELETE_CONCURRENCY;
         {ok, Concurrency} ->
@@ -131,7 +131,7 @@ delete_concurrency() ->
 %% size factor
 -spec put_fsm_buffer_size_factor() -> pos_integer().
 put_fsm_buffer_size_factor() ->
-    case application:get_env(riak_moss, put_buffer_factor) of
+    case application:get_env(riak_cs, put_buffer_factor) of
         undefined ->
             ?DEFAULT_PUT_BUFFER_FACTOR;
         {ok, Factor} ->

@@ -47,7 +47,7 @@ gc_manifests(Bucket, Key, Manifests, UUIDsToMark, RiakObject, RiakcPid) ->
 %% collection of a set of files before starting the next.
 -spec gc_interval() -> non_neg_integer().
 gc_interval() ->
-    case application:get_env(riak_moss, gc_interval) of
+    case application:get_env(riak_cs, gc_interval) of
         undefined ->
             ?DEFAULT_GC_INTERVAL;
         {ok, Interval} ->
@@ -58,7 +58,7 @@ gc_interval() ->
 %% `pending_delete' manifest for garbage collection.
 -spec gc_retry_interval() -> non_neg_integer().
 gc_retry_interval() ->
-    case application:get_env(riak_moss, gc_retry_interval) of
+    case application:get_env(riak_cs, gc_retry_interval) of
         undefined ->
             ?DEFAULT_GC_RETRY_INTERVAL;
         {ok, RetryInterval} ->
@@ -70,7 +70,7 @@ gc_retry_interval() ->
 %% from the `riak-cs-gc' bucket.
 -spec epoch_start() -> binary().
 epoch_start() ->
-    case application:get_env(riak_moss, epoch_start) of
+    case application:get_env(riak_cs, epoch_start) of
         undefined ->
             ?EPOCH_START;
         {ok, EpochStart} ->
@@ -81,7 +81,7 @@ epoch_start() ->
 %% the `scheduled_delete' state before being garbage collected.
 -spec leeway_seconds() -> non_neg_integer().
 leeway_seconds() ->
-    case application:get_env(riak_moss, leeway_seconds) of
+    case application:get_env(riak_cs, leeway_seconds) of
         undefined ->
             ?DEFAULT_LEEWAY_SECONDS;
         {ok, LeewaySeconds} ->

@@ -252,7 +252,7 @@ read_storage_schedule() ->
     lists:usort(read_storage_schedule1()).
 
 read_storage_schedule1() ->
-    case application:get_env(riak_moss, storage_schedule) of
+    case application:get_env(riak_cs, storage_schedule) of
         undefined ->
             _ = lager:warning("No storage schedule defined."
                               " Calculation must be triggered manually."),

@@ -150,10 +150,10 @@ auth_test_() ->
       }]}.
 
 setup() ->
-    application:set_env(riak_moss, moss_root_host, "s3.amazonaws.com").
+    application:set_env(riak_cs, cs_root_host, "s3.amazonaws.com").
 
 teardown(_) ->
-    application:unset_env(riak_moss, moss_root_host).
+    application:unset_env(riak_cs, cs_root_host).
 
 test_fun(Description, ExpectedSignature, CalculatedSignature) ->
     {Description,

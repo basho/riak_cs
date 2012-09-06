@@ -467,7 +467,7 @@ datetime(String) when is_list(String) ->
 too_many_periods(Start, End) ->
     Seconds = calendar:datetime_to_gregorian_seconds(End)
         -calendar:datetime_to_gregorian_seconds(Start),
-    {ok, Limit} = application:get_env(riak_moss, usage_request_limit),
+    {ok, Limit} = application:get_env(riak_cs, usage_request_limit),
 
     {ok, Access} = riak_cs_access:archive_period(),
     {ok, Storage} = riak_cs_storage:archive_period(),

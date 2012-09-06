@@ -87,7 +87,7 @@ test(Iterations) ->
 %% ====================================================================
 
 prop_get_fsm() ->
-    application:set_env(riak_moss, lfs_block_size, 1048576),
+    application:set_env(riak_cs, lfs_block_size, 1048576),
     ?FORALL(State, #state{content_length=?LET(X, riak_cs_gen:bounded_content_length(), X * 10)},
         ?FORALL(Cmds, eqc_statem:more_commands(10, commands(?MODULE, {start, State})),
                 begin

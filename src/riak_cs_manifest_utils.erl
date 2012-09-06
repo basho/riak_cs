@@ -291,7 +291,7 @@ wrong_state_for_pruning_2() ->
     ?assert(not needs_pruning(Mani2, erlang:now())).
 
 does_need_pruning() ->
-    application:set_env(riak_moss, leeway_seconds, 1),
+    application:set_env(riak_cs, leeway_seconds, 1),
     %% 1000000 second diff
     ScheduledDeleteTime = {1333,985708,445136},
     Now = {1334,985708,445136},
@@ -301,7 +301,7 @@ does_need_pruning() ->
     ?assert(needs_pruning(Mani2, Now)).
 
 not_old_enough_for_pruning() ->
-    application:set_env(riak_moss, leeway_seconds, 2),
+    application:set_env(riak_cs, leeway_seconds, 2),
     %$ 1 second diff
     ScheduledDeleteTime = {1333,985708,445136},
     Now = {1333,985709,445136},

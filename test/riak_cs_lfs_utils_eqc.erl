@@ -67,7 +67,7 @@ prop_manifest_manipulation() ->
              riak_cs_gen:metadata()},
 
             begin
-                application:set_env(riak_moss, lfs_block_size, 1048576),
+                application:set_env(riak_cs, lfs_block_size, 1048576),
                 Manifest = riak_cs_lfs_utils:new_manifest(Bucket,
                                                           FileName,
                                                           UUID,

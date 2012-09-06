@@ -48,7 +48,7 @@ test_n_chunks_builder(N) ->
     fun () ->
             ContentLength = 10000,
             BlockSize = calc_block_size(ContentLength, N),
-            application:set_env(riak_moss, lfs_block_size, BlockSize),
+            application:set_env(riak_cs, lfs_block_size, BlockSize),
             {ok, Pid} = riak_cs_get_fsm:test_link(<<"bucket">>, <<"key">>, ContentLength, BlockSize),
             Manifest = riak_cs_get_fsm:get_manifest(Pid),
             ?assertEqual(ContentLength, Manifest?MANIFEST.content_length),

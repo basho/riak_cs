@@ -38,7 +38,7 @@
 %% application.
 -spec archive_period() -> {ok, integer()}|{error, term()}.
 archive_period() ->
-    case application:get_env(riak_moss, access_archive_period) of
+    case application:get_env(riak_cs, access_archive_period) of
         {ok, AP} when is_integer(AP), AP > 0 ->
             {ok, AP};
         _ ->
@@ -51,7 +51,7 @@ archive_period() ->
 %% application.
 -spec log_flush_interval() -> {ok, integer()}|{error, term()}.
 log_flush_interval() ->
-    case application:get_env(riak_moss, access_log_flush_factor) of
+    case application:get_env(riak_cs, access_log_flush_factor) of
         {ok, AF} when is_integer(AF), AF > 0 ->
             case archive_period() of
                 {ok, AP} ->
@@ -76,7 +76,7 @@ log_flush_interval() ->
 %% the `riak_cs' application.
 -spec max_flush_size() -> {ok, integer()}|{error, term()}.
 max_flush_size() ->
-    case application:get_env(riak_moss, access_log_flush_size) of
+    case application:get_env(riak_cs, access_log_flush_size) of
         {ok, AP} when is_integer(AP), AP > 0 ->
             {ok, AP};
         _ ->
@@ -151,7 +151,7 @@ archive_period_prop() ->
     ?FORALL(I, oneof([rts:valid_period_g(),
                       choose(-86500, 86500)]), % purposely outside day boundary
             begin
-                application:set_env(riak_moss, access_archive_period, I),
+                application:set_env(riak_cs, access_archive_period, I),
                 case archive_period() of
                     {ok, I} ->
                         valid_period(I);
@@ -176,7 +176,7 @@ make_object_prop() ->
     ?FORALL(Accesses,
             list({op_g(), access_g()}),
             begin
-                application:set_env(riak_moss, access_archive_period, 60000),
+                application:set_env(riak_cs, access_archive_period, 60000),
 
                 %% trust rts:make_object_prop to check all of the
                 %% bucket/key/time/etc. properties

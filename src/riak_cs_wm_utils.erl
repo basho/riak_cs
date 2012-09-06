@@ -197,7 +197,7 @@ validate_auth_header(RD, AuthBypass, RiakPid) ->
 %% @doc Produce an access-denied error message from a webmachine
 %% resource's `forbidden/2' function.
 deny_access(RD, Ctx) ->
-    riak_xs_s3_response:api_error(access_denied, RD, Ctx).
+    riak_cs_s3_response:api_error(access_denied, RD, Ctx).
 
 %% @doc Prodice an invalid-access-keyid error message from a
 %% webmachine resource's `forbidden/2' function.

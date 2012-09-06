@@ -13,13 +13,13 @@
          stop/1]).
 
 riak_host_port() ->
-    case application:get_env(riak_moss, riak_ip) of
+    case application:get_env(riak_cs, riak_ip) of
         {ok, Host} ->
             ok;
         undefined ->
             Host = "127.0.0.1"
     end,
-    case application:get_env(riak_moss, riak_pb_port) of
+    case application:get_env(riak_cs, riak_pb_port) of
         {ok, Port} ->
             ok;
         undefined ->

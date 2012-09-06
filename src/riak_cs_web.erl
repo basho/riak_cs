@@ -11,7 +11,7 @@
 -export([dispatch_table/0]).
 
 dispatch_table() ->
-    case application:get_env(riak_moss, auth_bypass) of
+    case application:get_env(riak_cs, auth_bypass) of
         {ok, AuthBypass} ->
             ok;
         undefined ->

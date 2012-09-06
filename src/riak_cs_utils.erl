@@ -74,7 +74,7 @@
 %% environment variable.
 -spec anonymous_user_creation() -> boolean().
 anonymous_user_creation() ->
-    EnvResponse = application:get_env(riak_moss, anonymous_user_creation),
+    EnvResponse = application:get_env(riak_cs, anonymous_user_creation),
     handle_env_response(EnvResponse, false).
 
 %% @doc Convert the passed binary into a string where the numbers are represented in hexadecimal (lowercase and 0 prefilled).
@@ -235,21 +235,21 @@ get_buckets(?RCS_USER{buckets=Buckets}) ->
 %% @doc Return `stanchion' configuration data.
 -spec stanchion_data() -> {string(), pos_integer(), boolean()}.
 stanchion_data() ->
-    case application:get_env(riak_moss, stanchion_ip) of
+    case application:get_env(riak_cs, stanchion_ip) of
         {ok, IP} ->
             ok;
         undefined ->
             _ = lager:warning("No IP address or host name for stanchion access defined. Using default."),
             IP = ?DEFAULT_STANCHION_IP
     end,
-    case application:get_env(riak_moss, stanchion_port) of
+    case application:get_env(riak_cs, stanchion_port) of
         {ok, Port} ->
             ok;
         undefined ->
             _ = lager:warning("No port for stanchion access defined. Using default."),
             Port = ?DEFAULT_STANCHION_PORT
     end,
-    case application:get_env(riak_moss, stanchion_ssl) of
+    case application:get_env(riak_cs, stanchion_ssl) of
         {ok, SSL} ->
             ok;
         undefined ->
@@ -342,8 +342,8 @@ map_keys_and_manifests(Object, _, _) ->
 %% @doc Return the credentials of the admin user
 -spec get_admin_creds() -> {ok, {string(), string()}} | {error, term()}.
 get_admin_creds() ->
-    KeyEnvResult = application:get_env(riak_moss, admin_key),
-    SecretEnvResult = application:get_env(riak_moss, admin_secret),
+    KeyEnvResult = application:get_env(riak_cs, admin_key),
+    SecretEnvResult = application:get_env(riak_cs, admin_secret),
     admin_creds_response(
       handle_env_response(KeyEnvResult, undefined),
       handle_env_response(SecretEnvResult, undefined)).

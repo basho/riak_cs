@@ -74,7 +74,7 @@ ping(RD, Ctx) ->
 
 service_available(RD, #ctx{path_tokens = []} = Ctx) ->
     dt_entry(<<"service_available">>, [], []),
-    case riak_cs_utils:get_env(riak_moss, riak_cs_stat, false) of
+    case riak_cs_utils:get_env(riak_cs, riak_cs_stat, false) of
         false ->
             {false, RD, Ctx};
         true ->

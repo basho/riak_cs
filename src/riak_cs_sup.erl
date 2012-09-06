@@ -36,13 +36,13 @@ start_link() ->
 init([]) ->
     catch dtrace:init(),                   % NIF load trigger (R14B04)
     catch dyntrace:p(),                    % NIF load trigger (R15B01+)
-    case application:get_env(riak_moss, moss_ip) of
+    case application:get_env(riak_cs, cs_ip) of
         {ok, Ip} ->
             ok;
         undefined ->
             Ip = "0.0.0.0"
     end,
-    case application:get_env(riak_moss, moss_port) of
+    case application:get_env(riak_cs, cs_port) of
         {ok, Port} ->
             ok;
         undefined ->
@@ -58,7 +58,7 @@ init([]) ->
                  {log_dir, "log"},
                  {rewrite_module, riak_cs_wm_rewrite},
                  {error_handler, riak_cs_wm_error_handler}],
-    case application:get_env(riak_moss, ssl) of
+    case application:get_env(riak_cs, ssl) of
 
         {ok, SSLOpts} ->
             WebConfig = WebConfig1 ++ [{ssl, true},
@@ -90,7 +90,7 @@ init([]) ->
           {riak_cs_gc_d, start_link, []},
           permanent, 5000, worker, [riak_cs_gc_d]},
 
-    {ok, PoolList} = application:get_env(riak_moss, connection_pools),
+    {ok, PoolList} = application:get_env(riak_cs, connection_pools),
     WorkerStop = fun(Worker) -> riak_cs_riakc_pool_worker:stop(Worker) end,
     PoolSpecs = [{Name,
                   {poolboy, start_link, [[{name, {local, Name}},

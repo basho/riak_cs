@@ -571,7 +571,7 @@ test_link() ->
 
 %% @doc Start the garbage collection server
 test_link(Interval) ->
-    application:set_env(riak_moss, gc_interval, Interval),
+    application:set_env(riak_cs, gc_interval, Interval),
     test_link().
 
 %% @doc Get the current state of the fsm for testing inspection
