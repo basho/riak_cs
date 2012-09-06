@@ -39,44 +39,28 @@ malformed_request(RD, Ctx) ->
 %%      authenticated. Normally with HTTP
 %%      we'd use the `authorized` callback,
 %%      but this is how S3 does things.
-forbidden(RD, Ctx=#context{auth_bypass=AuthBypass,
-                           riakc_pid=RiakPid}) ->
+forbidden(RD, Ctx) ->
     dt_entry(<<"forbidden">>),
-    AuthHeader = wrq:get_req_header("authorization", RD),
-    {AuthMod, KeyId, Signature} =
-        riak_moss_wm_utils:parse_auth_header(AuthHeader, AuthBypass),
-    case riak_moss_utils:get_user(KeyId, RiakPid) of
-        {ok, {User, _}} when User?MOSS_USER.status =:= enabled ->
-            case AuthMod:authenticate(RD, User?MOSS_USER.key_secret, Signature) of
-                ok ->
-                    %% Authentication succeeded
-                    AccessRD = riak_moss_access_logger:set_user(User, RD),
-                    dt_return(<<"forbidden">>, [], [extract_name(User), <<"false">>]),
-                    {false, AccessRD, Ctx#context{user=User}};
-                {error, _Reason} ->
-                    %% Authentication failed, deny access
-                    dt_return(<<"forbidden">>, [403], [extract_name(User), <<"true">>]),
-                    riak_moss_s3_response:api_error(access_denied, RD, Ctx)
-            end;
-        {ok, {User, _}} ->
-            %% Account is disabled, deny access
-            dt_return(<<"forbidden">>, [403], [extract_name(User), <<"true">>]),
-            riak_moss_s3_response:api_error(access_denied, RD, Ctx);
-        {error, no_user_key} ->
-            %% Anonymous access not allowed, deny access
-            dt_return(<<"forbidden">>, [403], [extract_name(KeyId), <<"true">>]),
-            riak_moss_s3_response:api_error(access_denied, RD, Ctx);
-        {error, notfound} ->
-            %% Access not allowed, deny access
-            dt_return(<<"forbidden">>, [403], [extract_name(KeyId), <<"true">>]),
-            riak_moss_s3_response:api_error(invalid_access_key_id, RD, Ctx);
-        {error, Reason} ->
-            %% Access not allowed, deny access and log the reason
-            _ = lager:error("Retrieval of user record for ~p failed. Reason: ~p", [KeyId, Reason]),
-            Code = riak_moss_s3_response:status_code(Reason),
-            dt_return(<<"forbidden">>, [Code], [extract_name(KeyId), <<"true">>]),
-            riak_moss_s3_response:api_error(invalid_access_key_id, RD, Ctx)
+    case riak_moss_wm_utils:find_and_auth_user(RD, Ctx, fun auth_complete/2) of
+        {false, _RD2, Ctx2} = FalseRet ->
+            dt_return(<<"forbidden">>, [], [extract_name(Ctx2#context.user), <<"false">>]),
+            FalseRet;
+        {Rsn, _RD2, Ctx2} = Ret ->
+            Reason = case Rsn of
+                         {halt, Code} -> Code;
+                         _            -> -1
+                     end,
+            dt_return(<<"forbidden">>, [Reason], [extract_name(Ctx2#context.user), <<"true">>]),
+            Ret
     end.
+
+%% @doc This function will be called by
+%% `riak_moss_wm_utils:find_and_auth_user' if the user is successfully
+%% autenticated. ACLs are not applicaable to service-level requests so
+%% we just return a tuple indicating that the request may proceed.
+-spec auth_complete(term(), term()) -> {false, term(), term()}.
+auth_complete(RD, Ctx) ->
+    {false, RD, Ctx}.
 
 %% @doc Get the list of methods this resource supports.
 -spec allowed_methods(term(), term()) -> {[atom()], term(), term()}.

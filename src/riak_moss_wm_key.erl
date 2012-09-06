@@ -68,7 +68,7 @@ forbidden(RD, #key_context{context=ICtx}=Ctx) ->
                    get_access_and_manifest(NewRD, Ctx#key_context{context=NewICtx})
            end,
     Conv2KeyCtx = fun(NewICtx) -> Ctx#key_context{context=NewICtx} end,
-    case riak_moss_wm_utils:find_and_auth_user(RD, ICtx, Next, Conv2KeyCtx) of
+    case riak_moss_wm_utils:find_and_auth_user(RD, ICtx, Next, Conv2KeyCtx, true) of
         {false, _RD2, Ctx2} = FalseRet ->
             dt_return(<<"forbidden">>, [], [extract_name((Ctx2#key_context.context)#context.user), <<"false">>]),
             FalseRet;
