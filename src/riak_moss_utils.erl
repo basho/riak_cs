@@ -109,11 +109,11 @@ close_riak_connection(Pool, Pid) ->
 -spec create_bucket(moss_user(), term(), binary(), acl(), pid()) ->
                            ok |
                            {error, term()}.
-create_bucket(User, VClock, Bucket, ACL, RiakPid) ->
+create_bucket(User, UserObj, Bucket, ACL, RiakPid) ->
     serialized_bucket_op(Bucket,
                          ACL,
                          User,
-                         VClock,
+                         UserObj,
                          create,
                          bucket_create,
                          RiakPid).
@@ -158,10 +158,10 @@ create_user(Name, Email) ->
     end.
 
 %% @doc Delete a bucket
--spec delete_bucket(moss_user(), term(), binary(), pid()) ->
+-spec delete_bucket(moss_user(), riakc_obj:riakc_obj(), binary(), pid()) ->
                            ok |
                            {error, term()}.
-delete_bucket(User, VClock, Bucket, RiakPid) ->
+delete_bucket(User, UserObj, Bucket, RiakPid) ->
     CurrentBuckets = get_buckets(User),
 
     %% Buckets can only be deleted if they exist
@@ -184,7 +184,7 @@ delete_bucket(User, VClock, Bucket, RiakPid) ->
             serialized_bucket_op(Bucket,
                                  ?ACL{},
                                  User,
-                                 VClock,
+                                 UserObj,
                                  delete,
                                  bucket_delete,
                                  RiakPid);
@@ -387,11 +387,11 @@ get_manifests(RiakcPid, Bucket, Key) ->
     end.
 
 %% @doc Retrieve a MOSS user's information based on their id string.
--spec get_user('undefined' | list(), pid()) -> {ok, {moss_user(), riakc_obj:vclock()}} | {error, term()}.
+-spec get_user('undefined' | list(), pid()) -> {ok, {moss_user(), riakc_obj:riakc_obj()}} | {error, term()}.
 get_user(undefined, _RiakPid) ->
     {error, no_user_key};
 get_user(KeyId, RiakPid) ->
-    %% @TODO Check for an resolve siblings to get a
+    %% Check for and resolve siblings to get a
     %% coherent view of the bucket ownership.
     BinKey = list_to_binary(KeyId),
     case fetch_user(BinKey, RiakPid) of
@@ -400,7 +400,7 @@ get_user(KeyId, RiakPid) ->
                 1 ->
                     Value = binary_to_term(riakc_obj:get_value(Obj)),
                     User = update_user_record(Value),
-                    {ok, {User, riakc_obj:vclock(Obj)}};
+                    {ok, {User, Obj}};
                 0 ->
                     {error, no_value};
                 _ ->
@@ -408,7 +408,7 @@ get_user(KeyId, RiakPid) ->
                                  Value <- riakc_obj:get_values(Obj)],
                     User = update_user_record(hd(Values)),
                     Buckets = resolve_buckets(Values, [], KeepDeletedBuckets),
-                    {ok, {User?RCS_USER{buckets=Buckets}, riakc_obj:vclock(Obj)}}
+                    {ok, {User?RCS_USER{buckets=Buckets}, Obj}}
             end;
         Error ->
             Error
@@ -555,33 +555,25 @@ riak_connection(Pool) ->
     end.
 
 %% @doc Save information about a MOSS user
--spec save_user(moss_user(), term(), pid()) -> ok.
-save_user(User, VClock, RiakPid) ->
-    UserObj0 = riakc_obj:new(?USER_BUCKET,
-                             list_to_binary(User?MOSS_USER.key_id),
-                             term_to_binary(User)),
-    case VClock of
-        undefined ->
-            UserObj1 = UserObj0;
-        _ ->
-            UserObj1 = riakc_obj:set_vclock(UserObj0, VClock)
-    end,
-    Indexes = [{?EMAIL_INDEX, User?MOSS_USER.email},
-               {?ID_INDEX, User?MOSS_USER.canonical_id}],
-    Meta = dict:store(?MD_INDEX, Indexes, dict:new()),
-    UserObj = riakc_obj:update_metadata(UserObj1, Meta),
-
+-spec save_user(moss_user(), riakc_obj:riakc_obj(), pid()) -> ok.
+save_user(User, UserObj, RiakPid) ->
+    %% Metadata is currently never updated so if there
+    %% are siblings all copies should be the same
+    [MD | _] = riakc_obj:get_metadatas(UserObj),
+    UpdUserObj = riakc_obj:update_metadata(
+                   riakc_obj:update_value(UserObj, term_to_binary(User)),
+                   MD),
     %% @TODO Error handling
-    riakc_pb_socket:put(RiakPid, UserObj).
+    riakc_pb_socket:put(RiakPid, UpdUserObj).
 
 %% @doc Set the ACL for a bucket. Existing ACLs are only
 %% replaced, they cannot be updated.
--spec set_bucket_acl(moss_user(), term(), binary(), acl(), pid()) -> ok | {error, term()}.
-set_bucket_acl(User, VClock, Bucket, ACL, RiakPid) ->
+-spec set_bucket_acl(moss_user(), riakc_obj:riakc_obj(), binary(), acl(), pid()) -> ok | {error, term()}.
+set_bucket_acl(User, UserObj, Bucket, ACL, RiakPid) ->
     serialized_bucket_op(Bucket,
                          ACL,
                          User,
-                         VClock,
+                         UserObj,
                          update_acl,
                          bucket_put_acl,
                          RiakPid).
@@ -955,13 +947,13 @@ resolve_buckets([HeadUserRec | RestUserRecs], Buckets, _KeepDeleted) ->
 -spec serialized_bucket_op(binary(),
                            acl(),
                            moss_user(),
-                           term(),
+                           riakc_obj:riakc_obj(),
                            bucket_operation(),
                            atom(),
                            pid()) ->
                                   ok |
                                   {error, term()}.
-serialized_bucket_op(Bucket, ACL, User, VClock, BucketOp, StatName, RiakPid) ->
+serialized_bucket_op(Bucket, ACL, User, UserObj, BucketOp, StatName, RiakPid) ->
     StartTime = os:timestamp(),
     case get_admin_creds() of
         {ok, AdminCreds} ->
@@ -985,7 +977,7 @@ serialized_bucket_op(Bucket, ACL, User, VClock, BucketOp, StatName, RiakPid) ->
                         {ok, ignore} ->
                             OpResult;
                         {ok, UpdUser} ->
-                            X = save_user(UpdUser, VClock, RiakPid),
+                            X = save_user(UpdUser, UserObj, RiakPid),
                             ok = riak_cs_stats:update_with_start(StatName,
                                                                  StartTime),
                             X
@@ -1020,7 +1012,7 @@ user_json(User) ->
                                     {<<"canonical_id">>, list_to_binary(CanonicalId)}
                                    ]}))).
 
-%% @doc Validate an email address.
+%% @doc Vlidate an email address.
 -spec validate_email(string()) -> ok | {error, term()}.
 validate_email(EmailAddr) ->
     %% @TODO More robust email address validation

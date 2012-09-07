@@ -43,7 +43,7 @@
 -record(context, {start_time :: erlang:timestamp(),
                   auth_bypass :: atom(),
                   user :: moss_user(),
-                  user_vclock :: term(),
+                  user_object :: riakc_obj:riakc_obj(),
                   bucket :: binary(),
                   requested_perm :: acl_perm(),
                   riakc_pid :: pid()

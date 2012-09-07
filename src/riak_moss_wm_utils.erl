@@ -103,7 +103,7 @@ parse_auth_params(KeyId, Signature, _) ->
 %% @doc Lookup the user specified by the access headers, and call
 %% `Next(RD, NewCtx)' if there is no auth error.
 %%
-%% If a user was successfully authed, the `user' and `user_vclock'
+%% If a user was successfully authed, the `user' and `user_object'
 %% fields in the `#context' record passed to `Next' will be filled.
 %% If the access is instead anonymous, those fields will be left as
 %% they were passed to this function.
@@ -132,10 +132,10 @@ find_and_auth_user(RD,
       Conv2KeyCtx,
       AnonymousOk).
 
-handle_validation_response({ok, User, Vclock}, RD, Ctx, Next, _, _) ->
+handle_validation_response({ok, User, UserObj}, RD, Ctx, Next, _, _) ->
     %% given keyid and signature matched, proceed
     Next(RD, Ctx#context{user=User,
-                         user_vclock=Vclock});
+                         user_object=UserObj});
 handle_validation_response({error, no_user_key}, RD, Ctx, Next, _, true) ->
     %% no keyid was given, proceed anonymously
     Next(RD, Ctx);
@@ -150,10 +150,10 @@ handle_validation_response({error, _Reason}, RD, Ctx, _, Conv2KeyCtx, _) ->
     deny_invalid_key(RD, Conv2KeyCtx(Ctx)).
 
 %% @doc Look for an Authorization header in the request, and validate
-%% it if it exists.  Returns `{ok, User, UserVclock}' if validation
+%% it if it exists.  Returns `{ok, User, UserObj}' if validation
 %% succeeds, or `{error, KeyId, Reason}' if any step fails.
 -spec validate_auth_header(#wm_reqdata{}, term(), pid()) ->
-                                  {ok, moss_user(), riakc_obj:vclock()} |
+                                  {ok, moss_user(), riakc_obj:riakc_obj()} |
                                   {error, bad_auth | notfound | no_user_key | term()}.
 validate_auth_header(RD, AuthBypass, RiakPid) ->
     AuthHeader = wrq:get_req_header("authorization", RD),
@@ -169,11 +169,11 @@ validate_auth_header(RD, AuthBypass, RiakPid) ->
             {AuthMod, KeyId, Signature} = parse_auth_header(AuthHeader, AuthBypass)
     end,
     case riak_moss_utils:get_user(KeyId, RiakPid) of
-        {ok, {User, UserVclock}} when User?MOSS_USER.status =:= enabled ->
+        {ok, {User, UserObj}} when User?MOSS_USER.status =:= enabled ->
             Secret = User?MOSS_USER.key_secret,
             case AuthMod:authenticate(RD, Secret, Signature) of
                 ok ->
-                    {ok, User, UserVclock};
+                    {ok, User, UserObj};
                 {error, _Reason} ->
                     %% TODO: are the errors here of small enough
                     %% number that we could just handle them in

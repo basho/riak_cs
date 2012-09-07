@@ -241,8 +241,8 @@ get_user(AdminCheckResult, _) ->
                              term()) ->
                                     {boolean() | {halt, term()}, term(), term()}.
 
-handle_get_user_result({ok, {User, _}}, RD, Ctx) ->
-    {false, RD, Ctx#context{user=User}};
+handle_get_user_result({ok, {User, UserObj}}, RD, Ctx) ->
+    {false, RD, Ctx#context{user=User, user_object=UserObj}};
 handle_get_user_result({error, Reason}, RD, Ctx) ->
     _ = lager:warning("Failed to fetch user record. KeyId: ~p"
                       " Reason: ~p", [user_key(RD), Reason]),
@@ -276,10 +276,10 @@ handle_update_result({false, _User}, RD, Ctx) ->
     ContentType = wrq:get_resp_header("Content-Type", RD),
     {{halt, 200}, set_resp_data(ContentType, RD, Ctx), Ctx};
 handle_update_result({true, User}, RD, Ctx) ->
-    #context{user_vclock=VClock,
+    #context{user_object=UserObj,
              riakc_pid=RiakPid} = Ctx,
     handle_save_user_result(
-      riak_moss_utils:save_user(User, VClock, RiakPid), User, RD, Ctx).
+      riak_moss_utils:save_user(User, UserObj, RiakPid), User, RD, Ctx).
 
 -spec handle_save_user_result(ok | {error, term()}, rcs_user(), term(), term()) ->
     {boolean() | {halt, term()}, term(), term()}.
