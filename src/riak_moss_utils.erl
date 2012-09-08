@@ -1012,7 +1012,7 @@ user_json(User) ->
                                     {<<"canonical_id">>, list_to_binary(CanonicalId)}
                                    ]}))).
 
-%% @doc Vlidate an email address.
+%% @doc Validate an email address.
 -spec validate_email(string()) -> ok | {error, term()}.
 validate_email(EmailAddr) ->
     %% @TODO More robust email address validation
