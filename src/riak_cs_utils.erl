@@ -1106,17 +1106,17 @@ user_record(Name, Email, Buckets) ->
 %% store the value in app:set_env
 -spec get_cluster_id(pid()) -> binary().
 get_cluster_id(Pid) ->
-    case application:get_env(riak_moss, cluster_id) of
+    case application:get_env(riak_cs, cluster_id) of
         {ok, ClusterID} ->
             ClusterID;
         undefined ->
-            Timeout = case application:get_env(riak_moss,cluster_id_timeout) of
+            Timeout = case application:get_env(riak_cs,cluster_id_timeout) of
                           {ok, Value} -> Value;
                           undefined   -> ?DEFAULT_CLUSTER_ID_TIMEOUT
                       end,
             case riak_repl_pb_api:get_clusterid(Pid, Timeout) of
                 {ok, ClusterID} ->
-                    application:set_env(riak_moss, cluster_id, ClusterID),
+                    application:set_env(riak_cs, cluster_id, ClusterID),
                     ClusterID;
                 _ ->
                     lager:debug("Unable to obtain cluster ID"),
@@ -1127,7 +1127,7 @@ get_cluster_id(Pid) ->
 %% doc Check app.config to see if repl proxy_get is enabled
 %% Defaults to false.
 proxy_get_active() ->
-    case application:get_env(riak_moss, proxy_get) of
+    case application:get_env(riak_cs, proxy_get) of
         {ok, enabled} ->
             true;
         {ok, disabled} ->

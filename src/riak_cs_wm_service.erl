@@ -55,7 +55,7 @@ forbidden(RD, Ctx) ->
     end.
 
 %% @doc This function will be called by
-%% `riak_moss_wm_utils:find_and_auth_user' if the user is successfully
+%% `riak_cs_wm_utils:find_and_auth_user' if the user is successfully
 %% autenticated. ACLs are not applicaable to service-level requests so
 %% we just return a tuple indicating that the request may proceed.
 -spec auth_complete(term(), term()) -> {false, term(), term()}.

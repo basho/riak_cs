@@ -337,7 +337,7 @@ prepare(State=#state{bucket=Bucket,
     UUID = druuid:v4(),
 
     %% for now, always populate cluster_id
-    ClusterID = riak_moss_utils:get_cluster_id(RiakPid),
+    ClusterID = riak_cs_utils:get_cluster_id(RiakPid),
     Manifest =
         riak_cs_lfs_utils:new_manifest(Bucket,
                                          Key,

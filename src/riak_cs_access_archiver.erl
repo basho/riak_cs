@@ -112,7 +112,7 @@ status(Timeout) ->
 
 init([]) ->
     MaxBacklog = case application:get_env(
-                        riak_moss, access_archiver_max_backlog) of
+                        riak_cs, access_archiver_max_backlog) of
                      {ok, MB} when is_integer(MB) -> MB;
                      _ ->
                          _ = lager:warning(
