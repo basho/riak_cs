@@ -93,8 +93,8 @@ handle_cast({get_block, _From, Bucket, Key, UUID, BlockNumber}, #state{caller_pi
     {noreply, State};
 handle_cast({get_block, _From, Bucket, Key, _CLusterID, UUID, BlockNumber}, #state{caller_pid=CallerPid}=State) ->
     FakeData = <<BlockNumber:32/integer>>,
-    RiakObject = riakc_obj:new_obj(Bucket,riak_moss_lfs_utils:block_name(Key, UUID, BlockNumber), [], [{dict:new(),FakeData}]),
-    riak_moss_get_fsm:chunk(CallerPid, BlockNumber, {ok, RiakObject}),
+    RiakObject = riakc_obj:new_obj(Bucket,riak_cs_lfs_utils:block_name(Key, UUID, BlockNumber), [], [{dict:new(),FakeData}]),
+    riak_cs_get_fsm:chunk(CallerPid, BlockNumber, {ok, RiakObject}),
     {noreply, State};
 handle_cast(Event, State) ->
     lager:warning("Received unknown cast event: ~p", [Event]),
