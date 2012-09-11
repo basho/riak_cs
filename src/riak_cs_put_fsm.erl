@@ -42,7 +42,7 @@
                 caller :: reference(),
                 md5 :: binary(),
                 reply_pid :: {pid(), reference()},
-                mani_pid :: pid(),
+                mani_pid :: undefined | pid(),
                 riakc_pid :: pid(),
                 timer_ref :: reference(),
                 bucket :: binary(),
@@ -57,7 +57,7 @@
                 current_buffer_size=0 :: non_neg_integer(),
                 buffer_queue=[] :: [binary()], %% not actually a queue, but we treat it like one
                 remainder_data :: undefined | binary(),
-                free_writers :: ordsets:ordset(pid()),
+                free_writers :: undefined | ordsets:ordset(pid()),
                 unacked_writes=ordsets:new() :: ordsets:ordset(non_neg_integer()),
                 next_block_id=0 :: non_neg_integer(),
                 all_writer_pids=[] :: list(pid())}).
@@ -292,8 +292,8 @@ handle_info({'DOWN', CallerRef, process, _Pid, Reason}, _StateName, State=#state
 %%--------------------------------------------------------------------
 terminate(_Reason, _StateName, #state{mani_pid=ManiPid,
                                       all_writer_pids=BlockServerPids}) ->
-    riak_cs_manifest_fsm:stop(ManiPid),
-    _ = [riak_cs_block_server:stop(P) || P <- BlockServerPids],
+    maybe_stop_manifest_fsm(ManiPid),
+    maybe_stop_block_servers(BlockServerPids),
     ok.
 
 %%--------------------------------------------------------------------
@@ -550,3 +550,17 @@ handle_receiving_last_chunk(NewData, State=#state{buffer_queue=BufferQueue,
 
     Reply = ok,
     {reply, Reply, all_received, NewStateData}.
+
+-spec maybe_stop_manifest_fsm(undefined | pid()) -> ok.
+maybe_stop_manifest_fsm(undefined) ->
+    ok;
+maybe_stop_manifest_fsm(ManiPid) ->
+    riak_moss_manifest_fsm:stop(ManiPid),
+    ok.
+
+-spec maybe_stop_block_servers(undefined | pid()) -> ok.
+maybe_stop_block_servers(undefined) ->
+    ok;
+maybe_stop_block_servers(BlockServerPids) ->
+    _ = [riak_moss_block_server:stop(P) || P <- BlockServerPids],
+    ok.
