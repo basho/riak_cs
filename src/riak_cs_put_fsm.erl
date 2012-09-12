@@ -555,12 +555,12 @@ handle_receiving_last_chunk(NewData, State=#state{buffer_queue=BufferQueue,
 maybe_stop_manifest_fsm(undefined) ->
     ok;
 maybe_stop_manifest_fsm(ManiPid) ->
-    riak_moss_manifest_fsm:stop(ManiPid),
+    riak_cs_manifest_fsm:stop(ManiPid),
     ok.
 
 -spec maybe_stop_block_servers(undefined | pid()) -> ok.
 maybe_stop_block_servers(undefined) ->
     ok;
 maybe_stop_block_servers(BlockServerPids) ->
-    _ = [riak_moss_block_server:stop(P) || P <- BlockServerPids],
+    _ = [riak_cs_block_server:stop(P) || P <- BlockServerPids],
     ok.
