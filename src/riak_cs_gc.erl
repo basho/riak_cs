@@ -8,7 +8,7 @@
 
 -module(riak_cs_gc).
 
--include("riak_moss.hrl").
+-include("riak_cs.hrl").
 -ifdef(TEST).
 -compile(export_all).
 -include_lib("eunit/include/eunit.hrl").
@@ -47,7 +47,7 @@ gc_manifests(Bucket, Key, Manifests, UUIDsToMark, RiakObject, RiakcPid) ->
 %% collection of a set of files before starting the next.
 -spec gc_interval() -> non_neg_integer().
 gc_interval() ->
-    case application:get_env(riak_moss, gc_interval) of
+    case application:get_env(riak_cs, gc_interval) of
         undefined ->
             ?DEFAULT_GC_INTERVAL;
         {ok, Interval} ->
@@ -58,7 +58,7 @@ gc_interval() ->
 %% `pending_delete' manifest for garbage collection.
 -spec gc_retry_interval() -> non_neg_integer().
 gc_retry_interval() ->
-    case application:get_env(riak_moss, gc_retry_interval) of
+    case application:get_env(riak_cs, gc_retry_interval) of
         undefined ->
             ?DEFAULT_GC_RETRY_INTERVAL;
         {ok, RetryInterval} ->
@@ -70,7 +70,7 @@ gc_retry_interval() ->
 %% from the `riak-cs-gc' bucket.
 -spec epoch_start() -> binary().
 epoch_start() ->
-    case application:get_env(riak_moss, epoch_start) of
+    case application:get_env(riak_cs, epoch_start) of
         undefined ->
             ?EPOCH_START;
         {ok, EpochStart} ->
@@ -81,7 +81,7 @@ epoch_start() ->
 %% the `scheduled_delete' state before being garbage collected.
 -spec leeway_seconds() -> non_neg_integer().
 leeway_seconds() ->
-    case application:get_env(riak_moss, leeway_seconds) of
+    case application:get_env(riak_cs, leeway_seconds) of
         undefined ->
             ?DEFAULT_LEEWAY_SECONDS;
         {ok, LeewaySeconds} ->
@@ -91,7 +91,7 @@ leeway_seconds() ->
 %% @doc Generate a key for storing a set of manifests for deletion.
 -spec timestamp() -> non_neg_integer().
 timestamp() ->
-    riak_moss_utils:timestamp(os:timestamp()).
+    riak_cs_utils:timestamp(os:timestamp()).
 
 %%%===================================================================
 %%% Internal functions
@@ -108,7 +108,7 @@ mark_as_pending_delete(Manifests, UUIDsToMark, RiakObject, RiakcPid) ->
 %% @doc Mark a list of manifests as `scheduled_delete' based upon the
 %% UUIDs specified.
 mark_as_scheduled_delete(ok, Bucket, Key, UUIDsToMark, RiakcPid) ->
-    Manifests = riak_moss_utils:get_manifests(RiakcPid, Bucket, Key),
+    Manifests = riak_cs_utils:get_manifests(RiakcPid, Bucket, Key),
     {Result, _} = mark_manifests(Manifests,
                                  UUIDsToMark,
                                  fun riak_cs_manifest_utils:mark_scheduled_delete/2,
@@ -123,7 +123,7 @@ mark_as_scheduled_delete({error, _}=Error, _, _, _, _) ->
 mark_manifests({ok, RiakObject, Manifests}, UUIDsToMark, ManiFunction, RiakcPid) ->
     Marked = ManiFunction(Manifests, UUIDsToMark),
     UpdObj = riakc_obj:update_value(RiakObject, term_to_binary(Marked)),
-    PutResult = riak_moss_utils:put_with_no_meta(RiakcPid, UpdObj),
+    PutResult = riak_cs_utils:put_with_no_meta(RiakcPid, UpdObj),
     {PutResult, Marked};
 mark_manifests({error, _Reason}=Error, _, _, _) ->
     Error.
@@ -162,7 +162,7 @@ move_manifests_to_gc_bucket(Manifests, RiakcPid) ->
 
     %% Create a set from the list of manifests
     _ = lager:debug("Manifests scheduled for deletion: ~p", [ManifestSet]),
-    riak_moss_utils:put_with_no_meta(RiakcPid, ObjectToWrite).
+    riak_cs_utils:put_with_no_meta(RiakcPid, ObjectToWrite).
 
 -spec build_manifest_set([lfs_manifest()]) -> twop_set:twop_set().
 build_manifest_set(Manifests) ->
@@ -182,7 +182,7 @@ generate_key() ->
       twop_set:twop_set().
 decode_and_merge_siblings(Obj, OtherManifestSets) ->
     Some = [binary_to_term(V) || {_, V}=Content <- riakc_obj:get_contents(Obj),
-                                 not riak_moss_utils:has_tombstone(Content)],
+                                 not riak_cs_utils:has_tombstone(Content)],
     twop_set:resolve([OtherManifestSets | Some]).
 
 %% ===================================================================

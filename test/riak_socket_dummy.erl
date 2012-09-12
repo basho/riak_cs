@@ -5,8 +5,8 @@
 %% -------------------------------------------------------------------
 
 %% @doc Module to mirror the API of `riakc_pb_socket' so
-%% to facilitate testing of the `riak_moss_writer' and
-%% `riak_moss_deleter' modules.
+%% to facilitate testing of the `riak_cs_writer' and
+%% `riak_cs_deleter' modules.
 
 -module(riak_socket_dummy).
 
@@ -23,4 +23,3 @@ get(_Pid, Bucket, Key) ->
 -spec put(pid(), term()) -> ok.
 put(_Pid, _Obj) ->
     ok.
-

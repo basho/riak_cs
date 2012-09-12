@@ -1,12 +1,8 @@
-* riak_moss
+* riak_cs
 ** Overview
-Riak Multi-tenant Object Storage System (MOSS) is an Erlang
-application that provides an S3 type interface onto Riak.
-
+Riak Cloud Storage (Riak CS) is an Erlang application that provides an
+S3 interface onto Riak.
 
 ** Quick Start
-   You must have [[http://erlang.org/download.html][Erlang/OTP R14B02]] or later and a GNU-style build
-   system to compile and run =riak_moss=.
-
-   *TODO*
-
+   You must have [[http://erlang.org/download.html][Erlang/OTP R14B03]] or later and a GNU-style build
+   system to compile and run =riak_cs=.

@@ -189,12 +189,12 @@ iso8601({{Y,M,D},{H,I,S}}) ->
 %% bucket.  A warning is printed in the logs if this operation fails.
 -spec check_bucket_props(binary()) -> ok | {error, term()}.
 check_bucket_props(Bucket) ->
-    case riak_moss_utils:riak_connection() of
+    case riak_cs_utils:riak_connection() of
         {ok, Riak} ->
             try
                 check_bucket_props(Bucket, Riak)
             after
-                riak_moss_utils:close_riak_connection(Riak)
+                riak_cs_utils:close_riak_connection(Riak)
             end;
         {error, Reason} ->
             _ = lager:warning(
@@ -246,11 +246,11 @@ iso8601_roundtrip_prop() ->
     %% iso8601 & datetime don't actually care if the date was valid,
     %% but writing a valid generator was fun
 
-    %% datetime/1 is exported from riak_moss_wm_usage when TEST and
+    %% datetime/1 is exported from riak_cs_wm_usage when TEST and
     %% EQC are defined
     ?FORALL(T, datetime_g(),
             is_binary(iso8601(T)) andalso
-                {ok, T} == riak_moss_wm_usage:datetime(iso8601(T))).
+                {ok, T} == riak_cs_wm_usage:datetime(iso8601(T))).
 
 
 slice_containing_test() ->
@@ -262,7 +262,7 @@ slice_containing_prop() ->
     ?FORALL({T, I}, {datetime_g(), valid_period_g()},
             begin
                 {S, {_,ET}=E} = slice_containing(T, I),
-                
+
                 ?WHENFAIL(
                    io:format(user, "Containing slice: {~p, ~p}~n", [S, E]),
                    %% slice actually surrounds time
@@ -351,7 +351,7 @@ make_object_prop() ->
                 {Start, End} = list_to_tuple(lists:sort([T0, T1])),
                 {SliceStart,_} = slice_containing(Start, Period),
                 Obj = new_sample(Bucket, Postfix, Start, End, Period, []),
-                
+
                 {struct, MJ} = mochijson2:decode(
                                  riakc_obj:get_update_value(Obj)),
 
@@ -376,7 +376,7 @@ make_object_prop() ->
             end).
 
 string_g() ->
-    ?LET(L, ?SUCHTHAT(X, list(char()), X /= []), list_to_binary(L)).    
+    ?LET(L, ?SUCHTHAT(X, list(char()), X /= []), list_to_binary(L)).
 
 %% generate a valid datetime tuple; years are 1970-2200, to keep them
 %% more relevant-ish

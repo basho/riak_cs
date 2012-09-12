@@ -8,7 +8,7 @@
 
 -module(riak_cs_gc_d_eqc).
 
--include("riak_moss.hrl").
+-include("riak_cs.hrl").
 -include("riak_cs_gc_d.hrl").
 
 -ifdef(EQC).
@@ -115,8 +115,8 @@ prop_status() ->
     ?FORALL({Interval, Last, Next,
              Start, Count,
              Skips, Batch},
-            {eqc_gen:int(), moss_gen:datetime(),
-             moss_gen:datetime(), eqc_gen:int(), eqc_gen:int(),
+            {eqc_gen:int(), riak_cs_gen:datetime(),
+             riak_cs_gen:datetime(), eqc_gen:int(), eqc_gen:int(),
              eqc_gen:int(), eqc_gen:list(eqc_gen:int())},
             begin
                 State = #state{interval=Interval,
