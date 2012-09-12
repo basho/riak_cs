@@ -4,18 +4,18 @@
 %%
 %% -------------------------------------------------------------------
 
-%% @doc Log access to Riak MOSS.  This is where I/O stats are
+%% @doc Log access to Riak CS.  This is where I/O stats are
 %% computed and recorded.
 %%
 %% I/O stats are expected as notes in the webmachine log data, with
 %% keys of the form `{access, KEY}'.  I/O stats are only logged if a
 %% note is included with the key `user' and a value that is a
-%% `#moss_user{}' record.
+%% `#rcs_user_v2{}' record.
 %%
 %% That is, to log I/O stats for a request, call
 %%
 %% ```
-%% wrq:add_note({access, user}, User=#moss_user{}, RD)
+%% wrq:add_note({access, user}, User=#rcs_user_v2{}, RD)
 %% '''
 %%
 %% somewhere in your resource.  To add another stat, for instance
@@ -76,7 +76,7 @@
 -define(EXPECT_BYTES_OUT, expect_bytes_out).
 -define(BYTES_IN, bytes_in).
 
-%% @doc Set the MOSS user for this request.  Stats are not recorded if
+%% @doc Set the Riak CS user for this request.  Stats are not recorded if
 %% the user is not set.
 set_user(KeyID, RD) when is_list(KeyID) ->
     wrq:add_note(?STAT(user), KeyID, RD);

@@ -117,7 +117,7 @@ merge_stats(Stats, Acc) ->
 
 %% @doc Produce a usage compilation for the given `User' between
 %% `Start' and `End' times, inclusive.  The result is an orddict in
-%% which the keys are MOSS node names.  The value for each key is a
+%% which the keys are Riak CS node names.  The value for each key is a
 %% list of samples.  Each sample is an orddict full of metrics.
 -spec get_usage(pid(),
                 term(), %% TODO: riak_cs:user_key() type doesn't exist

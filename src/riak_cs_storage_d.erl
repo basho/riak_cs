@@ -4,7 +4,7 @@
 %%
 %% -------------------------------------------------------------------
 
-%% @doc The daemon that calculates moss storage on the configured
+%% @doc The daemon that calculates Riak CS storage on the configured
 %% schedule.
 
 -module(riak_cs_storage_d).
@@ -328,7 +328,7 @@ start_batch(Options, Time, State) ->
                 batch_skips=0,
                 recalc=Recalc}.
 
-%% @doc Grab the whole list of MOSS users.
+%% @doc Grab the whole list of Riak CS users.
 fetch_user_list(Riak) ->
     case riakc_pb_socket:list_keys(Riak, ?USER_BUCKET) of
         {ok, Users} -> Users;

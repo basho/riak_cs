@@ -153,7 +153,7 @@ handle_validation_response({error, _Reason}, RD, Ctx, _, Conv2KeyCtx, _) ->
 %% it if it exists.  Returns `{ok, User, UserObj}' if validation
 %% succeeds, or `{error, KeyId, Reason}' if any step fails.
 -spec validate_auth_header(#wm_reqdata{}, term(), pid()) ->
-                                  {ok, moss_user(), riakc_obj:riakc_obj()} |
+                                  {ok, rcs_user(), riakc_obj:riakc_obj()} |
                                   {error, bad_auth | notfound | no_user_key | term()}.
 validate_auth_header(RD, AuthBypass, RiakPid) ->
     AuthHeader = wrq:get_req_header("authorization", RD),

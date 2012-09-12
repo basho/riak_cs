@@ -106,7 +106,7 @@ close_riak_connection(Pool, Pid) ->
 
 %% @doc Create a bucket in the global namespace or return
 %% an error if it already exists.
--spec create_bucket(moss_user(), term(), binary(), acl(), pid()) ->
+-spec create_bucket(rcs_user(), term(), binary(), acl(), pid()) ->
                            ok |
                            {error, term()}.
 create_bucket(User, UserObj, Bucket, ACL, RiakPid) ->
@@ -118,8 +118,8 @@ create_bucket(User, UserObj, Bucket, ACL, RiakPid) ->
                          bucket_create,
                          RiakPid).
 
-%% @doc Create a new MOSS user
--spec create_user(string(), string()) -> {ok, moss_user()} | {error, term()}.
+%% @doc Create a new Riak CS user
+-spec create_user(string(), string()) -> {ok, rcs_user()} | {error, term()}.
 create_user(Name, Email) ->
     %% Validate the email address
     case validate_email(Email) of
@@ -158,7 +158,7 @@ create_user(Name, Email) ->
     end.
 
 %% @doc Delete a bucket
--spec delete_bucket(moss_user(), riakc_obj:riakc_obj(), binary(), pid()) ->
+-spec delete_bucket(rcs_user(), riakc_obj:riakc_obj(), binary(), pid()) ->
                            ok |
                            {error, term()}.
 delete_bucket(User, UserObj, Bucket, RiakPid) ->
@@ -211,7 +211,7 @@ delete_object(Bucket, Key, RiakcPid) ->
             Error
     end.
 
-%% Get the root bucket name for either a MOSS object
+%% Get the root bucket name for either a Riak CS object
 %% bucket or the data block bucket name.
 -spec from_bucket_name(binary()) -> {'blocks' | 'objects', binary()}.
 from_bucket_name(BucketNameWithPrefix) ->
@@ -228,7 +228,7 @@ from_bucket_name(BucketNameWithPrefix) ->
     end.
 
 %% @doc Return a user's buckets.
--spec get_buckets(moss_user()) -> [cs_bucket()].
+-spec get_buckets(rcs_user()) -> [cs_bucket()].
 get_buckets(?RCS_USER{buckets=Buckets}) ->
     [Bucket || Bucket <- Buckets, Bucket?RCS_BUCKET.last_action /= deleted].
 
@@ -386,8 +386,8 @@ get_manifests(RiakcPid, Bucket, Key) ->
             NotFound
     end.
 
-%% @doc Retrieve a MOSS user's information based on their id string.
--spec get_user('undefined' | list(), pid()) -> {ok, {moss_user(), riakc_obj:riakc_obj()}} | {error, term()}.
+%% @doc Retrieve a Riak CS user's information based on their id string.
+-spec get_user('undefined' | list(), pid()) -> {ok, {rcs_user(), riakc_obj:riakc_obj()}} | {error, term()}.
 get_user(undefined, _RiakPid) ->
     {error, no_user_key};
 get_user(KeyId, RiakPid) ->
@@ -414,11 +414,11 @@ get_user(KeyId, RiakPid) ->
             Error
     end.
 
-%% @doc Retrieve a MOSS user's information based on their
+%% @doc Retrieve a Riak CS user's information based on their
 %% canonical id string.
 %% @TODO May want to use mapreduce job for this.
 -spec get_user_by_index(binary(), binary(), pid()) ->
-                               {ok, {moss_user(), term()}} |
+                               {ok, {rcs_user(), term()}} |
                                {error, term()}.
 get_user_by_index(Index, Value, RiakPid) ->
     case get_user_index(Index, Value, RiakPid) of
@@ -554,8 +554,8 @@ riak_connection(Pool) ->
             {ok, Worker}
     end.
 
-%% @doc Save information about a MOSS user
--spec save_user(moss_user(), riakc_obj:riakc_obj(), pid()) -> ok.
+%% @doc Save information about a Riak CS user
+-spec save_user(rcs_user(), riakc_obj:riakc_obj(), pid()) -> ok.
 save_user(User, UserObj, RiakPid) ->
     %% Metadata is currently never updated so if there
     %% are siblings all copies should be the same
@@ -568,7 +568,7 @@ save_user(User, UserObj, RiakPid) ->
 
 %% @doc Set the ACL for a bucket. Existing ACLs are only
 %% replaced, they cannot be updated.
--spec set_bucket_acl(moss_user(), riakc_obj:riakc_obj(), binary(), acl(), pid()) -> ok | {error, term()}.
+-spec set_bucket_acl(rcs_user(), riakc_obj:riakc_obj(), binary(), acl(), pid()) -> ok | {error, term()}.
 set_bucket_acl(User, UserObj, Bucket, ACL, RiakPid) ->
     serialized_bucket_op(Bucket,
                          ACL,
@@ -601,7 +601,7 @@ set_object_acl(Bucket, Key, Manifest, Acl, RiakPid) ->
 timestamp({MegaSecs, Secs, _MicroSecs}) ->
     (MegaSecs * 1000000) + Secs.
 
-%% Get the proper bucket name for either the MOSS object
+%% Get the proper bucket name for either the Riak CS object
 %% bucket or the data block bucket.
 -spec to_bucket_name(objects | blocks, binary()) -> binary().
 to_bucket_name(Type, Bucket) ->
@@ -932,7 +932,7 @@ process_xml_error([HeadElement | RestElements]) ->
 
 %% @doc Resolve the set of buckets for a user when
 %% siblings are encountered on a read of a user record.
--spec resolve_buckets([moss_user()], [cs_bucket()], boolean()) ->
+-spec resolve_buckets([rcs_user()], [cs_bucket()], boolean()) ->
                              [cs_bucket()].
 resolve_buckets([], Buckets, true) ->
     lists:sort(fun bucket_sorter/2, Buckets);
@@ -946,7 +946,7 @@ resolve_buckets([HeadUserRec | RestUserRecs], Buckets, _KeepDeleted) ->
 %% @doc Shared code used when doing a bucket creation or deletion.
 -spec serialized_bucket_op(binary(),
                            acl(),
-                           moss_user(),
+                           rcs_user(),
                            riakc_obj:riakc_obj(),
                            bucket_operation(),
                            atom(),
@@ -994,7 +994,7 @@ serialized_bucket_op(Bucket, ACL, User, UserObj, BucketOp, StatName, RiakPid) ->
 
 %% @doc Generate a JSON document to use for a user
 %% creation request.
--spec user_json(moss_user()) -> string().
+-spec user_json(rcs_user()) -> string().
 user_json(User) ->
     ?RCS_USER{name=UserName,
                display_name=DisplayName,
@@ -1040,8 +1040,8 @@ update_bucket_record(Bucket) ->
 
 %% @doc Check if a user already has an ownership of
 %% a bucket and update the bucket list if needed.
--spec update_user_buckets(moss_user(), cs_bucket()) ->
-                                 {ok, ignore} | {ok, moss_user()}.
+-spec update_user_buckets(rcs_user(), cs_bucket()) ->
+                                 {ok, ignore} | {ok, rcs_user()}.
 update_user_buckets(User, Bucket) ->
     Buckets = User?RCS_USER.buckets,
     %% At this point any siblings from the read of the
@@ -1082,13 +1082,13 @@ update_user_record(User=#moss_user_v1{}) ->
 
 %% @doc Return a user record for the specified user name and
 %% email address.
--spec user_record(string(), string()) -> moss_user().
+-spec user_record(string(), string()) -> rcs_user().
 user_record(Name, Email) ->
     user_record(Name, Email, []).
 
 %% @doc Return a user record for the specified user name and
 %% email address.
--spec user_record(string(), string(), [cs_bucket()]) -> moss_user().
+-spec user_record(string(), string(), [cs_bucket()]) -> rcs_user().
 user_record(Name, Email, Buckets) ->
     {KeyId, Secret} = generate_access_creds(Email),
     CanonicalId = generate_canonical_id(KeyId, Secret),
