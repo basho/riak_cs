@@ -35,8 +35,8 @@
 batch(Opts) ->
     ?SAFELY(
        case getopt:parse(?BATCH_OPTIONS, Opts) of
-           {ok, {Parsed, _Extra}} -> 
-               case riak_moss_storage_d:start_batch(Parsed) of
+           {ok, {Parsed, _Extra}} ->
+               case riak_cs_storage_d:start_batch(Parsed) of
                    ok ->
                        io:format("Batch storage calculation started.~n"),
                        ok;
@@ -56,7 +56,7 @@ batch(Opts) ->
 status(_Opts) ->
     ?SAFELY(
        begin
-           {ok, {State, Details}} = riak_moss_storage_d:status(),
+           {ok, {State, Details}} = riak_cs_storage_d:status(),
            print_state(State),
            print_details(Details)
        end,
@@ -71,7 +71,7 @@ print_state(paused) ->
 
 cancel(_Opts) ->
     ?SAFELY(
-       case riak_moss_storage_d:cancel_batch() of
+       case riak_cs_storage_d:cancel_batch() of
            ok ->
                io:format("The calculation was canceled.~n");
            {error, no_batch} ->
@@ -81,7 +81,7 @@ cancel(_Opts) ->
 
 pause(_Opts) ->
     ?SAFELY(
-       case riak_moss_storage_d:pause_batch() of
+       case riak_cs_storage_d:pause_batch() of
            ok ->
                io:format("The calculation was paused.~n");
            {error, no_batch} ->
@@ -91,7 +91,7 @@ pause(_Opts) ->
 
 resume(_Opts) ->
     ?SAFELY(
-       case riak_moss_storage_d:resume_batch() of
+       case riak_cs_storage_d:resume_batch() of
            ok ->
                io:format("The calculation was resumed.~n");
            {error, no_batch} ->
@@ -124,13 +124,13 @@ human_detail(next, Time) ->
     {"Next run scheduled for", human_time(Time)};
 human_detail(current, Time) ->
     {"Current run started at", human_time(Time)};
-human_detail(elapsed, Elapsed) ->    
+human_detail(elapsed, Elapsed) ->
     {"Elapsed time of current run", integer_to_list(Elapsed)};
-human_detail(users_done, Count) -> 
+human_detail(users_done, Count) ->
     {"Users completed in current run", integer_to_list(Count)};
-human_detail(users_skipped, Count) -> 
+human_detail(users_skipped, Count) ->
     {"Users skipped in current run", integer_to_list(Count)};
-human_detail(users_left, Count) -> 
+human_detail(users_left, Count) ->
     {"Users left in current run", integer_to_list(Count)};
 human_detail(Name, Value) ->
     %% anything not to bomb if something was added

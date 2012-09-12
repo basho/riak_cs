@@ -6,7 +6,7 @@
 -module(riak_cs_dtrace).
 
 -export([dtrace/1, dtrace/3, dtrace/4, dtrace/6]).
--include("riak_moss.hrl").
+-include("riak_cs.hrl").
 -export([t/1, t/2, tt/3]).                      % debugging use only
 
 -define(MAGIC, '**DTRACE*SUPPORT**').
@@ -14,7 +14,7 @@
 dtrace(ArgList) ->
     case get(?MAGIC) of
         undefined ->
-            case application:get_env(riak_moss, dtrace_support) of
+            case application:get_env(riak_cs, dtrace_support) of
                 {ok, true} ->
                     case string:to_float(erlang:system_info(version)) of
                         {5.8, _} ->
