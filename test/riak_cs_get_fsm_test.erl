@@ -32,7 +32,7 @@ get_fsm_test_() ->
      fun teardown/1,
      [
       fun receives_manifest/0,
-      [{timeout, 30, test_n_chunks_builder(X)} || X <- [1,2,5,9,100,1000]]
+      [{timeout, 5 + (X / 20), test_n_chunks_builder(X)} || X <- [1,2,5,9,100,1000]]
      ]}.
 
 calc_block_size(ContentLength, NumBlocks) ->
