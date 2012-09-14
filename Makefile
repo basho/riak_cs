@@ -79,6 +79,13 @@ stagedevrel: dev1 dev2 dev3 dev4
 	  $(foreach app,$(wildcard apps/*), rm -rf dev/$(dev)/lib/$(shell basename $(app))-* && ln -sf $(abspath $(app)) dev/$(dev)/lib;) \
 	  $(foreach dep,$(wildcard deps/*), rm -rf dev/$(dev)/lib/$(shell basename $(dep))-* && ln -sf $(abspath $(dep)) dev/$(dev)/lib;))
 
+rtdevrel: rtdev1 rtdev2 rtdev3 rtdev4 rtdev5 rtdev6
+
+rtdev1 rtdev2 rtdev3 rtdev4 rtdev5 rtdev6:
+	mkdir -p $(RT_TARGET_CS)/$@
+	 (cd rel && ../rebar generate skip_deps=true target_dir=$(RT_TARGET_CS)/$@ overlay_vars=vars/$@_vars.config)
+
+
 devclean: clean
 	rm -rf dev
 
