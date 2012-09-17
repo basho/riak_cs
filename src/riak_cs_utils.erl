@@ -193,7 +193,7 @@ delete_bucket(User, UserObj, Bucket, RiakPid) ->
     end.
 
 %% @doc Mark all active manifests as pending_delete.
--spec delete_object(binary(), binary(), pid()) -> ok | {error, term()}.
+-spec delete_object(binary(), binary(), pid()) -> ok | {error, notfound}.
 delete_object(Bucket, Key, RiakcPid) ->
     StartTime = os:timestamp(),
     case get_manifests(RiakcPid, Bucket, Key) of
@@ -207,7 +207,7 @@ delete_object(Bucket, Key, RiakcPid) ->
                                     RiakObject,
                                     RiakcPid),
             ok = riak_cs_stats:update_with_start(object_delete, StartTime);
-        {error, _}=Error ->
+        {error, notfound}=Error ->
             Error
     end.
 
