@@ -60,7 +60,7 @@
                 free_writers :: undefined | ordsets:ordset(pid()),
                 unacked_writes=ordsets:new() :: ordsets:ordset(non_neg_integer()),
                 next_block_id=0 :: non_neg_integer(),
-                all_writer_pids=[] :: list(pid())}).
+                all_writer_pids :: undefined | list(pid())}).
 
 %%%===================================================================
 %%% API
@@ -558,7 +558,7 @@ maybe_stop_manifest_fsm(ManiPid) ->
     riak_cs_manifest_fsm:stop(ManiPid),
     ok.
 
--spec maybe_stop_block_servers(undefined | pid()) -> ok.
+-spec maybe_stop_block_servers(undefined | [pid()]) -> ok.
 maybe_stop_block_servers(undefined) ->
     ok;
 maybe_stop_block_servers(BlockServerPids) ->
