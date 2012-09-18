@@ -82,6 +82,7 @@ stagedevrel: dev1 dev2 dev3 dev4
 rtdevrel: rtdev1 rtdev2 rtdev3 rtdev4 rtdev5 rtdev6
 
 rtdev1 rtdev2 rtdev3 rtdev4 rtdev5 rtdev6:
+	$(if $(RT_TARGET_CS),,$(error "RT_TARGET_CS var not set, see riak_test/ directory for details"))
 	mkdir -p $(RT_TARGET_CS)/$@
 	 (cd rel && ../rebar generate skip_deps=true target_dir=$(RT_TARGET_CS)/$@ overlay_vars=vars/$@_vars.config)
 
