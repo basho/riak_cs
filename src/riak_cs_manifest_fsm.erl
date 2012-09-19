@@ -282,18 +282,16 @@ get_and_update(RiakcPid, WrappedManifests, Bucket, Key) ->
         {ok, RiakObject, Manifests} ->
             NewManiAdded = riak_cs_manifest_resolution:resolve([WrappedManifests, Manifests]),
             OverwrittenUUIDs = riak_cs_manifest_utils:overwritten_UUIDs(Manifests),
-            case OverwrittenUUIDs of
+            Result = case OverwrittenUUIDs of
                 [] ->
                     ObjectToWrite = riakc_obj:update_value(RiakObject,
                         term_to_binary(NewManiAdded)),
 
-                    Result = riak_cs_utils:put_with_no_meta(RiakcPid, ObjectToWrite);
+                    riak_cs_utils:put_with_no_meta(RiakcPid, ObjectToWrite);
                 _ ->
-                    Result = riak_cs_gc:gc_manifests(Bucket,
-                                                    Key,                                                                                     NewManiAdded,
-                                                    OverwrittenUUIDs,
-                                                    RiakObject,
-                                                    RiakcPid)
+                    riak_cs_gc:gc_manifests(OverwrittenUUIDs,
+                                                     RiakObject,
+                                                     RiakcPid)
             end,
             {Result, RiakObject, Manifests};
         {error, notfound} ->

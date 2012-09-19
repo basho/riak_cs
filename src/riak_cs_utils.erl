@@ -27,6 +27,7 @@
          map_keys_and_manifests/3,
          get_object/3,
          get_manifests/3,
+         manifests_from_riak_object/1,
          get_user/2,
          get_user_by_index/3,
          get_user_index/3,
@@ -36,6 +37,7 @@
          pow/3,
          put_object/5,
          put_with_no_meta/2,
+         put_with_no_meta/3,
          riak_connection/0,
          riak_connection/1,
          save_user/3,
@@ -200,12 +202,9 @@ delete_object(Bucket, Key, RiakcPid) ->
         {ok, RiakObject, Manifests} ->
             ActiveManifests = riak_cs_manifest_utils:active_and_writing_manifests(Manifests),
             ActiveUUIDs = [UUID || {UUID, _} <- ActiveManifests],
-            _ = riak_cs_gc:gc_manifests(Bucket,
-                                    Key,
-                                    Manifests,
-                                    ActiveUUIDs,
-                                    RiakObject,
-                                    RiakcPid),
+            _ = riak_cs_gc:gc_manifests(ActiveUUIDs,
+                                        RiakObject,
+                                        RiakcPid),
             ok = riak_cs_stats:update_with_start(object_delete, StartTime);
         {error, notfound}=Error ->
             Error
@@ -368,23 +367,27 @@ get_manifests_raw(RiakcPid, Bucket, Key) ->
 get_manifests(RiakcPid, Bucket, Key) ->
     case get_manifests_raw(RiakcPid, Bucket, Key) of
         {ok, Object} ->
-            DecodedSiblings = [binary_to_term(V) ||
-                                  {_, V}=Content <- riakc_obj:get_contents(Object),
-                                  not has_tombstone(Content)],
-
-            %% Upgrade the manifests to be the latest erlang
-            %% record version
-            Upgraded = riak_cs_manifest_utils:upgrade_wrapped_manifests(DecodedSiblings),
-
-            %% resolve the siblings
-            Resolved = riak_cs_manifest_resolution:resolve(Upgraded),
-
-            %% prune old scheduled_delete manifests
-            Pruned = riak_cs_manifest_utils:prune(Resolved),
-            {ok, Object, Pruned};
+            Manifests = manifests_from_riak_object(Object),
+            {ok, Object, Manifests};
         {error, notfound}=NotFound ->
             NotFound
     end.
+
+-spec manifests_from_riak_object(riakc_obj:riak_object()) -> orddict:orddict().
+manifests_from_riak_object(RiakObject) ->
+    DecodedSiblings = [binary_to_term(V) ||
+                          {_, V}=Content <- riakc_obj:get_contents(RiakObject),
+                          not has_tombstone(Content)],
+
+    %% Upgrade the manifests to be the latest erlang
+    %% record version
+    Upgraded = riak_cs_manifest_utils:upgrade_wrapped_manifests(DecodedSiblings),
+
+    %% resolve the siblings
+    Resolved = riak_cs_manifest_resolution:resolve(Upgraded),
+
+    %% prune old scheduled_delete manifests
+    riak_cs_manifest_utils:prune(Resolved).
 
 %% @doc Retrieve a Riak CS user's information based on their id string.
 -spec get_user('undefined' | list(), pid()) -> {ok, {rcs_user(), riakc_obj:riakc_obj()}} | {error, term()}.
@@ -522,6 +525,8 @@ put_object(BucketName, Key, Value, Metadata, RiakPid) ->
     NewObj = riakc_obj:update_metadata(RiakObject, Metadata),
     riakc_pb_socket:put(RiakPid, NewObj).
 
+put_with_no_meta(RiakcPid, RiakcObj) ->
+    put_with_no_meta(RiakcPid, RiakcObj, []).
 %% @doc Put an object in Riak with empty
 %% metadata. This is likely used when because
 %% you want to avoid manually setting the metadata
@@ -529,11 +534,11 @@ put_object(BucketName, Key, Value, Metadata, RiakPid) ->
 %% if the previous object had metadata siblings,
 %% not explicitly setting the metadata will
 %% cause a siblings exception to be raised.
--spec put_with_no_meta(pid(), riakc_obj:riakc_obj()) ->
-    ok | {error, term()}.
-put_with_no_meta(RiakcPid, RiakcObject) ->
+-spec put_with_no_meta(pid(), riakc_obj:riakc_obj(), term()) ->
+    ok | {ok, riakc_obj:riak_object()} | {ok, binary()} | {error, term()}.
+put_with_no_meta(RiakcPid, RiakcObject, Options) ->
     WithMeta = riakc_obj:update_metadata(RiakcObject, dict:new()),
-    riakc_pb_socket:put(RiakcPid, WithMeta).
+    riakc_pb_socket:put(RiakcPid, WithMeta, Options).
 
 %% @doc Get a protobufs connection to the riak cluster
 %% from the default connection pool.
