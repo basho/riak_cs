@@ -530,7 +530,7 @@ put_object(BucketName, Key, Value, Metadata, RiakPid) ->
 %% not explicitly setting the metadata will
 %% cause a siblings exception to be raised.
 -spec put_with_no_meta(pid(), riakc_obj:riakc_obj()) ->
-    ok | {ok, riakc_obj:riakc_obj()} | {ok, riakc_obj:key()} | {error, term()}.
+    ok | {error, term()}.
 put_with_no_meta(RiakcPid, RiakcObject) ->
     WithMeta = riakc_obj:update_metadata(RiakcObject, dict:new()),
     riakc_pb_socket:put(RiakcPid, WithMeta).
