@@ -195,20 +195,34 @@ delete_bucket(User, UserObj, Bucket, RiakPid) ->
     end.
 
 %% @doc Mark all active manifests as pending_delete.
--spec delete_object(binary(), binary(), pid()) -> ok | {error, notfound}.
+%% If successful, returns a list of the UUIDs that were marked for
+%% Garbage collection. Otherwise returns an error. Note,
+%% {error, notfound} counts as success in this case,
+%% with the list of UUIDs being [].
+-spec delete_object(binary(), binary(), pid()) ->
+    {ok, [binary()]} | {error, term()}.
 delete_object(Bucket, Key, RiakcPid) ->
     StartTime = os:timestamp(),
-    case get_manifests(RiakcPid, Bucket, Key) of
-        {ok, RiakObject, Manifests} ->
-            ActiveManifests = riak_cs_manifest_utils:active_and_writing_manifests(Manifests),
-            ActiveUUIDs = [UUID || {UUID, _} <- ActiveManifests],
-            _ = riak_cs_gc:gc_manifests(ActiveUUIDs,
-                                        RiakObject,
-                                        RiakcPid),
-            ok = riak_cs_stats:update_with_start(object_delete, StartTime);
-        {error, notfound}=Error ->
-            Error
-    end.
+    handle_get_manifests(get_manifests(RiakcPid, Bucket, Key),
+                         StartTime, RiakcPid).
+
+handle_get_manifests({ok, RiakObject, Manifests}, StartTime, RiakcPid) ->
+    ActiveManifests = riak_cs_manifest_utils:active_and_writing_manifests(Manifests),
+    ActiveUUIDs = [UUID || {UUID, _} <- ActiveManifests],
+    GCManiResponse = riak_cs_gc:gc_manifests(ActiveUUIDs,
+                                             RiakObject,
+                                             RiakcPid),
+    handle_gc_manifests(GCManiResponse, ActiveUUIDs, StartTime);
+handle_get_manifests({error, notfound}, _StartTime, _RiakcPid) ->
+    {ok, []};
+handle_get_manifests({error, _Reason}=Error, _StartTime, _RiakcPid) ->
+    Error.
+
+handle_gc_manifests({ok, _RiakObject}, ActiveUUIDs, StartTime) ->
+    ok = riak_cs_stats:update_with_start(object_delete, StartTime),
+    {ok, ActiveUUIDs};
+handle_gc_manifests({error, _Error}=Error, _ActiveUUIDs, _StartTime) ->
+    Error.
 
 %% Get the root bucket name for either a Riak CS object
 %% bucket or the data block bucket name.
@@ -356,21 +370,21 @@ get_object(BucketName, Key, RiakPid) ->
 %% internal fun to retrieve the riak object
 %% at a bucket/key
 -spec get_manifests_raw(pid(), binary(), binary()) ->
-    {ok, riakc_obj:riakc_obj()} | {error, notfound}.
+    {ok, riakc_obj:riakc_obj()} | {error, term()}.
 get_manifests_raw(RiakcPid, Bucket, Key) ->
     ManifestBucket = to_bucket_name(objects, Bucket),
     riakc_pb_socket:get(RiakcPid, ManifestBucket, Key).
 
 %% @doc
 -spec get_manifests(pid(), binary(), binary()) ->
-    {ok, term(), term()} | {error, notfound}.
+    {ok, term(), term()} | {error, term()}.
 get_manifests(RiakcPid, Bucket, Key) ->
     case get_manifests_raw(RiakcPid, Bucket, Key) of
         {ok, Object} ->
             Manifests = manifests_from_riak_object(Object),
             {ok, Object, Manifests};
-        {error, notfound}=NotFound ->
-            NotFound
+        {error, _Reason}=Error ->
+            Error
     end.
 
 -spec manifests_from_riak_object(riakc_obj:riak_object()) -> orddict:orddict().

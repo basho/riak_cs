@@ -277,18 +277,18 @@ delete_resource(RD, Ctx=#key_context{bucket=Bucket,
     riak_cs_get_fsm:stop(GetFsmPid),
     BinKey = list_to_binary(Key),
     #context{riakc_pid=RiakPid} = InnerCtx,
-    case riak_cs_utils:delete_object(Bucket, BinKey, RiakPid) of
-        ok ->
-            %% successfully marked for deletion
-            DCode = 1,
-            ok;
-        {error, notfound} ->
-            %% it's not there; consider the delete successful
-            DCode = 0,
-            ok
-    end,
-    dt_return(<<"delete_resource">>, [DCode], [UserName, BFile_str]),
-    dt_return_object(<<"file_delete">>, [DCode], [UserName, BFile_str]),
+    DeleteObjectResponse = riak_cs_utils:delete_object(Bucket, BinKey, RiakPid),
+    handle_delete_object(DeleteObjectResponse, UserName, BFile_str, RD, Ctx).
+
+%% @private
+handle_delete_object({error, Error}, UserName, BFile_str, RD, Ctx) ->
+    lager:error("delete object failed with reason: ", [Error]),
+    dt_return(<<"delete_resource">>, [0], [UserName, BFile_str]),
+    dt_return_object(<<"file_delete">>, [0], [UserName, BFile_str]),
+    {false, RD, Ctx};
+handle_delete_object({ok, _UUIDsMarkedforDelete}, UserName, BFile_str, RD, Ctx) ->
+    dt_return(<<"delete_resource">>, [1], [UserName, BFile_str]),
+    dt_return_object(<<"file_delete">>, [1], [UserName, BFile_str]),
     {true, RD, Ctx}.
 
 -spec content_types_accepted(term(), term()) ->
