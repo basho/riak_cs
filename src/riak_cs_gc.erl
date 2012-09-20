@@ -136,6 +136,10 @@ mark_manifests(RiakObject, UUIDsToMark, ManiFunction, RiakcPid) ->
     Manifests = riak_cs_utils:manifests_from_riak_object(RiakObject),
     Marked = ManiFunction(Manifests, UUIDsToMark),
     UpdObj = riakc_obj:update_value(RiakObject, term_to_binary(Marked)),
+
+    %% use [returnbody] so that we get back the object
+    %% with vector clock. This allows us to do a PUT
+    %% again without having to re-retrieve the object
     riak_cs_utils:put_with_no_meta(RiakcPid, UpdObj, [return_body]).
 
 %% @doc Copy data for a list of manifests to the
