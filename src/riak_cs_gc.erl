@@ -27,6 +27,10 @@
 %%% Public API
 %%%===================================================================
 
+-spec gc_manifests(UUIDsToMark :: [binary()],
+                   RiakObject :: riakc_obj:riak_object(),
+                   RiakcPid :: pid()) ->
+    {error, term()} | {ok, riakc_obj:riak_object()}.
 gc_manifests(UUIDsToMark, RiakObject, RiakcPid) ->
     MarkedResult = mark_as_pending_delete(UUIDsToMark,
                                           RiakObject,
@@ -38,7 +42,6 @@ gc_manifests(UUIDsToMark, RiakObject, RiakcPid) ->
 
     ({error, term()}, pid()) ->
     {error, term()} | {ok, riakc_obj:riak_object()}.
-
 handle_mark_as_pending_delete({ok, RiakObject}, RiakcPid) ->
     Manifests = riak_cs_utils:manifests_from_riak_object(RiakObject),
     PDManifests = riak_cs_manifest_utils:filter_pending_delete_uuid_manifests(Manifests),
@@ -49,6 +52,11 @@ handle_mark_as_pending_delete({error, Error}=Error, _RiakcPid) ->
     _ = lager:warning("Failed to mark as pending_delete, reason: ~p", [Error]),
     Error.
 
+-spec handle_move_result(ok | {error, term()},
+                         riakc_obj:riak_object(),
+                         [binary()],
+                         pid()) ->
+    {ok, riakc_obj:riak_object()} | {error, term()}.
 handle_move_result(ok, RiakObject, PDUUIDs, RiakcPid) ->
     mark_as_scheduled_delete(PDUUIDs, RiakObject, RiakcPid);
 handle_move_result({error, _Error}=Error, _RiakObject, _PDUUIDs, _RiakcPid) ->
