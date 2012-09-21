@@ -203,26 +203,19 @@ delete_bucket(User, UserObj, Bucket, RiakPid) ->
     {ok, [binary()]} | {error, term()}.
 delete_object(Bucket, Key, RiakcPid) ->
     StartTime = os:timestamp(),
-    handle_get_manifests(get_manifests(RiakcPid, Bucket, Key),
+    maybe_gc_active_manifests(get_manifests(RiakcPid, Bucket, Key),
                          StartTime, RiakcPid).
 
-handle_get_manifests({ok, RiakObject, Manifests}, StartTime, RiakcPid) ->
-    ActiveManifests = riak_cs_manifest_utils:active_and_writing_manifests(Manifests),
-    ActiveUUIDs = [UUID || {UUID, _} <- ActiveManifests],
-    GCManiResponse = riak_cs_gc:gc_manifests(ActiveUUIDs,
-                                             RiakObject,
-                                             RiakcPid),
-    handle_gc_manifests(GCManiResponse, ActiveUUIDs, StartTime);
-handle_get_manifests({error, notfound}, _StartTime, _RiakcPid) ->
+%% @private
+maybe_gc_active_manifests({ok, RiakObject, Manifests}, StartTime, RiakcPid) ->
+    R = riak_cs_gc:gc_active_manifests(Manifests, RiakObject, RiakcPid),
+    ok = riak_cs_stats:update_with_start(object_delete, StartTime),
+    R;
+maybe_gc_active_manifests({error, notfound}, _StartTime, _RiakcPid) ->
     {ok, []};
-handle_get_manifests({error, _Reason}=Error, _StartTime, _RiakcPid) ->
+maybe_gc_active_manifests({error, _Reason}=Error, _StartTime, _RiakcPid) ->
     Error.
 
-handle_gc_manifests({ok, _RiakObject}, ActiveUUIDs, StartTime) ->
-    ok = riak_cs_stats:update_with_start(object_delete, StartTime),
-    {ok, ActiveUUIDs};
-handle_gc_manifests({error, _Error}=Error, _ActiveUUIDs, _StartTime) ->
-    Error.
 
 %% Get the root bucket name for either a Riak CS object
 %% bucket or the data block bucket name.

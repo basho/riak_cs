@@ -289,7 +289,7 @@ get_and_update(RiakcPid, WrappedManifests, Bucket, Key) ->
 
                     riak_cs_utils:put_with_no_meta(RiakcPid, ObjectToWrite);
                 _ ->
-                    riak_cs_gc:gc_manifests(OverwrittenUUIDs,
+                    riak_cs_gc:gc_specific_manifests(OverwrittenUUIDs,
                                                      RiakObject,
                                                      RiakcPid)
             end,

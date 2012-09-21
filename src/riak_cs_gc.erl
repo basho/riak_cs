@@ -18,7 +18,8 @@
 -export([decode_and_merge_siblings/2,
          gc_interval/0,
          gc_retry_interval/0,
-         gc_manifests/3,
+         gc_active_manifests/3,
+         gc_specific_manifests/3,
          epoch_start/0,
          leeway_seconds/0,
          timestamp/0]).
@@ -27,16 +28,33 @@
 %%% Public API
 %%%===================================================================
 
--spec gc_manifests(UUIDsToMark :: [binary()],
+gc_active_manifests(Manifests, RiakObject, RiakcPid) ->
+    ActiveManifests = riak_cs_manifest_utils:active_and_writing_manifests(Manifests),
+    ActiveUUIDs = [UUID || {UUID, _} <- ActiveManifests],
+    GCManiResponse = gc_specific_manifests(ActiveUUIDs,
+                                           RiakObject,
+                                           RiakcPid),
+    return_active_uuids_from_gc_response(GCManiResponse,
+                                         ActiveUUIDs).
+
+%% @private
+return_active_uuids_from_gc_response({ok, _RiakObject}, ActiveUUIDs) ->
+    {ok, ActiveUUIDs};
+return_active_uuids_from_gc_response({error, _Error}=Error, _ActiveUUIDs) ->
+    Error.
+
+%% @private
+-spec gc_specific_manifests(UUIDsToMark :: [binary()],
                    RiakObject :: riakc_obj:riak_object(),
                    RiakcPid :: pid()) ->
     {error, term()} | {ok, riakc_obj:riak_object()}.
-gc_manifests(UUIDsToMark, RiakObject, RiakcPid) ->
+gc_specific_manifests(UUIDsToMark, RiakObject, RiakcPid) ->
     MarkedResult = mark_as_pending_delete(UUIDsToMark,
                                           RiakObject,
                                           RiakcPid),
     handle_mark_as_pending_delete(MarkedResult, RiakcPid).
 
+%% @private
 -spec handle_mark_as_pending_delete({ok, riakc_obj:riak_object()}, pid()) ->
     {error, term()} | {ok, riakc_obj:riak_object()};
 
@@ -52,6 +70,7 @@ handle_mark_as_pending_delete({error, Error}=Error, _RiakcPid) ->
     _ = lager:warning("Failed to mark as pending_delete, reason: ~p", [Error]),
     Error.
 
+%% @private
 -spec handle_move_result(ok | {error, term()},
                          riakc_obj:riak_object(),
                          [binary()],
