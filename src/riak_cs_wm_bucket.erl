@@ -104,14 +104,21 @@ check_permission(RD, #context{user=User,
                         undefined ->
                             %% no facility for logging bad access
                             %% against unknown actors
-                            AccessRD = RD;
+                            AccessRD = RD,
+                            riak_cs_wm_utils:deny_access(AccessRD, PermCtx);
                         _ ->
                             %% log bad requests against the actors
                             %% that make them
-                            AccessRD =
-                                riak_cs_access_logger:set_user(User, RD)
-                    end,
-                    riak_cs_wm_utils:deny_access(AccessRD, PermCtx)
+                            AccessRD = riak_cs_access_logger:set_user(User, RD),
+                            %% Check if the bucket actually exists so we can
+                            %% make the correct decision to return a 404 or 403
+                            case riak_cs_utils:check_bucket_exists(Bucket, RiakPid) of
+                                {ok, _} ->
+                                    riak_cs_wm_utils:deny_access(AccessRD, PermCtx);
+                                {error, Reason} ->
+                                    riak_cs_s3_response:api_error(Reason, RD, Ctx)
+                            end
+                    end
             end
     end.
 
