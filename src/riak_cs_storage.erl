@@ -52,7 +52,7 @@ sum_bucket(Riak, Bucket) when is_list(Bucket) ->
 sum_bucket(Riak, Bucket) when is_binary(Bucket) ->
     FullBucket = riak_cs_utils:to_bucket_name(objects, Bucket),
     Query = [{map, {modfun, riak_cs_storage, object_size_map},
-              none, false},
+              [do_prereduce], false},
              {reduce, {modfun, riak_cs_storage, object_size_reduce},
               none, true}],
     case riakc_pb_socket:mapred(Riak, FullBucket, Query) of
