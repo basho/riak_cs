@@ -156,43 +156,60 @@ handle_validation_response({error, _Reason}, RD, Ctx, _, Conv2KeyCtx, _) ->
                                   {ok, rcs_user(), riakc_obj:riakc_obj()} |
                                   {error, bad_auth | notfound | no_user_key | term()}.
 validate_auth_header(RD, AuthBypass, RiakPid) ->
-    AuthHeader = wrq:get_req_header("authorization", RD),
-    case AuthHeader of
+    case wrq:get_req_header("client_id", RD) of
         undefined ->
-            %% Check for auth info presented as query params
-            KeyId = wrq:get_qs_value(?QS_KEYID, RD),
-            EncodedSig = wrq:get_qs_value(?QS_SIGNATURE, RD),
-            {AuthMod, KeyId, Signature} = parse_auth_params(KeyId,
-                                                            EncodedSig,
-                                                            AuthBypass);
-        _ ->
-            {AuthMod, KeyId, Signature} = parse_auth_header(AuthHeader, AuthBypass)
-    end,
-    case riak_cs_utils:get_user(KeyId, RiakPid) of
-        {ok, {User, UserObj}} when User?RCS_USER.status =:= enabled ->
-            Secret = User?RCS_USER.key_secret,
-            case AuthMod:authenticate(RD, Secret, Signature) of
-                ok ->
-                    {ok, User, UserObj};
-                {error, _Reason} ->
-                    %% TODO: are the errors here of small enough
-                    %% number that we could just handle them in
-                    %% forbidden/2?
-                    {error, bad_auth}
+            AuthHeader = wrq:get_req_header("authorization", RD),
+            case AuthHeader of
+                undefined ->
+                    %% Check for auth info presented as query params
+                    KeyId = wrq:get_qs_value(?QS_KEYID, RD),
+                    EncodedSig = wrq:get_qs_value(?QS_SIGNATURE, RD),
+                    {AuthMod, KeyId, Signature} = parse_auth_params(KeyId,
+                                                                    EncodedSig,
+                                                                    AuthBypass);
+                _ ->
+                {AuthMod, KeyId, Signature} = parse_auth_header(AuthHeader, AuthBypass)
+            end,
+            case riak_cs_utils:get_user(KeyId, RiakPid) of
+                {ok, {User, UserObj}} when User?RCS_USER.status =:= enabled ->
+                    Secret = User?RCS_USER.key_secret,
+                    case AuthMod:authenticate(RD, Secret, Signature) of
+                        ok ->
+                            {ok, User, UserObj};
+                        {error, _Reason} ->
+                            %% TODO: are the errors here of small enough
+                            %% number that we could just handle them in
+                            %% forbidden/2?
+                            {error, bad_auth}
+                    end;
+                {ok, _} ->
+                    %% Disabled account so return 403
+                    {error, bad_auth};
+                {error, NE} when NE == notfound; NE == no_user_key ->
+                    %% anonymous access lookups don't need to be logged, and
+                    %% auth failures are logged by other means
+                    {error, NE};
+                {error, Reason} ->
+                    %% other failures, like Riak fetch timeout, be loud about
+                    _ = lager:error("Retrieval of user record for ~p failed. Reason: ~p",
+                                    [KeyId, Reason]),
+                    {error, Reason}
             end;
-        {ok, _} ->
-            %% Disabled account so return 403
-            {error, bad_auth};
-        {error, NE} when NE == notfound; NE == no_user_key ->
-            %% anonymous access lookups don't need to be logged, and
-            %% auth failures are logged by other means
-            {error, NE};
-        {error, Reason} ->
-            %% other failures, like Riak fetch timeout, be loud about
-            _ = lager:error("Retrieval of user record for ~p failed. Reason: ~p",
-                            [KeyId, Reason]),
-            {error, Reason}
+        ClientId ->
+            UserId = wrq:get_req_header("user_id", RD),
+            AuthId = UserId ++ "###" ++ ClientId,
+            FoundryClientId = AuthId ++ "@attfoundry.com",
+                        
+            case riak_cs_utils:get_user_by_index(?EMAIL_INDEX, list_to_binary(FoundryClientId), RiakPid) of
+                {ok, {User, UserVclock}} ->
+                    {ok, User, UserVclock};
+                {error, _} ->
+                    {ok, NewUser} = riak_cs_utils:create_user(AuthId, FoundryClientId),
+                    {ok, {User, UserVclock}} = riak_cs_utils:get_user(NewUser?MOSS_USER.key_id, RiakPid),
+                    {ok, User, UserVclock}
+            end
     end.
+
 
 %% @doc Produce an access-denied error message from a webmachine
 %% resource's `forbidden/2' function.
