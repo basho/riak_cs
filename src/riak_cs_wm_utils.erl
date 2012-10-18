@@ -155,7 +155,8 @@ handle_validation_response({error, _Reason}, RD, Ctx, _, Conv2KeyCtx, _) ->
 -spec validate_auth_header(#wm_reqdata{}, term(), pid()) ->
                                   {ok, rcs_user(), riakc_obj:riakc_obj()} |
                                   {error, bad_auth | notfound | no_user_key | term()}.
-validate_auth_header(RD, AuthBypass, RiakPid) ->
+validate_auth_header(RD0, AuthBypass, RiakPid) ->
+	RD = riak_cs_foundry_utils:convert_foundry_accesstoken(RD0),
     case wrq:get_req_header("client_id", RD) of
         undefined ->
             AuthHeader = wrq:get_req_header("authorization", RD),
@@ -195,19 +196,8 @@ validate_auth_header(RD, AuthBypass, RiakPid) ->
                                     [KeyId, Reason]),
                     {error, Reason}
             end;
-        ClientId ->
-            UserId = wrq:get_req_header("user_id", RD),
-            AuthId = UserId ++ "###" ++ ClientId,
-            FoundryClientId = AuthId ++ "@attfoundry.com",
-                        
-            case riak_cs_utils:get_user_by_index(?EMAIL_INDEX, list_to_binary(FoundryClientId), RiakPid) of
-                {ok, {User, UserVclock}} ->
-                    {ok, User, UserVclock};
-                {error, _} ->
-                    {ok, NewUser} = riak_cs_utils:create_user(AuthId, FoundryClientId),
-                    {ok, {User, UserVclock}} = riak_cs_utils:get_user(NewUser?MOSS_USER.key_id, RiakPid),
-                    {ok, User, UserVclock}
-            end
+        _ClientId ->
+            riak_cs_foundry_utils:validate_auth_header(RD, RiakPid)
     end.
 
 
