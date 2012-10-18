@@ -65,7 +65,7 @@ new(ID) ->
             _             -> {op_sec, fun(_) -> 1.0 end}
         end,
     if ID == 1 ->
-            basho_bench_log:log(info, "Reporting factor = ~p\n", [RF_name]);
+            lager:log(info, self(), "Reporting factor = ~p\n", [RF_name]);
        true ->
             ok
     end,
@@ -79,8 +79,8 @@ new(ID) ->
          lists:keymember(delete, 1, OpsList) andalso
          length(OpsList) > 1 of
         true ->
-            basho_bench_log:log(
-              warn,
+            lager:log(
+              warn, self(),
               "Mixing delete and non-delete operations together with "
               "~p measurements unit can yield nonsense results!\n\n",
               [RF_name]);
@@ -237,8 +237,8 @@ insert(KeyGen, ValueGen, {Host, Port}, Bucket) ->
                 %% tell us its content length.
                 {ValueGen, ValFunc(get_content_length)};
             _ ->
-                basho_bench_log:log(
-                  error,
+                lager:log(
+                  error, self(),
                   "This driver cannot use the standard basho_bench "
                   "generator functions, please see refer to "
                   "'moss.config.sample' file for an example.\n", []),
