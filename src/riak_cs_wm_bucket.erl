@@ -182,11 +182,43 @@ content_types_accepted(RD, Ctx) ->
 
 -spec to_xml(term(), #context{}) ->
                     {binary() | {'halt', term()}, term(), #context{}}.
-to_xml(RD, Ctx=#context{start_time=StartTime,
-                        user=User,
-                        bucket=Bucket,
-                        requested_perm='READ',
-                        riakc_pid=RiakPid}) ->
+to_xml(RD, Ctx=#context{requested_perm='READ'}) ->
+    handle_read_request(wrq:method(RD), RD, Ctx);
+to_xml(RD, Ctx=#context{requested_perm='READ_ACP'}) ->
+    handle_read_acp_request(wrq:method(RD), RD, Ctx).
+
+%% @private
+handle_read_request('HEAD', RD, Ctx=#context{user=User,
+                                             bucket=Bucket}) ->
+    %% override the content-type on HEAD
+    HeadRD = wrq:set_resp_header("content-type", "text/html", RD),
+    StrBucket = binary_to_list(Bucket),
+    case [B || B <- riak_cs_utils:get_buckets(User),
+               B?RCS_BUCKET.name =:= StrBucket] of
+        [] ->
+            {{halt, 404}, HeadRD, Ctx};
+        [_BucketRecord] ->
+            {{halt, 200}, HeadRD, Ctx}
+    end;
+handle_read_request('GET', RD, Ctx=#context{user=User,
+                                            bucket=Bucket}) ->
+    %% bail out if this is a ?versioning or ?location request
+    %% also maybe bail early and 404
+    StrBucket = binary_to_list(Bucket),
+    case [B || B <- riak_cs_utils:get_buckets(User),
+               B?RCS_BUCKET.name =:= StrBucket] of
+        [] ->
+            {{halt, 404}, RD, Ctx};
+        [_BucketRecord] ->
+            handle_versioning_or_location_req(versioning_or_location_request(wrq:req_qs(RD)),
+                                              RD, Ctx)
+    end.
+
+%% @private
+handle_normal_read_bucket_response(RD, Ctx=#context{start_time=StartTime,
+                                                    user=User,
+                                                    bucket=Bucket,
+                                                    riakc_pid=RiakPid}) ->
     dt_entry(<<"to_xml">>, [], [extract_name(User), Bucket]),
     dt_entry_bucket(<<"list_keys">>, [], [extract_name(User), Bucket]),
     StrBucket = binary_to_list(Bucket),
@@ -220,12 +252,60 @@ to_xml(RD, Ctx=#context{start_time=StartTime,
                     dt_return_bucket(<<"list_keys">>, [Code], [extract_name(User), Bucket]),
                     X
             end
+    end.
+
+%% @private
+versioning_qs({"versioning", _}) ->
+    true;
+versioning_qs(_) ->
+    false.
+
+%% @private
+location_qs({"location", _}) ->
+    true;
+location_qs(_) ->
+    false.
+
+%% @private
+versioning_or_location_qs(Item) ->
+    versioning_qs(Item) orelse location_qs(Item).
+
+%% @private
+versioning_or_location_request(Qs) ->
+    lists:any(fun versioning_or_location_qs/1, Qs).
+
+%% @private
+handle_versioning_or_location_req(true, RD, Ctx) ->
+    case lists:any(fun versioning_qs/1, wrq:req_qs(RD)) of
+        true ->
+            handle_versioning_req(RD, Ctx);
+        false ->
+            handle_location_req(RD, Ctx)
     end;
-to_xml(RD, Ctx=#context{start_time=StartTime,
-                        user=User,
-                        bucket=Bucket,
-                        requested_perm='READ_ACP',
-                        riakc_pid=RiakPid}) ->
+handle_versioning_or_location_req(false, RD, Ctx) ->
+    handle_normal_read_bucket_response(RD, Ctx).
+
+%% @private
+handle_versioning_req(RD, Ctx) ->
+    {<<"<VersioningConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"/>">>,
+     RD, Ctx}.
+
+%% @private
+handle_location_req(RD, Ctx) ->
+    {<<"<LocationConstraint xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"/>">>,
+     RD, Ctx}.
+
+%% @private
+handle_read_acp_request('HEAD', RD, Ctx) ->
+    %% HEAD requests aren't allowed on the /?acl subresource.
+    %% %% see:
+    %% `$ curl -v -I fakefakefake.s3.amazonaws.com/\?acl'
+    %% `$ HTTP/1.1 405 Method Not Allowed'
+    {{halt, 405}, RD, Ctx};
+handle_read_acp_request('GET', RD, Ctx=#context{start_time=StartTime,
+                                                user=User,
+                                                bucket=Bucket,
+                                                riakc_pid=RiakPid}) ->
     dt_entry(<<"to_xml">>, [], [extract_name(User), Bucket]),
     dt_entry_bucket(<<"get_acl">>, [], [extract_name(User), Bucket]),
     case riak_cs_acl:bucket_acl(Bucket, RiakPid) of
