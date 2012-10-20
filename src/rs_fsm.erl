@@ -22,7 +22,8 @@
 -define(ALG_FAKE_V0,       'alg_fake0').
 -define(ALG_LIBER8TION_V0, 'alg_liber8tion0').
 
--type ec_algorithm() ::'fake0' | 'liber8tion0'.
+-type ec_algorithm() :: 'fake0' | 'liber8tion0'.
+-type partnum() :: non_neg_integer().
 
 -record(state, {
           caller :: pid(),
@@ -37,10 +38,9 @@
           get_client_fun :: fun(),
           free_client_fun :: fun(),
           robj_mod :: atom(),
-          riak_client :: undefined | term(),
           ops_procs :: undefined | [pid()],
           waiting_replies = 0 :: integer(),
-          xx :: term()
+          read_replies = [] :: [{partnum(), binary()}]
          }).
 
 %%%===================================================================
@@ -188,12 +188,10 @@ init({read, Alg, K, M, RBucket, RSuffix, Timeout, Caller,
 %% @end
 %%--------------------------------------------------------------------
 prepare_write(timeout, S) ->
-    {ok, Client} = (S#state.get_client_fun)(),
     BKFrags = ec_encode(S#state.data, S),
     Writers = spawn_frag_writers(BKFrags, S),
     {next_state, write_waiting_replies,
-     S#state{riak_client = Client,
-             ops_procs = Writers,
+     S#state{ops_procs = Writers,
              waiting_replies = S#state.k + S#state.m}}.
 
 write_waiting_replies({?MODULE, asyncreply, FromPid, ok},
@@ -203,7 +201,8 @@ write_waiting_replies({?MODULE, asyncreply, FromPid, ok},
     case WaitingRepliesX - 1 of
         0 ->
             send_sync_reply(S#state.caller, ok),
-            {stop, normal, S#state{ops_procs = OpsProcs}};
+            {stop, normal, S#state{ops_procs = OpsProcs,
+                                   waiting_replies = 0}};
         WaitingReplies when OpsProcs == [] ->
             {next_state, write_partial_failure,
              S#state{ops_procs = OpsProcs,
@@ -227,16 +226,43 @@ write_partial_failure(timeout, S) ->
     {stop, normal, S}.
 
 prepare_read(timeout, S) ->
-    {ok, Client} = (S#state.get_client_fun)(),
-    {Bucket, Key} = {xxx, xxx},
-    %% XXX {Bucket, Key} = encode_bkey(S),
-    XX = Client:get(Bucket, Key),
-    {next_state, read_waiting_replies, S#state{riak_client = Client,
-                                               xx = XX}, 0}.
+    %% TODO Fix assumption about k readers
+    BKs = lists:sublist(ec_encode_read_keys(S), S#state.k),
+    PartNumBKs = lists:zip(lists:seq(0, length(BKs) - 1), BKs),
+    Readers = spawn_frag_readers(PartNumBKs, S),
+    {next_state, read_waiting_replies,
+     S#state{ops_procs = Readers,
+             waiting_replies = S#state.k}}.
 
+read_waiting_replies({?MODULE, asyncreply, FromPid, {ok, {_,_} = PartNumBin}},
+                      #state{waiting_replies = WaitingRepliesX,
+                             ops_procs = OpsProcsX,
+                             read_replies = Replies} = S) ->
+    OpsProcs = OpsProcsX -- [FromPid],
+    NewReplies = [PartNumBin|Replies],
+    case WaitingRepliesX - 1 of
+        0 ->
+            BigBin = list_to_binary([B || {_, B} <- lists:sort(NewReplies)]),
+            send_sync_reply(S#state.caller, {ok, BigBin}),
+            {stop, normal, S#state{ops_procs = OpsProcs,
+                                   waiting_replies = 0}};
+        WaitingReplies when OpsProcs == [] ->
+            {next_state, read_partial_failure,
+             S#state{ops_procs = OpsProcs,
+                     waiting_replies = WaitingReplies},
+             0};
+        WaitingReplies ->
+            {next_state, read_waiting_replies,
+             S#state{ops_procs = OpsProcs,
+                     waiting_replies = WaitingReplies,
+                     read_replies = NewReplies}}
+    end;
+read_waiting_replies({?MODULE, asyncreply, _FromPid, NotOk}, S) ->
+    %% TODO Fix
+    send_sync_reply(S#state.caller, {error, {dunno_why, NotOk}}),
+    {stop, normal, S};
 read_waiting_replies(timeout, S) ->
-    send_sync_reply(S#state.caller, S#state.xx),
-    {stop, normal, S}.
+    {next_state, read_partial_failure, S, 0}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -325,7 +351,6 @@ handle_info(_Info, StateName, State) ->
 %%--------------------------------------------------------------------
 terminate(_Reason, _StateName, S) ->
     erlang:cancel_timer(S#state.tref),
-    (S#state.free_client_fun)(S#state.riak_client),
     ok.
 
 %%--------------------------------------------------------------------
@@ -376,6 +401,15 @@ ec_encode(Bin, Alg, K, M, Bucket, Suffix) ->
     Keys = ec_encode_keys(Alg, K, M, Suffix, lists:seq(0, NumFrags - 1)),
     Frags = ec_encode_data(Bin, Alg, K, M),
     lists:zip3(Buckets, Keys, Frags).
+
+ec_encode_read_keys(#state{alg = Alg, k = K, m = M,
+                           rbucket = Bucket, rsuffix = Suffix}) ->
+    ec_encode_read_keys(Alg, K, M, Bucket, Suffix).
+
+ec_encode_read_keys(Alg, K, M, Bucket, Suffix) ->
+    Buckets = lists:duplicate(K + M, Bucket),
+    Keys = ec_encode_keys(Alg, K, M, Suffix, lists:seq(0, K + M - 1)),
+    lists:zip(Buckets, Keys).
 
 ec_encode_keys(Alg, K, M, Suffix, Frags) ->
     [encode_key(Alg, K, M, Frag, Suffix) || Frag <- Frags].
@@ -451,6 +485,39 @@ frag_writer(Parent, {Bucket, Key, FragData}, S) ->
                   {error, {Xo, Yo, erlang:get_stacktrace()}}
           end,
     send_frag_reply(Parent, Res),
+    exit(normal).
+
+spawn_frag_readers(PartNumBKs, S) ->
+    Me = self(),
+    [spawn_link(fun() -> frag_reader(Me, PBK, S) end) || PBK <- PartNumBKs].
+
+%% TODO I'm not very good at using try/catch/after or don't understand
+%%      it, or try/catch/after is an ugly tool?
+
+frag_reader(Parent, {PartNum, {Bucket, Key}}, S) ->
+    Res = try
+              {ok, Client} = (S#state.get_client_fun)(),
+              try
+                  case Client:get(Bucket, Key) of
+                      {ok, RObj} ->
+                          %% TODO If metadata attributes were added to
+                          %% each Riak object, is there any sanity
+                          %% checking to do here?
+                          {ok, (S#state.robj_mod):get_value(RObj)};
+                      Else ->
+                          Else
+                  end
+              catch
+                  Xi:Yi ->
+                      {error, {Xi, Yi, erlang:get_stacktrace()}}
+              after
+                  (S#state.free_client_fun)(Client)
+              end
+          catch
+              Xo:Yo ->
+                  {error, {Xo, Yo, erlang:get_stacktrace()}}
+          end,
+    send_frag_reply(Parent, {PartNum, Res}),
     exit(normal).
 
 zip_1xx(_A, [], []) ->
