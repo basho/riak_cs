@@ -16,7 +16,8 @@
 %% gen_fsm callbacks
 -export([init/1, prepare_write/2, prepare_write/3, handle_event/3,
          handle_sync_event/4, handle_info/3, terminate/3, code_change/4]).
--export([t_write/0, t_write_test/0]).
+-export([t_write/0, t_write_test/0,
+         t_read/0, t_read_test/0]).
 
 -define(ALG_LIBER8TION_V0, 'liber8tion0').
 
@@ -77,6 +78,23 @@ start_write(Alg, K, M, RBucket, RSuffix, Data, Timeout,
       ?MODULE, {write, Alg, K, M, RBucket, RSuffix, Data, Timeout, self(),
                 GetClientFun, FreeClientFun, RObjMod}, []).
 
+read(Alg, K, M, RBucket, RSuffix, Timeout) ->
+    read(Alg, K, M, RBucket, RSuffix, Timeout,
+         fun get_local_riak_client/0, fun free_local_riak_client/1,
+         riak_object).
+
+read(Alg, K, M, RBucket, RSuffix, Timeout,
+      GetClientFun, FreeClientFun, RObjMod) ->
+    {ok, Pid} = start_read(Alg, K, M, RBucket, RSuffix, Timeout,
+                           GetClientFun, FreeClientFun, RObjMod),
+    wait_for_reply(Pid, Timeout).
+
+start_read(Alg, K, M, RBucket, RSuffix, Timeout,
+           GetClientFun, FreeClientFun, RObjMod) ->
+    gen_fsm:start(
+      ?MODULE, {read, Alg, K, M, RBucket, RSuffix, Timeout, self(),
+                GetClientFun, FreeClientFun, RObjMod}, []).
+
 get_local_riak_client() ->
     riak:local_client().
 
@@ -124,7 +142,30 @@ init({write, Alg, K, M, RBucket, RSuffix, Data, Timeout, Caller,
                                tref = TRef,
                                get_client_fun = GetClientFun,
                                free_client_fun = FreeClientFun,
-                               robj_mod = RObjMod}, 0}.
+                               robj_mod = RObjMod}, 0};
+init({read, Alg, K, M, RBucket, RSuffix, Timeout, Caller,
+      GetClientFun, FreeClientFun, RObjMod})
+    when is_integer(K) andalso K > 0 andalso
+         is_integer(M) andalso M > 0 andalso
+         is_binary(RBucket) andalso is_binary(RSuffix) ->
+    Alg = ?ALG_LIBER8TION_V0,
+
+    TRef = if Timeout == infinity ->
+                   undefined;
+              true ->
+                   erlang:send_after(Timeout, self(), final_timeout)
+           end,
+    {ok, prepare_read, #state{caller = Caller,
+                              mode = write,
+                              alg = Alg,
+                              k = K,
+                              m = M,
+                              rbucket = RBucket,
+                              rsuffix = RSuffix,
+                              tref = TRef,
+                              get_client_fun = GetClientFun,
+                              free_client_fun = FreeClientFun,
+                              robj_mod = RObjMod}, 0}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -150,6 +191,17 @@ prepare_write(timeout, S) ->
                                                 xx = XX}, 0}.
 
 write_waiting_replies(timeout, S) ->
+    send_reply(S#state.caller, S#state.xx),
+    {stop, normal, S}.
+
+prepare_read(timeout, S) ->
+    {ok, Client} = (S#state.get_client_fun)(),
+    {Bucket, Key} = encode_bkey(S),
+    XX = Client:get(Bucket, Key),
+    {next_state, read_waiting_replies, S#state{riak_client = Client,
+                                               xx = XX}, 0}.
+
+read_waiting_replies(timeout, S) ->
     send_reply(S#state.caller, S#state.xx),
     {stop, normal, S}.
 
@@ -316,4 +368,10 @@ t_write() ->
 
 t_write_test() ->
     ok = t_write().
+
+t_read() ->
+    read(?ALG_LIBER8TION_V0, 3, 2, <<"rb">>, <<"rs">>, 500).
+
+t_read_test() ->
+    ok = t_read().
 
