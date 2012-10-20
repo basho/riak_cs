@@ -9,6 +9,8 @@
 -behaviour(gen_fsm).
 -compile(export_all).                           % XXX debugging only
 
+-include("rs_erasure_encoding.hrl").
+
 %% API
 -export([write/7, write/10]).
 -export([get_local_riak_client/0, free_local_riak_client/1]).
@@ -19,18 +21,14 @@
 -export([t_write/0, t_write_test/0,
          t_read/0, t_read_test/0]).
 
--define(ALG_FAKE_V0,       'alg_fake0').
--define(ALG_LIBER8TION_V0, 'alg_liber8tion0').
-
 -define(MD_USERMETA, <<"X-Riak-Meta">>).  %% TODO Define this the Right Way
 
--type ec_algorithm() :: 'fake0' | 'liber8tion0'.
 -type partnum() :: non_neg_integer().
 
 -record(state, {
           caller :: pid(),
           mode :: 'read' | 'write',
-          alg :: ec_algorithm(),
+          alg :: rs_ec_algorithm(),
           k :: pos_integer(),
           m :: pos_integer(),
           rbucket :: binary(),
@@ -481,7 +479,12 @@ frag_writer(Parent, BinSize, {Bucket, Key, FragData}, S) ->
                   MD = dict:from_list([{?MD_USERMETA, [{<<"BinSize">>,
                                                         BinSize}]}]),
                   RObj = (S#state.robj_mod):update_metadata(RObj0, MD),
-                  %% TODO Add some Riak object metadata here?
+
+                  %% TODO What to do about replica placement here?
+                  %% We cannot specify n_val in the put FSM's Options
+                  %% list, alas, and there are other things that we
+                  %% cannot specify either but could make our job a
+                  %% lot easier.
                   Client:put(RObj)
               catch
                   Xi:Yi ->
