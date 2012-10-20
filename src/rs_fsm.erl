@@ -22,6 +22,8 @@
 -define(ALG_FAKE_V0,       'alg_fake0').
 -define(ALG_LIBER8TION_V0, 'alg_liber8tion0').
 
+-define(MD_USERMETA, <<"X-Riak-Meta">>).  %% TODO Define this the Right Way
+
 -type ec_algorithm() :: 'fake0' | 'liber8tion0'.
 -type partnum() :: non_neg_integer().
 
@@ -189,7 +191,7 @@ init({read, Alg, K, M, RBucket, RSuffix, Timeout, Caller,
 %%--------------------------------------------------------------------
 prepare_write(timeout, S) ->
     BKFrags = ec_encode(S#state.data, S),
-    Writers = spawn_frag_writers(BKFrags, S),
+    Writers = spawn_frag_writers(size(S#state.data), BKFrags, S),
     {next_state, write_waiting_replies,
      S#state{ops_procs = Writers,
              waiting_replies = S#state.k + S#state.m}}.
@@ -234,7 +236,8 @@ prepare_read(timeout, S) ->
      S#state{ops_procs = Readers,
              waiting_replies = S#state.k}}.
 
-read_waiting_replies({?MODULE, asyncreply, FromPid, {PartNum, {ok, Bin}}},
+read_waiting_replies({?MODULE, asyncreply, FromPid,
+                      {PartNum, {ok, BigBinSize, Bin}}},
                       #state{waiting_replies = WaitingRepliesX,
                              ops_procs = OpsProcsX,
                              read_replies = Replies} = S) ->
@@ -242,7 +245,8 @@ read_waiting_replies({?MODULE, asyncreply, FromPid, {PartNum, {ok, Bin}}},
     NewReplies = [{PartNum, Bin}|Replies],
     case WaitingRepliesX - 1 of
         0 ->
-            BigBin = list_to_binary([B || {_, B} <- lists:sort(NewReplies)]),
+            PadBin = list_to_binary([B || {_, B} <- lists:sort(NewReplies)]),
+            <<BigBin:BigBinSize/binary, _Pad/binary>> = PadBin,
             send_sync_reply(S#state.caller, {ok, BigBin}),
             {stop, normal, S#state{ops_procs = OpsProcs,
                                    waiting_replies = 0}};
@@ -460,18 +464,23 @@ ec_fake_split_bin_big(_FragSize, Last, PadBytes) ->
 
 %% --- Misc
 
-spawn_frag_writers(BKFrags, S) ->
+spawn_frag_writers(BinSize, BKFrags, S) ->
     Me = self(),
-    [spawn_link(fun() -> frag_writer(Me, BKFrag, S) end) || BKFrag <- BKFrags].
+    [spawn_link(fun() ->
+                        frag_writer(Me, BinSize, BKFrag, S)
+                end) || BKFrag <- BKFrags].
 
 %% TODO I'm not very good at using try/catch/after or don't understand
 %%      it, or try/catch/after is an ugly tool?
 
-frag_writer(Parent, {Bucket, Key, FragData}, S) ->
+frag_writer(Parent, BinSize, {Bucket, Key, FragData}, S) ->
     Res = try
               {ok, Client} = (S#state.get_client_fun)(),
               try
-                  RObj = (S#state.robj_mod):new(Bucket, Key, FragData),
+                  RObj0 = (S#state.robj_mod):new(Bucket, Key, FragData),
+                  MD = dict:from_list([{?MD_USERMETA, [{<<"BinSize">>,
+                                                        BinSize}]}]),
+                  RObj = (S#state.robj_mod):update_metadata(RObj0, MD),
                   %% TODO Add some Riak object metadata here?
                   Client:put(RObj)
               catch
@@ -500,10 +509,11 @@ frag_reader(Parent, {PartNum, {Bucket, Key}}, S) ->
               try
                   case Client:get(Bucket, Key) of
                       {ok, RObj} ->
-                          %% TODO If metadata attributes were added to
-                          %% each Riak object, is there any sanity
-                          %% checking to do here?
-                          {ok, (S#state.robj_mod):get_value(RObj)};
+                          [MD|_] = (S#state.robj_mod):get_metadatas(RObj),
+                          {ok, UMD} = dict:find(?MD_USERMETA, MD),
+                          {value, {_, BinSize}} = lists:keysearch(
+                                                    <<"BinSize">>, 1, UMD),
+                          {ok, BinSize, (S#state.robj_mod):get_value(RObj)};
                       Else ->
                           Else
                   end
