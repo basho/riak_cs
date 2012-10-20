@@ -19,12 +19,15 @@
 -export([t_write/0, t_write_test/0,
          t_read/0, t_read_test/0]).
 
--define(ALG_LIBER8TION_V0, 'liber8tion0').
+-define(ALG_FAKE_V0,       'alg_fake0').
+-define(ALG_LIBER8TION_V0, 'alg_liber8tion0').
+
+-type ec_algorithm() ::'fake0' | 'liber8tion0'.
 
 -record(state, {
           caller :: pid(),
           mode :: 'read' | 'write',
-          alg :: 'liber8tion0',
+          alg :: ec_algorithm(),
           k :: pos_integer(),
           m :: pos_integer(),
           rbucket :: binary(),
@@ -74,6 +77,8 @@ write(Alg, K, M, RBucket, RSuffix, Data, Timeout,
 
 start_write(Alg, K, M, RBucket, RSuffix, Data, Timeout,
             GetClientFun, FreeClientFun, RObjMod) ->
+    Alg = ?ALG_FAKE_V0,
+
     gen_fsm:start(
       ?MODULE, {write, Alg, K, M, RBucket, RSuffix, Data, Timeout, self(),
                 GetClientFun, FreeClientFun, RObjMod}, []).
@@ -91,6 +96,8 @@ read(Alg, K, M, RBucket, RSuffix, Timeout,
 
 start_read(Alg, K, M, RBucket, RSuffix, Timeout,
            GetClientFun, FreeClientFun, RObjMod) ->
+    Alg = ?ALG_FAKE_V0,
+
     gen_fsm:start(
       ?MODULE, {read, Alg, K, M, RBucket, RSuffix, Timeout, self(),
                 GetClientFun, FreeClientFun, RObjMod}, []).
@@ -124,8 +131,6 @@ init({write, Alg, K, M, RBucket, RSuffix, Data, Timeout, Caller,
          is_integer(M) andalso M > 0 andalso
          is_binary(RBucket) andalso is_binary(RSuffix) andalso
          is_binary(Data) ->
-    Alg = ?ALG_LIBER8TION_V0,
-
     TRef = if Timeout == infinity ->
                    undefined;
               true ->
@@ -148,8 +153,6 @@ init({read, Alg, K, M, RBucket, RSuffix, Timeout, Caller,
     when is_integer(K) andalso K > 0 andalso
          is_integer(M) andalso M > 0 andalso
          is_binary(RBucket) andalso is_binary(RSuffix) ->
-    Alg = ?ALG_LIBER8TION_V0,
-
     TRef = if Timeout == infinity ->
                    undefined;
               true ->
@@ -184,9 +187,11 @@ init({read, Alg, K, M, RBucket, RSuffix, Timeout, Caller,
 %%--------------------------------------------------------------------
 prepare_write(timeout, S) ->
     {ok, Client} = (S#state.get_client_fun)(),
-    {Bucket, Key} = encode_bkey(S),
-    RObj = (S#state.robj_mod):new(Bucket, Key, S#state.data),
-    XX = Client:put(RObj),
+    %% XXX
+    %% {Bucket, Keys, Frags} = ec_encode(S#state.data, S),
+    %% RObj = (S#state.robj_mod):new(Bucket, Key, S#state.data),
+    %% XX = Client:put(RObj),
+    XX = xxx,
     {next_state, write_waiting_replies, S#state{riak_client = Client,
                                                 xx = XX}, 0}.
 
@@ -196,7 +201,8 @@ write_waiting_replies(timeout, S) ->
 
 prepare_read(timeout, S) ->
     {ok, Client} = (S#state.get_client_fun)(),
-    {Bucket, Key} = encode_bkey(S),
+    {Bucket, Key} = {xxx, xxx},
+    %% XXX {Bucket, Key} = encode_bkey(S),
     XX = Client:get(Bucket, Key),
     {next_state, read_waiting_replies, S#state{riak_client = Client,
                                                xx = XX}, 0}.
@@ -311,20 +317,92 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
-encode_bkey(#state{alg = Alg, k = K, m = M,
-                   rbucket = Bucket, rsuffix = Suffix}) ->
-    encode_bkey(Alg, K, M, Bucket, Suffix).
+%% --- Riak bucket & key encoding/decoding
 
-encode_bkey(?ALG_LIBER8TION_V0, K, M, Bucket, Suffix) ->
-    Code = alg_to_code(?ALG_LIBER8TION_V0),
-    {Bucket, <<"st", Code:8, K:8, M:8, Suffix/binary>>}.
+encode_key(Frag, #state{alg = Alg, k = K, m = M, rsuffix = Suffix}) ->
+    encode_key(Alg, K, M, Frag, Suffix).
 
-decode_key(<<"st", Code:8, K:8, M:8, Suffix/binary>>) ->
-    {code_to_alg(Code), K, M, Suffix}.
+encode_key(Alg, K, M, Frag, Suffix) ->
+    Code = alg_to_code(Alg),
+    <<"st", Code:8, K:8, M:8, Frag:8, Suffix/binary>>.
 
+decode_key(<<"st", Code:8, K:8, M:8, Frag:8, Suffix/binary>>) ->
+    {code_to_alg(Code), K, M, Frag, Suffix}.
+
+alg_to_code(?ALG_FAKE_V0)       -> $f;
 alg_to_code(?ALG_LIBER8TION_V0) -> $l.
 
+code_to_alg($f) -> ?ALG_FAKE_V0;
 code_to_alg($l) -> ?ALG_LIBER8TION_V0.
+
+%% --- Fake erasure encoding/decoding
+
+ec_encode(Bin, #state{alg = Alg, k = K, m = M,
+                      rbucket = Bucket, rsuffix = Suffix}) ->
+    ec_encode(Bin, Alg, K, M, Bucket, Suffix).
+
+ec_encode(<<>>, _, _, _, _, _) ->
+    [];
+ec_encode(Bin, Alg, K, M, Bucket, Suffix) ->
+    NumFrags = K + M,
+    Buckets = lists:duplicate(NumFrags, Bucket),
+    Keys = ec_encode_keys(Alg, K, M, Suffix, lists:seq(0, NumFrags - 1)),
+    Frags = ec_encode_data(Bin, Alg, K, M),
+    lists:zip3(Buckets, Keys, Frags).
+
+ec_encode_keys(Alg, K, M, Suffix, Frags) ->
+    [encode_key(Alg, K, M, Frag, Suffix) || Frag <- Frags].
+
+ec_encode_data(Bin, ?ALG_FAKE_V0, K, M) ->
+    BinSize = size(Bin),
+    BinSizeRemK = BinSize rem K,
+    if K == 1 ->
+            FragSize = BinSize,
+            PadSize = 0;
+       BinSizeRemK == 0 ->
+            FragSize = BinSize div K,
+            PadSize = 0;
+       true ->
+            FragSize = (BinSize div K) + 1,
+            PadSize = K - BinSizeRemK
+    end,
+    ec_fake_split_bin(FragSize, Bin, K, PadSize) ++
+        [<<(X+42):(FragSize * 8)>> || X <- lists:seq(0, M - 1)].
+
+ec_fake_split_bin(1, Bin, K, PadSize) when size(Bin) < K ->
+    ec_fake_split_small(Bin) ++ lists:duplicate(PadSize, <<0>>);
+ec_fake_split_bin(FragSize, Bin, _K, Padsize) ->
+    ec_fake_split_bin_big(FragSize, Bin, Padsize).
+
+ec_fake_split_small(<<>>) ->
+    [];
+ec_fake_split_small(<<Head:1/binary, Rest/binary>>) ->
+    [Head|ec_fake_split_small(Rest)].
+
+ec_fake_split_bin_big(FragSize, Bin, PadBytes)
+  when size(Bin) >= FragSize ->
+    <<Head:FragSize/binary, Rest/binary>> = Bin,
+    [Head|ec_fake_split_bin_big(FragSize, Rest, PadBytes)];
+ec_fake_split_bin_big(_, <<>>, 0) ->
+    [];
+ec_fake_split_bin_big(FragSize, Last, PadBytes) when FragSize < PadBytes ->
+    Pad1Size = FragSize - size(Last),
+    NumPad2s = PadBytes div FragSize,
+    Pad2s = lists:duplicate(NumPad2s, <<0:(8*FragSize)>>),
+    if Last == <<>> ->
+            Pad2s;
+       true ->
+            [<<Last/binary, 0:(8*Pad1Size)>>|Pad2s]
+    end;
+ec_fake_split_bin_big(_FragSize, Last, PadBytes) ->
+    [<<Last/binary, 0:(8*PadBytes)>>].
+
+%% --- Misc
+
+zip_1xx(_A, [], []) ->
+    [];
+zip_1xx(A, [B|Bx], [C|Cx]) ->
+    [{A, B, C}|zip_1xx(A, Bx, Cx)].
 
 monitor_pid(Pid) ->
     erlang:monitor(process, Pid).
@@ -364,14 +442,52 @@ wait_for_reply(Pid, Timeout0) ->
     end.
 
 t_write() ->
-    write(?ALG_LIBER8TION_V0, 3, 2, <<"rb">>, <<"rs">>, <<"data">>, 500).
+    write(?ALG_FAKE_V0, 3, 2, <<"rb">>, <<"rs">>, <<"data">>, 500).
 
 t_write_test() ->
     ok = t_write().
 
 t_read() ->
-    read(?ALG_LIBER8TION_V0, 3, 2, <<"rb">>, <<"rs">>, 500).
+    read(?ALG_FAKE_V0, 3, 2, <<"rb">>, <<"rs">>, 500).
 
 t_read_test() ->
     ok = t_read().
 
+t_fake_encode_test() ->
+    Bins = [list_to_binary(lists:seq(1, X)) || X <- lists:seq(1, 40)],
+    Ks = lists:seq(1, 13),
+    Ms = lists:seq(0, 13),
+    Bucket = <<"bucket">>,
+    Suffix = <<"suffix">>,
+    [begin
+         %% io:format("size(Bin) ~p K ~p M ~p\n", [size(Bin), K, M]),
+         Es = ec_encode(Bin, ?ALG_FAKE_V0, K, M, Bucket, Suffix),
+         %% We won't check the parity frags, since they're all bogus.
+         %% Instead, compare the original Bin + plus any addtional padding
+         %% to the concatenation of all of the K data frags.
+         %% and then compare to the K data
+         %% frags.
+         BinSize = size(Bin),
+         PadBytes = if K == 1 ->
+                           0;
+                      size(Bin) rem K == 0 ->
+                           0;
+                      true ->
+                           K - (size(Bin) rem K)
+                   end,
+         %% PadBytes = if K == size(Bin) ->
+         %%                   0;
+         %%              %% size(Bin) < K ->
+         %%              %%      K - size(Bin);
+         %%              size(Bin) rem K == 0 ->
+         %%                   0;
+         %%              true ->
+         %%                   K - (size(Bin) rem K)
+         %%           end,
+         Pad = list_to_binary([0 || _ <- lists:seq(0, PadBytes-1)]),
+         CatKFrags = list_to_binary([Frag || {_, _, Frag} <-
+                                                 lists:sublist(Es, K)]),
+         {Bin, K, M, Pad, <<Bin:BinSize/binary, Pad/binary>>} =
+             {Bin, K, M, Pad, CatKFrags}
+     end || Bin <- Bins, K <- Ks, M <- Ms],
+    ok.
