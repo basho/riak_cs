@@ -234,12 +234,12 @@ prepare_read(timeout, S) ->
      S#state{ops_procs = Readers,
              waiting_replies = S#state.k}}.
 
-read_waiting_replies({?MODULE, asyncreply, FromPid, {ok, {_,_} = PartNumBin}},
+read_waiting_replies({?MODULE, asyncreply, FromPid, {PartNum, {ok, Bin}}},
                       #state{waiting_replies = WaitingRepliesX,
                              ops_procs = OpsProcsX,
                              read_replies = Replies} = S) ->
     OpsProcs = OpsProcsX -- [FromPid],
-    NewReplies = [PartNumBin|Replies],
+    NewReplies = [{PartNum, Bin}|Replies],
     case WaitingRepliesX - 1 of
         0 ->
             BigBin = list_to_binary([B || {_, B} <- lists:sort(NewReplies)]),
