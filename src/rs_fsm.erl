@@ -7,16 +7,16 @@
 -module(rs_fsm).
 
 -behaviour(gen_fsm).
+-compile(export_all).                           % XXX debugging only
 
 %% API
--export([write/7, write/9]).
--export([start_write/9]).
+-export([write/7, write/10]).
 -export([get_local_riak_client/0, free_local_riak_client/1]).
 
 %% gen_fsm callbacks
 -export([init/1, prepare_write/2, prepare_write/3, handle_event/3,
          handle_sync_event/4, handle_info/3, terminate/3, code_change/4]).
--export([t0/0]).
+-export([t_write/0, t_write_test/0]).
 
 -define(ALG_LIBER8TION_V0, 'liber8tion0').
 
@@ -28,10 +28,13 @@
           m :: pos_integer(),
           rbucket :: binary(),
           rsuffix :: binary(),
+          data :: binary(),
           tref :: undefined | reference(),
           get_client_fun :: fun(),
           free_client_fun :: fun(),
-          riak_client :: undefined | term()
+          robj_mod :: atom(),
+          riak_client :: undefined | term(),
+          xx :: term()
          }).
 
 %%%===================================================================
@@ -59,19 +62,20 @@
 %%--------------------------------------------------------------------
 write(Alg, K, M, RBucket, RSuffix, Data, Timeout) ->
     write(Alg, K, M, RBucket, RSuffix, Data, Timeout,
-          fun get_local_riak_client/0, fun free_local_riak_client/1).
+          fun get_local_riak_client/0, fun free_local_riak_client/1,
+          riak_object).
 
 write(Alg, K, M, RBucket, RSuffix, Data, Timeout,
-      GetClientFun, FreeClientFun) ->
+      GetClientFun, FreeClientFun, RObjMod) ->
     {ok, Pid} = start_write(Alg, K, M, RBucket, RSuffix, Data, Timeout,
-                            GetClientFun, FreeClientFun),
+                            GetClientFun, FreeClientFun, RObjMod),
     wait_for_reply(Pid, Timeout).
 
 start_write(Alg, K, M, RBucket, RSuffix, Data, Timeout,
-            GetClientFun, FreeClientFun) ->
+            GetClientFun, FreeClientFun, RObjMod) ->
     gen_fsm:start(
       ?MODULE, {write, Alg, K, M, RBucket, RSuffix, Data, Timeout, self(),
-                GetClientFun, FreeClientFun}, []).
+                GetClientFun, FreeClientFun, RObjMod}, []).
 
 get_local_riak_client() ->
     riak:local_client().
@@ -97,7 +101,7 @@ free_local_riak_client(_) ->
 %% @end
 %%--------------------------------------------------------------------
 init({write, Alg, K, M, RBucket, RSuffix, Data, Timeout, Caller,
-      GetClientFun, FreeClientFun})
+      GetClientFun, FreeClientFun, RObjMod})
     when is_integer(K) andalso K > 0 andalso
          is_integer(M) andalso M > 0 andalso
          is_binary(RBucket) andalso is_binary(RSuffix) andalso
@@ -116,9 +120,11 @@ init({write, Alg, K, M, RBucket, RSuffix, Data, Timeout, Caller,
                                m = M,
                                rbucket = RBucket,
                                rsuffix = RSuffix,
+                               data = Data,
                                tref = TRef,
                                get_client_fun = GetClientFun,
-                               free_client_fun = FreeClientFun}, 0}.
+                               free_client_fun = FreeClientFun,
+                               robj_mod = RObjMod}, 0}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -137,9 +143,15 @@ init({write, Alg, K, M, RBucket, RSuffix, Data, Timeout, Caller,
 %%--------------------------------------------------------------------
 prepare_write(timeout, S) ->
     {ok, Client} = (S#state.get_client_fun)(),
-    send_reply(S#state.caller, boom),
-    {stop, normal, S#state{riak_client = Client}}.
-    %% {next_state, prepare_write, S}.
+    {Bucket, Key} = encode_bkey(S),
+    RObj = (S#state.robj_mod):new(Bucket, Key, S#state.data),
+    XX = Client:put(RObj),
+    {next_state, write_waiting_replies, S#state{riak_client = Client,
+                                                xx = XX}, 0}.
+
+write_waiting_replies(timeout, S) ->
+    send_reply(S#state.caller, S#state.xx),
+    {stop, normal, S}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -160,7 +172,7 @@ prepare_write(timeout, S) ->
 %% @end
 %%--------------------------------------------------------------------
 prepare_write(_Event, _From, State) ->
-    Reply = ok,
+    Reply = neverNEVAHHH,
     {reply, Reply, prepare_write, State}.
 
 %%--------------------------------------------------------------------
@@ -247,6 +259,21 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
+encode_bkey(#state{alg = Alg, k = K, m = M,
+                   rbucket = Bucket, rsuffix = Suffix}) ->
+    encode_bkey(Alg, K, M, Bucket, Suffix).
+
+encode_bkey(?ALG_LIBER8TION_V0, K, M, Bucket, Suffix) ->
+    Code = alg_to_code(?ALG_LIBER8TION_V0),
+    {Bucket, <<"st", Code:8, K:8, M:8, Suffix/binary>>}.
+
+decode_key(<<"st", Code:8, K:8, M:8, Suffix/binary>>) ->
+    {code_to_alg(Code), K, M, Suffix}.
+
+alg_to_code(?ALG_LIBER8TION_V0) -> $l.
+
+code_to_alg($l) -> ?ALG_LIBER8TION_V0.
+
 monitor_pid(Pid) ->
     erlang:monitor(process, Pid).
 
@@ -284,5 +311,9 @@ wait_for_reply(Pid, Timeout0) ->
         demonitor_pid(WRef)
     end.
 
-t0() ->
+t_write() ->
     write(?ALG_LIBER8TION_V0, 3, 2, <<"rb">>, <<"rs">>, <<"data">>, 500).
+
+t_write_test() ->
+    ok = t_write().
+
