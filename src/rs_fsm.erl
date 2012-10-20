@@ -38,6 +38,8 @@
           free_client_fun :: fun(),
           robj_mod :: atom(),
           riak_client :: undefined | term(),
+          ops_procs :: undefined | [pid()],
+          waiting_replies = 0 :: integer(),
           xx :: term()
          }).
 
@@ -73,7 +75,7 @@ write(Alg, K, M, RBucket, RSuffix, Data, Timeout,
       GetClientFun, FreeClientFun, RObjMod) ->
     {ok, Pid} = start_write(Alg, K, M, RBucket, RSuffix, Data, Timeout,
                             GetClientFun, FreeClientFun, RObjMod),
-    wait_for_reply(Pid, Timeout).
+    wait_for_sync_reply(Pid, Timeout).
 
 start_write(Alg, K, M, RBucket, RSuffix, Data, Timeout,
             GetClientFun, FreeClientFun, RObjMod) ->
@@ -92,7 +94,7 @@ read(Alg, K, M, RBucket, RSuffix, Timeout,
       GetClientFun, FreeClientFun, RObjMod) ->
     {ok, Pid} = start_read(Alg, K, M, RBucket, RSuffix, Timeout,
                            GetClientFun, FreeClientFun, RObjMod),
-    wait_for_reply(Pid, Timeout).
+    wait_for_sync_reply(Pid, Timeout).
 
 start_read(Alg, K, M, RBucket, RSuffix, Timeout,
            GetClientFun, FreeClientFun, RObjMod) ->
@@ -187,16 +189,41 @@ init({read, Alg, K, M, RBucket, RSuffix, Timeout, Caller,
 %%--------------------------------------------------------------------
 prepare_write(timeout, S) ->
     {ok, Client} = (S#state.get_client_fun)(),
-    %% XXX
-    %% {Bucket, Keys, Frags} = ec_encode(S#state.data, S),
-    %% RObj = (S#state.robj_mod):new(Bucket, Key, S#state.data),
-    %% XX = Client:put(RObj),
-    XX = xxx,
-    {next_state, write_waiting_replies, S#state{riak_client = Client,
-                                                xx = XX}, 0}.
+    BKFrags = ec_encode(S#state.data, S),
+    Writers = spawn_frag_writers(BKFrags, S),
+    {next_state, write_waiting_replies,
+     S#state{riak_client = Client,
+             ops_procs = Writers,
+             waiting_replies = S#state.k + S#state.m}}.
 
+write_waiting_replies({?MODULE, asyncreply, FromPid, ok},
+                      #state{waiting_replies = WaitingRepliesX,
+                             ops_procs = OpsProcsX} = S) ->
+    OpsProcs = OpsProcsX -- [FromPid],
+    case WaitingRepliesX - 1 of
+        0 ->
+            send_sync_reply(S#state.caller, ok),
+            {stop, normal, S#state{ops_procs = OpsProcs}};
+        WaitingReplies when OpsProcs == [] ->
+            {next_state, write_partial_failure,
+             S#state{ops_procs = OpsProcs,
+                     waiting_replies = WaitingReplies},
+             0};
+        WaitingReplies ->
+            {next_state, write_waiting_replies,
+             S#state{ops_procs = OpsProcs,
+                     waiting_replies = WaitingReplies}}
+    end;
+write_waiting_replies({?MODULE, asyncreply, _FromPid, NotOk}, S) ->
+    %% TODO Fix
+    send_sync_reply(S#state.caller, {error, {dunno_why, NotOk}}),
+    {stop, normal, S};
 write_waiting_replies(timeout, S) ->
-    send_reply(S#state.caller, S#state.xx),
+    {next_state, write_partial_failure, S, 0}.
+
+write_partial_failure(timeout, S) ->
+    %% TODO: figure out what to do here
+    send_sync_reply(S#state.caller, timeout_bummer),
     {stop, normal, S}.
 
 prepare_read(timeout, S) ->
@@ -208,7 +235,7 @@ prepare_read(timeout, S) ->
                                                xx = XX}, 0}.
 
 read_waiting_replies(timeout, S) ->
-    send_reply(S#state.caller, S#state.xx),
+    send_sync_reply(S#state.caller, S#state.xx),
     {stop, normal, S}.
 
 %%--------------------------------------------------------------------
@@ -399,6 +426,33 @@ ec_fake_split_bin_big(_FragSize, Last, PadBytes) ->
 
 %% --- Misc
 
+spawn_frag_writers(BKFrags, S) ->
+    Me = self(),
+    [spawn_link(fun() -> frag_writer(Me, BKFrag, S) end) || BKFrag <- BKFrags].
+
+%% TODO I'm not very good at using try/catch/after or don't understand
+%%      it, or try/catch/after is an ugly tool?
+
+frag_writer(Parent, {Bucket, Key, FragData}, S) ->
+    Res = try
+              {ok, Client} = (S#state.get_client_fun)(),
+              try
+                  RObj = (S#state.robj_mod):new(Bucket, Key, FragData),
+                  %% TODO Add some Riak object metadata here?
+                  Client:put(RObj)
+              catch
+                  Xi:Yi ->
+                      {error, {Xi, Yi, erlang:get_stacktrace()}}
+              after
+                  (S#state.free_client_fun)(Client)
+              end
+          catch
+              Xo:Yo ->
+                  {error, {Xo, Yo, erlang:get_stacktrace()}}
+          end,
+    send_frag_reply(Parent, Res),
+    exit(normal).
+
 zip_1xx(_A, [], []) ->
     [];
 zip_1xx(A, [B|Bx], [C|Cx]) ->
@@ -416,20 +470,23 @@ demonitor_pid(Ref) when is_reference(Ref) ->
             true
     end.
 
-send_reply(Pid, Reply) ->
-    Pid ! {?MODULE, reply, Reply}.
+send_frag_reply(Pid, Reply) ->
+    gen_fsm:send_event(Pid, {?MODULE, asyncreply, self(), Reply}).
+
+send_sync_reply(Pid, Reply) ->
+    Pid ! {?MODULE, syncreply, Reply}.
 
 %% Note that we assume that the pid we're waiting for is going to
 %% do the right thing wrt timeouts.
 
-wait_for_reply(Pid, Timeout0) ->
+wait_for_sync_reply(Pid, Timeout0) ->
     Timeout = if Timeout0 == infinity -> infinity;
                  true                 -> Timeout0 + 200
               end,
     WRef = monitor_pid(Pid),
     try
         receive
-            {?MODULE, reply, Reply} ->
+            {?MODULE, syncreply, Reply} ->
                 Reply;
             {'DOWN', WRef, _, _, Info} ->
                 {error, Info}
