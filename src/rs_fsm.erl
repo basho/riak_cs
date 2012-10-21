@@ -58,9 +58,9 @@
 %%
 %% The Alg atom will encode some algorithm assumptions that the rest
 %% of this code will also assume, e.g.
-%%   * ?ALG_LIBER8TION_V0 will use w=8 *and* it will assume a very
+%%   * ?ALG_CAUCHY_GOOD_V0 will use w=4 *and* it will assume a very
 %%     particular version of the NIF-to-be's implementation of
-%%     the liber8tion algorithm.  For example, if the NIF can't
+%%     the cauchy_good algorithm.  For example, if the NIF can't
 %%     provide that exact version, then we must fail.  Paranoia!
 %%
 %% @spec start() -> {ok, Pid} | ignore | {error, Error}
@@ -383,11 +383,11 @@ encode_key(Alg, K, M, Frag, Suffix) ->
 decode_key(<<"st", Code:8, K:8, M:8, Frag:8, Suffix/binary>>) ->
     {code_to_alg(Code), K, M, Frag, Suffix}.
 
-alg_to_code(?ALG_FAKE_V0)       -> $f;
-alg_to_code(?ALG_LIBER8TION_V0) -> $l.
+alg_to_code(?ALG_FAKE_V0)        -> $f;
+alg_to_code(?ALG_CAUCHY_GOOD_V0) -> $g.
 
 code_to_alg($f) -> ?ALG_FAKE_V0;
-code_to_alg($l) -> ?ALG_LIBER8TION_V0.
+code_to_alg($g) -> ?ALG_CAUCHY_GOOD_V0.
 
 %% --- Fake erasure encoding/decoding
 

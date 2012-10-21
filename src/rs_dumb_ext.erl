@@ -139,11 +139,9 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 
 do_encode(Alg, K, M, Bin, Dir, Exe) ->
-    Alg = ?ALG_LIBER8TION_V0,
+    Alg = ?ALG_CAUCHY_GOOD_V0,
     try
-        TmpDir = filename:join(Dir, "bogus-name-for-ensure_dir"),
-        ok = filelib:ensure_dir(TmpDir),
-        ok = clean_up_dir(Dir),
+        clean_up_dir(Dir),
         TmpFile = filename:join(Dir, "file"),
         ok = file:write_file(TmpFile, Bin),
 
@@ -156,31 +154,67 @@ do_encode(Alg, K, M, Bin, Dir, Exe) ->
                  X <- lists:seq(1, K)],
         Ms = [filename:join(Dir, "file_m" ++ integer_to_list(X)) ||
                  X <- lists:seq(1, M)],
-        {read_bins(Ks), read_bins(Ms)}                 
+        {read_frags(Ks), read_frags(Ms)}                 
     catch X:Y ->
             {error, {X, Y, erlang:get_stacktrace()}}
     end.
 
+do_decode(Alg, BinSize, K, M, Ks, Ms, Dir, Exe) ->
+    Alg = ?ALG_CAUCHY_GOOD_V0,
+    true = (length(Ks) < K),
+    true = (length(Ms) =< M),
+    try
+        clean_up_dir(Dir),
+        [write_km_file(Dir, k, Num, Bin) || {Num, Bin} <- Ks],
+        [write_km_file(Dir, m, Num, Bin) || {Num, Bin} <- Ms],
+        Out = filename:join(Dir, "file"),
+        Decoded = filename:join(Dir, "file_decoded"),
+
+        Meta = filename:join(Dir, "file_meta.txt"),
+        MetaData = io_lib:format(
+                     "~s\n~w\n~w ~w 4 64 ~w\ncauchy_good\n3\n1\n",
+                     [Out, BinSize, K, M, BinSize]),
+        ok = file:write_file(Meta, MetaData),
+
+        Cmd = make_decoder_cmd(Alg, Dir, Exe, Out),
+        %% TODO: Oops, I need something other than exit status, drat!
+        io:format("Cmd ~p\n", [Cmd]),
+        "0\n" = os:cmd(Cmd),
+
+        {ok, DecodedBin} = file:read_file(Decoded),
+        DecodedBin
+    catch X:Y ->
+            {error, {X, Y, erlang:get_stacktrace()}}
+    end.
+    
 clean_up_dir(Dir) ->
+    TmpDir = filename:join(Dir, "bogus-name-for-ensure_dir"),
+    ok = filelib:ensure_dir(TmpDir),
     Files = filelib:wildcard(filename:join(Dir, "*")),
     [ok = file:delete(F) || F <- Files],
     ok.
 
-make_encoder_cmd(?ALG_LIBER8TION_V0, K, M, Bin, Dir, Exe, TmpFile) ->
-    PacketSize = case size(Bin) of
-                     N when N <     1024 -> 8;
-                     N when N <  16*1024 -> 32;
-                     N when N < 128*1024 -> 128;
-                     _                   -> 1024
-                 end,
-    flat("~s encoder ~s ~s ~w ~w liber8tion 8 ~p ~p\n",
-         [Exe, Dir, TmpFile, K, M, PacketSize, PacketSize]).
+make_encoder_cmd(?ALG_CAUCHY_GOOD_V0, K, M, _Bin, Dir, Exe, TmpFile) ->
+    flat("~s encoder ~s ~s ~w ~w cauchy_good 4 64 0\n",
+         [Exe, Dir, TmpFile, K, M]).
+
+make_decoder_cmd(?ALG_CAUCHY_GOOD_V0, Dir, Exe, OutFile) ->
+    flat("~s decoder ~s ~s\n", [Exe, Dir, OutFile]).
 
 flat(Fmt, Args) ->
     lists:flatten(io_lib:format(Fmt, Args)).
 
-read_bins(Files) ->
+read_frags(Files) ->
     [begin
          {ok, Bin} = file:read_file(F),
          Bin
      end || F <- Files].
+
+write_km_file(Dir, Type, Num, Bin)
+  when is_list(Dir) andalso
+       (Type == k orelse Type == m) andalso
+       is_integer(Num) andalso Num > 0 andalso
+       is_binary(Bin) ->
+    Path = filename:join(Dir, "file_" ++ atom_to_list(Type) ++
+                             integer_to_list(Num)),
+    ok = file:write_file(Path, Bin).
