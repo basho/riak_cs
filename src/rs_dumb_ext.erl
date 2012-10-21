@@ -15,7 +15,6 @@
 -module(rs_dumb_ext).
 
 -behaviour(gen_server).
--compile(export_all).                           % SLF debugging only!
 
 -include("rs_erasure_encoding.hrl").
 
@@ -24,6 +23,7 @@
          encode/5,
          decode/7,
          stop/1]).
+-export([t_iter_encode/6]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -182,7 +182,6 @@ do_encode(Alg, K, M, Bin, Dir, Exe) ->
 
         Cmd = make_encoder_cmd(Alg, K, M, Bin, Dir, Exe, TmpFile),
         %% TODO: Oops, I need something other than exit status, drat!
-        io:format("Cmd ~p\n", [Cmd]),
         "0\n" = os:cmd(Cmd),
 
         Ks = [filename:join(Dir, "file_k" ++ integer_to_list(X)) ||
@@ -213,7 +212,6 @@ do_decode(Alg, BinSize, K, M, Ks, Ms, Dir, Exe) ->
 
         Cmd = make_decoder_cmd(Alg, Dir, Exe, Out),
         %% TODO: Oops, I need something other than exit status, drat!
-        io:format("Cmd ~p\n", [Cmd]),
         "0\n" = os:cmd(Cmd),
 
         {ok, DecodedBin} = file:read_file(Decoded),
@@ -253,3 +251,16 @@ write_km_file(Dir, Type, Num, Bin)
     Path = filename:join(Dir, "file_" ++ atom_to_list(Type) ++
                              integer_to_list(Num)),
     ok = file:write_file(Path, Bin).
+
+%% Goofy little performance test ... which shows that there's a pretty
+%% horrible bottleneck in here somewhere: 1 proc can do ~35MByte/sec
+%% but 8 procs can only do about ~48 MByte/sec.
+%%
+%% Encoders = [begin {ok, Pid} = rs_dumb_ext:start_link("/Users/fritchie/src/erasure-encoding-libs/jerasure.osx-mountain-lion/bin/enc-dec-wrapper.sh", "/tmp/qwer" ++ integer_to_list(X)), Pid end || X <- lists:seq(1,8)].
+%% [spawn(fun() -> Res = timer:tc(fun() -> catch rs_dumb_ext:t_iter_encode(L100, Eee, alg_cauchy_good0, 9, 4, B1Mr) end), io:format("Res ~P\n", [Res, 10]) end) || Eee <- Encoders].
+
+t_iter_encode(IterItemList, Pid, Alg, K, M, Bin) ->
+    [begin
+         {_, _} = encode(Pid, Alg, K, M, Bin),
+         ok
+     end || _ <- IterItemList].
