@@ -20,7 +20,10 @@
 -include("rs_erasure_encoding.hrl").
 
 %% API
--export([start_link/2]).
+-export([start_link/2,
+         encode/5,
+         decode/7,
+         stop/1]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -46,6 +49,27 @@ start_link(JerasureEncDecWrapper, WorkDir) ->
     gen_server:start_link(?MODULE, {JerasureEncDecWrapper, WorkDir},
                           []).
 
+encode(Pid, Alg, K, M, Bin)
+  when is_atom(Alg), is_integer(K), is_integer(M), is_binary(Bin) ->
+    gen_server:call(Pid, {encode, Alg, K, M, Bin}, infinity).
+
+decode(Pid, Alg, BinSize, K, M, Ks, Ms)
+  when is_atom(Alg), is_integer(BinSize),
+       is_integer(K), is_integer(M),
+       is_list(Ks), is_list(Ms) ->
+    VerifyFun = fun({Num, Bin}) when is_integer(Num), Num > 0,
+                                     is_binary(Bin) ->
+                        true;
+                   (_) ->
+                        false
+                end,
+    true = lists:all(VerifyFun, Ks),
+    true = lists:all(VerifyFun, Ms),
+    gen_server:call(Pid, {decode, Alg, BinSize, K, M, Ks, Ms}, infinity).
+
+stop(Pid) ->
+    gen_server:call(Pid, {stop}, infinity).
+
 %%%===================================================================
 %%% gen_server callbacks
 %%%===================================================================
@@ -62,6 +86,8 @@ start_link(JerasureEncDecWrapper, WorkDir) ->
 %% @end
 %%--------------------------------------------------------------------
 init({JerasureEncDecWrapper, WorkDir}) ->
+    ok = clean_up_dir(WorkDir),
+    true = filelib:is_file(JerasureEncDecWrapper),
     {ok, #state{exe = JerasureEncDecWrapper,
                 dir = WorkDir}}.
 
@@ -79,8 +105,16 @@ init({JerasureEncDecWrapper, WorkDir}) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
+handle_call({encode, Alg, K, M, Bin}, _From, State) ->
+    Res = do_encode(Alg, K, M, Bin, State#state.dir, State#state.exe),
+    {reply, Res, State};
+handle_call({decode, Alg, BinSize, K, M, Ks, Ms}, _From, State) ->
+    Res = do_decode(Alg, BinSize, K, M, Ks, Ms, State#state.dir, State#state.exe),
+    {reply, Res, State};
+handle_call({stop}, _From, State) ->
+    {stop, normal, ok, State};
 handle_call(_Request, _From, State) ->
-    Reply = ok,
+    Reply = neverNeVaH,
     {reply, Reply, State}.
 
 %%--------------------------------------------------------------------
@@ -120,7 +154,8 @@ handle_info(_Info, State) ->
 %% @spec terminate(Reason, State) -> void()
 %% @end
 %%--------------------------------------------------------------------
-terminate(_Reason, _State) ->
+terminate(_Reason, State) ->
+    clean_up_dir(State#state.dir),
     ok.
 
 %%--------------------------------------------------------------------
