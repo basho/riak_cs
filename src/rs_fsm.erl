@@ -14,8 +14,8 @@
 -include_lib("eqc/include/eqc.hrl").
 
 %% API
--export([write/7, write/10,
-         read/6, read/9]).
+-export([write/8, write/11,
+         read/7, read/10]).
 -export([get_local_riak_client/0, free_local_riak_client/1]).
 
 %% gen_fsm callbacks
@@ -37,6 +37,7 @@
           rbucket :: binary(),
           rsuffix :: binary(),
           data :: binary(),
+          opts :: proplist:proplist(),
           tref :: undefined | reference(),
           get_client_fun :: fun(),
           free_client_fun :: fun(),
@@ -69,42 +70,40 @@
 %% @spec start() -> {ok, Pid} | ignore | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
-write(Alg, K, M, RBucket, RSuffix, Data, Timeout) ->
-    write(Alg, K, M, RBucket, RSuffix, Data, Timeout,
+write(Alg, K, M, RBucket, RSuffix, Data, Opts, Timeout) ->
+    write(Alg, K, M, RBucket, RSuffix, Data, Opts, Timeout,
           fun get_local_riak_client/0, fun free_local_riak_client/1,
           riak_object).
 
-write(Alg, K, M, RBucket, RSuffix, Data, Timeout,
+write(Alg, K, M, RBucket, RSuffix, Data, Opts, Timeout,
       GetClientFun, FreeClientFun, RObjMod) ->
-    {ok, Pid} = start_write(Alg, K, M, RBucket, RSuffix, Data, Timeout,
+    {ok, Pid} = start_write(Alg, K, M, RBucket, RSuffix, Data, Opts, Timeout,
                             GetClientFun, FreeClientFun, RObjMod),
     wait_for_sync_reply(Pid, Timeout).
 
-start_write(Alg, K, M, RBucket, RSuffix, Data, Timeout,
-            GetClientFun, FreeClientFun, RObjMod) ->
-    Alg = ?ALG_FAKE_V0,
-
+start_write(Alg, K, M, RBucket, RSuffix, Data, Opts, Timeout,
+            GetClientFun, FreeClientFun, RObjMod)
+  when Alg == ?ALG_FAKE_V0; Alg == ?ALG_CAUCHY_GOOD_V0 ->
     gen_fsm:start(
-      ?MODULE, {write, Alg, K, M, RBucket, RSuffix, Data, Timeout, self(),
+      ?MODULE, {write, Alg, K, M, RBucket, RSuffix, Data, Opts, Timeout, self(),
                 GetClientFun, FreeClientFun, RObjMod}, []).
 
-read(Alg, K, M, RBucket, RSuffix, Timeout) ->
-    read(Alg, K, M, RBucket, RSuffix, Timeout,
+read(Alg, K, M, RBucket, RSuffix, Opts, Timeout) ->
+    read(Alg, K, M, RBucket, RSuffix, Opts, Timeout,
          fun get_local_riak_client/0, fun free_local_riak_client/1,
          riak_object).
 
-read(Alg, K, M, RBucket, RSuffix, Timeout,
+read(Alg, K, M, RBucket, RSuffix, Opts, Timeout,
       GetClientFun, FreeClientFun, RObjMod) ->
-    {ok, Pid} = start_read(Alg, K, M, RBucket, RSuffix, Timeout,
+    {ok, Pid} = start_read(Alg, K, M, RBucket, RSuffix, Opts, Timeout,
                            GetClientFun, FreeClientFun, RObjMod),
     wait_for_sync_reply(Pid, Timeout).
 
-start_read(Alg, K, M, RBucket, RSuffix, Timeout,
-           GetClientFun, FreeClientFun, RObjMod) ->
-    Alg = ?ALG_FAKE_V0,
-
+start_read(Alg, K, M, RBucket, RSuffix, Opts, Timeout,
+           GetClientFun, FreeClientFun, RObjMod)
+  when Alg == ?ALG_FAKE_V0; Alg == ?ALG_CAUCHY_GOOD_V0 ->
     gen_fsm:start(
-      ?MODULE, {read, Alg, K, M, RBucket, RSuffix, Timeout, self(),
+      ?MODULE, {read, Alg, K, M, RBucket, RSuffix, Opts, Timeout, self(),
                 GetClientFun, FreeClientFun, RObjMod}, []).
 
 get_local_riak_client() ->
@@ -130,7 +129,7 @@ free_local_riak_client(_) ->
 %%                     {stop, StopReason}
 %% @end
 %%--------------------------------------------------------------------
-init({write, Alg, K, M, RBucket, RSuffix, Data, Timeout, Caller,
+init({write, Alg, K, M, RBucket, RSuffix, Data, Opts, Timeout, Caller,
       GetClientFun, FreeClientFun, RObjMod})
     when is_integer(K) andalso K > 0 andalso
          is_integer(M) andalso M > 0 andalso
@@ -149,15 +148,19 @@ init({write, Alg, K, M, RBucket, RSuffix, Data, Timeout, Caller,
                                rbucket = RBucket,
                                rsuffix = RSuffix,
                                data = Data,
+                               opts = Opts,
                                tref = TRef,
                                get_client_fun = GetClientFun,
                                free_client_fun = FreeClientFun,
                                robj_mod = RObjMod}, 0};
-init({read, Alg, K, M, RBucket, RSuffix, Timeout, Caller,
+init({read, Alg, K, M, RBucket, RSuffix, Opts, Timeout, Caller,
       GetClientFun, FreeClientFun, RObjMod})
     when is_integer(K) andalso K > 0 andalso
          is_integer(M) andalso M > 0 andalso
          is_binary(RBucket) andalso is_binary(RSuffix) ->
+    if Alg == ?ALG_FAKE_V0        -> ok;
+       Alg == ?ALG_CAUCHY_GOOD_V0 -> io:format("Warning: read code broken!\n")
+    end,
     TRef = if Timeout == infinity ->
                    undefined;
               true ->
@@ -170,6 +173,7 @@ init({read, Alg, K, M, RBucket, RSuffix, Timeout, Caller,
                               m = M,
                               rbucket = RBucket,
                               rsuffix = RSuffix,
+                              opts = Opts,
                               tref = TRef,
                               get_client_fun = GetClientFun,
                               free_client_fun = FreeClientFun,
@@ -394,17 +398,17 @@ code_to_alg($g) -> ?ALG_CAUCHY_GOOD_V0.
 
 %% --- Fake erasure encoding/decoding
 
-ec_encode(Bin, #state{alg = Alg, k = K, m = M,
+ec_encode(Bin, #state{alg = Alg, k = K, m = M, opts = Opts,
                       rbucket = Bucket, rsuffix = Suffix}) ->
-    ec_encode(Bin, Alg, K, M, Bucket, Suffix).
+    ec_encode(Bin, Alg, K, M, Bucket, Suffix, Opts).
 
-ec_encode(<<>>, _, _, _, _, _) ->
+ec_encode(<<>>, _, _, _, _, _, _) ->
     [];
-ec_encode(Bin, Alg, K, M, Bucket, Suffix) ->
+ec_encode(Bin, Alg, K, M, Bucket, Suffix, Opts) ->
     NumFrags = K + M,
     Buckets = lists:duplicate(NumFrags, Bucket),
     Keys = ec_encode_keys(Alg, K, M, Suffix, lists:seq(0, NumFrags - 1)),
-    Frags = ec_encode_data(Bin, Alg, K, M),
+    Frags = ec_encode_data(Bin, Alg, K, M, Opts),
     lists:zip3(Buckets, Keys, Frags).
 
 ec_encode_read_keys(#state{alg = Alg, k = K, m = M,
@@ -419,7 +423,7 @@ ec_encode_read_keys(Alg, K, M, Bucket, Suffix) ->
 ec_encode_keys(Alg, K, M, Suffix, Frags) ->
     [encode_key(Alg, K, M, Frag, Suffix) || Frag <- Frags].
 
-ec_encode_data(Bin, ?ALG_FAKE_V0, K, M) ->
+ec_encode_data(Bin, ?ALG_FAKE_V0, K, M, _Opts) ->
     BinSize = size(Bin),
     BinSizeRemK = BinSize rem K,
     if K == 1 ->
@@ -433,7 +437,11 @@ ec_encode_data(Bin, ?ALG_FAKE_V0, K, M) ->
             PadSize = K - BinSizeRemK
     end,
     ec_fake_split_bin(FragSize, Bin, K, PadSize) ++
-        [<<(X+42):(FragSize * 8)>> || X <- lists:seq(0, M - 1)].
+        [<<(X+42):(FragSize * 8)>> || X <- lists:seq(0, M - 1)];
+ec_encode_data(Bin, ?ALG_CAUCHY_GOOD_V0, K, M, Opts) ->
+    EncPid = proplists:get_value(rs_dumb_ext_pid, Opts, no_such_encoder_pid),
+    {Ks, Ms} = rs_dumb_ext:encode(EncPid, alg_cauchy_good0, K, M, Bin),
+    Ks ++ Ms.
 
 ec_fake_split_bin(1, Bin, K, PadSize) when size(Bin) < K ->
     ec_fake_split_small(Bin) ++ lists:duplicate(PadSize, <<0>>);
@@ -582,13 +590,13 @@ wait_for_sync_reply(Pid, Timeout0) ->
     end.
 
 t_write() ->
-    write(?ALG_FAKE_V0, 3, 2, <<"rb">>, <<"rs">>, <<"data">>, 500).
+    write(?ALG_FAKE_V0, 3, 2, <<"rb">>, <<"rs">>, <<"data">>, [], 500).
 
 t_write_test() ->
     ok = t_write().
 
 t_read() ->
-    read(?ALG_FAKE_V0, 3, 2, <<"rb">>, <<"rs">>, 500).
+    read(?ALG_FAKE_V0, 3, 2, <<"rb">>, <<"rs">>, [], 500).
 
 t_read_test() ->
     ok = t_read().
@@ -601,7 +609,7 @@ t_fake_encode_test() ->
     Suffix = <<"suffix">>,
     [begin
          %% io:format("size(Bin) ~p K ~p M ~p\n", [size(Bin), K, M]),
-         Es = ec_encode(Bin, ?ALG_FAKE_V0, K, M, Bucket, Suffix),
+         Es = ec_encode(Bin, ?ALG_FAKE_V0, K, M, Bucket, Suffix, []),
          %% We won't check the parity frags, since they're all bogus.
          %% Instead, compare the original Bin + plus any addtional padding
          %% to the concatenation of all of the K data frags.
