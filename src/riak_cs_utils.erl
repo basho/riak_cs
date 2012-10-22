@@ -11,6 +11,7 @@
 %% Public API
 -export([anonymous_user_creation/0,
          binary_to_hexlist/1,
+         check_bucket_exists/2,
          close_riak_connection/1,
          close_riak_connection/2,
          create_bucket/5,
@@ -683,6 +684,30 @@ bucket_empty(Bucket, RiakPid) ->
             end;
         _ ->
             false
+    end.
+
+%% @doc Check if a bucket exists in the `buckets' bucket and verify
+%% that it has an owner assigned. If true return the object;
+%% otherwise, return an error.
+%%
+%% @TODO Rename current `bucket_exists' function to
+%% `bucket_exists_for_user' and rename this function
+%% `bucket_exists'.
+-spec check_bucket_exists(binary(), pid()) ->
+                                 {ok, riak_obj:riak_obj()} | {error, term()}.
+check_bucket_exists(Bucket, RiakPid) ->
+    case riak_cs_utils:get_object(?BUCKETS_BUCKET, Bucket, RiakPid) of
+        {ok, Obj} ->
+            %% Make sure the bucket has an owner
+            [Value | _] = riakc_obj:get_values(Obj),
+            case Value of
+                <<"0">> ->
+                    {error, no_such_bucket};
+                _ ->
+                    {ok, Obj}
+            end;
+        {error, _}=Error ->
+            Error
     end.
 
 %% @doc Check if a bucket exists in a list of the user's buckets.

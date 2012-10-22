@@ -119,7 +119,7 @@ bucket_access(Bucket, RequestedAccess, CanonicalId, RiakPid) ->
 %% @doc Get the ACL for a bucket
 -spec bucket_acl(binary(), pid()) -> {ok, acl()} | {error, term()}.
 bucket_acl(Bucket, RiakPid) ->
-    case riak_cs_utils:get_object(?BUCKETS_BUCKET, Bucket, RiakPid) of
+    case riak_cs_utils:check_bucket_exists(Bucket, RiakPid) of
         {ok, Obj} ->
             %% For buckets there will not be siblings.
             MD = riakc_obj:get_metadata(Obj),
