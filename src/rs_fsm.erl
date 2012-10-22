@@ -14,7 +14,8 @@
 -include_lib("eqc/include/eqc.hrl").
 
 %% API
--export([write/7, write/10]).
+-export([write/7, write/10,
+         read/6, read/9]).
 -export([get_local_riak_client/0, free_local_riak_client/1]).
 
 %% gen_fsm callbacks
@@ -680,14 +681,14 @@ prop_yoyo() ->
            _NumTOs = length([x || {_, _, _, timeout} <- FullSeq]),
            Class = if NumOKs >= K ->
                            ok;
-                      NumFails >= K ->
+                      NumNotFs >= K ->
                            not_found;
                       true ->
                            future_hazy_try_again_later
                    end,
            ?WHENFAIL(
               io:format("S = ~p\n", [FullSeq]),
-              (NumOKs >= K orelse NumFails >= K)
+              (NumOKs >= K orelse NumNotFs >= K)
               andalso
               %% TODO replay FullSeq into the FSM
               true)
