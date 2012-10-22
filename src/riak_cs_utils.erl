@@ -26,6 +26,7 @@
          has_tombstone/1,
          is_admin/1,
          map_keys_and_manifests/3,
+         reduce_keys_and_manifests/2,
          get_object/3,
          get_manifests/3,
          get_user/2,
@@ -293,6 +294,8 @@ active_manifests(ManifestBucket, Prefix, RiakPid) ->
                     {ManifestBucket, [[<<"starts_with">>, Prefix]]}
             end,
     Query = [{map, {modfun, riak_cs_utils, map_keys_and_manifests},
+              undefined, false},
+             {reduce, {modfun, riak_cs_utils, reduce_keys_and_manifests},
               undefined, true}],
     {ok, ReqId} = riakc_pb_socket:mapred_stream(RiakPid, Input, Query, self()),
     receive_keys_and_manifests(ReqId, []).
@@ -339,6 +342,12 @@ map_keys_and_manifests(Object, _, _) ->
                               [Type, Reason]),
             []
     end.
+
+%% Pipe all the bucket listing results through a passthrough reduce
+%% phase.  This is just a temporary kludge until the sink backpressure
+%% work is done.
+reduce_keys_and_manifests(Acc, _) ->
+    Acc.
 
 %% @doc Return the credentials of the admin user
 -spec get_admin_creds() -> {ok, {string(), string()}} | {error, term()}.
