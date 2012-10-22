@@ -182,8 +182,7 @@ do_encode(Alg, K, M, Bin, Dir, Exe) ->
 
         Cmd = make_encoder_cmd(Alg, K, M, Bin, Dir, Exe, TmpFile),
         %% TODO: Oops, I need something other than exit status, drat!
-        %% "0\n" = os:cmd(Cmd),
-        "0\n" = rs_os:cmd(Cmd),
+        "0\n" = os:cmd(Cmd),
 
         Ks = [filename:join(Dir, "file_k" ++ integer_to_list(X)) ||
                  X <- lists:seq(1, K)],
