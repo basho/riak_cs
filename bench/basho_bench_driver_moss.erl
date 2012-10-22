@@ -27,7 +27,9 @@
                  bucket,
                  report_fun,
                  working_op,
-                 req_id
+                 req_id,
+                 http_proxy_host,
+                 http_proxy_port
                }).
 
 %% ====================================================================
@@ -89,10 +91,25 @@ new(ID) ->
     end,
 
     Hosts = [{Ip, Port}],
+    ProxyHosts  = case basho_bench_config:get(moss_http_proxy_host,
+                                              ["127.0.0.1"]) of
+                      [C|_] = String when is_integer(C), C < 256 ->
+                          [String];
+                      T = Tuple when is_tuple(T) ->
+                          [T];
+                      Else ->
+                          Else
+                  end,
+    ProxyPort = basho_bench_config:get(moss_http_proxy_port, 8080),
+    ProxyTargets = basho_bench_config:normalize_ips(ProxyHosts, ProxyPort),
+    {ProxyH, ProxyP} = lists:nth((ID rem length(ProxyTargets)+1), ProxyTargets),
+    lager:log(info, self(), "ID ~p Proxy host ~p TCP port ~p\n",
+              [ID, ProxyH, ProxyP]),
 
     {ok, #state{client_id=ID, hosts=Hosts,
                 bucket = basho_bench_config:get(moss_bucket, "test"),
-                report_fun = ReportFun}}.
+                report_fun = ReportFun,
+                http_proxy_host = ProxyH, http_proxy_port = ProxyP}}.
 
 %% This module does some crazy stuff, but it's there for a reason.
 %% The reason is that basho_bench is expecting the run() function to
@@ -138,7 +155,7 @@ run(Op, KeyGen, ValueGen, State) ->
 run2(insert, KeyGen, ValueGen, #state{bucket = Bucket} = State) ->
     {NextHost, S2} = next_host(State),
     ConnInfo = NextHost,
-    case insert(KeyGen, ValueGen, ConnInfo, Bucket) of
+    case insert(KeyGen, ValueGen, ConnInfo, Bucket, State) of
         ok ->
             {{silent, ok}, S2};
         {error, Reason} ->
@@ -149,7 +166,7 @@ run2(delete, KeyGen, _ValueGen, #state{bucket = Bucket} = State) ->
     {Host, Port} = NextHost,
     Key = KeyGen(),
     Url = url(Host, Port, Bucket, Key),
-    case do_delete({Host, Port}, Url, []) of
+    case do_delete({Host, Port}, Url, [], State) of
         ok ->
             {ok, S2};
         {error, Reason} ->
@@ -220,7 +237,7 @@ bigfile_valgen(Id, Props) ->
 %% Internal functions
 %% ====================================================================
 
-insert(KeyGen, ValueGen, {Host, Port}, Bucket) ->
+insert(KeyGen, ValueGen, {Host, Port}, Bucket, State) ->
     Key = KeyGen(),
     Url = url(Host, Port, Bucket, Key),
     {ValueT, CL} =
@@ -244,7 +261,8 @@ insert(KeyGen, ValueGen, {Host, Port}, Bucket) ->
                   "'moss.config.sample' file for an example.\n", []),
                 exit(bad_generator)
         end,
-    do_put({Host, Port}, Url, [{"content-length", integer_to_list(CL)}], ValueT).
+    do_put({Host, Port}, Url, [{"content-length", integer_to_list(CL)}], ValueT,
+           State).
 
 url(Host, Port, Bucket, Key) ->
     UnparsedUrl = lists:concat(["http://", Host, ":", Port, "/", Bucket, "/", Key]),
@@ -356,9 +374,9 @@ send_request(Host, Url, Headers0, Method, Body, Options, Count) ->
             end
     end.
 
-do_put(Host, Url, Headers, Value) ->
+do_put(Host, Url, Headers, Value, State) ->
     case send_request(Host, Url, Headers ++ [{'Content-Type', 'application/octet-stream'}],
-                      put, Value, proxy_opts()) of
+                      put, Value, proxy_opts(State)) of
         {ok, "200", _Header, _Body} ->
             ok;
         {ok, "201", _Header, _Body} ->
@@ -371,8 +389,8 @@ do_put(Host, Url, Headers, Value) ->
             {error, Reason}
     end.
 
-do_delete(Host, Url, Headers) ->
-    case send_request(Host, Url, Headers, delete, <<>>, proxy_opts()) of
+do_delete(Host, Url, Headers, State) ->
+    case send_request(Host, Url, Headers, delete, <<>>, proxy_opts(State)) of
         {ok, "200", _Header, _Body} ->
             ok;
         {ok, "204", _Header, _Body} ->
@@ -392,7 +410,7 @@ do_get_first_unit(Host, Url, Headers, State) ->
             {response_format, binary},
             {connect_timeout, 300*1000},
             {inactivity_timeout, 300*1000}],
-    case initiate_request(Host, Url, Headers, get, <<>>, Opts++proxy_opts()) of
+    case initiate_request(Host, Url, Headers, get, <<>>, Opts++proxy_opts(State)) of
         {ibrowse_req_id, ReqId} ->
             receive
                 {ibrowse_async_headers, ReqId, HTTPCode, _}
@@ -452,10 +470,10 @@ normalize_error(Method, {'EXIT', {timeout, _}})  -> {error, {Method, timeout}};
 normalize_error(Method, {'EXIT', Reason})        -> {error, {Method, 'EXIT', Reason}};
 normalize_error(Method, {error, Reason})         -> {error, {Method, Reason}}.
 
-proxy_opts() ->
+proxy_opts(State) ->
     [{response_format, binary},
-     {proxy_host, basho_bench_config:get(moss_http_proxy_host)},
-     {proxy_port, basho_bench_config:get(moss_http_proxy_port)}].
+     {proxy_host, State#state.http_proxy_host},
+     {proxy_port, State#state.http_proxy_port}].
 
 uppercase_verb(put) ->
     'PUT';

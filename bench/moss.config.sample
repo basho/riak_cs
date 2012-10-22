@@ -26,7 +26,7 @@
 {moss_raw_ip, "s3.amazonaws.com"}. % DO NOT CHANGE
 {moss_raw_port, 80}.               % DO NOT CHANGE
 %% Replace these with your HTTP proxy's location (i.e. Riak CS)
-{moss_http_proxy_host, "localhost"}.
+{moss_http_proxy_host, [{"localhost", 8080}, {"127.0.0.1", 8080}, {{127,0,0,1}, 8080}]}.
 {moss_http_proxy_port, 8080}.
 {moss_request_timeout, 999999000}.
 % If using the moss_measurement_units option, you need to change
