@@ -11,6 +11,8 @@
 
 -include("rs_erasure_encoding.hrl").
 
+-include_lib("eqc/include/eqc.hrl").
+
 %% API
 -export([write/7, write/10]).
 -export([get_local_riak_client/0, free_local_riak_client/1]).
@@ -628,3 +630,113 @@ t_fake_encode_test() ->
              {Bin, K, M, Pad, CatKFrags}
      end || Bin <- Bins, K <- Ks, M <- Ms],
     ok.
+
+%% --- QuickCheck model stuff
+
+gen_proto_reply_seq() ->
+    ?LET({K, M}, {choose(1, 9), choose(0, 5)},
+         %% 1st vector = K replicas, sequence range 0 - 1000
+         %% 2nd vector = M replicas, sequence range 100 - 1100
+         %% Goal: M replica replies will tend to be a bit later than K replies
+         {K, M, vector(K, gen_seq_reply(500)), vector(M, gen_seq_reply(600))}).
+
+gen_seq_reply(N) ->
+    {choose(N - 500, N + 500), gen_reply()}.
+
+gen_reply() ->
+    frequency([{ 7, ok},
+               { 2, not_found},
+               { 1, timeout}]).
+
+%% %% Sanity check: no m reply appears before a k not-ok.
+%% %% Check by keeping a counter of failures: +1 when a k server
+%% %% fails, and -1 when an m server responds w
+%% Sanity1 = lists:foldl(fun({_, k, _, Fail}, Fails) when Fail /= ok ->
+%%                               Fails + 1;
+%%                          ({_, m, _, _}, Fails) ->
+%%                               Fails - 1;
+%%                          (_, Fails) ->
+%%                               Fails
+%%                       end, 0, FullSeq),
+%%
+%% This is a bogus test.  Consider this sequence:
+%%
+%% [{0,k,1,not_found},{100,m,1,not_found},{100,m,2,not_found}]
+%% k1's not_found means that m1 should be considered.
+%% m1's not_found means that m2 should be considered.
+%% m2's not_found means that the sanity score is negative.
+%% The sequence is legit, so a negative score tells us not-enough.
+
+prop_yoyo() ->
+    ?FORALL(
+       {K, M, K_vec, M_vec}, gen_proto_reply_seq(),
+       begin
+           FullSeq = make_reply_sequence(K_vec, M_vec),
+           %% io:format("K: ~p ~p\n", [K, K_vec]),
+           %% io:format("M: ~p ~p\n", [M, M_vec]),
+           %% io:format("r: ~p\n", [FullSeq]),
+           NumOKs = length([x || {_, _, _, ok} <- FullSeq]),
+           NumNotFs = length([x || {_, _, _, not_found} <- FullSeq]),
+           _NumTOs = length([x || {_, _, _, timeout} <- FullSeq]),
+           Class = if NumOKs >= K ->
+                           ok;
+                      NumFails >= K ->
+                           not_found;
+                      true ->
+                           future_hazy_try_again_later
+                   end,
+           ?WHENFAIL(
+              io:format("S = ~p\n", [FullSeq]),
+              (NumOKs >= K orelse NumFails >= K)
+              andalso
+              %% TODO replay FullSeq into the FSM
+              true)
+       end).
+
+conv_proto_reply_seq2sfar(FragType, Vector) ->
+    %% sfar = sequence number, frag type, server #, reply
+    Pairs = lists:zip(lists:seq(1, length(Vector)), Vector),
+    [{SequenceNum, FragType, Server, Reply} ||
+        {Server, {SequenceNum, Reply}} <- Pairs].
+
+make_reply_sequence(K_vec0, M_vec0) ->
+    K_vec = lists:sort(conv_proto_reply_seq2sfar(k, K_vec0)),
+    M_vec = lists:sort(conv_proto_reply_seq2sfar(m, M_vec0)),
+    make_reply_seq(K_vec, M_vec).
+
+make_reply_seq(K_vec, M_vec) ->
+    make_reply_seq2(K_vec, M_vec, 1).
+
+%% For example, if:
+%%
+%%    K_vec = [{49,timeout},{24,timeout},{315,ok}]
+%%    M_vec = [{564,ok},{219,ok},{586,ok}]
+%%
+%% ... the model will assume that K frag #2 will timeout @ 24 and K
+%% frag #1 will timeout at 49.  So we mix in the replies from M frag
+%% #2 and M frag #1.  That will give a total order over time of:
+%%
+%% [{24,k,2,timeout},{49,k,1,timeout},{219,m,2,ok},{315,k,3,ok},{564,m,1,ok}]
+
+make_reply_seq2([], _, _) ->
+    [];
+make_reply_seq2([{_Seq, _FragType, _Server, Cmd} = K|Krest], M_vec, NextM) ->
+    %% Here's where we embed an assumption of the model.
+    case Cmd of
+        ok ->
+            %% If reply == ok, then no action will be required later
+            %% by one of the m parity servers.
+            [K|make_reply_seq2(Krest, M_vec, NextM)];
+        _ ->
+            %% If a reply is not ok, then we'll
+            %% try to find an m server's reply and mix it in (sorted!)
+            %% with the rest of our command sequence.  Otherwise,
+            %% keep processing as normal.
+            case lists:keytake(NextM, 3, M_vec) of
+                {value, Msfar, M_vec2} ->
+                    [K|make_reply_seq2(lists:sort([Msfar|Krest]),
+                                         M_vec2, NextM + 1)];
+                _ ->
+                    [K|make_reply_seq2(Krest, M_vec, NextM)]
+            end
+    end.

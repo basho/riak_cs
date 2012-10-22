@@ -178,11 +178,12 @@ do_encode(Alg, K, M, Bin, Dir, Exe) ->
     try
         clean_up_dir(Dir),
         TmpFile = filename:join(Dir, "file"),
-        ok = file:write_file(TmpFile, Bin),
+        ok = my_write_file(TmpFile, Bin),
 
         Cmd = make_encoder_cmd(Alg, K, M, Bin, Dir, Exe, TmpFile),
         %% TODO: Oops, I need something other than exit status, drat!
-        "0\n" = os:cmd(Cmd),
+        %% "0\n" = os:cmd(Cmd),
+        "0\n" = rs_os:cmd(Cmd),
 
         Ks = [filename:join(Dir, "file_k" ++ integer_to_list(X)) ||
                  X <- lists:seq(1, K)],
@@ -208,7 +209,7 @@ do_decode(Alg, BinSize, K, M, Ks, Ms, Dir, Exe) ->
         MetaData = io_lib:format(
                      "~s\n~w\n~w ~w 4 64 ~w\ncauchy_good\n3\n1\n",
                      [Out, BinSize, K, M, BinSize]),
-        ok = file:write_file(Meta, MetaData),
+        ok = my_write_file(Meta, MetaData),
 
         Cmd = make_decoder_cmd(Alg, Dir, Exe, Out),
         %% TODO: Oops, I need something other than exit status, drat!
@@ -222,9 +223,10 @@ do_decode(Alg, BinSize, K, M, Ks, Ms, Dir, Exe) ->
     
 clean_up_dir(Dir) ->
     TmpDir = filename:join(Dir, "bogus-name-for-ensure_dir"),
-    ok = filelib:ensure_dir(TmpDir),
-    Files = filelib:wildcard(filename:join(Dir, "*")),
-    [ok = file:delete(F) || F <- Files],
+    %% ok = filelib:ensure_dir(TmpDir),
+    %% Files = filelib:wildcard(filename:join(Dir, "*")),
+    %% [ok = file:delete(F) || F <- Files],
+    os:cmd("rm -rf " ++ Dir ++ "/*"),
     ok.
 
 make_encoder_cmd(?ALG_CAUCHY_GOOD_V0, K, M, _Bin, Dir, Exe, TmpFile) ->
@@ -239,7 +241,7 @@ flat(Fmt, Args) ->
 
 read_frags(Files) ->
     [begin
-         {ok, Bin} = file:read_file(F),
+         {ok, Bin} = my_read_file(F),
          Bin
      end || F <- Files].
 
@@ -250,7 +252,21 @@ write_km_file(Dir, Type, Num, Bin)
        is_binary(Bin) ->
     Path = filename:join(Dir, "file_" ++ atom_to_list(Type) ++
                              integer_to_list(Num)),
-    ok = file:write_file(Path, Bin).
+    ok = my_write_file(Path, Bin).
+
+%% WARNING: Do not use on files larger than 16MB.
+
+my_read_file(Path) ->
+    {ok, FH} = file:open(Path, [read, binary, raw]),
+    Res = file:read(FH, 16*1024*1024),
+    file:close(FH),
+    Res.
+
+my_write_file(Path, Bin) ->
+    {ok, FH} = file:open(Path, [write, binary, raw]),
+    Res = file:write(FH, Bin),
+    file:close(FH),
+    Res.
 
 %% Goofy little performance test ... which shows that there's a pretty
 %% horrible bottleneck in here somewhere: 1 proc can do ~35MByte/sec
