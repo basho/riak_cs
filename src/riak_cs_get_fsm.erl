@@ -36,8 +36,10 @@
          waiting_value/2,
          waiting_value/3,
          waiting_continue_or_stop/2,
+         waiting_continue_or_stop/3,
          waiting_chunks/2,
          waiting_chunks/3,
+         sending_remaining/2,
          sending_remaining/3,
          handle_event/3,
          handle_sync_event/4,
@@ -206,6 +208,11 @@ waiting_continue_or_stop(continue, #state{manifest=Manifest,
             {next_state, waiting_chunks, NewState}
     end.
 
+waiting_continue_or_stop(Event, From, State) ->
+    _ = lager:info("Pid ~p got unknown event ~p from ~p\n",
+                   [self(), Event, From]),
+    {next_state, waiting_continue_or_stop, State}.
+
 waiting_chunks(get_next_chunk, From, #state{block_buffer=[], from=PreviousFrom}=State) when PreviousFrom =:= undefined ->
     %% we don't have a chunk ready
     %% yet, so we'll make note
@@ -323,6 +330,10 @@ waiting_chunks({chunk, Pid, {BlockSeq, BlockReturnValue}}, #state{blocks_left=Re
             NextStateName = waiting_chunks
     end,
     {next_state, NextStateName, NewState}.
+
+sending_remaining(Event, State) ->
+    _ = lager:info("Pid ~p got unknown async event ~p\n", [self(), Event]),
+    {next_state, sending_remaining, State}.
 
 sending_remaining(get_next_chunk, _From, #state{block_buffer=[{BlockSeq, Block} | RestBlockBuffer]}=State) ->
     _ = lager:debug("Returning block ~p to client", [BlockSeq]),
