@@ -33,6 +33,7 @@
 -export([init/1,
          prepare/2,
          prepare/3,
+         waiting_value/2,
          waiting_value/3,
          waiting_continue_or_stop/2,
          waiting_chunks/2,
@@ -150,6 +151,9 @@ prepare(get_manifest, _From, State) ->
                                            from=undefined},
             {reply, Mfst, waiting_continue_or_stop, NewState, NextStateTimeout}
     end.
+
+waiting_value(stop, State) ->
+    {stop, normal, State}.
 
 waiting_value(get_manifest, _From, State=#state{manifest=undefined}) ->
     {stop, normal, notfound, State};
