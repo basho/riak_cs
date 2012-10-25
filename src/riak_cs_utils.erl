@@ -16,6 +16,7 @@
          close_riak_connection/2,
          create_bucket/5,
          create_user/2,
+         cs_version/0,
          delete_bucket/4,
          delete_object/3,
          from_bucket_name/1,
@@ -160,6 +161,13 @@ create_user(Name, Email) ->
         {error, _Reason}=Error ->
             Error
     end.
+
+%% @doc Get the active version of Riak CS to use in checks to
+%% determine if new features should be enabled.
+-spec cs_version() -> pos_integer().
+cs_version() ->
+    {ok, Version} = application:get_env(riak_cs, cs_version),
+    Version.
 
 %% @doc Delete a bucket
 -spec delete_bucket(rcs_user(), riakc_obj:riakc_obj(), binary(), pid()) ->
