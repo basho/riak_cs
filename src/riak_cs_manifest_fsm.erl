@@ -290,10 +290,11 @@ get_and_update(RiakcPid, WrappedManifests, Bucket, Key) ->
                     Result = riak_cs_utils:put_with_no_meta(RiakcPid, ObjectToWrite);
                 _ ->
                     Result = riak_cs_gc:gc_manifests(Bucket,
-                                                    Key,                                                                                     NewManiAdded,
-                                                    OverwrittenUUIDs,
-                                                    RiakObject,
-                                                    RiakcPid)
+                                                     Key,
+                                                     NewManiAdded,
+                                                     OverwrittenUUIDs,
+                                                     RiakObject,
+                                                     RiakcPid)
             end,
             {Result, RiakObject, Manifests};
         {error, notfound} ->
