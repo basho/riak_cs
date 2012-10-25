@@ -285,10 +285,7 @@ delete_resource(RD, Ctx=#key_context{bucket=Bucket,
         {error, notfound} ->
             %% it's not there; consider the delete successful
             DCode = 0,
-            ok;
-        {error, _Reason} ->
-            DCode = -1,
-            riak_cs_s3_response:api_error(delete_failed, RD, Ctx)
+            ok
     end,
     dt_return(<<"delete_resource">>, [DCode], [UserName, BFile_str]),
     dt_return_object(<<"file_delete">>, [DCode], [UserName, BFile_str]),

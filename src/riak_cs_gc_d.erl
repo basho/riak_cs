@@ -439,12 +439,13 @@ pause_gc(State, StateData) ->
     _ = lager:info("Pausing garbage collection"),
     StateData#state{pause_state=State}.
 
+-spec cancel_timer(timeout(), timer:tref()) -> timeout() | undefined.
 cancel_timer(_, undefined) ->
     undefined;
 cancel_timer(infinity, TimerRef) ->
     %% Cancel the timer in case the interval has
     %% recently be set to `infinity'.
-    erlang:cancel_timer(TimerRef),
+    _ = erlang:cancel_timer(TimerRef),
     undefined;
 cancel_timer(_, TimerRef) ->
     handle_cancel_timer(erlang:cancel_timer(TimerRef)).

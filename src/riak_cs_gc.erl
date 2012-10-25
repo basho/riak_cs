@@ -120,6 +120,14 @@ mark_as_scheduled_delete({error, _}=Error, _, _, _, _) ->
 %% @doc Call a `riak_cs_manifest_utils' function on a set of manifests
 %% to update the state of the manifests specified by `UUIDsToMark'
 %% and then write the updated values to riak.
+-spec mark_manifests(Response ::
+                     {ok, riakc_obj:riak_object(), [{binary(), lfs_manifest()}]} |
+                     {error, term()},
+                     UUIDsToMark :: [binary()],
+                     ManiFunction :: fun(),
+                     RiakcPid :: pid()) ->
+                    {ok, orddict:orddict()} |
+                    {error, term()}.
 mark_manifests({ok, RiakObject, Manifests}, UUIDsToMark, ManiFunction, RiakcPid) ->
     Marked = ManiFunction(Manifests, UUIDsToMark),
     UpdObj = riakc_obj:update_value(RiakObject, term_to_binary(Marked)),
