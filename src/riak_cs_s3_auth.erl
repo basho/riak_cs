@@ -9,6 +9,7 @@
 -behavior(riak_cs_auth).
 
 -include("riak_cs.hrl").
+-include("s3_api.hrl").
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -93,11 +94,6 @@ calculate_signature(KeyData, RD) ->
 check_auth(PresentedSignature, CalculatedSignature) ->
     PresentedSignature == CalculatedSignature.
 
--define(ROOT_HOST, "s3.amazonaws.com").
--define(SUBRESOURCES, ["acl", "location", "logging", "notification", "partNumber",
-                       "policy", "requestPayment", "torrent", "uploadId", "uploads",
-                       "versionId", "versioning", "versions", "website"]).
-
 canonicalize_qs(QS) ->
     canonicalize_qs(QS, []).
 
@@ -150,7 +146,7 @@ auth_test_() ->
       }]}.
 
 setup() ->
-    application:set_env(riak_cs, cs_root_host, "s3.amazonaws.com").
+    application:set_env(riak_cs, cs_root_host, ?ROOT_HOST).
 
 teardown(_) ->
     application:unset_env(riak_cs, cs_root_host).

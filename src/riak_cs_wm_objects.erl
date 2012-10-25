@@ -4,7 +4,7 @@
 %%
 %% -------------------------------------------------------------------
 
--module(riak_cs_wm_bucket).
+-module(riak_cs_wm_objects).
 
 -export([init/1,
          service_available/2,
@@ -21,6 +21,8 @@
 -include("riak_cs.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
 
+-define(RIAKCPOOL, bucket_list_pool).
+
 init(Config) ->
     dt_entry(<<"init">>),
     %% Check if authentication is disabled and
@@ -31,7 +33,7 @@ init(Config) ->
 -spec service_available(term(), term()) -> {true, term(), term()}.
 service_available(RD, Ctx) ->
     dt_entry(<<"service_available">>),
-    Res = riak_cs_wm_utils:service_available(RD, Ctx),
+    Res = riak_cs_wm_utils:service_available(?RIAKCPOOL, RD, Ctx),
     dt_return(<<"service_available">>),
     Res.
 
@@ -155,9 +157,7 @@ shift_to_owner(RD, Ctx, OwnerId, RiakPid) when RiakPid /= undefined ->
 -spec allowed_methods(term(), term()) -> {[atom()], term(), term()}.
 allowed_methods(RD, Ctx) ->
     dt_entry(<<"allowed_methods">>),
-    %% TODO: add POST
-    %% TODO: make this list conditional on Ctx
-    {['HEAD', 'PUT', 'DELETE'], RD, Ctx}.
+    {['GET'], RD, Ctx}.
 
 -spec content_types_provided(term(), term()) ->
                                     {[{string(), atom()}], term(), term()}.
@@ -187,63 +187,45 @@ content_types_accepted(RD, Ctx) ->
 
 -spec to_xml(term(), #context{}) ->
                     {binary() | {'halt', term()}, term(), #context{}}.
-to_xml(RD, Ctx) ->
-    handle_read_request(RD, Ctx).
-
-%% @private
-handle_read_request(RD, Ctx=#context{user=User,
-                                             bucket=Bucket}) ->
-    %% override the content-type on HEAD
-    HeadRD = wrq:set_resp_header("content-type", "text/html", RD),
+to_xml(RD, Ctx=#context{start_time=StartTime,
+                        user=User,
+                        bucket=Bucket,
+                        requested_perm='READ',
+                        riakc_pid=RiakPid}) ->
+    dt_entry(<<"to_xml">>, [], [extract_name(User), Bucket]),
+    dt_entry_bucket(<<"list_keys">>, [], [extract_name(User), Bucket]),
     StrBucket = binary_to_list(Bucket),
     case [B || B <- riak_cs_utils:get_buckets(User),
                B?RCS_BUCKET.name =:= StrBucket] of
         [] ->
-            {{halt, 404}, HeadRD, Ctx};
-        [_BucketRecord] ->
-            {{halt, 200}, HeadRD, Ctx}
+            CodeName = no_such_bucket,
+            Res = riak_cs_s3_response:api_error(CodeName, RD, Ctx),
+            Code = riak_cs_s3_response:status_code(CodeName),
+            dt_return(<<"to_xml">>, [Code], [extract_name(User), Bucket]),
+            dt_return_bucket(<<"list_keys">>, [Code], [extract_name(User), Bucket]),
+            Res;
+        [BucketRecord] ->
+            Prefix = list_to_binary(wrq:get_qs_value("prefix", "", RD)),
+            case riak_cs_utils:get_keys_and_manifests(Bucket, Prefix, RiakPid) of
+                {ok, KeyObjPairs} ->
+                    X = riak_cs_s3_response:list_bucket_response(User,
+                                                                   BucketRecord,
+                                                                   KeyObjPairs,
+                                                                   RD,
+                                                                   Ctx),
+                    ok = riak_cs_stats:update_with_start(bucket_list_keys,
+                                                         StartTime),
+                    dt_return(<<"to_xml">>, [200], [extract_name(User), Bucket]),
+                    dt_return_bucket(<<"list_keys">>, [200], [extract_name(User), Bucket]),
+                    X;
+                {error, Reason} ->
+                    Code = riak_cs_s3_response:status_code(Reason),
+                    X = riak_cs_s3_response:api_error(Reason, RD, Ctx),
+                    dt_return(<<"to_xml">>, [Code], [extract_name(User), Bucket]),
+                    dt_return_bucket(<<"list_keys">>, [Code], [extract_name(User), Bucket]),
+                    X
+            end
     end.
-
-%% @private
-%% versioning_qs({"versioning", _}) ->
-%%     true;
-%% versioning_qs(_) ->
-%%     false.
-
-%% %% @private
-%% location_qs({"location", _}) ->
-%%     true;
-%% location_qs(_) ->
-%%     false.
-
-%% %% @private
-%% versioning_or_location_qs(Item) ->
-%%     versioning_qs(Item) orelse location_qs(Item).
-
-%% %% @private
-%% versioning_or_location_request(Qs) ->
-%%     lists:any(fun versioning_or_location_qs/1, Qs).
-
-%% %% @private
-%% handle_versioning_or_location_req(true, RD, Ctx) ->
-%%     case lists:any(fun versioning_qs/1, wrq:req_qs(RD)) of
-%%         true ->
-%%             handle_versioning_req(RD, Ctx);
-%%         false ->
-%%             handle_location_req(RD, Ctx)
-%%     end;
-%% handle_versioning_or_location_req(false, RD, Ctx) ->
-%%     handle_normal_read_bucket_response(RD, Ctx).
-
-%% %% @private
-%% handle_versioning_req(RD, Ctx) ->
-%%     {<<"<VersioningConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"/>">>,
-%%      RD, Ctx}.
-
-%% %% @private
-%% handle_location_req(RD, Ctx) ->
-%%     {<<"<LocationConstraint xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"/>">>,
-%%      RD, Ctx}.
 
 %% @doc Process request body on `PUT' request.
 accept_body(RD, Ctx=#context{user=User,
@@ -305,7 +287,7 @@ finish_request(RD, Ctx=#context{riakc_pid=undefined}) ->
     {true, RD, Ctx};
 finish_request(RD, Ctx=#context{riakc_pid=RiakPid}) ->
     dt_entry(<<"finish_request">>, [1], []),
-    riak_cs_utils:close_riak_connection(RiakPid),
+    riak_cs_utils:close_riak_connection(?RIAKCPOOL, RiakPid),
     dt_return(<<"finish_request">>, [1], []),
     {true, RD, Ctx#context{riakc_pid=undefined}}.
 

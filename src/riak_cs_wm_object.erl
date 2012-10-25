@@ -1,10 +1,10 @@
 %% -------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2011 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2012 Basho Technologies, Inc.  All Rights Reserved.
 %%
 %% -------------------------------------------------------------------
 
--module(riak_cs_wm_key).
+-module(riak_cs_wm_object).
 
 -export([init/1,
          service_available/2,
@@ -23,12 +23,8 @@
 -include_lib("webmachine/include/webmachine.hrl").
 
 init(Config) ->
-    dt_entry(<<"init">>),
-    %% Check if authentication is disabled and
-    %% set that in the context.
-    AuthBypass = proplists:get_value(auth_bypass, Config),
-    {ok, #key_context{context=#context{auth_bypass=AuthBypass,
-                                       start_time=os:timestamp()}}}.
+    {ok, Ctx} = riak_cs_wm_common:init(Config),
+    {ok, #key_context{context=Ctx}}.
 
 -spec extract_paths(term(), term()) -> term().
 extract_paths(RD, Ctx) ->

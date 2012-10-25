@@ -118,9 +118,8 @@ empty_acl_xml() ->
 %% to complete the request.
 -type request_method() :: 'GET' | 'HEAD' | 'PUT' | 'POST' |
                           'DELETE' | 'Dialyzer happiness'.
--spec requested_access(request_method(), string()) -> acl_perm().
-requested_access(Method, QueryString) ->
-    AclRequest = acl_request(QueryString),
+-spec requested_access(request_method(), boolean()) -> acl_perm().
+requested_access(Method, AclRequest) ->
     if
         Method == 'GET'
         andalso
@@ -155,16 +154,6 @@ requested_access(Method, QueryString) ->
 %% ===================================================================
 %% Internal functions
 %% ===================================================================
-
-%% @doc Check if the acl subresource is specified in the
-%% list of query string parameters.
--spec acl_request([{string(), string()}]) -> boolean().
-acl_request([]) ->
-    false;
-acl_request([{"acl", _} | _]) ->
-    true;
-acl_request([_ | Rest]) ->
-    acl_request(Rest).
 
 %% @doc Update the permissions for a grant in the provided
 %% list of grants if an entry exists with matching grantee
