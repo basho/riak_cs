@@ -29,6 +29,7 @@
          reduce_keys_and_manifests/2,
          get_object/3,
          get_manifests/3,
+         manifests_from_riak_object/1,
          get_user/2,
          get_user_by_index/3,
          get_user_index/3,
@@ -38,6 +39,7 @@
          pow/3,
          put_object/5,
          put_with_no_meta/2,
+         put_with_no_meta/3,
          riak_connection/0,
          riak_connection/1,
          save_user/3,
@@ -195,23 +197,27 @@ delete_bucket(User, UserObj, Bucket, RiakPid) ->
     end.
 
 %% @doc Mark all active manifests as pending_delete.
--spec delete_object(binary(), binary(), pid()) -> ok | {error, term()}.
+%% If successful, returns a list of the UUIDs that were marked for
+%% Garbage collection. Otherwise returns an error. Note,
+%% {error, notfound} counts as success in this case,
+%% with the list of UUIDs being [].
+-spec delete_object(binary(), binary(), pid()) ->
+    {ok, [binary()]} | {error, term()}.
 delete_object(Bucket, Key, RiakcPid) ->
     StartTime = os:timestamp(),
-    case get_manifests(RiakcPid, Bucket, Key) of
-        {ok, RiakObject, Manifests} ->
-            ActiveManifests = riak_cs_manifest_utils:active_and_writing_manifests(Manifests),
-            ActiveUUIDs = [UUID || {UUID, _} <- ActiveManifests],
-            _ = riak_cs_gc:gc_manifests(Bucket,
-                                    Key,
-                                    Manifests,
-                                    ActiveUUIDs,
-                                    RiakObject,
-                                    RiakcPid),
-            ok = riak_cs_stats:update_with_start(object_delete, StartTime);
-        {error, _}=Error ->
-            Error
-    end.
+    maybe_gc_active_manifests(get_manifests(RiakcPid, Bucket, Key),
+                         StartTime, RiakcPid).
+
+%% @private
+maybe_gc_active_manifests({ok, RiakObject, Manifests}, StartTime, RiakcPid) ->
+    R = riak_cs_gc:gc_active_manifests(Manifests, RiakObject, RiakcPid),
+    ok = riak_cs_stats:update_with_start(object_delete, StartTime),
+    R;
+maybe_gc_active_manifests({error, notfound}, _StartTime, _RiakcPid) ->
+    {ok, []};
+maybe_gc_active_manifests({error, _Reason}=Error, _StartTime, _RiakcPid) ->
+    Error.
+
 
 %% Get the root bucket name for either a Riak CS object
 %% bucket or the data block bucket name.
@@ -367,34 +373,38 @@ get_object(BucketName, Key, RiakPid) ->
 %% internal fun to retrieve the riak object
 %% at a bucket/key
 -spec get_manifests_raw(pid(), binary(), binary()) ->
-    {ok, riakc_obj:riakc_obj()} | {error, notfound}.
+    {ok, riakc_obj:riakc_obj()} | {error, term()}.
 get_manifests_raw(RiakcPid, Bucket, Key) ->
     ManifestBucket = to_bucket_name(objects, Bucket),
     riakc_pb_socket:get(RiakcPid, ManifestBucket, Key).
 
 %% @doc
 -spec get_manifests(pid(), binary(), binary()) ->
-    {ok, term(), term()} | {error, notfound}.
+    {ok, term(), term()} | {error, term()}.
 get_manifests(RiakcPid, Bucket, Key) ->
     case get_manifests_raw(RiakcPid, Bucket, Key) of
         {ok, Object} ->
-            DecodedSiblings = [binary_to_term(V) ||
-                                  {_, V}=Content <- riakc_obj:get_contents(Object),
-                                  not has_tombstone(Content)],
-
-            %% Upgrade the manifests to be the latest erlang
-            %% record version
-            Upgraded = riak_cs_manifest_utils:upgrade_wrapped_manifests(DecodedSiblings),
-
-            %% resolve the siblings
-            Resolved = riak_cs_manifest_resolution:resolve(Upgraded),
-
-            %% prune old scheduled_delete manifests
-            Pruned = riak_cs_manifest_utils:prune(Resolved),
-            {ok, Object, Pruned};
-        {error, notfound}=NotFound ->
-            NotFound
+            Manifests = manifests_from_riak_object(Object),
+            {ok, Object, Manifests};
+        {error, _Reason}=Error ->
+            Error
     end.
+
+-spec manifests_from_riak_object(riakc_obj:riak_object()) -> orddict:orddict().
+manifests_from_riak_object(RiakObject) ->
+    DecodedSiblings = [binary_to_term(V) ||
+                          {_, V}=Content <- riakc_obj:get_contents(RiakObject),
+                          not has_tombstone(Content)],
+
+    %% Upgrade the manifests to be the latest erlang
+    %% record version
+    Upgraded = riak_cs_manifest_utils:upgrade_wrapped_manifests(DecodedSiblings),
+
+    %% resolve the siblings
+    Resolved = riak_cs_manifest_resolution:resolve(Upgraded),
+
+    %% prune old scheduled_delete manifests
+    riak_cs_manifest_utils:prune(Resolved).
 
 %% @doc Retrieve a Riak CS user's information based on their id string.
 -spec get_user('undefined' | list(), pid()) -> {ok, {rcs_user(), riakc_obj:riakc_obj()}} | {error, term()}.
@@ -532,6 +542,8 @@ put_object(BucketName, Key, Value, Metadata, RiakPid) ->
     NewObj = riakc_obj:update_metadata(RiakObject, Metadata),
     riakc_pb_socket:put(RiakPid, NewObj).
 
+put_with_no_meta(RiakcPid, RiakcObj) ->
+    put_with_no_meta(RiakcPid, RiakcObj, []).
 %% @doc Put an object in Riak with empty
 %% metadata. This is likely used when because
 %% you want to avoid manually setting the metadata
@@ -539,11 +551,11 @@ put_object(BucketName, Key, Value, Metadata, RiakPid) ->
 %% if the previous object had metadata siblings,
 %% not explicitly setting the metadata will
 %% cause a siblings exception to be raised.
--spec put_with_no_meta(pid(), riakc_obj:riakc_obj()) ->
-    ok | {ok, riakc_obj:riakc_obj()} | {ok, riakc_obj:key()} | {error, term()}.
-put_with_no_meta(RiakcPid, RiakcObject) ->
+-spec put_with_no_meta(pid(), riakc_obj:riakc_obj(), term()) ->
+    ok | {ok, riakc_obj:riak_object()} | {ok, binary()} | {error, term()}.
+put_with_no_meta(RiakcPid, RiakcObject, Options) ->
     WithMeta = riakc_obj:update_metadata(RiakcObject, dict:new()),
-    riakc_pb_socket:put(RiakcPid, WithMeta).
+    riakc_pb_socket:put(RiakcPid, WithMeta, Options).
 
 %% @doc Get a protobufs connection to the riak cluster
 %% from the default connection pool.

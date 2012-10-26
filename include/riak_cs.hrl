@@ -31,7 +31,7 @@
           acl :: acl()}).
 
 -record(moss_bucket_v1, {
-          name :: string(),
+          name :: string() | binary(),
           last_action :: created | deleted,
           creation_date :: string(),
           modification_time :: erlang:timestamp(),
