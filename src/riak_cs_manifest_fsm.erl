@@ -259,8 +259,7 @@ get_and_delete(RiakcPid, UUID, Bucket, Key) ->
             UpdatedManifests = orddict:erase(UUID, ResolvedManifests),
             case UpdatedManifests of
                 [] ->
-                    ManifestBucket = riak_cs_utils:to_bucket_name(objects, Bucket),
-                    riakc_pb_socket:delete(RiakcPid, ManifestBucket, Key);
+                    riakc_pb_socket:delete_obj(RiakcPid, RiakObject);
                 _ ->
                     ObjectToWrite =
                         riakc_obj:update_value(RiakObject,
