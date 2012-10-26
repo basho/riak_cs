@@ -1,10 +1,9 @@
 -record(multipart_manifest_v1, {
-    bucket :: binary(),
-    key :: binary(),
+    bkey :: {binary(), binary()},
     upload_id :: binary(),
-    start_time :: integer(),
+    start_time :: term(),
 
-    cluster_id :: binary(),
+    cluster_id :: undefined | binary(),
 
     acl :: term(),
     metadata :: orddict:orddict(),
@@ -18,9 +17,14 @@
     %% or `abort' requests.
 
     %% set of complete_request()
+    %% TODO: should this be an orddict
+    %% instead of a set so we can
+    %% retrieve the complete
+    %% record by some index?
     complete_requests :: ordsets:ordset(),
 
     %% set of abort_request()
+    %% TODO: same note as above
     abort_requests :: ordsets:ordset(),
 
     %% Stores references to all of the parts uploaded
@@ -29,13 +33,18 @@
     %% part number, we store the values in this dict
     %% as sets instead of just `part_manifest()'.
     %% [{integer(), ordsets:ordset(part_manifest())}]
-    parts :: orddict:orddict()
+    parts :: orddict:orddict(),
+
+    %% a place to stuff future information
+    %% without having to change
+    %% the record format
+    props = [] :: proplists:proplist()
 }).
 -type multipart_manifest() :: #multipart_manifest_v1{}.
 
 -record(complete_request_v1, {
 
-    complete_time :: integer(),
+    complete_time :: term(),
 
     %% just an ID to refer to a specific
     %% complete record from within a collection
@@ -49,28 +58,41 @@
     %%   Etag :: binary()}]
     part_list :: ordsets:ordset(),
 
-    %% TODO: should this have a content-length?
-    %% It's calculatable based on the `part_list',
-    %% but maybe we should memoize it?
-    content_length :: integer()
+    %% This is a calculatable field,
+    %% not sure if it should
+    %% be denormalized or not.
+    %% I suppose it might
+    %% as well be.
+    content_length :: non_neg_integer()
 }).
 -type complete_request() :: #complete_request_v1{}.
 
 -record(abort_request_v1, {
-    abort_time :: integer(),
+    abort_time :: term(),
 
     %% just an ID to refer to a specific
     %% abort record from within a collection
     id :: binary()
+
+    %% we probably want some information
+    %% here about the parts
+    %% that were observed when this
+    %% abort call came through.
 }).
 -type abort_request() :: #abort_request_v1{}.
 
 -record(part_manifest_v1, {
+    %% TODO: should this be bkey {binary(), binary()}?
     bucket :: binary(),
     key :: binary(),
 
+    %% used to judge races between concurrent uploads
+    %% of the same part_number
+    start_time :: term(),
+
     %% still some questions here
-    status :: writing | active | pending_delete | marked_delete,
+    %% need to account for aborts?
+    state :: writing | active | pending_delete | marked_delete,
 
     %% the parent upload identifier
     upload_id :: binary(),
@@ -81,16 +103,6 @@
     %% a UUID to prevent conflicts with concurrent
     %% uploads of the same {upload_id, part_number}.
     part_id :: binary(),
-
-    %% whether or not this part
-    %% has been marked as aborted
-    %% for the sake of storage calculations.
-    aborted = false,
-    %% aborted :: boolean(),
-
-    %% used to judge races between concurrent uploads
-    %% of the same part_number
-    start_time :: integer(),
 
     last_block_written_time :: integer(),
     write_blocks_remaining :: orddsets:ordset(),
