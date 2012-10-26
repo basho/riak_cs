@@ -167,8 +167,12 @@ create_user(Name, Email) ->
 %% determine if new features should be enabled.
 -spec cs_version() -> pos_integer().
 cs_version() ->
-    {ok, Version} = application:get_env(riak_cs, cs_version),
-    Version.
+    cs_version(application:get_env(riak_cs, cs_version)).
+
+cs_version({ok, Version}) ->
+    Version;
+cs_version(undefined) ->
+    undefined.
 
 %% @doc Delete a bucket
 -spec delete_bucket(rcs_user(), riakc_obj:riakc_obj(), binary(), pid()) ->
