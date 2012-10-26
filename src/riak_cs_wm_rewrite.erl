@@ -25,12 +25,15 @@ do_rewrite("/", _QS, undefined) ->
     "/buckets";
 do_rewrite(Path, QS, undefined) ->
     Bucket = extract_bucket_from_path(string:tokens(Path, [$/])),
-    UpdPath = "/" ++ string:substr(Bucket, length(Bucket)+1),
+    UpdPath = "/" ++ string:substr(Path, length(Bucket)+2),
+    ?debugFmt("Path: ~p Bucket: ~p UpdPath: ~p", [Path, Bucket, UpdPath]),
     do_rewrite(UpdPath, QS, Bucket);
 do_rewrite("/", QS, Bucket) ->
+    ?debugFmt("QS: ~p Bucket: ~p", [QS, Bucket]),
     SubResources = get_subresources(QS),
     lists:flatten(["/buckets/", Bucket, format_bucket_qs(QS, SubResources)]);
 do_rewrite(Path, QS, Bucket) ->
+    ?debugFmt("Path: ~p QS: ~p Bucket: ~p", [Path, QS, Bucket]),
     lists:flatten(["/buckets/",
                    Bucket,
                    "/objects/",
@@ -110,7 +113,9 @@ valid_subresource({Key, _}) ->
 
 rewrite_test() ->
     application:set_env(riak_cs, cs_root_host, ?ROOT_HOST),
+    %% List Buckets URL
     ?assertEqual("/buckets", rewrite(headers([]), "/")),
+    %% Bucket Operations
     ?assertEqual("/buckets/testbucket/objects", rewrite(headers([]), "/testbucket")),
     ?assertEqual("/buckets/testbucket/objects", rewrite(headers([{"host", "testbucket." ++ ?ROOT_HOST}]), "/")),
     ?assertEqual("/buckets/testbucket/acl", rewrite(headers([]), "/testbucket?acl")),
@@ -120,7 +125,12 @@ rewrite_test() ->
     ?assertEqual("/buckets/testbucket/versioning", rewrite(headers([]), "/testbucket?versioning")),
     ?assertEqual("/buckets/testbucket/versioning", rewrite(headers([{"host", "testbucket." ++ ?ROOT_HOST}]), "/?versioning")),
     ?assertEqual("/buckets/testbucket/policy", rewrite(headers([]), "/testbucket?policy")),
-    ?assertEqual("/buckets/testbucket/policy", rewrite(headers([{"host", "testbucket." ++ ?ROOT_HOST}]), "/?policy")).
+    ?assertEqual("/buckets/testbucket/policy", rewrite(headers([{"host", "testbucket." ++ ?ROOT_HOST}]), "/?policy")),
+    ?assertEqual("/buckets/testbucket/upload", rewrite(headers([]), "/testbucket?uploads")),
+    ?assertEqual("/buckets/testbucket/upload", rewrite(headers([{"host", "testbucket." ++ ?ROOT_HOST}]), "/?uploads")),
+    %% Object Operations
+    ?assertEqual("/buckets/testbucket/objects/testobject", rewrite(headers([]), "/testbucket/testobject")),
+    ?assertEqual("/buckets/testbucket/objects/testobject", rewrite(headers([{"host", "testbucket." ++ ?ROOT_HOST}]), "/testobject")).
 
 headers(HeadersList) ->
     mochiweb_headers:make(HeadersList).
