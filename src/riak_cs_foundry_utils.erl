@@ -30,12 +30,12 @@ convert_foundry_accesstoken(RD) ->
             [AccessToken, _] = string:tokens(Key, ":"),
             case string:len(AccessToken) of
                 32 ->
-                    %% foundry access_tokens length is 32 characters
+                    %% Length of foundry access_tokens is 32 characters
                     convert_to_additional_headers(RD, AccessToken);
                 _ ->
                     RD
-			end
-	end.
+            end
+    end.
 
 validate_auth_header(RD, RiakPid) ->
     ClientId = wrq:get_req_header("client_id", RD),
@@ -54,34 +54,41 @@ validate_auth_header(RD, RiakPid) ->
 
 
 convert_to_additional_headers(RD, AccessToken) ->
-	UserId= resolveUserId(AccessToken),
-	ClientId= resolveClientId(AccessToken),
-	case resolveScope(AccessToken) of
-        "S3" ->
-            RequestHeadersTemp = mochiweb_headers:insert("user_id", UserId, wrq:req_headers(RD)),
-            NewRequestHeaders = mochiweb_headers:insert("client_id", ClientId, RequestHeadersTemp),
-            RD#wm_reqdata{req_headers=NewRequestHeaders};
-        _ ->
+    %% If we run into any issue,
+    %% we pass RD to CS standard authentication, which will throw a key error
+    try
+        UserId= resolveUserId(AccessToken),
+        ClientId= resolveClientId(AccessToken),
+        case resolveScope(AccessToken) of
+            "S3" ->
+                RequestHeadersTemp = mochiweb_headers:insert("user_id", UserId, wrq:req_headers(RD)),
+                NewRequestHeaders = mochiweb_headers:insert("client_id", ClientId, RequestHeadersTemp),
+                RD#wm_reqdata{req_headers=NewRequestHeaders};
+            _ ->
+                RD
+        end
+    catch
+        _Exception:_Reason ->
             RD
     end.
-	
+
 resolveUserId(AccessToken) ->
-	XMLResponse = auth_request("validate", AccessToken),
-	{XML, _Rest} = xmerl_scan:string(XMLResponse),
-	[ #xmlText{value=UserId} ] = xmerl_xpath:string("/user/uid/text()", XML),
-	UserId.
+    XMLResponse = auth_request("validate", AccessToken),
+    {XML, _Rest} = xmerl_scan:string(XMLResponse),
+    [ #xmlText{value=UserId} ] = xmerl_xpath:string("/user/uid/text()", XML),
+    UserId.
 
 resolveClientId(AccessToken) ->
-	XMLResponse = auth_request("application", AccessToken),
-	{XML, _Rest} = xmerl_scan:string(XMLResponse),
-	[ #xmlText{value=ClientId} ] = xmerl_xpath:string("/application/info/client-id/text()", XML),
-	ClientId.
+    XMLResponse = auth_request("application", AccessToken),
+    {XML, _Rest} = xmerl_scan:string(XMLResponse),
+    [ #xmlText{value=ClientId} ] = xmerl_xpath:string("/application/info/client-id/text()", XML),
+    ClientId.
 
 resolveScope(AccessToken) ->
-	XMLResponse = auth_request("accesstoken", AccessToken),
-	{XML, _Rest} = xmerl_scan:string(XMLResponse),
-	[ #xmlText{value=Rank} ] = xmerl_xpath:string("/access-token/scope/text()", XML),
-	Rank.
+    XMLResponse = auth_request("accesstoken", AccessToken),
+    {XML, _Rest} = xmerl_scan:string(XMLResponse),
+    [ #xmlText{value=Rank} ] = xmerl_xpath:string("/access-token/scope/text()", XML),
+    Rank.
 
 
 %% Example:
@@ -97,7 +104,7 @@ auth_request(What, AccessToken) ->
         "/apigee/",
         What,
         "?token=",
-		AccessToken
+    AccessToken
     ]),
     Response = httpc:request(get, {RequestURI, RequestHeaders}, [], []),
     case Response of
