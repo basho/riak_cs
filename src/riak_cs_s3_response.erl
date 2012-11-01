@@ -119,7 +119,11 @@ list_bucket_response(User, Bucket, KeyObjPairs, RD, Ctx) ->
     %% in `riak_cs_lfs_utils' to determine if the object
     %% associated with each key is an `lfs_manifest' or not.
     Contents = [begin
-                    KeyString = binary_to_list(Key),
+                    % Key is just not a unicode string but just a
+                    % raw binary like <<229,159,188,231,142,137>>.
+                    % we need to convert to unicode string like [22524,29577].
+                    % this does not affect ascii characters.
+                    KeyString = unicode:characters_to_list(Key, unicode),
                     case ObjResp of
                         {ok, Manifest} ->
                             Size = integer_to_list(
@@ -159,7 +163,7 @@ user_to_xml_owner(?RCS_USER{canonical_id=CanonicalId, display_name=Name}) ->
 
 export_xml(XmlDoc) ->
     unicode:characters_to_binary(
-      xmerl:export_simple(XmlDoc, xmerl_xml, [{prolog, ?XML_PROLOG}])).
+      xmerl:export_simple(XmlDoc, xmerl_xml, [{prolog, ?XML_PROLOG}]), unicode, unicode).
 
 %% @doc Convert an error code string into its corresponding atom
 -spec error_code_to_atom(string()) -> atom().
