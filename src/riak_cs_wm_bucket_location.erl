@@ -1,10 +1,10 @@
 %% -------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2011 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2012 Basho Technologies, Inc.  All Rights Reserved.
 %%
 %% -------------------------------------------------------------------
 
--module(riak_cs_wm_bucket).
+-module(riak_cs_wm_bucket_location).
 
 -export([init/1,
          service_available/2,
@@ -21,8 +21,6 @@
 -include("riak_cs.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
 
--define(RIAKCPOOL, bucket_list_pool).
-
 init(Config) ->
     dt_entry(<<"init">>),
     %% Check if authentication is disabled and
@@ -33,7 +31,7 @@ init(Config) ->
 -spec service_available(term(), term()) -> {true, term(), term()}.
 service_available(RD, Ctx) ->
     dt_entry(<<"service_available">>),
-    Res = riak_cs_wm_utils:service_available(?RIAKCPOOL, RD, Ctx),
+    Res = riak_cs_wm_utils:service_available(RD, Ctx),
     dt_return(<<"service_available">>),
     Res.
 
@@ -349,7 +347,7 @@ finish_request(RD, Ctx=#context{riakc_pid=undefined}) ->
     {true, RD, Ctx};
 finish_request(RD, Ctx=#context{riakc_pid=RiakPid}) ->
     dt_entry(<<"finish_request">>, [1], []),
-    riak_cs_utils:close_riak_connection(?RIAKCPOOL, RiakPid),
+    riak_cs_utils:close_riak_connection(RiakPid),
     dt_return(<<"finish_request">>, [1], []),
     {true, RD, Ctx#context{riakc_pid=undefined}}.
 
