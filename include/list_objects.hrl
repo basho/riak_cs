@@ -17,6 +17,7 @@
         %% the key to start with
         marker :: binary() | undefined}).
 -type list_object_request() :: #list_objects_request_v1{}.
+-define(LOREQ, #list_objects_request_v1).
 
 -record(list_objects_response_v1, {
         %% Params just echoed back from the request --------------------------
@@ -44,6 +45,7 @@
 
         common_prefixes :: list(list_objects_common_prefixes())}).
 -type list_object_response() :: #list_objects_response_v1{}.
+-define(LORESP, #list_objects_response_v1).
 
 -record(list_objects_key_content_v1, {
         key :: binary(),
@@ -51,17 +53,14 @@
         etag :: binary(),
         size :: non_neg_integer(),
         owner :: list_objects_owner(),
-        storage_class :: binary()
-        }).
+        storage_class :: binary()}).
 -type list_objects_key_content() :: #list_objects_key_content_v1{}.
 
 -record(list_objects_owner_v1, {
         id :: binary(),
-        display_name :: binary()
-        }).
+        display_name :: binary()}).
 -type list_objects_owner() :: #list_objects_owner_v1{}.
 
 -record(list_objects_common_prefixes_v1, {
-        prefix :: binary()
-        }).
+        prefix :: binary()}).
 -type list_objects_common_prefixes() :: #list_objects_common_prefixes_v1{}.
