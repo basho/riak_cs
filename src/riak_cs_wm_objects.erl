@@ -1,10 +1,10 @@
 %% -------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2011 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2012 Basho Technologies, Inc.  All Rights Reserved.
 %%
 %% -------------------------------------------------------------------
 
--module(riak_cs_wm_bucket_acl).
+-module(riak_cs_wm_objects).
 
 -export([init/1,
          service_available/2,
@@ -21,6 +21,8 @@
 -include("riak_cs.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
 
+-define(RIAKCPOOL, bucket_list_pool).
+
 init(Config) ->
     dt_entry(<<"init">>),
     %% Check if authentication is disabled and
@@ -31,7 +33,7 @@ init(Config) ->
 -spec service_available(term(), term()) -> {true, term(), term()}.
 service_available(RD, Ctx) ->
     dt_entry(<<"service_available">>),
-    Res = riak_cs_wm_utils:service_available(RD, Ctx),
+    Res = riak_cs_wm_utils:service_available(?RIAKCPOOL, RD, Ctx),
     dt_return(<<"service_available">>),
     Res.
 
@@ -63,48 +65,59 @@ check_permission(RD, #context{user=User,
                               riakc_pid=RiakPid}=Ctx) ->
     Method = wrq:method(RD),
     RequestedAccess =
-        riak_cs_acl_utils:requested_access(Method, true),
+        riak_cs_acl_utils:requested_access(Method, false),
     Bucket = list_to_binary(wrq:path_info(bucket, RD)),
     PermCtx = Ctx#context{bucket=Bucket,
                           requested_perm=RequestedAccess},
-    %% only owners are allowed to delete buckets
-    case check_grants(PermCtx) of
-        true ->
-            %% because users are not allowed to create/destroy
-            %% buckets, we can assume that User is not
-            %% undefined here
+
+    case {Method, RequestedAccess} of
+        {_, 'WRITE'} when User == undefined ->
+            %% unauthed users may neither create nor delete buckets
+            riak_cs_wm_utils:deny_access(RD, PermCtx);
+        {'PUT', 'WRITE'} ->
+            %% authed users are always allowed to attempt bucket creation
             AccessRD = riak_cs_access_logger:set_user(User, RD),
             {false, AccessRD, PermCtx};
-        {true, _OwnerId} when RequestedAccess == 'WRITE' ->
-            %% grants lied: this is a delete, and only the
-            %% owner is allowed to do that; setting user for
-            %% the request anyway, so the error tally is
-            %% logged for them
-            AccessRD = riak_cs_access_logger:set_user(User, RD),
-            riak_cs_wm_utils:deny_access(AccessRD, PermCtx);
-        {true, OwnerId} ->
-            %% this operation is allowed, but we need to get
-            %% the owner's record, and log the access against
-            %% them instead of the actor
-            shift_to_owner(RD, PermCtx, OwnerId, RiakPid);
-        false ->
-            case User of
-                undefined ->
-                    %% no facility for logging bad access
-                    %% against unknown actors
-                    AccessRD = RD,
-                    riak_cs_wm_utils:deny_access(AccessRD, PermCtx);
-                _ ->
-                    %% log bad requests against the actors
-                    %% that make them
+        _ ->
+            %% only owners are allowed to delete buckets
+            case check_grants(PermCtx) of
+                true ->
+                    %% because users are not allowed to create/destroy
+                    %% buckets, we can assume that User is not
+                    %% undefined here
                     AccessRD = riak_cs_access_logger:set_user(User, RD),
-                    %% Check if the bucket actually exists so we can
-                    %% make the correct decision to return a 404 or 403
-                    case riak_cs_utils:check_bucket_exists(Bucket, RiakPid) of
-                        {ok, _} ->
+                    {false, AccessRD, PermCtx};
+                {true, _OwnerId} when RequestedAccess == 'WRITE' ->
+                    %% grants lied: this is a delete, and only the
+                    %% owner is allowed to do that; setting user for
+                    %% the request anyway, so the error tally is
+                    %% logged for them
+                    AccessRD = riak_cs_access_logger:set_user(User, RD),
+                    riak_cs_wm_utils:deny_access(AccessRD, PermCtx);
+                {true, OwnerId} ->
+                    %% this operation is allowed, but we need to get
+                    %% the owner's record, and log the access against
+                    %% them instead of the actor
+                    shift_to_owner(RD, PermCtx, OwnerId, RiakPid);
+                false ->
+                    case User of
+                        undefined ->
+                            %% no facility for logging bad access
+                            %% against unknown actors
+                            AccessRD = RD,
                             riak_cs_wm_utils:deny_access(AccessRD, PermCtx);
-                        {error, Reason} ->
-                            riak_cs_s3_response:api_error(Reason, RD, Ctx)
+                        _ ->
+                            %% log bad requests against the actors
+                            %% that make them
+                            AccessRD = riak_cs_access_logger:set_user(User, RD),
+                            %% Check if the bucket actually exists so we can
+                            %% make the correct decision to return a 404 or 403
+                            case riak_cs_utils:check_bucket_exists(Bucket, RiakPid) of
+                                {ok, _} ->
+                                    riak_cs_wm_utils:deny_access(AccessRD, PermCtx);
+                                {error, Reason} ->
+                                    riak_cs_s3_response:api_error(Reason, RD, Ctx)
+                            end
                     end
             end
     end.
@@ -144,9 +157,7 @@ shift_to_owner(RD, Ctx, OwnerId, RiakPid) when RiakPid /= undefined ->
 -spec allowed_methods(term(), term()) -> {[atom()], term(), term()}.
 allowed_methods(RD, Ctx) ->
     dt_entry(<<"allowed_methods">>),
-    %% TODO: add POST
-    %% TODO: make this list conditional on Ctx
-    {['HEAD', 'GET', 'PUT', 'DELETE'], RD, Ctx}.
+    {['GET'], RD, Ctx}.
 
 -spec content_types_provided(term(), term()) ->
                                     {[{string(), atom()}], term(), term()}.
@@ -179,22 +190,41 @@ content_types_accepted(RD, Ctx) ->
 to_xml(RD, Ctx=#context{start_time=StartTime,
                         user=User,
                         bucket=Bucket,
+                        requested_perm='READ',
                         riakc_pid=RiakPid}) ->
     dt_entry(<<"to_xml">>, [], [extract_name(User), Bucket]),
-    dt_entry_bucket(<<"get_acl">>, [], [extract_name(User), Bucket]),
-    case riak_cs_acl:bucket_acl(Bucket, RiakPid) of
-        {ok, Acl} ->
-            X = {riak_cs_acl_utils:acl_to_xml(Acl), RD, Ctx},
-            ok = riak_cs_stats:update_with_start(bucket_get_acl, StartTime),
-            dt_return(<<"to_xml">>, [200], [extract_name(User), Bucket]),
-            dt_return_bucket(<<"get_acl">>, [200], [extract_name(User), Bucket]),
-            X;
-        {error, Reason} ->
-            Code = riak_cs_s3_response:status_code(Reason),
-            X = riak_cs_s3_response:api_error(Reason, RD, Ctx),
+    dt_entry_bucket(<<"list_keys">>, [], [extract_name(User), Bucket]),
+    StrBucket = binary_to_list(Bucket),
+    case [B || B <- riak_cs_utils:get_buckets(User),
+               B?RCS_BUCKET.name =:= StrBucket] of
+        [] ->
+            CodeName = no_such_bucket,
+            Res = riak_cs_s3_response:api_error(CodeName, RD, Ctx),
+            Code = riak_cs_s3_response:status_code(CodeName),
             dt_return(<<"to_xml">>, [Code], [extract_name(User), Bucket]),
-            dt_return_bucket(<<"get_acl">>, [Code], [extract_name(User), Bucket]),
-            X
+            dt_return_bucket(<<"list_keys">>, [Code], [extract_name(User), Bucket]),
+            Res;
+        [BucketRecord] ->
+            Prefix = list_to_binary(wrq:get_qs_value("prefix", "", RD)),
+            case riak_cs_utils:get_keys_and_manifests(Bucket, Prefix, RiakPid) of
+                {ok, KeyObjPairs} ->
+                    X = riak_cs_s3_response:list_bucket_response(User,
+                                                                   BucketRecord,
+                                                                   KeyObjPairs,
+                                                                   RD,
+                                                                   Ctx),
+                    ok = riak_cs_stats:update_with_start(bucket_list_keys,
+                                                         StartTime),
+                    dt_return(<<"to_xml">>, [200], [extract_name(User), Bucket]),
+                    dt_return_bucket(<<"list_keys">>, [200], [extract_name(User), Bucket]),
+                    X;
+                {error, Reason} ->
+                    Code = riak_cs_s3_response:status_code(Reason),
+                    X = riak_cs_s3_response:api_error(Reason, RD, Ctx),
+                    dt_return(<<"to_xml">>, [Code], [extract_name(User), Bucket]),
+                    dt_return_bucket(<<"list_keys">>, [Code], [extract_name(User), Bucket]),
+                    X
+            end
     end.
 
 %% @doc Process request body on `PUT' request.
@@ -203,37 +233,29 @@ accept_body(RD, Ctx=#context{user=User,
                              bucket=Bucket,
                              riakc_pid=RiakPid}) ->
     dt_entry(<<"accept_body">>, [], [extract_name(User), Bucket]),
-    dt_entry_bucket(<<"put_acl">>, [], [extract_name(User), Bucket]),
-    Body = binary_to_list(wrq:req_body(RD)),
-    case Body of
-        [] ->
-            %% Check for `x-amz-acl' header to support
-            %% the use of a canned ACL.
-            ACL = riak_cs_acl_utils:canned_acl(
-                    wrq:get_req_header("x-amz-acl", RD),
-                    {User?RCS_USER.display_name,
-                     User?RCS_USER.canonical_id,
-                     User?RCS_USER.key_id},
-                    undefined,
-                    RiakPid);
-        _ ->
-            ACL = riak_cs_acl_utils:acl_from_xml(Body,
-                                                   User?RCS_USER.key_id,
-                                                   RiakPid)
-    end,
-    case riak_cs_utils:set_bucket_acl(User,
-                                        UserObj,
-                                        Bucket,
-                                        ACL,
-                                        RiakPid) of
+    dt_entry_bucket(<<"create">>, [], [extract_name(User), Bucket]),
+    %% Check for `x-amz-acl' header to support
+    %% non-default ACL at bucket creation time.
+    ACL = riak_cs_acl_utils:canned_acl(
+            wrq:get_req_header("x-amz-acl", RD),
+            {User?RCS_USER.display_name,
+             User?RCS_USER.canonical_id,
+             User?RCS_USER.key_id},
+            undefined,
+            RiakPid),
+    case riak_cs_utils:create_bucket(User,
+                                       UserObj,
+                                       Bucket,
+                                       ACL,
+                                       RiakPid) of
         ok ->
             dt_return(<<"accept_body">>, [200], [extract_name(User), Bucket]),
-            dt_return_bucket(<<"put_acl">>, [200], [extract_name(User), Bucket]),
+            dt_return_bucket(<<"create">>, [200], [extract_name(User), Bucket]),
             {{halt, 200}, RD, Ctx};
         {error, Reason} ->
             Code = riak_cs_s3_response:status_code(Reason),
             dt_return(<<"accept_body">>, [Code], [extract_name(User), Bucket]),
-            dt_return_bucket(<<"put_acl">>, [Code], [extract_name(User), Bucket]),
+            dt_return_bucket(<<"create">>, [Code], [extract_name(User), Bucket]),
             riak_cs_s3_response:api_error(Reason, RD, Ctx)
     end.
 
@@ -265,7 +287,7 @@ finish_request(RD, Ctx=#context{riakc_pid=undefined}) ->
     {true, RD, Ctx};
 finish_request(RD, Ctx=#context{riakc_pid=RiakPid}) ->
     dt_entry(<<"finish_request">>, [1], []),
-    riak_cs_utils:close_riak_connection(RiakPid),
+    riak_cs_utils:close_riak_connection(?RIAKCPOOL, RiakPid),
     dt_return(<<"finish_request">>, [1], []),
     {true, RD, Ctx#context{riakc_pid=undefined}}.
 

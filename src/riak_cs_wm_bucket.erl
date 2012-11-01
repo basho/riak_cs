@@ -1,6 +1,6 @@
 %% -------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2011 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2012 Basho Technologies, Inc.  All Rights Reserved.
 %%
 %% -------------------------------------------------------------------
 
@@ -65,7 +65,7 @@ check_permission(RD, #context{user=User,
                               riakc_pid=RiakPid}=Ctx) ->
     Method = wrq:method(RD),
     RequestedAccess =
-        riak_cs_acl_utils:requested_access(Method, wrq:req_qs(RD)),
+        riak_cs_acl_utils:requested_access(Method, false),
     Bucket = list_to_binary(wrq:path_info(bucket, RD)),
     PermCtx = Ctx#context{bucket=Bucket,
                           requested_perm=RequestedAccess},
@@ -159,7 +159,7 @@ allowed_methods(RD, Ctx) ->
     dt_entry(<<"allowed_methods">>),
     %% TODO: add POST
     %% TODO: make this list conditional on Ctx
-    {['HEAD', 'GET', 'PUT', 'DELETE'], RD, Ctx}.
+    {['HEAD', 'PUT', 'DELETE'], RD, Ctx}.
 
 -spec content_types_provided(term(), term()) ->
                                     {[{string(), atom()}], term(), term()}.
@@ -331,45 +331,6 @@ handle_read_acp_request('GET', RD, Ctx=#context{start_time=StartTime,
     end.
 
 %% @doc Process request body on `PUT' request.
-accept_body(RD, Ctx=#context{user=User,
-                             user_object=UserObj,
-                             bucket=Bucket,
-                             requested_perm='WRITE_ACP',
-                             riakc_pid=RiakPid}) ->
-    dt_entry(<<"accept_body">>, [], [extract_name(User), Bucket]),
-    dt_entry_bucket(<<"put_acl">>, [], [extract_name(User), Bucket]),
-    Body = binary_to_list(wrq:req_body(RD)),
-    case Body of
-        [] ->
-            %% Check for `x-amz-acl' header to support
-            %% the use of a canned ACL.
-            ACL = riak_cs_acl_utils:canned_acl(
-                    wrq:get_req_header("x-amz-acl", RD),
-                    {User?RCS_USER.display_name,
-                     User?RCS_USER.canonical_id,
-                     User?RCS_USER.key_id},
-                    undefined,
-                    RiakPid);
-        _ ->
-            ACL = riak_cs_acl_utils:acl_from_xml(Body,
-                                                   User?RCS_USER.key_id,
-                                                   RiakPid)
-    end,
-    case riak_cs_utils:set_bucket_acl(User,
-                                        UserObj,
-                                        Bucket,
-                                        ACL,
-                                        RiakPid) of
-        ok ->
-            dt_return(<<"accept_body">>, [200], [extract_name(User), Bucket]),
-            dt_return_bucket(<<"put_acl">>, [200], [extract_name(User), Bucket]),
-            {{halt, 200}, RD, Ctx};
-        {error, Reason} ->
-            Code = riak_cs_s3_response:status_code(Reason),
-            dt_return(<<"accept_body">>, [Code], [extract_name(User), Bucket]),
-            dt_return_bucket(<<"put_acl">>, [Code], [extract_name(User), Bucket]),
-            riak_cs_s3_response:api_error(Reason, RD, Ctx)
-    end;
 accept_body(RD, Ctx=#context{user=User,
                              user_object=UserObj,
                              bucket=Bucket,
