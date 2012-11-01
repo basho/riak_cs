@@ -348,7 +348,6 @@ map_keys_and_manifests(Object, _, _) ->
 %% phase.  This is just a temporary kludge until the sink backpressure
 %% work is done.
 reduce_keys_and_manifests(Acc, _) ->
-    lager:info("Acc length: ~p", [length(Acc)]),
     lists:sublist(lists:keysort(1, Acc), 1000).
 
 %% @doc Return the credentials of the admin user
