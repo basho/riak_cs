@@ -39,9 +39,9 @@ admin_resources(Props) ->
 base_resources(Props) ->
     [
      %% Bucket resources
-     {["buckets"], riak_cs_wm_bucket_list, Props},
+     {["buckets"], riak_cs_wm_buckets, Props},
      {["buckets", bucket], riak_cs_wm_bucket, Props},
-     {["buckets", bucket, "objects"], riak_cs_wm_object_list, Props},
+     {["buckets", bucket, "objects"], riak_cs_wm_objects, Props},
      {["buckets", bucket, "acl"], riak_cs_wm_bucket_acl, Props},
      {["buckets", bucket, "location"], riak_cs_wm_bucket_location, Props},
      {["buckets", bucket, "versioning"], riak_cs_wm_bucket_versioning, Props},
