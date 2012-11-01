@@ -1,10 +1,10 @@
 %% -------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2011 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2012 Basho Technologies, Inc.  All Rights Reserved.
 %%
 %% -------------------------------------------------------------------
 
--module(riak_cs_wm_service).
+-module(riak_cs_wm_buckets).
 
 -export([init/1,
          service_available/2,
