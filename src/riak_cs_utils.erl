@@ -275,12 +275,13 @@ get_env(App, Key, Default) ->
 -spec get_keys_and_manifests(binary(), binary(), pid()) -> {ok, [lfs_manifest()]} | {error, term()}.
 get_keys_and_manifests(BucketName, Prefix, RiakPid) ->
     ManifestBucket = to_bucket_name(objects, BucketName),
-    case active_manifests(ManifestBucket, Prefix, RiakPid) of
-        {ok, KeyManifests} ->
-            {ok, lists:keysort(1, KeyManifests)};
-        {error, Reason} ->
-            {error, Reason}
-    end.
+    %% case
+    active_manifests(ManifestBucket, Prefix, RiakPid).
+    %%     {ok, KeyManifests} ->
+    %%         {ok, lists:keysort(1, KeyManifests)};
+    %%     {error, Reason} ->
+    %%         {error, Reason}
+    %% end.
 
 active_manifests(ManifestBucket, Prefix, RiakPid) ->
     Input = case Prefix of
@@ -296,7 +297,7 @@ active_manifests(ManifestBucket, Prefix, RiakPid) ->
     Query = [{map, {modfun, riak_cs_utils, map_keys_and_manifests},
               undefined, false},
              {reduce, {modfun, riak_cs_utils, reduce_keys_and_manifests},
-              undefined, true}],
+              [{reduce_phase_batch_size, 100}], true}],
     {ok, ReqId} = riakc_pb_socket:mapred_stream(RiakPid, Input, Query, self()),
     receive_keys_and_manifests(ReqId, []).
 
@@ -311,7 +312,7 @@ receive_keys_and_manifests(ReqId, Acc) ->
         {ReqId, {mapred, _Phase, Res}} ->
             %% The use of ++ here shouldn't be *too* bad, especially
             %% since Res is always a single list element in Riak 1.1
-            receive_keys_and_manifests(ReqId, Res++Acc);
+            receive_keys_and_manifests(ReqId, Acc++Res);
         {ReqId, {error, Reason}} ->
             {error, Reason}
     after 60000 ->
@@ -347,7 +348,8 @@ map_keys_and_manifests(Object, _, _) ->
 %% phase.  This is just a temporary kludge until the sink backpressure
 %% work is done.
 reduce_keys_and_manifests(Acc, _) ->
-    Acc.
+    lager:info("Acc length: ~p", [length(Acc)]),
+    lists:sublist(lists:keysort(1, Acc), 1000).
 
 %% @doc Return the credentials of the admin user
 -spec get_admin_creds() -> {ok, {string(), string()}} | {error, term()}.
