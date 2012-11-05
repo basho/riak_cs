@@ -46,7 +46,9 @@
                   user_object :: riakc_obj:riakc_obj(),
                   bucket :: binary(),
                   requested_perm :: acl_perm(),
-                  riakc_pid :: pid()
+                  riakc_pid :: pid(),
+                  submodule :: atom(),
+                  exports_fun :: function()
                  }).
 
 -record(key_context, {context :: #context{},
