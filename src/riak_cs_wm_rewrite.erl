@@ -25,14 +25,18 @@ rewrite(Headers, RawPath) ->
     {Path, QueryString, _} = mochiweb_util:urlsplit_path(RawPath),
     do_rewrite(Path, QueryString, bucket_from_host(Host)).
 
+
 %% @doc Internal function to handle rewriting the URL
 -spec do_rewrite(string(), string(), undefined | string()) -> string().
 do_rewrite("/", _QS, undefined) ->
     "/buckets";
 do_rewrite(Path, QS, undefined) ->
-    Bucket = extract_bucket_from_path(string:tokens(Path, [$/])),
-    UpdPath = "/" ++ string:substr(Path, length(Bucket)+2),
+    {Bucket, UpdPath} = separate_bucket_from_path(string:tokens(Path, [$/])),
     do_rewrite(UpdPath, QS, Bucket);
+do_rewrite(Path, _QS, "riak-cs") ->
+    "/riak-cs" ++ Path;
+do_rewrite(Path, _QS, "usage") ->
+    "/usage" ++ Path;
 do_rewrite("/", QS, Bucket) ->
     SubResources = get_subresources(QS),
     lists:flatten(["/buckets/", Bucket, format_bucket_qs(QS, SubResources)]);
@@ -67,11 +71,13 @@ extract_bucket_from_host([Bucket | RootHost], RootHost) ->
 extract_bucket_from_host(_Host, _RootHost) ->
     undefined.
 
-%% @doc Extract the bucket name from the raw path in the case where
-%% the bucket name is included in the path.
--spec extract_bucket_from_path([string()]) -> string().
-extract_bucket_from_path([Bucket | _]) ->
-    Bucket.
+%% @doc Separate the bucket name from the rest of the raw path in the
+%% case where the bucket name is included in the path.
+-spec separate_bucket_from_path([string()]) -> string().
+separate_bucket_from_path([Bucket | []]) ->
+    {Bucket, "/"};
+separate_bucket_from_path([Bucket | RestPath]) ->
+    {Bucket, lists:flatten([["/", PathElement] || PathElement <- RestPath])}.
 
 %% @doc Format a bucket operation query string to conform the the
 %% rewrite rules.
