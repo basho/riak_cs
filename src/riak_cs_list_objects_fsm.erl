@@ -30,6 +30,8 @@
 
 -record(state, {riakc_pid :: pid(),
                 req :: list_object_request(),
+                list_keys_req_id :: undefined | non_neg_integer(),
+                key_buffer=[] :: list(),
                 keys=[] :: list(),
                 objects=[] :: list()}).
 
@@ -42,26 +44,28 @@
 %%% gen_fsm callbacks
 %%%===================================================================
 
-init(_Args) ->
-    %% just create the StateData
-    {ok, prepare, #state{}, 0}.
+init([RiakcPid, Request]) ->
+    State = #state{riakc_pid=RiakcPid,
+                   req=Request},
+    {ok, prepare, State, 0}.
 
-prepare(timeout, State) ->
-    %% make the list-keys request here
-    {ok, waiting_list_keys, State}.
+prepare(timeout, State=#state{riakc_pid=RiakcPid,
+                              req=Request}) ->
+    handle_streaming_list_keys_call(make_list_keys_request(RiakcPid, Request),
+                                   State).
 
-waiting_list_keys(_Event, State) ->
+waiting_list_keys({ReqID, done}, State=#state{list_keys_req_id=ReqID}) ->
+    NewState = handle_keys_done(State),
+    {next_state, waiting_map_reduce, NewState};
+waiting_list_keys({ReqID, {keys, Keys}}, State=#state{list_keys_req_id=ReqID}) ->
+    NewState = handle_keys_received(Keys, State),
+    {next_state, waiting_list_keys, NewState};
+waiting_list_keys({ReqID, {error, Reason}}, State=#state{list_keys_req_id=ReqID}) ->
     %% if we get an error while we're in this state,
     %% we still have the option to return `HTTP 500'
     %% to the client, since we haven't written
     %% any bytes yet
-
-
-    %% depending on whether we're done listing keys
-    %% or not, transition back into `waiting_list_keys'
-    %% or make a m/r request and head into `waiting_map_reduce'.
-    _ = {next_state, waiting_list_keys, State},
-    {next_state, waiting_map_reduce, State}.
+    {stop, Reason, State}.
 
 waiting_map_reduce(_Event, State) ->
     %% depending on whether we have enough results yet
@@ -81,6 +85,11 @@ handle_sync_event(_Event, _From, StateName, State) ->
     Reply = ok,
     {reply, Reply, StateName, State}.
 
+%% the responses from `riakc_pb_socket:stream_list_keys'
+%% come back as regular messages, so just pass
+%% them along as if they were gen_server events.
+handle_info(Info, waiting_list_keys, State) ->
+    waiting_list_keys(Info, State);
 handle_info(_Info, _StateName, State) ->
     {stop, unknown, State}.
 
@@ -94,5 +103,35 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 %% Internal helpers
 %%--------------------------------------------------------------------
 
-
 %% function to create a list keys request
+%% this could also be a phase-less map-reduce request
+%% with key filters.
+make_list_keys_request(RiakcPid, ?LOREQ{name=BucketName}) ->
+    %% hardcoded for now
+    ServerTimeout = timer:seconds(60),
+    ManifestBucket = riak_cs_utils:to_bucket_name(objects, BucketName),
+    riakc_pb_socket:stream_list_keys(RiakcPid,
+                                     ManifestBucket,
+                                     ServerTimeout,
+                                     infinity).
+
+handle_streaming_list_keys_call({ok, ReqID}, State) ->
+    {next_state, waiting_list_keys, State#state{list_keys_req_id=ReqID}};
+handle_streaming_list_keys_call({error, Reason}, State) ->
+    {stop, Reason, State}.
+
+handle_keys_done(State=#state{key_buffer=ListofListofKeys}) ->
+    NewState = State#state{keys=lists:sort(lists:flatten(ListofListofKeys)),
+                           %% free up the space
+                           key_buffer=undefined},
+    handle_map_reduce_call(make_map_reduce_request(State), State).
+
+handle_keys_received(Keys, State=#state{key_buffer=PrevKeyBuffer}) ->
+    %% this is where we might eventually do a 'top-k' keys
+    %% kind of thing
+    State#state{key_buffer=[Keys | PrevKeyBuffer]}.
+
+make_map_reduce_request(RiakcPid, ManifestBucketName, Keys) ->
+    BKeyTuples = make_bkeys(ManifestBucketName, Keys),
+    Query = make_map_reduce_query(BKeyTuples),
+

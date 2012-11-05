@@ -17,6 +17,7 @@
         %% the key to start with
         marker :: binary() | undefined}).
 -type list_object_request() :: #list_objects_request_v1{}.
+-define(LOREQ, #list_objects_request_v1).
 
 -record(list_objects_response_v1, {
         %% Params just echoed back from the request --------------------------
