@@ -7,7 +7,7 @@
 -module(riak_cs_foundry_utils).
 
 -export([validate_auth_header/2,
-		 convert_foundry_accesstoken/1]).
+         convert_foundry_accesstoken/1]).
 
 -include_lib("xmerl/include/xmerl.hrl").
 -include("riak_cs.hrl").
@@ -60,7 +60,7 @@ convert_to_additional_headers(RD, AccessToken) ->
         UserId= resolveUserId(AccessToken),
         ClientId= resolveClientId(AccessToken),
         case resolveScope(AccessToken) of
-            "S3" ->
+            "s3" ->
                 RequestHeadersTemp = mochiweb_headers:insert("user_id", UserId, wrq:req_headers(RD)),
                 NewRequestHeaders = mochiweb_headers:insert("client_id", ClientId, RequestHeadersTemp),
                 RD#wm_reqdata{req_headers=NewRequestHeaders};
@@ -85,7 +85,7 @@ resolveClientId(AccessToken) ->
     ClientId.
 
 resolveScope(AccessToken) ->
-    XMLResponse = auth_request("accesstoken", AccessToken),
+    XMLResponse = auth_request("accesstoken", AccessToken ++ "&clientrequestPath=%2Fa1%2Fs3%2F"),
     {XML, _Rest} = xmerl_scan:string(XMLResponse),
     [ #xmlText{value=Rank} ] = xmerl_xpath:string("/access-token/scope/text()", XML),
     Rank.
@@ -104,7 +104,7 @@ auth_request(What, AccessToken) ->
         "/apigee/",
         What,
         "?token=",
-    AccessToken
+        AccessToken
     ]),
     Response = httpc:request(get, {RequestURI, RequestHeaders}, [], []),
     case Response of
