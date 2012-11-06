@@ -120,18 +120,45 @@ handle_streaming_list_keys_call({ok, ReqID}, State) ->
 handle_streaming_list_keys_call({error, Reason}, State) ->
     {stop, Reason, State}.
 
-handle_keys_done(State=#state{key_buffer=ListofListofKeys}) ->
+handle_keys_done(State=#state{key_buffer=ListofListofKeys,
+                              req=?LOREQ{name=BucketName},
+                              riakc_pid=RiakcPid}) ->
     NewState = State#state{keys=lists:sort(lists:flatten(ListofListofKeys)),
                            %% free up the space
                            key_buffer=undefined},
-    handle_map_reduce_call(make_map_reduce_request(State), State).
+    ManifestBucketName = riak_cs_utils:to_bucket_name(objects, BucketName),
+    handle_map_reduce_call(map_reduce_results(RiakcPid,
+                                              ManifestBucketName,
+                                              NewState),
+                           State).
 
 handle_keys_received(Keys, State=#state{key_buffer=PrevKeyBuffer}) ->
     %% this is where we might eventually do a 'top-k' keys
-    %% kind of thing
+    %% kind of thing, like
+    %% `lists:sublist(lists:sort([Keys | PrevKeyBuffer]), BufferSize)'
     State#state{key_buffer=[Keys | PrevKeyBuffer]}.
 
-make_map_reduce_request(RiakcPid, ManifestBucketName, Keys) ->
+map_reduce_results(RiakcPid, ManifestBucketName, Keys) ->
     BKeyTuples = make_bkeys(ManifestBucketName, Keys),
-    Query = make_map_reduce_query(BKeyTuples),
+    make_map_reduce_query(RiakcPid, BKeyTuples).
 
+make_bkeys(ManifestBucketName, Keys) ->
+    [{ManifestBucketName, Key} || Key <- Keys].
+
+make_map_reduce_query(RiakcPid, BKeyTuples) ->
+    %% TODO: change this:
+    %% hardcode 60 seconds for now
+    Timeout = timer:seconds(60),
+    riakc_pb_socket:mapred(RiakcPid,
+                           BKeyTuples,
+                           mapred_query(),
+                           Timeout,
+                           infinity).
+
+mapred_query() ->
+    [{map, {modfun, riak_cs_utils, map_keys_and_manifests},
+      undefined, false},
+     {reduce, {modfun, riak_cs_utils, reduce_keys_and_manifests},
+      undefined, true}].
+
+handle_map_reduce_call({ok, Results}, _State) -> ok.
