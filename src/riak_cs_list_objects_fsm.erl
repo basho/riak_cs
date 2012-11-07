@@ -33,7 +33,17 @@
                 list_keys_req_id :: undefined | non_neg_integer(),
                 key_buffer=[] :: list(),
                 keys=[] :: list(),
-                objects=[] :: list()}).
+                %% we cache the number of keys because
+                %% `length/1' is linear time
+                num_keys :: undefined | non_neg_integer(),
+
+                %% this field will change, it represents
+                %% the current outstanding m/r request
+                map_red_req_id :: undefined | non_neg_integer(),
+                %% maybe we don't need to save the req. ids
+                mr_requests=[] :: [{StartIdx :: non_neg_integer(),
+                                    EndIdx :: non_neg_integer()}],
+                object_buffer=[] :: list()}).
 
 %%%===================================================================
 %%% API
@@ -67,16 +77,16 @@ waiting_list_keys({ReqID, {error, Reason}}, State=#state{list_keys_req_id=ReqID}
     %% any bytes yet
     {stop, Reason, State}.
 
-waiting_map_reduce(_Event, State) ->
-    %% depending on whether we have enough results yet
-    %% (some of the manifests we requested may be
-    %% marked as delete) we will either have to
-    %% make another map-reduce request.
-
-
-    _ = {next_state, waiting_map_reduce, State},
-    %% reply the results if we do end up being done
-    {stop, normal, State}.
+waiting_map_reduce({ReqID, done}, State=#state{map_red_req_id=ReqID}) ->
+    %% depending on the result of this, we'll either
+    %% make another m/r request, or be done
+    handle_mapred_done(State);
+waiting_map_reduce({ReqID, {mapred, _Phase, Results}},
+                   State=#state{map_red_req_id=ReqID}) ->
+    handle_mapred_results(Results, State);
+waiting_map_reduce({ReqID, {error, Reason}},
+                   State=#state{map_red_req_id=ReqID}) ->
+    {stop, Reason, State}.
 
 handle_event(_Event, StateName, State) ->
     {next_state, StateName, State}.
@@ -103,6 +113,9 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 %% Internal helpers
 %%--------------------------------------------------------------------
 
+%% List Keys stuff
+%%--------------------------------------------------------------------
+
 %% function to create a list keys request
 %% this could also be a phase-less map-reduce request
 %% with key filters.
@@ -123,7 +136,10 @@ handle_streaming_list_keys_call({error, Reason}, State) ->
 handle_keys_done(State=#state{key_buffer=ListofListofKeys,
                               req=?LOREQ{name=BucketName},
                               riakc_pid=RiakcPid}) ->
-    NewState = State#state{keys=lists:sort(lists:flatten(ListofListofKeys)),
+    SortedFlattenedKeys = lists:sort(lists:flatten(ListofListofKeys)),
+    NumKeys = length(SortedFlattenedKeys),
+    NewState = State#state{keys=SortedFlattenedKeys,
+                           num_keys=NumKeys,
                            %% free up the space
                            key_buffer=undefined},
     ManifestBucketName = riak_cs_utils:to_bucket_name(objects, BucketName),
@@ -138,14 +154,24 @@ handle_keys_received(Keys, State=#state{key_buffer=PrevKeyBuffer}) ->
     %% `lists:sublist(lists:sort([Keys | PrevKeyBuffer]), BufferSize)'
     State#state{key_buffer=[Keys | PrevKeyBuffer]}.
 
+
+%% Map Reduce stuff
+%%--------------------------------------------------------------------
+
+handle_mapred_done(_State) ->
+    could_query_more_mapreduce(foo, bar),
+    more_results_possible(foo, bar).
+
+handle_mapred_results(_Results, _State) -> ok.
+
 map_reduce_results(RiakcPid, ManifestBucketName, Keys) ->
     BKeyTuples = make_bkeys(ManifestBucketName, Keys),
-    make_map_reduce_query(RiakcPid, BKeyTuples).
+    make_map_reduce_request(RiakcPid, BKeyTuples).
 
 make_bkeys(ManifestBucketName, Keys) ->
     [{ManifestBucketName, Key} || Key <- Keys].
 
-make_map_reduce_query(RiakcPid, BKeyTuples) ->
+make_map_reduce_request(RiakcPid, BKeyTuples) ->
     %% TODO: change this:
     %% hardcode 60 seconds for now
     Timeout = timer:seconds(60),
@@ -161,4 +187,29 @@ mapred_query() ->
      {reduce, {modfun, riak_cs_utils, reduce_keys_and_manifests},
       undefined, true}].
 
-handle_map_reduce_call({ok, Results}, _State) -> ok.
+handle_map_reduce_call({ok, _Results}, _State) ->
+    enough_results(foo, bar, baz),
+    ok.
+
+-spec enough_results(list(), list_object_request(), non_neg_integer()) ->
+    boolean().
+enough_results(Results, ?LOREQ{max_keys=MaxKeysRequested}, TotalKeys) ->
+    ResultsLength = length(Results),
+    %% we have enough results if one of two things is true:
+    %% 1. we have more results than requested
+    %% 2. there are less keys than were requested even possible
+    (ResultsLength >= MaxKeysRequested) orelse (MaxKeysRequested =< TotalKeys).
+
+-spec could_query_more_mapreduce(list(), non_neg_integer()) -> boolean().
+could_query_more_mapreduce(_Requests, 0) ->
+    false;
+could_query_more_mapreduce([], _TotalKeys) ->
+    true;
+could_query_more_mapreduce(_Requests, _TotalKeys) ->
+    ok.
+
+more_results_possible({_StartIdx, EndIdx}, TotalKeys)
+        when EndIdx < TotalKeys ->
+    true;
+more_results_possible(_Request, _TotalKeys) ->
+    false.
