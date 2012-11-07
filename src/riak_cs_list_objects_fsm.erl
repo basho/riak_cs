@@ -45,6 +45,8 @@
                                     EndIdx :: non_neg_integer()}],
                 object_buffer=[] :: list()}).
 
+-type state() :: #state{}.
+
 %%%===================================================================
 %%% API
 %%%===================================================================
@@ -158,19 +160,29 @@ handle_keys_received(Keys, State=#state{key_buffer=PrevKeyBuffer}) ->
 %% Map Reduce stuff
 %%--------------------------------------------------------------------
 
+-spec handle_mapred_done(state()) ->
+    {atom(), atom(), state()}.
 handle_mapred_done(_State) ->
     could_query_more_mapreduce(foo, bar),
     more_results_possible(foo, bar).
 
+-spec handle_mapred_results(list(), state()) ->
+    {atom(), atom(), state()}.
 handle_mapred_results(_Results, _State) -> ok.
 
+-spec map_reduce_results(pid(), binary(), list()) ->
+    {ok, non_neg_integer()} | {error, term()}.
 map_reduce_results(RiakcPid, ManifestBucketName, Keys) ->
     BKeyTuples = make_bkeys(ManifestBucketName, Keys),
     make_map_reduce_request(RiakcPid, BKeyTuples).
 
+-spec make_bkeys(binary(), list()) ->
+    list().
 make_bkeys(ManifestBucketName, Keys) ->
     [{ManifestBucketName, Key} || Key <- Keys].
 
+-spec make_map_reduce_request(pid(), list()) ->
+    {ok, pid()} | {error, term()}.
 make_map_reduce_request(RiakcPid, BKeyTuples) ->
     %% TODO: change this:
     %% hardcode 60 seconds for now
@@ -181,6 +193,7 @@ make_map_reduce_request(RiakcPid, BKeyTuples) ->
                            Timeout,
                            infinity).
 
+-spec mapred_query() -> list().
 mapred_query() ->
     [{map, {modfun, riak_cs_utils, map_keys_and_manifests},
       undefined, false},
