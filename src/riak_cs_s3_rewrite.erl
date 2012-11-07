@@ -4,8 +4,9 @@
 %%
 %% -------------------------------------------------------------------
 
--module(riak_cs_wm_rewrite).
--export([rewrite/5]).
+-module(riak_cs_s3_rewrite).
+
+-export([rewrite/2]).
 
 -include("riak_cs.hrl").
 -include("s3_api.hrl").
