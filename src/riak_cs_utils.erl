@@ -29,6 +29,7 @@
          reduce_keys_and_manifests/2,
          get_object/3,
          get_manifests/3,
+         active_manifest_from_response/1,
          get_user/2,
          get_user_by_index/3,
          get_user_index/3,
@@ -396,6 +397,23 @@ get_manifests(RiakcPid, Bucket, Key) ->
             NotFound
     end.
 
+-spec active_manifest_from_response({ok, orddict:orddict()} |
+                                    {error, notfound}) ->
+    {ok, lfs_manifest()} | {error, notfound}.
+active_manifest_from_response({ok, Manifests}) ->
+    handle_active_manifests(riak_cs_manifest_utils:active_manifest(Manifests));
+active_manifest_from_response({error, notfound}=NotFound) ->
+    NotFound.
+
+%% @private
+-spec handle_active_manifests({ok, lfs_manifest()} |
+                              {error, no_active_manifest}) ->
+    {ok, lfs_manifest()} | {error, notfound}.
+handle_active_manifests({ok, _Active}=ActiveReply) ->
+    ActiveReply;
+handle_active_manifests({error, no_active_manifest}) ->
+    {error, notfound}.
+
 %% @doc Retrieve a Riak CS user's information based on their id string.
 -spec get_user('undefined' | list(), pid()) -> {ok, {rcs_user(), riakc_obj:riakc_obj()}} | {error, term()}.
 get_user(undefined, _RiakPid) ->
@@ -668,32 +686,55 @@ bucket_acl_json(ACL, KeyId)  ->
 
 %% @doc Check if a bucket is empty
 -spec bucket_empty(binary(), pid()) -> boolean().
-bucket_empty(Bucket, RiakPid) ->
+bucket_empty(Bucket, RiakcPid) ->
     ManifestBucket = to_bucket_name(objects, Bucket),
     %% @TODO Use `stream_list_keys' instead and
-    %% break out as soon as an active manifest is found.
-    case list_keys(ManifestBucket, RiakPid) of
-        {ok, Keys} ->
-            FoldFun =
-                fun(Key, Acc) ->
-                        {ok, ManiPid} = riak_cs_manifest_fsm:start_link(Bucket, Key, RiakPid),
-                        case riak_cs_manifest_fsm:get_active_manifest(ManiPid) of
-                            {ok, _} ->
-                                [Key | Acc];
-                            {error, notfound} ->
-                                Acc
-                        end
-                end,
-            ActiveKeys = lists:foldl(FoldFun, [], Keys),
-            case ActiveKeys of
-                [] ->
-                    true;
-                _ ->
-                    false
-            end;
-        _ ->
-            false
+    ListKeysResult = list_keys(ManifestBucket, RiakcPid),
+    bucket_empty_handle_list_keys(RiakcPid,
+                                  Bucket,
+                                  ListKeysResult).
+
+-spec bucket_empty_handle_list_keys(pid(), binary(),
+                                    {ok, list()} |
+                                    {error, term()}) ->
+    boolean().
+bucket_empty_handle_list_keys(RiakcPid, Bucket, {ok, Keys}) ->
+    AnyPred = bucket_empty_any_pred(RiakcPid, Bucket),
+    %% `lists:any/2' will break out early as soon
+    %% as something returns `true'
+    not lists:any(AnyPred, Keys);
+bucket_empty_handle_list_keys(_RiakcPid, _Bucket, _Error) ->
+    false.
+
+-spec bucket_empty_any_pred(RiakcPid :: pid(), Bucket :: binary()) ->
+    fun((Key :: binary()) -> boolean()).
+bucket_empty_any_pred(RiakcPid, Bucket) ->
+    fun (Key) ->
+            key_exists(RiakcPid, Bucket, Key)
     end.
+
+%% @private
+%% `Bucket' should be the raw bucket name,
+%% we'll take care of calling `to_bucket_name'
+-spec key_exists(pid(), binary(), binary()) -> boolean().
+key_exists(RiakcPid, Bucket, Key) ->
+    key_exists_handle_get_manifests(get_manifests(RiakcPid, Bucket, Key)).
+
+%% @private
+-spec key_exists_handle_get_manifests({ok, riakc_obj:riakc_obj(), list()} |
+                                      {error, term()}) ->
+    boolean().
+key_exists_handle_get_manifests({ok, _Object, Manifests}) ->
+    active_to_bool(active_manifest_from_response({ok, Manifests}));
+key_exists_handle_get_manifests(Error) ->
+    active_to_bool(active_manifest_from_response(Error)).
+
+%% @private
+-spec active_to_bool({ok, term()} | {error, notfound}) -> boolean().
+active_to_bool({ok, _Active}) ->
+    true;
+active_to_bool({error, notfound}) ->
+    false.
 
 %% @doc Check if a bucket exists in the `buckets' bucket and verify
 %% that it has an owner assigned. If true return the object;
