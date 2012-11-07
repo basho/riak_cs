@@ -10,6 +10,8 @@
 
 -export([dispatch_table/0]).
 
+-include("riak_cs.hrl").
+
 -type dispatch_rule() :: {[string() | atom()], atom(), [term()]}.
 
 %% @doc Setup the Webmachine dispatch table
@@ -22,6 +24,7 @@ dispatch_table() ->
 -spec props(atom()) -> [term()].
 props(Mod) ->
     [{auth_bypass, get_auth_bypass()},
+     {auth_module, get_auth_module()},
      {submodule, Mod}].
 
 -spec stats_props() -> [term()].
@@ -66,8 +69,18 @@ one_three_resources(_Version) ->
 get_auth_bypass() ->
     get_auth_bypass(application:get_env(riak_cs, auth_bypass)).
 
+-spec get_auth_module() -> atom().
+get_auth_module() ->
+    get_auth_module(application:get_env(riak_cs, auth_module)).
+
 -spec get_auth_bypass(undefined | {ok, boolean()}) -> boolean().
 get_auth_bypass(undefined) ->
     false;
 get_auth_bypass({ok, AuthBypass}) ->
     AuthBypass.
+
+-spec get_auth_module(undefined | {ok, atom()}) -> atom().
+get_auth_module(undefined) ->
+    ?DEFAULT_AUTH_MODULE;
+get_auth_module({ok, AuthModule}) ->
+    AuthModule.

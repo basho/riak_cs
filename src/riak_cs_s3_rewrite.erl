@@ -4,7 +4,7 @@
 %%
 %% -------------------------------------------------------------------
 
--module(riak_cs_wm_rewrite).
+-module(riak_cs_s3_rewrite).
 
 -export([rewrite/2]).
 

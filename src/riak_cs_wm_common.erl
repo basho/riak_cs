@@ -35,9 +35,11 @@ init(Config) ->
     dt_entry(Mod, <<"init">>),
     %% Check if authentication is disabled and set that in the context.
     AuthBypass = proplists:get_value(auth_bypass, Config),
+    AuthModule = proplists:get_value(auth_module, Config),
     Exports = orddict:from_list(Mod:module_info(exports)),
     ExportsFun = exports_fun(Exports),
     Ctx = #context{auth_bypass=AuthBypass,
+                   auth_module=AuthModule,
                    exports_fun=ExportsFun,
                    start_time=os:timestamp(),
                    submodule=Mod},
@@ -80,15 +82,15 @@ malformed_request(RD, Ctx=#context{submodule=Mod,
                   [RD, Ctx],
                   ExportsFun(malformed_request)).
 
-forbidden(RD, Ctx=#context{submodule=Mod}) ->
+forbidden(RD, Ctx=#context{auth_module=AuthMod, submodule=Mod}) ->
     dt_entry(Mod, <<"forbidden">>),
+    _Authenticated = AuthMod:authenticate(RD, Ctx),
     %% @TODO Use resource callback to check for special `Fun'
-    case riak_cs_wm_utils:find_and_auth_user(RD, Ctx, fun auth_complete/2) of
+    case riak_cs_wm_utils:xfind_and_auth_user(RD, Ctx, fun auth_complete/2) of
         {false, _RD2, Ctx2} = FalseRet ->
             dt_return(Mod, <<"forbidden">>, [], [riak_cs_wm_utils:extract_name(Ctx2#context.user), <<"false">>]),
             FalseRet;
         {Rsn, _RD2, Ctx2} = Ret ->
-            lager:info("Rsn: ~p", [Rsn]),
             Reason =
                 case Rsn of
                     {halt, Code} -> Code;

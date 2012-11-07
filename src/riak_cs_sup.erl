@@ -56,7 +56,7 @@ init([]) ->
                  {port, Port},
                  {nodelay, true},
                  {log_dir, "log"},
-                 {rewrite_module, riak_cs_wm_rewrite},
+                 {rewrite_module, riak_cs_s3_rewrite},
                  {error_handler, riak_cs_wm_error_handler}],
     case application:get_env(riak_cs, ssl) of
 
