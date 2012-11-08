@@ -78,17 +78,8 @@ get_all_manifests(Pid) ->
     gen_fsm:sync_send_event(Pid, get_manifests, infinity).
 
 get_active_manifest(Pid) ->
-    case gen_fsm:sync_send_event(Pid, get_manifests, infinity) of
-        {ok, Manifests} ->
-            case riak_cs_manifest_utils:active_manifest(Manifests) of
-                {ok, _Active}=ActiveReply ->
-                    ActiveReply;
-                {error, no_active_manifest} ->
-                    {error, notfound}
-            end;
-        {error, notfound}=NotFound ->
-            NotFound
-    end.
+    Response = gen_fsm:sync_send_event(Pid, get_manifests, infinity),
+    riak_cs_utils:active_manifest_from_response(Response).
 
 get_specific_manifest(Pid, UUID) ->
     case gen_fsm:sync_send_event(Pid, get_manifests, infinity) of
