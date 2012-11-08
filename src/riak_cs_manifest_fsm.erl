@@ -29,6 +29,7 @@
          delete_specific_manifest/2,
          update_manifest_with_confirmation/2,
          update_manifests_with_confirmation/2,
+         maybe_stop_manifest_fsm/1,
          stop/1]).
 
 %% gen_fsm callbacks
@@ -130,6 +131,13 @@ update_manifests_with_confirmation(Pid, Manifests) ->
 update_manifest_with_confirmation(Pid, Manifest) ->
     Dict = riak_cs_manifest_utils:new_dict(Manifest?MANIFEST.uuid, Manifest),
     update_manifests_with_confirmation(Pid, Dict).
+
+-spec maybe_stop_manifest_fsm(undefined | pid()) -> ok.
+maybe_stop_manifest_fsm(undefined) ->
+    ok;
+maybe_stop_manifest_fsm(ManiPid) ->
+    stop(ManiPid),
+    ok.
 
 stop(Pid) ->
     gen_fsm:sync_send_all_state_event(Pid, stop, infinity).
