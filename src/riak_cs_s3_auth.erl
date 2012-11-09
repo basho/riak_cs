@@ -8,23 +8,35 @@
 
 -behavior(riak_cs_auth).
 
+-export([identify/2, authenticate/4]).
+
 -include("riak_cs.hrl").
 -include("s3_api.hrl").
+-include_lib("webmachine/include/webmachine.hrl").
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
--export([authenticate/3]).
+-define(QS_KEYID, "AWSAccessKeyId").
+-define(QS_SIGNATURE, "Signature").
 
 %% ===================================================================
 %% Public API
 %% ===================================================================
 
--spec authenticate(term(), string(), string()) -> ok | {error, atom()}.
-authenticate(RD, KeyData, Signature) ->
-    CalculatedSignature =
-        calculate_signature(KeyData, RD),
+-spec identify(term(), term()) -> {string(),term()} | {undefined,term()}.
+identify(RD,_Ctx) ->
+    case wrq:get_req_header("authorization", RD) of
+        undefined ->
+            {wrq:get_qs_value(?QS_KEYID, RD), wrq:get_qs_value(?QS_SIGNATURE)};
+        AuthHeader ->
+            parse_auth_header(AuthHeader)
+    end.
+
+-spec authenticate(rcs_user(), term(), term(), term()) -> ok | {error, atom}.
+authenticate(User, Signature, RD, _Ctx) ->
+    CalculatedSignature = calculate_signature(User?RCS_USER.key_secret, RD),
     case check_auth(Signature, CalculatedSignature) of
         true ->
             Expires = wrq:get_qs_value("Expires", RD),
@@ -50,6 +62,15 @@ authenticate(RD, KeyData, Signature) ->
 %% ===================================================================
 %% Internal functions
 %% ===================================================================
+
+parse_auth_header("AWS " ++ Key) ->
+    case string:tokens(Key, ":") of
+        [KeyId, KeyData] ->
+            {KeyId, KeyData};
+        _ -> {undefined, undefined}
+    end;
+parse_auth_header(_) ->
+    {undefined, undefined}.
 
 calculate_signature(KeyData, RD) ->
     Headers = riak_cs_wm_utils:normalize_headers(RD),
