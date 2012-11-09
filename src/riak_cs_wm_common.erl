@@ -21,6 +21,7 @@
          default_content_types/1,
          default_finish_request/2,
          default_init/1,
+         default_authorize/2,
          default_malformed_request/2]).
 
 -include("riak_cs.hrl").
@@ -212,14 +213,6 @@ resource_call(Mod, Fun, Args, true) ->
 resource_call(_Mod, Fun, Args, false) ->
     erlang:apply(?MODULE, default(Fun), Args).
 
-%% @doc this function will be called by `post_authenticate/2` if the user successfully 
-%% authenticates and the submodule does not provide an implementation
-%% of authorize/2. The default implementation does not perform any additional authorization
-%% and simply returns false to signify the user is not forbidden to proceed but has been 
--spec default_authorize(term(), term()) -> {false, term(), term()}.
-default_authorize(RD, Ctx) ->
-    {false, RD, Ctx}.
-
 %% ===================================================================
 %% Helper Functions Copied from riak_cs_wm_utils that should be removed from that module
 %% ===================================================================
@@ -271,7 +264,7 @@ default(content_types_provided) ->
 default(malformed_request) ->
     default_malformed_request;
 default(authorize) ->
-    fun default_authorize/2;
+    default_authorize;
 default(_) ->
     undefined.
 
@@ -294,6 +287,15 @@ default_finish_request(RD, Ctx=#context{riakc_pid=undefined}) ->
 default_finish_request(RD, Ctx=#context{riakc_pid=RiakPid}) ->
     riak_cs_utils:close_riak_connection(RiakPid),
     {true, RD, Ctx#context{riakc_pid=undefined}}.
+
+%% @doc this function will be called by `post_authenticate/2` if the user successfully 
+%% authenticates and the submodule does not provide an implementation
+%% of authorize/2. The default implementation does not perform any authorization
+%% and simply returns false to signify the request is not fobidden
+-spec default_authorize(term(), term()) -> {false, term(), term()}.
+default_authorize(RD, Ctx) ->
+    {false, RD, Ctx}.
+
 
 %% ===================================================================
 %% DTrace functions

@@ -6,10 +6,12 @@
 
 -module(riak_cs_s3_rewrite).
 
--export([rewrite/2]).
+-export([rewrite/2, original_resource/1]).
 
 -include("riak_cs.hrl").
 -include("s3_api.hrl").
+
+-define(RCS_REWRITE_HEADER, "x-rcs-rewrite-path").
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -19,29 +21,39 @@
 -type subresources() :: [subresource()].
 
 %% @doc Function to rewrite headers prior to processing by webmachine.
--spec rewrite(gb_tree(), string()) -> string().
+-spec rewrite(gb_tree(), string()) -> {gb_tree(), string()}.
 rewrite(Headers, RawPath) ->
     riak_cs_dtrace:dtrace(?DT_WM_OP, 1, [], ?MODULE, <<"rewrite">>, []),
     Host = mochiweb_headers:get_value("host", Headers),
     {Path, QueryString, _} = mochiweb_util:urlsplit_path(RawPath),
-    do_rewrite(Path, QueryString, bucket_from_host(Host)).
+    {mochiweb_headers:default(?RCS_REWRITE_HEADER, RawPath, Headers), 
+     rewrite_path(Path, QueryString, bucket_from_host(Host))}.
+
+-spec original_resource(term()) -> undefined | {string(), [{term(),term()}]}.
+original_resource(RD) ->
+    case wrq:get_req_header(?RCS_REWRITE_HEADER, RD) of 
+        undefined -> undefined;
+        RawPath ->
+            {Path, QS, _} = mochiweb_util:urlsplit_path(RawPath),
+            {Path, mochiweb_util:parse_qs(QS)}
+    end.                                                         
 
 
 %% @doc Internal function to handle rewriting the URL
--spec do_rewrite(string(), string(), undefined | string()) -> string().
-do_rewrite("/", _QS, undefined) ->
+-spec rewrite_path(string(), string(), undefined | string()) -> string().
+rewrite_path("/", _QS, undefined) ->
     "/buckets";
-do_rewrite(Path, QS, undefined) ->
+rewrite_path(Path, QS, undefined) ->
     {Bucket, UpdPath} = separate_bucket_from_path(string:tokens(Path, [$/])),
-    do_rewrite(UpdPath, QS, Bucket);
-do_rewrite(Path, _QS, "riak-cs") ->
+    rewrite_path(UpdPath, QS, Bucket);
+rewrite_path(Path, _QS, "riak-cs") ->
     "/riak-cs" ++ Path;
-do_rewrite(Path, _QS, "usage") ->
+rewrite_path(Path, _QS, "usage") ->
     "/usage" ++ Path;
-do_rewrite("/", QS, Bucket) ->
+rewrite_path("/", QS, Bucket) ->
     SubResources = get_subresources(QS),
     lists:flatten(["/buckets/", Bucket, format_bucket_qs(QS, SubResources)]);
-do_rewrite(Path, QS, Bucket) ->
+rewrite_path(Path, QS, Bucket) ->
     lists:flatten(["/buckets/",
                    Bucket,
                    "/objects/",

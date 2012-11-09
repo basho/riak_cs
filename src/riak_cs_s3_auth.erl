@@ -75,8 +75,11 @@ parse_auth_header(_) ->
 calculate_signature(KeyData, RD) ->
     Headers = riak_cs_wm_utils:normalize_headers(RD),
     AmazonHeaders = riak_cs_wm_utils:extract_amazon_headers(Headers),
-    Resource = [wrq:path(RD),
-                canonicalize_qs(lists:sort(wrq:req_qs(RD)))],
+    OriginalResource = riak_cs_s3_rewrite:original_resource(RD),
+    Resource = case OriginalResource of
+        undefined -> []; %% TODO: get noisy here?
+        {Path,QS} -> [Path, canonicalize_qs(lists:sort(QS))]
+    end,
     Expires = wrq:get_qs_value("Expires", RD),
     case Expires of
         undefined ->
