@@ -25,7 +25,7 @@
 %% Public API
 %% ===================================================================
 
--spec identify(term(), term()) -> {string(),term()} | {undefined,term()}.
+-spec identify(term(), term()) -> {string() | undefined , string()}.
 identify(RD,_Ctx) ->
     case wrq:get_req_header("authorization", RD) of
         undefined ->
@@ -34,7 +34,7 @@ identify(RD,_Ctx) ->
             parse_auth_header(AuthHeader)
     end.
 
--spec authenticate(rcs_user(), term(), term(), term()) -> ok | {error, atom}.
+-spec authenticate(rcs_user(), string(), term(), term()) -> ok | {error, atom()}.
 authenticate(User, Signature, RD, _Ctx) ->
     CalculatedSignature = calculate_signature(User?RCS_USER.key_secret, RD),
     case check_auth(Signature, CalculatedSignature) of

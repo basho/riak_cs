@@ -10,8 +10,12 @@
 
 -include("riak_cs.hrl").
 
--export([authenticate/3]).
+-export([identify/2,authenticate/4]).
 
--spec authenticate(term(), string(), undefined) -> {error, atom()}.
-authenticate(_RD, Reason, undefined) ->
-    {error, Reason}.
+-spec identify(term(), term()) -> {undefined, block_all}.
+identify(_RD,_Ctx) ->
+    {undefined, block_all}.
+
+-spec authenticate(rcs_user(), term(), term(), term()) -> ok | {error, term()}.
+authenticate(_User, AuthData, _RD, _Ctx) ->
+    {error, AuthData}.
