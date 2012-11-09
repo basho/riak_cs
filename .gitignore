@@ -3,6 +3,7 @@ deps/*
 rel/riak-cs
 ebin/*.beam
 ebin/*.app
+riak_test/ebin/*
 doc
 dev
 /package/
