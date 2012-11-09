@@ -10,8 +10,16 @@
 
 -include("riak_cs.hrl").
 
--export([authenticate/3]).
+-export([identify/2, authenticate/4]).
 
--spec authenticate(term(), string(), undefined) -> ok.
-authenticate(_RD, _KeyData, _) ->
+-spec identify(term(),term()) -> {string() | undefined, undefined}.
+identify(RD,_Ctx) ->
+    case wrq:get_req_header("authorization", RD) of
+        undefined -> {[], undefined};
+        Key -> {Key, undefined}
+    end.
+            
+
+-spec authenticate(rcs_user(), undefined, term(), term()) -> ok.
+authenticate(_User, _AuthData, _RD, _Ctx) ->
     ok.
