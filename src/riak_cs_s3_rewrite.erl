@@ -147,37 +147,46 @@ valid_subresource({Key, _}) ->
 
 -ifdef(TEST).
 
-rewrite_test() ->
+rewrite_path_test() ->
     application:set_env(riak_cs, cs_root_host, ?ROOT_HOST),
     %% List Buckets URL
-    ?assertEqual("/buckets", rewrite(headers([]), "/")),
+    equal_paths("/buckets", rewrite(headers([]), "/")),
     %% Bucket Operations
-    ?assertEqual("/buckets/testbucket/objects", rewrite(headers([]), "/testbucket")),
-    ?assertEqual("/buckets/testbucket/objects", rewrite(headers([{"host", "testbucket." ++ ?ROOT_HOST}]), "/")),
-    ?assertEqual("/buckets/testbucket/acl", rewrite(headers([]), "/testbucket?acl")),
-    ?assertEqual("/buckets/testbucket/acl", rewrite(headers([{"host", "testbucket." ++ ?ROOT_HOST}]), "/?acl")),
-    ?assertEqual("/buckets/testbucket/location", rewrite(headers([]), "/testbucket?location")),
-    ?assertEqual("/buckets/testbucket/location", rewrite(headers([{"host", "testbucket." ++ ?ROOT_HOST}]), "/?location")),
-    ?assertEqual("/buckets/testbucket/versioning", rewrite(headers([]), "/testbucket?versioning")),
-    ?assertEqual("/buckets/testbucket/versioning", rewrite(headers([{"host", "testbucket." ++ ?ROOT_HOST}]), "/?versioning")),
-    ?assertEqual("/buckets/testbucket/policy", rewrite(headers([]), "/testbucket?policy")),
-    ?assertEqual("/buckets/testbucket/policy", rewrite(headers([{"host", "testbucket." ++ ?ROOT_HOST}]), "/?policy")),
-    ?assertEqual("/buckets/testbucket/uploads", rewrite(headers([]), "/testbucket?uploads")),
-    ?assertEqual("/buckets/testbucket/uploads", rewrite(headers([{"host", "testbucket." ++ ?ROOT_HOST}]), "/?uploads")),
+    equal_paths("/buckets/testbucket/objects", rewrite(headers([]), "/testbucket")),
+    equal_paths("/buckets/testbucket/objects", rewrite(headers([{"host", "testbucket." ++ ?ROOT_HOST}]), "/")),
+    equal_paths("/buckets/testbucket/acl", rewrite(headers([]), "/testbucket?acl")),
+    equal_paths("/buckets/testbucket/acl", rewrite(headers([{"host", "testbucket." ++ ?ROOT_HOST}]), "/?acl")),
+    equal_paths("/buckets/testbucket/location", rewrite(headers([]), "/testbucket?location")),
+    equal_paths("/buckets/testbucket/location", rewrite(headers([{"host", "testbucket." ++ ?ROOT_HOST}]), "/?location")),
+    equal_paths("/buckets/testbucket/versioning", rewrite(headers([]), "/testbucket?versioning")),
+    equal_paths("/buckets/testbucket/versioning", rewrite(headers([{"host", "testbucket." ++ ?ROOT_HOST}]), "/?versioning")),
+    equal_paths("/buckets/testbucket/policy", rewrite(headers([]), "/testbucket?policy")),
+    equal_paths("/buckets/testbucket/policy", rewrite(headers([{"host", "testbucket." ++ ?ROOT_HOST}]), "/?policy")),
+    equal_paths("/buckets/testbucket/uploads", rewrite(headers([]), "/testbucket?uploads")),
+    equal_paths("/buckets/testbucket/uploads", rewrite(headers([{"host", "testbucket." ++ ?ROOT_HOST}]), "/?uploads")),
     %% Object Operations
-    ?assertEqual("/buckets/testbucket/objects/testobject", rewrite(headers([]), "/testbucket/testobject")),
-    ?assertEqual("/buckets/testbucket/objects/testobject", rewrite(headers([{"host", "testbucket." ++ ?ROOT_HOST}]), "/testobject")),
-    ?assertEqual("/buckets/testbucket/objects/testobject/acl", rewrite(headers([]), "/testbucket/testobject?acl")),
-    ?assertEqual("/buckets/testbucket/objects/testobject/acl", rewrite(headers([{"host", "testbucket." ++ ?ROOT_HOST}]), "/testobject?acl")),
-    ?assertEqual("/buckets/testbucket/objects/testobject/uploads", rewrite(headers([]), "/testbucket/testobject?uploads")),
-    ?assertEqual("/buckets/testbucket/objects/testobject/uploads", rewrite(headers([{"host", "testbucket." ++ ?ROOT_HOST}]), "/testobject?uploads")),
-    ?assertEqual("/buckets/testbucket/objects/testobject/uploads/2", rewrite(headers([]), "/testbucket/testobject?uploadId=2")),
-    ?assertEqual("/buckets/testbucket/objects/testobject/uploads/2", rewrite(headers([{"host", "testbucket." ++ ?ROOT_HOST}]), "/testobject?uploadId=2")),
-    ?assertEqual("/buckets/testbucket/objects/testobject/uploads/2?partNumber=1", rewrite(headers([]), "/testbucket/testobject?partNumber=1&uploadId=2")),
-    ?assertEqual("/buckets/testbucket/objects/testobject/uploads/2?partNumber=1", rewrite(headers([{"host", "testbucket." ++ ?ROOT_HOST}]), "/testobject?partNumber=1&uploadId=2")).
+    equal_paths("/buckets/testbucket/objects/testobject", rewrite(headers([]), "/testbucket/testobject")),
+    equal_paths("/buckets/testbucket/objects/testobject", rewrite(headers([{"host", "testbucket." ++ ?ROOT_HOST}]), "/testobject")),
+    equal_paths("/buckets/testbucket/objects/testobject/acl", rewrite(headers([]), "/testbucket/testobject?acl")),
+    equal_paths("/buckets/testbucket/objects/testobject/acl", rewrite(headers([{"host", "testbucket." ++ ?ROOT_HOST}]), "/testobject?acl")),
+    equal_paths("/buckets/testbucket/objects/testobject/uploads", rewrite(headers([]), "/testbucket/testobject?uploads")),
+    equal_paths("/buckets/testbucket/objects/testobject/uploads", rewrite(headers([{"host", "testbucket." ++ ?ROOT_HOST}]), "/testobject?uploads")),
+    equal_paths("/buckets/testbucket/objects/testobject/uploads/2", rewrite(headers([]), "/testbucket/testobject?uploadId=2")),
+    equal_paths("/buckets/testbucket/objects/testobject/uploads/2", rewrite(headers([{"host", "testbucket." ++ ?ROOT_HOST}]), "/testobject?uploadId=2")),
+    equal_paths("/buckets/testbucket/objects/testobject/uploads/2?partNumber=1", rewrite(headers([]), "/testbucket/testobject?partNumber=1&uploadId=2")),
+    equal_paths("/buckets/testbucket/objects/testobject/uploads/2?partNumber=1", rewrite(headers([{"host", "testbucket." ++ ?ROOT_HOST}]), "/testobject?partNumber=1&uploadId=2")).
+
+rewrite_header_test() ->
+    Path = "/testbucket?a=b",
+    {Headers, _} = rewrite(headers([]), Path),
+    ?assertEqual(Path, mochiweb_headers:get_value(?RCS_REWRITE_HEADER, Headers)).
+        
 
 %% Helper function for eunit tests
 headers(HeadersList) ->
     mochiweb_headers:make(HeadersList).
+
+equal_paths(EPath, {_RHeaders, RPath}) ->
+    ?assertEqual(EPath, RPath).
 
 -endif.
