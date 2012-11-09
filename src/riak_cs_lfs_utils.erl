@@ -24,8 +24,7 @@
          new_manifest/9,
          new_manifest/11,
          remove_write_block/2,
-         remove_delete_block/2,
-         sorted_blocks_remaining/1]).
+         remove_delete_block/2]).
 
 %% -------------------------------------------------------------------
 %% Public API
@@ -206,6 +205,3 @@ remove_delete_block(Manifest, Chunk) ->
     Manifest?MANIFEST{delete_blocks_remaining=Updated,
                              state=ManiState,
                              last_block_deleted_time=os:timestamp()}.
-
-sorted_blocks_remaining(?MANIFEST{write_blocks_remaining=Remaining}) ->
-    lists:sort(ordsets:to_list(Remaining)).
