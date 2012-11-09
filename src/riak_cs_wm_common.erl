@@ -14,14 +14,19 @@
          content_types_provided/2,
          malformed_request/2,
          to_xml/2,
+         accept_body/2,
          allowed_methods/2,
+         delete_resource/2,
          finish_request/2]).
 
--export([default_allowed_methods/1,
-         default_content_types/1,
+-export([default_allowed_methods/0,
+         default_content_types/0,
+         default_content_types/2,
          default_finish_request/2,
          default_init/1,
-         default_malformed_request/2]).
+         default_authorize/2,
+         default_malformed_request/2,
+         default_delete_resource/2]).
 
 -include("riak_cs.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
@@ -82,11 +87,26 @@ malformed_request(RD, Ctx=#context{submodule=Mod,
                   [RD, Ctx],
                   ExportsFun(malformed_request)).
 
-forbidden(RD, Ctx=#context{auth_module=AuthMod, submodule=Mod}) ->
+forbidden(RD, Ctx=#context{auth_module=AuthMod, submodule=Mod, riakc_pid=RiakPid}) ->
     dt_entry(Mod, <<"forbidden">>),
-    _Authenticated = AuthMod:authenticate(RD, Ctx),
-    %% @TODO Use resource callback to check for special `Fun'
-    case riak_cs_wm_utils:xfind_and_auth_user(RD, Ctx, fun auth_complete/2) of
+    {UserKey, AuthData} = AuthMod:identify(RD, Ctx),
+    AuthResult = case riak_cs_utils:get_user(UserKey, RiakPid) of
+                     {ok, {User, UserObj}} when User?RCS_USER.status =:= enabled ->            
+                         authenticate(User, UserObj, RD, Ctx, AuthData);
+                     {ok, _} -> %% disabled account, we are going to 403
+                         {error, bad_auth};
+                     {error, NE} when NE =:= not_found; 
+                                      NE =:= no_user_key ->
+                         {error, NE};
+                     {error, R} ->
+                         %% other failures, like Riak fetch timeout, be loud about
+                         _ = lager:error("Retrieval of user record for ~p failed. Reason: ~p",
+                                         [UserKey, R]),
+                         {error, R}
+                 end,
+    Conv2KeyCtx = fun(X) -> X end, %% TODO: get Conv2KeyCtx from submodule callback
+    AnonOk = true, %% TODO: need to call submodule to determine if anonymous request is ok    
+    case post_authentication(AuthResult, RD, Ctx, fun authorize/2, Conv2KeyCtx, AnonOk) of
         {false, _RD2, Ctx2} = FalseRet ->
             dt_return(Mod, <<"forbidden">>, [], [riak_cs_wm_utils:extract_name(Ctx2#context.user), <<"false">>]),
             FalseRet;
@@ -116,11 +136,10 @@ allowed_methods(RD, Ctx=#context{submodule=Mod,
 content_types_accepted(RD, Ctx=#context{submodule=Mod,
                                         exports_fun=ExportsFun}) ->
     dt_entry(Mod, <<"content_types_accepted">>),
-    ContentTypes = resource_call(Mod,
-                                 content_types_accepted,
-                                 [],
-                                 ExportsFun(content_types_accepted)),
-    {ContentTypes, RD, Ctx}.
+    resource_call(Mod,
+                  content_types_accepted,
+                  [RD,Ctx],
+                  ExportsFun(content_types_accepted)).
 
 -spec content_types_provided(term(), term()) ->
     {[{string(), atom()}], term(), term()}.
@@ -133,8 +152,16 @@ content_types_provided(RD, Ctx=#context{submodule=Mod,
                                  ExportsFun(content_types_provided)),
     {ContentTypes, RD, Ctx}.
 
+-spec delete_resource(term(), term()) -> {boolean() | {halt, term()}, term(), #context{}}.
+delete_resource(RD, Ctx=#context{submodule=Mod,exports_fun=ExportsFun}) ->
+    resource_call(Mod,
+                  delete_resource,
+                  [RD,Ctx],
+                  ExportsFun(delete_resource)).
+                  
+
 -spec to_xml(term(), term()) ->
-    {{'halt', term()}, term(), #context{}}.
+    {binary() | {'halt', term()}, term(), #context{}}.
 to_xml(RD, Ctx=#context{user=User,
                         submodule=Mod,
                         exports_fun=ExportsFun}) ->
@@ -147,6 +174,16 @@ to_xml(RD, Ctx=#context{user=User,
     dt_return(Mod, <<"to_xml">>, [], [riak_cs_wm_utils:extract_name(User), <<"service_get_buckets">>]),
     dt_return_service(Mod, <<"service_get_buckets">>, [], [riak_cs_wm_utils:extract_name(User)]),
     Res.
+
+-spec accept_body(term(), term()) ->
+    {boolean() | {'halt', term()}, term(), #context{}}.
+accept_body(RD, Ctx=#context{submodule=Mod,exports_fun=ExportsFun}) -> %% TODO: add in dtrace
+    resource_call(Mod,
+                  accept_body,
+                  [RD, Ctx],
+                  ExportsFun(accept_body)).
+                  
+
 
 finish_request(RD, Ctx=#context{riakc_pid=undefined,
                                 submodule=Mod,
@@ -172,6 +209,20 @@ finish_request(RD, Ctx=#context{submodule=Mod,
 %% Helper functions
 %% ===================================================================
 
+-spec authorize(term(), term()) -> {boolean(),term(),term()}.
+authorize(RD,Ctx=#context{submodule=Mod, exports_fun=ExportsFun}) ->
+    resource_call(Mod, authorize, [RD,Ctx], ExportsFun(authorize)).               
+
+-spec authenticate(rcs_user(), riakc_obj:riakc_obj(), term(), term(), term()) -> 
+                          {ok, rcs_user(), riakc_obj:riakc_obj()} | {error, term()}.
+authenticate(User, UserObj, RD, Ctx=#context{auth_module=AuthMod}, AuthData) ->
+    case AuthMod:authenticate(User, AuthData, RD, Ctx) of
+        ok ->
+            {ok, User, UserObj};
+        {error, _Reason} ->
+            {error, bad_auth}
+    end.
+
 -spec exports_fun(orddict:new()) -> function().
 exports_fun(Exports) ->
     fun(Function) ->
@@ -183,14 +234,41 @@ resource_call(Mod, Fun, Args, true) ->
 resource_call(_Mod, Fun, Args, false) ->
     erlang:apply(?MODULE, default(Fun), Args).
 
+%% ===================================================================
+%% Helper Functions Copied from riak_cs_wm_utils that should be removed from that module
+%% ===================================================================
 
-%% @doc This function will be called by
-%% `riak_cs_wm_utils:find_and_auth_user' if the user is successfully
-%% autenticated. ACLs are not applicaable to service-level requests so
-%% we just return a tuple indicating that the request may proceed.
--spec auth_complete(term(), term()) -> {false, term(), term()}.
-auth_complete(RD, Ctx) ->
-    {false, RD, Ctx}.
+post_authentication({ok, User, UserObj}, RD, Ctx, Authorize, _, _) ->
+    %% given keyid and signature matched, proceed
+    Authorize(RD, Ctx#context{user=User,
+                              user_object=UserObj});
+post_authentication({error, no_user_key}, RD, Ctx, Authorize, _, true) ->
+    %% no keyid was given, proceed anonymously
+    lager:info("No user key"),
+    Authorize(RD, Ctx);
+post_authentication({error, no_user_key}, RD, Ctx, _, Conv2KeyCtx, false) ->
+    %% no keyid was given, deny access
+    lager:info("No user key, deny"),
+    deny_access(RD, Conv2KeyCtx(Ctx));
+post_authentication({error, bad_auth}, RD, Ctx, _, Conv2KeyCtx, _) ->
+    %% given keyid was found, but signature didn't match
+    lager:info("bad_auth"),
+    deny_access(RD, Conv2KeyCtx(Ctx));
+post_authentication({error, _Reason}, RD, Ctx, _, Conv2KeyCtx, _) ->
+    %% no matching keyid was found, or lookup failed
+    lager:info("other"),
+    deny_invalid_key(RD, Conv2KeyCtx(Ctx)).
+
+%% @doc Produce an access-denied error message from a webmachine
+%% resource's `forbidden/2' function.
+deny_access(RD, Ctx) ->
+    riak_cs_s3_response:api_error(access_denied, RD, Ctx).
+
+%% @doc Prodice an invalid-access-keyid error message from a
+%% webmachine resource's `forbidden/2' function.
+deny_invalid_key(RD, Ctx) ->
+    riak_cs_s3_response:api_error(invalid_access_key_id, RD, Ctx).
+
 
 %% ===================================================================
 %% Resource function defaults
@@ -206,6 +284,12 @@ default(content_types_provided) ->
     default_content_types;
 default(malformed_request) ->
     default_malformed_request;
+default(delete_resource) ->
+    default_delete_resource;
+default(authorize) ->
+    default_authorize;
+default(finish_request) ->
+    default_finish_request;
 default(_) ->
     undefined.
 
@@ -215,12 +299,15 @@ default_init(Ctx) ->
 default_malformed_request(RD, Ctx) ->
     {false, RD, Ctx}.
 
-default_content_types(_) ->
-    [].
+default_content_types() -> % for content-types provided
+    []. 
+default_content_types(_, _) -> % for content-types accepted
+    []. 
 
-%% @doc Mapping of resource module to allowed methods
--spec default_allowed_methods(atom()) -> [atom()].
-default_allowed_methods(_) ->
+default_delete_resource(RD, Ctx) ->
+    {false, RD, Ctx}.
+
+default_allowed_methods() ->
     [].
 
 default_finish_request(RD, Ctx=#context{riakc_pid=undefined}) ->
@@ -228,6 +315,15 @@ default_finish_request(RD, Ctx=#context{riakc_pid=undefined}) ->
 default_finish_request(RD, Ctx=#context{riakc_pid=RiakPid}) ->
     riak_cs_utils:close_riak_connection(RiakPid),
     {true, RD, Ctx#context{riakc_pid=undefined}}.
+
+%% @doc this function will be called by `post_authenticate/2` if the user successfully 
+%% authenticates and the submodule does not provide an implementation
+%% of authorize/2. The default implementation does not perform any authorization
+%% and simply returns false to signify the request is not fobidden
+-spec default_authorize(term(), term()) -> {false, term(), term()}.
+default_authorize(RD, Ctx) ->
+    {false, RD, Ctx}.
+
 
 %% ===================================================================
 %% DTrace functions

@@ -45,12 +45,13 @@ admin_resources(Props) ->
 base_resources() ->
     [
      %% Bucket resources
-     {["buckets"], riak_cs_wm_common, props(riak_cs_wm_buckets)}
-     %% {["buckets", bucket], riak_cs_wm_bucket, Props},
-     %% {["buckets", bucket, "objects"], riak_cs_wm_objects, Props},
-     %% {["buckets", bucket, "acl"], riak_cs_wm_bucket_acl, Props},
-     %% {["buckets", bucket, "location"], riak_cs_wm_bucket_location, Props},
-     %% {["buckets", bucket, "versioning"], riak_cs_wm_bucket_versioning, Props},
+     {["buckets"], riak_cs_wm_common, props(riak_cs_wm_buckets)},
+     {["buckets", bucket], riak_cs_wm_common, props(riak_cs_wm_bucket)},
+     {["buckets", bucket, "objects"], riak_cs_wm_common, props(riak_cs_wm_objects)},
+     {["buckets", bucket, "acl"], riak_cs_wm_common, props(riak_cs_wm_bucket_acl)},
+     {["buckets", bucket, "location"], riak_cs_wm_common, props(riak_cs_wm_bucket_location)},
+     {["buckets", bucket, "versioning"], riak_cs_wm_common, props(riak_cs_wm_bucket_versioning)}
+     %% TODO: bucket policy
      %% %% Object resources
      %% {["buckets", bucket, "objects", object], riak_cs_wm_object, Props},
      %% {["buckets", bucket, "objects", object, "acl"], riak_cs_wm_object_acl, Props}

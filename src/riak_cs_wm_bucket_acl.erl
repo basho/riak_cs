@@ -6,61 +6,44 @@
 
 -module(riak_cs_wm_bucket_acl).
 
--export([init/1,
-         service_available/2,
-         forbidden/2,
-         content_types_provided/2,
-         malformed_request/2,
+-export([content_types_provided/0,
          to_xml/2,
-         allowed_methods/2,
+         allowed_methods/0,
          content_types_accepted/2,
-         accept_body/2,
-         delete_resource/2,
-         finish_request/2]).
+         accept_body/2]).
+
+-export([authorize/2]).
+
+%% TODO: PUT/DELETE
 
 -include("riak_cs.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
 
-init(Config) ->
-    dt_entry(<<"init">>),
-    %% Check if authentication is disabled and
-    %% set that in the context.
-    AuthBypass = proplists:get_value(auth_bypass, Config),
-    {ok, #context{start_time=os:timestamp(), auth_bypass=AuthBypass}}.
 
--spec service_available(term(), term()) -> {true, term(), term()}.
-service_available(RD, Ctx) ->
-    dt_entry(<<"service_available">>),
-    Res = riak_cs_wm_utils:service_available(RD, Ctx),
-    dt_return(<<"service_available">>),
-    Res.
+%% @doc Get the list of methods this resource supports.
+-spec allowed_methods() -> [atom()].
+allowed_methods() ->
+    ['GET', 'PUT'].
 
--spec malformed_request(term(), term()) -> {false, term(), term()}.
-malformed_request(RD, Ctx) ->
-    dt_entry(<<"malformed_request">>),
-    {false, RD, Ctx}.
+-spec content_types_provided() -> [{string(), atom()}].
+content_types_provided() ->
+    [{"application/xml", to_xml}].
 
-%% @doc Check to see if the user is
-%%      authenticated. Normally with HTTP
-%%      we'd use the `authorized` callback,
-%%      but this is how S3 does things.
-forbidden(RD, Ctx) ->
-    dt_entry(<<"forbidden">>),
-    case riak_cs_wm_utils:find_and_auth_user(RD, Ctx, fun check_permission/2) of
-        {false, _RD2, Ctx2} = FalseRet ->
-            dt_return(<<"forbidden">>, [], [extract_name(Ctx2#context.user), <<"false">>]),
-            FalseRet;
-        {Rsn, _RD2, Ctx2} = Ret ->
-            Reason = case Rsn of
-                         {halt, Code} -> Code;
-                         _            -> -1
-                     end,
-            dt_return(<<"forbidden">>, [Reason], [extract_name(Ctx2#context.user), <<"true">>]),
-            Ret
+-spec content_types_accepted(#wm_reqdata{}, #context{}) -> 
+                                    {[{string(), atom()}], #wm_reqdata{}, #context{}}.
+content_types_accepted(RD, Ctx) ->
+    dt_entry(<<"content_types_accepted">>),
+    case wrq:get_req_header("content-type", RD) of
+        undefined ->
+            {[{"application/octet-stream", accept_body}], RD, Ctx};
+        CType ->
+            {Media, _Params} = mochiweb_util:parse_header(CType),
+            {[{Media, accept_body}], RD, Ctx}
     end.
 
-check_permission(RD, #context{user=User,
-                              riakc_pid=RiakPid}=Ctx) ->
+-spec authorize(term(),term()) -> {boolean() | {halt, term()}, term(), term()}.
+authorize(RD, #context{user=User,
+                       riakc_pid=RiakPid}=Ctx) ->
     Method = wrq:method(RD),
     RequestedAccess =
         riak_cs_acl_utils:requested_access(Method, true),
@@ -68,7 +51,7 @@ check_permission(RD, #context{user=User,
     PermCtx = Ctx#context{bucket=Bucket,
                           requested_perm=RequestedAccess},
     %% only owners are allowed to delete buckets
-    case check_grants(PermCtx) of
+    case riak_cs_acl_utils:check_grants(User,Bucket,RequestedAccess,RiakPid) of
         true ->
             %% because users are not allowed to create/destroy
             %% buckets, we can assume that User is not
@@ -86,7 +69,7 @@ check_permission(RD, #context{user=User,
             %% this operation is allowed, but we need to get
             %% the owner's record, and log the access against
             %% them instead of the actor
-            shift_to_owner(RD, PermCtx, OwnerId, RiakPid);
+            riak_cs_wm_utils:shift_to_owner(RD, PermCtx, OwnerId, RiakPid);
         false ->
             case User of
                 undefined ->
@@ -107,71 +90,6 @@ check_permission(RD, #context{user=User,
                             riak_cs_s3_response:api_error(Reason, RD, Ctx)
                     end
             end
-    end.
-
-%% @doc Call the correct (anonymous or auth'd user) {@link
-%% riak_cs_acl} function to check permissions for this request.
-check_grants(#context{user=undefined,
-                      bucket=Bucket,
-                      requested_perm=RequestedAccess,
-                      riakc_pid=RiakPid}) ->
-    riak_cs_acl:anonymous_bucket_access(Bucket, RequestedAccess, RiakPid);
-check_grants(#context{user=User,
-                      bucket=Bucket,
-                      requested_perm=RequestedAccess,
-                      riakc_pid=RiakPid}) ->
-    riak_cs_acl:bucket_access(Bucket,
-                                RequestedAccess,
-                                User?RCS_USER.canonical_id,
-                                RiakPid).
-
-%% @doc The {@link forbidden/2} decision passed, but the bucket
-%% belongs to someone else.  Switch to it if the owner's record can be
-%% retrieved.
-shift_to_owner(RD, Ctx, OwnerId, RiakPid) when RiakPid /= undefined ->
-    case riak_cs_utils:get_user(OwnerId, RiakPid) of
-        {ok, {Owner, OwnerObject}} when Owner?RCS_USER.status =:= enabled ->
-            AccessRD = riak_cs_access_logger:set_user(Owner, RD),
-            {false, AccessRD, Ctx#context{user=Owner,
-                                          user_object=OwnerObject}};
-        {ok, _} ->
-            riak_cs_wm_utils:deny_access(RD, Ctx);
-        {error, _} ->
-            riak_cs_s3_response:api_error(bucket_owner_unavailable, RD, Ctx)
-    end.
-
-%% @doc Get the list of methods this resource supports.
--spec allowed_methods(term(), term()) -> {[atom()], term(), term()}.
-allowed_methods(RD, Ctx) ->
-    dt_entry(<<"allowed_methods">>),
-    %% TODO: add POST
-    %% TODO: make this list conditional on Ctx
-    {['HEAD', 'GET', 'PUT', 'DELETE'], RD, Ctx}.
-
--spec content_types_provided(term(), term()) ->
-                                    {[{string(), atom()}], term(), term()}.
-content_types_provided(RD, Ctx) ->
-    dt_entry(<<"content_types_provided">>),
-    %% TODO:
-    %% Add xml support later
-
-    %% TODO:
-    %% The subresource will likely affect
-    %% the content-type. Need to look
-    %% more into those.
-    {[{"application/xml", to_xml}], RD, Ctx}.
-
-%% @spec content_types_accepted(reqdata(), context()) ->
-%%          {[{ContentType::string(), Acceptor::atom()}],
-%%           reqdata(), context()}
-content_types_accepted(RD, Ctx) ->
-    dt_entry(<<"content_types_accepted">>),
-    case wrq:get_req_header("content-type", RD) of
-        undefined ->
-            {[{"application/octet-stream", accept_body}], RD, Ctx};
-        CType ->
-            {Media, _Params} = mochiweb_util:parse_header(CType),
-            {[{Media, accept_body}], RD, Ctx}
     end.
 
 -spec to_xml(term(), #context{}) ->
@@ -237,38 +155,6 @@ accept_body(RD, Ctx=#context{user=User,
             riak_cs_s3_response:api_error(Reason, RD, Ctx)
     end.
 
-%% @doc Callback for deleting a bucket.
--spec delete_resource(term(), term()) -> {boolean() | {'halt', term()}, term, #context{}}.
-delete_resource(RD, Ctx=#context{user=User,
-                                 user_object=UserObj,
-                                 bucket=Bucket,
-                                 riakc_pid=RiakPid}) ->
-    dt_entry(<<"delete_resource">>, [], [extract_name(User), Bucket]),
-    dt_entry_bucket(<<"delete">>, [], [extract_name(User), Bucket]),
-    case riak_cs_utils:delete_bucket(User,
-                                       UserObj,
-                                       Bucket,
-                                       RiakPid) of
-        ok ->
-            dt_return(<<"delete_resource">>, [200], [extract_name(User), Bucket]),
-            dt_return_bucket(<<"delete">>, [200], [extract_name(User), Bucket]),
-            {true, RD, Ctx};
-        {error, Reason} ->
-            Code = riak_cs_s3_response:status_code(Reason),
-            dt_return(<<"delete_resource">>, [Code], [extract_name(User), Bucket]),
-            dt_return_bucket(<<"delete">>, [Code], [extract_name(User), Bucket]),
-            riak_cs_s3_response:api_error(Reason, RD, Ctx)
-    end.
-
-finish_request(RD, Ctx=#context{riakc_pid=undefined}) ->
-    dt_entry(<<"finish_request">>, [0], []),
-    {true, RD, Ctx};
-finish_request(RD, Ctx=#context{riakc_pid=RiakPid}) ->
-    dt_entry(<<"finish_request">>, [1], []),
-    riak_cs_utils:close_riak_connection(RiakPid),
-    dt_return(<<"finish_request">>, [1], []),
-    {true, RD, Ctx#context{riakc_pid=undefined}}.
-
 extract_name(X) ->
     riak_cs_wm_utils:extract_name(X).
 
@@ -280,9 +166,6 @@ dt_entry(Func, Ints, Strings) ->
 
 dt_entry_bucket(Func, Ints, Strings) ->
     riak_cs_dtrace:dtrace(?DT_BUCKET_OP, 1, Ints, ?MODULE, Func, Strings).
-
-dt_return(Func) ->
-    dt_return(Func, [], []).
 
 dt_return(Func, Ints, Strings) ->
     riak_cs_dtrace:dtrace(?DT_WM_OP, 2, Ints, ?MODULE, Func, Strings).
