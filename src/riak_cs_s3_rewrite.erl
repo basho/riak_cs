@@ -25,9 +25,13 @@
 rewrite(Headers, RawPath) ->
     riak_cs_dtrace:dtrace(?DT_WM_OP, 1, [], ?MODULE, <<"rewrite">>, []),
     Host = mochiweb_headers:get_value("host", Headers),
-    {Path, QueryString, _} = mochiweb_util:urlsplit_path(RawPath),
-    {mochiweb_headers:default(?RCS_REWRITE_HEADER, RawPath, Headers), 
-     rewrite_path(Path, QueryString, bucket_from_host(Host))}.
+    HostBucket = bucket_from_host(Host),
+    {Path, QueryString, _} = mochiweb_util:urlsplit_path(RawPath),    
+    RewrittenPath = rewrite_path(Path, QueryString, HostBucket),
+    RewrittenHeaders = mochiweb_headers:default(?RCS_REWRITE_HEADER, 
+                                                rcs_rewrite_header(RawPath, HostBucket),
+                                                Headers),
+    {RewrittenHeaders, RewrittenPath}.
 
 -spec original_resource(term()) -> undefined | {string(), [{term(),term()}]}.
 original_resource(RD) ->
@@ -60,6 +64,13 @@ rewrite_path(Path, QS, Bucket) ->
                    string:strip(Path, left, $/),
                    format_object_qs(get_subresources(QS))
                   ]).
+
+%% @doc, build the path to be stored as the rewritten path in the request. Bucket name
+%% from the host header is added if it exists. 
+rcs_rewrite_header(RawPath, undefined) ->
+    RawPath;
+rcs_rewrite_header(RawPath, Bucket) ->
+    "/" ++ Bucket ++ RawPath.
 
 %% @doc Extract the bucket name that may have been prepended to the
 %% host name in the Host header value.
