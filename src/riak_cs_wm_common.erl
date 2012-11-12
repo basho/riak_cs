@@ -17,7 +17,7 @@
          allowed_methods/2,
          finish_request/2]).
 
--export([default_allowed_methods/1,
+-export([default_allowed_methods/0,
          default_content_types/1,
          default_finish_request/2,
          default_init/1,
@@ -278,8 +278,8 @@ default_content_types(_) ->
     [].
 
 %% @doc Mapping of resource module to allowed methods
--spec default_allowed_methods(atom()) -> [atom()].
-default_allowed_methods(_) ->
+-spec default_allowed_methods() -> [].
+default_allowed_methods() ->
     [].
 
 default_finish_request(RD, Ctx=#context{riakc_pid=undefined}) ->
