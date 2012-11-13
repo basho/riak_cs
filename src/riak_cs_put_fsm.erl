@@ -292,8 +292,8 @@ handle_info({'DOWN', CallerRef, process, _Pid, Reason}, _StateName, State=#state
 %%--------------------------------------------------------------------
 terminate(_Reason, _StateName, #state{mani_pid=ManiPid,
                                       all_writer_pids=BlockServerPids}) ->
-    maybe_stop_manifest_fsm(ManiPid),
-    maybe_stop_block_servers(BlockServerPids),
+    riak_cs_manifest_fsm:maybe_stop_manifest_fsm(ManiPid),
+    riak_cs_block_server:maybe_stop_block_servers(BlockServerPids),
     ok.
 
 %%--------------------------------------------------------------------
@@ -551,16 +551,3 @@ handle_receiving_last_chunk(NewData, State=#state{buffer_queue=BufferQueue,
     Reply = ok,
     {reply, Reply, all_received, NewStateData}.
 
--spec maybe_stop_manifest_fsm(undefined | pid()) -> ok.
-maybe_stop_manifest_fsm(undefined) ->
-    ok;
-maybe_stop_manifest_fsm(ManiPid) ->
-    riak_cs_manifest_fsm:stop(ManiPid),
-    ok.
-
--spec maybe_stop_block_servers(undefined | [pid()]) -> ok.
-maybe_stop_block_servers(undefined) ->
-    ok;
-maybe_stop_block_servers(BlockServerPids) ->
-    _ = [riak_cs_block_server:stop(P) || P <- BlockServerPids],
-    ok.
