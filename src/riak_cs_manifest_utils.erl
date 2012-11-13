@@ -21,7 +21,7 @@
          overwritten_UUIDs/1,
          mark_pending_delete/2,
          mark_scheduled_delete/2,
-         filter_pending_delete_uuid_manifests/1,
+         manifests_to_gc/2,
          prune/1,
          prune/2,
          upgrade_wrapped_manifests/1,
@@ -119,11 +119,47 @@ mark_scheduled_delete(Dict, UUIDsToMark) ->
     end,
     orddict:map(MapFun, Dict).
 
-%% @doc Return the current `pending_delete' manifests
-%% from an orddict of manifests.
--spec filter_pending_delete_uuid_manifests(orddict:orddict()) -> [cs_uuid_and_manifest()].
-filter_pending_delete_uuid_manifests(Dict) ->
-    orddict:to_list(orddict:filter(fun pending_delete_manifest/2, Dict)).
+%% @doc Return a list of manifests that are either
+%% in `PendingDeleteUUIDs' or are in the `pending_delete'
+%% state and have been there for longer than the retry
+%% interval.
+-spec manifests_to_gc([binary()], orddict:orddict()) -> [cs_uuid_and_manifest()].
+manifests_to_gc(PendingDeleteUUIDs, Manifests) ->
+    FilterFun = pending_delete_helper(PendingDeleteUUIDs),
+    orddict:to_list(orddict:filter(FilterFun, Manifests)).
+
+%% @private
+%% Return a function for use in `orddict:filter/2'
+%% that will return true if the manifest key is
+%% in `UUIDs' or the manifest should be retried
+%% moving to the GC bucket
+-spec pending_delete_helper([binary()]) ->
+    fun((binary(), lfs_manifest()) -> boolean()).
+pending_delete_helper(UUIDs) ->
+    fun (Key, Manifest) ->
+            lists:member(Key, UUIDs) orelse retry_manifest(Manifest)
+    end.
+
+%% @private
+%% Return true if this manifest should be retried
+%% moving to the GC bucket
+-spec retry_manifest(lfs_manifest()) -> boolean().
+retry_manifest(?MANIFEST{state=pending_delete,
+                         delete_marked_time=MarkedTime}) ->
+    retry_from_marked_time(MarkedTime, os:timestamp());
+retry_manifest(_Manifest) ->
+    false.
+
+%% @private
+%% Return true if the time elapsed between
+%% `MarkedTime' and `Now' is greater than
+%% `riak_cs_gc:gc_retry_interval()'.
+-spec retry_from_marked_time(erlang:timestamp(), erlang:timestamp()) ->
+    boolean().
+retry_from_marked_time(MarkedTime, Now) ->
+    NowSeconds = riak_cs_utils:timestamp(Now),
+    MarkedTimeSeconds = riak_cs_utils:timestamp(MarkedTime),
+    NowSeconds > (MarkedTimeSeconds + riak_cs_gc:gc_retry_interval()).
 
 %% @doc Remove all manifests that require pruning,
 %%      see needs_pruning() for definition of needing pruning.
@@ -224,23 +260,6 @@ needs_pruning(?MANIFEST{state=scheduled_delete,
                               scheduled_delete_time=ScheduledDeleteTime}, Time) ->
     seconds_diff(Time, ScheduledDeleteTime) > riak_cs_gc:leeway_seconds();
 needs_pruning(_Manifest, _Time) ->
-    false.
-
-%% NOTE: This is a orddict filter fun.
-pending_delete_manifest(_, ?MANIFEST{state=pending_delete,
-                                     last_block_deleted_time=undefined}) ->
-    true;
-pending_delete_manifest(_, ?MANIFEST{last_block_deleted_time=undefined}) ->
-    false;
-pending_delete_manifest(_, ?MANIFEST{state=scheduled_delete,
-                                     last_block_deleted_time=LBDTime}) ->
-    %% If a manifest is `scheduled_delete' and the amount of time
-    %% specified by the retry interval has elapsed since a file block
-    %% was last deleted, then reschedule it for deletion.
-    LBDSeconds = riak_cs_utils:timestamp(LBDTime),
-    Now = riak_cs_utils:timestamp(os:timestamp()),
-    Now > (LBDSeconds + riak_cs_gc:gc_retry_interval());
-pending_delete_manifest(_, _) ->
     false.
 
 seconds_diff(T2, T1) ->
