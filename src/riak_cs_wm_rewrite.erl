@@ -4,7 +4,7 @@
 %%
 %% -------------------------------------------------------------------
 -module(riak_cs_wm_rewrite).
--export([rewrite/2]).
+-export([rewrite/5]).
 
 -include("riak_cs.hrl").
 
@@ -27,7 +27,7 @@ bucket_from_host(HostHeader) ->
             end
     end.
 
-rewrite(Headers, Path) ->
+rewrite(_Method, _Scheme, _Vsn, Headers, Path) ->
     riak_cs_dtrace:dtrace(?DT_WM_OP, 1, [], ?MODULE, <<"bucket_from_host">>, []),
     HostHeader = mochiweb_headers:get_value("host", Headers),
     case bucket_from_host(HostHeader) of
