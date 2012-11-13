@@ -62,28 +62,55 @@ active_and_writing_manifests(Dict) ->
 overwritten_UUIDs(Dict) ->
     case active_manifest(Dict) of
         {error, no_active_manifest} ->
-            FoldFun =
-                fun ({_, ?MANIFEST{state=State}}, Acc) when State =:= writing ->
-                        Acc;
-                    ({UUID, _}, Acc) ->
-                        [UUID | Acc]
-                end;
+            lists:foldl(fun overwritten_UUIDs_no_active_fold/2,
+                        [],
+                        orddict:to_list(Dict));
         {ok, Active} ->
-            FoldFun =
-                fun ({UUID, Elem}, Acc) ->
-                        case Elem of
-                            Active ->
-                                Acc;
-                            Elem=?MANIFEST{state=active} ->
-                                [UUID | Acc];
-                            Elem=?MANIFEST{state=writing} ->
-                                [UUID | Acc];
-                            _ ->
-                                Acc
-                        end
-                end
-    end,
-    lists:foldl(FoldFun, [], orddict:to_list(Dict)).
+            lists:foldl(overwritten_UUIDs_active_fold_helper(Active),
+                        [],
+                        orddict:to_list(Dict))
+    end.
+
+-spec overwritten_UUIDs_no_active_fold({binary(), lfs_manifest},
+                                       [binary()]) -> [binary()].
+overwritten_UUIDs_no_active_fold({_, ?MANIFEST{state=State}}, Acc)
+        when State =:= writing ->
+    Acc;
+overwritten_UUIDs_no_active_fold({UUID, _}, Acc) ->
+    [UUID | Acc].
+
+-spec overwritten_UUIDs_active_fold_helper(lfs_manifest()) ->
+    fun(({binary(), lfs_manifest()}, [binary()]) -> [binary()]).
+overwritten_UUIDs_active_fold_helper(Active) ->
+    fun ({UUID, Manifest}, Acc) ->
+            case {UUID, Manifest} of
+                {_UUID, Active} ->
+                    Acc;
+                {_UUID, ?MANIFEST{state=active}} ->
+                    [UUID | Acc];
+                {_UUID, ?MANIFEST{state=writing,
+                                  last_block_written_time=undefined,
+                                  write_start_time=WST}} ->
+                    acc_leeway_helper(UUID, Acc, WST);
+                {_UUID, ?MANIFEST{state=writing,
+                                  last_block_written_time=LBWT}} ->
+                    acc_leeway_helper(UUID, Acc, LBWT);
+                _Else ->
+                    Acc
+            end
+    end.
+
+-spec acc_leeway_helper(binary(), list(), undefined | erlang:timestamp()) ->
+    list().
+acc_leeway_helper(UUID, Acc, Time) ->
+    handle_leeway_elaped_time(leeway_elapsed(Time), UUID, Acc).
+
+-spec handle_leeway_elaped_time(boolean(), binary(), list()) ->
+    list().
+handle_leeway_elaped_time(true, UUID, Acc) ->
+    [UUID | Acc];
+handle_leeway_elaped_time(false, _UUID, Acc) ->
+    Acc.
 
 %% @doc Return `Dict' with the manifests in
 %% `UUIDsToMark' with their state changed to
@@ -238,6 +265,13 @@ filter_manifests_by_state(Dict, AcceptedStates) ->
                 lists:member(State, AcceptedStates)
         end,
     orddict:filter(AcceptManifest, Dict).
+
+-spec leeway_elapsed(undefined | erlang:timestamp()) -> boolean().
+leeway_elapsed(undefined) ->
+    false;
+leeway_elapsed(Timestamp) ->
+    Now = riak_moss_utils:timestamp(os:timestamp()),
+    Now > (riak_moss_utils:timestamp(Timestamp) + riak_cs_gc:leeway_seconds()).
 
 orddict_values(OrdDict) ->
     [V || {_K, V} <- orddict:to_list(OrdDict)].

@@ -280,7 +280,7 @@ get_and_update(RiakcPid, WrappedManifests, Bucket, Key) ->
     case riak_cs_utils:get_manifests(RiakcPid, Bucket, Key) of
         {ok, RiakObject, Manifests} ->
             NewManiAdded = riak_cs_manifest_resolution:resolve([WrappedManifests, Manifests]),
-            OverwrittenUUIDs = riak_cs_manifest_utils:overwritten_UUIDs(Manifests),
+            OverwrittenUUIDs = riak_cs_manifest_utils:overwritten_UUIDs(NewManiAdded),
             Result = case OverwrittenUUIDs of
                 [] ->
                     ObjectToWrite = riakc_obj:update_value(RiakObject,
