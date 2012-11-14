@@ -378,14 +378,8 @@ handle_info(_Info, _StateName, StateData) ->
 terminate(_Reason, _StateName, #state{test=false,
                                       all_reader_pids=BlockServerPids,
                                       mani_fsm_pid=ManiPid}) ->
-
-    riak_cs_manifest_fsm:stop(ManiPid),
-    _ = case BlockServerPids of
-            undefined ->
-                ok;
-            _ ->
-                [riak_cs_block_server:stop(P) || P <- BlockServerPids]
-        end,
+    riak_cs_manifest_fsm:maybe_stop_manifest_fsm(ManiPid),
+    riak_cs_block_server:maybe_stop_block_servers(BlockServerPids),
     ok;
 terminate(_Reason, _StateName, #state{test=true,
                                       free_readers=ReaderPids}) ->

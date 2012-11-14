@@ -18,6 +18,7 @@
          get_block/5, get_block/6,
          put_block/6,
          delete_block/5,
+         maybe_stop_block_servers/1,
          stop/1]).
 
 %% gen_server callbacks
@@ -98,6 +99,13 @@ put_block(Pid, Bucket, Key, UUID, BlockNumber, Value) ->
 -spec delete_block(pid(), binary(), binary(), binary(), pos_integer()) -> ok.
 delete_block(Pid, Bucket, Key, UUID, BlockNumber) ->
     gen_server:cast(Pid, {delete_block, self(), Bucket, Key, UUID, BlockNumber}).
+
+-spec maybe_stop_block_servers(undefined | [pid()]) -> ok.
+maybe_stop_block_servers(undefined) ->
+    ok;
+maybe_stop_block_servers(BlockServerPids) ->
+    _ = [stop(P) || P <- BlockServerPids],
+    ok.
 
 stop(Pid) ->
     gen_server:call(Pid, stop, infinity).
