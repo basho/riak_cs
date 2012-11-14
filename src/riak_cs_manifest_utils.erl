@@ -82,7 +82,7 @@ overwritten_UUIDs_no_active_fold({UUID, _}, Acc) ->
 -spec overwritten_UUIDs_active_fold_helper(lfs_manifest()) ->
     fun(({binary(), lfs_manifest()}, [binary()]) -> [binary()]).
 overwritten_UUIDs_active_fold_helper(Active) ->
-    fun ({UUID, Manifest}, Acc) ->
+    fun({UUID, Manifest}, Acc) ->
             case {UUID, Manifest} of
                 {_UUID, Active} ->
                     Acc;
@@ -163,7 +163,7 @@ manifests_to_gc(PendingDeleteUUIDs, Manifests) ->
 -spec pending_delete_helper([binary()]) ->
     fun((binary(), lfs_manifest()) -> boolean()).
 pending_delete_helper(UUIDs) ->
-    fun (Key, Manifest) ->
+    fun(Key, Manifest) ->
             lists:member(Key, UUIDs) orelse retry_manifest(Manifest)
     end.
 
@@ -202,8 +202,8 @@ prune(Dict, Time) ->
 
 -spec upgrade_wrapped_manifests([orddict:orddict()]) -> [orddict:orddict()].
 upgrade_wrapped_manifests(ListofOrdDicts) ->
-    DictMapFun = fun (_Key, Value) -> upgrade_manifest(Value) end,
-    MapFun = fun (Value) -> orddict:map(DictMapFun, Value) end,
+    DictMapFun = fun(_Key, Value) -> upgrade_manifest(Value) end,
+    MapFun = fun(Value) -> orddict:map(DictMapFun, Value) end,
     lists:map(MapFun, ListofOrdDicts).
 
 %% @doc Upgrade the manifest to the most recent
@@ -261,7 +261,7 @@ upgrade_manifest(?MANIFEST{}=M) ->
 -spec filter_manifests_by_state(orddict:orddict(), [atom()]) -> orddict:orddict().
 filter_manifests_by_state(Dict, AcceptedStates) ->
     AcceptManifest =
-        fun (_, ?MANIFEST{state=State}) ->
+        fun(_, ?MANIFEST{state=State}) ->
                 lists:member(State, AcceptedStates)
         end,
     orddict:filter(AcceptManifest, Dict).
