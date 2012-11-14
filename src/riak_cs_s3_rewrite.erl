@@ -6,7 +6,7 @@
 
 -module(riak_cs_s3_rewrite).
 
--export([rewrite/2, original_resource/1]).
+-export([rewrite/5, original_resource/1]).
 
 -include("riak_cs.hrl").
 -include("s3_api.hrl").
@@ -21,13 +21,14 @@
 -type subresources() :: [subresource()].
 
 %% @doc Function to rewrite headers prior to processing by webmachine.
--spec rewrite(gb_tree(), string()) -> {gb_tree(), string()}.
-rewrite(Headers, RawPath) ->
+-spec rewrite(atom(), atom(), {integer(), integer()}, gb_tree(), string()) -> 
+                     {gb_tree(), string()}.
+rewrite(Method, _Scheme, _Vsn, Headers, RawPath) ->
     riak_cs_dtrace:dtrace(?DT_WM_OP, 1, [], ?MODULE, <<"rewrite">>, []),
     Host = mochiweb_headers:get_value("host", Headers),
     HostBucket = bucket_from_host(Host),
     {Path, QueryString, _} = mochiweb_util:urlsplit_path(RawPath),    
-    RewrittenPath = rewrite_path(Path, QueryString, HostBucket),
+    RewrittenPath = rewrite_path(Method, Path, QueryString, HostBucket),
     RewrittenHeaders = mochiweb_headers:default(?RCS_REWRITE_HEADER, 
                                                 rcs_rewrite_header(RawPath, HostBucket),
                                                 Headers),
@@ -44,20 +45,22 @@ original_resource(RD) ->
 
 
 %% @doc Internal function to handle rewriting the URL
--spec rewrite_path(string(), string(), undefined | string()) -> string().
-rewrite_path("/", _QS, undefined) ->
+-spec rewrite_path(atom(),string(), string(), undefined | string()) -> string().
+rewrite_path(_Method, "/", _QS, undefined) ->
     "/buckets";
-rewrite_path(Path, QS, undefined) ->
+rewrite_path(Method, Path, QS, undefined) ->
     {Bucket, UpdPath} = separate_bucket_from_path(string:tokens(Path, [$/])),
-    rewrite_path(UpdPath, QS, Bucket);
-rewrite_path(Path, _QS, "riak-cs") ->
+    rewrite_path(Method, UpdPath, QS, Bucket);
+rewrite_path(_Method, Path, _QS, "riak-cs") ->
     "/riak-cs" ++ Path;
-rewrite_path(Path, _QS, "usage") ->
+rewrite_path(_Method, Path, _QS, "usage") ->
     "/usage" ++ Path;
-rewrite_path("/", QS, Bucket) ->
+rewrite_path(Method, "/", [], Bucket) when Method =/= 'GET' ->
+    lists:flatten(["/buckets/", Bucket]);
+rewrite_path(_Method, "/", QS, Bucket) ->
     SubResources = get_subresources(QS),
     lists:flatten(["/buckets/", Bucket, format_bucket_qs(QS, SubResources)]);
-rewrite_path(Path, QS, Bucket) ->
+rewrite_path(_Method, Path, QS, Bucket) ->
     lists:flatten(["/buckets/",
                    Bucket,
                    "/objects/",
@@ -161,35 +164,41 @@ valid_subresource({Key, _}) ->
 rewrite_path_test() ->
     application:set_env(riak_cs, cs_root_host, ?ROOT_HOST),
     %% List Buckets URL
-    equal_paths("/buckets", rewrite(headers([]), "/")),
+    equal_paths("/buckets", rewrite_with(headers([]), "/")),    
     %% Bucket Operations
-    equal_paths("/buckets/testbucket/objects", rewrite(headers([]), "/testbucket")),
-    equal_paths("/buckets/testbucket/objects", rewrite(headers([{"host", "testbucket." ++ ?ROOT_HOST}]), "/")),
-    equal_paths("/buckets/testbucket/acl", rewrite(headers([]), "/testbucket?acl")),
-    equal_paths("/buckets/testbucket/acl", rewrite(headers([{"host", "testbucket." ++ ?ROOT_HOST}]), "/?acl")),
-    equal_paths("/buckets/testbucket/location", rewrite(headers([]), "/testbucket?location")),
-    equal_paths("/buckets/testbucket/location", rewrite(headers([{"host", "testbucket." ++ ?ROOT_HOST}]), "/?location")),
-    equal_paths("/buckets/testbucket/versioning", rewrite(headers([]), "/testbucket?versioning")),
-    equal_paths("/buckets/testbucket/versioning", rewrite(headers([{"host", "testbucket." ++ ?ROOT_HOST}]), "/?versioning")),
-    equal_paths("/buckets/testbucket/policy", rewrite(headers([]), "/testbucket?policy")),
-    equal_paths("/buckets/testbucket/policy", rewrite(headers([{"host", "testbucket." ++ ?ROOT_HOST}]), "/?policy")),
-    equal_paths("/buckets/testbucket/uploads", rewrite(headers([]), "/testbucket?uploads")),
-    equal_paths("/buckets/testbucket/uploads", rewrite(headers([{"host", "testbucket." ++ ?ROOT_HOST}]), "/?uploads")),
+    equal_paths("/buckets/testbucket/objects", rewrite_with('GET', headers([]), "/testbucket")),
+    equal_paths("/buckets/testbucket/objects", rewrite_with('GET', headers([{"host", "testbucket." ++ ?ROOT_HOST}]), "/")),
+    equal_paths("/buckets/testbucket", rewrite_with('HEAD', headers([]), "/testbucket")),
+    equal_paths("/buckets/testbucket", rewrite_with('HEAD', headers([{"host", "testbucket." ++ ?ROOT_HOST}]), "/")),
+    equal_paths("/buckets/testbucket", rewrite_with('PUT', headers([]), "/testbucket")),
+    equal_paths("/buckets/testbucket", rewrite_with('PUT', headers([{"host", "testbucket." ++ ?ROOT_HOST}]), "/")),
+    equal_paths("/buckets/testbucket", rewrite_with('DELETE', headers([]), "/testbucket")),
+    equal_paths("/buckets/testbucket", rewrite_with('DELETE', headers([{"host", "testbucket." ++ ?ROOT_HOST}]), "/")),
+    equal_paths("/buckets/testbucket/acl", rewrite_with(headers([]), "/testbucket?acl")),
+    equal_paths("/buckets/testbucket/acl", rewrite_with(headers([{"host", "testbucket." ++ ?ROOT_HOST}]), "/?acl")),
+    equal_paths("/buckets/testbucket/location", rewrite_with(headers([]), "/testbucket?location")),
+    equal_paths("/buckets/testbucket/location", rewrite_with(headers([{"host", "testbucket." ++ ?ROOT_HOST}]), "/?location")),
+    equal_paths("/buckets/testbucket/versioning", rewrite_with(headers([]), "/testbucket?versioning")),
+    equal_paths("/buckets/testbucket/versioning", rewrite_with(headers([{"host", "testbucket." ++ ?ROOT_HOST}]), "/?versioning")),
+    equal_paths("/buckets/testbucket/policy", rewrite_with(headers([]), "/testbucket?policy")),
+    equal_paths("/buckets/testbucket/policy", rewrite_with(headers([{"host", "testbucket." ++ ?ROOT_HOST}]), "/?policy")),
+    equal_paths("/buckets/testbucket/uploads", rewrite_with(headers([]), "/testbucket?uploads")),
+    equal_paths("/buckets/testbucket/uploads", rewrite_with(headers([{"host", "testbucket." ++ ?ROOT_HOST}]), "/?uploads")),
     %% Object Operations
-    equal_paths("/buckets/testbucket/objects/testobject", rewrite(headers([]), "/testbucket/testobject")),
-    equal_paths("/buckets/testbucket/objects/testobject", rewrite(headers([{"host", "testbucket." ++ ?ROOT_HOST}]), "/testobject")),
-    equal_paths("/buckets/testbucket/objects/testobject/acl", rewrite(headers([]), "/testbucket/testobject?acl")),
-    equal_paths("/buckets/testbucket/objects/testobject/acl", rewrite(headers([{"host", "testbucket." ++ ?ROOT_HOST}]), "/testobject?acl")),
-    equal_paths("/buckets/testbucket/objects/testobject/uploads", rewrite(headers([]), "/testbucket/testobject?uploads")),
-    equal_paths("/buckets/testbucket/objects/testobject/uploads", rewrite(headers([{"host", "testbucket." ++ ?ROOT_HOST}]), "/testobject?uploads")),
-    equal_paths("/buckets/testbucket/objects/testobject/uploads/2", rewrite(headers([]), "/testbucket/testobject?uploadId=2")),
-    equal_paths("/buckets/testbucket/objects/testobject/uploads/2", rewrite(headers([{"host", "testbucket." ++ ?ROOT_HOST}]), "/testobject?uploadId=2")),
-    equal_paths("/buckets/testbucket/objects/testobject/uploads/2?partNumber=1", rewrite(headers([]), "/testbucket/testobject?partNumber=1&uploadId=2")),
-    equal_paths("/buckets/testbucket/objects/testobject/uploads/2?partNumber=1", rewrite(headers([{"host", "testbucket." ++ ?ROOT_HOST}]), "/testobject?partNumber=1&uploadId=2")).
+    equal_paths("/buckets/testbucket/objects/testobject", rewrite_with(headers([]), "/testbucket/testobject")),
+    equal_paths("/buckets/testbucket/objects/testobject", rewrite_with(headers([{"host", "testbucket." ++ ?ROOT_HOST}]), "/testobject")),
+    equal_paths("/buckets/testbucket/objects/testobject/acl", rewrite_with(headers([]), "/testbucket/testobject?acl")),
+    equal_paths("/buckets/testbucket/objects/testobject/acl", rewrite_with(headers([{"host", "testbucket." ++ ?ROOT_HOST}]), "/testobject?acl")),
+    equal_paths("/buckets/testbucket/objects/testobject/uploads", rewrite_with(headers([]), "/testbucket/testobject?uploads")),
+    equal_paths("/buckets/testbucket/objects/testobject/uploads", rewrite_with(headers([{"host", "testbucket." ++ ?ROOT_HOST}]), "/testobject?uploads")),
+    equal_paths("/buckets/testbucket/objects/testobject/uploads/2", rewrite_with(headers([]), "/testbucket/testobject?uploadId=2")),
+    equal_paths("/buckets/testbucket/objects/testobject/uploads/2", rewrite_with(headers([{"host", "testbucket." ++ ?ROOT_HOST}]), "/testobject?uploadId=2")),
+    equal_paths("/buckets/testbucket/objects/testobject/uploads/2?partNumber=1", rewrite_with(headers([]), "/testbucket/testobject?partNumber=1&uploadId=2")),
+    equal_paths("/buckets/testbucket/objects/testobject/uploads/2?partNumber=1", rewrite_with(headers([{"host", "testbucket." ++ ?ROOT_HOST}]), "/testobject?partNumber=1&uploadId=2")).
 
 rewrite_header_test() ->
     Path = "/testbucket?a=b",
-    {Headers, _} = rewrite(headers([]), Path),
+    {Headers, _} = rewrite_with(headers([]), Path),
     ?assertEqual(Path, mochiweb_headers:get_value(?RCS_REWRITE_HEADER, Headers)).
         
 
@@ -199,5 +208,14 @@ headers(HeadersList) ->
 
 equal_paths(EPath, {_RHeaders, RPath}) ->
     ?assertEqual(EPath, RPath).
+
+
+rewrite_with(Headers, Path) ->
+    rewrite_with('GET', Headers, Path).
+
+rewrite_with(Method, Headers, Path) ->
+    Scheme = https,
+    Version = {1, 1},
+    rewrite(Method, Scheme, Version, Headers, Path).
 
 -endif.
