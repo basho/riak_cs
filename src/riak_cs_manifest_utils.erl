@@ -83,30 +83,38 @@ overwritten_UUIDs_no_active_fold({UUID, _}, Acc) ->
     fun(({binary(), lfs_manifest()}, [binary()]) -> [binary()]).
 overwritten_UUIDs_active_fold_helper(Active) ->
     fun({UUID, Manifest}, Acc) ->
-            case {UUID, Manifest} of
-                {_UUID, Active} ->
-                    Acc;
-                {_UUID, ?MANIFEST{state=active}} ->
-                    [UUID | Acc];
-                {_UUID, ?MANIFEST{state=writing,
-                                  last_block_written_time=undefined,
-                                  write_start_time=WST}} ->
-                    acc_leeway_helper(UUID, Acc, WST);
-                {_UUID, ?MANIFEST{state=writing,
-                                  last_block_written_time=LBWT}} ->
-                    acc_leeway_helper(UUID, Acc, LBWT);
-                _Else ->
-                    Acc
-            end
+            update_acc(UUID, Manifest, Acc, Active =:= Manifest)
     end.
 
--spec acc_leeway_helper(binary(), list(), undefined | erlang:timestamp()) ->
-    list().
+-spec update_acc(binary(), lfs_manifest(), [binary()], boolean()) ->
+    [binary()].
+update_acc(_UUID, _Manifest, Acc, true) ->
+    Acc;
+update_acc(UUID, ?MANIFEST{state=active}, Acc, false) ->
+    [UUID | Acc];
+update_acc(UUID, Manifest=?MANIFEST{state=writing}, Acc, _) ->
+    LBWT = Manifest?MANIFEST.last_block_written_time,
+    WST = Manifest?MANIFEST.write_start_time,
+    acc_leeway_helper(UUID, Acc, LBWT, WST);
+update_acc(_, _, Acc, _) ->
+   Acc.
+
+-spec acc_leeway_helper(binary(), [binary()],
+                        undefined | erlang:timestamp(),
+                        undefined | erlang:timestamp()) ->
+    [binary()].
+acc_leeway_helper(UUID, Acc, undefined, WST) ->
+    acc_leeway_helper(UUID, Acc, WST);
+acc_leeway_helper(UUID, Acc, LBWT, _) ->
+    acc_leeway_helper(UUID, Acc, LBWT).
+
+-spec acc_leeway_helper(binary(), [binary()], undefined | erlang:timestamp()) ->
+    [binary()].
 acc_leeway_helper(UUID, Acc, Time) ->
     handle_leeway_elaped_time(leeway_elapsed(Time), UUID, Acc).
 
--spec handle_leeway_elaped_time(boolean(), binary(), list()) ->
-    list().
+-spec handle_leeway_elaped_time(boolean(), binary(), [binary()]) ->
+    [binary()].
 handle_leeway_elaped_time(true, UUID, Acc) ->
     [UUID | Acc];
 handle_leeway_elaped_time(false, _UUID, Acc) ->
