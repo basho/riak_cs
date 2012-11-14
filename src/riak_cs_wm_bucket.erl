@@ -6,61 +6,43 @@
 
 -module(riak_cs_wm_bucket).
 
--export([init/1,
-         service_available/2,
-         forbidden/2,
-         content_types_provided/2,
-         malformed_request/2,
+-export([content_types_provided/0,
          to_xml/2,
-         allowed_methods/2,
+         allowed_methods/0,
          content_types_accepted/2,
          accept_body/2,
          delete_resource/2,
-         finish_request/2]).
+         finish_request/2,
+         authorize/2]).
 
 -include("riak_cs.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
 
-init(Config) ->
-    dt_entry(<<"init">>),
-    %% Check if authentication is disabled and
-    %% set that in the context.
-    AuthBypass = proplists:get_value(auth_bypass, Config),
-    {ok, #context{start_time=os:timestamp(), auth_bypass=AuthBypass}}.
+%% @doc Get the list of methods this resource supports.
+-spec allowed_methods() -> [atom()].
+allowed_methods() ->
+    ['HEAD', 'PUT', 'DELETE'].
 
--spec service_available(term(), term()) -> {true, term(), term()}.
-service_available(RD, Ctx) ->
-    dt_entry(<<"service_available">>),
-    Res = riak_cs_wm_utils:service_available(RD, Ctx),
-    dt_return(<<"service_available">>),
-    Res.
+-spec content_types_provided() -> [{string(), atom()}].
+content_types_provided() ->
+    [{"application/xml", to_xml}].
 
--spec malformed_request(term(), term()) -> {false, term(), term()}.
-malformed_request(RD, Ctx) ->
-    dt_entry(<<"malformed_request">>),
-    {false, RD, Ctx}.
-
-%% @doc Check to see if the user is
-%%      authenticated. Normally with HTTP
-%%      we'd use the `authorized` callback,
-%%      but this is how S3 does things.
-forbidden(RD, Ctx) ->
-    dt_entry(<<"forbidden">>),
-    case riak_cs_wm_utils:find_and_auth_user(RD, Ctx, fun check_permission/2) of
-        {false, _RD2, Ctx2} = FalseRet ->
-            dt_return(<<"forbidden">>, [], [extract_name(Ctx2#context.user), <<"false">>]),
-            FalseRet;
-        {Rsn, _RD2, Ctx2} = Ret ->
-            Reason = case Rsn of
-                         {halt, Code} -> Code;
-                         _            -> -1
-                     end,
-            dt_return(<<"forbidden">>, [Reason], [extract_name(Ctx2#context.user), <<"true">>]),
-            Ret
+%% @spec content_types_accepted(reqdata(), context()) ->
+%%          {[{ContentType::string(), Acceptor::atom()}],
+%%           reqdata(), context()}
+content_types_accepted(RD, Ctx) ->
+    dt_entry(<<"content_types_accepted">>),
+    case wrq:get_req_header("content-type", RD) of
+        undefined ->
+            {[{"application/octet-stream", accept_body}], RD, Ctx};
+        CType ->
+            {Media, _Params} = mochiweb_util:parse_header(CType),
+            {[{Media, accept_body}], RD, Ctx}
     end.
 
-check_permission(RD, #context{user=User,
-                              riakc_pid=RiakPid}=Ctx) ->
+-spec authorize(term(), term()) -> {boolean(), term(), term()}.
+authorize(RD, #context{user=User,
+                       riakc_pid=RiakPid}=Ctx) ->
     Method = wrq:method(RD),
     RequestedAccess =
         riak_cs_acl_utils:requested_access(Method, false),
@@ -151,40 +133,6 @@ shift_to_owner(RD, Ctx, OwnerId, RiakPid) when RiakPid /= undefined ->
             riak_cs_s3_response:api_error(bucket_owner_unavailable, RD, Ctx)
     end.
 
-%% @doc Get the list of methods this resource supports.
--spec allowed_methods(term(), term()) -> {[atom()], term(), term()}.
-allowed_methods(RD, Ctx) ->
-    dt_entry(<<"allowed_methods">>),
-    %% TODO: add POST
-    %% TODO: make this list conditional on Ctx
-    {['HEAD', 'PUT', 'DELETE'], RD, Ctx}.
-
--spec content_types_provided(term(), term()) ->
-                                    {[{string(), atom()}], term(), term()}.
-content_types_provided(RD, Ctx) ->
-    dt_entry(<<"content_types_provided">>),
-    %% TODO:
-    %% Add xml support later
-
-    %% TODO:
-    %% The subresource will likely affect
-    %% the content-type. Need to look
-    %% more into those.
-    {[{"application/xml", to_xml}], RD, Ctx}.
-
-%% @spec content_types_accepted(reqdata(), context()) ->
-%%          {[{ContentType::string(), Acceptor::atom()}],
-%%           reqdata(), context()}
-content_types_accepted(RD, Ctx) ->
-    dt_entry(<<"content_types_accepted">>),
-    case wrq:get_req_header("content-type", RD) of
-        undefined ->
-            {[{"application/octet-stream", accept_body}], RD, Ctx};
-        CType ->
-            {Media, _Params} = mochiweb_util:parse_header(CType),
-            {[{Media, accept_body}], RD, Ctx}
-    end.
-
 -spec to_xml(term(), #context{}) ->
                     {binary() | {'halt', term()}, term(), #context{}}.
 to_xml(RD, Ctx) ->
@@ -203,47 +151,6 @@ handle_read_request(RD, Ctx=#context{user=User,
         [_BucketRecord] ->
             {{halt, 200}, HeadRD, Ctx}
     end.
-
-%% @private
-%% versioning_qs({"versioning", _}) ->
-%%     true;
-%% versioning_qs(_) ->
-%%     false.
-
-%% %% @private
-%% location_qs({"location", _}) ->
-%%     true;
-%% location_qs(_) ->
-%%     false.
-
-%% %% @private
-%% versioning_or_location_qs(Item) ->
-%%     versioning_qs(Item) orelse location_qs(Item).
-
-%% %% @private
-%% versioning_or_location_request(Qs) ->
-%%     lists:any(fun versioning_or_location_qs/1, Qs).
-
-%% %% @private
-%% handle_versioning_or_location_req(true, RD, Ctx) ->
-%%     case lists:any(fun versioning_qs/1, wrq:req_qs(RD)) of
-%%         true ->
-%%             handle_versioning_req(RD, Ctx);
-%%         false ->
-%%             handle_location_req(RD, Ctx)
-%%     end;
-%% handle_versioning_or_location_req(false, RD, Ctx) ->
-%%     handle_normal_read_bucket_response(RD, Ctx).
-
-%% %% @private
-%% handle_versioning_req(RD, Ctx) ->
-%%     {<<"<VersioningConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"/>">>,
-%%      RD, Ctx}.
-
-%% %% @private
-%% handle_location_req(RD, Ctx) ->
-%%     {<<"<LocationConstraint xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"/>">>,
-%%      RD, Ctx}.
 
 %% @doc Process request body on `PUT' request.
 accept_body(RD, Ctx=#context{user=User,
@@ -320,9 +227,6 @@ dt_entry(Func, Ints, Strings) ->
 
 dt_entry_bucket(Func, Ints, Strings) ->
     riak_cs_dtrace:dtrace(?DT_BUCKET_OP, 1, Ints, ?MODULE, Func, Strings).
-
-dt_return(Func) ->
-    dt_return(Func, [], []).
 
 dt_return(Func, Ints, Strings) ->
     riak_cs_dtrace:dtrace(?DT_WM_OP, 2, Ints, ?MODULE, Func, Strings).

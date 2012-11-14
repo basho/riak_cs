@@ -14,15 +14,19 @@
          content_types_provided/2,
          malformed_request/2,
          to_xml/2,
+         accept_body/2,
          allowed_methods/2,
+         delete_resource/2,
          finish_request/2]).
 
 -export([default_allowed_methods/0,
-         default_content_types/1,
+         default_content_types/0,
+         default_content_types/2,
          default_finish_request/2,
          default_init/1,
          default_authorize/2,
-         default_malformed_request/2]).
+         default_malformed_request/2,
+         default_delete_resource/2]).
 
 -include("riak_cs.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
@@ -132,11 +136,10 @@ allowed_methods(RD, Ctx=#context{submodule=Mod,
 content_types_accepted(RD, Ctx=#context{submodule=Mod,
                                         exports_fun=ExportsFun}) ->
     dt_entry(Mod, <<"content_types_accepted">>),
-    ContentTypes = resource_call(Mod,
-                                 content_types_accepted,
-                                 [],
-                                 ExportsFun(content_types_accepted)),
-    {ContentTypes, RD, Ctx}.
+    resource_call(Mod,
+                  content_types_accepted,
+                  [RD,Ctx],
+                  ExportsFun(content_types_accepted)).
 
 -spec content_types_provided(term(), term()) ->
     {[{string(), atom()}], term(), term()}.
@@ -149,8 +152,16 @@ content_types_provided(RD, Ctx=#context{submodule=Mod,
                                  ExportsFun(content_types_provided)),
     {ContentTypes, RD, Ctx}.
 
+-spec delete_resource(term(), term()) -> {boolean() | {halt, term()}, term(), #context{}}.
+delete_resource(RD, Ctx=#context{submodule=Mod,exports_fun=ExportsFun}) ->
+    resource_call(Mod,
+                  delete_resource,
+                  [RD,Ctx],
+                  ExportsFun(delete_resource)).
+                  
+
 -spec to_xml(term(), term()) ->
-    {{'halt', term()}, term(), #context{}}.
+    {binary() | {'halt', term()}, term(), #context{}}.
 to_xml(RD, Ctx=#context{user=User,
                         submodule=Mod,
                         exports_fun=ExportsFun}) ->
@@ -163,6 +174,16 @@ to_xml(RD, Ctx=#context{user=User,
     dt_return(Mod, <<"to_xml">>, [], [riak_cs_wm_utils:extract_name(User), <<"service_get_buckets">>]),
     dt_return_service(Mod, <<"service_get_buckets">>, [], [riak_cs_wm_utils:extract_name(User)]),
     Res.
+
+-spec accept_body(term(), term()) ->
+    {boolean() | {'halt', term()}, term(), #context{}}.
+accept_body(RD, Ctx=#context{submodule=Mod,exports_fun=ExportsFun}) -> %% TODO: add in dtrace
+    resource_call(Mod,
+                  accept_body,
+                  [RD, Ctx],
+                  ExportsFun(accept_body)).
+                  
+
 
 finish_request(RD, Ctx=#context{riakc_pid=undefined,
                                 submodule=Mod,
@@ -263,8 +284,11 @@ default(content_types_provided) ->
     default_content_types;
 default(malformed_request) ->
     default_malformed_request;
+default(delete_resource) ->
+    default_delete_resource;
 default(authorize) ->
     default_authorize;
+%% TODO: default finish request to close riak connection
 default(_) ->
     undefined.
 
@@ -274,11 +298,14 @@ default_init(Ctx) ->
 default_malformed_request(RD, Ctx) ->
     {false, RD, Ctx}.
 
-default_content_types(_) ->
-    [].
+default_content_types() -> % for content-types provided
+    []. 
+default_content_types(_, _) -> % for content-types accepted
+    []. 
 
-%% @doc Mapping of resource module to allowed methods
--spec default_allowed_methods() -> [].
+default_delete_resource(RD, Ctx) ->
+    {false, RD, Ctx}.
+
 default_allowed_methods() ->
     [].
 
