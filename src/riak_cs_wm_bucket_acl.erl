@@ -6,61 +6,24 @@
 
 -module(riak_cs_wm_bucket_acl).
 
--export([init/1,
-         service_available/2,
-         forbidden/2,
-         content_types_provided/2,
-         malformed_request/2,
+-export([content_types_provided/0,
          to_xml/2,
-         allowed_methods/2,
+         allowed_methods/0,
          content_types_accepted/2,
          accept_body/2,
          delete_resource/2,
          finish_request/2]).
 
+-export([authorize/2]).
+
+%% TODO: PUT/DELETE
+
 -include("riak_cs.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
 
-init(Config) ->
-    dt_entry(<<"init">>),
-    %% Check if authentication is disabled and
-    %% set that in the context.
-    AuthBypass = proplists:get_value(auth_bypass, Config),
-    {ok, #context{start_time=os:timestamp(), auth_bypass=AuthBypass}}.
-
--spec service_available(term(), term()) -> {true, term(), term()}.
-service_available(RD, Ctx) ->
-    dt_entry(<<"service_available">>),
-    Res = riak_cs_wm_utils:service_available(RD, Ctx),
-    dt_return(<<"service_available">>),
-    Res.
-
--spec malformed_request(term(), term()) -> {false, term(), term()}.
-malformed_request(RD, Ctx) ->
-    dt_entry(<<"malformed_request">>),
-    {false, RD, Ctx}.
-
-%% @doc Check to see if the user is
-%%      authenticated. Normally with HTTP
-%%      we'd use the `authorized` callback,
-%%      but this is how S3 does things.
-forbidden(RD, Ctx) ->
-    dt_entry(<<"forbidden">>),
-    case riak_cs_wm_utils:find_and_auth_user(RD, Ctx, fun check_permission/2) of
-        {false, _RD2, Ctx2} = FalseRet ->
-            dt_return(<<"forbidden">>, [], [extract_name(Ctx2#context.user), <<"false">>]),
-            FalseRet;
-        {Rsn, _RD2, Ctx2} = Ret ->
-            Reason = case Rsn of
-                         {halt, Code} -> Code;
-                         _            -> -1
-                     end,
-            dt_return(<<"forbidden">>, [Reason], [extract_name(Ctx2#context.user), <<"true">>]),
-            Ret
-    end.
-
-check_permission(RD, #context{user=User,
-                              riakc_pid=RiakPid}=Ctx) ->
+-spec authorize(term(),term()) -> {boolean() | {halt, term()}, term(), term()}.
+authorize(RD, #context{user=User,
+                       riakc_pid=RiakPid}=Ctx) ->
     Method = wrq:method(RD),
     RequestedAccess =
         riak_cs_acl_utils:requested_access(Method, true),
@@ -141,25 +104,16 @@ shift_to_owner(RD, Ctx, OwnerId, RiakPid) when RiakPid /= undefined ->
     end.
 
 %% @doc Get the list of methods this resource supports.
--spec allowed_methods(term(), term()) -> {[atom()], term(), term()}.
-allowed_methods(RD, Ctx) ->
+-spec allowed_methods() -> [atom()].
+allowed_methods() ->
     dt_entry(<<"allowed_methods">>),
     %% TODO: add POST
-    %% TODO: make this list conditional on Ctx
-    {['HEAD', 'GET', 'PUT', 'DELETE'], RD, Ctx}.
+    %% TODO: add back PUT/DELETE
+    ['HEAD', 'GET'].
 
--spec content_types_provided(term(), term()) ->
-                                    {[{string(), atom()}], term(), term()}.
-content_types_provided(RD, Ctx) ->
-    dt_entry(<<"content_types_provided">>),
-    %% TODO:
-    %% Add xml support later
-
-    %% TODO:
-    %% The subresource will likely affect
-    %% the content-type. Need to look
-    %% more into those.
-    {[{"application/xml", to_xml}], RD, Ctx}.
+-spec content_types_provided() -> [{string(), atom()}].
+content_types_provided() ->
+    [{"application/xml", to_xml}].
 
 %% @spec content_types_accepted(reqdata(), context()) ->
 %%          {[{ContentType::string(), Acceptor::atom()}],
@@ -280,9 +234,6 @@ dt_entry(Func, Ints, Strings) ->
 
 dt_entry_bucket(Func, Ints, Strings) ->
     riak_cs_dtrace:dtrace(?DT_BUCKET_OP, 1, Ints, ?MODULE, Func, Strings).
-
-dt_return(Func) ->
-    dt_return(Func, [], []).
 
 dt_return(Func, Ints, Strings) ->
     riak_cs_dtrace:dtrace(?DT_WM_OP, 2, Ints, ?MODULE, Func, Strings).
