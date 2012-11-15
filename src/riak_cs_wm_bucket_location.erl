@@ -34,7 +34,7 @@ authorize(RD, #context{user=User,
     Bucket = list_to_binary(wrq:path_info(bucket, RD)),
     PermCtx = Ctx#context{bucket=Bucket,
                           requested_perm=RequestedAccess},
-    case check_grants(PermCtx) of 
+    case riak_cs_acl_utils:check_grants(User,Bucket,RequestedAccess,RiakPid) of 
         true ->
             AccessRD = riak_cs_access_logger:set_user(User, RD),
             {false, AccessRD, PermCtx};
@@ -54,22 +54,6 @@ authorize(RD, #context{user=User,
                     riak_cs_s3_response:api_error(Reason, RD, Ctx)
             end
     end.
-
-%% @doc Call the correct (anonymous or auth'd user) {@link
-%% riak_cs_acl} function to check permissions for this request.
-check_grants(#context{user=undefined,
-                      bucket=Bucket,
-                      requested_perm=RequestedAccess,
-                      riakc_pid=RiakPid}) ->
-    riak_cs_acl:anonymous_bucket_access(Bucket, RequestedAccess, RiakPid);
-check_grants(#context{user=User,
-                      bucket=Bucket,
-                      requested_perm=RequestedAccess,
-                      riakc_pid=RiakPid}) ->
-    riak_cs_acl:bucket_access(Bucket,
-                                RequestedAccess,
-                                User?RCS_USER.canonical_id,
-                                RiakPid).
 
 %% @doc The {@link forbidden/2} decision passed, but the bucket
 %% belongs to someone else.  Switch to it if the owner's record can be

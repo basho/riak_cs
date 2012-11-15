@@ -60,7 +60,7 @@ authorize(RD, #context{user=User,
             {false, AccessRD, PermCtx};
         _ ->
             %% only owners are allowed to delete buckets
-            case check_grants(PermCtx) of
+            case riak_cs_acl_utils:check_grants(User,Bucket,RequestedAccess,RiakPid) of
                 true ->
                     %% because users are not allowed to create/destroy
                     %% buckets, we can assume that User is not
@@ -101,22 +101,6 @@ authorize(RD, #context{user=User,
                     end
             end
     end.
-
-%% @doc Call the correct (anonymous or auth'd user) {@link
-%% riak_cs_acl} function to check permissions for this request.
-check_grants(#context{user=undefined,
-                      bucket=Bucket,
-                      requested_perm=RequestedAccess,
-                      riakc_pid=RiakPid}) ->
-    riak_cs_acl:anonymous_bucket_access(Bucket, RequestedAccess, RiakPid);
-check_grants(#context{user=User,
-                      bucket=Bucket,
-                      requested_perm=RequestedAccess,
-                      riakc_pid=RiakPid}) ->
-    riak_cs_acl:bucket_access(Bucket,
-                                RequestedAccess,
-                                User?RCS_USER.canonical_id,
-                                RiakPid).
 
 %% @doc The {@link forbidden/2} decision passed, but the bucket
 %% belongs to someone else.  Switch to it if the owner's record can be
