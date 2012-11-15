@@ -25,7 +25,8 @@
          extract_name/1,
          normalize_headers/1,
          extract_amazon_headers/1,
-         extract_user_metadata/1]).
+         extract_user_metadata/1,
+         shift_to_owner/4]).
 
 -include("riak_cs.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
@@ -207,6 +208,24 @@ deny_access(RD, Ctx) ->
 %% webmachine resource's `forbidden/2' function.
 deny_invalid_key(RD, Ctx) ->
     riak_cs_s3_response:api_error(invalid_access_key_id, RD, Ctx).
+
+%% @doc In the case is a user is authorized to perform an operation on 
+%% a bucket but is not the owner of that bucket this function can be used
+%% to switch to the owner's record if it can be retrieved
+-spec shift_to_owner(#wm_reqdata{}, #context{}, string(), pid()) ->
+                            {boolean(), #wm_reqdata{}, #context{}}.
+shift_to_owner(RD, Ctx=#context{}, OwnerId, RiakPid) when RiakPid /= undefined ->
+    case riak_cs_utils:get_user(OwnerId, RiakPid) of
+        {ok, {Owner, OwnerObject}} when Owner?RCS_USER.status =:= enabled ->
+            AccessRD = riak_cs_access_logger:set_user(Owner, RD),
+            {false, AccessRD, Ctx#context{user=Owner,
+                                          user_object=OwnerObject}};
+        {ok, _} ->
+            riak_cs_wm_utils:deny_access(RD, Ctx);
+        {error, _} ->
+            riak_cs_s3_response:api_error(bucket_owner_unavailable, RD, Ctx)
+    end.
+
 
 %% @doc Utility function for accessing
 %%      a riakc_obj without retrieving
