@@ -288,7 +288,8 @@ default(delete_resource) ->
     default_delete_resource;
 default(authorize) ->
     default_authorize;
-%% TODO: default finish request to close riak connection
+default(finish_request) ->
+    default_finish_request;
 default(_) ->
     undefined.
 
