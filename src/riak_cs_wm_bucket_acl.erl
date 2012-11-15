@@ -69,7 +69,7 @@ authorize(RD, #context{user=User,
             %% this operation is allowed, but we need to get
             %% the owner's record, and log the access against
             %% them instead of the actor
-            shift_to_owner(RD, PermCtx, OwnerId, RiakPid);
+            riak_cs_wm_utils:shift_to_owner(RD, PermCtx, OwnerId, RiakPid);
         false ->
             case User of
                 undefined ->
@@ -90,22 +90,6 @@ authorize(RD, #context{user=User,
                             riak_cs_s3_response:api_error(Reason, RD, Ctx)
                     end
             end
-    end.
-
-
-%% @doc The {@link forbidden/2} decision passed, but the bucket
-%% belongs to someone else.  Switch to it if the owner's record can be
-%% retrieved.
-shift_to_owner(RD, Ctx, OwnerId, RiakPid) when RiakPid /= undefined ->
-    case riak_cs_utils:get_user(OwnerId, RiakPid) of
-        {ok, {Owner, OwnerObject}} when Owner?RCS_USER.status =:= enabled ->
-            AccessRD = riak_cs_access_logger:set_user(Owner, RD),
-            {false, AccessRD, Ctx#context{user=Owner,
-                                          user_object=OwnerObject}};
-        {ok, _} ->
-            riak_cs_wm_utils:deny_access(RD, Ctx);
-        {error, _} ->
-            riak_cs_s3_response:api_error(bucket_owner_unavailable, RD, Ctx)
     end.
 
 -spec to_xml(term(), #context{}) ->
