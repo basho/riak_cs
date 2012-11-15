@@ -12,7 +12,6 @@
          content_types_accepted/2,
          accept_body/2,
          delete_resource/2,
-         finish_request/2,
          authorize/2]).
 
 -include("riak_cs.hrl").
@@ -27,9 +26,8 @@ allowed_methods() ->
 content_types_provided() ->
     [{"application/xml", to_xml}].
 
-%% @spec content_types_accepted(reqdata(), context()) ->
-%%          {[{ContentType::string(), Acceptor::atom()}],
-%%           reqdata(), context()}
+-spec content_types_accepted(#wm_reqdata{}, #context{}) -> 
+                                    {[{string(), atom()}], #wm_reqdata{}, #context{}}.
 content_types_accepted(RD, Ctx) ->
     dt_entry(<<"content_types_accepted">>),
     case wrq:get_req_header("content-type", RD) of
@@ -40,7 +38,7 @@ content_types_accepted(RD, Ctx) ->
             {[{Media, accept_body}], RD, Ctx}
     end.
 
--spec authorize(term(), term()) -> {boolean(), term(), term()}.
+-spec authorize(#wm_reqdata{}, #context{}) -> {boolean(), #wm_reqdata{}, #context{}}.
 authorize(RD, #context{user=User,
                        riakc_pid=RiakPid}=Ctx) ->
     Method = wrq:method(RD),
@@ -103,8 +101,8 @@ authorize(RD, #context{user=User,
     end.
 
 
--spec to_xml(term(), #context{}) ->
-                    {binary() | {'halt', term()}, term(), #context{}}.
+-spec to_xml(#wm_reqdata{}, #context{}) ->
+                    {binary() | {'halt', term()}, #wm_reqdata{}, #context{}}.
 to_xml(RD, Ctx) ->
     handle_read_request(RD, Ctx).
 
@@ -123,6 +121,7 @@ handle_read_request(RD, Ctx=#context{user=User,
     end.
 
 %% @doc Process request body on `PUT' request.
+-spec accept_body(#wm_reqdata{}, #context{}) -> {{halt, integer()}, #wm_reqdata{}, #context{}}.
 accept_body(RD, Ctx=#context{user=User,
                              user_object=UserObj,
                              bucket=Bucket,
@@ -155,7 +154,8 @@ accept_body(RD, Ctx=#context{user=User,
     end.
 
 %% @doc Callback for deleting a bucket.
--spec delete_resource(term(), term()) -> {boolean() | {'halt', term()}, term, #context{}}.
+-spec delete_resource(#wm_reqdata{}, #context{}) -> 
+                             {boolean() | {'halt', term()}, #wm_reqdata{}, #context{}}.
 delete_resource(RD, Ctx=#context{user=User,
                                  user_object=UserObj,
                                  bucket=Bucket,
@@ -176,15 +176,6 @@ delete_resource(RD, Ctx=#context{user=User,
             dt_return_bucket(<<"delete">>, [Code], [extract_name(User), Bucket]),
             riak_cs_s3_response:api_error(Reason, RD, Ctx)
     end.
-
-finish_request(RD, Ctx=#context{riakc_pid=undefined}) ->
-    dt_entry(<<"finish_request">>, [0], []),
-    {true, RD, Ctx};
-finish_request(RD, Ctx=#context{riakc_pid=RiakPid}) ->
-    dt_entry(<<"finish_request">>, [1], []),
-    riak_cs_utils:close_riak_connection(RiakPid),
-    dt_return(<<"finish_request">>, [1], []),
-    {true, RD, Ctx#context{riakc_pid=undefined}}.
 
 extract_name(X) ->
     riak_cs_wm_utils:extract_name(X).

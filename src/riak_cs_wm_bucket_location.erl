@@ -9,8 +9,7 @@
 % TODO: add PUT
 -export([content_types_provided/0,
          to_xml/2,
-         allowed_methods/0,
-         finish_request/2 %% TODO remove me
+         allowed_methods/0
         ]).
 
 -export([authorize/2]).
@@ -27,7 +26,8 @@ allowed_methods() ->
 content_types_provided() ->
     [{"application/xml", to_xml}].
 
--spec authorize(term(),term()) -> {boolean() | {halt, term()}, term(), term()}.
+-spec authorize(#wm_reqdata{}, #context{}) -> 
+                       {boolean() | {halt, term()}, #wm_reqdata{}, #context{}}.
 authorize(RD, #context{user=User,
                        riakc_pid=RiakPid}=Ctx) ->
     RequestedAccess = riak_cs_acl_utils:requested_access('GET', true),
@@ -55,24 +55,10 @@ authorize(RD, #context{user=User,
             end
     end.
 
--spec to_xml(term(), #context{}) ->
-                    {binary() | {'halt', term()}, term(), #context{}}.
+-spec to_xml(#wm_reqdata{}, #context{}) ->
+                    {binary() | {'halt', term()}, #wm_reqdata{}, #context{}}.
 to_xml(RD, Ctx) ->
     {<<"<LocationConstraint xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"/>">>,
      RD, Ctx}.
 
-finish_request(RD, Ctx=#context{riakc_pid=undefined}) ->
-    dt_entry(<<"finish_request">>, [0], []),
-    {true, RD, Ctx};
-finish_request(RD, Ctx=#context{riakc_pid=RiakPid}) ->
-    dt_entry(<<"finish_request">>, [1], []),
-    riak_cs_utils:close_riak_connection(RiakPid),
-    dt_return(<<"finish_request">>, [1], []),
-    {true, RD, Ctx#context{riakc_pid=undefined}}.
-
-dt_entry(Func, Ints, Strings) ->
-    riak_cs_dtrace:dtrace(?DT_WM_OP, 1, Ints, ?MODULE, Func, Strings).
-
-dt_return(Func, Ints, Strings) ->
-    riak_cs_dtrace:dtrace(?DT_WM_OP, 2, Ints, ?MODULE, Func, Strings).
 

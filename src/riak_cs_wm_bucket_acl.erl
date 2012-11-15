@@ -10,8 +10,7 @@
          to_xml/2,
          allowed_methods/0,
          content_types_accepted/2,
-         accept_body/2,
-         finish_request/2]).
+         accept_body/2]).
 
 -export([authorize/2]).
 
@@ -30,7 +29,8 @@ allowed_methods() ->
 content_types_provided() ->
     [{"application/xml", to_xml}].
 
--spec content_types_accepted(term(), term()) -> {[{string(), atom()}], term(), term()}.
+-spec content_types_accepted(#wm_reqdata{}, #context{}) -> 
+                                    {[{string(), atom()}], #wm_reqdata{}, #context{}}.
 content_types_accepted(RD, Ctx) ->
     dt_entry(<<"content_types_accepted">>),
     case wrq:get_req_header("content-type", RD) of
@@ -154,15 +154,6 @@ accept_body(RD, Ctx=#context{user=User,
             dt_return_bucket(<<"put_acl">>, [Code], [extract_name(User), Bucket]),
             riak_cs_s3_response:api_error(Reason, RD, Ctx)
     end.
-
-finish_request(RD, Ctx=#context{riakc_pid=undefined}) ->
-    dt_entry(<<"finish_request">>, [0], []),
-    {true, RD, Ctx};
-finish_request(RD, Ctx=#context{riakc_pid=RiakPid}) ->
-    dt_entry(<<"finish_request">>, [1], []),
-    riak_cs_utils:close_riak_connection(RiakPid),
-    dt_return(<<"finish_request">>, [1], []),
-    {true, RD, Ctx#context{riakc_pid=undefined}}.
 
 extract_name(X) ->
     riak_cs_wm_utils:extract_name(X).
