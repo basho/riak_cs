@@ -52,21 +52,23 @@ gc_specific_manifests(UUIDsToMark, RiakObject, RiakcPid) ->
     MarkedResult = mark_as_pending_delete(UUIDsToMark,
                                           RiakObject,
                                           RiakcPid),
-    handle_mark_as_pending_delete(MarkedResult, RiakcPid).
+    handle_mark_as_pending_delete(MarkedResult, UUIDsToMark, RiakcPid).
 
 %% @private
--spec handle_mark_as_pending_delete({ok, riakc_obj:riak_object()}, pid()) ->
+-spec handle_mark_as_pending_delete({ok, riakc_obj:riak_object()},
+                                    [binary()],
+                                    pid()) ->
     {error, term()} | {ok, riakc_obj:riak_object()};
 
-    ({error, term()}, pid()) ->
+    ({error, term()}, [binary()], pid()) ->
     {error, term()} | {ok, riakc_obj:riak_object()}.
-handle_mark_as_pending_delete({ok, RiakObject}, RiakcPid) ->
+handle_mark_as_pending_delete({ok, RiakObject}, UUIDsToMark, RiakcPid) ->
     Manifests = riak_cs_utils:manifests_from_riak_object(RiakObject),
-    PDManifests = riak_cs_manifest_utils:filter_pending_delete_uuid_manifests(Manifests),
+    PDManifests = riak_cs_manifest_utils:manifests_to_gc(UUIDsToMark, Manifests),
     MoveResult = move_manifests_to_gc_bucket(PDManifests, RiakcPid),
     PDUUIDs = [UUID || {UUID, _} <- PDManifests],
     handle_move_result(MoveResult, RiakObject, PDUUIDs, RiakcPid);
-handle_mark_as_pending_delete({error, Error}=Error, _RiakcPid) ->
+handle_mark_as_pending_delete({error, Error}=Error, _UUIDsToMark, _RiakcPid) ->
     _ = lager:warning("Failed to mark as pending_delete, reason: ~p", [Error]),
     Error.
 

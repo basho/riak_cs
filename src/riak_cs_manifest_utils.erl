@@ -21,7 +21,7 @@
          overwritten_UUIDs/1,
          mark_pending_delete/2,
          mark_scheduled_delete/2,
-         filter_pending_delete_uuid_manifests/1,
+         manifests_to_gc/2,
          prune/1,
          prune/2,
          upgrade_wrapped_manifests/1,
@@ -62,28 +62,63 @@ active_and_writing_manifests(Dict) ->
 overwritten_UUIDs(Dict) ->
     case active_manifest(Dict) of
         {error, no_active_manifest} ->
-            FoldFun =
-                fun ({_, ?MANIFEST{state=State}}, Acc) when State =:= writing ->
-                        Acc;
-                    ({UUID, _}, Acc) ->
-                        [UUID | Acc]
-                end;
+            lists:foldl(fun overwritten_UUIDs_no_active_fold/2,
+                        [],
+                        orddict:to_list(Dict));
         {ok, Active} ->
-            FoldFun =
-                fun ({UUID, Elem}, Acc) ->
-                        case Elem of
-                            Active ->
-                                Acc;
-                            Elem=?MANIFEST{state=active} ->
-                                [UUID | Acc];
-                            Elem=?MANIFEST{state=writing} ->
-                                [UUID | Acc];
-                            _ ->
-                                Acc
-                        end
-                end
-    end,
-    lists:foldl(FoldFun, [], orddict:to_list(Dict)).
+            lists:foldl(overwritten_UUIDs_active_fold_helper(Active),
+                        [],
+                        orddict:to_list(Dict))
+    end.
+
+-spec overwritten_UUIDs_no_active_fold({binary(), lfs_manifest},
+                                       [binary()]) -> [binary()].
+overwritten_UUIDs_no_active_fold({_, ?MANIFEST{state=State}}, Acc)
+        when State =:= writing ->
+    Acc;
+overwritten_UUIDs_no_active_fold({UUID, _}, Acc) ->
+    [UUID | Acc].
+
+-spec overwritten_UUIDs_active_fold_helper(lfs_manifest()) ->
+    fun(({binary(), lfs_manifest()}, [binary()]) -> [binary()]).
+overwritten_UUIDs_active_fold_helper(Active) ->
+    fun({UUID, Manifest}, Acc) ->
+            update_acc(UUID, Manifest, Acc, Active =:= Manifest)
+    end.
+
+-spec update_acc(binary(), lfs_manifest(), [binary()], boolean()) ->
+    [binary()].
+update_acc(_UUID, _Manifest, Acc, true) ->
+    Acc;
+update_acc(UUID, ?MANIFEST{state=active}, Acc, false) ->
+    [UUID | Acc];
+update_acc(UUID, Manifest=?MANIFEST{state=writing}, Acc, _) ->
+    LBWT = Manifest?MANIFEST.last_block_written_time,
+    WST = Manifest?MANIFEST.write_start_time,
+    acc_leeway_helper(UUID, Acc, LBWT, WST);
+update_acc(_, _, Acc, _) ->
+   Acc.
+
+-spec acc_leeway_helper(binary(), [binary()],
+                        undefined | erlang:timestamp(),
+                        undefined | erlang:timestamp()) ->
+    [binary()].
+acc_leeway_helper(UUID, Acc, undefined, WST) ->
+    acc_leeway_helper(UUID, Acc, WST);
+acc_leeway_helper(UUID, Acc, LBWT, _) ->
+    acc_leeway_helper(UUID, Acc, LBWT).
+
+-spec acc_leeway_helper(binary(), [binary()], undefined | erlang:timestamp()) ->
+    [binary()].
+acc_leeway_helper(UUID, Acc, Time) ->
+    handle_leeway_elaped_time(leeway_elapsed(Time), UUID, Acc).
+
+-spec handle_leeway_elaped_time(boolean(), binary(), [binary()]) ->
+    [binary()].
+handle_leeway_elaped_time(true, UUID, Acc) ->
+    [UUID | Acc];
+handle_leeway_elaped_time(false, _UUID, Acc) ->
+    Acc.
 
 %% @doc Return `Dict' with the manifests in
 %% `UUIDsToMark' with their state changed to
@@ -119,11 +154,47 @@ mark_scheduled_delete(Dict, UUIDsToMark) ->
     end,
     orddict:map(MapFun, Dict).
 
-%% @doc Return the current `pending_delete' manifests
-%% from an orddict of manifests.
--spec filter_pending_delete_uuid_manifests(orddict:orddict()) -> [cs_uuid_and_manifest()].
-filter_pending_delete_uuid_manifests(Dict) ->
-    orddict:to_list(orddict:filter(fun pending_delete_manifest/2, Dict)).
+%% @doc Return a list of manifests that are either
+%% in `PendingDeleteUUIDs' or are in the `pending_delete'
+%% state and have been there for longer than the retry
+%% interval.
+-spec manifests_to_gc([binary()], orddict:orddict()) -> [cs_uuid_and_manifest()].
+manifests_to_gc(PendingDeleteUUIDs, Manifests) ->
+    FilterFun = pending_delete_helper(PendingDeleteUUIDs),
+    orddict:to_list(orddict:filter(FilterFun, Manifests)).
+
+%% @private
+%% Return a function for use in `orddict:filter/2'
+%% that will return true if the manifest key is
+%% in `UUIDs' or the manifest should be retried
+%% moving to the GC bucket
+-spec pending_delete_helper([binary()]) ->
+    fun((binary(), lfs_manifest()) -> boolean()).
+pending_delete_helper(UUIDs) ->
+    fun(Key, Manifest) ->
+            lists:member(Key, UUIDs) orelse retry_manifest(Manifest)
+    end.
+
+%% @private
+%% Return true if this manifest should be retried
+%% moving to the GC bucket
+-spec retry_manifest(lfs_manifest()) -> boolean().
+retry_manifest(?MANIFEST{state=pending_delete,
+                         delete_marked_time=MarkedTime}) ->
+    retry_from_marked_time(MarkedTime, os:timestamp());
+retry_manifest(_Manifest) ->
+    false.
+
+%% @private
+%% Return true if the time elapsed between
+%% `MarkedTime' and `Now' is greater than
+%% `riak_cs_gc:gc_retry_interval()'.
+-spec retry_from_marked_time(erlang:timestamp(), erlang:timestamp()) ->
+    boolean().
+retry_from_marked_time(MarkedTime, Now) ->
+    NowSeconds = riak_cs_utils:timestamp(Now),
+    MarkedTimeSeconds = riak_cs_utils:timestamp(MarkedTime),
+    NowSeconds > (MarkedTimeSeconds + riak_cs_gc:gc_retry_interval()).
 
 %% @doc Remove all manifests that require pruning,
 %%      see needs_pruning() for definition of needing pruning.
@@ -139,8 +210,8 @@ prune(Dict, Time) ->
 
 -spec upgrade_wrapped_manifests([orddict:orddict()]) -> [orddict:orddict()].
 upgrade_wrapped_manifests(ListofOrdDicts) ->
-    DictMapFun = fun (_Key, Value) -> upgrade_manifest(Value) end,
-    MapFun = fun (Value) -> orddict:map(DictMapFun, Value) end,
+    DictMapFun = fun(_Key, Value) -> upgrade_manifest(Value) end,
+    MapFun = fun(Value) -> orddict:map(DictMapFun, Value) end,
     lists:map(MapFun, ListofOrdDicts).
 
 %% @doc Upgrade the manifest to the most recent
@@ -198,10 +269,17 @@ upgrade_manifest(?MANIFEST{}=M) ->
 -spec filter_manifests_by_state(orddict:orddict(), [atom()]) -> orddict:orddict().
 filter_manifests_by_state(Dict, AcceptedStates) ->
     AcceptManifest =
-        fun (_, ?MANIFEST{state=State}) ->
+        fun(_, ?MANIFEST{state=State}) ->
                 lists:member(State, AcceptedStates)
         end,
     orddict:filter(AcceptManifest, Dict).
+
+-spec leeway_elapsed(undefined | erlang:timestamp()) -> boolean().
+leeway_elapsed(undefined) ->
+    false;
+leeway_elapsed(Timestamp) ->
+    Now = riak_moss_utils:timestamp(os:timestamp()),
+    Now > (riak_moss_utils:timestamp(Timestamp) + riak_cs_gc:leeway_seconds()).
 
 orddict_values(OrdDict) ->
     [V || {_K, V} <- orddict:to_list(OrdDict)].
@@ -224,23 +302,6 @@ needs_pruning(?MANIFEST{state=scheduled_delete,
                               scheduled_delete_time=ScheduledDeleteTime}, Time) ->
     seconds_diff(Time, ScheduledDeleteTime) > riak_cs_gc:leeway_seconds();
 needs_pruning(_Manifest, _Time) ->
-    false.
-
-%% NOTE: This is a orddict filter fun.
-pending_delete_manifest(_, ?MANIFEST{state=pending_delete,
-                                     last_block_deleted_time=undefined}) ->
-    true;
-pending_delete_manifest(_, ?MANIFEST{last_block_deleted_time=undefined}) ->
-    false;
-pending_delete_manifest(_, ?MANIFEST{state=scheduled_delete,
-                                     last_block_deleted_time=LBDTime}) ->
-    %% If a manifest is `scheduled_delete' and the amount of time
-    %% specified by the retry interval has elapsed since a file block
-    %% was last deleted, then reschedule it for deletion.
-    LBDSeconds = riak_cs_utils:timestamp(LBDTime),
-    Now = riak_cs_utils:timestamp(os:timestamp()),
-    Now > (LBDSeconds + riak_cs_gc:gc_retry_interval());
-pending_delete_manifest(_, _) ->
     false.
 
 seconds_diff(T2, T1) ->
