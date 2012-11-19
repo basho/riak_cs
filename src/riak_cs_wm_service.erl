@@ -41,7 +41,7 @@ malformed_request(RD, Ctx) ->
 %%      but this is how S3 does things.
 forbidden(RD, Ctx) ->
     dt_entry(<<"forbidden">>),
-    case riak_cs_wm_utils:find_and_auth_user(RD, Ctx, fun auth_complete/2) of
+    case riak_cs_wm_utils:find_and_auth_user(RD, Ctx, fun auth_complete/2, false) of
         {false, _RD2, Ctx2} = FalseRet ->
             dt_return(<<"forbidden">>, [], [extract_name(Ctx2#context.user), <<"false">>]),
             FalseRet;
