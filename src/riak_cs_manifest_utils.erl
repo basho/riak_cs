@@ -278,8 +278,8 @@ filter_manifests_by_state(Dict, AcceptedStates) ->
 leeway_elapsed(undefined) ->
     false;
 leeway_elapsed(Timestamp) ->
-    Now = riak_moss_utils:timestamp(os:timestamp()),
-    Now > (riak_moss_utils:timestamp(Timestamp) + riak_cs_gc:leeway_seconds()).
+    Now = riak_cs_utils:timestamp(os:timestamp()),
+    Now > (riak_cs_utils:timestamp(Timestamp) + riak_cs_gc:leeway_seconds()).
 
 orddict_values(OrdDict) ->
     [V || {_K, V} <- orddict:to_list(OrdDict)].
