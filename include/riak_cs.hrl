@@ -49,17 +49,9 @@
                   riakc_pid :: pid(),
                   submodule :: atom(),
                   exports_fun :: function(),
-                  auth_module :: atom()
+                  auth_module :: atom(),
+                  local_context :: term()
                  }).
-
--record(key_context, {context :: #context{},
-                      manifest :: 'notfound' | lfs_manifest(),
-                      get_fsm_pid :: pid(),
-                      putctype :: string(),
-                      bucket :: binary(),
-                      key :: list(),
-                      owner :: 'undefined' | string(),
-                      size :: non_neg_integer()}).
 
 -type acl_perm() :: 'READ' | 'WRITE' | 'READ_ACP' | 'WRITE_ACP' | 'FULL_CONTROL'.
 -type acl_perms() :: [acl_perm()].

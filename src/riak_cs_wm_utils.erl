@@ -9,7 +9,6 @@
 -export([service_available/2,
          service_available/3,
          parse_auth_header/2,
-         ensure_doc/1,
          iso_8601_datetime/0,
          to_iso_8601/1,
          iso_8601_to_rfc_1123/1,
@@ -38,13 +37,6 @@
 %% Public API
 %% ===================================================================
 
-service_available(RD, KeyCtx=#key_context{context=Ctx}) ->
-    case service_available(RD, Ctx) of
-        {true, UpdRD, UpdCtx} ->
-            {true, UpdRD, KeyCtx#key_context{context=UpdCtx}};
-        {false, _, _} ->
-            {false, RD, KeyCtx}
-    end;
 service_available(RD, Ctx) ->
     case riak_cs_utils:riak_connection() of
         {ok, Pid} ->
@@ -209,7 +201,7 @@ deny_access(RD, Ctx) ->
 deny_invalid_key(RD, Ctx) ->
     riak_cs_s3_response:api_error(invalid_access_key_id, RD, Ctx).
 
-%% @doc In the case is a user is authorized to perform an operation on 
+%% @doc In the case is a user is authorized to perform an operation on
 %% a bucket but is not the owner of that bucket this function can be used
 %% to switch to the owner's record if it can be retrieved
 -spec shift_to_owner(#wm_reqdata{}, #context{}, string(), pid()) ->
@@ -225,24 +217,6 @@ shift_to_owner(RD, Ctx=#context{}, OwnerId, RiakPid) when RiakPid /= undefined -
         {error, _} ->
             riak_cs_s3_response:api_error(bucket_owner_unavailable, RD, Ctx)
     end.
-
-
-%% @doc Utility function for accessing
-%%      a riakc_obj without retrieving
-%%      it again if it's already in the
-%%      Ctx
--spec ensure_doc(term()) -> term().
-ensure_doc(Ctx=#key_context{get_fsm_pid=undefined,
-                            bucket=Bucket,
-                            key=Key,
-                            context=InnerCtx}) ->
-    RiakPid = InnerCtx#context.riakc_pid,
-    %% start the get_fsm
-    BinKey = list_to_binary(Key),
-    {ok, Pid} = riak_cs_get_fsm_sup:start_get_fsm(node(), Bucket, BinKey, self(), RiakPid),
-    Manifest = riak_cs_get_fsm:get_manifest(Pid),
-    Ctx#key_context{get_fsm_pid=Pid, manifest=Manifest};
-ensure_doc(Ctx) -> Ctx.
 
 streaming_get(FsmPid, StartTime, UserName, BFile_str) ->
     case riak_cs_get_fsm:get_next_chunk(FsmPid) of
