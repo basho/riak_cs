@@ -21,8 +21,8 @@
 -compile(export_all).
 
 %% eqc properties
--export([prop_api_test/2
-         %% prop_parallel_api_test/2
+-export([prop_api_test/4
+         %% prop_parallel_api_test/4
         ]).
 
 %% States
@@ -36,7 +36,7 @@
 %% eqc_fsm callbacks
 -export([initial_state/0,
          initial_state_data/0,
-         initial_state_data/2,
+         initial_state_data/4,
          next_state_data/5,
          precondition/4,
          postcondition/5]).
@@ -44,7 +44,7 @@
 %% Helpers
 -export([test/0,
          test/2,
-         test/3,
+         test/5,
          create_user/3,
          user_name/0,
          user_email/0]).
@@ -58,7 +58,9 @@
 
 -define(S3_MODULE, erlcloud_s3).
 -define(DEFAULT_HOST, "s3.amazonaws.com").
--define(DEFAULT_PORT, 8080).
+-define(DEFAULT_PORT, 80).
+-define(DEFAULT_PROXY_HOST, "localhost").
+-define(DEFAULT_PROXY_PORT, 8080).
 -define(VALUE, "test value").
 -define(EMPTY_OBJECT_LIST(B), [{name, B},
                                 {prefix,[]},
@@ -79,7 +81,12 @@
 eqc_test_() ->
     {spawn,
      [
-      {timeout, 600, ?_assertEqual(true, quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_api_test(?DEFAULT_HOST, ?DEFAULT_PORT)))))}
+      {timeout, 600, ?_assertEqual(true,
+                                   quickcheck(numtests(?TEST_ITERATIONS,
+                                                       ?QC_OUT(prop_api_test(?DEFAULT_HOST,
+                                                                             ?DEFAULT_PORT,
+                                                                             ?DEFAULT_PROXY_HOST,
+                                                                             ?DEFAULT_PROXY_PORT)))))}
       %% {timeout, 60, ?_assertEqual(true, quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_parallel_api_test(?DEFAULT_HOST, ?DEFAULT_PORT)))))}
      ]
     }.
@@ -88,9 +95,9 @@ eqc_test_() ->
 %% EQC Properties
 %% ====================================================================
 
-prop_api_test(Host, Port) ->
+prop_api_test(Host, Port, ProxyHost, ProxyPort) ->
     ?FORALL(Cmds,
-            commands(?MODULE, {start, initial_state_data(Host, Port)}),
+            commands(?MODULE, {start, initial_state_data(Host, Port, ProxyHost, ProxyPort)}),
             begin
                 RunningApps = application:which_applications(),
                 case lists:keymember(erlcloud, 1, RunningApps) of
@@ -117,7 +124,7 @@ prop_api_test(Host, Port) ->
             end
            ).
 
-%% prop_parallel_api_test(Host, Port) ->
+%% prop_parallel_api_test(Host, Port, ProxyHost, ProxyPort) ->
 %%     ?FORALL(Cmds={Seq, Par},
 %%             parallel_commands(?MODULE, {start, initial_state_data(Host, Port)}),
 %%             begin
@@ -190,10 +197,12 @@ initial_state() ->
 initial_state_data() ->
     #api_state{}.
 
-initial_state_data(Host, Port) ->
+initial_state_data(Host, Port, ProxyHost, ProxyPort) ->
     #api_state{aws_config=#aws_config{s3_host=Host,
                                       s3_port=Port,
-                                      s3_prot="http"}}.
+                                      s3_prot="http",
+                                      proxy_host=ProxyHost,
+                                      proxy_port=ProxyPort}}.
 
 next_state_data(start, user_created, S, AwsConfig, _C) ->
     S#api_state{aws_config=AwsConfig};
@@ -272,16 +281,16 @@ test() ->
     test(?DEFAULT_HOST, ?DEFAULT_PORT).
 
 test(Host, Port) ->
-    test(Host, Port, 500).
+    test(Host, Port, ?DEFAULT_PROXY_HOST, ?DEFAULT_PROXY_PORT, 500).
 
-test(Host, Port, Iterations) ->
-    eqc:quickcheck(eqc:numtests(Iterations, prop_api_test(Host, Port))).
-    %% eqc:quickcheck(eqc:numtests(Iterations, prop_parallel_api_test(Host, Port))).
+test(Host, Port, ProxyHost, ProxyPort, Iterations) ->
+    eqc:quickcheck(eqc:numtests(Iterations, prop_api_test(Host, Port, ProxyHost, ProxyPort))).
+    %% eqc:quickcheck(eqc:numtests(Iterations, prop_parallel_api_test(Host, Port, ProxyHost, ProxyPort))).
 
 create_user(Name, Email, Config) ->
     process_post(
       post_user_request(
-        compose_url(Config#aws_config.s3_host, Config#aws_config.s3_port),
+        compose_url(Config#aws_config.proxy_host, Config#aws_config.proxy_port),
         compose_request(Name, Email)),
      Config).
 
