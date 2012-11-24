@@ -12,6 +12,7 @@
          forbidden/2,
          content_types_accepted/2,
          content_types_provided/2,
+         valid_entity_length/2,
          malformed_request/2,
          to_xml/2,
          accept_body/2,
@@ -20,12 +21,12 @@
          finish_request/2]).
 
 -export([default_allowed_methods/0,
-         default_content_types/0,
          default_content_types/2,
          default_finish_request/2,
          default_init/1,
          default_authorize/2,
          default_malformed_request/2,
+         default_valid_entity_length/2,
          default_delete_resource/2]).
 
 -include("riak_cs.hrl").
@@ -77,6 +78,13 @@ malformed_request(RD, Ctx=#context{submodule=Mod,
                   malformed_request,
                   [RD, Ctx],
                   ExportsFun(malformed_request)).
+
+-spec valid_entity_length(term(), term()) -> {boolean(), term(), term()}.
+valid_entity_length(RD, Ctx=#context{submodule=Mod, exports_fun=ExportsFun}) ->
+    resource_call(Mod,
+                  valid_entity_length,
+                  [RD, Ctx],
+                  ExportsFun(valid_entity_length)).
 
 forbidden(RD, Ctx=#context{auth_module=AuthMod, submodule=Mod, riakc_pid=RiakPid}) ->
     dt_entry(Mod, <<"forbidden">>),
@@ -136,11 +144,10 @@ content_types_accepted(RD, Ctx=#context{submodule=Mod,
 content_types_provided(RD, Ctx=#context{submodule=Mod,
                                         exports_fun=ExportsFun}) ->
     dt_entry(Mod, <<"content_types_provided">>),
-    ContentTypes = resource_call(Mod,
-                                 content_types_provided,
-                                 [],
-                                 ExportsFun(content_types_provided)),
-    {ContentTypes, RD, Ctx}.
+    resource_call(Mod,
+                  content_types_provided,
+                  [RD,Ctx],
+                  ExportsFun(content_types_provided)).
 
 -spec delete_resource(term(), term()) -> {boolean() | {halt, term()}, term(), #context{}}.
 delete_resource(RD, Ctx=#context{submodule=Mod,exports_fun=ExportsFun}) ->
@@ -274,6 +281,8 @@ default(content_types_provided) ->
     default_content_types;
 default(malformed_request) ->
     default_malformed_request;
+default(valid_entity_length) ->
+    default_valid_entity_length;
 default(delete_resource) ->
     default_delete_resource;
 default(authorize) ->
@@ -289,10 +298,11 @@ default_init(Ctx) ->
 default_malformed_request(RD, Ctx) ->
     {false, RD, Ctx}.
 
-default_content_types() -> % for content-types provided
-    [].
-default_content_types(_, _) -> % for content-types accepted
-    [].
+default_valid_entity_length(RD, Ctx) ->
+    {true, RD, Ctx}. 
+
+default_content_types(RD, Ctx) ->
+    {[], RD, Ctx}.
 
 default_delete_resource(RD, Ctx) ->
     {false, RD, Ctx}.

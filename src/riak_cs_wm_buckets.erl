@@ -7,7 +7,7 @@
 -module(riak_cs_wm_buckets).
 
 -export([allowed_methods/0,
-         content_types_provided/0,
+         content_types_provided/2,
          to_xml/2]).
 
 -include("riak_cs.hrl").
@@ -18,9 +18,9 @@
 allowed_methods() ->
     ['GET'].
 
--spec content_types_provided() -> [{string(), atom()}].
-content_types_provided() ->
-    [{"application/xml", to_xml}].
+-spec content_types_provided(term(),term()) -> [{string(), atom()}].
+content_types_provided(RD,Ctx) ->
+    {[{"application/xml", to_xml}], RD, Ctx}.
 
 %% @TODO This spec will need to be updated when we change this to
 %% allow streaming bodies.

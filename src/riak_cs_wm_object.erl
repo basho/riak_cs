@@ -10,7 +10,8 @@
          authorize/2,
          content_types_provided/2,
          produce_body/2,
-         allowed_methods/2,
+         allowed_methods/0,
+         malformed_request/2,
          content_types_accepted/2,
          accept_body/2,
          delete_resource/2,
@@ -30,24 +31,28 @@
                       owner :: 'undefined' | string(),
                       size :: non_neg_integer()}).
 
-init(Config) ->
-    {ok, Ctx} = riak_cs_wm_common:init(Config),
+init(Ctx) ->
     {ok, Ctx#context{local_context=#key_context{}}}.
+
+malformed_request(RD,Ctx=#context{local_context=LocalCtx0}) ->    
+    Bucket = list_to_binary(wrq:path_info(bucket, RD)),
+    Key = mochiweb_util:unquote(wrq:disp_path(RD)),
+    LocalCtx = LocalCtx0#key_context{bucket=Bucket, key=Key},
+    {false, RD, Ctx#context{local_context=LocalCtx}}.
 
 %% @doc Get the type of access requested and the manifest with the
 %% object ACL and compare the permission requested with the permission
 %% granted, and allow or deny access. Returns a result suitable for
 %% directly returning from the {@link forbidden/2} webmachine export.
-authorize(RD, Ctx=#context{local_context=LocalCtx}) ->
+authorize(RD, Ctx0=#context{local_context=LocalCtx0, riakc_pid=RiakPid}) ->
     Method = wrq:method(RD),
     RequestedAccess =
-        riak_cs_acl_utils:requested_access(Method,
-                                           wrq:req_qs(RD)),
+        riak_cs_acl_utils:requested_access(Method, false),
      %% @TODO This line is no longer needed post-refactor
-    NewLocalCtx0 = LocalCtx#context{requested_perm=RequestedAccess},
-    NewLocalCtx = riak_cs_wm_utils:ensure_doc(NewLocalCtx0),
-    NewCtx = riak_cs_wm_utils:ensure_doc(Ctx#context{local_context=NewLocalCtx}),
-    check_permission(Method, RD, NewCtx, NewLocalCtx#key_context.manifest).
+    
+    LocalCtx = ensure_doc(LocalCtx0, RiakPid),
+    Ctx = Ctx0#context{requested_perm=RequestedAccess,local_context=LocalCtx},
+    check_permission(Method, RD, Ctx, LocalCtx#key_context.manifest).
 
 %% @doc Final step of {@link forbidden/2}: Authentication succeeded,
 %% now perform ACL check to verify access permission.
@@ -105,10 +110,10 @@ maybe_log_user(RD, Context) ->
     end.
 
 %% @doc Get the list of methods this resource supports.
--spec allowed_methods(term(), term()) -> {[atom()], term(), term()}.
-allowed_methods(RD, Ctx) ->
+-spec allowed_methods() -> [atom()].
+allowed_methods() ->
     %% TODO: POST
-    {['HEAD', 'GET', 'DELETE', 'PUT'], RD, Ctx}.
+    ['HEAD', 'GET', 'DELETE', 'PUT'].
 
 valid_entity_length(RD, Ctx=#context{local_context=LocalCtx}) ->
     case wrq:method(RD) of
@@ -228,14 +233,15 @@ handle_delete_object({ok, _UUIDsMarkedforDelete}, UserName, BFile_str, RD, Ctx) 
 
 -spec content_types_accepted(term(), term()) ->
     {[{string(), atom()}], term(), term()}.
-content_types_accepted(RD, Ctx) ->
+content_types_accepted(RD, Ctx=#context{local_context=LocalCtx0}) ->
     dt_entry(<<"content_types_accepted">>),
     case wrq:get_req_header("Content-Type", RD) of
         undefined ->
             DefaultCType = "application/octet-stream",
+            LocalCtx = LocalCtx0#key_context{putctype=DefaultCType},
             {[{DefaultCType, accept_body}],
              RD,
-             Ctx#key_context{putctype=DefaultCType}};
+             Ctx#context{local_context=LocalCtx}};
         %% This was shamelessly ripped out of
         %% https://github.com/basho/riak_kv/blob/0d91ca641a309f2962a216daa0cee869c82ffe26/src/riak_kv_wm_object.erl#L492
         CType ->
@@ -243,7 +249,8 @@ content_types_accepted(RD, Ctx) ->
             case string:tokens(Media, "/") of
                 [_Type, _Subtype] ->
                     %% accept whatever the user says
-                    {[{Media, accept_body}], RD, Ctx#key_context{putctype=Media}};
+                    LocalCtx = LocalCtx0#key_context{putctype=Media},
+                    {[{Media, accept_body}], RD, Ctx#context{local_context=LocalCtx}};
                 _ ->
                     %% TODO:
                     %% Maybe we should have caught
