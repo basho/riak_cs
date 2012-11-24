@@ -7,11 +7,11 @@
 -module(riak_cs_wm_object).
 
 -export([init/1,
-         service_available/2,
-         forbidden/2,
+         authorize/2,
          content_types_provided/2,
          produce_body/2,
-         allowed_methods/2,
+         allowed_methods/0,
+         malformed_request/2,
          content_types_accepted/2,
          accept_body/2,
          delete_resource/2,
@@ -22,89 +22,51 @@
 -include("riak_cs.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
 
-init(Config) ->
-    {ok, Ctx} = riak_cs_wm_common:init(Config),
-    {ok, #key_context{context=Ctx}}.
+-record(key_context, {context :: #context{},
+                      manifest :: 'notfound' | lfs_manifest(),
+                      get_fsm_pid :: pid(),
+                      putctype :: string(),
+                      bucket :: binary(),
+                      key :: list(),
+                      owner :: 'undefined' | string(),
+                      size :: non_neg_integer()}).
 
--spec extract_paths(term(), term()) -> term().
-extract_paths(RD, Ctx) ->
+init(Ctx) ->
+    {ok, Ctx#context{local_context=#key_context{}}}.
+
+malformed_request(RD,Ctx=#context{local_context=LocalCtx0}) ->    
     Bucket = list_to_binary(wrq:path_info(bucket, RD)),
-    case wrq:path_tokens(RD) of
-        [] ->
-            Key = undefined;
-        KeyTokens ->
-            Key = mochiweb_util:unquote(string:join(KeyTokens, "/"))
-    end,
-    Ctx#key_context{bucket=Bucket, key=Key}.
-
--spec service_available(term(), term()) -> {true, term(), term()}.
-service_available(RD, Ctx) ->
-    dt_entry(<<"service_available">>),
-    case riak_cs_wm_utils:service_available(RD, Ctx) of
-        {true, ServiceRD, ServiceCtx} ->
-            %% this fills in the bucket and key
-            %% part of the context so they are
-            %% available in the rest of the
-            %% chain
-            NewCtx = extract_paths(ServiceRD, ServiceCtx),
-            dt_return(<<"service_available">>, [1], []),
-            {true, ServiceRD, NewCtx};
-        {false, _, _} ->
-            dt_return(<<"service_available">>, [0], []),
-            {false, RD, Ctx}
-    end.
-
-%% @doc Check to see if the user is
-%%      authenticated. Normally with HTTP
-%%      we'd use the `authorized` callback,
-%%      but this is how S3 does things.
-forbidden(RD, #key_context{context=ICtx}=Ctx) ->
-    dt_entry(<<"forbidden">>),
-    Next = fun(NewRD, NewICtx) ->
-                   get_access_and_manifest(NewRD, Ctx#key_context{context=NewICtx})
-           end,
-    Conv2KeyCtx = fun(NewICtx) -> Ctx#key_context{context=NewICtx} end,
-    case riak_cs_wm_utils:find_and_auth_user(RD, ICtx, Next, Conv2KeyCtx, true) of
-        {false, _RD2, Ctx2} = FalseRet ->
-            dt_return(<<"forbidden">>, [], [extract_name((Ctx2#key_context.context)#context.user), <<"false">>]),
-            FalseRet;
-        {Rsn, _RD2, Ctx2} = Ret ->
-            Reason = case Rsn of
-                         {halt, Code} -> Code;
-                         _            -> -1
-                     end,
-            dt_return(<<"forbidden">>, [Reason], [extract_name((Ctx2#key_context.context)#context.user), <<"true">>]),
-            Ret
-    end.
-
+    Key = mochiweb_util:unquote(wrq:disp_path(RD)),
+    LocalCtx = LocalCtx0#key_context{bucket=Bucket, key=Key},
+    {false, RD, Ctx#context{local_context=LocalCtx}}.
 
 %% @doc Get the type of access requested and the manifest with the
 %% object ACL and compare the permission requested with the permission
 %% granted, and allow or deny access. Returns a result suitable for
 %% directly returning from the {@link forbidden/2} webmachine export.
-get_access_and_manifest(RD, Ctx=#key_context{context=InnerCtx}) ->
+authorize(RD, Ctx0=#context{local_context=LocalCtx0, riakc_pid=RiakPid}) ->
     Method = wrq:method(RD),
     RequestedAccess =
-        riak_cs_acl_utils:requested_access(Method,
-                                             wrq:req_qs(RD)),
-    NewInnerCtx = InnerCtx#context{requested_perm=RequestedAccess},
-    NewCtx = riak_cs_wm_utils:ensure_doc(Ctx#key_context{context=NewInnerCtx}),
-    check_permission(Method, RD, NewCtx).
+        riak_cs_acl_utils:requested_access(Method, false),
+     %% @TODO This line is no longer needed post-refactor
+    
+    LocalCtx = ensure_doc(LocalCtx0, RiakPid),
+    Ctx = Ctx0#context{requested_perm=RequestedAccess,local_context=LocalCtx},
+    check_permission(Method, RD, Ctx, LocalCtx#key_context.manifest).
 
 %% @doc Final step of {@link forbidden/2}: Authentication succeeded,
 %% now perform ACL check to verify access permission.
-check_permission('GET', RD, Ctx=#key_context{manifest=notfound}) ->
+check_permission('GET', RD, Ctx, notfound) ->
     {{halt, 404}, maybe_log_user(RD, Ctx), Ctx};
-check_permission('HEAD', RD, Ctx=#key_context{manifest=notfound}) ->
+check_permission('HEAD', RD, Ctx, notfound) ->
     {{halt, 404}, maybe_log_user(RD, Ctx), Ctx};
-check_permission(Method, RD, Ctx=#key_context{bucket=Bucket,
-                                       context=InnerCtx,
-                                       manifest=Mfst}) ->
-    RiakPid = InnerCtx#context.riakc_pid,
+check_permission(Method, RD, Ctx=#context{local_context=LocalCtx}, Mfst) ->
+    #key_context{bucket=Bucket} = LocalCtx,
+    RiakPid = Ctx#context.riakc_pid,
     RequestedAccess =
         riak_cs_acl_utils:requested_access(Method,
-                                             wrq:req_qs(RD)),
-    case InnerCtx#context.user of
+                                           wrq:req_qs(RD)),
+    case Ctx#context.user of
         undefined ->
             User = CanonicalId = undefined;
         User ->
@@ -117,19 +79,21 @@ check_permission(Method, RD, Ctx=#key_context{bucket=Bucket,
             ObjectAcl = Mfst?MANIFEST.acl
     end,
     case riak_cs_acl:object_access(Bucket,
-                                     ObjectAcl,
-                                     RequestedAccess,
-                                     CanonicalId,
-                                     RiakPid) of
+                                   ObjectAcl,
+                                   RequestedAccess,
+                                   CanonicalId,
+                                   RiakPid) of
         true ->
             %% actor is the owner
             AccessRD = riak_cs_access_logger:set_user(User, RD),
             UserStr = User?RCS_USER.canonical_id,
-            {false, AccessRD, Ctx#key_context{owner=UserStr}};
+            UpdLocalCtx = LocalCtx#key_context{owner=UserStr},
+            {false, AccessRD, Ctx#context{local_context=UpdLocalCtx}};
         {true, OwnerId} ->
             %% bill the owner, not the actor
             AccessRD = riak_cs_access_logger:set_user(OwnerId, RD),
-            {false, AccessRD, Ctx#key_context{owner=OwnerId}};
+            UpdLocalCtx = LocalCtx#key_context{owner=OwnerId},
+            {false, AccessRD, Ctx#context{local_context=UpdLocalCtx}};
         false ->
             %% ACL check failed, deny access
             riak_cs_wm_utils:deny_access(RD, Ctx)
@@ -137,7 +101,7 @@ check_permission(Method, RD, Ctx=#key_context{bucket=Bucket,
 
 %% @doc Only set the user for the access logger to catch if there is a
 %% user to catch.
-maybe_log_user(RD, #key_context{context=Context}) ->
+maybe_log_user(RD, Context) ->
     case Context#context.user of
         undefined ->
             RD;
@@ -146,12 +110,12 @@ maybe_log_user(RD, #key_context{context=Context}) ->
     end.
 
 %% @doc Get the list of methods this resource supports.
--spec allowed_methods(term(), term()) -> {[atom()], term(), term()}.
-allowed_methods(RD, Ctx) ->
+-spec allowed_methods() -> [atom()].
+allowed_methods() ->
     %% TODO: POST
-    {['HEAD', 'GET', 'DELETE', 'PUT'], RD, Ctx}.
+    ['HEAD', 'GET', 'DELETE', 'PUT'].
 
-valid_entity_length(RD, Ctx) ->
+valid_entity_length(RD, Ctx=#context{local_context=LocalCtx}) ->
     case wrq:method(RD) of
         'PUT' ->
             case catch(
@@ -163,7 +127,8 @@ valid_entity_length(RD, Ctx) ->
                             riak_cs_s3_response:api_error(
                               entity_too_large, RD, Ctx);
                         true ->
-                            {true, RD, Ctx#key_context{size=Length}}
+                            UpdLocalCtx = LocalCtx#key_context{size=Length},
+                            {true, RD, Ctx#context{local_context=UpdLocalCtx}}
                     end;
                 _ ->
                     {false, RD, Ctx}
@@ -174,7 +139,9 @@ valid_entity_length(RD, Ctx) ->
 
 -spec content_types_provided(term(), term()) ->
     {[{string(), atom()}], term(), term()}.
-content_types_provided(RD, Ctx=#key_context{manifest=Mfst}) ->
+content_types_provided(RD, Ctx=#context{local_context=LocalCtx,
+                                        riakc_pid=RiakcPid}) ->
+    Mfst = LocalCtx#key_context.manifest,
     dt_entry(<<"content_types_provided">>),
     %% TODO:
     %% As I understand S3, the content types provided
@@ -183,47 +150,24 @@ content_types_provided(RD, Ctx=#key_context{manifest=Mfst}) ->
     %% `response-content-type` header in the request.
     Method = wrq:method(RD),
     if Method == 'GET'; Method == 'HEAD' ->
-            DocCtx = riak_cs_wm_utils:ensure_doc(Ctx),
+            UpdLocalCtx = ensure_doc(LocalCtx, RiakcPid),
             ContentType = binary_to_list(Mfst?MANIFEST.content_type),
             case ContentType of
                 _ ->
-                    {[{ContentType, produce_body}], RD, DocCtx}
+                    UpdCtx = Ctx#context{local_context=UpdLocalCtx},
+                    {[{ContentType, produce_body}], RD, UpdCtx}
             end;
        true ->
-            %% TODO
-            %% this shouldn't ever be
-            %% called, it's just to appease
-            %% webmachine
+            %% TODO this shouldn't ever be called, it's just to
+            %% appease webmachine
             {[{"text/plain", produce_body}], RD, Ctx}
     end.
 
 -spec produce_body(term(), term()) -> {iolist()|binary(), term(), term()}.
-produce_body(RD, #key_context{get_fsm_pid=GetFsmPid,
-                              manifest=Mfst,
-                              context=#context{start_time=StartTime,
-                                               user=User,
-                                               requested_perm='READ_ACP'}}=KeyCtx) ->
-    {Bucket, File} = Mfst?MANIFEST.bkey,
-    BFile_str = [Bucket, $,, File],
-    UserName = extract_name(User),
-    dt_entry(<<"produce_body">>, [], [UserName, BFile_str]),
-    dt_entry_object(<<"get_acl">>, [], [UserName, BFile_str]),
-    riak_cs_get_fsm:stop(GetFsmPid),
-    ok = riak_cs_stats:update_with_start(object_get_acl, StartTime),
-    Acl = Mfst?MANIFEST.acl,
-    case Acl of
-        undefined ->
-            dt_return(<<"produce_body">>, [-1], [UserName, BFile_str]),
-            dt_return_object(<<"get_acl">>, [-1], [UserName, BFile_str]),
-            {riak_cs_acl_utils:empty_acl_xml(), RD, KeyCtx};
-        _ ->
-            dt_return(<<"produce_body">>, [-2], [UserName, BFile_str]),
-            dt_return_object(<<"get_acl">>, [-2], [UserName, BFile_str]),
-            {riak_cs_acl_utils:acl_to_xml(Acl), RD, KeyCtx}
-    end;
-produce_body(RD, #key_context{get_fsm_pid=GetFsmPid, manifest=Mfst,
-                              context=#context{start_time=StartTime,
-                                               user=User}}=Ctx) ->
+produce_body(RD, Ctx=#context{local_context=LocalCtx,
+                              start_time=StartTime,
+                              user=User}) ->
+    #key_context{get_fsm_pid=GetFsmPid, manifest=Mfst} = LocalCtx,
     {Bucket, File} = Mfst?MANIFEST.bkey,
     BFile_str = [Bucket, $,, File],
     UserName = extract_name(User),
@@ -262,18 +206,18 @@ produce_body(RD, #key_context{get_fsm_pid=GetFsmPid, manifest=Mfst,
 
 %% @doc Callback for deleting an object.
 -spec delete_resource(term(), term()) -> {true, term(), #key_context{}}.
-delete_resource(RD, Ctx=#key_context{bucket=Bucket,
-                                     key=Key,
-                                     get_fsm_pid=GetFsmPid,
-                                     context=InnerCtx}) ->
+delete_resource(RD, Ctx=#context{local_context=LocalCtx,
+                                 riakc_pid=RiakcPid}) ->
+    #key_context{bucket=Bucket,
+                 key=Key,
+                 get_fsm_pid=GetFsmPid} = LocalCtx,
     BFile_str = [Bucket, $,, Key],
-    UserName = extract_name(InnerCtx#context.user),
+    UserName = extract_name(Ctx#context.user),
     dt_entry(<<"delete_resource">>, [], [UserName, BFile_str]),
     dt_entry_object(<<"file_delete">>, [], [UserName, BFile_str]),
     riak_cs_get_fsm:stop(GetFsmPid),
     BinKey = list_to_binary(Key),
-    #context{riakc_pid=RiakPid} = InnerCtx,
-    DeleteObjectResponse = riak_cs_utils:delete_object(Bucket, BinKey, RiakPid),
+    DeleteObjectResponse = riak_cs_utils:delete_object(Bucket, BinKey, RiakcPid),
     handle_delete_object(DeleteObjectResponse, UserName, BFile_str, RD, Ctx).
 
 %% @private
@@ -289,14 +233,15 @@ handle_delete_object({ok, _UUIDsMarkedforDelete}, UserName, BFile_str, RD, Ctx) 
 
 -spec content_types_accepted(term(), term()) ->
     {[{string(), atom()}], term(), term()}.
-content_types_accepted(RD, Ctx) ->
+content_types_accepted(RD, Ctx=#context{local_context=LocalCtx0}) ->
     dt_entry(<<"content_types_accepted">>),
     case wrq:get_req_header("Content-Type", RD) of
         undefined ->
             DefaultCType = "application/octet-stream",
+            LocalCtx = LocalCtx0#key_context{putctype=DefaultCType},
             {[{DefaultCType, accept_body}],
              RD,
-             Ctx#key_context{putctype=DefaultCType}};
+             Ctx#context{local_context=LocalCtx}};
         %% This was shamelessly ripped out of
         %% https://github.com/basho/riak_kv/blob/0d91ca641a309f2962a216daa0cee869c82ffe26/src/riak_kv_wm_object.erl#L492
         CType ->
@@ -304,7 +249,8 @@ content_types_accepted(RD, Ctx) ->
             case string:tokens(Media, "/") of
                 [_Type, _Subtype] ->
                     %% accept whatever the user says
-                    {[{Media, accept_body}], RD, Ctx#key_context{putctype=Media}};
+                    LocalCtx = LocalCtx0#key_context{putctype=Media},
+                    {[{Media, accept_body}], RD, Ctx#context{local_context=LocalCtx}};
                 _ ->
                     %% TODO:
                     %% Maybe we should have caught
@@ -322,61 +268,15 @@ content_types_accepted(RD, Ctx) ->
             end
     end.
 
--spec accept_body(term(), term()) ->
-    {boolean() | {halt, term()}, term(), term()}.
-accept_body(RD, Ctx=#key_context{bucket=Bucket,
-                                 key=KeyStr,
-                                 manifest=Mfst,
-                                 owner=Owner,
-                                 get_fsm_pid=GetFsmPid,
-                                 context=#context{user=User,
-                                                  riakc_pid=RiakPid,
-                                                  requested_perm='WRITE_ACP'}})
-  when Bucket /= undefined, KeyStr /= undefined,
-       Mfst /= undefined, RiakPid /= undefined ->
-    BFile_str = [Bucket, $,, KeyStr],
-    UserName = extract_name(User),
-    dt_entry(<<"accept_body">>, [], [UserName, BFile_str]),
-    dt_entry_object(<<"file_put_acl">>, [], [UserName, BFile_str]),
-    riak_cs_get_fsm:stop(GetFsmPid),
-    Body = binary_to_list(wrq:req_body(RD)),
-    case Body of
-        [] ->
-            %% Check for `x-amz-acl' header to support
-            %% the use of a canned ACL.
-            Acl = riak_cs_acl_utils:canned_acl(
-                    wrq:get_req_header("x-amz-acl", RD),
-                    {User?RCS_USER.display_name,
-                     User?RCS_USER.canonical_id,
-                     User?RCS_USER.key_id},
-                    Owner,
-                    RiakPid);
-        _ ->
-            Acl = riak_cs_acl_utils:acl_from_xml(Body,
-                                                   User?RCS_USER.key_id,
-                                                   RiakPid)
-    end,
-    %% Write new ACL to active manifest
-    Key = list_to_binary(KeyStr),
-    case riak_cs_utils:set_object_acl(Bucket, Key, Mfst, Acl, RiakPid) of
-        ok ->
-            dt_return(<<"accept_body">>, [200], [UserName, BFile_str]),
-            dt_return_object(<<"file_put_acl">>, [200], [UserName, BFile_str]),
-            {{halt, 200}, RD, Ctx};
-        {error, Reason} ->
-            Code = riak_cs_s3_response:status_code(Reason),
-            dt_return(<<"accept_body">>, [Code], [UserName, BFile_str]),
-            dt_return_object(<<"file_put_acl">>, [Code], [UserName, BFile_str]),
-            riak_cs_s3_response:api_error(Reason, RD, Ctx)
-    end;
-accept_body(RD, Ctx=#key_context{bucket=Bucket,
-                                 key=Key,
-                                 putctype=ContentType,
-                                 size=Size,
-                                 get_fsm_pid=GetFsmPid,
-                                 owner=Owner,
-                                 context=#context{user=User,
-                                                  riakc_pid=RiakPid}}) ->
+accept_body(RD, Ctx=#context{local_context=LocalCtx,
+                             user=User,
+                             riakc_pid=RiakcPid}) ->
+    #key_context{bucket=Bucket,
+                 key=Key,
+                 putctype=ContentType,
+                 size=Size,
+                 get_fsm_pid=GetFsmPid,
+                 owner=Owner} = LocalCtx,
     BFile_str = [Bucket, $,, Key],
     UserName = extract_name(User),
     dt_entry(<<"accept_body">>, [], [UserName, BFile_str]),
@@ -392,18 +292,24 @@ accept_body(RD, Ctx=#key_context{bucket=Bucket,
              User?RCS_USER.canonical_id,
              User?RCS_USER.key_id},
             Owner,
-            RiakPid),
+            RiakcPid),
     Args = [{Bucket, list_to_binary(Key), Size, list_to_binary(ContentType),
-             Metadata, BlockSize, ACL, timer:seconds(60), self(), RiakPid}],
+             Metadata, BlockSize, ACL, timer:seconds(60), self(), RiakcPid}],
     {ok, Pid} = riak_cs_put_fsm_sup:start_put_fsm(node(), Args),
     accept_streambody(RD, Ctx, Pid, wrq:stream_req_body(RD, riak_cs_lfs_utils:block_size())).
 
-accept_streambody(RD, Ctx=#key_context{size=0}, Pid, {_Data, _Next}) ->
+accept_streambody(RD,
+                  Ctx=#context{local_context=_LocalCtx=#key_context{size=0}},
+                  Pid,
+                  {_Data, _Next}) ->
     finalize_request(RD, Ctx, Pid);
-accept_streambody(RD, Ctx=#key_context{bucket=Bucket,
-                                       key=Key,
-                                       context=#context{user=User}},
-                  Pid, {Data, Next}) ->
+accept_streambody(RD,
+                  Ctx=#context{local_context=LocalCtx,
+                                       user=User},
+                  Pid,
+                  {Data, Next}) ->
+    #key_context{bucket=Bucket,
+                 key=Key} = LocalCtx,
     BFile_str = [Bucket, $,, Key],
     UserName = extract_name(User),
     dt_entry(<<"accept_streambody">>, [size(Data)], [UserName, BFile_str]),
@@ -418,11 +324,14 @@ accept_streambody(RD, Ctx=#key_context{bucket=Bucket,
 %% We need to do some checking to make sure
 %% the bucket exists for the user who is doing
 %% this PUT
-finalize_request(RD, #key_context{bucket=Bucket,
-                                  key=Key,
-                                  size=S,
-                                  context=#context{start_time=StartTime,
-                                                   user=User}}=Ctx, Pid) ->
+finalize_request(RD,
+                 Ctx=#context{local_context=LocalCtx,
+                              start_time=StartTime,
+                              user=User},
+                 Pid) ->
+    #key_context{bucket=Bucket,
+                 key=Key,
+                 size=S} = LocalCtx,
     BFile_str = [Bucket, $,, Key],
     UserName = extract_name(User),
     dt_entry(<<"finalize_request">>, [S], [UserName, BFile_str]),
@@ -437,26 +346,43 @@ finalize_request(RD, #key_context{bucket=Bucket,
     dt_return(<<"finalize_request">>, [S], [UserName, BFile_str]),
     {{halt, 200}, wrq:set_resp_header("ETag",  ETag, AccessRD), Ctx}.
 
-finish_request(RD, KeyCtx=#key_context{bucket=Bucket,
-                                       key=Key,
-                                       context=InnerCtx=#context{user=User}}) ->
+finish_request(RD, Ctx=#context{local_context=LocalCtx,
+                                riakc_pid=RiakcPid,
+                                user=User}) ->
+    #key_context{bucket=Bucket,
+                 key=Key} = LocalCtx,
     BFile_str = [Bucket, $,, Key],
     UserName = extract_name(User),
     dt_entry(<<"finish_request">>, [], [UserName, BFile_str]),
-    #context{riakc_pid=RiakPid} = InnerCtx,
-    case RiakPid of
+    case RiakcPid of
         undefined ->
             dt_return(<<"finish_request">>, [0], [UserName, BFile_str]),
-            {true, RD, KeyCtx};
+            {true, RD, LocalCtx};
         _ ->
-            riak_cs_utils:close_riak_connection(RiakPid),
-            UpdInnerCtx = InnerCtx#context{riakc_pid=undefined},
+            riak_cs_utils:close_riak_connection(RiakcPid),
+            UpdCtx = Ctx#context{riakc_pid=undefined},
             dt_return(<<"finish_request">>, [1], [UserName, BFile_str]),
-            {true, RD, KeyCtx#key_context{context=UpdInnerCtx}}
+            {true, RD, UpdCtx}
     end.
 
 extract_name(X) ->
     riak_cs_wm_utils:extract_name(X).
+
+%% @doc Utility function for accessing
+%%      a riakc_obj without retrieving
+%%      it again if it's already in the
+%%      Ctx
+-spec ensure_doc(term(), pid()) -> term().
+ensure_doc(KeyCtx=#key_context{get_fsm_pid=undefined,
+                               bucket=Bucket,
+                               key=Key}, RiakcPid) ->
+    %% start the get_fsm
+    BinKey = list_to_binary(Key),
+    {ok, Pid} = riak_cs_get_fsm_sup:start_get_fsm(node(), Bucket, BinKey, self(), RiakcPid),
+    Manifest = riak_cs_get_fsm:get_manifest(Pid),
+    KeyCtx#key_context{get_fsm_pid=Pid, manifest=Manifest};
+ensure_doc(KeyCtx, _) ->
+    KeyCtx.
 
 dt_entry(Func) ->
     dt_entry(Func, [], []).
