@@ -6,7 +6,7 @@
 
 -module(riak_cs_wm_bucket_versioning).
 
--export([content_types_provided/0,
+-export([content_types_provided/2,
          to_xml/2,
          allowed_methods/0]).
 
@@ -21,11 +21,12 @@ allowed_methods() ->
     %% TODO: PUT?
     ['GET'].
 
--spec content_types_provided() -> [{string(), atom()}].
-content_types_provided() ->
-    [{"application/xml", to_xml}].
+-spec content_types_provided(#wm_reqdata{}, #context{}) -> {[{string(), atom()}], #wm_reqdata{}, #context{}}.
+content_types_provided(RD, Ctx) ->
+    {[{"application/xml", to_xml}], RD, Ctx}.
 
-
+-spec authorize(#wm_reqdata{}, #context{}) -> 
+                       {boolean() | {halt, term()}, #wm_reqdata{}, #context{}}.
 authorize(RD, #context{user=User,
                               riakc_pid=RiakPid}=Ctx) ->
     Method = wrq:method(RD),
@@ -60,8 +61,15 @@ authorize(RD, #context{user=User,
 
 -spec to_xml(#wm_reqdata{}, #context{}) -> 
                     {binary() | {halt, term()}, #wm_reqdata{}, #context{}}.
-to_xml(RD, Ctx) ->
-    {<<"<VersioningConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"/>">>,
-     RD, Ctx}.
+to_xml(RD, Ctx=#context{user=User,bucket=Bucket}) ->
+    StrBucket = binary_to_list(Bucket),
+    case [B || B <- riak_cs_utils:get_buckets(User),
+               B?RCS_BUCKET.name =:= StrBucket] of
+        [] ->
+            riak_cs_s3_response:api_error(no_such_bucket, RD, Ctx);
+        [_BucketRecord] ->
+            {<<"<VersioningConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"/>">>,
+             RD, Ctx}
+    end.
 
 

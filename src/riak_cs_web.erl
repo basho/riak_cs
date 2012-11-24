@@ -50,11 +50,11 @@ base_resources() ->
      {["buckets", bucket, "objects"], riak_cs_wm_common, props(riak_cs_wm_objects)},
      {["buckets", bucket, "acl"], riak_cs_wm_common, props(riak_cs_wm_bucket_acl)},
      {["buckets", bucket, "location"], riak_cs_wm_common, props(riak_cs_wm_bucket_location)},
-     {["buckets", bucket, "versioning"], riak_cs_wm_common, props(riak_cs_wm_bucket_versioning)}
+     {["buckets", bucket, "versioning"], riak_cs_wm_common, props(riak_cs_wm_bucket_versioning)},
      %% TODO: bucket policy
      %% %% Object resources
-     %% {["buckets", bucket, "objects", object], riak_cs_wm_object, Props},
-     %% {["buckets", bucket, "objects", object, "acl"], riak_cs_wm_object_acl, Props}
+     {["buckets", bucket, "objects", object], riak_cs_wm_common, props(riak_cs_wm_object)},
+     {["buckets", bucket, "objects", object, "acl"], riak_cs_wm_common, props(riak_cs_wm_object_acl)}
     ].
 
 -spec one_three_resources(undefined | pos_integer()) -> [dispatch_rule()].
@@ -63,8 +63,7 @@ one_three_resources(undefined) ->
 one_three_resources(Version) when Version < 010300 ->
     [];
 one_three_resources(_Version) ->
-    [
-    ].
+    [].
 
 -spec get_auth_bypass() -> boolean().
 get_auth_bypass() ->

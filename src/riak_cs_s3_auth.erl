@@ -29,7 +29,7 @@
 identify(RD,_Ctx) ->
     case wrq:get_req_header("authorization", RD) of
         undefined ->
-            {wrq:get_qs_value(?QS_KEYID, RD), wrq:get_qs_value(?QS_SIGNATURE)};
+            {wrq:get_qs_value(?QS_KEYID, RD), wrq:get_qs_value(?QS_SIGNATURE, RD)};
         AuthHeader ->
             parse_auth_header(AuthHeader)
     end.
@@ -271,12 +271,13 @@ example_upload() ->
     KeyData = "uV3F3YluFJax1cknvbcGwgjvx4QpvB+leU8dUj2o",
     Method = 'PUT',
     Version = {1, 1},
-    Path = "/db-backup.dat.gz",
+    OrigPath = "/static.johnsmith.net/db-backup.dat.gz",
+    Path = "/buckets/static.johnsmith.net/objects/db-backup.dat.gz",
     Headers =
         mochiweb_headers:make([{"User-Agent", "curl/7.15.5"},
                                {"Host", "static.johnsmith.net:8080"},
                                {"Date", "Tue, 27 Mar 2007 21:06:08 +0000"},
-                               {"x-rcs-rewrite-path", Path},
+                               {"x-rcs-rewrite-path", OrigPath},
                                {"x-amz-acl", "public-read"},
                                {"content-type", "application/x-download"},
                                {"Content-MD5", "4gJE4saaMU4BqNR0kLY+lw=="},

@@ -6,8 +6,9 @@
 
 -module(riak_cs_wm_objects).
 
--export([allowed_methods/0,
-         content_types_provided/0,
+-export([init/1,
+         allowed_methods/0,
+         content_types_provided/2,
          to_xml/2]).
 
 -export([authorize/2]).
@@ -17,14 +18,18 @@
 
 -define(RIAKCPOOL, bucket_list_pool).
 
+-spec init(#context{}) -> {ok, #context{}}.
+init(Ctx) ->
+    {ok, Ctx#context{riakc_pool=?RIAKCPOOL}}.
+
 -spec allowed_methods() -> [atom()].
 allowed_methods() ->
     %% TODO: POST (multi-delete)
     ['GET'].
 
--spec content_types_provided() -> [{string(), atom()}].
-content_types_provided() ->        
-    [{"application/xml", to_xml}].
+-spec content_types_provided(#wm_reqdata{}, #context{}) -> {[{string(), atom()}], #wm_reqdata{}, #context{}}.
+content_types_provided(RD,Ctx) ->        
+    {[{"application/xml", to_xml}], RD, Ctx}.
 
 
 %% TODO: change to authorize/spec/cleanup unneeded cases
@@ -46,7 +51,7 @@ authorize(RD, #context{user=User,
         {true, OwnerId} ->
             %% listing bucket for (possibly anon.) actor other than the owner of this bucket.
             %% need to get the owner record and log access against it
-            riak_cs_acl_utils:shift_to_owner(RD, PermCtx, OwnerId, RiakPid);
+            riak_cs_wm_utils:shift_to_owner(RD, PermCtx, OwnerId, RiakPid);
         false ->
             case User of
                 undefined ->
@@ -69,15 +74,15 @@ authorize(RD, #context{user=User,
             end
     end.
 
--spec to_xml(term(), #context{}) ->
-                    {binary() | {'halt', term()}, term(), #context{}}.
+-spec to_xml(#wm_reqdata{}, #context{}) ->
+                    {binary() | {'halt', non_neg_integer()}, #wm_reqdata{}, #context{}}.
 to_xml(RD, Ctx=#context{start_time=StartTime,
                         user=User,
                         bucket=Bucket,
                         requested_perm='READ',
                         riakc_pid=RiakPid}) ->
-    dt_entry(<<"to_xml">>, [], [extract_name(User), Bucket]),
-    dt_entry_bucket(<<"list_keys">>, [], [extract_name(User), Bucket]),
+    riak_cs_dtrace:dt_bucket_entry(?MODULE, <<"bucket_list_keys">>, 
+                                      [], [riak_cs_wm_utils:extract_name(User), Bucket]),
     StrBucket = binary_to_list(Bucket),
     case [B || B <- riak_cs_utils:get_buckets(User),
                B?RCS_BUCKET.name =:= StrBucket] of
@@ -85,8 +90,8 @@ to_xml(RD, Ctx=#context{start_time=StartTime,
             CodeName = no_such_bucket,
             Res = riak_cs_s3_response:api_error(CodeName, RD, Ctx),
             Code = riak_cs_s3_response:status_code(CodeName),
-            dt_return(<<"to_xml">>, [Code], [extract_name(User), Bucket]),
-            dt_return_bucket(<<"list_keys">>, [Code], [extract_name(User), Bucket]),
+            riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_list_keys">>, 
+                                               [Code], [riak_cs_wm_utils:extract_name(User), Bucket]),
             Res;
         [BucketRecord] ->
             Prefix = list_to_binary(wrq:get_qs_value("prefix", "", RD)),
@@ -99,29 +104,14 @@ to_xml(RD, Ctx=#context{start_time=StartTime,
                                                                    Ctx),
                     ok = riak_cs_stats:update_with_start(bucket_list_keys,
                                                          StartTime),
-                    dt_return(<<"to_xml">>, [200], [extract_name(User), Bucket]),
-                    dt_return_bucket(<<"list_keys">>, [200], [extract_name(User), Bucket]),
+                    riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_list_keys">>, 
+                                                       [200], [riak_cs_wm_utils:extract_name(User), Bucket]),
                     X;
                 {error, Reason} ->
                     Code = riak_cs_s3_response:status_code(Reason),
                     X = riak_cs_s3_response:api_error(Reason, RD, Ctx),
-                    dt_return(<<"to_xml">>, [Code], [extract_name(User), Bucket]),
-                    dt_return_bucket(<<"list_keys">>, [Code], [extract_name(User), Bucket]),
+                    riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_list_keys">>, 
+                                                       [Code], [riak_cs_wm_utils:extract_name(User), Bucket]),
                     X
             end
     end.
-
-extract_name(X) ->
-    riak_cs_wm_utils:extract_name(X).
-
-dt_entry(Func, Ints, Strings) ->
-    riak_cs_dtrace:dtrace(?DT_WM_OP, 1, Ints, ?MODULE, Func, Strings).
-
-dt_entry_bucket(Func, Ints, Strings) ->
-    riak_cs_dtrace:dtrace(?DT_BUCKET_OP, 1, Ints, ?MODULE, Func, Strings).
-
-dt_return(Func, Ints, Strings) ->
-    riak_cs_dtrace:dtrace(?DT_WM_OP, 2, Ints, ?MODULE, Func, Strings).
-
-dt_return_bucket(Func, Ints, Strings) ->
-    riak_cs_dtrace:dtrace(?DT_BUCKET_OP, 2, Ints, ?MODULE, Func, Strings).
