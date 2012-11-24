@@ -7,7 +7,7 @@
 -module(riak_cs_wm_objects).
 
 -export([allowed_methods/0,
-         content_types_provided/0,
+         content_types_provided/2,
          to_xml/2]).
 
 -export([authorize/2]).
@@ -22,9 +22,9 @@ allowed_methods() ->
     %% TODO: POST (multi-delete)
     ['GET'].
 
--spec content_types_provided() -> [{string(), atom()}].
-content_types_provided() ->        
-    [{"application/xml", to_xml}].
+-spec content_types_provided(term(),term()) -> [{string(), atom()}].
+content_types_provided(RD,Ctx) ->        
+    {[{"application/xml", to_xml}], RD, Ctx}.
 
 
 %% TODO: change to authorize/spec/cleanup unneeded cases

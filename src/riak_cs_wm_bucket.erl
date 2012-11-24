@@ -6,7 +6,7 @@
 
 -module(riak_cs_wm_bucket).
 
--export([content_types_provided/0,
+-export([content_types_provided/2,
          to_xml/2,
          allowed_methods/0,
          content_types_accepted/2,
@@ -22,9 +22,9 @@
 allowed_methods() ->
     ['HEAD', 'PUT', 'DELETE'].
 
--spec content_types_provided() -> [{string(), atom()}].
-content_types_provided() ->
-    [{"application/xml", to_xml}].
+-spec content_types_provided(term(),term()) -> [{string(), atom()}].
+content_types_provided(RD, Ctx) ->
+    {[{"application/xml", to_xml}], RD, Ctx}.
 
 -spec content_types_accepted(#wm_reqdata{}, #context{}) -> 
                                     {[{string(), atom()}], #wm_reqdata{}, #context{}}.
