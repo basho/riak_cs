@@ -203,6 +203,10 @@ handle_streaming_list_keys_call({error, Reason}, State) ->
 
 -spec handle_keys_done(state()) -> fsm_state_return().
 handle_keys_done(State=#state{key_buffer=ListofListofKeys}) ->
+    %% TODO: this could potentially be pretty expensive
+    %% and memory instensive. More reason to think about starting
+    %% to only keep a smaller buffer. See comment in
+    %% `handle_keys_received'
     SortedFlattenedKeys = lists:sort(lists:flatten(ListofListofKeys)),
     NumKeys = length(SortedFlattenedKeys),
     NewState = State#state{keys=SortedFlattenedKeys,
@@ -212,6 +216,7 @@ handle_keys_done(State=#state{key_buffer=ListofListofKeys}) ->
     maybe_map_reduce(NewState).
 
 handle_keys_received(Keys, State=#state{key_buffer=PrevKeyBuffer}) ->
+    %% TODO:
     %% this is where we might eventually do a 'top-k' keys
     %% kind of thing, like
     %% `lists:sublist(lists:sort([Keys | PrevKeyBuffer]), BufferSize)'
@@ -222,8 +227,7 @@ handle_keys_received(Keys, State=#state{key_buffer=PrevKeyBuffer}) ->
 %% Map Reduce stuff
 %%--------------------------------------------------------------------
 
--spec maybe_map_reduce(state()) ->
-    fsm_state_return().
+-spec maybe_map_reduce(state()) -> fsm_state_return().
 maybe_map_reduce(State=#state{object_buffer=ObjectBuffer,
                               req=Request,
                               num_keys=TotalNumKeys}) ->
@@ -231,12 +235,7 @@ maybe_map_reduce(State=#state{object_buffer=ObjectBuffer,
     handle_enough_results(Enough, State).
 
 handle_enough_results(true, State) ->
-    %% TODO: is this the right return?
-    %% TODO:
-    %% I think there should also be a timeout
-    %% passed here in case we never get the call from
-    %% `get_object_list'
-    {next_state, done, State};
+    have_enough_results(State);
 handle_enough_results(false, State=#state{num_keys=TotalNumKeys,
                                           mr_requests=MapRRequests}) ->
     MoreQuery = could_query_more_mapreduce(MapRRequests, TotalNumKeys),
@@ -245,15 +244,51 @@ handle_enough_results(false, State=#state{num_keys=TotalNumKeys,
 -spec handle_could_query_more_map_reduce(boolean, state()) ->
     fsm_state_return().
 handle_could_query_more_map_reduce(true, State=#state{req=Request,
+                                                      keys=Keys,
+                                                      key_multiplier=KeyMultiplier,
+                                                      mr_requests=PrevRequests,
+                                                      object_buffer=Buffer,
                                                       riakc_pid=RiakcPid}) ->
+    TotalNeeded = Request?LOREQ.max_keys,
     BucketName = Request?LOREQ.name,
     ManifestBucketName = riak_cs_utils:to_bucket_name(objects, BucketName),
-    handle_map_reduce_call(make_map_reduce_request(RiakcPid,
-                                              ManifestBucketName,
-                                              State),
-                           State);
-handle_could_query_more_map_reduce(false, _State) ->
+    {Keys, NewReq} = keys_to_query(PrevRequests,
+                                   Keys,
+                                   TotalNeeded,
+                                   length(Buffer),
+                                   KeyMultiplier),
+    NewStateData = State#state{mr_requests=PrevRequests ++ [NewReq]},
+    MapReduceRequestResult = make_map_reduce_request(RiakcPid,
+                                                     ManifestBucketName,
+                                                     Keys),
+    handle_map_reduce_call(MapReduceRequestResult, NewStateData);
+handle_could_query_more_map_reduce(false, State) ->
+    have_enough_results(State).
+
+-spec make_response(list_object_request(), list()) ->
+    list_object_response().
+make_response(_Request, _ObjectBuffer) ->
+    %% TODO: fix me
     ok.
+
+-spec keys_to_query(list(),
+                    list(),
+                    non_neg_integer(),
+                    non_neg_integer(),
+                    float()) ->
+    {list(), {non_neg_integer(), non_neg_integer()}}.
+keys_to_query([], Keys, TotalNeeded, _NumHaveSoFar, KeyMultiplier) ->
+    StartIdx = 1,
+    EndIdx = round_up(TotalNeeded * KeyMultiplier),
+    {lists:sublist(Keys, StartIdx, EndIdx),
+     {StartIdx, EndIdx}};
+keys_to_query(PrevRequests, Keys, TotalNeeded, NumHaveSoFar, KeyMultiplier) ->
+    MoreNeeded = TotalNeeded - NumHaveSoFar,
+    StartIdx = element(2, lists:last(PrevRequests)) + 1,
+    EndIdx = (StartIdx + MoreNeeded) * KeyMultiplier,
+    {lists:sublist(Keys, StartIdx, EndIdx),
+     {StartIdx, EndIdx}}.
+
 
 -spec handle_mapred_results(list(), state()) ->
     fsm_state_return().
@@ -326,3 +361,23 @@ more_results_possible({_StartIdx, EndIdx}, TotalKeys)
     true;
 more_results_possible(_Request, _TotalKeys) ->
     false.
+
+-spec have_enough_results(state()) -> fsm_state_return().
+have_enough_results(State=#state{reply_pid=undefined,
+                                 req=Request,
+                                 object_buffer=ObjectBuffer}) ->
+    Response = make_response(Request, ObjectBuffer),
+    NewStateData = State#state{response=Response},
+    {next_state, done, NewStateData, 60};
+have_enough_results(State=#state{reply_pid=ReplyPid,
+                                 req=Request,
+                                 object_buffer=ObjectBuffer}) ->
+    Response = make_response(Request, ObjectBuffer),
+    gen_fsm:reply(ReplyPid, {ok, Response}),
+    NewStateData = State#state{response=Response},
+    {stop, normal, NewStateData}.
+
+%% only works for positive numbers
+-spec round_up(float()) -> float().
+round_up(X) ->
+    erlang:round(X + 0.5).
