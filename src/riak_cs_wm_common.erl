@@ -16,6 +16,7 @@
          malformed_request/2,
          to_xml/2,
          accept_body/2,
+         produce_body/2,
          allowed_methods/2,
          delete_resource/2,
          finish_request/2]).
@@ -179,6 +180,14 @@ accept_body(RD, Ctx=#context{submodule=Mod,exports_fun=ExportsFun}) -> %% TODO: 
                   accept_body,
                   [RD, Ctx],
                   ExportsFun(accept_body)).
+
+-spec produce_body(term(), term()) ->
+                          {iolist()|binary(), term(), term()}.
+produce_body(RD, Ctx=#context{submodule=Mod,exports_fun=ExportsFun}) ->
+    resource_call(Mod, 
+                  produce_body,
+                  [RD, Ctx],
+                  ExportsFun(produce_body)).
 
 
 
