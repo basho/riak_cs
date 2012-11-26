@@ -53,8 +53,8 @@ base_resources() ->
      {["buckets", bucket, "versioning"], riak_cs_wm_common, props(riak_cs_wm_bucket_versioning)},
      %% TODO: bucket policy
      %% %% Object resources
-     {["buckets", bucket, "objects", '*'], riak_cs_wm_common, props(riak_cs_wm_object)}
-     %% {["buckets", bucket, "objects", object, "acl"], riak_cs_wm_object_acl, Props}
+     {["buckets", bucket, "objects", object], riak_cs_wm_common, props(riak_cs_wm_object)},
+     {["buckets", bucket, "objects", object, "acl"], riak_cs_wm_common, props(riak_cs_wm_object_acl)}
     ].
 
 -spec one_three_resources(undefined | pos_integer()) -> [dispatch_rule()].

@@ -20,6 +20,7 @@
          find_and_auth_user/4,
          find_and_auth_user/5,
          validate_auth_header/3,
+         ensure_doc/2,
          deny_access/2,
          extract_name/1,
          normalize_headers/1,
@@ -190,6 +191,22 @@ validate_auth_header(RD, AuthBypass, RiakPid) ->
                             [KeyId, Reason]),
             {error, Reason}
     end.
+
+%% @doc Utility function for accessing
+%%      a riakc_obj without retrieving
+%%      it again if it's already in the
+%%      Ctx
+-spec ensure_doc(term(), pid()) -> term().
+ensure_doc(KeyCtx=#key_context{get_fsm_pid=undefined,
+                               bucket=Bucket,
+                               key=Key}, RiakcPid) ->
+    %% start the get_fsm
+    BinKey = list_to_binary(Key),
+    {ok, Pid} = riak_cs_get_fsm_sup:start_get_fsm(node(), Bucket, BinKey, self(), RiakcPid),
+    Manifest = riak_cs_get_fsm:get_manifest(Pid),
+    KeyCtx#key_context{get_fsm_pid=Pid, manifest=Manifest};
+ensure_doc(KeyCtx, _) ->
+    KeyCtx.
 
 %% @doc Produce an access-denied error message from a webmachine
 %% resource's `forbidden/2' function.

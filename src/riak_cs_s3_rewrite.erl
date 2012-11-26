@@ -64,7 +64,7 @@ rewrite_path(_Method, Path, QS, Bucket) ->
     lists:flatten(["/buckets/",
                    Bucket,
                    "/objects/",
-                   string:strip(Path, left, $/),
+                   mochiweb_util:quote_plus(string:strip(Path, left, $/)),
                    format_object_qs(get_subresources(QS))
                   ]).
 

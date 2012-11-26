@@ -22,21 +22,14 @@
 -include("riak_cs.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
 
--record(key_context, {context :: #context{},
-                      manifest :: 'notfound' | lfs_manifest(),
-                      get_fsm_pid :: pid(),
-                      putctype :: string(),
-                      bucket :: binary(),
-                      key :: list(),
-                      owner :: 'undefined' | string(),
-                      size :: non_neg_integer()}).
-
 init(Ctx) ->
     {ok, Ctx#context{local_context=#key_context{}}}.
 
 malformed_request(RD,Ctx=#context{local_context=LocalCtx0}) ->    
     Bucket = list_to_binary(wrq:path_info(bucket, RD)),
-    Key = mochiweb_util:unquote(wrq:disp_path(RD)),
+    %% need to unquote twice since we re-urlencode the string during rewrite in 
+    %% order to trick webmachine dispatching
+    Key = mochiweb_util:unquote(mochiweb_util:unquote(wrq:path_info(object, RD))),
     LocalCtx = LocalCtx0#key_context{bucket=Bucket, key=Key},
     {false, RD, Ctx#context{local_context=LocalCtx}}.
 
@@ -48,9 +41,7 @@ authorize(RD, Ctx0=#context{local_context=LocalCtx0, riakc_pid=RiakPid}) ->
     Method = wrq:method(RD),
     RequestedAccess =
         riak_cs_acl_utils:requested_access(Method, false),
-     %% @TODO This line is no longer needed post-refactor
-    
-    LocalCtx = ensure_doc(LocalCtx0, RiakPid),
+    LocalCtx = riak_cs_wm_utils:ensure_doc(LocalCtx0, RiakPid),
     Ctx = Ctx0#context{requested_perm=RequestedAccess,local_context=LocalCtx},
     check_permission(Method, RD, Ctx, LocalCtx#key_context.manifest).
 
@@ -60,12 +51,9 @@ check_permission('GET', RD, Ctx, notfound) ->
     {{halt, 404}, maybe_log_user(RD, Ctx), Ctx};
 check_permission('HEAD', RD, Ctx, notfound) ->
     {{halt, 404}, maybe_log_user(RD, Ctx), Ctx};
-check_permission(Method, RD, Ctx=#context{local_context=LocalCtx}, Mfst) ->
+check_permission(_, RD, Ctx=#context{requested_perm=RequestedAccess,local_context=LocalCtx}, Mfst) ->
     #key_context{bucket=Bucket} = LocalCtx,
     RiakPid = Ctx#context.riakc_pid,
-    RequestedAccess =
-        riak_cs_acl_utils:requested_access(Method,
-                                           wrq:req_qs(RD)),
     case Ctx#context.user of
         undefined ->
             User = CanonicalId = undefined;
@@ -150,7 +138,7 @@ content_types_provided(RD, Ctx=#context{local_context=LocalCtx,
     %% `response-content-type` header in the request.
     Method = wrq:method(RD),
     if Method == 'GET'; Method == 'HEAD' ->
-            UpdLocalCtx = ensure_doc(LocalCtx, RiakcPid),
+            UpdLocalCtx = riak_cs_wm_utils:ensure_doc(LocalCtx, RiakcPid),
             ContentType = binary_to_list(Mfst?MANIFEST.content_type),
             case ContentType of
                 _ ->
@@ -367,22 +355,6 @@ finish_request(RD, Ctx=#context{local_context=LocalCtx,
 
 extract_name(X) ->
     riak_cs_wm_utils:extract_name(X).
-
-%% @doc Utility function for accessing
-%%      a riakc_obj without retrieving
-%%      it again if it's already in the
-%%      Ctx
--spec ensure_doc(term(), pid()) -> term().
-ensure_doc(KeyCtx=#key_context{get_fsm_pid=undefined,
-                               bucket=Bucket,
-                               key=Key}, RiakcPid) ->
-    %% start the get_fsm
-    BinKey = list_to_binary(Key),
-    {ok, Pid} = riak_cs_get_fsm_sup:start_get_fsm(node(), Bucket, BinKey, self(), RiakcPid),
-    Manifest = riak_cs_get_fsm:get_manifest(Pid),
-    KeyCtx#key_context{get_fsm_pid=Pid, manifest=Manifest};
-ensure_doc(KeyCtx, _) ->
-    KeyCtx.
 
 dt_entry(Func) ->
     dt_entry(Func, [], []).
