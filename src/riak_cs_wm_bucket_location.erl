@@ -7,7 +7,7 @@
 -module(riak_cs_wm_bucket_location).
 
 % TODO: add PUT
--export([content_types_provided/0,
+-export([content_types_provided/2,
          to_xml/2,
          allowed_methods/0
         ]).
@@ -22,9 +22,9 @@
 allowed_methods() ->
     ['GET'].
 
--spec content_types_provided() -> [{string(), atom()}].
-content_types_provided() ->
-    [{"application/xml", to_xml}].
+-spec content_types_provided(#wm_reqdata{}, #context{}) -> [{string(), atom()}].
+content_types_provided(RD, Ctx) ->
+    {[{"application/xml", to_xml}], RD, Ctx}.
 
 -spec authorize(#wm_reqdata{}, #context{}) -> 
                        {boolean() | {halt, term()}, #wm_reqdata{}, #context{}}.
