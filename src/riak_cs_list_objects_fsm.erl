@@ -14,7 +14,8 @@
 -include("list_objects.hrl").
 
 %% API
--export([]).
+-export([start_link/2,
+         get_object_list/1]).
 
 %% gen_fsm callbacks
 -export([init/1,
@@ -31,6 +32,8 @@
 -record(state, {riakc_pid :: pid(),
                 req :: list_object_request(),
 
+                reply_pid :: undefined | pid(),
+
                 %% list keys ----
                 list_keys_req_id :: undefined | non_neg_integer(),
                 key_buffer=[] :: list(),
@@ -39,13 +42,25 @@
                 %% `length/1' is linear time
                 num_keys :: undefined | non_neg_integer(),
 
+                %% We issue a map reduce request for _more_
+                %% keys than the user asks for because some
+                %% of the keys returned from list keys
+                %% may be tombstoned or marked as deleted.
+                %% We assume this will happen to some percentage
+                %% of keys, so we account for it in every request
+                %% by multiplying the number of objects we need
+                %% by some constant.
+                key_multiplier :: float(),
+
                 %% map reduce ----
                 %% this field will change, it represents
                 %% the current outstanding m/r request
                 map_red_req_id :: undefined | non_neg_integer(),
                 mr_requests=[] :: [{StartIdx :: non_neg_integer(),
                                     EndIdx :: non_neg_integer()}],
-                object_buffer=[] :: list()}).
+                object_buffer=[] :: list(),
+
+                response :: undefined | list_object_response()}).
 
 %% some useful shared types
 
@@ -70,6 +85,16 @@
 %%% API
 %%%===================================================================
 
+-spec start_link(pid(), list_object_request()) ->
+    {ok, pid()} | {error, term()}.
+start_link(RiakcPid, ListKeysRequest) ->
+    gen_fsm:start_link(?MODULE, [RiakcPid, ListKeysRequest], []).
+
+-spec get_object_list(pid()) ->
+    {ok, list_object_response()} |
+    {error, term()}.
+get_object_list(FSMPid) ->
+    gen_fsm:sync_send_all_state_event(FSMPid, get_object_list, infinity).
 
 %%%===================================================================
 %%% gen_fsm callbacks
@@ -77,7 +102,17 @@
 
 -spec init(list()) -> {ok, prepare, state(), 0}.
 init([RiakcPid, Request]) ->
+    %% TODO: should we be linking or monitoring
+    %% the proc that called us?
+
+    %% TODO: this should not be hardcoded. Maybe there should
+    %% be two `start_link' arities, and one will use a default
+    %% val from app.config and the other will explicitly
+    %% take a val
+    KeyMultiplier = 1.5,
+
     State = #state{riakc_pid=RiakcPid,
+                   key_multiplier=KeyMultiplier,
                    req=Request},
     {ok, prepare, State, 0}.
 
@@ -103,7 +138,7 @@ waiting_list_keys({ReqID, {error, Reason}}, State=#state{list_keys_req_id=ReqID}
 waiting_map_reduce({ReqID, done}, State=#state{map_red_req_id=ReqID}) ->
     %% depending on the result of this, we'll either
     %% make another m/r request, or be done
-    handle_mapred_done(State);
+    maybe_map_reduce(State);
 waiting_map_reduce({ReqID, {mapred, _Phase, Results}},
                    State=#state{map_red_req_id=ReqID}) ->
     handle_mapred_results(Results, State);
@@ -114,6 +149,12 @@ waiting_map_reduce({ReqID, {error, Reason}},
 handle_event(_Event, StateName, State) ->
     {next_state, StateName, State}.
 
+handle_sync_event(get_object_list, _From, done, State=#state{response=Resp}) ->
+    Reply = {ok, Resp},
+    {stop, normal, Reply, State};
+handle_sync_event(get_object_list, From, StateName, State) ->
+    NewStateData = State#state{reply_pid=From},
+    {next_state, StateName, NewStateData};
 handle_sync_event(_Event, _From, StateName, State) ->
     Reply = ok,
     {reply, Reply, StateName, State}.
@@ -161,20 +202,14 @@ handle_streaming_list_keys_call({error, Reason}, State) ->
     {stop, Reason, State}.
 
 -spec handle_keys_done(state()) -> fsm_state_return().
-handle_keys_done(State=#state{key_buffer=ListofListofKeys,
-                              req=?LOREQ{name=BucketName},
-                              riakc_pid=RiakcPid}) ->
+handle_keys_done(State=#state{key_buffer=ListofListofKeys}) ->
     SortedFlattenedKeys = lists:sort(lists:flatten(ListofListofKeys)),
     NumKeys = length(SortedFlattenedKeys),
     NewState = State#state{keys=SortedFlattenedKeys,
                            num_keys=NumKeys,
                            %% free up the space
                            key_buffer=undefined},
-    ManifestBucketName = riak_cs_utils:to_bucket_name(objects, BucketName),
-    handle_map_reduce_call(make_map_reduce_request(RiakcPid,
-                                              ManifestBucketName,
-                                              NewState),
-                           State).
+    maybe_map_reduce(NewState).
 
 handle_keys_received(Keys, State=#state{key_buffer=PrevKeyBuffer}) ->
     %% this is where we might eventually do a 'top-k' keys
@@ -187,21 +222,50 @@ handle_keys_received(Keys, State=#state{key_buffer=PrevKeyBuffer}) ->
 %% Map Reduce stuff
 %%--------------------------------------------------------------------
 
--spec handle_mapred_done(state()) ->
+-spec maybe_map_reduce(state()) ->
     fsm_state_return().
-handle_mapred_done(_State=#state{object_buffer=ObjectsSoFar,
-                                req=Request,
-                                num_keys=TotalNumKeys}) ->
-    enough_results(ObjectsSoFar, Request, TotalNumKeys),
-    could_query_more_mapreduce(foo, bar),
-    more_results_possible(foo, bar),
-    %% based on the results of `more_results_possible',
-    %% return a new state transition
+maybe_map_reduce(State=#state{object_buffer=ObjectBuffer,
+                              req=Request,
+                              num_keys=TotalNumKeys}) ->
+    Enough = enough_results(ObjectBuffer, Request, TotalNumKeys),
+    handle_enough_results(Enough, State).
+
+handle_enough_results(true, State) ->
+    %% TODO: is this the right return?
+    %% TODO:
+    %% I think there should also be a timeout
+    %% passed here in case we never get the call from
+    %% `get_object_list'
+    {next_state, done, State};
+handle_enough_results(false, State=#state{num_keys=TotalNumKeys,
+                                          mr_requests=MapRRequests}) ->
+    MoreQuery = could_query_more_mapreduce(MapRRequests, TotalNumKeys),
+    handle_could_query_more_map_reduce(MoreQuery, State).
+
+-spec handle_could_query_more_map_reduce(boolean, state()) ->
+    fsm_state_return().
+handle_could_query_more_map_reduce(true, State=#state{req=Request,
+                                                      riakc_pid=RiakcPid}) ->
+    BucketName = Request?LOREQ.name,
+    ManifestBucketName = riak_cs_utils:to_bucket_name(objects, BucketName),
+    handle_map_reduce_call(make_map_reduce_request(RiakcPid,
+                                              ManifestBucketName,
+                                              State),
+                           State);
+handle_could_query_more_map_reduce(false, _State) ->
     ok.
 
 -spec handle_mapred_results(list(), state()) ->
-    {atom(), atom(), state()}.
-handle_mapred_results(_Results, _State) -> ok.
+    fsm_state_return().
+handle_mapred_results(Results, State=#state{object_buffer=Buffer}) ->
+    NewBuffer = update_buffer(Results, Buffer),
+    NewState = State#state{object_buffer=NewBuffer},
+    {next_state, waiting_map_reduce, NewState}.
+
+-spec update_buffer(list(), list()) -> list().
+update_buffer(Results, Buffer) ->
+    %% TODO: is this the fastest way to do this?
+    lists:merge(lists:sort(Results), Buffer).
 
 -spec make_map_reduce_request(pid(), binary(), list()) ->
     streaming_req_response().
@@ -252,8 +316,8 @@ could_query_more_mapreduce(_Requests, 0) ->
     false;
 could_query_more_mapreduce([], _TotalKeys) ->
     true;
-could_query_more_mapreduce(_Requests, _TotalKeys) ->
-    ok.
+could_query_more_mapreduce(Requests, TotalKeys) ->
+    more_results_possible(lists:last(Requests), TotalKeys).
 
 -spec more_results_possible({non_neg_integer(), non_neg_integer()},
                             non_neg_integer()) -> boolean().
