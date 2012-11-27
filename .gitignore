@@ -4,6 +4,7 @@ rel/riak-cs
 ebin/*.beam
 ebin/*.app
 riak_test/ebin/*
+riak_test/bin/riak-cs*
 doc
 dev
 /package/
