@@ -14,7 +14,8 @@
 %% API
 -export([new_request/1,
          new_request/3,
-         new_response/4]).
+         new_response/4,
+         manifest_to_keycontent/1]).
 
 
 %%%===================================================================
@@ -72,6 +73,44 @@ new_response(?LOREQ{name=Name,
             contents=ObjectContents,
             common_prefixes=CommonPrefixes}.
 
+%% Rest
+%%--------------------------------------------------------------------
+
+-spec manifest_to_keycontent(lfs_manifest()) -> list_objects_key_content().
+manifest_to_keycontent(?MANIFEST{bkey=BKey,
+                                 created=Created,
+                                 content_md5=ContentMd5,
+                                 content_length=ContentLength,
+                                 acl=ACL}) ->
+    {_Bucket, UnprocessedKey} = BKey,
+    Key = list_to_binary(unicode:characters_to_list(UnprocessedKey, unicode)),
+
+    LastModified = riak_cs_wm_utils:to_iso_8601(Created),
+
+    %% Etag
+    ETagString = "\"" ++ riak_cs_utils:binary_to_hexlist(ContentMd5) ++ "\"",
+    Etag = list_to_binary(ETagString),
+
+    Size = ContentLength,
+    Owner = acl_to_owner(ACL),
+    %% hardcoded since we don't support reduced redundancy or glacier
+    StorageClass = <<"STANDARD">>,
+
+    #list_objects_key_content_v1{key=Key,
+                              last_modified=LastModified,
+                              etag=Etag,
+                              size=Size,
+                              owner=Owner,
+                              storage_class=StorageClass}.
+
 %% ====================================================================
 %% Internal functions
 %% ====================================================================
+
+-spec acl_to_owner(acl()) -> list_objects_owner().
+acl_to_owner(?ACL{owner=Owner}) ->
+    {DisplayName, CanonicalId, _KeyId} = Owner,
+    CanonicalIdBinary = list_to_binary(CanonicalId),
+    DisplayNameBinary = list_to_binary(DisplayName),
+    #list_objects_owner_v1{id=CanonicalIdBinary,
+                           display_name=DisplayNameBinary}.
