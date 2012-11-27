@@ -7,7 +7,7 @@ import httplib, json
 import unittest, time, uuid
 
 def create_user(host, port, name, email):
-    url = '/user'
+    url = '/riak-cs/user'
     body = json.dumps({"email": email, "name": name})
     conn = httplib.HTTPConnection(host, port)
     headers = {"Content-Type": "application/json"}
