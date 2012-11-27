@@ -275,11 +275,22 @@ prepare_state_for_mapred(State=#state{req=Request,
 
 -spec make_response(list_object_request(), list()) ->
     list_object_response().
-make_response(_Request, _ObjectBuffer) ->
-    %% TODO: fix me
-    %% TODO: maybe this should go in the
-    %% `riak_cs_list_objects' module.
-    ok.
+make_response(Request, ObjectBuffer) ->
+    Contents = response_contents_from_object_buffer(ObjectBuffer),
+    %% TODO: hardcoded, fix me!
+    IsTruncated = false,
+    %% TODO: hardcoded, fix me!
+    CommonPrefixes = [],
+    riak_cs_list_objects:new_response(Request, IsTruncated, CommonPrefixes,
+                                      Contents).
+
+-spec response_contents_from_object_buffer(list()) ->
+    list(list_objects_key_content()).
+response_contents_from_object_buffer(Buffer) ->
+    lists:map(fun response_transformer/1, lists:keysort(1, Buffer)).
+
+response_transformer({_Key, {ok, Manifest}}) ->
+    riak_cs_list_objects:manifest_to_keycontent(Manifest).
 
 -spec next_mr_query_spec(list(),
                          non_neg_integer(),
