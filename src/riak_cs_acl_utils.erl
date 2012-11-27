@@ -493,16 +493,16 @@ roundtrip_test() ->
     ?assertEqual(Xml2, binary_to_list(acl_to_xml(acl_from_xml(Xml2, "TESTKEYID2", undefined)))).
 
 requested_access_test() ->
-    ?assertEqual('READ', requested_access('GET', [])),
-    ?assertEqual('READ_ACP', requested_access('GET', [{"acl", ""}])),
-    ?assertEqual('WRITE', requested_access('PUT', [])),
-    ?assertEqual('WRITE_ACP', requested_access('PUT', [{"acl", ""}])),
-    ?assertEqual('WRITE', requested_access('POST', [])),
-    ?assertEqual('WRITE', requested_access('DELETE', [])),
-    ?assertEqual(undefined, requested_access('POST', [{"acl", ""}])),
-    ?assertEqual(undefined, requested_access('DELETE', [{"acl", ""}])),
-    ?assertEqual(undefined, requested_access('GARBAGE', [])),
-    ?assertEqual(undefined, requested_access('GARBAGE', [{"acl", ""}])).
+    ?assertEqual('READ', requested_access('GET', false)),
+    ?assertEqual('READ_ACP', requested_access('GET', true)),
+    ?assertEqual('WRITE', requested_access('PUT', false)),
+    ?assertEqual('WRITE_ACP', requested_access('PUT', true)),
+    ?assertEqual('WRITE', requested_access('POST', false)),
+    ?assertEqual('WRITE', requested_access('DELETE', false)),
+    ?assertEqual(undefined, requested_access('POST', true)),
+    ?assertEqual(undefined, requested_access('DELETE', true)),
+    ?assertEqual(undefined, requested_access('GARBAGE', false)),
+    ?assertEqual(undefined, requested_access('GARBAGE', true)).
 
 -ifdef(BROKEN_TEST).
 canned_acl_test() ->
