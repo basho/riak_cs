@@ -181,8 +181,9 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 %%--------------------------------------------------------------------
 
 %% function to create a list keys request
-%% this could also be a phase-less map-reduce request
-%% with key filters.
+%% TODO:
+%% could this also be a phase-less map-reduce request
+%% with key filters?
 -spec make_list_keys_request(pid(), list_object_request()) ->
     streaming_req_response().
 make_list_keys_request(RiakcPid, ?LOREQ{name=BucketName}) ->
@@ -203,17 +204,21 @@ handle_streaming_list_keys_call({error, Reason}, State) ->
 
 -spec handle_keys_done(state()) -> fsm_state_return().
 handle_keys_done(State=#state{key_buffer=ListofListofKeys}) ->
+    NewState = prepare_state_for_first_mapred(ListofListofKeys, State),
+    maybe_map_reduce(NewState).
+
+-spec prepare_state_for_first_mapred(list(), state()) -> state().
+prepare_state_for_first_mapred(KeyBuffer, State) ->
     %% TODO: this could potentially be pretty expensive
     %% and memory instensive. More reason to think about starting
     %% to only keep a smaller buffer. See comment in
     %% `handle_keys_received'
-    SortedFlattenedKeys = lists:sort(lists:flatten(ListofListofKeys)),
+    SortedFlattenedKeys = lists:sort(lists:flatten(KeyBuffer)),
     NumKeys = length(SortedFlattenedKeys),
-    NewState = State#state{keys=SortedFlattenedKeys,
-                           num_keys=NumKeys,
-                           %% free up the space
-                           key_buffer=undefined},
-    maybe_map_reduce(NewState).
+    State#state{keys=SortedFlattenedKeys,
+                num_keys=NumKeys,
+                %% free up the space
+                key_buffer=undefined}.
 
 handle_keys_received(Keys, State=#state{key_buffer=PrevKeyBuffer}) ->
     %% TODO:
@@ -243,27 +248,30 @@ handle_enough_results(false, State=#state{num_keys=TotalNumKeys,
 
 -spec handle_could_query_more_map_reduce(boolean, state()) ->
     fsm_state_return().
-handle_could_query_more_map_reduce(true, State=#state{req=Request,
-                                                      keys=Keys,
-                                                      key_multiplier=KeyMultiplier,
-                                                      mr_requests=PrevRequests,
-                                                      object_buffer=Buffer,
-                                                      riakc_pid=RiakcPid}) ->
-    TotalNeeded = Request?LOREQ.max_keys,
+handle_could_query_more_map_reduce(true,
+                                   State=#state{req=Request,
+                                                riakc_pid=RiakcPid}) ->
+    NewStateData = prepare_state_for_mapred(State),
+    KeysToQuery = next_keys_from_state(NewStateData),
     BucketName = Request?LOREQ.name,
     ManifestBucketName = riak_cs_utils:to_bucket_name(objects, BucketName),
-    {Keys, NewReq} = keys_to_query(PrevRequests,
-                                   Keys,
-                                   TotalNeeded,
-                                   length(Buffer),
-                                   KeyMultiplier),
-    NewStateData = State#state{mr_requests=PrevRequests ++ [NewReq]},
     MapReduceRequestResult = make_map_reduce_request(RiakcPid,
                                                      ManifestBucketName,
-                                                     Keys),
+                                                     KeysToQuery),
     handle_map_reduce_call(MapReduceRequestResult, NewStateData);
 handle_could_query_more_map_reduce(false, State) ->
     have_enough_results(State).
+
+prepare_state_for_mapred(State=#state{req=Request,
+                                      key_multiplier=KeyMultiplier,
+                                      mr_requests=PrevRequests,
+                                      object_buffer=ObjectBuffer}) ->
+    TotalNeeded = Request?LOREQ.max_keys,
+    NewReq = next_mr_query_spec(PrevRequests,
+                                TotalNeeded,
+                                length(ObjectBuffer),
+                                KeyMultiplier),
+    State#state{mr_requests=PrevRequests ++ [NewReq]}.
 
 -spec make_response(list_object_request(), list()) ->
     list_object_response().
@@ -273,29 +281,26 @@ make_response(_Request, _ObjectBuffer) ->
     %% `riak_cs_list_objects' module.
     ok.
 
--spec keys_to_query(list(),
-                    list(),
-                    non_neg_integer(),
-                    non_neg_integer(),
-                    float()) ->
+-spec next_mr_query_spec(list(),
+                         non_neg_integer(),
+                         non_neg_integer(),
+                         float()) ->
     {list(), {non_neg_integer(), non_neg_integer()}}.
-keys_to_query([], Keys, TotalNeeded, _NumHaveSoFar, KeyMultiplier) ->
+next_mr_query_spec([], TotalNeeded, _NumHaveSoFar, KeyMultiplier) ->
     StartIdx = 1,
     EndIdx = round_up(TotalNeeded * KeyMultiplier),
-    keys_request_tuple(StartIdx, EndIdx, Keys);
-keys_to_query(PrevRequests, Keys, TotalNeeded, NumHaveSoFar, KeyMultiplier) ->
+    {StartIdx, EndIdx};
+next_mr_query_spec(PrevRequests, TotalNeeded, NumHaveSoFar, KeyMultiplier) ->
     MoreNeeded = TotalNeeded - NumHaveSoFar,
     StartIdx = element(2, lists:last(PrevRequests)) + 1,
     EndIdx = (StartIdx + MoreNeeded) * KeyMultiplier,
-    keys_request_tuple(StartIdx, EndIdx, Keys).
+    {StartIdx, EndIdx}.
 
-keys_request_tuple(StartIdx, EndIdx, Keys) ->
-    {key_slice(StartIdx, EndIdx, Keys),
-     {StartIdx, EndIdx}}.
+next_keys_from_state(#state{mr_requests=Requests,
+                            keys=Keys}) ->
+    next_keys(lists:last(Requests), Keys).
 
--spec key_slice(non_neg_integer(), non_neg_integer(), list()) ->
-    list().
-key_slice(StartIdx, EndIdx, Keys) ->
+next_keys({StartIdx, EndIdx}, Keys) ->
     lists:sublist(Keys, StartIdx, EndIdx).
 
 
