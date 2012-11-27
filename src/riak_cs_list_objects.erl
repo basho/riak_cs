@@ -85,7 +85,7 @@ manifest_to_keycontent(?MANIFEST{bkey=BKey,
     {_Bucket, UnprocessedKey} = BKey,
     Key = list_to_binary(unicode:characters_to_list(UnprocessedKey, unicode)),
 
-    LastModified = riak_cs_wm_utils:to_iso_8601(Created),
+    LastModified = list_to_binary(riak_cs_wm_utils:to_iso_8601(Created)),
 
     %% Etag
     ETagString = "\"" ++ riak_cs_utils:binary_to_hexlist(ContentMd5) ++ "\"",
