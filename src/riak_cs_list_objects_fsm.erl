@@ -269,6 +269,8 @@ handle_could_query_more_map_reduce(false, State) ->
     list_object_response().
 make_response(_Request, _ObjectBuffer) ->
     %% TODO: fix me
+    %% TODO: maybe this should go in the
+    %% `riak_cs_list_objects' module.
     ok.
 
 -spec keys_to_query(list(),
@@ -280,14 +282,21 @@ make_response(_Request, _ObjectBuffer) ->
 keys_to_query([], Keys, TotalNeeded, _NumHaveSoFar, KeyMultiplier) ->
     StartIdx = 1,
     EndIdx = round_up(TotalNeeded * KeyMultiplier),
-    {lists:sublist(Keys, StartIdx, EndIdx),
-     {StartIdx, EndIdx}};
+    keys_request_tuple(StartIdx, EndIdx, Keys);
 keys_to_query(PrevRequests, Keys, TotalNeeded, NumHaveSoFar, KeyMultiplier) ->
     MoreNeeded = TotalNeeded - NumHaveSoFar,
     StartIdx = element(2, lists:last(PrevRequests)) + 1,
     EndIdx = (StartIdx + MoreNeeded) * KeyMultiplier,
-    {lists:sublist(Keys, StartIdx, EndIdx),
+    keys_request_tuple(StartIdx, EndIdx, Keys).
+
+keys_request_tuple(StartIdx, EndIdx, Keys) ->
+    {key_slice(StartIdx, EndIdx, Keys),
      {StartIdx, EndIdx}}.
+
+-spec key_slice(non_neg_integer(), non_neg_integer(), list()) ->
+    list().
+key_slice(StartIdx, EndIdx, Keys) ->
+    lists:sublist(Keys, StartIdx, EndIdx).
 
 
 -spec handle_mapred_results(list(), state()) ->
