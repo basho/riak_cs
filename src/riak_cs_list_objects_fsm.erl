@@ -36,7 +36,7 @@
 
                 %% list keys ----
                 list_keys_req_id :: undefined | non_neg_integer(),
-                key_buffer=[] :: list(),
+                key_buffer=[] :: undefined | list(),
                 keys=[] :: list(),
                 %% we cache the number of keys because
                 %% `length/1' is linear time
@@ -246,7 +246,7 @@ handle_enough_results(false, State=#state{num_keys=TotalNumKeys,
     MoreQuery = could_query_more_mapreduce(MapRRequests, TotalNumKeys),
     handle_could_query_more_map_reduce(MoreQuery, State).
 
--spec handle_could_query_more_map_reduce(boolean, state()) ->
+-spec handle_could_query_more_map_reduce(boolean(), state()) ->
     fsm_state_return().
 handle_could_query_more_map_reduce(true,
                                    State=#state{req=Request,
@@ -285,7 +285,7 @@ make_response(_Request, _ObjectBuffer) ->
                          non_neg_integer(),
                          non_neg_integer(),
                          float()) ->
-    {list(), {non_neg_integer(), non_neg_integer()}}.
+    {integer(), integer()}.
 next_mr_query_spec([], TotalNeeded, _NumHaveSoFar, KeyMultiplier) ->
     StartIdx = 1,
     EndIdx = round_up(TotalNeeded * KeyMultiplier),
@@ -392,6 +392,6 @@ have_enough_results(State=#state{reply_pid=ReplyPid,
     {stop, normal, NewStateData}.
 
 %% only works for positive numbers
--spec round_up(float()) -> float().
+-spec round_up(float()) -> integer().
 round_up(X) ->
     erlang:round(X + 0.5).
