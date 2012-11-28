@@ -32,7 +32,7 @@
 -record(state, {riakc_pid :: pid(),
                 req :: list_object_request(),
 
-                reply_pid :: undefined | pid(),
+                reply_ref :: undefined | {pid(), any()},
 
                 %% list keys ----
                 list_keys_req_id :: undefined | non_neg_integer(),
@@ -67,6 +67,7 @@
 -type state() :: #state{}.
 
 -type fsm_state_return() :: {next_state, atom(), state()} |
+                            {next_state, atom(), state(), non_neg_integer()} |
                             {stop, term(), state()}.
 
 -type streaming_req_response() :: {ok, ReqID :: non_neg_integer()} |
@@ -153,7 +154,7 @@ handle_sync_event(get_object_list, _From, done, State=#state{response=Resp}) ->
     Reply = {ok, Resp},
     {stop, normal, Reply, State};
 handle_sync_event(get_object_list, From, StateName, State) ->
-    NewStateData = State#state{reply_pid=From},
+    NewStateData = State#state{reply_ref=From},
     {next_state, StateName, NewStateData};
 handle_sync_event(_Event, _From, StateName, State) ->
     Reply = ok,
@@ -388,17 +389,17 @@ more_results_possible(_Request, _TotalKeys) ->
     false.
 
 -spec have_enough_results(state()) -> fsm_state_return().
-have_enough_results(State=#state{reply_pid=undefined,
+have_enough_results(State=#state{reply_ref=undefined,
                                  req=Request,
                                  object_buffer=ObjectBuffer}) ->
     Response = make_response(Request, ObjectBuffer),
     NewStateData = State#state{response=Response},
     {next_state, done, NewStateData, 60};
-have_enough_results(State=#state{reply_pid=ReplyPid,
+have_enough_results(State=#state{reply_ref=ReplyPid,
                                  req=Request,
                                  object_buffer=ObjectBuffer}) ->
     Response = make_response(Request, ObjectBuffer),
-    gen_fsm:reply(ReplyPid, {ok, Response}),
+    _ = gen_fsm:reply(ReplyPid, {ok, Response}),
     NewStateData = State#state{response=Response},
     {stop, normal, NewStateData}.
 
