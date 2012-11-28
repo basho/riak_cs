@@ -11,3 +11,4 @@ log/
 *~
 /log
 current_counterexample.eqc
+client_tests/clojure/clj-s3/.lein-plugins/
