@@ -15,7 +15,8 @@
 
 %% API
 -export([start_link/2,
-         get_object_list/1]).
+         get_object_list/1,
+         get_internal_state/1]).
 
 %% gen_fsm callbacks
 -export([init/1,
@@ -97,6 +98,9 @@ start_link(RiakcPid, ListKeysRequest) ->
 get_object_list(FSMPid) ->
     gen_fsm:sync_send_all_state_event(FSMPid, get_object_list, infinity).
 
+get_internal_state(FSMPid) ->
+    gen_fsm:sync_send_all_state_event(FSMPid, get_internal_state, infinity).
+
 %%%===================================================================
 %%% gen_fsm callbacks
 %%%===================================================================
@@ -156,7 +160,11 @@ handle_sync_event(get_object_list, _From, done, State=#state{response=Resp}) ->
 handle_sync_event(get_object_list, From, StateName, State) ->
     NewStateData = State#state{reply_ref=From},
     {next_state, StateName, NewStateData};
-handle_sync_event(_Event, _From, StateName, State) ->
+handle_sync_event(get_internal_state, _From, StateName, State) ->
+    Reply = {StateName, State},
+    {reply, Reply, StateName, State};
+handle_sync_event(Event, _From, StateName, State) ->
+    lager:info("got unknown event ~p in state ~p", [Event, StateName]),
     Reply = ok,
     {reply, Reply, StateName, State}.
 
@@ -165,8 +173,8 @@ handle_sync_event(_Event, _From, StateName, State) ->
 %% them along as if they were gen_server events.
 handle_info(Info, waiting_list_keys, State) ->
     waiting_list_keys(Info, State);
-handle_info(_Info, _StateName, State) ->
-    {stop, unknown, State}.
+handle_info(Info, waiting_map_reduce, State) ->
+    waiting_map_reduce(Info, State).
 
 terminate(_Reason, _StateName, _State) ->
     ok.
@@ -277,7 +285,8 @@ prepare_state_for_mapred(State=#state{req=Request,
 -spec make_response(list_object_request(), list()) ->
     list_object_response().
 make_response(Request, ObjectBuffer) ->
-    Contents = response_contents_from_object_buffer(ObjectBuffer),
+    Contents = response_contents_from_object_buffer(ObjectBuffer,
+                                                    Request?LOREQ.max_keys),
     %% TODO: hardcoded, fix me!
     IsTruncated = false,
     %% TODO: hardcoded, fix me!
@@ -285,10 +294,12 @@ make_response(Request, ObjectBuffer) ->
     riak_cs_list_objects:new_response(Request, IsTruncated, CommonPrefixes,
                                       Contents).
 
--spec response_contents_from_object_buffer(list()) ->
+-spec response_contents_from_object_buffer(list(), pos_integer()) ->
     list(list_objects_key_content()).
-response_contents_from_object_buffer(Buffer) ->
-    lists:map(fun response_transformer/1, lists:keysort(1, Buffer)).
+response_contents_from_object_buffer(Buffer, MaxNumObjects) ->
+    SortedBuffer = lists:keysort(1, Buffer),
+    LimitedBuffer = lists:sublist(SortedBuffer, MaxNumObjects),
+    lists:map(fun response_transformer/1, LimitedBuffer).
 
 response_transformer({_Key, {ok, Manifest}}) ->
     riak_cs_list_objects:manifest_to_keycontent(Manifest).
@@ -305,7 +316,7 @@ next_mr_query_spec([], TotalNeeded, _NumHaveSoFar, KeyMultiplier) ->
 next_mr_query_spec(PrevRequests, TotalNeeded, NumHaveSoFar, KeyMultiplier) ->
     MoreNeeded = TotalNeeded - NumHaveSoFar,
     StartIdx = element(2, lists:last(PrevRequests)) + 1,
-    EndIdx = (StartIdx + MoreNeeded) * KeyMultiplier,
+    EndIdx = round_up((StartIdx + MoreNeeded) * KeyMultiplier),
     {StartIdx, EndIdx}.
 
 next_keys_from_state(#state{mr_requests=Requests,
@@ -343,11 +354,12 @@ send_map_reduce_request(RiakcPid, BKeyTuples) ->
     %% TODO: change this:
     %% hardcode 60 seconds for now
     Timeout = timer:seconds(60),
-    riakc_pb_socket:mapred(RiakcPid,
-                           BKeyTuples,
-                           mapred_query(),
-                           Timeout,
-                           infinity).
+    riakc_pb_socket:mapred_stream(RiakcPid,
+                                  BKeyTuples,
+                                  mapred_query(),
+                                  self(),
+                                  Timeout,
+                                  infinity).
 
 -spec mapred_query() -> list().
 mapred_query() ->
@@ -370,7 +382,8 @@ enough_results(Results, ?LOREQ{max_keys=MaxKeysRequested}, TotalKeys) ->
     %% we have enough results if one of two things is true:
     %% 1. we have more results than requested
     %% 2. there are less keys than were requested even possible
-    (ResultsLength >= MaxKeysRequested) orelse (MaxKeysRequested =< TotalKeys).
+    ResultsLength >= erlang:min(MaxKeysRequested, TotalKeys).
+    %% (ResultsLength >= MaxKeysRequested) orelse (MaxKeysRequested =< TotalKeys).
 
 -spec could_query_more_mapreduce(list(), non_neg_integer()) -> boolean().
 could_query_more_mapreduce(_Requests, 0) ->
@@ -394,7 +407,7 @@ have_enough_results(State=#state{reply_ref=undefined,
                                  object_buffer=ObjectBuffer}) ->
     Response = make_response(Request, ObjectBuffer),
     NewStateData = State#state{response=Response},
-    {next_state, done, NewStateData, 60};
+    {next_state, done, NewStateData, timer:seconds(60)};
 have_enough_results(State=#state{reply_ref=ReplyPid,
                                  req=Request,
                                  object_buffer=ObjectBuffer}) ->
