@@ -29,7 +29,7 @@
 identify(RD,_Ctx) ->
     case wrq:get_req_header("authorization", RD) of
         undefined ->
-            {wrq:get_qs_value(?QS_KEYID, RD), wrq:get_qs_value(?QS_SIGNATURE)};
+            {wrq:get_qs_value(?QS_KEYID, RD), wrq:get_qs_value(?QS_SIGNATURE, RD)};
         AuthHeader ->
             parse_auth_header(AuthHeader)
     end.
