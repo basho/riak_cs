@@ -201,9 +201,12 @@ finish_request(RD, Ctx=#context{riakc_pid=undefined,
                         ExportsFun(finish_request)),
     dt_return(Mod, <<"finish_request">>, [0], []),
     Res;
-finish_request(RD, Ctx=#context{submodule=Mod,
-                                exports_fun=ExportsFun}) ->
+finish_request(RD, Ctx0=#context{submodule=Mod,
+                                 riakc_pid=RiakcPid,
+                                 exports_fun=ExportsFun}) ->
     dt_entry(Mod, <<"finish_request">>, [1], []),
+    riak_cs_utils:close_riak_connection(RiakcPid),
+    Ctx = Ctx0#context{riakc_pid=undefined},
     Res = resource_call(Mod,
                         finish_request,
                         [RD, Ctx],
