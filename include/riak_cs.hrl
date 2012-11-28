@@ -64,9 +64,11 @@
 -type acl_grantee() :: {string(), string()} | group_grant().
 -type acl_grant() :: {acl_grantee(), acl_perms()}.
 -type acl_owner() :: {string(), string()} | {string(), string(), string()}.
+%% acl_v1 owner fields: {DisplayName, CanonicalId}
 -record(acl_v1, {owner={"", ""} :: acl_owner(),
                  grants=[] :: [acl_grant()],
                  creation_time=now() :: erlang:timestamp()}).
+%% acl_v2 owner fields: {DisplayName, CanonicalId, KeyId}
 -record(acl_v2, {owner={"", "", ""} :: acl_owner(),
                  grants=[] :: [acl_grant()],
                  creation_time=now() :: erlang:timestamp()}).

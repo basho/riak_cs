@@ -198,11 +198,11 @@ acl_grants(?ACL{grants=Grants}) ->
 acl_grants(#acl_v1{grants=Grants}) ->
     Grants.
 
-%% @doc Get the canonical id of the owner of an entity.
+%% @doc Get the key id of the owner of an entity.
 -spec owner_id(acl(), pid()) -> string().
 owner_id(?ACL{owner=Owner}, _) ->
-    {_, _, OwnerId} = Owner,
-    OwnerId;
+    {_DisplayName, _CanonicalId, KeyId} = Owner,
+    KeyId;
 owner_id(#acl_v1{owner=OwnerData}, RiakPid) ->
     {Name, CanonicalId} = OwnerData,
     case riak_cs_utils:get_user_by_index(?ID_INDEX,
