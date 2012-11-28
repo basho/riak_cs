@@ -14,7 +14,7 @@
 
 -export([authorize/2]).
 
-%% TODO: PUT/DELETE
+%% TODO: DELETE?
 
 -include("riak_cs.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
