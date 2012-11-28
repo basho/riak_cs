@@ -23,12 +23,12 @@
 %% -------------------------------------------------------------------
 
 init(_Config) ->
-    dt_entry(<<"init">>),
+    riak_cs_wm_dtrace:dt_entry(?MODULE, <<"init">>),
     {ok, #ping_context{}}.
 
 -spec service_available(term(), term()) -> {boolean(), term(), term()}.
 service_available(RD, Ctx) ->
-    dt_entry(<<"service_available">>),
+    riak_cs_wm_dtrace:dt_entry(<<"service_available">>),
     case poolboy:checkout(request_pool, true, ping_timeout()) of
         full ->
             case riak_cs_riakc_pool_worker:start_link([]) of
@@ -57,39 +57,30 @@ service_available(RD, Ctx) ->
 
 -spec allowed_methods(term(), term()) -> {[atom()], term(), term()}.
 allowed_methods(RD, Ctx) ->
-    dt_entry(<<"allowed_methods">>),
+    riak_cs_wm_dtrace:dt_entry(?MODULE, <<"allowed_methods">>),
     {['GET', 'HEAD'], RD, Ctx}.
 
 to_html(ReqData, Ctx) ->
     {"OK", ReqData, Ctx}.
 
 finish_request(RD, Ctx=#ping_context{riakc_pid=undefined}) ->
-    dt_entry(<<"finish_request">>, [0], []),
+    riak_cs_wm_dtrace:dt_entry(?MODULE, <<"finish_request">>, [0], []),
     {true, RD, Ctx};
 finish_request(RD, Ctx=#ping_context{riakc_pid=RiakPid,
                                 pool_pid=PoolPid}) ->
-    dt_entry(<<"finish_request">>, [1], []),
+    riak_cs_wm_dtrace:dt_entry(?MODULE, <<"finish_request">>, [1], []),
     case PoolPid of
         true ->
             riak_cs_utils:close_riak_connection(RiakPid);
         false ->
             riak_cs_riakc_pool_worker:stop(RiakPid)
     end,
-    dt_return(<<"finish_request">>, [1], []),
+    riak_cs_wm_dtrace:dt_return(?MODULE, <<"finish_request">>, [1], []),
     {true, RD, Ctx#ping_context{riakc_pid=undefined}}.
 
 %% -------------------------------------------------------------------
 %% Internal functions
 %% -------------------------------------------------------------------
-
-dt_entry(Func) ->
-    dt_entry(Func, [], []).
-
-dt_entry(Func, Ints, Strings) ->
-    riak_cs_dtrace:dtrace(?DT_WM_OP, 1, Ints, ?MODULE, Func, Strings).
-
-dt_return(Func, Ints, Strings) ->
-    riak_cs_dtrace:dtrace(?DT_WM_OP, 2, Ints, ?MODULE, Func, Strings).
 
 %% @doc Return the configured ping timeout. Default is 5 seconds.  The
 %% timeout is used in call to `poolboy:checkout' and if that fails in

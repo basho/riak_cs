@@ -32,7 +32,6 @@ content_types_provided(RD, Ctx) ->
 -spec content_types_accepted(#wm_reqdata{}, #context{}) -> 
                                     {[{string(), atom()}], #wm_reqdata{}, #context{}}.
 content_types_accepted(RD, Ctx) ->
-    dt_entry(<<"content_types_accepted">>),
     case wrq:get_req_header("content-type", RD) of
         undefined ->
             {[{"application/octet-stream", accept_body}], RD, Ctx};
@@ -98,20 +97,20 @@ to_xml(RD, Ctx=#context{start_time=StartTime,
                         user=User,
                         bucket=Bucket,
                         riakc_pid=RiakPid}) ->
-    dt_entry(<<"to_xml">>, [], [extract_name(User), Bucket]),
-    dt_entry_bucket(<<"get_acl">>, [], [extract_name(User), Bucket]),
+    riak_cs_wm_dtrace:dt_bucket_entry(?MODULE, <<"bucket_get_acl">>, 
+                                      [], [riak_cs_wm_utils:extract_name(User), Bucket]),
     case riak_cs_acl:bucket_acl(Bucket, RiakPid) of
         {ok, Acl} ->
             X = {riak_cs_acl_utils:acl_to_xml(Acl), RD, Ctx},
             ok = riak_cs_stats:update_with_start(bucket_get_acl, StartTime),
-            dt_return(<<"to_xml">>, [200], [extract_name(User), Bucket]),
-            dt_return_bucket(<<"get_acl">>, [200], [extract_name(User), Bucket]),
+            riak_cs_wm_dtrace:dt_bucket_return(?MODULE, <<"bucket_get_acl">>, 
+                                               [200], [riak_cs_wm_utils:extract_name(User), Bucket]),
             X;
         {error, Reason} ->
             Code = riak_cs_s3_response:status_code(Reason),
             X = riak_cs_s3_response:api_error(Reason, RD, Ctx),
-            dt_return(<<"to_xml">>, [Code], [extract_name(User), Bucket]),
-            dt_return_bucket(<<"get_acl">>, [Code], [extract_name(User), Bucket]),
+            riak_cs_wm_dtrace:dt_bucket_return(?MODULE, <<"bucket_get_acl">>, 
+                                               [Code], [riak_cs_wm_utils:extract_name(User), Bucket]),
             X
     end.
 
@@ -120,8 +119,8 @@ accept_body(RD, Ctx=#context{user=User,
                              user_object=UserObj,
                              bucket=Bucket,
                              riakc_pid=RiakPid}) ->
-    dt_entry(<<"accept_body">>, [], [extract_name(User), Bucket]),
-    dt_entry_bucket(<<"put_acl">>, [], [extract_name(User), Bucket]),
+    riak_cs_wm_dtrace:dt_bucket_entry(?MODULE, <<"bucket_put_acl">>, 
+                                      [], [riak_cs_wm_utils:extract_name(User), Bucket]),
     Body = binary_to_list(wrq:req_body(RD)),
     case Body of
         [] ->
@@ -145,30 +144,13 @@ accept_body(RD, Ctx=#context{user=User,
                                         ACL,
                                         RiakPid) of
         ok ->
-            dt_return(<<"accept_body">>, [200], [extract_name(User), Bucket]),
-            dt_return_bucket(<<"put_acl">>, [200], [extract_name(User), Bucket]),
+            riak_cs_wm_dtrace:dt_bucket_return(?MODULE, <<"bucket_put_acl">>, 
+                                               [200], [riak_cs_wm_utils:extract_name(User), Bucket]),
             {{halt, 200}, RD, Ctx};
         {error, Reason} ->
             Code = riak_cs_s3_response:status_code(Reason),
-            dt_return(<<"accept_body">>, [Code], [extract_name(User), Bucket]),
-            dt_return_bucket(<<"put_acl">>, [Code], [extract_name(User), Bucket]),
+            riak_cs_wm_dtrace:dt_bucket_return(?MODULE, <<"bucket_put_acl">>, 
+                                               [Code], [riak_cs_wm_utils:extract_name(User), Bucket]),
             riak_cs_s3_response:api_error(Reason, RD, Ctx)
     end.
 
-extract_name(X) ->
-    riak_cs_wm_utils:extract_name(X).
-
-dt_entry(Func) ->
-    dt_entry(Func, [], []).
-
-dt_entry(Func, Ints, Strings) ->
-    riak_cs_dtrace:dtrace(?DT_WM_OP, 1, Ints, ?MODULE, Func, Strings).
-
-dt_entry_bucket(Func, Ints, Strings) ->
-    riak_cs_dtrace:dtrace(?DT_BUCKET_OP, 1, Ints, ?MODULE, Func, Strings).
-
-dt_return(Func, Ints, Strings) ->
-    riak_cs_dtrace:dtrace(?DT_WM_OP, 2, Ints, ?MODULE, Func, Strings).
-
-dt_return_bucket(Func, Ints, Strings) ->
-    riak_cs_dtrace:dtrace(?DT_BUCKET_OP, 2, Ints, ?MODULE, Func, Strings).

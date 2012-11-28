@@ -39,7 +39,7 @@
 
 init(Config) ->
     Mod = proplists:get_value(submodule, Config),
-    dt_entry(Mod, <<"init">>),
+    riak_cs_wm_dtrace:dt_entry({?MODULE, Mod}, <<"init">>),
     %% Check if authentication is disabled and set that in the context.
     AuthBypass = proplists:get_value(auth_bypass, Config),
     AuthModule = proplists:get_value(auth_module, Config),
@@ -55,11 +55,13 @@ init(Config) ->
 
 -spec service_available(term(), term()) -> {true, term(), term()}.
 service_available(RD, Ctx=#context{submodule=Mod}) ->
-    dt_entry(Mod, <<"service_available">>),
+    riak_cs_wm_dtrace:dt_entry({?MODULE, Mod}, <<"service_available">>),
     case riak_cs_utils:riak_connection() of
         {ok, Pid} ->
+            riak_cs_wm_dtrace:dt_return({?MODULE, Mod}, <<"service_available">>, [1], []),
             {true, RD, Ctx#context{riakc_pid=Pid}};
         {error, _Reason} ->
+            riak_cs_wm_dtrace:dt_return({?MODULE, Mod}, <<"service_available">>, [0], []),
             {false, RD, Ctx}
     end.
 
@@ -74,21 +76,27 @@ service_available(Pool, RD, Ctx) ->
 -spec malformed_request(term(), term()) -> {false, term(), term()}.
 malformed_request(RD, Ctx=#context{submodule=Mod,
                                    exports_fun=ExportsFun}) ->
-    dt_entry(Mod, <<"malformed_request">>),
-    resource_call(Mod,
-                  malformed_request,
-                  [RD, Ctx],
-                  ExportsFun(malformed_request)).
+    riak_cs_wm_dtrace:dt_entry({?MODULE, Mod}, <<"malformed_request">>),
+    {Malformed, _, _} = R = resource_call(Mod,
+                                          malformed_request,
+                                          [RD, Ctx],
+                                          ExportsFun(malformed_request)),
+    riak_cs_wm_dtrace:dt_return_bool({?MODULE, Mod}, <<"malformed_request">>, Malformed),
+    R.
+                        
 
 -spec valid_entity_length(term(), term()) -> {boolean(), term(), term()}.
 valid_entity_length(RD, Ctx=#context{submodule=Mod, exports_fun=ExportsFun}) ->
-    resource_call(Mod,
-                  valid_entity_length,
-                  [RD, Ctx],
-                  ExportsFun(valid_entity_length)).
+    riak_cs_wm_dtrace:dt_entry({?MODULE, Mod}, <<"valid_entity_length">>),
+    {Valid, _, _} = R = resource_call(Mod,
+                                      valid_entity_length,
+                                      [RD, Ctx],
+                                      ExportsFun(valid_entity_length)),
+    riak_cs_wm_dtrace:dt_return_bool({?MODULE, Mod}, <<"valid_entity_length">>, Valid),
+    R.
 
 forbidden(RD, Ctx=#context{auth_module=AuthMod, submodule=Mod, riakc_pid=RiakPid}) ->
-    dt_entry(Mod, <<"forbidden">>),
+    riak_cs_wm_dtrace:dt_entry({?MODULE, Mod}, <<"forbidden">>),
     {UserKey, AuthData} = AuthMod:identify(RD, Ctx),
     AuthResult = case riak_cs_utils:get_user(UserKey, RiakPid) of
                      {ok, {User, UserObj}} when User?RCS_USER.status =:= enabled ->
@@ -107,7 +115,7 @@ forbidden(RD, Ctx=#context{auth_module=AuthMod, submodule=Mod, riakc_pid=RiakPid
     AnonOk = true, %% TODO: need to call submodule to determine if anonymous request is ok
     case post_authentication(AuthResult, RD, Ctx, fun authorize/2, AnonOk) of
         {false, _RD2, Ctx2} = FalseRet ->
-            dt_return(Mod, <<"forbidden">>, [], [riak_cs_wm_utils:extract_name(Ctx2#context.user), <<"false">>]),
+            riak_cs_wm_dtrace:dt_return({?MODULE, Mod}, <<"forbidden">>, [], [riak_cs_wm_utils:extract_name(Ctx2#context.user), <<"false">>]),
             FalseRet;
         {Rsn, _RD2, Ctx2} = Ret ->
             Reason =
@@ -115,7 +123,7 @@ forbidden(RD, Ctx=#context{auth_module=AuthMod, submodule=Mod, riakc_pid=RiakPid
                     {halt, Code} -> Code;
                     _            -> -1
                 end,
-            dt_return(Mod, <<"forbidden">>, [Reason], [riak_cs_wm_utils:extract_name(Ctx2#context.user), <<"true">>]),
+            riak_cs_wm_dtrace:dt_return({?MODULE, Mod}, <<"forbidden">>, [Reason], [riak_cs_wm_utils:extract_name(Ctx2#context.user), <<"true">>]),
             Ret
     end.
 
@@ -123,7 +131,7 @@ forbidden(RD, Ctx=#context{auth_module=AuthMod, submodule=Mod, riakc_pid=RiakPid
 -spec allowed_methods(term(), term()) -> {[atom()], term(), term()}.
 allowed_methods(RD, Ctx=#context{submodule=Mod,
                                  exports_fun=ExportsFun}) ->
-    dt_entry(Mod, <<"allowed_methods">>),
+    riak_cs_wm_dtrace:dt_entry({?MODULE, Mod}, <<"allowed_methods">>),
     Methods = resource_call(Mod,
                             allowed_methods,
                             [],
@@ -134,7 +142,7 @@ allowed_methods(RD, Ctx=#context{submodule=Mod,
     {[{string(), atom()}], term(), term()}.
 content_types_accepted(RD, Ctx=#context{submodule=Mod,
                                         exports_fun=ExportsFun}) ->
-    dt_entry(Mod, <<"content_types_accepted">>),
+    riak_cs_wm_dtrace:dt_entry({?MODULE, Mod}, <<"content_types_accepted">>),
     resource_call(Mod,
                   content_types_accepted,
                   [RD,Ctx],
@@ -144,7 +152,7 @@ content_types_accepted(RD, Ctx=#context{submodule=Mod,
     {[{string(), atom()}], term(), term()}.
 content_types_provided(RD, Ctx=#context{submodule=Mod,
                                         exports_fun=ExportsFun}) ->
-    dt_entry(Mod, <<"content_types_provided">>),
+    riak_cs_wm_dtrace:dt_entry({?MODULE, Mod}, <<"content_types_provided">>),
     resource_call(Mod,
                   content_types_provided,
                   [RD,Ctx],
@@ -152,6 +160,8 @@ content_types_provided(RD, Ctx=#context{submodule=Mod,
 
 -spec delete_resource(term(), term()) -> {boolean() | {halt, term()}, term(), #context{}}.
 delete_resource(RD, Ctx=#context{submodule=Mod,exports_fun=ExportsFun}) ->
+    riak_cs_wm_dtrace:dt_entry({?MODULE, Mod}, <<"delete_resource">>),
+    %% TODO: add dt_return from subresource?
     resource_call(Mod,
                   delete_resource,
                   [RD,Ctx],
@@ -163,55 +173,57 @@ delete_resource(RD, Ctx=#context{submodule=Mod,exports_fun=ExportsFun}) ->
 to_xml(RD, Ctx=#context{user=User,
                         submodule=Mod,
                         exports_fun=ExportsFun}) ->
-    dt_entry(Mod, <<"to_xml">>),
-    dt_entry_service(Mod, <<"service_get_buckets">>),
+    riak_cs_wm_dtrace:dt_entry({?MODULE, Mod}, <<"to_xml">>),
     Res = resource_call(Mod,
                         to_xml,
                         [RD, Ctx],
                         ExportsFun(to_xml)),
-    dt_return(Mod, <<"to_xml">>, [], [riak_cs_wm_utils:extract_name(User), <<"service_get_buckets">>]),
-    dt_return_service(Mod, <<"service_get_buckets">>, [], [riak_cs_wm_utils:extract_name(User)]),
+    riak_cs_wm_dtrace:dt_return({?MODULE, Mod}, <<"to_xml">>, [], [riak_cs_wm_utils:extract_name(User)]),
     Res.
 
 -spec accept_body(term(), term()) ->
     {boolean() | {'halt', term()}, term(), #context{}}.
-accept_body(RD, Ctx=#context{submodule=Mod,exports_fun=ExportsFun}) -> %% TODO: add in dtrace
-    resource_call(Mod,
-                  accept_body,
-                  [RD, Ctx],
-                  ExportsFun(accept_body)).
+accept_body(RD, Ctx=#context{submodule=Mod,exports_fun=ExportsFun,user=User}) ->
+    riak_cs_wm_dtrace:dt_entry({?MODULE, Mod}, <<"accept_body">>),
+    Res = resource_call(Mod,
+                        accept_body,
+                        [RD, Ctx],
+                        ExportsFun(accept_body)),
+    %% TODO: extract response code and add to ints field
+    riak_cs_wm_dtrace:dt_return({?MODULE, Mod}, <<"accept_body">>, [], [riak_cs_wm_utils:extract_name(User)]),
+    Res.
 
 -spec produce_body(term(), term()) ->
                           {iolist()|binary(), term(), term()}.
 produce_body(RD, Ctx=#context{submodule=Mod,exports_fun=ExportsFun}) ->
+    %% TODO: add dt_return w/ content length
+    riak_cs_wm_dtrace:dt_entry({?MODULE, Mod}, <<"produce_body">>),
     resource_call(Mod, 
                   produce_body,
                   [RD, Ctx],
                   ExportsFun(produce_body)).
 
-
-
 finish_request(RD, Ctx=#context{riakc_pid=undefined,
                                 submodule=Mod,
                                 exports_fun=ExportsFun}) ->
-    dt_entry(Mod, <<"finish_request">>, [0], []),
+    riak_cs_wm_dtrace:dt_entry({?MODULE, Mod}, <<"finish_request">>, [0], []),
     Res = resource_call(Mod,
                         finish_request,
                         [RD, Ctx],
                         ExportsFun(finish_request)),
-    dt_return(Mod, <<"finish_request">>, [0], []),
+    riak_cs_wm_dtrace:dt_return({?MODULE, Mod}, <<"finish_request">>, [0], []),
     Res;
-finish_request(RD, Ctx0=#context{submodule=Mod,
-                                 riakc_pid=RiakcPid,
-                                 exports_fun=ExportsFun}) ->
-    dt_entry(Mod, <<"finish_request">>, [1], []),
+finish_request(RD, Ctx0=#context{riakc_pid=RiakcPid,
+                                submodule=Mod,
+                                exports_fun=ExportsFun}) ->
+    riak_cs_wm_dtrace:dt_entry({?MODULE, Mod}, <<"finish_request">>, [1], []),
     riak_cs_utils:close_riak_connection(RiakcPid),
     Ctx = Ctx0#context{riakc_pid=undefined},
     Res = resource_call(Mod,
                         finish_request,
                         [RD, Ctx],
                         ExportsFun(finish_request)),
-    dt_return(Mod, <<"finish_request">>, [1], []),
+    riak_cs_wm_dtrace:dt_return({?MODULE, Mod}, <<"finish_request">>, [1], []),
     Res.
 
 %% ===================================================================
@@ -220,15 +232,21 @@ finish_request(RD, Ctx0=#context{submodule=Mod,
 
 -spec authorize(term(), term()) -> {boolean(),term(),term()}.
 authorize(RD,Ctx=#context{submodule=Mod, exports_fun=ExportsFun}) ->
-    resource_call(Mod, authorize, [RD,Ctx], ExportsFun(authorize)).
+    riak_cs_wm_dtrace:dt_entry({?MODULE, Mod}, <<"authorize">>),
+    {Success, _, _} = R = resource_call(Mod, authorize, [RD,Ctx], ExportsFun(authorize)),
+    riak_cs_wm_dtrace:dt_return_bool({?MODULE, Mod}, <<"authorize">>, Success),
+    R.
 
 -spec authenticate(rcs_user(), riakc_obj:riakc_obj(), term(), term(), term()) ->
                           {ok, rcs_user(), riakc_obj:riakc_obj()} | {error, term()}.
-authenticate(User, UserObj, RD, Ctx=#context{auth_module=AuthMod}, AuthData) ->
+authenticate(User, UserObj, RD, Ctx=#context{auth_module=AuthMod, submodule=Mod}, AuthData) ->
+    riak_cs_wm_dtrace:dt_entry({?MODULE, Mod}, <<"authenticate">>, [], [atom_to_binary(AuthMod, latin1)]),
     case AuthMod:authenticate(User, AuthData, RD, Ctx) of
         ok ->
+            riak_cs_wm_dtrace:dt_return({?MODULE, Mod}, <<"authenticate">>, [1], [atom_to_binary(AuthMod, latin1)]),
             {ok, User, UserObj};
         {error, _Reason} ->
+            riak_cs_wm_dtrace:dt_return({?MODULE, Mod}, <<"authenticate">>, [0], [atom_to_binary(AuthMod, latin1)]),
             {error, bad_auth}
     end.
 
@@ -337,24 +355,4 @@ default_authorize(RD, Ctx) ->
     {false, RD, Ctx}.
 
 
-%% ===================================================================
-%% DTrace functions
-%% ===================================================================
 
-dt_entry(Mod, Func) ->
-    dt_entry(Mod, Func, [], []).
-
-dt_entry(Mod, Func, Ints, Strings) ->
-    riak_cs_dtrace:dtrace(?DT_WM_OP, 1, Ints, Mod, Func, Strings).
-
-dt_entry_service(Mod, Func) ->
-    dt_entry_service(Mod, Func, [], []).
-
-dt_entry_service(Mod, Func, Ints, Strings) ->
-    riak_cs_dtrace:dtrace(?DT_SERVICE_OP, 1, Ints, Mod, Func, Strings).
-
-dt_return(Mod, Func, Ints, Strings) ->
-    riak_cs_dtrace:dtrace(?DT_WM_OP, 2, Ints, Mod, Func, Strings).
-
-dt_return_service(Mod, Func, Ints, Strings) ->
-    riak_cs_dtrace:dtrace(?DT_SERVICE_OP, 2, Ints, Mod, Func, Strings).

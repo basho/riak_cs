@@ -27,6 +27,8 @@ content_types_provided(RD,Ctx) ->
 -spec to_xml(term(), term()) -> {{'halt', term()}, term(), #context{}}.
 to_xml(RD, Ctx=#context{start_time=StartTime,
                         user=User}) ->
+    riak_cs_wm_dtrace:dt_service_entry(?MODULE, <<"service_get_buckets">>, [], [riak_cs_wm_utils:extract_name(User)]),
     Res = riak_cs_s3_response:list_all_my_buckets_response(User, RD, Ctx),
     ok = riak_cs_stats:update_with_start(service_get_buckets, StartTime),
+    riak_cs_wm_dtrace:dt_service_return(?MODULE, <<"service_get_buckets">>, [], [riak_cs_wm_utils:extract_name(User)]),
     Res.
