@@ -16,7 +16,8 @@
 %% API
 -export([start_link/2,
          get_object_list/1,
-         get_internal_state/1]).
+         get_internal_state/1,
+         index_of_element/2]).
 
 %% gen_fsm callbacks
 -export([init/1,
@@ -38,10 +39,21 @@
                 %% list keys ----
                 list_keys_req_id :: undefined | non_neg_integer(),
                 key_buffer=[] :: undefined | list(),
-                keys=[] :: list(),
+                keys=[] :: undefined | list(),
                 %% we cache the number of keys because
                 %% `length/1' is linear time
                 num_keys :: undefined | non_neg_integer(),
+
+                filtered_keys :: undefined | list(),
+
+                %% The number of keys that could be used
+                %% for a map-reduce request. This accounts
+                %% the `marker' that may be in the request.
+                %% This number should always be =< `num_keys'.
+                %% This field is used to help determine whether
+                %% we have enough results yet from map-reduce
+                %% to fullfill our query.
+                num_considerable_keys :: undefined | non_neg_integer(),
 
                 %% We issue a map reduce request for _more_
                 %% keys than the user asks for because some
@@ -217,15 +229,21 @@ handle_keys_done(State=#state{key_buffer=ListofListofKeys}) ->
     maybe_map_reduce(NewState).
 
 -spec prepare_state_for_first_mapred(list(), state()) -> state().
-prepare_state_for_first_mapred(KeyBuffer, State) ->
+prepare_state_for_first_mapred(KeyBuffer, State=#state{req=Request}) ->
     %% TODO: this could potentially be pretty expensive
     %% and memory instensive. More reason to think about starting
     %% to only keep a smaller buffer. See comment in
     %% `handle_keys_received'
     SortedFlattenedKeys = lists:sort(lists:flatten(KeyBuffer)),
     NumKeys = length(SortedFlattenedKeys),
-    State#state{keys=SortedFlattenedKeys,
+    FilteredKeys = filtered_keys_from_request(Request,
+                                              SortedFlattenedKeys,
+                                              NumKeys),
+    TotalCandidateKeys = length(FilteredKeys),
+    State#state{keys=undefined,
                 num_keys=NumKeys,
+                num_considerable_keys=TotalCandidateKeys,
+                filtered_keys=FilteredKeys,
                 %% free up the space
                 key_buffer=undefined}.
 
@@ -244,15 +262,15 @@ handle_keys_received(Keys, State=#state{key_buffer=PrevKeyBuffer}) ->
 -spec maybe_map_reduce(state()) -> fsm_state_return().
 maybe_map_reduce(State=#state{object_buffer=ObjectBuffer,
                               req=Request,
-                              num_keys=TotalNumKeys}) ->
-    Enough = enough_results(ObjectBuffer, Request, TotalNumKeys),
+                              num_considerable_keys=TotalCandidateKeys}) ->
+    Enough = enough_results(ObjectBuffer, Request, TotalCandidateKeys),
     handle_enough_results(Enough, State).
 
 handle_enough_results(true, State) ->
     have_enough_results(State);
-handle_enough_results(false, State=#state{num_keys=TotalNumKeys,
+handle_enough_results(false, State=#state{num_considerable_keys=TotalCandidateKeys,
                                           mr_requests=MapRRequests}) ->
-    MoreQuery = could_query_more_mapreduce(MapRRequests, TotalNumKeys),
+    MoreQuery = could_query_more_mapreduce(MapRRequests, TotalCandidateKeys),
     handle_could_query_more_map_reduce(MoreQuery, State).
 
 -spec handle_could_query_more_map_reduce(boolean(), state()) ->
@@ -320,8 +338,8 @@ next_mr_query_spec(PrevRequests, TotalNeeded, NumHaveSoFar, KeyMultiplier) ->
     {StartIdx, EndIdx}.
 
 next_keys_from_state(#state{mr_requests=Requests,
-                            keys=Keys}) ->
-    next_keys(lists:last(Requests), Keys).
+                            filtered_keys=FilteredKeys}) ->
+    next_keys(lists:last(Requests), FilteredKeys).
 
 next_keys({StartIdx, EndIdx}, Keys) ->
     lists:sublist(Keys, StartIdx, EndIdx).
@@ -377,13 +395,14 @@ handle_map_reduce_call({error, Reason}, State) ->
 
 -spec enough_results(list(), list_object_request(), non_neg_integer()) ->
     boolean().
-enough_results(Results, ?LOREQ{max_keys=MaxKeysRequested}, TotalKeys) ->
+enough_results(Results, ?LOREQ{max_keys=MaxKeysRequested}, TotalCandidateKeys) ->
     ResultsLength = length(Results),
     %% we have enough results if one of two things is true:
     %% 1. we have more results than requested
     %% 2. there are less keys than were requested even possible
-    ResultsLength >= erlang:min(MaxKeysRequested, TotalKeys).
-    %% (ResultsLength >= MaxKeysRequested) orelse (MaxKeysRequested =< TotalKeys).
+    %% (where 'possible' includes filtering for things like
+    %% `marker' and `prefix'
+    ResultsLength >= erlang:min(MaxKeysRequested, TotalCandidateKeys).
 
 -spec could_query_more_mapreduce(list(), non_neg_integer()) -> boolean().
 could_query_more_mapreduce(_Requests, 0) ->
@@ -416,7 +435,38 @@ have_enough_results(State=#state{reply_ref=ReplyPid,
     NewStateData = State#state{response=Response},
     {stop, normal, NewStateData}.
 
+-spec filtered_keys_from_request(list_object_request(),
+                                 list(binary()),
+                                 non_neg_integer()) ->
+    list(binary()).
+filtered_keys_from_request(?LOREQ{marker=undefined}, KeyList, _KeyListLength) ->
+    KeyList;
+filtered_keys_from_request(?LOREQ{marker=Marker}, KeyList, KeyListLength) ->
+    MarkerIndex = index_of_element(KeyList, Marker),
+    lists:sublist(KeyList, MarkerIndex, KeyListLength).
+
 %% only works for positive numbers
 -spec round_up(float()) -> integer().
 round_up(X) ->
     erlang:round(X + 0.5).
+
+%% Return the index (1-based) where
+%% `Element' would fit in `List'. `List'
+%% is assumed to be sorted. If `Element' exists
+%% in the list, this will return the index of the
+%% first occurrence. If `List' is empty, `1'
+%% is returned.
+-spec index_of_element(list(), term()) -> pos_integer().
+index_of_element(List, Element) ->
+    index_of_element_helper(List, Element, 1).
+
+index_of_element_helper([], _Element, 1) ->
+    1;
+index_of_element_helper([Fst], Element, Index) when Element =< Fst ->
+    Index;
+index_of_element_helper([_Fst], _Element, Index) ->
+    Index + 1;
+index_of_element_helper([Head | _Rest], Element, Index) when Element =< Head ->
+    Index;
+index_of_element_helper([_Head | Rest], Element, Index) ->
+    index_of_element_helper(Rest, Element, Index + 1).
