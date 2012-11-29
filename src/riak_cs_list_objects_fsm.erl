@@ -6,6 +6,10 @@
 
 %% @doc
 
+%% TODO:
+%% 1. optimize for when list keys returns [], we shouldn't
+%% even have to do map-reduce then
+
 -module(riak_cs_list_objects_fsm).
 
 -behaviour(gen_fsm).
