@@ -24,7 +24,7 @@
 -spec rewrite(atom(), atom(), {integer(), integer()}, gb_tree(), string()) -> 
                      {gb_tree(), string()}.
 rewrite(Method, _Scheme, _Vsn, Headers, RawPath) ->
-    riak_cs_dtrace:dtrace(?DT_WM_OP, 1, [], ?MODULE, <<"rewrite">>, []),
+    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"rewrite">>),
     Host = mochiweb_headers:get_value("host", Headers),
     HostBucket = bucket_from_host(Host),
     {Path, QueryString, _} = mochiweb_util:urlsplit_path(RawPath),    
@@ -79,10 +79,10 @@ rcs_rewrite_header(RawPath, Bucket) ->
 %% host name in the Host header value.
 -spec bucket_from_host(undefined | string()) -> undefined | string().
 bucket_from_host(undefined) ->
-    riak_cs_dtrace:dtrace(?DT_WM_OP, 1, [], ?MODULE, <<"bucket_from_host">>, []),
+    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"bucket_from_host">>),
     undefined;
 bucket_from_host(HostHeader) ->
-    riak_cs_dtrace:dtrace(?DT_WM_OP, 1, [], ?MODULE, <<"bucket_from_host">>, []),
+    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"bucket_from_host">>),
     HostNoPort = hd(string:tokens(HostHeader, ":")),
     {ok, RootHost} = application:get_env(riak_cs, cs_root_host),
     extract_bucket_from_host(string:tokens(HostNoPort, "."),

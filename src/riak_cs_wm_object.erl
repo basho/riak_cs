@@ -15,9 +15,7 @@
          content_types_accepted/2,
          accept_body/2,
          delete_resource/2,
-         valid_entity_length/2,
-         finish_request/2]).
--export([dt_return_object/3]).
+         valid_entity_length/2]).
 
 -include("riak_cs.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
@@ -130,7 +128,6 @@ valid_entity_length(RD, Ctx=#context{local_context=LocalCtx}) ->
 content_types_provided(RD, Ctx=#context{local_context=LocalCtx,
                                         riakc_pid=RiakcPid}) ->
     Mfst = LocalCtx#key_context.manifest,
-    dt_entry(<<"content_types_provided">>),
     %% TODO:
     %% As I understand S3, the content types provided
     %% will either come from the value that was
@@ -158,9 +155,13 @@ produce_body(RD, Ctx=#context{local_context=LocalCtx,
     #key_context{get_fsm_pid=GetFsmPid, manifest=Mfst} = LocalCtx,
     {Bucket, File} = Mfst?MANIFEST.bkey,
     BFile_str = [Bucket, $,, File],
-    UserName = extract_name(User),
-    dt_entry(<<"produce_body">>, [], [UserName, BFile_str]),
-    dt_entry_object(<<"file_get">>, [], [UserName, BFile_str]),
+    UserName = riak_cs_wm_utils:extract_name(User),
+    Method = wrq:method(RD),
+    Func = case Method of 
+               'HEAD' -> <<"object_head">>;
+               _ -> <<"object_get">>
+           end,
+    riak_cs_dtrace:dt_object_entry(?MODULE, Func, [], [UserName, BFile_str]),
     ContentLength = Mfst?MANIFEST.content_length,
     ContentMd5 = Mfst?MANIFEST.content_md5,
     LastModified = riak_cs_wm_utils:to_rfc_1123(Mfst?MANIFEST.created),
@@ -170,7 +171,6 @@ produce_body(RD, Ctx=#context{local_context=LocalCtx,
                         [{"ETag",  ETag},
                          {"Last-Modified", LastModified}
                         ] ++  Mfst?MANIFEST.metadata),
-    Method = wrq:method(RD),
     case Method == 'HEAD'
         orelse
     ContentLength == 0 of
@@ -184,12 +184,12 @@ produce_body(RD, Ctx=#context{local_context=LocalCtx,
                         end
     end,
     if Method == 'HEAD' ->
-            dt_return_object(<<"file_head">>, [], [UserName, BFile_str]),
+            riak_cs_dtrace:dt_object_return(?MODULE, <<"object_head">>, 
+                                               [], [UserName, BFile_str]),
             ok = riak_cs_stats:update_with_start(object_head, StartTime);
        true ->
             ok
     end,
-    dt_return(<<"produce_body">>, [ContentLength], [UserName, BFile_str]),
     {{known_length_stream, ContentLength, {<<>>, StreamFun}}, NewRQ, Ctx}.
 
 %% @doc Callback for deleting an object.
@@ -200,9 +200,9 @@ delete_resource(RD, Ctx=#context{local_context=LocalCtx,
                  key=Key,
                  get_fsm_pid=GetFsmPid} = LocalCtx,
     BFile_str = [Bucket, $,, Key],
-    UserName = extract_name(Ctx#context.user),
-    dt_entry(<<"delete_resource">>, [], [UserName, BFile_str]),
-    dt_entry_object(<<"file_delete">>, [], [UserName, BFile_str]),
+    UserName = riak_cs_wm_utils:extract_name(Ctx#context.user),  
+    riak_cs_dtrace:dt_object_entry(?MODULE, <<"object_delete">>, 
+                                      [], [UserName, BFile_str]),
     riak_cs_get_fsm:stop(GetFsmPid),
     BinKey = list_to_binary(Key),
     DeleteObjectResponse = riak_cs_utils:delete_object(Bucket, BinKey, RiakcPid),
@@ -211,18 +211,15 @@ delete_resource(RD, Ctx=#context{local_context=LocalCtx,
 %% @private
 handle_delete_object({error, Error}, UserName, BFile_str, RD, Ctx) ->
     lager:error("delete object failed with reason: ", [Error]),
-    dt_return(<<"delete_resource">>, [0], [UserName, BFile_str]),
-    dt_return_object(<<"file_delete">>, [0], [UserName, BFile_str]),
+    riak_cs_dtrace:dt_object_return(?MODULE, <<"object_delete">>, [0], [UserName, BFile_str]),
     {false, RD, Ctx};
 handle_delete_object({ok, _UUIDsMarkedforDelete}, UserName, BFile_str, RD, Ctx) ->
-    dt_return(<<"delete_resource">>, [1], [UserName, BFile_str]),
-    dt_return_object(<<"file_delete">>, [1], [UserName, BFile_str]),
+    riak_cs_dtrace:dt_object_return(<<"object_delete">>, [1], [UserName, BFile_str]),
     {true, RD, Ctx}.
 
 -spec content_types_accepted(term(), term()) ->
     {[{string(), atom()}], term(), term()}.
 content_types_accepted(RD, Ctx=#context{local_context=LocalCtx0}) ->
-    dt_entry(<<"content_types_accepted">>),
     case wrq:get_req_header("Content-Type", RD) of
         undefined ->
             DefaultCType = "application/octet-stream",
@@ -266,9 +263,9 @@ accept_body(RD, Ctx=#context{local_context=LocalCtx,
                  get_fsm_pid=GetFsmPid,
                  owner=Owner} = LocalCtx,
     BFile_str = [Bucket, $,, Key],
-    UserName = extract_name(User),
-    dt_entry(<<"accept_body">>, [], [UserName, BFile_str]),
-    dt_entry_object(<<"file_put">>, [], [UserName, BFile_str]),
+    UserName = riak_cs_wm_utils:extract_name(User),
+    riak_cs_dtrace:dt_object_entry(?MODULE, <<"object_put">>, 
+                                      [], [UserName, BFile_str]),
     riak_cs_get_fsm:stop(GetFsmPid),
     Metadata = riak_cs_wm_utils:extract_user_metadata(RD),
     BlockSize = riak_cs_lfs_utils:block_size(),
@@ -299,8 +296,8 @@ accept_streambody(RD,
     #key_context{bucket=Bucket,
                  key=Key} = LocalCtx,
     BFile_str = [Bucket, $,, Key],
-    UserName = extract_name(User),
-    dt_entry(<<"accept_streambody">>, [size(Data)], [UserName, BFile_str]),
+    UserName = riak_cs_wm_utils:extract_name(User),
+    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"accept_streambody">>, [size(Data)], [UserName, BFile_str]),
     riak_cs_put_fsm:augment_data(Pid, Data),
     if is_function(Next) ->
             accept_streambody(RD, Ctx, Pid, Next());
@@ -321,9 +318,8 @@ finalize_request(RD,
                  key=Key,
                  size=S} = LocalCtx,
     BFile_str = [Bucket, $,, Key],
-    UserName = extract_name(User),
-    dt_entry(<<"finalize_request">>, [S], [UserName, BFile_str]),
-    dt_entry_object(<<"file_put">>, [S], [UserName, BFile_str]),
+    UserName = riak_cs_wm_utils:extract_name(User),
+    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"finalize_request">>, [S], [UserName, BFile_str]),
     %% TODO: probably want something that counts actual bytes uploaded
     %% instead, to record partial/aborted uploads
     AccessRD = riak_cs_access_logger:set_bytes_in(S, RD),
@@ -331,42 +327,6 @@ finalize_request(RD,
     {ok, Manifest} = riak_cs_put_fsm:finalize(Pid),
     ETag = "\"" ++ riak_cs_utils:binary_to_hexlist(Manifest?MANIFEST.content_md5) ++ "\"",
     ok = riak_cs_stats:update_with_start(object_put, StartTime),
-    dt_return(<<"finalize_request">>, [S], [UserName, BFile_str]),
+    riak_cs_dtrace:dt_wm_return(?MODULE, <<"finalize_request">>, [S], [UserName, BFile_str]),
+    riak_cs_dtrace:dt_object_return(?MODULE, <<"object_put">>, [S], [UserName, BFile_str]),
     {{halt, 200}, wrq:set_resp_header("ETag",  ETag, AccessRD), Ctx}.
-
-finish_request(RD, Ctx=#context{local_context=LocalCtx,
-                                riakc_pid=RiakcPid,
-                                user=User}) ->
-    #key_context{bucket=Bucket,
-                 key=Key} = LocalCtx,
-    BFile_str = [Bucket, $,, Key],
-    UserName = extract_name(User),
-    dt_entry(<<"finish_request">>, [], [UserName, BFile_str]),
-    case RiakcPid of
-        undefined ->
-            dt_return(<<"finish_request">>, [0], [UserName, BFile_str]),
-            {true, RD, LocalCtx};
-        _ ->
-            riak_cs_utils:close_riak_connection(RiakcPid),
-            UpdCtx = Ctx#context{riakc_pid=undefined},
-            dt_return(<<"finish_request">>, [1], [UserName, BFile_str]),
-            {true, RD, UpdCtx}
-    end.
-
-extract_name(X) ->
-    riak_cs_wm_utils:extract_name(X).
-
-dt_entry(Func) ->
-    dt_entry(Func, [], []).
-
-dt_entry(Func, Ints, Strings) ->
-    riak_cs_dtrace:dtrace(?DT_WM_OP, 1, Ints, ?MODULE, Func, Strings).
-
-dt_entry_object(Func, Ints, Strings) ->
-    riak_cs_dtrace:dtrace(?DT_OBJECT_OP, 1, Ints, ?MODULE, Func, Strings).
-
-dt_return(Func, Ints, Strings) ->
-    riak_cs_dtrace:dtrace(?DT_WM_OP, 2, Ints, ?MODULE, Func, Strings).
-
-dt_return_object(Func, Ints, Strings) ->
-    riak_cs_dtrace:dtrace(?DT_OBJECT_OP, 2, Ints, ?MODULE, Func, Strings).

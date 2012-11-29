@@ -29,7 +29,6 @@ content_types_provided(RD, Ctx) ->
 -spec content_types_accepted(#wm_reqdata{}, #context{}) -> 
                                     {[{string(), atom()}], #wm_reqdata{}, #context{}}.
 content_types_accepted(RD, Ctx) ->
-    dt_entry(<<"content_types_accepted">>),
     case wrq:get_req_header("content-type", RD) of
         undefined ->
             {[{"application/octet-stream", accept_body}], RD, Ctx};
@@ -108,15 +107,21 @@ to_xml(RD, Ctx) ->
 
 %% @private
 handle_read_request(RD, Ctx=#context{user=User,
-                                             bucket=Bucket}) ->
-    %% override the content-type on HEAD
-    HeadRD = wrq:set_resp_header("content-type", "text/html", RD),
+                                     bucket=Bucket}) ->
+    riak_cs_dtrace:dt_bucket_entry(?MODULE, <<"bucket_head">>, 
+                                      [], [riak_cs_wm_utils:extract_name(User), Bucket]),
+    %% override the content-type on HEAD    
+    HeadRD = wrq:set_resp_header("content-type", "text/html", RD),    
     StrBucket = binary_to_list(Bucket),
     case [B || B <- riak_cs_utils:get_buckets(User),
                B?RCS_BUCKET.name =:= StrBucket] of
         [] ->
+            riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_head">>, 
+                                               [404], [riak_cs_wm_utils:extract_name(User), Bucket]),
             {{halt, 404}, HeadRD, Ctx};
         [_BucketRecord] ->
+            riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_head">>, 
+                                               [200], [riak_cs_wm_utils:extract_name(User), Bucket]),
             {{halt, 200}, HeadRD, Ctx}
     end.
 
@@ -126,8 +131,8 @@ accept_body(RD, Ctx=#context{user=User,
                              user_object=UserObj,
                              bucket=Bucket,
                              riakc_pid=RiakPid}) ->
-    dt_entry(<<"accept_body">>, [], [extract_name(User), Bucket]),
-    dt_entry_bucket(<<"create">>, [], [extract_name(User), Bucket]),
+    riak_cs_dtrace:dt_bucket_entry(?MODULE, <<"bucket_create">>, 
+                                      [], [riak_cs_wm_utils:extract_name(User), Bucket]),
     %% Check for `x-amz-acl' header to support
     %% non-default ACL at bucket creation time.
     ACL = riak_cs_acl_utils:canned_acl(
@@ -143,13 +148,13 @@ accept_body(RD, Ctx=#context{user=User,
                                        ACL,
                                        RiakPid) of
         ok ->
-            dt_return(<<"accept_body">>, [200], [extract_name(User), Bucket]),
-            dt_return_bucket(<<"create">>, [200], [extract_name(User), Bucket]),
+            riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_create">>, 
+                                               [200], [riak_cs_wm_utils:extract_name(User), Bucket]),
             {{halt, 200}, RD, Ctx};
         {error, Reason} ->
             Code = riak_cs_s3_response:status_code(Reason),
-            dt_return(<<"accept_body">>, [Code], [extract_name(User), Bucket]),
-            dt_return_bucket(<<"create">>, [Code], [extract_name(User), Bucket]),
+            riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_create">>, 
+                                              [Code], [riak_cs_wm_utils:extract_name(User), Bucket]),
             riak_cs_s3_response:api_error(Reason, RD, Ctx)
     end.
 
@@ -160,37 +165,21 @@ delete_resource(RD, Ctx=#context{user=User,
                                  user_object=UserObj,
                                  bucket=Bucket,
                                  riakc_pid=RiakPid}) ->
-    dt_entry(<<"delete_resource">>, [], [extract_name(User), Bucket]),
-    dt_entry_bucket(<<"delete">>, [], [extract_name(User), Bucket]),
+    riak_cs_dtrace:dt_bucket_entry(?MODULE, <<"bucket_delete">>, 
+                                      [], [riak_cs_wm_utils:extract_name(User), Bucket]),
     case riak_cs_utils:delete_bucket(User,
                                        UserObj,
                                        Bucket,
                                        RiakPid) of
         ok ->
-            dt_return(<<"delete_resource">>, [200], [extract_name(User), Bucket]),
-            dt_return_bucket(<<"delete">>, [200], [extract_name(User), Bucket]),
+            riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_delete">>, 
+                                               [200], [riak_cs_wm_utils:extract_name(User), Bucket]),
             {true, RD, Ctx};
         {error, Reason} ->
             Code = riak_cs_s3_response:status_code(Reason),
-            dt_return(<<"delete_resource">>, [Code], [extract_name(User), Bucket]),
-            dt_return_bucket(<<"delete">>, [Code], [extract_name(User), Bucket]),
+            riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_delete">>, 
+                                               [Code], [riak_cs_wm_utils:extract_name(User), Bucket]),
             riak_cs_s3_response:api_error(Reason, RD, Ctx)
     end.
 
-extract_name(X) ->
-    riak_cs_wm_utils:extract_name(X).
 
-dt_entry(Func) ->
-    dt_entry(Func, [], []).
-
-dt_entry(Func, Ints, Strings) ->
-    riak_cs_dtrace:dtrace(?DT_WM_OP, 1, Ints, ?MODULE, Func, Strings).
-
-dt_entry_bucket(Func, Ints, Strings) ->
-    riak_cs_dtrace:dtrace(?DT_BUCKET_OP, 1, Ints, ?MODULE, Func, Strings).
-
-dt_return(Func, Ints, Strings) ->
-    riak_cs_dtrace:dtrace(?DT_WM_OP, 2, Ints, ?MODULE, Func, Strings).
-
-dt_return_bucket(Func, Ints, Strings) ->
-    riak_cs_dtrace:dtrace(?DT_BUCKET_OP, 2, Ints, ?MODULE, Func, Strings).
