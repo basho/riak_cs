@@ -443,7 +443,9 @@ filtered_keys_from_request(?LOREQ{marker=undefined}, KeyList, _KeyListLength) ->
     KeyList;
 filtered_keys_from_request(?LOREQ{marker=Marker}, KeyList, KeyListLength) ->
     MarkerIndex = index_of_element(KeyList, Marker),
-    lists:sublist(KeyList, MarkerIndex, KeyListLength).
+    %% marker is _exclusive_, not _inclusive,
+    %% so we add 1
+    lists:sublist(KeyList, MarkerIndex + 1, KeyListLength).
 
 %% only works for positive numbers
 -spec round_up(float()) -> integer().
