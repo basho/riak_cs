@@ -16,8 +16,7 @@
 %% API
 -export([start_link/2,
          get_object_list/1,
-         get_internal_state/1,
-         index_of_element/2]).
+         get_internal_state/1]).
 
 %% gen_fsm callbacks
 -export([init/1,
@@ -302,11 +301,10 @@ prepare_state_for_mapred(State=#state{req=Request,
 
 -spec make_response(list_object_request(), list()) ->
     list_object_response().
-make_response(Request, ObjectBuffer) ->
+make_response(Request=?LOREQ{max_keys=NumKeysRequested}, ObjectBuffer) ->
     Contents = response_contents_from_object_buffer(ObjectBuffer,
-                                                    Request?LOREQ.max_keys),
-    %% TODO: hardcoded, fix me!
-    IsTruncated = false,
+                                                    NumKeysRequested),
+    IsTruncated = length(ObjectBuffer) > NumKeysRequested,
     %% TODO: hardcoded, fix me!
     CommonPrefixes = [],
     riak_cs_list_objects:new_response(Request, IsTruncated, CommonPrefixes,
@@ -402,7 +400,11 @@ enough_results(Results, ?LOREQ{max_keys=MaxKeysRequested}, TotalCandidateKeys) -
     %% 2. there are less keys than were requested even possible
     %% (where 'possible' includes filtering for things like
     %% `marker' and `prefix'
-    ResultsLength >= erlang:min(MaxKeysRequested, TotalCandidateKeys).
+
+    %% add 1 to `MaxKeysRequested' because we need to know if there
+    %% are more active manifests after this key, so we can
+    %% correctly return `isTruncated'
+    ResultsLength >= erlang:min(MaxKeysRequested + 1, TotalCandidateKeys).
 
 -spec could_query_more_mapreduce(list(), non_neg_integer()) -> boolean().
 could_query_more_mapreduce(_Requests, 0) ->
@@ -442,10 +444,8 @@ have_enough_results(State=#state{reply_ref=ReplyPid,
 filtered_keys_from_request(?LOREQ{marker=undefined}, KeyList, _KeyListLength) ->
     KeyList;
 filtered_keys_from_request(?LOREQ{marker=Marker}, KeyList, KeyListLength) ->
-    MarkerIndex = index_of_element(KeyList, Marker),
-    %% marker is _exclusive_, not _inclusive,
-    %% so we add 1
-    lists:sublist(KeyList, MarkerIndex + 1, KeyListLength).
+    MarkerIndex = index_of_first_greater_element(KeyList, Marker),
+    lists:sublist(KeyList, MarkerIndex, KeyListLength).
 
 %% only works for positive numbers
 -spec round_up(float()) -> integer().
@@ -453,22 +453,20 @@ round_up(X) ->
     erlang:round(X + 0.5).
 
 %% Return the index (1-based) where
-%% `Element' would fit in `List'. `List'
-%% is assumed to be sorted. If `Element' exists
-%% in the list, this will return the index of the
-%% first occurrence. If `List' is empty, `1'
+%% all list members are > than `Element'.
+%% If `List' is empty, `1'
 %% is returned.
--spec index_of_element(list(), term()) -> pos_integer().
-index_of_element(List, Element) ->
-    index_of_element_helper(List, Element, 1).
+-spec index_of_first_greater_element(list(), term()) -> pos_integer().
+index_of_first_greater_element(List, Element) ->
+    index_of_first_greater_element_helper(List, Element, 1).
 
-index_of_element_helper([], _Element, 1) ->
+index_of_first_greater_element_helper([], _Element, 1) ->
     1;
-index_of_element_helper([Fst], Element, Index) when Element =< Fst ->
+index_of_first_greater_element_helper([Fst], Element, Index) when Element < Fst ->
     Index;
-index_of_element_helper([_Fst], _Element, Index) ->
+index_of_first_greater_element_helper([_Fst], _Element, Index) ->
     Index + 1;
-index_of_element_helper([Head | _Rest], Element, Index) when Element =< Head ->
+index_of_first_greater_element_helper([Head | _Rest], Element, Index) when Element < Head ->
     Index;
-index_of_element_helper([_Head | Rest], Element, Index) ->
-    index_of_element_helper(Rest, Element, Index + 1).
+index_of_first_greater_element_helper([_Head | Rest], Element, Index) ->
+    index_of_first_greater_element_helper(Rest, Element, Index + 1).
