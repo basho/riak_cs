@@ -95,9 +95,9 @@ valid_entity_length(RD, Ctx=#context{submodule=Mod, exports_fun=ExportsFun}) ->
     riak_cs_dtrace:dt_wm_return_bool({?MODULE, Mod}, <<"valid_entity_length">>, Valid),
     R.
 
-forbidden(RD, Ctx=#context{auth_module=AuthMod, submodule=Mod, riakc_pid=RiakPid}) ->
-    riak_cs_dtrace:dt_wm_entry({?MODULE, Mod}, <<"forbidden">>),
+forbidden(RD, Ctx=#context{auth_module=AuthMod, submodule=Mod, riakc_pid=RiakPid}) ->    
     {UserKey, AuthData} = AuthMod:identify(RD, Ctx),
+    riak_cs_dtrace:dt_wm_entry({?MODULE, Mod}, <<"forbidden">>, [], [riak_cs_wm_utils:extract_name(UserKey)]),
     AuthResult = case riak_cs_utils:get_user(UserKey, RiakPid) of
                      {ok, {User, UserObj}} when User?RCS_USER.status =:= enabled ->
                          authenticate(User, UserObj, RD, Ctx, AuthData);
