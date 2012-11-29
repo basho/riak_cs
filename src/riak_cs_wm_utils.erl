@@ -239,7 +239,7 @@ streaming_get(FsmPid, StartTime, UserName, BFile_str) ->
     case riak_cs_get_fsm:get_next_chunk(FsmPid) of
         {done, Chunk} ->
             ok = riak_cs_stats:update_with_start(object_get, StartTime),
-            riak_cs_wm_dtrace:dt_object_return(riak_cs_wm_object, <<"object_get">>, 
+            riak_cs_dtrace:dt_object_return(riak_cs_wm_object, <<"object_get">>, 
                                                [], [UserName, BFile_str]),
             {Chunk, done};
         {chunk, Chunk} ->

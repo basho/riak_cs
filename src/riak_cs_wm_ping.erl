@@ -23,12 +23,12 @@
 %% -------------------------------------------------------------------
 
 init(_Config) ->
-    riak_cs_wm_dtrace:dt_entry(?MODULE, <<"init">>),
+    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"init">>),
     {ok, #ping_context{}}.
 
 -spec service_available(term(), term()) -> {boolean(), term(), term()}.
 service_available(RD, Ctx) ->
-    riak_cs_wm_dtrace:dt_entry(<<"service_available">>),
+    riak_cs_dtrace:dt_wm_entry(<<"service_available">>),
     case poolboy:checkout(request_pool, true, ping_timeout()) of
         full ->
             case riak_cs_riakc_pool_worker:start_link([]) of
@@ -57,25 +57,25 @@ service_available(RD, Ctx) ->
 
 -spec allowed_methods(term(), term()) -> {[atom()], term(), term()}.
 allowed_methods(RD, Ctx) ->
-    riak_cs_wm_dtrace:dt_entry(?MODULE, <<"allowed_methods">>),
+    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"allowed_methods">>),
     {['GET', 'HEAD'], RD, Ctx}.
 
 to_html(ReqData, Ctx) ->
     {"OK", ReqData, Ctx}.
 
 finish_request(RD, Ctx=#ping_context{riakc_pid=undefined}) ->
-    riak_cs_wm_dtrace:dt_entry(?MODULE, <<"finish_request">>, [0], []),
+    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"finish_request">>, [0], []),
     {true, RD, Ctx};
 finish_request(RD, Ctx=#ping_context{riakc_pid=RiakPid,
                                 pool_pid=PoolPid}) ->
-    riak_cs_wm_dtrace:dt_entry(?MODULE, <<"finish_request">>, [1], []),
+    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"finish_request">>, [1], []),
     case PoolPid of
         true ->
             riak_cs_utils:close_riak_connection(RiakPid);
         false ->
             riak_cs_riakc_pool_worker:stop(RiakPid)
     end,
-    riak_cs_wm_dtrace:dt_return(?MODULE, <<"finish_request">>, [1], []),
+    riak_cs_dtrace:dt_wm_return(?MODULE, <<"finish_request">>, [1], []),
     {true, RD, Ctx#ping_context{riakc_pid=undefined}}.
 
 %% -------------------------------------------------------------------

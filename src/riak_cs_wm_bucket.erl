@@ -108,7 +108,7 @@ to_xml(RD, Ctx) ->
 %% @private
 handle_read_request(RD, Ctx=#context{user=User,
                                      bucket=Bucket}) ->
-    riak_cs_wm_dtrace:dt_bucket_entry(?MODULE, <<"bucket_head">>, 
+    riak_cs_dtrace:dt_bucket_entry(?MODULE, <<"bucket_head">>, 
                                       [], [riak_cs_wm_utils:extract_name(User), Bucket]),
     %% override the content-type on HEAD    
     HeadRD = wrq:set_resp_header("content-type", "text/html", RD),    
@@ -116,11 +116,11 @@ handle_read_request(RD, Ctx=#context{user=User,
     case [B || B <- riak_cs_utils:get_buckets(User),
                B?RCS_BUCKET.name =:= StrBucket] of
         [] ->
-            riak_cs_wm_dtrace:dt_bucket_return(?MODULE, <<"bucket_head">>, 
+            riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_head">>, 
                                                [404], [riak_cs_wm_utils:extract_name(User), Bucket]),
             {{halt, 404}, HeadRD, Ctx};
         [_BucketRecord] ->
-            riak_cs_wm_dtrace:dt_bucket_return(?MODULE, <<"bucket_head">>, 
+            riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_head">>, 
                                                [200], [riak_cs_wm_utils:extract_name(User), Bucket]),
             {{halt, 200}, HeadRD, Ctx}
     end.
@@ -131,7 +131,7 @@ accept_body(RD, Ctx=#context{user=User,
                              user_object=UserObj,
                              bucket=Bucket,
                              riakc_pid=RiakPid}) ->
-    riak_cs_wm_dtrace:dt_bucket_entry(?MODULE, <<"bucket_create">>, 
+    riak_cs_dtrace:dt_bucket_entry(?MODULE, <<"bucket_create">>, 
                                       [], [riak_cs_wm_utils:extract_name(User), Bucket]),
     %% Check for `x-amz-acl' header to support
     %% non-default ACL at bucket creation time.
@@ -148,12 +148,12 @@ accept_body(RD, Ctx=#context{user=User,
                                        ACL,
                                        RiakPid) of
         ok ->
-            riak_cs_wm_dtrace:dt_bucket_return(?MODULE, <<"bucket_create">>, 
+            riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_create">>, 
                                                [200], [riak_cs_wm_utils:extract_name(User), Bucket]),
             {{halt, 200}, RD, Ctx};
         {error, Reason} ->
             Code = riak_cs_s3_response:status_code(Reason),
-            riak_cs_wm_dtrace:dt_bucket_return(?MODULE, <<"bucket_create">>, 
+            riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_create">>, 
                                               [Code], [riak_cs_wm_utils:extract_name(User), Bucket]),
             riak_cs_s3_response:api_error(Reason, RD, Ctx)
     end.
@@ -165,19 +165,19 @@ delete_resource(RD, Ctx=#context{user=User,
                                  user_object=UserObj,
                                  bucket=Bucket,
                                  riakc_pid=RiakPid}) ->
-    riak_cs_wm_dtrace:dt_bucket_entry(?MODULE, <<"bucket_delete">>, 
+    riak_cs_dtrace:dt_bucket_entry(?MODULE, <<"bucket_delete">>, 
                                       [], [riak_cs_wm_utils:extract_name(User), Bucket]),
     case riak_cs_utils:delete_bucket(User,
                                        UserObj,
                                        Bucket,
                                        RiakPid) of
         ok ->
-            riak_cs_wm_dtrace:dt_bucket_return(?MODULE, <<"bucket_delete">>, 
+            riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_delete">>, 
                                                [200], [riak_cs_wm_utils:extract_name(User), Bucket]),
             {true, RD, Ctx};
         {error, Reason} ->
             Code = riak_cs_s3_response:status_code(Reason),
-            riak_cs_wm_dtrace:dt_bucket_return(?MODULE, <<"bucket_delete">>, 
+            riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_delete">>, 
                                                [Code], [riak_cs_wm_utils:extract_name(User), Bucket]),
             riak_cs_s3_response:api_error(Reason, RD, Ctx)
     end.

@@ -9,7 +9,7 @@
 -include("riak_cs.hrl").
 
 render_error(500, Req, Reason) ->
-    riak_cs_wm_dtrace:dt_entry(?MODULE, <<"render_error">>),
+    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"render_error">>),
     {ok, ReqState} = Req:add_response_header("Content-Type", "text/html"),
     {Path,_} = Req:path(),
     error_logger:error_msg("webmachine error: path=~p~n~p~n", [Path, Reason]),
@@ -21,5 +21,5 @@ render_error(500, Req, Reason) ->
     IOList = [ErrorOne, ErrorTwo, ErrorThree, ErrorFour],
     {erlang:iolist_to_binary(IOList), ReqState};
 render_error(_Code, Req, _Reason) ->
-    riak_cs_wm_dtrace:dt_entry(?MODULE, <<"render_error">>),
+    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"render_error">>),
     Req:response_body().

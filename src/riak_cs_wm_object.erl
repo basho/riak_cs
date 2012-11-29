@@ -161,7 +161,7 @@ produce_body(RD, Ctx=#context{local_context=LocalCtx,
                'HEAD' -> <<"object_head">>;
                _ -> <<"object_get">>
            end,
-    riak_cs_wm_dtrace:dt_object_entry(?MODULE, Func, [], [UserName, BFile_str]),
+    riak_cs_dtrace:dt_object_entry(?MODULE, Func, [], [UserName, BFile_str]),
     ContentLength = Mfst?MANIFEST.content_length,
     ContentMd5 = Mfst?MANIFEST.content_md5,
     LastModified = riak_cs_wm_utils:to_rfc_1123(Mfst?MANIFEST.created),
@@ -184,7 +184,7 @@ produce_body(RD, Ctx=#context{local_context=LocalCtx,
                         end
     end,
     if Method == 'HEAD' ->
-            riak_cs_wm_dtrace:dt_object_return(?MODULE, <<"object_head">>, 
+            riak_cs_dtrace:dt_object_return(?MODULE, <<"object_head">>, 
                                                [], [UserName, BFile_str]),
             ok = riak_cs_stats:update_with_start(object_head, StartTime);
        true ->
@@ -201,7 +201,7 @@ delete_resource(RD, Ctx=#context{local_context=LocalCtx,
                  get_fsm_pid=GetFsmPid} = LocalCtx,
     BFile_str = [Bucket, $,, Key],
     UserName = riak_cs_wm_utils:extract_name(Ctx#context.user),  
-    riak_cs_wm_dtrace:dt_object_entry(?MODULE, <<"object_delete">>, 
+    riak_cs_dtrace:dt_object_entry(?MODULE, <<"object_delete">>, 
                                       [], [UserName, BFile_str]),
     riak_cs_get_fsm:stop(GetFsmPid),
     BinKey = list_to_binary(Key),
@@ -211,10 +211,10 @@ delete_resource(RD, Ctx=#context{local_context=LocalCtx,
 %% @private
 handle_delete_object({error, Error}, UserName, BFile_str, RD, Ctx) ->
     lager:error("delete object failed with reason: ", [Error]),
-    riak_cs_wm_dtrace:dt_object_return(?MODULE, <<"object_delete">>, [0], [UserName, BFile_str]),
+    riak_cs_dtrace:dt_object_return(?MODULE, <<"object_delete">>, [0], [UserName, BFile_str]),
     {false, RD, Ctx};
 handle_delete_object({ok, _UUIDsMarkedforDelete}, UserName, BFile_str, RD, Ctx) ->
-    riak_cs_wm_dtrace:dt_object_return(<<"object_delete">>, [1], [UserName, BFile_str]),
+    riak_cs_dtrace:dt_object_return(<<"object_delete">>, [1], [UserName, BFile_str]),
     {true, RD, Ctx}.
 
 -spec content_types_accepted(term(), term()) ->
@@ -264,7 +264,7 @@ accept_body(RD, Ctx=#context{local_context=LocalCtx,
                  owner=Owner} = LocalCtx,
     BFile_str = [Bucket, $,, Key],
     UserName = riak_cs_wm_utils:extract_name(User),
-    riak_cs_wm_dtrace:dt_object_entry(?MODULE, <<"object_put">>, 
+    riak_cs_dtrace:dt_object_entry(?MODULE, <<"object_put">>, 
                                       [], [UserName, BFile_str]),
     riak_cs_get_fsm:stop(GetFsmPid),
     Metadata = riak_cs_wm_utils:extract_user_metadata(RD),
@@ -297,7 +297,7 @@ accept_streambody(RD,
                  key=Key} = LocalCtx,
     BFile_str = [Bucket, $,, Key],
     UserName = riak_cs_wm_utils:extract_name(User),
-    riak_cs_wm_dtrace:dt_entry(?MODULE, <<"accept_streambody">>, [size(Data)], [UserName, BFile_str]),
+    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"accept_streambody">>, [size(Data)], [UserName, BFile_str]),
     riak_cs_put_fsm:augment_data(Pid, Data),
     if is_function(Next) ->
             accept_streambody(RD, Ctx, Pid, Next());
@@ -319,7 +319,7 @@ finalize_request(RD,
                  size=S} = LocalCtx,
     BFile_str = [Bucket, $,, Key],
     UserName = riak_cs_wm_utils:extract_name(User),
-    riak_cs_wm_dtrace:dt_entry(?MODULE, <<"finalize_request">>, [S], [UserName, BFile_str]),
+    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"finalize_request">>, [S], [UserName, BFile_str]),
     %% TODO: probably want something that counts actual bytes uploaded
     %% instead, to record partial/aborted uploads
     AccessRD = riak_cs_access_logger:set_bytes_in(S, RD),
@@ -327,6 +327,6 @@ finalize_request(RD,
     {ok, Manifest} = riak_cs_put_fsm:finalize(Pid),
     ETag = "\"" ++ riak_cs_utils:binary_to_hexlist(Manifest?MANIFEST.content_md5) ++ "\"",
     ok = riak_cs_stats:update_with_start(object_put, StartTime),
-    riak_cs_wm_dtrace:dt_return(?MODULE, <<"finalize_request">>, [S], [UserName, BFile_str]),
-    riak_cs_wm_dtrace:dt_object_return(?MODULE, <<"object_put">>, [S], [UserName, BFile_str]),
+    riak_cs_dtrace:dt_wm_return(?MODULE, <<"finalize_request">>, [S], [UserName, BFile_str]),
+    riak_cs_dtrace:dt_object_return(?MODULE, <<"object_put">>, [S], [UserName, BFile_str]),
     {{halt, 200}, wrq:set_resp_header("ETag",  ETag, AccessRD), Ctx}.
