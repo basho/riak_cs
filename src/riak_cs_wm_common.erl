@@ -230,11 +230,18 @@ finish_request(RD, Ctx0=#context{riakc_pid=RiakcPid,
 %% Helper functions
 %% ===================================================================
 
--spec authorize(term(), term()) -> {boolean(),term(),term()}.
+-spec authorize(term(), term()) -> {boolean() | {halt, non_neg_integer()} ,term(),term()}.
 authorize(RD,Ctx=#context{submodule=Mod, exports_fun=ExportsFun}) ->
     riak_cs_dtrace:dt_wm_entry({?MODULE, Mod}, <<"authorize">>),
     {Success, _, _} = R = resource_call(Mod, authorize, [RD,Ctx], ExportsFun(authorize)),
-    riak_cs_dtrace:dt_wm_return_bool({?MODULE, Mod}, <<"authorize">>, Success),
+    case Success of 
+        {halt, Code} -> 
+            riak_cs_dtrace:dt_wm_return({?MODULE, Mod}, <<"authorize">>, [Code], []);
+        false -> %% not forbidden, e.g. success
+            riak_cs_dtrace:dt_wm_return({?MODULE, Mod}, <<"authorize">>);
+        true -> %% forbidden
+            riak_cs_dtrace:dt_wm_return({?MODULE, Mod}, <<"authorize">>, [403], [])
+    end,
     R.
 
 -spec authenticate(rcs_user(), riakc_obj:riakc_obj(), term(), term(), term()) ->

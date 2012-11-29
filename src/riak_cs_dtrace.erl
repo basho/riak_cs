@@ -13,6 +13,7 @@
          dt_service_entry/4,
          dt_bucket_entry/4,
          dt_object_entry/4,
+         dt_wm_return/2,
          dt_wm_return/4,
          dt_wm_return_bool/3,
          dt_service_return/4,
@@ -122,6 +123,9 @@ dt_wm_return_bool(Mod, Func, true) ->
     dt_wm_return(Mod, Func, [1], []);
 dt_wm_return_bool(Mod, Func, false) ->
     dt_wm_return(Mod, Func, [0], []).
+
+dt_wm_return(Mod, Func) ->
+    dt_wm_return(Mod, Func, [], []).
 
 dt_wm_return({Mod, SubMod}, Func, Ints, Strings) when is_atom(Mod), is_atom(SubMod)->
     dt_wm_return(common_submod_to_bin(Mod, SubMod), Func, Ints, Strings);
