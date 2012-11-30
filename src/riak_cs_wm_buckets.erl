@@ -8,7 +8,8 @@
 
 -export([allowed_methods/0,
          content_types_provided/2,
-         to_xml/2]).
+         to_xml/2,
+         anon_ok/0]).
 
 -include("riak_cs.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
@@ -30,3 +31,7 @@ to_xml(RD, Ctx=#context{start_time=StartTime,
     Res = riak_cs_s3_response:list_all_my_buckets_response(User, RD, Ctx),
     ok = riak_cs_stats:update_with_start(service_get_buckets, StartTime),
     Res.
+
+-spec anon_ok() -> boolean().
+anon_ok() ->
+    false.

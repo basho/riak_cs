@@ -28,7 +28,8 @@
          default_authorize/2,
          default_malformed_request/2,
          default_valid_entity_length/2,
-         default_delete_resource/2]).
+         default_delete_resource/2,
+         default_anon_ok/0]).
 
 -include("riak_cs.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
@@ -87,7 +88,10 @@ valid_entity_length(RD, Ctx=#context{submodule=Mod, exports_fun=ExportsFun}) ->
                   [RD, Ctx],
                   ExportsFun(valid_entity_length)).
 
-forbidden(RD, Ctx=#context{auth_module=AuthMod, submodule=Mod, riakc_pid=RiakPid}) ->
+forbidden(RD, Ctx=#context{auth_module=AuthMod, 
+                           submodule=Mod, 
+                           riakc_pid=RiakPid, 
+                           exports_fun=ExportsFun}) ->
     dt_entry(Mod, <<"forbidden">>),
     {UserKey, AuthData} = AuthMod:identify(RD, Ctx),
     AuthResult = case riak_cs_utils:get_user(UserKey, RiakPid) of
@@ -104,7 +108,7 @@ forbidden(RD, Ctx=#context{auth_module=AuthMod, submodule=Mod, riakc_pid=RiakPid
                                          [UserKey, R]),
                          {error, R}
                  end,
-    AnonOk = true, %% TODO: need to call submodule to determine if anonymous request is ok
+    AnonOk = resource_call(Mod, anon_ok, [], ExportsFun(anon_ok)),
     case post_authentication(AuthResult, RD, Ctx, fun authorize/2, AnonOk) of
         {false, _RD2, Ctx2} = FalseRet ->
             dt_return(Mod, <<"forbidden">>, [], [riak_cs_wm_utils:extract_name(Ctx2#context.user), <<"false">>]),
@@ -301,6 +305,8 @@ default(authorize) ->
     default_authorize;
 default(finish_request) ->
     default_finish_request;
+default(anon_ok) ->
+    default_anon_ok;
 default(_) ->
     undefined.
 
@@ -327,6 +333,9 @@ default_finish_request(RD, Ctx=#context{riakc_pid=undefined}) ->
 default_finish_request(RD, Ctx=#context{riakc_pid=RiakPid}) ->
     riak_cs_utils:close_riak_connection(RiakPid),
     {true, RD, Ctx#context{riakc_pid=undefined}}.
+
+default_anon_ok() ->
+    true.
 
 %% @doc this function will be called by `post_authenticate/2` if the user successfully
 %% authenticates and the submodule does not provide an implementation
