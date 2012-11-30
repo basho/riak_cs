@@ -55,6 +55,7 @@
         owner :: list_objects_owner(),
         storage_class :: binary()}).
 -type list_objects_key_content() :: #list_objects_key_content_v1{}.
+-define(LOKC, #list_objects_key_content_v1).
 
 -record(list_objects_owner_v1, {
         id :: binary(),
