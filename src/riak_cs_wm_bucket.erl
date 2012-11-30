@@ -317,7 +317,7 @@ handle_read_acp_request('GET', RD, Ctx=#context{start_time=StartTime,
     dt_entry_bucket(<<"get_acl">>, [], [extract_name(User), Bucket]),
     case riak_cs_acl:bucket_acl(Bucket, RiakPid) of
         {ok, Acl} ->
-            X = {xml:to_xml(Acl), RD, Ctx},
+            X = {riak_cs_xml:to_xml(Acl), RD, Ctx},
             ok = riak_cs_stats:update_with_start(bucket_get_acl, StartTime),
             dt_return(<<"to_xml">>, [200], [extract_name(User), Bucket]),
             dt_return_bucket(<<"get_acl">>, [200], [extract_name(User), Bucket]),
