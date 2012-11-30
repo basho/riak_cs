@@ -22,7 +22,6 @@
          default_acl/3,
          canned_acl/4,
          acl_from_xml/3,
-         acl_to_xml/1,
          empty_acl_xml/0,
          requested_access/2,
          check_grants/4,
@@ -72,38 +71,6 @@ acl_from_xml(Xml, KeyId, RiakPid) ->
     {ParsedData, _Rest} = xmerl_scan:string(Xml, []),
     BareAcl = ?ACL{owner={[], [], KeyId}},
     process_acl_contents(ParsedData#xmlElement.content, BareAcl, RiakPid).
-
-%% @doc Convert an internal representation of an ACL
-%% into XML.
--spec acl_to_xml(acl()) -> binary().
-acl_to_xml(?ACL{owner=Owner, grants=Grants}) ->
-    {OwnerName, OwnerId, _} = Owner,
-    XmlDoc =
-        [{'AccessControlPolicy',
-          [
-           {'Owner',
-            [
-             {'ID', [OwnerId]},
-             {'DisplayName', [OwnerName]}
-            ]},
-           {'AccessControlList', grants_xml(Grants)}
-          ]}],
-    unicode:characters_to_binary(
-      xmerl:export_simple(XmlDoc, xmerl_xml, [{prolog, ?XML_PROLOG}]));
-acl_to_xml(#acl_v1{owner=Owner, grants=Grants}) ->
-    {OwnerName, OwnerId} = Owner,
-    XmlDoc =
-        [{'AccessControlPolicy',
-          [
-           {'Owner',
-            [
-             {'ID', [OwnerId]},
-             {'DisplayName', [OwnerName]}
-            ]},
-           {'AccessControlList', grants_xml(Grants)}
-          ]}],
-    unicode:characters_to_binary(
-      xmerl:export_simple(XmlDoc, xmerl_xml, [{prolog, ?XML_PROLOG}])).
 
 %% @doc Convert an internal representation of an ACL
 %% into XML.
@@ -254,54 +221,7 @@ get_owner_data(KeyId, RiakPid) ->
             {[], []}
     end.
 
-%% @doc Assemble the xml for the set of grantees for an acl.
--spec grants_xml([acl_grant()]) -> term().
-grants_xml(Grantees) ->
-    grants_xml(Grantees, []).
 
-%% @doc Assemble the xml for the set of grantees for an acl.
--spec grants_xml([acl_grant()], list()) -> list().
-grants_xml([], Acc) ->
-    lists:flatten(Acc);
-grants_xml([HeadGrantee | RestGrantees], Acc) ->
-    case HeadGrantee of
-        {{GranteeName, GranteeId}, Perms} ->
-            GranteeXml = [grant_xml(GranteeName, GranteeId, Perm) ||
-                             Perm <- Perms];
-        {Group, Perms} ->
-            GranteeXml = [grant_xml(Group, Perm) ||
-                             Perm <- Perms]
-    end,
-    grants_xml(RestGrantees, [GranteeXml | Acc]).
-
-%% @doc Assemble the xml for a group grantee for an acl.
--spec grant_xml(atom(), acl_perm()) -> term().
-grant_xml(Group, Permission) ->
-    {'Grant',
-     [
-      {'Grantee',
-       [{'xmlns:xsi', "http://www.w3.org/2001/XMLSchema-instance"},
-        {'xsi:type', "Group"}],
-       [
-        {'URI', [uri_for_group(Group)]}
-       ]},
-      {'Permission', [atom_to_list(Permission)]}
-     ]}.
-
-%% @doc Assemble the xml for a single grantee for an acl.
--spec grant_xml(string(), string(), acl_perm()) -> term().
-grant_xml(DisplayName, CanonicalId, Permission) ->
-    {'Grant',
-     [
-      {'Grantee',
-       [{'xmlns:xsi', "http://www.w3.org/2001/XMLSchema-instance"},
-        {'xsi:type', "CanonicalUser"}],
-       [
-        {'ID', [CanonicalId]},
-        {'DisplayName', [DisplayName]}
-       ]},
-      {'Permission', [atom_to_list(Permission)]}
-     ]}.
 
 %% @doc Get the display name of the user associated with
 %% a given canonical id.
@@ -456,12 +376,6 @@ process_permission([Content], Grant) ->
     end,
     {Grantee, UpdPerms}.
 
-%% @doc Map a ACL group atom to its corresponding URI.
--spec uri_for_group(atom()) -> string().
-uri_for_group('AllUsers') ->
-    ?ALL_USERS_GROUP;
-uri_for_group('AuthUsers') ->
-    ?AUTH_USERS_GROUP.
 
 %% ===================================================================
 %% Eunit tests
@@ -476,7 +390,7 @@ default_acl_test() ->
     DefaultAcl = default_acl("tester1", "TESTID1", "TESTKEYID1"),
     ?assertMatch({acl_v2,{"tester1","TESTID1", "TESTKEYID1"},
                   [{{"tester1","TESTID1"},['FULL_CONTROL']}], _}, DefaultAcl),
-    ?assertEqual(ExpectedXml, acl_to_xml(DefaultAcl)).
+    ?assertEqual(ExpectedXml, xml:to_xml(DefaultAcl)).
 
 acl_from_xml_test() ->
     Xml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><AccessControlPolicy><Owner><ID>TESTID1</ID><DisplayName>tester1</DisplayName></Owner><AccessControlList><Grant><Grantee xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"CanonicalUser\"><ID>TESTID1</ID><DisplayName>tester1</DisplayName></Grantee><Permission>FULL_CONTROL</Permission></Grant></AccessControlList></AccessControlPolicy>",
@@ -488,17 +402,11 @@ acl_from_xml_test() ->
     ?assertEqual(ExpectedOwnerName, ActualOwnerName),
     ?assertEqual(ExpectedOwnerId, ActualOwnerId).
 
-acl_to_xml_test() ->
-    Xml = <<"<?xml version=\"1.0\" encoding=\"UTF-8\"?><AccessControlPolicy><Owner><ID>TESTID1</ID><DisplayName>tester1</DisplayName></Owner><AccessControlList><Grant><Grantee xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"CanonicalUser\"><ID>TESTID2</ID><DisplayName>tester2</DisplayName></Grantee><Permission>WRITE</Permission></Grant><Grant><Grantee xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"CanonicalUser\"><ID>TESTID1</ID><DisplayName>tester1</DisplayName></Grantee><Permission>READ</Permission></Grant></AccessControlList></AccessControlPolicy>">>,
-    Acl = acl("tester1", "TESTID1", "TESTKEYID1", [{{"tester1", "TESTID1"}, ['READ']},
-                                     {{"tester2", "TESTID2"}, ['WRITE']}]),
-    ?assertEqual(Xml, acl_to_xml(Acl)).
-
 roundtrip_test() ->
     Xml1 = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><AccessControlPolicy><Owner><ID>TESTID1</ID><DisplayName>tester1</DisplayName></Owner><AccessControlList><Grant><Grantee xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"CanonicalUser\"><ID>TESTID1</ID><DisplayName>tester1</DisplayName></Grantee><Permission>FULL_CONTROL</Permission></Grant></AccessControlList></AccessControlPolicy>",
     Xml2 = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><AccessControlPolicy><Owner><ID>TESTID1</ID><DisplayName>tester1</DisplayName></Owner><AccessControlList><Grant><Grantee xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"CanonicalUser\"><ID>TESTID1</ID><DisplayName>tester1</DisplayName></Grantee><Permission>FULL_CONTROL</Permission></Grant><Grant><Grantee xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"Group\"><URI>http://acs.amazonaws.com/groups/global/AuthenticatedUsers</URI></Grantee><Permission>READ</Permission></Grant></AccessControlList></AccessControlPolicy>",
-    ?assertEqual(Xml1, binary_to_list(acl_to_xml(acl_from_xml(Xml1, "TESTKEYID1", undefined)))),
-    ?assertEqual(Xml2, binary_to_list(acl_to_xml(acl_from_xml(Xml2, "TESTKEYID2", undefined)))).
+    ?assertEqual(Xml1, binary_to_list(xml:to_xml(acl_from_xml(Xml1, "TESTKEYID1", undefined)))),
+    ?assertEqual(Xml2, binary_to_list(xml:to_xml(acl_from_xml(Xml2, "TESTKEYID2", undefined)))).
 
 requested_access_test() ->
     ?assertEqual('READ', requested_access('GET', false)),
