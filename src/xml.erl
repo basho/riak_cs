@@ -30,13 +30,43 @@ to_xml(undefined) ->
 to_xml([]) ->
     [];
 to_xml(?ACL{}=Acl) ->
-    riak_cs_acl_utils:acl_to_xml(Acl);
+    acl_to_xml(Acl);
 to_xml(?LORESP{}=ListObjsResp) ->
     list_objects_response_to_xml(ListObjsResp).
 
 %% ===================================================================
 %% Internal functions
 %% ===================================================================
+
+%% @doc Convert an internal representation of an ACL
+%% into XML.
+-spec acl_to_xml(acl()) -> binary().
+acl_to_xml(?ACL{owner=Owner, grants=Grants}) ->
+    {OwnerName, OwnerId, _} = Owner,
+    XmlDoc =
+        [{'AccessControlPolicy',
+          [
+           {'Owner',
+            [
+             {'ID', [OwnerId]},
+             {'DisplayName', [OwnerName]}
+            ]},
+           {'AccessControlList', grants_xml(Grants)}
+          ]}],
+    export_xml(XmlDoc);
+acl_to_xml(#acl_v1{owner=Owner, grants=Grants}) ->
+    {OwnerName, OwnerId} = Owner,
+    XmlDoc =
+        [{'AccessControlPolicy',
+          [
+           {'Owner',
+            [
+             {'ID', [OwnerId]},
+             {'DisplayName', [OwnerName]}
+            ]},
+           {'AccessControlList', grants_xml(Grants)}
+          ]}],
+    export_xml(XmlDoc).
 
 list_objects_response_to_xml(Resp) ->
     Contents = [key_content_to_xml(Content) ||
@@ -59,19 +89,62 @@ key_content_to_xml(KeyContent) ->
     %% string like [22524,29577]. This does not affect ascii
     %% characters.
     KeyString = unicode:characters_to_list(KeyContent?LOKC.key, unicode),
-    LastModified =
-        riak_cs_wm_utils:to_iso_8601(
-          KeyContent?LOKC.last_modified),
-    ETag = "\"" ++
-         %% riak_cs_utils:binary_to_hexlist(
-                     format_value(KeyContent?LOKC.etag)
-        ++ "\"",
+    LastModified = riak_cs_wm_utils:to_iso_8601(KeyContent?LOKC.last_modified),
     {'Contents', [{'Key', [KeyString]},
                   {'LastModified', [LastModified]},
-                  {'ETag', [ETag]},
+                  {'ETag', ["\"" ++ format_value(KeyContent?LOKC.etag) ++ "\""]},
                   {'Size', [format_value(KeyContent?LOKC.size)]},
                   {'StorageClass', [format_value(KeyContent?LOKC.storage_class)]},
                   owner_element(KeyContent?LOKC.owner)]}.
+
+%% @doc Assemble the xml for the set of grantees for an acl.
+-spec grants_xml([acl_grant()]) -> term().
+grants_xml(Grantees) ->
+    grants_xml(Grantees, []).
+
+%% @doc Assemble the xml for the set of grantees for an acl.
+-spec grants_xml([acl_grant()], list()) -> list().
+grants_xml([], Acc) ->
+    lists:flatten(Acc);
+grants_xml([HeadGrantee | RestGrantees], Acc) ->
+    case HeadGrantee of
+        {{GranteeName, GranteeId}, Perms} ->
+            GranteeXml = [grant_xml(GranteeName, GranteeId, Perm) ||
+                             Perm <- Perms];
+        {Group, Perms} ->
+            GranteeXml = [grant_xml(Group, Perm) ||
+                             Perm <- Perms]
+    end,
+    grants_xml(RestGrantees, [GranteeXml | Acc]).
+
+%% @doc Assemble the xml for a group grantee for an acl.
+-spec grant_xml(atom(), acl_perm()) -> term().
+grant_xml(Group, Permission) ->
+    {'Grant',
+     [
+      {'Grantee',
+       [{'xmlns:xsi', "http://www.w3.org/2001/XMLSchema-instance"},
+        {'xsi:type', "Group"}],
+       [
+        {'URI', [uri_for_group(Group)]}
+       ]},
+      {'Permission', [atom_to_list(Permission)]}
+     ]}.
+
+%% @doc Assemble the xml for a single grantee for an acl.
+-spec grant_xml(string(), string(), acl_perm()) -> term().
+grant_xml(DisplayName, CanonicalId, Permission) ->
+    {'Grant',
+     [
+      {'Grantee',
+       [{'xmlns:xsi', "http://www.w3.org/2001/XMLSchema-instance"},
+        {'xsi:type', "CanonicalUser"}],
+       [
+        {'ID', [CanonicalId]},
+        {'DisplayName', [DisplayName]}
+       ]},
+      {'Permission', [atom_to_list(Permission)]}
+     ]}.
 
 owner_element(#list_objects_owner_v1{id=Id, display_name=Name}) ->
     {'Owner', [{'ID', [format_value(Id)]},
@@ -94,6 +167,13 @@ format_value(Val) when is_integer(Val) ->
 format_value(Val) when is_list(Val) ->
     Val.
 
+
+%% @doc Map a ACL group atom to its corresponding URI.
+-spec uri_for_group(atom()) -> string().
+uri_for_group('AllUsers') ->
+    ?ALL_USERS_GROUP;
+uri_for_group('AuthUsers') ->
+    ?AUTH_USERS_GROUP.
 %% ===================================================================
 %% Eunit tests
 %% ===================================================================
