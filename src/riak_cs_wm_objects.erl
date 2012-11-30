@@ -6,7 +6,8 @@
 
 -module(riak_cs_wm_objects).
 
--export([allowed_methods/0,
+-export([init/1,
+         allowed_methods/0,
          content_types_provided/2,
          to_xml/2]).
 
@@ -16,6 +17,10 @@
 -include_lib("webmachine/include/webmachine.hrl").
 
 -define(RIAKCPOOL, bucket_list_pool).
+
+-spec init(#context{}) -> {ok, #context{}}.
+init(Ctx) ->
+    {ok, Ctx#context{riakc_pool=?RIAKCPOOL}}.
 
 -spec allowed_methods() -> [atom()].
 allowed_methods() ->

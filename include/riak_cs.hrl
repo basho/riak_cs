@@ -47,6 +47,7 @@
                   bucket :: binary(),
                   requested_perm :: acl_perm(),
                   riakc_pid :: pid(),
+                  riakc_pool :: atom(),
                   submodule :: atom(),
                   exports_fun :: function(),
                   auth_module :: atom(),

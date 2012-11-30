@@ -8,7 +8,6 @@
 
 -export([init/1,
          service_available/2,
-         service_available/3,
          forbidden/2,
          content_types_accepted/2,
          content_types_provided/2,
@@ -54,17 +53,17 @@ init(Config) ->
     resource_call(Mod, init, [Ctx], ExportsFun(init)).
 
 
--spec service_available(term(), term()) -> {true, term(), term()}.
-service_available(RD, Ctx=#context{submodule=Mod}) ->
+-spec service_available(#wm_reqdata{}, #context{}) -> {boolean(), #wm_reqdata{}, #context{}}.
+service_available(RD, Ctx=#context{submodule=Mod,riakc_pool=undefined}) ->
     dt_entry(Mod, <<"service_available">>),
     case riak_cs_utils:riak_connection() of
         {ok, Pid} ->
             {true, RD, Ctx#context{riakc_pid=Pid}};
         {error, _Reason} ->
             {false, RD, Ctx}
-    end.
-
-service_available(Pool, RD, Ctx) ->
+    end;
+service_available(RD, Ctx=#context{submodule=Mod,riakc_pool=Pool}) ->
+    dt_entry(Mod, <<"service_available">>),
     case riak_cs_utils:riak_connection(Pool) of
         {ok, Pid} ->
             {true, RD, Ctx#context{riakc_pid=Pid}};
