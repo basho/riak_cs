@@ -123,6 +123,7 @@ handle_read_request(RD, Ctx=#context{user=User,
             riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_head">>,
                                                [200], [riak_cs_wm_utils:extract_name(User), Bucket]),
             {{halt, 200}, HeadRD, Ctx}
+
     end.
 
 %% @doc Process request body on `PUT' request.
