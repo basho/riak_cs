@@ -238,26 +238,32 @@ handle_normal_read_bucket_response(RD, Ctx=#context{start_time=StartTime,
             dt_return(<<"to_xml">>, [Code], [extract_name(User), Bucket]),
             dt_return_bucket(<<"list_keys">>, [Code], [extract_name(User), Bucket]),
             Res;
-        [BucketRecord] ->
-            Prefix = list_to_binary(wrq:get_qs_value("prefix", "", RD)),
-            case riak_cs_utils:get_keys_and_manifests(Bucket, Prefix, RiakPid) of
-                {ok, KeyObjPairs} ->
-                    X = riak_cs_s3_response:list_bucket_response(User,
-                                                                   BucketRecord,
-                                                                   KeyObjPairs,
-                                                                   RD,
-                                                                   Ctx),
+        [_BucketRecord] ->
+            Marker = case wrq:get_qs_value("marker", RD) of
+                undefined ->
+                    undefined;
+                M ->
+                    list_to_binary(M)
+            end,
+            MaxKeys = list_to_integer(wrq:get_qs_value("marker", "1000", RD)),
+            Options = [{marker, Marker}],
+            ListKeysRequest = riak_cs_list_objects:new_request(Bucket, MaxKeys,
+                                                               Options),
+            case riak_cs_list_objects_fsm:start_link(RiakPid, ListKeysRequest) of
+                {ok, ListFSMPid} ->
+                    {ok, ListObjectsResponse} = riak_cs_list_objects_fsm:get_object_list(ListFSMPid),
+                    Response = riak_cs_xml:to_xml(ListObjectsResponse),
                     ok = riak_cs_stats:update_with_start(bucket_list_keys,
                                                          StartTime),
                     dt_return(<<"to_xml">>, [200], [extract_name(User), Bucket]),
                     dt_return_bucket(<<"list_keys">>, [200], [extract_name(User), Bucket]),
-                    X;
+                    riak_cs_s3_response:respond(200, Response, RD, Ctx);
                 {error, Reason} ->
                     Code = riak_cs_s3_response:status_code(Reason),
-                    X = riak_cs_s3_response:api_error(Reason, RD, Ctx),
+                    Response = riak_cs_s3_response:api_error(Reason, RD, Ctx),
                     dt_return(<<"to_xml">>, [Code], [extract_name(User), Bucket]),
                     dt_return_bucket(<<"list_keys">>, [Code], [extract_name(User), Bucket]),
-                    X
+                    Response
             end
     end.
 
