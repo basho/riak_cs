@@ -1,3 +1,36 @@
+* Riak CS 1.2.2 Release Notes
+** Bugs Fixed
+- Fix problem where objects with utf-8 unicode key cannot be listed
+  nor fetched.
+- Speed up bucket_empty check and fix process leak. This bug was
+  originally found when a user was having trouble with =s3cmd
+  rb :s3//foo --recursive=. The operation first tries to delete the
+  (potentially large) bucket, which triggers our bucket empty
+  check. If the bucket has more than 32k items, we run out of
+  processes unless +P is set higher (because of the leak).
+** Additions
+- Full support for MDC replication
+* Riak CS 1.2.1 Release Notes
+** Bugs Fixed
+- Return 403 instead of 404 when a user attempts to list contents of
+  nonexistent bucket.
+- Do not do bucket list for HEAD or ?versioning or ?location request.
+** Additions
+- Add reduce phase for listing bucket contents to provide backpressure
+  when executing the MapReduce job.
+- Use prereduce during storage calculations.
+- Return 403 instead of 404 when a user attempts to list contents of
+  nonexistent bucket.
+* Riak CS 1.2.0 Release Notes
+** Bugs Fixed
+- Do not expose stack traces to users on 500 errors
+- Fix issue with sibling creation on user record updates
+- Fix crash in terminate state when fsm state is not fully populated
+- Script fixes and updates in response to node_package updates
+** Additions
+- Add preliminary support for MDC replication
+- Quickcheck test to exercise the erlcloud library against Riak CS
+- Basic support for riak_test integration
 * Riak CS 1.1.0 Release Notes
 ** Bugs Fixed
 - Check for timeout when checking out a connection from poolboy.
