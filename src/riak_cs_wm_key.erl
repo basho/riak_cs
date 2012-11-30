@@ -223,7 +223,7 @@ produce_body(RD, #key_context{get_fsm_pid=GetFsmPid,
         _ ->
             dt_return(<<"produce_body">>, [-2], [UserName, BFile_str]),
             dt_return_object(<<"get_acl">>, [-2], [UserName, BFile_str]),
-            {riak_cs_acl_utils:acl_to_xml(Acl), RD, KeyCtx}
+            {xml:to_xml(Acl), RD, KeyCtx}
     end;
 produce_body(RD, #key_context{get_fsm_pid=GetFsmPid, manifest=Mfst,
                               context=#context{start_time=StartTime,
