@@ -390,7 +390,7 @@ default_acl_test() ->
     DefaultAcl = default_acl("tester1", "TESTID1", "TESTKEYID1"),
     ?assertMatch({acl_v2,{"tester1","TESTID1", "TESTKEYID1"},
                   [{{"tester1","TESTID1"},['FULL_CONTROL']}], _}, DefaultAcl),
-    ?assertEqual(ExpectedXml, xml:to_xml(DefaultAcl)).
+    ?assertEqual(ExpectedXml, riak_cs_xml:to_xml(DefaultAcl)).
 
 acl_from_xml_test() ->
     Xml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><AccessControlPolicy><Owner><ID>TESTID1</ID><DisplayName>tester1</DisplayName></Owner><AccessControlList><Grant><Grantee xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"CanonicalUser\"><ID>TESTID1</ID><DisplayName>tester1</DisplayName></Grantee><Permission>FULL_CONTROL</Permission></Grant></AccessControlList></AccessControlPolicy>",
@@ -405,8 +405,8 @@ acl_from_xml_test() ->
 roundtrip_test() ->
     Xml1 = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><AccessControlPolicy><Owner><ID>TESTID1</ID><DisplayName>tester1</DisplayName></Owner><AccessControlList><Grant><Grantee xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"CanonicalUser\"><ID>TESTID1</ID><DisplayName>tester1</DisplayName></Grantee><Permission>FULL_CONTROL</Permission></Grant></AccessControlList></AccessControlPolicy>",
     Xml2 = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><AccessControlPolicy><Owner><ID>TESTID1</ID><DisplayName>tester1</DisplayName></Owner><AccessControlList><Grant><Grantee xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"CanonicalUser\"><ID>TESTID1</ID><DisplayName>tester1</DisplayName></Grantee><Permission>FULL_CONTROL</Permission></Grant><Grant><Grantee xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"Group\"><URI>http://acs.amazonaws.com/groups/global/AuthenticatedUsers</URI></Grantee><Permission>READ</Permission></Grant></AccessControlList></AccessControlPolicy>",
-    ?assertEqual(Xml1, binary_to_list(xml:to_xml(acl_from_xml(Xml1, "TESTKEYID1", undefined)))),
-    ?assertEqual(Xml2, binary_to_list(xml:to_xml(acl_from_xml(Xml2, "TESTKEYID2", undefined)))).
+    ?assertEqual(Xml1, binary_to_list(riak_cs_xml:to_xml(acl_from_xml(Xml1, "TESTKEYID1", undefined)))),
+    ?assertEqual(Xml2, binary_to_list(riak_cs_xml:to_xml(acl_from_xml(Xml2, "TESTKEYID2", undefined)))).
 
 requested_access_test() ->
     ?assertEqual('READ', requested_access('GET', false)),

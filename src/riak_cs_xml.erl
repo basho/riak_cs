@@ -7,7 +7,7 @@
 %% @doc A collection functions for going to or from XML to an erlang
 %% record type.
 
--module(xml).
+-module(riak_cs_xml).
 
 -include("riak_cs.hrl").
 -include("list_objects.hrl").
@@ -188,8 +188,8 @@ acl_to_xml_test() ->
                {{"tester1", "TESTID2"}, ['WRITE']}],
     Acl1 = riak_cs_acl_utils:acl("tester1", "TESTID1", "TESTKEYID1", Grants1),
     Acl2 = riak_cs_acl_utils:acl("tester1", "TESTID1", "TESTKEYID1", Grants2),
-    ?assertEqual(Xml, xml:to_xml(Acl1)),
-    ?assertNotEqual(Xml, xml:to_xml(Acl2)).
+    ?assertEqual(Xml, riak_cs_xml:to_xml(Acl1)),
+    ?assertNotEqual(Xml, riak_cs_xml:to_xml(Acl2)).
 
 list_objects_response_to_xml_test() ->
     Xml = <<"<?xml version=\"1.0\" encoding=\"UTF-8\"?><ListBucketResult><Name>bucket</Name><Prefix></Prefix><Marker></Marker><MaxKeys>1000</MaxKeys><Delimiter></Delimiter><IsTruncated>false</IsTruncated><Contents><Key>testkey1</Key><LastModified>2012-11-29T17:50:30.000Z</LastModified><ETag>\"fba9dede6af29711d7271245a35813428\"</ETag><Size>12345</Size><StorageClass>STANDARD</StorageClass><Owner><ID>TESTID1</ID><DisplayName>tester1</DisplayName></Owner></Contents><Contents><Key>testkey2</Key><LastModified>2012-11-29T17:52:30.000Z</LastModified><ETag>\"43433281b2f27731ccf53597645a3985\"</ETag><Size>54321</Size><StorageClass>STANDARD</StorageClass><Owner><ID>TESTID2</ID><DisplayName>tester2</DisplayName></Owner></Contents></ListBucketResult>">>,
@@ -215,6 +215,6 @@ list_objects_response_to_xml_test() ->
                                   is_truncated = false,
                                   contents = [Content1, Content2],
                                   common_prefixes = []},
-    ?assertEqual(Xml, xml:to_xml(ListObjectsResponse)).
+    ?assertEqual(Xml, riak_cs_xml:to_xml(ListObjectsResponse)).
 
 -endif.
