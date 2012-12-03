@@ -13,23 +13,31 @@
 -include("list_objects.hrl").
 
 -ifdef(TEST).
-
 -include_lib("eunit/include/eunit.hrl").
-
 -endif.
 
 %% Public API
 -export([to_xml/1]).
 
+-define(XML_SCHEMA_INSTANCE, "http://www.w3.org/2001/XMLSchema-instance").
+
+-type attributes() :: [{atom(), string()}].
+-type external_node() :: {atom(), [string()]}.
+-type internal_node() :: {atom(), [internal_node() | external_node()]} |
+                         {atom(), attributes(), [internal_node() | external_node()]}.
+
 %% ===================================================================
 %% Public API
 %% ===================================================================
 
+-spec to_xml(term()) -> binary().
 to_xml(undefined) ->
     [];
 to_xml([]) ->
     [];
 to_xml(?ACL{}=Acl) ->
+    acl_to_xml(Acl);
+to_xml(#acl_v1{}=Acl) ->
     acl_to_xml(Acl);
 to_xml(?LORESP{}=ListObjsResp) ->
     list_objects_response_to_xml(ListObjsResp).
@@ -41,119 +49,123 @@ to_xml(?LORESP{}=ListObjsResp) ->
 %% @doc Convert an internal representation of an ACL
 %% into XML.
 -spec acl_to_xml(acl()) -> binary().
-acl_to_xml(?ACL{owner=Owner, grants=Grants}) ->
-    {OwnerName, OwnerId, _} = Owner,
-    XmlDoc =
-        [{'AccessControlPolicy',
-          [
-           {'Owner',
-            [
-             {'ID', [OwnerId]},
-             {'DisplayName', [OwnerName]}
-            ]},
-           {'AccessControlList', grants_xml(Grants)}
-          ]}],
-    export_xml(XmlDoc);
-acl_to_xml(#acl_v1{owner=Owner, grants=Grants}) ->
-    {OwnerName, OwnerId} = Owner,
-    XmlDoc =
-        [{'AccessControlPolicy',
-          [
-           {'Owner',
-            [
-             {'ID', [OwnerId]},
-             {'DisplayName', [OwnerName]}
-            ]},
-           {'AccessControlList', grants_xml(Grants)}
-          ]}],
+acl_to_xml(Acl) ->
+    Content = [make_internal_node('Owner', owner_content(acl_owner(Acl))),
+               make_internal_node('AccessControlList', make_grants(acl_grants(Acl)))],
+    XmlDoc = [make_internal_node('AccessControlPolicy', Content)],
     export_xml(XmlDoc).
 
+-spec acl_grants(?ACL{} | #acl_v1{}) -> {string(), string()}.
+acl_grants(?ACL{grants=Grants}) ->
+    Grants;
+acl_grants(#acl_v1{grants=Grants}) ->
+    Grants.
+
+-spec acl_owner(?ACL{} | #acl_v1{}) -> {string(), string()}.
+acl_owner(?ACL{owner=Owner}) ->
+    {OwnerName, OwnerId, _} = Owner,
+    {OwnerName, OwnerId};
+acl_owner(#acl_v1{owner=Owner}) ->
+    Owner.
+
+-spec owner_content({string(), string()}) -> [external_node()].
+owner_content({OwnerName, OwnerId}) ->
+    [make_external_node('ID', OwnerId),
+     make_external_node('DisplayName', OwnerName)].
+
 list_objects_response_to_xml(Resp) ->
-    Contents = [key_content_to_xml(Content) ||
+    KeyContents = [key_content_to_xml(Content) ||
                    Content <- (Resp?LORESP.contents)],
     %% CommonPrefixes = common_prefixes_to_xml(Resp?LORESP.common_prefixes),
     CommonPrefixes = [],
-    XmlDoc = [{'ListBucketResult',
-               [{'Name', [format_value(Resp?LORESP.name)]},
-                {'Prefix', [format_value(Resp?LORESP.prefix)]},
-                {'Marker', [format_value(Resp?LORESP.marker)]},
-                {'MaxKeys', [format_value(Resp?LORESP.max_keys)]},
-                {'Delimiter', [format_value(Resp?LORESP.delimiter)]},
-                {'IsTruncated', [format_value(Resp?LORESP.is_truncated)]}] ++
-                   Contents ++ CommonPrefixes}],
-    export_xml(XmlDoc).
+    Contents = [make_external_node('Name', Resp?LORESP.name),
+                make_external_node('Prefix', Resp?LORESP.prefix),
+                make_external_node('Marker', Resp?LORESP.marker),
+                make_external_node('MaxKeys', Resp?LORESP.max_keys),
+                make_external_node('Delimiter', Resp?LORESP.delimiter),
+                make_external_node('IsTruncated', Resp?LORESP.is_truncated)] ++
+        KeyContents ++ CommonPrefixes,
+    export_xml([make_internal_node('ListBucketResult', Contents)]).
 
 key_content_to_xml(KeyContent) ->
-    {'Contents', [{'Key', [format_value(KeyContent?LOKC.key)]},
-                  {'LastModified', [format_value(KeyContent?LOKC.last_modified)]},
-                  {'ETag', ["\"" ++ format_value(KeyContent?LOKC.etag) ++ "\""]},
-                  {'Size', [format_value(KeyContent?LOKC.size)]},
-                  {'StorageClass', [format_value(KeyContent?LOKC.storage_class)]},
-                  owner_element(KeyContent?LOKC.owner)]}.
+    Contents =
+        [make_external_node('Key', KeyContent?LOKC.key),
+         make_external_node('LastModified', KeyContent?LOKC.last_modified),
+         make_external_node('ETag', KeyContent?LOKC.etag),
+         make_external_node('Size', KeyContent?LOKC.size),
+         make_external_node('StorageClass', KeyContent?LOKC.storage_class),
+         make_owner(KeyContent?LOKC.owner)],
+    make_internal_node('Contents', Contents).
+
+-spec make_internal_node(atom(), term()) -> internal_node().
+make_internal_node(Name, Content) ->
+    {Name, Content}.
+
+-spec make_internal_node(atom(), attributes(), term()) -> internal_node().
+make_internal_node(Name, Attributes, Content) ->
+    {Name, Attributes, Content}.
+
+-spec make_external_node(atom(), term()) -> external_node().
+make_external_node('ETag', Content) ->
+    {'ETag', ["\"" ++ format_value(Content) ++ "\""]};
+make_external_node(Name, Content) ->
+    {Name, [format_value(Content)]}.
 
 %% @doc Assemble the xml for the set of grantees for an acl.
--spec grants_xml([acl_grant()]) -> term().
-grants_xml(Grantees) ->
-    grants_xml(Grantees, []).
+-spec make_grants([acl_grant()]) -> [internal_node()].
+make_grants(Grantees) ->
+    make_grants(Grantees, []).
 
 %% @doc Assemble the xml for the set of grantees for an acl.
--spec grants_xml([acl_grant()], list()) -> list().
-grants_xml([], Acc) ->
+-spec make_grants([acl_grant()], [internal_node()]) -> [internal_node()].
+make_grants([], Acc) ->
     lists:flatten(Acc);
-grants_xml([HeadGrantee | RestGrantees], Acc) ->
-    case HeadGrantee of
-        {{GranteeName, GranteeId}, Perms} ->
-            GranteeXml = [grant_xml(GranteeName, GranteeId, Perm) ||
-                             Perm <- Perms];
-        {Group, Perms} ->
-            GranteeXml = [grant_xml(Group, Perm) ||
-                             Perm <- Perms]
-    end,
-    grants_xml(RestGrantees, [GranteeXml | Acc]).
+make_grants([{{GranteeName, GranteeId}, Perms} | RestGrantees], Acc) ->
+    Grantee = [make_grant(GranteeName, GranteeId, Perm) || Perm <- Perms],
+    make_grants(RestGrantees, [Grantee | Acc]);
+make_grants([{Group, Perms} | RestGrantees], Acc) ->
+    Grantee = [make_grant(Group, Perm) || Perm <- Perms],
+    make_grants(RestGrantees, [Grantee | Acc]).
 
 %% @doc Assemble the xml for a group grantee for an acl.
--spec grant_xml(atom(), acl_perm()) -> term().
-grant_xml(Group, Permission) ->
-    {'Grant',
-     [
-      {'Grantee',
-       [{'xmlns:xsi', "http://www.w3.org/2001/XMLSchema-instance"},
-        {'xsi:type', "Group"}],
-       [
-        {'URI', [uri_for_group(Group)]}
-       ]},
-      {'Permission', [atom_to_list(Permission)]}
-     ]}.
+-spec make_grant(atom(), acl_perm()) -> internal_node().
+make_grant(Group, Permission) ->
+    Attributes = [{'xmlns:xsi', ?XML_SCHEMA_INSTANCE},
+                  {'xsi:type', "Group"}],
+    GranteeContent = [make_external_node('URI', uri_for_group(Group))],
+    GrantContent =
+        [make_internal_node('Grantee', Attributes, GranteeContent),
+         make_external_node('Permission', Permission)],
+    make_internal_node('Grant', GrantContent).
 
 %% @doc Assemble the xml for a single grantee for an acl.
--spec grant_xml(string(), string(), acl_perm()) -> term().
-grant_xml(DisplayName, CanonicalId, Permission) ->
-    {'Grant',
-     [
-      {'Grantee',
-       [{'xmlns:xsi', "http://www.w3.org/2001/XMLSchema-instance"},
-        {'xsi:type', "CanonicalUser"}],
-       [
-        {'ID', [CanonicalId]},
-        {'DisplayName', [DisplayName]}
-       ]},
-      {'Permission', [atom_to_list(Permission)]}
-     ]}.
+-spec make_grant(string(), string(), acl_perm()) -> internal_node().
+make_grant(DisplayName, CanonicalId, Permission) ->
+    Attributes = [{'xmlns:xsi', ?XML_SCHEMA_INSTANCE},
+                  {'xsi:type', "CanonicalUser"}],
+    GranteeContent = [make_external_node('ID', CanonicalId),
+                      make_external_node('DisplayName', DisplayName)],
+    GrantContent =
+        [make_internal_node('Grantee', Attributes, GranteeContent),
+         make_external_node('Permission', Permission)],
+    make_internal_node('Grant', GrantContent).
 
-owner_element(#list_objects_owner_v1{id=Id, display_name=Name}) ->
-    {'Owner', [{'ID', [format_value(Id)]},
-               {'DisplayName', [format_value(Name)]}]}.
+-spec make_owner(list_objects_owner()) -> internal_node().
+make_owner(#list_objects_owner_v1{id=Id, display_name=Name}) ->
+    Content = [make_external_node('ID', Id),
+               make_external_node('DisplayName', Name)],
+    make_internal_node('Owner', Content).
 
+-spec export_xml([internal_node()]) -> binary().
 export_xml(XmlDoc) ->
     unicode:characters_to_binary(
       xmerl:export_simple(XmlDoc, xmerl_xml, [{prolog, ?XML_PROLOG}]), unicode, unicode).
 
+-spec format_value(atom() | integer() | binary() | list()) -> string().
 format_value(undefined) ->
     [];
-format_value(true) ->
-    "true";
-format_value(false) ->
-    "false";
+format_value(Val) when is_atom(Val) ->
+    atom_to_list(Val);
 format_value(Val) when is_binary(Val) ->
     binary_to_list(Val);
 format_value(Val) when is_integer(Val) ->
@@ -161,13 +173,13 @@ format_value(Val) when is_integer(Val) ->
 format_value(Val) when is_list(Val) ->
     Val.
 
-
 %% @doc Map a ACL group atom to its corresponding URI.
 -spec uri_for_group(atom()) -> string().
 uri_for_group('AllUsers') ->
     ?ALL_USERS_GROUP;
 uri_for_group('AuthUsers') ->
     ?AUTH_USERS_GROUP.
+
 %% ===================================================================
 %% Eunit tests
 %% ===================================================================
