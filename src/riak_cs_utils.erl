@@ -51,6 +51,7 @@
          delete_bucket_policy/4,
          get_bucket_acl_policy/2,
          timestamp/1,
+         timestamp_to_seconds/1,
          to_bucket_name/2,
          update_key_secret/1,
          get_cluster_id/1,
@@ -697,6 +698,10 @@ get_bucket_acl_policy(Bucket, RiakPid) ->
 -spec timestamp(erlang:timestamp()) -> non_neg_integer().
 timestamp({MegaSecs, Secs, _MicroSecs}) ->
     (MegaSecs * 1000000) + Secs.
+
+-spec timestamp_to_seconds(erlang:timestamp()) -> float().
+timestamp_to_seconds({MegaSecs, Secs, MicroSecs}) ->
+    (MegaSecs * 1000000) + Secs + (MicroSecs / 1000000).
 
 %% Get the proper bucket name for either the Riak CS object
 %% bucket or the data block bucket.

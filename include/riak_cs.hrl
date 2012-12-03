@@ -327,6 +327,7 @@
 -define(EPOCH_START, <<"0">>).
 -define(DEFAULT_CLUSTER_ID_TIMEOUT,5000).
 -define(DEFAULT_AUTH_MODULE, riak_cs_s3_auth).
+-define(DEFAULT_LIST_OBJECTS_MAX_KEYS, 1000).
 -define(DEFAULT_POLICY_MODULE, riak_cs_s3_policy).
 
 -record(access_v1, {
