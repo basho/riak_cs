@@ -245,7 +245,7 @@ handle_normal_read_bucket_response(RD, Ctx=#context{start_time=StartTime,
                 M ->
                     list_to_binary(M)
             end,
-            MaxKeys = list_to_integer(wrq:get_qs_value("marker", "1000", RD)),
+            MaxKeys = list_to_integer(wrq:get_qs_value("max-keys", "1000", RD)),
             Options = [{marker, Marker}],
             ListKeysRequest = riak_cs_list_objects:new_request(Bucket, MaxKeys,
                                                                Options),
