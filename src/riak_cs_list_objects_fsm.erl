@@ -33,6 +33,23 @@
          terminate/3,
          code_change/4]).
 
+-record(profiling, {
+        %% floating point secs
+        list_keys_start_time :: float(),
+        list_keys_end_time :: float(),
+        list_keys_num_results :: non_neg_integer(),
+
+        temp_mr_req :: {Request :: {StartIdx :: non_neg_integer(),
+                                    EndIdx :: non_neg_integer()},
+                        NumKeysRequested :: non_neg_integer(),
+                        StartTime :: float()},
+        mr_requests=[] :: [{Request :: {StartIdx :: non_neg_integer(),
+                                        EndIdx :: non_neg_integer()},
+                            NumKeysRequested :: non_neg_integer(),
+                            Timing :: {StartTime :: float(),
+                                       EndTime :: float()}}]}).
+-type profiling() :: #profiling{}.
+
 
 -record(state, {riakc_pid :: pid(),
                 req :: list_object_request(),
@@ -76,7 +93,9 @@
                                     EndIdx :: non_neg_integer()}],
                 object_buffer=[] :: list(),
 
-                response :: undefined | list_object_response()}).
+                response :: undefined | list_object_response(),
+
+                req_profiles :: profiling()}).
 
 %% some useful shared types
 
@@ -158,7 +177,8 @@ waiting_list_keys({ReqID, {error, Reason}}, State=#state{list_keys_req_id=ReqID}
 waiting_map_reduce({ReqID, done}, State=#state{map_red_req_id=ReqID}) ->
     %% depending on the result of this, we'll either
     %% make another m/r request, or be done
-    maybe_map_reduce(State);
+    State2 = update_state_with_mr_end_profiling(State),
+    maybe_map_reduce(State2);
 waiting_map_reduce({ReqID, {mapred, _Phase, Results}},
                    State=#state{map_red_req_id=ReqID}) ->
     handle_mapred_results(Results, State);
@@ -179,7 +199,7 @@ handle_sync_event(get_internal_state, _From, StateName, State) ->
     Reply = {StateName, State},
     {reply, Reply, StateName, State};
 handle_sync_event(Event, _From, StateName, State) ->
-    lager:info("got unknown event ~p in state ~p", [Event, StateName]),
+    lager:debug("got unknown event ~p in state ~p", [Event, StateName]),
     Reply = ok,
     {reply, Reply, StateName, State}.
 
@@ -191,6 +211,9 @@ handle_info(Info, waiting_list_keys, State) ->
 handle_info(Info, waiting_map_reduce, State) ->
     waiting_map_reduce(Info, State).
 
+terminate(normal, _StateName, #state{req_profiles=Profilings}) ->
+    print_profiling(Profilings),
+    ok;
 terminate(_Reason, _StateName, _State) ->
     ok.
 
@@ -222,7 +245,10 @@ make_list_keys_request(RiakcPid, ?LOREQ{name=BucketName}) ->
 -spec handle_streaming_list_keys_call(streaming_req_response(), state()) ->
     fsm_state_return().
 handle_streaming_list_keys_call({ok, ReqID}, State) ->
-    {next_state, waiting_list_keys, State#state{list_keys_req_id=ReqID}};
+    ListKeysStartTime = riak_cs_utils:timestamp_to_seconds(os:timestamp()),
+    Profiling2 = #profiling{list_keys_start_time=ListKeysStartTime},
+    {next_state, waiting_list_keys, State#state{list_keys_req_id=ReqID,
+                                                req_profiles=Profiling2}};
 handle_streaming_list_keys_call({error, Reason}, State) ->
     {stop, Reason, State}.
 
@@ -232,13 +258,21 @@ handle_keys_done(State=#state{key_buffer=ListofListofKeys}) ->
     maybe_map_reduce(NewState).
 
 -spec prepare_state_for_first_mapred(list(), state()) -> state().
-prepare_state_for_first_mapred(KeyBuffer, State=#state{req=Request}) ->
+prepare_state_for_first_mapred(KeyBuffer, State=#state{req=Request,
+                                                       req_profiles=Profiling}) ->
     %% TODO: this could potentially be pretty expensive
     %% and memory instensive. More reason to think about starting
     %% to only keep a smaller buffer. See comment in
     %% `handle_keys_received'
     SortedFlattenedKeys = lists:sort(lists:flatten(KeyBuffer)),
+
     NumKeys = length(SortedFlattenedKeys),
+
+    %% profiling info
+    EndTime = riak_cs_utils:timestamp_to_seconds(os:timestamp()),
+    Profiling2 = Profiling#profiling{list_keys_num_results=NumKeys,
+                                     list_keys_end_time=EndTime},
+
     FilteredKeys = filtered_keys_from_request(Request,
                                               SortedFlattenedKeys,
                                               NumKeys),
@@ -248,7 +282,8 @@ prepare_state_for_first_mapred(KeyBuffer, State=#state{req=Request}) ->
                 num_considerable_keys=TotalCandidateKeys,
                 filtered_keys=FilteredKeys,
                 %% free up the space
-                key_buffer=undefined}.
+                key_buffer=undefined,
+                req_profiles=Profiling2}.
 
 handle_keys_received(Keys, State=#state{key_buffer=PrevKeyBuffer}) ->
     %% TODO:
@@ -344,7 +379,9 @@ next_keys_from_state(#state{mr_requests=Requests,
     next_keys(lists:last(Requests), FilteredKeys).
 
 next_keys({StartIdx, EndIdx}, Keys) ->
-    lists:sublist(Keys, StartIdx, EndIdx).
+    %% the last arg to sublist is _not_ an index, but
+    %% a length, hence the diff of `EndIdx' and `StartIdx'
+    lists:sublist(Keys, StartIdx, (EndIdx - StartIdx)).
 
 
 -spec handle_mapred_results(list(), state()) ->
@@ -391,7 +428,9 @@ mapred_query() ->
 -spec handle_map_reduce_call(streaming_req_response(), state()) ->
     fsm_state_return().
 handle_map_reduce_call({ok, ReqID}, State) ->
-    {next_state, waiting_map_reduce, State#state{map_red_req_id=ReqID}};
+    State2 = State#state{map_red_req_id=ReqID},
+    State3 = update_state_with_mr_start_profiling(State2),
+    {next_state, waiting_map_reduce, State3};
 handle_map_reduce_call({error, Reason}, State) ->
     {stop, Reason, State}.
 
@@ -474,3 +513,48 @@ index_of_first_greater_element_helper([Head | _Rest], Element, Index) when Eleme
     Index;
 index_of_first_greater_element_helper([_Head | Rest], Element, Index) ->
     index_of_first_greater_element_helper(Rest, Element, Index + 1).
+
+%% Profiling helper functions
+%%--------------------------------------------------------------------
+
+update_state_with_mr_start_profiling(State=#state{req_profiles=Profiling,
+                                                  mr_requests=MRRequests}) ->
+    {StartIdx, EndIdx}=LastReq = lists:last(MRRequests),
+    Start = riak_cs_utils:timestamp_to_seconds(os:timestamp()),
+    NumKeysRequested = EndIdx - StartIdx,
+    TempReq = {LastReq, NumKeysRequested, Start},
+    Profiling2 = Profiling#profiling{temp_mr_req=TempReq},
+    State#state{req_profiles=Profiling2}.
+
+update_state_with_mr_end_profiling(State=#state{req_profiles=Profiling}) ->
+    PrevMrRequests = Profiling#profiling.mr_requests,
+    {Req, NumKeys, Start} = Profiling#profiling.temp_mr_req,
+    EndTime = riak_cs_utils:timestamp_to_seconds(os:timestamp()),
+    CompletedProfile = {Req, NumKeys, {Start, EndTime}},
+    NewMrRequests = PrevMrRequests ++ [CompletedProfile],
+    Profiling2 = Profiling#profiling{temp_mr_req=undefined,
+                                   mr_requests=NewMrRequests},
+    State#state{req_profiles=Profiling2}.
+
+print_profiling(Profiling) ->
+    lager:debug(format_list_keys_profile(Profiling)),
+    lager:debug(format_map_reduce_profile(Profiling)).
+
+format_list_keys_profile(#profiling{list_keys_start_time=Start,
+                                    list_keys_end_time=End,
+                                    list_keys_num_results=NumResults}) ->
+    SecondsDiff = End - Start,
+    io_lib:format("List keys returned ~p keys in ~6.2f seconds", [NumResults,
+                                                                  SecondsDiff]).
+
+format_map_reduce_profile(#profiling{mr_requests=MRRequests}) ->
+    string:concat("Map Reduce timings: ",
+                  format_map_reduce_profile_helper(MRRequests)).
+
+format_map_reduce_profile_helper(MRRequests) ->
+    string:join(lists:map(fun format_single_mr_profile/1, MRRequests),
+                "~n").
+
+format_single_mr_profile({_Request, NumKeysRequested, {Start, End}}) ->
+    TimeDiff = End - Start,
+    io_lib:format("~p keys in ~6.2f seconds", [NumKeysRequested, TimeDiff]).

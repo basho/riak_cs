@@ -245,7 +245,13 @@ handle_normal_read_bucket_response(RD, Ctx=#context{start_time=StartTime,
                 M ->
                     list_to_binary(M)
             end,
-            MaxKeys = list_to_integer(wrq:get_qs_value("marker", "1000", RD)),
+            MaxKeys = case wrq:get_qs_value("max-keys", RD) of
+                undefined ->
+                    ?DEFAULT_LIST_OBJECTS_MAX_KEYS;
+                StringKeys ->
+                    erlang:min(list_to_integer(StringKeys),
+                               ?DEFAULT_LIST_OBJECTS_MAX_KEYS)
+            end,
             Options = [{marker, Marker}],
             ListKeysRequest = riak_cs_list_objects:new_request(Bucket, MaxKeys,
                                                                Options),
