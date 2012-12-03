@@ -215,7 +215,7 @@ handle_read_request('GET', RD, Ctx=#context{user=User,
     case [B || B <- riak_cs_utils:get_buckets(User),
                B?RCS_BUCKET.name =:= StrBucket] of
         [] ->
-            {{halt, 404}, RD, Ctx};
+            handle_no_such_bucket_response(RD, Ctx);
         [_BucketRecord] ->
             handle_versioning_or_location_req(versioning_or_location_request(wrq:req_qs(RD)),
                                               RD, Ctx)
@@ -232,12 +232,7 @@ handle_normal_read_bucket_response(RD, Ctx=#context{start_time=StartTime,
     case [B || B <- riak_cs_utils:get_buckets(User),
                B?RCS_BUCKET.name =:= StrBucket] of
         [] ->
-            CodeName = no_such_bucket,
-            Res = riak_cs_s3_response:api_error(CodeName, RD, Ctx),
-            Code = riak_cs_s3_response:status_code(CodeName),
-            dt_return(<<"to_xml">>, [Code], [extract_name(User), Bucket]),
-            dt_return_bucket(<<"list_keys">>, [Code], [extract_name(User), Bucket]),
-            Res;
+            handle_no_such_bucket_response(RD, Ctx);
         [BucketRecord] ->
             Prefix = list_to_binary(wrq:get_qs_value("prefix", "", RD)),
             case riak_cs_utils:get_keys_and_manifests(Bucket, Prefix, RiakPid) of
@@ -260,6 +255,16 @@ handle_normal_read_bucket_response(RD, Ctx=#context{start_time=StartTime,
                     X
             end
     end.
+
+%% @private
+handle_no_such_bucket_response(RD, Ctx=#context{user=User,
+                                                bucket=Bucket}) ->
+    CodeName = no_such_bucket,
+    Res = riak_cs_s3_response:api_error(CodeName, RD, Ctx),
+    Code = riak_cs_s3_response:status_code(CodeName),
+    dt_return(<<"to_xml">>, [Code], [extract_name(User), Bucket]),
+    dt_return_bucket(<<"list_keys">>, [Code], [extract_name(User), Bucket]),
+    Res.
 
 %% @private
 versioning_qs({"versioning", _}) ->
