@@ -29,7 +29,7 @@
 %% -------------------------------------------------------------------
 
 init(Config) ->
-    dt_entry(<<"init">>),
+    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"init">>),
     %% Check if authentication is disabled and
     %% set that in the context.
     AuthBypass = proplists:get_value(auth_bypass, Config),
@@ -37,16 +37,16 @@ init(Config) ->
 
 -spec service_available(term(), term()) -> {true, term(), term()}.
 service_available(RD, Ctx) ->
-    dt_entry(<<"service_available">>),
+    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"service_available">>),
     riak_cs_wm_utils:service_available(RD, Ctx).
 
 -spec allowed_methods(term(), term()) -> {[atom()], term(), term()}.
 allowed_methods(RD, Ctx) ->
-    dt_entry(<<"allowed_methods">>),
+    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"allowed_methods">>),
     {['GET', 'HEAD', 'POST', 'PUT'], RD, Ctx}.
 
 forbidden(RD, Ctx) ->
-    dt_entry(<<"forbidden">>),
+    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"forbidden">>),
     Next = fun(NewRD, NewCtx=#context{user=User}) ->
                    forbidden(wrq:method(RD),
                              NewRD,
@@ -59,23 +59,26 @@ forbidden(RD, Ctx) ->
     handle_user_auth_response(UserAuthResponse).
 
 handle_user_auth_response({false, _RD, Ctx} = Ret) ->
-    dt_return(<<"forbidden">>, [], [extract_name(Ctx#context.user), <<"false">>]),
+    riak_cs_dtrace:dt_wm_return(?MODULE, <<"forbidden">>, 
+                                [], [riak_cs_wm_utils:extract_name(Ctx#context.user), <<"false">>]),
     Ret;
 handle_user_auth_response({{halt, Code}, _RD, Ctx} = Ret) ->
-    dt_return(<<"forbidden">>, [Code], [extract_name(Ctx#context.user), <<"true">>]),
+    riak_cs_dtrace:dt_wm_return(?MODULE, <<"forbidden">>, 
+                                [Code], [riak_cs_wm_utils:extract_name(Ctx#context.user), <<"true">>]),
     Ret;
 handle_user_auth_response({_Reason, _RD, Ctx} = Ret) ->
-    dt_return(<<"forbidden">>, [-1], [extract_name(Ctx#context.user), <<"true">>]),
+    riak_cs_dtrace:dt_wm_return(?MODULE, <<"forbidden">>, 
+                                [-1], [riak_cs_wm_utils:extract_name(Ctx#context.user), <<"true">>]),
     Ret.
 
 -spec content_types_accepted(term(), term()) ->
     {[{string(), atom()}], term(), term()}.
 content_types_accepted(RD, Ctx) ->
-    dt_entry(<<"content_types_accepted">>),
+    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"content_types_accepted">>),
     {[{?XML_TYPE, accept_xml}, {?JSON_TYPE, accept_json}], RD, Ctx}.
 
 content_types_provided(RD, Ctx) ->
-    dt_entry(<<"content_types_provided">>),
+    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"content_types_provided">>),
     {[{?XML_TYPE, produce_xml}, {?JSON_TYPE, produce_json}], RD, Ctx}.
 
 post_is_create(RD, Ctx) -> {true, RD, Ctx}.
@@ -85,7 +88,7 @@ create_path(RD, Ctx) -> {"/riak-cs/user", RD, Ctx}.
 -spec accept_json(term(), term()) ->
     {boolean() | {halt, term()}, term(), term()}.
 accept_json(RD, Ctx=#context{user=undefined}) ->
-    dt_entry(<<"accept_json">>),
+    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"accept_json">>),
     Body = wrq:req_body(RD),
     case catch mochijson2:decode(Body) of
         {struct, UserItems} ->
@@ -106,7 +109,7 @@ accept_json(RD, Ctx=#context{user=undefined}) ->
             riak_cs_s3_response:api_error(invalid_user_update, RD, Ctx)
     end;
 accept_json(RD, Ctx) ->
-    dt_entry(<<"accept_json">>),
+    riak_cs_wm_dtace:dt_wm_entry(?MODULE, <<"accept_json">>),
     Body = wrq:req_body(RD),
     case catch mochijson2:decode(Body) of
         {struct, UserItems} ->
@@ -120,7 +123,7 @@ accept_json(RD, Ctx) ->
 -spec accept_xml(term(), term()) ->
     {boolean() | {halt, term()}, term(), term()}.
 accept_xml(RD, Ctx=#context{user=undefined}) ->
-    dt_entry(<<"accept_xml">>),
+    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"accept_xml">>),
     Body = binary_to_list(wrq:req_body(RD)),
     case catch xmerl_scan:string(Body, []) of
         {'EXIT', _} ->
@@ -143,7 +146,7 @@ accept_xml(RD, Ctx=#context{user=undefined}) ->
             end
     end;
 accept_xml(RD, Ctx) ->
-    dt_entry(<<"accept_xml">>),
+    riacs_cs_wm_dtrace:dt_wm_entry(?MODULE, <<"accept_xml">>),
     Body = binary_to_list(wrq:req_body(RD)),
     case catch xmerl_scan:string(Body, []) of
         {'EXIT', _} ->
@@ -157,7 +160,7 @@ accept_xml(RD, Ctx) ->
     end.
 
 produce_json(RD, #context{user=User}=Ctx) ->
-    dt_entry(<<"produce_json">>),
+    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"produce_json">>),
     Body = mochijson2:encode(
              riak_cs_wm_utils:user_record_to_json(User)),
     Etag = etag(Body),
@@ -165,7 +168,7 @@ produce_json(RD, #context{user=User}=Ctx) ->
     {Body, RD2, Ctx}.
 
 produce_xml(RD, #context{user=User}=Ctx) ->
-    dt_entry(<<"produce_xml">>),
+    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"produce_xml">>),
     XmlDoc = riak_cs_wm_utils:user_record_to_xml(User),
     Body = riak_cs_s3_response:export_xml([XmlDoc]),
     Etag = etag(Body),
@@ -173,12 +176,12 @@ produce_xml(RD, #context{user=User}=Ctx) ->
     {Body, RD2, Ctx}.
 
 finish_request(RD, Ctx=#context{riakc_pid=undefined}) ->
-    dt_entry(<<"finish_request">>, [0], []),
+    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"finish_request">>, [0], []),
     {true, RD, Ctx};
 finish_request(RD, Ctx=#context{riakc_pid=RiakPid}) ->
-    dt_entry(<<"finish_request">>, [1], []),
+    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"finish_request">>, [1], []),
     riak_cs_utils:close_riak_connection(RiakPid),
-    dt_return(<<"finish_request">>, [1], []),
+    riak_cs_dtrace:dt_wm_return(?MODULE, <<"finish_request">>, [1], []),
     {true, RD, Ctx#context{riakc_pid=undefined}}.
 
 %% -------------------------------------------------------------------
@@ -251,7 +254,7 @@ handle_get_user_result({error, Reason}, RD, Ctx) ->
 -spec update_user([{binary(), binary()}], term(), term()) ->
     {boolean() | {halt, term()}, term(), term()}.
 update_user(UpdateItems, RD, Ctx=#context{user=User}) ->
-    dt_entry(<<"update_user">>),
+    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"update_user">>),
     UpdateUserResult = update_user_record(User, UpdateItems, false),
     handle_update_result(UpdateUserResult, RD, Ctx).
 
@@ -383,14 +386,3 @@ user_xml_filter(Element, Acc) ->
             Acc
     end.
 
-extract_name(X) ->
-    riak_cs_wm_utils:extract_name(X).
-
-dt_entry(Func) ->
-    dt_entry(Func, [], []).
-
-dt_entry(Func, Ints, Strings) ->
-    riak_cs_dtrace:dtrace(?DT_WM_OP, 1, Ints, ?MODULE, Func, Strings).
-
-dt_return(Func, Ints, Strings) ->
-    riak_cs_dtrace:dtrace(?DT_WM_OP, 2, Ints, ?MODULE, Func, Strings).

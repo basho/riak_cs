@@ -106,7 +106,6 @@ allowed_methods() ->
 content_types_provided(RD, Ctx=#context{local_context=LocalCtx,
                                         riakc_pid=RiakcPid}) ->
     Mfst = LocalCtx#key_context.manifest,
-    dt_entry(<<"content_types_provided">>),
     %% TODO:
     %% As I understand S3, the content types provided
     %% will either come from the value that was
@@ -130,7 +129,6 @@ content_types_provided(RD, Ctx=#context{local_context=LocalCtx,
 -spec content_types_accepted(term(), term()) ->
     {[{string(), atom()}], term(), term()}.
 content_types_accepted(RD, Ctx=#context{local_context=LocalCtx0}) ->
-    dt_entry(<<"content_types_accepted">>),
     case wrq:get_req_header("Content-Type", RD) of
         undefined ->
             DefaultCType = "application/octet-stream",
@@ -173,20 +171,20 @@ produce_body(RD, Ctx=#context{local_context=LocalCtx,
     #key_context{get_fsm_pid=GetFsmPid, manifest=Mfst} = LocalCtx,
     {Bucket, File} = Mfst?MANIFEST.bkey,
     BFile_str = [Bucket, $,, File],
-    UserName = extract_name(User),
-    dt_entry(<<"produce_body">>, [], [UserName, BFile_str]),
-    dt_entry_object(<<"get_acl">>, [], [UserName, BFile_str]),
+    UserName = riak_cs_wm_utils:extract_name(User),
+    riak_cs_dtrace:dt_object_entry(?MODULE, <<"object_get_acl">>, 
+                                      [], [UserName, BFile_str]),
     riak_cs_get_fsm:stop(GetFsmPid),
     ok = riak_cs_stats:update_with_start(object_get_acl, StartTime),
     Acl = Mfst?MANIFEST.acl,
     case Acl of
         undefined ->
-            dt_return(<<"produce_body">>, [-1], [UserName, BFile_str]),
-            dt_return_object(<<"get_acl">>, [-1], [UserName, BFile_str]),
+            riak_cs_dtrace:dt_object_return(?MODULE, <<"object_get_acl">>, 
+                                               [-1], [UserName, BFile_str]),
             {riak_cs_acl_utils:empty_acl_xml(), RD, Ctx};
-        _ ->
-            dt_return(<<"produce_body">>, [-2], [UserName, BFile_str]),
-            dt_return_object(<<"get_acl">>, [-2], [UserName, BFile_str]),
+        _ -> 
+            riak_cs_dtrace:dt_object_return(?MODULE, <<"object_get_acl">>, 
+                                               [-2], [UserName, BFile_str]),
             {riak_cs_acl_utils:acl_to_xml(Acl), RD, Ctx}
     end.        
 
@@ -204,9 +202,9 @@ accept_body(RD, Ctx=#context{local_context=#key_context{get_fsm_pid=GetFsmPid,
                                                         Mfst /= undefined, 
                                                         RiakPid /= undefined ->
     BFile_str = [Bucket, $,, KeyStr],
-    UserName = extract_name(User),
-    dt_entry(<<"accept_body">>, [], [UserName, BFile_str]),
-    dt_entry_object(<<"file_put_acl">>, [], [UserName, BFile_str]),
+    UserName = riak_cs_wm_utils:extract_name(User),
+    riak_cs_dtrace:dt_object_entry(?MODULE, <<"object_put_acl">>, 
+                                      [], [UserName, BFile_str]),
     riak_cs_get_fsm:stop(GetFsmPid),
     Body = binary_to_list(wrq:req_body(RD)),
     case Body of
@@ -229,30 +227,14 @@ accept_body(RD, Ctx=#context{local_context=#key_context{get_fsm_pid=GetFsmPid,
     Key = list_to_binary(KeyStr),
     case riak_cs_utils:set_object_acl(Bucket, Key, Mfst, Acl, RiakPid) of
         ok ->
-            dt_return(<<"accept_body">>, [200], [UserName, BFile_str]),
-            dt_return_object(<<"file_put_acl">>, [200], [UserName, BFile_str]),
+            riak_cs_dtrace:dt_object_return(?MODULE, <<"object_put_acl">>, 
+                                               [200], [UserName, BFile_str]),
             {{halt, 200}, RD, Ctx};
         {error, Reason} ->
             Code = riak_cs_s3_response:status_code(Reason),
-            dt_return(<<"accept_body">>, [Code], [UserName, BFile_str]),
-            dt_return_object(<<"file_put_acl">>, [Code], [UserName, BFile_str]),
+            riak_cs_dtrace:dt_object_return(?MODULE, <<"object_put_acl">>, 
+                                               [Code], [UserName, BFile_str]),
             riak_cs_s3_response:api_error(Reason, RD, Ctx)
     end.
 
-extract_name(X) ->
-    riak_cs_wm_utils:extract_name(X).
 
-dt_entry(Func) ->
-    dt_entry(Func, [], []).
-
-dt_entry(Func, Ints, Strings) ->
-    riak_cs_dtrace:dtrace(?DT_WM_OP, 1, Ints, ?MODULE, Func, Strings).
-
-dt_entry_object(Func, Ints, Strings) ->
-    riak_cs_dtrace:dtrace(?DT_OBJECT_OP, 1, Ints, ?MODULE, Func, Strings).
-
-dt_return(Func, Ints, Strings) ->
-    riak_cs_dtrace:dtrace(?DT_WM_OP, 2, Ints, ?MODULE, Func, Strings).
-
-dt_return_object(Func, Ints, Strings) ->
-    riak_cs_dtrace:dtrace(?DT_OBJECT_OP, 2, Ints, ?MODULE, Func, Strings).
