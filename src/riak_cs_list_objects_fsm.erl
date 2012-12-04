@@ -211,8 +211,10 @@ handle_info(Info, waiting_list_keys, State) ->
 handle_info(Info, waiting_map_reduce, State) ->
     waiting_map_reduce(Info, State).
 
-terminate(_Reason, _StateName, #state{req_profiles=Profilings}) ->
+terminate(normal, _StateName, #state{req_profiles=Profilings}) ->
     print_profiling(Profilings),
+    ok;
+terminate(_Reason, _StateName, _State) ->
     ok.
 
 code_change(_OldVsn, StateName, State, _Extra) ->
