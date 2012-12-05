@@ -27,7 +27,7 @@ allowed_methods() ->
     %% TODO: POST (multi-delete)
     ['GET'].
 
--spec content_types_provided(term(),term()) -> [{string(), atom()}].
+-spec content_types_provided(#wm_reqdata{}, #context{}) -> [{string(), atom()}].
 content_types_provided(RD,Ctx) ->        
     {[{"application/xml", to_xml}], RD, Ctx}.
 
@@ -74,8 +74,8 @@ authorize(RD, #context{user=User,
             end
     end.
 
--spec to_xml(term(), #context{}) ->
-                    {binary() | {'halt', term()}, term(), #context{}}.
+-spec to_xml(#wm_reqdata{}, #context{}) ->
+                    {binary() | {'halt', non_neg_integer()}, #wm_reqdata{}, #context{}}.
 to_xml(RD, Ctx=#context{start_time=StartTime,
                         user=User,
                         bucket=Bucket,
@@ -115,4 +115,3 @@ to_xml(RD, Ctx=#context{start_time=StartTime,
                     X
             end
     end.
-

@@ -22,7 +22,7 @@
 allowed_methods() ->
     ['HEAD', 'PUT', 'DELETE'].
 
--spec content_types_provided(term(),term()) -> [{string(), atom()}].
+-spec content_types_provided(#wm_reqdata{}, #context{}) -> [{string(), atom()}].
 content_types_provided(RD, Ctx) ->
     {[{"application/xml", to_xml}], RD, Ctx}.
 
@@ -181,5 +181,3 @@ delete_resource(RD, Ctx=#context{user=User,
                                                [Code], [riak_cs_wm_utils:extract_name(User), Bucket]),
             riak_cs_s3_response:api_error(Reason, RD, Ctx)
     end.
-
-

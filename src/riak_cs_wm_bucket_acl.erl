@@ -40,7 +40,7 @@ content_types_accepted(RD, Ctx) ->
             {[{Media, accept_body}], RD, Ctx}
     end.
 
--spec authorize(term(),term()) -> {boolean() | {halt, term()}, term(), term()}.
+-spec authorize(#wm_reqdata{}, #context{}) -> {boolean() | {halt, non_neg_integer()}, #wm_reqdata{}, #context{}}.
 authorize(RD, #context{user=User,
                        riakc_pid=RiakPid}=Ctx) ->
     Method = wrq:method(RD),
@@ -91,8 +91,8 @@ authorize(RD, #context{user=User,
             end
     end.
 
--spec to_xml(term(), #context{}) ->
-                    {binary() | {'halt', term()}, term(), #context{}}.
+-spec to_xml(#wm_reqdata{}, #context{}) ->
+                    {binary() | {'halt', non_neg_integer()}, #wm_reqdata{}, #context{}}.
 to_xml(RD, Ctx=#context{start_time=StartTime,
                         user=User,
                         bucket=Bucket,
@@ -115,6 +115,7 @@ to_xml(RD, Ctx=#context{start_time=StartTime,
     end.
 
 %% @doc Process request body on `PUT' request.
+-spec accept_body(#wm_reqdata{}, #context{}) -> {{halt, non_neg_integer()}, #wm_reqdata{}, #context{}}.
 accept_body(RD, Ctx=#context{user=User,
                              user_object=UserObj,
                              bucket=Bucket,

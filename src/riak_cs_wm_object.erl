@@ -20,9 +20,11 @@
 -include("riak_cs.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
 
+-spec init(#context{}) -> {ok, #context{}}.
 init(Ctx) ->
     {ok, Ctx#context{local_context=#key_context{}}}.
 
+-spec malformed_request(#wm_reqdata{}, #context{}) -> {false, #wm_reqdata{}, #context{}}.
 malformed_request(RD,Ctx=#context{local_context=LocalCtx0}) ->    
     Bucket = list_to_binary(wrq:path_info(bucket, RD)),
     %% need to unquote twice since we re-urlencode the string during rewrite in 
@@ -35,6 +37,8 @@ malformed_request(RD,Ctx=#context{local_context=LocalCtx0}) ->
 %% object ACL and compare the permission requested with the permission
 %% granted, and allow or deny access. Returns a result suitable for
 %% directly returning from the {@link forbidden/2} webmachine export.
+-spec authorize(#wm_reqdata{}, #context{}) -> 
+                       {boolean() | {halt, term()}, #wm_reqdata{}, #context{}}.
 authorize(RD, Ctx0=#context{local_context=LocalCtx0, riakc_pid=RiakPid}) ->
     Method = wrq:method(RD),
     RequestedAccess =
@@ -45,6 +49,8 @@ authorize(RD, Ctx0=#context{local_context=LocalCtx0, riakc_pid=RiakPid}) ->
 
 %% @doc Final step of {@link forbidden/2}: Authentication succeeded,
 %% now perform ACL check to verify access permission.
+-spec check_permission(atom(), #wm_reqdata{}, #context{}, lfs_manifest() | notfound) ->
+                              {boolean() | {halt, non_neg_integer()}, #wm_reqdata{}, #context{}}.
 check_permission('GET', RD, Ctx, notfound) ->
     {{halt, 404}, riak_cs_access_logger:set_user(Ctx#context.user, RD), Ctx};
 check_permission('HEAD', RD, Ctx, notfound) ->
@@ -91,6 +97,7 @@ allowed_methods() ->
     %% TODO: POST
     ['HEAD', 'GET', 'DELETE', 'PUT'].
 
+-spec valid_entity_length(#wm_reqdata{}, #context{}) -> {boolean(), #wm_reqdata{}, #context{}}.
 valid_entity_length(RD, Ctx=#context{local_context=LocalCtx}) ->
     case wrq:method(RD) of
         'PUT' ->
@@ -113,8 +120,7 @@ valid_entity_length(RD, Ctx=#context{local_context=LocalCtx}) ->
             {true, RD, Ctx}
     end.
 
--spec content_types_provided(term(), term()) ->
-    {[{string(), atom()}], term(), term()}.
+-spec content_types_provided(#wm_reqdata{}, #context{}) -> {[{string(), atom()}], #wm_reqdata{}, #context{}}.
 content_types_provided(RD, Ctx=#context{local_context=LocalCtx,
                                         riakc_pid=RiakcPid}) ->
     Mfst = LocalCtx#key_context.manifest,
@@ -138,7 +144,7 @@ content_types_provided(RD, Ctx=#context{local_context=LocalCtx,
             {[{"text/plain", produce_body}], RD, Ctx}
     end.
 
--spec produce_body(term(), term()) -> {iolist()|binary(), term(), term()}.
+-spec produce_body(#wm_reqdata{}, #context{}) -> {iolist()|binary(), #wm_reqdata{}, #context{}}.
 produce_body(RD, Ctx=#context{local_context=LocalCtx,
                               start_time=StartTime,
                               user=User}) ->
@@ -183,7 +189,7 @@ produce_body(RD, Ctx=#context{local_context=LocalCtx,
     {{known_length_stream, ContentLength, {<<>>, StreamFun}}, NewRQ, Ctx}.
 
 %% @doc Callback for deleting an object.
--spec delete_resource(term(), term()) -> {true, term(), #key_context{}}.
+-spec delete_resource(#wm_reqdata{}, #context{}) -> {true, #wm_reqdata{}, #context{}}.
 delete_resource(RD, Ctx=#context{local_context=LocalCtx,
                                  riakc_pid=RiakcPid}) ->
     #key_context{bucket=Bucket,
@@ -207,8 +213,7 @@ handle_delete_object({ok, _UUIDsMarkedforDelete}, UserName, BFile_str, RD, Ctx) 
     riak_cs_dtrace:dt_object_return(?MODULE, <<"object_delete">>, [1], [UserName, BFile_str]),
     {true, RD, Ctx}.
 
--spec content_types_accepted(term(), term()) ->
-    {[{string(), atom()}], term(), term()}.
+-spec content_types_accepted(#wm_reqdata{}, #context{}) -> {[{string(), atom()}], #wm_reqdata{}, #context{}}.
 content_types_accepted(RD, Ctx=#context{local_context=LocalCtx0}) ->
     case wrq:get_req_header("Content-Type", RD) of
         undefined ->
@@ -243,6 +248,7 @@ content_types_accepted(RD, Ctx=#context{local_context=LocalCtx0}) ->
             end
     end.
 
+-spec accept_body(#wm_reqdata{}, #context{}) -> {{halt, integer()}, #wm_reqdata{}, #context{}}.
 accept_body(RD, Ctx=#context{local_context=LocalCtx,
                              user=User,
                              riakc_pid=RiakcPid}) ->
@@ -273,6 +279,7 @@ accept_body(RD, Ctx=#context{local_context=LocalCtx,
     {ok, Pid} = riak_cs_put_fsm_sup:start_put_fsm(node(), Args),
     accept_streambody(RD, Ctx, Pid, wrq:stream_req_body(RD, riak_cs_lfs_utils:block_size())).
 
+-spec accept_streambody(#wm_reqdata{}, #context{}, pid(), term()) -> {{halt, integer()}, #wm_reqdata{}, #context{}}.
 accept_streambody(RD,
                   Ctx=#context{local_context=_LocalCtx=#key_context{size=0}},
                   Pid,
@@ -299,6 +306,7 @@ accept_streambody(RD,
 %% We need to do some checking to make sure
 %% the bucket exists for the user who is doing
 %% this PUT
+-spec finalize_request(#wm_reqdata{}, #context{}, pid()) -> {{halt, 200}, #wm_reqdata{}, #context{}}.
 finalize_request(RD,
                  Ctx=#context{local_context=LocalCtx,
                               start_time=StartTime,

@@ -27,7 +27,7 @@ content_types_provided(RD, Ctx) ->
     {[{"application/xml", to_xml}], RD, Ctx}.
 
 -spec authorize(#wm_reqdata{}, #context{}) -> 
-                       {boolean() | {halt, term()}, #wm_reqdata{}, #context{}}.
+                       {boolean() | {halt, non_neg_integer()}, #wm_reqdata{}, #context{}}.
 authorize(RD, #context{user=User,
                        riakc_pid=RiakPid}=Ctx) ->
     RequestedAccess = riak_cs_acl_utils:requested_access('GET', true),

@@ -25,7 +25,8 @@ allowed_methods() ->
 content_types_provided(RD, Ctx) ->
     {[{"application/xml", to_xml}], RD, Ctx}.
 
-
+-spec authorize(#wm_reqdata{}, #context{}) -> 
+                       {boolean() | {halt, term()}, #wm_reqdata{}, #context{}}.
 authorize(RD, #context{user=User,
                               riakc_pid=RiakPid}=Ctx) ->
     Method = wrq:method(RD),
