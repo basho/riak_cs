@@ -214,7 +214,7 @@ handle_delete_object({error, Error}, UserName, BFile_str, RD, Ctx) ->
     riak_cs_dtrace:dt_object_return(?MODULE, <<"object_delete">>, [0], [UserName, BFile_str]),
     {false, RD, Ctx};
 handle_delete_object({ok, _UUIDsMarkedforDelete}, UserName, BFile_str, RD, Ctx) ->
-    riak_cs_dtrace:dt_object_return(<<"object_delete">>, [1], [UserName, BFile_str]),
+    riak_cs_dtrace:dt_object_return(?MODULE, <<"object_delete">>, [1], [UserName, BFile_str]),
     {true, RD, Ctx}.
 
 -spec content_types_accepted(term(), term()) ->
