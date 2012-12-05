@@ -219,9 +219,14 @@ finish_request(RD, Ctx=#context{riakc_pid=undefined,
     riak_cs_dtrace:dt_wm_return({?MODULE, Mod}, <<"finish_request">>, [0], []),
     Res;
 finish_request(RD, Ctx0=#context{riakc_pid=RiakcPid,
-                                submodule=Mod,
-                                exports_fun=ExportsFun}) ->
+                                 submodule=Mod,
+                                 riakc_pool=Pool,
+                                 exports_fun=ExportsFun}) ->
     riak_cs_dtrace:dt_wm_entry({?MODULE, Mod}, <<"finish_request">>, [1], []),
+    case Pool of
+        undefined -> riak_cs_utils:close_riak_connection(RiakcPid);
+        _ -> riak_cs_utils:close_riak_connection(Pool, RiakcPid)
+    end,
     riak_cs_utils:close_riak_connection(RiakcPid),
     Ctx = Ctx0#context{riakc_pid=undefined},
     Res = resource_call(Mod,
