@@ -12,7 +12,7 @@
 -include("riak_cs.hrl").
 
 %% API
--export([start_link/1]).
+-export([start_link/0]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -30,7 +30,7 @@
 %%% API
 %%%===================================================================
 
-start_link(_Args) ->
+start_link() ->
     %% named proc
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
@@ -68,5 +68,5 @@ code_change(_OldVsn, State, _Extra) ->
 
 -spec new_table() -> ets:tid().
 new_table() ->
-    TableSpec = [public, set, {write_concurrency, true}, {compressed, false}],
+    TableSpec = [public, set, {write_concurrency, true}],
     ets:new(list_objects_cache, TableSpec).
