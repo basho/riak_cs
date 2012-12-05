@@ -22,7 +22,7 @@
          terminate/2,
          code_change/3]).
 
--record(state, {}).
+-record(state, {tid :: ets:tid()}).
 
 -type state() :: #state{}.
 
@@ -31,6 +31,7 @@
 %%%===================================================================
 
 start_link(_Args) ->
+    %% named proc
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
 %%%===================================================================
@@ -38,12 +39,16 @@ start_link(_Args) ->
 %%%===================================================================
 
 -spec init(list()) -> {ok, state()} | {error, term()}.
-init(_Args) ->
-    {ok, #state{}}.
+init([]) ->
+    Tid = new_table(),
+    NewState = #state{tid=Tid},
+    {ok, NewState}.
 
-handle_call(_Msg, _From, State) ->
-    Reply = ok,
-    {reply, Reply, State}.
+handle_call(get_tid, _From, State=#state{tid=Tid}) ->
+    {reply, Tid, State};
+handle_call(Msg, _From, State) ->
+    lager:debug("got unknown message: ~p", [Msg]),
+    {reply, ok, State}.
 
 handle_cast(_Msg, State) ->
     {noreply, State}.
@@ -60,3 +65,8 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
+
+-spec new_table() -> ets:tid().
+new_table() ->
+    TableSpec = [public, set, {write_concurrency, true}, {compressed, false}],
+    ets:new(list_objects_cache, TableSpec).
