@@ -359,11 +359,8 @@ default_delete_resource(RD, Ctx) ->
 default_allowed_methods() ->
     [].
 
-default_finish_request(RD, Ctx=#context{riakc_pid=undefined}) ->
-    {true, RD, Ctx};
-default_finish_request(RD, Ctx=#context{riakc_pid=RiakPid}) ->
-    riak_cs_utils:close_riak_connection(RiakPid),
-    {true, RD, Ctx#context{riakc_pid=undefined}}.
+default_finish_request(RD, Ctx) ->
+    {true, RD, Ctx}.
 
 default_anon_ok() ->
     true.
