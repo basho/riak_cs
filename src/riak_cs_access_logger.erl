@@ -352,61 +352,61 @@ access_record(#wm_log_data{notes=Notes}=Log) ->
 
 operation(#wm_log_data{resource_module=riak_cs_wm_usage}) ->
     <<"UsageRead">>;
-operation(#wm_log_data{resource_module=riak_cs_wm_service}) ->
+operation(#wm_log_data{resource_module=riak_cs_wm_buckets}) ->
     <<"ListBuckets">>;
 operation(#wm_log_data{resource_module=riak_cs_wm_user}) ->
     <<"AccountRead">>;
+operation(#wm_log_data{resource_module=riak_cs_wm_bucket_acl,
+                       method='GET'}) ->
+    <<"BucketReadACL">>;
+operation(#wm_log_data{resource_module=riak_cs_wm_bucket_acl,
+                       method='HEAD'}) ->
+    <<"BucketStatACL">>;
+operation(#wm_log_data{resource_module=riak_cs_wm_bucket_acl,
+                       method='PUT'}) ->
+    <<"BucketWriteACL">>;
+operation(#wm_log_data{resource_module=riak_cs_wm_bucket_acl}) ->
+    <<"BucketUnknownACL">>;
 operation(#wm_log_data{resource_module=riak_cs_wm_bucket,
-                       path=Path,
-                       method=Method}) ->
-    case is_acl(Method, Path) of
-        true ->
-            case Method of
-                'GET'  -> <<"BucketReadACL">>;
-                'HEAD' -> <<"BucketStatACL">>;
-                'PUT'  -> <<"BucketWriteACL">>;
-                _      -> <<"BucketUnknownACL">>
-            end;
-        false ->
-            case Method of
-                'GET'  -> <<"BucketRead">>;
-                'HEAD' -> <<"BucketStat">>;
-                'PUT'  -> <<"BucketCreate">>;
-                'DELETE' -> <<"BucketDelete">>;
-                _        -> <<"BucketUnknown">>
-            end
-    end;
-operation(#wm_log_data{resource_module=riak_cs_wm_key,
-                       path=Path,
-                       method=Method}) ->
-    case is_acl(Method, Path) of
-        true ->
-            case Method of
-                'GET'  -> <<"KeyReadACL">>;
-                'HEAD' -> <<"KeyStatACL">>;
-                'PUT'  -> <<"KeyWriteACL">>;
-                _      -> <<"KeyUnknownACL">>
-            end;
-        false ->
-            case Method of
-                'GET'  -> <<"KeyRead">>;
-                'HEAD' -> <<"KeyStat">>;
-                'PUT'  -> <<"KeyWrite">>;
-                'DELETE' -> <<"KeyDelete">>;
-                _        -> <<"KeyUnknown">>
-            end
-    end;
+                       method='HEAD'}) ->
+    <<"BucketStat">>;
+operation(#wm_log_data{resource_module=riak_cs_wm_bucket,
+                       method='PUT'}) ->
+    <<"BucketCreate">>;
+operation(#wm_log_data{resource_module=riak_cs_wm_bucket,
+                       method='DELETE'}) ->
+    <<"BucketDelete">>;
+operation(#wm_log_data{resource_module=riak_cs_wm_bucket}) ->
+    <<"BucketUnknown">>;
+operation(#wm_log_data{resource_module=riak_cs_wm_objects}) ->
+    <<"BucketRead">>;
+operation(#wm_log_data{resource_module=riak_cs_wm_object_acl,
+                       method='GET'}) ->
+    <<"KeyReadACL">>;
+operation(#wm_log_data{resource_module=riak_cs_wm_object_acl,
+                       method='HEAD'}) ->
+    <<"KeyStatACL">>;
+operation(#wm_log_data{resource_module=riak_cs_wm_object_acl,
+                       method='PUT'}) ->
+    <<"KeyWriteACL">>;
+operation(#wm_log_data{resource_module=riak_cs_wm_object_acl}) ->
+    <<"KeyUnknownACL">>;
+operation(#wm_log_data{resource_module=riak_cs_wm_object,
+                       method='GET'}) ->
+    <<"KeyRead">>;
+operation(#wm_log_data{resource_module=riak_cs_wm_object,
+                       method='HEAD'}) ->
+    <<"KeyStat">>;
+operation(#wm_log_data{resource_module=riak_cs_wm_object,
+                       method='PUT'}) ->
+    <<"KeyWrite">>;
+operation(#wm_log_data{resource_module=riak_cs_wm_object,
+                       method='DELETE'}) ->
+    <<"KeyDelete">>;
+operation(#wm_log_data{resource_module=riak_cs_wm_object}) ->
+    <<"KeyUnknown">>;
 operation(#wm_log_data{method=Method}) ->
     iolist_to_binary([<<"Unknown">>, atom_to_binary(Method, latin1)]).
-
-is_acl(Method, Path) ->
-    {_, Query, _} = mochiweb_util:urlsplit_path(Path),
-    Params = mochiweb_util:parse_qs(Query),
-    case riak_cs_acl_utils:requested_access(Method, Params) of
-        'READ_ACP'  -> true;
-        'WRITE_ACP' -> true;
-        _           -> false
-    end.
 
 stats(#wm_log_data{response_code=Code,
                    notes=Notes,
