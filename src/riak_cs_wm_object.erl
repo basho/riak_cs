@@ -46,9 +46,9 @@ authorize(RD, Ctx0=#context{local_context=LocalCtx0, riakc_pid=RiakPid}) ->
 %% @doc Final step of {@link forbidden/2}: Authentication succeeded,
 %% now perform ACL check to verify access permission.
 check_permission('GET', RD, Ctx, notfound) ->
-    {{halt, 404}, maybe_log_user(RD, Ctx), Ctx};
+    {{halt, 404}, riak_cs_access_logger:set_user(Ctx#context.user, RD), Ctx};
 check_permission('HEAD', RD, Ctx, notfound) ->
-    {{halt, 404}, maybe_log_user(RD, Ctx), Ctx};
+    {{halt, 404}, riak_cs_access_logger:set_user(Ctx#context.user, RD), Ctx};
 check_permission(_, RD, Ctx=#context{requested_perm=RequestedAccess,local_context=LocalCtx}, Mfst) ->
     #key_context{bucket=Bucket} = LocalCtx,
     RiakPid = Ctx#context.riakc_pid,
@@ -83,16 +83,6 @@ check_permission(_, RD, Ctx=#context{requested_perm=RequestedAccess,local_contex
         false ->
             %% ACL check failed, deny access
             riak_cs_wm_utils:deny_access(RD, Ctx)
-    end.
-
-%% @doc Only set the user for the access logger to catch if there is a
-%% user to catch.
-maybe_log_user(RD, Context) ->
-    case Context#context.user of
-        undefined ->
-            RD;
-        User ->
-            riak_cs_access_logger:set_user(User, RD)
     end.
 
 %% @doc Get the list of methods this resource supports.
