@@ -60,8 +60,15 @@ authorize(RD, #context{user=User,
 
 -spec to_xml(#wm_reqdata{}, #context{}) -> 
                     {binary() | {halt, term()}, #wm_reqdata{}, #context{}}.
-to_xml(RD, Ctx) ->
-    {<<"<VersioningConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"/>">>,
-     RD, Ctx}.
+to_xml(RD, Ctx=#context{user=User,bucket=Bucket}) ->
+    StrBucket = binary_to_list(Bucket),
+    case [B || B <- riak_cs_utils:get_buckets(User),
+               B?RCS_BUCKET.name =:= StrBucket] of
+        [] ->
+            riak_cs_s3_response:api_error(no_such_bucket, RD, Ctx);
+        [_BucketRecord] ->
+            {<<"<VersioningConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"/>">>,
+             RD, Ctx}
+    end.
 
 
