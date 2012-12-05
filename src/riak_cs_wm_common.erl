@@ -108,6 +108,7 @@ forbidden(RD, Ctx=#context{auth_module=AuthMod,
                      {ok, _} -> %% disabled account, we are going to 403
                          {error, bad_auth};
                      {error, NE} when NE =:= not_found;
+                                      NE =:= notfound;
                                       NE =:= no_user_key ->
                          {error, NE};
                      {error, R} ->
