@@ -51,7 +51,7 @@ authorize(RD, #context{user=User,
         {true, OwnerId} ->
             %% listing bucket for (possibly anon.) actor other than the owner of this bucket.
             %% need to get the owner record and log access against it
-            riak_cs_acl_utils:shift_to_owner(RD, PermCtx, OwnerId, RiakPid);
+            riak_cs_wm_utils:shift_to_owner(RD, PermCtx, OwnerId, RiakPid);
         false ->
             case User of
                 undefined ->
