@@ -294,25 +294,15 @@ post_authentication({error, no_user_key}, RD, Ctx, Authorize, true) ->
 post_authentication({error, no_user_key}, RD, Ctx, _, false) ->
     %% no keyid was given, deny access
     lager:info("No user key, deny"),
-    deny_access(RD, Ctx);
+    riak_cs_wm_utils:deny_access(RD, Ctx);
 post_authentication({error, bad_auth}, RD, Ctx, _, _) ->
     %% given keyid was found, but signature didn't match
     lager:info("bad_auth"),
-    deny_access(RD, Ctx);
+    riak_cs_wm_utils:deny_access(RD, Ctx);
 post_authentication({error, _Reason}, RD, Ctx, _, _) ->
     %% no matching keyid was found, or lookup failed
     lager:info("other"),
-    deny_invalid_key(RD, Ctx).
-
-%% @doc Produce an access-denied error message from a webmachine
-%% resource's `forbidden/2' function.
-deny_access(RD, Ctx) ->
-    riak_cs_s3_response:api_error(access_denied, RD, Ctx).
-
-%% @doc Prodice an invalid-access-keyid error message from a
-%% webmachine resource's `forbidden/2' function.
-deny_invalid_key(RD, Ctx) ->
-    riak_cs_s3_response:api_error(invalid_access_key_id, RD, Ctx).
+    riak_cs_wm_utils:deny_invalid_key(RD, Ctx).
 
 
 %% ===================================================================

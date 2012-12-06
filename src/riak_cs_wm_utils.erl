@@ -22,6 +22,7 @@
          validate_auth_header/3,
          ensure_doc/2,
          deny_access/2,
+         deny_invalid_key/2,
          extract_name/1,
          normalize_headers/1,
          extract_amazon_headers/1,
