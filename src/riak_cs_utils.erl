@@ -39,6 +39,8 @@
          pow/2,
          pow/3,
          put_object/5,
+         put/2,
+         put/3,
          put_with_no_meta/2,
          put_with_no_meta/3,
          riak_connection/0,
@@ -560,6 +562,12 @@ put_object(BucketName, Key, Value, Metadata, RiakPid) ->
     NewObj = riakc_obj:update_metadata(RiakObject, Metadata),
     riakc_pb_socket:put(RiakPid, NewObj).
 
+put(RiakcPid, RiakcObj) ->
+    put(RiakcPid, RiakcObj, []).
+
+put(RiakcPid, RiakcObj, Options) ->
+    riakc_pb_socket:put(RiakcPid, RiakcObj, Options).
+
 put_with_no_meta(RiakcPid, RiakcObj) ->
     put_with_no_meta(RiakcPid, RiakcObj, []).
 %% @doc Put an object in Riak with empty
@@ -573,6 +581,9 @@ put_with_no_meta(RiakcPid, RiakcObj) ->
     ok | {ok, riakc_obj:riak_object()} | {ok, binary()} | {error, term()}.
 put_with_no_meta(RiakcPid, RiakcObject, Options) ->
     WithMeta = riakc_obj:update_metadata(RiakcObject, dict:new()),
+    io:format("put_NO_META LINE ~p contents ~p bucket ~p key ~p\n", [?LINE, length(riakc_obj:get_contents(WithMeta)), riakc_obj:bucket(WithMeta), riakc_obj:key(WithMeta)]),
+    catch exit(yoyo),
+    io:format("put_NO_META LINE ~p ~p\n", [?LINE, erlang:get_stacktrace()]),
     riakc_pb_socket:put(RiakcPid, WithMeta, Options).
 
 %% @doc Get a protobufs connection to the riak cluster

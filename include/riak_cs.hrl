@@ -63,7 +63,10 @@
 -type group_grant() :: 'AllUsers' | 'AuthUsers'.
 -type acl_grantee() :: {string(), string()} | group_grant().
 -type acl_grant() :: {acl_grantee(), acl_perms()}.
--type acl_owner() :: {string(), string()} | {string(), string(), string()}.
+-type acl_owner2() :: {string(), string()}.
+%% acl_owner3: {display name, canonical id, key id}
+-type acl_owner3() :: {string(), string(), string()}.
+-type acl_owner() :: acl_owner2() | acl_owner3().
 -record(acl_v1, {owner={"", ""} :: acl_owner(),
                  grants=[] :: [acl_grant()],
                  creation_time=now() :: erlang:timestamp()}).
@@ -196,7 +199,7 @@
 
         %% The ACL for the version of the object represented
         %% by this manifest.
-        acl :: acl(),
+        acl :: acl() | no_acl_yet,
 
         %% There are a couple of cases where we want to add record
         %% member'ish data without adding new members to the record,
@@ -231,12 +234,156 @@
 
 -type cs_uuid_and_manifest() :: {cs_uuid(), lfs_manifest()}.
 
+-record(multipart_manifest_v1, {
+    %% bkey :: {binary(), binary()},
+    upload_id :: binary(),
+    %% start_time :: term(),
+    owner :: acl_owner3(),
+
+    %% cluster_id :: undefined | binary(),
+
+    %% acl :: term(),
+    %% metadata :: orddict:orddict(),
+
+    %% since we don't have any point of strong
+    %% consistency (other than stanchion), we
+    %% can get concurrent `complete' and `abort'
+    %% requests. There are still some details to
+    %% work out, but what we observe here will
+    %% affect whether we accept future `complete'
+    %% or `abort' requests.
+
+    %% set of complete_request()
+    %% TODO: should this be an orddict
+    %% instead of a set so we can
+    %% retrieve the complete
+    %% record by some index?
+    complete_requests = ordsets:new() :: ordsets:ordset(),
+
+    %% set of abort_request()
+    %% TODO: same note as above
+    abort_requests = ordsets:new() :: ordsets:ordset(),
+
+    %% Stores references to all of the parts uploaded
+    %% with this `upload_id' so far. Since a part
+    %% can be uploaded more than once with the same
+    %% part number, we store the values in this dict
+    %% as sets instead of just `part_manifest()'.
+    %% [{integer(), ordsets:ordset(part_manifest())}]
+    parts  = ordsets:new() :: orddict:orddict(),
+
+    %% a place to stuff future information
+    %% without having to change
+    %% the record format
+    props = [] :: proplists:proplist()
+}).
+-type multipart_manifest() :: #multipart_manifest_v1{}.
+
+-record(complete_request_v1, {
+
+    complete_time :: term(),
+
+    %% just an ID to refer to a specific
+    %% complete record from within a collection
+    id :: binary(),
+
+    %% This is the information provided from the
+    %% user from a 'complete upload' request.
+    %% Once this record is made, the info has
+    %% already been validated.
+    %% [{PartNumber :: integer(),
+    %%   Etag :: binary()}]
+    part_list :: ordsets:ordset(),
+
+    %% This is a calculatable field,
+    %% not sure if it should
+    %% be denormalized or not.
+    %% I suppose it might
+    %% as well be.
+    content_length :: non_neg_integer()
+}).
+-type complete_request() :: #complete_request_v1{}.
+
+-record(abort_request_v1, {
+    abort_time :: term(),
+
+    %% just an ID to refer to a specific
+    %% abort record from within a collection
+    id :: binary()
+
+    %% we probably want some information
+    %% here about the parts
+    %% that were observed when this
+    %% abort call came through.
+}).
+-type abort_request() :: #abort_request_v1{}.
+
+-record(part_manifest_v1, {
+    %% TODO: should this be bkey {binary(), binary()}?
+    bucket :: binary(),
+    key :: binary(),
+
+    %% used to judge races between concurrent uploads
+    %% of the same part_number
+    start_time :: term(),
+
+    %% still some questions here
+    %% need to account for aborts?
+    state :: writing | active | pending_delete | marked_delete,
+
+    %% the parent upload identifier
+    upload_id :: binary(),
+
+    %% one-of 1-10000, inclusive
+    part_number :: integer(),
+
+    %% a UUID to prevent conflicts with concurrent
+    %% uploads of the same {upload_id, part_number}.
+    part_id :: binary(),
+
+    last_block_written_time :: integer(),
+    write_blocks_remaining :: orddsets:ordset(),
+
+    %% each individual part upload always has a content-length
+    content_length :: integer(),
+
+    %% block size just like in `lfs_manifest_v2'. Concievably,
+    %% parts for the same upload id could have different block_sizes.
+    block_size :: integer()
+}).
+-type part_manifest() :: #part_manifest_v1{}.
+
+-record(multipart_descr_v1, {
+    %% Object key for the multipart upload
+    key :: binary(),
+
+    %% UUID of the multipart upload
+    upload_id :: binary(),
+
+    %% User that initiated the upload
+    owner_display :: string(),
+    owner_key_id :: string(),
+
+    %% storage class: no real options here
+    storage_class = regular,
+
+    %% Time that the upload was initiated
+    initiated :: string() %% conflict of func vs. type: riak_cs_wm_utils:iso_8601_datetime()
+}).
+
 -define(MANIFEST, #lfs_manifest_v3).
 
 -define(ACL, #acl_v2).
 -define(RCS_BUCKET, #moss_bucket_v1).
 -define(MOSS_USER, #rcs_user_v2).
 -define(RCS_USER, #rcs_user_v2).
+-define(MULTIPART_MANIFEST, #multipart_manifest_v1).
+-define(MULTIPART_MANIFEST_RECNAME, multipart_manifest_v1).
+-define(MULTIPART_COMPLETE, #complete_req_v1).
+-define(MULTIPART_ABORT, #abort_req_v1).
+-define(PART_MANIFEST, #part_manifest_v1).
+-define(MULTIPART_DESCR, #multipart_descr_v1).
+
 -define(USER_BUCKET, <<"moss.users">>).
 -define(ACCESS_BUCKET, <<"moss.access">>).
 -define(STORAGE_BUCKET, <<"moss.storage">>).
