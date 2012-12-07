@@ -57,11 +57,21 @@ cancel_multipart_upload(x, y) ->
 initiate_multipart_upload(Bucket, Key, ContentType, {_,_,_} = Owner) ->
     write_new_manifest(new_manifest(Bucket, Key, ContentType, Owner)).
 
-list_multipart_uploads(Bucket, Owner) ->
+list_multipart_uploads(Bucket, {_Display, _Canon, CallerKeyId} = Caller) ->
+    %% TODO: ACL check of Bucket
     case riak_cs_utils:riak_connection() of
         {ok, RiakcPid} ->
             try
-                Key2i = make_2i_key(Bucket, Owner),
+                {m_1, {ok, {C, _}}} = {m_1, riak_cs_utils:get_user(CallerKeyId,
+                                                                   RiakcPid)},
+                Buckets = [iolist_to_binary(B?RCS_BUCKET.name) ||
+                              B <- riak_cs_utils:get_buckets(C)],
+                Key2i = case lists:member(Bucket, Buckets) of
+                            true ->
+                                make_2i_key(Bucket); % caller = bucket owner
+                            false ->
+                                make_2i_key(Bucket, Caller)
+                        end,
                 HashBucket = riak_cs_utils:to_bucket_name(objects, Bucket),
                 case riakc_pb_socket:get_index(RiakcPid, HashBucket, Key2i,
                                                <<"1">>) of
@@ -70,6 +80,8 @@ list_multipart_uploads(Bucket, Owner) ->
                     Else2 ->
                         Else2
                 end
+            catch error:{badmatch, {m_1, _}} ->
+                    {error, todo_bad_caller}
             after
                 riak_cs_utils:close_riak_connection(RiakcPid)
             end;
