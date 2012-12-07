@@ -349,7 +349,7 @@ prepare(State=#state{bucket=Bucket,
                                          Metadata,
                                          BlockSize,
                                          Acl,
-                                         undefined,
+                                         [],
                                          ClusterID),
     NewManifest = Manifest?MANIFEST{write_start_time=os:timestamp()},
 

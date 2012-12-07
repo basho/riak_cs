@@ -31,6 +31,7 @@
          update_manifests_with_confirmation/2,
          maybe_stop_manifest_fsm/1,
          stop/1]).
+-export([update_md_with_multipart_2i/4]).
 
 %% gen_fsm callbacks
 -export([init/1,
@@ -260,10 +261,12 @@ get_and_delete(RiakcPid, UUID, Bucket, Key) ->
                 [] ->
                     riakc_pb_socket:delete_obj(RiakcPid, RiakObject);
                 _ ->
-                    ObjectToWrite =
+                    ObjectToWrite0 =
                         riakc_obj:update_value(RiakObject,
                                                term_to_binary(UpdatedManifests)),
-                    riak_cs_utils:put_with_no_meta(RiakcPid, ObjectToWrite)
+                    ObjectToWrite = update_md_with_multipart_2i(
+                                      ObjectToWrite0, UpdatedManifests, Bucket, Key),
+                    riak_cs_utils:put(RiakcPid, ObjectToWrite)
             end;
         {error, notfound} ->
             ok
@@ -280,22 +283,25 @@ get_and_update(RiakcPid, WrappedManifests, Bucket, Key) ->
         {ok, RiakObject, Manifests} ->
             NewManiAdded = riak_cs_manifest_resolution:resolve([WrappedManifests, Manifests]),
             OverwrittenUUIDs = riak_cs_manifest_utils:overwritten_UUIDs(NewManiAdded),
-            Result = case OverwrittenUUIDs of
+            {Result, NewRiakObject} = case OverwrittenUUIDs of
                 [] ->
-                    ObjectToWrite = riakc_obj:update_value(RiakObject,
+                    ObjectToWrite0 = riakc_obj:update_value(RiakObject,
                         term_to_binary(NewManiAdded)),
-
-                    riak_cs_utils:put_with_no_meta(RiakcPid, ObjectToWrite);
+                    ObjectToWrite = update_md_with_multipart_2i(
+                                      ObjectToWrite0, NewManiAdded, Bucket, Key),
+                    riak_cs_utils:put(RiakcPid, ObjectToWrite, [return_body]);
                 _ ->
                     riak_cs_gc:gc_specific_manifests(OverwrittenUUIDs,
                                                      RiakObject,
                                                      RiakcPid)
             end,
-            {Result, RiakObject, Manifests};
+            {Result, NewRiakObject, Manifests};
         {error, notfound} ->
             ManifestBucket = riak_cs_utils:to_bucket_name(objects, Bucket),
-            ObjectToWrite = riakc_obj:new(ManifestBucket, Key, term_to_binary(WrappedManifests)),
-            PutResult = riak_cs_utils:put_with_no_meta(RiakcPid, ObjectToWrite),
+            ObjectToWrite0 = riakc_obj:new(ManifestBucket, Key, term_to_binary(WrappedManifests)),
+            ObjectToWrite = update_md_with_multipart_2i(
+                              ObjectToWrite0, WrappedManifests, Bucket, Key),
+            PutResult = riak_cs_utils:put(RiakcPid, ObjectToWrite),
             {PutResult, undefined, undefined}
     end.
 
@@ -307,14 +313,28 @@ update_from_previous_read(RiakcPid, RiakObject,
                               PreviousManifests, NewManifests) ->
     Resolved = riak_cs_manifest_resolution:resolve([PreviousManifests,
             NewManifests]),
-    NewRiakObject = riakc_obj:update_value(RiakObject,
+    NewRiakObject0 = riakc_obj:update_value(RiakObject,
         term_to_binary(Resolved)),
+    NewRiakObject = update_md_with_multipart_2i(
+                      NewRiakObject0, Resolved,
+                      riakc_obj:bucket(RiakObject), riakc_obj:key(RiakObject)),
     %% TODO:
     %% currently we don't do
     %% anything to make sure
     %% this call succeeded
+    riak_cs_utils:put(RiakcPid, NewRiakObject).
 
-    riak_cs_utils:put_with_no_meta(RiakcPid, NewRiakObject).
+update_md_with_multipart_2i(RiakObject, WrappedManifests, Bucket, Key) ->
+    MD0 = try
+              %% riakc_obj:get_metadata(RiakObject)
+              dict:erase(<<"X-Riak-Last-Modified">>, dict:erase(<<"X-Riak-VTag">>, riakc_obj:get_metadata(RiakObject)))
+          catch throw:no_metadata ->
+                  dict:new()
+          end,
+    {K_i, V_i} = riak_cs_mp_utils:calc_multipart_2i_dict(
+                   [M || {_, M} <- WrappedManifests], Bucket, Key),
+    MD = dict:store(K_i, V_i, MD0),
+    riakc_obj:update_metadata(RiakObject, MD).
 
 %% ===================================================================
 %% Test API
