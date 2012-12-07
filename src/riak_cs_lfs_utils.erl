@@ -146,7 +146,7 @@ put_fsm_buffer_size_factor() ->
                    term(),
                    term(),
                    pos_integer(),
-                   acl()) -> lfs_manifest().
+                   acl() | no_acl_yet) -> lfs_manifest().
 new_manifest(Bucket, FileName, UUID, ContentLength, ContentType, ContentMd5, MetaData, BlockSize, Acl) ->
     new_manifest(Bucket, FileName, UUID, ContentLength, ContentType, ContentMd5, MetaData, BlockSize, Acl, [], undefined).
 
@@ -158,7 +158,7 @@ new_manifest(Bucket, FileName, UUID, ContentLength, ContentType, ContentMd5, Met
                    term(),
                    term(),
                    pos_integer(),
-                   acl(),
+                   acl() | no_acl_yet,
                    proplists:proplist(),
                    cluster_id()) -> lfs_manifest().
 new_manifest(Bucket, FileName, UUID, ContentLength, ContentType, ContentMd5, MetaData, BlockSize, Acl, Props, ClusterID) ->

@@ -162,14 +162,19 @@ mark_as_scheduled_delete(UUIDsToMark, RiakObject, RiakcPid) ->
 -spec mark_manifests(riakc_obj:riak_object(), [binary()], fun(), pid()) ->
                     {ok, riakc_obj:riak_object()} | {error, term()}.
 mark_manifests(RiakObject, UUIDsToMark, ManiFunction, RiakcPid) ->
+io:format("LINE ~p OldMD ~P\n", [?LINE, riakc_obj:get_metadata(RiakObject), 20]),
     Manifests = riak_cs_utils:manifests_from_riak_object(RiakObject),
     Marked = ManiFunction(Manifests, UUIDsToMark),
-    UpdObj = riakc_obj:update_value(RiakObject, term_to_binary(Marked)),
+    UpdObj0 = riakc_obj:update_value(RiakObject, term_to_binary(Marked)),
+    UpdObj = riak_cs_manifest_fsm:update_md_with_multipart_2i(
+               UpdObj0, Marked,
+               riakc_obj:bucket(UpdObj0), riakc_obj:key(UpdObj0)),
+io:format("LINE ~p MD ~P\n", [?LINE, riakc_obj:get_update_metadata(UpdObj), 20]),
 
     %% use [returnbody] so that we get back the object
     %% with vector clock. This allows us to do a PUT
     %% again without having to re-retrieve the object
-    riak_cs_utils:put_with_no_meta(RiakcPid, UpdObj, [return_body]).
+    riak_cs_utils:put(RiakcPid, UpdObj, [return_body]).
 
 %% @doc Copy data for a list of manifests to the
 %% `riak-cs-gc' bucket to schedule them for deletion.
