@@ -21,6 +21,7 @@
 -export([
          abort_multipart_upload/4,
          calc_multipart_2i_dict/3,
+         commit_multipart_upload/4,
          initiate_multipart_upload/4,
          list_multipart_uploads/2,
          new_manifest/4,
@@ -90,6 +91,47 @@ abort_multipart_upload(Bucket, Key, UploadId, {_,_,CallerKeyId}) ->
                 end
             catch error:{badmatch, {m_icbo, _}} ->
                     {error, todo_bad_caller}
+            after
+                riak_cs_utils:close_riak_connection(RiakcPid)
+            end;
+        Else ->
+            Else
+    end.
+
+commit_multipart_upload(Bucket, Key, UploadId, {_,_,CallerKeyId}) ->
+    %% TODO: ACL check of Bucket
+    case riak_cs_utils:riak_connection() of
+        {ok, RiakcPid} ->
+            try
+                case riak_cs_utils:get_manifests(RiakcPid, Bucket, Key) of
+                    {ok, _Obj, Manifests} ->
+                        case find_manifest_with_uploadid(UploadId, Manifests) of
+                            false ->
+                                {error, todo_no_such_uploadid};
+                            M ->
+                                MpM = proplists:get_value(
+                                        multipart, M?MANIFEST.props),
+                                {_, _, MpMOwner} = MpM?MULTIPART_MANIFEST.owner,
+                                case CallerKeyId == MpMOwner of
+                                    true ->
+                                        case M?MANIFEST.state of
+                                            writing ->
+                                                commit_multipart_upload2(
+                                                  RiakcPid, M);
+                                            _ ->
+                                                {error, todo_no_such_uploadid2}
+                                        end;
+                                    false ->
+                                        {error, todo_bad_caller}
+                                end
+                        end;
+                    Else2 ->
+                        Else2
+                end
+            catch error:{badmatch, {m_icbo, _}} ->
+                    {error, todo_bad_caller};
+                  error:{badmatch, {m_cmpu2, _}} ->
+                    {error, todo_try_again_later}
             after
                 riak_cs_utils:close_riak_connection(RiakcPid)
             end;
@@ -198,27 +240,29 @@ make_2i_key2(Bucket, OwnerStr) ->
     iolist_to_binary(["rcs@", OwnerStr, "@", Bucket, "_bin"]).
 
 list_multipart_uploads2(Bucket, RiakcPid, Names, CallerKeyId) ->
-    lists:foldl(fun fold_get_multipart_id/2, {RiakcPid, Bucket, CallerKeyId, []}, Names).
+    {_, _, _, Res} = lists:foldl(fun fold_get_multipart_id/2,
+                                 {RiakcPid, Bucket, CallerKeyId, []}, Names),
+    Res.
 
 fold_get_multipart_id(Name, {RiakcPid, Bucket, CallerKeyId, Acc}) ->
     case riak_cs_utils:get_manifests(RiakcPid, Bucket, Name) of
         {ok, _Obj, Manifests} ->
-            [?MULTIPART_DESCR{
-                key = element(2, M?MANIFEST.bkey),
-                upload_id = UUID,
-                owner_key_id = element(3, MpM?MULTIPART_MANIFEST.owner),
-                owner_display = element(1, MpM?MULTIPART_MANIFEST.owner),
-                initiated = M?MANIFEST.created} ||
-                {UUID, M} <- Manifests,
-                CallerKeyId == owner orelse
-                    iolist_to_binary(CallerKeyId) ==
-                    iolist_to_binary(element(3, (M?MANIFEST.acl)?ACL.owner)),
-                M?MANIFEST.state == writing,
-                MpM <- case proplists:get_value(multipart, M?MANIFEST.props) of
-                           undefined -> [];
-                           X         -> [X]
-                       end]
-                ++ Acc;
+            L = [?MULTIPART_DESCR{
+                    key = element(2, M?MANIFEST.bkey),
+                    upload_id = UUID,
+                    owner_key_id = element(3, MpM?MULTIPART_MANIFEST.owner),
+                    owner_display = element(1, MpM?MULTIPART_MANIFEST.owner),
+                    initiated = M?MANIFEST.created} ||
+                    {UUID, M} <- Manifests,
+                    CallerKeyId == owner orelse
+                        iolist_to_binary(CallerKeyId) ==
+                        iolist_to_binary(element(3, (M?MANIFEST.acl)?ACL.owner)),
+                    M?MANIFEST.state == writing,
+                    MpM <- case proplists:get_value(multipart, M?MANIFEST.props) of
+                               undefined -> [];
+                               X         -> [X]
+                           end],
+            {RiakcPid, Bucket, CallerKeyId, L ++ Acc};
         _Else ->
             Acc
     end.
@@ -240,6 +284,18 @@ find_manifest_with_uploadid(UploadId, Manifests) ->
             M
     end.
 
+commit_multipart_upload2(RiakcPid, Manifest) ->
+    {Bucket, Key} = Manifest?MANIFEST.bkey,
+    {m_cmpu2, {ok, ManiPid}} = {m_cmpu2,
+                                riak_cs_manifest_fsm:start_link(Bucket, Key,
+                                                                RiakcPid)},
+    try
+        ok = riak_cs_manifest_fsm:update_manifest_with_confirmation(
+               ManiPid, Manifest?MANIFEST{state = active})
+    after
+        ok = riak_cs_manifest_fsm:stop(ManiPid)
+    end.
+
 %% ===================================================================
 %% EUnit tests
 %% ===================================================================
@@ -252,9 +308,11 @@ test_0() ->
     test_create_users(),
 
     ID1 = test_initiate(test_user1()),
-    _ID2 = test_initiate(test_user2()),
+    ID2 = test_initiate(test_user2()),
+    _ID1b = test_initiate(test_user1()),
+
     {ok, X1} = test_list_uploadids(test_user1()),
-    2 = length(X1),
+    3 = length(X1),
     {ok, X2} = test_list_uploadids(test_user2()),
     1 = length(X2),
     {error, todo_bad_caller} = test_list_uploadids(test_userNONE()),
@@ -263,6 +321,16 @@ test_0() ->
     {error,todo_no_such_uploadid} = test_abort(<<"no such upload_id">>, test_user2()),
     ok = test_abort(ID1, test_user1()),
     {error, todo_no_such_uploadid2} = test_abort(ID1, test_user1()),
+
+    {error, todo_bad_caller} = test_commit(ID2, test_user1()),
+    {error,todo_no_such_uploadid} = test_commit(<<"no such upload_id">>, test_user2()),
+    ok = test_commit(ID2, test_user2()),
+    {error, todo_no_such_uploadid2} = test_commit(ID2, test_user2()),
+
+    {ok, X3} = test_list_uploadids(test_user1()),
+    1 = length(X3),
+    {ok, X4} = test_list_uploadids(test_user2()),
+    0 = length(X4),
 
     ok.
 
@@ -273,6 +341,9 @@ test_initiate(User) ->
 
 test_abort(UploadId, User) ->
     abort_multipart_upload(test_bucket1(), test_key1(), UploadId, User).
+
+test_commit(UploadId, User) ->
+    commit_multipart_upload(test_bucket1(), test_key1(), UploadId, User).
 
 test_list_uploadids(User) ->
     list_multipart_uploads(test_bucket1(), User).
