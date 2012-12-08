@@ -191,7 +191,12 @@ waiting_command({delete_manifest, UUID},
                                     riak_object=undefined,
                                     manifests=undefined}) ->
     Reply = get_and_delete(RiakcPid, UUID, Bucket, Key),
-    {reply, Reply, waiting_update_command, State}.
+    {reply, Reply, waiting_update_command, State};
+waiting_command({update_manifests_with_confirmation, _}=Cmd, From, State) ->
+    %% Used by multipart commit: this FSM was just started a moment
+    %% ago, and we don't need this FSM to re-do work that multipart
+    %% commit has already done.
+    waiting_update_command(Cmd, From, State).
 
 
 waiting_update_command({update_manifests_with_confirmation, WrappedManifests}, _From,
