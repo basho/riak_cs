@@ -45,7 +45,6 @@ calc_multipart_2i_dict(Ms, Bucket, _Key) when is_list(Ms) ->
                 undefined ->
                     [];
                 MP when is_record(MP, ?MULTIPART_MANIFEST_RECNAME) ->
-                    %% OwnerVal = term_to_binary({Key, MP?MULTIPART_MANIFEST.upload_id}),
                     [{make_2i_key(Bucket, MP?MULTIPART_MANIFEST.owner), <<"1">>},
                      {make_2i_key(Bucket), <<"1">>}]
             end || M <- Ms,
@@ -204,7 +203,12 @@ write_new_manifest(M) ->
     case riak_cs_utils:riak_connection() of
         {ok, RiakcPid} ->
             try
-                Acl = riak_cs_acl_utils:canned_acl(undefined, Owner, unused, unused),
+                %% {Bucket, _Key} = M?MANIFEST.bkey,
+                %% {m_wnm1, {ok, BucketAcl}} = {m_wnm1, riak_cs_acl:bucket_acl(
+                %%                                        Bucket, RiakcPid)},
+                %% {_, _, BucketOwnerId} = BucketAcl?ACL.owner,
+                %% Acl = riak_cs_acl_utils:canned_acl("private", Owner, BucketOwnerId, unused),
+                Acl = riak_cs_acl_utils:canned_acl("private", Owner, undefined, unused),
                 ClusterId = riak_cs_utils:get_cluster_id(RiakcPid),
                 M2 = M?MANIFEST{acl = Acl,
                                 cluster_id = ClusterId,
@@ -217,6 +221,8 @@ write_new_manifest(M) ->
                 after
                     ok = riak_cs_manifest_fsm:stop(ManiPid)
                 end
+            %% catch error:{badmatch, {m_wnm1, _}} ->
+            %%         {error, todo_bad_bucket}
             after
                 riak_cs_utils:close_riak_connection(RiakcPid)
             end;
@@ -284,14 +290,16 @@ find_manifest_with_uploadid(UploadId, Manifests) ->
             M
     end.
 
-commit_multipart_upload2(RiakcPid, Manifest) ->
+commit_multipart_upload2(RiakcPid, ?MANIFEST{uuid = UUID} = Manifest) ->
     {Bucket, Key} = Manifest?MANIFEST.bkey,
     {m_cmpu2, {ok, ManiPid}} = {m_cmpu2,
                                 riak_cs_manifest_fsm:start_link(Bucket, Key,
                                                                 RiakcPid)},
     try
         ok = riak_cs_manifest_fsm:update_manifest_with_confirmation(
-               ManiPid, Manifest?MANIFEST{state = active})
+               ManiPid, Manifest?MANIFEST{state = active,
+                                          content_md5 = UUID % TODO?
+                                         })
     after
         ok = riak_cs_manifest_fsm:stop(ManiPid)
     end.
@@ -335,9 +343,9 @@ test_0() ->
     ok.
 
 test_initiate(User) ->
-    {ok, ID1} = initiate_multipart_upload(
-                  test_bucket1(), test_key1(), "text/plain", User),
-    ID1.
+    {ok, ID} = initiate_multipart_upload(
+                 test_bucket1(), test_key1(), <<"text/plain">>, User),
+    ID.
 
 test_abort(UploadId, User) ->
     abort_multipart_upload(test_bucket1(), test_key1(), UploadId, User).
