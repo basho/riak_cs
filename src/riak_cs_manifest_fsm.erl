@@ -326,8 +326,14 @@ update_from_previous_read(RiakcPid, RiakObject,
 
 update_md_with_multipart_2i(RiakObject, WrappedManifests, Bucket, Key) ->
     MD0 = try
-              %% riakc_obj:get_metadata(RiakObject)
-              dict:erase(<<"X-Riak-Last-Modified">>, dict:erase(<<"X-Riak-VTag">>, riakc_obj:get_metadata(RiakObject)))
+              %% During testing, it's handy to delete Riak keys in the
+              %% S3 bucket, e.g., cleaning up from a previous test.
+              %% Let's not trip over tombstones here.
+              case ([MD || {MD, V} <- riakc_obj:get_contents(RiakObject),
+                           V /= <<>>]) of
+                  [X] -> X;
+                  []  -> throw(no_metadata)
+              end
           catch throw:no_metadata ->
                   dict:new()
           end,

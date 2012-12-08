@@ -460,7 +460,9 @@ get_user(KeyId, RiakPid) ->
                     {error, no_value};
                 _ ->
                     Values = [binary_to_term(Value) ||
-                                 Value <- riakc_obj:get_values(Obj)],
+                                 Value <- riakc_obj:get_values(Obj),
+                                 Value /= <<>>  % tombstone
+                             ],
                     User = update_user_record(hd(Values)),
                     Buckets = resolve_buckets(Values, [], KeepDeletedBuckets),
                     {ok, {User?RCS_USER{buckets=Buckets}, Obj}}
