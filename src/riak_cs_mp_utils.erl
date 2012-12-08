@@ -56,7 +56,7 @@ abort_multipart_upload(Bucket, Key, UploadId, {_,_,CallerKeyId}) ->
         {ok, RiakcPid} ->
             try
                 case riak_cs_utils:get_manifests(RiakcPid, Bucket, Key) of
-                    {ok, _Obj, Manifests} ->
+                    {ok, Obj, Manifests} ->
                         B_OwnerP = is_caller_bucket_owner(RiakcPid,
                                                           Bucket, CallerKeyId),
                         case find_manifest_with_uploadid(UploadId, Manifests) of
@@ -68,9 +68,20 @@ abort_multipart_upload(Bucket, Key, UploadId, {_,_,CallerKeyId}) ->
                                 {_, _, MpMOwner} = MpM?MULTIPART_MANIFEST.owner,
                                 case B_OwnerP orelse CallerKeyId == MpMOwner of
                                     true ->
-                                        continue;
+                                        case M?MANIFEST.state of
+                                            writing ->
+                                                case riak_cs_gc:gc_specific_manifests(
+                                                       [M?MANIFEST.uuid], Obj, RiakcPid) of
+                                                    {ok, _NewObj} ->
+                                                        ok;
+                                                    Else3 ->
+                                                        Else3
+                                                end;
+                                            _ ->
+                                                {error, todo_no_such_uploadid2}
+                                        end;
                                     false ->
-                                        {error, bad_owner}
+                                        {error, todo_bad_caller}
                                 end
                         end;
                     Else2 ->
@@ -94,8 +105,9 @@ list_multipart_uploads(Bucket, {_Display, _Canon, CallerKeyId} = Caller) ->
     case riak_cs_utils:riak_connection() of
         {ok, RiakcPid} ->
             try
-                Key2i = case is_caller_bucket_owner(RiakcPid,
-                                                    Bucket, CallerKeyId) of
+                BucketOwnerP = is_caller_bucket_owner(RiakcPid,
+                                                      Bucket, CallerKeyId),
+                Key2i = case BucketOwnerP of
                             true ->
                                 make_2i_key(Bucket); % caller = bucket owner
                             false ->
@@ -105,7 +117,12 @@ list_multipart_uploads(Bucket, {_Display, _Canon, CallerKeyId} = Caller) ->
                 case riakc_pb_socket:get_index(RiakcPid, HashBucket, Key2i,
                                                <<"1">>) of
                     {ok, Names} ->
-                        list_multipart_uploads2(Bucket, RiakcPid, Names);
+                        MyCaller = case BucketOwnerP of
+                                       true -> owner;
+                                       _    -> CallerKeyId
+                                   end,
+                        {ok, list_multipart_uploads2(Bucket, RiakcPid,
+                                                     Names, MyCaller)};
                     Else2 ->
                         Else2
                 end
@@ -152,7 +169,8 @@ write_new_manifest(M) ->
                 {Bucket, Key} = M?MANIFEST.bkey,
                 {ok, ManiPid} = riak_cs_manifest_fsm:start_link(Bucket, Key, RiakcPid),
                 try
-                    ok = riak_cs_manifest_fsm:add_new_manifest(ManiPid, M2)
+                    ok = riak_cs_manifest_fsm:add_new_manifest(ManiPid, M2),
+                    {ok, M2?MANIFEST.uuid}
                 after
                     ok = riak_cs_manifest_fsm:stop(ManiPid)
                 end
@@ -178,10 +196,10 @@ make_2i_key(Bucket, OwnerStr) when is_list(OwnerStr) ->
 make_2i_key2(Bucket, OwnerStr) ->
     iolist_to_binary(["rcs@", OwnerStr, "@", Bucket, "_bin"]).
 
-list_multipart_uploads2(Bucket, RiakcPid, Names) ->
-    lists:foldl(fun fold_get_multipart_id/2, {RiakcPid, Bucket, []}, Names).
+list_multipart_uploads2(Bucket, RiakcPid, Names, CallerKeyId) ->
+    lists:foldl(fun fold_get_multipart_id/2, {RiakcPid, Bucket, CallerKeyId, []}, Names).
 
-fold_get_multipart_id(Name, {RiakcPid, Bucket, Acc}) ->
+fold_get_multipart_id(Name, {RiakcPid, Bucket, CallerKeyId, Acc}) ->
     case riak_cs_utils:get_manifests(RiakcPid, Bucket, Name) of
         {ok, _Obj, Manifests} ->
             [?MULTIPART_DESCR{
@@ -191,6 +209,9 @@ fold_get_multipart_id(Name, {RiakcPid, Bucket, Acc}) ->
                 owner_display = element(1, MpM?MULTIPART_MANIFEST.owner),
                 initiated = M?MANIFEST.created} ||
                 {UUID, M} <- Manifests,
+                CallerKeyId == owner orelse
+                    iolist_to_binary(CallerKeyId) ==
+                    iolist_to_binary(element(3, (M?MANIFEST.acl)?ACL.owner)),
                 M?MANIFEST.state == writing,
                 MpM <- case proplists:get_value(multipart, M?MANIFEST.props) of
                            undefined -> [];
