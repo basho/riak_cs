@@ -18,8 +18,8 @@
 
 %% export Public API
 -export([
+         abort_multipart_upload/4,
          calc_multipart_2i_dict/3,
-         cancel_multipart_upload/2,
          initiate_multipart_upload/4,
          list_multipart_uploads/2,
          new_manifest/4,
@@ -50,8 +50,40 @@ calc_multipart_2i_dict(Ms, Bucket, _Key) when is_list(Ms) ->
                    M?MANIFEST.state == writing],
     {?MD_INDEX, lists:usort(lists:flatten(L_2i))}.
 
-cancel_multipart_upload(x, y) ->
-    foo.
+abort_multipart_upload(Bucket, Key, UploadId, {_,_,CallerKeyId}) ->
+    %% TODO: ACL check of Bucket
+    case riak_cs_utils:riak_connection() of
+        {ok, RiakcPid} ->
+            try
+                case riak_cs_utils:get_manifests(RiakcPid, Bucket, Key) of
+                    {ok, _Obj, Manifests} ->
+                        B_OwnerP = is_caller_bucket_owner(RiakcPid,
+                                                          Bucket, CallerKeyId),
+                        case find_manifest_with_uploadid(UploadId, Manifests) of
+                            false ->
+                                {error, todo_no_such_uploadid};
+                            M ->
+                                MpM = proplists:get_value(
+                                        multipart, M?MANIFEST.props),
+                                {_, _, MpMOwner} = MpM?MULTIPART_MANIFEST.owner,
+                                case B_OwnerP orelse CallerKeyId == MpMOwner of
+                                    true ->
+                                        continue;
+                                    false ->
+                                        {error, bad_owner}
+                                end
+                        end;
+                    Else2 ->
+                        Else2
+                end
+            catch error:{badmatch, {m_icbo, _}} ->
+                    {error, todo_bad_caller}
+            after
+                riak_cs_utils:close_riak_connection(RiakcPid)
+            end;
+        Else ->
+            Else
+    end.
 
 %% riak_cs_mp_utils:write_new_manifest(riak_cs_mp_utils:new_manifest(<<"test">>, <<"mp0">>, <<"text/plain">>, {"foobar", "18983ba0e16e18a2b103ca16b84fad93d12a2fbed1c88048931fb91b0b844ad3", "J2IP6WGUQ_FNGIAN9AFI"})).
 initiate_multipart_upload(Bucket, Key, ContentType, {_,_,_} = Owner) ->
@@ -62,11 +94,8 @@ list_multipart_uploads(Bucket, {_Display, _Canon, CallerKeyId} = Caller) ->
     case riak_cs_utils:riak_connection() of
         {ok, RiakcPid} ->
             try
-                {m_1, {ok, {C, _}}} = {m_1, riak_cs_utils:get_user(CallerKeyId,
-                                                                   RiakcPid)},
-                Buckets = [iolist_to_binary(B?RCS_BUCKET.name) ||
-                              B <- riak_cs_utils:get_buckets(C)],
-                Key2i = case lists:member(Bucket, Buckets) of
+                Key2i = case is_caller_bucket_owner(RiakcPid,
+                                                    Bucket, CallerKeyId) of
                             true ->
                                 make_2i_key(Bucket); % caller = bucket owner
                             false ->
@@ -80,7 +109,7 @@ list_multipart_uploads(Bucket, {_Display, _Canon, CallerKeyId} = Caller) ->
                     Else2 ->
                         Else2
                 end
-            catch error:{badmatch, {m_1, _}} ->
+            catch error:{badmatch, {m_icbo, _}} ->
                     {error, todo_bad_caller}
             after
                 riak_cs_utils:close_riak_connection(RiakcPid)
@@ -170,6 +199,23 @@ fold_get_multipart_id(Name, {RiakcPid, Bucket, Acc}) ->
                 ++ Acc;
         _Else ->
             Acc
+    end.
+
+%% @doc Will cause error:{badmatch, {m_ibco, _}} if CallerKeyId does not exist
+
+is_caller_bucket_owner(RiakcPid, Bucket, CallerKeyId) ->
+    {m_icbo, {ok, {C, _}}} = {m_icbo, riak_cs_utils:get_user(CallerKeyId,
+                                                             RiakcPid)},
+    Buckets = [iolist_to_binary(B?RCS_BUCKET.name) ||
+                  B <- riak_cs_utils:get_buckets(C)],
+    lists:member(Bucket, Buckets).
+
+find_manifest_with_uploadid(UploadId, Manifests) ->
+    case lists:keyfind(UploadId, 1, Manifests) of
+        false ->
+            false;
+        {UploadId, M} ->
+            M
     end.
 
 %% ===================================================================
