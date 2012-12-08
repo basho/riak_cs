@@ -203,11 +203,6 @@ write_new_manifest(M) ->
     case riak_cs_utils:riak_connection() of
         {ok, RiakcPid} ->
             try
-                %% {Bucket, _Key} = M?MANIFEST.bkey,
-                %% {m_wnm1, {ok, BucketAcl}} = {m_wnm1, riak_cs_acl:bucket_acl(
-                %%                                        Bucket, RiakcPid)},
-                %% {_, _, BucketOwnerId} = BucketAcl?ACL.owner,
-                %% Acl = riak_cs_acl_utils:canned_acl("private", Owner, BucketOwnerId, unused),
                 Acl = riak_cs_acl_utils:canned_acl("private", Owner, undefined, unused),
                 ClusterId = riak_cs_utils:get_cluster_id(RiakcPid),
                 M2 = M?MANIFEST{acl = Acl,
@@ -221,8 +216,6 @@ write_new_manifest(M) ->
                 after
                     ok = riak_cs_manifest_fsm:stop(ManiPid)
                 end
-            %% catch error:{badmatch, {m_wnm1, _}} ->
-            %%         {error, todo_bad_bucket}
             after
                 riak_cs_utils:close_riak_connection(RiakcPid)
             end;
