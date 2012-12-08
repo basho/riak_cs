@@ -361,6 +361,7 @@
 }).
 -type part_manifest() :: #part_manifest_v1{}.
 
+%% Basis of list multipart uploads output
 -record(multipart_descr_v1, {
     %% Object key for the multipart upload
     key :: binary(),
