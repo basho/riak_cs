@@ -289,9 +289,20 @@ commit_multipart_upload2(RiakcPid, ?MANIFEST{uuid = UUID} = Manifest) ->
                                 riak_cs_manifest_fsm:start_link(Bucket, Key,
                                                                 RiakcPid)},
     try
+        %% The content_md5 is used by WM to create the ETags header.
+        %% However/fortunately/sigh-of-relief, Amazon's S3 doesn't use
+        %% the file contents for ETag for a committed multipart
+        %% upload.
+        %%
+        %% However, if we add the hypen suffix here, e.g., "-1", then
+        %% the WM etags doodad will simply convert that suffix to
+        %% extra hex digits "2d31" instead.  So, hrm, what to do here.
+        %%
+        %% https://forums.aws.amazon.com/thread.jspa?messageID=203436&#203436
+        %% BogoMD5 = iolist_to_binary([UUID, "-1"]),
         ok = riak_cs_manifest_fsm:update_manifest_with_confirmation(
                ManiPid, Manifest?MANIFEST{state = active,
-                                          content_md5 = UUID % TODO?
+                                          content_md5 = UUID
                                          })
     after
         ok = riak_cs_manifest_fsm:stop(ManiPid)
