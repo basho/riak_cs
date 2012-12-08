@@ -3,45 +3,23 @@
 -export([confirm/0]).
 -include_lib("eunit/include/eunit.hrl").
 
--define(PROXY_HOST, "localhost").
--define(S3_HOST, "s3.amazonaws.com").
--define(S3_PORT, 80).
--define(DEFAULT_PROTO, "http").
 -define(TEST_BUCKET, "riak_test_bucket").
-
-config(Key, Secret, Port) ->
-    erlcloud_s3:new(Key,
-                    Secret,
-                    ?S3_HOST,
-                    Port, % inets issue precludes using ?S3_PORT
-                    ?DEFAULT_PROTO,
-                    ?PROXY_HOST,
-                    Port).
-
-create_user(Node, UserIndex) ->
-    {A, B, C} = erlang:now(),
-    User = "Test User" ++ integer_to_list(UserIndex),
-    Email = lists:flatten(io_lib:format("~p~p~p@basho.com", [A, B, C])),
-    {KeyId, Secret, _Id} =
-        rtcs:create_admin_user(cs_port(Node), Email, User),
-    lager:info("Created user ~p with keys ~p ~p", [Email, KeyId, Secret]),
-    {KeyId, Secret}.
 
 confirm() ->
     {RiakNodes, _CSNodes, _Stanchion} =
-        rtcs:deploy_nodes(4, [{riak, ee_config()},
-                              {stanchion, stanchion_config()},
-                              {cs, cs_config()}]),
+        rtcs:deploy_nodes(4, [{riak, rtcs:ee_config()},
+                              {stanchion, rtcs:stanchion_config()},
+                              {cs, rtcs:cs_config()}]),
 
     rt:wait_until_nodes_ready(RiakNodes),
 
     {ANodes, BNodes} = lists:split(2, RiakNodes),
 
     lager:info("Build cluster A"),
-    repl_helpers:make_cluster(ANodes),
+    rtcs:make_cluster(ANodes),
 
     lager:info("Build cluster B"),
-    repl_helpers:make_cluster(BNodes),
+    rtcs:make_cluster(BNodes),
 
     rt:wait_until_ring_converged(ANodes),
     rt:wait_until_ring_converged(BNodes),
@@ -54,17 +32,17 @@ confirm() ->
     AFirst = hd(ANodes),
     BFirst = hd(BNodes),
 
-    {AccessKeyId, SecretAccessKey} = create_user(AFirst, 1),
-    {AccessKeyId2, SecretAccessKey2} = create_user(BFirst, 2),
+    {AccessKeyId, SecretAccessKey} = rtcs:create_user(AFirst, 1),
+    {AccessKeyId2, SecretAccessKey2} = rtcs:create_user(BFirst, 2),
 
     %% User 1, Cluster 1 config
-    U1C1Config = config(AccessKeyId, SecretAccessKey, cs_port(hd(ANodes))),
+    U1C1Config = rtcs:config(AccessKeyId, SecretAccessKey, rtcs:cs_port(hd(ANodes))),
     %% User 2, Cluster 1 config
-    U2C1Config = config(AccessKeyId2, SecretAccessKey2, cs_port(hd(ANodes))),
+    U2C1Config = rtcs:config(AccessKeyId2, SecretAccessKey2, rtcs:cs_port(hd(ANodes))),
     %% User 1, Cluster 2 config
-    U1C2Config = config(AccessKeyId, SecretAccessKey, cs_port(hd(BNodes))),
+    U1C2Config = rtcs:config(AccessKeyId, SecretAccessKey, rtcs:cs_port(hd(BNodes))),
     %% User 2, Cluster 2 config
-    U2C2Config = config(AccessKeyId2, SecretAccessKey2, cs_port(hd(BNodes))),
+    U2C2Config = rtcs:config(AccessKeyId2, SecretAccessKey2, rtcs:cs_port(hd(BNodes))),
 
     lager:info("User 1 IS valid on the primary cluster, and has no buckets"),
     ?assertEqual([{buckets, []}], erlcloud_s3:list_buckets(U1C1Config)),
@@ -140,13 +118,11 @@ confirm() ->
 
     lager:info("write 2 more objects to the primary cluster"),
 
-    %% Object2 = crypto:rand_bytes(4194304),
-    Object2 = crypto:rand_bytes(500),
+    Object2 = crypto:rand_bytes(4194304),
 
     erlcloud_s3:put_object(?TEST_BUCKET, "object_two", Object2, U1C1Config),
 
-    %% Object3 = crypto:rand_bytes(4194304),
-    Object3 = crypto:rand_bytes(500),
+    Object3 = crypto:rand_bytes(4194304),
 
     erlcloud_s3:put_object(?TEST_BUCKET, "object_three", Object3, U1C1Config),
 
@@ -294,74 +270,3 @@ confirm() ->
     Obj15 = erlcloud_s3:get_object(?TEST_BUCKET, "object_four", U1C2Config),
     ?assertEqual(Object4A, proplists:get_value(content,Obj15)),
     pass.
-
-
-cs_port(Node) ->
-    8070 + rtdev:node_id(Node).
-
-ee_config() ->
-    CSCurrent = rt:config(rtdev_path.cs_current),
-    [
-     lager_config(),
-     {riak_core,
-      [{default_bucket_props, [{allow_mult, true}]}]},
-     {riak_kv,
-      [
-       {add_paths, [CSCurrent ++ "/dev/dev1/lib/riak_cs/ebin"]},
-       {storage_backend, riak_cs_kv_multi_backend},
-       {multi_backend_prefix_list, [{<<"0b:">>, be_blocks}]},
-       {multi_backend_default, be_default},
-       {multi_backend,
-        [{be_default, riak_kv_eleveldb_backend,
-          [
-           {max_open_files, 20},
-           {data_root, "./leveldb"}
-          ]},
-         {be_blocks, riak_kv_bitcask_backend,
-          [
-           {data_root, "./bitcask"}
-          ]}
-        ]}
-      ]},
-     {riak_repl,
-      [
-       {fullsync_on_connect, false},
-       {fullsync_interval, disabled},
-       {proxy_get, enabled}
-      ]}
-    ].
-
-cs_config() ->
-    [
-     lager_config(),
-     {riak_cs,
-      [
-       {proxy_get, enabled},
-       {anonymous_user_creation, true},
-       {riak_pb_port, 10017},
-       {stanchion_port, 9095}
-      ]
-     }].
-
-stanchion_config() ->
-    [
-     lager_config(),
-     {stanchion,
-      [
-       {stanchion_port, 9095},
-       {riak_pb_port, 10017}
-      ]}].
-
-lager_config() ->
-    {lager,
-     [
-      {handlers,
-       [
-        {lager_console_backend, debug},
-        {lager_file_backend,
-         [
-          {"./log/error.log", error, 10485760, "$D0",5},
-          {"./log/console.log", debug, 10485760, "$D0", 5}
-         ]}
-       ]}
-     ]}.
