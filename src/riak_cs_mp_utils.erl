@@ -25,6 +25,7 @@
          initiate_multipart_upload/4,
          list_multipart_uploads/2,
          new_manifest/4,
+         upload_part/6,
          write_new_manifest/1
         ]).
 
@@ -51,92 +52,13 @@ calc_multipart_2i_dict(Ms, Bucket, _Key) when is_list(Ms) ->
                    M?MANIFEST.state == writing],
     {?MD_INDEX, lists:usort(lists:flatten(L_2i))}.
 
-abort_multipart_upload(Bucket, Key, UploadId, {_,_,CallerKeyId}) ->
+abort_multipart_upload(Bucket, Key, UploadId, Caller) ->
     %% TODO: ACL check of Bucket
-    case riak_cs_utils:riak_connection() of
-        {ok, RiakcPid} ->
-            try
-                case riak_cs_utils:get_manifests(RiakcPid, Bucket, Key) of
-                    {ok, Obj, Manifests} ->
-                        B_OwnerP = is_caller_bucket_owner(RiakcPid,
-                                                          Bucket, CallerKeyId),
-                        case find_manifest_with_uploadid(UploadId, Manifests) of
-                            false ->
-                                {error, todo_no_such_uploadid};
-                            M ->
-                                MpM = proplists:get_value(
-                                        multipart, M?MANIFEST.props),
-                                {_, _, MpMOwner} = MpM?MULTIPART_MANIFEST.owner,
-                                case B_OwnerP orelse CallerKeyId == MpMOwner of
-                                    true ->
-                                        case M?MANIFEST.state of
-                                            writing ->
-                                                case riak_cs_gc:gc_specific_manifests(
-                                                       [M?MANIFEST.uuid], Obj, RiakcPid) of
-                                                    {ok, _NewObj} ->
-                                                        ok;
-                                                    Else3 ->
-                                                        Else3
-                                                end;
-                                            _ ->
-                                                {error, todo_no_such_uploadid2}
-                                        end;
-                                    false ->
-                                        {error, todo_bad_caller}
-                                end
-                        end;
-                    Else2 ->
-                        Else2
-                end
-            catch error:{badmatch, {m_icbo, _}} ->
-                    {error, todo_bad_caller}
-            after
-                riak_cs_utils:close_riak_connection(RiakcPid)
-            end;
-        Else ->
-            Else
-    end.
+    do_part_common(abort, Bucket, Key, UploadId, Caller, []).
 
-commit_multipart_upload(Bucket, Key, UploadId, {_,_,CallerKeyId}) ->
+commit_multipart_upload(Bucket, Key, UploadId, Caller) ->
     %% TODO: ACL check of Bucket
-    case riak_cs_utils:riak_connection() of
-        {ok, RiakcPid} ->
-            try
-                case riak_cs_utils:get_manifests(RiakcPid, Bucket, Key) of
-                    {ok, _Obj, Manifests} ->
-                        case find_manifest_with_uploadid(UploadId, Manifests) of
-                            false ->
-                                {error, todo_no_such_uploadid};
-                            M ->
-                                MpM = proplists:get_value(
-                                        multipart, M?MANIFEST.props),
-                                {_, _, MpMOwner} = MpM?MULTIPART_MANIFEST.owner,
-                                case CallerKeyId == MpMOwner of
-                                    true ->
-                                        case M?MANIFEST.state of
-                                            writing ->
-                                                commit_multipart_upload2(
-                                                  RiakcPid, M);
-                                            _ ->
-                                                {error, todo_no_such_uploadid2}
-                                        end;
-                                    false ->
-                                        {error, todo_bad_caller}
-                                end
-                        end;
-                    Else2 ->
-                        Else2
-                end
-            catch error:{badmatch, {m_icbo, _}} ->
-                    {error, todo_bad_caller};
-                  error:{badmatch, {m_cmpu2, _}} ->
-                    {error, todo_try_again_later}
-            after
-                riak_cs_utils:close_riak_connection(RiakcPid)
-            end;
-        Else ->
-            Else
-    end.
+    do_part_common(commit, Bucket, Key, UploadId, Caller, []).
 
 %% riak_cs_mp_utils:write_new_manifest(riak_cs_mp_utils:new_manifest(<<"test">>, <<"mp0">>, <<"text/plain">>, {"foobar", "18983ba0e16e18a2b103ca16b84fad93d12a2fbed1c88048931fb91b0b844ad3", "J2IP6WGUQ_FNGIAN9AFI"})).
 initiate_multipart_upload(Bucket, Key, ContentType, {_,_,_} = Owner) ->
@@ -196,6 +118,9 @@ new_manifest(Bucket, Key, ContentType, {_, _, _} = Owner) ->
                               owner = Owner},
     M?MANIFEST{props = [{multipart, MpM}|M?MANIFEST.props]}.
 
+upload_part(_Bucket, _Key, _UploadId, _PartNumber, _Size, {_,_,_CallerKeyId}) ->
+    foo.
+
 write_new_manifest(M) ->
     %% TODO: ACL, cluster_id
     MpM = proplists:get_value(multipart, M?MANIFEST.props),
@@ -226,6 +151,80 @@ write_new_manifest(M) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
+
+do_part_common(Op, Bucket, Key, UploadId, {_,_,CallerKeyId} = _Caller, Extra) ->
+    case riak_cs_utils:riak_connection() of
+        {ok, RiakcPid} ->
+            try
+                case riak_cs_utils:get_manifests(RiakcPid, Bucket, Key) of
+                    {ok, Obj, Manifests} ->
+                        case find_manifest_with_uploadid(UploadId, Manifests) of
+                            false ->
+                                {error, todo_no_such_uploadid};
+                            M ->
+                                MpM = proplists:get_value(
+                                        multipart, M?MANIFEST.props),
+                                {_, _, MpMOwner} = MpM?MULTIPART_MANIFEST.owner,
+                                case CallerKeyId == MpMOwner of
+                                    true ->
+                                        case M?MANIFEST.state of
+                                            writing ->
+                                                do_part_common2(Op, RiakcPid, M,
+                                                                Obj, Extra);
+                                            _ ->
+                                                {error, todo_no_such_uploadid2}
+                                        end;
+                                    false ->
+                                        {error, todo_bad_caller}
+                                end
+                        end;
+                    Else2 ->
+                        Else2
+                end
+            catch error:{badmatch, {m_icbo, _}} ->
+                    {error, todo_bad_caller};
+                  error:{badmatch, {m_cmpu2, _}} ->
+                    {error, todo_try_again_later}
+            after
+                riak_cs_utils:close_riak_connection(RiakcPid)
+            end;
+        Else ->
+            Else
+    end.
+
+do_part_common2(abort, RiakcPid, M, Obj, _Extra) ->
+        case riak_cs_gc:gc_specific_manifests(
+               [M?MANIFEST.uuid], Obj, RiakcPid) of
+            {ok, _NewObj} ->
+                ok;
+            Else3 ->
+                Else3
+        end;
+do_part_common2(commit, RiakcPid, ?MANIFEST{uuid = UUID} = Manifest,
+                _Obj, _Extra) ->
+    {Bucket, Key} = Manifest?MANIFEST.bkey,
+    {m_cmpu2, {ok, ManiPid}} = {m_cmpu2,
+                                riak_cs_manifest_fsm:start_link(Bucket, Key,
+                                                                RiakcPid)},
+    try
+        %% The content_md5 is used by WM to create the ETags header.
+        %% However/fortunately/sigh-of-relief, Amazon's S3 doesn't use
+        %% the file contents for ETag for a committed multipart
+        %% upload.
+        %%
+        %% However, if we add the hypen suffix here, e.g., "-1", then
+        %% the WM etags doodad will simply convert that suffix to
+        %% extra hex digits "2d31" instead.  So, hrm, what to do here.
+        %%
+        %% https://forums.aws.amazon.com/thread.jspa?messageID=203436&#203436
+        %% BogoMD5 = iolist_to_binary([UUID, "-1"]),
+        ok = riak_cs_manifest_fsm:update_manifest_with_confirmation(
+               ManiPid, Manifest?MANIFEST{state = active,
+                                          content_md5 = UUID
+                                         })
+    after
+        ok = riak_cs_manifest_fsm:stop(ManiPid)
+    end.
 
 make_2i_key(Bucket) ->
     make_2i_key2(Bucket, "").
@@ -281,31 +280,6 @@ find_manifest_with_uploadid(UploadId, Manifests) ->
             false;
         {UploadId, M} ->
             M
-    end.
-
-commit_multipart_upload2(RiakcPid, ?MANIFEST{uuid = UUID} = Manifest) ->
-    {Bucket, Key} = Manifest?MANIFEST.bkey,
-    {m_cmpu2, {ok, ManiPid}} = {m_cmpu2,
-                                riak_cs_manifest_fsm:start_link(Bucket, Key,
-                                                                RiakcPid)},
-    try
-        %% The content_md5 is used by WM to create the ETags header.
-        %% However/fortunately/sigh-of-relief, Amazon's S3 doesn't use
-        %% the file contents for ETag for a committed multipart
-        %% upload.
-        %%
-        %% However, if we add the hypen suffix here, e.g., "-1", then
-        %% the WM etags doodad will simply convert that suffix to
-        %% extra hex digits "2d31" instead.  So, hrm, what to do here.
-        %%
-        %% https://forums.aws.amazon.com/thread.jspa?messageID=203436&#203436
-        %% BogoMD5 = iolist_to_binary([UUID, "-1"]),
-        ok = riak_cs_manifest_fsm:update_manifest_with_confirmation(
-               ManiPid, Manifest?MANIFEST{state = active,
-                                          content_md5 = UUID
-                                         })
-    after
-        ok = riak_cs_manifest_fsm:stop(ManiPid)
     end.
 
 %% ===================================================================
