@@ -118,8 +118,10 @@ new_manifest(Bucket, Key, ContentType, {_, _, _} = Owner) ->
                               owner = Owner},
     M?MANIFEST{props = [{multipart, MpM}|M?MANIFEST.props]}.
 
-upload_part(_Bucket, _Key, _UploadId, _PartNumber, _Size, {_,_,_CallerKeyId}) ->
-    foo.
+upload_part(Bucket, Key, UploadId, PartNumber, Size, Caller) ->
+    Extra = {Bucket, Key, UploadId, Caller, PartNumber, Size},
+    do_part_common(upload_part, Bucket, Key, UploadId, Caller,
+                   [{upload_part, Extra}]).
 
 write_new_manifest(M) ->
     %% TODO: ACL, cluster_id
@@ -152,7 +154,7 @@ write_new_manifest(M) ->
 %%% Internal functions
 %%%===================================================================
 
-do_part_common(Op, Bucket, Key, UploadId, {_,_,CallerKeyId} = _Caller, Extra) ->
+do_part_common(Op, Bucket, Key, UploadId, {_,_,CallerKeyId} = _Caller, Props) ->
     case riak_cs_utils:riak_connection() of
         {ok, RiakcPid} ->
             try
@@ -170,7 +172,7 @@ do_part_common(Op, Bucket, Key, UploadId, {_,_,CallerKeyId} = _Caller, Extra) ->
                                         case M?MANIFEST.state of
                                             writing ->
                                                 do_part_common2(Op, RiakcPid, M,
-                                                                Obj, Extra);
+                                                                Obj, MpM, Props);
                                             _ ->
                                                 {error, todo_no_such_uploadid2}
                                         end;
@@ -183,7 +185,7 @@ do_part_common(Op, Bucket, Key, UploadId, {_,_,CallerKeyId} = _Caller, Extra) ->
                 end
             catch error:{badmatch, {m_icbo, _}} ->
                     {error, todo_bad_caller};
-                  error:{badmatch, {m_cmpu2, _}} ->
+                  error:{badmatch, {m_umwc, _}} ->
                     {error, todo_try_again_later}
             after
                 riak_cs_utils:close_riak_connection(RiakcPid)
@@ -192,7 +194,7 @@ do_part_common(Op, Bucket, Key, UploadId, {_,_,CallerKeyId} = _Caller, Extra) ->
             Else
     end.
 
-do_part_common2(abort, RiakcPid, M, Obj, _Extra) ->
+do_part_common2(abort, RiakcPid, M, Obj, _Mpm, _Props) ->
         case riak_cs_gc:gc_specific_manifests(
                [M?MANIFEST.uuid], Obj, RiakcPid) of
             {ok, _NewObj} ->
@@ -201,27 +203,61 @@ do_part_common2(abort, RiakcPid, M, Obj, _Extra) ->
                 Else3
         end;
 do_part_common2(commit, RiakcPid, ?MANIFEST{uuid = UUID} = Manifest,
-                _Obj, _Extra) ->
-    {Bucket, Key} = Manifest?MANIFEST.bkey,
-    {m_cmpu2, {ok, ManiPid}} = {m_cmpu2,
-                                riak_cs_manifest_fsm:start_link(Bucket, Key,
-                                                                RiakcPid)},
+                _Obj, _Mpm, _Props) ->
+    %% The content_md5 is used by WM to create the ETags header.
+    %% However/fortunately/sigh-of-relief, Amazon's S3 doesn't use
+    %% the file contents for ETag for a committed multipart
+    %% upload.
+    %%
+    %% However, if we add the hypen suffix here, e.g., "-1", then
+    %% the WM etags doodad will simply convert that suffix to
+    %% extra hex digits "2d31" instead.  So, hrm, what to do here.
+    %%
+    %% https://forums.aws.amazon.com/thread.jspa?messageID=203436&#203436
+    %% BogoMD5 = iolist_to_binary([UUID, "-1"]),
+    NewManifest = Manifest?MANIFEST{state = active,
+                                    content_md5 = UUID},
+    ok = update_manifest_with_confirmation(RiakcPid, NewManifest);
+do_part_common2(upload_part, RiakcPid, M, _Obj, MpM, Props) ->
+    {Bucket, Key, _UploadId, _Caller, PartNumber, Size} = proplists:get_value(upload_part, Props),
+    BlockSize = riak_cs_lfs_utils:block_size(),
+    {ok, PutPid} = riak_cs_put_fsm:start_link(
+                     {Bucket, Key, Size, <<"x-riak/multipart-part">>,
+                      orddict:new(), BlockSize, M?MANIFEST.acl,
+                      infinity_but_timeout_not_actually_used, self(), RiakcPid},
+                     false),
     try
-        %% The content_md5 is used by WM to create the ETags header.
-        %% However/fortunately/sigh-of-relief, Amazon's S3 doesn't use
-        %% the file contents for ETag for a committed multipart
-        %% upload.
-        %%
-        %% However, if we add the hypen suffix here, e.g., "-1", then
-        %% the WM etags doodad will simply convert that suffix to
-        %% extra hex digits "2d31" instead.  So, hrm, what to do here.
-        %%
-        %% https://forums.aws.amazon.com/thread.jspa?messageID=203436&#203436
-        %% BogoMD5 = iolist_to_binary([UUID, "-1"]),
-        ok = riak_cs_manifest_fsm:update_manifest_with_confirmation(
-               ManiPid, Manifest?MANIFEST{state = active,
-                                          content_md5 = UUID
-                                         })
+        ?MANIFEST{content_length = ContentLength} = M,
+        ?MULTIPART_MANIFEST{parts = Parts} = MpM,
+        PartUUID = riak_cs_put_fsm:get_uuid(PutPid),
+        PM = ?PART_MANIFEST{bucket = Bucket,
+                            key = Key,
+                            start_time = os:timestamp(),
+                            part_number = PartNumber,
+                            part_id = PartUUID,
+                            content_length = Size,
+                            block_size = BlockSize},
+        NewMpM = MpM?MULTIPART_MANIFEST{parts = ordsets:add_element(PM, Parts)},
+        NewM = M?MANIFEST{
+                   content_length = ContentLength + Size,
+                   props = [{multipart, NewMpM}|proplists:delete(multipart, Props)]
+                  },
+io:format("NewMpM ~p\n", [NewMpM]),
+        ok = update_manifest_with_confirmation(RiakcPid, NewM),
+        {foo, PartUUID, PutPid}
+    catch error:{badmatch, {m_umwc, _}} ->
+            riak_cs_put_fsm:force_stop(PutPid),
+            {error, todo_try_again_later}
+    end.
+
+update_manifest_with_confirmation(RiakcPid, Manifest) ->
+    {Bucket, Key} = Manifest?MANIFEST.bkey,
+    {m_umwc, {ok, ManiPid}} = {m_umwc,
+                               riak_cs_manifest_fsm:start_link(Bucket, Key,
+                                                               RiakcPid)},
+    try
+        ok = riak_cs_manifest_fsm:update_manifest_with_confirmation(ManiPid,
+                                                                    Manifest)
     after
         ok = riak_cs_manifest_fsm:stop(ManiPid)
     end.
@@ -320,6 +356,14 @@ test_0() ->
 
     ok.
 
+test_1() ->
+    test_cleanup_users(),
+    test_cleanup_data(),
+    test_create_users(),
+
+    ID1 = test_initiate(test_user1()),
+    test_upload_part(ID1, 1, 50, test_user1()).
+
 test_initiate(User) ->
     {ok, ID} = initiate_multipart_upload(
                  test_bucket1(), test_key1(), <<"text/plain">>, User),
@@ -333,6 +377,9 @@ test_commit(UploadId, User) ->
 
 test_list_uploadids(User) ->
     list_multipart_uploads(test_bucket1(), User).
+
+test_upload_part(UploadId, PartNumber, Size, User) ->
+    upload_part(test_bucket1(), test_key1(), UploadId, PartNumber, Size, User).
 
 test_create_users() ->
     %% info for test_user1()

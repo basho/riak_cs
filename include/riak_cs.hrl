@@ -273,12 +273,11 @@
     abort_requests = ordsets:new() :: ordsets:ordset(),
 
     %% Stores references to all of the parts uploaded
-    %% with this `upload_id' so far. Since a part
+    %% with this `upload_id' so far. A part
     %% can be uploaded more than once with the same
-    %% part number, we store the values in this dict
-    %% as sets instead of just `part_manifest()'.
-    %% [{integer(), ordsets:ordset(part_manifest())}]
-    parts  = ordsets:new() :: orddict:orddict(),
+    %% part number, we key the set by {PartNum, PartETag}.
+    parts = ordsets:new() :: ordsets:ordset(),
+    done_parts = ordsets:new() :: ordsets:ordset(),
 
     %% a place to stuff future information
     %% without having to change
@@ -335,12 +334,12 @@
     %% of the same part_number
     start_time :: term(),
 
-    %% still some questions here
-    %% need to account for aborts?
-    state :: writing | active | pending_delete | marked_delete,
+    %% %% still some questions here
+    %% %% need to account for aborts?
+    %% state :: writing | active | pending_delete | marked_delete,
 
-    %% the parent upload identifier
-    upload_id :: binary(),
+    %% %% the parent upload identifier
+    %% upload_id :: binary(),
 
     %% one-of 1-10000, inclusive
     part_number :: integer(),
@@ -349,8 +348,8 @@
     %% uploads of the same {upload_id, part_number}.
     part_id :: binary(),
 
-    last_block_written_time :: integer(),
-    write_blocks_remaining :: orddsets:ordset(),
+    %% last_block_written_time :: integer(),
+    %% write_blocks_remaining :: orddsets:ordset(),
 
     %% each individual part upload always has a content-length
     content_length :: integer(),
