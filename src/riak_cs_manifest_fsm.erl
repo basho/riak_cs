@@ -193,6 +193,7 @@ waiting_command({delete_manifest, UUID},
     Reply = get_and_delete(RiakcPid, UUID, Bucket, Key),
     {reply, Reply, waiting_update_command, State};
 waiting_command({update_manifests_with_confirmation, _}=Cmd, From, State) ->
+io:format("~p LINE ~p with_conf\n", [?MODULE, ?LINE]),
     %% Used by multipart commit: this FSM was just started a moment
     %% ago, and we don't need this FSM to re-do work that multipart
     %% commit has already done.
@@ -205,12 +206,14 @@ waiting_update_command({update_manifests_with_confirmation, WrappedManifests}, _
                                             key=Key,
                                             riak_object=undefined,
                                             manifests=undefined}) ->
+io:format("~p LINE ~p with_conf\n", [?MODULE, ?LINE]),
     {Reply, _, _} = get_and_update(RiakcPid, WrappedManifests, Bucket, Key),
     {reply, Reply, waiting_update_command, State};
 waiting_update_command({update_manifests_with_confirmation, WrappedManifests}, _From,
                                             State=#state{riakc_pid=RiakcPid,
                                             riak_object=PreviousRiakObject,
                                             manifests=PreviousManifests}) ->
+io:format("~p LINE ~p with_conf\n", [?MODULE, ?LINE]),
     Reply = update_from_previous_read(RiakcPid, PreviousRiakObject,
                                   PreviousManifests, WrappedManifests),
 

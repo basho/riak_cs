@@ -45,6 +45,8 @@ resolve_dicts(A, B) ->
 resolve_manifests(_Key, A, B) ->
     AState = state_to_stage_number(A?MANIFEST.state),
     BState = state_to_stage_number(B?MANIFEST.state),
+io:format("resolve A: ~P\n", [catch proplists:get_value(multipart, A?MANIFEST.props), 15]),
+io:format("resolve B: ~P\n", [catch proplists:get_value(multipart, B?MANIFEST.props), 15]),
     resolve_manifests(AState, BState, A, B).
 
 state_to_stage_number(writing)          -> 10;
@@ -71,7 +73,10 @@ resolve_manifests(_, _,
                   ?MANIFEST{state = writing} = B) ->
     WriteBlocksRemaining = resolve_written_blocks(A, B),
     LastBlockWrittenTime = resolve_last_written_time(A, B),
-    A?MANIFEST{write_blocks_remaining=WriteBlocksRemaining, last_block_written_time=LastBlockWrittenTime};
+    Props = resolve_props(A, B),
+    A?MANIFEST{write_blocks_remaining=WriteBlocksRemaining,
+               last_block_written_time=LastBlockWrittenTime,
+               props = Props};
 
 %% Check for and handle differing ACLs, but otherwise purposely throw
 %% a function clause exception if the manifests aren't equivalent
@@ -110,6 +115,38 @@ resolve_deleted_blocks(A, B) ->
     ADeleted = A?MANIFEST.delete_blocks_remaining,
     BDeleted = B?MANIFEST.delete_blocks_remaining,
     safe_intersection(ADeleted, BDeleted).
+
+resolve_props(A, B) ->
+    Ps_A = A?MANIFEST.props,
+    Ps_B = B?MANIFEST.props,
+    lists:foldl(fun resolve_a_prop/2,
+                {Ps_A, Ps_B, []},
+                [fun resolve_prop_multiprop/2]).
+
+resolve_a_prop(Resolver, {Ps_A, Ps_B, Ps_merged}) ->
+    Resolver(Ps_A, Ps_B) ++ Ps_merged.
+
+resolve_prop_multiprop(Ps_A, Ps_B) ->
+    case {proplists:get_value(multipart, Ps_A),
+          proplists:get_value(multipart, Ps_B)} of
+        {undefined, undefined} ->
+            [];
+        {undefined, B} ->
+            [{multipart, B}];
+        {A, undefined} ->
+            [{multipart, A}];
+        {A, B} ->
+            Completes = ordsets:union(A?MULTIPART_MANIFEST.complete_requests,
+                                      B?MULTIPART_MANIFEST.complete_requests),
+            Aborts = ordsets:union(A?MULTIPART_MANIFEST.abort_requests,
+                                   B?MULTIPART_MANIFEST.abort_requests),
+            Parts = ordsets:union(A?MULTIPART_MANIFEST.parts,
+                                  B?MULTIPART_MANIFEST.parts),
+            MM = A?MULTIPART_MANIFEST{complete_requests = Completes,
+                                      abort_requests = Aborts,
+                                      parts = Parts},
+            [{multipart, MM}]
+    end.
 
 %% NOTE:
 %% There was a bit of a gaff
