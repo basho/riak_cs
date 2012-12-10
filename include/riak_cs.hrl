@@ -390,6 +390,7 @@
 -define(MULTIPART_COMPLETE, #complete_req_v1).
 -define(MULTIPART_ABORT, #abort_req_v1).
 -define(PART_MANIFEST, #part_manifest_v1).
+-define(PART_MANIFEST_RECNAME, part_manifest_v1).
 -define(MULTIPART_DESCR, #multipart_descr_v1).
 
 -define(USER_BUCKET, <<"moss.users">>).
