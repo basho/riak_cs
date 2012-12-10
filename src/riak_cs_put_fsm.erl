@@ -318,7 +318,6 @@ terminate(_Reason, _StateName, #state{mani_pid=ManiPid,
                                       all_writer_pids=BlockServerPids}) ->
     riak_cs_manifest_fsm:maybe_stop_manifest_fsm(ManiPid),
     riak_cs_block_server:maybe_stop_block_servers(BlockServerPids),
-io:format("~p LINE ~p terminate\n", [?MODULE, ?LINE]),
     ok.
 
 %%--------------------------------------------------------------------

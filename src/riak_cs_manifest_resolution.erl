@@ -45,8 +45,6 @@ resolve_dicts(A, B) ->
 resolve_manifests(_Key, A, B) ->
     AState = state_to_stage_number(A?MANIFEST.state),
     BState = state_to_stage_number(B?MANIFEST.state),
-io:format("resolve A: ~P\n", [catch proplists:get_value(multipart, A?MANIFEST.props), 15]),
-io:format("resolve B: ~P\n", [catch proplists:get_value(multipart, B?MANIFEST.props), 15]),
     resolve_manifests(AState, BState, A, B).
 
 state_to_stage_number(writing)          -> 10;
