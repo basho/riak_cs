@@ -142,9 +142,11 @@ resolve_prop_multiprop(Ps_A, Ps_B) ->
                                    B?MULTIPART_MANIFEST.abort_requests),
             Parts = ordsets:union(A?MULTIPART_MANIFEST.parts,
                                   B?MULTIPART_MANIFEST.parts),
+            DParts = ordsets:union(A?MULTIPART_MANIFEST.done_parts,
+                                  B?MULTIPART_MANIFEST.done_parts),
             MM = A?MULTIPART_MANIFEST{complete_requests = Completes,
                                       abort_requests = Aborts,
-                                      parts = Parts},
+                                      parts = Parts, done_parts = DParts},
             [{multipart, MM}]
     end.
 

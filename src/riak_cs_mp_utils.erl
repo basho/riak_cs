@@ -26,6 +26,7 @@
          list_multipart_uploads/2,
          new_manifest/4,
          upload_part/6,
+         upload_part_1blob/2,
          write_new_manifest/1
         ]).
 
@@ -123,6 +124,15 @@ upload_part(Bucket, Key, UploadId, PartNumber, Size, Caller) ->
     do_part_common(upload_part, Bucket, Key, UploadId, Caller,
                    [{upload_part, Extra}]).
 
+upload_part_1blob(PutPid, Blob) ->
+    ok = riak_cs_put_fsm:augment_data(PutPid, Blob),
+    {ok, _} = riak_cs_put_fsm:finalize(PutPid),
+    ok.
+
+upload_part_finished(Bucket, Key, UploadId, _PartNumber, PartUUID, Caller) ->
+    Extra = {PartUUID},
+    do_part_common(upload_part_finished, Bucket, Key, UploadId, Caller,
+                   [{upload_part_finished, Extra}]).
 write_new_manifest(M) ->
     %% TODO: ACL, cluster_id
     MpM = proplists:get_value(multipart, M?MANIFEST.props),
@@ -219,7 +229,8 @@ do_part_common2(commit, RiakcPid, ?MANIFEST{uuid = UUID} = Manifest,
                                     content_md5 = UUID},
     ok = update_manifest_with_confirmation(RiakcPid, NewManifest);
 do_part_common2(upload_part, RiakcPid, M, _Obj, MpM, Props) ->
-    {Bucket, Key, _UploadId, _Caller, PartNumber, Size} = proplists:get_value(upload_part, Props),
+    {Bucket, Key, _UploadId, _Caller, PartNumber, Size} =
+        proplists:get_value(upload_part, Props),
     BlockSize = riak_cs_lfs_utils:block_size(),
     {ok, PutPid} = riak_cs_put_fsm:start_link(
                      {Bucket, Key, Size, <<"x-riak/multipart-part">>,
@@ -244,9 +255,32 @@ do_part_common2(upload_part, RiakcPid, M, _Obj, MpM, Props) ->
                   },
 io:format("NewMpM ~p\n", [NewMpM]),
         ok = update_manifest_with_confirmation(RiakcPid, NewM),
-        {foo, PartUUID, PutPid}
+        {upload_part_ready, PartUUID, PutPid}
     catch error:{badmatch, {m_umwc, _}} ->
             riak_cs_put_fsm:force_stop(PutPid),
+            {error, todo_try_again_later}
+    end;
+do_part_common2(upload_part_finished, RiakcPid, M, _Obj, MpM, Props) ->
+    {PartUUID} = proplists:get_value(upload_part_finished, Props),
+    try
+        ?MULTIPART_MANIFEST{parts = Parts, done_parts = DoneParts} = MpM,
+        case {lists:keyfind(PartUUID, ?PART_MANIFEST.part_id,
+                            ordsets:to_list(Parts)),
+              ordsets:is_element(PartUUID, DoneParts)} of
+            {false, _} ->
+                {error, todo_bad_partid1};
+            {_, true} ->
+                {error, todo_bad_partid2};
+            {PM, false} when is_record(PM, ?PART_MANIFEST_RECNAME) ->
+                NewMpM = MpM?MULTIPART_MANIFEST{
+                               done_parts = ordsets:add_element(PartUUID,
+                                                                DoneParts)},
+                NewM = M?MANIFEST{
+                           props = [{multipart, NewMpM}|proplists:delete(multipart, Props)]},
+                io:format("NewMpM ~p\n", [NewMpM]),
+                ok = update_manifest_with_confirmation(RiakcPid, NewM)
+        end
+    catch error:{badmatch, {m_umwc, _}} ->
             {error, todo_try_again_later}
     end.
 
@@ -362,7 +396,9 @@ test_1() ->
     test_create_users(),
 
     ID1 = test_initiate(test_user1()),
-    test_upload_part(ID1, 1, 50, test_user1()).
+    Bytes = 50,
+    {ok, _PartID1} = test_upload_part(ID1, 1, <<42:(8*Bytes)>>, test_user1()),
+    {ok, _PartID2} = test_upload_part(ID1, 2, <<4242:(8*Bytes)>>, test_user1()).
 
 test_initiate(User) ->
     {ok, ID} = initiate_multipart_upload(
@@ -378,8 +414,34 @@ test_commit(UploadId, User) ->
 test_list_uploadids(User) ->
     list_multipart_uploads(test_bucket1(), User).
 
-test_upload_part(UploadId, PartNumber, Size, User) ->
-    upload_part(test_bucket1(), test_key1(), UploadId, PartNumber, Size, User).
+test_upload_part(UploadId, PartNumber, Blob, User) ->
+    Size = byte_size(Blob),
+    {upload_part_ready, PartUUID, PutPid} =
+        upload_part(test_bucket1(), test_key1(), UploadId, PartNumber, Size, User),
+    ok = upload_part_1blob(PutPid, Blob),
+    {error, notfound} =
+        upload_part_finished(<<"no-such-bucket">>, test_key1(), UploadId,
+                             PartNumber, PartUUID, User),
+    {error, notfound} =
+        upload_part_finished(test_bucket1(), <<"no-such-key">>, UploadId,
+                             PartNumber, PartUUID, User),
+    {U1, U2, U3} = User,
+    NoSuchUser = {U1 ++ "foo", U2 ++ "foo", U3 ++ "foo"},
+    {error, todo_bad_caller} =
+        upload_part_finished(test_bucket1(), test_key1(), UploadId,
+                             PartNumber, PartUUID, NoSuchUser),
+    {error, todo_no_such_uploadid} =
+        upload_part_finished(test_bucket1(), test_key1(), <<"no-such-upload-id">>,
+                             PartNumber, PartUUID, User),
+    {error, todo_bad_partid1} =
+         upload_part_finished(test_bucket1(), test_key1(), UploadId,
+                              PartNumber, <<"no-such-part-id">>, User),
+    ok = upload_part_finished(test_bucket1(), test_key1(), UploadId,
+                              PartNumber, PartUUID, User),
+    {error, todo_bad_partid2} =
+         upload_part_finished(test_bucket1(), test_key1(), UploadId,
+                              PartNumber, PartUUID, User),
+    {ok, PartUUID}.
 
 test_create_users() ->
     %% info for test_user1()
