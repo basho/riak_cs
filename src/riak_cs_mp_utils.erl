@@ -441,8 +441,9 @@ test_1() ->
     ID1 = test_initiate(test_user1()),
     Bytes = 50,
     {ok, PartID1} = test_upload_part(ID1, 1, <<42:(8*Bytes)>>, test_user1()),
-    {ok, PartID2} = test_upload_part(ID1, 2, <<4242:(8*Bytes)>>, test_user1()),
-    test_complete(ID1, [{1, PartID1}, {2, PartID2}], test_user1()).
+    {ok, PartID4} = test_upload_part(ID1, 4, <<43:(8*Bytes)>>, test_user1()),
+    {ok, PartID9} = test_upload_part(ID1, 9, <<44:(8*Bytes)>>, test_user1()),
+    test_complete(ID1, [{1, PartID1}, {4, PartID4}, {9, PartID9}], test_user1()).
 
 test_initiate(User) ->
     {ok, ID} = initiate_multipart_upload(
