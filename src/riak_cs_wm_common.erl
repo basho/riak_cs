@@ -199,7 +199,8 @@ accept_body(RD, Ctx=#context{submodule=Mod,exports_fun=ExportsFun,user=User}) ->
     Res.
 
 -spec produce_body(#wm_reqdata{}, #context{}) ->
-                          {iolist()|binary(), #wm_reqdata{}, #context{}}.
+                          {iolist()|binary(), #wm_reqdata{}, #context{}} |
+                          {{known_length_stream, non_neg_integer(), {<<>>, function()}}, #wm_reqdata{}, #context{}}.
 produce_body(RD, Ctx=#context{submodule=Mod,exports_fun=ExportsFun}) ->
     %% TODO: add dt_wm_return w/ content length
     riak_cs_dtrace:dt_wm_entry({?MODULE, Mod}, <<"produce_body">>),

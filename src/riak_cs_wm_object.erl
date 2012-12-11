@@ -144,7 +144,9 @@ content_types_provided(RD, Ctx=#context{local_context=LocalCtx,
             {[{"text/plain", produce_body}], RD, Ctx}
     end.
 
--spec produce_body(#wm_reqdata{}, #context{}) -> {iolist()|binary(), #wm_reqdata{}, #context{}}.
+
+-spec produce_body(#wm_reqdata{}, #context{}) -> 
+                          {{known_length_stream, non_neg_integer(), {<<>>, function()}}, #wm_reqdata{}, #context{}}.
 produce_body(RD, Ctx=#context{local_context=LocalCtx,
                               start_time=StartTime,
                               user=User}) ->
