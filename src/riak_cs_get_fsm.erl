@@ -39,13 +39,13 @@
          waiting_continue_or_stop/3,
          waiting_chunks/2,
          waiting_chunks/3,
-         sending_remaining/2,
-         sending_remaining/3,
          handle_event/3,
          handle_sync_event/4,
          handle_info/3,
          terminate/3,
          code_change/4]).
+
+-type block_name() :: {binary(), integer()}.
 
 -record(state, {from :: {pid(), reference()},
                 mani_fsm_pid :: pid(),
@@ -53,16 +53,15 @@
                 bucket :: term(),
                 caller :: reference(),
                 key :: term(),
-                block_buffer=[] :: [{pos_integer(), term()}],
+                got_blocks=orddict:new() :: orddict:orddict(),
                 manifest :: term(),
-                manifest_uuid :: term(),
-                blocks_left :: set(),
+                blocks_order :: [block_name()],
+                blocks_intransit=queue:new() :: queue(),
                 test=false :: boolean(),
-                next_block=0 :: 0 | pos_integer(),
-                last_block_requested :: pos_integer(),
                 total_blocks :: pos_integer(),
                 free_readers :: [pid()],
                 all_reader_pids :: [pid()]}).
+-type state() :: #state{}.
 
 %% ===================================================================
 %% Public API
@@ -149,8 +148,7 @@ prepare(get_manifest, _From, State) ->
             {stop, normal, notfound, PreparedState};
         Mfst ->
             NextStateTimeout = 60000,
-            NewState = PreparedState#state{manifest_uuid=Mfst?MANIFEST.uuid,
-                                           from=undefined},
+            NewState = PreparedState#state{from=undefined},
             {reply, Mfst, waiting_continue_or_stop, NewState, NextStateTimeout}
     end.
 
@@ -161,8 +159,7 @@ waiting_value(get_manifest, _From, State=#state{manifest=undefined}) ->
     {stop, normal, notfound, State};
 waiting_value(get_manifest, _From, State=#state{manifest=Mfst}) ->
     NextStateTimeout = 60000,
-    NewState = State#state{manifest_uuid=Mfst?MANIFEST.uuid,
-                           from=undefined},
+    NewState = State#state{from=undefined},
     {reply, Mfst, waiting_continue_or_stop, NewState, NextStateTimeout}.
 
 waiting_continue_or_stop(timeout, State) ->
@@ -172,21 +169,18 @@ waiting_continue_or_stop(stop, State) ->
 waiting_continue_or_stop(continue, #state{manifest=Manifest,
                                           bucket=BucketName,
                                           key=Key,
-                                          next_block=NextBlock,
-                                          manifest_uuid=UUID,
                                           free_readers=Readers,
                                           riakc_pid=RiakPid}=State) ->
-    BlockSequences = riak_cs_lfs_utils:block_sequences_for_manifest(Manifest),
-    ClusterID = Manifest?MANIFEST.cluster_id,
-    case BlockSequences of
+    BlocksOrder = riak_cs_lfs_utils:block_sequences_for_manifest(Manifest),
+    case BlocksOrder of
         [] ->
             %% We should never get here because empty
             %% files are handled by the wm resource.
             _ = lager:warning("~p:~p has no blocks", [BucketName, Key]),
             {stop, normal, State};
         [_|_] ->
-            BlocksLeft = sets:from_list(BlockSequences),
-            TotalBlocks = sets:size(BlocksLeft),
+            io:format("BSeq ~p\n", [BlocksOrder]),
+            TotalBlocks = length(BlocksOrder),
 
             %% Start the block servers
             case Readers of
@@ -199,13 +193,10 @@ waiting_continue_or_stop(continue, #state{manifest=Manifest,
                     FreeReaders = Readers
             end,
             %% start retrieving the first set of blocks
-            {LastBlockRequested, UpdFreeReaders} =
-                read_blocks(BucketName, Key, ClusterID, UUID, FreeReaders, NextBlock, TotalBlocks),
-            NewState = State#state{blocks_left=BlocksLeft,
-                                   last_block_requested=LastBlockRequested-1,
+            UpdState = State#state{blocks_order=BlocksOrder,
                                    total_blocks=TotalBlocks,
-                                   free_readers=UpdFreeReaders},
-            {next_state, waiting_chunks, NewState}
+                                   free_readers=FreeReaders},
+            {next_state, waiting_chunks, read_blocks(UpdState)}
     end.
 
 waiting_continue_or_stop(Event, From, State) ->
@@ -213,136 +204,53 @@ waiting_continue_or_stop(Event, From, State) ->
                    [self(), Event, From]),
     {next_state, waiting_continue_or_stop, State}.
 
-waiting_chunks(get_next_chunk, From, #state{block_buffer=[], from=PreviousFrom}=State) when PreviousFrom =:= undefined ->
-    %% we don't have a chunk ready
-    %% yet, so we'll make note
-    %% of the sender and go back
-    %% into waiting for another
-    %% chunk
-    {next_state, waiting_chunks, State#state{from=From}};
-waiting_chunks(get_next_chunk,
-               _From,
-               State=#state{block_buffer=[{NextBlock, Block} | RestBlockBuffer],
-                            next_block=NextBlock}) ->
-    _ = lager:debug("Returning block ~p to client", [NextBlock]),
-    {reply, {chunk, Block}, waiting_chunks, State#state{block_buffer=RestBlockBuffer,
-                                                        next_block=NextBlock+1}};
-waiting_chunks(get_next_chunk, From, State) ->
-    {next_state, waiting_chunks, State#state{from=From}}.
+waiting_chunks(get_next_chunk, From, #state{got_blocks=Got,
+                                            blocks_intransit=Intransit}=State) ->
+  %% SLF: not wanted?? when PreviousFrom =:= undefined ->
+    case queue:out(Intransit) of
+        {empty, _} ->
+io:format("waiting_chunks3 from ~p empty\n", [From]),
+            gen_fsm:reply(From, {done, <<>>}),
+            {stop, normal, State};
+        {{value, NextBlock}, UpdIntransit} ->
+            case orddict:find(NextBlock, Got) of
+                {ok, Block} ->
+io:format("waiting_chunks3 from ~p send ~p\n", [From, NextBlock]),
+                    _ = lager:debug("Returning block ~p to client", [NextBlock]),
+                    %% Must use gen_fsm:reply/2 here!  We are shared
+                    %% with an async event func and must return next_state.
+                    gen_fsm:reply(From, {chunk, Block}),
+                    {next_state, waiting_chunks,
+                     State#state{got_blocks=orddict:erase(NextBlock, Got),
+                                 blocks_intransit=UpdIntransit}};
+                error ->
+io:format("waiting_chunks3 from ~p wait\n", [From]),
+                    {next_state, waiting_chunks, State#state{from=From}}
+            end
+    end.
+%% waiting_chunks(get_next_chunk, From, #state{from=PreviousFrom}=State) when PreviousFrom =/= undefined ->
+%%     %% get_next_chunk is a synchronous RPC call.
+%%     %% We should be getting calls from only a single caller.
+%%     %% Therefore, this clause should not be necessary.
+%%     %% However, we can be called in other contexts, and in
+%%     %% those other strictly-internal-use-only contexts, we
+%%     %% do nothing here.
+%%     {next_state, waiting_chunks, State}.
 
 waiting_chunks({chunk, Pid, {NextBlock, BlockReturnValue}}, #state{from=From,
-                                                                   blocks_left=Remaining,
-                                                                   manifest_uuid=UUID,
-                                                                   manifest=Manifest,
-                                                                   key=Key,
-                                                                   bucket=BucketName,
-                                                                   next_block=NextBlock,
-                                                                   free_readers=FreeReaders,
-                                                                   last_block_requested=LastBlockRequested,
-                                                                   total_blocks=TotalBlocks,
-                                                                   block_buffer=BlockBuffer}=State) ->
+                                                                   got_blocks=Got,
+                                                                   free_readers=FreeReaders}=State) ->
     _ = lager:debug("Retrieved block ~p", [NextBlock]),
-    ClusterID = Manifest?MANIFEST.cluster_id,
-    {ok, BlockValue} = BlockReturnValue,
-    NewRemaining = sets:del_element(NextBlock, Remaining),
-    BlocksLeft = sets:size(NewRemaining),
-    _ = lager:debug("BlocksLeft: ~p", [BlocksLeft]),
-    case From of
-        undefined ->
-            UpdBlockBuffer =
-                lists:sort(fun block_sorter/2,
-                           [{NextBlock, BlockValue} | BlockBuffer]),
-            _ = lager:debug("BlockBuffer: ~p", [UpdBlockBuffer]),
-            NewState0 = State#state{blocks_left=NewRemaining,
-                                   block_buffer=UpdBlockBuffer},
-            case BlocksLeft of
-                0 ->
-                    NewState = NewState0#state{free_readers=[Pid | FreeReaders]},
-                    NextStateName = sending_remaining;
-                _ ->
-                    {ReadRequests, UpdFreeReaders} =
-                        read_blocks(BucketName, Key, ClusterID, UUID, [Pid | FreeReaders], NextBlock+1, TotalBlocks),
-                    NewState = NewState0#state{last_block_requested=LastBlockRequested+ReadRequests,
-                                               free_readers=UpdFreeReaders},
-                    NextStateName = waiting_chunks
-            end,
-            {next_state, NextStateName, NewState};
-        _ ->
-            _ = lager:debug("Returning block ~p to client", [NextBlock]),
-            NewState0 = State#state{blocks_left=NewRemaining,
-                                    from=undefined,
-                                    free_readers=[Pid | FreeReaders],
-                                    next_block=NextBlock+1},
-            case BlocksLeft of
-                0 when length(BlockBuffer) > 0 ->
-                    gen_fsm:reply(From, {chunk, BlockValue}),
-                    NewState=NewState0,
-                    {next_state, sending_remaining, NewState};
-                0 ->
-                    gen_fsm:reply(From, {done, BlockValue}),
-                    NewState=NewState0,
-                    {stop, normal, NewState};
-                _ ->
-                    gen_fsm:reply(From, {chunk, BlockValue}),
-                    {ReadRequests, UpdFreeReaders} =
-                        read_blocks(BucketName, Key, ClusterID, UUID,
-                                    [Pid | FreeReaders], LastBlockRequested+1, TotalBlocks),
-                    _ = lager:debug("Started ~p new readers. Free readers: ~p", [ReadRequests, UpdFreeReaders]),
-                    NewState = NewState0#state{last_block_requested=LastBlockRequested+ReadRequests,
-                                               free_readers=UpdFreeReaders},
-                    {next_state, waiting_chunks, NewState}
-            end
-    end;
-
-waiting_chunks({chunk, Pid, {BlockSeq, BlockReturnValue}}, #state{blocks_left=Remaining,
-                                                                   manifest_uuid=UUID,
-                                                                   manifest=Manifest,
-                                                                   key=Key,
-                                                                   bucket=BucketName,
-                                                                   free_readers=FreeReaders,
-                                                                   last_block_requested=LastBlockRequested,
-                                                                   total_blocks=TotalBlocks,
-                                                                   block_buffer=BlockBuffer}=State) ->
-    %% we don't deal with missing chunks
-    %% at all here, so this pattern
-    %% match will fail
-    _ = lager:debug("Retrieved block ~p", [BlockSeq]),
-    ClusterID = Manifest?MANIFEST.cluster_id,
-    {ok, BlockValue} = BlockReturnValue,
-    NewRemaining = sets:del_element(BlockSeq, Remaining),
-    BlocksLeft = sets:size(NewRemaining),
-    UpdBlockBuffer =
-        lists:sort(fun block_sorter/2,
-                   [{BlockSeq, BlockValue} | BlockBuffer]),
-    NewState0 = State#state{blocks_left=NewRemaining,
-                            block_buffer=UpdBlockBuffer},
-    _ = lager:debug("BlocksLeft: ~p", [BlocksLeft]),
-    case BlocksLeft of
-        0 ->
-            NewState = NewState0#state{free_readers=[Pid | FreeReaders]},
-            NextStateName = sending_remaining;
-        _ ->
-            {ReadRequests, UpdFreeReaders} =
-                read_blocks(BucketName, Key, ClusterID, UUID,
-                            [Pid | FreeReaders], LastBlockRequested+1, TotalBlocks),
-            NewState = NewState0#state{last_block_requested=LastBlockRequested+ReadRequests,
-                                       free_readers=UpdFreeReaders},
-            NextStateName = waiting_chunks
-    end,
-    {next_state, NextStateName, NewState}.
-
-sending_remaining(Event, State) ->
-    _ = lager:info("Pid ~p got unknown async event ~p\n", [self(), Event]),
-    {next_state, sending_remaining, State}.
-
-sending_remaining(get_next_chunk, _From, #state{block_buffer=[{BlockSeq, Block} | RestBlockBuffer]}=State) ->
-    _ = lager:debug("Returning block ~p to client", [BlockSeq]),
-    NewState = State#state{block_buffer=RestBlockBuffer},
-    case RestBlockBuffer of
-        [] ->
-            {stop, normal, {done, Block}, NewState};
-        _ ->
-            {reply, {chunk, Block}, sending_remaining, NewState}
+    {ok, BlockValue} = BlockReturnValue,        % TODO: robustify!
+    UpdGot = orddict:store(NextBlock, BlockValue, Got),
+    %% TODO: _ = lager:debug("BlocksLeft: ~p", [BlocksLeft]),
+    UpdState = read_blocks(State#state{got_blocks=UpdGot,
+                                        free_readers=[Pid|FreeReaders]}),
+io:format("waiting_chunks2 from ~p chunk ~p ~p\n", [From, Pid, NextBlock]),
+    if From == undefined ->
+            {next_state, waiting_chunks, UpdState};
+       true ->
+            waiting_chunks(get_next_chunk, From, UpdState)
     end.
 
 %% @private
@@ -397,10 +305,6 @@ code_change(_OldVsn, StateName, State, _Extra) -> {ok, StateName, State}.
 %% Internal functions
 %% ===================================================================
 
--spec block_sorter({pos_integer(), term()}, {pos_integer(), term()}) -> boolean().
-block_sorter({A, _}, {B, _}) ->
-    A < B.
-
 -spec prepare(#state{}) -> #state{}.
 prepare(#state{bucket=Bucket,
                key=Key,
@@ -418,34 +322,24 @@ prepare(#state{bucket=Bucket,
             State#state{mani_fsm_pid=ManiPid}
     end.
 
--spec read_blocks(binary(), binary(), binary(), binary(), [pid()], pos_integer(), pos_integer()) ->
-                         {pos_integer(), [pid()]}.
-read_blocks(Bucket, Key, ClusterID, UUID, FreeReaders, NextBlock, TotalBlocks) ->
-    read_blocks(Bucket,
-                Key,
-                ClusterID,
-                UUID,
-                FreeReaders,
-                NextBlock,
-                TotalBlocks,
-                0).
+-spec read_blocks(state()) -> state().
 
--spec read_blocks(binary(),
-                  binary(),
-                  binary(),
-                  binary(),
-                  [pid()],
-                  pos_integer(),
-                  pos_integer(),
-                  non_neg_integer()) ->
-                         {pos_integer(), [pid()]}.
-read_blocks(_Bucket, _Key, _ClusterID, _UUID, [], _, _, ReadsRequested) ->
-    {ReadsRequested, []};
-read_blocks(_Bucket, _Key, _ClusterID, _UUID, FreeReaders, _TotalBlocks, _TotalBlocks, ReadsRequested) ->
-    {ReadsRequested, FreeReaders};
-read_blocks(Bucket, Key, ClusterID, UUID, [ReaderPid | RestFreeReaders], NextBlock, _TotalBlocks, ReadsRequested) ->
-    riak_cs_block_server:get_block(ReaderPid, Bucket, Key, ClusterID, UUID, NextBlock),
-    read_blocks(Bucket, Key, ClusterID, UUID, RestFreeReaders, NextBlock+1, _TotalBlocks, ReadsRequested+1).
+read_blocks(#state{free_readers=[]} = State) ->
+    State;
+read_blocks(#state{blocks_order=[]} = State) ->
+    State;
+read_blocks(#state{manifest=Manifest,
+                   bucket=Bucket,
+                   key=Key,
+                   free_readers=[ReaderPid | RestFreeReaders],
+                   blocks_order=[NextBlock|BlocksOrder],
+                   blocks_intransit=Intransit} = State) ->
+    ClusterID = Manifest?MANIFEST.cluster_id,
+    {UUID, Seq} = NextBlock,
+    riak_cs_block_server:get_block(ReaderPid, Bucket, Key, ClusterID, UUID, Seq),
+    read_blocks(State#state{free_readers=RestFreeReaders,
+                            blocks_order=BlocksOrder,
+                            blocks_intransit=queue:in(NextBlock, Intransit)}).
 
 %% ===================================================================
 %% Test API

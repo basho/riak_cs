@@ -92,9 +92,22 @@ initial_blocks(ContentLength, BlockSize) ->
     UpperBound = block_count(ContentLength, BlockSize),
     lists:seq(0, (UpperBound - 1)).
 
-block_sequences_for_manifest(?MANIFEST{content_length=ContentLength}=Manifest) ->
+initial_blocks(ContentLength, SafeBlockSize, UUID) ->
+    Bs = initial_blocks(ContentLength, SafeBlockSize),
+    [{UUID, B} || B <- Bs].
+
+block_sequences_for_manifest(?MANIFEST{uuid=UUID,
+                                       content_length=ContentLength,
+                                       props=Props}=Manifest) ->
     SafeBlockSize = safe_block_size_from_manifest(Manifest),
-    initial_blocks(ContentLength, SafeBlockSize).
+    case proplists:get_value(multipart, Props) of
+        undefined ->
+            initial_blocks(ContentLength, SafeBlockSize, UUID);
+        PMs when is_list(PMs) ->
+            lists:append([initial_blocks(ContentLength, SafeBlockSize,
+                                         PM?PART_MANIFEST.part_id) ||
+                             PM <- PMs])
+    end.
 
 %% @doc Return the configured file block fetch concurrency .
 -spec fetch_concurrency() -> pos_integer().
