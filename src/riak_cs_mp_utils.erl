@@ -51,7 +51,7 @@ calc_multipart_2i_dict(Ms, Bucket, _Key) when is_list(Ms) ->
                      {make_2i_key(Bucket), <<"1">>}]
             end || M <- Ms,
                    M?MANIFEST.state == writing],
-    {?MD_INDEX, lists:usort(lists:flatten(L_2i))}.
+    {?MD_INDEX, lists:usort(lists:append(L_2i))}.
 
 abort_multipart_upload(Bucket, Key, UploadId, Caller) ->
     %% TODO: ACL check of Bucket
@@ -234,6 +234,7 @@ do_part_common2(complete, RiakcPid,
                                         content_md5 = UUID,
                                         props = [Prop|proplists:delete(multipart, MProps)]},
         ok = update_manifest_with_confirmation(RiakcPid, NewManifest)
+        %% TODO: must do something quite reliable with PartsToDelete
     catch error:{badmatch, {m_umwc, _}} ->
             {error, todo_try_again_later};
           throw:bad_etag ->
