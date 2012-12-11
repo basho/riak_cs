@@ -55,7 +55,7 @@ write(Key, Value) ->
         TS = riak_cs_utils:timestamp(os:timestamp()),
         lager:debug("Writing entry for ~p to LO Cache", [Key]),
         ets:insert(?LIST_OBJECTS_CACHE, {Key, Value, TS}),
-        erlang:send_after(?CACHE_TIMEOUT, self(), {cache_expiry, Key}),
+        erlang:send_after(?CACHE_TIMEOUT, ?MODULE, {cache_expiry, Key}),
         ok
     catch
         _:Reason ->
