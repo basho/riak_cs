@@ -63,8 +63,7 @@ one_three_resources(undefined) ->
 one_three_resources(Version) when Version < 010300 ->
     [];
 one_three_resources(_Version) ->
-    [
-    ].
+    [].
 
 -spec get_auth_bypass() -> boolean().
 get_auth_bypass() ->

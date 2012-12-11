@@ -101,8 +101,7 @@ allowed_methods() ->
     ['HEAD', 'GET', 'PUT'].
 
 
--spec content_types_provided(term(), term()) ->
-    {[{string(), atom()}], term(), term()}.
+-spec content_types_provided(#wm_reqdata{}, #context{}) -> {[{string(), atom()}], #wm_reqdata{}, #context{}}.
 content_types_provided(RD, Ctx=#context{local_context=LocalCtx,
                                         riakc_pid=RiakcPid}) ->
     Mfst = LocalCtx#key_context.manifest,
@@ -126,8 +125,7 @@ content_types_provided(RD, Ctx=#context{local_context=LocalCtx,
             {[{"text/plain", produce_body}], RD, Ctx}
     end.
 
--spec content_types_accepted(term(), term()) ->
-    {[{string(), atom()}], term(), term()}.
+-spec content_types_accepted(term(), term()) -> {[{string(), atom()}], #wm_reqdata{}, #context{}}.
 content_types_accepted(RD, Ctx=#context{local_context=LocalCtx0}) ->
     case wrq:get_req_header("Content-Type", RD) of
         undefined ->

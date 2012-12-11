@@ -27,7 +27,7 @@ allowed_methods() ->
     %% TODO: POST (multi-delete)
     ['GET'].
 
--spec content_types_provided(#wm_reqdata{}, #context{}) -> [{string(), atom()}].
+-spec content_types_provided(#wm_reqdata{}, #context{}) -> {[{string(), atom()}], #wm_reqdata{}, #context{}}.
 content_types_provided(RD,Ctx) ->        
     {[{"application/xml", to_xml}], RD, Ctx}.
 
