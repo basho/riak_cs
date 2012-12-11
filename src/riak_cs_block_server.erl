@@ -180,7 +180,7 @@ handle_cast({get_block, ReplyPid, Bucket, Key, ClusterID, UUID, BlockNumber}, St
             NotFound
     end,
     ok = riak_cs_stats:update_with_start(block_get, StartTime),
-    ok = riak_cs_get_fsm:chunk(ReplyPid, BlockNumber, ChunkValue),
+    ok = riak_cs_get_fsm:chunk(ReplyPid, {UUID, BlockNumber}, ChunkValue),
     dt_return(<<"get_block">>, [BlockNumber], [Bucket, Key]),
     {noreply, State};
 handle_cast({put_block, ReplyPid, Bucket, Key, UUID, BlockNumber, Value}, State=#state{riakc_pid=RiakcPid}) ->
