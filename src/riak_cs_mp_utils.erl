@@ -226,13 +226,13 @@ do_part_common2(complete, RiakcPid,
     %% BogoMD5 = iolist_to_binary([UUID, "-1"]),
     {PartETags} = proplists:get_value(complete, Props),
     try
-        {Bytes, PartsToKeep, _PartsToDelete} = comb_parts(MpM, PartETags),
-
+        {Bytes, PartsToKeep0, _PartsToDelete} = comb_parts(MpM, PartETags),
+        PartsToKeep = shrink_part_manifests(PartsToKeep0),
+        Prop = {multipart, PartsToKeep},
         NewManifest = Manifest?MANIFEST{state = active,
                                         content_length = Bytes,
                                         content_md5 = UUID,
-                                        last_block_written_time = PartsToKeep,
-                                        props = proplists:delete(multipart, MProps)},
+                                        props = [Prop|proplists:delete(multipart, MProps)]},
         ok = update_manifest_with_confirmation(RiakcPid, NewManifest)
     catch error:{badmatch, {m_umwc, _}} ->
             {error, todo_try_again_later};
@@ -390,6 +390,9 @@ comb_parts_fold({PartNum, _ETag} = K,
         _ ->
             throw(bad_etag)
     end.
+
+shrink_part_manifests(PMs) ->
+    [PM?PART_MANIFEST{bucket = x, key = x, start_time = x} || PM <- PMs].
 
 %% ===================================================================
 %% EUnit tests
