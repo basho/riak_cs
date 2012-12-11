@@ -52,7 +52,7 @@ init(Config) ->
                    exports_fun=ExportsFun,
                    start_time=os:timestamp(),
                    submodule=Mod},
-    resource_call(Mod, init, [Ctx], ExportsFun(init)).
+    resource_call(Mod, init, [Ctx], ExportsFun).
 
 
 -spec service_available(#wm_reqdata{}, #context{}) -> {boolean(), #wm_reqdata{}, #context{}}.
@@ -82,7 +82,7 @@ malformed_request(RD, Ctx=#context{submodule=Mod,
     {Malformed, _, _} = R = resource_call(Mod,
                                           malformed_request,
                                           [RD, Ctx],
-                                          ExportsFun(malformed_request)),
+                                          ExportsFun),
     riak_cs_dtrace:dt_wm_return_bool({?MODULE, Mod}, <<"malformed_request">>, Malformed),
     R.
                         
@@ -93,7 +93,7 @@ valid_entity_length(RD, Ctx=#context{submodule=Mod, exports_fun=ExportsFun}) ->
     {Valid, _, _} = R = resource_call(Mod,
                                       valid_entity_length,
                                       [RD, Ctx],
-                                      ExportsFun(valid_entity_length)),
+                                      ExportsFun),
     riak_cs_dtrace:dt_wm_return_bool({?MODULE, Mod}, <<"valid_entity_length">>, Valid),
     R.
 
@@ -119,7 +119,7 @@ forbidden(RD, Ctx=#context{auth_module=AuthMod,
                                          [UserKey, R]),
                          {error, R}
                  end,
-    AnonOk = resource_call(Mod, anon_ok, [], ExportsFun(anon_ok)),
+    AnonOk = resource_call(Mod, anon_ok, [], ExportsFun),
     case post_authentication(AuthResult, RD, Ctx, fun authorize/2, AnonOk) of
         {false, _RD2, Ctx2} = FalseRet ->
             riak_cs_dtrace:dt_wm_return({?MODULE, Mod}, <<"forbidden">>, [], [riak_cs_wm_utils:extract_name(Ctx2#context.user), <<"false">>]),
@@ -142,7 +142,7 @@ allowed_methods(RD, Ctx=#context{submodule=Mod,
     Methods = resource_call(Mod,
                             allowed_methods,
                             [],
-                            ExportsFun(allowed_methods)),
+                            ExportsFun),
     {Methods, RD, Ctx}.
 
 -spec content_types_accepted(#wm_reqdata{}, #context{}) -> {[{string(), atom()}], #wm_reqdata{}, #context{}}.
@@ -152,7 +152,7 @@ content_types_accepted(RD, Ctx=#context{submodule=Mod,
     resource_call(Mod,
                   content_types_accepted,
                   [RD,Ctx],
-                  ExportsFun(content_types_accepted)).
+                  ExportsFun).
 
 -spec content_types_provided(#wm_reqdata{}, #context{}) -> {[{string(), atom()}], #wm_reqdata{}, #context{}}.
 content_types_provided(RD, Ctx=#context{submodule=Mod,
@@ -161,7 +161,7 @@ content_types_provided(RD, Ctx=#context{submodule=Mod,
     resource_call(Mod,
                   content_types_provided,
                   [RD,Ctx],
-                  ExportsFun(content_types_provided)).
+                  ExportsFun).
 
 -spec delete_resource(#wm_reqdata{}, #context{}) -> {boolean() | {halt, non_neg_integer()}, #wm_reqdata{}, #context{}}.
 delete_resource(RD, Ctx=#context{submodule=Mod,exports_fun=ExportsFun}) ->
@@ -170,7 +170,7 @@ delete_resource(RD, Ctx=#context{submodule=Mod,exports_fun=ExportsFun}) ->
     resource_call(Mod,
                   delete_resource,
                   [RD,Ctx],
-                  ExportsFun(delete_resource)).
+                  ExportsFun).
 
 
 -spec to_xml(#wm_reqdata{}, #context{}) ->
@@ -182,7 +182,7 @@ to_xml(RD, Ctx=#context{user=User,
     Res = resource_call(Mod,
                         to_xml,
                         [RD, Ctx],
-                        ExportsFun(to_xml)),
+                        ExportsFun),
     riak_cs_dtrace:dt_wm_return({?MODULE, Mod}, <<"to_xml">>, [], [riak_cs_wm_utils:extract_name(User)]),
     Res.
 
@@ -193,7 +193,7 @@ accept_body(RD, Ctx=#context{submodule=Mod,exports_fun=ExportsFun,user=User}) ->
     Res = resource_call(Mod,
                         accept_body,
                         [RD, Ctx],
-                        ExportsFun(accept_body)),
+                        ExportsFun),
     %% TODO: extract response code and add to ints field
     riak_cs_dtrace:dt_wm_return({?MODULE, Mod}, <<"accept_body">>, [], [riak_cs_wm_utils:extract_name(User)]),
     Res.
@@ -206,7 +206,7 @@ produce_body(RD, Ctx=#context{submodule=Mod,exports_fun=ExportsFun}) ->
     resource_call(Mod, 
                   produce_body,
                   [RD, Ctx],
-                  ExportsFun(produce_body)).
+                  ExportsFun).
 
 -spec finish_request(#wm_reqdata{}, #context{}) -> {boolean(), #wm_reqdata{}, #context{}}.                            
 finish_request(RD, Ctx=#context{riakc_pid=undefined,
@@ -216,7 +216,7 @@ finish_request(RD, Ctx=#context{riakc_pid=undefined,
     Res = resource_call(Mod,
                         finish_request,
                         [RD, Ctx],
-                        ExportsFun(finish_request)),
+                        ExportsFun),
     riak_cs_dtrace:dt_wm_return({?MODULE, Mod}, <<"finish_request">>, [0], []),
     Res;
 finish_request(RD, Ctx0=#context{riakc_pid=RiakcPid,
@@ -233,7 +233,7 @@ finish_request(RD, Ctx0=#context{riakc_pid=RiakcPid,
     Res = resource_call(Mod,
                         finish_request,
                         [RD, Ctx],
-                        ExportsFun(finish_request)),
+                        ExportsFun),
     riak_cs_dtrace:dt_wm_return({?MODULE, Mod}, <<"finish_request">>, [1], []),
     Res.
 
@@ -244,7 +244,7 @@ finish_request(RD, Ctx0=#context{riakc_pid=RiakcPid,
 -spec authorize(#wm_reqdata{}, #context{}) -> {boolean() | {halt, non_neg_integer()}, #wm_reqdata{}, #context{}}.
 authorize(RD,Ctx=#context{submodule=Mod, exports_fun=ExportsFun}) ->
     riak_cs_dtrace:dt_wm_entry({?MODULE, Mod}, <<"authorize">>),
-    {Success, _, _} = R = resource_call(Mod, authorize, [RD,Ctx], ExportsFun(authorize)),
+    {Success, _, _} = R = resource_call(Mod, authorize, [RD,Ctx], ExportsFun),
     case Success of 
         {halt, Code} -> 
             riak_cs_dtrace:dt_wm_return({?MODULE, Mod}, <<"authorize">>, [Code], []);
@@ -274,10 +274,13 @@ exports_fun(Exports) ->
             orddict:is_key(Function, Exports)
     end.
 
+
 resource_call(Mod, Fun, Args, true) ->
     erlang:apply(Mod, Fun, Args);
 resource_call(_Mod, Fun, Args, false) ->
-    erlang:apply(?MODULE, default(Fun), Args).
+    erlang:apply(?MODULE, default(Fun), Args);
+resource_call(Mod, Fun, Args, ExportsFun) -> 
+    resource_call(Mod, Fun, Args, ExportsFun(Fun)).
 
 %% ===================================================================
 %% Helper Functions Copied from riak_cs_wm_utils that should be removed from that module
