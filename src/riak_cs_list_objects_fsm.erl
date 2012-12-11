@@ -18,7 +18,7 @@
 -include("list_objects.hrl").
 
 %% API
--export([start_link/2,
+-export([start_link/3,
          get_object_list/1,
          get_internal_state/1]).
 
@@ -95,7 +95,10 @@
 
                 response :: undefined | list_object_response(),
 
-                req_profiles :: profiling()}).
+                req_profiles=#profiling{} :: profiling(),
+
+                %% Key to use to check for cached results from key listing
+                cache_key :: term()}).
 
 %% some useful shared types
 
@@ -121,10 +124,10 @@
 %%% API
 %%%===================================================================
 
--spec start_link(pid(), list_object_request()) ->
+-spec start_link(pid(), list_object_request(), term()) ->
     {ok, pid()} | {error, term()}.
-start_link(RiakcPid, ListKeysRequest) ->
-    gen_fsm:start_link(?MODULE, [RiakcPid, ListKeysRequest], []).
+start_link(RiakcPid, ListKeysRequest, CacheKey) ->
+    gen_fsm:start_link(?MODULE, [RiakcPid, ListKeysRequest, CacheKey], []).
 
 -spec get_object_list(pid()) ->
     {ok, list_object_response()} |
@@ -140,7 +143,7 @@ get_internal_state(FSMPid) ->
 %%%===================================================================
 
 -spec init(list()) -> {ok, prepare, state(), 0}.
-init([RiakcPid, Request]) ->
+init([RiakcPid, Request, CacheKey]) ->
     %% TODO: should we be linking or monitoring
     %% the proc that called us?
 
@@ -152,14 +155,16 @@ init([RiakcPid, Request]) ->
 
     State = #state{riakc_pid=RiakcPid,
                    key_multiplier=KeyMultiplier,
-                   req=Request},
+                   req=Request,
+                   cache_key=CacheKey},
     {ok, prepare, State, 0}.
 
 -spec prepare(timeout, state()) -> fsm_state_return().
 prepare(timeout, State=#state{riakc_pid=RiakcPid,
-                              req=Request}) ->
-    handle_streaming_list_keys_call(make_list_keys_request(RiakcPid, Request),
-                                   State).
+                              req=Request,
+                              cache_key=CacheKey}) ->
+    CacheResult = riak_cs_list_objects_ets_cache:lookup(CacheKey),
+    fetch_key_list(RiakcPid, Request, State, CacheResult).
 
 -spec waiting_list_keys(list_keys_event(), state()) -> fsm_state_return().
 waiting_list_keys({ReqID, done}, State=#state{list_keys_req_id=ReqID}) ->
@@ -227,6 +232,20 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 %% List Keys stuff
 %%--------------------------------------------------------------------
 
+%% @doc Either proceed using the cached key list or make the request
+%% to start a key listing.
+-type cache_lookup_result() :: {true, [binary()]} | false.
+-spec fetch_key_list(pid(), list_object_request(), state(), cache_lookup_result()) -> fsm_state_return().
+fetch_key_list(_, _, State, {true, Value}) ->
+    lager:debug("Using cached key list"),
+    NewState = prepare_state_for_first_mapred(Value, State#state{key_buffer=Value}),
+    maybe_map_reduce(NewState);
+fetch_key_list(RiakcPid, Request, State, false) ->
+    lager:debug("Requesting fresh key list"),
+    handle_streaming_list_keys_call(
+      make_list_keys_request(RiakcPid, Request),
+      State).
+
 %% function to create a list keys request
 %% TODO:
 %% could this also be a phase-less map-reduce request
@@ -253,7 +272,9 @@ handle_streaming_list_keys_call({error, Reason}, State) ->
     {stop, Reason, State}.
 
 -spec handle_keys_done(state()) -> fsm_state_return().
-handle_keys_done(State=#state{key_buffer=ListofListofKeys}) ->
+handle_keys_done(State=#state{cache_key=CacheKey,
+                              key_buffer=ListofListofKeys}) ->
+    riak_cs_list_objects_ets_cache:write(CacheKey, ListofListofKeys),
     NewState = prepare_state_for_first_mapred(ListofListofKeys, State),
     maybe_map_reduce(NewState).
 
@@ -540,6 +561,9 @@ print_profiling(Profiling) ->
     lager:debug(format_list_keys_profile(Profiling)),
     lager:debug(format_map_reduce_profile(Profiling)).
 
+format_list_keys_profile(#profiling{list_keys_start_time=undefined,
+                                    list_keys_num_results=NumResults}) ->
+    io_lib:format("A cached list keys result of ~p keys was used", [NumResults]);
 format_list_keys_profile(#profiling{list_keys_start_time=Start,
                                     list_keys_end_time=End,
                                     list_keys_num_results=NumResults}) ->

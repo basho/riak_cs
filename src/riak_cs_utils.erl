@@ -55,7 +55,8 @@
          to_bucket_name/2,
          update_key_secret/1,
          get_cluster_id/1,
-         proxy_get_active/0]).
+         proxy_get_active/0,
+         pid_to_binary/1]).
 
 -include("riak_cs.hrl").
 -include_lib("riak_pb/include/riak_pb_kv_codec.hrl").
@@ -1319,3 +1320,8 @@ proxy_get_active() ->
             false;
         undefined -> false
     end.
+
+%% @doc Convert a pid to a binary
+-spec pid_to_binary(pid()) -> binary().
+pid_to_binary(Pid) ->
+    list_to_binary(pid_to_list(Pid)).
