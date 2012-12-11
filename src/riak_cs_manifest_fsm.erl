@@ -196,7 +196,6 @@ waiting_command({update_manifests_with_confirmation, _}=Cmd, From, State) ->
     %% Used by multipart commit: this FSM was just started a moment
     %% ago, and we don't need this FSM to re-do work that multipart
     %% commit has already done.
-io:format("~p LINE ~p\n", [?MODULE, ?LINE]),
     waiting_update_command(Cmd, From, State).
 
 
@@ -206,15 +205,12 @@ waiting_update_command({update_manifests_with_confirmation, WrappedManifests}, _
                                             key=Key,
                                             riak_object=undefined,
                                             manifests=undefined}) ->
-io:format("~p LINE ~p\n", [?MODULE, ?LINE]),
-io:format("WMS ~P\n", [WrappedManifests, 15]),
     {Reply, _, _} = get_and_update(RiakcPid, WrappedManifests, Bucket, Key),
     {reply, Reply, waiting_update_command, State};
 waiting_update_command({update_manifests_with_confirmation, WrappedManifests}, _From,
                                             State=#state{riakc_pid=RiakcPid,
                                             riak_object=PreviousRiakObject,
                                             manifests=PreviousManifests}) ->
-io:format("~p LINE ~p\n", [?MODULE, ?LINE]),
     Reply = update_from_previous_read(RiakcPid, PreviousRiakObject,
                                   PreviousManifests, WrappedManifests),
 

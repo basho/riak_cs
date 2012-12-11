@@ -179,7 +179,6 @@ waiting_continue_or_stop(continue, #state{manifest=Manifest,
             _ = lager:warning("~p:~p has no blocks", [BucketName, Key]),
             {stop, normal, State};
         [_|_] ->
-            io:format("BSeq ~p\n", [BlocksOrder]),
             TotalBlocks = length(BlocksOrder),
 
             %% Start the block servers
@@ -209,13 +208,11 @@ waiting_chunks(get_next_chunk, From, #state{got_blocks=Got,
   %% SLF: not wanted?? when PreviousFrom =:= undefined ->
     case queue:out(Intransit) of
         {empty, _} ->
-io:format("waiting_chunks3 from ~p empty\n", [From]),
             gen_fsm:reply(From, {done, <<>>}),
             {stop, normal, State};
         {{value, NextBlock}, UpdIntransit} ->
             case orddict:find(NextBlock, Got) of
                 {ok, Block} ->
-io:format("waiting_chunks3 from ~p send ~p\n", [From, NextBlock]),
                     _ = lager:debug("Returning block ~p to client", [NextBlock]),
                     %% Must use gen_fsm:reply/2 here!  We are shared
                     %% with an async event func and must return next_state.
@@ -224,7 +221,6 @@ io:format("waiting_chunks3 from ~p send ~p\n", [From, NextBlock]),
                      State#state{got_blocks=orddict:erase(NextBlock, Got),
                                  blocks_intransit=UpdIntransit}};
                 error ->
-io:format("waiting_chunks3 from ~p wait\n", [From]),
                     {next_state, waiting_chunks, State#state{from=From}}
             end
     end.
@@ -246,7 +242,6 @@ waiting_chunks({chunk, Pid, {NextBlock, BlockReturnValue}}, #state{from=From,
     %% TODO: _ = lager:debug("BlocksLeft: ~p", [BlocksLeft]),
     UpdState = read_blocks(State#state{got_blocks=UpdGot,
                                         free_readers=[Pid|FreeReaders]}),
-io:format("waiting_chunks2 from ~p chunk ~p ~p\n", [From, Pid, NextBlock]),
     if From == undefined ->
             {next_state, waiting_chunks, UpdState};
        true ->
