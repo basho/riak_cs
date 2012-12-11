@@ -255,7 +255,9 @@ handle_normal_read_bucket_response(RD, Ctx=#context{start_time=StartTime,
             Options = [{marker, Marker}],
             ListKeysRequest = riak_cs_list_objects:new_request(Bucket, MaxKeys,
                                                                Options),
-            case riak_cs_list_objects_fsm:start_link(RiakPid, ListKeysRequest) of
+            BinPid = riak_cs_utils:pid_to_binary(self()),
+            CacheKey = << BinPid/binary, <<":">>/binary, Bucket/binary >>,
+            case riak_cs_list_objects_fsm:start_link(RiakPid, ListKeysRequest, CacheKey) of
                 {ok, ListFSMPid} ->
                     {ok, ListObjectsResponse} = riak_cs_list_objects_fsm:get_object_list(ListFSMPid),
                     Response = riak_cs_xml:to_xml(ListObjectsResponse),

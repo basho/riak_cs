@@ -10,9 +10,12 @@
 
 -behaviour(gen_server).
 -include("riak_cs.hrl").
+-include("list_objects.hrl").
 
 %% API
--export([start_link/0]).
+-export([start_link/0,
+         lookup/1,
+         write/2]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -25,6 +28,7 @@
 -record(state, {tid :: ets:tid()}).
 
 -type state() :: #state{}.
+-type cache_lookup_result() :: {true, [binary()]} | false.
 
 %%%===================================================================
 %%% API
@@ -33,6 +37,31 @@
 start_link() ->
     %% named proc
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
+
+-spec lookup(binary()) -> cache_lookup_result().
+lookup(Key) ->
+    try
+        lager:debug("Reading info for ~p from cache", [Key]),
+        format_lookup_result(ets:lookup(?LIST_OBJECTS_CACHE, Key))
+    catch
+        _:Reason ->
+            lager:warning("List objects cache lookup failed. Reason: ~p", [Reason]),
+            false
+    end.
+
+-spec write(binary(), term()) -> ok.
+write(Key, Value) ->
+    try
+        TS = riak_cs_utils:timestamp(os:timestamp()),
+        lager:debug("Writing entry for ~p to LO Cache", [Key]),
+        ets:insert(?LIST_OBJECTS_CACHE, {Key, Value, TS}),
+        erlang:send_after(?CACHE_TIMEOUT, self(), {cache_expiry, Key}),
+        ok
+    catch
+        _:Reason ->
+            lager:warning("List objects cache write failed. Reason: ~p", [Reason]),
+            ok
+    end.
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -53,6 +82,9 @@ handle_call(Msg, _From, State) ->
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
+handle_info({cache_expiry, ExpiredKey}, State) ->
+    ets:delete(?LIST_OBJECTS_CACHE, ExpiredKey),
+    {noreply, State};
 handle_info(_Info, State) ->
     {noreply, State}.
 
@@ -68,5 +100,11 @@ code_change(_OldVsn, State, _Extra) ->
 
 -spec new_table() -> ets:tid().
 new_table() ->
-    TableSpec = [public, set, {write_concurrency, true}],
-    ets:new(list_objects_cache, TableSpec).
+    TableSpec = [public, set, named_table, {write_concurrency, true}],
+    ets:new(?LIST_OBJECTS_CACHE, TableSpec).
+
+-spec format_lookup_result([{binary(), term(), integer()}]) -> cache_lookup_result().
+format_lookup_result([]) ->
+    false;
+format_lookup_result([{_, Value, _}]) ->
+    {true, Value}.
