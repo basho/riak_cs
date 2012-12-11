@@ -65,3 +65,6 @@
 -record(list_objects_common_prefixes_v1, {
         prefix :: binary()}).
 -type list_objects_common_prefixes() :: #list_objects_common_prefixes_v1{}.
+
+-define(LIST_OBJECTS_CACHE, list_objects_cache).
+-define(CACHE_TIMEOUT, 7200000).  % 2 hours
