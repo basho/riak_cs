@@ -45,6 +45,8 @@ resolve_dicts(A, B) ->
 resolve_manifests(_Key, A, B) ->
     AState = state_to_stage_number(A?MANIFEST.state),
     BState = state_to_stage_number(B?MANIFEST.state),
+io:format("A ~P\n", [A, 15]),
+io:format("B ~P\n", [B, 15]),
     resolve_manifests(AState, BState, A, B).
 
 state_to_stage_number(writing)          -> 10;
