@@ -21,7 +21,7 @@
 -export([
          abort_multipart_upload/4,
          calc_multipart_2i_dict/3,
-         commit_multipart_upload/4,
+         complete_multipart_upload/5,
          initiate_multipart_upload/4,
          list_multipart_uploads/2,
          new_manifest/4,
@@ -57,9 +57,10 @@ abort_multipart_upload(Bucket, Key, UploadId, Caller) ->
     %% TODO: ACL check of Bucket
     do_part_common(abort, Bucket, Key, UploadId, Caller, []).
 
-commit_multipart_upload(Bucket, Key, UploadId, Caller) ->
+complete_multipart_upload(Bucket, Key, UploadId, PartETags, Caller) ->
     %% TODO: ACL check of Bucket
-    do_part_common(commit, Bucket, Key, UploadId, Caller, []).
+    Extra = {PartETags},
+    do_part_common(complete, Bucket, Key, UploadId, Caller, [{complete, Extra}]).
 
 %% riak_cs_mp_utils:write_new_manifest(riak_cs_mp_utils:new_manifest(<<"test">>, <<"mp0">>, <<"text/plain">>, {"foobar", "18983ba0e16e18a2b103ca16b84fad93d12a2fbed1c88048931fb91b0b844ad3", "J2IP6WGUQ_FNGIAN9AFI"})).
 initiate_multipart_upload(Bucket, Key, ContentType, {_,_,_} = Owner) ->
@@ -173,22 +174,19 @@ do_part_common(Op, Bucket, Key, UploadId, {_,_,CallerKeyId} = _Caller, Props) ->
                         case find_manifest_with_uploadid(UploadId, Manifests) of
                             false ->
                                 {error, todo_no_such_uploadid};
-                            M ->
+                            M when M?MANIFEST.state == writing ->
                                 MpM = proplists:get_value(
                                         multipart, M?MANIFEST.props),
                                 {_, _, MpMOwner} = MpM?MULTIPART_MANIFEST.owner,
                                 case CallerKeyId == MpMOwner of
                                     true ->
-                                        case M?MANIFEST.state of
-                                            writing ->
-                                                do_part_common2(Op, RiakcPid, M,
-                                                                Obj, MpM, Props);
-                                            _ ->
-                                                {error, todo_no_such_uploadid2}
-                                        end;
+                                        do_part_common2(Op, RiakcPid, M,
+                                                        Obj, MpM, Props);
                                     false ->
                                         {error, todo_bad_caller}
-                                end
+                                end;
+                            _ ->
+                                {error, todo_no_such_uploadid2}
                         end;
                     Else2 ->
                         Else2
@@ -212,11 +210,12 @@ do_part_common2(abort, RiakcPid, M, Obj, _Mpm, _Props) ->
             Else3 ->
                 Else3
         end;
-do_part_common2(commit, RiakcPid, ?MANIFEST{uuid = UUID} = Manifest,
-                _Obj, _Mpm, _Props) ->
+do_part_common2(complete, RiakcPid,
+                ?MANIFEST{uuid = UUID, props = MProps} = Manifest,
+                _Obj, MpM, Props) ->
     %% The content_md5 is used by WM to create the ETags header.
     %% However/fortunately/sigh-of-relief, Amazon's S3 doesn't use
-    %% the file contents for ETag for a committed multipart
+    %% the file contents for ETag for a completeted multipart
     %% upload.
     %%
     %% However, if we add the hypen suffix here, e.g., "-1", then
@@ -225,9 +224,21 @@ do_part_common2(commit, RiakcPid, ?MANIFEST{uuid = UUID} = Manifest,
     %%
     %% https://forums.aws.amazon.com/thread.jspa?messageID=203436&#203436
     %% BogoMD5 = iolist_to_binary([UUID, "-1"]),
-    NewManifest = Manifest?MANIFEST{state = active,
-                                    content_md5 = UUID},
-    ok = update_manifest_with_confirmation(RiakcPid, NewManifest);
+    {PartETags} = proplists:get_value(complete, Props),
+    try
+        {Bytes, PartsToKeep, _PartsToDelete} = comb_parts(MpM, PartETags),
+
+        NewManifest = Manifest?MANIFEST{state = active,
+                                        content_length = Bytes,
+                                        content_md5 = UUID,
+                                        last_block_written_time = PartsToKeep,
+                                        props = proplists:delete(multipart, MProps)},
+        ok = update_manifest_with_confirmation(RiakcPid, NewManifest)
+    catch error:{badmatch, {m_umwc, _}} ->
+            {error, todo_try_again_later};
+          throw:bad_etag ->
+            {error, todo_bad_etag}
+    end;
 do_part_common2(upload_part, RiakcPid, M, _Obj, MpM, Props) ->
     {Bucket, Key, _UploadId, _Caller, PartNumber, Size} =
         proplists:get_value(upload_part, Props),
@@ -253,7 +264,6 @@ do_part_common2(upload_part, RiakcPid, M, _Obj, MpM, Props) ->
                    content_length = ContentLength + Size,
                    props = [{multipart, NewMpM}|proplists:delete(multipart, Props)]
                   },
-io:format("NewMpM ~p\n", [NewMpM]),
         ok = update_manifest_with_confirmation(RiakcPid, NewM),
         {upload_part_ready, PartUUID, PutPid}
     catch error:{badmatch, {m_umwc, _}} ->
@@ -277,7 +287,6 @@ do_part_common2(upload_part_finished, RiakcPid, M, _Obj, MpM, Props) ->
                                                                 DoneParts)},
                 NewM = M?MANIFEST{
                            props = [{multipart, NewMpM}|proplists:delete(multipart, Props)]},
-                io:format("NewMpM ~p\n", [NewMpM]),
                 ok = update_manifest_with_confirmation(RiakcPid, NewM)
         end
     catch error:{badmatch, {m_umwc, _}} ->
@@ -352,6 +361,36 @@ find_manifest_with_uploadid(UploadId, Manifests) ->
             M
     end.
 
+comb_parts(MpM, PartETags) ->
+    All = dict:from_list(
+            [{{PM?PART_MANIFEST.part_number, PM?PART_MANIFEST.part_id}, PM} ||
+                PM <- ordsets:to_list(MpM?MULTIPART_MANIFEST.parts)]),
+    Keep0 = dict:new(),
+    Delete0 = dict:new(),
+    {_, Keep, _Delete, _, KeepBytes, KeepPMs} =
+        lists:foldl(fun comb_parts_fold/2,
+                    {All, Keep0, Delete0, 0, 0, []}, PartETags),
+    ToDelete = [PM || {_, PM} <-
+                          dict:to_list(
+                            dict:filter(fun(K, _V) ->
+                                             not dict:is_key(K, Keep) end,
+                                        All))],
+    {KeepBytes, lists:reverse(KeepPMs), ToDelete}.
+
+comb_parts_fold({PartNum, _ETag} = _K,
+                {_All, _Keep, _Delete, LastPartNum, _Bytes, _KeepPMs})
+  when PartNum =< LastPartNum orelse PartNum < 1 ->
+    throw(bad_etag);
+comb_parts_fold({PartNum, _ETag} = K,
+                {All, Keep, Delete, _LastPartNum, Bytes, KeepPMs}) ->
+    case {dict:find(K, All), dict:is_key(K, Keep)} of
+        {{ok, PM}, false} ->
+            {All, dict:store(K, true, Keep), Delete, PartNum,
+             Bytes + PM?PART_MANIFEST.content_length, [PM|KeepPMs]};
+        _ ->
+            throw(bad_etag)
+    end.
+
 %% ===================================================================
 %% EUnit tests
 %% ===================================================================
@@ -378,10 +417,10 @@ test_0() ->
     ok = test_abort(ID1, test_user1()),
     {error, todo_no_such_uploadid2} = test_abort(ID1, test_user1()),
 
-    {error, todo_bad_caller} = test_commit(ID2, test_user1()),
-    {error,todo_no_such_uploadid} = test_commit(<<"no such upload_id">>, test_user2()),
-    ok = test_commit(ID2, test_user2()),
-    {error, todo_no_such_uploadid2} = test_commit(ID2, test_user2()),
+    {error, todo_bad_caller} = test_complete(ID2, [], test_user1()),
+    {error,todo_no_such_uploadid} = test_complete(<<"no such upload_id">>, [], test_user2()),
+    ok = test_complete(ID2, [], test_user2()),
+    {error, todo_no_such_uploadid2} = test_complete(ID2, [], test_user2()),
 
     {ok, X3} = test_list_uploadids(test_user1()),
     1 = length(X3),
@@ -397,8 +436,9 @@ test_1() ->
 
     ID1 = test_initiate(test_user1()),
     Bytes = 50,
-    {ok, _PartID1} = test_upload_part(ID1, 1, <<42:(8*Bytes)>>, test_user1()),
-    {ok, _PartID2} = test_upload_part(ID1, 2, <<4242:(8*Bytes)>>, test_user1()).
+    {ok, PartID1} = test_upload_part(ID1, 1, <<42:(8*Bytes)>>, test_user1()),
+    {ok, PartID2} = test_upload_part(ID1, 2, <<4242:(8*Bytes)>>, test_user1()),
+    test_complete(ID1, [{1, PartID1}, {2, PartID2}], test_user1()).
 
 test_initiate(User) ->
     {ok, ID} = initiate_multipart_upload(
@@ -408,8 +448,8 @@ test_initiate(User) ->
 test_abort(UploadId, User) ->
     abort_multipart_upload(test_bucket1(), test_key1(), UploadId, User).
 
-test_commit(UploadId, User) ->
-    commit_multipart_upload(test_bucket1(), test_key1(), UploadId, User).
+test_complete(UploadId, PartETags, User) ->
+    complete_multipart_upload(test_bucket1(), test_key1(), UploadId, PartETags, User).
 
 test_list_uploadids(User) ->
     list_multipart_uploads(test_bucket1(), User).
@@ -442,6 +482,39 @@ test_upload_part(UploadId, PartNumber, Blob, User) ->
          upload_part_finished(test_bucket1(), test_key1(), UploadId,
                               PartNumber, PartUUID, User),
     {ok, PartUUID}.
+
+test_comb_parts() ->
+    Num = 5,
+    GoodIDs = [{X, <<(X+$0):8>>} || X <- lists:seq(1, Num)],
+    PMs = [?PART_MANIFEST{part_number = X, part_id = Y, content_length = X} ||
+              {X, Y} <- GoodIDs],
+    BadIDs = [{X, <<(X+$0):8>>} || X <- lists:seq(Num + 1, Num + 1 + Num)],
+    MpM1 = ?MULTIPART_MANIFEST{parts = ordsets:from_list(PMs)},
+    try
+        comb_parts(MpM1, GoodIDs ++ BadIDs),
+        throw(test_failed)
+    catch
+        throw:bad_etag ->
+            ok
+    end,
+    try
+        comb_parts(MpM1, [lists:last(GoodIDs)|tl(GoodIDs)]),
+        throw(test_failed)
+    catch
+        throw:bad_etag ->
+            ok
+    end,
+
+    {15, Keep1, []} = comb_parts(MpM1, GoodIDs),
+    5 = length(Keep1),
+    Keep1 = lists:usort(Keep1),
+
+    {14, Keep2, [PM2]} = comb_parts(MpM1, tl(GoodIDs)),
+    4 = length(Keep2),
+    Keep2 = lists:usort(Keep2),
+    1 = PM2?PART_MANIFEST.part_number,
+
+    ok.
 
 test_create_users() ->
     %% info for test_user1()
