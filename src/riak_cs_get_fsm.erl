@@ -125,15 +125,18 @@ init([test, Bucket, Key, ContentLength, BlockSize]) ->
     %% purposely have the timeout happen
     %% so that we get called in the prepare
     %% state
-    {ok, ReaderPid} =
-        riak_cs_dummy_reader:start_link([self(),
-                                           Bucket,
-                                           Key,
-                                           ContentLength,
-                                           BlockSize]),
-    link(ReaderPid),
-    {ok, Manifest} = riak_cs_dummy_reader:get_manifest(ReaderPid),
-    {ok, waiting_value, State1#state{free_readers=[ReaderPid],
+    RPs = [begin
+               {ok, ReaderPid} =
+                   riak_cs_dummy_reader:start_link([self(),
+                                                    Bucket,
+                                                    Key,
+                                                    ContentLength,
+                                                    BlockSize]),
+               link(ReaderPid),
+               ReaderPid
+           end || _ <- lists:seq(1,5)],
+    {ok, Manifest} = riak_cs_dummy_reader:get_manifest(hd(RPs)),
+    {ok, waiting_value, State1#state{free_readers=RPs,
                                      manifest=Manifest,
                                      test=true}}.
 
@@ -203,13 +206,20 @@ waiting_continue_or_stop(Event, From, State) ->
                    [self(), Event, From]),
     {next_state, waiting_continue_or_stop, State}.
 
-waiting_chunks(get_next_chunk, From, #state{got_blocks=Got,
-                                            blocks_intransit=Intransit}=State) ->
-  %% SLF: not wanted?? when PreviousFrom =:= undefined ->
-    case queue:out(Intransit) of
-        {empty, _} ->
+waiting_chunks(get_next_chunk, From, State) ->
+    case perhaps_send_to_user(From, State) of
+        done ->
             gen_fsm:reply(From, {done, <<>>}),
             {stop, normal, State};
+        {_, UpdState} ->
+            {next_state, waiting_chunks, UpdState}
+    end.
+
+perhaps_send_to_user(From, #state{got_blocks=Got,
+                                  blocks_intransit=Intransit}=State) ->
+    case queue:out(Intransit) of
+        {empty, _} ->
+            done;
         {{value, NextBlock}, UpdIntransit} ->
             case orddict:find(NextBlock, Got) of
                 {ok, Block} ->
@@ -217,11 +227,10 @@ waiting_chunks(get_next_chunk, From, #state{got_blocks=Got,
                     %% Must use gen_fsm:reply/2 here!  We are shared
                     %% with an async event func and must return next_state.
                     gen_fsm:reply(From, {chunk, Block}),
-                    {next_state, waiting_chunks,
-                     State#state{got_blocks=orddict:erase(NextBlock, Got),
-                                 blocks_intransit=UpdIntransit}};
+                    {sent, State#state{got_blocks=orddict:erase(NextBlock, Got),
+                                       blocks_intransit=UpdIntransit}};
                 error ->
-                    {next_state, waiting_chunks, State#state{from=From}}
+                    {not_sent, State#state{from=From}}
             end
     end.
 %% waiting_chunks(get_next_chunk, From, #state{from=PreviousFrom}=State) when PreviousFrom =/= undefined ->
@@ -245,7 +254,12 @@ waiting_chunks({chunk, Pid, {NextBlock, BlockReturnValue}}, #state{from=From,
     if From == undefined ->
             {next_state, waiting_chunks, UpdState};
        true ->
-            waiting_chunks(get_next_chunk, From, UpdState)
+            case perhaps_send_to_user(From, UpdState) of
+                {sent, Upd2State} ->
+                    {next_state, waiting_chunks, Upd2State#state{from=undefined}};
+                {not_sent, Upd2State} ->
+                    {next_state, waiting_chunks, Upd2State}
+            end
     end.
 
 %% @private
@@ -286,12 +300,7 @@ terminate(_Reason, _StateName, #state{test=false,
     ok;
 terminate(_Reason, _StateName, #state{test=true,
                                       free_readers=ReaderPids}) ->
-    case ReaderPids of
-        [ReaderPid|_] ->
-            exit(ReaderPid, normal);
-        _ ->
-            ok
-    end.
+    [catch exit(Pid, kill) || Pid <- ReaderPids].
 
 %% @private
 code_change(_OldVsn, StateName, State, _Extra) -> {ok, StateName, State}.
