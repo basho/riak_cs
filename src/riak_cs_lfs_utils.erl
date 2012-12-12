@@ -103,10 +103,17 @@ block_sequences_for_manifest(?MANIFEST{uuid=UUID,
     case proplists:get_value(multipart, Props) of
         undefined ->
             initial_blocks(ContentLength, SafeBlockSize, UUID);
-        PMs when is_list(PMs) ->
-            lists:append([initial_blocks(ContentLength, SafeBlockSize,
+        X ->
+            Src = case X of
+                      PMs when is_list(PMs) ->
+                          PMs;
+                      MpM when is_record(MpM, ?MULTIPART_MANIFEST_RECNAME) ->
+                          MpM?MULTIPART_MANIFEST.parts
+                  end,
+            lists:append([initial_blocks(PM?PART_MANIFEST.content_length,
+                                         SafeBlockSize,
                                          PM?PART_MANIFEST.part_id) ||
-                             PM <- PMs])
+                             PM <- Src])
     end.
 
 %% @doc Return the configured file block fetch concurrency .
