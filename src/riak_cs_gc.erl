@@ -29,13 +29,17 @@
 %%%===================================================================
 
 gc_active_manifests(Manifests, RiakObject, RiakcPid) ->
-    ActiveManifests = riak_cs_manifest_utils:active_and_writing_manifests(Manifests),
-    ActiveUUIDs = [UUID || {UUID, _} <- ActiveManifests],
-    GCManiResponse = gc_specific_manifests(ActiveUUIDs,
-                                           RiakObject,
-                                           RiakcPid),
-    return_active_uuids_from_gc_response(GCManiResponse,
-                                         ActiveUUIDs).
+    case riak_cs_manifest_utils:active_manifest(Manifests) of
+        {ok, M} ->
+            ActiveUUIDs = [M?MANIFEST.uuid],
+            GCManiResponse = gc_specific_manifests(ActiveUUIDs,
+                                                   RiakObject,
+                                                   RiakcPid),
+            return_active_uuids_from_gc_response(GCManiResponse,
+                                                 ActiveUUIDs);
+        _ ->
+            {ok, []}
+    end.
 
 %% @private
 return_active_uuids_from_gc_response({ok, _RiakObject}, ActiveUUIDs) ->
