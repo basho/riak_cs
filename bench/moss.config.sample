@@ -34,7 +34,7 @@
 % "make mbyte_sec-results"
 {moss_measurement_units, mbyte_sec}.
 
-{key_generator, {int_to_str, {partitioned_sequential_int, 1000, 100}}}.
+{key_generator, {int_to_str, {partitioned_sequential_int, 1000}}}.
 %{key_generator, {int_to_str, {uniform_int, 1000}}}.
 %% See comments in source code for bigfile_valgen() function for full
 %% explanation of the proplist below.
@@ -44,6 +44,8 @@
                     {max_rate_per_chunk, 50}]]}}.
 
 %% NOTE: It's not a good idea to mix insert & get ops in a single
-%%       basho_bench instance.  Use separate ones instead!
+%%       basho_bench instance with this driver.
+%%       Use separate ones instead!
 %% bad idea: {operations, [{insert, 1}, {delete, 1}, {get, 1}]}.
 {operations, [{insert, 1}]}.
+%{operations, [{get, 1}]}.
