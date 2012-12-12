@@ -19,6 +19,7 @@
 
 %% API
 -export([start_link/3,
+         start_link/4,
          get_object_list/1,
          get_internal_state/1]).
 
@@ -97,6 +98,8 @@
 
                 req_profiles=#profiling{} :: profiling(),
 
+                %% whether or not to bypass the cache entirely
+                use_cache :: boolean(),
                 %% Key to use to check for cached results from key listing
                 cache_key :: term()}).
 
@@ -127,7 +130,12 @@
 -spec start_link(pid(), list_object_request(), term()) ->
     {ok, pid()} | {error, term()}.
 start_link(RiakcPid, ListKeysRequest, CacheKey) ->
-    gen_fsm:start_link(?MODULE, [RiakcPid, ListKeysRequest, CacheKey], []).
+    start_link(RiakcPid, ListKeysRequest, CacheKey, true).
+
+-spec start_link(pid(), list_object_request(), term(), UseCache :: boolean()) ->
+    {ok, pid()} | {error, term()}.
+start_link(RiakcPid, ListKeysRequest, CacheKey, UseCache) ->
+    gen_fsm:start_link(?MODULE, [RiakcPid, ListKeysRequest, CacheKey, UseCache], []).
 
 -spec get_object_list(pid()) ->
     {ok, list_object_response()} |
@@ -143,7 +151,7 @@ get_internal_state(FSMPid) ->
 %%%===================================================================
 
 -spec init(list()) -> {ok, prepare, state(), 0}.
-init([RiakcPid, Request, CacheKey]) ->
+init([RiakcPid, Request, CacheKey, UseCache]) ->
     %% TODO: should we be linking or monitoring
     %% the proc that called us?
 
@@ -156,15 +164,14 @@ init([RiakcPid, Request, CacheKey]) ->
     State = #state{riakc_pid=RiakcPid,
                    key_multiplier=KeyMultiplier,
                    req=Request,
+                   use_cache=UseCache,
                    cache_key=CacheKey},
     {ok, prepare, State, 0}.
 
 -spec prepare(timeout, state()) -> fsm_state_return().
 prepare(timeout, State=#state{riakc_pid=RiakcPid,
-                              req=Request,
-                              cache_key=CacheKey}) ->
-    CacheResult = riak_cs_list_objects_ets_cache:lookup(CacheKey),
-    fetch_key_list(RiakcPid, Request, State, CacheResult).
+                              req=Request}) ->
+    maybe_fetch_key_list(RiakcPid, Request, State).
 
 -spec waiting_list_keys(list_keys_event(), state()) -> fsm_state_return().
 waiting_list_keys({ReqID, done}, State=#state{list_keys_req_id=ReqID}) ->
@@ -232,6 +239,21 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 %% List Keys stuff
 %%--------------------------------------------------------------------
 
+-spec maybe_fetch_key_list(pid(), list_object_request(), state()) ->
+    fsm_state_return().
+maybe_fetch_key_list(RiakcPid, Request, State=#state{use_cache=true,
+                                                     cache_key=CacheKey}) ->
+    CacheResult = riak_cs_list_objects_ets_cache:lookup(CacheKey),
+    fetch_key_list(RiakcPid, Request, State, CacheResult);
+maybe_fetch_key_list(RiakcPid, Request, State=#state{use_cache=false}) ->
+    fetch_key_list(RiakcPid, Request, State, false).
+
+-spec maybe_write_to_cache(state(), list()) -> ok.
+maybe_write_to_cache(#state{use_cache=false}, _ListofListofKeys) ->
+    ok;
+maybe_write_to_cache(#state{cache_key=CacheKey}, ListofListofKeys) ->
+    riak_cs_list_objects_ets_cache:write(CacheKey, ListofListofKeys).
+
 %% @doc Either proceed using the cached key list or make the request
 %% to start a key listing.
 -type cache_lookup_result() :: {true, [binary()]} | false.
@@ -272,9 +294,8 @@ handle_streaming_list_keys_call({error, Reason}, State) ->
     {stop, Reason, State}.
 
 -spec handle_keys_done(state()) -> fsm_state_return().
-handle_keys_done(State=#state{cache_key=CacheKey,
-                              key_buffer=ListofListofKeys}) ->
-    riak_cs_list_objects_ets_cache:write(CacheKey, ListofListofKeys),
+handle_keys_done(State=#state{key_buffer=ListofListofKeys}) ->
+    ok = maybe_write_to_cache(State, ListofListofKeys),
     NewState = prepare_state_for_first_mapred(ListofListofKeys, State),
     maybe_map_reduce(NewState).
 
