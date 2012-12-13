@@ -12,7 +12,7 @@ render_error(500, Req, Reason) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"render_error">>),
     {ok, ReqState} = Req:add_response_header("Content-Type", "text/html"),
     {Path,_} = Req:path(),
-    error_logger:error_msg("webmachine error: path=~p~n~p~n", [Path, Reason]),
+    error_logger:error_msg("webmachine error: path=~p~n~p~n~p\n", [Path, Reason, erlang:get_stacktrace()]),
 
     ErrorOne = <<"<html><head><title>500 Internal Server Error</title>">>,
     ErrorTwo = <<"</head><body><h1>Internal Server Error</h1>">>,
