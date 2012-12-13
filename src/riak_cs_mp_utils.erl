@@ -21,6 +21,7 @@
 -export([
          abort_multipart_upload/4,
          calc_multipart_2i_dict/3,
+         clean_multipart_unused_parts/1,
          complete_multipart_upload/5,
          initiate_multipart_upload/4,
          list_multipart_uploads/2,
@@ -46,8 +47,8 @@ calc_multipart_2i_dict(Ms, Bucket, _Key) when is_list(Ms) ->
             case proplists:get_value(multipart, M?MANIFEST.props) of
                 undefined ->
                     [];
-                MP when is_record(MP, ?MULTIPART_MANIFEST_RECNAME) ->
-                    [{make_2i_key(Bucket, MP?MULTIPART_MANIFEST.owner), <<"1">>},
+                MpM when is_record(MpM, ?MULTIPART_MANIFEST_RECNAME) ->
+                    [{make_2i_key(Bucket, MpM?MULTIPART_MANIFEST.owner), <<"1">>},
                      {make_2i_key(Bucket), <<"1">>}]
             end || M <- Ms,
                    M?MANIFEST.state == writing],
@@ -56,6 +57,38 @@ calc_multipart_2i_dict(Ms, Bucket, _Key) when is_list(Ms) ->
 abort_multipart_upload(Bucket, Key, UploadId, Caller) ->
     %% TODO: ACL check of Bucket
     do_part_common(abort, Bucket, Key, UploadId, Caller, []).
+
+clean_multipart_unused_parts(?MANIFEST{bkey=BKey, props=Props} = Manifest) ->
+    case proplists:get_value(multipart, Props, false) of
+        false ->
+            same;
+        MpM ->
+            case {proplists:get_value(multipart_clean, Props, false),
+                  MpM?MULTIPART_MANIFEST.cleanup_parts} of
+                {false, []} ->
+                    same;
+                {false, PartsToDelete} ->
+                    try
+                        {m_cmup1, {ok, RiakcPid}} =
+                            {m_cmup1, riak_cs_utils:riak_connection()},
+                        try
+                            {Bucket, Key} = BKey,
+                            ok = move_dead_parts_to_gc(Bucket, Key, PartsToDelete,
+                                                       RiakcPid),
+                            UpdManifest = Manifest?MANIFEST{props=[multipart_clean|Props]},
+                            ok = update_manifest_with_confirmation(
+                                   RiakcPid, UpdManifest),
+                            updated
+                        after
+                            riak_cs_utils:close_riak_connection(RiakcPid)
+                        end
+                    catch error:{badmatch,{m_cmup1, _}} ->
+                            same
+                    end;
+                {true, _} ->
+                    same
+            end
+    end.
 
 complete_multipart_upload(Bucket, Key, UploadId, PartETags, Caller) ->
     %% TODO: ACL check of Bucket
@@ -226,15 +259,45 @@ do_part_common2(complete, RiakcPid,
     %% BogoMD5 = iolist_to_binary([UUID, "-1"]),
     {PartETags} = proplists:get_value(complete, Props),
     try
-        {Bytes, PartsToKeep0, _PartsToDelete} = comb_parts(MpM, PartETags),
-        PartsToKeep = shrink_part_manifests(PartsToKeep0),
-        Prop = {multipart, PartsToKeep},
-        NewManifest = Manifest?MANIFEST{state = active,
-                                        content_length = Bytes,
-                                        content_md5 = UUID,
-                                        props = [Prop|proplists:delete(multipart, MProps)]},
-        ok = update_manifest_with_confirmation(RiakcPid, NewManifest)
-        %% TODO: must do something quite reliable with PartsToDelete
+        {Bucket, Key} = Manifest?MANIFEST.bkey,
+        {ok, ManiPid} = riak_cs_manifest_fsm:start_link(Bucket, Key, RiakcPid),
+        try
+                {Bytes, PartsToKeep, PartsToDelete} = comb_parts(MpM, PartETags),
+                Prop = {multipart, MpM?MULTIPART_MANIFEST{parts = PartsToKeep,
+                                                          done_parts = [],
+                                                          cleanup_parts = PartsToDelete}},
+                %% If [] = PartsToDelete, then we only need to update
+                %% the manifest once.
+                MProps2 = case PartsToDelete of
+                              [] ->
+                                  [multipart_clean,
+                                   Prop|proplists:delete(multipart, MProps)];
+                              _ ->
+                                  [Prop|proplists:delete(multipart, MProps)]
+                          end,
+                NewManifest = Manifest?MANIFEST{state = active,
+                                                content_length = Bytes,
+                                                content_md5 = UUID,
+                                                props = MProps2},
+                ok = riak_cs_manifest_fsm:add_new_manifest(ManiPid, NewManifest),
+                case PartsToDelete of
+                    [] ->
+                        ok;
+                    _ ->
+                        io:format("PartsToDelete ~p\n", [PartsToDelete]),
+                        exit(bummer),
+                        %% Create fake S3 object manifests for this part,
+                        %% then pass them to the GC monster for immediate
+                        %% deletion.
+                        ok = move_dead_parts_to_gc(Bucket, Key, PartsToDelete, RiakcPid),
+                        MProps3 = [multipart_clean|MProps2],
+                        New2Manifest = NewManifest?MANIFEST{props = MProps3},
+                        ok = riak_cs_manifest_fsm:update_manifest(
+                               ManiPid, New2Manifest)
+                end
+        after
+            ok = riak_cs_manifest_fsm:stop(ManiPid)
+        end
     catch error:{badmatch, {m_umwc, _}} ->
             {error, todo_try_again_later};
           throw:bad_etag ->
@@ -250,7 +313,8 @@ do_part_common2(upload_part, RiakcPid, M, _Obj, MpM, Props) ->
                       infinity_but_timeout_not_actually_used, self(), RiakcPid},
                      false),
     try
-        ?MANIFEST{content_length = ContentLength} = M,
+        ?MANIFEST{content_length = ContentLength,
+                  props = MProps} = M,
         ?MULTIPART_MANIFEST{parts = Parts} = MpM,
         PartUUID = riak_cs_put_fsm:get_uuid(PutPid),
         PM = ?PART_MANIFEST{bucket = Bucket,
@@ -263,7 +327,7 @@ do_part_common2(upload_part, RiakcPid, M, _Obj, MpM, Props) ->
         NewMpM = MpM?MULTIPART_MANIFEST{parts = ordsets:add_element(PM, Parts)},
         NewM = M?MANIFEST{
                    content_length = ContentLength + Size,
-                   props = [{multipart, NewMpM}|proplists:delete(multipart, Props)]
+                   props = [{multipart, NewMpM}|proplists:delete(multipart, MProps)]
                   },
         ok = update_manifest_with_confirmation(RiakcPid, NewM),
         {upload_part_ready, PartUUID, PutPid}
@@ -283,11 +347,12 @@ do_part_common2(upload_part_finished, RiakcPid, M, _Obj, MpM, Props) ->
             {_, true} ->
                 {error, todo_bad_partid2};
             {PM, false} when is_record(PM, ?PART_MANIFEST_RECNAME) ->
+                ?MANIFEST{props = MProps} = M,
                 NewMpM = MpM?MULTIPART_MANIFEST{
                                done_parts = ordsets:add_element(PartUUID,
                                                                 DoneParts)},
                 NewM = M?MANIFEST{
-                           props = [{multipart, NewMpM}|proplists:delete(multipart, Props)]},
+                           props = [{multipart, NewMpM}|proplists:delete(multipart, MProps)]},
                 ok = update_manifest_with_confirmation(RiakcPid, NewM)
         end
     catch error:{badmatch, {m_umwc, _}} ->
@@ -395,6 +460,23 @@ comb_parts_fold({PartNum, _ETag} = K,
 shrink_part_manifests(PMs) ->
     [PM?PART_MANIFEST{bucket = x, key = x, start_time = x} || PM <- PMs].
 
+move_dead_parts_to_gc(Bucket, Key, PartsToDelete, RiakcPid) ->
+    PartDelMs = [{P_UUID,
+                  riak_cs_lfs_utils:new_manifest(
+                    Bucket,
+                    Key,
+                    P_UUID,
+                    ContentLength,
+                    <<"x-delete/now">>,
+                    undefined,
+                    [],
+                    P_BlockSize,
+                    no_acl_yet)} ||
+                    ?PART_MANIFEST{part_id=P_UUID,
+                                   content_length=ContentLength,
+                                   block_size=P_BlockSize} <- PartsToDelete],
+    ok = riak_cs_gc:move_manifests_to_gc_bucket(PartDelMs, RiakcPid, false).
+
 %% ===================================================================
 %% EUnit tests
 %% ===================================================================
@@ -441,9 +523,10 @@ test_1() ->
     ID1 = test_initiate(test_user1()),
     Bytes = 50,
     {ok, PartID1} = test_upload_part(ID1, 1, <<42:(8*Bytes)>>, test_user1()),
-    {ok, PartID4} = test_upload_part(ID1, 4, <<43:(8*Bytes)>>, test_user1()),
+    {ok, _PartID4} = test_upload_part(ID1, 4, <<43:(8*Bytes)>>, test_user1()),
     {ok, PartID9} = test_upload_part(ID1, 9, <<44:(8*Bytes)>>, test_user1()),
-    test_complete(ID1, [{1, PartID1}, {4, PartID4}, {9, PartID9}], test_user1()).
+    test_complete(ID1, [{1, PartID1}, {9, PartID9}], test_user1()).
+    %% test_complete(ID1, [{1, PartID1}, {4, PartID4}, {9, PartID9}], test_user1()).
 
 test_initiate(User) ->
     {ok, ID} = initiate_multipart_upload(

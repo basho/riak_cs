@@ -113,7 +113,7 @@ count_multipart_parts(Resolved) ->
 
 count_multipart_parts({_UUID, M}, {MPparts, MPbytes} = Acc) ->
     case {M?MANIFEST.state, proplists:get_value(multipart, M?MANIFEST.props)} of
-        {writing, MP} when is_record(MP, ?MULTIPART_MANIFEST_RECNAME) ->
+        {writing, MP} ->
             Ps = MP?MULTIPART_MANIFEST.parts,
             {MPparts + length(Ps),
              MPbytes + lists:sum([P?PART_MANIFEST.content_length ||
