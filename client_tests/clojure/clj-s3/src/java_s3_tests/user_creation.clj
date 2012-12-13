@@ -14,7 +14,7 @@
 
 (defn ^:internal make-user-url [host port]
   (let [location (make-host-port-string host port)]
-    (make-url-with-resource location "user")))
+    (make-url-with-resource location "/riak-cs/user")))
 
 (defn ^:internal parse-response-body [string]
   (let [data (cheshire/parse-string string true)]

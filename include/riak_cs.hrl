@@ -46,7 +46,12 @@
                   user_object :: riakc_obj:riakc_obj(),
                   bucket :: binary(),
                   requested_perm :: acl_perm(),
-                  riakc_pid :: pid()
+                  riakc_pid :: pid(),
+                  riakc_pool :: atom(),
+                  submodule :: atom(),
+                  exports_fun :: function(),
+                  auth_module :: atom(),
+                  local_context :: term()
                  }).
 
 -record(key_context, {context :: #context{},
@@ -319,3 +324,4 @@
 -define(DEFAULT_GC_RETRY_INTERVAL, 21600). %% 6 hours
 -define(EPOCH_START, <<"0">>).
 -define(DEFAULT_CLUSTER_ID_TIMEOUT,5000).
+-define(DEFAULT_AUTH_MODULE, riak_cs_s3_auth).

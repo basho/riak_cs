@@ -7,7 +7,20 @@
 
 -export([dtrace/1, dtrace/3, dtrace/4, dtrace/6]).
 -include("riak_cs.hrl").
+-export([dt_wm_entry/2,
+         dt_wm_entry/4,
+         dt_service_entry/2,
+         dt_service_entry/4,
+         dt_bucket_entry/4,
+         dt_object_entry/4,
+         dt_wm_return/2,
+         dt_wm_return/4,
+         dt_wm_return_bool/3,
+         dt_service_return/4,
+         dt_bucket_return/4,
+         dt_object_return/4]).
 -export([t/1, t/2, tt/3]).                      % debugging use only
+
 
 -define(MAGIC, '**DTRACE*SUPPORT**').
 
@@ -86,3 +99,54 @@ tt(Int0, Ints, Strings) ->                     % debugging/micro-performance
         _ ->
             false
     end.
+
+dt_wm_entry(Mod, Func) ->
+    dt_wm_entry(Mod, Func, [], []).
+
+dt_wm_entry({Mod, SubMod}, Func, Ints, Strings) when is_atom(Mod), is_atom(SubMod)->
+    dt_wm_entry(common_submod_to_bin(Mod, SubMod), Func, Ints, Strings);
+dt_wm_entry(Mod, Func, Ints, Strings) ->
+    riak_cs_dtrace:dtrace(?DT_WM_OP, 1, Ints, Mod, Func, Strings).
+
+dt_service_entry(Mod, Func) ->
+    dt_service_entry(Mod, Func, [], []).
+dt_service_entry(Mod, Func, Ints, Strings) ->
+    riak_cs_dtrace:dtrace(?DT_SERVICE_OP, 1, Ints, Mod, Func, Strings).
+
+dt_bucket_entry(Mod, Func, Ints, Strings) ->
+    riak_cs_dtrace:dtrace(?DT_BUCKET_OP, 1, Ints, Mod, Func, Strings).
+
+dt_object_entry(Mod, Func, Ints, Strings) ->
+    riak_cs_dtrace:dtrace(?DT_OBJECT_OP, 1, Ints, Mod, Func, Strings).
+
+dt_wm_return_bool(Mod, Func, true) ->
+    dt_wm_return(Mod, Func, [1], []);
+dt_wm_return_bool(Mod, Func, false) ->
+    dt_wm_return(Mod, Func, [0], []).
+
+dt_wm_return(Mod, Func) ->
+    dt_wm_return(Mod, Func, [], []).
+
+dt_wm_return({Mod, SubMod}, Func, Ints, Strings) when is_atom(Mod), is_atom(SubMod)->
+    dt_wm_return(common_submod_to_bin(Mod, SubMod), Func, Ints, Strings);
+dt_wm_return(Mod, Func, Ints, Strings) ->
+    riak_cs_dtrace:dtrace(?DT_WM_OP, 2, Ints, Mod, Func, Strings).
+
+dt_service_return(Mod, Func, Ints, Strings) ->
+    riak_cs_dtrace:dtrace(?DT_SERVICE_OP, 2, Ints, Mod, Func, Strings).
+
+dt_bucket_return(Mod, Func, Ints, Strings) ->
+    riak_cs_dtrace:dtrace(?DT_BUCKET_OP, 2, Ints, Mod, Func, Strings).
+
+dt_object_return(Mod, Func, Ints, Strings) ->
+    riak_cs_dtrace:dtrace(?DT_OBJECT_OP, 2, Ints, Mod, Func, Strings).
+
+
+%% ===================================================================
+%% Internal Functions
+%% ===================================================================
+
+common_submod_to_bin(Mod, SubMod) ->
+    <<(atom_to_binary(Mod, latin1))/binary, 
+      "/", 
+      (atom_to_binary(SubMod, latin1))/binary>>.

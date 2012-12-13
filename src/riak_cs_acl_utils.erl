@@ -24,7 +24,8 @@
          acl_from_xml/3,
          acl_to_xml/1,
          empty_acl_xml/0,
-         requested_access/2
+         requested_access/2,
+         check_grants/4
         ]).
 
 -type xmlElement() :: #xmlElement{}.
@@ -118,9 +119,8 @@ empty_acl_xml() ->
 %% to complete the request.
 -type request_method() :: 'GET' | 'HEAD' | 'PUT' | 'POST' |
                           'DELETE' | 'Dialyzer happiness'.
--spec requested_access(request_method(), string()) -> acl_perm().
-requested_access(Method, QueryString) ->
-    AclRequest = acl_request(QueryString),
+-spec requested_access(request_method(), boolean()) -> acl_perm().
+requested_access(Method, AclRequest) ->
     if
         Method == 'GET'
         andalso
@@ -152,19 +152,18 @@ requested_access(Method, QueryString) ->
             undefined
     end.
 
+-spec check_grants(undefined | rcs_user(), string(), atom(), pid()) -> 
+                          boolean() | {true, string()}.
+check_grants(undefined, Bucket, RequestedAccess, RiakPid) ->
+    riak_cs_acl:anonymous_bucket_access(Bucket, RequestedAccess, RiakPid);
+check_grants(User, Bucket, RequestedAccess, RiakPid) ->
+    riak_cs_acl:bucket_access(Bucket,
+                              RequestedAccess,
+                              User?RCS_USER.canonical_id,
+                              RiakPid).
 %% ===================================================================
 %% Internal functions
 %% ===================================================================
-
-%% @doc Check if the acl subresource is specified in the
-%% list of query string parameters.
--spec acl_request([{string(), string()}]) -> boolean().
-acl_request([]) ->
-    false;
-acl_request([{"acl", _} | _]) ->
-    true;
-acl_request([_ | Rest]) ->
-    acl_request(Rest).
 
 %% @doc Update the permissions for a grant in the provided
 %% list of grants if an entry exists with matching grantee
@@ -494,16 +493,16 @@ roundtrip_test() ->
     ?assertEqual(Xml2, binary_to_list(acl_to_xml(acl_from_xml(Xml2, "TESTKEYID2", undefined)))).
 
 requested_access_test() ->
-    ?assertEqual('READ', requested_access('GET', [])),
-    ?assertEqual('READ_ACP', requested_access('GET', [{"acl", ""}])),
-    ?assertEqual('WRITE', requested_access('PUT', [])),
-    ?assertEqual('WRITE_ACP', requested_access('PUT', [{"acl", ""}])),
-    ?assertEqual('WRITE', requested_access('POST', [])),
-    ?assertEqual('WRITE', requested_access('DELETE', [])),
-    ?assertEqual(undefined, requested_access('POST', [{"acl", ""}])),
-    ?assertEqual(undefined, requested_access('DELETE', [{"acl", ""}])),
-    ?assertEqual(undefined, requested_access('GARBAGE', [])),
-    ?assertEqual(undefined, requested_access('GARBAGE', [{"acl", ""}])).
+    ?assertEqual('READ', requested_access('GET', false)),
+    ?assertEqual('READ_ACP', requested_access('GET', true)),
+    ?assertEqual('WRITE', requested_access('PUT', false)),
+    ?assertEqual('WRITE_ACP', requested_access('PUT', true)),
+    ?assertEqual('WRITE', requested_access('POST', false)),
+    ?assertEqual('WRITE', requested_access('DELETE', false)),
+    ?assertEqual(undefined, requested_access('POST', true)),
+    ?assertEqual(undefined, requested_access('DELETE', true)),
+    ?assertEqual(undefined, requested_access('GARBAGE', false)),
+    ?assertEqual(undefined, requested_access('GARBAGE', true)).
 
 -ifdef(BROKEN_TEST).
 canned_acl_test() ->
