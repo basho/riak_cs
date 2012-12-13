@@ -220,8 +220,21 @@ delete_bucket(User, UserObj, Bucket, RiakPid) ->
     {ok, [binary()]} | {error, term()}.
 delete_object(Bucket, Key, RiakcPid) ->
     StartTime = os:timestamp(),
-    maybe_gc_active_manifests(get_manifests(RiakcPid, Bucket, Key),
-                         StartTime, RiakcPid).
+    DoIt = fun() ->
+                   maybe_gc_active_manifests(
+                     get_manifests(RiakcPid, Bucket, Key), StartTime, RiakcPid)
+           end,
+    case DoIt() of
+        updated ->
+            %% Some multipart upload parts were deleted in
+            %% a minor transition from active state to
+            %% active + props=[multipart_clean|...] state.
+            %% The Riak object that get_manifests returned
+            %% is invalid, so retry once.
+            DoIt();
+        Else ->
+            Else
+    end.
 
 %% @private
 maybe_gc_active_manifests({ok, RiakObject, Manifests}, StartTime, RiakcPid) ->

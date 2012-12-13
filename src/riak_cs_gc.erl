@@ -22,6 +22,7 @@
          gc_specific_manifests/3,
          epoch_start/0,
          leeway_seconds/0,
+         move_manifests_to_gc_bucket/3,
          timestamp/0]).
 
 %%%===================================================================
@@ -31,12 +32,18 @@
 gc_active_manifests(Manifests, RiakObject, RiakcPid) ->
     case riak_cs_manifest_utils:active_manifest(Manifests) of
         {ok, M} ->
-            ActiveUUIDs = [M?MANIFEST.uuid],
-            GCManiResponse = gc_specific_manifests(ActiveUUIDs,
-                                                   RiakObject,
-                                                   RiakcPid),
-            return_active_uuids_from_gc_response(GCManiResponse,
-                                                 ActiveUUIDs);
+            case riak_cs_mp_utils:clean_multipart_unused_parts(M) of
+                same ->
+                    ActiveUUIDs = [M?MANIFEST.uuid],
+                    GCManiResponse = gc_specific_manifests(ActiveUUIDs,
+                                                           RiakObject,
+                                                           RiakcPid),
+                    return_active_uuids_from_gc_response(GCManiResponse,
+                                                         ActiveUUIDs);
+                updated ->
+                    io:format("Updated!\n"),
+                    updated
+            end;
         _ ->
             {ok, []}
     end.
@@ -178,12 +185,15 @@ mark_manifests(RiakObject, UUIDsToMark, ManiFunction, RiakcPid) ->
     %% again without having to re-retrieve the object
     riak_cs_utils:put(RiakcPid, UpdObj, [return_body]).
 
+move_manifests_to_gc_bucket(Manifests, RiakcPid) ->
+    move_manifests_to_gc_bucket(Manifests, RiakcPid, true).
+
 %% @doc Copy data for a list of manifests to the
 %% `riak-cs-gc' bucket to schedule them for deletion.
--spec move_manifests_to_gc_bucket([lfs_manifest()], pid()) ->
+-spec move_manifests_to_gc_bucket([lfs_manifest()], pid(), boolean()) ->
     ok | {error, term()}.
-move_manifests_to_gc_bucket(Manifests, RiakcPid) ->
-    Key = generate_key(),
+move_manifests_to_gc_bucket(Manifests, RiakcPid, AddLeewayP) ->
+    Key = generate_key(AddLeewayP),
     ManifestSet = build_manifest_set(Manifests),
     ObjectToWrite = case riakc_pb_socket:get(RiakcPid, ?GC_BUCKET, Key) of
         {error, notfound} ->
@@ -209,11 +219,13 @@ build_manifest_set(Manifests) ->
 
 %% @doc Generate a key for storing a set of manifests in the
 %% garbage collection bucket.
--spec generate_key() -> binary().
-generate_key() ->
+-spec generate_key(boolean()) -> binary().
+generate_key(AddLeewayP) ->
     list_to_binary(
       integer_to_list(
-        timestamp() + leeway_seconds())).
+        timestamp() + if not AddLeewayP -> 0;
+                         true           -> leeway_seconds()
+                      end)).
 
 %% @doc Given a list of riakc_obj-flavored object (with potentially
 %%      many siblings and perhaps a tombstone), decode and merge them.

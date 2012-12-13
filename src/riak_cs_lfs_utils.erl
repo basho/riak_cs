@@ -106,6 +106,7 @@ block_sequences_for_manifest(?MANIFEST{uuid=UUID,
         X ->
             Src = case X of
                       PMs when is_list(PMs) ->
+                          exit(deathToDeadCode),
                           PMs;
                       MpM when is_record(MpM, ?MULTIPART_MANIFEST_RECNAME) ->
                           MpM?MULTIPART_MANIFEST.parts
