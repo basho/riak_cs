@@ -48,6 +48,12 @@ init([]) ->
         undefined ->
             Port = 80
     end,
+    case application:get_env(riak_cs, http_logdir) of
+        {ok, WebLogDir} ->
+            ok = filelib:ensure_dir(WebLogDir);
+        undefined ->
+            WebLogDir = "log"
+    end,
 
     %% Create child specifications
     WebConfig1 = [
@@ -55,11 +61,10 @@ init([]) ->
                  {ip, Ip},
                  {port, Port},
                  {nodelay, true},
-                 {log_dir, "log"},
+                 {log_dir, WebLogDir},
                  {rewrite_module, riak_cs_s3_rewrite},
                  {error_handler, riak_cs_wm_error_handler}],
     case application:get_env(riak_cs, ssl) of
-
         {ok, SSLOpts} ->
             WebConfig = WebConfig1 ++ [{ssl, true},
                                        {ssl_opts, SSLOpts}];
