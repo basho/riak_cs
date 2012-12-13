@@ -288,8 +288,11 @@ handle_info({'DOWN', CallerRef, process, _Pid, Reason},
             _StateName,
             State=#state{caller=CallerRef}) ->
     {stop, Reason, State};
+handle_info({'EXIT', _Pid, normal}, StateName, StateData) ->
+    %% TODO: who is _Pid when clean_multipart_unused_parts returns updated?
+    {next_state, StateName, StateData};
 handle_info(_Info, _StateName, StateData) ->
-    {stop, badmsg, StateData}.
+    {stop, {badmsg, _Info}, StateData}.
 
 %% @private
 terminate(_Reason, _StateName, #state{test=false,
@@ -320,8 +323,14 @@ prepare(#state{bucket=Bucket,
     case riak_cs_manifest_fsm:get_active_manifest(ManiPid) of
         {ok, Manifest} ->
             _ = lager:debug("Manifest: ~p", [Manifest]),
-            State#state{manifest=Manifest,
-                        mani_fsm_pid=ManiPid};
+            case riak_cs_mp_utils:clean_multipart_unused_parts(Manifest) of
+                same ->
+                    State#state{manifest=Manifest,
+                                mani_fsm_pid=ManiPid};
+                updated ->
+                    riak_cs_manifest_fsm:stop(ManiPid),
+                    prepare(State)
+            end;
         {error, notfound} ->
             State#state{mani_fsm_pid=ManiPid}
     end.
