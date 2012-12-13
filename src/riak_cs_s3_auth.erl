@@ -8,22 +8,35 @@
 
 -behavior(riak_cs_auth).
 
+-export([identify/2, authenticate/4]).
+
 -include("riak_cs.hrl").
+-include("s3_api.hrl").
+-include_lib("webmachine/include/webmachine.hrl").
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
--export([authenticate/3]).
+-define(QS_KEYID, "AWSAccessKeyId").
+-define(QS_SIGNATURE, "Signature").
 
 %% ===================================================================
 %% Public API
 %% ===================================================================
 
--spec authenticate(term(), string(), string()) -> ok | {error, atom()}.
-authenticate(RD, KeyData, Signature) ->
-    CalculatedSignature =
-        calculate_signature(KeyData, RD),
+-spec identify(term(), term()) -> {string() | undefined , string()}.
+identify(RD,_Ctx) ->
+    case wrq:get_req_header("authorization", RD) of
+        undefined ->
+            {wrq:get_qs_value(?QS_KEYID, RD), wrq:get_qs_value(?QS_SIGNATURE, RD)};
+        AuthHeader ->
+            parse_auth_header(AuthHeader)
+    end.
+
+-spec authenticate(rcs_user(), string(), term(), term()) -> ok | {error, atom()}.
+authenticate(User, Signature, RD, _Ctx) ->
+    CalculatedSignature = calculate_signature(User?RCS_USER.key_secret, RD),
     case check_auth(Signature, CalculatedSignature) of
         true ->
             Expires = wrq:get_qs_value("Expires", RD),
@@ -50,11 +63,23 @@ authenticate(RD, KeyData, Signature) ->
 %% Internal functions
 %% ===================================================================
 
+parse_auth_header("AWS " ++ Key) ->
+    case string:tokens(Key, ":") of
+        [KeyId, KeyData] ->
+            {KeyId, KeyData};
+        _ -> {undefined, undefined}
+    end;
+parse_auth_header(_) ->
+    {undefined, undefined}.
+
 calculate_signature(KeyData, RD) ->
     Headers = riak_cs_wm_utils:normalize_headers(RD),
     AmazonHeaders = riak_cs_wm_utils:extract_amazon_headers(Headers),
-    Resource = [wrq:path(RD),
-                canonicalize_qs(lists:sort(wrq:req_qs(RD)))],
+    OriginalResource = riak_cs_s3_rewrite:original_resource(RD),
+    Resource = case OriginalResource of
+        undefined -> []; %% TODO: get noisy here?
+        {Path,QS} -> [Path, canonicalize_qs(lists:sort(QS))]
+    end,
     Expires = wrq:get_qs_value("Expires", RD),
     case Expires of
         undefined ->
@@ -92,11 +117,6 @@ calculate_signature(KeyData, RD) ->
 
 check_auth(PresentedSignature, CalculatedSignature) ->
     PresentedSignature == CalculatedSignature.
-
--define(ROOT_HOST, "s3.amazonaws.com").
--define(SUBRESOURCES, ["acl", "location", "logging", "notification", "partNumber",
-                       "policy", "requestPayment", "torrent", "uploadId", "uploads",
-                       "versionId", "versioning", "versions", "website"]).
 
 canonicalize_qs(QS) ->
     canonicalize_qs(QS, []).
@@ -150,28 +170,24 @@ auth_test_() ->
       }]}.
 
 setup() ->
-    application:set_env(riak_cs, cs_root_host, "s3.amazonaws.com").
+    application:set_env(riak_cs, cs_root_host, ?ROOT_HOST).
 
 teardown(_) ->
     application:unset_env(riak_cs, cs_root_host).
 
-test_fun(Description, ExpectedSignature, CalculatedSignature) ->
-    {Description,
-     fun() ->
-             [
-              ?_assert(check_auth(ExpectedSignature, CalculatedSignature))
-             ]
-     end
-    }.
+test_fun(Desc, ExpectedSignature, CalculatedSignature) ->
+    {Desc, ?_assert(check_auth(ExpectedSignature,CalculatedSignature))}.
 
 example_get_object() ->
     KeyData = "uV3F3YluFJax1cknvbcGwgjvx4QpvB+leU8dUj2o",
     Method = 'GET',
     Version = {1, 1},
-    Path = "/photos/puppy.jpg",
+    OrigPath = "/johnsmith/photos/puppy.jpg",
+    Path = "/buckets/johnsmith/objects/photos/puppy.jpg",
     Headers =
-        mochiweb_headers:make([{"Host", "johnsmith.s3.amazonaws.com"},
-                               {"Date", "Tue, 27 Mar 2007 19:36:42 +0000"}]),
+        mochiweb_headers:make([{"Host", "s3.amazonaws.com"},
+                               {"Date", "Tue, 27 Mar 2007 19:36:42 +0000"},
+                               {"x-rcs-rewrite-path", OrigPath}]),
     RD = wrq:create(Method, Version, Path, Headers),
     ExpectedSignature = "xXjDGYUmKxnwqr5KXNPGldn5LbA=",
     CalculatedSignature = calculate_signature(KeyData, RD),
@@ -181,10 +197,12 @@ example_put_object() ->
     KeyData = "uV3F3YluFJax1cknvbcGwgjvx4QpvB+leU8dUj2o",
     Method = 'PUT',
     Version = {1, 1},
-    Path = "/photos/puppy.jpg",
+    OrigPath = "/johnsmith/photos/puppy.jpg",
+    Path = "/buckets/johnsmith/objects/photos/puppy.jpg",
     Headers =
-        mochiweb_headers:make([{"Host", "johnsmith.s3.amazonaws.com"},
+        mochiweb_headers:make([{"Host", "s3.amazonaws.com"},
                                {"Content-Type", "image/jpeg"},
+                               {"x-rcs-rewrite-path", OrigPath},
                                {"Content-Length", 94328},
                                {"Date", "Tue, 27 Mar 2007 21:15:45 +0000"}]),
     RD = wrq:create(Method, Version, Path, Headers),
@@ -196,10 +214,12 @@ example_list() ->
     KeyData = "uV3F3YluFJax1cknvbcGwgjvx4QpvB+leU8dUj2o",
     Method = 'GET',
     Version = {1, 1},
-    Path = "/?prefix=photos&max-keys=50&marker=puppy",
+    OrigPath = "/johnsmith/?prefix=photos&max-keys=50&marker=puppy",
+    Path = "/buckets/johnsmith/objects?prefix=photos&max-keys=50&marker=puppy",
     Headers =
         mochiweb_headers:make([{"User-Agent", "Mozilla/5.0"},
                                {"Host", "johnsmith.s3.amazonaws.com"},
+                               {"x-rcs-rewrite-path", OrigPath},
                                {"Date", "Tue, 27 Mar 2007 19:42:41 +0000"}]),
     RD = wrq:create(Method, Version, Path, Headers),
     ExpectedSignature = "jsRt/rhG+Vtp88HrYL706QhE4w4=",
@@ -210,9 +230,11 @@ example_fetch() ->
     KeyData = "uV3F3YluFJax1cknvbcGwgjvx4QpvB+leU8dUj2o",
     Method = 'GET',
     Version = {1, 1},
-    Path = "/?acl",
+    OrigPath = "/johnsmith/?acl",
+    Path = "/buckets/johnsmith/acl",
     Headers =
         mochiweb_headers:make([{"Host", "johnsmith.s3.amazonaws.com"},
+                               {"x-rcs-rewrite-path", OrigPath},
                                {"Date", "Tue, 27 Mar 2007 19:44:46 +0000"}]),
     RD = wrq:create(Method, Version, Path, Headers),
     ExpectedSignature = "thdUi9VAkzhkniLj96JIrOPGi0g=",
@@ -223,10 +245,12 @@ example_delete() ->
     KeyData = "uV3F3YluFJax1cknvbcGwgjvx4QpvB+leU8dUj2o",
     Method = 'DELETE',
     Version = {1, 1},
-    Path = "/johnsmith/photos/puppy.jpg",
+    OrigPath = "/johnsmith/photos/puppy.jpg",
+    Path = "/buckets/johnsmith/objects/photos/puppy.jpg",
     Headers =
         mochiweb_headers:make([{"User-Agent", "dotnet"},
                                {"Host", "s3.amazonaws.com"},
+                               {"x-rcs-rewrite-path", OrigPath},
                                {"Date", "Tue, 27 Mar 2007 21:20:27 +0000"},
                                {"x-amz-date", "Tue, 27 Mar 2007 21:20:26 +0000"}]),
     RD = wrq:create(Method, Version, Path, Headers),
@@ -247,11 +271,13 @@ example_upload() ->
     KeyData = "uV3F3YluFJax1cknvbcGwgjvx4QpvB+leU8dUj2o",
     Method = 'PUT',
     Version = {1, 1},
-    Path = "/db-backup.dat.gz",
+    OrigPath = "/static.johnsmith.net/db-backup.dat.gz",
+    Path = "/buckets/static.johnsmith.net/objects/db-backup.dat.gz",
     Headers =
         mochiweb_headers:make([{"User-Agent", "curl/7.15.5"},
                                {"Host", "static.johnsmith.net:8080"},
                                {"Date", "Tue, 27 Mar 2007 21:06:08 +0000"},
+                               {"x-rcs-rewrite-path", OrigPath},
                                {"x-amz-acl", "public-read"},
                                {"content-type", "application/x-download"},
                                {"Content-MD5", "4gJE4saaMU4BqNR0kLY+lw=="},
@@ -274,6 +300,7 @@ example_list_all_buckets() ->
     Path = "/",
     Headers =
         mochiweb_headers:make([{"Host", "s3.amazonaws.com"},
+                               {"x-rcs-rewrite-path", Path},
                                {"Date", "Wed, 28 Mar 2007 01:29:59 +0000"}]),
     RD = wrq:create(Method, Version, Path, Headers),
     ExpectedSignature = "Db+gepJSUbZKwpx1FR0DLtEYoZA=",
@@ -284,9 +311,11 @@ example_unicode_keys() ->
     KeyData = "uV3F3YluFJax1cknvbcGwgjvx4QpvB+leU8dUj2o",
     Method = 'GET',
     Version = {1, 1},
-    Path = "/dictionary/fran%C3%A7ais/pr%c3%a9f%c3%a8re",
+    OrigPath = "/dictionary/fran%C3%A7ais/pr%c3%a9f%c3%a8re",
+    Path = "/buckets/dictionary/objects/fran%C3%A7ais/pr%c3%a9f%c3%a8re",
     Headers =
         mochiweb_headers:make([{"Host", "s3.amazonaws.com"},
+                               {"x-rcs-rewrite-path", OrigPath},
                                {"Date", "Wed, 28 Mar 2007 01:49:49 +0000"}]),
     RD = wrq:create(Method, Version, Path, Headers),
     ExpectedSignature = "dxhSBHoI6eVSPcXJqEghlUzZMnY=",

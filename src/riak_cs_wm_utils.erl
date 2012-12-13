@@ -9,7 +9,6 @@
 -export([service_available/2,
          service_available/3,
          parse_auth_header/2,
-         ensure_doc/1,
          iso_8601_datetime/0,
          to_iso_8601/1,
          iso_8601_to_rfc_1123/1,
@@ -21,11 +20,14 @@
          find_and_auth_user/4,
          find_and_auth_user/5,
          validate_auth_header/3,
+         ensure_doc/2,
          deny_access/2,
+         deny_invalid_key/2,
          extract_name/1,
          normalize_headers/1,
          extract_amazon_headers/1,
-         extract_user_metadata/1]).
+         extract_user_metadata/1,
+         shift_to_owner/4]).
 
 -include("riak_cs.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
@@ -37,13 +39,6 @@
 %% Public API
 %% ===================================================================
 
-service_available(RD, KeyCtx=#key_context{context=Ctx}) ->
-    case service_available(RD, Ctx) of
-        {true, UpdRD, UpdCtx} ->
-            {true, UpdRD, KeyCtx#key_context{context=UpdCtx}};
-        {false, _, _} ->
-            {false, RD, KeyCtx}
-    end;
 service_available(RD, Ctx) ->
     case riak_cs_utils:riak_connection() of
         {ok, Pid} ->
@@ -138,15 +133,19 @@ handle_validation_response({ok, User, UserObj}, RD, Ctx, Next, _, _) ->
                          user_object=UserObj});
 handle_validation_response({error, no_user_key}, RD, Ctx, Next, _, true) ->
     %% no keyid was given, proceed anonymously
+    lager:info("No user key"),
     Next(RD, Ctx);
 handle_validation_response({error, no_user_key}, RD, Ctx, _, Conv2KeyCtx, false) ->
     %% no keyid was given, deny access
+    lager:info("No user key, deny"),
     deny_access(RD, Conv2KeyCtx(Ctx));
 handle_validation_response({error, bad_auth}, RD, Ctx, _, Conv2KeyCtx, _) ->
     %% given keyid was found, but signature didn't match
+    lager:info("bad_auth"),
     deny_access(RD, Conv2KeyCtx(Ctx));
 handle_validation_response({error, _Reason}, RD, Ctx, _, Conv2KeyCtx, _) ->
     %% no matching keyid was found, or lookup failed
+    lager:info("other"),
     deny_invalid_key(RD, Conv2KeyCtx(Ctx)).
 
 %% @doc Look for an Authorization header in the request, and validate
@@ -194,6 +193,22 @@ validate_auth_header(RD, AuthBypass, RiakPid) ->
             {error, Reason}
     end.
 
+%% @doc Utility function for accessing
+%%      a riakc_obj without retrieving
+%%      it again if it's already in the
+%%      Ctx
+-spec ensure_doc(term(), pid()) -> term().
+ensure_doc(KeyCtx=#key_context{get_fsm_pid=undefined,
+                               bucket=Bucket,
+                               key=Key}, RiakcPid) ->
+    %% start the get_fsm
+    BinKey = list_to_binary(Key),
+    {ok, Pid} = riak_cs_get_fsm_sup:start_get_fsm(node(), Bucket, BinKey, self(), RiakcPid),
+    Manifest = riak_cs_get_fsm:get_manifest(Pid),
+    KeyCtx#key_context{get_fsm_pid=Pid, manifest=Manifest};
+ensure_doc(KeyCtx, _) ->
+    KeyCtx.
+
 %% @doc Produce an access-denied error message from a webmachine
 %% resource's `forbidden/2' function.
 deny_access(RD, Ctx) ->
@@ -204,29 +219,29 @@ deny_access(RD, Ctx) ->
 deny_invalid_key(RD, Ctx) ->
     riak_cs_s3_response:api_error(invalid_access_key_id, RD, Ctx).
 
-%% @doc Utility function for accessing
-%%      a riakc_obj without retrieving
-%%      it again if it's already in the
-%%      Ctx
--spec ensure_doc(term()) -> term().
-ensure_doc(Ctx=#key_context{get_fsm_pid=undefined,
-                            bucket=Bucket,
-                            key=Key,
-                            context=InnerCtx}) ->
-    RiakPid = InnerCtx#context.riakc_pid,
-    %% start the get_fsm
-    BinKey = list_to_binary(Key),
-    {ok, Pid} = riak_cs_get_fsm_sup:start_get_fsm(node(), Bucket, BinKey, self(), RiakPid),
-    Manifest = riak_cs_get_fsm:get_manifest(Pid),
-    Ctx#key_context{get_fsm_pid=Pid, manifest=Manifest};
-ensure_doc(Ctx) -> Ctx.
+%% @doc In the case is a user is authorized to perform an operation on
+%% a bucket but is not the owner of that bucket this function can be used
+%% to switch to the owner's record if it can be retrieved
+-spec shift_to_owner(#wm_reqdata{}, #context{}, string(), pid()) ->
+                            {boolean(), #wm_reqdata{}, #context{}}.
+shift_to_owner(RD, Ctx=#context{}, OwnerId, RiakPid) when RiakPid /= undefined ->
+    case riak_cs_utils:get_user(OwnerId, RiakPid) of
+        {ok, {Owner, OwnerObject}} when Owner?RCS_USER.status =:= enabled ->
+            AccessRD = riak_cs_access_logger:set_user(Owner, RD),
+            {false, AccessRD, Ctx#context{user=Owner,
+                                          user_object=OwnerObject}};
+        {ok, _} ->
+            riak_cs_wm_utils:deny_access(RD, Ctx);
+        {error, _} ->
+            riak_cs_s3_response:api_error(bucket_owner_unavailable, RD, Ctx)
+    end.
 
 streaming_get(FsmPid, StartTime, UserName, BFile_str) ->
     case riak_cs_get_fsm:get_next_chunk(FsmPid) of
         {done, Chunk} ->
             ok = riak_cs_stats:update_with_start(object_get, StartTime),
-            riak_cs_wm_key:dt_return_object(<<"file_get">>, [],
-                                              [UserName, BFile_str]),
+            riak_cs_dtrace:dt_object_return(riak_cs_wm_object, <<"object_get">>, 
+                                               [], [UserName, BFile_str]),
             {Chunk, done};
         {chunk, Chunk} ->
             {Chunk, fun() -> streaming_get(FsmPid, StartTime, UserName, BFile_str) end}

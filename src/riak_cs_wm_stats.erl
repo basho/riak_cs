@@ -32,7 +32,7 @@
          }).
 
 init(Props) ->
-    dt_entry(<<"init">>, [], []),
+    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"init">>),
     AuthBypass = proplists:get_value(auth_bypass, Props, false),
     {ok, #ctx{auth_bypass = AuthBypass}}.
 
@@ -42,7 +42,7 @@ init(Props) ->
 %%      "identity" is provided for all methods, and "gzip" is
 %%      provided for GET as well
 encodings_provided(RD, Context) ->
-    dt_entry(<<"encodings_provided">>, [], []),
+    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"encodings_provided">>),
     case wrq:method(RD) of
         'GET' ->
             {[{"identity", fun(X) -> X end},
@@ -63,17 +63,17 @@ encodings_provided(RD, Context) ->
 %%            so s3cmd will only be able to get the JSON flavor.
 
 content_types_provided(RD, Context) ->
-    dt_entry(<<"content_types_provided">>, [], []),
+    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"content_types_provided">>),
     {[{"application/json", produce_body},
       {"text/plain", pretty_print}],
      RD, Context}.
 
 ping(RD, Ctx) ->
-    dt_entry(<<"pong">>, [], []),
+    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"pong">>, [], []),
     {pong, RD, Ctx#ctx{path_tokens = path_tokens(RD)}}.
 
 service_available(RD, #ctx{path_tokens = []} = Ctx) ->
-    dt_entry(<<"service_available">>, [], []),
+    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"service_available">>),
     case riak_cs_utils:get_env(riak_cs, riak_cs_stat, false) of
         false ->
             {false, RD, Ctx};
@@ -86,45 +86,46 @@ service_available(RD, #ctx{path_tokens = []} = Ctx) ->
             end
     end;
 service_available(RD, Ctx) ->
-    dt_entry(<<"service_available">>, [], []),
+    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"service_available">>),
     {false, RD, Ctx}.
 
 produce_body(RD, Ctx) ->
-    dt_entry(<<"produce_body">>, [], []),
+    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"produce_body">>),
     Body = mochijson2:encode(get_stats()),
     ETag = riak_cs_utils:binary_to_hexlist(crypto:md5(Body)),
     RD2 = wrq:set_resp_header("ETag", ETag, RD),
-    dt_return(<<"produce_body">>, [], []),
+    riak_cs_dtrace:dt_wm_return(?MODULE, <<"produce_body">>),
     {Body, RD2, Ctx}.
 
 forbidden(RD, #ctx{auth_bypass = AuthBypass, riakc_pid = RiakPid} = Ctx) ->
-    dt_entry(<<"forbidden">>, [], []),
+    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"forbidden">>),
     case riak_cs_wm_utils:validate_auth_header(RD, AuthBypass, RiakPid) of
         {ok, User, _UserObj} ->
             UserKeyId = User?RCS_USER.key_id,
             case riak_cs_utils:get_admin_creds() of
                 {ok, {Admin, _}} when Admin == UserKeyId ->
                     %% admin account is allowed
-                    dt_return(<<"forbidden">>, [], [<<"false">>, Admin]),
+                    riak_cs_dtrace:dt_wm_return(?MODULE, <<"forbidden">>, 
+                                                [], [<<"false">>, Admin]),
                     {false, RD, Ctx};
                 _ ->
                     Res = riak_cs_wm_utils:deny_access(RD, Ctx),
-                    dt_return(<<"forbidden">>, [], [<<"true">>]),
+                    riak_cs_dtrace:dt_wm_return(?MODULE, <<"forbidden">>, [], [<<"true">>]),
                     Res
             end;
         _ ->
             Res = riak_cs_wm_utils:deny_access(RD, Ctx),
-            dt_return(<<"forbidden">>, [], [<<"true">>]),
+            riak_cs_dtrace:dt_wm_return(?MODULE, <<"forbidden">>, [], [<<"true">>]),
             Res
     end.
 
 finish_request(RD, #ctx{riakc_pid=undefined}=Ctx) ->
-    dt_entry(<<"finish_request">>, [0], []),
+    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"finish_request">>, [0], []),
     {true, RD, Ctx};
 finish_request(RD, #ctx{riakc_pid=RiakPid}=Ctx) ->
-    dt_entry(<<"finish_request">>, [1], []),
+    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"finish_request">>, [1], []),
     riak_cs_utils:close_riak_connection(RiakPid),
-    dt_return(<<"finish_request">>, [1], []),
+    riak_cs_dtrace:dt_wm_return(?MODULE, <<"finish_request">>, [1], []),
     {true, RD, Ctx#ctx{riakc_pid=undefined}}.
 
 %% @spec pretty_print(webmachine:wrq(), context()) ->
@@ -143,8 +144,3 @@ get_stats() ->
 path_tokens(RD) ->
     wrq:path_tokens(RD).
 
-dt_entry(Func, Ints, Strings) ->
-    riak_cs_dtrace:dtrace(?DT_WM_OP, 1, Ints, ?MODULE, Func, Strings).
-
-dt_return(Func, Ints, Strings) ->
-    riak_cs_dtrace:dtrace(?DT_WM_OP, 2, Ints, ?MODULE, Func, Strings).
