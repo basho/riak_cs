@@ -253,23 +253,17 @@
     %% affect whether we accept future `complete'
     %% or `abort' requests.
 
-    %% set of complete_request()
-    %% TODO: should this be an orddict
-    %% instead of a set so we can
-    %% retrieve the complete
-    %% record by some index?
-    complete_requests = ordsets:new() :: ordsets:ordset(),
-
-    %% set of abort_request()
-    %% TODO: same note as above
-    abort_requests = ordsets:new() :: ordsets:ordset(),
-
     %% Stores references to all of the parts uploaded
     %% with this `upload_id' so far. A part
     %% can be uploaded more than once with the same
-    %% part number, we key the set by {PartNum, PartETag}.
+    %% part number.  type = #part_manifest_vX
     parts = ordsets:new() :: ordsets:ordset(),
+    %% List of UUIDs for parts that are done uploading.
+    %% The part number is redundant, so we only store
+    %% PartETag::binary() here.
     done_parts = ordsets:new() :: ordsets:ordset(),
+    %% type = #part_manifest_vX
+    cleanup_parts = ordsets:new() :: ordsets:ordset(),
 
     %% a place to stuff future information
     %% without having to change
@@ -277,45 +271,6 @@
     props = [] :: proplists:proplist()
 }).
 -type multipart_manifest() :: #multipart_manifest_v1{}.
-
--record(complete_request_v1, {
-
-    complete_time :: term(),
-
-    %% just an ID to refer to a specific
-    %% complete record from within a collection
-    id :: binary(),
-
-    %% This is the information provided from the
-    %% user from a 'complete upload' request.
-    %% Once this record is made, the info has
-    %% already been validated.
-    %% [{PartNumber :: integer(),
-    %%   Etag :: binary()}]
-    part_list :: ordsets:ordset(),
-
-    %% This is a calculatable field,
-    %% not sure if it should
-    %% be denormalized or not.
-    %% I suppose it might
-    %% as well be.
-    content_length :: non_neg_integer()
-}).
--type complete_request() :: #complete_request_v1{}.
-
--record(abort_request_v1, {
-    abort_time :: term(),
-
-    %% just an ID to refer to a specific
-    %% abort record from within a collection
-    id :: binary()
-
-    %% we probably want some information
-    %% here about the parts
-    %% that were observed when this
-    %% abort call came through.
-}).
--type abort_request() :: #abort_request_v1{}.
 
 -record(part_manifest_v1, {
     %% TODO: should this be bkey {binary(), binary()}?
@@ -379,8 +334,6 @@
 -define(RCS_USER, #rcs_user_v2).
 -define(MULTIPART_MANIFEST, #multipart_manifest_v1).
 -define(MULTIPART_MANIFEST_RECNAME, multipart_manifest_v1).
--define(MULTIPART_COMPLETE, #complete_req_v1).
--define(MULTIPART_ABORT, #abort_req_v1).
 -define(PART_MANIFEST, #part_manifest_v1).
 -define(PART_MANIFEST_RECNAME, part_manifest_v1).
 -define(MULTIPART_DESCR, #multipart_descr_v1).
