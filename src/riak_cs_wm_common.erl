@@ -14,6 +14,11 @@
          valid_entity_length/2,
          malformed_request/2,
          to_xml/2,
+         post_is_create/2,
+         create_path/2,
+         process_post/2,
+         resp_body/2,
+         multiple_choices/2,
          accept_body/2,
          produce_body/2,
          allowed_methods/2,
@@ -184,6 +189,40 @@ to_xml(RD, Ctx=#context{user=User,
                         ExportsFun),
     riak_cs_dtrace:dt_wm_return({?MODULE, Mod}, <<"to_xml">>, [], [riak_cs_wm_utils:extract_name(User)]),
     Res.
+
+post_is_create(RD, Ctx=#context{submodule=Mod,
+                                exports_fun=ExportsFun}) ->
+    resource_call(Mod, post_is_create, [RD, Ctx], ExportsFun).
+
+create_path(RD, Ctx=#context{submodule=Mod,
+                                exports_fun=ExportsFun}) ->
+    resource_call(Mod, create_path, [RD, Ctx], ExportsFun).
+
+process_post(RD, Ctx=#context{submodule=Mod,
+                              exports_fun=ExportsFun}) ->
+    resource_call(Mod, process_post, [RD, Ctx], ExportsFun).
+
+resp_body(RD, Ctx=#context{submodule=Mod,
+                           exports_fun=ExportsFun}) ->
+    resource_call(Mod, resp_body, [RD, Ctx], ExportsFun).
+
+multiple_choices(RD, Ctx=#context{submodule=Mod,
+                                  exports_fun=ExportsFun}) ->
+    resource_call(Mod, multiple_choices, [RD, Ctx], ExportsFun).
+
+%% create_path(RD, Ctx=#context{submodule=Mod,
+%%                                 exports_fun=ExportsFun}) ->
+%%     riak_cs_dtrace:dt_wm_entry({?MODULE, Mod}, <<"create_path">>),
+%%     try
+%%         Res = resource_call(Mod,
+%%                             create_path,
+%%                             [RD, Ctx],
+%%                             ExportsFun),
+%%         riak_cs_dtrace:dt_wm_return({?MODULE, Mod}, <<"create_path">>, [], []),
+%%         Res
+%%     catch error:undef ->
+%%             {false, RD, Ctx}
+%%     end.
 
 -spec accept_body(#wm_reqdata{}, #context{}) ->
     {boolean() | {'halt', non_neg_integer()}, #wm_reqdata{}, #context{}}.
