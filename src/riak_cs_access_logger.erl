@@ -342,9 +342,9 @@ do_archive(#state{period=P, table=T, current=C}=State) ->
 -spec access_record(#wm_log_data{})
          -> {ok, {iodata(), {binary(), list()}}}
           | ignore.
-access_record(#wm_log_data{notes=undefined}) ->
-    error_logger:error_msg("WTF, why is notes undefined at ~p line ~p\n",
-                           [?MODULE, ?LINE]),
+access_record(#wm_log_data{notes=undefined,
+                           method=Method,path=Path,headers=Headers}=_X) ->
+    error_logger:error_msg("No WM route: ~p ~s ~p\n", [Method, Path, Headers]),
     ignore;
 access_record(#wm_log_data{notes=Notes}=Log) ->
     case lists:keyfind(?STAT(user), 1, Notes) of

@@ -20,6 +20,7 @@
          %% resp_body/2,
          multiple_choices/2,
          valid_entity_length/2,
+         delete_resource/2,
          finish_request/2]).
 
 -include("riak_cs.hrl").
@@ -35,6 +36,7 @@ malformed_request(RD,Ctx=#context{local_context=LocalCtx0}) ->
     Bucket = list_to_binary(wrq:path_info(bucket, RD)),
     %% need to unquote twice since we re-urlencode the string during rewrite in 
     %% order to trick webmachine dispatching
+    %% NOTE: Bucket::binary(), *but* Key::string()
     Key = mochiweb_util:unquote(mochiweb_util:unquote(wrq:path_info(object, RD))),
     LocalCtx = LocalCtx0#key_context{bucket=Bucket, key=Key},
     {false, RD, Ctx#context{local_context=LocalCtx}}.
@@ -100,7 +102,7 @@ check_permission(_, RD, Ctx=#context{requested_perm=RequestedAccess,local_contex
 %% @doc Get the list of methods this resource supports.
 -spec allowed_methods() -> [atom()].
 allowed_methods() ->
-    ['POST'].
+    ['POST', 'DELETE'].
 
 post_is_create(RD, Ctx) ->
     {false, RD, Ctx}.
@@ -127,7 +129,7 @@ process_post(RD, Ctx=#context{local_context=LocalCtx}) ->
                        [
                         {'Bucket', [binary_to_list(Bucket)]},
                         {'Key', [Key]},
-                        {'UploadId', [binary_to_list(base64:encode(UploadId))]}
+                        {'UploadId', [binary_to_list(base64url:encode(UploadId))]}
                        ]
                      },
             Body = riak_cs_s3_response:export_xml([XmlDoc]),
@@ -161,6 +163,29 @@ valid_entity_length(RD, Ctx=#context{local_context=LocalCtx}) ->
             end;
         _ ->
             {true, RD, Ctx}
+    end.
+
+-spec delete_resource(#wm_reqdata{}, #context{}) ->
+                             {boolean() | {'halt', term()}, #wm_reqdata{}, #context{}}.
+%% TODO: Use the RiakcPid in our Ctx and thread it through abort_mult....
+delete_resource(RD, Ctx=#context{local_context=LocalCtx,
+                                 riakc_pid=_RiakPid}) ->
+    case (catch base64url:decode(wrq:path_info('uploadId', RD))) of
+        {'EXIT', _Reason} ->
+            {{halt, 404}, RD, Ctx};
+        UploadId ->
+            #key_context{bucket=Bucket, key=KeyStr} = LocalCtx,
+            Key = list_to_binary(KeyStr),
+            User = riak_cs_mp_utils:user_rec_to_3tuple(Ctx#context.user),
+            case riak_cs_mp_utils:abort_multipart_upload(Bucket, Key,
+                                                         UploadId, User) of
+                ok ->
+                    {true, RD, Ctx};
+                {error, notfound} ->
+                    {{halt, 404}, RD, Ctx};
+                {error, Reason} ->
+                    riak_cs_s3_response:api_error(Reason, RD, Ctx)
+            end
     end.
 
 finish_request(RD, Ctx) ->
