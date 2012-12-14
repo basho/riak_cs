@@ -89,12 +89,12 @@ api_error(Error, ReqData, Ctx) when is_atom(Error); is_tuple(Error) ->
                    ReqData, Ctx).
 
 error_response(StatusCode, Code, Message, RD, Ctx) ->
+    {OrigResource, _} = riak_cs_s3_rewrite:original_resource(RD),
     XmlDoc = [{'Error', [{'Code', [Code]},
                          {'Message', [Message]},
-                         {'Resource', [wrq:path(RD)]},
+                         {'Resource', [string:strip(OrigResource, right, $/)]},
                          {'RequestId', [""]}]}],
     respond(StatusCode, export_xml(XmlDoc), RD, Ctx).
-
 
 list_all_my_buckets_response(User, RD, Ctx) ->
     BucketsDoc =
