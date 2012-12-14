@@ -14,6 +14,7 @@
          valid_entity_length/2,
          malformed_request/2,
          to_xml/2,
+         to_json/2,
          accept_body/2,
          produce_body/2,
          allowed_methods/2,
@@ -45,10 +46,12 @@ init(Config) ->
     %% Check if authentication is disabled and set that in the context.
     AuthBypass = proplists:get_value(auth_bypass, Config),
     AuthModule = proplists:get_value(auth_module, Config),
+    PolicyModule = proplists:get_value(policy_module, Config),
     Exports = orddict:from_list(Mod:module_info(exports)),
     ExportsFun = exports_fun(Exports),
     Ctx = #context{auth_bypass=AuthBypass,
                    auth_module=AuthModule,
+                   policy_module=PolicyModule,
                    exports_fun=ExportsFun,
                    start_time=os:timestamp(),
                    submodule=Mod},
@@ -183,6 +186,19 @@ to_xml(RD, Ctx=#context{user=User,
                         [RD, Ctx],
                         ExportsFun),
     riak_cs_dtrace:dt_wm_return({?MODULE, Mod}, <<"to_xml">>, [], [riak_cs_wm_utils:extract_name(User)]),
+    Res.
+
+-spec to_json(#wm_reqdata{}, #context{}) ->
+    {binary() | {'halt', non_neg_integer()}, #wm_reqdata{}, #context{}}.
+to_json(RD, Ctx=#context{user=User,
+                        submodule=Mod,
+                        exports_fun=ExportsFun}) ->
+    riak_cs_dtrace:dt_wm_entry({?MODULE, Mod}, <<"to_json">>),
+    Res = resource_call(Mod,
+                        to_json,
+                        [RD, Ctx],
+                        ExportsFun(to_json)),
+    riak_cs_dtrace:dt_wm_return({?MODULE, Mod}, <<"to_json">>, [], [riak_cs_wm_utils:extract_name(User)]),
     Res.
 
 -spec accept_body(#wm_reqdata{}, #context{}) ->

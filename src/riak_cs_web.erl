@@ -25,6 +25,7 @@ dispatch_table() ->
 props(Mod) ->
     [{auth_bypass, get_auth_bypass()},
      {auth_module, get_auth_module()},
+     {policy_module, get_policy_module()},
      {submodule, Mod}].
 
 -spec stats_props() -> [term()].
@@ -51,8 +52,7 @@ base_resources() ->
      {["buckets", bucket, "acl"], riak_cs_wm_common, props(riak_cs_wm_bucket_acl)},
      {["buckets", bucket, "location"], riak_cs_wm_common, props(riak_cs_wm_bucket_location)},
      {["buckets", bucket, "versioning"], riak_cs_wm_common, props(riak_cs_wm_bucket_versioning)},
-     %% TODO: bucket policy
-     %% %% Object resources
+     {["buckets", bucket, "policy"], riak_cs_wm_common, props(riak_cs_wm_bucket_policy)},
      {["buckets", bucket, "objects", object], riak_cs_wm_common, props(riak_cs_wm_object)},
      {["buckets", bucket, "objects", object, "acl"], riak_cs_wm_common, props(riak_cs_wm_object_acl)}
     ].
@@ -72,6 +72,13 @@ get_auth_bypass() ->
 -spec get_auth_module() -> atom().
 get_auth_module() ->
     get_auth_module(application:get_env(riak_cs, auth_module)).
+
+-spec get_policy_module() -> atom().
+get_policy_module() ->
+    case application:get_env(riak_cs, policy_module) of
+        undefined -> ?DEFAULT_POLICY_MODULE;
+        {ok, PolicyModule} -> PolicyModule
+    end.             
 
 -spec get_auth_bypass(undefined | {ok, boolean()}) -> boolean().
 get_auth_bypass(undefined) ->

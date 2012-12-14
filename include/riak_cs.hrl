@@ -51,6 +51,7 @@
                   submodule :: atom(),
                   exports_fun :: function(),
                   auth_module :: atom(),
+                  policy_module :: atom(),
                   local_context :: term()
                  }).
 
@@ -257,6 +258,7 @@
 -define(DEFAULT_STANCHION_PORT, 8085).
 -define(DEFAULT_STANCHION_SSL, true).
 -define(MD_ACL, <<"X-Moss-Acl">>).
+-define(MD_POLICY, <<"X-Rcs-Policy">>).
 -define(EMAIL_INDEX, <<"email_bin">>).
 -define(ID_INDEX, <<"c_id_bin">>).
 -define(KEY_INDEX, <<"$key">>).
@@ -325,3 +327,17 @@
 -define(EPOCH_START, <<"0">>).
 -define(DEFAULT_CLUSTER_ID_TIMEOUT,5000).
 -define(DEFAULT_AUTH_MODULE, riak_cs_s3_auth).
+-define(DEFAULT_POLICY_MODULE, riak_cs_s3_policy).
+
+-record(access_v1, {
+          method :: atom(), % PUT / GET / POST / ....
+          target :: atom(), % object | object_acl | ....
+          id :: binary(),
+          bucket :: binary(),
+          key = <<>> :: binary(),
+          req %:: #wm_reqdata{} % request of webmachine
+         }).
+
+-type access() :: #access_v1{}.
+
+-type policy() :: riak_cs_s3_policy:policy1().

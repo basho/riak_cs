@@ -33,46 +33,10 @@ content_types_provided(RD,Ctx) ->
 
 
 %% TODO: change to authorize/spec/cleanup unneeded cases
+%% TODO: requires update for multi-delete
 -spec authorize(#wm_reqdata{}, #context{}) -> {boolean(), #wm_reqdata{}, #context{}}.
-authorize(RD, #context{user=User,
-                       riakc_pid=RiakPid}=Ctx) ->
-    Method = wrq:method(RD),
-    RequestedAccess =
-        riak_cs_acl_utils:requested_access(Method, false),
-    Bucket = list_to_binary(wrq:path_info(bucket, RD)),
-    PermCtx = Ctx#context{bucket=Bucket,
-                          requested_perm=RequestedAccess},
-    %% TODO: requires update for multi-delete
-    case riak_cs_acl_utils:check_grants(User,Bucket,RequestedAccess,RiakPid) of
-        true ->
-            %% listing bucket for owner
-            AccessRD = riak_cs_access_logger:set_user(User, RD),
-            {false, AccessRD, PermCtx};        
-        {true, OwnerId} ->
-            %% listing bucket for (possibly anon.) actor other than the owner of this bucket.
-            %% need to get the owner record and log access against it
-            riak_cs_wm_utils:shift_to_owner(RD, PermCtx, OwnerId, RiakPid);
-        false ->
-            case User of
-                undefined ->
-                    %% no facility for logging bad access
-                    %% against unknown actors
-                    AccessRD = RD,
-                    riak_cs_wm_utils:deny_access(AccessRD, PermCtx);
-                _ ->
-                    %% log bad requests against the actors
-                    %% that make them
-                    AccessRD = riak_cs_access_logger:set_user(User, RD),
-                    %% Check if the bucket actually exists so we can
-                    %% make the correct decision to return a 404 or 403
-                    case riak_cs_utils:check_bucket_exists(Bucket, RiakPid) of
-                        {ok, _} ->
-                            riak_cs_wm_utils:deny_access(AccessRD, PermCtx);
-                        {error, Reason} ->
-                            riak_cs_s3_response:api_error(Reason, RD, Ctx)
-                    end
-            end
-    end.
+authorize(RD, Ctx) ->
+    riak_cs_wm_utils:bucket_access_authorize_helper(bucket, false, RD, Ctx).
 
 -spec to_xml(#wm_reqdata{}, #context{}) ->
                     {binary() | {'halt', non_neg_integer()}, #wm_reqdata{}, #context{}}.
