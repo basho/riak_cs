@@ -52,8 +52,7 @@ base_resources() ->
      {["buckets", bucket, "acl"], riak_cs_wm_common, props(riak_cs_wm_bucket_acl)},
      {["buckets", bucket, "location"], riak_cs_wm_common, props(riak_cs_wm_bucket_location)},
      {["buckets", bucket, "versioning"], riak_cs_wm_common, props(riak_cs_wm_bucket_versioning)},
-     {["buckets", bucket, "policy"], riak_cs_wm_common, props(riak_cs_wm_bucket_policy)},
-     {["buckets", bucket, "uploads"], riak_cs_wm_common, props(riak_cs_wm_objects_uploads)},
+     {["buckets", bucket, "uploads"], riak_cs_wm_common, props(riak_cs_wm_bucket_uploads)},
      %% TODO: bucket policy
      %% %% Object resources
      {["buckets", bucket, "objects", object], riak_cs_wm_common, props(riak_cs_wm_object)},
