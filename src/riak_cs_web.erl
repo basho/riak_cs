@@ -55,7 +55,8 @@ base_resources() ->
      %% %% Object resources
      {["buckets", bucket, "objects", object], riak_cs_wm_common, props(riak_cs_wm_object)},
      {["buckets", bucket, "objects", object, "acl"], riak_cs_wm_common, props(riak_cs_wm_object_acl)},
-     {["buckets", bucket, "objects", object, "uploads"], riak_cs_wm_common, props(riak_cs_wm_objects_uploads)}
+     {["buckets", bucket, "objects", object, "uploads"], riak_cs_wm_common, props(riak_cs_wm_objects_uploads)},
+     {["buckets", bucket, "objects", object, "uploads", uploadId], riak_cs_wm_common, props(riak_cs_wm_objects_uploads)}
     ].
 
 -spec one_three_resources(undefined | pos_integer()) -> [dispatch_rule()].
