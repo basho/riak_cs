@@ -226,7 +226,7 @@ do_part_common(Op, Bucket, Key, UploadId, {_,_,CallerKeyId} = _Caller, Props) ->
                                         {error, todo_bad_caller}
                                 end;
                             _ ->
-                                {error, todo_no_such_uploadid2}
+                                {error, notfound}
                         end;
                     Else2 ->
                         Else2
@@ -508,12 +508,12 @@ test_0() ->
     {error, todo_bad_caller} = test_abort(ID1, test_user2()),
     {error,notfound} = test_abort(<<"no such upload_id">>, test_user2()),
     ok = test_abort(ID1, test_user1()),
-    {error, todo_no_such_uploadid2} = test_abort(ID1, test_user1()),
+    {error, notfound} = test_abort(ID1, test_user1()),
 
     {error, todo_bad_caller} = test_complete(ID2, [], test_user1()),
     {error,notfound} = test_complete(<<"no such upload_id">>, [], test_user2()),
     ok = test_complete(ID2, [], test_user2()),
-    {error, todo_no_such_uploadid2} = test_complete(ID2, [], test_user2()),
+    {error, notfound} = test_complete(ID2, [], test_user2()),
 
     {ok, X3} = test_list_uploadids(test_user1()),
     1 = length(X3),
