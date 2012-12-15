@@ -136,28 +136,12 @@ process_post(RD, Ctx=#context{local_context=LocalCtx}) ->
                     RD2 = wrq:set_resp_body(XmlBody, RD),
                     {true, RD2, Ctx};
                 {error, notfound} ->
-                    XmlDoc = {'Error',
-                              [
-                               {'Code', ["NoSuchUpload"]},
-                               {'Message', ["NoSuchUpload"]},
-                               {'RequestId', ["TODO"]},
-                               {'HostId', ["TODO"]}
-                              ]
-                             },
-                    XmlBody = riak_cs_s3_response:export_xml([XmlDoc]),
-                    RD2 = wrq:set_resp_body(XmlBody, RD),
+                    XErr = riak_cs_wm_utils:make_special_error("NoSuchUpload"),
+                    RD2 = wrq:set_resp_body(XErr, RD),
                     {{halt, 404}, RD2, Ctx};
                 {error, bad_etag} ->
-                    XmlDoc = {'Error',
-                              [
-                               {'Code', ["InvalidPart"]},
-                               {'Message', ["InvalidPart"]},
-                               {'RequestId', ["TODO"]},
-                               {'HostId', ["TODO"]}
-                              ]
-                             },
-                    XmlBody = riak_cs_s3_response:export_xml([XmlDoc]),
-                    RD2 = wrq:set_resp_body(XmlBody, RD),
+                    XErr = riak_cs_wm_utils:make_special_error("InvalidPart"),
+                    RD2 = wrq:set_resp_body(XErr, RD),
                     {{halt, 400}, RD2, Ctx};
                 {error, Reason} ->
 io:format("~p LINE ~p ~p\n", [?MODULE, ?LINE, Reason]),

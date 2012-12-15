@@ -178,7 +178,9 @@ delete_resource(RD, Ctx=#context{local_context=LocalCtx,
                 ok ->
                     {true, RD, Ctx};
                 {error, notfound} ->
-                    {{halt, 404}, RD, Ctx};
+                    XErr = riak_cs_wm_utils:make_special_error("NoSuchUpload"),
+                    RD2 = wrq:set_resp_body(XErr, RD),
+                    {{halt, 404}, RD2, Ctx};
                 {error, Reason} ->
                     riak_cs_s3_response:api_error(Reason, RD, Ctx)
             end
