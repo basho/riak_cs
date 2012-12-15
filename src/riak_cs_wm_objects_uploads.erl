@@ -24,6 +24,7 @@
 
 -spec init(#context{}) -> {ok, #context{}}.
 init(Ctx) ->
+    %% TODO: get rid of trace
     {{trace, "/tmp/wm"}, Ctx#context{local_context=#key_context{}}}.
     %% {ok, Ctx#context{local_context=#key_context{}}}.
 
@@ -207,37 +208,6 @@ content_types_provided(RD, Ctx=#context{}) ->
     end.
 
 -spec content_types_accepted(#wm_reqdata{}, #context{}) -> {[{string(), atom()}], #wm_reqdata{}, #context{}}.
-content_types_accepted(RD, Ctx=#context{local_context=LocalCtx0}) ->
-    case wrq:get_req_header("Content-Type", RD) of
-        undefined ->
-            DefaultCType = "application/octet-stream",
-            LocalCtx = LocalCtx0#key_context{putctype=DefaultCType},
-            {[{DefaultCType, unused_callback}],
-             RD,
-             Ctx#context{local_context=LocalCtx}};
-        %% This was shamelessly ripped out of
-        %% https://github.com/basho/riak_kv/blob/0d91ca641a309f2962a216daa0cee869c82ffe26/src/riak_kv_wm_object.erl#L492
-        CType ->
-            {Media, _Params} = mochiweb_util:parse_header(CType),
-            case string:tokens(Media, "/") of
-                [_Type, _Subtype] ->
-                    %% accept whatever the user says
-                    LocalCtx = LocalCtx0#key_context{putctype=Media},
-                    {[{Media, unused_callback}], RD, Ctx#context{local_context=LocalCtx}};
-                _ ->
-                    %% TODO:
-                    %% Maybe we should have caught
-                    %% this in malformed_request?
-                    {[],
-                     wrq:set_resp_header(
-                       "Content-Type",
-                       "text/plain",
-                       wrq:set_resp_body(
-                         ["\"", Media, "\""
-                          " is not a valid media type"
-                          " for the Content-type header.\n"],
-                         RD)),
-                     Ctx}
-            end
-    end.
+content_types_accepted(RD, Ctx) ->
+    riak_cs_mp_utils:make_content_types_accepted(RD, Ctx).
 

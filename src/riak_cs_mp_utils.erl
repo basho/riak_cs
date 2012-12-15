@@ -25,6 +25,7 @@
          complete_multipart_upload/5,
          initiate_multipart_upload/4,
          list_multipart_uploads/2,
+         make_content_types_accepted/2,
          make_special_error/1,
          make_special_error/4,
          new_manifest/4,
@@ -101,6 +102,40 @@ complete_multipart_upload(Bucket, Key, UploadId, PartETags, Caller) ->
 %% riak_cs_mp_utils:write_new_manifest(riak_cs_mp_utils:new_manifest(<<"test">>, <<"mp0">>, <<"text/plain">>, {"foobar", "18983ba0e16e18a2b103ca16b84fad93d12a2fbed1c88048931fb91b0b844ad3", "J2IP6WGUQ_FNGIAN9AFI"})).
 initiate_multipart_upload(Bucket, Key, ContentType, {_,_,_} = Owner) ->
     write_new_manifest(new_manifest(Bucket, Key, ContentType, Owner)).
+
+make_content_types_accepted(RD, Ctx=#context{local_context=LocalCtx0}) ->
+    case wrq:get_req_header("Content-Type", RD) of
+        undefined ->
+            DefaultCType = "application/octet-stream",
+            LocalCtx = LocalCtx0#key_context{putctype=DefaultCType},
+            {[{DefaultCType, unused_callback}],
+             RD,
+             Ctx#context{local_context=LocalCtx}};
+        %% This was shamelessly ripped out of
+        %% https://github.com/basho/riak_kv/blob/0d91ca641a309f2962a216daa0cee869c82ffe26/src/riak_kv_wm_object.erl#L492
+        CType ->
+            {Media, _Params} = mochiweb_util:parse_header(CType),
+            case string:tokens(Media, "/") of
+                [_Type, _Subtype] ->
+                    %% accept whatever the user says
+                    LocalCtx = LocalCtx0#key_context{putctype=Media},
+                    {[{Media, unused_callback}], RD, Ctx#context{local_context=LocalCtx}};
+                _ ->
+                    %% TODO:
+                    %% Maybe we should have caught
+                    %% this in malformed_request?
+                    {[],
+                     wrq:set_resp_header(
+                       "Content-Type",
+                       "text/plain",
+                       wrq:set_resp_body(
+                         ["\"", Media, "\""
+                          " is not a valid media type"
+                          " for the Content-type header.\n"],
+                         RD)),
+                     Ctx}
+            end
+    end.
 
 make_special_error(Error) ->
     make_special_error(Error, Error, "request-id", "host-id").
