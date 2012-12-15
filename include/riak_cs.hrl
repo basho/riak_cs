@@ -56,6 +56,9 @@
 
 -record(key_context, {context :: #context{},
                       manifest :: 'notfound' | lfs_manifest(),
+                      upload_id :: 'undefined' | binary(),
+                      part_number :: 'undefined' | integer(),
+                      part_uuid :: 'undefined' | binary(),
                       get_fsm_pid :: pid(),
                       putctype :: string(),
                       bucket :: binary(),
