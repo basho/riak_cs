@@ -240,7 +240,11 @@ resp_body(RD, Ctx=#context{submodule=Mod,
 
 multiple_choices(RD, Ctx=#context{submodule=Mod,
                                   exports_fun=ExportsFun}) ->
-    resource_call(Mod, multiple_choices, [RD, Ctx], ExportsFun).
+    try
+        resource_call(Mod, multiple_choices, [RD, Ctx], ExportsFun)
+    catch _:_ ->
+            {false, RD, Ctx}
+    end.
 
 %% create_path(RD, Ctx=#context{submodule=Mod,
 %%                                 exports_fun=ExportsFun}) ->
