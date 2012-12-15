@@ -78,7 +78,7 @@ calculate_signature(KeyData, RD) ->
     OriginalResource = riak_cs_s3_rewrite:original_resource(RD),
     Resource = case OriginalResource of
         undefined -> []; %% TODO: get noisy here?
-        {Path,QS} -> [Path, canonicalize_qs(lists:sort(QS))]
+        {Path,QS} -> [Path, canonicalize_qs(lists:reverse(QS))]
     end,
     Expires = wrq:get_qs_value("Expires", RD),
     case Expires of
@@ -128,14 +128,20 @@ canonicalize_qs([], Acc) ->
 canonicalize_qs([{K, []}|T], Acc) ->
     case lists:member(K, ?SUBRESOURCES) of
         true ->
-            canonicalize_qs(T, [K|Acc]);
+            Amp = if Acc == [] -> "";
+                     true      -> "&"
+                  end,
+            canonicalize_qs(T, [[K, Amp]|Acc]);
         false ->
             canonicalize_qs(T)
     end;
 canonicalize_qs([{K, V}|T], Acc) ->
     case lists:member(K, ?SUBRESOURCES) of
         true ->
-            canonicalize_qs(T, [[K, "=", V]|Acc]);
+            Amp = if Acc == [] -> "";
+                     true      -> "&"
+                  end,
+            canonicalize_qs(T, [[K, "=", V, Amp]|Acc]);
         false ->
             canonicalize_qs(T)
     end.
