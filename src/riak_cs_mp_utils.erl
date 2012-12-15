@@ -308,7 +308,7 @@ do_part_common2(complete, RiakcPid,
     catch error:{badmatch, {m_umwc, _}} ->
             {error, todo_try_again_later};
           throw:bad_etag ->
-            {error, todo_bad_etag}
+            {error, bad_etag}
     end;
 do_part_common2(upload_part, RiakcPid, M, _Obj, MpM, Props) ->
     {Bucket, Key, _UploadId, _Caller, PartNumber, Size} =

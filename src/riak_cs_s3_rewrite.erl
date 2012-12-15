@@ -142,12 +142,7 @@ format_object_qs(_SubResources, UploadId, PartNum) ->
 format_subresources([]) ->
     [];
 format_subresources([{Key, []} | _]) ->
-    ["/", Key];
-%% Example: http://testXX.s3.amazonaws.com/?uploadId=asdflkj
-%%          Key = "uploadId", Val = "asdflkj"
-format_subresources([{Key, Val} | _]) ->
-    ["/", Key, "/", Val].
-
+    ["/", Key].
 
 %% @doc Parse the valid subresources from the raw path.
 -spec get_subresources(string()) -> subresources().

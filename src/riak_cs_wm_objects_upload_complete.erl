@@ -4,7 +4,7 @@
 %%
 %% -------------------------------------------------------------------
 
--module(riak_cs_wm_objects_uploads).
+-module(riak_cs_wm_objects_upload_complete).
 
 -export([init/1,
          authorize/2,
@@ -21,6 +21,7 @@
 
 -include("riak_cs.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
+-include_lib("xmerl/include/xmerl.hrl").
 
 -spec init(#context{}) -> {ok, #context{}}.
 init(Ctx) ->
@@ -55,10 +56,6 @@ authorize(RD, Ctx0=#context{local_context=LocalCtx0, riakc_pid=RiakPid}) ->
 %% now perform ACL check to verify access permission.
 -spec check_permission(atom(), #wm_reqdata{}, #context{}, lfs_manifest() | notfound) ->
                               {boolean() | {halt, non_neg_integer()}, #wm_reqdata{}, #context{}}.
-check_permission('GET', RD, Ctx, notfound) ->
-    {{halt, 404}, riak_cs_access_logger:set_user(Ctx#context.user, RD), Ctx};
-check_permission('HEAD', RD, Ctx, notfound) ->
-    {{halt, 404}, riak_cs_access_logger:set_user(Ctx#context.user, RD), Ctx};
 check_permission(_, RD, Ctx=#context{requested_perm=RequestedAccess,local_context=LocalCtx}, Mfst) ->
     #key_context{bucket=Bucket} = LocalCtx,
     RiakPid = Ctx#context.riakc_pid,
@@ -98,7 +95,7 @@ check_permission(_, RD, Ctx=#context{requested_perm=RequestedAccess,local_contex
 %% @doc Get the list of methods this resource supports.
 -spec allowed_methods() -> [atom()].
 allowed_methods() ->
-    ['POST', 'DELETE'].
+    ['POST'].
 
 post_is_create(RD, Ctx) ->
     {false, RD, Ctx}.
@@ -106,33 +103,66 @@ post_is_create(RD, Ctx) ->
 %% TODO: Use the RiakcPid in our Ctx and thread it through initiate_mult....
 process_post(RD, Ctx=#context{local_context=LocalCtx}) ->
     #key_context{bucket=Bucket, key=Key} = LocalCtx,
-    ContentType = list_to_binary(wrq:get_req_header("Content-Type", RD)),
     User = riak_cs_mp_utils:user_rec_to_3tuple(Ctx#context.user),
-    %% TODO: pass in x-amz-acl?
-    %% TODO: pass in additional x-amz-meta-* headers?
-    %% TODO: pass in Content-​Disposition?
-    %% TODO: pass in Content-​Encoding?
-    %% TODO: pass in Expires?
-    %% TODO: pass in x-amz-server-side​-encryption?
-    %% TODO: pass in x-amz-storage-​class?
-    %% TODO: pass in x-amz-server-side​-encryption?
-    %% TODO: pass in x-amz-grant-* headers?
-    case riak_cs_mp_utils:initiate_multipart_upload(Bucket, Key,
-                                                    ContentType, User) of
-        {ok, UploadId} ->
-            XmlDoc = {'InitiateMultipartUploadResult',
-                       [{'xmlns', "http://s3.amazonaws.com/doc/2006-03-01/"}],
-                       [
-                        {'Bucket', [binary_to_list(Bucket)]},
-                        {'Key', [Key]},
-                        {'UploadId', [binary_to_list(base64url:encode(UploadId))]}
-                       ]
-                     },
-            Body = riak_cs_s3_response:export_xml([XmlDoc]),
-            RD2 = wrq:set_resp_body(Body, RD),
-            {true, RD2, Ctx};
-        {error, Reason} ->
-            riak_cs_s3_response:api_error(Reason, RD, Ctx)
+    UploadId64 = re:replace(wrq:path(RD), ".*/uploads/", "", [{return, binary}]),
+    Body = binary_to_list(wrq:req_body(RD)),
+    case {parse_body(Body), catch base64url:decode(UploadId64)} of
+        {bad, _} ->
+            {{halt,477}, RD, Ctx};
+        {PartETags, UploadId} ->
+            %% TODO: double-check this cut-and-paste'd TODO list.....
+            %% TODO: pass in x-amz-acl?
+            %% TODO: pass in additional x-amz-meta-* headers?
+            %% TODO: pass in Content-​Disposition?
+            %% TODO: pass in Content-​Encoding?
+            %% TODO: pass in Expires?
+            %% TODO: pass in x-amz-server-side​-encryption?
+            %% TODO: pass in x-amz-storage-​class?
+            %% TODO: pass in x-amz-server-side​-encryption?
+            %% TODO: pass in x-amz-grant-* headers?
+            case riak_cs_mp_utils:complete_multipart_upload(
+                   Bucket, list_to_binary(Key), UploadId, PartETags, User) of
+                ok ->
+                    XmlDoc = {'CompleteMultipartUploadResult',
+                              [{'xmlns', "http://s3.amazonaws.com/doc/2006-03-01/"}],
+                              [
+                               {'Location', [lists:append(["http://", binary_to_list(Bucket), ".s3.amazonaws.com/", Key])]},
+                               {'Bucket', [binary_to_list(Bucket)]},
+                               {'Key', [Key]},
+                               {'ETag', [binary_to_list(UploadId64)]}
+                              ]
+                             },
+                    XmlBody = riak_cs_s3_response:export_xml([XmlDoc]),
+                    RD2 = wrq:set_resp_body(XmlBody, RD),
+                    {true, RD2, Ctx};
+                {error, notfound} ->
+                    XmlDoc = {'Error',
+                              [
+                               {'Code', ["NoSuchUpload"]},
+                               {'Message', ["NoSuchUpload"]},
+                               {'RequestId', ["TODO"]},
+                               {'HostId', ["TODO"]}
+                              ]
+                             },
+                    XmlBody = riak_cs_s3_response:export_xml([XmlDoc]),
+                    RD2 = wrq:set_resp_body(XmlBody, RD),
+                    {{halt, 404}, RD2, Ctx};
+                {error, bad_etag} ->
+                    XmlDoc = {'Error',
+                              [
+                               {'Code', ["InvalidPart"]},
+                               {'Message', ["InvalidPart"]},
+                               {'RequestId', ["TODO"]},
+                               {'HostId', ["TODO"]}
+                              ]
+                             },
+                    XmlBody = riak_cs_s3_response:export_xml([XmlDoc]),
+                    RD2 = wrq:set_resp_body(XmlBody, RD),
+                    {{halt, 400}, RD2, Ctx};
+                {error, Reason} ->
+io:format("~p LINE ~p ~p\n", [?MODULE, ?LINE, Reason]),
+                    riak_cs_s3_response:api_error(Reason, RD, Ctx)
+            end
     end.
 
 multiple_choices(RD, Ctx) ->
@@ -239,3 +269,15 @@ content_types_accepted(RD, Ctx=#context{local_context=LocalCtx0}) ->
             end
     end.
 
+parse_body(Body) ->
+    try
+        {ParsedData, _Rest} = xmerl_scan:string(Body, []),
+        #xmlElement{name='CompleteMultipartUpload'} = ParsedData,
+        Nums = [list_to_integer(T#xmlText.value) ||
+                   T <- xmerl_xpath:string("//CompleteMultipartUpload/Part/PartNumber/text()", ParsedData)],
+        ETags = [list_to_binary(string:strip(T#xmlText.value, both, $")) ||
+                   T <- xmerl_xpath:string("//CompleteMultipartUpload/Part/ETag/text()", ParsedData)],
+        lists:zip(Nums, ETags)
+    catch _:_ ->
+            bad
+    end.
