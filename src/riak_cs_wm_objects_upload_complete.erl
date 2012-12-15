@@ -136,11 +136,15 @@ process_post(RD, Ctx=#context{local_context=LocalCtx}) ->
                     RD2 = wrq:set_resp_body(XmlBody, RD),
                     {true, RD2, Ctx};
                 {error, notfound} ->
-                    XErr = riak_cs_wm_utils:make_special_error("NoSuchUpload"),
+                    XErr = riak_cs_mp_utils:make_special_error("NoSuchUpload"),
                     RD2 = wrq:set_resp_body(XErr, RD),
                     {{halt, 404}, RD2, Ctx};
                 {error, bad_etag} ->
-                    XErr = riak_cs_wm_utils:make_special_error("InvalidPart"),
+                    XErr = riak_cs_mp_utils:make_special_error("InvalidPart"),
+                    RD2 = wrq:set_resp_body(XErr, RD),
+                    {{halt, 400}, RD2, Ctx};
+                {error, bad_etag_order} ->
+                    XErr = riak_cs_mp_utils:make_special_error("InvalidPartOrder"),
                     RD2 = wrq:set_resp_body(XErr, RD),
                     {{halt, 400}, RD2, Ctx};
                 {error, Reason} ->
