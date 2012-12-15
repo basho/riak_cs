@@ -57,7 +57,7 @@ base_resources() ->
      %% %% Object resources
      {["buckets", bucket, "objects", object], riak_cs_wm_common, props(riak_cs_wm_object)},
      {["buckets", bucket, "objects", object, "acl"], riak_cs_wm_common, props(riak_cs_wm_object_acl)},
-     {["buckets", bucket, "objects", object, "uploads", uploadId], riak_cs_wm_common, props(riak_cs_wm_objects_upload_complete)},
+     {["buckets", bucket, "objects", object, "uploads", uploadId], riak_cs_wm_common, props(riak_cs_wm_objects_uploads2)},
      {["buckets", bucket, "objects", object, "uploads"], riak_cs_wm_common, props(riak_cs_wm_objects_uploads)}
     ].
 

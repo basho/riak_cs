@@ -4,7 +4,7 @@
 %%
 %% -------------------------------------------------------------------
 
--module(riak_cs_wm_objects_upload_complete).
+-module(riak_cs_wm_objects_uploads2).
 
 -export([init/1,
          authorize/2,
@@ -17,6 +17,7 @@
          multiple_choices/2,
          valid_entity_length/2,
          delete_resource/2,
+         accept_body/2,
          finish_request/2]).
 
 -include("riak_cs.hrl").
@@ -96,7 +97,7 @@ check_permission(_, RD, Ctx=#context{requested_perm=RequestedAccess,local_contex
 %% @doc Get the list of methods this resource supports.
 -spec allowed_methods() -> [atom()].
 allowed_methods() ->
-    ['POST'].
+    ['POST', 'PUT'].
 
 post_is_create(RD, Ctx) ->
     {false, RD, Ctx}.
@@ -149,7 +150,7 @@ process_post(RD, Ctx=#context{local_context=LocalCtx}) ->
                     RD2 = wrq:set_resp_body(XErr, RD),
                     {{halt, 400}, RD2, Ctx};
                 {error, Reason} ->
-io:format("~p LINE ~p ~p\n", [?MODULE, ?LINE, Reason]),
+                    io:format("~p LINE ~p ~p\n", [?MODULE, ?LINE, Reason]),
                     riak_cs_s3_response:api_error(Reason, RD, Ctx)
             end
     end.
@@ -216,16 +217,20 @@ content_types_provided(RD, Ctx=#context{}) ->
     %% `response-content-type` header in the request.
     Method = wrq:method(RD),
     if Method == 'POST' ->
-            {[{?XML_TYPE, unused_callback}], RD, Ctx};
+            {[{?XML_TYPE, unused_callback1}], RD, Ctx};
+       Method == 'PUT' ->
+            {[{?XML_TYPE, doesnt_matter_see_content_types_accepted}], RD, Ctx};
        true ->
             %% TODO this shouldn't ever be called, it's just to
             %% appease webmachine
-            {[{"text/plain", unused_callback}], RD, Ctx}
+            {[{"text/plain", unused_callback2}], RD, Ctx}
     end.
 
 -spec content_types_accepted(#wm_reqdata{}, #context{}) -> {[{string(), atom()}], #wm_reqdata{}, #context{}}.
 content_types_accepted(RD, Ctx) ->
-    riak_cs_mp_utils:make_content_types_accepted(RD, Ctx).
+    %% For multipart upload part,
+    %% e.g., PUT /ObjectName?partNumber=PartNumber&uploadId=UploadId
+    riak_cs_mp_utils:make_content_types_accepted(RD, Ctx, accept_body).
 
 parse_body(Body) ->
     try
@@ -233,9 +238,90 @@ parse_body(Body) ->
         #xmlElement{name='CompleteMultipartUpload'} = ParsedData,
         Nums = [list_to_integer(T#xmlText.value) ||
                    T <- xmerl_xpath:string("//CompleteMultipartUpload/Part/PartNumber/text()", ParsedData)],
-        ETags = [list_to_binary(string:strip(T#xmlText.value, both, $")) ||
+        ETags = [base64url:decode(string:strip(T#xmlText.value, both, $")) ||
                    T <- xmerl_xpath:string("//CompleteMultipartUpload/Part/ETag/text()", ParsedData)],
         lists:zip(Nums, ETags)
     catch _:_ ->
             bad
+    end.
+
+-spec accept_body(#wm_reqdata{}, #context{}) -> {{halt, integer()}, #wm_reqdata{}, #context{}}.
+accept_body(RD, Ctx0=#context{local_context=LocalCtx0,
+                              riakc_pid=_RiakcPid}) ->
+    %% TODO: Content-MD5 header?
+    %% TODO: Expect header?
+    #key_context{bucket=Bucket,
+                 key=Key,
+                 size=Size,
+                 get_fsm_pid=GetFsmPid} = LocalCtx0,
+    catch riak_cs_get_fsm:stop(GetFsmPid),
+    BlockSize = riak_cs_lfs_utils:block_size(),
+    Caller = riak_cs_mp_utils:user_rec_to_3tuple(Ctx0#context.user),
+    %% TODO: handle badarg
+    UploadId = base64url:decode(re:replace(wrq:path(RD), ".*/uploads/",
+                                           "", [{return, binary}])),
+    %% TODO: handle badarg
+    PartNumber = list_to_integer(wrq:get_qs_value("partNumber", RD)),
+    case riak_cs_mp_utils:upload_part(Bucket, Key, UploadId, PartNumber,
+                                      Size, Caller) of
+        {upload_part_ready, PartUUID, PutPid} ->
+            LocalCtx = LocalCtx0#key_context{upload_id=UploadId,
+                                             part_number=PartNumber,
+                                             part_uuid=PartUUID},
+            Ctx = Ctx0#context{local_context=LocalCtx},
+            accept_streambody(RD, Ctx, PutPid,
+                              wrq:stream_req_body(RD, BlockSize));
+        {error, notfound} ->
+            XErr = riak_cs_mp_utils:make_special_error("NoSuchUpload"),
+            RD2 = wrq:set_resp_body(XErr, RD),
+            {{halt, 404}, RD2, Ctx0};
+        {error, Reason} ->
+            io:format("~p LINE ~p ~p\n", [?MODULE, ?LINE, Reason]),
+            riak_cs_s3_response:api_error(Reason, RD, Ctx0)
+    end.
+
+-spec accept_streambody(#wm_reqdata{}, #context{}, pid(), term()) -> {{halt, integer()}, #wm_reqdata{}, #context{}}.
+accept_streambody(RD,
+                  Ctx=#context{local_context=_LocalCtx=#key_context{size=0}},
+                  Pid,
+                  {_Data, _Next}) ->
+    finalize_request(RD, Ctx, Pid);
+accept_streambody(RD,
+                  Ctx=#context{local_context=LocalCtx,
+                                       user=User},
+                  Pid,
+                  {Data, Next}) ->
+    #key_context{bucket=Bucket,
+                 key=Key} = LocalCtx,
+    BFile_str = [Bucket, $,, Key],
+    UserName = riak_cs_wm_utils:extract_name(User),
+    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"accept_streambody">>, [size(Data)], [UserName, BFile_str]),
+    riak_cs_put_fsm:augment_data(Pid, Data),
+    if is_function(Next) ->
+            accept_streambody(RD, Ctx, Pid, Next());
+       Next =:= done ->
+            finalize_request(RD, Ctx, Pid)
+    end.
+
+finalize_request(RD, Ctx=#context{local_context=LocalCtx}, PutPid) ->
+    %% TODO: Is it possible to have a process leak if we crash before
+    %%       reaching this place?
+    %% TODO: If yes, is there a similar leak in
+    %%       riak_cs_wm_object:accept_streambody()?
+    %% TODO: robustify against pattern matching failures?
+    {ok, _} = riak_cs_put_fsm:finalize(PutPid),
+    #key_context{bucket=Bucket,
+                 key=Key,
+                 upload_id=UploadId,
+                 part_number=PartNumber,
+                 part_uuid=PartUUID} = LocalCtx,
+    Caller = riak_cs_mp_utils:user_rec_to_3tuple(Ctx#context.user),
+    case riak_cs_mp_utils:upload_part_finished(Bucket, Key, UploadId, PartNumber,
+                                               PartUUID, Caller) of
+        ok ->
+            RD2 = wrq:set_resp_header("ETag", binary_to_list(base64url:encode(PartUUID)), RD),
+            {{halt, 200}, RD2, Ctx};
+        Else ->
+            io:format("~p LINE ~p err ~p\n", [?MODULE, ?LINE, Else]),
+            {{halt, 555}, RD, Ctx}
     end.

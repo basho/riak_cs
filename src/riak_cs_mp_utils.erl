@@ -26,11 +26,13 @@
          initiate_multipart_upload/4,
          list_multipart_uploads/2,
          make_content_types_accepted/2,
+         make_content_types_accepted/3,
          make_special_error/1,
          make_special_error/4,
          new_manifest/4,
          upload_part/6,
          upload_part_1blob/2,
+         upload_part_finished/6,
          user_rec_to_3tuple/1,
          write_new_manifest/1
         ]).
@@ -97,18 +99,22 @@ clean_multipart_unused_parts(?MANIFEST{bkey=BKey, props=Props} = Manifest) ->
 complete_multipart_upload(Bucket, Key, UploadId, PartETags, Caller) ->
     %% TODO: ACL check of Bucket
     Extra = {PartETags},
+    io:format("~p LINE ~p ~p\n", [?MODULE, ?LINE, PartETags]),
     do_part_common(complete, Bucket, Key, UploadId, Caller, [{complete, Extra}]).
 
 %% riak_cs_mp_utils:write_new_manifest(riak_cs_mp_utils:new_manifest(<<"test">>, <<"mp0">>, <<"text/plain">>, {"foobar", "18983ba0e16e18a2b103ca16b84fad93d12a2fbed1c88048931fb91b0b844ad3", "J2IP6WGUQ_FNGIAN9AFI"})).
 initiate_multipart_upload(Bucket, Key, ContentType, {_,_,_} = Owner) ->
     write_new_manifest(new_manifest(Bucket, Key, ContentType, Owner)).
 
-make_content_types_accepted(RD, Ctx=#context{local_context=LocalCtx0}) ->
+make_content_types_accepted(RD, Ctx) ->
+    make_content_types_accepted(RD, Ctx, unused_callback).
+
+make_content_types_accepted(RD, Ctx=#context{local_context=LocalCtx0}, Callback) ->
     case wrq:get_req_header("Content-Type", RD) of
         undefined ->
             DefaultCType = "application/octet-stream",
             LocalCtx = LocalCtx0#key_context{putctype=DefaultCType},
-            {[{DefaultCType, unused_callback}],
+            {[{DefaultCType, Callback}],
              RD,
              Ctx#context{local_context=LocalCtx}};
         %% This was shamelessly ripped out of
@@ -119,7 +125,7 @@ make_content_types_accepted(RD, Ctx=#context{local_context=LocalCtx0}) ->
                 [_Type, _Subtype] ->
                     %% accept whatever the user says
                     LocalCtx = LocalCtx0#key_context{putctype=Media},
-                    {[{Media, unused_callback}], RD, Ctx#context{local_context=LocalCtx}};
+                    {[{Media, Callback}], RD, Ctx#context{local_context=LocalCtx}};
                 _ ->
                     %% TODO:
                     %% Maybe we should have caught
@@ -343,7 +349,6 @@ do_part_common2(complete, RiakcPid,
                         ok;
                     _ ->
                         io:format("PartsToDelete ~p\n", [PartsToDelete]),
-                        exit(bummer),
                         %% Create fake S3 object manifests for this part,
                         %% then pass them to the GC monster for immediate
                         %% deletion.
@@ -401,7 +406,7 @@ do_part_common2(upload_part_finished, RiakcPid, M, _Obj, MpM, Props) ->
                             ordsets:to_list(Parts)),
               ordsets:is_element(PartUUID, DoneParts)} of
             {false, _} ->
-                {error, todo_bad_partid1};
+                {error, {todo_bad_partid1, PartUUID, DoneParts}};
             {_, true} ->
                 {error, todo_bad_partid2};
             {PM, false} when is_record(PM, ?PART_MANIFEST_RECNAME) ->

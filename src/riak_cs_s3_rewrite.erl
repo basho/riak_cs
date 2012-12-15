@@ -211,7 +211,7 @@ rewrite_path_test() ->
     equal_paths("/buckets/testbucket/objects/testobject/uploads/2?partNumber=1", rewrite_with(headers([{"host", "testbucket." ++ ?ROOT_HOST}]), "/testobject?partNumber=1&uploadId=2")).
 
 rewrite_header_test() ->
-    Path = "/testbucket?a=b",
+    Path = "/testbucket?y=z&a=b&m=n",
     {Headers, _} = rewrite_with(headers([]), Path),
     ?assertEqual(Path, mochiweb_headers:get_value(?RCS_REWRITE_HEADER, Headers)).
 

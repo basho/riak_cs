@@ -130,7 +130,8 @@ forbidden(RD, Ctx=#context{auth_module=AuthMod,
     AuthResult = case riak_cs_utils:get_user(UserKey, RiakPid) of
                      {ok, {User, UserObj}} when User?RCS_USER.status =:= enabled ->
                          authenticate(User, UserObj, RD, Ctx, AuthData);
-                     {ok, _} -> %% disabled account, we are going to 403
+                     %% {ok, _} -> %% disabled account, we are going to 403
+                     {ok, {User, _UserObj}} when User?RCS_USER.status =/= enabled ->
                          {error, bad_auth};
                      {error, NE} when NE =:= not_found;
                                       NE =:= notfound;
@@ -339,6 +340,7 @@ authenticate(User, UserObj, RD, Ctx=#context{auth_module=AuthMod, submodule=Mod}
             riak_cs_dtrace:dt_wm_return({?MODULE, Mod}, <<"authenticate">>, [1], [atom_to_binary(AuthMod, latin1)]),
             {ok, User, UserObj};
         {error, _Reason} ->
+io:format("~p LINE ~p Reason ~p\n", [?MODULE, ?LINE, _Reason]),
             riak_cs_dtrace:dt_wm_return({?MODULE, Mod}, <<"authenticate">>, [0], [atom_to_binary(AuthMod, latin1)]),
             {error, bad_auth}
     end.
