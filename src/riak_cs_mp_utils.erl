@@ -469,7 +469,7 @@ comb_parts(MpM, PartETags) ->
 comb_parts_fold({PartNum, _ETag} = _K,
                 {_All, _Keep, _Delete, LastPartNum, _Bytes, _KeepPMs})
   when PartNum =< LastPartNum orelse PartNum < 1 ->
-    throw(bad_etag);
+    throw(bad_etag_order);
 comb_parts_fold({PartNum, _ETag} = K,
                 {All, Keep, Delete, _LastPartNum, Bytes, KeepPMs}) ->
     case {dict:find(K, All), dict:is_key(K, Keep)} of
