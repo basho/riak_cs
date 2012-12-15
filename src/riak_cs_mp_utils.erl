@@ -25,6 +25,8 @@
          complete_multipart_upload/5,
          initiate_multipart_upload/4,
          list_multipart_uploads/2,
+         make_special_error/1,
+         make_special_error/4,
          new_manifest/4,
          upload_part/6,
          upload_part_1blob/2,
@@ -99,6 +101,20 @@ complete_multipart_upload(Bucket, Key, UploadId, PartETags, Caller) ->
 %% riak_cs_mp_utils:write_new_manifest(riak_cs_mp_utils:new_manifest(<<"test">>, <<"mp0">>, <<"text/plain">>, {"foobar", "18983ba0e16e18a2b103ca16b84fad93d12a2fbed1c88048931fb91b0b844ad3", "J2IP6WGUQ_FNGIAN9AFI"})).
 initiate_multipart_upload(Bucket, Key, ContentType, {_,_,_} = Owner) ->
     write_new_manifest(new_manifest(Bucket, Key, ContentType, Owner)).
+
+make_special_error(Error) ->
+    make_special_error(Error, Error, "request-id", "host-id").
+
+make_special_error(Code, Message, RequestId, HostId) ->
+    XmlDoc = {'Error',
+              [
+               {'Code', [Code]},
+               {'Message', [Message]},
+               {'RequestId', [RequestId]},
+               {'HostId', [HostId]}
+              ]
+             },
+    riak_cs_s3_response:export_xml([XmlDoc]).
 
 list_multipart_uploads(Bucket, {_Display, _Canon, CallerKeyId} = Caller) ->
     %% TODO: ACL check of Bucket
