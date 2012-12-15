@@ -29,6 +29,11 @@ init(Ctx) ->
 malformed_request(RD,Ctx=#context{local_context=LocalCtx0}) ->
     Bucket = list_to_binary(wrq:path_info(bucket, RD)),
     LocalCtx = LocalCtx0#key_context{bucket=Bucket},
+    %% TODO: delimiter
+    %% TODO: max-uploads
+    %% TODO: key-marker
+    %% TODO: prefix
+    %% TODO: upload-id-marker
     {false, RD, Ctx#context{local_context=LocalCtx}}.
 
 -spec authorize(#wm_reqdata{}, #context{}) -> 
