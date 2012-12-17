@@ -503,6 +503,12 @@ find_manifest_with_uploadid(UploadId, Manifests) ->
 
 comb_parts(MpM, PartETags) ->
     Done = orddict:from_list(ordsets:to_list(MpM?MULTIPART_MANIFEST.done_parts)),
+    %% TODO: Strictly speaking, this implementation could have
+    %%       problems with MD5 hash collisions.  I'd *really* wanted
+    %%       to avoid using MD5 hash used as the part ETags (see the
+    %%       "Once upon a time" comment for upload_part_finished()
+    %%       above).  According to AWS S3 docs, we're supposed to take
+    %%       the newest part that has this {PartNum, ETag} pair.
     Parts0 = ordsets:to_list(MpM?MULTIPART_MANIFEST.parts),
     FindOrSet = fun(Key, Dict) -> case orddict:find(Key, Dict) of
                                       {ok, Value} -> Value;
