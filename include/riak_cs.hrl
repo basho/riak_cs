@@ -271,7 +271,7 @@
     parts = ordsets:new() :: ordsets:ordset(),
     %% List of UUIDs for parts that are done uploading.
     %% The part number is redundant, so we only store
-    %% PartETag::binary() here.
+    %% {UUID::binary(), PartETag::binary()} here.
     done_parts = ordsets:new() :: ordsets:ordset(),
     %% type = #part_manifest_vX
     cleanup_parts = ordsets:new() :: ordsets:ordset(),
@@ -292,13 +292,6 @@
     %% of the same part_number
     start_time :: term(),
 
-    %% %% still some questions here
-    %% %% need to account for aborts?
-    %% state :: writing | active | pending_delete | marked_delete,
-
-    %% %% the parent upload identifier
-    %% upload_id :: binary(),
-
     %% one-of 1-10000, inclusive
     part_number :: integer(),
 
@@ -306,11 +299,10 @@
     %% uploads of the same {upload_id, part_number}.
     part_id :: binary(),
 
-    %% last_block_written_time :: integer(),
-    %% write_blocks_remaining :: orddsets:ordset(),
-
     %% each individual part upload always has a content-length
+    %% content_md5 is used for the part ETag, alas.
     content_length :: integer(),
+    content_md5 :: 'undefined' | binary(),
 
     %% block size just like in `lfs_manifest_v2'. Concievably,
     %% parts for the same upload id could have different block_sizes.
