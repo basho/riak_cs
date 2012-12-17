@@ -15,6 +15,7 @@
 %% API
 -export([start_link/0,
          lookup/1,
+         maybe_write/2,
          write/2]).
 
 %% gen_server callbacks
@@ -48,6 +49,54 @@ lookup(Key) ->
             lager:warning("List objects cache lookup failed. Reason: ~p", [Reason]),
             false
     end.
+
+-spec maybe_write(binary(), term()) -> ok.
+maybe_write(Key, Value) ->
+    handle_should_write(should_write(Value), Key, Value).
+
+handle_should_write(true, Key, Value) ->
+    write(Key, Value);
+handle_should_write(false, _Key, _Value) ->
+    ok.
+
+-spec should_write(list()) -> boolean().
+should_write(ListOfKeys) ->
+    NumKeys = lists:flatlength(ListOfKeys),
+    enough_keys_to_cache(NumKeys) andalso space_in_cache(NumKeys).
+
+-spec enough_keys_to_cache(list()) -> boolean().
+enough_keys_to_cache(NumKeys) when NumKeys < ?MIN_KEYS_TO_CACHE ->
+    false;
+enough_keys_to_cache(_NumKeys) ->
+    true.
+
+%% @doc Based on current ETS usage and some estimate, decide whether
+%% or not we can fit these keys in the cache
+%%
+%% Current estimate is ~ 64 bytes per key.
+-spec space_in_cache(non_neg_integer()) -> boolean().
+space_in_cache(NumKeys) ->
+    space_in_cache(?LIST_OBJECTS_CACHE, NumKeys).
+
+space_in_cache(TableID, NumKeys) ->
+    WordsUsed = ets:info(TableID, memory),
+    BytesUsed = words_to_bytes(WordsUsed),
+    space_available(BytesUsed, NumKeys).
+
+words_to_bytes(Words) ->
+    Words * ?WORD_SIZE.
+
+space_available(BytesUsed, NumKeys) ->
+    space_available(BytesUsed, num_keys_to_bytes(NumKeys), ?MAX_CACHE_BYTES).
+
+space_available(BytesUsed, ProspectiveAdd, MaxCacheSize)
+        when (BytesUsed + ProspectiveAdd) < MaxCacheSize ->
+    true;
+space_available(_BytesUsed, _ProspectiveAdd, _MaxCacheSize) ->
+    false.
+
+num_keys_to_bytes(NumKeys) ->
+    NumKeys * 64.
 
 -spec write(binary(), term()) -> ok.
 write(Key, Value) ->
