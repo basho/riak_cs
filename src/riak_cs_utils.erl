@@ -35,6 +35,7 @@
          get_user/2,
          get_user_by_index/3,
          get_user_index/3,
+         hexlist_to_binary/1,
          json_pp_print/1,
          list_keys/2,
          pow/2,
@@ -99,6 +100,13 @@ binary_to_hexlist(Bin) ->
               end
           end || X <- binary_to_list(Bin)],
     string:to_lower(lists:flatten(XBin)).
+
+%% @doc Convert the passed binary into a string where the numbers are represented in hexadecimal (lowercase and 0 prefilled).
+-spec hexlist_to_binary(string()) -> binary().
+hexlist_to_binary(String) ->
+    Bytes = length(String) div 2,
+    Int = httpd_util:hexlist_to_integer(String),
+    <<Int:(Bytes*8)/integer>>.
 
 %% @doc Release a protobufs connection from the specified
 %% connection pool.

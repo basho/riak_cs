@@ -32,7 +32,7 @@
          new_manifest/4,
          upload_part/6,
          upload_part_1blob/2,
-         upload_part_finished/6,
+         upload_part_finished/7,
          user_rec_to_3tuple/1,
          write_new_manifest/1
         ]).
@@ -99,7 +99,6 @@ clean_multipart_unused_parts(?MANIFEST{bkey=BKey, props=Props} = Manifest) ->
 complete_multipart_upload(Bucket, Key, UploadId, PartETags, Caller) ->
     %% TODO: ACL check of Bucket
     Extra = {PartETags},
-    io:format("~p LINE ~p ~p\n", [?MODULE, ?LINE, PartETags]),
     do_part_common(complete, Bucket, Key, UploadId, Caller, [{complete, Extra}]).
 
 %% riak_cs_mp_utils:write_new_manifest(riak_cs_mp_utils:new_manifest(<<"test">>, <<"mp0">>, <<"text/plain">>, {"foobar", "18983ba0e16e18a2b103ca16b84fad93d12a2fbed1c88048931fb91b0b844ad3", "J2IP6WGUQ_FNGIAN9AFI"})).
@@ -218,13 +217,22 @@ upload_part(Bucket, Key, UploadId, PartNumber, Size, Caller) ->
 
 upload_part_1blob(PutPid, Blob) ->
     ok = riak_cs_put_fsm:augment_data(PutPid, Blob),
-    {ok, _} = riak_cs_put_fsm:finalize(PutPid),
-    ok.
+    {ok, M} = riak_cs_put_fsm:finalize(PutPid),
+    {ok, M?MANIFEST.content_md5}.
 
-upload_part_finished(Bucket, Key, UploadId, _PartNumber, PartUUID, Caller) ->
-    Extra = {PartUUID},
-    do_part_common(upload_part_finished, Bucket, Key, UploadId, Caller,
-                   [{upload_part_finished, Extra}]).
+%% Once upon a time, in a naive land far away, I thought that it would
+%% be sufficient to use each part's UUID as the ETag when the part
+%% upload was finished, and thus the clietn would use that UUID to
+%% complete the uploaded object.  However, 's3cmd' want to use the
+%% ETag of each uploaded part to be the MD5(part content) and will
+%% issue a warning if that checksum expectation isn't met.  So, now we
+%% must thread the MD5 value through upload_part_finished and update
+%% the ?MULTIPART_MANIFEST in a mergeable way.  {sigh}
+
+upload_part_finished(Bucket, Key, UploadId, _PartNumber, PartUUID,
+    MD5, Caller) -> Extra = {PartUUID, MD5},
+    do_part_common(upload_part_finished, Bucket, Key, UploadId,
+    Caller, [{upload_part_finished, Extra}]).
 
 user_rec_to_3tuple(U) ->
     %% acl_owner3: {display name, canonical id, key id}
@@ -348,7 +356,6 @@ do_part_common2(complete, RiakcPid,
                     [] ->
                         ok;
                     _ ->
-                        io:format("PartsToDelete ~p\n", [PartsToDelete]),
                         %% Create fake S3 object manifests for this part,
                         %% then pass them to the GC monster for immediate
                         %% deletion.
@@ -364,7 +371,9 @@ do_part_common2(complete, RiakcPid,
     catch error:{badmatch, {m_umwc, _}} ->
             {error, todo_try_again_later};
           throw:bad_etag ->
-            {error, bad_etag}
+            {error, bad_etag};
+          throw:bad_etag_order ->
+            {error, bad_etag_order}
     end;
 do_part_common2(upload_part, RiakcPid, M, _Obj, MpM, Props) ->
     {Bucket, Key, _UploadId, _Caller, PartNumber, Size} =
@@ -399,20 +408,22 @@ do_part_common2(upload_part, RiakcPid, M, _Obj, MpM, Props) ->
             {error, todo_try_again_later}
     end;
 do_part_common2(upload_part_finished, RiakcPid, M, _Obj, MpM, Props) ->
-    {PartUUID} = proplists:get_value(upload_part_finished, Props),
+    {PartUUID, MD5} = proplists:get_value(upload_part_finished, Props),
     try
         ?MULTIPART_MANIFEST{parts = Parts, done_parts = DoneParts} = MpM,
+        DoneUUIDs = ordsets:from_list([UUID || {UUID, _ETag} <- DoneParts]),
         case {lists:keyfind(PartUUID, ?PART_MANIFEST.part_id,
                             ordsets:to_list(Parts)),
-              ordsets:is_element(PartUUID, DoneParts)} of
+              ordsets:is_element(PartUUID, DoneUUIDs)} of
             {false, _} ->
-                {error, {todo_bad_partid1, PartUUID, DoneParts}};
+                %% {error, {todo_bad_partid1, PartUUID, DoneParts}};
+                {error, todo_bad_partid1};
             {_, true} ->
                 {error, todo_bad_partid2};
             {PM, false} when is_record(PM, ?PART_MANIFEST_RECNAME) ->
                 ?MANIFEST{props = MProps} = M,
                 NewMpM = MpM?MULTIPART_MANIFEST{
-                               done_parts = ordsets:add_element(PartUUID,
+                               done_parts = ordsets:add_element({PartUUID, MD5},
                                                                 DoneParts)},
                 NewM = M?MANIFEST{
                            props = [{multipart, NewMpM}|proplists:delete(multipart, MProps)]},
@@ -491,9 +502,18 @@ find_manifest_with_uploadid(UploadId, Manifests) ->
     end.
 
 comb_parts(MpM, PartETags) ->
+    Done = orddict:from_list(ordsets:to_list(MpM?MULTIPART_MANIFEST.done_parts)),
+    Parts0 = ordsets:to_list(MpM?MULTIPART_MANIFEST.parts),
+    FindOrSet = fun(Key, Dict) -> case orddict:find(Key, Dict) of
+                                      {ok, Value} -> Value;
+                                      error       -> <<>>
+                                  end
+                end,
+    Parts = [P?PART_MANIFEST{content_md5 = FindOrSet(P?PART_MANIFEST.part_id, Done)} ||
+                P <- Parts0],
     All = dict:from_list(
-            [{{PM?PART_MANIFEST.part_number, PM?PART_MANIFEST.part_id}, PM} ||
-                PM <- ordsets:to_list(MpM?MULTIPART_MANIFEST.parts)]),
+            [{{PM?PART_MANIFEST.part_number, PM?PART_MANIFEST.content_md5}, PM} ||
+                PM <- Parts]),
     Keep0 = dict:new(),
     Delete0 = dict:new(),
     {_, Keep, _Delete, _, KeepBytes, KeepPMs} =
@@ -516,7 +536,7 @@ comb_parts_fold({PartNum, _ETag} = K,
         {{ok, PM}, false} ->
             {All, dict:store(K, true, Keep), Delete, PartNum,
              Bytes + PM?PART_MANIFEST.content_length, [PM|KeepPMs]};
-        _ ->
+        _X ->
             throw(bad_etag)
     end.
 
@@ -586,10 +606,9 @@ test_1() ->
     ID1 = test_initiate(test_user1()),
     Bytes = 50,
     {ok, PartID1} = test_upload_part(ID1, 1, <<42:(8*Bytes)>>, test_user1()),
-    {ok, _PartID4} = test_upload_part(ID1, 4, <<43:(8*Bytes)>>, test_user1()),
+    {ok, PartID4} = test_upload_part(ID1, 4, <<43:(8*Bytes)>>, test_user1()),
     {ok, PartID9} = test_upload_part(ID1, 9, <<44:(8*Bytes)>>, test_user1()),
-    test_complete(ID1, [{1, PartID1}, {9, PartID9}], test_user1()).
-    %% test_complete(ID1, [{1, PartID1}, {4, PartID4}, {9, PartID9}], test_user1()).
+    test_complete(ID1, [{1, PartID1}, {4, PartID4}, {9, PartID9}], test_user1()).
 
 test_initiate(User) ->
     {ok, ID} = initiate_multipart_upload(
@@ -609,29 +628,29 @@ test_upload_part(UploadId, PartNumber, Blob, User) ->
     Size = byte_size(Blob),
     {upload_part_ready, PartUUID, PutPid} =
         upload_part(test_bucket1(), test_key1(), UploadId, PartNumber, Size, User),
-    ok = upload_part_1blob(PutPid, Blob),
+    {ok, MD5} = upload_part_1blob(PutPid, Blob),
     {error, notfound} =
         upload_part_finished(<<"no-such-bucket">>, test_key1(), UploadId,
-                             PartNumber, PartUUID, User),
+                             PartNumber, PartUUID, MD5, User),
     {error, notfound} =
         upload_part_finished(test_bucket1(), <<"no-such-key">>, UploadId,
-                             PartNumber, PartUUID, User),
+                             PartNumber, PartUUID, MD5, User),
     {U1, U2, U3} = User,
     NoSuchUser = {U1 ++ "foo", U2 ++ "foo", U3 ++ "foo"},
     {error, todo_bad_caller} =
         upload_part_finished(test_bucket1(), test_key1(), UploadId,
-                             PartNumber, PartUUID, NoSuchUser),
+                             PartNumber, PartUUID, MD5, NoSuchUser),
     {error, notfound} =
         upload_part_finished(test_bucket1(), test_key1(), <<"no-such-upload-id">>,
-                             PartNumber, PartUUID, User),
+                             PartNumber, PartUUID, MD5, User),
     {error, todo_bad_partid1} =
          upload_part_finished(test_bucket1(), test_key1(), UploadId,
-                              PartNumber, <<"no-such-part-id">>, User),
+                              PartNumber, <<"no-such-part-id">>, MD5, User),
     ok = upload_part_finished(test_bucket1(), test_key1(), UploadId,
-                              PartNumber, PartUUID, User),
+                              PartNumber, PartUUID, MD5, User),
     {error, todo_bad_partid2} =
          upload_part_finished(test_bucket1(), test_key1(), UploadId,
-                              PartNumber, PartUUID, User),
+                              PartNumber, PartUUID, MD5, User),
     {ok, PartUUID}.
 
 test_comb_parts() ->
