@@ -326,3 +326,6 @@
 -define(DEFAULT_CLUSTER_ID_TIMEOUT,5000).
 -define(DEFAULT_AUTH_MODULE, riak_cs_s3_auth).
 -define(DEFAULT_LIST_OBJECTS_MAX_KEYS, 1000).
+
+%% General system info
+-define(WORD_SIZE, erlang:system_info(wordsize)).
