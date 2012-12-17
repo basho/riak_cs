@@ -252,7 +252,7 @@ maybe_fetch_key_list(RiakcPid, Request, State=#state{use_cache=false}) ->
 maybe_write_to_cache(#state{use_cache=false}, _ListofListofKeys) ->
     ok;
 maybe_write_to_cache(#state{cache_key=CacheKey}, ListofListofKeys) ->
-    riak_cs_list_objects_ets_cache:write(CacheKey, ListofListofKeys).
+    riak_cs_list_objects_ets_cache:maybe_write(CacheKey, ListofListofKeys).
 
 %% @doc Either proceed using the cached key list or make the request
 %% to start a key listing.
