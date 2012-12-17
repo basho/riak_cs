@@ -233,12 +233,13 @@ content_types_accepted(RD, Ctx) ->
     riak_cs_mp_utils:make_content_types_accepted(RD, Ctx, accept_body).
 
 parse_body(Body) ->
+    io:format("Body ~P\n", [Body, 1024]),
     try
         {ParsedData, _Rest} = xmerl_scan:string(Body, []),
         #xmlElement{name='CompleteMultipartUpload'} = ParsedData,
         Nums = [list_to_integer(T#xmlText.value) ||
                    T <- xmerl_xpath:string("//CompleteMultipartUpload/Part/PartNumber/text()", ParsedData)],
-        ETags = [base64url:decode(string:strip(T#xmlText.value, both, $")) ||
+        ETags = [riak_cs_utils:hexlist_to_binary(string:strip(T#xmlText.value, both, $")) ||
                    T <- xmerl_xpath:string("//CompleteMultipartUpload/Part/ETag/text()", ParsedData)],
         lists:zip(Nums, ETags)
     catch _:_ ->
@@ -309,17 +310,18 @@ finalize_request(RD, Ctx=#context{local_context=LocalCtx}, PutPid) ->
     %% TODO: If yes, is there a similar leak in
     %%       riak_cs_wm_object:accept_streambody()?
     %% TODO: robustify against pattern matching failures?
-    {ok, _} = riak_cs_put_fsm:finalize(PutPid),
+    {ok, M} = riak_cs_put_fsm:finalize(PutPid),
     #key_context{bucket=Bucket,
                  key=Key,
                  upload_id=UploadId,
                  part_number=PartNumber,
                  part_uuid=PartUUID} = LocalCtx,
     Caller = riak_cs_mp_utils:user_rec_to_3tuple(Ctx#context.user),
-    case riak_cs_mp_utils:upload_part_finished(Bucket, Key, UploadId, PartNumber,
-                                               PartUUID, Caller) of
+    case riak_cs_mp_utils:upload_part_finished(
+           Bucket, Key, UploadId, PartNumber, PartUUID,
+           M?MANIFEST.content_md5, Caller) of
         ok ->
-            RD2 = wrq:set_resp_header("ETag", binary_to_list(base64url:encode(PartUUID)), RD),
+            RD2 = wrq:set_resp_header("ETag", riak_cs_utils:binary_to_hexlist(M?MANIFEST.content_md5), RD),
             {{halt, 200}, RD2, Ctx};
         Else ->
             io:format("~p LINE ~p err ~p\n", [?MODULE, ?LINE, Else]),
