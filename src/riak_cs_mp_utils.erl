@@ -61,7 +61,6 @@ calc_multipart_2i_dict(Ms, Bucket, _Key) when is_list(Ms) ->
     {?MD_INDEX, lists:usort(lists:append(L_2i))}.
 
 abort_multipart_upload(Bucket, Key, UploadId, Caller) ->
-    %% TODO: ACL check of Bucket
     do_part_common(abort, Bucket, Key, UploadId, Caller, []).
 
 clean_multipart_unused_parts(?MANIFEST{bkey=BKey, props=Props} = Manifest) ->
@@ -97,7 +96,6 @@ clean_multipart_unused_parts(?MANIFEST{bkey=BKey, props=Props} = Manifest) ->
     end.
 
 complete_multipart_upload(Bucket, Key, UploadId, PartETags, Caller) ->
-    %% TODO: ACL check of Bucket
     Extra = {PartETags},
     do_part_common(complete, Bucket, Key, UploadId, Caller, [{complete, Extra}]).
 
@@ -126,9 +124,6 @@ make_content_types_accepted(RD, Ctx=#context{local_context=LocalCtx0}, Callback)
                     LocalCtx = LocalCtx0#key_context{putctype=Media},
                     {[{Media, Callback}], RD, Ctx#context{local_context=LocalCtx}};
                 _ ->
-                    %% TODO:
-                    %% Maybe we should have caught
-                    %% this in malformed_request?
                     {[],
                      wrq:set_resp_header(
                        "Content-Type",
@@ -157,7 +152,6 @@ make_special_error(Code, Message, RequestId, HostId) ->
     riak_cs_s3_response:export_xml([XmlDoc]).
 
 list_multipart_uploads(Bucket, {_Display, _Canon, CallerKeyId} = Caller) ->
-    %% TODO: ACL check of Bucket
     case riak_cs_utils:riak_connection() of
         {ok, RiakcPid} ->
             try
@@ -183,7 +177,7 @@ list_multipart_uploads(Bucket, {_Display, _Canon, CallerKeyId} = Caller) ->
                         Else2
                 end
             catch error:{badmatch, {m_icbo, _}} ->
-                    {error, todo_bad_caller}
+                    {error, access_denied}
             after
                 riak_cs_utils:close_riak_connection(RiakcPid)
             end;
@@ -288,7 +282,7 @@ do_part_common(Op, Bucket, Key, UploadId, {_,_,CallerKeyId} = _Caller, Props) ->
                                         do_part_common2(Op, RiakcPid, M,
                                                         Obj, MpM, Props);
                                     false ->
-                                        {error, todo_bad_caller}
+                                        {error, access_denied}
                                 end;
                             _ ->
                                 {error, notfound}
@@ -297,7 +291,7 @@ do_part_common(Op, Bucket, Key, UploadId, {_,_,CallerKeyId} = _Caller, Props) ->
                         Else2
                 end
             catch error:{badmatch, {m_icbo, _}} ->
-                    {error, todo_bad_caller};
+                    {error, access_denied};
                   error:{badmatch, {m_umwc, _}} ->
                     {error, todo_try_again_later}
             after
@@ -585,14 +579,14 @@ test_0() ->
     3 = length(X1),
     {ok, X2} = test_list_uploadids(test_user2()),
     1 = length(X2),
-    {error, todo_bad_caller} = test_list_uploadids(test_userNONE()),
+    {error, access_denied} = test_list_uploadids(test_userNONE()),
 
-    {error, todo_bad_caller} = test_abort(ID1, test_user2()),
+    {error, access_denied} = test_abort(ID1, test_user2()),
     {error,notfound} = test_abort(<<"no such upload_id">>, test_user2()),
     ok = test_abort(ID1, test_user1()),
     {error, notfound} = test_abort(ID1, test_user1()),
 
-    {error, todo_bad_caller} = test_complete(ID2, [], test_user1()),
+    {error, access_denied} = test_complete(ID2, [], test_user1()),
     {error,notfound} = test_complete(<<"no such upload_id">>, [], test_user2()),
     ok = test_complete(ID2, [], test_user2()),
     {error, notfound} = test_complete(ID2, [], test_user2()),
@@ -611,10 +605,10 @@ test_1() ->
 
     ID1 = test_initiate(test_user1()),
     Bytes = 50,
-    {ok, PartID1} = test_upload_part(ID1, 1, <<42:(8*Bytes)>>, test_user1()),
-    {ok, PartID4} = test_upload_part(ID1, 4, <<43:(8*Bytes)>>, test_user1()),
-    {ok, PartID9} = test_upload_part(ID1, 9, <<44:(8*Bytes)>>, test_user1()),
-    test_complete(ID1, [{1, PartID1}, {4, PartID4}, {9, PartID9}], test_user1()).
+    {ok, _PartID1, MD51} = test_upload_part(ID1, 1, <<42:(8*Bytes)>>, test_user1()),
+    {ok, _PartID4, MD54} = test_upload_part(ID1, 4, <<43:(8*Bytes)>>, test_user1()),
+    {ok, _PartID9, MD59} = test_upload_part(ID1, 9, <<44:(8*Bytes)>>, test_user1()),
+    ok = test_complete(ID1, [{1, MD51}, {4, MD54}, {9, MD59}], test_user1()).
 
 test_initiate(User) ->
     {ok, ID} = initiate_multipart_upload(
@@ -643,7 +637,7 @@ test_upload_part(UploadId, PartNumber, Blob, User) ->
                              PartNumber, PartUUID, MD5, User),
     {U1, U2, U3} = User,
     NoSuchUser = {U1 ++ "foo", U2 ++ "foo", U3 ++ "foo"},
-    {error, todo_bad_caller} =
+    {error, access_denied} =
         upload_part_finished(test_bucket1(), test_key1(), UploadId,
                              PartNumber, PartUUID, MD5, NoSuchUser),
     {error, notfound} =
@@ -657,35 +651,37 @@ test_upload_part(UploadId, PartNumber, Blob, User) ->
     {error, todo_bad_partid2} =
          upload_part_finished(test_bucket1(), test_key1(), UploadId,
                               PartNumber, PartUUID, MD5, User),
-    {ok, PartUUID}.
+    {ok, PartUUID, MD5}.
 
 test_comb_parts() ->
     Num = 5,
-    GoodIDs = [{X, <<(X+$0):8>>} || X <- lists:seq(1, Num)],
+    GoodETags = [{X, <<(X+$0):8>>} || X <- lists:seq(1, Num)],
+    GoodDones = [{ETag, ETag} || {_, ETag} <- GoodETags],
     PMs = [?PART_MANIFEST{part_number = X, part_id = Y, content_length = X} ||
-              {X, Y} <- GoodIDs],
-    BadIDs = [{X, <<(X+$0):8>>} || X <- lists:seq(Num + 1, Num + 1 + Num)],
-    MpM1 = ?MULTIPART_MANIFEST{parts = ordsets:from_list(PMs)},
+              {X, Y} <- GoodETags],
+    BadETags = [{X, <<(X+$0):8>>} || X <- lists:seq(Num + 1, Num + 1 + Num)],
+    MpM1 = ?MULTIPART_MANIFEST{parts = ordsets:from_list(PMs),
+                               done_parts = ordsets:from_list(GoodDones)},
     try
-        comb_parts(MpM1, GoodIDs ++ BadIDs),
+        comb_parts(MpM1, GoodETags ++ BadETags),
         throw(test_failed)
     catch
         throw:bad_etag ->
             ok
     end,
     try
-        comb_parts(MpM1, [lists:last(GoodIDs)|tl(GoodIDs)]),
+        comb_parts(MpM1, [lists:last(GoodETags)|tl(GoodETags)]),
         throw(test_failed)
     catch
-        throw:bad_etag ->
+        throw:bad_etag_order ->
             ok
     end,
 
-    {15, Keep1, []} = comb_parts(MpM1, GoodIDs),
+    {15, Keep1, []} = comb_parts(MpM1, GoodETags),
     5 = length(Keep1),
     Keep1 = lists:usort(Keep1),
 
-    {14, Keep2, [PM2]} = comb_parts(MpM1, tl(GoodIDs)),
+    {14, Keep2, [PM2]} = comb_parts(MpM1, tl(GoodETags)),
     4 = length(Keep2),
     Keep2 = lists:usort(Keep2),
     1 = PM2?PART_MANIFEST.part_number,
