@@ -233,7 +233,6 @@ content_types_accepted(RD, Ctx) ->
     riak_cs_mp_utils:make_content_types_accepted(RD, Ctx, accept_body).
 
 parse_body(Body) ->
-    io:format("Body ~P\n", [Body, 1024]),
     try
         {ParsedData, _Rest} = xmerl_scan:string(Body, []),
         #xmlElement{name='CompleteMultipartUpload'} = ParsedData,
