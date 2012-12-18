@@ -54,6 +54,7 @@ lookup(Key) ->
 maybe_write(Key, Value) ->
     handle_should_write(should_write(Value), Key, Value).
 
+-spec handle_should_write(boolean(), binary(), term()) -> ok.
 handle_should_write(true, Key, Value) ->
     write(Key, Value);
 handle_should_write(false, _Key, _Value) ->
