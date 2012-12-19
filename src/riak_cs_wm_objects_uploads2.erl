@@ -95,7 +95,7 @@ check_permission(_, RD, Ctx=#context{requested_perm=RequestedAccess,local_contex
 %% @doc Get the list of methods this resource supports.
 -spec allowed_methods() -> [atom()].
 allowed_methods() ->
-    ['POST', 'PUT'].
+    ['POST', 'PUT', 'DELETE'].
 
 post_is_create(RD, Ctx) ->
     {false, RD, Ctx}.
