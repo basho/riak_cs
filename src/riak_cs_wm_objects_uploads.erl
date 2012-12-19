@@ -101,7 +101,6 @@ allowed_methods() ->
 post_is_create(RD, Ctx) ->
     {false, RD, Ctx}.
 
-%% TODO: Use the RiakcPid in our Ctx and thread it through initiate_mult....
 process_post(RD, Ctx=#context{local_context=LocalCtx,
                               riakc_pid=RiakcPid}) ->
     #key_context{bucket=Bucket, key=Key} = LocalCtx,
