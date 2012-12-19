@@ -103,9 +103,15 @@ post_is_create(RD, Ctx) ->
     {false, RD, Ctx}.
 
 %% TODO: Use the RiakcPid in our Ctx and thread it through initiate_mult....
-process_post(RD, Ctx=#context{local_context=LocalCtx}) ->
+process_post(RD, Ctx=#context{local_context=LocalCtx,
+                              riakc_pid=RiakcPid}) ->
     #key_context{bucket=Bucket, key=Key} = LocalCtx,
-    ContentType = list_to_binary(wrq:get_req_header("Content-Type", RD)),
+    ContentType = try
+                      list_to_binary(wrq:get_req_header("Content-Type", RD))
+                  catch error:badarg ->
+                          %% Per http://docs.amazonwebservices.com/AmazonS3/latest/API/mpUploadInitiate.html
+                          <<"binary/octet-stream">>
+                  end,
     User = riak_cs_mp_utils:user_rec_to_3tuple(Ctx#context.user),
     %% TODO: pass in x-amz-acl?
     %% TODO: pass in additional x-amz-meta-* headers?
@@ -116,8 +122,8 @@ process_post(RD, Ctx=#context{local_context=LocalCtx}) ->
     %% TODO: pass in x-amz-storage-​class?
     %% TODO: pass in x-amz-server-side​-encryption?
     %% TODO: pass in x-amz-grant-* headers?
-    case riak_cs_mp_utils:initiate_multipart_upload(Bucket, Key,
-                                                    ContentType, User) of
+    case riak_cs_mp_utils:initiate_multipart_upload(Bucket, Key, ContentType,
+                                                    User, RiakcPid) of
         {ok, UploadId} ->
             XmlDoc = {'InitiateMultipartUploadResult',
                        [{'xmlns', "http://s3.amazonaws.com/doc/2006-03-01/"}],
@@ -164,7 +170,7 @@ valid_entity_length(RD, Ctx=#context{local_context=LocalCtx}) ->
                              {boolean() | {'halt', term()}, #wm_reqdata{}, #context{}}.
 %% TODO: Use the RiakcPid in our Ctx and thread it through abort_mult....
 delete_resource(RD, Ctx=#context{local_context=LocalCtx,
-                                 riakc_pid=_RiakPid}) ->
+                                 riakc_pid=RiakcPid}) ->
     case (catch base64url:decode(wrq:path_info('uploadId', RD))) of
         {'EXIT', _Reason} ->
             {{halt, 404}, RD, Ctx};
@@ -172,8 +178,8 @@ delete_resource(RD, Ctx=#context{local_context=LocalCtx,
             #key_context{bucket=Bucket, key=KeyStr} = LocalCtx,
             Key = list_to_binary(KeyStr),
             User = riak_cs_mp_utils:user_rec_to_3tuple(Ctx#context.user),
-            case riak_cs_mp_utils:abort_multipart_upload(Bucket, Key,
-                                                         UploadId, User) of
+            case riak_cs_mp_utils:abort_multipart_upload(Bucket, Key, UploadId,
+                                                         User, RiakcPid) of
                 ok ->
                     {true, RD, Ctx};
                 {error, notfound} ->
