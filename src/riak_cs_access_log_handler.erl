@@ -1,6 +1,6 @@
 %% -------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2011 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2012 Basho Technologies, Inc.  All Rights Reserved.
 %%
 %% -------------------------------------------------------------------
 
@@ -39,22 +39,31 @@
 %% to the `access_archive_period' setting, and should also evenly
 %% divide that setting, or results of later queries may miss
 %% information.
--module(riak_cs_access_logger).
 
--behaviour(gen_server).
+-module(riak_cs_access_log_handler).
+
+-behaviour(gen_event).
+
+%% Public API
+-export([expect_bytes_out/2,
+         flush/1,
+         set_bytes_in/2,
+         set_user/2]).
+
+%% gen_event callbacks
+-export([init/1,
+         handle_call/2,
+         handle_event/2,
+         handle_info/2,
+         terminate/2,
+         code_change/3]).
+
 -include_lib("webmachine/include/webmachine_logger.hrl").
 -include("riak_cs.hrl").
 
-%% API
--export([start_link/1, log_access/1]).
--export([set_user/2, expect_bytes_out/2, set_bytes_in/2]).
--export([flush/1]).
-
-%% gen_server callbacks
--export([init/1, handle_call/3, handle_cast/2, handle_info/2,
-         terminate/2, code_change/3]).
-
--define(SERVER, ?MODULE).
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+-endif.
 
 -record(state, {
           period :: integer(),         %% time between aggregation archivals
@@ -67,6 +76,17 @@
          }).
 
 -type state() :: #state{}.
+
+%% ===================================================================
+%% Public API
+%% ===================================================================
+
+flush(Timeout) ->
+    Now = calendar:universal_time(),
+    case catch webmachine_log:call(?MODULE, {flush, Now}, Timeout) of
+        ok -> ok;
+        {'EXIT',{Reason,_}} -> Reason
+    end.
 
 %%%===================================================================
 %%% Non-server API (Webmachine Notes)
@@ -98,25 +118,36 @@ expect_bytes_out(Count, RD) when is_integer(Count) ->
 set_bytes_in(Count, RD) when is_integer(Count) ->
     wrq:add_note(?BYTES_IN, Count, RD).
 
-%%%===================================================================
-%%% Server API (Final Logging)
-%%%===================================================================
+%% ===================================================================
+%% gen_event callbacks
+%% ===================================================================
 
-%%--------------------------------------------------------------------
-%% @doc
-%% Starts the server
-%%
-%% @spec start_link() -> {ok, Pid} | ignore | {error, Error}
-%% @end
-%%--------------------------------------------------------------------
-start_link(_BaseDir) ->
+%% @private
+init(_) ->
     case {riak_cs_access:log_flush_interval(),
           riak_cs_access:max_flush_size()} of
         {{ok, LogPeriod}, {ok, FlushSize}} ->
-            gen_server:start_link({local, ?SERVER}, ?MODULE,
-                                  [{period, LogPeriod},
-                                   {max_size, FlushSize}],
-                                  []);
+            T = fresh_table(),
+
+            %% accuracy in recording: say the first slice starts *now*, not
+            %% at the just-passed boundary
+            Start = calendar:universal_time(),
+            {_,End} = rts:slice_containing(Start, LogPeriod),
+            C = {Start, End},
+
+            InitState = #state{period=LogPeriod,
+                               table=T,
+                               current=C,
+                               max_size=FlushSize,
+                               size=0},
+            case schedule_archival(InitState) of
+                {ok, SchedState} -> ok;
+                {error, _Behind} ->
+                    %% startup was right on a boundary, just try again,
+                    %% and fail if this one also fails
+                    {ok, SchedState} = schedule_archival(InitState)
+            end,
+            {ok, SchedState};
         {{error, Reason}, _} ->
             _ = lager:error("Error starting access logger: ~s", [Reason]),
             %% can't simply {error, Reason} out here, because
@@ -129,121 +160,39 @@ start_link(_BaseDir) ->
             init:stop()
     end.
 
-%% @doc webmachine logging callback
-log_access(LogData) ->
-    %% this happens in a fun spawned by webmachine_decision_core, but
-    %% there's no reason to make the process wait around for an ok
-    %% response -- just cast
-    gen_server:cast(?SERVER, {log_access, LogData}).
-
-flush(Timeout) ->
-    Now = calendar:universal_time(),
-    case catch gen_server:call(?SERVER, {flush, Now}, Timeout) of
-        ok -> ok;
-        {'EXIT',{Reason,_}} -> Reason
-    end.
-
-%%%===================================================================
-%%% gen_server callbacks
-%%%===================================================================
-
-%%--------------------------------------------------------------------
 %% @private
-%% @doc
-%% Initializes the server
-%%
-%% @spec init(Args) -> {ok, State} |
-%%                     {ok, State, Timeout} |
-%%                     ignore |
-%%                     {stop, Reason}
-%% @end
-%%--------------------------------------------------------------------
-init(Props) ->
-    {period, P} = lists:keyfind(period, 1, Props),
-    {max_size, MS} = lists:keyfind(max_size, 1, Props),
-    T = fresh_table(),
-
-    %% accuracy in recording: say the first slice starts *now*, not
-    %% at the just-passed boundary
-    Start = calendar:universal_time(),
-    {_,End} = rts:slice_containing(Start, P),
-    C = {Start, End},
-
-    InitState = #state{period=P, table=T, current=C, max_size=MS, size=0},
-    case schedule_archival(InitState) of
-        {ok, SchedState} -> ok;
-        {error, _Behind} ->
-            %% startup was right on a boundary, just try again,
-            %% and fail if this one also fails
-            {ok, SchedState} = schedule_archival(InitState)
-    end,
-    {ok, SchedState}.
-
-%%--------------------------------------------------------------------
-%% @private
-%% @doc
-%% Handling call messages
-%%
-%% @spec handle_call(Request, From, State) ->
-%%                                   {reply, Reply, State} |
-%%                                   {reply, Reply, State, Timeout} |
-%%                                   {noreply, State} |
-%%                                   {noreply, State, Timeout} |
-%%                                   {stop, Reason, Reply, State} |
-%%                                   {stop, Reason, State}
-%% @end
-%%--------------------------------------------------------------------
-handle_call({flush, FlushEnd}, _From, State) ->
+handle_call({flush, FlushEnd}, State) ->
     NewState = force_archive(State, FlushEnd),
-    {reply, ok, NewState};
-handle_call(_Request, _From, State) ->
-    Reply = ok,
-    {reply, Reply, State}.
+    {ok, ok, NewState};
+handle_call(_Request, State) ->
+    {ok, ok, State}.
 
-%%--------------------------------------------------------------------
 %% @private
-%% @doc
-%% Handling cast messages
-%%
-%% @spec handle_cast(Msg, State) -> {noreply, State} |
-%%                                  {noreply, State, Timeout} |
-%%                                  {stop, Reason, State}
-%% @end
-%%--------------------------------------------------------------------
-handle_cast({log_access, LogData},
-            #state{table=T, size=S, max_size=MaxS}=State) ->
+handle_event({log_access, LogData},
+             #state{table=T, size=S, max_size=MaxS}=State) ->
     case access_record(LogData) of
         {ok, Access} ->
             ets:insert(T, Access),
             case S+1 < MaxS of
                 true ->
                     %% still a "small" log; keep going
-                    {noreply, State#state{size=S+1}};
+                    {ok, State#state{size=S+1}};
                 false ->
                     %% log is now "big"; flush it
-                    {noreply, force_archive(State, calendar:universal_time())}
+                    {ok, force_archive(State, calendar:universal_time())}
             end;
         _ ->
-            {noreply, State}
+            {ok, State}
     end;
-handle_cast(_Msg, State) ->
-    {noreply, State}.
+handle_event(_Event, State) ->
+    {ok, State}.
 
-%%--------------------------------------------------------------------
 %% @private
-%% @doc
-%% Handling all non call/cast messages
-%%
-%% @spec handle_info(Info, State) -> {noreply, State} |
-%%                                   {noreply, State, Timeout} |
-%%                                   {stop, Reason, State}
-%% @end
-%%--------------------------------------------------------------------
 handle_info({archive, Ref}, #state{archive=Ref}=State) ->
     NewState = do_archive(State),
     case schedule_archival(NewState) of
-        {ok, SchedState} ->
-            {noreply, SchedState};
+        {ok, _}=OkRes ->
+            OkRes;
         {error, Behind} ->
             %% if the logger is so far behind that it has already
             %% missed the time that the next archival should happen,
@@ -256,44 +205,27 @@ handle_info({archive, Ref}, #state{archive=Ref}=State) ->
             _ = lager:error("Access logger is running ~b seconds behind,"
                             " skipping ~p log messages to catch up",
                             [Behind, MessageCount]),
-            {stop, behind, NewState}
+            remove_handler
     end;
 handle_info(_Info, State) ->
-    {noreply, State}.
+    {ok, State}.
 
-%%--------------------------------------------------------------------
 %% @private
-%% @doc
-%% This function is called by a gen_server when it is about to
-%% terminate. It should be the opposite of Module:init/1 and do any
-%% necessary cleaning up. When it returns, the gen_server terminates
-%% with Reason. The return value is ignored.
-%%
-%% @spec terminate(Reason, State) -> void()
-%% @end
-%%--------------------------------------------------------------------
 terminate(_Reason, _State) ->
     ok.
 
-%%--------------------------------------------------------------------
 %% @private
-%% @doc
-%% Convert process state when code is changed
-%%
-%% @spec code_change(OldVsn, State, Extra) -> {ok, NewState}
-%% @end
-%%--------------------------------------------------------------------
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
-%%%===================================================================
-%%% Internal functions
-%%%===================================================================
+%% ===================================================================
+%% Internal functions
+%% ===================================================================
 
 %% @doc Create a new ets table to accumulate accesses in.
 -spec fresh_table() -> ets:tid().
 fresh_table() ->
-    ets:new(?SERVER, [private, duplicate_bag, {keypos, 1}]).
+    ets:new(?MODULE, [private, duplicate_bag, {keypos, 1}]).
 
 %% @doc Schedule a message to be sent when it's time to archive this
 %% slice's accumulated accesses.

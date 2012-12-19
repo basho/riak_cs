@@ -229,7 +229,7 @@ deny_invalid_key(RD, Ctx) ->
 shift_to_owner(RD, Ctx=#context{}, OwnerId, RiakPid) when RiakPid /= undefined ->
     case riak_cs_utils:get_user(OwnerId, RiakPid) of
         {ok, {Owner, OwnerObject}} when Owner?RCS_USER.status =:= enabled ->
-            AccessRD = riak_cs_access_logger:set_user(Owner, RD),
+            AccessRD = riak_cs_access_log_handler:set_user(Owner, RD),
             {false, AccessRD, Ctx#context{user=Owner,
                                           user_object=OwnerObject}};
         {ok, _} ->
@@ -430,7 +430,7 @@ bucket_access_authorize_helper(AccessType, Deletable,
                     %% because users are not allowed to create/destroy
                     %% buckets, we can assume that User is not
                     %% undefined here
-                    AccessRD = riak_cs_access_logger:set_user(User, RD),
+                    AccessRD = riak_cs_access_log_handler:set_user(User, RD),
                     Access = PolicyMod:reqdata_to_access(RD, AccessType,
                                                          User?RCS_USER.canonical_id),
                     case PolicyMod:eval(Access, Policy) of
@@ -444,7 +444,7 @@ bucket_access_authorize_helper(AccessType, Deletable,
                     %% owner is allowed to do that; setting user for
                     %% the request anyway, so the error tally is
                     %% logged for them
-                    AccessRD = riak_cs_access_logger:set_user(User, RD),
+                    AccessRD = riak_cs_access_log_handler:set_user(User, RD),
                     riak_cs_wm_utils:deny_access(AccessRD, PermCtx);
 
                 {true, OwnerId} ->
@@ -472,7 +472,7 @@ bucket_access_authorize_helper(AccessType, Deletable,
                         {_, _} ->
                             %% log bad requests against the actors
                             %% that make them
-                            AccessRD = riak_cs_access_logger:set_user(User, RD),
+                            AccessRD = riak_cs_access_log_handler:set_user(User, RD),
                             %% Check if the bucket actually exists so we can
                             %% make the correct decision to return a 404 or 403
                             case riak_cs_utils:check_bucket_exists(Bucket, RiakPid) of
@@ -529,16 +529,16 @@ object_access_authorize_helper(AccessType, Deletable,
         {true, false} when Method =:= 'PUT' orelse
                            (Deletable andalso Method =:= 'DELETE') ->
             %% actor is the owner
-            AccessRD = riak_cs_access_logger:set_user(User, RD),
+            AccessRD = riak_cs_access_log_handler:set_user(User, RD),
 
             riak_cs_wm_utils:deny_access(AccessRD, Ctx);
         {true, false} when Method =:= 'GET' orelse
                            (Deletable andalso Method =:= 'HEAD') ->
-            {{halt, 404}, riak_cs_access_logger:set_user(Ctx#context.user, RD), Ctx};
+            {{halt, 404}, riak_cs_access_log_handler:set_user(Ctx#context.user, RD), Ctx};
 
         {true, _} ->
             %% actor is the owner
-            AccessRD = riak_cs_access_logger:set_user(User, RD),
+            AccessRD = riak_cs_access_log_handler:set_user(User, RD),
             UserStr = User?RCS_USER.canonical_id,
             UpdLocalCtx = LocalCtx#key_context{owner=UserStr},
             {false, AccessRD, Ctx#context{local_context=UpdLocalCtx}};
@@ -546,7 +546,7 @@ object_access_authorize_helper(AccessType, Deletable,
         {{true, OwnerId}, false} when Method =:= 'PUT' orelse
                                       (Deletable andalso Method =:= 'DELETE') ->
             %% actor is not the owner
-            AccessRD = riak_cs_access_logger:set_user(OwnerId, RD),
+            AccessRD = riak_cs_access_log_handler:set_user(OwnerId, RD),
             riak_cs_wm_utils:deny_access(AccessRD, Ctx);
 
         {{true, _OwnerId}, false} when Method =:= 'GET' orelse
@@ -555,14 +555,14 @@ object_access_authorize_helper(AccessType, Deletable,
 
         {{true, OwnerId}, _} ->
             %% actor is not the owner
-            AccessRD = riak_cs_access_logger:set_user(OwnerId, RD),
+            AccessRD = riak_cs_access_log_handler:set_user(OwnerId, RD),
             UpdLocalCtx = LocalCtx#key_context{owner=OwnerId},
             {false, AccessRD, Ctx#context{local_context=UpdLocalCtx}};
 
         {false, true} ->
             %% actor is not the owner, not permitted by ACL but permitted by policy
             OwnerId = riak_cs_acl:owner_id(ObjectAcl, RiakPid),
-            AccessRD = riak_cs_access_logger:set_user(OwnerId, RD),
+            AccessRD = riak_cs_access_log_handler:set_user(OwnerId, RD),
             UpdLocalCtx = LocalCtx#key_context{owner=OwnerId},
             {false, AccessRD, Ctx#context{local_context=UpdLocalCtx}};
 
