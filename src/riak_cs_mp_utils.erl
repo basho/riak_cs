@@ -27,6 +27,7 @@
          complete_multipart_upload/5, complete_multipart_upload/6,
          initiate_multipart_upload/4, initiate_multipart_upload/5,
          list_multipart_uploads/3, list_multipart_uploads/4,
+         list_parts/5, list_parts/6,
          make_content_types_accepted/2,
          make_content_types_accepted/3,
          make_special_error/1,
@@ -201,6 +202,14 @@ list_multipart_uploads(Bucket, {_Display, _Canon, CallerKeyId} = Caller,
         Else ->
             Else
     end.
+
+list_parts(Bucket, Key, UploadId, Caller, Opts) ->
+    list_parts(Bucket, Key, UploadId, Caller, Opts, nopid).
+
+list_parts(Bucket, Key, UploadId, Caller, Opts, RiakcPidUnW) ->
+    Extra = {Opts},
+    do_part_common(list, Bucket, Key, UploadId, Caller, [{list, Extra}],
+                   RiakcPidUnW).
 
 %% @doc
 -spec new_manifest(binary(), binary(), string(), acl_owner()) -> multipart_manifest().
@@ -397,6 +406,26 @@ do_part_common2(complete, RiakcPid,
           throw:bad_etag_order ->
             {error, bad_etag_order}
     end;
+do_part_common2(list, _RiakcPid, _M, _Obj, MpM, Props) ->
+    {_Opts} = proplists:get_value(list, Props),
+    ?MULTIPART_MANIFEST{parts = Parts, done_parts = DoneParts0} = MpM,
+    DoneParts = orddict:from_list(ordsets:to_list(DoneParts0)),
+    ETagPs = lists:foldl(fun(P, Acc) ->
+                                 case orddict:find(P?PART_MANIFEST.part_id,
+                                                   DoneParts) of
+                                     error ->
+                                         Acc;
+                                     {ok, ETag} ->
+                                         [{ETag, P}|Acc]
+                                 end
+                         end, [], Parts),
+    Ds = [?PART_DESCR{part_number = P?PART_MANIFEST.part_number,
+                      %% TODO: technically, start_time /= last_modified
+                      last_modified = P?PART_MANIFEST.start_time,
+                      etag = ETag,
+                      size = P?PART_MANIFEST.content_length} ||
+             {ETag, P} <- ETagPs],
+    {ok, Ds};
 do_part_common2(upload_part, RiakcPid, M, _Obj, MpM, Props) ->
     {Bucket, Key, _UploadId, _Caller, PartNumber, Size} =
         proplists:get_value(upload_part, Props),
