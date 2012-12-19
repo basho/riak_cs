@@ -372,9 +372,6 @@ do_part_common2(complete, RiakcPid,
                                                 content_length = Bytes,
                                                 content_md5 = UUID,
                                                 props = MProps2},
-io:format("Active ~p\n", [UUID]),
-%% redbug:start({riak_cs_manifest_resolution, resolve, [return]}, [{print_depth, 21}, {msgs,5999}]),
-%% redbug:start({riak_cs_manifest_resolution, '_', [return]}, [{print_depth, 21}, {msgs,5999}]),
                 ok = riak_cs_manifest_fsm:add_new_manifest(ManiPid, NewManifest),
                 case PartsToDelete of
                     [] ->

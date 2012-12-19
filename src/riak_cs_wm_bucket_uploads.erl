@@ -58,10 +58,11 @@ authorize(RD, Ctx=#context{riakc_pid=RiakcPid, local_context=LocalCtx}) ->
 allowed_methods() ->
     ['GET'].
 
-to_xml(RD, Ctx=#context{local_context=LocalCtx}) ->
+to_xml(RD, Ctx=#context{local_context=LocalCtx,
+                        riakc_pid=RiakcPid}) ->
     #key_context{bucket=Bucket} = LocalCtx,
     User = riak_cs_mp_utils:user_rec_to_3tuple(Ctx#context.user),
-    case riak_cs_mp_utils:list_multipart_uploads(Bucket, User) of
+    case riak_cs_mp_utils:list_multipart_uploads(Bucket, User, RiakcPid) of
         {ok, Ds} ->
             Us = [{'Upload',
                    [

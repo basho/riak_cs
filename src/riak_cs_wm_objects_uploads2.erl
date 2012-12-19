@@ -101,7 +101,8 @@ post_is_create(RD, Ctx) ->
     {false, RD, Ctx}.
 
 %% TODO: Use the RiakcPid in our Ctx and thread it through initiate_mult....
-process_post(RD, Ctx=#context{local_context=LocalCtx}) ->
+process_post(RD, Ctx=#context{local_context=LocalCtx,
+                              riakc_pid=RiakcPid}) ->
     #key_context{bucket=Bucket, key=Key} = LocalCtx,
     User = riak_cs_mp_utils:user_rec_to_3tuple(Ctx#context.user),
     UploadId64 = re:replace(wrq:path(RD), ".*/uploads/", "", [{return, binary}]),
@@ -121,7 +122,7 @@ process_post(RD, Ctx=#context{local_context=LocalCtx}) ->
             %% TODO: pass in x-amz-server-side​-encryption?
             %% TODO: pass in x-amz-grant-* headers?
             case riak_cs_mp_utils:complete_multipart_upload(
-                   Bucket, list_to_binary(Key), UploadId, PartETags, User) of
+                   Bucket, list_to_binary(Key), UploadId, PartETags, User, RiakcPid) of
                 ok ->
                     XmlDoc = {'CompleteMultipartUploadResult',
                               [{'xmlns', "http://s3.amazonaws.com/doc/2006-03-01/"}],
@@ -183,7 +184,7 @@ valid_entity_length(RD, Ctx=#context{local_context=LocalCtx}) ->
                              {boolean() | {'halt', term()}, #wm_reqdata{}, #context{}}.
 %% TODO: Use the RiakcPid in our Ctx and thread it through abort_mult....
 delete_resource(RD, Ctx=#context{local_context=LocalCtx,
-                                 riakc_pid=_RiakPid}) ->
+                                 riakc_pid=RiakcPid}) ->
     case (catch base64url:decode(wrq:path_info('uploadId', RD))) of
         {'EXIT', _Reason} ->
             {{halt, 404}, RD, Ctx};
@@ -191,8 +192,8 @@ delete_resource(RD, Ctx=#context{local_context=LocalCtx,
             #key_context{bucket=Bucket, key=KeyStr} = LocalCtx,
             Key = list_to_binary(KeyStr),
             User = riak_cs_mp_utils:user_rec_to_3tuple(Ctx#context.user),
-            case riak_cs_mp_utils:abort_multipart_upload(Bucket, Key,
-                                                         UploadId, User) of
+            case riak_cs_mp_utils:abort_multipart_upload(Bucket, Key, UploadId,
+                                                         User, RiakcPid) of
                 ok ->
                     {true, RD, Ctx};
                 {error, notfound} ->
@@ -245,7 +246,7 @@ parse_body(Body) ->
 
 -spec accept_body(#wm_reqdata{}, #context{}) -> {{halt, integer()}, #wm_reqdata{}, #context{}}.
 accept_body(RD, Ctx0=#context{local_context=LocalCtx0,
-                              riakc_pid=_RiakcPid}) ->
+                              riakc_pid=RiakcPid}) ->
     %% TODO: Content-MD5 header?
     %% TODO: Expect header?
     #key_context{bucket=Bucket,
@@ -261,7 +262,7 @@ accept_body(RD, Ctx0=#context{local_context=LocalCtx0,
     %% TODO: handle badarg
     PartNumber = list_to_integer(wrq:get_qs_value("partNumber", RD)),
     case riak_cs_mp_utils:upload_part(Bucket, Key, UploadId, PartNumber,
-                                      Size, Caller) of
+                                      Size, Caller, RiakcPid) of
         {upload_part_ready, PartUUID, PutPid} ->
             LocalCtx = LocalCtx0#key_context{upload_id=UploadId,
                                              part_number=PartNumber,
@@ -301,7 +302,8 @@ accept_streambody(RD,
             finalize_request(RD, Ctx, Pid)
     end.
 
-finalize_request(RD, Ctx=#context{local_context=LocalCtx}, PutPid) ->
+finalize_request(RD, Ctx=#context{local_context=LocalCtx,
+                                  riakc_pid=RiakcPid}, PutPid) ->
     %% TODO: Is it possible to have a process leak if we crash before
     %%       reaching this place?
     %% TODO: If yes, is there a similar leak in
@@ -316,7 +318,7 @@ finalize_request(RD, Ctx=#context{local_context=LocalCtx}, PutPid) ->
     Caller = riak_cs_mp_utils:user_rec_to_3tuple(Ctx#context.user),
     case riak_cs_mp_utils:upload_part_finished(
            Bucket, Key, UploadId, PartNumber, PartUUID,
-           M?MANIFEST.content_md5, Caller) of
+           M?MANIFEST.content_md5, Caller, RiakcPid) of
         ok ->
             RD2 = wrq:set_resp_header("ETag", riak_cs_utils:binary_to_hexlist(M?MANIFEST.content_md5), RD),
             {{halt, 200}, RD2, Ctx};
