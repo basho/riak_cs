@@ -283,7 +283,6 @@
 -type multipart_manifest() :: #multipart_manifest_v1{}.
 
 -record(part_manifest_v1, {
-    %% TODO: should this be bkey {binary(), binary()}?
     bucket :: binary(),
     key :: binary(),
 
@@ -328,6 +327,14 @@
     initiated :: string() %% conflict of func vs. type: riak_cs_wm_utils:iso_8601_datetime()
 }).
 
+%% Basis of multipart list parts output
+-record(part_descr_v1, {
+    part_number :: integer(),
+    last_modified :: string(),  % TODO ??
+    etag :: binary(),
+    size :: integer()
+}).
+
 -define(MANIFEST, #lfs_manifest_v3).
 
 -define(ACL, #acl_v2).
@@ -339,6 +346,7 @@
 -define(PART_MANIFEST, #part_manifest_v1).
 -define(PART_MANIFEST_RECNAME, part_manifest_v1).
 -define(MULTIPART_DESCR, #multipart_descr_v1).
+-define(PART_DESCR, #part_descr_v1).
 
 -define(USER_BUCKET, <<"moss.users">>).
 -define(ACCESS_BUCKET, <<"moss.access">>).
