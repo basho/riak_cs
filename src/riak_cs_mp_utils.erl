@@ -421,7 +421,7 @@ do_part_common2(list, _RiakcPid, _M, _Obj, MpM, Props) ->
                          end, [], Parts),
     Ds = [?PART_DESCR{part_number = P?PART_MANIFEST.part_number,
                       %% TODO: technically, start_time /= last_modified
-                      last_modified = P?PART_MANIFEST.start_time,
+                      last_modified = riak_cs_wm_utils:iso_8601_datetime(calendar:now_to_local_time(P?PART_MANIFEST.start_time)),
                       etag = ETag,
                       size = P?PART_MANIFEST.content_length} ||
              {ETag, P} <- ETagPs],
