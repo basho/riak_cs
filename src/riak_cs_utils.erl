@@ -428,8 +428,20 @@ get_manifests(RiakcPid, Bucket, Key) ->
 
 -spec manifests_from_riak_object(riakc_obj:riak_object()) -> orddict:orddict().
 manifests_from_riak_object(RiakObject) ->
+    %% For example, riak_cs_manifest_fsm:get_and_update/4 may wish to
+    %% update the #riakc_obj without a roundtrip to Riak first.  So we
+    %% need to see what the latest
+    Contents = try
+                   %% get_update_value will return the updatevalue or
+                   %% a single old original value.
+                   [{riakc_obj:get_update_metadata(RiakObject),
+                     riakc_obj:get_update_value(RiakObject)}]
+               catch throw:_ ->
+                       %% Original value had many contents
+                       riakc_obj:get_contents(RiakObject)
+               end,
     DecodedSiblings = [binary_to_term(V) ||
-                          {_, V}=Content <- riakc_obj:get_contents(RiakObject),
+                          {_, V}=Content <- Contents,
                           not has_tombstone(Content)],
 
     %% Upgrade the manifests to be the latest erlang
