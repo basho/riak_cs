@@ -16,25 +16,28 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
+-define(PID(WrappedPid), get_riakc_pid(WrappedPid)).
+
 %% export Public API
 -compile(export_all).                           % SLF DEBUGGING ONLY!
 -export([
-         abort_multipart_upload/4,
+         abort_multipart_upload/4, abort_multipart_upload/5,
          calc_multipart_2i_dict/3,
          clean_multipart_unused_parts/1,
-         complete_multipart_upload/5,
-         initiate_multipart_upload/4,
-         list_multipart_uploads/2,
+         complete_multipart_upload/5, complete_multipart_upload/6,
+         initiate_multipart_upload/4, initiate_multipart_upload/5,
+         list_multipart_uploads/2, list_multipart_uploads/3,
          make_content_types_accepted/2,
          make_content_types_accepted/3,
          make_special_error/1,
          make_special_error/4,
          new_manifest/4,
-         upload_part/6,
+         upload_part/6, upload_part/7,
          upload_part_1blob/2,
          upload_part_finished/7,
          user_rec_to_3tuple/1,
-         write_new_manifest/1
+         write_new_manifest/1,
+         write_new_manifest/2
         ]).
 
 %%%===================================================================
@@ -61,7 +64,10 @@ calc_multipart_2i_dict(Ms, Bucket, _Key) when is_list(Ms) ->
     {?MD_INDEX, lists:usort(lists:append(L_2i))}.
 
 abort_multipart_upload(Bucket, Key, UploadId, Caller) ->
-    do_part_common(abort, Bucket, Key, UploadId, Caller, []).
+    abort_multipart_upload(Bucket, Key, UploadId, Caller, nopid).
+
+abort_multipart_upload(Bucket, Key, UploadId, Caller, RiakcPidUnW) ->
+    do_part_common(abort, Bucket, Key, UploadId, Caller, [], RiakcPidUnW).
 
 clean_multipart_unused_parts(?MANIFEST{bkey=BKey, props=Props} = Manifest) ->
     case proplists:get_value(multipart, Props, false) of
@@ -96,12 +102,19 @@ clean_multipart_unused_parts(?MANIFEST{bkey=BKey, props=Props} = Manifest) ->
     end.
 
 complete_multipart_upload(Bucket, Key, UploadId, PartETags, Caller) ->
-    Extra = {PartETags},
-    do_part_common(complete, Bucket, Key, UploadId, Caller, [{complete, Extra}]).
+    complete_multipart_upload(Bucket, Key, UploadId, PartETags, Caller, nopid).
 
-%% riak_cs_mp_utils:write_new_manifest(riak_cs_mp_utils:new_manifest(<<"test">>, <<"mp0">>, <<"text/plain">>, {"foobar", "18983ba0e16e18a2b103ca16b84fad93d12a2fbed1c88048931fb91b0b844ad3", "J2IP6WGUQ_FNGIAN9AFI"})).
-initiate_multipart_upload(Bucket, Key, ContentType, {_,_,_} = Owner) ->
-    write_new_manifest(new_manifest(Bucket, Key, ContentType, Owner)).
+complete_multipart_upload(Bucket, Key, UploadId, PartETags, Caller, RiakcPidUnW) ->
+    Extra = {PartETags},
+    do_part_common(complete, Bucket, Key, UploadId, Caller, [{complete, Extra}],
+                   RiakcPidUnW).
+
+initiate_multipart_upload(Bucket, Key, ContentType, Owner) ->
+    initiate_multipart_upload(Bucket, Key, ContentType, Owner, nopid).
+
+initiate_multipart_upload(Bucket, Key, ContentType, {_,_,_} = Owner, RiakcPidUnW) ->
+    write_new_manifest(new_manifest(Bucket, Key, ContentType, Owner),
+                       RiakcPidUnW).
 
 make_content_types_accepted(RD, Ctx) ->
     make_content_types_accepted(RD, Ctx, unused_callback).
@@ -151,11 +164,14 @@ make_special_error(Code, Message, RequestId, HostId) ->
              },
     riak_cs_s3_response:export_xml([XmlDoc]).
 
-list_multipart_uploads(Bucket, {_Display, _Canon, CallerKeyId} = Caller) ->
-    case riak_cs_utils:riak_connection() of
+list_multipart_uploads(Bucket, Caller) ->
+    list_multipart_uploads(Bucket, Caller, nopid).
+
+list_multipart_uploads(Bucket, {_Display, _Canon, CallerKeyId} = Caller, RiakcPidUnW) ->
+    case wrap_riak_connection(RiakcPidUnW) of
         {ok, RiakcPid} ->
             try
-                BucketOwnerP = is_caller_bucket_owner(RiakcPid,
+                BucketOwnerP = is_caller_bucket_owner(?PID(RiakcPid),
                                                       Bucket, CallerKeyId),
                 Key2i = case BucketOwnerP of
                             true ->
@@ -164,14 +180,14 @@ list_multipart_uploads(Bucket, {_Display, _Canon, CallerKeyId} = Caller) ->
                                 make_2i_key(Bucket, Caller)
                         end,
                 HashBucket = riak_cs_utils:to_bucket_name(objects, Bucket),
-                case riakc_pb_socket:get_index(RiakcPid, HashBucket, Key2i,
-                                               <<"1">>) of
+                case riakc_pb_socket:get_index(?PID(RiakcPid), HashBucket,
+                                               Key2i, <<"1">>) of
                     {ok, Names} ->
                         MyCaller = case BucketOwnerP of
                                        true -> owner;
                                        _    -> CallerKeyId
                                    end,
-                        {ok, list_multipart_uploads2(Bucket, RiakcPid,
+                        {ok, list_multipart_uploads2(Bucket, ?PID(RiakcPid),
                                                      Names, MyCaller)};
                     Else2 ->
                         Else2
@@ -179,7 +195,7 @@ list_multipart_uploads(Bucket, {_Display, _Canon, CallerKeyId} = Caller) ->
             catch error:{badmatch, {m_icbo, _}} ->
                     {error, access_denied}
             after
-                riak_cs_utils:close_riak_connection(RiakcPid)
+                wrap_close_riak_connection(RiakcPid)
             end;
         Else ->
             Else
@@ -205,9 +221,12 @@ new_manifest(Bucket, Key, ContentType, {_, _, _} = Owner) ->
     M?MANIFEST{props = [{multipart, MpM}|M?MANIFEST.props]}.
 
 upload_part(Bucket, Key, UploadId, PartNumber, Size, Caller) ->
+    upload_part(Bucket, Key, UploadId, PartNumber, Size, Caller, nopid).
+
+upload_part(Bucket, Key, UploadId, PartNumber, Size, Caller, RiakcPidUnW) ->
     Extra = {Bucket, Key, UploadId, Caller, PartNumber, Size},
     do_part_common(upload_part, Bucket, Key, UploadId, Caller,
-                   [{upload_part, Extra}]).
+                   [{upload_part, Extra}], RiakcPidUnW).
 
 upload_part_1blob(PutPid, Blob) ->
     ok = riak_cs_put_fsm:augment_data(PutPid, Blob),
@@ -223,10 +242,15 @@ upload_part_1blob(PutPid, Blob) ->
 %% must thread the MD5 value through upload_part_finished and update
 %% the ?MULTIPART_MANIFEST in a mergeable way.  {sigh}
 
-upload_part_finished(Bucket, Key, UploadId, _PartNumber, PartUUID,
-    MD5, Caller) -> Extra = {PartUUID, MD5},
+upload_part_finished(Bucket, Key, UploadId, _PartNumber, PartUUID, MD5, Caller) ->
+    upload_part_finished(Bucket, Key, UploadId, _PartNumber, PartUUID, MD5,
+                         Caller, nopid).
+
+upload_part_finished(Bucket, Key, UploadId, _PartNumber, PartUUID, MD5,
+                     Caller, RiakcPidUnW) ->
+    Extra = {PartUUID, MD5},
     do_part_common(upload_part_finished, Bucket, Key, UploadId,
-    Caller, [{upload_part_finished, Extra}]).
+    Caller, [{upload_part_finished, Extra}], RiakcPidUnW).
 
 user_rec_to_3tuple(U) ->
     %% acl_owner3: {display name, canonical id, key id}
@@ -234,19 +258,22 @@ user_rec_to_3tuple(U) ->
      U?RCS_USER.key_id}.
 
 write_new_manifest(M) ->
-    %% TODO: ACL, cluster_id
+    write_new_manifest(M, nopid).
+
+write_new_manifest(M, RiakcPidUnW) ->
     MpM = proplists:get_value(multipart, M?MANIFEST.props),
     Owner = MpM?MULTIPART_MANIFEST.owner,
-    case riak_cs_utils:riak_connection() of
+    case wrap_riak_connection(RiakcPidUnW) of
         {ok, RiakcPid} ->
             try
                 Acl = riak_cs_acl_utils:canned_acl("private", Owner, undefined, unused),
-                ClusterId = riak_cs_utils:get_cluster_id(RiakcPid),
+                ClusterId = riak_cs_utils:get_cluster_id(?PID(RiakcPid)),
                 M2 = M?MANIFEST{acl = Acl,
                                 cluster_id = ClusterId,
                                 write_start_time=os:timestamp()},
                 {Bucket, Key} = M?MANIFEST.bkey,
-                {ok, ManiPid} = riak_cs_manifest_fsm:start_link(Bucket, Key, RiakcPid),
+                {ok, ManiPid} = riak_cs_manifest_fsm:start_link(Bucket, Key,
+                                                                ?PID(RiakcPid)),
                 try
                     ok = riak_cs_manifest_fsm:add_new_manifest(ManiPid, M2),
                     {ok, M2?MANIFEST.uuid}
@@ -254,7 +281,7 @@ write_new_manifest(M) ->
                     ok = riak_cs_manifest_fsm:stop(ManiPid)
                 end
             after
-                riak_cs_utils:close_riak_connection(RiakcPid)
+                wrap_close_riak_connection(RiakcPid)
             end;
         Else ->
             Else
@@ -264,11 +291,11 @@ write_new_manifest(M) ->
 %%% Internal functions
 %%%===================================================================
 
-do_part_common(Op, Bucket, Key, UploadId, {_,_,CallerKeyId} = _Caller, Props) ->
-    case riak_cs_utils:riak_connection() of
+do_part_common(Op, Bucket, Key, UploadId, {_,_,CallerKeyId} = _Caller, Props, RiakcPidUnW) ->
+    case wrap_riak_connection(RiakcPidUnW) of
         {ok, RiakcPid} ->
             try
-                case riak_cs_utils:get_manifests(RiakcPid, Bucket, Key) of
+                case riak_cs_utils:get_manifests(?PID(RiakcPid), Bucket, Key) of
                     {ok, Obj, Manifests} ->
                         case find_manifest_with_uploadid(UploadId, Manifests) of
                             false ->
@@ -279,7 +306,7 @@ do_part_common(Op, Bucket, Key, UploadId, {_,_,CallerKeyId} = _Caller, Props) ->
                                 {_, _, MpMOwner} = MpM?MULTIPART_MANIFEST.owner,
                                 case CallerKeyId == MpMOwner of
                                     true ->
-                                        do_part_common2(Op, RiakcPid, M,
+                                        do_part_common2(Op, ?PID(RiakcPid), M,
                                                         Obj, MpM, Props);
                                     false ->
                                         {error, access_denied}
@@ -293,9 +320,9 @@ do_part_common(Op, Bucket, Key, UploadId, {_,_,CallerKeyId} = _Caller, Props) ->
             catch error:{badmatch, {m_icbo, _}} ->
                     {error, access_denied};
                   error:{badmatch, {m_umwc, _}} ->
-                    {error, todo_try_again_later}
+                    {error, riak_unavailable}
             after
-                riak_cs_utils:close_riak_connection(RiakcPid)
+                wrap_close_riak_connection(RiakcPid)
             end;
         Else ->
             Else
@@ -345,6 +372,9 @@ do_part_common2(complete, RiakcPid,
                                                 content_length = Bytes,
                                                 content_md5 = UUID,
                                                 props = MProps2},
+io:format("Active ~p\n", [UUID]),
+%% redbug:start({riak_cs_manifest_resolution, resolve, [return]}, [{print_depth, 21}, {msgs,5999}]),
+%% redbug:start({riak_cs_manifest_resolution, '_', [return]}, [{print_depth, 21}, {msgs,5999}]),
                 ok = riak_cs_manifest_fsm:add_new_manifest(ManiPid, NewManifest),
                 case PartsToDelete of
                     [] ->
@@ -363,7 +393,7 @@ do_part_common2(complete, RiakcPid,
             ok = riak_cs_manifest_fsm:stop(ManiPid)
         end
     catch error:{badmatch, {m_umwc, _}} ->
-            {error, todo_try_again_later};
+            {error, riak_unavailable};
           throw:bad_etag ->
             {error, bad_etag};
           throw:bad_etag_order ->
@@ -399,7 +429,7 @@ do_part_common2(upload_part, RiakcPid, M, _Obj, MpM, Props) ->
         {upload_part_ready, PartUUID, PutPid}
     catch error:{badmatch, {m_umwc, _}} ->
             riak_cs_put_fsm:force_stop(PutPid),
-            {error, todo_try_again_later}
+            {error, riak_unavailable}
     end;
 do_part_common2(upload_part_finished, RiakcPid, M, _Obj, MpM, Props) ->
     {PartUUID, MD5} = proplists:get_value(upload_part_finished, Props),
@@ -410,10 +440,9 @@ do_part_common2(upload_part_finished, RiakcPid, M, _Obj, MpM, Props) ->
                             ordsets:to_list(Parts)),
               ordsets:is_element(PartUUID, DoneUUIDs)} of
             {false, _} ->
-                %% {error, {todo_bad_partid1, PartUUID, DoneParts}};
-                {error, todo_bad_partid1};
+                {error, notfound};
             {_, true} ->
-                {error, todo_bad_partid2};
+                {error, notfound};
             {PM, false} when is_record(PM, ?PART_MANIFEST_RECNAME) ->
                 ?MANIFEST{props = MProps} = M,
                 NewMpM = MpM?MULTIPART_MANIFEST{
@@ -424,7 +453,7 @@ do_part_common2(upload_part_finished, RiakcPid, M, _Obj, MpM, Props) ->
                 ok = update_manifest_with_confirmation(RiakcPid, NewM)
         end
     catch error:{badmatch, {m_umwc, _}} ->
-            {error, todo_try_again_later}
+            {error, riak_unavailable}
     end.
 
 update_manifest_with_confirmation(RiakcPid, Manifest) ->
@@ -560,6 +589,34 @@ move_dead_parts_to_gc(Bucket, Key, PartsToDelete, RiakcPid) ->
                                    block_size=P_BlockSize} <- PartsToDelete],
     ok = riak_cs_gc:move_manifests_to_gc_bucket(PartDelMs, RiakcPid, false).
 
+%% The intent of the wrap_* functions is to make this module's code
+%% flexible enough to support two methods of operation:
+%%
+%% 1. Allocate its own Riak client pids (as originally written)
+%% 2. Use a Riak client pid passed in by caller (later to interface with WM)
+%%
+%% If we're to allocate our own Riak client pids, we use the atom 'nopid'.
+
+wrap_riak_connection(nopid) ->
+    case riak_cs_utils:riak_connection() of
+        {ok, RiakcPid} ->
+            {ok, {local_pid, RiakcPid}};
+        Else ->
+            Else
+    end;
+wrap_riak_connection(RiakcPid) ->
+    {ok, {remote_pid, RiakcPid}}.
+
+wrap_close_riak_connection({local_pid, RiakcPid}) ->
+    riak_cs_utils:close_riak_connection(RiakcPid);
+wrap_close_riak_connection({remote_pid, _RiakcPid}) ->
+    ok.
+
+get_riakc_pid({local_pid, RiakcPid}) ->
+    RiakcPid;
+get_riakc_pid({remote_pid, RiakcPid}) ->
+    RiakcPid.
+
 %% ===================================================================
 %% EUnit tests
 %% ===================================================================
@@ -643,12 +700,12 @@ test_upload_part(UploadId, PartNumber, Blob, User) ->
     {error, notfound} =
         upload_part_finished(test_bucket1(), test_key1(), <<"no-such-upload-id">>,
                              PartNumber, PartUUID, MD5, User),
-    {error, todo_bad_partid1} =
+    {error, notfound} =
          upload_part_finished(test_bucket1(), test_key1(), UploadId,
                               PartNumber, <<"no-such-part-id">>, MD5, User),
     ok = upload_part_finished(test_bucket1(), test_key1(), UploadId,
                               PartNumber, PartUUID, MD5, User),
-    {error, todo_bad_partid2} =
+    {error, notfound} =
          upload_part_finished(test_bucket1(), test_key1(), UploadId,
                               PartNumber, PartUUID, MD5, User),
     {ok, PartUUID, MD5}.
