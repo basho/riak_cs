@@ -287,17 +287,21 @@ get_and_update(RiakcPid, WrappedManifests, Bucket, Key) ->
     case riak_cs_utils:get_manifests(RiakcPid, Bucket, Key) of
         {ok, RiakObject, Manifests} ->
             NewManiAdded = riak_cs_manifest_resolution:resolve([WrappedManifests, Manifests]),
-            OverwrittenUUIDs = riak_cs_manifest_utils:overwritten_UUIDs(NewManiAdded),
-            {Result, NewRiakObject} = case OverwrittenUUIDs of
+            %% Update the object here so that if there are any
+            %% overwritten UUIDs, then gc_specific_manifests() will
+            %% operate on NewManiAdded and save it to Riak when it is
+            %% finished.
+            ObjectToWrite0 = riakc_obj:update_value(RiakObject,
+                                                    term_to_binary(NewManiAdded)),
+            ObjectToWrite = update_md_with_multipart_2i(
+                              ObjectToWrite0, NewManiAdded, Bucket, Key),
+            {Result, NewRiakObject} =
+              case riak_cs_manifest_utils:overwritten_UUIDs(NewManiAdded) of
                 [] ->
-                    ObjectToWrite0 = riakc_obj:update_value(RiakObject,
-                        term_to_binary(NewManiAdded)),
-                    ObjectToWrite = update_md_with_multipart_2i(
-                                      ObjectToWrite0, NewManiAdded, Bucket, Key),
                     riak_cs_utils:put(RiakcPid, ObjectToWrite, [return_body]);
-                _ ->
+                OverwrittenUUIDs ->
                     riak_cs_gc:gc_specific_manifests(OverwrittenUUIDs,
-                                                     RiakObject,
+                                                     ObjectToWrite,
                                                      RiakcPid)
             end,
             {Result, NewRiakObject, Manifests};
