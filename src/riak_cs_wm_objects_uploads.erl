@@ -16,7 +16,6 @@
          process_post/2,
          multiple_choices/2,
          valid_entity_length/2,
-         delete_resource/2,
          finish_request/2]).
 
 -include("riak_cs.hrl").
@@ -97,7 +96,7 @@ check_permission(_, RD, Ctx=#context{requested_perm=RequestedAccess,local_contex
 %% @doc Get the list of methods this resource supports.
 -spec allowed_methods() -> [atom()].
 allowed_methods() ->
-    ['POST', 'DELETE'].
+    ['POST'].
 
 post_is_create(RD, Ctx) ->
     {false, RD, Ctx}.
@@ -164,31 +163,6 @@ valid_entity_length(RD, Ctx=#context{local_context=LocalCtx}) ->
             end;
         _ ->
             {true, RD, Ctx}
-    end.
-
--spec delete_resource(#wm_reqdata{}, #context{}) ->
-                             {boolean() | {'halt', term()}, #wm_reqdata{}, #context{}}.
-%% TODO: Use the RiakcPid in our Ctx and thread it through abort_mult....
-delete_resource(RD, Ctx=#context{local_context=LocalCtx,
-                                 riakc_pid=RiakcPid}) ->
-    case (catch base64url:decode(wrq:path_info('uploadId', RD))) of
-        {'EXIT', _Reason} ->
-            {{halt, 404}, RD, Ctx};
-        UploadId ->
-            #key_context{bucket=Bucket, key=KeyStr} = LocalCtx,
-            Key = list_to_binary(KeyStr),
-            User = riak_cs_mp_utils:user_rec_to_3tuple(Ctx#context.user),
-            case riak_cs_mp_utils:abort_multipart_upload(Bucket, Key, UploadId,
-                                                         User, RiakcPid) of
-                ok ->
-                    {true, RD, Ctx};
-                {error, notfound} ->
-                    XErr = riak_cs_mp_utils:make_special_error("NoSuchUpload"),
-                    RD2 = wrq:set_resp_body(XErr, RD),
-                    {{halt, 404}, RD2, Ctx};
-                {error, Reason} ->
-                    riak_cs_s3_response:api_error(Reason, RD, Ctx)
-            end
     end.
 
 finish_request(RD, Ctx) ->
