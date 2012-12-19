@@ -26,7 +26,7 @@
          clean_multipart_unused_parts/1,
          complete_multipart_upload/5, complete_multipart_upload/6,
          initiate_multipart_upload/4, initiate_multipart_upload/5,
-         list_multipart_uploads/2, list_multipart_uploads/3,
+         list_multipart_uploads/3, list_multipart_uploads/4,
          make_content_types_accepted/2,
          make_content_types_accepted/3,
          make_special_error/1,
@@ -164,10 +164,11 @@ make_special_error(Code, Message, RequestId, HostId) ->
              },
     riak_cs_s3_response:export_xml([XmlDoc]).
 
-list_multipart_uploads(Bucket, Caller) ->
-    list_multipart_uploads(Bucket, Caller, nopid).
+list_multipart_uploads(Bucket, Caller, Opts) ->
+    list_multipart_uploads(Bucket, Caller, Opts, nopid).
 
-list_multipart_uploads(Bucket, {_Display, _Canon, CallerKeyId} = Caller, RiakcPidUnW) ->
+list_multipart_uploads(Bucket, {_Display, _Canon, CallerKeyId} = Caller,
+                       Opts, RiakcPidUnW) ->
     case wrap_riak_connection(RiakcPidUnW) of
         {ok, RiakcPid} ->
             try
@@ -188,7 +189,7 @@ list_multipart_uploads(Bucket, {_Display, _Canon, CallerKeyId} = Caller, RiakcPi
                                        _    -> CallerKeyId
                                    end,
                         {ok, list_multipart_uploads2(Bucket, ?PID(RiakcPid),
-                                                     Names, MyCaller)};
+                                                     Names, Opts, MyCaller)};
                     Else2 ->
                         Else2
                 end
@@ -476,7 +477,7 @@ make_2i_key(Bucket, OwnerStr) when is_list(OwnerStr) ->
 make_2i_key2(Bucket, OwnerStr) ->
     iolist_to_binary(["rcs@", OwnerStr, "@", Bucket, "_bin"]).
 
-list_multipart_uploads2(Bucket, RiakcPid, Names, CallerKeyId) ->
+list_multipart_uploads2(Bucket, RiakcPid, Names, _Opts, CallerKeyId) ->
     {_, _, _, Res} = lists:foldl(fun fold_get_multipart_id/2,
                                  {RiakcPid, Bucket, CallerKeyId, []}, Names),
     Res.
@@ -629,11 +630,11 @@ test_0() ->
     ID2 = test_initiate(test_user2()),
     _ID1b = test_initiate(test_user1()),
 
-    {ok, X1} = test_list_uploadids(test_user1()),
+    {ok, X1} = test_list_uploadids(test_user1(), []),
     3 = length(X1),
-    {ok, X2} = test_list_uploadids(test_user2()),
+    {ok, X2} = test_list_uploadids(test_user2(), []),
     1 = length(X2),
-    {error, access_denied} = test_list_uploadids(test_userNONE()),
+    {error, access_denied} = test_list_uploadids(test_userNONE(), []),
 
     {error, access_denied} = test_abort(ID1, test_user2()),
     {error,notfound} = test_abort(<<"no such upload_id">>, test_user2()),
@@ -645,9 +646,9 @@ test_0() ->
     ok = test_complete(ID2, [], test_user2()),
     {error, notfound} = test_complete(ID2, [], test_user2()),
 
-    {ok, X3} = test_list_uploadids(test_user1()),
+    {ok, X3} = test_list_uploadids(test_user1(), []),
     1 = length(X3),
-    {ok, X4} = test_list_uploadids(test_user2()),
+    {ok, X4} = test_list_uploadids(test_user2(), []),
     0 = length(X4),
 
     ok.
@@ -675,8 +676,8 @@ test_abort(UploadId, User) ->
 test_complete(UploadId, PartETags, User) ->
     complete_multipart_upload(test_bucket1(), test_key1(), UploadId, PartETags, User).
 
-test_list_uploadids(User) ->
-    list_multipart_uploads(test_bucket1(), User).
+test_list_uploadids(User, Opts) ->
+    list_multipart_uploads(test_bucket1(), User, Opts).
 
 test_upload_part(UploadId, PartNumber, Blob, User) ->
     Size = byte_size(Blob),

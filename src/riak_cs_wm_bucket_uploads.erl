@@ -3,6 +3,12 @@
 %% Copyright (c) 2007-2012 Basho Technologies, Inc.  All Rights Reserved.
 %%
 %% -------------------------------------------------------------------
+%%
+%% @doc WM callback module for S3 list multipart uploads.
+%%
+%% Intentionally not (yet) implemented:
+%%
+%% * output: CommonPrefixes attribute
 
 -module(riak_cs_wm_bucket_uploads).
 
@@ -68,7 +74,10 @@ to_xml(RD, Ctx=#context{local_context=LocalCtx,
                    [
                     {'Key', [D?MULTIPART_DESCR.key]},
                     {'UploadId', [binary_to_list(base64url:encode(D?MULTIPART_DESCR.upload_id))]},
-                    %% {'Initiator', [TODO]},
+                    {'Initiator',               % TODO: replace with ARN data?
+                     [{'ID', [D?MULTIPART_DESCR.owner_key_id]},
+                      {'DisplayName', [D?MULTIPART_DESCR.owner_display]}
+                     ]},
                     {'Owner',
                      [{'ID', [D?MULTIPART_DESCR.owner_key_id]},
                       {'DisplayName', [D?MULTIPART_DESCR.owner_display]}
