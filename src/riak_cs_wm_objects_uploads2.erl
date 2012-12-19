@@ -100,7 +100,6 @@ allowed_methods() ->
 post_is_create(RD, Ctx) ->
     {false, RD, Ctx}.
 
-%% TODO: Use the RiakcPid in our Ctx and thread it through initiate_mult....
 process_post(RD, Ctx=#context{local_context=LocalCtx,
                               riakc_pid=RiakcPid}) ->
     #key_context{bucket=Bucket, key=Key} = LocalCtx,
@@ -182,7 +181,6 @@ valid_entity_length(RD, Ctx=#context{local_context=LocalCtx}) ->
 
 -spec delete_resource(#wm_reqdata{}, #context{}) ->
                              {boolean() | {'halt', term()}, #wm_reqdata{}, #context{}}.
-%% TODO: Use the RiakcPid in our Ctx and thread it through abort_mult....
 delete_resource(RD, Ctx=#context{local_context=LocalCtx,
                                  riakc_pid=RiakcPid}) ->
     case (catch base64url:decode(wrq:path_info('uploadId', RD))) of
