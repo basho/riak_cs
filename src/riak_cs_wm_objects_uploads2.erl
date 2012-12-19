@@ -18,6 +18,7 @@
          valid_entity_length/2,
          delete_resource/2,
          accept_body/2,
+         to_xml/2,
          finish_request/2]).
 
 -include("riak_cs.hrl").
@@ -56,7 +57,8 @@ authorize(RD, Ctx0=#context{local_context=LocalCtx0, riakc_pid=RiakPid}) ->
 %% now perform ACL check to verify access permission.
 -spec check_permission(atom(), #wm_reqdata{}, #context{}, lfs_manifest() | notfound) ->
                               {boolean() | {halt, non_neg_integer()}, #wm_reqdata{}, #context{}}.
-check_permission(_, RD, Ctx=#context{requested_perm=RequestedAccess,local_context=LocalCtx}, Mfst) ->
+check_permission(_, RD, Ctx=#context{requested_perm=RequestedAccess,
+                                     local_context=LocalCtx}, Mfst) ->
     #key_context{bucket=Bucket} = LocalCtx,
     RiakPid = Ctx#context.riakc_pid,
     case Ctx#context.user of
@@ -67,15 +69,25 @@ check_permission(_, RD, Ctx=#context{requested_perm=RequestedAccess,local_contex
     end,
     case Mfst of
         notfound ->
-            ObjectAcl = undefined;
+            case wrq:method(RD) of
+                'GET' ->
+                    %% Object ownership will be checked by
+                    %% riak_cs_mp_utils:do_part_common(), so we give blanket
+                    %% permission here.
+                    ObjectAcl = skip;
+                _ ->
+                    ObjectAcl = undefined
+                end;
         _ ->
             ObjectAcl = Mfst?MANIFEST.acl
     end,
-    case riak_cs_acl:object_access(Bucket,
-                                   ObjectAcl,
-                                   RequestedAccess,
-                                   CanonicalId,
-                                   RiakPid) of
+    case if ObjectAcl == skip -> true;
+            true              -> riak_cs_acl:object_access(Bucket,
+                                                           ObjectAcl,
+                                                           RequestedAccess,
+                                                           CanonicalId,
+                                                           RiakPid)
+         end of
         true ->
             %% actor is the owner
             AccessRD = riak_cs_access_logger:set_user(User, RD),
@@ -95,7 +107,7 @@ check_permission(_, RD, Ctx=#context{requested_perm=RequestedAccess,local_contex
 %% @doc Get the list of methods this resource supports.
 -spec allowed_methods() -> [atom()].
 allowed_methods() ->
-    ['POST', 'PUT', 'DELETE'].
+    ['GET', 'POST', 'PUT', 'DELETE'].
 
 post_is_create(RD, Ctx) ->
     {false, RD, Ctx}.
@@ -213,7 +225,9 @@ content_types_provided(RD, Ctx=#context{}) ->
     %% last PUT or, from you adding a
     %% `response-content-type` header in the request.
     Method = wrq:method(RD),
-    if Method == 'POST' ->
+    if Method == 'GET' ->
+            {[{?XML_TYPE, to_xml}], RD, Ctx};
+       Method == 'POST' ->
             {[{?XML_TYPE, unused_callback1}], RD, Ctx};
        Method == 'PUT' ->
             {[{?XML_TYPE, doesnt_matter_see_content_types_accepted}], RD, Ctx};
@@ -273,7 +287,6 @@ accept_body(RD, Ctx0=#context{local_context=LocalCtx0,
             RD2 = wrq:set_resp_body(XErr, RD),
             {{halt, 404}, RD2, Ctx0};
         {error, Reason} ->
-            io:format("~p LINE ~p ~p\n", [?MODULE, ?LINE, Reason]),
             riak_cs_s3_response:api_error(Reason, RD, Ctx0)
     end.
 
@@ -299,6 +312,56 @@ accept_streambody(RD,
        Next =:= done ->
             finalize_request(RD, Ctx, Pid)
     end.
+
+to_xml(RD, Ctx=#context{local_context=LocalCtx,
+                        riakc_pid=RiakcPid}) ->
+    #key_context{bucket=Bucket, key=Key} = LocalCtx,
+    UploadId = base64url:decode(re:replace(wrq:path(RD), ".*/uploads/",
+                                           "", [{return, binary}])),
+    {UserDisplay, _Canon, UserKeyId} = User =
+        riak_cs_mp_utils:user_rec_to_3tuple(Ctx#context.user),
+    case riak_cs_mp_utils:list_parts(Bucket, Key, UploadId, User, [], RiakcPid) of
+        {ok, Ps} ->
+            Us = [{'Part',
+                   [
+                    {'PartNumber', [integer_to_list(P?PART_DESCR.part_number)]},
+                    {'LastModified', [P?PART_DESCR.last_modified]},
+                    {'ETag', [riak_cs_utils:binary_to_hexlist(P?PART_DESCR.etag)]},
+                    {'Size', [integer_to_list(P?PART_DESCR.size)]}
+                   ]
+                  } || P <- lists:sort(Ps)],
+            PartNumbers = [P?PART_DESCR.part_number || P <- Ps],
+            MaxPartNumber = case PartNumbers of
+                                [] -> 1;
+                                _  -> lists:max(PartNumbers)
+                            end,
+            XmlDoc = {'ListPartsResult',
+                      [{'xmlns', "http://s3.amazonaws.com/doc/2006-03-01/"}],
+                      [
+                       {'Bucket', [binary_to_list(Bucket)]},
+                       {'Key', [Key]},
+                       {'UploadId', [binary_to_list(base64url:encode(UploadId))]},
+                       {'Initiator',               % TODO: replace with ARN data?
+                        [{'ID', [UserKeyId]},
+                         {'DisplayName', [UserDisplay]}
+                        ]},
+                       {'Owner',
+                        [{'ID', [UserKeyId]},
+                         {'DisplayName', [UserDisplay]}
+                        ]},
+                       {'StorageClass', ["STANDARD"]}, % TODO
+                       {'PartNumberMarker', ["1"]},    % TODO
+                       {'NextPartNumberMarker', [integer_to_list(MaxPartNumber)]}, % TODO
+                       {'MaxParts', [integer_to_list(length(Us))]}, % TODO
+                       {'IsTruncated', ["false"]}   % TODO
+                      ] ++ Us
+                     },
+            Body = riak_cs_s3_response:export_xml([XmlDoc]),
+            {Body, RD, Ctx};
+        {error, Reason} ->
+            riak_cs_s3_response:api_error(Reason, RD, Ctx)
+    end.
+
 
 finalize_request(RD, Ctx=#context{local_context=LocalCtx,
                                   riakc_pid=RiakcPid}, PutPid) ->

@@ -10,6 +10,7 @@
          service_available/3,
          parse_auth_header/2,
          iso_8601_datetime/0,
+         iso_8601_datetime/1,
          to_iso_8601/1,
          iso_8601_to_rfc_1123/1,
          to_rfc_1123/1,
@@ -300,7 +301,10 @@ user_record_to_xml(?RCS_USER{email=Email,
 %% current time.
 -spec iso_8601_datetime() -> string().
 iso_8601_datetime() ->
-    {{Year, Month, Day}, {Hour, Min, Sec}} = erlang:universaltime(),
+    iso_8601_datetime(erlang:universaltime()).
+
+-spec iso_8601_datetime(calendar:datetime()) -> string().
+iso_8601_datetime({{Year, Month, Day}, {Hour, Min, Sec}}) ->
     iso_8601_format(Year, Month, Day, Hour, Min, Sec).
 
 %% @doc Convert an RFC 1123 date into an ISO 8601 formatted timestamp.
