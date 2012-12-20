@@ -1,3 +1,16 @@
+-define(MANIFEST, #lfs_manifest_v3).
+
+-define(ACL, #acl_v2).
+-define(RCS_BUCKET, #moss_bucket_v1).
+-define(MOSS_USER, #rcs_user_v2).
+-define(RCS_USER, #rcs_user_v2).
+-define(MULTIPART_MANIFEST, #multipart_manifest_v1).
+-define(MULTIPART_MANIFEST_RECNAME, multipart_manifest_v1).
+-define(PART_MANIFEST, #part_manifest_v1).
+-define(PART_MANIFEST_RECNAME, part_manifest_v1).
+-define(MULTIPART_DESCR, #multipart_descr_v1).
+-define(PART_DESCR, #part_descr_v1).
+
 -record(moss_user, {
           name :: string(),
           key_id :: string(),
@@ -246,44 +259,6 @@
 
 -type cs_uuid_and_manifest() :: {cs_uuid(), lfs_manifest()}.
 
--record(multipart_manifest_v1, {
-    %% bkey :: {binary(), binary()},
-    upload_id :: binary(),
-    %% start_time :: term(),
-    owner :: acl_owner3(),
-
-    %% cluster_id :: undefined | binary(),
-
-    %% acl :: term(),
-    %% metadata :: orddict:orddict(),
-
-    %% since we don't have any point of strong
-    %% consistency (other than stanchion), we
-    %% can get concurrent `complete' and `abort'
-    %% requests. There are still some details to
-    %% work out, but what we observe here will
-    %% affect whether we accept future `complete'
-    %% or `abort' requests.
-
-    %% Stores references to all of the parts uploaded
-    %% with this `upload_id' so far. A part
-    %% can be uploaded more than once with the same
-    %% part number.  type = #part_manifest_vX
-    parts = ordsets:new() :: ordsets:ordset(),
-    %% List of UUIDs for parts that are done uploading.
-    %% The part number is redundant, so we only store
-    %% {UUID::binary(), PartETag::binary()} here.
-    done_parts = ordsets:new() :: ordsets:ordset(),
-    %% type = #part_manifest_vX
-    cleanup_parts = ordsets:new() :: ordsets:ordset(),
-
-    %% a place to stuff future information
-    %% without having to change
-    %% the record format
-    props = [] :: proplists:proplist()
-}).
--type multipart_manifest() :: #multipart_manifest_v1{}.
-
 -record(part_manifest_v1, {
     bucket :: binary(),
     key :: binary(),
@@ -309,6 +284,44 @@
     block_size :: integer()
 }).
 -type part_manifest() :: #part_manifest_v1{}.
+
+-record(multipart_manifest_v1, {
+    %% bkey :: {binary(), binary()},
+    upload_id :: binary(),
+    %% start_time :: term(),
+    owner :: acl_owner3(),
+
+    %% cluster_id :: undefined | binary(),
+
+    %% acl :: term(),
+    %% metadata :: orddict:orddict(),
+
+    %% since we don't have any point of strong
+    %% consistency (other than stanchion), we
+    %% can get concurrent `complete' and `abort'
+    %% requests. There are still some details to
+    %% work out, but what we observe here will
+    %% affect whether we accept future `complete'
+    %% or `abort' requests.
+
+    %% Stores references to all of the parts uploaded
+    %% with this `upload_id' so far. A part
+    %% can be uploaded more than once with the same
+    %% part number.  type = #part_manifest_vX
+    parts = ordsets:new() :: ordsets:ordset(?PART_MANIFEST{}),
+    %% List of UUIDs for parts that are done uploading.
+    %% The part number is redundant, so we only store
+    %% {UUID::binary(), PartETag::binary()} here.
+    done_parts = ordsets:new() :: ordsets:ordset({binary(), binary()}),
+    %% type = #part_manifest_vX
+    cleanup_parts = ordsets:new() :: ordsets:ordset(?PART_MANIFEST{}),
+
+    %% a place to stuff future information
+    %% without having to change
+    %% the record format
+    props = [] :: proplists:proplist()
+}).
+-type multipart_manifest() :: #multipart_manifest_v1{}.
 
 %% Basis of list multipart uploads output
 -record(multipart_descr_v1, {
@@ -336,19 +349,6 @@
     etag :: binary(),
     size :: integer()
 }).
-
--define(MANIFEST, #lfs_manifest_v3).
-
--define(ACL, #acl_v2).
--define(RCS_BUCKET, #moss_bucket_v1).
--define(MOSS_USER, #rcs_user_v2).
--define(RCS_USER, #rcs_user_v2).
--define(MULTIPART_MANIFEST, #multipart_manifest_v1).
--define(MULTIPART_MANIFEST_RECNAME, multipart_manifest_v1).
--define(PART_MANIFEST, #part_manifest_v1).
--define(PART_MANIFEST_RECNAME, part_manifest_v1).
--define(MULTIPART_DESCR, #multipart_descr_v1).
--define(PART_DESCR, #part_descr_v1).
 
 -define(USER_BUCKET, <<"moss.users">>).
 -define(ACCESS_BUCKET, <<"moss.access">>).

@@ -152,3 +152,8 @@ watchdog.erl:238: Expression produces a value of type [any()], but this value is
 watchdog.erl:243: Expression produces a value of type [[any()]], but this value is unmatched
 watchdog.erl:272: The call lists:keyreplace(Key::{'log' | 'pid' | 'tcp' | 'udp' | integer(),_},1,Subs::maybe_improper_list(),Sub::fun((_) -> any())) will never return since it differs in the 4th argument from the success typing arguments: (any(),pos_integer(),maybe_improper_list(),tuple())
 watchdog.erl:352: Expression produces a value of type 'ok' | {'error',atom()}, but this value is unmatched
+  riak_kv_backend:fold_buckets_fun/0
+  riak_kv_backend:fold_keys_fun/0
+  riak_kv_backend:fold_objects_fun/0
+  riak_object:bucket/0
+  riak_object:key/0
