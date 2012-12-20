@@ -111,7 +111,6 @@ process_post(RD, Ctx=#context{local_context=LocalCtx,
                           <<"binary/octet-stream">>
                   end,
     User = riak_cs_mp_utils:user_rec_to_3tuple(Ctx#context.user),
-io:format("x-amz-acl HDR: ~p\n", [wrq:get_req_header("x-amz-acl", RD)]),
     ACL = riak_cs_acl_utils:canned_acl(
             wrq:get_req_header("x-amz-acl", RD),
             User,
