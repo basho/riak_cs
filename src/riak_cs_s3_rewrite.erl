@@ -15,33 +15,35 @@
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
+-compile(export_all).
 -endif.
 
 -type subresource() :: {string(), string()}.
 -type subresources() :: [subresource()].
 
 %% @doc Function to rewrite headers prior to processing by webmachine.
--spec rewrite(atom(), atom(), {integer(), integer()}, gb_tree(), string()) -> 
+-spec rewrite(atom(), atom(), {integer(), integer()}, gb_tree(), string()) ->
                      {gb_tree(), string()}.
 rewrite(Method, _Scheme, _Vsn, Headers, RawPath) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"rewrite">>),
     Host = mochiweb_headers:get_value("host", Headers),
     HostBucket = bucket_from_host(Host),
-    {Path, QueryString, _} = mochiweb_util:urlsplit_path(RawPath),    
+    {Path, QueryString, _} = mochiweb_util:urlsplit_path(RawPath),
     RewrittenPath = rewrite_path(Method, Path, QueryString, HostBucket),
-    RewrittenHeaders = mochiweb_headers:default(?RCS_REWRITE_HEADER, 
+    RewrittenHeaders = mochiweb_headers:default(?RCS_REWRITE_HEADER,
                                                 rcs_rewrite_header(RawPath, HostBucket),
                                                 Headers),
+    lager:info("Hdrs: ~p Path: ~p", [RewrittenHeaders, RewrittenPath]),
     {RewrittenHeaders, RewrittenPath}.
 
 -spec original_resource(term()) -> undefined | {string(), [{term(),term()}]}.
 original_resource(RD) ->
-    case wrq:get_req_header(?RCS_REWRITE_HEADER, RD) of 
+    case wrq:get_req_header(?RCS_REWRITE_HEADER, RD) of
         undefined -> undefined;
         RawPath ->
             {Path, QS, _} = mochiweb_util:urlsplit_path(RawPath),
             {Path, mochiweb_util:parse_qs(QS)}
-    end.                                                         
+    end.
 
 
 %% @doc Internal function to handle rewriting the URL
@@ -69,7 +71,7 @@ rewrite_path(_Method, Path, QS, Bucket) ->
                   ]).
 
 %% @doc, build the path to be stored as the rewritten path in the request. Bucket name
-%% from the host header is added if it exists. 
+%% from the host header is added if it exists.
 rcs_rewrite_header(RawPath, undefined) ->
     RawPath;
 rcs_rewrite_header(RawPath, Bucket) ->
@@ -85,18 +87,20 @@ bucket_from_host(HostHeader) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"bucket_from_host">>),
     HostNoPort = hd(string:tokens(HostHeader, ":")),
     {ok, RootHost} = application:get_env(riak_cs, cs_root_host),
-    extract_bucket_from_host(string:tokens(HostNoPort, "."),
-                             string:tokens(RootHost, ".")).
+    extract_bucket_from_host(HostNoPort,
+                             string:str(HostNoPort, RootHost)).
 
 %% @doc Extract the bucket name from the `Host' header value if a
 %% bucket name is present.
 -spec extract_bucket_from_host([string()], [string()]) -> undefined | string().
-extract_bucket_from_host(RootHost, RootHost) ->
+extract_bucket_from_host(_Host, 0) ->
     undefined;
-extract_bucket_from_host([Bucket | RootHost], RootHost) ->
-    Bucket;
-extract_bucket_from_host(_Host, _RootHost) ->
-    undefined.
+extract_bucket_from_host(_Host, 1) ->
+    undefined;
+extract_bucket_from_host(Host, RootHostIndex) ->
+    %% Take the substring of the everything up to
+    %% the '.' preceding the root host
+    string:sub_string(Host, 1, RootHostIndex-2).
 
 %% @doc Separate the bucket name from the rest of the raw path in the
 %% case where the bucket name is included in the path.
@@ -165,7 +169,7 @@ valid_subresource({Key, _}) ->
 rewrite_path_test() ->
     application:set_env(riak_cs, cs_root_host, ?ROOT_HOST),
     %% List Buckets URL
-    equal_paths("/buckets", rewrite_with(headers([]), "/")),    
+    equal_paths("/buckets", rewrite_with(headers([]), "/")),
     %% Bucket Operations
     equal_paths("/buckets/testbucket/objects", rewrite_with('GET', headers([]), "/testbucket")),
     equal_paths("/buckets/testbucket/objects", rewrite_with('GET', headers([{"host", "testbucket." ++ ?ROOT_HOST}]), "/")),
@@ -201,7 +205,7 @@ rewrite_header_test() ->
     Path = "/testbucket?a=b",
     {Headers, _} = rewrite_with(headers([]), Path),
     ?assertEqual(Path, mochiweb_headers:get_value(?RCS_REWRITE_HEADER, Headers)).
-        
+
 
 %% Helper function for eunit tests
 headers(HeadersList) ->
@@ -220,4 +224,3 @@ rewrite_with(Method, Headers, Path) ->
     rewrite(Method, Scheme, Version, Headers, Path).
 
 -endif.
-
