@@ -74,6 +74,9 @@ resume() ->
 
 set_interval(undefined) ->
     output("Error: No interval value specified");
+set_interval(infinity) ->
+    output("The garbage collection interval was updated."),
+    riak_cs_gc_d:set_interval(infinity);
 set_interval(Interval) when is_integer(Interval) ->
     output("The garbage collection interval was updated."),
     riak_cs_gc_d:set_interval(Interval);
@@ -170,5 +173,7 @@ human_time(Datetime)  -> rts:iso8601(Datetime).
 
 parse_interval_opts([]) ->
     undefined;
+parse_interval_opts(["infinity"]) ->
+    infinity;
 parse_interval_opts([Interval | _]) ->
     catch list_to_integer(Interval).
