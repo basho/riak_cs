@@ -426,7 +426,7 @@ get_manifests(RiakcPid, Bucket, Key) ->
             Error
     end.
 
--spec manifests_from_riak_object(riakc_obj:riak_object()) -> orddict:orddict().
+-spec manifests_from_riak_object(riakc_obj:riakc_obj()) -> orddict:orddict().
 manifests_from_riak_object(RiakObject) ->
     %% For example, riak_cs_manifest_fsm:get_and_update/4 may wish to
     %% update the #riakc_obj without a roundtrip to Riak first.  So we
@@ -625,7 +625,7 @@ put_with_no_meta(RiakcPid, RiakcObj) ->
 %% not explicitly setting the metadata will
 %% cause a siblings exception to be raised.
 -spec put_with_no_meta(pid(), riakc_obj:riakc_obj(), term()) ->
-    ok | {ok, riakc_obj:riak_object()} | {ok, binary()} | {error, term()}.
+    ok | {ok, riakc_obj:riakc_obj()} | {ok, binary()} | {error, term()}.
 put_with_no_meta(RiakcPid, RiakcObject, Options) ->
     WithMeta = riakc_obj:update_metadata(RiakcObject, dict:new()),
     io:format("put_NO_META LINE ~p contents ~p bucket ~p key ~p\n", [?LINE, length(riakc_obj:get_contents(WithMeta)), riakc_obj:bucket(WithMeta), riakc_obj:key(WithMeta)]),
@@ -814,7 +814,7 @@ active_to_bool({error, notfound}) ->
 %% `bucket_exists_for_user' and rename this function
 %% `bucket_exists'.
 -spec check_bucket_exists(binary(), pid()) ->
-                                 {ok, riak_obj:riak_obj()} | {error, term()}.
+                                 {ok, riakc_obj:riakc_obj()} | {error, term()}.
 check_bucket_exists(Bucket, RiakPid) ->
     case riak_cs_utils:get_object(?BUCKETS_BUCKET, Bucket, RiakPid) of
         {ok, Obj} ->

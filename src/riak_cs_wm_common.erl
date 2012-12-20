@@ -313,7 +313,7 @@ io:format("~p LINE ~p Reason ~p\n", [?MODULE, ?LINE, _Reason]),
             {error, bad_auth}
     end.
 
--spec exports_fun(orddict:new()) -> function().
+-spec exports_fun(orddict:orddict()) -> function().
 exports_fun(Exports) ->
     fun(Function) ->
             orddict:is_key(Function, Exports)
