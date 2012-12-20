@@ -32,7 +32,7 @@
          make_content_types_accepted/3,
          make_special_error/1,
          make_special_error/4,
-         new_manifest/4,
+         new_manifest/5,
          upload_part/6, upload_part/7,
          upload_part_1blob/2,
          upload_part_finished/7,
@@ -115,7 +115,7 @@ initiate_multipart_upload(Bucket, Key, ContentType, Owner, Opts) ->
 
 initiate_multipart_upload(Bucket, Key, ContentType, {_,_,_} = Owner,
                           Opts, RiakcPidUnW) ->
-    write_new_manifest(new_manifest(Bucket, Key, ContentType, Owner),
+    write_new_manifest(new_manifest(Bucket, Key, ContentType, Owner, Opts),
                        Opts, RiakcPidUnW).
 
 make_content_types_accepted(RD, Ctx) ->
@@ -213,11 +213,15 @@ list_parts(Bucket, Key, UploadId, Caller, Opts, RiakcPidUnW) ->
                    RiakcPidUnW).
 
 %% @doc
--spec new_manifest(binary(), binary(), string(), acl_owner()) -> multipart_manifest().
-new_manifest(Bucket, Key, ContentType, {_, _, _} = Owner) ->
+-spec new_manifest(binary(), binary(), string(), acl_owner(), list()) -> multipart_manifest().
+new_manifest(Bucket, Key, ContentType, {_, _, _} = Owner, Opts) ->
     UUID = druuid:v4(),
     %% TODO: add object metadata here, e.g. content-disposition et al.
     %% TODO: add cluster_id ... which means calling new_manifest/11 not /9.
+    MetaData = case proplists:get_value(as_is_headers, Opts) of
+                   undefined -> [];
+                   AsIsHdrs  -> AsIsHdrs
+               end,
     M = riak_cs_lfs_utils:new_manifest(Bucket,
                                        Key,
                                        UUID,
@@ -225,7 +229,7 @@ new_manifest(Bucket, Key, ContentType, {_, _, _} = Owner) ->
                                        ContentType,
                                        %% we won't know the md5 of a multipart
                                        undefined,
-                                       [],
+                                       MetaData,
                                        riak_cs_lfs_utils:block_size(),
                                        %% ACL: needs Riak client pid, so we wait
                                        no_acl_yet),

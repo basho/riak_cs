@@ -111,22 +111,42 @@ process_post(RD, Ctx=#context{local_context=LocalCtx,
                           <<"binary/octet-stream">>
                   end,
     User = riak_cs_mp_utils:user_rec_to_3tuple(Ctx#context.user),
+io:format("x-amz-acl HDR: ~p\n", [wrq:get_req_header("x-amz-acl", RD)]),
     ACL = riak_cs_acl_utils:canned_acl(
             wrq:get_req_header("x-amz-acl", RD),
             User,
             Owner,
             RiakcPid),
-    %% TODO: pass in additional x-amz-meta-* headers?
-    %% TODO: pass in Content-​Disposition?
-    %% TODO: pass in Content-​Encoding?
-    %% TODO: pass in Expires?
     %% TODO: pass in x-amz-server-side​-encryption?
     %% TODO: pass in x-amz-storage-​class?
     %% TODO: pass in x-amz-grant-* headers?
-    Opts = [{acl, ACL},
-            {content_disposition, wrq:get_req_header("content-disposition", RD)},
-            {content_encoding, wrq:get_req_header("content-encoding", RD)},
-            {expires, wrq:get_req_header("expires", RD)}],
+    %% OtherREs = ["^x-amz-server-side-encryption$",
+    %%             "^x-amz-storage-​class$",
+    %%             "^x-amz-grant-"],
+    AsIsREs = ["^Expires", "^Content-Disposition$", "^Content-Encoding$",
+               "^x-amz-meta-"],
+    Hdrs = case wrq:get_req_header("expires", RD) of
+               undefined -> [];
+               ExpiresV  -> [{"Expires", ExpiresV}]
+           end ++ [HV || {H, _} = HV <- mochiweb_headers:to_list(
+                                          wrq:req_headers(RD)),
+                         is_list(H)],
+    %% Note for above: Mochiweb standard/expected header name are atoms,
+    %% so we filter them out above.  The 'Expires' header is indeed an atom.
+    %% TODO: This treatment of the Expires header is probably wrong.
+    AsIs = case lists:foldl(
+                  fun({Hdr, Val}, Acc) ->
+                          [{Hdr, Val} || is_list(Hdr),
+                                         RE <- AsIsREs,
+                                         re:run(Hdr, RE, [caseless, {capture,none}]) == match] ++ Acc
+                  end, [], Hdrs) of
+               [] ->
+                   [];
+               Pairs ->
+                   [{as_is_headers, Pairs}]
+           end,
+    Opts = [{acl, ACL}|AsIs],
+
     case riak_cs_mp_utils:initiate_multipart_upload(Bucket, Key, ContentType,
                                                     User, Opts, RiakcPid) of
         {ok, UploadId} ->
