@@ -361,11 +361,6 @@ to_xml(RD, Ctx=#context{local_context=LocalCtx,
 
 finalize_request(RD, Ctx=#context{local_context=LocalCtx,
                                   riakc_pid=RiakcPid}, PutPid) ->
-    %% TODO: Is it possible to have a process leak if we crash before
-    %%       reaching this place?
-    %% TODO: If yes, is there a similar leak in
-    %%       riak_cs_wm_object:accept_streambody()?
-    %% TODO: robustify against pattern matching failures?
     {ok, M} = riak_cs_put_fsm:finalize(PutPid),
     #key_context{bucket=Bucket,
                  key=Key,
