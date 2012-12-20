@@ -256,32 +256,39 @@ accept_body(RD, Ctx0=#context{local_context=LocalCtx0,
     catch riak_cs_get_fsm:stop(GetFsmPid),
     BlockSize = riak_cs_lfs_utils:block_size(),
     Caller = riak_cs_mp_utils:user_rec_to_3tuple(Ctx0#context.user),
-    %% TODO: handle badarg
-    UploadId = base64url:decode(re:replace(wrq:path(RD), ".*/uploads/",
-                                           "", [{return, binary}])),
-    %% TODO: handle badarg
-    PartNumber = list_to_integer(wrq:get_qs_value("partNumber", RD)),
-    %% TODO: handle badarg
-    ContentMD5 = case wrq:get_req_header("Content-MD5", RD) of
-                     undefined -> undefined;
-                     MD5Enc    -> base64:decode(MD5Enc)
-                 end,
-    case riak_cs_mp_utils:upload_part(Bucket, Key, UploadId, PartNumber,
-                                      Size, Caller, RiakcPid) of
-        {upload_part_ready, PartUUID, PutPid} ->
-            LocalCtx = LocalCtx0#key_context{upload_id=UploadId,
-                                             part_number=PartNumber,
-                                             part_uuid=PartUUID,
-                                             content_md5=ContentMD5},
-            Ctx = Ctx0#context{local_context=LocalCtx},
-            accept_streambody(RD, Ctx, PutPid,
-                              wrq:stream_req_body(RD, BlockSize));
-        {error, notfound} ->
-            XErr = riak_cs_mp_utils:make_special_error("NoSuchUpload"),
-            RD2 = wrq:set_resp_body(XErr, RD),
-            {{halt, 404}, RD2, Ctx0};
-        {error, Reason} ->
-            riak_cs_s3_response:api_error(Reason, RD, Ctx0)
+    try
+        {t, {ok, UploadId}} =
+            {t, safe_base64url_decode(re:replace(wrq:path(RD), ".*/uploads/", "", [{return, binary}]))},
+        {t, {ok, PartNumber}} =
+            {t, safe_list_to_integer(wrq:get_qs_value("partNumber", RD))},
+        {t3, {ok, ContentMD5}} = case wrq:get_req_header("Content-MD5", RD) of
+                                     undefined -> {t3, {ok, undefined}};
+                                     MD5Enc    -> {t3, safe_base64_decode(MD5Enc)}
+                                 end,
+        case riak_cs_mp_utils:upload_part(Bucket, Key, UploadId, PartNumber,
+                                          Size, Caller, RiakcPid) of
+            {upload_part_ready, PartUUID, PutPid} ->
+                LocalCtx = LocalCtx0#key_context{upload_id=UploadId,
+                                                 part_number=PartNumber,
+                                                 part_uuid=PartUUID,
+                                                 content_md5=ContentMD5},
+                Ctx = Ctx0#context{local_context=LocalCtx},
+                accept_streambody(RD, Ctx, PutPid,
+                                  wrq:stream_req_body(RD, BlockSize));
+            {error, notfound} ->
+                XErr = riak_cs_mp_utils:make_special_error("NoSuchUpload"),
+                RD2 = wrq:set_resp_body(XErr, RD),
+                {{halt, 404}, RD2, Ctx0};
+            {error, Reason} ->
+                riak_cs_s3_response:api_error(Reason, RD, Ctx0)
+        end
+    catch
+        error:{badmatch, {t, _}} ->
+            {{halt, 400}, RD, Ctx0};
+        error:{badmatch, {t3, _}} ->
+            XErrT3 = riak_cs_mp_utils:make_special_error("InvalidDigest"),
+            RDT3 = wrq:set_resp_body(XErrT3, RD),
+            {{halt, 400}, RDT3, Ctx0}
     end.
 
 -spec accept_streambody(#wm_reqdata{}, #context{}, pid(), term()) -> {{halt, integer()}, #wm_reqdata{}, #context{}}.
@@ -387,4 +394,27 @@ finalize_request(RD, Ctx=#context{local_context=LocalCtx,
             end;
         {error, Reason} ->
             riak_cs_s3_response:api_error(Reason, RD, Ctx)
+    end.
+
+safe_base64_decode(Str) ->
+    try
+        X = base64:decode(Str),
+        {ok, X}
+    catch _:_ ->
+            bad
+    end.
+
+safe_base64url_decode(Str) ->
+    try
+        X = base64url:decode(Str),
+        {ok, X}
+    catch _:_ ->
+            bad
+    end.
+safe_list_to_integer(Str) ->
+    try
+        X = list_to_integer(Str),
+        {ok, X}
+    catch _:_ ->
+            bad
     end.
