@@ -25,7 +25,7 @@
          calc_multipart_2i_dict/3,
          clean_multipart_unused_parts/1,
          complete_multipart_upload/5, complete_multipart_upload/6,
-         initiate_multipart_upload/4, initiate_multipart_upload/5,
+         initiate_multipart_upload/5, initiate_multipart_upload/6,
          list_multipart_uploads/3, list_multipart_uploads/4,
          list_parts/5, list_parts/6,
          make_content_types_accepted/2,
@@ -38,7 +38,7 @@
          upload_part_finished/7,
          user_rec_to_3tuple/1,
          write_new_manifest/1,
-         write_new_manifest/2
+         write_new_manifest/3
         ]).
 
 %%%===================================================================
@@ -110,12 +110,13 @@ complete_multipart_upload(Bucket, Key, UploadId, PartETags, Caller, RiakcPidUnW)
     do_part_common(complete, Bucket, Key, UploadId, Caller, [{complete, Extra}],
                    RiakcPidUnW).
 
-initiate_multipart_upload(Bucket, Key, ContentType, Owner) ->
-    initiate_multipart_upload(Bucket, Key, ContentType, Owner, nopid).
+initiate_multipart_upload(Bucket, Key, ContentType, Owner, Opts) ->
+    initiate_multipart_upload(Bucket, Key, ContentType, Owner, Opts, nopid).
 
-initiate_multipart_upload(Bucket, Key, ContentType, {_,_,_} = Owner, RiakcPidUnW) ->
+initiate_multipart_upload(Bucket, Key, ContentType, {_,_,_} = Owner,
+                          Opts, RiakcPidUnW) ->
     write_new_manifest(new_manifest(Bucket, Key, ContentType, Owner),
-                       RiakcPidUnW).
+                       Opts, RiakcPidUnW).
 
 make_content_types_accepted(RD, Ctx) ->
     make_content_types_accepted(RD, Ctx, unused_callback).
@@ -215,6 +216,8 @@ list_parts(Bucket, Key, UploadId, Caller, Opts, RiakcPidUnW) ->
 -spec new_manifest(binary(), binary(), string(), acl_owner()) -> multipart_manifest().
 new_manifest(Bucket, Key, ContentType, {_, _, _} = Owner) ->
     UUID = druuid:v4(),
+    %% TODO: add object metadata here, e.g. content-disposition et al.
+    %% TODO: add cluster_id ... which means calling new_manifest/11 not /9.
     M = riak_cs_lfs_utils:new_manifest(Bucket,
                                        Key,
                                        UUID,
@@ -268,15 +271,22 @@ user_rec_to_3tuple(U) ->
      U?RCS_USER.key_id}.
 
 write_new_manifest(M) ->
-    write_new_manifest(M, nopid).
+    write_new_manifest(M, [], nopid).
 
-write_new_manifest(M, RiakcPidUnW) ->
+write_new_manifest(M, Opts, RiakcPidUnW) ->
+    io:format("wnm: ~p\n", [Opts]),
     MpM = proplists:get_value(multipart, M?MANIFEST.props),
     Owner = MpM?MULTIPART_MANIFEST.owner,
     case wrap_riak_connection(RiakcPidUnW) of
         {ok, RiakcPid} ->
             try
-                Acl = riak_cs_acl_utils:canned_acl("private", Owner, undefined, unused),
+                Acl = case proplists:get_value(acl, Opts) of
+                          undefined ->
+                              riak_cs_acl_utils:canned_acl(
+                                "private", Owner, undefined, unused);
+                          AnAcl ->
+                              AnAcl
+                      end,
                 ClusterId = riak_cs_utils:get_cluster_id(?PID(RiakcPid)),
                 M2 = M?MANIFEST{acl = Acl,
                                 cluster_id = ClusterId,
@@ -745,7 +755,7 @@ test_1() ->
 
 test_initiate(User) ->
     {ok, ID} = initiate_multipart_upload(
-                 test_bucket1(), test_key1(), <<"text/plain">>, User),
+                 test_bucket1(), test_key1(), <<"text/plain">>, [], User),
     ID.
 
 test_abort(UploadId, User) ->
