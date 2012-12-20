@@ -122,7 +122,7 @@ dialyzer: compile
 	@echo
 	@sleep 1
 	dialyzer -Wno_return -Wunmatched_returns --plt $(PLT) deps/*/ebin ebin | \
-	    fgrep -v -f ./dialyzer.ignore-warnings
+	    egrep -v -f ./dialyzer.ignore-warnings
 
 cleanplt:
 	@echo
