@@ -209,11 +209,6 @@ finish_request(RD, Ctx) ->
 
 -spec content_types_provided(#wm_reqdata{}, #context{}) -> {[{string(), atom()}], #wm_reqdata{}, #context{}}.
 content_types_provided(RD, Ctx=#context{}) ->
-    %% TODO:
-    %% As I understand S3, the content types provided
-    %% will either come from the value that was
-    %% last PUT or, from you adding a
-    %% `response-content-type` header in the request.
     Method = wrq:method(RD),
     if Method == 'GET' ->
             {[{?XML_TYPE, to_xml}], RD, Ctx};
@@ -222,7 +217,7 @@ content_types_provided(RD, Ctx=#context{}) ->
        Method == 'PUT' ->
             {[{?XML_TYPE, doesnt_matter_see_content_types_accepted}], RD, Ctx};
        true ->
-            %% TODO this shouldn't ever be called, it's just to
+            %% this shouldn't ever be called, it's just to
             %% appease webmachine
             {[{"text/plain", unused_callback2}], RD, Ctx}
     end.
@@ -342,7 +337,7 @@ to_xml(RD, Ctx=#context{local_context=LocalCtx,
                        {'Bucket', [binary_to_list(Bucket)]},
                        {'Key', [Key]},
                        {'UploadId', [binary_to_list(base64url:encode(UploadId))]},
-                       {'Initiator',               % TODO: replace with ARN data?
+                       {'Initiator',    % TODO: replace with ARN data?
                         [{'ID', [UserKeyId]},
                          {'DisplayName', [UserDisplay]}
                         ]},
