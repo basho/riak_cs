@@ -56,9 +56,9 @@ return_active_uuids_from_gc_response({error, _Error}=Error, _ActiveUUIDs) ->
 
 %% @private
 -spec gc_specific_manifests(UUIDsToMark :: [binary()],
-                   RiakObject :: riakc_obj:riak_object(),
+                   RiakObject :: riakc_obj:riakc_obj(),
                    RiakcPid :: pid()) ->
-    {error, term()} | {ok, riakc_obj:riak_object()}.
+    {error, term()} | {ok, riakc_obj:riakc_obj()}.
 gc_specific_manifests(UUIDsToMark, RiakObject, RiakcPid) ->
     MarkedResult = mark_as_pending_delete(UUIDsToMark,
                                           RiakObject,
@@ -66,13 +66,13 @@ gc_specific_manifests(UUIDsToMark, RiakObject, RiakcPid) ->
     handle_mark_as_pending_delete(MarkedResult, UUIDsToMark, RiakcPid).
 
 %% @private
--spec handle_mark_as_pending_delete({ok, riakc_obj:riak_object()},
+-spec handle_mark_as_pending_delete({ok, riakc_obj:riakc_obj()},
                                     [binary()],
                                     pid()) ->
-    {error, term()} | {ok, riakc_obj:riak_object()};
+    {error, term()} | {ok, riakc_obj:riakc_obj()};
 
     ({error, term()}, [binary()], pid()) ->
-    {error, term()} | {ok, riakc_obj:riak_object()}.
+    {error, term()} | {ok, riakc_obj:riakc_obj()}.
 handle_mark_as_pending_delete({ok, RiakObject}, UUIDsToMark, RiakcPid) ->
     Manifests = riak_cs_utils:manifests_from_riak_object(RiakObject),
     PDManifests = riak_cs_manifest_utils:manifests_to_gc(UUIDsToMark, Manifests),
@@ -85,10 +85,10 @@ handle_mark_as_pending_delete({error, Error}=Error, _UUIDsToMark, _RiakcPid) ->
 
 %% @private
 -spec handle_move_result(ok | {error, term()},
-                         riakc_obj:riak_object(),
+                         riakc_obj:riakc_obj(),
                          [binary()],
                          pid()) ->
-    {ok, riakc_obj:riak_object()} | {error, term()}.
+    {ok, riakc_obj:riakc_obj()} | {error, term()}.
 handle_move_result(ok, RiakObject, PDUUIDs, RiakcPid) ->
     mark_as_scheduled_delete(PDUUIDs, RiakObject, RiakcPid);
 handle_move_result({error, _Error}=Error, _RiakObject, _PDUUIDs, _RiakcPid) ->
@@ -150,8 +150,8 @@ timestamp() ->
 
 %% @doc Mark a list of manifests as `pending_delete' based upon the
 %% UUIDs specified.
--spec mark_as_pending_delete([binary()], riakc_obj:riak_object(), pid()) ->
-    {ok, riakc_obj:riak_object()} | {error, term()}.
+-spec mark_as_pending_delete([binary()], riakc_obj:riakc_obj(), pid()) ->
+    {ok, riakc_obj:riakc_obj()} | {error, term()}.
 mark_as_pending_delete(UUIDsToMark, RiakObject, RiakcPid) ->
     mark_manifests(RiakObject, UUIDsToMark,
                    fun riak_cs_manifest_utils:mark_pending_delete/2,
@@ -159,8 +159,8 @@ mark_as_pending_delete(UUIDsToMark, RiakObject, RiakcPid) ->
 
 %% @doc Mark a list of manifests as `scheduled_delete' based upon the
 %% UUIDs specified.
--spec mark_as_scheduled_delete([binary()], riakc_obj:riak_object(), pid()) ->
-    {ok, riakc_obj:riak_object()} | {error, term()}.
+-spec mark_as_scheduled_delete([binary()], riakc_obj:riakc_obj(), pid()) ->
+    {ok, riakc_obj:riakc_obj()} | {error, term()}.
 mark_as_scheduled_delete(UUIDsToMark, RiakObject, RiakcPid) ->
     mark_manifests(RiakObject, UUIDsToMark,
                    fun riak_cs_manifest_utils:mark_scheduled_delete/2,
@@ -170,8 +170,8 @@ mark_as_scheduled_delete(UUIDsToMark, RiakObject, RiakcPid) ->
 %% @doc Call a `riak_cs_manifest_utils' function on a set of manifests
 %% to update the state of the manifests specified by `UUIDsToMark'
 %% and then write the updated values to riak.
--spec mark_manifests(riakc_obj:riak_object(), [binary()], fun(), pid()) ->
-                    {ok, riakc_obj:riak_object()} | {error, term()}.
+-spec mark_manifests(riakc_obj:riakc_obj(), [binary()], fun(), pid()) ->
+                    {ok, riakc_obj:riakc_obj()} | {error, term()}.
 mark_manifests(RiakObject, UUIDsToMark, ManiFunction, RiakcPid) ->
     Manifests = riak_cs_utils:manifests_from_riak_object(RiakObject),
     Marked = ManiFunction(Manifests, UUIDsToMark),
