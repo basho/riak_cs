@@ -278,7 +278,6 @@ write_new_manifest(M) ->
     write_new_manifest(M, [], nopid).
 
 write_new_manifest(M, Opts, RiakcPidUnW) ->
-    io:format("wnm: ~p\n", [Opts]),
     MpM = proplists:get_value(multipart, M?MANIFEST.props),
     Owner = MpM?MULTIPART_MANIFEST.owner,
     case wrap_riak_connection(RiakcPidUnW) of
