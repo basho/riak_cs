@@ -19,7 +19,7 @@
          find_and_auth_user/3,
          find_and_auth_user/4,
          find_and_auth_user/5,
-         validate_auth_header/3,
+         validate_auth_header/4,
          ensure_doc/2,
          deny_access/2,
          deny_invalid_key/2,
@@ -120,7 +120,7 @@ find_and_auth_user(RD,
                    Conv2KeyCtx,
                    AnonymousOk) ->
     handle_validation_response(
-      validate_auth_header(RD, AuthBypass, RiakPid),
+      validate_auth_header(RD, AuthBypass, RiakPid, ICtx),
       RD,
       ICtx,
       Next,
@@ -151,10 +151,10 @@ handle_validation_response({error, _Reason}, RD, Ctx, _, Conv2KeyCtx, _) ->
 %% @doc Look for an Authorization header in the request, and validate
 %% it if it exists.  Returns `{ok, User, UserObj}' if validation
 %% succeeds, or `{error, KeyId, Reason}' if any step fails.
--spec validate_auth_header(#wm_reqdata{}, term(), pid()) ->
+-spec validate_auth_header(#wm_reqdata{}, term(), pid(), #context{}) ->
                                   {ok, rcs_user(), riakc_obj:riakc_obj()} |
                                   {error, bad_auth | notfound | no_user_key | term()}.
-validate_auth_header(RD, AuthBypass, RiakPid) ->
+validate_auth_header(RD, AuthBypass, RiakPid, Ctx) ->
     AuthHeader = wrq:get_req_header("authorization", RD),
     case AuthHeader of
         undefined ->
@@ -169,8 +169,7 @@ validate_auth_header(RD, AuthBypass, RiakPid) ->
     end,
     case riak_cs_utils:get_user(KeyId, RiakPid) of
         {ok, {User, UserObj}} when User?RCS_USER.status =:= enabled ->
-            Secret = User?RCS_USER.key_secret,
-            case AuthMod:authenticate(RD, Secret, Signature) of
+            case AuthMod:authenticate(User, Signature, RD, Ctx) of
                 ok ->
                     {ok, User, UserObj};
                 {error, _Reason} ->
@@ -240,7 +239,7 @@ streaming_get(FsmPid, StartTime, UserName, BFile_str) ->
     case riak_cs_get_fsm:get_next_chunk(FsmPid) of
         {done, Chunk} ->
             ok = riak_cs_stats:update_with_start(object_get, StartTime),
-            riak_cs_dtrace:dt_object_return(riak_cs_wm_object, <<"object_get">>, 
+            riak_cs_dtrace:dt_object_return(riak_cs_wm_object, <<"object_get">>,
                                                [], [UserName, BFile_str]),
             {Chunk, done};
         {chunk, Chunk} ->
