@@ -103,7 +103,7 @@ post_is_create(RD, Ctx) ->
 
 process_post(RD, Ctx=#context{local_context=LocalCtx,
                               riakc_pid=RiakcPid}) ->
-    #key_context{bucket=Bucket, key=Key} = LocalCtx,
+    #key_context{bucket=Bucket, key=Key, owner=Owner} = LocalCtx,
     ContentType = try
                       list_to_binary(wrq:get_req_header("Content-Type", RD))
                   catch error:badarg ->
@@ -111,17 +111,24 @@ process_post(RD, Ctx=#context{local_context=LocalCtx,
                           <<"binary/octet-stream">>
                   end,
     User = riak_cs_mp_utils:user_rec_to_3tuple(Ctx#context.user),
-    %% TODO: pass in x-amz-acl?
+    ACL = riak_cs_acl_utils:canned_acl(
+            wrq:get_req_header("x-amz-acl", RD),
+            User,
+            Owner,
+            RiakcPid),
     %% TODO: pass in additional x-amz-meta-* headers?
     %% TODO: pass in Content-​Disposition?
     %% TODO: pass in Content-​Encoding?
     %% TODO: pass in Expires?
     %% TODO: pass in x-amz-server-side​-encryption?
     %% TODO: pass in x-amz-storage-​class?
-    %% TODO: pass in x-amz-server-side​-encryption?
     %% TODO: pass in x-amz-grant-* headers?
+    Opts = [{acl, ACL},
+            {content_disposition, wrq:get_req_header("content-disposition", RD)},
+            {content_encoding, wrq:get_req_header("content-encoding", RD)},
+            {expires, wrq:get_req_header("expires", RD)}],
     case riak_cs_mp_utils:initiate_multipart_upload(Bucket, Key, ContentType,
-                                                    User, RiakcPid) of
+                                                    User, Opts, RiakcPid) of
         {ok, UploadId} ->
             XmlDoc = {'InitiateMultipartUploadResult',
                        [{'xmlns', "http://s3.amazonaws.com/doc/2006-03-01/"}],
@@ -170,16 +177,11 @@ finish_request(RD, Ctx) ->
 
 -spec content_types_provided(#wm_reqdata{}, #context{}) -> {[{string(), atom()}], #wm_reqdata{}, #context{}}.
 content_types_provided(RD, Ctx=#context{}) ->
-    %% TODO:
-    %% As I understand S3, the content types provided
-    %% will either come from the value that was
-    %% last PUT or, from you adding a
-    %% `response-content-type` header in the request.
     Method = wrq:method(RD),
     if Method == 'POST' ->
             {[{?XML_TYPE, unused_callback}], RD, Ctx};
        true ->
-            %% TODO this shouldn't ever be called, it's just to
+            %% this shouldn't ever be called, it's just to
             %% appease webmachine
             {[{"text/plain", unused_callback}], RD, Ctx}
     end.
