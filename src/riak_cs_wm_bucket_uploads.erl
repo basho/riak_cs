@@ -33,11 +33,6 @@ init(Ctx) ->
 malformed_request(RD,Ctx=#context{local_context=LocalCtx0}) ->
     Bucket = list_to_binary(wrq:path_info(bucket, RD)),
     LocalCtx = LocalCtx0#key_context{bucket=Bucket},
-    %% TODO: delimiter
-    %% TODO: max-uploads
-    %% TODO: key-marker
-    %% TODO: prefix
-    %% TODO: upload-id-marker
     {false, RD, Ctx#context{local_context=LocalCtx}}.
 
 -spec authorize(#wm_reqdata{}, #context{}) -> 
@@ -68,8 +63,9 @@ to_xml(RD, Ctx=#context{local_context=LocalCtx,
                         riakc_pid=RiakcPid}) ->
     #key_context{bucket=Bucket} = LocalCtx,
     User = riak_cs_mp_utils:user_rec_to_3tuple(Ctx#context.user),
-    case riak_cs_mp_utils:list_multipart_uploads(Bucket, User, RiakcPid) of
-        {ok, Ds} ->
+    Opts = make_list_mp_uploads_opts(RD),
+    case riak_cs_mp_utils:list_multipart_uploads(Bucket, User, Opts, RiakcPid) of
+        {ok, {Ds, Common}} ->
             Us = [{'Upload',
                    [
                     {'Key', [D?MULTIPART_DESCR.key]},
@@ -86,19 +82,27 @@ to_xml(RD, Ctx=#context{local_context=LocalCtx,
                     {'Initiated', [D?MULTIPART_DESCR.initiated]}
                    ]
                   } || D <- Ds],
+            Cs = [{'CommonPrefixes',
+                   [
+                    {'Prefix', [C]}
+                   ]} || C <- Common],
+            Get = fun(Name) -> case proplists:get_value(Name, Opts) of
+                                   undefined -> [];
+                                   X         -> X
+                               end
+                  end,
             XmlDoc = {'ListMultipartUploadsResult',
                        [{'xmlns', "http://s3.amazonaws.com/doc/2006-03-01/"}],
                        [
                         {'Bucket', [binary_to_list(Bucket)]},
-                        {'KeyMarker', ""},          % TODO
-                        {'UploadMarker', ""},       % TODO
-                        {'NextKeyMarker', ""},      % TODO
-                        {'NextUploadIdMarker', ""}, % TODO
-                        {'Delimiter', ["/"]},         % TODO
-                        {'Prefix', ""},             % TODO
+                        {'KeyMarker', [Get(key_marker)]},
+                        {'NextKeyMarker', []},      % TODO
+                        {'NextUploadIdMarker', [Get(upload_id_marker)]},
+                        {'Delimiter', [Get(delimiter)]},
+                        {'Prefix', [Get(prefix)]},
                         {'MaxUploads', ["1000"]},     % TODO
                         {'IsTruncated', ["false"]}   % TODO
-                      ] ++ Us
+                      ] ++ Us ++ Cs
                      },
             Body = riak_cs_s3_response:export_xml([XmlDoc]),
             {Body, RD, Ctx};
@@ -127,4 +131,20 @@ content_types_provided(RD, Ctx=#context{}) ->
 -spec content_types_accepted(#wm_reqdata{}, #context{}) -> {[{string(), atom()}], #wm_reqdata{}, #context{}}.
 content_types_accepted(RD, Ctx) ->
     riak_cs_mp_utils:make_content_types_accepted(RD, Ctx).
+
+make_list_mp_uploads_opts(RD) ->
+    %% Weird: wrq:req_qs(RD) returns [], so that any call to
+    %% wrq:get_ws_value(Name, RD) will also fail.  {sigh}
+    %% Get the original and parse it instead.
+    {_, Qs} = riak_cs_s3_rewrite:original_resource(RD),
+    Ps = [{"delimiter", delimiter},
+          {"key-marker", key_marker},
+          {"max-uploads", max_uploads},
+          {"prefix", prefix},
+          {"upload-id-marker", upload_id_marker}
+         ],
+    lists:append([case proplists:get_value(Name, Qs) of
+                      undefined -> [];
+                      X         -> [{PropName, X}]
+                  end || {Name, PropName} <- Ps]).
 
