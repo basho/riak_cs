@@ -6,9 +6,10 @@
 %%
 %% @doc WM callback module for S3 list multipart uploads.
 %%
-%% Intentionally not (yet) implemented:
+%% TODO: Intentionally not (yet) implemented:
 %%
-%% * output: CommonPrefixes attribute
+%% * list multipart uploads output: maximum 1000 results grouping
+%% * list multipart uploads output: upload 'Initiator' ARN data
 
 -module(riak_cs_wm_bucket_uploads).
 
@@ -123,7 +124,7 @@ content_types_provided(RD, Ctx=#context{}) ->
     if Method == 'GET' ->
             {[{?XML_TYPE, to_xml}], RD, Ctx};
        true ->
-            %% TODO this shouldn't ever be called, it's just to
+            %% this shouldn't ever be called, it's just to
             %% appease webmachine
             {[{"text/plain", unused_callback}], RD, Ctx}
     end.
