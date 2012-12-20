@@ -506,10 +506,59 @@ make_2i_key(Bucket, OwnerStr) when is_list(OwnerStr) ->
 make_2i_key2(Bucket, OwnerStr) ->
     iolist_to_binary(["rcs@", OwnerStr, "@", Bucket, "_bin"]).
 
-list_multipart_uploads2(Bucket, RiakcPid, Names, _Opts, CallerKeyId) ->
+list_multipart_uploads2(Bucket, RiakcPid, Names, Opts, CallerKeyId) ->
+    %% Easy.
     {_, _, _, Res} = lists:foldl(fun fold_get_multipart_id/2,
                                  {RiakcPid, Bucket, CallerKeyId, []}, Names),
-    Res.
+    %% Not so easy: filter based on prefix, delimiter, key_marker, and
+    %%              upload_id_marker.
+    %%
+    %% First, set up helpers....
+    PrefixStr = proplists:get_value(prefix, Opts, ""),
+    PrefixStrLen = length(PrefixStr),
+    PrefixMatch = fun(Str) ->
+                          PrefixStr == lists:sublist(Str, PrefixStrLen)
+                  end,
+    KeyMStr = proplists:get_value(key_marker, Opts, ""),
+    UploadMBin = try
+                     base64url:decode(proplists:get_value(
+                                        upload_id_marker, Opts, ""))
+                 catch _:_ ->
+                         <<>>
+                 end,
+    Delimiter = case proplists:get_value(delimiter, Opts) of
+                    undefined -> undefined;
+                    [C]       -> C;
+                    _         -> undefined
+                end,
+    DelimiterMatch =
+        fun(Str) ->
+                StrLen = length(Str),
+                StrLen >= PrefixStrLen andalso
+                    lists:member(Delimiter,
+                                 lists:sublist(Str, PrefixStrLen + 1, StrLen))
+        end,
+
+    %% Do some real work: filter the result set based on all criteria
+    Res2 = [M || M <- Res,
+                 PrefixMatch(M?MULTIPART_DESCR.key),
+                 M?MULTIPART_DESCR.key > KeyMStr,
+                 M?MULTIPART_DESCR.upload_id > UploadMBin,
+                 Delimiter == undefined orelse
+                     not DelimiterMatch(M?MULTIPART_DESCR.key)],
+    %% More work: find the common strings based on Delimiter
+    Common = if Delimiter == undefined ->
+                     [];
+                true ->
+                     Max = 999999999999999,     % arbitrarily big
+                     [hd(string:tokens(
+                           lists:sublist(M?MULTIPART_DESCR.key,
+                                         PrefixStrLen+1, Max),
+                                       [Delimiter])) ||
+                         M <- Res,
+                         lists:member(Delimiter, M?MULTIPART_DESCR.key)]
+             end,
+    {lists:sort(Res2), lists:usort(Common)}.
 
 fold_get_multipart_id(Name, {RiakcPid, Bucket, CallerKeyId, Acc}) ->
     case riak_cs_utils:get_manifests(RiakcPid, Bucket, Name) of
@@ -531,7 +580,7 @@ fold_get_multipart_id(Name, {RiakcPid, Bucket, CallerKeyId, Acc}) ->
                            end],
             {RiakcPid, Bucket, CallerKeyId, L ++ Acc};
         _Else ->
-            Acc
+            {RiakcPid, Bucket, CallerKeyId, Acc}
     end.
 
 %% @doc Will cause error:{badmatch, {m_ibco, _}} if CallerKeyId does not exist
