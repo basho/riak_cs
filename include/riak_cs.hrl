@@ -64,7 +64,8 @@
                       bucket :: binary(),
                       key :: list(),
                       owner :: 'undefined' | string(),
-                      size :: non_neg_integer()}).
+                      size :: non_neg_integer(),
+                      content_md5 :: 'undefined' | binary()}).
 
 -type acl_perm() :: 'READ' | 'WRITE' | 'READ_ACP' | 'WRITE_ACP' | 'FULL_CONTROL'.
 -type acl_perms() :: [acl_perm()].

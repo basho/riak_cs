@@ -27,7 +27,8 @@
 
 -spec init(#context{}) -> {ok, #context{}}.
 init(Ctx) ->
-    {ok, Ctx#context{local_context=#key_context{}}}.
+    %% {ok, Ctx#context{local_context=#key_context{}}}.
+    {{trace, "/tmp/wm"}, Ctx#context{local_context=#key_context{}}}.
 
 -spec malformed_request(#wm_reqdata{}, #context{}) -> {false, #wm_reqdata{}, #context{}}.
 malformed_request(RD,Ctx=#context{local_context=LocalCtx0}) ->    
@@ -122,16 +123,6 @@ process_post(RD, Ctx=#context{local_context=LocalCtx,
         {bad, _} ->
             {{halt,477}, RD, Ctx};
         {PartETags, UploadId} ->
-            %% TODO: double-check this cut-and-paste'd TODO list.....
-            %% TODO: pass in x-amz-acl?
-            %% TODO: pass in additional x-amz-meta-* headers?
-            %% TODO: pass in Content-​Disposition?
-            %% TODO: pass in Content-​Encoding?
-            %% TODO: pass in Expires?
-            %% TODO: pass in x-amz-server-side​-encryption?
-            %% TODO: pass in x-amz-storage-​class?
-            %% TODO: pass in x-amz-server-side​-encryption?
-            %% TODO: pass in x-amz-grant-* headers?
             case riak_cs_mp_utils:complete_multipart_upload(
                    Bucket, list_to_binary(Key), UploadId, PartETags, User, RiakcPid) of
                 ok ->
@@ -160,7 +151,6 @@ process_post(RD, Ctx=#context{local_context=LocalCtx,
                     RD2 = wrq:set_resp_body(XErr, RD),
                     {{halt, 400}, RD2, Ctx};
                 {error, Reason} ->
-                    io:format("~p LINE ~p ~p\n", [?MODULE, ?LINE, Reason]),
                     riak_cs_s3_response:api_error(Reason, RD, Ctx)
             end
     end.
@@ -259,8 +249,6 @@ parse_body(Body) ->
 -spec accept_body(#wm_reqdata{}, #context{}) -> {{halt, integer()}, #wm_reqdata{}, #context{}}.
 accept_body(RD, Ctx0=#context{local_context=LocalCtx0,
                               riakc_pid=RiakcPid}) ->
-    %% TODO: Content-MD5 header?
-    %% TODO: Expect header?
     #key_context{bucket=Bucket,
                  key=Key,
                  size=Size,
@@ -273,12 +261,18 @@ accept_body(RD, Ctx0=#context{local_context=LocalCtx0,
                                            "", [{return, binary}])),
     %% TODO: handle badarg
     PartNumber = list_to_integer(wrq:get_qs_value("partNumber", RD)),
+    %% TODO: handle badarg
+    ContentMD5 = case wrq:get_req_header("Content-MD5", RD) of
+                     undefined -> undefined;
+                     MD5Enc    -> base64:decode(MD5Enc)
+                 end,
     case riak_cs_mp_utils:upload_part(Bucket, Key, UploadId, PartNumber,
                                       Size, Caller, RiakcPid) of
         {upload_part_ready, PartUUID, PutPid} ->
             LocalCtx = LocalCtx0#key_context{upload_id=UploadId,
                                              part_number=PartNumber,
-                                             part_uuid=PartUUID},
+                                             part_uuid=PartUUID,
+                                             content_md5=ContentMD5},
             Ctx = Ctx0#context{local_context=LocalCtx},
             accept_streambody(RD, Ctx, PutPid,
                               wrq:stream_req_body(RD, BlockSize));
@@ -375,15 +369,22 @@ finalize_request(RD, Ctx=#context{local_context=LocalCtx,
                  key=Key,
                  upload_id=UploadId,
                  part_number=PartNumber,
-                 part_uuid=PartUUID} = LocalCtx,
+                 part_uuid=PartUUID,
+                 content_md5=ContentMD5} = LocalCtx,
     Caller = riak_cs_mp_utils:user_rec_to_3tuple(Ctx#context.user),
     case riak_cs_mp_utils:upload_part_finished(
            Bucket, Key, UploadId, PartNumber, PartUUID,
            M?MANIFEST.content_md5, Caller, RiakcPid) of
         ok ->
-            RD2 = wrq:set_resp_header("ETag", riak_cs_utils:binary_to_hexlist(M?MANIFEST.content_md5), RD),
-            {{halt, 200}, RD2, Ctx};
-        Else ->
-            io:format("~p LINE ~p err ~p\n", [?MODULE, ?LINE, Else]),
-            {{halt, 555}, RD, Ctx}
+            if ContentMD5 == undefined orelse
+               ContentMD5 == M?MANIFEST.content_md5 ->
+                    RD2 = wrq:set_resp_header("ETag", riak_cs_utils:binary_to_hexlist(M?MANIFEST.content_md5), RD),
+                    {{halt, 200}, RD2, Ctx};
+               true ->
+                    XErr = riak_cs_mp_utils:make_special_error("BadDigest"),
+                    RD2 = wrq:set_resp_body(XErr, RD),
+                    {{halt, 400}, RD2, Ctx}
+            end;
+        {error, Reason} ->
+            riak_cs_s3_response:api_error(Reason, RD, Ctx)
     end.
