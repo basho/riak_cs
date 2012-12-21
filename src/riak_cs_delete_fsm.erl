@@ -36,7 +36,7 @@
                 uuid :: binary(),
                 manifest :: lfs_manifest(),
                 riakc_pid :: pid(),
-                delete_blocks_remaining :: ordsets:ordset(integer()),
+                delete_blocks_remaining :: ordsets:ordset({binary(), integer()}),
                 unacked_deletes=ordsets:new() :: ordsets:ordset(integer()),
                 all_delete_workers=[] :: list(pid()),
                 free_deleters = ordsets:new() :: ordsets:ordset(pid()),
@@ -54,7 +54,7 @@ start_link(RiakcPid, Manifest, Options) ->
     Args = [RiakcPid, Manifest, Options],
     gen_fsm:start_link(?MODULE, Args, []).
 
--spec block_deleted(pid(), {ok, integer()} | {error, binary()}) -> ok.
+-spec block_deleted(pid(), {ok, {binary(), integer()}} | {error, binary()}) -> ok.
 block_deleted(Pid, Response) ->
     gen_fsm:send_event(Pid, {block_deleted, Response, self()}).
 
@@ -208,11 +208,11 @@ notification_msg(Reason, _State) ->
 -spec manifest_cleanup(atom(), binary(), binary(), binary(), pid()) -> ok.
 manifest_cleanup(deleted, Bucket, Key, UUID, RiakcPid) ->
     {ok, ManiFsmPid} = riak_cs_manifest_fsm:start_link(Bucket, Key, RiakcPid),
-    try
-        _ = riak_cs_manifest_fsm:delete_specific_manifest(ManiFsmPid, UUID)
-    after
-        _ = riak_cs_manifest_fsm:stop(ManiFsmPid)
-    end,
+    _ = try
+            _ = riak_cs_manifest_fsm:delete_specific_manifest(ManiFsmPid, UUID)
+        after
+            _ = riak_cs_manifest_fsm:stop(ManiFsmPid)
+        end,
     ok;
 manifest_cleanup(_, _, _, _, _) ->
     ok.

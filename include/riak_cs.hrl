@@ -265,7 +265,7 @@
 
     %% used to judge races between concurrent uploads
     %% of the same part_number
-    start_time :: term(),
+    start_time :: erlang:timestamp(),
 
     %% one-of 1-10000, inclusive
     part_number :: integer(),
@@ -286,15 +286,8 @@
 -type part_manifest() :: #part_manifest_v1{}.
 
 -record(multipart_manifest_v1, {
-    %% bkey :: {binary(), binary()},
     upload_id :: binary(),
-    %% start_time :: term(),
     owner :: acl_owner3(),
-
-    %% cluster_id :: undefined | binary(),
-
-    %% acl :: term(),
-    %% metadata :: orddict:orddict(),
 
     %% since we don't have any point of strong
     %% consistency (other than stanchion), we

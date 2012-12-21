@@ -55,7 +55,7 @@ default_acl(DisplayName, CanonicalId, KeyId) ->
 
 %% @doc Map a x-amz-acl header value to an
 %% internal acl representation.
--spec canned_acl(undefined | string(), {_,_,_} | string(), undefined | string(), pid()) -> #acl_v2{}.
+-spec canned_acl(undefined | string(), {_,_,_} | string(), undefined | string(), pid() | 'not_required') -> #acl_v2{}.
 canned_acl(undefined, {Name, CanonicalId, KeyId}, _, _) ->
     default_acl(Name, CanonicalId, KeyId);
 canned_acl(HeaderVal, Owner, BucketOwnerId, RiakPid) ->
@@ -153,7 +153,7 @@ requested_access(Method, AclRequest) ->
             undefined
     end.
 
--spec check_grants(undefined | rcs_user(), string(), atom(), pid()) -> 
+-spec check_grants(undefined | rcs_user(), binary(), atom(), pid()) -> 
                           boolean() | {true, string()}.
 check_grants(User, Bucket, RequestedAccess, RiakPid) ->
     check_grants(User, Bucket, RequestedAccess, RiakPid, undefined).

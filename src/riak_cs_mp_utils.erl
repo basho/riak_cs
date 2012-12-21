@@ -213,7 +213,7 @@ list_parts(Bucket, Key, UploadId, Caller, Opts, RiakcPidUnW) ->
                    RiakcPidUnW).
 
 %% @doc
--spec new_manifest(binary(), binary(), string(), acl_owner(), list()) -> multipart_manifest().
+-spec new_manifest(binary(), binary(), binary(), acl_owner(), list()) -> lfs_manifest().
 new_manifest(Bucket, Key, ContentType, {_, _, _} = Owner, Opts) ->
     UUID = druuid:v4(),
     %% TODO: add object metadata here, e.g. content-disposition et al.
@@ -285,8 +285,9 @@ write_new_manifest(M, Opts, RiakcPidUnW) ->
             try
                 Acl = case proplists:get_value(acl, Opts) of
                           undefined ->
+                              % 4th arg, pid(), unused but honor the contract
                               riak_cs_acl_utils:canned_acl(
-                                "private", Owner, undefined, unused);
+                                "private", Owner, undefined, not_required); 
                           AnAcl ->
                               AnAcl
                       end,
@@ -446,7 +447,7 @@ do_part_common2(upload_part, RiakcPid, M, _Obj, MpM, Props) ->
     {ok, PutPid} = riak_cs_put_fsm:start_link(
                      {Bucket, Key, Size, <<"x-riak/multipart-part">>,
                       orddict:new(), BlockSize, M?MANIFEST.acl,
-                      infinity_but_timeout_not_actually_used, self(), RiakcPid},
+                      infinity, self(), RiakcPid},
                      false),
     try
         ?MANIFEST{content_length = ContentLength,
@@ -554,22 +555,23 @@ list_multipart_uploads2(Bucket, RiakcPid, Names, Opts, CallerKeyId) ->
 
     %% Do some real work: filter the result set based on all criteria
     Res2 = [M || M <- Res,
-                 PrefixMatch(M?MULTIPART_DESCR.key),
-                 M?MULTIPART_DESCR.key > KeyMStr,
+                 Key <- [binary_to_list(M?MULTIPART_DESCR.key)],
+                 PrefixMatch(Key),
+                 Key > KeyMStr,
                  M?MULTIPART_DESCR.upload_id > UploadMBin,
                  Delimiter == undefined orelse
-                     not DelimiterMatch(M?MULTIPART_DESCR.key)],
+                     not DelimiterMatch(Key)],
     %% More work: find the common strings based on Delimiter
     Common = if Delimiter == undefined ->
                      [];
                 true ->
                      Max = 999999999999999,     % arbitrarily big
                      [hd(string:tokens(
-                           lists:sublist(M?MULTIPART_DESCR.key,
+                           lists:sublist(binary_to_list(M?MULTIPART_DESCR.key),
                                          PrefixStrLen+1, Max),
-                                       [Delimiter])) ||
-                         M <- Res,
-                         lists:member(Delimiter, M?MULTIPART_DESCR.key)]
+                           [Delimiter])) || M <- Res,
+                         lists:member(Delimiter,
+                                      binary_to_list(M?MULTIPART_DESCR.key))]
              end,
     {lists:sort(Res2), lists:usort(Common)}.
 
@@ -659,7 +661,7 @@ comb_parts_fold({PartNum, _ETag} = K,
     end.
 
 shrink_part_manifests(PMs) ->
-    [PM?PART_MANIFEST{bucket = x, key = x, start_time = x} || PM <- PMs].
+    [PM?PART_MANIFEST{bucket = <<"x">>, key = <<"x">>, start_time = os:timestamp()} || PM <- PMs].
 
 move_dead_parts_to_gc(Bucket, Key, PartsToDelete, RiakcPid) ->
     PartDelMs = [{P_UUID,
@@ -721,9 +723,9 @@ test_0() ->
     ID2 = test_initiate(test_user2()),
     _ID1b = test_initiate(test_user1()),
 
-    {ok, X1} = test_list_uploadids(test_user1(), []),
+    {ok, {X1, _}} = test_list_uploadids(test_user1(), []),
     3 = length(X1),
-    {ok, X2} = test_list_uploadids(test_user2(), []),
+    {ok, {X2, _}} = test_list_uploadids(test_user2(), []),
     1 = length(X2),
     {error, access_denied} = test_list_uploadids(test_userNONE(), []),
 
@@ -737,9 +739,9 @@ test_0() ->
     ok = test_complete(ID2, [], test_user2()),
     {error, notfound} = test_complete(ID2, [], test_user2()),
 
-    {ok, X3} = test_list_uploadids(test_user1(), []),
+    {ok, {X3, _}} = test_list_uploadids(test_user1(), []),
     1 = length(X3),
-    {ok, X4} = test_list_uploadids(test_user2(), []),
+    {ok, {X4, _}} = test_list_uploadids(test_user2(), []),
     0 = length(X4),
 
     ok.
@@ -758,7 +760,7 @@ test_1() ->
 
 test_initiate(User) ->
     {ok, ID} = initiate_multipart_upload(
-                 test_bucket1(), test_key1(), <<"text/plain">>, [], User),
+                 test_bucket1(), test_key1(), <<"text/plain">>, User, []),
     ID.
 
 test_abort(UploadId, User) ->
@@ -809,14 +811,14 @@ test_comb_parts() ->
     MpM1 = ?MULTIPART_MANIFEST{parts = ordsets:from_list(PMs),
                                done_parts = ordsets:from_list(GoodDones)},
     try
-        comb_parts(MpM1, GoodETags ++ BadETags),
+        _ = comb_parts(MpM1, GoodETags ++ BadETags),
         throw(test_failed)
     catch
         throw:bad_etag ->
             ok
     end,
     try
-        comb_parts(MpM1, [lists:last(GoodETags)|tl(GoodETags)]),
+        _ = comb_parts(MpM1, [lists:last(GoodETags)|tl(GoodETags)]),
         throw(test_failed)
     catch
         throw:bad_etag_order ->

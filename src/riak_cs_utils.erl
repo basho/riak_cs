@@ -178,7 +178,7 @@ create_user(Name, Email) ->
 
 %% @doc Get the active version of Riak CS to use in checks to
 %% determine if new features should be enabled.
--spec cs_version() -> pos_integer().
+-spec cs_version() -> pos_integer() | undefined.
 cs_version() ->
     cs_version(application:get_env(riak_cs, cs_version)).
 
@@ -1341,7 +1341,7 @@ get_cluster_id(Pid) ->
                     application:set_env(riak_cs, cluster_id, ClusterID),
                     ClusterID;
                 _ ->
-                    lager:debug("Unable to obtain cluster ID"),
+                    _ = lager:debug("Unable to obtain cluster ID"),
                     undefined
             end
     end.
@@ -1355,7 +1355,7 @@ proxy_get_active() ->
         {ok, disabled} ->
             false;
         {ok, _} ->
-            lager:warning("proxy_get value in app.config is invalid"),
+            _ = lager:warning("proxy_get value in app.config is invalid"),
             false;
         undefined -> false
     end.
