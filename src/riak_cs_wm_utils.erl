@@ -137,19 +137,19 @@ handle_validation_response({ok, User, UserObj}, RD, Ctx, Next, _, _) ->
                          user_object=UserObj});
 handle_validation_response({error, no_user_key}, RD, Ctx, Next, _, true) ->
     %% no keyid was given, proceed anonymously
-    lager:debug("No user key"),
+    _ = lager:debug("No user key"),
     Next(RD, Ctx);
 handle_validation_response({error, no_user_key}, RD, Ctx, _, Conv2KeyCtx, false) ->
     %% no keyid was given, deny access
-    lager:debug("No user key, deny"),
+    _ = lager:debug("No user key, deny"),
     deny_access(RD, Conv2KeyCtx(Ctx));
 handle_validation_response({error, bad_auth}, RD, Ctx, _, Conv2KeyCtx, _) ->
     %% given keyid was found, but signature didn't match
-    lager:info("bad_auth"),
+    _ = lager:info("bad_auth"),
     deny_access(RD, Conv2KeyCtx(Ctx));
 handle_validation_response({error, _Reason}, RD, Ctx, _, Conv2KeyCtx, _) ->
     %% no matching keyid was found, or lookup failed
-    lager:info("other"),
+    _ = lager:info("other"),
     deny_invalid_key(RD, Conv2KeyCtx(Ctx)).
 
 %% @doc Look for an Authorization header in the request, and validate

@@ -16,7 +16,7 @@
 -include_lib("webmachine/include/webmachine.hrl").
 
 -record(ping_context, {pool_pid=true :: boolean(),
-                  riakc_pid :: pid()}).
+                       riakc_pid :: 'undefined' | pid()}).
 
 %% -------------------------------------------------------------------
 %% Webmachine callbacks
@@ -46,10 +46,10 @@ service_available(RD, Ctx) ->
         undefined ->
             Available = false;
         _ ->
-            case riakc_pb_socket:ping(Pid, ping_timeout()) of
+            case (catch riakc_pb_socket:ping(Pid, ping_timeout())) of
                 pong ->
                     Available = true;
-                 _ ->
+                _ ->
                     Available = false
             end
     end,
