@@ -158,7 +158,7 @@ mark_scheduled_delete(Dict, UUIDsToMark) ->
 %% in `PendingDeleteUUIDs' or are in the `pending_delete'
 %% state and have been there for longer than the retry
 %% interval.
--spec manifests_to_gc([binary()], orddict:orddict()) -> [cs_uuid_and_manifest()].
+-spec manifests_to_gc([cs_uuid()], orddict:orddict()) -> [cs_uuid_and_manifest()].
 manifests_to_gc(PendingDeleteUUIDs, Manifests) ->
     FilterFun = pending_delete_helper(PendingDeleteUUIDs),
     orddict:to_list(orddict:filter(FilterFun, Manifests)).

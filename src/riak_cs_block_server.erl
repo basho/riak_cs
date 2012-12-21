@@ -222,7 +222,7 @@ handle_cast(_Msg, State) ->
 
 delete_block(RiakcPid, ReplyPid, RiakObject, BlockId) ->
     Result = constrained_delete(RiakcPid, RiakObject, BlockId),
-    secondary_delete_check(Result, RiakcPid, RiakObject),
+    _ = secondary_delete_check(Result, RiakcPid, RiakObject),
     riak_cs_delete_fsm:block_deleted(ReplyPid, Result),
     ok.
 

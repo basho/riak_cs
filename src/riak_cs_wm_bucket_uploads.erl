@@ -41,7 +41,7 @@ malformed_request(RD,Ctx=#context{local_context=LocalCtx0}) ->
 
 authorize(RD, Ctx=#context{riakc_pid=RiakcPid, local_context=LocalCtx}) ->
     Bucket = LocalCtx#key_context.bucket,
-    ReqAccess = riak_cs_acl_utils:requested_access('GET', not_really),
+    ReqAccess = riak_cs_acl_utils:requested_access('GET', false),
     case {riak_cs_utils:check_bucket_exists(Bucket, RiakcPid),
           riak_cs_acl_utils:check_grants(Ctx#context.user, Bucket,
                                          ReqAccess, RiakcPid)} of
@@ -66,10 +66,10 @@ to_xml(RD, Ctx=#context{local_context=LocalCtx,
     User = riak_cs_mp_utils:user_rec_to_3tuple(Ctx#context.user),
     Opts = make_list_mp_uploads_opts(RD),
     case riak_cs_mp_utils:list_multipart_uploads(Bucket, User, Opts, RiakcPid) of
-        {ok, {Ds, Common}} ->
+        {ok, {Ds, Commons}} ->
             Us = [{'Upload',
                    [
-                    {'Key', [D?MULTIPART_DESCR.key]},
+                    {'Key', [binary_to_list(D?MULTIPART_DESCR.key)]},
                     {'UploadId', [binary_to_list(base64url:encode(D?MULTIPART_DESCR.upload_id))]},
                     {'Initiator',               % TODO: replace with ARN data?
                      [{'ID', [D?MULTIPART_DESCR.owner_key_id]},
@@ -85,8 +85,9 @@ to_xml(RD, Ctx=#context{local_context=LocalCtx,
                   } || D <- Ds],
             Cs = [{'CommonPrefixes',
                    [
-                    {'Prefix', [C]}
-                   ]} || C <- Common],
+                    % WTH? The pattern [Common | _] can never match the type []
+                    {'Prefix', [Common]} 
+                   ]} || Common <- Commons],
             Get = fun(Name) -> case proplists:get_value(Name, Opts) of
                                    undefined -> [];
                                    X         -> X

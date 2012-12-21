@@ -109,7 +109,7 @@ extract_bucket_from_host(Host, RootHostIndex) ->
 
 %% @doc Separate the bucket name from the rest of the raw path in the
 %% case where the bucket name is included in the path.
--spec separate_bucket_from_path([string()]) -> string().
+-spec separate_bucket_from_path([string()]) -> {nonempty_string(), string()}.
 separate_bucket_from_path([Bucket | []]) ->
     {Bucket, "/"};
 separate_bucket_from_path([Bucket | RestPath]) ->

@@ -30,7 +30,7 @@ start(_Type, _StartArgs) ->
         true ->
             riak_cs_sup:start_link();
         false ->
-            lager:error("You must update you Riak CS app.config. Please see the release notes for more information on updating you configuration."),
+            _ = lager:error("You must update you Riak CS app.config. Please see the release notes for more information on updating you configuration."),
             {error, bad_config}
     end.
 
