@@ -208,7 +208,7 @@ delete_resource(RD, Ctx=#context{local_context=LocalCtx,
 
 %% @private
 handle_delete_object({error, Error}, UserName, BFile_str, RD, Ctx) ->
-    lager:error("delete object failed with reason: ", [Error]),
+    _ = lager:error("delete object failed with reason: ", [Error]),
     riak_cs_dtrace:dt_object_return(?MODULE, <<"object_delete">>, [0], [UserName, BFile_str]),
     {false, RD, Ctx};
 handle_delete_object({ok, _UUIDsMarkedforDelete}, UserName, BFile_str, RD, Ctx) ->

@@ -146,8 +146,9 @@ process_post(RD, Ctx=#context{local_context=LocalCtx,
            end,
     Opts = [{acl, ACL}|AsIs],
 
-    case riak_cs_mp_utils:initiate_multipart_upload(Bucket, Key, ContentType,
-                                                    User, Opts, RiakcPid) of
+    case riak_cs_mp_utils:initiate_multipart_upload(Bucket, list_to_binary(Key),
+                                                    ContentType, User, Opts,
+                                                    RiakcPid) of
         {ok, UploadId} ->
             XmlDoc = {'InitiateMultipartUploadResult',
                        [{'xmlns', "http://s3.amazonaws.com/doc/2006-03-01/"}],

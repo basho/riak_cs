@@ -109,7 +109,7 @@ accept_json(RD, Ctx=#context{user=undefined}) ->
             riak_cs_s3_response:api_error(invalid_user_update, RD, Ctx)
     end;
 accept_json(RD, Ctx) ->
-    riak_cs_wm_dtace:dt_wm_entry(?MODULE, <<"accept_json">>),
+    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"accept_json">>),
     Body = wrq:req_body(RD),
     case catch mochijson2:decode(Body) of
         {struct, UserItems} ->
@@ -146,7 +146,7 @@ accept_xml(RD, Ctx=#context{user=undefined}) ->
             end
     end;
 accept_xml(RD, Ctx) ->
-    riacs_cs_wm_dtrace:dt_wm_entry(?MODULE, <<"accept_xml">>),
+    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"accept_xml">>),
     Body = binary_to_list(wrq:req_body(RD)),
     case catch xmerl_scan:string(Body, []) of
         {'EXIT', _} ->
