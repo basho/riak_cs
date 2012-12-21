@@ -27,6 +27,7 @@ riak_host_port() ->
     end,
     {Host, Port}.
 
+-spec start_link(term()) -> {ok, pid()} | {error, term()}.
 start_link(_Args) ->
     {Host, Port} = riak_host_port(),
     riakc_pb_socket:start_link(Host, Port, [{connect_timeout, 10000}]).

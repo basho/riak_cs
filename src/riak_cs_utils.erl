@@ -653,7 +653,7 @@ riak_connection(Pool) ->
     end.
 
 %% @doc Save information about a Riak CS user
--spec save_user(rcs_user(), riakc_obj:riakc_obj(), pid()) -> ok.
+-spec save_user(rcs_user(), riakc_obj:riakc_obj(), pid()) -> ok | {error, term()}.
 save_user(User, UserObj, RiakPid) ->
     %% Metadata is currently never updated so if there
     %% are siblings all copies should be the same
@@ -661,7 +661,6 @@ save_user(User, UserObj, RiakPid) ->
     UpdUserObj = riakc_obj:update_metadata(
                    riakc_obj:update_value(UserObj, term_to_binary(User)),
                    MD),
-    %% @TODO Error handling
     riakc_pb_socket:put(RiakPid, UpdUserObj).
 
 %% @doc Set the ACL for a bucket. Existing ACLs are only
