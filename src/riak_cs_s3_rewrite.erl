@@ -33,7 +33,6 @@ rewrite(Method, _Scheme, _Vsn, Headers, RawPath) ->
     RewrittenHeaders = mochiweb_headers:default(?RCS_REWRITE_HEADER,
                                                 rcs_rewrite_header(RawPath, HostBucket),
                                                 Headers),
-    lager:info("Hdrs: ~p Path: ~p", [RewrittenHeaders, RewrittenPath]),
     {RewrittenHeaders, RewrittenPath}.
 
 -spec original_resource(term()) -> undefined | {string(), [{term(),term()}]}.
@@ -85,10 +84,16 @@ bucket_from_host(undefined) ->
     undefined;
 bucket_from_host(HostHeader) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"bucket_from_host">>),
-    HostNoPort = hd(string:tokens(HostHeader, ":")),
     {ok, RootHost} = application:get_env(riak_cs, cs_root_host),
+    bucket_from_host(HostHeader, RootHost).
+
+bucket_from_host(HostHeader, RootHost) ->
+    HostNoPort = case string:tokens(HostHeader, ":") of
+                     []    -> HostHeader;
+                     [H|_] -> H
+                 end,
     extract_bucket_from_host(HostNoPort,
-                             string:str(HostNoPort, RootHost)).
+                             string:rstr(HostNoPort, RootHost)).
 
 %% @doc Extract the bucket name from the `Host' header value if a
 %% bucket name is present.
@@ -165,6 +170,11 @@ valid_subresource({Key, _}) ->
 %% ===================================================================
 
 -ifdef(TEST).
+
+rstr_test() ->
+    ?assertEqual("foo." ++ ?ROOT_HOST,
+                 bucket_from_host("foo." ++ ?ROOT_HOST ++ "." ++ ?ROOT_HOST,
+                                  ?ROOT_HOST)).
 
 rewrite_path_test() ->
     application:set_env(riak_cs, cs_root_host, ?ROOT_HOST),

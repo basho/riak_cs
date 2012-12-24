@@ -42,17 +42,17 @@ eqc_test_() ->
 %% ====================================================================
 
 prop_extract_bucket_from_host() ->
-    ?FORALL({Bucket, BaseHost},{riak_cs_gen:bucket_or_blank(), base_host()},
+    ?FORALL({Bucket, BaseHost},
+            {riak_cs_gen:bucket_or_blank(), base_host()},
+    ?IMPLIES(nomatch == re:run(Bucket, ":", [{capture, first}]),
             begin
                 BucketStr = binary_to_list(Bucket),
                 Host = compose_host(BucketStr, BaseHost),
-                BaseHostIdx = string:str(Host, BaseHost),
                 ExpectedBucket = expected_bucket(BucketStr, BaseHost),
                 ResultBucket =
-                    riak_cs_s3_rewrite:extract_bucket_from_host(Host,
-                                                                BaseHostIdx),
+                    riak_cs_s3_rewrite:bucket_from_host(Host, BaseHost),
                 equals(ExpectedBucket, ResultBucket)
-            end).
+            end)).
 
 %%====================================================================
 %% Helpers
