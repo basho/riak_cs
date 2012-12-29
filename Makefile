@@ -16,11 +16,23 @@ all: deps compile
 compile:
 	@./rebar compile
 
-compile-client-test:
+compile-client-test: all
 	@./rebar client_test_compile
 
-compile-int-test:
+compile-int-test: all
 	@./rebar int_test_compile
+
+compile-riak-test: all
+	@./rebar riak_test_compile
+
+clean-client-test:
+	@./rebar client_test_clean
+
+clean-int-test:
+	@./rebar int_test_clean
+
+clean-riak-test:
+	@./rebar riak_test_clean
 
 deps:
 	@./rebar get-deps

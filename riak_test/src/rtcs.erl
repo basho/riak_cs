@@ -7,44 +7,59 @@
 -define(CSDEVS(N), lists:concat(["rcs-dev", N, "@127.0.0.1"])).
 -define(CSDEV(N), list_to_atom(?CSDEVS(N))).
 
+-define(RIAK_CURRENT, rtdev_path.root).
+-define(EE_ROOT, rtdev_path.ee_root).
+-define(EE_CURRENT, rtdev_path.ee_current).
+-define(CS_ROOT, rtdev_path.cs_root).
+-define(CS_CURRENT, rtdev_path.cs_current).
+-define(STANCHION_ROOT, rtdev_path.stanchion_root).
+-define(STANCHION_CURRENT, rtdev_path.stanchion_current).
+
 riakcs_binpath(Prefix, N) ->
-    io_lib:format("~s/cs/rtdev~b/sbin/riak-cs", [Prefix, N]).
+    io_lib:format("~s/dev/dev~b/sbin/riak-cs", [Prefix, N]).
 
 riakcs_etcpath(Prefix, N) ->
-    io_lib:format("~s/cs/rtdev~b/etc", [Prefix, N]).
+    io_lib:format("~s/dev/dev~b/etc", [Prefix, N]).
 
 riakcscmd(Path, N, Cmd) ->
     lists:flatten(io_lib:format("~s ~s", [riakcs_binpath(Path, N), Cmd])).
 
-stanchion_binpath(Path, _N) ->
-    io_lib:format("~s/stanchion/sbin/stanchion", [Path]).
+stanchion_binpath(Prefix) ->
+    io_lib:format("~s/dev/stanchion/sbin/stanchion", [Prefix]).
 
-stanchion_etcpath(Path) ->
-    io_lib:format("~s/stanchion/etc", [Path]).
+stanchion_etcpath(Prefix) ->
+    io_lib:format("~s/dev/stanchion/etc", [Prefix]).
 
-stanchioncmd(Path, N, Cmd) ->
-    lists:flatten(io_lib:format("~s ~s", [stanchion_binpath(Path, N), Cmd])).
+stanchioncmd(Path, Cmd) ->
+    lists:flatten(io_lib:format("~s ~s", [stanchion_binpath(Path), Cmd])).
 
 deploy_nodes(NumNodes, InitialConfig) ->
+    lager:info("Initial Config: ~p", [InitialConfig]),
     NodeConfig = [{current, InitialConfig} || _ <- lists:seq(1,NumNodes)],
     RiakNodes = [?DEV(N) || N <- lists:seq(1, NumNodes)],
     CSNodes = [?CSDEV(N) || N <- lists:seq(1, NumNodes)],
     StanchionNode = 'stanchion@127.0.0.1',
 
+    lager:info("RiakNodes: ~p", [RiakNodes]),
+
     NodeMap = orddict:from_list(lists:zip(RiakNodes, lists:seq(1, NumNodes))),
     rt:set_config(rt_nodes, NodeMap),
 
-    VersionMap = lists:zip(lists:seq(1, NumNodes), lists:duplicate(NumNodes, current)),
+    VersionMap = lists:zip(lists:seq(1, NumNodes), lists:duplicate(NumNodes, ee_current)),
     rt:set_config(rt_versions, VersionMap),
+
+    lager:info("VersionMap: ~p", [VersionMap]),
 
     NL0 = lists:zip(CSNodes, RiakNodes),
     {CS1, R1} = hd(NL0),
     NodeList = [{CS1, R1, StanchionNode} | tl(NL0)],
 
+    lager:info("NodeList: ~p", [NodeList]),
+
     rt:pmap(fun({CSNode, RiakNode, Stanchion}) ->
                 N = rtdev:node_id(RiakNode),
                 stop_cs(N),
-                stop_stanchion(Stanchion),
+                stop_stanchion(),
                 rtdev:run_riak(N, rtdev:relpath(rtdev:node_version(N)), "stop"),
                 rt:wait_until_unpingable(CSNode),
                 rt:wait_until_unpingable(Stanchion),
@@ -57,14 +72,10 @@ deploy_nodes(NumNodes, InitialConfig) ->
                 rt:wait_until_unpingable(RiakNode)
         end, NodeList),
 
-    %% XXX this is a hack
-    Path = os:getenv("RT_TARGET_CURRENT"),
-
-    %% Reset nodes to base state
-    lager:info("Resetting nodes to fresh state"),
-    %% run_git(Path, "status"),
-    rtdev:run_git(Path, "reset HEAD --hard"),
-    rtdev:run_git(Path, "clean -fd"),
+    [reset_nodes(Project, Path) ||
+        {Project, Path} <- [{riak_ee, rt:config(?EE_ROOT)},
+                            {riak_cs, rt:config(?CS_ROOT)},
+                            {stanchion, rt:config(?STANCHION_ROOT)}]],
 
     rtdev:create_dirs(RiakNodes),
 
@@ -75,31 +86,35 @@ deploy_nodes(NumNodes, InitialConfig) ->
                     ok;
                ({{_CSNode, RiakNode, _Stanchion}, Config}) ->
                     N = rtdev:node_id(RiakNode),
+                    lager:info("Config: ~p~n~p", [Config, N]),
                     rtdev:update_app_config(RiakNode, proplists:get_value(riak,
                             Config)),
-                    update_cs_config(rt:config(csroot), N,
+                    update_cs_config(rt:config(?CS_CURRENT), N,
                         proplists:get_value(cs, Config)),
-                    update_stanchion_config(rt:config(csroot),
+                    update_stanchion_config(rt:config(?STANCHION_CURRENT),
                         proplists:get_value(stanchion, Config));
                 ({{_CSNode, RiakNode}, Config}) ->
                     N = rtdev:node_id(RiakNode),
+                    lager:info("Config2: ~p~n~p", [Config, N]),
                     rtdev:update_app_config(RiakNode, proplists:get_value(riak,
                             Config)),
-                    update_cs_config(rt:config(csroot), N,
+                    update_cs_config(rt:config(?CS_CURRENT), N,
                         proplists:get_value(cs, Config))
             end,
             lists:zip(NodeList, Configs)),
 
     rt:pmap(fun({_CSNode, RiakNode, _Stanchion}) ->
-                N = rtdev:node_id(RiakNode),
-                rtdev:run_riak(N, rtdev:relpath(rtdev:node_version(N)), "start"),
-                start_stanchion(N),
-                start_cs(N);
-            ({_CSNode, RiakNode}) ->
-                N = rtdev:node_id(RiakNode),
-                rtdev:run_riak(N, rtdev:relpath(rtdev:node_version(N)), "start"),
-                start_cs(N)
-        end, NodeList),
+                    N = rtdev:node_id(RiakNode),
+                    rtdev:run_riak(N, rtdev:relpath(rtdev:node_version(N)), "start"),
+                    rt:wait_for_service(RiakNode, riak_kv),
+                    start_stanchion(),
+                    start_cs(N);
+               ({_CSNode, RiakNode}) ->
+                    N = rtdev:node_id(RiakNode),
+                    rtdev:run_riak(N, rtdev:relpath(rtdev:node_version(N)), "start"),
+                    rt:wait_for_service(RiakNode, riak_kv),
+                    start_cs(N)
+            end, NodeList),
 
     Nodes = {RiakNodes, CSNodes, StanchionNode},
 
@@ -111,28 +126,42 @@ deploy_nodes(NumNodes, InitialConfig) ->
     lager:info("Deployed nodes: ~p", [Nodes]),
     Nodes.
 
+reset_nodes(Project, Path) ->
+    %% Reset nodes to base state
+    lager:info("Resetting ~p nodes to fresh state", [Project]),
+    lager:debug("Project path for reset: ~p", [Path]),
+    rtdev:run_git(Path, "reset HEAD --hard"),
+    rtdev:run_git(Path, "clean -fd").
+
 start_cs(N) ->
-    Cmd = riakcscmd(rt:config(csroot), N, "start"),
+    Cmd = riakcscmd(rt:config(?CS_CURRENT), N, "start"),
     lager:info("Running ~p", [Cmd]),
     os:cmd(Cmd).
 
 stop_cs(N) ->
-    Cmd = riakcscmd(rt:config(csroot), N, "stop"),
+    Cmd = riakcscmd(rt:config(?CS_CURRENT), N, "stop"),
     lager:info("Running ~p", [Cmd]),
     os:cmd(Cmd).
 
-start_stanchion(N) ->
-    Cmd = stanchioncmd(rt:config(csroot), N, "start"),
+start_stanchion() ->
+    Cmd = stanchioncmd(rt:config(?STANCHION_CURRENT), "start"),
     lager:info("Running ~p", [Cmd]),
     os:cmd(Cmd).
 
-stop_stanchion(N) ->
-    Cmd = stanchioncmd(rt:config(csroot), N, "stop"),
+stop_stanchion() ->
+    Cmd = stanchioncmd(rt:config(?STANCHION_CURRENT), "stop"),
     lager:info("Running ~p", [Cmd]),
     os:cmd(Cmd).
 
 update_cs_config(Prefix, N, Config) ->
-    update_app_config(riakcs_etcpath(Prefix, N) ++ "/app.config", Config).
+    CSSection = proplists:get_value(riak_cs, Config),
+    UpdConfig = [{riak_cs, update_cs_port(CSSection, N)} |
+                  proplists:delete(riak_cs, Config)],
+    update_app_config(riakcs_etcpath(Prefix, N) ++ "/app.config", UpdConfig).
+
+update_cs_port(Config, N) ->
+    PbPort = 10000 + (N * 10) + 7,
+    [{riak_pb_port, PbPort} | proplists:delete(riak_pb_port, Config)].
 
 update_stanchion_config(Prefix, Config) ->
     update_app_config(stanchion_etcpath(Prefix) ++ "/app.config", Config).
@@ -157,41 +186,25 @@ update_app_config(ConfigFile,  Config) ->
 
 
 deploy_cs(Config, N) ->
-    %%NodeId = io_lib:format("rcs-dev~b@127.0.0.1",[N]),
-    stop_cs(N),
-    timer:sleep(10000),
-    %% TODO: need a better method than sleep here
-
-    update_cs_config(rt:config(csroot), N, Config),
-
+    update_cs_config(rt:config(?CS_CURRENT), N, Config),
     start_cs(N),
-    %timer:sleep(10000),
-    %% TODO:
-    %%rt:wait_until_unpingable(NodeId),
     lager:info("Riak CS started").
 
-%% this differes from rtdev:deploy_xxx in that it only starts one node
-deploy_stanchion(Config, N) ->
-    %%NodeId = "stanchion@127.0.0.1",
-    stop_stanchion(N),
-    timer:sleep(10000),
-    %% TODO: need a better method than sleep here
-
+%% this differs from rtdev:deploy_xxx in that it only starts one node
+deploy_stanchion(Config) ->
     %% Set initial config
-    update_stanchion_config(rt:config(csroot), Config),
+    update_stanchion_config(rt:config(?STANCHION_CURRENT), Config),
 
-    start_stanchion(N),
-    %% TODO
-    %%rt:wait_until_unpingable(NodeId),
-    %timer:sleep(60000),
+    start_stanchion(),
     lager:info("Stanchion started").
 
 
 create_admin_user(Port, EmailAddr, Name) ->
     lager:debug("Trying to create user ~p", [EmailAddr]),
-    Cmd="curl -s -H 'Content-Type: application/json' -X POST http://localhost:" ++
+    Cmd="curl -s -H 'Content-Type: application/json' http://localhost:" ++
         integer_to_list(Port) ++
-        "/user --data '{\"email\":\"" ++ EmailAddr ++  "\", \"name\":\"" ++ Name ++"\"}'",
+        "/riak-cs/user --data '{\"email\":\"" ++ EmailAddr ++  "\", \"name\":\"" ++ Name ++"\"}'",
+    lager:info("Cmd: ~p", [Cmd]),
     Output = os:cmd(Cmd),
     lager:debug("Create user output=~p~n",[Output]),
     {struct, JsonData} = mochijson2:decode(Output),
@@ -204,46 +217,3 @@ create_admin_user(Port, EmailAddr, Name) ->
     lager:info("KeySecret = ~p",[KeySecret]),
     lager:info("Id = ~p",[Id]),
     {KeyId, KeySecret, Id}.
-
-
-
-%% gen_s3cmd_config() ->
-%%     "[default]~n" ++
-%%         "access_key = $IDNOQUOTES~n" ++
-%%         "bucket_location = US~n" ++
-%%         "cloudfront_host = cloudfront.amazonaws.com~n" ++
-%%         "cloudfront_resource = /2010-07-15/distribution~n" ++
-%%         "default_mime_type = binary/octet-stream~n" ++
-%%         "delete_removed = False~n" ++
-%%         "dry_run = False~n" ++
-%%         "enable_multipart = False~n" ++
-%%         "encoding = UTF-8~n" ++
-%%         "encrypt = False~n" ++
-%%         "follow_symlinks = False~n" ++
-%%         "force = False~n" ++
-%%         "get_continue = False~n" ++
-%%         "gpg_command = /usr/local/bin/gpg~n" ++
-%%         "gpg_decrypt = %(gpg_command)s -d --verbose --no-use-agent --batch --yes --passphrase-fd %(passphrase_fd)s -o %(output_file)s\" %(input_file)s\"~n" ++
-%%         "gpg_encrypt = %(gpg_command)s -c --verbose --no-use-agent --batch --yes --passphrase-fd %(passphrase_fd)s -o %(output_file)s\" %(input_file)s\"~n" ++
-%%         "gpg_passphrase = password~n" ++
-%%         "guess_mime_type = True~n" ++
-%%         "host_base = s3.amazonaws.com~n" ++
-%%         "host_bucket = %(bucket)s.s3.amazonaws.com~n" ++
-%%         "human_readable_sizes = False~n" ++
-%%         "list_md5 = False~n" ++
-%%         "log_target_prefix =~n" ++
-%%         "preserve_attrs = True~n" ++
-%%         "progress_meter = True~n" ++
-%%         "proxy_host = localhost~n" ++
-%%         "proxy_port = 8080~n" ++
-%%         "recursive = False~n" ++
-%%         "recv_chunk = 4096~n" ++
-%%         "reduced_redundancy = False~n" ++
-%%         "secret_key = $KEYNOQUOTES~n" ++
-%%         "send_chunk = 4096~n" ++
-%%         "simpledb_host = sdb.amazonaws.com~n" ++
-%%         "skip_existing = False~n" ++
-%%         "socket_timeout = 300~n" ++
-%%         "urlencoding_mode = normal~n" ++
-%%         "use_https = False~n" ++
-%%         "verbosity = WARNING~n".

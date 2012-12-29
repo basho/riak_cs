@@ -12,7 +12,9 @@
     client_test_run/2,
     int_test_clean/2,
     int_test_compile/2,
-    int_test_run/2
+    int_test_run/2,
+    riak_test_clean/2,
+    riak_test_compile/2
 ]).
 
 %% ===================================================================
@@ -52,6 +54,18 @@ int_test_run(Config, AppFile) ->
     case should_i_run(Config) of
         false -> ok;
         _ -> test_run(int_test, Config, AppFile)
+    end.
+
+riak_test_clean(Config, AppFile) ->
+    case should_i_run(Config) of
+        false -> ok;
+        _ -> test_clean(riak_test, Config, AppFile)
+    end.
+
+riak_test_compile(Config, AppFile) ->
+    case should_i_run(Config) of
+        false -> ok;
+        _ -> test_compile(riak_test, Config, AppFile)
     end.
 
 %% ===================================================================
