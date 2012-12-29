@@ -2,10 +2,6 @@
 -compile(export_all).
 -include_lib("eunit/include/eunit.hrl").
 
--import(rt, [join/2,
-             wait_until_nodes_ready/1,
-             wait_until_no_pending_changes/1]).
-
 verify_sites_balanced(NumSites, BNodes0) ->
     Leader = rpc:call(hd(BNodes0), riak_repl_leader, leader_node, []),
     case node_has_version(Leader, "1.2.0") of
@@ -26,12 +22,6 @@ verify_sites_balanced(NumSites, BNodes0) ->
         false ->
             ok
     end.
-
-make_cluster(Nodes) ->
-    [First|Rest] = Nodes,
-    [join(Node, First) || Node <- Rest],
-    ?assertEqual(ok, wait_until_nodes_ready(Nodes)),
-    ?assertEqual(ok, wait_until_no_pending_changes(Nodes)).
 
 %% does the node meet the version requirement?
 node_has_version(Node, Version) ->
