@@ -14,6 +14,7 @@
 
 %% Generators
 -export([bucket/0,
+         bucket_or_blank/0,
          file_name/0,
          block_size/0,
          content_length/0,
@@ -31,6 +32,9 @@
 
 bucket() ->
     non_blank_string().
+
+bucket_or_blank() ->
+    maybe_blank_string().
 
 file_name() ->
     non_blank_string().
@@ -77,7 +81,10 @@ bounded_non_zero_nums() ->
     ?LET(X, not_zero(int()), X * 100000).
 
 non_blank_string() ->
-    ?LET(X,not_empty(list(lower_char())), list_to_binary(X)).
+    ?LET(X, not_empty(list(lower_char())), list_to_binary(X)).
+
+maybe_blank_string() ->
+    ?LET(X, list(lower_char()), list_to_binary(X)).
 
 %% Generate a lower 7-bit ACSII character that should not cause any problems
 %% with utf8 conversion.
