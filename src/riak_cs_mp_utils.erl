@@ -178,7 +178,7 @@ make_special_error(Code, Message, RequestId, HostId) ->
                {'HostId', [HostId]}
               ]
              },
-    riak_cs_s3_response:export_xml([XmlDoc]).
+    riak_cs_xml:export_xml([XmlDoc]).
 
 list_multipart_uploads(Bucket, Caller, Opts) ->
     list_multipart_uploads(Bucket, Caller, Opts, nopid).
@@ -301,7 +301,7 @@ write_new_manifest(M, Opts, RiakcPidUnW) ->
                           AnAcl ->
                               AnAcl
                       end,
-                ClusterId = riak_cs_utils:get_cluster_id(?PID(RiakcPid)),
+                ClusterId = riak_cs_config:cluster_id(?PID(RiakcPid)),
                 M2 = M?MANIFEST{acl = Acl,
                                 cluster_id = ClusterId,
                                 write_start_time=os:timestamp()},
@@ -727,7 +727,7 @@ move_dead_parts_to_gc(Bucket, Key, PartsToDelete, RiakcPid) ->
     ok = riak_cs_gc:move_manifests_to_gc_bucket(PartDelMs, RiakcPid, false).
 
 enforce_part_size(PartsToKeep) ->
-    case riak_cs_utils:get_env(riak_cs, enforce_multipart_part_size, true) of
+    case riak_cs_config:enforce_multipart_part_size() of
         true ->
             eval_part_sizes([P?PART_MANIFEST.content_length || P <- PartsToKeep]);
         false ->

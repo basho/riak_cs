@@ -163,11 +163,13 @@ riak_cs_gc.erl:.*: The pattern ..UUID, _... _. can never match the type ..$
 riak_cs_gc_d.erl:383: Function fetch_eligible_manifest_keys/2 will never be called
 riak_cs_gc_d.erl:387: Function eligible_manifest_keys/1 will never be called
 riak_cs_gc_d.erl:395: Function gc_index_query/2 will never be called
-^riak_cs_riakc_pool_worker.erl:48:
+^riak_cs_riakc_pool_worker.erl:54:
+riak_cs_storage_d.erl:346: Function fetch_user_list/1 will never be called
 riak_cs_storage_d.erl:384: Function fetch_user_list/1 will never be called
 riak_cs_wm_ping.erl:46: The pattern 'undefined' can never match the type pid()
 ############## All the others..........
 riak_cs_blockall_auth.erl:23: Callback info about the riak_cs_auth behaviour is not available
-riak_cs_passthru_auth.erl:23: Callback info about the riak_cs_auth behaviour is not available
+riak_cs_s3_passthru_auth.erl:23: Callback info about the riak_cs_auth behaviour is not available
 riak_cs_s3_auth.erl:23: Callback info about the riak_cs_auth behaviour is not available
+riak_cs_keystone_auth.erl:23: Callback info about the riak_cs_auth behaviour is not available
 riak_cs_s3_policy.erl:26: Callback info about the riak_cs_policy behaviour is not available

@@ -63,7 +63,7 @@ forbidden(RD, Ctx=#context{auth_bypass=AuthBypass}) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"forbidden">>),
     Method = wrq:method(RD),
     AnonOk = ((Method =:= 'PUT' orelse Method =:= 'POST') andalso
-              riak_cs_utils:anonymous_user_creation())
+              riak_cs_config:anonymous_user_creation())
         orelse AuthBypass,
     Next = fun(NewRD, NewCtx=#context{user=User}) ->
                    forbidden(wrq:method(RD),
@@ -156,7 +156,7 @@ accept_xml(RD, Ctx=#context{user=undefined}) ->
                 {ok, User} ->
                     CTypeWritten = wrq:set_resp_header("Content-Type", ?XML_TYPE, RD),
                     UserData = riak_cs_wm_utils:user_record_to_xml(User),
-                    XmlDoc = riak_cs_s3_response:export_xml([UserData]),
+                    XmlDoc = riak_cs_xml:export_xml([UserData]),
                     WrittenRD = wrq:set_resp_body(XmlDoc, CTypeWritten),
                     {true, WrittenRD, Ctx};
                 {error, Reason} ->
@@ -188,7 +188,7 @@ produce_json(RD, #context{user=User}=Ctx) ->
 produce_xml(RD, #context{user=User}=Ctx) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"produce_xml">>),
     XmlDoc = riak_cs_wm_utils:user_record_to_xml(User),
-    Body = riak_cs_s3_response:export_xml([XmlDoc]),
+    Body = riak_cs_xml:export_xml([XmlDoc]),
     Etag = etag(Body),
     RD2 = wrq:set_resp_header("ETag", Etag, RD),
     {Body, RD2, Ctx}.
@@ -316,7 +316,7 @@ set_resp_data(?JSON_TYPE, RD, #context{user=User}) ->
     wrq:set_resp_body(JsonDoc, RD);
 set_resp_data(?XML_TYPE, RD, #context{user=User}) ->
     UserData = riak_cs_wm_utils:user_record_to_xml(User),
-    XmlDoc = riak_cs_s3_response:export_xml([UserData]),
+    XmlDoc = riak_cs_xml:export_xml([UserData]),
     wrq:set_resp_body(XmlDoc, RD).
 
 -spec user_json_filter({binary(), binary()}, [{atom(), term()}]) -> [{atom(), term()}].

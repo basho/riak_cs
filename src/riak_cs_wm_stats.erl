@@ -86,7 +86,7 @@ ping(RD, Ctx) ->
 
 service_available(RD, #ctx{path_tokens = []} = Ctx) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"service_available">>),
-    case riak_cs_utils:get_env(riak_cs, riak_cs_stat, true) of
+    case riak_cs_config:riak_cs_stat() of
         false ->
             {false, RD, Ctx};
         true ->
@@ -114,7 +114,7 @@ forbidden(RD, #ctx{auth_bypass = AuthBypass, riakc_pid = RiakPid} = Ctx) ->
     case riak_cs_wm_utils:validate_auth_header(RD, AuthBypass, RiakPid, undefined) of
         {ok, User, _UserObj} ->
             UserKeyId = User?RCS_USER.key_id,
-            case riak_cs_utils:get_admin_creds() of
+            case riak_cs_config:admin_creds() of
                 {ok, {Admin, _}} when Admin == UserKeyId ->
                     %% admin account is allowed
                     riak_cs_dtrace:dt_wm_return(?MODULE, <<"forbidden">>,

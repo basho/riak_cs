@@ -233,20 +233,23 @@ ensure_doc(KeyCtx, _) ->
 
 %% @doc Produce an access-denied error message from a webmachine
 %% resource's `forbidden/2' function.
+deny_access(RD, Ctx=#context{response_module=ResponseMod}) ->
+    ResponseMod:api_error(access_denied, RD, Ctx);
 deny_access(RD, Ctx) ->
     riak_cs_s3_response:api_error(access_denied, RD, Ctx).
 
 %% @doc Prodice an invalid-access-keyid error message from a
 %% webmachine resource's `forbidden/2' function.
-deny_invalid_key(RD, Ctx) ->
-    riak_cs_s3_response:api_error(invalid_access_key_id, RD, Ctx).
+deny_invalid_key(RD, Ctx=#context{response_module=ResponseMod}) ->
+    ResponseMod:api_error(invalid_access_key_id, RD, Ctx).
 
 %% @doc In the case is a user is authorized to perform an operation on
 %% a bucket but is not the owner of that bucket this function can be used
 %% to switch to the owner's record if it can be retrieved
 -spec shift_to_owner(#wm_reqdata{}, #context{}, string(), pid()) ->
                             {boolean(), #wm_reqdata{}, #context{}}.
-shift_to_owner(RD, Ctx=#context{}, OwnerId, RiakPid) when RiakPid /= undefined ->
+shift_to_owner(RD, Ctx=#context{response_module=ResponseMod}, OwnerId, RiakPid)
+  when RiakPid /= undefined ->
     case riak_cs_utils:get_user(OwnerId, RiakPid) of
         {ok, {Owner, OwnerObject}} when Owner?RCS_USER.status =:= enabled ->
             AccessRD = riak_cs_access_log_handler:set_user(Owner, RD),
@@ -255,7 +258,7 @@ shift_to_owner(RD, Ctx=#context{}, OwnerId, RiakPid) when RiakPid /= undefined -
         {ok, _} ->
             riak_cs_wm_utils:deny_access(RD, Ctx);
         {error, _} ->
-            riak_cs_s3_response:api_error(bucket_owner_unavailable, RD, Ctx)
+            ResponseMod:api_error(bucket_owner_unavailable, RD, Ctx)
     end.
 
 streaming_get(FsmPid, StartTime, UserName, BFile_str) ->
@@ -449,9 +452,11 @@ bucket_access_authorize_helper(AccessType, Deletable, RD, Ctx) ->
       PermCtx).
 
 handle_bucket_acl_policy_response({error, notfound}, _, _, RD, Ctx) ->
-    riak_cs_s3_response:api_error(no_such_bucket, RD, Ctx);
+    ResponseMod = Ctx#context.response_module,
+    ResponseMod:api_error(no_such_bucket, RD, Ctx);
 handle_bucket_acl_policy_response({error, Reason}, _, _, RD, Ctx) ->
-    riak_cs_s3_response:api_error(Reason, RD, Ctx);
+    ResponseMod = Ctx#context.response_module,
+    ResponseMod:api_error(Reason, RD, Ctx);
 handle_bucket_acl_policy_response({Acl, Policy}, AccessType, DeleteEligible, RD, Ctx) ->
     #context{bucket=Bucket,
              riakc_pid=RiakPid,
@@ -515,6 +520,7 @@ handle_policy_eval_result(_, true, OwnerId, RD, Ctx) ->
     shift_to_owner(RD, Ctx, OwnerId, Ctx#context.riakc_pid);
 handle_policy_eval_result(User, _, _, RD, Ctx) ->
     #context{riakc_pid=RiakPid,
+             response_module=ResponseMod,
              user=User,
              bucket=Bucket} = Ctx,
     %% log bad requests against the actors that make them
@@ -525,7 +531,7 @@ handle_policy_eval_result(User, _, _, RD, Ctx) ->
         {ok, _} ->
             riak_cs_wm_utils:deny_access(AccessRD, Ctx);
         {error, Reason} ->
-            riak_cs_s3_response:api_error(Reason, RD, Ctx)
+            ResponseMod:api_error(Reason, RD, Ctx)
     end.
 
 -spec is_acl_request(atom()) -> boolean().
@@ -550,6 +556,7 @@ object_access_authorize_helper(AccessType, Deletable, RD, Ctx) ->
 object_access_authorize_helper(AccessType, Deletable, SkipAcl,
                                RD, #context{policy_module=PolicyMod,
                                             local_context=LocalCtx,
+                                            response_module=ResponseMod,
                                             riakc_pid=RiakPid}=Ctx)
   when ( AccessType =:= object_acl orelse
          AccessType =:= object_part orelse
@@ -562,11 +569,11 @@ object_access_authorize_helper(AccessType, Deletable, SkipAcl,
         {error, multiple_bucket_owners=E} ->
             %% We want to bail out early if there are siblings when
             %% retrieving the bucket policy
-            riak_cs_s3_response:api_error(E, RD, Ctx);
+            ResponseMod:api_error(E, RD, Ctx);
         {error, notfound} ->
             %% The call to `check_bucket_exists' returned `notfound'
             %% so we can assume to bucket does not exist.
-            riak_cs_s3_response:api_error(no_such_bucket, RD, Ctx);
+            ResponseMod:api_error(no_such_bucket, RD, Ctx);
         Policy ->
             check_object_authorization(AccessType, Deletable, SkipAcl, Policy, RD, Ctx)
     end.
@@ -583,8 +590,8 @@ check_object_authorization(AccessType, Deletable, SkipAcl, Policy,
     ObjectAcl = extract_object_acl(Manifest),
     Access = PolicyMod:reqdata_to_access(RD, AccessType, CanonicalId),
     Acl = case SkipAcl of
-	      true -> true;
-	      false -> riak_cs_acl:object_access(Bucket,
+              true -> true;
+              false -> riak_cs_acl:object_access(Bucket,
                                              ObjectAcl,
                                              RequestedAccess,
                                              CanonicalId,
