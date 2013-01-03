@@ -19,7 +19,7 @@
 
 %% API
 -export([start_link/3,
-         start_link/4,
+         start_link/5,
          get_object_list/1,
          get_internal_state/1]).
 
@@ -53,6 +53,7 @@
 
 
 -record(state, {riakc_pid :: pid(),
+                caller_pid :: pid(),
                 req :: list_object_request(),
 
                 reply_ref :: undefined | {pid(), any()},
@@ -130,12 +131,12 @@
 -spec start_link(pid(), list_object_request(), term()) ->
     {ok, pid()} | {error, term()}.
 start_link(RiakcPid, ListKeysRequest, CacheKey) ->
-    start_link(RiakcPid, ListKeysRequest, CacheKey, true).
+    start_link(RiakcPid, self(), ListKeysRequest, CacheKey, true).
 
--spec start_link(pid(), list_object_request(), term(), UseCache :: boolean()) ->
+-spec start_link(pid(), pid(), list_object_request(), term(), UseCache :: boolean()) ->
     {ok, pid()} | {error, term()}.
-start_link(RiakcPid, ListKeysRequest, CacheKey, UseCache) ->
-    gen_fsm:start_link(?MODULE, [RiakcPid, ListKeysRequest, CacheKey, UseCache], []).
+start_link(RiakcPid, CallerPid, ListKeysRequest, CacheKey, UseCache) ->
+    gen_fsm:start_link(?MODULE, [RiakcPid, CallerPid, ListKeysRequest, CacheKey, UseCache], []).
 
 -spec get_object_list(pid()) ->
     {ok, list_object_response()} |
@@ -151,7 +152,7 @@ get_internal_state(FSMPid) ->
 %%%===================================================================
 
 -spec init(list()) -> {ok, prepare, state(), 0}.
-init([RiakcPid, Request, CacheKey, UseCache]) ->
+init([RiakcPid, CallerPid, Request, CacheKey, UseCache]) ->
     %% TODO: should we be linking or monitoring
     %% the proc that called us?
 
@@ -162,6 +163,7 @@ init([RiakcPid, Request, CacheKey, UseCache]) ->
     KeyMultiplier = 1.5,
 
     State = #state{riakc_pid=RiakcPid,
+                   caller_pid=CallerPid,
                    key_multiplier=KeyMultiplier,
                    req=Request,
                    use_cache=UseCache,
@@ -251,8 +253,18 @@ maybe_fetch_key_list(RiakcPid, Request, State=#state{use_cache=false}) ->
 -spec maybe_write_to_cache(state(), list()) -> ok.
 maybe_write_to_cache(#state{use_cache=false}, _ListofListofKeys) ->
     ok;
-maybe_write_to_cache(#state{cache_key=CacheKey}, ListofListofKeys) ->
-    riak_cs_list_objects_ets_cache:maybe_write(CacheKey, ListofListofKeys).
+maybe_write_to_cache(#state{cache_key=CacheKey,
+                            caller_pid=CallerPid}, ListofListofKeys) ->
+    case riak_cs_list_objects_ets_cache:can_write(CacheKey,
+                                                  CallerPid,
+                                                  lists:flatlength(ListofListofKeys)) of
+        true ->
+            lager:debug("writing to the cache"),
+            riak_cs_list_objects_ets_cache:write(CacheKey, ListofListofKeys);
+        false ->
+            lager:debug("not writing to the cache"),
+            ok
+    end.
 
 %% @doc Either proceed using the cached key list or make the request
 %% to start a key listing.
