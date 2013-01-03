@@ -247,20 +247,6 @@ multiple_choices(RD, Ctx=#context{submodule=Mod,
             {false, RD, Ctx}
     end.
 
-%% create_path(RD, Ctx=#context{submodule=Mod,
-%%                                 exports_fun=ExportsFun}) ->
-%%     riak_cs_dtrace:dt_wm_entry({?MODULE, Mod}, <<"create_path">>),
-%%     try
-%%         Res = resource_call(Mod,
-%%                             create_path,
-%%                             [RD, Ctx],
-%%                             ExportsFun),
-%%         riak_cs_dtrace:dt_wm_return({?MODULE, Mod}, <<"create_path">>, [], []),
-%%         Res
-%%     catch error:undef ->
-%%             {false, RD, Ctx}
-%%     end.
-
 -spec accept_body(#wm_reqdata{}, #context{}) ->
     {boolean() | {'halt', non_neg_integer()}, #wm_reqdata{}, #context{}}.
 accept_body(RD, Ctx=#context{submodule=Mod,exports_fun=ExportsFun,user=User}) ->
@@ -340,7 +326,6 @@ authenticate(User, UserObj, RD, Ctx=#context{auth_module=AuthMod, submodule=Mod}
             riak_cs_dtrace:dt_wm_return({?MODULE, Mod}, <<"authenticate">>, [1], [atom_to_binary(AuthMod, latin1)]),
             {ok, User, UserObj};
         {error, _Reason} ->
-io:format("~p LINE ~p Reason ~p\n", [?MODULE, ?LINE, _Reason]),
             riak_cs_dtrace:dt_wm_return({?MODULE, Mod}, <<"authenticate">>, [0], [atom_to_binary(AuthMod, latin1)]),
             {error, bad_auth}
     end.
