@@ -67,6 +67,6 @@
 -type list_objects_common_prefixes() :: #list_objects_common_prefixes_v1{}.
 
 -define(LIST_OBJECTS_CACHE, list_objects_cache).
--define(CACHE_TIMEOUT, 7200000).  % 2 hours
+-define(CACHE_TIMEOUT, timer:minutes(15)).  % 2 hours
 -define(MIN_KEYS_TO_CACHE, 2000).
 -define(MAX_CACHE_BYTES, 104857600). % 100MB
