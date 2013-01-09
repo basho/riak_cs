@@ -14,6 +14,11 @@
 
 -behaviour(gen_fsm).
 
+-ifdef(TEST).
+-compile([export_all]).
+-include_lib("eunit/include/eunit.hrl").
+-endif.
+
 -include("riak_cs.hrl").
 -include("list_objects.hrl").
 
@@ -549,11 +554,12 @@ filtered_keys_from_request(?LOREQ{marker=Marker}, KeyList, KeyListLength) ->
 round_up(X) ->
     erlang:round(X + 0.5).
 
-%% Return the index (1-based) where
+%% @doc Return the index (1-based) where
 %% all list members are > than `Element'.
 %% If `List' is empty, `1'
-%% is returned.
--spec index_of_first_greater_element(list(), term()) -> pos_integer().
+%% is returned. If `Element' is greater than all elements
+%% in `List', then `length(List) + 1' is returned.
+-spec index_of_first_greater_element(list(non_neg_integer()), term()) -> pos_integer().
 index_of_first_greater_element(List, Element) ->
     index_of_first_greater_element_helper(List, Element, 1).
 
