@@ -97,7 +97,7 @@ bucket_from_host(HostHeader, RootHost) ->
 
 %% @doc Extract the bucket name from the `Host' header value if a
 %% bucket name is present.
--spec extract_bucket_from_host([string()], [string()]) -> undefined | string().
+-spec extract_bucket_from_host(string(), non_neg_integer()) -> undefined | string().
 extract_bucket_from_host(_Host, 0) ->
     undefined;
 extract_bucket_from_host(_Host, 1) ->

@@ -41,7 +41,6 @@ gc_active_manifests(Manifests, RiakObject, RiakcPid) ->
                     return_active_uuids_from_gc_response(GCManiResponse,
                                                          ActiveUUIDs);
                 updated ->
-                    io:format("Updated!\n"),
                     updated
             end;
         _ ->
