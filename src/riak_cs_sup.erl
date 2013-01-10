@@ -36,7 +36,8 @@
                   admin_ip,
                   admin_port,
                   ssl,
-                  admin_ssl]).
+                  admin_ssl,
+                  {rewrite_module, riak_cs_s3_rewrite}]).
 
 -type startlink_err() :: {'already_started', pid()} | 'shutdown' | term().
 -type startlink_ret() :: {'ok', pid()} | 'ignore' | {'error', startlink_err()}.
