@@ -19,7 +19,6 @@
 -define(PID(WrappedPid), get_riakc_pid(WrappedPid)).
 
 %% export Public API
--compile(export_all).                           % SLF DEBUGGING ONLY!
 -export([
          abort_multipart_upload/4, abort_multipart_upload/5,
          calc_multipart_2i_dict/3,
@@ -35,7 +34,7 @@
          new_manifest/5,
          upload_part/6, upload_part/7,
          upload_part_1blob/2,
-         upload_part_finished/7,
+         upload_part_finished/7, upload_part_finished/8,
          user_rec_to_3tuple/1,
          write_new_manifest/1,
          write_new_manifest/3
@@ -514,6 +513,22 @@ make_2i_key(Bucket) ->
 
 make_2i_key(Bucket, {_, _, OwnerStr}) ->
     make_2i_key2(Bucket, OwnerStr);
+make_2i_key(Bucket, undefined) ->
+    %% I can't figure this one out:
+    %%     riak_cs_mp_utils.erl:516: Guard test is_list(OwnerStr::'undefined') can never succeed
+    %% or, if I try to work around:
+    %%     riak_cs_mp_utils.erl:529: The pattern <Bucket, OwnerStr> can never match since previous clauses completely covered the type <_,'undefined' | {_,_,_}>
+    %%
+    %% If I use "typer" to infer types for this func, the 'undefined' atom
+    %% is not inferred.  'undefined' isn't part of the valid type for
+    %% ?MULTIPART_MANIFEST.owner.  {sigh}
+    _ = try
+            really_does_not_exist = get(really_does_not_exist)
+        catch _:_ ->
+                lager:error("~s:make_2i_key: error @ ~p\n",
+                            [?MODULE, erlang:get_stacktrace()])
+        end,
+    iolist_to_binary(["rcs@undefined@", Bucket, "_bin"]);
 make_2i_key(Bucket, OwnerStr) when is_list(OwnerStr) ->
     make_2i_key2(Bucket, OwnerStr).
 
@@ -660,9 +675,6 @@ comb_parts_fold({PartNum, _ETag} = K,
             throw(bad_etag)
     end.
 
-shrink_part_manifests(PMs) ->
-    [PM?PART_MANIFEST{bucket = <<"x">>, key = <<"x">>, start_time = os:timestamp()} || PM <- PMs].
-
 move_dead_parts_to_gc(Bucket, Key, PartsToDelete, RiakcPid) ->
     PartDelMs = [{P_UUID,
                   riak_cs_lfs_utils:new_manifest(
@@ -711,8 +723,7 @@ get_riakc_pid({remote_pid, RiakcPid}) ->
 %% ===================================================================
 %% EUnit tests
 %% ===================================================================
-%%%%%%%%%%%%%%%%%%%%%%%%-ifdef(TEST). % SLF debugging: put me back!
--ifndef(TESTfoo).
+-ifdef(TEST).
 
 test_0() ->
     test_cleanup_users(),

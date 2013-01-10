@@ -51,8 +51,6 @@ anonymous_bucket_access(Bucket, RequestedAccess, RiakPid, undefined) ->
         {error, Reason} ->
             %% @TODO Think about bubbling this error up and providing
             %% feedback to requester.
-            %% lager:error("Anonymous bucket access hacked, ignoring ~p", [Reason]),
-            %% {true, "J2IP6WGUQ_FNGIAN9AFI"}
             _ = lager:error("Anonymous bucket access check failed due to error. Reason: ~p", [Reason]),
             false
     end;
