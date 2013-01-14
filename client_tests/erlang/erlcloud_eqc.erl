@@ -201,8 +201,7 @@ initial_state_data(Host, Port, ProxyHost, ProxyPort) ->
     #api_state{aws_config=#aws_config{s3_host=Host,
                                       s3_port=Port,
                                       s3_prot="http",
-                                      proxy_host=ProxyHost,
-                                      proxy_port=ProxyPort}}.
+                                      http_options=[{proxy, {{ProxyHost, ProxyPort}, []}}, {keep_alive_timeout, 100}]}}.
 
 next_state_data(start, user_created, S, AwsConfig, _C) ->
     S#api_state{aws_config=AwsConfig};
@@ -290,7 +289,7 @@ test(Host, Port, ProxyHost, ProxyPort, Iterations) ->
 create_user(Name, Email, Config) ->
     process_post(
       post_user_request(
-        compose_url(Config#aws_config.proxy_host, Config#aws_config.proxy_port),
+        compose_url(Config),
         compose_request(Name, Email)),
      Config).
 
@@ -332,8 +331,17 @@ item_to_record_field({<<"key_secret">>, KeySecret}, User) ->
 item_to_record_field(_, User) ->
     User.
 
+compose_url(#aws_config{http_options=HTTPOptions}) ->
+    {Host, Port} = grab_host_port(HTTPOptions),
+    compose_url(Host, Port).
+
 compose_url(Host, Port) ->
     lists:flatten(["http://", Host, ":", integer_to_list(Port), "/riak-cs/user"]).
+
+grab_host_port([{proxy, {{Host, Port}, _}} | _T]) ->
+    {Host, Port};
+grab_host_port([_H | T]) ->
+    grab_host_port(T).
 
 compose_request(Name, Email) ->
     binary_to_list(
