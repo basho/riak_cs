@@ -21,8 +21,8 @@
 -compile(export_all).
 
 %% eqc properties
--export([prop_api_test/4
-         %% prop_parallel_api_test/4
+-export([prop_api_test/4,
+         prop_parallel_api_test/4
         ]).
 
 %% States
@@ -86,8 +86,8 @@ eqc_test_() ->
                                                        ?QC_OUT(prop_api_test(?DEFAULT_HOST,
                                                                              ?DEFAULT_PORT,
                                                                              ?DEFAULT_PROXY_HOST,
-                                                                             ?DEFAULT_PROXY_PORT)))))}
-      %% {timeout, 60, ?_assertEqual(true, quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_parallel_api_test(?DEFAULT_HOST, ?DEFAULT_PORT)))))}
+                                                                             ?DEFAULT_PROXY_PORT)))))},
+      {timeout, 60, ?_assertEqual(true, quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_parallel_api_test(?DEFAULT_HOST, ?DEFAULT_PORT, ?DEFAULT_PROXY_HOST, ?DEFAULT_PROXY_PORT)))))}
      ]
     }.
 
@@ -124,25 +124,27 @@ prop_api_test(Host, Port, ProxyHost, ProxyPort) ->
             end
            ).
 
-%% prop_parallel_api_test(Host, Port, ProxyHost, ProxyPort) ->
-%%     ?FORALL(Cmds={Seq, Par},
-%%             parallel_commands(?MODULE, {start, initial_state_data(Host, Port)}),
-%%             begin
-%%                 erlcloud:start(),
-%%                 {H, _ParH, Res} = run_parallel_commands(?MODULE, {Seq, Par}),
-%%                 %% aggregate(zip(state_names(H), command_names(Cmds)),
-%%                 aggregate(command_names(Cmds),
-%%                           ?WHENFAIL(
-%%                              begin
-%%                                  ?debugFmt("Cmds: ~p~n",
-%%                                            [zip(state_names(H),
-%%                                                 command_names(Cmds))]),
-%%                                  ?debugFmt("Result: ~p~n", [Res]),
-%%                                  ?debugFmt("History: ~p~n", [H])
-%%                              end,
-%%                              equals(ok, Res)))
-%%             end
-%%            ).
+prop_parallel_api_test(Host, Port, ProxyHost, ProxyPort) ->
+    ?FORALL(Cmds={Seq, Par},
+             parallel_commands(?MODULE, {start, initial_state_data(Host,
+                                                                   Port,
+                                                                   ProxyHost,
+                                                                   ProxyPort)}),
+             begin
+                 erlcloud:start(),
+                 {H, _ParH, Res} = run_parallel_commands(?MODULE, {Seq, Par}),
+                 %% aggregate(zip(state_names(H), command_names(Cmds)),
+                 aggregate(command_names(Cmds),
+                           ?WHENFAIL(
+                              begin
+                                  ?debugFmt("Cmds: ~p~n",
+                                            [zip(state_names(H),
+                                                 command_names(Cmds))]),
+                                  ?debugFmt("Result: ~p~n", [Res]),
+                                  ?debugFmt("History: ~p~n", [H])
+                              end,
+                              equals(ok, Res)))
+             end).
 
 %%====================================================================
 %% eqc_fsm callbacks
@@ -283,8 +285,8 @@ test(Host, Port) ->
     test(Host, Port, ?DEFAULT_PROXY_HOST, ?DEFAULT_PROXY_PORT, 500).
 
 test(Host, Port, ProxyHost, ProxyPort, Iterations) ->
-    eqc:quickcheck(eqc:numtests(Iterations, prop_api_test(Host, Port, ProxyHost, ProxyPort))).
-    %% eqc:quickcheck(eqc:numtests(Iterations, prop_parallel_api_test(Host, Port, ProxyHost, ProxyPort))).
+    eqc:quickcheck(eqc:numtests(Iterations, prop_api_test(Host, Port, ProxyHost, ProxyPort))),
+    eqc:quickcheck(eqc:numtests(Iterations, prop_parallel_api_test(Host, Port, ProxyHost, ProxyPort))).
 
 create_user(Name, Email, Config) ->
     process_post(
