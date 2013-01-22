@@ -97,15 +97,17 @@ upload_part(#state{initiated=UploadIDs}) ->
     %% ids that are not in the aborted state,
     %% at least at first
     UploadID = elements(UploadIDs),
-    Value = binary(),
+    Value = non_empty_binary(),
     PartID = nat(),
     {call, ?MODULE, upload_part_wrapper, [UploadID, PartID, Value]}.
 
 upload_part_wrapper(UploadId, PartNumber, Blob) ->
     Size = byte_size(Blob),
-    {upload_part_ready, _PartUUID, PutPid} =
+    {upload_part_ready, PartUUID, PutPid} =
         riak_cs_mp_utils:upload_part(?BUCKET, ?KEY, UploadId, PartNumber, Size, ?USER),
     {ok, MD5} = riak_cs_mp_utils:upload_part_1blob(PutPid, Blob),
+    ok = riak_cs_mp_utils:upload_part_finished(?BUCKET, ?KEY, UploadId,
+                                               PartNumber, PartUUID, MD5, ?USER),
     MD5.
 
 %% -------------------------------------------------------------------
@@ -170,6 +172,9 @@ stop_deps() ->
 %% -------------------------------------------------------------------
 %% Generators
 %% -------------------------------------------------------------------
+
+non_empty_binary() ->
+    ?SUCHTHAT(X, binary(), X =/= <<>>).
 
 %% -------------------------------------------------------------------
 %% Helpers
