@@ -349,7 +349,7 @@ handle_keys_received(Keys, State=#state{key_buffer=PrevKeyBuffer}) ->
     %% this is where we might eventually do a 'top-k' keys
     %% kind of thing, like
     %% `lists:sublist(lists:sort([Keys | PrevKeyBuffer]), BufferSize)'
-    NewState = State#state{key_buffer=[Keys | PrevKeyBuffer]},
+    NewState = State#state{key_buffer=[lists:sort(Keys) | PrevKeyBuffer]},
     {next_state, waiting_list_keys, NewState}.
 
 
