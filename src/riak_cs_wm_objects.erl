@@ -28,7 +28,7 @@ allowed_methods() ->
     ['GET'].
 
 -spec content_types_provided(#wm_reqdata{}, #context{}) -> {[{string(), atom()}], #wm_reqdata{}, #context{}}.
-content_types_provided(RD,Ctx) ->        
+content_types_provided(RD,Ctx) ->
     {[{"application/xml", to_xml}], RD, Ctx}.
 
 
@@ -47,7 +47,7 @@ authorize(RD, #context{user=User,
         true ->
             %% listing bucket for owner
             AccessRD = riak_cs_access_logger:set_user(User, RD),
-            {false, AccessRD, PermCtx};        
+            {false, AccessRD, PermCtx};
         {true, OwnerId} ->
             %% listing bucket for (possibly anon.) actor other than the owner of this bucket.
             %% need to get the owner record and log access against it
@@ -81,8 +81,8 @@ to_xml(RD, Ctx=#context{start_time=StartTime,
                         bucket=Bucket,
                         requested_perm='READ',
                         riakc_pid=RiakPid}) ->
-    riak_cs_dtrace:dt_bucket_entry(?MODULE, <<"bucket_list_keys">>, 
-                                      [], [riak_cs_wm_utils:extract_name(User), Bucket]),
+    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"to_xml">>, [], [riak_cs_wm_utils:extract_name(User), Bucket]),
+    riak_cs_dtrace:dt_bucket_entry(?MODULE, <<"list_keys">>, [], [riak_cs_wm_utils:extract_name(User), Bucket]),
     StrBucket = binary_to_list(Bucket),
     case [B || B <- riak_cs_utils:get_buckets(User),
                B?RCS_BUCKET.name =:= StrBucket] of
@@ -90,28 +90,42 @@ to_xml(RD, Ctx=#context{start_time=StartTime,
             CodeName = no_such_bucket,
             Res = riak_cs_s3_response:api_error(CodeName, RD, Ctx),
             Code = riak_cs_s3_response:status_code(CodeName),
-            riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_list_keys">>, 
-                                               [Code], [riak_cs_wm_utils:extract_name(User), Bucket]),
+            riak_cs_dtrace:dt_wm_return(?MODULE, <<"to_xml">>, [Code], [riak_cs_wm_utils:extract_name(User), Bucket]),
+            riak_cs_dtrace:dt_bucket_return(?MODULE, <<"list_keys">>, [Code], [riak_cs_wm_utils:extract_name(User), Bucket]),
             Res;
-        [BucketRecord] ->
-            Prefix = list_to_binary(wrq:get_qs_value("prefix", "", RD)),
-            case riak_cs_utils:get_keys_and_manifests(Bucket, Prefix, RiakPid) of
-                {ok, KeyObjPairs} ->
-                    X = riak_cs_s3_response:list_bucket_response(User,
-                                                                   BucketRecord,
-                                                                   KeyObjPairs,
-                                                                   RD,
-                                                                   Ctx),
+        [_BucketRecord] ->
+            Marker = case wrq:get_qs_value("marker", RD) of
+                         undefined ->
+                             undefined;
+                         M ->
+                             list_to_binary(M)
+                     end,
+            MaxKeys = case wrq:get_qs_value("max-keys", RD) of
+                          undefined ->
+                              ?DEFAULT_LIST_OBJECTS_MAX_KEYS;
+                          StringKeys ->
+                              erlang:min(list_to_integer(StringKeys),
+                                         ?DEFAULT_LIST_OBJECTS_MAX_KEYS)
+                      end,
+            Options = [{marker, Marker}],
+            ListKeysRequest = riak_cs_list_objects:new_request(Bucket, MaxKeys,
+                                                               Options),
+            BinPid = riak_cs_utils:pid_to_binary(self()),
+            CacheKey = << BinPid/binary, <<":">>/binary, Bucket/binary >>,
+            case riak_cs_list_objects_fsm:start_link(RiakPid, ListKeysRequest, CacheKey) of
+                {ok, ListFSMPid} ->
+                    {ok, ListObjectsResponse} = riak_cs_list_objects_fsm:get_object_list(ListFSMPid),
+                    Response = riak_cs_xml:to_xml(ListObjectsResponse),
                     ok = riak_cs_stats:update_with_start(bucket_list_keys,
                                                          StartTime),
-                    riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_list_keys">>, 
-                                                       [200], [riak_cs_wm_utils:extract_name(User), Bucket]),
-                    X;
+                    riak_cs_dtrace:dt_wm_return(?MODULE, <<"to_xml">>, [200], [riak_cs_wm_utils:extract_name(User), Bucket]),
+                    riak_cs_dtrace:dt_bucket_return(?MODULE, <<"list_keys">>, [200], [riak_cs_wm_utils:extract_name(User), Bucket]),
+                    riak_cs_s3_response:respond(200, Response, RD, Ctx);
                 {error, Reason} ->
                     Code = riak_cs_s3_response:status_code(Reason),
-                    X = riak_cs_s3_response:api_error(Reason, RD, Ctx),
-                    riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_list_keys">>, 
-                                                       [Code], [riak_cs_wm_utils:extract_name(User), Bucket]),
-                    X
+                    Response = riak_cs_s3_response:api_error(Reason, RD, Ctx),
+                    riak_cs_dtrace:dt_wm_return(?MODULE, <<"to_xml">>, [Code], [riak_cs_wm_utils:extract_name(User), Bucket]),
+                    riak_cs_dtrace:dt_bucket_return(?MODULE, <<"list_keys">>, [Code], [riak_cs_wm_utils:extract_name(User), Bucket]),
+                    Response
             end
     end.
