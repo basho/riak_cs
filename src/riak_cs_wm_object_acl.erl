@@ -41,49 +41,17 @@ authorize(RD, Ctx0=#context{local_context=LocalCtx0, riakc_pid=RiakPid}) ->
         riak_cs_acl_utils:requested_access(Method, true),
     LocalCtx = riak_cs_wm_utils:ensure_doc(LocalCtx0, RiakPid),
     Ctx = Ctx0#context{requested_perm=RequestedAccess,local_context=LocalCtx},
-    check_permission(Method, RD, Ctx, LocalCtx#key_context.manifest).
 
-%% @doc Final step of {@link forbidden/2}: Authentication succeeded,
-%% now perform ACL check to verify access permission.
-check_permission('GET', RD, Ctx, notfound) ->
-    {{halt, 404}, maybe_log_user(RD, Ctx), Ctx};
-check_permission('HEAD', RD, Ctx, notfound) ->
-    {{halt, 404}, maybe_log_user(RD, Ctx), Ctx};
-check_permission(_, RD, Ctx=#context{requested_perm=RequestedAccess,local_context=LocalCtx}, Mfst) ->
-    #key_context{bucket=Bucket} = LocalCtx,
-    RiakPid = Ctx#context.riakc_pid,
-    case Ctx#context.user of
-        undefined ->
-            User = CanonicalId = undefined;
-        User ->
-            CanonicalId = User?RCS_USER.canonical_id
-    end,
-    case Mfst of
-        notfound ->
-            ObjectAcl = undefined;
+    %% Final step of {@link forbidden/2}: Authentication succeeded,
+    case {Method, LocalCtx#key_context.manifest} of
+        {'GET', notfound} ->
+            {{halt, 404}, maybe_log_user(RD, Ctx), Ctx};
+        {'HEAD', notfound} ->
+            {{halt, 404}, maybe_log_user(RD, Ctx), Ctx};
         _ ->
-            ObjectAcl = Mfst?MANIFEST.acl
-    end,
-    case riak_cs_acl:object_access(Bucket,
-                                   ObjectAcl,
-                                   RequestedAccess,
-                                   CanonicalId,
-                                   RiakPid) of
-        true ->
-            %% actor is the owner
-            AccessRD = riak_cs_access_logger:set_user(User, RD),
-            UserStr = User?RCS_USER.canonical_id,
-            UpdLocalCtx = LocalCtx#key_context{owner=UserStr},
-            {false, AccessRD, Ctx#context{local_context=UpdLocalCtx}};
-        {true, OwnerId} ->
-            %% bill the owner, not the actor
-            AccessRD = riak_cs_access_logger:set_user(OwnerId, RD),
-            UpdLocalCtx = LocalCtx#key_context{owner=OwnerId},
-            {false, AccessRD, Ctx#context{local_context=UpdLocalCtx}};
-        false ->
-            %% ACL check failed, deny access
-            riak_cs_wm_utils:deny_access(RD, Ctx)
+            riak_cs_wm_utils:object_access_authorize_helper(object_acl, false, RD, Ctx)
     end.
+
 
 %% @doc Only set the user for the access logger to catch if there is a
 %% user to catch.

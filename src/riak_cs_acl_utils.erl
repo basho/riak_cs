@@ -25,7 +25,8 @@
          acl_to_xml/1,
          empty_acl_xml/0,
          requested_access/2,
-         check_grants/4
+         check_grants/4,
+         check_grants/5
         ]).
 
 -type xmlElement() :: #xmlElement{}.
@@ -154,13 +155,20 @@ requested_access(Method, AclRequest) ->
 
 -spec check_grants(undefined | rcs_user(), string(), atom(), pid()) -> 
                           boolean() | {true, string()}.
-check_grants(undefined, Bucket, RequestedAccess, RiakPid) ->
-    riak_cs_acl:anonymous_bucket_access(Bucket, RequestedAccess, RiakPid);
 check_grants(User, Bucket, RequestedAccess, RiakPid) ->
+    check_grants(User, Bucket, RequestedAccess, RiakPid, undefined).
+
+-spec check_grants(undefined | rcs_user(), string(), atom(), pid(), acl()|undefined) -> 
+                          boolean() | {true, string()}.
+check_grants(undefined, Bucket, RequestedAccess, RiakPid, BucketAcl) ->
+    riak_cs_acl:anonymous_bucket_access(Bucket, RequestedAccess, RiakPid, BucketAcl);
+check_grants(User, Bucket, RequestedAccess, RiakPid, BucketAcl) ->
     riak_cs_acl:bucket_access(Bucket,
                               RequestedAccess,
                               User?RCS_USER.canonical_id,
-                              RiakPid).
+                              RiakPid,
+                              BucketAcl).
+
 %% ===================================================================
 %% Internal functions
 %% ===================================================================

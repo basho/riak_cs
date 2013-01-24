@@ -47,6 +47,9 @@
          save_user/3,
          set_bucket_acl/5,
          set_object_acl/5,
+         set_bucket_policy/5,
+         delete_bucket_policy/4,
+         get_bucket_acl_policy/2,
          timestamp/1,
          to_bucket_name/2,
          update_key_secret/1,
@@ -630,6 +633,28 @@ set_bucket_acl(User, UserObj, Bucket, ACL, RiakPid) ->
                          bucket_put_acl,
                          RiakPid).
 
+%% @doc Set the policy for a bucket. Existing policy is only overwritten.
+-spec set_bucket_policy(rcs_user(), riakc_obj:riakc_obj(), binary(), binary(), pid()) -> ok | {error, term()}.
+set_bucket_policy(User, UserObj, Bucket, PolicyJson, RiakPid) ->
+    serialized_bucket_op(Bucket,
+                         PolicyJson,
+                         User,
+                         UserObj,
+                         update_policy,
+                         bucket_put_policy,
+                         RiakPid).
+
+%% @doc Set the policy for a bucket. Existing policy is only overwritten.
+-spec delete_bucket_policy(rcs_user(), riakc_obj:riakc_obj(), binary(), pid()) -> ok | {error, term()}.
+delete_bucket_policy(User, UserObj, Bucket, RiakPid) ->
+    serialized_bucket_op(Bucket,
+                         [],
+                         User,
+                         UserObj,
+                         delete_policy,
+                         bucket_put_policy,
+                         RiakPid).
+
 %% @doc Set the ACL for an object. Existing ACLs are only
 %% replaced, they cannot be updated.
 -spec set_object_acl(binary(), binary(), lfs_manifest(), acl(), pid()) ->
@@ -647,6 +672,26 @@ set_object_acl(Bucket, Key, Manifest, Acl, RiakPid) ->
             ok
     end,
     Res.
+
+% @doc fetch moss.bucket and return acl and policy
+-spec get_bucket_acl_policy(binary(), pid()) -> {ok, {acl(), policy()}} | {error, term()}.
+get_bucket_acl_policy(Bucket, RiakPid) ->
+    case check_bucket_exists(Bucket, RiakPid) of
+        {ok, Obj} ->
+            %% For buckets there will not be siblings.
+            MD = riakc_obj:get_metadata(Obj),
+            MetaVals = dict:fetch(?MD_USERMETA, MD),
+            case {proplists:get_value(?MD_ACL, MetaVals),
+                  proplists:get_value(?MD_POLICY, MetaVals)} of
+                {undefined, undefined} -> {error, no_aclfound};
+                {undefined, PolicyBin} -> {ok, {undefined, binary_to_term(PolicyBin)}};
+                {AclBin, undefined}    -> {ok, {binary_to_term(AclBin), undefined}};
+                {AclBin,    PolicyBin} -> {ok, {binary_to_term(AclBin), binary_to_term(PolicyBin)}}
+            end;
+        {error, _}=Error ->
+            Error
+    end.
+
 
 %% @doc Generate a key for storing a set of manifests for deletion.
 -spec timestamp(erlang:timestamp()) -> non_neg_integer().
@@ -707,6 +752,15 @@ bucket_acl_json(ACL, KeyId)  ->
       iolist_to_binary(
         mochijson2:encode({struct, [{<<"requester">>, list_to_binary(KeyId)},
                                     stanchion_acl_utils:acl_to_json_term(ACL)]}))).
+
+%% @doc Generate a JSON document to use for a bucket
+-spec bucket_policy_json(binary(), string()) -> string().
+bucket_policy_json(PolicyJson, KeyId)  ->
+    binary_to_list(
+      iolist_to_binary(
+        mochijson2:encode({struct, [{<<"requester">>, list_to_binary(KeyId)},
+                                    {<<"policy">>, PolicyJson}]
+                          }))).
 
 %% @doc Check if a bucket is empty
 -spec bucket_empty(binary(), pid()) -> boolean().
@@ -832,6 +886,30 @@ bucket_fun(update_acl, Bucket, ACL, KeyId, AdminCreds, StanchionData) ->
                                   AclDoc,
                                   [{ssl, StanchionSSL},
                                    {auth_creds, AdminCreds}])
+    end;
+bucket_fun(update_policy, Bucket, PolicyJson, KeyId, AdminCreds, StanchionData) ->
+    {StanchionIp, StanchionPort, StanchionSSL} = StanchionData,
+    %% Generate the bucket JSON document for the ACL request
+    PolicyDoc = bucket_policy_json(PolicyJson, KeyId),
+    fun() ->
+            velvet:set_bucket_policy(StanchionIp,
+                                     StanchionPort,
+                                     Bucket,
+                                     "application/json",
+                                     PolicyDoc,
+                                     [{ssl, StanchionSSL},
+                                      {auth_creds, AdminCreds}])
+    end;
+bucket_fun(delete_policy, Bucket, _, KeyId, AdminCreds, StanchionData) ->
+    {StanchionIp, StanchionPort, StanchionSSL} = StanchionData,
+    %% Generate the bucket JSON document for the ACL request
+    fun() ->
+            velvet:delete_bucket_policy(StanchionIp,
+                                        StanchionPort,
+                                        Bucket,
+                                        KeyId,
+                                        [{ssl, StanchionSSL},
+                                         {auth_creds, AdminCreds}])
     end;
 bucket_fun(delete, Bucket, _ACL, KeyId, AdminCreds, StanchionData) ->
     {StanchionIp, StanchionPort, StanchionSSL} = StanchionData,
@@ -1044,7 +1122,7 @@ resolve_buckets([HeadUserRec | RestUserRecs], Buckets, _KeepDeleted) ->
 
 %% @doc Shared code used when doing a bucket creation or deletion.
 -spec serialized_bucket_op(binary(),
-                           acl(),
+                           acl() | policy(),
                            rcs_user(),
                            riakc_obj:riakc_obj(),
                            bucket_operation(),

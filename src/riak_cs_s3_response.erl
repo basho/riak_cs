@@ -43,6 +43,10 @@ error_message(admin_key_undefined) -> "Please reduce your request rate.";
 error_message(admin_secret_undefined) -> "Please reduce your request rate.";
 error_message(bucket_owner_unavailable) -> "The user record for the bucket owner was unavailable. Try again later.";
 error_message(econnrefused) -> "Please reduce your request rate.";
+error_message(malformed_policy_resource) -> "Policy has invalid resource";
+error_message(malformed_policy_principal) -> "Invalid principal in policy";
+error_message(malformed_policy_action) -> "Policy has invalid action";
+error_message(no_such_bucket_policy) -> "The bucket policy does not exist";
 error_message(_) -> "Please reduce your request rate.".
 
 error_code(invalid_access_key_id) -> "InvalidAccessKeyId";
@@ -58,6 +62,10 @@ error_code(admin_key_undefined) -> "ServiceUnavailable";
 error_code(admin_secret_undefined) -> "ServiceUnavailable";
 error_code(bucket_owner_unavailable) -> "ServiceUnavailable";
 error_code(econnrefused) -> "ServiceUnavailable";
+error_code(malformed_policy_resource) -> "MalformedPolicy";
+error_code(malformed_policy_principal) -> "MalformedPolicy";
+error_code(malformed_policy_action) -> "MalformedPolicy";
+error_code(no_such_bucket_policy) -> "NoSuchBucketPolicy";
 error_code(_) -> "ServiceUnavailable".
 
 status_code(invalid_access_key_id) -> 403;
@@ -74,6 +82,10 @@ status_code(admin_key_undefined) -> 503;
 status_code(admin_secret_undefined) -> 503;
 status_code(bucket_owner_unavailable) -> 503;
 status_code(econnrefused) -> 503;
+status_code(malformed_policy_resource) -> 400;
+status_code(malformed_policy_principal) -> 400;
+status_code(malformed_policy_action) -> 400;
+status_code(no_such_bucket_policy) -> 404;
 status_code(_) -> 503.
 
 

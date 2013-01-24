@@ -20,10 +20,16 @@
 
 %% Public API
 -export([anonymous_bucket_access/3,
+         anonymous_bucket_access/4,
          anonymous_object_access/4,
+         anonymous_object_access/5,
          bucket_access/4,
+         bucket_access/5,
          bucket_acl/2,
-         object_access/5]).
+         object_access/5,
+         object_access/6,
+         owner_id/2
+        ]).
 
 %% ===================================================================
 %% Public API
@@ -31,29 +37,35 @@
 
 %% @doc Determine if anonymous access is set for the bucket.
 -spec anonymous_bucket_access(binary(), atom(), pid()) -> {true, string()} | false.
-anonymous_bucket_access(_Bucket, undefined, _) ->
-    false;
 anonymous_bucket_access(Bucket, RequestedAccess, RiakPid) ->
+    anonymous_bucket_access(Bucket, RequestedAccess, RiakPid, undefined).
+
+-spec anonymous_bucket_access(binary(), atom(), pid(), acl()|undefined)
+                             -> {true, string()} | false.
+anonymous_bucket_access(_Bucket, undefined, _, _) ->
+    false;
+anonymous_bucket_access(Bucket, RequestedAccess, RiakPid, undefined) ->
     %% Fetch the bucket's ACL
     case bucket_acl(Bucket, RiakPid) of
-        {ok, Acl} ->
-            case RequestedAccess of
-                'WRITE' ->
-                    %% Only owners may delete buckets
-                    false;
-                _ ->
-                    case has_permission(acl_grants(Acl), RequestedAccess) of
-                        true ->
-                            {true, owner_id(Acl, RiakPid)};
-                        false ->
-                            false
-                    end
-            end;
+        {ok, BucketAcl} -> anonymous_bucket_access(Bucket, RequestedAccess, RiakPid, BucketAcl);
         {error, Reason} ->
             %% @TODO Think about bubbling this error up and providing
             %% feedback to requester.
             _ = lager:error("Anonymous bucket access check failed due to error. Reason: ~p", [Reason]),
             false
+    end;
+anonymous_bucket_access(_Bucket, RequestedAccess, RiakPid, BucketAcl) ->
+    case RequestedAccess of
+        'WRITE' ->
+            %% Only owners may delete buckets
+            false;
+        _ ->
+            case has_permission(acl_grants(BucketAcl), RequestedAccess) of
+                true ->
+                    {true, owner_id(BucketAcl, RiakPid)};
+                false ->
+                    false
+            end
     end.
 
 %% @doc Determine if anonymous access is set for the object.
@@ -61,21 +73,30 @@ anonymous_bucket_access(Bucket, RequestedAccess, RiakPid) ->
 -spec anonymous_object_access(binary(), acl(), atom(), pid()) ->
                                      {true, string()} |
                                      false.
-anonymous_object_access(_Bucket, _ObjAcl, undefined, _) ->
+anonymous_object_access(Bucket, ObjAcl, RequestedAccess, RiakPid) ->
+    anonymous_object_access(Bucket, ObjAcl, RequestedAccess, RiakPid, undefined).
+
+
+-spec anonymous_object_access(binary(), acl(), atom(), pid(), acl()|undefined) ->
+                                     {true, string()} | false.
+anonymous_object_access(_Bucket, _ObjAcl, undefined, _, _) ->
     false;
-anonymous_object_access(Bucket, _ObjAcl, 'WRITE', RiakPid) ->
+anonymous_object_access(Bucket, ObjAcl, 'WRITE', RiakPid, undefined) ->
     case bucket_acl(Bucket, RiakPid) of
         {ok, BucketAcl} ->
             %% `WRITE' is the only pertinent bucket-level
             %% permission when checking object access.
-            has_permission(acl_grants(BucketAcl), 'WRITE');
+            anonymous_object_access(BucketAcl, ObjAcl, 'WRITE', RiakPid, BucketAcl);
         {error, Reason} ->
             %% @TODO Think about bubbling this error up and providing
             %% feedback to requester.
             _ = lager:error("Anonymous object access check failed due to error. Reason: ~p", [Reason]),
             false
     end;
-anonymous_object_access(_Bucket, ObjAcl, RequestedAccess, RiakPid) ->
+anonymous_object_access(_Bucket, _ObjAcl, 'WRITE', _RiakPid, BucketAcl) ->
+    has_permission(acl_grants(BucketAcl), 'WRITE');
+
+anonymous_object_access(_Bucket, ObjAcl, RequestedAccess, RiakPid, _) ->
     HasObjPerm = has_permission(acl_grants(ObjAcl), RequestedAccess),
     case HasObjPerm of
         true ->
@@ -85,26 +106,20 @@ anonymous_object_access(_Bucket, ObjAcl, RequestedAccess, RiakPid) ->
     end.
 
 %% @doc Determine if a user has the requested access to a bucket.
--spec bucket_access(binary(), atom(), string(), pid()) -> boolean() |
-                                                   {true, string()}.
-bucket_access(_Bucket, undefined, _CanonicalId, _) ->
-    false;
+-spec bucket_access(binary(), atom(), string(), pid()) ->
+                           boolean() | {true, string()}.
 bucket_access(Bucket, RequestedAccess, CanonicalId, RiakPid) ->
+    bucket_access(Bucket, RequestedAccess, CanonicalId, RiakPid, undefined).
+
+-spec bucket_access(binary(), atom(), string(), pid(), acl()|undefined ) ->
+                           boolean() | {true, string()}.
+bucket_access(_Bucket, undefined, _CanonicalId, _, _) ->
+    false;
+bucket_access(Bucket, RequestedAccess, CanonicalId, RiakPid, undefined) ->
     %% Fetch the bucket's ACL
     case bucket_acl(Bucket, RiakPid) of
         {ok, Acl} ->
-            IsOwner = is_owner(Acl, CanonicalId),
-            HasPerm = has_permission(acl_grants(Acl),
-                                     RequestedAccess,
-                                     CanonicalId),
-            case HasPerm of
-                true when IsOwner == true ->
-                    true;
-                true ->
-                    {true, owner_id(Acl, RiakPid)};
-                _ ->
-                    false
-            end;
+            bucket_access(Bucket, RequestedAccess, CanonicalId, RiakPid, Acl);
         {error, notfound} ->
             %% This indicates the bucket does not exist so
             %% allow the request to proceed.
@@ -114,7 +129,21 @@ bucket_access(Bucket, RequestedAccess, CanonicalId, RiakPid) ->
             %% feedback to requester.
             _ = lager:error("Bucket access check failed due to error. Reason: ~p", [Reason]),
             false
+    end;
+bucket_access(_, RequestedAccess, CanonicalId, RiakPid, Acl) ->
+    IsOwner = is_owner(Acl, CanonicalId),
+    HasPerm = has_permission(acl_grants(Acl),
+                             RequestedAccess,
+                             CanonicalId),
+    case HasPerm of
+        true when IsOwner == true ->
+            true;
+        true ->
+            {true, owner_id(Acl, RiakPid)};
+        _ ->
+            false
     end.
+
 
 %% @doc Get the ACL for a bucket
 -spec bucket_acl(binary(), pid()) -> {ok, acl()} | {error, term()}.
@@ -133,33 +162,41 @@ bucket_acl(Bucket, RiakPid) ->
 %% @TODO Enhance when doing object-level ACL work. This is a bit
 %% patchy until object ACLs are done. The bucket owner gets full
 %% control, but bucket-level ACLs only matter for writes otherwise.
--spec object_access(binary(), acl(), atom(), string(), pid()) -> boolean() |
-                                                             {true, string()}.
-object_access(_Bucket, _ObjAcl, undefined, _CanonicalId, _) ->
+-spec object_access(binary(), acl(), atom(), string(), pid())
+                   -> boolean() | {true, string()}.
+object_access(Bucket, ObjAcl, RequestedAccess, CanonicalId, RiakPid) ->
+    object_access(Bucket, ObjAcl, RequestedAccess, CanonicalId, RiakPid, undefined).
+
+
+-spec object_access(binary(), acl(), atom(), string(), pid(), undefined|acl())
+                   -> boolean() | {true, string()}.
+object_access(_Bucket, _ObjAcl, undefined, _CanonicalId, _, _) ->
     false;
-object_access(_Bucket, _ObjAcl, _RequestedAccess, undefined, _RiakPid) ->
+object_access(_Bucket, _ObjAcl, _RequestedAccess, undefined, _RiakPid, _) ->
     %% User record not provided, check for anonymous access
     anonymous_object_access(_Bucket, _ObjAcl, _RequestedAccess, _RiakPid);
-object_access(Bucket, _ObjAcl, 'WRITE', CanonicalId, RiakPid) ->
-    %% Fetch the bucket's ACL
+object_access(Bucket, ObjAcl, 'WRITE', CanonicalId, RiakPid, undefined) ->
     case bucket_acl(Bucket, RiakPid) of
         {ok, BucketAcl} ->
-            HasBucketPerm = has_permission(acl_grants(BucketAcl),
-                                           'WRITE',
-                                           CanonicalId),
-            case HasBucketPerm of
-                true ->
-                    {true, owner_id(BucketAcl, RiakPid)};
-                _ ->
-                    false
-            end;
+            object_access(Bucket, ObjAcl, 'WRITE', CanonicalId, RiakPid, BucketAcl);
         {error, Reason} ->
             %% @TODO Think about bubbling this error up and providing
             %% feedback to requester.
             _ = lager:error("Object access check failed due to error. Reason: ~p", [Reason]),
             false
     end;
-object_access(_Bucket, ObjAcl, RequestedAccess, CanonicalId, RiakPid) ->
+object_access(_Bucket, _ObjAcl, 'WRITE', CanonicalId, RiakPid, BucketAcl) ->
+    %% Fetch the bucket's ACL
+    HasBucketPerm = has_permission(acl_grants(BucketAcl),
+                                   'WRITE',
+                                   CanonicalId),
+    case HasBucketPerm of
+        true ->
+            {true, owner_id(BucketAcl, RiakPid)};
+        _ ->
+            false
+    end;
+object_access(_Bucket, ObjAcl, RequestedAccess, CanonicalId, RiakPid, _) ->
     _ = lager:debug("ObjAcl: ~p~nCanonicalId: ~p", [ObjAcl, CanonicalId]),
     IsObjOwner = is_owner(ObjAcl, CanonicalId),
     HasObjPerm = has_permission(acl_grants(ObjAcl),
@@ -174,6 +211,23 @@ object_access(_Bucket, ObjAcl, RequestedAccess, CanonicalId, RiakPid) ->
             {true, owner_id(ObjAcl, RiakPid)};
         _ ->
             false
+    end.
+
+%% @doc Get the canonical id of the owner of an entity.
+-spec owner_id(acl(), pid()) -> string().
+owner_id(?ACL{owner=Owner}, _) ->
+    {_, _, OwnerId} = Owner,
+    OwnerId;
+owner_id(#acl_v1{owner=OwnerData}, RiakPid) ->
+    {Name, CanonicalId} = OwnerData,
+    case riak_cs_utils:get_user_by_index(?ID_INDEX,
+                                           list_to_binary(CanonicalId),
+                                           RiakPid) of
+        {ok, {Owner, _}} ->
+            Owner?RCS_USER.key_id;
+        {error, _} ->
+            _ = lager:warning("Failed to retrieve key_id for user ~p with canonical_id ~p", [Name, CanonicalId]),
+            []
     end.
 
 %% ===================================================================
@@ -197,23 +251,6 @@ acl_grants(?ACL{grants=Grants}) ->
     Grants;
 acl_grants(#acl_v1{grants=Grants}) ->
     Grants.
-
-%% @doc Get the key id of the owner of an entity.
--spec owner_id(acl(), pid()) -> string().
-owner_id(?ACL{owner=Owner}, _) ->
-    {_DisplayName, _CanonicalId, KeyId} = Owner,
-    KeyId;
-owner_id(#acl_v1{owner=OwnerData}, RiakPid) ->
-    {Name, CanonicalId} = OwnerData,
-    case riak_cs_utils:get_user_by_index(?ID_INDEX,
-                                           list_to_binary(CanonicalId),
-                                           RiakPid) of
-        {ok, {Owner, _}} ->
-            Owner?RCS_USER.key_id;
-        {error, _} ->
-            _ = lager:warning("Failed to retrieve key_id for user ~p with canonical_id ~p", [Name, CanonicalId]),
-            []
-    end.
 
 %% @doc Iterate through a list of ACL grants and return
 %% any group grants.
