@@ -45,51 +45,18 @@ authorize(RD, Ctx0=#context{local_context=LocalCtx0, riakc_pid=RiakPid}) ->
         riak_cs_acl_utils:requested_access(Method, false),
     LocalCtx = riak_cs_wm_utils:ensure_doc(LocalCtx0, RiakPid),
     Ctx = Ctx0#context{requested_perm=RequestedAccess,local_context=LocalCtx},
-    check_permission(Method, RD, Ctx, LocalCtx#key_context.manifest).
 
-%% @doc Final step of {@link forbidden/2}: Authentication succeeded,
-%% now perform ACL check to verify access permission.
--spec check_permission(atom(), #wm_reqdata{}, #context{}, lfs_manifest() | notfound) ->
-                              {boolean() | {halt, non_neg_integer()}, #wm_reqdata{}, #context{}}.
-check_permission('GET', RD, Ctx, notfound) ->
-    {{halt, 404}, riak_cs_access_logger:set_user(Ctx#context.user, RD), Ctx};
-check_permission('HEAD', RD, Ctx, notfound) ->
-    {{halt, 404}, riak_cs_access_logger:set_user(Ctx#context.user, RD), Ctx};
-check_permission(_, RD, Ctx=#context{requested_perm=RequestedAccess,local_context=LocalCtx}, Mfst) ->
-    #key_context{bucket=Bucket} = LocalCtx,
-    RiakPid = Ctx#context.riakc_pid,
-    case Ctx#context.user of
-        undefined ->
-            User = CanonicalId = undefined;
-        User ->
-            CanonicalId = User?RCS_USER.canonical_id
-    end,
-    case Mfst of
-        notfound ->
-            ObjectAcl = undefined;
+    %% Final step of {@link forbidden/2}: Authentication succeeded,
+    case {Method, LocalCtx#key_context.manifest} of
+        {'GET', notfound} ->
+            {{halt, 404}, riak_cs_access_logger:set_user(Ctx#context.user, RD), Ctx};
+        {'HEAD', notfound} ->
+            {{halt, 404}, riak_cs_access_logger:set_user(Ctx#context.user, RD), Ctx};
         _ ->
-            ObjectAcl = Mfst?MANIFEST.acl
-    end,
-    case riak_cs_acl:object_access(Bucket,
-                                   ObjectAcl,
-                                   RequestedAccess,
-                                   CanonicalId,
-                                   RiakPid) of
-        true ->
-            %% actor is the owner
-            AccessRD = riak_cs_access_logger:set_user(User, RD),
-            UserStr = User?RCS_USER.canonical_id,
-            UpdLocalCtx = LocalCtx#key_context{owner=UserStr},
-            {false, AccessRD, Ctx#context{local_context=UpdLocalCtx}};
-        {true, OwnerId} ->
-            %% bill the owner, not the actor
-            AccessRD = riak_cs_access_logger:set_user(OwnerId, RD),
-            UpdLocalCtx = LocalCtx#key_context{owner=OwnerId},
-            {false, AccessRD, Ctx#context{local_context=UpdLocalCtx}};
-        false ->
-            %% ACL check failed, deny access
-            riak_cs_wm_utils:deny_access(RD, Ctx)
+            riak_cs_wm_utils:object_access_authorize_helper(object, false, RD, Ctx)
     end.
+
+
 
 %% @doc Get the list of methods this resource supports.
 -spec allowed_methods() -> [atom()].
@@ -207,7 +174,7 @@ delete_resource(RD, Ctx=#context{local_context=LocalCtx,
     handle_delete_object(DeleteObjectResponse, UserName, BFile_str, RD, Ctx).
 
 %% @private
-handle_delete_object({error, Error}, UserName, BFile_str, RD, Ctx) ->
+ handle_delete_object({error, Error}, UserName, BFile_str, RD, Ctx) ->
     lager:error("delete object failed with reason: ", [Error]),
     riak_cs_dtrace:dt_object_return(?MODULE, <<"object_delete">>, [0], [UserName, BFile_str]),
     {false, RD, Ctx};
