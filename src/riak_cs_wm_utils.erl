@@ -136,11 +136,11 @@ handle_validation_response({ok, User, UserObj}, RD, Ctx, Next, _, _) ->
                          user_object=UserObj});
 handle_validation_response({error, no_user_key}, RD, Ctx, Next, _, true) ->
     %% no keyid was given, proceed anonymously
-    lager:info("No user key"),
+    lager:debug("No user key"),
     Next(RD, Ctx);
 handle_validation_response({error, no_user_key}, RD, Ctx, _, Conv2KeyCtx, false) ->
     %% no keyid was given, deny access
-    lager:info("No user key, deny"),
+    lager:debug("No user key, deny"),
     deny_access(RD, Conv2KeyCtx(Ctx));
 handle_validation_response({error, bad_auth}, RD, Ctx, _, Conv2KeyCtx, _) ->
     %% given keyid was found, but signature didn't match
@@ -555,7 +555,7 @@ object_access_authorize_helper(AccessType, Deletable,
             AccessRD = riak_cs_access_logger:set_user(OwnerId, RD),
             UpdLocalCtx = LocalCtx#key_context{owner=OwnerId},
             {false, AccessRD, Ctx#context{local_context=UpdLocalCtx}};
-        
+
         {false, _} -> % policy says undefined or false
             %% ACL check failed, deny access
             riak_cs_wm_utils:deny_access(RD, Ctx)
