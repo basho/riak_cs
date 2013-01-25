@@ -17,7 +17,9 @@
          lookup/1,
          can_write/3,
          can_write/4,
-         write/2]).
+         write/2,
+         bytes_used/0,
+         bytes_used/1]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -85,6 +87,15 @@ write(Key, Value) ->
             lager:warning("List objects cache write failed. Reason: ~p", [Reason]),
             ok
     end.
+
+-spec bytes_used() -> non_neg_integer().
+bytes_used() ->
+    bytes_used(default_ets_table()).
+
+-spec bytes_used(ets:tab()) -> non_neg_integer().
+bytes_used(TableID) ->
+    WordsUsed = ets:info(TableID, memory),
+    words_to_bytes(WordsUsed).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -179,8 +190,7 @@ space_in_cache(NumKeys) ->
     space_in_cache(default_ets_table(), NumKeys).
 
 space_in_cache(TableID, NumKeys) ->
-    WordsUsed = ets:info(TableID, memory),
-    BytesUsed = words_to_bytes(WordsUsed),
+    BytesUsed = bytes_used(TableID),
     space_available(BytesUsed, NumKeys).
 
 words_to_bytes(Words) ->
