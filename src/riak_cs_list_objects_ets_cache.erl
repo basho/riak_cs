@@ -27,6 +27,13 @@
          terminate/2,
          code_change/3]).
 
+%% Config getters
+-export([default_ets_table/0,
+         cache_enabled/0,
+         cache_timeout/0,
+         min_keys_to_cache/0,
+         max_cache_size/0]).
+
 -define(DICTMODULE, dict).
 
 -record(state, {tid :: ets:tid(),
@@ -48,7 +55,7 @@ start_link() ->
 lookup(Key) ->
     try
         lager:debug("Reading info for ~p from cache", [Key]),
-        format_lookup_result(ets:lookup(?LIST_OBJECTS_CACHE, Key))
+        format_lookup_result(ets:lookup(default_ets_table(), Key))
     catch
         _:Reason ->
             lager:warning("List objects cache lookup failed. Reason: ~p", [Reason]),
@@ -124,6 +131,34 @@ code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 %%%===================================================================
+%%% Config getters
+%%%===================================================================
+
+%% @private
+get_with_default(EnvKey, Default) ->
+    case application:get_env(riak_cs, EnvKey) of
+        {ok, Val} ->
+            Val;
+        undefined ->
+            Default
+    end.
+
+default_ets_table() ->
+    get_with_default(list_objects_ets_cache_table_name, ?LIST_OBJECTS_CACHE).
+
+cache_enabled() ->
+    get_with_default(list_objects_ets_cache_enabled, ?ENABLE_CACHE).
+
+cache_timeout() ->
+    get_with_default(list_objects_ets_cache_timeout, ?CACHE_TIMEOUT).
+
+min_keys_to_cache() ->
+    get_with_default(list_objects_ets_cache_min_keys, ?MIN_KEYS_TO_CACHE).
+
+max_cache_size() ->
+    get_with_default(list_objects_ets_cache_max_bytes, ?MAX_CACHE_BYTES).
+
+%%%===================================================================
 %%% Internal functions
 %%%===================================================================
 
@@ -132,10 +167,8 @@ should_write(NumKeys) ->
     enough_keys_to_cache(NumKeys) andalso space_in_cache(NumKeys).
 
 -spec enough_keys_to_cache(non_neg_integer()) -> boolean().
-enough_keys_to_cache(NumKeys) when NumKeys < ?MIN_KEYS_TO_CACHE ->
-    false;
-enough_keys_to_cache(_NumKeys) ->
-    true.
+enough_keys_to_cache(NumKeys) ->
+    NumKeys >= min_keys_to_cache().
 
 %% @doc Based on current ETS usage and some estimate, decide whether
 %% or not we can fit these keys in the cache
@@ -143,7 +176,7 @@ enough_keys_to_cache(_NumKeys) ->
 %% Current estimate is ~ 64 bytes per key.
 -spec space_in_cache(non_neg_integer()) -> boolean().
 space_in_cache(NumKeys) ->
-    space_in_cache(?LIST_OBJECTS_CACHE, NumKeys).
+    space_in_cache(default_ets_table(), NumKeys).
 
 space_in_cache(TableID, NumKeys) ->
     WordsUsed = ets:info(TableID, memory),
@@ -154,7 +187,7 @@ words_to_bytes(Words) ->
     Words * ?WORD_SIZE.
 
 space_available(BytesUsed, NumKeys) ->
-    space_available(BytesUsed, num_keys_to_bytes(NumKeys), ?MAX_CACHE_BYTES).
+    space_available(BytesUsed, num_keys_to_bytes(NumKeys), max_cache_size()).
 
 space_available(BytesUsed, ProspectiveAdd, MaxCacheSize)
         when (BytesUsed + ProspectiveAdd) < MaxCacheSize ->
@@ -169,13 +202,13 @@ num_keys_to_bytes(NumKeys) ->
 unsafe_write(Key, Value) ->
     TS = riak_cs_utils:timestamp(os:timestamp()),
     lager:debug("Writing entry for ~p to LO Cache", [Key]),
-    ets:insert(?LIST_OBJECTS_CACHE, {Key, Value, TS}),
+    ets:insert(default_ets_table(), {Key, Value, TS}),
     ok.
 
 -spec update_state_with_refs(binary(), pid(), state()) -> state().
 update_state_with_refs(CacheKey, MonitorPid, State) ->
     MonitorRef = erlang:monitor(process, MonitorPid),
-    TimerRef = erlang:send_after(?CACHE_TIMEOUT, ?MODULE,
+    TimerRef = erlang:send_after(cache_timeout(), ?MODULE,
                                  {cache_expiry, CacheKey}),
     update_state_with_refs_helper(MonitorRef, TimerRef, CacheKey, State).
 
@@ -191,7 +224,7 @@ update_state_with_refs_helper(MonitorRef, TimerRef, CacheKey,
 
 -spec handle_cache_expiry(binary(), state()) -> state().
 handle_cache_expiry(ExpiredKey, State=#state{key_to_monitor=KeyToMon}) ->
-    ets:delete(?LIST_OBJECTS_CACHE, ExpiredKey),
+    ets:delete(default_ets_table(), ExpiredKey),
     NewKeyToMon = remove_monitor(ExpiredKey, KeyToMon),
     State#state{key_to_monitor=NewKeyToMon}.
 
@@ -217,7 +250,7 @@ remove_timer(MonitorRef, MonToTimer) ->
     _ = case RefResult of
         {ok, {TimerRef, CacheKey}} ->
             %% can be true | false
-            _ = ets:delete(?LIST_OBJECTS_CACHE, CacheKey),
+            _ = ets:delete(default_ets_table(), CacheKey),
             erlang:cancel_timer(TimerRef);
         {error, _Reason} ->
             true
@@ -236,7 +269,7 @@ safe_fetch(Key, Dict) ->
 -spec new_table() -> ets:tid().
 new_table() ->
     TableSpec = [public, set, named_table, {write_concurrency, true}],
-    ets:new(?LIST_OBJECTS_CACHE, TableSpec).
+    ets:new(default_ets_table(), TableSpec).
 
 -spec format_lookup_result([{binary(), term(), integer()}]) -> cache_lookup_result().
 format_lookup_result([]) ->
