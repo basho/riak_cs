@@ -308,11 +308,11 @@ post_authentication({ok, User, UserObj}, RD, Ctx, Authorize, _) ->
                               user_object=UserObj});
 post_authentication({error, no_user_key}, RD, Ctx, Authorize, true) ->
     %% no keyid was given, proceed anonymously
-    lager:info("No user key"),
+    lager:debug("No user key"),
     Authorize(RD, Ctx);
 post_authentication({error, no_user_key}, RD, Ctx, _, false) ->
     %% no keyid was given, deny access
-    lager:info("No user key, deny"),
+    lager:debug("No user key, deny"),
     riak_cs_wm_utils:deny_access(RD, Ctx);
 post_authentication({error, bad_auth}, RD, Ctx, _, _) ->
     %% given keyid was found, but signature didn't match
