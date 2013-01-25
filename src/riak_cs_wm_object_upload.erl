@@ -4,7 +4,7 @@
 %%
 %% -------------------------------------------------------------------
 
--module(riak_cs_wm_objects_uploads).
+-module(riak_cs_wm_object_upload).
 
 -export([init/1,
          authorize/2,
