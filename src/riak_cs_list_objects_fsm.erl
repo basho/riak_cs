@@ -107,7 +107,8 @@
                 %% whether or not to bypass the cache entirely
                 use_cache :: boolean(),
                 %% Key to use to check for cached results from key listing
-                cache_key :: term()}).
+                cache_key :: term(),
+                common_prefixes=[] :: list()}).
 
 %% some useful shared types
 
@@ -344,14 +345,62 @@ prepare_state_for_first_mapred(KeyBuffer, State=#state{req=Request,
                 key_buffer=undefined,
                 req_profiles=Profiling2}.
 
-handle_keys_received(Keys, State=#state{key_buffer=PrevKeyBuffer}) ->
+handle_keys_received(Keys, State=#state{key_buffer=PrevKeyBuffer,
+                                        req=Request,
+                                        common_prefixes=CommonPrefixes}) ->
     %% TODO:
     %% this is where we might eventually do a 'top-k' keys
     %% kind of thing, like
     %% `lists:sublist(lists:sort([Keys | PrevKeyBuffer]), BufferSize)'
-    NewState = State#state{key_buffer=[lists:sort(Keys) | PrevKeyBuffer]},
+    {FilteredKeys, UpdPrefixes} = filter_prefix_keys(Keys, CommonPrefixes, Request),
+    NewState = State#state{key_buffer=[lists:sort(FilteredKeys) | PrevKeyBuffer],
+                           common_prefixes=UpdPrefixes},
     {next_state, waiting_list_keys, NewState}.
 
+
+filter_prefix_keys(Keys, CommonPrefixes, ?LOREQ{prefix=undefined,
+                                                delimiter=undefined}) ->
+    {Keys, CommonPrefixes};
+filter_prefix_keys(Keys, CommonPrefixes, ?LOREQ{prefix=Prefix,
+                                                delimiter=Delimiter}) ->
+    PrefixFilter =
+        fun(Key, Acc) ->
+                prefix_filter(Key, Acc, Prefix, Delimiter)
+        end,
+    lists:foldl(PrefixFilter, {[], CommonPrefixes}, Keys).
+
+prefix_filter(Key, {Keys, Prefixes}, undefined, Delimiter) ->
+    case extract_group(Key, Delimiter) of
+        Key ->
+            {[Key | Keys], Prefixes};
+        Group ->
+            {Keys, ordsets:add_element(Group, Prefixes)}
+    end;
+prefix_filter(Key, {Keys, Prefixes}, Prefix, undefined) ->
+    PrefixLen = byte_size(Prefix),
+    case Key of
+        << Prefix:PrefixLen/binary, _/binary >> ->
+            {[Key | Keys], Prefixes};
+        _ ->
+            {Keys, Prefixes}
+    end;
+prefix_filter(Key, {Keys, Prefixes}, Prefix, Delimiter) ->
+    PrefixLen = byte_size(Prefix),
+    case Key of
+        << Prefix:PrefixLen/binary, Rest/binary >> ->
+            Group = extract_group(Rest, Delimiter),
+            {Keys, ordsets:add_element(<< Prefix:PrefixLen/binary, Group/binary >>, Prefixes)};
+        _ ->
+            {[Key | Keys], Prefixes}
+    end.
+
+extract_group(Key, Delimiter) ->
+    case binary:match(Key, [Delimiter]) of
+        nomatch ->
+            Key;
+        {Pos, Len} ->
+            binary:part(Key, {0, Pos+Len})
+    end.
 
 %% Map Reduce stuff
 %%--------------------------------------------------------------------
@@ -397,14 +446,13 @@ prepare_state_for_mapred(State=#state{req=Request,
                                 KeyMultiplier),
     State#state{mr_requests=PrevRequests ++ [NewReq]}.
 
--spec make_response(list_object_request(), list()) ->
+-spec make_response(list_object_request(), list(), list()) ->
     list_object_response().
-make_response(Request=?LOREQ{max_keys=NumKeysRequested}, ObjectBuffer) ->
+make_response(Request=?LOREQ{max_keys=NumKeysRequested}, ObjectBuffer, CommonPrefixes) ->
+    AdjustedMaxKeys = NumKeysRequested - ordsets:size(CommonPrefixes),
     Contents = response_contents_from_object_buffer(ObjectBuffer,
-                                                    NumKeysRequested),
-    IsTruncated = length(ObjectBuffer) > NumKeysRequested,
-    %% TODO: hardcoded, fix me!
-    CommonPrefixes = [],
+                                                    AdjustedMaxKeys),
+    IsTruncated = length(ObjectBuffer) > AdjustedMaxKeys,
     riak_cs_list_objects:new_response(Request, IsTruncated, CommonPrefixes,
                                       Contents).
 
@@ -528,14 +576,16 @@ more_results_possible(_Request, _TotalKeys) ->
 -spec have_enough_results(state()) -> fsm_state_return().
 have_enough_results(State=#state{reply_ref=undefined,
                                  req=Request,
-                                 object_buffer=ObjectBuffer}) ->
-    Response = make_response(Request, ObjectBuffer),
+                                 object_buffer=ObjectBuffer,
+                                 common_prefixes=CommonPrefixes}) ->
+    Response = make_response(Request, ObjectBuffer, CommonPrefixes),
     NewStateData = State#state{response=Response},
     {next_state, done, NewStateData, timer:seconds(60)};
 have_enough_results(State=#state{reply_ref=ReplyPid,
                                  req=Request,
-                                 object_buffer=ObjectBuffer}) ->
-    Response = make_response(Request, ObjectBuffer),
+                                 object_buffer=ObjectBuffer,
+                                 common_prefixes=CommonPrefixes}) ->
+    Response = make_response(Request, ObjectBuffer, CommonPrefixes),
     _ = gen_fsm:reply(ReplyPid, {ok, Response}),
     NewStateData = State#state{response=Response},
     {stop, normal, NewStateData}.
