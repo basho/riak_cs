@@ -559,6 +559,7 @@ round_up(X) ->
 %% If `List' is empty, `1'
 %% is returned. If `Element' is greater than all elements
 %% in `List', then `length(List) + 1' is returned.
+%% `List' must be <em>sorted</em> and contain only unique elements.
 -spec index_of_first_greater_element(list(non_neg_integer()), term()) -> pos_integer().
 index_of_first_greater_element(List, Element) ->
     index_of_first_greater_element_helper(List, Element, 1).
