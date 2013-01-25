@@ -151,7 +151,7 @@ produce_body(RD, Ctx=#context{local_context=LocalCtx,
         _ -> 
             riak_cs_dtrace:dt_object_return(?MODULE, <<"object_get_acl">>, 
                                                [-2], [UserName, BFile_str]),
-            {riak_cs_acl_utils:acl_to_xml(Acl), RD, Ctx}
+            {riak_cs_xml:to_xml(Acl), RD, Ctx}
     end.        
 
 -spec accept_body(term(), term()) ->
