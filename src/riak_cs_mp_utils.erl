@@ -80,7 +80,7 @@ clean_multipart_unused_parts(?MANIFEST{bkey=BKey, props=Props} = Manifest,
                 {false, []} ->
                     same;
                 {false, PartsToDelete} ->
-                    try
+                    _ = try
                         {Bucket, Key} = BKey,
                         ok = move_dead_parts_to_gc(Bucket, Key, PartsToDelete,
                                                    RiakcPid),

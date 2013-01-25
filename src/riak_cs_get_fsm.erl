@@ -233,14 +233,6 @@ perhaps_send_to_user(From, #state{got_blocks=Got,
                     {not_sent, State#state{from=From}}
             end
     end.
-%% waiting_chunks(get_next_chunk, From, #state{from=PreviousFrom}=State) when PreviousFrom =/= undefined ->
-%%     %% get_next_chunk is a synchronous RPC call.
-%%     %% We should be getting calls from only a single caller.
-%%     %% Therefore, this clause should not be necessary.
-%%     %% However, we can be called in other contexts, and in
-%%     %% those other strictly-internal-use-only contexts, we
-%%     %% do nothing here.
-%%     {next_state, waiting_chunks, State}.
 
 waiting_chunks({chunk, Pid, {NextBlock, BlockReturnValue}}, #state{from=From,
                                                                    got_blocks=Got,
