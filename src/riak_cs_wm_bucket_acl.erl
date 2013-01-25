@@ -101,7 +101,7 @@ to_xml(RD, Ctx=#context{start_time=StartTime,
                                       [], [riak_cs_wm_utils:extract_name(User), Bucket]),
     case riak_cs_acl:bucket_acl(Bucket, RiakPid) of
         {ok, Acl} ->
-            X = {riak_cs_acl_utils:acl_to_xml(Acl), RD, Ctx},
+            X = {riak_cs_xml:to_xml(Acl), RD, Ctx},
             ok = riak_cs_stats:update_with_start(bucket_get_acl, StartTime),
             riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_get_acl">>, 
                                                [200], [riak_cs_wm_utils:extract_name(User), Bucket]),
