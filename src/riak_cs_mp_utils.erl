@@ -22,7 +22,7 @@
 -export([
          abort_multipart_upload/4, abort_multipart_upload/5,
          calc_multipart_2i_dict/3,
-         clean_multipart_unused_parts/1,
+         clean_multipart_unused_parts/2,
          complete_multipart_upload/5, complete_multipart_upload/6,
          initiate_multipart_upload/5, initiate_multipart_upload/6,
          list_multipart_uploads/3, list_multipart_uploads/4,
@@ -69,7 +69,8 @@ abort_multipart_upload(Bucket, Key, UploadId, Caller) ->
 abort_multipart_upload(Bucket, Key, UploadId, Caller, RiakcPidUnW) ->
     do_part_common(abort, Bucket, Key, UploadId, Caller, [], RiakcPidUnW).
 
-clean_multipart_unused_parts(?MANIFEST{bkey=BKey, props=Props} = Manifest) ->
+clean_multipart_unused_parts(?MANIFEST{bkey=BKey, props=Props} = Manifest,
+                             RiakcPid) ->
     case proplists:get_value(multipart, Props, false) of
         false ->
             same;
@@ -80,22 +81,18 @@ clean_multipart_unused_parts(?MANIFEST{bkey=BKey, props=Props} = Manifest) ->
                     same;
                 {false, PartsToDelete} ->
                     try
-                        {m_cmup1, {ok, RiakcPid}} =
-                            {m_cmup1, riak_cs_utils:riak_connection()},
-                        try
-                            {Bucket, Key} = BKey,
-                            ok = move_dead_parts_to_gc(Bucket, Key, PartsToDelete,
-                                                       RiakcPid),
-                            UpdManifest = Manifest?MANIFEST{props=[multipart_clean|Props]},
-                            ok = update_manifest_with_confirmation(
-                                   RiakcPid, UpdManifest),
-                            updated
-                        after
-                            riak_cs_utils:close_riak_connection(RiakcPid)
-                        end
-                    catch error:{badmatch,{m_cmup1, _}} ->
-                            same
-                    end;
+                        {Bucket, Key} = BKey,
+                        ok = move_dead_parts_to_gc(Bucket, Key, PartsToDelete,
+                                                   RiakcPid),
+                        UpdManifest = Manifest?MANIFEST{props=[multipart_clean|Props]},
+                        ok = update_manifest_with_confirmation(RiakcPid, UpdManifest)
+                    catch X:Y ->
+                            lager:debug("clean_multipart_unused_parts: "
+                                        "bkey ~p: ~p ~p @ ~p\n",
+                                        [BKey, X, Y, erlang:get_stacktrace()])
+                    end,
+                    %% Return same value to caller, regardless of ok/catch
+                    updated;
                 {true, _} ->
                     same
             end

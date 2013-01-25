@@ -323,7 +323,8 @@ prepare(#state{bucket=Bucket,
     case riak_cs_manifest_fsm:get_active_manifest(ManiPid) of
         {ok, Manifest} ->
             _ = lager:debug("Manifest: ~p", [Manifest]),
-            case riak_cs_mp_utils:clean_multipart_unused_parts(Manifest) of
+            case riak_cs_mp_utils:clean_multipart_unused_parts(Manifest,
+                                                               RiakPid) of
                 same ->
                     State#state{manifest=Manifest,
                                 mani_fsm_pid=ManiPid};

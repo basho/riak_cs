@@ -32,7 +32,7 @@
 gc_active_manifests(Manifests, RiakObject, RiakcPid) ->
     case riak_cs_manifest_utils:active_manifest(Manifests) of
         {ok, M} ->
-            case riak_cs_mp_utils:clean_multipart_unused_parts(M) of
+            case riak_cs_mp_utils:clean_multipart_unused_parts(M, RiakcPid) of
                 same ->
                     ActiveUUIDs = [M?MANIFEST.uuid],
                     GCManiResponse = gc_specific_manifests(ActiveUUIDs,
