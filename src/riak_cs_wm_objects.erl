@@ -76,7 +76,10 @@ to_xml(RD, Ctx=#context{start_time=StartTime,
                                                                Options),
             BinPid = riak_cs_utils:pid_to_binary(self()),
             CacheKey = << BinPid/binary, <<":">>/binary, Bucket/binary >>,
-            case riak_cs_list_objects_fsm:start_link(RiakPid, ListKeysRequest, CacheKey) of
+            UseCache = riak_cs_list_objects_ets_cache:cache_enabled(),
+            case riak_cs_list_objects_fsm:start_link(RiakPid, self(),
+                                                     ListKeysRequest, CacheKey,
+                                                     UseCache) of
                 {ok, ListFSMPid} ->
                     {ok, ListObjectsResponse} = riak_cs_list_objects_fsm:get_object_list(ListFSMPid),
                     Response = riak_cs_xml:to_xml(ListObjectsResponse),
