@@ -96,6 +96,8 @@ initial_blocks(ContentLength, SafeBlockSize, UUID) ->
     Bs = initial_blocks(ContentLength, SafeBlockSize),
     [{UUID, B} || B <- Bs].
 
+block_sequences_for_manifest(?MANIFEST{props=undefined}=Manifest) ->    
+    block_sequences_for_manifest(Manifest?MANIFEST{props=[]});
 block_sequences_for_manifest(?MANIFEST{uuid=UUID,
                                        content_length=ContentLength,
                                        props=Props}=Manifest) ->

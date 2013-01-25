@@ -235,7 +235,9 @@
         %%       record but don't want to go through the full code
         %%       refactoring and backward-compatibility tap dance
         %%       until sometime later.
-        props = [] :: proplists:proplist(),
+        %% 'undefined' is for backward compatibility with v3 manifests
+        %% written with Riak CS 1.2.2 or earlier.
+        props = [] :: 'undefined' | proplists:proplist(),
 
         %% cluster_id: A couple of uses, both short- and longer-term
         %%  possibilities:
