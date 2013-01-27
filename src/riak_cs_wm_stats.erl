@@ -99,7 +99,7 @@ produce_body(RD, Ctx) ->
 
 forbidden(RD, #ctx{auth_bypass = AuthBypass, riakc_pid = RiakPid} = Ctx) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"forbidden">>),
-    case riak_cs_wm_utils:validate_auth_header(RD, AuthBypass, RiakPid) of
+    case riak_cs_wm_utils:validate_auth_header(RD, AuthBypass, RiakPid, Ctx) of
         {ok, User, _UserObj} ->
             UserKeyId = User?RCS_USER.key_id,
             case riak_cs_utils:get_admin_creds() of
@@ -109,6 +109,7 @@ forbidden(RD, #ctx{auth_bypass = AuthBypass, riakc_pid = RiakPid} = Ctx) ->
                                                 [], [<<"false">>, Admin]),
                     {false, RD, Ctx};
                 _ ->
+                    %% non-admin account is not allowed -> 403
                     Res = riak_cs_wm_utils:deny_access(RD, Ctx),
                     riak_cs_dtrace:dt_wm_return(?MODULE, <<"forbidden">>, [], [<<"true">>]),
                     Res
