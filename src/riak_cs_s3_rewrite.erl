@@ -19,6 +19,7 @@
 -endif.
 
 -type subresource() :: {string(), string()}.
+-type query_params() :: [{string(), string()}].
 -type subresources() :: [subresource()].
 
 %% @doc Function to rewrite headers prior to processing by webmachine.
@@ -59,8 +60,8 @@ rewrite_path(_Method, Path, _QS, "usage") ->
 rewrite_path(Method, "/", [], Bucket) when Method =/= 'GET' ->
     lists:flatten(["/buckets/", Bucket]);
 rewrite_path(_Method, "/", QS, Bucket) ->
-    SubResources = get_subresources(QS),
-    lists:flatten(["/buckets/", Bucket, format_bucket_qs(QS, SubResources)]);
+    {SubResources, QueryParams} = get_subresources(QS),
+    lists:flatten(["/buckets/", Bucket, format_bucket_qs(QueryParams, SubResources)]);
 rewrite_path(_Method, Path, QS, Bucket) ->
     lists:flatten(["/buckets/",
                    Bucket,
@@ -117,20 +118,21 @@ separate_bucket_from_path([Bucket | RestPath]) ->
 
 %% @doc Format a bucket operation query string to conform the the
 %% rewrite rules.
--spec format_bucket_qs(string(), subresources()) -> string().
+-spec format_bucket_qs(query_params(), subresources()) -> string().
 format_bucket_qs([], []) ->
     "/objects";
-format_bucket_qs("delete", []) ->
+format_bucket_qs([{"delete", []}], []) ->
     "/objects";
-format_bucket_qs(QS, []) ->
-    ["/objects?", QS];
-format_bucket_qs(_QS, SubResources) ->
-    format_subresources(SubResources).
+format_bucket_qs(QueryParams, []) ->
+    ["/objects", format_query_params(QueryParams)];
+format_bucket_qs(QueryParams, SubResources) ->
+    [format_subresources(SubResources),
+     format_query_params(QueryParams)].
 
 %% @doc Format an object operation query string to conform the the
 %% rewrite rules.
 -spec format_object_qs(subresources()) -> string().
-format_object_qs(SubResources) ->
+format_object_qs({SubResources, _}) ->
     UploadId = proplists:get_value("uploadId", SubResources, []),
     PartNum = proplists:get_value("partNumber", SubResources, []),
     format_object_qs(SubResources, UploadId, PartNum).
@@ -153,10 +155,30 @@ format_subresources([]) ->
 format_subresources([{Key, []} | _]) ->
     ["/", Key].
 
+%% @doc Format a proplist of query parameters into a string
+-spec format_query_params(query_params()) -> string().
+format_query_params([]) ->
+    [];
+format_query_params(QueryParams) ->
+    format_query_params(QueryParams, []).
+
+%% @doc Format a proplist of query parameters into a string
+-spec format_query_params(query_params(), list()) -> string().
+format_query_params([], QS) ->
+    ["?", QS];
+format_query_params([{Key, []} | RestParams], []) ->
+    format_query_params(RestParams, [Key]);
+format_query_params([{Key, []} | RestParams], QS) ->
+    format_query_params(RestParams, [[Key, "&"] | QS]);
+format_query_params([{Key, Value} | RestParams], []) ->
+    format_query_params(RestParams, [Key, "=", Value]);
+format_query_params([{Key, Value} | RestParams], QS) ->
+    format_query_params(RestParams, [[Key, "=", Value, "&"] | QS]).
+
 %% @doc Parse the valid subresources from the raw path.
--spec get_subresources(string()) -> subresources().
+-spec get_subresources(string()) -> {subresources(), query_params()}.
 get_subresources(QueryString) ->
-    lists:filter(fun valid_subresource/1, mochiweb_util:parse_qs(QueryString)).
+    lists:partition(fun valid_subresource/1, mochiweb_util:parse_qs(QueryString)).
 
 %% @doc Determine if a query parameter key is a valid S3 subresource
 -spec valid_subresource(subresource()) -> boolean().
@@ -182,6 +204,8 @@ rewrite_path_test() ->
     %% Bucket Operations
     equal_paths("/buckets/testbucket/objects", rewrite_with('GET', headers([]), "/testbucket")),
     equal_paths("/buckets/testbucket/objects", rewrite_with('GET', headers([{"host", "testbucket." ++ ?ROOT_HOST}]), "/")),
+    equal_paths("/buckets/testbucket/objects?max-keys=20&delimiter=/&prefix=123", rewrite_with('GET', headers([]), "/testbucket?prefix=123&delimiter=/&max-keys=20")),
+    equal_paths("/buckets/testbucket/objects?max-keys=20&delimiter=/&prefix=123", rewrite_with('GET', headers([{"host", "testbucket." ++ ?ROOT_HOST}]), "/?prefix=123&delimiter=/&max-keys=20")),
     equal_paths("/buckets/testbucket", rewrite_with('HEAD', headers([]), "/testbucket")),
     equal_paths("/buckets/testbucket", rewrite_with('HEAD', headers([{"host", "testbucket." ++ ?ROOT_HOST}]), "/")),
     equal_paths("/buckets/testbucket", rewrite_with('PUT', headers([]), "/testbucket")),
@@ -198,6 +222,10 @@ rewrite_path_test() ->
     equal_paths("/buckets/testbucket/policy", rewrite_with(headers([{"host", "testbucket." ++ ?ROOT_HOST}]), "/?policy")),
     equal_paths("/buckets/testbucket/uploads", rewrite_with(headers([]), "/testbucket?uploads")),
     equal_paths("/buckets/testbucket/uploads", rewrite_with(headers([{"host", "testbucket." ++ ?ROOT_HOST}]), "/?uploads")),
+    equal_paths("/buckets/testbucket/uploads?delimiter=D&prefix=ABC&max-uploads=10&key-marker=bob&upload-id-marker=blah", rewrite_with(headers([]), "/testbucket?uploads&upload-id-marker=blah&key-marker=bob&max-uploads=10&prefix=ABC&delimiter=D")),
+    equal_paths("/buckets/testbucket/uploads?delimiter=D&prefix=ABC&max-uploads=10&key-marker=bob&upload-id-marker=blah", rewrite_with(headers([{"host", "testbucket." ++ ?ROOT_HOST}]), "/?uploads&upload-id-marker=blah&key-marker=bob&max-uploads=10&prefix=ABC&delimiter=D")),
+    equal_paths("/buckets/testbucket/objects", rewrite_with('POST', headers([]), "/testbucket/?delete")),
+    equal_paths("/buckets/testbucket/objects", rewrite_with('POST', headers([{"host", "testbucket." ++ ?ROOT_HOST}]), "/?delete")),
     %% Object Operations
     equal_paths("/buckets/testbucket/objects/testobject", rewrite_with(headers([]), "/testbucket/testobject")),
     equal_paths("/buckets/testbucket/objects/testobject", rewrite_with(headers([{"host", "testbucket." ++ ?ROOT_HOST}]), "/testobject")),
