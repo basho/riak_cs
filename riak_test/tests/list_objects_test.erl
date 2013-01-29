@@ -51,16 +51,17 @@ confirm() ->
     %% Use `max-keys' to restrict object list to 20 results
     Options1 = [{max_keys, 20}],
     ObjList1 = erlcloud_s3:list_objects(?TEST_BUCKET, Options1, UserConfig),
-    Marker1 = proplists:get_value(marker, ObjList1),
-    verify_object_list(ObjList1, 20),
+    verify_object_list(ObjList1, 20, 30),
 
     %% Use `marker' to request remainder of results
-    Options2 = [{marker, Marker1}],
-    verify_object_list(erlcloud_s3:list_objects(?TEST_BUCKET, Options2, UserConfig), 10),
+    Options2 = [{marker, "27"}],
+    verify_object_list(erlcloud_s3:list_objects(?TEST_BUCKET, Options2, UserConfig), 10, 30, 21),
 
     %% Put 2 sets of 4 objects with keys that have a common subdirectory
-    load_objects(?TEST_BUCKET, 4, "subdir/prefix1/", UserConfig),
-    load_objects(?TEST_BUCKET, 4, "subdir/prefix2/", UserConfig),
+    Prefix1 = "0/prefix1/",
+    Prefix2 = "0/prefix2/",
+    load_objects(?TEST_BUCKET, 4, Prefix1, UserConfig),
+    load_objects(?TEST_BUCKET, 4, Prefix2, UserConfig),
 
     %% Use `max-keys', `prefix' and `delimiter' to get first 30
     %% results back and verify results are truncated and 2 common
@@ -68,14 +69,20 @@ confirm() ->
     %% Unable to currently verify the `CommonPrefixes' for this is
     %% fact that ercloud does not support parsing the those response
     %% elements.
-    Options3 = [{max_keys, 30}, {prefix, "subdir"}, {delimiter, "/"}],
+    Options3 = [{max_keys, 30}, {prefix, "0/"}, {delimiter, "/"}],
     ObjList2 = erlcloud_s3:list_objects(?TEST_BUCKET, Options3, UserConfig),
-    Marker2 = proplists:get_value(marker, ObjList2),
-    verify_object_list(ObjList1, 28),
+    CommonPrefixes = proplists:get_value(common_prefixes, ObjList2),
+    ?assert(lists:member([{prefix, Prefix1}], CommonPrefixes)),
+    ?assert(lists:member([{prefix, Prefix2}], CommonPrefixes)),
+    verify_object_list(ObjList2, 28, 30),
 
     %% Request remainder of results
-    Options3 = [{marker, Marker2}],
-    verify_object_list(erlcloud_s3:list_objects(?TEST_BUCKET, Options3, UserConfig), 2),
+    Options4 = [{marker, "7"}],
+    verify_object_list(erlcloud_s3:list_objects(?TEST_BUCKET, Options4, UserConfig), 2, 30, 29),
+
+    delete_objects(?TEST_BUCKET, Count3, [], UserConfig),
+    delete_objects(?TEST_BUCKET, 4, Prefix1, UserConfig),
+    delete_objects(?TEST_BUCKET, 4, Prefix2, UserConfig),
 
     lager:info("deleting bucket ~p", [?TEST_BUCKET]),
     ?assertEqual(ok, erlcloud_s3:delete_bucket(?TEST_BUCKET, UserConfig)),
@@ -93,7 +100,20 @@ load_objects(Bucket, Count, KeyPrefix, Config) ->
                             Config) || X <- lists:seq(1,Count)].
 
 verify_object_list(ObjList, ExpectedCount) ->
+    verify_object_list(ObjList, ExpectedCount, ExpectedCount, 1).
+
+verify_object_list(ObjList, ExpectedCount, TotalCount) ->
+    verify_object_list(ObjList, ExpectedCount, TotalCount, 1).
+
+verify_object_list(ObjList, ExpectedCount, TotalCount, 1) when ExpectedCount =:= TotalCount ->
     ?assertEqual(lists:sort([integer_to_list(X) || X <- lists:seq(1, ExpectedCount)]),
+                 [proplists:get_value(key, O) ||
+                     O <- proplists:get_value(contents, ObjList)]);
+verify_object_list(ObjList, ExpectedCount, TotalCount, Offset) ->
+    ?assertEqual(lists:sublist(
+                   lists:sort([integer_to_list(X) || X <- lists:seq(1, TotalCount)]),
+                   Offset,
+                   ExpectedCount),
                  [proplists:get_value(key, O) ||
                      O <- proplists:get_value(contents, ObjList)]).
 
@@ -104,3 +124,9 @@ delete_and_verify_objects(Bucket, Count, Config) ->
     verify_object_list(erlcloud_s3:list_objects(Bucket, Config), Count),
     erlcloud_s3:delete_object(Bucket, integer_to_list(Count), Config),
     delete_and_verify_objects(Bucket, Count-1, Config).
+
+delete_objects(Bucket, Count, Prefix, Config) ->
+    [erlcloud_s3:delete_object(Bucket,
+                               Prefix ++ integer_to_list(X),
+                               Config)
+     || X <- lists:seq(1, Count)].
