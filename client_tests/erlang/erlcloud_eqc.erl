@@ -65,7 +65,7 @@
 -define(EMPTY_OBJECT_LIST(B), [{name, B},
                                 {prefix,[]},
                                 {marker,[]},
-                                {delimiter,"/"},
+                                {delimiter,""},
                                 {max_keys,1000},
                                 {is_truncated,false},
                                 {contents,[]}]).
@@ -97,7 +97,7 @@ eqc_test_() ->
 
 prop_api_test(Host, Port, ProxyHost, ProxyPort) ->
     ?FORALL(Cmds,
-            commands(?MODULE, {start, initial_state_data(Host, Port, ProxyHost, ProxyPort)}),
+            eqc_gen:noshrink(commands(?MODULE, {start, initial_state_data(Host, Port, ProxyHost, ProxyPort)})),
             begin
                 RunningApps = application:which_applications(),
                 case lists:keymember(erlcloud, 1, RunningApps) of
@@ -245,7 +245,7 @@ postcondition(user_created, bucket_created, _S, _C, _) ->
 postcondition(bucket_created, bucket_created, #api_state{bucket=Bucket}, {call, _, list_buckets, _}, [{buckets, [Bucket]}]) ->
     true;
 postcondition(bucket_created, bucket_created, #api_state{bucket=Bucket}, {call, _, list_objects, _}, R) ->
-    is_empty_object_list(Bucket, R);
+    ?P(is_empty_object_list(Bucket, R));
 postcondition(bucket_created, bucket_deleted, _S, _C, ok) ->
     true;
 postcondition(bucket_created, bucket_deleted, _S, _C, _) ->
