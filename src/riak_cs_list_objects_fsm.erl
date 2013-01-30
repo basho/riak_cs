@@ -384,23 +384,29 @@ prefix_filter(Key, {Keys, Prefixes}, Prefix, undefined) ->
         _ ->
             {Keys, Prefixes}
     end;
-prefix_filter(Key, {Keys, Prefixes}, Prefix, Delimiter) ->
+prefix_filter(Key, {Keys, Prefixes}=Acc, Prefix, Delimiter) ->
     PrefixLen = byte_size(Prefix),
     case Key of
         << Prefix:PrefixLen/binary, Rest/binary >> ->
             Group = extract_group(Rest, Delimiter),
-            {Keys, ordsets:add_element(<< Prefix:PrefixLen/binary, Group/binary >>, Prefixes)};
+            update_keys_and_prefixes(Acc, Key, Prefix, PrefixLen, Group);
         _ ->
-            {[Key | Keys], Prefixes}
+            {Keys, Prefixes}
     end.
 
 extract_group(Key, Delimiter) ->
     case binary:match(Key, [Delimiter]) of
         nomatch ->
-            Key;
+            nomatch;
         {Pos, Len} ->
             binary:part(Key, {0, Pos+Len})
     end.
+
+update_keys_and_prefixes({Keys, Prefixes}, Key, _, _, nomatch) ->
+    {[Key | Keys], Prefixes};
+update_keys_and_prefixes({Keys, Prefixes}, _, Prefix, PrefixLen, Group) ->
+    NewPrefix = << Prefix:PrefixLen/binary, Group/binary >>,
+    {Keys, ordsets:add_element(NewPrefix, Prefixes)}.
 
 %% Map Reduce stuff
 %%--------------------------------------------------------------------
