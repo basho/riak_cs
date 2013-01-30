@@ -66,9 +66,6 @@ confirm() ->
     %% Use `max-keys', `prefix' and `delimiter' to get first 30
     %% results back and verify results are truncated and 2 common
     %% prefixes are returned.
-    %% Unable to currently verify the `CommonPrefixes' for this is
-    %% fact that ercloud does not support parsing the those response
-    %% elements.
     Options3 = [{max_keys, 30}, {prefix, "0/"}, {delimiter, "/"}],
     ObjList2 = erlcloud_s3:list_objects(?TEST_BUCKET, Options3, UserConfig),
     CommonPrefixes = proplists:get_value(common_prefixes, ObjList2),
