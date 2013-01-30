@@ -414,63 +414,71 @@ bucket_access_authorize_helper(AccessType, Deletable,
     PermCtx = Ctx#context{bucket=Bucket,
                           requested_perm=RequestedAccess},
 
-    {ok, {BucketAcl, Policy}} = riak_cs_utils:get_bucket_acl_policy(Bucket, RiakPid),
+    case riak_cs_utils:get_bucket_acl_policy(Bucket, RiakPid) of
+        {error, notfound} ->
+            riak_cs_s3_response:api_error(no_such_bucket, RD, Ctx);
 
-    case riak_cs_acl_utils:check_grants(User,Bucket,RequestedAccess,RiakPid,BucketAcl) of
-        true ->
-            %% because users are not allowed to create/destroy
-            %% buckets, we can assume that User is not
-            %% undefined here
-            AccessRD = riak_cs_access_logger:set_user(User, RD),
-            Access = PolicyMod:reqdata_to_access(RD, AccessType,
-                                                 User?RCS_USER.canonical_id),
-            case PolicyMod:eval(Access, Policy) of
-                true ->      {false, AccessRD, PermCtx};
-                undefined -> {false, AccessRD, PermCtx};
-                false ->     riak_cs_wm_utils:deny_access(AccessRD, Ctx)
-            end;
+        {error, Reason} when is_atom(Reason) ->
+            riak_cs_s3_response:api_error(Reason, RD, Ctx);
 
-        {true, _OwnerId} when Deletable andalso (RequestedAccess == 'WRITE') ->
-            %% grants lied: this is a delete, and only the
-            %% owner is allowed to do that; setting user for
-            %% the request anyway, so the error tally is
-            %% logged for them
-            AccessRD = riak_cs_access_logger:set_user(User, RD),
-            riak_cs_wm_utils:deny_access(AccessRD, PermCtx);
+        {ok, {BucketAcl, Policy}} ->
 
-        {true, OwnerId} ->
-            %% this operation is allowed, but we need to get
-            %% the owner's record, and log the access against
-            %% them instead of the actor
-            riak_cs_wm_utils:shift_to_owner(RD, PermCtx, OwnerId, RiakPid);
+            case riak_cs_acl_utils:check_grants(User,Bucket,RequestedAccess,RiakPid,BucketAcl) of
+                true ->
+                    %% because users are not allowed to create/destroy
+                    %% buckets, we can assume that User is not
+                    %% undefined here
+                    AccessRD = riak_cs_access_logger:set_user(User, RD),
+                    Access = PolicyMod:reqdata_to_access(RD, AccessType,
+                                                         User?RCS_USER.canonical_id),
+                    case PolicyMod:eval(Access, Policy) of
+                        true ->      {false, AccessRD, PermCtx};
+                        undefined -> {false, AccessRD, PermCtx};
+                        false ->     riak_cs_wm_utils:deny_access(AccessRD, Ctx)
+                    end;
 
-        false ->
-            Access = PolicyMod:reqdata_to_access(RD, AccessType,
-                                                 User?RCS_USER.canonical_id),
-            PolicyResult = PolicyMod:eval(Access, Policy),
+                {true, _OwnerId} when Deletable andalso (RequestedAccess == 'WRITE') ->
+                    %% grants lied: this is a delete, and only the
+                    %% owner is allowed to do that; setting user for
+                    %% the request anyway, so the error tally is
+                    %% logged for them
+                    AccessRD = riak_cs_access_logger:set_user(User, RD),
+                    riak_cs_wm_utils:deny_access(AccessRD, PermCtx);
 
-            case {User, PolicyResult} of
-                {_, true} ->
-                    OwnerId = riak_cs_acl:owner_id(BucketAcl, RiakPid),
-                    %% Policy says yes while ACL says no
+                {true, OwnerId} ->
+                    %% this operation is allowed, but we need to get
+                    %% the owner's record, and log the access against
+                    %% them instead of the actor
                     riak_cs_wm_utils:shift_to_owner(RD, PermCtx, OwnerId, RiakPid);
 
-                {undefined, _} ->
-                    %% no facility for logging bad access
-                    %% against unknown actors
-                    AccessRD = RD,
-                    riak_cs_wm_utils:deny_access(AccessRD, PermCtx);
-                {_, _} ->
-                    %% log bad requests against the actors
-                    %% that make them
-                    AccessRD = riak_cs_access_logger:set_user(User, RD),
-                    %% Check if the bucket actually exists so we can
-                    %% make the correct decision to return a 404 or 403
-                    case riak_cs_utils:check_bucket_exists(Bucket, RiakPid) of
-                        {ok, _} ->
+                false ->
+                    Access = PolicyMod:reqdata_to_access(RD, AccessType,
+                                                         User?RCS_USER.canonical_id),
+                    PolicyResult = PolicyMod:eval(Access, Policy),
+
+                    case {User, PolicyResult} of
+                        {_, true} ->
+                            OwnerId = riak_cs_acl:owner_id(BucketAcl, RiakPid),
+                            %% Policy says yes while ACL says no
+                            riak_cs_wm_utils:shift_to_owner(RD, PermCtx, OwnerId, RiakPid);
+
+                        {undefined, _} ->
+                            %% no facility for logging bad access
+                            %% against unknown actors
+                            AccessRD = RD,
                             riak_cs_wm_utils:deny_access(AccessRD, PermCtx);
-                        {error, Reason} ->
-                            riak_cs_s3_response:api_error(Reason, RD, Ctx)
+                        {_, _} ->
+                            %% log bad requests against the actors
+                            %% that make them
+                            AccessRD = riak_cs_access_logger:set_user(User, RD),
+                            %% Check if the bucket actually exists so we can
+                            %% make the correct decision to return a 404 or 403
+                            case riak_cs_utils:check_bucket_exists(Bucket, RiakPid) of
+                                {ok, _} ->
+                                    riak_cs_wm_utils:deny_access(AccessRD, PermCtx);
+                                {error, Reason} ->
+                                    riak_cs_s3_response:api_error(Reason, RD, Ctx)
+                            end
                     end
             end
     end.
