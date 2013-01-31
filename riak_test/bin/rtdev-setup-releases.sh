@@ -5,14 +5,17 @@
 # that contains devrels for prior Riak CS releases. Easy way to create this
 # is to use the rtdev-build-releases.sh script
 
-rm -rf /tmp/rtcs
-mkdir /tmp/rtcs
+: ${RTCS_DEST_DIR:="$HOME/rt/riak_cs"}
+
+rm -rf $RTCS_DEST_DIR
+mkdir $RTCS_DEST_DIR
 for rel in */dev; do
     vsn=$(dirname "$rel")
-    mkdir "/tmp/rtcs/$vsn"
-    cp -p -P -R "$rel" "/tmp/rtcs/$vsn"
+    mkdir "$RTCS_DEST_DIR/$vsn"
+    cp -p -P -R "$rel" "$RTCS_DEST_DIR/$vsn"
 done
-cd /tmp/rtcs
+cd $RTCS_DEST_DIR
 git init
 git add .
 git commit -a -m "riak_test init"
+
