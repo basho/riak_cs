@@ -15,65 +15,65 @@
 
 %% Tests for `riak_cs_list_objects_fsm:filter_prefix_keys/3'
 
-%% A request with no prefix, delimiter, or marker
-%% should just return the same list of keys
-simple_request_test() ->
-    Keys = keys(),
-    Request = riak_cs_list_objects:new_request(<<"bucket">>),
-    {ResultKeys, _CommonPrefixes} =
-        riak_cs_list_objects_fsm:filter_prefix_keys(Keys, [], Request),
-    ?assertEqual(lists:sort(Keys), lists:sort(ResultKeys)).
+filter_prefix_keys_test_() ->
+    [
+        %% simple test
+        test_creator(riak_cs_list_objects:new_request(<<"bucket">>),
+                     {keys(), []}),
 
-prefix_request_1_test() ->
-    Keys = keys(),
-    Request = riak_cs_list_objects:new_request(<<"bucket">>, 1000,
-                                               [{prefix, <<"a">>}]),
-    Result =
-        riak_cs_list_objects_fsm:filter_prefix_keys(Keys, [], Request),
-    Expected = {[<<"a">>], []},
-    ?assertEqual(Expected, Result).
+        %% simple prefix
+        test_creator(riak_cs_list_objects:new_request(<<"bucket">>,
+                                                      1000,
+                                                      [{prefix, <<"a">>}]),
+                     {[<<"a">>], []}),
 
-prefix_request_2_test() ->
-    Keys = keys(),
-    Request = riak_cs_list_objects:new_request(<<"bucket">>, 1000,
-                                               [{prefix, <<"photos/">>}]),
-    {ResultKeys, CommonPrefixes} =
-        riak_cs_list_objects_fsm:filter_prefix_keys(Keys, [], Request),
-    Expected = {lists:sort(lists:sublist(Keys, 4, length(Keys))), []},
-    ?assertEqual(Expected, {lists:sort(ResultKeys), CommonPrefixes}).
+        %% simple prefix 2
+        test_creator(riak_cs_list_objects:new_request(<<"bucket">>,
+                                                      1000,
+                                                      [{prefix, <<"photos/">>}]),
+                     {lists:sublist(keys(), 4, length(keys())), []}),
 
-prefix_and_delimiter_1_test() ->
-    Keys = keys(),
-    Request = riak_cs_list_objects:new_request(<<"bucket">>, 1000,
-                                               [{prefix, <<"photos/">>},
-                                                {delimiter, <<"/">>}]),
-    {ResultKeys, CommonPrefixes} =
-        riak_cs_list_objects_fsm:filter_prefix_keys(Keys, [], Request),
-    Expected = {[], lists:sort([<<"photos/01/">>, <<"photos/02/">>])},
-    ?assertEqual(Expected, {ResultKeys, lists:sort(CommonPrefixes)}).
+        %% prefix and delimiter
+        test_creator(riak_cs_list_objects:new_request(<<"bucket">>,
+                                                      1000,
+                                                      [{prefix, <<"photos/">>},
+                                                       {delimiter, <<"/">>}]),
+                     {[], [<<"photos/01/">>, <<"photos/02/">>]}),
 
-%% The only difference from the above test is
-%% in the `prefix', note the lack of `/' after `photos'
-prefix_and_delimiter_2_test() ->
-    Keys = keys(),
-    Request = riak_cs_list_objects:new_request(<<"bucket">>, 1000,
-                                               [{prefix, <<"photos">>},
-                                                {delimiter, <<"/">>}]),
-    {ResultKeys, CommonPrefixes} =
-        riak_cs_list_objects_fsm:filter_prefix_keys(Keys, [], Request),
-    Expected = {[], lists:sort([<<"photos/">>])},
-    ?assertEqual(Expected, {ResultKeys, lists:sort(CommonPrefixes)}).
+        %% prefix and delimiter 2
+        %% The only difference from the above test is
+        %% in the `prefix', note the lack of `/' after `photos'
+        test_creator(riak_cs_list_objects:new_request(<<"bucket">>,
+                                                      1000,
+                                                      [{prefix, <<"photos">>},
+                                                       {delimiter, <<"/">>}]),
+                     {[], [<<"photos/">>]}),
 
-prefix_and_delimiter_3_test() ->
-    Keys = keys(),
-    Request = riak_cs_list_objects:new_request(<<"bucket">>, 1000,
-                                               [{delimiter, <<"/">>}]),
-    {ResultKeys, CommonPrefixes} =
-        riak_cs_list_objects_fsm:filter_prefix_keys(Keys, [], Request),
-    Expected = {[<<"a">>, <<"b">>, <<"c">>], [<<"photos/">>]},
-    ?assertEqual(Expected, {lists:sort(ResultKeys), CommonPrefixes}).
+        %% prefix and delimiter
+        test_creator(riak_cs_list_objects:new_request(<<"bucket">>,
+                                                      1000,
+                                                      [{delimiter, <<"/">>}]),
+                     {[<<"a">>, <<"b">>, <<"c">>], [<<"photos/">>]})
+    ].
+
+%% Test creator
+
+test_creator(Request, Expected) ->
+    test_creator(keys(), Request, Expected).
+
+test_creator(Keys, Request, Expected) ->
+    fun () ->
+            Result =
+                riak_cs_list_objects_fsm:filter_prefix_keys(Keys, [], Request),
+            ?assertEqual(two_tuple_sort(Expected),
+                         two_tuple_sort(Result))
+    end.
 
 %% Test helpers
+
+two_tuple_sort({A, B}) ->
+    {lists:sort(A),
+     lists:sort(B)}.
 
 keys() ->
     [<<"a">>, <<"b">>, <<"c">>, <<"photos/01/foo">>, <<"photos/01/bar">>,
