@@ -36,6 +36,67 @@ confirm() ->
     basic_upload_test_case(?TEST_BUCKET, ?TEST_KEY1, UserConfig),
     aborted_upload_test_case(?TEST_BUCKET, ?TEST_KEY2, UserConfig),
 
+    %% Start 10 uploads for 10 different keys
+    Count1 = 10,
+    initiate_uploads(?TEST_BUCKET, Count1, UserConfig),
+
+    %% Successively list the in-progress uploads, verify the output,
+    %% and abort an upload until all uploads are aborted
+    abort_and_verify_uploads(?TEST_BUCKET, Count1, UserConfig),
+
+    %% Start 100 uploads for 100 different keys
+    Count2 = 100,
+    initiate_uploads(?TEST_BUCKET, Count2, UserConfig),
+
+    %% List uploads and verify all 100 are returned
+    UploadList1 = erlcloud_s3_multipart:list_uploads(?TEST_BUCKET, [], UserConfig),
+    lager:info("UploadList1: ~p", [UploadList1]),
+    verify_upload_list(UploadList1, Count2),
+
+    %% @TODO Use max-uploads option to request first 50 results
+    %% Options1 = [{max_uploads, 50}],
+    %% UploadList2 = erlcloud_s3_multipart:list_uploads(?TEST_BUCKET, Options1, UserConfig),
+    %% verify_upload_list(ObjList1, 50, 100),
+
+    %% Initiate uploads for 2 sets of 4 objects with keys that have
+    %% a common subdirectory
+    Prefix1 = "0/prefix1/",
+    Prefix2 = "0/prefix2/",
+    initiate_uploads(?TEST_BUCKET, 4, Prefix1, UserConfig),
+    initiate_uploads(?TEST_BUCKET, 4, Prefix2, UserConfig),
+
+    %% @TODO Uncomment this block once support for `max-uploads' is done.
+    %% Use `max-uploads', `prefix' and `delimiter' to get first 50
+    %% results back and verify results are truncated and 2 common
+    %% prefixes are returned.
+    %% Options2 = [{max_uploads, 50}, {prefix, "0/"}, {delimiter, "/"}],
+    %% UploadList3 = erlcloud_s3_multipart:list_uploads(?TEST_BUCKET, Options2, UserConfig),
+    %% CommonPrefixes = proplists:get_value(common_prefixes, UploadList3),
+    %% ?assert(lists:member([{prefix, Prefix1}], CommonPrefixes)),
+    %% ?assert(lists:member([{prefix, Prefix2}], CommonPrefixes)),
+    %% verify_upload_list(UploadList3, 48, 100),
+
+    %% @TODO Replace this with the commented-out code blocks above and
+    %% below this one once the support for `max-uploads' is in place.
+    %% Use `prefix' and `delimiter' to get the active uploads back and
+    %% verify that 2 common prefixes are returned.
+    Options2 = [{prefix, "0/"}, {delimiter, "/"}],
+    UploadList3 = erlcloud_s3_multipart:list_uploads(?TEST_BUCKET, Options2, UserConfig),
+    CommonPrefixes = proplists:get_value(common_prefixes, UploadList3),
+    ?assert(lists:member([{prefix, Prefix1}], CommonPrefixes)),
+    ?assert(lists:member([{prefix, Prefix2}], CommonPrefixes)),
+    verify_upload_list(UploadList3, 48, 100),
+
+    %% @TODO Uncomment this block once support for `max-uploads' is done.
+    %% Use `key-marker' and `upload-id-marker' to request
+    %% remainder of in-progress upload results
+    %% Options3 = [{key_marker, "48"}, {upload_id_marker, "X"}],
+    %% UploadList4 = erlcloud_s3_multipart:list_uploads(?TEST_BUCKET, Options3, UserConfig),
+    %% verify_upload_list(UploadList4, 52, 100, 49),
+
+    %% Abort all uploads for the bucket
+    abort_uploads(?TEST_BUCKET, UserConfig),
+
     lager:info("deleting bucket ~p", [?TEST_BUCKET]),
     ?assertEqual(ok, erlcloud_s3:delete_bucket(?TEST_BUCKET, UserConfig)),
 
@@ -79,11 +140,10 @@ aborted_upload_test_case(Bucket, Key, Config) ->
 
     %% Verify the upload id is in list_uploads results and
     %% that the bucket information is correct
-    UploadsTerm1 = erlcloud_s3_multipart:uploads_to_term(
-                     erlcloud_s3_multipart:list_uploads(Bucket, [], Config)),
-    Uploads1 = proplists:get_value(uploads, UploadsTerm1, []),
-    ?assertEqual(Bucket, proplists:get_value(bucket, UploadsTerm1)),
-    ?assert(proplists:is_defined(UploadId, Uploads1)),
+    UploadsList1 = erlcloud_s3_multipart:list_uploads(Bucket, [], Config),
+    Uploads1 = proplists:get_value(uploads, UploadsList1, []),
+    ?assertEqual(Bucket, proplists:get_value(bucket, UploadsList1)),
+    ?assert(upload_id_present(UploadId, Uploads1)),
 
     lager:info("Uploading parts"),
     _EtagList = upload_and_assert_parts(Bucket,
@@ -104,10 +164,9 @@ aborted_upload_test_case(Bucket, Key, Config) ->
                                                            Config)),
 
     %% List uploads and verify upload id is no longer present
-    UploadsTerm2 = erlcloud_s3_multipart:uploads_to_term(
-                     erlcloud_s3_multipart:list_uploads(Bucket, [], Config)),
-    Uploads2 = proplists:get_value(uploads, UploadsTerm2, []),
-    ?assertNot(proplists:is_defined(UploadId, Uploads2)),
+    UploadsList2 = erlcloud_s3_multipart:list_uploads(Bucket, [], Config),
+    Uploads2 = proplists:get_value(uploads, UploadsList2, []),
+    ?assertNot(upload_id_present(UploadId, Uploads2)),
 
     %% List bucket contents and verify key is still not listed
     ObjList2 = erlcloud_s3:list_objects(Bucket, Config),
@@ -121,11 +180,10 @@ basic_upload_test_case(Bucket, Key, Config) ->
 
     %% Verify the upload id is in list_uploads results and
     %% that the bucket information is correct
-    UploadsTerm1 = erlcloud_s3_multipart:uploads_to_term(
-                     erlcloud_s3_multipart:list_uploads(Bucket, [], Config)),
-    Uploads1 = proplists:get_value(uploads, UploadsTerm1, []),
-    ?assertEqual(Bucket, proplists:get_value(bucket, UploadsTerm1)),
-    ?assert(proplists:is_defined(UploadId, Uploads1)),
+    UploadsList1 = erlcloud_s3_multipart:list_uploads(Bucket, [], Config),
+    Uploads1 = proplists:get_value(uploads, UploadsList1, []),
+    ?assertEqual(Bucket, proplists:get_value(bucket, UploadsList1)),
+    ?assert(upload_id_present(UploadId, Uploads1)),
 
     lager:info("Uploading parts"),
     EtagList = upload_and_assert_parts(Bucket,
@@ -147,10 +205,9 @@ basic_upload_test_case(Bucket, Key, Config) ->
                                                            Config)),
 
     %% List uploads and verify upload id is no longer present
-    UploadsTerm2 = erlcloud_s3_multipart:uploads_to_term(
-                     erlcloud_s3_multipart:list_uploads(Bucket, [], Config)),
-    Uploads2 = proplists:get_value(uploads, UploadsTerm2, []),
-    ?assertNot(proplists:is_defined(UploadId, Uploads2)),
+    UploadsList2 = erlcloud_s3_multipart:list_uploads(Bucket, [], Config),
+    Uploads2 = proplists:get_value(uploads, UploadsList2, []),
+    ?assertNot(upload_id_present(UploadId, Uploads2)),
 
     %% List bucket contents and verify key is now listed
     ObjList2 = erlcloud_s3:list_objects(Bucket, Config),
@@ -164,3 +221,61 @@ basic_upload_test_case(Bucket, Key, Config) ->
     %% List bucket contents and verify empty
     ObjList3 = erlcloud_s3:list_objects(Bucket, Config),
     ?assertEqual([], proplists:get_value(contents, ObjList3)).
+
+initiate_uploads(Bucket, Count, Config) ->
+    initiate_uploads(Bucket, Count, [], Config).
+
+initiate_uploads(Bucket, Count, KeyPrefix, Config) ->
+    [erlcloud_s3_multipart:initiate_upload(Bucket,
+                                           KeyPrefix ++ integer_to_list(X),
+                                           "text/plain",
+                                           [],
+                                           Config) || X <- lists:seq(1, Count)].
+
+verify_upload_list(UploadList, ExpectedCount) ->
+    verify_upload_list(UploadList, ExpectedCount, ExpectedCount, 1).
+
+verify_upload_list(UploadList, ExpectedCount, TotalCount) ->
+    verify_upload_list(UploadList, ExpectedCount, TotalCount, 1).
+
+verify_upload_list(UploadList, ExpectedCount, TotalCount, 1)
+  when ExpectedCount =:= TotalCount ->
+    ?assertEqual(lists:sort([integer_to_list(X) || X <- lists:seq(1, ExpectedCount)]),
+                 [proplists:get_value(key, O) ||
+                     O <- proplists:get_value(uploads, UploadList)]);
+verify_upload_list(UploadList, ExpectedCount, TotalCount, Offset) ->
+    ?assertEqual(lists:sublist(
+                   lists:sort([integer_to_list(X) || X <- lists:seq(1, TotalCount)]),
+                   Offset,
+                   ExpectedCount),
+                 [proplists:get_value(key, O) ||
+                     O <- proplists:get_value(uploads, UploadList)]).
+
+abort_and_verify_uploads(Bucket, 0, Config) ->
+    verify_upload_list(erlcloud_s3_multipart:list_uploads(Bucket, [], Config), 0),
+    ok;
+abort_and_verify_uploads(Bucket, Count, Config) ->
+    UploadList = erlcloud_s3_multipart:list_uploads(Bucket, [], Config),
+    verify_upload_list(UploadList, Count),
+    Key = integer_to_list(Count),
+    UploadId = upload_id_for_key(Key, UploadList),
+    erlcloud_s3_multipart:abort_upload(Bucket, Key, UploadId, Config),
+    abort_and_verify_uploads(Bucket, Count-1, Config).
+
+upload_id_present(UploadId, UploadList) ->
+    [] /= [UploadData || UploadData <- UploadList,
+                         proplists:get_value(upload_id, UploadData) =:= UploadId].
+
+upload_id_for_key(Key, UploadList) ->
+    Uploads = proplists:get_value(uploads, UploadList),
+    [KeyUpload] = [UploadData || UploadData <- Uploads,
+                                 proplists:get_value(key, UploadData) =:= Key],
+    proplists:get_value(upload_id, KeyUpload).
+
+abort_uploads(Bucket, Config) ->
+    UploadList = erlcloud_s3_multipart:list_uploads(Bucket, [], Config),
+    [begin
+         Key = proplists:get_value(key, Upload),
+         UploadId = proplists:get_value(upload_id, Upload),
+         erlcloud_s3_multipart:abort_upload(Bucket, Key, UploadId, Config)
+     end || Upload <- UploadList].
