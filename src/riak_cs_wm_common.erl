@@ -12,6 +12,7 @@
          content_types_accepted/2,
          content_types_provided/2,
          valid_entity_length/2,
+         validate_content_checksum/2,
          malformed_request/2,
          to_xml/2,
          to_json/2,
@@ -28,6 +29,7 @@
          default_authorize/2,
          default_malformed_request/2,
          default_valid_entity_length/2,
+         default_validate_content_checksum/2,
          default_delete_resource/2,
          default_anon_ok/0]).
 
@@ -97,6 +99,20 @@ valid_entity_length(RD, Ctx=#context{submodule=Mod, exports_fun=ExportsFun}) ->
                                       [RD, Ctx],
                                       ExportsFun),
     riak_cs_dtrace:dt_wm_return_bool({?MODULE, Mod}, <<"valid_entity_length">>, Valid),
+    R.
+
+-type validate_checksum_response() :: {error, term()} |
+                                      {halt, pos_integer()} |
+                                       boolean().
+-spec validate_content_checksum(#wm_reqdata{}, #context{}) ->
+    {validate_checksum_response(), #wm_reqdata{}, #context{}}.
+validate_content_checksum(RD, Ctx=#context{submodule=Mod, exports_fun=ExportsFun}) ->
+    riak_cs_dtrace:dt_wm_entry({?MODULE, Mod}, <<"validate_content_checksum">>),
+    {Valid, _, _} = R = resource_call(Mod,
+                                      validate_content_checksum,
+                                      [RD, Ctx],
+                                      ExportsFun),
+    riak_cs_dtrace:dt_wm_return_bool({?MODULE, Mod}, <<"validate_content_checksum">>, Valid),
     R.
 
 -spec forbidden(#wm_reqdata{}, #context{}) -> {boolean() | {halt, non_neg_integer()}, #wm_reqdata{}, #context{}}.
@@ -340,6 +356,8 @@ default(malformed_request) ->
     default_malformed_request;
 default(valid_entity_length) ->
     default_valid_entity_length;
+default(validate_content_checksum) ->
+    default_validate_content_checksum;
 default(delete_resource) ->
     default_delete_resource;
 default(authorize) ->
@@ -358,6 +376,9 @@ default_malformed_request(RD, Ctx) ->
     {false, RD, Ctx}.
 
 default_valid_entity_length(RD, Ctx) ->
+    {true, RD, Ctx}.
+
+default_validate_content_checksum(RD, Ctx) ->
     {true, RD, Ctx}.
 
 default_content_types(RD, Ctx) ->

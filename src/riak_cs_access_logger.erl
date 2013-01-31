@@ -42,7 +42,7 @@
 -module(riak_cs_access_logger).
 
 -behaviour(gen_server).
--include_lib("webmachine/src/webmachine_logger.hrl").
+-include_lib("webmachine/include/webmachine_logger.hrl").
 -include("riak_cs.hrl").
 
 %% API
