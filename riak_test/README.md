@@ -21,36 +21,40 @@
                   ]},
         {rt_retry_delay, 500},
         {rt_harness, rtdev},
-        {rtdev_path, [{root, "/tmp/rt"},
-                      {current, "/tmp/rt/current"},
-                      {"1.2.0", "/tmp/rt/riak-1.2.0"},
-                      {"1.1.4", "/tmp/rt/riak-1.1.4"},
-                      {"1.0.3", "/tmp/rt/riak-1.0.3"},
-                      {ee_root, "/tmp/rtee"},
-                      {ee_current, "/tmp/rtee/current"},
-                      {"1.2.0-ee", "/tmp/rtee/riak_ee-1.2.0"},
-                      {"1.1.4-ee", "/tmp/rtee/riak_ee-1.1.4"},
-                      {"1.0.3-ee", "/tmp/rtee/riak_ee-1.0.3"},
-                      {cs_root, "/tmp/rtcs"},
-                      {cs_current, "/tmp/rtcs/current"},
-                      {"1.2.2-cs", "/tmp/rtcs/riak-cs-1.2.2"},
-                      {"1.1.0-cs", "/tmp/rtcs/riak-cs-1.1.0"},
-                      {"1.0.1-cs", "/tmp/rtcs/riak-cs-1.0.1"},
-                      {stanchion_root, "/tmp/rtstanchion"},
-                      {stanchion_current, "/tmp/rtstanchion/current"},
-                      {"1.2.2-stanchion", "/tmp/rtstanchion/stanchion-1.2.2"},
-                      {"1.1.0-stanchion", "/tmp/rtstanchion/stanchion-1.1.0"},
-                      {"1.0.1-stanchion", "/tmp/rtstanchion/stanchion-1.0.1"}
+        {rtdev_path, [{root, "RT_DEST_DIR"},
+                      {current, "RT_DEST_DIR/current"},
+                      {previous, "RT_DEST_DIR/riak-1.2.0"},
+                      {legacy, "RT_DEST_DIR/riak-1.1.4"},
+                      {ee_root, "RTEE_DEST_DIR"},
+                      {ee_current, "RTEE_DEST_DIR/current"},
+                      {"1.2.0-ee", "RTEE_DEST_DIR/riak_ee-1.2.0"},
+                      {"1.1.4-ee", "RTEE_DEST_DIR/riak_ee-1.1.4"},
+                      {"1.0.3-ee", "RTEE_DEST_DIR/riak_ee-1.0.3"},
+                      {cs_root, "RTCS_DEST_DIR"},
+                      {cs_current, "RTCS_DEST_DIR/current"},
+                      {"1.2.2-cs", "RTCS_DEST_DIR/riak-cs-1.2.2"},
+                      {"1.1.0-cs", "RTCS_DEST_DIR/riak-cs-1.1.0"},
+                      {"1.0.1-cs", "RTCS_DEST_DIR/riak-cs-1.0.1"},
+                      {stanchion_root, "RTSTANCHION_DEST_DIR"},
+                      {stanchion_current, "RTSTANCHION_DEST_DIR/current"},
+                      {"1.2.2-stanchion", "RTSTANCHION_DEST_DIR/stanchion-1.2.2"},
+                      {"1.1.0-stanchion", "RTSTANCHION_DEST_DIR/stanchion-1.1.0"},
+                      {"1.0.1-stanchion", "RTSTANCHION_DEST_DIR/stanchion-1.0.1"}
                      ]}
     ]}.
     </pre>
 
-     Notice the extra `riak_ee/deps`, `riak_cs/deps` and
-     `stanchion/deps` in the `rt_deps` section and the extra path
-     specifications in `rtdev_path`. The path keys shown here (*e.g.*
-     `ee_root`) **MUST** be used verbatim since the test setup
-     specifically looks for them. You have been warned.
-1. To build the `riak_test` files use the `compile-riak-test` Makefile target or run `./rebar riak_test_compile`.
+Notice the extra `riak_ee/deps`, `riak_cs/deps` and `stanchion/deps` in
+the `rt_deps` section and the extra path specifications in
+`rtdev_path`. `RT_DEST_DIR` should be replaced by the path used when
+setting up `riak_test` builds for Riak (by default
+`$HOME/rt/riak`). The same should be done for `RTEE_DEST_DIR` (default
+`$HOME/rt/riak_ee`), `RTCS_DEST_DIR` (default `$HOME/rt/riak_cs`) and
+`RTSTANCHION_DEST_DIR` (default `$HOME/rt/stanchion`).
+
+1. To build the `riak_test` files use the `compile-riak-test` Makefile
+target or run `./rebar riak_test_compile`.
+
 1. To execute a test, run the following from the `riak_test` repo:
 
     ```
