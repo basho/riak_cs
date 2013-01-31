@@ -166,7 +166,12 @@ create_user(Name, Email) ->
                         ok ->
                             {ok, User};
                         {error, {error_status, _, _, ErrorDoc}} ->
-                            ErrorCode = xml_error_code(ErrorDoc),
+                            ErrorCode = case length(ErrorDoc) of
+                                0 ->
+                                    "BadRequest";
+                                _ ->
+                                    xml_error_code(ErrorDoc)
+                            end,
                             {error, riak_cs_s3_response:error_code_to_atom(ErrorCode)};
                         {error, _} ->
                             CreateResult
