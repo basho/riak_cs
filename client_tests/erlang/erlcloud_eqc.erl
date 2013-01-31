@@ -62,13 +62,6 @@
 -define(DEFAULT_PROXY_HOST, "localhost").
 -define(DEFAULT_PROXY_PORT, 8080).
 -define(VALUE, "test value").
--define(EMPTY_OBJECT_LIST(B), [{name, B},
-                                {prefix,[]},
-                                {marker,[]},
-                                {delimiter,"/"},
-                                {max_keys,1000},
-                                {is_truncated,false},
-                                {contents,[]}]).
 
 -record(api_state, {aws_config :: aws_config(),
                     bucket :: string(),
@@ -368,10 +361,9 @@ update_keys(Key, undefined) ->
 update_keys(Key, ExistingKeys) ->
     [Key | ExistingKeys].
 
-is_empty_object_list(Bucket, ?EMPTY_OBJECT_LIST(Bucket)) ->
-    true;
-is_empty_object_list(_, _) ->
-    false.
+is_empty_object_list(Bucket, ObjectList) ->
+    Bucket =:= proplists:get_value(name, ObjectList)
+        andalso [] =:= proplists:get_value(contents, ObjectList).
 
 verify_object_list_contents([], []) ->
     true;
