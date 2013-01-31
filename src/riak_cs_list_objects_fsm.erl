@@ -369,13 +369,9 @@ filter_prefix_keys(Keys, CommonPrefixes, ?LOREQ{prefix=Prefix,
         end,
     lists:foldl(PrefixFilter, {[], CommonPrefixes}, Keys).
 
-prefix_filter(Key, {Keys, Prefixes}, undefined, Delimiter) ->
-    case extract_group(Key, Delimiter) of
-        Key ->
-            {[Key | Keys], Prefixes};
-        Group ->
-            {Keys, ordsets:add_element(Group, Prefixes)}
-    end;
+prefix_filter(Key, Acc, undefined, Delimiter) ->
+    Group = extract_group(Key, Delimiter),
+    update_keys_and_prefixes(Acc, Key, <<>>, 0, Group);
 prefix_filter(Key, {Keys, Prefixes}, Prefix, undefined) ->
     PrefixLen = byte_size(Prefix),
     case Key of
