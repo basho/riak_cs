@@ -440,7 +440,8 @@ next_keys_from_state(#state{mr_requests=Requests,
 next_keys({StartIdx, EndIdx}, Keys) ->
     %% the last arg to sublist is _not_ an index, but
     %% a length, hence the diff of `EndIdx' and `StartIdx'
-    lists:sublist(Keys, StartIdx, (EndIdx - StartIdx)).
+    Length = (EndIdx - StartIdx) + 1,
+    lists:sublist(Keys, StartIdx, Length).
 
 
 -spec handle_mapred_results(list(), state()) ->
