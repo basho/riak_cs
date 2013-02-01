@@ -26,9 +26,12 @@
 -include("riak_cs.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
 
+-define(RIAKCPOOL, bucket_list_pool).
+
 -spec init(#context{}) -> {ok, #context{}}.
 init(Ctx) ->
-    {ok, Ctx#context{local_context=#key_context{}}}.
+    {ok, Ctx#context{local_context=#key_context{},
+                     riakc_pool=?RIAKCPOOL}}.
 
 -spec malformed_request(#wm_reqdata{}, #context{}) -> {false, #wm_reqdata{}, #context{}}.
 malformed_request(RD,Ctx=#context{local_context=LocalCtx0}) ->
