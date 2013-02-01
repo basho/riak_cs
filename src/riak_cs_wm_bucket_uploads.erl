@@ -36,7 +36,7 @@ malformed_request(RD,Ctx=#context{local_context=LocalCtx0}) ->
     LocalCtx = LocalCtx0#key_context{bucket=Bucket},
     {false, RD, Ctx#context{local_context=LocalCtx}}.
 
--spec authorize(#wm_reqdata{}, #context{}) -> 
+-spec authorize(#wm_reqdata{}, #context{}) ->
                        {boolean() | {halt, term()}, #wm_reqdata{}, #context{}}.
 
 authorize(RD, Ctx=#context{riakc_pid=RiakcPid, local_context=LocalCtx}) ->
@@ -86,7 +86,7 @@ to_xml(RD, Ctx=#context{local_context=LocalCtx,
             Cs = [{'CommonPrefixes',
                    [
                     % WTH? The pattern [Common | _] can never match the type []
-                    {'Prefix', [Common]} 
+                    {'Prefix', [Common]}
                    ]} || Common <- Commons],
             Get = fun(Name) -> case proplists:get_value(Name, Opts) of
                                    undefined -> [];
@@ -135,18 +135,13 @@ content_types_accepted(RD, Ctx) ->
     riak_cs_mp_utils:make_content_types_accepted(RD, Ctx).
 
 make_list_mp_uploads_opts(RD) ->
-    %% Weird: wrq:req_qs(RD) returns [], so that any call to
-    %% wrq:get_ws_value(Name, RD) will also fail.  {sigh}
-    %% Get the original and parse it instead.
-    {_, Qs} = riak_cs_s3_rewrite:original_resource(RD),
     Ps = [{"delimiter", delimiter},
           {"key-marker", key_marker},
           {"max-uploads", max_uploads},
           {"prefix", prefix},
           {"upload-id-marker", upload_id_marker}
          ],
-    lists:append([case proplists:get_value(Name, Qs) of
+    lists:append([case wrq:get_qs_value(Name, RD) of
                       undefined -> [];
                       X         -> [{PropName, X}]
                   end || {Name, PropName} <- Ps]).
-
