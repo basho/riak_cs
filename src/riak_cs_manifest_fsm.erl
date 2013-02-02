@@ -334,22 +334,28 @@ update_from_previous_read(RiakcPid, RiakObject,
     riak_cs_utils:put(RiakcPid, NewRiakObject).
 
 update_md_with_multipart_2i(RiakObject, WrappedManifests, Bucket, Key) ->
-    MD0 = try
-              %% During testing, it's handy to delete Riak keys in the
-              %% S3 bucket, e.g., cleaning up from a previous test.
-              %% Let's not trip over tombstones here.
-              case ([MD || {MD, V} <- riakc_obj:get_contents(RiakObject),
-                           V /= <<>>]) of
-                  [X] -> X;
-                  []  -> throw(no_metadata)
-              end
-          catch throw:no_metadata ->
-                  dict:new()
+    %% During testing, it's handy to delete Riak keys in the
+    %% S3 bucket, e.g., cleaning up from a previous test.
+    %% Let's not trip over tombstones here.
+    MD0 = case ([MD || {MD, V} <- riakc_obj:get_contents(RiakObject),
+                       V /= <<>>]) of
+              []  ->
+                  dict:new();
+              MDs ->
+                  merge_dicts(MDs)
           end,
     {K_i, V_i} = riak_cs_mp_utils:calc_multipart_2i_dict(
                    [M || {_, M} <- WrappedManifests], Bucket, Key),
     MD = dict:store(K_i, V_i, MD0),
     riakc_obj:update_metadata(RiakObject, MD).
+
+merge_dicts([MD|MDs]) ->
+    %% Smash all the dicts together, arbitrarily picking
+    %% one value in case of conflict.
+    Pick1 = fun(_K, V1, _V2) -> V1 end,
+    lists:foldl(fun(D, DMerged) ->
+                        dict:merge(Pick1, D, DMerged)
+                end, MD, MDs).
 
 %% ===================================================================
 %% Test API
@@ -359,5 +365,14 @@ update_md_with_multipart_2i(RiakObject, WrappedManifests, Bucket, Key) ->
 
 test_link(Bucket, Key) ->
     gen_fsm:start_link(?MODULE, [test, Bucket, Key], []).
+
+mash_test() ->
+    L1 = [{a,1}, {b,2}, {c,3}],
+    L2 = [{d,4}, {b,3}, {e,5}],
+    D1 = dict:from_list(L1),
+    D2 = dict:from_list(L2),
+    [{a,1},{b,3},{c,3},{d,4},{e,5}] =
+        lists:sort(dict:to_list(merge_dicts([D1, D2]))),
+    L1 = lists:sort(dict:to_list(merge_dicts([D1]))).
 
 -endif.
