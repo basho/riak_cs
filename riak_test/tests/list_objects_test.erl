@@ -63,19 +63,38 @@ confirm() ->
     load_objects(?TEST_BUCKET, 4, Prefix1, UserConfig),
     load_objects(?TEST_BUCKET, 4, Prefix2, UserConfig),
 
-    %% Use `max-keys', `prefix' and `delimiter' to get first 30
-    %% results back and verify results are truncated and 2 common
-    %% prefixes are returned.
-    Options3 = [{max_keys, 30}, {prefix, "0/"}, {delimiter, "/"}],
+    %% Use `prefix' and `delimiter' to get the key groups under
+    %% the `prefix'. Should get 2 common prefix results back.
+    Options3 = [{prefix, "0/"}, {delimiter, "/"}],
     ObjList2 = erlcloud_s3:list_objects(?TEST_BUCKET, Options3, UserConfig),
-    CommonPrefixes = proplists:get_value(common_prefixes, ObjList2),
-    ?assert(lists:member([{prefix, Prefix1}], CommonPrefixes)),
-    ?assert(lists:member([{prefix, Prefix2}], CommonPrefixes)),
-    verify_object_list(ObjList2, 28, 30),
+    CommonPrefixes1 = proplists:get_value(common_prefixes, ObjList2),
+    ?assert(lists:member([{prefix, Prefix1}], CommonPrefixes1)),
+    ?assert(lists:member([{prefix, Prefix2}], CommonPrefixes1)),
+    ?assertEqual([], proplists:get_value(contents, ObjList2)),
+
+    %% Use `prefix' option to restrict results to only keys that
+    %% begin with that prefix. Without the `delimiter' option the keys
+    %% are returned in the contents instead of as common prefixes.
+    Options4 = [{prefix, "0/"}],
+    ObjList3 = erlcloud_s3:list_objects(?TEST_BUCKET, Options4, UserConfig),
+    CommonPrefixes2 = proplists:get_value(common_prefixes, ObjList3),
+    ?assertEqual([], CommonPrefixes2),
+    ExpObjList1 = [Prefix1 ++ integer_to_list(X) || X <- lists:seq(1,4)] ++
+        [Prefix2 ++ integer_to_list(Y) || Y <- lists:seq(1,4)],
+    ?assertEqual(ExpObjList1, [proplists:get_value(key, O) ||
+                                  O <- proplists:get_value(contents, ObjList3)]),
 
     %% Request remainder of results
-    Options4 = [{marker, "7"}],
-    verify_object_list(erlcloud_s3:list_objects(?TEST_BUCKET, Options4, UserConfig), 2, 30, 29),
+    Options5 = [{marker, "7"}],
+    verify_object_list(erlcloud_s3:list_objects(?TEST_BUCKET, Options5, UserConfig), 2, 30, 29),
+
+    %% Use `delimiter' and verify results include a single common
+    %% prefixe and 30 keys in the contents
+    Options6 = [{delimiter, "/"}],
+    ObjList4 = erlcloud_s3:list_objects(?TEST_BUCKET, Options6, UserConfig),
+    CommonPrefixes3 = proplists:get_value(common_prefixes, ObjList4),
+    ?assert(lists:member([{prefix, "0/"}], CommonPrefixes3)),
+    verify_object_list(ObjList4, 30),
 
     delete_objects(?TEST_BUCKET, Count3, [], UserConfig),
     delete_objects(?TEST_BUCKET, 4, Prefix1, UserConfig),
@@ -102,13 +121,19 @@ verify_object_list(ObjList, ExpectedCount) ->
 verify_object_list(ObjList, ExpectedCount, TotalCount) ->
     verify_object_list(ObjList, ExpectedCount, TotalCount, 1).
 
-verify_object_list(ObjList, ExpectedCount, TotalCount, 1) when ExpectedCount =:= TotalCount ->
-    ?assertEqual(lists:sort([integer_to_list(X) || X <- lists:seq(1, ExpectedCount)]),
+verify_object_list(ObjList, ExpectedCount, TotalCount, Offset) ->
+    verify_object_list(ObjList, ExpectedCount, TotalCount, Offset, []).
+
+verify_object_list(ObjList, ExpectedCount, TotalCount, 1, KeyPrefix)
+  when ExpectedCount =:= TotalCount ->
+    ?assertEqual(lists:sort([KeyPrefix ++ integer_to_list(X)
+                             || X <- lists:seq(1, ExpectedCount)]),
                  [proplists:get_value(key, O) ||
                      O <- proplists:get_value(contents, ObjList)]);
-verify_object_list(ObjList, ExpectedCount, TotalCount, Offset) ->
+verify_object_list(ObjList, ExpectedCount, TotalCount, Offset, KeyPrefix) ->
     ?assertEqual(lists:sublist(
-                   lists:sort([integer_to_list(X) || X <- lists:seq(1, TotalCount)]),
+                   lists:sort([KeyPrefix ++ integer_to_list(X)
+                               || X <- lists:seq(1, TotalCount)]),
                    Offset,
                    ExpectedCount),
                  [proplists:get_value(key, O) ||
