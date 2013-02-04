@@ -16,10 +16,8 @@
 # Or, alternatively, just substitute the paths to the kerl install paths as
 # that should work too.
 
-# R14B03=${R14B03:-$HOME/erlang-R14B03}
 # R14B04=${R14B04:-$HOME/erlang-R14B04}
 # R15B01=${R15B01:-$HOME/erlang-R15B01}
-R14B03=${R14B03:-$HOME/erlang/R14B03-64}
 R14B04=${R14B04:-$HOME/erlang/R14B04-64}
 R15B01=${R15B01:-$HOME/erlang/R15B01-64}
 
@@ -72,7 +70,6 @@ build()
     cd ..
 }
 
-checkbuild $R14B03
 checkbuild $R14B04
 checkbuild $R15B01
 
