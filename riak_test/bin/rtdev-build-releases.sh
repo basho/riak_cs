@@ -70,14 +70,23 @@ build()
     cd ..
 }
 
+download()
+{
+  URI=$1
+  FILENAME=`echo $URI | awk -F/ '{ print $7 }'`
+  if [ ! -f $FILENAME ]; then
+    s3cmd get --continue $URI
+  fi
+}
+
 checkbuild $R14B04
 checkbuild $R15B01
 
 # Download Riak CS release source, need s3cmd configured
 # You must have the proper credentials configured in ~/.s3cfg for this to work.
-s3cmd get --continue s3://builds.basho.com/riak-cs/1.2/1.2.2/riak-cs-1.2.2.tar.gz
-s3cmd get --continue s3://builds.basho.com/riak-cs/1.1/1.1.0/riak-cs-1.1.0.tar.gz
-s3cmd get --continue s3://builds.basho.com/riak-cs/1.0/1.0.1/riak-cs-1.0.1.tar.gz
+download s3://builds.basho.com/riak-cs/1.2/1.2.2/riak-cs-1.2.2.tar.gz
+download s3://builds.basho.com/riak-cs/1.1/1.1.0/riak-cs-1.1.0.tar.gz
+download s3://builds.basho.com/riak-cs/1.0/1.0.1/riak-cs-1.0.1.tar.gz
 
 tar -xzf riak-cs-1.0.1.tar.gz
 build "riak-cs-1.0.1" $R14B04
