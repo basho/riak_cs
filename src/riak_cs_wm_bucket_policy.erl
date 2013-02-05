@@ -84,23 +84,26 @@ accept_body(RD, Ctx=#context{user=User,
                                    [], [riak_cs_wm_utils:extract_name(User), Bucket]),
 
     PolicyJson = wrq:req_body(RD),
-    Policy = PolicyMod:policy_from_json(PolicyJson),
-    Access = PolicyMod:reqdata_to_access(RD, bucket_policy, User#rcs_user_v2.canonical_id),
-    case PolicyMod:check_policy(Access, Policy) of
-        ok ->
-            case riak_cs_utils:set_bucket_policy(User, UserObj, Bucket, PolicyJson, RiakPid) of
+    case PolicyMod:policy_from_json(PolicyJson) of
+        {ok, Policy} ->
+            Access = PolicyMod:reqdata_to_access(RD, bucket_policy, User#rcs_user_v2.canonical_id),
+            case PolicyMod:check_policy(Access, Policy) of
                 ok ->
-                    riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_put_policy">>,
-                                                    [200], [riak_cs_wm_utils:extract_name(User), Bucket]),
-                    {{halt, 200}, RD, Ctx};
-                {error, Reason} ->
-                    Code = riak_cs_s3_response:status_code(Reason),
-                    riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_put_policy">>,
-                                                    [Code], [riak_cs_wm_utils:extract_name(User), Bucket]),
+                    case riak_cs_utils:set_bucket_policy(User, UserObj, Bucket, PolicyJson, RiakPid) of
+                        ok ->
+                            riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_put_policy">>,
+                                                            [200], [riak_cs_wm_utils:extract_name(User), Bucket]),
+                            {{halt, 200}, RD, Ctx};
+                        {error, Reason} ->
+                            Code = riak_cs_s3_response:status_code(Reason),
+                            riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_put_policy">>,
+                                                            [Code], [riak_cs_wm_utils:extract_name(User), Bucket]),
+                            riak_cs_s3_response:api_error(Reason, RD, Ctx)
+                    end;
+                {error, Reason} -> %% good JSON, but bad as IAM policy
                     riak_cs_s3_response:api_error(Reason, RD, Ctx)
             end;
-        {error, Reason} ->
-            % 400 MalformedPolicy
+        {error, Reason} -> %% Broken as JSON
             riak_cs_s3_response:api_error(Reason, RD, Ctx)
     end.
 

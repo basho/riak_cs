@@ -14,12 +14,6 @@
 -include("s3_api.hrl").
 -include_lib("webmachine/include/wm_reqdata.hrl").
 
--ifdef(TEST).
-
--include_lib("eunit/include/eunit.hrl").
-
--endif.
-
 %% Public API
 -export([
          eval/2,
@@ -31,6 +25,19 @@
          supported_bucket_action/0,
          log_supported_actions/0
         ]).
+
+-ifdef(TEST).
+-export([eval_all_ip_addr/2,
+         eval_ip_address/2,
+         eval_condition/2,
+         eval_statement/2,
+         my_split/4,
+         parse_arns/1,
+         print_arns/1,
+         parse_ip/1,
+         print_ip/1]).
+
+-endif.
 
 -type policy1() :: ?POLICY{}.
 
@@ -45,7 +52,10 @@
 -spec eval(access(), policy() | undefined | binary() )-> boolean().
 eval(_, undefined) -> undefined;
 eval(Access, JSON) when is_binary(JSON) ->
-    eval(Access, policy_from_json(JSON));
+    case policy_from_json(JSON) of
+        {ok, Policy} ->  eval(Access, Policy);
+        E -> E
+    end;
 eval(Access, ?POLICY{version=V, statement=Stmts}) ->
     case V of
         undefined ->        aggregate_evaluation(Access, Stmts);
@@ -143,14 +153,20 @@ reqdata_to_access(RD, Target, ID) ->
        key    = Key
       }.
 
--spec policy_from_json(JSON::binary()) -> policy().
+-spec policy_from_json(JSON::binary()) -> {ok, policy()} | {error, term()}.
 policy_from_json(JSON)->
-    {struct, Pairs} = mochijson2:decode(JSON),
-    Version = proplists:get_value(<<"Version">>, Pairs),
-    ID      = proplists:get_value(<<"Id">>, Pairs),
-    Stmts0  = proplists:get_value(<<"Statement">>, Pairs),
-    Stmts = lists:map(fun({struct,S})->statement_from_pairs(S, #statement{}) end, Stmts0),
-    ?POLICY{id=ID, version=Version, statement=Stmts}.
+    case catch(mochijson2:decode(JSON)) of
+        {struct, Pairs} ->
+            Version = proplists:get_value(<<"Version">>, Pairs),
+            ID      = proplists:get_value(<<"Id">>, Pairs),
+            Stmts0  = proplists:get_value(<<"Statement">>, Pairs),
+            Stmts = lists:map(fun({struct,S})->statement_from_pairs(S, #statement{}) end, Stmts0),
+            {ok, ?POLICY{id=ID, version=Version, statement=Stmts}};
+        {error, _Reason} = E ->
+            E;
+        {'EXIT', {{case_clause, B}, _}} when is_binary(B) -> %% mochiweb failed to parse the JSON
+            {error, malformed_policy_json}
+    end.
 
 -spec policy_to_json_term(policy()) -> JSON::binary().
 policy_to_json_term( ?POLICY{ version = V,
@@ -298,6 +314,8 @@ eval_condition(Req, {AtomKey, Cond}) ->
         'DateGreaterThanEquals' -> not eval_date_lt(Req, Cond);
         dategteq                -> not eval_date_lt(Req, Cond);
 
+        'Bool' -> eval_bool(Req, Cond);
+
         'IpAddress' ->    eval_ip_address(Req, Cond);
         'NotIpAddress' -> not eval_ip_address(Req, Cond)
     end.
@@ -325,6 +343,16 @@ eval_numeric_lte(_, _) -> throw(not_supported).
 eval_date_eq(_, _) -> throw(not_supported).
 eval_date_lt(_, _) -> throw(not_supported).
 eval_date_lte(_, _) -> throw(not_supported).
+
+-spec eval_bool(#wm_reqdata{}, [{'aws:SecureTransport', boolean()}]) -> boolean().
+eval_bool(_Req, []) ->  undefined;
+
+eval_bool(#wm_reqdata{scheme=Scheme} = _Req, Conds) ->
+    {'aws:SecureTransport', Boolean} = lists:last(Conds),
+    case Scheme of
+        https -> Boolean;
+        http  -> not Boolean
+    end.
 
 -spec eval_ip_address(#wm_reqdata{}, [{'aws:SourceIp', binary()}]) -> boolean().
 eval_ip_address(Req, Conds) ->
@@ -551,7 +579,10 @@ condition_({<<"aws:CurrentTime">>, Bin}) when is_binary(Bin) ->
     {'aws:CurrentTime', Bin};
 condition_({<<"aws:EpochTime">>, Int}) when is_integer(Int) andalso Int >= 0 ->
     {'aws:EpochTime', Int};
-condition_({<<"aws:SecureTransport">>, Bool}) when is_atom(Bool) ->
+condition_({<<"aws:SecureTransport">>, MaybeBool}) ->
+    %% TODO: if this doesn't match return code like malformed condition -
+    %% while AWS never returns error in failing. Needs decision.
+    {ok, Bool} = parse_bool(MaybeBool),
     {'aws:SecureTransport', Bool};
 condition_({<<"aws:SourceIp">>, Bin}) when is_binary(Bin)->
     IP = parse_ip(Bin),
@@ -561,6 +592,39 @@ condition_({<<"aws:UserAgent">>, Bin}) -> % TODO: check string condition
 condition_({<<"aws:Referer">>, Bin}) -> % TODO: check string condition
     {'aws:Referer', Bin}.
 
+
+%% how S3 works:
+%% "true" => true
+%% "TRUE" => true
+%% "True" => true
+%% "tRUe" => true
+%% "true   " => false
+%% "trueboo" => false
+%% "true boo" => false
+%% "false" => false
+%% "falsetrue" => false
+%% "0" => false
+%% "1" => false
+%% "oopaa" => false
+%% [] => []
+%% ["true"] => true
+%% ["false", "true"] => [false,true]
+%% ["true", "false"] => [false,true]
+%% ["true", "false", "true"] => [false,true]
+%% [[[[[[["true"]]]]]]]  => true
+%% [[[[[[["true"], "false"]]]]]] => [false, true] => evaluaged as true
+%% To be honest, we can't imitate S3 any more.
+-spec parse_bool(term()) -> {ok, boolean()} | {error, notbool}.
+parse_bool(Bool) when is_boolean(Bool) -> {ok, Bool};
+parse_bool(<<"true">>)  -> {ok, true};
+parse_bool(<<"false">>) -> {ok, false};
+parse_bool(MaybeBool) when is_binary(MaybeBool) ->
+    case string:to_lower(binary_to_list(MaybeBool)) of
+        "true" ->  {ok, true};
+        "false" -> {ok, false};
+        _ ->       {error, notbool}
+    end;
+parse_bool(_) -> {error, notbool}.
 
 % TODO: IPv6
 % <<"10.1.2.3/24">> -> {{10,1,2,3}, {255,255,255,0}}
@@ -583,127 +647,3 @@ parse_ip(Str) when is_list(Str) ->
         {ok, IP} -> {IP, {255,255,255,255}}
     end;
 parse_ip(T) when is_tuple(T)-> T.
-
-% TODO: eqc tests
--ifdef(TEST).
-
-parse_ip_test_()->
-    [
-     ?_assertEqual({{192,0,0,1}, {255,0,0,0}}, parse_ip(<<"192.0.0.1/8">>)),
-     ?_assertEqual({{192,3,0,1}, {255,255,0,0}}, parse_ip(<<"192.3.1/16">>)),
-     ?_assertEqual(<<"1.2.3.4">>,    print_ip(parse_ip(<<"1.2.3.4">>))),
-     ?_assertEqual(<<"1.2.3.4/13">>, print_ip(parse_ip(<<"1.2.3.4/13">>)))
-    ].
-
-empty_statement_conversion_test()->
-    Policy = ?POLICY{id= <<"hello">>},
-    JsonPolicy = "{\"Version\":\"2008-10-17\",\"Id\":\"hello\",\"Statement\":[]}",
-    ?assertEqual(list_to_binary(JsonPolicy), policy_to_json_term(Policy)),
-    ?assertEqual(Policy, policy_from_json(list_to_binary(JsonPolicy))).
-
-sample_statement_0()->
-    <<"{"
-      "\"Id\":\"Policy1354069963875\","
-      "\"Statement\":["
-      "{"
-      "   \"Sid\":\"Stmt1354069958376\","
-      "   \"Action\":["
-      "     \"s3:CreateBucket\","
-      "     \"s3:DeleteBucket\","
-      "     \"s3:DeleteBucketPolicy\","
-      "     \"s3:DeleteObject\","
-      "     \"s3:GetBucketAcl\","
-      "     \"s3:GetBucketPolicy\","
-      "     \"s3:GetObject\","
-      "     \"s3:GetObjectAcl\","
-      "     \"s3:ListAllMyBuckets\","
-      "     \"s3:ListBucket\","
-      "     \"s3:PutBucketAcl\","
-      "     \"s3:PutBucketPolicy\","
-%      "     \"s3:PutObject\","
-      "     \"s3:PutObjectAcl\""
-      "   ],"
-      "   \"Condition\":{"
-      "     \"IpAddress\": { \"aws:SourceIp\":\"192.168.0.1/8\" }"
-      "   },"
-      "   \"Effect\": \"Allow\","
-      "   \"Resource\": \"arn:aws:s3:::test\","
-      "   \"Principal\": {"
-      "     \"AWS\": \"*\""
-      "   }"
-      "  }"
-      " ]"
-      "}" >>.
-
-sample_policy_check_test()->
-    JsonPolicy0 = sample_statement_0(),
-    Policy = policy_from_json(JsonPolicy0),
-    Access = #access_v1{method='GET', target=object, id="spam/ham/egg",
-                        req = #wm_reqdata{peer="192.168.0.1"}, bucket= <<"test">>},
-    ?assert(eval(Access, Policy)),
-    % io:format(standard_error, "~w~n", [Policy]),
-    Access2 = Access#access_v1{method='PUT', target=object},
-    ?assertEqual(undefined, eval(Access2, Policy)),
-    Access3 = Access#access_v1{req=#wm_reqdata{peer="1.1.1.1"}},
-    ?assert(not eval(Access3, Policy)).
-
-sample_conversion_test()->
-    JsonPolicy0 = sample_statement_0(),
-    Policy = policy_from_json(JsonPolicy0),
-    ?assertEqual(Policy, policy_from_json(policy_to_json_term(Policy))).
-
-eval_all_ip_addr_test() ->
-    ?assert(eval_all_ip_addr([{{192,168,0,1},{255,255,255,255}}], {192,168,0,1})),
-    ?assert(not eval_all_ip_addr([{{192,168,0,1},{255,255,255,255}}], {192,168,25,1})),
-    ?assert(eval_all_ip_addr([{{192,168,0,1},{255,255,255,0}}], {192,168,0,23})).
-
-eval_ip_address_test()->
-    ?assert(eval_ip_address(#wm_reqdata{peer = "23.23.23.23"},
-                            [garbage,{chiba, boo},"saitama",{'aws:SourceIp', {{23,23,0,0},{255,255,0,0}}}, hage])).
-
-eval_ip_addresses_test()->
-    ?assert(eval_ip_address(#wm_reqdata{peer = "23.23.23.23"},
-                            [{'aws:SourceIp', {{1,1,1,1}, {255,255,255,0}}},
-                             {'aws:SourceIp', {{23,23,0,0},{255,255,0,0}}}, hage])).
-
-eval_condition_test()->    
-    ?assert(eval_condition(#wm_reqdata{peer = "23.23.23.23"},
-                           {'IpAddress', [garbage,{chiba, boo},"saitama",{'aws:SourceIp', {{23,23,0,0},{255,255,0,0}}}, hage]})).
-
-eval_statement_test()->
-    ?assert(eval_statement(#access_v1{method='GET', target=object,
-                                      req=#wm_reqdata{peer="23.23.23.23"},
-                                      bucket= <<"testbokee">>},
-                           #statement{effect=allow,condition_block=
-                                          [{'IpAddress',
-                                            [{'aws:SourceIp', {{23,23,0,0},{255,255,0,0}}}]}],
-                                      action=['s3:GetObject'],
-                                      resource='*'
-                                     })).
-
-my_split_test_()->
-    [
-     ?_assertEqual(["foo", "bar"], my_split($:, "foo:bar", [], [])),
-     ?_assertEqual(["foo", "", "", "bar"], my_split($:, "foo:::bar", [], [])),
-     ?_assertEqual(["arn", "aws", "s3", "", "", "hoge"],
-                   my_split($:, "arn:aws:s3:::hoge", [], [])),
-     ?_assertEqual(["arn", "aws", "s3", "", "", "hoge/*"],
-                   my_split($:, "arn:aws:s3:::hoge/*", [], []))
-    ].
-
-parse_arn_test()->
-    List0 = [<<"arn:aws:s3:::hoge">>, <<"arn:aws:s3:::hoge/*">>],
-    {ok, ARNS0} = parse_arns(List0),
-    ?assertEqual(List0, print_arns(ARNS0)),
-
-    List1 = [<<"arn:aws:s3:ap-northeast-1:000000:hoge">>, <<"arn:aws:s3:::hoge/*">>],
-    {ok, ARNS1} = parse_arns(List1),
-    ?assertEqual(List1, print_arns(ARNS1)),
-
-    ?assertEqual({error, bad_arn}, parse_arns([<<"asdfiua;sfkjsd">>])),
-
-    List2 = <<"*">>,
-    {ok, ARNS2} = parse_arns(List2),
-    ?assertEqual(List2, print_arns(ARNS2)).
-
--endif.
