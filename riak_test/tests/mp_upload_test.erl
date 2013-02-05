@@ -50,7 +50,6 @@ confirm() ->
 
     %% List uploads and verify all 100 are returned
     UploadList1 = erlcloud_s3_multipart:list_uploads(?TEST_BUCKET, [], UserConfig),
-    lager:info("UploadList1: ~p", [UploadList1]),
     verify_upload_list(UploadList1, Count2),
 
     %% @TODO Use max-uploads option to request first 50 results
@@ -82,10 +81,18 @@ confirm() ->
     %% verify that 2 common prefixes are returned.
     Options2 = [{prefix, "0/"}, {delimiter, "/"}],
     UploadList3 = erlcloud_s3_multipart:list_uploads(?TEST_BUCKET, Options2, UserConfig),
-    CommonPrefixes = proplists:get_value(common_prefixes, UploadList3),
-    ?assert(lists:member([{prefix, Prefix1}], CommonPrefixes)),
-    ?assert(lists:member([{prefix, Prefix2}], CommonPrefixes)),
-    verify_upload_list(UploadList3, 48, 100),
+    CommonPrefixes1 = proplists:get_value(common_prefixes, UploadList3),
+    ?assert(lists:member([{prefix, Prefix1}], CommonPrefixes1)),
+    ?assert(lists:member([{prefix, Prefix2}], CommonPrefixes1)),
+    ?assertEqual([], proplists:get_value(uploads, UploadList3)),
+
+    %% Use `delimiter' to get the active uploads back and
+    %% verify that 2 common prefixes are returned.
+    Options3 = [{delimiter, "/"}],
+    UploadList4 = erlcloud_s3_multipart:list_uploads(?TEST_BUCKET, Options3, UserConfig),
+    CommonPrefixes2 = proplists:get_value(common_prefixes, UploadList4),
+    ?assert(lists:member([{prefix, "0/"}], CommonPrefixes2)),
+    verify_upload_list(UploadList4, Count2),
 
     %% @TODO Uncomment this block once support for `max-uploads' is done.
     %% Use `key-marker' and `upload-id-marker' to request
@@ -235,8 +242,8 @@ initiate_uploads(Bucket, Count, KeyPrefix, Config) ->
 verify_upload_list(UploadList, ExpectedCount) ->
     verify_upload_list(UploadList, ExpectedCount, ExpectedCount, 1).
 
-verify_upload_list(UploadList, ExpectedCount, TotalCount) ->
-    verify_upload_list(UploadList, ExpectedCount, TotalCount, 1).
+%% verify_upload_list(UploadList, ExpectedCount, TotalCount) ->
+%%     verify_upload_list(UploadList, ExpectedCount, TotalCount, 1).
 
 verify_upload_list(UploadList, ExpectedCount, TotalCount, 1)
   when ExpectedCount =:= TotalCount ->
@@ -278,4 +285,4 @@ abort_uploads(Bucket, Config) ->
          Key = proplists:get_value(key, Upload),
          UploadId = proplists:get_value(upload_id, Upload),
          erlcloud_s3_multipart:abort_upload(Bucket, Key, UploadId, Config)
-     end || Upload <- UploadList].
+     end || Upload <- proplists:get_value(uploads, UploadList)].
