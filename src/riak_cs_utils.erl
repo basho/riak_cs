@@ -233,7 +233,7 @@ delete_object(Bucket, Key, RiakcPid) ->
     StartTime = os:timestamp(),
     DoIt = fun() ->
                    maybe_gc_active_manifests(
-                     get_manifests(RiakcPid, Bucket, Key), StartTime, RiakcPid)
+                     get_manifests(RiakcPid, Bucket, Key), Bucket, Key, StartTime, RiakcPid)
            end,
     case DoIt() of
         updated ->
@@ -248,13 +248,13 @@ delete_object(Bucket, Key, RiakcPid) ->
     end.
 
 %% @private
-maybe_gc_active_manifests({ok, RiakObject, Manifests}, StartTime, RiakcPid) ->
-    R = riak_cs_gc:gc_active_manifests(Manifests, RiakObject, RiakcPid),
+maybe_gc_active_manifests({ok, RiakObject, Manifests}, Bucket, Key, StartTime, RiakcPid) ->
+    R = riak_cs_gc:gc_active_manifests(Manifests, RiakObject, Bucket, Key, RiakcPid),
     ok = riak_cs_stats:update_with_start(object_delete, StartTime),
     R;
-maybe_gc_active_manifests({error, notfound}, _StartTime, _RiakcPid) ->
+maybe_gc_active_manifests({error, notfound}, _Bucket, _Key, _StartTime, _RiakcPid) ->
     {ok, []};
-maybe_gc_active_manifests({error, _Reason}=Error, _StartTime, _RiakcPid) ->
+maybe_gc_active_manifests({error, _Reason}=Error, _Bucket, _Key, _StartTime, _RiakcPid) ->
     Error.
 
 

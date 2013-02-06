@@ -349,8 +349,9 @@ do_part_common(Op, Bucket, Key, UploadId, {_,_,CallerKeyId} = _Caller, Props, Ri
     end.
 
 do_part_common2(abort, RiakcPid, M, Obj, _Mpm, _Props) ->
+        {Bucket, Key} = M?MANIFEST.bkey,
         case riak_cs_gc:gc_specific_manifests(
-               [M?MANIFEST.uuid], Obj, RiakcPid) of
+               [M?MANIFEST.uuid], Obj, Bucket, Key, RiakcPid) of
             {ok, _NewObj} ->
                 ok;
             Else3 ->

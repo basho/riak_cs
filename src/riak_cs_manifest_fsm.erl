@@ -169,12 +169,15 @@ waiting_update_command({update_manifests, WrappedManifests}, State=#state{riakc_
     _Res = get_and_update(RiakcPid, WrappedManifests, Bucket, Key),
     {next_state, waiting_update_command, State};
 waiting_update_command({update_manifests, WrappedManifests}, State=#state{riakc_pid=RiakcPid,
+                                                                 bucket=Bucket,
+                                                                 key=Key,
                                                                  riak_object=PreviousRiakObject,
                                                                  manifests=PreviousManifests}) ->
 
 
     _ = update_from_previous_read(RiakcPid,
                                   PreviousRiakObject,
+                                  Bucket, Key,
                                   PreviousManifests,
                                   WrappedManifests),
     {next_state, waiting_update_command, State#state{riak_object=undefined, manifests=undefined}}.
@@ -209,10 +212,13 @@ waiting_update_command({update_manifests_with_confirmation, WrappedManifests}, _
     {reply, Reply, waiting_update_command, State};
 waiting_update_command({update_manifests_with_confirmation, WrappedManifests}, _From,
                                             State=#state{riakc_pid=RiakcPid,
+                                            bucket=Bucket,
+                                            key=Key,
                                             riak_object=PreviousRiakObject,
                                             manifests=PreviousManifests}) ->
     Reply = update_from_previous_read(RiakcPid, PreviousRiakObject,
-                                  PreviousManifests, WrappedManifests),
+                                      Bucket, Key,
+                                      PreviousManifests, WrappedManifests),
 
     {reply, Reply, waiting_update_command, State#state{riak_object=undefined,
                                                        manifests=undefined}}.
@@ -302,6 +308,7 @@ get_and_update(RiakcPid, WrappedManifests, Bucket, Key) ->
                 OverwrittenUUIDs ->
                     riak_cs_gc:gc_specific_manifests(OverwrittenUUIDs,
                                                      ObjectToWrite,
+                                                     Bucket, Key,
                                                      RiakcPid)
             end,
             {Result, NewRiakObject, Manifests};
@@ -316,17 +323,17 @@ get_and_update(RiakcPid, WrappedManifests, Bucket, Key) ->
 
 
 -spec update_from_previous_read(pid(), riakc_obj:riakc_obj(),
-                                    orddict:orddict(), orddict:orddict()) ->
+                                binary(), binary(),
+                                orddict:orddict(), orddict:orddict()) ->
     ok | {error, term()}.
-update_from_previous_read(RiakcPid, RiakObject,
-                              PreviousManifests, NewManifests) ->
+update_from_previous_read(RiakcPid, RiakObject, Bucket, Key,
+                          PreviousManifests, NewManifests) ->
     Resolved = riak_cs_manifest_resolution:resolve([PreviousManifests,
             NewManifests]),
     NewRiakObject0 = riakc_obj:update_value(RiakObject,
         term_to_binary(Resolved)),
-    NewRiakObject = update_md_with_multipart_2i(
-                      NewRiakObject0, Resolved,
-                      riakc_obj:bucket(RiakObject), riakc_obj:key(RiakObject)),
+    NewRiakObject = update_md_with_multipart_2i(NewRiakObject0, Resolved,
+                                                Bucket, Key),
     %% TODO:
     %% currently we don't do
     %% anything to make sure
