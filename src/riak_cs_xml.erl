@@ -76,8 +76,8 @@ owner_content({OwnerName, OwnerId}) ->
 list_objects_response_to_xml(Resp) ->
     KeyContents = [key_content_to_xml(Content) ||
                    Content <- (Resp?LORESP.contents)],
-    %% CommonPrefixes = common_prefixes_to_xml(Resp?LORESP.common_prefixes),
-    CommonPrefixes = [],
+    CommonPrefixes = [common_prefix_to_xml(Prefix) ||
+                         Prefix <- Resp?LORESP.common_prefixes],
     Contents = [make_external_node('Name', Resp?LORESP.name),
                 make_external_node('Prefix', Resp?LORESP.prefix),
                 make_external_node('Marker', Resp?LORESP.marker),
@@ -96,6 +96,10 @@ key_content_to_xml(KeyContent) ->
          make_external_node('StorageClass', KeyContent?LOKC.storage_class),
          make_owner(KeyContent?LOKC.owner)],
     make_internal_node('Contents', Contents).
+
+common_prefix_to_xml(CommonPrefix) ->
+    make_internal_node('CommonPrefixes',
+                       [make_external_node('Prefix', CommonPrefix)]).
 
 -spec make_internal_node(atom(), term()) -> internal_node().
 make_internal_node(Name, Content) ->

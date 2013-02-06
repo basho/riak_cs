@@ -94,12 +94,6 @@ to_xml(RD, Ctx=#context{start_time=StartTime,
             riak_cs_dtrace:dt_bucket_return(?MODULE, <<"list_keys">>, [Code], [riak_cs_wm_utils:extract_name(User), Bucket]),
             Res;
         [_BucketRecord] ->
-            Marker = case wrq:get_qs_value("marker", RD) of
-                         undefined ->
-                             undefined;
-                         M ->
-                             list_to_binary(M)
-                     end,
             MaxKeys = case wrq:get_qs_value("max-keys", RD) of
                           undefined ->
                               ?DEFAULT_LIST_OBJECTS_MAX_KEYS;
@@ -107,8 +101,9 @@ to_xml(RD, Ctx=#context{start_time=StartTime,
                               erlang:min(list_to_integer(StringKeys),
                                          ?DEFAULT_LIST_OBJECTS_MAX_KEYS)
                       end,
-            Options = [{marker, Marker}],
-            ListKeysRequest = riak_cs_list_objects:new_request(Bucket, MaxKeys,
+            Options = get_options(RD),
+            ListKeysRequest = riak_cs_list_objects:new_request(Bucket,
+                                                               MaxKeys,
                                                                Options),
             BinPid = riak_cs_utils:pid_to_binary(self()),
             CacheKey = << BinPid/binary, <<":">>/binary, Bucket/binary >>,
@@ -132,3 +127,14 @@ to_xml(RD, Ctx=#context{start_time=StartTime,
                     Response
             end
     end.
+
+-spec get_options(#wm_reqdata{}) -> [{atom(), binary()}].
+get_options(RD) ->
+    [get_option(list_to_atom(Opt), wrq:get_qs_value(Opt, RD)) ||
+        Opt <- ["delimiter", "marker", "prefix"]].
+
+-spec get_option(#wm_reqdata{}, 'undefined' | string()) -> {atom(), binary()}.
+get_option(Option, undefined) ->
+    {Option, undefined};
+get_option(Option, Value) ->
+    {Option, list_to_binary(Value)}.

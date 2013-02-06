@@ -107,7 +107,8 @@
                 %% whether or not to bypass the cache entirely
                 use_cache :: boolean(),
                 %% Key to use to check for cached results from key listing
-                cache_key :: term()}).
+                cache_key :: term(),
+                common_prefixes=ordsets:new() :: list()}).
 
 %% some useful shared types
 
@@ -128,6 +129,14 @@
                         {ReqID :: non_neg_integer(),
                          {mapred, Phase :: non_neg_integer(), list()}} |
                         {ReqID :: non_neg_integer, {error, term()}}.
+
+-type key_and_manifest() :: {binary(), lfs_manifest()}.
+-type manifests_and_prefixes() :: {list(key_and_manifest()), ordsets:ordset()}.
+
+-type tagged_item() :: {prefix, binary()} |
+                       {manifest, {binary(), lfs_manifest()}}.
+
+-type tagged_item_list() :: list(tagged_item()).
 
 %%%===================================================================
 %%% API
@@ -352,15 +361,118 @@ handle_keys_received(Keys, State=#state{key_buffer=PrevKeyBuffer}) ->
     NewState = State#state{key_buffer=[lists:sort(Keys) | PrevKeyBuffer]},
     {next_state, waiting_list_keys, NewState}.
 
+-spec manifests_and_prefix_slice(manifests_and_prefixes(), non_neg_integer()) ->
+    tagged_item_list().
+manifests_and_prefix_slice(ManifestsAndPrefixes, MaxObjects) ->
+    TaggedList = tagged_manifest_and_prefix(ManifestsAndPrefixes),
+    Sorted = lists:sort(fun tagged_sort_fun/2, TaggedList),
+    lists:sublist(Sorted, MaxObjects).
+
+-spec tagged_sort_fun(tagged_item(), tagged_item()) ->
+    boolean().
+tagged_sort_fun(A, B) ->
+    AKey = key_from_tag(A),
+    BKey = key_from_tag(B),
+    AKey =< BKey.
+
+-spec key_from_tag(tagged_item()) -> binary().
+key_from_tag({manifest, {Key, _M}}) ->
+    Key;
+key_from_tag({prefix, Key}) ->
+    Key.
+
+-spec tagged_manifest_and_prefix(manifests_and_prefixes()) ->
+    tagged_item_list().
+tagged_manifest_and_prefix({Manifests, Prefixes}) ->
+    tagged_manifest_list(Manifests) ++ tagged_prefix_list(Prefixes).
+
+-spec tagged_manifest_list(list(key_and_manifest())) ->
+    list({manifest, key_and_manifest()}).
+tagged_manifest_list(KeyAndManifestList) ->
+    [{manifest, M} || M <- KeyAndManifestList].
+
+-spec tagged_prefix_list(list(binary())) ->
+    list({prefix, binary()}).
+tagged_prefix_list(Prefixes) ->
+    [{prefix, P} || P <- ordsets:to_list(Prefixes)].
+
+-spec untagged_manifest_and_prefix(tagged_item_list()) ->
+    manifests_and_prefixes().
+untagged_manifest_and_prefix(TaggedInput) ->
+    Pred = fun({manifest, _}) -> true;
+              (_Else) -> false end,
+    {A, B} = lists:partition(Pred, TaggedInput),
+    {[element(2, M) || M <- A],
+     [element(2, P) || P <- B]}.
+
+-spec manifests_and_prefix_length(manifests_and_prefixes()) -> non_neg_integer().
+manifests_and_prefix_length({KeyAndManifestList, Prefixes}) ->
+    length(KeyAndManifestList) + ordsets:size(Prefixes).
+
+-spec filter_prefix_keys(KeyAndManifestList :: list(manifests_and_prefixes()),
+                         CommonPrefixes :: ordsets:ordset(),
+                         list_object_request()) ->
+    manifests_and_prefixes().
+filter_prefix_keys(KeyAndManifestList, CommonPrefixes, ?LOREQ{prefix=undefined,
+                                                              delimiter=undefined}) ->
+    {KeyAndManifestList, CommonPrefixes};
+filter_prefix_keys(KeyAndManifestList, CommonPrefixes, ?LOREQ{prefix=Prefix,
+                                                              delimiter=Delimiter}) ->
+    PrefixFilter =
+        fun(KeyAndManifest, Acc) ->
+                prefix_filter(KeyAndManifest, Acc, Prefix, Delimiter)
+        end,
+    lists:foldl(PrefixFilter, {[], CommonPrefixes}, KeyAndManifestList).
+
+prefix_filter({Key, _Manifest}=KeyAndManifest, Acc, undefined, Delimiter) ->
+    Group = extract_group(Key, Delimiter),
+    update_keys_and_prefixes(Acc, KeyAndManifest, <<>>, 0, Group);
+prefix_filter({Key, _Manifest}=KeyAndManifest,
+              {KeyAndManifestList, Prefixes}=Acc, Prefix, undefined) ->
+    PrefixLen = byte_size(Prefix),
+    case Key of
+        << Prefix:PrefixLen/binary, _/binary >> ->
+            {[KeyAndManifest | KeyAndManifestList], Prefixes};
+        _ ->
+            Acc
+    end;
+prefix_filter({Key, _Manifest}=KeyAndManifest,
+              {_KeyAndManifestList, _Prefixes}=Acc, Prefix, Delimiter) ->
+    PrefixLen = byte_size(Prefix),
+    case Key of
+        << Prefix:PrefixLen/binary, Rest/binary >> ->
+            Group = extract_group(Rest, Delimiter),
+            update_keys_and_prefixes(Acc, KeyAndManifest, Prefix, PrefixLen, Group);
+        _ ->
+            Acc
+    end.
+
+extract_group(Key, Delimiter) ->
+    case binary:match(Key, [Delimiter]) of
+        nomatch ->
+            nomatch;
+        {Pos, Len} ->
+            binary:part(Key, {0, Pos+Len})
+    end.
+
+update_keys_and_prefixes({KeyAndManifestList, Prefixes},
+                         KeyAndManifest, _, _, nomatch) ->
+    {[KeyAndManifest | KeyAndManifestList], Prefixes};
+update_keys_and_prefixes({KeyAndManifestList, Prefixes},
+                         _, Prefix, PrefixLen, Group) ->
+    NewPrefix = << Prefix:PrefixLen/binary, Group/binary >>,
+    {KeyAndManifestList, ordsets:add_element(NewPrefix, Prefixes)}.
 
 %% Map Reduce stuff
 %%--------------------------------------------------------------------
 
 -spec maybe_map_reduce(state()) -> fsm_state_return().
 maybe_map_reduce(State=#state{object_buffer=ObjectBuffer,
+                              common_prefixes=CommonPrefixes,
                               req=Request,
                               num_considerable_keys=TotalCandidateKeys}) ->
-    Enough = enough_results(ObjectBuffer, Request, TotalCandidateKeys),
+    ManifestsAndPrefixes = {ObjectBuffer, CommonPrefixes},
+    Enough = enough_results(ManifestsAndPrefixes, Request, TotalCandidateKeys),
     handle_enough_results(Enough, State).
 
 handle_enough_results(true, State) ->
@@ -397,25 +509,20 @@ prepare_state_for_mapred(State=#state{req=Request,
                                 KeyMultiplier),
     State#state{mr_requests=PrevRequests ++ [NewReq]}.
 
--spec make_response(list_object_request(), list()) ->
+-spec make_response(list_object_request(), list(), list()) ->
     list_object_response().
-make_response(Request=?LOREQ{max_keys=NumKeysRequested}, ObjectBuffer) ->
-    Contents = response_contents_from_object_buffer(ObjectBuffer,
-                                                    NumKeysRequested),
-    IsTruncated = length(ObjectBuffer) > NumKeysRequested,
-    %% TODO: hardcoded, fix me!
-    CommonPrefixes = [],
-    riak_cs_list_objects:new_response(Request, IsTruncated, CommonPrefixes,
-                                      Contents).
+make_response(Request=?LOREQ{max_keys=NumKeysRequested}, ObjectBuffer, CommonPrefixes) ->
+    ObjectPrefixTuple = {ObjectBuffer, CommonPrefixes},
+    NumObjects = manifests_and_prefix_length(ObjectPrefixTuple),
+    IsTruncated = NumObjects > NumKeysRequested,
+    SlicedTaggedItems = manifests_and_prefix_slice(ObjectPrefixTuple,
+                                                   NumKeysRequested),
+    {NewManis, NewPrefixes} = untagged_manifest_and_prefix(SlicedTaggedItems),
+    KeyContents = lists:map(fun response_transformer/1, NewManis),
+    riak_cs_list_objects:new_response(Request, IsTruncated, NewPrefixes,
+                                      KeyContents).
 
--spec response_contents_from_object_buffer(list(), pos_integer()) ->
-    list(list_objects_key_content()).
-response_contents_from_object_buffer(Buffer, MaxNumObjects) ->
-    SortedBuffer = lists:keysort(1, Buffer),
-    LimitedBuffer = lists:sublist(SortedBuffer, MaxNumObjects),
-    lists:map(fun response_transformer/1, LimitedBuffer).
-
-response_transformer({_Key, {ok, Manifest}}) ->
+response_transformer({_Key, Manifest}) ->
     riak_cs_list_objects:manifest_to_keycontent(Manifest).
 
 -spec next_mr_query_spec(list(),
@@ -446,10 +553,24 @@ next_keys({StartIdx, EndIdx}, Keys) ->
 
 -spec handle_mapred_results(list(), state()) ->
     fsm_state_return().
-handle_mapred_results(Results, State=#state{object_buffer=Buffer}) ->
-    NewBuffer = update_buffer(Results, Buffer),
-    NewState = State#state{object_buffer=NewBuffer},
+handle_mapred_results(Results, State=#state{object_buffer=Buffer,
+                                            common_prefixes=OldPrefixes,
+                                            req=Request}) ->
+    CleanedResults = lists:map(fun clean_key_and_manifest/1, Results),
+    {NoPrefix, Prefixes} = filter_prefix_keys(CleanedResults, OldPrefixes, Request),
+    NewBuffer = update_buffer(NoPrefix, Buffer),
+    NewState = State#state{object_buffer=NewBuffer,
+                           common_prefixes=Prefixes},
     {next_state, waiting_map_reduce, NewState}.
+
+%% @doc Results come back (for historical reasons...?) like this
+%% from the map/reduce call. Rather than change the m/r code
+%% (which would make rolling upgrades more difficult), we just
+%% transform the values of the list here.
+-spec clean_key_and_manifest({binary(), {ok, lfs_manifest()}}) ->
+    {binary(), lfs_manifest()}.
+clean_key_and_manifest({Key, {ok, Manifest}}) ->
+    {Key, Manifest}.
 
 -spec update_buffer(list(), list()) -> list().
 update_buffer(Results, Buffer) ->
@@ -494,10 +615,12 @@ handle_map_reduce_call({ok, ReqID}, State) ->
 handle_map_reduce_call({error, Reason}, State) ->
     {stop, Reason, State}.
 
--spec enough_results(list(), list_object_request(), non_neg_integer()) ->
+-spec enough_results(manifests_and_prefixes(),
+                     list_object_request(),
+                     non_neg_integer()) ->
     boolean().
-enough_results(Results, ?LOREQ{max_keys=MaxKeysRequested}, TotalCandidateKeys) ->
-    ResultsLength = length(Results),
+enough_results(ManifestsAndPrefixes, ?LOREQ{max_keys=MaxKeysRequested}, TotalCandidateKeys) ->
+    ResultsLength = manifests_and_prefix_length(ManifestsAndPrefixes),
     %% we have enough results if one of two things is true:
     %% 1. we have more results than requested
     %% 2. there are less keys than were requested even possible
@@ -528,14 +651,16 @@ more_results_possible(_Request, _TotalKeys) ->
 -spec have_enough_results(state()) -> fsm_state_return().
 have_enough_results(State=#state{reply_ref=undefined,
                                  req=Request,
-                                 object_buffer=ObjectBuffer}) ->
-    Response = make_response(Request, ObjectBuffer),
+                                 object_buffer=ObjectBuffer,
+                                 common_prefixes=CommonPrefixes}) ->
+    Response = make_response(Request, ObjectBuffer, CommonPrefixes),
     NewStateData = State#state{response=Response},
     {next_state, done, NewStateData, timer:seconds(60)};
 have_enough_results(State=#state{reply_ref=ReplyPid,
                                  req=Request,
-                                 object_buffer=ObjectBuffer}) ->
-    Response = make_response(Request, ObjectBuffer),
+                                 object_buffer=ObjectBuffer,
+                                 common_prefixes=CommonPrefixes}) ->
+    Response = make_response(Request, ObjectBuffer, CommonPrefixes),
     _ = gen_fsm:reply(ReplyPid, {ok, Response}),
     NewStateData = State#state{response=Response},
     {stop, normal, NewStateData}.
@@ -544,11 +669,46 @@ have_enough_results(State=#state{reply_ref=ReplyPid,
                                  list(binary()),
                                  non_neg_integer()) ->
     list(binary()).
-filtered_keys_from_request(?LOREQ{marker=undefined}, KeyList, _KeyListLength) ->
+filtered_keys_from_request(?LOREQ{marker=Marker,
+                                  prefix=Prefix}, KeyList, KeyListLength) ->
+    AfterMarker = maybe_filter_marker(Marker, KeyList, KeyListLength),
+    maybe_filter_prefix(Prefix, AfterMarker).
+
+-spec maybe_filter_marker(undefined | binary(),
+                          list(binary()),
+                          non_neg_integer()) ->
+    list(binary()).
+maybe_filter_marker(undefined, KeyList, _KeyListLength) ->
     KeyList;
-filtered_keys_from_request(?LOREQ{marker=Marker}, KeyList, KeyListLength) ->
+maybe_filter_marker(Marker, KeyList, KeyListLength) ->
+    filter_marker(Marker, KeyList, KeyListLength).
+
+-spec maybe_filter_prefix(undefined | binary(),
+                          list(binary())) ->
+    list(binary()).
+maybe_filter_prefix(undefined, KeyList) ->
+    KeyList;
+maybe_filter_prefix(Prefix, KeyList) ->
+    filter_prefix(Prefix, KeyList).
+
+filter_marker(Marker, KeyList, KeyListLength) ->
     MarkerIndex = index_of_first_greater_element(KeyList, Marker),
     lists:sublist(KeyList, MarkerIndex, KeyListLength).
+
+filter_prefix(Prefix, KeyList) ->
+    PrefixFun = build_prefix_fun(Prefix),
+    lists:filter(PrefixFun, KeyList).
+
+build_prefix_fun(Prefix) ->
+    PrefixLen = byte_size(Prefix),
+    fun(Elem) ->
+            case Elem of
+                <<Prefix:PrefixLen/binary, _/binary>> ->
+                    true;
+                _Else ->
+                    false
+            end
+    end.
 
 %% only works for positive numbers
 -spec round_up(float()) -> integer().
