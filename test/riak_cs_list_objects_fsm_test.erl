@@ -19,19 +19,20 @@ filter_prefix_keys_test_() ->
     [
         %% simple test
         test_creator(riak_cs_list_objects:new_request(<<"bucket">>),
-                     {keys(), []}),
+                     {keys_and_manifests(), []}),
 
         %% simple prefix
         test_creator(riak_cs_list_objects:new_request(<<"bucket">>,
                                                       1000,
                                                       [{prefix, <<"a">>}]),
-                     {[<<"a">>], []}),
+                     {keys_and_manifests([<<"a">>]), []}),
 
         %% simple prefix 2
         test_creator(riak_cs_list_objects:new_request(<<"bucket">>,
                                                       1000,
                                                       [{prefix, <<"photos/">>}]),
-                     {lists:sublist(keys(), 4, length(keys())), []}),
+                     {lists:sublist(keys_and_manifests(), 4,
+                      length(keys_and_manifests())), []}),
 
         %% prefix and delimiter
         test_creator(riak_cs_list_objects:new_request(<<"bucket">>,
@@ -53,13 +54,14 @@ filter_prefix_keys_test_() ->
         test_creator(riak_cs_list_objects:new_request(<<"bucket">>,
                                                       1000,
                                                       [{delimiter, <<"/">>}]),
-                     {[<<"a">>, <<"b">>, <<"c">>], [<<"photos/">>]})
+                     {keys_and_manifests([<<"a">>, <<"b">>, <<"c">>]),
+                      [<<"photos/">>]})
     ].
 
 %% Test creator
 
 test_creator(Request, Expected) ->
-    test_creator(keys(), Request, Expected).
+    test_creator(keys_and_manifests(), Request, Expected).
 
 test_creator(Keys, Request, Expected) ->
     fun () ->
@@ -74,6 +76,12 @@ test_creator(Keys, Request, Expected) ->
 two_tuple_sort({A, B}) ->
     {lists:sort(A),
      lists:sort(B)}.
+
+keys_and_manifests() ->
+    keys_and_manifests(keys()).
+
+keys_and_manifests(Items) ->
+    [{K, fake_manifest} || K <- Items].
 
 keys() ->
     [<<"a">>, <<"b">>, <<"c">>, <<"photos/01/foo">>, <<"photos/01/bar">>,
