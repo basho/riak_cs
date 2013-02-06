@@ -57,10 +57,9 @@ convert_to_additional_headers(RD, AccessToken) ->
     %% If we run into any issue,
     %% we pass RD to CS standard authentication, which will throw a key error
     try
-        UserId= resolveUserId(AccessToken),
-        ClientId= resolveClientId(AccessToken),
-        case resolveScope(AccessToken) of
-            "s3" ->
+        {ClientId, UserId, Scope} = resolve(AccessToken),
+        case Scope of
+            "S3" ->
                 RequestHeadersTemp = mochiweb_headers:insert("user_id", UserId, wrq:req_headers(RD)),
                 NewRequestHeaders = mochiweb_headers:insert("client_id", ClientId, RequestHeadersTemp),
                 RD#wm_reqdata{req_headers=NewRequestHeaders};
@@ -68,45 +67,45 @@ convert_to_additional_headers(RD, AccessToken) ->
                 RD
         end
     catch
-        _Exception:_Reason ->
+        Exception:Reason ->
+            io:format("~p ~p~n", [Exception, Reason]),
             RD
     end.
 
-resolveUserId(AccessToken) ->
-    XMLResponse = auth_request("validate", AccessToken),
-    {XML, _Rest} = xmerl_scan:string(XMLResponse),
-    [ #xmlText{value=UserId} ] = xmerl_xpath:string("/user/uid/text()", XML),
-    UserId.
+resolve(AccessToken) ->
+    JSONResponse = auth_request(AccessToken),
+    {struct, Response} = mochijson2:decode(JSONResponse),
+    Entries = proplists:get_value(<<"entry">>, Response),
+    {ClientId, UserId, Scope} = entries_to_items(Entries),
+    io:format("Result ~p ~p ~p~n", [ClientId, UserId, Scope]),
+    {ClientId, UserId, Scope}.
 
-resolveClientId(AccessToken) ->
-    XMLResponse = auth_request("application", AccessToken),
-    {XML, _Rest} = xmerl_scan:string(XMLResponse),
-    [ #xmlText{value=ClientId} ] = xmerl_xpath:string("/application/info/client-id/text()", XML),
-    ClientId.
 
-resolveScope(AccessToken) ->
-    XMLResponse = auth_request("accesstoken", AccessToken ++ "&clientrequestPath=%2Fa1%2Fs3%2F"),
-    {XML, _Rest} = xmerl_scan:string(XMLResponse),
-    [ #xmlText{value=Rank} ] = xmerl_xpath:string("/access-token/scope/text()", XML),
-    Rank.
+entries_to_items(Entries) ->
+    lists:foldl(fun entry_to_item/2, {client_id, user_id, scope}, Entries).
 
+entry_to_item({struct,[{<<"name">>,<<"consumer_id">>}, {<<"value">>, Value}]}, {ClientId, _UserId, Scope}) ->
+    {ClientId, binary:bin_to_list(Value), Scope};
+entry_to_item({struct,[{<<"name">>,<<"client_application_id">>}, {<<"value">>, Value}]}, {_ClientId, UserId, Scope}) ->
+    {binary:bin_to_list(Value), UserId, Scope};
+entry_to_item({struct,[{<<"name">>,<<"scopes">>}, {<<"value">>, _Value}]}, {ClientId, UserId, _Scope}) ->
+    {ClientId, UserId, "S3"};
+entry_to_item(_, Result) -> Result.
 
 %% Example:
-%% curl -v -X GET -H "Authorization: Basic dGhpc2lzU0VDUkVUOlRvdGFsbHlTM2NyM3Q=" "https://auth.tfoundry.com/apigee/validate?token=8b8c07dcaaee58027def7df4ec1ea729"
+%% curl -v -X GET -H "Authorization: Basic bWFyY2VsQGJhc2hvLmNvbTpaaWd6YWcxMjM=" "http://75.62.61.233:8080/v1/organizations/prod/maps/8od2ssonlbetz0xyhtbsrf9ifwnm00oh"
 
-
-auth_request(What, AccessToken) ->
-    RequestHeaders = [{"Authorization", "Basic dGhpc2lzU0VDUkVUOlRvdGFsbHlTM2NyM3Q="}],
+auth_request(AccessToken) ->
+    RequestHeaders = [{"Authorization", "Basic bWFyY2VsQGJhc2hvLmNvbTpaaWd6YWcxMjM="}],
     RequestURI = lists:flatten([
-        "https",
+        "http",
         "://",
-        "auth.tfoundry.com",
-        "/apigee/",
-        What,
-        "?token=",
+        "75.62.61.233:8080",
+        "/v1/organizations/prod/maps/",
         AccessToken
     ]),
     Response = httpc:request(get, {RequestURI, RequestHeaders}, [], []),
+    %%io:format("~p ~n", [Response]),
     case Response of
         {ok, {{_HTTPVer, OKStatus, _StatusLine}, _ResponseHeaders, ResponseBody}}
           when OKStatus >= 200, OKStatus =< 299 ->
