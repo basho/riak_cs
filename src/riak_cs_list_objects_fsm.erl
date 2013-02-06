@@ -401,9 +401,7 @@ tagged_prefix_list(Prefixes) ->
 untagged_manifest_and_prefix(TaggedInput) ->
     Pred = fun({manifest, _}) -> true;
               (_Else) -> false end,
-    NotPred = fun(A) -> not Pred(A) end,
-    {A, B} = {lists:filter(Pred, TaggedInput),
-              lists:filter(NotPred, TaggedInput)},
+    {A, B} = lists:partition(Pred, TaggedInput),
     {[element(2, M) || M <- A],
      [element(2, P) || P <- B]}.
 
