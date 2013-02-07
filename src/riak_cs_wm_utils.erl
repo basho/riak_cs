@@ -327,7 +327,8 @@ to_rfc_1123(Date) when is_list(Date) ->
             iso_8601_to_rfc_1123(Date)
     end.
 
-%% @doc Convert an ISO 8601 date to RFC 1123 date
+%% @doc Convert an ISO 8601 date to RFC 1123 date. This function
+%% assumes the input time is already in GMT time.
 -spec iso_8601_to_rfc_1123(binary() | string()) -> string().
 iso_8601_to_rfc_1123(Date) when is_list(Date) ->
     iso_8601_to_rfc_1123(iolist_to_binary(Date));
@@ -337,8 +338,9 @@ iso_8601_to_rfc_1123(Date) when is_binary(Date) ->
       _T:1/binary,
       Hr:2/binary, _:1/binary, Mn:2/binary, _:1/binary, Sc:2/binary,
       _/binary>> = Date,
-    httpd_util:rfc1123_date({{b2i(Yr), b2i(Mo), b2i(Da)},
-                             {b2i(Hr), b2i(Mn), b2i(Sc)}}).
+    httpd_util:rfc1123_date(
+      erlang:universaltime_to_localtime({{b2i(Yr), b2i(Mo), b2i(Da)},
+                                         {b2i(Hr), b2i(Mn), b2i(Sc)}})).
 
 extract_name(User) when is_list(User) ->
     User;
