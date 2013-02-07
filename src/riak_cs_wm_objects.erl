@@ -81,7 +81,6 @@ to_xml(RD, Ctx=#context{start_time=StartTime,
                         bucket=Bucket,
                         requested_perm='READ',
                         riakc_pid=RiakPid}) ->
-    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"to_xml">>, [], [riak_cs_wm_utils:extract_name(User), Bucket]),
     riak_cs_dtrace:dt_bucket_entry(?MODULE, <<"list_keys">>, [], [riak_cs_wm_utils:extract_name(User), Bucket]),
     StrBucket = binary_to_list(Bucket),
     case [B || B <- riak_cs_utils:get_buckets(User),
@@ -90,7 +89,6 @@ to_xml(RD, Ctx=#context{start_time=StartTime,
             CodeName = no_such_bucket,
             Res = riak_cs_s3_response:api_error(CodeName, RD, Ctx),
             Code = riak_cs_s3_response:status_code(CodeName),
-            riak_cs_dtrace:dt_wm_return(?MODULE, <<"to_xml">>, [Code], [riak_cs_wm_utils:extract_name(User), Bucket]),
             riak_cs_dtrace:dt_bucket_return(?MODULE, <<"list_keys">>, [Code], [riak_cs_wm_utils:extract_name(User), Bucket]),
             Res;
         [_BucketRecord] ->
@@ -116,13 +114,11 @@ to_xml(RD, Ctx=#context{start_time=StartTime,
                     Response = riak_cs_xml:to_xml(ListObjectsResponse),
                     ok = riak_cs_stats:update_with_start(bucket_list_keys,
                                                          StartTime),
-                    riak_cs_dtrace:dt_wm_return(?MODULE, <<"to_xml">>, [200], [riak_cs_wm_utils:extract_name(User), Bucket]),
                     riak_cs_dtrace:dt_bucket_return(?MODULE, <<"list_keys">>, [200], [riak_cs_wm_utils:extract_name(User), Bucket]),
                     riak_cs_s3_response:respond(200, Response, RD, Ctx);
                 {error, Reason} ->
                     Code = riak_cs_s3_response:status_code(Reason),
                     Response = riak_cs_s3_response:api_error(Reason, RD, Ctx),
-                    riak_cs_dtrace:dt_wm_return(?MODULE, <<"to_xml">>, [Code], [riak_cs_wm_utils:extract_name(User), Bucket]),
                     riak_cs_dtrace:dt_bucket_return(?MODULE, <<"list_keys">>, [Code], [riak_cs_wm_utils:extract_name(User), Bucket]),
                     Response
             end
