@@ -55,7 +55,7 @@ acl_to_xml(Acl) ->
     XmlDoc = [make_internal_node('AccessControlPolicy', Content)],
     export_xml(XmlDoc).
 
--spec acl_grants(?ACL{} | #acl_v1{}) -> {string(), string()}.
+-spec acl_grants(?ACL{} | #acl_v1{}) -> [acl_grant()].
 acl_grants(?ACL{grants=Grants}) ->
     Grants;
 acl_grants(#acl_v1{grants=Grants}) ->
@@ -97,6 +97,7 @@ key_content_to_xml(KeyContent) ->
          make_owner(KeyContent?LOKC.owner)],
     make_internal_node('Contents', Contents).
 
+-spec common_prefix_to_xml(binary()) -> internal_node().
 common_prefix_to_xml(CommonPrefix) ->
     make_internal_node('CommonPrefixes',
                        [make_external_node('Prefix', CommonPrefix)]).
@@ -121,7 +122,7 @@ make_grants(Grantees) ->
     make_grants(Grantees, []).
 
 %% @doc Assemble the xml for the set of grantees for an acl.
--spec make_grants([acl_grant()], [internal_node()]) -> [internal_node()].
+-spec make_grants([acl_grant()], [[internal_node()]]) -> [internal_node()].
 make_grants([], Acc) ->
     lists:flatten(Acc);
 make_grants([{{GranteeName, GranteeId}, Perms} | RestGrantees], Acc) ->

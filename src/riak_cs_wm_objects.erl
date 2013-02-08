@@ -88,12 +88,12 @@ to_xml(RD, Ctx=#context{start_time=StartTime,
             end
     end.
 
--spec get_options(#wm_reqdata{}) -> [{atom(), binary()}].
+-spec get_options(#wm_reqdata{}) -> [{atom(), 'undefined' | binary()}].
 get_options(RD) ->
     [get_option(list_to_atom(Opt), wrq:get_qs_value(Opt, RD)) ||
         Opt <- ["delimiter", "marker", "prefix"]].
 
--spec get_option(#wm_reqdata{}, 'undefined' | string()) -> {atom(), binary()}.
+-spec get_option(atom(), 'undefined' | string()) -> {atom(), 'undefined' | binary()}.
 get_option(Option, undefined) ->
     {Option, undefined};
 get_option(Option, Value) ->
