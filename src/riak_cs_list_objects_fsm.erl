@@ -108,7 +108,7 @@
                 use_cache :: boolean(),
                 %% Key to use to check for cached results from key listing
                 cache_key :: term(),
-                common_prefixes=ordsets:new() :: list()}).
+                common_prefixes=ordsets:new() :: list_objects_common_prefixes()}).
 
 %% some useful shared types
 

@@ -43,7 +43,7 @@
 
         contents :: list(list_objects_key_content()),
 
-        common_prefixes :: list(list_objects_common_prefixes())}).
+        common_prefixes :: list_objects_common_prefixes()}).
 -type list_object_response() :: #list_objects_response_v1{}.
 -define(LORESP, #list_objects_response_v1).
 
@@ -62,9 +62,7 @@
         display_name :: binary()}).
 -type list_objects_owner() :: #list_objects_owner_v1{}.
 
--record(list_objects_common_prefixes_v1, {
-        prefix :: binary()}).
--type list_objects_common_prefixes() :: #list_objects_common_prefixes_v1{}.
+-type list_objects_common_prefixes() :: list(binary()).
 
 -define(LIST_OBJECTS_CACHE, list_objects_cache).
 -define(ENABLE_CACHE, true).
