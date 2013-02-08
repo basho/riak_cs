@@ -134,7 +134,7 @@ lager_config() ->
      ]}.
 
 riakcs_binpath(Prefix, N) ->
-    io_lib:format("~s/dev/dev~b/sbin/riak-cs", [Prefix, N]).
+    io_lib:format("~s/dev/dev~b/bin/riak-cs", [Prefix, N]).
 
 riakcs_etcpath(Prefix, N) ->
     io_lib:format("~s/dev/dev~b/etc", [Prefix, N]).
@@ -143,7 +143,7 @@ riakcscmd(Path, N, Cmd) ->
     lists:flatten(io_lib:format("~s ~s", [riakcs_binpath(Path, N), Cmd])).
 
 stanchion_binpath(Prefix) ->
-    io_lib:format("~s/dev/stanchion/sbin/stanchion", [Prefix]).
+    io_lib:format("~s/dev/stanchion/bin/stanchion", [Prefix]).
 
 stanchion_etcpath(Prefix) ->
     io_lib:format("~s/dev/stanchion/etc", [Prefix]).
