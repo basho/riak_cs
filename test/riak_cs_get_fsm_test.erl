@@ -65,7 +65,7 @@ test_n_chunks_builder(N) ->
             {ok, Pid} = riak_cs_get_fsm:test_link(<<"bucket">>, <<"key">>, ContentLength, BlockSize),
             Manifest = riak_cs_get_fsm:get_manifest(Pid),
             ?assertEqual(ContentLength, Manifest?MANIFEST.content_length),
-            riak_cs_get_fsm:continue(Pid),
+            riak_cs_get_fsm:continue(Pid, {0, ContentLength - 1}),
             try
                 expect_n_bytes(Pid, N, ContentLength)
             after

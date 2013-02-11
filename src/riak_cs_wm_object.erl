@@ -127,27 +127,40 @@ produce_body(RD, Ctx=#context{local_context=LocalCtx,
                _ -> <<"object_get">>
            end,
     riak_cs_dtrace:dt_object_entry(?MODULE, Func, [], [UserName, BFile_str]),
-    ContentLength = Mfst?MANIFEST.content_length,
+    ResourceLength = Mfst?MANIFEST.content_length,
     ContentMd5 = Mfst?MANIFEST.content_md5,
     LastModified = riak_cs_wm_utils:to_rfc_1123(Mfst?MANIFEST.created),
     ETag = "\"" ++ riak_cs_utils:binary_to_hexlist(ContentMd5) ++ "\"",
+    {{Start, End}, IsRange} = parse_range(RD, ResourceLength),
     NewRQ = lists:foldl(fun({K, V}, Rq) -> wrq:set_resp_header(K, V, Rq) end,
                         RD,
                         [{"ETag",  ETag},
                          {"Last-Modified", LastModified}
                         ] ++  Mfst?MANIFEST.metadata),
-    case Method == 'HEAD'
-        orelse
-    ContentLength == 0 of
-        true ->
-            riak_cs_get_fsm:stop(GetFsmPid),
-            StreamFun = fun() -> {<<>>, done} end;
-        false ->
-            riak_cs_get_fsm:continue(GetFsmPid),
-            StreamFun = fun() -> riak_cs_wm_utils:streaming_get(
+    StreamOp =
+        case Method == 'HEAD'
+            orelse
+            ResourceLength == 0 of
+            true ->
+                riak_cs_get_fsm:stop(GetFsmPid),
+                {known_length_stream, ResourceLength, fun() -> {<<>>, done} end};
+            false ->
+                riak_cs_get_fsm:continue(GetFsmPid, {Start, End}),
+                case IsRange of
+                    false ->
+                        {known_length_stream, ResourceLength,
+                         {<<>>, fun() ->
+                                        riak_cs_wm_utils:streaming_get(
+                                          GetFsmPid, StartTime, UserName, BFile_str)
+                                end}};
+                    true ->
+                        {stream, ResourceLength,
+                         fun(_RangeStart, _RangeEnd) ->
+                                 riak_cs_wm_utils:streaming_get(
                                    GetFsmPid, StartTime, UserName, BFile_str)
-                        end
-    end,
+                         end}
+                end
+        end,
     if Method == 'HEAD' ->
             riak_cs_dtrace:dt_object_return(?MODULE, <<"object_head">>,
                                                [], [UserName, BFile_str]),
@@ -155,7 +168,32 @@ produce_body(RD, Ctx=#context{local_context=LocalCtx,
        true ->
             ok
     end,
-    {{known_length_stream, ContentLength, {<<>>, StreamFun}}, NewRQ, Ctx}.
+    {StreamOp, NewRQ, Ctx}.
+
+parse_range(RD, ResourceLength) ->
+    case wrq:get_req_header("range", RD) of
+        undefined ->
+            {{0, ResourceLength - 1}, false};
+        RawRange ->
+            case webmachine_util:parse_range(RawRange, ResourceLength) of
+                [] ->
+                    %% TODO: S3 responds with 416
+                    %% HTTP/1.1 416 Requested Range Not Satisfiable
+                    %% Content-Type: application/xml
+                    %% <Error><Code>InvalidRange</Code>
+                    %% <Message>The requested range is not satisfiable</Message>
+                    %% <ActualObjectSize>11</ActualObjectSize>
+                    %% <RangeRequested>bytes=14-15</RangeRequested></Error>
+                    error(invalid_range);
+                [SingleRange] ->
+                    {SingleRange, true};
+                _MultipleRanges ->
+                    %% S3 responds full resource without a Content-Range header
+                    %% TODO: Not yet implemented
+                    throw(not_yet_implemented)
+                    %% {{0, ResourceLength - 1}, false}
+            end
+    end.
 
 %% @doc Callback for deleting an object.
 -spec delete_resource(#wm_reqdata{}, #context{}) -> {true, #wm_reqdata{}, #context{}}.

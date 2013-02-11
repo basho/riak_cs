@@ -21,6 +21,7 @@
          safe_block_size_from_manifest/1,
          initial_blocks/2,
          block_sequences_for_manifest/1,
+         block_sequences_for_manifest/2,
          new_manifest/9,
          new_manifest/11,
          remove_write_block/2,
@@ -117,6 +118,17 @@ block_sequences_for_manifest(?MANIFEST{uuid=UUID,
                                          PM?PART_MANIFEST.part_id) ||
                              PM <- Src])
     end.
+
+%% TODO: multipart is NOT yet considered.
+block_sequences_for_manifest(?MANIFEST{uuid=UUID} = Manifest, {Start, End}) ->
+    SafeBlockSize = safe_block_size_from_manifest(Manifest),
+    SkipInitial = Start rem SafeBlockSize,
+    KeepFinal = (End rem SafeBlockSize) + 1,
+    lager:debug("InitialBlock: ~p, FinalBlock: ~p~n",
+                [Start div SafeBlockSize, End div SafeBlockSize]),
+    lager:debug("SkipInitial: ~p, KeepFinal: ~p~n", [SkipInitial, KeepFinal]),
+    {[{UUID, B} || B <- lists:seq(Start div SafeBlockSize, End div SafeBlockSize)],
+     SkipInitial, KeepFinal}.
 
 %% @doc Return the configured file block fetch concurrency .
 -spec fetch_concurrency() -> pos_integer().
