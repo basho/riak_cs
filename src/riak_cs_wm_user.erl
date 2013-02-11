@@ -258,7 +258,7 @@ update_user(UpdateItems, RD, Ctx=#context{user=User}) ->
     UpdateUserResult = update_user_record(User, UpdateItems, false),
     handle_update_result(UpdateUserResult, RD, Ctx).
 
--spec update_user_record(rcs_user(), {atom(), term()}, boolean())
+-spec update_user_record('undefined' | rcs_user(), [{atom(), term()}], boolean())
                         -> {boolean(), rcs_user()}.
 update_user_record(_User, [], RecordUpdated) ->
     {RecordUpdated, _User};

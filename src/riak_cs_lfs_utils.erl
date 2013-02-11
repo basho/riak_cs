@@ -92,9 +92,32 @@ initial_blocks(ContentLength, BlockSize) ->
     UpperBound = block_count(ContentLength, BlockSize),
     lists:seq(0, (UpperBound - 1)).
 
-block_sequences_for_manifest(?MANIFEST{content_length=ContentLength}=Manifest) ->
+initial_blocks(ContentLength, SafeBlockSize, UUID) ->
+    Bs = initial_blocks(ContentLength, SafeBlockSize),
+    [{UUID, B} || B <- Bs].
+
+block_sequences_for_manifest(?MANIFEST{props=undefined}=Manifest) ->    
+    block_sequences_for_manifest(Manifest?MANIFEST{props=[]});
+block_sequences_for_manifest(?MANIFEST{uuid=UUID,
+                                       content_length=ContentLength,
+                                       props=Props}=Manifest) ->
     SafeBlockSize = safe_block_size_from_manifest(Manifest),
-    initial_blocks(ContentLength, SafeBlockSize).
+    case proplists:get_value(multipart, Props) of
+        undefined ->
+            initial_blocks(ContentLength, SafeBlockSize, UUID);
+        X ->
+            Src = case X of
+                      PMs when is_list(PMs) ->
+                          exit(deathToDeadCode),
+                          PMs;
+                      MpM when is_record(MpM, ?MULTIPART_MANIFEST_RECNAME) ->
+                          MpM?MULTIPART_MANIFEST.parts
+                  end,
+            lists:append([initial_blocks(PM?PART_MANIFEST.content_length,
+                                         SafeBlockSize,
+                                         PM?PART_MANIFEST.part_id) ||
+                             PM <- Src])
+    end.
 
 %% @doc Return the configured file block fetch concurrency .
 -spec fetch_concurrency() -> pos_integer().
@@ -146,7 +169,7 @@ put_fsm_buffer_size_factor() ->
                    term(),
                    term(),
                    pos_integer(),
-                   acl()) -> lfs_manifest().
+                   acl() | no_acl_yet) -> lfs_manifest().
 new_manifest(Bucket, FileName, UUID, ContentLength, ContentType, ContentMd5, MetaData, BlockSize, Acl) ->
     new_manifest(Bucket, FileName, UUID, ContentLength, ContentType, ContentMd5, MetaData, BlockSize, Acl, [], undefined).
 
@@ -158,7 +181,7 @@ new_manifest(Bucket, FileName, UUID, ContentLength, ContentType, ContentMd5, Met
                    term(),
                    term(),
                    pos_integer(),
-                   acl(),
+                   acl() | no_acl_yet,
                    proplists:proplist(),
                    cluster_id()) -> lfs_manifest().
 new_manifest(Bucket, FileName, UUID, ContentLength, ContentType, ContentMd5, MetaData, BlockSize, Acl, Props, ClusterID) ->

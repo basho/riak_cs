@@ -25,9 +25,9 @@ init(Ctx) ->
     {ok, Ctx#context{local_context=#key_context{}}}.
 
 -spec malformed_request(#wm_reqdata{}, #context{}) -> {false, #wm_reqdata{}, #context{}}.
-malformed_request(RD,Ctx=#context{local_context=LocalCtx0}) ->    
+malformed_request(RD,Ctx=#context{local_context=LocalCtx0}) ->
     Bucket = list_to_binary(wrq:path_info(bucket, RD)),
-    %% need to unquote twice since we re-urlencode the string during rewrite in 
+    %% need to unquote twice since we re-urlencode the string during rewrite in
     %% order to trick webmachine dispatching
     Key = mochiweb_util:unquote(mochiweb_util:unquote(wrq:path_info(object, RD))),
     LocalCtx = LocalCtx0#key_context{bucket=Bucket, key=Key},
@@ -37,7 +37,7 @@ malformed_request(RD,Ctx=#context{local_context=LocalCtx0}) ->
 %% object ACL and compare the permission requested with the permission
 %% granted, and allow or deny access. Returns a result suitable for
 %% directly returning from the {@link forbidden/2} webmachine export.
--spec authorize(#wm_reqdata{}, #context{}) -> 
+-spec authorize(#wm_reqdata{}, #context{}) ->
                        {boolean() | {halt, term()}, #wm_reqdata{}, #context{}}.
 authorize(RD, Ctx0=#context{local_context=LocalCtx0, riakc_pid=RiakPid}) ->
     Method = wrq:method(RD),
@@ -112,7 +112,7 @@ content_types_provided(RD, Ctx=#context{local_context=LocalCtx,
     end.
 
 
--spec produce_body(#wm_reqdata{}, #context{}) -> 
+-spec produce_body(#wm_reqdata{}, #context{}) ->
                           {{known_length_stream, non_neg_integer(), {<<>>, function()}}, #wm_reqdata{}, #context{}}.
 produce_body(RD, Ctx=#context{local_context=LocalCtx,
                               start_time=StartTime,
@@ -122,7 +122,7 @@ produce_body(RD, Ctx=#context{local_context=LocalCtx,
     BFile_str = [Bucket, $,, File],
     UserName = riak_cs_wm_utils:extract_name(User),
     Method = wrq:method(RD),
-    Func = case Method of 
+    Func = case Method of
                'HEAD' -> <<"object_head">>;
                _ -> <<"object_get">>
            end,
@@ -149,7 +149,7 @@ produce_body(RD, Ctx=#context{local_context=LocalCtx,
                         end
     end,
     if Method == 'HEAD' ->
-            riak_cs_dtrace:dt_object_return(?MODULE, <<"object_head">>, 
+            riak_cs_dtrace:dt_object_return(?MODULE, <<"object_head">>,
                                                [], [UserName, BFile_str]),
             ok = riak_cs_stats:update_with_start(object_head, StartTime);
        true ->
@@ -165,8 +165,8 @@ delete_resource(RD, Ctx=#context{local_context=LocalCtx,
                  key=Key,
                  get_fsm_pid=GetFsmPid} = LocalCtx,
     BFile_str = [Bucket, $,, Key],
-    UserName = riak_cs_wm_utils:extract_name(Ctx#context.user),  
-    riak_cs_dtrace:dt_object_entry(?MODULE, <<"object_delete">>, 
+    UserName = riak_cs_wm_utils:extract_name(Ctx#context.user),
+    riak_cs_dtrace:dt_object_entry(?MODULE, <<"object_delete">>,
                                       [], [UserName, BFile_str]),
     riak_cs_get_fsm:stop(GetFsmPid),
     BinKey = list_to_binary(Key),
@@ -174,8 +174,8 @@ delete_resource(RD, Ctx=#context{local_context=LocalCtx,
     handle_delete_object(DeleteObjectResponse, UserName, BFile_str, RD, Ctx).
 
 %% @private
- handle_delete_object({error, Error}, UserName, BFile_str, RD, Ctx) ->
-    lager:error("delete object failed with reason: ", [Error]),
+handle_delete_object({error, Error}, UserName, BFile_str, RD, Ctx) ->
+    _ = lager:error("delete object failed with reason: ", [Error]),
     riak_cs_dtrace:dt_object_return(?MODULE, <<"object_delete">>, [0], [UserName, BFile_str]),
     {false, RD, Ctx};
 handle_delete_object({ok, _UUIDsMarkedforDelete}, UserName, BFile_str, RD, Ctx) ->
@@ -229,7 +229,7 @@ accept_body(RD, Ctx=#context{local_context=LocalCtx,
                  owner=Owner} = LocalCtx,
     BFile_str = [Bucket, $,, Key],
     UserName = riak_cs_wm_utils:extract_name(User),
-    riak_cs_dtrace:dt_object_entry(?MODULE, <<"object_put">>, 
+    riak_cs_dtrace:dt_object_entry(?MODULE, <<"object_put">>,
                                       [], [UserName, BFile_str]),
     riak_cs_get_fsm:stop(GetFsmPid),
     Metadata = riak_cs_wm_utils:extract_user_metadata(RD),

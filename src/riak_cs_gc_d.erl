@@ -111,7 +111,7 @@ resume() ->
 %% `infinity' effectively disable garbage collection. The daemon still
 %% runs, but does not carry out any file deletion.
 -spec set_interval(infinity | non_neg_integer()) -> ok | {error, term()}.
-set_interval(Interval) ->
+set_interval(Interval) when is_integer(Interval) orelse Interval == infinity ->
     gen_fsm:sync_send_event(?SERVER, {set_interval, Interval}, infinity).
 
 %% @doc Stop the daemon
@@ -228,7 +228,8 @@ idle({manual_batch, Options}, _From, State) ->
                                        State));
 idle(pause, _From, State) ->
     ok_reply(paused, pause_gc(idle, State));
-idle({set_interval, Interval}, _From, State) ->
+idle({set_interval, Interval}, _From, State)
+  when is_integer(Interval) orelse Interval == infinity ->
     ok_reply(idle, State#state{interval=Interval});
 idle(Msg, _From, State) ->
     Common = [{status, {ok, {idle, [{interval, State#state.interval},
@@ -439,7 +440,7 @@ pause_gc(State, StateData) ->
     _ = lager:info("Pausing garbage collection"),
     StateData#state{pause_state=State}.
 
--spec cancel_timer(timeout(), timer:tref()) -> timeout() | undefined.
+-spec cancel_timer(timeout(), 'undefined' | timer:tref()) -> 'undefined' | integer().
 cancel_timer(_, undefined) ->
     undefined;
 cancel_timer(infinity, TimerRef) ->
@@ -461,7 +462,7 @@ resume_gc(State) ->
     gen_fsm:send_event(self(), continue),
     State#state{pause_state=undefined}.
 
--spec ok_reply(atom(), function()) -> {reply, ok, atom(), #state{}}.
+-spec ok_reply(atom(), #state{}) -> {reply, ok, atom(), #state{}}.
 ok_reply(NextState, NextStateData) ->
     {reply, ok, NextState, NextStateData}.
 

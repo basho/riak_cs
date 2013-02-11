@@ -30,6 +30,7 @@
          code_change/3]).
 
 -record(state, {content_length :: integer(),
+                remaining :: integer(),
                 block_size :: integer(),
                 bucket :: binary(),
                 key :: binary(),
@@ -61,7 +62,9 @@ get_manifest(Pid) ->
 -spec init([pid()] | {test, [pid()]}) -> {ok, state()} | {stop, term()}.
 init([CallerPid, Bucket, Key, ContentLength, BlockSize]) ->
     %% Get a connection to riak
+    random:seed(now()),
     {ok, #state{content_length=ContentLength,
+                remaining=ContentLength,
                 bucket=Bucket,
                 key=Key,
                 block_size=BlockSize,
@@ -75,7 +78,7 @@ handle_call(get_manifest, _From, #state{bucket=Bucket,
                                                content_length=ContentLength}=State) ->
     Manifest = riak_cs_lfs_utils:new_manifest(Bucket,
                                                 Key,
-                                                <<"uuid">>,
+                                                druuid:v4(),
                                                 ContentLength,
                                                 "application/test",
                                                 <<"md5">>,
@@ -86,16 +89,10 @@ handle_call(get_manifest, _From, #state{bucket=Bucket,
 handle_call(_Msg, _From, State) ->
     {reply, ok, State}.
 
-handle_cast({get_block, _From, Bucket, Key, UUID, BlockNumber}, #state{caller_pid=CallerPid}=State) ->
-    FakeData = <<BlockNumber:32/integer>>,
-    RiakObject = riakc_obj:new_obj(Bucket,riak_cs_lfs_utils:block_name(Key, UUID, BlockNumber), [], [{dict:new(),FakeData}]),
-    riak_cs_get_fsm:chunk(CallerPid, BlockNumber, {ok, RiakObject}),
-    {noreply, State};
-handle_cast({get_block, _From, Bucket, Key, _CLusterID, UUID, BlockNumber}, #state{caller_pid=CallerPid}=State) ->
-    FakeData = <<BlockNumber:32/integer>>,
-    RiakObject = riakc_obj:new_obj(Bucket,riak_cs_lfs_utils:block_name(Key, UUID, BlockNumber), [], [{dict:new(),FakeData}]),
-    riak_cs_get_fsm:chunk(CallerPid, BlockNumber, {ok, RiakObject}),
-    {noreply, State};
+handle_cast({get_block, _From, _Bucket, _Key, UUID, BlockNumber}, State) ->
+    send_fake_data(UUID, BlockNumber, State);
+handle_cast({get_block, _From, _Bucket, _Key, _ClusterID, UUID, BlockNumber}, State) ->
+    send_fake_data(UUID, BlockNumber, State);
 handle_cast(Event, State) ->
     lager:warning("Received unknown cast event: ~p", [Event]),
     {noreply, State}.
@@ -116,3 +113,9 @@ terminate(_Reason, _State) ->
                          {ok, state()}.
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
+
+send_fake_data(UUID, BlockNumber, #state{caller_pid=CallerPid,remaining=Remaining}=State) ->
+    Bytes = erlang:min(State#state.block_size, Remaining),
+    FakeData = <<BlockNumber:(8*Bytes)/little-integer>>,
+    riak_cs_get_fsm:chunk(CallerPid, {UUID, BlockNumber}, {ok, FakeData}),
+    {noreply, State#state{remaining = Remaining - Bytes}}.

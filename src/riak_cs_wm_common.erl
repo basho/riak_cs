@@ -16,6 +16,11 @@
          malformed_request/2,
          to_xml/2,
          to_json/2,
+         post_is_create/2,
+         create_path/2,
+         process_post/2,
+         resp_body/2,
+         multiple_choices/2,
          accept_body/2,
          produce_body/2,
          allowed_methods/2,
@@ -42,7 +47,7 @@
 
 -spec init([{atom(),term()}]) -> {ok, #context{}}.
 init(Config) ->
-    dyntrace:put_tag(pid_to_list(self())),
+    _ = dyntrace:put_tag(pid_to_list(self())),
     Mod = proplists:get_value(submodule, Config),
     riak_cs_dtrace:dt_wm_entry({?MODULE, Mod}, <<"init">>),
     %% Check if authentication is disabled and set that in the context.
@@ -125,7 +130,8 @@ forbidden(RD, Ctx=#context{auth_module=AuthMod,
     AuthResult = case riak_cs_utils:get_user(UserKey, RiakPid) of
                      {ok, {User, UserObj}} when User?RCS_USER.status =:= enabled ->
                          authenticate(User, UserObj, RD, Ctx, AuthData);
-                     {ok, _} -> %% disabled account, we are going to 403
+                     %% {ok, _} -> %% disabled account, we are going to 403
+                     {ok, {User, _UserObj}} when User?RCS_USER.status =/= enabled ->
                          {error, bad_auth};
                      {error, NE} when NE =:= not_found;
                                       NE =:= notfound;
@@ -217,6 +223,30 @@ to_json(RD, Ctx=#context{user=User,
     riak_cs_dtrace:dt_wm_return({?MODULE, Mod}, <<"to_json">>, [], [riak_cs_wm_utils:extract_name(User)]),
     Res.
 
+post_is_create(RD, Ctx=#context{submodule=Mod,
+                                exports_fun=ExportsFun}) ->
+    resource_call(Mod, post_is_create, [RD, Ctx], ExportsFun).
+
+create_path(RD, Ctx=#context{submodule=Mod,
+                                exports_fun=ExportsFun}) ->
+    resource_call(Mod, create_path, [RD, Ctx], ExportsFun).
+
+process_post(RD, Ctx=#context{submodule=Mod,
+                              exports_fun=ExportsFun}) ->
+    resource_call(Mod, process_post, [RD, Ctx], ExportsFun).
+
+resp_body(RD, Ctx=#context{submodule=Mod,
+                           exports_fun=ExportsFun}) ->
+    resource_call(Mod, resp_body, [RD, Ctx], ExportsFun).
+
+multiple_choices(RD, Ctx=#context{submodule=Mod,
+                                  exports_fun=ExportsFun}) ->
+    try
+        resource_call(Mod, multiple_choices, [RD, Ctx], ExportsFun)
+    catch _:_ ->
+            {false, RD, Ctx}
+    end.
+
 -spec accept_body(#wm_reqdata{}, #context{}) ->
     {boolean() | {'halt', non_neg_integer()}, #wm_reqdata{}, #context{}}.
 accept_body(RD, Ctx=#context{submodule=Mod,exports_fun=ExportsFun,user=User}) ->
@@ -300,7 +330,7 @@ authenticate(User, UserObj, RD, Ctx=#context{auth_module=AuthMod, submodule=Mod}
             {error, bad_auth}
     end.
 
--spec exports_fun(orddict:new()) -> function().
+-spec exports_fun(orddict:orddict()) -> function().
 exports_fun(Exports) ->
     fun(Function) ->
             orddict:is_key(Function, Exports)
@@ -324,19 +354,19 @@ post_authentication({ok, User, UserObj}, RD, Ctx, Authorize, _) ->
                               user_object=UserObj});
 post_authentication({error, no_user_key}, RD, Ctx, Authorize, true) ->
     %% no keyid was given, proceed anonymously
-    lager:debug("No user key"),
+    _ = lager:debug("No user key"),
     Authorize(RD, Ctx);
 post_authentication({error, no_user_key}, RD, Ctx, _, false) ->
     %% no keyid was given, deny access
-    lager:debug("No user key, deny"),
+    _ = lager:debug("No user key, deny"),
     riak_cs_wm_utils:deny_access(RD, Ctx);
 post_authentication({error, bad_auth}, RD, Ctx, _, _) ->
     %% given keyid was found, but signature didn't match
-    lager:info("bad_auth"),
+    _ = lager:info("bad_auth"),
     riak_cs_wm_utils:deny_access(RD, Ctx);
 post_authentication({error, _Reason}, RD, Ctx, _, _) ->
     %% no matching keyid was found, or lookup failed
-    lager:info("other"),
+    _ = lager:info("other"),
     riak_cs_wm_utils:deny_invalid_key(RD, Ctx).
 
 

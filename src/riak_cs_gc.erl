@@ -18,24 +18,35 @@
 -export([decode_and_merge_siblings/2,
          gc_interval/0,
          gc_retry_interval/0,
-         gc_active_manifests/3,
-         gc_specific_manifests/3,
+         gc_active_manifests/5,
+         gc_specific_manifests/5,
          epoch_start/0,
          leeway_seconds/0,
+         move_manifests_to_gc_bucket/3,
          timestamp/0]).
 
 %%%===================================================================
 %%% Public API
 %%%===================================================================
 
-gc_active_manifests(Manifests, RiakObject, RiakcPid) ->
-    ActiveManifests = riak_cs_manifest_utils:active_and_writing_manifests(Manifests),
-    ActiveUUIDs = [UUID || {UUID, _} <- ActiveManifests],
-    GCManiResponse = gc_specific_manifests(ActiveUUIDs,
-                                           RiakObject,
-                                           RiakcPid),
-    return_active_uuids_from_gc_response(GCManiResponse,
-                                         ActiveUUIDs).
+gc_active_manifests(Manifests, RiakObject, Bucket, Key, RiakcPid) ->
+    case riak_cs_manifest_utils:active_manifest(Manifests) of
+        {ok, M} ->
+            case riak_cs_mp_utils:clean_multipart_unused_parts(M, RiakcPid) of
+                same ->
+                    ActiveUUIDs = [M?MANIFEST.uuid],
+                    GCManiResponse = gc_specific_manifests(ActiveUUIDs,
+                                                           RiakObject,
+                                                           Bucket, Key,
+                                                           RiakcPid),
+                    return_active_uuids_from_gc_response(GCManiResponse,
+                                                         ActiveUUIDs);
+                updated ->
+                    updated
+            end;
+        _ ->
+            {ok, []}
+    end.
 
 %% @private
 return_active_uuids_from_gc_response({ok, _RiakObject}, ActiveUUIDs) ->
@@ -45,42 +56,47 @@ return_active_uuids_from_gc_response({error, _Error}=Error, _ActiveUUIDs) ->
 
 %% @private
 -spec gc_specific_manifests(UUIDsToMark :: [binary()],
-                   RiakObject :: riakc_obj:riak_object(),
+                   RiakObject :: riakc_obj:riakc_obj(),
+                   Bucket :: binary(),
+                   Key :: binary(),
                    RiakcPid :: pid()) ->
-    {error, term()} | {ok, riakc_obj:riak_object()}.
-gc_specific_manifests(UUIDsToMark, RiakObject, RiakcPid) ->
+    {error, term()} | {ok, riakc_obj:riakc_obj()}.
+gc_specific_manifests(UUIDsToMark, RiakObject, Bucket, Key, RiakcPid) ->
     MarkedResult = mark_as_pending_delete(UUIDsToMark,
                                           RiakObject,
+                                          Bucket, Key,
                                           RiakcPid),
-    handle_mark_as_pending_delete(MarkedResult, UUIDsToMark, RiakcPid).
+    handle_mark_as_pending_delete(MarkedResult, Bucket, Key, UUIDsToMark, RiakcPid).
 
 %% @private
--spec handle_mark_as_pending_delete({ok, riakc_obj:riak_object()},
+-spec handle_mark_as_pending_delete({ok, riakc_obj:riakc_obj()},
+                                    binary(), binary(),
                                     [binary()],
                                     pid()) ->
-    {error, term()} | {ok, riakc_obj:riak_object()};
+    {error, term()} | {ok, riakc_obj:riakc_obj()};
 
-    ({error, term()}, [binary()], pid()) ->
-    {error, term()} | {ok, riakc_obj:riak_object()}.
-handle_mark_as_pending_delete({ok, RiakObject}, UUIDsToMark, RiakcPid) ->
+    ({error, term()}, binary(), binary(), [binary()], pid()) ->
+    {error, term()} | {ok, riakc_obj:riakc_obj()}.
+handle_mark_as_pending_delete({ok, RiakObject}, Bucket, Key, UUIDsToMark, RiakcPid) ->
     Manifests = riak_cs_utils:manifests_from_riak_object(RiakObject),
     PDManifests = riak_cs_manifest_utils:manifests_to_gc(UUIDsToMark, Manifests),
     MoveResult = move_manifests_to_gc_bucket(PDManifests, RiakcPid),
     PDUUIDs = [UUID || {UUID, _} <- PDManifests],
-    handle_move_result(MoveResult, RiakObject, PDUUIDs, RiakcPid);
-handle_mark_as_pending_delete({error, Error}=Error, _UUIDsToMark, _RiakcPid) ->
+    handle_move_result(MoveResult, RiakObject, Bucket, Key, PDUUIDs, RiakcPid);
+handle_mark_as_pending_delete({error, Error}=Error, _Bucket, _Key, _UUIDsToMark, _RiakcPid) ->
     _ = lager:warning("Failed to mark as pending_delete, reason: ~p", [Error]),
     Error.
 
 %% @private
 -spec handle_move_result(ok | {error, term()},
-                         riakc_obj:riak_object(),
+                         riakc_obj:riakc_obj(),
+                         binary(), binary(),
                          [binary()],
                          pid()) ->
-    {ok, riakc_obj:riak_object()} | {error, term()}.
-handle_move_result(ok, RiakObject, PDUUIDs, RiakcPid) ->
-    mark_as_scheduled_delete(PDUUIDs, RiakObject, RiakcPid);
-handle_move_result({error, _Error}=Error, _RiakObject, _PDUUIDs, _RiakcPid) ->
+    {ok, riakc_obj:riakc_obj()} | {error, term()}.
+handle_move_result(ok, RiakObject, Bucket, Key, PDUUIDs, RiakcPid) ->
+    mark_as_scheduled_delete(PDUUIDs, RiakObject, Bucket, Key, RiakcPid);
+handle_move_result({error, _Error}=Error, _RiakObject, _Bucket, _Key, _PDUUIDs, _RiakcPid) ->
     Error.
 
 %% @doc Return the number of seconds to wait after finishing garbage
@@ -139,19 +155,19 @@ timestamp() ->
 
 %% @doc Mark a list of manifests as `pending_delete' based upon the
 %% UUIDs specified.
--spec mark_as_pending_delete([binary()], riakc_obj:riak_object(), pid()) ->
-    {ok, riakc_obj:riak_object()} | {error, term()}.
-mark_as_pending_delete(UUIDsToMark, RiakObject, RiakcPid) ->
-    mark_manifests(RiakObject, UUIDsToMark,
+-spec mark_as_pending_delete([binary()], riakc_obj:riakc_obj(), binary(), binary(), pid()) ->
+    {ok, riakc_obj:riakc_obj()} | {error, term()}.
+mark_as_pending_delete(UUIDsToMark, RiakObject, Bucket, Key, RiakcPid) ->
+    mark_manifests(RiakObject, Bucket, Key, UUIDsToMark,
                    fun riak_cs_manifest_utils:mark_pending_delete/2,
                    RiakcPid).
 
 %% @doc Mark a list of manifests as `scheduled_delete' based upon the
 %% UUIDs specified.
--spec mark_as_scheduled_delete([binary()], riakc_obj:riak_object(), pid()) ->
-    {ok, riakc_obj:riak_object()} | {error, term()}.
-mark_as_scheduled_delete(UUIDsToMark, RiakObject, RiakcPid) ->
-    mark_manifests(RiakObject, UUIDsToMark,
+-spec mark_as_scheduled_delete([binary()], riakc_obj:riakc_obj(), binary(), binary(), pid()) ->
+    {ok, riakc_obj:riakc_obj()} | {error, term()}.
+mark_as_scheduled_delete(UUIDsToMark, RiakObject, Bucket, Key, RiakcPid) ->
+    mark_manifests(RiakObject, Bucket, Key, UUIDsToMark,
                    fun riak_cs_manifest_utils:mark_scheduled_delete/2,
                    RiakcPid).
 
@@ -159,24 +175,29 @@ mark_as_scheduled_delete(UUIDsToMark, RiakObject, RiakcPid) ->
 %% @doc Call a `riak_cs_manifest_utils' function on a set of manifests
 %% to update the state of the manifests specified by `UUIDsToMark'
 %% and then write the updated values to riak.
--spec mark_manifests(riakc_obj:riak_object(), [binary()], fun(), pid()) ->
-                    {ok, riakc_obj:riak_object()} | {error, term()}.
-mark_manifests(RiakObject, UUIDsToMark, ManiFunction, RiakcPid) ->
+-spec mark_manifests(riakc_obj:riakc_obj(), binary(), binary(), [binary()], fun(), pid()) ->
+                    {ok, riakc_obj:riakc_obj()} | {error, term()}.
+mark_manifests(RiakObject, Bucket, Key, UUIDsToMark, ManiFunction, RiakcPid) ->
     Manifests = riak_cs_utils:manifests_from_riak_object(RiakObject),
     Marked = ManiFunction(Manifests, UUIDsToMark),
-    UpdObj = riakc_obj:update_value(RiakObject, term_to_binary(Marked)),
+    UpdObj0 = riakc_obj:update_value(RiakObject, term_to_binary(Marked)),
+    UpdObj = riak_cs_manifest_fsm:update_md_with_multipart_2i(
+               UpdObj0, Marked, Bucket, Key),
 
     %% use [returnbody] so that we get back the object
     %% with vector clock. This allows us to do a PUT
     %% again without having to re-retrieve the object
-    riak_cs_utils:put_with_no_meta(RiakcPid, UpdObj, [return_body]).
+    riak_cs_utils:put(RiakcPid, UpdObj, [return_body]).
+
+move_manifests_to_gc_bucket(Manifests, RiakcPid) ->
+    move_manifests_to_gc_bucket(Manifests, RiakcPid, true).
 
 %% @doc Copy data for a list of manifests to the
 %% `riak-cs-gc' bucket to schedule them for deletion.
--spec move_manifests_to_gc_bucket([lfs_manifest()], pid()) ->
+-spec move_manifests_to_gc_bucket([lfs_manifest()], pid(), boolean()) ->
     ok | {error, term()}.
-move_manifests_to_gc_bucket(Manifests, RiakcPid) ->
-    Key = generate_key(),
+move_manifests_to_gc_bucket(Manifests, RiakcPid, AddLeewayP) ->
+    Key = generate_key(AddLeewayP),
     ManifestSet = build_manifest_set(Manifests),
     ObjectToWrite = case riakc_pb_socket:get(RiakcPid, ?GC_BUCKET, Key) of
         {error, notfound} ->
@@ -194,7 +215,7 @@ move_manifests_to_gc_bucket(Manifests, RiakcPid) ->
 
     %% Create a set from the list of manifests
     _ = lager:debug("Manifests scheduled for deletion: ~p", [ManifestSet]),
-    riak_cs_utils:put_with_no_meta(RiakcPid, ObjectToWrite).
+    riak_cs_utils:put(RiakcPid, ObjectToWrite).
 
 -spec build_manifest_set([lfs_manifest()]) -> twop_set:twop_set().
 build_manifest_set(Manifests) ->
@@ -202,11 +223,13 @@ build_manifest_set(Manifests) ->
 
 %% @doc Generate a key for storing a set of manifests in the
 %% garbage collection bucket.
--spec generate_key() -> binary().
-generate_key() ->
+-spec generate_key(boolean()) -> binary().
+generate_key(AddLeewayP) ->
     list_to_binary(
       integer_to_list(
-        timestamp() + leeway_seconds())).
+        timestamp() + if not AddLeewayP -> 0;
+                         true           -> leeway_seconds()
+                      end)).
 
 %% @doc Given a list of riakc_obj-flavored object (with potentially
 %%      many siblings and perhaps a tombstone), decode and merge them.
