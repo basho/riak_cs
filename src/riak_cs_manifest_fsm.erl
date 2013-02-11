@@ -176,7 +176,7 @@ waiting_update_command({update_manifests, WrappedManifests}, State=#state{riakc_
                                   PreviousRiakObject,
                                   PreviousManifests,
                                   WrappedManifests),
-    {next_state, waiting_update_command, State#state{riak_object=undefined, manifests=undefined}}.
+    {next_state, waiting_update_command, State}.
 
 
 waiting_command(get_manifests, _From, State) ->
