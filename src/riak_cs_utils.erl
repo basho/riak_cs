@@ -51,10 +51,12 @@
          delete_bucket_policy/4,
          get_bucket_acl_policy/2,
          timestamp/1,
+         timestamp_to_seconds/1,
          to_bucket_name/2,
          update_key_secret/1,
          get_cluster_id/1,
-         proxy_get_active/0]).
+         proxy_get_active/0,
+         pid_to_binary/1]).
 
 -include("riak_cs.hrl").
 -include_lib("riak_pb/include/riak_pb_kv_codec.hrl").
@@ -698,6 +700,10 @@ get_bucket_acl_policy(Bucket, RiakPid) ->
 timestamp({MegaSecs, Secs, _MicroSecs}) ->
     (MegaSecs * 1000000) + Secs.
 
+-spec timestamp_to_seconds(erlang:timestamp()) -> float().
+timestamp_to_seconds({MegaSecs, Secs, MicroSecs}) ->
+    (MegaSecs * 1000000) + Secs + (MicroSecs / 1000000).
+
 %% Get the proper bucket name for either the Riak CS object
 %% bucket or the data block bucket.
 -spec to_bucket_name(objects | blocks, binary()) -> binary().
@@ -1314,3 +1320,8 @@ proxy_get_active() ->
             false;
         undefined -> false
     end.
+
+%% @doc Convert a pid to a binary
+-spec pid_to_binary(pid()) -> binary().
+pid_to_binary(Pid) ->
+    list_to_binary(pid_to_list(Pid)).
