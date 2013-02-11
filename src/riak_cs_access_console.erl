@@ -55,7 +55,7 @@ wait_for_logger(Retries) ->
     Ref = erlang:make_ref(),
     Pid = erlang:spawn_link(
             fun() ->
-                    Result = riak_cs_access_logger:flush(
+                    Result = riak_cs_access_log_handler:flush(
                                Retries*?RETRY_TIMEOUT),
                     Self ! {Ref, Result}
             end),

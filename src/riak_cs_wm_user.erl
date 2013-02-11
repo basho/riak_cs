@@ -59,15 +59,15 @@ forbidden(RD, Ctx) ->
     handle_user_auth_response(UserAuthResponse).
 
 handle_user_auth_response({false, _RD, Ctx} = Ret) ->
-    riak_cs_dtrace:dt_wm_return(?MODULE, <<"forbidden">>, 
+    riak_cs_dtrace:dt_wm_return(?MODULE, <<"forbidden">>,
                                 [], [riak_cs_wm_utils:extract_name(Ctx#context.user), <<"false">>]),
     Ret;
 handle_user_auth_response({{halt, Code}, _RD, Ctx} = Ret) ->
-    riak_cs_dtrace:dt_wm_return(?MODULE, <<"forbidden">>, 
+    riak_cs_dtrace:dt_wm_return(?MODULE, <<"forbidden">>,
                                 [Code], [riak_cs_wm_utils:extract_name(Ctx#context.user), <<"true">>]),
     Ret;
 handle_user_auth_response({_Reason, _RD, Ctx} = Ret) ->
-    riak_cs_dtrace:dt_wm_return(?MODULE, <<"forbidden">>, 
+    riak_cs_dtrace:dt_wm_return(?MODULE, <<"forbidden">>,
                                 [-1], [riak_cs_wm_utils:extract_name(Ctx#context.user), <<"true">>]),
     Ret.
 
@@ -223,7 +223,7 @@ forbidden(_Method, RD, Ctx, User, UserPathKey, _) when
       UserPathKey =:= User?RCS_USER.key_id;
       UserPathKey =:= [] ->
     %% User is accessing own account
-    AccessRD = riak_cs_access_logger:set_user(User, RD),
+    AccessRD = riak_cs_access_log_handler:set_user(User, RD),
     {false, AccessRD, Ctx};
 forbidden(_Method, RD, Ctx, User, UserPathKey, _) ->
     AdminCheckResult = admin_check(riak_cs_utils:is_admin(User), RD, Ctx),
@@ -385,4 +385,3 @@ user_xml_filter(Element, Acc) ->
         _ ->
             Acc
     end.
-

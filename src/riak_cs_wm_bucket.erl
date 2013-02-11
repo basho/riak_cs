@@ -52,7 +52,7 @@ authorize(RD, #context{user=User}=Ctx) ->
             riak_cs_wm_utils:deny_access(RD, PermCtx);
         {'PUT', 'WRITE'} ->
             %% authed users are always allowed to attempt bucket creation
-            AccessRD = riak_cs_access_logger:set_user(User, RD),
+            AccessRD = riak_cs_access_log_handler:set_user(User, RD),
             {false, AccessRD, PermCtx};
         _ ->
             riak_cs_wm_utils:bucket_access_authorize_helper(bucket, true, RD, Ctx)
