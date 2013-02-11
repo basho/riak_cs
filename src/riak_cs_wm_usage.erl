@@ -228,7 +228,7 @@ forbidden(RD, Ctx, User) ->
     case user_key(RD) == User?RCS_USER.key_id of
         true ->
             %% user is accessing own stats
-            AccessRD = riak_cs_access_logger:set_user(User, RD),
+            AccessRD = riak_cs_access_log_handler:set_user(User, RD),
             {false, AccessRD, Ctx};
         false ->
             case riak_cs_utils:get_admin_creds() of

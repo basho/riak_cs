@@ -63,7 +63,8 @@ init([]) ->
                  {nodelay, true},
                  {log_dir, WebLogDir},
                  {rewrite_module, riak_cs_s3_rewrite},
-                 {error_handler, riak_cs_wm_error_handler}],
+                 {error_handler, riak_cs_wm_error_handler},
+                 {resource_module_option, submodule}],
     case application:get_env(riak_cs, ssl) of
         {ok, SSLOpts} ->
             WebConfig = WebConfig1 ++ [{ssl, true},
