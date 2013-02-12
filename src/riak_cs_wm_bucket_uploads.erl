@@ -89,11 +89,11 @@ to_xml(RD, Ctx=#context{local_context=LocalCtx,
             Cs = [{'CommonPrefixes',
                    [
                     % WTH? The pattern [Common | _] can never match the type []
-                    {'Prefix', [Common]}
+                    {'Prefix', [binary_to_list(Common)]}
                    ]} || Common <- Commons],
             Get = fun(Name) -> case proplists:get_value(Name, Opts) of
                                    undefined -> [];
-                                   X         -> X
+                                   X         -> binary_to_list(X)
                                end
                   end,
             XmlDoc = {'ListMultipartUploadsResult',
@@ -138,13 +138,16 @@ content_types_accepted(RD, Ctx) ->
     riak_cs_mp_utils:make_content_types_accepted(RD, Ctx).
 
 make_list_mp_uploads_opts(RD) ->
-    Ps = [{"delimiter", delimiter},
-          {"key-marker", key_marker},
-          {"max-uploads", max_uploads},
-          {"prefix", prefix},
-          {"upload-id-marker", upload_id_marker}
-         ],
-    lists:append([case wrq:get_qs_value(Name, RD) of
-                      undefined -> [];
-                      X         -> [{PropName, X}]
-                  end || {Name, PropName} <- Ps]).
+    Params1 = [{"delimiter", delimiter},
+               {"max-uploads", max_uploads},
+               {"prefix", prefix}],
+    Params2 = [{"key-marker", key_marker},
+               {"upload-id-marker", upload_id_marker}],
+    assemble_options(Params1, undefined, RD) ++
+        assemble_options(Params2, <<>>, RD).
+
+assemble_options(Parameters, Default, RD) ->
+    [case wrq:get_qs_value(Name, RD) of
+         undefined -> {PropName, Default};
+         X         -> {PropName, list_to_binary(X)}
+     end || {Name, PropName} <- Parameters].
