@@ -53,7 +53,7 @@ authorize(RD, Ctx0=#context{local_context=LocalCtx0, riakc_pid=RiakPid}) ->
         {'HEAD', notfound} ->
             {{halt, 404}, riak_cs_access_log_handler:set_user(Ctx#context.user, RD), Ctx};
         _ ->
-            riak_cs_wm_utils:object_access_authorize_helper(object, false, RD, Ctx)
+            riak_cs_wm_utils:object_access_authorize_helper(object, true, RD, Ctx)
     end.
 
 
