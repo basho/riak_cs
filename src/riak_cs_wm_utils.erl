@@ -10,6 +10,7 @@
          service_available/3,
          parse_auth_header/2,
          iso_8601_datetime/0,
+         iso_8601_datetime/1,
          to_iso_8601/1,
          iso_8601_to_rfc_1123/1,
          to_rfc_1123/1,
@@ -136,19 +137,19 @@ handle_validation_response({ok, User, UserObj}, RD, Ctx, Next, _, _) ->
                          user_object=UserObj});
 handle_validation_response({error, no_user_key}, RD, Ctx, Next, _, true) ->
     %% no keyid was given, proceed anonymously
-    lager:debug("No user key"),
+    _ = lager:debug("No user key"),
     Next(RD, Ctx);
 handle_validation_response({error, no_user_key}, RD, Ctx, _, Conv2KeyCtx, false) ->
     %% no keyid was given, deny access
-    lager:debug("No user key, deny"),
+    _ = lager:debug("No user key, deny"),
     deny_access(RD, Conv2KeyCtx(Ctx));
 handle_validation_response({error, bad_auth}, RD, Ctx, _, Conv2KeyCtx, _) ->
     %% given keyid was found, but signature didn't match
-    lager:info("bad_auth"),
+    _ = lager:info("bad_auth"),
     deny_access(RD, Conv2KeyCtx(Ctx));
 handle_validation_response({error, _Reason}, RD, Ctx, _, Conv2KeyCtx, _) ->
     %% no matching keyid was found, or lookup failed
-    lager:info("other"),
+    _ = lager:info("other"),
     deny_invalid_key(RD, Conv2KeyCtx(Ctx)).
 
 %% @doc Look for an Authorization header in the request, and validate
@@ -303,7 +304,10 @@ user_record_to_xml(?RCS_USER{email=Email,
 %% current time.
 -spec iso_8601_datetime() -> string().
 iso_8601_datetime() ->
-    {{Year, Month, Day}, {Hour, Min, Sec}} = erlang:universaltime(),
+    iso_8601_datetime(erlang:universaltime()).
+
+-spec iso_8601_datetime(calendar:datetime()) -> string().
+iso_8601_datetime({{Year, Month, Day}, {Hour, Min, Sec}}) ->
     iso_8601_format(Year, Month, Day, Hour, Min, Sec).
 
 %% @doc Convert an RFC 1123 date into an ISO 8601 formatted timestamp.
@@ -393,7 +397,7 @@ extract_metadata(Headers) ->
     ordsets:from_list(lists:foldl(FilterFun, [], Headers)).
 
 -spec bucket_access_authorize_helper(AccessType::atom(), boolean(),
-                                     RD::term(), Ctx::term()) -> term().
+                                     RD::term(), Ctx::#context{}) -> term().
 bucket_access_authorize_helper(AccessType, Deletable,
                                RD, #context{user=User,
                                             policy_module=PolicyMod,
@@ -459,16 +463,16 @@ bucket_access_authorize_helper(AccessType, Deletable,
                     PolicyResult = PolicyMod:eval(Access, Policy),
 
                     case {User, PolicyResult} of
-                        {_, true} ->
-                            OwnerId = riak_cs_acl:owner_id(BucketAcl, RiakPid),
-                            %% Policy says yes while ACL says no
-                            riak_cs_wm_utils:shift_to_owner(RD, PermCtx, OwnerId, RiakPid);
-
                         {undefined, _} ->
                             %% no facility for logging bad access
                             %% against unknown actors
                             AccessRD = RD,
                             riak_cs_wm_utils:deny_access(AccessRD, PermCtx);
+                        {_, true} ->
+                            OwnerId = riak_cs_acl:owner_id(BucketAcl, RiakPid),
+                            %% Policy says yes while ACL says no
+                            riak_cs_wm_utils:shift_to_owner(RD, PermCtx, OwnerId, RiakPid);
+
                         {_, _} ->
                             %% log bad requests against the actors
                             %% that make them

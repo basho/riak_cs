@@ -35,11 +35,14 @@
          get_user/2,
          get_user_by_index/3,
          get_user_index/3,
+         hexlist_to_binary/1,
          json_pp_print/1,
          list_keys/2,
          pow/2,
          pow/3,
          put_object/5,
+         put/2,
+         put/3,
          put_with_no_meta/2,
          put_with_no_meta/3,
          riak_connection/0,
@@ -102,6 +105,13 @@ binary_to_hexlist(Bin) ->
               end
           end || X <- binary_to_list(Bin)],
     string:to_lower(lists:flatten(XBin)).
+
+%% @doc Convert the passed binary into a string where the numbers are represented in hexadecimal (lowercase and 0 prefilled).
+-spec hexlist_to_binary(string()) -> binary().
+hexlist_to_binary(String) ->
+    Bytes = length(String) div 2,
+    Int = httpd_util:hexlist_to_integer(String),
+    <<Int:(Bytes*8)/integer>>.
 
 %% @doc Release a protobufs connection from the specified
 %% connection pool.
@@ -170,7 +180,7 @@ create_user(Name, Email) ->
 
 %% @doc Get the active version of Riak CS to use in checks to
 %% determine if new features should be enabled.
--spec cs_version() -> pos_integer().
+-spec cs_version() -> pos_integer() | undefined.
 cs_version() ->
     cs_version(application:get_env(riak_cs, cs_version)).
 
@@ -223,17 +233,30 @@ delete_bucket(User, UserObj, Bucket, RiakPid) ->
     {ok, [binary()]} | {error, term()}.
 delete_object(Bucket, Key, RiakcPid) ->
     StartTime = os:timestamp(),
-    maybe_gc_active_manifests(get_manifests(RiakcPid, Bucket, Key),
-                         StartTime, RiakcPid).
+    DoIt = fun() ->
+                   maybe_gc_active_manifests(
+                     get_manifests(RiakcPid, Bucket, Key), Bucket, Key, StartTime, RiakcPid)
+           end,
+    case DoIt() of
+        updated ->
+            %% Some multipart upload parts were deleted in
+            %% a minor transition from active state to
+            %% active + props=[multipart_clean|...] state.
+            %% The Riak object that get_manifests returned
+            %% is invalid, so retry once.
+            DoIt();
+        Else ->
+            Else
+    end.
 
 %% @private
-maybe_gc_active_manifests({ok, RiakObject, Manifests}, StartTime, RiakcPid) ->
-    R = riak_cs_gc:gc_active_manifests(Manifests, RiakObject, RiakcPid),
+maybe_gc_active_manifests({ok, RiakObject, Manifests}, Bucket, Key, StartTime, RiakcPid) ->
+    R = riak_cs_gc:gc_active_manifests(Manifests, RiakObject, Bucket, Key, RiakcPid),
     ok = riak_cs_stats:update_with_start(object_delete, StartTime),
     R;
-maybe_gc_active_manifests({error, notfound}, _StartTime, _RiakcPid) ->
+maybe_gc_active_manifests({error, notfound}, _Bucket, _Key, _StartTime, _RiakcPid) ->
     {ok, []};
-maybe_gc_active_manifests({error, _Reason}=Error, _StartTime, _RiakcPid) ->
+maybe_gc_active_manifests({error, _Reason}=Error, _Bucket, _Key, _StartTime, _RiakcPid) ->
     Error.
 
 
@@ -408,10 +431,22 @@ get_manifests(RiakcPid, Bucket, Key) ->
             Error
     end.
 
--spec manifests_from_riak_object(riakc_obj:riak_object()) -> orddict:orddict().
+-spec manifests_from_riak_object(riakc_obj:riakc_obj()) -> orddict:orddict().
 manifests_from_riak_object(RiakObject) ->
+    %% For example, riak_cs_manifest_fsm:get_and_update/4 may wish to
+    %% update the #riakc_obj without a roundtrip to Riak first.  So we
+    %% need to see what the latest
+    Contents = try
+                   %% get_update_value will return the updatevalue or
+                   %% a single old original value.
+                   [{riakc_obj:get_update_metadata(RiakObject),
+                     riakc_obj:get_update_value(RiakObject)}]
+               catch throw:_ ->
+                       %% Original value had many contents
+                       riakc_obj:get_contents(RiakObject)
+               end,
     DecodedSiblings = [binary_to_term(V) ||
-                          {_, V}=Content <- riakc_obj:get_contents(RiakObject),
+                          {_, V}=Content <- Contents,
                           not has_tombstone(Content)],
 
     %% Upgrade the manifests to be the latest erlang
@@ -460,7 +495,9 @@ get_user(KeyId, RiakPid) ->
                     {error, no_value};
                 _ ->
                     Values = [binary_to_term(Value) ||
-                                 Value <- riakc_obj:get_values(Obj)],
+                                 Value <- riakc_obj:get_values(Obj),
+                                 Value /= <<>>  % tombstone
+                             ],
                     User = update_user_record(hd(Values)),
                     Buckets = resolve_buckets(Values, [], KeepDeletedBuckets),
                     {ok, {User?RCS_USER{buckets=Buckets}, Obj}}
@@ -577,6 +614,12 @@ put_object(BucketName, Key, Value, Metadata, RiakPid) ->
     NewObj = riakc_obj:update_metadata(RiakObject, Metadata),
     riakc_pb_socket:put(RiakPid, NewObj).
 
+put(RiakcPid, RiakcObj) ->
+    put(RiakcPid, RiakcObj, []).
+
+put(RiakcPid, RiakcObj, Options) ->
+    riakc_pb_socket:put(RiakcPid, RiakcObj, Options).
+
 put_with_no_meta(RiakcPid, RiakcObj) ->
     put_with_no_meta(RiakcPid, RiakcObj, []).
 %% @doc Put an object in Riak with empty
@@ -587,9 +630,12 @@ put_with_no_meta(RiakcPid, RiakcObj) ->
 %% not explicitly setting the metadata will
 %% cause a siblings exception to be raised.
 -spec put_with_no_meta(pid(), riakc_obj:riakc_obj(), term()) ->
-    ok | {ok, riakc_obj:riak_object()} | {ok, binary()} | {error, term()}.
+    ok | {ok, riakc_obj:riakc_obj()} | {ok, binary()} | {error, term()}.
 put_with_no_meta(RiakcPid, RiakcObject, Options) ->
     WithMeta = riakc_obj:update_metadata(RiakcObject, dict:new()),
+    io:format("put_NO_META LINE ~p contents ~p bucket ~p key ~p\n", [?LINE, length(riakc_obj:get_contents(WithMeta)), riakc_obj:bucket(WithMeta), riakc_obj:key(WithMeta)]),
+    catch exit(yoyo),
+    io:format("put_NO_META LINE ~p ~p\n", [?LINE, erlang:get_stacktrace()]),
     riakc_pb_socket:put(RiakcPid, WithMeta, Options).
 
 %% @doc Get a protobufs connection to the riak cluster
@@ -612,7 +658,7 @@ riak_connection(Pool) ->
     end.
 
 %% @doc Save information about a Riak CS user
--spec save_user(rcs_user(), riakc_obj:riakc_obj(), pid()) -> ok.
+-spec save_user(rcs_user(), riakc_obj:riakc_obj(), pid()) -> ok | {error, term()}.
 save_user(User, UserObj, RiakPid) ->
     %% Metadata is currently never updated so if there
     %% are siblings all copies should be the same
@@ -620,7 +666,6 @@ save_user(User, UserObj, RiakPid) ->
     UpdUserObj = riakc_obj:update_metadata(
                    riakc_obj:update_value(UserObj, term_to_binary(User)),
                    MD),
-    %% @TODO Error handling
     riakc_pb_socket:put(RiakPid, UpdUserObj).
 
 %% @doc Set the ACL for a bucket. Existing ACLs are only
@@ -828,7 +873,7 @@ active_to_bool({error, notfound}) ->
 %% `bucket_exists_for_user' and rename this function
 %% `bucket_exists'.
 -spec check_bucket_exists(binary(), pid()) ->
-                                 {ok, riak_obj:riak_obj()} | {error, term()}.
+                                 {ok, riakc_obj:riakc_obj()} | {error, term()}.
 check_bucket_exists(Bucket, RiakPid) ->
     case riak_cs_utils:get_object(?BUCKETS_BUCKET, Bucket, RiakPid) of
         {ok, Obj} ->
@@ -1302,7 +1347,7 @@ get_cluster_id(Pid) ->
                     application:set_env(riak_cs, cluster_id, ClusterID),
                     ClusterID;
                 _ ->
-                    lager:debug("Unable to obtain cluster ID"),
+                    _ = lager:debug("Unable to obtain cluster ID"),
                     undefined
             end
     end.
@@ -1316,7 +1361,7 @@ proxy_get_active() ->
         {ok, disabled} ->
             false;
         {ok, _} ->
-            lager:warning("proxy_get value in app.config is invalid"),
+            _ = lager:warning("proxy_get value in app.config is invalid"),
             false;
         undefined -> false
     end.

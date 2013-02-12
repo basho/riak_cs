@@ -115,7 +115,7 @@ stop_fsm() -> ok.
 %%====================================================================
 
 check_chunk(Counter, Chunk) ->
-    <<NewCounter:32>> = riakc_obj:get_value(Chunk),
+    <<NewCounter:32/little, _/binary>> = Chunk,
     Counter == NewCounter.
 
 %%====================================================================

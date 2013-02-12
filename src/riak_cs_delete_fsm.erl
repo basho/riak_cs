@@ -36,7 +36,7 @@
                 uuid :: binary(),
                 manifest :: lfs_manifest(),
                 riakc_pid :: pid(),
-                delete_blocks_remaining :: ordsets:ordset(integer()),
+                delete_blocks_remaining :: ordsets:ordset({binary(), integer()}),
                 unacked_deletes=ordsets:new() :: ordsets:ordset(integer()),
                 all_delete_workers=[] :: list(pid()),
                 free_deleters = ordsets:new() :: ordsets:ordset(pid()),
@@ -54,7 +54,7 @@ start_link(RiakcPid, Manifest, Options) ->
     Args = [RiakcPid, Manifest, Options],
     gen_fsm:start_link(?MODULE, Args, []).
 
--spec block_deleted(pid(), {ok, integer()} | {error, binary()}) -> ok.
+-spec block_deleted(pid(), {ok, {binary(), integer()}} | {error, binary()}) -> ok.
 block_deleted(Pid, Response) ->
     gen_fsm:send_event(Pid, {block_deleted, Response, self()}).
 
@@ -178,15 +178,15 @@ maybe_delete_blocks(State=#state{delete_blocks_remaining=[]}) ->
     State;
 maybe_delete_blocks(State=#state{bucket=Bucket,
                                  key=Key,
-                                 uuid=UUID,
                                  free_deleters=FreeDeleters=[DeleterPid | _Rest],
                                  unacked_deletes=UnackedDeletes,
                                  delete_blocks_remaining=DeleteBlocksRemaining=
                                      [BlockID | _RestBlocks]}) ->
     NewUnackedDeletes = ordsets:add_element(BlockID, UnackedDeletes),
     NewDeleteBlocksRemaining = ordsets:del_element(BlockID, DeleteBlocksRemaining),
-    _ = lager:debug("Deleting block: ~p ~p ~p ~p", [Bucket, Key, UUID, BlockID]),
-    riak_cs_block_server:delete_block(DeleterPid, Bucket, Key, UUID, BlockID),
+    {UUID, Seq} = BlockID,
+    _ = lager:debug("Deleting block: ~p ~p ~p ~p", [Bucket, Key, UUID, Seq]),
+    riak_cs_block_server:delete_block(DeleterPid, Bucket, Key, UUID, Seq),
     NewFreeDeleters = ordsets:del_element(DeleterPid, FreeDeleters),
     maybe_delete_blocks(State#state{unacked_deletes=NewUnackedDeletes,
                                     free_deleters=NewFreeDeleters,
@@ -208,8 +208,11 @@ notification_msg(Reason, _State) ->
 -spec manifest_cleanup(atom(), binary(), binary(), binary(), pid()) -> ok.
 manifest_cleanup(deleted, Bucket, Key, UUID, RiakcPid) ->
     {ok, ManiFsmPid} = riak_cs_manifest_fsm:start_link(Bucket, Key, RiakcPid),
-    _ = riak_cs_manifest_fsm:delete_specific_manifest(ManiFsmPid, UUID),
-    _ = riak_cs_manifest_fsm:stop(ManiFsmPid),
+    _ = try
+            _ = riak_cs_manifest_fsm:delete_specific_manifest(ManiFsmPid, UUID)
+        after
+            _ = riak_cs_manifest_fsm:stop(ManiFsmPid)
+        end,
     ok;
 manifest_cleanup(_, _, _, _, _) ->
     ok.

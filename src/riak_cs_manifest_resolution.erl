@@ -71,19 +71,22 @@ resolve_manifests(_, _,
                   ?MANIFEST{state = writing} = B) ->
     WriteBlocksRemaining = resolve_written_blocks(A, B),
     LastBlockWrittenTime = resolve_last_written_time(A, B),
-    A?MANIFEST{write_blocks_remaining=WriteBlocksRemaining, last_block_written_time=LastBlockWrittenTime};
+    Props = resolve_props(A, B),
+    A?MANIFEST{write_blocks_remaining=WriteBlocksRemaining,
+               last_block_written_time=LastBlockWrittenTime,
+               props = Props};
 
-%% Check for and handle differing ACLs, but otherwise purposely throw
-%% a function clause exception if the manifests aren't equivalent
 resolve_manifests(_, _,
-                  A1=?MANIFEST{acl=A1Acl},
-                  A2=?MANIFEST{acl=A2Acl}) when A1Acl =/= A2Acl ->
-    case A1Acl?ACL.creation_time >= A2Acl?ACL.creation_time of
-        true ->
-            A1;
-        false ->
-            A2
-    end;
+                  ?MANIFEST{state = active,acl=A1Acl} = A,
+                  ?MANIFEST{state = active,acl=A2Acl} = B) ->
+    ACL = case A1Acl?ACL.creation_time >= A2Acl?ACL.creation_time of
+              true ->
+                  A1Acl;
+              false ->
+                  A2Acl
+          end,
+    Props = resolve_props(A, B),
+    A?MANIFEST{acl=ACL, props = Props};
 
 resolve_manifests(_, _,
                   ?MANIFEST{state = pending_delete} = A,
@@ -110,6 +113,49 @@ resolve_deleted_blocks(A, B) ->
     ADeleted = A?MANIFEST.delete_blocks_remaining,
     BDeleted = B?MANIFEST.delete_blocks_remaining,
     safe_intersection(ADeleted, BDeleted).
+
+resolve_props(A, B) ->
+    Ps_A = A?MANIFEST.props,
+    Ps_B = B?MANIFEST.props,
+    {_, _, New} = lists:foldl(fun resolve_a_prop/2,
+                              {Ps_A, Ps_B, []},
+                              [fun resolve_prop_multipart/2,
+                               fun resolve_prop_multipart_cleanup/2]),
+    New.
+
+resolve_a_prop(Resolver, {Ps_A, Ps_B, Ps_merged}) ->
+    {_, _, New} = Resolver(Ps_A, Ps_B),
+    {Ps_A, Ps_B, New ++ Ps_merged}.
+
+resolve_prop_multipart(Ps_A, Ps_B) ->
+    case {proplists:get_value(multipart, Ps_A),
+          proplists:get_value(multipart, Ps_B)} of
+        {undefined, undefined} ->
+            {Ps_A, Ps_B, []};
+        {undefined, B} ->
+            {Ps_A, Ps_B, [{multipart, B}]};
+        {A, undefined} ->
+            {Ps_A, Ps_B, [{multipart, A}]};
+        {A, B} ->
+            Parts = ordsets:union(A?MULTIPART_MANIFEST.parts,
+                                  B?MULTIPART_MANIFEST.parts),
+            DParts = ordsets:union(A?MULTIPART_MANIFEST.done_parts,
+                                  B?MULTIPART_MANIFEST.done_parts),
+            CParts = ordsets:union(A?MULTIPART_MANIFEST.cleanup_parts,
+                                  B?MULTIPART_MANIFEST.cleanup_parts),
+            MM = A?MULTIPART_MANIFEST{parts = Parts, done_parts = DParts,
+                                      cleanup_parts = CParts},
+            {Ps_A, Ps_B, [{multipart, MM}]}
+    end.
+
+resolve_prop_multipart_cleanup(Ps_A, Ps_B) ->
+    case proplists:get_value(multipart_clean, Ps_A, false) orelse
+         proplists:get_value(multipart_clean, Ps_B, false) of
+        true ->
+            {Ps_A, Ps_B, [multipart_clean]};
+        false ->
+            {Ps_A, Ps_B, []}
+    end.
 
 %% NOTE:
 %% There was a bit of a gaff

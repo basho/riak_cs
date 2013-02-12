@@ -71,11 +71,12 @@ object_size_map(Object, _, _) ->
         AllManifests = [ binary_to_term(V)
                          || V <- riak_object:get_values(Object) ],
         Resolved = riak_cs_manifest_resolution:resolve(AllManifests),
+        {MPparts, MPbytes} = count_multipart_parts(Resolved),
         case riak_cs_manifest_utils:active_manifest(Resolved) of
             {ok, ?MANIFEST{content_length=Length}} ->
-                [{1,Length}];
+                [{1 + MPparts, Length + MPbytes}];
             _ ->
-                []
+                [{MPparts, MPbytes}]
         end
     catch _:_ ->
             []
@@ -106,3 +107,17 @@ make_object(User, BucketList, SampleStart, SampleEnd) ->
 get_usage(Riak, User, Start, End) ->
     {ok, Period} = archive_period(),
     rts:find_samples(Riak, ?STORAGE_BUCKET, User, Start, End, Period).
+
+count_multipart_parts(Resolved) ->
+    lists:foldl(fun count_multipart_parts/2, {0, 0}, Resolved).
+
+count_multipart_parts({_UUID, M}, {MPparts, MPbytes} = Acc) ->
+    case {M?MANIFEST.state, proplists:get_value(multipart, M?MANIFEST.props)} of
+        {writing, MP} ->
+            Ps = MP?MULTIPART_MANIFEST.parts,
+            {MPparts + length(Ps),
+             MPbytes + lists:sum([P?PART_MANIFEST.content_length ||
+                                     P <- Ps])};
+        _ ->
+            Acc
+    end.
