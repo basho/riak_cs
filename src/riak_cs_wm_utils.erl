@@ -395,7 +395,7 @@ extract_metadata(Headers) ->
     ordsets:from_list(lists:foldl(FilterFun, [], Headers)).
 
 -spec bucket_access_authorize_helper(AccessType::atom(), boolean(),
-                                     RD::term(), Ctx::term()) -> term().
+                                     RD::term(), Ctx::#context{}) -> term().
 bucket_access_authorize_helper(AccessType, Deletable,
                                RD, #context{user=User,
                                             policy_module=PolicyMod,
@@ -461,16 +461,16 @@ bucket_access_authorize_helper(AccessType, Deletable,
                     PolicyResult = PolicyMod:eval(Access, Policy),
 
                     case {User, PolicyResult} of
-                        {_, true} ->
-                            OwnerId = riak_cs_acl:owner_id(BucketAcl, RiakPid),
-                            %% Policy says yes while ACL says no
-                            riak_cs_wm_utils:shift_to_owner(RD, PermCtx, OwnerId, RiakPid);
-
                         {undefined, _} ->
                             %% no facility for logging bad access
                             %% against unknown actors
                             AccessRD = RD,
                             riak_cs_wm_utils:deny_access(AccessRD, PermCtx);
+                        {_, true} ->
+                            OwnerId = riak_cs_acl:owner_id(BucketAcl, RiakPid),
+                            %% Policy says yes while ACL says no
+                            riak_cs_wm_utils:shift_to_owner(RD, PermCtx, OwnerId, RiakPid);
+
                         {_, _} ->
                             %% log bad requests against the actors
                             %% that make them

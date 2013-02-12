@@ -64,7 +64,7 @@
 -type condition_pair() :: {date_condition_type(), [{'aws:CurrentTime', binary()}]}
                         | {numeric_condition_type(), [{'aws:EpochTime', non_neg_integer()}]}
                         | {boolean(), 'aws:SecureTransport'}
-                        | {ip_addr_condition_type(), [{'aws:SourceIp', {IP::inet:ip_addr(), inet:ip_addr()}}]}
+                        | {ip_addr_condition_type(), [{'aws:SourceIp', {IP::inet:ip_address(), inet:ip_address()}}]}
                         | {string_condition_type(),  [{'aws:UserAgent', binary()}]}
                         | {string_condition_type(),  [{'aws:Referer', binary()}]}.
 

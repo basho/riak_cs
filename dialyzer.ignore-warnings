@@ -18,6 +18,7 @@
 ^webmachine_request.erl:
 ^webmachine_resource.erl:
 ^webmachine_sup.erl:
+webmachine_dispatcher.erl:210: The pattern 'testing_ignore_dialyzer_warning_here' can never match the type {'wm_reqdata',_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_}
 ############## Warnings from dependencies that are outside our scope
 ^bread.erl:
 ^dtop.erl:

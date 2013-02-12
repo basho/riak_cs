@@ -204,6 +204,8 @@ full({block_written, BlockID, WriterPid}, State=#state{reply_pid=Waiter}) ->
     gen_fsm:reply(Waiter, ok),
     {next_state, not_full, NewState#state{reply_pid=undefined}}.
 
+all_received({augment_data, <<>>}, State) ->
+    {next_state, all_received, State};
 all_received({block_written, BlockID, WriterPid}, State=#state{mani_pid=ManiPid,
                                                                timer_ref=TimerRef}) ->
 
@@ -259,6 +261,8 @@ not_full({augment_data, NewData}, From,
             handle_receiving_last_chunk(NewData, State)
     end.
 
+all_received({augment_data, <<>>}, _From, State) ->
+    {next_state, all_received, State};
 all_received(finalize, From, State) ->
     %% 1. stash the From pid into our
     %%    state so that we know to reply
