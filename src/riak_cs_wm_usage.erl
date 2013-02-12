@@ -130,6 +130,8 @@
 -define(KEY_ERRORS, 'Errors').
 -define(KEY_REASON, 'Reason').
 -define(KEY_MESSAGE, 'Message').
+-define(ATTR_START, 'StartTime').
+-define(ATTR_END, 'EndTime').
 
 -record(ctx, {
           auth_bypass :: boolean(),
@@ -336,7 +338,12 @@ xml_sample_error({{Start, End}, Reason}, SubType, TypeLabel) ->
 
 %% @doc JSON deserializes with keys as binaries, but xmerl requires
 %% tag names to be atoms.
-xml_name(Other) -> binary_to_existing_atom(Other, latin1).
+-spec xml_name(binary()) -> usage_field_type() | ?ATTR_START | ?ATTR_END.
+xml_name(?START_TIME) -> ?ATTR_START;
+xml_name(?END_TIME) -> ?ATTR_END;
+xml_name(UsageFieldName) ->
+    true = lists:member(UsageFieldName, ?SUPPORTED_USAGE_FIELD),
+    binary_to_existing_atom(UsageFieldName, latin1).
 
 xml_reason(Reason) ->
     [if is_atom(Reason) -> atom_to_binary(Reason, latin1);
