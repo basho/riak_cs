@@ -131,35 +131,26 @@ produce_body(RD, Ctx=#context{local_context=LocalCtx,
     ContentMd5 = Mfst?MANIFEST.content_md5,
     LastModified = riak_cs_wm_utils:to_rfc_1123(Mfst?MANIFEST.created),
     ETag = "\"" ++ riak_cs_utils:binary_to_hexlist(ContentMd5) ++ "\"",
-    {{Start, End}, IsRange} = parse_range(RD, ResourceLength),
-    NewRQ = lists:foldl(fun({K, V}, Rq) -> wrq:set_resp_header(K, V, Rq) end,
-                        RD,
-                        [{"ETag",  ETag},
-                         {"Last-Modified", LastModified}
-                        ] ++  Mfst?MANIFEST.metadata),
-    StreamOp =
+    {{Start, End}, RespRange} = parse_range(RD, ResourceLength),
+    NewRQ1 = lists:foldl(fun({K, V}, Rq) -> wrq:set_resp_header(K, V, Rq) end,
+                         RD,
+                         [{"ETag",  ETag},
+                          {"Last-Modified", LastModified}
+                         ] ++  Mfst?MANIFEST.metadata),
+    NewRQ2 = wrq:set_resp_range(RespRange, NewRQ1),
+    StreamBody =
         case Method == 'HEAD'
             orelse
             ResourceLength == 0 of
             true ->
                 riak_cs_get_fsm:stop(GetFsmPid),
-                {known_length_stream, ResourceLength, fun() -> {<<>>, done} end};
+                fun() -> {<<>>, done} end;
             false ->
                 riak_cs_get_fsm:continue(GetFsmPid, {Start, End}),
-                case IsRange of
-                    false ->
-                        {known_length_stream, ResourceLength,
-                         {<<>>, fun() ->
-                                        riak_cs_wm_utils:streaming_get(
-                                          GetFsmPid, StartTime, UserName, BFile_str)
-                                end}};
-                    true ->
-                        {stream, ResourceLength,
-                         fun(_RangeStart, _RangeEnd) ->
-                                 riak_cs_wm_utils:streaming_get(
-                                   GetFsmPid, StartTime, UserName, BFile_str)
-                         end}
-                end
+                {<<>>, fun() ->
+                               riak_cs_wm_utils:streaming_get(
+                                 GetFsmPid, StartTime, UserName, BFile_str)
+                       end}
         end,
     if Method == 'HEAD' ->
             riak_cs_dtrace:dt_object_return(?MODULE, <<"object_head">>,
@@ -168,12 +159,12 @@ produce_body(RD, Ctx=#context{local_context=LocalCtx,
        true ->
             ok
     end,
-    {StreamOp, NewRQ, Ctx}.
+    {{known_length_stream, ResourceLength, StreamBody}, NewRQ2, Ctx}.
 
 parse_range(RD, ResourceLength) ->
     case wrq:get_req_header("range", RD) of
         undefined ->
-            {{0, ResourceLength - 1}, false};
+            {{0, ResourceLength - 1}, ignore_request};
         RawRange ->
             case webmachine_util:parse_range(RawRange, ResourceLength) of
                 [] ->
@@ -186,12 +177,10 @@ parse_range(RD, ResourceLength) ->
                     %% <RangeRequested>bytes=14-15</RangeRequested></Error>
                     error(invalid_range);
                 [SingleRange] ->
-                    {SingleRange, true};
+                    {SingleRange, follow_request};
                 _MultipleRanges ->
                     %% S3 responds full resource without a Content-Range header
-                    %% TODO: Not yet implemented
-                    throw(not_yet_implemented)
-                    %% {{0, ResourceLength - 1}, false}
+                    {{0, ResourceLength - 1}, ignore_request}
             end
     end.
 
