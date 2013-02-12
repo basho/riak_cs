@@ -31,9 +31,9 @@ init(Ctx) ->
     {ok, Ctx#context{local_context=#key_context{}}}.
 
 -spec malformed_request(#wm_reqdata{}, #context{}) -> {false, #wm_reqdata{}, #context{}}.
-malformed_request(RD,Ctx=#context{local_context=LocalCtx0}) ->    
+malformed_request(RD,Ctx=#context{local_context=LocalCtx0}) ->
     Bucket = list_to_binary(wrq:path_info(bucket, RD)),
-    %% need to unquote twice since we re-urlencode the string during rewrite in 
+    %% need to unquote twice since we re-urlencode the string during rewrite in
     %% order to trick webmachine dispatching
     %% NOTE: Bucket::binary(), *but* Key::string()
     Key = mochiweb_util:unquote(mochiweb_util:unquote(wrq:path_info(object, RD))),
@@ -44,7 +44,7 @@ malformed_request(RD,Ctx=#context{local_context=LocalCtx0}) ->
 %% object ACL and compare the permission requested with the permission
 %% granted, and allow or deny access. Returns a result suitable for
 %% directly returning from the {@link forbidden/2} webmachine export.
--spec authorize(#wm_reqdata{}, #context{}) -> 
+-spec authorize(#wm_reqdata{}, #context{}) ->
                        {boolean() | {halt, term()}, #wm_reqdata{}, #context{}}.
 authorize(RD, Ctx0=#context{local_context=LocalCtx0, riakc_pid=RiakPid}) ->
     Method = wrq:method(RD),
@@ -91,13 +91,13 @@ check_permission(_, RD, Ctx=#context{requested_perm=RequestedAccess,
          end of
         true ->
             %% actor is the owner
-            AccessRD = riak_cs_access_logger:set_user(User, RD),
+            AccessRD = riak_cs_access_log_handler:set_user(User, RD),
             UserStr = User?RCS_USER.canonical_id,
             UpdLocalCtx = LocalCtx#key_context{owner=UserStr},
             {false, AccessRD, Ctx#context{local_context=UpdLocalCtx}};
         {true, OwnerId} ->
             %% bill the owner, not the actor
-            AccessRD = riak_cs_access_logger:set_user(OwnerId, RD),
+            AccessRD = riak_cs_access_log_handler:set_user(OwnerId, RD),
             UpdLocalCtx = LocalCtx#key_context{owner=OwnerId},
             {false, AccessRD, Ctx#context{local_context=UpdLocalCtx}};
         false ->
