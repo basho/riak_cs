@@ -336,7 +336,7 @@ xml_sample_error({{Start, End}, Reason}, SubType, TypeLabel) ->
 
 %% @doc JSON deserializes with keys as binaries, but xmerl requires
 %% tag names to be atoms.
-xml_name(Other) -> binary_to_atom(Other, latin1).
+xml_name(Other) -> binary_to_existing_atom(Other, latin1).
 
 xml_reason(Reason) ->
     [if is_atom(Reason) -> atom_to_binary(Reason, latin1);

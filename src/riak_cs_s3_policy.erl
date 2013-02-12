@@ -473,11 +473,7 @@ statement_from_pairs([{<<"Condition">>,{struct, Cs}}  |T], Stmt) ->
 
 -spec binary_to_action(binary()) -> s3_object_action() | s3_bucket_action().
 binary_to_action(Bin)->
-    % @TODO: use binary_to_existing_atom/2 to protect atom table.
-    % but no other good place to register atoms into atom tables
-    % defined in ?SUPPORTED_BUCKET_ACTION and ?SUPPORTED_OBJECT_ACTION
-    %binary_to_existing_atom(Bin, latin1).
-    binary_to_atom(Bin, latin1).
+    binary_to_existing_atom(Bin, latin1).
 
 % @TODO: error processing
 -spec parse_principal(binary() | [binary()]) -> principal().
