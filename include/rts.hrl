@@ -8,7 +8,14 @@
                           | 'BytesOut' | 'UserErrorBytesOut' | 'SystemErrorBytesOut'
                           | 'BytesOutIncomplete'.
 
--define(SUPPORTED_USAGE_FIELD, ['Count' , 'UserErrorCount' , 'SystemErrorCount',
-                                'BytesIn' , 'UserErrorBytesIn' , 'SystemErrorBytesIn',
-                                'BytesOut' , 'UserErrorBytesOut' , 'SystemErrorBytesOut',
-                                'BytesOutIncomplete']).
+-define(SUPPORTED_USAGE_FIELD,
+        ['Count' , 'UserErrorCount' , 'SystemErrorCount',
+         'BytesIn' , 'UserErrorBytesIn' , 'SystemErrorBytesIn',
+         'BytesOut' , 'UserErrorBytesOut' , 'SystemErrorBytesOut',
+         'BytesOutIncomplete']).
+
+-define(SUPPORTED_USAGE_FIELD_BIN,
+        [<<"Count">> , <<"UserErrorCount">> , <<"SystemErrorCount">>,
+         <<"BytesIn">> , <<"UserErrorBytesIn">> , <<"SystemErrorBytesIn">>,
+         <<"BytesOut">> , <<"UserErrorBytesOut">> , <<"SystemErrorBytesOut">>,
+         <<"BytesOutIncomplete">>]).

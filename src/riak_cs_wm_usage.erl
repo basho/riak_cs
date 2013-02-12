@@ -100,6 +100,7 @@
          produce_xml/2,
          finish_request/2
         ]).
+-on_load(on_load/0).
 
 -ifdef(TEST).
 -ifdef(EQC).
@@ -142,6 +143,13 @@
           body :: iodata(),
           etag :: iolist()
          }).
+
+on_load() ->
+    %% put atoms into atom table, for binary_to_existing_atom/2 in xml_name/1
+    ?SUPPORTED_USAGE_FIELD = lists:map(fun(Bin) ->
+                                               binary_to_existing_atom(Bin, latin1)
+                                       end, ?SUPPORTED_USAGE_FIELD_BIN),
+    ok.
 
 init(Config) ->
     %% Check if authentication is disabled and
@@ -342,7 +350,7 @@ xml_sample_error({{Start, End}, Reason}, SubType, TypeLabel) ->
 xml_name(?START_TIME) -> ?ATTR_START;
 xml_name(?END_TIME) -> ?ATTR_END;
 xml_name(UsageFieldName) ->
-    true = lists:member(UsageFieldName, ?SUPPORTED_USAGE_FIELD),
+    true = lists:member(UsageFieldName, ?SUPPORTED_USAGE_FIELD_BIN),
     binary_to_existing_atom(UsageFieldName, latin1).
 
 xml_reason(Reason) ->
