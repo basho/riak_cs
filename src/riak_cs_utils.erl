@@ -63,7 +63,6 @@
 
 -include("riak_cs.hrl").
 -include_lib("riak_pb/include/riak_pb_kv_codec.hrl").
--include_lib("xmerl/include/xmerl.hrl").
 
 -ifdef(TEST).
 -compile(export_all).
@@ -77,8 +76,6 @@
 -define(is_quote(C), (C == $\") orelse (C == $\')).
 -define(is_indent(C), (C == 91) orelse (C == 123)). % [, {
 -define(is_undent(C), (C == 93) orelse (C == 125)). % ], }
-
--type xmlElement() :: #xmlElement{}.
 
 %% ===================================================================
 %% Public API
@@ -166,13 +163,7 @@ create_user(Name, Email) ->
                         ok ->
                             {ok, User};
                         {error, {error_status, _, _, ErrorDoc}} ->
-                            ErrorCode = case length(ErrorDoc) of
-                                0 ->
-                                    "BadRequest";
-                                _ ->
-                                    xml_error_code(ErrorDoc)
-                            end,
-                            {error, riak_cs_s3_response:error_code_to_atom(ErrorCode)};
+                            riak_cs_s3_response:error_response(ErrorDoc);
                         {error, _} ->
                             CreateResult
                     end;
@@ -1148,21 +1139,6 @@ keep_existing_bucket(?RCS_BUCKET{last_action=LastAction1,
             false
     end.
 
-%% @doc Process the top-level elements of the
--spec process_xml_error([xmlElement()]) -> string().
-process_xml_error([]) ->
-    [];
-process_xml_error([HeadElement | RestElements]) ->
-    _ = lager:debug("Element name: ~p", [HeadElement#xmlElement.name]),
-    ElementName = HeadElement#xmlElement.name,
-    case ElementName of
-        'Code' ->
-            [Content] = HeadElement#xmlElement.content,
-            Content#xmlText.value;
-        _ ->
-            process_xml_error(RestElements)
-    end.
-
 %% @doc Resolve the set of buckets for a user when
 %% siblings are encountered on a read of a user record.
 -spec resolve_buckets([rcs_user()], [cs_bucket()], boolean()) ->
@@ -1216,8 +1192,7 @@ serialized_bucket_op(Bucket, ACL, User, UserObj, BucketOp, StatName, RiakPid) ->
                             X
                     end;
                 {error, {error_status, _, _, ErrorDoc}} ->
-                    ErrorCode = xml_error_code(ErrorDoc),
-                    {error, riak_cs_s3_response:error_code_to_atom(ErrorCode)};
+                    riak_cs_s3_response:error_response(ErrorDoc);
                 {error, _} ->
                     OpResult
             end;
@@ -1255,13 +1230,6 @@ validate_email(EmailAddr) ->
         _ ->
             ok
     end.
-
-%% @doc Get the value of the `Code' element from
-%% and XML document.
--spec xml_error_code(string()) -> string().
-xml_error_code(Xml) ->
-    {ParsedData, _Rest} = xmerl_scan:string(Xml, []),
-    process_xml_error(ParsedData#xmlElement.content).
 
 %% @doc Update a bucket record to convert the name from binary
 %% to string if necessary.
