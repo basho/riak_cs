@@ -54,9 +54,9 @@ authorize(RD, Ctx0=#context{local_context=LocalCtx0, riakc_pid=RiakPid}) ->
 -spec check_permission(atom(), #wm_reqdata{}, #context{}, lfs_manifest() | notfound) ->
                               {boolean() | {halt, non_neg_integer()}, #wm_reqdata{}, #context{}}.
 check_permission('GET', RD, Ctx, notfound) ->
-    {{halt, 404}, riak_cs_access_logger:set_user(Ctx#context.user, RD), Ctx};
+    {{halt, 404}, riak_cs_access_log_handler:set_user(Ctx#context.user, RD), Ctx};
 check_permission('HEAD', RD, Ctx, notfound) ->
-    {{halt, 404}, riak_cs_access_logger:set_user(Ctx#context.user, RD), Ctx};
+    {{halt, 404}, riak_cs_access_log_handler:set_user(Ctx#context.user, RD), Ctx};
 check_permission(_, RD, Ctx=#context{requested_perm=RequestedAccess,local_context=LocalCtx}, Mfst) ->
     #key_context{bucket=Bucket} = LocalCtx,
     RiakPid = Ctx#context.riakc_pid,
@@ -79,13 +79,13 @@ check_permission(_, RD, Ctx=#context{requested_perm=RequestedAccess,local_contex
                                    RiakPid) of
         true ->
             %% actor is the owner
-            AccessRD = riak_cs_access_logger:set_user(User, RD),
+            AccessRD = riak_cs_access_log_handler:set_user(User, RD),
             UserStr = User?RCS_USER.canonical_id,
             UpdLocalCtx = LocalCtx#key_context{owner=UserStr},
             {false, AccessRD, Ctx#context{local_context=UpdLocalCtx}};
         {true, OwnerId} ->
             %% bill the owner, not the actor
-            AccessRD = riak_cs_access_logger:set_user(OwnerId, RD),
+            AccessRD = riak_cs_access_log_handler:set_user(OwnerId, RD),
             UpdLocalCtx = LocalCtx#key_context{owner=OwnerId},
             {false, AccessRD, Ctx#context{local_context=UpdLocalCtx}};
         false ->

@@ -91,13 +91,13 @@ check_permission(_, RD, Ctx=#context{requested_perm=RequestedAccess,
          end of
         true ->
             %% actor is the owner
-            AccessRD = riak_cs_access_logger:set_user(User, RD),
+            AccessRD = riak_cs_access_log_handler:set_user(User, RD),
             UserStr = User?RCS_USER.canonical_id,
             UpdLocalCtx = LocalCtx#key_context{owner=UserStr},
             {false, AccessRD, Ctx#context{local_context=UpdLocalCtx}};
         {true, OwnerId} ->
             %% bill the owner, not the actor
-            AccessRD = riak_cs_access_logger:set_user(OwnerId, RD),
+            AccessRD = riak_cs_access_log_handler:set_user(OwnerId, RD),
             UpdLocalCtx = LocalCtx#key_context{owner=OwnerId},
             {false, AccessRD, Ctx#context{local_context=UpdLocalCtx}};
         false ->
