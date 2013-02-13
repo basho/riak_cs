@@ -137,7 +137,7 @@ list_all_my_buckets_response(User, RD, Ctx) ->
                {'CreationDate', [B?RCS_BUCKET.creation_date]}]}
          end || B <- riak_cs_utils:get_buckets(User)],
     Contents =  [user_to_xml_owner(User)] ++ [{'Buckets', BucketsDoc}],
-    XmlDoc = [{'ListAllMyBucketsResult',  Contents}],
+    XmlDoc = [{'ListAllMyBucketsResult', [{'xmlns', ?S3_XMLNS}], Contents}],
     respond(200, export_xml(XmlDoc), RD, Ctx).
 
 list_bucket_response(User, Bucket, KeyObjPairs, RD, Ctx) ->
