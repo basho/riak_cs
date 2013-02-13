@@ -547,8 +547,9 @@ filter_uploads_list(Bucket, Key, Opts, RiakcPid, Acc) ->
 parameter_filter(M, Acc, _, _, KeyMarker, _)
   when M?MULTIPART_DESCR.key =< KeyMarker->
     Acc;
-parameter_filter(M, Acc, _, _, _, UploadIdMarker)
-  when M?MULTIPART_DESCR.upload_id =< UploadIdMarker ->
+parameter_filter(M, Acc, _, _, KeyMarker, UploadIdMarker)
+  when M?MULTIPART_DESCR.key =< KeyMarker andalso
+       M?MULTIPART_DESCR.upload_id =< UploadIdMarker ->
     Acc;
 parameter_filter(M, {Manifests, Prefixes}, undefined, undefined, _, _) ->
     {[M | Manifests], Prefixes};
