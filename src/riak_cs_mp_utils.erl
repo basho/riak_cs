@@ -53,7 +53,10 @@ calc_multipart_2i_dict(Ms, Bucket, _Key) when is_list(Ms) ->
     %% of bucket owner vs. non-bucket owner via two different 2I entries,
     %% one that includes the object owner and one that does not.
     L_2i = [
-            case proplists:get_value(multipart, M?MANIFEST.props) of
+            case proplists:get_value(multipart, case M?MANIFEST.props of 
+                                                    undefined -> []; 
+                                                    _ -> M?MANIFEST.props
+                                                end) of
                 undefined ->
                     [];
                 MpM when is_record(MpM, ?MULTIPART_MANIFEST_RECNAME) ->
