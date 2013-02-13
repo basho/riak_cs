@@ -100,6 +100,7 @@
          produce_xml/2,
          finish_request/2
         ]).
+-on_load(on_load/0).
 
 -ifdef(TEST).
 -ifdef(EQC).
@@ -130,6 +131,8 @@
 -define(KEY_ERRORS, 'Errors').
 -define(KEY_REASON, 'Reason').
 -define(KEY_MESSAGE, 'Message').
+-define(ATTR_START, 'StartTime').
+-define(ATTR_END, 'EndTime').
 
 -record(ctx, {
           auth_bypass :: boolean(),
@@ -140,6 +143,13 @@
           body :: iodata(),
           etag :: iolist()
          }).
+
+on_load() ->
+    %% put atoms into atom table, for binary_to_existing_atom/2 in xml_name/1
+    ?SUPPORTED_USAGE_FIELD = lists:map(fun(Bin) ->
+                                               binary_to_existing_atom(Bin, latin1)
+                                       end, ?SUPPORTED_USAGE_FIELD_BIN),
+    ok.
 
 init(Config) ->
     %% Check if authentication is disabled and
@@ -336,7 +346,12 @@ xml_sample_error({{Start, End}, Reason}, SubType, TypeLabel) ->
 
 %% @doc JSON deserializes with keys as binaries, but xmerl requires
 %% tag names to be atoms.
-xml_name(Other) -> binary_to_atom(Other, latin1).
+-spec xml_name(binary()) -> usage_field_type() | ?ATTR_START | ?ATTR_END.
+xml_name(?START_TIME) -> ?ATTR_START;
+xml_name(?END_TIME) -> ?ATTR_END;
+xml_name(UsageFieldName) ->
+    true = lists:member(UsageFieldName, ?SUPPORTED_USAGE_FIELD_BIN),
+    binary_to_existing_atom(UsageFieldName, latin1).
 
 xml_reason(Reason) ->
     [if is_atom(Reason) -> atom_to_binary(Reason, latin1);
