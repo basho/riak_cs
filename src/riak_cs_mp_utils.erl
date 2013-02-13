@@ -35,10 +35,9 @@
          upload_part/6, upload_part/7,
          upload_part_1blob/2,
          upload_part_finished/7, upload_part_finished/8,
-         user_rec_to_3tuple/1,
-         write_new_manifest/1,
-         write_new_manifest/3
+         user_rec_to_3tuple/1
         ]).
+-export([get_mp_manifest/1]).
 
 %%%===================================================================
 %%% API
@@ -53,10 +52,7 @@ calc_multipart_2i_dict(Ms, Bucket, _Key) when is_list(Ms) ->
     %% of bucket owner vs. non-bucket owner via two different 2I entries,
     %% one that includes the object owner and one that does not.
     L_2i = [
-            case proplists:get_value(multipart, case M?MANIFEST.props of 
-                                                    undefined -> []; 
-                                                    _ -> M?MANIFEST.props
-                                                end) of
+            case get_mp_manifest(M) of
                 undefined ->
                     [];
                 MpM when is_record(MpM, ?MULTIPART_MANIFEST_RECNAME) ->
@@ -74,8 +70,8 @@ abort_multipart_upload(Bucket, Key, UploadId, Caller, RiakcPidUnW) ->
 
 clean_multipart_unused_parts(?MANIFEST{bkey=BKey, props=Props} = Manifest,
                              RiakcPid) ->
-    case proplists:get_value(multipart, Props, false) of
-        false ->
+    case get_mp_manifest(Manifest) of
+        undefined ->
             same;
         MpM ->
             case {proplists:get_value(multipart_clean, Props, false),
@@ -234,7 +230,7 @@ new_manifest(Bucket, Key, ContentType, {_, _, _} = Owner, Opts) ->
                                        no_acl_yet),
     MpM = ?MULTIPART_MANIFEST{upload_id = UUID,
                               owner = Owner},
-    M?MANIFEST{props = [{multipart, MpM}|M?MANIFEST.props]}.
+    M?MANIFEST{props = replace_mp_manifest(MpM, M?MANIFEST.props)}.
 
 upload_part(Bucket, Key, UploadId, PartNumber, Size, Caller) ->
     upload_part(Bucket, Key, UploadId, PartNumber, Size, Caller, nopid).
@@ -273,11 +269,8 @@ user_rec_to_3tuple(U) ->
     {U?RCS_USER.display_name, U?RCS_USER.canonical_id,
      U?RCS_USER.key_id}.
 
-write_new_manifest(M) ->
-    write_new_manifest(M, [], nopid).
-
 write_new_manifest(M, Opts, RiakcPidUnW) ->
-    MpM = proplists:get_value(multipart, M?MANIFEST.props),
+    MpM = get_mp_manifest(M),
     Owner = MpM?MULTIPART_MANIFEST.owner,
     case wrap_riak_connection(RiakcPidUnW) of
         {ok, RiakcPid} ->
@@ -324,8 +317,7 @@ do_part_common(Op, Bucket, Key, UploadId, {_,_,CallerKeyId} = _Caller, Props, Ri
                             false ->
                                 {error, notfound};
                             M when M?MANIFEST.state == writing ->
-                                MpM = proplists:get_value(
-                                        multipart, M?MANIFEST.props),
+                                MpM = get_mp_manifest(M),
                                 {_, _, MpMOwner} = MpM?MULTIPART_MANIFEST.owner,
                                 case CallerKeyId == MpMOwner of
                                     true ->
@@ -380,17 +372,17 @@ do_part_common2(complete, RiakcPid,
         {ok, ManiPid} = riak_cs_manifest_fsm:start_link(Bucket, Key, RiakcPid),
         try
                 {Bytes, PartsToKeep, PartsToDelete} = comb_parts(MpM, PartETags),
-                Prop = {multipart, MpM?MULTIPART_MANIFEST{parts = PartsToKeep,
-                                                          done_parts = [],
-                                                          cleanup_parts = PartsToDelete}},
+                NewMpM = MpM?MULTIPART_MANIFEST{parts = PartsToKeep,
+                                                done_parts = [],
+                                                cleanup_parts = PartsToDelete},
                 %% If [] = PartsToDelete, then we only need to update
                 %% the manifest once.
                 MProps2 = case PartsToDelete of
                               [] ->
                                   [multipart_clean,
-                                   Prop|proplists:delete(multipart, MProps)];
+                                   replace_mp_manifest(NewMpM, MProps)];
                               _ ->
-                                  [Prop|proplists:delete(multipart, MProps)]
+                                  replace_mp_manifest(NewMpM, MProps)
                           end,
                 NewManifest = Manifest?MANIFEST{state = active,
                                                 content_length = Bytes,
@@ -462,10 +454,8 @@ do_part_common2(upload_part, RiakcPid, M, _Obj, MpM, Props) ->
                             content_length = Size,
                             block_size = BlockSize},
         NewMpM = MpM?MULTIPART_MANIFEST{parts = ordsets:add_element(PM, Parts)},
-        NewM = M?MANIFEST{
-                   content_length = ContentLength + Size,
-                   props = [{multipart, NewMpM}|proplists:delete(multipart, MProps)]
-                  },
+        NewM = M?MANIFEST{content_length = ContentLength + Size,
+                          props = replace_mp_manifest(NewMpM, MProps)},
         ok = update_manifest_with_confirmation(RiakcPid, NewM),
         {upload_part_ready, PartUUID, PutPid}
     catch error:{badmatch, {m_umwc, _}} ->
@@ -489,8 +479,7 @@ do_part_common2(upload_part_finished, RiakcPid, M, _Obj, MpM, Props) ->
                 NewMpM = MpM?MULTIPART_MANIFEST{
                                done_parts = ordsets:add_element({PartUUID, MD5},
                                                                 DoneParts)},
-                NewM = M?MANIFEST{
-                           props = [{multipart, NewMpM}|proplists:delete(multipart, MProps)]},
+                NewM = M?MANIFEST{props = replace_mp_manifest(NewMpM, MProps)},
                 ok = update_manifest_with_confirmation(RiakcPid, NewM)
         end
     catch error:{badmatch, {m_umwc, _}} ->
@@ -605,7 +594,7 @@ fold_get_multipart_id(Name, {RiakcPid, Bucket, CallerKeyId, Acc}) ->
                         iolist_to_binary(CallerKeyId) ==
                         iolist_to_binary(element(3, (M?MANIFEST.acl)?ACL.owner)),
                     M?MANIFEST.state == writing,
-                    MpM <- case proplists:get_value(multipart, M?MANIFEST.props) of
+                    MpM <- case get_mp_manifest(M) of
                                undefined -> [];
                                X         -> [X]
                            end],
@@ -721,10 +710,67 @@ get_riakc_pid({local_pid, RiakcPid}) ->
 get_riakc_pid({remote_pid, RiakcPid}) ->
     RiakcPid.
 
+-spec get_mp_manifest(lfs_manifest()) -> multipart_manifest() | 'undefined'.
+get_mp_manifest(?MANIFEST{props = Props}) when is_list(Props) ->
+    %% TODO: When the version number of the multipart_manifest_v1 changes
+    %%       to version v2 and beyond, this might be a good place to add
+    %%       a record conversion function to handle older versions of
+    %%       the multipart record?
+    proplists:get_value(multipart, Props, undefined);
+get_mp_manifest(_) ->
+    undefined.
+
+replace_mp_manifest(MpM, Props) ->
+    [{multipart, MpM}|proplists:delete(multipart, Props)].
+
 %% ===================================================================
 %% EUnit tests
 %% ===================================================================
 -ifdef(TEST).
+
+%% The test_0() and test_1() commands can be used while Riak CS is running.
+%% In fact, it's preferred (?) to do it that way because then all of the
+%% Poolboy infrastructure is already set up.  However, then there's the
+%% problem of getting the EUnit-compiled version of this module!
+%% So, there are a couple of work-arounds:
+%%
+%% 1. If Riak CS is running via "make stage" or "make rel", do at the console:
+%%       code:add_patha("../../.eunit").
+%%       l(riak_cs_mp_utils).
+%%       code:which(riak_cs_mp_utils).    % To verify EUnit version is loaded
+%%
+%% 2. Run without Riak CS:
+%%       erl -pz .eunit ebin deps/*/ebin
+%%    ... and then...
+%%       riak_cs_mp_utils:test_setup().   % Scott's preferred environment
+%%    or
+%%       riak_cs_mp_utils:test_setup(RiakIpAddress, RiakPbPortNumber).
+%%
+%% Finally, to run the tests:
+%%       ok = riak_cs_mp_utils:test_0().
+%%       ok = riak_cs_mp_utils:test_1().
+
+test_setup() ->
+    test_setup("127.0.0.1", 8081).
+
+test_setup(RiakIp, RiakPbPort) ->
+    PoolList = [{request_pool,{128,0}},{bucket_list_pool,{5,0}}],
+    WorkerStop = fun(Worker) -> riak_cs_riakc_pool_worker:stop(Worker) end,
+    PoolSpecs = [{Name,
+                  {poolboy, start_link, [[{name, {local, Name}},
+                                          {worker_module, riak_cs_riakc_pool_worker},
+                                          {size, Workers},
+                                          {max_overflow, Overflow},
+                                          {stop_fun, WorkerStop}]]},
+                  permanent, 5000, worker, [poolboy]}
+                 || {Name, {Workers, Overflow}} <- PoolList],
+    application:set_env(riak_cs, riak_ip, RiakIp),
+    application:set_env(riak_cs, riak_pb_port, RiakPbPort),
+    [{ok, _}, {ok, _}] =
+        [erlang:apply(M, F, A) || {_, {M, F, A}, _, _, _, _} <- PoolSpecs],
+    application:start(folsom),
+    riak_cs_stats:start_link(),
+    ok.    
 
 test_0() ->
     test_cleanup_users(),

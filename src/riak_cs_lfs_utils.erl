@@ -99,10 +99,9 @@ initial_blocks(ContentLength, SafeBlockSize, UUID) ->
 block_sequences_for_manifest(?MANIFEST{props=undefined}=Manifest) ->    
     block_sequences_for_manifest(Manifest?MANIFEST{props=[]});
 block_sequences_for_manifest(?MANIFEST{uuid=UUID,
-                                       content_length=ContentLength,
-                                       props=Props}=Manifest) ->
+                                       content_length=ContentLength}=Manifest)->
     SafeBlockSize = safe_block_size_from_manifest(Manifest),
-    case proplists:get_value(multipart, Props) of
+    case riak_cs_mp_utils:get_mp_manifest(Manifest) of
         undefined ->
             initial_blocks(ContentLength, SafeBlockSize, UUID);
         X ->
