@@ -406,6 +406,7 @@ bucket_access_authorize_helper(AccessType, Deletable,
          AccessType =:= bucket_policy orelse
          AccessType =:= bucket_location orelse
          AccessType =:= bucket_version orelse
+         AccessType =:= bucket_uploads orelse
          AccessType =:= bucket )
        andalso is_boolean(Deletable) ->
 
