@@ -8,12 +8,16 @@
          status_code/1,
          respond/4,
          export_xml/1,
+         error_response/1,
          error_response/5,
          list_bucket_response/5,
          list_all_my_buckets_response/3,
          error_code_to_atom/1]).
 
 -include("riak_cs.hrl").
+-include_lib("xmerl/include/xmerl.hrl").
+
+-type xmlElement() :: #xmlElement{}.
 
 -spec error_message(atom() | {'riak_connect_failed', term()}) -> string().
 -spec error_code(atom() | {'riak_connect_failed', term()}) -> string().
@@ -34,7 +38,7 @@ error_message(user_already_exists) ->
 error_message(entity_too_large) ->
     "Your proposed upload exceeds the maximum allowed object size.";
 error_message(invalid_user_update) ->
-    "The user update you request was invalid.";
+    "The user update you requested was invalid.";
 error_message(no_such_bucket) ->
     "The specified bucket does not exist.";
 error_message({riak_connect_failed, Reason}) ->
@@ -48,6 +52,7 @@ error_message(malformed_policy_resource) -> "Policy has invalid resource";
 error_message(malformed_policy_principal) -> "Invalid principal in policy";
 error_message(malformed_policy_action) -> "Policy has invalid action";
 error_message(no_such_bucket_policy) -> "The bucket policy does not exist";
+error_message(bad_request) -> "Bad Request";
 error_message(_) -> "Please reduce your request rate.".
 
 error_code(invalid_access_key_id) -> "InvalidAccessKeyId";
@@ -68,6 +73,7 @@ error_code(malformed_policy_resource) -> "MalformedPolicy";
 error_code(malformed_policy_principal) -> "MalformedPolicy";
 error_code(malformed_policy_action) -> "MalformedPolicy";
 error_code(no_such_bucket_policy) -> "NoSuchBucketPolicy";
+error_code(bad_request) -> "BadRequest";
 error_code(_) -> "ServiceUnavailable".
 
 status_code(invalid_access_key_id) -> 403;
@@ -89,6 +95,7 @@ status_code(malformed_policy_resource) -> 400;
 status_code(malformed_policy_principal) -> 400;
 status_code(malformed_policy_action) -> 400;
 status_code(no_such_bucket_policy) -> 404;
+status_code(bad_request) -> 400;
 status_code(_) -> 503.
 
 
@@ -102,6 +109,11 @@ respond(StatusCode, Body, ReqData, Ctx) ->
 api_error(Error, ReqData, Ctx) when is_atom(Error); is_tuple(Error) ->
     error_response(status_code(Error), error_code(Error), error_message(Error),
                    ReqData, Ctx).
+
+error_response(ErrorDoc) when length(ErrorDoc) =:= 0 ->
+    {error, error_code_to_atom("BadRequest")};
+error_response(ErrorDoc) ->
+    {error, error_code_to_atom(xml_error_code(ErrorDoc))}.
 
 error_response(StatusCode, Code, Message, RD, Ctx) ->
     {OrigResource, _} = riak_cs_s3_rewrite:original_resource(RD),
@@ -184,6 +196,8 @@ export_xml(XmlDoc) ->
 -spec error_code_to_atom(string()) -> atom().
 error_code_to_atom(ErrorCode) ->
     case ErrorCode of
+        "BadRequest" ->
+            bad_request;
         "InvalidAccessKeyId" ->
             invalid_access_key_id;
         "AccessDenied" ->
@@ -198,4 +212,26 @@ error_code_to_atom(ErrorCode) ->
             no_such_bucket;
         _ ->
             unknown
+    end.
+
+%% @doc Get the value of the `Code' element from
+%% and XML document.
+-spec xml_error_code(string()) -> string().
+xml_error_code(Xml) ->
+    {ParsedData, _Rest} = xmerl_scan:string(Xml, []),
+    process_xml_error(ParsedData#xmlElement.content).
+
+%% @doc Process the top-level elements of the
+-spec process_xml_error([xmlElement()]) -> string().
+process_xml_error([]) ->
+    [];
+process_xml_error([HeadElement | RestElements]) ->
+    _ = lager:debug("Element name: ~p", [HeadElement#xmlElement.name]),
+    ElementName = HeadElement#xmlElement.name,
+    case ElementName of
+        'Code' ->
+            [Content] = HeadElement#xmlElement.content,
+            Content#xmlText.value;
+        _ ->
+            process_xml_error(RestElements)
     end.
