@@ -85,7 +85,8 @@ list_objects_response_to_xml(Resp) ->
                 make_external_node('Delimiter', Resp?LORESP.delimiter),
                 make_external_node('IsTruncated', Resp?LORESP.is_truncated)] ++
         KeyContents ++ CommonPrefixes,
-    export_xml([make_internal_node('ListBucketResult', Contents)]).
+    export_xml([make_internal_node('ListBucketResult', [{'xmlns', ?S3_XMLNS}],
+                                   Contents)]).
 
 key_content_to_xml(KeyContent) ->
     Contents =
@@ -203,7 +204,7 @@ acl_to_xml_test() ->
     ?assertNotEqual(Xml, riak_cs_xml:to_xml(Acl2)).
 
 list_objects_response_to_xml_test() ->
-    Xml = <<"<?xml version=\"1.0\" encoding=\"UTF-8\"?><ListBucketResult><Name>bucket</Name><Prefix></Prefix><Marker></Marker><MaxKeys>1000</MaxKeys><Delimiter></Delimiter><IsTruncated>false</IsTruncated><Contents><Key>testkey1</Key><LastModified>2012-11-29T17:50:30.000Z</LastModified><ETag>\"fba9dede6af29711d7271245a35813428\"</ETag><Size>12345</Size><StorageClass>STANDARD</StorageClass><Owner><ID>TESTID1</ID><DisplayName>tester1</DisplayName></Owner></Contents><Contents><Key>testkey2</Key><LastModified>2012-11-29T17:52:30.000Z</LastModified><ETag>\"43433281b2f27731ccf53597645a3985\"</ETag><Size>54321</Size><StorageClass>STANDARD</StorageClass><Owner><ID>TESTID2</ID><DisplayName>tester2</DisplayName></Owner></Contents></ListBucketResult>">>,
+    Xml = <<"<?xml version=\"1.0\" encoding=\"UTF-8\"?><ListBucketResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Name>bucket</Name><Prefix></Prefix><Marker></Marker><MaxKeys>1000</MaxKeys><Delimiter></Delimiter><IsTruncated>false</IsTruncated><Contents><Key>testkey1</Key><LastModified>2012-11-29T17:50:30.000Z</LastModified><ETag>\"fba9dede6af29711d7271245a35813428\"</ETag><Size>12345</Size><StorageClass>STANDARD</StorageClass><Owner><ID>TESTID1</ID><DisplayName>tester1</DisplayName></Owner></Contents><Contents><Key>testkey2</Key><LastModified>2012-11-29T17:52:30.000Z</LastModified><ETag>\"43433281b2f27731ccf53597645a3985\"</ETag><Size>54321</Size><StorageClass>STANDARD</StorageClass><Owner><ID>TESTID2</ID><DisplayName>tester2</DisplayName></Owner></Contents></ListBucketResult>">>,
     Owner1 = #list_objects_owner_v1{id = <<"TESTID1">>, display_name = <<"tester1">>},
     Owner2 = #list_objects_owner_v1{id = <<"TESTID2">>, display_name = <<"tester2">>},
     Content1 = ?LOKC{key = <<"testkey1">>,
