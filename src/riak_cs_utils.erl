@@ -38,6 +38,7 @@
          hexlist_to_binary/1,
          json_pp_print/1,
          list_keys/2,
+         maybe_log_bucket_owner_error/2,
          pow/2,
          pow/3,
          put_object/5,
@@ -52,7 +53,7 @@
          set_object_acl/5,
          set_bucket_policy/5,
          delete_bucket_policy/4,
-         get_bucket_acl_policy/2,
+         get_bucket_acl_policy/3,
          timestamp/1,
          timestamp_to_seconds/1,
          to_bucket_name/2,
@@ -717,24 +718,35 @@ set_object_acl(Bucket, Key, Manifest, Acl, RiakPid) ->
     Res.
 
 % @doc fetch moss.bucket and return acl and policy
--spec get_bucket_acl_policy(binary(), pid()) -> {ok, {acl(), policy()}} | {error, term()}.
-get_bucket_acl_policy(Bucket, RiakPid) ->
+-spec get_bucket_acl_policy(binary(), atom(), pid()) -> {acl(), policy()} | {error, term()}.
+get_bucket_acl_policy(Bucket, PolicyMod, RiakPid) ->
     case check_bucket_exists(Bucket, RiakPid) of
         {ok, Obj} ->
-            %% For buckets there will not be siblings.
-            MD = riakc_obj:get_metadata(Obj),
-            MetaVals = dict:fetch(?MD_USERMETA, MD),
-            case {proplists:get_value(?MD_ACL, MetaVals),
-                  proplists:get_value(?MD_POLICY, MetaVals)} of
-                {undefined, undefined} -> {error, no_aclfound};
-                {undefined, PolicyBin} -> {ok, {undefined, binary_to_term(PolicyBin)}};
-                {AclBin, undefined}    -> {ok, {binary_to_term(AclBin), undefined}};
-                {AclBin,    PolicyBin} -> {ok, {binary_to_term(AclBin), binary_to_term(PolicyBin)}}
-            end;
+            %% For buckets there should not be siblings, but in rare
+            %% cases it may happen so check for them and attempt to
+            %% resolve if possible.
+            Contents = riakc_obj:get_contents(Obj),
+            Acl = riak_cs_acl:bucket_acl_from_contents(Bucket, Contents),
+            Policy = PolicyMod:bucket_policy_from_contents(Bucket, Contents),
+            format_acl_policy_response(Acl, Policy);
         {error, _}=Error ->
             Error
     end.
 
+-type policy_from_meta_result() :: {'ok', policy()} | {'error', 'policy_undefined'}.
+-type bucket_policy_result() :: policy_from_meta_result() | {'error', 'multiple_bucket_onwers'}.
+-type acl_from_meta_result() :: {'ok', acl()} | {'error', 'acl_undefined'}.
+-type bucket_acl_result() :: acl_from_meta_result() | {'error', 'multiple_bucket_onwers'}.
+-spec format_acl_policy_response(bucket_acl_result(), bucket_policy_result()) ->
+                                        {error, atom()} | {acl(), 'undefined' | policy()}.
+format_acl_policy_response({error, _}=Error, _) ->
+    Error;
+format_acl_policy_response(_, {error, multiple_bucket_owners}=Error) ->
+    Error;
+format_acl_policy_response({ok, Acl}, {error, policy_undefined}) ->
+    {Acl, undefined};
+format_acl_policy_response({ok, Acl}, {ok, Policy}) ->
+    {Acl, Policy}.
 
 %% @doc Generate a key for storing a set of manifests for deletion.
 -spec timestamp(erlang:timestamp()) -> non_neg_integer().
@@ -874,7 +886,8 @@ check_bucket_exists(Bucket, RiakPid) ->
     case riak_cs_utils:get_object(?BUCKETS_BUCKET, Bucket, RiakPid) of
         {ok, Obj} ->
             %% Make sure the bucket has an owner
-            [Value | _] = riakc_obj:get_values(Obj),
+            [Value | _] = Values = riakc_obj:get_values(Obj),
+            maybe_log_sibling_warning(Bucket, Values),
             case Value of
                 <<"0">> ->
                     {error, no_such_bucket};
@@ -884,6 +897,23 @@ check_bucket_exists(Bucket, RiakPid) ->
         {error, _}=Error ->
             Error
     end.
+
+-spec maybe_log_sibling_warning(binary(), list(riakc_obj:value())) -> ok.
+maybe_log_sibling_warning(Bucket, Values) when length(Values) > 1 ->
+    _ = lager:warning("The bucket ~s has ~b siblings that may need resolution.",
+                  [binary_to_list(Bucket), length(Values)]),
+    ok;
+maybe_log_sibling_warning(_, _) ->
+    ok.
+
+-spec maybe_log_bucket_owner_error(binary(), list(riakc_obj:value())) -> ok.
+maybe_log_bucket_owner_error(Bucket, Values) when length(Values) > 1 ->
+    _ = lager:warning("The bucket ~s has ~b owners."
+                      " This situation requires administrator intervention.",
+                      [binary_to_list(Bucket), length(Values)]),
+    ok;
+maybe_log_bucket_owner_error(_, _) ->
+    ok.
 
 %% @doc Check if a bucket exists in a list of the user's buckets.
 %% @TODO This will need to change once globally unique buckets
