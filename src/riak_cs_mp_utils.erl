@@ -379,8 +379,8 @@ do_part_common2(complete, RiakcPid,
                 %% the manifest once.
                 MProps2 = case PartsToDelete of
                               [] ->
-                                  [multipart_clean,
-                                   replace_mp_manifest(NewMpM, MProps)];
+                                  [multipart_clean] ++
+                                   replace_mp_manifest(NewMpM, MProps);
                               _ ->
                                   replace_mp_manifest(NewMpM, MProps)
                           end,
