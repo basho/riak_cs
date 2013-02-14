@@ -198,6 +198,7 @@ all_received({block_written, BlockID, WriterPid}, State=#state{mani_pid=ManiPid,
                 ReplyPid ->
                     %% reply with the final manifest
                     _ = erlang:cancel_timer(TimerRef),
+                    lager:error("the manifest state is ~p", [Manifest?MANIFEST.state]),
                     case riak_cs_manifest_fsm:update_manifest_with_confirmation(ManiPid, Manifest) of
                         ok ->
                             gen_fsm:reply(ReplyPid, {ok, Manifest}),
@@ -249,6 +250,7 @@ done(finalize, _From, State=#state{manifest=Manifest,
     %% 1. reply immediately
     %%    with the finished manifest
     _ = erlang:cancel_timer(TimerRef),
+    lager:error("the manifest state is ~p", [Manifest?MANIFEST.state]),
     case riak_cs_manifest_fsm:update_manifest_with_confirmation(ManiPid, Manifest) of
         ok ->
             {stop, normal, {ok, Manifest}, State};
@@ -278,8 +280,9 @@ handle_sync_event(_Event, _From, StateName, State) ->
 handle_info(save_manifest, StateName, State=#state{mani_pid=ManiPid,
                                                    manifest=Manifest}) ->
     %% 1. save the manifest
+    lager:error("saving manifest from timer"),
     riak_cs_manifest_fsm:update_manifest(ManiPid, Manifest),
-    TRef = erlang:send_after(60000, self(), save_manifest),
+    TRef = erlang:send_after(10000, self(), save_manifest),
     {next_state, StateName, State#state{timer_ref=TRef}};
 %% TODO:
 %% add a clause for handling down
@@ -290,8 +293,9 @@ handle_info({'DOWN', CallerRef, process, _Pid, Reason}, _StateName, State=#state
 %%--------------------------------------------------------------------
 %%
 %%--------------------------------------------------------------------
-terminate(_Reason, _StateName, #state{mani_pid=ManiPid,
+terminate(Reason, _StateName, #state{mani_pid=ManiPid,
                                       all_writer_pids=BlockServerPids}) ->
+    lager:error("the stop reason is ~p", [Reason]),
     riak_cs_manifest_fsm:maybe_stop_manifest_fsm(ManiPid),
     riak_cs_block_server:maybe_stop_block_servers(BlockServerPids),
     ok.
@@ -358,7 +362,7 @@ prepare(State=#state{bucket=Bucket,
     %% shouldn't be hardcoded,
     %% and if it is, what should
     %% it be?
-    TRef = erlang:send_after(60000, self(), save_manifest),
+    TRef = erlang:send_after(10000, self(), save_manifest),
     riak_cs_manifest_fsm:add_new_manifest(ManiPid, NewManifest),
     State#state{manifest=NewManifest,
                 md5=Md5,

@@ -199,12 +199,14 @@ waiting_update_command({update_manifests_with_confirmation, WrappedManifests}, _
                                             key=Key,
                                             riak_object=undefined,
                                             manifests=undefined}) ->
+    lager:error("new read"),
     {Reply, _, _} = get_and_update(RiakcPid, WrappedManifests, Bucket, Key),
     {reply, Reply, waiting_update_command, State};
 waiting_update_command({update_manifests_with_confirmation, WrappedManifests}, _From,
                                             State=#state{riakc_pid=RiakcPid,
                                             riak_object=PreviousRiakObject,
                                             manifests=PreviousManifests}) ->
+    lager:error("from previous read"),
     Reply = update_from_previous_read(RiakcPid, PreviousRiakObject,
                                   PreviousManifests, WrappedManifests),
 
@@ -263,6 +265,7 @@ get_and_delete(RiakcPid, UUID, Bucket, Key) ->
                     ObjectToWrite =
                         riakc_obj:update_value(RiakObject,
                                                term_to_binary(UpdatedManifests)),
+                    lager:error("put with not meta from delete manifests"),
                     riak_cs_utils:put_with_no_meta(RiakcPid, ObjectToWrite)
             end;
         {error, notfound} ->
@@ -276,20 +279,30 @@ get_and_update(RiakcPid, WrappedManifests, Bucket, Key) ->
     %% NOTE: it would also be nice to assert that the
     %% UUID being added doesn't already exist in the
     %% dict
+    [{_Key, Val}] = WrappedManifests,
+    lager:error("state is ~p", [Val?MANIFEST.state]),
+    lager:error("uuid is ~p", [Val?MANIFEST.uuid]),
     case riak_cs_utils:get_manifests(RiakcPid, Bucket, Key) of
         {ok, RiakObject, Manifests} ->
             NewManiAdded = riak_cs_manifest_resolution:resolve([WrappedManifests, Manifests]),
+            lager:error("after resolve ~p", [NewManiAdded]),
             OverwrittenUUIDs = riak_cs_manifest_utils:overwritten_UUIDs(NewManiAdded),
+            ObjectToWrite = riakc_obj:update_value(RiakObject,
+                term_to_binary(NewManiAdded)),
             Result = case OverwrittenUUIDs of
                 [] ->
-                    ObjectToWrite = riakc_obj:update_value(RiakObject,
-                        term_to_binary(NewManiAdded)),
-
+                    lager:error("no gc"),
+                    lager:error("put with no meta from get_and_update no gc"),
                     riak_cs_utils:put_with_no_meta(RiakcPid, ObjectToWrite);
                 _ ->
-                    riak_cs_gc:gc_specific_manifests(OverwrittenUUIDs,
-                                                     RiakObject,
-                                                     RiakcPid)
+                    lager:error("overwritten uuids is ~p", [OverwrittenUUIDs]),
+                    lager:error("w/ new mani is ~p", [NewManiAdded]),
+                    lager:error("yes gc"),
+                    _Foo = riak_cs_gc:gc_specific_manifests(OverwrittenUUIDs,
+                                                           ObjectToWrite,
+                                                           RiakcPid),
+                    %%lager:error("foo is ~p", [Foo]),
+                    ok
             end,
             {Result, RiakObject, Manifests};
         {error, notfound} ->
@@ -305,6 +318,7 @@ get_and_update(RiakcPid, WrappedManifests, Bucket, Key) ->
     ok | {error, term()}.
 update_from_previous_read(RiakcPid, RiakObject,
                               PreviousManifests, NewManifests) ->
+    lager:error("update from previous read"),
     Resolved = riak_cs_manifest_resolution:resolve([PreviousManifests,
             NewManifests]),
     NewRiakObject = riakc_obj:update_value(RiakObject,
@@ -314,6 +328,7 @@ update_from_previous_read(RiakcPid, RiakObject,
     %% anything to make sure
     %% this call succeeded
 
+    lager:error("put with no meta from update from previous read"),
     riak_cs_utils:put_with_no_meta(RiakcPid, NewRiakObject).
 
 %% ===================================================================

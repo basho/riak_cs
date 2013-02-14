@@ -163,12 +163,15 @@ mark_as_scheduled_delete(UUIDsToMark, RiakObject, RiakcPid) ->
                     {ok, riakc_obj:riak_object()} | {error, term()}.
 mark_manifests(RiakObject, UUIDsToMark, ManiFunction, RiakcPid) ->
     Manifests = riak_cs_utils:manifests_from_riak_object(RiakObject),
+    lager:error("states/uuid in mark_manifests is ~p", [[{M?MANIFEST.state, M?MANIFEST.uuid} || {_K, M} <- Manifests]]),
     Marked = ManiFunction(Manifests, UUIDsToMark),
+    lager:error("states/uuid in mark_manifests is ~p after marked", [[{M?MANIFEST.state, M?MANIFEST.uuid} || {_K, M} <- Manifests]]),
     UpdObj = riakc_obj:update_value(RiakObject, term_to_binary(Marked)),
 
     %% use [returnbody] so that we get back the object
     %% with vector clock. This allows us to do a PUT
     %% again without having to re-retrieve the object
+    lager:error("put with not meta from mark manifests"),
     riak_cs_utils:put_with_no_meta(RiakcPid, UpdObj, [return_body]).
 
 %% @doc Copy data for a list of manifests to the
@@ -176,6 +179,7 @@ mark_manifests(RiakObject, UUIDsToMark, ManiFunction, RiakcPid) ->
 -spec move_manifests_to_gc_bucket([lfs_manifest()], pid()) ->
     ok | {error, term()}.
 move_manifests_to_gc_bucket(Manifests, RiakcPid) ->
+    lager:error("states/uuid in move is ~p", [[{M?MANIFEST.state, M?MANIFEST.uuid} || {_K, M} <- Manifests]]),
     Key = generate_key(),
     ManifestSet = build_manifest_set(Manifests),
     ObjectToWrite = case riakc_pb_socket:get(RiakcPid, ?GC_BUCKET, Key) of
@@ -194,6 +198,7 @@ move_manifests_to_gc_bucket(Manifests, RiakcPid) ->
 
     %% Create a set from the list of manifests
     _ = lager:debug("Manifests scheduled for deletion: ~p", [ManifestSet]),
+    lager:error("put with not meta from move to gc bucket"),
     riak_cs_utils:put_with_no_meta(RiakcPid, ObjectToWrite).
 
 -spec build_manifest_set([lfs_manifest()]) -> twop_set:twop_set().

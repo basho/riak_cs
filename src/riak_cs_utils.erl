@@ -417,9 +417,12 @@ manifests_from_riak_object(RiakObject) ->
     %% Upgrade the manifests to be the latest erlang
     %% record version
     Upgraded = riak_cs_manifest_utils:upgrade_wrapped_manifests(DecodedSiblings),
+    lager:error("number of siblings is ~p", [length(DecodedSiblings)]),
+    lager:error("states/uuid in from riak object is ~p", [[[{M?MANIFEST.state, M?MANIFEST.uuid} || {_K, M} <- U] || U <- Upgraded]]),
 
     %% resolve the siblings
     Resolved = riak_cs_manifest_resolution:resolve(Upgraded),
+    lager:error("states/uuid in riak object is ~p after resolved", [[{M?MANIFEST.state, M?MANIFEST.uuid} || {_K, M} <- Resolved]]),
 
     %% prune old scheduled_delete manifests
     riak_cs_manifest_utils:prune(Resolved).
@@ -589,6 +592,7 @@ put_with_no_meta(RiakcPid, RiakcObj) ->
 -spec put_with_no_meta(pid(), riakc_obj:riakc_obj(), term()) ->
     ok | {ok, riakc_obj:riak_object()} | {ok, binary()} | {error, term()}.
 put_with_no_meta(RiakcPid, RiakcObject, Options) ->
+    lager:error("put with no meta called"),
     WithMeta = riakc_obj:update_metadata(RiakcObject, dict:new()),
     riakc_pb_socket:put(RiakcPid, WithMeta, Options).
 
