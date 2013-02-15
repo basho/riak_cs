@@ -111,14 +111,30 @@ content_types_provided(RD, Ctx=#context{local_context=LocalCtx,
             {[{"text/plain", produce_body}], RD, Ctx}
     end.
 
-
 -spec produce_body(#wm_reqdata{}, #context{}) ->
                           {{known_length_stream, non_neg_integer(), {<<>>, function()}}, #wm_reqdata{}, #context{}}.
+produce_body(RD, Ctx=#context{local_context=LocalCtx}) ->
+    #key_context{get_fsm_pid=GetFsmPid, manifest=Mfst} = LocalCtx,
+    ResourceLength = Mfst?MANIFEST.content_length,
+    case parse_range(RD, ResourceLength) of
+        invalid_range ->
+            %% HTTP/1.1 416 Requested Range Not Satisfiable
+            riak_cs_get_fsm:stop(GetFsmPid),
+            riak_cs_s3_response:api_error(
+              invalid_range,
+              %% RD#wm_reqdata{resp_range=ignore_request}, Ctx);
+              RD, Ctx);
+        {RangeIndexes, RespRange} ->
+            produce_body(RD, Ctx, RangeIndexes, RespRange)
+    end.
+
 produce_body(RD, Ctx=#context{local_context=LocalCtx,
                               start_time=StartTime,
-                              user=User}) ->
+                              user=User},
+             {Start, End}, RespRange) ->
     #key_context{get_fsm_pid=GetFsmPid, manifest=Mfst} = LocalCtx,
     {Bucket, File} = Mfst?MANIFEST.bkey,
+    ResourceLength = Mfst?MANIFEST.content_length,
     BFile_str = [Bucket, $,, File],
     UserName = riak_cs_wm_utils:extract_name(User),
     Method = wrq:method(RD),
@@ -127,11 +143,9 @@ produce_body(RD, Ctx=#context{local_context=LocalCtx,
                _ -> <<"object_get">>
            end,
     riak_cs_dtrace:dt_object_entry(?MODULE, Func, [], [UserName, BFile_str]),
-    ResourceLength = Mfst?MANIFEST.content_length,
     ContentMd5 = Mfst?MANIFEST.content_md5,
     LastModified = riak_cs_wm_utils:to_rfc_1123(Mfst?MANIFEST.created),
     ETag = "\"" ++ riak_cs_utils:binary_to_hexlist(ContentMd5) ++ "\"",
-    {{Start, End}, RespRange} = parse_range(RD, ResourceLength),
     NewRQ1 = lists:foldl(fun({K, V}, Rq) -> wrq:set_resp_header(K, V, Rq) end,
                          RD,
                          [{"ETag",  ETag},
@@ -168,14 +182,7 @@ parse_range(RD, ResourceLength) ->
         RawRange ->
             case webmachine_util:parse_range(RawRange, ResourceLength) of
                 [] ->
-                    %% TODO: S3 responds with 416
-                    %% HTTP/1.1 416 Requested Range Not Satisfiable
-                    %% Content-Type: application/xml
-                    %% <Error><Code>InvalidRange</Code>
-                    %% <Message>The requested range is not satisfiable</Message>
-                    %% <ActualObjectSize>11</ActualObjectSize>
-                    %% <RangeRequested>bytes=14-15</RangeRequested></Error>
-                    error(invalid_range);
+                    invalid_range;
                 [SingleRange] ->
                     {SingleRange, follow_request};
                 _MultipleRanges ->
