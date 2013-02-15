@@ -131,7 +131,7 @@ format_bucket_qs(QueryParams, SubResources) ->
 
 %% @doc Format an object operation query string to conform the the
 %% rewrite rules.
--spec format_object_qs(subresources()) -> string().
+-spec format_object_qs({subresources(), query_params()}) -> string().
 format_object_qs({SubResources, _}) ->
     UploadId = proplists:get_value("uploadId", SubResources, []),
     PartNum = proplists:get_value("partNumber", SubResources, []),
@@ -163,7 +163,7 @@ format_query_params(QueryParams) ->
     format_query_params(QueryParams, []).
 
 %% @doc Format a proplist of query parameters into a string
--spec format_query_params(query_params(), list()) -> string().
+-spec format_query_params(query_params(), list()) -> list().
 format_query_params([], QS) ->
     ["?", QS];
 format_query_params([{Key, []} | RestParams], []) ->
