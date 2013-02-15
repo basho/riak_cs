@@ -438,9 +438,9 @@
 -record(access_v1, {
           method :: atom(), % PUT / GET / POST / ....
           target :: atom(), % object | object_acl | ....
-          id :: binary(),
+          id :: string(),
           bucket :: binary(),
-          key = <<>> :: binary(),
+          key = <<>> :: undefined | binary(),
           req %:: #wm_reqdata{} % request of webmachine
          }).
 
