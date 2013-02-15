@@ -49,7 +49,7 @@
 %% Public API
 %% ===================================================================
 
--spec eval(access(), policy() | undefined | binary() )-> boolean().
+-spec eval(access(), policy1() | undefined | binary() )-> boolean().
 eval(_, undefined) -> undefined;
 eval(Access, JSON) when is_binary(JSON) ->
     case policy_from_json(JSON) of
@@ -58,7 +58,7 @@ eval(Access, JSON) when is_binary(JSON) ->
     end;
 eval(Access, ?POLICY{version=V, statement=Stmts}) ->
     case V of
-        undefined ->        aggregate_evaluation(Access, Stmts);
+%        undefined ->        aggregate_evaluation(Access, Stmts);
         ?AMZ_DEFAULT_VERSION -> aggregate_evaluation(Access, Stmts);
         _ -> false
     end.
@@ -73,7 +73,7 @@ aggregate_evaluation(Access, [Stmt|Stmts]) ->
 
 
 % @doc  semantic validation of policy
--spec check_policy(access(), policy()) -> ok | {error, atom()}.
+-spec check_policy(access(), policy1()) -> ok | {error, atom()}.
 check_policy(#access_v1{bucket=B} = _Access,
              Policy) ->
     
@@ -92,6 +92,7 @@ check_policy(#access_v1{bucket=B} = _Access,
 
 % @doc confirm if forbidden action included in policy
 % s3:CreateBucket and s3:ListAllMyBuckets are prohibited at S3
+-spec check_actions([#statement{}]) -> boolean().
 check_actions([]) -> true;
 check_actions([Stmt|Stmts]) ->
     case Stmt#statement.action of
@@ -107,6 +108,7 @@ check_actions([Stmt|Stmts]) ->
             end
     end.
 
+-spec check_principals([#statement{}]) -> boolean().
 check_principals([]) -> false;
 check_principals([Stmt|Stmts]) ->
     case check_principal(Stmt#statement.principal) of
@@ -114,6 +116,7 @@ check_principals([Stmt|Stmts]) ->
         false -> check_principals(Stmts)
     end.    
 
+-spec check_principal(any()) -> boolean().
 check_principal('*') ->
     true;
 check_principal([]) ->
@@ -140,20 +143,21 @@ check_all_resources(BucketBin, #arn_v1{path=Path} = _Resource) ->
     [B|_] = string:tokens(Path, "/"),
     B =:= binary_to_list(BucketBin).
 
--spec reqdata_to_access(#wm_reqdata{}, Target::atom(), ID::binary()) -> {ok, policy()}.
+-spec reqdata_to_access(#wm_reqdata{}, Target::atom(), ID::binary()|undefined) -> access().
 reqdata_to_access(RD, Target, ID) ->
     Key = case wrq:path_info(object, RD) of
               undefined -> undefined;
               RawKey -> mochiweb_util:unquote(mochiweb_util:unquote(RawKey))
           end,
     #access_v1{
-       method = wrq:method(RD), target = Target,
-       id = ID, req = RD,
-       bucket = list_to_binary(wrq:path_info(bucket, RD)),
-       key    = Key
-      }.
+            method = wrq:method(RD), 
+            target = Target,
+            id = ID, req = RD,
+            bucket = list_to_binary(wrq:path_info(bucket, RD)),
+            key    = Key
+           }.
 
--spec policy_from_json(JSON::binary()) -> {ok, policy()} | {error, term()}.
+-spec policy_from_json(JSON::binary()) -> {ok, policy1()} | {error, term()}.
 policy_from_json(JSON)->
     case catch(mochijson2:decode(JSON)) of
         {struct, Pairs} ->
@@ -161,24 +165,24 @@ policy_from_json(JSON)->
             ID      = proplists:get_value(<<"Id">>, Pairs),
             Stmts0  = proplists:get_value(<<"Statement">>, Pairs),
             Stmts = lists:map(fun({struct,S})->statement_from_pairs(S, #statement{}) end, Stmts0),
-            {ok, ?POLICY{id=ID, version=Version, statement=Stmts}};
+            case Version of
+                undefined ->
+                    {ok, ?POLICY{id=ID, statement=Stmts}};
+                _ ->
+                    {ok, ?POLICY{id=ID, version=Version, statement=Stmts}}
+            end;
         {error, _Reason} = E ->
             E;
         {'EXIT', {{case_clause, B}, _}} when is_binary(B) -> %% mochiweb failed to parse the JSON
             {error, malformed_policy_json}
     end.
 
--spec policy_to_json_term(policy()) -> JSON::binary().
-policy_to_json_term( ?POLICY{ version = V,
-                                 id = ID, statement = Stmts0} ) when
-      V =:= ?AMZ_DEFAULT_VERSION orelse V =:= undefined ->
+-spec policy_to_json_term(policy1()) -> JSON::binary().
+policy_to_json_term( ?POLICY{ version = ?AMZ_DEFAULT_VERSION,
+                              id = ID, statement = Stmts0}) ->
     Stmts = lists:map(fun statement_to_pairs/1, Stmts0),
     % hope no unicode included
-    Policy0 = [{"Id", ID}, {"Statement",Stmts}],
-    Policy = case V of
-                 undefined ->  Policy0;
-                 ?AMZ_DEFAULT_VERSION -> [{"Version", V}|Policy0]
-             end,
+    Policy = [{"Version",?AMZ_DEFAULT_VERSION},{"Id", ID},{"Statement",Stmts}],
     list_to_binary(mochijson2:encode(Policy)).
 
 -spec supported_object_action() -> [s3_object_action()].
@@ -200,7 +204,7 @@ log_supported_actions()->
 %% ===================================================================
 %% internal API
 
--spec resource_matches(binary(), binary(), #statement{}) -> boolean().
+-spec resource_matches(binary(), binary()|undefined|list(), #statement{}) -> boolean().
 resource_matches(_, _, #statement{resource='*'} = _Stmt ) -> true;
 resource_matches(BucketBin, KeyBin, #statement{resource=Resources}) ->
     Bucket = binary_to_list(BucketBin),
@@ -229,7 +233,7 @@ resource_matches(BucketBin, KeyBin, #statement{resource=Resources}) ->
 
 
 % functions to eval:
--spec eval_statement(access(), policy()) -> boolean() | undefined.
+-spec eval_statement(access(), #statement{}) -> boolean() | undefined.
 eval_statement(#access_v1{method=M, target=T, req=Req, bucket=B, key=K} = _Access,
                #statement{effect=E, condition_block=Conds, action=As} = Stmt) ->
     {ok, A} = make_action(M, T),
@@ -374,11 +378,10 @@ ipv4_eq({A,B,C,D}, {E,F,G,H}) ->
     (A =:= E) andalso (B =:= F) andalso (C =:= G) andalso (D =:= H).
 
 -type json_term() :: [{binary(), json_term()}] | integer() | float() | binary().
-
 % ===========================================
 % functions to convert policy record to JSON:
 
--spec statement_to_pairs(#statement{}) -> [{binary(), json_term()}].
+-spec statement_to_pairs(#statement{}) -> [{binary(), any()}].
 statement_to_pairs(#statement{sid=Sid, effect=E, principal=P, action=A,
                               not_action=NA, resource=R, condition_block=Cs})->
     AtomE = case E of
@@ -393,7 +396,7 @@ statement_to_pairs(#statement{sid=Sid, effect=E, principal=P, action=A,
      {<<"Condition">>, Conds}].
 
 
--spec condition_block_from_condition_pair(condition_pair()) -> {binary(), json_term()}.
+-spec condition_block_from_condition_pair(condition_pair()) -> {binary(), list()}.
 condition_block_from_condition_pair({AtomKey, Conds})->
     Fun = fun({'aws:SourceIp', IP}) -> {'aws:SourceIp', print_ip(IP)};
              (Cond) -> Cond
@@ -442,7 +445,7 @@ int_to_prefix(0) -> 0.
 % ===========================================================
 % functions to convert (parse) JSON to create a policy record:
 
--spec statement_from_pairs(json_term(), #statement{})-> #statement{}.
+-spec statement_from_pairs(list(), #statement{})-> #statement{}.
 statement_from_pairs([], Stmt) -> Stmt;
 statement_from_pairs([{<<"Sid">>,Sid}      |T], Stmt) ->
     statement_from_pairs(T, Stmt#statement{sid=Sid});
@@ -513,13 +516,13 @@ print_principal(List) ->
                end,
     lists:map(PrintFun, List).
 
--spec parse_arns(binary()|[binary()]) -> {ok, arn()} | {error, term()}.
+-spec parse_arns(binary()|[binary()]) -> {ok, arn()} | {error, bad_arn}.
 parse_arns(<<"*">>) -> {ok, '*'};
 parse_arns(Bin) when is_binary(Bin) ->
     Str = binary_to_list(Bin),
     case parse_arn(Str) of
         {ok, ARN} -> {ok, [ARN]};
-        {error, _} = E -> E
+        {error, bad_arn} = E -> E
     end;
 parse_arns(List) when is_list(List) ->
     AccFun = fun(ARNBin, {ok, Acc0}) ->
@@ -533,7 +536,7 @@ parse_arns(List) when is_list(List) ->
         {ok, ARNs} -> {ok, lists:reverse(ARNs)};
         Error -> Error
     end.
-
+-spec parse_arn(string()) -> {ok, arn()} | {error, bad_arn}.
 parse_arn(Str) ->
     case my_split($:, Str, [], []) of
         ["arn", "aws", "s3", Region, ID, Path] ->
@@ -564,7 +567,7 @@ print_arns(ARNs) ->
         end,
     lists:map(PrintARN, ARNs).
 
--spec condition_block_to_condition_pair({binary(), json_term()}) -> condition_pair().
+-spec condition_block_to_condition_pair({binary(), {struct, json_term()}}) -> condition_pair().
 condition_block_to_condition_pair({Key,{struct,Cond}}) ->
     % all key should be defined in stanchion.hrl
     AtomKey = binary_to_existing_atom(Key, latin1),
