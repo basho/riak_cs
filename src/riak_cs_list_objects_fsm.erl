@@ -240,7 +240,7 @@ handle_info(Info, waiting_map_reduce, State) ->
     waiting_map_reduce(Info, State).
 
 terminate(normal, _StateName, #state{req_profiles=Profilings}) ->
-    print_profiling(Profilings),
+    _ = print_profiling(Profilings),
     ok;
 terminate(_Reason, _StateName, _State) ->
     ok.
