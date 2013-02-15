@@ -58,7 +58,6 @@ eval(Access, JSON) when is_binary(JSON) ->
     end;
 eval(Access, ?POLICY{version=V, statement=Stmts}) ->
     case V of
-%        undefined ->        aggregate_evaluation(Access, Stmts);
         ?AMZ_DEFAULT_VERSION -> aggregate_evaluation(Access, Stmts);
         _ -> false
     end.
