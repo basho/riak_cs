@@ -71,17 +71,20 @@
 -record(arn_v1, {
           provider = aws :: aws,
           service  = s3  :: s3,
-          region         :: binary(),
-          id             :: binary(),
-          path           :: binary()
+          region         :: string(),
+          id             :: string(),
+          path           :: string()
          }).
 
 -type arn() :: #arn_v1{}.
 
+-type principal() :: '*'
+                   | [{canonical_id, string()}|{aws, '*'}].
+
 -record(statement, {
-          sid = undefined :: binary(), % had better use uuid: should be UNIQUE
+          sid = undefined :: undefined | binary(), % had better use uuid: should be UNIQUE
           effect = deny :: allow | deny,
-          principal  = [] :: [{binary(), [binary()]}],
+          principal  = [] :: principal(),
           action     = [] :: [ s3_object_action() | s3_bucket_action() ] | '*',
           not_action = [] :: [ s3_object_action() | s3_bucket_action() ] | '*',
           resource =   [] :: [ arn() ] | '*',
@@ -90,11 +93,9 @@
 
 -record(policy_v1, {
           version = <<"2008-10-17">> :: binary(),  % no other value is allowed than default
-          id = undefined :: binary(),  % had better use uuid: should be UNIQUE
-          statement = [] :: #statement{}
+          id = undefined :: undefined | binary(),  % had better use uuid: should be UNIQUE
+          statement = [] :: [#statement{}]
          }).
 
--type principal() :: '*'
-                   | [{canonical_id, string()}|{aws, '*'}].
 
 -define(POLICY, #policy_v1).
