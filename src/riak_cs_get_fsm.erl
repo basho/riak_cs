@@ -59,8 +59,8 @@
                 blocks_intransit=queue:new() :: queue(),
                 test=false :: boolean(),
                 total_blocks :: pos_integer(),
-                initial_block_no :: non_neg_integer(),
-                final_block_no :: non_neg_integer(),
+                initial_block :: block_name(),
+                final_block :: block_name(),
                 skip_bytes_initial :: non_neg_integer(),
                 keep_bytes_final :: non_neg_integer(),
                 free_readers :: [pid()],
@@ -186,7 +186,7 @@ waiting_continue_or_stop({continue, Range}, #state{manifest=Manifest,
             %% files are handled by the wm resource.
             _ = lager:warning("~p:~p has no blocks", [BucketName, Key]),
             {stop, normal, State};
-        [{_UUID, InitialBlockNo}|_] ->
+        [InitialBlock|_] ->
             TotalBlocks = length(BlocksOrder),
 
             %% Start the block servers
@@ -202,8 +202,8 @@ waiting_continue_or_stop({continue, Range}, #state{manifest=Manifest,
             %% start retrieving the first set of blocks
             UpdState = State#state{blocks_order=BlocksOrder,
                                    total_blocks=TotalBlocks,
-                                   initial_block_no=InitialBlockNo,
-                                   final_block_no=InitialBlockNo+TotalBlocks-1,
+                                   initial_block=InitialBlock,
+                                   final_block=lists:last(BlocksOrder),
                                    skip_bytes_initial=SkipInitial,
                                    keep_bytes_final=KeepFinal,
                                    free_readers=FreeReaders},
@@ -247,17 +247,16 @@ waiting_chunks({chunk, Pid, {NextBlock, BlockReturnValue}},
                #state{from=From,
                       got_blocks=Got,
                       free_readers=FreeReaders,
-                      initial_block_no=InitialBlockNo,
-                      final_block_no=FinalBlockNo,
+                      initial_block=InitialBlock,
+                      final_block=FinalBlock,
                       skip_bytes_initial=SkipInitial,
                       keep_bytes_final=KeepFinal
                      }=State) ->
     _ = lager:debug("Retrieved block ~p", [NextBlock]),
     {ok, RawBlockValue} = BlockReturnValue,        % TODO: robustify!
-    {_, BlockNo} = NextBlock,
     BlockValue = trim_block_value(RawBlockValue,
-                                  BlockNo,
-                                  {InitialBlockNo, FinalBlockNo},
+                                  NextBlock,
+                                  {InitialBlock, FinalBlock},
                                   {SkipInitial, KeepFinal}),
     UpdGot = orddict:store(NextBlock, BlockValue, Got),
     %% TODO: _ = lager:debug("BlocksLeft: ~p", [BlocksLeft]),
@@ -367,24 +366,24 @@ read_blocks(#state{manifest=Manifest,
                             blocks_order=BlocksOrder,
                             blocks_intransit=queue:in(NextBlock, Intransit)}).
 
-trim_block_value(RawBlockValue, CurrentBlockNo,
-                 {CurrentBlockNo, CurrentBlockNo},
+trim_block_value(RawBlockValue, CurrentBlock,
+                 {CurrentBlock, CurrentBlock},
                  {SkipInitial, KeepFinal}) ->
     ValueLength = KeepFinal - SkipInitial,
     <<_Skip:SkipInitial/binary, Value:ValueLength/binary, _Rest/binary>> = RawBlockValue,
     Value;
-trim_block_value(RawBlockValue, CurrentBlockNo,
-                 {CurrentBlockNo, _FinalBlockNo},
+trim_block_value(RawBlockValue, CurrentBlock,
+                 {CurrentBlock, _FinalBlock},
                  {SkipInitial, _KeepFinal}) ->
     <<_Skip:SkipInitial/binary, Value/binary>> = RawBlockValue,
     Value;
-trim_block_value(RawBlockValue, CurrentBlockNo,
-                 {_InitialBlockNo, CurrentBlockNo},
+trim_block_value(RawBlockValue, CurrentBlock,
+                 {_InitialBlock, CurrentBlock},
                  {_SkipInitial, KeepFinal}) ->
     <<Value:KeepFinal/binary, _Rest/binary>> = RawBlockValue,
     Value;
-trim_block_value(RawBlockValue, _CurrentBlockNo,
-                 {_InitialBlockNo, _FinalBlockNo},
+trim_block_value(RawBlockValue, _CurrentBlock,
+                 {_InitialBlock, _FinalBlock},
                  {_SkipInitial, _KeepFinal}) ->
     RawBlockValue.
 
