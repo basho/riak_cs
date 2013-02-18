@@ -44,8 +44,8 @@ get_fsm_should_never_fail_intermittently_test_() ->
       %% ContentLength = 10000, e.g. 1,2,5,100,1000.
       [{timeout, 300, fun() -> [ok = (test_n_chunks_builder(X))() ||
                                    _ <- lists:seq(1, Iters)] end} ||
-          {X, Iters} <- [{1, 500}, {2, 500}, {5, 500},
-                         {100, 300}, {1000, 30}]]
+          {X, Iters} <- [{1, 50}, {2, 50}, {5, 50},
+                         {100, 10}, {1000, 2}]]
      ]}.
 
 calc_block_size(ContentLength, NumBlocks) ->
