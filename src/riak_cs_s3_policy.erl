@@ -13,9 +13,12 @@
 -include("riak_cs.hrl").
 -include("s3_api.hrl").
 -include_lib("webmachine/include/wm_reqdata.hrl").
+-include_lib("riak_pb/include/riak_pb_kv_codec.hrl").
 
 %% Public API
 -export([
+         bucket_policy/2,
+         bucket_policy_from_contents/2,
          eval/2,
          check_policy/2,
          reqdata_to_access/3,
@@ -44,6 +47,7 @@
 -export_type([policy1/0]).
 
 -define(AMZ_DEFAULT_VERSION, <<"2008-10-17">>).
+-define(POLICY_UNDEF, {error, policy_undefined}).
 
 %% ===================================================================
 %% Public API
@@ -75,13 +79,13 @@ aggregate_evaluation(Access, [Stmt|Stmts]) ->
 -spec check_policy(access(), policy1()) -> ok | {error, atom()}.
 check_policy(#access_v1{bucket=B} = _Access,
              Policy) ->
-    
+
     case check_all_resources(B, Policy) of
         false -> {error, malformed_policy_resource};
         true ->
             case check_principals(Policy?POLICY.statement) of
                 false -> {error, malformed_policy_principal};
-                true -> 
+                true ->
                     case check_actions(Policy?POLICY.statement) of
                         false -> {error, malformed_policy_action};
                         true -> ok
@@ -113,7 +117,7 @@ check_principals([Stmt|Stmts]) ->
     case check_principal(Stmt#statement.principal) of
         true -> true;
         false -> check_principals(Stmts)
-    end.    
+    end.
 
 -spec check_principal(any()) -> boolean().
 check_principal('*') ->
@@ -200,6 +204,73 @@ log_supported_actions()->
                    [lists:map(fun atom_to_list/1, supported_bucket_action())]),
     ok.
 
+%% @doc Get the policy for a bucket
+-type policy_from_meta_result() :: {'ok', policy()} | {'error', 'policy_undefined'}.
+-type bucket_policy_result() :: policy_from_meta_result() | {'error', 'multiple_bucket_onwers'}.
+-spec bucket_policy(binary(), pid()) -> bucket_policy_result().
+bucket_policy(Bucket, RiakPid) ->
+    case riak_cs_utils:check_bucket_exists(Bucket, RiakPid) of
+        {ok, Obj} ->
+            %% For buckets there should not be siblings, but in rare
+            %% cases it may happen so check for them and attempt to
+            %% resolve if possible.
+            Contents = riakc_obj:get_contents(Obj),
+            bucket_policy_from_contents(Bucket, Contents);
+        {error, _}=Error ->
+            Error
+    end.
+
+%% @doc Attempt to resolve a policy for the bucket based on the contents.
+%% We attempt resolution, but intentionally do not write back a resolved
+%% value. Instead the fact that the bucket has siblings is logged, but the
+%% condition should be rare so we avoid updating the value at this time.
+-spec bucket_policy_from_contents(binary(), riakc_obj:contents()) ->
+                                         bucket_policy_result().
+bucket_policy_from_contents(_, [{MD, _}]) ->
+    MetaVals = dict:fetch(?MD_USERMETA, MD),
+    policy_from_meta(MetaVals);
+bucket_policy_from_contents(Bucket, Contents) ->
+    {Metas, Vals} = lists:unzip(Contents),
+    UniqueVals = lists:usort(Vals),
+    UserMetas = [dict:fetch(?MD_USERMETA, MD) || MD <- Metas],
+    riak_cs_utils:maybe_log_bucket_owner_error(Bucket, UniqueVals),
+    resolve_bucket_metadata(UserMetas, UniqueVals).
+
+-spec resolve_bucket_metadata(list(riakc_obj:metadata()),
+                               list(riakc_obj:values())) -> bucket_policy_result().
+resolve_bucket_metadata(Metas, [_Val]) ->
+    Policies = [policy_from_meta(M) || M <- Metas],
+    resolve_bucket_policies(Policies);
+resolve_bucket_metadata(_Metas, _) ->
+    {error, multiple_bucket_owners}.
+
+-spec resolve_bucket_policies(list(policy_from_meta_result())) -> policy_from_meta_result().
+resolve_bucket_policies([Policy]) ->
+    Policy;
+resolve_bucket_policies(Policies) ->
+    lists:foldl(fun newer_policy/2, ?POLICY_UNDEF, Policies).
+
+-spec newer_policy(policy_from_meta_result(), policy_from_meta_result()) ->
+                       policy_from_meta_result().
+newer_policy(Policy1, ?POLICY_UNDEF) ->
+    Policy1;
+newer_policy({ok, Policy1}, {ok, Policy2})
+  when Policy1?POLICY.creation_time >= Policy2?POLICY.creation_time ->
+    {ok, Policy1};
+newer_policy(_, Policy2) ->
+    Policy2.
+
+%% @doc Find the policy in a list of metadata values and
+%% convert it to an erlang term representation. Return
+%% an error tuple if a policy is not found.
+-spec policy_from_meta([{string(), term()}]) -> policy_from_meta_result().
+policy_from_meta([]) ->
+    ?POLICY_UNDEF;
+policy_from_meta([{?MD_POLICY, Policy} | _]) ->
+    {ok, binary_to_term(Policy)};
+policy_from_meta([_ | RestMD]) ->
+    policy_from_meta(RestMD).
+
 %% ===================================================================
 %% internal API
 
@@ -228,7 +299,7 @@ resource_matches(BucketBin, KeyBin, #statement{resource=Resources}) ->
                       end;
                  (_) -> false
               end, Resources).
-    
+
 
 
 % functions to eval:
@@ -257,7 +328,7 @@ make_action(Method, Target) ->
             {ok, 's3:CreateBucket'}; % 400 (MalformedPolicy): Policy has invalid action
         {'PUT', bucket_acl} -> {ok, 's3:PutBucketAcl'};
         {'PUT', bucket_policy} -> {ok, 's3:PutBucketPolicy'};
-        
+
         {'GET', object} ->     {ok, 's3:GetObject'};
         {'GET', object_acl} -> {ok, 's3:GetObjectAcl'};
         {'GET', bucket} ->     {ok, 's3:ListBucket'};
@@ -265,11 +336,11 @@ make_action(Method, Target) ->
         {'GET', bucket_acl} -> {ok, 's3:GetBucketAcl'};
         {'GET', bucket_policy} -> {ok, 's3:GetBucketPolicy'};
         {'GET', bucket_location} -> {ok, 's3:GetBucketLocation'};
-        
+
         {'DELETE', object} ->  {ok, 's3:DeleteObject'};
         {'DELETE', bucket} ->  {ok, 's3:DeleteBucket'};
         {'DELETE', bucket_policy} -> {ok, 's3:DeleteBucketPolicy'};
-        
+
         {'HEAD', object} -> {ok, 's3:GetObject'}; % no HeadObject
 
         {'HEAD', _} ->
@@ -408,7 +479,7 @@ print_ip({IP, Mask}) ->
     IPBin = list_to_binary(inet_parse:ntoa(IP)),
     case mask_to_prefix(Mask) of
         32 -> IPBin;
-        I -> 
+        I ->
             Str = integer_to_list(I),
             <<IPBin/binary, <<"/">>/binary, (list_to_binary(Str))/binary>>
     end.

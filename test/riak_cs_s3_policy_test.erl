@@ -36,8 +36,10 @@ empty_statement_conversion_test()->
     JsonPolicy = "{\"Version\":\"2008-10-17\",\"Id\":\"hello\",\"Statement\":[]}",
     ?assertEqual(list_to_binary(JsonPolicy),
                  riak_cs_s3_policy:policy_to_json_term(Policy)),
-    ?assertEqual({ok, Policy},
-                 riak_cs_s3_policy:policy_from_json(list_to_binary(JsonPolicy))).
+    {ok, PolicyFromJson} = riak_cs_s3_policy:policy_from_json(list_to_binary(JsonPolicy)),
+    ?assertEqual(Policy?POLICY.id, PolicyFromJson?POLICY.id),
+    ?assertEqual(Policy?POLICY.statement, PolicyFromJson?POLICY.statement),
+    ?assertEqual(Policy?POLICY.version, PolicyFromJson?POLICY.version).
 
 sample_plain_allow_policy()->
     <<"{"
@@ -88,8 +90,11 @@ sample_policy_check_test()->
 sample_conversion_test()->
     JsonPolicy0 = sample_plain_allow_policy(),
     {ok, Policy} = riak_cs_s3_policy:policy_from_json(JsonPolicy0),
-    ?assertEqual({ok, Policy},
-                 riak_cs_s3_policy:policy_from_json(riak_cs_s3_policy:policy_to_json_term(Policy))).
+    {ok, PolicyFromJson} = riak_cs_s3_policy:policy_from_json(riak_cs_s3_policy:policy_to_json_term(Policy)),
+    ?assertEqual(Policy?POLICY.id, PolicyFromJson?POLICY.id),
+    ?assertEqual(Policy?POLICY.statement, PolicyFromJson?POLICY.statement),
+    ?assertEqual(Policy?POLICY.version, PolicyFromJson?POLICY.version).
+
 
 eval_all_ip_addr_test() ->
     ?assert(riak_cs_s3_policy:eval_all_ip_addr([{{192,168,0,1},{255,255,255,255}}], {192,168,0,1})),
@@ -106,7 +111,7 @@ eval_ip_addresses_test()->
                                               [{'aws:SourceIp', {{1,1,1,1}, {255,255,255,0}}},
                                                {'aws:SourceIp', {{23,23,0,0},{255,255,0,0}}}, hage])).
 
-eval_condition_test()->    
+eval_condition_test()->
     ?assert(riak_cs_s3_policy:eval_condition(#wm_reqdata{peer = "23.23.23.23"},
                                              {'IpAddress', [garbage,{chiba, boo},"saitama",
                                                             {'aws:SourceIp', {{23,23,0,0},{255,255,0,0}}}, hage]})).
