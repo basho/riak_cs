@@ -58,8 +58,8 @@ eqc_test_() ->
        fun setup/0,
        fun cleanup/1,
        [%% Run the quickcheck tests
-        {timeout, 300,
-         ?_assertEqual(true, quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_get_fsm()))))}
+        {timeout, 30,
+         ?_assertEqual(true, eqc:quickcheck(eqc:testing_time(15, ?QC_OUT(prop_get_fsm()))))}
        ]
       }
      ]
