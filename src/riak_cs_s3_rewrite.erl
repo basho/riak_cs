@@ -29,7 +29,10 @@ rewrite(Method, _Scheme, _Vsn, Headers, RawPath) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"rewrite">>),
     Host = mochiweb_headers:get_value("host", Headers),
     HostBucket = bucket_from_host(Host),
-    {Path, QueryString, _} = mochiweb_util:urlsplit_path(RawPath),
+    %% Unquote the URL to accomodate some naughty client libs (looking
+    %% at you Fog)
+    {Path, QueryString, _} = mochiweb_util:urlsplit_path(
+                               mochiweb_util:unquote(RawPath)),
     RewrittenPath = rewrite_path(Method, Path, QueryString, HostBucket),
     RewrittenHeaders = mochiweb_headers:default(?RCS_REWRITE_HEADER,
                                                 rcs_rewrite_header(RawPath, HostBucket),

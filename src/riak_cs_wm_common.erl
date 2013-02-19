@@ -362,11 +362,11 @@ post_authentication({error, no_user_key}, RD, Ctx, _, false) ->
     riak_cs_wm_utils:deny_access(RD, Ctx);
 post_authentication({error, bad_auth}, RD, Ctx, _, _) ->
     %% given keyid was found, but signature didn't match
-    _ = lager:info("bad_auth"),
+    _ = lager:debug("bad_auth"),
     riak_cs_wm_utils:deny_access(RD, Ctx);
-post_authentication({error, _Reason}, RD, Ctx, _, _) ->
+post_authentication({error, Reason}, RD, Ctx, _, _) ->
     %% no matching keyid was found, or lookup failed
-    _ = lager:info("other"),
+    _ = lager:debug("Authentication error: ~p", [Reason]),
     riak_cs_wm_utils:deny_invalid_key(RD, Ctx).
 
 

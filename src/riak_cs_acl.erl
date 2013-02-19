@@ -26,10 +26,13 @@
          bucket_access/4,
          bucket_access/5,
          bucket_acl/2,
+         bucket_acl_from_contents/2,
          object_access/5,
          object_access/6,
          owner_id/2
         ]).
+
+-define(ACL_UNDEF, {error, acl_undefined}).
 
 %% ===================================================================
 %% Public API
@@ -146,17 +149,60 @@ bucket_access(_, RequestedAccess, CanonicalId, RiakPid, Acl) ->
 
 
 %% @doc Get the ACL for a bucket
--spec bucket_acl(binary(), pid()) -> {ok, acl()} | {error, term()}.
+-type acl_from_meta_result() :: {'ok', acl()} | {'error', 'acl_undefined'}.
+-type bucket_acl_result() :: acl_from_meta_result() | {'error', 'multiple_bucket_onwers'}.
+-spec bucket_acl(binary(), pid()) -> bucket_acl_result().
 bucket_acl(Bucket, RiakPid) ->
     case riak_cs_utils:check_bucket_exists(Bucket, RiakPid) of
         {ok, Obj} ->
-            %% For buckets there will not be siblings.
-            MD = riakc_obj:get_metadata(Obj),
-            MetaVals = dict:fetch(?MD_USERMETA, MD),
-            acl_from_meta(MetaVals);
+            %% For buckets there should not be siblings, but in rare
+            %% cases it may happen so check for them and attempt to
+            %% resolve if possible.
+            Contents = riakc_obj:get_contents(Obj),
+            bucket_acl_from_contents(Bucket, Contents);
         {error, _}=Error ->
             Error
     end.
+
+%% @doc Attempt to resolve an ACL for the bucket based on the contents.
+%% We attempt resolution, but intentionally do not write back a resolved
+%% value. Instead the fact that the bucket has siblings is logged, but the
+%% condition should be rare so we avoid updating the value at this time.
+-spec bucket_acl_from_contents(binary(), riakc_obj:contents()) ->
+                                      bucket_acl_result().
+bucket_acl_from_contents(_, [{MD, _}]) ->
+    MetaVals = dict:fetch(?MD_USERMETA, MD),
+    acl_from_meta(MetaVals);
+bucket_acl_from_contents(Bucket, Contents) ->
+    {Metas, Vals} = lists:unzip(Contents),
+    UniqueVals = lists:usort(Vals),
+    UserMetas = [dict:fetch(?MD_USERMETA, MD) || MD <- Metas],
+    riak_cs_utils:maybe_log_bucket_owner_error(Bucket, UniqueVals),
+    resolve_bucket_metadata(UserMetas, UniqueVals).
+
+-spec resolve_bucket_metadata(list(riakc_obj:metadata()),
+                               list(riakc_obj:values())) -> bucket_acl_result().
+resolve_bucket_metadata(Metas, [_Val]) ->
+    Acls = [acl_from_meta(M) || M <- Metas],
+    resolve_bucket_acls(Acls);
+resolve_bucket_metadata(_Metas, _) ->
+    {error, multiple_bucket_owners}.
+
+-spec resolve_bucket_acls(list(acl_from_meta_result())) -> acl_from_meta_result().
+resolve_bucket_acls([Acl]) ->
+    Acl;
+resolve_bucket_acls(Acls) ->
+    lists:foldl(fun newer_acl/2, ?ACL_UNDEF, Acls).
+
+-spec newer_acl(acl_from_meta_result(), acl_from_meta_result()) ->
+                       acl_from_meta_result().
+newer_acl(Acl1, ?ACL_UNDEF) ->
+    Acl1;
+newer_acl({ok, Acl1}, {ok, Acl2})
+  when Acl1?ACL.creation_time >= Acl2?ACL.creation_time ->
+    {ok, Acl1};
+newer_acl(_, Acl2) ->
+    Acl2.
 
 %% @doc Determine if a user has the requested access to an object
 %% @TODO Enhance when doing object-level ACL work. This is a bit
@@ -237,9 +283,9 @@ owner_id(#acl_v1{owner=OwnerData}, RiakPid) ->
 %% @doc Find the ACL in a list of metadata values and
 %% convert it to an erlang term representation. Return
 %% `undefined' if an ACL is not found.
--spec acl_from_meta([{string(), term()}]) -> {ok, acl()} | {error, acl_undefined}.
+-spec acl_from_meta([{string(), term()}]) -> acl_from_meta_result().
 acl_from_meta([]) ->
-    {error, acl_undefined};
+    ?ACL_UNDEF;
 acl_from_meta([{?MD_ACL, Acl} | _]) ->
     {ok, binary_to_term(Acl)};
 acl_from_meta([_ | RestMD]) ->

@@ -39,24 +39,9 @@ malformed_request(RD,Ctx=#context{local_context=LocalCtx0}) ->
     LocalCtx = LocalCtx0#key_context{bucket=Bucket},
     {false, RD, Ctx#context{local_context=LocalCtx}}.
 
--spec authorize(#wm_reqdata{}, #context{}) ->
-                       {boolean() | {halt, term()}, #wm_reqdata{}, #context{}}.
-
-authorize(RD, Ctx=#context{riakc_pid=RiakcPid, local_context=LocalCtx}) ->
-    Bucket = LocalCtx#key_context.bucket,
-    ReqAccess = riak_cs_acl_utils:requested_access('GET', false),
-    case {riak_cs_utils:check_bucket_exists(Bucket, RiakcPid),
-          riak_cs_acl_utils:check_grants(Ctx#context.user, Bucket,
-                                         ReqAccess, RiakcPid)} of
-        {{ok, _}, true} ->
-            {false, RD, Ctx};
-        {{ok, _}, false} ->
-            {{halt, 403}, RD, Ctx};
-        {{error, Reason}, _} ->
-            riak_cs_s3_response:api_error(Reason, RD, Ctx);
-        _X ->
-            {{halt, 404}, RD, Ctx}
-    end.
+-spec authorize(#wm_reqdata{}, #context{}) -> {boolean() | {halt, non_neg_integer()}, #wm_reqdata{}, #context{}}.
+authorize(RD, Ctx) ->
+    riak_cs_wm_utils:bucket_access_authorize_helper(bucket_uploads, true, RD, Ctx).
 
 %% @doc Get the list of methods this resource supports.
 -spec allowed_methods() -> [atom()].
@@ -89,11 +74,11 @@ to_xml(RD, Ctx=#context{local_context=LocalCtx,
             Cs = [{'CommonPrefixes',
                    [
                     % WTH? The pattern [Common | _] can never match the type []
-                    {'Prefix', [Common]}
+                    {'Prefix', [binary_to_list(Common)]}
                    ]} || Common <- Commons],
             Get = fun(Name) -> case proplists:get_value(Name, Opts) of
                                    undefined -> [];
-                                   X         -> X
+                                   X         -> binary_to_list(X)
                                end
                   end,
             XmlDoc = {'ListMultipartUploadsResult',
@@ -138,13 +123,16 @@ content_types_accepted(RD, Ctx) ->
     riak_cs_mp_utils:make_content_types_accepted(RD, Ctx).
 
 make_list_mp_uploads_opts(RD) ->
-    Ps = [{"delimiter", delimiter},
-          {"key-marker", key_marker},
-          {"max-uploads", max_uploads},
-          {"prefix", prefix},
-          {"upload-id-marker", upload_id_marker}
-         ],
-    lists:append([case wrq:get_qs_value(Name, RD) of
-                      undefined -> [];
-                      X         -> [{PropName, X}]
-                  end || {Name, PropName} <- Ps]).
+    Params1 = [{"delimiter", delimiter},
+               {"max-uploads", max_uploads},
+               {"prefix", prefix}],
+    Params2 = [{"key-marker", key_marker},
+               {"upload-id-marker", upload_id_marker}],
+    assemble_options(Params1, undefined, RD) ++
+        assemble_options(Params2, <<>>, RD).
+
+assemble_options(Parameters, Default, RD) ->
+    [case wrq:get_qs_value(Name, RD) of
+         undefined -> {PropName, Default};
+         X         -> {PropName, list_to_binary(X)}
+     end || {Name, PropName} <- Parameters].

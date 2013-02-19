@@ -21,6 +21,7 @@
          safe_block_size_from_manifest/1,
          initial_blocks/2,
          block_sequences_for_manifest/1,
+         block_sequences_for_manifest/2,
          new_manifest/9,
          new_manifest/11,
          remove_write_block/2,
@@ -96,7 +97,16 @@ initial_blocks(ContentLength, SafeBlockSize, UUID) ->
     Bs = initial_blocks(ContentLength, SafeBlockSize),
     [{UUID, B} || B <- Bs].
 
-block_sequences_for_manifest(?MANIFEST{props=undefined}=Manifest) ->    
+range_blocks(Start, End, SafeBlockSize, UUID) ->
+    SkipInitial = Start rem SafeBlockSize,
+    KeepFinal = (End rem SafeBlockSize) + 1,
+    lager:debug("InitialBlock: ~p, FinalBlock: ~p~n",
+                [Start div SafeBlockSize, End div SafeBlockSize]),
+    lager:debug("SkipInitial: ~p, KeepFinal: ~p~n", [SkipInitial, KeepFinal]),
+    {[{UUID, B} || B <- lists:seq(Start div SafeBlockSize, End div SafeBlockSize)],
+     SkipInitial, KeepFinal}.
+
+block_sequences_for_manifest(?MANIFEST{props=undefined}=Manifest) ->
     block_sequences_for_manifest(Manifest?MANIFEST{props=[]});
 block_sequences_for_manifest(?MANIFEST{uuid=UUID,
                                        content_length=ContentLength}=Manifest)->
@@ -116,6 +126,66 @@ block_sequences_for_manifest(?MANIFEST{uuid=UUID,
                                          SafeBlockSize,
                                          PM?PART_MANIFEST.part_id) ||
                              PM <- Src])
+    end.
+
+block_sequences_for_manifest(?MANIFEST{props=undefined}=Manifest, {Start, End}) ->
+    block_sequences_for_manifest(Manifest?MANIFEST{props=[]}, {Start, End});
+block_sequences_for_manifest(?MANIFEST{uuid=UUID}=Manifest,
+                             {Start, End})->
+    SafeBlockSize = safe_block_size_from_manifest(Manifest),
+    case riak_cs_mp_utils:get_mp_manifest(Manifest) of
+        undefined ->
+            range_blocks(Start, End, SafeBlockSize, UUID);
+        MpM ->
+            PartManifests = MpM?MULTIPART_MANIFEST.parts,
+            block_sequences_for_part_manifests_skip(SafeBlockSize, PartManifests,
+                                                    Start, End)
+    end.
+
+block_sequences_for_part_manifests_skip(SafeBlockSize, [PM | Rest],
+                                        StartOffset, EndOffset) ->
+    lager:debug("StartOffset: ~p, EndOffset: ~p, PartLength: ~p~n",
+                [StartOffset, EndOffset, PM?PART_MANIFEST.content_length]),
+    case PM?PART_MANIFEST.content_length of
+        %% Skipped
+        PartLength when PartLength =< StartOffset ->
+            block_sequences_for_part_manifests_skip(
+              SafeBlockSize, Rest,
+              StartOffset - PartLength, EndOffset - PartLength);
+        %% The first block, more blocks needed
+        PartLength when PartLength =< EndOffset ->
+            {Blocks, SkipInitial, _KeepFinal} =
+                range_blocks(StartOffset, PartLength - 1,
+                               SafeBlockSize, PM?PART_MANIFEST.part_id),
+            block_sequences_for_part_manifests_keep(
+              SafeBlockSize, SkipInitial, Rest,
+              EndOffset - PartLength, [Blocks]);
+        %% The first block, also the last
+        _PartLength ->
+            range_blocks(StartOffset, EndOffset,
+                         SafeBlockSize, PM?PART_MANIFEST.part_id)
+    end.
+
+block_sequences_for_part_manifests_keep(SafeBlockSize, SkipInitial, [PM | Rest],
+                                        EndOffset, ListOfBlocks) ->
+    lager:debug("EndOffset: EndOffset: ~p, PartLength: ~p~n",
+                [EndOffset, PM?PART_MANIFEST.content_length]),
+    case PM?PART_MANIFEST.content_length of
+        %% More blocks needed
+        PartLength when PartLength =< EndOffset ->
+            block_sequences_for_part_manifests_keep(
+              SafeBlockSize, SkipInitial, Rest,
+              EndOffset - PartLength,
+              [initial_blocks(PM?PART_MANIFEST.content_length,
+                              SafeBlockSize, PM?PART_MANIFEST.part_id)
+               | ListOfBlocks]);
+        %% Reaches to the last block
+        _PartLength ->
+            {Blocks, _SkipInitial, KeepFinal}
+                = range_blocks(0, EndOffset,
+                               SafeBlockSize, PM?PART_MANIFEST.part_id),
+            {lists:append(lists:reverse([Blocks | ListOfBlocks])),
+             SkipInitial, KeepFinal}
     end.
 
 %% @doc Return the configured file block fetch concurrency .

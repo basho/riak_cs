@@ -35,6 +35,7 @@ confirm() ->
     %% Test cases
     basic_upload_test_case(?TEST_BUCKET, ?TEST_KEY1, UserConfig),
     aborted_upload_test_case(?TEST_BUCKET, ?TEST_KEY2, UserConfig),
+    nonexistent_bucket_listing_test_case("fake-bucket", UserConfig),
 
     %% Start 10 uploads for 10 different keys
     Count1 = 10,
@@ -178,6 +179,9 @@ aborted_upload_test_case(Bucket, Key, Config) ->
     %% List bucket contents and verify key is still not listed
     ObjList2 = erlcloud_s3:list_objects(Bucket, Config),
     ?assertEqual([], proplists:get_value(contents, ObjList2)).
+
+nonexistent_bucket_listing_test_case(Bucket, Config) ->
+    ?assertError({aws_error, {http_error, 404, _, _}}, erlcloud_s3_multipart:list_uploads(Bucket, [], Config)).
 
 basic_upload_test_case(Bucket, Key, Config) ->
     %% Initiate a multipart upload

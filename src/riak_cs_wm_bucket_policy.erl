@@ -31,7 +31,7 @@ allowed_methods() ->
 content_types_provided(RD, Ctx) ->
     {[{"application/json", to_json}], RD, Ctx}.
 
--spec content_types_accepted(#wm_reqdata{}, #context{}) -> 
+-spec content_types_accepted(#wm_reqdata{}, #context{}) ->
                                     {[{string(), atom()}], #wm_reqdata{}, #context{}}.
 content_types_accepted(RD, Ctx) ->
     case wrq:get_req_header("content-type", RD) of
@@ -54,21 +54,19 @@ to_json(RD, Ctx=#context{start_time=_StartTime,
                          user=User,
                          bucket=Bucket,
                          riakc_pid=RiakPid}) ->
-    riak_cs_dtrace:dt_bucket_entry(?MODULE, <<"bucket_get_policy">>, 
+    riak_cs_dtrace:dt_bucket_entry(?MODULE, <<"bucket_get_policy">>,
                                       [], [riak_cs_wm_utils:extract_name(User), Bucket]),
 
-    case riak_cs_utils:get_bucket_acl_policy(Bucket, RiakPid) of
-        {ok, {_, undefined}} ->
+    case riak_cs_s3_policy:bucket_policy(Bucket, RiakPid) of
+        {ok, PolicyJson} ->
+            {PolicyJson, RD, Ctx};
+        {error, policy_undefined} ->
             % S3 error: 404 (NoSuchBucketPolicy): The bucket policy does not exist
             riak_cs_s3_response:api_error(no_such_bucket_policy, RD, Ctx);
-
-        {ok, {_, PolicyJson}} ->
-            {PolicyJson, RD, Ctx};
-
         {error, Reason} ->
             Code = riak_cs_s3_response:status_code(Reason),
             X = riak_cs_s3_response:api_error(Reason, RD, Ctx),
-            riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_get_policy">>, 
+            riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_get_policy">>,
                                                [Code], [riak_cs_wm_utils:extract_name(User), Bucket]),
             X
     end.
@@ -80,7 +78,7 @@ accept_body(RD, Ctx=#context{user=User,
                              bucket=Bucket,
                              policy_module=PolicyMod,
                              riakc_pid=RiakPid}) ->
-    riak_cs_dtrace:dt_bucket_entry(?MODULE, <<"bucket_put_policy">>, 
+    riak_cs_dtrace:dt_bucket_entry(?MODULE, <<"bucket_put_policy">>,
                                    [], [riak_cs_wm_utils:extract_name(User), Bucket]),
 
     PolicyJson = wrq:req_body(RD),
@@ -113,18 +111,17 @@ delete_resource(RD, Ctx=#context{user=User,
                                  user_object=UserObj,
                                  bucket=Bucket,
                                  riakc_pid=RiakPid}) ->
-    riak_cs_dtrace:dt_object_entry(?MODULE, <<"bucket_policy_delete">>, 
+    riak_cs_dtrace:dt_object_entry(?MODULE, <<"bucket_policy_delete">>,
                                    [], [RD, Ctx, RiakPid]),
 
     case riak_cs_utils:delete_bucket_policy(User, UserObj, Bucket, RiakPid) of
         ok ->
-            riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_put_policy">>, 
+            riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_put_policy">>,
                                             [200], [riak_cs_wm_utils:extract_name(User), Bucket]),
             {{halt, 200}, RD, Ctx};
         {error, Reason} ->
             Code = riak_cs_s3_response:status_code(Reason),
-            riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_put_policy">>, 
+            riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_put_policy">>,
                                             [Code], [riak_cs_wm_utils:extract_name(User), Bucket]),
             riak_cs_s3_response:api_error(Reason, RD, Ctx)
     end.
-
