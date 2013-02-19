@@ -1184,7 +1184,7 @@ resolve_buckets([HeadUserRec | RestUserRecs], Buckets, _KeepDeleted) ->
 
 %% @doc Shared code used when doing a bucket creation or deletion.
 -spec serialized_bucket_op(binary(),
-                           acl() | policy(),
+                           [] | acl() | policy(),
                            rcs_user(),
                            riakc_obj:riakc_obj(),
                            bucket_operation(),

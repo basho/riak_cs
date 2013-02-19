@@ -50,7 +50,8 @@
           modification_time :: erlang:timestamp(),
           acl :: acl()}).
 -type cs_bucket() :: #moss_bucket_v1{}.
--type bucket_operation() :: create | delete | update_acl.
+-type bucket_operation() :: create | delete | update_acl | update_policy 
+                          | delete_policy.
 -type bucket_action() :: created | deleted.
 
 -record(context, {start_time :: erlang:timestamp(),
