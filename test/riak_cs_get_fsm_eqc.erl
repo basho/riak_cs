@@ -102,7 +102,7 @@ prop_get_fsm() ->
 start_fsm(ContentLength, BlockSize) ->
     {ok, FSMPid} = riak_cs_get_fsm:test_link(<<"bucket">>, <<"key">>, ContentLength, BlockSize),
     _Manifest = riak_cs_get_fsm:get_manifest(FSMPid),
-    riak_cs_get_fsm:continue(FSMPid),
+    riak_cs_get_fsm:continue(FSMPid, {0, ContentLength-1}),
     FSMPid.
 
 get_chunk(FSMPid) ->
