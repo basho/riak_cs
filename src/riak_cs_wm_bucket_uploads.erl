@@ -39,24 +39,9 @@ malformed_request(RD,Ctx=#context{local_context=LocalCtx0}) ->
     LocalCtx = LocalCtx0#key_context{bucket=Bucket},
     {false, RD, Ctx#context{local_context=LocalCtx}}.
 
--spec authorize(#wm_reqdata{}, #context{}) ->
-                       {boolean() | {halt, term()}, #wm_reqdata{}, #context{}}.
-
-authorize(RD, Ctx=#context{riakc_pid=RiakcPid, local_context=LocalCtx}) ->
-    Bucket = LocalCtx#key_context.bucket,
-    ReqAccess = riak_cs_acl_utils:requested_access('GET', false),
-    case {riak_cs_utils:check_bucket_exists(Bucket, RiakcPid),
-          riak_cs_acl_utils:check_grants(Ctx#context.user, Bucket,
-                                         ReqAccess, RiakcPid)} of
-        {{ok, _}, true} ->
-            {false, RD, Ctx};
-        {{ok, _}, false} ->
-            {{halt, 403}, RD, Ctx};
-        {{error, Reason}, _} ->
-            riak_cs_s3_response:api_error(Reason, RD, Ctx);
-        _X ->
-            {{halt, 404}, RD, Ctx}
-    end.
+-spec authorize(#wm_reqdata{}, #context{}) -> {boolean() | {halt, non_neg_integer()}, #wm_reqdata{}, #context{}}.
+authorize(RD, Ctx) ->
+    riak_cs_wm_utils:bucket_access_authorize_helper(bucket_uploads, true, RD, Ctx).
 
 %% @doc Get the list of methods this resource supports.
 -spec allowed_methods() -> [atom()].
