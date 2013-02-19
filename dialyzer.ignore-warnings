@@ -23,7 +23,7 @@
 ^webmachine_request.erl:
 ^webmachine_resource.erl:
 ^webmachine_sup.erl:
-webmachine_dispatcher.erl:210: The pattern 'testing_ignore_dialyzer_warning_here' can never match the type {'wm_reqdata',_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_}
+^webmachine_dispatcher.erl:
 ############## Warnings from dependencies that are outside our scope
 ^bread.erl:
 ^dtop.erl:
@@ -69,7 +69,7 @@ webmachine_dispatcher.erl:210: The pattern 'testing_ignore_dialyzer_warning_here
 ^sherk_tab.erl:
 ^sherk_target.erl:
 ^watchdog.erl:
-############## datatypes due to riak_kv stuff in this repo
+############## datatypes due to riak_kv and other deps
   riak_kv_backend:fold_buckets_fun/0
   riak_kv_backend:fold_keys_fun/0
   riak_kv_backend:fold_objects_fun/0
@@ -81,6 +81,12 @@ webmachine_dispatcher.erl:210: The pattern 'testing_ignore_dialyzer_warning_here
   riak_object:key/1
   riak_object:new/3
   riak_object:update_metadata/2
+  calendar:day/0
+  calendar:hour/0
+  calendar:month/0
+  calendar:year/0
+############## stuff defined in test (we should dialyze these someday)
+  riakc_pb_socket_fake:start_link/0
 ############## functions due to riak_kv stuff in this repo
   app_helper:get_prop_or_env/3
   app_helper:get_prop_or_env/4
