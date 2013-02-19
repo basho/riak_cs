@@ -149,3 +149,4 @@ webmachine_dispatcher.erl:210: The pattern 'testing_ignore_dialyzer_warning_here
 riak_cs_blockall_auth.erl:9: Callback info about the riak_cs_auth behaviour is not available
 riak_cs_passthru_auth.erl:9: Callback info about the riak_cs_auth behaviour is not available
 riak_cs_s3_auth.erl:9: Callback info about the riak_cs_auth behaviour is not available
+riak_cs_s3_policy.erl:11: Callback info about the riak_cs_policy behaviour is not available
