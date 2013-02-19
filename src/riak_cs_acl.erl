@@ -181,7 +181,7 @@ bucket_acl_from_contents(Bucket, Contents) ->
     resolve_bucket_metadata(UserMetas, UniqueVals).
 
 -spec resolve_bucket_metadata(list(riakc_obj:metadata()),
-                               list(riakc_obj:values())) -> bucket_acl_result().
+                               list(riakc_obj:value())) -> bucket_acl_result().
 resolve_bucket_metadata(Metas, [_Val]) ->
     Acls = [acl_from_meta(M) || M <- Metas],
     resolve_bucket_acls(Acls);

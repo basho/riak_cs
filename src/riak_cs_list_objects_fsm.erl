@@ -131,7 +131,7 @@
                         {ReqID :: non_neg_integer, {error, term()}}.
 
 -type key_and_manifest() :: {binary(), lfs_manifest()}.
--type manifests_and_prefixes() :: {list(key_and_manifest()), ordsets:ordset()}.
+-type manifests_and_prefixes() :: {list(key_and_manifest()), ordsets:ordset(binary())}.
 
 -type tagged_item() :: {prefix, binary()} |
                        {manifest, {binary(), lfs_manifest()}}.
@@ -410,7 +410,7 @@ manifests_and_prefix_length({KeyAndManifestList, Prefixes}) ->
     length(KeyAndManifestList) + ordsets:size(Prefixes).
 
 -spec filter_prefix_keys(KeyAndManifestList :: list(manifests_and_prefixes()),
-                         CommonPrefixes :: ordsets:ordset(),
+                         CommonPrefixes :: ordsets:ordset(binary()),
                          list_object_request()) ->
     manifests_and_prefixes().
 filter_prefix_keys(KeyAndManifestList, CommonPrefixes, ?LOREQ{prefix=undefined,
