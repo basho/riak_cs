@@ -597,12 +597,6 @@ object_access_authorize_helper(AccessType, Deletable,
             riak_cs_wm_utils:deny_access(RD, Ctx)
     end.
 
-
-
-%% Illegal call, thus should not match.
-%% bucket_access_authorize_helper(_RD, _Ctx, _AccessType, _Deletable)->
-%%     ok.
-
 %% ===================================================================
 %% Internal functions
 %% ===================================================================
