@@ -107,7 +107,8 @@ accept_body(RD, Ctx=#context{user=User,
     end.
 
 %% @doc Callback for deleting policy.
--spec delete_resource(#wm_reqdata{}, #context{}) -> {true, #wm_reqdata{}, #context{}}.
+-spec delete_resource(#wm_reqdata{}, #context{}) -> {true, #wm_reqdata{}, #context{}} |
+                                                    {{halt, 200}, #wm_reqdata{}, #context{}}.
 delete_resource(RD, Ctx=#context{user=User,
                                  user_object=UserObj,
                                  bucket=Bucket,
