@@ -534,7 +534,15 @@ object_access_authorize_helper(AccessType, Deletable,
                     _ ->        Mfst?MANIFEST.acl
                 end,
 
-    Policy = PolicyMod:bucket_policy(Bucket, RiakPid),
+    Policy = case PolicyMod:bucket_policy(Bucket, RiakPid) of
+                 {ok, P} ->
+                     P;
+                 {error, policy_undefined} ->
+                     undefined;
+                 {error, _Reason} ->
+                     %% riak_cs_s3_response:api_error(Reason, RD, Ctx),
+                     undefined
+             end,
     Access = PolicyMod:reqdata_to_access(RD, AccessType, CanonicalId),
 
     case {riak_cs_acl:object_access(Bucket,

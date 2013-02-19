@@ -908,7 +908,7 @@ maybe_log_sibling_warning(_, _) ->
 
 -spec maybe_log_bucket_owner_error(binary(), list(riakc_obj:value())) -> ok.
 maybe_log_bucket_owner_error(Bucket, Values) when length(Values) > 1 ->
-    _ = lager:warning("The bucket ~s has ~b owners."
+    _ = lager:error("The bucket ~s has ~b owners."
                       " This situation requires administrator intervention.",
                       [binary_to_list(Bucket), length(Values)]),
     ok;

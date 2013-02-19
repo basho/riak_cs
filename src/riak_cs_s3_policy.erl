@@ -153,7 +153,7 @@ reqdata_to_access(RD, Target, ID) ->
               RawKey -> mochiweb_util:unquote(mochiweb_util:unquote(RawKey))
           end,
     #access_v1{
-            method = wrq:method(RD), 
+            method = wrq:method(RD),
             target = Target,
             id = ID, req = RD,
             bucket = list_to_binary(wrq:path_info(bucket, RD)),
