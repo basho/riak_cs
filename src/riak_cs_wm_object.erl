@@ -218,7 +218,6 @@ content_types_accepted(RD, Ctx=#context{local_context=LocalCtx0}) ->
 
 -spec accept_body(#wm_reqdata{}, #context{}) -> {{halt, integer()}, #wm_reqdata{}, #context{}}.
 accept_body(RD, Ctx=#context{local_context=LocalCtx,
-                             user=_User,
                              riakc_pid=RiakcPid})
   when LocalCtx#key_context.update_metadata == true ->
     #key_context{bucket=Bucket, key=KeyStr, manifest=Mfst} = LocalCtx,
