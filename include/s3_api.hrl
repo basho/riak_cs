@@ -94,7 +94,7 @@
 -record(policy_v1, {
           version = <<"2008-10-17">> :: binary(),  % no other value is allowed than default
           id = undefined :: undefined | binary(),  % had better use uuid: should be UNIQUE
-          statement = [] :: [#statement{}]
+          statement = [] :: [#statement{}],
           creation_time=os:timestamp() :: erlang:timestamp()
          }).
 
