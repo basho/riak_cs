@@ -65,7 +65,7 @@ allowed_methods() ->
     ['HEAD', 'GET', 'DELETE', 'PUT'].
 
 -spec valid_entity_length(#wm_reqdata{}, #context{}) -> {boolean(), #wm_reqdata{}, #context{}}.
-valid_entity_length(RD, Ctx=#context{local_context=LocalCtx}) ->
+valid_entity_length(RD, Ctx) ->
     case wrq:method(RD) of
         'PUT' ->
             case catch(
@@ -77,8 +77,7 @@ valid_entity_length(RD, Ctx=#context{local_context=LocalCtx}) ->
                             riak_cs_s3_response:api_error(
                               entity_too_large, RD, Ctx);
                         true ->
-                            UpdLocalCtx = LocalCtx#key_context{size=Length},
-                            {true, RD, Ctx#context{local_context=UpdLocalCtx}}
+                            check_0length_metadata_update(Length, RD, Ctx)
                     end;
                 _ ->
                     {false, RD, Ctx}
@@ -253,6 +252,26 @@ content_types_accepted(RD, Ctx=#context{local_context=LocalCtx0}) ->
 
 -spec accept_body(#wm_reqdata{}, #context{}) -> {{halt, integer()}, #wm_reqdata{}, #context{}}.
 accept_body(RD, Ctx=#context{local_context=LocalCtx,
+                             riakc_pid=RiakcPid})
+  when LocalCtx#key_context.update_metadata == true ->
+    #key_context{bucket=Bucket, key=KeyStr, manifest=Mfst} = LocalCtx,
+    Acl = Mfst?MANIFEST.acl,
+    NewAcl = Acl?ACL{creation_time = now()},
+    %% Remove the x-amz-meta- prefixed items in the dict
+    MD = [KV || {K, _V} = KV <- orddict:to_list(Mfst?MANIFEST.metadata),
+                not lists:prefix("x-amz-meta-", K)],
+    NewMD = orddict:to_list(riak_cs_wm_utils:extract_user_metadata(RD) ++ MD),
+    case riak_cs_utils:set_object_acl(Bucket, list_to_binary(KeyStr),
+                                      Mfst?MANIFEST{metadata=NewMD}, NewAcl,
+                                      RiakcPid) of
+        ok ->
+            ETag = riak_cs_utils:binary_to_hexlist(Mfst?MANIFEST.content_md5),
+            RD2 = wrq:set_resp_header("ETag", ETag, RD),
+            {{halt, 200}, RD2, Ctx};
+        {error, Err} ->
+            riak_cs_s3_response:api_error(Err, RD, Ctx)
+    end;
+accept_body(RD, Ctx=#context{local_context=LocalCtx,
                              user=User,
                              riakc_pid=RiakcPid}) ->
     #key_context{bucket=Bucket,
@@ -331,3 +350,29 @@ finalize_request(RD,
     riak_cs_dtrace:dt_wm_return(?MODULE, <<"finalize_request">>, [S], [UserName, BFile_str]),
     riak_cs_dtrace:dt_object_return(?MODULE, <<"object_put">>, [S], [UserName, BFile_str]),
     {{halt, 200}, wrq:set_resp_header("ETag",  ETag, AccessRD), Ctx}.
+
+check_0length_metadata_update(Length, RD, Ctx=#context{local_context=LocalCtx}) ->
+    %% The authorize() callback has already been called, which means
+    %% that ensure_doc() has been called, so the local context
+    %% manifest is up-to-date: the object exists or it doesn't.
+    case (not is_atom(LocalCtx#key_context.manifest) andalso
+          zero_length_metadata_update_p(Length, RD)) of
+        false ->
+            UpdLocalCtx = LocalCtx#key_context{size=Length},
+            {true, RD, Ctx#context{local_context=UpdLocalCtx}};
+        true ->
+            UpdLocalCtx = LocalCtx#key_context{size=Length,
+                                               update_metadata=true},
+            {true, RD, Ctx#context{local_context=UpdLocalCtx}}
+    end.
+
+zero_length_metadata_update_p(0, RD) ->
+    case wrq:get_req_header("x-amz-copy-source", RD) of
+        undefined ->
+            false;
+        Path ->
+            OrigPath = wrq:get_req_header("x-rcs-rewrite-path", RD),
+            Path == OrigPath
+    end;
+zero_length_metadata_update_p(_, _) ->
+    false.
