@@ -27,7 +27,8 @@
 allowed_methods() ->
     ['GET', 'PUT', 'DELETE'].
 
--spec content_types_provided(#wm_reqdata{}, #context{}) -> [{string(), atom()}].
+-spec content_types_provided(#wm_reqdata{}, #context{}) -> 
+                                    {[{string(), atom()}], #wm_reqdata{}, #context{}}.
 content_types_provided(RD, Ctx) ->
     {[{"application/json", to_json}], RD, Ctx}.
 
