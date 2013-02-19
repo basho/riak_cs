@@ -89,7 +89,7 @@ anonymous_object_access(Bucket, ObjAcl, 'WRITE', RiakPid, undefined) ->
         {ok, BucketAcl} ->
             %% `WRITE' is the only pertinent bucket-level
             %% permission when checking object access.
-            anonymous_object_access(BucketAcl, ObjAcl, 'WRITE', RiakPid, BucketAcl);
+            anonymous_object_access(Bucket, ObjAcl, 'WRITE', RiakPid, BucketAcl);
         {error, Reason} ->
             %% @TODO Think about bubbling this error up and providing
             %% feedback to requester.
@@ -150,7 +150,7 @@ bucket_access(_, RequestedAccess, CanonicalId, RiakPid, Acl) ->
 
 %% @doc Get the ACL for a bucket
 -type acl_from_meta_result() :: {'ok', acl()} | {'error', 'acl_undefined'}.
--type bucket_acl_result() :: acl_from_meta_result() | {'error', 'multiple_bucket_onwers'}.
+-type bucket_acl_result() :: acl_from_meta_result() | {'error', 'multiple_bucket_owners'}.
 -spec bucket_acl(binary(), pid()) -> bucket_acl_result().
 bucket_acl(Bucket, RiakPid) ->
     case riak_cs_utils:check_bucket_exists(Bucket, RiakPid) of
