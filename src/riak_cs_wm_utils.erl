@@ -145,11 +145,11 @@ handle_validation_response({error, no_user_key}, RD, Ctx, _, Conv2KeyCtx, false)
     deny_access(RD, Conv2KeyCtx(Ctx));
 handle_validation_response({error, bad_auth}, RD, Ctx, _, Conv2KeyCtx, _) ->
     %% given keyid was found, but signature didn't match
-    _ = lager:info("bad_auth"),
+    _ = lager:debug("bad_auth"),
     deny_access(RD, Conv2KeyCtx(Ctx));
-handle_validation_response({error, _Reason}, RD, Ctx, _, Conv2KeyCtx, _) ->
+handle_validation_response({error, Reason}, RD, Ctx, _, Conv2KeyCtx, _) ->
     %% no matching keyid was found, or lookup failed
-    _ = lager:info("other"),
+    _ = lager:debug("Authentication error: ~p", [Reason]),
     deny_invalid_key(RD, Conv2KeyCtx(Ctx)).
 
 %% @doc Look for an Authorization header in the request, and validate
