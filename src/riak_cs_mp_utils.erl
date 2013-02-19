@@ -279,7 +279,7 @@ write_new_manifest(M, Opts, RiakcPidUnW) ->
                           undefined ->
                               % 4th arg, pid(), unused but honor the contract
                               riak_cs_acl_utils:canned_acl(
-                                "private", Owner, undefined, not_required); 
+                                "private", Owner, undefined, not_required);
                           AnAcl ->
                               AnAcl
                       end,
@@ -525,83 +525,108 @@ make_2i_key(Bucket, OwnerStr) when is_list(OwnerStr) ->
 make_2i_key2(Bucket, OwnerStr) ->
     iolist_to_binary(["rcs@", OwnerStr, "@", Bucket, "_bin"]).
 
-list_multipart_uploads2(Bucket, RiakcPid, Names, Opts, CallerKeyId) ->
-    %% Easy.
-    {_, _, _, Res} = lists:foldl(fun fold_get_multipart_id/2,
-                                 {RiakcPid, Bucket, CallerKeyId, []}, Names),
-    %% Not so easy: filter based on prefix, delimiter, key_marker, and
-    %%              upload_id_marker.
-    %%
-    %% First, set up helpers....
-    PrefixStr = proplists:get_value(prefix, Opts, ""),
-    PrefixStrLen = length(PrefixStr),
-    PrefixMatch = fun(Str) ->
-                          PrefixStr == lists:sublist(Str, PrefixStrLen)
-                  end,
-    KeyMStr = proplists:get_value(key_marker, Opts, ""),
-    UploadMBin = try
-                     base64url:decode(proplists:get_value(
-                                        upload_id_marker, Opts, ""))
-                 catch _:_ ->
-                         <<>>
-                 end,
-    Delimiter = case proplists:get_value(delimiter, Opts) of
-                    undefined -> undefined;
-                    [C]       -> C;
-                    _         -> undefined
-                end,
-    DelimiterMatch =
-        fun(Str) ->
-                StrLen = length(Str),
-                StrLen >= PrefixStrLen andalso
-                    lists:member(Delimiter,
-                                 lists:sublist(Str, PrefixStrLen + 1, StrLen))
+list_multipart_uploads2(Bucket, RiakcPid, Names, Opts, _CallerKeyId) ->
+    FilterFun =
+        fun(K, Acc) ->
+                filter_uploads_list(Bucket, K, Opts, RiakcPid, Acc)
         end,
+    {Manifests, Prefixes} = lists:foldl(FilterFun, {[], ordsets:new()}, Names),
+    {lists:sort(Manifests), ordsets:to_list(Prefixes)}.
 
-    %% Do some real work: filter the result set based on all criteria
-    Res2 = [M || M <- Res,
-                 Key <- [binary_to_list(M?MULTIPART_DESCR.key)],
-                 PrefixMatch(Key),
-                 Key > KeyMStr,
-                 M?MULTIPART_DESCR.upload_id > UploadMBin,
-                 Delimiter == undefined orelse
-                     not DelimiterMatch(Key)],
-    %% More work: find the common strings based on Delimiter
-    Common = if Delimiter == undefined ->
-                     [];
-                true ->
-                     Max = 999999999999999,     % arbitrarily big
-                     [hd(string:tokens(
-                           lists:sublist(binary_to_list(M?MULTIPART_DESCR.key),
-                                         PrefixStrLen+1, Max),
-                           [Delimiter])) || M <- Res,
-                         lists:member(Delimiter,
-                                      binary_to_list(M?MULTIPART_DESCR.key))]
-             end,
-    {lists:sort(Res2), lists:usort(Common)}.
+filter_uploads_list(Bucket, Key, Opts, RiakcPid, Acc) ->
+    multipart_manifests_for_key(Bucket, Key, Opts, Acc, RiakcPid).
 
-fold_get_multipart_id(Name, {RiakcPid, Bucket, CallerKeyId, Acc}) ->
-    case riak_cs_utils:get_manifests(RiakcPid, Bucket, Name) of
-        {ok, _Obj, Manifests} ->
-            L = [?MULTIPART_DESCR{
-                    key = element(2, M?MANIFEST.bkey),
-                    upload_id = UUID,
-                    owner_key_id = element(3, MpM?MULTIPART_MANIFEST.owner),
-                    owner_display = element(1, MpM?MULTIPART_MANIFEST.owner),
-                    initiated = M?MANIFEST.created} ||
-                    {UUID, M} <- Manifests,
-                    CallerKeyId == owner orelse
-                        iolist_to_binary(CallerKeyId) ==
-                        iolist_to_binary(element(3, (M?MANIFEST.acl)?ACL.owner)),
-                    M?MANIFEST.state == writing,
-                    MpM <- case get_mp_manifest(M) of
-                               undefined -> [];
-                               X         -> [X]
-                           end],
-            {RiakcPid, Bucket, CallerKeyId, L ++ Acc};
-        _Else ->
-            {RiakcPid, Bucket, CallerKeyId, Acc}
+parameter_filter(M, Acc, _, _, KeyMarker, _)
+  when M?MULTIPART_DESCR.key =< KeyMarker->
+    Acc;
+parameter_filter(M, Acc, _, _, KeyMarker, UploadIdMarker)
+  when M?MULTIPART_DESCR.key =< KeyMarker andalso
+       M?MULTIPART_DESCR.upload_id =< UploadIdMarker ->
+    Acc;
+parameter_filter(M, {Manifests, Prefixes}, undefined, undefined, _, _) ->
+    {[M | Manifests], Prefixes};
+parameter_filter(M, Acc, undefined, Delimiter, _, _) ->
+    Group = extract_group(M?MULTIPART_DESCR.key, Delimiter),
+    update_keys_and_prefixes(Acc, M, <<>>, 0, Group);
+parameter_filter(M, {Manifests, Prefixes}, Prefix, undefined, _, _) ->
+    PrefixLen = byte_size(Prefix),
+    case M?MULTIPART_DESCR.key of
+        << Prefix:PrefixLen/binary, _/binary >> ->
+            {[M | Manifests], Prefixes};
+        _ ->
+            {Manifests, Prefixes}
+    end;
+parameter_filter(M, {Manifests, Prefixes}=Acc, Prefix, Delimiter, _, _) ->
+    PrefixLen = byte_size(Prefix),
+    case M?MULTIPART_DESCR.key of
+        << Prefix:PrefixLen/binary, Rest/binary >> ->
+            Group = extract_group(Rest, Delimiter),
+            update_keys_and_prefixes(Acc, M, Prefix, PrefixLen, Group);
+        _ ->
+            {Manifests, Prefixes}
     end.
+
+extract_group(Key, Delimiter) ->
+    case binary:match(Key, [Delimiter]) of
+        nomatch ->
+            nomatch;
+        {Pos, Len} ->
+            binary:part(Key, {0, Pos+Len})
+    end.
+
+update_keys_and_prefixes({Keys, Prefixes}, Key, _, _, nomatch) ->
+    {[Key | Keys], Prefixes};
+update_keys_and_prefixes({Keys, Prefixes}, _, Prefix, PrefixLen, Group) ->
+    NewPrefix = << Prefix:PrefixLen/binary, Group/binary >>,
+    {Keys, ordsets:add_element(NewPrefix, Prefixes)}.
+
+multipart_manifests_for_key(Bucket, Key, Opts, Acc, RiakcPid) ->
+    ParameterFilter = build_parameter_filter(Opts),
+    Manifests = handle_get_manifests_result(
+                  riak_cs_utils:get_manifests(RiakcPid, Bucket, Key)),
+    lists:foldl(ParameterFilter, Acc, Manifests).
+
+build_parameter_filter(Opts) ->
+    Prefix = proplists:get_value(prefix, Opts),
+    Delimiter = proplists:get_value(delimiter, Opts),
+    KeyMarker = proplists:get_value(key_marker, Opts),
+    UploadIdMarker = base64url:decode(
+                           proplists:get_value(upload_id_marker, Opts)),
+    build_parameter_filter(Prefix, Delimiter, KeyMarker, UploadIdMarker).
+
+build_parameter_filter(Prefix, Delimiter, KeyMarker, UploadIdMarker) ->
+    fun(Key, Acc) ->
+            parameter_filter(Key, Acc, Prefix, Delimiter, KeyMarker, UploadIdMarker)
+    end.
+
+handle_get_manifests_result({ok, _Obj, Manifests}) ->
+   [multipart_description(M)
+                 || {_, M} <- Manifests,
+                    M?MANIFEST.state == writing,
+                    is_multipart_manifest(M)];
+handle_get_manifests_result(_) ->
+    [].
+
+-spec is_multipart_manifest(?MANIFEST{}) -> boolean().
+is_multipart_manifest(?MANIFEST{props=Props}) ->
+    case proplists:get_value(multipart, Props) of
+        undefined ->
+            false;
+        _ ->
+             true
+    end;
+is_multipart_manifest(_) ->
+    false.
+
+-spec multipart_description(?MANIFEST{}) -> ?MULTIPART_DESCR{}.
+multipart_description(Manifest) ->
+    MpM =  proplists:get_value(multipart, Manifest?MANIFEST.props),
+    ?MULTIPART_DESCR{
+       key = element(2, Manifest?MANIFEST.bkey),
+       upload_id = Manifest?MANIFEST.uuid,
+       owner_key_id = element(3, MpM?MULTIPART_MANIFEST.owner),
+       owner_display = element(1, MpM?MULTIPART_MANIFEST.owner),
+       initiated = Manifest?MANIFEST.created}.
 
 %% @doc Will cause error:{badmatch, {m_ibco, _}} if CallerKeyId does not exist
 
@@ -770,7 +795,7 @@ test_setup(RiakIp, RiakPbPort) ->
         [erlang:apply(M, F, A) || {_, {M, F, A}, _, _, _, _} <- PoolSpecs],
     application:start(folsom),
     riak_cs_stats:start_link(),
-    ok.    
+    ok.
 
 test_0() ->
     test_cleanup_users(),
