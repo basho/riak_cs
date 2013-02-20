@@ -144,6 +144,9 @@ cleanplt:
 	sleep 5
 	rm $(PLT)
 
+xref: compile
+	./rebar xref skip_deps=true | grep -v unused | egrep -v -f ./xref.ignore-warnings
+
 ##
 ## Packaging targets
 ##
