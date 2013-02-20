@@ -125,7 +125,7 @@ requested_access(Method, AclRequest) ->
 check_grants(User, Bucket, RequestedAccess, RiakPid) ->
     check_grants(User, Bucket, RequestedAccess, RiakPid, undefined).
 
--spec check_grants(undefined | rcs_user(), string(), atom(), pid(), acl()|undefined) -> 
+-spec check_grants(undefined | rcs_user(), binary(), atom(), pid(), acl()|undefined) -> 
                           boolean() | {true, string()}.
 check_grants(undefined, Bucket, RequestedAccess, RiakPid, BucketAcl) ->
     riak_cs_acl:anonymous_bucket_access(Bucket, RequestedAccess, RiakPid, BucketAcl);

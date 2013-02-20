@@ -678,7 +678,7 @@ set_bucket_acl(User, UserObj, Bucket, ACL, RiakPid) ->
                          RiakPid).
 
 %% @doc Set the policy for a bucket. Existing policy is only overwritten.
--spec set_bucket_policy(rcs_user(), riakc_obj:riakc_obj(), binary(), binary(), pid()) -> ok | {error, term()}.
+-spec set_bucket_policy(rcs_user(), riakc_obj:riakc_obj(), binary(), []|policy()|acl(), pid()) -> ok | {error, term()}.
 set_bucket_policy(User, UserObj, Bucket, PolicyJson, RiakPid) ->
     serialized_bucket_op(Bucket,
                          PolicyJson,
@@ -734,9 +734,9 @@ get_bucket_acl_policy(Bucket, PolicyMod, RiakPid) ->
     end.
 
 -type policy_from_meta_result() :: {'ok', policy()} | {'error', 'policy_undefined'}.
--type bucket_policy_result() :: policy_from_meta_result() | {'error', 'multiple_bucket_onwers'}.
+-type bucket_policy_result() :: policy_from_meta_result() | {'error', 'multiple_bucket_owners'}.
 -type acl_from_meta_result() :: {'ok', acl()} | {'error', 'acl_undefined'}.
--type bucket_acl_result() :: acl_from_meta_result() | {'error', 'multiple_bucket_onwers'}.
+-type bucket_acl_result() :: acl_from_meta_result() | {'error', 'multiple_bucket_owners'}.
 -spec format_acl_policy_response(bucket_acl_result(), bucket_policy_result()) ->
                                         {error, atom()} | {acl(), 'undefined' | policy()}.
 format_acl_policy_response({error, _}=Error, _) ->
@@ -1184,7 +1184,7 @@ resolve_buckets([HeadUserRec | RestUserRecs], Buckets, _KeepDeleted) ->
 
 %% @doc Shared code used when doing a bucket creation or deletion.
 -spec serialized_bucket_op(binary(),
-                           acl() | policy(),
+                           [] | acl() | policy(),
                            rcs_user(),
                            riakc_obj:riakc_obj(),
                            bucket_operation(),
