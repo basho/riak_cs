@@ -678,7 +678,7 @@ set_bucket_acl(User, UserObj, Bucket, ACL, RiakPid) ->
                          RiakPid).
 
 %% @doc Set the policy for a bucket. Existing policy is only overwritten.
--spec set_bucket_policy(rcs_user(), riakc_obj:riakc_obj(), binary(), binary(), pid()) -> ok | {error, term()}.
+-spec set_bucket_policy(rcs_user(), riakc_obj:riakc_obj(), binary(), []|policy()|acl(), pid()) -> ok | {error, term()}.
 set_bucket_policy(User, UserObj, Bucket, PolicyJson, RiakPid) ->
     serialized_bucket_op(Bucket,
                          PolicyJson,
