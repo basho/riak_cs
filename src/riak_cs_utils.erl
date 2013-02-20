@@ -734,9 +734,9 @@ get_bucket_acl_policy(Bucket, PolicyMod, RiakPid) ->
     end.
 
 -type policy_from_meta_result() :: {'ok', policy()} | {'error', 'policy_undefined'}.
--type bucket_policy_result() :: policy_from_meta_result() | {'error', 'multiple_bucket_onwers'}.
+-type bucket_policy_result() :: policy_from_meta_result() | {'error', 'multiple_bucket_owners'}.
 -type acl_from_meta_result() :: {'ok', acl()} | {'error', 'acl_undefined'}.
--type bucket_acl_result() :: acl_from_meta_result() | {'error', 'multiple_bucket_onwers'}.
+-type bucket_acl_result() :: acl_from_meta_result() | {'error', 'multiple_bucket_owners'}.
 -spec format_acl_policy_response(bucket_acl_result(), bucket_policy_result()) ->
                                         {error, atom()} | {acl(), 'undefined' | policy()}.
 format_acl_policy_response({error, _}=Error, _) ->

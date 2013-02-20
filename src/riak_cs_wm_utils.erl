@@ -509,22 +509,34 @@ is_acl_request(_) ->
                                      RD::term(), Ctx::term()) ->
     authorized_response().
 object_access_authorize_helper(AccessType, Deletable,
-                               RD, #context{user=User,
-                                            policy_module=PolicyMod,
+                               RD, #context{policy_module=PolicyMod,
                                             local_context=LocalCtx,
                                             riakc_pid=RiakPid}=Ctx)
   when ( AccessType =:= object_acl orelse
          AccessType =:= object )
        andalso is_boolean(Deletable) ->
 
+    #key_context{bucket=Bucket} = LocalCtx,
+    case translate_bucket_policy(PolicyMod, Bucket, RiakPid) of
+        {error, multiple_bucket_owners=E} ->
+            %% We want to bail out early if there are siblings when
+            %% retrieving the bucket policy
+            riak_cs_s3_response:api_error(E, RD, Ctx);
+        Policy ->
+            check_object_authorization(AccessType, Deletable, Policy, RD, Ctx)
+    end.
+
+check_object_authorization(AccessType, Deletable, Policy,
+                           RD, #context{user=User,
+                                        policy_module=PolicyMod,
+                                        local_context=LocalCtx,
+                                        riakc_pid=RiakPid}=Ctx) ->
     Method = wrq:method(RD),
     #key_context{bucket=Bucket, manifest=Manifest} = LocalCtx,
     CanonicalId = extract_canonical_id(User),
     RequestedAccess = requested_access_helper(AccessType, Method),
     ObjectAcl = extract_object_acl(Manifest),
-    Policy = translate_bucket_policy(PolicyMod, Bucket, RiakPid),
     Access = PolicyMod:reqdata_to_access(RD, AccessType, CanonicalId),
-
     case {riak_cs_acl:object_access(Bucket,
                                    ObjectAcl,
                                    RequestedAccess,
@@ -579,16 +591,15 @@ extract_object_acl(?MANIFEST{acl=Acl}) ->
     Acl.
 
 -spec translate_bucket_policy(atom(), binary(), pid()) ->
-    policy() | undefined.
+    policy() | undefined | {error, multiple_bucket_owners}.
 translate_bucket_policy(PolicyMod, Bucket, RiakPid) ->
     case PolicyMod:bucket_policy(Bucket, RiakPid) of
         {ok, P} ->
             P;
         {error, policy_undefined} ->
             undefined;
-         {error, _Reason} ->
-             %% riak_cs_s3_response:api_error(Reason, RD, Ctx),
-             undefined
+        {error, multiple_bucket_owners}=Error ->
+             Error
     end.
 
 %% Helper functions for dealing with combinations of Object ACL
