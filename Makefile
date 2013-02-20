@@ -134,7 +134,7 @@ dialyzer: compile
 	@echo
 	@sleep 1
 	dialyzer -Wno_return -Wunmatched_returns --plt $(PLT) deps/*/ebin ebin | \
-	    egrep -v -f ./dialyzer.ignore-warnings
+	    tee .dialyzer.raw-output | egrep -v -f ./dialyzer.ignore-warnings
 
 cleanplt:
 	@echo
@@ -143,6 +143,9 @@ cleanplt:
 	@echo
 	sleep 5
 	rm $(PLT)
+
+xref: compile
+	./rebar xref skip_deps=true | grep -v unused | egrep -v -f ./xref.ignore-warnings
 
 ##
 ## Packaging targets

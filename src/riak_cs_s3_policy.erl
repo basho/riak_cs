@@ -206,7 +206,7 @@ log_supported_actions()->
 
 %% @doc Get the policy for a bucket
 -type policy_from_meta_result() :: {'ok', policy()} | {'error', 'policy_undefined'}.
--type bucket_policy_result() :: policy_from_meta_result() | {'error', 'multiple_bucket_onwers'}.
+-type bucket_policy_result() :: policy_from_meta_result() | {'error', 'multiple_bucket_owners'}.
 -spec bucket_policy(binary(), pid()) -> bucket_policy_result().
 bucket_policy(Bucket, RiakPid) ->
     case riak_cs_utils:check_bucket_exists(Bucket, RiakPid) of
@@ -237,7 +237,7 @@ bucket_policy_from_contents(Bucket, Contents) ->
     resolve_bucket_metadata(UserMetas, UniqueVals).
 
 -spec resolve_bucket_metadata(list(riakc_obj:metadata()),
-                               list(riakc_obj:values())) -> bucket_policy_result().
+                               list(riakc_obj:value())) -> bucket_policy_result().
 resolve_bucket_metadata(Metas, [_Val]) ->
     Policies = [policy_from_meta(M) || M <- Metas],
     resolve_bucket_policies(Policies);

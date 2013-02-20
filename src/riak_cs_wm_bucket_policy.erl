@@ -27,7 +27,8 @@
 allowed_methods() ->
     ['GET', 'PUT', 'DELETE'].
 
--spec content_types_provided(#wm_reqdata{}, #context{}) -> [{string(), atom()}].
+-spec content_types_provided(#wm_reqdata{}, #context{}) -> 
+                                    {[{string(), atom()}], #wm_reqdata{}, #context{}}.
 content_types_provided(RD, Ctx) ->
     {[{"application/json", to_json}], RD, Ctx}.
 
@@ -106,7 +107,8 @@ accept_body(RD, Ctx=#context{user=User,
     end.
 
 %% @doc Callback for deleting policy.
--spec delete_resource(#wm_reqdata{}, #context{}) -> {true, #wm_reqdata{}, #context{}}.
+-spec delete_resource(#wm_reqdata{}, #context{}) -> {true, #wm_reqdata{}, #context{}} |
+                                                    {{halt, 200}, #wm_reqdata{}, #context{}}.
 delete_resource(RD, Ctx=#context{user=User,
                                  user_object=UserObj,
                                  bucket=Bucket,
