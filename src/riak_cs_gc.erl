@@ -81,6 +81,11 @@ handle_mark_as_pending_delete({ok, RiakObject}, Bucket, Key, UUIDsToMark, RiakcP
     Manifests = riak_cs_utils:manifests_from_riak_object(RiakObject),
     PDManifests = riak_cs_manifest_utils:manifests_to_gc(UUIDsToMark, Manifests),
     MoveResult = move_manifests_to_gc_bucket(PDManifests, RiakcPid),
+    %% riak_cs_gc.erl:89: The pattern [{UUID, _} | _] can never match
+    %% the type [] Oi, this is a stumper.  Just overwrite a file once,
+    %% and it's obvious that PDManifests is a non-empty list and
+    %% indeed has 2-tuples.  And the spec for
+    %% riak_cs_manifest_utils:manifests_to_gc/2 appears correct.
     PDUUIDs = [UUID || {UUID, _} <- PDManifests],
     handle_move_result(MoveResult, RiakObject, Bucket, Key, PDUUIDs, RiakcPid);
 handle_mark_as_pending_delete({error, Error}=Error, _Bucket, _Key, _UUIDsToMark, _RiakcPid) ->
