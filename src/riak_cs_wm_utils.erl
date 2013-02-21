@@ -503,40 +503,40 @@ is_acl_request(ReqType) when ReqType =:= bucket_acl orelse
 is_acl_request(_) ->
     false.
 
+-type halt_or_bool() :: {halt, pos_integer()} | boolean().
+-type authorized_response() :: {halt_or_bool(), RD :: term(), Ctx :: term()}.
 -spec object_access_authorize_helper(AccessType::atom(), boolean(),
-                                     RD::term(), Ctx::term()) -> term().
+                                     RD::term(), Ctx::term()) ->
+    authorized_response().
 object_access_authorize_helper(AccessType, Deletable,
-                               RD, #context{user=User,
-                                            policy_module=PolicyMod,
+                               RD, #context{policy_module=PolicyMod,
                                             local_context=LocalCtx,
                                             riakc_pid=RiakPid}=Ctx)
   when ( AccessType =:= object_acl orelse
          AccessType =:= object )
        andalso is_boolean(Deletable) ->
 
+    #key_context{bucket=Bucket} = LocalCtx,
+    case translate_bucket_policy(PolicyMod, Bucket, RiakPid) of
+        {error, multiple_bucket_owners=E} ->
+            %% We want to bail out early if there are siblings when
+            %% retrieving the bucket policy
+            riak_cs_s3_response:api_error(E, RD, Ctx);
+        Policy ->
+            check_object_authorization(AccessType, Deletable, Policy, RD, Ctx)
+    end.
+
+check_object_authorization(AccessType, Deletable, Policy,
+                           RD, #context{user=User,
+                                        policy_module=PolicyMod,
+                                        local_context=LocalCtx,
+                                        riakc_pid=RiakPid}=Ctx) ->
     Method = wrq:method(RD),
-    #key_context{bucket=Bucket, manifest=Mfst} = LocalCtx,
-
-    CanonicalId = case Ctx#context.user of
-                      undefined ->  undefined;
-                      User ->       User?RCS_USER.canonical_id
-                  end,
-    RequestedAccess =
-        case AccessType of
-            object ->
-                riak_cs_acl_utils:requested_access(Method, false);
-            object_acl ->
-                riak_cs_acl_utils:requested_access(Method, true)
-        end,
-
-    ObjectAcl = case Mfst of
-                    notfound -> undefined;
-                    _ ->        Mfst?MANIFEST.acl
-                end,
-
-    Policy = PolicyMod:bucket_policy(Bucket, RiakPid),
+    #key_context{bucket=Bucket, manifest=Manifest} = LocalCtx,
+    CanonicalId = extract_canonical_id(User),
+    RequestedAccess = requested_access_helper(AccessType, Method),
+    ObjectAcl = extract_object_acl(Manifest),
     Access = PolicyMod:reqdata_to_access(RD, AccessType, CanonicalId),
-
     case {riak_cs_acl:object_access(Bucket,
                                    ObjectAcl,
                                    RequestedAccess,
@@ -544,56 +544,132 @@ object_access_authorize_helper(AccessType, Deletable,
                                    RiakPid),
           PolicyMod:eval(Access, Policy)} of
 
-        {true, false} when Method =:= 'PUT' orelse
-                           (Deletable andalso Method =:= 'DELETE') ->
-            %% actor is the owner
-            AccessRD = riak_cs_access_log_handler:set_user(User, RD),
-
-            riak_cs_wm_utils:deny_access(AccessRD, Ctx);
-        {true, false} when Method =:= 'GET' orelse
-                           (Deletable andalso Method =:= 'HEAD') ->
-            {{halt, 404}, riak_cs_access_log_handler:set_user(Ctx#context.user, RD), Ctx};
-
+        {true, false} ->
+            %% return forbidden or 404 based on the `Method' and `Deletable'
+            %% values
+            actor_is_owner_but_denied_policy(User, RD, Ctx, Method, Deletable);
         {true, _} ->
             %% actor is the owner
-            AccessRD = riak_cs_access_log_handler:set_user(User, RD),
-            UserStr = User?RCS_USER.canonical_id,
-            UpdLocalCtx = LocalCtx#key_context{owner=UserStr},
-            {false, AccessRD, Ctx#context{local_context=UpdLocalCtx}};
-
-        {{true, OwnerId}, false} when Method =:= 'PUT' orelse
-                                      (Deletable andalso Method =:= 'DELETE') ->
-            %% actor is not the owner
-            AccessRD = riak_cs_access_log_handler:set_user(OwnerId, RD),
-            riak_cs_wm_utils:deny_access(AccessRD, Ctx);
-
-        {{true, _OwnerId}, false} when Method =:= 'GET' orelse
-                                       (Deletable andalso Method =:= 'HEAD') ->
-            {{halt, 404}, RD, Ctx};
-
+            actor_is_owner_and_allowed_policy(User, RD, Ctx, LocalCtx);
+        {{true, OwnerId}, false} ->
+            actor_is_not_owner_and_denied_policy(OwnerId, RD, Ctx,
+                                                 Method, Deletable);
         {{true, OwnerId}, _} ->
             %% actor is not the owner
-            AccessRD = riak_cs_access_log_handler:set_user(OwnerId, RD),
-            UpdLocalCtx = LocalCtx#key_context{owner=OwnerId},
-            {false, AccessRD, Ctx#context{local_context=UpdLocalCtx}};
-
+            actor_is_not_owner_but_allowed_policy(OwnerId, RD, Ctx, LocalCtx);
         {false, true} ->
             %% actor is not the owner, not permitted by ACL but permitted by policy
-            OwnerId = riak_cs_acl:owner_id(ObjectAcl, RiakPid),
-            AccessRD = riak_cs_access_log_handler:set_user(OwnerId, RD),
-            UpdLocalCtx = LocalCtx#key_context{owner=OwnerId},
-            {false, AccessRD, Ctx#context{local_context=UpdLocalCtx}};
-
-        {false, _} -> % policy says undefined or false
+            just_allowed_by_policy(ObjectAcl, RiakPid, RD, Ctx, LocalCtx);
+        {false, _} ->
+            % policy says undefined or false
             %% ACL check failed, deny access
             riak_cs_wm_utils:deny_access(RD, Ctx)
     end.
 
+%% ===================================================================
+%% object_acces_authorize_helper helper functions
+
+-spec extract_canonical_id(rcs_user() | undefined) ->
+    undefined | string().
+extract_canonical_id(undefined) ->
+    undefined;
+extract_canonical_id(?RCS_USER{canonical_id=CanonicalID}) ->
+    CanonicalID.
+
+-spec requested_access_helper(object | object_acl, atom()) ->
+    acl_perm().
+requested_access_helper(object, Method) ->
+    riak_cs_acl_utils:requested_access(Method, false);
+requested_access_helper(object_acl, Method) ->
+    riak_cs_acl_utils:requested_access(Method, true).
+
+-spec extract_object_acl(notfound | lfs_manifest()) ->
+    undefined | acl().
+extract_object_acl(notfound) ->
+    undefined;
+extract_object_acl(?MANIFEST{acl=Acl}) ->
+    Acl.
+
+-spec translate_bucket_policy(atom(), binary(), pid()) ->
+    policy() | undefined | {error, multiple_bucket_owners}.
+translate_bucket_policy(PolicyMod, Bucket, RiakPid) ->
+    case PolicyMod:bucket_policy(Bucket, RiakPid) of
+        {ok, P} ->
+            P;
+        {error, policy_undefined} ->
+            undefined;
+        {error, multiple_bucket_owners}=Error ->
+             Error
+    end.
+
+%% Helper functions for dealing with combinations of Object ACL
+%% and (bucket) Policy
 
 
-%% Illegal call, thus should not match.
-%% bucket_access_authorize_helper(_RD, _Ctx, _AccessType, _Deletable)->
-%%     ok.
+-spec actor_is_owner_but_denied_policy(User :: rcs_user(),
+                                       RD :: term(),
+                                       Ctx :: term(),
+                                       Method :: atom(),
+                                       Deletable :: boolean()) ->
+    authorized_response().
+actor_is_owner_but_denied_policy(User, RD, Ctx, Method, Deletable)
+        when Method =:= 'PUT' orelse
+        (Deletable andalso Method =:= 'DELETE') ->
+    AccessRD = riak_cs_access_log_handler:set_user(User, RD),
+    riak_cs_wm_utils:deny_access(AccessRD, Ctx);
+actor_is_owner_but_denied_policy(User, RD, Ctx, Method, Deletable)
+        when Method =:= 'GET' orelse
+        (Deletable andalso Method =:= 'HEAD') ->
+    {{halt, 404}, riak_cs_access_log_handler:set_user(User, RD), Ctx}.
+
+-spec actor_is_owner_and_allowed_policy(User :: rcs_user(),
+                                        RD :: term(),
+                                        Ctx :: term(),
+                                        LocalCtx :: term()) ->
+    authorized_response().
+actor_is_owner_and_allowed_policy(User, RD, Ctx, LocalCtx) ->
+    AccessRD = riak_cs_access_log_handler:set_user(User, RD),
+    UserStr = User?RCS_USER.canonical_id,
+    UpdLocalCtx = LocalCtx#key_context{owner=UserStr},
+    {false, AccessRD, Ctx#context{local_context=UpdLocalCtx}}.
+
+-spec actor_is_not_owner_and_denied_policy(OwnerId :: string(),
+                                           RD :: term(),
+                                           Ctx :: term(),
+                                           Method :: atom(),
+                                           Deletable :: boolean()) ->
+    authorized_response().
+actor_is_not_owner_and_denied_policy(OwnerId, RD, Ctx, Method, Deletable)
+        when Method =:= 'PUT' orelse
+        (Deletable andalso Method =:= 'DELETE') ->
+    AccessRD = riak_cs_access_log_handler:set_user(OwnerId, RD),
+    riak_cs_wm_utils:deny_access(AccessRD, Ctx);
+actor_is_not_owner_and_denied_policy(_OwnerId, RD, Ctx, Method, Deletable)
+        when Method =:= 'GET' orelse
+        (Deletable andalso Method =:= 'HEAD') ->
+    {{halt, 404}, RD, Ctx}.
+
+-spec actor_is_not_owner_but_allowed_policy(OwnerId :: string(),
+                                            RD :: term(),
+                                            Ctx :: term(),
+                                            LocalCtx :: term()) ->
+    authorized_response().
+actor_is_not_owner_but_allowed_policy(OwnerId, RD, Ctx, LocalCtx) ->
+    AccessRD = riak_cs_access_log_handler:set_user(OwnerId, RD),
+    UpdLocalCtx = LocalCtx#key_context{owner=OwnerId},
+    {false, AccessRD, Ctx#context{local_context=UpdLocalCtx}}.
+
+-spec just_allowed_by_policy(ObjectAcl :: acl(),
+                              RiakPid :: pid(),
+                              RD :: term(),
+                              Ctx :: term(),
+                              LocalCtx :: term()) ->
+    authorized_response().
+just_allowed_by_policy(ObjectAcl, RiakPid, RD, Ctx, LocalCtx) ->
+    OwnerId = riak_cs_acl:owner_id(ObjectAcl, RiakPid),
+    AccessRD = riak_cs_access_log_handler:set_user(OwnerId, RD),
+    UpdLocalCtx = LocalCtx#key_context{owner=OwnerId},
+    {false, AccessRD, Ctx#context{local_context=UpdLocalCtx}}.
 
 %% ===================================================================
 %% Internal functions
