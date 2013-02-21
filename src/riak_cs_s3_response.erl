@@ -91,6 +91,7 @@ status_code({riak_connect_failed, _}) -> 503;
 status_code(admin_key_undefined) -> 503;
 status_code(admin_secret_undefined) -> 503;
 status_code(bucket_owner_unavailable) -> 503;
+status_code(multiple_bucket_owners) -> 503;
 status_code(econnrefused) -> 503;
 status_code(malformed_policy_json) -> 400;
 status_code(malformed_policy_resource) -> 400;
