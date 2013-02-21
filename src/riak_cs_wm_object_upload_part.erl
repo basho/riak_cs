@@ -142,14 +142,6 @@ process_post(RD, Ctx=#context{local_context=LocalCtx,
                     XErr = riak_cs_mp_utils:make_special_error("NoSuchUpload"),
                     RD2 = wrq:set_resp_body(XErr, RD),
                     {{halt, 404}, RD2, Ctx};
-                {error, bad_etag} ->
-                    XErr = riak_cs_mp_utils:make_special_error("InvalidPart"),
-                    RD2 = wrq:set_resp_body(XErr, RD),
-                    {{halt, 400}, RD2, Ctx};
-                {error, bad_etag_order} ->
-                    XErr = riak_cs_mp_utils:make_special_error("InvalidPartOrder"),
-                    RD2 = wrq:set_resp_body(XErr, RD),
-                    {{halt, 400}, RD2, Ctx};
                 {error, Reason} ->
                     riak_cs_s3_response:api_error(Reason, RD, Ctx)
             end
