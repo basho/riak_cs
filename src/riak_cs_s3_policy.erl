@@ -276,13 +276,13 @@ policy_from_meta([_ | RestMD]) ->
 
 -spec resource_matches(binary(), binary()|undefined|list(), #statement{}) -> boolean().
 resource_matches(_, _, #statement{resource='*'} = _Stmt ) -> true;
-resource_matches(BucketBin, KeyBin, #statement{resource=Resources}) ->
+resource_matches(BucketBin, KeyBin, #statement{resource=Resources})
+  when KeyBin =:= undefined orelse is_binary(KeyBin) ->
     Bucket = binary_to_list(BucketBin),
     % @TODO in case of using unicode object keys
     Path0 = case KeyBin of
-                undefined -> Bucket;
-                Key when is_list(KeyBin) ->
-                    binary_to_list(BucketBin) ++ "/" ++ Key;
+                undefined ->
+                    Bucket;
                 _ when is_binary(KeyBin) ->
                     binary_to_list(<<BucketBin/binary, "/", KeyBin/binary>>)
             end,

@@ -151,7 +151,8 @@ bucket_access(_, RequestedAccess, CanonicalId, RiakPid, Acl) ->
 %% @doc Get the ACL for a bucket
 -type acl_from_meta_result() :: {'ok', acl()} | {'error', 'acl_undefined'}.
 -type bucket_acl_result() :: acl_from_meta_result() | {'error', 'multiple_bucket_owners'}.
--spec bucket_acl(binary(), pid()) -> bucket_acl_result().
+-type bucket_acl_riak_error() :: {error, 'notfound' | term()}.
+-spec bucket_acl(binary(), pid()) -> bucket_acl_result() | bucket_acl_riak_error().
 bucket_acl(Bucket, RiakPid) ->
     case riak_cs_utils:check_bucket_exists(Bucket, RiakPid) of
         {ok, Obj} ->
