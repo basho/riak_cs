@@ -8,17 +8,22 @@
 
 -module(riak_cs_web).
 
--export([dispatch_table/0]).
+-export([admin_api_dispatch_table/0,
+         object_api_dispatch_table/0]).
 
 -include("riak_cs.hrl").
 
 -type dispatch_rule() :: {[string() | atom()], atom(), [term()]}.
 
-%% @doc Setup the Webmachine dispatch table
--spec dispatch_table() -> [dispatch_rule()].
-dispatch_table() ->
-    admin_resources(stats_props()) ++
-        base_resources() ++
+%% @doc Setup the Webmachine dispatch table for the admin API
+-spec admin_api_dispatch_table() -> [dispatch_rule()].
+admin_api_dispatch_table() ->
+    admin_resources(stats_props()).
+
+%% @doc Setup the Webmachine dispatch table for the object storage API
+-spec object_api_dispatch_table() -> [dispatch_rule()].
+object_api_dispatch_table() ->
+    base_resources() ++
         one_three_resources(riak_cs_utils:cs_version()).
 
 -spec props(atom()) -> [term()].
@@ -30,7 +35,8 @@ props(Mod) ->
 
 -spec stats_props() -> [term()].
 stats_props() ->
-    [{auth_bypass, get_auth_bypass()}].
+    [{admin_auth_enabled, get_admin_auth_enabled()},
+     {auth_bypass, get_auth_bypass()}].
 
 -spec admin_resources([term()]) -> [dispatch_rule()].
 admin_resources(Props) ->
@@ -39,7 +45,7 @@ admin_resources(Props) ->
      {["riak-cs", "ping"], riak_cs_wm_ping, []},
      {["riak-cs", "users"], riak_cs_wm_users, Props},
      {["riak-cs", "user", '*'], riak_cs_wm_user, Props},
-     {["usage", '*'], riak_cs_wm_usage, Props}
+     {["riak-cs", "usage", '*'], riak_cs_wm_usage, Props}
     ].
 
 -spec base_resources() -> [dispatch_rule()].
@@ -52,13 +58,9 @@ base_resources() ->
      {["buckets", bucket, "acl"], riak_cs_wm_common, props(riak_cs_wm_bucket_acl)},
      {["buckets", bucket, "location"], riak_cs_wm_common, props(riak_cs_wm_bucket_location)},
      {["buckets", bucket, "versioning"], riak_cs_wm_common, props(riak_cs_wm_bucket_versioning)},
-     {["buckets", bucket, "uploads"], riak_cs_wm_common, props(riak_cs_wm_bucket_uploads)},
-     %% TODO: bucket policy
-     %% %% Object resources
+     %% Object resources
      {["buckets", bucket, "objects", object], riak_cs_wm_common, props(riak_cs_wm_object)},
-     {["buckets", bucket, "objects", object, "acl"], riak_cs_wm_common, props(riak_cs_wm_object_acl)},
-     {["buckets", bucket, "objects", object, "uploads", uploadId], riak_cs_wm_common, props(riak_cs_wm_object_upload_part)},
-     {["buckets", bucket, "objects", object, "uploads"], riak_cs_wm_common, props(riak_cs_wm_object_upload)}
+     {["buckets", bucket, "objects", object, "acl"], riak_cs_wm_common, props(riak_cs_wm_object_acl)}
     ].
 
 -spec one_three_resources(undefined | pos_integer()) -> [dispatch_rule()].
@@ -67,11 +69,27 @@ one_three_resources(undefined) ->
 one_three_resources(Version) when Version < 010300 ->
     [];
 one_three_resources(_Version) ->
-    [].
+    [
+     %% Bucket resources
+     {["buckets", bucket, "uploads"], riak_cs_wm_common, props(riak_cs_wm_bucket_uploads)},
+     {["buckets", bucket, "policy"], riak_cs_wm_common, props(riak_cs_wm_bucket_policy)},
+     %% Object resources
+     {["buckets", bucket, "objects", object, "uploads", uploadId], riak_cs_wm_common, props(riak_cs_wm_object_upload_part)},
+     {["buckets", bucket, "objects", object, "uploads"], riak_cs_wm_common, props(riak_cs_wm_object_upload)}
+    ].
 
 -spec get_auth_bypass() -> boolean().
 get_auth_bypass() ->
     get_auth_bypass(application:get_env(riak_cs, auth_bypass)).
+
+-spec get_admin_auth_enabled() -> boolean().
+get_admin_auth_enabled() ->
+    case application:get_env(riak_cs, admin_auth_enabled) of
+        {ok, false} ->
+            false;
+        _ ->
+            true
+    end.
 
 -spec get_auth_module() -> atom().
 get_auth_module() ->

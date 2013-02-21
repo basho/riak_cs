@@ -154,7 +154,7 @@ on_load() ->
 init(Config) ->
     %% Check if authentication is disabled and
     %% set that in the context.
-    AuthBypass = proplists:get_value(auth_bypass, Config),
+    AuthBypass = not proplists:get_value(admin_auth_enabled, Config),
     {ok, #ctx{auth_bypass=AuthBypass}}.
 
 service_available(RD, Ctx) ->
@@ -226,15 +226,17 @@ generate_etag(RD, #ctx{etag=Etag}=Ctx) ->
 forbidden(RD, #ctx{auth_bypass=AuthBypass, riak=Riak}=Ctx) ->
     BogusContext = #context{auth_bypass=AuthBypass, riakc_pid=Riak},
     Next = fun(NewRD, #context{user=User}) ->
-                   forbidden(NewRD, Ctx, User)
+                   forbidden(NewRD, Ctx, User, AuthBypass)
            end,
     Conv2Ctx = fun(_) -> Ctx end,
-    riak_cs_wm_utils:find_and_auth_user(RD, BogusContext, Next, Conv2Ctx, false).
+    riak_cs_wm_utils:find_and_auth_user(RD, BogusContext, Next, Conv2Ctx, AuthBypass).
 
-forbidden(RD, Ctx, undefined) ->
+forbidden(RD, Ctx, _, true) ->
+    {false, RD, Ctx};
+forbidden(RD, Ctx, undefined, false) ->
     %% anonymous access disallowed
     riak_cs_wm_utils:deny_access(RD, Ctx);
-forbidden(RD, Ctx, User) ->
+forbidden(RD, Ctx, User, false) ->
     case user_key(RD) == User?RCS_USER.key_id of
         true ->
             %% user is accessing own stats

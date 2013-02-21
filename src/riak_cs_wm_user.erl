@@ -32,7 +32,7 @@ init(Config) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"init">>),
     %% Check if authentication is disabled and
     %% set that in the context.
-    AuthBypass = proplists:get_value(auth_bypass, Config),
+    AuthBypass = not proplists:get_value(admin_auth_enabled, Config),
     {ok, #context{auth_bypass=AuthBypass}}.
 
 -spec service_available(term(), term()) -> {true, term(), term()}.
@@ -45,15 +45,19 @@ allowed_methods(RD, Ctx) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"allowed_methods">>),
     {['GET', 'HEAD', 'POST', 'PUT'], RD, Ctx}.
 
-forbidden(RD, Ctx) ->
+forbidden(RD, Ctx=#context{auth_bypass=AuthBypass}) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"forbidden">>),
+    Method = wrq:method(RD),
+    AnonOk = ((Method =:= 'PUT' orelse Method =:= 'POST') andalso
+              riak_cs_utils:anonymous_user_creation())
+        orelse AuthBypass,
     Next = fun(NewRD, NewCtx=#context{user=User}) ->
                    forbidden(wrq:method(RD),
                              NewRD,
                              NewCtx,
                              User,
                              user_key(RD),
-                             riak_cs_utils:anonymous_user_creation())
+                             AnonOk)
            end,
     UserAuthResponse = riak_cs_wm_utils:find_and_auth_user(RD, Ctx, Next),
     handle_user_auth_response(UserAuthResponse).
@@ -210,10 +214,10 @@ etag(Body) ->
 forbidden(_Method, RD, Ctx, undefined, _UserPathKey, false) ->
     %% anonymous access disallowed
     riak_cs_wm_utils:deny_access(RD, Ctx);
-forbidden('POST', _RD, _Ctx, undefined, [], true) ->
+forbidden(_, _RD, _Ctx, undefined, [], true) ->
     {false, _RD, _Ctx};
-forbidden('PUT', _RD, _Ctx, undefined, [], true) ->
-    {false, _RD, _Ctx};
+forbidden(_, RD, Ctx, undefined, UserPathKey, true) ->
+    get_user({false, RD, Ctx}, UserPathKey);
 forbidden('POST', RD, Ctx, User, [], _) ->
     %% Admin is creating a new user
     admin_check(riak_cs_utils:is_admin(User), RD, Ctx);

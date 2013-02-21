@@ -33,7 +33,7 @@
 
 init(Props) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"init">>),
-    AuthBypass = proplists:get_value(auth_bypass, Props, false),
+    AuthBypass = not proplists:get_value(admin_auth_enabled, Props),
     {ok, #ctx{auth_bypass = AuthBypass}}.
 
 %% @spec encodings_provided(webmachine:wrq(), context()) ->
@@ -105,7 +105,7 @@ forbidden(RD, #ctx{auth_bypass = AuthBypass, riakc_pid = RiakPid} = Ctx) ->
             case riak_cs_utils:get_admin_creds() of
                 {ok, {Admin, _}} when Admin == UserKeyId ->
                     %% admin account is allowed
-                    riak_cs_dtrace:dt_wm_return(?MODULE, <<"forbidden">>, 
+                    riak_cs_dtrace:dt_wm_return(?MODULE, <<"forbidden">>,
                                                 [], [<<"false">>, Admin]),
                     {false, RD, Ctx};
                 _ ->
@@ -144,4 +144,3 @@ get_stats() ->
 
 path_tokens(RD) ->
     wrq:path_tokens(RD).
-

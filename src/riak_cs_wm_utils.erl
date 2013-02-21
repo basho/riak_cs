@@ -135,9 +135,9 @@ handle_validation_response({ok, User, UserObj}, RD, Ctx, Next, _, _) ->
     %% given keyid and signature matched, proceed
     Next(RD, Ctx#context{user=User,
                          user_object=UserObj});
-handle_validation_response({error, no_user_key}, RD, Ctx, Next, _, true) ->
+handle_validation_response({error, Reason}, RD, Ctx, Next, _, true) ->
     %% no keyid was given, proceed anonymously
-    _ = lager:debug("No user key"),
+    _ = lager:debug("No user key: ~p", [Reason]),
     Next(RD, Ctx);
 handle_validation_response({error, no_user_key}, RD, Ctx, _, Conv2KeyCtx, false) ->
     %% no keyid was given, deny access
@@ -163,9 +163,9 @@ validate_auth_header(RD, AuthBypass, RiakPid, Ctx) ->
     case AuthHeader of
         undefined ->
             %% Check for auth info presented as query params
-            KeyId = wrq:get_qs_value(?QS_KEYID, RD),
+            KeyId0 = wrq:get_qs_value(?QS_KEYID, RD),
             EncodedSig = wrq:get_qs_value(?QS_SIGNATURE, RD),
-            {AuthMod, KeyId, Signature} = parse_auth_params(KeyId,
+            {AuthMod, KeyId, Signature} = parse_auth_params(KeyId0,
                                                             EncodedSig,
                                                             AuthBypass);
         _ ->
