@@ -614,9 +614,7 @@ is_multipart_manifest(?MANIFEST{props=Props}) ->
             false;
         _ ->
              true
-    end;
-is_multipart_manifest(_) ->
-    false.
+    end.
 
 -spec multipart_description(?MANIFEST{}) -> ?MULTIPART_DESCR{}.
 multipart_description(Manifest) ->

@@ -68,6 +68,7 @@
 ^sherk_scan.erl:
 ^sherk_tab.erl:
 ^sherk_target.erl:
+^syslog.erl:
 ^watchdog.erl:
 ############## datatypes due to riak_kv and other deps
   riak_kv_backend:fold_buckets_fun/0
@@ -155,6 +156,7 @@
 ############# we've gone in and added a throw / log to be sure
 riak_cs_mp_utils.erl:522: The pattern <Bucket, OwnerStr> can never match since previous clauses completely covered the type <_,'undefined' | {_,_,_}>
 ^riak_cs_lfs_utils.erl:119:
+riak_cs_gc.erl:.*: The pattern ..UUID, _... _. can never match the type ..$
 ############## All the others..........
 riak_cs_blockall_auth.erl:9: Callback info about the riak_cs_auth behaviour is not available
 riak_cs_passthru_auth.erl:9: Callback info about the riak_cs_auth behaviour is not available
