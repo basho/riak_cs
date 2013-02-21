@@ -51,7 +51,8 @@ config(Key, Secret, Port) ->
                     Port, % inets issue precludes using ?S3_PORT
                     ?DEFAULT_PROTO,
                     ?PROXY_HOST,
-                    Port).
+                    Port,
+                    [{keep_alive_timeout, 100}]).
 
 create_user(Node, UserIndex) ->
     {A, B, C} = erlang:now(),
