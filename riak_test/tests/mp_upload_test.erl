@@ -9,7 +9,8 @@
 -define(TEST_KEY1, "riak_test_key1").
 -define(TEST_KEY2, "riak_test_key2").
 -define(PART_COUNT, 5).
--define(PART_SIZE, 20).
+-define(GOOD_PART_SIZE, 5*1024*1024).
+-define(BAD_PART_SIZE, 2*1024*1024).
 
 confirm() ->
     {RiakNodes, _CSNodes, _Stanchion} = rtcs:setup(4),
@@ -34,6 +35,7 @@ confirm() ->
 
     %% Test cases
     basic_upload_test_case(?TEST_BUCKET, ?TEST_KEY1, UserConfig),
+    ok = parts_too_small_test_case(?TEST_BUCKET, ?TEST_KEY1, UserConfig),
     aborted_upload_test_case(?TEST_BUCKET, ?TEST_KEY2, UserConfig),
     nonexistent_bucket_listing_test_case("fake-bucket", UserConfig),
 
@@ -111,13 +113,13 @@ confirm() ->
     ?assertError({aws_error, {http_error, 404, _, _}}, erlcloud_s3:list_objects(?TEST_BUCKET, UserConfig)),
     pass.
 
-upload_and_assert_parts(Bucket, Key, UploadId, PartCount, Config) ->
-    [upload_and_assert_part(Bucket,
-                            Key,
-                            UploadId,
-                            X,
-                            generate_part_data(),
-                            Config)
+upload_and_assert_parts(Bucket, Key, UploadId, PartCount, Size, Config) ->
+    [{X, upload_and_assert_part(Bucket,
+                                Key,
+                                UploadId,
+                                X,
+                                generate_part_data(X, Size),
+                                Config)}
      || X <- lists:seq(1, PartCount)].
 
 upload_and_assert_part(Bucket, Key, UploadId, PartNum, PartData, Config) ->
@@ -129,16 +131,18 @@ upload_and_assert_part(Bucket, Key, UploadId, PartNum, PartData, Config) ->
     ?assertEqual(Bucket, proplists:get_value(bucket, PartsTerm)),
     ?assertEqual(Key, proplists:get_value(key, PartsTerm)),
     ?assertEqual(UploadId, proplists:get_value(upload_id, PartsTerm)),
-    verify_part(PartEtag, proplists:get_value(PartNum, Parts)).
+    verify_part(PartEtag, proplists:get_value(PartNum, Parts)),
+    PartEtag.
 
 verify_part(_, undefined) ->
     ?assert(false);
 verify_part(ExpectedEtag, PartInfo) ->
     ?assertEqual(ExpectedEtag, proplists:get_value(etag, PartInfo)).
 
-generate_part_data() ->
+generate_part_data(X, Size)
+  when 0 =< X, X =< 255 ->
     list_to_binary(
-      ["a" || _ <- lists:seq(1, ?PART_SIZE)]).
+      [X || _ <- lists:seq(1, Size)]).
 
 aborted_upload_test_case(Bucket, Key, Config) ->
     %% Initiate a multipart upload
@@ -155,10 +159,11 @@ aborted_upload_test_case(Bucket, Key, Config) ->
 
     lager:info("Uploading parts"),
     _EtagList = upload_and_assert_parts(Bucket,
-                                       Key,
-                                       UploadId,
-                                       ?PART_COUNT,
-                                       Config),
+                                        Key,
+                                        UploadId,
+                                        ?PART_COUNT,
+                                        ?GOOD_PART_SIZE,
+                                        Config),
 
     %% List bucket contents and verify empty
     ObjList1= erlcloud_s3:list_objects(Bucket, Config),
@@ -201,6 +206,7 @@ basic_upload_test_case(Bucket, Key, Config) ->
                                        Key,
                                        UploadId,
                                        ?PART_COUNT,
+                                       ?GOOD_PART_SIZE,
                                        Config),
 
     %% List bucket contents and verify empty
@@ -209,6 +215,7 @@ basic_upload_test_case(Bucket, Key, Config) ->
 
     %% Complete upload
     lager:info("Completing multipart upload"),
+
     ?assertEqual(ok, erlcloud_s3_multipart:complete_upload(Bucket,
                                                            Key,
                                                            UploadId,
@@ -226,12 +233,53 @@ basic_upload_test_case(Bucket, Key, Config) ->
                  [proplists:get_value(key, O) ||
                      O <- proplists:get_value(contents, ObjList2)]),
 
+    %% Get the object: it better be what we expect
+    ExpectedObj = list_to_binary([generate_part_data(X, ?GOOD_PART_SIZE) ||
+                                     X <- lists:seq(1, ?PART_COUNT)]),
+    GetRes = erlcloud_s3:get_object(Bucket, Key, Config),
+    ?assertEqual(ExpectedObj, proplists:get_value(content, GetRes)),
+
     %% Delete uploaded object
     erlcloud_s3:delete_object(Bucket, Key, Config),
 
     %% List bucket contents and verify empty
     ObjList3 = erlcloud_s3:list_objects(Bucket, Config),
     ?assertEqual([], proplists:get_value(contents, ObjList3)).
+
+parts_too_small_test_case(Bucket, Key, Config) ->
+    %% Initiate a multipart upload
+    lager:info("Initiating multipart upload (bad)"),
+    InitUploadRes = erlcloud_s3_multipart:initiate_upload(Bucket, Key, [], [], Config),
+    UploadId = erlcloud_s3_multipart:upload_id(InitUploadRes),
+
+    lager:info("Uploading parts (bad)"),
+    EtagList = upload_and_assert_parts(Bucket,
+                                       Key,
+                                       UploadId,
+                                       ?PART_COUNT,
+                                       ?BAD_PART_SIZE,
+                                       Config),
+
+    %% Complete upload
+    lager:info("Completing multipart upload (bad)"),
+
+    {'EXIT', {{aws_error, {http_error, 400, _, Body}}, _Backtrace}} =
+        (catch erlcloud_s3_multipart:complete_upload(Bucket,
+                                                     Key,
+                                                     UploadId,
+                                                     EtagList,
+                                                     Config)),
+    ?assertMatch({match, _},
+                 re:run(Body, "EntityTooSmall", [multiline])),
+
+    Abort = fun() -> erlcloud_s3_multipart:abort_upload(Bucket,
+                                                        Key,
+                                                        UploadId,
+                                                        Config)
+            end,
+    ?assertEqual(ok, Abort()),
+    ?assertError({aws_error, {http_error, 404, _, _}}, Abort()),
+    ok.
 
 initiate_uploads(Bucket, Count, Config) ->
     initiate_uploads(Bucket, Count, [], Config).
