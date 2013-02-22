@@ -37,6 +37,8 @@ error_message(user_already_exists) ->
     "The specified email address has already been registered. Email addresses must be unique among all users of the system. Please try again with a different email address.";
 error_message(entity_too_large) ->
     "Your proposed upload exceeds the maximum allowed object size.";
+error_message(entity_too_small) ->
+    "Your proposed upload is smaller than the minimum allowed object size. Each part must be at least 5 MB in size, except the last part.";
 error_message(invalid_user_update) ->
     "The user update you requested was invalid.";
 error_message(no_such_bucket) ->
@@ -62,6 +64,9 @@ error_code(bucket_not_empty) -> "BucketNotEmpty";
 error_code(bucket_already_exists) -> "BucketAlreadyExists";
 error_code(user_already_exists) -> "UserAlreadyExists";
 error_code(entity_too_large) -> "EntityTooLarge";
+error_code(entity_too_small) -> "EntityTooSmall";
+error_code(bad_etag) -> "InvalidPart";
+error_code(bad_etag_order) -> "InvalidPartOrder";
 error_code(invalid_user_update) -> "InvalidUserUpdate";
 error_code(no_such_bucket) -> "NoSuchBucket";
 error_code({riak_connect_failed, _}) -> "RiakConnectFailed";
@@ -85,6 +90,9 @@ status_code(bucket_not_empty) ->  409;
 status_code(bucket_already_exists) -> 409;
 status_code(user_already_exists) -> 409;
 status_code(entity_too_large) -> 400;
+status_code(entity_too_small) -> 400;
+status_code(bad_etag) -> 400;
+status_code(bad_etag_order) -> 400;
 status_code(invalid_user_update) -> 400;
 status_code(no_such_bucket) -> 404;
 status_code({riak_connect_failed, _}) -> 503;

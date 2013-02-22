@@ -13,8 +13,13 @@
 
 -ifdef(TEST).
 -compile(export_all).
+-ifdef(EQC).
+-include_lib("eqc/include/eqc.hrl").
+-endif.
 -include_lib("eunit/include/eunit.hrl").
 -endif.
+
+-define(MIN_MP_PART_SIZE, (5*1024*1024)).
 
 -define(PID(WrappedPid), get_riakc_pid(WrappedPid)).
 
@@ -262,7 +267,7 @@ upload_part_finished(Bucket, Key, UploadId, _PartNumber, PartUUID, MD5,
                      Caller, RiakcPidUnW) ->
     Extra = {PartUUID, MD5},
     do_part_common(upload_part_finished, Bucket, Key, UploadId,
-    Caller, [{upload_part_finished, Extra}], RiakcPidUnW).
+                   Caller, [{upload_part_finished, Extra}], RiakcPidUnW).
 
 user_rec_to_3tuple(U) ->
     %% acl_owner3: {display name, canonical id, key id}
@@ -372,6 +377,7 @@ do_part_common2(complete, RiakcPid,
         {ok, ManiPid} = riak_cs_manifest_fsm:start_link(Bucket, Key, RiakcPid),
         try
                 {Bytes, PartsToKeep, PartsToDelete} = comb_parts(MpM, PartETags),
+                true = enforce_part_size(PartsToKeep),
                 NewMpM = MpM?MULTIPART_MANIFEST{parts = PartsToKeep,
                                                 done_parts = [],
                                                 cleanup_parts = PartsToDelete},
@@ -410,7 +416,9 @@ do_part_common2(complete, RiakcPid,
           throw:bad_etag ->
             {error, bad_etag};
           throw:bad_etag_order ->
-            {error, bad_etag_order}
+            {error, bad_etag_order};
+          throw:entity_too_small ->
+            {error, entity_too_small}
     end;
 do_part_common2(list, _RiakcPid, _M, _Obj, MpM, Props) ->
     {_Opts} = proplists:get_value(list, Props),
@@ -705,6 +713,26 @@ move_dead_parts_to_gc(Bucket, Key, PartsToDelete, RiakcPid) ->
                                    block_size=P_BlockSize} <- PartsToDelete],
     ok = riak_cs_gc:move_manifests_to_gc_bucket(PartDelMs, RiakcPid, false).
 
+enforce_part_size(PartsToKeep) ->
+    case riak_cs_utils:get_env(riak_cs, enforce_multipart_part_size, true) of
+        true ->
+            eval_part_sizes([P?PART_MANIFEST.content_length || P <- PartsToKeep]);
+        false ->
+            true
+    end.
+
+eval_part_sizes([]) ->
+    true;
+eval_part_sizes([_]) ->
+    true;
+eval_part_sizes(L) ->
+    case lists:min(lists:sublist(L, length(L)-1)) of
+        X when X < ?MIN_MP_PART_SIZE ->
+            throw(entity_too_small);
+        _ ->
+            true
+    end.
+
 %% The intent of the wrap_* functions is to make this module's code
 %% flexible enough to support two methods of operation:
 %%
@@ -750,6 +778,44 @@ replace_mp_manifest(MpM, Props) ->
 %% EUnit tests
 %% ===================================================================
 -ifdef(TEST).
+
+eval_part_sizes_test() ->
+    true = eval_part_sizes_wrapper([]),
+    true = eval_part_sizes_wrapper([999888777]),
+    true = eval_part_sizes_wrapper([777]),
+    false = eval_part_sizes_wrapper([1,51048576,51048576,51048576,436276]),
+    false = eval_part_sizes_wrapper([51048576,1,51048576,51048576,436276]),
+    false = eval_part_sizes_wrapper([51048576,1,51048576,51048576,436276]),
+    false = eval_part_sizes_wrapper([1,51048576,51048576,51048576]),
+    false = eval_part_sizes_wrapper([51048576,1,51048576,51048576]),
+    true  = eval_part_sizes_wrapper([51048576,51048576,51048576,1]),
+    ok.
+
+eval_part_sizes_wrapper(L) ->
+    try
+        eval_part_sizes(L)
+    catch
+        throw:entity_too_small ->
+            false
+    end.
+
+-ifdef(EQC).
+
+eval_part_sizes_eqc_test() ->
+    true = eqc:quickcheck(eqc:numtests(500, prop_part_sizes())).
+
+prop_part_sizes() ->
+    Min = ?MIN_MP_PART_SIZE,
+    Min_1 = Min - 1,
+    MinMinus100 = Min - 100,
+    MinPlus100 = Min + 100,
+    ?FORALL({L, Last, Either},
+            {list(choose(Min, MinPlus100)), choose(0, Min_1), choose(MinMinus100, MinPlus100)},
+            true == eval_part_sizes_wrapper(L ++ [Last]) andalso
+            false == eval_part_sizes_wrapper(L ++ [Min_1] ++ L ++ [Either])
+           ).
+
+-endif. % EQC
 
 %% The test_0() and test_1() commands can be used while Riak CS is running.
 %% In fact, it's preferred (?) to do it that way because then all of the

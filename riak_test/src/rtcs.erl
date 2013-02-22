@@ -106,7 +106,8 @@ cs_config() ->
        {proxy_get, enabled},
        {anonymous_user_creation, true},
        {riak_pb_port, 10017},
-       {stanchion_port, 9095}
+       {stanchion_port, 9095},
+       {cs_version, 010300}
       ]
      }].
 
