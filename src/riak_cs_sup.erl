@@ -110,7 +110,6 @@ web_specs(Options) ->
                 [{admin_web, admin_web_config(Options)},
                  {object_web, object_web_config(Options)}]
         end,
-    [router_spec(Name) || {Name, _} <- WebConfigs] ++
     [web_spec(Name, Config) || {Name, Config} <- WebConfigs].
 
 -spec pool_specs(proplist()) -> [supervisor:child_spec()].
@@ -130,12 +129,6 @@ pool_spec(Name, Workers, Overflow, WorkerStop) ->
                              {stop_fun, WorkerStop}]]},
      permanent, 5000, worker, [poolboy]}.
 
--spec router_spec(atom()) -> supervisor:child_spec().
-router_spec(Name) ->
-    {list_to_atom(atom_to_list(Name) ++ "_router"),
-     {webmachine_router, start_link, [Name]},
-     permanent, 5000, worker, dynamic}.
-
 -spec web_spec(atom(), proplist()) -> supervisor:child_spec().
 web_spec(Name, Config) ->
     {Name,
@@ -145,8 +138,8 @@ web_spec(Name, Config) ->
 -spec object_web_config(proplist()) -> proplist().
 object_web_config(Options) ->
     [{dispatch, riak_cs_web:object_api_dispatch_table()},
-     {default_router, false},
      {name, object_web},
+     {router_name, object_web},
      {ip, proplists:get_value(cs_ip, Options)},
      {port, proplists:get_value(cs_port, Options)},
      {nodelay, true},
@@ -159,6 +152,7 @@ object_web_config(Options) ->
 admin_web_config(Options) ->
     [{dispatch, riak_cs_web:admin_api_dispatch_table()},
      {name, admin_web},
+     {router_name, admin_web},
      {ip, proplists:get_value(admin_ip, Options)},
      {port, proplists:get_value(admin_port, Options, 8000)},
      {nodelay, true},
