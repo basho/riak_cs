@@ -78,7 +78,7 @@ calculate_signature(KeyData, RD) ->
     OriginalResource = riak_cs_s3_rewrite:original_resource(RD),
     Resource = case OriginalResource of
         undefined -> []; %% TODO: get noisy here?
-        {Path,QS} -> [Path, canonicalize_qs(lists:reverse(QS))]
+        {Path,QS} -> [Path, canonicalize_qs(QS)]
     end,
     Expires = wrq:get_qs_value("Expires", RD),
     case Expires of
@@ -119,7 +119,13 @@ check_auth(PresentedSignature, CalculatedSignature) ->
     PresentedSignature == CalculatedSignature.
 
 canonicalize_qs(QS) ->
-    canonicalize_qs(QS, []).
+    %% The QS must be sorted be canonicalized,
+    %% and since `canonicalize_qs/2` builds up the
+    %% accumulator with cons, it comes back in reverse
+    %% order. So we'll sort then reverise, so cons'ing
+    %% actually puts it back in the correct order
+    ReversedSorted = lists:reverse(lists:sort(QS)),
+    canonicalize_qs(ReversedSorted, []).
 
 canonicalize_qs([], []) ->
     [];
