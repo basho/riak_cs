@@ -162,9 +162,7 @@ list_bucket_response(User, Bucket, KeyObjPairs, RD, Ctx) ->
                             LastModified =
                                 riak_cs_wm_utils:to_iso_8601(
                                   Manifest?MANIFEST.created),
-                            ETag = "\"" ++ riak_cs_utils:binary_to_hexlist(
-                                             Manifest?MANIFEST.content_md5)
-                                ++ "\"",
+                            ETag = riak_cs_utils:etag_from_binary(Manifest?MANIFEST.content_md5),
                             {'Contents', [{'Key', [KeyString]},
                                           {'Size', [Size]},
                                           {'LastModified', [LastModified]},

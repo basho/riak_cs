@@ -88,7 +88,7 @@ manifest_to_keycontent(?MANIFEST{bkey=BKey,
     LastModified = list_to_binary(riak_cs_wm_utils:to_iso_8601(Created)),
 
     %% Etag
-    ETagString = "\"" ++ riak_cs_utils:binary_to_hexlist(ContentMd5) ++ "\"",
+    ETagString = riak_cs_utils:etag_from_binary(ContentMd5),
     Etag = list_to_binary(ETagString),
 
     Size = ContentLength,

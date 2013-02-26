@@ -11,6 +11,7 @@
 %% Public API
 -export([anonymous_user_creation/0,
          binary_to_hexlist/1,
+         etag_from_binary/1,
          check_bucket_exists/2,
          close_riak_connection/1,
          close_riak_connection/2,
@@ -103,6 +104,12 @@ binary_to_hexlist(Bin) ->
               end
           end || X <- binary_to_list(Bin)],
     string:to_lower(lists:flatten(XBin)).
+
+%% @doc Return a hexadecimal string of `Binary', with double quotes
+%% around it.
+-spec etag_from_binary(binary()) -> string().
+etag_from_binary(Binary) ->
+    "\"" ++ binary_to_hexlist(Binary) ++ "\"".
 
 %% @doc Convert the passed binary into a string where the numbers are represented in hexadecimal (lowercase and 0 prefilled).
 -spec hexlist_to_binary(string()) -> binary().
