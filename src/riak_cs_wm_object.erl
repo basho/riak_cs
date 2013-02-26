@@ -144,7 +144,7 @@ produce_body(RD, Ctx=#context{local_context=LocalCtx,
     riak_cs_dtrace:dt_object_entry(?MODULE, Func, [], [UserName, BFile_str]),
     ContentMd5 = Mfst?MANIFEST.content_md5,
     LastModified = riak_cs_wm_utils:to_rfc_1123(Mfst?MANIFEST.created),
-    ETag = "\"" ++ riak_cs_utils:binary_to_hexlist(ContentMd5) ++ "\"",
+    ETag = riak_cs_utils:etag_from_binary(ContentMd5),
     NewRQ1 = lists:foldl(fun({K, V}, Rq) -> wrq:set_resp_header(K, V, Rq) end,
                          RD,
                          [{"ETag",  ETag},
@@ -265,7 +265,7 @@ accept_body(RD, Ctx=#context{local_context=LocalCtx,
                                       Mfst?MANIFEST{metadata=NewMD}, NewAcl,
                                       RiakcPid) of
         ok ->
-            ETag = riak_cs_utils:binary_to_hexlist(Mfst?MANIFEST.content_md5),
+            ETag = riak_cs_utils:etag_from_binary(Mfst?MANIFEST.content_md5),
             RD2 = wrq:set_resp_header("ETag", ETag, RD),
             {{halt, 200}, RD2, Ctx};
         {error, Err} ->
@@ -345,7 +345,7 @@ finalize_request(RD,
     AccessRD = riak_cs_access_log_handler:set_bytes_in(S, RD),
 
     {ok, Manifest} = riak_cs_put_fsm:finalize(Pid),
-    ETag = "\"" ++ riak_cs_utils:binary_to_hexlist(Manifest?MANIFEST.content_md5) ++ "\"",
+    ETag = riak_cs_utils:etag_from_binary(Manifest?MANIFEST.content_md5),
     ok = riak_cs_stats:update_with_start(object_put, StartTime),
     riak_cs_dtrace:dt_wm_return(?MODULE, <<"finalize_request">>, [S], [UserName, BFile_str]),
     riak_cs_dtrace:dt_object_return(?MODULE, <<"object_put">>, [S], [UserName, BFile_str]),
