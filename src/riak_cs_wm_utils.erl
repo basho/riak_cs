@@ -603,7 +603,7 @@ translate_bucket_policy(PolicyMod, Bucket, RiakPid) ->
         %% 'no_such_bucket' but nothing else. if it comes it's a bug.
         {error, multiple_bucket_owners}=Error ->
             Error;
-        {error, notfound}=Error ->
+        {error, no_such_bucket}=Error ->
             Error
     end.
 
