@@ -901,6 +901,8 @@ check_bucket_exists(Bucket, RiakPid) ->
                 _ ->
                     {ok, Obj}
             end;
+        {error, notfound} ->
+            {error, no_such_bucket};
         {error, _}=Error ->
             Error
     end.
