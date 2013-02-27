@@ -367,7 +367,7 @@ finalize_request(RD, Ctx=#context{local_context=LocalCtx,
         ok ->
             if ContentMD5 == undefined orelse
                ContentMD5 == M?MANIFEST.content_md5 ->
-                    RD2 = wrq:set_resp_header("ETag", riak_cs_utils:binary_to_hexlist(M?MANIFEST.content_md5), RD),
+                    RD2 = wrq:set_resp_header("ETag", riak_cs_utils:etag_from_binary(M?MANIFEST.content_md5), RD),
                     {{halt, 200}, RD2, Ctx};
                true ->
                     XErr = riak_cs_mp_utils:make_special_error("BadDigest"),
