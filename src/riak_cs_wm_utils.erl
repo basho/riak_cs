@@ -518,7 +518,7 @@ object_access_authorize_helper(AccessType, Deletable,
 
     #key_context{bucket=Bucket} = LocalCtx,
     case translate_bucket_policy(PolicyMod, Bucket, RiakPid) of
-        {error, multiple_bucket_owners=E} ->
+        {error, E} ->
             %% We want to bail out early if there are siblings when
             %% retrieving the bucket policy
             riak_cs_s3_response:api_error(E, RD, Ctx);
@@ -598,8 +598,13 @@ translate_bucket_policy(PolicyMod, Bucket, RiakPid) ->
             P;
         {error, policy_undefined} ->
             undefined;
+
+        %% here we are supposed to receive 'multiple_bucket_owners' or
+        %% 'no_such_bucket' but nothing else. if it comes it's a bug.
         {error, multiple_bucket_owners}=Error ->
-             Error
+            Error;
+        {error, notfound}=Error ->
+            Error
     end.
 
 %% Helper functions for dealing with combinations of Object ACL
