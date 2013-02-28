@@ -139,7 +139,7 @@ canonicalize_qs([{K, []}|T], Acc) ->
                   end,
             canonicalize_qs(T, [[K, Amp]|Acc]);
         false ->
-            canonicalize_qs(T)
+            canonicalize_qs(T, Acc)
     end;
 canonicalize_qs([{K, V}|T], Acc) ->
     case lists:member(K, ?SUBRESOURCES) of
@@ -149,7 +149,7 @@ canonicalize_qs([{K, V}|T], Acc) ->
                   end,
             canonicalize_qs(T, [[K, "=", V, Amp]|Acc]);
         false ->
-            canonicalize_qs(T)
+            canonicalize_qs(T, Acc)
     end.
 
 %% ===================================================================
