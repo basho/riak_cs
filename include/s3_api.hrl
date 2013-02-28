@@ -40,17 +40,27 @@
 -define(SUPPORTED_BUCKET_ACTION,
         [ 's3:CreateBucket', 's3:DeleteBucket', 's3:ListBucket', 's3:ListAllMyBuckets',
           's3:GetBucketAcl', 's3:PutBucketAcl',
-          's3:GetBucketPolicy', 's3:DeleteBucketPolicy', 's3:PutBucketPolicy']).
+          's3:GetBucketPolicy', 's3:DeleteBucketPolicy', 's3:PutBucketPolicy',
+          's3:ListBucketMultipartUploads']).
 
 % one of string, numeric, date&time, boolean, IP address, ARN and existence of condition keys
 -type string_condition_type() :: 'StringEquals' | streq            | 'StringNotEquals' | strneq
-                               | 'StringEqualsIgnoreCase' | streqi | 'StringNotEqualsIgnoreCase' | streqni
+                               | 'StringEqualsIgnoreCase' | streqi | 'StringNotEqualsIgnoreCase' | strneqi
                                | 'StringLike' | strl               | 'StringNotLike' | strnl.
+
+-define(STRING_CONDITION_ATOMS,
+        [ 'StringEquals' , streq,           'StringNotEquals', strneq,
+          'StringEqualsIgnoreCase', streqi, 'StringNotEqualsIgnoreCase', strneqi,
+          'StringLike', strl,               'StringNotLike' , strnl]).
 
 -type numeric_condition_type() :: 'NumericEquals' | numeq      | 'NumericNotEquals' | numneq
                                 | 'NumericLessThan'  | numlt   | 'NumericLessThanEquals' | numlteq
                                 | 'NumericGreaterThan' | numgt | 'NumericGreaterThanEquals' | numgteq.
 
+-define(NUMERIC_CONDITION_ATOMS,
+        [ 'NumericEquals', numeq,      'NumericNotEquals', numneq,
+          'NumericLessThan' , numlt,   'NumericLessThanEquals', numlteq,
+          'NumericGreaterThan', numgt, 'NumericGreaterThanEquals', numgteq]).
 
 -type date_condition_type() :: 'DateEquals'         | dateeq
                              | 'DateNotEquals'      | dateneq
@@ -59,7 +69,19 @@
                              | 'DateGreaterThan'    | dategt
                              | 'DateGreaterThanEquals' | dategteq.
 
+-define(DATE_CONDITION_ATOMS,
+        [ 'DateEquals',            dateeq,
+          'DateNotEquals',         dateneq,
+          'DateLessThan',          datelt,
+          'DateLessThanEquals',    datelteq,
+          'DateGreaterThan',       dategt,
+          'DateGreaterThanEquals', dategteq]).
+
+
 -type ip_addr_condition_type() :: 'IpAddress' | 'NotIpAddress'.
+
+-define(IP_ADDR_CONDITION_ATOMS,
+        ['IpAddress', 'NotIpAddress']).
 
 -type condition_pair() :: {date_condition_type(), [{'aws:CurrentTime', binary()}]}
                         | {numeric_condition_type(), [{'aws:EpochTime', non_neg_integer()}]}
@@ -87,7 +109,7 @@
           principal  = [] :: principal(),
           action     = [] :: [ s3_object_action() | s3_bucket_action() ] | '*',
           not_action = [] :: [ s3_object_action() | s3_bucket_action() ] | '*',
-          resource =   [] :: [ arn() ] | '*',
+          resource   = [] :: [ arn() ] | '*',
           condition_block = [] :: [ condition_pair() ]
          }).
 
@@ -100,3 +122,4 @@
 
 
 -define(POLICY, #policy_v1).
+-define(ARN,    #arn_v1).

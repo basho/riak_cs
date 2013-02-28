@@ -5,6 +5,7 @@
 %% -------------------------------------------------------------------
 
 %% @doc policy utility functions
+%% A (principal) is/isn't allowed (effect) to do B (action) to C (resource) where D (condition) applies
 
 -module(riak_cs_s3_policy).
 
@@ -30,6 +31,8 @@
         ]).
 
 -ifdef(TEST).
+
+-include_lib("eunit/include/eunit.hrl").
 -export([eval_all_ip_addr/2,
          eval_ip_address/2,
          eval_condition/2,
@@ -38,7 +41,10 @@
          parse_arns/1,
          print_arns/1,
          parse_ip/1,
-         print_ip/1]).
+         print_ip/1,
+
+         statement_eq/2  %% for test use
+        ]).
 
 -endif.
 
@@ -53,12 +59,15 @@
 %% Public API
 %% ===================================================================
 
--spec eval(access(), policy1() | undefined | binary() )-> boolean().
+%% @doc evaluates the policy and returns the policy allows, denies or
+%% not says nothing about this access. Usually in case of undefined,
+%% the owner access must be accepted and others must be refused.
+-spec eval(access(), policy1() | undefined | binary() ) -> boolean() | undefined.
 eval(_, undefined) -> undefined;
 eval(Access, JSON) when is_binary(JSON) ->
     case policy_from_json(JSON) of
         {ok, Policy} ->  eval(Access, Policy);
-        E -> E
+        {error, _} = E -> E
     end;
 eval(Access, ?POLICY{version=V, statement=Stmts}) ->
     case V of
@@ -150,7 +159,7 @@ check_all_resources(BucketBin, #arn_v1{path=Path} = _Resource) ->
 reqdata_to_access(RD, Target, ID) ->
     Key = case wrq:path_info(object, RD) of
               undefined -> undefined;
-              RawKey -> mochiweb_util:unquote(mochiweb_util:unquote(RawKey))
+              RawKey -> list_to_binary(mochiweb_util:unquote(mochiweb_util:unquote(RawKey)))
           end,
     #access_v1{
             method = wrq:method(RD),
@@ -161,22 +170,39 @@ reqdata_to_access(RD, Target, ID) ->
            }.
 
 -spec policy_from_json(JSON::binary()) -> {ok, policy1()} | {error, term()}.
-policy_from_json(JSON)->
+policy_from_json(JSON) ->
+    %% TODO: stop using exception and start some monadic validation and parsing.
     case catch(mochijson2:decode(JSON)) of
         {struct, Pairs} ->
             Version = proplists:get_value(<<"Version">>, Pairs),
             ID      = proplists:get_value(<<"Id">>, Pairs),
             Stmts0  = proplists:get_value(<<"Statement">>, Pairs),
-            Stmts = lists:map(fun({struct,S})->statement_from_pairs(S, #statement{}) end, Stmts0),
-            case Version of
-                undefined ->
-                    {ok, ?POLICY{id=ID, statement=Stmts}};
-                _ ->
-                    {ok, ?POLICY{id=ID, version=Version, statement=Stmts}}
-            end;
+
+            case catch(lists:map(fun({struct,S})->
+                                         statement_from_pairs(S, #statement{})
+                                 end, Stmts0)) of
+                      {error, _Reason} = E ->
+                         E;
+                      [] ->
+                         {error, malformed_policy_missing};
+                      
+                      Stmts ->
+                         case {Version, ID} of
+                             {undefined, <<"undefined">>} ->
+                                 {ok, ?POLICY{statement=Stmts}};
+                             {undefined, _} ->
+                                 {ok, ?POLICY{id=ID, statement=Stmts}};
+                             {_, <<"undefined">>} ->
+                                 {ok, ?POLICY{version=Version, statement=Stmts}};
+                             _ ->
+                                 {ok, ?POLICY{id=ID, version=Version, statement=Stmts}}
+                         end
+                 end;
         {error, _Reason} = E ->
             E;
-        {'EXIT', {{case_clause, B}, _}} when is_binary(B) -> %% mochiweb failed to parse the JSON
+        {'EXIT', {{case_clause, B}, _}} when is_binary(B) ->
+            %% mochiweb failed to parse the JSON
+            _ = lager:debug("~p", [B]),
             {error, malformed_policy_json}
     end.
 
@@ -188,14 +214,15 @@ policy_to_json_term( ?POLICY{ version = ?AMZ_DEFAULT_VERSION,
     Policy = [{"Version",?AMZ_DEFAULT_VERSION},{"Id", ID},{"Statement",Stmts}],
     unicode:characters_to_binary(mochijson2:encode(Policy), unicode).
 
+
 -spec supported_object_action() -> [s3_object_action()].
 supported_object_action() -> ?SUPPORTED_OBJECT_ACTION.
 
 -spec supported_bucket_action() -> [s3_bucket_action()].
 supported_bucket_action() -> ?SUPPORTED_BUCKET_ACTION.
 
-% @doc put required atoms into atom table
-% to make policy json parser safer by using erlang:binary_to_existing_atom/2.
+%% @doc put required atoms into atom table
+%% to make policy json parser safer by using erlang:binary_to_existing_atom/2.
 -spec log_supported_actions() -> ok.
 log_supported_actions()->
     _ = lager:info("supported object actions: ~p",
@@ -313,15 +340,18 @@ eval_statement(#access_v1{method=M, target=T, req=Req, bucket=B, key=K} = _Acces
                #statement{effect=E, condition_block=Conds, action=As} = Stmt) ->
     {ok, A} = make_action(M, T),
     ResourceMatch = resource_matches(B, K, Stmt),
-    IsRelated = lists:member(A, As) orelse lists:member('*', As),
+    IsRelated = (As =:= '*')
+        orelse (A =:= As)
+        orelse (is_list(As) andalso lists:member(A, As)),
     case {IsRelated, ResourceMatch} of
         {false, _} -> undefined;
         {_, false} -> undefined;
         {true, true} ->
             Match = lists:all(fun(Cond) -> eval_condition(Req, Cond) end, Conds),
-            case E of
-                allow -> Match;
-                deny -> not Match % @TODO: add test cases for Deny
+            case {E, Match} of
+                {allow, true} -> true;
+                {deny, true} -> false;  
+                {_, false} -> undefined %% matches nothing
             end
     end.
 
@@ -329,8 +359,6 @@ make_action(Method, Target) ->
     case {Method, Target} of
         {'PUT', object} ->     {ok, 's3:PutObject'};
         {'PUT', object_acl} -> {ok, 's3:PutObjectAcl'};
-        {'PUT', bucket} ->
-            {ok, 's3:CreateBucket'}; % 400 (MalformedPolicy): Policy has invalid action
         {'PUT', bucket_acl} -> {ok, 's3:PutBucketAcl'};
         {'PUT', bucket_policy} -> {ok, 's3:PutBucketPolicy'};
 
@@ -341,12 +369,23 @@ make_action(Method, Target) ->
         {'GET', bucket_acl} -> {ok, 's3:GetBucketAcl'};
         {'GET', bucket_policy} -> {ok, 's3:GetBucketPolicy'};
         {'GET', bucket_location} -> {ok, 's3:GetBucketLocation'};
+        {'GET', bucket_uploads} -> {ok, 's3:ListBucketMultipartUploads'};
 
         {'DELETE', object} ->  {ok, 's3:DeleteObject'};
         {'DELETE', bucket} ->  {ok, 's3:DeleteBucket'};
         {'DELETE', bucket_policy} -> {ok, 's3:DeleteBucketPolicy'};
 
         {'HEAD', object} -> {ok, 's3:GetObject'}; % no HeadObject
+
+        %% PUT Object includes POST Object,
+        %% including Initiate Multipart Upload, Upload Part, Complete Multipart Upload
+        {'POST', object} -> {ok, 's3:PutObject'};
+
+        %% same as {'GET' bucket}
+        {'HEAD', bucket} -> {ok, 's3:ListBucket'};
+
+        %% 400 (MalformedPolicy): Policy has invalid action
+        {'PUT', bucket} ->  {ok, 's3:CreateBucket'};
 
         {'HEAD', _} ->
             {error, no_action}
@@ -361,7 +400,7 @@ eval_condition(Req, {AtomKey, Cond}) ->
         'StringEqualsIgnoreCase' -> eval_string_eq_ignore_case(Req, Cond);
         streqi                   -> eval_string_eq_ignore_case(Req, Cond);
         'StringNotEqualsIgnoreCase' -> not eval_string_eq_ignore_case(Req, Cond);
-        streqni                     -> not eval_string_eq_ignore_case(Req, Cond);
+        strneqi                     -> not eval_string_eq_ignore_case(Req, Cond);
         'StringLike' -> eval_string_like(Req, Cond);
         strl         -> eval_string_like(Req, Cond);
         'StringNotLike' -> not eval_string_like(Req, Cond);
@@ -470,7 +509,6 @@ statement_to_pairs(#statement{sid=Sid, effect=E, principal=P, action=A,
      {<<"Resource">>, print_arns(R)},
      {<<"Condition">>, Conds}].
 
-
 -spec condition_block_from_condition_pair(condition_pair()) -> {binary(), list()}.
 condition_block_from_condition_pair({AtomKey, Conds})->
     Fun = fun({'aws:SourceIp', IP}) -> {'aws:SourceIp', print_ip(IP)};
@@ -521,7 +559,19 @@ int_to_prefix(0) -> 0.
 % functions to convert (parse) JSON to create a policy record:
 
 -spec statement_from_pairs(list(), #statement{})-> #statement{}.
-statement_from_pairs([], Stmt) -> Stmt;
+statement_from_pairs([], Stmt) ->
+    case Stmt#statement.principal of
+        undefined ->
+            %% TODO: there're a lot to do: S3 describes the
+            %% details of error, in xml. with <Code>, <Message> and <Detail>
+            throw({error, malformed_policy_missing});
+        _ ->
+            Stmt
+    end;
+
+statement_from_pairs([{<<"Sid">>, <<>>}      |_], _) ->
+    throw({error, malformed_policy_resource});
+
 statement_from_pairs([{<<"Sid">>,Sid}      |T], Stmt) ->
     statement_from_pairs(T, Stmt#statement{sid=Sid});
 
@@ -535,15 +585,28 @@ statement_from_pairs([{<<"Principal">>,P}  |T], Stmt) ->
     statement_from_pairs(T, Stmt#statement{principal=Principal});
 
 statement_from_pairs([{<<"Action">>,As}    |T], Stmt) ->
-    Atoms = lists:map(fun binary_to_action/1, As),
+    Atoms = case As of
+                As when is_list(As) ->
+                    lists:map(fun binary_to_action/1, As);
+                Bin when is_binary(Bin) ->
+                    binary_to_existing_atom(Bin, latin1)
+            end,
     statement_from_pairs(T, Stmt#statement{action=Atoms});
-statement_from_pairs([{<<"NotAction">>,As}  |T], Stmt) ->
+statement_from_pairs([{<<"NotAction">>,As}  |T], Stmt) when is_list(As) ->
     Atoms = lists:map(fun binary_to_action/1, As),
     statement_from_pairs(T, Stmt#statement{not_action=Atoms});
 
 statement_from_pairs([{<<"Resource">>,R}   |T], Stmt) ->
-    {ok, ARN} = parse_arns(R),
-    statement_from_pairs(T, Stmt#statement{resource=ARN});
+    case parse_arns(R) of
+        {ok, ARN} ->
+            statement_from_pairs(T, Stmt#statement{resource=ARN});
+        {error, _} ->
+            throw({error, malformed_policy_resource})
+    end;
+
+statement_from_pairs([{<<"Condition">>,[]}  |T], Stmt) ->
+    %% empty conditions
+    statement_from_pairs(T, Stmt#statement{condition_block=[]});
 
 statement_from_pairs([{<<"Condition">>,{struct, Cs}}  |T], Stmt) ->
     Conditions = lists:map(fun condition_block_to_condition_pair/1, Cs),
@@ -557,6 +620,8 @@ binary_to_action(Bin)->
 -spec parse_principal(binary() | [binary()]) -> principal().
 parse_principal(<<"*">>) -> '*';
 parse_principal({struct, List}) when is_list(List) ->
+    parse_principals(List, []);
+parse_principal([{struct, List}]) when is_list(List) ->
     parse_principals(List, []).
 
 
@@ -583,13 +648,13 @@ parse_principals([{<<"AWS">>,<<"*">>}|TL], Principal) ->
 %%     end.
 
 print_principal('*') -> <<"*">>;
-print_principal(List) ->
-    PrintFun = fun({aws, '*'}) ->
-                       {"AWS", <<"*">>};
-                  ({canonical_id, Id}) ->
-                       {"CanonicalUser", Id}
-               end,
-    lists:map(PrintFun, List).
+print_principal({aws, '*'}) ->
+    [{<<"AWS">>, <<"*">>}];
+%%print_principal({canonical_id, Id}) ->
+%%    {"CanonicalUser", Id};
+print_principal(Principals) when is_list(Principals) ->
+    PrintFun = fun(Principal) -> print_principal(Principal) end,
+    lists:map(PrintFun, Principals).
 
 -spec parse_arns(binary()|[binary()]) -> {ok, arn()} | {error, bad_arn}.
 parse_arns(<<"*">>) -> {ok, '*'};
@@ -611,6 +676,7 @@ parse_arns(List) when is_list(List) ->
         {ok, ARNs} -> {ok, lists:reverse(ARNs)};
         Error -> Error
     end.
+
 -spec parse_arn(string()) -> {ok, arn()} | {error, bad_arn}.
 parse_arn(Str) ->
     case my_split($:, Str, [], []) of
@@ -618,7 +684,7 @@ parse_arn(Str) ->
             {ok, #arn_v1{provider = aws,
                          service  = s3,
                          region   = Region,
-                         id       = ID,
+                         id       = list_to_binary(ID),
                          path     = Path}};
         _ ->
             {error, bad_arn}
@@ -635,11 +701,13 @@ my_split(Ch, [Ch0|TL], Acc, L) ->
 
 -spec print_arns( '*'|[arn()]) -> [binary()] | binary().
 print_arns('*') -> <<"*">>;
-print_arns(ARNs) ->
-    PrintARN =
-        fun(#arn_v1{region=R, id=ID, path=Path} = _ARN) ->
-                list_to_binary(string:join(["arn", "aws", "s3", R, ID, Path], ":"))
-        end,
+print_arns(#arn_v1{region=R, id=ID, path=Path} = _ARN) ->
+    StringPath = unicode:characters_to_list(Path),
+    StringID   = binary_to_list(ID),
+    list_to_binary(string:join(["arn", "aws", "s3", R, StringID, StringPath], ":"));
+                        
+print_arns(ARNs) when is_list(ARNs)->
+    PrintARN = fun(ARN) -> print_arns(ARN) end,
     lists:map(PrintARN, ARNs).
 
 -spec condition_block_to_condition_pair({binary(), {struct, json_term()}}) -> condition_pair().
@@ -710,8 +778,9 @@ parse_ip(Bin) when is_binary(Bin) ->
 parse_ip(Str) when is_list(Str) ->
     case inet_parse:ipv4_address(Str) of
         {error, _} ->
-            [IPStr, Bits] = string:tokens(Str, "/"),
-            Prefix0 = (16#FFFFFFFF bsl (32-list_to_integer(Bits))) band 16#FFFFFFFF,
+            [IPStr, Bits0] = string:tokens(Str, "/"),
+            Bits = list_to_integer(lists:flatten(Bits0)),
+            Prefix0 = (16#FFFFFFFF bsl (32-Bits)) band 16#FFFFFFFF,
             Prefix = { Prefix0 band 16#FF000000 bsr 24,
                        Prefix0 band 16#FF0000 bsr 16,
                        Prefix0 band 16#FF00 bsr 8,
@@ -719,5 +788,33 @@ parse_ip(Str) when is_list(Str) ->
             {ok, IP} =inet_parse:ipv4_address(IPStr),
             {IP, Prefix};
         {ok, IP} -> {IP, {255,255,255,255}}
-    end;
-parse_ip(T) when is_tuple(T)-> T.
+    end.
+%% parse_ip(T) when is_tuple(T)-> T.
+
+
+-ifdef(TEST).
+
+principal_eq({aws, H}, [{aws, H}]) -> true;
+principal_eq([{aws, H}], {aws, H}) -> true;
+principal_eq(LHS, RHS) ->   LHS =:= RHS.
+
+resource_eq(?ARN{} = LHS, [?ARN{} = LHS]) -> true;
+resource_eq([?ARN{} = LHS], ?ARN{} = LHS) -> true;
+resource_eq(LHS, RHS) ->  LHS =:= RHS.
+
+statement_eq(LHS, RHS) ->
+    (LHS#statement.sid =:= RHS#statement.sid)
+        andalso
+    (LHS#statement.effect =:= RHS#statement.effect)
+        andalso
+    principal_eq(LHS#statement.principal, RHS#statement.principal)
+        andalso
+    (LHS#statement.action =:= RHS#statement.action)
+        andalso
+    (LHS#statement.not_action =:= RHS#statement.not_action)
+        andalso
+    resource_eq(LHS#statement.resource, RHS#statement.resource)
+        andalso
+    (LHS#statement.condition_block =:= RHS#statement.condition_block).
+
+-endif.
