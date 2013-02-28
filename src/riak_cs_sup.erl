@@ -139,7 +139,7 @@ web_spec(Name, Config) ->
 object_web_config(Options) ->
     [{dispatch, riak_cs_web:object_api_dispatch_table()},
      {name, object_web},
-     {router_name, object_web},
+     {dispatch_group, object_web},
      {ip, proplists:get_value(cs_ip, Options)},
      {port, proplists:get_value(cs_port, Options)},
      {nodelay, true},
@@ -152,7 +152,7 @@ object_web_config(Options) ->
 admin_web_config(Options) ->
     [{dispatch, riak_cs_web:admin_api_dispatch_table()},
      {name, admin_web},
-     {router_name, admin_web},
+     {dispatch_group, admin_web},
      {ip, proplists:get_value(admin_ip, Options)},
      {port, proplists:get_value(admin_port, Options, 8000)},
      {nodelay, true},
