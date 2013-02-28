@@ -4,7 +4,7 @@
 %%
 %% -------------------------------------------------------------------
 
-%% @doc policy utility functions
+%% @doc ad-hoc policy tests
 
 -module(riak_cs_s3_policy_test).
 
@@ -33,9 +33,9 @@ parse_ip_test_()->
 
 empty_statement_conversion_test()->
     Policy = ?POLICY{id= <<"hello">>},
-    JsonPolicy = "{\"Version\":\"2008-10-17\",\"Id\":\"hello\",\"Statement\":[]}",
-    ?assertEqual(list_to_binary(JsonPolicy),
-                 riak_cs_s3_policy:policy_to_json_term(Policy)),
+    JsonPolicy = "{\"Version\":\"2008-10-17\",\"Statement\":[],\"Id\":\"hello\"}",
+    ?assertEqual(mochijson2:decode(JsonPolicy),
+                 mochijson2:decode(riak_cs_s3_policy:policy_to_json_term(Policy))),
     {ok, PolicyFromJson} = riak_cs_s3_policy:policy_from_json(list_to_binary(JsonPolicy)),
     ?assertEqual(Policy?POLICY.id, PolicyFromJson?POLICY.id),
     ?assertEqual(Policy?POLICY.statement, PolicyFromJson?POLICY.statement),
@@ -92,7 +92,11 @@ sample_conversion_test()->
     {ok, Policy} = riak_cs_s3_policy:policy_from_json(JsonPolicy0),
     {ok, PolicyFromJson} = riak_cs_s3_policy:policy_from_json(riak_cs_s3_policy:policy_to_json_term(Policy)),
     ?assertEqual(Policy?POLICY.id, PolicyFromJson?POLICY.id),
-    ?assertEqual(Policy?POLICY.statement, PolicyFromJson?POLICY.statement),
+    ?assert(lists:all(fun({LHS, RHS}) ->
+                              riak_cs_s3_policy:statement_eq(LHS, RHS)
+                      end,
+                      lists:zip(Policy?POLICY.statement,
+                                PolicyFromJson?POLICY.statement))),
     ?assertEqual(Policy?POLICY.version, PolicyFromJson?POLICY.version).
 
 

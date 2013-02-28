@@ -47,10 +47,19 @@
                                | 'StringEqualsIgnoreCase' | streqi | 'StringNotEqualsIgnoreCase' | streqni
                                | 'StringLike' | strl               | 'StringNotLike' | strnl.
 
+-define(STRING_CONDITION_ATOMS,
+        [ 'StringEquals' , streq,           'StringNotEquals', strneq,
+          'StringEqualsIgnoreCase', streqi, 'StringNotEqualsIgnoreCase', streqni,
+          'StringLike', strl,               'StringNotLike' , strnl]).
+
 -type numeric_condition_type() :: 'NumericEquals' | numeq      | 'NumericNotEquals' | numneq
                                 | 'NumericLessThan'  | numlt   | 'NumericLessThanEquals' | numlteq
                                 | 'NumericGreaterThan' | numgt | 'NumericGreaterThanEquals' | numgteq.
 
+-define(NUMERIC_CONDITION_ATOMS,
+        [ 'NumericEquals', numeq,      'NumericNotEquals', numneq,
+          'NumericLessThan' , numlt,   'NumericLessThanEquals', numlteq,
+          'NumericGreaterThan', numgt, 'NumericGreaterThanEquals', numgteq]).
 
 -type date_condition_type() :: 'DateEquals'         | dateeq
                              | 'DateNotEquals'      | dateneq
@@ -59,7 +68,19 @@
                              | 'DateGreaterThan'    | dategt
                              | 'DateGreaterThanEquals' | dategteq.
 
+-define(DATE_CONDITION_ATOMS,
+        [ 'DateEquals',            dateeq,
+          'DateNotEquals',         dateneq,
+          'DateLessThan',          datelt,
+          'DateLessThanEquals',    datelteq,
+          'DateGreaterThan',       dategt,
+          'DateGreaterThanEquals', dategteq]).
+
+
 -type ip_addr_condition_type() :: 'IpAddress' | 'NotIpAddress'.
+
+-define(IP_ADDR_CONDITION_ATOMS,
+        ['IpAddress', 'NotIpAddress']).
 
 -type condition_pair() :: {date_condition_type(), [{'aws:CurrentTime', binary()}]}
                         | {numeric_condition_type(), [{'aws:EpochTime', non_neg_integer()}]}
@@ -100,3 +121,4 @@
 
 
 -define(POLICY, #policy_v1).
+-define(ARN,    #arn_v1).
