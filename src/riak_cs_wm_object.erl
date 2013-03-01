@@ -9,6 +9,7 @@
 -export([init/1,
          authorize/2,
          content_types_provided/2,
+         last_modified/2,
          produce_body/2,
          allowed_methods/0,
          malformed_request/2,
@@ -109,6 +110,12 @@ content_types_provided(RD, Ctx=#context{local_context=LocalCtx,
             %% appease webmachine
             {[{"text/plain", produce_body}], RD, Ctx}
     end.
+
+-spec last_modified(#wm_reqdata{}, #context{}) -> {calendar:datetime(), #wm_reqdata{}, #context{}}.
+last_modified(RD, Ctx=#context{local_context=LocalCtx}) ->
+    Mfst = LocalCtx#key_context.manifest,
+    ErlDate = riak_cs_wm_utils:iso_8601_to_erl_date(Mfst?MANIFEST.created),
+    {ErlDate, RD, Ctx}.
 
 -spec produce_body(#wm_reqdata{}, #context{}) ->
                           {{known_length_stream, non_neg_integer(), {<<>>, function()}}, #wm_reqdata{}, #context{}}.
