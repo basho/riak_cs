@@ -314,7 +314,7 @@ to_xml(RD, Ctx=#context{local_context=LocalCtx,
                    [
                     {'PartNumber', [integer_to_list(P?PART_DESCR.part_number)]},
                     {'LastModified', [P?PART_DESCR.last_modified]},
-                    {'ETag', [riak_cs_utils:binary_to_hexlist(P?PART_DESCR.etag)]},
+                    {'ETag', [riak_cs_utils:etag_from_binary(P?PART_DESCR.etag)]},
                     {'Size', [integer_to_list(P?PART_DESCR.size)]}
                    ]
                   } || P <- lists:sort(Ps)],
