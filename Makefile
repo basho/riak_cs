@@ -1,8 +1,7 @@
 REPO		?= riak_cs
-PKG_NAME        ?= riak-cs
 PKG_REVISION    ?= $(shell git describe --tags)
 PKG_VERSION	?= $(shell git describe --tags | tr - .)
-PKG_ID           = $(PKG_NAME)-$(PKG_VERSION)
+PKG_ID           = riak-cs-$(PKG_VERSION)
 PKG_BUILD        = 1
 BASE_DIR         = $(shell pwd)
 ERLANG_BIN       = $(shell dirname $(shell which erl))
@@ -82,7 +81,7 @@ stage : rel
 
 devrel: dev1 dev2 dev3 dev4
 
-dev1 dev2 dev3 dev4:
+dev1 dev2 dev3 dev4: all
 	mkdir -p dev
 	(cd rel && ../rebar generate skip_deps=true target_dir=../dev/$@ overlay_vars=vars/$@_vars.config)
 
@@ -151,7 +150,7 @@ xref: compile
 ## Packaging targets
 ##
 .PHONY: package
-export PKG_NAME PKG_VERSION PKG_ID PKG_BUILD BASE_DIR ERLANG_BIN REBAR OVERLAY_VARS RELEASE
+export PKG_VERSION PKG_ID PKG_BUILD BASE_DIR ERLANG_BIN REBAR OVERLAY_VARS RELEASE
 
 package.src: deps
 	mkdir -p package
