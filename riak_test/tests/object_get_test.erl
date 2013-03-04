@@ -68,6 +68,19 @@ non_mp_get_cases(UserConfig) ->
                         {100, mb(3)}, UserConfig),
     range_get_test_case(?TEST_BUCKET, ?KEY_MULTIPLE_BLOCK, MultipleBlock,
                         {0, none}, UserConfig),
+
+    %% Multiple ranges, CS returns whole resources.
+    multiple_range_get_test_case(?TEST_BUCKET, ?KEY_MULTIPLE_BLOCK, MultipleBlock,
+                                 [{10, 20}, {30, 50}], UserConfig),
+    multiple_range_get_test_case(?TEST_BUCKET, ?KEY_MULTIPLE_BLOCK, MultipleBlock,
+                                 [{10, 50}, {20, 50}], UserConfig),
+
+    %% Invalid ranges
+    LastPosExceeded = byte_size(MultipleBlock),
+    invalid_range_get_test_case(?TEST_BUCKET, ?KEY_MULTIPLE_BLOCK, MultipleBlock,
+                                [{LastPosExceeded, LastPosExceeded + 10}], UserConfig),
+    invalid_range_get_test_case(?TEST_BUCKET, ?KEY_MULTIPLE_BLOCK, MultipleBlock,
+                                [{20, 10}], UserConfig),
     ok.
 
 mp_get_cases(UserConfig) ->
@@ -104,21 +117,17 @@ mb(MegaBytes) ->
 
 basic_get_test_case(Bucket, Key, ExpectedContent, Config) ->
     Obj = erlcloud_s3:get_object(Bucket, Key, Config),
-    Content = proplists:get_value(content, Obj),
-    ContentLength = proplists:get_value(content_length, Obj),
+    assert_whole_content(ExpectedContent, Obj).
+
+assert_whole_content(ExpectedContent, ResultObj) ->
+    Content = proplists:get_value(content, ResultObj),
+    ContentLength = proplists:get_value(content_length, ResultObj),
     ?assertEqual(byte_size(ExpectedContent), list_to_integer(ContentLength)),
     ?assertEqual(byte_size(ExpectedContent), byte_size(Content)),
     ?assertEqual(ExpectedContent, Content).
 
 range_get_test_case(Bucket, Key, WholeContent, {Start, End}, Config) ->
-    Range = case {Start, End} of
-                {none, End} ->
-                    io_lib:format("bytes=-~B", [End]);
-                {Start, none} ->
-                    io_lib:format("bytes=~B-", [Start]);
-                {Start, End} ->
-                    io_lib:format("bytes=~B-~B", [Start, End])
-            end,
+    Range = format_ranges([{Start, End}]),
     Obj = erlcloud_s3:get_object(Bucket, Key, [{range, Range}], Config),
     Content = proplists:get_value(content, Obj),
     ContentLength = proplists:get_value(content_length, Obj),
@@ -129,6 +138,33 @@ range_get_test_case(Bucket, Key, WholeContent, {Start, End}, Config) ->
     assert_content_range(Skip, Length, WholeSize, Obj),
     ExpectedContent = binary:part(WholeContent, Skip, Length),
     ?assertEqual(ExpectedContent, Content).
+
+multiple_range_get_test_case(Bucket, Key, WholeContent, Ranges, Config) ->
+    RangeValue = format_ranges(Ranges),
+    Obj = erlcloud_s3:get_object(Bucket, Key, [{range, RangeValue}], Config),
+    assert_whole_content(WholeContent, Obj).
+
+invalid_range_get_test_case(Bucket, Key, _WholeContent, Ranges, Config) ->
+    RangeValue = format_ranges(Ranges),
+    {'EXIT', {{aws_error, {http_error, 416, _, Body}}, _Backtrace}} =
+        (catch erlcloud_s3:get_object(Bucket, Key, [{range, RangeValue}], Config)),
+    ?assertMatch({match, _},
+                 re:run(Body, "InvalidRange", [multiline])).
+
+format_ranges(Ranges) ->
+    Formatted = [format_range(Range) || Range <- Ranges],
+    io_lib:format("bytes=~s", [string:join(Formatted, ",")]).
+
+format_range(Range) ->
+    RangeStr = case Range of
+                   {none, End} ->
+                       io_lib:format("-~B", [End]);
+                   {Start, none} ->
+                       io_lib:format("~B-", [Start]);
+                   {Start, End} ->
+                       io_lib:format("~B-~B", [Start, End])
+               end,
+    lists:flatten(RangeStr).
 
 assert_content_range(Skip, Length, Size, Obj) ->
     Expected = lists:flatten(
