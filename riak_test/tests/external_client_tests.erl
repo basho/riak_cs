@@ -30,21 +30,21 @@ confirm() ->
     os:cmd("rm -f " ++ StdoutStderr),
 
     Cmd = lists:flatten(
-            io_lib:format("cd ~s; env CS_HTTP_PORT=~p make test-erlang > ~s 2>&1 ; echo Res $?",
+            io_lib:format("cd ~s; env CS_HTTP_PORT=~p make test-client > ~s 2>&1 ; echo Res $?",
                           [CS_src_dir, CS_http_port, StdoutStderr])),
     lager:debug("Cmd = ~s", [Cmd]),
     Res = os:cmd(Cmd),
-    lager:debug("YYY res = ~s", [Res]),
+    lager:debug("Res = ~s", [Res]),
+    {ok, DebugOut} = file:read_file(StdoutStderr),
+    %% This io:format will have every line tagged as "debug" output.
+    io:format("Verbose Res = ~s\n", [DebugOut]),
 
     try
         case Res of
             "Res 0\n" ->
-                {ok, DebugOut0} = file:read_file(StdoutStderr), io:format("YYY Res = ~s\n", [DebugOut0]),
                 pass;
             _ ->
                 lager:error("Expected 'Res 0', got: ~s", [Res]),
-                {ok, DebugOut} = file:read_file(StdoutStderr),
-                lager:error("Script output: ~s", [DebugOut]),
                 error(fail)
         end
     after
