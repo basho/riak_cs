@@ -3,6 +3,8 @@
 import httplib, json, unittest, uuid, md5
 from cStringIO import StringIO
 
+from file_generator import FileGenerator
+
 from boto.exception import S3ResponseError
 from boto.s3.connection import S3Connection, OrdinaryCallingFormat
 from boto.s3.key import Key
@@ -194,6 +196,77 @@ class MultiPartUploadTests(S3ApiVerificationTestBase):
     def test_small_strings_upload_4(self):
         parts = [str(uuid.uuid4()) for _ in xrange(20)]
         self.multipart_md5_helper(parts)
+
+def one_kb_string():
+    "Return a 1KB string of all a's"
+    return ''.join(['a' for _ in xrange(1024)])
+
+def kb_gen(num_kilobytes):
+    s = one_kb_string()
+    return (s for _ in xrange(num_kilobytes))
+
+def kb_file_gen(num_kilobytes):
+    gen = kb_gen(num_kilobytes)
+    return FileGenerator(gen, num_kilobytes * 1024)
+
+def mb_file_gen(num_megabytes):
+    return kb_file_gen(num_megabytes * 1024)
+
+def md5_from_file(file_object):
+    "Helper function for calculating the hex md5 of a file-like object"
+    m = md5.new()
+    go = True
+    while go:
+        byte = file_object.read(8196)
+        if byte:
+            m.update(byte)
+        else:
+            go = False
+    return m.hexdigest()
+
+def remove_double_quotes(string):
+    "remove double quote from a string"
+    return string.replace('"', '')
+
+class LargerFileUploadTest(S3ApiVerificationTestBase):
+    "Larger, regular key uploads"
+
+    def upload_helper(self, num_kilobytes):
+        key_name = str(uuid.uuid4())
+        bucket = self.conn.create_bucket(self.bucket_name)
+        md5_expected = md5_from_file(kb_file_gen(num_kilobytes))
+        file_obj = kb_file_gen(num_kilobytes)
+        key = Key(bucket, key_name)
+        key.set_contents_from_file(file_obj,
+                                   md5=key.get_md5_from_hexdigest(md5_expected))
+        self.assertEqual(md5_expected, remove_double_quotes(key.etag))
+
+    def test_1kb(self):
+        return self.upload_helper(1)
+
+    def test_2kb(self):
+        return self.upload_helper(2)
+
+    def test_256kb(self):
+        return self.upload_helper(256)
+
+    def test_512kb(self):
+        return self.upload_helper(512)
+
+    def test_1mb(self):
+        return self.upload_helper(1 * 1024)
+
+    def test_4mb(self):
+        return self.upload_helper(4 * 1024)
+
+    def test_8mb(self):
+        return self.upload_helper(8 * 1024)
+
+    def test_16mb(self):
+        return self.upload_helper(16 * 1024)
+
+    def test_32mb(self):
+        return self.upload_helper(32 * 1024)
 
 if __name__ == "__main__":
     unittest.main()
