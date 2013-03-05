@@ -10,9 +10,12 @@
 
 -ifdef(TEST).
 
+-include("riak_cs.hrl").
 -include("s3_api.hrl").
 -include_lib("eqc/include/eqc.hrl").
 -include_lib("eunit/include/eunit.hrl").
+
+-include_lib("webmachine/include/wm_reqdata.hrl").
 
 -define(TEST_ITERATIONS, 500).
 -define(SET_MODULE, twop_set).
@@ -24,9 +27,24 @@ eqc_test_()->
      [
       {timeout, 20, ?_assertEqual(true,
                                   quickcheck(numtests(?TEST_ITERATIONS,
-                                                      ?QC_OUT(prop_policy_v1()))))}
+                                                      ?QC_OUT(prop_policy_v1()))))},
+      {timeout, 20, ?_assertEqual(true,
+                                  quickcheck(numtests(?TEST_ITERATIONS,
+                                                      ?QC_OUT(prop_eval()))))}
       ]}.
 
+
+prop_eval() ->
+    ?FORALL({Policy, Access}, {policy_v1(), access_v1()},
+            begin
+                JsonPolicy = riak_cs_s3_policy:policy_to_json_term(Policy),
+                case eval(Access, JsonPolicy) of
+                    true -> ok;
+                    false -> ok;
+                    undefined  -> ok
+                end,
+                true
+            end).
 
 prop_policy_v1()->
     ?FORALL(Policy, policy_v1(),
@@ -113,9 +131,10 @@ statement() ->
 creation_time() ->
     {nat(), choose(0, 1000000), choose(0, 1000000)}.
 
+string() -> list(choose(33,127)).
+
 binary_char_string() ->
-    ?LET(String, list(choose(33,127)),
-         list_to_binary(String)).
+    ?LET(String, string(), list_to_binary(String)).
 
 nonempty_binary_char_string() ->
     ?LET({Char, BinString}, {choose(33,127), binary_char_string()},
@@ -127,6 +146,52 @@ policy_v1() ->
        id        = oneof([undefined, nonempty_binary_char_string()]),
        statement = list(statement()),
        creation_time = creation_time()
+      }.
+
+method() ->
+    oneof(['PUT', 'GET', 'POST', 'DELETE', 'HEAD']).
+
+access_v1() ->
+    #access_v1{
+       method = method(),
+       target = oneof([bucket, bucket_acl, bucket_location,
+                       bucket_policy, bucket_uploads, bucket_version,
+                       object, object_acl]),
+       id     = string(),
+       bucket = nonempty_binary_char_string(),
+       key    = oneof([undefined, binary_char_string()]),
+       req    = wm_reqdata()
+      }.
+
+http_response_code() ->
+    oneof([200]).
+
+wm_reqdata() ->
+    #wm_reqdata{
+       method = method(),
+       scheme = oneof([http, https]),
+       peer   = inet_ip_address_v4(),
+       wm_state  = undefined,
+       disp_path = "/",
+       path      = "/",
+       raw_path  = "/",
+       path_info = dict:new(),
+       path_tokens = ["/"],
+       app_root  = "/",
+       response_code = oneof([undefined, http_response_code()]),
+       max_recv_body = nat(),
+       max_recv_hunk = nat(),
+       req_cookie    = string(),
+       req_qs        = string(),
+       req_headers   = undefined,
+       req_body      = binary_char_string(),
+       resp_redirect = bool(),
+       resp_headers  = undefined,
+       resp_body     = undefined,
+       resp_range    = "range=0-",
+       host_tokens   = list(binary_char_string()),
+       port          = choose(1,65535),
+       notes         = list(nonempty_binary_char_string()) %% any..?
       }.
 
 -endif.
