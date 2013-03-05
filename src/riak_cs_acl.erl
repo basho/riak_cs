@@ -161,8 +161,11 @@ bucket_acl(Bucket, RiakPid) ->
             %% resolve if possible.
             Contents = riakc_obj:get_contents(Obj),
             bucket_acl_from_contents(Bucket, Contents);
-        {error, _}=Error ->
-            Error
+        {error, Reason} ->
+            lager:debug("Failed to fetch ACL. Bucket ~p "
+                        " does not exist. Reason: ~p",
+                        [Bucket, Reason]),
+            {error, notfound}
     end.
 
 %% @doc Attempt to resolve an ACL for the bucket based on the contents.

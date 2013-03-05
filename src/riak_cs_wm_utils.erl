@@ -522,6 +522,10 @@ object_access_authorize_helper(AccessType, Deletable,
             %% We want to bail out early if there are siblings when
             %% retrieving the bucket policy
             riak_cs_s3_response:api_error(E, RD, Ctx);
+        {error, notfound} ->
+            %% The call to `check_bucket_exists' returned `notfound'
+            %% so we can assume to bucket does not exist.
+            riak_cs_s3_response:api_error(no_such_bucket, RD, Ctx);
         Policy ->
             check_object_authorization(AccessType, Deletable, Policy, RD, Ctx)
     end.
@@ -598,8 +602,10 @@ translate_bucket_policy(PolicyMod, Bucket, RiakPid) ->
             P;
         {error, policy_undefined} ->
             undefined;
-        {error, multiple_bucket_owners}=Error ->
-             Error
+        {error, notfound}=Error1 ->
+            Error1;
+        {error, multiple_bucket_owners}=Error2 ->
+             Error2
     end.
 
 %% Helper functions for dealing with combinations of Object ACL
