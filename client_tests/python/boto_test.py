@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-import httplib, json, unittest, uuid, md5
+import os, httplib, json, unittest, uuid, md5
 from cStringIO import StringIO
 
 from file_generator import FileGenerator
@@ -38,9 +38,13 @@ def upload_multipart(bucket, key_name, parts_list):
     upload.complete_upload()
     return upload
 
-class S3ApiVerificationTestBase(unittest.TestCase):
-    host = "127.0.0.1"
-    port = 8080
+class S3ApiVerificationTest(unittest.TestCase):
+    host="127.0.0.1"
+    try:
+        port=int(os.environ['CS_HTTP_PORT'])
+    except:
+        port=8080
+    print "YYY I am using port %d" % port
 
     user1 = None
     user2 = None

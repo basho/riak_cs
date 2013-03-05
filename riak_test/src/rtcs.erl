@@ -47,6 +47,7 @@ setup(NumNodes, Configs) ->
 build_cluster(NumNodes, Configs) ->
     {_, {RiakNodes, _, _}} = Nodes =
         deploy_nodes(NumNodes, Configs),
+
     rt:wait_until_nodes_ready(RiakNodes),
     lager:info("Build cluster"),
     rtcs:make_cluster(RiakNodes),
@@ -129,9 +130,13 @@ ee_config() ->
     ].
 
 cs_config() ->
+    cs_config([]).
+
+cs_config(UserExtra) ->
     [
      lager_config(),
      {riak_cs,
+      UserExtra ++
       [
        {proxy_get, enabled},
        {anonymous_user_creation, true},
