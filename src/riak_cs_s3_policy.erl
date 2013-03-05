@@ -206,7 +206,9 @@ log_supported_actions()->
 
 %% @doc Get the policy for a bucket
 -type policy_from_meta_result() :: {'ok', policy()} | {'error', 'policy_undefined'}.
--type bucket_policy_result() :: policy_from_meta_result() | {'error', 'multiple_bucket_owners'}.
+-type bucket_policy_result() :: policy_from_meta_result() |
+                                {'error', 'notfound'} |
+                                {'error', 'multiple_bucket_owners'}.
 -spec bucket_policy(binary(), pid()) -> bucket_policy_result().
 bucket_policy(Bucket, RiakPid) ->
     case riak_cs_utils:check_bucket_exists(Bucket, RiakPid) of
@@ -216,8 +218,11 @@ bucket_policy(Bucket, RiakPid) ->
             %% resolve if possible.
             Contents = riakc_obj:get_contents(Obj),
             bucket_policy_from_contents(Bucket, Contents);
-        {error, _}=Error ->
-            Error
+        {error, Reason} ->
+            lager:debug("Failed to fetch policy. Bucket ~p "
+                        " does not exist. Reason: ~p",
+                        [Bucket, Reason]),
+            {error, notfound}
     end.
 
 %% @doc Attempt to resolve a policy for the bucket based on the contents.
