@@ -213,16 +213,27 @@ def mb_file_gen(num_megabytes):
     return kb_file_gen(num_megabytes * 1024)
 
 def md5_from_file(file_object):
-    "Helper function for calculating the hex md5 of a file-like object"
     m = md5.new()
+    update_md5_from_file(m, file_object)
+    return m.hexdigest()
+
+def md5_from_files(file_objects):
+    "note the plural"
+    m = md5.new()
+    for f in file_objects:
+        update_md5_from_file(m, f)
+    return m.hexdigest()
+
+def update_md5_from_file(md5_object, file_object):
+    "Helper function for calculating the hex md5 of a file-like object"
     go = True
     while go:
         byte = file_object.read(8196)
         if byte:
-            m.update(byte)
+            md5_object.update(byte)
         else:
             go = False
-    return m.hexdigest()
+    return md5_object
 
 def remove_double_quotes(string):
     "remove double quote from a string"
@@ -267,6 +278,39 @@ class LargerFileUploadTest(S3ApiVerificationTestBase):
 
     def test_32mb(self):
         return self.upload_helper(32 * 1024)
+
+class LargerMultipartFileUploadTest(S3ApiVerificationTestBase):
+    "Larger, multipart file uploads"
+
+    def upload_parts_helper(self, zipped_parts_and_md5s, expected_md5):
+        key_name = str(uuid.uuid4())
+        bucket = self.conn.create_bucket(self.bucket_name)
+        upload = bucket.initiate_multipart_upload(key_name)
+        key = Key(bucket, key_name)
+        for idx, (part, md5_of_part) in enumerate(zipped_parts_and_md5s):
+            upload.upload_part_from_file(part, idx + 1,
+                                         md5=key.get_md5_from_hexdigest(md5_of_part))
+        upload.complete_upload()
+        actual_md5 = md5_from_key(key)
+        self.assertEqual(expected_md5, actual_md5)
+
+    def from_mb_list(self, mb_list):
+        md5_list = [md5_from_file(mb_file_gen(m)) for m in mb_list]
+        expected_md5 = md5_from_files([mb_file_gen(m) for m in mb_list])
+        parts = [mb_file_gen(m) for m in mb_list]
+        self.upload_parts_helper(zip(parts, md5_list), expected_md5)
+
+    def test_upload_1(self):
+        mb_list = [5, 6, 5, 7, 8, 9]
+        self.from_mb_list(mb_list)
+
+    def test_upload_2(self):
+        mb_list = [10, 11, 5, 7, 9, 14, 12]
+        self.from_mb_list(mb_list)
+
+    def test_upload_3(self):
+        mb_list = [15, 14, 13, 12, 11, 10]
+        self.from_mb_list(mb_list)
 
 if __name__ == "__main__":
     unittest.main()
