@@ -79,7 +79,7 @@ eqc_test_() ->
                                                        ?QC_OUT(prop_api_test(?DEFAULT_HOST,
                                                                              ?DEFAULT_PORT,
                                                                              ?DEFAULT_PROXY_HOST,
-                                                                             ?DEFAULT_PROXY_PORT)))))}
+                                                                             cs_port())))))}
       %% {timeout, 60, ?_assertEqual(true, quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_parallel_api_test(?DEFAULT_HOST, ?DEFAULT_PORT)))))}
      ]
     }.
@@ -273,7 +273,7 @@ test() ->
     test(?DEFAULT_HOST, ?DEFAULT_PORT).
 
 test(Host, Port) ->
-    test(Host, Port, ?DEFAULT_PROXY_HOST, ?DEFAULT_PROXY_PORT, 500).
+    test(Host, Port, ?DEFAULT_PROXY_HOST, cs_port(), 500).
 
 test(Host, Port, ProxyHost, ProxyPort, Iterations) ->
     eqc:quickcheck(eqc:numtests(Iterations, prop_api_test(Host, Port, ProxyHost, ProxyPort))).
@@ -380,5 +380,13 @@ verify_object_list_contents(_, []) ->
 verify_object_list_contents(ExpectedKeys, [HeadContent | RestContents]) ->
     Key = proplists:get_value(key, HeadContent),
     verify_object_list_contents(lists:delete(Key, ExpectedKeys), RestContents).
+
+cs_port() ->
+    case os:getenv("CS_HTTP_PORT") of
+        false ->
+            ?DEFAULT_PROXY_PORT;
+        Str ->
+            list_to_integer(Str)
+    end.
 
 -endif.
