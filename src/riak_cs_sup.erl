@@ -43,10 +43,10 @@ start_link() ->
                          non_neg_integer()},
                         [supervisor:child_spec()]}}.
 init([]) ->
-    catch dtrace:init(),                   % NIF load trigger (R14B04)
-    catch dyntrace:p(),                    % NIF load trigger (R15B01+)
+    %%catch dtrace:init(),                   % NIF load trigger (R14B04)
+    %%catch dyntrace:p(),                    % NIF load trigger (R15B01+)
     Options = [get_option_val(Option) || Option <- ?OPTIONS],
-    {ok, { {one_for_one, 10, 10}, pool_specs(Options) ++
+    {ok, { {one_for_one, 10, 10}, riak_cs_core_sup:pool_specs(Options) ++
                process_specs() ++
                web_specs(Options)}}.
 
@@ -112,22 +112,22 @@ web_specs(Options) ->
         end,
     [web_spec(Name, Config) || {Name, Config} <- WebConfigs].
 
--spec pool_specs(proplist()) -> [supervisor:child_spec()].
-pool_specs(Options) ->
-    WorkerStop = fun(Worker) -> riak_cs_riakc_pool_worker:stop(Worker) end,
-    [pool_spec(Name, Workers, Overflow, WorkerStop)
-     || {Name, {Workers, Overflow}} <- proplists:get_value(connection_pools, Options)].
-
--spec pool_spec(atom(), non_neg_integer(), non_neg_integer(), function()) ->
-                       supervisor:child_spec().
-pool_spec(Name, Workers, Overflow, WorkerStop) ->
-    {Name,
-     {poolboy, start_link, [[{name, {local, Name}},
-                             {worker_module, riak_cs_riakc_pool_worker},
-                             {size, Workers},
-                             {max_overflow, Overflow},
-                             {stop_fun, WorkerStop}]]},
-     permanent, 5000, worker, [poolboy]}.
+%-spec pool_specs(proplist()) -> [supervisor:child_spec()].
+%pool_specs(Options) ->
+%    WorkerStop = fun(Worker) -> riak_cs_riakc_pool_worker:stop(Worker) end,
+%    [pool_spec(Name, Workers, Overflow, WorkerStop)
+%     || {Name, {Workers, Overflow}} <- proplists:get_value(connection_pools, Options)].
+%
+%-spec pool_spec(atom(), non_neg_integer(), non_neg_integer(), function()) ->
+%                       supervisor:child_spec().
+%pool_spec(Name, Workers, Overflow, WorkerStop) ->
+%    {Name,
+%     {poolboy, start_link, [[{name, {local, Name}},
+%                             {worker_module, riak_cs_riakc_pool_worker},
+%                             {size, Workers},
+%                             {max_overflow, Overflow},
+%                             {stop_fun, WorkerStop}]]},
+%     permanent, 5000, worker, [poolboy]}.
 
 -spec web_spec(atom(), proplist()) -> supervisor:child_spec().
 web_spec(Name, Config) ->
