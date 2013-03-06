@@ -100,6 +100,10 @@ confirm() ->
     delete_objects(?TEST_BUCKET, 4, Prefix1, UserConfig),
     delete_objects(?TEST_BUCKET, 4, Prefix2, UserConfig),
 
+    Options7 = [{max_keys, "invalid"}],
+    ?assertError({aws_error, {http_error, 400, _, _}},
+                 erlcloud_s3:list_objects(?TEST_BUCKET, Options7, UserConfig)),
+
     lager:info("deleting bucket ~p", [?TEST_BUCKET]),
     ?assertEqual(ok, erlcloud_s3:delete_bucket(?TEST_BUCKET, UserConfig)),
 
