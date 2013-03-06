@@ -56,31 +56,33 @@ to_xml(RD, Ctx=#context{start_time=StartTime,
             riak_cs_dtrace:dt_bucket_return(?MODULE, <<"list_keys">>, [Code], [riak_cs_wm_utils:extract_name(User), Bucket]),
             Res;
         [_BucketRecord] ->
-            MaxKeys = case wrq:get_qs_value("max-keys", RD) of
-                          undefined ->
-                              ?DEFAULT_LIST_OBJECTS_MAX_KEYS;
-                          StringKeys ->
-                              erlang:min(list_to_integer(StringKeys),
-                                         ?DEFAULT_LIST_OBJECTS_MAX_KEYS)
-                      end,
-            Options = get_options(RD),
-            ListKeysRequest = riak_cs_list_objects:new_request(Bucket,
-                                                               MaxKeys,
-                                                               Options),
-            BinPid = riak_cs_utils:pid_to_binary(self()),
-            CacheKey = << BinPid/binary, <<":">>/binary, Bucket/binary >>,
-            UseCache = riak_cs_list_objects_ets_cache:cache_enabled(),
-            case riak_cs_list_objects_fsm:start_link(RiakPid, self(),
-                                                     ListKeysRequest, CacheKey,
-                                                     UseCache) of
-                {ok, ListFSMPid} ->
-                    {ok, ListObjectsResponse} = riak_cs_list_objects_fsm:get_object_list(ListFSMPid),
-                    Response = riak_cs_xml:to_xml(ListObjectsResponse),
-                    ok = riak_cs_stats:update_with_start(bucket_list_keys,
-                                                         StartTime),
-                    riak_cs_dtrace:dt_bucket_return(?MODULE, <<"list_keys">>, [200], [riak_cs_wm_utils:extract_name(User), Bucket]),
-                    riak_cs_s3_response:respond(200, Response, RD, Ctx);
-                {error, Reason} ->
+            MaxKeys = get_max_keys(RD),
+            case MaxKeys of
+                _ when is_integer(MaxKeys) ->
+                    Options = get_options(RD),
+                    ListKeysRequest = riak_cs_list_objects:new_request(Bucket,
+                                                                       MaxKeys,
+                                                                       Options),
+                    BinPid = riak_cs_utils:pid_to_binary(self()),
+                    CacheKey = << BinPid/binary, <<":">>/binary, Bucket/binary >>,
+                    UseCache = riak_cs_list_objects_ets_cache:cache_enabled(),
+                    case riak_cs_list_objects_fsm:start_link(RiakPid, self(),
+                                                             ListKeysRequest, CacheKey,
+                                                             UseCache) of
+                        {ok, ListFSMPid} ->
+                            {ok, ListObjectsResponse} = riak_cs_list_objects_fsm:get_object_list(ListFSMPid),
+                            Response = riak_cs_xml:to_xml(ListObjectsResponse),
+                            ok = riak_cs_stats:update_with_start(bucket_list_keys,
+                                                                 StartTime),
+                            riak_cs_dtrace:dt_bucket_return(?MODULE, <<"list_keys">>, [200], [riak_cs_wm_utils:extract_name(User), Bucket]),
+                            riak_cs_s3_response:respond(200, Response, RD, Ctx);
+                        {error, Reason} ->
+                            Code = riak_cs_s3_response:status_code(Reason),
+                            Response = riak_cs_s3_response:api_error(Reason, RD, Ctx),
+                            riak_cs_dtrace:dt_bucket_return(?MODULE, <<"list_keys">>, [Code], [riak_cs_wm_utils:extract_name(User), Bucket]),
+                            Response
+                    end;
+                Reason ->
                     Code = riak_cs_s3_response:status_code(Reason),
                     Response = riak_cs_s3_response:api_error(Reason, RD, Ctx),
                     riak_cs_dtrace:dt_bucket_return(?MODULE, <<"list_keys">>, [Code], [riak_cs_wm_utils:extract_name(User), Bucket]),
@@ -98,3 +100,17 @@ get_option(Option, undefined) ->
     {Option, undefined};
 get_option(Option, Value) ->
     {Option, list_to_binary(Value)}.
+
+-spec get_max_keys(#wm_reqdata{}) -> integer() | 'bad_request'.
+get_max_keys(RD) ->
+    case wrq:get_qs_value("max-keys", RD) of
+        undefined ->
+            ?DEFAULT_LIST_OBJECTS_MAX_KEYS;
+        StringKeys ->
+            try
+                erlang:min(list_to_integer(StringKeys),
+                           ?DEFAULT_LIST_OBJECTS_MAX_KEYS)
+            catch _:_ ->
+                    bad_request
+            end
+    end.
