@@ -143,6 +143,9 @@ bucket_access(_, RequestedAccess, CanonicalId, RiakPid, Acl) ->
             true;
         true ->
             {true, owner_id(Acl, RiakPid)};
+        false when IsOwner == true
+                   andalso RequestedAccess /= 'READ' ->
+            true;
         _ ->
             false
     end.
