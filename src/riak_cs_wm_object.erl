@@ -9,6 +9,7 @@
 -export([init/1,
          authorize/2,
          content_types_provided/2,
+         generate_etag/2,
          last_modified/2,
          produce_body/2,
          allowed_methods/0,
@@ -110,6 +111,13 @@ content_types_provided(RD, Ctx=#context{local_context=LocalCtx,
             %% appease webmachine
             {[{"text/plain", produce_body}], RD, Ctx}
     end.
+
+-spec generate_etag(#wm_reqdata{}, #context{}) -> {string(), #wm_reqdata{}, #context{}}.
+generate_etag(RD, Ctx=#context{local_context=LocalCtx}) ->
+    Mfst = LocalCtx#key_context.manifest,
+    ContentMd5 = Mfst?MANIFEST.content_md5,
+    ETag = riak_cs_utils:etag_from_binary_no_quotes(ContentMd5),
+    {ETag, RD, Ctx}.
 
 -spec last_modified(#wm_reqdata{}, #context{}) -> {calendar:datetime(), #wm_reqdata{}, #context{}}.
 last_modified(RD, Ctx=#context{local_context=LocalCtx}) ->

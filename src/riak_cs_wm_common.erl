@@ -11,6 +11,7 @@
          forbidden/2,
          content_types_accepted/2,
          content_types_provided/2,
+         generate_etag/2,
          last_modified/2,
          valid_entity_length/2,
          validate_content_checksum/2,
@@ -30,6 +31,7 @@
 
 -export([default_allowed_methods/0,
          default_content_types/2,
+         default_generate_etag/2,
          default_last_modified/2,
          default_finish_request/2,
          default_init/1,
@@ -186,6 +188,15 @@ content_types_provided(RD, Ctx=#context{submodule=Mod,
     riak_cs_dtrace:dt_wm_entry({?MODULE, Mod}, <<"content_types_provided">>),
     resource_call(Mod,
                   content_types_provided,
+                  [RD,Ctx],
+                  ExportsFun).
+
+-spec generate_etag(#wm_reqdata{}, #context{}) -> {string(), #wm_reqdata{}, #context{}}.
+generate_etag(RD, Ctx=#context{submodule=Mod,
+                               exports_fun=ExportsFun}) ->
+    riak_cs_dtrace:dt_wm_entry({?MODULE, Mod}, <<"generate_etag">>),
+    resource_call(Mod,
+                  generate_etag,
                   [RD,Ctx],
                   ExportsFun).
 
@@ -393,6 +404,8 @@ default(content_types_accepted) ->
     default_content_types;
 default(content_types_provided) ->
     default_content_types;
+default(generate_etag) ->
+    default_generate_etag;
 default(last_modified) ->
     default_last_modified;
 default(malformed_request) ->
@@ -426,6 +439,9 @@ default_validate_content_checksum(RD, Ctx) ->
 
 default_content_types(RD, Ctx) ->
     {[], RD, Ctx}.
+
+default_generate_etag(RD, Ctx) ->
+    {undefined, RD, Ctx}.
 
 default_last_modified(RD, Ctx) ->
     {undefined, RD, Ctx}.

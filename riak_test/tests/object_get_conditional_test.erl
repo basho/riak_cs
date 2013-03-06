@@ -8,6 +8,7 @@
 %% keys for non-multipart objects
 -define(TEST_BUCKET, "riak_test_bucket").
 -define(TEST_KEY,    "riak_test_key1").
+-define(ETAG_NOTEXIST, "\"NoTeXiSt\"").
 
 confirm() ->
     {RiakNodes, _CSNodes, _Stanchion} = rtcs:setup(4),
@@ -28,12 +29,15 @@ confirm() ->
     ?assertMatch([{buckets, [[{name, ?TEST_BUCKET}, _]]}],
                  erlcloud_s3:list_buckets(UserConfig)),
 
-    {Content, Etag, {Before, After}} = setup_object(?TEST_BUCKET, ?TEST_KEY, UserConfig),
-    lager:debug("{Etag, {Before, After}}: ~p~n", [{Etag, {Before, After}}]),
+    {Content, Etag, ThreeDates} =
+        setup_object(?TEST_BUCKET, ?TEST_KEY, UserConfig),
+    lager:debug("Etag: ~p~n", [Etag]),
+    lager:debug("{Before, LastModified, After}: ~p~n", [ThreeDates]),
 
     last_modified_condition_test_cases(?TEST_BUCKET, ?TEST_KEY,
-                                       Content, {Before, After}, UserConfig),
-
+                                       Content, ThreeDates, UserConfig),
+    match_condition_test_cases(?TEST_BUCKET, ?TEST_KEY,
+                               Content, Etag, UserConfig),
     pass.
 
 setup_object(Bucket, Key, UserConfig) ->
@@ -42,31 +46,31 @@ setup_object(Bucket, Key, UserConfig) ->
     Obj = erlcloud_s3:get_object(Bucket, Key, UserConfig),
     ?assertEqual(Content, proplists:get_value(content, Obj)),
     Etag = proplists:get_value(etag, Obj),
-    {Before, After} = before_and_after_of_last_modified(Obj),
-    {Content, Etag, {Before, After}}.
+    {Before, LastModified, After} = before_and_after_of_last_modified(Obj),
+    {Content, Etag, {Before, LastModified, After}}.
 
 before_and_after_of_last_modified(Obj) ->
     Headers = proplists:get_value(headers, Obj),
-    RFC1123LastModified = proplists:get_value("last-modified", Headers),
-    LastModified = httpd_util:convert_request_date(RFC1123LastModified),
-    LastModifiedSec = calendar:datetime_to_gregorian_seconds(LastModified),
+    LastModified = proplists:get_value("last-modified", Headers),
+    LastModifiedErlDate = httpd_util:convert_request_date(LastModified),
+    LastModifiedSec = calendar:datetime_to_gregorian_seconds(LastModifiedErlDate),
     Before = rfc1123_date(LastModifiedSec - 1),
     After = rfc1123_date(LastModifiedSec + 1),
     %% Sleep 1 sec because webmachine ignores if-modified-since header
     %% if it is future date.
-    lager:warning("{RFC1123LastModified, Before, After}: ~p~n",
-                  [{RFC1123LastModified, Before, After}]),
     timer:sleep(1000),
-    {Before, After}.
+    {Before, LastModified, After}.
 
 rfc1123_date(GregorianSecs) ->
     ErlDate = calendar:gregorian_seconds_to_datetime(GregorianSecs),
     riak_cs_wm_utils:iso_8601_to_rfc_1123(riak_cs_wm_utils:iso_8601_datetime(ErlDate)).
 
 last_modified_condition_test_cases(Bucket, Key, ExpectedContent,
-                                   {Before, After}, UserConfig) ->
+                                   {Before, LastModified, After}, UserConfig) ->
     normal_get_case(Bucket, Key, ExpectedContent,
                     [{if_modified_since, Before}], UserConfig),
+    not_modified_case(Bucket, Key,
+                      [{if_modified_since, LastModified}], UserConfig),
     not_modified_case(Bucket, Key,
                       [{if_modified_since, After}], UserConfig),
 
@@ -74,6 +78,22 @@ last_modified_condition_test_cases(Bucket, Key, ExpectedContent,
                     [{if_unmodified_since, After}], UserConfig),
     precondition_failed_case(Bucket, Key,
                              [{if_unmodified_since, Before}], UserConfig).
+
+match_condition_test_cases(Bucket, Key, ExpectedContent,
+                           Etag, UserConfig) ->
+    normal_get_case(Bucket, Key, ExpectedContent,
+                    [{if_match, Etag}], UserConfig),
+    normal_get_case(Bucket, Key, ExpectedContent,
+                    [{if_match, Etag ++ ", " ++ ?ETAG_NOTEXIST}], UserConfig),
+    precondition_failed_case(Bucket, Key,
+                             [{if_match, ?ETAG_NOTEXIST}], UserConfig),
+
+    normal_get_case(Bucket, Key, ExpectedContent,
+                    [{if_none_match, ?ETAG_NOTEXIST}], UserConfig),
+    not_modified_case(Bucket, Key,
+                      [{if_none_match, Etag}], UserConfig),
+    not_modified_case(Bucket, Key,
+                      [{if_none_match, Etag ++ ", " ++ ?ETAG_NOTEXIST}], UserConfig).
 
 normal_get_case(Bucket, Key, ExpectedContent, Options, UserConfig) ->
     Obj = erlcloud_s3:get_object(Bucket, Key, Options, UserConfig),
