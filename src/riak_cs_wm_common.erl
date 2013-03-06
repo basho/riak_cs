@@ -11,6 +11,7 @@
          forbidden/2,
          content_types_accepted/2,
          content_types_provided/2,
+         last_modified/2,
          valid_entity_length/2,
          validate_content_checksum/2,
          malformed_request/2,
@@ -184,6 +185,15 @@ content_types_provided(RD, Ctx=#context{submodule=Mod,
     riak_cs_dtrace:dt_wm_entry({?MODULE, Mod}, <<"content_types_provided">>),
     resource_call(Mod,
                   content_types_provided,
+                  [RD,Ctx],
+                  ExportsFun).
+
+-spec last_modified(#wm_reqdata{}, #context{}) -> {calendar:datetime(), #wm_reqdata{}, #context{}}.
+last_modified(RD, Ctx=#context{submodule=Mod,
+                               exports_fun=ExportsFun}) ->
+    riak_cs_dtrace:dt_wm_entry({?MODULE, Mod}, <<"last_modified">>),
+    resource_call(Mod,
+                  last_modified,
                   [RD,Ctx],
                   ExportsFun).
 

@@ -14,6 +14,7 @@
          to_iso_8601/1,
          iso_8601_to_rfc_1123/1,
          to_rfc_1123/1,
+         iso_8601_to_erl_date/1,
          streaming_get/4,
          user_record_to_json/1,
          user_record_to_xml/1,
@@ -335,16 +336,22 @@ to_rfc_1123(Date) when is_list(Date) ->
 %% assumes the input time is already in GMT time.
 -spec iso_8601_to_rfc_1123(binary() | string()) -> string().
 iso_8601_to_rfc_1123(Date) when is_list(Date) ->
-    iso_8601_to_rfc_1123(iolist_to_binary(Date));
-iso_8601_to_rfc_1123(Date) when is_binary(Date) ->
+    ErlDate = iso_8601_to_erl_date(Date),
+    httpd_util:rfc1123_date(erlang:universaltime_to_localtime(ErlDate)).
+
+%% @doc Convert an ISO 8601 date to Erlang datetime format.
+%% This function assumes the input time is already in GMT time.
+-spec iso_8601_to_erl_date(binary() | string()) -> calendar:datetime().
+iso_8601_to_erl_date(Date) when is_list(Date) ->
+    iso_8601_to_erl_date(iolist_to_binary(Date));
+iso_8601_to_erl_date(Date)  ->
     %% e.g. "2012-02-17T18:22:50.000Z"
     <<Yr:4/binary, _:1/binary, Mo:2/binary, _:1/binary, Da:2/binary,
       _T:1/binary,
       Hr:2/binary, _:1/binary, Mn:2/binary, _:1/binary, Sc:2/binary,
       _/binary>> = Date,
-    httpd_util:rfc1123_date(
-      erlang:universaltime_to_localtime({{b2i(Yr), b2i(Mo), b2i(Da)},
-                                         {b2i(Hr), b2i(Mn), b2i(Sc)}})).
+    {{b2i(Yr), b2i(Mo), b2i(Da)},
+     {b2i(Hr), b2i(Mn), b2i(Sc)}}.
 
 extract_name(User) when is_list(User) ->
     User;
