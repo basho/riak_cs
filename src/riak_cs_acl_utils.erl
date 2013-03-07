@@ -319,8 +319,6 @@ process_grant([HeadElement | RestElements], Grant, AclOwner, RiakPid) ->
 %% @doc Process an XML element containing information about
 %% an ACL permission grantee.
 -spec process_grantee([xmlElement()], acl_grant(), acl_owner(), pid()) -> acl_grant().
-process_grantee([], {{[], CanonicalId}, _Perms}, {DisplayName, CanonicalId}, _) ->
-    {{DisplayName, CanonicalId}, _Perms};
 process_grantee([], {{[], CanonicalId}, _Perms}, {DisplayName, CanonicalId, _}, _) ->
     {{DisplayName, CanonicalId}, _Perms};
 process_grantee([], {{[], CanonicalId}, _Perms}, _, RiakPid) ->
