@@ -16,6 +16,7 @@
          dt_wm_return/2,
          dt_wm_return/4,
          dt_wm_return_bool/3,
+         dt_wm_return_bool_with_default/4,
          dt_service_return/4,
          dt_bucket_return/4,
          dt_object_return/4]).
@@ -123,6 +124,14 @@ dt_wm_return_bool(Mod, Func, true) ->
     dt_wm_return(Mod, Func, [1], []);
 dt_wm_return_bool(Mod, Func, false) ->
     dt_wm_return(Mod, Func, [0], []).
+
+%% Like `dt_wm_return_bool', but uses a default
+%% boolean value from `Default' if the 3rd argument is
+%% a `{halt, integer()}' tuple
+dt_wm_return_bool_with_default(Mod, Func, Bool, _Default) when is_boolean(Bool) ->
+    dt_wm_return_bool(Mod, Func, Bool);
+dt_wm_return_bool_with_default(Mod, Func, {halt, _Code}, Default) when is_integer(_Code) ->
+    dt_wm_return_bool(Mod, Func, Default).
 
 dt_wm_return(Mod, Func) ->
     dt_wm_return(Mod, Func, [], []).
