@@ -595,7 +595,10 @@ extract_object_acl(?MANIFEST{acl=Acl}) ->
     Acl.
 
 -spec translate_bucket_policy(atom(), binary(), pid()) ->
-    policy() | undefined | {error, multiple_bucket_owners}.
+                                     policy() |
+                                     undefined |
+                                     {error, multiple_bucket_owners} |
+                                     {error, notfound}.
 translate_bucket_policy(PolicyMod, Bucket, RiakPid) ->
     case PolicyMod:bucket_policy(Bucket, RiakPid) of
         {ok, P} ->

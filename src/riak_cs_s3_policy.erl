@@ -219,9 +219,9 @@ bucket_policy(Bucket, RiakPid) ->
             Contents = riakc_obj:get_contents(Obj),
             bucket_policy_from_contents(Bucket, Contents);
         {error, Reason} ->
-            lager:debug("Failed to fetch policy. Bucket ~p "
-                        " does not exist. Reason: ~p",
-                        [Bucket, Reason]),
+            _ = lager:debug("Failed to fetch policy. Bucket ~p "
+                            " does not exist. Reason: ~p",
+                            [Bucket, Reason]),
             {error, notfound}
     end.
 
