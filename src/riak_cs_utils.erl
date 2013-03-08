@@ -10,7 +10,6 @@
 
 %% Public API
 -export([anonymous_user_creation/0,
-         binary_to_hexlist/1,
          etag_from_binary/1,
          etag_from_binary_no_quotes/1,
          check_bucket_exists/2,
