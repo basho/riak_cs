@@ -30,13 +30,12 @@ setup(NumNodes) ->
 setup(NumNodes, Configs) ->
     %% Start the erlcloud app
     erlcloud:start(),
-    Cfgs = configs(Configs),
-    Nodes = build_cluster(NumNodes, Cfgs),
 
     %% STFU sasl
     application:load(sasl),
     application:set_env(sasl, sasl_error_logger, false),
 
+    Cfgs = configs(Configs),
     {{AdminKeyId, AdminSecretKey},
      {RiakNodes, _CSNodes, _Stanchion}=Nodes} = build_cluster(NumNodes, Cfgs),
 
