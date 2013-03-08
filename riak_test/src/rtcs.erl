@@ -25,30 +25,46 @@
 -define(DEFAULT_PROTO, "http").
 
 setup(NumNodes) ->
+    setup(NumNodes, default_configs()).
+
+setup(NumNodes, Configs) ->
     %% Start the erlcloud app
     erlcloud:start(),
-
-    {{AdminKeyId, AdminSecretKey},
-     {RiakNodes, _CSNodes, _Stanchion}=Nodes} = build_cluster(NumNodes),
-
-    AdminConfig = rtcs:config(AdminKeyId,
-                              AdminSecretKey,
-                              rtcs:cs_port(hd(RiakNodes))),
+    Cfgs = configs(Configs),
+    Nodes = build_cluster(NumNodes, Cfgs),
 
     %% STFU sasl
     application:load(sasl),
     application:set_env(sasl, sasl_error_logger, false),
+
+    {{AdminKeyId, AdminSecretKey},
+     {RiakNodes, _CSNodes, _Stanchion}=Nodes} = build_cluster(NumNodes, Cfgs),
+
+    AdminConfig = rtcs:config(AdminKeyId,
+                              AdminSecretKey,
+                              rtcs:cs_port(hd(RiakNodes))),
     {AdminConfig, Nodes}.
 
-build_cluster(NumNodes) ->
+build_cluster(NumNodes, Configs) ->
     {_, {RiakNodes, _, _}} = Nodes =
-        deploy_nodes(NumNodes, [{riak, ee_config()},
-                                {stanchion, stanchion_config()},
-                                {cs, cs_config()}]),
+        deploy_nodes(NumNodes, Configs),
+    rt:wait_until_nodes_ready(RiakNodes),
     lager:info("Build cluster"),
     rtcs:make_cluster(RiakNodes),
     rt:wait_until_ring_converged(RiakNodes),
     Nodes.
+
+configs(CustomConfigs) ->
+    [{riak, proplists:get_value(riak, CustomConfigs, ee_config())},
+     {cs, proplists:get_value(cs, CustomConfigs, cs_config())},
+     {stanchion, proplists:get_value(stanchion,
+                                     CustomConfigs,
+                                     stanchion_config())}].
+
+default_configs() ->
+    [{riak, ee_config()},
+     {stanchion, stanchion_config()},
+     {cs, cs_config()}].
 
 config(Key, Secret, Port) ->
     erlcloud_s3:new(Key,
