@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+# -*- coding: utf-8 -*-
 
 import httplib, json, unittest, uuid, md5
 from cStringIO import StringIO
@@ -311,6 +312,28 @@ class LargerMultipartFileUploadTest(S3ApiVerificationTestBase):
     def test_upload_3(self):
         mb_list = [15, 14, 13, 12, 11, 10]
         self.from_mb_list(mb_list)
+
+class UnicodeNamedObjectTest(S3ApiVerificationTestBase):
+    ''' test to check unicode object name works '''
+    utf8_key_name = u"utf8ファイル名.txt"
+    #                     ^^^^^^^^^ filename in Japanese
+
+    def test_unicode_object(self):
+        bucket = self.conn.create_bucket(self.bucket_name)
+        k = Key(bucket)
+        k.key = UnicodeNamedObjectTest.utf8_key_name
+        k.set_contents_from_string(self.data)
+        self.assertEqual(k.get_contents_as_string(), self.data)
+        self.assertIn(UnicodeNamedObjectTest.utf8_key_name,
+                      [obj.key for obj in bucket.list()])
+
+    def test_delete_object(self):
+        bucket = self.conn.create_bucket(self.bucket_name)
+        k = Key(bucket)
+        k.key = UnicodeNamedObjectTest.utf8_key_name
+        k.delete()
+        self.assertNotIn(UnicodeNamedObjectTest.utf8_key_name,
+                         [obj.key for obj in bucket.list()])
 
 if __name__ == "__main__":
     unittest.main()
