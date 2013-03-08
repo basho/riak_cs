@@ -335,5 +335,27 @@ class UnicodeNamedObjectTest(S3ApiVerificationTestBase):
         self.assertNotIn(UnicodeNamedObjectTest.utf8_key_name,
                          [obj.key for obj in bucket.list()])
 
+
+class BucketPolicyTest(S3ApiVerificationTestBase):
+    "test bucket policy"
+
+    def test_no_policy(self):
+        bucket = self.conn.create_bucket(self.bucket_name)
+        bucket.delete_policy()
+        try:                    bucket.get_policy()
+        except S3ResponseError: pass
+        else:                   self.fail()
+
+    def test_put_policy(self):
+        bucket = self.conn.create_bucket(self.bucket_name)
+        bucket.delete_policy()
+        policy = '''
+{"Version":"2008-10-17","Statement":[{"Sid":"Stmtaaa","Effect":"Allow","Principal":"*","Action":["s3:GetObjectAcl","s3:GetObject"],"Resource":"arn:aws:s3:::%s/*","Condition":{"IpAddress":{"aws:SourceIp":"127.0.0.1/32"}}}]}
+''' % bucket.name
+        self.assertTrue(bucket.set_policy(policy, headers={'content-type':'application/json'}))
+
+        got_policy = bucket.get_policy()
+        self.assertEqual(policy, got_policy)
+
 if __name__ == "__main__":
     unittest.main()
