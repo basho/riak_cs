@@ -186,7 +186,7 @@ policy_to_json_term( ?POLICY{ version = ?AMZ_DEFAULT_VERSION,
     Stmts = lists:map(fun statement_to_pairs/1, Stmts0),
     % hope no unicode included
     Policy = [{"Version",?AMZ_DEFAULT_VERSION},{"Id", ID},{"Statement",Stmts}],
-    list_to_binary(mochijson2:encode(Policy)).
+    unicode:characters_to_binary(mochijson2:encode(Policy), unicode).
 
 -spec supported_object_action() -> [s3_object_action()].
 supported_object_action() -> ?SUPPORTED_OBJECT_ACTION.
@@ -289,7 +289,8 @@ resource_matches(BucketBin, KeyBin, #statement{resource=Resources})
                 undefined ->
                     Bucket;
                 _ when is_binary(KeyBin) ->
-                    binary_to_list(<<BucketBin/binary, "/", KeyBin/binary>>)
+                    unicode:characters_to_binary(<<BucketBin/binary, "/", KeyBin/binary>>,
+						 unicode)
             end,
     lists:any(fun(#arn_v1{path="*"}) ->    true;
                  (#arn_v1{path=Path}) ->
