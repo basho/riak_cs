@@ -9,6 +9,7 @@
 %{mode, {rate,4}}.
 {duration, 1}.
 {concurrent, 1}.
+{report_interval, 1}.
 
 %% Replace these with your own paths
 {source_dir, "/Users/fritchie/b/src/riak_moss/bench"}.
@@ -46,6 +47,6 @@
 %% NOTE: It's not a good idea to mix insert & get ops in a single
 %%       basho_bench instance with this driver.
 %%       Use separate ones instead!
-%% bad idea: {operations, [{insert, 1}, {delete, 1}, {get, 1}]}.
+%% bad idea: {operations, [{insert, 1}, {get, 1}]}.
 {operations, [{insert, 1}]}.
 %{operations, [{get, 1}]}.
