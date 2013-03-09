@@ -6,7 +6,7 @@
 -define(TEST_BUCKET, "riak_test_bucket").
 
 confirm() ->
-    {RiakNodes, _CSNodes, _Stanchion} =
+    {_, {RiakNodes, _CSNodes, _Stanchion}} =
         rtcs:deploy_nodes(4, [{riak, rtcs:ee_config()},
                               {stanchion, rtcs:stanchion_config()},
                               {cs, rtcs:cs_config()}]),
