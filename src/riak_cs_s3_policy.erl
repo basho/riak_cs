@@ -289,8 +289,7 @@ resource_matches(BucketBin, KeyBin, #statement{resource=Resources})
                 undefined ->
                     Bucket;
                 _ when is_binary(KeyBin) ->
-                    unicode:characters_to_binary(<<BucketBin/binary, "/", KeyBin/binary>>,
-						 unicode)
+                    unicode:characters_to_list(<<BucketBin/binary, "/", KeyBin/binary>>, unicode)
             end,
     lists:any(fun(#arn_v1{path="*"}) ->    true;
                  (#arn_v1{path=Path}) ->
