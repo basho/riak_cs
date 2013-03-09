@@ -57,7 +57,7 @@ to_xml(RD, Ctx=#context{local_context=LocalCtx,
         {ok, {Ds, Commons}} ->
             Us = [{'Upload',
                    [
-                    {'Key', [binary_to_list(D?MULTIPART_DESCR.key)]},
+                    {'Key', [unicode:characters_to_list(D?MULTIPART_DESCR.key, uncode)]},
                     {'UploadId', [binary_to_list(base64url:encode(D?MULTIPART_DESCR.upload_id))]},
                     {'Initiator',               % TODO: replace with ARN data?
                      [{'ID', [D?MULTIPART_DESCR.owner_key_id]},
