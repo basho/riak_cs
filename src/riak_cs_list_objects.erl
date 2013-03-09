@@ -77,13 +77,11 @@ new_response(?LOREQ{name=Name,
 %%--------------------------------------------------------------------
 
 -spec manifest_to_keycontent(lfs_manifest()) -> list_objects_key_content().
-manifest_to_keycontent(?MANIFEST{bkey=BKey,
+manifest_to_keycontent(?MANIFEST{bkey={_Bucket, Key},
                                  created=Created,
                                  content_md5=ContentMd5,
                                  content_length=ContentLength,
                                  acl=ACL}) ->
-    {_Bucket, UnprocessedKey} = BKey,
-    Key = list_to_binary(unicode:characters_to_list(UnprocessedKey, unicode)),
 
     LastModified = list_to_binary(riak_cs_wm_utils:to_iso_8601(Created)),
 

@@ -173,7 +173,7 @@ format_value(undefined) ->
 format_value(Val) when is_atom(Val) ->
     atom_to_list(Val);
 format_value(Val) when is_binary(Val) ->
-    binary_to_list(Val);
+    unicode:characters_to_list(Val, unicode);
 format_value(Val) when is_integer(Val) ->
     integer_to_list(Val);
 format_value(Val) when is_list(Val) ->
