@@ -59,6 +59,7 @@
          timestamp_to_seconds/1,
          to_bucket_name/2,
          update_key_secret/1,
+         update_obj_value/2,
          get_cluster_id/1,
          proxy_get_active/0,
          pid_to_binary/1]).
@@ -672,10 +673,7 @@ riak_connection(Pool) ->
 save_user(User, UserObj, RiakPid) ->
     %% Metadata is currently never updated so if there
     %% are siblings all copies should be the same
-    [MD | _] = riakc_obj:get_metadatas(UserObj),
-    UpdUserObj = riakc_obj:update_metadata(
-                   riakc_obj:update_value(UserObj, term_to_binary(User)),
-                   MD),
+    UpdUserObj = update_obj_value(UserObj, term_to_binary(User)),
     riakc_pb_socket:put(RiakPid, UpdUserObj).
 
 %% @doc Set the ACL for a bucket. Existing ACLs are only
@@ -790,6 +788,14 @@ update_key_secret(User=?RCS_USER{email=Email,
                                  key_id=KeyId}) ->
     EmailBin = list_to_binary(Email),
     User?RCS_USER{key_secret=generate_secret(EmailBin, KeyId)}.
+
+%% @doc Update the object's value blob, and take the first metadata
+%%      dictionary because we don't care about trying to merge them.
+-spec update_obj_value(riakc_obj:riakc_obj(), binary()) -> riakc_obj:riakc_obj().
+update_obj_value(Obj, Value) when is_binary(Value) ->
+    [MD | _] = riakc_obj:get_metadatas(Obj),
+    riakc_obj:update_metadata(riakc_obj:update_value(Obj, Value),
+                              MD).
 
 %% ===================================================================
 %% Internal functions

@@ -273,8 +273,8 @@ get_and_delete(RiakcPid, UUID, Bucket, Key) ->
                     riakc_pb_socket:delete_obj(RiakcPid, RiakObject);
                 _ ->
                     ObjectToWrite0 =
-                        riakc_obj:update_value(RiakObject,
-                                               term_to_binary(UpdatedManifests)),
+                        riak_cs_utils:update_obj_value(
+                          RiakObject, term_to_binary(UpdatedManifests)),
                     ObjectToWrite = update_md_with_multipart_2i(
                                       ObjectToWrite0, UpdatedManifests, Bucket, Key),
                     riak_cs_utils:put(RiakcPid, ObjectToWrite)
@@ -297,8 +297,8 @@ get_and_update(RiakcPid, WrappedManifests, Bucket, Key) ->
             %% overwritten UUIDs, then gc_specific_manifests() will
             %% operate on NewManiAdded and save it to Riak when it is
             %% finished.
-            ObjectToWrite0 = riakc_obj:update_value(RiakObject,
-                                                    term_to_binary(NewManiAdded)),
+            ObjectToWrite0 = riak_cs_utils:update_obj_value(
+                               RiakObject, term_to_binary(NewManiAdded)),
             ObjectToWrite = update_md_with_multipart_2i(
                               ObjectToWrite0, NewManiAdded, Bucket, Key),
             {Result, NewRiakObject} =
@@ -330,8 +330,8 @@ update_from_previous_read(RiakcPid, RiakObject, Bucket, Key,
                           PreviousManifests, NewManifests) ->
     Resolved = riak_cs_manifest_resolution:resolve([PreviousManifests,
             NewManifests]),
-    NewRiakObject0 = riakc_obj:update_value(RiakObject,
-        term_to_binary(Resolved)),
+    NewRiakObject0 = riak_cs_utils:update_obj_value(RiakObject,
+                                                    term_to_binary(Resolved)),
     NewRiakObject = update_md_with_multipart_2i(NewRiakObject0, Resolved,
                                                 Bucket, Key),
     %% TODO:

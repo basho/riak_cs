@@ -185,7 +185,8 @@ mark_as_scheduled_delete(UUIDsToMark, RiakObject, Bucket, Key, RiakcPid) ->
 mark_manifests(RiakObject, Bucket, Key, UUIDsToMark, ManiFunction, RiakcPid) ->
     Manifests = riak_cs_utils:manifests_from_riak_object(RiakObject),
     Marked = ManiFunction(Manifests, UUIDsToMark),
-    UpdObj0 = riakc_obj:update_value(RiakObject, term_to_binary(Marked)),
+    UpdObj0 = riak_cs_utils:update_obj_value(RiakObject,
+                                             term_to_binary(Marked)),
     UpdObj = riak_cs_manifest_fsm:update_md_with_multipart_2i(
                UpdObj0, Marked, Bucket, Key),
 
@@ -215,7 +216,8 @@ move_manifests_to_gc_bucket(Manifests, RiakcPid, AddLeewayP) ->
             %% new set in as well. Write this
             %% value back to riak
             Resolved = decode_and_merge_siblings(PreviousObject, ManifestSet),
-            riakc_obj:update_value(PreviousObject, term_to_binary(Resolved))
+            riak_cs_utils:update_obj_value(PreviousObject,
+                                           term_to_binary(Resolved))
     end,
 
     %% Create a set from the list of manifests
