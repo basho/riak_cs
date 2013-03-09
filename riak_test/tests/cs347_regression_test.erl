@@ -12,14 +12,7 @@
 -define(TEST_BUCKET, "riak_test_bucket").
 
 confirm() ->
-    {RiakNodes, _CSNodes, _Stanchion} = rtcs:setup(4),
-
-    FirstNode = hd(RiakNodes),
-
-    {AccessKeyId, SecretAccessKey} = rtcs:create_user(FirstNode, 1),
-
-    %% User config
-    UserConfig = rtcs:config(AccessKeyId, SecretAccessKey, rtcs:cs_port(FirstNode)),
+    {UserConfig, {_RiakNodes, _CSNodes, _Stanchion}} = rtcs:setup(4),
 
     lager:info("User is valid on the cluster, and has no buckets"),
     ?assertEqual([{buckets, []}], erlcloud_s3:list_buckets(UserConfig)),
