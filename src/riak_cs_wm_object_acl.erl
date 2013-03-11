@@ -172,31 +172,41 @@ accept_body(RD, Ctx=#context{local_context=#key_context{get_fsm_pid=GetFsmPid,
                                       [], [UserName, BFile_str]),
     riak_cs_get_fsm:stop(GetFsmPid),
     Body = binary_to_list(wrq:req_body(RD)),
-    case Body of
-        [] ->
-            %% Check for `x-amz-acl' header to support
-            %% the use of a canned ACL.
-            Acl = riak_cs_acl_utils:canned_acl(
-                    wrq:get_req_header("x-amz-acl", RD),
-                    {User?RCS_USER.display_name,
-                     User?RCS_USER.canonical_id,
-                     User?RCS_USER.key_id},
-                    riak_cs_wm_utils:bucket_owner(Bucket, RiakPid));
-        _ ->
-            Acl = riak_cs_acl_utils:acl_from_xml(Body,
-                                                   User?RCS_USER.key_id,
-                                                   RiakPid)
-    end,
-    %% Write new ACL to active manifest
-    Key = list_to_binary(KeyStr),
-    case riak_cs_utils:set_object_acl(Bucket, Key, Mfst, Acl, RiakPid) of
-        ok ->
+    AclRes =
+        case Body of
+            [] ->
+                %% Check for `x-amz-acl' header to support
+                %% the use of a canned ACL.
+                CannedAcl = riak_cs_acl_utils:canned_acl(
+                              wrq:get_req_header("x-amz-acl", RD),
+                              {User?RCS_USER.display_name,
+                               User?RCS_USER.canonical_id,
+                               User?RCS_USER.key_id},
+                              riak_cs_wm_utils:bucket_owner(Bucket, RiakPid)),
+                {ok, CannedAcl};
+            _ ->
+                riak_cs_acl_utils:acl_from_xml(Body,
+                                               User?RCS_USER.key_id,
+                                               RiakPid)
+        end,
+    case AclRes of
+        {ok, Acl} ->
+            %% Write new ACL to active manifest
+            Key = list_to_binary(KeyStr),
+            case riak_cs_utils:set_object_acl(Bucket, Key, Mfst, Acl, RiakPid) of
+                ok ->
+                    riak_cs_dtrace:dt_object_return(?MODULE, <<"object_put_acl">>,
+                                                    [200], [UserName, BFile_str]),
+                    {{halt, 200}, RD, Ctx};
+                {error, Reason} ->
+                    Code = riak_cs_s3_response:status_code(Reason),
+                    riak_cs_dtrace:dt_object_return(?MODULE, <<"object_put_acl">>,
+                                                    [Code], [UserName, BFile_str]),
+                    riak_cs_s3_response:api_error(Reason, RD, Ctx)
+            end;
+        {error, Reason2} ->
+            Code = riak_cs_s3_response:status_code(Reason2),
             riak_cs_dtrace:dt_object_return(?MODULE, <<"object_put_acl">>,
-                                               [200], [UserName, BFile_str]),
-            {{halt, 200}, RD, Ctx};
-        {error, Reason} ->
-            Code = riak_cs_s3_response:status_code(Reason),
-            riak_cs_dtrace:dt_object_return(?MODULE, <<"object_put_acl">>,
-                                               [Code], [UserName, BFile_str]),
-            riak_cs_s3_response:api_error(Reason, RD, Ctx)
+                                            [Code], [UserName, BFile_str]),
+            riak_cs_s3_response:api_error(Reason2, RD, Ctx)
     end.

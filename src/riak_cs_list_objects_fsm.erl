@@ -531,7 +531,7 @@ prepare_state_for_mapred(State=#state{req=Request,
 make_response(Request=?LOREQ{max_keys=NumKeysRequested}, ObjectBuffer, CommonPrefixes) ->
     ObjectPrefixTuple = {ObjectBuffer, CommonPrefixes},
     NumObjects = manifests_and_prefix_length(ObjectPrefixTuple),
-    IsTruncated = NumObjects > NumKeysRequested,
+    IsTruncated = NumObjects > NumKeysRequested andalso NumKeysRequested > 0,
     SlicedTaggedItems = manifests_and_prefix_slice(ObjectPrefixTuple,
                                                    NumKeysRequested),
     {NewManis, NewPrefixes} = untagged_manifest_and_prefix(SlicedTaggedItems),

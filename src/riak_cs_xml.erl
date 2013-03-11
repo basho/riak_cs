@@ -112,8 +112,6 @@ make_internal_node(Name, Attributes, Content) ->
     {Name, Attributes, Content}.
 
 -spec make_external_node(atom(), term()) -> external_node().
-make_external_node('ETag', Content) ->
-    {'ETag', ["\"" ++ format_value(Content) ++ "\""]};
 make_external_node(Name, Content) ->
     {Name, [format_value(Content)]}.
 
@@ -209,13 +207,13 @@ list_objects_response_to_xml_test() ->
     Owner2 = #list_objects_owner_v1{id = <<"TESTID2">>, display_name = <<"tester2">>},
     Content1 = ?LOKC{key = <<"testkey1">>,
                      last_modified = riak_cs_wm_utils:to_iso_8601("Thu, 29 Nov 2012 17:50:30 GMT"),
-                     etag = <<"fba9dede6af29711d7271245a35813428">>,
+                     etag = <<"\"fba9dede6af29711d7271245a35813428\"">>,
                      size = 12345,
                      owner = Owner1,
                      storage_class = <<"STANDARD">>},
     Content2 = ?LOKC{key = <<"testkey2">>,
                      last_modified = riak_cs_wm_utils:to_iso_8601("Thu, 29 Nov 2012 17:52:30 GMT"),
-                     etag = <<"43433281b2f27731ccf53597645a3985">>,
+                     etag = <<"\"43433281b2f27731ccf53597645a3985\"">>,
                      size = 54321,
                      owner = Owner2,
                      storage_class = <<"STANDARD">>},
