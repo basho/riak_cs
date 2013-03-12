@@ -20,6 +20,7 @@
          cs_version/0,
          delete_bucket/4,
          delete_object/3,
+         encode_term/1,
          from_bucket_name/1,
          get_admin_creds/0,
          get_buckets/1,
@@ -259,6 +260,10 @@ delete_object(Bucket, Key, RiakcPid) ->
         Else ->
             Else
     end.
+
+-spec encode_term(term()) -> binary().
+encode_term(Term) ->
+    term_to_binary(Term, [compressed]).
 
 %% @private
 maybe_gc_active_manifests({ok, RiakObject, Manifests}, Bucket, Key, StartTime, RiakcPid) ->
@@ -673,7 +678,7 @@ riak_connection(Pool) ->
 save_user(User, UserObj, RiakPid) ->
     %% Metadata is currently never updated so if there
     %% are siblings all copies should be the same
-    UpdUserObj = update_obj_value(UserObj, term_to_binary(User)),
+    UpdUserObj = update_obj_value(UserObj, riak_cs_utils:encode_term(User)),
     riakc_pb_socket:put(RiakPid, UpdUserObj).
 
 %% @doc Set the ACL for a bucket. Existing ACLs are only
