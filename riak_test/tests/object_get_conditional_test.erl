@@ -6,7 +6,7 @@
 -include_lib("eunit/include/eunit.hrl").
 
 %% keys for non-multipart objects
--define(TEST_BUCKET, "riak_test_bucket").
+-define(TEST_BUCKET, "riak-test-bucket").
 -define(TEST_KEY,    "riak_test_key1").
 -define(ETAG_NOTEXIST, "\"NoTeXiSt\"").
 

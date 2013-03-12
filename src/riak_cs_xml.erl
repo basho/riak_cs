@@ -10,6 +10,7 @@
 -module(riak_cs_xml).
 
 -include("riak_cs.hrl").
+-include("s3_api.hrl").
 -include("list_objects.hrl").
 
 -ifdef(TEST).
@@ -40,7 +41,9 @@ to_xml(?ACL{}=Acl) ->
 to_xml(#acl_v1{}=Acl) ->
     acl_to_xml(Acl);
 to_xml(?LORESP{}=ListObjsResp) ->
-    list_objects_response_to_xml(ListObjsResp).
+    list_objects_response_to_xml(ListObjsResp);
+to_xml(?S3_ERROR{}=Error) ->
+    s3_error_to_xml(Error).
 
 %% ===================================================================
 %% Internal functions
@@ -185,6 +188,14 @@ uri_for_group('AllUsers') ->
     ?ALL_USERS_GROUP;
 uri_for_group('AuthUsers') ->
     ?AUTH_USERS_GROUP.
+
+-spec s3_error_to_xml(?S3_ERROR{}) -> binary().
+s3_error_to_xml(Error) ->
+    Content = [make_external_node('Code', Error?S3_ERROR.code),
+               make_external_node('Message', Error?S3_ERROR.message),
+               make_external_node('Method', Error?S3_ERROR.method)],
+    XmlDoc = [make_internal_node('Error', Content)],
+    export_xml(XmlDoc).
 
 %% ===================================================================
 %% Eunit tests

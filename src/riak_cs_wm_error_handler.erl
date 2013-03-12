@@ -7,6 +7,7 @@
 -export([render_error/3]).
 
 -include("riak_cs.hrl").
+-include("s3_api.hrl").
 
 render_error(500, Req, Reason) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"render_error">>),
@@ -20,6 +21,16 @@ render_error(500, Req, Reason) ->
     ErrorFour = <<"this request</body></html>">>,
     IOList = [ErrorOne, ErrorTwo, ErrorThree, ErrorFour],
     {erlang:iolist_to_binary(IOList), ReqState};
+render_error(405, Req, Reason) ->
+    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"render_error">>),
+    {ok, ReqState} = Req:add_response_header("Content-Type", "application/xml"),
+    {Path,_} = Req:path(),
+    error_logger:error_msg("webmachine error: path=~p~n~p~n~p\n", [Path, Reason, erlang:get_stacktrace()]),
+    {RD, _} = Req:get_reqdata(),
+    Error = ?S3_ERROR{code = <<"MethodNotAllowed">>,
+                      message = <<"The specified method is not allowed against this resource.">>,
+                      method = wrq:method(RD)},
+    {riak_cs_xml:to_xml(Error), ReqState};
 render_error(_Code, Req, _Reason) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"render_error">>),
     Req:response_body().
