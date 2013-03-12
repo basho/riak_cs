@@ -9,7 +9,7 @@
 -export([confirm/0]).
 -include_lib("eunit/include/eunit.hrl").
 
--define(TEST_BUCKET, "riak_test_bucket").
+-define(TEST_BUCKET, "riak-test-bucket").
 
 confirm() ->
     {UserConfig, {_RiakNodes, _CSNodes, _Stanchion}} = rtcs:setup(4),
@@ -62,6 +62,6 @@ verify_error_child_element('Code', [Content]) ->
 verify_error_child_element('Message', [Content]) ->
     Content#xmlText.value =:= "The specified bucket does not exist.";
 verify_error_child_element('Resource', [Content]) ->
-    Content#xmlText.value =:= "/riak_test_bucket";
+    Content#xmlText.value =:= "/riak-test-bucket";
 verify_error_child_element(_, _) ->
     true.

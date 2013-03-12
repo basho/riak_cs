@@ -4,7 +4,7 @@
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("erlcloud/include/erlcloud_aws.hrl").
 
--define(TEST_BUCKET, "riak_test_bucket").
+-define(TEST_BUCKET, "riak-test-bucket").
 
 confirm() ->
     {UserConfig, {RiakNodes, _CSNodes, _Stanchion}} = rtcs:setup(4),
