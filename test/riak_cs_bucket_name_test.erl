@@ -29,7 +29,11 @@ valid_names() ->
 invalid_names() ->
     [<<"NotValid">>,
     %% some tests from
-    %% http://docs.aws.amazon.com/AmazonS3/latest/dev/BucketRestrictions.html].
+    %% http://docs.aws.amazon.com/AmazonS3/latest/dev/BucketRestrictions.html
+     <<"ab">>,
+     <<"Abc">>,
+     <<"abC">>,
+     <<"my.aWs.bucket">>,
      <<".myawsbucket">>,
      <<"myawsbucket.">>,
      <<"my..examplebucket">>,

@@ -214,7 +214,6 @@ valid_bookend_char(Char) ->
 valid_bucket_char(Char) ->
     numeric_char(Char) orelse
         lower_case_char(Char) orelse
-        upper_case_char(Char) orelse
         dash_char(Char).
 
 -spec numeric_char(integer()) -> boolean().
@@ -224,10 +223,6 @@ numeric_char(Char) ->
 -spec lower_case_char(integer()) -> boolean().
 lower_case_char(Char) ->
     Char >= 97 andalso Char =< 122.
-
--spec upper_case_char(integer()) -> boolean().
-upper_case_char(Char) ->
-    Char >= 65 andalso Char =< 90.
 
 -spec dash_char(integer()) -> boolean().
 dash_char(Char) ->
