@@ -281,7 +281,10 @@ class LargerFileUploadTest(S3ApiVerificationTestBase):
         return self.upload_helper(32 * 1024)
 
 class LargerMultipartFileUploadTest(S3ApiVerificationTestBase):
-    "Larger, multipart file uploads"
+    """
+    Larger, multipart file uploads - to pass this test,
+    requires '{enforce_multipart_part_size, false},' entry at riak_cs's app.config
+    """
 
     def upload_parts_helper(self, zipped_parts_and_md5s, expected_md5):
         key_name = str(uuid.uuid4())
@@ -335,5 +338,90 @@ class UnicodeNamedObjectTest(S3ApiVerificationTestBase):
         self.assertNotIn(UnicodeNamedObjectTest.utf8_key_name,
                          [obj.key for obj in bucket.list()])
 
+
+class BucketPolicyTest(S3ApiVerificationTestBase):
+    "test bucket policy"
+
+    def test_no_policy(self):
+        bucket = self.conn.create_bucket(self.bucket_name)
+        bucket.delete_policy()
+        try:                    bucket.get_policy()
+        except S3ResponseError: pass
+        else:                   self.fail()
+
+    def test_put_policy(self):
+        bucket = self.conn.create_bucket(self.bucket_name)
+        bucket.delete_policy()
+        policy = '''
+{"Version":"2008-10-17","Statement":[{"Sid":"Stmtaaa","Effect":"Allow","Principal":"*","Action":["s3:GetObjectAcl","s3:GetObject"],"Resource":"arn:aws:s3:::%s/*","Condition":{"IpAddress":{"aws:SourceIp":"127.0.0.1/32"}}}]}
+''' % bucket.name
+        self.assertTrue(bucket.set_policy(policy, headers={'content-type':'application/json'}))
+
+        got_policy = bucket.get_policy()
+        self.assertEqual(policy, got_policy)
+
+    def test_ip_addr_policy(self):
+        bucket = self.conn.create_bucket(self.bucket_name)
+        policy = '''
+{"Version":"2008-10-17","Statement":[{"Sid":"Stmtaaa","Effect":"Deny","Principal":"*","Action":["s3:GetObject"],"Resource":"arn:aws:s3:::%s/*","Condition":{"IpAddress":{"aws:SourceIp":"%s"}}}]}
+''' % (bucket.name, self.host)
+        self.assertTrue(bucket.set_policy(policy, headers={'content-type':'application/json'}))
+
+        key_name = str(uuid.uuid4())
+        key = Key(bucket, key_name)
+
+        key.set_contents_from_string(self.data)
+        bucket.list()
+        try:
+            key.get_contents_as_string()
+            self.fail()
+        except S3ResponseError as e:
+            self.assertEqual(e.status, 404)
+            self.assertEqual(e.reason, 'Object Not Found')
+
+        policy = '''
+{"Version":"2008-10-17","Statement":[{"Sid":"Stmtaaa","Effect":"Allow","Principal":"*","Action":["s3:GetObject"],"Resource":"arn:aws:s3:::%s/*","Condition":{"IpAddress":{"aws:SourceIp":"%s"}}}]}
+''' % (bucket.name, self.host)
+        self.assertTrue(bucket.set_policy(policy, headers={'content-type':'application/json'}))
+        key.get_contents_as_string() ## throws nothing
+
+
+    def test_transport_addr_policy(self):
+        bucket = self.conn.create_bucket(self.bucket_name)
+        key_name = str(uuid.uuid4())
+        key = Key(bucket, key_name)
+        key.set_contents_from_string(self.data)
+
+        ## anyone may GET this object
+        policy = '''
+{"Version":"2008-10-17","Statement":[{"Sid":"Stmtaaa0","Effect":"Allow","Principal":"*","Action":["s3:GetObject"],"Resource":"arn:aws:s3:::%s/*","Condition":{"Bool":{"aws:SecureTransport":false}}}]}
+''' % bucket.name
+        self.assertTrue(bucket.set_policy(policy, headers={'content-type':'application/json'}))
+        key.get_contents_as_string()
+
+        ## policy accepts anyone who comes with http
+        conn = httplib.HTTPConnection(self.host, self.port)
+        headers = { "Host" : "%s.s3.amazonaws.com" % bucket.name }
+        conn.request('GET', ("/%s" % key_name) , None, headers)
+        response = conn.getresponse()
+        self.assertEqual(response.status, 200)
+        self.assertEqual(response.read(), key.get_contents_as_string())
+
+        ## anyone without https may not do any operation
+        policy = '''
+{"Version":"2008-10-17","Statement":[{"Sid":"Stmtaaa0","Effect":"Deny","Principal":"*","Action":"*","Resource":"arn:aws:s3:::%s/*","Condition":{"Bool":{"aws:SecureTransport":false}}}]}
+''' % bucket.name
+        self.assertTrue(bucket.set_policy(policy, headers={'content-type':'application/json'}))
+
+        ## policy accepts anyone who comes with http
+        conn = httplib.HTTPConnection(self.host, self.port)
+        headers = { "Host" : "%s.s3.amazonaws.com" % bucket.name }
+        conn.request('GET', ("/%s" % key_name) , None, headers)
+        response = conn.getresponse()
+        self.assertEqual(response.status, 403)
+        self.assertEqual(response.reason, 'Forbidden')
+
+
 if __name__ == "__main__":
     unittest.main()
+#    unittest.main(defaultTest = 'BucketPolicyTest')
