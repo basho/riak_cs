@@ -100,11 +100,3 @@
 
 
 -define(POLICY, #policy_v1).
-
--record(s3_error, {
-          code :: binary(),
-          message :: binary(),
-          method :: atom()
-         }).
-
--define(S3_ERROR, #s3_error).
