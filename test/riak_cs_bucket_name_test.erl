@@ -36,9 +36,7 @@ invalid_names() ->
      <<"192.168.1.1">>].
 
 make_test_from_name_and_success(Name, Success) ->
-    fun () ->
-            ?assertEqual(Success,
-                         riak_cs_utils:valid_bucket_name(Name))
-    end.
+    ?_assertEqual(Success,
+                  riak_cs_utils:valid_bucket_name(Name)).
 
 -endif.
