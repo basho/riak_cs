@@ -96,7 +96,10 @@ malformed_request(RD, Ctx=#context{submodule=Mod,
                                           malformed_request,
                                           [RD, Ctx],
                                           ExportsFun),
-    riak_cs_dtrace:dt_wm_return_bool({?MODULE, Mod}, <<"malformed_request">>, Malformed),
+    riak_cs_dtrace:dt_wm_return_bool_with_default({?MODULE, Mod},
+                                                  <<"malformed_request">>,
+                                                  Malformed,
+                                                 false),
     R.
 
 
@@ -107,7 +110,10 @@ valid_entity_length(RD, Ctx=#context{submodule=Mod, exports_fun=ExportsFun}) ->
                                       valid_entity_length,
                                       [RD, Ctx],
                                       ExportsFun),
-    riak_cs_dtrace:dt_wm_return_bool({?MODULE, Mod}, <<"valid_entity_length">>, Valid),
+    riak_cs_dtrace:dt_wm_return_bool_with_default({?MODULE, Mod},
+                                                  <<"valid_entity_length">>,
+                                                  Valid,
+                                                  true),
     R.
 
 -type validate_checksum_response() :: {error, term()} |
@@ -121,7 +127,10 @@ validate_content_checksum(RD, Ctx=#context{submodule=Mod, exports_fun=ExportsFun
                                       validate_content_checksum,
                                       [RD, Ctx],
                                       ExportsFun),
-    riak_cs_dtrace:dt_wm_return_bool({?MODULE, Mod}, <<"validate_content_checksum">>, Valid),
+    riak_cs_dtrace:dt_wm_return_bool_with_default({?MODULE, Mod},
+                                                  <<"validate_content_checksum">>,
+                                                  Valid,
+                                                  true),
     R.
 
 -spec forbidden(#wm_reqdata{}, #context{}) -> {boolean() | {halt, non_neg_integer()}, #wm_reqdata{}, #context{}}.

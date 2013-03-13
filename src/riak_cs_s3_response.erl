@@ -83,12 +83,16 @@ error_code(bad_request) -> "BadRequest";
 error_code(invalid_range) -> "InvalidRange";
 error_code(_) -> "ServiceUnavailable".
 
+%% These should match:
+%% http://docs.aws.amazon.com/AmazonS3/latest/API/ErrorResponses.html
+
 status_code(invalid_access_key_id) -> 403;
 status_code(invalid_email_address) -> 400;
 status_code(access_denied) ->  403;
 status_code(bucket_not_empty) ->  409;
 status_code(bucket_already_exists) -> 409;
 status_code(user_already_exists) -> 409;
+%% yes, 400, really, not 413
 status_code(entity_too_large) -> 400;
 status_code(entity_too_small) -> 400;
 status_code(bad_etag) -> 400;
