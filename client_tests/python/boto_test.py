@@ -38,7 +38,7 @@ def upload_multipart(bucket, key_name, parts_list):
     upload.complete_upload()
     return upload
 
-class S3ApiVerificationTest(unittest.TestCase):
+class S3ApiVerificationTestBase(unittest.TestCase):
     host="127.0.0.1"
     try:
         port=int(os.environ['CS_HTTP_PORT'])

@@ -6,20 +6,9 @@
 -define(TEST_BUCKET, "riak_test_bucket").
 
 confirm() ->
-    CS_extra = [{enforce_multipart_part_size, false}],
-    {RiakNodes, _CSNodes, _Stanchion} =
-        rtcs:setup(1,
-                   rtcs:ee_config(),
-                   rtcs:stanchion_config(),
-                   rtcs:cs_config(CS_extra)),
+    {_UserConfig, {RiakNodes, _CSNodes, _Stanchion}} = rtcs:setup(4, [{cs, cs_config()}]),
 
-    FirstNode = hd(RiakNodes),
-
-    {AccessKeyId, SecretAccessKey} = rtcs:create_user(FirstNode, 1),
-
-    %% User config
-    CS_http_port = rtcs:cs_port(FirstNode),
-    _UserConfig = rtcs:config(AccessKeyId, SecretAccessKey, CS_http_port),
+    CS_http_port = rtcs:cs_port(hd(RiakNodes)),
 
     lager:debug("cs_src_root = ~p", [rtdev:relpath(cs_src_root)]),
     %% NOTE: This 'cs_src_root' path must appear in
@@ -50,3 +39,17 @@ confirm() ->
     after
         os:cmd("rm -f " ++ StdoutStderr)
     end.
+
+cs_config() ->
+    [
+     rtcs:lager_config(),
+     {riak_cs,
+      [
+       {proxy_get, enabled},
+       {anonymous_user_creation, true},
+       {riak_pb_port, 10017},
+       {stanchion_port, 9095},
+       {cs_version, 010300},
+       {enforce_multipart_part_size, false}
+      ]
+     }].
