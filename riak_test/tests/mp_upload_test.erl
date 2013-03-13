@@ -5,7 +5,7 @@
 -export([confirm/0]).
 -include_lib("eunit/include/eunit.hrl").
 
--define(TEST_BUCKET, "riak_test_bucket").
+-define(TEST_BUCKET, "riak-test-bucket").
 -define(TEST_KEY1, "riak_test_key1").
 -define(TEST_KEY2, "riak_test_key2").
 -define(PART_COUNT, 5).

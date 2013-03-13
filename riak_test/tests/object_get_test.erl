@@ -6,7 +6,7 @@
 -include_lib("eunit/include/eunit.hrl").
 
 %% keys for non-multipart objects
--define(TEST_BUCKET,        "riak_test_bucket").
+-define(TEST_BUCKET,        "riak-test-bucket").
 -define(KEY_SINGLE_BLOCK,   "riak_test_key1").
 -define(KEY_MULTIPLE_BLOCK, "riak_test_key2").
 
