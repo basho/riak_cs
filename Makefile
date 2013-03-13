@@ -7,6 +7,7 @@ BASE_DIR         = $(shell pwd)
 ERLANG_BIN       = $(shell dirname $(shell which erl))
 REBAR           ?= $(BASE_DIR)/rebar
 OVERLAY_VARS    ?=
+CS_HTTP_PORT    ?= 8080
 
 .PHONY: rel stagedevrel deps test
 
@@ -51,7 +52,7 @@ test-client: test-clojure test-python test-erlang
 test-python: test-boto
 
 test-boto:
-	@python client_tests/python/boto_test.py
+	env CS_HTTP_PORT=${CS_HTTP_PORT} python client_tests/python/boto_test.py
 
 test-erlang: compile-client-test
 	@./rebar skip_deps=true client_test_run
