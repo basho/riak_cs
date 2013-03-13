@@ -143,13 +143,91 @@ close_riak_connection(Pool, Pid) ->
                            ok |
                            {error, term()}.
 create_bucket(User, UserObj, Bucket, ACL, RiakPid) ->
-    serialized_bucket_op(Bucket,
-                         ACL,
-                         User,
-                         UserObj,
-                         create,
-                         bucket_create,
-                         RiakPid).
+    CurrentBuckets = get_buckets(User),
+
+    %% Do not attempt to create bucket if the user already owns it
+    AttemptCreate = not bucket_exists(CurrentBuckets, binary_to_list(Bucket)),
+    case AttemptCreate of
+        true ->
+            case valid_bucket_name(Bucket) of
+                true ->
+                    serialized_bucket_op(Bucket,
+                                         ACL,
+                                         User,
+                                         UserObj,
+                                         create,
+                                         bucket_create,
+                                         RiakPid);
+                false ->
+                    {error, invalid_bucket_name}
+            end;
+        false ->
+            ok
+    end.
+
+-spec valid_bucket_name(binary()) -> boolean().
+valid_bucket_name(Bucket) when byte_size(Bucket) < 3 orelse
+                               byte_size(Bucket) > 63 ->
+    false;
+valid_bucket_name(Bucket) ->
+    lists:all(fun(X) -> X end, [valid_bucket_label(Label) ||
+                                   Label <- binary:split(Bucket,
+                                                         <<".">>,
+                                                         [global])])
+        andalso not is_bucket_ip_addr(binary_to_list(Bucket)).
+
+-spec valid_bucket_label(binary()) -> boolean().
+valid_bucket_label(<<>>) ->
+    %% this clause gets called when we either have a `.' as the first or
+    %% last byte. Or if it appears twice in a row. Examples are:
+    %% `<<".myawsbucket">>'
+    %% `<<"myawsbucket.">>'
+    %% `<<"my..examplebucket">>'
+    false;
+valid_bucket_label(Label) ->
+    valid_bookend_char(binary:first(Label)) andalso
+        valid_bookend_char(binary:last(Label)) andalso
+        lists:all(fun(X) -> X end,
+                  [valid_bucket_char(C) || C <- middle_chars(Label)]).
+
+-spec middle_chars(binary()) -> list().
+middle_chars(B) when byte_size(B) < 3 ->
+    [];
+middle_chars(B) ->
+    %% `binary:at/2' is zero based
+    ByteSize = byte_size(B),
+    [binary:at(B, Position) || Position <- lists:seq(1, ByteSize - 2)].
+
+-spec is_bucket_ip_addr(string()) -> boolean().
+is_bucket_ip_addr(Bucket) ->
+    case inet_parse:ipv4strict_address(Bucket) of
+        {ok, _} ->
+            true;
+        {error, _} ->
+            false
+    end.
+
+-spec valid_bookend_char(integer()) -> boolean().
+valid_bookend_char(Char) ->
+    numeric_char(Char) orelse lower_case_char(Char).
+
+-spec valid_bucket_char(integer()) -> boolean().
+valid_bucket_char(Char) ->
+    numeric_char(Char) orelse
+        lower_case_char(Char) orelse
+        dash_char(Char).
+
+-spec numeric_char(integer()) -> boolean().
+numeric_char(Char) ->
+    Char >= $0 andalso Char =< $9.
+
+-spec lower_case_char(integer()) -> boolean().
+lower_case_char(Char) ->
+    Char >= $a andalso Char =< $z.
+
+-spec dash_char(integer()) -> boolean().
+dash_char(Char) ->
+    Char =:= $-.
 
 %% @doc Create a new Riak CS user
 -spec create_user(string(), string()) -> {ok, rcs_user()} | {error, term()}.

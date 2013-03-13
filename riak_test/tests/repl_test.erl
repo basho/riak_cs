@@ -3,7 +3,7 @@
 -export([confirm/0]).
 -include_lib("eunit/include/eunit.hrl").
 
--define(TEST_BUCKET, "riak_test_bucket").
+-define(TEST_BUCKET, "riak-test-bucket").
 
 confirm() ->
     {_, {RiakNodes, _CSNodes, _Stanchion}} =

@@ -57,6 +57,7 @@ error_message(malformed_policy_action) -> "Policy has invalid action";
 error_message(no_such_bucket_policy) -> "The bucket policy does not exist";
 error_message(bad_request) -> "Bad Request";
 error_message(invalid_range) -> "The requested range is not satisfiable";
+error_message(invalid_bucket_name) -> "The specified bucket is not valid.";
 error_message(_) -> "Please reduce your request rate.".
 
 error_code(invalid_access_key_id) -> "InvalidAccessKeyId";
@@ -83,6 +84,7 @@ error_code(malformed_policy_action) -> "MalformedPolicy";
 error_code(no_such_bucket_policy) -> "NoSuchBucketPolicy";
 error_code(bad_request) -> "BadRequest";
 error_code(invalid_range) -> "InvalidRange";
+error_code(invalid_bucket_name) -> "InvalidBucketName";
 error_code(_) -> "ServiceUnavailable".
 
 %% These should match:
@@ -115,6 +117,7 @@ status_code(malformed_policy_action) -> 400;
 status_code(no_such_bucket_policy) -> 404;
 status_code(bad_request) -> 400;
 status_code(invalid_range) -> 416;
+status_code(invalid_bucket_name) -> 400;
 status_code(_) -> 503.
 
 
