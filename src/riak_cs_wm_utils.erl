@@ -472,19 +472,17 @@ handle_acl_check_result(false, _, undefined, _, _Deletable, RD, Ctx) ->
     handle_policy_eval_result(Ctx#context.user, false, undefined, RD, Ctx);
 handle_acl_check_result(false, Acl, Policy, AccessType, _Deletable, RD, Ctx) ->
     #context{riakc_pid=RiakPid,
-             user=User} = Ctx,
+             user=User0} = Ctx,
     PolicyMod = Ctx#context.policy_module,
-    Access = PolicyMod:reqdata_to_access(RD,
-                                         AccessType,
-                                         User?RCS_USER.canonical_id),
+    User = case User0 of
+               undefined -> undefined;
+               _ ->         User0?RCS_USER.canonical_id
+	   end,
+    Access = PolicyMod:reqdata_to_access(RD, AccessType, User),
     PolicyResult = PolicyMod:eval(Access, Policy),
     OwnerId = riak_cs_acl:owner_id(Acl, RiakPid),
     handle_policy_eval_result(User, PolicyResult, OwnerId, RD, Ctx).
 
-handle_policy_eval_result(undefined, _, _, RD, Ctx) ->
-    %% no facility for logging bad access
-    %% against unknown actors
-    riak_cs_wm_utils:deny_access(RD, Ctx);
 handle_policy_eval_result(_, true, OwnerId, RD, Ctx) ->
     %% Policy says yes while ACL says no
     riak_cs_wm_utils:shift_to_owner(RD, Ctx, OwnerId, Ctx#context.riakc_pid);

@@ -4,7 +4,7 @@
 %%
 %% -------------------------------------------------------------------
 
-%% @doc policy utility functions
+%% @doc ad-hoc policy tests
 
 -module(riak_cs_s3_policy_test).
 
@@ -18,7 +18,6 @@
 
 -include_lib("eunit/include/eunit.hrl").
 
-% TODO: eqc tests
 parse_ip_test_()->
     [
      ?_assertEqual({{192,0,0,1}, {255,0,0,0}},
@@ -32,13 +31,16 @@ parse_ip_test_()->
     ].
 
 empty_statement_conversion_test()->
-    Policy = ?POLICY{id= <<"hello">>},
-    JsonPolicy = "{\"Version\":\"2008-10-17\",\"Id\":\"hello\",\"Statement\":[]}",
-    ?assertEqual(list_to_binary(JsonPolicy),
-                 riak_cs_s3_policy:policy_to_json_term(Policy)),
+    Policy = ?POLICY{id= <<"hello">>, statement=[#statement{}]},
+    JsonPolicy = "{\"Version\":\"2008-10-17\",\"Statement\":["
+        "{\"Sid\":\"undefined\",\"Effect\":\"Deny\",\"Principal\":[],"
+        "\"Action\":[],\"NotAction\":[],\"Resource\":[],\"Condition\":[]}"
+        "],\"Id\":\"hello\"}",
+    {struct, LHS} = mochijson2:decode(JsonPolicy),
+    {struct, RHS} = mochijson2:decode(riak_cs_s3_policy:policy_to_json_term(Policy)),
+    ?assertEqual(lists:sort(LHS), lists:sort(RHS)),
     {ok, PolicyFromJson} = riak_cs_s3_policy:policy_from_json(list_to_binary(JsonPolicy)),
     ?assertEqual(Policy?POLICY.id, PolicyFromJson?POLICY.id),
-    ?assertEqual(Policy?POLICY.statement, PolicyFromJson?POLICY.statement),
     ?assertEqual(Policy?POLICY.version, PolicyFromJson?POLICY.version).
 
 sample_plain_allow_policy()->
@@ -85,14 +87,18 @@ sample_policy_check_test()->
     Access2 = Access#access_v1{method='PUT', target=object},
     ?assertEqual(undefined, riak_cs_s3_policy:eval(Access2, Policy)),
     Access3 = Access#access_v1{req=#wm_reqdata{peer="1.1.1.1"}},
-    ?assert(not riak_cs_s3_policy:eval(Access3, Policy)).
+    ?assertEqual(undefined, riak_cs_s3_policy:eval(Access3, Policy)).
 
 sample_conversion_test()->
     JsonPolicy0 = sample_plain_allow_policy(),
     {ok, Policy} = riak_cs_s3_policy:policy_from_json(JsonPolicy0),
     {ok, PolicyFromJson} = riak_cs_s3_policy:policy_from_json(riak_cs_s3_policy:policy_to_json_term(Policy)),
     ?assertEqual(Policy?POLICY.id, PolicyFromJson?POLICY.id),
-    ?assertEqual(Policy?POLICY.statement, PolicyFromJson?POLICY.statement),
+    ?assert(lists:all(fun({LHS, RHS}) ->
+                              riak_cs_s3_policy:statement_eq(LHS, RHS)
+                      end,
+                      lists:zip(Policy?POLICY.statement,
+                                PolicyFromJson?POLICY.statement))),
     ?assertEqual(Policy?POLICY.version, PolicyFromJson?POLICY.version).
 
 
@@ -185,7 +191,7 @@ secure_transport_test()->
     ?assert(riak_cs_s3_policy:eval(Access, Policy)),
     % io:format(standard_error, "~w~n", [Policy]),
     Access2 = Access#access_v1{req=Req#wm_reqdata{scheme=http}},
-    ?assert(not riak_cs_s3_policy:eval(Access2, Policy)).
+    ?assertEqual(undefined, riak_cs_s3_policy:eval(Access2, Policy)).
 
 %% "Bool": { "aws:SecureTransport" : true,
 %%           "aws:SecureTransport" : false } is recognized as false
