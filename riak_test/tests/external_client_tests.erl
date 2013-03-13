@@ -22,7 +22,7 @@ confirm() ->
     _UserConfig = rtcs:config(AccessKeyId, SecretAccessKey, CS_http_port),
 
     lager:debug("cs_src_root = ~p", [rtdev:relpath(cs_src_root)]),
-    %% NOTE: This 'riak_cs_root' path must appear in
+    %% NOTE: This 'cs_src_root' path must appear in
     %% ~/.riak_test.config in the 'rtdev' section, 'rtdev_path'
     %% subsection.
     CS_src_dir = rtdev:relpath(cs_src_root),
