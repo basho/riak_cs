@@ -263,7 +263,16 @@ delete_object(Bucket, Key, RiakcPid) ->
 
 -spec encode_term(term()) -> binary().
 encode_term(Term) ->
-    term_to_binary(Term, [compressed]).
+    case use_t2b_compression() of
+        true ->
+            term_to_binary(Term, [compressed]);
+        false ->
+            term_to_binary(Term)
+    end.
+
+-spec use_t2b_compression() -> boolean().
+use_t2b_compression() ->
+    get_env(riak_cs, compress_terms, ?COMPRESS_TERMS).
 
 %% @private
 maybe_gc_active_manifests({ok, RiakObject, Manifests}, Bucket, Key, StartTime, RiakcPid) ->
