@@ -195,7 +195,11 @@ delete_resource(RD, Ctx=#context{local_context=LocalCtx,
             end
     end.
 
-finish_request(RD, Ctx) ->
+finish_request(RD, Ctx=#context{start_time=StartTime}) ->
+    MicroSecondsTimeDiff = timer:now_diff(os:timestamp(), StartTime),
+    MilliSecondsTimeDiff = MicroSecondsTimeDiff / 1000,
+    lager:error("Object upload part took (millis) ~p",
+                [trunc(MilliSecondsTimeDiff)]),
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"finish_request">>, [0], []),
     {true, RD, Ctx}.
 
