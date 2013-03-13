@@ -218,15 +218,15 @@ valid_bucket_char(Char) ->
 
 -spec numeric_char(integer()) -> boolean().
 numeric_char(Char) ->
-    Char >= 48 andalso Char =< 57.
+    Char >= $0 andalso Char =< $9.
 
 -spec lower_case_char(integer()) -> boolean().
 lower_case_char(Char) ->
-    Char >= 97 andalso Char =< 122.
+    Char >= $a andalso Char =< $z.
 
 -spec dash_char(integer()) -> boolean().
 dash_char(Char) ->
-    Char =:= 45.
+    Char =:= $-.
 
 %% @doc Create a new Riak CS user
 -spec create_user(string(), string()) -> {ok, rcs_user()} | {error, term()}.
