@@ -158,7 +158,6 @@ produce_body(RD, Ctx=#context{local_context=LocalCtx,
     {boolean() | {halt, term()}, term(), term()}.
 accept_body(RD, Ctx=#context{local_context=#key_context{get_fsm_pid=GetFsmPid,
                                                         manifest=Mfst,
-                                                        owner=Owner,
                                                         key=KeyStr,
                                                         bucket=Bucket},
                              user=User,
@@ -182,8 +181,7 @@ accept_body(RD, Ctx=#context{local_context=#key_context{get_fsm_pid=GetFsmPid,
                     {User?RCS_USER.display_name,
                      User?RCS_USER.canonical_id,
                      User?RCS_USER.key_id},
-                    Owner,
-                    RiakPid);
+                    riak_cs_wm_utils:bucket_owner(Bucket, RiakPid));
         _ ->
             Acl = riak_cs_acl_utils:acl_from_xml(Body,
                                                    User?RCS_USER.key_id,

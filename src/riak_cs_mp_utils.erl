@@ -283,8 +283,7 @@ write_new_manifest(M, Opts, RiakcPidUnW) ->
                 Acl = case proplists:get_value(acl, Opts) of
                           undefined ->
                               % 4th arg, pid(), unused but honor the contract
-                              riak_cs_acl_utils:canned_acl(
-                                "private", Owner, undefined, not_required);
+                              riak_cs_acl_utils:canned_acl("private", Owner, undefined);
                           AnAcl ->
                               AnAcl
                       end,

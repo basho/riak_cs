@@ -31,7 +31,8 @@
          extract_user_metadata/1,
          shift_to_owner/4,
          bucket_access_authorize_helper/4,
-         object_access_authorize_helper/4
+         object_access_authorize_helper/4,
+         bucket_owner/2
         ]).
 
 -include("riak_cs.hrl").
@@ -477,7 +478,7 @@ handle_acl_check_result(false, Acl, Policy, AccessType, _Deletable, RD, Ctx) ->
     User = case User0 of
                undefined -> undefined;
                _ ->         User0?RCS_USER.canonical_id
-	   end,
+           end,
     Access = PolicyMod:reqdata_to_access(RD, AccessType, User),
     PolicyResult = PolicyMod:eval(Access, Policy),
     OwnerId = riak_cs_acl:owner_id(Acl, RiakPid),
@@ -485,7 +486,7 @@ handle_acl_check_result(false, Acl, Policy, AccessType, _Deletable, RD, Ctx) ->
 
 handle_policy_eval_result(_, true, OwnerId, RD, Ctx) ->
     %% Policy says yes while ACL says no
-    riak_cs_wm_utils:shift_to_owner(RD, Ctx, OwnerId, Ctx#context.riakc_pid);
+    shift_to_owner(RD, Ctx, OwnerId, Ctx#context.riakc_pid);
 handle_policy_eval_result(User, _, _, RD, Ctx) ->
     #context{riakc_pid=RiakPid,
              user=User,
@@ -547,10 +548,10 @@ check_object_authorization(AccessType, Deletable, Policy,
     ObjectAcl = extract_object_acl(Manifest),
     Access = PolicyMod:reqdata_to_access(RD, AccessType, CanonicalId),
     case {riak_cs_acl:object_access(Bucket,
-                                   ObjectAcl,
-                                   RequestedAccess,
-                                   CanonicalId,
-                                   RiakPid),
+                                    ObjectAcl,
+                                    RequestedAccess,
+                                    CanonicalId,
+                                    RiakPid),
           PolicyMod:eval(Access, Policy)} of
 
         {true, false} ->
@@ -641,10 +642,11 @@ actor_is_owner_but_denied_policy(User, RD, Ctx, Method, Deletable)
                                         Ctx :: term(),
                                         LocalCtx :: term()) ->
     authorized_response().
+actor_is_owner_and_allowed_policy(undefined, RD, Ctx, _LocalCtx) ->
+    {false, RD, Ctx};
 actor_is_owner_and_allowed_policy(User, RD, Ctx, LocalCtx) ->
     AccessRD = riak_cs_access_log_handler:set_user(User, RD),
-    UserStr = User?RCS_USER.canonical_id,
-    UpdLocalCtx = LocalCtx#key_context{owner=UserStr},
+    UpdLocalCtx = LocalCtx#key_context{owner=User?RCS_USER.key_id},
     {false, AccessRD, Ctx#context{local_context=UpdLocalCtx}}.
 
 -spec actor_is_not_owner_and_denied_policy(OwnerId :: string(),
@@ -684,6 +686,16 @@ just_allowed_by_policy(ObjectAcl, RiakPid, RD, Ctx, LocalCtx) ->
     AccessRD = riak_cs_access_log_handler:set_user(OwnerId, RD),
     UpdLocalCtx = LocalCtx#key_context{owner=OwnerId},
     {false, AccessRD, Ctx#context{local_context=UpdLocalCtx}}.
+
+-spec bucket_owner(binary(), pid()) -> undefined | acl_owner().
+bucket_owner(Bucket, RiakPid) ->
+    case riak_cs_acl:bucket_acl(Bucket, RiakPid) of
+        {ok, Acl} ->
+            Acl?ACL.owner;
+        {error, Reason} ->
+            _ = lager:debug("Failed to retrieve owner info for bucket ~p. Reason ~p", [Bucket, Reason]),
+            undefined
+    end.
 
 %% ===================================================================
 %% Internal functions

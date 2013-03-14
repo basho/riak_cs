@@ -96,9 +96,14 @@ anonymous_object_access(Bucket, ObjAcl, 'WRITE', RiakPid, undefined) ->
             _ = lager:error("Anonymous object access check failed due to error. Reason: ~p", [Reason]),
             false
     end;
-anonymous_object_access(_Bucket, _ObjAcl, 'WRITE', _RiakPid, BucketAcl) ->
-    has_permission(acl_grants(BucketAcl), 'WRITE');
-
+anonymous_object_access(_Bucket, _ObjAcl, 'WRITE', RiakPid, BucketAcl) ->
+    HasObjPerm = has_permission(acl_grants(BucketAcl), 'WRITE'),
+    case HasObjPerm of
+        true ->
+            {true, owner_id(BucketAcl, RiakPid)};
+        _ ->
+            false
+    end;
 anonymous_object_access(_Bucket, ObjAcl, RequestedAccess, RiakPid, _) ->
     HasObjPerm = has_permission(acl_grants(ObjAcl), RequestedAccess),
     case HasObjPerm of
@@ -240,10 +245,13 @@ object_access(Bucket, ObjAcl, 'WRITE', CanonicalId, RiakPid, undefined) ->
     end;
 object_access(_Bucket, _ObjAcl, 'WRITE', CanonicalId, RiakPid, BucketAcl) ->
     %% Fetch the bucket's ACL
+    IsBucketOwner = is_owner(BucketAcl, CanonicalId),
     HasBucketPerm = has_permission(acl_grants(BucketAcl),
                                    'WRITE',
                                    CanonicalId),
     case HasBucketPerm of
+        true when IsBucketOwner == true ->
+            true;
         true ->
             {true, owner_id(BucketAcl, RiakPid)};
         _ ->
@@ -257,12 +265,19 @@ object_access(_Bucket, ObjAcl, RequestedAccess, CanonicalId, RiakPid, _) ->
                                 CanonicalId),
     _ = lager:debug("IsObjOwner: ~p", [IsObjOwner]),
     _ = lager:debug("HasObjPerm: ~p", [HasObjPerm]),
-    case HasObjPerm of
-        true when IsObjOwner == true ->
+    if
+        (RequestedAccess == 'READ_ACP' orelse
+         RequestedAccess == 'WRITE_ACP') andalso
+        IsObjOwner == true ->
+            %% The owner of an object may always read and modify the
+            %% ACL of an object
             true;
-        true ->
+        IsObjOwner == true andalso
+        HasObjPerm == true ->
+            true;
+        HasObjPerm == true ->
             {true, owner_id(ObjAcl, RiakPid)};
-        _ ->
+        true ->
             false
     end.
 
