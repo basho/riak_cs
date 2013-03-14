@@ -24,6 +24,12 @@ compile-int-test: all
 
 compile-riak-test: all
 	@./rebar riak_test_compile
+	## There are some Riak CS internal modules that our riak_test
+	## test would like to use.  But riak_test doesn't have a nice
+	## way of adding the -pz argument + code path that we need.
+	## So we'll copy the BEAM files to a place that riak_test is
+	## already using.
+	cp -v ebin/riak_cs_wm_utils.beam riak_test/ebin
 
 clean-client-test:
 	@./rebar client_test_clean
