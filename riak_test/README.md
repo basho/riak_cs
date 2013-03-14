@@ -80,6 +80,5 @@ commands `make clean-client-test` and then `make compile-client-test`.
 1. To execute a test, run the following from the `riak_test` repo:
 
     ```
-    ./riak_test -c rtdev -d <PATH-TO-RIAK-CS-REPO>/riak_test/ebin/ -v \
-        -t /path/to/your/source/riak_cs/ebin/
+    ./riak_test -c rtdev -d <PATH-TO-RIAK-CS-REPO>/riak_test/ebin/ -v
     ```
