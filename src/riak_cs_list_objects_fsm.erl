@@ -28,6 +28,10 @@
          get_object_list/1,
          get_internal_state/1]).
 
+%% Observability
+-export([get_key_list_multiplier/0,
+         set_key_list_multiplier/1]).
+
 %% gen_fsm callbacks
 -export([init/1,
          prepare/2,
@@ -139,6 +143,20 @@
 -type tagged_item_list() :: list(tagged_item()).
 
 %%%===================================================================
+%%% Observability
+%%%===================================================================
+
+-spec get_key_list_multiplier() -> float().
+get_key_list_multiplier() ->
+    riak_cs_utils:get_env(riak_cs, key_list_multiplier,
+                          ?KEY_LIST_MULTIPLIER).
+
+-spec set_key_list_multiplier(float()) -> 'ok'.
+set_key_list_multiplier(Multiplier) ->
+    application:set_env(riak_cs, key_list_multiplier,
+                        Multiplier).
+
+%%%===================================================================
 %%% API
 %%%===================================================================
 
@@ -174,7 +192,7 @@ init([RiakcPid, CallerPid, Request, CacheKey, UseCache]) ->
     %% be two `start_link' arities, and one will use a default
     %% val from app.config and the other will explicitly
     %% take a val
-    KeyMultiplier = 1.5,
+    KeyMultiplier = get_key_list_multiplier(),
 
     State = #state{riakc_pid=RiakcPid,
                    caller_pid=CallerPid,
@@ -321,20 +339,19 @@ handle_streaming_list_keys_call({error, Reason}, State) ->
 
 -spec handle_keys_done(state()) -> fsm_state_return().
 handle_keys_done(State=#state{key_buffer=ListofListofKeys}) ->
-    ok = maybe_write_to_cache(State, ListofListofKeys),
-    NewState = prepare_state_for_first_mapred(ListofListofKeys, State),
-    maybe_map_reduce(NewState).
-
--spec prepare_state_for_first_mapred(list(), state()) -> state().
-prepare_state_for_first_mapred(KeyBuffer, State=#state{req=Request,
-                                                       req_profiles=Profiling}) ->
     %% TODO: this could potentially be pretty expensive
     %% and memory instensive. More reason to think about starting
     %% to only keep a smaller buffer. See comment in
     %% `handle_keys_received'
-    SortedFlattenedKeys = lists:sort(lists:flatten(KeyBuffer)),
+    SortedFlattenedKeys = lists:sort(lists:flatten(ListofListofKeys)),
+    ok = maybe_write_to_cache(State, SortedFlattenedKeys),
+    NewState = prepare_state_for_first_mapred(SortedFlattenedKeys, State),
+    maybe_map_reduce(NewState).
 
-    NumKeys = length(SortedFlattenedKeys),
+-spec prepare_state_for_first_mapred(list(), state()) -> state().
+prepare_state_for_first_mapred(KeyList, State=#state{req=Request,
+                                                       req_profiles=Profiling}) ->
+    NumKeys = length(KeyList),
 
     %% profiling info
     EndTime = riak_cs_utils:timestamp_to_seconds(os:timestamp()),
@@ -342,7 +359,7 @@ prepare_state_for_first_mapred(KeyBuffer, State=#state{req=Request,
                                      list_keys_end_time=EndTime},
 
     FilteredKeys = filtered_keys_from_request(Request,
-                                              SortedFlattenedKeys,
+                                              KeyList,
                                               NumKeys),
     TotalCandidateKeys = length(FilteredKeys),
     State#state{keys=undefined,
