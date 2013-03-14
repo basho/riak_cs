@@ -352,7 +352,7 @@ active_manifests(ManifestBucket, Prefix, RiakPid) ->
                     {ManifestBucket, [[<<"starts_with">>, Prefix]]}
             end,
     Query = [{map, {modfun, riak_cs_utils, map_keys_and_manifests},
-              undefined, false}],
+              undefined, true}],
     {ok, ReqId} = riakc_pb_socket:mapred_stream(RiakPid, Input, Query, self()),
     receive_keys_and_manifests(ReqId, []).
 
