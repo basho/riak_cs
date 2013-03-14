@@ -66,6 +66,7 @@
 
 -define(LIST_OBJECTS_CACHE, list_objects_cache).
 -define(ENABLE_CACHE, true).
--define(CACHE_TIMEOUT, timer:minutes(15)).  % 2 hours
+-define(CACHE_TIMEOUT, timer:minutes(15)).
 -define(MIN_KEYS_TO_CACHE, 2000).
 -define(MAX_CACHE_BYTES, 104857600). % 100MB
+-define(KEY_LIST_MULTIPLIER, 1.1).
