@@ -321,20 +321,19 @@ handle_streaming_list_keys_call({error, Reason}, State) ->
 
 -spec handle_keys_done(state()) -> fsm_state_return().
 handle_keys_done(State=#state{key_buffer=ListofListofKeys}) ->
-    ok = maybe_write_to_cache(State, ListofListofKeys),
-    NewState = prepare_state_for_first_mapred(ListofListofKeys, State),
-    maybe_map_reduce(NewState).
-
--spec prepare_state_for_first_mapred(list(), state()) -> state().
-prepare_state_for_first_mapred(KeyBuffer, State=#state{req=Request,
-                                                       req_profiles=Profiling}) ->
     %% TODO: this could potentially be pretty expensive
     %% and memory instensive. More reason to think about starting
     %% to only keep a smaller buffer. See comment in
     %% `handle_keys_received'
-    SortedFlattenedKeys = lists:sort(lists:flatten(KeyBuffer)),
+    SortedFlattenedKeys = lists:sort(lists:flatten(ListofListofKeys)),
+    ok = maybe_write_to_cache(State, SortedFlattenedKeys),
+    NewState = prepare_state_for_first_mapred(SortedFlattenedKeys, State),
+    maybe_map_reduce(NewState).
 
-    NumKeys = length(SortedFlattenedKeys),
+-spec prepare_state_for_first_mapred(list(), state()) -> state().
+prepare_state_for_first_mapred(KeyList, State=#state{req=Request,
+                                                       req_profiles=Profiling}) ->
+    NumKeys = length(KeyList),
 
     %% profiling info
     EndTime = riak_cs_utils:timestamp_to_seconds(os:timestamp()),
@@ -342,7 +341,7 @@ prepare_state_for_first_mapred(KeyBuffer, State=#state{req=Request,
                                      list_keys_end_time=EndTime},
 
     FilteredKeys = filtered_keys_from_request(Request,
-                                              SortedFlattenedKeys,
+                                              KeyList,
                                               NumKeys),
     TotalCandidateKeys = length(FilteredKeys),
     State#state{keys=undefined,
