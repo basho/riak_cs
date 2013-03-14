@@ -1,2 +1,4 @@
 Gemfile.lock
 conf/s3.yml
+vendor/
+.bundle/

@@ -21,6 +21,7 @@
 require 'aws-sdk'
 require 'uuid'
 require 'yaml'
+require 'helper'
 
 class AWS::S3::AccessControlList::Grant
   def  ==(other)
@@ -29,7 +30,7 @@ class AWS::S3::AccessControlList::Grant
 end
 
 describe AWS::S3 do
-  let(:s3) { AWS::S3.new(YAML::load_file('conf/s3.yml')['s3']) }
+  let(:s3) { AWS::S3.new( s3_conf ) }
   let(:bucket_name) { "aws-sdk-test-" + UUID::generate }
   let(:object_name) { "key-" + UUID::generate }
   let(:grant_public_read) {

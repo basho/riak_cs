@@ -57,6 +57,10 @@ test-client: test-clojure test-python test-erlang
 
 test-python: test-boto
 
+test-ruby:
+	@bundle --gemfile client_tests/ruby/Gemfile --path vendor
+	@cd client_tests/ruby && bundle exec rake spec
+
 test-boto:
 	env CS_HTTP_PORT=${CS_HTTP_PORT} python client_tests/python/boto_test.py
 
