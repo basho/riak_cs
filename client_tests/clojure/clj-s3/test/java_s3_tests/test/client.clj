@@ -9,7 +9,16 @@
 
 (def ^:internal riak-cs-host-with-protocol "http://localhost")
 (def ^:internal riak-cs-host "localhost")
-(def ^:internal riak-cs-port 8080)
+
+(defn get-riak-cs-port-str
+  "Try to get a TCP port number from the OS environment"
+  []
+  (let [port-str (get (System/getenv) "CS_HTTP_PORT")]
+       (cond (nil? port-str) "8080"
+             :else           port-str)))
+
+(defn get-riak-cs-port []
+  (Integer/parseInt (get-riak-cs-port-str) 10))
 
 (defn md5-byte-array [input-byte-array]
   (let [instance (MessageDigest/getInstance "MD5")]
@@ -24,11 +33,11 @@
   []
   (let [new-creds (user-creation/create-random-user
                     riak-cs-host-with-protocol
-                    riak-cs-port)]
+                    (get-riak-cs-port))]
     (s3/client (:key_id new-creds)
                (:key_secret new-creds)
                {:proxy-host riak-cs-host
-                :proxy-port riak-cs-port
+                :proxy-port (get-riak-cs-port)
                 :protocol :http})))
 
 (defmacro with-random-client
@@ -45,7 +54,8 @@
       (let [bogus-client
             (s3/client "foo"
                        "bar"
-                       {:endpoint "http://localhost:8080"})]
+                       {:endpoint (str "http://localhost:"
+                                       (get-riak-cs-port-str))})]
         (s3/list-buckets bogus-client))
       => (throws AmazonS3Exception))
 
