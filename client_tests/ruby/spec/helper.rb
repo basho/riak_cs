@@ -1,6 +1,7 @@
 require 'httparty'
 require 'json'
 require 'uuid'
+require 'tempfile'
 
 def create_user(name)
   response = HTTParty.put("http://localhost:8080/riak-cs/user",
@@ -20,6 +21,13 @@ def s3_conf
     secret_access_key: key_secret,
     proxy_uri: "http://localhost:8080",
     use_ssl: false,
+    http_read_timeout: 2000,
     max_retries: 0
   }
+end
+
+def new_mb_temp_file(size)
+    temp = Tempfile.new 'riakcs-test'
+    (size*1024*1024).times {|i| temp.write 0}
+    temp
 end

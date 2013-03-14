@@ -103,5 +103,17 @@ describe AWS::S3 do
 
       s3.buckets[bucket_name].objects[object_name].acl.grants.include?(grant_public_read).should == true
     end
+
+    it "should be able to put object using multipart upload" do
+      s3.buckets.create(bucket_name).should be_kind_of(AWS::S3::Bucket)
+
+      temp = new_mb_temp_file 6 # making 6MB file
+      s3.buckets[bucket_name].objects[object_name].write(
+                                    :file => temp.path,
+                                    :multipart_threshold => 1024 * 1024,
+                                   )
+      s3.buckets[bucket_name].objects[object_name].exists?.should == true
+      temp.close
+    end
   end
 end
