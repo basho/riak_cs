@@ -2,7 +2,7 @@
 %%
 %% riak_fs2_backend: storage engine based on basic filesystem access
 %%
-%% Copyright (c) 2007-2012 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
