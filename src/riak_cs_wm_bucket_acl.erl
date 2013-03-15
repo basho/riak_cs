@@ -77,33 +77,43 @@ accept_body(RD, Ctx=#context{user=User,
     riak_cs_dtrace:dt_bucket_entry(?MODULE, <<"bucket_put_acl">>,
                                       [], [riak_cs_wm_utils:extract_name(User), Bucket]),
     Body = binary_to_list(wrq:req_body(RD)),
-    case Body of
-        [] ->
-            %% Check for `x-amz-acl' header to support
-            %% the use of a canned ACL.
-            ACL = riak_cs_acl_utils:canned_acl(
-                    wrq:get_req_header("x-amz-acl", RD),
-                    {User?RCS_USER.display_name,
-                     User?RCS_USER.canonical_id,
-                     User?RCS_USER.key_id},
-                    riak_cs_wm_utils:bucket_owner(Bucket, RiakPid));
-        _ ->
-            ACL = riak_cs_acl_utils:acl_from_xml(Body,
-                                                 User?RCS_USER.key_id,
-                                                 RiakPid)
-    end,
-    case riak_cs_utils:set_bucket_acl(User,
-                                        UserObj,
-                                        Bucket,
-                                        ACL,
-                                        RiakPid) of
-        ok ->
+    AclRes =
+        case Body of
+            [] ->
+                %% Check for `x-amz-acl' header to support
+                %% the use of a canned ACL.
+                CannedAcl = riak_cs_acl_utils:canned_acl(
+                              wrq:get_req_header("x-amz-acl", RD),
+                              {User?RCS_USER.display_name,
+                               User?RCS_USER.canonical_id,
+                               User?RCS_USER.key_id},
+                              riak_cs_wm_utils:bucket_owner(Bucket, RiakPid)),
+                {ok, CannedAcl};
+            _ ->
+                riak_cs_acl_utils:acl_from_xml(Body,
+                                               User?RCS_USER.key_id,
+                                               RiakPid)
+        end,
+    case AclRes of
+        {ok, ACL} ->
+            case riak_cs_utils:set_bucket_acl(User,
+                                              UserObj,
+                                              Bucket,
+                                              ACL,
+                                              RiakPid) of
+                ok ->
+                    riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_put_acl">>,
+                                                    [200], [riak_cs_wm_utils:extract_name(User), Bucket]),
+                    {{halt, 200}, RD, Ctx};
+                {error, Reason} ->
+                    Code = riak_cs_s3_response:status_code(Reason),
+                    riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_put_acl">>,
+                                                    [Code], [riak_cs_wm_utils:extract_name(User), Bucket]),
+                    riak_cs_s3_response:api_error(Reason, RD, Ctx)
+            end;
+        {error, Reason2} ->
+            Code = riak_cs_s3_response:status_code(Reason2),
             riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_put_acl">>,
-                                               [200], [riak_cs_wm_utils:extract_name(User), Bucket]),
-            {{halt, 200}, RD, Ctx};
-        {error, Reason} ->
-            Code = riak_cs_s3_response:status_code(Reason),
-            riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_put_acl">>,
-                                               [Code], [riak_cs_wm_utils:extract_name(User), Bucket]),
-            riak_cs_s3_response:api_error(Reason, RD, Ctx)
+                                            [Code], [riak_cs_wm_utils:extract_name(User), Bucket]),
+            riak_cs_s3_response:api_error(Reason2, RD, Ctx)
     end.
