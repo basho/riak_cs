@@ -56,6 +56,8 @@ error_message(malformed_policy_principal) -> "Invalid principal in policy";
 error_message(malformed_policy_action) -> "Policy has invalid action";
 error_message(no_such_bucket_policy) -> "The bucket policy does not exist";
 error_message(bad_request) -> "Bad Request";
+error_message(invalid_argument) -> "Invalid Argument";
+error_message(unresolved_grant_email) -> "The e-mail address you provided does not match any account on record.";
 error_message(invalid_range) -> "The requested range is not satisfiable";
 error_message(invalid_bucket_name) -> "The specified bucket is not valid.";
 error_message(_) -> "Please reduce your request rate.".
@@ -83,8 +85,10 @@ error_code(malformed_policy_principal) -> "MalformedPolicy";
 error_code(malformed_policy_action) -> "MalformedPolicy";
 error_code(no_such_bucket_policy) -> "NoSuchBucketPolicy";
 error_code(bad_request) -> "BadRequest";
+error_code(invalid_argument) -> "InvalidArgument";
 error_code(invalid_range) -> "InvalidRange";
 error_code(invalid_bucket_name) -> "InvalidBucketName";
+error_code(unresolved_grant_email) -> "UnresolvableGrantByEmailAddress";
 error_code(_) -> "ServiceUnavailable".
 
 %% These should match:
@@ -116,6 +120,8 @@ status_code(malformed_policy_principal) -> 400;
 status_code(malformed_policy_action) -> 400;
 status_code(no_such_bucket_policy) -> 404;
 status_code(bad_request) -> 400;
+status_code(invalid_argument) -> 400;
+status_code(unresolved_grant_email) -> 400;
 status_code(invalid_range) -> 416;
 status_code(invalid_bucket_name) -> 400;
 status_code(_) -> 503.

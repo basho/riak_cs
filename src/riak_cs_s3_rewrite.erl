@@ -62,9 +62,11 @@ rewrite_path(_Method, Path, _QS, "usage") ->
     "/usage" ++ Path;
 rewrite_path(Method, "/", [], Bucket) when Method =/= 'GET' ->
     lists:flatten(["/buckets/", Bucket]);
-rewrite_path(_Method, "/", QS, Bucket) ->
+rewrite_path(Method, "/", QS, Bucket) ->
     {SubResources, QueryParams} = get_subresources(QS),
-    lists:flatten(["/buckets/", Bucket, format_bucket_qs(QueryParams, SubResources)]);
+    lists:flatten(["/buckets/", Bucket, format_bucket_qs(Method,
+                                                         QueryParams,
+                                                         SubResources)]);
 rewrite_path(_Method, Path, QS, Bucket) ->
     lists:flatten(["/buckets/",
                    Bucket,
@@ -121,14 +123,14 @@ separate_bucket_from_path([Bucket | RestPath]) ->
 
 %% @doc Format a bucket operation query string to conform the the
 %% rewrite rules.
--spec format_bucket_qs(query_params(), subresources()) -> string().
-format_bucket_qs([], []) ->
+-spec format_bucket_qs(atom(), query_params(), subresources()) -> string().
+format_bucket_qs('POST', [{"delete", []}], []) ->
     "/objects";
-format_bucket_qs([{"delete", []}], []) ->
-    "/objects";
-format_bucket_qs(QueryParams, []) ->
-    ["/objects", format_query_params(QueryParams)];
-format_bucket_qs(QueryParams, SubResources) ->
+format_bucket_qs(Method, QueryParams, [])
+  when Method =:= 'GET'; Method =:= 'POST' ->
+    ["/objects",
+     format_query_params(QueryParams)];
+format_bucket_qs(_Method, QueryParams, SubResources) ->
     [format_subresources(SubResources),
      format_query_params(QueryParams)].
 

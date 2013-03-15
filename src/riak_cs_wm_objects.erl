@@ -101,7 +101,7 @@ get_option(Option, undefined) ->
 get_option(Option, Value) ->
     {Option, list_to_binary(Value)}.
 
--spec get_max_keys(#wm_reqdata{}) -> integer() | 'bad_request'.
+-spec get_max_keys(#wm_reqdata{}) -> integer() | 'invalid_argument'.
 get_max_keys(RD) ->
     case wrq:get_qs_value("max-keys", RD) of
         undefined ->
@@ -111,6 +111,6 @@ get_max_keys(RD) ->
                 erlang:min(list_to_integer(StringKeys),
                            ?DEFAULT_LIST_OBJECTS_MAX_KEYS)
             catch _:_ ->
-                    bad_request
+                    invalid_argument
             end
     end.
