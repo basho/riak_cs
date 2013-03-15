@@ -30,6 +30,7 @@
          has_tombstone/1,
          is_admin/1,
          map_keys_and_manifests/3,
+         md5_chunk_size/0,
          reduce_keys_and_manifests/2,
          get_object/3,
          get_manifests/3,
@@ -1500,3 +1501,8 @@ chunked_md5(Data, Context, ChunkSize) ->
             UpdContext = crypto:md5_update(Context, Chunk),
             chunked_md5(RestData, UpdContext, ChunkSize)
     end.
+
+%% @doc Return the configured md5 chunk size
+-spec md5_chunk_size() -> non_neg_integer().
+md5_chunk_size() ->
+    get_env(riak_cs, md5_chunk_size, ?DEFAULT_MD5_CHUNK_SIZE).
