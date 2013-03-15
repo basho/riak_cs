@@ -13,6 +13,7 @@
          etag_from_binary/1,
          etag_from_binary_no_quotes/1,
          check_bucket_exists/2,
+         chunked_md5/3,
          close_riak_connection/1,
          close_riak_connection/2,
          create_bucket/5,
@@ -1484,3 +1485,18 @@ proxy_get_active() ->
 -spec pid_to_binary(pid()) -> binary().
 pid_to_binary(Pid) ->
     list_to_binary(pid_to_list(Pid)).
+
+%% @doc Rapid calls to `md5_update' with largish data blocks (e.g. 1MB)
+%% can lead to erlang scheduler collapse
+-spec chunked_md5(binary(), binary(), non_neg_integer()) -> {binary(), binary()}.
+chunked_md5(<<>>, Context, _ChunkSize) ->
+    Context;
+chunked_md5(Data, Context, ChunkSize) ->
+    case byte_size(Data) < ChunkSize of
+        true ->
+            crypto:md5_update(Context, Data);
+        false ->
+            <<Chunk:ChunkSize/binary, RestData/binary>> = Data,
+            UpdContext = crypto:md5_update(Context, Chunk),
+            chunked_md5(RestData, UpdContext, ChunkSize)
+    end.

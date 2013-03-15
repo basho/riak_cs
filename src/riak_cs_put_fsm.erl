@@ -38,6 +38,7 @@
 
 -define(SERVER, ?MODULE).
 -define(EMPTYORDSET, ordsets:new()).
+-define(MD5_CHUNK_SIZE, 64*1024).
 
 -record(state, {timeout :: timeout(),
                 block_size :: pos_integer(),
@@ -508,7 +509,7 @@ handle_accept_chunk(NewData, State=#state{buffer_queue=BufferQueue,
                                           current_buffer_size=CurrentBufferSize,
                                           content_length=ContentLength}) ->
 
-    NewMd5 = crypto:md5_update(Md5, NewData),
+    NewMd5 = riak_cs_utils:chunked_md5(NewData, Md5, ?MD5_CHUNK_SIZE),
     NewRemainderData = combine_new_and_remainder_data(NewData, RemainderData),
     UpdatedBytesReceived = PreviousBytesReceived + size(NewData),
     if UpdatedBytesReceived > ContentLength ->
@@ -541,7 +542,7 @@ handle_backpressure_for_chunk(NewData, From, State=#state{reply_pid=undefined,
                                                           num_bytes_received=PreviousBytesReceived,
                                                           content_length=ContentLength}) ->
 
-    NewMd5 = crypto:md5_update(Md5, NewData),
+    NewMd5 = riak_cs_utils:chunked_md5(NewData, Md5, ?MD5_CHUNK_SIZE),
     NewRemainderData = combine_new_and_remainder_data(NewData, RemainderData),
     UpdatedBytesReceived = PreviousBytesReceived + size(NewData),
 
@@ -567,7 +568,7 @@ handle_receiving_last_chunk(NewData, State=#state{buffer_queue=BufferQueue,
                                                   num_bytes_received=PreviousBytesReceived,
                                                   content_length=ContentLength}) ->
 
-    NewMd5 = crypto:md5_final(crypto:md5_update(Md5, NewData)),
+    NewMd5 = crypto:md5_final(riak_cs_utils:chunked_md5(NewData, Md5, ?MD5_CHUNK_SIZE)),
     NewManifest = Manifest?MANIFEST{content_md5=NewMd5},
     NewRemainderData = combine_new_and_remainder_data(NewData, RemainderData),
     UpdatedBytesReceived = PreviousBytesReceived + size(NewData),
