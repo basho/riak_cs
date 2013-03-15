@@ -186,7 +186,7 @@ mark_manifests(RiakObject, Bucket, Key, UUIDsToMark, ManiFunction, RiakcPid) ->
     Manifests = riak_cs_utils:manifests_from_riak_object(RiakObject),
     Marked = ManiFunction(Manifests, UUIDsToMark),
     UpdObj0 = riak_cs_utils:update_obj_value(RiakObject,
-                                             term_to_binary(Marked)),
+                                             riak_cs_utils:encode_term(Marked)),
     UpdObj = riak_cs_manifest_fsm:update_md_with_multipart_2i(
                UpdObj0, Marked, Bucket, Key),
 
@@ -209,7 +209,7 @@ move_manifests_to_gc_bucket(Manifests, RiakcPid, AddLeewayP) ->
         {error, notfound} ->
             %% There was no previous value, so we'll
             %% create a new riak object and write it
-            riakc_obj:new(?GC_BUCKET, Key, term_to_binary(ManifestSet));
+            riakc_obj:new(?GC_BUCKET, Key, riak_cs_utils:encode_term(ManifestSet));
         {ok, PreviousObject} ->
             %% There is a value currently stored here,
             %% so resolve all the siblings and add the
@@ -217,7 +217,7 @@ move_manifests_to_gc_bucket(Manifests, RiakcPid, AddLeewayP) ->
             %% value back to riak
             Resolved = decode_and_merge_siblings(PreviousObject, ManifestSet),
             riak_cs_utils:update_obj_value(PreviousObject,
-                                           term_to_binary(Resolved))
+                                           riak_cs_utils:encode_term(Resolved))
     end,
 
     %% Create a set from the list of manifests
