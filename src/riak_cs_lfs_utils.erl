@@ -114,18 +114,12 @@ block_sequences_for_manifest(?MANIFEST{uuid=UUID,
     case riak_cs_mp_utils:get_mp_manifest(Manifest) of
         undefined ->
             initial_blocks(ContentLength, SafeBlockSize, UUID);
-        X ->
-            Src = case X of
-                      PMs when is_list(PMs) ->
-                          exit(deathToDeadCode),
-                          PMs;
-                      MpM when is_record(MpM, ?MULTIPART_MANIFEST_RECNAME) ->
-                          MpM?MULTIPART_MANIFEST.parts
-                  end,
+        MpM ->
+            PartManifests = MpM?MULTIPART_MANIFEST.parts,
             lists:append([initial_blocks(PM?PART_MANIFEST.content_length,
                                          SafeBlockSize,
                                          PM?PART_MANIFEST.part_id) ||
-                             PM <- Src])
+                             PM <- PartManifests])
     end.
 
 block_sequences_for_manifest(?MANIFEST{props=undefined}=Manifest, {Start, End}) ->
