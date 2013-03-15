@@ -426,6 +426,42 @@ class BucketPolicyTest(S3ApiVerificationTestBase):
         self.assertEqual(response.reason, 'Forbidden')
 
 
+class MultipartUploadTestsUnderPolicy(S3ApiVerificationTestBase):
+
+    def test_small_strings_upload_1(self):
+        bucket = self.conn.create_bucket(self.bucket_name)
+        parts = ['this is part one', 'part two is just a rewording',
+                 'surprise that part three is pretty much the same',
+                 'and the last part is number four']
+        stringio_parts = [StringIO(p) for p in parts]
+        expected_md5 = md5.new(''.join(parts)).hexdigest()
+
+        key_name = str(uuid.uuid4())
+        key = Key(bucket, key_name)
+
+        ## anyone may PUT this object
+        policy = '''
+{"Version":"2008-10-17","Statement":[{"Sid":"Stmtaaa0","Effect":"Allow","Principal":"*","Action":["s3:PutObject"],"Resource":"arn:aws:s3:::%s/*","Condition":{"Bool":{"aws:SecureTransport":false}}}]}
+''' % bucket.name
+        self.assertTrue(bucket.set_policy(policy, headers={'content-type':'application/json'}))
+
+        upload = upload_multipart(bucket, key_name, stringio_parts)
+        actual_md5 = md5_from_key(key)
+        self.assertEqual(expected_md5, actual_md5)
+
+        ## anyone without https may not do any operation
+        policy = '''
+{"Version":"2008-10-17","Statement":[{"Sid":"Stmtaaa0","Effect":"Deny","Principal":"*","Action":["s3:PutObject"],"Resource":"arn:aws:s3:::%s/*","Condition":{"Bool":{"aws:SecureTransport":false}}}]}
+''' % bucket.name
+        self.assertTrue(bucket.set_policy(policy, headers={'content-type':'application/json'}))
+
+        try:
+            upload = upload_multipart(bucket, key_name, stringio_parts)
+            self.fail()
+        except S3ResponseError as e:
+            self.assertEqual(e.status, 403)
+            self.assertEqual(e.reason, 'Forbidden')
+
+
 if __name__ == "__main__":
     unittest.main()
-#    unittest.main(defaultTest = 'BucketPolicyTest')

@@ -358,11 +358,13 @@ eval_statement(#access_v1{method=M, target=T, req=Req, bucket=B, key=K} = _Acces
 make_action(Method, Target) ->
     case {Method, Target} of
         {'PUT', object} ->     {ok, 's3:PutObject'};
+        {'PUT', object_part} -> {ok, 's3:PutObject'};
         {'PUT', object_acl} -> {ok, 's3:PutObjectAcl'};
         {'PUT', bucket_acl} -> {ok, 's3:PutBucketAcl'};
         {'PUT', bucket_policy} -> {ok, 's3:PutBucketPolicy'};
 
         {'GET', object} ->     {ok, 's3:GetObject'};
+        {'GET', object_part} -> {ok, 's3:ListMultipartUploadParts'};
         {'GET', object_acl} -> {ok, 's3:GetObjectAcl'};
         {'GET', bucket} ->     {ok, 's3:ListBucket'};
         {'GET', no_bucket } -> {ok, 's3:ListAllMyBuckets'};
@@ -372,6 +374,7 @@ make_action(Method, Target) ->
         {'GET', bucket_uploads} -> {ok, 's3:ListBucketMultipartUploads'};
 
         {'DELETE', object} ->  {ok, 's3:DeleteObject'};
+        {'DELETE', object_part} -> {ok, 's3:AbortMultipartUpload'};
         {'DELETE', bucket} ->  {ok, 's3:DeleteBucket'};
         {'DELETE', bucket_policy} -> {ok, 's3:DeleteBucketPolicy'};
 
@@ -380,6 +383,7 @@ make_action(Method, Target) ->
         %% PUT Object includes POST Object,
         %% including Initiate Multipart Upload, Upload Part, Complete Multipart Upload
         {'POST', object} -> {ok, 's3:PutObject'};
+        {'POST', object_part} -> {ok, 's3:PutObject'};
 
         %% same as {'GET' bucket}
         {'HEAD', bucket} -> {ok, 's3:ListBucket'};
@@ -387,8 +391,7 @@ make_action(Method, Target) ->
         %% 400 (MalformedPolicy): Policy has invalid action
         {'PUT', bucket} ->  {ok, 's3:CreateBucket'};
 
-        {'HEAD', _} ->
-            {error, no_action}
+        {'HEAD', _} -> {error, no_action}
     end.
 
 eval_condition(Req, {AtomKey, Cond}) ->

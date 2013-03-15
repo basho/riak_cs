@@ -11,15 +11,16 @@
                        | 's3:PutObject'       | 's3:PutObjectAcl'
                        | 's3:PutObjectVersionAcl'
                        | 's3:DeleteObject'    | 's3:DeleteObjectVersion'
-                       | 's3:ListMultipartUploadParts' %to be supported
-                       | 's3:AbortMultipartUpload'     %to be supported
+                       | 's3:ListMultipartUploadParts'
+                       | 's3:AbortMultipartUpload'
                        %| 's3:GetObjectTorrent'         we never do this
                        %| 's3:GetObjectVersionTorrent'  we never do this
                        | 's3:RestoreObject'.
 
 -define(SUPPORTED_OBJECT_ACTION,
         [ 's3:GetObject', 's3:GetObjectAcl', 's3:PutObject', 's3:PutObjectAcl',
-          's3:DeleteObject' ]).
+          's3:DeleteObject',
+          's3:ListMultipartUploadParts', 's3:AbortMultipartUpload' ]).
 
 -type s3_bucket_action() :: 's3:CreateBucket'
                        | 's3:DeleteBucket'

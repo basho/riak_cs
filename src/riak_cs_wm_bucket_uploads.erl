@@ -41,7 +41,7 @@ malformed_request(RD,Ctx=#context{local_context=LocalCtx0}) ->
 
 -spec authorize(#wm_reqdata{}, #context{}) -> {boolean() | {halt, non_neg_integer()}, #wm_reqdata{}, #context{}}.
 authorize(RD, Ctx) ->
-    riak_cs_wm_utils:bucket_access_authorize_helper(bucket_uploads, true, RD, Ctx).
+    riak_cs_wm_utils:bucket_access_authorize_helper(bucket_uploads, false, RD, Ctx).
 
 %% @doc Get the list of methods this resource supports.
 -spec allowed_methods() -> [atom()].
