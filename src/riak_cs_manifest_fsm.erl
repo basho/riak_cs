@@ -274,7 +274,7 @@ get_and_delete(RiakcPid, UUID, Bucket, Key) ->
                 _ ->
                     ObjectToWrite0 =
                         riak_cs_utils:update_obj_value(
-                          RiakObject, term_to_binary(UpdatedManifests)),
+                          RiakObject, riak_cs_utils:encode_term(UpdatedManifests)),
                     ObjectToWrite = update_md_with_multipart_2i(
                                       ObjectToWrite0, UpdatedManifests, Bucket, Key),
                     riak_cs_utils:put(RiakcPid, ObjectToWrite)
@@ -298,7 +298,7 @@ get_and_update(RiakcPid, WrappedManifests, Bucket, Key) ->
             %% operate on NewManiAdded and save it to Riak when it is
             %% finished.
             ObjectToWrite0 = riak_cs_utils:update_obj_value(
-                               RiakObject, term_to_binary(NewManiAdded)),
+                               RiakObject, riak_cs_utils:encode_term(NewManiAdded)),
             ObjectToWrite = update_md_with_multipart_2i(
                               ObjectToWrite0, NewManiAdded, Bucket, Key),
             {Result, NewRiakObject} =
@@ -314,7 +314,7 @@ get_and_update(RiakcPid, WrappedManifests, Bucket, Key) ->
             {Result, NewRiakObject, Manifests};
         {error, notfound} ->
             ManifestBucket = riak_cs_utils:to_bucket_name(objects, Bucket),
-            ObjectToWrite0 = riakc_obj:new(ManifestBucket, Key, term_to_binary(WrappedManifests)),
+            ObjectToWrite0 = riakc_obj:new(ManifestBucket, Key, riak_cs_utils:encode_term(WrappedManifests)),
             ObjectToWrite = update_md_with_multipart_2i(
                               ObjectToWrite0, WrappedManifests, Bucket, Key),
             PutResult = riak_cs_utils:put(RiakcPid, ObjectToWrite),
@@ -331,7 +331,7 @@ update_from_previous_read(RiakcPid, RiakObject, Bucket, Key,
     Resolved = riak_cs_manifest_resolution:resolve([PreviousManifests,
             NewManifests]),
     NewRiakObject0 = riak_cs_utils:update_obj_value(RiakObject,
-                                                    term_to_binary(Resolved)),
+                                                    riak_cs_utils:encode_term(Resolved)),
     NewRiakObject = update_md_with_multipart_2i(NewRiakObject0, Resolved,
                                                 Bucket, Key),
     %% TODO:
