@@ -103,7 +103,7 @@ post_is_create(RD, Ctx) ->
 
 process_post(RD, Ctx=#context{local_context=LocalCtx,
                               riakc_pid=RiakcPid}) ->
-    #key_context{bucket=Bucket, key=Key, owner=Owner} = LocalCtx,
+    #key_context{bucket=Bucket, key=Key} = LocalCtx,
     ContentType = try
                       list_to_binary(wrq:get_req_header("Content-Type", RD))
                   catch error:badarg ->
@@ -114,8 +114,7 @@ process_post(RD, Ctx=#context{local_context=LocalCtx,
     ACL = riak_cs_acl_utils:canned_acl(
             wrq:get_req_header("x-amz-acl", RD),
             User,
-            Owner,
-            RiakcPid),
+            riak_cs_wm_utils:bucket_owner(Bucket, RiakcPid)),
     %% TODO: pass in x-amz-server-side​-encryption?
     %% TODO: pass in x-amz-storage-​class?
     %% TODO: pass in x-amz-grant-* headers?

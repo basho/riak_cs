@@ -86,8 +86,7 @@ accept_body(RD, Ctx=#context{user=User,
                     {User?RCS_USER.display_name,
                      User?RCS_USER.canonical_id,
                      User?RCS_USER.key_id},
-                    undefined,
-                    RiakPid);
+                    riak_cs_wm_utils:bucket_owner(Bucket, RiakPid));
         _ ->
             ACL = riak_cs_acl_utils:acl_from_xml(Body,
                                                  User?RCS_USER.key_id,
