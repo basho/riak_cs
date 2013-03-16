@@ -51,7 +51,7 @@
           modification_time :: erlang:timestamp(),
           acl :: acl()}).
 -type cs_bucket() :: #moss_bucket_v1{}.
--type bucket_operation() :: create | delete | update_acl | update_policy 
+-type bucket_operation() :: create | delete | update_acl | update_policy
                           | delete_policy.
 -type bucket_action() :: created | deleted.
 
@@ -432,6 +432,7 @@
 -define(DEFAULT_CLUSTER_ID_TIMEOUT,5000).
 -define(DEFAULT_AUTH_MODULE, riak_cs_s3_auth).
 -define(DEFAULT_LIST_OBJECTS_MAX_KEYS, 1000).
+-define(DEFAULT_MD5_CHUNK_SIZE, 1048576). %% 1 MB
 
 %% General system info
 -define(WORD_SIZE, erlang:system_info(wordsize)).

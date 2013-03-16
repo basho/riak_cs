@@ -13,6 +13,7 @@
          etag_from_binary/1,
          etag_from_binary_no_quotes/1,
          check_bucket_exists/2,
+         chunked_md5/3,
          close_riak_connection/1,
          close_riak_connection/2,
          create_bucket/5,
@@ -29,6 +30,7 @@
          has_tombstone/1,
          is_admin/1,
          map_keys_and_manifests/3,
+         md5_chunk_size/0,
          reduce_keys_and_manifests/2,
          get_object/3,
          get_manifests/3,
@@ -54,6 +56,7 @@
          set_bucket_acl/5,
          set_object_acl/5,
          set_bucket_policy/5,
+         set_md5_chunk_size/1,
          delete_bucket_policy/4,
          get_bucket_acl_policy/3,
          timestamp/1,
@@ -1484,3 +1487,30 @@ proxy_get_active() ->
 -spec pid_to_binary(pid()) -> binary().
 pid_to_binary(Pid) ->
     list_to_binary(pid_to_list(Pid)).
+
+%% @doc Rapid calls to `md5_update' with largish data blocks (e.g. 1MB)
+%% can lead to erlang scheduler collapse
+-spec chunked_md5(binary(), binary(), non_neg_integer()) -> {binary(), binary()}.
+chunked_md5(<<>>, Context, _ChunkSize) ->
+    Context;
+chunked_md5(Data, Context, ChunkSize) ->
+    case byte_size(Data) < ChunkSize of
+        true ->
+            crypto:md5_update(Context, Data);
+        false ->
+            <<Chunk:ChunkSize/binary, RestData/binary>> = Data,
+            UpdContext = crypto:md5_update(Context, Chunk),
+            chunked_md5(RestData, UpdContext, ChunkSize)
+    end.
+
+%% @doc Return the configured md5 chunk size
+-spec md5_chunk_size() -> non_neg_integer().
+md5_chunk_size() ->
+    get_env(riak_cs, md5_chunk_size, ?DEFAULT_MD5_CHUNK_SIZE).
+
+%% @doc Helper fun to set the md5 chunk size
+-spec set_md5_chunk_size(non_neg_integer()) -> ok | {error, invalid_value}.
+set_md5_chunk_size(Size) when is_integer(Size) andalso Size > 0 ->
+    application:set_env(riak_cs, md5_chunk_size, Size);
+set_md5_chunk_size(_) ->
+    {error, invalid_value}.

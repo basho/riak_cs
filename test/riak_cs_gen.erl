@@ -24,7 +24,8 @@
          metadata/0,
          bounded_uuid/0,
          manifest_state/0,
-         datetime/0]).
+         datetime/0,
+         md5_chunk_size/0]).
 
 %%====================================================================
 %% Generators
@@ -69,6 +70,9 @@ manifest_state() ->
 datetime() ->
     {{choose(1,5000), choose(1,12), choose(1,28)},
      {choose(0, 23), choose(0, 59), choose(0, 59)}}.
+
+md5_chunk_size() ->
+    oneof([2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048]).
 
 %%====================================================================
 %% Helpers
