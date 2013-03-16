@@ -16,3 +16,4 @@ current_counterexample.eqc
 .int_test/
 .client_test/
 priv/riak_cs_drv.so
+pkg.vars.config
