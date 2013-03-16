@@ -42,7 +42,7 @@ eqc_test_() ->
 
 prop_chunked_md5() ->
     ?FORALL({DataBlob, ChunkSize},
-            {eqc_gen:binary(), riak_cs_gen:md5_chunk_size()},
+            {eqc_gen:binary(2048), riak_cs_gen:md5_chunk_size()},
             begin
                 Context = crypto:md5_init(),
                 ChunkedMd5Sum = crypto:md5_final(
