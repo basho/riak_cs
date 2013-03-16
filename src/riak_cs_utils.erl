@@ -56,6 +56,7 @@
          set_bucket_acl/5,
          set_object_acl/5,
          set_bucket_policy/5,
+         set_md5_chunk_size/1,
          delete_bucket_policy/4,
          get_bucket_acl_policy/3,
          timestamp/1,
@@ -1506,3 +1507,10 @@ chunked_md5(Data, Context, ChunkSize) ->
 -spec md5_chunk_size() -> non_neg_integer().
 md5_chunk_size() ->
     get_env(riak_cs, md5_chunk_size, ?DEFAULT_MD5_CHUNK_SIZE).
+
+%% @doc Helper fun to set the md5 chunk size
+-spec set_md5_chunk_size(non_neg_integer()) -> ok | {error, invalid_value}.
+set_md5_chunk_size(Size) when is_integer(Size) andalso Size > 0 ->
+    application:set_env(riak_cs, md5_chunk_size, Size);
+set_md5_chunk_size(_) ->
+    {error, invalid_value}.

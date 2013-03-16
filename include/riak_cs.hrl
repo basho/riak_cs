@@ -432,7 +432,7 @@
 -define(DEFAULT_CLUSTER_ID_TIMEOUT,5000).
 -define(DEFAULT_AUTH_MODULE, riak_cs_s3_auth).
 -define(DEFAULT_LIST_OBJECTS_MAX_KEYS, 1000).
--define(DEFAULT_MD5_CHUNK_SIZE, 64*1024).
+-define(DEFAULT_MD5_CHUNK_SIZE, 1048576). %% 1 MB
 
 %% General system info
 -define(WORD_SIZE, erlang:system_info(wordsize)).
