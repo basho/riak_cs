@@ -139,9 +139,7 @@ process_post(RD, Ctx=#context{local_context=LocalCtx,
                     RD2 = wrq:set_resp_body(XmlBody, RD),
                     {true, RD2, Ctx};
                 {error, notfound} ->
-                    XErr = riak_cs_mp_utils:make_special_error("NoSuchUpload"),
-                    RD2 = wrq:set_resp_body(XErr, RD),
-                    {{halt, 404}, RD2, Ctx};
+                    riak_cs_s3_response:no_such_upload_response(UploadId, RD, Ctx);
                 {error, Reason} ->
                     riak_cs_s3_response:api_error(Reason, RD, Ctx)
             end
@@ -189,7 +187,7 @@ delete_resource(RD, Ctx=#context{local_context=LocalCtx,
                 ok ->
                     {true, RD, Ctx};
                 {error, notfound} ->
-                    {{halt, 404}, RD, Ctx};
+                    riak_cs_s3_response:no_such_upload_response(UploadId, RD, Ctx);
                 {error, Reason} ->
                     riak_cs_s3_response:api_error(Reason, RD, Ctx)
             end
@@ -262,10 +260,8 @@ accept_body(RD, Ctx0=#context{local_context=LocalCtx0,
                 Ctx = Ctx0#context{local_context=LocalCtx},
                 accept_streambody(RD, Ctx, PutPid,
                                   wrq:stream_req_body(RD, BlockSize));
-            {error, notfound} ->
-                XErr = riak_cs_mp_utils:make_special_error("NoSuchUpload"),
-                RD2 = wrq:set_resp_body(XErr, RD),
-                {{halt, 404}, RD2, Ctx0};
+            {error, notfond} ->
+                riak_cs_s3_response:no_such_upload_response(UploadId, RD, Ctx0);
             {error, Reason} ->
                 riak_cs_s3_response:api_error(Reason, RD, Ctx0)
         end
@@ -346,6 +342,8 @@ to_xml(RD, Ctx=#context{local_context=LocalCtx,
                      },
             Body = riak_cs_s3_response:export_xml([XmlDoc]),
             {Body, RD, Ctx};
+        {error, notfound} ->
+            riak_cs_s3_response:no_such_upload_response(UploadId, RD, Ctx);
         {error, Reason} ->
             riak_cs_s3_response:api_error(Reason, RD, Ctx)
     end.
