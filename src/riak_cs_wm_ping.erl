@@ -56,16 +56,11 @@ service_available(RD, Ctx) ->
         Pid ->
             UpdCtx = Ctx#ping_context{riakc_pid=Pid}
     end,
-    case Pid of
-        undefined ->
-            Available = false;
+    case (catch riakc_pb_socket:ping(Pid, ping_timeout())) of
+        pong ->
+            Available = true;
         _ ->
-            case (catch riakc_pb_socket:ping(Pid, ping_timeout())) of
-                pong ->
-                    Available = true;
-                _ ->
-                    Available = false
-            end
+            Available = false
     end,
     {Available, RD, UpdCtx}.
 
