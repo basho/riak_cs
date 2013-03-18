@@ -1,8 +1,22 @@
-%% -------------------------------------------------------------------
+%% ---------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2012 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
 %%
-%% -------------------------------------------------------------------
+%% This file is provided to you under the Apache License,
+%% Version 2.0 (the "License"); you may not use this file
+%% except in compliance with the License.  You may obtain
+%% a copy of the License at
+%%
+%%   http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing,
+%% software distributed under the License is distributed on an
+%% "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+%% KIND, either express or implied.  See the License for the
+%% specific language governing permissions and limitations
+%% under the License.
+%%
+%% ---------------------------------------------------------------------
 
 %% @doc Quickcheck test module for `erlcloud' S3 API interaction with Riak CS.
 
@@ -79,7 +93,7 @@ eqc_test_() ->
                                                        ?QC_OUT(prop_api_test(?DEFAULT_HOST,
                                                                              ?DEFAULT_PORT,
                                                                              ?DEFAULT_PROXY_HOST,
-                                                                             ?DEFAULT_PROXY_PORT)))))}
+                                                                             cs_port())))))}
       %% {timeout, 60, ?_assertEqual(true, quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_parallel_api_test(?DEFAULT_HOST, ?DEFAULT_PORT)))))}
      ]
     }.
@@ -273,7 +287,7 @@ test() ->
     test(?DEFAULT_HOST, ?DEFAULT_PORT).
 
 test(Host, Port) ->
-    test(Host, Port, ?DEFAULT_PROXY_HOST, ?DEFAULT_PROXY_PORT, 500).
+    test(Host, Port, ?DEFAULT_PROXY_HOST, cs_port(), 500).
 
 test(Host, Port, ProxyHost, ProxyPort, Iterations) ->
     eqc:quickcheck(eqc:numtests(Iterations, prop_api_test(Host, Port, ProxyHost, ProxyPort))).
@@ -380,5 +394,13 @@ verify_object_list_contents(_, []) ->
 verify_object_list_contents(ExpectedKeys, [HeadContent | RestContents]) ->
     Key = proplists:get_value(key, HeadContent),
     verify_object_list_contents(lists:delete(Key, ExpectedKeys), RestContents).
+
+cs_port() ->
+    case os:getenv("CS_HTTP_PORT") of
+        false ->
+            ?DEFAULT_PROXY_PORT;
+        Str ->
+            list_to_integer(Str)
+    end.
 
 -endif.

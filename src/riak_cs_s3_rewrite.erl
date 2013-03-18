@@ -1,8 +1,22 @@
-%% -------------------------------------------------------------------
+%% ---------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2012 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
 %%
-%% -------------------------------------------------------------------
+%% This file is provided to you under the Apache License,
+%% Version 2.0 (the "License"); you may not use this file
+%% except in compliance with the License.  You may obtain
+%% a copy of the License at
+%%
+%%   http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing,
+%% software distributed under the License is distributed on an
+%% "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+%% KIND, either express or implied.  See the License for the
+%% specific language governing permissions and limitations
+%% under the License.
+%%
+%% ---------------------------------------------------------------------
 
 -module(riak_cs_s3_rewrite).
 
@@ -62,9 +76,11 @@ rewrite_path(_Method, Path, _QS, "usage") ->
     "/usage" ++ Path;
 rewrite_path(Method, "/", [], Bucket) when Method =/= 'GET' ->
     lists:flatten(["/buckets/", Bucket]);
-rewrite_path(_Method, "/", QS, Bucket) ->
+rewrite_path(Method, "/", QS, Bucket) ->
     {SubResources, QueryParams} = get_subresources(QS),
-    lists:flatten(["/buckets/", Bucket, format_bucket_qs(QueryParams, SubResources)]);
+    lists:flatten(["/buckets/", Bucket, format_bucket_qs(Method,
+                                                         QueryParams,
+                                                         SubResources)]);
 rewrite_path(_Method, Path, QS, Bucket) ->
     lists:flatten(["/buckets/",
                    Bucket,
@@ -121,14 +137,14 @@ separate_bucket_from_path([Bucket | RestPath]) ->
 
 %% @doc Format a bucket operation query string to conform the the
 %% rewrite rules.
--spec format_bucket_qs(query_params(), subresources()) -> string().
-format_bucket_qs([], []) ->
+-spec format_bucket_qs(atom(), query_params(), subresources()) -> string().
+format_bucket_qs('POST', [{"delete", []}], []) ->
     "/objects";
-format_bucket_qs([{"delete", []}], []) ->
-    "/objects";
-format_bucket_qs(QueryParams, []) ->
-    ["/objects", format_query_params(QueryParams)];
-format_bucket_qs(QueryParams, SubResources) ->
+format_bucket_qs(Method, QueryParams, [])
+  when Method =:= 'GET'; Method =:= 'POST' ->
+    ["/objects",
+     format_query_params(QueryParams)];
+format_bucket_qs(_Method, QueryParams, SubResources) ->
     [format_subresources(SubResources),
      format_query_params(QueryParams)].
 

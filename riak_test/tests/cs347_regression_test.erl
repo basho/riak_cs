@@ -1,3 +1,23 @@
+%% ---------------------------------------------------------------------
+%%
+%% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
+%%
+%% This file is provided to you under the Apache License,
+%% Version 2.0 (the "License"); you may not use this file
+%% except in compliance with the License.  You may obtain
+%% a copy of the License at
+%%
+%%   http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing,
+%% software distributed under the License is distributed on an
+%% "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+%% KIND, either express or implied.  See the License for the
+%% specific language governing permissions and limitations
+%% under the License.
+%%
+%% ---------------------------------------------------------------------
+
 -module(cs347_regression_test).
 
 -include_lib("xmerl/include/xmerl.hrl").
@@ -9,17 +29,10 @@
 -export([confirm/0]).
 -include_lib("eunit/include/eunit.hrl").
 
--define(TEST_BUCKET, "riak_test_bucket").
+-define(TEST_BUCKET, "riak-test-bucket").
 
 confirm() ->
-    {RiakNodes, _CSNodes, _Stanchion} = rtcs:setup(4),
-
-    FirstNode = hd(RiakNodes),
-
-    {AccessKeyId, SecretAccessKey} = rtcs:create_user(FirstNode, 1),
-
-    %% User config
-    UserConfig = rtcs:config(AccessKeyId, SecretAccessKey, rtcs:cs_port(FirstNode)),
+    {UserConfig, {_RiakNodes, _CSNodes, _Stanchion}} = rtcs:setup(4),
 
     lager:info("User is valid on the cluster, and has no buckets"),
     ?assertEqual([{buckets, []}], erlcloud_s3:list_buckets(UserConfig)),
@@ -69,6 +82,6 @@ verify_error_child_element('Code', [Content]) ->
 verify_error_child_element('Message', [Content]) ->
     Content#xmlText.value =:= "The specified bucket does not exist.";
 verify_error_child_element('Resource', [Content]) ->
-    Content#xmlText.value =:= "/riak_test_bucket";
+    Content#xmlText.value =:= "/riak-test-bucket";
 verify_error_child_element(_, _) ->
     true.

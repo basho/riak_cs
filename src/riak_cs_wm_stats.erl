@@ -1,10 +1,22 @@
-%% -------------------------------------------------------------------
+%% ---------------------------------------------------------------------
 %%
-%% stats_http_resource: publishing RiakCS runtime stats via HTTP
+%% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
 %%
-%% Copyright (c) 2007-2012 Basho Technologies, Inc.  All Rights Reserved.
+%% This file is provided to you under the Apache License,
+%% Version 2.0 (the "License"); you may not use this file
+%% except in compliance with the License.  You may obtain
+%% a copy of the License at
 %%
-%% -------------------------------------------------------------------
+%%   http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing,
+%% software distributed under the License is distributed on an
+%% "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+%% KIND, either express or implied.  See the License for the
+%% specific language governing permissions and limitations
+%% under the License.
+%%
+%% ---------------------------------------------------------------------
 
 -module(riak_cs_wm_stats).
 
@@ -74,7 +86,7 @@ ping(RD, Ctx) ->
 
 service_available(RD, #ctx{path_tokens = []} = Ctx) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"service_available">>),
-    case riak_cs_utils:get_env(riak_cs, riak_cs_stat, false) of
+    case riak_cs_utils:get_env(riak_cs, riak_cs_stat, true) of
         false ->
             {false, RD, Ctx};
         true ->

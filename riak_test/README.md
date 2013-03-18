@@ -30,8 +30,12 @@
                       {"1.2.0-ee", "RTEE_DEST_DIR/riak_ee-1.2.0"},
                       {"1.1.4-ee", "RTEE_DEST_DIR/riak_ee-1.1.4"},
                       {"1.0.3-ee", "RTEE_DEST_DIR/riak_ee-1.0.3"},
+
                       {cs_root, "RTCS_DEST_DIR"},
                       {cs_current, "RTCS_DEST_DIR/current"},
+                      %% Add cs_src_root to get access to client tests
+                      {cs_src_root, "YOUR/PATH/TO/RIAK-CS/SOURCE/TREE/riak_cs/"},
+
                       {"1.2.2-cs", "RTCS_DEST_DIR/riak-cs-1.2.2"},
                       {"1.1.0-cs", "RTCS_DEST_DIR/riak-cs-1.1.0"},
                       {"1.0.1-cs", "RTCS_DEST_DIR/riak-cs-1.0.1"},
@@ -54,6 +58,24 @@ setting up `riak_test` builds for Riak (by default
 
 1. To build the `riak_test` files use the `compile-riak-test` Makefile
 target or run `./rebar riak_test_compile`.
+
+1. The Riak client tests are now automated by the
+`tests/external_client_tests.erl` test.  There are several
+prerequisites:
+
+* Your $PATH must have `erl` available.
+* Your $PATH must have a version of Python available that also has
+  access to the Boto S3 libraries.
+* Your $PATH must have Clojure's "lein" available.  "lein" is the main
+  executable for the Leinigen tool.
+
+1. Before running the Riak client tests, your
+`~/.riak_test.config` file must contain an entry for `cs_src_root` in
+the `rtdev_path` list, as shown above.  The source in this directory
+must be successfully compiled using the top level `make all` target.
+
+1. Before running the Riak client tests, you must first use the
+commands `make clean-client-test` and then `make compile-client-test`.
 
 1. To execute a test, run the following from the `riak_test` repo:
 

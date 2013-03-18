@@ -1,3 +1,23 @@
+%% ---------------------------------------------------------------------
+%%
+%% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
+%%
+%% This file is provided to you under the Apache License,
+%% Version 2.0 (the "License"); you may not use this file
+%% except in compliance with the License.  You may obtain
+%% a copy of the License at
+%%
+%%   http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing,
+%% software distributed under the License is distributed on an
+%% "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+%% KIND, either express or implied.  See the License for the
+%% specific language governing permissions and limitations
+%% under the License.
+%%
+%% ---------------------------------------------------------------------
+
 -define(MANIFEST, #lfs_manifest_v3).
 
 -define(ACL, #acl_v2).
@@ -9,6 +29,7 @@
 -define(PART_MANIFEST, #part_manifest_v1).
 -define(PART_MANIFEST_RECNAME, part_manifest_v1).
 -define(MULTIPART_DESCR, #multipart_descr_v1).
+-define(COMPRESS_TERMS, false).
 -define(PART_DESCR, #part_descr_v1).
 
 -record(moss_user, {
@@ -50,7 +71,7 @@
           modification_time :: erlang:timestamp(),
           acl :: acl()}).
 -type cs_bucket() :: #moss_bucket_v1{}.
--type bucket_operation() :: create | delete | update_acl | update_policy 
+-type bucket_operation() :: create | delete | update_acl | update_policy
                           | delete_policy.
 -type bucket_action() :: created | deleted.
 
@@ -431,6 +452,7 @@
 -define(DEFAULT_CLUSTER_ID_TIMEOUT,5000).
 -define(DEFAULT_AUTH_MODULE, riak_cs_s3_auth).
 -define(DEFAULT_LIST_OBJECTS_MAX_KEYS, 1000).
+-define(DEFAULT_MD5_CHUNK_SIZE, 1048576). %% 1 MB
 
 %% General system info
 -define(WORD_SIZE, erlang:system_info(wordsize)).

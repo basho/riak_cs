@@ -1,8 +1,22 @@
-%% -------------------------------------------------------------------
+%% ---------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2011 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
 %%
-%% -------------------------------------------------------------------
+%% This file is provided to you under the Apache License,
+%% Version 2.0 (the "License"); you may not use this file
+%% except in compliance with the License.  You may obtain
+%% a copy of the License at
+%%
+%%   http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing,
+%% software distributed under the License is distributed on an
+%% "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+%% KIND, either express or implied.  See the License for the
+%% specific language governing permissions and limitations
+%% under the License.
+%%
+%% ---------------------------------------------------------------------
 
 %% @doc
 
@@ -77,13 +91,11 @@ new_response(?LOREQ{name=Name,
 %%--------------------------------------------------------------------
 
 -spec manifest_to_keycontent(lfs_manifest()) -> list_objects_key_content().
-manifest_to_keycontent(?MANIFEST{bkey=BKey,
+manifest_to_keycontent(?MANIFEST{bkey={_Bucket, Key},
                                  created=Created,
                                  content_md5=ContentMd5,
                                  content_length=ContentLength,
                                  acl=ACL}) ->
-    {_Bucket, UnprocessedKey} = BKey,
-    Key = list_to_binary(unicode:characters_to_list(UnprocessedKey, unicode)),
 
     LastModified = list_to_binary(riak_cs_wm_utils:to_iso_8601(Created)),
 

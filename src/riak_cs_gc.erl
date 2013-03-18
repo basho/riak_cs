@@ -1,8 +1,22 @@
-%% -------------------------------------------------------------------
+%% ---------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2012 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
 %%
-%% -------------------------------------------------------------------
+%% This file is provided to you under the Apache License,
+%% Version 2.0 (the "License"); you may not use this file
+%% except in compliance with the License.  You may obtain
+%% a copy of the License at
+%%
+%%   http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing,
+%% software distributed under the License is distributed on an
+%% "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+%% KIND, either express or implied.  See the License for the
+%% specific language governing permissions and limitations
+%% under the License.
+%%
+%% ---------------------------------------------------------------------
 
 %% @doc Utility module for garbage collection of files.
 
@@ -185,7 +199,8 @@ mark_as_scheduled_delete(UUIDsToMark, RiakObject, Bucket, Key, RiakcPid) ->
 mark_manifests(RiakObject, Bucket, Key, UUIDsToMark, ManiFunction, RiakcPid) ->
     Manifests = riak_cs_utils:manifests_from_riak_object(RiakObject),
     Marked = ManiFunction(Manifests, UUIDsToMark),
-    UpdObj0 = riakc_obj:update_value(RiakObject, term_to_binary(Marked)),
+    UpdObj0 = riak_cs_utils:update_obj_value(RiakObject,
+                                             riak_cs_utils:encode_term(Marked)),
     UpdObj = riak_cs_manifest_fsm:update_md_with_multipart_2i(
                UpdObj0, Marked, Bucket, Key),
 
@@ -208,14 +223,15 @@ move_manifests_to_gc_bucket(Manifests, RiakcPid, AddLeewayP) ->
         {error, notfound} ->
             %% There was no previous value, so we'll
             %% create a new riak object and write it
-            riakc_obj:new(?GC_BUCKET, Key, term_to_binary(ManifestSet));
+            riakc_obj:new(?GC_BUCKET, Key, riak_cs_utils:encode_term(ManifestSet));
         {ok, PreviousObject} ->
             %% There is a value currently stored here,
             %% so resolve all the siblings and add the
             %% new set in as well. Write this
             %% value back to riak
             Resolved = decode_and_merge_siblings(PreviousObject, ManifestSet),
-            riakc_obj:update_value(PreviousObject, term_to_binary(Resolved))
+            riak_cs_utils:update_obj_value(PreviousObject,
+                                           riak_cs_utils:encode_term(Resolved))
     end,
 
     %% Create a set from the list of manifests
