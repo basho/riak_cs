@@ -94,7 +94,7 @@
           provider = aws :: aws,
           service  = s3  :: s3,
           region         :: string(),
-          id             :: string(),
+          id             :: binary(),
           path           :: string()
          }).
 
