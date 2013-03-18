@@ -152,13 +152,20 @@
   xmerl_ucs:from_utf8/1
   xmerl_ucs:to_utf8/1
   xmerl_xpath:string/2
-############# stuff dialyzer has stumped us on - mostly unused code where 
+############# stuff dialyzer has stumped us on - mostly unused code where
 ############# we've gone in and added a throw / log to be sure
 riak_cs_mp_utils.erl:522: The pattern <Bucket, OwnerStr> can never match since previous clauses completely covered the type <_,'undefined' | {_,_,_}>
 ^riak_cs_lfs_utils.erl:119:
 riak_cs_gc.erl:.*: The pattern ..UUID, _... _. can never match the type ..$
+############# Due to inadequate specs with our riak-erlang-client tag
+riak_cs_gc_d.erl:369: Function fetch_eligible_manifest_keys/2 will never be called
+riak_cs_gc_d.erl:373: Function eligible_manifest_keys/1 will never be called
+riak_cs_gc_d.erl:381: Function gc_index_query/2 will never be called
+^riak_cs_riakc_pool_worker.erl:33:
+riak_cs_storage_d.erl:332: Function fetch_user_list/1 will never be called
+riak_cs_wm_ping.erl:46: The pattern 'undefined' can never match the type pid()
 ############## All the others..........
 riak_cs_blockall_auth.erl:9: Callback info about the riak_cs_auth behaviour is not available
 riak_cs_passthru_auth.erl:9: Callback info about the riak_cs_auth behaviour is not available
 riak_cs_s3_auth.erl:9: Callback info about the riak_cs_auth behaviour is not available
-riak_cs_s3_policy.erl:11: Callback info about the riak_cs_policy behaviour is not available
+riak_cs_s3_policy.erl:12: Callback info about the riak_cs_policy behaviour is not available
