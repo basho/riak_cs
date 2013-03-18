@@ -185,7 +185,7 @@ policy_from_json(JSON) ->
                          E;
                       [] ->
                          {error, malformed_policy_missing};
-                      
+
                       Stmts ->
                          case {Version, ID} of
                              {undefined, <<"undefined">>} ->
@@ -350,7 +350,7 @@ eval_statement(#access_v1{method=M, target=T, req=Req, bucket=B, key=K} = _Acces
             Match = lists:all(fun(Cond) -> eval_condition(Req, Cond) end, Conds),
             case {E, Match} of
                 {allow, true} -> true;
-                {deny, true} -> false;  
+                {deny, true} -> false;
                 {_, false} -> undefined %% matches nothing
             end
     end.
@@ -561,7 +561,7 @@ int_to_prefix(0) -> 0.
 -spec statement_from_pairs(list(), #statement{})-> #statement{}.
 statement_from_pairs([], Stmt) ->
     case Stmt#statement.principal of
-        undefined ->
+        [] ->
             %% TODO: there're a lot to do: S3 describes the
             %% details of error, in xml. with <Code>, <Message> and <Detail>
             throw({error, malformed_policy_missing});
@@ -705,7 +705,7 @@ print_arns(#arn_v1{region=R, id=ID, path=Path} = _ARN) ->
     StringPath = unicode:characters_to_list(Path),
     StringID   = binary_to_list(ID),
     list_to_binary(string:join(["arn", "aws", "s3", R, StringID, StringPath], ":"));
-                        
+
 print_arns(ARNs) when is_list(ARNs)->
     PrintARN = fun(ARN) -> print_arns(ARN) end,
     lists:map(PrintARN, ARNs).

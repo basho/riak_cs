@@ -1490,7 +1490,7 @@ pid_to_binary(Pid) ->
 
 %% @doc Rapid calls to `md5_update' with largish data blocks (e.g. 1MB)
 %% can lead to erlang scheduler collapse
--spec chunked_md5(binary(), binary(), non_neg_integer()) -> {binary(), binary()}.
+-spec chunked_md5(binary(), binary(), non_neg_integer()) -> binary().
 chunked_md5(<<>>, Context, _ChunkSize) ->
     Context;
 chunked_md5(Data, Context, ChunkSize) ->
