@@ -52,7 +52,7 @@ case os:getenv("RIAK_CS_EE_DEPS") of
 {vendor_contact_name, \"Basho Package Maintainer\"}.
 {vendor_contact_email, \"packaging@basho.com\"}.
 {license_full_text, \"This software is provided under license from Basho Technologies.\"}.
-{solaris_pkgname, \"BASHOriak-cs\"}.",
+{solaris_pkgname, \"BASHOriak-cs-ee\"}.",
                 file:write_file("pkg.vars.config", Bytes),
                 EE_DEPS =
                     [
