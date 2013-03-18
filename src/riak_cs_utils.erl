@@ -1459,15 +1459,30 @@ get_cluster_id(Pid) ->
                           {ok, Value} -> Value;
                           undefined   -> ?DEFAULT_CLUSTER_ID_TIMEOUT
                       end,
-            case riak_repl_pb_api:get_clusterid(Pid, Timeout) of
-                {ok, ClusterID} ->
-                    application:set_env(riak_cs, cluster_id, ClusterID),
-                    ClusterID;
-                _ ->
-                    _ = lager:debug("Unable to obtain cluster ID"),
-                    undefined
-            end
+            maybe_get_cluster_id(proxy_get_active(), Pid, Timeout)
     end.
+
+%% @doc If `proxy_get' is enabled then attempt to determine the cluster id
+-spec maybe_get_cluster_id(boolean(), pid(), integer()) -> undefined | binary().
+maybe_get_cluster_id(true, Pid, Timeout) ->
+    try
+        case riak_repl_pb_api:get_clusterid(Pid, Timeout) of
+            {ok, ClusterID} ->
+                application:set_env(riak_cs, cluster_id, ClusterID),
+                ClusterID;
+            _ ->
+                _ = lager:debug("Unable to obtain cluster ID"),
+                undefined
+        end
+    catch _:_ ->
+            %% Disable `proxy_get' so we do not repeatedly have to
+            %% handle this same exception. This would happen if an OSS
+            %% install has `proxy_get' enabled.
+            application:set_env(riak_cs, proxy_get, disabled),
+            undefined
+    end;
+maybe_get_cluster_id(false, _, _) ->
+    undefined.
 
 %% doc Check app.config to see if repl proxy_get is enabled
 %% Defaults to false.
