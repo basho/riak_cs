@@ -158,7 +158,7 @@ object_web_config(Options) ->
      {ip, proplists:get_value(cs_ip, Options)},
      {port, proplists:get_value(cs_port, Options)},
      {nodelay, true},
-     {rewrite_module, riak_cs_s3_rewrite},
+     {rewrite_module, proplists:get_value(rewrite_module, Options)},
      {error_handler, riak_cs_wm_error_handler},
      {resource_module_option, submodule}] ++
         maybe_add_ssl_opts(proplists:get_value(ssl, Options)).
