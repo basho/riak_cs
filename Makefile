@@ -1,13 +1,13 @@
 REPO		?= riak_cs
-PKG_NAME        ?= riak-cs
 PKG_REVISION    ?= $(shell git describe --tags)
 PKG_VERSION	?= $(shell git describe --tags | tr - .)
-PKG_ID           = $(PKG_NAME)-$(PKG_VERSION)
+PKG_ID           = riak-cs-$(PKG_VERSION)
 PKG_BUILD        = 1
 BASE_DIR         = $(shell pwd)
 ERLANG_BIN       = $(shell dirname $(shell which erl))
 REBAR           ?= $(BASE_DIR)/rebar
 OVERLAY_VARS    ?=
+CS_HTTP_PORT    ?= 8080
 
 .PHONY: rel stagedevrel deps test
 
@@ -24,6 +24,12 @@ compile-int-test: all
 
 compile-riak-test: all
 	@./rebar riak_test_compile
+	## There are some Riak CS internal modules that our riak_test
+	## test would like to use.  But riak_test doesn't have a nice
+	## way of adding the -pz argument + code path that we need.
+	## So we'll copy the BEAM files to a place that riak_test is
+	## already using.
+	cp -v ebin/riak_cs_wm_utils.beam riak_test/ebin
 
 clean-client-test:
 	@./rebar client_test_clean
@@ -52,7 +58,7 @@ test-client: test-clojure test-python test-erlang
 test-python: test-boto
 
 test-boto:
-	@python client_tests/python/boto_test.py
+	env CS_HTTP_PORT=${CS_HTTP_PORT} python client_tests/python/boto_test.py
 
 test-erlang: compile-client-test
 	@./rebar skip_deps=true client_test_run
@@ -82,7 +88,7 @@ stage : rel
 
 devrel: dev1 dev2 dev3 dev4
 
-dev1 dev2 dev3 dev4:
+dev1 dev2 dev3 dev4: all
 	mkdir -p dev
 	(cd rel && ../rebar generate skip_deps=true target_dir=../dev/$@ overlay_vars=vars/$@_vars.config)
 
@@ -151,7 +157,7 @@ xref: compile
 ## Packaging targets
 ##
 .PHONY: package
-export PKG_NAME PKG_VERSION PKG_ID PKG_BUILD BASE_DIR ERLANG_BIN REBAR OVERLAY_VARS RELEASE
+export PKG_VERSION PKG_ID PKG_BUILD BASE_DIR ERLANG_BIN REBAR OVERLAY_VARS RELEASE
 
 package.src: deps
 	mkdir -p package

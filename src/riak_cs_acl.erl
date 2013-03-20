@@ -1,8 +1,22 @@
-%% -------------------------------------------------------------------
+%% ---------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2012 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
 %%
-%% -------------------------------------------------------------------
+%% This file is provided to you under the Apache License,
+%% Version 2.0 (the "License"); you may not use this file
+%% except in compliance with the License.  You may obtain
+%% a copy of the License at
+%%
+%%   http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing,
+%% software distributed under the License is distributed on an
+%% "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+%% KIND, either express or implied.  See the License for the
+%% specific language governing permissions and limitations
+%% under the License.
+%%
+%% ---------------------------------------------------------------------
 
 %% @doc Module of functions that provide a way to determine if a
 %% user may access a particular system resource.
@@ -96,9 +110,14 @@ anonymous_object_access(Bucket, ObjAcl, 'WRITE', RiakPid, undefined) ->
             _ = lager:error("Anonymous object access check failed due to error. Reason: ~p", [Reason]),
             false
     end;
-anonymous_object_access(_Bucket, _ObjAcl, 'WRITE', _RiakPid, BucketAcl) ->
-    has_permission(acl_grants(BucketAcl), 'WRITE');
-
+anonymous_object_access(_Bucket, _ObjAcl, 'WRITE', RiakPid, BucketAcl) ->
+    HasObjPerm = has_permission(acl_grants(BucketAcl), 'WRITE'),
+    case HasObjPerm of
+        true ->
+            {true, owner_id(BucketAcl, RiakPid)};
+        _ ->
+            false
+    end;
 anonymous_object_access(_Bucket, ObjAcl, RequestedAccess, RiakPid, _) ->
     HasObjPerm = has_permission(acl_grants(ObjAcl), RequestedAccess),
     case HasObjPerm of
@@ -143,6 +162,9 @@ bucket_access(_, RequestedAccess, CanonicalId, RiakPid, Acl) ->
             true;
         true ->
             {true, owner_id(Acl, RiakPid)};
+        false when IsOwner == true
+                   andalso RequestedAccess /= 'READ' ->
+            true;
         _ ->
             false
     end.
@@ -161,8 +183,11 @@ bucket_acl(Bucket, RiakPid) ->
             %% resolve if possible.
             Contents = riakc_obj:get_contents(Obj),
             bucket_acl_from_contents(Bucket, Contents);
-        {error, _}=Error ->
-            Error
+        {error, Reason} ->
+            _ = lager:debug("Failed to fetch ACL. Bucket ~p "
+                            " does not exist. Reason: ~p",
+                            [Bucket, Reason]),
+            {error, notfound}
     end.
 
 %% @doc Attempt to resolve an ACL for the bucket based on the contents.
@@ -234,10 +259,13 @@ object_access(Bucket, ObjAcl, 'WRITE', CanonicalId, RiakPid, undefined) ->
     end;
 object_access(_Bucket, _ObjAcl, 'WRITE', CanonicalId, RiakPid, BucketAcl) ->
     %% Fetch the bucket's ACL
+    IsBucketOwner = is_owner(BucketAcl, CanonicalId),
     HasBucketPerm = has_permission(acl_grants(BucketAcl),
                                    'WRITE',
                                    CanonicalId),
     case HasBucketPerm of
+        true when IsBucketOwner == true ->
+            true;
         true ->
             {true, owner_id(BucketAcl, RiakPid)};
         _ ->
@@ -251,12 +279,19 @@ object_access(_Bucket, ObjAcl, RequestedAccess, CanonicalId, RiakPid, _) ->
                                 CanonicalId),
     _ = lager:debug("IsObjOwner: ~p", [IsObjOwner]),
     _ = lager:debug("HasObjPerm: ~p", [HasObjPerm]),
-    case HasObjPerm of
-        true when IsObjOwner == true ->
+    if
+        (RequestedAccess == 'READ_ACP' orelse
+         RequestedAccess == 'WRITE_ACP') andalso
+        IsObjOwner == true ->
+            %% The owner of an object may always read and modify the
+            %% ACL of an object
             true;
-        true ->
+        IsObjOwner == true andalso
+        HasObjPerm == true ->
+            true;
+        HasObjPerm == true ->
             {true, owner_id(ObjAcl, RiakPid)};
-        _ ->
+        true ->
             false
     end.
 

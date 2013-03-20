@@ -1,8 +1,22 @@
-%% -------------------------------------------------------------------
+%% ---------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2011 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
 %%
-%% -------------------------------------------------------------------
+%% This file is provided to you under the Apache License,
+%% Version 2.0 (the "License"); you may not use this file
+%% except in compliance with the License.  You may obtain
+%% a copy of the License at
+%%
+%%   http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing,
+%% software distributed under the License is distributed on an
+%% "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+%% KIND, either express or implied.  See the License for the
+%% specific language governing permissions and limitations
+%% under the License.
+%%
+%% ---------------------------------------------------------------------
 
 %% @doc riak_cs utility functions
 
@@ -10,9 +24,10 @@
 
 %% Public API
 -export([anonymous_user_creation/0,
-         binary_to_hexlist/1,
          etag_from_binary/1,
+         etag_from_binary_no_quotes/1,
          check_bucket_exists/2,
+         chunked_md5/3,
          close_riak_connection/1,
          close_riak_connection/2,
          create_bucket/5,
@@ -20,6 +35,7 @@
          cs_version/0,
          delete_bucket/4,
          delete_object/3,
+         encode_term/1,
          from_bucket_name/1,
          get_admin_creds/0,
          get_buckets/1,
@@ -28,6 +44,7 @@
          has_tombstone/1,
          is_admin/1,
          map_keys_and_manifests/3,
+         md5_chunk_size/0,
          reduce_keys_and_manifests/2,
          get_object/3,
          get_manifests/3,
@@ -53,12 +70,14 @@
          set_bucket_acl/5,
          set_object_acl/5,
          set_bucket_policy/5,
+         set_md5_chunk_size/1,
          delete_bucket_policy/4,
          get_bucket_acl_policy/3,
          timestamp/1,
          timestamp_to_seconds/1,
          to_bucket_name/2,
          update_key_secret/1,
+         update_obj_value/2,
          get_cluster_id/1,
          proxy_get_active/0,
          pid_to_binary/1]).
@@ -109,7 +128,13 @@ binary_to_hexlist(Bin) ->
 %% around it.
 -spec etag_from_binary(binary()) -> string().
 etag_from_binary(Binary) ->
-    "\"" ++ binary_to_hexlist(Binary) ++ "\"".
+    "\"" ++ etag_from_binary_no_quotes(Binary) ++ "\"".
+
+%% @doc Return a hexadecimal string of `Binary', without double quotes
+%% around it.
+-spec etag_from_binary_no_quotes(binary()) -> string().
+etag_from_binary_no_quotes(Binary) ->
+    binary_to_hexlist(Binary).
 
 %% @doc Convert the passed binary into a string where the numbers are represented in hexadecimal (lowercase and 0 prefilled).
 -spec hexlist_to_binary(string()) -> binary().
@@ -136,13 +161,91 @@ close_riak_connection(Pool, Pid) ->
                            ok |
                            {error, term()}.
 create_bucket(User, UserObj, Bucket, ACL, RiakPid) ->
-    serialized_bucket_op(Bucket,
-                         ACL,
-                         User,
-                         UserObj,
-                         create,
-                         bucket_create,
-                         RiakPid).
+    CurrentBuckets = get_buckets(User),
+
+    %% Do not attempt to create bucket if the user already owns it
+    AttemptCreate = not bucket_exists(CurrentBuckets, binary_to_list(Bucket)),
+    case AttemptCreate of
+        true ->
+            case valid_bucket_name(Bucket) of
+                true ->
+                    serialized_bucket_op(Bucket,
+                                         ACL,
+                                         User,
+                                         UserObj,
+                                         create,
+                                         bucket_create,
+                                         RiakPid);
+                false ->
+                    {error, invalid_bucket_name}
+            end;
+        false ->
+            ok
+    end.
+
+-spec valid_bucket_name(binary()) -> boolean().
+valid_bucket_name(Bucket) when byte_size(Bucket) < 3 orelse
+                               byte_size(Bucket) > 63 ->
+    false;
+valid_bucket_name(Bucket) ->
+    lists:all(fun(X) -> X end, [valid_bucket_label(Label) ||
+                                   Label <- binary:split(Bucket,
+                                                         <<".">>,
+                                                         [global])])
+        andalso not is_bucket_ip_addr(binary_to_list(Bucket)).
+
+-spec valid_bucket_label(binary()) -> boolean().
+valid_bucket_label(<<>>) ->
+    %% this clause gets called when we either have a `.' as the first or
+    %% last byte. Or if it appears twice in a row. Examples are:
+    %% `<<".myawsbucket">>'
+    %% `<<"myawsbucket.">>'
+    %% `<<"my..examplebucket">>'
+    false;
+valid_bucket_label(Label) ->
+    valid_bookend_char(binary:first(Label)) andalso
+        valid_bookend_char(binary:last(Label)) andalso
+        lists:all(fun(X) -> X end,
+                  [valid_bucket_char(C) || C <- middle_chars(Label)]).
+
+-spec middle_chars(binary()) -> list().
+middle_chars(B) when byte_size(B) < 3 ->
+    [];
+middle_chars(B) ->
+    %% `binary:at/2' is zero based
+    ByteSize = byte_size(B),
+    [binary:at(B, Position) || Position <- lists:seq(1, ByteSize - 2)].
+
+-spec is_bucket_ip_addr(string()) -> boolean().
+is_bucket_ip_addr(Bucket) ->
+    case inet_parse:ipv4strict_address(Bucket) of
+        {ok, _} ->
+            true;
+        {error, _} ->
+            false
+    end.
+
+-spec valid_bookend_char(integer()) -> boolean().
+valid_bookend_char(Char) ->
+    numeric_char(Char) orelse lower_case_char(Char).
+
+-spec valid_bucket_char(integer()) -> boolean().
+valid_bucket_char(Char) ->
+    numeric_char(Char) orelse
+        lower_case_char(Char) orelse
+        dash_char(Char).
+
+-spec numeric_char(integer()) -> boolean().
+numeric_char(Char) ->
+    Char >= $0 andalso Char =< $9.
+
+-spec lower_case_char(integer()) -> boolean().
+lower_case_char(Char) ->
+    Char >= $a andalso Char =< $z.
+
+-spec dash_char(integer()) -> boolean().
+dash_char(Char) ->
+    Char =:= $-.
 
 %% @doc Create a new Riak CS user
 -spec create_user(string(), string()) -> {ok, rcs_user()} | {error, term()}.
@@ -252,6 +355,19 @@ delete_object(Bucket, Key, RiakcPid) ->
         Else ->
             Else
     end.
+
+-spec encode_term(term()) -> binary().
+encode_term(Term) ->
+    case use_t2b_compression() of
+        true ->
+            term_to_binary(Term, [compressed]);
+        false ->
+            term_to_binary(Term)
+    end.
+
+-spec use_t2b_compression() -> boolean().
+use_t2b_compression() ->
+    get_env(riak_cs, compress_terms, ?COMPRESS_TERMS).
 
 %% @private
 maybe_gc_active_manifests({ok, RiakObject, Manifests}, Bucket, Key, StartTime, RiakcPid) ->
@@ -666,10 +782,7 @@ riak_connection(Pool) ->
 save_user(User, UserObj, RiakPid) ->
     %% Metadata is currently never updated so if there
     %% are siblings all copies should be the same
-    [MD | _] = riakc_obj:get_metadatas(UserObj),
-    UpdUserObj = riakc_obj:update_metadata(
-                   riakc_obj:update_value(UserObj, term_to_binary(User)),
-                   MD),
+    UpdUserObj = update_obj_value(UserObj, riak_cs_utils:encode_term(User)),
     riakc_pb_socket:put(RiakPid, UpdUserObj).
 
 %% @doc Set the ACL for a bucket. Existing ACLs are only
@@ -784,6 +897,14 @@ update_key_secret(User=?RCS_USER{email=Email,
                                  key_id=KeyId}) ->
     EmailBin = list_to_binary(Email),
     User?RCS_USER{key_secret=generate_secret(EmailBin, KeyId)}.
+
+%% @doc Update the object's value blob, and take the first metadata
+%%      dictionary because we don't care about trying to merge them.
+-spec update_obj_value(riakc_obj:riakc_obj(), binary()) -> riakc_obj:riakc_obj().
+update_obj_value(Obj, Value) when is_binary(Value) ->
+    [MD | _] = riakc_obj:get_metadatas(Obj),
+    riakc_obj:update_metadata(riakc_obj:update_value(Obj, Value),
+                              MD).
 
 %% ===================================================================
 %% Internal functions
@@ -1352,15 +1473,30 @@ get_cluster_id(Pid) ->
                           {ok, Value} -> Value;
                           undefined   -> ?DEFAULT_CLUSTER_ID_TIMEOUT
                       end,
-            case riak_repl_pb_api:get_clusterid(Pid, Timeout) of
-                {ok, ClusterID} ->
-                    application:set_env(riak_cs, cluster_id, ClusterID),
-                    ClusterID;
-                _ ->
-                    _ = lager:debug("Unable to obtain cluster ID"),
-                    undefined
-            end
+            maybe_get_cluster_id(proxy_get_active(), Pid, Timeout)
     end.
+
+%% @doc If `proxy_get' is enabled then attempt to determine the cluster id
+-spec maybe_get_cluster_id(boolean(), pid(), integer()) -> undefined | binary().
+maybe_get_cluster_id(true, Pid, Timeout) ->
+    try
+        case riak_repl_pb_api:get_clusterid(Pid, Timeout) of
+            {ok, ClusterID} ->
+                application:set_env(riak_cs, cluster_id, ClusterID),
+                ClusterID;
+            _ ->
+                _ = lager:debug("Unable to obtain cluster ID"),
+                undefined
+        end
+    catch _:_ ->
+            %% Disable `proxy_get' so we do not repeatedly have to
+            %% handle this same exception. This would happen if an OSS
+            %% install has `proxy_get' enabled.
+            application:set_env(riak_cs, proxy_get, disabled),
+            undefined
+    end;
+maybe_get_cluster_id(false, _, _) ->
+    undefined.
 
 %% doc Check app.config to see if repl proxy_get is enabled
 %% Defaults to false.
@@ -1380,3 +1516,30 @@ proxy_get_active() ->
 -spec pid_to_binary(pid()) -> binary().
 pid_to_binary(Pid) ->
     list_to_binary(pid_to_list(Pid)).
+
+%% @doc Rapid calls to `md5_update' with largish data blocks (e.g. 1MB)
+%% can lead to erlang scheduler collapse
+-spec chunked_md5(binary(), binary(), non_neg_integer()) -> binary().
+chunked_md5(<<>>, Context, _ChunkSize) ->
+    Context;
+chunked_md5(Data, Context, ChunkSize) ->
+    case byte_size(Data) < ChunkSize of
+        true ->
+            crypto:md5_update(Context, Data);
+        false ->
+            <<Chunk:ChunkSize/binary, RestData/binary>> = Data,
+            UpdContext = crypto:md5_update(Context, Chunk),
+            chunked_md5(RestData, UpdContext, ChunkSize)
+    end.
+
+%% @doc Return the configured md5 chunk size
+-spec md5_chunk_size() -> non_neg_integer().
+md5_chunk_size() ->
+    get_env(riak_cs, md5_chunk_size, ?DEFAULT_MD5_CHUNK_SIZE).
+
+%% @doc Helper fun to set the md5 chunk size
+-spec set_md5_chunk_size(non_neg_integer()) -> ok | {error, invalid_value}.
+set_md5_chunk_size(Size) when is_integer(Size) andalso Size > 0 ->
+    application:set_env(riak_cs, md5_chunk_size, Size);
+set_md5_chunk_size(_) ->
+    {error, invalid_value}.

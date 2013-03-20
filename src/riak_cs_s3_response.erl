@@ -1,8 +1,23 @@
-%% -------------------------------------------------------------------
+%% ---------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2011 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
 %%
-%% -------------------------------------------------------------------
+%% This file is provided to you under the Apache License,
+%% Version 2.0 (the "License"); you may not use this file
+%% except in compliance with the License.  You may obtain
+%% a copy of the License at
+%%
+%%   http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing,
+%% software distributed under the License is distributed on an
+%% "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+%% KIND, either express or implied.  See the License for the
+%% specific language governing permissions and limitations
+%% under the License.
+%%
+%% ---------------------------------------------------------------------
+
 -module(riak_cs_s3_response).
 -export([api_error/3,
          status_code/1,
@@ -12,6 +27,7 @@
          error_response/5,
          list_bucket_response/5,
          list_all_my_buckets_response/3,
+         no_such_upload_response/3,
          error_code_to_atom/1]).
 
 -include("riak_cs.hrl").
@@ -50,12 +66,18 @@ error_message(admin_secret_undefined) -> "Please reduce your request rate.";
 error_message(bucket_owner_unavailable) -> "The user record for the bucket owner was unavailable. Try again later.";
 error_message(econnrefused) -> "Please reduce your request rate.";
 error_message(malformed_policy_json) -> "JSON parsing error";
+error_message(malformed_policy_missing) -> "Policy is missing required element";
 error_message(malformed_policy_resource) -> "Policy has invalid resource";
 error_message(malformed_policy_principal) -> "Invalid principal in policy";
 error_message(malformed_policy_action) -> "Policy has invalid action";
 error_message(no_such_bucket_policy) -> "The bucket policy does not exist";
+error_message(no_such_upload) ->
+    "The specified upload does not exist. The upload ID may be invalid, or the upload may have been aborted or completed.";
 error_message(bad_request) -> "Bad Request";
+error_message(invalid_argument) -> "Invalid Argument";
+error_message(unresolved_grant_email) -> "The e-mail address you provided does not match any account on record.";
 error_message(invalid_range) -> "The requested range is not satisfiable";
+error_message(invalid_bucket_name) -> "The specified bucket is not valid.";
 error_message(_) -> "Please reduce your request rate.".
 
 error_code(invalid_access_key_id) -> "InvalidAccessKeyId";
@@ -75,13 +97,23 @@ error_code(admin_secret_undefined) -> "ServiceUnavailable";
 error_code(bucket_owner_unavailable) -> "ServiceUnavailable";
 error_code(econnrefused) -> "ServiceUnavailable";
 error_code(malformed_policy_json) -> "MalformedPolicy";
+error_code(malformed_policy_missing) -> "MalformedPolicy";
 error_code(malformed_policy_resource) -> "MalformedPolicy";
 error_code(malformed_policy_principal) -> "MalformedPolicy";
 error_code(malformed_policy_action) -> "MalformedPolicy";
 error_code(no_such_bucket_policy) -> "NoSuchBucketPolicy";
+error_code(no_such_upload) -> "NoSuchUpload";
 error_code(bad_request) -> "BadRequest";
+error_code(invalid_argument) -> "InvalidArgument";
 error_code(invalid_range) -> "InvalidRange";
-error_code(_) -> "ServiceUnavailable".
+error_code(invalid_bucket_name) -> "InvalidBucketName";
+error_code(unresolved_grant_email) -> "UnresolvableGrantByEmailAddress";
+error_code(ErrorName) ->
+    ok = lager:debug("Unknown Error Name: ~p", [ErrorName]),
+    "ServiceUnavailable".
+
+%% These should match:
+%% http://docs.aws.amazon.com/AmazonS3/latest/API/ErrorResponses.html
 
 status_code(invalid_access_key_id) -> 403;
 status_code(invalid_email_address) -> 400;
@@ -89,6 +121,7 @@ status_code(access_denied) ->  403;
 status_code(bucket_not_empty) ->  409;
 status_code(bucket_already_exists) -> 409;
 status_code(user_already_exists) -> 409;
+%% yes, 400, really, not 413
 status_code(entity_too_large) -> 400;
 status_code(entity_too_small) -> 400;
 status_code(bad_etag) -> 400;
@@ -102,12 +135,17 @@ status_code(bucket_owner_unavailable) -> 503;
 status_code(multiple_bucket_owners) -> 503;
 status_code(econnrefused) -> 503;
 status_code(malformed_policy_json) -> 400;
+status_code(malformed_policy_missing) -> 400;
 status_code(malformed_policy_resource) -> 400;
 status_code(malformed_policy_principal) -> 400;
 status_code(malformed_policy_action) -> 400;
 status_code(no_such_bucket_policy) -> 404;
+status_code(no_such_upload) -> 404;
 status_code(bad_request) -> 400;
+status_code(invalid_argument) -> 400;
+status_code(unresolved_grant_email) -> 400;
 status_code(invalid_range) -> 416;
+status_code(invalid_bucket_name) -> 400;
 status_code(_) -> 503.
 
 
@@ -201,6 +239,17 @@ user_to_xml_owner(?RCS_USER{canonical_id=CanonicalId, display_name=Name}) ->
 export_xml(XmlDoc) ->
     unicode:characters_to_binary(
       xmerl:export_simple(XmlDoc, xmerl_xml, [{prolog, ?XML_PROLOG}]), unicode, unicode).
+
+no_such_upload_response(UploadId, RD, Ctx) ->
+    XmlDoc = {'Error',
+              [
+               {'Code', [error_code(no_such_upload)]},
+               {'Message', [error_message(no_such_upload)]},
+               {'UploadId', [binary_to_list(base64url:encode(UploadId))]},
+               {'HostId', ["host-id"]}
+              ]},
+    Body = export_xml([XmlDoc]),
+    respond(status_code(no_such_upload), Body, RD, Ctx).
 
 %% @doc Convert an error code string into its corresponding atom
 -spec error_code_to_atom(string()) -> atom().

@@ -1,8 +1,22 @@
-%% -------------------------------------------------------------------
+%% ---------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2011 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
 %%
-%% -------------------------------------------------------------------
+%% This file is provided to you under the Apache License,
+%% Version 2.0 (the "License"); you may not use this file
+%% except in compliance with the License.  You may obtain
+%% a copy of the License at
+%%
+%%   http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing,
+%% software distributed under the License is distributed on an
+%% "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+%% KIND, either express or implied.  See the License for the
+%% specific language governing permissions and limitations
+%% under the License.
+%%
+%% ---------------------------------------------------------------------
 
 %% @doc Module to manage storage of objects and files
 
@@ -38,6 +52,7 @@
 
 -define(SERVER, ?MODULE).
 -define(EMPTYORDSET, ordsets:new()).
+-define(MD5_CHUNK_SIZE, 64*1024).
 
 -record(state, {timeout :: timeout(),
                 block_size :: pos_integer(),
@@ -64,7 +79,8 @@
                 free_writers :: undefined | ordsets:ordset(pid()),
                 unacked_writes=ordsets:new() :: ordsets:ordset(non_neg_integer()),
                 next_block_id=0 :: non_neg_integer(),
-                all_writer_pids :: undefined | list(pid())}).
+                all_writer_pids :: undefined | list(pid()),
+                md5_chunk_size :: non_neg_integer()}).
 
 %%%===================================================================
 %%% API
@@ -139,17 +155,20 @@ init({{Bucket, Key, ContentLength, ContentType,
     %%    live.
     CallerRef = erlang:monitor(process, Caller),
 
+    UUID = druuid:v4(),
     {ok, prepare, #state{bucket=Bucket,
                          key=Key,
                          block_size=BlockSize,
                          caller=CallerRef,
+                         uuid=UUID,
                          metadata=Metadata,
                          acl=Acl,
                          content_length=ContentLength,
                          content_type=ContentType,
                          riakc_pid=RiakPid,
                          make_new_manifest_p=MakeNewManifestP,
-                         timeout=Timeout},
+                         timeout=Timeout,
+                         md5_chunk_size=riak_cs_utils:md5_chunk_size()},
      0}.
 
 %%--------------------------------------------------------------------
@@ -339,6 +358,7 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 prepare(State=#state{bucket=Bucket,
                      key=Key,
                      block_size=BlockSize,
+                     uuid=UUID,
                      content_length=ContentLength,
                      content_type=ContentType,
                      metadata=Metadata,
@@ -364,7 +384,6 @@ prepare(State=#state{bucket=Bucket,
                  end,
     FreeWriters = ordsets:from_list(WriterPids),
     MaxBufferSize = (riak_cs_lfs_utils:put_fsm_buffer_size_factor() * BlockSize),
-    UUID = druuid:v4(),
 
     %% for now, always populate cluster_id
     ClusterID = riak_cs_utils:get_cluster_id(RiakPid),
@@ -391,7 +410,6 @@ prepare(State=#state{bucket=Bucket,
     TRef = erlang:send_after(60000, self(), save_manifest),
     ok = maybe_add_new_manifest(ManiPid, NewManifest),
     State#state{manifest=NewManifest,
-                uuid=UUID,
                 md5=Md5,
                 timer_ref=TRef,
                 mani_pid=ManiPid,
@@ -506,9 +524,10 @@ handle_accept_chunk(NewData, State=#state{buffer_queue=BufferQueue,
                                           num_bytes_received=PreviousBytesReceived,
                                           md5=Md5,
                                           current_buffer_size=CurrentBufferSize,
-                                          content_length=ContentLength}) ->
+                                          content_length=ContentLength,
+                                          md5_chunk_size=Md5ChunkSize}) ->
 
-    NewMd5 = crypto:md5_update(Md5, NewData),
+    NewMd5 = riak_cs_utils:chunked_md5(NewData, Md5, Md5ChunkSize),
     NewRemainderData = combine_new_and_remainder_data(NewData, RemainderData),
     UpdatedBytesReceived = PreviousBytesReceived + size(NewData),
     if UpdatedBytesReceived > ContentLength ->
@@ -539,9 +558,10 @@ handle_backpressure_for_chunk(NewData, From, State=#state{reply_pid=undefined,
                                                           remainder_data=RemainderData,
                                                           current_buffer_size=CurrentBufferSize,
                                                           num_bytes_received=PreviousBytesReceived,
-                                                          content_length=ContentLength}) ->
+                                                          content_length=ContentLength,
+                                                          md5_chunk_size=Md5ChunkSize}) ->
 
-    NewMd5 = crypto:md5_update(Md5, NewData),
+    NewMd5 = riak_cs_utils:chunked_md5(NewData, Md5, Md5ChunkSize),
     NewRemainderData = combine_new_and_remainder_data(NewData, RemainderData),
     UpdatedBytesReceived = PreviousBytesReceived + size(NewData),
 
@@ -565,9 +585,10 @@ handle_receiving_last_chunk(NewData, State=#state{buffer_queue=BufferQueue,
                                                   manifest=Manifest,
                                                   current_buffer_size=CurrentBufferSize,
                                                   num_bytes_received=PreviousBytesReceived,
-                                                  content_length=ContentLength}) ->
+                                                  content_length=ContentLength,
+                                                  md5_chunk_size=Md5ChunkSize}) ->
 
-    NewMd5 = crypto:md5_final(crypto:md5_update(Md5, NewData)),
+    NewMd5 = crypto:md5_final(riak_cs_utils:chunked_md5(NewData, Md5, Md5ChunkSize)),
     NewManifest = Manifest?MANIFEST{content_md5=NewMd5},
     NewRemainderData = combine_new_and_remainder_data(NewData, RemainderData),
     UpdatedBytesReceived = PreviousBytesReceived + size(NewData),

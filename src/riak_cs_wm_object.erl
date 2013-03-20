@@ -1,14 +1,30 @@
-%% -------------------------------------------------------------------
+%% ---------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2012 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
 %%
-%% -------------------------------------------------------------------
+%% This file is provided to you under the Apache License,
+%% Version 2.0 (the "License"); you may not use this file
+%% except in compliance with the License.  You may obtain
+%% a copy of the License at
+%%
+%%   http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing,
+%% software distributed under the License is distributed on an
+%% "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+%% KIND, either express or implied.  See the License for the
+%% specific language governing permissions and limitations
+%% under the License.
+%%
+%% ---------------------------------------------------------------------
 
 -module(riak_cs_wm_object).
 
 -export([init/1,
          authorize/2,
          content_types_provided/2,
+         generate_etag/2,
+         last_modified/2,
          produce_body/2,
          allowed_methods/0,
          malformed_request/2,
@@ -109,6 +125,19 @@ content_types_provided(RD, Ctx=#context{local_context=LocalCtx,
             %% appease webmachine
             {[{"text/plain", produce_body}], RD, Ctx}
     end.
+
+-spec generate_etag(#wm_reqdata{}, #context{}) -> {string(), #wm_reqdata{}, #context{}}.
+generate_etag(RD, Ctx=#context{local_context=LocalCtx}) ->
+    Mfst = LocalCtx#key_context.manifest,
+    ContentMd5 = Mfst?MANIFEST.content_md5,
+    ETag = riak_cs_utils:etag_from_binary_no_quotes(ContentMd5),
+    {ETag, RD, Ctx}.
+
+-spec last_modified(#wm_reqdata{}, #context{}) -> {calendar:datetime(), #wm_reqdata{}, #context{}}.
+last_modified(RD, Ctx=#context{local_context=LocalCtx}) ->
+    Mfst = LocalCtx#key_context.manifest,
+    ErlDate = riak_cs_wm_utils:iso_8601_to_erl_date(Mfst?MANIFEST.created),
+    {ErlDate, RD, Ctx}.
 
 -spec produce_body(#wm_reqdata{}, #context{}) ->
                           {{known_length_stream, non_neg_integer(), {<<>>, function()}}, #wm_reqdata{}, #context{}}.
@@ -278,8 +307,7 @@ accept_body(RD, Ctx=#context{local_context=LocalCtx,
                  key=Key,
                  putctype=ContentType,
                  size=Size,
-                 get_fsm_pid=GetFsmPid,
-                 owner=Owner} = LocalCtx,
+                 get_fsm_pid=GetFsmPid} = LocalCtx,
     BFile_str = [Bucket, $,, Key],
     UserName = riak_cs_wm_utils:extract_name(User),
     riak_cs_dtrace:dt_object_entry(?MODULE, <<"object_put">>,
@@ -287,6 +315,7 @@ accept_body(RD, Ctx=#context{local_context=LocalCtx,
     riak_cs_get_fsm:stop(GetFsmPid),
     Metadata = riak_cs_wm_utils:extract_user_metadata(RD),
     BlockSize = riak_cs_lfs_utils:block_size(),
+
     %% Check for `x-amz-acl' header to support
     %% non-default ACL at bucket creation time.
     ACL = riak_cs_acl_utils:canned_acl(
@@ -294,8 +323,7 @@ accept_body(RD, Ctx=#context{local_context=LocalCtx,
             {User?RCS_USER.display_name,
              User?RCS_USER.canonical_id,
              User?RCS_USER.key_id},
-            Owner,
-            RiakcPid),
+            riak_cs_wm_utils:bucket_owner(Bucket, RiakcPid)),
     Args = [{Bucket, list_to_binary(Key), Size, list_to_binary(ContentType),
              Metadata, BlockSize, ACL, timer:seconds(60), self(), RiakcPid}],
     {ok, Pid} = riak_cs_put_fsm_sup:start_put_fsm(node(), Args),
