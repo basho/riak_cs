@@ -78,7 +78,7 @@ with Riak CS. For more information about Riak CS please visit our [[http://docs.
 
 * Riak CS Fast Track
 
-  http://docs.basho.com/riakcs/latest/tutorials/fast-track
+  http://docs.basho.com/riakcs/latest/riakcs-tutorials/fast-track
 
 * Contributing to Riak CS
   Basho encourages contributions to Riak CS from the community. Here is
