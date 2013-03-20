@@ -1,3 +1,23 @@
+%% ---------------------------------------------------------------------
+%%
+%% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
+%%
+%% This file is provided to you under the Apache License,
+%% Version 2.0 (the "License"); you may not use this file
+%% except in compliance with the License.  You may obtain
+%% a copy of the License at
+%%
+%%   http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing,
+%% software distributed under the License is distributed on an
+%% "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+%% KIND, either express or implied.  See the License for the
+%% specific language governing permissions and limitations
+%% under the License.
+%%
+%% ---------------------------------------------------------------------
+
 %% see also: http://docs.amazonwebservices.com/AmazonS3/latest/API/RESTBucketGET.html
 %% non mandatory keys have `| undefined' as a
 %% type option.
@@ -66,6 +86,7 @@
 
 -define(LIST_OBJECTS_CACHE, list_objects_cache).
 -define(ENABLE_CACHE, true).
--define(CACHE_TIMEOUT, timer:minutes(15)).  % 2 hours
+-define(CACHE_TIMEOUT, timer:minutes(15)).
 -define(MIN_KEYS_TO_CACHE, 2000).
 -define(MAX_CACHE_BYTES, 104857600). % 100MB
+-define(KEY_LIST_MULTIPLIER, 1.1).

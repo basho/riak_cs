@@ -1,8 +1,22 @@
-%% -------------------------------------------------------------------
+%% ---------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2012 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
 %%
-%% -------------------------------------------------------------------
+%% This file is provided to you under the Apache License,
+%% Version 2.0 (the "License"); you may not use this file
+%% except in compliance with the License.  You may obtain
+%% a copy of the License at
+%%
+%%   http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing,
+%% software distributed under the License is distributed on an
+%% "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+%% KIND, either express or implied.  See the License for the
+%% specific language governing permissions and limitations
+%% under the License.
+%%
+%% ---------------------------------------------------------------------
 
 %% @doc A collection functions for going to or from XML to an erlang
 %% record type.
@@ -112,8 +126,6 @@ make_internal_node(Name, Attributes, Content) ->
     {Name, Attributes, Content}.
 
 -spec make_external_node(atom(), term()) -> external_node().
-make_external_node('ETag', Content) ->
-    {'ETag', ["\"" ++ format_value(Content) ++ "\""]};
 make_external_node(Name, Content) ->
     {Name, [format_value(Content)]}.
 
@@ -173,7 +185,7 @@ format_value(undefined) ->
 format_value(Val) when is_atom(Val) ->
     atom_to_list(Val);
 format_value(Val) when is_binary(Val) ->
-    binary_to_list(Val);
+    unicode:characters_to_list(Val, unicode);
 format_value(Val) when is_integer(Val) ->
     integer_to_list(Val);
 format_value(Val) when is_list(Val) ->
@@ -209,13 +221,13 @@ list_objects_response_to_xml_test() ->
     Owner2 = #list_objects_owner_v1{id = <<"TESTID2">>, display_name = <<"tester2">>},
     Content1 = ?LOKC{key = <<"testkey1">>,
                      last_modified = riak_cs_wm_utils:to_iso_8601("Thu, 29 Nov 2012 17:50:30 GMT"),
-                     etag = <<"fba9dede6af29711d7271245a35813428">>,
+                     etag = <<"\"fba9dede6af29711d7271245a35813428\"">>,
                      size = 12345,
                      owner = Owner1,
                      storage_class = <<"STANDARD">>},
     Content2 = ?LOKC{key = <<"testkey2">>,
                      last_modified = riak_cs_wm_utils:to_iso_8601("Thu, 29 Nov 2012 17:52:30 GMT"),
-                     etag = <<"43433281b2f27731ccf53597645a3985">>,
+                     etag = <<"\"43433281b2f27731ccf53597645a3985\"">>,
                      size = 54321,
                      owner = Owner2,
                      storage_class = <<"STANDARD">>},

@@ -1,8 +1,22 @@
-%% -------------------------------------------------------------------
+%% ---------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2012 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
 %%
-%% -------------------------------------------------------------------
+%% This file is provided to you under the Apache License,
+%% Version 2.0 (the "License"); you may not use this file
+%% except in compliance with the License.  You may obtain
+%% a copy of the License at
+%%
+%%   http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing,
+%% software distributed under the License is distributed on an
+%% "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+%% KIND, either express or implied.  See the License for the
+%% specific language governing permissions and limitations
+%% under the License.
+%%
+%% ---------------------------------------------------------------------
 
 -module(riak_cs_manifest_fsm).
 
@@ -273,8 +287,8 @@ get_and_delete(RiakcPid, UUID, Bucket, Key) ->
                     riakc_pb_socket:delete_obj(RiakcPid, RiakObject);
                 _ ->
                     ObjectToWrite0 =
-                        riakc_obj:update_value(RiakObject,
-                                               term_to_binary(UpdatedManifests)),
+                        riak_cs_utils:update_obj_value(
+                          RiakObject, riak_cs_utils:encode_term(UpdatedManifests)),
                     ObjectToWrite = update_md_with_multipart_2i(
                                       ObjectToWrite0, UpdatedManifests, Bucket, Key),
                     riak_cs_utils:put(RiakcPid, ObjectToWrite)
@@ -297,8 +311,8 @@ get_and_update(RiakcPid, WrappedManifests, Bucket, Key) ->
             %% overwritten UUIDs, then gc_specific_manifests() will
             %% operate on NewManiAdded and save it to Riak when it is
             %% finished.
-            ObjectToWrite0 = riakc_obj:update_value(RiakObject,
-                                                    term_to_binary(NewManiAdded)),
+            ObjectToWrite0 = riak_cs_utils:update_obj_value(
+                               RiakObject, riak_cs_utils:encode_term(NewManiAdded)),
             ObjectToWrite = update_md_with_multipart_2i(
                               ObjectToWrite0, NewManiAdded, Bucket, Key),
             {Result, NewRiakObject} =
@@ -314,7 +328,7 @@ get_and_update(RiakcPid, WrappedManifests, Bucket, Key) ->
             {Result, NewRiakObject, Manifests};
         {error, notfound} ->
             ManifestBucket = riak_cs_utils:to_bucket_name(objects, Bucket),
-            ObjectToWrite0 = riakc_obj:new(ManifestBucket, Key, term_to_binary(WrappedManifests)),
+            ObjectToWrite0 = riakc_obj:new(ManifestBucket, Key, riak_cs_utils:encode_term(WrappedManifests)),
             ObjectToWrite = update_md_with_multipart_2i(
                               ObjectToWrite0, WrappedManifests, Bucket, Key),
             PutResult = riak_cs_utils:put(RiakcPid, ObjectToWrite),
@@ -330,8 +344,8 @@ update_from_previous_read(RiakcPid, RiakObject, Bucket, Key,
                           PreviousManifests, NewManifests) ->
     Resolved = riak_cs_manifest_resolution:resolve([PreviousManifests,
             NewManifests]),
-    NewRiakObject0 = riakc_obj:update_value(RiakObject,
-        term_to_binary(Resolved)),
+    NewRiakObject0 = riak_cs_utils:update_obj_value(RiakObject,
+                                                    riak_cs_utils:encode_term(Resolved)),
     NewRiakObject = update_md_with_multipart_2i(NewRiakObject0, Resolved,
                                                 Bucket, Key),
     %% TODO:

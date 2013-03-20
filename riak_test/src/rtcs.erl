@@ -1,3 +1,22 @@
+%% ---------------------------------------------------------------------
+%%
+%% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
+%%
+%% This file is provided to you under the Apache License,
+%% Version 2.0 (the "License"); you may not use this file
+%% except in compliance with the License.  You may obtain
+%% a copy of the License at
+%%
+%%   http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing,
+%% software distributed under the License is distributed on an
+%% "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+%% KIND, either express or implied.  See the License for the
+%% specific language governing permissions and limitations
+%% under the License.
+%%
+%% ---------------------------------------------------------------------
 -module(rtcs).
 -compile(export_all).
 -include_lib("eunit/include/eunit.hrl").
@@ -25,24 +44,46 @@
 -define(DEFAULT_PROTO, "http").
 
 setup(NumNodes) ->
-    Nodes = build_cluster(NumNodes),
+    setup(NumNodes, default_configs()).
+
+setup(NumNodes, Configs) ->
+    %% Start the erlcloud app
+    erlcloud:start(),
+
     %% STFU sasl
     application:load(sasl),
     application:set_env(sasl, sasl_error_logger, false),
-    %% Start the erlcloud app
-    erlcloud:start(),
-    Nodes.
 
-build_cluster(NumNodes) ->
-     {RiakNodes, _, _} = Nodes =
-        rtcs:deploy_nodes(NumNodes, [{riak, ee_config()},
-                                     {stanchion, stanchion_config()},
-                                     {cs, cs_config()}]),
+    Cfgs = configs(Configs),
+    {{AdminKeyId, AdminSecretKey},
+     {RiakNodes, _CSNodes, _Stanchion}=Nodes} = build_cluster(NumNodes, Cfgs),
+
+    AdminConfig = rtcs:config(AdminKeyId,
+                              AdminSecretKey,
+                              rtcs:cs_port(hd(RiakNodes))),
+    {AdminConfig, Nodes}.
+
+build_cluster(NumNodes, Configs) ->
+    {_, {RiakNodes, _, _}} = Nodes =
+        deploy_nodes(NumNodes, Configs),
+
     rt:wait_until_nodes_ready(RiakNodes),
     lager:info("Build cluster"),
     rtcs:make_cluster(RiakNodes),
     rt:wait_until_ring_converged(RiakNodes),
     Nodes.
+
+configs(CustomConfigs) ->
+    [{riak, proplists:get_value(riak, CustomConfigs, ee_config())},
+     {cs, proplists:get_value(cs, CustomConfigs, cs_config())},
+     {stanchion, proplists:get_value(stanchion,
+                                     CustomConfigs,
+                                     stanchion_config())}].
+
+default_configs() ->
+    [{riak, ee_config()},
+     {stanchion, stanchion_config()},
+     {cs, cs_config()}].
 
 config(Key, Secret, Port) ->
     erlcloud_s3:new(Key,
@@ -58,9 +99,18 @@ create_user(Node, UserIndex) ->
     {A, B, C} = erlang:now(),
     User = "Test User" ++ integer_to_list(UserIndex),
     Email = lists:flatten(io_lib:format("~p~p~p@basho.com", [A, B, C])),
-    {KeyId, Secret, _Id} =
-        rtcs:create_admin_user(cs_port(Node), Email, User),
+    {KeyId, Secret, _Id} = create_user(cs_port(Node), Email, User),
     lager:info("Created user ~p with keys ~p ~p", [Email, KeyId, Secret]),
+    {KeyId, Secret}.
+
+create_admin_user(Node) ->
+    User = "admin",
+    Email = "admin@me.com",
+    {KeyId, Secret, Id} = create_user(cs_port(Node), Email, User),
+    lager:info("Riak CS Admin account created with ~p",[Email]),
+    lager:info("KeyId = ~p",[KeyId]),
+    lager:info("KeySecret = ~p",[Secret]),
+    lager:info("Id = ~p",[Id]),
     {KeyId, Secret}.
 
 cs_port(Node) ->
@@ -99,9 +149,13 @@ ee_config() ->
     ].
 
 cs_config() ->
+    cs_config([]).
+
+cs_config(UserExtra) ->
     [
      lager_config(),
      {riak_cs,
+      UserExtra ++
       [
        {proxy_get, enabled},
        {anonymous_user_creation, true},
@@ -173,24 +227,9 @@ deploy_nodes(NumNodes, InitialConfig) ->
     NL0 = lists:zip(CSNodes, RiakNodes),
     {CS1, R1} = hd(NL0),
     NodeList = [{CS1, R1, StanchionNode} | tl(NL0)],
-
     lager:info("NodeList: ~p", [NodeList]),
 
-    rt:pmap(fun({CSNode, RiakNode, Stanchion}) ->
-                N = rtdev:node_id(RiakNode),
-                stop_cs(N),
-                stop_stanchion(),
-                rtdev:run_riak(N, rtdev:relpath(rtdev:node_version(N)), "stop"),
-                rt:wait_until_unpingable(CSNode),
-                rt:wait_until_unpingable(Stanchion),
-                rt:wait_until_unpingable(RiakNode);
-            ({CSNode, RiakNode}) ->
-                N = rtdev:node_id(RiakNode),
-                stop_cs(N),
-                rtdev:run_riak(N, rtdev:relpath(rtdev:node_version(N)), "stop"),
-                rt:wait_until_unpingable(CSNode),
-                rt:wait_until_unpingable(RiakNode)
-        end, NodeList),
+    stop_all_nodes(NodeList),
 
     [reset_nodes(Project, Path) ||
         {Project, Path} <- [{riak_ee, rt:config(?EE_ROOT)},
@@ -202,27 +241,53 @@ deploy_nodes(NumNodes, InitialConfig) ->
     {_Versions, Configs} = lists:unzip(NodeConfig),
 
     %% Set initial config
-    rt:pmap(fun({_, default}) ->
-                    ok;
-               ({{_CSNode, RiakNode, _Stanchion}, Config}) ->
-                    N = rtdev:node_id(RiakNode),
-                    lager:info("Config: ~p~n~p", [Config, N]),
-                    rtdev:update_app_config(RiakNode, proplists:get_value(riak,
-                            Config)),
-                    update_cs_config(rt:config(?CS_CURRENT), N,
-                        proplists:get_value(cs, Config)),
-                    update_stanchion_config(rt:config(?STANCHION_CURRENT),
-                        proplists:get_value(stanchion, Config));
-                ({{_CSNode, RiakNode}, Config}) ->
-                    N = rtdev:node_id(RiakNode),
-                    lager:info("Config2: ~p~n~p", [Config, N]),
-                    rtdev:update_app_config(RiakNode, proplists:get_value(riak,
-                            Config)),
-                    update_cs_config(rt:config(?CS_CURRENT), N,
-                        proplists:get_value(cs, Config))
-            end,
-            lists:zip(NodeList, Configs)),
+    set_configs(NodeList, Configs),
+    start_all_nodes(NodeList),
 
+    Nodes = {RiakNodes, CSNodes, StanchionNode},
+    [ok = rt:wait_until_pingable(N) || N <- RiakNodes ++ CSNodes ++ [StanchionNode]],
+    [ok = rt:check_singleton_node(N) || N <- RiakNodes],
+
+    rt:wait_until_nodes_ready(RiakNodes),
+
+    %% Create admin user and set in cs and stanchion configs
+    AdminCreds = create_admin_user(hd(RiakNodes)),
+
+    %% Restart cs and stanchion nodes so admin user takes effect
+    stop_cs_and_stanchion_nodes(NodeList),
+
+    set_admin_creds_in_configs(NodeList, Configs, AdminCreds),
+
+    start_cs_and_stanchion_nodes(NodeList),
+    [ok = rt:wait_until_pingable(N) || N <- CSNodes ++ [StanchionNode]],
+
+    lager:info("Deployed nodes: ~p", [Nodes]),
+    {AdminCreds, Nodes}.
+
+start_cs_and_stanchion_nodes(NodeList) ->
+    rt:pmap(fun({_CSNode, RiakNode, _Stanchion}) ->
+                    N = rtdev:node_id(RiakNode),
+                    start_stanchion(),
+                    start_cs(N);
+               ({_CSNode, RiakNode}) ->
+                    N = rtdev:node_id(RiakNode),
+                    start_cs(N)
+            end, NodeList).
+
+stop_cs_and_stanchion_nodes(NodeList) ->
+    rt:pmap(fun({CSNode, RiakNode, Stanchion}) ->
+                    N = rtdev:node_id(RiakNode),
+                    stop_cs(N),
+                    stop_stanchion(),
+                    rt:wait_until_unpingable(CSNode),
+                    rt:wait_until_unpingable(Stanchion);
+               ({CSNode, RiakNode}) ->
+                    N = rtdev:node_id(RiakNode),
+                    stop_cs(N),
+                    rt:wait_until_unpingable(CSNode)
+            end, NodeList).
+
+start_all_nodes(NodeList) ->
     rt:pmap(fun({_CSNode, RiakNode, _Stanchion}) ->
                     N = rtdev:node_id(RiakNode),
                     rtdev:run_riak(N, rtdev:relpath(rtdev:node_version(N)), "start"),
@@ -234,17 +299,65 @@ deploy_nodes(NumNodes, InitialConfig) ->
                     rtdev:run_riak(N, rtdev:relpath(rtdev:node_version(N)), "start"),
                     rt:wait_for_service(RiakNode, riak_kv),
                     start_cs(N)
-            end, NodeList),
+            end, NodeList).
 
-    Nodes = {RiakNodes, CSNodes, StanchionNode},
+stop_all_nodes(NodeList) ->
+    rt:pmap(fun({CSNode, RiakNode, Stanchion}) ->
+                    N = rtdev:node_id(RiakNode),
+                    stop_cs(N),
+                    stop_stanchion(),
+                    rtdev:run_riak(N, rtdev:relpath(rtdev:node_version(N)), "stop"),
+                    rt:wait_until_unpingable(CSNode),
+                    rt:wait_until_unpingable(Stanchion),
+                    rt:wait_until_unpingable(RiakNode);
+               ({CSNode, RiakNode}) ->
+                    N = rtdev:node_id(RiakNode),
+                    stop_cs(N),
+                    rtdev:run_riak(N, rtdev:relpath(rtdev:node_version(N)), "stop"),
+                    rt:wait_until_unpingable(CSNode),
+                    rt:wait_until_unpingable(RiakNode)
+            end, NodeList).
 
-    [ok = rt:wait_until_pingable(N) || N <- RiakNodes ++ CSNodes ++
-        [StanchionNode]],
+set_configs(NodeList, Configs) ->
+    rt:pmap(fun({_, default}) ->
+                    ok;
+               ({{_CSNode, RiakNode, _Stanchion}, Config}) ->
+                    N = rtdev:node_id(RiakNode),
+                    rtdev:update_app_config(RiakNode, proplists:get_value(riak,
+                                                                          Config)),
+                    update_cs_config(rt:config(?CS_CURRENT), N,
+                                     proplists:get_value(cs, Config)),
+                    update_stanchion_config(rt:config(?STANCHION_CURRENT),
+                                            proplists:get_value(stanchion, Config));
+               ({{_CSNode, RiakNode}, Config}) ->
+                    N = rtdev:node_id(RiakNode),
+                    rtdev:update_app_config(RiakNode, proplists:get_value(riak,
+                                                                          Config)),
+                    update_cs_config(rt:config(?CS_CURRENT), N,
+                                     proplists:get_value(cs, Config))
+            end,
+            lists:zip(NodeList, Configs)).
 
-    [ok = rt:check_singleton_node(N) || N <- RiakNodes],
-
-    lager:info("Deployed nodes: ~p", [Nodes]),
-    Nodes.
+set_admin_creds_in_configs(NodeList, Configs, AdminCreds) ->
+    rt:pmap(fun({_, default}) ->
+                    ok;
+               ({{_CSNode, RiakNode, _Stanchion}, Config}) ->
+                    N = rtdev:node_id(RiakNode),
+                    update_cs_config(rt:config(?CS_CURRENT),
+                                     N,
+                                     proplists:get_value(cs, Config),
+                                     AdminCreds),
+                    update_stanchion_config(rt:config(?STANCHION_CURRENT),
+                                            proplists:get_value(stanchion, Config),
+                                            AdminCreds);
+               ({{_CSNode, RiakNode}, Config}) ->
+                    N = rtdev:node_id(RiakNode),
+                    update_cs_config(rt:config(?CS_CURRENT),
+                                     N,
+                                     proplists:get_value(cs, Config),
+                                     AdminCreds)
+            end,
+            lists:zip(NodeList, Configs)).
 
 reset_nodes(Project, Path) ->
     %% Reset nodes to base state
@@ -279,21 +392,37 @@ stop_stanchion() ->
     lager:info("Running ~p", [Cmd]),
     os:cmd(Cmd).
 
+update_cs_config(Prefix, N, Config, {AdminKey, AdminSecret}) ->
+    CSSection = proplists:get_value(riak_cs, Config),
+    UpdConfig = [{riak_cs, update_admin_creds(CSSection, AdminKey, AdminSecret)} |
+                 proplists:delete(riak_cs, Config)],
+    update_cs_config(Prefix, N, UpdConfig).
+
 update_cs_config(Prefix, N, Config) ->
     CSSection = proplists:get_value(riak_cs, Config),
     UpdConfig = [{riak_cs, update_cs_port(CSSection, N)} |
-                  proplists:delete(riak_cs, Config)],
+                 proplists:delete(riak_cs, Config)],
     update_app_config(riakcs_etcpath(Prefix, N) ++ "/app.config", UpdConfig).
+
+update_admin_creds(Config, AdminKey, AdminSecret) ->
+    [{admin_key, AdminKey}, {admin_secret, AdminSecret} |
+     proplists:delete(admin_secret,
+                      proplists:delete(admin_key, Config))].
 
 update_cs_port(Config, N) ->
     PbPort = 10000 + (N * 10) + 7,
     [{riak_pb_port, PbPort} | proplists:delete(riak_pb_port, Config)].
 
+update_stanchion_config(Prefix, Config, {AdminKey, AdminSecret}) ->
+    StanchionSection = proplists:get_value(stanchion, Config),
+    UpdConfig = [{stanchion, update_admin_creds(StanchionSection, AdminKey, AdminSecret)} |
+                 proplists:delete(stanchion, Config)],
+    update_stanchion_config(Prefix, UpdConfig).
+
 update_stanchion_config(Prefix, Config) ->
     update_app_config(stanchion_etcpath(Prefix) ++ "/app.config", Config).
 
 update_app_config(ConfigFile,  Config) ->
-    lager:debug("~nReading config file at ~s~n", [ConfigFile]),
     {ok, [BaseConfig]} = file:consult(ConfigFile),
     MergeA = orddict:from_list(Config),
     MergeB = orddict:from_list(BaseConfig),
@@ -306,7 +435,6 @@ update_app_config(ConfigFile,  Config) ->
                                             end, MergeC, MergeD)
                       end, MergeA, MergeB),
     NewConfigOut = io_lib:format("~p.", [NewConfig]),
-    lager:debug("CONFIG FILE=~s~n",[ConfigFile]),
     ?assertEqual(ok, file:write_file(ConfigFile, NewConfigOut)),
     ok.
 
@@ -324,22 +452,31 @@ deploy_stanchion(Config) ->
     start_stanchion(),
     lager:info("Stanchion started").
 
-
-create_admin_user(Port, EmailAddr, Name) ->
+create_user(Port, EmailAddr, Name) ->
     lager:debug("Trying to create user ~p", [EmailAddr]),
     Cmd="curl -s -H 'Content-Type: application/json' http://localhost:" ++
         integer_to_list(Port) ++
         "/riak-cs/user --data '{\"email\":\"" ++ EmailAddr ++  "\", \"name\":\"" ++ Name ++"\"}'",
     lager:info("Cmd: ~p", [Cmd]),
-    Output = os:cmd(Cmd),
+    Delay = rt:config(rt_retry_delay),
+    Retries = rt:config(rt_max_wait_time) div Delay,
+    OutputFun = fun() -> os:cmd(Cmd) end,
+    Condition = fun(Res) -> Res /= [] end,
+    Output = wait_until(OutputFun, Condition, Retries, Delay),
     lager:debug("Create user output=~p~n",[Output]),
     {struct, JsonData} = mochijson2:decode(Output),
     KeyId = binary_to_list(proplists:get_value(<<"key_id">>, JsonData)),
     KeySecret = binary_to_list(proplists:get_value(<<"key_secret">>, JsonData)),
     Id = binary_to_list(proplists:get_value(<<"id">>, JsonData)),
-    Email = binary_to_list(proplists:get_value(<<"email">>, JsonData)),
-    lager:info("Riak CS Admin account created with ~p",[Email]),
-    lager:info("KeyId = ~p",[KeyId]),
-    lager:info("KeySecret = ~p",[KeySecret]),
-    lager:info("Id = ~p",[Id]),
     {KeyId, KeySecret, Id}.
+
+wait_until(_, _, 0, _) ->
+    fail;
+wait_until(Fun, Condition, Retries, Delay) ->
+    Result = Fun(),
+    case Condition(Result) of
+        true ->
+            Result;
+        false ->
+            wait_until(Fun, Condition, Retries-1, Delay)
+    end.

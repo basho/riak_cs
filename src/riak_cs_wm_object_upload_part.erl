@@ -1,8 +1,22 @@
-%% -------------------------------------------------------------------
+%% ---------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2012 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
 %%
-%% -------------------------------------------------------------------
+%% This file is provided to you under the Apache License,
+%% Version 2.0 (the "License"); you may not use this file
+%% except in compliance with the License.  You may obtain
+%% a copy of the License at
+%%
+%%   http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing,
+%% software distributed under the License is distributed on an
+%% "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+%% KIND, either express or implied.  See the License for the
+%% specific language governing permissions and limitations
+%% under the License.
+%%
+%% ---------------------------------------------------------------------
 
 -module(riak_cs_wm_object_upload_part).
 
@@ -51,58 +65,21 @@ authorize(RD, Ctx0=#context{local_context=LocalCtx0, riakc_pid=RiakPid}) ->
     RequestedAccess =
         riak_cs_acl_utils:requested_access(Method, false),
     LocalCtx = riak_cs_wm_utils:ensure_doc(LocalCtx0, RiakPid),
-    Ctx = Ctx0#context{requested_perm=RequestedAccess,local_context=LocalCtx},
-    check_permission(Method, RD, Ctx, LocalCtx#key_context.manifest).
+    Ctx = Ctx0#context{requested_perm=RequestedAccess, local_context=LocalCtx},
 
-%% @doc Final step of {@link forbidden/2}: Authentication succeeded,
-%% now perform ACL check to verify access permission.
--spec check_permission(atom(), #wm_reqdata{}, #context{}, lfs_manifest() | notfound) ->
-                              {boolean() | {halt, non_neg_integer()}, #wm_reqdata{}, #context{}}.
-check_permission(_, RD, Ctx=#context{requested_perm=RequestedAccess,
-                                     local_context=LocalCtx}, Mfst) ->
-    #key_context{bucket=Bucket} = LocalCtx,
-    RiakPid = Ctx#context.riakc_pid,
-    case Ctx#context.user of
-        undefined ->
-            User = CanonicalId = undefined;
-        User ->
-            CanonicalId = User?RCS_USER.canonical_id
-    end,
-    case Mfst of
-        notfound ->
-            case wrq:method(RD) of
-                'GET' ->
-                    %% Object ownership will be checked by
-                    %% riak_cs_mp_utils:do_part_common(), so we give blanket
-                    %% permission here.
-                    ObjectAcl = skip;
-                _ ->
-                    ObjectAcl = undefined
-                end;
+    %% Final step of {@link forbidden/2}: Authentication succeeded,
+    case {Method, LocalCtx#key_context.manifest} of
+        {'GET', notfound} ->
+            %% List Parts
+            %% Object ownership will be checked by riak_cs_mp_utils:do_part_common(),
+            %% so we give blanket permission here - Never check ACL but Policy.
+            riak_cs_wm_utils:object_access_authorize_helper(object_part, true, true, RD, Ctx);
+        {'HEAD', notfound} ->
+            {{halt, 404},
+             riak_cs_access_log_handler:set_user(Ctx#context.user, RD), Ctx};
         _ ->
-            ObjectAcl = Mfst?MANIFEST.acl
-    end,
-    case if ObjectAcl == skip -> true;
-            true              -> riak_cs_acl:object_access(Bucket,
-                                                           ObjectAcl,
-                                                           RequestedAccess,
-                                                           CanonicalId,
-                                                           RiakPid)
-         end of
-        true ->
-            %% actor is the owner
-            AccessRD = riak_cs_access_log_handler:set_user(User, RD),
-            UserStr = User?RCS_USER.canonical_id,
-            UpdLocalCtx = LocalCtx#key_context{owner=UserStr},
-            {false, AccessRD, Ctx#context{local_context=UpdLocalCtx}};
-        {true, OwnerId} ->
-            %% bill the owner, not the actor
-            AccessRD = riak_cs_access_log_handler:set_user(OwnerId, RD),
-            UpdLocalCtx = LocalCtx#key_context{owner=OwnerId},
-            {false, AccessRD, Ctx#context{local_context=UpdLocalCtx}};
-        false ->
-            %% ACL check failed, deny access
-            riak_cs_wm_utils:deny_access(RD, Ctx)
+            %% Initiate/Complete/Abort multipart
+            riak_cs_wm_utils:object_access_authorize_helper(object_part, true, false, RD, Ctx)
     end.
 
 %% @doc Get the list of methods this resource supports.
@@ -139,9 +116,7 @@ process_post(RD, Ctx=#context{local_context=LocalCtx,
                     RD2 = wrq:set_resp_body(XmlBody, RD),
                     {true, RD2, Ctx};
                 {error, notfound} ->
-                    XErr = riak_cs_mp_utils:make_special_error("NoSuchUpload"),
-                    RD2 = wrq:set_resp_body(XErr, RD),
-                    {{halt, 404}, RD2, Ctx};
+                    riak_cs_s3_response:no_such_upload_response(UploadId, RD, Ctx);
                 {error, Reason} ->
                     riak_cs_s3_response:api_error(Reason, RD, Ctx)
             end
@@ -189,7 +164,7 @@ delete_resource(RD, Ctx=#context{local_context=LocalCtx,
                 ok ->
                     {true, RD, Ctx};
                 {error, notfound} ->
-                    {{halt, 404}, RD, Ctx};
+                    riak_cs_s3_response:no_such_upload_response(UploadId, RD, Ctx);
                 {error, Reason} ->
                     riak_cs_s3_response:api_error(Reason, RD, Ctx)
             end
@@ -262,10 +237,8 @@ accept_body(RD, Ctx0=#context{local_context=LocalCtx0,
                 Ctx = Ctx0#context{local_context=LocalCtx},
                 accept_streambody(RD, Ctx, PutPid,
                                   wrq:stream_req_body(RD, BlockSize));
-            {error, notfound} ->
-                XErr = riak_cs_mp_utils:make_special_error("NoSuchUpload"),
-                RD2 = wrq:set_resp_body(XErr, RD),
-                {{halt, 404}, RD2, Ctx0};
+            {error, notfond} ->
+                riak_cs_s3_response:no_such_upload_response(UploadId, RD, Ctx0);
             {error, Reason} ->
                 riak_cs_s3_response:api_error(Reason, RD, Ctx0)
         end
@@ -314,7 +287,7 @@ to_xml(RD, Ctx=#context{local_context=LocalCtx,
                    [
                     {'PartNumber', [integer_to_list(P?PART_DESCR.part_number)]},
                     {'LastModified', [P?PART_DESCR.last_modified]},
-                    {'ETag', [riak_cs_utils:binary_to_hexlist(P?PART_DESCR.etag)]},
+                    {'ETag', [riak_cs_utils:etag_from_binary(P?PART_DESCR.etag)]},
                     {'Size', [integer_to_list(P?PART_DESCR.size)]}
                    ]
                   } || P <- lists:sort(Ps)],
@@ -346,6 +319,8 @@ to_xml(RD, Ctx=#context{local_context=LocalCtx,
                      },
             Body = riak_cs_s3_response:export_xml([XmlDoc]),
             {Body, RD, Ctx};
+        {error, notfound} ->
+            riak_cs_s3_response:no_such_upload_response(UploadId, RD, Ctx);
         {error, Reason} ->
             riak_cs_s3_response:api_error(Reason, RD, Ctx)
     end.

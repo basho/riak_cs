@@ -1,8 +1,22 @@
-%% -------------------------------------------------------------------
+%% ---------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2012 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
 %%
-%% -------------------------------------------------------------------
+%% This file is provided to you under the Apache License,
+%% Version 2.0 (the "License"); you may not use this file
+%% except in compliance with the License.  You may obtain
+%% a copy of the License at
+%%
+%%   http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing,
+%% software distributed under the License is distributed on an
+%% "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+%% KIND, either express or implied.  See the License for the
+%% specific language governing permissions and limitations
+%% under the License.
+%%
+%% ---------------------------------------------------------------------
 %%
 %% @doc WM callback module for S3 list multipart uploads.
 %%
@@ -41,7 +55,7 @@ malformed_request(RD,Ctx=#context{local_context=LocalCtx0}) ->
 
 -spec authorize(#wm_reqdata{}, #context{}) -> {boolean() | {halt, non_neg_integer()}, #wm_reqdata{}, #context{}}.
 authorize(RD, Ctx) ->
-    riak_cs_wm_utils:bucket_access_authorize_helper(bucket_uploads, true, RD, Ctx).
+    riak_cs_wm_utils:bucket_access_authorize_helper(bucket_uploads, false, RD, Ctx).
 
 %% @doc Get the list of methods this resource supports.
 -spec allowed_methods() -> [atom()].
@@ -57,7 +71,7 @@ to_xml(RD, Ctx=#context{local_context=LocalCtx,
         {ok, {Ds, Commons}} ->
             Us = [{'Upload',
                    [
-                    {'Key', [binary_to_list(D?MULTIPART_DESCR.key)]},
+                    {'Key', [unicode:characters_to_list(D?MULTIPART_DESCR.key, unicode)]},
                     {'UploadId', [binary_to_list(base64url:encode(D?MULTIPART_DESCR.upload_id))]},
                     {'Initiator',               % TODO: replace with ARN data?
                      [{'ID', [D?MULTIPART_DESCR.owner_key_id]},

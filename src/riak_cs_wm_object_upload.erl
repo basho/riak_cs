@@ -1,8 +1,22 @@
-%% -------------------------------------------------------------------
+%% ---------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2012 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
 %%
-%% -------------------------------------------------------------------
+%% This file is provided to you under the Apache License,
+%% Version 2.0 (the "License"); you may not use this file
+%% except in compliance with the License.  You may obtain
+%% a copy of the License at
+%%
+%%   http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing,
+%% software distributed under the License is distributed on an
+%% "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+%% KIND, either express or implied.  See the License for the
+%% specific language governing permissions and limitations
+%% under the License.
+%%
+%% ---------------------------------------------------------------------
 
 -module(riak_cs_wm_object_upload).
 
@@ -47,51 +61,9 @@ authorize(RD, Ctx0=#context{local_context=LocalCtx0, riakc_pid=RiakPid}) ->
         riak_cs_acl_utils:requested_access(Method, false),
     LocalCtx = riak_cs_wm_utils:ensure_doc(LocalCtx0, RiakPid),
     Ctx = Ctx0#context{requested_perm=RequestedAccess,local_context=LocalCtx},
-    check_permission(Method, RD, Ctx, LocalCtx#key_context.manifest).
 
-%% @doc Final step of {@link forbidden/2}: Authentication succeeded,
-%% now perform ACL check to verify access permission.
--spec check_permission(atom(), #wm_reqdata{}, #context{}, lfs_manifest() | notfound) ->
-                              {boolean() | {halt, non_neg_integer()}, #wm_reqdata{}, #context{}}.
-check_permission('GET', RD, Ctx, notfound) ->
-    {{halt, 404}, riak_cs_access_log_handler:set_user(Ctx#context.user, RD), Ctx};
-check_permission('HEAD', RD, Ctx, notfound) ->
-    {{halt, 404}, riak_cs_access_log_handler:set_user(Ctx#context.user, RD), Ctx};
-check_permission(_, RD, Ctx=#context{requested_perm=RequestedAccess,local_context=LocalCtx}, Mfst) ->
-    #key_context{bucket=Bucket} = LocalCtx,
-    RiakPid = Ctx#context.riakc_pid,
-    case Ctx#context.user of
-        undefined ->
-            User = CanonicalId = undefined;
-        User ->
-            CanonicalId = User?RCS_USER.canonical_id
-    end,
-    case Mfst of
-        notfound ->
-            ObjectAcl = undefined;
-        _ ->
-            ObjectAcl = Mfst?MANIFEST.acl
-    end,
-    case riak_cs_acl:object_access(Bucket,
-                                   ObjectAcl,
-                                   RequestedAccess,
-                                   CanonicalId,
-                                   RiakPid) of
-        true ->
-            %% actor is the owner
-            AccessRD = riak_cs_access_log_handler:set_user(User, RD),
-            UserStr = User?RCS_USER.canonical_id,
-            UpdLocalCtx = LocalCtx#key_context{owner=UserStr},
-            {false, AccessRD, Ctx#context{local_context=UpdLocalCtx}};
-        {true, OwnerId} ->
-            %% bill the owner, not the actor
-            AccessRD = riak_cs_access_log_handler:set_user(OwnerId, RD),
-            UpdLocalCtx = LocalCtx#key_context{owner=OwnerId},
-            {false, AccessRD, Ctx#context{local_context=UpdLocalCtx}};
-        false ->
-            %% ACL check failed, deny access
-            riak_cs_wm_utils:deny_access(RD, Ctx)
-    end.
+    riak_cs_wm_utils:object_access_authorize_helper(object_part, false, RD, Ctx).
+
 
 %% @doc Get the list of methods this resource supports.
 -spec allowed_methods() -> [atom()].
@@ -103,7 +75,7 @@ post_is_create(RD, Ctx) ->
 
 process_post(RD, Ctx=#context{local_context=LocalCtx,
                               riakc_pid=RiakcPid}) ->
-    #key_context{bucket=Bucket, key=Key, owner=Owner} = LocalCtx,
+    #key_context{bucket=Bucket, key=Key} = LocalCtx,
     ContentType = try
                       list_to_binary(wrq:get_req_header("Content-Type", RD))
                   catch error:badarg ->
@@ -114,8 +86,7 @@ process_post(RD, Ctx=#context{local_context=LocalCtx,
     ACL = riak_cs_acl_utils:canned_acl(
             wrq:get_req_header("x-amz-acl", RD),
             User,
-            Owner,
-            RiakcPid),
+            riak_cs_wm_utils:bucket_owner(Bucket, RiakcPid)),
     %% TODO: pass in x-amz-server-side​-encryption?
     %% TODO: pass in x-amz-storage-​class?
     %% TODO: pass in x-amz-grant-* headers?

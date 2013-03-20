@@ -1,8 +1,22 @@
-%% -------------------------------------------------------------------
+%% ---------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2012 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
 %%
-%% -------------------------------------------------------------------
+%% This file is provided to you under the Apache License,
+%% Version 2.0 (the "License"); you may not use this file
+%% except in compliance with the License.  You may obtain
+%% a copy of the License at
+%%
+%%   http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing,
+%% software distributed under the License is distributed on an
+%% "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+%% KIND, either express or implied.  See the License for the
+%% specific language governing permissions and limitations
+%% under the License.
+%%
+%% ---------------------------------------------------------------------
 
 -module(riak_cs_wm_common).
 
@@ -11,6 +25,8 @@
          forbidden/2,
          content_types_accepted/2,
          content_types_provided/2,
+         generate_etag/2,
+         last_modified/2,
          valid_entity_length/2,
          validate_content_checksum/2,
          malformed_request/2,
@@ -29,6 +45,8 @@
 
 -export([default_allowed_methods/0,
          default_content_types/2,
+         default_generate_etag/2,
+         default_last_modified/2,
          default_finish_request/2,
          default_init/1,
          default_authorize/2,
@@ -92,7 +110,10 @@ malformed_request(RD, Ctx=#context{submodule=Mod,
                                           malformed_request,
                                           [RD, Ctx],
                                           ExportsFun),
-    riak_cs_dtrace:dt_wm_return_bool({?MODULE, Mod}, <<"malformed_request">>, Malformed),
+    riak_cs_dtrace:dt_wm_return_bool_with_default({?MODULE, Mod},
+                                                  <<"malformed_request">>,
+                                                  Malformed,
+                                                 false),
     R.
 
 
@@ -103,7 +124,10 @@ valid_entity_length(RD, Ctx=#context{submodule=Mod, exports_fun=ExportsFun}) ->
                                       valid_entity_length,
                                       [RD, Ctx],
                                       ExportsFun),
-    riak_cs_dtrace:dt_wm_return_bool({?MODULE, Mod}, <<"valid_entity_length">>, Valid),
+    riak_cs_dtrace:dt_wm_return_bool_with_default({?MODULE, Mod},
+                                                  <<"valid_entity_length">>,
+                                                  Valid,
+                                                  true),
     R.
 
 -type validate_checksum_response() :: {error, term()} |
@@ -117,7 +141,10 @@ validate_content_checksum(RD, Ctx=#context{submodule=Mod, exports_fun=ExportsFun
                                       validate_content_checksum,
                                       [RD, Ctx],
                                       ExportsFun),
-    riak_cs_dtrace:dt_wm_return_bool({?MODULE, Mod}, <<"validate_content_checksum">>, Valid),
+    riak_cs_dtrace:dt_wm_return_bool_with_default({?MODULE, Mod},
+                                                  <<"validate_content_checksum">>,
+                                                  Valid,
+                                                  true),
     R.
 
 -spec forbidden(#wm_reqdata{}, #context{}) -> {boolean() | {halt, non_neg_integer()}, #wm_reqdata{}, #context{}}.
@@ -184,6 +211,24 @@ content_types_provided(RD, Ctx=#context{submodule=Mod,
     riak_cs_dtrace:dt_wm_entry({?MODULE, Mod}, <<"content_types_provided">>),
     resource_call(Mod,
                   content_types_provided,
+                  [RD,Ctx],
+                  ExportsFun).
+
+-spec generate_etag(#wm_reqdata{}, #context{}) -> {string(), #wm_reqdata{}, #context{}}.
+generate_etag(RD, Ctx=#context{submodule=Mod,
+                               exports_fun=ExportsFun}) ->
+    riak_cs_dtrace:dt_wm_entry({?MODULE, Mod}, <<"generate_etag">>),
+    resource_call(Mod,
+                  generate_etag,
+                  [RD,Ctx],
+                  ExportsFun).
+
+-spec last_modified(#wm_reqdata{}, #context{}) -> {calendar:datetime(), #wm_reqdata{}, #context{}}.
+last_modified(RD, Ctx=#context{submodule=Mod,
+                               exports_fun=ExportsFun}) ->
+    riak_cs_dtrace:dt_wm_entry({?MODULE, Mod}, <<"last_modified">>),
+    resource_call(Mod,
+                  last_modified,
                   [RD,Ctx],
                   ExportsFun).
 
@@ -382,6 +427,10 @@ default(content_types_accepted) ->
     default_content_types;
 default(content_types_provided) ->
     default_content_types;
+default(generate_etag) ->
+    default_generate_etag;
+default(last_modified) ->
+    default_last_modified;
 default(malformed_request) ->
     default_malformed_request;
 default(valid_entity_length) ->
@@ -413,6 +462,12 @@ default_validate_content_checksum(RD, Ctx) ->
 
 default_content_types(RD, Ctx) ->
     {[], RD, Ctx}.
+
+default_generate_etag(RD, Ctx) ->
+    {undefined, RD, Ctx}.
+
+default_last_modified(RD, Ctx) ->
+    {undefined, RD, Ctx}.
 
 default_delete_resource(RD, Ctx) ->
     {false, RD, Ctx}.
