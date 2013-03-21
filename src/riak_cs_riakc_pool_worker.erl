@@ -45,7 +45,13 @@ riak_host_port() ->
 -spec start_link(term()) -> {ok, pid()} | {error, term()}.
 start_link(_Args) ->
     {Host, Port} = riak_host_port(),
-    riakc_pb_socket:start_link(Host, Port, [{connect_timeout, 10000}]).
+    case application:get_env(riak_cs, riakc_connect_timeout) of
+        {ok, Timeout} ->
+            ok;
+        undefined ->
+            Timeout = 10000
+    end,
+    riakc_pb_socket:start_link(Host, Port, [{connect_timeout, Timeout}]).
 
 stop(undefined) ->
     ok;
