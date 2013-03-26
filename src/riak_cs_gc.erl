@@ -32,7 +32,7 @@
 -export([decode_and_merge_siblings/2,
          gc_interval/0,
          gc_retry_interval/0,
-         gc_active_manifests/5,
+         gc_active_and_writing_manifests/5,
          gc_specific_manifests/5,
          epoch_start/0,
          leeway_seconds/0,
@@ -43,30 +43,29 @@
 %%% Public API
 %%%===================================================================
 
-gc_active_manifests(Manifests, RiakObject, Bucket, Key, RiakcPid) ->
-    case riak_cs_manifest_utils:active_manifest(Manifests) of
-        {ok, M} ->
-            case riak_cs_mp_utils:clean_multipart_unused_parts(M, RiakcPid) of
-                same ->
-                    ActiveUUIDs = [M?MANIFEST.uuid],
-                    GCManiResponse = gc_specific_manifests(ActiveUUIDs,
-                                                           RiakObject,
-                                                           Bucket, Key,
-                                                           RiakcPid),
-                    return_active_uuids_from_gc_response(GCManiResponse,
-                                                         ActiveUUIDs);
-                updated ->
-                    updated
-            end;
-        _ ->
-            {ok, []}
-    end.
+gc_active_and_writing_manifests(Manifests, RiakObject, Bucket, Key, RiakcPid) ->
+    ActiveManifests = riak_cs_manifest_utils:active_and_writing_manifests(Manifests),
+    gc_manifests(ActiveManifests, RiakObject, Bucket, Key, RiakcPid, []).
 
 %% @private
-return_active_uuids_from_gc_response({ok, _RiakObject}, ActiveUUIDs) ->
-    {ok, ActiveUUIDs};
-return_active_uuids_from_gc_response({error, _Error}=Error, _ActiveUUIDs) ->
-    Error.
+gc_manifests([], _RiakObject, _Bucket, _Key, _RiakcPid, Acc) ->
+    {ok, Acc};
+gc_manifests([{UUID, M} | Manifests], RiakObject, Bucket, Key, RiakcPid, Acc) ->
+    case riak_cs_mp_utils:clean_multipart_unused_parts(M, RiakcPid) of
+        same ->
+            case gc_specific_manifests([UUID],
+                                       RiakObject,
+                                       Bucket, Key,
+                                       RiakcPid) of
+                {ok, _} ->
+                    gc_manifests(Manifests, RiakObject, Bucket, Key, RiakcPid,
+                                         [UUID | Acc]);
+                Error ->
+                    Error
+            end;
+        updated ->
+            updated
+    end.
 
 %% @private
 -spec gc_specific_manifests(UUIDsToMark :: [binary()],
