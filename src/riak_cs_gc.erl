@@ -32,7 +32,7 @@
 -export([decode_and_merge_siblings/2,
          gc_interval/0,
          gc_retry_interval/0,
-         gc_active_manifests/5,
+         gc_active_manifests/3,
          gc_specific_manifests/5,
          epoch_start/0,
          leeway_seconds/0,
@@ -43,30 +43,62 @@
 %%% Public API
 %%%===================================================================
 
-gc_active_manifests(Manifests, RiakObject, Bucket, Key, RiakcPid) ->
-    case riak_cs_manifest_utils:active_manifest(Manifests) of
-        {ok, M} ->
-            case riak_cs_mp_utils:clean_multipart_unused_parts(M, RiakcPid) of
-                same ->
-                    ActiveUUIDs = [M?MANIFEST.uuid],
-                    GCManiResponse = gc_specific_manifests(ActiveUUIDs,
-                                                           RiakObject,
-                                                           Bucket, Key,
-                                                           RiakcPid),
-                    return_active_uuids_from_gc_response(GCManiResponse,
-                                                         ActiveUUIDs);
-                updated ->
-                    updated
-            end;
-        _ ->
-            {ok, []}
-    end.
+%% @doc Keep requesting manifests until 
+%% 1) There are no more active manifests 
+%% 2) All previously active multipart manifests have had their unused parts cleaned
+%%    and become active+multipart_clean
+%% 3) All active manifests and active+multipart_clean manifests for multipart ar GC'd
+%%            OR
+%% There is an Error.
+%% Note that any error is irrespective of the current position of the GC states.
+%% Some manifests may have been GC'd and then an error occurs. In this case the
+%% client will only get the error response.
+-spec gc_active_manifests(binary(), binary(), pid()) -> 
+    {ok, [binary()]} | {error, term()}.
+gc_active_manifests(Bucket, Key, RiakcPid) ->
+    gc_active_manifests(Bucket, Key, RiakcPid, []).
 
 %% @private
-return_active_uuids_from_gc_response({ok, _RiakObject}, ActiveUUIDs) ->
-    {ok, ActiveUUIDs};
-return_active_uuids_from_gc_response({error, _Error}=Error, _ActiveUUIDs) ->
-    Error.
+gc_active_manifests(Bucket, Key, RiakcPid, UUIDs) ->
+   case get_active_manifests(Bucket, Key, RiakcPid) of
+        {ok, _RiakObject, []} -> {ok, UUIDs};
+        {ok, RiakObject, Manifests} ->
+            UnchangedManifests = clean_manifests(Manifests, RiakcPid),
+            case gc_manifests(UnchangedManifests, RiakObject, Bucket, Key, RiakcPid) of
+                {error, _}=Error -> Error;
+                NewUUIDs -> gc_active_manifests(Bucket, Key, RiakcPid, UUIDs ++ NewUUIDs)
+            end;
+        {error, not_found} ->{ok, UUIDs};
+        {error, _}=Error -> Error
+    end.
+
+get_active_manifests(Bucket, Key, RiakcPid) ->
+    active_manifests(riak_cs_utils:get_manifests(RiakcPid, Bucket, Key)).
+
+active_manifests({ok, RiakObject, Manifests}) -> 
+    {ok, RiakObject, riak_cs_manifest_utils:active_manifests(Manifests)};
+active_manifests({error, _}=Error) -> Error.
+
+clean_manifests(ActiveManifests, RiakcPid) ->
+    [M || M <- ActiveManifests, clean_multipart_manifest(M, RiakcPid)]. 
+
+clean_multipart_manifest(M, RiakcPid) ->
+    is_multipart_clean(riak_cs_mp_utils:clean_multipart_unused_parts(M, RiakcPid)).
+
+is_multipart_clean(same) -> true;
+is_multipart_clean(updated) -> false.
+
+gc_manifests(Manifests, RiakObject, Bucket, Key, RiakcPid) ->
+    catch lists:foldl(fun(M, UUIDs) -> 
+                          gc_manifest(M, RiakObject, Bucket, Key, RiakcPid, UUIDs) 
+                      end, [], Manifests).
+
+gc_manifest(M, RiakObject, Bucket, Key, RiakcPid, UUIDs) ->
+    UUID = M?MANIFEST.uuid,
+    check(gc_specific_manifests([UUID], RiakObject, Bucket, Key, RiakcPid), [UUID | UUIDs]).
+
+check({ok, _}, Val) -> Val;
+check({error, _}=Error, _Val) -> throw(Error).
 
 %% @private
 -spec gc_specific_manifests(UUIDsToMark :: [binary()],
