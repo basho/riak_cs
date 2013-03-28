@@ -188,6 +188,7 @@ start_and_wait_until_fullsync_complete(Node) ->
 
     lager:info("Fullsync on ~p complete", [Node]).
 
+
 wait_until_leader(Node) ->
     Res = rt:wait_until(Node,
         fun(_) ->
@@ -261,3 +262,62 @@ do_write(Node, Start, End, Bucket, W) ->
             lists:flatten([rt:systest_write(Node, S, S, Bucket, W) ||
                     {S, _Error} <- Errors])
     end.
+
+%% The functions below are for 1.3 repl (aka Advanced Mode MDC)
+connect_cluster(Node, IP, Port) ->
+    Res = rpc:call(Node, riak_repl_console, connect,
+        [[IP, integer_to_list(Port)]]),
+    ?assertEqual(ok, Res).
+
+disconnect_cluster(Node, Name) ->
+    Res = rpc:call(Node, riak_repl_console, disconnect,
+        [[Name]]),
+    ?assertEqual(ok, Res).
+
+wait_for_connection(Node, Name) ->
+    rt:wait_until(Node,
+        fun(_) ->
+                {ok, Connections} = rpc:call(Node, riak_core_cluster_mgr,
+                    get_connections, []),
+                lists:any(fun({{cluster_by_name, N}, _}) when N == Name -> true;
+                        (_) -> false
+                    end, Connections)
+        end).
+
+wait_until_no_connection(Node) ->
+    rt:wait_until(Node,
+        fun(_) ->
+                Status = rpc:call(Node, riak_repl_console, status, [quiet]),
+                case proplists:get_value(connected_clusters, Status) of
+                    [] ->
+                        true;
+                    _ ->
+                        false
+                end
+        end). %% 40 seconds is enough for repl
+
+enable_realtime(Node, Cluster) ->
+    Res = rpc:call(Node, riak_repl_console, realtime, [["enable", Cluster]]),
+    ?assertEqual(ok, Res).
+
+disable_realtime(Node, Cluster) ->
+    Res = rpc:call(Node, riak_repl_console, realtime, [["disable", Cluster]]),
+    ?assertEqual(ok, Res).
+
+enable_fullsync(Node, Cluster) ->
+    Res = rpc:call(Node, riak_repl_console, fullsync, [["enable", Cluster]]),
+    ?assertEqual(ok, Res).
+
+start_realtime(Node, Cluster) ->
+    Res = rpc:call(Node, riak_repl_console, realtime, [["start", Cluster]]),
+    ?assertEqual(ok, Res).
+
+stop_realtime(Node, Cluster) ->
+    Res = rpc:call(Node, riak_repl_console, realtime, [["stop", Cluster]]),
+    ?assertEqual(ok, Res).
+
+name_cluster(Node, Name) ->
+    lager:info("Naming cluster ~p",[Name]),
+    Res = rpc:call(Node, riak_repl_console, clustername, [[Name]]),
+    ?assertEqual(ok, Res).
+
