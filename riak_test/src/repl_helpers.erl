@@ -321,3 +321,96 @@ name_cluster(Node, Name) ->
     Res = rpc:call(Node, riak_repl_console, clustername, [[Name]]),
     ?assertEqual(ok, Res).
 
+connect_clusters13(LeaderA, ANodes, BPort, Name) ->
+    lager:info("Connecting to ~p", [Name]),
+    connect_cluster13(LeaderA, "127.0.0.1", BPort),
+    ?assertEqual(ok, wait_for_connection13(LeaderA, Name)),
+    repl_util:enable_realtime(LeaderA, Name),
+    rt:wait_until_ring_converged(ANodes),
+    repl_util:start_realtime(LeaderA, Name),
+    rt:wait_until_ring_converged(ANodes),
+    repl_util:enable_fullsync(LeaderA, Name),
+    rt:wait_until_ring_converged(ANodes),
+    enable_pg13(LeaderA, Name),
+    rt:wait_until_ring_converged(ANodes),
+    ?assertEqual(ok, wait_for_connection13(LeaderA, Name)),
+    rt:wait_until_ring_converged(ANodes).
+
+disconnect_clusters13(LeaderA, ANodes, Name) ->
+    lager:info("Disconnecting from ~p", [Name]),
+    disconnect_cluster13(LeaderA, Name),
+    repl_util:disable_realtime(LeaderA, Name),
+    rt:wait_until_ring_converged(ANodes),
+    repl_util:stop_realtime(LeaderA, Name),
+    rt:wait_until_ring_converged(ANodes),
+    disable_pg13(LeaderA, Name),
+    rt:wait_until_ring_converged(ANodes),
+    ?assertEqual(ok, wait_until_no_connection13(LeaderA)),
+    rt:wait_until_ring_converged(ANodes).
+
+start_and_wait_until_fullsync_complete13(Node) ->
+    Status0 = rpc:call(Node, riak_repl_console, status, [quiet]),
+    Count = proplists:get_value(server_fullsyncs, Status0) + 1,
+    lager:info("waiting for fullsync count to be ~p", [Count]),
+
+    lager:info("Starting fullsync on ~p (~p)", [Node,
+            rtdev:node_version(rtdev:node_id(Node))]),
+    rpc:call(Node, riak_repl_console, fullsync, [["start"]]),
+    %% sleep because of the old bug where stats will crash if you call it too
+    %% soon after starting a fullsync
+    timer:sleep(500),
+
+    Res = rt:wait_until(Node,
+        fun(_) ->
+                Status = rpc:call(Node, riak_repl_console, status, [quiet]),
+                case proplists:get_value(server_fullsyncs, Status) of
+                    C when C >= Count ->
+                        true;
+                    _ ->
+                        false
+                end
+        end),
+    ?assertEqual(ok, Res),
+
+    lager:info("Fullsync on ~p complete", [Node]).
+
+wait_for_connection13(Node, Name) ->
+    rt:wait_until(Node,
+        fun(_) ->
+                {ok, Connections} = rpc:call(Node, riak_core_cluster_mgr,
+                    get_connections, []),
+                lists:any(fun({{cluster_by_name, N}, _}) when N == Name -> true;
+                        (_) -> false
+                    end, Connections)
+        end).
+
+wait_until_no_connection13(Node) ->
+    rt:wait_until(Node,
+        fun(_) ->
+                Status = rpc:call(Node, riak_repl_console, status, [quiet]),
+                case proplists:get_value(connected_clusters, Status) of
+                    [] ->
+                        true;
+                    _ ->
+                        false
+                end
+        end). %% 40 seconds is enough for repl
+
+connect_cluster13(Node, IP, Port) ->
+    Res = rpc:call(Node, riak_repl_console, connect,
+        [[IP, integer_to_list(Port)]]),
+    ?assertEqual(ok, Res).
+
+disconnect_cluster13(Node, Name) ->
+    Res = rpc:call(Node, riak_repl_console, disconnect,
+        [[Name]]),
+    ?assertEqual(ok, Res).
+
+enable_pg13(Node, Cluster) ->
+    Res = rpc:call(Node, riak_repl_console, proxy_get, [["enable", Cluster]]),
+    ?assertEqual(ok, Res).
+
+disable_pg13(Node, Cluster) ->
+    Res = rpc:call(Node, riak_repl_console, proxy_get, [["disable", Cluster]]),
+    ?assertEqual(ok, Res).
+
