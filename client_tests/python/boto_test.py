@@ -49,8 +49,8 @@ def md5_from_key(boto_key):
     return m.hexdigest()
 
 # `parts_list` should be a list of file-like objects
-def upload_multipart(bucket, key_name, parts_list):
-    upload = bucket.initiate_multipart_upload(key_name)
+def upload_multipart(bucket, key_name, parts_list, metadata={}):
+    upload = bucket.initiate_multipart_upload(key_name, metadata=metadata)
     for index, val in enumerate(parts_list):
         upload.upload_part_from_file(val, index + 1)
     upload.complete_upload()
@@ -479,6 +479,51 @@ class MultipartUploadTestsUnderPolicy(S3ApiVerificationTestBase):
         except S3ResponseError as e:
             self.assertEqual(e.status, 403)
             self.assertEqual(e.reason, 'Forbidden')
+
+class ObjectMetadataTest(S3ApiVerificationTestBase):
+    "Test object metadata, e.g. Content-Encoding, x-amz-meta-*, for PUT/GET"
+
+    metadata = {"Content-Disposition": 'attachment; filename="metaname.txt"',
+                "Content-Encoding": 'identity',
+                "Expires": "Tue, 19 Jan 2038 03:14:07 GMT",
+                "mtime": "1364742057",
+                "UID": "0",
+                "with-hypen": "1"}
+
+    def test_normal_object_metadata(self):
+        key_name = str(uuid.uuid4())
+        bucket = self.conn.create_bucket(self.bucket_name)
+        key = Key(bucket, key_name)
+        for k,v in self.metadata.items():
+            key.set_metadata(k, v)
+        key.set_contents_from_string("test_normal_object_metadata")
+        self.assert_metadata(bucket, key_name)
+
+    def test_mp_object_metadata(self):
+        key_name = str(uuid.uuid4())
+        bucket = self.conn.create_bucket(self.bucket_name)
+        upload = upload_multipart(bucket, key_name, [StringIO("part1")],
+                                  metadata=self.metadata)
+        self.assert_metadata(bucket, key_name)
+
+    def assert_metadata(self, bucket, key_name):
+        key = Key(bucket, key_name)
+        key.get_contents_as_string()
+
+        self.assertEqual(key.content_disposition,
+                         'attachment; filename="metaname.txt"')
+        self.assertEqual(key.content_encoding, "identity")
+        # TODO: Expires header can be accessed by boto?
+        # self.assertEqual(key.expires, "Tue, 19 Jan 2038 03:14:07 GMT")
+        self.assertEqual(key.get_metadata("mtime"), "1364742057")
+        self.assertEqual(key.get_metadata("uid"), "0")
+        self.assertEqual(key.get_metadata("with-hypen"), "1")
+        # x-amz-meta-* headers should be normalized to lowercase
+        self.assertEqual(key.get_metadata("Mtime"), None)
+        self.assertEqual(key.get_metadata("MTIME"), None)
+        self.assertEqual(key.get_metadata("Uid"), None)
+        self.assertEqual(key.get_metadata("UID"), None)
+        self.assertEqual(key.get_metadata("With-Hypen"), None)
 
 
 if __name__ == "__main__":
