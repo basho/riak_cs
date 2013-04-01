@@ -27,6 +27,7 @@
          error_response/5,
          list_bucket_response/5,
          list_all_my_buckets_response/3,
+         copy_object_response/3,
          no_such_upload_response/3,
          error_code_to_atom/1]).
 
@@ -235,6 +236,14 @@ list_bucket_response(User, Bucket, KeyObjPairs, RD, Ctx) ->
 user_to_xml_owner(?RCS_USER{canonical_id=CanonicalId, display_name=Name}) ->
     {'Owner', [{'ID', [CanonicalId]},
                {'DisplayName', [Name]}]}.
+
+copy_object_response(Manifest, RD, Ctx) ->
+    LastModified = riak_cs_wm_utils:to_iso_8601(Manifest?MANIFEST.created),
+    ETag = riak_cs_utils:etag_from_binary(Manifest?MANIFEST.content_md5),
+    XmlDoc = [{'CopyObjectResponse',
+               [{'LastModified', [LastModified]},
+                {'ETag', [ETag]}]}],
+    respond(200, export_xml(XmlDoc), RD, Ctx).
 
 export_xml(XmlDoc) ->
     unicode:characters_to_binary(
