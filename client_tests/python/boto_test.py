@@ -483,12 +483,20 @@ class MultipartUploadTestsUnderPolicy(S3ApiVerificationTestBase):
 class ObjectMetadataTest(S3ApiVerificationTestBase):
     "Test object metadata, e.g. Content-Encoding, x-amz-meta-*, for PUT/GET"
 
-    metadata = {"Content-Disposition": 'attachment; filename="metaname.txt"',
-                "Content-Encoding": 'identity',
-                "Expires": "Tue, 19 Jan 2038 03:14:07 GMT",
-                "mtime": "1364742057",
-                "UID": "0",
-                "with-hypen": "1"}
+    metadata = {
+        "Content-Disposition": 'attachment; filename="metaname.txt"',
+        "Content-Encoding": 'identity',
+        "Expires": "Tue, 19 Jan 2038 03:14:07 GMT",
+        "mtime": "1364742057",
+        "UID": "0",
+        "with-hypen": "1"}
+
+    updated_metadata = {
+        "Content-Disposition": 'attachment; filename="newname.txt"',
+        "Expires": "Tue, 19 Jan 2038 03:14:07 GMT",
+        "mtime": "2222222222",
+        "uid": "0",
+        "new-entry": "NEW"}
 
     def test_normal_object_metadata(self):
         key_name = str(uuid.uuid4())
@@ -498,6 +506,8 @@ class ObjectMetadataTest(S3ApiVerificationTestBase):
             key.set_metadata(k, v)
         key.set_contents_from_string("test_normal_object_metadata")
         self.assert_metadata(bucket, key_name)
+        self.change_metadata(bucket, key_name)
+        self.assert_updated_metadata(bucket, key_name)
 
     def test_mp_object_metadata(self):
         key_name = str(uuid.uuid4())
@@ -505,6 +515,8 @@ class ObjectMetadataTest(S3ApiVerificationTestBase):
         upload = upload_multipart(bucket, key_name, [StringIO("part1")],
                                   metadata=self.metadata)
         self.assert_metadata(bucket, key_name)
+        self.change_metadata(bucket, key_name)
+        self.assert_updated_metadata(bucket, key_name)
 
     def assert_metadata(self, bucket, key_name):
         key = Key(bucket, key_name)
@@ -524,6 +536,28 @@ class ObjectMetadataTest(S3ApiVerificationTestBase):
         self.assertEqual(key.get_metadata("Uid"), None)
         self.assertEqual(key.get_metadata("UID"), None)
         self.assertEqual(key.get_metadata("With-Hypen"), None)
+
+    def change_metadata(self, bucket, key_name):
+        key = Key(bucket, key_name)
+        key.copy(bucket.name, key_name, self.updated_metadata)
+
+    def assert_updated_metadata(self, bucket, key_name):
+        key = Key(bucket, key_name)
+        key.get_contents_as_string()
+
+        # unchanged
+        self.assertEqual(key.get_metadata("uid"), "0")
+        # updated
+        self.assertEqual(key.content_disposition,
+                         'attachment; filename="newname.txt"')
+        self.assertEqual(key.get_metadata("mtime"), "2222222222")
+        # removed
+        self.assertEqual(key.content_encoding, None)
+        self.assertEqual(key.get_metadata("with-hypen"), None)
+        # inserted
+        self.assertEqual(key.get_metadata("new-entry"), "NEW")
+        # TODO: Expires header can be accessed by boto?
+        # self.assertEqual(key.expires, "Tue, 19 Jan 2038 03:14:07 GMT")
 
 
 if __name__ == "__main__":
