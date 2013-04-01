@@ -197,7 +197,7 @@ content_types_accepted(RD, Ctx) ->
 
 parse_body(Body) ->
     try
-        {ParsedData, _Rest} = xmerl_scan:string(Body, []),
+        {ParsedData, _Rest} = xmerl_scan:string(re:replace(Body, "&quot;", "", [global, {return, list}]), []),
         #xmlElement{name='CompleteMultipartUpload'} = ParsedData,
         Nums = [list_to_integer(T#xmlText.value) ||
                    T <- xmerl_xpath:string("//CompleteMultipartUpload/Part/PartNumber/text()", ParsedData)],
