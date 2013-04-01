@@ -286,12 +286,9 @@ accept_body(RD, Ctx=#context{local_context=LocalCtx,
     #key_context{bucket=Bucket, key=KeyStr, manifest=Mfst} = LocalCtx,
     Acl = Mfst?MANIFEST.acl,
     NewAcl = Acl?ACL{creation_time = now()},
-    %% Remove the x-amz-meta- prefixed items in the dict
-    MD = [KV || {K, _V} = KV <- orddict:to_list(Mfst?MANIFEST.metadata),
-                not lists:prefix("x-amz-meta-", K)],
-    NewMD = orddict:to_list(riak_cs_wm_utils:extract_user_metadata(RD) ++ MD),
+    Metadata = riak_cs_wm_utils:extract_user_metadata(RD),
     case riak_cs_utils:set_object_acl(Bucket, list_to_binary(KeyStr),
-                                      Mfst?MANIFEST{metadata=NewMD}, NewAcl,
+                                      Mfst?MANIFEST{metadata=Metadata}, NewAcl,
                                       RiakcPid) of
         ok ->
             ETag = riak_cs_utils:etag_from_binary(Mfst?MANIFEST.content_md5),
