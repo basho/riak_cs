@@ -87,35 +87,8 @@ process_post(RD, Ctx=#context{local_context=LocalCtx,
             wrq:get_req_header("x-amz-acl", RD),
             User,
             riak_cs_wm_utils:bucket_owner(Bucket, RiakcPid)),
-    %% TODO: pass in x-amz-server-side​-encryption?
-    %% TODO: pass in x-amz-storage-​class?
-    %% TODO: pass in x-amz-grant-* headers?
-    %% OtherREs = ["^x-amz-server-side-encryption$",
-    %%             "^x-amz-storage-​class$",
-    %%             "^x-amz-grant-"],
-    AsIsREs = ["^Expires", "^Content-Disposition$", "^Content-Encoding$",
-               "^x-amz-meta-"],
-    Hdrs = case wrq:get_req_header("expires", RD) of
-               undefined -> [];
-               ExpiresV  -> [{"Expires", ExpiresV}]
-           end ++ [HV || {H, _} = HV <- mochiweb_headers:to_list(
-                                          wrq:req_headers(RD)),
-                         is_list(H)],
-    %% Note for above: Mochiweb standard/expected header name are atoms,
-    %% so we filter them out above.  The 'Expires' header is indeed an atom.
-    %% TODO: This treatment of the Expires header is probably wrong.
-    AsIs = case lists:foldl(
-                  fun({Hdr, Val}, Acc) ->
-                          [{Hdr, Val} || is_list(Hdr),
-                                         RE <- AsIsREs,
-                                         re:run(Hdr, RE, [caseless, {capture,none}]) == match] ++ Acc
-                  end, [], Hdrs) of
-               [] ->
-                   [];
-               Pairs ->
-                   [{as_is_headers, Pairs}]
-           end,
-    Opts = [{acl, ACL}|AsIs],
+    Metadata = riak_cs_wm_utils:extract_user_metadata(RD),
+    Opts = [{acl, ACL}, {meta_data, Metadata}],
 
     case riak_cs_mp_utils:initiate_multipart_upload(Bucket, list_to_binary(Key),
                                                     ContentType, User, Opts,

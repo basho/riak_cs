@@ -389,10 +389,13 @@ extract_amazon_headers(Headers) ->
         end,
     ordsets:from_list(lists:foldl(FilterFun, [], Headers)).
 
-%% @doc Extract user metadata ("x-amz-meta") from request header
-%% copied from riak_cs_s3_auth.erl
+%% @doc Extract user metadata from request header
+%% Expires, Content-Disposition, Content-Encoding and x-amz-meta-*
+%% TODO: pass in x-amz-server-side​-encryption?
+%% TODO: pass in x-amz-storage-​class?
+%% TODO: pass in x-amz-grant-* headers?
 extract_user_metadata(RD) ->
-    extract_metadata(normalize_headers(RD)).
+    extract_user_metadata(get_request_headers(RD), []).
 
 get_request_headers(RD) ->
     mochiweb_headers:to_list(wrq:req_headers(RD)).
@@ -406,18 +409,24 @@ normalize_headers(RD) ->
         end,
     ordsets:from_list(lists:foldl(FilterFun, [], Headers)).
 
-extract_metadata(Headers) ->
-    FilterFun =
-        fun({K, V}, Acc) ->
-                case lists:prefix("x-amz-meta-", K) of
-                    true ->
-                        V2 = unicode:characters_to_list(V, utf8),
-                        [{K, V2} | Acc];
-                    false ->
-                        Acc
-                end
-        end,
-    ordsets:from_list(lists:foldl(FilterFun, [], Headers)).
+extract_user_metadata([], Acc) ->
+    Acc;
+extract_user_metadata([{Name, Value} | Headers], Acc)
+  when Name =:= 'Expires' orelse Name =:= 'Content-Encoding'
+       orelse Name =:= "Content-Disposition" ->
+    extract_user_metadata(
+      Headers, [{any_to_list(Name), unicode:characters_to_list(Value, utf8)} | Acc]);
+extract_user_metadata([{Name, Value} | Headers], Acc) when is_list(Name) ->
+    LowerName = string:to_lower(any_to_list(Name)),
+    case LowerName of
+        "x-amz-meta" ++ _ ->
+            extract_user_metadata(
+              Headers, [{LowerName, unicode:characters_to_list(Value, utf8)} | Acc]);
+        _ ->
+            extract_user_metadata(Headers, Acc)
+    end;
+extract_user_metadata([_ | Headers], Acc) ->
+    extract_user_metadata(Headers, Acc).
 
 -spec bucket_access_authorize_helper(AccessType::atom(), boolean(),
                                      RD::term(), Ctx::#context{}) -> term().
