@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# just bail out if things go south
+set -e
+
 # You need to use this script once to build a set of devrels for prior
 # releases of Riak (for mixed version / upgrade testing). You should
 # create a directory and then run this script from within that directory.
