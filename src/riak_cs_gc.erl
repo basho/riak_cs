@@ -58,6 +58,8 @@ gc_active_manifests(Bucket, Key, RiakcPid) ->
     gc_active_manifests(Bucket, Key, RiakcPid, []).
 
 %% @private
+-spec gc_active_manifests(binary(), binary(), pid(), [binary]) ->
+    {ok, [binary()]} | {error, term()}.
 gc_active_manifests(Bucket, Key, RiakcPid, UUIDs) ->
    case get_active_manifests(Bucket, Key, RiakcPid) of
         {ok, _RiakObject, []} -> {ok, UUIDs};
@@ -71,16 +73,24 @@ gc_active_manifests(Bucket, Key, RiakcPid, UUIDs) ->
         {error, _}=Error -> Error
     end.
 
+-spec get_active_manifests(binary(), binary(), pid()) ->
+    {ok, riakc_obj:riakc_obj(), [lfs_manifest()]} | {error, term()}.
 get_active_manifests(Bucket, Key, RiakcPid) ->
     active_manifests(riak_cs_utils:get_manifests(RiakcPid, Bucket, Key)).
 
+-spec active_manifests({ok, riakc_obj:riakc_obj(), [lfs_manifest()]}) ->
+                          {ok, riakc_obj:riakc_obj(), [lfs_manifest()]}; 
+                      ({error, term()}) ->
+                          {error, term()}.
 active_manifests({ok, RiakObject, Manifests}) -> 
     {ok, RiakObject, riak_cs_manifest_utils:active_manifests(Manifests)};
 active_manifests({error, _}=Error) -> Error.
 
+-spec clean_manifests([lfs_manifest()], pid()) -> [lfs_manifest()].
 clean_manifests(ActiveManifests, RiakcPid) ->
     [M || M <- ActiveManifests, clean_multipart_manifest(M, RiakcPid)]. 
 
+-spec clean_multipart_manifest(lfs_manifest(), pid()) -> true | false.
 clean_multipart_manifest(M, RiakcPid) ->
     is_multipart_clean(riak_cs_mp_utils:clean_multipart_unused_parts(M, RiakcPid)).
 
@@ -89,11 +99,24 @@ is_multipart_clean(same) ->
 is_multipart_clean(updated) -> 
     false.
 
+-spec gc_manifests(Manifests :: [lfs_manifest()],
+                   RiakObject :: riakc_obj:riakc_obj(),
+                   Bucket :: binary(),
+                   Key :: binary(),
+                   RiakcPid :: pid()) ->
+    [binary()] | {error, term()}.
 gc_manifests(Manifests, RiakObject, Bucket, Key, RiakcPid) ->
     catch lists:foldl(fun(M, UUIDs) -> 
                           gc_manifest(M, RiakObject, Bucket, Key, RiakcPid, UUIDs) 
                       end, [], Manifests).
 
+-spec gc_manifest(M :: lfs_manifest(),
+                  RiakObject :: riakc_obj:riakc_obj(),
+                  Bucket :: binary(),
+                  Key :: binary(),
+                  RiakcPid :: pid(),
+                  UUIDs :: [binary()]) ->
+      [binary()] | no_return().
 gc_manifest(M, RiakObject, Bucket, Key, RiakcPid, UUIDs) ->
     UUID = M?MANIFEST.uuid,
     check(gc_specific_manifests([UUID], RiakObject, Bucket, Key, RiakcPid), [UUID | UUIDs]).
