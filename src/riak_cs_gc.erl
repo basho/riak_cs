@@ -43,13 +43,12 @@
 %%% Public API
 %%%===================================================================
 
-%% @doc Keep requesting manifests until 
-%% 1) There are no more active manifests 
-%% 2) All previously active multipart manifests have had their unused parts cleaned
+%% @doc Keep requesting manifests until there are no more active manifests or
+%% there is an error. This requires the following to be occur:
+%% 1) All previously active multipart manifests have had their unused parts cleaned
 %%    and become active+multipart_clean
-%% 3) All active manifests and active+multipart_clean manifests for multipart ar GC'd
-%%            OR
-%% There is an Error.
+%% 2) All active manifests and active+multipart_clean manifests for multipart are GC'd
+%%
 %% Note that any error is irrespective of the current position of the GC states.
 %% Some manifests may have been GC'd and then an error occurs. In this case the
 %% client will only get the error response.
