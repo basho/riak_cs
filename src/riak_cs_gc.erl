@@ -84,8 +84,10 @@ clean_manifests(ActiveManifests, RiakcPid) ->
 clean_multipart_manifest(M, RiakcPid) ->
     is_multipart_clean(riak_cs_mp_utils:clean_multipart_unused_parts(M, RiakcPid)).
 
-is_multipart_clean(same) -> true;
-is_multipart_clean(updated) -> false.
+is_multipart_clean(same) -> 
+    true;
+is_multipart_clean(updated) -> 
+    false.
 
 gc_manifests(Manifests, RiakObject, Bucket, Key, RiakcPid) ->
     catch lists:foldl(fun(M, UUIDs) -> 
@@ -96,8 +98,10 @@ gc_manifest(M, RiakObject, Bucket, Key, RiakcPid, UUIDs) ->
     UUID = M?MANIFEST.uuid,
     check(gc_specific_manifests([UUID], RiakObject, Bucket, Key, RiakcPid), [UUID | UUIDs]).
 
-check({ok, _}, Val) -> Val;
-check({error, _}=Error, _Val) -> throw(Error).
+check({ok, _}, Val) -> 
+    Val;
+check({error, _}=Error, _Val) -> 
+    throw(Error).
 
 %% @private
 -spec gc_specific_manifests(UUIDsToMark :: [binary()],
