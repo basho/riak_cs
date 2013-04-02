@@ -69,7 +69,7 @@ gc_active_manifests(Bucket, Key, RiakcPid, UUIDs) ->
                 {error, _}=Error -> Error;
                 NewUUIDs -> gc_active_manifests(Bucket, Key, RiakcPid, UUIDs ++ NewUUIDs)
             end;
-        {error, not_found} ->{ok, UUIDs};
+        {error, notfound} ->{ok, UUIDs};
         {error, _}=Error -> Error
     end.
 
