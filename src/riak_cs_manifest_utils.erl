@@ -31,6 +31,7 @@
 %% export Public API
 -export([new_dict/2,
          active_manifest/1,
+         active_manifests/1,
          active_and_writing_manifests/1,
          overwritten_UUIDs/1,
          mark_pending_delete/2,
@@ -63,6 +64,11 @@ active_manifest(Dict) ->
         Manifest ->
             {ok, Manifest}
     end.
+
+%% @doc Return all active manifests
+-spec active_manifests(orddict:orddict()) -> [lfs_manifest()] | [].
+active_manifests(Dict) ->
+    lists:filter(fun manifest_is_active/1, orddict_values(Dict)).
 
 %% @doc Return a list of all manifests in the
 %% `active' or `writing' state
@@ -297,6 +303,9 @@ leeway_elapsed(Timestamp) ->
 
 orddict_values(OrdDict) ->
     [V || {_K, V} <- orddict:to_list(OrdDict)].
+
+manifest_is_active(?MANIFEST{state=active}) -> true;
+manifest_is_active(_Manifest) -> false.
 
 %% NOTE: This is a foldl function, initial acc = no_active_manifest
 most_recent_active_manifest(Manifest=?MANIFEST{state=active}, no_active_manifest) ->
