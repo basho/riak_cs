@@ -341,7 +341,7 @@ delete_bucket(User, UserObj, Bucket, RiakPid) ->
 delete_object(Bucket, Key, RiakcPid) ->
     StartTime = os:timestamp(),
     DoIt = fun() ->
-                   maybe_gc_active_manifests(
+                   maybe_gc_active_and_writing_manifests(
                      get_manifests(RiakcPid, Bucket, Key), Bucket, Key, StartTime, RiakcPid)
            end,
     case DoIt() of
@@ -370,13 +370,13 @@ use_t2b_compression() ->
     get_env(riak_cs, compress_terms, ?COMPRESS_TERMS).
 
 %% @private
-maybe_gc_active_manifests({ok, RiakObject, Manifests}, Bucket, Key, StartTime, RiakcPid) ->
-    R = riak_cs_gc:gc_active_manifests(Manifests, RiakObject, Bucket, Key, RiakcPid),
+maybe_gc_active_and_writing_manifests({ok, RiakObject, Manifests}, Bucket, Key, StartTime, RiakcPid) ->
+    R = riak_cs_gc:gc_active_and_writing_manifests(Manifests, RiakObject, Bucket, Key, RiakcPid),
     ok = riak_cs_stats:update_with_start(object_delete, StartTime),
     R;
-maybe_gc_active_manifests({error, notfound}, _Bucket, _Key, _StartTime, _RiakcPid) ->
+maybe_gc_active_and_writing_manifests({error, notfound}, _Bucket, _Key, _StartTime, _RiakcPid) ->
     {ok, []};
-maybe_gc_active_manifests({error, _Reason}=Error, _Bucket, _Key, _StartTime, _RiakcPid) ->
+maybe_gc_active_and_writing_manifests({error, _Reason}=Error, _Bucket, _Key, _StartTime, _RiakcPid) ->
     Error.
 
 
