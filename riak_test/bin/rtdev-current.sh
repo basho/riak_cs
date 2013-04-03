@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# just bail out if things go south
+set -e
+
 : ${RTCS_DEST_DIR:="$HOME/rt/riak_cs"}
 
 cwd=$(pwd)
