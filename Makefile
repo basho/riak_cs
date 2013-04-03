@@ -53,7 +53,7 @@ distclean: clean
 test: all
 	@./rebar skip_deps=true eunit
 
-test-client: test-clojure test-python test-erlang
+test-client: test-clojure test-python test-erlang test-ruby
 
 test-python: test-boto
 

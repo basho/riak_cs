@@ -4,7 +4,7 @@ require 'uuid'
 require 'tempfile'
 
 def create_user(name)
-  response = HTTParty.put("http://localhost:8080/riak-cs/user",
+  response = HTTParty.put("#{cs_uri}/riak-cs/user",
                           :body => {
                             :name => name,
                             :email => "#{name}@example.com"}.to_json,
@@ -19,11 +19,19 @@ def s3_conf
   {
     access_key_id: key_id,
     secret_access_key: key_secret,
-    proxy_uri: "http://localhost:8080",
+    proxy_uri: cs_uri,
     use_ssl: false,
     http_read_timeout: 2000,
     max_retries: 0
   }
+end
+
+def cs_uri
+  "http://localhost:#{cs_port}"
+end
+
+def cs_port
+  ENV['CS_HTTP_PORT'] || 8080
 end
 
 def new_mb_temp_file(size)
