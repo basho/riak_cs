@@ -36,12 +36,14 @@ parse_ip_test_()->
     [
      ?_assertEqual({{192,0,0,1}, {255,0,0,0}},
                    riak_cs_s3_policy:parse_ip(<<"192.0.0.1/8">>)),
-     ?_assertEqual({{192,3,0,1}, {255,255,0,0}},
+     ?_assertEqual(false,
                    riak_cs_s3_policy:parse_ip(<<"192.3.1/16">>)),
      ?_assertEqual(<<"1.2.3.4">>,
                    riak_cs_s3_policy:print_ip(riak_cs_s3_policy:parse_ip(<<"1.2.3.4">>))),
      ?_assertEqual(<<"1.2.3.4/13">>,
-                   riak_cs_s3_policy:print_ip(riak_cs_s3_policy:parse_ip(<<"1.2.3.4/13">>)))
+                   riak_cs_s3_policy:print_ip(riak_cs_s3_policy:parse_ip(<<"1.2.3.4/13">>))),
+     ?_assertEqual(false, riak_cs_s3_policy:parse_ip(<<"0">>)),
+     ?_assertEqual(false, riak_cs_s3_policy:parse_ip(<<"0/0">>))
     ].
 
 empty_statement_conversion_test()->
