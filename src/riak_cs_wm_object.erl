@@ -237,7 +237,7 @@ delete_resource(RD, Ctx=#context{local_context=LocalCtx,
 
 %% @private
 handle_delete_object({error, Error}, UserName, BFile_str, RD, Ctx) ->
-    _ = lager:error("delete object failed with reason: ", [Error]),
+    _ = lager:error("delete object failed with reason: ~p", [Error]),
     riak_cs_dtrace:dt_object_return(?MODULE, <<"object_delete">>, [0], [UserName, BFile_str]),
     {false, RD, Ctx};
 handle_delete_object({ok, _UUIDsMarkedforDelete}, UserName, BFile_str, RD, Ctx) ->
@@ -286,17 +286,14 @@ accept_body(RD, Ctx=#context{local_context=LocalCtx,
     #key_context{bucket=Bucket, key=KeyStr, manifest=Mfst} = LocalCtx,
     Acl = Mfst?MANIFEST.acl,
     NewAcl = Acl?ACL{creation_time = now()},
-    %% Remove the x-amz-meta- prefixed items in the dict
-    MD = [KV || {K, _V} = KV <- orddict:to_list(Mfst?MANIFEST.metadata),
-                not lists:prefix("x-amz-meta-", K)],
-    NewMD = orddict:to_list(riak_cs_wm_utils:extract_user_metadata(RD) ++ MD),
+    Metadata = riak_cs_wm_utils:extract_user_metadata(RD),
     case riak_cs_utils:set_object_acl(Bucket, list_to_binary(KeyStr),
-                                      Mfst?MANIFEST{metadata=NewMD}, NewAcl,
+                                      Mfst?MANIFEST{metadata=Metadata}, NewAcl,
                                       RiakcPid) of
         ok ->
             ETag = riak_cs_utils:etag_from_binary(Mfst?MANIFEST.content_md5),
             RD2 = wrq:set_resp_header("ETag", ETag, RD),
-            {{halt, 200}, RD2, Ctx};
+            riak_cs_s3_response:copy_object_response(Mfst, RD2, Ctx);
         {error, Err} ->
             riak_cs_s3_response:api_error(Err, RD, Ctx)
     end;
@@ -395,12 +392,15 @@ check_0length_metadata_update(Length, RD, Ctx=#context{local_context=LocalCtx}) 
     end.
 
 zero_length_metadata_update_p(0, RD) ->
+    OrigPath = wrq:get_req_header("x-rcs-rewrite-path", RD),
     case wrq:get_req_header("x-amz-copy-source", RD) of
         undefined ->
             false;
+        [$/ | _] = Path ->
+            Path == OrigPath;
         Path ->
-            OrigPath = wrq:get_req_header("x-rcs-rewrite-path", RD),
-            Path == OrigPath
+            %% boto (version 2.7.0) does NOT prepend "/"
+            [$/ | Path] == OrigPath
     end;
 zero_length_metadata_update_p(_, _) ->
     false.
