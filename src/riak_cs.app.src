@@ -2,7 +2,7 @@
 {application, riak_cs,
  [
   {description, "riak_cs"},
-  {vsn, "1.3.0"},
+  {vsn, "1.3.1"},
   {modules, []},
   {registered, []},
   {applications, [

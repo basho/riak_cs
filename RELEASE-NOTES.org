@@ -1,3 +1,15 @@
+* Riak CS 1.3.1 Release Notes
+** Bugs Fixed
+- Fix bug in handling of active object manifests in the case of
+  overwrite or delete that could lead to old object versions being
+  resurrected.
+- Fix improper capitalization of user metadata header names.
+- Fix issue where the S3 rewrite module omits any query parameters
+  that are not S3 subresources. Also correct handling of query
+  parameters so that parameter values are not URL decoded twice. This
+  primarily affects pre-signed URLs because the access key and request
+  signature are included as query parameters.
+- Fix for issue with init script stop.
 * Riak CS 1.3.0 Release Notes
 ** Bugs Fixed
 - Fix handling of cases where buckets have siblings. Previously this
