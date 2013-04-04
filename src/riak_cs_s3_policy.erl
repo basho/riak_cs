@@ -492,7 +492,7 @@ eval_bool(#wm_reqdata{scheme=Scheme} = _Req, Conds) ->
 -spec eval_ip_address(#wm_reqdata{}, [{'aws:SourceIp', binary()}]) -> boolean().
 eval_ip_address(Req, Conds) ->
     case parse_ip(Req#wm_reqdata.peer) of
-        false ->
+        {error, _} ->
             false;
         {Peer, _} ->
             IPConds = [ IPCond || {'aws:SourceIp', IPCond} <- Conds ],
@@ -749,8 +749,8 @@ condition_({<<"aws:SecureTransport">>, MaybeBool}) ->
     {'aws:SecureTransport', Bool};
 condition_({<<"aws:SourceIp">>, Bin}) when is_binary(Bin)->
     case parse_ip(Bin) of
-        false -> 
-            throw({error, malformed_policy_condition});
+        {error, _} -> 
+            {error, malformed_policy_condition};
         IP ->
             {'aws:SourceIp', IP}
     end;
@@ -803,13 +803,14 @@ parse_ip(Bin) when is_binary(Bin) ->
     parse_ip(Str);
 parse_ip(Str) when is_list(Str) ->
     {IPStr, Netmask} = parse_tokenized_ip(string:tokens(Str, "/")),
-    try
-        {ok, IP} = inet_parse:ipv4strict_address(IPStr),
-        {IP, Netmask}
-    catch _:_ ->
-        false
-end.
+    case inet_parse:ipv4strict_address(IPStr) of
+        {ok, IP} ->
+            {IP, Netmask};
+        Error ->
+            Error 
+    end.
 
+-spec parse_tokenized_ip([string()]) -> {inet:ip_address(), inet:ip_address()}.
 parse_tokenized_ip([IP]) ->
     {IP, {255, 255, 255, 255}};
 parse_tokenized_ip([IP, PrefixSize]) ->
