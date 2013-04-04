@@ -232,7 +232,7 @@ new_manifest(Bucket, Key, ContentType, {_, _, _} = Owner, Opts) ->
     UUID = druuid:v4(),
     %% TODO: add object metadata here, e.g. content-disposition et al.
     %% TODO: add cluster_id ... which means calling new_manifest/11 not /9.
-    MetaData = case proplists:get_value(as_is_headers, Opts) of
+    MetaData = case proplists:get_value(meta_data, Opts) of
                    undefined -> [];
                    AsIsHdrs  -> AsIsHdrs
                end,

@@ -39,17 +39,19 @@
 %% @doc Function to rewrite headers prior to processing by webmachine.
 -spec rewrite(atom(), atom(), {integer(), integer()}, gb_tree(), string()) ->
                      {gb_tree(), string()}.
-rewrite(Method, _Scheme, _Vsn, Headers, RawPath) ->
+rewrite(Method, _Scheme, _Vsn, Headers, Url) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"rewrite">>),
     Host = mochiweb_headers:get_value("host", Headers),
     HostBucket = bucket_from_host(Host),
-    %% Unquote the URL to accomodate some naughty client libs (looking
+    {Path, QueryString, _} = mochiweb_util:urlsplit_path(Url),
+    %% Unquote the path to accomodate some naughty client libs (looking
     %% at you Fog)
-    {Path, QueryString, _} = mochiweb_util:urlsplit_path(
-                               mochiweb_util:unquote(RawPath)),
-    RewrittenPath = rewrite_path(Method, Path, QueryString, HostBucket),
+    RewrittenPath = rewrite_path(Method,
+                                 mochiweb_util:unquote(Path),
+                                 QueryString,
+                                 HostBucket),
     RewrittenHeaders = mochiweb_headers:default(?RCS_REWRITE_HEADER,
-                                                rcs_rewrite_header(RawPath, HostBucket),
+                                                rcs_rewrite_header(Url, HostBucket),
                                                 Headers),
     {RewrittenHeaders, RewrittenPath}.
 
@@ -61,7 +63,6 @@ original_resource(RD) ->
             {Path, QS, _} = mochiweb_util:urlsplit_path(RawPath),
             {Path, mochiweb_util:parse_qs(QS)}
     end.
-
 
 %% @doc Internal function to handle rewriting the URL
 -spec rewrite_path(atom(),string(), string(), undefined | string()) -> string().
@@ -151,19 +152,19 @@ format_bucket_qs(_Method, QueryParams, SubResources) ->
 %% @doc Format an object operation query string to conform the the
 %% rewrite rules.
 -spec format_object_qs({subresources(), query_params()}) -> string().
-format_object_qs({SubResources, _}) ->
+format_object_qs({SubResources, QueryParams}) ->
     UploadId = proplists:get_value("uploadId", SubResources, []),
     PartNum = proplists:get_value("partNumber", SubResources, []),
-    format_object_qs(SubResources, UploadId, PartNum).
+    format_object_qs(SubResources, QueryParams, UploadId, PartNum).
 
 %% @doc Format an object operation query string to conform the the
 %% rewrite rules.
--spec format_object_qs(subresources(), string(), string()) -> string().
-format_object_qs(SubResources, [], []) ->
-    format_subresources(SubResources);
-format_object_qs(_SubResources, UploadId, []) ->
+-spec format_object_qs(subresources(), query_params(), string(), string()) -> string().
+format_object_qs(SubResources, QueryParams, [], []) ->
+    [format_subresources(SubResources), format_query_params(QueryParams)];
+format_object_qs(_SubResources, _QueryParams, UploadId, []) ->
     ["/uploads/", UploadId];
-format_object_qs(_SubResources, UploadId, PartNum) ->
+format_object_qs(_SubResources, _QueryParams, UploadId, PartNum) ->
     ["/uploads/", UploadId, "?partNumber=", PartNum].
 
 %% @doc Format a string that expresses the subresource request
@@ -190,9 +191,9 @@ format_query_params([{Key, []} | RestParams], []) ->
 format_query_params([{Key, []} | RestParams], QS) ->
     format_query_params(RestParams, [[Key, "&"] | QS]);
 format_query_params([{Key, Value} | RestParams], []) ->
-    format_query_params(RestParams, [Key, "=", Value]);
+    format_query_params(RestParams, [Key, "=", mochiweb_util:quote_plus(Value)]);
 format_query_params([{Key, Value} | RestParams], QS) ->
-    format_query_params(RestParams, [[Key, "=", Value, "&"] | QS]).
+    format_query_params(RestParams, [[Key, "=", mochiweb_util:quote_plus(Value), "&"] | QS]).
 
 %% @doc Parse the valid subresources from the raw path.
 -spec get_subresources(string()) -> {subresources(), query_params()}.
@@ -223,8 +224,8 @@ rewrite_path_test() ->
     %% Bucket Operations
     equal_paths("/buckets/testbucket/objects", rewrite_with('GET', headers([]), "/testbucket")),
     equal_paths("/buckets/testbucket/objects", rewrite_with('GET', headers([{"host", "testbucket." ++ ?ROOT_HOST}]), "/")),
-    equal_paths("/buckets/testbucket/objects?max-keys=20&delimiter=/&prefix=123", rewrite_with('GET', headers([]), "/testbucket?prefix=123&delimiter=/&max-keys=20")),
-    equal_paths("/buckets/testbucket/objects?max-keys=20&delimiter=/&prefix=123", rewrite_with('GET', headers([{"host", "testbucket." ++ ?ROOT_HOST}]), "/?prefix=123&delimiter=/&max-keys=20")),
+    equal_paths("/buckets/testbucket/objects?max-keys=20&delimiter=%2F&prefix=123", rewrite_with('GET', headers([]), "/testbucket?prefix=123&delimiter=/&max-keys=20")),
+    equal_paths("/buckets/testbucket/objects?max-keys=20&delimiter=%2F&prefix=123", rewrite_with('GET', headers([{"host", "testbucket." ++ ?ROOT_HOST}]), "/?prefix=123&delimiter=/&max-keys=20")),
     equal_paths("/buckets/testbucket", rewrite_with('HEAD', headers([]), "/testbucket")),
     equal_paths("/buckets/testbucket", rewrite_with('HEAD', headers([{"host", "testbucket." ++ ?ROOT_HOST}]), "/")),
     equal_paths("/buckets/testbucket", rewrite_with('PUT', headers([]), "/testbucket")),
@@ -255,7 +256,9 @@ rewrite_path_test() ->
     equal_paths("/buckets/testbucket/objects/testobject/uploads/2", rewrite_with(headers([]), "/testbucket/testobject?uploadId=2")),
     equal_paths("/buckets/testbucket/objects/testobject/uploads/2", rewrite_with(headers([{"host", "testbucket." ++ ?ROOT_HOST}]), "/testobject?uploadId=2")),
     equal_paths("/buckets/testbucket/objects/testobject/uploads/2?partNumber=1", rewrite_with(headers([]), "/testbucket/testobject?partNumber=1&uploadId=2")),
-    equal_paths("/buckets/testbucket/objects/testobject/uploads/2?partNumber=1", rewrite_with(headers([{"host", "testbucket." ++ ?ROOT_HOST}]), "/testobject?partNumber=1&uploadId=2")).
+    equal_paths("/buckets/testbucket/objects/testobject/uploads/2?partNumber=1", rewrite_with(headers([{"host", "testbucket." ++ ?ROOT_HOST}]), "/testobject?partNumber=1&uploadId=2")),
+    equal_paths("/buckets/testbucket/objects/testobject?AWSAccessKeyId=BF_BI8XYKFJSIW-NNAIR&Expires=1364406757&Signature=x%2B0vteNN1YillZNw4yDGVQWrT2s%3D", rewrite_with(headers([]), "/testbucket/testobject?Signature=x%2B0vteNN1YillZNw4yDGVQWrT2s%3D&Expires=1364406757&AWSAccessKeyId=BF_BI8XYKFJSIW-NNAIR")),
+    equal_paths("/buckets/testbucket/objects/testobject?AWSAccessKeyId=BF_BI8XYKFJSIW-NNAIR&Expires=1364406757&Signature=x%2B0vteNN1YillZNw4yDGVQWrT2s%3D", rewrite_with(headers([{"host", "testbucket." ++ ?ROOT_HOST}]), "/testobject?Signature=x%2B0vteNN1YillZNw4yDGVQWrT2s%3D&Expires=1364406757&AWSAccessKeyId=BF_BI8XYKFJSIW-NNAIR")).
 
 rewrite_header_test() ->
     Path = "/testbucket?y=z&a=b&m=n",

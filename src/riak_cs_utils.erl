@@ -339,22 +339,8 @@ delete_bucket(User, UserObj, Bucket, RiakPid) ->
 -spec delete_object(binary(), binary(), pid()) ->
     {ok, [binary()]} | {error, term()}.
 delete_object(Bucket, Key, RiakcPid) ->
-    StartTime = os:timestamp(),
-    DoIt = fun() ->
-                   maybe_gc_active_manifests(
-                     get_manifests(RiakcPid, Bucket, Key), Bucket, Key, StartTime, RiakcPid)
-           end,
-    case DoIt() of
-        updated ->
-            %% Some multipart upload parts were deleted in
-            %% a minor transition from active state to
-            %% active + props=[multipart_clean|...] state.
-            %% The Riak object that get_manifests returned
-            %% is invalid, so retry once.
-            DoIt();
-        Else ->
-            Else
-    end.
+    ok = riak_cs_stats:update_with_start(object_delete, os:timestamp()),
+    riak_cs_gc:gc_active_manifests(Bucket, Key, RiakcPid).
 
 -spec encode_term(term()) -> binary().
 encode_term(Term) ->
@@ -368,17 +354,6 @@ encode_term(Term) ->
 -spec use_t2b_compression() -> boolean().
 use_t2b_compression() ->
     get_env(riak_cs, compress_terms, ?COMPRESS_TERMS).
-
-%% @private
-maybe_gc_active_manifests({ok, RiakObject, Manifests}, Bucket, Key, StartTime, RiakcPid) ->
-    R = riak_cs_gc:gc_active_manifests(Manifests, RiakObject, Bucket, Key, RiakcPid),
-    ok = riak_cs_stats:update_with_start(object_delete, StartTime),
-    R;
-maybe_gc_active_manifests({error, notfound}, _Bucket, _Key, _StartTime, _RiakcPid) ->
-    {ok, []};
-maybe_gc_active_manifests({error, _Reason}=Error, _Bucket, _Key, _StartTime, _RiakcPid) ->
-    Error.
-
 
 %% Get the root bucket name for either a Riak CS object
 %% bucket or the data block bucket name.
