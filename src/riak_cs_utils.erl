@@ -253,37 +253,32 @@ create_user(Name, Email) ->
     %% Validate the email address
     case validate_email(Email) of
         ok ->
-            {StanchionIp, StanchionPort, StanchionSSL} =
-                stanchion_data(),
             User = user_record(Name, Email),
-            case get_admin_creds() of
-                {ok, AdminCreds} ->
-                    %% Generate the user JSON document
-                    UserDoc = user_json(User),
-
-                    %% Make a call to the user request
-                    %% serialization service.
-                    CreateResult =
-                        velvet:create_user(StanchionIp,
-                                           StanchionPort,
-                                           "application/json",
-                                           UserDoc,
-                                           [{ssl, StanchionSSL},
-                                            {auth_creds, AdminCreds}]),
-                    case CreateResult of
-                        ok ->
-                            {ok, User};
-                        {error, {error_status, _, _, ErrorDoc}} ->
-                            riak_cs_s3_response:error_response(ErrorDoc);
-                        {error, _} ->
-                            CreateResult
-                    end;
-                {error, _Reason1}=Error1 ->
-                    Error1
-            end;
+            create_credentialed_user(get_admin_creds(), User);
         {error, _Reason}=Error ->
             Error
     end.
+
+-spec create_credentialed_user({error, term()}, rcs_user()) ->
+                                  {error, term()};
+                              ({ok, {term(), term()}}, rcs_user()) ->
+                                  {ok, rcs_user()} | {error, term()}.
+create_credentialed_user({error, _}=Error, _User) ->
+    Error;
+create_credentialed_user({ok, AdminCreds}, User) ->
+    {StIp, StPort, StSSL} = stanchion_data(),
+    UserDoc = user_json(User),
+    %% Make a call to the user request serialization service.
+    Result = velvet:create_user(StIp, StPort, "application/json", UserDoc, 
+        [{ssl, StSSL}, {auth_creds, AdminCreds}]),
+    handle_create_user(Result, User).
+
+handle_create_user(ok, User) ->
+    {ok, User};
+handle_create_user({error, {error_status, _, _, ErrorDoc}}, _User) ->
+    riak_cs_s3_response:error_response(ErrorDoc);
+handle_create_user({error, _}=Error, _User) ->
+    Error.
 
 %% @doc Get the active version of Riak CS to use in checks to
 %% determine if new features should be enabled.
