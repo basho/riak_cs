@@ -112,7 +112,7 @@ is_multipart_clean(updated) ->
                    RiakcPid :: pid()) ->
     [binary()] | {error, term()}.
 gc_manifests(Manifests, RiakObject, Bucket, Key, RiakcPid) ->
-    F = fun(M, {error, _}=Error) ->
+    F = fun(_M, {error, _}=Error) ->
                Error;
            (M, UUIDs) -> 
                gc_manifest(M, RiakObject, Bucket, Key, RiakcPid, UUIDs) 
