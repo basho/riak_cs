@@ -250,7 +250,6 @@ dash_char(Char) ->
 %% @doc Create a new Riak CS user
 -spec create_user(string(), string()) -> {ok, rcs_user()} | {error, term()}.
 create_user(Name, Email) ->
-    %% Validate the email address
     case validate_email(Email) of
         ok ->
             User = user_record(Name, Email),
