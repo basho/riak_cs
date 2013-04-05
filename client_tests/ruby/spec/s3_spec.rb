@@ -21,6 +21,7 @@
 require 'aws-sdk'
 require 'uuid'
 require 'yaml'
+require 'helper'
 
 class AWS::S3::AccessControlList::Grant
   def  ==(other)
@@ -29,7 +30,7 @@ class AWS::S3::AccessControlList::Grant
 end
 
 describe AWS::S3 do
-  let(:s3) { AWS::S3.new(YAML::load_file('conf/s3.yml')['s3']) }
+  let(:s3) { AWS::S3.new( s3_conf ) }
   let(:bucket_name) { "aws-sdk-test-" + UUID::generate }
   let(:object_name) { "key-" + UUID::generate }
   let(:grant_public_read) {
@@ -101,6 +102,18 @@ describe AWS::S3 do
       s3.buckets[bucket_name].objects[object_name].write('Rakefile', :acl => :public_read)
 
       s3.buckets[bucket_name].objects[object_name].acl.grants.include?(grant_public_read).should == true
+    end
+
+    it "should be able to put object using multipart upload" do
+      s3.buckets.create(bucket_name).should be_kind_of(AWS::S3::Bucket)
+
+      temp = new_mb_temp_file 6 # making 6MB file
+      s3.buckets[bucket_name].objects[object_name].write(
+                                    :file => temp.path,
+                                    :multipart_threshold => 1024 * 1024,
+                                   )
+      s3.buckets[bucket_name].objects[object_name].exists?.should == true
+      temp.close
     end
   end
 end
