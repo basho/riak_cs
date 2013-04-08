@@ -62,15 +62,20 @@ gc_active_manifests(Bucket, Key, RiakcPid) ->
     {ok, [binary()]} | {error, term()}.
 gc_active_manifests(Bucket, Key, RiakcPid, UUIDs) ->
    case get_active_manifests(Bucket, Key, RiakcPid) of
-        {ok, _RiakObject, []} -> {ok, UUIDs};
+        {ok, _RiakObject, []} -> 
+            {ok, UUIDs};
         {ok, RiakObject, Manifests} ->
             UnchangedManifests = clean_manifests(Manifests, RiakcPid),
             case gc_manifests(UnchangedManifests, RiakObject, Bucket, Key, RiakcPid) of
-                {error, _}=Error -> Error;
-                NewUUIDs -> gc_active_manifests(Bucket, Key, RiakcPid, UUIDs ++ NewUUIDs)
+                {error, _}=Error -> 
+                    Error;
+                NewUUIDs -> 
+                    gc_active_manifests(Bucket, Key, RiakcPid, UUIDs ++ NewUUIDs)
             end;
-        {error, notfound} ->{ok, UUIDs};
-        {error, _}=Error -> Error
+        {error, notfound} ->
+            {ok, UUIDs};
+        {error, _}=Error -> 
+            Error
     end.
 
 -spec get_active_manifests(binary(), binary(), pid()) ->
@@ -84,7 +89,8 @@ get_active_manifests(Bucket, Key, RiakcPid) ->
                           {error, term()}.
 active_manifests({ok, RiakObject, Manifests}) -> 
     {ok, RiakObject, riak_cs_manifest_utils:active_manifests(Manifests)};
-active_manifests({error, _}=Error) -> Error.
+active_manifests({error, _}=Error) -> 
+    Error.
 
 -spec clean_manifests([lfs_manifest()], pid()) -> [lfs_manifest()].
 clean_manifests(ActiveManifests, RiakcPid) ->
@@ -106,9 +112,12 @@ is_multipart_clean(updated) ->
                    RiakcPid :: pid()) ->
     [binary()] | {error, term()}.
 gc_manifests(Manifests, RiakObject, Bucket, Key, RiakcPid) ->
-    catch lists:foldl(fun(M, UUIDs) -> 
-                          gc_manifest(M, RiakObject, Bucket, Key, RiakcPid, UUIDs) 
-                      end, [], Manifests).
+    F = fun(_M, {error, _}=Error) ->
+               Error;
+           (M, UUIDs) -> 
+               gc_manifest(M, RiakObject, Bucket, Key, RiakcPid, UUIDs) 
+        end, 
+    lists:foldl(F, [], Manifests).
 
 -spec gc_manifest(M :: lfs_manifest(),
                   RiakObject :: riakc_obj:riakc_obj(),
@@ -124,7 +133,7 @@ gc_manifest(M, RiakObject, Bucket, Key, RiakcPid, UUIDs) ->
 check({ok, _}, Val) -> 
     Val;
 check({error, _}=Error, _Val) -> 
-    throw(Error).
+    Error.
 
 %% @private
 -spec gc_specific_manifests(UUIDsToMark :: [binary()],
