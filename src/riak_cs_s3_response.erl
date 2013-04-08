@@ -71,6 +71,7 @@ error_message(malformed_policy_missing) -> "Policy is missing required element";
 error_message(malformed_policy_resource) -> "Policy has invalid resource";
 error_message(malformed_policy_principal) -> "Invalid principal in policy";
 error_message(malformed_policy_action) -> "Policy has invalid action";
+error_message(malformed_policy_condition) -> "Policy has invalid condition";
 error_message(no_such_bucket_policy) -> "The bucket policy does not exist";
 error_message(no_such_upload) ->
     "The specified upload does not exist. The upload ID may be invalid, or the upload may have been aborted or completed.";
