@@ -327,21 +327,15 @@ receive_keys_and_manifests(ReqId, Acc) ->
 map_keys_and_manifests({error, notfound}, _, _) ->
     [];
 map_keys_and_manifests(Object, _, _) ->
-    try
-        AllManifests = [ binary_to_term(V)
-                         || {_, V}=Content <- riak_object:get_contents(Object),
-                            not has_tombstone(Content)],
-        Upgraded = riak_cs_manifest_utils:upgrade_wrapped_manifests(AllManifests),
-        Resolved = riak_cs_manifest_resolution:resolve(Upgraded),
-        case riak_cs_manifest_utils:active_manifest(Resolved) of
-            {ok, Manifest} ->
-                [{riak_object:key(Object), {ok, Manifest}}];
-            _ ->
-                []
-        end
-    catch Type:Reason ->
-            _ = lager:warning("Riak CS object list map failed: ~p:~p",
-                              [Type, Reason]),
+    AllManifests = [ binary_to_term(V)
+                     || {_, V}=Content <- riak_object:get_contents(Object),
+                        not has_tombstone(Content)],
+    Upgraded = riak_cs_manifest_utils:upgrade_wrapped_manifests(AllManifests),
+    Resolved = riak_cs_manifest_resolution:resolve(Upgraded),
+    case riak_cs_manifest_utils:active_manifest(Resolved) of
+        {ok, Manifest} ->
+            [{riak_object:key(Object), {ok, Manifest}}];
+        _ ->
             []
     end.
 
