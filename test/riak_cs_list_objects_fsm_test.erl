@@ -24,7 +24,7 @@
 
 -ifdef(TEST).
 
--include("riak_cs.hrl").
+-include_lib("riak_cs_core/include/riak_cs.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 %% Tests for `riak_cs_list_objects_fsm:filter_prefix_keys/3'

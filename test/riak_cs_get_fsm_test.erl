@@ -20,7 +20,7 @@
 
 -module(riak_cs_get_fsm_test).
 
--include("riak_cs.hrl").
+-include_lib("riak_cs_core/include/riak_cs.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 setup() ->

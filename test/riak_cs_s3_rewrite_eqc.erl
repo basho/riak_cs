@@ -22,7 +22,7 @@
 
 -module(riak_cs_s3_rewrite_eqc).
 
--include("riak_cs.hrl").
+-include_lib("riak_cs_core/include/riak_cs.hrl").
 
 -ifdef(EQC).
 -include_lib("eqc/include/eqc.hrl").

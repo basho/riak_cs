@@ -22,8 +22,8 @@
 
 -module(riak_cs_gc_d_eqc).
 
--include("riak_cs.hrl").
--include("riak_cs_gc_d.hrl").
+-include_lib("riak_cs_core/include/riak_cs.hrl").
+-include_lib("riak_cs_lfs/include/riak_cs_gc_d.hrl").
 
 -ifdef(EQC).
 -include_lib("eqc/include/eqc.hrl").

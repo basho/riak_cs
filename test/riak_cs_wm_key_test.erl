@@ -22,7 +22,7 @@
 
 -compile(export_all).
 
--include("riak_cs.hrl").
+-include_lib("riak_cs_core/include/riak_cs.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
