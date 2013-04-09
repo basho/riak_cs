@@ -195,6 +195,7 @@ policy_from_json(JSON) ->
             case catch(lists:map(fun({struct,S})->
                                          statement_from_pairs(S, #statement{})
                                  end, Stmts0)) of
+
                       {error, _Reason} = E ->
                          E;
                       [] ->
@@ -750,7 +751,7 @@ condition_({<<"aws:SecureTransport">>, MaybeBool}) ->
 condition_({<<"aws:SourceIp">>, Bin}) when is_binary(Bin)->
     case parse_ip(Bin) of
         {error, _} -> 
-            {error, malformed_policy_condition};
+            throw({error, malformed_policy_condition});
         IP ->
             {'aws:SourceIp', IP}
     end;

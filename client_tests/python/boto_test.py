@@ -371,6 +371,18 @@ class BucketPolicyTest(S3ApiVerificationTestBase):
         except S3ResponseError: pass
         else:                   self.fail()
 
+    def test_put_policy_invalid_ip(self):
+        bucket = self.conn.create_bucket(self.bucket_name)
+        bucket.delete_policy()
+        policy = '''
+{"Version":"2008-10-17","Statement":[{"Sid":"Stmtaaa","Effect":"Allow","Principal":"*","Action":["s3:GetObjectAcl","s3:GetObject"],"Resource":"arn:aws:s3:::%s/*","Condition":{"IpAddress":{"aws:SourceIp":"0"}}}]}
+''' % bucket.name
+        try: 
+            bucket.set_policy(policy, headers={'content-type':'application/json'})
+        except S3ResponseError as e:
+            self.assertEqual(e.status, 400)
+            self.assertEqual(e.reason, 'Bad Request')
+
     def test_put_policy(self):
         bucket = self.conn.create_bucket(self.bucket_name)
         bucket.delete_policy()
