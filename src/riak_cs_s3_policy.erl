@@ -744,10 +744,12 @@ condition_({<<"aws:CurrentTime">>, Bin}) when is_binary(Bin) ->
 condition_({<<"aws:EpochTime">>, Int}) when is_integer(Int) andalso Int >= 0 ->
     {'aws:EpochTime', Int};
 condition_({<<"aws:SecureTransport">>, MaybeBool}) ->
-    %% TODO: if this doesn't match return code like malformed condition -
-    %% while AWS never returns error in failing. Needs decision.
-    {ok, Bool} = parse_bool(MaybeBool),
-    {'aws:SecureTransport', Bool};
+    case parse_bool(MaybeBool) of 
+        {error, _} ->
+            throw({error, malformed_policy_condition});
+        {ok, Bool} ->
+            {'aws:SecureTransport', Bool}
+    end;
 condition_({<<"aws:SourceIp">>, Bin}) when is_binary(Bin)->
     case parse_ip(Bin) of
         {error, _} -> 
