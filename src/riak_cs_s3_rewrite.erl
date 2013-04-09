@@ -69,7 +69,7 @@ original_resource(RD) ->
 rewrite_path(_Method, "/", _QS, undefined) ->
     "/buckets";
 rewrite_path(Method, Path, QS, undefined) ->
-    {Bucket, UpdPath} = separate_bucket_from_path(string:tokens(Path, [$/])),
+    {Bucket, UpdPath} = separate_bucket_from_path(Path),
     rewrite_path(Method, UpdPath, QS, Bucket);
 rewrite_path(_Method, Path, _QS, "riak-cs") ->
     "/riak-cs" ++ Path;
@@ -130,11 +130,16 @@ extract_bucket_from_host(Host, RootHostIndex) ->
 
 %% @doc Separate the bucket name from the rest of the raw path in the
 %% case where the bucket name is included in the path.
--spec separate_bucket_from_path([string()]) -> {nonempty_string(), string()}.
-separate_bucket_from_path([Bucket | []]) ->
-    {Bucket, "/"};
-separate_bucket_from_path([Bucket | RestPath]) ->
-    {Bucket, lists:flatten([["/", PathElement] || PathElement <- RestPath])}.
+-spec separate_bucket_from_path(string()) -> {nonempty_string(), string()}.
+separate_bucket_from_path([$/ | Rest]) ->
+    separate_bucket_from_path(Rest, []).
+
+separate_bucket_from_path([], Acc) ->
+    {lists:reverse(Acc), "/"};
+separate_bucket_from_path([$/ | _] = Path, Acc) ->
+    {lists:reverse(Acc), Path};
+separate_bucket_from_path([C | Rest], Acc) ->
+    separate_bucket_from_path(Rest, [C | Acc]).
 
 %% @doc Format a bucket operation query string to conform the the
 %% rewrite rules.
@@ -299,15 +304,39 @@ rewrite_path_test() ->
     equal_paths("/buckets/testbucket/objects/testobject",
                 rewrite_with(headers([]),
                              "/testbucket/testobject")),
+    equal_paths("/buckets/testbucket/objects/testdir%2F",
+                rewrite_with(headers([]),
+                             "/testbucket/testdir/")),
+    equal_paths("/buckets/testbucket/objects/testdir%2Ftestobject",
+                rewrite_with(headers([]),
+                             "/testbucket/testdir/testobject")),
     equal_paths("/buckets/testbucket/objects/testobject",
                 rewrite_with(headers([{"host", "testbucket." ++ ?ROOT_HOST}]),
                              "/testobject")),
+    equal_paths("/buckets/testbucket/objects/testdir%2F",
+                rewrite_with(headers([{"host", "testbucket." ++ ?ROOT_HOST}]),
+                             "/testdir/")),
+    equal_paths("/buckets/testbucket/objects/testdir%2Ftestobject",
+                rewrite_with(headers([{"host", "testbucket." ++ ?ROOT_HOST}]),
+                             "/testdir/testobject")),
     equal_paths("/buckets/testbucket/objects/testobject/acl",
                 rewrite_with(headers([]),
                              "/testbucket/testobject?acl")),
+    equal_paths("/buckets/testbucket/objects/testdir%2F/acl",
+                rewrite_with(headers([]),
+                             "/testbucket/testdir/?acl")),
+    equal_paths("/buckets/testbucket/objects/testdir%2Ftestobject/acl",
+                rewrite_with(headers([]),
+                             "/testbucket/testdir/testobject?acl")),
     equal_paths("/buckets/testbucket/objects/testobject/acl",
                 rewrite_with(headers([{"host", "testbucket." ++ ?ROOT_HOST}]),
                              "/testobject?acl")),
+    equal_paths("/buckets/testbucket/objects/testdir%2F/acl",
+                rewrite_with(headers([{"host", "testbucket." ++ ?ROOT_HOST}]),
+                             "/testdir/?acl")),
+    equal_paths("/buckets/testbucket/objects/testdir%2Ftestobject/acl",
+                rewrite_with(headers([{"host", "testbucket." ++ ?ROOT_HOST}]),
+                             "/testdir/testobject?acl")),
     equal_paths("/buckets/testbucket/objects/testobject/uploads",
                 rewrite_with(headers([]),
                              "/testbucket/testobject?uploads")),
