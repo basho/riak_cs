@@ -22,8 +22,8 @@
 
 -export([init/1,
          allowed_methods/0,
-         api_request/2
-        ]).
+         content_types_provided/2,
+         to_xml/2]).
 
 -export([authorize/2]).
 
@@ -43,28 +43,72 @@ allowed_methods() ->
     %% TODO: POST (multi-delete)
     ['GET'].
 
+-spec content_types_provided(#wm_reqdata{}, #context{}) -> {[{string(), atom()}], #wm_reqdata{}, #context{}}.
+content_types_provided(RD,Ctx) ->
+    {[{"application/xml", to_xml}], RD, Ctx}.
+
+
 %% TODO: change to authorize/spec/cleanup unneeded cases
 %% TODO: requires update for multi-delete
 -spec authorize(#wm_reqdata{}, #context{}) -> {boolean(), #wm_reqdata{}, #context{}}.
 authorize(RD, Ctx) ->
     riak_cs_wm_utils:bucket_access_authorize_helper(bucket, false, RD, Ctx).
 
--spec api_request(#wm_reqdata{}, #context{}) -> {ok, ?LORESP{}} | {error, term()}.
-api_request(RD, Ctx=#context{bucket=Bucket,
-                             user=User,
-                             start_time=StartTime}) ->
-    UserName = riak_cs_wm_utils:extract_name(User),
-    riak_cs_dtrace:dt_bucket_entry(?MODULE, <<"list_keys">>, [], [UserName, Bucket]),
-    Res = riak_cs_api:list_objects(
-            [B || B <- riak_cs_utils:get_buckets(User),
-                  B?RCS_BUCKET.name =:= binary_to_list(Bucket)],
-            Ctx#context.bucket,
-            get_max_keys(RD),
-            get_options(RD),
-            Ctx#context.riakc_pid),
-    ok = riak_cs_stats:update_with_start(bucket_list_keys, StartTime),
-    riak_cs_dtrace:dt_bucket_return(?MODULE, <<"list_keys">>, [200], [UserName, Bucket]),
-    Res.
+-spec to_xml(#wm_reqdata{}, #context{}) ->
+                    {binary() | {'halt', non_neg_integer()}, #wm_reqdata{}, #context{}}.
+to_xml(RD, Ctx=#context{start_time=StartTime,
+                        user=User,
+                        bucket=Bucket,
+                        requested_perm='READ',
+                        riakc_pid=RiakPid}) ->
+    riak_cs_dtrace:dt_bucket_entry(?MODULE, <<"list_keys">>, [], [riak_cs_wm_utils:extract_name(User), Bucket]),
+    StrBucket = binary_to_list(Bucket),
+    case [B || B <- riak_cs_utils:get_buckets(User),
+               B?RCS_BUCKET.name =:= StrBucket] of
+        [] ->
+            CodeName = no_such_bucket,
+            Res = riak_cs_s3_response:api_error(CodeName, RD, Ctx),
+            Code = riak_cs_s3_response:status_code(CodeName),
+            riak_cs_dtrace:dt_bucket_return(?MODULE, <<"list_keys">>, [Code], [riak_cs_wm_utils:extract_name(User), Bucket]),
+            Res;
+        [_BucketRecord] ->
+            MaxKeys = get_max_keys(RD),
+            case MaxKeys of
+                _ when is_integer(MaxKeys) ->
+                    _ = StartTime,
+                    Options = get_options(RD),
+                    ListKeysRequest = riak_cs_list_objects:new_request(Bucket,
+                                                                       MaxKeys,
+                                                                       Options),
+                    ListObjectsResponse = riak_cs_list_objects_fsm_v2:list_objects(RiakPid, ListKeysRequest),
+                    Response = riak_cs_xml:to_xml(ListObjectsResponse),
+                    riak_cs_s3_response:respond(200, Response, RD, Ctx);
+%%                    BinPid = riak_cs_utils:pid_to_binary(self()),
+%%                    CacheKey = << BinPid/binary, <<":">>/binary, Bucket/binary >>,
+%%                    UseCache = riak_cs_list_objects_ets_cache:cache_enabled(),
+%%                    case riak_cs_list_objects_fsm:start_link(RiakPid, self(),
+%%                                                             ListKeysRequest, CacheKey,
+%%                                                             UseCache) of
+%%                        {ok, ListFSMPid} ->
+%%                            {ok, ListObjectsResponse} = riak_cs_list_objects_fsm:get_object_list(ListFSMPid),
+%%                            Response = riak_cs_xml:to_xml(ListObjectsResponse),
+%%                            ok = riak_cs_stats:update_with_start(bucket_list_keys,
+%%                                                                 StartTime),
+%%                            riak_cs_dtrace:dt_bucket_return(?MODULE, <<"list_keys">>, [200], [riak_cs_wm_utils:extract_name(User), Bucket]),
+%%                            riak_cs_s3_response:respond(200, Response, RD, Ctx);
+%%                        {error, Reason} ->
+%%                            Code = riak_cs_s3_response:status_code(Reason),
+%%                            Response = riak_cs_s3_response:api_error(Reason, RD, Ctx),
+%%                            riak_cs_dtrace:dt_bucket_return(?MODULE, <<"list_keys">>, [Code], [riak_cs_wm_utils:extract_name(User), Bucket]),
+%%                            Response
+%%                    end;
+                Reason ->
+                    Code = riak_cs_s3_response:status_code(Reason),
+                    Response = riak_cs_s3_response:api_error(Reason, RD, Ctx),
+                    riak_cs_dtrace:dt_bucket_return(?MODULE, <<"list_keys">>, [Code], [riak_cs_wm_utils:extract_name(User), Bucket]),
+                    Response
+            end
+    end.
 
 -spec get_options(#wm_reqdata{}) -> [{atom(), 'undefined' | binary()}].
 get_options(RD) ->
