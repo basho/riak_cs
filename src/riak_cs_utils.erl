@@ -71,6 +71,7 @@
          get_bucket_acl_policy/3,
          second_resolution_timestamp/1,
          timestamp_to_seconds/1,
+         timestamp_to_milliseconds/1,
          to_bucket_name/2,
          update_key_secret/1,
          update_obj_value/2,
@@ -598,9 +599,9 @@ get_user_by_index(Index, Value, RiakPid) ->
 -spec get_user_index(binary(), binary(), pid()) -> {ok, string()} | {error, term()}.
 get_user_index(Index, Value, RiakPid) ->
     case riakc_pb_socket:get_index(RiakPid, ?USER_BUCKET, Index, Value) of
-        {ok, []} ->
+        {ok, {keys, []}} ->
             {error, notfound};
-        {ok, [Key | _]} ->
+        {ok, {keys, [Key | _]}} ->
             {ok, binary_to_list(Key)};
         {error, Reason}=Error ->
             _ = lager:warning("Error occurred trying to query ~p in user index ~p. Reason: ~p", [Value,
@@ -831,6 +832,10 @@ second_resolution_timestamp({MegaSecs, Secs, _MicroSecs}) ->
 -spec timestamp_to_seconds(erlang:timestamp()) -> float().
 timestamp_to_seconds({MegaSecs, Secs, MicroSecs}) ->
     (MegaSecs * 1000000) + Secs + (MicroSecs / 1000000).
+
+-spec timestamp_to_milliseconds(erlang:timestamp()) -> float().
+timestamp_to_milliseconds(Timestamp) ->
+    timestamp_to_seconds(Timestamp) * 1000.
 
 %% Get the proper bucket name for either the Riak CS object
 %% bucket or the data block bucket.
