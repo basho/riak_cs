@@ -58,7 +58,7 @@ bool_prop(<<>>=B) ->
 bool_prop(Binary) ->
     case binary:last(Binary) of
         255 ->
-            Binary =< riak_cs_list_objects_fsm_v2:skip_past_prefix_and_delimiter(Binary);
+            Binary == riak_cs_list_objects_fsm_v2:skip_past_prefix_and_delimiter(Binary);
         _Else ->
             Binary < riak_cs_list_objects_fsm_v2:skip_past_prefix_and_delimiter(Binary)
     end.
