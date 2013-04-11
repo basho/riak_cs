@@ -28,7 +28,8 @@
 -include_lib("eunit/include/eunit.hrl").
 
 %% eqc properties
--export([prop_skip_past_prefix_and_delimiter/0]).
+-export([prop_skip_past_prefix_and_delimiter/0,
+         prop_prefix_must_be_in_between/0]).
 
 %% Helpers
 -export([test/0,
@@ -49,13 +50,14 @@ eqc_test() ->
 %% EQC Properties
 %% ====================================================================
 
+%% @doc Forall non-empty binaries `B',
+%% `B < skip_past_prefix_and_delimiter(B)'.
+%% Unless the last byte in `B' is 255, then they should be equal
 prop_skip_past_prefix_and_delimiter() ->
-    ?FORALL(B, binary(),
-            bool_prop(B)).
+    ?FORALL(B, non_empty_binary(),
+            less_than_prop(B)).
 
-bool_prop(<<>>=B) ->
-    B < riak_cs_list_objects_fsm_v2:skip_past_prefix_and_delimiter(B);
-bool_prop(Binary) ->
+less_than_prop(Binary) ->
     case binary:last(Binary) of
         255 ->
             Binary == riak_cs_list_objects_fsm_v2:skip_past_prefix_and_delimiter(Binary);
@@ -63,14 +65,40 @@ bool_prop(Binary) ->
             Binary < riak_cs_list_objects_fsm_v2:skip_past_prefix_and_delimiter(Binary)
     end.
 
+%% ====================================================================
+
+%% Forall binaries `A' and `B',
+%% concatenating `B' to `A' (A + B) should sort inbetween
+%% `A' and `skip_past_prefix_and_delimiter(A)'
+prop_prefix_must_be_in_between() ->
+    ?FORALL({A, B}, {non_empty_binary(), non_empty_binary()},
+            ?IMPLIES(no_max_byte(A), bool_in_between(A, B))).
+
+no_max_byte(<<255:8/integer>>) ->
+    false;
+no_max_byte(Binary) ->
+    255 =/= binary:last(Binary).
+
+bool_in_between(A, B) ->
+    Between = <<A/binary, B/binary>>,
+    (A < Between) andalso (Between < riak_cs_list_objects_fsm_v2:skip_past_prefix_and_delimiter(A)).
+
 %%====================================================================
-%% Helpers
+%% Generators
+%%====================================================================
+
+non_empty_binary() ->
+    ?SUCHTHAT(B, binary(), B =/= <<>>).
+
+%%====================================================================
+%% Test Helpers
 %%====================================================================
 
 test() ->
     test(?TEST_ITERATIONS).
 
 test(Iterations) ->
-    eqc:quickcheck(eqc:numtests(Iterations, prop_skip_past_prefix_and_delimiter())).
+    eqc:quickcheck(eqc:numtests(Iterations, prop_skip_past_prefix_and_delimiter())),
+    eqc:quickcheck(eqc:numtests(Iterations, prop_prefix_must_be_in_between())).
 
 -endif.
