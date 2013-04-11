@@ -122,7 +122,8 @@ web_specs(Options) ->
                 [{object_web, add_admin_dispatch_table(object_web_config(Options))}];
             false ->
                 [{admin_web, admin_web_config(Options)},
-                 {object_web, object_web_config(Options)}]
+                 {object_web, object_web_config(Options)},
+                 {stanchion_web, stanchion_web_config(Options)}]
         end,
     [web_spec(Name, Config) || {Name, Config} <- WebConfigs].
 
@@ -148,6 +149,17 @@ web_spec(Name, Config) ->
     {Name,
      {webmachine_mochiweb, start, [Config]},
      permanent, 5000, worker, dynamic}.
+
+stanchion_web_config(_Options) ->
+    [{dispatch, stanchion_web:dispatch_table()},
+     {name, stanchion_web},
+     {dispatch_group, stanchion_web},
+     {ip, "127.0.0.1"}, %proplists:get_value(stanchion_ip, Options)},
+     {port, 8085}, %proplists:get_value(stanchion_port, Options)},
+     {nodelay, true},
+     {error_handler, stanchion_wm_error_handler}].
+%     {resource_module_option, submodule}] ++
+%        maybe_add_ssl_opts(proplists:get_value(ssl, Options)).    
 
 -spec object_web_config(proplist()) -> proplist().
 object_web_config(Options) ->

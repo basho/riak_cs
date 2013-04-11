@@ -75,6 +75,8 @@ rewrite_path(_Method, Path, _QS, "riak-cs") ->
     "/riak-cs" ++ Path;
 rewrite_path(_Method, Path, _QS, "usage") ->
     "/usage" ++ Path;
+rewrite_path(_Method, Path, _QS, "stanchion") ->
+    "/stanchion" ++ Path;
 rewrite_path(Method, "/", [], Bucket) when Method =/= 'GET' ->
     lists:flatten(["/buckets/", Bucket]);
 rewrite_path(Method, "/", QS, Bucket) ->
