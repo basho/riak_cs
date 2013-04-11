@@ -371,6 +371,18 @@ class BucketPolicyTest(S3ApiVerificationTestBase):
         except S3ResponseError: pass
         else:                   self.fail()
 
+    def test_put_policy_invalid_ip(self):
+        bucket = self.conn.create_bucket(self.bucket_name)
+        bucket.delete_policy()
+        policy = '''
+{"Version":"2008-10-17","Statement":[{"Sid":"Stmtaaa","Effect":"Allow","Principal":"*","Action":["s3:GetObjectAcl","s3:GetObject"],"Resource":"arn:aws:s3:::%s/*","Condition":{"IpAddress":{"aws:SourceIp":"0"}}}]}
+''' % bucket.name
+        try: 
+            bucket.set_policy(policy, headers={'content-type':'application/json'})
+        except S3ResponseError as e:
+            self.assertEqual(e.status, 400)
+            self.assertEqual(e.reason, 'Bad Request')
+
     def test_put_policy(self):
         bucket = self.conn.create_bucket(self.bucket_name)
         bucket.delete_policy()
@@ -407,6 +419,22 @@ class BucketPolicyTest(S3ApiVerificationTestBase):
         self.assertTrue(bucket.set_policy(policy, headers={'content-type':'application/json'}))
         key.get_contents_as_string() ## throws nothing
 
+
+    def test_invalid_transport_addr_policy(self):
+        bucket = self.conn.create_bucket(self.bucket_name)
+        key_name = str(uuid.uuid4())
+        key = Key(bucket, key_name)
+        key.set_contents_from_string(self.data)
+
+        ## anyone may GET this object
+        policy = '''
+{"Version":"2008-10-17","Statement":[{"Sid":"Stmtaaa0","Effect":"Allow","Principal":"*","Action":["s3:GetObject"],"Resource":"arn:aws:s3:::%s/*","Condition":{"Bool":{"aws:SecureTransport":wat}}}]}
+''' % bucket.name
+        try: 
+            bucket.set_policy(policy, headers={'content-type':'application/json'})
+        except S3ResponseError as e:
+            self.assertEqual(e.status, 400)
+            self.assertEqual(e.reason, 'Bad Request')
 
     def test_transport_addr_policy(self):
         bucket = self.conn.create_bucket(self.bucket_name)
