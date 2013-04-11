@@ -23,6 +23,7 @@
 -include("riak_cs.hrl").
 -include("list_objects.hrl").
 
+-compile(export_all).
 -export([list_objects/2]).
 
 -spec list_objects(pid(), list_object_request()) -> list_object_response().
@@ -101,3 +102,18 @@ exclude_marker(?LOREQ{marker=Marker}, [H | T]=Objects) ->
         false ->
             Objects
     end.
+
+-spec skip_past_prefix_and_delimiter(binary()) -> binary().
+skip_past_prefix_and_delimiter(<<>>) ->
+    <<0:8/integer>>;
+skip_past_prefix_and_delimiter(Key) ->
+    PrefixSize = byte_size(Key) - 1,
+    <<Prefix:PrefixSize/binary, LastByte/binary>> = Key,
+    NextByte = next_byte(LastByte),
+    <<Prefix/binary, NextByte/binary>>.
+
+-spec next_byte(binary()) -> binary().
+next_byte(<<Integer:8/integer>>=Byte) when Integer == 255 ->
+    Byte;
+next_byte(<<Integer:8/integer>>) ->
+    <<(Integer+1):8/integer>>.
