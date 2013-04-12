@@ -158,7 +158,7 @@ check_bucket_props(_Request, State) ->
     {next_state, check_bucket_props, State}.
 
 idle(_Request, State) ->
-    {next_state, idle, State}.
+    {next_state, idle, State, hibernate}.
 
 archiving(continue, #state{next='$end_of_table', table=OldTable}=State) ->
     ets:delete(OldTable),
@@ -182,7 +182,7 @@ check_bucket_props(_Request, _From, State) ->
     {reply, ok, check_bucket_props, State}.
 
 idle(_Request, _From, State) ->
-    {reply, ok, idle, State}.
+    {reply, ok, idle, State, hibernate}.
 
 archiving(_Request, _From, State) ->
     {reply, ok, archiving, State}.
@@ -297,10 +297,10 @@ maybe_idle(#state{backlog=[], riak=Riak, mon=Mon}=State)
     %% nothing to do, but we're holding a client
     erlang:demonitor(Mon, [flush]),
     ok = riak_cs_access_archiver_sup:stop_client(),
-    {next_state, idle, State#state{riak=undefined, mon=undefined}};
+    {next_state, idle, State#state{riak=undefined, mon=undefined}, hibernate};
 maybe_idle(State) ->
     %% nothing to do, no client
-    {next_state, idle, State}.
+    {next_state, idle, State, hibernate}.
 
 %% @doc Fold the data stored in the table, and store it in Riak, then
 %% delete the table.  Each user referenced in the table generates one
