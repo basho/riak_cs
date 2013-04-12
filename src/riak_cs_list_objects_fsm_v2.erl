@@ -20,11 +20,214 @@
 
 -module(riak_cs_list_objects_fsm_v2).
 
+-behaviour(gen_fsm).
+
 -include("riak_cs.hrl").
 -include("list_objects.hrl").
 
 -compile(export_all).
+
+%%%===================================================================
+%%% Exports
+%%%===================================================================
+
+%% API
 -export([list_objects/2]).
+%% API
+-export([start_link/2,
+         get_object_list/1,
+         get_internal_state/1]).
+
+%% Observability
+-export([]).
+
+%% gen_fsm callbacks
+-export([init/1,
+         prepare/2,
+         waiting_object_list/2,
+         handle_event/3,
+         handle_sync_event/4,
+         handle_info/3,
+         terminate/3,
+         code_change/4]).
+
+%%%===================================================================
+%%% Records and Types
+%%%===================================================================
+
+-record(state, {riakc_pid :: pid(),
+                req :: list_object_request(),
+                reply_ref :: undefined | {pid(), any()},
+                key_multiplier :: float(),
+                object_list_req_id :: undefined | non_neg_integer(),
+                reached_end_of_keyspace=false :: boolean(),
+                object_buffer=[] :: list(),
+                objects :: list(),
+                response :: undefined |
+                            {ok, list_object_response()} |
+                            {error, term()},
+                common_prefixes=ordsets:new() :: list_objects_common_prefixes()}).
+
+%% some useful shared types
+
+-type state() :: #state{}.
+
+-type fsm_state_return() :: {next_state, atom(), state()} |
+                            {next_state, atom(), state(), non_neg_integer()} |
+                            {stop, term(), state()}.
+
+-type list_objects_event() :: {ReqID :: non_neg_integer(), done} |
+                              {ReqID :: non_neg_integer(), {objects, list()}} |
+                              {ReqID :: non_neg_integer(), {error, term()}}.
+
+-type manifests_and_prefixes() :: {list(lfs_manifest()), ordsets:ordset(binary())}.
+
+%%-type tagged_item() :: {prefix, binary()} |
+%%                       {manifest, {binary(), lfs_manifest()}}.
+
+%%-type tagged_item_list() :: list(tagged_item()).
+
+%%%===================================================================
+%%% API
+%%%===================================================================
+
+-spec start_link(pid(), list_object_request()) ->
+    {ok, pid()} | {error, term()}.
+start_link(RiakcPid, ListKeysRequest) ->
+    gen_fsm:start_link(?MODULE, [RiakcPid, ListKeysRequest], []).
+
+-spec get_object_list(pid()) ->
+    {ok, list_object_response()} |
+    {error, term()}.
+get_object_list(FSMPid) ->
+    gen_fsm:sync_send_all_state_event(FSMPid, get_object_list, infinity).
+
+get_internal_state(FSMPid) ->
+    gen_fsm:sync_send_all_state_event(FSMPid, get_internal_state, infinity).
+
+%%%===================================================================
+%%% Observability
+%%%===================================================================
+
+-spec get_key_list_multiplier() -> float().
+get_key_list_multiplier() ->
+    riak_cs_utils:get_env(riak_cs, key_list_multiplier,
+                          ?KEY_LIST_MULTIPLIER).
+
+-spec set_key_list_multiplier(float()) -> 'ok'.
+set_key_list_multiplier(Multiplier) ->
+    application:set_env(riak_cs, key_list_multiplier,
+                        Multiplier).
+
+%%%===================================================================
+%%% gen_fsm callbacks
+%%%===================================================================
+
+-spec init(list()) -> {ok, prepare, state(), 0}.
+init([RiakcPid, Request]) ->
+    %% TODO: this should not be hardcoded. Maybe there should
+    %% be two `start_link' arities, and one will use a default
+    %% val from app.config and the other will explicitly
+    %% take a val
+    KeyMultiplier = get_key_list_multiplier(),
+
+    State = #state{riakc_pid=RiakcPid,
+                   key_multiplier=KeyMultiplier,
+                   req=Request},
+    {ok, prepare, State, 0}.
+
+-spec prepare(timeout, state()) -> fsm_state_return().
+prepare(timeout, State=#state{riakc_pid=RiakcPid,
+                               req=Request}) ->
+    case make_2i_request(RiakcPid, Request) of
+        {ok, ReqId} ->
+            {next_state, waiting_object_list,
+             State#state{object_list_req_id=ReqId}};
+        {error, Reason}=E ->
+            NewStateData = State#state{response=E},
+            case State#state.reply_ref of
+                undefined ->
+                    {next_state, waiting_req, NewStateData};
+                ReplyRef ->
+                    gen_fsm:reply(ReplyRef, E),
+                    {stop, Reason, NewStateData}
+           end
+    end.
+
+-spec waiting_object_list(list_objects_event(), state()) -> fsm_state_return().
+waiting_object_list({ReqId, {objects, ObjectList}},
+                    State=#state{object_list_req_id=ReqId,
+                                 object_buffer=ObjectBuffer}) ->
+    NewStateData = State#state{object_buffer=ObjectBuffer ++ ObjectList},
+    {next_state, waiting_object_list, NewStateData};
+waiting_object_list({ReqId, done}, State=#state{object_list_req_id=ReqId}) ->
+    handle_done(State);
+waiting_object_list({ReqId, {error, Reason}=E}, State=#state{object_list_req_id=ReqId,
+                                                             reply_ref=ReplyRef}) ->
+    %% TODO: this is basically the same as in `prepare'
+    NewStateData = State#state{response=E},
+    case ReplyRef of
+        undefined ->
+            {next_state, waiting_req, NewStateData};
+        ReplyRef ->
+            gen_fsm:reply(ReplyRef, E),
+            {stop, Reason, NewStateData}
+    end.
+
+handle_event(_Event, StateName, State) ->
+    %% TODO: log unknown event
+    {next_state, StateName, State}.
+
+handle_sync_event(get_object_list, From, StateName, State=#state{response=undefined}) ->
+    NewStateData = State#state{reply_ref=From},
+    {next_state, StateName, NewStateData};
+handle_sync_event(get_object_list, _From, _StateName, State=#state{response=Resp}) ->
+    {stop, normal, Resp, State};
+handle_sync_event(get_internal_state, _From, StateName, State) ->
+    Reply = {StateName, State},
+    {reply, Reply, StateName, State};
+handle_sync_event(Event, _From, StateName, State) ->
+    _ = lager:debug("got unknown event ~p in state ~p", [Event, StateName]),
+    Reply = ok,
+    {reply, Reply, StateName, State}.
+
+%% the responses from `riakc_pb_socket:get_index_range'
+%% come back as regular messages, so just pass
+%% them along as if they were gen_server events.
+handle_info(Info, waiting_object_list, State) ->
+    waiting_object_list(Info, State);
+handle_info(Info, StateName, _State) ->
+    lager:debug("Received unknown info message ~p"
+                "in state ~p", [Info, StateName]),
+    ok.
+
+terminate(_Reason, _StateName, _State) ->
+    ok.
+
+code_change(_OldVsn, StateName, State, _Extra) ->
+    {ok, StateName, State}.
+
+%%%====================================================================
+%%% Internal helpers
+%%%====================================================================
+
+handle_done(State) ->
+    case enough_results(State) of
+        true ->
+            %% reply
+            ok;
+        false ->
+            ok
+            %% make another request
+    end,
+    {next_state, waiting_object_list, State}.
+
+enough_results(#state{req=?LOREQ{max_keys=MaxKeys},
+                      reached_end_of_keyspace=EndofKeyspace,
+                      objects=Objects,
+                      common_prefixes=CommonPrefixes}) ->
+    manifests_and_prefix_length({Objects, CommonPrefixes}) >= MaxKeys
+    orelse EndofKeyspace.
 
 -spec list_objects(pid(), list_object_request()) -> list_object_response().
 list_objects(RiakcPid, Request) ->
@@ -117,3 +320,9 @@ next_byte(<<Integer:8/integer>>=Byte) when Integer == 255 ->
     Byte;
 next_byte(<<Integer:8/integer>>) ->
     <<(Integer+1):8/integer>>.
+
+%% TODO: this was c/p from other module
+%% well, not quite anymore
+-spec manifests_and_prefix_length(manifests_and_prefixes()) -> non_neg_integer().
+manifests_and_prefix_length({Manifests, Prefixes}) ->
+    length(Manifests) + ordsets:size(Prefixes).
