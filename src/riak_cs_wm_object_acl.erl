@@ -80,7 +80,7 @@ maybe_log_user(RD, Context) ->
 %% @doc Get the list of methods this resource supports.
 -spec allowed_methods() -> [atom()].
 allowed_methods() ->
-    ['HEAD', 'GET', 'PUT'].
+    ['GET', 'PUT'].
 
 
 -spec content_types_provided(#wm_reqdata{}, #context{}) -> {[{string(), atom()}], #wm_reqdata{}, #context{}}.
