@@ -24,7 +24,6 @@
 
 -compile(export_all).
 -include_lib("eqc/include/eqc.hrl").
--include_lib("eqc/include/eqc_fsm.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 %% eqc properties
@@ -35,7 +34,7 @@
 -export([test/0,
          test/1]).
 
--define(TEST_ITERATIONS, 500).
+-define(TEST_ITERATIONS, 1000).
 -define(QC_OUT(P),
         eqc:on_output(fun(Str, Args) -> io:format(user, Str, Args) end, P)).
 
@@ -43,8 +42,9 @@
 %% Eunit tests
 %%====================================================================
 
-eqc_test() ->
-    ?assert(quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_skip_past_prefix_and_delimiter())))).
+eqc_test_() ->
+    [?_assert(quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_skip_past_prefix_and_delimiter())))),
+     ?_assert(quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_prefix_must_be_in_between()))))].
 
 %% ====================================================================
 %% EQC Properties
