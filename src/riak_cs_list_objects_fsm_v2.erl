@@ -18,6 +18,9 @@
 %%
 %% ---------------------------------------------------------------------
 
+%% TODO:
+%% 1. maybe `objects' should be called `manifests'
+
 -module(riak_cs_list_objects_fsm_v2).
 
 -behaviour(gen_fsm).
@@ -152,7 +155,10 @@ prepare(timeout, State=#state{riakc_pid=RiakcPid,
                     gen_fsm:reply(ReplyRef, E),
                     {stop, Reason, NewStateData}
            end
-    end.
+    end;
+prepare(Anything, State) ->
+    _ = lager:debug("got some weird shit right here ~p", [Anything]),
+    {stop, bad, State}.
 
 -spec waiting_object_list(list_objects_event(), state()) -> fsm_state_return().
 waiting_object_list({ReqId, {objects, ObjectList}},
@@ -197,8 +203,8 @@ handle_sync_event(Event, _From, StateName, State) ->
 handle_info(Info, waiting_object_list, State) ->
     waiting_object_list(Info, State);
 handle_info(Info, StateName, _State) ->
-    lager:debug("Received unknown info message ~p"
-                "in state ~p", [Info, StateName]),
+    _ = lager:debug("Received unknown info message ~p"
+                    "in state ~p", [Info, StateName]),
     ok.
 
 terminate(_Reason, _StateName, _State) ->
@@ -211,16 +217,29 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 %%% Internal helpers
 %%%====================================================================
 
-handle_done(State) ->
-    case enough_results(State) of
+handle_done(State=#state{object_buffer=ObjectBuffer,
+                         req=?LOREQ{max_keys=MaxKeys}=Request}) ->
+    Manifests = [riak_cs_utils:manifests_from_riak_object(O) ||
+                 O <- ObjectBuffer],
+    ReachedEnd = length(ObjectBuffer) < MaxKeys,
+    NewStateData = State#state{objects=Manifests,
+                               reached_end_of_keyspace=ReachedEnd,
+                               object_buffer=[]},
+    case enough_results(NewStateData) of
         true ->
-            %% reply
-            ok;
+            Response = response_from_manifests(Request, Manifests),
+            NewStateData2 = State#state{response={ok, Response}},
+            case State#state.reply_ref of
+                undefined ->
+                    ok;
+                ReplyRef ->
+                    gen_fsm:reply(ReplyRef, {ok, Response}),
+                    {stop, normal, NewStateData2}
+            end;
         false ->
             ok
             %% make another request
-    end,
-    {next_state, waiting_object_list, State}.
+    end.
 
 enough_results(#state{req=?LOREQ{max_keys=MaxKeys},
                       reached_end_of_keyspace=EndofKeyspace,
@@ -228,6 +247,18 @@ enough_results(#state{req=?LOREQ{max_keys=MaxKeys},
                       common_prefixes=CommonPrefixes}) ->
     manifests_and_prefix_length({Objects, CommonPrefixes}) >= MaxKeys
     orelse EndofKeyspace.
+
+response_from_manifests(Request, Manifests) ->
+    Active = map_active_manifests(Manifests),
+    Filtered = exclude_marker(Request, Active),
+    KeyContent = lists:map(fun riak_cs_list_objects:manifest_to_keycontent/1,
+                           Filtered),
+    case KeyContent of
+        [] ->
+            riak_cs_list_objects:new_response(Request, false, [], []);
+        _Else ->
+            riak_cs_list_objects:new_response(Request, true, [], KeyContent)
+    end.
 
 -spec list_objects(pid(), list_object_request()) -> list_object_response().
 list_objects(RiakcPid, Request) ->
@@ -252,13 +283,12 @@ make_2i_request(RiakcPid, Request=?LOREQ{name=BucketName,
     StartKey = make_start_key(Request),
     EndKey = big_end_key(128),
     Opts = [{return_terms, true}, {max_results, MaxKeys}, {stream, true}],
-    {ok, ReqID} = riakc_pb_socket:get_index_range(RiakcPid,
-                                                  ManifestBucket,
-                                                  <<"$key">>,
-                                                  StartKey,
-                                                  EndKey,
-                                                  Opts),
-    receive_objects(ReqID).
+    riakc_pb_socket:get_index_range(RiakcPid,
+                                    ManifestBucket,
+                                    <<"$key">>,
+                                    StartKey,
+                                    EndKey,
+                                    Opts).
 
 -spec receive_objects(term()) -> list().
 receive_objects(ReqID) ->
@@ -271,7 +301,7 @@ receive_objects(ReqId, Acc) ->
         {ReqId, done} ->
             Acc;
         {ReqId, {error, Reason}} ->
-            lager:error("yikes, error ~p", [Reason]),
+            _ = lager:error("yikes, error ~p", [Reason]),
             throw({list_objects_error, Reason});
         Else ->
             throw({unknown_message, Else})
@@ -326,3 +356,4 @@ next_byte(<<Integer:8/integer>>) ->
 -spec manifests_and_prefix_length(manifests_and_prefixes()) -> non_neg_integer().
 manifests_and_prefix_length({Manifests, Prefixes}) ->
     length(Manifests) + ordsets:size(Prefixes).
+
