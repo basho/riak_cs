@@ -146,19 +146,9 @@ prepare(timeout, State=#state{riakc_pid=RiakcPid,
         {ok, ReqId} ->
             {next_state, waiting_object_list,
              State#state{object_list_req_id=ReqId}};
-        {error, Reason}=E ->
-            NewStateData = State#state{response=E},
-            case State#state.reply_ref of
-                undefined ->
-                    {next_state, waiting_req, NewStateData};
-                ReplyRef ->
-                    gen_fsm:reply(ReplyRef, E),
-                    {stop, Reason, NewStateData}
-           end
-    end;
-prepare(Anything, State) ->
-    _ = lager:debug("got some weird shit right here ~p", [Anything]),
-    {stop, bad, State}.
+        {error, _Reason}=Error ->
+            try_reply(Error, State)
+    end.
 
 -spec waiting_object_list(list_objects_event(), state()) -> fsm_state_return().
 waiting_object_list({ReqId, {objects, ObjectList}},
@@ -168,17 +158,9 @@ waiting_object_list({ReqId, {objects, ObjectList}},
     {next_state, waiting_object_list, NewStateData};
 waiting_object_list({ReqId, done}, State=#state{object_list_req_id=ReqId}) ->
     handle_done(State);
-waiting_object_list({ReqId, {error, Reason}=E}, State=#state{object_list_req_id=ReqId,
-                                                             reply_ref=ReplyRef}) ->
-    %% TODO: this is basically the same as in `prepare'
-    NewStateData = State#state{response=E},
-    case ReplyRef of
-        undefined ->
-            {next_state, waiting_req, NewStateData};
-        ReplyRef ->
-            gen_fsm:reply(ReplyRef, E),
-            {stop, Reason, NewStateData}
-    end.
+waiting_object_list({ReqId, {error, _Reason}=Error},
+                    State=#state{object_list_req_id=ReqId}) ->
+    try_reply(Error, State).
 
 handle_event(_Event, StateName, State) ->
     %% TODO: log unknown event
@@ -228,17 +210,10 @@ handle_done(State=#state{object_buffer=ObjectBuffer,
     case enough_results(NewStateData) of
         true ->
             Response = response_from_manifests(Request, Manifests),
-            NewStateData2 = State#state{response={ok, Response}},
-            case State#state.reply_ref of
-                undefined ->
-                    ok;
-                ReplyRef ->
-                    gen_fsm:reply(ReplyRef, {ok, Response}),
-                    {stop, normal, NewStateData2}
-            end;
+            try_reply({ok, Response}, NewStateData);
         false ->
+            %% TODO: fill this in
             ok
-            %% make another request
     end.
 
 enough_results(#state{req=?LOREQ{max_keys=MaxKeys},
@@ -356,4 +331,23 @@ next_byte(<<Integer:8/integer>>) ->
 -spec manifests_and_prefix_length(manifests_and_prefixes()) -> non_neg_integer().
 manifests_and_prefix_length({Manifests, Prefixes}) ->
     length(Manifests) + ordsets:size(Prefixes).
+
+-spec try_reply(Response :: {ok, list_object_response()} | {error, term()},
+                State :: state()) ->
+    fsm_state_return().
+try_reply(Response, State) ->
+    NewStateData = State#state{response=Response},
+    reply_or_wait(Response, NewStateData).
+
+reply_or_wait(_Response, State=#state{reply_ref=undefined}) ->
+    {next_state, waiting_req, State};
+reply_or_wait(Response, State=#state{reply_ref=Ref}) ->
+    gen_fsm:reply(Ref, Response),
+    Reason = make_reason(Response),
+    {stop, Reason, State}.
+
+make_reason({ok, _Response}) ->
+    normal;
+make_reason({error, Reason}) ->
+    Reason.
 
