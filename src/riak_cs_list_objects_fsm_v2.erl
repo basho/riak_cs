@@ -66,6 +66,8 @@
                 reached_end_of_keyspace=false :: boolean(),
                 object_buffer=[] :: list(),
                 objects :: list(),
+                last_request_start_key :: undefined | binary(),
+                object_list_ranges=[] :: object_list_ranges(),
                 response :: undefined |
                             {ok, list_object_response()} |
                             {error, term()},
@@ -84,6 +86,10 @@
                               {ReqID :: non_neg_integer(), {error, term()}}.
 
 -type manifests_and_prefixes() :: {list(lfs_manifest()), ordsets:ordset(binary())}.
+
+%% `Start' and `End' are inclusive
+-type object_list_range()  :: {Start :: binary(), End :: binary()}.
+-type object_list_ranges() :: [object_list_range()].
 
 %%-type tagged_item() :: {prefix, binary()} |
 %%                       {manifest, {binary(), lfs_manifest()}}.
@@ -140,14 +146,13 @@ init([RiakcPid, Request]) ->
     {ok, prepare, State, 0}.
 
 -spec prepare(timeout, state()) -> fsm_state_return().
-prepare(timeout, State=#state{riakc_pid=RiakcPid,
-                               req=Request}) ->
-    case make_2i_request(RiakcPid, Request) of
-        {ok, ReqId} ->
+prepare(timeout, State=#state{riakc_pid=RiakcPid}) ->
+    case make_2i_request(RiakcPid, State) of
+        {NewStateData, {ok, ReqId}} ->
             {next_state, waiting_object_list,
-             State#state{object_list_req_id=ReqId}};
-        {error, _Reason}=Error ->
-            try_reply(Error, State)
+             NewStateData#state{object_list_req_id=ReqId}};
+        {NewStateData, {error, _Reason}}=Error ->
+            try_reply(Error, NewStateData)
     end.
 
 -spec waiting_object_list(list_objects_event(), state()) -> fsm_state_return().
@@ -189,7 +194,8 @@ handle_info(Info, StateName, _State) ->
                     "in state ~p", [Info, StateName]),
     ok.
 
-terminate(_Reason, _StateName, _State) ->
+terminate(_Reason, _StateName, State) ->
+    _ = lager:info("terminating state is ~p", [State#state.object_list_ranges]),
     ok.
 
 code_change(_OldVsn, StateName, State, _Extra) ->
@@ -201,12 +207,14 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 
 handle_done(State=#state{object_buffer=ObjectBuffer,
                          req=?LOREQ{max_keys=MaxKeys}=Request}) ->
+    RangeUpdatedStateData = update_last_request_state(State, ObjectBuffer),
+    FilteredObjects = exclude_key_from_state(State, ObjectBuffer),
     Manifests = [riak_cs_utils:manifests_from_riak_object(O) ||
-                 O <- ObjectBuffer],
+                 O <- FilteredObjects],
     ReachedEnd = length(ObjectBuffer) < MaxKeys,
-    NewStateData = State#state{objects=Manifests,
-                               reached_end_of_keyspace=ReachedEnd,
-                               object_buffer=[]},
+    NewStateData = RangeUpdatedStateData#state{objects=Manifests,
+                                               reached_end_of_keyspace=ReachedEnd,
+                                               object_buffer=[]},
     case enough_results(NewStateData) of
         true ->
             Response = response_from_manifests(Request, Manifests),
@@ -225,9 +233,8 @@ enough_results(#state{req=?LOREQ{max_keys=MaxKeys},
 
 response_from_manifests(Request, Manifests) ->
     Active = map_active_manifests(Manifests),
-    Filtered = exclude_marker(Request, Active),
     KeyContent = lists:map(fun riak_cs_list_objects:manifest_to_keycontent/1,
-                           Filtered),
+                           Active),
     case KeyContent of
         [] ->
             riak_cs_list_objects:new_response(Request, false, [], []);
@@ -251,19 +258,21 @@ list_objects(RiakcPid, Request) ->
             riak_cs_list_objects:new_response(Request, true, [], KeyContent)
     end.
 
--spec make_2i_request(pid(), list_object_request()) -> [riakc_obj:riakc_obj()].
-make_2i_request(RiakcPid, Request=?LOREQ{name=BucketName,
-                                         max_keys=MaxKeys}) ->
+-spec make_2i_request(pid(), state()) -> [riakc_obj:riakc_obj()].
+make_2i_request(RiakcPid, State=#state{req=?LOREQ{name=BucketName,
+                                                          max_keys=MaxKeys}}) ->
     ManifestBucket = riak_cs_utils:to_bucket_name(objects, BucketName),
-    StartKey = make_start_key(Request),
+    StartKey = make_start_key(State),
     EndKey = big_end_key(128),
-    Opts = [{return_terms, true}, {max_results, MaxKeys}, {stream, true}],
-    riakc_pb_socket:get_index_range(RiakcPid,
-                                    ManifestBucket,
-                                    <<"$key">>,
-                                    StartKey,
-                                    EndKey,
-                                    Opts).
+    Opts = [{return_terms, true}, {max_results, MaxKeys + 1}, {stream, true}],
+    NewStateData = State#state{last_request_start_key=StartKey},
+    Ref = riakc_pb_socket:get_index_range(RiakcPid,
+                                          ManifestBucket,
+                                          <<"$key">>,
+                                          StartKey,
+                                          EndKey,
+                                          Opts),
+    {NewStateData, Ref}.
 
 -spec receive_objects(term()) -> list().
 receive_objects(ReqID) ->
@@ -282,10 +291,16 @@ receive_objects(ReqId, Acc) ->
             throw({unknown_message, Else})
     end.
 
--spec make_start_key(list_object_request()) -> binary().
-make_start_key(?LOREQ{marker=undefined}) ->
+-spec make_start_key(state()) -> binary().
+make_start_key(#state{object_list_ranges=[], req=Request}) ->
+    make_start_key_from_marker(Request);
+make_start_key(#state{object_list_ranges=PrevRanges}) ->
+    element(2, lists:last(PrevRanges)).
+
+-spec make_start_key_from_marker(list_object_request()) -> binary().
+make_start_key_from_marker(?LOREQ{marker=undefined}) ->
     <<0:8/integer>>;
-make_start_key(?LOREQ{marker=Marker}) ->
+make_start_key_from_marker(?LOREQ{marker=Marker}) ->
     Marker.
 
 big_end_key(NumBytes) ->
@@ -298,13 +313,26 @@ map_active_manifests(Manifests) ->
                     M <- Manifests],
     [A || {ok, A} <- ActiveTuples].
 
+-spec exclude_key_from_state(state(), list(riakc_obj:riakc_obj())) ->
+    list(riakc_obj:riakc_obj()).
+exclude_key_from_state(_State, []) ->
+    [];
+exclude_key_from_state(#state{object_list_ranges=[],
+                              req=Request}, Objects) ->
+    exclude_marker(Request, Objects);
+exclude_key_from_state(#state{last_request_start_key=StartKey}, Objects) ->
+    exclude_key(StartKey, Objects).
+
 -spec exclude_marker(list_object_request(), list()) -> list().
 exclude_marker(?LOREQ{marker=undefined}, Objects) ->
     Objects;
-exclude_marker(_Request, []) ->
-    [];
-exclude_marker(?LOREQ{marker=Marker}, [H | T]=Objects) ->
-    case element(2, H?MANIFEST.bkey) == Marker of
+exclude_marker(?LOREQ{marker=Marker}, Objects) ->
+    exclude_key(Marker, Objects).
+
+-spec exclude_key(binary(), list(riakc_obj:riakc_obj())) ->
+    list(riakc_obj:riakc_obj()).
+exclude_key(Key, [H | T]=Objects) ->
+    case riakc_obj:key(H) == Key of
         true ->
             T;
         false ->
@@ -350,4 +378,17 @@ make_reason({ok, _Response}) ->
     normal;
 make_reason({error, Reason}) ->
     Reason.
+
+update_last_request_state(State=#state{last_request_start_key=StartKey,
+                                       object_list_ranges=PrevRanges},
+                          []) ->
+    NewRange = {StartKey, StartKey},
+    State#state{object_list_ranges=PrevRanges ++ [NewRange]};
+update_last_request_state(State=#state{last_request_start_key=StartKey,
+                                       object_list_ranges=PrevRanges},
+                          RiakObjects) ->
+    LastObject = lists:last(RiakObjects),
+    LastKey = riakc_obj:key(LastObject),
+    NewRange = {StartKey, LastKey},
+    State#state{object_list_ranges=PrevRanges ++ [NewRange]}.
 
