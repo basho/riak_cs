@@ -295,11 +295,57 @@ receive_objects(ReqId, Acc) ->
             throw({unknown_message, Else})
     end.
 
+-spec last_result_is_common_prefix(state()) -> boolean().
+last_result_is_common_prefix(#state{object_list_ranges=[]}) ->
+    false;
+last_result_is_common_prefix(#state{object_list_ranges=Ranges,
+                                    req=Request}) ->
+    Key = element(2, lists:last(Ranges)),
+    key_is_common_prefix(Key, Request).
+
+
+-spec key_is_common_prefix(binary(), list_object_request()) ->
+    boolean().
+%% TODO: please refactor this
+key_is_common_prefix(_Key, ?LOREQ{delimiter=undefined}) ->
+    false;
+key_is_common_prefix(Key, ?LOREQ{prefix=Prefix,
+                                 delimiter=Delimiter}) ->
+    case Prefix of
+        undefined ->
+            case binary:match(Key, [Delimiter]) of
+                nomatch ->
+                    false;
+                _Match ->
+                    true
+            end;
+        _Prefix ->
+            PrefixLen = byte_size(Prefix),
+            case Key of
+                <<Prefix:PrefixLen/binary, Rest/binary>> ->
+                    case binary:match(Rest, [Delimiter]) of
+                        nomatch ->
+                            false;
+                        _Match ->
+                            true
+                    end;
+                _NoPrefix ->
+                    false
+            end
+    end.
+
 -spec make_start_key(state()) -> binary().
 make_start_key(#state{object_list_ranges=[], req=Request}) ->
     make_start_key_from_marker(Request);
-make_start_key(#state{object_list_ranges=PrevRanges}) ->
-    element(2, lists:last(PrevRanges)).
+make_start_key(State=#state{object_list_ranges=PrevRanges,
+                            common_prefixes=CommonPrefixes}) ->
+    case last_result_is_common_prefix(State) of
+        true ->
+            LastPrefix = lists:last(lists:sort(ordsets:to_list(CommonPrefixes))),
+            skip_past_prefix_and_delimiter(LastPrefix);
+        false ->
+            element(2, lists:last(PrevRanges))
+    end.
 
 -spec make_start_key_from_marker(list_object_request()) -> binary().
 make_start_key_from_marker(?LOREQ{marker=undefined}) ->
