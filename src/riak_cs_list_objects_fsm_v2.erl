@@ -35,8 +35,6 @@
 %%%===================================================================
 
 %% API
--export([list_objects/2]).
-%% API
 -export([start_link/2,
          get_object_list/1,
          get_internal_state/1]).
@@ -65,7 +63,7 @@
                 object_list_req_id :: undefined | non_neg_integer(),
                 reached_end_of_keyspace=false :: boolean(),
                 object_buffer=[] :: list(),
-                objects :: list(),
+                objects=[] :: list(),
                 last_request_start_key :: undefined | binary(),
                 last_request_num_keys_requested :: undefined | pos_integer(),
                 object_list_ranges=[] :: object_list_ranges(),
@@ -195,8 +193,7 @@ handle_info(Info, StateName, _State) ->
                     "in state ~p", [Info, StateName]),
     ok.
 
-terminate(_Reason, _StateName, State) ->
-    _ = lager:info("terminating state is ~p", [State#state.object_list_ranges]),
+terminate(_Reason, _StateName, _State) ->
     ok.
 
 code_change(_OldVsn, StateName, State, _Extra) ->
@@ -207,6 +204,7 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 %%%====================================================================
 
 handle_done(State=#state{object_buffer=ObjectBuffer,
+                         objects=PrevObjects,
                          last_request_num_keys_requested=NumKeysRequested,
                          common_prefixes=CommonPrefixes,
                          req=Request=?LOREQ{max_keys=UserMaxKeys}}) ->
@@ -217,8 +215,10 @@ handle_done(State=#state{object_buffer=ObjectBuffer,
     Manifests = [riak_cs_utils:manifests_from_riak_object(O) ||
                  O <- FilteredObjects],
     Active = map_active_manifests(Manifests),
-    ObjectPrefixTuple = {Active, CommonPrefixes},
-    SlicedTaggedItems = manifests_and_prefix_slice(ObjectPrefixTuple,
+    NewObjects = PrevObjects ++ Active,
+    ObjectPrefixTuple = {NewObjects, CommonPrefixes},
+    ObjectPrefixTuple2 = filter_prefix_keys(ObjectPrefixTuple, Request),
+    SlicedTaggedItems = manifests_and_prefix_slice(ObjectPrefixTuple2,
                                                    UserMaxKeys),
     {NewManis, NewPrefixes} = untagged_manifest_and_prefix(SlicedTaggedItems),
 
@@ -232,8 +232,14 @@ handle_done(State=#state{object_buffer=ObjectBuffer,
                                                                    {NewManis, NewPrefixes}),
             try_reply({ok, Response}, NewStateData);
         false ->
-            %% TODO: fill this in
-            ok
+            RiakcPid = NewStateData#state.riakc_pid,
+            case make_2i_request(RiakcPid, NewStateData) of
+                {NewStateData2, {ok, ReqId}} ->
+                    {next_state, waiting_object_list,
+                     NewStateData2#state{object_list_req_id=ReqId}};
+                {NewStateData2, {error, _Reason}}=Error ->
+                    try_reply(Error, NewStateData2)
+            end
     end.
 
 enough_results(#state{req=?LOREQ{max_keys=UserMaxKeys},
@@ -254,25 +260,9 @@ response_from_manifests_and_common_prefixes(Request,
             riak_cs_list_objects:new_response(Request, true, CommonPrefixes, KeyContent)
     end.
 
--spec list_objects(pid(), list_object_request()) -> list_object_response().
-list_objects(RiakcPid, Request) ->
-    RiakObjects = make_2i_request(RiakcPid, Request),
-    Manifests = [riak_cs_utils:manifests_from_riak_object(O) ||
-                 O <- RiakObjects],
-    Active = map_active_manifests(Manifests),
-    Filtered = exclude_marker(Request, Active),
-    KeyContent = lists:map(fun riak_cs_list_objects:manifest_to_keycontent/1,
-                           Filtered),
-    case KeyContent of
-        [] ->
-            riak_cs_list_objects:new_response(Request, false, [], []);
-        _Else ->
-            riak_cs_list_objects:new_response(Request, true, [], KeyContent)
-    end.
-
 -spec make_2i_request(pid(), state()) -> [riakc_obj:riakc_obj()].
 make_2i_request(RiakcPid, State=#state{req=?LOREQ{name=BucketName,
-                                                          max_keys=MaxKeys}}) ->
+                                       max_keys=MaxKeys}}) ->
     ManifestBucket = riak_cs_utils:to_bucket_name(objects, BucketName),
     StartKey = make_start_key(State),
     EndKey = big_end_key(128),
@@ -439,13 +429,13 @@ prefix_filter(Manifest=?MANIFEST{bkey={_Bucket, Key}},
         _ ->
             Acc
     end;
-prefix_filter({Key, _Manifest}=KeyAndManifest,
-              {_KeyAndManifestList, _Prefixes}=Acc, Prefix, Delimiter) ->
+prefix_filter(Manifest=?MANIFEST{bkey={_Bucket, Key}},
+              {_ManifestList, _Prefixes}=Acc, Prefix, Delimiter) ->
     PrefixLen = byte_size(Prefix),
     case Key of
         << Prefix:PrefixLen/binary, Rest/binary >> ->
             Group = extract_group(Rest, Delimiter),
-            update_keys_and_prefixes(Acc, KeyAndManifest, Prefix, PrefixLen, Group);
+            update_keys_and_prefixes(Acc, Manifest, Prefix, PrefixLen, Group);
         _ ->
             Acc
     end.
