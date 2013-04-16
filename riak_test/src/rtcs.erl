@@ -157,6 +157,10 @@ cs_config(UserExtra) ->
      {riak_cs,
       UserExtra ++
       [
+      {connection_pools, [
+              {request_pool, {8, 0} },
+              {bucket_list_pool, {5, 0} }
+       ]},
        {proxy_get, enabled},
        {anonymous_user_creation, true},
        {riak_pb_port, 10017},
