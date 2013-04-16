@@ -67,6 +67,7 @@
                 object_buffer=[] :: list(),
                 objects :: list(),
                 last_request_start_key :: undefined | binary(),
+                last_request_num_keys_requested :: undefined | pos_integer(),
                 object_list_ranges=[] :: object_list_ranges(),
                 response :: undefined |
                             {ok, list_object_response()} |
@@ -91,10 +92,10 @@
 -type object_list_range()  :: {Start :: binary(), End :: binary()}.
 -type object_list_ranges() :: [object_list_range()].
 
-%%-type tagged_item() :: {prefix, binary()} |
-%%                       {manifest, {binary(), lfs_manifest()}}.
+-type tagged_item() :: {prefix, binary()} |
+                       {manifest, lfs_manifest()}.
 
-%%-type tagged_item_list() :: list(tagged_item()).
+-type tagged_item_list() :: list(tagged_item()).
 
 %%%===================================================================
 %%% API
@@ -206,12 +207,13 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 %%%====================================================================
 
 handle_done(State=#state{object_buffer=ObjectBuffer,
-                         req=?LOREQ{max_keys=MaxKeys}=Request}) ->
+                         last_request_num_keys_requested=NumKeysRequested,
+                         req=Request}) ->
     RangeUpdatedStateData = update_last_request_state(State, ObjectBuffer),
     FilteredObjects = exclude_key_from_state(State, ObjectBuffer),
     Manifests = [riak_cs_utils:manifests_from_riak_object(O) ||
                  O <- FilteredObjects],
-    ReachedEnd = length(ObjectBuffer) < MaxKeys,
+    ReachedEnd = length(ObjectBuffer) < NumKeysRequested,
     NewStateData = RangeUpdatedStateData#state{objects=Manifests,
                                                reached_end_of_keyspace=ReachedEnd,
                                                object_buffer=[]},
@@ -264,8 +266,10 @@ make_2i_request(RiakcPid, State=#state{req=?LOREQ{name=BucketName,
     ManifestBucket = riak_cs_utils:to_bucket_name(objects, BucketName),
     StartKey = make_start_key(State),
     EndKey = big_end_key(128),
-    Opts = [{return_terms, true}, {max_results, MaxKeys + 1}, {stream, true}],
-    NewStateData = State#state{last_request_start_key=StartKey},
+    NumResults = MaxKeys + 2,
+    Opts = [{return_terms, true}, {max_results, NumResults}, {stream, true}],
+    NewStateData = State#state{last_request_start_key=StartKey,
+                               last_request_num_keys_requested=NumResults},
     Ref = riakc_pb_socket:get_index_range(RiakcPid,
                                           ManifestBucket,
                                           <<"$key">>,
@@ -353,6 +357,50 @@ next_byte(<<Integer:8/integer>>=Byte) when Integer == 255 ->
     Byte;
 next_byte(<<Integer:8/integer>>) ->
     <<(Integer+1):8/integer>>.
+
+-spec manifests_and_prefix_slice(manifests_and_prefixes(), non_neg_integer()) ->
+    tagged_item_list().
+manifests_and_prefix_slice(ManifestsAndPrefixes, MaxObjects) ->
+    TaggedList = tagged_manifest_and_prefix(ManifestsAndPrefixes),
+    Sorted = lists:sort(fun tagged_sort_fun/2, TaggedList),
+    lists:sublist(Sorted, MaxObjects).
+
+-spec tagged_sort_fun(tagged_item(), tagged_item()) ->
+    boolean().
+tagged_sort_fun(A, B) ->
+    AKey = key_from_tag(A),
+    BKey = key_from_tag(B),
+    AKey =< BKey.
+
+-spec key_from_tag(tagged_item()) -> binary().
+key_from_tag({manifest, ?MANIFEST{bkey={_Bucket, Key}}}) ->
+    Key;
+key_from_tag({prefix, Key}) ->
+    Key.
+
+-spec tagged_manifest_and_prefix(manifests_and_prefixes()) ->
+    tagged_item_list().
+tagged_manifest_and_prefix({Manifests, Prefixes}) ->
+    tagged_manifest_list(Manifests) ++ tagged_prefix_list(Prefixes).
+
+-spec tagged_manifest_list(list(lfs_manifest())) ->
+    list({manifest, lfs_manifest()}).
+tagged_manifest_list(KeyAndManifestList) ->
+    [{manifest, M} || M <- KeyAndManifestList].
+
+-spec tagged_prefix_list(list(binary())) ->
+    list({prefix, binary()}).
+tagged_prefix_list(Prefixes) ->
+    [{prefix, P} || P <- ordsets:to_list(Prefixes)].
+
+-spec untagged_manifest_and_prefix(tagged_item_list()) ->
+    manifests_and_prefixes().
+untagged_manifest_and_prefix(TaggedInput) ->
+    Pred = fun({manifest, _}) -> true;
+              (_Else) -> false end,
+    {A, B} = lists:partition(Pred, TaggedInput),
+    {[element(2, M) || M <- A],
+     [element(2, P) || P <- B]}.
 
 %% TODO: this was c/p from other module
 %% well, not quite anymore
