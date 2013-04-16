@@ -208,40 +208,50 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 
 handle_done(State=#state{object_buffer=ObjectBuffer,
                          last_request_num_keys_requested=NumKeysRequested,
-                         req=Request}) ->
+                         common_prefixes=CommonPrefixes,
+                         req=Request=?LOREQ{max_keys=UserMaxKeys}}) ->
+    ReachedEnd = length(ObjectBuffer) < NumKeysRequested,
     RangeUpdatedStateData = update_last_request_state(State, ObjectBuffer),
+
     FilteredObjects = exclude_key_from_state(State, ObjectBuffer),
     Manifests = [riak_cs_utils:manifests_from_riak_object(O) ||
                  O <- FilteredObjects],
-    ReachedEnd = length(ObjectBuffer) < NumKeysRequested,
-    NewStateData = RangeUpdatedStateData#state{objects=Manifests,
+    Active = map_active_manifests(Manifests),
+    ObjectPrefixTuple = {Active, CommonPrefixes},
+    SlicedTaggedItems = manifests_and_prefix_slice(ObjectPrefixTuple,
+                                                   UserMaxKeys),
+    {NewManis, NewPrefixes} = untagged_manifest_and_prefix(SlicedTaggedItems),
+
+    NewStateData = RangeUpdatedStateData#state{objects=NewManis,
+                                               common_prefixes=NewPrefixes,
                                                reached_end_of_keyspace=ReachedEnd,
                                                object_buffer=[]},
     case enough_results(NewStateData) of
         true ->
-            Response = response_from_manifests(Request, Manifests),
+            Response = response_from_manifests_and_common_prefixes(Request,
+                                                                   {NewManis, NewPrefixes}),
             try_reply({ok, Response}, NewStateData);
         false ->
             %% TODO: fill this in
             ok
     end.
 
-enough_results(#state{req=?LOREQ{max_keys=MaxKeys},
+enough_results(#state{req=?LOREQ{max_keys=UserMaxKeys},
                       reached_end_of_keyspace=EndofKeyspace,
                       objects=Objects,
                       common_prefixes=CommonPrefixes}) ->
-    manifests_and_prefix_length({Objects, CommonPrefixes}) >= MaxKeys
+    manifests_and_prefix_length({Objects, CommonPrefixes}) >= UserMaxKeys
     orelse EndofKeyspace.
 
-response_from_manifests(Request, Manifests) ->
-    Active = map_active_manifests(Manifests),
+response_from_manifests_and_common_prefixes(Request,
+                                            {Manifests, CommonPrefixes}) ->
     KeyContent = lists:map(fun riak_cs_list_objects:manifest_to_keycontent/1,
-                           Active),
+                           Manifests),
     case KeyContent of
         [] ->
-            riak_cs_list_objects:new_response(Request, false, [], []);
+            riak_cs_list_objects:new_response(Request, false, CommonPrefixes, []);
         _Else ->
-            riak_cs_list_objects:new_response(Request, true, [], KeyContent)
+            riak_cs_list_objects:new_response(Request, true, CommonPrefixes, KeyContent)
     end.
 
 -spec list_objects(pid(), list_object_request()) -> list_object_response().
@@ -401,6 +411,60 @@ untagged_manifest_and_prefix(TaggedInput) ->
     {A, B} = lists:partition(Pred, TaggedInput),
     {[element(2, M) || M <- A],
      [element(2, P) || P <- B]}.
+
+-spec filter_prefix_keys({ManifestList :: list(lfs_manifest()),
+                          CommonPrefixes :: ordsets:ordset(binary())},
+                         list_object_request()) ->
+    manifests_and_prefixes().
+filter_prefix_keys({_ManifestList, _CommonPrefixes}=Input, ?LOREQ{prefix=undefined,
+                                                                  delimiter=undefined}) ->
+    Input;
+filter_prefix_keys({ManifestList, CommonPrefixes}, ?LOREQ{prefix=Prefix,
+                                                              delimiter=Delimiter}) ->
+    PrefixFilter =
+        fun(Manifest, Acc) ->
+                prefix_filter(Manifest, Acc, Prefix, Delimiter)
+        end,
+    lists:foldl(PrefixFilter, {[], CommonPrefixes}, ManifestList).
+
+prefix_filter(Manifest=?MANIFEST{bkey={_Bucket, Key}}, Acc, undefined, Delimiter) ->
+    Group = extract_group(Key, Delimiter),
+    update_keys_and_prefixes(Acc, Manifest, <<>>, 0, Group);
+prefix_filter(Manifest=?MANIFEST{bkey={_Bucket, Key}},
+              {ManifestList, Prefixes}=Acc, Prefix, undefined) ->
+    PrefixLen = byte_size(Prefix),
+    case Key of
+        << Prefix:PrefixLen/binary, _/binary >> ->
+            {[Manifest | ManifestList], Prefixes};
+        _ ->
+            Acc
+    end;
+prefix_filter({Key, _Manifest}=KeyAndManifest,
+              {_KeyAndManifestList, _Prefixes}=Acc, Prefix, Delimiter) ->
+    PrefixLen = byte_size(Prefix),
+    case Key of
+        << Prefix:PrefixLen/binary, Rest/binary >> ->
+            Group = extract_group(Rest, Delimiter),
+            update_keys_and_prefixes(Acc, KeyAndManifest, Prefix, PrefixLen, Group);
+        _ ->
+            Acc
+    end.
+
+extract_group(Key, Delimiter) ->
+    case binary:match(Key, [Delimiter]) of
+        nomatch ->
+            nomatch;
+        {Pos, Len} ->
+            binary:part(Key, {0, Pos+Len})
+    end.
+
+update_keys_and_prefixes({ManifestList, Prefixes},
+                         Manifest, _, _, nomatch) ->
+    {[Manifest | ManifestList], Prefixes};
+update_keys_and_prefixes({ManifestList, Prefixes},
+                         _, Prefix, PrefixLen, Group) ->
+    NewPrefix = << Prefix:PrefixLen/binary, Group/binary >>,
+    {ManifestList, ordsets:add_element(NewPrefix, Prefixes)}.
 
 %% TODO: this was c/p from other module
 %% well, not quite anymore
