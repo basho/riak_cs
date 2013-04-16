@@ -32,7 +32,7 @@
 -export([decode_and_merge_siblings/2,
          gc_interval/0,
          gc_retry_interval/0,
-         gc_active_manifests/3,
+         gc_active_and_writing_manifests/3,
          gc_specific_manifests/5,
          epoch_start/0,
          leeway_seconds/0,
@@ -52,16 +52,16 @@
 %% Note that any error is irrespective of the current position of the GC states.
 %% Some manifests may have been GC'd and then an error occurs. In this case the
 %% client will only get the error response.
--spec gc_active_manifests(binary(), binary(), pid()) -> 
+-spec gc_active_and_writing_manifests(binary(), binary(), pid()) -> 
     {ok, [binary()]} | {error, term()}.
-gc_active_manifests(Bucket, Key, RiakcPid) ->
-    gc_active_manifests(Bucket, Key, RiakcPid, []).
+gc_active_and_writing_manifests(Bucket, Key, RiakcPid) ->
+    gc_active_and_writing_manifests(Bucket, Key, RiakcPid, []).
 
 %% @private
--spec gc_active_manifests(binary(), binary(), pid(), [binary]) ->
+-spec gc_active_and_writing_manifests(binary(), binary(), pid(), [binary()]) ->
     {ok, [binary()]} | {error, term()}.
-gc_active_manifests(Bucket, Key, RiakcPid, UUIDs) ->
-   case get_active_manifests(Bucket, Key, RiakcPid) of
+gc_active_and_writing_manifests(Bucket, Key, RiakcPid, UUIDs) ->
+   case get_active_and_writing_manifests(Bucket, Key, RiakcPid) of
         {ok, _RiakObject, []} -> 
             {ok, UUIDs};
         {ok, RiakObject, Manifests} ->
@@ -70,7 +70,7 @@ gc_active_manifests(Bucket, Key, RiakcPid, UUIDs) ->
                 {error, _}=Error -> 
                     Error;
                 NewUUIDs -> 
-                    gc_active_manifests(Bucket, Key, RiakcPid, UUIDs ++ NewUUIDs)
+                    gc_active_and_writing_manifests(Bucket, Key, RiakcPid, UUIDs ++ NewUUIDs)
             end;
         {error, notfound} ->
             {ok, UUIDs};
@@ -78,18 +78,18 @@ gc_active_manifests(Bucket, Key, RiakcPid, UUIDs) ->
             Error
     end.
 
--spec get_active_manifests(binary(), binary(), pid()) ->
+-spec get_active_and_writing_manifests(binary(), binary(), pid()) ->
     {ok, riakc_obj:riakc_obj(), [lfs_manifest()]} | {error, term()}.
-get_active_manifests(Bucket, Key, RiakcPid) ->
-    active_manifests(riak_cs_utils:get_manifests(RiakcPid, Bucket, Key)).
+get_active_and_writing_manifests(Bucket, Key, RiakcPid) ->
+    active_and_writing_manifests(riak_cs_utils:get_manifests(RiakcPid, Bucket, Key)).
 
--spec active_manifests({ok, riakc_obj:riakc_obj(), [lfs_manifest()]}) ->
-                          {ok, riakc_obj:riakc_obj(), [lfs_manifest()]}; 
-                      ({error, term()}) ->
-                          {error, term()}.
-active_manifests({ok, RiakObject, Manifests}) -> 
-    {ok, RiakObject, riak_cs_manifest_utils:active_manifests(Manifests)};
-active_manifests({error, _}=Error) -> 
+-spec active_and_writing_manifests({ok, riakc_obj:riakc_obj(), [lfs_manifest()]}) ->
+                                      {ok, riakc_obj:riakc_obj(), [lfs_manifest()]}; 
+                                  ({error, term()}) ->
+                                      {error, term()}.
+active_and_writing_manifests({ok, RiakObject, Manifests}) -> 
+    {ok, RiakObject, riak_cs_manifest_utils:active_and_writing_manifests(Manifests)};
+active_and_writing_manifests({error, _}=Error) -> 
     Error.
 
 -spec clean_manifests([lfs_manifest()], pid()) -> [lfs_manifest()].

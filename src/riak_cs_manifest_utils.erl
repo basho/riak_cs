@@ -74,7 +74,7 @@ active_manifests(Dict) ->
 %% `active' or `writing' state
 -spec active_and_writing_manifests(orddict:orddict()) -> [lfs_manifest()].
 active_and_writing_manifests(Dict) ->
-    orddict:to_list(filter_manifests_by_state(Dict, [active, writing])).
+    lists:filter(fun active_or_writing/1, orddict_values(Dict)).
 
 %% @doc Extract all manifests that are not "the most active"
 %%      and not actively writing (within the leeway period).
@@ -284,15 +284,12 @@ upgrade_manifest(?MANIFEST{}=M) ->
 %%% Internal functions
 %%%===================================================================
 
-%% @doc Filter an orddict manifests and accept only manifests whose
-%% current state is specified in the `AcceptedStates' list.
--spec filter_manifests_by_state(orddict:orddict(), [atom()]) -> orddict:orddict().
-filter_manifests_by_state(Dict, AcceptedStates) ->
-    AcceptManifest =
-        fun(_, ?MANIFEST{state=State}) ->
-                lists:member(State, AcceptedStates)
-        end,
-    orddict:filter(AcceptManifest, Dict).
+active_or_writing(?MANIFEST{state=active}) ->
+    true;
+active_or_writing(?MANIFEST{state=writing}) ->
+    true;
+active_or_writing(_Manifest) ->
+    false.
 
 -spec leeway_elapsed(undefined | erlang:timestamp()) -> boolean().
 leeway_elapsed(undefined) ->
