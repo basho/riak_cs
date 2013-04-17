@@ -347,7 +347,7 @@ do_part_common(Op, Bucket, Key, UploadId, {_,_,CallerKeyId} = _Caller, Props, Ri
                                     false ->
                                         {error, access_denied}
                                 end;
-                            M ->
+                            _ ->
                                 {error, notfound}
                         end;
                     Else2 ->
@@ -480,7 +480,6 @@ do_part_common2(upload_part, RiakcPid, M, _Obj, MpM, Props) ->
         NewMpM = MpM?MULTIPART_MANIFEST{parts = ordsets:add_element(PM, Parts)},
         NewM = M?MANIFEST{content_length = ContentLength + Size,
                           props = replace_mp_manifest(NewMpM, MProps)},
-        NewNewMpM = proplists:get_value(multipart, NewM?MANIFEST.props),
         ok = update_manifest_with_confirmation(RiakcPid, NewM),
         {upload_part_ready, PartUUID, PutPid}
     catch error:{badmatch, {m_umwc, _}} ->
