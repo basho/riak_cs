@@ -115,8 +115,10 @@ resolve_manifests(_, _,
                   ?MANIFEST{state = scheduled_delete} = B) ->
     BlocksLeftToDelete = resolve_deleted_blocks(A, B),
     LastDeletedTime = resolve_last_deleted_time(A, B),
+    Props = resolve_props(A, B),
     A?MANIFEST{delete_blocks_remaining=BlocksLeftToDelete,
-                      last_block_deleted_time=LastDeletedTime}.
+               last_block_deleted_time=LastDeletedTime,
+               props=Props}.
 
 resolve_written_blocks(A, B) ->
     AWritten = A?MANIFEST.write_blocks_remaining,

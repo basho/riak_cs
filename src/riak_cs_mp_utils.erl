@@ -37,6 +37,7 @@
 
 -define(PID(WrappedPid), get_riakc_pid(WrappedPid)).
 
+
 %% export Public API
 -export([
          abort_multipart_upload/4, abort_multipart_upload/5,
@@ -334,7 +335,9 @@ do_part_common(Op, Bucket, Key, UploadId, {_,_,CallerKeyId} = _Caller, Props, Ri
                         case find_manifest_with_uploadid(UploadId, Manifests) of
                             false ->
                                 {error, notfound};
-                            M when M?MANIFEST.state == writing ->
+                            M when M?MANIFEST.state == writing orelse
+                                   M?MANIFEST.state == pending_delete orelse
+                                   M?MANIFEST.state == scheduled_delete ->
                                 MpM = get_mp_manifest(M),
                                 {_, _, MpMOwner} = MpM?MULTIPART_MANIFEST.owner,
                                 case CallerKeyId == MpMOwner of
@@ -344,7 +347,7 @@ do_part_common(Op, Bucket, Key, UploadId, {_,_,CallerKeyId} = _Caller, Props, Ri
                                     false ->
                                         {error, access_denied}
                                 end;
-                            _ ->
+                            M ->
                                 {error, notfound}
                         end;
                     Else2 ->
@@ -477,6 +480,7 @@ do_part_common2(upload_part, RiakcPid, M, _Obj, MpM, Props) ->
         NewMpM = MpM?MULTIPART_MANIFEST{parts = ordsets:add_element(PM, Parts)},
         NewM = M?MANIFEST{content_length = ContentLength + Size,
                           props = replace_mp_manifest(NewMpM, MProps)},
+        NewNewMpM = proplists:get_value(multipart, NewM?MANIFEST.props),
         ok = update_manifest_with_confirmation(RiakcPid, NewM),
         {upload_part_ready, PartUUID, PutPid}
     catch error:{badmatch, {m_umwc, _}} ->

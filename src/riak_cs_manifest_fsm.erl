@@ -233,7 +233,6 @@ waiting_update_command({update_manifests_with_confirmation, WrappedManifests}, _
     Reply = update_from_previous_read(RiakcPid, PreviousRiakObject,
                                       Bucket, Key,
                                       PreviousManifests, WrappedManifests),
-
     {reply, Reply, waiting_update_command, State#state{riak_object=undefined,
                                                        manifests=undefined}}.
 handle_event(_Event, StateName, State) ->

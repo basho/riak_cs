@@ -47,6 +47,7 @@ confirm() ->
                  erlcloud_s3:list_buckets(UserConfig)),
 
     %% Test cases
+    delete_in_progress_upload_test_case(?TEST_BUCKET, ?TEST_KEY1, UserConfig), 
     basic_upload_test_case(?TEST_BUCKET, ?TEST_KEY1, UserConfig),
     ok = parts_too_small_test_case(?TEST_BUCKET, ?TEST_KEY1, UserConfig),
     aborted_upload_test_case(?TEST_BUCKET, ?TEST_KEY2, UserConfig),
@@ -126,14 +127,17 @@ confirm() ->
     ?assertError({aws_error, {http_error, 404, _, _}}, erlcloud_s3:list_objects(?TEST_BUCKET, UserConfig)),
     pass.
 
-upload_and_assert_parts(Bucket, Key, UploadId, PartCount, Size, Config) ->
+upload_and_assert_parts(Bucket, Key, UploadId, PartCount, Size, Config, Start) ->
     [{X, upload_and_assert_part(Bucket,
                                 Key,
                                 UploadId,
                                 X,
                                 generate_part_data(X, Size),
                                 Config)}
-     || X <- lists:seq(1, PartCount)].
+     || X <- lists:seq(Start, Start + PartCount - 1)].
+
+upload_and_assert_parts(Bucket, Key, UploadId, PartCount, Size, Config) ->
+    upload_and_assert_parts(Bucket, Key, UploadId, PartCount, Size, Config, 1).
 
 upload_and_assert_part(Bucket, Key, UploadId, PartNum, PartData, Config) ->
     {RespHeaders, _UploadRes} = erlcloud_s3_multipart:upload_part(Bucket, Key, UploadId, PartNum, PartData, Config),
@@ -200,6 +204,59 @@ aborted_upload_test_case(Bucket, Key, Config) ->
 
 nonexistent_bucket_listing_test_case(Bucket, Config) ->
     ?assertError({aws_error, {http_error, 404, _, _}}, erlcloud_s3_multipart:list_uploads(Bucket, [], Config)).
+
+delete_in_progress_upload_test_case(Bucket, Key, Config) ->
+    %% Initiate a multipart upload
+    lager:info("Initiating multipart upload"),
+    InitUploadRes = erlcloud_s3_multipart:initiate_upload(Bucket, Key, [], [], Config),
+    UploadId = erlcloud_s3_multipart:upload_id(InitUploadRes),
+
+    %% Verify the upload id is in list_uploads results and
+    %% that the bucket information is correct
+    UploadsList1 = erlcloud_s3_multipart:list_uploads(Bucket, [], Config),
+    Uploads1 = proplists:get_value(uploads, UploadsList1, []),
+    ?assertEqual(Bucket, proplists:get_value(bucket, UploadsList1)),
+    ?assert(upload_id_present(UploadId, Uploads1)),
+
+    lager:info("Uploading first set of parts"),
+    EtagList = upload_and_assert_parts(Bucket,
+                                       Key,
+                                       UploadId,
+                                       ?PART_COUNT,
+                                       ?GOOD_PART_SIZE,
+                                       Config),
+
+    %% List bucket contents and verify empty
+    ObjList1= erlcloud_s3:list_objects(Bucket, Config),
+    ?assertEqual([], proplists:get_value(contents, ObjList1)),
+
+    lager:info("Deleting Object currently being MP uploaded"),
+    erlcloud_s3:delete_object(Bucket, Key, Config),
+
+    lager:info("Uploading last set of parts"),
+    EtagListNew = EtagList ++ upload_and_assert_parts(Bucket,
+                                                      Key,
+                                                      UploadId,
+                                                      ?PART_COUNT,
+                                                      ?GOOD_PART_SIZE,
+                                                      Config,
+                                                      ?PART_COUNT+1),
+
+    lager:info("Completing multipart upload"),
+    ?assertEqual(ok, erlcloud_s3_multipart:complete_upload(Bucket,
+                                                           Key,
+                                                           UploadId,
+                                                           EtagListNew,
+                                                           Config)),
+
+    %% List uploads and verify upload id is no longer present
+    UploadsList2 = erlcloud_s3_multipart:list_uploads(Bucket, [], Config),
+    Uploads2 = proplists:get_value(uploads, UploadsList2, []),
+    ?assertNot(upload_id_present(UploadId, Uploads2)),
+
+    %% List bucket contents and verify empty
+    ObjList2 = erlcloud_s3:list_objects(Bucket, Config),
+    ?assertEqual([], proplists:get_value(contents, ObjList2)).
 
 basic_upload_test_case(Bucket, Key, Config) ->
     %% Initiate a multipart upload
