@@ -261,12 +261,11 @@ response_from_manifests_and_common_prefixes(Request,
     end.
 
 -spec make_2i_request(pid(), state()) -> [riakc_obj:riakc_obj()].
-make_2i_request(RiakcPid, State=#state{req=?LOREQ{name=BucketName,
-                                       max_keys=MaxKeys}}) ->
+make_2i_request(RiakcPid, State=#state{req=?LOREQ{name=BucketName}}) ->
     ManifestBucket = riak_cs_utils:to_bucket_name(objects, BucketName),
     StartKey = make_start_key(State),
     EndKey = big_end_key(128),
-    NumResults = MaxKeys + 2,
+    NumResults = 1002,
     Opts = [{return_terms, true}, {max_results, NumResults}, {stream, true}],
     NewStateData = State#state{last_request_start_key=StartKey,
                                last_request_num_keys_requested=NumResults},
