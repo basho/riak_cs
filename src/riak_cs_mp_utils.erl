@@ -188,36 +188,34 @@ list_multipart_uploads(Bucket, {_Display, _Canon, CallerKeyId} = Caller,
                        Opts, RiakcPidUnW) ->
     case wrap_riak_connection(RiakcPidUnW) of
         {ok, RiakcPid} ->
-            try
-                BucketOwnerP = is_caller_bucket_owner(?PID(RiakcPid),
-                                                      Bucket, CallerKeyId),
-                Key2i = case BucketOwnerP of
-                            true ->
-                                make_2i_key(Bucket); % caller = bucket owner
-                            false ->
-                                make_2i_key(Bucket, Caller)
-                        end,
-                HashBucket = riak_cs_utils:to_bucket_name(objects, Bucket),
-                case riakc_pb_socket:get_index(?PID(RiakcPid), HashBucket,
-                                               Key2i, <<"1">>) of
-                    {ok, Names} ->
-                        MyCaller = case BucketOwnerP of
-                                       true -> owner;
-                                       _    -> CallerKeyId
-                                   end,
-                        {ok, list_multipart_uploads2(Bucket, ?PID(RiakcPid),
-                                                     Names, Opts, MyCaller)};
-                    Else2 ->
-                        Else2
-                end
-            catch error:{badmatch, {m_icbo, _}} ->
-                    {error, access_denied}
-            after
-                wrap_close_riak_connection(RiakcPid)
-            end;
+            Result = case is_caller_bucket_owner(?PID(RiakcPid), Bucket, CallerKeyId) of
+                {error, _}=Error ->
+                    Error;
+                BucketOwnerP -> 
+                    Key2i = make_2i_key(BucketOwnerP, Bucket, Caller),
+                    HashBucket = riak_cs_utils:to_bucket_name(objects, Bucket),
+                    MyCaller = get_caller(BucketOwnerP, CallerKeyId),
+                    get_multipart_uploads(?PID(RiakcPid), HashBucket, Key2i, 
+                        Bucket, Opts, MyCaller)
+            end,
+            wrap_close_riak_connection(RiakcPid),
+            Result;
         Else ->
             Else
     end.
+
+get_multipart_uploads(RiakcPid, HashBucket, Key2i, Bucket, Opts, Caller) ->
+    case riakc_pb_socket:get_index(RiakcPid, HashBucket, Key2i, <<"1">>) of
+        {ok, Names} ->
+            {ok, list_multipart_uploads2(Bucket, RiakcPid, Names, Opts, Caller)};
+        Else2 ->
+            Else2
+    end.
+
+get_caller(true, _) ->
+    owner;
+get_caller(false, CallerKeyId) ->
+    CallerKeyId.
 
 list_parts(Bucket, Key, UploadId, Caller, Opts) ->
     list_parts(Bucket, Key, UploadId, Caller, Opts, nopid).
@@ -326,37 +324,63 @@ write_new_manifest(M, Opts, RiakcPidUnW) ->
 %%% Internal functions
 %%%===================================================================
 
+run_operation(Op, RiakcPid, Manifest, Obj, MultipartManifest, Props, CallerKeyId, MpMOwner) ->
+    case authenticate_mp(CallerKeyId, MpMOwner) of
+        true ->
+            do_part_common2(Op, RiakcPid, Manifest, Obj, MultipartManifest, Props);
+        false ->
+            {error, access_denied}
+    end.
+
+authenticate_mp(CallerKeyId, MpMOwner) when CallerKeyId == MpMOwner ->
+    true;
+authenticate_mp(_, _) ->
+    false.
+
+%% @doc In order to allow multipart uploads to continue even though the writing
+%% manifest was GC'd, we must allow retrieval of manifests in the pending_delete
+%% and scheduled_delete states. However, for abort to operate as it should and 
+%% return 404 for manifests after they were aborted, it can't return manifests
+%% in the *_delete states. This function follows that behavior.
+%% https://github.com/basho/riak_cs/issues/533
+get_multipart_manifest(abort, UploadId, Manifests) ->
+    case find_manifest_with_uploadid(UploadId, Manifests) of
+        M when M?MANIFEST.state == writing ->
+            get_multipart_manifest(M);
+        _ ->
+            {error, notfound}
+    end;
+get_multipart_manifest(_, UploadId, Manifests) ->
+    case find_manifest_with_uploadid(UploadId, Manifests) of
+        M when M?MANIFEST.state == writing orelse 
+               M?MANIFEST.state == pending_delete orelse
+               M?MANIFEST.state == scheduled_delete ->
+            get_multipart_manifest(M);
+        _ ->
+            {error, notfound}
+    end.
+
+get_multipart_manifest(M) ->
+    MpM = get_mp_manifest(M),
+    {_, _, MpMOwner} = MpM?MULTIPART_MANIFEST.owner,
+    {M, MpM, MpMOwner}.
+
 do_part_common(Op, Bucket, Key, UploadId, {_,_,CallerKeyId} = _Caller, Props, RiakcPidUnW) ->
     case wrap_riak_connection(RiakcPidUnW) of
         {ok, RiakcPid} ->
             try
                 case riak_cs_utils:get_manifests(?PID(RiakcPid), Bucket, Key) of
                     {ok, Obj, Manifests} ->
-                        case find_manifest_with_uploadid(UploadId, Manifests) of
-                            false ->
-                                {error, notfound};
-                            M when M?MANIFEST.state == writing orelse
-                                   M?MANIFEST.state == pending_delete orelse
-                                   M?MANIFEST.state == scheduled_delete ->
-                                MpM = get_mp_manifest(M),
-                                {_, _, MpMOwner} = MpM?MULTIPART_MANIFEST.owner,
-                                case CallerKeyId == MpMOwner of
-                                    true ->
-                                        do_part_common2(Op, ?PID(RiakcPid), M,
-                                                        Obj, MpM, Props);
-                                    false ->
-                                        {error, access_denied}
-                                end;
-                            _ ->
-                                {error, notfound}
+                        case get_multipart_manifest(Op, UploadId, Manifests) of
+                            {M, MpM, MpMOwner} ->
+                                run_operation(Op, ?PID(RiakcPid), M, Obj, MpM, 
+                                    Props, CallerKeyId, MpMOwner);
+                            E ->
+                                E
                         end;
                     Else2 ->
                         Else2
                 end
-            catch error:{badmatch, {m_icbo, _}} ->
-                    {error, access_denied};
-                  error:{badmatch, {m_umwc, _}} ->
-                    {error, riak_unavailable}
             after
                 wrap_close_riak_connection(RiakcPid)
             end;
@@ -465,62 +489,63 @@ do_part_common2(upload_part, RiakcPid, M, _Obj, MpM, Props) ->
                       orddict:new(), BlockSize, M?MANIFEST.acl,
                       infinity, self(), RiakcPid},
                      false),
-    try
-        ?MANIFEST{content_length = ContentLength,
-                  props = MProps} = M,
-        ?MULTIPART_MANIFEST{parts = Parts} = MpM,
-        PartUUID = riak_cs_put_fsm:get_uuid(PutPid),
-        PM = ?PART_MANIFEST{bucket = Bucket,
-                            key = Key,
-                            start_time = os:timestamp(),
-                            part_number = PartNumber,
-                            part_id = PartUUID,
-                            content_length = Size,
-                            block_size = BlockSize},
-        NewMpM = MpM?MULTIPART_MANIFEST{parts = ordsets:add_element(PM, Parts)},
-        NewM = M?MANIFEST{content_length = ContentLength + Size,
-                          props = replace_mp_manifest(NewMpM, MProps)},
-        ok = update_manifest_with_confirmation(RiakcPid, NewM),
-        {upload_part_ready, PartUUID, PutPid}
-    catch error:{badmatch, {m_umwc, _}} ->
+    ?MANIFEST{content_length = ContentLength,
+              props = MProps} = M,
+    ?MULTIPART_MANIFEST{parts = Parts} = MpM,
+    PartUUID = riak_cs_put_fsm:get_uuid(PutPid),
+    PM = ?PART_MANIFEST{bucket = Bucket,
+                        key = Key,
+                        start_time = os:timestamp(),
+                        part_number = PartNumber,
+                        part_id = PartUUID,
+                        content_length = Size,
+                        block_size = BlockSize},
+    NewMpM = MpM?MULTIPART_MANIFEST{parts = ordsets:add_element(PM, Parts)},
+    NewM = M?MANIFEST{content_length = ContentLength + Size,
+                      props = replace_mp_manifest(NewMpM, MProps)},
+    case update_manifest_with_confirmation(RiakcPid, NewM) of
+        ok ->
+            {upload_part_ready, PartUUID, PutPid};
+        Err ->
             riak_cs_put_fsm:force_stop(PutPid),
-            {error, riak_unavailable}
+            Err
     end;
 do_part_common2(upload_part_finished, RiakcPid, M, _Obj, MpM, Props) ->
     {PartUUID, MD5} = proplists:get_value(upload_part_finished, Props),
-    try
-        ?MULTIPART_MANIFEST{parts = Parts, done_parts = DoneParts} = MpM,
-        DoneUUIDs = ordsets:from_list([UUID || {UUID, _ETag} <- DoneParts]),
-        case {lists:keyfind(PartUUID, ?PART_MANIFEST.part_id,
-                            ordsets:to_list(Parts)),
-              ordsets:is_element(PartUUID, DoneUUIDs)} of
-            {false, _} ->
-                {error, notfound};
-            {_, true} ->
-                {error, notfound};
-            {PM, false} when is_record(PM, ?PART_MANIFEST_RECNAME) ->
-                ?MANIFEST{props = MProps} = M,
-                NewMpM = MpM?MULTIPART_MANIFEST{
-                               done_parts = ordsets:add_element({PartUUID, MD5},
-                                                                DoneParts)},
-                NewM = M?MANIFEST{props = replace_mp_manifest(NewMpM, MProps)},
-                ok = update_manifest_with_confirmation(RiakcPid, NewM)
-        end
-    catch error:{badmatch, {m_umwc, _}} ->
-            {error, riak_unavailable}
+    ?MULTIPART_MANIFEST{parts = Parts, done_parts = DoneParts} = MpM,
+    DoneUUIDs = ordsets:from_list([UUID || {UUID, _ETag} <- DoneParts]),
+    case {lists:keyfind(PartUUID, ?PART_MANIFEST.part_id,
+                        ordsets:to_list(Parts)),
+          ordsets:is_element(PartUUID, DoneUUIDs)} of
+        {false, _} ->
+            {error, notfound};
+        {_, true} ->
+            {error, notfound};
+        {PM, false} when is_record(PM, ?PART_MANIFEST_RECNAME) ->
+            ?MANIFEST{props = MProps} = M,
+            NewMpM = MpM?MULTIPART_MANIFEST{
+                           done_parts = ordsets:add_element({PartUUID, MD5},
+                                                            DoneParts)},
+            NewM = M?MANIFEST{props = replace_mp_manifest(NewMpM, MProps)},
+            update_manifest_with_confirmation(RiakcPid, NewM)
     end.
 
 update_manifest_with_confirmation(RiakcPid, Manifest) ->
     {Bucket, Key} = Manifest?MANIFEST.bkey,
-    {m_umwc, {ok, ManiPid}} = {m_umwc,
-                               riak_cs_manifest_fsm:start_link(Bucket, Key,
-                                                               RiakcPid)},
+    {ok, ManiPid} = riak_cs_manifest_fsm:start_link(Bucket, Key, RiakcPid),
     try
         ok = riak_cs_manifest_fsm:update_manifest_with_confirmation(ManiPid,
                                                                     Manifest)
+    catch error:_ ->
+        {error, riak_unavailable}
     after
         ok = riak_cs_manifest_fsm:stop(ManiPid)
     end.
+
+make_2i_key(true, Bucket, _) ->
+    make_2i_key(Bucket);
+make_2i_key(false, Bucket, Caller) ->
+    make_2i_key(Bucket, Caller).
 
 make_2i_key(Bucket) ->
     make_2i_key2(Bucket, "").
@@ -650,14 +675,15 @@ multipart_description(Manifest) ->
        owner_display = element(1, MpM?MULTIPART_MANIFEST.owner),
        initiated = Manifest?MANIFEST.created}.
 
-%% @doc Will cause error:{badmatch, {m_ibco, _}} if CallerKeyId does not exist
-
 is_caller_bucket_owner(RiakcPid, Bucket, CallerKeyId) ->
-    {m_icbo, {ok, {C, _}}} = {m_icbo, riak_cs_utils:get_user(CallerKeyId,
-                                                             RiakcPid)},
-    Buckets = [iolist_to_binary(B?RCS_BUCKET.name) ||
-                  B <- riak_cs_utils:get_buckets(C)],
-    lists:member(Bucket, Buckets).
+    try 
+        {ok, {C, _}} = riak_cs_utils:get_user(CallerKeyId, RiakcPid),
+        Buckets = [iolist_to_binary(B?RCS_BUCKET.name) ||
+                      B <- riak_cs_utils:get_buckets(C)],
+        lists:member(Bucket, Buckets)
+    catch error:_ ->
+        {error, access_denied}
+    end.
 
 find_manifest_with_uploadid(UploadId, Manifests) ->
     case lists:keyfind(UploadId, 1, Manifests) of
