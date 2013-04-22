@@ -338,7 +338,8 @@ delete_object(Bucket, Key, RiakcPid) ->
         ok = riak_cs_gc:mark_writing_manifests_dead(Bucket, Key, RiakcPid),
         riak_cs_gc:gc_active_manifests(Bucket, Key, RiakcPid).
     catch error:{badmatch, {error, Reason}}
-        lager:error("Error: ~p", Reason)
+        lager:error("Error deleting object: ~p", [Reason]),
+        {error, Reason}
     end.
 
 -spec encode_term(term()) -> binary().
