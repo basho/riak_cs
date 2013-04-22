@@ -333,8 +333,13 @@ delete_bucket(User, UserObj, Bucket, RiakPid) ->
 -spec delete_object(binary(), binary(), pid()) ->
     {ok, [binary()]} | {error, term()}.
 delete_object(Bucket, Key, RiakcPid) ->
-    ok = riak_cs_stats:update_with_start(object_delete, os:timestamp()),
-    riak_cs_gc:gc_active_manifests(Bucket, Key, RiakcPid).
+    try
+        ok = riak_cs_stats:update_with_start(object_delete, os:timestamp()),
+        ok = riak_cs_gc:mark_writing_manifests_dead(Bucket, Key, RiakcPid),
+        riak_cs_gc:gc_active_manifests(Bucket, Key, RiakcPid).
+    catch error:{badmatch, {error, Reason}}
+        lager:error("Error: ~p", Reason)
+    end.
 
 -spec encode_term(term()) -> binary().
 encode_term(Term) ->

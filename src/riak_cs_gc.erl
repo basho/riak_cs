@@ -39,9 +39,26 @@
          move_manifests_to_gc_bucket/3,
          timestamp/0]).
 
+-type(bucket, binary()).
+-type(key, binary()).
 %%%===================================================================
 %%% Public API
 %%%===================================================================
+
+-spec mark_writing_manifests_dead(bucket(), key(), pid()) -> ok | {error, term()}.
+mark_writing_manifests_dead(Bucket, Key, RiakcPid) ->
+    Manifests = get_writing_manifests(Bucket, Key, RiakcPid),
+    mark_dead(Bucket, Key, RiakcPid, Manifests).
+
+-spec get_writing_manifests(bucket(), key(), pid()) -> [lfs_manifest()] | {error, term()}.
+get_writing_manifests(Bucket, Key, RiakcPid) ->
+    Manifests = riak_cs_utils:get_manifests(RiakcPid, Bucket, Key) ->
+    riak_cs_manifest_utils:writing_manifests(Manifests).
+
+
+-spec mark_dead(bucket(), key(), pid(), [lfs_manifest()]) -> ok | {error, term()}.
+mark_dead(Bucket, Key, RiakcPid, Manifests) -> 
+    ok.
 
 %% @doc Keep requesting manifests until there are no more active manifests or
 %% there is an error. This requires the following to be occur:
