@@ -800,7 +800,7 @@ parse_bool(_) -> {error, notbool}.
 % <<"10.1.2.3/24">> -> {{10,1,2,3}, {255,255,255,0}}
 % "10.1.2.3/24 -> {{10,1,2,3}, {255,255,255,0}}
 %% NOTE: Returns false on a bad ip
--spec parse_ip(binary() | string()) -> {inet:ip_address(), inet:ip_address()} | false.
+-spec parse_ip(binary() | string()) -> {inet:ip_address(), inet:ip_address()} | {error, term()}.
 parse_ip(Bin) when is_binary(Bin) ->
     Str = binary_to_list(Bin),
     parse_ip(Str);
@@ -813,7 +813,7 @@ parse_ip(Str) when is_list(Str) ->
             Error 
     end.
 
--spec parse_tokenized_ip([string()]) -> {inet:ip_address(), inet:ip_address()}.
+-spec parse_tokenized_ip([string()]) -> {string(), inet:ip_address()}.
 parse_tokenized_ip([IP]) ->
     {IP, {255, 255, 255, 255}};
 parse_tokenized_ip([IP, PrefixSize]) ->
