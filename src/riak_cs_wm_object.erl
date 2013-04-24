@@ -359,6 +359,7 @@ finalize_request(RD,
                               start_time=StartTime,
                               user=User},
                  Pid) ->
+    lager:info("Finalize request"),
     #key_context{bucket=Bucket,
                  key=Key,
                  size=S} = LocalCtx,

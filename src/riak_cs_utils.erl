@@ -330,15 +330,14 @@ delete_bucket(User, UserObj, Bucket, RiakPid) ->
 %% Garbage collection. Otherwise returns an error. Note,
 %% {error, notfound} counts as success in this case,
 %% with the list of UUIDs being [].
--spec delete_object(binary(), binary(), pid()) ->
-    {ok, [binary()]} | {error, term()}.
+-spec delete_object(binary(), binary(), pid()) -> {ok, [binary()]} | {error, term()}.
 delete_object(Bucket, Key, RiakcPid) ->
     try
         ok = riak_cs_stats:update_with_start(object_delete, os:timestamp()),
-        ok = riak_cs_gc:mark_writing_manifests_dead(Bucket, Key, RiakcPid),
-        riak_cs_gc:gc_active_manifests(Bucket, Key, RiakcPid).
-    catch error:{badmatch, {error, Reason}}
-        lager:error("Error deleting object: ~p", [Reason]),
+        {ok, _} = riak_cs_gc:mark_writing_manifests_dead(Bucket, Key, RiakcPid),
+        riak_cs_gc:gc_active_manifests(Bucket, Key, RiakcPid)
+    catch error:{badmatch, {error, Reason}} ->
+        lager:error("Error deleting object: ~p ~p ~p ~p", [Bucket, Key, RiakcPid, Reason]),
         {error, Reason}
     end.
 

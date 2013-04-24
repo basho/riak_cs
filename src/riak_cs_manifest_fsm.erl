@@ -304,6 +304,7 @@ get_and_update(RiakcPid, WrappedManifests, Bucket, Key) ->
     %% NOTE: it would also be nice to assert that the
     %% UUID being added doesn't already exist in the
     %% dict
+    lager:info("get and update"),
     case riak_cs_utils:get_manifests(RiakcPid, Bucket, Key) of
         {ok, RiakObject, Manifests} ->
             NewManiAdded = riak_cs_manifest_resolution:resolve([WrappedManifests, Manifests]),
@@ -320,6 +321,7 @@ get_and_update(RiakcPid, WrappedManifests, Bucket, Key) ->
                 [] ->
                     riak_cs_utils:put(RiakcPid, ObjectToWrite, [return_body]);
                 OverwrittenUUIDs ->
+                    lager:info("OVERWRITTEN UUIDS: ~p", [OverwrittenUUIDs]),
                     riak_cs_gc:gc_specific_manifests(OverwrittenUUIDs,
                                                      ObjectToWrite,
                                                      Bucket, Key,
@@ -342,6 +344,7 @@ get_and_update(RiakcPid, WrappedManifests, Bucket, Key) ->
     ok | {error, term()}.
 update_from_previous_read(RiakcPid, RiakObject, Bucket, Key,
                           PreviousManifests, NewManifests) ->
+    lager:info("Update from previous read"),
     Resolved = riak_cs_manifest_resolution:resolve([PreviousManifests,
             NewManifests]),
     NewRiakObject0 = riak_cs_utils:update_obj_value(RiakObject,

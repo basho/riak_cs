@@ -191,6 +191,7 @@ prepare(finalize, From, State=#state{content_length=0}) ->
     NewManifest = NewState#state.manifest?MANIFEST{content_md5=Md5,
                                                    state=active,
                                                    last_block_written_time=os:timestamp()},
+    lager:info("riak_cs_put_fsm:prepare(finalize)"),
     done(finalize, From, NewState#state{md5=Md5, manifest=NewManifest});
 
 prepare({get_uuid}, _From, State) ->
@@ -234,8 +235,10 @@ all_received({block_written, BlockID, WriterPid}, State=#state{mani_pid=ManiPid,
         0 ->
             case State#state.reply_pid of
                 undefined ->
+                    lager:info("received last block - pid undefined"),
                     {next_state, done, NewState};
                 ReplyPid ->
+                    lager:info("received last block - pid set"),
                     %% reply with the final manifest
                     _ = erlang:cancel_timer(TimerRef),
                     case maybe_update_manifest_with_confirmation(ManiPid, Manifest) of
@@ -283,6 +286,7 @@ not_full({augment_data, NewData}, From,
 all_received({augment_data, <<>>}, _From, State) ->
     {next_state, all_received, State};
 all_received(finalize, From, State) ->
+    lager:info("all_received(finalize)"),
     %% 1. stash the From pid into our
     %%    state so that we know to reply
     %%    later with the finished manifest
@@ -291,13 +295,16 @@ all_received(finalize, From, State) ->
 done(finalize, _From, State=#state{manifest=Manifest,
                                    mani_pid=ManiPid,
                                    timer_ref=TimerRef}) ->
+    lager:info("done(finalize)"),
     %% 1. reply immediately
     %%    with the finished manifest
     _ = erlang:cancel_timer(TimerRef),
     case maybe_update_manifest_with_confirmation(ManiPid, Manifest) of
         ok ->
+            lager:info("done(finalize) - maybe confirm success"),
             {stop, normal, {ok, Manifest}, State};
         Error ->
+            lager:info("done(finalize) - maybe confirm err = Error", [Error]),
             {stop, Error, {error, Error}, State}
     end.
 

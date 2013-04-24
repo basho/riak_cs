@@ -32,10 +32,12 @@
 -export([new_dict/2,
          active_manifest/1,
          active_manifests/1,
+         writing_manifests/1,
          active_and_writing_manifests/1,
          overwritten_UUIDs/1,
          mark_pending_delete/2,
          mark_scheduled_delete/2,
+         mark_dead/2,
          manifests_to_gc/2,
          prune/1,
          prune/2,
@@ -70,6 +72,11 @@ active_manifest(Dict) ->
 active_manifests(Dict) ->
     lists:filter(fun manifest_is_active/1, orddict_values(Dict)).
 
+%% @doc Return all writing manifests
+-spec writing_manifests(orddict:orddict()) -> [lfs_manifest()] | [].
+writing_manifests(Dict) ->
+    lists:filter(fun manifest_is_writing/1, orddict_values(Dict)).
+
 %% @doc Return a list of all manifests in the
 %% `active' or `writing' state
 -spec active_and_writing_manifests(orddict:orddict()) -> [lfs_manifest()].
@@ -80,16 +87,21 @@ active_and_writing_manifests(Dict) ->
 %%      and not actively writing (within the leeway period).
 -spec overwritten_UUIDs(orddict:orddict()) -> term().
 overwritten_UUIDs(Dict) ->
-    case active_manifest(Dict) of
-        {error, no_active_manifest} ->
-            lists:foldl(fun overwritten_UUIDs_no_active_fold/2,
-                        [],
-                        orddict:to_list(Dict));
-        {ok, Active} ->
-            lists:foldl(overwritten_UUIDs_active_fold_helper(Active),
-                        [],
-                        orddict:to_list(Dict))
-    end.
+    lager:info("overwritten UUIDs Dict = ~p", [Dict]),
+    fold(Dict, active_manifest(Dict)).
+
+-spec fold([lfs_manifest()], {error, no_active_manifest}) -> term();
+          ([lfs_manifest()], {ok, lfs_manifest()}) -> term().
+fold(AllManifests, {error, no_active_manifest}) ->
+    lists:foldl(fun overwritten_UUIDs_no_active_fold/2,
+                [],
+                orddict:to_list(AllManifests));
+fold(AllManifests, {ok, ActiveManifest}) ->
+    lists:foldl(overwritten_UUIDs_active_fold_helper(ActiveManifest),
+                [],
+                orddict:to_list(AllManifests)).
+
+
 
 -spec overwritten_UUIDs_no_active_fold({binary(), lfs_manifest},
                                        [binary()]) -> [binary()].
@@ -106,9 +118,22 @@ overwritten_UUIDs_active_fold_helper(Active) ->
             update_acc(UUID, Manifest, Acc, Active =:= Manifest)
     end.
 
--spec update_acc(binary(), lfs_manifest(), [binary()], boolean()) ->
-    [binary()].
-update_acc(_UUID, _Manifest, Acc, true) ->
+%% @doc If the newly active manifest was marked dead because it was deleted during upload, 
+%%      then add the UUID to the Acc.
+%%      If the UUID is active but not the currently marked active one, add the UUID to the Acc.
+-spec update_acc(binary(), lfs_manifest(), [binary()], boolean()) -> [binary()].
+update_acc(UUID, ?MANIFEST{state=active}=M, Acc, true) ->
+    lager:info("GARP: update_acc for the active manifest ~p", [M?MANIFEST.props]),
+    lager:info("GARP MANIFEST = ~p", [M]),
+    lager:info("GARP ACC = ~p", [Acc]),
+    case proplists:get_value(dead, M?MANIFEST.props, not_found) of
+        not_found -> 
+            Acc;
+        true ->
+            [UUID | Acc]
+    end;
+update_acc(UUID, _Manifest, Acc, true) ->
+    lager:info("GARP: update_acc standalone: Acc = ~p, UUID = ~p", [UUID, Acc]),
     Acc;
 update_acc(UUID, ?MANIFEST{state=active}, Acc, false) ->
     [UUID | Acc];
@@ -151,6 +176,23 @@ mark_pending_delete(Dict, UUIDsToMark) ->
                 true ->
                     V?MANIFEST{state=pending_delete,
                                delete_marked_time=os:timestamp()};
+                false ->
+                    V
+            end
+    end,
+    orddict:map(MapFun, Dict).
+
+%% @doc Return `Dict' with the manifests in
+%% `UUIDsToMark' with a {dead, true} in the props
+%% member to signify that the writing manifests should be garbage 
+%% collected immediately after being made active.
+-spec mark_dead(orddict:orddict(), list(binary())) ->
+    orddict:orddict().
+mark_dead(Dict, UUIDsToMark) ->
+    MapFun = fun(K, ?MANIFEST{props=Props}=V) ->
+            case lists:member(K, UUIDsToMark) of
+                true ->
+                    V?MANIFEST{props=[{dead, true} | Props]};
                 false ->
                     V
             end
@@ -306,6 +348,9 @@ orddict_values(OrdDict) ->
 
 manifest_is_active(?MANIFEST{state=active}) -> true;
 manifest_is_active(_Manifest) -> false.
+
+manifest_is_writing(?MANIFEST{state=writing}) -> true;
+manifest_is_writing(_Manifest) -> false.
 
 %% NOTE: This is a foldl function, initial acc = no_active_manifest
 most_recent_active_manifest(Manifest=?MANIFEST{state=active}, no_active_manifest) ->
