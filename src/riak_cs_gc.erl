@@ -39,6 +39,9 @@
          move_manifests_to_gc_bucket/3,
          timestamp/0]).
 
+%% export for repl debugging and testing
+-export([get_active_manifests/3]).
+
 %%%===================================================================
 %%% Public API
 %%%===================================================================
