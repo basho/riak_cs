@@ -128,12 +128,22 @@ gc_manifests(Manifests, RiakObject, Bucket, Key, RiakcPid) ->
       [binary()] | no_return().
 gc_manifest(M, RiakObject, Bucket, Key, RiakcPid, UUIDs) ->
     UUID = M?MANIFEST.uuid,
-    check(gc_specific_manifests([UUID], RiakObject, Bucket, Key, RiakcPid), [UUID | UUIDs]).
+    check(gc_specific_manifests_to_delete([UUID], RiakObject, Bucket, Key, RiakcPid), [UUID | UUIDs]).
 
 check({ok, _}, Val) -> 
     Val;
 check({error, _}=Error, _Val) -> 
     Error.
+
+-spec gc_specific_manifests_to_delete(UUIDsToMark :: [binary()],
+                   RiakObject :: riakc_obj:riakc_obj(),
+                   Bucket :: binary(),
+                   Key :: binary(),
+                   RiakcPid :: pid()) ->
+    {error, term()} | {ok, riakc_obj:riakc_obj()}.
+gc_specific_manifests_to_delete(UUIDsToMark, RiakObject, Bucket, Key, RiakcPid) ->
+    MarkedResult = mark_as_deleted(UUIDsToMark, RiakObject, Bucket, Key, RiakcPid),
+    handle_mark_as_pending_delete(MarkedResult, Bucket, Key, UUIDsToMark, RiakcPid).
 
 %% @private
 -spec gc_specific_manifests(UUIDsToMark :: [binary()],
@@ -238,6 +248,16 @@ timestamp() ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
+
+%% @doc Mark a list of manifests as `pending_delete' based upon the
+%% UUIDs specified, and also add {deleted, true} to the props member
+%% to signify an actual delete, and not an overwrite.
+-spec mark_as_deleted([binary()], riakc_obj:riakc_obj(), binary(), binary(), pid()) ->
+    {ok, riakc_obj:riakc_obj()} | {error, term()}.
+mark_as_deleted(UUIDsToMark, RiakObject, Bucket, Key, RiakcPid) ->
+    mark_manifests(RiakObject, Bucket, Key, UUIDsToMark,
+                   fun riak_cs_manifest_utils:mark_deleted/2,
+                   RiakcPid).
 
 %% @doc Mark a list of manifests as `pending_delete' based upon the
 %% UUIDs specified.
