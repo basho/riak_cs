@@ -2,31 +2,22 @@
 
 ## Dependencies
 
-Install [Pip](http://www.pip-installer.org/en/latest/):
-
-```bash
-$ curl -O https://raw.github.com/pypa/pip/master/contrib/get-pip.py
-$ python get-pip.py
-```
-
-Install dependencies:
-
-```bash
-$ pip install boto
-```
+* [virtualenv](http://www.virtualenv.org/en/latest/#installation) (I'm using 1.9.1)
+* Python (I'm using 2.7.2)
 
 ## Configuration
 
 Ensure that the Riak CS `app.config` has `anonymous_user_creation` set to
-`true`. If it was previously set to `false`, make sure that the `riak-cs`
-service is restarted:
-
-```bash
-$ riak-cs restart
-```
+`true`.
 
 ## Execution
 
+There is a `Makefile` that will set everything up for you, including all of the
+dependencies. The `all` target will install everything and run the integration
+tests:
+
 ```bash
-$ cd client_tests/python && python boto_test.py
+make
 ```
+
+Take a look at the `Makefile` for more detail about how the test is set up.
