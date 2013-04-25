@@ -60,9 +60,9 @@ class S3ApiVerificationTestBase(unittest.TestCase):
     host="127.0.0.1"
     try:
         port=int(os.environ['CS_HTTP_PORT'])
-    except:
+    except KeyError:
         port=8080
-    print "YYY I am using port %d" % port
+
 
     user1 = None
     user2 = None

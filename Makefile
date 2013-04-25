@@ -62,7 +62,7 @@ test-ruby:
 	@cd client_tests/ruby && bundle exec rake spec
 
 test-boto:
-	env CS_HTTP_PORT=${CS_HTTP_PORT} python client_tests/python/boto_test.py
+	@cd client_tests/python/ && make CS_HTTP_PORT=$(CS_HTTP_PORT)
 
 test-erlang: compile-client-test
 	@./rebar skip_deps=true client_test_run
