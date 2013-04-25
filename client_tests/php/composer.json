@@ -3,7 +3,7 @@
       "bin-dir": "."
     },
     "require": {
-        "aws/aws-sdk-php": "2.*"
+        "aws/aws-sdk-php": "2.3.*"
     },
     "require-dev": {
         "phpunit/phpunit": "3.7.*"
