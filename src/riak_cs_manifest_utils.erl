@@ -35,6 +35,7 @@
          active_and_writing_manifests/1,
          overwritten_UUIDs/1,
          mark_pending_delete/2,
+         mark_deleted/2,
          mark_scheduled_delete/2,
          manifests_to_gc/2,
          prune/1,
@@ -58,10 +59,20 @@ new_dict(UUID, Manifest) ->
 %% from an orddict of manifests.
 -spec active_manifest(orddict:orddict()) -> {ok, lfs_manifest()} | {error, no_active_manifest}.
 active_manifest(Dict) ->
-    case lists:foldl(fun most_recent_active_manifest/2, no_active_manifest, orddict_values(Dict)) of
-        no_active_manifest ->
+    live_manifest(lists:foldl(fun most_recent_active_manifest/2, 
+            {no_active_manifest, undefined}, orddict_values(Dict))). 
+
+%% @doc Ensure the manifest hasn't been deleted during upload.
+-spec live_manifest(tuple()) -> {ok, lfs_manifest()} | {error, no_active_manifest}.
+live_manifest({no_active_manifest, _}) ->
+    {error, no_active_manifest};
+live_manifest({Manifest, undefined}) ->
+    {ok, Manifest};
+live_manifest({Manifest, DeleteTime}) ->
+    case DeleteTime > Manifest?MANIFEST.write_start_time of
+        true ->
             {error, no_active_manifest};
-        Manifest ->
+        false ->
             {ok, Manifest}
     end.
 
@@ -139,6 +150,24 @@ handle_leeway_elaped_time(true, UUID, Acc) ->
     [UUID | Acc];
 handle_leeway_elaped_time(false, _UUID, Acc) ->
     Acc.
+
+%% @doc Return `Dict' with the manifests in
+%% `UUIDsToMark' with their state changed to
+%% `pending_delete' and {deleted, true} added to props.
+-spec mark_deleted(orddict:orddict(), list(binary())) ->
+    orddict:orddict().
+mark_deleted(Dict, UUIDsToMark) ->
+    MapFun = fun(K, V) ->
+            case lists:member(K, UUIDsToMark) of
+                true ->
+                    V?MANIFEST{state=pending_delete,
+                               delete_marked_time=os:timestamp(),
+                               props=[{deleted, true} | V?MANIFEST.props]};
+                false ->
+                    V
+            end
+    end,
+    orddict:map(MapFun, Dict).
 
 %% @doc Return `Dict' with the manifests in
 %% `UUIDsToMark' with their state changed to
@@ -307,18 +336,40 @@ orddict_values(OrdDict) ->
 manifest_is_active(?MANIFEST{state=active}) -> true;
 manifest_is_active(_Manifest) -> false.
 
-%% NOTE: This is a foldl function, initial acc = no_active_manifest
-most_recent_active_manifest(Manifest=?MANIFEST{state=active}, no_active_manifest) ->
-    Manifest;
-most_recent_active_manifest(_Manfest, no_active_manifest) ->
-    no_active_manifest;
-most_recent_active_manifest(Man1=?MANIFEST{state=active}, Man2=?MANIFEST{state=active}) ->
-    case Man1?MANIFEST.write_start_time > Man2?MANIFEST.write_start_time of
-        true -> Man1;
-        false -> Man2
+delete_time(Manifest) ->
+    case proplists:is_defined(deleted, Manifest?MANIFEST.props) of
+        true ->
+            Manifest?MANIFEST.delete_marked_time;
+        false ->
+            undefined
+    end.
+
+%% NOTE: This is a foldl function, initial acc = {no_active_manifest, undefined}
+%% Return the most recent active manifest as well as the most recent manifest delete time
+most_recent_active_manifest(Manifest=?MANIFEST{state=scheduled_delete}, {MostRecent, undefined}) -> 
+    {MostRecent, delete_time(Manifest)};
+most_recent_active_manifest(Manifest=?MANIFEST{state=scheduled_delete}, {MostRecent, DeleteTime}) -> 
+    case Dt=delete_time(Manifest) > DeleteTime of
+        true -> 
+            {MostRecent, Dt};
+        false ->
+            {MostRecent, DeleteTime}
     end;
-most_recent_active_manifest(Man1=?MANIFEST{state=active}, _Man2) -> Man1;
-most_recent_active_manifest(_Man1, Man2=?MANIFEST{state=active}) -> Man2.
+most_recent_active_manifest(Manifest=?MANIFEST{state=active}, {no_active_manifest, undefined}) ->
+    {Manifest, undefined};
+most_recent_active_manifest(_Manfest, {no_active_manifest, DeleteTime}) ->
+    {no_active_manifest, DeleteTime};
+most_recent_active_manifest(Man1=?MANIFEST{state=active}, {Man2=?MANIFEST{state=active}, DeleteTime}) ->
+    case Man1?MANIFEST.write_start_time > Man2?MANIFEST.write_start_time of
+        true -> 
+            {Man1, DeleteTime};
+        false -> 
+            {Man2, DeleteTime}
+    end;
+most_recent_active_manifest(Man1=?MANIFEST{state=active}, {_, DeleteTime}) -> 
+    {Man1, DeleteTime};
+most_recent_active_manifest(_Man1, {Man2=?MANIFEST{state=active}, DeleteTime}) -> 
+    {Man2, DeleteTime}.
 
 -spec needs_pruning(lfs_manifest(), erlang:timestamp()) -> boolean().
 needs_pruning(?MANIFEST{state=scheduled_delete,
