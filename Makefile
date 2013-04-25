@@ -53,7 +53,7 @@ distclean: clean
 test: all
 	@./rebar skip_deps=true eunit
 
-test-client: test-clojure test-python test-erlang test-ruby
+test-client: test-clojure test-python test-erlang test-ruby test-php
 
 test-python: test-boto
 
@@ -73,8 +73,7 @@ test-clojure:
 	@cd client_tests/clojure/clj-s3 && lein do deps, midje
 
 test-php:
-	@composer install --dev --working-dir client_tests/php
-	@cd client_tests/php && ./phpunit
+	@cd client_tests/php && make
 
 test-int: compile-int-test
 	@./rebar skip_deps=true int_test_run
