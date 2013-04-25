@@ -69,6 +69,7 @@ live_manifest({no_active_manifest, _}) ->
 live_manifest({Manifest, undefined}) ->
     {ok, Manifest};
 live_manifest({Manifest, DeleteTime}) ->
+    lager:info("Manifest = ~p DeleteTime = ~p", [Manifest?MANIFEST.write_start_time, DeleteTime]),
     case DeleteTime > Manifest?MANIFEST.write_start_time of
         true ->
             {error, no_active_manifest};
@@ -336,6 +337,7 @@ orddict_values(OrdDict) ->
 manifest_is_active(?MANIFEST{state=active}) -> true;
 manifest_is_active(_Manifest) -> false.
 
+-spec delete_time(lfs_manifest()) -> term() | undefined.
 delete_time(Manifest) ->
     case proplists:is_defined(deleted, Manifest?MANIFEST.props) of
         true ->
@@ -349,7 +351,8 @@ delete_time(Manifest) ->
 most_recent_active_manifest(Manifest=?MANIFEST{state=scheduled_delete}, {MostRecent, undefined}) -> 
     {MostRecent, delete_time(Manifest)};
 most_recent_active_manifest(Manifest=?MANIFEST{state=scheduled_delete}, {MostRecent, DeleteTime}) -> 
-    case Dt=delete_time(Manifest) > DeleteTime of
+    Dt=delete_time(Manifest), 
+    case (Dt =/= undefined) andalso (Dt > DeleteTime) of
         true -> 
             {MostRecent, Dt};
         false ->
@@ -357,8 +360,6 @@ most_recent_active_manifest(Manifest=?MANIFEST{state=scheduled_delete}, {MostRec
     end;
 most_recent_active_manifest(Manifest=?MANIFEST{state=active}, {no_active_manifest, undefined}) ->
     {Manifest, undefined};
-most_recent_active_manifest(_Manfest, {no_active_manifest, DeleteTime}) ->
-    {no_active_manifest, DeleteTime};
 most_recent_active_manifest(Man1=?MANIFEST{state=active}, {Man2=?MANIFEST{state=active}, DeleteTime}) ->
     case Man1?MANIFEST.write_start_time > Man2?MANIFEST.write_start_time of
         true -> 
@@ -366,10 +367,12 @@ most_recent_active_manifest(Man1=?MANIFEST{state=active}, {Man2=?MANIFEST{state=
         false -> 
             {Man2, DeleteTime}
     end;
-most_recent_active_manifest(Man1=?MANIFEST{state=active}, {_, DeleteTime}) -> 
+most_recent_active_manifest(Man1=?MANIFEST{state=active}, {no_active_manifest, DeleteTime}) -> 
     {Man1, DeleteTime};
 most_recent_active_manifest(_Man1, {Man2=?MANIFEST{state=active}, DeleteTime}) -> 
-    {Man2, DeleteTime}.
+    {Man2, DeleteTime};
+most_recent_active_manifest(_Manifest, {MostRecent, DeleteTime}) ->
+    {MostRecent, DeleteTime}.
 
 -spec needs_pruning(lfs_manifest(), erlang:timestamp()) -> boolean().
 needs_pruning(?MANIFEST{state=scheduled_delete,
