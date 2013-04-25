@@ -72,6 +72,10 @@ test-clojure:
 	Please read client_tests/clojure/clj-s3/README."; exit 1; }
 	@cd client_tests/clojure/clj-s3 && lein do deps, midje
 
+test-php:
+	@composer install --dev --working-dir client_tests/php
+	@cd client_tests/php && ./phpunit
+
 test-int: compile-int-test
 	@./rebar skip_deps=true int_test_run
 ##
