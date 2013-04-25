@@ -8,7 +8,12 @@
 ## Configuration
 
 Ensure that the Riak CS `app.config` has `anonymous_user_creation` set to
-`true`.
+`true` and `enforce_multipart_part_size` to `false`. Like:
+
+```erlang
+{anonymous_user_creation, true},
+{enforce_multipart_part_size, false},
+```
 
 ## Execution
 
