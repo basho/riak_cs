@@ -813,7 +813,7 @@ parse_ip(Str) when is_list(Str) ->
             Error 
     end.
 
--spec parse_tokenized_ip([string()]) -> {inet:ip_address(), inet:ip_address()}.
+-spec parse_tokenized_ip([string()]) -> {string(), inet:ip_address()}.
 parse_tokenized_ip([IP]) ->
     {IP, {255, 255, 255, 255}};
 parse_tokenized_ip([IP, PrefixSize]) ->
