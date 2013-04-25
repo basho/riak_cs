@@ -3,11 +3,11 @@
     "services" : {
         "default_settings" : {
             "params" : {
-                "key"    : "your-aws-access-key-id",
-                "secret" : "your-aws-secret-access-key",
+                "key"    : "key_id",
+                "secret" : "key_secret",
                 "region" : "us-east-1",
                 "base_url" : "http://s3.amazonaws.com",
-                // "curl.options": {"CURLOPT_PROXY" : "33.33.33.10:8080"},
+                "curl.options": {"CURLOPT_PROXY" : "localhost:8080"},
                 "scheme" : "http"
             }
         }
