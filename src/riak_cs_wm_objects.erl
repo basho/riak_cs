@@ -78,29 +78,30 @@ to_xml(RD, Ctx=#context{start_time=StartTime,
                     ListKeysRequest = riak_cs_list_objects:new_request(Bucket,
                                                                        MaxKeys,
                                                                        Options),
-                    {ok, ListFSMPid} = riak_cs_list_objects_fsm_v2:start_link(RiakPid, ListKeysRequest),
-                    {ok, ListObjectsResponse} = riak_cs_list_objects_fsm_v2:get_object_list(ListFSMPid),
-                    Response = riak_cs_xml:to_xml(ListObjectsResponse),
-                    riak_cs_s3_response:respond(200, Response, RD, Ctx);
-%%                    BinPid = riak_cs_utils:pid_to_binary(self()),
-%%                    CacheKey = << BinPid/binary, <<":">>/binary, Bucket/binary >>,
-%%                    UseCache = riak_cs_list_objects_ets_cache:cache_enabled(),
-%%                    case riak_cs_list_objects_fsm:start_link(RiakPid, self(),
-%%                                                             ListKeysRequest, CacheKey,
-%%                                                             UseCache) of
-%%                        {ok, ListFSMPid} ->
-%%                            {ok, ListObjectsResponse} = riak_cs_list_objects_fsm:get_object_list(ListFSMPid),
-%%                            Response = riak_cs_xml:to_xml(ListObjectsResponse),
-%%                            ok = riak_cs_stats:update_with_start(bucket_list_keys,
-%%                                                                 StartTime),
-%%                            riak_cs_dtrace:dt_bucket_return(?MODULE, <<"list_keys">>, [200], [riak_cs_wm_utils:extract_name(User), Bucket]),
-%%                            riak_cs_s3_response:respond(200, Response, RD, Ctx);
-%%                        {error, Reason} ->
-%%                            Code = riak_cs_s3_response:status_code(Reason),
-%%                            Response = riak_cs_s3_response:api_error(Reason, RD, Ctx),
-%%                            riak_cs_dtrace:dt_bucket_return(?MODULE, <<"list_keys">>, [Code], [riak_cs_wm_utils:extract_name(User), Bucket]),
-%%                            Response
-%%                    end;
+                    BinPid = riak_cs_utils:pid_to_binary(self()),
+                    CacheKey = << BinPid/binary, <<":">>/binary, Bucket/binary >>,
+                    UseCache = riak_cs_list_objects_ets_cache:cache_enabled(),
+                    %% Get the pid with the abstraction layer, that lets
+                    %% us start either the old or the new version.
+                    %% If we start the new version, some of the arguments
+                    %% like `UseCache', `BinPid',  and `CacheKey' will be
+                    %% ignored.
+                    case riak_cs_list_objects_utils:start_link(RiakPid, self(),
+                                                             ListKeysRequest, CacheKey,
+                                                             UseCache) of
+                        {ok, ListFSMPid} ->
+                            {ok, ListObjectsResponse} = riak_cs_list_objects_fsm:get_object_list(ListFSMPid),
+                            Response = riak_cs_xml:to_xml(ListObjectsResponse),
+                            ok = riak_cs_stats:update_with_start(bucket_list_keys,
+                                                                 StartTime),
+                            riak_cs_dtrace:dt_bucket_return(?MODULE, <<"list_keys">>, [200], [riak_cs_wm_utils:extract_name(User), Bucket]),
+                            riak_cs_s3_response:respond(200, Response, RD, Ctx);
+                        {error, Reason} ->
+                            Code = riak_cs_s3_response:status_code(Reason),
+                            Response = riak_cs_s3_response:api_error(Reason, RD, Ctx),
+                            riak_cs_dtrace:dt_bucket_return(?MODULE, <<"list_keys">>, [Code], [riak_cs_wm_utils:extract_name(User), Bucket]),
+                            Response
+                    end;
                 Reason ->
                     Code = riak_cs_s3_response:status_code(Reason),
                     Response = riak_cs_s3_response:api_error(Reason, RD, Ctx),
