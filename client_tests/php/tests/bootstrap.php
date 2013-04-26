@@ -21,5 +21,31 @@ under the License.
 ---------------------------------------------------------------------
 */
 require_once 'vendor/autoload.php';
-Guzzle\Tests\GuzzleTestCase::setServiceBuilder(Aws\Common\Aws::factory($_SERVER['CONFIG']));
+use Guzzle\Http\Client;
+
+function newServiceBuilder() {
+    $user = creat_user();
+    return Aws\Common\Aws::factory($_SERVER['CONFIG'], array(
+        'key' => $user['key_id'],
+        'secret' => $user['key_secret'],
+        'curl.options' => array('CURLOPT_PROXY' => 'localhost:' . cs_port())
+    ));
+}
+
+function creat_user() {
+    $name = uniqid('riakcs-');
+    $client = new Client('http://localhost:' . cs_port());
+    $request = $client->put('/riak-cs/user',
+                    array('Content-Type' => 'application/json'),
+                    "{\"name\":\"{$name}\", \"email\":\"{$name}@example.com\"}");
+    return $request->send()->json();
+}
+
+function cs_port() {
+    return getenv('CS_HTTP_PORT') ? getenv('CS_HTTP_PORT') : 8080;
+}
+
+
+Guzzle\Tests\GuzzleTestCase::setServiceBuilder(newServiceBuilder());
+
 ?>

@@ -1,8 +1,21 @@
-# howto run
+# Riak CS AWS Ruby SDK Tests
 
-* prepare rake
+## Dependencies
 
+Install [Bundler](http://gembundler.com/):
+
+```bash
+$ gem install bundler
 ```
-$ bundle install --path=vendor/bundler
-$ bundle exec rake
+
+Install dependencies:
+
+```bash
+$ bundle --gemfile client_tests/ruby/Gemfile --path vendor
+```
+
+## Execution
+
+```bash
+$ cd client_tests/ruby && bundle exec rake spec
 ```

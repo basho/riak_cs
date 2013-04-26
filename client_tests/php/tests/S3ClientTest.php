@@ -38,9 +38,9 @@ class S3ClientTest extends \Guzzle\Tests\GuzzleTestCase
     {
         if ( ! $this->client->doesBucketExist($this->bucket)) { return; }
 
-        $objectKeys = $this->client->listObjects(array('Bucket' => $this->bucket))['Contents'];
-        foreach ($objectKeys as $key) {
-            $this->client->deleteObject(array('Bucket' => $this->bucket, 'Key' => $key['Key']));
+        $objects = $this->client->getIterator('ListObjects', array('Bucket' => $this->bucket));
+        foreach ($objects as $object) {
+            $this->client->deleteObject(array('Bucket' => $this->bucket, 'Key' => $object['Key']));
         }
         $this->client->deleteBucket(array('Bucket' => $this->bucket));
     }

@@ -152,6 +152,8 @@ handle_validation_response({ok, User, UserObj}, RD, Ctx, Next, _, _) ->
     %% given keyid and signature matched, proceed
     Next(RD, Ctx#context{user=User,
                          user_object=UserObj});
+handle_validation_response({error, disconnected}, RD, Ctx, _Next, _, _Bool) ->
+    {{halt, 503}, RD, Ctx};
 handle_validation_response({error, Reason}, RD, Ctx, Next, _, true) ->
     %% no keyid was given, proceed anonymously
     _ = lager:debug("No user key: ~p", [Reason]),

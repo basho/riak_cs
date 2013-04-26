@@ -154,26 +154,40 @@ forbidden(RD, Ctx=#context{auth_module=AuthMod,
                            exports_fun=ExportsFun}) ->
     {UserKey, AuthData} = AuthMod:identify(RD, Ctx),
     riak_cs_dtrace:dt_wm_entry({?MODULE, Mod}, <<"forbidden">>, [], [riak_cs_wm_utils:extract_name(UserKey)]),
-    AuthResult = case riak_cs_utils:get_user(UserKey, RiakPid) of
-                     {ok, {User, UserObj}} when User?RCS_USER.status =:= enabled ->
-                         authenticate(User, UserObj, RD, Ctx, AuthData);
-                     %% {ok, _} -> %% disabled account, we are going to 403
-                     {ok, {User, _UserObj}} when User?RCS_USER.status =/= enabled ->
-                         {error, bad_auth};
-                     {error, NE} when NE =:= not_found;
-                                      NE =:= notfound;
-                                      NE =:= no_user_key ->
-                         {error, NE};
-                     {error, R} ->
-                         %% other failures, like Riak fetch timeout, be loud about
-                         _ = lager:error("Retrieval of user record for ~p failed. Reason: ~p",
-                                         [UserKey, R]),
-                         {error, R}
-                 end,
+    case riak_cs_utils:get_user(UserKey, RiakPid) of
+        {error, disconnected} ->
+            riak_cs_s3_response:api_error(econnrefused, RD, Ctx);
+        {error, _BinaryConstraint} when is_binary(_BinaryConstraint) ->
+            riak_cs_s3_response:api_error(unsatisfied_constraint, RD, Ctx);
+        {ok, {User, UserObj}} when User?RCS_USER.status =:= enabled ->
+            AuthResult = authenticate(User, UserObj, RD, Ctx, AuthData),
+            handle_auth_result(RD, Ctx, Mod, ExportsFun, AuthResult);
+        {ok, {User, _UserObj}} when User?RCS_USER.status =/= enabled ->
+            AuthResult = {error, bad_auth},
+            handle_auth_result(RD, Ctx, Mod, ExportsFun, AuthResult);
+        {error, NE} when NE =:= not_found;
+                NE =:= notfound;
+                NE =:= no_user_key ->
+            AuthResult = {error, NE},
+            handle_auth_result(RD, Ctx, Mod, ExportsFun, AuthResult);
+        {error, R} ->
+            %% other failures, like Riak fetch timeout, be loud about
+            _ = lager:error("Retrieval of user record for ~p failed. Reason: ~p",
+                            [UserKey, R]),
+            AuthResult = {error, R},
+            handle_auth_result(RD, Ctx, Mod, ExportsFun, AuthResult)
+    end.
+
+-spec handle_auth_result(term(), #context{}, atom(), function(), term()) ->
+                         term().
+handle_auth_result(RD, Ctx, Mod, ExportsFun, AuthResult) ->
     AnonOk = resource_call(Mod, anon_ok, [], ExportsFun),
     case post_authentication(AuthResult, RD, Ctx, fun authorize/2, AnonOk) of
         {false, _RD2, Ctx2} = FalseRet ->
-            riak_cs_dtrace:dt_wm_return({?MODULE, Mod}, <<"forbidden">>, [], [riak_cs_wm_utils:extract_name(Ctx2#context.user), <<"false">>]),
+            riak_cs_dtrace:dt_wm_return({?MODULE, Mod},
+                                        <<"forbidden">>, [],
+                                        [riak_cs_wm_utils:extract_name(Ctx2#context.user),
+                                         <<"false">>]),
             FalseRet;
         {Rsn, _RD2, Ctx2} = Ret ->
             Reason =
@@ -181,7 +195,10 @@ forbidden(RD, Ctx=#context{auth_module=AuthMod,
                     {halt, Code} -> Code;
                     _            -> -1
                 end,
-            riak_cs_dtrace:dt_wm_return({?MODULE, Mod}, <<"forbidden">>, [Reason], [riak_cs_wm_utils:extract_name(Ctx2#context.user), <<"true">>]),
+            riak_cs_dtrace:dt_wm_return({?MODULE, Mod},
+                                        <<"forbidden">>, [Reason],
+                                        [riak_cs_wm_utils:extract_name(Ctx2#context.user),
+                                        <<"true">>]),
             Ret
     end.
 
