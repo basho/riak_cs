@@ -1,5 +1,5 @@
 ######## mapreduce functions calling into a riak_kv environment / code path
-src/riak_cs_storage.erl:67: Warning object_size_map/3 calls undefined function riak_object:get_values/1
+Warning object_size_map/3 calls undefined function riak_object:get_values/1
 Warning map_keys_and_manifests/3 calls undefined function riak_object:get_values/1
 Warning map_keys_and_manifests/3 calls undefined function riak_object:key/1
 ######## kv backends calling into kv/core code
