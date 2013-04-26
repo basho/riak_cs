@@ -42,7 +42,8 @@
 %%%===================================================================
 
 %% API
--export([start_link/5]).
+-export([start_link/5,
+         manifests_and_prefix_length/1]).
 
 %% Configuration
 -export([fold_objects_for_list_keys/0]).
@@ -67,6 +68,11 @@ start_link(RiakcPid, CallerPid, ListKeysRequest, CacheKey, UseCache) ->
                                                 ListKeysRequest, CacheKey,
                                                 UseCache)
     end.
+
+-spec manifests_and_prefix_length({list(), ordsets:ordset()}) ->
+                                   non_neg_integer().
+manifests_and_prefix_length({List, Set}) ->
+    length(List) + ordsets:size(Set).
 
 %%%===================================================================
 %%% Configuration
