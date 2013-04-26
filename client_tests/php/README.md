@@ -2,22 +2,24 @@
 
 ## Dependencies
 
-**Note**: The test is currently only known to work on php 5.4.x.
+* PHP54 (5.4.x)
 
-Install [Composer](https://getcomposer.org/):
+    on OSX with homebrew:
 
-```bash
-$ curl -s https://getcomposer.org/installer | php && mv -v composer.phar /usr/local/bin/composer
-```
+    ```bash
+    brew tap homebrew/dupes
+    brew tap josegonzalez/homebrew-php
+    brew install php54
+    ```
 
-Install dependencies:
+* [Composer](https://getcomposer.org/):
 
-```bash
-$ composer install --dev
-```
+    ```bash
+    $ curl -s https://getcomposer.org/installer | php && mv -v composer.phar /usr/local/bin/composer
+    ```
 
 ## Execution
 
 ```bash
-$ cd client_tests/php && ./phpunit
+$ make
 ```
