@@ -25,6 +25,22 @@
 -include("riak_cs.hrl").
 -include("list_objects.hrl").
 
+%%%===================================================================
+%%% Types
+%%%===================================================================
+
+-type tagged_item() :: {prefix, binary()} |
+                       {manifest, lfs_manifest()}.
+
+-type tagged_item_list() :: list(tagged_item()).
+
+-export_type([tagged_item/0,
+              tagged_item_list/0]).
+
+%%%===================================================================
+%%% Exports
+%%%===================================================================
+
 %% API
 -export([start_link/5]).
 
