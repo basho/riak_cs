@@ -151,11 +151,6 @@
 -type key_and_manifest() :: {binary(), lfs_manifest()}.
 -type manifests_and_prefixes() :: {list(key_and_manifest()), ordsets:ordset(binary())}.
 
--type tagged_item() :: {prefix, binary()} |
-                       {manifest, {binary(), lfs_manifest()}}.
-
--type tagged_item_list() :: list(tagged_item()).
-
 %%%===================================================================
 %%% Observability
 %%%===================================================================
@@ -393,27 +388,27 @@ handle_keys_received(Keys, State=#state{key_buffer=PrevKeyBuffer}) ->
     {next_state, waiting_list_keys, NewState}.
 
 -spec manifests_and_prefix_slice(manifests_and_prefixes(), non_neg_integer()) ->
-    tagged_item_list().
+    riak_cs_list_objects_fsm_utils:tagged_item_list().
 manifests_and_prefix_slice(ManifestsAndPrefixes, MaxObjects) ->
     TaggedList = tagged_manifest_and_prefix(ManifestsAndPrefixes),
     Sorted = lists:sort(fun tagged_sort_fun/2, TaggedList),
     lists:sublist(Sorted, MaxObjects).
 
--spec tagged_sort_fun(tagged_item(), tagged_item()) ->
+-spec tagged_sort_fun(riak_cs_list_objects_fsm_utils:tagged_item(), riak_cs_list_objects_fsm_utils:tagged_item()) ->
     boolean().
 tagged_sort_fun(A, B) ->
     AKey = key_from_tag(A),
     BKey = key_from_tag(B),
     AKey =< BKey.
 
--spec key_from_tag(tagged_item()) -> binary().
+-spec key_from_tag(riak_cs_list_objects_fsm_utils:tagged_item()) -> binary().
 key_from_tag({manifest, {Key, _M}}) ->
     Key;
 key_from_tag({prefix, Key}) ->
     Key.
 
 -spec tagged_manifest_and_prefix(manifests_and_prefixes()) ->
-    tagged_item_list().
+    riak_cs_list_objects_fsm_utils:tagged_item_list().
 tagged_manifest_and_prefix({Manifests, Prefixes}) ->
     tagged_manifest_list(Manifests) ++ tagged_prefix_list(Prefixes).
 
@@ -427,7 +422,7 @@ tagged_manifest_list(KeyAndManifestList) ->
 tagged_prefix_list(Prefixes) ->
     [{prefix, P} || P <- ordsets:to_list(Prefixes)].
 
--spec untagged_manifest_and_prefix(tagged_item_list()) ->
+-spec untagged_manifest_and_prefix(riak_cs_list_objects_fsm_utils:tagged_item_list()) ->
     manifests_and_prefixes().
 untagged_manifest_and_prefix(TaggedInput) ->
     Pred = fun({manifest, _}) -> true;
