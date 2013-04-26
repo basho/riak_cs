@@ -241,7 +241,7 @@ enough_results(#state{req=?LOREQ{max_keys=UserMaxKeys},
                       reached_end_of_keyspace=EndofKeyspace,
                       objects=Objects,
                       common_prefixes=CommonPrefixes}) ->
-    manifests_and_prefix_length({Objects, CommonPrefixes}) >= UserMaxKeys
+    riak_cs_list_objects_utils:manifests_and_prefix_length({Objects, CommonPrefixes}) >= UserMaxKeys
     orelse EndofKeyspace.
 
 response_from_manifests_and_common_prefixes(Request,
@@ -496,12 +496,6 @@ update_keys_and_prefixes({ManifestList, Prefixes},
                          _, Prefix, PrefixLen, Group) ->
     NewPrefix = << Prefix:PrefixLen/binary, Group/binary >>,
     {ManifestList, ordsets:add_element(NewPrefix, Prefixes)}.
-
-%% TODO: this was c/p from other module
-%% well, not quite anymore
--spec manifests_and_prefix_length(manifests_and_prefixes()) -> non_neg_integer().
-manifests_and_prefix_length({Manifests, Prefixes}) ->
-    length(Manifests) + ordsets:size(Prefixes).
 
 -spec try_reply(Response :: {ok, list_object_response()} | {error, term()},
                 State :: state()) ->

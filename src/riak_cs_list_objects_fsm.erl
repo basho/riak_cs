@@ -370,27 +370,27 @@ handle_keys_received(Keys, State=#state{key_buffer=PrevKeyBuffer}) ->
     {next_state, waiting_list_keys, NewState}.
 
 -spec manifests_and_prefix_slice(manifests_and_prefixes(), non_neg_integer()) ->
-    riak_cs_list_objects_fsm_utils:tagged_item_list().
+    riak_cs_list_objects_utils:tagged_item_list().
 manifests_and_prefix_slice(ManifestsAndPrefixes, MaxObjects) ->
     TaggedList = tagged_manifest_and_prefix(ManifestsAndPrefixes),
     Sorted = lists:sort(fun tagged_sort_fun/2, TaggedList),
     lists:sublist(Sorted, MaxObjects).
 
--spec tagged_sort_fun(riak_cs_list_objects_fsm_utils:tagged_item(), riak_cs_list_objects_fsm_utils:tagged_item()) ->
+-spec tagged_sort_fun(riak_cs_list_objects_utils:tagged_item(), riak_cs_list_objects_utils:tagged_item()) ->
     boolean().
 tagged_sort_fun(A, B) ->
     AKey = key_from_tag(A),
     BKey = key_from_tag(B),
     AKey =< BKey.
 
--spec key_from_tag(riak_cs_list_objects_fsm_utils:tagged_item()) -> binary().
+-spec key_from_tag(riak_cs_list_objects_utils:tagged_item()) -> binary().
 key_from_tag({manifest, {Key, _M}}) ->
     Key;
 key_from_tag({prefix, Key}) ->
     Key.
 
 -spec tagged_manifest_and_prefix(manifests_and_prefixes()) ->
-    riak_cs_list_objects_fsm_utils:tagged_item_list().
+    riak_cs_list_objects_utils:tagged_item_list().
 tagged_manifest_and_prefix({Manifests, Prefixes}) ->
     tagged_manifest_list(Manifests) ++ tagged_prefix_list(Prefixes).
 
@@ -404,7 +404,7 @@ tagged_manifest_list(KeyAndManifestList) ->
 tagged_prefix_list(Prefixes) ->
     [{prefix, P} || P <- ordsets:to_list(Prefixes)].
 
--spec untagged_manifest_and_prefix(riak_cs_list_objects_fsm_utils:tagged_item_list()) ->
+-spec untagged_manifest_and_prefix(riak_cs_list_objects_utils:tagged_item_list()) ->
     manifests_and_prefixes().
 untagged_manifest_and_prefix(TaggedInput) ->
     Pred = fun({manifest, _}) -> true;
@@ -413,9 +413,6 @@ untagged_manifest_and_prefix(TaggedInput) ->
     {[element(2, M) || M <- A],
      [element(2, P) || P <- B]}.
 
--spec manifests_and_prefix_length(manifests_and_prefixes()) -> non_neg_integer().
-manifests_and_prefix_length({KeyAndManifestList, Prefixes}) ->
-    length(KeyAndManifestList) + ordsets:size(Prefixes).
 
 -spec filter_prefix_keys(KeyAndManifestList :: list(manifests_and_prefixes()),
                          CommonPrefixes :: ordsets:ordset(binary()),
@@ -521,7 +518,7 @@ prepare_state_for_mapred(State=#state{req=Request,
     list_object_response().
 make_response(Request=?LOREQ{max_keys=NumKeysRequested}, ObjectBuffer, CommonPrefixes) ->
     ObjectPrefixTuple = {ObjectBuffer, CommonPrefixes},
-    NumObjects = manifests_and_prefix_length(ObjectPrefixTuple),
+    NumObjects = riak_cs_list_objects_utils:manifests_and_prefix_length(ObjectPrefixTuple),
     IsTruncated = NumObjects > NumKeysRequested andalso NumKeysRequested > 0,
     SlicedTaggedItems = manifests_and_prefix_slice(ObjectPrefixTuple,
                                                    NumKeysRequested),
@@ -628,7 +625,7 @@ handle_map_reduce_call({error, Reason}, State) ->
                      non_neg_integer()) ->
     boolean().
 enough_results(ManifestsAndPrefixes, ?LOREQ{max_keys=MaxKeysRequested}, TotalCandidateKeys) ->
-    ResultsLength = manifests_and_prefix_length(ManifestsAndPrefixes),
+    ResultsLength = riak_cs_list_objects_utils:manifests_and_prefix_length(ManifestsAndPrefixes),
     %% we have enough results if one of two things is true:
     %% 1. we have more results than requested
     %% 2. there are less keys than were requested even possible
