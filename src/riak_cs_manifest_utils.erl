@@ -34,6 +34,7 @@
          active_manifests/1,
          active_and_writing_manifests/1,
          overwritten_UUIDs/1,
+         deleted_while_writing/1,
          mark_pending_delete/2,
          mark_deleted/2,
          mark_scheduled_delete/2,
@@ -344,6 +345,44 @@ delete_time(Manifest) ->
             Manifest?MANIFEST.delete_marked_time;
         false ->
             undefined
+    end.
+
+%% @doc Return all active manifests that have timestamps before the latest deletion
+%% This happens when a manifest is still uploading while it is deleted. The upload 
+%% is allowed to complete, but is not visible afterwards.
+-spec deleted_while_writing(orddict:orddict()) -> [binary()].
+deleted_while_writing(Manifests) ->
+    ManifestList = orddict_values(Manifests),
+    DeleteTime = latest_delete_time(ManifestList),
+    find_deleted_active_manifests(ManifestList, DeleteTime).
+
+-spec find_deleted_active_manifests([lfs_manifest()], term()) -> [lfs_manifest()].
+find_deleted_active_manifests(_Manifests, undefined) ->
+    [];
+find_deleted_active_manifests(Manifests, DeleteTime) ->
+    [M || M <- Manifests, M?MANIFEST.state =:= active, 
+                          M?MANIFEST.write_start_time < DeleteTime].
+
+-spec latest_delete_time([lfs_manifest()]) -> term() | undefined.
+latest_delete_time(Manifests) ->
+    lists:foldl(fun(M, Acc) ->
+                    DeleteTime = delete_time(M),
+                    later(DeleteTime, Acc)
+                end, undefined, Manifests).
+
+%% @doc Return the later of two times, accounting for undefined
+later(undefined, undefined) ->
+    undefined;
+later(undefined, DeleteTime2) ->
+    DeleteTime2;
+later(DeleteTime1, undefined) ->
+    DeleteTime1;
+later(DeleteTime1, DeleteTime2) ->
+    case DeleteTime1 > DeleteTime2 of
+        true ->
+            DeleteTime1;
+        false ->
+            DeleteTime2
     end.
 
 %% NOTE: This is a foldl function, initial acc = {no_active_manifest, undefined}
