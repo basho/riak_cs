@@ -153,6 +153,16 @@ class BasicTests(S3ApiVerificationTestBase):
         self.assertIn(self.key_name,
                       [k.key for k in bucket.get_all_keys()])
 
+    def test_put_object_with_trailing_slash(self):
+        bucket = self.conn.create_bucket(self.bucket_name)
+        key_name_with_slash = self.key_name + "/"
+        k = Key(bucket)
+        k.key = key_name_with_slash
+        k.set_contents_from_string(self.data)
+        self.assertEqual(k.get_contents_as_string(), self.data)
+        self.assertIn(key_name_with_slash,
+                      [k.key for k in bucket.get_all_keys()])
+
     def test_delete_object(self):
         bucket = self.conn.create_bucket(self.bucket_name)
         k = Key(bucket)
