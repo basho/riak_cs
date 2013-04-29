@@ -30,7 +30,8 @@
 %%%===================================================================
 
 -type tagged_item() :: {prefix, binary()} |
-                       {manifest, lfs_manifest()}.
+                       {manifest, lfs_manifest()} |
+                       {manifest, {Key :: binary(), lfs_manifest()}}.
 
 -type tagged_item_list() :: list(tagged_item()).
 
