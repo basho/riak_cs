@@ -185,8 +185,8 @@ handle_done(State=#state{object_buffer=ObjectBuffer,
     Active = map_active_manifests(Manifests),
     NewObjects = PrevObjects ++ Active,
     ObjectPrefixTuple = {NewObjects, CommonPrefixes},
-    ObjectPrefixTuple2 = filter_prefix_keys(ObjectPrefixTuple, Request),
-    SlicedTaggedItems = manifests_and_prefix_slice(ObjectPrefixTuple2,
+    ObjectPrefixTuple2 = riak_cs_list_objects_utils:filter_prefix_keys(ObjectPrefixTuple, Request),
+    SlicedTaggedItems = riak_cs_list_objects_utils:manifests_and_prefix_slice(ObjectPrefixTuple2,
                                                    UserMaxKeys),
     {NewManis, NewPrefixes} = riak_cs_list_objects_utils:untagged_manifest_and_prefix(SlicedTaggedItems),
 
@@ -370,81 +370,6 @@ next_byte(<<Integer:8/integer>>=Byte) when Integer == 255 ->
     Byte;
 next_byte(<<Integer:8/integer>>) ->
     <<(Integer+1):8/integer>>.
-
--spec manifests_and_prefix_slice(riak_cs_list_objects_utils:manifests_and_prefixes(), non_neg_integer()) ->
-    riak_cs_list_objects_utils:tagged_item_list().
-manifests_and_prefix_slice(ManifestsAndPrefixes, MaxObjects) ->
-    TaggedList = riak_cs_list_objects_utils:tagged_manifest_and_prefix(ManifestsAndPrefixes),
-    Sorted = lists:sort(fun tagged_sort_fun/2, TaggedList),
-    lists:sublist(Sorted, MaxObjects).
-
--spec tagged_sort_fun(riak_cs_list_objects_utils:tagged_item(),
-                      riak_cs_list_objects_utils:tagged_item()) ->
-    boolean().
-tagged_sort_fun(A, B) ->
-    AKey = key_from_tag(A),
-    BKey = key_from_tag(B),
-    AKey =< BKey.
-
--spec key_from_tag(riak_cs_list_objects_utils:tagged_item()) -> binary().
-key_from_tag({manifest, ?MANIFEST{bkey={_Bucket, Key}}}) ->
-    Key;
-key_from_tag({prefix, Key}) ->
-    Key.
-
--spec filter_prefix_keys({ManifestList :: list(lfs_manifest()),
-                          CommonPrefixes :: ordsets:ordset(binary())},
-                         list_object_request()) ->
-    riak_cs_list_objects_utils:manifests_and_prefixes().
-filter_prefix_keys({_ManifestList, _CommonPrefixes}=Input, ?LOREQ{prefix=undefined,
-                                                                  delimiter=undefined}) ->
-    Input;
-filter_prefix_keys({ManifestList, CommonPrefixes}, ?LOREQ{prefix=Prefix,
-                                                              delimiter=Delimiter}) ->
-    PrefixFilter =
-        fun(Manifest, Acc) ->
-                prefix_filter(Manifest, Acc, Prefix, Delimiter)
-        end,
-    lists:foldl(PrefixFilter, {[], CommonPrefixes}, ManifestList).
-
-prefix_filter(Manifest=?MANIFEST{bkey={_Bucket, Key}}, Acc, undefined, Delimiter) ->
-    Group = extract_group(Key, Delimiter),
-    update_keys_and_prefixes(Acc, Manifest, <<>>, 0, Group);
-prefix_filter(Manifest=?MANIFEST{bkey={_Bucket, Key}},
-              {ManifestList, Prefixes}=Acc, Prefix, undefined) ->
-    PrefixLen = byte_size(Prefix),
-    case Key of
-        << Prefix:PrefixLen/binary, _/binary >> ->
-            {[Manifest | ManifestList], Prefixes};
-        _ ->
-            Acc
-    end;
-prefix_filter(Manifest=?MANIFEST{bkey={_Bucket, Key}},
-              {_ManifestList, _Prefixes}=Acc, Prefix, Delimiter) ->
-    PrefixLen = byte_size(Prefix),
-    case Key of
-        << Prefix:PrefixLen/binary, Rest/binary >> ->
-            Group = extract_group(Rest, Delimiter),
-            update_keys_and_prefixes(Acc, Manifest, Prefix, PrefixLen, Group);
-        _ ->
-            Acc
-    end.
-
-extract_group(Key, Delimiter) ->
-    case binary:match(Key, [Delimiter]) of
-        nomatch ->
-            nomatch;
-        {Pos, Len} ->
-            binary:part(Key, {0, Pos+Len})
-    end.
-
-update_keys_and_prefixes({ManifestList, Prefixes},
-                         Manifest, _, _, nomatch) ->
-    {[Manifest | ManifestList], Prefixes};
-update_keys_and_prefixes({ManifestList, Prefixes},
-                         _, Prefix, PrefixLen, Group) ->
-    NewPrefix = << Prefix:PrefixLen/binary, Group/binary >>,
-    {ManifestList, ordsets:add_element(NewPrefix, Prefixes)}.
 
 -spec try_reply(Response :: {ok, list_object_response()} | {error, term()},
                 State :: state()) ->

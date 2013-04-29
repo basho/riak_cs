@@ -355,80 +355,6 @@ handle_keys_received(Keys, State=#state{key_buffer=PrevKeyBuffer}) ->
     NewState = State#state{key_buffer=[lists:sort(Keys) | PrevKeyBuffer]},
     {next_state, waiting_list_keys, NewState}.
 
--spec manifests_and_prefix_slice(riak_cs_list_objects_utils:manifests_and_prefixes(), non_neg_integer()) ->
-    riak_cs_list_objects_utils:tagged_item_list().
-manifests_and_prefix_slice(ManifestsAndPrefixes, MaxObjects) ->
-    TaggedList = riak_cs_list_objects_utils:tagged_manifest_and_prefix(ManifestsAndPrefixes),
-    Sorted = lists:sort(fun tagged_sort_fun/2, TaggedList),
-    lists:sublist(Sorted, MaxObjects).
-
--spec tagged_sort_fun(riak_cs_list_objects_utils:tagged_item(), riak_cs_list_objects_utils:tagged_item()) ->
-    boolean().
-tagged_sort_fun(A, B) ->
-    AKey = key_from_tag(A),
-    BKey = key_from_tag(B),
-    AKey =< BKey.
-
--spec key_from_tag(riak_cs_list_objects_utils:tagged_item()) -> binary().
-key_from_tag({manifest, {Key, _M}}) ->
-    Key;
-key_from_tag({prefix, Key}) ->
-    Key.
-
--spec filter_prefix_keys(KeyAndManifestList :: list(riak_cs_list_objects_utils:manifests_and_prefixes()),
-                         CommonPrefixes :: ordsets:ordset(binary()),
-                         list_object_request()) ->
-    riak_cs_list_objects_utils:manifests_and_prefixes().
-filter_prefix_keys(KeyAndManifestList, CommonPrefixes, ?LOREQ{prefix=undefined,
-                                                              delimiter=undefined}) ->
-    {KeyAndManifestList, CommonPrefixes};
-filter_prefix_keys(KeyAndManifestList, CommonPrefixes, ?LOREQ{prefix=Prefix,
-                                                              delimiter=Delimiter}) ->
-    PrefixFilter =
-        fun(KeyAndManifest, Acc) ->
-                prefix_filter(KeyAndManifest, Acc, Prefix, Delimiter)
-        end,
-    lists:foldl(PrefixFilter, {[], CommonPrefixes}, KeyAndManifestList).
-
-prefix_filter({Key, _Manifest}=KeyAndManifest, Acc, undefined, Delimiter) ->
-    Group = extract_group(Key, Delimiter),
-    update_keys_and_prefixes(Acc, KeyAndManifest, <<>>, 0, Group);
-prefix_filter({Key, _Manifest}=KeyAndManifest,
-              {KeyAndManifestList, Prefixes}=Acc, Prefix, undefined) ->
-    PrefixLen = byte_size(Prefix),
-    case Key of
-        << Prefix:PrefixLen/binary, _/binary >> ->
-            {[KeyAndManifest | KeyAndManifestList], Prefixes};
-        _ ->
-            Acc
-    end;
-prefix_filter({Key, _Manifest}=KeyAndManifest,
-              {_KeyAndManifestList, _Prefixes}=Acc, Prefix, Delimiter) ->
-    PrefixLen = byte_size(Prefix),
-    case Key of
-        << Prefix:PrefixLen/binary, Rest/binary >> ->
-            Group = extract_group(Rest, Delimiter),
-            update_keys_and_prefixes(Acc, KeyAndManifest, Prefix, PrefixLen, Group);
-        _ ->
-            Acc
-    end.
-
-extract_group(Key, Delimiter) ->
-    case binary:match(Key, [Delimiter]) of
-        nomatch ->
-            nomatch;
-        {Pos, Len} ->
-            binary:part(Key, {0, Pos+Len})
-    end.
-
-update_keys_and_prefixes({KeyAndManifestList, Prefixes},
-                         KeyAndManifest, _, _, nomatch) ->
-    {[KeyAndManifest | KeyAndManifestList], Prefixes};
-update_keys_and_prefixes({KeyAndManifestList, Prefixes},
-                         _, Prefix, PrefixLen, Group) ->
-    NewPrefix = << Prefix:PrefixLen/binary, Group/binary >>,
-    {KeyAndManifestList, ordsets:add_element(NewPrefix, Prefixes)}.
-
 %% Map Reduce stuff
 %%--------------------------------------------------------------------
 
@@ -481,15 +407,12 @@ make_response(Request=?LOREQ{max_keys=NumKeysRequested}, ObjectBuffer, CommonPre
     ObjectPrefixTuple = {ObjectBuffer, CommonPrefixes},
     NumObjects = riak_cs_list_objects_utils:manifests_and_prefix_length(ObjectPrefixTuple),
     IsTruncated = NumObjects > NumKeysRequested andalso NumKeysRequested > 0,
-    SlicedTaggedItems = manifests_and_prefix_slice(ObjectPrefixTuple,
-                                                   NumKeysRequested),
+    SlicedTaggedItems = riak_cs_list_objects_utils:manifests_and_prefix_slice(ObjectPrefixTuple,
+                                                                              NumKeysRequested),
     {NewManis, NewPrefixes} = riak_cs_list_objects_utils:untagged_manifest_and_prefix(SlicedTaggedItems),
-    KeyContents = lists:map(fun response_transformer/1, NewManis),
+    KeyContents = lists:map(fun riak_cs_list_objects:manifest_to_keycontent/1, NewManis),
     riak_cs_list_objects:new_response(Request, IsTruncated, NewPrefixes,
                                       KeyContents).
-
-response_transformer({_Key, Manifest}) ->
-    riak_cs_list_objects:manifest_to_keycontent(Manifest).
 
 -spec next_mr_query_spec(list(),
                          non_neg_integer(),
@@ -522,8 +445,8 @@ next_keys({StartIdx, EndIdx}, Keys) ->
 handle_mapred_results(Results, State=#state{object_buffer=Buffer,
                                             common_prefixes=OldPrefixes,
                                             req=Request}) ->
-    CleanedResults = lists:map(fun clean_key_and_manifest/1, Results),
-    {NoPrefix, Prefixes} = filter_prefix_keys(CleanedResults, OldPrefixes, Request),
+    CleanedResults = lists:map(fun clean_manifest/1, Results),
+    {NoPrefix, Prefixes} = riak_cs_list_objects_utils:filter_prefix_keys({CleanedResults, OldPrefixes}, Request),
     NewBuffer = update_buffer(NoPrefix, Buffer),
     NewState = State#state{object_buffer=NewBuffer,
                            common_prefixes=Prefixes},
@@ -533,10 +456,10 @@ handle_mapred_results(Results, State=#state{object_buffer=Buffer,
 %% from the map/reduce call. Rather than change the m/r code
 %% (which would make rolling upgrades more difficult), we just
 %% transform the values of the list here.
--spec clean_key_and_manifest({binary(), {ok, lfs_manifest()}}) ->
-    {binary(), lfs_manifest()}.
-clean_key_and_manifest({Key, {ok, Manifest}}) ->
-    {Key, Manifest}.
+-spec clean_manifest({binary(), {ok, lfs_manifest()}}) ->
+    lfs_manifest().
+clean_manifest({_Key, {ok, Manifest}}) ->
+    Manifest.
 
 -spec update_buffer(list(), list()) -> list().
 update_buffer(Results, Buffer) ->
