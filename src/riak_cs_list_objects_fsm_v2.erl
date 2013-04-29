@@ -138,10 +138,12 @@ handle_event(_Event, StateName, State) ->
     %% TODO: log unknown event
     {next_state, StateName, State}.
 
-handle_sync_event(get_object_list, From, StateName, State=#state{response=undefined}) ->
+handle_sync_event(get_object_list, From, StateName,
+                  State=#state{response=undefined}) ->
     NewStateData = State#state{reply_ref=From},
     {next_state, StateName, NewStateData};
-handle_sync_event(get_object_list, _From, _StateName, State=#state{response=Resp}) ->
+handle_sync_event(get_object_list, _From, _StateName,
+                  State=#state{response=Resp}) ->
     {stop, normal, Resp, State};
 handle_sync_event(get_internal_state, _From, StateName, State) ->
     Reply = {StateName, State},
@@ -185,10 +187,16 @@ handle_done(State=#state{object_buffer=ObjectBuffer,
     Active = map_active_manifests(Manifests),
     NewObjects = PrevObjects ++ Active,
     ObjectPrefixTuple = {NewObjects, CommonPrefixes},
-    ObjectPrefixTuple2 = riak_cs_list_objects_utils:filter_prefix_keys(ObjectPrefixTuple, Request),
-    SlicedTaggedItems = riak_cs_list_objects_utils:manifests_and_prefix_slice(ObjectPrefixTuple2,
-                                                   UserMaxKeys),
-    {NewManis, NewPrefixes} = riak_cs_list_objects_utils:untagged_manifest_and_prefix(SlicedTaggedItems),
+
+    ObjectPrefixTuple2 =
+    riak_cs_list_objects_utils:filter_prefix_keys(ObjectPrefixTuple, Request),
+
+    SlicedTaggedItems =
+    riak_cs_list_objects_utils:manifests_and_prefix_slice(ObjectPrefixTuple2,
+                                                          UserMaxKeys),
+
+    {NewManis, NewPrefixes} =
+    riak_cs_list_objects_utils:untagged_manifest_and_prefix(SlicedTaggedItems),
 
     NewStateData = RangeUpdatedStateData#state{objects=NewManis,
                                                common_prefixes=NewPrefixes,
@@ -196,9 +204,10 @@ handle_done(State=#state{object_buffer=ObjectBuffer,
                                                object_buffer=[]},
     case enough_results(NewStateData) of
         true ->
-            Response = response_from_manifests_and_common_prefixes(Request,
-                                                                   not ReachedEnd,
-                                                                   {NewManis, NewPrefixes}),
+            Response =
+            response_from_manifests_and_common_prefixes(Request,
+                                                        not ReachedEnd,
+                                                        {NewManis, NewPrefixes}),
             try_reply({ok, Response}, NewStateData);
         false ->
             RiakcPid = NewStateData#state.riakc_pid,
@@ -215,7 +224,8 @@ enough_results(#state{req=?LOREQ{max_keys=UserMaxKeys},
                       reached_end_of_keyspace=EndOfKeyspace,
                       objects=Objects,
                       common_prefixes=CommonPrefixes}) ->
-    riak_cs_list_objects_utils:manifests_and_prefix_length({Objects, CommonPrefixes}) >= UserMaxKeys
+    riak_cs_list_objects_utils:manifests_and_prefix_length({Objects, CommonPrefixes})
+    >= UserMaxKeys
     orelse EndOfKeyspace.
 
 response_from_manifests_and_common_prefixes(Request,
@@ -223,7 +233,8 @@ response_from_manifests_and_common_prefixes(Request,
                                             {Manifests, CommonPrefixes}) ->
     KeyContent = lists:map(fun riak_cs_list_objects:manifest_to_keycontent/1,
                            Manifests),
-    riak_cs_list_objects:new_response(Request, Truncated, CommonPrefixes, KeyContent).
+    riak_cs_list_objects:new_response(Request, Truncated, CommonPrefixes,
+                                      KeyContent).
 
 -spec make_2i_request(pid(), state()) -> [riakc_obj:riakc_obj()].
 make_2i_request(RiakcPid, State=#state{req=?LOREQ{name=BucketName}}) ->
