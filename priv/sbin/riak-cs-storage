@@ -1,7 +1,21 @@
 #!/bin/sh
 
+# Identify the script name
+SCRIPT=$(basename ${0})
+
 # Pull environment for this install
-. "{{runner_base_dir}}/lib/env.sh"
+RUNNER_SCRIPT=${0}
+
+while [ -L $RUNNER_SCRIPT ]; do
+    RUNNER_BIN_DIR="$(dirname "$(readlink $RUNNER_SCRIPT)" )"
+    RUNNER_SCRIPT_DIR="$(cd $(dirname $RUNNER_SCRIPT) && cd $RUNNER_BIN_DIR && pwd)"
+    RUNNER_SCRIPT="$RUNNER_SCRIPT_DIR/$SCRIPT"
+done
+
+RUNNER_BASE_DIR=$(cd "$RUNNER_SCRIPT_DIR/.." && pwd)
+
+# Pull environment for this install
+. "$RUNNER_BASE_DIR/lib/env.sh"
 
 # Make sure the user running this script is the owner and/or su to that user
 check_user $@
