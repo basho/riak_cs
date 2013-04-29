@@ -38,9 +38,7 @@
 
 %% API
 -export([start_link/3,
-         start_link/5,
-         get_object_list/1,
-         get_internal_state/1]).
+         start_link/5]).
 
 %% gen_fsm callbacks
 -export([init/1,
@@ -160,15 +158,6 @@ start_link(RiakcPid, ListKeysRequest, CacheKey) ->
     {ok, pid()} | {error, term()}.
 start_link(RiakcPid, CallerPid, ListKeysRequest, CacheKey, UseCache) ->
     gen_fsm:start_link(?MODULE, [RiakcPid, CallerPid, ListKeysRequest, CacheKey, UseCache], []).
-
--spec get_object_list(pid()) ->
-    {ok, list_object_response()} |
-    {error, term()}.
-get_object_list(FSMPid) ->
-    gen_fsm:sync_send_all_state_event(FSMPid, get_object_list, infinity).
-
-get_internal_state(FSMPid) ->
-    gen_fsm:sync_send_all_state_event(FSMPid, get_internal_state, infinity).
 
 %%%===================================================================
 %%% gen_fsm callbacks

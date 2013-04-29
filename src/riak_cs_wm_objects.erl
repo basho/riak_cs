@@ -92,7 +92,7 @@ to_xml(RD, Ctx=#context{start_time=StartTime,
                                                              ListKeysRequest, CacheKey,
                                                              UseCache) of
                         {ok, ListFSMPid} ->
-                            {ok, ListObjectsResponse} = riak_cs_list_objects_fsm:get_object_list(ListFSMPid),
+                            {ok, ListObjectsResponse} = riak_cs_list_objects_utils:get_object_list(ListFSMPid),
                             Response = riak_cs_xml:to_xml(ListObjectsResponse),
                             ok = riak_cs_stats:update_with_start(bucket_list_keys,
                                                                  StartTime),
