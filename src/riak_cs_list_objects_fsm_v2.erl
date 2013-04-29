@@ -197,6 +197,7 @@ handle_done(State=#state{object_buffer=ObjectBuffer,
     case enough_results(NewStateData) of
         true ->
             Response = response_from_manifests_and_common_prefixes(Request,
+                                                                   not ReachedEnd,
                                                                    {NewManis, NewPrefixes}),
             try_reply({ok, Response}, NewStateData);
         false ->
@@ -211,22 +212,18 @@ handle_done(State=#state{object_buffer=ObjectBuffer,
     end.
 
 enough_results(#state{req=?LOREQ{max_keys=UserMaxKeys},
-                      reached_end_of_keyspace=EndofKeyspace,
+                      reached_end_of_keyspace=EndOfKeyspace,
                       objects=Objects,
                       common_prefixes=CommonPrefixes}) ->
     riak_cs_list_objects_utils:manifests_and_prefix_length({Objects, CommonPrefixes}) >= UserMaxKeys
-    orelse EndofKeyspace.
+    orelse EndOfKeyspace.
 
 response_from_manifests_and_common_prefixes(Request,
+                                            Truncated,
                                             {Manifests, CommonPrefixes}) ->
     KeyContent = lists:map(fun riak_cs_list_objects:manifest_to_keycontent/1,
                            Manifests),
-    case KeyContent of
-        [] ->
-            riak_cs_list_objects:new_response(Request, false, CommonPrefixes, []);
-        _Else ->
-            riak_cs_list_objects:new_response(Request, true, CommonPrefixes, KeyContent)
-    end.
+    riak_cs_list_objects:new_response(Request, Truncated, CommonPrefixes, KeyContent).
 
 -spec make_2i_request(pid(), state()) -> [riakc_obj:riakc_obj()].
 make_2i_request(RiakcPid, State=#state{req=?LOREQ{name=BucketName}}) ->
