@@ -154,7 +154,8 @@ start_link(RiakcPid, ListKeysRequest, CacheKey) ->
 -spec start_link(pid(), pid(), list_object_request(), term(), UseCache :: boolean()) ->
     {ok, pid()} | {error, term()}.
 start_link(RiakcPid, CallerPid, ListKeysRequest, CacheKey, UseCache) ->
-    gen_fsm:start_link(?MODULE, [RiakcPid, CallerPid, ListKeysRequest, CacheKey, UseCache], []).
+    gen_fsm:start_link(?MODULE, [RiakcPid, CallerPid, ListKeysRequest,
+                                 CacheKey, UseCache], []).
 
 %%%===================================================================
 %%% gen_fsm callbacks
@@ -187,9 +188,11 @@ prepare(timeout, State=#state{riakc_pid=RiakcPid,
 -spec waiting_list_keys(list_keys_event(), state()) -> fsm_state_return().
 waiting_list_keys({ReqID, done}, State=#state{list_keys_req_id=ReqID}) ->
     handle_keys_done(State);
-waiting_list_keys({ReqID, {keys, Keys}}, State=#state{list_keys_req_id=ReqID}) ->
+waiting_list_keys({ReqID, {keys, Keys}},
+                  State=#state{list_keys_req_id=ReqID}) ->
     handle_keys_received(Keys, State);
-waiting_list_keys({ReqID, {error, Reason}}, State=#state{list_keys_req_id=ReqID}) ->
+waiting_list_keys({ReqID, {error, Reason}},
+                  State=#state{list_keys_req_id=ReqID}) ->
     %% if we get an error while we're in this state,
     %% we still have the option to return `HTTP 500'
     %% to the client, since we haven't written
@@ -264,9 +267,10 @@ maybe_write_to_cache(#state{use_cache=false}, _ListofListofKeys) ->
     ok;
 maybe_write_to_cache(#state{cache_key=CacheKey,
                             caller_pid=CallerPid}, ListofListofKeys) ->
+    ListOfListOfKeysLength = lists:flatlength(ListofListofKeys),
     case riak_cs_list_objects_ets_cache:can_write(CacheKey,
                                                   CallerPid,
-                                                  lists:flatlength(ListofListofKeys)) of
+                                                  ListOfListOfKeysLength) of
         true ->
             _ = lager:debug("writing to the cache"),
             riak_cs_list_objects_ets_cache:write(CacheKey, ListofListofKeys);
@@ -278,10 +282,12 @@ maybe_write_to_cache(#state{cache_key=CacheKey,
 %% @doc Either proceed using the cached key list or make the request
 %% to start a key listing.
 -type cache_lookup_result() :: {true, [binary()]} | false.
--spec fetch_key_list(pid(), list_object_request(), state(), cache_lookup_result()) -> fsm_state_return().
+-spec fetch_key_list(pid(), list_object_request(), state(),
+                     cache_lookup_result()) -> fsm_state_return().
 fetch_key_list(_, _, State, {true, Value}) ->
     _ = lager:debug("Using cached key list"),
-    NewState = prepare_state_for_first_mapred(Value, State#state{key_buffer=Value}),
+    NewState = prepare_state_for_first_mapred(Value,
+                                              State#state{key_buffer=Value}),
     maybe_map_reduce(NewState);
 fetch_key_list(RiakcPid, Request, State, false) ->
     _ = lager:debug("Requesting fresh key list"),
@@ -327,7 +333,7 @@ handle_keys_done(State=#state{key_buffer=ListofListofKeys}) ->
 
 -spec prepare_state_for_first_mapred(list(), state()) -> state().
 prepare_state_for_first_mapred(KeyList, State=#state{req=Request,
-                                                       req_profiles=Profiling}) ->
+                                                     req_profiles=Profiling}) ->
     NumKeys = length(KeyList),
 
     %% profiling info
@@ -369,8 +375,9 @@ maybe_map_reduce(State=#state{object_buffer=ObjectBuffer,
 
 handle_enough_results(true, State) ->
     have_enough_results(State);
-handle_enough_results(false, State=#state{num_considerable_keys=TotalCandidateKeys,
-                                          mr_requests=MapRRequests}) ->
+handle_enough_results(false,
+                      State=#state{num_considerable_keys=TotalCandidateKeys,
+                                   mr_requests=MapRRequests}) ->
     MoreQuery = could_query_more_mapreduce(MapRRequests, TotalCandidateKeys),
     handle_could_query_more_map_reduce(MoreQuery, State).
 
@@ -403,14 +410,19 @@ prepare_state_for_mapred(State=#state{req=Request,
 
 -spec make_response(list_object_request(), list(), list()) ->
     list_object_response().
-make_response(Request=?LOREQ{max_keys=NumKeysRequested}, ObjectBuffer, CommonPrefixes) ->
+make_response(Request=?LOREQ{max_keys=NumKeysRequested},
+              ObjectBuffer, CommonPrefixes) ->
     ObjectPrefixTuple = {ObjectBuffer, CommonPrefixes},
-    NumObjects = riak_cs_list_objects_utils:manifests_and_prefix_length(ObjectPrefixTuple),
+    NumObjects =
+    riak_cs_list_objects_utils:manifests_and_prefix_length(ObjectPrefixTuple),
     IsTruncated = NumObjects > NumKeysRequested andalso NumKeysRequested > 0,
-    SlicedTaggedItems = riak_cs_list_objects_utils:manifests_and_prefix_slice(ObjectPrefixTuple,
-                                                                              NumKeysRequested),
-    {NewManis, NewPrefixes} = riak_cs_list_objects_utils:untagged_manifest_and_prefix(SlicedTaggedItems),
-    KeyContents = lists:map(fun riak_cs_list_objects:manifest_to_keycontent/1, NewManis),
+    SlicedTaggedItems =
+    riak_cs_list_objects_utils:manifests_and_prefix_slice(ObjectPrefixTuple,
+                                                          NumKeysRequested),
+    {NewManis, NewPrefixes} =
+    riak_cs_list_objects_utils:untagged_manifest_and_prefix(SlicedTaggedItems),
+    KeyContents = lists:map(fun riak_cs_list_objects:manifest_to_keycontent/1,
+                            NewManis),
     riak_cs_list_objects:new_response(Request, IsTruncated, NewPrefixes,
                                       KeyContents).
 
@@ -446,7 +458,9 @@ handle_mapred_results(Results, State=#state{object_buffer=Buffer,
                                             common_prefixes=OldPrefixes,
                                             req=Request}) ->
     CleanedResults = lists:map(fun clean_manifest/1, Results),
-    {NoPrefix, Prefixes} = riak_cs_list_objects_utils:filter_prefix_keys({CleanedResults, OldPrefixes}, Request),
+    {NoPrefix, Prefixes} =
+    riak_cs_list_objects_utils:filter_prefix_keys({CleanedResults, OldPrefixes},
+                                                  Request),
     NewBuffer = update_buffer(NoPrefix, Buffer),
     NewState = State#state{object_buffer=NewBuffer,
                            common_prefixes=Prefixes},
@@ -508,8 +522,10 @@ handle_map_reduce_call({error, Reason}, State) ->
                      list_object_request(),
                      non_neg_integer()) ->
     boolean().
-enough_results(ManifestsAndPrefixes, ?LOREQ{max_keys=MaxKeysRequested}, TotalCandidateKeys) ->
-    ResultsLength = riak_cs_list_objects_utils:manifests_and_prefix_length(ManifestsAndPrefixes),
+enough_results(ManifestsAndPrefixes,
+               ?LOREQ{max_keys=MaxKeysRequested}, TotalCandidateKeys) ->
+    ResultsLength =
+    riak_cs_list_objects_utils:manifests_and_prefix_length(ManifestsAndPrefixes),
     %% we have enough results if one of two things is true:
     %% 1. we have more results than requested
     %% 2. there are less keys than were requested even possible
@@ -610,17 +626,20 @@ round_up(X) ->
 %% is returned. If `Element' is greater than all elements
 %% in `List', then `length(List) + 1' is returned.
 %% `List' must be <em>sorted</em> and contain only unique elements.
--spec index_of_first_greater_element(list(non_neg_integer()), term()) -> pos_integer().
+-spec index_of_first_greater_element(list(non_neg_integer()), term()) ->
+    pos_integer().
 index_of_first_greater_element(List, Element) ->
     index_of_first_greater_element_helper(List, Element, 1).
 
 index_of_first_greater_element_helper([], _Element, 1) ->
     1;
-index_of_first_greater_element_helper([Fst], Element, Index) when Element < Fst ->
+index_of_first_greater_element_helper([Fst], Element, Index)
+        when Element < Fst ->
     Index;
 index_of_first_greater_element_helper([_Fst], _Element, Index) ->
     Index + 1;
-index_of_first_greater_element_helper([Head | _Rest], Element, Index) when Element < Head ->
+index_of_first_greater_element_helper([Head | _Rest], Element, Index)
+        when Element < Head ->
     Index;
 index_of_first_greater_element_helper([_Head | Rest], Element, Index) ->
     index_of_first_greater_element_helper(Rest, Element, Index + 1).

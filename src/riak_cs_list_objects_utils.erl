@@ -68,7 +68,8 @@
 %%%===================================================================
 
 
--spec start_link(pid(), pid(), list_object_request(), term(), UseCache :: boolean()) ->
+-spec start_link(pid(), pid(), list_object_request(), term(),
+                 UseCache :: boolean()) ->
     {ok, pid()} | {error, term()}.
 %% @doc An abstraction between the old and new list-keys mechanism. Uses the
 %% old mechanism if `fold_objects_for_list_keys' is false, otherwise uses
@@ -126,10 +127,13 @@ untagged_manifest_and_prefix(TaggedInput) ->
     {[element(2, M) || M <- A],
      [element(2, P) || P <- B]}.
 
--spec manifests_and_prefix_slice(riak_cs_list_objects_utils:manifests_and_prefixes(), non_neg_integer()) ->
+-spec manifests_and_prefix_slice(riak_cs_list_objects_utils:manifests_and_prefixes(),
+                                 non_neg_integer()) ->
     riak_cs_list_objects_utils:tagged_item_list().
 manifests_and_prefix_slice(ManifestsAndPrefixes, MaxObjects) ->
-    TaggedList = riak_cs_list_objects_utils:tagged_manifest_and_prefix(ManifestsAndPrefixes),
+    TaggedList =
+    riak_cs_list_objects_utils:tagged_manifest_and_prefix(ManifestsAndPrefixes),
+
     Sorted = lists:sort(fun tagged_sort_fun/2, TaggedList),
     lists:sublist(Sorted, MaxObjects).
 
@@ -151,18 +155,21 @@ key_from_tag({prefix, Key}) ->
                           CommonPrefixes :: ordsets:ordset(binary())},
                          list_object_request()) ->
     riak_cs_list_objects_utils:manifests_and_prefixes().
-filter_prefix_keys({_ManifestList, _CommonPrefixes}=Input, ?LOREQ{prefix=undefined,
-                                                                  delimiter=undefined}) ->
+filter_prefix_keys({_ManifestList, _CommonPrefixes}=Input,
+                   ?LOREQ{prefix=undefined,
+                          delimiter=undefined}) ->
     Input;
-filter_prefix_keys({ManifestList, CommonPrefixes}, ?LOREQ{prefix=Prefix,
-                                                              delimiter=Delimiter}) ->
+filter_prefix_keys({ManifestList, CommonPrefixes},
+                   ?LOREQ{prefix=Prefix,
+                          delimiter=Delimiter}) ->
     PrefixFilter =
         fun(Manifest, Acc) ->
                 prefix_filter(Manifest, Acc, Prefix, Delimiter)
         end,
     lists:foldl(PrefixFilter, {[], CommonPrefixes}, ManifestList).
 
-prefix_filter(Manifest=?MANIFEST{bkey={_Bucket, Key}}, Acc, undefined, Delimiter) ->
+prefix_filter(Manifest=?MANIFEST{bkey={_Bucket, Key}},
+              Acc, undefined, Delimiter) ->
     Group = extract_group(Key, Delimiter),
     update_keys_and_prefixes(Acc, Manifest, <<>>, 0, Group);
 prefix_filter(Manifest=?MANIFEST{bkey={_Bucket, Key}},
