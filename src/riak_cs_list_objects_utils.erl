@@ -55,8 +55,7 @@
          tagged_manifest_and_prefix/1,
          untagged_manifest_and_prefix/1,
          manifests_and_prefix_slice/2,
-         filter_prefix_keys/2
-        ]).
+         filter_prefix_keys/2]).
 
 %% Observability / Configuration
 -export([get_key_list_multiplier/0,
