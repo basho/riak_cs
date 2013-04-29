@@ -35,9 +35,7 @@
 %%%===================================================================
 
 %% API
--export([start_link/2,
-         get_object_list/1,
-         get_internal_state/1]).
+-export([start_link/2]).
 
 %% Observability
 -export([]).
@@ -98,15 +96,6 @@
     {ok, pid()} | {error, term()}.
 start_link(RiakcPid, ListKeysRequest) ->
     gen_fsm:start_link(?MODULE, [RiakcPid, ListKeysRequest], []).
-
--spec get_object_list(pid()) ->
-    {ok, list_object_response()} |
-    {error, term()}.
-get_object_list(FSMPid) ->
-    gen_fsm:sync_send_all_state_event(FSMPid, get_object_list, infinity).
-
-get_internal_state(FSMPid) ->
-    gen_fsm:sync_send_all_state_event(FSMPid, get_internal_state, infinity).
 
 %%%===================================================================
 %%% gen_fsm callbacks

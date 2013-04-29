@@ -43,7 +43,11 @@
 
 %% API
 -export([start_link/5,
-         manifests_and_prefix_length/1]).
+         get_object_list/1,
+         get_internal_state/1]).
+
+%% Shared Helpers
+-export([manifests_and_prefix_length/1]).
 
 %% Observability / Configuration
 -export([get_key_list_multiplier/0,
@@ -70,6 +74,19 @@ start_link(RiakcPid, CallerPid, ListKeysRequest, CacheKey, UseCache) ->
                                                 ListKeysRequest, CacheKey,
                                                 UseCache)
     end.
+
+-spec get_object_list(pid()) ->
+    {ok, list_object_response()} |
+    {error, term()}.
+get_object_list(FSMPid) ->
+    gen_fsm:sync_send_all_state_event(FSMPid, get_object_list, infinity).
+
+get_internal_state(FSMPid) ->
+    gen_fsm:sync_send_all_state_event(FSMPid, get_internal_state, infinity).
+
+%%%===================================================================
+%%% Shared Helpers
+%%%===================================================================
 
 -spec manifests_and_prefix_length({list(), ordsets:ordset()}) ->
                                    non_neg_integer().
