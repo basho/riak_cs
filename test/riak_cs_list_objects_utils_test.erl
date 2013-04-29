@@ -18,7 +18,7 @@
 %%
 %% ---------------------------------------------------------------------
 
--module(riak_cs_list_objects_fsm_test).
+-module(riak_cs_list_objects_utils_test).
 
 -ifdef(TEST).
 
