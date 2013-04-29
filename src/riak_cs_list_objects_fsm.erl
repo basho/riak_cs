@@ -142,9 +142,6 @@
                          {mapred, Phase :: non_neg_integer(), list()}} |
                         {ReqID :: non_neg_integer, {error, term()}}.
 
--type key_and_manifest() :: {binary(), lfs_manifest()}.
--type manifests_and_prefixes() :: {list(key_and_manifest()), ordsets:ordset(binary())}.
-
 %%%===================================================================
 %%% API
 %%%===================================================================
@@ -358,10 +355,10 @@ handle_keys_received(Keys, State=#state{key_buffer=PrevKeyBuffer}) ->
     NewState = State#state{key_buffer=[lists:sort(Keys) | PrevKeyBuffer]},
     {next_state, waiting_list_keys, NewState}.
 
--spec manifests_and_prefix_slice(manifests_and_prefixes(), non_neg_integer()) ->
+-spec manifests_and_prefix_slice(riak_cs_list_objects_utils:manifests_and_prefixes(), non_neg_integer()) ->
     riak_cs_list_objects_utils:tagged_item_list().
 manifests_and_prefix_slice(ManifestsAndPrefixes, MaxObjects) ->
-    TaggedList = tagged_manifest_and_prefix(ManifestsAndPrefixes),
+    TaggedList = riak_cs_list_objects_utils:tagged_manifest_and_prefix(ManifestsAndPrefixes),
     Sorted = lists:sort(fun tagged_sort_fun/2, TaggedList),
     lists:sublist(Sorted, MaxObjects).
 
@@ -378,35 +375,10 @@ key_from_tag({manifest, {Key, _M}}) ->
 key_from_tag({prefix, Key}) ->
     Key.
 
--spec tagged_manifest_and_prefix(manifests_and_prefixes()) ->
-    riak_cs_list_objects_utils:tagged_item_list().
-tagged_manifest_and_prefix({Manifests, Prefixes}) ->
-    tagged_manifest_list(Manifests) ++ tagged_prefix_list(Prefixes).
-
--spec tagged_manifest_list(list(key_and_manifest())) ->
-    list({manifest, key_and_manifest()}).
-tagged_manifest_list(KeyAndManifestList) ->
-    [{manifest, M} || M <- KeyAndManifestList].
-
--spec tagged_prefix_list(list(binary())) ->
-    list({prefix, binary()}).
-tagged_prefix_list(Prefixes) ->
-    [{prefix, P} || P <- ordsets:to_list(Prefixes)].
-
--spec untagged_manifest_and_prefix(riak_cs_list_objects_utils:tagged_item_list()) ->
-    manifests_and_prefixes().
-untagged_manifest_and_prefix(TaggedInput) ->
-    Pred = fun({manifest, _}) -> true;
-              (_Else) -> false end,
-    {A, B} = lists:partition(Pred, TaggedInput),
-    {[element(2, M) || M <- A],
-     [element(2, P) || P <- B]}.
-
-
--spec filter_prefix_keys(KeyAndManifestList :: list(manifests_and_prefixes()),
+-spec filter_prefix_keys(KeyAndManifestList :: list(riak_cs_list_objects_utils:manifests_and_prefixes()),
                          CommonPrefixes :: ordsets:ordset(binary()),
                          list_object_request()) ->
-    manifests_and_prefixes().
+    riak_cs_list_objects_utils:manifests_and_prefixes().
 filter_prefix_keys(KeyAndManifestList, CommonPrefixes, ?LOREQ{prefix=undefined,
                                                               delimiter=undefined}) ->
     {KeyAndManifestList, CommonPrefixes};
@@ -511,7 +483,7 @@ make_response(Request=?LOREQ{max_keys=NumKeysRequested}, ObjectBuffer, CommonPre
     IsTruncated = NumObjects > NumKeysRequested andalso NumKeysRequested > 0,
     SlicedTaggedItems = manifests_and_prefix_slice(ObjectPrefixTuple,
                                                    NumKeysRequested),
-    {NewManis, NewPrefixes} = untagged_manifest_and_prefix(SlicedTaggedItems),
+    {NewManis, NewPrefixes} = riak_cs_list_objects_utils:untagged_manifest_and_prefix(SlicedTaggedItems),
     KeyContents = lists:map(fun response_transformer/1, NewManis),
     riak_cs_list_objects:new_response(Request, IsTruncated, NewPrefixes,
                                       KeyContents).
@@ -609,7 +581,7 @@ handle_map_reduce_call({ok, ReqID}, State) ->
 handle_map_reduce_call({error, Reason}, State) ->
     {stop, Reason, State}.
 
--spec enough_results(manifests_and_prefixes(),
+-spec enough_results(riak_cs_list_objects_utils:manifests_and_prefixes(),
                      list_object_request(),
                      non_neg_integer()) ->
     boolean().

@@ -35,8 +35,11 @@
 
 -type tagged_item_list() :: list(tagged_item()).
 
+-type manifests_and_prefixes() :: {list(lfs_manifest()), ordsets:ordset(binary())}.
+
 -export_type([tagged_item/0,
-              tagged_item_list/0]).
+              tagged_item_list/0,
+              manifests_and_prefixes/0]).
 
 %%%===================================================================
 %%% Exports
@@ -48,7 +51,9 @@
          get_internal_state/1]).
 
 %% Shared Helpers
--export([manifests_and_prefix_length/1]).
+-export([manifests_and_prefix_length/1,
+         tagged_manifest_and_prefix/1,
+         untagged_manifest_and_prefix/1]).
 
 %% Observability / Configuration
 -export([get_key_list_multiplier/0,
@@ -93,6 +98,31 @@ get_internal_state(FSMPid) ->
                                    non_neg_integer().
 manifests_and_prefix_length({List, Set}) ->
     length(List) + ordsets:size(Set).
+
+-spec tagged_manifest_and_prefix(manifests_and_prefixes()) ->
+    riak_cs_list_objects_utils:tagged_item_list().
+tagged_manifest_and_prefix({Manifests, Prefixes}) ->
+    tagged_manifest_list(Manifests) ++ tagged_prefix_list(Prefixes).
+
+-spec tagged_manifest_list(list()) ->
+    list({manifest, term()}).
+tagged_manifest_list(KeyAndManifestList) ->
+    [{manifest, M} || M <- KeyAndManifestList].
+
+-spec tagged_prefix_list(list(binary())) ->
+    list({prefix, binary()}).
+tagged_prefix_list(Prefixes) ->
+    [{prefix, P} || P <- ordsets:to_list(Prefixes)].
+
+-spec untagged_manifest_and_prefix(riak_cs_list_objects_utils:tagged_item_list()) ->
+    manifests_and_prefixes().
+untagged_manifest_and_prefix(TaggedInput) ->
+    Pred = fun({manifest, _}) -> true;
+              (_Else) -> false end,
+    {A, B} = lists:partition(Pred, TaggedInput),
+    {[element(2, M) || M <- A],
+     [element(2, P) || P <- B]}.
+
 
 %%%===================================================================
 %%% Observability / Configuration
