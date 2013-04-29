@@ -109,20 +109,6 @@ get_internal_state(FSMPid) ->
     gen_fsm:sync_send_all_state_event(FSMPid, get_internal_state, infinity).
 
 %%%===================================================================
-%%% Observability
-%%%===================================================================
-
--spec get_key_list_multiplier() -> float().
-get_key_list_multiplier() ->
-    riak_cs_utils:get_env(riak_cs, key_list_multiplier,
-                          ?KEY_LIST_MULTIPLIER).
-
--spec set_key_list_multiplier(float()) -> 'ok'.
-set_key_list_multiplier(Multiplier) ->
-    application:set_env(riak_cs, key_list_multiplier,
-                        Multiplier).
-
-%%%===================================================================
 %%% gen_fsm callbacks
 %%%===================================================================
 
@@ -132,7 +118,7 @@ init([RiakcPid, Request]) ->
     %% be two `start_link' arities, and one will use a default
     %% val from app.config and the other will explicitly
     %% take a val
-    KeyMultiplier = get_key_list_multiplier(),
+    KeyMultiplier = riak_cs_list_objects_utils:get_key_list_multiplier(),
 
     State = #state{riakc_pid=RiakcPid,
                    key_multiplier=KeyMultiplier,

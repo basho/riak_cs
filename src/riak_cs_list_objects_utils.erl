@@ -45,8 +45,10 @@
 -export([start_link/5,
          manifests_and_prefix_length/1]).
 
-%% Configuration
--export([fold_objects_for_list_keys/0]).
+%% Observability / Configuration
+-export([get_key_list_multiplier/0,
+         set_key_list_multiplier/1,
+         fold_objects_for_list_keys/0]).
 
 %%%===================================================================
 %%% API
@@ -75,8 +77,19 @@ manifests_and_prefix_length({List, Set}) ->
     length(List) + ordsets:size(Set).
 
 %%%===================================================================
-%%% Configuration
+%%% Observability / Configuration
 %%%===================================================================
+
+-spec get_key_list_multiplier() -> float().
+get_key_list_multiplier() ->
+    riak_cs_utils:get_env(riak_cs, key_list_multiplier,
+                          ?KEY_LIST_MULTIPLIER).
+
+-spec set_key_list_multiplier(float()) -> 'ok'.
+set_key_list_multiplier(Multiplier) ->
+    application:set_env(riak_cs, key_list_multiplier,
+                        Multiplier).
+
 
 -spec fold_objects_for_list_keys() -> boolean().
 fold_objects_for_list_keys() ->
