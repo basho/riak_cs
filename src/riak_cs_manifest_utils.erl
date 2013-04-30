@@ -360,8 +360,8 @@ deleted_while_writing(Manifests) ->
 find_deleted_active_manifests(_Manifests, undefined) ->
     [];
 find_deleted_active_manifests(Manifests, DeleteTime) ->
-    [M || M <- Manifests, M?MANIFEST.state =:= active, 
-                          M?MANIFEST.write_start_time < DeleteTime].
+    [M?MANIFEST.uuid || M <- Manifests, M?MANIFEST.state =:= active, 
+                        M?MANIFEST.write_start_time < DeleteTime].
 
 -spec latest_delete_time([lfs_manifest()]) -> term() | undefined.
 latest_delete_time(Manifests) ->
