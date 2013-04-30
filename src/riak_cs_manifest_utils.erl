@@ -70,7 +70,6 @@ live_manifest({no_active_manifest, _}) ->
 live_manifest({Manifest, undefined}) ->
     {ok, Manifest};
 live_manifest({Manifest, DeleteTime}) ->
-    lager:info("Manifest = ~p DeleteTime = ~p", [Manifest?MANIFEST.write_start_time, DeleteTime]),
     case DeleteTime > Manifest?MANIFEST.write_start_time of
         true ->
             {error, no_active_manifest};
@@ -338,7 +337,7 @@ orddict_values(OrdDict) ->
 manifest_is_active(?MANIFEST{state=active}) -> true;
 manifest_is_active(_Manifest) -> false.
 
--spec delete_time(lfs_manifest()) -> term() | undefined.
+-spec delete_time(lfs_manifest()) -> erlang:timestamp() | undefined.
 delete_time(Manifest) ->
     case proplists:is_defined(deleted, Manifest?MANIFEST.props) of
         true ->
@@ -371,6 +370,8 @@ latest_delete_time(Manifests) ->
                 end, undefined, Manifests).
 
 %% @doc Return the later of two times, accounting for undefined
+-spec later(undefined | erlang:timestamp(), undefined | erlang:timestamp()) -> 
+    undefined | erlang:timestamp().
 later(undefined, undefined) ->
     undefined;
 later(undefined, DeleteTime2) ->
@@ -387,16 +388,19 @@ later(DeleteTime1, DeleteTime2) ->
 
 %% NOTE: This is a foldl function, initial acc = {no_active_manifest, undefined}
 %% Return the most recent active manifest as well as the most recent manifest delete time
+-spec most_recent_active_manifest(lfs_manifest(), {
+    no_active_manifest | lfs_manifest(), undefined | erlang:timestamp()}) -> 
+        {no_active_manifest | lfs_manifest(), erlang:timestamp() | undefined}.
 most_recent_active_manifest(Manifest=?MANIFEST{state=scheduled_delete}, {MostRecent, undefined}) -> 
     {MostRecent, delete_time(Manifest)};
 most_recent_active_manifest(Manifest=?MANIFEST{state=scheduled_delete}, {MostRecent, DeleteTime}) -> 
     Dt=delete_time(Manifest), 
-    case (Dt =/= undefined) andalso (Dt > DeleteTime) of
-        true -> 
-            {MostRecent, Dt};
-        false ->
-            {MostRecent, DeleteTime}
-    end;
+    {MostRecent, later(Dt, DeleteTime)};
+most_recent_active_manifest(Manifest=?MANIFEST{state=pending_delete}, {MostRecent, undefined}) -> 
+    {MostRecent, delete_time(Manifest)};
+most_recent_active_manifest(Manifest=?MANIFEST{state=pending_delete}, {MostRecent, DeleteTime}) -> 
+    Dt=delete_time(Manifest), 
+    {MostRecent, later(Dt, DeleteTime)};
 most_recent_active_manifest(Manifest=?MANIFEST{state=active}, {no_active_manifest, undefined}) ->
     {Manifest, undefined};
 most_recent_active_manifest(Man1=?MANIFEST{state=active}, {Man2=?MANIFEST{state=active}, DeleteTime}) ->
