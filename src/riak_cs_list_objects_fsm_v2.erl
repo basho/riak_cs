@@ -54,6 +54,20 @@
 %%% Records and Types
 %%%===================================================================
 
+-record(profiling, {
+        temp_fold_objects_request :: undefined |
+                                     {Request :: {StartKey :: binary(),
+                                                  EndKey :: binary()},
+                                      StartTime :: float()},
+        fold_objects_requests=[] :: [{Request :: {StartKey :: binary(),
+                                                  EndKey :: binary()},
+                                      NumKeysReturned :: non_neg_integer(),
+                                      Timing :: {StartTime :: erlang:timestamp(),
+                                                 EndTime :: erlang:timestamp()}}]}).
+
+-type profiling() :: #profiling{}.
+
+
 -record(state, {riakc_pid :: pid(),
                 req :: list_object_request(),
                 reply_ref :: undefined | {pid(), any()},
@@ -65,6 +79,7 @@
                 last_request_start_key :: undefined | binary(),
                 last_request_num_keys_requested :: undefined | pos_integer(),
                 object_list_ranges=[] :: object_list_ranges(),
+                profiling=#profiling{} :: profiling(),
                 response :: undefined |
                             {ok, list_object_response()} |
                             {error, term()},
@@ -411,3 +426,50 @@ update_last_request_state(State=#state{last_request_start_key=StartKey,
     NewRange = {StartKey, LastKey},
     State#state{object_list_ranges=PrevRanges ++ [NewRange]}.
 
+%% Profiling helper functions
+%%--------------------------------------------------------------------
+
+-spec update_profiling_state_with_start(state(), StartKey :: binary(),
+                                        EndKey :: binary(),
+                                        StartTime :: float()) ->
+    state().
+update_profiling_state_with_start(State=#state{profiling=Profiling},
+                            StartKey, EndKey, StartTime) ->
+    TempData = {{StartKey, EndKey},
+                StartTime},
+    NewProfiling = Profiling#profiling{temp_fold_objects_request=TempData},
+    State#state{profiling=NewProfiling}.
+
+-spec update_profiling_state_with_end(state(), EndTime :: float(),
+                                      NumKeysReturned :: non_neg_integer()) ->
+    state().
+update_profiling_state_with_end(State=#state{profiling=Profiling},
+                                EndTime, NumKeysReturned) ->
+    {KeyRange, StartTime} = Profiling#profiling.temp_fold_objects_request,
+    OldRequests = Profiling#profiling.fold_objects_requests,
+    NewRequest = {KeyRange, NumKeysReturned, {StartTime, EndTime}},
+    NewProfiling = Profiling#profiling{temp_fold_objects_request=undefined,
+                                       fold_objects_requests=
+                                       [NewRequest | OldRequests]},
+    State#state{profiling=NewProfiling}.
+
+-spec extract_timings(list()) -> [{Millis :: non_neg_integer(),
+                                        NumResults :: non_neg_integer()}].
+extract_timings(Requests) ->
+    [extract_timing(R) || R <- Requests].
+
+%% TODO: time to make legit types out of these
+-spec extract_timing({term(), non_neg_integer(), {term(), term()}}) ->
+    {term(), term()}.
+extract_timing({_Range, NumKeysReturned, {StartTime, EndTime}}) ->
+    MillisecondDiff = riak_cs_utils:timestamp_to_milliseconds(EndTime) -
+                      riak_cs_utils:timestamp_to_milliseconds(StartTime),
+    {MillisecondDiff, NumKeysReturned}.
+
+-spec format_profiling(list_object_request(), profiling()) -> string().
+format_profiling(?LOREQ{max_keys=MaxKeys},
+                 #profiling{fold_objects_requests=Requests}) ->
+    string:join([io_lib:format("User requested ~p keys", [MaxKeys]),
+                 io_lib:format("We returned ~p (including common_prefixes)", [500]),
+                 io_lib:format("With fold objects timings ~p", [extract_timings(lists:reverse(Requests))])],
+                "~n").
