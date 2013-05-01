@@ -233,7 +233,7 @@ leeway_seconds() ->
 %% @doc Generate a key for storing a set of manifests for deletion.
 -spec timestamp() -> non_neg_integer().
 timestamp() ->
-    riak_cs_utils:timestamp(os:timestamp()).
+    riak_cs_utils:second_resolution_timestamp(os:timestamp()).
 
 %%%===================================================================
 %%% Internal functions

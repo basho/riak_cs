@@ -212,8 +212,8 @@ retry_manifest(_Manifest) ->
 -spec retry_from_marked_time(erlang:timestamp(), erlang:timestamp()) ->
     boolean().
 retry_from_marked_time(MarkedTime, Now) ->
-    NowSeconds = riak_cs_utils:timestamp(Now),
-    MarkedTimeSeconds = riak_cs_utils:timestamp(MarkedTime),
+    NowSeconds = riak_cs_utils:second_resolution_timestamp(Now),
+    MarkedTimeSeconds = riak_cs_utils:second_resolution_timestamp(MarkedTime),
     NowSeconds > (MarkedTimeSeconds + riak_cs_gc:gc_retry_interval()).
 
 %% @doc Remove all manifests that require pruning,
@@ -298,8 +298,8 @@ filter_manifests_by_state(Dict, AcceptedStates) ->
 leeway_elapsed(undefined) ->
     false;
 leeway_elapsed(Timestamp) ->
-    Now = riak_cs_utils:timestamp(os:timestamp()),
-    Now > (riak_cs_utils:timestamp(Timestamp) + riak_cs_gc:leeway_seconds()).
+    Now = riak_cs_utils:second_resolution_timestamp(os:timestamp()),
+    Now > (riak_cs_utils:second_resolution_timestamp(Timestamp) + riak_cs_gc:leeway_seconds()).
 
 orddict_values(OrdDict) ->
     [V || {_K, V} <- orddict:to_list(OrdDict)].
