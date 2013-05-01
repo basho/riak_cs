@@ -515,7 +515,7 @@ get_manifests(RiakcPid, Bucket, Key) ->
     case get_manifests_raw(RiakcPid, Bucket, Key) of
         {ok, Object} ->
             Manifests = manifests_from_riak_object(Object),
-            gc_deleted_while_writing_manifests(Object, Manifests, Bucket, Key, RiakcPid),
+            _  = gc_deleted_while_writing_manifests(Object, Manifests, Bucket, Key, RiakcPid),
             {ok, Object, Manifests};
         {error, _Reason}=Error ->
             Error
