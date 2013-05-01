@@ -73,6 +73,7 @@ to_xml(RD, Ctx=#context{start_time=StartTime,
             MaxKeys = get_max_keys(RD),
             case MaxKeys of
                 _ when is_integer(MaxKeys) ->
+                    _ = StartTime,
                     Options = get_options(RD),
                     ListKeysRequest = riak_cs_list_objects:new_request(Bucket,
                                                                        MaxKeys,
@@ -80,11 +81,16 @@ to_xml(RD, Ctx=#context{start_time=StartTime,
                     BinPid = riak_cs_utils:pid_to_binary(self()),
                     CacheKey = << BinPid/binary, <<":">>/binary, Bucket/binary >>,
                     UseCache = riak_cs_list_objects_ets_cache:cache_enabled(),
-                    case riak_cs_list_objects_fsm:start_link(RiakPid, self(),
+                    %% Get the pid with the abstraction layer, that lets
+                    %% us start either the old or the new version.
+                    %% If we start the new version, some of the arguments
+                    %% like `UseCache', `BinPid',  and `CacheKey' will be
+                    %% ignored.
+                    case riak_cs_list_objects_utils:start_link(RiakPid, self(),
                                                              ListKeysRequest, CacheKey,
                                                              UseCache) of
                         {ok, ListFSMPid} ->
-                            {ok, ListObjectsResponse} = riak_cs_list_objects_fsm:get_object_list(ListFSMPid),
+                            {ok, ListObjectsResponse} = riak_cs_list_objects_utils:get_object_list(ListFSMPid),
                             Response = riak_cs_xml:to_xml(ListObjectsResponse),
                             ok = riak_cs_stats:update_with_start(bucket_list_keys,
                                                                  StartTime),
