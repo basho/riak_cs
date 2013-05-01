@@ -28,8 +28,6 @@
 -include("riak_cs.hrl").
 -include("list_objects.hrl").
 
--compile(export_all).
-
 %%%===================================================================
 %%% Exports
 %%%===================================================================
@@ -178,6 +176,8 @@ handle_info(Info, StateName, _State) ->
                     "in state ~p", [Info, StateName]),
     ok.
 
+terminate(normal, _StateName, State) ->
+    lager:debug(format_profiling_from_state(State));
 terminate(_Reason, _StateName, _State) ->
     ok.
 
@@ -193,8 +193,12 @@ handle_done(State=#state{object_buffer=ObjectBuffer,
                          last_request_num_keys_requested=NumKeysRequested,
                          common_prefixes=CommonPrefixes,
                          req=Request=?LOREQ{max_keys=UserMaxKeys}}) ->
-    ReachedEnd = length(ObjectBuffer) < NumKeysRequested,
-    RangeUpdatedStateData = update_last_request_state(State, ObjectBuffer),
+    ObjectBufferLength = length(ObjectBuffer),
+    ProfilingStateData = update_profiling_state_with_end(State,
+                                                         os:timestamp(),
+                                                         ObjectBufferLength),
+    ReachedEnd = ObjectBufferLength < NumKeysRequested,
+    RangeUpdatedStateData = update_last_request_state(ProfilingStateData, ObjectBuffer),
 
     FilteredObjects = exclude_key_from_state(State, ObjectBuffer),
     Manifests = [riak_cs_utils:manifests_from_riak_object(O) ||
@@ -260,30 +264,17 @@ make_2i_request(RiakcPid, State=#state{req=?LOREQ{name=BucketName}}) ->
     Opts = [{return_terms, true}, {max_results, NumResults}, {stream, true}],
     NewStateData = State#state{last_request_start_key=StartKey,
                                last_request_num_keys_requested=NumResults},
+    NewStateData2 = update_profiling_state_with_start(NewStateData,
+                                                      StartKey,
+                                                      EndKey,
+                                                      os:timestamp()),
     Ref = riakc_pb_socket:get_index_range(RiakcPid,
                                           ManifestBucket,
                                           <<"$key">>,
                                           StartKey,
                                           EndKey,
                                           Opts),
-    {NewStateData, Ref}.
-
--spec receive_objects(term()) -> list().
-receive_objects(ReqID) ->
-    receive_objects(ReqID, []).
-
-receive_objects(ReqId, Acc) ->
-    receive
-        {ReqId, {objects, List}} ->
-            receive_objects(ReqId, Acc ++ List);
-        {ReqId, done} ->
-            Acc;
-        {ReqId, {error, Reason}} ->
-            _ = lager:error("yikes, error ~p", [Reason]),
-            throw({list_objects_error, Reason});
-        Else ->
-            throw({unknown_message, Else})
-    end.
+    {NewStateData2, Ref}.
 
 -spec last_result_is_common_prefix(state()) -> boolean().
 last_result_is_common_prefix(#state{object_list_ranges=[]}) ->
@@ -454,7 +445,7 @@ update_profiling_state_with_end(State=#state{profiling=Profiling},
     State#state{profiling=NewProfiling}.
 
 -spec extract_timings(list()) -> [{Millis :: non_neg_integer(),
-                                        NumResults :: non_neg_integer()}].
+                                   NumResults :: non_neg_integer()}].
 extract_timings(Requests) ->
     [extract_timing(R) || R <- Requests].
 
@@ -466,10 +457,29 @@ extract_timing({_Range, NumKeysReturned, {StartTime, EndTime}}) ->
                       riak_cs_utils:timestamp_to_milliseconds(StartTime),
     {MillisecondDiff, NumKeysReturned}.
 
--spec format_profiling(list_object_request(), profiling()) -> string().
+-spec format_profiling_from_state(state()) -> string().
+format_profiling_from_state(#state{req=Request,
+                                   response={ok, Response},
+                                   profiling=Profiling}) ->
+    format_profiling(Request, Response, Profiling, self()).
+
+-spec format_profiling(list_object_request(), profiling(),
+                       list_object_response(),
+                       pid()) -> string().
 format_profiling(?LOREQ{max_keys=MaxKeys},
-                 #profiling{fold_objects_requests=Requests}) ->
-    string:join([io_lib:format("User requested ~p keys", [MaxKeys]),
-                 io_lib:format("We returned ~p (including common_prefixes)", [500]),
-                 io_lib:format("With fold objects timings ~p", [extract_timings(lists:reverse(Requests))])],
+                 ?LORESP{contents=Contents, common_prefixes=CommonPrefixes},
+                 #profiling{fold_objects_requests=Requests},
+                 Pid) ->
+    string:join([io_lib:format("~p: User requested ~p keys", [Pid, MaxKeys]),
+
+                 io_lib:format("~p: We returned ~p objects",
+                               [Pid, length(Contents)]),
+
+                 io_lib:format("~p: We returned ~p common prefixes",
+                               [Pid, ordsets:size(CommonPrefixes)]),
+
+                 io_lib:format("~p: With fold objects timings: {Millis, NumObjects}: ~p",
+                               %% We reverse the Requests in here because they
+                               %% were cons'd as they happened.
+                               [Pid, extract_timings(lists:reverse(Requests))])],
                 "~n").
