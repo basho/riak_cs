@@ -85,6 +85,7 @@
          timestamp_to_seconds/1,
          timestamp_to_milliseconds/1,
          to_bucket_name/2,
+         to_bucket_name/3,
          update_key_secret/1,
          update_obj_value/2,
          pid_to_binary/1,
@@ -93,15 +94,13 @@
         ]).
 
 -include("riak_cs.hrl").
+-include("riak_cs_lfs.hrl").
 -include_lib("riak_pb/include/riak_pb_kv_codec.hrl").
 -include_lib("riakc/include/riakc.hrl").
 
 -ifdef(TEST).
 -compile(export_all).
 -endif.
-
--define(OBJECT_BUCKET_PREFIX, <<"0o:">>).       % Version # = 0
--define(BLOCK_BUCKET_PREFIX, <<"0b:">>).        % Version # = 0
 
 %% Definitions for json_pp_print, from riak_core's json_pp.erl
 -define(SPACE, 32).
@@ -113,37 +112,21 @@
 %% Public API
 %% ===================================================================
 
+-type bclass() :: 'v0' | 'v1' | 'v2'.
+-type any_bclass() :: bclass() | 'unknown'.
+-export_type([bclass/0, any_bclass/0]).
+
 %% @doc Convert the passed binary into a string where the numbers are represented in hexadecimal (lowercase and 0 prefilled).
 -spec binary_to_hexlist(binary()) -> string().
-binary_to_hexlist(<<>>) ->
-    [];
-binary_to_hexlist(<<A:4, B:4, T/binary>>) ->
-    [num2hexchar(A), num2hexchar(B)|binary_to_hexlist(T)].
-
-num2hexchar(N) when N < 10 ->
-    N + $0;
-num2hexchar(N) when N < 16 ->
-    (N - 10) + $a.
+binary_to_hexlist(B) ->
+    %% Avoid module dependency problem when testing riak_kv_fs2_backend. {sigh}
+    riak_kv_fs2_backend:binary_to_hexlist(B).
 
 %% @doc Convert the passed binary into a string where the numbers are represented in hexadecimal (lowercase and 0 prefilled).
 -spec hexlist_to_binary(string()) -> binary().
 hexlist_to_binary(HS) ->
-    list_to_binary(hexlist_to_binary_2(HS)).
-
-hexlist_to_binary_2([]) ->
-    [];
-hexlist_to_binary_2([A,B|T]) ->
-    [hex2byte(A, B)|hexlist_to_binary_2(T)].
-
-hex2byte(A, B) ->
-    An = hexchar2num(A),
-    Bn = hexchar2num(B),
-    <<An:4, Bn:4>>.
-
-hexchar2num(C) when $0 =< C, C =< $9 ->
-    C - $0;
-hexchar2num(C) when $a =< C, C =< $f ->
-    (C - $a) + 10.
+    %% Avoid module dependency problem when testing riak_kv_fs2_backend. {sigh}
+    riak_kv_fs2_backend:hexlist_to_binary(HS).
 
 %% @doc Return a hexadecimal string of `Binary', with double quotes
 %% around it.
@@ -409,13 +392,20 @@ encode_term(Term) ->
 %% bucket or the data block bucket name.
 -spec from_bucket_name(binary()) -> {'blocks' | 'objects', binary()}.
 from_bucket_name(BucketNameWithPrefix) ->
-    BlocksName = ?BLOCK_BUCKET_PREFIX,
+    %% All blocks prefixes must have the same size: 3 bytes
+    BlocksNameV0 = ?BLOCK_BUCKET_PREFIX_V0,
+    BlocksNameV1 = ?BLOCK_BUCKET_PREFIX_V1,
+    BlocksNameV2 = ?BLOCK_BUCKET_PREFIX_V2,
     ObjectsName = ?OBJECT_BUCKET_PREFIX,
-    BlockByteSize = byte_size(BlocksName),
+    BlockByteSize = byte_size(BlocksNameV0),
     ObjectsByteSize = byte_size(ObjectsName),
 
     case BucketNameWithPrefix of
-        <<BlocksName:BlockByteSize/binary, BucketName/binary>> ->
+        <<BlocksNameV0:BlockByteSize/binary, BucketName/binary>> ->
+            {blocks, BucketName};
+        <<BlocksNameV1:BlockByteSize/binary, BucketName/binary>> ->
+            {blocks, BucketName};
+        <<BlocksNameV2:BlockByteSize/binary, BucketName/binary>> ->
             {blocks, BucketName};
         <<ObjectsName:ObjectsByteSize/binary, BucketName/binary>> ->
             {objects, BucketName}
@@ -537,15 +527,17 @@ reduce_keys_and_manifests(Acc, _) ->
     Acc.
 
 -spec sha_mac(iolist() | binary(), iolist() | binary()) -> binary().
--spec sha(binary()) -> binary().
+-spec sha(binary() | list()) -> binary().
 
 -ifdef(new_hash).
 sha_mac(Key,STS) -> crypto:hmac(sha, Key,STS).
-sha(Bin) -> crypto:hash(sha, Bin).
+sha(Bin) when is_binary(Bin) -> crypto:hash(sha, Bin);
+sha(L)   when is_list(L)     -> crypto:hash(sha, list_to_binary(L)).
 
 -else.
 sha_mac(Key,STS) -> crypto:sha_mac(Key,STS).
-sha(Bin) -> crypto:sha(Bin).
+sha(Bin) when is_binary(Bin) -> crypto:sha(Bin);
+sha(L) when is_list(L)       -> crypto:sha(list_to_binary(L)).
 
 -endif.
 
@@ -584,6 +576,7 @@ md5_update(Ctx, <<Part:?MAX_UPDATE_SIZE/binary, Rest/binary>>) ->
 
 md5_final(Ctx) -> crypto:md5_final(Ctx).
 -endif.
+
 %% @doc Get an object from Riak
 -spec get_object(binary(), binary(), pid()) ->
                         {ok, riakc_obj:riakc_obj()} | {error, term()}.
@@ -1010,15 +1003,27 @@ timestamp_to_milliseconds(Timestamp) ->
 %% bucket or the data block bucket.
 -spec to_bucket_name(objects | blocks, binary()) -> binary().
 to_bucket_name(Type, Bucket) ->
-    case Type of
-        objects ->
-            Prefix = ?OBJECT_BUCKET_PREFIX;
-        blocks ->
-            Prefix = ?BLOCK_BUCKET_PREFIX
-    end,
+    to_bucket_name(Type, Bucket, "utterly invalid bucket class").
+
+-spec to_bucket_name(objects | blocks, binary(), integer()) -> binary().
+to_bucket_name(Type, Bucket, BClass) ->
+    Prefix = case Type of
+                 objects ->
+                     ?OBJECT_BUCKET_PREFIX;
+                 blocks ->
+                     case BClass of
+                         v0 ->
+                             ?BLOCK_BUCKET_PREFIX_V0;
+                         v1 ->
+                             ?BLOCK_BUCKET_PREFIX_V1;
+                         v2 ->
+                             ?BLOCK_BUCKET_PREFIX_V2;
+                         _ ->
+                             ?BLOCK_BUCKET_PREFIX_V0
+                     end
+             end,
     BucketHash = md5(Bucket),
     <<Prefix/binary, BucketHash/binary>>.
-
 
 %% @doc Generate a new `key_secret' for a user record.
 -spec update_key_secret(rcs_user()) -> rcs_user().
