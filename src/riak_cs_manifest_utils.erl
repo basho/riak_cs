@@ -391,26 +391,32 @@ later(DeleteTime1, DeleteTime2) ->
 -spec most_recent_active_manifest(lfs_manifest(), {
     no_active_manifest | lfs_manifest(), undefined | erlang:timestamp()}) -> 
         {no_active_manifest | lfs_manifest(), erlang:timestamp() | undefined}.
-most_recent_active_manifest(Manifest=?MANIFEST{state=scheduled_delete}, {MostRecent, undefined}) -> 
+most_recent_active_manifest(Manifest=?MANIFEST{state=scheduled_delete}, 
+                            {MostRecent, undefined}) -> 
     {MostRecent, delete_time(Manifest)};
-most_recent_active_manifest(Manifest=?MANIFEST{state=scheduled_delete}, {MostRecent, DeleteTime}) -> 
+most_recent_active_manifest(Manifest=?MANIFEST{state=scheduled_delete}, 
+                            {MostRecent, DeleteTime}) -> 
     Dt=delete_time(Manifest), 
     {MostRecent, later(Dt, DeleteTime)};
-most_recent_active_manifest(Manifest=?MANIFEST{state=pending_delete}, {MostRecent, undefined}) -> 
+most_recent_active_manifest(Manifest=?MANIFEST{state=pending_delete}, 
+                            {MostRecent, undefined}) -> 
     {MostRecent, delete_time(Manifest)};
-most_recent_active_manifest(Manifest=?MANIFEST{state=pending_delete}, {MostRecent, DeleteTime}) -> 
+most_recent_active_manifest(Manifest=?MANIFEST{state=pending_delete}, 
+                           {MostRecent, DeleteTime}) -> 
     Dt=delete_time(Manifest), 
     {MostRecent, later(Dt, DeleteTime)};
-most_recent_active_manifest(Manifest=?MANIFEST{state=active}, {no_active_manifest, undefined}) ->
+most_recent_active_manifest(Manifest=?MANIFEST{state=active}, 
+                            {no_active_manifest, undefined}) ->
     {Manifest, undefined};
-most_recent_active_manifest(Man1=?MANIFEST{state=active}, {Man2=?MANIFEST{state=active}, DeleteTime}) ->
-    case Man1?MANIFEST.write_start_time > Man2?MANIFEST.write_start_time of
-        true -> 
-            {Man1, DeleteTime};
-        false -> 
-            {Man2, DeleteTime}
-    end;
-most_recent_active_manifest(Man1=?MANIFEST{state=active}, {no_active_manifest, DeleteTime}) -> 
+most_recent_active_manifest(Man1=?MANIFEST{state=active}, 
+                            {Man2=?MANIFEST{state=active}, DeleteTime}) 
+    when Man1?MANIFEST.write_start_time > Man2?MANIFEST.write_start_time ->
+        {Man1, DeleteTime};
+most_recent_active_manifest(_Man1=?MANIFEST{state=active}, 
+                            {Man2=?MANIFEST{state=active}, DeleteTime}) ->
+    {Man2, DeleteTime};
+most_recent_active_manifest(Man1=?MANIFEST{state=active}, 
+                            {no_active_manifest, DeleteTime}) -> 
     {Man1, DeleteTime};
 most_recent_active_manifest(_Man1, {Man2=?MANIFEST{state=active}, DeleteTime}) -> 
     {Man2, DeleteTime};
