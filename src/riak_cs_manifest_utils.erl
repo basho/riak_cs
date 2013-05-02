@@ -32,12 +32,14 @@
 -export([new_dict/2,
          active_manifest/1,
          active_manifests/1,
+         writing_manifests/1,
          active_and_writing_manifests/1,
          overwritten_UUIDs/1,
          deleted_while_writing/1,
          mark_pending_delete/2,
          mark_deleted/2,
          mark_scheduled_delete/2,
+         mark_dead/2,
          manifests_to_gc/2,
          prune/1,
          prune/2,
@@ -88,6 +90,11 @@ active_manifests(Dict) ->
 active_and_writing_manifests(Dict) ->
     orddict:to_list(filter_manifests_by_state(Dict, [active, writing])).
 
+%% @doc Return all writing manifests
+-spec writing_manifests(orddict:orddict()) -> [lfs_manifest()] | [].
+writing_manifests(Dict) ->
+    lists:filter(fun manifest_is_writing/1, orddict_values(Dict)).
+
 %% @doc Extract all manifests that are not "the most active"
 %%      and not actively writing (within the leeway period).
 -spec overwritten_UUIDs(orddict:orddict()) -> term().
@@ -118,8 +125,17 @@ overwritten_UUIDs_active_fold_helper(Active) ->
             update_acc(UUID, Manifest, Acc, Active =:= Manifest)
     end.
 
--spec update_acc(binary(), lfs_manifest(), [binary()], boolean()) ->
-    [binary()].
+%% @doc If the newly active manifest was marked dead because it was deleted during upload, 
+%%      then add the UUID to the Acc.
+%%      If the UUID is active but not the currently marked active one, add the UUID to the Acc.
+-spec update_acc(binary(), lfs_manifest(), [binary()], boolean()) -> [binary()].
+update_acc(UUID, ?MANIFEST{state=active}=M, Acc, true) ->
+    case proplists:get_value(dead, M?MANIFEST.props, not_found) of
+        not_found -> 
+            Acc;
+        true ->
+            [UUID | Acc]
+    end;
 update_acc(_UUID, _Manifest, Acc, true) ->
     Acc;
 update_acc(UUID, ?MANIFEST{state=active}, Acc, false) ->
@@ -152,35 +168,12 @@ handle_leeway_elaped_time(true, UUID, Acc) ->
 handle_leeway_elaped_time(false, _UUID, Acc) ->
     Acc.
 
-%% @doc Return `Dict' with the manifests in
-%% `UUIDsToMark' with their state changed to
-%% `pending_delete' and {deleted, true} added to props.
--spec mark_deleted(orddict:orddict(), list(binary())) ->
-    orddict:orddict().
-mark_deleted(Dict, UUIDsToMark) ->
+-spec mark(orddict:orddict(), list(binary()), fun()) -> orddict:orddict().
+mark(Dict, UUIDsToMark, MakeManifest) ->
     MapFun = fun(K, V) ->
             case lists:member(K, UUIDsToMark) of
                 true ->
-                    V?MANIFEST{state=pending_delete,
-                               delete_marked_time=os:timestamp(),
-                               props=[{deleted, true} | V?MANIFEST.props]};
-                false ->
-                    V
-            end
-    end,
-    orddict:map(MapFun, Dict).
-
-%% @doc Return `Dict' with the manifests in
-%% `UUIDsToMark' with their state changed to
-%% `pending_delete'
--spec mark_pending_delete(orddict:orddict(), list(binary())) ->
-    orddict:orddict().
-mark_pending_delete(Dict, UUIDsToMark) ->
-    MapFun = fun(K, V) ->
-            case lists:member(K, UUIDsToMark) of
-                true ->
-                    V?MANIFEST{state=pending_delete,
-                               delete_marked_time=os:timestamp()};
+                    MakeManifest(V);
                 false ->
                     V
             end
@@ -193,16 +186,51 @@ mark_pending_delete(Dict, UUIDsToMark) ->
 -spec mark_scheduled_delete(orddict:orddict(), list(binary())) ->
     orddict:orddict().
 mark_scheduled_delete(Dict, UUIDsToMark) ->
-    MapFun = fun(K, V) ->
-            case lists:member(K, UUIDsToMark) of
-                true ->
-                    V?MANIFEST{state=scheduled_delete,
-                               scheduled_delete_time=os:timestamp()};
-                false ->
-                    V
-            end
-    end,
-    orddict:map(MapFun, Dict).
+    mark(Dict, UUIDsToMark, fun make_scheduled_delete_manifest/1).
+
+%% @doc Return `Dict' with the manifests in
+%% `UUIDsToMark' with their state changed to
+%% `pending_delete' and {deleted, true} added to props.
+-spec mark_deleted(orddict:orddict(), list(binary())) ->
+    orddict:orddict().
+mark_deleted(Dict, UUIDsToMark) ->
+    mark(Dict, UUIDsToMark, fun make_deleted_manifest/1).
+
+%% @doc Return `Dict' with the manifests in
+%% `UUIDsToMark' with their state changed to
+%% `pending_delete'
+-spec mark_pending_delete(orddict:orddict(), list(binary())) ->
+    orddict:orddict().
+mark_pending_delete(Dict, UUIDsToMark) ->
+    mark(Dict, UUIDsToMark, fun make_pending_delete_manifest/1).
+
+%% @doc Return `Dict' with the manifests in
+%% `UUIDsToMark' with a {dead, true} in the props
+%% member to signify that the writing manifests should be garbage 
+%% collected immediately after being made active.
+-spec mark_dead(orddict:orddict(), list(binary())) -> orddict:orddict().
+mark_dead(Dict, UUIDsToMark) ->
+     mark(Dict, UUIDsToMark, fun make_dead_manifest/1). 
+                            
+-spec make_dead_manifest(lfs_manifest()) -> lfs_manifest().
+make_dead_manifest(?MANIFEST{props=Props, state=writing}=Manifest) ->
+    Manifest?MANIFEST{props=[{dead, true} | Props]}.
+
+-spec make_pending_delete_manifest(lfs_manifest()) -> lfs_manifest().
+make_pending_delete_manifest(Manifest) ->
+    Manifest?MANIFEST{state=pending_delete,
+                      delete_marked_time=os:timestamp()}.
+
+-spec make_deleted_manifest(lfs_manifest()) -> lfs_manifest().
+make_deleted_manifest(?MANIFEST{props=Props}=Manifest) ->
+    Manifest?MANIFEST{state=pending_delete,
+                      delete_marked_time=os:timestamp(),
+                      props=[{deleted, true} | Props]}.
+
+-spec make_scheduled_delete_manifest(lfs_manifest()) -> lfs_manifest().
+make_scheduled_delete_manifest(Manifest) ->
+    Manifest?MANIFEST{state=scheduled_delete,
+                      scheduled_delete_time=os:timestamp()}.
 
 %% @doc Return a list of manifests that are either
 %% in `PendingDeleteUUIDs' or are in the `pending_delete'
@@ -334,8 +362,14 @@ leeway_elapsed(Timestamp) ->
 orddict_values(OrdDict) ->
     [V || {_K, V} <- orddict:to_list(OrdDict)].
 
-manifest_is_active(?MANIFEST{state=active}) -> true;
-manifest_is_active(_Manifest) -> false.
+manifest_is_active(?MANIFEST{state=active}) -> 
+    true;
+manifest_is_active(_Manifest) -> 
+    false.
+manifest_is_writing(?MANIFEST{state=writing}) -> 
+    true;
+manifest_is_writing(_Manifest) -> 
+    false.
 
 -spec delete_time(lfs_manifest()) -> erlang:timestamp() | undefined.
 delete_time(Manifest) ->

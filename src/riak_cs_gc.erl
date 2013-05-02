@@ -34,17 +34,38 @@
          gc_retry_interval/0,
          gc_active_manifests/3,
          gc_specific_manifests/5,
+         mark_writing_manifests_dead/3,
          epoch_start/0,
          leeway_seconds/0,
          move_manifests_to_gc_bucket/3,
          timestamp/0]).
 
 %% export for repl debugging and testing
--export([get_active_manifests/3]).
+-export([get_active_manifests/3,
+         get_writing_manifests/3]).
 
 %%%===================================================================
 %%% Public API
 %%%===================================================================
+-spec mark_writing_manifests_dead(binary(), binary(), pid()) -> ok | {error, term()}.
+mark_writing_manifests_dead(Bucket, Key, RiakcPid) ->
+    {RiakObject, Manifests} = get_writing_manifests(Bucket, Key, RiakcPid),
+    mark_dead(Bucket, Key, RiakcPid, RiakObject, Manifests).
+
+-spec get_writing_manifests(binary(), binary(), pid()) -> 
+    {riakc_obj:riakc_obj(), [lfs_manifest()]} | {error, term()}.
+get_writing_manifests(Bucket, Key, RiakcPid) ->
+    {ok, RiakObject, Manifests} = riak_cs_utils:get_manifests(RiakcPid, Bucket, Key), 
+    WritingManifests = riak_cs_manifest_utils:writing_manifests(Manifests),
+    {RiakObject, WritingManifests}.
+
+-spec mark_dead(binary(), binary(), pid(), riakc_obj:riakc_obj(), [lfs_manifest()]) -> 
+    ok | {error, term()}.
+mark_dead(Bucket, Key, RiakcPid, RiakObject, Manifests) -> 
+    UUIDs = [M?MANIFEST.uuid || M <- Manifests],
+    mark_manifests(RiakObject, Bucket, Key, UUIDs, 
+                   fun riak_cs_manifest_utils:mark_dead/2, 
+                   RiakcPid).
 
 %% @doc Keep requesting manifests until there are no more active manifests or
 %% there is an error. This requires the following to be occur:

@@ -334,6 +334,7 @@ delete_bucket(User, UserObj, Bucket, RiakPid) ->
     {ok, [binary()]} | {error, term()}.
 delete_object(Bucket, Key, RiakcPid) ->
     ok = riak_cs_stats:update_with_start(object_delete, os:timestamp()),
+    {ok, _} = riak_cs_gc:mark_writing_manifests_dead(Bucket, Key, RiakcPid),
     riak_cs_gc:gc_active_manifests(Bucket, Key, RiakcPid).
 
 -spec encode_term(term()) -> binary().
