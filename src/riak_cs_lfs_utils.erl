@@ -21,6 +21,7 @@
 -module(riak_cs_lfs_utils).
 
 -include("riak_cs.hrl").
+-include("riak_cs_lfs.hrl").
 
 -export([block_count/2,
          block_keynames/3,
@@ -40,6 +41,7 @@
          new_manifest/11,
          remove_write_block/2,
          remove_delete_block/2]).
+-export([chash_cs_keyfun/1]).
 
 %% -------------------------------------------------------------------
 %% Public API
@@ -305,3 +307,13 @@ remove_delete_block(Manifest, Chunk) ->
     Manifest?MANIFEST{delete_blocks_remaining=Updated,
                              state=ManiState,
                              last_block_deleted_time=os:timestamp()}.
+
+
+-spec chash_cs_keyfun({binary(), binary()}) -> binary().
+chash_cs_keyfun({<<"b:", _/binary>> = Bucket,
+                 <<UUID:?UUID_BYTES/binary, BlockNum:?BLOCK_FIELD_SIZE>>}) ->
+    Contig = BlockNum div ?FS2_CONTIGUOUS_BLOCKS,
+    chash:key_of({Bucket, <<UUID/binary, Contig:?BLOCK_FIELD_SIZE>>});
+chash_cs_keyfun({Bucket, Key}) ->
+    %% Default object/ring hashing fun, direct passthrough of bkey.
+    chash:key_of({Bucket, Key}).
