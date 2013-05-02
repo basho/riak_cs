@@ -104,7 +104,7 @@
 -define(API_VERSION, 1).
 -define(CAPABILITIES, [async_fold, write_once_keys, put_plus_object]).
 
--define(TEST_IN_RIAK_KV, true).
+%%% -define(TEST_IN_RIAK_KV, true).
 
 %% Borrowed from bitcask.hrl
 -define(VALSIZEFIELD, 32).
@@ -168,38 +168,51 @@ capabilities(_) ->
 capabilities(_, _) ->
     {ok, ?CAPABILITIES}.
 
-%% @doc Start this backend.  'riak_kv_fs_backend_root' must be set in
-%%      Riak's application environment.  It must be set to a string
-%%      representing the base directory where this backend should
-%%      store its files.
+%% @doc Start this backend.
+
 -spec start(integer(), config()) -> {ok, state()}.
 start(Partition, Config) ->
     PartitionName = integer_to_list(Partition),
     try
-        ConfigRoot = case get_prop_or_env(
-                            fs2_backend_data_root, Config, riak_kv) of
+        ConfigRoot = case get_prop_or_env(data_root, Config, riak_kv) of
                          undefined ->
-                             throw("fs2_backend_data_root unset, failing");
+                             throw("data_root unset, failing");
                          Else1 ->
                              Else1
                      end,
-        BlockSize = case get_prop_or_env(
-                           fs2_backend_block_size, Config, riak_kv) of
+        BlockSize = case get_prop_or_env(block_size, Config, riak_kv) of
                         undefined ->
-                            throw("fs2_backend_block_size unset, failing");
+                            throw("block_size unset, failing");
                         Else2 ->
                             Else2
                     end,
         true = (BlockSize < ?MAXVALSIZE),
-        MaxBlocks = ?FS2_CONTIGUOUS_BLOCKS,
+        %% MaxBlocks should be present only for testing
+        MaxBlocks = case get_prop_or_env(max_blocks_per_file,
+                                         Config, riak_kv) of
+                        N when is_integer(N), 1 =< N,
+                                              N =< ?FS2_CONTIGUOUS_BLOCKS ->
+                            error_logger:warning_msg(
+                              "~s: max_blocks_per_file is ~p.  This "
+                              "configuration item is only valid for tests.  "
+                              "Proceed with caution.",
+                              [?MODULE, N]),
+                            %% Go ahead and use it
+                            N;
+                        undefined ->
+                            ?FS2_CONTIGUOUS_BLOCKS;
+                        _ ->
+                            error_logger:warning_msg(
+                              "~s: invalid max blocks value, using ~p\n",
+                              [?MODULE, ?FS2_CONTIGUOUS_BLOCKS]),
+                            ?FS2_CONTIGUOUS_BLOCKS
+                    end,
         Dir = filename:join([ConfigRoot,PartitionName]),
-        BDepth = case get_prop_or_env(
-                        fs2_backend_b_depth, Config, riak_kv) of
+        BDepth = case get_prop_or_env(b_depth, Config, riak_kv) of
                      undefined -> 2;
                      Else3     -> Else3
                  end,
-        KDepth = case get_prop_or_env(
-                        fs2_backend_k_depth, Config, riak_kv) of
+        KDepth = case get_prop_or_env(k_depth, Config, riak_kv) of
                      undefined -> 2;
                      Else4     -> Else4
                  end,
@@ -736,7 +749,8 @@ make_trailer(Term, State) ->
 get_prop_or_env(Key, Properties, App) ->
     case proplists:get_value(Key, Properties) of
         undefined ->
-            application:get_env(App, Key);
+            KV_key = list_to_atom("fs2_backend_" ++ atom_to_list(Key)),
+            application:get_env(App, KV_key);
         Value ->
             Value
     end.
@@ -929,8 +943,8 @@ t0() ->
     K1 = <<0:(?UUID_BYTES*8), 1:?BLOCK_FIELD_SIZE>>,
     V1 = <<43:(BlockSize*8)>>,
     os:cmd("rm -rf " ++ TestDir),
-    {ok, S} = start(-1, [{fs2_backend_data_root, TestDir},
-                         {fs2_backend_block_size, BlockSize}]),
+    {ok, S} = start(-1, [{data_root, TestDir},
+                         {block_size, BlockSize}]),
     {ok, S} = put(Bucket, K1, [], V1, ignored, S),
     {ok, S} = put(Bucket, K0, [], V0, ignored, S),
     {ok, V0, S} = get(Bucket, K0, S),
@@ -946,8 +960,8 @@ t1() ->
     K1 = <<0:(?UUID_BYTES*8), 1:?BLOCK_FIELD_SIZE>>,
     V1 = <<101:64>>,
     os:cmd("rm -rf " ++ TestDir),
-    {ok, S} = start(-1, [{fs2_backend_data_root, TestDir},
-                         {fs2_backend_block_size, 1024}]),
+    {ok, S} = start(-1, [{data_root, TestDir},
+                         {block_size, 1024}]),
     {ok, S4} = put(Bucket, K0, [], V0, ignored, S),
     {ok, [{{Bucket, K0}, V0}]} = fold_objects(fun(B, K, V, Acc) ->
                                                       [{{B, K}, V}|Acc]
@@ -973,8 +987,8 @@ t2() ->
     B2 = <<?BLOCK_BUCKET_PREFIX, "delme2">>,
     B3 = <<?BLOCK_BUCKET_PREFIX, "delme22">>,
     os:cmd("rm -rf " ++ TestDir),
-    {ok, S} = start(-1, [{fs2_backend_data_root, TestDir},
-                         {fs2_backend_block_size, 1024}]),
+    {ok, S} = start(-1, [{data_root, TestDir},
+                         {block_size, 1024}]),
     BKVs = [{B, <<UUID:(?UUID_BYTES*8), Seq:?BLOCK_FIELD_SIZE>>,
              list_to_binary(["val ", integer_to_list(Seq)])} ||
                B <- [B1, B2, B3],
@@ -999,8 +1013,8 @@ t3() ->
     BlockSize = 10,
     V0 = <<42:((BlockSize+1)*8)>>,
     os:cmd("rm -rf " ++ TestDir),
-    {ok, S} = start(-1, [{fs2_backend_data_root, TestDir},
-                         {fs2_backend_block_size, BlockSize}]),
+    {ok, S} = start(-1, [{data_root, TestDir},
+                         {block_size, BlockSize}]),
     {error, invalid_user_argument, S} = put(Bucket, K0, [], V0, ignored, S),
     ok.
 
@@ -1017,9 +1031,9 @@ t4(SmallestBlock, BiggestBlock, BlocksPerFile, OrderFun)
     TheTwoBs = [B1, B2],
     BlockSize = 20,
     os:cmd("rm -rf " ++ TestDir),
-    {ok, S} = start(-1, [{fs2_backend_data_root, TestDir},
-                         {fs2_backend_block_size, BlockSize},
-                         {fs2_backend_max_blocks_per_file, BlocksPerFile}]),
+    {ok, S} = start(-1, [{data_root, TestDir},
+                         {block_size, BlockSize},
+                         {max_blocks_per_file, BlocksPerFile}]),
     BKVs = [{<<?BLOCK_BUCKET_PREFIX, "delme", Bp:8>>,
              <<0:(?UUID_BYTES*8), X:?BLOCK_FIELD_SIZE>>,
              <<X:((BlockSize)*8)>>} ||
@@ -1100,19 +1114,22 @@ t4(SmallestBlock, BiggestBlock, BlocksPerFile, OrderFun)
 -ifdef(TEST).
 
 t0_test() ->
-    t0().
+    ok = t0().
 
 t1_test() ->
-    t1().
+    ok = t1().
 
-t2_test() ->
-    t2().
+t2_test_() ->
+    {spawn,
+     [
+      {timeout, 60*1000, ?_assertEqual(ok, t2())}
+     ]}.
 
 t3_test() ->
-    t3().
+    ok = t3().
 
 t4_test() ->
-    t4().
+    ok = t4().
 
 %% t4_eqc_test() is now run by eqc_test_(), below, to avoid EUnit timeouts.
 
@@ -1143,11 +1160,13 @@ eqc_filter_list_keys(Keys, S) ->
 -ifdef(TEST_IN_RIAK_KV).
 
 %% Broken test:
-simple_test_() ->
+simple_test_foofoo() ->
    ?assertCmd("rm -rf test/fs-backend/*"),
-   Config = [{fs2_backend_data_root, "test/fs-backend"},
-             {fs2_backend_block_size, 8}],
+   Config = [{data_root, "test/fs-backend"},
+             {block_size, 8}],
    riak_kv_backend:standard_test(?MODULE, Config).
+
+-endif. % TEST_IN_RIAK_KV
 
 nest_test() ->
     ?assertEqual(["ab","cd","ef"],nest("abcdefg", 3)),
@@ -1162,9 +1181,10 @@ nest_test() ->
 -ifdef(EQC).
 
 basic_props() ->
-    [{fs2_backend_data_root,  "test/fs-backend"},
-     {fs2_backend_block_size, 1024}].
+    [{data_root,  "test/fs-backend"},
+     {block_size, 1024}].
 
+-ifdef(TEST_IN_RIAK_KV).
 eqc_test_() ->
     {spawn,
      [{inorder,
@@ -1172,12 +1192,12 @@ eqc_test_() ->
          fun setup/0,
          fun cleanup/1,
          [
-          ?_assertEqual(?BLOCK_BUCKET_PREFIX,
-                        backend_eqc:bucket_prefix_1()),
-          ?_assertEqual(?UUID_BYTES,
-                        backend_eqc:key_prefix_1()),
-          ?_assertEqual(?BLOCK_FIELD_SIZE,
-                        backend_eqc:key_suffix_1()),
+          %% ?_assertEqual(?BLOCK_BUCKET_PREFIX,
+          %%               backend_eqc:bucket_prefix_1()),
+          %% ?_assertEqual(?UUID_BYTES,
+          %%               backend_eqc:key_prefix_1()),
+          %% ?_assertEqual(?BLOCK_FIELD_SIZE,
+          %%               backend_eqc:key_suffix_1()),
           {timeout, 60000,
            [?_assertEqual(true,
                           backend_eqc:test(?MODULE,
@@ -1190,6 +1210,7 @@ eqc_test_() ->
            [?_assertEqual(true,
                           eqc_t4_wrapper())]}
          ]}]}]}.
+-endif. % TEST_IN_RIAK_KV
 
 eqc_nest_tester() ->
     setup(),
@@ -1264,5 +1285,4 @@ insert_sample_key(Bucket, S) ->
     ok.
 
 -endif. % EQC
--endif. % TEST_IN_RIAK_KV
 -endif. % TEST
