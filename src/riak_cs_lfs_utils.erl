@@ -322,7 +322,7 @@ remove_delete_block(Manifest, Chunk) ->
 
 
 -spec chash_cs_keyfun({binary(), binary()}) -> binary().
-chash_cs_keyfun({<<"b:", _/binary>> = Bucket,
+chash_cs_keyfun({<<?BLOCK_BUCKET_PREFIX, _/binary>> = Bucket,
                  <<UUID:?UUID_BYTES/binary, BlockNum:?BLOCK_FIELD_SIZE>>}) ->
     Contig = BlockNum div ?FS2_CONTIGUOUS_BLOCKS,
     chash:key_of({Bucket, <<UUID/binary, Contig:?BLOCK_FIELD_SIZE>>});
