@@ -70,9 +70,14 @@ active_manifest(Dict) ->
 live_manifest({no_active_manifest, _}) ->
     {error, no_active_manifest};
 live_manifest({Manifest, undefined}) ->
-    {ok, Manifest};
+    case is_dead(Manifest) of
+        true ->
+            {error, no_active_manifest};
+        false ->
+            {ok, Manifest}
+    end;
 live_manifest({Manifest, DeleteTime}) ->
-    case DeleteTime > Manifest?MANIFEST.write_start_time of
+    case is_dead(Manifest) orelse DeleteTime > Manifest?MANIFEST.write_start_time of
         true ->
             {error, no_active_manifest};
         false ->
@@ -125,13 +130,17 @@ overwritten_UUIDs_active_fold_helper(Active) ->
             update_acc(UUID, Manifest, Acc, Active =:= Manifest)
     end.
 
+-spec is_dead(lfs_manifest()) -> boolean().
+is_dead(Manifest) ->
+    proplists:get_value(dead, Manifest?MANIFEST.props, false).
+
 %% @doc If the newly active manifest was marked dead because it was deleted during upload, 
 %%      then add the UUID to the Acc.
 %%      If the UUID is active but not the currently marked active one, add the UUID to the Acc.
 -spec update_acc(binary(), lfs_manifest(), [binary()], boolean()) -> [binary()].
 update_acc(UUID, ?MANIFEST{state=active}=M, Acc, true) ->
-    case proplists:get_value(dead, M?MANIFEST.props, not_found) of
-        not_found -> 
+    case is_dead(M) of 
+        false -> 
             Acc;
         true ->
             [UUID | Acc]
@@ -381,8 +390,7 @@ delete_time(Manifest) ->
     end.
 
 %% @doc Return all active manifests that have timestamps before the latest deletion
-%% This happens when a manifest is still uploading while it is deleted. The upload 
-%% is allowed to complete, but is not visible afterwards.
+%% This happens when a manifest is still uploading while the key is deleted by a client.
 -spec deleted_while_writing(orddict:orddict()) -> [binary()].
 deleted_while_writing(Manifests) ->
     ManifestList = orddict_values(Manifests),
@@ -390,11 +398,11 @@ deleted_while_writing(Manifests) ->
     find_deleted_active_manifests(ManifestList, DeleteTime).
 
 -spec find_deleted_active_manifests([lfs_manifest()], term()) -> [lfs_manifest()].
-find_deleted_active_manifests(_Manifests, undefined) ->
-    [];
+find_deleted_active_manifests(Manifests, undefined) ->
+    [M?MANIFEST.uuid || M <- Manifests, M?MANIFEST.state =:= active, is_dead(M)];
 find_deleted_active_manifests(Manifests, DeleteTime) ->
     [M?MANIFEST.uuid || M <- Manifests, M?MANIFEST.state =:= active, 
-                        M?MANIFEST.write_start_time < DeleteTime].
+        is_dead(M) orelse M?MANIFEST.write_start_time < DeleteTime].
 
 -spec latest_delete_time([lfs_manifest()]) -> term() | undefined.
 latest_delete_time(Manifests) ->
