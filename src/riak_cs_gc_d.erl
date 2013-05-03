@@ -139,10 +139,9 @@ stop() ->
 
 %% @doc Read the storage schedule and go to idle.
 
-init(Args) ->
+init(_Args) ->
     Interval = riak_cs_gc:gc_interval(),
     SchedState = schedule_next(#state{interval=Interval}),
-    _ = check_bucket_props(Args),
     {ok, idle, SchedState}.
 
 %% Asynchronous events
@@ -355,14 +354,6 @@ cancel_batch(#state{batch_start=BatchStart,
     riak_cs_riakc_pool_worker:stop(RiakPid),
     schedule_next(State#state{batch=[],
                               riak=undefined}).
-
--spec check_bucket_props([term()]) -> ok | {error, term()}.
-check_bucket_props([testing]) ->
-    ok;
-check_bucket_props([]) ->
-    %% @TODO Handle this in more general way. Maybe break out the
-    %% function from the rts module?
-    rts:check_bucket_props(?GC_BUCKET).
 
 %% @doc How many seconds have passed from `Time' to now.
 -spec elapsed(undefined | non_neg_integer()) -> non_neg_integer().

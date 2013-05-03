@@ -62,12 +62,7 @@
           batch_count=0, %% count of users processed so far
           batch_skips=0, %% count of users skipped so far
           batch=[],      %% users left to process in this batch
-          recalc,        %% recalculate a user's storage for this period?
-
-          bucket_property_read_retries=0  %% the number of times we've tried to read
-                                          %% bucket properties and received
-                                          %% `{error, disconnected}'
-
+          recalc        %% recalculate a user's storage for this period?
          }).
 
 -type state() :: #state{}.
@@ -269,34 +264,11 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 
 -spec try_prepare(state()) -> {next_state, atom(), state()} |
                               {next_state, atom(), state(), pos_integer()}.
-try_prepare(State=#state{bucket_property_read_retries=Retries}) ->
+try_prepare(State) ->
     Schedule = read_storage_schedule(),
-    case rts:check_bucket_props(?STORAGE_BUCKET) of
-        {error, disconnected} ->
-            _ = lager:info("Unable to verify bucket properties for "
-                           "storage daemon. Riak "
-                           "currently disconnected. "
-                           "Retrying in 5 seconds."),
-            NewState = State#state{bucket_property_read_retries=Retries+1},
-            {next_state, prepare, NewState, timer:seconds(5)};
-        ok ->
-            _ = maybe_log_checked_bucket_properties(State),
-            SchedState = schedule_next(State#state{schedule=Schedule,
-                                                   %% reset the bucket property
-                                                   %% retry time
-                                                   bucket_property_read_retries=0},
-                                       calendar:universal_time()),
-            {next_state, idle, SchedState}
-    end.
-
--spec maybe_log_checked_bucket_properties(state()) -> ok.
-maybe_log_checked_bucket_properties(#state{bucket_property_read_retries=N})
-        when N =/= 0 ->
-    _ = lager:info("Storage daemon successfully read bucket properties, "
-                   "continuing"),
-    ok;
-maybe_log_checked_bucket_properties(_State) ->
-    ok.
+    SchedState = schedule_next(State#state{schedule=Schedule},
+                               calendar:universal_time()),
+    {next_state, idle, SchedState}.
 
 %% @doc The schedule will contain all valid times found in the
 %% configuration, and will be sorted in day order.
