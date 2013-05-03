@@ -54,7 +54,8 @@
          upload_part/6, upload_part/7,
          upload_part_1blob/2,
          upload_part_finished/7, upload_part_finished/8,
-         user_rec_to_3tuple/1
+         user_rec_to_3tuple/1,
+         is_multipart_manifest/1
         ]).
 -export([get_mp_manifest/1]).
 
