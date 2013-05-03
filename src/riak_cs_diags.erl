@@ -18,7 +18,14 @@ start_link() ->
 
 -spec print_manifests(binary(), binary()) -> string().
 print_manifests(Bucket, Key) ->
-    gen_server:call(?MODULE, {print_manifests, Bucket, Key}).
+    _Manifests = gen_server:call(?MODULE, {get_manifests, Bucket, Key}),
+    table:print(manifest_table_spec(), []).
+
+%% ====================================================================
+%% Table Specifications
+%% ====================================================================
+manifest_table_spec() ->
+    [{block_size, 12}, {bucket, 15}, {key, 20}, {state, 15}].
 
 %% ====================================================================
 %% gen_server callbacks
@@ -27,7 +34,7 @@ print_manifests(Bucket, Key) ->
 init([]) ->
     {ok, #state{}}.
 
-handle_call({print_manifests, Bucket, Key}, _From, State) ->
+handle_call({get_manifests, Bucket, Key}, _From, State) ->
     {ok, Pid} = riak_cs_utils:riak_connection(),
     try
         Reply = riak_cs_utils:get_manifests(Pid, Bucket, Key),
