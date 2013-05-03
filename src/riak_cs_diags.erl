@@ -1,6 +1,7 @@
 -module(riak_cs_diags).
 -behaviour(gen_server).
 
+-include("riak_cs.hrl").
 
 %% API
 -export([start_link/0,
@@ -16,16 +17,26 @@
 start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
--spec print_manifests(binary(), binary()) -> string().
+-spec print_manifests(binary() | string(), binary() | string()) -> string().
+print_manifests(Bucket, Key) when is_list(Bucket), is_list(Key) ->
+    print_manifests(list_to_binary(Bucket), list_to_binary(Key));
 print_manifests(Bucket, Key) ->
-    _Manifests = gen_server:call(?MODULE, {get_manifests, Bucket, Key}),
-    table:print(manifest_table_spec(), []).
+    Manifests = gen_server:call(?MODULE, {get_manifests, Bucket, Key}),
+    Rows = manifest_rows(orddict_values(Manifests)),
+    table:print(manifest_table_spec(), Rows).
+
+orddict_values(Dict) ->
+    [Val || {_, Val} <- orddict:to_list(Dict)].
 
 %% ====================================================================
-%% Table Specifications
+%% Table Specifications and Record to Row conversions
 %% ====================================================================
 manifest_table_spec() ->
-    [{block_size, 12}, {bucket, 15}, {key, 20}, {state, 15}].
+    [{block_size, 12}, {bucket, 15}, {key, 20}, {state, 20}].
+
+manifest_rows(Manifests) ->
+    [[M?MANIFEST.block_size, element(1, M?MANIFEST.bkey), 
+        element(2, M?MANIFEST.bkey), M?MANIFEST.state] || M <- Manifests].
 
 %% ====================================================================
 %% gen_server callbacks
@@ -37,8 +48,8 @@ init([]) ->
 handle_call({get_manifests, Bucket, Key}, _From, State) ->
     {ok, Pid} = riak_cs_utils:riak_connection(),
     try
-        Reply = riak_cs_utils:get_manifests(Pid, Bucket, Key),
-        {reply, Reply, State}
+        {ok, _, Manifests} = riak_cs_utils:get_manifests(Pid, Bucket, Key),
+        {reply, Manifests, State}
     catch _:_=E ->
         {reply, {error, E}, State}
     after
