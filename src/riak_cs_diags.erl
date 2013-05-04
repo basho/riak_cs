@@ -32,11 +32,20 @@ orddict_values(Dict) ->
 %% Table Specifications and Record to Row conversions
 %% ====================================================================
 manifest_table_spec() ->
-    [{block_size, 12}, {bucket, 15}, {key, 20}, {state, 20}].
+    [{state, 20}, {dead, 8}, {deleted, 8},  {mp, 6}, {created, 28}, {uuid, 36}, 
+     {write_start_time, 23}, {delete_marked_time, 23}].
 
 manifest_rows(Manifests) ->
-    [[M?MANIFEST.block_size, element(1, M?MANIFEST.bkey), 
-        element(2, M?MANIFEST.bkey), M?MANIFEST.state] || M <- Manifests].
+    [ [M?MANIFEST.state, dead(M?MANIFEST.props), deleted(M?MANIFEST.props),
+       riak_cs_mp_utils:is_multipart_manifest(M), 
+       M?MANIFEST.created, mochihex:to_hex(M?MANIFEST.uuid),
+       M?MANIFEST.write_start_time, M?MANIFEST.delete_marked_time] || M <- Manifests].
+
+dead(Props) ->
+    lists:keymember(dead, 1, Props).
+
+deleted(Props) ->
+    lists:keymember(deleted, 1, Props).
 
 %% ====================================================================
 %% gen_server callbacks

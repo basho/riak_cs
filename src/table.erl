@@ -48,22 +48,27 @@ titles(Spec) ->
                             end, [], Spec)])].
 
 -spec align(string(), non_neg_integer()) -> iolist().
+align(undefined, Size) ->
+    align("", Size);
 align(Str, Size) when is_integer(Str) ->
     align(integer_to_list(Str), Size);
 align(Str, Size) when is_binary(Str) ->
     align(binary_to_list(Str), Size);
 align(Str, Size) when is_atom(Str) ->
     align(atom_to_list(Str), Size);
-align(Str, Size) when length(Str) > Size -> 
+align(Str, Size) when is_list(Str), length(Str) > Size -> 
     Truncated = lists:sublist(Str, Size),
     Truncated ++ " |"; 
-align(Str, Size) when length(Str) =:= Size ->
+align(Str, Size) when is_list(Str), length(Str) =:= Size ->
     Str ++ " |";
-align(Str, Size) ->
+align(Str, Size) when is_list(Str) ->
     StrLen = length(Str),
     LeftSpaces = (Size - StrLen) div 2,
     RightSpaces = Size - StrLen - LeftSpaces,
-    spaces(LeftSpaces) ++ Str ++ spaces(RightSpaces) ++ " |".
+    spaces(LeftSpaces) ++ Str ++ spaces(RightSpaces) ++ " |";
+align(Term, Size) ->
+    Str = lists:flatten(io_lib:format("~p", [Term])),
+    align(Str, Size).
 
 -spec vertical_border(non_neg_integer()) -> string().
 vertical_border(Length) ->
