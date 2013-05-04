@@ -26,6 +26,8 @@
 %%   the RiakCS application.
 %%
 %% * We assume that RiakCS's LFS chunks will be written in ascending order.
+%%   If they are written out of order, we'll deal with it sanely but
+%%   perhaps not in a 100% optimal way.
 %%
 %% * We assume that it is not a fatal flaw if folding over BKeys/whatever
 %%   is not 100% accurate: we might say that a LFS chunk exists in a fold
@@ -54,6 +56,22 @@
 %% __ When using with RCS, add a programmatic check for the LFS block size.
 %%    Then add extra cushion (e.g. 512 bytes??) and use that for block size?
 %%
+%% __ Double-check that the api_version & capabilities/0 func is doing
+%%    the right thing wrt riak_kv.
+%%
+%% __ http://erlang.org/pipermail/erlang-questions/2011-September/061147.html
+%%    __ Avoid `file` module whenever file_server_2 calls are used.
+%%    __ Avoid file:file_name_1() recursion silliness
+%%
+%% __ Add capability to extend put() and get() to avoid getting an
+%%    already-encoded-Riak-object and returning same.  If
+%%    riak_kv_vnode gives us an encoded object, we need to unencoded
+%%    it just to see if there's a tombstone in the metadata.  We know
+%%    that R15B* and R16B releases have scheduler sticking problems
+%%    with term_to_binary() conversions.  Doing extra conversions is
+%%    both a waste of CPU time and a way to anger the Erlang process
+%%    scheduler gods.
+%%
 %% no Implement the delete op:
 %%    __ Update the deleted chunk map:
 %%        if undeleted chunks, write new map
@@ -70,9 +88,8 @@
 %%    read entire file async'ly and send it as a message to be recieved
 %%    later.  When reading 1st chunk, wait for arrival of read-ahead block.
 %%    __ Needs a real cache though.  Steal the cache from the memory backend?
-%%       Use the entire riak_memory_backend as-is??  Except that using ETS
-%%       is going to copy binaries, and we don't want those shared off-heap
-%%       binaries copied.  Hrm....
+%%       Use the entire riak_memory_backend as-is??  Triple-check that ETS
+%%       isn't going to copy off-heap/shared binaries....
 
 -module(riak_kv_fs2_backend).
 %% -behavior(riak_kv_backend). % Not building within riak_kv
@@ -102,7 +119,7 @@
 -include_lib("kernel/include/file.hrl").
 
 -define(API_VERSION, 1).
--define(CAPABILITIES, [async_fold, write_once_keys, put_plus_object]).
+-define(CAPABILITIES, [raw_object, async_fold, write_once_keys]).
 
 %%% -define(TEST_IN_RIAK_KV, true).
 
@@ -160,12 +177,12 @@ api_version() ->
 
 %% @doc Return the capabilities of the backend.
 -spec capabilities(state()) -> {ok, [atom()]}.
-capabilities(_) ->
-    {ok, ?CAPABILITIES}.
+capabilities(State) ->
+    capabilities(fake_bucket_name, State).
 
 %% @doc Return the capabilities of the backend.
 -spec capabilities(riak_object:bucket(), state()) -> {ok, [atom()]}.
-capabilities(_, _) ->
+capabilities(_Bucket, _State) ->
     {ok, ?CAPABILITIES}.
 
 %% @doc Start this backend.
@@ -174,22 +191,14 @@ capabilities(_, _) ->
 start(Partition, Config) ->
     PartitionName = integer_to_list(Partition),
     try
-        ConfigRoot = case get_prop_or_env(data_root, Config, riak_kv) of
-                         undefined ->
-                             throw("data_root unset, failing");
-                         Else1 ->
-                             Else1
-                     end,
-        BlockSize = case get_prop_or_env(block_size, Config, riak_kv) of
-                        undefined ->
-                            throw("block_size unset, failing");
-                        Else2 ->
-                            Else2
-                    end,
+        ConfigRoot = get_prop_or_env(data_root, Config, riak_kv,
+                                     {{"data_root unset, failing"}}),
+        BlockSize = get_prop_or_env(block_size, Config, riak_kv,
+                                    {{"block_size unset, failing"}}),
         true = (BlockSize < ?MAXVALSIZE),
         %% MaxBlocks should be present only for testing
-        MaxBlocks = case get_prop_or_env(max_blocks_per_file,
-                                         Config, riak_kv) of
+        MaxBlocks = case get_prop_or_env(max_blocks_per_file, Config,
+                                         riak_kv, undefined) of
                         N when is_integer(N), 1 =< N,
                                               N =< ?FS2_CONTIGUOUS_BLOCKS ->
                             error_logger:warning_msg(
@@ -208,21 +217,16 @@ start(Partition, Config) ->
                             ?FS2_CONTIGUOUS_BLOCKS
                     end,
         Dir = filename:join([ConfigRoot,PartitionName]),
-        BDepth = case get_prop_or_env(b_depth, Config, riak_kv) of
-                     undefined -> 2;
-                     Else3     -> Else3
-                 end,
-        KDepth = case get_prop_or_env(k_depth, Config, riak_kv) of
-                     undefined -> 2;
-                     Else4     -> Else4
-                 end,
+        ok = filelib:ensure_dir(Dir),
+        BDepth = get_prop_or_env(b_depth, Config, riak_kv, 2),
+        KDepth = get_prop_or_env(k_depth, Config, riak_kv, 2),
         ok = create_or_sanity_check_version_file(Dir, BlockSize, MaxBlocks,
                                                  BDepth, KDepth),
-        {ok = filelib:ensure_dir(Dir), #state{dir = Dir,
-                                              block_size = BlockSize,
-                                              max_blocks = MaxBlocks,
-                                              b_depth = BDepth,
-                                              k_depth = KDepth}}
+        {ok,  #state{dir = Dir,
+                     block_size = BlockSize,
+                     max_blocks = MaxBlocks,
+                     b_depth = BDepth,
+                     k_depth = KDepth}}
     catch throw:Error ->
         {error, Error}
     end.
@@ -240,6 +244,9 @@ get(<<?BLOCK_BUCKET_PREFIX, _/binary>> = Bucket,
     <<UUID:?UUID_BYTES/binary, BlockNum:?BLOCK_FIELD_SIZE>>, State) ->
     case read_block(Bucket, UUID, BlockNum, State) of
         Bin when is_binary(Bin) ->
+            %% io:format("Got ~p bytes ~P\n", [byte_size(Bin), catch binary_to_term(Bin), 20]),
+            %% D = riak_object:get_metadatas(binary_to_term(Bin)),
+            %% io:format("MD ~P\n", [D, 125]),
             {ok, Bin, State};
         Reason when is_atom(Reason) ->
             {error, not_found, State}
@@ -250,7 +257,7 @@ get(Bucket, Key, State) ->
         false ->
             {error, not_found, State};
         true ->
-            {ok, Bin} = file:read_file(File),
+            {ok, Bin} = read_file(File),
             case unpack_ondisk(Bin) of
                 bad_crc ->
                     %% TODO logging?
@@ -263,7 +270,10 @@ get(Bucket, Key, State) ->
 put(Bucket, Key, IndexSpecs, Val, State) ->
     put(Bucket, Key, IndexSpecs, Val, binary_to_term(Val), State).
 
-%% @doc Store Val under Bkey
+%% @doc Store Val under Bucket and Key
+%%
+%% NOTE: Val is a copy of ValRObj that has been encoded by term_to_binary()
+
 -type index_spec() :: {add, Index, SecondaryKey} | {remove, Index, SecondaryKey}.
 -spec put(riak_object:bucket(), riak_object:key(), [index_spec()], binary(), riak_object:riak_object(), state()) ->
                  {ok, state()} |
@@ -285,7 +295,11 @@ put(<<?BLOCK_BUCKET_PREFIX, _/binary>> = Bucket,
 put(Bucket, PrimaryKey, _IndexSpecs, Val, _ValRObj, State) ->
     File = location(State, Bucket, PrimaryKey),
     case filelib:ensure_dir(File) of
-        ok         -> {atomic_write(File, Val, State), State};
+        ok ->
+            case atomic_write(File, Val, State) of
+                ok         -> {ok, State};
+                {error, X} -> {error, X, State}
+            end;
         {error, X} -> {error, X, State}
     end.
 
@@ -387,7 +401,7 @@ is_empty(S) ->
 %% @doc Get the status information for this fs backend
 -spec status(state()) -> [no_status_sorry | {atom(), term()}].
 status(_S) ->
-    [no_status_sorry].
+    [no_status_sorry_TODO].
 
 %% @doc Register an asynchronous callback
 -spec callback(reference(), any(), state()) -> {ok, state()}.
@@ -404,7 +418,7 @@ callback(_Ref, _Term, S) ->
 %%       normal path.
 atomic_write(File, Val, State) ->
     FakeFile = File ++ ".tmpwrite",
-    case file:write_file(FakeFile, pack_ondisk(Val, State)) of
+    case write_file(FakeFile, pack_ondisk(Val, State)) of
         ok ->
             file:rename(FakeFile, File);
         X -> X
@@ -619,9 +633,53 @@ read_block(Bucket, UUID, BlockNum, #state{block_size = BlockSize} = State) ->
             not_found
     end.
 
+read_file(Path) ->
+    io:format(user, "\r\nDEBUG only, deleteme: read_file\r\n", []),
+    MaxSize = 4*1024*1024,
+    {ok, FH} = file:open(Path, [read, raw, binary]),
+    case file:open(Path, [read, raw, binary]) of
+        {ok, FH} ->
+            try
+                {ok, Bin} = file:read(FH, MaxSize),
+                case size(Bin) of
+                    L when L < MaxSize ->
+                        {ok, Bin};
+                    _ ->
+                        {ok, iolist_to_binary([Bin|read_rest(FH, MaxSize)])}
+                end
+            catch _:_ ->
+                    {error, enoent}
+            after
+                file:close(FH)
+            end;
+        Error ->
+            Error
+    end.
+
+write_file(Path, Data) ->
+    case file:open(Path, [write, raw, binary]) of
+        {ok, FH} ->
+            try
+                file:write(FH, Data)
+            after
+                file:close(FH)
+            end;
+        Error ->
+            Error
+    end.
+
+read_rest(FH, MaxSize) ->
+    read_rest(file:read(FH, MaxSize), FH, MaxSize).
+
+read_rest({ok, <<>>}, _FH, _MaxSize) ->
+    [];
+read_rest({ok, Bin}, FH, MaxSize) ->
+    [Bin|read_rest(FH, MaxSize)].
+
 put_block(Bucket, UUID, BlockNum, Val, ValRObj, State) ->
     put_block_t_marker_check(Bucket, UUID, BlockNum, Val, ValRObj, State).
 
+%% @doc Check for tombstone on disk before we try to put block
 put_block_t_marker_check(Bucket, UUID, BlockNum, Val, ValRObj, State) ->
     Key = convert_blocknum2key(UUID, BlockNum, State),
     File = location(State, Bucket, Key),
@@ -640,6 +698,7 @@ put_block_t_marker_check(Bucket, UUID, BlockNum, Val, ValRObj, State) ->
             put_block_t_check(BlockNum, Val, ValRObj, File, FI_perhaps, State)
     end.
 
+%% @doc Check for tombstone in ValRObj before we try to put block
 put_block_t_check(BlockNum, Val, ValRObj, File, FI_perhaps, State) ->
     NewMode = fun(FI) ->
                       NewMode = FI#file_info.mode bor ?TOMBSTONE_MODE_MARKER,
@@ -660,6 +719,7 @@ put_block_t_check(BlockNum, Val, ValRObj, File, FI_perhaps, State) ->
             put_block3(BlockNum, Val, File, FI_perhaps, State)
     end.
 
+%% @doc Put block: there is no previous tombstone or current tombstone.
 put_block3(BlockNum, Val, File, FI_perhaps, State) ->
     Offset = calc_block_offset(BlockNum, State),
     OutOfOrder_p = check_trailer_ooo(FI_perhaps, BlockNum, State),
@@ -746,14 +806,24 @@ make_trailer(Term, State) ->
     Sz = size(Bin),
     [Bin, <<Sz:32>>].
 
-get_prop_or_env(Key, Properties, App) ->
+get_prop_or_env(Key, Properties, App, Default) ->
     case proplists:get_value(Key, Properties) of
         undefined ->
             KV_key = list_to_atom("fs2_backend_" ++ atom_to_list(Key)),
-            application:get_env(App, KV_key);
+            case application:get_env(App, KV_key) of
+                undefined ->
+                    get_prop_or_env_default(Default);
+                Value ->
+                    Value
+            end;
         Value ->
             Value
     end.
+
+get_prop_or_env_default({{Reason}}) ->
+    throw(Reason);
+get_prop_or_env_default(Default) ->
+    Default.
 
 create_or_sanity_check_version_file(Dir, BlockSize, MaxBlocks,
                                     BDepth, KDepth) ->
@@ -1177,6 +1247,33 @@ nest_test() ->
     ?assertEqual(["0","0","ab"],  nest("ab", 3)),
     ?assertEqual(["0","0","a"],   nest("a", 3)),
     ?assertEqual(["0","0","0"],   nest([], 3)).
+
+create_or_sanity_test() ->
+    Dir = "/tmp/sanity_test_delete_me",
+    BlockSize = 20,
+    MaxBlocks = 21,
+    BDepth = 2,
+    KDepth = 3,
+
+    os:cmd("rm -rf ++ " ++ Dir),
+    Base = fun(A, B, C, D) ->
+               try
+                   ok = create_or_sanity_check_version_file(
+                          Dir, BlockSize+A, MaxBlocks+B, BDepth+C, KDepth+D)
+               catch _:_ ->
+                       bad
+               end
+           end,
+    try
+        ok  = Base(0, 0, 0, 0),
+        bad = Base(1, 0, 0, 0),
+        bad = Base(0, 1, 0, 0),
+        bad = Base(0, 0, 1, 0),
+        bad = Base(0, 0, 0, 1),
+        ok
+    after
+        os:cmd("rm -rf ++ " ++ Dir)
+    end.
 
 -ifdef(EQC).
 
