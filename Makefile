@@ -164,7 +164,7 @@ xref: compile
 ## Packaging targets
 ##
 .PHONY: package
-export PKG_VERSION PKG_ID PKG_BUILD BASE_DIR ERLANG_BIN REBAR OVERLAY_VARS RELEASE
+export PKG_VERSION PKG_ID PKG_BUILD BASE_DIR ERLANG_BIN REBAR OVERLAY_VARS RELEASE RIAK_CS_EE_DEPS
 
 package.src: deps
 	mkdir -p package
