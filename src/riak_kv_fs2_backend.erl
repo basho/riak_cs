@@ -40,6 +40,36 @@
 %%   belong to that same UUID.  (If RiakCS deletes a chunk, it's going
 %%   to delete the rest of them soon.)
 %%
+%% * When there's a read-repair triggered by Riak's get FSM, there will
+%%   likely be a problem because there will probably be siblings.  These
+%%   data blocks are immutable, so repair can only be an option when
+%%   there is corruption:
+%%     a. Corrupted after landing on disk: our checksum (or Bitcask's)
+%%        mean that a backend -> vnode -> get FSM response is not_found.
+%%        A repair will get the single correct version, write the
+%%        correct version to the corrupted vnode, and all will be fixed.
+%%     B. Corrupted before landing on disk: our checksum will look just
+%%        fine, because our checksum will be calculated after the
+%%        corruption happened.  (E.g., it happened at Riak CS or in
+%%        in the network due to a memory error.)
+%%        In this case, the get FSM plus allow_mult=true plus
+%%        riak_object:reconcile/2 will catch a difference in value
+%%        even if the vclocks are identical.  So, we have siblings,
+%%        and the get FSM's read repair will try to write the two
+%%        siblings to all N copies of key ... and will fail, because
+%%        this module will be configured to only allow 1MB chunks + the
+%%        largest allowable metadata for the key.
+%%
+%%        Therefore, Riak CS must do a couple of things:
+%%
+%%        a. It will also get the siblings.  It must resolve them,
+%%           using a checksum header in the metadata to find the
+%%           uncorrupted version.
+%%        b. Riak CS must do read repair whenever it finds corruption.
+%%           As noted above, Riak plus this backend's size limitation
+%%           won't allow Riak's own read-repair to succeed most/all of
+%%           the time.
+%%
 %% TODO list for the multiple-chunk-in-single-file scheme:
 %%
 %% XX Test-first: create EQC model, test it ruthlessly
@@ -53,16 +83,24 @@
 %% XX Add a version number to the ?HEADER_SIZE for all put(),
 %% XX Check it on get()s.
 %%
-%% __ When using with RCS, add a programmatic check for the LFS block size.
-%%    Then add extra cushion (e.g. 512 bytes??) and use that for block size?
+%% When we encode a bucket name, the encoding has the <<"0b:">> prefix,
+%% which doesn't help spread the love of bucket subdir hashing levels.
+%% Is this avoidable?  If not, we need a change of hashing the dir levels.
+%%
+%% __ Add patch to CS that will 1. add Riak header that contains checksum.
+%%    2. Will not crash horribly if put fails.
+%%    3. Will detect siblings correctly on get and pick the version
+%%       that matches the block checksum.
+%%    4. Will repair the block when #3 hits.
+%%    Also, in conjunction with this backend:
+%%    __ Since we're already peeking into the Riak object metadata to
+%%       check for tombstones, also check for the block checksum and
+%%       refuse to write the block if it is corrupted.  This would
+%%       avoid propagation of corruption in a couple of places:
+%%       a. AAE replicates a bad block and clobbers a good one
+%%       b. Handoff sends a bad block to a vnode and clobbers a good one
 %%
 %% __ Double-check that the api_version & capabilities/0 func is doing
-%%    the right thing wrt riak_kv.
-%%
-%% __ http://erlang.org/pipermail/erlang-questions/2011-September/061147.html
-%%    __ Avoid `file` module whenever file_server_2 calls are used.
-%%    __ Avoid file:file_name_1() recursion silliness
-%%
 %% __ Add capability to extend put() and get() to avoid getting an
 %%    already-encoded-Riak-object and returning same.  If
 %%    riak_kv_vnode gives us an encoded object, we need to unencoded
@@ -71,6 +109,25 @@
 %%    with term_to_binary() conversions.  Doing extra conversions is
 %%    both a waste of CPU time and a way to anger the Erlang process
 %%    scheduler gods.
+%%
+%% __ Move to assuming that <<"0b:">> will be assuming 1MB block size.
+%%    We need block size flexibility for testing, but that's all for now.
+%%    Figure out the max length of S3 bucket (DNS limit) and object name
+%%    (AWS S3 docs), and leave room for the rest of the metadata dict.
+%%
+%% __ Double-check that the api_version & capabilities/0 func is doing
+%%    the right thing wrt riak_kv.
+%%
+%% __ http://erlang.org/pipermail/erlang-questions/2011-September/061147.html
+%%    __ Avoid `file` module whenever file_server_2 calls are used.
+%%    __ Avoid file:file_name_1() recursion silliness
+%%
+%% __ Read cache: if reading 0th chunk, create read-ahead that will
+%%    read entire file async'ly and send it as a message to be recieved
+%%    later.  When reading 1st chunk, wait for arrival of read-ahead block.
+%%    __ Needs a real cache though.  Steal the cache from the memory backend?
+%%       Use the entire riak_memory_backend as-is??  Triple-check that ETS
+%%       isn't going to copy off-heap/shared binaries....
 %%
 %% no Implement the delete op:
 %%    __ Update the deleted chunk map:
@@ -83,13 +140,6 @@
 %%                 deleted yet.  (Or if pread(2) returns EOF)
 %%              2. If trailer is present, check last trailer for latest map.
 %%    INSTEAD, use hack of one-tombstone-for-all and one-delete-for-all.
-%%
-%% __ Read cache: if reading 0th chunk, create read-ahead that will
-%%    read entire file async'ly and send it as a message to be recieved
-%%    later.  When reading 1st chunk, wait for arrival of read-ahead block.
-%%    __ Needs a real cache though.  Steal the cache from the memory backend?
-%%       Use the entire riak_memory_backend as-is??  Triple-check that ETS
-%%       isn't going to copy off-heap/shared binaries....
 
 -module(riak_kv_fs2_backend).
 %% -behavior(riak_kv_backend). % Not building within riak_kv
@@ -100,8 +150,8 @@
          capabilities/2,
          start/2,
          stop/1,
-         get/3,
-         put/5,                 % deprecated in favor of put/6
+         get_object/4,                          % capability: uses_r_object
+         put_object/5,                          % capability: uses_r_object
          delete/4,
          drop/1,
          fold_buckets/4,
@@ -110,8 +160,6 @@
          is_empty/1,
          status/1,
          callback/3]).
-%% KV Backend API based on capabilities
--export([put/6]).
 %% Testing
 -export([t0/0, t1/0, t2/0, t3/0, t4/0]).
 
@@ -119,7 +167,7 @@
 -include_lib("kernel/include/file.hrl").
 
 -define(API_VERSION, 1).
--define(CAPABILITIES, [raw_object, async_fold, write_once_keys]).
+-define(CAPABILITIES, [uses_r_object, async_fold, write_once_keys]).
 
 %%% -define(TEST_IN_RIAK_KV, true).
 
@@ -204,7 +252,7 @@ start(Partition, Config) ->
                             error_logger:warning_msg(
                               "~s: max_blocks_per_file is ~p.  This "
                               "configuration item is only valid for tests.  "
-                              "Proceed with caution.",
+                              "Proceed with caution.\n",
                               [?MODULE, N]),
                             %% Go ahead and use it
                             N;
@@ -236,22 +284,27 @@ start(Partition, Config) ->
 stop(_State) -> ok.
 
 %% @doc Get the object stored at the given bucket/key pair
--spec get(riak_object:bucket(), riak_object:key(), state()) ->
-                 {ok, any(), state()} |
-                 {ok, not_found, state()} |
-                 {error, term(), state()}.
-get(<<?BLOCK_BUCKET_PREFIX, _/binary>> = Bucket,
-    <<UUID:?UUID_BYTES/binary, BlockNum:?BLOCK_FIELD_SIZE>>, State) ->
+-spec get_object(riak_object:bucket(), riak_object:key(), boolean(), state()) ->
+                     {ok, binary() | riak_object:riak_object(), state()} |
+                     {ok, not_found, state()} |
+                     {error, term(), state()}.
+get_object(<<?BLOCK_BUCKET_PREFIX, _/binary>> = Bucket,
+           <<UUID:?UUID_BYTES/binary, BlockNum:?BLOCK_FIELD_SIZE>>,
+           WantsBinary, State) ->
     case read_block(Bucket, UUID, BlockNum, State) of
-        Bin when is_binary(Bin) ->
-            %% io:format("Got ~p bytes ~P\n", [byte_size(Bin), catch binary_to_term(Bin), 20]),
-            %% D = riak_object:get_metadatas(binary_to_term(Bin)),
-            %% io:format("MD ~P\n", [D, 125]),
+        Bin when is_binary(Bin), WantsBinary == false ->
+            try
+                {ok, deserialize_term(Bin), State}
+            catch
+                _:_ ->
+                    {error, not_found, State}
+            end;
+        Bin when is_binary(Bin), WantsBinary == true ->
             {ok, Bin, State};
         Reason when is_atom(Reason) ->
             {error, not_found, State}
     end;
-get(Bucket, Key, State) ->
+get_object(Bucket, Key, WantsBinary, State) ->
     File = location(State, Bucket, Key),
     case filelib:is_file(File) of
         false ->
@@ -263,44 +316,42 @@ get(Bucket, Key, State) ->
                     %% TODO logging?
                     {error, not_found, State};
                 Val ->
-                    {ok, Val, State}
+                    case WantsBinary of
+                        false ->
+                            ok;
+                        true ->
+                            {ok, Val, State}
+                    end
             end
     end.
 
-put(Bucket, Key, IndexSpecs, Val, State) ->
-    put(Bucket, Key, IndexSpecs, Val, binary_to_term(Val), State).
-
 %% @doc Store Val under Bucket and Key
 %%
-%% NOTE: Val is a copy of ValRObj that has been encoded by term_to_binary()
+%% NOTE: Val is a copy of ValRObj that has been encoded by serialize_term()
 
 -type index_spec() :: {add, Index, SecondaryKey} | {remove, Index, SecondaryKey}.
--spec put(riak_object:bucket(), riak_object:key(), [index_spec()], binary(), riak_object:riak_object(), state()) ->
-                 {ok, state()} |
-                 {error, term(), state()}.
-put(<<?BLOCK_BUCKET_PREFIX, _/binary>>,
-    <<_:?UUID_BYTES/binary, _:?BLOCK_FIELD_SIZE>>,
-    _IndexSpecs, Val, _ValRObj, #state{block_size = BlockSize} = State)
-  when size(Val) > BlockSize ->
-    {error, invalid_user_argument, State};
-put(<<?BLOCK_BUCKET_PREFIX, _/binary>> = Bucket,
-    <<UUID:?UUID_BYTES/binary, BlockNum:?BLOCK_FIELD_SIZE>>,
-    _IndexSpecs, Val, ValRObj, State) ->
-    case put_block(Bucket, UUID, BlockNum, Val, ValRObj, State) of
-        ok ->
-            {ok, State};
+-spec put_object(riak_object:bucket(), riak_object:key(), [index_spec()], riak_object:riak_object(), state()) ->
+                 {{ok, state()}, EncodedVal::binary()} |
+                 {{error, term()}, state()}.
+put_object(<<?BLOCK_BUCKET_PREFIX, _/binary>> = Bucket,
+           <<UUID:?UUID_BYTES/binary, BlockNum:?BLOCK_FIELD_SIZE>>,
+           _IndexSpecs, RObj, State) ->
+    case put_block(Bucket, UUID, BlockNum, RObj, State) of
+        {ok, EncodedVal} ->
+            {{ok, State}, EncodedVal};
         Reason ->
-            {error, Reason, State}
+            {{error, Reason, State}, invalid_encoded_val_do_not_use}
     end;
-put(Bucket, PrimaryKey, _IndexSpecs, Val, _ValRObj, State) ->
+put_object(Bucket, PrimaryKey, _IndexSpecs, RObj, State) ->
     File = location(State, Bucket, PrimaryKey),
     case filelib:ensure_dir(File) of
         ok ->
-            case atomic_write(File, Val, State) of
-                ok         -> {ok, State};
-                {error, X} -> {error, X, State}
+            EncodedVal = serialize_term(RObj),
+            case atomic_write(File, EncodedVal, State) of
+                ok         -> {{ok, State}, EncodedVal};
+                {error, X} -> {{error, X, State}, EncodedVal}
             end;
-        {error, X} -> {error, X, State}
+        {error, X} -> {{error, X, State}, invalid_encoded_val_do_not_use}
     end.
 
 %% @doc Delete the object stored at BKey
@@ -552,13 +603,11 @@ nest([],N,Acc) ->
 pack_ondisk(Bin, State) ->
     pack_ondisk_v1(Bin, State).
 
-pack_ondisk_v1(Bin, #state{block_size = BlockSize}) ->
+%% NOTE: We don't check for size overflow here, we rely on the caller
+%%       to do that now, e.g., put_block3().
+
+pack_ondisk_v1(Bin, _S) ->
     ValueSz = size(Bin),
-    if ValueSz =< BlockSize ->
-            ok;
-       true ->
-            exit({size_violation, ?MODULE, ValueSz, '>', BlockSize})
-    end,
     Bytes0 = [<<ValueSz:?VALSIZEFIELD>>, Bin],
     [<<?COOKIE_V1:?COOKIE_SIZE, (erlang:crc32(Bytes0)):?CRCSIZEFIELD>>, Bytes0].
 
@@ -676,11 +725,11 @@ read_rest({ok, <<>>}, _FH, _MaxSize) ->
 read_rest({ok, Bin}, FH, MaxSize) ->
     [Bin|read_rest(FH, MaxSize)].
 
-put_block(Bucket, UUID, BlockNum, Val, ValRObj, State) ->
-    put_block_t_marker_check(Bucket, UUID, BlockNum, Val, ValRObj, State).
+put_block(Bucket, UUID, BlockNum, RObj, State) ->
+    put_block_t_marker_check(Bucket, UUID, BlockNum, RObj, State).
 
 %% @doc Check for tombstone on disk before we try to put block
-put_block_t_marker_check(Bucket, UUID, BlockNum, Val, ValRObj, State) ->
+put_block_t_marker_check(Bucket, UUID, BlockNum, RObj, State) ->
     Key = convert_blocknum2key(UUID, BlockNum, State),
     File = location(State, Bucket, Key),
     FI_perhaps = file:read_file_info(File),
@@ -689,76 +738,84 @@ put_block_t_marker_check(Bucket, UUID, BlockNum, Val, ValRObj, State) ->
             if FI#file_info.mode band ?TOMBSTONE_MODE_MARKER > 0 ->
                     %% This UUID + block of chunks has got a tombstone
                     %% marker set, so there's nothing more to do here.
-                    ok;
+                    {ok, serialize_term(RObj)};
                true ->
-                    put_block_t_check(BlockNum, Val, ValRObj, File, FI_perhaps,
-                                      State)
+                    put_block_t_check(BlockNum, RObj, File, FI_perhaps, State)
             end;
         _ ->
-            put_block_t_check(BlockNum, Val, ValRObj, File, FI_perhaps, State)
+            put_block_t_check(BlockNum, RObj, File, FI_perhaps, State)
     end.
 
-%% @doc Check for tombstone in ValRObj before we try to put block
-put_block_t_check(BlockNum, Val, ValRObj, File, FI_perhaps, State) ->
+%% @doc Check for tombstone in RObj before we try to put block
+put_block_t_check(BlockNum, RObj, File, FI_perhaps, State) ->
     NewMode = fun(FI) ->
                       NewMode = FI#file_info.mode bor ?TOMBSTONE_MODE_MARKER,
                       ok = file:change_mode(File, NewMode)
               end,
-    case riak_object_is_deleted(ValRObj) of
+    case riak_object_is_deleted(RObj) of
         true ->
             case FI_perhaps of
                 {ok, FI} ->
-                    ok = NewMode(FI);
+                    {ok = NewMode(FI), serialize_term(RObj)};
                 {error, enoent} ->
                     ok = filelib:ensure_dir(File),
                     {ok, FH} = file:open(File, [write, raw]),
                     ok = file:close(FH),
-                    ok = NewMode(#file_info{mode = 8#600})
+                    {ok = NewMode(#file_info{mode = 8#600}), serialize_term(RObj)}
             end;
         _ ->
-            put_block3(BlockNum, Val, File, FI_perhaps, State)
+            put_block3(BlockNum, RObj, File, FI_perhaps, State)
     end.
 
 %% @doc Put block: there is no previous tombstone or current tombstone.
-put_block3(BlockNum, Val, File, FI_perhaps, State) ->
+put_block3(BlockNum, RObj, File, FI_perhaps,
+           #state{block_size = BlockSize} = State) ->
     Offset = calc_block_offset(BlockNum, State),
     OutOfOrder_p = check_trailer_ooo(FI_perhaps, BlockNum, State),
     try
         case file:open(File, [write, read, raw, binary]) of
             {ok, FH} ->
                 try
-                    PackedBin = pack_ondisk(Val, State),
-                    ok = file:pwrite(FH, Offset, PackedBin),
-                    if OutOfOrder_p ->
-                            %% It's not an error to write more than one trailer
-                            Tr = make_trailer(#t{written_sequentially = false},
-                                              State),
-                            TrOffset = calc_block_offset(trailer, State),
-                            {ok, TrOffset} = file:position(FH, {bof, TrOffset}),
-                            ok = file:write(FH, Tr);
-                       true ->
-                            ok
+                    EncodedObj = serialize_term(RObj),
+                    PackedBin = pack_ondisk(EncodedObj, State),
+                    case erlang:iolist_size(PackedBin) of
+                        PBS when PBS > BlockSize ->
+                            {invalid_data_size, PBS, BlockSize};
+                        _ -> 
+                            ok = file:pwrite(FH, Offset, PackedBin),
+                            if
+                                OutOfOrder_p ->
+                                   %% It's not an error to write more
+                                   %% than one trailer
+                                   Tr = make_trailer(
+                                          #t{written_sequentially = false},
+                                          State),
+                                   TrOffset = calc_block_offset(trailer, State),
+                                   {ok, TrOffset} = file:position(
+                                                      FH, {bof, TrOffset}),
+                                   {ok = file:write(FH, Tr), EncodedObj};
+                                true ->
+                                   {ok, EncodedObj}
+                            end
                     end
                 after
                         file:close(FH)
                 end;
             {error, enoent} ->
                 ok = filelib:ensure_dir(File),
-                put_block3(BlockNum, Val, File, FI_perhaps, State);
-            {error, _} = Res ->
-                Res
+                put_block3(BlockNum, RObj, File, FI_perhaps, State);
+            {error, _} = Error ->
+                Error
         end
     catch
-        error:{badmatch, _Y} ->
-            lager:warning("~s: badmatch1 err ~p\n", [?MODULE, _Y]),
-            {error, badmatch1};
-        _X:Y ->
-            lager:warning("~s: badmatch2 ~p ~p\n", [?MODULE, _X, Y]),
-            {error, badmatch2}
+        error:{badmatch, Y} ->
+            lager:warning("~s: badmatch1 err ~p\n", [?MODULE, Y]),
+            {badmatch1, Y};
+        X:Y ->
+            lager:warning("~s: badmatch2 ~p ~p\n", [?MODULE, X, Y]),
+            {badmatch2, X, Y}
     end.
 
-riak_object_is_deleted(eunit_delete_op_requested) ->
-    true;
 riak_object_is_deleted(ValRObj) ->
     catch riak_kv_util:is_x_deleted(ValRObj).
 
@@ -802,7 +859,7 @@ check_trailer_ooo({ok, FI}, BlockNum, #state{max_blocks = MaxBlocks} = State) ->
     (BlockNum rem MaxBlocks) == MaxBlock - 1.
 
 make_trailer(Term, State) ->
-    Bin = iolist_to_binary(pack_ondisk(term_to_binary(Term), State)),
+    Bin = iolist_to_binary(pack_ondisk(serialize_term(Term), State)),
     Sz = size(Bin),
     [Bin, <<Sz:32>>].
 
@@ -986,7 +1043,7 @@ exec_stack_op({_Bucket, _Key} = BKey, FoldFun, Acc,
     {[], FoldFun(BKey, value_unused_by_this_modules_fold_wrapper, Acc)};
 exec_stack_op({Bucket, Key} = BKey, FoldFun, Acc,
               #state{fold_type = objects} = State) ->
-    case get(Bucket, Key, State) of
+    case get_object(Bucket, Key, false, State) of
         {ok, Value, _S} ->
             {[], FoldFun(BKey, Value, Acc)};
         _ ->
@@ -1000,6 +1057,12 @@ do_glob(Glob, Dir, #state{dir = PrefixDir}) ->
 convert_blocknum2key(UUID, BlockNum, #state{max_blocks = MaxBlocks}) ->
     <<UUID/binary, ((BlockNum div MaxBlocks) * MaxBlocks):?BLOCK_FIELD_SIZE>>.
 
+serialize_term(Term) ->
+    term_to_binary(Term).
+
+deserialize_term(Bin) ->
+    binary_to_term(Bin).
+
 t0() ->
     %% Blocksize must be at last 15 or so: this test writes two blocks
     %% for the same UUID, but it does them out of order, so a trailer
@@ -1012,13 +1075,15 @@ t0() ->
     V0 = <<42:(BlockSize*8)>>,
     K1 = <<0:(?UUID_BYTES*8), 1:?BLOCK_FIELD_SIZE>>,
     V1 = <<43:(BlockSize*8)>>,
+    O0 = riak_object:new(Bucket, K0, V0),
+    O1 = riak_object:new(Bucket, K1, V1),
     os:cmd("rm -rf " ++ TestDir),
     {ok, S} = start(-1, [{data_root, TestDir},
-                         {block_size, BlockSize}]),
-    {ok, S} = put(Bucket, K1, [], V1, ignored, S),
-    {ok, S} = put(Bucket, K0, [], V0, ignored, S),
-    {ok, V0, S} = get(Bucket, K0, S),
-    {ok, V1, S} = get(Bucket, K1, S),
+                         {block_size, base_ext_size() + 100 + BlockSize}]),
+    {{ok, S}, _} = put_object(Bucket, K1, [], O1, S),
+    {{ok, S}, _} = put_object(Bucket, K0, [], O0, S),
+    {ok, O0, S} = get_object(Bucket, K0, false, S),
+    {ok, O1, S} = get_object(Bucket, K1, false, S),
     ok.
 
 t1() ->
@@ -1029,24 +1094,30 @@ t1() ->
     V0 = <<100:64>>,
     K1 = <<0:(?UUID_BYTES*8), 1:?BLOCK_FIELD_SIZE>>,
     V1 = <<101:64>>,
+    O0 = riak_object:new(Bucket, K0, V0),
+    O1 = riak_object:new(Bucket, K1, V1),
     os:cmd("rm -rf " ++ TestDir),
     {ok, S} = start(-1, [{data_root, TestDir},
-                         {block_size, 1024}]),
-    {ok, S4} = put(Bucket, K0, [], V0, ignored, S),
-    {ok, [{{Bucket, K0}, V0}]} = fold_objects(fun(B, K, V, Acc) ->
-                                                      [{{B, K}, V}|Acc]
+                         {block_size, base_ext_size() + 1024}]),
+    {{ok, S4}, _} = put_object(Bucket, K0, [], O0, S),
+    {ok, [{{Bucket, K0}, O0}]} = fold_objects(fun(B, K, O, Acc) ->
+                                                      [{{B, K}, O}|Acc]
                                               end, [], [], S4),
-    {ok, S5} = put(Bucket, K1, [], V1, ignored, S4),
-    {ok, V0, _} = get(Bucket, K0, S5),
-    {ok, V1, _} = get(Bucket, K1, S5),
+    {{ok, S5}, _} = put_object(Bucket, K1, [], O1, S4),
+    {ok, O0, _} = get_object(Bucket, K0, false, S5),
+    {ok, O1, _} = get_object(Bucket, K1, false, S5),
     {ok, X} = fold_objects(fun(B, K, V, Acc) ->
                                    [{{B, K}, V}|Acc]
                            end, [], [], S5),
-    [{{Bucket, K0}, V0}, {{Bucket, K1}, V1}] = lists:reverse(X),
+    [{{Bucket, K0}, O0}, {{Bucket, K1}, O1}] = lists:reverse(X),
 
-    {ok, S6} = delete(Bucket, K1, unused, S5),
-    {ok, []} = fold_objects(fun(B, K, V, Acc) ->
-                                    [{{B, K}, V}|Acc]
+    {ok, S6} = delete(Bucket, K0, unused, S5),
+    %% Remember, this backend is different than the usual riak_kv backend:
+    %% if someone deletes an object that's stored inside some file-on-disk
+    %% F, then any other key that also is mapped to file F will also be
+    %% deleted at the same time.
+    {ok, []} = fold_objects(fun(B, K, O, Acc) ->
+                                    [{{B, K}, O}|Acc]
                             end, [], [], S6),
     ok.
 
@@ -1057,35 +1128,44 @@ t2() ->
     B2 = <<?BLOCK_BUCKET_PREFIX, "delme2">>,
     B3 = <<?BLOCK_BUCKET_PREFIX, "delme22">>,
     os:cmd("rm -rf " ++ TestDir),
+    BlockSize = base_ext_size() + 1024,
     {ok, S} = start(-1, [{data_root, TestDir},
-                         {block_size, 1024}]),
-    BKVs = [{B, <<UUID:(?UUID_BYTES*8), Seq:?BLOCK_FIELD_SIZE>>,
-             list_to_binary(["val ", integer_to_list(Seq)])} ||
-               B <- [B1, B2, B3],
-               UUID <- [44, 88],
-               %% Seq <- lists:seq(0, 5)],
-               Seq <- lists:seq(0, ?FS2_CONTIGUOUS_BLOCKS + 5)],
-    [{ok, _} = put(B, K, [], V, ignored, S) || {B, K, V} <- BKVs],
-    {ok, Res} = fold_objects(fun(B, K, V, Acc) ->
-                                     [{B, K, V}|Acc]
+                         {block_size, BlockSize},
+                         {max_blocks_per_file, 7}]),
+    RoughSize = ?UUID_BYTES + (?BLOCK_FIELD_SIZE div 8) + 8 + base_ext_size(),
+    EndSeq = 20 * (BlockSize div RoughSize),
+
+    Os = [riak_object:new(B, <<UUID:(?UUID_BYTES*8), Seq:?BLOCK_FIELD_SIZE>>,
+                          list_to_binary(["val ", integer_to_list(Seq)])) ||
+             B <- [B1, B2, B3],
+             UUID <- [44, 88],
+             Seq <- lists:seq(0, EndSeq)],
+    [{{ok, _}, _} = put_object(riak_object:bucket(RObj),
+                               riak_object:key(RObj),
+                               [], RObj, S) || RObj <- Os],
+    {ok, Res} = fold_objects(fun(_B, _K, RObj, Acc) ->
+                                     [RObj|Acc]
                              end, [], [], S),
     %% Lengths are the same
-    true = (length(BKVs) == length(Res)),
+    true = (length(Os) == length(Res)),
     %% The original data's sorted order is the same as our traversal
     %% order (once we reverse the fold).
-    true = (lists:sort(BKVs) == lists:reverse(Res)),
+    true = (lists:sort(Os) == lists:reverse(Res)),
+    os:cmd("rm -rf " ++ TestDir),
     ok.
 
 t3() ->
     TestDir = "./delme",
     Bucket = <<?BLOCK_BUCKET_PREFIX, "delme">>,
     K0 = <<0:(?UUID_BYTES*8), 0:?BLOCK_FIELD_SIZE>>,
-    BlockSize = 10,
+    BlockSize = 10,                             % Too small!
     V0 = <<42:((BlockSize+1)*8)>>,
+    O0 = riak_object:new(Bucket, K0, V0),
     os:cmd("rm -rf " ++ TestDir),
     {ok, S} = start(-1, [{data_root, TestDir},
                          {block_size, BlockSize}]),
-    {error, invalid_user_argument, S} = put(Bucket, K0, [], V0, ignored, S),
+    {{error, {invalid_data_size, _, _}, S}, _EncodedVal} =
+        put_object(Bucket, K0, [], O0, S),
     ok.
 
 %% t4() = folding tests
@@ -1099,38 +1179,45 @@ t4(SmallestBlock, BiggestBlock, BlocksPerFile, OrderFun)
     B1 = <<?BLOCK_BUCKET_PREFIX, "delme1">>,
     B2 = <<?BLOCK_BUCKET_PREFIX, "delme2">>,
     TheTwoBs = [B1, B2],
-    BlockSize = 20,
+    BlockSize = 4096,
     os:cmd("rm -rf " ++ TestDir),
     {ok, S} = start(-1, [{data_root, TestDir},
-                         {block_size, BlockSize},
+                         {block_size, BlockSize + base_ext_size()},
                          {max_blocks_per_file, BlocksPerFile}]),
-    BKVs = [{<<?BLOCK_BUCKET_PREFIX, "delme", Bp:8>>,
-             <<0:(?UUID_BYTES*8), X:?BLOCK_FIELD_SIZE>>,
-             <<X:((BlockSize)*8)>>} ||
-               Bp <- [$1, $2],
-               X <- lists:seq(SmallestBlock, BiggestBlock)],
-    [{ok, S} = put(B, K, [], V, ignored, S) || {B, K, V} <- OrderFun(BKVs)],
+    Os = [riak_object:new(<<?BLOCK_BUCKET_PREFIX, "delme", Bp:8>>,
+                          <<0:(?UUID_BYTES*8), X:?BLOCK_FIELD_SIZE>>,
+                          <<X:((BlockSize)*8)>>) ||
+             Bp <- [$1, $2],
+             X <- lists:seq(SmallestBlock, BiggestBlock)],
+    [{{ok, S}, _} = put_object(riak_object:bucket(O),
+                               riak_object:key(O),
+                               [], O, S) || O <- OrderFun(Os)],
 
-    BKs = [{B, K} || {B, K, _V} <- BKVs],
+    put(t4_paranoid_counter, 0),
     [begin
          OnlyB = proplists:get_value(bucket, FoldOpts, all_buckets),
          BucketFilt = fun(B) -> OnlyB == all_buckets orelse B == OnlyB end,
-
          %% Fold objects
-         {ok, FoundBKVs} = fold_objects(fun(B, K, V, Acc) ->
-                                                [{B, K, V}|Acc]
-                                        end, [], FoldOpts, S),
-         OnlyBKVs = [BKV || {B, _, _} = BKV <- BKVs,
-                            BucketFilt(B)],
-         {OnlyB, true} = {OnlyB, (lists:sort(OnlyBKVs) == lists:reverse(FoundBKVs))},
+         {ok, FoundOs} = fold_objects(fun(_B, _K, RObj, Acc) ->
+                                              [RObj|Acc]
+                                      end, [], FoldOpts, S),
+         OnlyOs = [O || O <- Os,
+                        B <- [riak_object:bucket(O)],
+                        BucketFilt(B)],
+         {OnlyB, true} = {OnlyB, (lists:sort(OnlyOs) == lists:reverse(FoundOs))},
          %% Fold keys
          {ok, FoundBKs} = fold_keys(fun(B, K, Acc) ->
                                             [{B, K}|Acc]
                                     end, [], FoldOpts, S),
-         OnlyBKs = [BK || {B, _} = BK <- BKs,
-                          BucketFilt(B)],
-         {OnlyB, true} = {OnlyB, (lists:sort(OnlyBKs) == lists:reverse(FoundBKs))}
+         OnlyBKs = [{riak_object:bucket(O),
+                     riak_object:key(O)} || O <- Os,
+                                            B <- [riak_object:bucket(O)],
+                                            BucketFilt(B)],
+         {OnlyB, true} = {OnlyB, (lists:sort(OnlyBKs) ==
+                                      lists:reverse(FoundBKs))},
+         put(t4_paranoid_counter, get(t4_paranoid_counter) + 1)
      end || FoldOpts <- [[], [{bucket, B1}], [{bucket, B2}]] ],
+    3 = get(t4_paranoid_counter),               % Extra paranoia...
 
     %% Set up for fold buckets
     RestBegin = $3,             % We already have buckets ending with $1 & $2
@@ -1142,16 +1229,30 @@ t4(SmallestBlock, BiggestBlock, BlocksPerFile, OrderFun)
              %% Using X like for both UUID and block # will give us one
              %% file that's written in order, UUID=0, and the rest will be
              %% files written out of order.
-             [{ok, S} = put(RestB, <<X:(?UUID_BYTES*8), X:?BLOCK_FIELD_SIZE>>,
-                            [], <<"val!">>, ignored, S) ||
-                 X <- lists:seq(0, RestBlocks)],
+             RestOs = [riak_object:new(
+                         RestB,
+                         <<X:(?UUID_BYTES*8), X:?BLOCK_FIELD_SIZE>>,
+                         <<"val!">>) ||
+                          X <- lists:seq(0, RestBlocks)],
+             [{{ok, S}, _} = put_object(riak_object:bucket(O),
+                                        riak_object:key(O),
+                                        [], O, S) ||
+                 O <- RestOs],
              if Bp rem 3 == 0 ->
                      {exists, RestB};
+
                 Bp rem 3 == 1 ->
-                     [{ok, S} = put(RestB,
-                                    <<X:(?UUID_BYTES*8),X:?BLOCK_FIELD_SIZE>>,
-                                    [], <<>>, eunit_delete_op_requested, S) ||
-                         X <- lists:seq(0, RestBlocks)],
+                     DelMD = dict:store(<<"X-Riak-Deleted">>, true, dict:new()),
+                     [begin
+                          Od = riak_object:new(
+                                 RestB,
+                                 <<X:(?UUID_BYTES*8),X:?BLOCK_FIELD_SIZE>>,
+                                 <<>>, DelMD),
+                         {{ok, S}, _} = put_object(
+                                     RestB,
+                                     <<X:(?UUID_BYTES*8),X:?BLOCK_FIELD_SIZE>>,
+                                     [], Od, S)
+                      end || X <- lists:seq(0, RestBlocks)],
                      {tombstone, RestB};
                 Bp rem 3 == 2 ->
                      [{ok, S} = delete(RestB,
@@ -1166,8 +1267,10 @@ t4(SmallestBlock, BiggestBlock, BlocksPerFile, OrderFun)
     %% Fold buckets
     {ok, FoundBs} = fold_buckets(fun(B, Acc) -> [B|Acc] end, [], [], S),
     %% FoundBs should contain only the buckets in TheTwoBs and
-    %% the buckets in RestStatus that are 'exists' status.  And
-    %% FoundBs should come out in the proper order (don't sort it!).
+    %% the buckets in RestStatus that are 'exists' status.
+    %% The items that we marked with tombstones or explicitly deleted
+    %% should be gone, and if they aren't gone, FoundBs will be too big.
+    %% Also, FoundBs should come out in the proper order (don't sort it!).
     true = (lists:sort(TheTwoBs ++ RestRemainingBuckets) == lists:reverse(FoundBs)),
 
     %% TODO? In the section for setup of the fold buckets, perhaps
@@ -1177,6 +1280,9 @@ t4(SmallestBlock, BiggestBlock, BlocksPerFile, OrderFun)
     %% TODO? In the fold objects and fold keys tests, use bucket names of
     %% different lengths, for the same reason as above?
     ok.
+
+base_ext_size() ->
+    erlang:external_size(riak_object:new(<<>>, <<>>, <<>>)) + 128.
 
 %% ===================================================================
 %% EUnit tests
@@ -1201,11 +1307,6 @@ t3_test() ->
 t4_test() ->
     ok = t4().
 
-%% t4_eqc_test() is now run by eqc_test_(), below, to avoid EUnit timeouts.
-
-eqc_t4_wrapper() ->
-    eqc:quickcheck(eqc:numtests(250, prop_t4())).
-
 %% Callbacks for backend_eqc test.
 
 eqc_filter_delete(Bucket, Key, BKVs) ->
@@ -1224,8 +1325,9 @@ eqc_filter_delete(Bucket, Key, BKVs) ->
     end.
 
 eqc_filter_list_keys(Keys, S) ->
+    exit(todo_TODO_broken),
     [BKey || {Bucket, Key} = BKey <- Keys,
-             (catch element(1, get(Bucket, Key, S))) == ok].
+             (catch element(1, get_object(Bucket, Key, false, S))) == ok].
 
 -ifdef(TEST_IN_RIAK_KV).
 
@@ -1280,6 +1382,9 @@ create_or_sanity_test() ->
 basic_props() ->
     [{data_root,  "test/fs-backend"},
      {block_size, 1024}].
+
+eqc_t4_wrapper() ->
+    eqc:quickcheck(eqc:numtests(250, prop_t4())).
 
 -ifdef(TEST_IN_RIAK_KV).
 eqc_test_() ->
