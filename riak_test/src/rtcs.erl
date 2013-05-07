@@ -117,7 +117,7 @@ cs_port(Node) ->
     8070 + rtdev:node_id(Node).
 
 ee_config() ->
-    CSCurrent = rt:config(rtdev_path.cs_current),
+    CSCurrent = rt_config:get(rtdev_path.cs_current),
     [
      lager_config(),
      {riak_core,
@@ -157,6 +157,11 @@ cs_config(UserExtra) ->
      {riak_cs,
       UserExtra ++
       [
+       {connection_pools,
+        [
+         {request_pool, {8, 0} },
+         {bucket_list_pool, {2, 0} }
+        ]},
        {proxy_get, enabled},
        {anonymous_user_creation, true},
        {riak_pb_port, 10017},
@@ -217,10 +222,10 @@ deploy_nodes(NumNodes, InitialConfig) ->
     lager:info("RiakNodes: ~p", [RiakNodes]),
 
     NodeMap = orddict:from_list(lists:zip(RiakNodes, lists:seq(1, NumNodes))),
-    rt:set_config(rt_nodes, NodeMap),
+    rt_config:set(rt_nodes, NodeMap),
 
     VersionMap = lists:zip(lists:seq(1, NumNodes), lists:duplicate(NumNodes, ee_current)),
-    rt:set_config(rt_versions, VersionMap),
+    rt_config:set(rt_versions, VersionMap),
 
     lager:info("VersionMap: ~p", [VersionMap]),
 
@@ -232,9 +237,9 @@ deploy_nodes(NumNodes, InitialConfig) ->
     stop_all_nodes(NodeList),
 
     [reset_nodes(Project, Path) ||
-        {Project, Path} <- [{riak_ee, rt:config(?EE_ROOT)},
-                            {riak_cs, rt:config(?CS_ROOT)},
-                            {stanchion, rt:config(?STANCHION_ROOT)}]],
+        {Project, Path} <- [{riak_ee, rt_config:get(?EE_ROOT)},
+                            {riak_cs, rt_config:get(?CS_ROOT)},
+                            {stanchion, rt_config:get(?STANCHION_ROOT)}]],
 
     rtdev:create_dirs(RiakNodes),
 
@@ -325,15 +330,15 @@ set_configs(NodeList, Configs) ->
                     N = rtdev:node_id(RiakNode),
                     rtdev:update_app_config(RiakNode, proplists:get_value(riak,
                                                                           Config)),
-                    update_cs_config(rt:config(?CS_CURRENT), N,
+                    update_cs_config(rt_config:get(?CS_CURRENT), N,
                                      proplists:get_value(cs, Config)),
-                    update_stanchion_config(rt:config(?STANCHION_CURRENT),
+                    update_stanchion_config(rt_config:get(?STANCHION_CURRENT),
                                             proplists:get_value(stanchion, Config));
                ({{_CSNode, RiakNode}, Config}) ->
                     N = rtdev:node_id(RiakNode),
                     rtdev:update_app_config(RiakNode, proplists:get_value(riak,
                                                                           Config)),
-                    update_cs_config(rt:config(?CS_CURRENT), N,
+                    update_cs_config(rt_config:get(?CS_CURRENT), N,
                                      proplists:get_value(cs, Config))
             end,
             lists:zip(NodeList, Configs)).
@@ -343,16 +348,16 @@ set_admin_creds_in_configs(NodeList, Configs, AdminCreds) ->
                     ok;
                ({{_CSNode, RiakNode, _Stanchion}, Config}) ->
                     N = rtdev:node_id(RiakNode),
-                    update_cs_config(rt:config(?CS_CURRENT),
+                    update_cs_config(rt_config:get(?CS_CURRENT),
                                      N,
                                      proplists:get_value(cs, Config),
                                      AdminCreds),
-                    update_stanchion_config(rt:config(?STANCHION_CURRENT),
+                    update_stanchion_config(rt_config:get(?STANCHION_CURRENT),
                                             proplists:get_value(stanchion, Config),
                                             AdminCreds);
                ({{_CSNode, RiakNode}, Config}) ->
                     N = rtdev:node_id(RiakNode),
-                    update_cs_config(rt:config(?CS_CURRENT),
+                    update_cs_config(rt_config:get(?CS_CURRENT),
                                      N,
                                      proplists:get_value(cs, Config),
                                      AdminCreds)
@@ -373,22 +378,22 @@ make_cluster(Nodes) ->
     ?assertEqual(ok, wait_until_no_pending_changes(Nodes)).
 
 start_cs(N) ->
-    Cmd = riakcscmd(rt:config(?CS_CURRENT), N, "start"),
+    Cmd = riakcscmd(rt_config:get(?CS_CURRENT), N, "start"),
     lager:info("Running ~p", [Cmd]),
     os:cmd(Cmd).
 
 stop_cs(N) ->
-    Cmd = riakcscmd(rt:config(?CS_CURRENT), N, "stop"),
+    Cmd = riakcscmd(rt_config:get(?CS_CURRENT), N, "stop"),
     lager:info("Running ~p", [Cmd]),
     os:cmd(Cmd).
 
 start_stanchion() ->
-    Cmd = stanchioncmd(rt:config(?STANCHION_CURRENT), "start"),
+    Cmd = stanchioncmd(rt_config:get(?STANCHION_CURRENT), "start"),
     lager:info("Running ~p", [Cmd]),
     os:cmd(Cmd).
 
 stop_stanchion() ->
-    Cmd = stanchioncmd(rt:config(?STANCHION_CURRENT), "stop"),
+    Cmd = stanchioncmd(rt_config:get(?STANCHION_CURRENT), "stop"),
     lager:info("Running ~p", [Cmd]),
     os:cmd(Cmd).
 
@@ -440,14 +445,14 @@ update_app_config(ConfigFile,  Config) ->
 
 
 deploy_cs(Config, N) ->
-    update_cs_config(rt:config(?CS_CURRENT), N, Config),
+    update_cs_config(rt_config:get(?CS_CURRENT), N, Config),
     start_cs(N),
     lager:info("Riak CS started").
 
 %% this differs from rtdev:deploy_xxx in that it only starts one node
 deploy_stanchion(Config) ->
     %% Set initial config
-    update_stanchion_config(rt:config(?STANCHION_CURRENT), Config),
+    update_stanchion_config(rt_config:get(?STANCHION_CURRENT), Config),
 
     start_stanchion(),
     lager:info("Stanchion started").
@@ -458,8 +463,8 @@ create_user(Port, EmailAddr, Name) ->
         integer_to_list(Port) ++
         "/riak-cs/user --data '{\"email\":\"" ++ EmailAddr ++  "\", \"name\":\"" ++ Name ++"\"}'",
     lager:info("Cmd: ~p", [Cmd]),
-    Delay = rt:config(rt_retry_delay),
-    Retries = rt:config(rt_max_wait_time) div Delay,
+    Delay = rt_config:get(rt_retry_delay),
+    Retries = rt_config:get(rt_max_wait_time) div Delay,
     OutputFun = fun() -> os:cmd(Cmd) end,
     Condition = fun(Res) -> Res /= [] end,
     Output = wait_until(OutputFun, Condition, Retries, Delay),
