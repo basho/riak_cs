@@ -260,6 +260,12 @@
         %%       until sometime later.
         %% 'undefined' is for backward compatibility with v3 manifests
         %% written with Riak CS 1.2.2 or earlier.
+        %% Currently, the 'dead' property can be in props indicating
+        %% that this manifest was deleted while in the writing state.
+        %% The 'deleted' property may also exist on manifests in the
+        %% pending_delete and scheduled_delete states. This indicates
+        %% that the manifest was actually deleted by a user and not
+        %% due to an upload.
         props = [] :: 'undefined' | proplists:proplist(),
 
         %% cluster_id: A couple of uses, both short- and longer-term

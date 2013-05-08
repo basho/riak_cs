@@ -34,14 +34,38 @@
          gc_retry_interval/0,
          gc_active_manifests/3,
          gc_specific_manifests/5,
+         mark_writing_manifests_dead/3,
          epoch_start/0,
          leeway_seconds/0,
          move_manifests_to_gc_bucket/3,
          timestamp/0]).
 
+%% export for repl debugging and testing
+-export([get_active_manifests/3,
+         get_writing_manifests/3]).
+
 %%%===================================================================
 %%% Public API
 %%%===================================================================
+-spec mark_writing_manifests_dead(binary(), binary(), pid()) -> ok | {error, term()}.
+mark_writing_manifests_dead(Bucket, Key, RiakcPid) ->
+    {RiakObject, Manifests} = get_writing_manifests(Bucket, Key, RiakcPid),
+    mark_dead(Bucket, Key, RiakcPid, RiakObject, Manifests).
+
+-spec get_writing_manifests(binary(), binary(), pid()) -> 
+    {riakc_obj:riakc_obj(), [lfs_manifest()]} | {error, term()}.
+get_writing_manifests(Bucket, Key, RiakcPid) ->
+    {ok, RiakObject, Manifests} = riak_cs_utils:get_manifests(RiakcPid, Bucket, Key), 
+    WritingManifests = riak_cs_manifest_utils:writing_manifests(Manifests),
+    {RiakObject, WritingManifests}.
+
+-spec mark_dead(binary(), binary(), pid(), riakc_obj:riakc_obj(), [lfs_manifest()]) -> 
+    ok | {error, term()}.
+mark_dead(Bucket, Key, RiakcPid, RiakObject, Manifests) -> 
+    UUIDs = [M?MANIFEST.uuid || M <- Manifests],
+    mark_manifests(RiakObject, Bucket, Key, UUIDs, 
+                   fun riak_cs_manifest_utils:mark_dead/2, 
+                   RiakcPid).
 
 %% @doc Keep requesting manifests until there are no more active manifests or
 %% there is an error. This requires the following to be occur:
@@ -128,12 +152,22 @@ gc_manifests(Manifests, RiakObject, Bucket, Key, RiakcPid) ->
       [binary()] | no_return().
 gc_manifest(M, RiakObject, Bucket, Key, RiakcPid, UUIDs) ->
     UUID = M?MANIFEST.uuid,
-    check(gc_specific_manifests([UUID], RiakObject, Bucket, Key, RiakcPid), [UUID | UUIDs]).
+    check(gc_specific_manifests_to_delete([UUID], RiakObject, Bucket, Key, RiakcPid), [UUID | UUIDs]).
 
 check({ok, _}, Val) -> 
     Val;
 check({error, _}=Error, _Val) -> 
     Error.
+
+-spec gc_specific_manifests_to_delete(UUIDsToMark :: [binary()],
+                   RiakObject :: riakc_obj:riakc_obj(),
+                   Bucket :: binary(),
+                   Key :: binary(),
+                   RiakcPid :: pid()) ->
+    {error, term()} | {ok, riakc_obj:riakc_obj()}.
+gc_specific_manifests_to_delete(UUIDsToMark, RiakObject, Bucket, Key, RiakcPid) ->
+    MarkedResult = mark_as_deleted(UUIDsToMark, RiakObject, Bucket, Key, RiakcPid),
+    handle_mark_as_pending_delete(MarkedResult, Bucket, Key, UUIDsToMark, RiakcPid).
 
 %% @private
 -spec gc_specific_manifests(UUIDsToMark :: [binary()],
@@ -238,6 +272,16 @@ timestamp() ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
+
+%% @doc Mark a list of manifests as `pending_delete' based upon the
+%% UUIDs specified, and also add {deleted, true} to the props member
+%% to signify an actual delete, and not an overwrite.
+-spec mark_as_deleted([binary()], riakc_obj:riakc_obj(), binary(), binary(), pid()) ->
+    {ok, riakc_obj:riakc_obj()} | {error, term()}.
+mark_as_deleted(UUIDsToMark, RiakObject, Bucket, Key, RiakcPid) ->
+    mark_manifests(RiakObject, Bucket, Key, UUIDsToMark,
+                   fun riak_cs_manifest_utils:mark_deleted/2,
+                   RiakcPid).
 
 %% @doc Mark a list of manifests as `pending_delete' based upon the
 %% UUIDs specified.
