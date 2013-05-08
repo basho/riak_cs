@@ -515,10 +515,15 @@ get_manifests(RiakcPid, Bucket, Key) ->
     case get_manifests_raw(RiakcPid, Bucket, Key) of
         {ok, Object} ->
             Manifests = manifests_from_riak_object(Object),
+            _  = gc_deleted_while_writing_manifests(Object, Manifests, Bucket, Key, RiakcPid),
             {ok, Object, Manifests};
         {error, _Reason}=Error ->
             Error
     end.
+
+gc_deleted_while_writing_manifests(Object, Manifests, Bucket, Key, RiakcPid) ->
+    UUIDs = riak_cs_manifest_utils:deleted_while_writing(Manifests),
+    riak_cs_gc:gc_specific_manifests(UUIDs, Object, Bucket, Key, RiakcPid).
 
 -spec manifests_from_riak_object(riakc_obj:riakc_obj()) -> orddict:orddict().
 manifests_from_riak_object(RiakObject) ->
