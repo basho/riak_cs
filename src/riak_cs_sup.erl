@@ -66,9 +66,10 @@ init([]) ->
 
 -spec process_specs() -> [supervisor:child_spec()].
 process_specs() ->
-    Archiver = {riak_cs_access_archiver_sup,
-                {riak_cs_access_archiver_sup, start_link, []},
-                permanent, 5000, worker, dynamic},
+    Archiver = {riak_cs_access_archiver_manager,
+                {riak_cs_access_archiver_manager, start_link, []},
+                permanent, 5000, worker,
+                [riak_cs_access_archiver_manager]},
     Storage = {riak_cs_storage_d,
                {riak_cs_storage_d, start_link, []},
                permanent, 5000, worker, [riak_cs_storage_d]},
