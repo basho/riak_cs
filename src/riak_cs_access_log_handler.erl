@@ -276,7 +276,7 @@ force_archive(#state{current=C}=State, FlushEnd) ->
 do_archive(#state{period=P, table=T, current=C}=State) ->
     _ = lager:debug("Rolling access for ~p", [C]),
     %% archiver takes ownership of the table, and deletes it when done
-    riak_cs_access_archiver:archive(T, C),
+    riak_cs_access_archiver_manager:archive(T, C),
 
     %% create a fresh table for use here
     NewT = fresh_table(),

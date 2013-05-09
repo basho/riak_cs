@@ -171,3 +171,4 @@ riak_cs_blockall_auth.erl:23: Callback info about the riak_cs_auth behaviour is 
 riak_cs_passthru_auth.erl:23: Callback info about the riak_cs_auth behaviour is not available
 riak_cs_s3_auth.erl:23: Callback info about the riak_cs_auth behaviour is not available
 riak_cs_s3_policy.erl:26: Callback info about the riak_cs_policy behaviour is not available
+riak_cs_app.erl:88: Function will never be called
