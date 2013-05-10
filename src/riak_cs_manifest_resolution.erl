@@ -93,14 +93,13 @@ resolve_manifests(_, _,
 resolve_manifests(_, _,
                   ?MANIFEST{state = active,acl=A1Acl} = A,
                   ?MANIFEST{state = active,acl=A2Acl} = B) ->
-    ACL = case A1Acl?ACL.creation_time >= A2Acl?ACL.creation_time of
-              true ->
-                  A1Acl;
-              false ->
-                  A2Acl
-          end,
     Props = resolve_props(A, B),
-    A?MANIFEST{acl=ACL, props = Props};
+    case A1Acl?ACL.creation_time >= A2Acl?ACL.creation_time of
+        true ->
+            A?MANIFEST{props = Props};
+        false ->
+            B?MANIFEST{props = Props}
+    end;
 
 resolve_manifests(_, _,
                   ?MANIFEST{state = pending_delete} = A,
