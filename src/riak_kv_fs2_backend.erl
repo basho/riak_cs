@@ -114,6 +114,9 @@
 %%    We need block size flexibility for testing, but that's all for now.
 %%    Figure out the max length of S3 bucket (DNS limit) and object name
 %%    (AWS S3 docs), and leave room for the rest of the metadata dict.
+%%    Answer: max S3 bucket and S3 object name length:
+%%    http://aws.amazon.com/articles/1109?_encoding=UTF8&jiveRedirect=1#07
+%%    1024 bytes each
 %%
 %% __ Double-check that the api_version & capabilities/0 func is doing
 %%    the right thing wrt riak_kv.
