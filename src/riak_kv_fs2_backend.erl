@@ -292,9 +292,9 @@ stop(_State) -> ok.
                      {ok, not_found, state()} |
                      {error, term(), state()}.
 get_object(<<?BLOCK_BUCKET_PREFIX, _/binary>> = Bucket,
-           <<UUID:?UUID_BYTES/binary, BlockNum:?BLOCK_FIELD_SIZE>>,
+           <<UUID:?UUID_BYTES/binary, BlockNum:?BLOCK_FIELD_SIZE>> = Key,
            WantsBinary, State) ->
-    case read_block(Bucket, UUID, BlockNum, State) of
+    case read_block(Bucket, Key, UUID, BlockNum, Bucket, State) of
         Bin when is_binary(Bin), WantsBinary == false ->
             try
                 {ok, deserialize_term(Bin), State}
@@ -304,6 +304,10 @@ get_object(<<?BLOCK_BUCKET_PREFIX, _/binary>> = Bucket,
             end;
         Bin when is_binary(Bin), WantsBinary == true ->
             {ok, Bin, State};
+        RObj when is_record(RObj, r_object), WantsBinary == false ->
+            {ok, RObj, State};
+        RObj when is_record(RObj, r_object), WantsBinary == true ->
+            {ok, serialize_term(RObj), State};
         Reason when is_atom(Reason) ->
             {error, not_found, State}
     end;
@@ -659,31 +663,40 @@ calc_max_block(FileSize, #state{block_size = BlockSize,
             N
     end.
 
-read_block(Bucket, UUID, BlockNum, #state{block_size = BlockSize} = State) ->
+read_block(Bucket, RiakKey, UUID, BlockNum, State) ->
     Key = convert_blocknum2key(UUID, BlockNum, State),
     File = location(State, Bucket, Key),
     Offset = calc_block_offset(BlockNum, State),
     try
-        {ok, FH} = file:open(File, [read, raw, binary]),
-        try
-            {ok, PackedBin} = file:pread(FH, Offset, ?HEADER_SIZE + BlockSize),
-            try
-                Bin = unpack_ondisk(PackedBin),
-                Bin
-            catch _A:_B ->
-                    bad_crc
-            end
-        catch _X:_Y ->
-                %% The pread failed, which means we're in a situation
-                %% where we've written only as far as block N but we're
-                %% attempting to read ahead, i.e., N+e, where e > 0.
-                not_found
-        after
-            file:close(FH)
+        {ok, FI} = file:read_file_info(File),
+        if FI#file_info.mode band ?TOMBSTONE_MODE_MARKER > 0 ->
+                throw(make_tombstoned_0byte_obj(Bucket, RiakKey));
+           true ->
+                read_block2(File, BlockNum, State)
         end
     catch _:_ ->
             not_found
     end.
+
+read_block2(File, BlockNum, #state{block_size = BlockSize} = State) ->
+    {ok, FH} = file:open(File, [read, raw, binary]),
+    try
+        {ok, PackedBin} = file:pread(FH, Offset, ?HEADER_SIZE + BlockSize),
+        try
+            Bin = unpack_ondisk(PackedBin),
+            Bin
+        catch _A:_B ->
+                bad_crc
+        end
+    catch _X:_Y ->
+            %% The pread failed, which means we're in a situation
+            %% where we've written only as far as block N but we're
+            %% attempting to read ahead, i.e., N+e, where e > 0.
+            not_found
+    after
+        file:close(FH)
+    end.
+
 
 read_file(Path) ->
     io:format(user, "\r\nDEBUG only, deleteme: read_file\r\n", []),
@@ -741,7 +754,7 @@ put_block_t_marker_check(Bucket, UUID, BlockNum, RObj, State) ->
             if FI#file_info.mode band ?TOMBSTONE_MODE_MARKER > 0 ->
                     %% This UUID + block of chunks has got a tombstone
                     %% marker set, so there's nothing more to do here.
-                    {ok, serialize_term(RObj)};
+                    {ok, serialize_term(make_tombstoned_0byte_obj(RObj))};
                true ->
                     put_block_t_check(BlockNum, RObj, File, FI_perhaps, State)
             end;
@@ -759,7 +772,7 @@ put_block_t_check(BlockNum, RObj, File, FI_perhaps, State) ->
         true ->
             case FI_perhaps of
                 {ok, FI} ->
-                    {ok = NewMode(FI), serialize_term(RObj)};
+                    {ok = NewMode(FI), serialize_term(make_tombstoned_0byte_obj(RObj))};
                 {error, enoent} ->
                     ok = filelib:ensure_dir(File),
                     {ok, FH} = file:open(File, [write, raw]),
@@ -1286,6 +1299,12 @@ t4(SmallestBlock, BiggestBlock, BlocksPerFile, OrderFun)
 
 base_ext_size() ->
     erlang:external_size(riak_object:new(<<>>, <<>>, <<>>)) + 128.
+
+make_tombstoned_0byte_obj(RObj) ->
+    riak_object:new(riak_object:bucket(RObj),
+                    riak_object:key(RObj),
+                    <<>>,
+                    dict:from_list([{<<"X-Riak-Deleted">>, true}])).
 
 %% ===================================================================
 %% EUnit tests
