@@ -165,7 +165,7 @@
          callback/3]).
 %% For QuickCheck testing use only
 -export([get/3, put/5]).
--export([fold_objects_transform/1]).
+-export([backend_eqc_fold_objects_transform/1]).
 %% Testing
 -export([t0/0, t1/0, t2/0, t3/0, t4/0]).
 
@@ -175,7 +175,7 @@
 -define(API_VERSION, 1).
 -define(CAPABILITIES, [uses_r_object, async_fold, write_once_keys]).
 
-%%% -define(TEST_IN_RIAK_KV, true).
+%%% -define(TEST_FS2_BACKEND_IN_RIAK_KV, true).
 
 %% Borrowed from bitcask.hrl
 -define(VALSIZEFIELD, 32).
@@ -354,7 +354,7 @@ put(Bucket, Key, IdxList, Val, State) ->
             Else
     end.
 
-fold_objects_transform(RObjs) ->
+backend_eqc_fold_objects_transform(RObjs) ->
     [{BKey, riak_object:get_value(RObj)} || {BKey, RObj} <- RObjs].
 
 %% @doc Store Val under Bucket and Key
@@ -1413,16 +1413,18 @@ eqc_filter_list_keys(Keys, S) ->
     [BKey || {Bucket, Key} = BKey <- Keys,
              (catch element(1, get_object(Bucket, Key, false, S))) == ok].
 
--ifdef(TEST_IN_RIAK_KV).
+-ifdef(TEST_FS2_BACKEND_IN_RIAK_KV).
 
-%% Broken test:
-simple_test_foofoo() ->
-   ?assertCmd("rm -rf test/fs-backend/*"),
-   Config = [{data_root, "test/fs-backend"},
-             {block_size, 8}],
-   riak_kv_backend:standard_test(?MODULE, Config).
+simple_test_() ->
+    ?assertCmd("rm -rf test/fs-backend/*"),
+    %% This test is not aware of CS-style key structure, so the block_size
+    %% checks will never be made, so the block_size that we give here does
+    %% not matter: it merely needs to be present.
+    Config = [{data_root, "test/fs-backend"},
+              {block_size, 0}],
+    riak_kv_backend:standard_test(?MODULE, Config).
 
--endif. % TEST_IN_RIAK_KV
+-endif. % TEST_FS2_BACKEND_IN_RIAK_KV
 
 nest_test() ->
     ?assertEqual(["ab","cd","ef"],nest("abcdefg", 3)),
@@ -1470,7 +1472,7 @@ basic_props() ->
 eqc_t4_wrapper() ->
     eqc:quickcheck(eqc:numtests(250, prop_t4())).
 
--ifdef(TEST_IN_RIAK_KV).
+-ifdef(TEST_FS2_BACKEND_IN_RIAK_KV).
 eqc_test_() ->
     {spawn,
      [{inorder,
@@ -1496,7 +1498,7 @@ eqc_test_() ->
            [?_assertEqual(true,
                           eqc_t4_wrapper())]}
          ]}]}]}.
--endif. % TEST_IN_RIAK_KV
+-endif. % TEST_FS2_BACKEND_IN_RIAK_KV
 
 eqc_nest_tester() ->
     setup(),
