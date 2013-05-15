@@ -307,6 +307,10 @@ get_object(<<?BLOCK_BUCKET_PREFIX, _/binary>> = Bucket,
             end;
         Bin when is_binary(Bin), WantsBinary == true ->
             {ok, Bin, State};
+        RObj when element(1, RObj) == r_object, WantsBinary == false ->
+            {ok, RObj, State};
+        RObj when element(1, RObj) == r_object, WantsBinary == true ->
+            {ok, serialize_term(RObj), State};
         Reason when is_atom(Reason) ->
             {error, not_found, State}
     end;
@@ -690,7 +694,7 @@ read_block(Bucket, RiakKey, UUID, BlockNum, State) ->
     try
         {ok, FI} = file:read_file_info(File),
         if FI#file_info.mode band ?TOMBSTONE_MODE_MARKER > 0 ->
-                throw(make_tombstoned_0byte_obj(Bucket, RiakKey));
+                make_tombstoned_0byte_obj(Bucket, RiakKey);
            true ->
                 read_block2(File, BlockNum, State)
         end
