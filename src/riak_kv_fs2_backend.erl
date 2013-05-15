@@ -163,6 +163,9 @@
          is_empty/1,
          status/1,
          callback/3]).
+%% For QuickCheck testing use only
+-export([get/3, put/5]).
+-export([fold_objects_transform/1]).
 %% Testing
 -export([t0/0, t1/0, t2/0, t3/0, t4/0]).
 
@@ -294,7 +297,7 @@ stop(_State) -> ok.
 get_object(<<?BLOCK_BUCKET_PREFIX, _/binary>> = Bucket,
            <<UUID:?UUID_BYTES/binary, BlockNum:?BLOCK_FIELD_SIZE>> = Key,
            WantsBinary, State) ->
-    case read_block(Bucket, Key, UUID, BlockNum, Bucket, State) of
+    case read_block(Bucket, Key, UUID, BlockNum, State) of
         Bin when is_binary(Bin), WantsBinary == false ->
             try
                 {ok, deserialize_term(Bin), State}
@@ -304,10 +307,6 @@ get_object(<<?BLOCK_BUCKET_PREFIX, _/binary>> = Bucket,
             end;
         Bin when is_binary(Bin), WantsBinary == true ->
             {ok, Bin, State};
-        RObj when is_record(RObj, r_object), WantsBinary == false ->
-            {ok, RObj, State};
-        RObj when is_record(RObj, r_object), WantsBinary == true ->
-            {ok, serialize_term(RObj), State};
         Reason when is_atom(Reason) ->
             {error, not_found, State}
     end;
@@ -318,19 +317,41 @@ get_object(Bucket, Key, WantsBinary, State) ->
             {error, not_found, State};
         true ->
             {ok, Bin} = read_file(File),
-            case unpack_ondisk(Bin) of
-                bad_crc ->
-                    %% TODO logging?
-                    {error, not_found, State};
-                Val ->
-                    case WantsBinary of
-                        false ->
-                            ok;
-                        true ->
-                            {ok, Val, State}
+            case WantsBinary of
+                true ->
+                    {ok, Bin, State};
+                false ->
+                    case unpack_ondisk(Bin) of
+                        bad_crc ->
+                            %% TODO logging?
+                            {error, not_found, State};
+                        Val ->
+                            {ok, deserialize_term(Val), State}
                     end
             end
     end.
+
+%% EQC use only
+get(Bucket, Key, State) ->
+    case get_object(Bucket, Key, false, State) of
+        {ok, RObj, State} ->
+            {ok, riak_object:get_value(RObj), State};
+        Else ->
+            Else
+    end.
+
+%% EQC use only
+put(Bucket, Key, IdxList, Val, State) ->
+    RObj = riak_object:new(Bucket, Key, Val),
+    case put_object(Bucket, Key, IdxList, RObj, State) of
+        {{ok, _}, _} ->
+            ok;
+        {Else, _} ->
+            Else
+    end.
+
+fold_objects_transform(RObjs) ->
+    [{BKey, riak_object:get_value(RObj)} || {BKey, RObj} <- RObjs].
 
 %% @doc Store Val under Bucket and Key
 %%
@@ -666,7 +687,6 @@ calc_max_block(FileSize, #state{block_size = BlockSize,
 read_block(Bucket, RiakKey, UUID, BlockNum, State) ->
     Key = convert_blocknum2key(UUID, BlockNum, State),
     File = location(State, Bucket, Key),
-    Offset = calc_block_offset(BlockNum, State),
     try
         {ok, FI} = file:read_file_info(File),
         if FI#file_info.mode band ?TOMBSTONE_MODE_MARKER > 0 ->
@@ -680,6 +700,7 @@ read_block(Bucket, RiakKey, UUID, BlockNum, State) ->
 
 read_block2(File, BlockNum, #state{block_size = BlockSize} = State) ->
     {ok, FH} = file:open(File, [read, raw, binary]),
+    Offset = calc_block_offset(BlockNum, State),
     try
         {ok, PackedBin} = file:pread(FH, Offset, ?HEADER_SIZE + BlockSize),
         try
@@ -699,9 +720,7 @@ read_block2(File, BlockNum, #state{block_size = BlockSize} = State) ->
 
 
 read_file(Path) ->
-    io:format(user, "\r\nDEBUG only, deleteme: read_file\r\n", []),
     MaxSize = 4*1024*1024,
-    {ok, FH} = file:open(Path, [read, raw, binary]),
     case file:open(Path, [read, raw, binary]) of
         {ok, FH} ->
             try
@@ -851,7 +870,9 @@ enumerate_chunks_in_file(Bucket, UUID, BlockBase,
                     %% perhaps there might be holes in this file.
                     MaxBlock = MaxBlocks - 1,
                     Filt = fun(BlNum) ->
-                                   is_binary(read_block(Bucket, UUID,
+                                   %% Key's use here is: a) incorrect, and
+                                   %% b) harmless.
+                                   is_binary(read_block(Bucket, Key, UUID,
                                                         BlockBase + BlNum,
                                                         State))
                            end;
@@ -886,7 +907,7 @@ get_prop_or_env(Key, Properties, App, Default) ->
             case application:get_env(App, KV_key) of
                 undefined ->
                     get_prop_or_env_default(Default);
-                Value ->
+                {ok, Value} ->
                     Value
             end;
         Value ->
@@ -1035,7 +1056,7 @@ exec_stack_op({key_file, File},  _FoldFun, Acc, State) ->
                     %% TODO: shouldn't happen, because all filenames
                     %% should be encoded with base64fs2, so decoding
                     %% them should also always work.
-                    io:format("ERROR: key_file ~p: ~p ~p\n", [File, _X2, _Y2]),
+                    lager:error("ERROR: key_file ~p: ~p ~p\n", [File, _X2, _Y2]),
                     {[], Acc}
             end
     end;
@@ -1301,9 +1322,11 @@ base_ext_size() ->
     erlang:external_size(riak_object:new(<<>>, <<>>, <<>>)) + 128.
 
 make_tombstoned_0byte_obj(RObj) ->
-    riak_object:new(riak_object:bucket(RObj),
-                    riak_object:key(RObj),
-                    <<>>,
+    make_tombstoned_0byte_obj(riak_object:bucket(RObj),
+                              riak_object:key(RObj)).
+
+make_tombstoned_0byte_obj(Bucket, Key) ->
+    riak_object:new(Bucket, Key, <<>>,
                     dict:from_list([{<<"X-Riak-Deleted">>, true}])).
 
 %% ===================================================================
@@ -1311,23 +1334,58 @@ make_tombstoned_0byte_obj(RObj) ->
 %% ===================================================================
 -ifdef(TEST).
 
+riak_object_available() ->
+    try
+        _ = riak_object:new(<<>>, <<>>, <<>>),
+        true
+    catch
+        error:undef ->
+            false
+    end.
+
 t0_test() ->
-    ok = t0().
+    case riak_object_available() of
+        true ->
+            ok = t0();
+        false ->
+            io:format(user, "SKIP: riak_object module is not available\n", [])
+    end.
 
 t1_test() ->
-    ok = t1().
+    case riak_object_available() of
+        true ->
+            ok = t1();
+        false ->
+            io:format(user, "SKIP: riak_object module is not available\n", [])
+    end.
 
 t2_test_() ->
-    {spawn,
-     [
-      {timeout, 60*1000, ?_assertEqual(ok, t2())}
-     ]}.
+    case riak_object_available() of
+        true ->
+            {spawn,
+             [
+              {timeout, 60*1000, ?_assertEqual(ok, t2())}
+             ]};
+        false ->
+            io:format(user, "SKIP: riak_object module is not available\n", []),
+            {spawn, []}
+    end.
 
 t3_test() ->
-    ok = t3().
+    case riak_object_available() of
+        true ->
+            ok = t3();
+        false ->
+            io:format(user, "SKIP: riak_object module is not available\n", [])
+    end.
 
 t4_test() ->
-    ok = t4().
+    case riak_object_available() of
+        true ->
+            ok = t4();
+        false ->
+            io:format(user, "SKIP: riak_object module is not available\n", [])
+    end.
 
 %% Callbacks for backend_eqc test.
 
