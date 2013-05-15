@@ -165,7 +165,10 @@
          callback/3]).
 %% For QuickCheck testing use only
 -export([get/3, put/5]).
--export([backend_eqc_fold_objects_transform/1]).
+-export([backend_eqc_fold_objects_transform/1,
+         backend_eqc_filter_orddict_on_delete/4,
+         backend_eqc_bucket/0,
+         backend_eqc_key/0]).
 %% Testing
 -export([t0/0, t1/0, t2/0, t3/0, t4/0]).
 
@@ -245,35 +248,10 @@ capabilities(_Bucket, _State) ->
 start(Partition, Config) ->
     PartitionName = integer_to_list(Partition),
     try
-        ConfigRoot = get_prop_or_env(data_root, Config, riak_kv,
-                                     {{"data_root unset, failing"}}),
-        BlockSize = get_prop_or_env(block_size, Config, riak_kv,
-                                    {{"block_size unset, failing"}}),
-        true = (BlockSize < ?MAXVALSIZE),
-        %% MaxBlocks should be present only for testing
-        MaxBlocks = case get_prop_or_env(max_blocks_per_file, Config,
-                                         riak_kv, undefined) of
-                        N when is_integer(N), 1 =< N,
-                                              N =< ?FS2_CONTIGUOUS_BLOCKS ->
-                            error_logger:warning_msg(
-                              "~s: max_blocks_per_file is ~p.  This "
-                              "configuration item is only valid for tests.  "
-                              "Proceed with caution.\n",
-                              [?MODULE, N]),
-                            %% Go ahead and use it
-                            N;
-                        undefined ->
-                            ?FS2_CONTIGUOUS_BLOCKS;
-                        _ ->
-                            error_logger:warning_msg(
-                              "~s: invalid max blocks value, using ~p\n",
-                              [?MODULE, ?FS2_CONTIGUOUS_BLOCKS]),
-                            ?FS2_CONTIGUOUS_BLOCKS
-                    end,
+        {ConfigRoot, BlockSize, MaxBlocks, BDepth, KDepth} =
+            parse_config_and_env(Config),
         Dir = filename:join([ConfigRoot,PartitionName]),
         ok = filelib:ensure_dir(Dir),
-        BDepth = get_prop_or_env(b_depth, Config, riak_kv, 2),
-        KDepth = get_prop_or_env(k_depth, Config, riak_kv, 2),
         ok = create_or_sanity_check_version_file(Dir, BlockSize, MaxBlocks,
                                                  BDepth, KDepth),
         {ok,  #state{dir = Dir,
@@ -356,6 +334,62 @@ put(Bucket, Key, IdxList, Val, State) ->
 
 backend_eqc_fold_objects_transform(RObjs) ->
     [{BKey, riak_object:get_value(RObj)} || {BKey, RObj} <- RObjs].
+
+backend_eqc_filter_orddict_on_delete(
+                      <<?BLOCK_BUCKET_PREFIX, _/binary>> = DBucket,
+                      <<DUUID:?UUID_BYTES/binary,
+                        DBlockNum:?BLOCK_FIELD_SIZE>> = _DKey,
+                      Dict, Config) ->
+    %% backend_eqc deleted a key that uses our ?BLOCK_BUCKET_PREFIX + UUID
+    %% scheme.  Filter out all other blocks that reside in the same file.
+
+    {_ConfigRoot, BlockSize, MaxBlocks, BDepth, KDepth} =
+        parse_config_and_env(Config),
+    State = #state{dir = "does/not/matter",
+                   block_size = BlockSize,
+                   max_blocks = MaxBlocks,
+                   b_depth = BDepth,
+                   k_depth = KDepth},
+    DeletedKey = convert_blocknum2key(DUUID, DBlockNum, State),
+    DeletedPath = location(State, DBucket, DeletedKey),
+    F = fun({Bucket, <<UUID:?UUID_BYTES/binary, BlockNum:?BLOCK_FIELD_SIZE>>},
+            _Value)
+           when Bucket == DBucket, UUID == DUUID ->
+                Key = convert_blocknum2key(UUID, BlockNum, State),
+                Path = location(State, Bucket, Key),
+                Path /= DeletedPath;
+           (_Key, _Value) ->
+                true
+        end,
+    orddict:filter(F, Dict);
+backend_eqc_filter_orddict_on_delete(_Bucket, _Key, Dict, _State) ->
+    %% backend_eqc deleted a key that isn't special.
+    Dict.
+
+backend_eqc_bucket() ->
+    oneof([backend_eqc_bucket_standard(),
+           backend_eqc_bucket_v1()]).
+
+backend_eqc_key() ->
+    oneof([backend_eqc_key_standard(),
+           backend_eqc_key_v1()]).
+
+backend_eqc_bucket_standard() ->
+    oneof([<<"b1">>, <<"b2">>]).
+
+backend_eqc_bucket_v1() ->
+    ?LET(X, oneof([<<"v1_a">>, <<"v1_b">>]),
+         <<?BLOCK_BUCKET_PREFIX, X/binary>>).
+
+backend_eqc_key_standard() ->
+    oneof([<<"k1">>, <<"k2">>]).
+
+backend_eqc_key_v1() ->
+    UUID = 42,
+    BigBlockNum = 77239823, % Arbitrary, but bigger than any real
+                            % max_blocks_per_file value
+    ?LET(X, oneof([0, 1, BigBlockNum]),
+         <<UUID:(?UUID_BYTES*8), X:?BLOCK_FIELD_SIZE>>).
 
 %% @doc Store Val under Bucket and Key
 %%
@@ -494,6 +528,36 @@ callback(_Ref, _Term, S) ->
 %% ===================================================================
 %% Internal functions
 %% ===================================================================
+
+parse_config_and_env(Config) ->
+    ConfigRoot = get_prop_or_env(data_root, Config, riak_kv,
+                                 {{"data_root unset, failing"}}),
+    BlockSize = get_prop_or_env(block_size, Config, riak_kv,
+                                {{"block_size unset, failing"}}),
+    true = (BlockSize < ?MAXVALSIZE),
+    %% MaxBlocks should be present only for testing
+    MaxBlocks = case get_prop_or_env(max_blocks_per_file, Config,
+                                     riak_kv, undefined) of
+                    N when is_integer(N), 1 =< N,
+                           N =< ?FS2_CONTIGUOUS_BLOCKS ->
+                        error_logger:warning_msg(
+                          "~s: max_blocks_per_file is ~p.  This "
+                          "configuration item is only valid for tests.  "
+                          "Proceed with caution.\n",
+                          [?MODULE, N]),
+                        %% Go ahead and use it
+                        N;
+                    undefined ->
+                        ?FS2_CONTIGUOUS_BLOCKS;
+                    _ ->
+                        error_logger:warning_msg(
+                          "~s: invalid max blocks value, using ~p\n",
+                          [?MODULE, ?FS2_CONTIGUOUS_BLOCKS]),
+                        ?FS2_CONTIGUOUS_BLOCKS
+                end,
+    BDepth = get_prop_or_env(b_depth, Config, riak_kv, 2),
+    KDepth = get_prop_or_env(k_depth, Config, riak_kv, 2),
+    {ConfigRoot, BlockSize, MaxBlocks, BDepth, KDepth}.
 
 %% @spec atomic_write(File :: string(), Val :: binary()) ->
 %%       ok | {error, Reason :: term()}
@@ -1469,11 +1533,16 @@ basic_props() ->
     [{data_root,  "test/fs-backend"},
      {block_size, 1024}].
 
-eqc_t4_wrapper() ->
-    eqc:quickcheck(eqc:numtests(250, prop_t4())).
+eqc_t4_wrapper(TestTime) ->
+    eqc:quickcheck(eqc:testing_time(TestTime, prop_t4())).
 
 -ifdef(TEST_FS2_BACKEND_IN_RIAK_KV).
 eqc_test_() ->
+    TestTime1 = 30,
+    EQC_prop0 = backend_eqc:property(?MODULE, false, basic_props()),
+    EQC_prop1 = eqc_statem:more_commands(75, EQC_prop0),
+    EQC_prop2 = eqc:testing_time(TestTime1, EQC_prop1),
+    TestTime3 = 10,
     {spawn,
      [{inorder,
        [{setup,
@@ -1486,17 +1555,14 @@ eqc_test_() ->
           %%               backend_eqc:key_prefix_1()),
           %% ?_assertEqual(?BLOCK_FIELD_SIZE,
           %%               backend_eqc:key_suffix_1()),
-          {timeout, 60000,
-           [?_assertEqual(true,
-                          backend_eqc:test(?MODULE,
-                                           false,
-                                           basic_props()))]},
+          {timeout, 2 * TestTime1,
+           [?_assertEqual(true, eqc:quickcheck(EQC_prop2))]},
           {timeout, 60000,
            [?_assertEqual(true,
                           eqc_nest_tester())]},
-          {timeout, 60000,
+          {timeout, 2 * TestTime3,
            [?_assertEqual(true,
-                          eqc_t4_wrapper())]}
+                          eqc_t4_wrapper(TestTime3))]}
          ]}]}]}.
 -endif. % TEST_FS2_BACKEND_IN_RIAK_KV
 
