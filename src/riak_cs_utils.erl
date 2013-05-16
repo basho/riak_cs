@@ -73,7 +73,7 @@
          set_md5_chunk_size/1,
          delete_bucket_policy/4,
          get_bucket_acl_policy/3,
-         timestamp/1,
+         second_resolution_timestamp/1,
          timestamp_to_seconds/1,
          to_bucket_name/2,
          update_key_secret/1,
@@ -842,9 +842,10 @@ format_acl_policy_response({ok, Acl}, {error, policy_undefined}) ->
 format_acl_policy_response({ok, Acl}, {ok, Policy}) ->
     {Acl, Policy}.
 
-%% @doc Generate a key for storing a set of manifests for deletion.
--spec timestamp(erlang:timestamp()) -> non_neg_integer().
-timestamp({MegaSecs, Secs, _MicroSecs}) ->
+-spec second_resolution_timestamp(erlang:timestamp()) -> non_neg_integer().
+%% @doc Return the number of seconds this timestamp represents. Truncated to
+%% seconds, as an integer.
+second_resolution_timestamp({MegaSecs, Secs, _MicroSecs}) ->
     (MegaSecs * 1000000) + Secs.
 
 -spec timestamp_to_seconds(erlang:timestamp()) -> float().
