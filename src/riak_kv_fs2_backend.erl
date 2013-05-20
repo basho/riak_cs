@@ -165,10 +165,6 @@
          callback/3]).
 %% For QuickCheck testing use only
 -export([get/3, put/5]).
--export([backend_eqc_fold_objects_transform/1,
-         backend_eqc_filter_orddict_on_delete/4,
-         backend_eqc_bucket/0,
-         backend_eqc_key/0]).
 %% Testing
 -export([t0/0, t1/0, t2/0, t3/0, t4/0]).
 
@@ -199,6 +195,10 @@
 %% EQC testing assistants
 -export([eqc_filter_delete/3, eqc_filter_list_keys/2]).
 -export([prop_nest_ordered/0, eqc_nest_tester/0]).
+-export([backend_eqc_fold_objects_transform/1,
+         backend_eqc_filter_orddict_on_delete/4,
+         backend_eqc_bucket/0,
+         backend_eqc_key/0]).
 -include_lib("eqc/include/eqc.hrl").
 -endif.
 -include_lib("eunit/include/eunit.hrl").
@@ -331,65 +331,6 @@ put(Bucket, Key, IdxList, Val, State) ->
         {Else, _} ->
             Else
     end.
-
-backend_eqc_fold_objects_transform(RObjs) ->
-    [{BKey, riak_object:get_value(RObj)} || {BKey, RObj} <- RObjs].
-
-backend_eqc_filter_orddict_on_delete(
-                      <<?BLOCK_BUCKET_PREFIX, _/binary>> = DBucket,
-                      <<DUUID:?UUID_BYTES/binary,
-                        DBlockNum:?BLOCK_FIELD_SIZE>> = _DKey,
-                      Dict, Config) ->
-    %% backend_eqc deleted a key that uses our ?BLOCK_BUCKET_PREFIX + UUID
-    %% scheme.  Filter out all other blocks that reside in the same file.
-
-    {_ConfigRoot, BlockSize, MaxBlocks, BDepth, KDepth} =
-        parse_config_and_env(Config),
-    State = #state{dir = "does/not/matter",
-                   block_size = BlockSize,
-                   max_blocks = MaxBlocks,
-                   b_depth = BDepth,
-                   k_depth = KDepth},
-    DeletedKey = convert_blocknum2key(DUUID, DBlockNum, State),
-    DeletedPath = location(State, DBucket, DeletedKey),
-    F = fun({Bucket, <<UUID:?UUID_BYTES/binary, BlockNum:?BLOCK_FIELD_SIZE>>},
-            _Value)
-           when Bucket == DBucket, UUID == DUUID ->
-                Key = convert_blocknum2key(UUID, BlockNum, State),
-                Path = location(State, Bucket, Key),
-                Path /= DeletedPath;
-           (_Key, _Value) ->
-                true
-        end,
-    orddict:filter(F, Dict);
-backend_eqc_filter_orddict_on_delete(_Bucket, _Key, Dict, _State) ->
-    %% backend_eqc deleted a key that isn't special.
-    Dict.
-
-backend_eqc_bucket() ->
-    oneof([backend_eqc_bucket_standard(),
-           backend_eqc_bucket_v1()]).
-
-backend_eqc_key() ->
-    oneof([backend_eqc_key_standard(),
-           backend_eqc_key_v1()]).
-
-backend_eqc_bucket_standard() ->
-    oneof([<<"b1">>, <<"b2">>]).
-
-backend_eqc_bucket_v1() ->
-    ?LET(X, oneof([<<"v1_a">>, <<"v1_b">>]),
-         <<?BLOCK_BUCKET_PREFIX, X/binary>>).
-
-backend_eqc_key_standard() ->
-    oneof([<<"k1">>, <<"k2">>]).
-
-backend_eqc_key_v1() ->
-    UUID = 42,
-    BigBlockNum = 77239823, % Arbitrary, but bigger than any real
-                            % max_blocks_per_file value
-    ?LET(X, oneof([0, 1, BigBlockNum]),
-         <<UUID:(?UUID_BYTES*8), X:?BLOCK_FIELD_SIZE>>).
 
 %% @doc Store Val under Bucket and Key
 %%
@@ -1528,6 +1469,65 @@ create_or_sanity_test() ->
     end.
 
 -ifdef(EQC).
+
+backend_eqc_fold_objects_transform(RObjs) ->
+    [{BKey, riak_object:get_value(RObj)} || {BKey, RObj} <- RObjs].
+
+backend_eqc_filter_orddict_on_delete(
+                      <<?BLOCK_BUCKET_PREFIX, _/binary>> = DBucket,
+                      <<DUUID:?UUID_BYTES/binary,
+                        DBlockNum:?BLOCK_FIELD_SIZE>> = _DKey,
+                      Dict, Config) ->
+    %% backend_eqc deleted a key that uses our ?BLOCK_BUCKET_PREFIX + UUID
+    %% scheme.  Filter out all other blocks that reside in the same file.
+
+    {_ConfigRoot, BlockSize, MaxBlocks, BDepth, KDepth} =
+        parse_config_and_env(Config),
+    State = #state{dir = "does/not/matter",
+                   block_size = BlockSize,
+                   max_blocks = MaxBlocks,
+                   b_depth = BDepth,
+                   k_depth = KDepth},
+    DeletedKey = convert_blocknum2key(DUUID, DBlockNum, State),
+    DeletedPath = location(State, DBucket, DeletedKey),
+    F = fun({Bucket, <<UUID:?UUID_BYTES/binary, BlockNum:?BLOCK_FIELD_SIZE>>},
+            _Value)
+           when Bucket == DBucket, UUID == DUUID ->
+                Key = convert_blocknum2key(UUID, BlockNum, State),
+                Path = location(State, Bucket, Key),
+                Path /= DeletedPath;
+           (_Key, _Value) ->
+                true
+        end,
+    orddict:filter(F, Dict);
+backend_eqc_filter_orddict_on_delete(_Bucket, _Key, Dict, _State) ->
+    %% backend_eqc deleted a key that isn't special.
+    Dict.
+
+backend_eqc_bucket() ->
+    oneof([backend_eqc_bucket_standard(),
+           backend_eqc_bucket_v1()]).
+
+backend_eqc_key() ->
+    oneof([backend_eqc_key_standard(),
+           backend_eqc_key_v1()]).
+
+backend_eqc_bucket_standard() ->
+    oneof([<<"b1">>, <<"b2">>]).
+
+backend_eqc_bucket_v1() ->
+    ?LET(X, oneof([<<"v1_a">>, <<"v1_b">>]),
+         <<?BLOCK_BUCKET_PREFIX, X/binary>>).
+
+backend_eqc_key_standard() ->
+    oneof([<<"k1">>, <<"k2">>]).
+
+backend_eqc_key_v1() ->
+    UUID = 42,
+    BigBlockNum = 77239823, % Arbitrary, but bigger than any real
+                            % max_blocks_per_file value
+    ?LET(X, oneof([0, 1, BigBlockNum]),
+         <<UUID:(?UUID_BYTES*8), X:?BLOCK_FIELD_SIZE>>).
 
 basic_props() ->
     [{data_root,  "test/fs-backend"},
