@@ -166,7 +166,7 @@
 %% For QuickCheck testing use only
 -export([get/3, put/5]).
 %% Testing
--export([t0/0, t1/0, t2/0, t3/0, t4/0]).
+-export([t0/0, t1/0, t2/0, t3/0, t4/0, t5/0]).
 
 -include("riak_cs_lfs.hrl").
 -include_lib("kernel/include/file.hrl").
@@ -454,7 +454,7 @@ drop(State=#state{dir=Dir}) ->
 %% non-tombstone values; otherwise returns false.
 -spec is_empty(state()) -> boolean().
 is_empty(S) ->
-    list_all_keys(S) == [].
+    check_is_empty(S).
 
 %% @doc Get the status information for this fs backend
 -spec status(state()) -> [no_status_sorry | {atom(), term()}].
@@ -534,39 +534,6 @@ fold_objects_fun(FoldObjectsFun) ->
             {Bucket, Key} = BKey,
             FoldObjectsFun(Bucket, Key, Value, Acc)
     end.
-
-%% @spec list_all_files_naive_bkeys(state()) -> [{Bucket :: riak_object:bucket(),
-%%                                    Key :: riak_object:key()}]
-%% @doc Get a list of all bucket/key pairs stored by this backend
-list_all_files_naive_bkeys(#state{dir=Dir, b_depth = BDepth,
-                                  k_depth = KDepth} = State) ->
-    Glob = lists:flatten([
-                          lists:duplicate(BDepth, "*/"), % bucket intermediates
-                          "*/",                          % bucket
-                          lists:duplicate(KDepth, "*/"), % key intermediates
-                          "*"                            % key
-                         ]),
-    % this is slow slow slow
-    [location_to_bkey(X, State) || X <- filelib:wildcard(Glob, Dir)].
-
-%% @spec list_all_keys([string()]) -> [{Bucket :: riak_object:bucket(),
-%%                                      Key :: riak_object:key()}]
-%% @doc Get a list of all bucket/key pairs stored by this backend
-list_all_keys(State) ->
-    L = lists:foldl(
-          fun({<<?BLOCK_BUCKET_PREFIX, _/binary>> = Bucket,
-               <<UUID:?UUID_BYTES/binary,
-                 BlockBase:?BLOCK_FIELD_SIZE>>}, Acc) ->
-                  Chunks = enumerate_chunks_in_file(
-                             Bucket, UUID, BlockBase, State),
-                  ChunkBKeys = [{Bucket, <<UUID:?UUID_BYTES/binary,
-                                           (BlockBase+C):?BLOCK_FIELD_SIZE>>} ||
-                                   C <- Chunks],
-                  lists:reverse(ChunkBKeys, Acc);
-             (BKey, Acc) ->
-                  [BKey|Acc]
-          end, [], list_all_files_naive_bkeys(State)),
-    lists:reverse(L).
 
 %% @spec location(state(), riak_object:bucket(), riak_object:key())
 %%          -> string()
@@ -1092,7 +1059,7 @@ exec_stack_op({Bucket, Key} = BKey, FoldFun, Acc,
     case get_object(Bucket, Key, false, State) of
         {ok, Value, _S} ->
             {[], FoldFun(BKey, Value, Acc)};
-        _ ->
+        _Else ->
             {[], Acc}
     end.
 
@@ -1327,6 +1294,49 @@ t4(SmallestBlock, BiggestBlock, BlocksPerFile, OrderFun)
     %% different lengths, for the same reason as above?
     ok.
 
+t5() ->
+    TestDir = "./delme-t5",
+    NumBuckets = 5,                           % Must be greater than 1
+    EndSeq = 5,                               % Must be greater than 2
+    BlockSize = 1024,
+
+    os:cmd("rm -rf ++ " ++ TestDir),
+    {ok, S} = start(-1, [{data_root, TestDir},
+                         {block_size, BlockSize},
+                         {max_blocks_per_file, EndSeq - 2}]),
+    true = is_empty(S),
+
+    Bs = [<<?BLOCK_BUCKET_PREFIX, X:32>> || X <- lists:seq(1, NumBuckets)],
+    Os = [riak_object:new(B, <<UUID:(?UUID_BYTES*8), Seq:?BLOCK_FIELD_SIZE>>,
+                          list_to_binary(["val ", integer_to_list(Seq)])) ||
+             B <- Bs,
+             UUID <- [55, 56, 57],
+             Seq <- lists:seq(0, EndSeq)],
+    [{{ok, _}, _} = put_object(riak_object:bucket(RObj),
+                               riak_object:key(RObj),
+                               [], RObj, S) || RObj <- Os],
+    false = is_empty(S),
+
+    LastO = lists:last(Os),
+    AllButLastBucketOs =
+        [O || O <- Os, riak_object:bucket(O) /= riak_object:bucket(LastO)],
+    [{ok, _} = delete(riak_object:bucket(O), riak_object:key(O), [], S) ||
+        O <- AllButLastBucketOs],
+    false = is_empty(S),
+
+    LastBucketOs = Os -- AllButLastBucketOs,
+    DelMD = dict:store(<<"X-Riak-Deleted">>, true, dict:new()),
+    [{{ok, _}, _} = begin
+                        B = riak_object:bucket(O),
+                        K = riak_object:key(O),
+                        V = riak_object:get_value(O),
+                        DelO = riak_object:new(B, K, V, DelMD),
+                        put_object(B, K, [], DelO, S)
+                    end || O <- LastBucketOs],
+    true = is_empty(S),
+
+    ok.
+
 base_ext_size() ->
     erlang:external_size(riak_object:new(<<>>, <<>>, <<>>)) + 128.
 
@@ -1337,6 +1347,23 @@ make_tombstoned_0byte_obj(RObj) ->
 make_tombstoned_0byte_obj(Bucket, Key) ->
     riak_object:new(Bucket, Key, <<>>,
                     dict:from_list([{<<"X-Riak-Deleted">>, true}])).
+
+check_is_empty(S) ->
+    EmptyFun = fun(_B, _K, RObj, Acc) ->
+                       case (catch riak_object_is_deleted(RObj)) of
+                           false ->
+                               throw(it_is_not_empty);
+                           _ ->
+                               Acc
+                       end
+               end,
+    try
+        {ok, true} = fold_objects(EmptyFun, true, [], S),
+        true
+    catch
+        throw:it_is_not_empty ->
+            false
+    end.
 
 %% ===================================================================
 %% EUnit tests
@@ -1395,6 +1422,15 @@ t4_test() ->
         false ->
             io:format(user, "SKIP: riak_object module is not available\n", [])
     end.
+
+t5_test() ->
+    case riak_object_available() of
+        true ->
+            ok = t5();
+        false ->
+            io:format(user, "SKIP: riak_object module is not available\n", [])
+    end.
+
 
 %% Callbacks for backend_eqc test.
 
