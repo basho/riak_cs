@@ -30,7 +30,9 @@
          start/2,
          stop/1,
          get/3,
+         get_object/4,
          put/5,
+         put_object/5,
          delete/4,
          drop/1,
          fold_buckets/4,
@@ -239,6 +241,22 @@ get(Bucket, Key, State) ->
             {error, Reason, NewState}
     end.
 
+%% @doc Retrieve an object from the backend
+-spec get_object(riak_object:bucket(), riak_object:key(), boolean(), state()) ->
+                 {ok, any(), state()} |
+                 {ok, not_found, state()} |
+                 {error, term(), state()}.
+get_object(Bucket, Key, WantsBinary, State) ->
+    {Name, Module, SubState} = get_backend(Bucket, State),
+    case Module:get_object(Bucket, Key, WantsBinary, SubState) of
+        {ok, Value, NewSubState} ->
+            NewState = update_backend_state(Name, Module, NewSubState, State),
+            {ok, Value, NewState};
+        {error, Reason, NewSubState} ->
+            NewState = update_backend_state(Name, Module, NewSubState, State),
+            {error, Reason, NewState}
+    end.
+
 %% @doc Insert an object with secondary index
 %% information into the kv backend
 -type index_spec() :: {add, Index, SecondaryKey} | {remove, Index, SecondaryKey}.
@@ -254,6 +272,22 @@ put(Bucket, PrimaryKey, IndexSpecs, Value, State) ->
         {error, Reason, NewSubState} ->
             NewState = update_backend_state(Name, Module, NewSubState, State),
             {error, Reason, NewState}
+    end.
+
+%% @doc Insert an object with secondary index
+%% information into the kv backend
+-spec put_object(riak_object:bucket(), riak_object:key(), [index_spec()], riak_object:riak_object(), state()) ->
+                 {ok, state()} |
+                 {error, term(), state()}.
+put_object(Bucket, PrimaryKey, IndexSpecs, RObj, State) ->
+    {Name, Module, SubState} = get_backend(Bucket, State),
+    case Module:put_object(Bucket, PrimaryKey, IndexSpecs, RObj, SubState) of
+        {{ok, NewSubState}, EncodedVal} ->
+            NewState = update_backend_state(Name, Module, NewSubState, State),
+            {{ok, NewState}, EncodedVal};
+        {{error, Reason, NewSubState}, EncodedVal} ->
+            NewState = update_backend_state(Name, Module, NewSubState, State),
+            {{error, Reason, NewState}, EncodedVal}
     end.
 
 %% @doc Delete an object from the backend
