@@ -477,15 +477,22 @@ parse_config_and_env(Config) ->
                                 {{"block_size unset, failing"}}),
     true = (BlockSize < ?MAXVALSIZE),
     %% MaxBlocks should be present only for testing
+    TestWarning = get(test_warning),
     MaxBlocks = case get_prop_or_env(max_blocks_per_file, Config,
                                      riak_kv, undefined) of
-                    N when is_integer(N), 1 =< N,
+                    N when is_integer(N),
+                           1 =< N,
                            N =< ?FS2_CONTIGUOUS_BLOCKS ->
-                        error_logger:warning_msg(
-                          "~s: max_blocks_per_file is ~p.  This "
-                          "configuration item is only valid for tests.  "
-                          "Proceed with caution.\n",
-                          [?MODULE, N]),
+                        if TestWarning == undefined ->
+                                error_logger:warning_msg(
+                                 "~s: max_blocks_per_file is ~p.  This "
+                                 "configuration item is only valid for tests.  "
+                                 "Proceed with caution.\n",
+                                 [?MODULE, N]);
+                           true ->
+                                ok
+                        end,
+                        put(test_warning, done),
                         %% Go ahead and use it
                         N;
                     undefined ->
@@ -1356,8 +1363,10 @@ make_tombstoned_0byte_obj(RObj) ->
                               riak_object:key(RObj)).
 
 make_tombstoned_0byte_obj(Bucket, Key) ->
-    riak_object:new(Bucket, Key, <<>>,
-                    dict:from_list([{<<"X-Riak-Deleted">>, true}])).
+    riak_object:set_vclock(
+      riak_object:new(Bucket, Key, <<>>,
+                      dict:from_list([{<<"X-Riak-Deleted">>, true}])),
+      vclock:increment(<<"tombstone_actor">>, vclock:fresh())).
 
 check_is_empty(S) ->
     EmptyFun = fun(_B, _K, _RObj, _Acc) ->
@@ -1672,7 +1681,9 @@ gen_bucket() ->
          iolist_to_binary(Bucket)).
 
 insert_sample_key(Bucket, S) ->
-    {ok, _} = ?MODULE:put(Bucket, <<"key">>, [], <<"val">>, unused, S),
+    Key = <<"key">>,
+    O = riak_object:new(Bucket, Key, <<"val">>),
+    {{ok, _}, _} = ?MODULE:put_object(Bucket, Key, [], O, S),
     ok.
 
 -endif. % EQC
