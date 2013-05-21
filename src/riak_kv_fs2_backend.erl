@@ -838,7 +838,12 @@ enumerate_chunks_in_file(Bucket, UUID, BlockBase,
         {error, _} ->
             [];
         {ok, FI} when FI#file_info.mode band ?TOMBSTONE_MODE_MARKER > 0 ->
-            [];
+            %% We don't have to be 100% exact: if there are holes in the
+            %% file, then we'll emit block numbers for those holes,
+            %% but Riak's AAE will fix things up eventually.
+            MB = calc_max_block(FI#file_info.size, State),
+            [BlockNum || BlockNum <- lists:seq(0, erlang:max(MB,
+                                                             MaxBlocks - 1))];
         {ok, FI} ->
             case calc_max_block(FI#file_info.size, State) of
                 X when X >= MaxBlocks ->
@@ -851,15 +856,13 @@ enumerate_chunks_in_file(Bucket, UUID, BlockBase,
                                    is_binary(read_block(Bucket, Key, UUID,
                                                         BlockBase + BlNum,
                                                         State))
-                           end;
+                           end,
+                    [BlockNum || BlockNum <- lists:seq(0, MaxBlock),
+                                 Filt(BlockNum)];
                 N ->
                     MaxBlock = N,
-                    Filt = fun(_BlNum) ->
-                                   true
-                           end
-            end,
-            [BlockNum || BlockNum <- lists:seq(0, MaxBlock),
-                         Filt(BlockNum)]
+                    [BlockNum || BlockNum <- lists:seq(0, MaxBlock)]
+            end
     end.
 
 %% @doc Is the next block number we wish to write out-of-order?
@@ -1253,7 +1256,6 @@ t4(SmallestBlock, BiggestBlock, BlocksPerFile, OrderFun)
                  O <- RestOs],
              if Bp rem 3 == 0 ->
                      {exists, RestB};
-
                 Bp rem 3 == 1 ->
                      DelMD = dict:store(<<"X-Riak-Deleted">>, true, dict:new()),
                      [begin
@@ -1275,8 +1277,9 @@ t4(SmallestBlock, BiggestBlock, BlocksPerFile, OrderFun)
                      {deleted, RestB}
              end
          end || Bp <- lists:seq(RestBegin, RestEnd)],
-    RestRemainingBuckets = [B || {exists, B} <- RestStatus],
-
+    RestRemainingBuckets = [B || {Status, B} <- RestStatus,
+                                 Status == exists orelse
+                                 Status == tombstone],
     %% Fold buckets
     {ok, FoundBs} = fold_buckets(fun(B, Acc) -> [B|Acc] end, [], [], S),
     %% FoundBs should contain only the buckets in TheTwoBs and
@@ -1297,7 +1300,7 @@ t4(SmallestBlock, BiggestBlock, BlocksPerFile, OrderFun)
 t5() ->
     TestDir = "./delme-t5",
     NumBuckets = 5,                           % Must be greater than 1
-    EndSeq = 5,                               % Must be greater than 2
+    EndSeq = 7,                               % Must be greater than 2
     BlockSize = 1024,
 
     os:cmd("rm -rf ++ " ++ TestDir),
@@ -1333,6 +1336,14 @@ t5() ->
                         DelO = riak_object:new(B, K, V, DelMD),
                         put_object(B, K, [], DelO, S)
                     end || O <- LastBucketOs],
+    [begin
+         {ok, O2, _} = get_object(riak_object:bucket(O), riak_object:key(O),
+                                  false, S),
+         true = riak_object_is_deleted(O2)
+     end || O <- LastBucketOs],
+    false = is_empty(S),
+    [{ok, _} = delete(riak_object:bucket(O), riak_object:key(O), [], S) ||
+        O <- LastBucketOs],
     true = is_empty(S),
 
     ok.
@@ -1349,13 +1360,8 @@ make_tombstoned_0byte_obj(Bucket, Key) ->
                     dict:from_list([{<<"X-Riak-Deleted">>, true}])).
 
 check_is_empty(S) ->
-    EmptyFun = fun(_B, _K, RObj, Acc) ->
-                       case (catch riak_object_is_deleted(RObj)) of
-                           false ->
-                               throw(it_is_not_empty);
-                           _ ->
-                               Acc
-                       end
+    EmptyFun = fun(_B, _K, _RObj, _Acc) ->
+                       throw(it_is_not_empty)
                end,
     try
         {ok, true} = fold_objects(EmptyFun, true, [], S),
