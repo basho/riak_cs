@@ -193,7 +193,7 @@
 -compile(export_all).
 -ifdef(EQC).
 %% EQC testing assistants
--export([eqc_filter_delete/3, eqc_filter_list_keys/2]).
+-export([eqc_filter_delete/3]).
 -export([prop_nest_ordered/0, eqc_nest_tester/0]).
 -export([backend_eqc_fold_objects_transform/1,
          backend_eqc_filter_orddict_on_delete/4,
@@ -1454,11 +1454,6 @@ eqc_filter_delete(Bucket, Key, BKVs) ->
     catch error:{badmatch, _} ->
             BKVs
     end.
-
-eqc_filter_list_keys(Keys, S) ->
-    exit(todo_TODO_broken),
-    [BKey || {Bucket, Key} = BKey <- Keys,
-             (catch element(1, get_object(Bucket, Key, false, S))) == ok].
 
 -ifdef(TEST_FS2_BACKEND_IN_RIAK_KV).
 
