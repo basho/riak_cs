@@ -186,8 +186,10 @@
 -define(COOKIE_V1, 16#c0c00101c00101c0).
 
 %% !@#$!!@#$!@#$!@#$! Erlang's efile_drv does not support the sticky bit.
-%% So, we use something else: the setgid bit.
--define(TOMBSTONE_MODE_MARKER, 8#2000).
+%% So, we use something else: the setuid bit.
+%% I'd prefer to use the setgid bit, but HFS+ does not allow non-root
+%% users to set the setgid bit on files.  {exasperated}
+-define(TOMBSTONE_MODE_MARKER, 8#4000).
 
 -ifdef(TEST).
 -compile(export_all).
