@@ -73,16 +73,14 @@ resolve_manifests(_, _,
     LastBlockWrittenTime = resolve_last_written_time(A, B),
     A?MANIFEST{write_blocks_remaining=WriteBlocksRemaining, last_block_written_time=LastBlockWrittenTime};
 
-%% Check for and handle differing ACLs, but otherwise purposely throw
-%% a function clause exception if the manifests aren't equivalent
 resolve_manifests(_, _,
-                  A1=?MANIFEST{acl=A1Acl},
-                  A2=?MANIFEST{acl=A2Acl}) when A1Acl =/= A2Acl ->
+                  ?MANIFEST{state = active,acl=A1Acl} = A,
+                  ?MANIFEST{state = active,acl=A2Acl} = B) ->
     case A1Acl?ACL.creation_time >= A2Acl?ACL.creation_time of
         true ->
-            A1;
+            A;
         false ->
-            A2
+            B
     end;
 
 resolve_manifests(_, _,
