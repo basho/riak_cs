@@ -54,6 +54,7 @@
          get_user_by_index/3,
          get_user_index/3,
          hexlist_to_binary/1,
+         binary_to_hexlist/1,
          json_pp_print/1,
          list_keys/2,
          maybe_log_bucket_owner_error/2,
@@ -109,20 +110,13 @@ anonymous_user_creation() ->
     EnvResponse = application:get_env(riak_cs, anonymous_user_creation),
     handle_env_response(EnvResponse, false).
 
-%% @doc Convert the passed binary into a string where the numbers are represented in hexadecimal (lowercase and 0 prefilled).
--spec binary_to_hexlist(binary()) -> string().
-binary_to_hexlist(Bin) ->
-    XBin =
-        [ begin
-              Hex = erlang:integer_to_list(X, 16),
-              if
-                  X < 16 ->
-                      lists:flatten(["0" | Hex]);
-                  true ->
-                      Hex
-              end
-          end || X <- binary_to_list(Bin)],
-    string:to_lower(lists:flatten(XBin)).
+binary_to_hexlist(B) ->
+    %% Avoid module dependency problem when testing riak_kv_fs2_backend. {sigh}
+    riak_kv_fs2_backend:binary_to_hexlist(B).
+
+hexlist_to_binary(B) ->
+    %% Avoid module dependency problem when testing riak_kv_fs2_backend. {sigh}
+    riak_kv_fs2_backend:hexlist_to_binary(B).
 
 %% @doc Return a hexadecimal string of `Binary', with double quotes
 %% around it.
@@ -135,13 +129,6 @@ etag_from_binary(Binary) ->
 -spec etag_from_binary_no_quotes(binary()) -> string().
 etag_from_binary_no_quotes(Binary) ->
     binary_to_hexlist(Binary).
-
-%% @doc Convert the passed binary into a string where the numbers are represented in hexadecimal (lowercase and 0 prefilled).
--spec hexlist_to_binary(string()) -> binary().
-hexlist_to_binary(String) ->
-    Bytes = length(String) div 2,
-    Int = httpd_util:hexlist_to_integer(String),
-    <<Int:(Bytes*8)/integer>>.
 
 %% @doc Release a protobufs connection from the specified
 %% connection pool.

@@ -148,6 +148,7 @@
 %% -behavior(riak_kv_backend). % Not building within riak_kv
 
 %% KV Backend API
+-compile(export_all).                          % DEBUGGING ONLY, delme!
 -export([api_version/0,
          capabilities/1,
          capabilities/2,
@@ -163,6 +164,8 @@
          is_empty/1,
          status/1,
          callback/3]).
+%% To avoid EUnit test dependency on riak_cs_utils
+-export([hexlist_to_binary/1, binary_to_hexlist/1]).
 %% For QuickCheck testing use only
 -export([get/3, put/5]).
 %% Testing
@@ -581,23 +584,73 @@ location_to_bkey(Path, #state{b_depth = BDepth, k_depth = KDepth}) ->
 %% @doc reconstruct a Riak bucket, given a filename
 %% @see encode_bucket/1
 decode_bucket(B64) ->
-    base64fs2:decode(B64).
+    hexlist_to_binary(B64).
 
 %% @spec decode_key(string()) -> binary()
 %% @doc reconstruct a Riak object key, given a filename
 %% @see encode_key/1
 decode_key(K64) ->
-    base64fs2:decode(K64).
+    hexlist_to_binary(K64).
 
 %% @spec encode_bucket(binary()) -> string()
 %% @doc make a filename out of a Riak bucket
 encode_bucket(Bucket) ->
-    base64fs2:encode_to_string(Bucket).
+    binary_to_hexlist(Bucket).
 
 %% @spec encode_key(binary()) -> string()
 %% @doc make a filename out of a Riak object key
 encode_key(Key) ->
-    base64fs2:encode_to_string(Key).
+    binary_to_hexlist(Key).
+
+%% @doc Convert the passed binary into a string where the numbers are represented in hexadecimal (lowercase and 0 prefilled).
+-spec binary_to_hexlist(binary()) -> string().
+binary_to_hexlist(<<>>) ->
+    [];
+binary_to_hexlist(<<A:4, B:4, T/binary>>) ->
+    [num2hexchar(A), num2hexchar(B)|binary_to_hexlist(T)].
+
+num2hexchar(N) when N < 10 ->
+    N + $0;
+num2hexchar(N) when N < 16 ->
+    (N - 10) + $a.
+
+%% time_binary_to_hexlist_small() ->
+%%     Num = 1000*1000,
+%%     Xs = lists:seq(1, Num),
+%%     Bin = <<0,255,1,254,3,253>>,
+%%     time_binary_to_hexlist(Num, Xs, Bin).
+
+%% time_binary_to_hexlist_big() ->
+%%     Num = 50*1000,
+%%     Xs = lists:seq(1, Num),
+%%     Bin = list_to_binary(lists:duplicate(20, <<0,255,1,254,3,253>>)),
+%%     time_binary_to_hexlist(Num, Xs, Bin).
+
+%% time_binary_to_hexlist(Num, Xs, Bin) ->
+%%     {USec, _} = timer:tc(fun() ->
+%%                                  [binary_to_hexlist(Bin) || _ <- Xs]
+%%                          end),
+%%     USec / Num.
+
+%% @doc Convert the passed binary into a string where the numbers are represented in hexadecimal (lowercase and 0 prefilled).
+-spec hexlist_to_binary(string()) -> binary().
+hexlist_to_binary(HS) ->
+    list_to_binary(hexlist_to_binary_2(HS)).
+
+hexlist_to_binary_2([]) ->
+    [];
+hexlist_to_binary_2([A,B|T]) ->
+    [hex2byte(A, B)|hexlist_to_binary_2(T)].
+
+hex2byte(A, B) ->
+    An = hexchar2num(A),
+    Bn = hexchar2num(B),
+    <<An:4, Bn:4>>.
+
+hexchar2num(C) when $0 =< C, C =< $9 ->
+    C - $0;
+hexchar2num(C) when $a =< C, C =< $f ->
+    (C - $a) + 10.
 
 %% @doc create a directory nesting, to keep the number of
 %%      files in a directory smaller
