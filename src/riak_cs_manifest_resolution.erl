@@ -73,6 +73,26 @@ resolve_manifests(_, _,
     LastBlockWrittenTime = resolve_last_written_time(A, B),
     A?MANIFEST{write_blocks_remaining=WriteBlocksRemaining, last_block_written_time=LastBlockWrittenTime};
 
+%% The following two function clauses are only to help in cases where
+%% a user may have been using an early version of Riak CS without
+%% support for proxy_get and manifest cluster ids. For users not in
+%% that special situation these function clauses should never be
+%% executed.
+resolve_manifests(_, _,
+                  ?MANIFEST{state = active, acl=A1Acl, cluster_id=Id} = A,
+                  ?MANIFEST{state = active, acl=A2Acl, cluster_id=undefined} = B) ->
+    case A1Acl?ACL.creation_time >= A2Acl?ACL.creation_time of
+        true ->
+            A;
+        false ->
+            B?MANIFEST{cluster_id=Id}
+    end;
+
+resolve_manifests(StageX, StageX,
+                  ?MANIFEST{state = active, cluster_id=undefined} = A,
+                  ?MANIFEST{state = active} = B) ->
+    resolve_manifests(StageX, StageX, B, A);
+
 resolve_manifests(_, _,
                   ?MANIFEST{state = active,acl=A1Acl} = A,
                   ?MANIFEST{state = active,acl=A2Acl} = B) ->
