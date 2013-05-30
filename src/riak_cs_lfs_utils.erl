@@ -32,6 +32,7 @@
          put_concurrency/0,
          delete_concurrency/0,
          put_fsm_buffer_size_factor/0,
+         get_fsm_buffer_size_factor/0,
          safe_block_size_from_manifest/1,
          initial_blocks/2,
          block_sequences_for_manifest/1,
@@ -233,6 +234,17 @@ put_fsm_buffer_size_factor() ->
     case application:get_env(riak_cs, put_buffer_factor) of
         undefined ->
             ?DEFAULT_PUT_BUFFER_FACTOR;
+        {ok, Factor} ->
+            Factor
+    end.
+
+%% @doc Return the configured get fsm buffer
+%% size factor
+-spec get_fsm_buffer_size_factor() -> pos_integer().
+get_fsm_buffer_size_factor() ->
+    case application:get_env(riak_cs, fetch_buffer_factor) of
+        undefined ->
+            ?DEFAULT_FETCH_BUFFER_FACTOR;
         {ok, Factor} ->
             Factor
     end.
