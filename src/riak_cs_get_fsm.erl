@@ -234,8 +234,17 @@ waiting_chunks(get_next_chunk, From, State) ->
         done ->
             gen_fsm:reply(From, {done, <<>>}),
             {stop, normal, State};
-        {_, UpdState} ->
-            {next_state, waiting_chunks, UpdState}
+        {sent, UpdState} ->
+            Got = UpdState#state.got_blocks,
+            GotSize = orddict:size(Got),
+            MaxGotSize = riak_cs_lfs_utils:get_fsm_buffer_size_factor(),
+            if GotSize < MaxGotSize ->
+                {next_state, waiting_chunks, UpdState, 0};
+            true ->
+                {next_state, waiting_chunks, UpdState}
+            end;
+        {not_sent, UpdState} ->
+            {next_state, waiting_chunks, read_blocks(UpdState)}
     end.
 
 perhaps_send_to_user(From, #state{got_blocks=Got,
@@ -257,6 +266,12 @@ perhaps_send_to_user(From, #state{got_blocks=Got,
             end
     end.
 
+waiting_chunks(timeout, State = #state{got_blocks = Got}) ->
+    GotSize = orddict:size(Got),
+    lager:debug("starting fetch again with ~p left in queue", [GotSize]),
+    UpdState = read_blocks(State),
+    {next_state, waiting_chunks, UpdState};
+
 waiting_chunks({chunk, Pid, {NextBlock, BlockReturnValue}},
                #state{from=From,
                       got_blocks=Got,
@@ -267,6 +282,7 @@ waiting_chunks({chunk, Pid, {NextBlock, BlockReturnValue}},
                       keep_bytes_final=KeepFinal
                      }=State) ->
     _ = lager:debug("Retrieved block ~p", [NextBlock]),
+
     {ok, RawBlockValue} = BlockReturnValue,        % TODO: robustify!
     BlockValue = trim_block_value(RawBlockValue,
                                   NextBlock,
@@ -274,8 +290,15 @@ waiting_chunks({chunk, Pid, {NextBlock, BlockReturnValue}},
                                   {SkipInitial, KeepFinal}),
     UpdGot = orddict:store(NextBlock, BlockValue, Got),
     %% TODO: _ = lager:debug("BlocksLeft: ~p", [BlocksLeft]),
-    UpdState = read_blocks(State#state{got_blocks=UpdGot,
-                                        free_readers=[Pid|FreeReaders]}),
+    GotSize = orddict:size(UpdGot),
+    UpdState0 = State#state{got_blocks = UpdGot, free_readers = [Pid|FreeReaders]},
+    MaxGotSize = riak_cs_lfs_utils:get_fsm_buffer_size_factor(),
+    UpdState = if GotSize < MaxGotSize ->
+        read_blocks(UpdState0);
+    true ->
+        UpdState0
+    end,
+
     if From == undefined ->
             {next_state, waiting_chunks, UpdState};
        true ->
