@@ -268,7 +268,7 @@ perhaps_send_to_user(From, #state{got_blocks=Got,
 
 waiting_chunks(timeout, State = #state{got_blocks = Got}) ->
     GotSize = orddict:size(Got),
-    lager:debug("starting fetch again with ~p left in queue", [GotSize]),
+    _ = lager:debug("starting fetch again with ~p left in queue", [GotSize]),
     UpdState = read_blocks(State),
     {next_state, waiting_chunks, UpdState};
 
