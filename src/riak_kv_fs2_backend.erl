@@ -187,6 +187,7 @@
 -define(MAXVALSIZE, 2#11111111111111111111111111111111).
 -define(COOKIE_SIZE, 64).
 -define(COOKIE_V1, 16#c0c00101c00101c0).
+-define(TYPICAL_BUCKET_PREFIX_LEN, 3).  % To match ?BLOCK_BUCKET_PREFIX length
 
 %% !@#$!!@#$!@#$!@#$! Erlang's efile_drv does not support the sticky bit.
 %% So, we use something else: the setuid bit.
@@ -213,6 +214,7 @@
           dir        :: string(),
           block_size :: non_neg_integer(),
           max_blocks :: non_neg_integer(),
+          b_1st_prefixlen :: pos_integer(),
           b_depth    :: non_neg_integer(),
           k_depth    :: non_neg_integer(),
           %% Items below used by key listing stack only
@@ -253,7 +255,7 @@ capabilities(_Bucket, _State) ->
 start(Partition, Config) ->
     PartitionName = integer_to_list(Partition),
     try
-        {ConfigRoot, BlockSize, MaxBlocks, BDepth, KDepth} =
+        {ConfigRoot, BlockSize, MaxBlocks, B1stPrefixLen, BDepth, KDepth} =
             parse_config_and_env(Config),
         Dir = filename:join([ConfigRoot,PartitionName]),
         ok = filelib:ensure_dir(Dir),
@@ -262,6 +264,7 @@ start(Partition, Config) ->
         {ok,  #state{dir = Dir,
                      block_size = BlockSize,
                      max_blocks = MaxBlocks,
+                     b_1st_prefixlen = B1stPrefixLen,
                      b_depth = BDepth,
                      k_depth = KDepth}}
     catch throw:Error ->
@@ -508,9 +511,11 @@ parse_config_and_env(Config) ->
                           [?MODULE, ?FS2_CONTIGUOUS_BLOCKS]),
                         ?FS2_CONTIGUOUS_BLOCKS
                 end,
+    B1stPrefixLen = get_prop_or_env(
+                  b_1st_prefixlen, Config, riak_kv, ?TYPICAL_BUCKET_PREFIX_LEN),
     BDepth = get_prop_or_env(b_depth, Config, riak_kv, 2),
     KDepth = get_prop_or_env(k_depth, Config, riak_kv, 2),
-    {ConfigRoot, BlockSize, MaxBlocks, BDepth, KDepth}.
+    {ConfigRoot, BlockSize, MaxBlocks, B1stPrefixLen, BDepth, KDepth}.
 
 %% @spec atomic_write(File :: string(), Val :: binary()) ->
 %%       ok | {error, Reason :: term()}
@@ -554,10 +559,16 @@ fold_objects_fun(FoldObjectsFun) ->
 location(State, Bucket) ->
     location(State, Bucket, no_key_provided).
 
-location(#state{dir = Dir, b_depth = BDepth, k_depth = KDepth}, Bucket, Key) ->
+location(#state{dir = Dir, b_depth = BDepth, k_depth = KDepth,
+               b_1st_prefixlen = B1stPrefixLen}, Bucket, Key) ->
     B64 = encode_bucket(Bucket),
-    BDirs = if BDepth > 0 -> filename:join(nest(B64, BDepth));
-               true       -> ""
+    BDirs = if BDepth > 0 ->
+                    %% We know encode_bucket() has exactly 1:2 expansion ratio
+                    {BPrefix, BTail} = lists:split(2 * B1stPrefixLen, B64),
+                    [First|Rest] = nest(BTail, BDepth),
+                    filename:join([(BPrefix ++ First)|Rest]);
+               true ->
+                    ""
             end,
     if Key == no_key_provided ->
             filename:join([Dir, BDirs, B64]);
@@ -661,8 +672,9 @@ nest([Nb,Na|Rest],N,Acc) ->
     nest(Rest, N-1, [[Na,Nb]|Acc]);
 nest([Na],N,Acc) ->
     nest([],N-1,[[Na]|Acc]);
-nest([],N,Acc) ->
-    nest([],N-1,["0"|Acc]).
+nest([],_N,_Acc) ->
+    throw(minimum_name_length_violation).
+    %% nest([],N-1,["z"|Acc]).                     % $z sorts after $f
 
 %% Borrowed from bitcask_fileops.erl and then mangled
 -spec pack_ondisk(binary(), state()) -> [binary()].
@@ -1536,11 +1548,7 @@ nest_test() ->
     ?assertEqual(["ab","cd","ef"],nest("abcdefg", 3)),
     ?assertEqual(["ab","cd","ef"],nest("abcdef", 3)),
     ?assertEqual(["a","bc","de"], nest("abcde", 3)),
-    ?assertEqual(["0","ab","cd"], nest("abcd", 3)),
-    ?assertEqual(["0","a","bc"],  nest("abc", 3)),
-    ?assertEqual(["0","0","ab"],  nest("ab", 3)),
-    ?assertEqual(["0","0","a"],   nest("a", 3)),
-    ?assertEqual(["0","0","0"],   nest([], 3)).
+    ?assertEqual(minimum_name_length_violation, catch nest("abcd", 3)).
 
 create_or_sanity_test() ->
     Dir = "/tmp/sanity_test_delete_me",
@@ -1632,7 +1640,8 @@ backend_eqc_key_v1() ->
 
 basic_props() ->
     [{data_root,  "test/fs-backend"},
-     {block_size, 1024}].
+     {block_size, 1024},
+     {b_1st_prefixlen, ?TYPICAL_BUCKET_PREFIX_LEN}].
 
 eqc_t4_wrapper(TestTime) ->
     eqc:quickcheck(eqc:testing_time(TestTime, prop_t4())).
@@ -1671,17 +1680,9 @@ eqc_nest_tester() ->
     setup(),
     os:cmd("mkdir -p test/fs-backend"),
     rm_rf_test_dir_contents(),
-    ok = file:make_dir("test/fs-backend/foo"),
-    case file:make_dir("test/fs-backend/Foo") of
-        ok ->
-            X = eqc:quickcheck(eqc:numtests(250, prop_nest_ordered())),
-            cleanup(x),
-            X == true;
-        {error, eexist} ->
-            io:format(user, "SKIP ~s:eqc_nest_tester: using case insensitive file system\n", [?MODULE]),
-            %% cleanup(x),
-            true
-    end.
+    X = eqc:quickcheck(eqc:numtests(250, prop_nest_ordered())),
+    cleanup(x),
+    X = true.
 
 prop_t4() ->
     ?FORALL({SmallestBlock, N, BlocksPerFile, OrderFun},
@@ -1715,6 +1716,12 @@ prop_nest_ordered() ->
             begin
                 rm_rf_test_dir_contents(),
                 {ok, S} = ?MODULE:start(0, basic_props()),
+                #state{b_depth = BDepth,
+                       b_1st_prefixlen = B1stPrefixLen} = S,
+   ?IMPLIES(all_names_at_least_as_long_as(BucketList,
+                                          BDepth + B1stPrefixLen),
+            begin
+
                 [ok = insert_sample_key(Bucket, S) || Bucket <- BucketList],
                 {ok, Bs} = ?MODULE:fold_buckets(fun(B, Acc) -> [B|Acc] end, [],
                                                 [], S),
@@ -1724,16 +1731,21 @@ prop_nest_ordered() ->
                     _ -> {wanted, lists:usort(BucketList),
                           got, lists:reverse(Bs)}
                 end
+            end)
             end)).
 
 gen_bucket() ->
-    ?LET(Bucket, frequency([
-                            {50, vector(1, char())},
-                            {5, vector(2, char())},
-                            {5, vector(3, char())},
-                            {5, non_empty(list(char()))}
-                           ]),
-         iolist_to_binary(Bucket)).
+    ?LET(CharGen, oneof([$a, char()]),          % Limit to only $a's, sometimes
+    ?LET({BPrefix, Bucket},
+         {vector(?TYPICAL_BUCKET_PREFIX_LEN, CharGen),
+          frequency([
+                     {5, vector(3, CharGen)},
+                     {5, non_empty(list(CharGen))}
+                    ])},
+         iolist_to_binary([BPrefix, Bucket]))).
+
+all_names_at_least_as_long_as(Names, Len) ->
+    lists:all(fun(N) -> byte_size(N) >= Len end, Names).
 
 insert_sample_key(Bucket, S) ->
     Key = <<"key">>,
