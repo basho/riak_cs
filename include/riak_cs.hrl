@@ -354,7 +354,7 @@
     owner_key_id :: string(),
 
     %% storage class: no real options here
-    storage_class = regular,
+    storage_class = standard,
 
     %% Time that the upload was initiated
     initiated :: string() %% conflict of func vs. type: riak_cs_wm_utils:iso_8601_datetime()
