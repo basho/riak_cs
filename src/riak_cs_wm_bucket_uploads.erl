@@ -108,7 +108,7 @@ to_xml(RD, Ctx=#context{local_context=LocalCtx,
                         {'IsTruncated', ["false"]}   % TODO
                       ] ++ Us ++ Cs
                      },
-            Body = riak_cs_s3_response:export_xml([XmlDoc]),
+            Body = riak_cs_xml:export_xml([XmlDoc]),
             {Body, RD, Ctx};
         {error, Reason} ->
             riak_cs_s3_response:api_error(Reason, RD, Ctx)

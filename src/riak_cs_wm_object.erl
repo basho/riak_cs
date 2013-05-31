@@ -81,7 +81,7 @@ allowed_methods() ->
     ['HEAD', 'GET', 'DELETE', 'PUT'].
 
 -spec valid_entity_length(#wm_reqdata{}, #context{}) -> {boolean(), #wm_reqdata{}, #context{}}.
-valid_entity_length(RD, Ctx) ->
+valid_entity_length(RD, Ctx=#context{response_module=ResponseMod}) ->
     case wrq:method(RD) of
         'PUT' ->
             case catch(
@@ -90,7 +90,7 @@ valid_entity_length(RD, Ctx) ->
                 Length when is_integer(Length) ->
                     case Length =< riak_cs_lfs_utils:max_content_len() of
                         false ->
-                            riak_cs_s3_response:api_error(
+                            ResponseMod:api_error(
                               entity_too_large, RD, Ctx);
                         true ->
                             check_0length_metadata_update(Length, RD, Ctx)
@@ -141,14 +141,15 @@ last_modified(RD, Ctx=#context{local_context=LocalCtx}) ->
 
 -spec produce_body(#wm_reqdata{}, #context{}) ->
                           {{known_length_stream, non_neg_integer(), {<<>>, function()}}, #wm_reqdata{}, #context{}}.
-produce_body(RD, Ctx=#context{local_context=LocalCtx}) ->
+produce_body(RD, Ctx=#context{local_context=LocalCtx,
+                              response_module=ResponseMod}) ->
     #key_context{get_fsm_pid=GetFsmPid, manifest=Mfst} = LocalCtx,
     ResourceLength = Mfst?MANIFEST.content_length,
     case parse_range(RD, ResourceLength) of
         invalid_range ->
             %% HTTP/1.1 416 Requested Range Not Satisfiable
             riak_cs_get_fsm:stop(GetFsmPid),
-            riak_cs_s3_response:api_error(
+            ResponseMod:api_error(
               invalid_range,
               %% RD#wm_reqdata{resp_range=ignore_request}, Ctx);
               RD, Ctx);
@@ -281,6 +282,7 @@ content_types_accepted(RD, Ctx=#context{local_context=LocalCtx0}) ->
 
 -spec accept_body(#wm_reqdata{}, #context{}) -> {{halt, integer()}, #wm_reqdata{}, #context{}}.
 accept_body(RD, Ctx=#context{local_context=LocalCtx,
+                             response_module=ResponseMod,
                              riakc_pid=RiakcPid})
   when LocalCtx#key_context.update_metadata == true ->
     #key_context{bucket=Bucket, key=KeyStr, manifest=Mfst} = LocalCtx,
@@ -293,9 +295,9 @@ accept_body(RD, Ctx=#context{local_context=LocalCtx,
         ok ->
             ETag = riak_cs_utils:etag_from_binary(Mfst?MANIFEST.content_md5),
             RD2 = wrq:set_resp_header("ETag", ETag, RD),
-            riak_cs_s3_response:copy_object_response(Mfst, RD2, Ctx);
+            ResponseMod:copy_object_response(Mfst, RD2, Ctx);
         {error, Err} ->
-            riak_cs_s3_response:api_error(Err, RD, Ctx)
+            ResponseMod:api_error(Err, RD, Ctx)
     end;
 accept_body(RD, Ctx=#context{local_context=LocalCtx,
                              user=User,

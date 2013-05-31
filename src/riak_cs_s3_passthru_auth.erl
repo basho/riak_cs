@@ -18,7 +18,7 @@
 %%
 %% ---------------------------------------------------------------------
 
--module(riak_cs_passthru_auth).
+-module(riak_cs_s3_passthru_auth).
 
 -behavior(riak_cs_auth).
 
@@ -32,7 +32,7 @@ identify(RD,_Ctx) ->
         undefined -> {[], undefined};
         Key -> {Key, undefined}
     end.
-            
+
 
 -spec authenticate(rcs_user(), undefined, term(), term()) -> ok.
 authenticate(_User, _AuthData, _RD, _Ctx) ->

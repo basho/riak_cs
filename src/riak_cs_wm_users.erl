@@ -108,7 +108,7 @@ forbidden(RD, Ctx, undefined, false) ->
     riak_cs_wm_utils:deny_access(RD, Ctx);
 forbidden(RD, Ctx, User, false) ->
     UserKeyId = User?RCS_USER.key_id,
-    case riak_cs_utils:get_admin_creds() of
+    case riak_cs_config:admin_creds() of
         {ok, {Admin, _}} when Admin == UserKeyId ->
             %% admin account is allowed
             {false, RD, Ctx};
@@ -147,7 +147,7 @@ wait_for_users(Format, RiakPid, ReqId, Boundary, Status) ->
 
 %% @doc Compile a multipart entity for a set of user documents.
 users_doc(UserDocs, xml, Boundary) ->
-    XmlDoc = riak_cs_s3_response:export_xml([{'Users', UserDocs}]),
+    XmlDoc = riak_cs_xml:export_xml([{'Users', UserDocs}]),
     ["\r\n--",
      Boundary,
      "\r\nContent-Type: ", ?XML_TYPE, "\r\n\r\n",
