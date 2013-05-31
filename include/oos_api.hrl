@@ -18,18 +18,16 @@
 %%
 %% ---------------------------------------------------------------------
 
--module(riak_cs_blockall_auth).
+-define(DEFAULT_OS_AUTH_URL, "http://localhost:35357/v2.0/").
+-define(DEFAULT_TOKENS_RESOURCE, "tokens/").
+-define(DEFAULT_S3_TOKENS_RESOURCE, "s3tokens/").
+-define(DEFAULT_OS_USERS_RESOURCE, "users/").
+-define(DEFAULT_OS_ADMIN_TOKEN, "ADMIN").
+-define(DEFAULT_OS_OPERATOR_ROLES, [<<"admin">>, <<"swiftoperator">>]).
 
--behavior(riak_cs_auth).
-
--include("riak_cs.hrl").
-
--export([identify/2,authenticate/4]).
-
--spec identify(term(), term()) -> {undefined, block_all}.
-identify(_RD,_Ctx) ->
-    {undefined, block_all}.
-
--spec authenticate(rcs_user(), term(), term(), term()) -> ok | {error, term()}.
-authenticate(_User, AuthData, _RD, _Ctx) ->
-    {error, AuthData}.
+-record(keystone_s3_auth_req_v1, {
+          access :: binary(),
+          signature :: binary(),
+          token :: binary()}).
+-type keystone_s3_auth_req() :: #keystone_s3_auth_req_v1{}.
+-define(KEYSTONE_S3_AUTH_REQ, #keystone_s3_auth_req_v1).

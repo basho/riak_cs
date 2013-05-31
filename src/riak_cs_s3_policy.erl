@@ -744,7 +744,7 @@ condition_({<<"aws:CurrentTime">>, Bin}) when is_binary(Bin) ->
 condition_({<<"aws:EpochTime">>, Int}) when is_integer(Int) andalso Int >= 0 ->
     {'aws:EpochTime', Int};
 condition_({<<"aws:SecureTransport">>, MaybeBool}) ->
-    case parse_bool(MaybeBool) of 
+    case parse_bool(MaybeBool) of
         {error, _} ->
             throw({error, malformed_policy_condition});
         {ok, Bool} ->
@@ -752,7 +752,7 @@ condition_({<<"aws:SecureTransport">>, MaybeBool}) ->
     end;
 condition_({<<"aws:SourceIp">>, Bin}) when is_binary(Bin)->
     case parse_ip(Bin) of
-        {error, _} -> 
+        {error, _} ->
             throw({error, malformed_policy_condition});
         IP ->
             {'aws:SourceIp', IP}
@@ -800,7 +800,7 @@ parse_bool(_) -> {error, notbool}.
 % <<"10.1.2.3/24">> -> {{10,1,2,3}, {255,255,255,0}}
 % "10.1.2.3/24 -> {{10,1,2,3}, {255,255,255,0}}
 %% NOTE: Returns false on a bad ip
--spec parse_ip(binary() | string()) -> {inet:ip_address(), inet:ip_address()} | false.
+-spec parse_ip(binary() | string()) -> {inet:ip_address(), inet:ip_address()} | {error, term()}.
 parse_ip(Bin) when is_binary(Bin) ->
     Str = binary_to_list(Bin),
     parse_ip(Str);
@@ -810,7 +810,7 @@ parse_ip(Str) when is_list(Str) ->
         {ok, IP} ->
             {IP, Netmask};
         Error ->
-            Error 
+            Error
     end.
 
 -spec parse_tokenized_ip([string()]) -> {string(), inet:ip_address()}.

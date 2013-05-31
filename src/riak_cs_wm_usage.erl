@@ -258,7 +258,7 @@ forbidden(RD, Ctx, User, false) ->
             AccessRD = riak_cs_access_log_handler:set_user(User, RD),
             {false, AccessRD, Ctx};
         false ->
-            case riak_cs_utils:get_admin_creds() of
+            case riak_cs_config:admin_creds() of
                 {ok, {Admin, _}} when Admin == User?RCS_USER.key_id ->
                     %% admin can access anyone's stats
                     {false, RD, Ctx};
@@ -321,7 +321,7 @@ produce_xml(RD, #ctx{body=undefined}=Ctx) ->
     Storage = maybe_storage(RD, Ctx),
     Doc = [{?KEY_USAGE, [{?KEY_ACCESS, xml_access(Access)},
                          {?KEY_STORAGE, xml_storage(Storage)}]}],
-    Body = case riak_cs_s3_response:export_xml(Doc) of
+    Body = case riak_cs_xml:export_xml(Doc) of
                {error, Bin, _}         -> Bin;
                {incomplete, Bin, _}    -> Bin;
                Bin when is_binary(Bin) -> Bin
@@ -477,7 +477,7 @@ xml_error_msg(Message) when is_binary(Message) ->
     xml_error_msg(binary_to_list(Message));
 xml_error_msg(Message) ->
     Doc = [{?KEY_ERROR, [{?KEY_MESSAGE, [Message]}]}],
-    riak_cs_s3_response:export_xml(Doc).
+    riak_cs_xml:export_xml(Doc).
 
 %% @doc Produce a datetime tuple from a ISO8601 string
 -spec datetime(binary()|string()) -> {ok, calendar:datetime()} | error.

@@ -18,24 +18,79 @@
 %%
 %% ---------------------------------------------------------------------
 
--module(riak_cs_s3_response).
+-module(riak_cs_oos_response).
 -export([api_error/3,
-         status_code/1,
-         respond/3,
-         respond/4,
-         error_response/1,
+         error_code_to_atom/1,
          error_response/5,
-         copy_object_response/3,
-         no_such_upload_response/3,
-         error_code_to_atom/1]).
+         respond/3,
+         status_code/1]).
 
 -include("riak_cs.hrl").
 -include("riak_cs_api.hrl").
 -include("list_objects.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
--include_lib("xmerl/include/xmerl.hrl").
 
--type xmlElement() :: #xmlElement{}.
+-spec respond(term(), #wm_reqdata{}, #context{}) ->
+                     {string() | {halt, non_neg_integer()} , #wm_reqdata{}, #context{}}.
+respond(?LBRESP{}=Response, RD, Ctx) ->
+    BucketsDoc =
+        [begin
+             case is_binary(B?RCS_BUCKET.name) of
+                 true ->
+                     binary_to_list(B?RCS_BUCKET.name) ++ "\n";
+                 false ->
+                     B?RCS_BUCKET.name ++ "\n"
+             end
+         end || B <- Response?LBRESP.buckets],
+    UpdRD = wrq:set_resp_header("Content-Type",
+                                "text/plain",
+                                RD),
+    {BucketsDoc, UpdRD, Ctx};
+respond({ok, ?LORESP{}=Response}, RD, Ctx) ->
+    %% @TODO Expand to handle common prefixes
+    UpdRD = wrq:set_resp_header("Content-Type",
+                                "text/plain",
+                                RD),
+    ResponseBody = [binary_to_list(KeyContent?LOKC.key) ++ "\n" ||
+                       KeyContent <- Response?LORESP.contents,
+                       KeyContent /= undefined],
+    {ResponseBody, UpdRD, Ctx};
+respond({error, _}=Error, RD, Ctx) ->
+    api_error(Error, RD, Ctx).
+
+api_error(Error, RD, Ctx) when is_atom(Error); is_tuple(Error) ->
+    error_response(status_code(Error), error_code(Error), error_message(Error),
+                   RD, Ctx);
+api_error({riak_connect_failed, _}=Error, RD, Ctx) ->
+    error_response(status_code(Error), error_code(Error), error_message(Error),
+                   RD, Ctx);
+api_error({error, Reason}, RD, Ctx) ->
+    api_error(Reason, RD, Ctx).
+
+error_response(StatusCode, _Code, _Message, RD, Ctx) ->
+    {{halt, StatusCode}, RD, Ctx}.
+
+%% @doc Convert an error code string into its corresponding atom
+-spec error_code_to_atom(string()) -> atom().
+error_code_to_atom(ErrorCode) ->
+    case ErrorCode of
+        "BadRequest" ->
+            bad_request;
+        "InvalidAccessKeyId" ->
+            invalid_access_key_id;
+        "AccessDenied" ->
+            access_denied;
+        "BucketNotEmpty" ->
+            bucket_not_empty;
+        "BucketAlreadyExists" ->
+            bucket_already_exists;
+        "UserAlreadyExists" ->
+            user_already_exists;
+        "NoSuchBucket" ->
+            no_such_bucket;
+        _ ->
+            unknown
+    end.
 
 -spec error_message(atom() | {'riak_connect_failed', term()}) -> string().
 -spec error_code(atom() | {'riak_connect_failed', term()}) -> string().
@@ -138,7 +193,6 @@ status_code(admin_secret_undefined) -> 503;
 status_code(bucket_owner_unavailable) -> 503;
 status_code(multiple_bucket_owners) -> 503;
 status_code(econnrefused) -> 503;
-status_code(unsatisfied_constraint) -> 503;
 status_code(malformed_policy_json) -> 400;
 status_code(malformed_policy_missing) -> 400;
 status_code(malformed_policy_resource) -> 400;
@@ -153,110 +207,3 @@ status_code(unresolved_grant_email) -> 400;
 status_code(invalid_range) -> 416;
 status_code(invalid_bucket_name) -> 400;
 status_code(_) -> 503.
-
--spec respond(term(), #wm_reqdata{}, #context{}) ->
-                     {binary(), #wm_reqdata{}, #context{}}.
-respond(?LBRESP{}=Response, RD, Ctx) ->
-    {riak_cs_xml:to_xml(Response), RD, Ctx};
-respond({ok, ?LORESP{}=Response}, RD, Ctx) ->
-    {riak_cs_xml:to_xml(Response), RD, Ctx};
-respond({error, _}=Error, RD, Ctx) ->
-    api_error(Error, RD, Ctx).
-
-respond(StatusCode, Body, ReqData, Ctx) ->
-     UpdReqData = wrq:set_resp_body(Body,
-                                    wrq:set_resp_header("Content-Type",
-                                                        ?XML_TYPE,
-                                                        ReqData)),
-    {{halt, StatusCode}, UpdReqData, Ctx}.
-
-api_error(Error, RD, Ctx) when is_atom(Error) ->
-    error_response(status_code(Error),
-                   error_code(Error),
-                   error_message(Error),
-                   RD,
-                   Ctx);
-api_error({riak_connect_failed, _}=Error, RD, Ctx) ->
-    error_response(status_code(Error),
-                   error_code(Error),
-                   error_message(Error),
-                   RD,
-                   Ctx);
-api_error({error, Reason}, RD, Ctx) ->
-    api_error(Reason, RD, Ctx).
-
-error_response(ErrorDoc) when length(ErrorDoc) =:= 0 ->
-    {error, error_code_to_atom("BadRequest")};
-error_response(ErrorDoc) ->
-    {error, error_code_to_atom(xml_error_code(ErrorDoc))}.
-
-error_response(StatusCode, Code, Message, RD, Ctx) ->
-    {OrigResource, _} = riak_cs_s3_rewrite:original_resource(RD),
-    XmlDoc = [{'Error', [{'Code', [Code]},
-                         {'Message', [Message]},
-                         {'Resource', [string:strip(OrigResource, right, $/)]},
-                         {'RequestId', [""]}]}],
-    respond(StatusCode, riak_cs_xml:export_xml(XmlDoc), RD, Ctx).
-
-copy_object_response(Manifest, RD, Ctx) ->
-    LastModified = riak_cs_wm_utils:to_iso_8601(Manifest?MANIFEST.created),
-    ETag = riak_cs_utils:etag_from_binary(Manifest?MANIFEST.content_md5),
-    XmlDoc = [{'CopyObjectResponse',
-               [{'LastModified', [LastModified]},
-                {'ETag', [ETag]}]}],
-    respond(200, riak_cs_xml:export_xml(XmlDoc), RD, Ctx).
-
-no_such_upload_response(UploadId, RD, Ctx) ->
-    XmlDoc = {'Error',
-              [
-               {'Code', [error_code(no_such_upload)]},
-               {'Message', [error_message(no_such_upload)]},
-               {'UploadId', [binary_to_list(base64url:encode(UploadId))]},
-               {'HostId', ["host-id"]}
-              ]},
-    Body = riak_cs_xml:export_xml([XmlDoc]),
-    respond(status_code(no_such_upload), Body, RD, Ctx).
-
-%% @doc Convert an error code string into its corresponding atom
--spec error_code_to_atom(string()) -> atom().
-error_code_to_atom(ErrorCode) ->
-    case ErrorCode of
-        "BadRequest" ->
-            bad_request;
-        "InvalidAccessKeyId" ->
-            invalid_access_key_id;
-        "AccessDenied" ->
-            access_denied;
-        "BucketNotEmpty" ->
-            bucket_not_empty;
-        "BucketAlreadyExists" ->
-            bucket_already_exists;
-        "UserAlreadyExists" ->
-            user_already_exists;
-        "NoSuchBucket" ->
-            no_such_bucket;
-        _ ->
-            unknown
-    end.
-
-%% @doc Get the value of the `Code' element from
-%% and XML document.
--spec xml_error_code(string()) -> string().
-xml_error_code(Xml) ->
-    {ParsedData, _Rest} = xmerl_scan:string(Xml, []),
-    process_xml_error(ParsedData#xmlElement.content).
-
-%% @doc Process the top-level elements of the
--spec process_xml_error([xmlElement()]) -> string().
-process_xml_error([]) ->
-    [];
-process_xml_error([HeadElement | RestElements]) ->
-    _ = lager:debug("Element name: ~p", [HeadElement#xmlElement.name]),
-    ElementName = HeadElement#xmlElement.name,
-    case ElementName of
-        'Code' ->
-            [Content] = HeadElement#xmlElement.content,
-            Content#xmlText.value;
-        _ ->
-            process_xml_error(RestElements)
-    end.
