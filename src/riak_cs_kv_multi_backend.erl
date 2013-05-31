@@ -413,7 +413,7 @@ backend_fix_index({_, Mod, ModState}, Bucket, StorageKey, ForUpgrade) ->
         {reply, Reply, _UpModState} -> 
             Reply;
         {error, Reason} ->
-           lager:error("Failed to fix index for bucket ~p, key ~p, backend ~p: ~p",
+           _ = lager:error("Failed to fix index for bucket ~p, key ~p, backend ~p: ~p",
                        [Bucket, StorageKey, Mod, Reason]),
             {0, 0, length(StorageKey)}
     end.
