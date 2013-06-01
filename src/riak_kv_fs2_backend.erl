@@ -169,7 +169,8 @@
 %% For QuickCheck testing use only
 -export([get/3, put/5]).
 %% Testing
--export([t0/0, t1/0, t2/0, t3/0, t4/0, t5/0]).
+-export([scan_file/1]).
+-export([t0/0, t1/0, t2/0, t3/0, t4/0, t5/0, t6/0]).
 
 -include("riak_cs_lfs.hrl").
 -include_lib("kernel/include/file.hrl").
@@ -179,14 +180,33 @@
 
 %%% -define(TEST_FS2_BACKEND_IN_RIAK_KV, true).
 
+-define(FILE1_COOKIE_SIZE, 64).
+-define(FILE1_COOKIE, <<">fs2_v1<">>).
+-define(FILE1_BLOCK_LEN_SIZE,   32).
+-define(FILE1_UNUSED1_LEN_SIZE, 32).
+-define(FILE1_UNUSED2_LEN_SIZE, 32).
+-define(FILE1_UNUSED3_LEN_SIZE, 32).
+-define(FILE1_UNUSED4_LEN_SIZE, 32).
+-define(FILE1_UNUSED5_LEN_SIZE, 32).
+-define(FILE1_CRC_SIZE,         32).
+-define(FILE1_HEADER_SIZE, (?FILE1_COOKIE_SIZE div 8) +
+                           (?FILE1_BLOCK_LEN_SIZE div 8) +
+                           (?FILE1_UNUSED1_LEN_SIZE div 8) +
+                           (?FILE1_UNUSED2_LEN_SIZE div 8) +
+                           (?FILE1_UNUSED3_LEN_SIZE div 8) +
+                           (?FILE1_UNUSED4_LEN_SIZE div 8) +
+                           (?FILE1_UNUSED5_LEN_SIZE div 8) +
+                           (?FILE1_CRC_SIZE div 8)).
 %% Borrowed from bitcask.hrl
+-define(COOKIE_SIZE, 64).
+-define(COOKIE_V1, 16#c0c00101c00101c0).
 -define(VALSIZEFIELD, 32).
 -define(CRCSIZEFIELD, 32).
 %% 8 = header cookie & version number, 4 = Value size, 4 = Erlang CRC32,
--define(HEADER_SIZE,  (8+4+4)). % Differs from bitcask.hrl!
--define(MAXVALSIZE, 2#11111111111111111111111111111111).
--define(COOKIE_SIZE, 64).
--define(COOKIE_V1, 16#c0c00101c00101c0).
+-define(HEADER_SIZE, (?COOKIE_SIZE div 8) +
+                     (?VALSIZEFIELD div 8) +
+                     (?CRCSIZEFIELD div 8)). % Differs from bitcask.hrl!
+-define(MAXVALSIZE, (1 bsl ?VALSIZEFIELD) - 1).
 -define(TYPICAL_BUCKET_PREFIX_LEN, 3).  % To match ?BLOCK_BUCKET_PREFIX length
 
 %% !@#$!!@#$!@#$!@#$! Erlang's efile_drv does not support the sticky bit.
@@ -511,6 +531,8 @@ parse_config_and_env(Config) ->
                           [?MODULE, ?FS2_CONTIGUOUS_BLOCKS]),
                         ?FS2_CONTIGUOUS_BLOCKS
                 end,
+    %% B1stPrefixLen = get_prop_or_env(
+    %%               b_1st_prefixlen, Config, riak_kv, 0),
     B1stPrefixLen = get_prop_or_env(
                   b_1st_prefixlen, Config, riak_kv, ?TYPICAL_BUCKET_PREFIX_LEN),
     BDepth = get_prop_or_env(b_depth, Config, riak_kv, 2),
@@ -686,16 +708,18 @@ pack_ondisk(Bin, State) ->
 
 pack_ondisk_v1(Bin, _S) ->
     ValueSz = size(Bin),
-    Bytes0 = [<<ValueSz:?VALSIZEFIELD>>, Bin],
-    [<<?COOKIE_V1:?COOKIE_SIZE, (erlang:crc32(Bytes0)):?CRCSIZEFIELD>>, Bytes0].
+    Bytes0 = [<<ValueSz:?VALSIZEFIELD/unsigned>>, Bin],
+    [<<?COOKIE_V1:?COOKIE_SIZE,
+       (erlang:crc32(Bytes0)):?CRCSIZEFIELD/unsigned>>,
+     Bytes0].
 
 -spec unpack_ondisk(binary()) -> binary() | bad_crc.
-unpack_ondisk(<<?COOKIE_V1:?COOKIE_SIZE, Crc32:?CRCSIZEFIELD/unsigned,
-                ValueSz:?VALSIZEFIELD, Rest/binary>>)
+unpack_ondisk(<<?COOKIE_V1:?COOKIE_SIZE/unsigned, Crc32:?CRCSIZEFIELD/unsigned,
+                ValueSz:?VALSIZEFIELD/unsigned, Rest/binary>>)
   when size(Rest) >= ValueSz ->
     try
         <<Value:ValueSz/binary, _Tail/binary>> = Rest,
-        Crc32 = erlang:crc32([<<ValueSz:?VALSIZEFIELD>>, Value]),
+        Crc32 = erlang:crc32([<<ValueSz:?VALSIZEFIELD/unsigned>>, Value]),
         Value
     catch _:_ ->
             bad_crc
@@ -703,13 +727,54 @@ unpack_ondisk(<<?COOKIE_V1:?COOKIE_SIZE, Crc32:?CRCSIZEFIELD/unsigned,
 unpack_ondisk(_Bin) ->
     bad_crc.
 
+pack_file_header(BlockLen) ->
+    pack_file1_header(BlockLen).
+
+pack_file1_header(BlockLen)
+  when 0 =< BlockLen, BlockLen =< (1 bsl ?FILE1_BLOCK_LEN_SIZE) - 1 ->
+    H = <<?FILE1_COOKIE/binary,
+          BlockLen:?FILE1_BLOCK_LEN_SIZE/unsigned,
+          0:?FILE1_UNUSED1_LEN_SIZE/unsigned,
+          0:?FILE1_UNUSED2_LEN_SIZE/unsigned,
+          0:?FILE1_UNUSED3_LEN_SIZE/unsigned,
+          0:?FILE1_UNUSED4_LEN_SIZE/unsigned,
+          0:?FILE1_UNUSED5_LEN_SIZE/unsigned>>,
+    Size = ?FILE1_HEADER_SIZE - (?FILE1_CRC_SIZE div 8),
+    Size = byte_size(H),
+    CRC = erlang:crc32(H),
+    [H, <<CRC:?FILE1_CRC_SIZE/unsigned>>].
+
+unpack_file_header(Hdr) ->
+    unpack_file1_header(Hdr).
+
+unpack_file1_header(<<Cookie:(?FILE1_COOKIE_SIZE div 8)/binary,
+                      BlockLen:?FILE1_BLOCK_LEN_SIZE/unsigned,
+                      _:?FILE1_UNUSED1_LEN_SIZE/unsigned,
+                      _:?FILE1_UNUSED2_LEN_SIZE/unsigned,
+                      _:?FILE1_UNUSED3_LEN_SIZE/unsigned,
+                      _:?FILE1_UNUSED4_LEN_SIZE/unsigned,
+                      _:?FILE1_UNUSED5_LEN_SIZE/unsigned,
+                      CRC:?FILE1_CRC_SIZE/unsigned>> = Hdr)
+  when Cookie == ?FILE1_COOKIE ->
+    <<SubHdr:(?FILE1_HEADER_SIZE - (?FILE1_CRC_SIZE div 8))/binary,
+      _/binary>> = Hdr,
+    case erlang:crc32(SubHdr) of
+        X when X == CRC ->
+            {BlockLen, 0, 0, 0, 0, 0};
+        _ ->
+            throw(bad_file1_header)
+    end.
+
 calc_block_offset(BlockNum_x, #state{max_blocks = MaxBlocks,
                                      block_size = BlockSize}) ->
+    calc_block_offset(BlockNum_x, MaxBlocks, BlockSize).
+
+calc_block_offset(BlockNum_x, MaxBlocks, BlockSize) ->
     %% CS block numbers start at zero.
     BlockNum = if BlockNum_x == trailer -> MaxBlocks;
                   true                  -> (BlockNum_x rem MaxBlocks)
                end,
-    BlockNum * (?HEADER_SIZE + BlockSize).
+    ?FILE1_HEADER_SIZE + BlockNum * (?HEADER_SIZE + BlockSize).
 
 %% @doc Calculate the largest possible valid block number stored in
 %%      this file.  Return -1 if the file's size is zero.
@@ -725,7 +790,7 @@ calc_max_block(0, _) ->
     -1;
 calc_max_block(FileSize, #state{block_size = BlockSize,
                                 max_blocks = MaxBlocks}) ->
-    case (FileSize - 1) div (?HEADER_SIZE + BlockSize) of
+    case (FileSize - (?FILE1_COOKIE_SIZE div 8) - 1) div (?HEADER_SIZE + BlockSize) of
         X when X > (MaxBlocks - 1) ->
             %% Anything written at or beyond MaxBlocks's offset is
             %% in the realm of trailers and is hereby ignored.
@@ -748,8 +813,24 @@ read_block(Bucket, RiakKey, UUID, BlockNum, State) ->
             not_found
     end.
 
-read_block2(File, BlockNum, #state{block_size = BlockSize} = State) ->
+read_block2(File, BlockNum, #state{block_size = StateBlockSize} = State) ->
     {ok, FH} = file:open(File, [read, raw, binary]),
+    BlockSize = case file:pread(FH, 0, ?FILE1_HEADER_SIZE) of
+                    {ok, Hdr} when byte_size(Hdr) == ?FILE1_HEADER_SIZE ->
+                        %% We have a try/catch above already, but it would
+                        %% be nice if we could still try to assume
+                        %% StateBlockSize and continue attempting to read
+                        %% the block than to abandon all hope of reading the
+                        %% blocks that may be stored in this file.
+                        try
+                            {Sz, _, _, _, _, _} = unpack_file_header(Hdr),
+                            Sz
+                        catch _:_ ->
+                                StateBlockSize
+                        end;
+                    _ ->
+                        StateBlockSize
+                end,
     Offset = calc_block_offset(BlockNum, State),
     try
         {ok, PackedBin} = file:pread(FH, Offset, ?HEADER_SIZE + BlockSize),
@@ -763,6 +844,7 @@ read_block2(File, BlockNum, #state{block_size = BlockSize} = State) ->
             %% The pread failed, which means we're in a situation
             %% where we've written only as far as block N but we're
             %% attempting to read ahead, i.e., N+e, where e > 0.
+io:format(user, "LINE ~p: ~p ~p @ ~p\n", [?LINE, _X, _Y, erlang:get_stacktrace()]),
             not_found
     after
         file:close(FH)
@@ -867,6 +949,21 @@ put_block3(BlockNum, RObj, File, FI_perhaps,
                         PBS when PBS > BlockSize ->
                             {invalid_data_size, PBS, BlockSize};
                         _ -> 
+                            %% TODO: We assume that it's going to be cheaper
+                            %%       here to just dirty the first page of the
+                            %%       file repeatedly here, and the OS will
+                            %%       flush it at best once (because all blocks
+                            %%       will be written within a few seconds of
+                            %%       each other) and at worst only once or
+                            %%       twice more (unless the writer is *really*
+                            %%       slow.  The alternative is to try to read
+                            %%       the file header and write one if it is
+                            %%       not present.
+                            %% Also, we assume here that the client isn't going
+                            %% to change the block size for different blocks in
+                            %% the same BKey.
+                            %% 
+                            ok = file:pwrite(FH, 0, pack_file_header(BlockSize)),
                             ok = file:pwrite(FH, Offset, PackedBin),
                             if
                                 OutOfOrder_p ->
@@ -1153,6 +1250,9 @@ serialize_term(Term) ->
 deserialize_term(Bin) ->
     binary_to_term(Bin).
 
+scan_file(_Path) ->
+    qqq.
+
 t0() ->
     %% Blocksize must be at last 15 or so: this test writes two blocks
     %% for the same UUID, but it does them out of order, so a trailer
@@ -1422,6 +1522,29 @@ t5() ->
 
     ok.
 
+t6() ->
+    TestDir = "./delme-t6",
+    NumBuckets = 5,                           % Must be greater than 1
+    EndSeq = 7,                               % Must be greater than 2
+    BlockSize = 1024,
+
+    os:cmd("rm -rf ++ " ++ TestDir),
+    {ok, S} = start(-1, [{data_root, TestDir},
+                         {block_size, BlockSize},
+                         {max_blocks_per_file, EndSeq - 2}]),
+    true = is_empty(S),
+
+    Bs = [<<?BLOCK_BUCKET_PREFIX, X:32>> || X <- lists:seq(1, NumBuckets)],
+    Os = [riak_object:new(B, <<UUID:(?UUID_BYTES*8), Seq:?BLOCK_FIELD_SIZE>>,
+                          list_to_binary(["val ", integer_to_list(Seq)])) ||
+             B <- Bs,
+             UUID <- [55, 56, 57],
+             Seq <- lists:seq(EndSeq, EndSeq)],
+    [{{ok, _}, _} = put_object(riak_object:bucket(RObj),
+                               riak_object:key(RObj),
+                               [], RObj, S) || RObj <- Os],
+    false = is_empty(S).
+
 base_ext_size() ->
     erlang:external_size(riak_object:new(<<>>, <<>>, <<>>)) + 128.
 
@@ -1590,11 +1713,12 @@ backend_eqc_filter_orddict_on_delete(
     %% backend_eqc deleted a key that uses our ?BLOCK_BUCKET_PREFIX + UUID
     %% scheme.  Filter out all other blocks that reside in the same file.
 
-    {_ConfigRoot, BlockSize, MaxBlocks, BDepth, KDepth} =
+    {_ConfigRoot, BlockSize, MaxBlocks, B1stPrefixLen, BDepth, KDepth} =
         parse_config_and_env(Config),
     State = #state{dir = "does/not/matter",
                    block_size = BlockSize,
                    max_blocks = MaxBlocks,
+                   b_1st_prefixlen = B1stPrefixLen,
                    b_depth = BDepth,
                    k_depth = KDepth},
     DeletedKey = convert_blocknum2key(DUUID, DBlockNum, State),
@@ -1638,6 +1762,9 @@ backend_eqc_key_v1() ->
     ?LET(X, oneof([0, 1, BigBlockNum]),
          <<UUID:(?UUID_BYTES*8), X:?BLOCK_FIELD_SIZE>>).
 
+basic_props_eqc() ->
+    [{b_1st_prefixlen, 0} | basic_props()].
+
 basic_props() ->
     [{data_root,  "test/fs-backend"},
      {block_size, 1024},
@@ -1649,7 +1776,7 @@ eqc_t4_wrapper(TestTime) ->
 -ifdef(TEST_FS2_BACKEND_IN_RIAK_KV).
 eqc_test_() ->
     TestTime1 = 30,
-    EQC_prop0 = backend_eqc:property(?MODULE, false, basic_props()),
+    EQC_prop0 = backend_eqc:property(?MODULE, false, basic_props_eqc()),
     EQC_prop1 = eqc_statem:more_commands(75, EQC_prop0),
     EQC_prop2 = eqc:testing_time(TestTime1, EQC_prop1),
     TestTime3 = 10,
