@@ -765,10 +765,36 @@ unpack_file1_header(<<Cookie:(?FILE1_COOKIE_SIZE div 8)/binary,
             throw(bad_file1_header)
     end.
 
+read_and_unpack_file_header(FH, #state{block_size = BlockSize}) ->
+    Default = {BlockSize, unused, unused, unused, unused, unused},
+    case file:pread(FH, 0, ?FILE1_HEADER_SIZE) of
+        {ok, Hdr} when byte_size(Hdr) == ?FILE1_HEADER_SIZE ->
+            try
+                {ok, unpack_file_header(Hdr)}
+            catch _:_ ->
+                    {{parse_error, Hdr}, Default}
+            end;
+        Else ->
+            {{pread_error, Else}, Default}
+    end.
+
+read_blocksize_from_file_header(FH, State) ->
+    read_blocksize_from_file_header(FH, State, false).
+
+read_blocksize_from_file_header(FH, State, WantDetails) ->
+    {Details, {BlockSize,_,_,_,_,_}} = read_and_unpack_file_header(FH, State),
+    if WantDetails ->
+            {Details, BlockSize};
+        true ->
+            BlockSize
+    end.
+
 calc_block_offset(BlockNum_x, #state{max_blocks = MaxBlocks,
                                      block_size = BlockSize}) ->
     calc_block_offset(BlockNum_x, MaxBlocks, BlockSize).
 
+calc_block_offset(BlockNum_x, #state{max_blocks = MaxBlocks}, BlockSize) ->
+    calc_block_offset(BlockNum_x, MaxBlocks, BlockSize);
 calc_block_offset(BlockNum_x, MaxBlocks, BlockSize) ->
     %% CS block numbers start at zero.
     BlockNum = if BlockNum_x == trailer -> MaxBlocks;
@@ -813,25 +839,10 @@ read_block(Bucket, RiakKey, UUID, BlockNum, State) ->
             not_found
     end.
 
-read_block2(File, BlockNum, #state{block_size = StateBlockSize} = State) ->
+read_block2(File, BlockNum, State) ->
     {ok, FH} = file:open(File, [read, raw, binary]),
-    BlockSize = case file:pread(FH, 0, ?FILE1_HEADER_SIZE) of
-                    {ok, Hdr} when byte_size(Hdr) == ?FILE1_HEADER_SIZE ->
-                        %% We have a try/catch above already, but it would
-                        %% be nice if we could still try to assume
-                        %% StateBlockSize and continue attempting to read
-                        %% the block than to abandon all hope of reading the
-                        %% blocks that may be stored in this file.
-                        try
-                            {Sz, _, _, _, _, _} = unpack_file_header(Hdr),
-                            Sz
-                        catch _:_ ->
-                                StateBlockSize
-                        end;
-                    _ ->
-                        StateBlockSize
-                end,
-    Offset = calc_block_offset(BlockNum, State),
+    BlockSize = read_blocksize_from_file_header(FH, State),
+    Offset = calc_block_offset(BlockNum, State, BlockSize),
     try
         {ok, PackedBin} = file:pread(FH, Offset, ?HEADER_SIZE + BlockSize),
         try
@@ -935,35 +946,29 @@ put_block_t_check(BlockNum, RObj, File, FI_perhaps, State) ->
     end.
 
 %% @doc Put block: there is no previous tombstone or current tombstone.
-put_block3(BlockNum, RObj, File, FI_perhaps,
-           #state{block_size = BlockSize} = State) ->
-    Offset = calc_block_offset(BlockNum, State),
+put_block3(BlockNum, RObj, File, FI_perhaps, State) ->
     OutOfOrder_p = check_trailer_ooo(FI_perhaps, BlockNum, State),
     try
         case file:open(File, [write, read, raw, binary]) of
             {ok, FH} ->
                 try
+                    {HeaderDetails, BlockSize} =
+                        read_blocksize_from_file_header(FH, State, true),
                     EncodedObj = serialize_term(RObj),
                     PackedBin = pack_ondisk(EncodedObj, State),
                     case erlang:iolist_size(PackedBin) of
                         PBS when PBS > BlockSize ->
                             {invalid_data_size, PBS, BlockSize};
                         _ -> 
-                            %% TODO: We assume that it's going to be cheaper
-                            %%       here to just dirty the first page of the
-                            %%       file repeatedly here, and the OS will
-                            %%       flush it at best once (because all blocks
-                            %%       will be written within a few seconds of
-                            %%       each other) and at worst only once or
-                            %%       twice more (unless the writer is *really*
-                            %%       slow.  The alternative is to try to read
-                            %%       the file header and write one if it is
-                            %%       not present.
-                            %% Also, we assume here that the client isn't going
-                            %% to change the block size for different blocks in
-                            %% the same BKey.
-                            %% 
-                            ok = file:pwrite(FH, 0, pack_file_header(BlockSize)),
+                            case HeaderDetails of
+                                ok ->
+                                    ok;
+                                _Else ->
+                                    Hdr = pack_file_header(BlockSize),
+                                    ok = file:pwrite(FH, 0, Hdr)
+                            end,
+                            Offset = calc_block_offset(BlockNum, State,
+                                                       BlockSize),
                             ok = file:pwrite(FH, Offset, PackedBin),
                             if
                                 OutOfOrder_p ->
@@ -991,10 +996,11 @@ put_block3(BlockNum, RObj, File, FI_perhaps,
         end
     catch
         error:{badmatch, Y} ->
-            lager:warning("~s: badmatch1 err ~p\n", [?MODULE, Y]),
+            error_logger:warning_msg("~s: badmatch1 err ~p @ ~p\n",
+                                     [?MODULE, Y, erlang:get_stacktrace()]),
             {badmatch1, Y};
         X:Y ->
-            lager:warning("~s: badmatch2 ~p ~p\n", [?MODULE, X, Y]),
+            error_logger:warning_msg("~s: badmatch2 ~p ~p\n", [?MODULE, X, Y]),
             {badmatch2, X, Y}
     end.
 
