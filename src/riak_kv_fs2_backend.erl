@@ -1799,13 +1799,11 @@ eqc_test_() ->
           %% ?_assertEqual(?BLOCK_FIELD_SIZE,
           %%               backend_eqc:key_suffix_1()),
           {timeout, 2 * TestTime1,
-           [?_assertEqual(true, eqc:quickcheck(EQC_prop2))]},
+           {"EQC_prop2", [?_assertEqual(true, eqc:quickcheck(EQC_prop2))]}},
           {timeout, 60000,
-           [?_assertEqual(true,
-                          eqc_nest_tester())]},
+           {"eqc_nest_tester", [?_assertEqual(true, eqc_nest_tester())]}},
           {timeout, 2 * TestTime3,
-           [?_assertEqual(true,
-                          eqc_t4_wrapper(TestTime3))]}
+           {"eqc_t4_wrapper", [?_assertEqual(true, eqc_t4_wrapper(TestTime3))]}}
          ]}]}]}.
 -endif. % TEST_FS2_BACKEND_IN_RIAK_KV
 
