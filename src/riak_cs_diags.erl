@@ -20,7 +20,7 @@
 start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
--spec print_manifests(binary() | string(), binary() | string()) -> string().
+-spec print_manifests(_, _) -> ok.
 print_manifests(Bucket, Key) when is_list(Bucket), is_list(Key) ->
     print_manifests(list_to_binary(Bucket), list_to_binary(Key));
 print_manifests(Bucket, Key) ->
@@ -28,7 +28,7 @@ print_manifests(Bucket, Key) ->
     Rows = manifest_rows(orddict_values(Manifests)),
     table:print(manifest_table_spec(), Rows).
 
--spec print_manifest(binary() | string(), binary() | string(), binary() | string()) -> string().
+-spec print_manifest(_, _, _) -> ok.
 print_manifest(Bucket, Key, Uuid) when is_list(Bucket), is_list(Key) ->
     print_manifest(list_to_binary(Bucket), list_to_binary(Key), Uuid);
 print_manifest(Bucket, Key, Uuid) when is_list(Uuid) ->
