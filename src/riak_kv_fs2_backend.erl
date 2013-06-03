@@ -224,7 +224,8 @@
 -export([backend_eqc_fold_objects_transform/1,
          backend_eqc_filter_orddict_on_delete/4,
          backend_eqc_bucket/0,
-         backend_eqc_key/0]).
+         backend_eqc_key/0,
+         backend_eqc_postcondition_fold_keys/2]).
 -include_lib("eqc/include/eqc.hrl").
 -endif.
 -include_lib("eunit/include/eunit.hrl").
@@ -835,7 +836,8 @@ read_block(Bucket, RiakKey, UUID, BlockNum, State) ->
            true ->
                 read_block2(File, BlockNum, State)
         end
-    catch _:_ ->
+    catch
+        _:_ ->
             not_found
     end.
 
@@ -855,7 +857,6 @@ read_block2(File, BlockNum, State) ->
             %% The pread failed, which means we're in a situation
             %% where we've written only as far as block N but we're
             %% attempting to read ahead, i.e., N+e, where e > 0.
-io:format(user, "LINE ~p: ~p ~p @ ~p\n", [?LINE, _X, _Y, erlang:get_stacktrace()]),
             not_found
     after
         file:close(FH)
@@ -947,7 +948,6 @@ put_block_t_check(BlockNum, RObj, File, FI_perhaps, State) ->
 
 %% @doc Put block: there is no previous tombstone or current tombstone.
 put_block3(BlockNum, RObj, File, FI_perhaps, State) ->
-    OutOfOrder_p = check_trailer_ooo(FI_perhaps, BlockNum, State),
     try
         case file:open(File, [write, read, raw, binary]) of
             {ok, FH} ->
@@ -970,20 +970,7 @@ put_block3(BlockNum, RObj, File, FI_perhaps, State) ->
                             Offset = calc_block_offset(BlockNum, State,
                                                        BlockSize),
                             ok = file:pwrite(FH, Offset, PackedBin),
-                            if
-                                OutOfOrder_p ->
-                                   %% It's not an error to write more
-                                   %% than one trailer
-                                   Tr = make_trailer(
-                                          #t{written_sequentially = false},
-                                          State),
-                                   TrOffset = calc_block_offset(trailer, State),
-                                   {ok, TrOffset} = file:position(
-                                                      FH, {bof, TrOffset}),
-                                   {ok = file:write(FH, Tr), EncodedObj};
-                                true ->
-                                   {ok, EncodedObj}
-                            end
+                            {ok, EncodedObj}
                     end
                 after
                         file:close(FH)
@@ -1041,20 +1028,6 @@ enumerate_chunks_in_file(Bucket, UUID, BlockBase,
                     [BlockNum || BlockNum <- lists:seq(0, MaxBlock)]
             end
     end.
-
-%% @doc Is the next block number we wish to write out-of-order?
-
-check_trailer_ooo({error, enoent}, BlockNum, #state{max_blocks = MaxBlocks}) ->
-    %% BlockNum 0 is ok, all others are out of order
-    (BlockNum rem MaxBlocks) /= 0;
-check_trailer_ooo({ok, FI}, BlockNum, #state{max_blocks = MaxBlocks} = State) ->
-    MaxBlock = calc_max_block(FI#file_info.size, State),
-    (BlockNum rem MaxBlocks) == MaxBlock - 1.
-
-make_trailer(Term, State) ->
-    Bin = iolist_to_binary(pack_ondisk(serialize_term(Term), State)),
-    Sz = size(Bin),
-    [Bin, <<Sz:32>>].
 
 get_prop_or_env(Key, Properties, App, Default) ->
     case proplists:get_value(Key, Properties) of
@@ -1409,8 +1382,9 @@ t4(SmallestBlock, BiggestBlock, BlocksPerFile, OrderFun)
                      riak_object:key(O)} || O <- Os,
                                             B <- [riak_object:bucket(O)],
                                             BucketFilt(B)],
-         {OnlyB, true} = {OnlyB, (lists:sort(OnlyBKs) ==
-                                      lists:reverse(FoundBKs))},
+         {OnlyB, true} = {OnlyB, sets:is_subset(
+                                   sets:from_list(OnlyBKs),
+                                   sets:from_list(FoundBKs))},
          put(t4_paranoid_counter, get(t4_paranoid_counter) + 1)
      end || FoldOpts <- [[], [{bucket, B1}], [{bucket, B2}]] ],
     3 = get(t4_paranoid_counter),               % Extra paranoia...
@@ -1750,6 +1724,16 @@ backend_eqc_bucket() ->
 backend_eqc_key() ->
     oneof([backend_eqc_key_standard(),
            backend_eqc_key_v1()]).
+
+backend_eqc_postcondition_fold_keys(Expected, Result) ->
+    case sets:is_subset(sets:from_list(Expected),
+                        sets:from_list(Result)) of
+        true ->
+            true;
+        false ->
+            [{mod, ?MODULE}, {line, ?LINE},
+             {expected, Expected}, {result, Result}]
+    end.
 
 backend_eqc_bucket_standard() ->
     oneof([<<"b1">>, <<"b2">>]).
