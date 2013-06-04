@@ -44,6 +44,9 @@
          code_change/3]).
 
 -define(SERVER, ?MODULE).
+-define(USERMETA_BUCKET, "RCS-bucket").
+-define(USERMETA_KEY,    "RCS-key").
+-define(USERMETA_BCSUM,  "RCS-bcsum").
 
 -record(state, {riakc_pid :: pid(),
                 close_riak_connection=true :: boolean()}).
@@ -108,7 +111,7 @@ get_block(Pid, Bucket, Key, ClusterID, UUID, BlockNumber) ->
 
 -spec put_block(pid(), binary(), binary(), binary(), pos_integer(), binary()) -> ok.
 put_block(Pid, Bucket, Key, UUID, BlockNumber, Value) ->
-    gen_server:cast(Pid, {put_block, self(), Bucket, Key, UUID, BlockNumber, Value}).
+    gen_server:cast(Pid, {put_block, self(), Bucket, Key, UUID, BlockNumber, Value, crypto:md5(Value)}).
 
 -spec delete_block(pid(), binary(), binary(), binary(), pos_integer()) -> ok.
 delete_block(Pid, Bucket, Key, UUID, BlockNumber) ->
@@ -189,7 +192,11 @@ handle_cast({get_block, ReplyPid, Bucket, Key, ClusterID, UUID, BlockNumber}, St
         end,
     ChunkValue = case Object of
         {ok, RiakObject} ->
-            {ok, riakc_obj:get_value(RiakObject)};
+            resolve_block_object(RiakObject, RiakcPid);
+            %% %% Corrupted siblings hack: just add another....
+            %% [{MD,V}] = riakc_obj:get_contents(RiakObject),
+            %% RiakObject2 = setelement(5, RiakObject, [{MD, <<"foobar">>}, {MD, V}]),
+            %% resolve_block_object(RiakObject2, RiakcPid);
         {error, notfound}=NotFound ->
             NotFound
     end,
@@ -197,18 +204,19 @@ handle_cast({get_block, ReplyPid, Bucket, Key, ClusterID, UUID, BlockNumber}, St
     ok = riak_cs_get_fsm:chunk(ReplyPid, {UUID, BlockNumber}, ChunkValue),
     dt_return(<<"get_block">>, [BlockNumber], [Bucket, Key]),
     {noreply, State};
-handle_cast({put_block, ReplyPid, Bucket, Key, UUID, BlockNumber, Value}, State=#state{riakc_pid=RiakcPid}) ->
+handle_cast({put_block, ReplyPid, Bucket, Key, UUID, BlockNumber, Value, BCSum},
+            State=#state{riakc_pid=RiakcPid}) ->
     dt_entry(<<"put_block">>, [BlockNumber], [Bucket, Key]),
     {FullBucket, FullKey} = full_bkey(Bucket, Key, UUID, BlockNumber),
-    RiakObject0 = riakc_obj:new(FullBucket, FullKey, Value),
-    MD = dict:from_list([{?MD_USERMETA, [{"RCS-bucket", Bucket},
-                                         {"RCS-key", Key}]}]),
-    _ = lager:debug("put_block: Bucket ~p Key ~p UUID ~p", [Bucket, Key, UUID]),
-    _ = lager:debug("put_block: FullBucket: ~p FullKey: ~p", [FullBucket, FullKey]),
-    RiakObject = riakc_obj:update_metadata(RiakObject0, MD),
-    StartTime = os:timestamp(),
-    ok = riakc_pb_socket:put(RiakcPid, RiakObject),
-    ok = riak_cs_stats:update_with_start(block_put, StartTime),
+    MD = make_md_usermeta([{?USERMETA_BUCKET, Bucket},
+                           {?USERMETA_KEY, Key},
+                           {?USERMETA_BCSUM, BCSum}]),
+    FailFun = fun(Error) ->
+                      lager:error("Put ~p ~p UUID ~p block ~p failed: ~p\n",
+                                  [Bucket, Key, UUID, BlockNumber, Error])
+              end,
+    %% TODO: Handle put failure here.
+    ok = do_put_block(FullBucket, FullKey, undefined, Value, MD, RiakcPid, FailFun),
     riak_cs_put_fsm:block_written(ReplyPid, BlockNumber),
     dt_return(<<"put_block">>, [BlockNumber], [Bucket, Key]),
     {noreply, State};
@@ -322,6 +330,73 @@ full_bkey(Bucket, Key, UUID, BlockId) ->
     PrefixedBucket = riak_cs_utils:to_bucket_name(blocks, Bucket),
     FullKey = riak_cs_lfs_utils:block_name(Key, UUID, BlockId),
     {PrefixedBucket, FullKey}.
+
+fold_object_csum_fun({MD, V}, {PrevV, NeedsRepair, BCSum}) ->
+    case find_rcs_bcsum(MD) of
+        undefined when NeedsRepair == false ->
+            {V, NeedsRepair, BCSum};
+        undefined when NeedsRepair == true ->
+            {PrevV, true, BCSum};
+        CorrectBCSum when is_binary(CorrectBCSum) ->
+            case crypto:md5(V) of
+                X when X =:= CorrectBCSum ->
+                    {V, NeedsRepair, CorrectBCSum};
+                _Bad ->
+                    {PrevV, true, BCSum}
+            end
+    end.
+
+find_rcs_bcsum(MD) ->
+    proplists:get_value(<<?USERMETA_BCSUM>>, find_md_usermeta(MD)).
+
+find_md_usermeta(MD) ->
+    dict:fetch(?MD_USERMETA, MD).
+
+resolve_block_object(RObj, RiakcPid) ->
+    Cs = riakc_obj:get_contents(RObj),
+    Init = {not_done_unused, false, unknown_csum},
+    {Value, NeedRepair, BCSum} = lists:foldl(fun fold_object_csum_fun/2, Init, Cs),
+    if NeedRepair andalso is_binary(Value) ->
+            RBucket = riakc_obj:bucket(RObj),
+            RKey = riakc_obj:key(RObj),
+            S3Info = find_md_usermeta(hd(riakc_obj:get_metadatas(RObj))),
+            lager:info("Repairing riak ~p ~p for ~p\n",[RBucket, RKey, S3Info]),
+            Bucket = proplists:get_value(<<?USERMETA_BUCKET>>, S3Info),
+            Key = proplists:get_value(<<?USERMETA_KEY>>, S3Info),
+            VClock = riakc_obj:vclock(RObj),
+            MD = make_md_usermeta([{?USERMETA_BUCKET, Bucket},
+                                   {?USERMETA_KEY, Key},
+                                   {?USERMETA_BCSUM, BCSum}]),
+            FailFun = fun(Error) ->
+                          lager:error("Put S3 ~p ~p Riak ~p ~p failed: ~p\n",
+                                      [Bucket, Key, RBucket, RKey, Error])
+                      end,
+            do_put_block(RBucket, RKey, VClock, Value, MD, RiakcPid, FailFun);
+       true ->
+            ok
+    end,
+    if is_binary(Value) ->
+            {ok, Value};
+       true ->
+            {error, notfound}
+    end.
+
+make_md_usermeta(Props) ->
+    dict:from_list([{?MD_USERMETA, Props}]).
+
+do_put_block(FullBucket, FullKey, VClock, Value, MD, RiakcPid, FailFun) ->
+    RiakObject0 = riakc_obj:new(FullBucket, FullKey, Value),
+    RiakObject = riakc_obj:set_vclock(
+                   riakc_obj:update_metadata(RiakObject0, MD), VClock),
+    StartTime = os:timestamp(),
+    case riakc_pb_socket:put(RiakcPid, RiakObject) of
+        ok ->
+            ok = riak_cs_stats:update_with_start(block_put, StartTime),
+            ok;
+        Else ->
+            FailFun(Else),
+            Else
+    end.
 
 dt_entry(Func, Ints, Strings) ->
     riak_cs_dtrace:dtrace(?DT_BLOCK_OP, 1, Ints, ?MODULE, Func, Strings).
