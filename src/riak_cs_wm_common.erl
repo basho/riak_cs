@@ -459,6 +459,12 @@ post_authentication({error, bad_auth}, RD, Ctx, _, _) ->
     %% given keyid was found, but signature didn't match
     _ = lager:debug("bad_auth"),
     riak_cs_wm_utils:deny_access(RD, Ctx);
+post_authentication({error, notfound}, RD, Ctx, _, _) ->
+    %% This is rubbish. We need to differentiate between
+    %% no key_id being presented and the key_id lookup
+    %% failing in some better way.
+    _ = lager:debug("key_id not present or not found"),
+    riak_cs_wm_utils:deny_access(RD, Ctx);
 post_authentication({error, Reason}, RD, Ctx, _, _) ->
     %% no matching keyid was found, or lookup failed
     _ = lager:debug("Authentication error: ~p", [Reason]),

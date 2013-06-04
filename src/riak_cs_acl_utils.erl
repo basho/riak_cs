@@ -39,7 +39,8 @@
          empty_acl_xml/0,
          requested_access/2,
          check_grants/4,
-         check_grants/5
+         check_grants/5,
+         validate_acl/2
         ]).
 
 -type xmlElement() :: #xmlElement{}.
@@ -152,6 +153,15 @@ check_grants(User, Bucket, RequestedAccess, RiakPid, BucketAcl) ->
                               User?RCS_USER.canonical_id,
                               RiakPid,
                               BucketAcl).
+
+-spec validate_acl({ok, acl()} | {error, term()}, string()) ->
+                          {ok, acl()} | {error, access_denied}.
+validate_acl({ok, Acl=?ACL{owner={_, Id, _}}}, Id) ->
+    {ok, Acl};
+validate_acl({ok, _}, _) ->
+    {error, access_denied};
+validate_acl({error, _}=Error, _) ->
+    Error.
 
 %% ===================================================================
 %% Internal functions
