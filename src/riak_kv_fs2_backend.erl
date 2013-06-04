@@ -174,6 +174,7 @@
 
 -include("riak_cs_lfs.hrl").
 -include_lib("kernel/include/file.hrl").
+-include_lib("riak_pb/include/riak_pb_kv_codec.hrl"). % ?MD_USERMETA
 
 -define(API_VERSION, 1).
 -define(CAPABILITIES, [uses_r_object, async_fold, write_once_keys]).
@@ -372,11 +373,27 @@ put(Bucket, Key, IdxList, Val, State) ->
 put_object(<<?BLOCK_BUCKET_PREFIX, _/binary>> = Bucket,
            <<UUID:?UUID_BYTES/binary, BlockNum:?BLOCK_FIELD_SIZE>>,
            _IndexSpecs, RObj, State) ->
-    case put_block(Bucket, UUID, BlockNum, RObj, State) of
-        {ok, EncodedVal} ->
-            {{ok, State}, EncodedVal};
-        Reason ->
-            {{error, Reason, State}, invalid_encoded_val_do_not_use}
+    case riak_object:get_metadatas(RObj) of
+        [MD] ->
+            Props = dict:fetch(?MD_USERMETA, MD),
+            case proplists:get_value(<<"RCS-bcsum">>, Props) of
+                undefined ->
+                    %% We have an old Riak CS client that isn't
+                    %% adding block checksums yet.  Put it anyway.
+                    put_object2(Bucket, UUID, BlockNum, RObj, State);
+                BCSum when is_binary(BCSum) ->
+                    case crypto:md5(riak_object:get_value(RObj)) of
+                        X when X =:= BCSum ->
+                            put_object2(Bucket, UUID, BlockNum, RObj, State);
+                        _Bad ->
+                            {{error, bad_block_checksum, State},
+                             invalid_encoded_val_do_not_use}
+                    end
+            end;
+        [] ->
+            {{error, no_data, State}, invalid_encoded_val_do_not_use};
+        _ ->
+            {{error, has_siblings, State}, invalid_encoded_val_do_not_use}
     end;
 put_object(Bucket, PrimaryKey, _IndexSpecs, RObj, State) ->
     File = location(State, Bucket, PrimaryKey),
@@ -388,6 +405,14 @@ put_object(Bucket, PrimaryKey, _IndexSpecs, RObj, State) ->
                 {error, X} -> {{error, X, State}, EncodedVal}
             end;
         {error, X} -> {{error, X, State}, invalid_encoded_val_do_not_use}
+    end.
+
+put_object2(Bucket, UUID, BlockNum, RObj, State) ->
+    case put_block(Bucket, UUID, BlockNum, RObj, State) of
+        {ok, EncodedVal} ->
+            {{ok, State}, EncodedVal};
+        Reason ->
+            {{error, Reason, State}, invalid_encoded_val_do_not_use}
     end.
 
 %% @doc Delete the object stored at BKey
