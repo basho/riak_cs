@@ -135,35 +135,36 @@ initiate_multipart_upload(Bucket, Key, ContentType, {_,_,_} = Owner,
 make_content_types_accepted(RD, Ctx) ->
     make_content_types_accepted(RD, Ctx, unused_callback).
 
-make_content_types_accepted(RD, Ctx=#context{local_context=LocalCtx0}, Callback) ->
-    case wrq:get_req_header("Content-Type", RD) of
-        undefined ->
-            DefaultCType = "application/octet-stream",
-            LocalCtx = LocalCtx0#key_context{putctype=DefaultCType},
-            {[{DefaultCType, Callback}],
-             RD,
-             Ctx#context{local_context=LocalCtx}};
-        %% This was shamelessly ripped out of
-        %% https://github.com/basho/riak_kv/blob/0d91ca641a309f2962a216daa0cee869c82ffe26/src/riak_kv_wm_object.erl#L492
-        CType ->
-            {Media, _Params} = mochiweb_util:parse_header(CType),
-            case string:tokens(Media, "/") of
-                [_Type, _Subtype] ->
-                    %% accept whatever the user says
-                    LocalCtx = LocalCtx0#key_context{putctype=Media},
-                    {[{Media, Callback}], RD, Ctx#context{local_context=LocalCtx}};
-                _ ->
-                    {[],
-                     wrq:set_resp_header(
-                       "Content-Type",
-                       "text/plain",
-                       wrq:set_resp_body(
-                         ["\"", Media, "\""
-                          " is not a valid media type"
-                          " for the Content-type header.\n"],
-                         RD)),
-                     Ctx}
-            end
+make_content_types_accepted(RD, Ctx, Callback) ->
+    make_content_types_accepted(wrq:get_req_header("Content-Type", RD),
+                                RD,
+                                Ctx,
+                                Callback).
+
+make_content_types_accepted(CT, RD, Ctx, Callback)
+  when CT =:= undefined;
+       CT =:= [] ->
+    make_content_types_accepted("application/octet-stream", RD, Ctx, Callback);
+make_content_types_accepted(CT, RD, Ctx=#context{local_context=LocalCtx0}, Callback) ->
+    %% This was shamelessly ripped out of
+    %% https://github.com/basho/riak_kv/blob/0d91ca641a309f2962a216daa0cee869c82ffe26/src/riak_kv_wm_object.erl#L492
+    {Media, _Params} = mochiweb_util:parse_header(CT),
+    case string:tokens(Media, "/") of
+        [_Type, _Subtype] ->
+            %% accept whatever the user says
+            LocalCtx = LocalCtx0#key_context{putctype=Media},
+            {[{Media, Callback}], RD, Ctx#context{local_context=LocalCtx}};
+        _ ->
+            {[],
+             wrq:set_resp_header(
+               "Content-Type",
+               "text/plain",
+               wrq:set_resp_body(
+                 ["\"", Media, "\""
+                  " is not a valid media type"
+                  " for the Content-type header.\n"],
+                 RD)),
+             Ctx}
     end.
 
 make_special_error(Error) ->
