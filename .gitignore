@@ -17,3 +17,4 @@ current_counterexample.eqc
 .client_test/
 priv/riak_cs_drv.so
 pkg.vars.config
+client_tests/python/ceph_tests/s3-tests
