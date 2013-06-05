@@ -277,10 +277,10 @@ setup_admin_user(NumNodes, InitialConfig) ->
     CSNodes = [?CSDEV(N) || N <- lists:seq(1, NumNodes)],
     StanchionNode = 'stanchion@127.0.0.1',
     NodeMap = orddict:from_list(lists:zip(RiakNodes, lists:seq(1, NumNodes))),
-    rt:set_config(rt_nodes, NodeMap),
+    rt_config:set(rt_nodes, NodeMap),
 
     VersionMap = lists:zip(lists:seq(1, NumNodes), lists:duplicate(NumNodes, ee_current)),
-    rt:set_config(rt_versions, VersionMap),
+    rt_config:set(rt_versions, VersionMap),
 
     NL0 = lists:zip(CSNodes, RiakNodes),
     {CS1, R1} = hd(NL0),
