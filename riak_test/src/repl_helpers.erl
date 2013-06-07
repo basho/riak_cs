@@ -37,25 +37,9 @@ node_has_version(Node, Version) ->
 nodes_with_version(Nodes, Version) ->
     [Node || Node <- Nodes, node_has_version(Node, Version)].
 
-nodes_all_have_version(Nodes, Version) ->
-    Nodes == nodes_with_version(Nodes, Version).
-
 client_count(Node) ->
     Clients = rpc:call(Node, supervisor, which_children, [riak_repl_client_sup]),
     length(Clients).
-
-gen_fake_listeners(Num) ->
-    Ports = gen_ports(11000, Num),
-    IPs = lists:duplicate(Num, "127.0.0.1"),
-    Nodes = [fake_node(N) || N <- lists:seq(1, Num)],
-    lists:zip3(IPs, Ports, Nodes).
-
-fake_node(Num) ->
-    lists:flatten(io_lib:format("fake~p@127.0.0.1", [Num])).
-
-add_fake_sites([Node|_], Listeners) ->
-    [add_site(Node, {IP, Port, fake_site(Port)})
-     || {IP, Port, _} <- Listeners].
 
 add_site(Node, {IP, Port, Name}) ->
     lager:info("Add site ~p ~p:~p at node ~p", [Name, IP, Port, Node]),
@@ -69,9 +53,6 @@ del_site(Node, Name) ->
     Res = rpc:call(Node, riak_repl_console, del_site, [[Name]]),
     ?assertEqual(ok, Res),
     timer:sleep(timer:seconds(5)).
-
-fake_site(Port) ->
-    lists:flatten(io_lib:format("fake_site_~p", [Port])).
 
 verify_listeners(Listeners) ->
     Strs = [IP ++ ":" ++ integer_to_list(Port) || {IP, Port, _} <- Listeners],
@@ -101,40 +82,8 @@ add_listener(N, Node, IP, Port) ->
     Res = rpc:call(N, riak_repl_console, add_listener, Args),
     ?assertEqual(ok, Res).
 
-del_listeners(Node) ->
-    Listeners = get_listeners(Node),
-    lists:foreach(fun(Listener={IP, Port, N}) ->
-                lager:info("deleting listener ~p on ~p", [Listener, Node]),
-                Res = rpc:call(Node, riak_repl_console, del_listener,
-                    [[atom_to_list(N), IP, integer_to_list(Port)]]),
-                ?assertEqual(ok, Res)
-        end, Listeners).
-
-get_listeners(Node) ->
-    Status = rpc:call(Node, riak_repl_console, status, [quiet]),
-    %% *sigh*
-    [
-        begin
-                NodeName = list_to_atom(string:substr(K, 10)),
-                [IP, Port] = string:tokens(V, ":"),
-                {IP, list_to_integer(Port), NodeName}
-        end || {K, V} <- Status, is_list(K), string:substr(K, 1, 9) == "listener_"
-    ].
-
 gen_ports(Start, Len) ->
     lists:seq(Start, Start + Len - 1).
-
-get_os_env(Var) ->
-    case get_os_env(Var, undefined) of
-        undefined -> exit({os_env_var_undefined, Var});
-        Value -> Value
-    end.
-
-get_os_env(Var, Default) ->
-    case os:getenv(Var) of
-        false -> Default;
-        Value -> Value
-    end.
 
 verify_site_ips(Leader, Site, Listeners) ->
     Status = rpc:call(Leader, riak_repl_console, status, [quiet]),
@@ -145,10 +94,6 @@ verify_site_ips(Leader, Site, Listeners) ->
         [list_to_binary([IP, ":", integer_to_list(Port)]) || {IP, Port, _Node} <-
             Listeners]),
     ?assertEqual(ExpectedIPs, IPs).
-
-make_bucket(Node, Name, Args) ->
-    Res = rpc:call(Node, riak_core_bucket, set_bucket, [Name, Args]),
-    ?assertEqual(ok, Res).
 
 start_and_wait_until_fullsync_complete(Node) ->
     Status0 = rpc:call(Node, riak_repl_console, status, [quiet]),
@@ -207,27 +152,6 @@ wait_until_leader(Node) ->
         end),
     ?assertEqual(ok, Res).
 
-wait_until_leader_converge([Node|_] = Nodes) ->
-    rt:wait_until(Node,
-        fun(_) ->
-                length(lists:usort([begin
-                        Status = rpc:call(N, riak_repl_console, status, [quiet]),
-                        case Status of
-                            {badrpc, _} ->
-                                false;
-                            _ ->
-                                case proplists:get_value(leader, Status) of
-                                    undefined ->
-                                        false;
-                                    L ->
-                                        %lager:info("Leader for ~p is ~p",
-                                            %[N,L]),
-                                        L
-                                end
-                        end
-                end || N <- Nodes])) == 1
-        end).
-
 wait_until_connection(Node) ->
     rt:wait_until(Node,
         fun(_) ->
@@ -243,25 +167,6 @@ wait_until_connection(Node) ->
                         true
                 end
         end, 80, 500). %% 40 seconds is enough for repl
-
-wait_for_reads(Node, Start, End, Bucket, R) ->
-    rt:wait_until(Node,
-        fun(_) ->
-                rt:systest_read(Node, Start, End, Bucket, R) == []
-        end),
-    length(rt:systest_read(Node, Start, End, Bucket, R)).
-
-do_write(Node, Start, End, Bucket, W) ->
-    case rt:systest_write(Node, Start, End, Bucket, W) of
-        [] ->
-            [];
-        Errors ->
-            lager:warning("~p errors while writing: ~p",
-                [length(Errors), Errors]),
-            timer:sleep(1000),
-            lists:flatten([rt:systest_write(Node, S, S, Bucket, W) ||
-                    {S, _Error} <- Errors])
-    end.
 
 %% The functions below are for 1.3 repl (aka Advanced Mode MDC)
 connect_cluster(Node, IP, Port) ->
