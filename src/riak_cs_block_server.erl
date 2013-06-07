@@ -331,42 +331,57 @@ full_bkey(Bucket, Key, UUID, BlockId) ->
     FullKey = riak_cs_lfs_utils:block_name(Key, UUID, BlockId),
     {PrefixedBucket, FullKey}.
 
-fold_object_csum_fun({MD, V}, {PrevV, NeedsRepair, BCSum}) ->
-    case find_rcs_bcsum(MD) of
-        undefined when NeedsRepair == false ->
-            {V, NeedsRepair, BCSum};
-        undefined when NeedsRepair == true ->
-            {PrevV, true, BCSum};
-        CorrectBCSum when is_binary(CorrectBCSum) ->
-            case crypto:md5(V) of
-                X when X =:= CorrectBCSum ->
-                    {V, NeedsRepair, CorrectBCSum};
-                _Bad ->
-                    {PrevV, true, BCSum}
+find_correct_sibling(RObj) ->
+    Cs = riakc_obj:get_contents(RObj),
+    [{_BestRating, BestMDV}|Rest] = lists:sort([{rate_a_dict(MD, V), MDV} ||
+                                                   {MD, V} = MDV <- Cs]),
+    {BestMDV, length(Rest) > 0}.
+
+rate_a_dict(MD, V) ->
+    %% The lower the score, the better.
+    case dict:find(<<"X-Riak-Deleted">>, MD) of
+        {ok, true} ->
+            -10;                                % Trump everything
+        error ->
+            case find_rcs_bcsum(MD) of
+                CorrectBCSum when is_binary(CorrectBCSum) ->
+                    case crypto:md5(V) of
+                        X when X =:= CorrectBCSum ->
+                            -1;                 % Hooray correctness
+                        _Bad ->
+                            666                 % Boooo
+                    end;
+                _ ->
+                    0                           % OK for legacy data
             end
     end.
 
 find_rcs_bcsum(MD) ->
-    proplists:get_value(<<?USERMETA_BCSUM>>, find_md_usermeta(MD)).
+    case find_md_usermeta(MD) of
+        {ok, Ps} ->
+            proplists:get_value(<<?USERMETA_BCSUM>>, Ps);
+        error ->
+            undefined
+    end.
 
 find_md_usermeta(MD) ->
-    dict:fetch(?MD_USERMETA, MD).
+    dict:find(?MD_USERMETA, MD).
 
 resolve_block_object(RObj, RiakcPid) ->
-    Cs = riakc_obj:get_contents(RObj),
-    Init = {not_done_unused, false, unknown_csum},
-    {Value, NeedRepair, BCSum} = lists:foldl(fun fold_object_csum_fun/2, Init, Cs),
+    {{MD, Value}, NeedRepair} = find_correct_sibling(RObj),
     if NeedRepair andalso is_binary(Value) ->
             RBucket = riakc_obj:bucket(RObj),
             RKey = riakc_obj:key(RObj),
-            S3Info = find_md_usermeta(hd(riakc_obj:get_metadatas(RObj))),
+            S3Info = case find_md_usermeta(hd(riakc_obj:get_metadatas(RObj))) of
+                         {ok, Ps} ->
+                             Ps;
+                         error ->
+                             []
+                     end,
             lager:info("Repairing riak ~p ~p for ~p\n",[RBucket, RKey, S3Info]),
             Bucket = proplists:get_value(<<?USERMETA_BUCKET>>, S3Info),
             Key = proplists:get_value(<<?USERMETA_KEY>>, S3Info),
             VClock = riakc_obj:vclock(RObj),
-            MD = make_md_usermeta([{?USERMETA_BUCKET, Bucket},
-                                   {?USERMETA_KEY, Key},
-                                   {?USERMETA_BCSUM, BCSum}]),
             FailFun = fun(Error) ->
                           lager:error("Put S3 ~p ~p Riak ~p ~p failed: ~p\n",
                                       [Bucket, Key, RBucket, RKey, Error])
