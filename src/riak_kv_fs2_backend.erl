@@ -375,7 +375,10 @@ put_object(<<?BLOCK_BUCKET_PREFIX, _/binary>> = Bucket,
            _IndexSpecs, RObj, State) ->
     case riak_object:get_metadatas(RObj) of
         [MD] ->
-            Props = dict:fetch(?MD_USERMETA, MD),
+            Props = case dict:find(?MD_USERMETA, MD) of
+                        {ok, Ps} -> Ps;
+                        error    -> []
+                    end,
             case proplists:get_value(<<"RCS-bcsum">>, Props) of
                 undefined ->
                     %% We have an old Riak CS client that isn't
@@ -392,8 +395,8 @@ put_object(<<?BLOCK_BUCKET_PREFIX, _/binary>> = Bucket,
             end;
         [] ->
             {{error, no_data, State}, invalid_encoded_val_do_not_use};
-        _ ->
-            {{error, has_siblings, State}, invalid_encoded_val_do_not_use}
+        _MDs ->
+            {{error, {has_siblings, [dict:to_list(MD) || MD <- _MDs]}, State}, invalid_encoded_val_do_not_use}
     end;
 put_object(Bucket, PrimaryKey, _IndexSpecs, RObj, State) ->
     File = location(State, Bucket, PrimaryKey),
