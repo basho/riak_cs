@@ -232,6 +232,10 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
+-ifndef(MD_DELETED).
+-define(MD_DELETED, <<"X-Riak-Deleted">>).
+-endif.
+
 -record(state, {
           dir        :: string(),
           block_size :: non_neg_integer(),
@@ -1439,7 +1443,7 @@ t4(SmallestBlock, BiggestBlock, BlocksPerFile, OrderFun)
              if Bp rem 3 == 0 ->
                      {exists, RestB};
                 Bp rem 3 == 1 ->
-                     DelMD = dict:store(<<"X-Riak-Deleted">>, true, dict:new()),
+                     DelMD = dict:store(?MD_DELETED, true, dict:new()),
                      [begin
                           Od = riak_object:new(
                                  RestB,
@@ -1510,7 +1514,7 @@ t5() ->
     false = is_empty(S),
 
     LastBucketOs = Os -- AllButLastBucketOs,
-    DelMD = dict:store(<<"X-Riak-Deleted">>, true, dict:new()),
+    DelMD = dict:store(?MD_DELETED, true, dict:new()),
     [{{ok, _}, _} = begin
                         B = riak_object:bucket(O),
                         K = riak_object:key(O),
@@ -1563,7 +1567,7 @@ make_tombstoned_0byte_obj(RObj) ->
 make_tombstoned_0byte_obj(Bucket, Key) ->
     riak_object:set_vclock(
       riak_object:new(Bucket, Key, <<>>,
-                      dict:from_list([{<<"X-Riak-Deleted">>, true}])),
+                      dict:from_list([{?MD_DELETED, true}])),
       vclock:increment(<<"tombstone_actor">>, vclock:fresh())).
 
 check_is_empty(S) ->
