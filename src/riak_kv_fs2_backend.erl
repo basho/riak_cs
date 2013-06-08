@@ -165,13 +165,14 @@
          status/1,
          callback/3]).
 %% To avoid EUnit test dependency on riak_cs_utils
--export([hexlist_to_binary/1, binary_to_hexlist/1]).
+-export([hexlist_to_binary/1, binary_to_hexlist/1, resolve_robj_siblings/1]).
 %% For QuickCheck testing use only
 -export([get/3, put/5]).
 %% Testing
 -export([scan_file/1]).
 -export([t0/0, t1/0, t2/0, t3/0, t4/0, t5/0, t6/0]).
 
+-include("riak_cs.hrl").
 -include("riak_cs_lfs.hrl").
 -include_lib("kernel/include/file.hrl").
 -include_lib("riak_pb/include/riak_pb_kv_codec.hrl"). % ?MD_USERMETA
@@ -377,30 +378,17 @@ put(Bucket, Key, IdxList, Val, State) ->
 put_object(<<?BLOCK_BUCKET_PREFIX, _/binary>> = Bucket,
            <<UUID:?UUID_BYTES/binary, BlockNum:?BLOCK_FIELD_SIZE>>,
            _IndexSpecs, RObj, State) ->
-    case riak_object:get_metadatas(RObj) of
-        [MD] ->
-            Props = case dict:find(?MD_USERMETA, MD) of
-                        {ok, Ps} -> Ps;
-                        error    -> []
+    case resolve_robj_siblings(riak_object:get_contents(RObj)) of
+        {{_MD, V} = MDV, _} when is_binary(V) ->
+            RObj2 = case riak_object:get_values(RObj) of
+                        [VV] when VV =:= V ->
+                            RObj;
+                        _ ->
+                            riak_object:set_contents(RObj, [MDV])
                     end,
-            case proplists:get_value(<<"RCS-bcsum">>, Props) of
-                undefined ->
-                    %% We have an old Riak CS client that isn't
-                    %% adding block checksums yet.  Put it anyway.
-                    put_object2(Bucket, UUID, BlockNum, RObj, State);
-                BCSum when is_binary(BCSum) ->
-                    case crypto:md5(riak_object:get_value(RObj)) of
-                        X when X =:= BCSum ->
-                            put_object2(Bucket, UUID, BlockNum, RObj, State);
-                        _Bad ->
-                            {{error, bad_block_checksum, State},
-                             invalid_encoded_val_do_not_use}
-                    end
-            end;
-        [] ->
-            {{error, no_data, State}, invalid_encoded_val_do_not_use};
-        _MDs ->
-            {{error, {has_siblings, [dict:to_list(MD) || MD <- _MDs]}, State}, invalid_encoded_val_do_not_use}
+            put_object2(Bucket, UUID, BlockNum, RObj2, State);
+        Else ->
+            {{error, {has_errors, Else}, State}, invalid_encoded_val_do_not_use}
     end;
 put_object(Bucket, PrimaryKey, _IndexSpecs, RObj, State) ->
     File = location(State, Bucket, PrimaryKey),
@@ -1581,6 +1569,54 @@ check_is_empty(S) ->
         throw:it_is_not_empty ->
             false
     end.
+
+-type resolve_ok() :: {term(), binary()}.
+-type resolve_error() :: {atom(), atom()}.
+-spec resolve_robj_siblings(RObj::term()) ->
+                      {resolve_ok() | resolve_error(), NeedsRepair::boolean()}.
+
+resolve_robj_siblings(Cs) ->
+    [{BestRating, BestMDV}|Rest] = lists:sort([{rate_a_dict(MD, V), MDV} ||
+                                                  {MD, V} = MDV <- Cs]),
+    if BestRating =< 0 ->
+            {BestMDV, length(Rest) > 0};
+       true ->
+            %% The best has a failing checksum
+            {{no_dict_available, bad_checksum}, true}
+    end.
+
+%% Corruption simulation:
+%% rate_a_dict(_MD, _V) -> case find_rcs_bcsum(_MD) of _ -> 666777888 end.
+
+rate_a_dict(MD, V) ->
+    %% The lower the score, the better.
+    case dict:find(?MD_DELETED, MD) of
+        {ok, true} ->
+            -10;                                % Trump everything
+        error ->
+            case find_rcs_bcsum(MD) of
+                CorrectBCSum when is_binary(CorrectBCSum) ->
+                    case crypto:md5(V) of
+                        X when X =:= CorrectBCSum ->
+                            -1;                 % Hooray correctness
+                        _Bad ->
+                            666                 % Boooo
+                    end;
+                _ ->
+                    0                           % OK for legacy data
+            end
+    end.
+
+find_rcs_bcsum(MD) ->
+    case find_md_usermeta(MD) of
+        {ok, Ps} ->
+            proplists:get_value(<<?USERMETA_BCSUM>>, Ps);
+        error ->
+            undefined
+    end.
+
+find_md_usermeta(MD) ->
+    dict:find(?MD_USERMETA, MD).
 
 %% ===================================================================
 %% EUnit tests
