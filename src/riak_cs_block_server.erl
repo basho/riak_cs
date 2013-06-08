@@ -43,11 +43,6 @@
          terminate/2,
          code_change/3]).
 
--define(SERVER, ?MODULE).
--define(USERMETA_BUCKET, "RCS-bucket").
--define(USERMETA_KEY,    "RCS-key").
--define(USERMETA_BCSUM,  "RCS-bcsum").
-
 -record(state, {riakc_pid :: pid(),
                 close_riak_connection=true :: boolean()}).
 
@@ -385,57 +380,12 @@ full_bkey(Bucket, Key, UUID, BlockId) ->
     FullKey = riak_cs_lfs_utils:block_name(Key, UUID, BlockId),
     {PrefixedBucket, FullKey}.
 
--type resolve_ok() :: {term(), binary()}.
--type resolve_error() :: {atom(), atom()}.
--spec resolve_robj_siblings(RObj::term()) ->
-                      {resolve_ok() | resolve_error(), NeedsRepair::boolean()}.
-
-resolve_robj_siblings(RObj) ->
-    Cs = riakc_obj:get_contents(RObj),
-    [{BestRating, BestMDV}|Rest] = lists:sort([{rate_a_dict(MD, V), MDV} ||
-                                                  {MD, V} = MDV <- Cs]),
-    if BestRating =< 0 ->
-            {BestMDV, length(Rest) > 0};
-       true ->
-            %% The best has a failing checksum
-            {{no_dict_available, bad_checksum}, true}
-    end.
-
-%% Corruption simulation:
-%% rate_a_dict(_MD, _V) -> case find_rcs_bcsum(_MD) of _ -> 666777888 end.
-
-rate_a_dict(MD, V) ->
-    %% The lower the score, the better.
-    case dict:find(?MD_DELETED, MD) of
-        {ok, true} ->
-            -10;                                % Trump everything
-        error ->
-            case find_rcs_bcsum(MD) of
-                CorrectBCSum when is_binary(CorrectBCSum) ->
-                    case crypto:md5(V) of
-                        X when X =:= CorrectBCSum ->
-                            -1;                 % Hooray correctness
-                        _Bad ->
-                            666                 % Boooo
-                    end;
-                _ ->
-                    0                           % OK for legacy data
-            end
-    end.
-
-find_rcs_bcsum(MD) ->
-    case find_md_usermeta(MD) of
-        {ok, Ps} ->
-            proplists:get_value(<<?USERMETA_BCSUM>>, Ps);
-        error ->
-            undefined
-    end.
-
 find_md_usermeta(MD) ->
     dict:find(?MD_USERMETA, MD).
 
 resolve_block_object(RObj, RiakcPid) ->
-    {{MD, Value}, NeedRepair} = resolve_robj_siblings(RObj),
+    {{MD, Value}, NeedRepair} =
+        riak_kv_fs2_backend:resolve_robj_siblings(riakc_obj:get_contents(RObj)),
     if NeedRepair andalso is_binary(Value) ->
             RBucket = riakc_obj:bucket(RObj),
             RKey = riakc_obj:key(RObj),
