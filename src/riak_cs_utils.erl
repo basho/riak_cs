@@ -596,7 +596,7 @@ get_user_index(Index, Value, RiakPid) ->
 has_tombstone({_, <<>>}) ->
     true;
 has_tombstone({MD, _V}) ->
-    dict:is_key(<<"X-Riak-Deleted">>, MD) =:= true.
+    dict:is_key(?MD_DELETED, MD) =:= true.
 
 %% @doc Determine if the specified user account is a system admin.
 -spec is_admin(rcs_user()) -> boolean().
