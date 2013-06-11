@@ -166,6 +166,10 @@ handle_validation_response({error, bad_auth}, RD, Ctx, _, Conv2KeyCtx, _) ->
     %% given keyid was found, but signature didn't match
     _ = lager:debug("bad_auth"),
     deny_access(RD, Conv2KeyCtx(Ctx));
+handle_validation_response({error, notfound}, RD, Ctx, _, Conv2KeyCtx, _) ->
+    %% no keyid was found
+    _ = lager:debug("key_id not found"),
+    deny_access(RD, Conv2KeyCtx(Ctx));
 handle_validation_response({error, Reason}, RD, Ctx, _, Conv2KeyCtx, _) ->
     %% no matching keyid was found, or lookup failed
     _ = lager:debug("Authentication error: ~p", [Reason]),
@@ -563,7 +567,6 @@ object_access_authorize_helper(AccessType, Deletable, SkipAcl,
          AccessType =:= object )
        andalso is_boolean(Deletable)
        andalso is_boolean(SkipAcl) ->
-
     #key_context{bucket=Bucket} = LocalCtx,
     case translate_bucket_policy(PolicyMod, Bucket, RiakPid) of
         {error, multiple_bucket_owners=E} ->
@@ -592,13 +595,12 @@ check_object_authorization(AccessType, Deletable, SkipAcl, Policy,
     Acl = case SkipAcl of
               true -> true;
               false -> riak_cs_acl:object_access(Bucket,
-                                             ObjectAcl,
-                                             RequestedAccess,
-                                             CanonicalId,
-                                             RiakPid)
+                                                 ObjectAcl,
+                                                 RequestedAccess,
+                                                 CanonicalId,
+                                                 RiakPid)
           end,
     case {Acl, PolicyMod:eval(Access, Policy)} of
-
         {true, false} ->
             %% return forbidden or 404 based on the `Method' and `Deletable'
             %% values
@@ -611,7 +613,7 @@ check_object_authorization(AccessType, Deletable, SkipAcl, Policy,
                                                  Method, Deletable);
         {{true, OwnerId}, _} ->
             %% actor is not the owner
-            actor_is_not_owner_but_allowed_policy(OwnerId, RD, Ctx, LocalCtx);
+            actor_is_not_owner_but_allowed_policy(User, OwnerId, RD, Ctx, LocalCtx);
         {false, true} ->
             %% actor is not the owner, not permitted by ACL but permitted by policy
             just_allowed_by_policy(ObjectAcl, RiakPid, RD, Ctx, LocalCtx);
@@ -713,15 +715,22 @@ actor_is_not_owner_and_denied_policy(_OwnerId, RD, Ctx, Method, Deletable)
         (Deletable andalso Method =:= 'HEAD') ->
     {{halt, 404}, RD, Ctx}.
 
--spec actor_is_not_owner_but_allowed_policy(OwnerId :: string(),
+-spec actor_is_not_owner_but_allowed_policy(User :: rcs_user(),
+                                            OwnerId :: string(),
                                             RD :: term(),
                                             Ctx :: term(),
                                             LocalCtx :: term()) ->
     authorized_response().
-actor_is_not_owner_but_allowed_policy(OwnerId, RD, Ctx, LocalCtx) ->
+actor_is_not_owner_but_allowed_policy(undefined, OwnerId, RD, Ctx, LocalCtx) ->
+    %% This is an anonymous request so shift to the context of the
+    %% owner for the remainder of the request.
     AccessRD = riak_cs_access_log_handler:set_user(OwnerId, RD),
-    UpdLocalCtx = LocalCtx#key_context{owner=OwnerId},
-    {false, AccessRD, Ctx#context{local_context=UpdLocalCtx}}.
+    UpdCtx = Ctx#context{local_context=LocalCtx#key_context{owner=OwnerId}},
+    shift_to_owner(AccessRD, UpdCtx, OwnerId, Ctx#context.riakc_pid);
+actor_is_not_owner_but_allowed_policy(_, OwnerId, RD, Ctx, LocalCtx) ->
+    AccessRD = riak_cs_access_log_handler:set_user(OwnerId, RD),
+    UpdCtx = Ctx#context{local_context=LocalCtx#key_context{owner=OwnerId}},
+    {false, AccessRD, UpdCtx}.
 
 -spec just_allowed_by_policy(ObjectAcl :: acl(),
                               RiakPid :: pid(),
