@@ -225,7 +225,8 @@ do_get_block(ReplyPid, Bucket, Key, ClusterID, UUID, BlockNumber,
     dt_entry(<<"get_block">>, [BlockNumber], [Bucket, Key]),
     {FullBucket, FullKey} = full_bkey(Bucket, Key, UUID, BlockNumber),
     StartTime = os:timestamp(),
-    GetOptions = [{r, 1}, {notfound_ok, false}, {basic_quorum, false}],
+    GetOptions1 = [{r, 1}, {n_val, 1}, {sloppy_quorum, false}],
+    GetOptions2 = [{r, 1}, {notfound_ok, false}, {basic_quorum, false}],
     LocalClusterID = riak_cs_utils:get_cluster_id(RiakcPid),
     %% don't use proxy get if it's a local get
     %% or proxy get is disabled
@@ -243,35 +244,48 @@ do_get_block(ReplyPid, Bucket, Key, ClusterID, UUID, BlockNumber,
                do_get_block(ReplyPid, Bucket, Key, ClusterID, UUID, BlockNumber,
                             State, NewPause)
             end,
-    case get_block_local(RiakcPid, FullBucket, FullKey, GetOptions) of
+%%% SLF TODO fix timeout
+    case get_block_local(RiakcPid, FullBucket, FullKey, GetOptions1, 5*1000) of
         {ok, _} = Success ->
             Proceed(Success);
-        {error, notfound} ->
-            case UseProxyGet of
-                true when ProxyActive ->
-                    case get_block_remote(RiakcPid, FullBucket, FullKey,
-                                          ClusterID, GetOptions) of
-                        {ok, _} = Success ->
-                            Proceed(Success);
-                        {error, _} ->
-                            if UseProxyGet ->
-                                    Retry(RetryPause * 2);
-                               true ->
-                                    Retry(failure)
-                            end
+        {error, {insufficient_vnodes,_,need,_}} ->
+            Retry(RetryPause * 2);
+        {error, Why} when Why == notfound; Why == timeout;
+                          Why == <<"{insufficient_vnodes,0,need,1}">> ->
+%%% SLF TODO fix timeout
+            case get_block_local(RiakcPid, FullBucket, FullKey, GetOptions2, 60*1000) of
+                {ok, _} = Success ->
+                    Proceed(Success);
+                {error, Why} when Why == notfound; Why == timeout ->
+                    case UseProxyGet of
+                        true when ProxyActive ->
+                            case get_block_remote(RiakcPid, FullBucket, FullKey,
+                                                  ClusterID, GetOptions2) of
+                                {ok, _} = Success ->
+                                    Proceed(Success);
+                                {error, _} ->
+                                    if UseProxyGet ->
+                                            Retry(RetryPause * 2);
+                                       true ->
+                                            Retry(failure)
+                                    end
+                            end;
+                        true when not ProxyActive ->
+                            Retry(RetryPause * 2);
+                        false ->
+                            Retry(failure)
                     end;
-                true when not ProxyActive ->
-                    Retry(RetryPause * 2);
-                false ->
+                {error, Other} ->
+                    lager:error("do_get_block: other error 2: ~p\n", [Other]),
                     Retry(failure)
             end;
         {error, Other} ->
-            lager:error("do_get_block: other error ~p\n", [Other]),
+            lager:error("do_get_block: other error 1: ~p\n", [Other]),
             Retry(failure)
     end.
 
-get_block_local(RiakcPid, FullBucket, FullKey, GetOptions) ->
-    case riakc_pb_socket:get(RiakcPid, FullBucket, FullKey, GetOptions) of
+get_block_local(RiakcPid, FullBucket, FullKey, GetOptions, Timeout) ->
+    case riakc_pb_socket:get(RiakcPid, FullBucket, FullKey, GetOptions, Timeout) of
         {ok, RiakObject} ->
             resolve_block_object(RiakObject, RiakcPid);
             %% %% Corrupted siblings hack: just add another....
