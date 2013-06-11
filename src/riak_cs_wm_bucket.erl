@@ -45,7 +45,7 @@ content_types_provided(RD, Ctx) ->
 content_types_accepted(RD, Ctx) ->
     content_types_accepted(wrq:get_req_header("content-type", RD), RD, Ctx).
 
--spec content_types_accepted(unndefined | string(), #wm_reqdata{}, #context{}) ->
+-spec content_types_accepted(undefined | string(), #wm_reqdata{}, #context{}) ->
                                     {[{string(), atom()}], #wm_reqdata{}, #context{}}.
 content_types_accepted(CT, RD, Ctx) when CT =:= undefined;
                                          CT =:= [] ->
