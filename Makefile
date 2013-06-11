@@ -55,14 +55,12 @@ test: all
 
 test-client: test-clojure test-python test-erlang test-ruby test-php
 
-test-python: test-boto
+test-python:
+	@cd client_tests/python/ && make CS_HTTP_PORT=$(CS_HTTP_PORT)
 
 test-ruby:
 	@bundle --gemfile client_tests/ruby/Gemfile --path vendor
 	@cd client_tests/ruby && bundle exec rake spec
-
-test-boto:
-	@cd client_tests/python/ && make CS_HTTP_PORT=$(CS_HTTP_PORT)
 
 test-erlang: compile-client-test
 	@./rebar skip_deps=true client_test_run
