@@ -76,6 +76,26 @@
 (defn etag-suffix [etag]
   (subs etag (- (count etag) 2)))
 
+(defn create-manager [c]
+  (TransferManager. c))
+
+(defn configure-manager [tm]
+  (let [tm-config (.getConfiguration tm)]
+    (.setMultipartUploadThreshold tm-config 19)
+    (.setMinimumUploadPartSize tm-config 10)
+    (.setConfiguration tm tm-config)))
+
+(defn create-and-configure-manager [c]
+  (let [tm (create-manager c)]
+    (configure-manager tm)
+    tm))
+
+(defn upload-file [tm bucket-name object-name file-name]
+  (let [f (clojure.java.io/file file-name)
+        u (.upload tm bucket-name object-name f)]
+    (.waitForCompletion u)
+    (.delete f)))
+
 (fact "bogus creds raises an exception"
       (let [bogus-client
             (s3/client "foo"
@@ -139,24 +159,16 @@
 (let [bucket-name (random-string)
       object-name (random-string)
       value (str "aaaaaaaaaa" "bbbbbbbbbb")
-      upload-file "./clj-mp-test.txt"]
+      file-name "./clj-mp-test.txt"]
   (fact "mulitpart upload works"
         (with-random-client c
           (do
             (s3/create-bucket c bucket-name)
-            (def tm (TransferManager. c))
-            (def tm-config (.getConfiguration tm))
-            (.setMinimumUploadPartSize tm-config 10)
-            (.setMultipartUploadThreshold tm-config 19)
-            (.setConfiguration tm tm-config)
-            (write-file upload-file value)
-            (def f (clojure.java.io/file upload-file))
-            (def u (.upload tm bucket-name object-name f))
-            (.waitForCompletion u)
-            (.delete f)
-            (def fetched-object (s3/get-object
-                                 c bucket-name object-name))
-            [((comp slurp :content) fetched-object)
-             ((comp etag-suffix :etag :metadata) fetched-object)]
-            ))
+            (let [tm (create-and-configure-manager c)]
+              (write-file file-name value)
+              (upload-file tm bucket-name object-name file-name)
+              (let [fetched-object (s3/get-object
+                                      c bucket-name object-name)]
+                  [((comp slurp :content) fetched-object)
+                   ((comp etag-suffix :etag :metadata) fetched-object)]))))
         => [value, "-2"]))
