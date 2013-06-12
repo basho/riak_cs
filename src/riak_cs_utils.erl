@@ -24,6 +24,7 @@
 
 %% Public API
 -export([etag_from_binary/1,
+         etag_from_binary/2,
          etag_from_binary_no_quotes/1,
          check_bucket_exists/2,
          chunked_md5/3,
@@ -100,6 +101,8 @@
 %% @doc Convert the passed binary into a string where the numbers are
 %% represented in hexadecimal (lowercase and 0 prefilled).
 -spec binary_to_hexlist(binary()) -> string().
+binary_to_hexlist({Bin, Suffix}) ->
+    binary_to_hexlist(Bin) ++ Suffix;
 binary_to_hexlist(Bin) ->
     XBin =
         [ begin
@@ -117,7 +120,15 @@ binary_to_hexlist(Bin) ->
 %% around it.
 -spec etag_from_binary(binary()) -> string().
 etag_from_binary(Binary) ->
-    "\"" ++ etag_from_binary_no_quotes(Binary) ++ "\"".
+    etag_from_binary(Binary, []).
+
+%% @doc Return a hexadecimal string of `Binary', with double quotes
+%% around it.
+-spec etag_from_binary(binary(), string()) -> string().
+etag_from_binary(Binary, []) ->
+    "\"" ++ etag_from_binary_no_quotes(Binary) ++ "\"";
+etag_from_binary(Binary, Suffix) ->
+    "\"" ++ etag_from_binary_no_quotes(Binary) ++ Suffix ++ "\"".
 
 %% @doc Return a hexadecimal string of `Binary', without double quotes
 %% around it.
