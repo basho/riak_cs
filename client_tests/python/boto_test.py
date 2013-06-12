@@ -230,6 +230,17 @@ class MultiPartUploadTests(S3ApiVerificationTestBase):
         parts = [str(uuid.uuid4()) for _ in xrange(20)]
         self.multipart_md5_helper(parts)
 
+    def test_standard_storage_class(self):
+        # Test for bug reported in
+        # https://github.com/basho/riak_cs/pull/575
+        bucket = self.conn.create_bucket(self.bucket_name)
+        key_name = 'test_standard_storage_class'
+        _never_finished_upload = bucket.initiate_multipart_upload(key_name)
+        uploads = list(bucket.list_multipart_uploads())
+        for u in uploads:
+            self.assertEqual(u.storage_class, 'STANDARD')
+        self.assertTrue(True)
+
 def one_kb_string():
     "Return a 1KB string of all a's"
     return ''.join(['a' for _ in xrange(1024)])
