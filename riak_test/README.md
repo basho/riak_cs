@@ -12,45 +12,52 @@
 1. Setup a `~/.riak_test.config` file like this:
 
     <pre>
+    {default, [
+           {rt_max_wait_time, 180000},
+           {rt_retry_delay, 1000}
+          ]}.
+
     {rtdev, [
-        {rt_deps, [
-                   "/Users/dparfitt/test-releases/riak_ee/deps",
-                   "/Users/dparfitt/test-releases/riak_cs/deps",
-                   "/Users/dparfitt/test-releases/stanchion/deps",
-                   "deps"
-                  ]},
-        {rt_retry_delay, 500},
-        {rt_harness, rtdev},
-        {rtdev_path, [{root, "RT_DEST_DIR"},
-                      {current, "RT_DEST_DIR/current"},
-                      {previous, "RT_DEST_DIR/riak-1.2.0"},
-                      {legacy, "RT_DEST_DIR/riak-1.1.4"},
-                      {ee_root, "RTEE_DEST_DIR"},
-                      {ee_current, "RTEE_DEST_DIR/current"},
-                      {"1.2.0-ee", "RTEE_DEST_DIR/riak_ee-1.2.0"},
-                      {"1.1.4-ee", "RTEE_DEST_DIR/riak_ee-1.1.4"},
-                      {"1.0.3-ee", "RTEE_DEST_DIR/riak_ee-1.0.3"},
+         {rt_deps, [
+                    "/Users/kelly/basho/riak_test_builds/riak/deps",
+                    "deps"
+                   ]},
+         {rt_retry_delay, 500},
+         {rt_harness, rtdev},
+         {rtdev_path, [{root, "/Users/kelly/rt/riak"},
+                       {current, "/Users/kelly/rt/riak/current"},
+                       {ee_root, "/Users/kelly/rt/riak_ee"},
+                       {ee_current, "/Users/kelly/rt/riak_ee/current"}
+                      ]}
+        ]}.
 
-                      {cs_root, "RTCS_DEST_DIR"},
-                      {cs_current, "RTCS_DEST_DIR/current"},
-                      %% Add cs_src_root to get access to client tests
-                      {cs_src_root, "YOUR/PATH/TO/RIAK-CS/SOURCE/TREE/riak_cs/"},
-
-                      {"1.2.2-cs", "RTCS_DEST_DIR/riak-cs-1.2.2"},
-                      {"1.1.0-cs", "RTCS_DEST_DIR/riak-cs-1.1.0"},
-                      {"1.0.1-cs", "RTCS_DEST_DIR/riak-cs-1.0.1"},
-                      {stanchion_root, "RTSTANCHION_DEST_DIR"},
-                      {stanchion_current, "RTSTANCHION_DEST_DIR/current"},
-                      {"1.2.2-stanchion", "RTSTANCHION_DEST_DIR/stanchion-1.2.2"},
-                      {"1.1.0-stanchion", "RTSTANCHION_DEST_DIR/stanchion-1.1.0"},
-                      {"1.0.1-stanchion", "RTSTANCHION_DEST_DIR/stanchion-1.0.1"}
-                     ]}
-    ]}.
+    {rt_cs_dev, [
+         {rt_deps, [
+                    "/Users/kelly/basho/riak_test_builds/riak/deps",
+                    "/Users/kelly/basho/riak_test_builds/riak_cs/deps",
+                    "/Users/kelly/basho/riak_test_builds/stanchion/deps",
+                    "deps"
+                   ]},
+         {rt_retry_delay, 500},
+         {rt_harness, rt_cs_dev},
+         {build_paths, [{root, "/Users/kelly/rt/riak"},
+                        {current, "/Users/kelly/rt/riak/current"},
+                        {ee_root, "/Users/kelly/rt/riak_ee"},
+                        {ee_current, "/Users/kelly/rt/riak_ee/current"},
+                        {cs_root, "/Users/kelly/rt/riak_cs"},
+                        {cs_current, "/Users/kelly/rt/riak_cs/current"},
+                        {stanchion_root, "/Users/kelly/rt/stanchion"},
+                        {stanchion_current, "/Users/kelly/rt/stanchion/current"}
+                       ]},
+         {src_paths, [{cs_src_root, "/Users/kelly/basho/riak_test_builds/riak_cs"}]}
+        ]}.
     </pre>
 
-Notice the extra `riak_ee/deps`, `riak_cs/deps` and `stanchion/deps` in
-the `rt_deps` section and the extra path specifications in
-`rtdev_path`. `RT_DEST_DIR` should be replaced by the path used when
+Running the RiakCS tests for `riak_test` use a different test harness
+(`rt_cs_dev`) than running the Riak tests and so requires a separate
+configuration section.  Notice the extra `riak_ee/deps`,
+`riak_cs/deps` and `stanchion/deps` in the `rt_deps`
+section. `RT_DEST_DIR` should be replaced by the path used when
 setting up `riak_test` builds for Riak (by default
 `$HOME/rt/riak`). The same should be done for `RTEE_DEST_DIR` (default
 `$HOME/rt/riak_ee`), `RTCS_DEST_DIR` (default `$HOME/rt/riak_cs`) and
@@ -71,7 +78,7 @@ prerequisites:
 
 1. Before running the Riak client tests, your
 `~/.riak_test.config` file must contain an entry for `cs_src_root` in
-the `rtdev_path` list, as shown above.  The source in this directory
+the `src_paths` list, as shown above.  The source in this directory
 must be successfully compiled using the top level `make all` target.
 
 1. Before running the Riak client tests, you must first use the
@@ -80,5 +87,5 @@ commands `make clean-client-test` and then `make compile-client-test`.
 1. To execute a test, run the following from the `riak_test` repo:
 
     ```
-    ./riak_test -c rtdev -d <PATH-TO-RIAK-CS-REPO>/riak_test/ebin/ -v
+    ./riak_test -c rt_cs_dev -d <PATH-TO-RIAK-CS-REPO>/riak_test/ebin/ -v
     ```

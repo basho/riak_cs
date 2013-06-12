@@ -10,11 +10,12 @@ confirm() ->
 
     CS_http_port = rtcs:cs_port(hd(RiakNodes)),
 
-    lager:debug("cs_src_root = ~p", [rtdev:relpath(cs_src_root)]),
+    CS_src_dir = rt_cs_dev:srcpath(cs_src_root),
+    lager:debug("cs_src_root = ~p", [CS_src_dir]),
     %% NOTE: This 'cs_src_root' path must appear in
-    %% ~/.riak_test.config in the 'rtdev' section, 'rtdev_path'
+    %% ~/.riak_test.config in the 'rt_cs_dev' section, 'src_paths'
     %% subsection.
-    CS_src_dir = rtdev:relpath(cs_src_root),
+
     StdoutStderr = "/tmp/my_output." ++ os:getpid(),
     os:cmd("rm -f " ++ StdoutStderr),
 
