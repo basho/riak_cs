@@ -233,7 +233,7 @@ generate_etag(RD, #ctx{etag=undefined}=Ctx) ->
             end
     end,
     {Body, NewRD, NewCtx} = ?MODULE:Producer(RD, Ctx),
-    Etag = riak_cs_utils:etag_from_binary_no_quotes(crypto:md5(Body)),
+    Etag = riak_cs_utils:etag_from_binary_no_quotes(riak_cs_utils:md5(Body)),
     {Etag, NewRD, NewCtx#ctx{etag=Etag}};
 generate_etag(RD, #ctx{etag=Etag}=Ctx) ->
     {Etag, RD, Ctx}.

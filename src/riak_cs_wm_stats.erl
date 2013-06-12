@@ -104,7 +104,7 @@ service_available(RD, Ctx) ->
 produce_body(RD, Ctx) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"produce_body">>),
     Body = mochijson2:encode(get_stats()),
-    ETag = riak_cs_utils:etag_from_binary(crypto:md5(Body)),
+    ETag = riak_cs_utils:etag_from_binary(riak_cs_utils:md5(Body)),
     RD2 = wrq:set_resp_header("ETag", ETag, RD),
     riak_cs_dtrace:dt_wm_return(?MODULE, <<"produce_body">>),
     {Body, RD2, Ctx}.
@@ -147,7 +147,7 @@ finish_request(RD, #ctx{riakc_pid=RiakPid}=Ctx) ->
 pretty_print(RD1, C1=#ctx{}) ->
     {Json, RD2, C2} = produce_body(RD1, C1),
     Body = riak_cs_utils:json_pp_print(lists:flatten(Json)),
-    ETag = riak_cs_utils:etag_from_binary(crypto:md5(term_to_binary(Body))),
+    ETag = riak_cs_utils:etag_from_binary(riak_cs_utils:md5(term_to_binary(Body))),
     RD3 = wrq:set_resp_header("ETag", ETag, RD2),
     {Body, RD3, C2}.
 

@@ -1596,7 +1596,7 @@ rate_a_dict(MD, V) ->
         error ->
             case find_rcs_bcsum(MD) of
                 CorrectBCSum when is_binary(CorrectBCSum) ->
-                    case crypto:md5(V) of
+                    case riak_cs_utils:md5(V) of
                         X when X =:= CorrectBCSum ->
                             -1;                 % Hooray correctness
                         _Bad ->

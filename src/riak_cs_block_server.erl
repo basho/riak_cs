@@ -106,7 +106,8 @@ get_block(Pid, Bucket, Key, ClusterID, UUID, BlockNumber) ->
 
 -spec put_block(pid(), binary(), binary(), binary(), pos_integer(), binary()) -> ok.
 put_block(Pid, Bucket, Key, UUID, BlockNumber, Value) ->
-    gen_server:cast(Pid, {put_block, self(), Bucket, Key, UUID, BlockNumber, Value, crypto:md5(Value)}).
+    gen_server:cast(Pid, {put_block, self(), Bucket, Key, UUID, BlockNumber,
+                          Value, riak_cs_utils:md5(Value)}).
 
 -spec delete_block(pid(), binary(), binary(), binary(), pos_integer()) -> ok.
 delete_block(Pid, Bucket, Key, UUID, BlockNumber) ->
