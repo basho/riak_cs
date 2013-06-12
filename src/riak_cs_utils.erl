@@ -27,7 +27,6 @@
          etag_from_binary/2,
          etag_from_binary_no_quotes/1,
          check_bucket_exists/2,
-         chunked_md5/3,
          close_riak_connection/1,
          close_riak_connection/2,
          create_bucket/5,
@@ -42,6 +41,10 @@
          has_tombstone/1,
          is_admin/1,
          map_keys_and_manifests/3,
+         md5/1,
+         md5_init/0,
+         md5_update/2,
+         md5_final/1,
          reduce_keys_and_manifests/2,
          get_object/3,
          get_manifests/3,
@@ -456,6 +459,29 @@ map_keys_and_manifests(Object, _, _) ->
 reduce_keys_and_manifests(Acc, _) ->
     Acc.
 
+-type context() :: binary().
+-type digest() :: binary().
+
+-spec md5(binary()) -> digest().
+md5(Bin) ->
+    md5_final(md5_update(md5_init(), Bin)).
+
+-spec md5_init() -> context().
+md5_init() ->
+    crypto:md5_init().
+
+-define(MAX_UPDATE_SIZE, (32*1024)).
+
+-spec md5_update(context(), binary()) -> context().
+md5_update(Ctx, Bin) when size(Bin) =< ?MAX_UPDATE_SIZE ->
+    crypto:md5_update(Ctx, Bin);
+md5_update(Ctx, <<Part:?MAX_UPDATE_SIZE/binary, Rest/binary>>) ->
+    md5_update(crypto:md5_update(Ctx, Part), Rest).
+
+-spec md5_final(context()) -> digest().
+md5_final(Ctx) ->
+    crypto:md5_final(Ctx).
+
 %% @doc Get an object from Riak
 -spec get_object(binary(), binary(), pid()) ->
                         {ok, riakc_obj:riakc_obj()} | {error, term()}.
@@ -824,7 +850,7 @@ to_bucket_name(Type, Bucket) ->
         blocks ->
             Prefix = ?BLOCK_BUCKET_PREFIX
     end,
-    BucketHash = crypto:md5(Bucket),
+    BucketHash = md5(Bucket),
     <<Prefix/binary, BucketHash/binary>>.
 
 
@@ -1152,8 +1178,8 @@ generate_canonical_id(_KeyID, undefined) ->
     [];
 generate_canonical_id(KeyID, Secret) ->
     Bytes = 16,
-    Id1 = crypto:md5(KeyID),
-    Id2 = crypto:md5(Secret),
+    Id1 = md5(KeyID),
+    Id2 = md5(Secret),
     binary_to_hexlist(
       iolist_to_binary(<< Id1:Bytes/binary,
                           Id2:Bytes/binary >>)).
@@ -1377,18 +1403,3 @@ user_record(Name, Email, KeyId, Secret, Buckets) ->
 -spec pid_to_binary(pid()) -> binary().
 pid_to_binary(Pid) ->
     list_to_binary(pid_to_list(Pid)).
-
-%% @doc Rapid calls to `md5_update' with largish data blocks (e.g. 1MB)
-%% can lead to erlang scheduler collapse
--spec chunked_md5(binary(), binary(), non_neg_integer()) -> binary().
-chunked_md5(<<>>, Context, _ChunkSize) ->
-    Context;
-chunked_md5(Data, Context, ChunkSize) ->
-    case byte_size(Data) < ChunkSize of
-        true ->
-            crypto:md5_update(Context, Data);
-        false ->
-            <<Chunk:ChunkSize/binary, RestData/binary>> = Data,
-            UpdContext = crypto:md5_update(Context, Chunk),
-            chunked_md5(RestData, UpdContext, ChunkSize)
-    end.
