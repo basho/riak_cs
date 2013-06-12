@@ -129,8 +129,7 @@ content_types_provided(RD, Ctx=#context{local_context=LocalCtx,
 -spec generate_etag(#wm_reqdata{}, #context{}) -> {string(), #wm_reqdata{}, #context{}}.
 generate_etag(RD, Ctx=#context{local_context=LocalCtx}) ->
     Mfst = LocalCtx#key_context.manifest,
-    ContentMd5 = Mfst?MANIFEST.content_md5,
-    ETag = riak_cs_utils:etag_from_binary_no_quotes(ContentMd5),
+    ETag = format_etag(Mfst?MANIFEST.content_md5),
     {ETag, RD, Ctx}.
 
 -spec last_modified(#wm_reqdata{}, #context{}) -> {calendar:datetime(), #wm_reqdata{}, #context{}}.
@@ -174,7 +173,7 @@ produce_body(RD, Ctx=#context{local_context=LocalCtx,
     riak_cs_dtrace:dt_object_entry(?MODULE, Func, [], [UserName, BFile_str]),
     ContentMd5 = Mfst?MANIFEST.content_md5,
     LastModified = riak_cs_wm_utils:to_rfc_1123(Mfst?MANIFEST.created),
-    ETag = riak_cs_utils:etag_from_binary(ContentMd5),
+    ETag = format_etag(ContentMd5),
     NewRQ1 = lists:foldl(fun({K, V}, Rq) -> wrq:set_resp_header(K, V, Rq) end,
                          RD,
                          [{"ETag",  ETag},
@@ -406,3 +405,9 @@ zero_length_metadata_update_p(0, RD) ->
     end;
 zero_length_metadata_update_p(_, _) ->
     false.
+
+-spec format_etag(binary() | {binary(), string()}) -> string().
+format_etag({ContentMd5, Suffix}) ->
+    riak_cs_utils:etag_from_binary(ContentMd5, Suffix);
+format_etag(ContentMd5) ->
+    riak_cs_utils:etag_from_binary(ContentMd5).

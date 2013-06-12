@@ -18,7 +18,10 @@
   (:import java.security.MessageDigest
            org.apache.commons.codec.binary.Hex
            com.amazonaws.services.s3.model.AmazonS3Exception
-           com.amazonaws.services.s3.model.ObjectMetadata)
+           com.amazonaws.services.s3.model.ObjectMetadata
+           com.amazonaws.services.s3.transfer.TransferManager
+           com.amazonaws.services.s3.transfer.TransferManagerConfiguration)
+
   (:require [aws.sdk.s3 :as s3])
   (:require [java-s3-tests.user-creation :as user-creation])
   (:use midje.sweet))
@@ -65,6 +68,13 @@
 
 (defn random-string []
   (str (java.util.UUID/randomUUID)))
+
+(defn write-file [filename content]
+  (with-open [w (clojure.java.io/writer  filename :append false)]
+    (.write w content)))
+
+(defn etag-suffix [etag]
+  (subs etag (- (count etag) 2)))
 
 (fact "bogus creds raises an exception"
       (let [bogus-client
@@ -125,3 +135,28 @@
                (s3/get-object
                  c bucket-name object-name))))
         => md5-sum))
+
+(let [bucket-name (random-string)
+      object-name (random-string)
+      value (str "aaaaaaaaaa" "bbbbbbbbbb")
+      upload-file "./clj-mp-test.txt"]
+  (fact "mulitpart upload works"
+        (with-random-client c
+          (do
+            (s3/create-bucket c bucket-name)
+            (def tm (TransferManager. c))
+            (def tm-config (.getConfiguration tm))
+            (.setMinimumUploadPartSize tm-config 10)
+            (.setMultipartUploadThreshold tm-config 19)
+            (.setConfiguration tm tm-config)
+            (write-file upload-file value)
+            (def f (clojure.java.io/file upload-file))
+            (def u (.upload tm bucket-name object-name f))
+            (.waitForCompletion u)
+            (.delete f)
+            (def fetched-object (s3/get-object
+                                 c bucket-name object-name))
+            [((comp slurp :content) fetched-object)
+             ((comp etag-suffix :etag :metadata) fetched-object)]
+            ))
+        => [value, "-2"]))

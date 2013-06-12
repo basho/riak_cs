@@ -406,7 +406,7 @@ do_part_common2(complete, RiakcPid,
                           end,
                 NewManifest = Manifest?MANIFEST{state = active,
                                                 content_length = Bytes,
-                                                content_md5 = UUID,
+                                                content_md5 = {UUID, "-" ++ integer_to_list(ordsets:size(PartsToKeep))},
                                                 props = MProps2},
                 ok = riak_cs_manifest_fsm:add_new_manifest(ManiPid, NewManifest),
                 case PartsToDelete of
