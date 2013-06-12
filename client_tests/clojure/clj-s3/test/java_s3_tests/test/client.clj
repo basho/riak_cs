@@ -18,7 +18,10 @@
   (:import java.security.MessageDigest
            org.apache.commons.codec.binary.Hex
            com.amazonaws.services.s3.model.AmazonS3Exception
-           com.amazonaws.services.s3.model.ObjectMetadata)
+           com.amazonaws.services.s3.model.ObjectMetadata
+           com.amazonaws.services.s3.transfer.TransferManager
+           com.amazonaws.services.s3.transfer.TransferManagerConfiguration)
+
   (:require [aws.sdk.s3 :as s3])
   (:require [java-s3-tests.user-creation :as user-creation])
   (:use midje.sweet))
@@ -65,6 +68,33 @@
 
 (defn random-string []
   (str (java.util.UUID/randomUUID)))
+
+(defn write-file [filename content]
+  (with-open [w (clojure.java.io/writer  filename :append false)]
+    (.write w content)))
+
+(defn etag-suffix [etag]
+  (subs etag (- (count etag) 2)))
+
+(defn create-manager [c]
+  (TransferManager. c))
+
+(defn configure-manager [tm]
+  (let [tm-config (.getConfiguration tm)]
+    (.setMultipartUploadThreshold tm-config 19)
+    (.setMinimumUploadPartSize tm-config 10)
+    (.setConfiguration tm tm-config)))
+
+(defn create-and-configure-manager [c]
+  (let [tm (create-manager c)]
+    (configure-manager tm)
+    tm))
+
+(defn upload-file [tm bucket-name object-name file-name]
+  (let [f (clojure.java.io/file file-name)
+        u (.upload tm bucket-name object-name f)]
+    (.waitForCompletion u)
+    (.delete f)))
 
 (fact "bogus creds raises an exception"
       (let [bogus-client
@@ -125,3 +155,20 @@
                (s3/get-object
                  c bucket-name object-name))))
         => md5-sum))
+
+(let [bucket-name (random-string)
+      object-name (random-string)
+      value (str "aaaaaaaaaa" "bbbbbbbbbb")
+      file-name "./clj-mp-test.txt"]
+  (fact "mulitpart upload works"
+        (with-random-client c
+          (do
+            (s3/create-bucket c bucket-name)
+            (let [tm (create-and-configure-manager c)]
+              (write-file file-name value)
+              (upload-file tm bucket-name object-name file-name)
+              (let [fetched-object (s3/get-object
+                                      c bucket-name object-name)]
+                  [((comp slurp :content) fetched-object)
+                   ((comp etag-suffix :etag :metadata) fetched-object)]))))
+        => [value, "-2"]))
