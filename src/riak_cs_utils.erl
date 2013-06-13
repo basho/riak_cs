@@ -132,7 +132,9 @@ etag_from_binary(Binary, Suffix) ->
 
 %% @doc Return a hexadecimal string of `Binary', without double quotes
 %% around it.
--spec etag_from_binary_no_quotes(binary()) -> string().
+-spec etag_from_binary_no_quotes(binary() | {binary(), string()}) -> string().
+etag_from_binary_no_quotes({Binary, Suffix}) ->
+    binary_to_hexlist(Binary) ++ Suffix;
 etag_from_binary_no_quotes(Binary) ->
     binary_to_hexlist(Binary).
 
