@@ -73,6 +73,7 @@
                 blocks_intransit=queue:new() :: queue(),
                 test=false :: boolean(),
                 total_blocks :: pos_integer(),
+                num_sent=0 :: non_neg_integer(),
                 initial_block :: block_name(),
                 final_block :: block_name(),
                 skip_bytes_initial :: non_neg_integer(),
@@ -229,11 +230,16 @@ waiting_continue_or_stop(Event, From, State) ->
                    [self(), Event, From]),
     {next_state, waiting_continue_or_stop, State}.
 
-waiting_chunks(get_next_chunk, From, State) ->
+waiting_chunks(get_next_chunk, From, State=#state{num_sent=TotalNumBlocks,
+                                                  total_blocks=TotalNumBlocks}) ->
+    _ = gen_fsm:reply(From, {done, <<>>}),
+    {stop, normal, State};
+waiting_chunks(get_next_chunk, From, State=#state{num_sent=_NumSent,
+                                                  total_blocks=_TotalNumBlocks}) ->
     case perhaps_send_to_user(From, State) of
         done ->
-            gen_fsm:reply(From, {done, <<>>}),
-            {stop, normal, State};
+            UpdState = State#state{from=From},
+            {next_state, waiting_chunks, read_blocks(UpdState)};
         {sent, UpdState} ->
             Got = UpdState#state.got_blocks,
             GotSize = orddict:size(Got),
@@ -248,6 +254,7 @@ waiting_chunks(get_next_chunk, From, State) ->
     end.
 
 perhaps_send_to_user(From, #state{got_blocks=Got,
+                                  num_sent=NumSent,
                                   blocks_intransit=Intransit}=State) ->
     case queue:out(Intransit) of
         {empty, _} ->
@@ -260,6 +267,7 @@ perhaps_send_to_user(From, #state{got_blocks=Got,
                     %% with an async event func and must return next_state.
                     gen_fsm:reply(From, {chunk, Block}),
                     {sent, State#state{got_blocks=orddict:erase(NextBlock, Got),
+                                       num_sent=NumSent+1,
                                        blocks_intransit=UpdIntransit}};
                 error ->
                     {not_sent, State#state{from=From}}

@@ -23,6 +23,8 @@
 -include("riak_cs.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
+-compile(export_all).
+
 setup() ->
 %    TestNode = list_to_atom("testnode" ++ integer_to_list(element(3, now())) ++
 %                                "@localhost"),
@@ -58,8 +60,8 @@ get_fsm_should_never_fail_intermittently_test_() ->
       %% ContentLength = 10000, e.g. 1,2,5,100,1000.
       [{timeout, 300, fun() -> [ok = (test_n_chunks_builder(X))() ||
                                    _ <- lists:seq(1, Iters)] end} ||
-          {X, Iters} <- [{1, 50}, {2, 50}, {5, 50},
-                         {100, 10}, {1000, 2}]]
+                {X, Iters} <- [{1, 50}, {2, 50}, {5, 50},
+                               {100, 10}, {1000, 2}]]
      ]}.
 
 calc_block_size(ContentLength, NumBlocks) ->
@@ -109,8 +111,9 @@ expect_n_bytes(FsmPid, N, Bytes) ->
                                 {done, <<>>} ->
                                     {done, L}
                             end
-                    end, {working, []}, lists:seq(1, Bytes)),
-    ?assertMatch({N, Bytes}, {N, byte_size(iolist_to_binary(Res))}),
+                    end, {working, []}, lists:seq(1, N + 1)),
+    ?assertEqual({N, Bytes}, {N, byte_size(iolist_to_binary(Res))}),
+
     %% dummy reader uses little endian to encode the sequence number
     %% in each chunk ... pull that seq num out, then check that usort
     %% yields the same thing.
