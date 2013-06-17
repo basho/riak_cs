@@ -395,7 +395,7 @@
 %% A number to multiplied with the block size
 %% to determine the PUT buffer size.
 %% ex. 2 would mean BlockSize * 2
--define(DEFAULT_PUT_BUFFER_FACTOR, 1).
+-define(DEFAULT_PUT_BUFFER_FACTOR, 3).
 %% Similar to above, but for fetching
 %% This is also max ram per fetch request
 -define(DEFAULT_FETCH_BUFFER_FACTOR, 1).

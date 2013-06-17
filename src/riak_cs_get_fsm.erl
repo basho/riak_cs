@@ -159,7 +159,7 @@ init([test, Bucket, Key, Caller, ContentLength, BlockSize]) ->
                                                     BlockSize]),
                link(ReaderPid),
                ReaderPid
-           end || _ <- lists:seq(1,1)],
+           end || _ <- lists:seq(1,5)],
     {ok, Manifest} = riak_cs_dummy_reader:get_manifest(hd(RPs)),
     {ok, waiting_value, State1#state{free_readers=RPs,
                                      manifest=Manifest,
