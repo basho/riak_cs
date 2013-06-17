@@ -23,12 +23,18 @@
 -include("riak_cs.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
+-ifdef(PULSE).
+-include_lib("pulse/include/pulse.hrl").
+-compile({parse_transform, pulse_instrument}).
+-endif.
+
 -compile(export_all).
 
 setup() ->
 %    TestNode = list_to_atom("testnode" ++ integer_to_list(element(3, now())) ++
 %                                "@localhost"),
 %    {ok, _} = net_kernel:start([TestNode, longnames]),
+    pulse:start(),
     application:load(sasl),
     application:load(riak_cs),
     application:set_env(sasl, sasl_error_logger, {file, "cs_get_fsm_sasl.log"}),

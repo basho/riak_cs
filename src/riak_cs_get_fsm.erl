@@ -24,6 +24,12 @@
 
 -behaviour(gen_fsm).
 
+-ifdef(PULSE).
+-include_lib("pulse/include/pulse.hrl").
+-compile({parse_transform, pulse_instrument}).
+-compile({pulse_replace_module,[{gen_fsm,pulse_gen_fsm}]}).
+-endif.
+
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 
@@ -138,8 +144,8 @@ init([Bucket, Key, Caller, RiakPid])
                    key=Key,
                    riakc_pid=RiakPid},
     {ok, prepare, State, 0};
-init([test, Bucket, Key, ContentLength, BlockSize]) ->
-    {ok, prepare, State1, 0} = init([Bucket, Key, self(), self()]),
+init([test, Bucket, Key, Caller, ContentLength, BlockSize]) ->
+    {ok, prepare, State1, 0} = init([Bucket, Key, Caller, self()]),
 
     %% purposely have the timeout happen
     %% so that we get called in the prepare
@@ -153,7 +159,7 @@ init([test, Bucket, Key, ContentLength, BlockSize]) ->
                                                     BlockSize]),
                link(ReaderPid),
                ReaderPid
-           end || _ <- lists:seq(1,5)],
+           end || _ <- lists:seq(1,1)],
     {ok, Manifest} = riak_cs_dummy_reader:get_manifest(hd(RPs)),
     {ok, waiting_value, State1#state{free_readers=RPs,
                                      manifest=Manifest,
@@ -439,6 +445,6 @@ trim_block_value(RawBlockValue, _CurrentBlock,
 -ifdef(TEST).
 
 test_link(Bucket, Key, ContentLength, BlockSize) ->
-    gen_fsm:start_link(?MODULE, [test, Bucket, Key, ContentLength, BlockSize], []).
+    gen_fsm:start_link(?MODULE, [test, Bucket, Key, self(), ContentLength, BlockSize], []).
 
 -endif.

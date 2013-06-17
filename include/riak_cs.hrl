@@ -398,7 +398,7 @@
 -define(DEFAULT_PUT_BUFFER_FACTOR, 1).
 %% Similar to above, but for fetching
 %% This is also max ram per fetch request
--define(DEFAULT_FETCH_BUFFER_FACTOR, 32).
+-define(DEFAULT_FETCH_BUFFER_FACTOR, 1).
 -define(DEFAULT_PING_TIMEOUT, 5000).
 -define(JSON_TYPE, "application/json").
 -define(XML_TYPE, "application/xml").
