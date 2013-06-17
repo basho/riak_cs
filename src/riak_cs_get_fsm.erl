@@ -34,7 +34,7 @@
 -include_lib("eunit/include/eunit.hrl").
 
 %% Test API
--export([test_link/5]).
+-export([test_link/6]).
 
 -endif.
 
@@ -74,6 +74,7 @@
                 caller :: reference(),
                 key :: term(),
                 fetch_concurrency :: pos_integer(),
+                buffer_factor :: pos_integer(),
                 got_blocks=orddict:new() :: orddict:orddict(),
                 manifest :: term(),
                 blocks_order :: [block_name()],
@@ -120,9 +121,9 @@ chunk(Pid, ChunkSeq, ChunkValue) ->
 %% gen_fsm callbacks
 %% ====================================================================
 
-init([Bucket, Key, Caller, RiakPid, FetchConcurrency])
+init([Bucket, Key, Caller, RiakPid, FetchConcurrency, BufferFactor])
   when is_binary(Bucket), is_binary(Key), is_pid(Caller), is_pid(RiakPid),
-        FetchConcurrency >= 0 ->
+        FetchConcurrency > 0, BufferFactor > 0 ->
     %% We need to do this (the monitor) for two reasons
     %% 1. We're started through a supervisor, so the
     %%    proc that actually intends to start us isn't
@@ -145,10 +146,13 @@ init([Bucket, Key, Caller, RiakPid, FetchConcurrency])
                    caller=CallerRef,
                    key=Key,
                    riakc_pid=RiakPid,
+                   buffer_factor=BufferFactor,
                    fetch_concurrency=FetchConcurrency},
     {ok, prepare, State, 0};
-init([test, Bucket, Key, Caller, ContentLength, BlockSize, FetchConcurrency]) ->
-    {ok, prepare, State1, 0} = init([Bucket, Key, Caller, self(), FetchConcurrency]),
+init([test, Bucket, Key, Caller, ContentLength, BlockSize, FetchConcurrency,
+      BufferFactor]) ->
+    {ok, prepare, State1, 0} = init([Bucket, Key, Caller, self(),
+                                     FetchConcurrency, BufferFactor]),
 
     %% purposely have the timeout happen
     %% so that we get called in the prepare
@@ -447,8 +451,10 @@ trim_block_value(RawBlockValue, _CurrentBlock,
 
 -ifdef(TEST).
 
-test_link(Bucket, Key, ContentLength, BlockSize, FetchConcurrency) ->
+test_link(Bucket, Key, ContentLength, BlockSize, FetchConcurrency,
+          BufferFactor) ->
     gen_fsm:start_link(?MODULE, [test, Bucket, Key, self(), ContentLength,
-                                 BlockSize, FetchConcurrency], []).
+                                 BlockSize, FetchConcurrency, BufferFactor],
+                       []).
 
 -endif.
