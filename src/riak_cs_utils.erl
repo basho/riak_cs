@@ -462,9 +462,11 @@ reduce_keys_and_manifests(Acc, _) ->
 -type context() :: binary().
 -type digest() :: binary().
 
--spec md5(binary()) -> digest().
-md5(Bin) ->
-    md5_final(md5_update(md5_init(), Bin)).
+-spec md5(string() | binary()) -> digest().
+md5(Bin) when is_binary(Bin) ->
+    md5_final(md5_update(md5_init(), Bin));
+md5(List) when is_list(List) ->
+    md5(list_to_binary(List)).
 
 -spec md5_init() -> context().
 md5_init() ->
