@@ -25,6 +25,12 @@
 -include_lib("riak_pb/include/riak_pb.hrl").
 -include_lib("riak_pb/include/riak_kv_pb.hrl").
 
+-ifdef(PULSE).
+-include_lib("pulse/include/pulse.hrl").
+-compile({parse_transform, pulse_instrument}).
+-compile({pulse_replace_module,[{gen_server,pulse_gen_server}]}).
+-endif.
+
 %% API
 -export([start_link/0]).
 
