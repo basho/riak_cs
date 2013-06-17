@@ -228,10 +228,10 @@ do_get_block(ReplyPid, Bucket, Key, ClusterID, UUID, BlockNumber,
     StartTime = os:timestamp(),
     GetOptions1 = [{r, 1}, {n_val, 1}, {sloppy_quorum, false}],
     GetOptions2 = [{r, 1}, {notfound_ok, false}, {basic_quorum, false}],
-    LocalClusterID = riak_cs_utils:get_cluster_id(RiakcPid),
+    LocalClusterID = riak_cs_config:cluster_id(RiakcPid),
     %% don't use proxy get if it's a local get
     %% or proxy get is disabled
-    ProxyActive = riak_cs_utils:proxy_get_active(),
+    ProxyActive = riak_cs_config:proxy_get_active(),
     UseProxyGet = ClusterID /= undefined
                     andalso LocalClusterID /= ClusterID,
     Proceed = fun(OkReply) ->

@@ -320,8 +320,7 @@ make_list_keys_request(RiakcPid, ?LOREQ{name=BucketName}) ->
     ManifestBucket = riak_cs_utils:to_bucket_name(objects, BucketName),
     riakc_pb_socket:stream_list_keys(RiakcPid,
                                      ManifestBucket,
-                                     ServerTimeout,
-                                     infinity).
+                                     ServerTimeout).
 
 -spec handle_streaming_list_keys_call(streaming_req_response(), state()) ->
     fsm_state_return().
