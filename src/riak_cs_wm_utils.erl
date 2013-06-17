@@ -225,7 +225,12 @@ ensure_doc(KeyCtx=#key_context{get_fsm_pid=undefined,
                                key=Key}, RiakcPid) ->
     %% start the get_fsm
     BinKey = list_to_binary(Key),
-    {ok, Pid} = riak_cs_get_fsm_sup:start_get_fsm(node(), Bucket, BinKey, self(), RiakcPid),
+    FetchConcurrency = riak_cs_lfs_utils:fetch_concurrency(),
+    BufferFactor = riak_cs_lfs_utils:get_fsm_buffer_size_factor(),
+    {ok, Pid} = riak_cs_get_fsm_sup:start_get_fsm(node(), Bucket, BinKey,
+                                                  self(), RiakcPid,
+                                                  FetchConcurrency,
+                                                  BufferFactor),
     Manifest = riak_cs_get_fsm:get_manifest(Pid),
     KeyCtx#key_context{get_fsm_pid=Pid, manifest=Manifest};
 ensure_doc(KeyCtx, _) ->
