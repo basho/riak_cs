@@ -18,22 +18,50 @@
 %%
 %% ---------------------------------------------------------------------
 
--module(riak_cs_get_fsm_test).
+-module(riak_cs_get_fsm_pulse).
+
+-ifdef(EQC).
+-ifdef(PULSE).
+
+-include_lib("eqc/include/eqc.hrl").
+-include_lib("eqc/include/eqc_fsm.hrl").
+-include_lib("eunit/include/eunit.hrl").
 
 -include("riak_cs.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
--ifdef(PULSE).
+
 -include_lib("pulse/include/pulse.hrl").
 -compile({parse_transform, pulse_instrument}).
--endif.
 
 -compile(export_all).
 
+-define(QC_OUT(P),
+        eqc:on_output(fun(Str, Args) ->
+                              io:format(user, Str, Args) end, P)).
+%% ===================================================================
+%% Eunit Test
+%% ===================================================================
+
+eqc_test_() ->
+    {spawn,
+     [
+      {setup,
+       fun setup/0,
+       fun cleanup/1,
+       [%% Run the quickcheck tests
+        {timeout, 60,
+         ?_assertEqual(true, eqc:quickcheck(eqc:testing_time(30, ?QC_OUT(prop_blocks_in_order()))))}
+       ]
+      }
+     ]
+    }.
+
+%% ===================================================================
+%% Helper Funcs
+%% ===================================================================
+
 setup() ->
-%    TestNode = list_to_atom("testnode" ++ integer_to_list(element(3, now())) ++
-%                                "@localhost"),
-%    {ok, _} = net_kernel:start([TestNode, longnames]),
     pulse:start(),
     application:load(sasl),
     application:load(riak_cs),
@@ -41,34 +69,8 @@ setup() ->
     error_logger:tty(false),
     application:start(lager).
 
-%% TODO:
-%% Implement this
-teardown(_) ->
-    application:stop(riak_cs),
-    application:stop(sasl),
-    net_kernel:stop().
-
-get_fsm_should_never_fail_intermittently_test_() ->
-    {setup,
-     fun setup/0,
-     fun teardown/1,
-     [
-      fun receives_manifest/0,
-      %% In a perfect testing world, we would use chunks of
-      %% various sizes.  However, due to limitations of
-      %% using riak_cs_get_fsm:test_link() which uses multiple
-      %% dummy reader procs, and the dummy readers are too dumb
-      %% to be able to create chunks of variable size, we must
-      %% choose chunk sizes where the dummy readers can give
-      %% the get FSM decent chunk sizes.
-      %%
-      %% Thus we must use values that evenly divide the
-      %% ContentLength = 10000, e.g. 1,2,5,100,1000.
-      [{timeout, 300, fun() -> [ok = (test_n_chunks_builder(X))() ||
-                                   _ <- lists:seq(1, Iters)] end} ||
-                {X, Iters} <- [{1, 50}, {2, 50}, {5, 50},
-                               {100, 10}, {1000, 2}]]
-     ]}.
+cleanup(_) ->
+    ok.
 
 calc_block_size(ContentLength, NumBlocks) ->
     Quotient = ContentLength div NumBlocks,
@@ -79,13 +81,10 @@ calc_block_size(ContentLength, NumBlocks) ->
             Quotient + 1
     end.
 
-test_n_chunks_builder(N) ->
+test_n_chunks_builder(BlockSize, NumBlocks, FetchConcurrency, BufferFactor) ->
     fun () ->
-            ContentLength = 10000,
-            BlockSize = calc_block_size(ContentLength, N),
+            ContentLength = BlockSize * NumBlocks,
             application:set_env(riak_cs, lfs_block_size, BlockSize),
-            FetchConcurrency = 2,
-            BufferFactor = 32,
             {ok, Pid} = riak_cs_get_fsm:test_link(<<"bucket">>, <<"key">>,
                                                   ContentLength, BlockSize,
                                                   FetchConcurrency,
@@ -94,23 +93,12 @@ test_n_chunks_builder(N) ->
             ?assertEqual(ContentLength, Manifest?MANIFEST.content_length),
             riak_cs_get_fsm:continue(Pid, {0, ContentLength - 1}),
             try
-                expect_n_bytes(Pid, N, ContentLength)
+                expect_n_bytes(Pid, NumBlocks, ContentLength)
             after
                 riak_cs_get_fsm:stop(Pid)
             end
     end.
 
-receives_manifest() ->
-    {ok, Pid} = riak_cs_get_fsm:test_link(<<"bucket">>, <<"key">>, 100, 10),
-    Manifest = riak_cs_get_fsm:get_manifest(Pid),
-    ?assertEqual(100, Manifest?MANIFEST.content_length),
-    riak_cs_get_fsm:stop(Pid).
-
-%% ===================================================================
-%% Helper Funcs
-%% ===================================================================
-
-%% expect_n_bytes(FsmPid, N) ->
 expect_n_bytes(FsmPid, N, Bytes) ->
     {done, Res} = lists:foldl(
                     fun(_, {done, _} = Acc) ->
@@ -132,3 +120,50 @@ expect_n_bytes(FsmPid, N, Bytes) ->
                                    Bin <- Res]),
     USorted = lists:usort(FirstBytes),
     ?assertMatch(FirstBytes, USorted).
+
+%% ===================================================================
+%% EQC Properties
+%% ===================================================================
+
+run_n_chunks(BlockSize, NumBlocks, FetchConcurrency, BufferFactor) ->
+    (test_n_chunks_builder(BlockSize, NumBlocks, FetchConcurrency, BufferFactor))().
+
+prop_blocks_in_order() ->
+    ?FORALL({BlockSize, NumBlocks, FetchConcurrency, BufferFactor},
+            {block_size(), num_blocks(), fetch_concurrency(), buffer_factor()},
+            ?PULSE(Result,
+                   run_n_chunks(BlockSize, NumBlocks,
+                                FetchConcurrency, BufferFactor),
+                   ?WHENFAIL(io:format("~p /= ~p~n", [Result, ok]),
+                             Result == ok))).
+
+%% ===================================================================
+%% Generators
+%% ===================================================================
+
+block_size() ->
+    %% lower bound is `4' because we treat binaries
+    %% as integers, and need at least 4 bytes.
+    choose(4, 64).
+
+num_blocks() ->
+    choose(1, 64).
+
+fetch_concurrency() ->
+    choose(1, 16).
+
+buffer_factor() ->
+    frequency([{1, 1}, {3, choose(2, 64)}]).
+
+%% ===================================================================
+%% Test Helpers
+%% ===================================================================
+
+test() ->
+    test(500).
+
+test(Iterations) ->
+    eqc:quickcheck(eqc:numtests(Iterations, prop_blocks_in_order())).
+
+-endif. %% PULSE
+-endif. %% EQC

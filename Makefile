@@ -8,6 +8,7 @@ ERLANG_BIN       = $(shell dirname $(shell which erl))
 REBAR           ?= $(BASE_DIR)/rebar
 OVERLAY_VARS    ?=
 CS_HTTP_PORT    ?= 8080
+PULSE_TESTS = riak_cs_get_fsm_pulse
 
 .PHONY: rel stagedevrel deps test
 
@@ -52,6 +53,10 @@ distclean: clean
 
 test: all
 	@./rebar skip_deps=true eunit
+
+pulse: all
+	@rm -rf $(BASE_DIR)/.eunit
+	@./rebar -D PULSE eunit skip_deps=true suites=$(PULSE_TESTS)
 
 test-client: test-clojure test-python test-erlang test-ruby test-php
 

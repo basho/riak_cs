@@ -41,7 +41,7 @@
 -include("riak_cs.hrl").
 
 %% API
--export([start_link/4,
+-export([start_link/6,
          stop/1,
          continue/2,
          manifest/2,
@@ -94,10 +94,12 @@
 %% Public API
 %% ===================================================================
 
--spec start_link(binary(), binary(), pid(), pid()) -> {ok, pid()} | {error, term()}.
+-spec start_link(binary(), binary(), pid(), pid(), pos_integer(),
+                 pos_integer()) -> {ok, pid()} | {error, term()}.
 
-start_link(Bucket, Key, Caller, RiakPid) ->
-    gen_fsm:start_link(?MODULE, [Bucket, Key, Caller, RiakPid], []).
+start_link(Bucket, Key, Caller, RiakPid, FetchConcurrency, BufferFactor) ->
+    gen_fsm:start_link(?MODULE, [Bucket, Key, Caller, RiakPid,
+                                FetchConcurrency, BufferFactor], []).
 
 stop(Pid) ->
     gen_fsm:send_event(Pid, stop).
