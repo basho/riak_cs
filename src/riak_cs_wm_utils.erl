@@ -226,7 +226,7 @@ ensure_doc(KeyCtx=#key_context{get_fsm_pid=undefined,
     %% start the get_fsm
     BinKey = list_to_binary(Key),
     FetchConcurrency = riak_cs_lfs_utils:fetch_concurrency(),
-    BufferFactor = riak_cs_lfs_utils:fetch_buffer_factor(),
+    BufferFactor = riak_cs_lfs_utils:get_fsm_buffer_size_factor(),
     {ok, Pid} = riak_cs_get_fsm_sup:start_get_fsm(node(), Bucket, BinKey,
                                                   self(), RiakcPid,
                                                   FetchConcurrency,
