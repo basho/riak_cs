@@ -199,9 +199,11 @@ accept_body(RD, Ctx=#context{local_context=#key_context{get_fsm_pid=GetFsmPid,
                               riak_cs_wm_utils:bucket_owner(Bucket, RiakPid)),
                 {ok, CannedAcl};
             _ ->
-                riak_cs_acl_utils:acl_from_xml(Body,
-                                               User?RCS_USER.key_id,
-                                               RiakPid)
+                riak_cs_acl_utils:validate_acl(
+                  riak_cs_acl_utils:acl_from_xml(Body,
+                                                 User?RCS_USER.key_id,
+                                                 RiakPid),
+                  User?RCS_USER.canonical_id)
         end,
     case AclRes of
         {ok, Acl} ->

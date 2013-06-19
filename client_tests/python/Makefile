@@ -1,19 +1,15 @@
-.PHONY: test clean all
-.DEFAULT: all
+.PHONY: boto_tests ceph_tests
 
-DEPS = env/lib/python2.7/site-packages
-BIN = env/bin
+all:
+	$(MAKE) -C ./boto_tests
+	$(MAKE) -C ./ceph_tests
 
-all: test
+boto_tests:
+	$(MAKE) -C ./boto_tests
 
-env:
-	@virtualenv env
-
-$(DEPS) $(BIN): requirements.txt env
-	@env/bin/pip install -r requirements.txt
-
-test: $(DEPS) $(BIN)
-	@env/bin/python boto_test.py
+ceph_tests:
+	$(MAKE) -C ./ceph_tests
 
 clean:
-	@rm -rf env
+	$(MAKE) -C ./boto_tests clean
+	$(MAKE) -C ./ceph_tests clean
