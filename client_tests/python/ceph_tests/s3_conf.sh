@@ -2,18 +2,19 @@
 
 usage()
 {
-    echo "$0 USERNAME EMAIL [HOST PORT]"
+    echo "$0 [HOST PORT]"
 }
 
 if [ -z "$1" ]
-  then
+then
     HOST="localhost"
 else
       HOST=$1
 fi
+
 if [ -z "$2" ]
-  then
-    PORT=8080
+then
+    PORT=${CS_HTTP_PORT:=8080}
 else
     PORT=$2
 fi
@@ -49,8 +50,8 @@ host = s3.amazonaws.com
 ## uncomment the port to use something other than 80
 port = 80
 
-proxy = localhost
-proxy_port = 8080
+proxy = $HOST
+proxy_port = $PORT
 
 ## say \"no\" to disable TLS
 is_secure = no

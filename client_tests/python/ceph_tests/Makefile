@@ -16,7 +16,8 @@ $(DEPS) $(BIN): s3-tests env
 	@cd s3-tests && env/bin/pip install -r requirements.txt
 
 test: $(DEPS) $(BIN)
-	@./s3_conf.sh > s3-tests/s3test.conf
+	@echo $(CS_HTTP_PORT)
+	@./s3_conf.sh &> s3-tests/s3test.conf
 	@cd s3-tests && S3TEST_CONF=s3test.conf env/bin/nosetests s3tests.functional.test_s3
 
 clean:
