@@ -13,7 +13,7 @@ src/riak_cs_storage.erl:81: Warning object_size_map/3 calls undefined function r
 src/riak_cs_utils.erl:1467: Warning get_cluster_id/1 calls undefined function riak_repl_pb_api:get_clusterid/2
 ######## testing code
 src/riak_cs_manifest_fsm.erl:155: Warning init/1 calls undefined function riakc_pb_socket_fake:start_link/0
-src/riak_cs_get_fsm.erl:115: Warning init/1 calls undefined function riak_cs_dummy_reader:get_manifest/1
-src/riak_cs_get_fsm.erl:115: Warning init/1 calls undefined function riak_cs_dummy_reader:start_link/1
+src/riak_cs_get_fsm.erl:[0-9]+: Warning init/1 calls undefined function riak_cs_dummy_reader:get_manifest/1
+src/riak_cs_get_fsm.erl:[0-9]+: Warning init/1 calls undefined function riak_cs_dummy_reader:start_link/1
 ######## optional vm features
 src/riak_cs_sup.erl:59: Warning init/1 calls undefined function dtrace:init/0

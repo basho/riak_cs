@@ -114,7 +114,13 @@ prop_get_fsm() ->
 %%====================================================================
 
 start_fsm(ContentLength, BlockSize) ->
-    {ok, FSMPid} = riak_cs_get_fsm:test_link(<<"bucket">>, <<"key">>, ContentLength, BlockSize),
+    %% these should probably turn into inputs for the EQC test
+    FetchConcurrency = 2,
+    BufferFactor = 32,
+    {ok, FSMPid} = riak_cs_get_fsm:test_link(<<"bucket">>, <<"key">>,
+                                             ContentLength, BlockSize,
+                                             FetchConcurrency,
+                                             BufferFactor),
     _Manifest = riak_cs_get_fsm:get_manifest(FSMPid),
     riak_cs_get_fsm:continue(FSMPid, {0, ContentLength-1}),
     FSMPid.

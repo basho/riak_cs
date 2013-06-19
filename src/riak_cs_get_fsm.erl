@@ -24,18 +24,24 @@
 
 -behaviour(gen_fsm).
 
+-ifdef(PULSE).
+-include_lib("pulse/include/pulse.hrl").
+-compile({parse_transform, pulse_instrument}).
+-compile({pulse_replace_module,[{gen_fsm,pulse_gen_fsm}]}).
+-endif.
+
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 
 %% Test API
--export([test_link/4]).
+-export([test_link/6]).
 
 -endif.
 
 -include("riak_cs.hrl").
 
 %% API
--export([start_link/4,
+-export([start_link/6,
          stop/1,
          continue/2,
          manifest/2,
@@ -67,12 +73,15 @@
                 bucket :: term(),
                 caller :: reference(),
                 key :: term(),
+                fetch_concurrency :: pos_integer(),
+                buffer_factor :: pos_integer(),
                 got_blocks=orddict:new() :: orddict:orddict(),
                 manifest :: term(),
                 blocks_order :: [block_name()],
                 blocks_intransit=queue:new() :: queue(),
                 test=false :: boolean(),
                 total_blocks :: pos_integer(),
+                num_sent=0 :: non_neg_integer(),
                 initial_block :: block_name(),
                 final_block :: block_name(),
                 skip_bytes_initial :: non_neg_integer(),
@@ -85,10 +94,12 @@
 %% Public API
 %% ===================================================================
 
--spec start_link(binary(), binary(), pid(), pid()) -> {ok, pid()} | {error, term()}.
+-spec start_link(binary(), binary(), pid(), pid(), pos_integer(),
+                 pos_integer()) -> {ok, pid()} | {error, term()}.
 
-start_link(Bucket, Key, Caller, RiakPid) ->
-    gen_fsm:start_link(?MODULE, [Bucket, Key, Caller, RiakPid], []).
+start_link(Bucket, Key, Caller, RiakPid, FetchConcurrency, BufferFactor) ->
+    gen_fsm:start_link(?MODULE, [Bucket, Key, Caller, RiakPid,
+                                FetchConcurrency, BufferFactor], []).
 
 stop(Pid) ->
     gen_fsm:send_event(Pid, stop).
@@ -112,8 +123,9 @@ chunk(Pid, ChunkSeq, ChunkValue) ->
 %% gen_fsm callbacks
 %% ====================================================================
 
-init([Bucket, Key, Caller, RiakPid])
-  when is_binary(Bucket), is_binary(Key), is_pid(Caller), is_pid(RiakPid) ->
+init([Bucket, Key, Caller, RiakPid, FetchConcurrency, BufferFactor])
+  when is_binary(Bucket), is_binary(Key), is_pid(Caller), is_pid(RiakPid),
+        FetchConcurrency > 0, BufferFactor > 0 ->
     %% We need to do this (the monitor) for two reasons
     %% 1. We're started through a supervisor, so the
     %%    proc that actually intends to start us isn't
@@ -135,10 +147,14 @@ init([Bucket, Key, Caller, RiakPid])
     State = #state{bucket=Bucket,
                    caller=CallerRef,
                    key=Key,
-                   riakc_pid=RiakPid},
+                   riakc_pid=RiakPid,
+                   buffer_factor=BufferFactor,
+                   fetch_concurrency=FetchConcurrency},
     {ok, prepare, State, 0};
-init([test, Bucket, Key, ContentLength, BlockSize]) ->
-    {ok, prepare, State1, 0} = init([Bucket, Key, self(), self()]),
+init([test, Bucket, Key, Caller, ContentLength, BlockSize, FetchConcurrency,
+      BufferFactor]) ->
+    {ok, prepare, State1, 0} = init([Bucket, Key, Caller, self(),
+                                     FetchConcurrency, BufferFactor]),
 
     %% purposely have the timeout happen
     %% so that we get called in the prepare
@@ -152,7 +168,7 @@ init([test, Bucket, Key, ContentLength, BlockSize]) ->
                                                     BlockSize]),
                link(ReaderPid),
                ReaderPid
-           end || _ <- lists:seq(1,5)],
+           end || _ <- lists:seq(1, FetchConcurrency)],
     {ok, Manifest} = riak_cs_dummy_reader:get_manifest(hd(RPs)),
     {ok, waiting_value, State1#state{free_readers=RPs,
                                      manifest=Manifest,
@@ -190,6 +206,7 @@ waiting_continue_or_stop(stop, State) ->
 waiting_continue_or_stop({continue, Range}, #state{manifest=Manifest,
                                                    bucket=BucketName,
                                                    key=Key,
+                                                   fetch_concurrency=FetchConcurrency,
                                                    free_readers=Readers,
                                                    riakc_pid=RiakPid}=State) ->
     {BlocksOrder, SkipInitial, KeepFinal} =
@@ -208,7 +225,7 @@ waiting_continue_or_stop({continue, Range}, #state{manifest=Manifest,
                 undefined ->
                     FreeReaders =
                     riak_cs_block_server:start_block_servers(RiakPid,
-                        riak_cs_lfs_utils:fetch_concurrency()),
+                        FetchConcurrency),
                     _ = lager:debug("Block Servers: ~p", [FreeReaders]);
                 _ ->
                     FreeReaders = Readers
@@ -229,11 +246,15 @@ waiting_continue_or_stop(Event, From, State) ->
                    [self(), Event, From]),
     {next_state, waiting_continue_or_stop, State}.
 
+waiting_chunks(get_next_chunk, From, State=#state{num_sent=TotalNumBlocks,
+                                                  total_blocks=TotalNumBlocks}) ->
+    _ = gen_fsm:reply(From, {done, <<>>}),
+    {stop, normal, State};
 waiting_chunks(get_next_chunk, From, State) ->
     case perhaps_send_to_user(From, State) of
         done ->
-            gen_fsm:reply(From, {done, <<>>}),
-            {stop, normal, State};
+            UpdState = State#state{from=From},
+            {next_state, waiting_chunks, read_blocks(UpdState)};
         {sent, UpdState} ->
             Got = UpdState#state.got_blocks,
             GotSize = orddict:size(Got),
@@ -248,6 +269,7 @@ waiting_chunks(get_next_chunk, From, State) ->
     end.
 
 perhaps_send_to_user(From, #state{got_blocks=Got,
+                                  num_sent=NumSent,
                                   blocks_intransit=Intransit}=State) ->
     case queue:out(Intransit) of
         {empty, _} ->
@@ -260,6 +282,7 @@ perhaps_send_to_user(From, #state{got_blocks=Got,
                     %% with an async event func and must return next_state.
                     gen_fsm:reply(From, {chunk, Block}),
                     {sent, State#state{got_blocks=orddict:erase(NextBlock, Got),
+                                       num_sent=NumSent+1,
                                        blocks_intransit=UpdIntransit}};
                 error ->
                     {not_sent, State#state{from=From}}
@@ -268,7 +291,7 @@ perhaps_send_to_user(From, #state{got_blocks=Got,
 
 waiting_chunks(timeout, State = #state{got_blocks = Got}) ->
     GotSize = orddict:size(Got),
-    lager:debug("starting fetch again with ~p left in queue", [GotSize]),
+    _ = lager:debug("starting fetch again with ~p left in queue", [GotSize]),
     UpdState = read_blocks(State),
     {next_state, waiting_chunks, UpdState};
 
@@ -430,7 +453,10 @@ trim_block_value(RawBlockValue, _CurrentBlock,
 
 -ifdef(TEST).
 
-test_link(Bucket, Key, ContentLength, BlockSize) ->
-    gen_fsm:start_link(?MODULE, [test, Bucket, Key, ContentLength, BlockSize], []).
+test_link(Bucket, Key, ContentLength, BlockSize, FetchConcurrency,
+          BufferFactor) ->
+    gen_fsm:start_link(?MODULE, [test, Bucket, Key, self(), ContentLength,
+                                 BlockSize, FetchConcurrency, BufferFactor],
+                       []).
 
 -endif.
