@@ -22,6 +22,12 @@
 
 -behaviour(gen_server).
 
+-ifdef(PULSE).
+-include_lib("pulse/include/pulse.hrl").
+-compile({parse_transform, pulse_instrument}).
+-compile({pulse_replace_module,[{gen_server,pulse_gen_server}]}).
+-endif.
+
 -include("riak_cs.hrl").
 -include_lib("riak_pb/include/riak_pb_kv_codec.hrl").
 
