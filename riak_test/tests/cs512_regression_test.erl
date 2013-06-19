@@ -44,7 +44,7 @@ delete(UserConfig) ->
 
 assert_notfound(UserConfig) ->
     ?assertException(_,
-        {aws_error,{http_error,404,"Object Not Found",<<>>}},
+        {aws_error, {http_error, 404, "Object Not Found", _}},
         erlcloud_s3:get_object(?BUCKET, ?KEY, UserConfig)).
 
 setup() ->

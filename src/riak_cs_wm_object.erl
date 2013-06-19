@@ -55,7 +55,9 @@ malformed_request(RD,Ctx=#context{local_context=LocalCtx0}) ->
 %% directly returning from the {@link forbidden/2} webmachine export.
 -spec authorize(#wm_reqdata{}, #context{}) ->
                        {boolean() | {halt, term()}, #wm_reqdata{}, #context{}}.
-authorize(RD, Ctx0=#context{local_context=LocalCtx0, riakc_pid=RiakPid}) ->
+authorize(RD, Ctx0=#context{local_context=LocalCtx0,
+                            response_module=ResponseMod,
+                            riakc_pid=RiakPid}) ->
     Method = wrq:method(RD),
     RequestedAccess =
         riak_cs_acl_utils:requested_access(Method, false),
@@ -65,9 +67,13 @@ authorize(RD, Ctx0=#context{local_context=LocalCtx0, riakc_pid=RiakPid}) ->
     %% Final step of {@link forbidden/2}: Authentication succeeded,
     case {Method, LocalCtx#key_context.manifest} of
         {'GET', notfound} ->
-            {{halt, 404}, riak_cs_access_log_handler:set_user(Ctx#context.user, RD), Ctx};
+            ResponseMod:api_error(no_such_key,
+                                  riak_cs_access_log_handler:set_user(Ctx#context.user, RD),
+                                  Ctx);
         {'HEAD', notfound} ->
-            {{halt, 404}, riak_cs_access_log_handler:set_user(Ctx#context.user, RD), Ctx};
+            ResponseMod:api_error(no_such_key,
+                                  riak_cs_access_log_handler:set_user(Ctx#context.user, RD),
+                                  Ctx);
         _ ->
             riak_cs_wm_utils:object_access_authorize_helper(object, true, RD, Ctx)
     end.
@@ -245,38 +251,38 @@ handle_delete_object({ok, _UUIDsMarkedforDelete}, UserName, BFile_str, RD, Ctx) 
     {true, RD, Ctx}.
 
 -spec content_types_accepted(#wm_reqdata{}, #context{}) -> {[{string(), atom()}], #wm_reqdata{}, #context{}}.
-content_types_accepted(RD, Ctx=#context{local_context=LocalCtx0}) ->
-    case wrq:get_req_header("Content-Type", RD) of
-        undefined ->
-            DefaultCType = "application/octet-stream",
-            LocalCtx = LocalCtx0#key_context{putctype=DefaultCType},
-            {[{DefaultCType, accept_body}],
-             RD,
-             Ctx#context{local_context=LocalCtx}};
-        %% This was shamelessly ripped out of
-        %% https://github.com/basho/riak_kv/blob/0d91ca641a309f2962a216daa0cee869c82ffe26/src/riak_kv_wm_object.erl#L492
-        CType ->
-            {Media, _Params} = mochiweb_util:parse_header(CType),
-            case string:tokens(Media, "/") of
-                [_Type, _Subtype] ->
-                    %% accept whatever the user says
-                    LocalCtx = LocalCtx0#key_context{putctype=Media},
-                    {[{Media, accept_body}], RD, Ctx#context{local_context=LocalCtx}};
-                _ ->
-                    %% TODO:
-                    %% Maybe we should have caught
-                    %% this in malformed_request?
-                    {[],
-                     wrq:set_resp_header(
-                       "Content-Type",
-                       "text/plain",
-                       wrq:set_resp_body(
-                         ["\"", Media, "\""
-                          " is not a valid media type"
-                          " for the Content-type header.\n"],
-                         RD)),
-                     Ctx}
-            end
+content_types_accepted(RD, Ctx) ->
+    content_types_accepted(wrq:get_req_header("Content-Type", RD), RD, Ctx).
+
+-spec content_types_accepted(undefined | string(), #wm_reqdata{}, #context{}) ->
+                                    {[{string(), atom()}], #wm_reqdata{}, #context{}}.
+content_types_accepted(CT, RD, Ctx)
+  when CT =:= undefined;
+       CT =:= [] ->
+    content_types_accepted("application/octet-stream", RD, Ctx);
+content_types_accepted(CT, RD, Ctx=#context{local_context=LocalCtx0}) ->
+    %% This was shamelessly ripped out of
+    %% https://github.com/basho/riak_kv/blob/0d91ca641a309f2962a216daa0cee869c82ffe26/src/riak_kv_wm_object.erl#L492
+    {Media, _Params} = mochiweb_util:parse_header(CT),
+    case string:tokens(Media, "/") of
+        [_Type, _Subtype] ->
+            %% accept whatever the user says
+            LocalCtx = LocalCtx0#key_context{putctype=Media},
+            {[{Media, accept_body}], RD, Ctx#context{local_context=LocalCtx}};
+        _ ->
+            %% TODO:
+            %% Maybe we should have caught
+            %% this in malformed_request?
+            {[],
+             wrq:set_resp_header(
+               "Content-Type",
+               "text/plain",
+               wrq:set_resp_body(
+                 ["\"", Media, "\""
+                  " is not a valid media type"
+                  " for the Content-type header.\n"],
+                 RD)),
+             Ctx}
     end.
 
 -spec accept_body(#wm_reqdata{}, #context{}) -> {{halt, integer()}, #wm_reqdata{}, #context{}}.
