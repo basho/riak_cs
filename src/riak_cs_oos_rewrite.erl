@@ -36,6 +36,7 @@
 %% @doc Function to rewrite headers prior to processing by webmachine.
 -spec rewrite(atom(), atom(), {integer(), integer()}, gb_tree(), string()) ->
                      {gb_tree(), string()}.
+
 rewrite(Method, _Scheme, _Vsn, Headers, RawPath) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"rewrite">>),
     {Path, QueryString, _} = mochiweb_util:urlsplit_path(RawPath),
@@ -44,6 +45,7 @@ rewrite(Method, _Scheme, _Vsn, Headers, RawPath) ->
     {RewrittenHeaders, rewrite_path(ApiVsn, Method, RestPath, QueryString)}.
 
 -spec original_resource(term()) -> undefined | {string(), [{term(),term()}]}.
+
 original_resource(RD) ->
     case wrq:get_req_header(?RCS_REWRITE_HEADER, RD) of
         undefined -> undefined;
@@ -56,12 +58,14 @@ original_resource(RD) ->
 %% the account identifier, and the remainder of the path information
 %% pertaining to the requested object storage operation.
 -spec parse_path(string()) -> {string(), string(), string()}.
+
 parse_path(Path) ->
     [ApiVsn, Account | RestPath] = string:tokens(Path, "/"),
     {ApiVsn, Account, "/" ++ string:join(RestPath, "/")}.
 
 %% @doc Add headers for the raw path, the API version, and the account.
 -spec rewrite_headers(gb_tree(), string(), string(), string()) -> gb_tree().
+
 rewrite_headers(Headers, RawPath, ApiVsn, Account) ->
     UpdHdrs0 = mochiweb_headers:default(?RCS_REWRITE_HEADER, RawPath, Headers),
     UpdHdrs1 = mochiweb_headers:enter(?OOS_API_VSN_HEADER, ApiVsn, UpdHdrs0),
@@ -71,17 +75,20 @@ rewrite_headers(Headers, RawPath, ApiVsn, Account) ->
 %% the API is supported since right now it is the only version that
 %% exists, but crash if another version is specfified.
 -spec rewrite_path(string(), atom(), string(), string()) -> string().
+
 rewrite_path("v1", Method, Path, QS) ->
     rewrite_v1_path(Method, Path, QS).
 
 %% @doc Internal function to handle rewriting the URL
 -spec rewrite_v1_path(atom(),string(), string()) -> string().
+
 rewrite_v1_path(_Method, "/", _QS) ->
     "/buckets";
 rewrite_v1_path(Method, Path, QS) ->
     {Bucket, UpdPath} = separate_bucket_from_path(string:tokens(Path, [$/])),
     rewrite_v1_path(Method, UpdPath, QS, Bucket).
 
+-spec rewrite_v1_path(_,[any()],_,nonempty_string()) -> [any()].
 rewrite_v1_path(_Method, Path, _QS, "riak-cs") ->
     "/riak-cs" ++ Path;
 rewrite_v1_path(_Method, Path, _QS, "usage") ->
@@ -101,6 +108,7 @@ rewrite_v1_path(_Method, Path, QS, Bucket) ->
 %% @doc Separate the bucket name from the rest of the raw path in the
 %% case where the bucket name is included in the path.
 -spec separate_bucket_from_path([string()]) -> {string(), term()}.
+
 separate_bucket_from_path([Bucket | []]) ->
     {Bucket, "/"};
 separate_bucket_from_path([Bucket | RestPath]) ->
@@ -109,6 +117,7 @@ separate_bucket_from_path([Bucket | RestPath]) ->
 %% @doc Format a bucket operation query string to conform the the
 %% rewrite rules.
 -spec format_bucket_qs(string()) -> string().
+
 format_bucket_qs([]) ->
     "/objects";
 format_bucket_qs("delete") ->

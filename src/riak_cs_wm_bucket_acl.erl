@@ -36,15 +36,18 @@
 
 %% @doc Get the list of methods this resource supports.
 -spec allowed_methods() -> [atom()].
+
 allowed_methods() ->
     ['GET', 'PUT'].
 
 -spec content_types_provided(#wm_reqdata{}, #context{}) -> {[{string(), atom()}], #wm_reqdata{}, #context{}}.
+
 content_types_provided(RD, Ctx) ->
     {[{"application/xml", to_xml}], RD, Ctx}.
 
 -spec content_types_accepted(#wm_reqdata{}, #context{}) ->
                                     {[{string(), atom()}], #wm_reqdata{}, #context{}}.
+
 content_types_accepted(RD, Ctx) ->
     case wrq:get_req_header("content-type", RD) of
         undefined ->
@@ -55,12 +58,14 @@ content_types_accepted(RD, Ctx) ->
     end.
 
 -spec authorize(#wm_reqdata{}, #context{}) -> {boolean() | {halt, non_neg_integer()}, #wm_reqdata{}, #context{}}.
+
 authorize(RD, Ctx) ->
     riak_cs_wm_utils:bucket_access_authorize_helper(bucket_acl, true, RD, Ctx).
 
 
 -spec to_xml(#wm_reqdata{}, #context{}) ->
                     {binary() | {'halt', non_neg_integer()}, #wm_reqdata{}, #context{}}.
+
 to_xml(RD, Ctx=#context{start_time=StartTime,
                         user=User,
                         bucket=Bucket,
@@ -84,6 +89,7 @@ to_xml(RD, Ctx=#context{start_time=StartTime,
 
 %% @doc Process request body on `PUT' request.
 -spec accept_body(#wm_reqdata{}, #context{}) -> {{halt, non_neg_integer()}, #wm_reqdata{}, #context{}}.
+
 accept_body(RD, Ctx=#context{user=User,
                              user_object=UserObj,
                              bucket=Bucket,

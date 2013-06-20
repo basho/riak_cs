@@ -33,20 +33,24 @@
 
 %% @doc Get the list of methods this resource supports.
 -spec allowed_methods() -> [atom()].
+
 allowed_methods() ->
     ['HEAD', 'PUT', 'DELETE'].
 
 -spec content_types_provided(#wm_reqdata{}, #context{}) -> {[{string(), atom()}], #wm_reqdata{}, #context{}}.
+
 content_types_provided(RD, Ctx) ->
     {[{"application/xml", to_xml}], RD, Ctx}.
 
 -spec content_types_accepted(#wm_reqdata{}, #context{}) ->
                                     {[{string(), atom()}], #wm_reqdata{}, #context{}}.
+
 content_types_accepted(RD, Ctx) ->
     content_types_accepted(wrq:get_req_header("content-type", RD), RD, Ctx).
 
 -spec content_types_accepted(undefined | string(), #wm_reqdata{}, #context{}) ->
                                     {[{string(), atom()}], #wm_reqdata{}, #context{}}.
+
 content_types_accepted(CT, RD, Ctx) when CT =:= undefined;
                                          CT =:= [] ->
     content_types_accepted("application/octet-stream", RD, Ctx);
@@ -55,6 +59,7 @@ content_types_accepted(CT, RD, Ctx) ->
     {[{Media, accept_body}], RD, Ctx}.
 
 -spec authorize(#wm_reqdata{}, #context{}) -> {boolean(), #wm_reqdata{}, #context{}}.
+
 authorize(RD, #context{user=User}=Ctx) ->
     Method = wrq:method(RD),
     RequestedAccess =
@@ -78,6 +83,7 @@ authorize(RD, #context{user=User}=Ctx) ->
 
 -spec to_xml(#wm_reqdata{}, #context{}) ->
                     {binary() | {'halt', term()}, #wm_reqdata{}, #context{}}.
+
 to_xml(RD, Ctx) ->
     handle_read_request(RD, Ctx).
 
@@ -103,6 +109,7 @@ handle_read_request(RD, Ctx=#context{user=User,
 
 %% @doc Process request body on `PUT' request.
 -spec accept_body(#wm_reqdata{}, #context{}) -> {{halt, integer()}, #wm_reqdata{}, #context{}}.
+
 accept_body(RD, Ctx=#context{user=User,
                              user_object=UserObj,
                              bucket=Bucket,
@@ -137,6 +144,7 @@ accept_body(RD, Ctx=#context{user=User,
 %% @doc Callback for deleting a bucket.
 -spec delete_resource(#wm_reqdata{}, #context{}) ->
                              {boolean() | {'halt', term()}, #wm_reqdata{}, #context{}}.
+
 delete_resource(RD, Ctx=#context{user=User,
                                  user_object=UserObj,
                                  response_module=ResponseMod,

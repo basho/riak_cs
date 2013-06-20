@@ -47,6 +47,7 @@
 %% ===================================================================
 
 -spec from_json(string()) -> {struct, term()} | [term()] | {error, decode_failed}.
+
 from_json(JsonString) ->
     case catch mochijson2:decode(JsonString) of
         {'EXIT', _} ->
@@ -59,6 +60,7 @@ from_json(JsonString) ->
 -type path_query() :: {find, match_spec()}.
 -type path() :: [binary() | path_query()].
 -spec get({struct, term()} | [term()] | undefined, path()) -> term().
+
 get({struct, _}=Object, Path) ->
     follow_path(Object, Path);
 get(Array, [{find, Query} | RestPath]) when is_list(Array) ->
@@ -71,6 +73,7 @@ get(not_found, _) ->
     {error, not_found}.
 
 -spec to_json(term()) -> binary().
+
 to_json(?KEYSTONE_S3_AUTH_REQ{}=Req) ->
     Inner = {struct, [{<<"access">>, Req?KEYSTONE_S3_AUTH_REQ.access},
                       {<<"signature">>, Req?KEYSTONE_S3_AUTH_REQ.signature},
@@ -82,6 +85,7 @@ to_json([]) ->
     [].
 
 -spec value_or_default({ok, term()} | {error, term()}, term()) -> term().
+
 value_or_default({error, Reason}, Default) ->
     _ = lager:debug("JSON error: ~p", [Reason]),
     Default;
@@ -94,6 +98,7 @@ value_or_default({ok, Value}, _) ->
 
 -spec follow_path(tuple() | [term()] | undefined, path()) ->
                          {ok, term()} | {error, not_found}.
+
 follow_path(undefined, _) ->
     {error, not_found};
 follow_path(Value, []) ->
@@ -111,6 +116,7 @@ follow_path({struct, JsonItems}, [Key | RestPath]) ->
     follow_path(Value, RestPath).
 
 -spec find([term()], match_spec()) -> undefined | {struct, term()}.
+
 find(Array, {key, Key, Value}) ->
     lists:foldl(key_folder(Key, Value), not_found, Array);
 find(Array, {index, Index}) when Index =< length(Array) ->
@@ -118,6 +124,7 @@ find(Array, {index, Index}) when Index =< length(Array) ->
 find(_, {index, _}) ->
     undefined.
 
+-spec key_folder(_,_) -> fun((_,_) -> any()).
 key_folder(Key, Value) ->
     fun({struct, Items}=X, Acc) ->
             case lists:keyfind(Key, 1, Items) of
@@ -131,6 +138,7 @@ key_folder(Key, Value) ->
     end.
 
 -spec target_tuple_values(tuple(), proplists:proplist()) -> tuple().
+
 target_tuple_values(Keys, JsonItems) ->
     list_to_tuple(
       [proplists:get_value(element(Index, Keys), JsonItems)

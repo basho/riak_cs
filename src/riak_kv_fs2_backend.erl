@@ -68,16 +68,19 @@
 %% @doc Return the major version of the
 %% current API.
 -spec api_version() -> {ok, integer()}.
+
 api_version() ->
     {ok, ?API_VERSION}.
 
 %% @doc Return the capabilities of the backend.
 -spec capabilities(state()) -> {ok, [atom()]}.
+
 capabilities(_) ->
     {ok, ?CAPABILITIES}.
 
 %% @doc Return the capabilities of the backend.
 -spec capabilities(riak_object:bucket(), state()) -> {ok, [atom()]}.
+
 capabilities(_, _) ->
     {ok, ?CAPABILITIES}.
 
@@ -86,6 +89,7 @@ capabilities(_, _) ->
 %%      representing the base directory where this backend should
 %%      store its files.
 -spec start(integer(), config()) -> {ok, state()}.
+
 start(Partition, Config) ->
     PartitionName = integer_to_list(Partition),
     ConfigRoot = app_helper:get_prop_or_env(fs2_backend_data_root, Config, riak_kv),
@@ -100,6 +104,7 @@ start(Partition, Config) ->
 
 %% @doc Stop the backend
 -spec stop(state()) -> ok.
+
 stop(_State) -> ok.
 
 %% @doc Get the object stored at the given bucket/key pair
@@ -107,6 +112,7 @@ stop(_State) -> ok.
                  {ok, any(), state()} |
                  {ok, not_found, state()} |
                  {error, term(), state()}.
+
 get(Bucket, Key, State) ->
     File = location(State, {Bucket, Key}),
     case filelib:is_file(File) of
@@ -128,6 +134,7 @@ get(Bucket, Key, State) ->
 -spec put(riak_object:bucket(), riak_object:key(), [index_spec()], binary(), state()) ->
                  {ok, state()} |
                  {error, term(), state()}.
+
 put(Bucket, PrimaryKey, _IndexSpecs, Val, State) ->
     File = location(State, {Bucket, PrimaryKey}),
     case filelib:ensure_dir(File) of
@@ -139,6 +146,7 @@ put(Bucket, PrimaryKey, _IndexSpecs, Val, State) ->
 -spec delete(riak_object:bucket(), riak_object:key(), [index_spec()], state()) ->
                     {ok, state()} |
                     {error, term(), state()}.
+
 delete(Bucket, Key, _IndexSpecs, State) ->
     File = location(State, {Bucket, Key}),
     case file:delete(File) of
@@ -152,6 +160,7 @@ delete(Bucket, Key, _IndexSpecs, State) ->
                    any(),
                    [],
                    state()) -> {ok, any()} | {async, fun()}.
+
 fold_buckets(FoldBucketsFun, Acc, Opts, State) ->
     FoldFun = fold_buckets_fun(FoldBucketsFun),
     BucketFolder =
@@ -172,6 +181,7 @@ fold_buckets(FoldBucketsFun, Acc, Opts, State) ->
                 any(),
                 [{atom(), term()}],
                 state()) -> {ok, term()} | {async, fun()}.
+
 fold_keys(FoldKeysFun, Acc, Opts, State) ->
     Bucket =  proplists:get_value(bucket, Opts),
     FoldFun = fold_keys_fun(FoldKeysFun, Bucket),
@@ -191,6 +201,7 @@ fold_keys(FoldKeysFun, Acc, Opts, State) ->
                    any(),
                    [{atom(), term()}],
                    state()) -> {ok, any()} | {async, fun()}.
+
 fold_objects(FoldObjectsFun, Acc, Opts, State) ->
     %% Warning: This ain't pretty. Hold your nose.
     Bucket =  proplists:get_value(bucket, Opts),
@@ -209,6 +220,7 @@ fold_objects(FoldObjectsFun, Acc, Opts, State) ->
 %% @doc Delete all objects from this backend
 %% and return a fresh reference.
 -spec drop(state()) -> {ok, state()}.
+
 drop(State=#state{dir=Dir}) ->
     _ = [file:delete(location(State, BK)) || BK <- list(State)],
     Cmd = io_lib:format("rm -Rf ~s", [Dir]),
@@ -219,16 +231,19 @@ drop(State=#state{dir=Dir}) ->
 %% @doc Returns true if this backend contains any
 %% non-tombstone values; otherwise returns false.
 -spec is_empty(state()) -> boolean().
+
 is_empty(S) ->
     list(S) == [].
 
 %% @doc Get the status information for this fs backend
 -spec status(state()) -> [no_status_sorry | {atom(), term()}].
+
 status(_S) ->
     [no_status_sorry].
 
 %% @doc Register an asynchronous callback
 -spec callback(reference(), any(), state()) -> {ok, state()}.
+
 callback(_Ref, _Term, S) ->
     {ok, S}.
 
@@ -240,6 +255,7 @@ callback(_Ref, _Term, S) ->
 %%       ok | {error, Reason :: term()}
 %% @doc store a atomic value to disk. Write to temp file and rename to
 %%       normal path.
+-spec atomic_write(string(),binary()) -> 'ok' | {'error',atom()}.
 atomic_write(File, Val) ->
     FakeFile = File ++ ".tmpwrite",
     case file:write_file(FakeFile, pack_ondisk(Val)) of
@@ -250,6 +266,7 @@ atomic_write(File, Val) ->
 
 %% @private
 %% Fold over the keys and objects on this backend
+-spec fold(#state{dir::atom() | binary() | [atom() | [any()] | char()]},fun(({_,_},_,_) -> any()),_) -> any().
 fold(State, Fun0, Acc) ->
     Fun = fun(BKey, AccIn) ->
                   {Bucket, Key} = BKey,
@@ -264,6 +281,7 @@ fold(State, Fun0, Acc) ->
 
 %% @private
 %% Return a function to fold over the buckets on this backend
+-spec fold_buckets_fun(_) -> fun(({_,_},{_,set()}) -> {_,set()}).
 fold_buckets_fun(FoldBucketsFun) ->
     fun(BKey, {Acc, BucketSet}) ->
             {Bucket, _} = BKey,
@@ -278,6 +296,7 @@ fold_buckets_fun(FoldBucketsFun) ->
 
 %% @private
 %% Return a function to fold over keys on this backend
+-spec fold_keys_fun(_,_) -> fun(({_,_},_) -> any()).
 fold_keys_fun(FoldKeysFun, undefined) ->
     fun(BKey, Acc) ->
             {Bucket, Key} = BKey,
@@ -296,6 +315,7 @@ fold_keys_fun(FoldKeysFun, Bucket) ->
 
 %% @private
 %% Return a function to fold over the objects on this backend
+-spec fold_objects_fun(_,_) -> fun(({_,_},_,_) -> any()).
 fold_objects_fun(FoldObjectsFun, undefined) ->
     fun(BKey, Value, Acc) ->
             {Bucket, Key} = BKey,
@@ -315,6 +335,7 @@ fold_objects_fun(FoldObjectsFun, Bucket) ->
 %% @spec list(state()) -> [{Bucket :: riak_object:bucket(),
 %%                          Key :: riak_object:key()}]
 %% @doc Get a list of all bucket/key pairs stored by this backend
+-spec list(#state{dir::atom() | binary() | [atom() | [any()] | char()]}) -> [{binary(),binary()}].
 list(#state{dir=Dir}) ->
     % this is slow slow slow
     %                                              B,N,N,N,K
@@ -325,6 +346,7 @@ list(#state{dir=Dir}) ->
 %%          -> string()
 %% @doc produce the file-path at which the object for the given Bucket
 %%      and Key should be stored
+-spec location(#state{dir::binary() | string()},{binary() | string(),binary() | string()}) -> binary() | string().
 location(State, {Bucket, Key}) ->
     B64 = encode_bucket(Bucket),
     K64 = encode_key(Key),
@@ -335,6 +357,7 @@ location(State, {Bucket, Key}) ->
 %%           {riak_object:bucket(), riak_object:key()}
 %% @doc reconstruct a Riak bucket/key pair, given the location at
 %%      which its object is stored on-disk
+-spec location_to_bkey(string()) -> {binary(),binary()}.
 location_to_bkey(Path) ->
     [B64,_,_,_,K64] = string:tokens(Path, "/"),
     {decode_bucket(B64), decode_key(K64)}.
@@ -342,18 +365,21 @@ location_to_bkey(Path) ->
 %% @spec decode_bucket(string()) -> binary()
 %% @doc reconstruct a Riak bucket, given a filename
 %% @see encode_bucket/1
+-spec decode_bucket(nonempty_string()) -> binary().
 decode_bucket(B64) ->
     base64:decode(dirty(B64)).
 
 %% @spec decode_key(string()) -> binary()
 %% @doc reconstruct a Riak object key, given a filename
 %% @see encode_key/1
+-spec decode_key(nonempty_string()) -> binary().
 decode_key(K64) ->
     base64:decode(dirty(K64)).
 
 %% @spec dirty(string()) -> string()
 %% @doc replace filename-troublesome base64 characters
 %% @see clean/1
+-spec dirty(nonempty_string()) -> [any(),...].
 dirty(Str64) ->
     lists:map(fun($-) -> $=;
                  ($_) -> $+;
@@ -364,17 +390,20 @@ dirty(Str64) ->
 
 %% @spec encode_bucket(binary()) -> string()
 %% @doc make a filename out of a Riak bucket
+-spec encode_bucket(binary() | string()) -> [any()].
 encode_bucket(Bucket) ->
     clean(base64:encode_to_string(Bucket)).
 
 %% @spec encode_key(binary()) -> string()
 %% @doc make a filename out of a Riak object key
+-spec encode_key(binary() | string()) -> [any()].
 encode_key(Key) ->
     clean(base64:encode_to_string(Key)).
 
 %% @spec clean(string()) -> string()
 %% @doc remove characters from base64 encoding, which may
 %%      cause trouble with filenames
+-spec clean([1..255]) -> [any()].
 clean(Str64) ->
     lists:map(fun($=) -> $-;
                  ($+) -> $_;
@@ -386,7 +415,9 @@ clean(Str64) ->
 %% @spec nest(string()) -> [string()]
 %% @doc create a directory nesting, to keep the number of
 %%      files in a directory smaller
+-spec nest(string()) -> [nonempty_string()].
 nest(Key) -> nest(lists:reverse(string:substr(Key, 1, 6)), 3, []).
+-spec nest(string(),0 | 1 | 2 | 3,[nonempty_string()]) -> [nonempty_string()].
 nest(_, 0, Parts) -> Parts;
 nest([Nb,Na|Rest],N,Acc) ->
     nest(Rest, N-1, [[Na,Nb]|Acc]);
@@ -397,6 +428,7 @@ nest([],N,Acc) ->
 
 %% Borrowed from bitcask_fileops.erl and then mangled
 -spec pack_ondisk(binary()) -> [binary()].
+
 pack_ondisk(Bin) ->
     ValueSz = size(Bin),
     true = (ValueSz =< ?MAXVALSIZE),
@@ -404,6 +436,7 @@ pack_ondisk(Bin) ->
     [<<(erlang:crc32(Bytes0)):?CRCSIZEFIELD>> | Bytes0].
 
 -spec unpack_ondisk(binary()) -> binary() | bad_crc.
+
 unpack_ondisk(<<Crc32:?CRCSIZEFIELD/unsigned, Bytes/binary>>) ->
     case erlang:crc32(Bytes) of
         Crc32 ->

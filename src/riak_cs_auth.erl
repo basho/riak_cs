@@ -25,6 +25,7 @@
 -compile(export_all).
 
 -spec behaviour_info(atom()) -> 'undefined' | [{atom(), arity()}].
+
 behaviour_info(callbacks) ->
     [{identify, 2}, {authenticate, 4}];
 behaviour_info(_Other) ->

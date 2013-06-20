@@ -33,6 +33,7 @@
 %%% API functions
 %%%===================================================================
 
+-spec start_link() -> 'ignore' | {'error',_} | {'ok',pid()}.
 start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
@@ -40,6 +41,7 @@ start_link() ->
 %%% Supervisor callbacks
 %%%===================================================================
 
+-spec init([]) -> {'ok',{{'one_for_one',1000,3600},[{_,_,_,_,_,_},...]}}.
 init([]) ->
     RestartStrategy = one_for_one,
     MaxRestarts = 1000,

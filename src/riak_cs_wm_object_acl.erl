@@ -79,11 +79,13 @@ maybe_log_user(RD, Context) ->
 
 %% @doc Get the list of methods this resource supports.
 -spec allowed_methods() -> [atom()].
+
 allowed_methods() ->
     ['GET', 'PUT'].
 
 
 -spec content_types_provided(#wm_reqdata{}, #context{}) -> {[{string(), atom()}], #wm_reqdata{}, #context{}}.
+
 content_types_provided(RD, Ctx=#context{local_context=LocalCtx,
                                         riakc_pid=RiakcPid}) ->
     Mfst = LocalCtx#key_context.manifest,
@@ -108,6 +110,7 @@ content_types_provided(RD, Ctx=#context{local_context=LocalCtx,
     end.
 
 -spec content_types_accepted(term(), term()) -> {[{string(), atom()}], #wm_reqdata{}, #context{}}.
+
 content_types_accepted(RD, Ctx=#context{local_context=LocalCtx0}) ->
     case wrq:get_req_header("Content-Type", RD) of
         undefined ->
@@ -144,6 +147,7 @@ content_types_accepted(RD, Ctx=#context{local_context=LocalCtx0}) ->
 
 
 -spec produce_body(term(), term()) -> {iolist()|binary(), term(), term()}.
+
 produce_body(RD, Ctx=#context{local_context=LocalCtx,
                               requested_perm='READ_ACP',
                               start_time=StartTime,
@@ -170,6 +174,7 @@ produce_body(RD, Ctx=#context{local_context=LocalCtx,
 
 -spec accept_body(term(), term()) ->
     {boolean() | {halt, term()}, term(), term()}.
+
 accept_body(RD, Ctx=#context{local_context=#key_context{get_fsm_pid=GetFsmPid,
                                                         manifest=Mfst,
                                                         key=KeyStr,

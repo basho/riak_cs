@@ -31,16 +31,19 @@
 
 %% @doc Setup the Webmachine dispatch table for the admin API
 -spec admin_api_dispatch_table() -> [dispatch_rule()].
+
 admin_api_dispatch_table() ->
     admin_resources(stats_props()).
 
 %% @doc Setup the Webmachine dispatch table for the object storage API
 -spec object_api_dispatch_table() -> [dispatch_rule()].
+
 object_api_dispatch_table() ->
     base_resources() ++
         one_three_resources(riak_cs_config:cs_version()).
 
 -spec props(atom()) -> [term()].
+
 props(Mod) ->
     [{auth_bypass, riak_cs_config:auth_bypass()},
      {auth_module, riak_cs_config:auth_module()},
@@ -48,11 +51,13 @@ props(Mod) ->
      {submodule, Mod}].
 
 -spec stats_props() -> [term()].
+
 stats_props() ->
     [{admin_auth_enabled, riak_cs_config:admin_auth_enabled()},
      {auth_bypass, riak_cs_config:auth_bypass()}].
 
 -spec admin_resources([term()]) -> [dispatch_rule()].
+
 admin_resources(Props) ->
     [
      {["riak-cs", "stats"], riak_cs_wm_stats, Props},
@@ -63,6 +68,7 @@ admin_resources(Props) ->
     ].
 
 -spec base_resources() -> [dispatch_rule()].
+
 base_resources() ->
     [
      %% Bucket resources
@@ -78,6 +84,7 @@ base_resources() ->
     ].
 
 -spec one_three_resources(undefined | pos_integer()) -> [dispatch_rule()].
+
 one_three_resources(undefined) ->
     [];
 one_three_resources(Version) when Version < 010300 ->

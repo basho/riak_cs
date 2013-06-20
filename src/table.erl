@@ -5,16 +5,19 @@
          create_table/2]).
 
 -spec print(list(), list()) -> ok.
+
 print(Spec, Rows) ->
     Table = create_table(Spec, Rows),
     io:format("~s", [Table]).
 
 -spec create_table(list(), list()) -> iolist().
+
 create_table(Spec, Rows) ->
     Length = get_row_length(Spec),
     create_table(Spec, Rows, Length, []).
 
 -spec create_table(list(), list(), non_neg_integer(), iolist()) -> iolist().
+
 create_table(Spec, Rows, Length, []) ->
     FirstThreeRows = [vertical_border(Length), titles(Spec), vertical_border(Length)],
     create_table(Spec, Rows, Length, FirstThreeRows);
@@ -28,12 +31,14 @@ create_table(Spec, [Row | Rows], Length, IoList) ->
     create_table(Spec, Rows, Length, [row(Spec, Row) | IoList]).
 
 -spec get_row_length(list(tuple())) -> non_neg_integer().
+
 get_row_length(Spec) ->
     lists:foldl(fun({_Name, Size}, Total) ->
                     Total + Size + 2 
                 end, 0, Spec) + 2.
 
 -spec row(list(), list(string())) -> iolist().
+
 row(Spec, Row) ->
     ["| " | lists:reverse(
         ["\n" | lists:foldl(fun({{_, Size}, Str}, Acc) ->
@@ -41,6 +46,7 @@ row(Spec, Row) ->
                             end, [], lists:zip(Spec, Row))])].
 
 -spec titles(list()) -> iolist().
+
 titles(Spec) ->
     [ "| " | lists:reverse(
         ["\n" | lists:foldl(fun({Title, Size}, TitleRow) ->
@@ -48,6 +54,7 @@ titles(Spec) ->
                             end, [], Spec)])].
 
 -spec align(string(), non_neg_integer()) -> iolist().
+
 align(undefined, Size) ->
     align("", Size);
 align(Str, Size) when is_integer(Str) ->
@@ -71,14 +78,17 @@ align(Term, Size) ->
     align(Str, Size).
 
 -spec vertical_border(non_neg_integer()) -> string().
+
 vertical_border(Length) ->
     lists:reverse(["\n" | char_seq(Length, $-)]).
 
 -spec spaces(non_neg_integer()) -> string().
+
 spaces(Length) ->
     char_seq(Length, $\s).
 
 -spec char_seq(non_neg_integer(), char()) -> string().
+
 char_seq(Length, Char) ->
     [Char || _ <- lists:seq(1, Length)].
 

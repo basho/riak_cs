@@ -42,16 +42,19 @@
 %% @doc application start callback for riak_cs.
 -spec start(start_type(), start_args()) -> {ok, pid()} |
                                            {error, term()}.
+
 start(_Type, _StartArgs) ->
     sanity_check(is_config_valid(),
                  check_bucket_props()).
 
 %% @doc application stop callback for riak_cs.
 -spec stop(term()) -> ok.
+
 stop(_State) ->
     ok.
 
 -spec sanity_check(boolean(), boolean()) -> {ok, pid()} | {error, term()}.
+
 sanity_check(true, true) ->
     riak_cs_sup:start_link();
 sanity_check(false, _) ->
@@ -66,16 +69,19 @@ sanity_check(true, false) ->
     {error, invalid_bucket_props}.
 
 -spec is_config_valid() -> boolean().
+
 is_config_valid() ->
     get_env_response_to_bool(application:get_env(riak_cs, connection_pools)).
 
 -spec get_env_response_to_bool(term())  -> boolean().
+
 get_env_response_to_bool({ok, _}) ->
     true;
 get_env_response_to_bool(_) ->
     false.
 
 -spec check_bucket_props() -> boolean().
+
 check_bucket_props() ->
     Buckets = [?USER_BUCKET,
                ?ACCESS_BUCKET,
@@ -91,6 +97,7 @@ check_bucket_props() ->
     end.
 
 -spec check_bucket_props(binary(), pid()) -> ok | {error, failed}.
+
 check_bucket_props(Bucket, Riak) ->
     case catch riakc_pb_socket:get_bucket(Riak, Bucket) of
         {ok, Props} ->
@@ -111,6 +118,7 @@ check_bucket_props(Bucket, Riak) ->
             {error, failed}
     end.
 
+-spec riak_connection() -> any().
 riak_connection() ->
     {Host, Port} = riak_host_port(),
     Timeout = case application:get_env(riak_cs, riakc_connect_timeout) of
@@ -127,6 +135,7 @@ riak_connection() ->
 %% `riak_cs_riakc_pool_worker'. Move this to `riak_cs_config' once
 %% that has been merged.
 -spec riak_host_port() -> {string(), pos_integer()}.
+
 riak_host_port() ->
     case application:get_env(riak_cs, riak_ip) of
         {ok, Host} ->

@@ -53,18 +53,21 @@
 %% in Riak when the previous GET returned notfound,
 %% so we're (maybe) creating a new object.
 -spec new_dict(binary(), lfs_manifest()) -> orddict:orddict().
+
 new_dict(UUID, Manifest) ->
     orddict:store(UUID, Manifest, orddict:new()).
 
 %% @doc Return the current active manifest
 %% from an orddict of manifests.
 -spec active_manifest(orddict:orddict()) -> {ok, lfs_manifest()} | {error, no_active_manifest}.
+
 active_manifest(Dict) ->
     live_manifest(lists:foldl(fun most_recent_active_manifest/2, 
             {no_active_manifest, undefined}, orddict_values(Dict))). 
 
 %% @doc Ensure the manifest hasn't been deleted during upload.
 -spec live_manifest(tuple()) -> {ok, lfs_manifest()} | {error, no_active_manifest}.
+
 live_manifest({no_active_manifest, _}) ->
     {error, no_active_manifest};
 live_manifest({Manifest, undefined}) ->
@@ -79,18 +82,21 @@ live_manifest({Manifest, DeleteTime}) ->
 
 %% @doc Return all active manifests
 -spec active_manifests(orddict:orddict()) -> [lfs_manifest()] | [].
+
 active_manifests(Dict) ->
     lists:filter(fun manifest_is_active/1, orddict_values(Dict)).
 
 %% @doc Return a list of all manifests in the
 %% `active' or `writing' state
 -spec active_and_writing_manifests(orddict:orddict()) -> [lfs_manifest()].
+
 active_and_writing_manifests(Dict) ->
     orddict:to_list(filter_manifests_by_state(Dict, [active, writing])).
 
 %% @doc Extract all manifests that are not "the most active"
 %%      and not actively writing (within the leeway period).
 -spec overwritten_UUIDs(orddict:orddict()) -> term().
+
 overwritten_UUIDs(Dict) ->
     case active_manifest(Dict) of
         {error, no_active_manifest} ->
@@ -105,6 +111,7 @@ overwritten_UUIDs(Dict) ->
 
 -spec overwritten_UUIDs_no_active_fold({binary(), lfs_manifest},
                                        [binary()]) -> [binary()].
+
 overwritten_UUIDs_no_active_fold({_, ?MANIFEST{state=State}}, Acc)
         when State =:= writing ->
     Acc;
@@ -113,6 +120,7 @@ overwritten_UUIDs_no_active_fold({UUID, _}, Acc) ->
 
 -spec overwritten_UUIDs_active_fold_helper(lfs_manifest()) ->
     fun(({binary(), lfs_manifest()}, [binary()]) -> [binary()]).
+
 overwritten_UUIDs_active_fold_helper(Active) ->
     fun({UUID, Manifest}, Acc) ->
             update_acc(UUID, Manifest, Acc, Active =:= Manifest)
@@ -120,6 +128,7 @@ overwritten_UUIDs_active_fold_helper(Active) ->
 
 -spec update_acc(binary(), lfs_manifest(), [binary()], boolean()) ->
     [binary()].
+
 update_acc(_UUID, _Manifest, Acc, true) ->
     Acc;
 update_acc(UUID, ?MANIFEST{state=active}, Acc, false) ->
@@ -135,6 +144,7 @@ update_acc(_, _, Acc, _) ->
                         undefined | erlang:timestamp(),
                         undefined | erlang:timestamp()) ->
     [binary()].
+
 acc_leeway_helper(UUID, Acc, undefined, WST) ->
     acc_leeway_helper(UUID, Acc, WST);
 acc_leeway_helper(UUID, Acc, LBWT, _) ->
@@ -142,11 +152,13 @@ acc_leeway_helper(UUID, Acc, LBWT, _) ->
 
 -spec acc_leeway_helper(binary(), [binary()], undefined | erlang:timestamp()) ->
     [binary()].
+
 acc_leeway_helper(UUID, Acc, Time) ->
     handle_leeway_elaped_time(leeway_elapsed(Time), UUID, Acc).
 
 -spec handle_leeway_elaped_time(boolean(), binary(), [binary()]) ->
     [binary()].
+
 handle_leeway_elaped_time(true, UUID, Acc) ->
     [UUID | Acc];
 handle_leeway_elaped_time(false, _UUID, Acc) ->
@@ -157,6 +169,7 @@ handle_leeway_elaped_time(false, _UUID, Acc) ->
 %% `pending_delete' and {deleted, true} added to props.
 -spec mark_deleted(orddict:orddict(), list(binary())) ->
     orddict:orddict().
+
 mark_deleted(Dict, UUIDsToMark) ->
     MapFun = fun(K, V) ->
             case lists:member(K, UUIDsToMark) of
@@ -175,6 +188,7 @@ mark_deleted(Dict, UUIDsToMark) ->
 %% `pending_delete'
 -spec mark_pending_delete(orddict:orddict(), list(binary())) ->
     orddict:orddict().
+
 mark_pending_delete(Dict, UUIDsToMark) ->
     MapFun = fun(K, V) ->
             case lists:member(K, UUIDsToMark) of
@@ -192,6 +206,7 @@ mark_pending_delete(Dict, UUIDsToMark) ->
 %% `scheduled_delete'
 -spec mark_scheduled_delete(orddict:orddict(), list(binary())) ->
     orddict:orddict().
+
 mark_scheduled_delete(Dict, UUIDsToMark) ->
     MapFun = fun(K, V) ->
             case lists:member(K, UUIDsToMark) of
@@ -209,6 +224,7 @@ mark_scheduled_delete(Dict, UUIDsToMark) ->
 %% state and have been there for longer than the retry
 %% interval.
 -spec manifests_to_gc([cs_uuid()], orddict:orddict()) -> [cs_uuid_and_manifest()].
+
 manifests_to_gc(PendingDeleteUUIDs, Manifests) ->
     FilterFun = pending_delete_helper(PendingDeleteUUIDs),
     orddict:to_list(orddict:filter(FilterFun, Manifests)).
@@ -220,6 +236,7 @@ manifests_to_gc(PendingDeleteUUIDs, Manifests) ->
 %% moving to the GC bucket
 -spec pending_delete_helper([binary()]) ->
     fun((binary(), lfs_manifest()) -> boolean()).
+
 pending_delete_helper(UUIDs) ->
     fun(Key, Manifest) ->
             lists:member(Key, UUIDs) orelse retry_manifest(Manifest)
@@ -229,6 +246,7 @@ pending_delete_helper(UUIDs) ->
 %% Return true if this manifest should be retried
 %% moving to the GC bucket
 -spec retry_manifest(lfs_manifest()) -> boolean().
+
 retry_manifest(?MANIFEST{state=pending_delete,
                          delete_marked_time=MarkedTime}) ->
     retry_from_marked_time(MarkedTime, os:timestamp());
@@ -241,6 +259,7 @@ retry_manifest(_Manifest) ->
 %% `riak_cs_gc:gc_retry_interval()'.
 -spec retry_from_marked_time(erlang:timestamp(), erlang:timestamp()) ->
     boolean().
+
 retry_from_marked_time(MarkedTime, Now) ->
     NowSeconds = riak_cs_utils:second_resolution_timestamp(Now),
     MarkedTimeSeconds = riak_cs_utils:second_resolution_timestamp(MarkedTime),
@@ -249,16 +268,19 @@ retry_from_marked_time(MarkedTime, Now) ->
 %% @doc Remove all manifests that require pruning,
 %%      see needs_pruning() for definition of needing pruning.
 -spec prune(orddict:orddict()) -> orddict:orddict().
+
 prune(Dict) ->
     prune(Dict, erlang:now()).
 
 -spec prune(orddict:orddict(), erlang:timestamp()) -> orddict:orddict().
+
 prune(Dict, Time) ->
     orddict:from_list(
       [KV || {_K, V}=KV <- orddict:to_list(Dict), not (needs_pruning(V, Time))]
      ).
 
 -spec upgrade_wrapped_manifests([orddict:orddict()]) -> [orddict:orddict()].
+
 upgrade_wrapped_manifests(ListofOrdDicts) ->
     DictMapFun = fun(_Key, Value) -> upgrade_manifest(Value) end,
     MapFun = fun(Value) -> orddict:map(DictMapFun, Value) end,
@@ -269,6 +291,7 @@ upgrade_wrapped_manifests(ListofOrdDicts) ->
 %% _most_ of the codebase only has to deal with
 %% the most recent version of the record.
 -spec upgrade_manifest(lfs_manifest() | #lfs_manifest_v2{}) -> lfs_manifest().
+
 upgrade_manifest(#lfs_manifest_v2{block_size=BlockSize,
                                  bkey=Bkey,
                                  metadata=Metadata,
@@ -317,6 +340,7 @@ upgrade_manifest(?MANIFEST{}=M) ->
 %% @doc Filter an orddict manifests and accept only manifests whose
 %% current state is specified in the `AcceptedStates' list.
 -spec filter_manifests_by_state(orddict:orddict(), [atom()]) -> orddict:orddict().
+
 filter_manifests_by_state(Dict, AcceptedStates) ->
     AcceptManifest =
         fun(_, ?MANIFEST{state=State}) ->
@@ -325,19 +349,23 @@ filter_manifests_by_state(Dict, AcceptedStates) ->
     orddict:filter(AcceptManifest, Dict).
 
 -spec leeway_elapsed(undefined | erlang:timestamp()) -> boolean().
+
 leeway_elapsed(undefined) ->
     false;
 leeway_elapsed(Timestamp) ->
     Now = riak_cs_utils:second_resolution_timestamp(os:timestamp()),
     Now > (riak_cs_utils:second_resolution_timestamp(Timestamp) + riak_cs_gc:leeway_seconds()).
 
+-spec orddict_values([{_,_}]) -> [any()].
 orddict_values(OrdDict) ->
     [V || {_K, V} <- orddict:to_list(OrdDict)].
 
+-spec manifest_is_active(_) -> boolean().
 manifest_is_active(?MANIFEST{state=active}) -> true;
 manifest_is_active(_Manifest) -> false.
 
 -spec delete_time(lfs_manifest()) -> erlang:timestamp() | undefined.
+
 delete_time(Manifest) ->
     case proplists:is_defined(deleted, Manifest?MANIFEST.props) of
         true ->
@@ -350,12 +378,14 @@ delete_time(Manifest) ->
 %% This happens when a manifest is still uploading while it is deleted. The upload 
 %% is allowed to complete, but is not visible afterwards.
 -spec deleted_while_writing(orddict:orddict()) -> [binary()].
+
 deleted_while_writing(Manifests) ->
     ManifestList = orddict_values(Manifests),
     DeleteTime = latest_delete_time(ManifestList),
     find_deleted_active_manifests(ManifestList, DeleteTime).
 
 -spec find_deleted_active_manifests([lfs_manifest()], term()) -> [lfs_manifest()].
+
 find_deleted_active_manifests(_Manifests, undefined) ->
     [];
 find_deleted_active_manifests(Manifests, DeleteTime) ->
@@ -363,6 +393,7 @@ find_deleted_active_manifests(Manifests, DeleteTime) ->
                         M?MANIFEST.write_start_time < DeleteTime].
 
 -spec latest_delete_time([lfs_manifest()]) -> term() | undefined.
+
 latest_delete_time(Manifests) ->
     lists:foldl(fun(M, Acc) ->
                     DeleteTime = delete_time(M),
@@ -372,6 +403,7 @@ latest_delete_time(Manifests) ->
 %% @doc Return the later of two times, accounting for undefined
 -spec later(undefined | erlang:timestamp(), undefined | erlang:timestamp()) -> 
     undefined | erlang:timestamp().
+
 later(undefined, undefined) ->
     undefined;
 later(undefined, DeleteTime2) ->
@@ -391,6 +423,7 @@ later(DeleteTime1, DeleteTime2) ->
 -spec most_recent_active_manifest(lfs_manifest(), {
     no_active_manifest | lfs_manifest(), undefined | erlang:timestamp()}) -> 
         {no_active_manifest | lfs_manifest(), erlang:timestamp() | undefined}.
+
 most_recent_active_manifest(Manifest=?MANIFEST{state=scheduled_delete}, 
                             {MostRecent, undefined}) -> 
     {MostRecent, delete_time(Manifest)};
@@ -424,12 +457,14 @@ most_recent_active_manifest(_Manifest, {MostRecent, DeleteTime}) ->
     {MostRecent, DeleteTime}.
 
 -spec needs_pruning(lfs_manifest(), erlang:timestamp()) -> boolean().
+
 needs_pruning(?MANIFEST{state=scheduled_delete,
                               scheduled_delete_time=ScheduledDeleteTime}, Time) ->
     seconds_diff(Time, ScheduledDeleteTime) > riak_cs_gc:leeway_seconds();
 needs_pruning(_Manifest, _Time) ->
     false.
 
+-spec seconds_diff({non_neg_integer(),non_neg_integer(),non_neg_integer()},{non_neg_integer(),non_neg_integer(),non_neg_integer()}) -> integer().
 seconds_diff(T2, T1) ->
     TimeDiffMicrosends = timer:now_diff(T2, T1),
     SecondsTime = TimeDiffMicrosends / (1000 * 1000),

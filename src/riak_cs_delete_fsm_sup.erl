@@ -38,12 +38,14 @@
 
 %% @doc API for starting the supervisor.
 -spec start_link() -> {ok, pid()} | ignore | {error, term()}.
+
 start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
 %% @doc Start a `riak_cs_delete_fsm' child process.
 -spec start_delete_fsm(node(), list()) ->
                               supervisor:startchild_ret().
+
 start_delete_fsm(Node, Args) ->
     supervisor:start_child({?MODULE, Node}, Args).
 
@@ -57,6 +59,7 @@ start_delete_fsm(Node, Args) ->
                          pos_integer(),
                          pos_integer()},
                         [supervisor:child_spec()]}}.
+
 init([]) ->
     RestartStrategy = simple_one_for_one,
     MaxRestarts = 1000,

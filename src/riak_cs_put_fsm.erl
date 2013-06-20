@@ -89,6 +89,7 @@
 -spec start_link({binary(), binary(), non_neg_integer(), binary(),
                   term(), pos_integer(), acl(), timeout(), pid(), pid()}) ->
                         {ok, pid()} | {error, term()}.
+
 start_link(Tuple) when is_tuple(Tuple) ->
     start_link(Tuple, true).
 
@@ -96,6 +97,7 @@ start_link(Tuple) when is_tuple(Tuple) ->
                   term(), pos_integer(), acl(), timeout(), pid(), pid()},
                  boolean()) ->
                         {ok, pid()} | {error, term()}.
+
 start_link({_Bucket,
             _Key,
             _ContentLength,
@@ -109,18 +111,23 @@ start_link({_Bucket,
            MakeNewManifestP) ->
     gen_fsm:start_link(?MODULE, {Arg1, MakeNewManifestP}, []).
 
+-spec get_uuid(_) -> any().
 get_uuid(Pid) ->
     gen_fsm:sync_send_event(Pid, {get_uuid}, infinity).
 
+-spec augment_data(_,_) -> any().
 augment_data(Pid, Data) ->
     gen_fsm:sync_send_event(Pid, {augment_data, Data}, infinity).
 
+-spec finalize(_) -> any().
 finalize(Pid) ->
     gen_fsm:sync_send_event(Pid, finalize, infinity).
 
+-spec force_stop(_) -> any().
 force_stop(Pid) ->
     gen_fsm:sync_send_all_state_event(Pid, force_stop, infinity).
 
+-spec block_written(atom() | pid() | port() | {atom(),_} | {'via',_,_},_) -> 'ok'.
 block_written(Pid, BlockID) ->
     gen_fsm:send_event(Pid, {block_written, BlockID, self()}).
 
@@ -142,6 +149,7 @@ block_written(Pid, BlockID) ->
              term(), pos_integer(), acl(), timeout(), pid(), pid()},
             term()}) ->
                   {ok, prepare, #state{}, timeout()}.
+
 init({{Bucket, Key, ContentLength, ContentType,
        Metadata, BlockSize, Acl, Timeout, Caller, RiakPid},
       MakeNewManifestP}) ->
@@ -280,6 +288,7 @@ not_full({augment_data, NewData}, From,
             handle_receiving_last_chunk(NewData, State)
     end.
 
+-spec all_received('finalize' | {'augment_data',<<>>},_,_) -> {'next_state','all_received',_}.
 all_received({augment_data, <<>>}, _From, State) ->
     {next_state, all_received, State};
 all_received(finalize, From, State) ->
@@ -304,12 +313,14 @@ done(finalize, _From, State=#state{manifest=Manifest,
 %%--------------------------------------------------------------------
 %%
 %%--------------------------------------------------------------------
+-spec handle_event(_,_,_) -> {'next_state',_,_}.
 handle_event(_Event, StateName, State) ->
     {next_state, StateName, State}.
 
 %%--------------------------------------------------------------------
 %%
 %%--------------------------------------------------------------------
+-spec handle_sync_event(_,_,_,_) -> {'reply','ok' | {_,_},_,_} | {'stop','normal','ok',_}.
 handle_sync_event(current_state, _From, StateName, State) ->
     Reply = {StateName, State},
     {reply, Reply, StateName, State};
@@ -346,6 +357,7 @@ terminate(_Reason, _StateName, #state{mani_pid=ManiPid,
 %%--------------------------------------------------------------------
 %%
 %%--------------------------------------------------------------------
+-spec code_change(_,_,_,_) -> {'ok',_,_}.
 code_change(_OldVsn, StateName, State, _Extra) ->
     {ok, StateName, State}.
 
@@ -355,6 +367,7 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 
 %% @doc Handle expensive initialization operations required for the put_fsm.
 -spec prepare(#state{}) -> #state{}.
+
 prepare(State=#state{bucket=Bucket,
                      key=Key,
                      block_size=BlockSize,
@@ -417,6 +430,7 @@ prepare(State=#state{bucket=Bucket,
                 all_writer_pids=WriterPids,
                 free_writers=FreeWriters}.
 
+-spec handle_chunk('undefined' | non_neg_integer(),non_neg_integer(),non_neg_integer(),non_neg_integer(),'undefined' | non_neg_integer()) -> 'accept' | 'backpressure' | 'last_chunk'.
 handle_chunk(ContentLength, NumBytesReceived, NewDataSize, CurrentBufferSize, MaxBufferSize) ->
     if
         (NumBytesReceived + NewDataSize) == ContentLength ->
@@ -427,6 +441,7 @@ handle_chunk(ContentLength, NumBytesReceived, NewDataSize, CurrentBufferSize, Ma
             accept
     end.
 
+-spec combine_new_and_remainder_data(binary(),'undefined' | binary()) -> binary().
 combine_new_and_remainder_data(NewData, undefined) ->
     NewData;
 combine_new_and_remainder_data(NewData, Remainder) ->
@@ -440,6 +455,7 @@ combine_new_and_remainder_data(NewData, Remainder) ->
                   pos_integer(),
                   [binary()]) ->
                          {[binary()], undefined | binary()}.
+
 data_blocks(<<>>, _, _, _, Blocks) ->
     {Blocks, undefined};
 data_blocks(Data, ContentLength, BytesReceived, BlockSize, Blocks) ->
@@ -464,6 +480,7 @@ data_blocks(Data, ContentLength, BytesReceived, BlockSize, Blocks) ->
 %% @private
 %% @doc Append a data block to an list of data blocks.
 -spec append_data_block(binary(), [binary()]) -> [binary()].
+
 append_data_block(BlockData, Blocks) ->
     lists:reverse([BlockData | lists:reverse(Blocks)]).
 
@@ -472,6 +489,7 @@ append_data_block(BlockData, Blocks) ->
 %%      gen_servers to write another block,
 %%      and then return the updated func inputs
 -spec maybe_write_blocks(term()) -> term().
+
 maybe_write_blocks(State=#state{buffer_queue=[]}) ->
     State;
 maybe_write_blocks(State=#state{free_writers=[]}) ->
@@ -497,6 +515,7 @@ maybe_write_blocks(State=#state{buffer_queue=[ToWrite | RestBuffer],
                                    next_block_id=(NextBlockID + 1)}).
 
 -spec state_from_block_written(non_neg_integer(), pid(), term()) -> term().
+
 state_from_block_written(BlockID, WriterPid, State=#state{unacked_writes=UnackedWrites,
                                                           block_size=BlockSize,
                                                           free_writers=FreeWriters,
@@ -608,6 +627,7 @@ handle_receiving_last_chunk(NewData, State=#state{buffer_queue=BufferQueue,
     Reply = ok,
     {reply, Reply, all_received, NewStateData}.
 
+-spec maybe_riak_cs_manifest_fsm_start_link(boolean(),'undefined' | binary(),'undefined' | binary(),'undefined' | pid()) -> 'ignore' | {'error',_} | {'ok','undefined' | pid()}.
 maybe_riak_cs_manifest_fsm_start_link(false, _Bucket, _Key, _RiakPid) ->
     {ok, undefined};
 maybe_riak_cs_manifest_fsm_start_link(true, Bucket, Key, RiakPid) ->

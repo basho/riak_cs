@@ -35,10 +35,12 @@
 -define(RIAKCPOOL, bucket_list_pool).
 
 -spec init(#context{}) -> {ok, #context{}}.
+
 init(Ctx) ->
     {ok, Ctx#context{riakc_pool=?RIAKCPOOL}}.
 
 -spec allowed_methods() -> [atom()].
+
 allowed_methods() ->
     %% TODO: POST (multi-delete)
     ['GET'].
@@ -46,10 +48,12 @@ allowed_methods() ->
 %% TODO: change to authorize/spec/cleanup unneeded cases
 %% TODO: requires update for multi-delete
 -spec authorize(#wm_reqdata{}, #context{}) -> {boolean(), #wm_reqdata{}, #context{}}.
+
 authorize(RD, Ctx) ->
     riak_cs_wm_utils:bucket_access_authorize_helper(bucket, false, RD, Ctx).
 
 -spec api_request(#wm_reqdata{}, #context{}) -> {ok, ?LORESP{}} | {error, term()}.
+
 api_request(RD, Ctx=#context{bucket=Bucket,
                              user=User,
                              start_time=StartTime}) ->
@@ -67,17 +71,20 @@ api_request(RD, Ctx=#context{bucket=Bucket,
     Res.
 
 -spec get_options(#wm_reqdata{}) -> [{atom(), 'undefined' | binary()}].
+
 get_options(RD) ->
     [get_option(list_to_atom(Opt), wrq:get_qs_value(Opt, RD)) ||
         Opt <- ["delimiter", "marker", "prefix"]].
 
 -spec get_option(atom(), 'undefined' | string()) -> {atom(), 'undefined' | binary()}.
+
 get_option(Option, undefined) ->
     {Option, undefined};
 get_option(Option, Value) ->
     {Option, list_to_binary(Value)}.
 
 -spec get_max_keys(#wm_reqdata{}) -> non_neg_integer() | {error, 'invalid_argument'}.
+
 get_max_keys(RD) ->
     case wrq:get_qs_value("max-keys", RD) of
         undefined ->

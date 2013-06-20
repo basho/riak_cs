@@ -59,38 +59,46 @@
 %% ====================================================================
 
 -spec start_link() -> {ok, pid()} | {error, term()}.
+
 start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
 -spec update(atom(), integer()) -> ok | {error, {unknown_id, atom()}}.
+
 update(BaseId, ElapsedUs) ->
     gen_server:call(?MODULE, {update, BaseId, ElapsedUs}).
 
 -spec update_with_start(atom(), erlang:timestamp()) ->
                                    ok | {error, {unknown_id, atom()}}.
+
 update_with_start(BaseId, StartTime) ->
     gen_server:call(?MODULE, {update, BaseId,
                               timer:now_diff(os:timestamp(), StartTime)}).
 
 -spec report() -> ok.
+
 report() ->
     _ = [report_item(I) || I <- ?IDS],
     ok.
 
 -spec report_str() -> [string()].
+
 report_str() ->
     [lists:flatten(report_item_str(I)) || I <- ?IDS].
 
 -spec report_json() -> string().
+
 report_json() ->
     lists:flatten(mochijson2:encode({struct, get_stats()})).
 
 -spec report_pretty_json() -> string().
+
 report_pretty_json() ->
     lists:flatten(riak_cs_utils:json_pp_print(report_json())).
 
 -spec get_stats() -> [{legend, [atom()]} |
                       {atom(), [number()]}].
+
 get_stats() ->
     [{legend, [meter_count, meter_rate, latency_mean, latency_median,
                latency_95, latency_99]}]
@@ -101,12 +109,14 @@ get_stats() ->
 %% gen_server callbacks
 %% ====================================================================
 
+-spec init([]) -> {'ok',#state{}}.
 init([]) ->
     %% Setup a list of all the values we want to track. For each of these, we will
     %% have a latency histogram and meter
     _ = [init_item(I) || I <- ?IDS],
     {ok, #state{}}.
 
+-spec handle_call({'get_ids',_} | {'update',_,_},_,_) -> {'reply',_,_}.
 handle_call({get_ids, BaseId}, _From, State) ->
     {reply, erlang:get(BaseId), State};
 handle_call({update, BaseId, ElapsedUs}, _From, State) ->
@@ -120,15 +130,19 @@ handle_call({update, BaseId, ElapsedUs}, _From, State) ->
             end,
     {reply, Reply, State}.
 
+-spec handle_cast(_,_) -> {'noreply',_}.
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
+-spec handle_info(_,_) -> {'noreply',_}.
 handle_info(_Info, State) ->
     {noreply, State}.
 
+-spec terminate(_,_) -> 'ok'.
 terminate(_Reason, _State) ->
     ok.
 
+-spec code_change(_,_,_) -> {'ok',_}.
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
@@ -136,6 +150,7 @@ code_change(_OldVsn, State, _Extra) ->
 %% Internal
 %% ====================================================================
 
+-spec init_item(atom()) -> any().
 init_item(BaseId) ->
     LatencyId = list_to_atom(atom_to_list(BaseId) ++ "_latency"),
     ok = handle_folsom_response(folsom_metrics:new_histogram(LatencyId), histogram),
@@ -145,6 +160,7 @@ init_item(BaseId) ->
     %% conversion per update
     erlang:put(BaseId, {LatencyId, MeterId}).
 
+-spec handle_folsom_response(_,'histogram' | 'meter') -> any().
 handle_folsom_response(ok, _) ->
     ok;
 handle_folsom_response({error, Name, metric_already_exists}, histogram) ->
@@ -156,9 +172,11 @@ handle_folsom_response({error, Name, metric_already_exists}, meter) ->
 handle_folsom_response(Error, _) ->
     Error.
 
+-spec report_item(atom()) -> 'ok'.
 report_item(BaseId) ->
     io:format("~s\n", [report_item_str(BaseId)]).
 
+-spec report_item_str(atom()) -> [[any()] | char()].
 report_item_str(BaseId) ->
     {BaseId, [MeterCount, MeterRate, LatencyMean, LatencyMedian,
               Latency95, Latency99]} = raw_report_item(BaseId),
@@ -166,6 +184,7 @@ report_item_str(BaseId) ->
                   [BaseId, MeterCount, MeterRate, LatencyMean, LatencyMedian,
                    Latency95, Latency99]).
 
+-spec raw_report_item(atom()) -> {atom(),[any(),...]} | {atom(),-1,-1,-1,-1,-1,-1}.
 raw_report_item(BaseId) ->
     case gen_server:call(?MODULE, {get_ids, BaseId}) of
         {LatencyId, MeterId} ->

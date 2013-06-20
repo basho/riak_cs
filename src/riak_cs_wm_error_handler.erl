@@ -23,6 +23,7 @@
 
 -include("riak_cs.hrl").
 
+-spec render_error(_,atom() | tuple(),_) -> any().
 render_error(500, Req, Reason) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"render_error">>),
     {ok, ReqState} = Req:add_response_header("Content-Type", "text/html"),
@@ -45,6 +46,7 @@ render_error(_Code, Req, _Reason) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"render_error">>),
     Req:response_body().
 
+-spec xml_error_body(binary() | maybe_improper_list(any(),binary() | []) | byte(),binary() | maybe_improper_list(any(),binary() | []) | byte(),binary() | maybe_improper_list(any(),binary() | []) | byte(),binary() | maybe_improper_list(any(),binary() | []) | byte()) -> binary().
 xml_error_body(Resource, Code, Message, RequestId) ->
     erlang:iolist_to_binary(
       [<<"<?xml version=\"1.0\" encoding=\"UTF-8\"?>">>,

@@ -38,6 +38,7 @@
 %% keys are UUIDs and whose values
 %% are manifests.
 -spec resolve(list()) -> term().
+
 resolve(Siblings) ->
     lists:foldl(fun resolve_dicts/2, orddict:new(), Siblings).
 
@@ -49,6 +50,7 @@ resolve(Siblings) ->
 %% of manifests and resolve them.
 %% @private
 -spec resolve_dicts(term(), term()) -> term().
+
 resolve_dicts(A, B) ->
     orddict:merge(fun resolve_manifests/3, A, B).
 
@@ -56,11 +58,13 @@ resolve_dicts(A, B) ->
 %% the same UUID and resolve them
 %% @private
 -spec resolve_manifests(term(), term(), term()) -> term().
+
 resolve_manifests(_Key, A, B) ->
     AState = state_to_stage_number(A?MANIFEST.state),
     BState = state_to_stage_number(B?MANIFEST.state),
     resolve_manifests(AState, BState, A, B).
 
+-spec state_to_stage_number('active' | 'pending_delete' | 'scheduled_delete' | 'writing') -> 10 | 20 | 30 | 40.
 state_to_stage_number(writing)          -> 10;
 state_to_stage_number(active)           -> 20;
 state_to_stage_number(pending_delete)   -> 30;
@@ -73,6 +77,7 @@ state_to_stage_number(scheduled_delete) -> 40.
 %% manifests themselves.
 %% @private
 -spec resolve_manifests(integer(), integer(), term(), term()) -> term().
+
 
 resolve_manifests(StageA, StageB, A, _B) when StageA > StageB ->
     A;
@@ -136,10 +141,12 @@ resolve_props(A, B) ->
                                fun resolve_prop_multipart_cleanup/2]),
     New.
 
+-spec resolve_a_prop(fun((_,_) -> any()),{_,_,_}) -> {_,_,_}.
 resolve_a_prop(Resolver, {Ps_A, Ps_B, Ps_merged}) ->
     {_, _, New} = Resolver(Ps_A, Ps_B),
     {Ps_A, Ps_B, New ++ Ps_merged}.
 
+-spec resolve_prop_multipart([any()],[any()]) -> {[any()],[any()],[{'multipart',_}]}.
 resolve_prop_multipart(Ps_A, Ps_B) ->
     case {proplists:get_value(multipart, Ps_A),
           proplists:get_value(multipart, Ps_B)} of
@@ -161,6 +168,7 @@ resolve_prop_multipart(Ps_A, Ps_B) ->
             {Ps_A, Ps_B, [{multipart, MM}]}
     end.
 
+-spec resolve_prop_multipart_cleanup([any()],_) -> {[any()],_,['multipart_clean']}.
 resolve_prop_multipart_cleanup(Ps_A, Ps_B) ->
     case proplists:get_value(multipart_clean, Ps_A, false) orelse
          proplists:get_value(multipart_clean, Ps_B, false) of
@@ -178,6 +186,7 @@ resolve_prop_multipart_cleanup(Ps_A, Ps_B) ->
 %% pending_delete, so we have
 %% to account for it being
 %% `undefined`
+-spec safe_intersection('undefined' | [integer()],'undefined' | [integer()]) -> 'undefined' | [any()].
 safe_intersection(undefined, undefined) ->
     %% if these are both
     %% undefined, then
@@ -204,4 +213,5 @@ resolve_last_deleted_time(A, B) ->
     BLastDeleted = B?MANIFEST.last_block_deleted_time,
     latest_date(ALastDeleted, BLastDeleted).
 
+-spec latest_date(_,_) -> any().
 latest_date(A, B) -> erlang:max(A, B).

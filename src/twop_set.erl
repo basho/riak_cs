@@ -60,20 +60,25 @@
 %%% API
 %%%===================================================================
 
+-spec new() -> {set(),set()}.
 new() ->
     {sets:new(), sets:new()}.
 
 %% not implementing is_set
 
+-spec size({set(),set()}) -> non_neg_integer().
 size(Set) ->
     sets:size(minus_deletes(Set)).
 
+-spec to_list({set(),set()}) -> [any()].
 to_list(Set) ->
     sets:to_list(minus_deletes(Set)).
 
+-spec is_element(_,{set(),set()}) -> boolean().
 is_element(Element, Set) ->
     sets:is_element(Element, minus_deletes(Set)).
 
+-spec add_element(_,{_,set()}) -> {_,set()}.
 add_element(Element, Set={Adds,Dels}) ->
     case sets:is_element(Element, Dels) of
         true ->
@@ -87,12 +92,14 @@ add_element(Element, Set={Adds,Dels}) ->
              Dels}
     end.
 
+-spec del_element(_,{set(),set()}) -> {set(),set()}.
 del_element(Element, {Adds, Dels}) ->
     {sets:del_element(Element, Adds),
      sets:add_element(Element, Dels)}.
 
 
 %% CRDT Funs =========================================================
+-spec resolve([any()]) -> {set(),set()}.
 resolve(Siblings) ->
     FoldFun = fun({A_Adds, A_Dels}, {B_Adds, B_Dels}) ->
             DelsUnion = sets:union(A_Dels, B_Dels),
@@ -107,6 +114,7 @@ resolve(Siblings) ->
 %%% Internal functions
 %%%===================================================================
 
+-spec minus_deletes({set(),set()}) -> set().
 minus_deletes({Adds, Dels}) ->
     sets:subtract(Adds, Dels).
 

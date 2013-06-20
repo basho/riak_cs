@@ -87,9 +87,11 @@
 %% @spec start_link() -> {ok, Pid} | ignore | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
+-spec start_link(_,_,_) -> 'ignore' | {'error',_} | {'ok',pid()}.
 start_link(Bucket, Key, RiakcPid) ->
     gen_fsm:start_link(?MODULE, [Bucket, Key, RiakcPid], []).
 
+-spec get_all_manifests(_) -> any().
 get_all_manifests(Pid) ->
     gen_fsm:sync_send_event(Pid, get_manifests, infinity).
 
@@ -97,6 +99,7 @@ get_active_manifest(Pid) ->
     Response = gen_fsm:sync_send_event(Pid, get_manifests, infinity),
     riak_cs_utils:active_manifest_from_response(Response).
 
+-spec get_specific_manifest(_,_) -> {'error','notfound'} | {'ok',_}.
 get_specific_manifest(Pid, UUID) ->
     case gen_fsm:sync_send_event(Pid, get_manifests, infinity) of
         {ok, Manifests} ->
@@ -114,6 +117,7 @@ add_new_manifest(Pid, Manifest) ->
     Dict = riak_cs_manifest_utils:new_dict(Manifest?MANIFEST.uuid, Manifest),
     gen_fsm:send_event(Pid, {add_new_dict, Dict}).
 
+-spec update_manifests(atom() | pid() | port() | {atom(),_} | {'via',_,_},_) -> 'ok'.
 update_manifests(Pid, Manifests) ->
     gen_fsm:send_event(Pid, {update_manifests, Manifests}).
 
@@ -125,26 +129,31 @@ update_manifest(Pid, Manifest) ->
 %% update the manifest value in riak or delete the manifest key from
 %% riak if there are no manifest versions remaining.
 -spec delete_specific_manifest(pid(), binary()) -> ok | {error, term()}.
+
 delete_specific_manifest(Pid, UUID) ->
     gen_fsm:sync_send_event(Pid, {delete_manifest, UUID}, infinity).
 
 -spec update_manifests_with_confirmation(pid(), orddict:orddict()) -> ok | {error, term()}.
+
 update_manifests_with_confirmation(Pid, Manifests) ->
     gen_fsm:sync_send_event(Pid, {update_manifests_with_confirmation, Manifests},
                            infinity).
 
 -spec update_manifest_with_confirmation(pid(), lfs_manifest()) -> ok | {error, term()}.
+
 update_manifest_with_confirmation(Pid, Manifest) ->
     Dict = riak_cs_manifest_utils:new_dict(Manifest?MANIFEST.uuid, Manifest),
     update_manifests_with_confirmation(Pid, Dict).
 
 -spec maybe_stop_manifest_fsm(undefined | pid()) -> ok.
+
 maybe_stop_manifest_fsm(undefined) ->
     ok;
 maybe_stop_manifest_fsm(ManiPid) ->
     stop(ManiPid),
     ok.
 
+-spec stop(_) -> any().
 stop(Pid) ->
     gen_fsm:sync_send_all_state_event(Pid, stop, infinity).
 
@@ -152,6 +161,7 @@ stop(Pid) ->
 %%% gen_fsm callbacks
 %%%===================================================================
 
+-spec init(['test' | 'undefined' | binary() | pid(),...]) -> {'ok','waiting_command',#state{bucket::'undefined' | binary(),key::'undefined' | binary(),riakc_pid::'undefined' | pid()}}.
 init([Bucket, Key, RiakcPid]) ->
     process_flag(trap_exit, true),
     {ok, waiting_command, #state{bucket=Bucket,
@@ -168,6 +178,7 @@ init([test, Bucket, Key]) ->
 %% Once it has been called _once_
 %% with a particular UUID, update_manifest
 %% should be used from then on out.
+-spec waiting_command({'add_new_dict',_},#state{bucket::binary(),key::binary(),riakc_pid::pid()}) -> {'next_state','waiting_update_command',#state{bucket::binary(),key::binary(),manifests::'undefined' | [{_,_}],riakc_pid::pid()}}.
 waiting_command({add_new_dict, WrappedManifest}, State=#state{riakc_pid=RiakcPid,
                                                            bucket=Bucket,
                                                            key=Key}) ->
@@ -175,6 +186,7 @@ waiting_command({add_new_dict, WrappedManifest}, State=#state{riakc_pid=RiakcPid
     UpdState = State#state{riak_object=RiakObj, manifests=Manifests},
     {next_state, waiting_update_command, UpdState}.
 
+-spec waiting_update_command({'update_manifests',_},#state{bucket::binary(),key::binary(),manifests::'undefined' | [{_,_}],riakc_pid::pid()}) -> {'next_state','waiting_update_command',#state{bucket::binary(),key::binary(),riakc_pid::pid()}}.
 waiting_update_command({update_manifests, WrappedManifests}, State=#state{riakc_pid=RiakcPid,
                                                                  bucket=Bucket,
                                                                  key=Key,
@@ -197,6 +209,7 @@ waiting_update_command({update_manifests, WrappedManifests}, State=#state{riakc_
     {next_state, waiting_update_command, State#state{riak_object=undefined, manifests=undefined}}.
 
 
+-spec waiting_command('get_manifests' | {'delete_manifest',binary()} | {'update_manifests_with_confirmation',_},_,#state{bucket::binary(),key::binary(),riakc_pid::pid()}) -> {'reply',_,'waiting_update_command',#state{bucket::binary(),key::binary(),riakc_pid::pid()}}.
 waiting_command(get_manifests, _From, State) ->
     {Reply, NewState} = handle_get_manifests(State),
     {reply, Reply, waiting_update_command, NewState};
@@ -216,6 +229,7 @@ waiting_command({update_manifests_with_confirmation, _}=Cmd, From, State) ->
     waiting_update_command(Cmd, From, State).
 
 
+-spec waiting_update_command({'update_manifests_with_confirmation',_},_,#state{bucket::binary(),key::binary(),manifests::'undefined' | [{_,_}],riakc_pid::pid()}) -> {'reply',_,'waiting_update_command',#state{bucket::binary(),key::binary(),riakc_pid::pid()}}.
 waiting_update_command({update_manifests_with_confirmation, WrappedManifests}, _From,
                                             State=#state{riakc_pid=RiakcPid,
                                             bucket=Bucket,
@@ -236,19 +250,24 @@ waiting_update_command({update_manifests_with_confirmation, WrappedManifests}, _
 
     {reply, Reply, waiting_update_command, State#state{riak_object=undefined,
                                                        manifests=undefined}}.
+-spec handle_event(_,_,_) -> {'next_state',_,_}.
 handle_event(_Event, StateName, State) ->
     {next_state, StateName, State}.
 
+-spec handle_sync_event('stop',_,_,_) -> {'stop','normal','ok',_}.
 handle_sync_event(stop, _From, _StateName, State) ->
     Reply = ok,
     {stop, normal, Reply, State}.
 
+-spec handle_info(_,_,_) -> {'next_state',_,_}.
 handle_info(_Info, StateName, State) ->
     {next_state, StateName, State}.
 
+-spec terminate(_,_,_) -> 'ok'.
 terminate(_Reason, _StateName, _State) ->
     ok.
 
+-spec code_change(_,_,_,_) -> {'ok',_,_}.
 code_change(_OldVsn, StateName, State, _Extra) ->
     {ok, StateName, State}.
 
@@ -259,6 +278,7 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 %% @doc Return all (resolved) manifests, or notfound
 -spec handle_get_manifests(#state{}) ->
     {{ok, [lfs_manifest()]}, #state{}} | {{error, notfound}, #state{}}.
+
 handle_get_manifests(State=#state{riakc_pid=RiakcPid,
                            bucket=Bucket,
                            key=Key}) ->
@@ -277,6 +297,7 @@ handle_get_manifests(State=#state{riakc_pid=RiakcPid,
 %% if there are no manifests remaining.
 -spec get_and_delete(pid(), binary(), binary(), binary()) -> ok |
                                                              {error, term()}.
+
 get_and_delete(RiakcPid, UUID, Bucket, Key) ->
     case riak_cs_utils:get_manifests(RiakcPid, Bucket, Key) of
         {ok, RiakObject, Manifests} ->
@@ -297,6 +318,7 @@ get_and_delete(RiakcPid, UUID, Bucket, Key) ->
             ok
     end.
 
+-spec get_and_update(pid(),_,binary(),binary()) -> {_,_,'undefined' | [{_,_}]}.
 get_and_update(RiakcPid, WrappedManifests, Bucket, Key) ->
     %% retrieve the current (resolved) value at {Bucket, Key},
     %% add the new manifest, and then write the value
@@ -340,6 +362,7 @@ get_and_update(RiakcPid, WrappedManifests, Bucket, Key) ->
                                 binary(), binary(),
                                 orddict:orddict(), orddict:orddict()) ->
     ok | {error, term()}.
+
 update_from_previous_read(RiakcPid, RiakObject, Bucket, Key,
                           PreviousManifests, NewManifests) ->
     Resolved = riak_cs_manifest_resolution:resolve([PreviousManifests,
@@ -354,6 +377,7 @@ update_from_previous_read(RiakcPid, RiakObject, Bucket, Key,
     %% this call succeeded
     riak_cs_utils:put(RiakcPid, NewRiakObject).
 
+-spec update_md_with_multipart_2i(_,[any()],_,_) -> any().
 update_md_with_multipart_2i(RiakObject, WrappedManifests, Bucket, Key) ->
     %% During testing, it's handy to delete Riak keys in the
     %% S3 bucket, e.g., cleaning up from a previous test.
@@ -370,6 +394,7 @@ update_md_with_multipart_2i(RiakObject, WrappedManifests, Bucket, Key) ->
     MD = dict:store(K_i, V_i, MD0),
     riakc_obj:update_metadata(RiakObject, MD).
 
+-spec merge_dicts([any(),...]) -> any().
 merge_dicts([MD|MDs]) ->
     %% Smash all the dicts together, arbitrarily picking
     %% one value in case of conflict.

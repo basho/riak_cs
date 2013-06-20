@@ -42,6 +42,7 @@
 %% Webmachine callbacks
 %% -------------------------------------------------------------------
 
+-spec init([any()]) -> {'ok',#context{auth_bypass::boolean()}}.
 init(Config) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"init">>),
     %% Check if authentication is disabled and
@@ -50,11 +51,13 @@ init(Config) ->
     {ok, #context{auth_bypass=AuthBypass}}.
 
 -spec service_available(term(), term()) -> {true, term(), term()}.
+
 service_available(RD, Ctx) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"service_available">>),
     riak_cs_wm_utils:service_available(RD, Ctx).
 
 -spec allowed_methods(term(), term()) -> {[atom()], term(), term()}.
+
 allowed_methods(RD, Ctx) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"allowed_methods">>),
     {['GET', 'HEAD', 'POST', 'PUT'], RD, Ctx}.
@@ -91,20 +94,25 @@ handle_user_auth_response({_Reason, _RD, Ctx} = Ret) ->
 
 -spec content_types_accepted(term(), term()) ->
     {[{string(), atom()}], term(), term()}.
+
 content_types_accepted(RD, Ctx) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"content_types_accepted">>),
     {[{?XML_TYPE, accept_xml}, {?JSON_TYPE, accept_json}], RD, Ctx}.
 
+-spec content_types_provided(_,_) -> {[{[any(),...],'produce_json' | 'produce_xml'},...],_,_}.
 content_types_provided(RD, Ctx) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"content_types_provided">>),
     {[{?XML_TYPE, produce_xml}, {?JSON_TYPE, produce_json}], RD, Ctx}.
 
+-spec post_is_create(_,_) -> {'true',_,_}.
 post_is_create(RD, Ctx) -> {true, RD, Ctx}.
 
+-spec create_path(_,_) -> {[45 | 47 | 97 | 99 | 101 | 105 | 107 | 114 | 115 | 117,...],_,_}.
 create_path(RD, Ctx) -> {"/riak-cs/user", RD, Ctx}.
 
 -spec accept_json(term(), term()) ->
     {boolean() | {halt, term()}, term(), term()}.
+
 accept_json(RD, Ctx=#context{user=undefined}) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"accept_json">>),
     Body = wrq:req_body(RD),
@@ -140,6 +148,7 @@ accept_json(RD, Ctx) ->
 
 -spec accept_xml(term(), term()) ->
     {boolean() | {halt, term()}, term(), term()}.
+
 accept_xml(RD, Ctx=#context{user=undefined}) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"accept_xml">>),
     Body = binary_to_list(wrq:req_body(RD)),
@@ -207,12 +216,14 @@ finish_request(RD, Ctx=#context{riakc_pid=RiakPid}) ->
 %% -------------------------------------------------------------------
 
 -spec admin_check(boolean(), term(), term()) -> {boolean(), term(), term()}.
+
 admin_check(true, RD, Ctx) ->
     {false, RD, Ctx#context{user=undefined}};
 admin_check(false, RD, Ctx) ->
     riak_cs_wm_utils:deny_access(RD, Ctx).
 
 %% @doc Calculate the etag of a response body
+-spec etag(binary() | maybe_improper_list(binary() | maybe_improper_list(any(),binary() | []) | byte(),binary() | [])) -> nonempty_string().
 etag(Body) ->
         riak_cs_utils:etag_from_binary(crypto:md5(Body)).
 
@@ -223,6 +234,7 @@ etag(Body) ->
                 string(),
                 boolean()) ->
                        {boolean() | {halt, term()}, term(), term()}.
+
 forbidden(_Method, RD, Ctx, undefined, _UserPathKey, false) ->
     %% anonymous access disallowed
     riak_cs_wm_utils:deny_access(RD, Ctx);
@@ -247,6 +259,7 @@ forbidden(_Method, RD, Ctx, User, UserPathKey, _) ->
 
 -spec get_user({boolean() | {halt, term()}, term(), term()}, string()) ->
                       {boolean() | {halt, term()}, term(), term()}.
+
 get_user({false, RD, Ctx}, UserPathKey) ->
     handle_get_user_result(
       riak_cs_utils:get_user(UserPathKey, Ctx#context.riakc_pid),
@@ -260,6 +273,7 @@ get_user(AdminCheckResult, _) ->
                              term()) ->
                                     {boolean() | {halt, term()}, term(), term()}.
 
+
 handle_get_user_result({ok, {User, UserObj}}, RD, Ctx) ->
     {false, RD, Ctx#context{user=User, user_object=UserObj}};
 handle_get_user_result({error, Reason}, RD, Ctx) ->
@@ -269,6 +283,7 @@ handle_get_user_result({error, Reason}, RD, Ctx) ->
 
 -spec update_user([{binary(), binary()}], term(), term()) ->
     {boolean() | {halt, term()}, term(), term()}.
+
 update_user(UpdateItems, RD, Ctx=#context{user=User}) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"update_user">>),
     UpdateUserResult = update_user_record(User, UpdateItems, false),
@@ -276,6 +291,7 @@ update_user(UpdateItems, RD, Ctx=#context{user=User}) ->
 
 -spec update_user_record('undefined' | rcs_user(), [{atom(), term()}], boolean())
                         -> {boolean(), rcs_user()}.
+
 update_user_record(_User, [], RecordUpdated) ->
     {RecordUpdated, _User};
 update_user_record(User=?RCS_USER{status=Status},
@@ -291,6 +307,7 @@ update_user_record(_User, [_ | RestUpdates], _RecordUpdated) ->
 
 -spec handle_update_result({boolean(), rcs_user()}, term(), term()) ->
     {boolean() | {halt, term()}, term(), term()}.
+
 handle_update_result({false, _User}, RD, Ctx) ->
     ContentType = wrq:get_resp_header("Content-Type", RD),
     {{halt, 200}, set_resp_data(ContentType, RD, Ctx), Ctx};
@@ -302,6 +319,7 @@ handle_update_result({true, User}, RD, Ctx) ->
 
 -spec handle_save_user_result(ok | {error, term()}, rcs_user(), term(), term()) ->
     {boolean() | {halt, term()}, term(), term()}.
+
 handle_save_user_result(ok, User, RD, Ctx) ->
     ContentType = wrq:get_resp_header("Content-Type", RD),
     UpdCtx = Ctx#context{user=User},
@@ -310,6 +328,7 @@ handle_save_user_result({error, Reason}, _, RD, Ctx) ->
     riak_cs_s3_response:api_error(Reason, RD, Ctx).
 
 -spec set_resp_data(string(), term(), term()) -> term().
+
 set_resp_data(?JSON_TYPE, RD, #context{user=User}) ->
     UserData = riak_cs_wm_utils:user_record_to_json(User),
     JsonDoc = list_to_binary(mochijson2:encode(UserData)),
@@ -320,6 +339,7 @@ set_resp_data(?XML_TYPE, RD, #context{user=User}) ->
     wrq:set_resp_body(XmlDoc, RD).
 
 -spec user_json_filter({binary(), binary()}, [{atom(), term()}]) -> [{atom(), term()}].
+
 user_json_filter({ItemKey, ItemValue}, Acc) ->
     case ItemKey of
         <<"email">> ->
@@ -341,6 +361,7 @@ user_json_filter({ItemKey, ItemValue}, Acc) ->
             Acc
     end.
 
+-spec user_key(_) -> any().
 user_key(RD) ->
     case wrq:path_tokens(RD) of
         [KeyId|_] -> mochiweb_util:unquote(KeyId);
@@ -348,6 +369,7 @@ user_key(RD) ->
     end.
 
 -spec user_xml_filter(#xmlText{} | #xmlElement{}, [{atom(), term()}]) -> [{atom(), term()}].
+
 user_xml_filter(#xmlText{}, Acc) ->
     Acc;
 user_xml_filter(Element, Acc) ->

@@ -158,20 +158,24 @@
 
 -spec start_link(pid(), list_object_request(), term()) ->
     {ok, pid()} | {error, term()}.
+
 start_link(RiakcPid, ListKeysRequest, CacheKey) ->
     start_link(RiakcPid, self(), ListKeysRequest, CacheKey, true).
 
 -spec start_link(pid(), pid(), list_object_request(), term(), UseCache :: boolean()) ->
     {ok, pid()} | {error, term()}.
+
 start_link(RiakcPid, CallerPid, ListKeysRequest, CacheKey, UseCache) ->
     gen_fsm:start_link(?MODULE, [RiakcPid, CallerPid, ListKeysRequest, CacheKey, UseCache], []).
 
 -spec get_object_list(pid()) ->
     {ok, list_object_response()} |
     {error, term()}.
+
 get_object_list(FSMPid) ->
     gen_fsm:sync_send_all_state_event(FSMPid, get_object_list, infinity).
 
+-spec get_internal_state(_) -> any().
 get_internal_state(FSMPid) ->
     gen_fsm:sync_send_all_state_event(FSMPid, get_internal_state, infinity).
 
@@ -180,6 +184,7 @@ get_internal_state(FSMPid) ->
 %%%===================================================================
 
 -spec init(list()) -> {ok, prepare, state(), 0}.
+
 init([RiakcPid, CallerPid, Request, CacheKey, UseCache]) ->
     %% TODO: should we be linking or monitoring
     %% the proc that called us?
@@ -199,11 +204,13 @@ init([RiakcPid, CallerPid, Request, CacheKey, UseCache]) ->
     {ok, prepare, State, 0}.
 
 -spec prepare(timeout, state()) -> fsm_state_return().
+
 prepare(timeout, State=#state{riakc_pid=RiakcPid,
                               req=Request}) ->
     maybe_fetch_key_list(RiakcPid, Request, State).
 
 -spec waiting_list_keys(list_keys_event(), state()) -> fsm_state_return().
+
 waiting_list_keys({ReqID, done}, State=#state{list_keys_req_id=ReqID}) ->
     handle_keys_done(State);
 waiting_list_keys({ReqID, {keys, Keys}}, State=#state{list_keys_req_id=ReqID}) ->
@@ -216,6 +223,7 @@ waiting_list_keys({ReqID, {error, Reason}}, State=#state{list_keys_req_id=ReqID}
     {stop, Reason, State}.
 
 -spec waiting_map_reduce(mapred_event(), state()) -> fsm_state_return().
+
 waiting_map_reduce({ReqID, done}, State=#state{map_red_req_id=ReqID}) ->
     %% depending on the result of this, we'll either
     %% make another m/r request, or be done
@@ -228,6 +236,7 @@ waiting_map_reduce({ReqID, {error, Reason}},
                    State=#state{map_red_req_id=ReqID}) ->
     {stop, Reason, State}.
 
+-spec handle_event(_,_,_) -> {'next_state',_,_}.
 handle_event(_Event, StateName, State) ->
     {next_state, StateName, State}.
 
@@ -253,12 +262,14 @@ handle_info(Info, waiting_list_keys, State) ->
 handle_info(Info, waiting_map_reduce, State) ->
     waiting_map_reduce(Info, State).
 
+-spec terminate(_,_,_) -> 'ok'.
 terminate(normal, _StateName, #state{req_profiles=Profilings}) ->
     _ = print_profiling(Profilings),
     ok;
 terminate(_Reason, _StateName, _State) ->
     ok.
 
+-spec code_change(_,_,_,_) -> {'ok',_,_}.
 code_change(_OldVsn, StateName, State, _Extra) ->
     {ok, StateName, State}.
 
@@ -271,6 +282,7 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 
 -spec maybe_fetch_key_list(pid(), list_object_request(), state()) ->
     fsm_state_return().
+
 maybe_fetch_key_list(RiakcPid, Request, State=#state{use_cache=true,
                                                      cache_key=CacheKey}) ->
     CacheResult = riak_cs_list_objects_ets_cache:lookup(CacheKey),
@@ -279,6 +291,7 @@ maybe_fetch_key_list(RiakcPid, Request, State=#state{use_cache=false}) ->
     fetch_key_list(RiakcPid, Request, State, false).
 
 -spec maybe_write_to_cache(state(), list()) -> ok.
+
 maybe_write_to_cache(#state{use_cache=false}, _ListofListofKeys) ->
     ok;
 maybe_write_to_cache(#state{cache_key=CacheKey,
@@ -298,6 +311,7 @@ maybe_write_to_cache(#state{cache_key=CacheKey,
 %% to start a key listing.
 -type cache_lookup_result() :: {true, [binary()]} | false.
 -spec fetch_key_list(pid(), list_object_request(), state(), cache_lookup_result()) -> fsm_state_return().
+
 fetch_key_list(_, _, State, {true, Value}) ->
     _ = lager:debug("Using cached key list"),
     NewState = prepare_state_for_first_mapred(Value, State#state{key_buffer=Value}),
@@ -314,6 +328,7 @@ fetch_key_list(RiakcPid, Request, State, false) ->
 %% with key filters?
 -spec make_list_keys_request(pid(), list_object_request()) ->
     streaming_req_response().
+
 make_list_keys_request(RiakcPid, ?LOREQ{name=BucketName}) ->
     %% hardcoded for now
     ServerTimeout = timer:seconds(60),
@@ -325,6 +340,7 @@ make_list_keys_request(RiakcPid, ?LOREQ{name=BucketName}) ->
 
 -spec handle_streaming_list_keys_call(streaming_req_response(), state()) ->
     fsm_state_return().
+
 handle_streaming_list_keys_call({ok, ReqID}, State) ->
     ListKeysStartTime = riak_cs_utils:timestamp_to_seconds(os:timestamp()),
     Profiling2 = #profiling{list_keys_start_time=ListKeysStartTime},
@@ -334,6 +350,7 @@ handle_streaming_list_keys_call({error, Reason}, State) ->
     {stop, Reason, State}.
 
 -spec handle_keys_done(state()) -> fsm_state_return().
+
 handle_keys_done(State=#state{key_buffer=ListofListofKeys}) ->
     %% TODO: this could potentially be pretty expensive
     %% and memory instensive. More reason to think about starting
@@ -345,6 +362,7 @@ handle_keys_done(State=#state{key_buffer=ListofListofKeys}) ->
     maybe_map_reduce(NewState).
 
 -spec prepare_state_for_first_mapred(list(), state()) -> state().
+
 prepare_state_for_first_mapred(KeyList, State=#state{req=Request,
                                                        req_profiles=Profiling}) ->
     NumKeys = length(KeyList),
@@ -376,6 +394,7 @@ handle_keys_received(Keys, State=#state{key_buffer=PrevKeyBuffer}) ->
 
 -spec manifests_and_prefix_slice(manifests_and_prefixes(), non_neg_integer()) ->
     tagged_item_list().
+
 manifests_and_prefix_slice(ManifestsAndPrefixes, MaxObjects) ->
     TaggedList = tagged_manifest_and_prefix(ManifestsAndPrefixes),
     Sorted = lists:sort(fun tagged_sort_fun/2, TaggedList),
@@ -383,12 +402,14 @@ manifests_and_prefix_slice(ManifestsAndPrefixes, MaxObjects) ->
 
 -spec tagged_sort_fun(tagged_item(), tagged_item()) ->
     boolean().
+
 tagged_sort_fun(A, B) ->
     AKey = key_from_tag(A),
     BKey = key_from_tag(B),
     AKey =< BKey.
 
 -spec key_from_tag(tagged_item()) -> binary().
+
 key_from_tag({manifest, {Key, _M}}) ->
     Key;
 key_from_tag({prefix, Key}) ->
@@ -396,21 +417,25 @@ key_from_tag({prefix, Key}) ->
 
 -spec tagged_manifest_and_prefix(manifests_and_prefixes()) ->
     tagged_item_list().
+
 tagged_manifest_and_prefix({Manifests, Prefixes}) ->
     tagged_manifest_list(Manifests) ++ tagged_prefix_list(Prefixes).
 
 -spec tagged_manifest_list(list(key_and_manifest())) ->
     list({manifest, key_and_manifest()}).
+
 tagged_manifest_list(KeyAndManifestList) ->
     [{manifest, M} || M <- KeyAndManifestList].
 
 -spec tagged_prefix_list(list(binary())) ->
     list({prefix, binary()}).
+
 tagged_prefix_list(Prefixes) ->
     [{prefix, P} || P <- ordsets:to_list(Prefixes)].
 
 -spec untagged_manifest_and_prefix(tagged_item_list()) ->
     manifests_and_prefixes().
+
 untagged_manifest_and_prefix(TaggedInput) ->
     Pred = fun({manifest, _}) -> true;
               (_Else) -> false end,
@@ -419,6 +444,7 @@ untagged_manifest_and_prefix(TaggedInput) ->
      [element(2, P) || P <- B]}.
 
 -spec manifests_and_prefix_length(manifests_and_prefixes()) -> non_neg_integer().
+
 manifests_and_prefix_length({KeyAndManifestList, Prefixes}) ->
     length(KeyAndManifestList) + ordsets:size(Prefixes).
 
@@ -426,6 +452,7 @@ manifests_and_prefix_length({KeyAndManifestList, Prefixes}) ->
                          CommonPrefixes :: ordsets:ordset(binary()),
                          list_object_request()) ->
     manifests_and_prefixes().
+
 filter_prefix_keys(KeyAndManifestList, CommonPrefixes, ?LOREQ{prefix=undefined,
                                                               delimiter=undefined}) ->
     {KeyAndManifestList, CommonPrefixes};
@@ -437,6 +464,7 @@ filter_prefix_keys(KeyAndManifestList, CommonPrefixes, ?LOREQ{prefix=Prefix,
         end,
     lists:foldl(PrefixFilter, {[], CommonPrefixes}, KeyAndManifestList).
 
+-spec prefix_filter({_,_},{_,_},'undefined' | binary(),'undefined' | binary()) -> {_,_}.
 prefix_filter({Key, _Manifest}=KeyAndManifest, Acc, undefined, Delimiter) ->
     Group = extract_group(Key, Delimiter),
     update_keys_and_prefixes(Acc, KeyAndManifest, <<>>, 0, Group);
@@ -460,6 +488,7 @@ prefix_filter({Key, _Manifest}=KeyAndManifest,
             Acc
     end.
 
+-spec extract_group(binary(),binary()) -> 'nomatch' | binary().
 extract_group(Key, Delimiter) ->
     case binary:match(Key, [Delimiter]) of
         nomatch ->
@@ -468,6 +497,7 @@ extract_group(Key, Delimiter) ->
             binary:part(Key, {0, Pos+Len})
     end.
 
+-spec update_keys_and_prefixes({_,_},{_,_},binary(),non_neg_integer(),'nomatch' | binary()) -> {_,_}.
 update_keys_and_prefixes({KeyAndManifestList, Prefixes},
                          KeyAndManifest, _, _, nomatch) ->
     {[KeyAndManifest | KeyAndManifestList], Prefixes};
@@ -480,6 +510,7 @@ update_keys_and_prefixes({KeyAndManifestList, Prefixes},
 %%--------------------------------------------------------------------
 
 -spec maybe_map_reduce(state()) -> fsm_state_return().
+
 maybe_map_reduce(State=#state{object_buffer=ObjectBuffer,
                               common_prefixes=CommonPrefixes,
                               req=Request,
@@ -497,6 +528,7 @@ handle_enough_results(false, State=#state{num_considerable_keys=TotalCandidateKe
 
 -spec handle_could_query_more_map_reduce(boolean(), state()) ->
     fsm_state_return().
+
 handle_could_query_more_map_reduce(true,
                                    State=#state{req=Request,
                                                 riakc_pid=RiakcPid}) ->
@@ -524,6 +556,7 @@ prepare_state_for_mapred(State=#state{req=Request,
 
 -spec make_response(list_object_request(), list(), list()) ->
     list_object_response().
+
 make_response(Request=?LOREQ{max_keys=NumKeysRequested}, ObjectBuffer, CommonPrefixes) ->
     ObjectPrefixTuple = {ObjectBuffer, CommonPrefixes},
     NumObjects = manifests_and_prefix_length(ObjectPrefixTuple),
@@ -543,6 +576,7 @@ response_transformer({_Key, Manifest}) ->
                          non_neg_integer(),
                          float()) ->
     {integer(), integer()}.
+
 next_mr_query_spec([], TotalNeeded, _NumHaveSoFar, KeyMultiplier) ->
     StartIdx = 1,
     EndIdx = round_up(TotalNeeded * KeyMultiplier),
@@ -557,6 +591,7 @@ next_keys_from_state(#state{mr_requests=Requests,
                             filtered_keys=FilteredKeys}) ->
     next_keys(lists:last(Requests), FilteredKeys).
 
+-spec next_keys({pos_integer(),non_neg_integer()},[any()]) -> [any()].
 next_keys({StartIdx, EndIdx}, Keys) ->
     %% the last arg to sublist is _not_ an index, but
     %% a length, hence the diff of `EndIdx' and `StartIdx'
@@ -566,6 +601,7 @@ next_keys({StartIdx, EndIdx}, Keys) ->
 
 -spec handle_mapred_results(list(), state()) ->
     fsm_state_return().
+
 handle_mapred_results(Results, State=#state{object_buffer=Buffer,
                                             common_prefixes=OldPrefixes,
                                             req=Request}) ->
@@ -582,25 +618,30 @@ handle_mapred_results(Results, State=#state{object_buffer=Buffer,
 %% transform the values of the list here.
 -spec clean_key_and_manifest({binary(), {ok, lfs_manifest()}}) ->
     {binary(), lfs_manifest()}.
+
 clean_key_and_manifest({Key, {ok, Manifest}}) ->
     {Key, Manifest}.
 
 -spec update_buffer(list(), list()) -> list().
+
 update_buffer(Results, Buffer) ->
     %% TODO: is this the fastest way to do this?
     lists:merge(lists:sort(Results), Buffer).
 
 -spec make_map_reduce_request(pid(), binary(), list()) ->
     streaming_req_response().
+
 make_map_reduce_request(RiakcPid, ManifestBucketName, Keys) ->
     BKeyTuples = make_bkeys(ManifestBucketName, Keys),
     send_map_reduce_request(RiakcPid, BKeyTuples).
 
 -spec make_bkeys(binary(), list()) -> list().
+
 make_bkeys(ManifestBucketName, Keys) ->
     [{ManifestBucketName, Key} || Key <- Keys].
 
 -spec send_map_reduce_request(pid(), list()) -> streaming_req_response().
+
 send_map_reduce_request(RiakcPid, BKeyTuples) ->
     %% TODO: change this:
     %% hardcode 60 seconds for now
@@ -613,6 +654,7 @@ send_map_reduce_request(RiakcPid, BKeyTuples) ->
                                   infinity).
 
 -spec mapred_query() -> list().
+
 mapred_query() ->
     [{map, {modfun, riak_cs_utils, map_keys_and_manifests},
       undefined, false},
@@ -621,6 +663,7 @@ mapred_query() ->
 
 -spec handle_map_reduce_call(streaming_req_response(), state()) ->
     fsm_state_return().
+
 handle_map_reduce_call({ok, ReqID}, State) ->
     State2 = State#state{map_red_req_id=ReqID},
     State3 = update_state_with_mr_start_profiling(State2),
@@ -632,6 +675,7 @@ handle_map_reduce_call({error, Reason}, State) ->
                      list_object_request(),
                      non_neg_integer()) ->
     boolean().
+
 enough_results(ManifestsAndPrefixes, ?LOREQ{max_keys=MaxKeysRequested}, TotalCandidateKeys) ->
     ResultsLength = manifests_and_prefix_length(ManifestsAndPrefixes),
     %% we have enough results if one of two things is true:
@@ -646,6 +690,7 @@ enough_results(ManifestsAndPrefixes, ?LOREQ{max_keys=MaxKeysRequested}, TotalCan
     ResultsLength >= erlang:min(MaxKeysRequested + 1, TotalCandidateKeys).
 
 -spec could_query_more_mapreduce(list(), non_neg_integer()) -> boolean().
+
 could_query_more_mapreduce(_Requests, 0) ->
     false;
 could_query_more_mapreduce([], _TotalKeys) ->
@@ -655,6 +700,7 @@ could_query_more_mapreduce(Requests, TotalKeys) ->
 
 -spec more_results_possible({non_neg_integer(), non_neg_integer()},
                             non_neg_integer()) -> boolean().
+
 more_results_possible({_StartIdx, EndIdx}, TotalKeys)
         when EndIdx < TotalKeys ->
     true;
@@ -662,6 +708,7 @@ more_results_possible(_Request, _TotalKeys) ->
     false.
 
 -spec have_enough_results(state()) -> fsm_state_return().
+
 have_enough_results(State=#state{reply_ref=undefined,
                                  req=Request,
                                  object_buffer=ObjectBuffer,
@@ -682,6 +729,7 @@ have_enough_results(State=#state{reply_ref=ReplyPid,
                                  list(binary()),
                                  non_neg_integer()) ->
     list(binary()).
+
 filtered_keys_from_request(?LOREQ{marker=Marker,
                                   prefix=Prefix}, KeyList, KeyListLength) ->
     AfterMarker = maybe_filter_marker(Marker, KeyList, KeyListLength),
@@ -691,6 +739,7 @@ filtered_keys_from_request(?LOREQ{marker=Marker,
                           list(binary()),
                           non_neg_integer()) ->
     list(binary()).
+
 maybe_filter_marker(undefined, KeyList, _KeyListLength) ->
     KeyList;
 maybe_filter_marker(Marker, KeyList, KeyListLength) ->
@@ -699,19 +748,23 @@ maybe_filter_marker(Marker, KeyList, KeyListLength) ->
 -spec maybe_filter_prefix(undefined | binary(),
                           list(binary())) ->
     list(binary()).
+
 maybe_filter_prefix(undefined, KeyList) ->
     KeyList;
 maybe_filter_prefix(Prefix, KeyList) ->
     filter_prefix(Prefix, KeyList).
 
+-spec filter_marker(binary(),[non_neg_integer()],non_neg_integer()) -> [any()].
 filter_marker(Marker, KeyList, KeyListLength) ->
     MarkerIndex = index_of_first_greater_element(KeyList, Marker),
     lists:sublist(KeyList, MarkerIndex, KeyListLength).
 
+-spec filter_prefix(binary(),[binary()]) -> [binary()].
 filter_prefix(Prefix, KeyList) ->
     PrefixFun = build_prefix_fun(Prefix),
     lists:filter(PrefixFun, KeyList).
 
+-spec build_prefix_fun(binary()) -> fun((_) -> boolean()).
 build_prefix_fun(Prefix) ->
     PrefixLen = byte_size(Prefix),
     fun(Elem) ->
@@ -725,6 +778,7 @@ build_prefix_fun(Prefix) ->
 
 %% only works for positive numbers
 -spec round_up(float()) -> integer().
+
 round_up(X) ->
     erlang:round(X + 0.5).
 
@@ -735,9 +789,11 @@ round_up(X) ->
 %% in `List', then `length(List) + 1' is returned.
 %% `List' must be <em>sorted</em> and contain only unique elements.
 -spec index_of_first_greater_element(list(non_neg_integer()), term()) -> pos_integer().
+
 index_of_first_greater_element(List, Element) ->
     index_of_first_greater_element_helper(List, Element, 1).
 
+-spec index_of_first_greater_element_helper([any()],binary(),pos_integer()) -> pos_integer().
 index_of_first_greater_element_helper([], _Element, 1) ->
     1;
 index_of_first_greater_element_helper([Fst], Element, Index) when Element < Fst ->
@@ -789,10 +845,12 @@ format_map_reduce_profile(#profiling{mr_requests=MRRequests}) ->
     string:concat("Map Reduce timings: ",
                   format_map_reduce_profile_helper(MRRequests)).
 
+-spec format_map_reduce_profile_helper([{{_,_},non_neg_integer(),{_,_}}]) -> string().
 format_map_reduce_profile_helper(MRRequests) ->
     string:join(lists:map(fun format_single_mr_profile/1, MRRequests),
                 "~n").
 
+-spec format_single_mr_profile({_,_,{number(),number()}}) -> [[any()] | char()].
 format_single_mr_profile({_Request, NumKeysRequested, {Start, End}}) ->
     TimeDiff = End - Start,
     io_lib:format("~p keys in ~6.2f seconds", [NumKeysRequested, TimeDiff]).

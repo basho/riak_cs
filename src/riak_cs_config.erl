@@ -62,11 +62,13 @@
 %% @doc Return the value of the `anonymous_user_creation' application
 %% environment variable.
 -spec anonymous_user_creation() -> boolean().
+
 anonymous_user_creation() ->
     get_env(riak_cs, anonymous_user_creation, false).
 
 %% @doc Return the credentials of the admin user
 -spec admin_creds() -> {ok, {string(), string()}} | {error, term()}.
+
 admin_creds() ->
     admin_creds_response(
       get_env(riak_cs, admin_key, undefined),
@@ -74,6 +76,7 @@ admin_creds() ->
 
 -spec admin_creds_response(term(), term()) -> {ok, {term(), term()}} |
                                               {error, atom()}.
+
 admin_creds_response(undefined, _) ->
     _ = lager:warning("The admin user's key id"
                       "has not been specified."),
@@ -96,14 +99,17 @@ admin_creds_response(Key, Secret) ->
 %% @doc Get the active version of Riak CS to use in checks to
 %% determine if new features should be enabled.
 -spec cs_version() -> pos_integer() | undefined.
+
 cs_version() ->
     get_env(riak_cs, cs_version, undefined).
 
 -spec api() -> s3 | oos.
+
 api() ->
     api(application:get_env(riak_cs, rewrite_module)).
 
 -spec api({ok, atom()} | undefined) -> s3 | oos | undefined.
+
 api({ok, ?S3_API_MOD}) ->
     s3;
 api({ok, ?OOS_API_MOD}) ->
@@ -112,44 +118,54 @@ api(_) ->
     undefined.
 
 -spec auth_bypass() -> boolean().
+
 auth_bypass() ->
     get_env(riak_cs, auth_bypass, false).
 
 -spec admin_auth_enabled() -> boolean().
+
 admin_auth_enabled() ->
     get_env(riak_cs, admin_auth_enabled, true).
 
 -spec auth_module() -> atom().
+
 auth_module() ->
     get_env(riak_cs, auth_module, ?DEFAULT_AUTH_MODULE).
 
 -spec enforce_multipart_part_size() -> boolean().
+
 enforce_multipart_part_size() ->
     get_env(riak_cs, enforce_multipart_part_size, true).
 
 -spec key_list_multiplier() -> float().
+
 key_list_multiplier() ->
     get_env(riak_cs, key_list_multiplier, ?KEY_LIST_MULTIPLIER).
 
 -spec set_key_list_multiplier(float()) -> 'ok'.
+
 set_key_list_multiplier(Multiplier) ->
     application:set_env(riak_cs, key_list_multiplier, Multiplier).
 
 -spec policy_module() -> atom().
+
 policy_module() ->
     get_env(riak_cs, policy_module, ?DEFAULT_POLICY_MODULE).
 
 -spec response_module() -> atom().
+
 response_module() ->
     response_module(api()).
 
 -spec response_module(atom()) -> atom().
+
 response_module(oos) ->
     ?OOS_RESPONSE_MOD;
 response_module(_) ->
     ?S3_RESPONSE_MOD.
 
 -spec use_t2b_compression() -> boolean().
+
 use_t2b_compression() ->
     get_env(riak_cs, compress_terms, ?COMPRESS_TERMS).
 
@@ -157,6 +173,7 @@ use_t2b_compression() ->
 %% After obtaining the clusterid the first time,
 %% store the value in app:set_env
 -spec cluster_id(pid()) -> binary().
+
 cluster_id(Pid) ->
     case application:get_env(riak_cs, cluster_id) of
         {ok, ClusterID} ->
@@ -173,6 +190,7 @@ cluster_id(Pid) ->
 
 %% @doc If `proxy_get' is enabled then attempt to determine the cluster id
 -spec maybe_get_cluster_id(boolean(), pid(), integer()) -> undefined | binary().
+
 maybe_get_cluster_id(true, Pid, Timeout) ->
     try
         case riak_repl_pb_api:get_clusterid(Pid, Timeout) of
@@ -195,15 +213,18 @@ maybe_get_cluster_id(false, _, _) ->
 
 %% @doc Return the configured md5 chunk size
 -spec md5_chunk_size() -> non_neg_integer().
+
 md5_chunk_size() ->
     get_env(riak_cs, md5_chunk_size, ?DEFAULT_MD5_CHUNK_SIZE).
 
 -spec riak_cs_stat() -> boolean().
+
 riak_cs_stat() ->
     get_env(riak_cs, riak_cs_stat, true).
 
 %% @doc Helper fun to set the md5 chunk size
 -spec set_md5_chunk_size(non_neg_integer()) -> ok | {error, invalid_value}.
+
 set_md5_chunk_size(Size) when is_integer(Size) andalso Size > 0 ->
     application:set_env(riak_cs, md5_chunk_size, Size);
 set_md5_chunk_size(_) ->
@@ -211,6 +232,7 @@ set_md5_chunk_size(_) ->
 
 %% doc Check app.config to see if repl proxy_get is enabled
 %% Defaults to false.
+-spec proxy_get_active() -> boolean().
 proxy_get_active() ->
     case application:get_env(riak_cs, proxy_get) of
         {ok, enabled} ->
@@ -232,20 +254,24 @@ proxy_get_active() ->
 %% ===================================================================
 
 -spec os_auth_url() -> term().
+
 os_auth_url() ->
     get_env(riak_cs, os_auth_url, ?DEFAULT_OS_AUTH_URL).
 
 -spec os_operator_roles() -> [term()].
+
 os_operator_roles() ->
     ordsets:from_list(get_env(riak_cs,
                               os_operator_roles,
                               ?DEFAULT_OS_OPERATOR_ROLES)).
 
 -spec os_admin_token() -> term().
+
 os_admin_token() ->
     get_env(riak_cs, os_admin_token, ?DEFAULT_OS_ADMIN_TOKEN).
 
 -spec os_s3_tokens_url() -> term().
+
 os_s3_tokens_url() ->
     os_auth_url() ++
         get_env(riak_cs,
@@ -253,6 +279,7 @@ os_s3_tokens_url() ->
                 ?DEFAULT_S3_TOKENS_RESOURCE).
 
 -spec os_tokens_url() -> term().
+
 os_tokens_url() ->
     os_auth_url() ++
         get_env(riak_cs,
@@ -260,6 +287,7 @@ os_tokens_url() ->
                 ?DEFAULT_TOKENS_RESOURCE).
 
 -spec os_users_url() -> term().
+
 os_users_url() ->
     os_auth_url() ++
         get_env(riak_cs,
@@ -272,6 +300,7 @@ os_users_url() ->
 
 %% @doc Get an application environment variable or return a default term.
 -spec get_env(atom(), atom(), term()) -> term().
+
 get_env(App, Key, Default) ->
     case application:get_env(App, Key) of
         {ok, Value} ->

@@ -49,6 +49,7 @@
 
 %% @doc API for starting the supervisor.
 -spec start_link() -> startlink_ret().
+
 start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
@@ -57,6 +58,7 @@ start_link() ->
                          non_neg_integer(),
                          non_neg_integer()},
                         [supervisor:child_spec()]}}.
+
 init([]) ->
     catch dtrace:init(),                   % NIF load trigger (R14B04)
     catch dyntrace:p(),                    % NIF load trigger (R15B01+)
@@ -66,6 +68,7 @@ init([]) ->
                web_specs(Options)}}.
 
 -spec process_specs() -> [supervisor:child_spec()].
+
 process_specs() ->
     Archiver = {riak_cs_access_archiver_manager,
                 {riak_cs_access_archiver_manager, start_link, []},
@@ -104,22 +107,26 @@ process_specs() ->
      DiagsSup].
 
 -spec get_option_val({atom(), term()} | atom()) -> {atom(), term()}.
+
 get_option_val({Option, Default}) ->
     handle_get_env_result(Option, get_env(Option), Default);
 get_option_val(Option) ->
     get_option_val({Option, undefined}).
 
 -spec get_env(atom()) -> 'undefined' | {ok, term()}.
+
 get_env(Key) ->
     application:get_env(riak_cs, Key).
 
 -spec handle_get_env_result(atom(), {ok, term()} | 'undefined', term()) -> {atom(), term()}.
+
 handle_get_env_result(Option, {ok, Value}, _) ->
     {Option, Value};
 handle_get_env_result(Option, undefined, Default) ->
     {Option, Default}.
 
 -spec web_specs(proplist()) -> [supervisor:child_spec()].
+
 web_specs(Options) ->
     WebConfigs =
         case single_web_interface(proplists:get_value(admin_ip, Options)) of
@@ -132,6 +139,7 @@ web_specs(Options) ->
     [web_spec(Name, Config) || {Name, Config} <- WebConfigs].
 
 -spec pool_specs(proplist()) -> [supervisor:child_spec()].
+
 pool_specs(Options) ->
     WorkerStop = fun(Worker) -> riak_cs_riakc_pool_worker:stop(Worker) end,
     [pool_spec(Name, Workers, Overflow, WorkerStop)
@@ -139,6 +147,7 @@ pool_specs(Options) ->
 
 -spec pool_spec(atom(), non_neg_integer(), non_neg_integer(), function()) ->
                        supervisor:child_spec().
+
 pool_spec(Name, Workers, Overflow, WorkerStop) ->
     {Name,
      {poolboy, start_link, [[{name, {local, Name}},
@@ -149,12 +158,14 @@ pool_spec(Name, Workers, Overflow, WorkerStop) ->
      permanent, 5000, worker, [poolboy]}.
 
 -spec web_spec(atom(), proplist()) -> supervisor:child_spec().
+
 web_spec(Name, Config) ->
     {Name,
      {webmachine_mochiweb, start, [Config]},
      permanent, 5000, worker, dynamic}.
 
 -spec object_web_config(proplist()) -> proplist().
+
 object_web_config(Options) ->
     [{dispatch, riak_cs_web:object_api_dispatch_table()},
      {name, object_web},
@@ -168,6 +179,7 @@ object_web_config(Options) ->
         maybe_add_ssl_opts(proplists:get_value(ssl, Options)).
 
 -spec admin_web_config(proplist()) -> proplist().
+
 admin_web_config(Options) ->
     [{dispatch, riak_cs_web:admin_api_dispatch_table()},
      {name, admin_web},
@@ -179,18 +191,21 @@ admin_web_config(Options) ->
         maybe_add_ssl_opts(proplists:get_value(admin_ssl, Options)).
 
 -spec single_web_interface('undefined' | term()) -> boolean().
+
 single_web_interface(undefined) ->
     true;
 single_web_interface(_) ->
     false.
 
 -spec maybe_add_ssl_opts('undefined' | proplist()) -> proplist().
+
 maybe_add_ssl_opts(undefined) ->
     [];
 maybe_add_ssl_opts(SSLOpts) ->
     [{ssl, true}, {ssl_opts, SSLOpts}].
 
 -spec add_admin_dispatch_table(proplist()) -> proplist().
+
 add_admin_dispatch_table(Config) ->
     UpdDispatchTable = proplists:get_value(dispatch, Config) ++
         riak_cs_web:admin_api_dispatch_table(),

@@ -49,11 +49,13 @@
 %% This function is temporary and should be removed once all XML
 %% handling has been moved into this module.
 %% @TODO Remove this asap!
+-spec export_xml([atom() | maybe_improper_list() | {[any()]} | {atom() | fun((_) -> any()),_} | {atom(),[any()],[any()]} | {'xmlComment',_,_,_,_} | {'xmlDecl',_,_,_,[any()]} | {'xmlPI',_,_,_,_} | {'xmlText',_,_,_,_,_} | {'xmlElement',_,_,_,_,_,_,[any()],[any()],_,_,_}]) -> binary() | {'error',binary(),binary() | maybe_improper_list()} | {'incomplete',binary(),binary()}.
 export_xml(XmlDoc) ->
     unicode:characters_to_binary(
       xmerl:export_simple(XmlDoc, xmerl_xml, [{prolog, ?XML_PROLOG}]), unicode, unicode).
 
 -spec to_xml(term()) -> binary().
+
 to_xml(undefined) ->
     [];
 to_xml([]) ->
@@ -74,6 +76,7 @@ to_xml(?LORESP{}=ListObjsResp) ->
 %% @doc Convert an internal representation of an ACL
 %% into XML.
 -spec acl_to_xml(acl()) -> binary().
+
 acl_to_xml(Acl) ->
     Content = [make_internal_node('Owner', owner_content(acl_owner(Acl))),
                make_internal_node('AccessControlList', make_grants(acl_grants(Acl)))],
@@ -81,12 +84,14 @@ acl_to_xml(Acl) ->
     export_xml(XmlDoc).
 
 -spec acl_grants(?ACL{} | #acl_v1{}) -> [acl_grant()].
+
 acl_grants(?ACL{grants=Grants}) ->
     Grants;
 acl_grants(#acl_v1{grants=Grants}) ->
     Grants.
 
 -spec acl_owner(?ACL{} | #acl_v1{}) -> {string(), string()}.
+
 acl_owner(?ACL{owner=Owner}) ->
     {OwnerName, OwnerId, _} = Owner,
     {OwnerName, OwnerId};
@@ -94,6 +99,7 @@ acl_owner(#acl_v1{owner=Owner}) ->
     Owner.
 
 -spec owner_content({string(), string()}) -> [external_node()].
+
 owner_content({OwnerName, OwnerId}) ->
     [make_external_node('ID', OwnerId),
      make_external_node('DisplayName', OwnerName)].
@@ -125,6 +131,7 @@ list_buckets_response_to_xml(Resp) ->
                                    [{'xmlns', ?S3_XMLNS}],
                                    Contents)]).
 
+-spec bucket_to_xml('undefined' | binary() | string(),'undefined' | string()) -> {'AccessControlList' | 'AccessControlPolicy' | 'Bucket' | 'Buckets' | 'CommonPrefixes' | 'Contents' | 'Grant' | 'Owner',[{_,_} | {_,_,_}]}.
 bucket_to_xml(Name, CreationDate) when is_binary(Name) ->
     bucket_to_xml(binary_to_list(Name), CreationDate);
 bucket_to_xml(Name, CreationDate) ->
@@ -147,29 +154,35 @@ key_content_to_xml(KeyContent) ->
     make_internal_node('Contents', Contents).
 
 -spec common_prefix_to_xml(binary()) -> internal_node().
+
 common_prefix_to_xml(CommonPrefix) ->
     make_internal_node('CommonPrefixes',
                        [make_external_node('Prefix', CommonPrefix)]).
 
 -spec make_internal_node(atom(), term()) -> internal_node().
+
 make_internal_node(Name, Content) ->
     {Name, Content}.
 
 -spec make_internal_node(atom(), attributes(), term()) -> internal_node().
+
 make_internal_node(Name, Attributes, Content) ->
     {Name, Attributes, Content}.
 
 -spec make_external_node(atom(), term()) -> external_node().
+
 make_external_node(Name, Content) ->
     {Name, [format_value(Content)]}.
 
 %% @doc Assemble the xml for the set of grantees for an acl.
 -spec make_grants([acl_grant()]) -> [internal_node()].
+
 make_grants(Grantees) ->
     make_grants(Grantees, []).
 
 %% @doc Assemble the xml for the set of grantees for an acl.
 -spec make_grants([acl_grant()], [[internal_node()]]) -> [internal_node()].
+
 make_grants([], Acc) ->
     lists:flatten(Acc);
 make_grants([{{GranteeName, GranteeId}, Perms} | RestGrantees], Acc) ->
@@ -181,6 +194,7 @@ make_grants([{Group, Perms} | RestGrantees], Acc) ->
 
 %% @doc Assemble the xml for a group grantee for an acl.
 -spec make_grant(atom(), acl_perm()) -> internal_node().
+
 make_grant(Group, Permission) ->
     Attributes = [{'xmlns:xsi', ?XML_SCHEMA_INSTANCE},
                   {'xsi:type', "Group"}],
@@ -192,6 +206,7 @@ make_grant(Group, Permission) ->
 
 %% @doc Assemble the xml for a single grantee for an acl.
 -spec make_grant(string(), string(), acl_perm()) -> internal_node().
+
 make_grant(DisplayName, CanonicalId, Permission) ->
     Attributes = [{'xmlns:xsi', ?XML_SCHEMA_INSTANCE},
                   {'xsi:type', "CanonicalUser"}],
@@ -203,12 +218,14 @@ make_grant(DisplayName, CanonicalId, Permission) ->
     make_internal_node('Grant', GrantContent).
 
 -spec make_owner(list_objects_owner()) -> internal_node().
+
 make_owner(#list_objects_owner_v1{id=Id, display_name=Name}) ->
     Content = [make_external_node('ID', Id),
                make_external_node('DisplayName', Name)],
     make_internal_node('Owner', Content).
 
 -spec format_value(atom() | integer() | binary() | list()) -> string().
+
 format_value(undefined) ->
     [];
 format_value(Val) when is_atom(Val) ->
@@ -222,6 +239,7 @@ format_value(Val) when is_list(Val) ->
 
 %% @doc Map a ACL group atom to its corresponding URI.
 -spec uri_for_group(atom()) -> string().
+
 uri_for_group('AllUsers') ->
     ?ALL_USERS_GROUP;
 uri_for_group('AuthUsers') ->

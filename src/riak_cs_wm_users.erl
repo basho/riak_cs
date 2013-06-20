@@ -36,6 +36,7 @@
 %% Webmachine callbacks
 %% -------------------------------------------------------------------
 
+-spec init([any()]) -> {'ok',#context{auth_bypass::boolean()}}.
 init(Config) ->
     %% Check if authentication is disabled and
     %% set that in the context.
@@ -43,10 +44,12 @@ init(Config) ->
     {ok, #context{auth_bypass=AuthBypass}}.
 
 -spec service_available(term(), term()) -> {true, term(), term()}.
+
 service_available(RD, Ctx) ->
     riak_cs_wm_utils:service_available(RD, Ctx).
 
 -spec allowed_methods(term(), term()) -> {[atom()], term(), term()}.
+
 allowed_methods(RD, Ctx) ->
     {['GET', 'HEAD'], RD, Ctx}.
 
@@ -56,6 +59,7 @@ forbidden(RD, Ctx=#context{auth_bypass=AuthBypass}) ->
            end,
     riak_cs_wm_utils:find_and_auth_user(RD, Ctx, Next, AuthBypass).
 
+-spec content_types_provided(_,_) -> {[{[any(),...],'produce_json' | 'produce_xml'},...],_,_}.
 content_types_provided(RD, Ctx) ->
     {[{?XML_TYPE, produce_xml}, {?JSON_TYPE, produce_json}], RD, Ctx}.
 
@@ -117,6 +121,7 @@ forbidden(RD, Ctx, User, false) ->
             riak_cs_wm_utils:deny_access(RD, Ctx)
     end.
 
+-spec stream_users('json' | 'xml','undefined' | pid(),string(),'disabled' | 'enabled' | 'undefined') -> {binary() | [any(),...],'done' | fun(() -> {_,_})}.
 stream_users(Format, RiakPid, Boundary, Status) ->
     case riakc_pb_socket:stream_list_keys(RiakPid, ?USER_BUCKET) of
         {ok, ReqId} ->
@@ -132,6 +137,7 @@ stream_users(Format, RiakPid, Boundary, Status) ->
             {<<>>, done}
     end.
 
+-spec wait_for_users('json' | 'xml','undefined' | pid(),_,string(),'disabled' | 'enabled' | 'undefined') -> {binary() | [any(),...],'done' | fun(() -> {_,_})}.
 wait_for_users(Format, RiakPid, ReqId, Boundary, Status) ->
     receive
         {ReqId, {keys, UserIds}} ->
@@ -146,6 +152,7 @@ wait_for_users(Format, RiakPid, ReqId, Boundary, Status) ->
     end.
 
 %% @doc Compile a multipart entity for a set of user documents.
+-spec users_doc([{'User',[any(),...]} | {'struct',[any(),...]}],'json' | 'xml',string()) -> [any(),...].
 users_doc(UserDocs, xml, Boundary) ->
     XmlDoc = riak_cs_xml:export_xml([{'Users', UserDocs}]),
     ["\r\n--",
@@ -160,6 +167,7 @@ users_doc(UserDocs, json, Boundary) ->
 
 %% @doc Generate xml or json terms representing
 %% the information for a given user.
+-spec user_doc('json' | 'xml',pid(),[byte()],'disabled' | 'enabled' | 'undefined') -> [] | {'User',[{'DisplayName' | 'Email' | 'Id' | 'KeyId' | 'KeySecret' | 'Name' | 'Status',[any(),...]},...]} | {'struct',[{'display_name' | 'email' | 'id' | 'key_id' | 'key_secret' | 'name' | 'status',binary()},...]}.
 user_doc(Format, RiakPid, UserId, Status) ->
     case riak_cs_utils:get_user(UserId, RiakPid) of
         {ok, {User, _}} when User?RCS_USER.status =:= Status;
@@ -179,6 +187,7 @@ user_doc(Format, RiakPid, UserId, Status) ->
             []
     end.
 
+-spec unique_id() -> string().
 unique_id() ->
     Rand = crypto:sha(term_to_binary({make_ref(), now()})),
     <<I:160/integer>> = Rand,

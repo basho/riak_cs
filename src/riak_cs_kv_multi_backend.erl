@@ -113,11 +113,13 @@
 %% @doc Return the major version of the
 %% current API.
 -spec api_version() -> {ok, integer()}.
+
 api_version() ->
     {ok, ?API_VERSION}.
 
 %% @doc Return the capabilities of the backend.
 -spec capabilities(state()) -> {ok, [atom()]}.
+
 capabilities(State) ->
     %% Expose ?CAPABILITIES plus the intersection of all child
     %% backends. (This backend creates a shim for any backends that
@@ -135,6 +137,7 @@ capabilities(State) ->
 
 %% @doc Return the capabilities of the backend.
 -spec capabilities(riak_object:bucket(), state()) -> {ok, [atom()]}.
+
 capabilities(Bucket, State) when is_binary(Bucket) ->
     {_Name, Mod, ModState} = get_backend(Bucket, State),
     Mod:capabilities(ModState);
@@ -143,6 +146,7 @@ capabilities(_Bucket, State) ->
 
 %% @doc Start the backends
 -spec start(integer(), config()) -> {ok, state()} | {error, term()}.
+
 start(Partition, Config) ->
     %% Sanity checking
     BPrefixList =  app_helper:get_prop_or_env(multi_backend_prefix_list, Config,
@@ -187,6 +191,7 @@ start(Partition, Config) ->
     end.
 
 %% @private
+-spec start_backend_fun(_) -> fun(({_,_,_},{_,_}) -> {_,_}).
 start_backend_fun(Partition) ->
     fun({Name, Module, ModConfig}, {Backends, Errors}) ->
             try
@@ -208,6 +213,7 @@ start_backend_fun(Partition) ->
     end.
 
 %% @private
+-spec start_backend(_,_,_,_) -> {_,_} | {_,atom() | tuple(),_}.
 start_backend(Name, Module, Partition, Config) ->
     try
         case Module:start(Partition, Config) of
@@ -223,6 +229,7 @@ start_backend(Name, Module, Partition, Config) ->
 
 %% @doc Stop the backends
 -spec stop(state()) -> ok.
+
 stop(#state{backends=Backends}) ->
     _ = [Module:stop(SubState) || {_, Module, SubState} <- Backends],
     ok.
@@ -232,6 +239,7 @@ stop(#state{backends=Backends}) ->
                  {ok, any(), state()} |
                  {ok, not_found, state()} |
                  {error, term(), state()}.
+
 get(Bucket, Key, State) ->
     {Name, Module, SubState} = get_backend(Bucket, State),
     case Module:get(Bucket, Key, SubState) of
@@ -249,6 +257,7 @@ get(Bucket, Key, State) ->
 -spec put(riak_object:bucket(), riak_object:key(), [index_spec()], binary(), state()) ->
                  {ok, state()} |
                  {error, term(), state()}.
+
 put(Bucket, PrimaryKey, IndexSpecs, Value, State) ->
     {Name, Module, SubState} = get_backend(Bucket, State),
     case Module:put(Bucket, PrimaryKey, IndexSpecs, Value, SubState) of
@@ -264,6 +273,7 @@ put(Bucket, PrimaryKey, IndexSpecs, Value, State) ->
 -spec delete(riak_object:bucket(), riak_object:key(), [index_spec()], state()) ->
                     {ok, state()} |
                     {error, term(), state()}.
+
 delete(Bucket, Key, IndexSpecs, State) ->
     {Name, Module, SubState} = get_backend(Bucket, State),
     case Module:delete(Bucket, Key, IndexSpecs, SubState) of
@@ -280,6 +290,7 @@ delete(Bucket, Key, IndexSpecs, State) ->
                    any(),
                    [{atom(), term()}],
                    state()) -> {ok, any()} | {async, fun()} | {error, term()}.
+
 fold_buckets(FoldBucketsFun, Acc, Opts, State) ->
     fold_all(fold_buckets, FoldBucketsFun, Acc, Opts, State).
 
@@ -288,6 +299,7 @@ fold_buckets(FoldBucketsFun, Acc, Opts, State) ->
                 any(),
                 [{atom(), term()}],
                 state()) -> {ok, any()} | {async, fun()} | {error, term()}.
+
 fold_keys(FoldKeysFun, Acc, Opts, State) ->
     case proplists:get_value(bucket, Opts) of
         undefined ->
@@ -301,6 +313,7 @@ fold_keys(FoldKeysFun, Acc, Opts, State) ->
                    any(),
                    [{atom(), term()}],
                    state()) -> {ok, any()} | {async, fun()} | {error, term()}.
+
 fold_objects(FoldObjectsFun, Acc, Opts, State) ->
     case proplists:get_value(bucket, Opts) of
         undefined ->
@@ -311,6 +324,7 @@ fold_objects(FoldObjectsFun, Acc, Opts, State) ->
 
 %% @doc Delete all objects from the different backends
 -spec drop(state()) -> {ok, state()} | {error, term(), state()}.
+
 drop(#state{backends=Backends}=State) ->
     Fun = fun({Name, Module, SubState}) ->
                   case Module:drop(SubState) of
@@ -333,6 +347,7 @@ drop(#state{backends=Backends}=State) ->
 %% @doc Returns true if the backend contains any
 %% non-tombstone values; otherwise returns false.
 -spec is_empty(state()) -> boolean().
+
 is_empty(#state{backends=Backends}) ->
     Fun = fun({_, Module, SubState}) ->
                   Module:is_empty(SubState)
@@ -341,6 +356,7 @@ is_empty(#state{backends=Backends}) ->
 
 %% @doc Get the status information for this backend
 -spec status(state()) -> [{atom(), term()}].
+
 status(#state{backends=Backends}) ->
     %% @TODO Reexamine how this is handled
     %% all backend mods return a proplist from Mod:status/1
@@ -352,6 +368,7 @@ status(#state{backends=Backends}) ->
 
 %% @doc Register an asynchronous callback
 -spec callback(reference(), any(), state()) -> {ok, state()}.
+
 callback(Ref, Msg, #state{backends=Backends}=State) ->
     %% Pass the callback on to all submodules - their responsbility to
     %% filter out if they need it.
@@ -363,6 +380,7 @@ set_legacy_indexes(State=#state{backends=Backends}, WriteLegacy) ->
                       {I, Mod, ModState} <- Backends],
     State#state{backends=NewBackends}.
 
+-spec maybe_set_legacy_indexes(atom(),_,_) -> any().
 maybe_set_legacy_indexes(Mod, ModState, WriteLegacy) ->
     case backend_can_index_reformat(Mod, ModState) of
         true -> Mod:set_legacy_indexes(ModState, WriteLegacy);
@@ -373,6 +391,7 @@ mark_indexes_fixed(State=#state{backends=Backends}, ForUpgrade) ->
     NewBackends = mark_indexes_fixed(Backends, [], ForUpgrade),
     {ok, State#state{backends=NewBackends}}.
 
+-spec mark_indexes_fixed([{atom(),atom(),_}],[{atom(),atom(),_}],_) -> [{atom(),atom(),_}] | {'error',_}.
 mark_indexes_fixed([], NewBackends, _) ->
     lists:reverse(NewBackends);
 mark_indexes_fixed([{I, Mod, ModState} | Backends], NewBackends, ForUpgrade) ->
@@ -384,12 +403,14 @@ mark_indexes_fixed([{I, Mod, ModState} | Backends], NewBackends, ForUpgrade) ->
             mark_indexes_fixed(Backends, [{I, Mod, NewModState} | NewBackends], ForUpgrade)
     end.
 
+-spec maybe_mark_indexes_fixed(atom(),_,_) -> any().
 maybe_mark_indexes_fixed(Mod, ModState, ForUpgrade) ->
     case backend_can_index_reformat(Mod, ModState) of
         true -> Mod:mark_indexes_fixed(ModState, ForUpgrade);
         false -> {ok, ModState}
     end.
 
+-spec fix_index([any()],_,_) -> {'reply',_,_}.
 fix_index(BKeys, ForUpgrade, State) ->
     % Group keys per bucket 
     PerBucket = lists:foldl(fun(BK={B,_},D) -> dict:append(B,BK,D) end, dict:new(), BKeys),
@@ -408,6 +429,7 @@ fix_index(BKeys, ForUpgrade, State) ->
             end, {0, 0, 0}, PerBucket),
     {reply, Result, State}.
 
+-spec backend_fix_index({atom(),atom(),_},_,_,_) -> any().
 backend_fix_index({_, Mod, ModState}, Bucket, StorageKey, ForUpgrade) ->
     case Mod:fix_index(StorageKey, ForUpgrade, ModState) of
         {reply, Reply, _UpModState} -> 
@@ -419,6 +441,7 @@ backend_fix_index({_, Mod, ModState}, Bucket, StorageKey, ForUpgrade) ->
     end.
 
 -spec fixed_index_status(state()) -> boolean().
+
 fixed_index_status(#state{backends=Backends}) ->
     lists:foldl(fun({_N, Mod, ModState}, Acc) ->
                         Status = Mod:status(ModState),
@@ -434,6 +457,7 @@ fixed_index_status(#state{backends=Backends}) ->
                 undefined,
                 Backends).
 
+-spec fixed_index_status(atom() | tuple(),_,_) -> any().
 fixed_index_status(Mod, ModState, Status) ->
     case backend_can_index_reformat(Mod, ModState) of
         true -> proplists:get_value(fixed_indexes, Status);
@@ -449,6 +473,7 @@ fixed_index_status(Mod, ModState, Status) ->
 %% @private
 %% Given a Bucket name and the State, return the
 %% backend definition. (ie: {Name, Module, SubState})
+-spec get_backend(_,#state{backends::'undefined' | [{atom(),atom(),_}],bprefix_list::[{binary(),atom()}],default_backend::atom()}) -> 'false' | {atom(),atom(),_}.
 get_backend(Bucket, #state{backends=Backends,
                            bprefix_list=BPrefixList} = State) ->
     case match_bucket_prefix(Bucket, BPrefixList) of
@@ -459,6 +484,7 @@ get_backend(Bucket, #state{backends=Backends,
             lists:keyfind(BackendName, 1, Backends)
     end.
 
+-spec get_backend_bucketprops(_,#state{backends::[{atom(),atom(),_}],bprefix_list::'undefined' | [{binary(),atom()}],default_backend::atom()}) -> {atom(),atom(),_}.
 get_backend_bucketprops(Bucket, #state{backends=Backends,
                                        default_backend=DefaultBackend}) ->
     BucketProps = riak_core_bucket:get_bucket(Bucket),
@@ -472,6 +498,7 @@ get_backend_bucketprops(Bucket, #state{backends=Backends,
 %% @private
 %% @doc Update the state for one of the
 %% composing backends of this multi backend.
+-spec update_backend_state(atom(),atom(),_,#state{backends::[{atom(),atom(),_}],bprefix_list::[{binary(),atom()}],default_backend::atom()}) -> #state{backends::[{atom(),atom(),_}],bprefix_list::[{binary(),atom()}],default_backend::atom()}.
 update_backend_state(Backend,
                      Module,
                      ModState,
@@ -524,6 +551,7 @@ fold_in_bucket(Bucket, ModFun, FoldFun, Acc, Opts, State) ->
                   SubState).
 
 %% @private
+-spec backend_fold_fun('fold_buckets' | 'fold_keys' | 'fold_objects',_,[any()],boolean()) -> fun(({_,atom() | tuple(),_},{_,_}) -> {_,_}).
 backend_fold_fun(ModFun, FoldFun, Opts, AsyncFold) ->
     fun({_, Module, SubState}, {Acc, WorkList}) ->
             %% Get the backend capabilities to determine
@@ -549,6 +577,7 @@ backend_fold_fun(ModFun, FoldFun, Opts, AsyncFold) ->
             end
     end.
 
+-spec backend_fold_fun(atom() | tuple(),'fold_buckets' | 'fold_keys' | 'fold_objects',_,_,[any()],{_,_},boolean()) -> {_,_}.
 backend_fold_fun(Module, ModFun, SubState, FoldFun, Opts, {Acc, WorkList}, true) ->
     AsyncWork =
         fun(Acc1) ->
@@ -570,6 +599,7 @@ backend_fold_fun(Module, ModFun, SubState, FoldFun, Opts, {Acc, WorkList}, false
             throw({error, {Module, Reason}})
     end.
 
+-spec async_fold_fun() -> fun((fun((_) -> any()),_) -> any()).
 async_fold_fun() ->
     fun(AsyncWork, Acc) ->
             case AsyncWork(Acc) of
@@ -586,6 +616,7 @@ async_fold_fun() ->
 %% @doc Function to filter error results when
 %% calling a function on the entire list of
 %% backends composing this multi backend.
+-spec error_filter(_) -> boolean().
 error_filter({error, _, _}) ->
     true;
 error_filter(_) ->
@@ -593,6 +624,7 @@ error_filter(_) ->
 
 %% @private
 %% @edoc Check sanity of the BPrefixList against the backends we've started.
+-spec bprefix_sanity_check([any()],[any()]) -> 'ok' | {'unknown_backend_names',[any(),...]}.
 bprefix_sanity_check(Backends, BPrefixList) ->
     BackendNames = [Name || {Name, _Mod, _St} <- Backends],
     MyNames = [Name || {_BPrefix, Name} <- BPrefixList],
@@ -605,6 +637,7 @@ bprefix_sanity_check(Backends, BPrefixList) ->
 
 %% @private
 %% @edoc Check BucketName against a list of prefixes
+-spec match_bucket_prefix(_,[{binary(),atom()}]) -> atom().
 match_bucket_prefix(_Bucket, []) ->
     undefined;
 %% match_bucket_prefix(Bucket, [{Prefix, _Name}|BPrefixList])
@@ -620,6 +653,7 @@ match_bucket_prefix(Bucket, [{Prefix, Name}|BPrefixList]) ->
     end.
 
 
+-spec backend_can_index_reformat(atom() | tuple(),_) -> boolean().
 backend_can_index_reformat(Mod, ModState) ->
     {ok, Caps} = Mod:capabilities(ModState),
     lists:member(index_reformat, Caps).

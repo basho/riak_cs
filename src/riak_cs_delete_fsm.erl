@@ -64,11 +64,13 @@
 %% ===================================================================
 
 %% @doc Start a `riak_cs_delete_fsm'.
+-spec start_link(_,_,_) -> 'ignore' | {'error',_} | {'ok',pid()}.
 start_link(RiakcPid, Manifest, Options) ->
     Args = [RiakcPid, Manifest, Options],
     gen_fsm:start_link(?MODULE, Args, []).
 
 -spec block_deleted(pid(), {ok, {binary(), integer()}} | {error, binary()}) -> ok.
+
 block_deleted(Pid, Response) ->
     gen_fsm:send_event(Pid, {block_deleted, Response, self()}).
 
@@ -103,12 +105,15 @@ deleting({block_deleted, {error, {unsatisfied_constraint, _, BlockID}}, DeleterP
 deleting({block_deleted, {error, Error}, _DeleterPid}, State) ->
     {stop, Error, State}.
 
+-spec handle_event(_,_,_) -> {'next_state',_,_}.
 handle_event(_Event, StateName, State) ->
     {next_state, StateName, State}.
 
+-spec handle_sync_event(_,_,_,_) -> {'next_state',_,_}.
 handle_sync_event(_Event, _From, StateName, State) ->
     {next_state, StateName, State}.
 
+-spec handle_info(_,_,_) -> {'next_state',_,_}.
 handle_info(_Info, StateName, State) ->
     {next_state, StateName, State}.
 
@@ -123,6 +128,7 @@ terminate(Reason, _StateName, #state{all_delete_workers=AllDeleteWorkers,
     notify_gc_daemon(Reason, State),
     ok.
 
+-spec code_change(_,_,_,_) -> {'ok',_,_}.
 code_change(_OldVsn, StateName, State, _Extra) ->
     {ok, StateName, State}.
 
@@ -134,6 +140,7 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 %% completion of a block deletion.
 -spec deleting_state_update(pos_integer(), pid(), non_neg_integer(), #state{}) ->
                                    #state{}.
+
 deleting_state_update(BlockID,
                       DeleterPid,
                       DeletedBlocks,
@@ -151,6 +158,7 @@ deleting_state_update(BlockID,
 %% @doc Determine the appropriate `deleting' state
 %% fsm callback result based on the given manifest state.
 -spec deleting_state_result(atom(), #state{}) -> {atom(), atom(), #state{}}.
+
 deleting_state_result(deleted, State) ->
     {stop, normal, State};
 deleting_state_result(_, State) ->
@@ -159,6 +167,7 @@ deleting_state_result(_, State) ->
 
 -spec handle_receiving_manifest(state()) ->
     {next_state, atom(), state()}.
+
 handle_receiving_manifest(State=#state{riakc_pid=RiakcPid,
                                        manifest=Manifest}) ->
     {NewManifest, BlocksToDelete} = blocks_to_delete_from_manifest(Manifest),
@@ -207,12 +216,14 @@ maybe_delete_blocks(State=#state{bucket=Bucket,
                                     delete_blocks_remaining=NewDeleteBlocksRemaining}).
 
 -spec notify_gc_daemon(term(), state()) -> term().
+
 notify_gc_daemon(Reason, State) ->
     gen_fsm:sync_send_event(riak_cs_gc_d, notification_msg(Reason, State), infinity).
 
 -spec notification_msg(term(), state()) -> {pid(),
                                             {ok, {non_neg_integer(), non_neg_integer()}} |
                                             {error, term()}}.
+
 notification_msg(normal, #state{deleted_blocks = DeletedBlocks,
                                 total_blocks = TotalBlocks}) ->
     {self(), {ok, {DeletedBlocks, TotalBlocks}}};
@@ -220,6 +231,7 @@ notification_msg(Reason, _State) ->
     {self(), {error, Reason}}.
 
 -spec manifest_cleanup(atom(), binary(), binary(), binary(), pid()) -> ok.
+
 manifest_cleanup(deleted, Bucket, Key, UUID, RiakcPid) ->
     {ok, ManiFsmPid} = riak_cs_manifest_fsm:start_link(Bucket, Key, RiakcPid),
     _ = try
@@ -233,6 +245,7 @@ manifest_cleanup(_, _, _, _, _) ->
 
 -spec blocks_to_delete_from_manifest(lfs_manifest()) ->
     {lfs_manifest(), ordsets:ordset(integer())}.
+
 blocks_to_delete_from_manifest(Manifest=?MANIFEST{state=State,
                                                   delete_blocks_remaining=undefined})
   when State =:= pending_delete;State =:= writing; State =:= scheduled_delete ->

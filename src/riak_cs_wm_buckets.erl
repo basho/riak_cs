@@ -30,10 +30,12 @@
 
 %% @doc Get the list of methods this resource supports.
 -spec allowed_methods() -> [atom()].
+
 allowed_methods() ->
     ['GET'].
 
 -spec api_request(#wm_reqdata{}, #context{}) -> ?LBRESP{}.
+
 api_request(_RD, #context{user=User,
                           start_time=StartTime}) ->
     UserName = riak_cs_wm_utils:extract_name(User),
@@ -44,5 +46,6 @@ api_request(_RD, #context{user=User,
     Res.
 
 -spec anon_ok() -> boolean().
+
 anon_ok() ->
     false.

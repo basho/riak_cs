@@ -65,9 +65,11 @@
 %% @spec start_link() -> {ok, Pid} | ignore | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
+-spec start_link() -> 'ignore' | {'error',_} | {'ok',pid()}.
 start_link() ->
     gen_server:start_link(?MODULE, [], []).
 
+-spec start_link(_) -> 'ignore' | {'error',_} | {'ok',pid()}.
 start_link(RiakPid) ->
     gen_server:start_link(?MODULE, [RiakPid], []).
 
@@ -90,6 +92,7 @@ start_link(RiakPid) ->
 %% could return an error, or the pids it has
 %% so far (which might be less than MinWorkers).
 -spec start_block_servers(pid(), pos_integer()) -> [pid()].
+
 start_block_servers(RiakcPid, 1) ->
     {ok, Pid} = start_link(RiakcPid),
     [Pid];
@@ -102,6 +105,7 @@ start_block_servers(RiakcPid, MaxNumServers) ->
     end.
 
 -spec get_block(pid(), binary(), binary(), binary(), pos_integer()) -> ok.
+
 get_block(Pid, Bucket, Key, UUID, BlockNumber) ->
     gen_server:cast(Pid, {get_block, self(), Bucket, Key, undefined, UUID, BlockNumber}).
 
@@ -109,24 +113,29 @@ get_block(Pid, Bucket, Key, UUID, BlockNumber) ->
 %% If it's not found locally, it might get returned from the replication
 %% cluster if a connection exists to that cluster. This is proxy-get().
 -spec get_block(pid(), binary(), binary(), binary(), binary(), pos_integer()) -> ok.
+
 get_block(Pid, Bucket, Key, ClusterID, UUID, BlockNumber) ->
     gen_server:cast(Pid, {get_block, self(), Bucket, Key, ClusterID, UUID, BlockNumber}).
 
 -spec put_block(pid(), binary(), binary(), binary(), pos_integer(), binary()) -> ok.
+
 put_block(Pid, Bucket, Key, UUID, BlockNumber, Value) ->
     gen_server:cast(Pid, {put_block, self(), Bucket, Key, UUID, BlockNumber, Value}).
 
 -spec delete_block(pid(), binary(), binary(), binary(), pos_integer()) -> ok.
+
 delete_block(Pid, Bucket, Key, UUID, BlockNumber) ->
     gen_server:cast(Pid, {delete_block, self(), Bucket, Key, UUID, BlockNumber}).
 
 -spec maybe_stop_block_servers(undefined | [pid()]) -> ok.
+
 maybe_stop_block_servers(undefined) ->
     ok;
 maybe_stop_block_servers(BlockServerPids) ->
     _ = [stop(P) || P <- BlockServerPids],
     ok.
 
+-spec stop(_) -> any().
 stop(Pid) ->
     gen_server:call(Pid, stop, infinity).
 
@@ -134,6 +143,7 @@ stop(Pid) ->
 %%% gen_server callbacks
 %%%===================================================================
 
+-spec init(['undefined' | pid()]) -> {'ok',#state{riakc_pid::'undefined' | pid(),close_riak_connection::boolean()}} | {'stop','normal'}.
 init([RiakPid]) ->
     process_flag(trap_exit, true),
     {ok, #state{riakc_pid=RiakPid,
@@ -161,6 +171,7 @@ init([]) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
+-spec handle_call('stop',_,_) -> {'stop','normal','ok',_}.
 handle_call(stop, _From, State) ->
     {stop, normal, ok, State}.
 
@@ -175,6 +186,7 @@ handle_call(stop, _From, State) ->
 %% @end
 %%--------------------------------------------------------------------
 
+-spec handle_cast(_,_) -> {'noreply',_}.
 handle_cast({get_block, ReplyPid, Bucket, Key, ClusterID, UUID, BlockNumber}, State=#state{riakc_pid=RiakcPid}) ->
     dt_entry(<<"get_block">>, [BlockNumber], [Bucket, Key]),
     {FullBucket, FullKey} = full_bkey(Bucket, Key, UUID, BlockNumber),
@@ -240,23 +252,27 @@ handle_cast({delete_block, ReplyPid, Bucket, Key, UUID, BlockNumber}, State=#sta
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
+-spec delete_block('undefined' | pid(),pid(),_,{binary(),pos_integer()}) -> 'ok'.
 delete_block(RiakcPid, ReplyPid, RiakObject, BlockId) ->
     Result = constrained_delete(RiakcPid, RiakObject, BlockId),
     _ = secondary_delete_check(Result, RiakcPid, RiakObject),
     riak_cs_delete_fsm:block_deleted(ReplyPid, Result),
     ok.
 
+-spec constrained_delete('undefined' | pid(),_,{binary(),pos_integer()}) -> any().
 constrained_delete(RiakcPid, RiakObject, BlockId) ->
     DeleteOptions = [{r, all}, {pr, all}, {w, all}, {pw, all}],
     format_delete_result(
       riakc_pb_socket:delete_obj(RiakcPid, RiakObject, DeleteOptions),
       BlockId).
 
+-spec secondary_delete_check(_,'undefined' | pid(),_) -> any().
 secondary_delete_check({error, {unsatisfied_constraint, _, _}}, RiakcPid, RiakObject) ->
     riakc_pb_socket:delete_obj(RiakcPid, RiakObject);
 secondary_delete_check(_, _, _) ->
     ok.
 
+-spec format_delete_result(_,{binary(),pos_integer()}) -> any().
 format_delete_result(ok, BlockId) ->
     {ok, BlockId};
 format_delete_result({error, Reason}, BlockId) when is_binary(Reason) ->
@@ -283,6 +299,7 @@ format_delete_result(Result, _) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
+-spec handle_info(_,_) -> {'noreply',_}.
 handle_info(_Info, State) ->
     {noreply, State}.
 
@@ -297,6 +314,7 @@ handle_info(_Info, State) ->
 %% @spec terminate(Reason, State) -> void()
 %% @end
 %%--------------------------------------------------------------------
+-spec terminate(_,#state{riakc_pid::'undefined' | pid(),close_riak_connection::boolean()}) -> 'ok'.
 terminate(_Reason, #state{riakc_pid=RiakcPid,
                           close_riak_connection=CloseConn}) ->
     case CloseConn of
@@ -315,6 +333,7 @@ terminate(_Reason, #state{riakc_pid=RiakcPid,
 %% @spec code_change(OldVsn, State, Extra) -> {ok, NewState}
 %% @end
 %%--------------------------------------------------------------------
+-spec code_change(_,_,_) -> {'ok',_}.
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
@@ -324,13 +343,16 @@ code_change(_OldVsn, State, _Extra) ->
 
 -spec full_bkey(binary(), binary(), binary(), pos_integer()) -> {binary(), binary()}.
 %% @private
+
 full_bkey(Bucket, Key, UUID, BlockId) ->
     PrefixedBucket = riak_cs_utils:to_bucket_name(blocks, Bucket),
     FullKey = riak_cs_lfs_utils:block_name(Key, UUID, BlockId),
     {PrefixedBucket, FullKey}.
 
+-spec dt_entry(<<_:72,_:_*24>>,[any(),...],[any(),...]) -> any().
 dt_entry(Func, Ints, Strings) ->
     riak_cs_dtrace:dtrace(?DT_BLOCK_OP, 1, Ints, ?MODULE, Func, Strings).
 
+-spec dt_return(<<_:72,_:_*24>>,[pos_integer(),...],[binary(),...]) -> any().
 dt_return(Func, Ints, Strings) ->
     riak_cs_dtrace:dtrace(?DT_BLOCK_OP, 2, Ints, ?MODULE, Func, Strings).

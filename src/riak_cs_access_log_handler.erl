@@ -95,6 +95,7 @@
 %% Public API
 %% ===================================================================
 
+-spec flush(_) -> any().
 flush(Timeout) ->
     Now = calendar:universal_time(),
     case catch webmachine_log:call(?MODULE, {flush, Now}, Timeout) of
@@ -124,11 +125,13 @@ set_user(unknown, RD) ->
 %% @doc Tell the logger that this resource expected to send `Count'
 %% bytes, such that it can classify the count it actually receives as
 %% complete or incomplete.
+-spec expect_bytes_out(integer(),_) -> any().
 expect_bytes_out(Count, RD) when is_integer(Count) ->
     wrq:add_note(?EXPECT_BYTES_OUT, Count, RD).
 
 %% @doc Note that this resource received `Count' bytes from the
 %% request body.
+-spec set_bytes_in(integer(),_) -> any().
 set_bytes_in(Count, RD) when is_integer(Count) ->
     wrq:add_note(?BYTES_IN, Count, RD).
 
@@ -175,6 +178,7 @@ init(_) ->
     end.
 
 %% @private
+-spec handle_call(_,_) -> {'ok','ok',_}.
 handle_call({flush, FlushEnd}, State) ->
     NewState = force_archive(State, FlushEnd),
     {ok, ok, NewState};
@@ -182,6 +186,7 @@ handle_call(_Request, State) ->
     {ok, ok, State}.
 
 %% @private
+-spec handle_event(_,_) -> {'ok',_}.
 handle_event({log_access, LogData},
              #state{table=T, size=S, max_size=MaxS}=State) ->
     case access_record(LogData) of
@@ -202,6 +207,7 @@ handle_event(_Event, State) ->
     {ok, State}.
 
 %% @private
+-spec handle_info(_,_) -> 'remove_handler' | {'ok',_}.
 handle_info({archive, Ref}, #state{archive=Ref}=State) ->
     NewState = do_archive(State),
     case schedule_archival(NewState) of
@@ -225,10 +231,12 @@ handle_info(_Info, State) ->
     {ok, State}.
 
 %% @private
+-spec terminate(_,_) -> 'ok'.
 terminate(_Reason, _State) ->
     ok.
 
 %% @private
+-spec code_change(_,_,_) -> {'ok',_}.
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
@@ -238,12 +246,14 @@ code_change(_OldVsn, State, _Extra) ->
 
 %% @doc Create a new ets table to accumulate accesses in.
 -spec fresh_table() -> ets:tid().
+
 fresh_table() ->
     ets:new(?MODULE, [private, duplicate_bag, {keypos, 1}]).
 
 %% @doc Schedule a message to be sent when it's time to archive this
 %% slice's accumulated accesses.
 -spec schedule_archival(state()) -> {ok, state()} | {error, integer()}.
+
 schedule_archival(#state{current={_,E}}=State) ->
     Ref = make_ref(),
 
@@ -273,6 +283,7 @@ force_archive(#state{current=C}=State, FlushEnd) ->
 %% @doc Send the current slice's accumulated accesses to the archiver
 %% for storage.  Create a clean table to store the next slice's accesses.
 -spec do_archive(state()) -> state().
+
 do_archive(#state{period=P, table=T, current=C}=State) ->
     _ = lager:debug("Rolling access for ~p", [C]),
     %% archiver takes ownership of the table, and deletes it when done
@@ -288,6 +299,7 @@ do_archive(#state{period=P, table=T, current=C}=State) ->
 -spec access_record(#wm_log_data{})
          -> {ok, {iodata(), {binary(), list()}}}
           | ignore.
+
 access_record(#wm_log_data{notes=undefined,
                            method=Method,path=Path,headers=Headers}=_X) ->
     error_logger:error_msg("No WM route: ~p ~s ~p\n", [Method, Path, Headers]),
@@ -300,6 +312,7 @@ access_record(#wm_log_data{notes=Notes}=Log) ->
             ignore
     end.
 
+-spec operation(#wm_log_data{resource_module::atom(),start_time::'undefined' | tuple(),method::atom(),path::'undefined' | string(),end_time::'undefined' | tuple(),finish_time::'undefined' | tuple()}) -> binary().
 operation(#wm_log_data{resource_module=riak_cs_wm_usage}) ->
     <<"UsageRead">>;
 operation(#wm_log_data{resource_module=riak_cs_wm_buckets}) ->
@@ -358,6 +371,7 @@ operation(#wm_log_data{resource_module=riak_cs_wm_object}) ->
 operation(#wm_log_data{method=Method}) ->
     iolist_to_binary([<<"Unknown">>, atom_to_binary(Method, latin1)]).
 
+-spec stats(#wm_log_data{resource_module::atom(),start_time::'undefined' | tuple(),method::atom(),path::'undefined' | string(),end_time::'undefined' | tuple(),finish_time::'undefined' | tuple(),notes::maybe_improper_list()}) -> [{binary(),_}].
 stats(#wm_log_data{response_code=Code,
                    notes=Notes,
                    headers=Headers,

@@ -31,22 +31,26 @@
 
 %% @doc Get the list of methods this resource supports.
 -spec allowed_methods() -> [atom()].
+
 allowed_methods() ->
     %% TODO: PUT?
     ['GET'].
 
 -spec content_types_provided(#wm_reqdata{}, #context{}) -> {[{string(), atom()}], #wm_reqdata{}, #context{}}.
+
 content_types_provided(RD, Ctx) ->
     {[{"application/xml", to_xml}], RD, Ctx}.
 
 -spec authorize(#wm_reqdata{}, #context{}) -> 
                        {boolean() | {halt, term()}, #wm_reqdata{}, #context{}}.
+
 authorize(RD, Ctx) ->
     riak_cs_wm_utils:bucket_access_authorize_helper(bucket_version, false, RD, Ctx).
 
 
 -spec to_xml(#wm_reqdata{}, #context{}) -> 
                     {binary() | {halt, term()}, #wm_reqdata{}, #context{}}.
+
 to_xml(RD, Ctx=#context{user=User,bucket=Bucket}) ->
     StrBucket = binary_to_list(Bucket),
     case [B || B <- riak_cs_utils:get_buckets(User),

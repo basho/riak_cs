@@ -33,6 +33,7 @@
 %% Public API
 %% ===================================================================
 
+-spec get_os_user_data(_) -> 'undefined' | [any()] | {'error','decode_failed'} | {'struct',_}.
 get_os_user_data(undefined) ->
     undefined;
 get_os_user_data(UserId) ->
@@ -46,6 +47,7 @@ get_os_user_data(UserId) ->
 -spec extract_user_data(undefined | term()) -> {undef_or_string(),
                                                 undef_or_string(),
                                                 undef_or_string()}.
+
 extract_user_data(undefined) ->
     {undefined, undefined, []};
 extract_user_data(UserData) ->
@@ -58,6 +60,7 @@ extract_user_data(UserData) ->
         riak_cs_json:get(UserData, Path),
         {undefined, undefined, []})).
 
+-spec user_ec2_creds('undefined' | [any()],_) -> {'undefined',[]}.
 user_ec2_creds(undefined, _) ->
     {undefined, []};
 user_ec2_creds(UserId, TenantId) ->
@@ -73,9 +76,11 @@ user_ec2_creds(UserId, TenantId) ->
 %% Internal functions
 %% ===================================================================
 
+-spec user_binaries_to_lists({binary(),binary(),binary()}) -> {[byte()],[byte()],[byte()]}.
 user_binaries_to_lists({X, Y, Z}) ->
     {binary_to_list(X), binary_to_list(Y), binary_to_list(Z)}.
 
+-spec handle_user_data_response({'error',_} | {'ok',{{_,_,_},_,_}}) -> 'undefined' | [any()] | {'error','decode_failed'} | {'struct',_}.
 handle_user_data_response({ok, {{_HTTPVer, _Status, _StatusLine}, _, UserInfo}})
   when _Status >= 200, _Status =< 299 ->
     riak_cs_json:from_json(UserInfo);
@@ -87,6 +92,7 @@ handle_user_data_response({error, Reason}) ->
                   [Reason]),
     undefined.
 
+-spec handle_ec2_creds_response({'error',_} | {'ok',{{_,_,_},_,_}},_) -> {'undefined',[]}.
 handle_ec2_creds_response({ok, {{_HTTPVer, _Status, _StatusLine}, _, CredsInfo}}, TenantId)
   when _Status >= 200, _Status =< 299 ->
     CredsResult = riak_cs_json:from_json(CredsInfo),
@@ -99,6 +105,7 @@ handle_ec2_creds_response({error, Reason}, _) ->
                   [Reason]),
     {undefined, []}.
 
+-spec ec2_creds_for_tenant({'error','decode_failed'},_) -> {'undefined',[]}.
 ec2_creds_for_tenant({error, decode_failed}, _) ->
     {undefined, []};
 ec2_creds_for_tenant(Creds, TenantId) ->

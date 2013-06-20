@@ -74,6 +74,7 @@
 %% @doc Starting the server also verifies the storage schedule.  If
 %% the schedule contains invalid elements, an error will be printed in
 %% the logs.
+-spec start_link() -> 'ignore' | {'error',_} | {'ok',pid()}.
 start_link() ->
     gen_fsm:start_link({local, ?SERVER}, ?MODULE, [], []).
 
@@ -85,6 +86,7 @@ start_link() ->
 %% the active calculation, the number of seconds the process has been
 %% calculating so far, and counts of how many users have been
 %% processed and how many are left.
+-spec status() -> any().
 status() ->
     gen_fsm:sync_send_event(?SERVER, status).
 
@@ -101,12 +103,14 @@ status() ->
 %%   `false', such that restarting a canceled batch does not require
 %%   redoing the work that happened before cancellation.</dd>
 %% </dl>
+-spec start_batch(_) -> any().
 start_batch(Options) ->
     gen_fsm:sync_send_event(?SERVER, {manual_batch, Options}, infinity).
 
 %% @doc Cancel the calculation currently in progress.  Returns `ok' if
 %% a batch was canceled, or `{error, no_batch}' if there was no batch
 %% in progress.
+-spec cancel_batch() -> any().
 cancel_batch() ->
     gen_fsm:sync_send_event(?SERVER, cancel_batch, infinity).
 
@@ -114,6 +118,7 @@ cancel_batch() ->
 %% a batch was paused, or `{error, no_batch}' if there was no batch in
 %% progress.  Also returns `ok' if there was a batch in progress that
 %% was already paused.
+-spec pause_batch() -> any().
 pause_batch() ->
     gen_fsm:sync_send_event(?SERVER, pause_batch, infinity).
 
@@ -121,6 +126,7 @@ pause_batch() ->
 %% batch was resumed, or `{error, no_batch}' if there was no batch in
 %% progress.  Also returns `ok' if there was a batch in progress that
 %% was not paused.
+-spec resume_batch() -> any().
 resume_batch() ->
     gen_fsm:sync_send_event(?SERVER, resume_batch, infinity).
 
@@ -130,21 +136,25 @@ resume_batch() ->
 %%%===================================================================
 
 %% @doc Read the storage schedule and go to idle.
+-spec init([]) -> {'ok','prepare',#state{batch_count::0,batch_skips::0,batch::[]},0}.
 init([]) ->
     {ok, prepare, #state{}, 0}.
 
 %% Asynchronous events
 
+-spec prepare('timeout',#state{}) -> {'next_state','idle',#state{schedule::maybe_improper_list()}}.
 prepare(timeout, State) ->
     try_prepare(State).
 
 %% @doc Transitions out of idle are all synchronous events
+-spec idle(_,_) -> {'next_state','idle',_}.
 idle(_, State) ->
     {next_state, idle, State}.
 
 %% @doc Async transitions from calculating are all due to messages the
 %% FSM sends itself, in order to have opportunities to handle messages
 %% from the outside world (like `status').
+-spec calculating(_,_) -> {'next_state','calculating' | 'idle',_}.
 calculating(continue, #state{batch=[], current=Current}=State) ->
     %% finished with this batch
     _ = lager:info("Finished storage calculation in ~b seconds.",
@@ -162,11 +172,13 @@ calculating(continue, State) ->
 calculating(_, State) ->
     {next_state, calculating, State}.
 
+-spec paused(_,_) -> {'next_state','paused',_}.
 paused(_, State) ->
     {next_state, paused, State}.
 
 %% Synchronous events
 
+-spec idle(_,_,_) -> {'reply','ok' | {'error','no_batch'} | {'ok',{'idle',[any(),...]}},'calculating' | 'idle',_}.
 idle(status, _From, State) ->
     Props = [{schedule, State#state.schedule},
              {last, State#state.last},
@@ -184,6 +196,7 @@ idle(resume_batch, _From, State) ->
 idle(_, _From, State) ->
     {reply, ok, idle, State}.
 
+-spec calculating(_,_,_) -> {'reply','ok' | {'error','already_calculating'} | {'ok',{'calculating',[any(),...]}},'calculating' | 'idle' | 'paused',_}.
 calculating(status, _From, State) ->
     Props = [{schedule, State#state.schedule},
              {last, State#state.last},
@@ -213,6 +226,7 @@ calculating(cancel_batch, _From, #state{current=Current}=State) ->
 calculating(_, _From, State) ->
     {reply, ok, calculating, State}.
 
+-spec paused(_,_,_) -> {'reply','ok' | {'error','already_calculating'} | {'ok',{'calculating',[any(),...]} | {'paused',[any(),...]}},'calculating' | 'idle' | 'paused',_}.
 paused(status, From, State) ->
     {reply, {ok, {_, Status}}, _, State} = calculating(status, From, State),
     {reply, {ok, {paused, Status}}, paused, State};
@@ -226,14 +240,17 @@ paused(_, _From, State) ->
     {reply, ok, paused, State}.
 
 %% @doc there are no all-state events for this fsm
+-spec handle_event(_,_,_) -> {'next_state',_,_}.
 handle_event(_Event, StateName, State) ->
     {next_state, StateName, State}.
 
 %% @doc there are no all-state events for this fsm
+-spec handle_sync_event(_,_,_,_) -> {'reply','ok',_,_}.
 handle_sync_event(_Event, _From, StateName, State) ->
     Reply = ok,
     {reply, Reply, StateName, State}.
 
+-spec handle_info(_,_,_) -> {'next_state',_,_}.
 handle_info({start_batch, Next}, idle, #state{next=Next}=State) ->
     %% next is scheduled immediately in order to generate warnings if
     %% the current calculation runs over time (see next clause)
@@ -251,10 +268,12 @@ handle_info(_Info, StateName, State) ->
 
 %% @doc TODO: log warnings if this fsm is asked to terminate in the
 %% middle of running a calculation
+-spec terminate(_,_,_) -> 'ok'.
 terminate(_Reason, _StateName, _State) ->
     ok.
 
 %% @doc this fsm has no special upgrade process
+-spec code_change(_,_,_,_) -> {'ok',_,_}.
 code_change(_OldVsn, StateName, State, _Extra) ->
     {ok, StateName, State}.
 
@@ -264,6 +283,7 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 
 -spec try_prepare(state()) -> {next_state, atom(), state()} |
                               {next_state, atom(), state(), pos_integer()}.
+
 try_prepare(State) ->
     Schedule = read_storage_schedule(),
     SchedState = schedule_next(State#state{schedule=Schedule},
@@ -272,9 +292,11 @@ try_prepare(State) ->
 
 %% @doc The schedule will contain all valid times found in the
 %% configuration, and will be sorted in day order.
+-spec read_storage_schedule() -> [any()].
 read_storage_schedule() ->
     lists:usort(read_storage_schedule1()).
 
+-spec read_storage_schedule1() -> [any()].
 read_storage_schedule1() ->
     case application:get_env(riak_cs, storage_schedule) of
         undefined ->
@@ -316,6 +338,7 @@ read_storage_schedule1() ->
 %% string.  This function purposely fails (with function or case
 %% clause currently) to allow {@link read_storage_schedule1/0} to pick
 %% out the bad eggs.
+-spec parse_time(string() | {_,_}) -> {'ok',{_,_}}.
 parse_time({Hour, Min}) when (Hour >= 0 andalso Hour =< 23),
                              (Min >= 0 andalso Min =< 59) ->
     {ok, {Hour, Min}};
@@ -328,6 +351,7 @@ parse_time(HHMM) when is_list(HHMM) ->
 
 %% @doc Actually kick off the batch.  After calling this function, you
 %% must advance the FSM state to `calculating'.
+-spec start_batch([any()],_,#state{}) -> #state{riak::pid(),batch_start::{{pos_integer(),1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12,1..255},{byte(),byte(),byte()}},batch_count::0,batch_skips::0,recalc::boolean()}.
 start_batch(Options, Time, State) ->
     BatchStart = calendar:universal_time(),
     Recalc = true == proplists:get_value(recalc, Options),
@@ -353,6 +377,7 @@ start_batch(Options, Time, State) ->
                 recalc=Recalc}.
 
 %% @doc Grab the whole list of Riak CS users.
+-spec fetch_user_list(pid()) -> any().
 fetch_user_list(Riak) ->
     case riakc_pb_socket:list_keys(Riak, ?USER_BUCKET) of
         {ok, Users} -> Users;
@@ -364,6 +389,7 @@ fetch_user_list(Riak) ->
     end.
 
 %% @doc Compute storage for the next user in the batch.
+-spec calculate_next_user(#state{batch::nonempty_maybe_improper_list(),recalc::boolean()}) -> #state{recalc::boolean()}.
 calculate_next_user(#state{riak=Riak,
                            batch=[User|Rest],
                            recalc=Recalc}=State) ->
@@ -383,6 +409,7 @@ calculate_next_user(#state{riak=Riak,
             State#state{batch=Rest, batch_skips=1+State#state.batch_skips}
     end.
 
+-spec recalc(boolean(),_,_,{{pos_integer(),1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12,1..255},{byte(),byte(),byte()}}) -> boolean().
 recalc(true, _Riak, _User, _Time) ->
     %% the user demanded recalculations
     true;
@@ -400,6 +427,7 @@ recalc(false, Riak, User, Time) ->
     end.
 
 %% @doc Archive a user's storage calculation.
+-spec store_user(#state{batch::nonempty_maybe_improper_list()},[byte()],[{[any()],integer()}],{{pos_integer(),1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12,1..255},{byte(),byte(),byte()}},{{pos_integer(),1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12,1..255},{byte(),byte(),byte()}}) -> any().
 store_user(#state{riak=Riak}, User, BucketList, Start, End) ->
     Obj = riak_cs_storage:make_object(User, BucketList, Start, End),
     case riakc_pb_socket:put(Riak, Obj) of
@@ -410,11 +438,13 @@ store_user(#state{riak=Riak}, User, BucketList, Start, End) ->
     end.
 
 %% @doc How many seconds have passed from `Time' to now.
+-spec elapsed({{non_neg_integer(),1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12,1..255},{byte(),byte(),byte()}}) -> integer().
 elapsed(Time) ->
     elapsed(Time, calendar:universal_time()).
 
 %% @doc How many seconds are between `Early' and `Late'.  Warning:
 %% this will be negative if `Early' is later than `Late'.
+-spec elapsed({{non_neg_integer(),1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12,1..255},{byte(),byte(),byte()}},{{non_neg_integer(),1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12,1..255},{byte(),byte(),byte()}}) -> integer().
 elapsed(Early, Late) ->
     calendar:datetime_to_gregorian_seconds(Late)
         -calendar:datetime_to_gregorian_seconds(Early).
@@ -425,6 +455,7 @@ elapsed(Early, Late) ->
 %% passed by the wall clock.  If the next scheduled time <em>has</em>
 %% already passed, an error is printed to the logs, and the next time
 %% that has not already passed is found and scheduled instead.
+-spec schedule_next(#state{schedule::maybe_improper_list()},_) -> #state{schedule::maybe_improper_list()}.
 schedule_next(#state{schedule=[]}=State, _) ->
     %% nothing to schedule, all triggers manual
     State;
@@ -445,6 +476,7 @@ schedule_next(#state{schedule=Schedule}=State, Last) ->
     end.
 
 %% @doc Find the next scheduled time after the given time.
+-spec next_target_time({_,{_,_,_}},maybe_improper_list()) -> {_,{_,_,0}}.
 next_target_time({Day, {LH, LM,_}}, Schedule) ->
     RemainingInDay = lists:dropwhile(
                        fun(Sched) -> Sched =< {LH, LM} end, Schedule),
@@ -456,6 +488,7 @@ next_target_time({Day, {LH, LM,_}}, Schedule) ->
             {Day, {NH, NM, 0}}
     end.
 
+-spec next_day({non_neg_integer(),1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12,1..255}) -> {non_neg_integer(),1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12,1..255}.
 next_day(Day) ->
     {DayP,_} = calendar:gregorian_seconds_to_datetime(
                  86400+calendar:datetime_to_gregorian_seconds(

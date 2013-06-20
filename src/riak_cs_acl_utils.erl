@@ -53,6 +53,7 @@
 %% @doc Construct an acl. The structure is the same for buckets
 %% and objects.
 -spec acl(string(), string(), string(), [acl_grant()]) -> #acl_v2{}.
+
 acl(DisplayName, CanonicalId, KeyId, Grants) ->
     OwnerData = {DisplayName, CanonicalId, KeyId},
     ?ACL{owner=OwnerData,
@@ -61,6 +62,7 @@ acl(DisplayName, CanonicalId, KeyId, Grants) ->
 %% @doc Construct a default acl. The structure is the same for buckets
 %% and objects.
 -spec default_acl(string(), string(), string()) -> #acl_v2{}.
+
 default_acl(DisplayName, CanonicalId, KeyId) ->
     acl(DisplayName,
         CanonicalId,
@@ -72,6 +74,7 @@ default_acl(DisplayName, CanonicalId, KeyId) ->
 -spec canned_acl(undefined | string(),
                  acl_owner(),
                  undefined | acl_owner()) -> #acl_v2{}.
+
 canned_acl(undefined, {Name, CanonicalId, KeyId}, _) ->
     default_acl(Name, CanonicalId, KeyId);
 canned_acl(HeaderVal, Owner, BucketOwner) ->
@@ -85,6 +88,7 @@ canned_acl(HeaderVal, Owner, BucketOwner) ->
 -spec acl_from_xml(string(), string(), pid()) -> {ok, #acl_v2{}} |
                                                  {error, 'invalid_argument'} |
                                                  {error, 'unresolved_grant_email'}.
+
 acl_from_xml(Xml, KeyId, RiakPid) ->
     {ParsedData, _Rest} = xmerl_scan:string(Xml, []),
     BareAcl = ?ACL{owner={[], [], KeyId}},
@@ -93,6 +97,7 @@ acl_from_xml(Xml, KeyId, RiakPid) ->
 %% @doc Convert an internal representation of an ACL
 %% into XML.
 -spec empty_acl_xml() -> binary().
+
 empty_acl_xml() ->
     XmlDoc =
         [{'AccessControlPolicy',
@@ -106,6 +111,7 @@ empty_acl_xml() ->
 -type request_method() :: 'GET' | 'HEAD' | 'PUT' | 'POST' |
                           'DELETE' | 'Dialyzer happiness'.
 -spec requested_access(request_method(), boolean()) -> acl_perm().
+
 requested_access(Method, AclRequest) ->
     if
         Method == 'GET'
@@ -140,11 +146,13 @@ requested_access(Method, AclRequest) ->
 
 -spec check_grants(undefined | rcs_user(), binary(), atom(), pid()) ->
                           boolean() | {true, string()}.
+
 check_grants(User, Bucket, RequestedAccess, RiakPid) ->
     check_grants(User, Bucket, RequestedAccess, RiakPid, undefined).
 
 -spec check_grants(undefined | rcs_user(), binary(), atom(), pid(), acl()|undefined) ->
                           boolean() | {true, string()}.
+
 check_grants(undefined, Bucket, RequestedAccess, RiakPid, BucketAcl) ->
     riak_cs_acl:anonymous_bucket_access(Bucket, RequestedAccess, RiakPid, BucketAcl);
 check_grants(User, Bucket, RequestedAccess, RiakPid, BucketAcl) ->
@@ -156,6 +164,7 @@ check_grants(User, Bucket, RequestedAccess, RiakPid, BucketAcl) ->
 
 -spec validate_acl({ok, acl()} | {error, term()}, string()) ->
                           {ok, acl()} | {error, access_denied}.
+
 validate_acl({ok, Acl=?ACL{owner={_, Id, _}}}, Id) ->
     {ok, Acl};
 validate_acl({ok, _}, _) ->
@@ -171,6 +180,7 @@ validate_acl({error, _}=Error, _) ->
 %% list of grants if an entry exists with matching grantee
 %% data or add a grant to a list of grants.
 -spec add_grant(acl_grant(), [acl_grant()]) -> [acl_grant()].
+
 add_grant(NewGrant, Grants) ->
     {NewGrantee, NewPerms} = NewGrant,
     SplitFun = fun(G) ->
@@ -197,6 +207,7 @@ add_grant(NewGrant, Grants) ->
 -spec canned_acl_grants(string(),
                         acl_owner(),
                         undefined | acl_owner()) -> [acl_grant()].
+
 canned_acl_grants("public-read", Owner, _) ->
     [{owner_grant(Owner), ['FULL_CONTROL']},
      {'AllUsers', ['READ']}];
@@ -224,6 +235,7 @@ canned_acl_grants(_, Owner, _) ->
     [{owner_grant(Owner), ['FULL_CONTROL']}].
 
 -spec owner_grant({string(), string(), string()}) -> {string(), string()}.
+
 owner_grant({Name, CanonicalId, _}) ->
     {Name, CanonicalId}.
 
@@ -231,6 +243,7 @@ owner_grant({Name, CanonicalId, _}) ->
 %% a given email address.
 -spec canonical_for_email(string(), pid()) -> {ok, string()} |
                                               {error, unresolved_grant_email} .
+
 canonical_for_email(Email, RiakPid) ->
     case riak_cs_utils:get_user_by_index(?EMAIL_INDEX,
                                            list_to_binary(Email),
@@ -246,6 +259,7 @@ canonical_for_email(Email, RiakPid) ->
 %% a given canonical id.
 -spec name_for_canonical(string(), pid()) -> {ok, string()} |
                                              {error, 'invalid_argument'}.
+
 name_for_canonical(CanonicalId, RiakPid) ->
     case riak_cs_utils:get_user_by_index(?ID_INDEX,
                                            list_to_binary(CanonicalId),
@@ -261,6 +275,7 @@ name_for_canonical(CanonicalId, RiakPid) ->
                                   {ok, #acl_v2{}} |
                                   {error, invalid_argument} |
                                   {error, unresolved_grant_email}.
+
 process_acl_contents([], Acl, _) ->
     {ok, Acl};
 process_acl_contents([HeadElement | RestElements], Acl, RiakPid) ->
@@ -286,6 +301,7 @@ process_acl_contents([HeadElement | RestElements], Acl, RiakPid) ->
 
 %% @doc Process an XML element containing acl owner information.
 -spec process_owner([xmlElement()], acl(), pid()) -> {ok, #acl_v2{}}.
+
 process_owner([], Acl=?ACL{owner={[], CanonicalId, KeyId}}, RiakPid) ->
     {ok, DisplayName} = name_for_canonical(CanonicalId, RiakPid),
     case name_for_canonical(CanonicalId, RiakPid) of
@@ -321,6 +337,7 @@ process_owner([HeadElement | RestElements], Acl, RiakPid) ->
                             {ok, #acl_v2{}} |
                             {error, invalid_argument} |
                             {error, unresolved_grant_email}.
+
 process_grants([], Acl, _) ->
     {ok, Acl};
 process_grants([HeadElement | RestElements], Acl, RiakPid) ->
@@ -350,6 +367,7 @@ process_grants([HeadElement | RestElements], Acl, RiakPid) ->
 %% @doc Process an XML element containing the grants for the acl.
 -spec process_grant([xmlElement()], acl_grant(), acl_owner(), pid()) ->
                            acl_grant() | {error, atom()}.
+
 process_grant([], Grant, _, _) ->
     Grant;
 process_grant([HeadElement | RestElements], Grant, AclOwner, RiakPid) ->
@@ -380,6 +398,7 @@ process_grant([HeadElement | RestElements], Grant, AclOwner, RiakPid) ->
                              acl_grant() |
                              {error, invalid_argument} |
                              {error, unresolved_grant_email}.
+
 process_grantee([], {{[], CanonicalId}, _Perms}, {DisplayName, CanonicalId, _}, _) ->
     {{DisplayName, CanonicalId}, _Perms};
 process_grantee([], {{[], CanonicalId}, _Perms}, _, RiakPid) ->
@@ -438,6 +457,7 @@ process_grantee([HeadElement | RestElements], Grant, AclOwner, RiakPid) ->
 %% @doc Process an XML element containing information about
 %% an ACL permission.
 -spec process_permission([xmlText()], acl_grant()) -> acl_grant().
+
 process_permission([Content], Grant) ->
     Value = list_to_existing_atom(Content#xmlText.value),
     {Grantee, Perms} = Grant,

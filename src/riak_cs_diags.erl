@@ -17,10 +17,12 @@
 -record(state, {}).
 
 -spec start_link() -> {ok, pid()} | {error, term()}.
+
 start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
 -spec print_manifests(binary() | string(), binary() | string()) -> ok.
+
 print_manifests(Bucket, Key) when is_list(Bucket), is_list(Key) ->
     print_manifests(list_to_binary(Bucket), list_to_binary(Key));
 print_manifests(Bucket, Key) ->
@@ -29,6 +31,7 @@ print_manifests(Bucket, Key) ->
     table:print(manifest_table_spec(), Rows).
 
 -spec print_manifest(binary() | string(), binary() | string(), binary() | string()) -> ok.
+
 print_manifest(Bucket, Key, Uuid) when is_list(Bucket), is_list(Key) ->
     print_manifest(list_to_binary(Bucket), list_to_binary(Key), Uuid);
 print_manifest(Bucket, Key, Uuid) when is_list(Uuid) ->
@@ -39,16 +42,19 @@ print_manifest(Bucket, Key, Uuid) ->
     io:format("\n~s", [pr(Manifest)]).
 
 -spec pr(tuple()) -> iolist().
+
 pr(Record) ->
     pr(Record, 0).
 
 -spec pr(tuple(), non_neg_integer()) -> iolist().
+
 pr(Record, Indent) ->
     {'$lager_record', RecordName, Zipped} = lager:pr(Record, ?MODULE), 
     ["\n", spaces(Indent), "#", atom_to_list(RecordName),
      "\n", spaces(Indent), "--------------------\n", 
      [print_field(Field, Indent) || Field <- Zipped]].
 
+-spec print_field({_,_},non_neg_integer()) -> [[any()] | char()].
 print_field({_, undefined}, _) ->
     "";
 print_field({uuid, Uuid}, Indent) when is_binary(Uuid) ->
@@ -70,15 +76,18 @@ print_field({parts, Parts}, Indent) ->
 print_field({Key, Value}, Indent) ->
     io_lib:format("~s~s = ~p\n", [spaces(Indent), Key, Value]).
 
+-spec orddict_values([{_,_}]) -> [any()].
 orddict_values(Dict) ->
     [Val || {_, Val} <- orddict:to_list(Dict)].
 
+-spec spaces(non_neg_integer()) -> [[32,...]].
 spaces(Num) ->
     [" " || _ <- lists:seq(1, Num*?INDENT_LEVEL)].
 
 %% ====================================================================
 %% Table Specifications and Record to Row conversions
 %% ====================================================================
+-spec manifest_table_spec() -> [{'created' | 'delete_marked_time' | 'deleted' | 'mp' | 'state' | 'uuid' | 'write_start_time',6 | 8 | 20 | 23 | 28 | 36},...].
 manifest_table_spec() ->
     [{state, 20}, {deleted, 8},  {mp, 6}, {created, 28}, {uuid, 36}, 
      {write_start_time, 23}, {delete_marked_time, 23}].
@@ -89,6 +98,7 @@ manifest_rows(Manifests) ->
        M?MANIFEST.created, mochihex:to_hex(M?MANIFEST.uuid),
        M?MANIFEST.write_start_time, M?MANIFEST.delete_marked_time] || M <- Manifests].
 
+-spec print_multipart_manifest(maybe_improper_list(),non_neg_integer()) -> [[[any()] | char()]].
 print_multipart_manifest(Props, Indent) ->
     case lists:keyfind(multipart, 1, Props) of
         {multipart, MpManifest} -> 
@@ -97,6 +107,7 @@ print_multipart_manifest(Props, Indent) ->
             ""
     end.
 
+-spec deleted([atom() | tuple()]) -> boolean().
 deleted(Props) ->
     lists:keymember(deleted, 1, Props).
 
@@ -104,9 +115,11 @@ deleted(Props) ->
 %% gen_server callbacks
 %% ====================================================================
 
+-spec init([]) -> {'ok',#state{}}.
 init([]) ->
     {ok, #state{}}.
 
+-spec handle_call({'get_manifests',_,_},_,_) -> {'reply',[{_,_}] | {'error',_},_}.
 handle_call({get_manifests, Bucket, Key}, _From, State) ->
     {ok, Pid} = riak_cs_utils:riak_connection(),
     try
@@ -118,15 +131,19 @@ handle_call({get_manifests, Bucket, Key}, _From, State) ->
         riak_cs_utils:close_riak_connection(Pid)
     end.
 
+-spec handle_cast(_,_) -> {'noreply',_}.
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
+-spec handle_info(_,_) -> {'noreply',_}.
 handle_info(_Info, State) ->
     {noreply, State}.
 
+-spec terminate(_,_) -> 'ok'.
 terminate(_Reason, _State) ->
     ok.
 
+-spec code_change(_,_,_) -> {'ok',_}.
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 

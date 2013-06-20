@@ -83,6 +83,7 @@ service_available(Pool, RD, Ctx) ->
 -spec parse_auth_header(string(), boolean()) -> {atom(),
                                                  string() | undefined,
                                                  string() | undefined}.
+
 parse_auth_header(KeyId, true) when KeyId =/= undefined ->
     {riak_cs_passthru_auth, KeyId, undefined};
 parse_auth_header(_, true) ->
@@ -105,6 +106,7 @@ parse_auth_header(_, _) ->
 -spec parse_auth_params(string(), string(), boolean()) -> {atom(),
                                                            string() | undefined,
                                                            string() | undefined}.
+
 parse_auth_params(KeyId, _, true) when KeyId =/= undefined ->
     {riak_cs_passthru_auth, KeyId, undefined};
 parse_auth_params(_, _, true) ->
@@ -181,6 +183,7 @@ handle_validation_response({error, Reason}, RD, Ctx, _, Conv2KeyCtx, _) ->
 -spec validate_auth_header(#wm_reqdata{}, term(), pid(), #context{}|undefined) ->
                                   {ok, rcs_user(), riakc_obj:riakc_obj()} |
                                   {error, bad_auth | notfound | no_user_key | term()}.
+
 validate_auth_header(RD, AuthBypass, RiakPid, Ctx) ->
     AuthHeader = wrq:get_req_header("authorization", RD),
     case AuthHeader of
@@ -224,6 +227,7 @@ validate_auth_header(RD, AuthBypass, RiakPid, Ctx) ->
 %%      it again if it's already in the
 %%      Ctx
 -spec ensure_doc(term(), pid()) -> term().
+
 ensure_doc(KeyCtx=#key_context{get_fsm_pid=undefined,
                                bucket=Bucket,
                                key=Key}, RiakcPid) ->
@@ -242,6 +246,7 @@ ensure_doc(KeyCtx, _) ->
 
 %% @doc Produce an access-denied error message from a webmachine
 %% resource's `forbidden/2' function.
+-spec deny_access(_,_) -> any().
 deny_access(RD, Ctx=#context{response_module=ResponseMod}) ->
     ResponseMod:api_error(access_denied, RD, Ctx);
 deny_access(RD, Ctx) ->
@@ -257,6 +262,7 @@ deny_invalid_key(RD, Ctx=#context{response_module=ResponseMod}) ->
 %% to switch to the owner's record if it can be retrieved
 -spec shift_to_owner(#wm_reqdata{}, #context{}, string(), pid()) ->
                             {boolean(), #wm_reqdata{}, #context{}}.
+
 shift_to_owner(RD, Ctx=#context{response_module=ResponseMod}, OwnerId, RiakPid)
   when RiakPid /= undefined ->
     case riak_cs_utils:get_user(OwnerId, RiakPid) of
@@ -270,6 +276,7 @@ shift_to_owner(RD, Ctx=#context{response_module=ResponseMod}, OwnerId, RiakPid)
             ResponseMod:api_error(bucket_owner_unavailable, RD, Ctx)
     end.
 
+-spec streaming_get(_,_,_,_) -> {_,'done' | fun(() -> {_,_})}.
 streaming_get(FsmPid, StartTime, UserName, BFile_str) ->
     case riak_cs_get_fsm:get_next_chunk(FsmPid) of
         {done, Chunk} ->
@@ -283,6 +290,7 @@ streaming_get(FsmPid, StartTime, UserName, BFile_str) ->
 
 %% @doc Convert a Riak CS user record to JSON
 -spec user_record_to_json(term()) -> {struct, [{atom(), term()}]}.
+
 user_record_to_json(?RCS_USER{email=Email,
                               display_name=DisplayName,
                               name=Name,
@@ -307,6 +315,7 @@ user_record_to_json(?RCS_USER{email=Email,
 
 %% @doc Convert a Riak CS user record to XML
 -spec user_record_to_xml(term()) -> {atom(), [{atom(), term()}]}.
+
 user_record_to_xml(?RCS_USER{email=Email,
                               display_name=DisplayName,
                               name=Name,
@@ -334,15 +343,18 @@ user_record_to_xml(?RCS_USER{email=Email,
 %% @doc Get an ISO 8601 formatted timestamp representing
 %% current time.
 -spec iso_8601_datetime() -> string().
+
 iso_8601_datetime() ->
     iso_8601_datetime(erlang:universaltime()).
 
 -spec iso_8601_datetime(calendar:datetime()) -> string().
+
 iso_8601_datetime({{Year, Month, Day}, {Hour, Min, Sec}}) ->
     iso_8601_format(Year, Month, Day, Hour, Min, Sec).
 
 %% @doc Convert an RFC 1123 date into an ISO 8601 formatted timestamp.
 -spec to_iso_8601(string()) -> string().
+
 to_iso_8601(Date) ->
     case httpd_util:convert_request_date(Date) of
         {{Year, Month, Day}, {Hour, Min, Sec}} ->
@@ -353,6 +365,7 @@ to_iso_8601(Date) ->
     end.
 
 -spec to_rfc_1123(string()) -> string().
+
 to_rfc_1123(Date) when is_list(Date) ->
     case httpd_util:convert_request_date(Date) of
         {{_Year, _Month, _Day}, {_Hour, _Min, _Sec}} ->
@@ -365,6 +378,7 @@ to_rfc_1123(Date) when is_list(Date) ->
 %% @doc Convert an ISO 8601 date to RFC 1123 date. This function
 %% assumes the input time is already in GMT time.
 -spec iso_8601_to_rfc_1123(binary() | string()) -> string().
+
 iso_8601_to_rfc_1123(Date) when is_list(Date) ->
     ErlDate = iso_8601_to_erl_date(Date),
     httpd_util:rfc1123_date(erlang:universaltime_to_localtime(ErlDate)).
@@ -372,6 +386,7 @@ iso_8601_to_rfc_1123(Date) when is_list(Date) ->
 %% @doc Convert an ISO 8601 date to Erlang datetime format.
 %% This function assumes the input time is already in GMT time.
 -spec iso_8601_to_erl_date(binary() | string()) -> calendar:datetime().
+
 iso_8601_to_erl_date(Date) when is_list(Date) ->
     iso_8601_to_erl_date(iolist_to_binary(Date));
 iso_8601_to_erl_date(Date)  ->
@@ -383,6 +398,7 @@ iso_8601_to_erl_date(Date)  ->
     {{b2i(Yr), b2i(Mo), b2i(Da)},
      {b2i(Hr), b2i(Mn), b2i(Sc)}}.
 
+-spec extract_name(_) -> 'undefined' | maybe_improper_list().
 extract_name(User) when is_list(User) ->
     User;
 extract_name(?RCS_USER{name=Name}) ->
@@ -390,6 +406,7 @@ extract_name(?RCS_USER{name=Name}) ->
 extract_name(_) ->
     "-unknown-".
 
+-spec extract_amazon_headers([any()]) -> [any()].
 extract_amazon_headers(Headers) ->
     FilterFun =
         fun({K, V}, Acc) ->
@@ -408,12 +425,15 @@ extract_amazon_headers(Headers) ->
 %% TODO: pass in x-amz-server-side​-encryption?
 %% TODO: pass in x-amz-storage-​class?
 %% TODO: pass in x-amz-grant-* headers?
+-spec extract_user_metadata(_) -> [{maybe_improper_list(),[any()] | {_,_,_}}].
 extract_user_metadata(RD) ->
     extract_user_metadata(get_request_headers(RD), []).
 
+-spec get_request_headers(_) -> any().
 get_request_headers(RD) ->
     mochiweb_headers:to_list(wrq:req_headers(RD)).
 
+-spec normalize_headers(_) -> [any()].
 normalize_headers(RD) ->
     Headers = get_request_headers(RD),
     FilterFun =
@@ -423,6 +443,7 @@ normalize_headers(RD) ->
         end,
     ordsets:from_list(lists:foldl(FilterFun, [], Headers)).
 
+-spec extract_user_metadata([any()],[{maybe_improper_list(),[any()] | {_,_,_}}]) -> [{maybe_improper_list(),[any()] | {_,_,_}}].
 extract_user_metadata([], Acc) ->
     Acc;
 extract_user_metadata([{Name, Value} | Headers], Acc)
@@ -444,6 +465,7 @@ extract_user_metadata([_ | Headers], Acc) ->
 
 -spec bucket_access_authorize_helper(AccessType::atom(), boolean(),
                                      RD::term(), Ctx::#context{}) -> term().
+
 bucket_access_authorize_helper(AccessType, Deletable, RD, Ctx) ->
     #context{riakc_pid=RiakPid,
              policy_module=PolicyMod} = Ctx,
@@ -544,6 +566,7 @@ handle_policy_eval_result(User, _, _, RD, Ctx) ->
     end.
 
 -spec is_acl_request(atom()) -> boolean().
+
 is_acl_request(ReqType) when ReqType =:= bucket_acl orelse
                              ReqType =:= object_acl ->
     true;
@@ -556,12 +579,14 @@ is_acl_request(_) ->
 -spec object_access_authorize_helper(AccessType::atom(), boolean(),
                                      RD::term(), Ctx::term()) ->
     authorized_response().
+
 object_access_authorize_helper(AccessType, Deletable, RD, Ctx) ->
     object_access_authorize_helper(AccessType, Deletable, false, RD, Ctx).
 
 -spec object_access_authorize_helper(AccessType::atom(), boolean(), boolean(),
                                      RD::term(), Ctx::term()) ->
     authorized_response().
+
 object_access_authorize_helper(AccessType, Deletable, SkipAcl,
                                RD, #context{policy_module=PolicyMod,
                                             local_context=LocalCtx,
@@ -633,6 +658,7 @@ check_object_authorization(AccessType, Deletable, SkipAcl, Policy,
 
 -spec extract_canonical_id(rcs_user() | undefined) ->
     undefined | string().
+
 extract_canonical_id(undefined) ->
     undefined;
 extract_canonical_id(?RCS_USER{canonical_id=CanonicalID}) ->
@@ -640,6 +666,7 @@ extract_canonical_id(?RCS_USER{canonical_id=CanonicalID}) ->
 
 -spec requested_access_helper(object | object_part | object_acl, atom()) ->
     acl_perm().
+
 requested_access_helper(object, Method) ->
     riak_cs_acl_utils:requested_access(Method, false);
 requested_access_helper(object_part, Method) ->
@@ -649,6 +676,7 @@ requested_access_helper(object_acl, Method) ->
 
 -spec extract_object_acl(notfound | lfs_manifest()) ->
     undefined | acl().
+
 extract_object_acl(notfound) ->
     undefined;
 extract_object_acl(?MANIFEST{acl=Acl}) ->
@@ -659,6 +687,7 @@ extract_object_acl(?MANIFEST{acl=Acl}) ->
                                      undefined |
                                      {error, multiple_bucket_owners} |
                                      {error, notfound}.
+
 translate_bucket_policy(PolicyMod, Bucket, RiakPid) ->
     case PolicyMod:bucket_policy(Bucket, RiakPid) of
         {ok, P} ->
@@ -681,6 +710,7 @@ translate_bucket_policy(PolicyMod, Bucket, RiakPid) ->
                                        Method :: atom(),
                                        Deletable :: boolean()) ->
     authorized_response().
+
 actor_is_owner_but_denied_policy(User, RD, Ctx, Method, Deletable)
         when Method =:= 'PUT' orelse
              Method =:= 'POST' orelse
@@ -697,6 +727,7 @@ actor_is_owner_but_denied_policy(User, RD, Ctx, Method, Deletable)
                                         Ctx :: term(),
                                         LocalCtx :: term()) ->
     authorized_response().
+
 actor_is_owner_and_allowed_policy(undefined, RD, Ctx, _LocalCtx) ->
     {false, RD, Ctx};
 actor_is_owner_and_allowed_policy(User, RD, Ctx, LocalCtx) ->
@@ -710,6 +741,7 @@ actor_is_owner_and_allowed_policy(User, RD, Ctx, LocalCtx) ->
                                            Method :: atom(),
                                            Deletable :: boolean()) ->
     authorized_response().
+
 actor_is_not_owner_and_denied_policy(OwnerId, RD, Ctx, Method, Deletable)
         when Method =:= 'PUT' orelse
         (Deletable andalso Method =:= 'DELETE') ->
@@ -726,6 +758,7 @@ actor_is_not_owner_and_denied_policy(_OwnerId, RD, Ctx, Method, Deletable)
                                             Ctx :: term(),
                                             LocalCtx :: term()) ->
     authorized_response().
+
 actor_is_not_owner_but_allowed_policy(undefined, OwnerId, RD, Ctx, LocalCtx) ->
     %% This is an anonymous request so shift to the context of the
     %% owner for the remainder of the request.
@@ -743,6 +776,7 @@ actor_is_not_owner_but_allowed_policy(_, OwnerId, RD, Ctx, LocalCtx) ->
                               Ctx :: term(),
                               LocalCtx :: term()) ->
     authorized_response().
+
 just_allowed_by_policy(ObjectAcl, RiakPid, RD, Ctx, LocalCtx) ->
     OwnerId = riak_cs_acl:owner_id(ObjectAcl, RiakPid),
     AccessRD = riak_cs_access_log_handler:set_user(OwnerId, RD),
@@ -750,6 +784,7 @@ just_allowed_by_policy(ObjectAcl, RiakPid, RD, Ctx, LocalCtx) ->
     {false, AccessRD, Ctx#context{local_context=UpdLocalCtx}}.
 
 -spec bucket_owner(binary(), pid()) -> undefined | acl_owner().
+
 bucket_owner(Bucket, RiakPid) ->
     case riak_cs_acl:bucket_acl(Bucket, RiakPid) of
         {ok, Acl} ->
@@ -763,6 +798,7 @@ bucket_owner(Bucket, RiakPid) ->
 %% Internal functions
 %% ===================================================================
 
+-spec any_to_list(atom() | binary() | maybe_improper_list() | integer()) -> maybe_improper_list().
 any_to_list(V) when is_list(V) ->
     V;
 any_to_list(V) when is_atom(V) ->
@@ -780,10 +816,12 @@ any_to_list(V) when is_integer(V) ->
                       non_neg_integer(),
                       non_neg_integer(),
                       non_neg_integer()) -> string().
+
 iso_8601_format(Year, Month, Day, Hour, Min, Sec) ->
     lists:flatten(
      io_lib:format("~4.10.0B-~2.10.0B-~2.10.0BT~2.10.0B:~2.10.0B:~2.10.0B.000Z",
                    [Year, Month, Day, Hour, Min, Sec])).
 
+-spec b2i(<<_:16,_:_*16>>) -> integer().
 b2i(Bin) ->
     list_to_integer(binary_to_list(Bin)).

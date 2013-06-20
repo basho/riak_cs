@@ -36,11 +36,13 @@
 %% Webmachine callbacks
 %% -------------------------------------------------------------------
 
+-spec init(_) -> {'ok',#ping_context{pool_pid::'true'}}.
 init(_Config) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"init">>),
     {ok, #ping_context{}}.
 
 -spec service_available(term(), term()) -> {boolean(), term(), term()}.
+
 service_available(RD, Ctx) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"service_available">>),
     case poolboy:checkout(request_pool, true, ping_timeout()) of
@@ -65,13 +67,16 @@ service_available(RD, Ctx) ->
     {Available, RD, UpdCtx}.
 
 -spec allowed_methods(term(), term()) -> {[atom()], term(), term()}.
+
 allowed_methods(RD, Ctx) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"allowed_methods">>),
     {['GET', 'HEAD'], RD, Ctx}.
 
+-spec to_html(_,_) -> {[75 | 79,...],_,_}.
 to_html(ReqData, Ctx) ->
     {"OK", ReqData, Ctx}.
 
+-spec finish_request(_,#ping_context{pool_pid::boolean(),riakc_pid::'undefined' | pid()}) -> {'true',_,#ping_context{pool_pid::boolean()}}.
 finish_request(RD, Ctx=#ping_context{riakc_pid=undefined}) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"finish_request">>, [0], []),
     {true, RD, Ctx};
@@ -96,6 +101,7 @@ finish_request(RD, Ctx=#ping_context{riakc_pid=RiakPid,
 %% the call to `riakc_pb_socket:ping' so the effective cumulative
 %% timeout could be up to 2 * `ping_timeout()'.
 -spec ping_timeout() -> pos_integer().
+
 ping_timeout() ->
     case application:get_env(riak_cs, ping_timeout) of
         undefined ->

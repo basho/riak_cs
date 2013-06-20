@@ -39,6 +39,7 @@
 %% @doc Function to rewrite headers prior to processing by webmachine.
 -spec rewrite(atom(), atom(), {integer(), integer()}, gb_tree(), string()) ->
                      {gb_tree(), string()}.
+
 rewrite(Method, _Scheme, _Vsn, Headers, Url) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"rewrite">>),
     Host = mochiweb_headers:get_value("host", Headers),
@@ -56,6 +57,7 @@ rewrite(Method, _Scheme, _Vsn, Headers, Url) ->
     {RewrittenHeaders, RewrittenPath}.
 
 -spec original_resource(term()) -> undefined | {string(), [{term(),term()}]}.
+
 original_resource(RD) ->
     case wrq:get_req_header(?RCS_REWRITE_HEADER, RD) of
         undefined -> undefined;
@@ -66,6 +68,7 @@ original_resource(RD) ->
 
 %% @doc Internal function to handle rewriting the URL
 -spec rewrite_path(atom(),string(), string(), undefined | string()) -> string().
+
 rewrite_path(_Method, "/", _QS, undefined) ->
     "/buckets";
 rewrite_path(Method, Path, QS, undefined) ->
@@ -92,6 +95,7 @@ rewrite_path(_Method, Path, QS, Bucket) ->
 
 %% @doc, build the path to be stored as the rewritten path in the request. Bucket name
 %% from the host header is added if it exists.
+-spec rcs_rewrite_header(_,'undefined' | string()) -> any().
 rcs_rewrite_header(RawPath, undefined) ->
     RawPath;
 rcs_rewrite_header(RawPath, Bucket) ->
@@ -100,6 +104,7 @@ rcs_rewrite_header(RawPath, Bucket) ->
 %% @doc Extract the bucket name that may have been prepended to the
 %% host name in the Host header value.
 -spec bucket_from_host(undefined | string()) -> undefined | string().
+
 bucket_from_host(undefined) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"bucket_from_host">>),
     undefined;
@@ -108,6 +113,7 @@ bucket_from_host(HostHeader) ->
     {ok, RootHost} = application:get_env(riak_cs, cs_root_host),
     bucket_from_host(HostHeader, RootHost).
 
+-spec bucket_from_host(string(),string()) -> 'undefined' | string().
 bucket_from_host(HostHeader, RootHost) ->
     HostNoPort = case string:tokens(HostHeader, ":") of
                      []    -> HostHeader;
@@ -119,6 +125,7 @@ bucket_from_host(HostHeader, RootHost) ->
 %% @doc Extract the bucket name from the `Host' header value if a
 %% bucket name is present.
 -spec extract_bucket_from_host(string(), non_neg_integer()) -> undefined | string().
+
 extract_bucket_from_host(_Host, 0) ->
     undefined;
 extract_bucket_from_host(_Host, 1) ->
@@ -131,9 +138,11 @@ extract_bucket_from_host(Host, RootHostIndex) ->
 %% @doc Separate the bucket name from the rest of the raw path in the
 %% case where the bucket name is included in the path.
 -spec separate_bucket_from_path(string()) -> {nonempty_string(), string()}.
+
 separate_bucket_from_path([$/ | Rest]) ->
     separate_bucket_from_path(Rest, []).
 
+-spec separate_bucket_from_path(maybe_improper_list(),[any()]) -> {[any()],nonempty_maybe_improper_list()}.
 separate_bucket_from_path([], Acc) ->
     {lists:reverse(Acc), "/"};
 separate_bucket_from_path([$/ | _] = Path, Acc) ->
@@ -144,6 +153,7 @@ separate_bucket_from_path([C | Rest], Acc) ->
 %% @doc Format a bucket operation query string to conform the the
 %% rewrite rules.
 -spec format_bucket_qs(atom(), query_params(), subresources()) -> string().
+
 format_bucket_qs('POST', [{"delete", []}], []) ->
     "/objects";
 format_bucket_qs(Method, QueryParams, [])
@@ -157,6 +167,7 @@ format_bucket_qs(_Method, QueryParams, SubResources) ->
 %% @doc Format an object operation query string to conform the the
 %% rewrite rules.
 -spec format_object_qs({subresources(), query_params()}) -> string().
+
 format_object_qs({SubResources, QueryParams}) ->
     UploadId = proplists:get_value("uploadId", SubResources, []),
     PartNum = proplists:get_value("partNumber", SubResources, []),
@@ -165,6 +176,7 @@ format_object_qs({SubResources, QueryParams}) ->
 %% @doc Format an object operation query string to conform the the
 %% rewrite rules.
 -spec format_object_qs(subresources(), query_params(), string(), string()) -> string().
+
 format_object_qs(SubResources, QueryParams, [], []) ->
     [format_subresources(SubResources), format_query_params(QueryParams)];
 format_object_qs(_SubResources, _QueryParams, UploadId, []) ->
@@ -175,6 +187,7 @@ format_object_qs(_SubResources, _QueryParams, UploadId, PartNum) ->
 %% @doc Format a string that expresses the subresource request
 %% that can be appended to the URL.
 -spec format_subresources(subresources()) -> string().
+
 format_subresources([]) ->
     [];
 format_subresources([{Key, []} | _]) ->
@@ -182,6 +195,7 @@ format_subresources([{Key, []} | _]) ->
 
 %% @doc Format a proplist of query parameters into a string
 -spec format_query_params(query_params()) -> string().
+
 format_query_params([]) ->
     [];
 format_query_params(QueryParams) ->
@@ -189,6 +203,7 @@ format_query_params(QueryParams) ->
 
 %% @doc Format a proplist of query parameters into a string
 -spec format_query_params(query_params(), list()) -> list().
+
 format_query_params([], QS) ->
     ["?", QS];
 format_query_params([{Key, []} | RestParams], []) ->
@@ -202,11 +217,13 @@ format_query_params([{Key, Value} | RestParams], QS) ->
 
 %% @doc Parse the valid subresources from the raw path.
 -spec get_subresources(string()) -> {subresources(), query_params()}.
+
 get_subresources(QueryString) ->
     lists:partition(fun valid_subresource/1, mochiweb_util:parse_qs(QueryString)).
 
 %% @doc Determine if a query parameter key is a valid S3 subresource
 -spec valid_subresource(subresource()) -> boolean().
+
 valid_subresource({Key, _}) ->
     lists:member(Key, ?SUBRESOURCES).
 

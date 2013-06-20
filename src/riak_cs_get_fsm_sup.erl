@@ -38,6 +38,7 @@
 
 %% @doc API for starting the supervisor.
 -spec start_link() -> {ok, pid()} | ignore | {error, term()}.
+
 start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
@@ -45,6 +46,7 @@ start_link() ->
 -spec start_get_fsm(node(), binary(), binary(), pid(), pid(), pos_integer(),
                     pos_integer()) ->
                            {ok, pid()} | {error, term()}.  %% SLF: R14B04's supervisor:startchild_ret() is broken?
+
 start_get_fsm(Node, Bucket, Key, Caller, RiakPid, FetchConcurrency, BufferFactor) ->
     supervisor:start_child({?MODULE, Node}, [Bucket, Key, Caller, RiakPid,
                                             FetchConcurrency, BufferFactor]).
@@ -59,6 +61,7 @@ start_get_fsm(Node, Bucket, Key, Caller, RiakPid, FetchConcurrency, BufferFactor
                          pos_integer(),
                          pos_integer()},
                         [supervisor:child_spec()]}}.
+
 init([]) ->
     RestartStrategy = simple_one_for_one,
     MaxRestarts = 1000,

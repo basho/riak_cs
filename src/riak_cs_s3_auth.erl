@@ -40,6 +40,7 @@
 %% ===================================================================
 
 -spec identify(term(), term()) -> {string() | undefined , string()}.
+
 identify(RD,_Ctx) ->
     case wrq:get_req_header("authorization", RD) of
         undefined ->
@@ -49,6 +50,7 @@ identify(RD,_Ctx) ->
     end.
 
 -spec authenticate(rcs_user(), string(), term(), term()) -> ok | {error, atom()}.
+
 authenticate(User, Signature, RD, _Ctx) ->
     CalculatedSignature = calculate_signature(User?RCS_USER.key_secret, RD),
     case check_auth(Signature, CalculatedSignature) of
@@ -77,6 +79,7 @@ authenticate(User, Signature, RD, _Ctx) ->
 %% Internal functions
 %% ===================================================================
 
+-spec parse_auth_header(_) -> {'undefined' | nonempty_string(),'undefined' | nonempty_string()}.
 parse_auth_header("AWS " ++ Key) ->
     case string:tokens(Key, ":") of
         [KeyId, KeyData] ->
@@ -86,6 +89,7 @@ parse_auth_header("AWS " ++ Key) ->
 parse_auth_header(_) ->
     {undefined, undefined}.
 
+-spec calculate_signature([byte()],_) -> [1..255].
 calculate_signature(KeyData, RD) ->
     Headers = riak_cs_wm_utils:normalize_headers(RD),
     AmazonHeaders = riak_cs_wm_utils:extract_amazon_headers(Headers),
@@ -129,9 +133,11 @@ calculate_signature(KeyData, RD) ->
     base64:encode_to_string(
       crypto:sha_mac(KeyData, STS)).
 
+-spec check_auth(_,[1..255]) -> boolean().
 check_auth(PresentedSignature, CalculatedSignature) ->
     PresentedSignature == CalculatedSignature.
 
+-spec canonicalize_qs([{_,_}]) -> [any()].
 canonicalize_qs(QS) ->
     %% The QS must be sorted be canonicalized,
     %% and since `canonicalize_qs/2` builds up the
@@ -141,6 +147,7 @@ canonicalize_qs(QS) ->
     ReversedSorted = lists:reverse(lists:sort(QS)),
     canonicalize_qs(ReversedSorted, []).
 
+-spec canonicalize_qs([{_,_}],[[any(),...]]) -> [any()].
 canonicalize_qs([], []) ->
     [];
 canonicalize_qs([], Acc) ->

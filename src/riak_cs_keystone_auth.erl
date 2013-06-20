@@ -43,6 +43,7 @@
 %% ===================================================================
 
 -spec identify(#wm_reqdata{}, #context{}) -> failed | {string() | undefined , string()}.
+
 identify(RD, #context{api=s3}) ->
     validate_token(s3, RD);
 identify(RD, #context{api=oos}) ->
@@ -50,6 +51,7 @@ identify(RD, #context{api=oos}) ->
 
 -spec authenticate(rcs_user(), {string(), term()}, #wm_reqdata{}, #context{}) ->
                           ok | {error, invalid_authentication}.
+
 authenticate(_User, {_, TokenItems}, _RD, _Ctx) ->
     %% @TODO Expand authentication check for non-operators who may
     %% have access
@@ -73,6 +75,7 @@ authenticate(_User, {_, TokenItems}, _RD, _Ctx) ->
 %% Internal functions
 %% ===================================================================
 
+-spec token_names('undefined' | [any()]) -> [any()].
 token_names(undefined) ->
     ordsets:new();
 token_names(Roles) ->
@@ -80,6 +83,7 @@ token_names(Roles) ->
       [proplists:get_value(<<"name">>, Role, []) || {struct, Role} <- Roles]).
 
 -spec validate_token(s3 | oos, undefined | string()) -> failed | {term(), term()}.
+
 validate_token(_, undefined) ->
     failed;
 validate_token(Api, AuthToken) ->
@@ -93,6 +97,7 @@ validate_token(Api, AuthToken) ->
       request_keystone_token_info(Api, AuthToken)).
 
 -spec request_keystone_token_info(s3 | oos, string() | {term(), term()}) -> term().
+
 request_keystone_token_info(oos, AuthToken) ->
     RequestURI = riak_cs_config:os_tokens_url() ++ AuthToken,
     RequestHeaders = [{"X-Auth-Token", riak_cs_config:os_admin_token()}],
@@ -113,6 +118,7 @@ request_keystone_token_info(s3, RD) ->
     RequestHeaders = [{"X-Auth-Token", riak_cs_config:os_admin_token()}],
     httpc:request(post, {RequestURI, RequestHeaders, "application/json", RequestBody}, [], []).
 
+-spec handle_token_info_response({'error',_} | {'ok',{{_,_,_},_,_}}) -> 'failed' | {[],{{'undefined','undefined','undefined' | [any()]},[any()] | {'struct',_}}}.
 handle_token_info_response({ok, {{_HTTPVer, _Status, _StatusLine}, _, TokenInfo}})
   when _Status >= 200, _Status =< 299 ->
     TokenResult = riak_cs_json:from_json(TokenInfo),
@@ -134,6 +140,7 @@ handle_token_info_response({error, Reason}) ->
                   [Reason]),
     failed.
 
+-spec parse_auth_header(_) -> {'undefined' | nonempty_string(),'undefined' | nonempty_string()}.
 parse_auth_header("AWS " ++ Key) ->
     case string:tokens(Key, ":") of
         [KeyId, KeyData] ->
@@ -144,6 +151,7 @@ parse_auth_header(_) ->
     {undefined, undefined}.
 
 -spec calculate_sts(term()) -> binary().
+
 calculate_sts(RD) ->
     Headers = riak_cs_wm_utils:normalize_headers(RD),
     AmazonHeaders = riak_cs_wm_utils:extract_amazon_headers(Headers),
@@ -185,9 +193,11 @@ calculate_sts(RD) ->
                     AmazonHeaders,
                     Resource]).
 
+-spec canonicalize_qs([{_,_}]) -> [any()].
 canonicalize_qs(QS) ->
     canonicalize_qs(QS, []).
 
+-spec canonicalize_qs([{_,_}],_) -> [any()].
 canonicalize_qs([], []) ->
     [];
 canonicalize_qs([], Acc) ->

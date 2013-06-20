@@ -41,6 +41,7 @@
 %% `{BucketName, Bytes}`.
 -spec sum_user(pid(), string()) -> {ok, [{string(), integer()}]}
                                  | {error, term()}.
+
 sum_user(Riak, User) when is_binary(User) ->
     sum_user(Riak, binary_to_list(User));
 sum_user(Riak, User) when is_list(User) ->
@@ -61,6 +62,7 @@ sum_user(Riak, User) when is_list(User) ->
 %% which is the number of objects that were counted in the bucket, and
 %% `Bytes', which is the total size of all of those objects.
 -spec sum_bucket(pid(), string() | binary()) -> term() | {error, term()}.
+
 sum_bucket(Riak, Bucket) when is_list(Bucket) ->
     sum_bucket(Riak, list_to_binary(Bucket));
 sum_bucket(Riak, Bucket) when is_binary(Bucket) ->
@@ -78,6 +80,7 @@ sum_bucket(Riak, Bucket) when is_binary(Bucket) ->
             {error, Error}
     end.
 
+-spec object_size_map(_,_,_) -> [{_,_}].
 object_size_map({error, notfound}, _, _) ->
     [];
 object_size_map(Object, _, _) ->
@@ -96,6 +99,7 @@ object_size_map(Object, _, _) ->
             []
     end.
 
+-spec object_size_reduce([{_,_}],_) -> [{number(),number()},...].
 object_size_reduce(Sizes, _) ->
     {Objects,Bytes} = lists:unzip(Sizes),
     [{lists:sum(Objects),lists:sum(Bytes)}].
@@ -105,6 +109,7 @@ object_size_reduce(Sizes, _) ->
 %% `storage_archive_period' environment variable of the `riak_cs'
 %% application.
 -spec archive_period() -> {ok, integer()}|{error, term()}.
+
 archive_period() ->
     case application:get_env(riak_cs, storage_archive_period) of
         {ok, AP} when is_integer(AP), AP > 0 ->
@@ -113,15 +118,18 @@ archive_period() ->
             {error, "riak_cs:storage_archive_period was not an integer"}
     end.
 
+-spec make_object(maybe_improper_list(binary() | maybe_improper_list(any(),binary() | []) | byte(),binary() | []),_,{{non_neg_integer(),1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12,1..255},{byte(),byte(),byte()}},{{non_neg_integer(),1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12,1..255},{byte(),byte(),byte()}}) -> any().
 make_object(User, BucketList, SampleStart, SampleEnd) ->
     {ok, Period} = archive_period(),
     rts:new_sample(?STORAGE_BUCKET, User, SampleStart, SampleEnd, Period,
                    BucketList).
 
+-spec get_usage(pid(),maybe_improper_list(binary() | maybe_improper_list(any(),binary() | []) | byte(),binary() | []),{{non_neg_integer(),1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12,1..255},{byte(),byte(),byte()}},{{non_neg_integer(),1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12,1..255},{byte(),byte(),byte()}}) -> {[any()],[{{_,_},_}]}.
 get_usage(Riak, User, Start, End) ->
     {ok, Period} = archive_period(),
     rts:find_samples(Riak, ?STORAGE_BUCKET, User, Start, End, Period).
 
+-spec count_multipart_parts([{_,_}]) -> {_,_}.
 count_multipart_parts(Resolved) ->
     lists:foldl(fun count_multipart_parts/2, {0, 0}, Resolved).
 

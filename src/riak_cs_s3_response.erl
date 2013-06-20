@@ -41,6 +41,7 @@
 -spec error_code(atom() | {'riak_connect_failed', term()}) -> string().
 -spec status_code(atom() | {'riak_connect_failed', term()}) -> pos_integer().
 
+
 error_message(invalid_access_key_id) ->
     "The AWS Access Key Id you provided does not exist in our records.";
 error_message(invalid_email_address) ->
@@ -84,6 +85,7 @@ error_message(invalid_range) -> "The requested range is not satisfiable";
 error_message(invalid_bucket_name) -> "The specified bucket is not valid.";
 error_message(_) -> "Please reduce your request rate.".
 
+
 error_code(invalid_access_key_id) -> "InvalidAccessKeyId";
 error_code(access_denied) -> "AccessDenied";
 error_code(bucket_not_empty) -> "BucketNotEmpty";
@@ -120,6 +122,7 @@ error_code(ErrorName) ->
 
 %% These should match:
 %% http://docs.aws.amazon.com/AmazonS3/latest/API/ErrorResponses.html
+
 
 status_code(invalid_access_key_id) -> 403;
 status_code(invalid_email_address) -> 400;
@@ -159,6 +162,7 @@ status_code(_) -> 503.
 
 -spec respond(term(), #wm_reqdata{}, #context{}) ->
                      {binary(), #wm_reqdata{}, #context{}}.
+
 respond(?LBRESP{}=Response, RD, Ctx) ->
     {riak_cs_xml:to_xml(Response), RD, Ctx};
 respond({ok, ?LORESP{}=Response}, RD, Ctx) ->
@@ -166,6 +170,7 @@ respond({ok, ?LORESP{}=Response}, RD, Ctx) ->
 respond({error, _}=Error, RD, Ctx) ->
     api_error(Error, RD, Ctx).
 
+-spec respond(_,_,_,_) -> {{'halt',_},_,_}.
 respond(StatusCode, Body, ReqData, Ctx) ->
      UpdReqData = wrq:set_resp_body(Body,
                                     wrq:set_resp_header("Content-Type",
@@ -173,6 +178,7 @@ respond(StatusCode, Body, ReqData, Ctx) ->
                                                         ReqData)),
     {{halt, StatusCode}, UpdReqData, Ctx}.
 
+-spec api_error(atom() | {'error',atom() | {'error',atom() | {'error',atom() | {_,_}} | {'riak_connect_failed',_}} | {'riak_connect_failed',_}} | {'riak_connect_failed',_},_,_) -> {{'halt',_},_,_}.
 api_error(Error, RD, Ctx) when is_atom(Error) ->
     error_response(status_code(Error),
                    error_code(Error),
@@ -188,11 +194,13 @@ api_error({riak_connect_failed, _}=Error, RD, Ctx) ->
 api_error({error, Reason}, RD, Ctx) ->
     api_error(Reason, RD, Ctx).
 
+-spec error_response([any()]) -> {'error','access_denied' | 'bad_request' | 'bucket_already_exists' | 'bucket_not_empty' | 'invalid_access_key_id' | 'no_such_bucket' | 'unknown' | 'user_already_exists'}.
 error_response(ErrorDoc) when length(ErrorDoc) =:= 0 ->
     {error, error_code_to_atom("BadRequest")};
 error_response(ErrorDoc) ->
     {error, error_code_to_atom(xml_error_code(ErrorDoc))}.
 
+-spec error_response(_,_,_,_,_) -> {{'halt',_},_,_}.
 error_response(StatusCode, Code, Message, RD, Ctx) ->
     {OrigResource, _} = riak_cs_s3_rewrite:original_resource(RD),
     XmlDoc = [{'Error', [{'Code', [Code]},
@@ -209,6 +217,7 @@ copy_object_response(Manifest, RD, Ctx) ->
                 {'ETag', [ETag]}]}],
     respond(200, riak_cs_xml:export_xml(XmlDoc), RD, Ctx).
 
+-spec no_such_upload_response(binary() | string(),_,_) -> {{'halt',_},_,_}.
 no_such_upload_response(UploadId, RD, Ctx) ->
     XmlDoc = {'Error',
               [
@@ -222,6 +231,7 @@ no_such_upload_response(UploadId, RD, Ctx) ->
 
 %% @doc Convert an error code string into its corresponding atom
 -spec error_code_to_atom(string()) -> atom().
+
 error_code_to_atom(ErrorCode) ->
     case ErrorCode of
         "BadRequest" ->
@@ -245,12 +255,14 @@ error_code_to_atom(ErrorCode) ->
 %% @doc Get the value of the `Code' element from
 %% and XML document.
 -spec xml_error_code(string()) -> string().
+
 xml_error_code(Xml) ->
     {ParsedData, _Rest} = xmerl_scan:string(Xml, []),
     process_xml_error(ParsedData#xmlElement.content).
 
 %% @doc Process the top-level elements of the
 -spec process_xml_error([xmlElement()]) -> string().
+
 process_xml_error([]) ->
     [];
 process_xml_error([HeadElement | RestElements]) ->

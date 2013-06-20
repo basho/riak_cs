@@ -55,6 +55,7 @@
 %%%===================================================================
 
 -spec start_link() -> {ok, pid()} | ignore | {error, term()}.
+
 start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
@@ -62,6 +63,7 @@ start_link() ->
 %% table.  When this function is finished, the caller should assume
 %% that the referenced `Table' will be deleted.
 -spec archive(term(), term()) -> term().
+
 archive(Table, Slice) ->
     case gen_server:call(?MODULE, archive, infinity) of
         {ok, Pid} ->
@@ -94,6 +96,7 @@ archive(Table, Slice) ->
 %% `Props' will include additional details about what the archiver is
 %% up to.  May also return `{error, Reason}' if something else went
 %% wrong.
+-spec status(_) -> {'error',_} | {'ok',_}.
 status(Timeout) ->
     case catch gen_server:call(?MODULE, status, Timeout) of
         {ok, Props} ->
@@ -115,6 +118,7 @@ status(Timeout) ->
 %%% gen_server callbacks
 %%%===================================================================
 
+-spec init([]) -> {'ok',#state{max_workers::integer(),workers::[],max_backlog::integer(),backlog::[]}}.
 init([]) ->
     process_flag(trap_exit, true),
     %% @TODO Move this into `riak_cs_config' once it is merged in.
@@ -141,6 +145,7 @@ init([]) ->
     {ok, #state{max_workers=MaxWorkers,
                 max_backlog=MaxBacklog}}.
 
+-spec handle_call('archive' | 'status' | 'stop' | {'archive',_,_},_,_) -> {'reply','ignore' | {'error',_} | {'ok',pid() | [{_,_},...]},#state{}} | {'stop','normal','ok',_}.
 handle_call(status, _From, State=#state{backlog=Backlog, workers=Workers}) ->
     Props = [{backlog, length(Backlog)},
              {workers, Workers}],
@@ -163,9 +168,11 @@ handle_call(archive, _From, State=#state{workers=Workers}) ->
 handle_call(stop, _From, State) ->
     {stop, normal, ok, State}.
 
+-spec handle_cast(_,_) -> {'noreply',_}.
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
+-spec handle_info(_,_) -> {'noreply',_}.
 handle_info({'EXIT', Pid, _Reason}, State=#state{workers=Workers}) ->
     {noreply, State#state{workers=lists:delete(Pid, Workers)}};
 handle_info({'ETS-TRANSFER', Table, _From, Slice}, State) ->
@@ -187,6 +194,7 @@ handle_info({'ETS-TRANSFER', Table, _From, Slice}, State) ->
 handle_info(_Info, State) ->
     {noreply, State}.
 
+-spec terminate(_,_) -> 'ok'.
 terminate(_Reason, #state{backlog=[]}) ->
     ok;
 terminate(_Reason, _State) ->
@@ -194,6 +202,7 @@ terminate(_Reason, _State) ->
                       " logs will be dropped"),
     ok.
 
+-spec code_change(_,_,_) -> {'ok',_}.
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 

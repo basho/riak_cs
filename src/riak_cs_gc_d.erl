@@ -78,6 +78,7 @@
 %%%===================================================================
 
 %% @doc Start the garbage collection server
+-spec start_link() -> 'ignore' | {'error',_} | {'ok',pid()}.
 start_link() ->
     gen_fsm:start_link({local, ?SERVER}, ?MODULE, [], []).
 
@@ -89,6 +90,7 @@ start_link() ->
 %% the active calculation, the number of seconds the process has been
 %% calculating so far, and counts of how many users have been
 %% processed and how many are left.
+-spec status() -> any().
 status() ->
     gen_fsm:sync_send_event(?SERVER, status, infinity).
 
@@ -99,24 +101,28 @@ status() ->
 %%   <dt>`testing'</dt>
 %%   <dd>Indicate the daemon is started as part of a test suite.</dd>
 %% </dl>
+-spec manual_batch(_) -> any().
 manual_batch(Options) ->
     gen_fsm:sync_send_event(?SERVER, {manual_batch, Options}, infinity).
 
 %% @doc Cancel the calculation currently in progress.  Returns `ok' if
 %% a batch was canceled, or `{error, no_batch}' if there was no batch
 %% in progress.
+-spec cancel_batch() -> any().
 cancel_batch() ->
     gen_fsm:sync_send_event(?SERVER, cancel_batch, infinity).
 
 %% @doc Pause the garbage collection daemon.  Returns `ok' if
 %% the daemon was paused, or `{error, already_paused}' if the daemon
 %% was already paused.
+-spec pause() -> any().
 pause() ->
     gen_fsm:sync_send_event(?SERVER, pause, infinity).
 
 %% @doc Resume the garbage collection daemon.  Returns `ok' if the
 %% daemon was resumed, or `{error, not_paused}' if the daemon was
 %% not paused.
+-spec resume() -> any().
 resume() ->
     gen_fsm:sync_send_event(?SERVER, resume, infinity).
 
@@ -125,11 +131,13 @@ resume() ->
 %% `infinity' effectively disable garbage collection. The daemon still
 %% runs, but does not carry out any file deletion.
 -spec set_interval(infinity | non_neg_integer()) -> ok | {error, term()}.
+
 set_interval(Interval) when is_integer(Interval) orelse Interval == infinity ->
     gen_fsm:sync_send_event(?SERVER, {set_interval, Interval}, infinity).
 
 %% @doc Stop the daemon
 -spec stop() -> ok | {error, term()}.
+
 stop() ->
     gen_fsm:sync_send_all_state_event(?SERVER, stop, infinity).
 
@@ -156,6 +164,7 @@ idle(_, State=#state{interval_remaining=IntervalRemaining}) ->
 %% @doc Async transitions from `fetching_next_fileset' are all due to
 %% messages the FSM sends itself, in order to have opportunities to
 %% handle messages from the outside world (like `status').
+-spec fetching_next_fileset(_,_) -> {'next_state','fetching_next_fileset' | 'idle' | 'initiating_file_delete',_}.
 fetching_next_fileset(continue, #state{batch=[]}=State) ->
     %% finished with this batch
     _ = lager:info("Finished garbage collection: "
@@ -193,6 +202,7 @@ fetching_next_fileset(_, State) ->
 %% @doc This state initiates the deletion of a file from
 %% a set of manifests stored for a particular key in the
 %% garbage collection bucket.
+-spec initiating_file_delete(_,_) -> {'next_state','fetching_next_fileset' | 'initiating_file_delete' | 'waiting_file_delete',_}.
 initiating_file_delete(continue, #state{batch=[_ManiSetKey | RestKeys],
                                         batch_count=BatchCount,
                                         current_files=[],
@@ -227,9 +237,11 @@ initiating_file_delete(continue, #state{current_files=[Manifest | _RestManifests
 initiating_file_delete(_, State) ->
     {next_state, initiating_file_delete, State}.
 
+-spec waiting_file_delete(_,_) -> {'next_state','waiting_file_delete',_}.
 waiting_file_delete(_, State) ->
     {next_state, waiting_file_delete, State}.
 
+-spec paused(_,_) -> {'next_state','paused',_}.
 paused(_, State) ->
     {next_state, paused, State}.
 
@@ -305,6 +317,7 @@ paused(Msg, _From, State) ->
     {reply, handle_common_sync_reply(Msg, Common, State), paused, State}.
 
 %% @doc there are no all-state events for this fsm
+-spec handle_event(_,_,_) -> {'next_state',_,_}.
 handle_event(_Event, StateName, State) ->
     {next_state, StateName, State}.
 
@@ -312,6 +325,7 @@ handle_event(_Event, StateName, State) ->
 %% the same regardless of the current state.
 -spec handle_sync_event(term(), term(), atom(), #state{}) ->
                                {reply, term(), atom(), #state{}}.
+
 handle_sync_event(current_state, _From, StateName, State) ->
     {reply, {StateName, State}, StateName, State};
 handle_sync_event({change_state, NewStateName}, _From, _StateName, State) ->
@@ -321,6 +335,7 @@ handle_sync_event(stop, _From, _StateName, State) ->
 handle_sync_event(_Event, _From, StateName, State) ->
     ok_reply(StateName, State).
 
+-spec handle_info(_,_,_) -> {'next_state',_,_}.
 handle_info(start_batch, idle, State) ->
     NewState = start_batch(State),
     {next_state, fetching_next_fileset, NewState};
@@ -333,10 +348,12 @@ handle_info(_Info, StateName, State) ->
 
 %% @doc TODO: log warnings if this fsm is asked to terminate in the
 %% middle of running a gc batch
+-spec terminate(_,_,_) -> 'ok'.
 terminate(_Reason, _StateName, _State) ->
     ok.
 
 %% @doc this fsm has no special upgrade process
+-spec code_change(_,_,_,_) -> {'ok',_,_}.
 code_change(_OldVsn, StateName, State, _Extra) ->
     {ok, StateName, State}.
 
@@ -346,6 +363,7 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 
 %% @doc Cancel the current batch of files set for garbage collection.
 -spec cancel_batch(#state{}) -> #state{}.
+
 cancel_batch(#state{batch_start=BatchStart,
                     riak=RiakPid}=State) ->
     %% Interrupt the batch of deletes
@@ -357,6 +375,7 @@ cancel_batch(#state{batch_start=BatchStart,
 
 %% @doc How many seconds have passed from `Time' to now.
 -spec elapsed(undefined | non_neg_integer()) -> non_neg_integer().
+
 elapsed(undefined) ->
     riak_cs_gc:timestamp();
 elapsed(Time) ->
@@ -371,10 +390,12 @@ elapsed(Time) ->
 %% @doc Fetch the list of keys for file manifests that are eligible
 %% for delete.
 -spec fetch_eligible_manifest_keys(pid(), non_neg_integer()) -> [binary()].
+
 fetch_eligible_manifest_keys(RiakPid, IntervalStart) ->
     EndTime = list_to_binary(integer_to_list(IntervalStart)),
     eligible_manifest_keys(gc_index_query(RiakPid, EndTime)).
 
+-spec eligible_manifest_keys({{'error',_} | {'ok',_},binary()}) -> any().
 eligible_manifest_keys({{ok, Keys}, _}) ->
     Keys;
 eligible_manifest_keys({{error, Reason}, EndTime}) ->
@@ -383,6 +404,7 @@ eligible_manifest_keys({{error, Reason}, EndTime}) ->
                       [EndTime, Reason]),
     [].
 
+-spec gc_index_query(pid(),binary()) -> {_,binary()}.
 gc_index_query(RiakPid, EndTime) ->
     QueryResult = riakc_pb_socket:get_index(RiakPid,
                                             ?GC_BUCKET,
@@ -395,6 +417,7 @@ gc_index_query(RiakPid, EndTime) ->
 -spec fetch_next_fileset(binary(), pid()) ->
                                 {ok, twop_set:twop_set(), riakc_obj:riakc_obj()} |
                                 {error, term()}.
+
 fetch_next_fileset(ManifestSetKey, RiakPid) ->
     %% Get the set of manifests represented by the key
     case riak_cs_utils:get_object(?GC_BUCKET, ManifestSetKey, RiakPid) of
@@ -418,6 +441,7 @@ fetch_next_fileset(ManifestSetKey, RiakPid) ->
                          twop_set:twop_set(),
                          riakc_obj:riakc_obj(),
                          pid()) -> ok.
+
 finish_file_delete(0, _, RiakObj, RiakPid) ->
     %% Delete the key from the GC bucket
     _ = riakc_pb_socket:delete_obj(RiakPid, RiakObj),
@@ -435,6 +459,7 @@ finish_file_delete(_, FileSet, _RiakObj, _RiakPid) ->
 %% @doc Take required actions to pause garbage collection and update
 %% the state record for the transition to `paused'.
 -spec pause_gc(atom(), #state{}) -> #state{}.
+
 pause_gc(idle, State=#state{interval=Interval,
                             timer_ref=TimerRef}) ->
     _ = lager:info("Pausing garbage collection"),
@@ -446,6 +471,7 @@ pause_gc(State, StateData) ->
     StateData#state{pause_state=State}.
 
 -spec cancel_timer(timeout(), 'undefined' | timer:tref()) -> 'undefined' | integer().
+
 cancel_timer(_, undefined) ->
     undefined;
 cancel_timer(infinity, TimerRef) ->
@@ -456,24 +482,28 @@ cancel_timer(infinity, TimerRef) ->
 cancel_timer(_, TimerRef) ->
     handle_cancel_timer(erlang:cancel_timer(TimerRef)).
 
+-spec handle_cancel_timer('false' | integer()) -> integer().
 handle_cancel_timer(false) ->
     0;
 handle_cancel_timer(RemainderMillis) ->
     RemainderMillis.
 
 -spec resume_gc(#state{}) -> #state{}.
+
 resume_gc(State) ->
     _ = lager:info("Resuming garbage collection"),
     gen_fsm:send_event(self(), continue),
     State#state{pause_state=undefined}.
 
 -spec ok_reply(atom(), #state{}) -> {reply, ok, atom(), #state{}}.
+
 ok_reply(NextState, NextStateData) ->
     {reply, ok, NextState, NextStateData}.
 
 %% @doc Setup the automatic trigger to start the next
 %% scheduled batch calculation.
 -spec schedule_next(#state{}) -> #state{}.
+
 schedule_next(#state{interval=infinity}=State) ->
     %% nothing to schedule, all triggers manual
     State;
@@ -515,6 +545,7 @@ start_batch(State=#state{riak=undefined}) ->
                 riak=Riak}.
 
 -spec start_manual_batch(boolean(), #state{}) -> #state{}.
+
 start_manual_batch(true, State) ->
     State#state{batch=undefined};
 start_manual_batch(false, State) ->
@@ -524,6 +555,7 @@ start_manual_batch(false, State) ->
 %%
 %% CAUTION: Do not add side-effects to this function: it is called specutively.
 -spec status_data(#state{}) -> [{atom(), term()}].
+
 status_data(State) ->
     [{interval, State#state.interval},
      {last, State#state.last},

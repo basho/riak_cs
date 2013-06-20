@@ -27,6 +27,7 @@
          stop/1]).
 
 -spec riak_host_port() -> {string(), pos_integer()}.
+
 riak_host_port() ->
     case application:get_env(riak_cs, riak_ip) of
         {ok, Host} ->
@@ -43,6 +44,7 @@ riak_host_port() ->
     {Host, Port}.
 
 -spec start_link(term()) -> {ok, pid()} | {error, term()}.
+
 start_link(_Args) ->
     {Host, Port} = riak_host_port(),
     Timeout = case application:get_env(riak_cs, riakc_connect_timeout) of
@@ -55,6 +57,7 @@ start_link(_Args) ->
                     {auto_reconnect, true}],
     riakc_pb_socket:start_link(Host, Port, StartOptions).
 
+-spec stop(_) -> any().
 stop(undefined) ->
     ok;
 stop(Worker) ->

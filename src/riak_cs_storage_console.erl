@@ -47,6 +47,7 @@
 
 %% @doc Kick off a batch of storage calculation, unless one is already
 %% in progress.
+-spec batch(_) -> 'error' | 'ok'.
 batch(Opts) ->
     ?SAFELY(
        case getopt:parse(?BATCH_OPTIONS, Opts) of
@@ -68,6 +69,7 @@ batch(Opts) ->
        "Starting batch storage calculation").
 
 %% @doc Find out what the storage daemon is up to.
+-spec status(_) -> 'error' | ['ok'].
 status(_Opts) ->
     ?SAFELY(
        begin
@@ -77,6 +79,7 @@ status(_Opts) ->
        end,
        "Checking storage calculation status").
 
+-spec print_state('calculating' | 'idle' | 'paused') -> 'ok'.
 print_state(idle) ->
     io:format("There is no storage calculation in progress~n");
 print_state(calculating) ->
@@ -84,6 +87,7 @@ print_state(calculating) ->
 print_state(paused) ->
     io:format("A storage calculation is current paused~n").
 
+-spec cancel(_) -> 'error' | 'ok'.
 cancel(_Opts) ->
     ?SAFELY(
        case riak_cs_storage_d:cancel_batch() of
@@ -94,6 +98,7 @@ cancel(_Opts) ->
        end,
        "Canceling the storage calculation").
 
+-spec pause(_) -> 'error' | 'ok'.
 pause(_Opts) ->
     ?SAFELY(
        case riak_cs_storage_d:pause_batch() of
@@ -104,6 +109,7 @@ pause(_Opts) ->
        end,
        "Pausing the storage calculation").
 
+-spec resume(_) -> 'error' | 'ok'.
 resume(_Opts) ->
     ?SAFELY(
        case riak_cs_storage_d:resume_batch() of
@@ -115,6 +121,7 @@ resume(_Opts) ->
        "Resuming the storage calcluation").
 
 %% @doc Pretty-print the status returned from the storage daemon.
+-spec print_details([any()]) -> ['ok'].
 print_details(Details) ->
     [ begin
           {HumanName, HumanValue} = human_detail(K, V),
@@ -122,6 +129,7 @@ print_details(Details) ->
       end
       || {K, V} <- Details ].
 
+-spec human_detail(_,_) -> {[[any()] | char()],binary() | [[any()] | char()]}.
 human_detail(schedule, Schedule) ->
     Human = case Schedule of
                 [] -> "none defined";
@@ -151,5 +159,6 @@ human_detail(Name, Value) ->
     %% anything not to bomb if something was added
     {io_lib:format("~p", [Name]), io_lib:format("~p", [Value])}.
 
+-spec human_time('undefined' | {{non_neg_integer(),1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12,1..255},{byte(),byte(),byte()}}) -> binary() | [47 | 101 | 107 | 110 | 111 | 114 | 117 | 118 | 119,...].
 human_time(undefined) -> "unknown/never";
 human_time(Datetime)  -> rts:iso8601(Datetime).

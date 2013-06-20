@@ -77,6 +77,7 @@
 %% not says nothing about this access. Usually in case of undefined,
 %% the owner access must be accepted and others must be refused.
 -spec eval(access(), policy1() | undefined | binary() ) -> boolean() | undefined.
+
 eval(_, undefined) -> undefined;
 eval(Access, JSON) when is_binary(JSON) ->
     case policy_from_json(JSON) of
@@ -100,6 +101,7 @@ aggregate_evaluation(Access, [Stmt|Stmts]) ->
 
 % @doc  semantic validation of policy
 -spec check_policy(access(), policy1()) -> ok | {error, atom()}.
+
 check_policy(#access_v1{bucket=B} = _Access,
              Policy) ->
 
@@ -119,6 +121,7 @@ check_policy(#access_v1{bucket=B} = _Access,
 % @doc confirm if forbidden action included in policy
 % s3:CreateBucket and s3:ListAllMyBuckets are prohibited at S3
 -spec check_actions([#statement{}]) -> boolean().
+
 check_actions([]) -> true;
 check_actions([Stmt|Stmts]) ->
     case Stmt#statement.action of
@@ -135,6 +138,7 @@ check_actions([Stmt|Stmts]) ->
     end.
 
 -spec check_principals([#statement{}]) -> boolean().
+
 check_principals([]) -> false;
 check_principals([Stmt|Stmts]) ->
     case check_principal(Stmt#statement.principal) of
@@ -143,6 +147,7 @@ check_principals([Stmt|Stmts]) ->
     end.
 
 -spec check_principal(any()) -> boolean().
+
 check_principal('*') ->
     true;
 check_principal([]) ->
@@ -170,6 +175,7 @@ check_all_resources(BucketBin, #arn_v1{path=Path} = _Resource) ->
     B =:= binary_to_list(BucketBin).
 
 -spec reqdata_to_access(#wm_reqdata{}, Target::atom(), ID::binary()|undefined) -> access().
+
 reqdata_to_access(RD, Target, ID) ->
     Key = case wrq:path_info(object, RD) of
               undefined -> undefined;
@@ -184,6 +190,7 @@ reqdata_to_access(RD, Target, ID) ->
            }.
 
 -spec policy_from_json(JSON::binary()) -> {ok, policy1()} | {error, term()}.
+
 policy_from_json(JSON) ->
     %% TODO: stop using exception and start some monadic validation and parsing.
     case catch(mochijson2:decode(JSON)) of
@@ -222,6 +229,7 @@ policy_from_json(JSON) ->
     end.
 
 -spec policy_to_json_term(policy1()) -> JSON::binary().
+
 policy_to_json_term( ?POLICY{ version = ?AMZ_DEFAULT_VERSION,
                               id = ID, statement = Stmts0}) ->
     Stmts = lists:map(fun statement_to_pairs/1, Stmts0),
@@ -231,14 +239,17 @@ policy_to_json_term( ?POLICY{ version = ?AMZ_DEFAULT_VERSION,
 
 
 -spec supported_object_action() -> [s3_object_action()].
+
 supported_object_action() -> ?SUPPORTED_OBJECT_ACTION.
 
 -spec supported_bucket_action() -> [s3_bucket_action()].
+
 supported_bucket_action() -> ?SUPPORTED_BUCKET_ACTION.
 
 %% @doc put required atoms into atom table
 %% to make policy json parser safer by using erlang:binary_to_existing_atom/2.
 -spec log_supported_actions() -> ok.
+
 log_supported_actions()->
     _ = lager:info("supported object actions: ~p",
                    [lists:map(fun atom_to_list/1, supported_object_action())]),
@@ -252,6 +263,7 @@ log_supported_actions()->
                                 {'error', 'notfound'} |
                                 {'error', 'multiple_bucket_owners'}.
 -spec bucket_policy(binary(), pid()) -> bucket_policy_result().
+
 bucket_policy(Bucket, RiakPid) ->
     case riak_cs_utils:check_bucket_exists(Bucket, RiakPid) of
         {ok, Obj} ->
@@ -273,6 +285,7 @@ bucket_policy(Bucket, RiakPid) ->
 %% condition should be rare so we avoid updating the value at this time.
 -spec bucket_policy_from_contents(binary(), riakc_obj:contents()) ->
                                          bucket_policy_result().
+
 bucket_policy_from_contents(_, [{MD, _}]) ->
     MetaVals = dict:fetch(?MD_USERMETA, MD),
     policy_from_meta(MetaVals);
@@ -285,6 +298,7 @@ bucket_policy_from_contents(Bucket, Contents) ->
 
 -spec resolve_bucket_metadata(list(riakc_obj:metadata()),
                                list(riakc_obj:value())) -> bucket_policy_result().
+
 resolve_bucket_metadata(Metas, [_Val]) ->
     Policies = [policy_from_meta(M) || M <- Metas],
     resolve_bucket_policies(Policies);
@@ -292,6 +306,7 @@ resolve_bucket_metadata(_Metas, _) ->
     {error, multiple_bucket_owners}.
 
 -spec resolve_bucket_policies(list(policy_from_meta_result())) -> policy_from_meta_result().
+
 resolve_bucket_policies([Policy]) ->
     Policy;
 resolve_bucket_policies(Policies) ->
@@ -299,6 +314,7 @@ resolve_bucket_policies(Policies) ->
 
 -spec newer_policy(policy_from_meta_result(), policy_from_meta_result()) ->
                        policy_from_meta_result().
+
 newer_policy(Policy1, ?POLICY_UNDEF) ->
     Policy1;
 newer_policy({ok, Policy1}, {ok, Policy2})
@@ -311,6 +327,7 @@ newer_policy(_, Policy2) ->
 %% convert it to an erlang term representation. Return
 %% an error tuple if a policy is not found.
 -spec policy_from_meta([{string(), term()}]) -> policy_from_meta_result().
+
 policy_from_meta([]) ->
     ?POLICY_UNDEF;
 policy_from_meta([{?MD_POLICY, Policy} | _]) ->
@@ -322,6 +339,7 @@ policy_from_meta([_ | RestMD]) ->
 %% internal API
 
 -spec resource_matches(binary(), binary()|undefined|list(), #statement{}) -> boolean().
+
 resource_matches(_, _, #statement{resource='*'} = _Stmt ) -> true;
 resource_matches(BucketBin, KeyBin, #statement{resource=Resources})
   when KeyBin =:= undefined orelse is_binary(KeyBin) ->
@@ -351,6 +369,7 @@ resource_matches(BucketBin, KeyBin, #statement{resource=Resources})
 
 % functions to eval:
 -spec eval_statement(access(), #statement{}) -> boolean() | undefined.
+
 eval_statement(#access_v1{method=M, target=T, req=Req, bucket=B, key=K} = _Access,
                #statement{effect=E, condition_block=Conds, action=As} = Stmt) ->
     {ok, A} = make_action(M, T),
@@ -370,6 +389,7 @@ eval_statement(#access_v1{method=M, target=T, req=Req, bucket=B, key=K} = _Acces
             end
     end.
 
+-spec make_action('DELETE' | 'GET' | 'HEAD' | 'POST' | 'PUT',atom()) -> {'error','no_action'} | {'ok',atom()}.
 make_action(Method, Target) ->
     case {Method, Target} of
         {'PUT', object} ->     {ok, 's3:PutObject'};
@@ -409,6 +429,7 @@ make_action(Method, Target) ->
         {'HEAD', _} -> {error, no_action}
     end.
 
+-spec eval_condition(#wm_reqdata{},{'Bool' | 'IpAddress' | 'NotIpAddress' | 'StringEquals' | 'StringNotEquals' | 'streq' | 'strneq',[{'aws:Referer',binary()} | {'aws:SecureTransport',boolean()} | {'aws:SourceIp',binary()} | {'aws:UserAgent',binary()}]}) -> boolean().
 eval_condition(Req, {AtomKey, Cond}) ->
     case AtomKey of
         'StringEquals' -> eval_string_eq(Req, Cond);
@@ -457,6 +478,7 @@ eval_condition(Req, {AtomKey, Cond}) ->
     end.
 
 -spec eval_string_eq(#wm_reqdata{}, [{'aws:UserAgent', binary()}] | [{'aws:Referer', binary()}] )-> boolean().
+
 eval_string_eq(Req, Conds)->
     UA2be      = proplists:get_value('aws:UserAgent', Conds),
     Referer2be = proplists:get_value('aws:Referer', Conds),
@@ -469,18 +491,27 @@ eval_string_eq(Req, Conds)->
         _ -> (UA =:= UA2be) and (Referer =:= Referer2be)
     end.
 
+-spec eval_string_eq_ignore_case(_,_) -> none().
 eval_string_eq_ignore_case(_, _) -> throw(not_supported).
+-spec eval_string_like(_,_) -> none().
 eval_string_like(_, _) -> throw(not_supported).
 
+-spec eval_numeric_eq(_,_) -> none().
 eval_numeric_eq(_, _) -> throw(not_supported).
+-spec eval_numeric_lt(_,_) -> none().
 eval_numeric_lt(_, _) -> throw(not_supported).
+-spec eval_numeric_lte(_,_) -> none().
 eval_numeric_lte(_, _) -> throw(not_supported).
 
+-spec eval_date_eq(_,_) -> none().
 eval_date_eq(_, _) -> throw(not_supported).
+-spec eval_date_lt(_,_) -> none().
 eval_date_lt(_, _) -> throw(not_supported).
+-spec eval_date_lte(_,_) -> none().
 eval_date_lte(_, _) -> throw(not_supported).
 
 -spec eval_bool(#wm_reqdata{}, [{'aws:SecureTransport', boolean()}]) -> boolean().
+
 eval_bool(_Req, []) ->  undefined;
 
 eval_bool(#wm_reqdata{scheme=Scheme} = _Req, Conds) ->
@@ -491,6 +522,7 @@ eval_bool(#wm_reqdata{scheme=Scheme} = _Req, Conds) ->
     end.
 
 -spec eval_ip_address(#wm_reqdata{}, [{'aws:SourceIp', binary()}]) -> boolean().
+
 eval_ip_address(Req, Conds) ->
     case parse_ip(Req#wm_reqdata.peer) of
         {error, _} ->
@@ -500,6 +532,7 @@ eval_ip_address(Req, Conds) ->
             eval_all_ip_addr(IPConds, Peer)
     end.
 
+-spec eval_all_ip_addr([any()],{byte(),byte(),byte(),byte()}) -> boolean().
 eval_all_ip_addr([], _) -> false;
 eval_all_ip_addr([{IP,Prefix}|T], Peer) ->
     case ipv4_eq(ipv4_band(IP, Prefix), ipv4_band(Peer, Prefix)) of
@@ -507,9 +540,11 @@ eval_all_ip_addr([{IP,Prefix}|T], Peer) ->
         false -> eval_all_ip_addr(T, Peer)
     end.
 
+-spec ipv4_band({integer(),integer(),integer(),integer()},{integer(),integer(),integer(),integer()}) -> {integer(),integer(),integer(),integer()}.
 ipv4_band({A,B,C,D}, {E,F,G,H}) ->
     {A band E, B band F, C band G, D band H}.
 
+-spec ipv4_eq({integer(),integer(),integer(),integer()},{integer(),integer(),integer(),integer()}) -> boolean().
 ipv4_eq({A,B,C,D}, {E,F,G,H}) ->
     (A =:= E) andalso (B =:= F) andalso (C =:= G) andalso (D =:= H).
 
@@ -518,6 +553,7 @@ ipv4_eq({A,B,C,D}, {E,F,G,H}) ->
 % functions to convert policy record to JSON:
 
 -spec statement_to_pairs(#statement{}) -> [{binary(), any()}].
+
 statement_to_pairs(#statement{sid=Sid, effect=E, principal=P, action=A,
                               not_action=NA, resource=R, condition_block=Cs})->
     AtomE = case E of
@@ -532,6 +568,7 @@ statement_to_pairs(#statement{sid=Sid, effect=E, principal=P, action=A,
      {<<"Condition">>, Conds}].
 
 -spec condition_block_from_condition_pair(condition_pair()) -> {binary(), list()}.
+
 condition_block_from_condition_pair({AtomKey, Conds})->
     Fun = fun({'aws:SourceIp', IP}) -> {'aws:SourceIp', print_ip(IP)};
              (Cond) -> Cond
@@ -540,6 +577,7 @@ condition_block_from_condition_pair({AtomKey, Conds})->
 
 % inverse of parse_ip/1
 -spec print_ip({inet:ip_address(), inet:ip_address()}) -> binary().
+
 print_ip({IP, Mask}) ->
     IPBin = list_to_binary(inet_parse:ntoa(IP)),
     case mask_to_prefix(Mask) of
@@ -550,6 +588,7 @@ print_ip({IP, Mask}) ->
     end.
 
 % {255,255,255,0} -> 24
+-spec mask_to_prefix({0 | 128 | 192 | 224 | 240 | 248 | 252 | 254 | 255,_,_,_}) -> byte().
 mask_to_prefix({A,B,C,D})->
     case int_to_prefix(A) of
         8 ->
@@ -566,6 +605,7 @@ mask_to_prefix({A,B,C,D})->
         I -> I
     end.
 
+-spec int_to_prefix(0 | 128 | 192 | 224 | 240 | 248 | 252 | 254 | 255) -> 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8.
 int_to_prefix(2#11111111) -> 8;
 int_to_prefix(2#11111110) -> 7;
 int_to_prefix(2#11111100) -> 6;
@@ -581,6 +621,7 @@ int_to_prefix(0) -> 0.
 % functions to convert (parse) JSON to create a policy record:
 
 -spec statement_from_pairs(list(), #statement{})-> #statement{}.
+
 statement_from_pairs([], Stmt) ->
     case Stmt#statement.principal of
         [] ->
@@ -635,11 +676,13 @@ statement_from_pairs([{<<"Condition">>,{struct, Cs}}  |T], Stmt) ->
     statement_from_pairs(T, Stmt#statement{condition_block=Conditions}).
 
 -spec binary_to_action(binary()) -> s3_object_action() | s3_bucket_action().
+
 binary_to_action(Bin)->
     binary_to_existing_atom(Bin, latin1).
 
 % @TODO: error processing
 -spec parse_principal(binary() | [binary()]) -> principal().
+
 parse_principal(<<"*">>) -> '*';
 parse_principal({struct, List}) when is_list(List) ->
     parse_principals(List, []);
@@ -647,6 +690,7 @@ parse_principal([{struct, List}]) when is_list(List) ->
     parse_principals(List, []).
 
 
+-spec parse_principals([{<<_:24>>,<<_:8>> | [any(),...]}],[{'aws','*'}]) -> [{'aws','*'}].
 parse_principals([], Principal) -> Principal;
 parse_principals([{<<"AWS">>,[<<"*">>]}|TL], Principal) ->
     parse_principals(TL, [{aws, '*'}|Principal]);
@@ -669,6 +713,7 @@ parse_principals([{<<"AWS">>,<<"*">>}|TL], Principal) ->
 %%             parse_principals(TL, [{canonical_id, binary_to_list(CanonicalId)}|Principal])
 %%     end.
 
+-spec print_principal('*' | [any()] | {'aws','*'}) -> <<_:8>> | [<<_:8>> | [<<_:8>> | [any()] | {_,_}] | {<<_:24>>,<<_:8>>}].
 print_principal('*') -> <<"*">>;
 print_principal({aws, '*'}) ->
     [{<<"AWS">>, <<"*">>}];
@@ -679,6 +724,7 @@ print_principal(Principals) when is_list(Principals) ->
     lists:map(PrintFun, Principals).
 
 -spec parse_arns(binary()|[binary()]) -> {ok, arn()} | {error, bad_arn}.
+
 parse_arns(<<"*">>) -> {ok, '*'};
 parse_arns(Bin) when is_binary(Bin) ->
     Str = binary_to_list(Bin),
@@ -700,6 +746,7 @@ parse_arns(List) when is_list(List) ->
     end.
 
 -spec parse_arn(string()) -> {ok, arn()} | {error, bad_arn}.
+
 parse_arn(Str) ->
     case my_split($:, Str, [], []) of
         ["arn", "aws", "s3", Region, ID, Path] ->
@@ -713,6 +760,7 @@ parse_arn(Str) ->
     end.
 
 -spec my_split(char(), string(), string(), [string()]) -> [string()].
+
 my_split(_, [], [], L) -> lists:reverse(L);
 my_split(Ch, [], Acc, L) ->
     my_split(Ch, [], [], [ lists:reverse(Acc) | L ]);
@@ -722,6 +770,7 @@ my_split(Ch, [Ch0|TL], Acc, L) ->
     my_split(Ch, TL, [Ch0|Acc], L).
 
 -spec print_arns( '*'|[arn()]) -> [binary()] | binary().
+
 print_arns('*') -> <<"*">>;
 print_arns(#arn_v1{region=R, id=ID, path=Path} = _ARN) ->
     StringPath = unicode:characters_to_list(Path),
@@ -733,12 +782,14 @@ print_arns(ARNs) when is_list(ARNs)->
     lists:map(PrintARN, ARNs).
 
 -spec condition_block_to_condition_pair({binary(), {struct, json_term()}}) -> condition_pair().
+
 condition_block_to_condition_pair({Key,{struct,Cond}}) ->
     % all key should be defined in stanchion.hrl
     AtomKey = binary_to_existing_atom(Key, latin1),
     {AtomKey, lists:map(fun condition_/1, Cond)}.
 
 % TODO: more strict condition - currenttime only for date_condition, and so on
+-spec condition_({<<_:64,_:_*8>>,_}) -> {'aws:CurrentTime' | 'aws:EpochTime' | 'aws:Referer' | 'aws:SecureTransport' | 'aws:SourceIp' | 'aws:UserAgent',_}.
 condition_({<<"aws:CurrentTime">>, Bin}) when is_binary(Bin) ->
     {'aws:CurrentTime', Bin};
 condition_({<<"aws:EpochTime">>, Int}) when is_integer(Int) andalso Int >= 0 ->
@@ -785,6 +836,7 @@ condition_({<<"aws:Referer">>, Bin}) -> % TODO: check string condition
 %% [[[[[[["true"], "false"]]]]]] => [false, true] => evaluaged as true
 %% To be honest, we can't imitate S3 any more.
 -spec parse_bool(term()) -> {ok, boolean()} | {error, notbool}.
+
 parse_bool(Bool) when is_boolean(Bool) -> {ok, Bool};
 parse_bool(<<"true">>)  -> {ok, true};
 parse_bool(<<"false">>) -> {ok, false};
@@ -801,6 +853,7 @@ parse_bool(_) -> {error, notbool}.
 % "10.1.2.3/24 -> {{10,1,2,3}, {255,255,255,0}}
 %% NOTE: Returns false on a bad ip
 -spec parse_ip(binary() | string()) -> {inet:ip_address(), inet:ip_address()} | {error, term()}.
+
 parse_ip(Bin) when is_binary(Bin) ->
     Str = binary_to_list(Bin),
     parse_ip(Str);
@@ -814,6 +867,7 @@ parse_ip(Str) when is_list(Str) ->
     end.
 
 -spec parse_tokenized_ip([string()]) -> {string(), inet:ip_address()}.
+
 parse_tokenized_ip([IP]) ->
     {IP, {255, 255, 255, 255}};
 parse_tokenized_ip([IP, PrefixSize]) ->

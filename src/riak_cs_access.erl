@@ -51,6 +51,7 @@
 %% `access_archive_period' environment variable of the `riak_cs'
 %% application.
 -spec archive_period() -> {ok, integer()}|{error, term()}.
+
 archive_period() ->
     case application:get_env(riak_cs, access_archive_period) of
         {ok, AP} when is_integer(AP), AP > 0 ->
@@ -64,6 +65,7 @@ archive_period() ->
 %% `access_log_flush_interval' environment variable of the `riak_cs'
 %% application.
 -spec log_flush_interval() -> {ok, integer()}|{error, term()}.
+
 log_flush_interval() ->
     case application:get_env(riak_cs, access_log_flush_factor) of
         {ok, AF} when is_integer(AF), AF > 0 ->
@@ -89,6 +91,7 @@ log_flush_interval() ->
 %% controlled by the `access_log_flush_size' environment variable of
 %% the `riak_cs' application.
 -spec max_flush_size() -> {ok, integer()}|{error, term()}.
+
 max_flush_size() ->
     case application:get_env(riak_cs, access_log_flush_size) of
         {ok, AP} when is_integer(AP), AP > 0 ->
@@ -106,17 +109,20 @@ max_flush_size() ->
                   [[{atom()|binary(), number()}]],
                   slice())
          -> riakc_obj:riakc_obj().
+
 make_object(User, Accesses, {Start, End}) ->
     {ok, Period} = archive_period(),
     Aggregate = aggregate_accesses(Accesses),
     rts:new_sample(?ACCESS_BUCKET, User, Start, End, Period,
                    [{?NODEKEY, node()}|Aggregate]).
 
+-spec aggregate_accesses([any()]) -> [{_,{_,_}}].
 aggregate_accesses(Accesses) ->
     Merged = lists:foldl(fun merge_ops/2, [], Accesses),
     %% now mochijson-ify
     [ {OpName, {struct, Stats}} || {OpName, Stats} <- Merged ].
 
+-spec merge_ops({_,_},[tuple()]) -> [tuple(),...].
 merge_ops({OpName, Stats}, Acc) ->
     case lists:keytake(OpName, 1, Acc) of
         {value, {OpName, Existing}, RemAcc} ->
@@ -126,6 +132,7 @@ merge_ops({OpName, Stats}, Acc) ->
     end.
 
 %% `Stats' had better be an orddict
+-spec merge_stats([{_,_}],[{_,_}]) -> [{_,_}].
 merge_stats(Stats, Acc) ->
     orddict:merge(fun(_K, V1, V2) -> V1+V2 end, Acc, Stats).
 
@@ -138,12 +145,14 @@ merge_stats(Stats, Acc) ->
                 calendar:datetime(),
                 calendar:datetime()) ->
          {Usage::orddict:orddict(), Errors::[{slice(), term()}]}.
+
 get_usage(Riak, User, Start, End) ->
     {ok, Period} = archive_period(),
     {Usage, Errors} = rts:find_samples(Riak, ?ACCESS_BUCKET, User,
                                        Start, End, Period),
     {group_by_node(Usage), Errors}.
 
+-spec group_by_node([any()]) -> [{_,_}].
 group_by_node(Samples) ->
     lists:foldl(fun(Sample, Acc) ->
                         {value, {?NODEKEY, Node}, Other} =

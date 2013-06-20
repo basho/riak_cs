@@ -30,6 +30,7 @@
 
 %% @doc Roll the current access log over to the archiver, and then
 %% wait until the archiver has stored it in riak.
+-spec flush(_) -> 'error' | 'ok'.
 flush(Opts) ->
     try
         Retries = flush_retries(Opts),
@@ -51,6 +52,7 @@ flush(Opts) ->
 %% attempts to get the logger and archiver to flush.  Retries are used
 %% instead of one long timeout in order to provide an opportunity to
 %% print "still working" dots to the console.
+-spec flush_retries(maybe_improper_list()) -> integer().
 flush_retries(Opts) ->
     case lists:dropwhile(fun(E) -> E /= "-w" end, Opts) of
         ["-w", RetriesStr|_] ->
@@ -63,6 +65,7 @@ flush_retries(Opts) ->
     end.
 
 %% @doc Wait for the logger to confirm our flush message.
+-spec wait_for_logger(integer()) -> 'error' | 'ok'.
 wait_for_logger(Retries) ->
     OldTrap = erlang:process_flag(trap_exit, true),
     Self = self(),
@@ -85,6 +88,7 @@ wait_for_logger(Retries) ->
             error
     end.
 
+-spec wait_for_logger(integer(),reference(),pid()) -> any().
 wait_for_logger(N, _, _) when N < 1 ->
     timeout;
 wait_for_logger(N, Ref, Pid) ->
@@ -102,9 +106,11 @@ wait_for_logger(N, Ref, Pid) ->
 %% that the archiver will have received the logger's roll before it
 %% receives our status request, so it shouldn't say it's idle until it
 %% has archived that roll.
+-spec wait_for_archiver(integer()) -> 'error' | 'ok'.
 wait_for_archiver(N) ->
     wait_for_archiver(riak_cs_access_archiver_manager:status(?RETRY_TIMEOUT), N).
 
+-spec wait_for_archiver({'error',_} | {'ok',_},integer()) -> 'error' | 'ok'.
 wait_for_archiver(_, N) when N < 1 ->
     io:format("Flushing archiver timed out.~n"),
     error;
@@ -134,11 +140,13 @@ wait_for_archiver({error, Reason}, _) ->
     io:format("Flushing archives failed:~n  ~p~n", [Reason]),
     error.
 
+-spec archivers_status([any()]) -> ['ok'].
 archivers_status(Pids)  ->
     [archiver_status(
        riak_cs_access_archiver:status(Pid, ?RETRY_TIMEOUT)) ||
         Pid <- Pids].
 
+-spec archiver_status({'error',_} | {'ok','archiving' | 'busy' | 'idle',_}) -> 'ok'.
 archiver_status({ok, idle, _}) ->
     ok;
 archiver_status({ok, archiving, []}) ->

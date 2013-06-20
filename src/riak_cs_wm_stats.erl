@@ -43,6 +43,7 @@
           path_tokens :: [string()]
          }).
 
+-spec init([any()]) -> {'ok',#ctx{auth_bypass::boolean()}}.
 init(Props) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"init">>),
     AuthBypass = not proplists:get_value(admin_auth_enabled, Props),
@@ -53,6 +54,7 @@ init(Props) ->
 %% @doc Get the list of encodings this resource provides.
 %%      "identity" is provided for all methods, and "gzip" is
 %%      provided for GET as well
+-spec encodings_provided(_,_) -> {[{_,_},...],_,_}.
 encodings_provided(RD, Context) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"encodings_provided">>),
     case wrq:method(RD) of
@@ -74,6 +76,7 @@ encodings_provided(RD, Context) ->
 %%            "get --add-header=Accept:text/plain s3://RiakCS/stats",
 %%            so s3cmd will only be able to get the JSON flavor.
 
+-spec content_types_provided(_,_) -> {[{[any(),...],'pretty_print' | 'produce_body'},...],_,_}.
 content_types_provided(RD, Context) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"content_types_provided">>),
     {[{"application/json", produce_body},
@@ -101,6 +104,7 @@ service_available(RD, Ctx) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"service_available">>),
     {false, RD, Ctx}.
 
+-spec produce_body(_,_) -> {binary() | maybe_improper_list(binary() | maybe_improper_list(any(),binary() | []) | byte(),binary() | []),_,_}.
 produce_body(RD, Ctx) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"produce_body">>),
     Body = mochijson2:encode(get_stats()),
@@ -151,8 +155,10 @@ pretty_print(RD1, C1=#ctx{}) ->
     RD3 = wrq:set_resp_header("ETag", ETag, RD2),
     {Body, RD3, C2}.
 
+-spec get_stats() -> [{atom(),[atom() | number(),...]},...].
 get_stats() ->
     riak_cs_stats:get_stats().
 
+-spec path_tokens(_) -> any().
 path_tokens(RD) ->
     wrq:path_tokens(RD).

@@ -29,6 +29,7 @@
 
 %% @doc Return a user's buckets.
 -spec list_buckets(rcs_user()) -> ?LBRESP{}.
+
 list_buckets(User=?RCS_USER{buckets=Buckets}) ->
     ?LBRESP{user=User,
             buckets=[Bucket || Bucket <- Buckets,
@@ -37,6 +38,7 @@ list_buckets(User=?RCS_USER{buckets=Buckets}) ->
 -type options() :: [{atom(), 'undefined' | binary()}].
 -spec list_objects([string()], binary(), non_neg_integer(), options(), pid()) ->
                           {ok, ?LORESP{}} | {error, term()}.
+
 list_objects([], _, _, _, _) ->
     {error, no_such_bucket};
 list_objects(_UserBuckets, _Bucket, {error, _}=Error, _Options, _RiakPid) ->

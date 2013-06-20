@@ -27,6 +27,7 @@
 -export([identify/2, authenticate/4]).
 
 -spec identify(term(),term()) -> {string() | undefined, undefined}.
+
 identify(RD,_Ctx) ->
     case wrq:get_req_header("authorization", RD) of
         undefined -> {[], undefined};
@@ -35,5 +36,6 @@ identify(RD,_Ctx) ->
 
 
 -spec authenticate(rcs_user(), undefined, term(), term()) -> ok.
+
 authenticate(_User, _AuthData, _RD, _Ctx) ->
     ok.

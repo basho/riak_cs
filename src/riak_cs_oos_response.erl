@@ -32,6 +32,7 @@
 
 -spec respond(term(), #wm_reqdata{}, #context{}) ->
                      {string() | {halt, non_neg_integer()} , #wm_reqdata{}, #context{}}.
+
 respond(?LBRESP{}=Response, RD, Ctx) ->
     BucketsDoc =
         [begin
@@ -58,6 +59,7 @@ respond({ok, ?LORESP{}=Response}, RD, Ctx) ->
 respond({error, _}=Error, RD, Ctx) ->
     api_error(Error, RD, Ctx).
 
+-spec api_error(atom() | {'error',atom() | {'error',atom() | {'error',atom() | {_,_}} | {'riak_connect_failed',_}} | {'riak_connect_failed',_}} | {'riak_connect_failed',_},_,_) -> {{'halt',_},_,_}.
 api_error(Error, RD, Ctx) when is_atom(Error); is_tuple(Error) ->
     error_response(status_code(Error), error_code(Error), error_message(Error),
                    RD, Ctx);
@@ -67,11 +69,13 @@ api_error({riak_connect_failed, _}=Error, RD, Ctx) ->
 api_error({error, Reason}, RD, Ctx) ->
     api_error(Reason, RD, Ctx).
 
+-spec error_response(_,_,_,_,_) -> {{'halt',_},_,_}.
 error_response(StatusCode, _Code, _Message, RD, Ctx) ->
     {{halt, StatusCode}, RD, Ctx}.
 
 %% @doc Convert an error code string into its corresponding atom
 -spec error_code_to_atom(string()) -> atom().
+
 error_code_to_atom(ErrorCode) ->
     case ErrorCode of
         "BadRequest" ->
@@ -95,6 +99,7 @@ error_code_to_atom(ErrorCode) ->
 -spec error_message(atom() | {'riak_connect_failed', term()}) -> string().
 -spec error_code(atom() | {'riak_connect_failed', term()}) -> string().
 -spec status_code(atom() | {'riak_connect_failed', term()}) -> pos_integer().
+
 
 error_message(invalid_access_key_id) ->
     "The AWS Access Key Id you provided does not exist in our records.";
@@ -138,6 +143,7 @@ error_message(invalid_range) -> "The requested range is not satisfiable";
 error_message(invalid_bucket_name) -> "The specified bucket is not valid.";
 error_message(_) -> "Please reduce your request rate.".
 
+
 error_code(invalid_access_key_id) -> "InvalidAccessKeyId";
 error_code(access_denied) -> "AccessDenied";
 error_code(bucket_not_empty) -> "BucketNotEmpty";
@@ -173,6 +179,7 @@ error_code(ErrorName) ->
 
 %% These should match:
 %% http://docs.aws.amazon.com/AmazonS3/latest/API/ErrorResponses.html
+
 
 status_code(invalid_access_key_id) -> 403;
 status_code(invalid_email_address) -> 400;

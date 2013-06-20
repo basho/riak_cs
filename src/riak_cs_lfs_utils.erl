@@ -49,6 +49,7 @@
 %% @doc The number of blocks that this
 %%      size will be broken up into
 -spec block_count(non_neg_integer(), pos_integer()) -> non_neg_integer().
+
 block_count(ContentLength, BlockSize) ->
     Quotient = ContentLength div BlockSize,
     case ContentLength rem BlockSize of
@@ -58,22 +59,26 @@ block_count(ContentLength, BlockSize) ->
             Quotient + 1
     end.
 
+-spec block_keynames(_,_,[any()]) -> [{integer(),<<_:32,_:_*8>>}].
 block_keynames(KeyName, UUID, BlockList) ->
     MapFun = fun(BlockSeq) ->
                      {BlockSeq, block_name(KeyName, UUID, BlockSeq)} end,
     lists:map(MapFun, BlockList).
 
+-spec block_name(_,binary(),integer()) -> <<_:32,_:_*8>>.
 block_name(_Key, UUID, Number) ->
     %% 16 bits & 1MB chunk size = 64GB max object size
     %% 24 bits & 1MB chunk size = 16TB max object size
     %% 32 bits & 1MB chunk size = 4PB max object size
     <<UUID/binary, Number:32>>.
 
+-spec block_name_to_term(<<_:160>>) -> {<<_:128>>,non_neg_integer()}.
 block_name_to_term(<<UUID:16/binary, Number:32>>) ->
     {UUID, Number}.
 
 %% @doc Return the configured block size
 -spec block_size() -> pos_integer().
+
 block_size() ->
     case application:get_env(riak_cs, lfs_block_size) of
         undefined ->
@@ -84,6 +89,7 @@ block_size() ->
 
 %% @doc Return the configured block size
 -spec max_content_len() -> pos_integer().
+
 max_content_len() ->
 
     case application:get_env(riak_cs, max_content_length) of
@@ -104,14 +110,17 @@ safe_block_size_from_manifest(?MANIFEST{block_size=BlockSize}) ->
 %% @doc A list of all of the blocks that
 %%      make up the file.
 -spec initial_blocks(non_neg_integer(), pos_integer()) -> list().
+
 initial_blocks(ContentLength, BlockSize) ->
     UpperBound = block_count(ContentLength, BlockSize),
     lists:seq(0, (UpperBound - 1)).
 
+-spec initial_blocks(non_neg_integer(),pos_integer(),'undefined' | binary()) -> [{'undefined' | binary(),integer()}].
 initial_blocks(ContentLength, SafeBlockSize, UUID) ->
     Bs = initial_blocks(ContentLength, SafeBlockSize),
     [{UUID, B} || B <- Bs].
 
+-spec range_blocks(integer(),integer(),integer(),'undefined' | binary()) -> {[{_,_}],integer(),integer()}.
 range_blocks(Start, End, SafeBlockSize, UUID) ->
     SkipInitial = Start rem SafeBlockSize,
     KeepFinal = (End rem SafeBlockSize) + 1,
@@ -199,6 +208,7 @@ block_sequences_for_part_manifests_keep(SafeBlockSize, SkipInitial, [PM | Rest],
 
 %% @doc Return the configured file block fetch concurrency .
 -spec fetch_concurrency() -> pos_integer().
+
 fetch_concurrency() ->
     case application:get_env(riak_cs, fetch_concurrency) of
         undefined ->
@@ -209,6 +219,7 @@ fetch_concurrency() ->
 
 %% @doc Return the configured file block put concurrency .
 -spec put_concurrency() -> pos_integer().
+
 put_concurrency() ->
     case application:get_env(riak_cs, put_concurrency) of
         undefined ->
@@ -219,6 +230,7 @@ put_concurrency() ->
 
 %% @doc Return the configured file block delete concurrency .
 -spec delete_concurrency() -> pos_integer().
+
 delete_concurrency() ->
     case application:get_env(riak_cs, delete_concurrency) of
         undefined ->
@@ -230,6 +242,7 @@ delete_concurrency() ->
 %% @doc Return the configured put fsm buffer
 %% size factor
 -spec put_fsm_buffer_size_factor() -> pos_integer().
+
 put_fsm_buffer_size_factor() ->
     case application:get_env(riak_cs, put_buffer_factor) of
         undefined ->
@@ -241,6 +254,7 @@ put_fsm_buffer_size_factor() ->
 %% @doc Return the configured get fsm buffer
 %% size factor
 -spec get_fsm_buffer_size_factor() -> pos_integer().
+
 get_fsm_buffer_size_factor() ->
     case application:get_env(riak_cs, fetch_buffer_factor) of
         undefined ->
@@ -259,6 +273,7 @@ get_fsm_buffer_size_factor() ->
                    term(),
                    pos_integer(),
                    acl() | no_acl_yet) -> lfs_manifest().
+
 new_manifest(Bucket, FileName, UUID, ContentLength, ContentType, ContentMd5, MetaData, BlockSize, Acl) ->
     new_manifest(Bucket, FileName, UUID, ContentLength, ContentType, ContentMd5, MetaData, BlockSize, Acl, [], undefined).
 
@@ -273,6 +288,7 @@ new_manifest(Bucket, FileName, UUID, ContentLength, ContentType, ContentMd5, Met
                    acl() | no_acl_yet,
                    proplists:proplist(),
                    cluster_id()) -> lfs_manifest().
+
 new_manifest(Bucket, FileName, UUID, ContentLength, ContentType, ContentMd5, MetaData, BlockSize, Acl, Props, ClusterID) ->
     Blocks = ordsets:from_list(initial_blocks(ContentLength, BlockSize)),
     ?MANIFEST{bkey={Bucket, FileName},

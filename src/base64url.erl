@@ -34,38 +34,48 @@
          mime_decode/1,
          mime_decode_to_string/1]).
 
+-spec decode(binary() | [any()]) -> binary().
 decode(Base64url) ->
     base64:decode(urldecode(Base64url)).
 
+-spec decode_to_string(binary() | [any()]) -> string().
 decode_to_string(Base64url) ->
     base64:decode_to_string(urldecode(Base64url)).
 
+-spec mime_decode(binary() | [any()]) -> binary().
 mime_decode(Base64url) ->
     base64:mime_decode(urldecode(Base64url)).
 
+-spec mime_decode_to_string(binary() | [any()]) -> string().
 mime_decode_to_string(Base64url) ->
     base64:mime_decode_to_string(urldecode(Base64url)).
 
+-spec encode(binary() | string()) -> <<_:_*1>> | [byte()].
 encode(Data) ->
     urlencode(base64:encode(Data)).
 
+-spec encode_to_string(binary() | string()) -> <<_:_*1>> | [byte()].
 encode_to_string(Data) ->
     urlencode(base64:encode_to_string(Data)).
 
+-spec urlencode(binary() | [1..255]) -> <<_:_*1>> | [byte()].
 urlencode(Base64) when is_list(Base64) ->
     [urlencode_digit(D) || D <- Base64];
 urlencode(Base64) when is_binary(Base64) ->
     << << (urlencode_digit(D)) >> || <<D>> <= Base64 >>.
 
+-spec urldecode(binary() | [any()]) -> <<_:_*1>> | [any()].
 urldecode(Base64url) when is_list(Base64url) ->
     [urldecode_digit(D) || D <- Base64url ];
 urldecode(Base64url) when is_binary(Base64url) ->
     << << (urldecode_digit(D)) >> || <<D>> <= Base64url >>.
 
+-spec urlencode_digit(byte()) -> byte().
 urlencode_digit($/) -> $_;
 urlencode_digit($+) -> $-;
 urlencode_digit(D)  -> D.
 
+-spec urldecode_digit(_) -> any().
 urldecode_digit($_) -> $/;
 urldecode_digit($-) -> $+;
 urldecode_digit(D)  -> D.

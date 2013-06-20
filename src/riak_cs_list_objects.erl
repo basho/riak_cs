@@ -40,10 +40,12 @@
 %%--------------------------------------------------------------------
 
 -spec new_request(binary()) -> list_object_request().
+
 new_request(Name) ->
     new_request(Name, 1000, []).
 
 -spec new_request(binary(), pos_integer(), list()) -> list_object_request().
+
 new_request(Name, MaxKeys, Options) ->
     process_options(#list_objects_request_v1{name=Name,
                                              max_keys=MaxKeys},
@@ -52,11 +54,13 @@ new_request(Name, MaxKeys, Options) ->
 %% @private
 -spec process_options(list_object_request(), list()) ->
     list_object_request().
+
 process_options(Request, Options) ->
     lists:foldl(fun process_options_helper/2,
                 Request,
                 Options).
 
+-spec process_options_helper({'delimiter','undefined' | binary()} | {'marker','undefined' | binary()} | {'prefix','undefined' | binary()},#list_objects_request_v1{name::'undefined' | binary(),max_keys::'undefined' | non_neg_integer(),prefix::'undefined' | binary(),delimiter::'undefined' | binary(),marker::'undefined' | binary()}) -> #list_objects_request_v1{name::'undefined' | binary(),max_keys::'undefined' | non_neg_integer(),prefix::'undefined' | binary(),delimiter::'undefined' | binary(),marker::'undefined' | binary()}.
 process_options_helper({prefix, Val}, Req) ->
     Req#list_objects_request_v1{prefix=Val};
 process_options_helper({delimiter, Val}, Req) ->
@@ -72,6 +76,7 @@ process_options_helper({marker, Val}, Req) ->
                    CommonPrefixes :: list(list_objects_common_prefixes()),
                    ObjectContents :: list(list_objects_key_content())) ->
     list_object_response().
+
 new_response(?LOREQ{name=Name,
                     max_keys=MaxKeys,
                     prefix=Prefix,
@@ -91,6 +96,7 @@ new_response(?LOREQ{name=Name,
 %%--------------------------------------------------------------------
 
 -spec manifest_to_keycontent(lfs_manifest()) -> list_objects_key_content().
+
 manifest_to_keycontent(?MANIFEST{bkey={_Bucket, Key},
                                  created=Created,
                                  content_md5=ContentMd5,
@@ -120,6 +126,7 @@ manifest_to_keycontent(?MANIFEST{bkey={_Bucket, Key},
 %% ====================================================================
 
 -spec acl_to_owner(acl()) -> list_objects_owner().
+
 acl_to_owner(?ACL{owner=Owner}) ->
     {DisplayName, CanonicalId, _KeyId} = Owner,
     CanonicalIdBinary = list_to_binary(CanonicalId),

@@ -40,6 +40,7 @@
 
 %% @doc API for starting the supervisor.
 -spec start_link() -> {ok, pid()} | ignore | {error, term()}.
+
 start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
@@ -48,6 +49,7 @@ start_link() ->
                     [{binary(), binary(), non_neg_integer(), binary(),
                       term(), pos_integer(), acl(), timeout(), pid(), pid()}])->
                            {ok, pid()} | {error, term()}.
+
 start_put_fsm(Node, ArgList) ->
     supervisor:start_child({?MODULE, Node}, ArgList).
 
@@ -61,6 +63,7 @@ start_put_fsm(Node, ArgList) ->
                          pos_integer(),
                          pos_integer()},
                         [supervisor:child_spec()]}}.
+
 init([]) ->
     RestartStrategy = simple_one_for_one,
     MaxRestarts = 1000,

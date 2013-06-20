@@ -159,6 +159,7 @@
           etag :: iolist()
          }).
 
+-spec on_load() -> 'ok'.
 on_load() ->
     %% put atoms into atom table, for binary_to_existing_atom/2 in xml_name/1
     ?SUPPORTED_USAGE_FIELD = lists:map(fun(Bin) ->
@@ -166,6 +167,7 @@ on_load() ->
                                        end, ?SUPPORTED_USAGE_FIELD_BIN),
     ok.
 
+-spec init([any()]) -> {'ok',#ctx{auth_bypass::boolean()}}.
 init(Config) ->
     %% Check if authentication is disabled and
     %% set that in the context.
@@ -210,6 +212,7 @@ resource_exists(RD, #ctx{riak=Riak}=Ctx) ->
             {false, error_msg(RD, <<"Unknown user">>), Ctx}
     end.
 
+-spec content_types_provided(_,_) -> {[{[any(),...],'produce_json' | 'produce_xml'},...],_,_}.
 content_types_provided(RD, Ctx) ->
     Types = case {true_param(RD, "j"), true_param(RD, "x")} of
                 {true,_} -> [{?JSON_TYPE, produce_json}];
@@ -285,6 +288,7 @@ produce_json(RD, #ctx{body=undefined}=Ctx) ->
 produce_json(RD, #ctx{body=Body}=Ctx) ->
     {Body, RD, Ctx}.
 
+-spec mochijson_access(atom() | {[any()],[{_,_}]}) -> atom() | [{'Errors',[any()]} | {'Nodes',[any()]},...].
 mochijson_access(Msg) when is_atom(Msg) ->
     Msg;
 mochijson_access({Access, Errors}) ->
@@ -295,23 +299,27 @@ mochijson_access({Access, Errors}) ->
     [{?KEY_NODES, Nodes},
      {?KEY_ERRORS, Errs}].
 
+-spec mochijson_sample_error({{{{_,_,_},{_,_,_}},{{_,_,_},{_,_,_}}},_}) -> [{'Reason' | <<_:56,_:_*16>>,binary()},...].
 mochijson_sample_error({{Start, End}, Reason}) ->
     [{?START_TIME, rts:iso8601(Start)},
      {?END_TIME, rts:iso8601(End)},
      {?KEY_REASON, mochijson_reason(Reason)}].
 
+-spec mochijson_reason(_) -> binary().
 mochijson_reason(Reason) ->
     if is_atom(Reason) -> atom_to_binary(Reason, latin1);
        is_binary(Reason) -> Reason;
        true -> list_to_binary(io_lib:format("~p", [Reason]))
     end.
 
+-spec mochijson_storage(atom() | {[any()],[{_,_}]}) -> atom() | [{'Errors',[any()]} | {'Samples',[any()]},...].
 mochijson_storage(Msg) when is_atom(Msg) ->
     Msg;
 mochijson_storage({Storage, Errors}) ->
     [{?KEY_SAMPLES, [ mochijson_storage_sample(S) || S <- Storage ]},
      {?KEY_ERRORS, [ mochijson_sample_error(E)|| E <- Errors ]}].
 
+-spec mochijson_storage_sample(_) -> {'struct',_}.
 mochijson_storage_sample(Sample) ->
     {struct, Sample}.
 
@@ -330,6 +338,7 @@ produce_xml(RD, #ctx{body=undefined}=Ctx) ->
 produce_xml(RD, #ctx{body=Body}=Ctx) ->
     {Body, RD, Ctx}.
 
+-spec xml_access(atom() | {[any()],[{_,_}]}) -> [string() | {'Errors',[any()]} | {'Nodes',[any()]},...].
 xml_access(Msg) when is_atom(Msg) ->
     [atom_to_list(Msg)];
 xml_access({Access, Errors}) ->
@@ -341,6 +350,7 @@ xml_access({Access, Errors}) ->
     [{?KEY_NODES, Nodes},
      {?KEY_ERRORS, Errs}].
 
+-spec xml_sample([tuple()],'Bucket' | 'Operation','name' | 'type') -> {'Sample',[{_,_},...],[{_,_,_}]}.
 xml_sample(Sample, SubType, TypeLabel) ->
     {value, {?START_TIME,S}, SampleS} =
         lists:keytake(?START_TIME, 1, Sample),
@@ -352,6 +362,7 @@ xml_sample(Sample, SubType, TypeLabel) ->
        [{xml_name(K), [mochinum:digits(V)]} || {K, V} <- Stats]}
       || {OpName, {struct, Stats}} <- Rest ]}.
 
+-spec xml_sample_error({{{{_,_,_},{_,_,_}},{{_,_,_},{_,_,_}}},_},'Bucket' | 'Operation','name' | 'type') -> {'Sample',[{_,_},...],[{'Reason',[any(),...]} | {_,_,_},...]}.
 xml_sample_error({{Start, End}, Reason}, SubType, TypeLabel) ->
     %% cheat to make errors structured exactly like samples
     FakeSample = [{?START_TIME, rts:iso8601(Start)},
@@ -364,18 +375,21 @@ xml_sample_error({{Start, End}, Reason}, SubType, TypeLabel) ->
 %% @doc JSON deserializes with keys as binaries, but xmerl requires
 %% tag names to be atoms.
 -spec xml_name(binary()) -> usage_field_type() | ?ATTR_START | ?ATTR_END.
+
 xml_name(?START_TIME) -> ?ATTR_START;
 xml_name(?END_TIME) -> ?ATTR_END;
 xml_name(UsageFieldName) ->
     true = lists:member(UsageFieldName, ?SUPPORTED_USAGE_FIELD_BIN),
     binary_to_existing_atom(UsageFieldName, latin1).
 
+-spec xml_reason(_) -> [binary() | [[any()] | char()],...].
 xml_reason(Reason) ->
     [if is_atom(Reason) -> atom_to_binary(Reason, latin1);
        is_binary(Reason) -> Reason;
        true -> io_lib:format("~p", [Reason])
      end].
 
+-spec xml_storage(atom() | {[[any()]],[{_,_}]}) -> [string() | {'Errors',[any()]} | {'Samples',[any()]},...].
 xml_storage(Msg) when is_atom(Msg) ->
     [atom_to_list(Msg)];
 xml_storage({Storage, Errors}) ->
@@ -385,6 +399,7 @@ xml_storage({Storage, Errors}) ->
                     || E <- Errors ]}].
 
 %% Internals %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+-spec user_key(_) -> any().
 user_key(RD) ->
     case path_tokens(RD) of
         [KeyId|_] -> mochiweb_util:unquote(KeyId);
@@ -406,6 +421,7 @@ usage_if(RD, #ctx{riak=Riak, start_time=Start, end_time=End},
             not_requested
     end.
 
+-spec true_param(_,[97 | 98 | 106 | 120,...]) -> boolean().
 true_param(RD, Param) ->
     case lists:member(wrq:get_qs_value(Param, RD),
                       ["","t","true","1","y","yes"]) of
@@ -423,6 +439,7 @@ true_param(RD, Param) ->
 %% @doc Support both `/usage/Key/Opts/Start/End' and
 %% `/usage/Key.Opts.Start.End', since some commands assume that you
 %% want extra slashes quoted.
+-spec path_tokens(_) -> any().
 path_tokens(RD) ->
     case wrq:path_tokens(RD) of
         [JustOne] ->
@@ -437,12 +454,15 @@ path_tokens(RD) ->
             Many
     end.
 
+-spec parse_start_time(_) -> 'error' | {'ok',{{_,_,_},{_,_,_}}}.
 parse_start_time(RD) ->
     time_param(RD, "s", 3, calendar:universal_time()).
 
+-spec parse_end_time(_,{{_,_,_},{_,_,_}}) -> 'error' | {'ok',{{_,_,_},{_,_,_}}}.
 parse_end_time(RD, StartTime) ->
     time_param(RD, "e", 4, StartTime).
 
+-spec time_param(_,[101 | 115,...],3 | 4,{{_,_,_},{_,_,_}}) -> 'error' | {'ok',{{_,_,_},{_,_,_}}}.
 time_param(RD, Param, N, Default) ->
     case wrq:get_qs_value(Param, RD) of
         undefined ->
@@ -456,6 +476,7 @@ time_param(RD, Param, N, Default) ->
             datetime(TimeString)
     end.
 
+-spec error_msg(_,<<_:64,_:_*8>>) -> any().
 error_msg(RD, Message) ->
     {CTP, _, _} = content_types_provided(RD, #ctx{}),
     PTypes = [Type || {Type,_Fun} <- CTP],
@@ -469,10 +490,12 @@ error_msg(RD, Message) ->
     end,
     wrq:set_resp_header("content-type", Type, wrq:set_resp_body(Body, RD)).
 
+-spec json_error_msg(<<_:64,_:_*8>>) -> any().
 json_error_msg(Message) ->
     MJ = {struct, [{?KEY_ERROR, {struct, [{?KEY_MESSAGE, Message}]}}]},
     mochijson2:encode(MJ).
 
+-spec xml_error_msg(<<_:64,_:_*8>> | [byte()]) -> binary() | {'error',binary(),binary() | maybe_improper_list()} | {'incomplete',binary(),binary()}.
 xml_error_msg(Message) when is_binary(Message) ->
     xml_error_msg(binary_to_list(Message));
 xml_error_msg(Message) ->
@@ -481,6 +504,7 @@ xml_error_msg(Message) ->
 
 %% @doc Produce a datetime tuple from a ISO8601 string
 -spec datetime(binary()|string()) -> {ok, calendar:datetime()} | error.
+
 datetime(Binary) when is_binary(Binary) ->
     datetime(binary_to_list(Binary));
 datetime(String) when is_list(String) ->
@@ -496,6 +520,7 @@ datetime(String) when is_list(String) ->
 %% @doc Will this request require more reads than the configured limit?
 -spec too_many_periods(calendar:datetime(), calendar:datetime())
           -> boolean().
+
 too_many_periods(Start, End) ->
     Seconds = calendar:datetime_to_gregorian_seconds(End)
         -calendar:datetime_to_gregorian_seconds(Start),

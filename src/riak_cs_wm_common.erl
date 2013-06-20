@@ -67,6 +67,7 @@
 %% ===================================================================
 
 -spec init([{atom(),term()}]) -> {ok, #context{}}.
+
 init(Config) ->
     _ = dyntrace:put_tag(pid_to_list(self())),
     Mod = proplists:get_value(submodule, Config),
@@ -90,6 +91,7 @@ init(Config) ->
     resource_call(Mod, init, [Ctx], ExportsFun).
 
 -spec service_available(#wm_reqdata{}, #context{}) -> {boolean(), #wm_reqdata{}, #context{}}.
+
 service_available(RD, Ctx=#context{submodule=Mod,riakc_pool=undefined}) ->
     riak_cs_dtrace:dt_wm_entry({?MODULE, Mod}, <<"service_available">>),
     case riak_cs_utils:riak_connection() of
@@ -110,6 +112,7 @@ service_available(RD, Ctx=#context{submodule=Mod,riakc_pool=Pool}) ->
     end.
 
 -spec malformed_request(#wm_reqdata{}, #context{}) -> {boolean(), #wm_reqdata{}, #context{}}.
+
 malformed_request(RD, Ctx=#context{submodule=Mod,
                                    exports_fun=ExportsFun}) ->
     riak_cs_dtrace:dt_wm_entry({?MODULE, Mod}, <<"malformed_request">>),
@@ -125,6 +128,7 @@ malformed_request(RD, Ctx=#context{submodule=Mod,
 
 
 -spec valid_entity_length(#wm_reqdata{}, #context{}) -> {boolean(), #wm_reqdata{}, #context{}}.
+
 valid_entity_length(RD, Ctx=#context{submodule=Mod, exports_fun=ExportsFun}) ->
     riak_cs_dtrace:dt_wm_entry({?MODULE, Mod}, <<"valid_entity_length">>),
     {Valid, _, _} = R = resource_call(Mod,
@@ -142,6 +146,7 @@ valid_entity_length(RD, Ctx=#context{submodule=Mod, exports_fun=ExportsFun}) ->
                                       boolean().
 -spec validate_content_checksum(#wm_reqdata{}, #context{}) ->
                                        {validate_checksum_response(), #wm_reqdata{}, #context{}}.
+
 validate_content_checksum(RD, Ctx=#context{submodule=Mod, exports_fun=ExportsFun}) ->
     riak_cs_dtrace:dt_wm_entry({?MODULE, Mod}, <<"validate_content_checksum">>),
     {Valid, _, _} = R = resource_call(Mod,
@@ -155,6 +160,7 @@ validate_content_checksum(RD, Ctx=#context{submodule=Mod, exports_fun=ExportsFun
     R.
 
 -spec forbidden(#wm_reqdata{}, #context{}) -> {boolean() | {halt, non_neg_integer()}, #wm_reqdata{}, #context{}}.
+
 forbidden(RD, Ctx=#context{auth_module=AuthMod,
                            submodule=Mod,
                            riakc_pid=RiakPid,
@@ -199,6 +205,7 @@ forbidden(RD, Ctx=#context{auth_module=AuthMod,
             Ret
     end.
 
+-spec maybe_create_user({'error',_} | {'ok',{{_,_,_,_,_,_,_,_,_},_}},'undefined' | [binary() | maybe_improper_list(any(),binary() | []) | byte()],atom(),atom(),_,pid()) -> {'error',_} | {'ok',{{_,_,_,_,_,_,_,_,_},_}}.
 maybe_create_user({ok, {_, _}}=UserResult, _, _, _, _, _) ->
     UserResult;
 maybe_create_user({error, NE}, KeyId, oos, _, {UserData, _}, RiakPid)
@@ -226,6 +233,7 @@ maybe_create_user({error, Reason}=Error, _, Api, _, _, _) ->
 
 %% @doc Get the list of methods a resource supports.
 -spec allowed_methods(#wm_reqdata{}, #context{}) -> {[atom()], #wm_reqdata{}, #context{}}.
+
 allowed_methods(RD, Ctx=#context{submodule=Mod,
                                  exports_fun=ExportsFun}) ->
     riak_cs_dtrace:dt_wm_entry({?MODULE, Mod}, <<"allowed_methods">>),
@@ -236,6 +244,7 @@ allowed_methods(RD, Ctx=#context{submodule=Mod,
     {Methods, RD, Ctx}.
 
 -spec content_types_accepted(#wm_reqdata{}, #context{}) -> {[{string(), atom()}], #wm_reqdata{}, #context{}}.
+
 content_types_accepted(RD, Ctx=#context{submodule=Mod,
                                         exports_fun=ExportsFun}) ->
     riak_cs_dtrace:dt_wm_entry({?MODULE, Mod}, <<"content_types_accepted">>),
@@ -245,6 +254,7 @@ content_types_accepted(RD, Ctx=#context{submodule=Mod,
                   ExportsFun).
 
 -spec content_types_provided(#wm_reqdata{}, #context{}) -> {[{string(), atom()}], #wm_reqdata{}, #context{}}.
+
 content_types_provided(RD, Ctx=#context{submodule=Mod,
                                         exports_fun=ExportsFun}) ->
     riak_cs_dtrace:dt_wm_entry({?MODULE, Mod}, <<"content_types_provided">>),
@@ -254,6 +264,7 @@ content_types_provided(RD, Ctx=#context{submodule=Mod,
                   ExportsFun).
 
 -spec generate_etag(#wm_reqdata{}, #context{}) -> {string(), #wm_reqdata{}, #context{}}.
+
 generate_etag(RD, Ctx=#context{submodule=Mod,
                                exports_fun=ExportsFun}) ->
     riak_cs_dtrace:dt_wm_entry({?MODULE, Mod}, <<"generate_etag">>),
@@ -263,6 +274,7 @@ generate_etag(RD, Ctx=#context{submodule=Mod,
                   ExportsFun).
 
 -spec last_modified(#wm_reqdata{}, #context{}) -> {calendar:datetime(), #wm_reqdata{}, #context{}}.
+
 last_modified(RD, Ctx=#context{submodule=Mod,
                                exports_fun=ExportsFun}) ->
     riak_cs_dtrace:dt_wm_entry({?MODULE, Mod}, <<"last_modified">>),
@@ -272,6 +284,7 @@ last_modified(RD, Ctx=#context{submodule=Mod,
                   ExportsFun).
 
 -spec delete_resource(#wm_reqdata{}, #context{}) -> {boolean() | {halt, non_neg_integer()}, #wm_reqdata{}, #context{}}.
+
 delete_resource(RD, Ctx=#context{submodule=Mod,exports_fun=ExportsFun}) ->
     riak_cs_dtrace:dt_wm_entry({?MODULE, Mod}, <<"delete_resource">>),
     %% TODO: add dt_wm_return from subresource?
@@ -282,6 +295,7 @@ delete_resource(RD, Ctx=#context{submodule=Mod,exports_fun=ExportsFun}) ->
 
 -spec to_xml(#wm_reqdata{}, #context{}) ->
                     {binary() | {'halt', non_neg_integer()}, #wm_reqdata{}, #context{}}.
+
 to_xml(RD, Ctx=#context{user=User,
                         submodule=Mod,
                         exports_fun=ExportsFun}) ->
@@ -295,6 +309,7 @@ to_xml(RD, Ctx=#context{user=User,
 
 -spec to_json(#wm_reqdata{}, #context{}) ->
                      {binary() | {'halt', non_neg_integer()}, #wm_reqdata{}, #context{}}.
+
 to_json(RD, Ctx=#context{user=User,
                          submodule=Mod,
                          exports_fun=ExportsFun}) ->
@@ -332,6 +347,7 @@ multiple_choices(RD, Ctx=#context{submodule=Mod,
 
 -spec accept_body(#wm_reqdata{}, #context{}) ->
                          {boolean() | {'halt', non_neg_integer()}, #wm_reqdata{}, #context{}}.
+
 accept_body(RD, Ctx=#context{submodule=Mod,exports_fun=ExportsFun,user=User}) ->
     riak_cs_dtrace:dt_wm_entry({?MODULE, Mod}, <<"accept_body">>),
     Res = resource_call(Mod,
@@ -345,6 +361,7 @@ accept_body(RD, Ctx=#context{submodule=Mod,exports_fun=ExportsFun,user=User}) ->
 -spec produce_body(#wm_reqdata{}, #context{}) ->
                           {iolist()|binary(), #wm_reqdata{}, #context{}} |
                           {{known_length_stream, non_neg_integer(), {<<>>, function()}}, #wm_reqdata{}, #context{}}.
+
 produce_body(RD, Ctx=#context{user=User,
                               submodule=Mod,
                               exports_fun=ExportsFun}) ->
@@ -358,6 +375,7 @@ produce_body(RD, Ctx=#context{user=User,
     Res.
 
 -spec finish_request(#wm_reqdata{}, #context{}) -> {boolean(), #wm_reqdata{}, #context{}}.
+
 finish_request(RD, Ctx=#context{riakc_pid=undefined,
                                 submodule=Mod,
                                 exports_fun=ExportsFun}) ->
@@ -391,6 +409,7 @@ finish_request(RD, Ctx0=#context{riakc_pid=RiakcPid,
 %% ===================================================================
 
 -spec authorize(#wm_reqdata{}, #context{}) -> {boolean() | {halt, non_neg_integer()}, #wm_reqdata{}, #context{}}.
+
 authorize(RD,Ctx=#context{submodule=Mod, exports_fun=ExportsFun}) ->
     riak_cs_dtrace:dt_wm_entry({?MODULE, Mod}, <<"authorize">>),
     {Success, _, _} = R = resource_call(Mod, authorize, [RD,Ctx], ExportsFun),
@@ -407,6 +426,7 @@ authorize(RD,Ctx=#context{submodule=Mod, exports_fun=ExportsFun}) ->
 -type user_lookup_result() :: {ok, {rcs_user(), riakc_obj:riakc_obj()}} | {error, term()}.
 -spec authenticate(user_lookup_result(), term(), term(), term()) ->
                           {ok, rcs_user(), riakc_obj:riakc_obj()} | {error, term()}.
+
 authenticate({ok, {User, UserObj}}, RD, Ctx=#context{auth_module=AuthMod, submodule=Mod}, AuthData)
   when User?RCS_USER.status =:= enabled ->
     riak_cs_dtrace:dt_wm_entry({?MODULE, Mod}, <<"authenticate">>, [], [atom_to_binary(AuthMod, latin1)]),
@@ -426,12 +446,14 @@ authenticate({error, _}=Error, _RD, _Ctx, _AuthData) ->
     Error.
 
 -spec exports_fun(orddict:orddict()) -> function().
+
 exports_fun(Exports) ->
     fun(Function) ->
             orddict:is_key(Function, Exports)
     end.
 
 
+-spec resource_call(atom(),atom(),[any()],boolean() | fun((_) -> any())) -> any().
 resource_call(Mod, Fun, Args, true) ->
     erlang:apply(Mod, Fun, Args);
 resource_call(_Mod, Fun, Args, false) ->
@@ -475,6 +497,7 @@ post_authentication({error, Reason}, RD, Ctx, _, _) ->
 %% Resource function defaults
 %% ===================================================================
 
+-spec default(atom()) -> atom().
 default(init) ->
     default_init;
 default(allowed_methods) ->
@@ -506,18 +529,23 @@ default(produce_body) ->
 default(_) ->
     undefined.
 
+-spec default_init(_) -> {'ok',_}.
 default_init(Ctx) ->
     {ok, Ctx}.
 
+-spec default_malformed_request(_,_) -> {'false',_,_}.
 default_malformed_request(RD, Ctx) ->
     {false, RD, Ctx}.
 
+-spec default_valid_entity_length(_,_) -> {'true',_,_}.
 default_valid_entity_length(RD, Ctx) ->
     {true, RD, Ctx}.
 
+-spec default_validate_content_checksum(_,_) -> {'true',_,_}.
 default_validate_content_checksum(RD, Ctx) ->
     {true, RD, Ctx}.
 
+-spec default_content_types_accepted(_,_) -> {[],_,_}.
 default_content_types_accepted(RD, Ctx) ->
     {[], RD, Ctx}.
 
@@ -525,26 +553,33 @@ default_content_types_accepted(RD, Ctx) ->
                                             {[{string(), atom()}],
                                              #wm_reqdata{},
                                              #context{}}.
+
 default_content_types_provided(RD, Ctx=#context{api=oos}) ->
     {[{"text/plain", produce_body}], RD, Ctx};
 default_content_types_provided(RD, Ctx) ->
     {[{"application/xml", produce_body}], RD, Ctx}.
 
+-spec default_generate_etag(_,_) -> {'undefined',_,_}.
 default_generate_etag(RD, Ctx) ->
     {undefined, RD, Ctx}.
 
+-spec default_last_modified(_,_) -> {'undefined',_,_}.
 default_last_modified(RD, Ctx) ->
     {undefined, RD, Ctx}.
 
+-spec default_delete_resource(_,_) -> {'false',_,_}.
 default_delete_resource(RD, Ctx) ->
     {false, RD, Ctx}.
 
+-spec default_allowed_methods() -> [].
 default_allowed_methods() ->
     [].
 
+-spec default_finish_request(_,_) -> {'true',_,_}.
 default_finish_request(RD, Ctx) ->
     {true, RD, Ctx}.
 
+-spec default_anon_ok() -> 'true'.
 default_anon_ok() ->
     true.
 
@@ -565,5 +600,6 @@ default_produce_body(RD, Ctx=#context{submodule=Mod,
 %% of authorize/2. The default implementation does not perform any authorization
 %% and simply returns false to signify the request is not fobidden
 -spec default_authorize(term(), term()) -> {false, term(), term()}.
+
 default_authorize(RD, Ctx) ->
     {false, RD, Ctx}.

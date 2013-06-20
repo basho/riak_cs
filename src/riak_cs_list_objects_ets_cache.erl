@@ -63,11 +63,13 @@
 %%% API
 %%%===================================================================
 
+-spec start_link() -> 'ignore' | {'error',_} | {'ok',pid()}.
 start_link() ->
     %% named proc
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
 -spec lookup(binary()) -> cache_lookup_result().
+
 lookup(Key) ->
     try
         _ = lager:debug("Reading info for ~p from cache", [Key]),
@@ -81,6 +83,7 @@ lookup(Key) ->
 -spec can_write(CacheKey :: binary(),
                 MonitorPid :: pid(),
                 NumKeys :: non_neg_integer()) -> boolean().
+
 can_write(CacheKey, MonitorPid, NumKeys) ->
     can_write(?MODULE, CacheKey, MonitorPid, NumKeys).
 
@@ -88,11 +91,13 @@ can_write(CacheKey, MonitorPid, NumKeys) ->
                 CacheKey :: binary(),
                 MonitorPid :: pid(),
                 NumKeys :: non_neg_integer()) -> boolean().
+
 can_write(ServerPid, CacheKey, MonitorPid, NumKeys) ->
     Message = {can_write, {CacheKey, MonitorPid, NumKeys}},
     gen_server:call(ServerPid, Message, infinity).
 
 -spec write(binary(), term()) -> ok.
+
 write(Key, Value) ->
     try
         unsafe_write(Key, Value)
@@ -103,10 +108,12 @@ write(Key, Value) ->
     end.
 
 -spec bytes_used() -> non_neg_integer().
+
 bytes_used() ->
     bytes_used(default_ets_table()).
 
 -spec bytes_used(ets:tab()) -> non_neg_integer().
+
 bytes_used(TableID) ->
     WordsUsed = ets:info(TableID, memory),
     words_to_bytes(WordsUsed).
@@ -116,11 +123,13 @@ bytes_used(TableID) ->
 %%%===================================================================
 
 -spec init(list()) -> {ok, state()}.
+
 init([]) ->
     Tid = new_table(),
     NewState = #state{tid=Tid},
     {ok, NewState}.
 
+-spec handle_call(_,_,_) -> {'reply','false' | 'ok' | 'true' | 'undefined' | ets:tid(),_}.
 handle_call(get_tid, _From, State=#state{tid=Tid}) ->
     {reply, Tid, State};
 handle_call({can_write, {CacheKey, MonitorPid, NumKeys}},
@@ -137,9 +146,11 @@ handle_call(Msg, _From, State) ->
     _ = lager:debug("got unknown message: ~p", [Msg]),
     {reply, ok, State}.
 
+-spec handle_cast(_,_) -> {'noreply',_}.
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
+-spec handle_info(_,_) -> {'noreply',_}.
 handle_info({cache_expiry, ExpiredKey}, State) ->
     NewState = handle_cache_expiry(ExpiredKey, State),
     {noreply, NewState};
@@ -149,9 +160,11 @@ handle_info({'DOWN', MonitorRef, process, _Pid, _Info}, State) ->
 handle_info(_Info, State) ->
     {noreply, State}.
 
+-spec terminate(_,_) -> 'ok'.
 terminate(_Reason, _State) ->
     ok.
 
+-spec code_change(_,_,_) -> {'ok',_}.
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
@@ -160,6 +173,7 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 
 %% @private
+-spec get_with_default('list_objects_ets_cache_enabled' | 'list_objects_ets_cache_max_bytes' | 'list_objects_ets_cache_min_keys' | 'list_objects_ets_cache_table_name' | 'list_objects_ets_cache_timeout','list_objects_cache' | 'true' | non_neg_integer()) -> any().
 get_with_default(EnvKey, Default) ->
     case application:get_env(riak_cs, EnvKey) of
         {ok, Val} ->
@@ -168,18 +182,23 @@ get_with_default(EnvKey, Default) ->
             Default
     end.
 
+-spec default_ets_table() -> any().
 default_ets_table() ->
     get_with_default(list_objects_ets_cache_table_name, ?LIST_OBJECTS_CACHE).
 
+-spec cache_enabled() -> any().
 cache_enabled() ->
     get_with_default(list_objects_ets_cache_enabled, ?ENABLE_CACHE).
 
+-spec cache_timeout() -> any().
 cache_timeout() ->
     get_with_default(list_objects_ets_cache_timeout, ?CACHE_TIMEOUT).
 
+-spec min_keys_to_cache() -> any().
 min_keys_to_cache() ->
     get_with_default(list_objects_ets_cache_min_keys, ?MIN_KEYS_TO_CACHE).
 
+-spec max_cache_size() -> any().
 max_cache_size() ->
     get_with_default(list_objects_ets_cache_max_bytes, ?MAX_CACHE_BYTES).
 
@@ -188,10 +207,12 @@ max_cache_size() ->
 %%%===================================================================
 
 -spec should_write(non_neg_integer()) -> boolean().
+
 should_write(NumKeys) ->
     enough_keys_to_cache(NumKeys) andalso space_in_cache(NumKeys).
 
 -spec enough_keys_to_cache(non_neg_integer()) -> boolean().
+
 enough_keys_to_cache(NumKeys) ->
     NumKeys >= min_keys_to_cache().
 
@@ -200,29 +221,36 @@ enough_keys_to_cache(NumKeys) ->
 %%
 %% Current estimate is ~ 64 bytes per key.
 -spec space_in_cache(non_neg_integer()) -> boolean().
+
 space_in_cache(NumKeys) ->
     space_in_cache(default_ets_table(), NumKeys).
 
+-spec space_in_cache(atom() | ets:tid(),non_neg_integer()) -> boolean().
 space_in_cache(TableID, NumKeys) ->
     BytesUsed = bytes_used(TableID),
     space_available(BytesUsed, NumKeys).
 
+-spec words_to_bytes(number()) -> number().
 words_to_bytes(Words) ->
     Words * ?WORD_SIZE.
 
+-spec space_available(non_neg_integer(),non_neg_integer()) -> boolean().
 space_available(BytesUsed, NumKeys) ->
     space_available(BytesUsed, num_keys_to_bytes(NumKeys), max_cache_size()).
 
+-spec space_available(non_neg_integer(),non_neg_integer(),_) -> boolean().
 space_available(BytesUsed, ProspectiveAdd, MaxCacheSize)
         when (BytesUsed + ProspectiveAdd) < MaxCacheSize ->
     true;
 space_available(_BytesUsed, _ProspectiveAdd, _MaxCacheSize) ->
     false.
 
+-spec num_keys_to_bytes(non_neg_integer()) -> non_neg_integer().
 num_keys_to_bytes(NumKeys) ->
     NumKeys * 64.
 
 
+-spec unsafe_write(_,_) -> 'ok'.
 unsafe_write(Key, Value) ->
     TS = riak_cs_utils:second_resolution_timestamp(os:timestamp()),
     _ = lager:debug("Writing entry for ~p to LO Cache", [Key]),
@@ -230,6 +258,7 @@ unsafe_write(Key, Value) ->
     ok.
 
 -spec update_state_with_refs(binary(), pid(), state()) -> state().
+
 update_state_with_refs(CacheKey, MonitorPid, State) ->
     MonitorRef = erlang:monitor(process, MonitorPid),
     TimerRef = erlang:send_after(cache_timeout(), ?MODULE,
@@ -238,6 +267,7 @@ update_state_with_refs(CacheKey, MonitorPid, State) ->
 
 -spec update_state_with_refs_helper(reference(), reference(), binary(), state()) ->
     state().
+
 update_state_with_refs_helper(MonitorRef, TimerRef, CacheKey,
                               State=#state{monitor_to_timer=MonToTimer,
                                            key_to_monitor=KeyToMon}) ->
@@ -247,17 +277,20 @@ update_state_with_refs_helper(MonitorRef, TimerRef, CacheKey,
                 key_to_monitor=NewKeyToMon}.
 
 -spec handle_cache_expiry(binary(), state()) -> state().
+
 handle_cache_expiry(ExpiredKey, State=#state{key_to_monitor=KeyToMon}) ->
     ets:delete(default_ets_table(), ExpiredKey),
     NewKeyToMon = remove_monitor(ExpiredKey, KeyToMon),
     State#state{key_to_monitor=NewKeyToMon}.
 
 -spec handle_down(reference(), state()) -> state().
+
 handle_down(MonitorRef, State=#state{monitor_to_timer=MonToTimer}) ->
     NewMonToTimer = remove_timer(MonitorRef, MonToTimer),
     State#state{monitor_to_timer=NewMonToTimer}.
 
 -spec remove_monitor(binary(), ?DICTMODULE()) -> ?DICTMODULE().
+
 remove_monitor(ExpiredKey, KeyToMon) ->
     RefResult = safe_fetch(ExpiredKey, KeyToMon),
     case RefResult of
@@ -269,6 +302,7 @@ remove_monitor(ExpiredKey, KeyToMon) ->
     ?DICTMODULE:erase(ExpiredKey, KeyToMon).
 
 -spec remove_timer(reference(), ?DICTMODULE()) -> ?DICTMODULE().
+
 remove_timer(MonitorRef, MonToTimer) ->
     RefResult = safe_fetch(MonitorRef, MonToTimer),
     _ = case RefResult of
@@ -283,6 +317,7 @@ remove_timer(MonitorRef, MonToTimer) ->
 
 -spec safe_fetch(Key :: term(), Dict :: ?DICTMODULE()) ->
     {ok, term()} | {error, term()}.
+
 safe_fetch(Key, Dict) ->
     try
         {ok, ?DICTMODULE:fetch(Key, Dict)}
@@ -291,11 +326,13 @@ safe_fetch(Key, Dict) ->
     end.
 
 -spec new_table() -> ets:tid().
+
 new_table() ->
     TableSpec = [public, set, named_table, {write_concurrency, true}],
     ets:new(default_ets_table(), TableSpec).
 
 -spec format_lookup_result([{binary(), term(), integer()}]) -> cache_lookup_result().
+
 format_lookup_result([]) ->
     false;
 format_lookup_result([{_, Value, _}]) ->

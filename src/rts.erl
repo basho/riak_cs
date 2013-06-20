@@ -69,6 +69,7 @@
                  datetime(), datetime(),
                  integer(), mochijson2())
          -> riakc_obj:riakc_obj().
+
 new_sample(Bucket, KeyPostfix, Start, End, Period, Data) ->
     Slice = slice_containing(Start, Period),
     Key = slice_key(Slice, KeyPostfix),
@@ -87,6 +88,7 @@ new_sample(Bucket, KeyPostfix, Start, End, Period, Data) ->
 -spec find_samples(riakc_pb_socket(), binary(), iolist(),
                    datetime(), datetime(), integer()) ->
          {Samples::[mochijson2()], Errors::[{slice(), Reason::term()}]}.
+
 find_samples(Riak, Bucket, KeyPostfix, Start, End, Period) ->
     Slices = slices_filling(Start, End, Period),
     Puller = sample_puller(Riak, Bucket, KeyPostfix),
@@ -98,6 +100,7 @@ find_samples(Riak, Bucket, KeyPostfix, Start, End, Period) ->
 %% request some, but not all, samples from a group.
 -spec sample_in_bounds(datetime(), datetime())
          -> fun( (list()) -> boolean() ).
+
 sample_in_bounds(Start, End) ->
     Start8601 = iso8601(Start),
     End8601 = iso8601(End),
@@ -111,6 +114,7 @@ sample_in_bounds(Start, End) ->
 
 %% @doc Make a thunk that looks up samples for a given bucket+prefix.
 -spec sample_puller(riakc_pb_socket(), binary(), iolist()) -> fun().
+
 sample_puller(Riak, Bucket, Postfix) ->
     fun(Slice, {Samples, Errors}) ->
             case riakc_pb_socket:get(
@@ -141,11 +145,13 @@ sample_puller(Riak, Bucket, Postfix) ->
 %% actual slice, not just any two times (the times are not realigned
 %% to slice boundaries before making the key).
 -spec slice_key(slice(), iolist()) -> binary().
+
 slice_key({SliceStart, _}, Postfix) ->
     iolist_to_binary([iso8601(SliceStart),".",Postfix]).
 
 %% @doc Get the slice containing the `Time', given a period.
 -spec slice_containing(datetime(), integer()) -> slice().
+
 slice_containing({{_,_,_},{H,M,S}}=Time, Period) ->
     Rem = ((H*60+M)*60+S) rem Period,
     Sec = dtgs(Time),
@@ -153,11 +159,13 @@ slice_containing({{_,_,_},{H,M,S}}=Time, Period) ->
 
 %% @doc Get the slice following the one given.
 -spec next_slice(Slice::slice(), integer()) -> slice().
+
 next_slice({_,Prev}, Period) ->
     cut_at_midnight({Prev, gsdt(dtgs(Prev)+Period)}).
 
 %% @doc ensure that slices do not leak across day boundaries
 -spec cut_at_midnight(slice()) -> slice().
+
 cut_at_midnight({{SameDay,_},{SameDay,_}}=Slice) ->
     Slice;
 cut_at_midnight({Start,{NextDay,_}}) ->
@@ -167,6 +175,7 @@ cut_at_midnight({Start,{NextDay,_}}) ->
 %% @doc Get all slices covering the period from `Start' to `End'.
 -spec slices_filling(datetime(), datetime(), integer())
          -> [slice()].
+
 slices_filling(Start, End, Period) when Start > End ->
     slices_filling(End, Start, Period);
 slices_filling(Start, End, Period) ->
@@ -175,6 +184,7 @@ slices_filling(Start, End, Period) ->
 
 %% @doc Add slices to `Fill' until we've covered `Last'.
 -spec fill(integer(), datetime(), [slice()]) -> [slice()].
+
 fill(_, Last, [{_,Latest}|_]=Fill) when Latest >= Last ->
     %% just in case our iterative math is borked, checking >= instead
     %% of == should guarantee we stop anyway
@@ -185,12 +195,15 @@ fill(Period, Last, [Prev|_]=Fill) ->
 
 %% @doc convenience
 -spec dtgs(datetime()) -> integer().
+
 dtgs(DT) -> calendar:datetime_to_gregorian_seconds(DT).
 -spec gsdt(integer()) -> datetime().
+
 gsdt(S)  -> calendar:gregorian_seconds_to_datetime(S).
 
 %% @doc Produce an ISO8601-compatible representation of the given time.
 -spec iso8601(calendar:datetime()) -> binary().
+
 iso8601({{Y,M,D},{H,I,S}}) ->
     iolist_to_binary(
       io_lib:format("~4..0b~2..0b~2..0bT~2..0b~2..0b~2..0bZ",

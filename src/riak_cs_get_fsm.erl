@@ -97,25 +97,32 @@
 -spec start_link(binary(), binary(), pid(), pid(), pos_integer(),
                  pos_integer()) -> {ok, pid()} | {error, term()}.
 
+
 start_link(Bucket, Key, Caller, RiakPid, FetchConcurrency, BufferFactor) ->
     gen_fsm:start_link(?MODULE, [Bucket, Key, Caller, RiakPid,
                                 FetchConcurrency, BufferFactor], []).
 
+-spec stop(atom() | pid() | port() | {atom(),_} | {'via',_,_}) -> 'ok'.
 stop(Pid) ->
     gen_fsm:send_event(Pid, stop).
 
+-spec continue(atom() | pid() | port() | {atom(),_} | {'via',_,_},_) -> 'ok'.
 continue(Pid, Range) ->
     gen_fsm:send_event(Pid, {continue, Range}).
 
+-spec get_manifest(_) -> any().
 get_manifest(Pid) ->
     gen_fsm:sync_send_event(Pid, get_manifest, infinity).
 
+-spec get_next_chunk(_) -> any().
 get_next_chunk(Pid) ->
     gen_fsm:sync_send_event(Pid, get_next_chunk, infinity).
 
+-spec manifest(atom() | pid() | port() | {atom(),_} | {'via',_,_},_) -> 'ok'.
 manifest(Pid, ManifestValue) ->
     gen_fsm:send_event(Pid, {object, self(), ManifestValue}).
 
+-spec chunk(atom() | pid() | port() | {atom(),_} | {'via',_,_},_,_) -> 'ok'.
 chunk(Pid, ChunkSeq, ChunkValue) ->
     gen_fsm:send_event(Pid, {chunk, self(), {ChunkSeq, ChunkValue}}).
 
@@ -189,6 +196,7 @@ prepare(get_manifest, _From, State) ->
             {reply, Mfst, waiting_continue_or_stop, NewState, NextStateTimeout}
     end.
 
+-spec waiting_value('stop',_) -> {'stop','normal',_}.
 waiting_value(stop, State) ->
     {stop, normal, State}.
 
@@ -241,6 +249,7 @@ waiting_continue_or_stop({continue, Range}, #state{manifest=Manifest,
             {next_state, waiting_chunks, read_blocks(UpdState)}
     end.
 
+-spec waiting_continue_or_stop(_,_,_) -> {'next_state','waiting_continue_or_stop',_}.
 waiting_continue_or_stop(Event, From, State) ->
     _ = lager:info("Pid ~p got unknown event ~p from ~p\n",
                    [self(), Event, From]),
@@ -334,14 +343,17 @@ waiting_chunks({chunk, Pid, {NextBlock, BlockReturnValue}},
     end.
 
 %% @private
+-spec handle_event(_,_,_) -> {'stop','badmsg',_}.
 handle_event(_Event, _StateName, StateData) ->
     {stop,badmsg,StateData}.
 
 %% @private
+-spec handle_sync_event(_,_,_,_) -> {'stop','badmsg',_}.
 handle_sync_event(_Event, _From, _StateName, StateData) ->
     {stop,badmsg,StateData}.
 
 %% @private
+-spec handle_info(_,_,_) -> any().
 handle_info(request_timeout, StateName, StateData) ->
     ?MODULE:StateName(request_timeout, StateData);
 %% TODO:
@@ -377,6 +389,7 @@ terminate(_Reason, _StateName, #state{test=true,
     [catch exit(Pid, kill) || Pid <- ReaderPids].
 
 %% @private
+-spec code_change(_,_,_,_) -> {'ok',_,_}.
 code_change(_OldVsn, StateName, State, _Extra) -> {ok, StateName, State}.
 
 %% ===================================================================
@@ -384,6 +397,7 @@ code_change(_OldVsn, StateName, State, _Extra) -> {ok, StateName, State}.
 %% ===================================================================
 
 -spec prepare(#state{}) -> #state{}.
+
 prepare(#state{bucket=Bucket,
                key=Key,
                riakc_pid=RiakPid}=State) ->
@@ -409,6 +423,7 @@ prepare(#state{bucket=Bucket,
 
 -spec read_blocks(state()) -> state().
 
+
 read_blocks(#state{free_readers=[]} = State) ->
     State;
 read_blocks(#state{blocks_order=[]} = State) ->
@@ -426,6 +441,7 @@ read_blocks(#state{manifest=Manifest,
                             blocks_order=BlocksOrder,
                             blocks_intransit=queue:in(NextBlock, Intransit)}).
 
+-spec trim_block_value(_,_,{'undefined' | {binary(),integer()},'undefined' | {binary(),integer()}},{'undefined' | non_neg_integer(),'undefined' | non_neg_integer()}) -> any().
 trim_block_value(RawBlockValue, CurrentBlock,
                  {CurrentBlock, CurrentBlock},
                  {SkipInitial, KeepFinal}) ->

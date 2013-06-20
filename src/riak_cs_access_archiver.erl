@@ -66,6 +66,7 @@
 %% @spec start_link() -> {ok, Pid} | ignore | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
+-spec start_link() -> 'ignore' | {'error',_} | {'ok',pid()}.
 start_link() ->
     gen_fsm:start_link({local, ?MODULE}, ?MODULE, [], []).
 
@@ -75,6 +76,7 @@ start_link() ->
 %% `Props' will include additional details about what the archiver is
 %% up to.  May also return `{error, Reason}' if something else went
 %% wrong.
+-spec status(_,_) -> {'error',_} | {'ok','archiving' | 'busy' | 'idle',_}.
 status(Pid, Timeout) ->
     case catch gen_fsm:sync_send_all_state_event(Pid, status, Timeout) of
         {State, Props} when State == idle;
@@ -97,14 +99,17 @@ status(Pid, Timeout) ->
 %%% gen_fsm callbacks
 %%%===================================================================
 
+-spec init([]) -> {'stop',_} | {'ok','idle',#state{riak::atom() | pid() | {atom(),atom()},mon::reference()}}.
 init([]) ->
     {ok, Riak} = riak_connection(),
     Mon = erlang:monitor(process, Riak),
     {ok, idle, #state{riak=Riak, mon=Mon}}.
 
+-spec idle(_,_) -> {'next_state','idle',_}.
 idle(_Request, State) ->
     {next_state, idle, State}.
 
+-spec archiving(_,_) -> {'next_state','archiving',_} | {'stop','normal',#state{next::'$end_of_table'}}.
 archiving(continue, #state{next='$end_of_table'}=State) ->
     {stop, normal, State};
 archiving(continue, #state{riak=Riak, table=Table,
@@ -122,21 +127,26 @@ archiving(continue, #state{riak=Riak, table=Table,
 archiving(_Request, State) ->
     {next_state, archiving, State}.
 
+-spec idle(_,_,_) -> {'reply','ok','idle',_}.
 idle(_Request, _From, State) ->
     {reply, ok, idle, State}.
 
+-spec archiving(_,_,_) -> {'reply','ok','archiving',_}.
 archiving(_Request, _From, State) ->
     {reply, ok, archiving, State}.
 
+-spec handle_event(_,_,_) -> {'next_state',_,_}.
 handle_event(_Event, StateName, State) ->
     {next_state, StateName, State}.
 
+-spec handle_sync_event(_,_,_,_) -> {'reply','ok' | {_,[{_,_}]},_,_}.
 handle_sync_event(status, _From, StateName, #state{slice=Slice}=State) ->
     Props = [{slice, Slice} || Slice /= undefined],
     {reply, {StateName, Props}, StateName, State};
 handle_sync_event(_Event, _From, StateName, State) ->
     {reply, ok, StateName, State}.
 
+-spec handle_info(_,_,_) -> {'next_state',_,_} | {'stop',_,#state{}}.
 handle_info({'ETS-TRANSFER', Table, _From, Slice}, _StateName, State) ->
     continue(State#state{next=ets:first(Table), table=Table, slice=Slice});
 handle_info({'DOWN', _Mon, process, _Riak, _Reason}, StateName, State) ->
@@ -147,6 +157,7 @@ handle_info({'DOWN', _Mon, process, _Riak, _Reason}, StateName, State) ->
 handle_info(_Info, StateName, State) ->
     {next_state, StateName, State}.
 
+-spec terminate(_,_,#state{mon::'undefined' | reference(),table::atom() | ets:tid()}) -> 'ok'.
 terminate(Reason, StateName, #state{table=Table,
                                 riak=Riak,
                                 mon=Mon})
@@ -161,6 +172,7 @@ terminate(_Reason, _StateName, #state{table=Table,
     cleanup(Table, Riak, Mon),
     ok.
 
+-spec code_change(_,_,_,_) -> {'ok',_,_}.
 code_change(_OldVsn, StateName, State, _Extra) ->
     {ok, StateName, State}.
 
@@ -168,6 +180,7 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
+-spec riak_connection() -> any().
 riak_connection() ->
     {Host, Port} = riak_host_port(),
     Timeout = case application:get_env(riak_cs, riakc_connect_timeout) of
@@ -184,6 +197,7 @@ riak_connection() ->
 %% `riak_cs_riakc_pool_worker'. Move this to `riak_cs_config' once
 %% that has been merged.
 -spec riak_host_port() -> {string(), pos_integer()}.
+
 riak_host_port() ->
     case application:get_env(riak_cs, riak_ip) of
         {ok, Host} ->
@@ -199,35 +213,42 @@ riak_host_port() ->
     end,
     {Host, Port}.
 
+-spec cleanup(atom() | ets:tid(),_,'undefined' | reference()) -> any().
 cleanup(Table, Pid, Mon) ->
     cleanup_table(Table),
     cleanup_monitor(Mon),
     cleanup_socket(Pid).
 
+-spec cleanup_table(atom() | ets:tid()) -> 'ok' | 'true'.
 cleanup_table(undefined) ->
     ok;
 cleanup_table(Table) ->
     ets:delete(Table).
 
+-spec cleanup_monitor('undefined' | reference()) -> 'false' | 'ok' | 'true'.
 cleanup_monitor(undefined) ->
     ok;
 cleanup_monitor(Mon) ->
     erlang:demonitor(Mon, [flush]).
 
+-spec cleanup_socket(_) -> any().
 cleanup_socket(undefined) ->
     ok;
 cleanup_socket(Pid) ->
     riakc_pb_socket:stop(Pid).
 
+-spec continue(#state{}) -> {'next_state','archiving',#state{}}.
 continue(State) ->
     gen_fsm:send_event(?MODULE, continue),
     {next_state, archiving, State}.
 
+-spec archive_user(maybe_improper_list(binary() | maybe_improper_list(any(),binary() | []) | byte(),binary() | []),_,atom() | ets:tid(),{{{_,_,_},{_,_,_}},{{_,_,_},{_,_,_}}}) -> 'ok' | 'retry' | {'error',_}.
 archive_user(User, Riak, Table, Slice) ->
     Accesses = [ A || {_, A} <- ets:lookup(Table, User) ],
     Record = riak_cs_access:make_object(User, Accesses, Slice),
     store(User, Riak, Record, Slice).
 
+-spec store(maybe_improper_list(binary() | maybe_improper_list(any(),binary() | []) | byte(),binary() | []),_,_,{{{_,_,_},{_,_,_}},{{_,_,_},{_,_,_}}}) -> 'ok' | 'retry' | {'error',_}.
 store(User, Riak, Record, Slice) ->
     case catch riakc_pb_socket:put(Riak, Record) of
         ok ->

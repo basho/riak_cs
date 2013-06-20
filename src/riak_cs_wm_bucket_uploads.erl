@@ -43,22 +43,26 @@
 -define(RIAKCPOOL, bucket_list_pool).
 
 -spec init(#context{}) -> {ok, #context{}}.
+
 init(Ctx) ->
     {ok, Ctx#context{local_context=#key_context{},
                      riakc_pool=?RIAKCPOOL}}.
 
 -spec malformed_request(#wm_reqdata{}, #context{}) -> {false, #wm_reqdata{}, #context{}}.
+
 malformed_request(RD,Ctx=#context{local_context=LocalCtx0}) ->
     Bucket = list_to_binary(wrq:path_info(bucket, RD)),
     LocalCtx = LocalCtx0#key_context{bucket=Bucket},
     {false, RD, Ctx#context{local_context=LocalCtx}}.
 
 -spec authorize(#wm_reqdata{}, #context{}) -> {boolean() | {halt, non_neg_integer()}, #wm_reqdata{}, #context{}}.
+
 authorize(RD, Ctx) ->
     riak_cs_wm_utils:bucket_access_authorize_helper(bucket_uploads, false, RD, Ctx).
 
 %% @doc Get the list of methods this resource supports.
 -spec allowed_methods() -> [atom()].
+
 allowed_methods() ->
     ['GET'].
 
@@ -114,14 +118,17 @@ to_xml(RD, Ctx=#context{local_context=LocalCtx,
             riak_cs_s3_response:api_error(Reason, RD, Ctx)
     end.
 
+-spec multiple_choices(_,_) -> {'false',_,_}.
 multiple_choices(RD, Ctx) ->
     {false, RD, Ctx}.
 
+-spec finish_request(_,_) -> {'true',_,_}.
 finish_request(RD, Ctx) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"finish_request">>, [0], []),
     {true, RD, Ctx}.
 
 -spec content_types_provided(#wm_reqdata{}, #context{}) -> {[{string(), atom()}], #wm_reqdata{}, #context{}}.
+
 content_types_provided(RD, Ctx=#context{}) ->
     Method = wrq:method(RD),
     if Method == 'GET' ->
@@ -133,9 +140,11 @@ content_types_provided(RD, Ctx=#context{}) ->
     end.
 
 -spec content_types_accepted(#wm_reqdata{}, #context{}) -> {[{string(), atom()}], #wm_reqdata{}, #context{}}.
+
 content_types_accepted(RD, Ctx) ->
     riak_cs_mp_utils:make_content_types_accepted(RD, Ctx).
 
+-spec make_list_mp_uploads_opts(_) -> [{'delimiter','undefined' | binary()} | {'key_marker','undefined' | binary()} | {'max_uploads','undefined' | binary()} | {'prefix','undefined' | binary()} | {'upload_id_marker','undefined' | binary()}].
 make_list_mp_uploads_opts(RD) ->
     Params1 = [{"delimiter", delimiter},
                {"max-uploads", max_uploads},
@@ -145,6 +154,7 @@ make_list_mp_uploads_opts(RD) ->
     assemble_options(Params1, undefined, RD) ++
         assemble_options(Params2, <<>>, RD).
 
+-spec assemble_options([{[any(),...],'delimiter' | 'key_marker' | 'max_uploads' | 'prefix' | 'upload_id_marker'},...],'undefined' | <<>>,_) -> [{'delimiter','undefined' | binary()} | {'key_marker','undefined' | binary()} | {'max_uploads','undefined' | binary()} | {'prefix','undefined' | binary()} | {'upload_id_marker','undefined' | binary()}].
 assemble_options(Parameters, Default, RD) ->
     [case wrq:get_qs_value(Name, RD) of
          undefined -> {PropName, Default};

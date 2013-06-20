@@ -36,10 +36,12 @@
 -include_lib("webmachine/include/webmachine.hrl").
 
 -spec init(#context{}) -> {ok, #context{}}.
+
 init(Ctx) ->
     {ok, Ctx#context{local_context=#key_context{}}}.
 
 -spec malformed_request(#wm_reqdata{}, #context{}) -> {false, #wm_reqdata{}, #context{}}.
+
 malformed_request(RD,Ctx=#context{local_context=LocalCtx0}) ->
     Bucket = list_to_binary(wrq:path_info(bucket, RD)),
     %% need to unquote twice since we re-urlencode the string during rewrite in
@@ -55,6 +57,7 @@ malformed_request(RD,Ctx=#context{local_context=LocalCtx0}) ->
 %% directly returning from the {@link forbidden/2} webmachine export.
 -spec authorize(#wm_reqdata{}, #context{}) ->
                        {boolean() | {halt, term()}, #wm_reqdata{}, #context{}}.
+
 authorize(RD, Ctx0=#context{local_context=LocalCtx0, riakc_pid=RiakPid}) ->
     Method = wrq:method(RD),
     RequestedAccess =
@@ -67,9 +70,11 @@ authorize(RD, Ctx0=#context{local_context=LocalCtx0, riakc_pid=RiakPid}) ->
 
 %% @doc Get the list of methods this resource supports.
 -spec allowed_methods() -> [atom()].
+
 allowed_methods() ->
     ['POST'].
 
+-spec post_is_create(_,_) -> {'false',_,_}.
 post_is_create(RD, Ctx) ->
     {false, RD, Ctx}.
 
@@ -109,10 +114,12 @@ process_post(RD, Ctx=#context{local_context=LocalCtx,
             riak_cs_s3_response:api_error(Reason, RD, Ctx)
     end.
 
+-spec multiple_choices(_,_) -> {'false',_,_}.
 multiple_choices(RD, Ctx) ->
     {false, RD, Ctx}.
 
 -spec valid_entity_length(#wm_reqdata{}, #context{}) -> {boolean(), #wm_reqdata{}, #context{}}.
+
 valid_entity_length(RD, Ctx=#context{local_context=LocalCtx}) ->
     case wrq:method(RD) of
         'PUT' ->
@@ -135,11 +142,13 @@ valid_entity_length(RD, Ctx=#context{local_context=LocalCtx}) ->
             {true, RD, Ctx}
     end.
 
+-spec finish_request(_,_) -> {'true',_,_}.
 finish_request(RD, Ctx) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"finish_request">>, [0], []),
     {true, RD, Ctx}.
 
 -spec content_types_provided(#wm_reqdata{}, #context{}) -> {[{string(), atom()}], #wm_reqdata{}, #context{}}.
+
 content_types_provided(RD, Ctx=#context{}) ->
     Method = wrq:method(RD),
     if Method == 'POST' ->
@@ -151,5 +160,6 @@ content_types_provided(RD, Ctx=#context{}) ->
     end.
 
 -spec content_types_accepted(#wm_reqdata{}, #context{}) -> {[{string(), atom()}], #wm_reqdata{}, #context{}}.
+
 content_types_accepted(RD, Ctx) ->
     riak_cs_mp_utils:make_content_types_accepted(RD, Ctx).

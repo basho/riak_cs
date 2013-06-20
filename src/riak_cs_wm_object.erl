@@ -37,10 +37,12 @@
 -include_lib("webmachine/include/webmachine.hrl").
 
 -spec init(#context{}) -> {ok, #context{}}.
+
 init(Ctx) ->
     {ok, Ctx#context{local_context=#key_context{}}}.
 
 -spec malformed_request(#wm_reqdata{}, #context{}) -> {false, #wm_reqdata{}, #context{}}.
+
 malformed_request(RD,Ctx=#context{local_context=LocalCtx0}) ->
     Bucket = list_to_binary(wrq:path_info(bucket, RD)),
     %% need to unquote twice since we re-urlencode the string during rewrite in
@@ -55,6 +57,7 @@ malformed_request(RD,Ctx=#context{local_context=LocalCtx0}) ->
 %% directly returning from the {@link forbidden/2} webmachine export.
 -spec authorize(#wm_reqdata{}, #context{}) ->
                        {boolean() | {halt, term()}, #wm_reqdata{}, #context{}}.
+
 authorize(RD, Ctx0=#context{local_context=LocalCtx0,
                             response_module=ResponseMod,
                             riakc_pid=RiakPid}) ->
@@ -82,11 +85,13 @@ authorize(RD, Ctx0=#context{local_context=LocalCtx0,
 
 %% @doc Get the list of methods this resource supports.
 -spec allowed_methods() -> [atom()].
+
 allowed_methods() ->
     %% TODO: POST
     ['HEAD', 'GET', 'DELETE', 'PUT'].
 
 -spec valid_entity_length(#wm_reqdata{}, #context{}) -> {boolean(), #wm_reqdata{}, #context{}}.
+
 valid_entity_length(RD, Ctx=#context{response_module=ResponseMod}) ->
     case wrq:method(RD) of
         'PUT' ->
@@ -109,6 +114,7 @@ valid_entity_length(RD, Ctx=#context{response_module=ResponseMod}) ->
     end.
 
 -spec content_types_provided(#wm_reqdata{}, #context{}) -> {[{string(), atom()}], #wm_reqdata{}, #context{}}.
+
 content_types_provided(RD, Ctx=#context{local_context=LocalCtx,
                                         riakc_pid=RiakcPid}) ->
     Mfst = LocalCtx#key_context.manifest,
@@ -133,12 +139,14 @@ content_types_provided(RD, Ctx=#context{local_context=LocalCtx,
     end.
 
 -spec generate_etag(#wm_reqdata{}, #context{}) -> {string(), #wm_reqdata{}, #context{}}.
+
 generate_etag(RD, Ctx=#context{local_context=LocalCtx}) ->
     Mfst = LocalCtx#key_context.manifest,
     ETag = riak_cs_utils:etag_from_binary_no_quotes(Mfst?MANIFEST.content_md5),
     {ETag, RD, Ctx}.
 
 -spec last_modified(#wm_reqdata{}, #context{}) -> {calendar:datetime(), #wm_reqdata{}, #context{}}.
+
 last_modified(RD, Ctx=#context{local_context=LocalCtx}) ->
     Mfst = LocalCtx#key_context.manifest,
     ErlDate = riak_cs_wm_utils:iso_8601_to_erl_date(Mfst?MANIFEST.created),
@@ -146,6 +154,7 @@ last_modified(RD, Ctx=#context{local_context=LocalCtx}) ->
 
 -spec produce_body(#wm_reqdata{}, #context{}) ->
                           {{known_length_stream, non_neg_integer(), {<<>>, function()}}, #wm_reqdata{}, #context{}}.
+
 produce_body(RD, Ctx=#context{local_context=LocalCtx,
                               response_module=ResponseMod}) ->
     #key_context{get_fsm_pid=GetFsmPid, manifest=Mfst} = LocalCtx,
@@ -209,6 +218,7 @@ produce_body(RD, Ctx=#context{local_context=LocalCtx,
     end,
     {{known_length_stream, ResourceLength, StreamBody}, NewRQ2, Ctx}.
 
+-spec parse_range(_,'undefined' | non_neg_integer()) -> 'invalid_range' | {_,'follow_request' | 'ignore_request'}.
 parse_range(RD, ResourceLength) ->
     case wrq:get_req_header("range", RD) of
         undefined ->
@@ -227,6 +237,7 @@ parse_range(RD, ResourceLength) ->
 
 %% @doc Callback for deleting an object.
 -spec delete_resource(#wm_reqdata{}, #context{}) -> {true, #wm_reqdata{}, #context{}}.
+
 delete_resource(RD, Ctx=#context{local_context=LocalCtx,
                                  riakc_pid=RiakcPid}) ->
     #key_context{bucket=Bucket,
@@ -251,11 +262,13 @@ handle_delete_object({ok, _UUIDsMarkedforDelete}, UserName, BFile_str, RD, Ctx) 
     {true, RD, Ctx}.
 
 -spec content_types_accepted(#wm_reqdata{}, #context{}) -> {[{string(), atom()}], #wm_reqdata{}, #context{}}.
+
 content_types_accepted(RD, Ctx) ->
     content_types_accepted(wrq:get_req_header("Content-Type", RD), RD, Ctx).
 
 -spec content_types_accepted(undefined | string(), #wm_reqdata{}, #context{}) ->
                                     {[{string(), atom()}], #wm_reqdata{}, #context{}}.
+
 content_types_accepted(CT, RD, Ctx)
   when CT =:= undefined;
        CT =:= [] ->
@@ -286,6 +299,7 @@ content_types_accepted(CT, RD, Ctx=#context{local_context=LocalCtx0}) ->
     end.
 
 -spec accept_body(#wm_reqdata{}, #context{}) -> {{halt, integer()}, #wm_reqdata{}, #context{}}.
+
 accept_body(RD, Ctx=#context{local_context=LocalCtx,
                              response_module=ResponseMod,
                              riakc_pid=RiakcPid})
@@ -334,6 +348,7 @@ accept_body(RD, Ctx=#context{local_context=LocalCtx,
     accept_streambody(RD, Ctx, Pid, wrq:stream_req_body(RD, riak_cs_lfs_utils:block_size())).
 
 -spec accept_streambody(#wm_reqdata{}, #context{}, pid(), term()) -> {{halt, integer()}, #wm_reqdata{}, #context{}}.
+
 accept_streambody(RD,
                   Ctx=#context{local_context=_LocalCtx=#key_context{size=0}},
                   Pid,
@@ -361,6 +376,7 @@ accept_streambody(RD,
 %% the bucket exists for the user who is doing
 %% this PUT
 -spec finalize_request(#wm_reqdata{}, #context{}, pid()) -> {{halt, 200}, #wm_reqdata{}, #context{}}.
+
 finalize_request(RD,
                  Ctx=#context{local_context=LocalCtx,
                               start_time=StartTime,
@@ -398,6 +414,7 @@ check_0length_metadata_update(Length, RD, Ctx=#context{local_context=LocalCtx}) 
             {true, RD, Ctx#context{local_context=UpdLocalCtx}}
     end.
 
+-spec zero_length_metadata_update_p(integer(),_) -> boolean().
 zero_length_metadata_update_p(0, RD) ->
     OrigPath = wrq:get_req_header("x-rcs-rewrite-path", RD),
     case wrq:get_req_header("x-amz-copy-source", RD) of
@@ -413,6 +430,7 @@ zero_length_metadata_update_p(_, _) ->
     false.
 
 -spec format_etag(binary() | {binary(), string()}) -> string().
+
 format_etag({ContentMd5, Suffix}) ->
     riak_cs_utils:etag_from_binary(ContentMd5, Suffix);
 format_etag(ContentMd5) ->

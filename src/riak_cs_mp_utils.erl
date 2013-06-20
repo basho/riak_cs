@@ -63,6 +63,7 @@
 %%% API
 %%%===================================================================
 
+-spec calc_multipart_2i_dict([any()],_,_) -> {<<_:40>>,[any()]}.
 calc_multipart_2i_dict(Ms, Bucket, _Key) when is_list(Ms) ->
     %% According to API Version 2006-03-01, page 139-140, bucket
     %% owners have some privileges for multipart uploads performed by
@@ -82,9 +83,11 @@ calc_multipart_2i_dict(Ms, Bucket, _Key) when is_list(Ms) ->
                    M?MANIFEST.state == writing],
     {?MD_INDEX, lists:usort(lists:append(L_2i))}.
 
+-spec abort_multipart_upload(_,_,_,{_,_,_}) -> 'ok' | {'error',_} | {'ok',[{_,_,_,_,_}]} | {'upload_part_ready','undefined' | binary(),pid()}.
 abort_multipart_upload(Bucket, Key, UploadId, Caller) ->
     abort_multipart_upload(Bucket, Key, UploadId, Caller, nopid).
 
+-spec abort_multipart_upload(_,_,_,{_,_,_},_) -> 'ok' | {'error',_} | {'ok',[{_,_,_,_,_}]} | {'upload_part_ready','undefined' | binary(),pid()}.
 abort_multipart_upload(Bucket, Key, UploadId, Caller, RiakcPidUnW) ->
     do_part_common(abort, Bucket, Key, UploadId, Caller, [], RiakcPidUnW).
 
@@ -117,17 +120,21 @@ clean_multipart_unused_parts(?MANIFEST{bkey=BKey, props=Props} = Manifest,
             end
     end.
 
+-spec complete_multipart_upload(_,_,_,_,{_,_,_}) -> 'ok' | {'error',_} | {'ok',[{_,_,_,_,_}]} | {'upload_part_ready','undefined' | binary(),pid()}.
 complete_multipart_upload(Bucket, Key, UploadId, PartETags, Caller) ->
     complete_multipart_upload(Bucket, Key, UploadId, PartETags, Caller, nopid).
 
+-spec complete_multipart_upload(_,_,_,_,{_,_,_},_) -> 'ok' | {'error',_} | {'ok',[{_,_,_,_,_}]} | {'upload_part_ready','undefined' | binary(),pid()}.
 complete_multipart_upload(Bucket, Key, UploadId, PartETags, Caller, RiakcPidUnW) ->
     Extra = {PartETags},
     do_part_common(complete, Bucket, Key, UploadId, Caller, [{complete, Extra}],
                    RiakcPidUnW).
 
+-spec initiate_multipart_upload(binary(),binary(),binary(),{string(),string(),string()},[any()]) -> {'error','all_workers_busy' | 'poolboy_error'} | {'ok',binary()}.
 initiate_multipart_upload(Bucket, Key, ContentType, Owner, Opts) ->
     initiate_multipart_upload(Bucket, Key, ContentType, Owner, Opts, nopid).
 
+-spec initiate_multipart_upload(binary(),binary(),binary(),{string(),string(),string()},[any()],_) -> {'error','all_workers_busy' | 'poolboy_error'} | {'ok',binary()}.
 initiate_multipart_upload(Bucket, Key, ContentType, {_,_,_} = Owner,
                           Opts, RiakcPidUnW) ->
     write_new_manifest(new_manifest(Bucket, Key, ContentType, Owner, Opts),
@@ -168,9 +175,11 @@ make_content_types_accepted(CT, RD, Ctx=#context{local_context=LocalCtx0}, Callb
              Ctx}
     end.
 
+-spec make_special_error(_) -> binary() | {'error',binary(),binary() | maybe_improper_list()} | {'incomplete',binary(),binary()}.
 make_special_error(Error) ->
     make_special_error(Error, Error, "request-id", "host-id").
 
+-spec make_special_error(_,_,_,_) -> binary() | {'error',binary(),binary() | maybe_improper_list()} | {'incomplete',binary(),binary()}.
 make_special_error(Code, Message, RequestId, HostId) ->
     XmlDoc = {'Error',
               [
@@ -182,9 +191,11 @@ make_special_error(Code, Message, RequestId, HostId) ->
              },
     riak_cs_xml:export_xml([XmlDoc]).
 
+-spec list_multipart_uploads(_,{_,_,_},_) -> any().
 list_multipart_uploads(Bucket, Caller, Opts) ->
     list_multipart_uploads(Bucket, Caller, Opts, nopid).
 
+-spec list_multipart_uploads(_,{_,_,_},_,_) -> any().
 list_multipart_uploads(Bucket, {_Display, _Canon, CallerKeyId} = Caller,
                        Opts, RiakcPidUnW) ->
     case wrap_riak_connection(RiakcPidUnW) of
@@ -220,9 +231,11 @@ list_multipart_uploads(Bucket, {_Display, _Canon, CallerKeyId} = Caller,
             Else
     end.
 
+-spec list_parts(_,_,_,{_,_,_},_) -> 'ok' | {'error',_} | {'ok',[{_,_,_,_,_}]} | {'upload_part_ready','undefined' | binary(),pid()}.
 list_parts(Bucket, Key, UploadId, Caller, Opts) ->
     list_parts(Bucket, Key, UploadId, Caller, Opts, nopid).
 
+-spec list_parts(_,_,_,{_,_,_},_,_) -> 'ok' | {'error',_} | {'ok',[{_,_,_,_,_}]} | {'upload_part_ready','undefined' | binary(),pid()}.
 list_parts(Bucket, Key, UploadId, Caller, Opts, RiakcPidUnW) ->
     Extra = {Opts},
     do_part_common(list, Bucket, Key, UploadId, Caller, [{list, Extra}],
@@ -230,6 +243,7 @@ list_parts(Bucket, Key, UploadId, Caller, Opts, RiakcPidUnW) ->
 
 %% @doc
 -spec new_manifest(binary(), binary(), binary(), acl_owner(), list()) -> lfs_manifest().
+
 new_manifest(Bucket, Key, ContentType, {_, _, _} = Owner, Opts) ->
     UUID = druuid:v4(),
     %% TODO: add object metadata here, e.g. content-disposition et al.
@@ -253,14 +267,17 @@ new_manifest(Bucket, Key, ContentType, {_, _, _} = Owner, Opts) ->
                               owner = Owner},
     M?MANIFEST{props = replace_mp_manifest(MpM, M?MANIFEST.props)}.
 
+-spec upload_part(_,_,_,_,_,{_,_,_}) -> 'ok' | {'error',_} | {'ok',[{_,_,_,_,_}]} | {'upload_part_ready','undefined' | binary(),pid()}.
 upload_part(Bucket, Key, UploadId, PartNumber, Size, Caller) ->
     upload_part(Bucket, Key, UploadId, PartNumber, Size, Caller, nopid).
 
+-spec upload_part(_,_,_,_,_,{_,_,_},_) -> 'ok' | {'error',_} | {'ok',[{_,_,_,_,_}]} | {'upload_part_ready','undefined' | binary(),pid()}.
 upload_part(Bucket, Key, UploadId, PartNumber, Size, Caller, RiakcPidUnW) ->
     Extra = {Bucket, Key, UploadId, Caller, PartNumber, Size},
     do_part_common(upload_part, Bucket, Key, UploadId, Caller,
                    [{upload_part, Extra}], RiakcPidUnW).
 
+-spec upload_part_1blob(_,_) -> {'ok',_}.
 upload_part_1blob(PutPid, Blob) ->
     ok = riak_cs_put_fsm:augment_data(PutPid, Blob),
     {ok, M} = riak_cs_put_fsm:finalize(PutPid),
@@ -275,10 +292,12 @@ upload_part_1blob(PutPid, Blob) ->
 %% must thread the MD5 value through upload_part_finished and update
 %% the ?MULTIPART_MANIFEST in a mergeable way.  {sigh}
 
+-spec upload_part_finished(_,_,_,_,_,_,{_,_,_}) -> 'ok' | {'error',_} | {'ok',[{_,_,_,_,_}]} | {'upload_part_ready','undefined' | binary(),pid()}.
 upload_part_finished(Bucket, Key, UploadId, _PartNumber, PartUUID, MD5, Caller) ->
     upload_part_finished(Bucket, Key, UploadId, _PartNumber, PartUUID, MD5,
                          Caller, nopid).
 
+-spec upload_part_finished(_,_,_,_,_,_,{_,_,_},_) -> 'ok' | {'error',_} | {'ok',[{_,_,_,_,_}]} | {'upload_part_ready','undefined' | binary(),pid()}.
 upload_part_finished(Bucket, Key, UploadId, _PartNumber, PartUUID, MD5,
                      Caller, RiakcPidUnW) ->
     Extra = {PartUUID, MD5},
@@ -327,6 +346,7 @@ write_new_manifest(M, Opts, RiakcPidUnW) ->
 %%% Internal functions
 %%%===================================================================
 
+-spec do_part_common('abort' | 'complete' | 'list' | 'upload_part' | 'upload_part_finished',_,_,_,{_,_,_},[{'complete',{_}} | {'list',{_}} | {'upload_part',{_,_,_,_,_,_}} | {'upload_part_finished',{_,_}}],_) -> 'ok' | {'error',_} | {'ok',[{_,_,_,_,_}]} | {'upload_part_ready','undefined' | binary(),pid()}.
 do_part_common(Op, Bucket, Key, UploadId, {_,_,CallerKeyId} = _Caller, Props, RiakcPidUnW) ->
     case wrap_riak_connection(RiakcPidUnW) of
         {ok, RiakcPid} ->
@@ -521,9 +541,11 @@ update_manifest_with_confirmation(RiakcPid, Manifest) ->
         ok = riak_cs_manifest_fsm:stop(ManiPid)
     end.
 
+-spec make_2i_key(binary() | maybe_improper_list(any(),binary() | []) | byte()) -> binary().
 make_2i_key(Bucket) ->
     make_2i_key2(Bucket, "").
 
+-spec make_2i_key(binary() | maybe_improper_list(any(),binary() | []) | byte(),'undefined' | {_,_,binary() | maybe_improper_list(any(),binary() | []) | byte()}) -> binary().
 make_2i_key(Bucket, {_, _, OwnerStr}) ->
     make_2i_key2(Bucket, OwnerStr);
 make_2i_key(Bucket, undefined) ->
@@ -545,9 +567,11 @@ make_2i_key(Bucket, undefined) ->
 make_2i_key(Bucket, OwnerStr) when is_list(OwnerStr) ->
     make_2i_key2(Bucket, OwnerStr).
 
+-spec make_2i_key2(binary() | maybe_improper_list(any(),binary() | []) | byte(),binary() | maybe_improper_list(any(),binary() | []) | byte()) -> binary().
 make_2i_key2(Bucket, OwnerStr) ->
     iolist_to_binary(["rcs@", OwnerStr, "@", Bucket, "_bin"]).
 
+-spec list_multipart_uploads2(binary(),_,[any()],_,'owner' | 'undefined' | [binary() | maybe_improper_list(any(),binary() | []) | byte()]) -> {[any()],[any()]}.
 list_multipart_uploads2(Bucket, RiakcPid, Names, Opts, _CallerKeyId) ->
     FilterFun =
         fun(K, Acc) ->
@@ -556,9 +580,11 @@ list_multipart_uploads2(Bucket, RiakcPid, Names, Opts, _CallerKeyId) ->
     {Manifests, Prefixes} = lists:foldl(FilterFun, {[], ordsets:new()}, Names),
     {lists:sort(Manifests), ordsets:to_list(Prefixes)}.
 
+-spec filter_uploads_list(binary(),binary(),[any()],pid(),_) -> any().
 filter_uploads_list(Bucket, Key, Opts, RiakcPid, Acc) ->
     multipart_manifests_for_key(Bucket, Key, Opts, Acc, RiakcPid).
 
+-spec parameter_filter(_,_,_,_,_,binary()) -> any().
 parameter_filter(M, Acc, _, _, KeyMarker, _)
   when M?MULTIPART_DESCR.key =< KeyMarker->
     Acc;
@@ -589,6 +615,7 @@ parameter_filter(M, {Manifests, Prefixes}=Acc, Prefix, Delimiter, _, _) ->
             {Manifests, Prefixes}
     end.
 
+-spec extract_group(binary(),binary()) -> 'nomatch' | binary().
 extract_group(Key, Delimiter) ->
     case binary:match(Key, [Delimiter]) of
         nomatch ->
@@ -603,12 +630,14 @@ update_keys_and_prefixes({Keys, Prefixes}, _, Prefix, PrefixLen, Group) ->
     NewPrefix = << Prefix:PrefixLen/binary, Group/binary >>,
     {Keys, ordsets:add_element(NewPrefix, Prefixes)}.
 
+-spec multipart_manifests_for_key(binary(),binary(),[any()],_,pid()) -> any().
 multipart_manifests_for_key(Bucket, Key, Opts, Acc, RiakcPid) ->
     ParameterFilter = build_parameter_filter(Opts),
     Manifests = handle_get_manifests_result(
                   riak_cs_utils:get_manifests(RiakcPid, Bucket, Key)),
     lists:foldl(ParameterFilter, Acc, Manifests).
 
+-spec build_parameter_filter([any()]) -> fun((_,_) -> any()).
 build_parameter_filter(Opts) ->
     Prefix = proplists:get_value(prefix, Opts),
     Delimiter = proplists:get_value(delimiter, Opts),
@@ -617,6 +646,7 @@ build_parameter_filter(Opts) ->
                            proplists:get_value(upload_id_marker, Opts)),
     build_parameter_filter(Prefix, Delimiter, KeyMarker, UploadIdMarker).
 
+-spec build_parameter_filter(_,_,_,binary()) -> fun((_,_) -> any()).
 build_parameter_filter(Prefix, Delimiter, KeyMarker, UploadIdMarker) ->
     fun(Key, Acc) ->
             parameter_filter(Key, Acc, Prefix, Delimiter, KeyMarker, UploadIdMarker)
@@ -631,6 +661,7 @@ handle_get_manifests_result(_) ->
     [].
 
 -spec is_multipart_manifest(?MANIFEST{}) -> boolean().
+
 is_multipart_manifest(?MANIFEST{props=Props}) ->
     case proplists:get_value(multipart, Props) of
         undefined ->
@@ -640,6 +671,7 @@ is_multipart_manifest(?MANIFEST{props=Props}) ->
     end.
 
 -spec multipart_description(?MANIFEST{}) -> ?MULTIPART_DESCR{}.
+
 multipart_description(Manifest) ->
     MpM =  proplists:get_value(multipart, Manifest?MANIFEST.props),
     ?MULTIPART_DESCR{
@@ -651,6 +683,7 @@ multipart_description(Manifest) ->
 
 %% @doc Will cause error:{badmatch, {m_ibco, _}} if CallerKeyId does not exist
 
+-spec is_caller_bucket_owner(pid(),_,'undefined' | [binary() | maybe_improper_list(any(),binary() | []) | byte()]) -> boolean().
 is_caller_bucket_owner(RiakcPid, Bucket, CallerKeyId) ->
     {m_icbo, {ok, {C, _}}} = {m_icbo, riak_cs_utils:get_user(CallerKeyId,
                                                              RiakcPid)},
@@ -658,6 +691,7 @@ is_caller_bucket_owner(RiakcPid, Bucket, CallerKeyId) ->
                   B <- riak_cs_utils:get_buckets(C)],
     lists:member(Bucket, Buckets).
 
+-spec find_manifest_with_uploadid(_,[{_,_}]) -> any().
 find_manifest_with_uploadid(UploadId, Manifests) ->
     case lists:keyfind(UploadId, 1, Manifests) of
         false ->
@@ -697,6 +731,7 @@ comb_parts(MpM, PartETags) ->
                                         All))],
     {KeepBytes, lists:reverse(KeepPMs), ToDelete}.
 
+-spec comb_parts_fold({_,_},{dict(),dict(),_,_,number(),_}) -> {dict(),dict(),_,_,number(),nonempty_maybe_improper_list()}.
 comb_parts_fold({PartNum, _ETag} = _K,
                 {_All, _Keep, _Delete, LastPartNum, _Bytes, _KeepPMs})
   when PartNum =< LastPartNum orelse PartNum < 1 ->
@@ -728,6 +763,7 @@ move_dead_parts_to_gc(Bucket, Key, PartsToDelete, RiakcPid) ->
                                    block_size=P_BlockSize} <- PartsToDelete],
     ok = riak_cs_gc:move_manifests_to_gc_bucket(PartDelMs, RiakcPid, false).
 
+-spec enforce_part_size([any()]) -> 'true'.
 enforce_part_size(PartsToKeep) ->
     case riak_cs_config:enforce_multipart_part_size() of
         true ->
@@ -736,6 +772,7 @@ enforce_part_size(PartsToKeep) ->
             true
     end.
 
+-spec eval_part_sizes(['undefined' | integer()]) -> 'true'.
 eval_part_sizes([]) ->
     true;
 eval_part_sizes([_]) ->
@@ -756,6 +793,7 @@ eval_part_sizes(L) ->
 %%
 %% If we're to allocate our own Riak client pids, we use the atom 'nopid'.
 
+-spec wrap_riak_connection(_) -> {'error','all_workers_busy' | 'poolboy_error'} | {'ok',{'local_pid',pid()} | {'remote_pid',_}}.
 wrap_riak_connection(nopid) ->
     case riak_cs_utils:riak_connection() of
         {ok, RiakcPid} ->
@@ -766,17 +804,20 @@ wrap_riak_connection(nopid) ->
 wrap_riak_connection(RiakcPid) ->
     {ok, {remote_pid, RiakcPid}}.
 
+-spec wrap_close_riak_connection({'local_pid',pid()} | {'remote_pid',_}) -> 'ok'.
 wrap_close_riak_connection({local_pid, RiakcPid}) ->
     riak_cs_utils:close_riak_connection(RiakcPid);
 wrap_close_riak_connection({remote_pid, _RiakcPid}) ->
     ok.
 
+-spec get_riakc_pid({'local_pid',pid()} | {'remote_pid',_}) -> any().
 get_riakc_pid({local_pid, RiakcPid}) ->
     RiakcPid;
 get_riakc_pid({remote_pid, RiakcPid}) ->
     RiakcPid.
 
 -spec get_mp_manifest(lfs_manifest()) -> multipart_manifest() | 'undefined'.
+
 get_mp_manifest(?MANIFEST{props = Props}) when is_list(Props) ->
     %% TODO: When the version number of the multipart_manifest_v1 changes
     %%       to version v2 and beyond, this might be a good place to add
