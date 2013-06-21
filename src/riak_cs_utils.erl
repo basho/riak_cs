@@ -599,9 +599,9 @@ get_user_by_index(Index, Value, RiakPid) ->
 -spec get_user_index(binary(), binary(), pid()) -> {ok, string()} | {error, term()}.
 get_user_index(Index, Value, RiakPid) ->
     case riakc_pb_socket:get_index(RiakPid, ?USER_BUCKET, Index, Value) of
-        {ok, []} ->
+        {ok, {keys, []}} ->
             {error, notfound};
-        {ok, [Key | _]} ->
+        {ok, {keys, [Key | _]}} ->
             {ok, binary_to_list(Key)};
         {error, Reason}=Error ->
             _ = lager:warning("Error occurred trying to query ~p in user index ~p. Reason: ~p", [Value,
