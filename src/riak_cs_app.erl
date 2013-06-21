@@ -81,19 +81,13 @@ check_bucket_props() ->
                ?ACCESS_BUCKET,
                ?STORAGE_BUCKET,
                ?BUCKETS_BUCKET],
-    case riak_connection() of
-        {ok, Riak} ->
-            try
-                lists:all(fun(X) -> X =:= ok end,
-                          [check_bucket_props(Bucket, Riak) ||
-                              Bucket <- Buckets])
-            after
-                riakc_pb_socket:stop(Riak)
-            end;
-        {error, Reason} ->
-            _ = lager:warning("Unable to verify Riak bucket settings. "
-                             "Reason: ~p", [Reason]),
-            false
+    {ok, Riak} = riak_connection(),
+    try
+        lists:all(fun(X) -> X =:= ok end,
+                  [check_bucket_props(Bucket, Riak) ||
+                      Bucket <- Buckets])
+    after
+        riakc_pb_socket:stop(Riak)
     end.
 
 -spec check_bucket_props(binary(), pid()) -> ok | {error, failed}.
