@@ -353,7 +353,6 @@ handle_sync_event(_Event, _From, _StateName, StateData) ->
     {stop,badmsg,StateData}.
 
 %% @private
--spec handle_info(_,_,_) -> any().
 handle_info(request_timeout, StateName, StateData) ->
     ?MODULE:StateName(request_timeout, StateData);
 %% TODO:
@@ -389,7 +388,6 @@ terminate(_Reason, _StateName, #state{test=true,
     [catch exit(Pid, kill) || Pid <- ReaderPids].
 
 %% @private
--spec code_change(_,_,_,_) -> {'ok',_,_}.
 code_change(_OldVsn, StateName, State, _Extra) -> {ok, StateName, State}.
 
 %% ===================================================================

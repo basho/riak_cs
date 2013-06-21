@@ -236,7 +236,6 @@ waiting_map_reduce({ReqID, {error, Reason}},
                    State=#state{map_red_req_id=ReqID}) ->
     {stop, Reason, State}.
 
--spec handle_event(_,_,_) -> {'next_state',_,_}.
 handle_event(_Event, StateName, State) ->
     {next_state, StateName, State}.
 
@@ -269,7 +268,6 @@ terminate(normal, _StateName, #state{req_profiles=Profilings}) ->
 terminate(_Reason, _StateName, _State) ->
     ok.
 
--spec code_change(_,_,_,_) -> {'ok',_,_}.
 code_change(_OldVsn, StateName, State, _Extra) ->
     {ok, StateName, State}.
 

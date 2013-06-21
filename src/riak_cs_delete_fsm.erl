@@ -105,15 +105,12 @@ deleting({block_deleted, {error, {unsatisfied_constraint, _, BlockID}}, DeleterP
 deleting({block_deleted, {error, Error}, _DeleterPid}, State) ->
     {stop, Error, State}.
 
--spec handle_event(_,_,_) -> {'next_state',_,_}.
 handle_event(_Event, StateName, State) ->
     {next_state, StateName, State}.
 
--spec handle_sync_event(_,_,_,_) -> {'next_state',_,_}.
 handle_sync_event(_Event, _From, StateName, State) ->
     {next_state, StateName, State}.
 
--spec handle_info(_,_,_) -> {'next_state',_,_}.
 handle_info(_Info, StateName, State) ->
     {next_state, StateName, State}.
 
@@ -128,7 +125,6 @@ terminate(Reason, _StateName, #state{all_delete_workers=AllDeleteWorkers,
     notify_gc_daemon(Reason, State),
     ok.
 
--spec code_change(_,_,_,_) -> {'ok',_,_}.
 code_change(_OldVsn, StateName, State, _Extra) ->
     {ok, StateName, State}.
 

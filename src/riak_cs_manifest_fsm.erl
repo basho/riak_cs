@@ -178,7 +178,6 @@ init([test, Bucket, Key]) ->
 %% Once it has been called _once_
 %% with a particular UUID, update_manifest
 %% should be used from then on out.
--spec waiting_command({'add_new_dict',_},#state{bucket::binary(),key::binary(),riakc_pid::pid()}) -> {'next_state','waiting_update_command',#state{bucket::binary(),key::binary(),manifests::'undefined' | [{_,_}],riakc_pid::pid()}}.
 waiting_command({add_new_dict, WrappedManifest}, State=#state{riakc_pid=RiakcPid,
                                                            bucket=Bucket,
                                                            key=Key}) ->
@@ -186,7 +185,6 @@ waiting_command({add_new_dict, WrappedManifest}, State=#state{riakc_pid=RiakcPid
     UpdState = State#state{riak_object=RiakObj, manifests=Manifests},
     {next_state, waiting_update_command, UpdState}.
 
--spec waiting_update_command({'update_manifests',_},#state{bucket::binary(),key::binary(),manifests::'undefined' | [{_,_}],riakc_pid::pid()}) -> {'next_state','waiting_update_command',#state{bucket::binary(),key::binary(),riakc_pid::pid()}}.
 waiting_update_command({update_manifests, WrappedManifests}, State=#state{riakc_pid=RiakcPid,
                                                                  bucket=Bucket,
                                                                  key=Key,
@@ -250,7 +248,6 @@ waiting_update_command({update_manifests_with_confirmation, WrappedManifests}, _
 
     {reply, Reply, waiting_update_command, State#state{riak_object=undefined,
                                                        manifests=undefined}}.
--spec handle_event(_,_,_) -> {'next_state',_,_}.
 handle_event(_Event, StateName, State) ->
     {next_state, StateName, State}.
 
@@ -259,7 +256,6 @@ handle_sync_event(stop, _From, _StateName, State) ->
     Reply = ok,
     {stop, normal, Reply, State}.
 
--spec handle_info(_,_,_) -> {'next_state',_,_}.
 handle_info(_Info, StateName, State) ->
     {next_state, StateName, State}.
 
@@ -267,7 +263,6 @@ handle_info(_Info, StateName, State) ->
 terminate(_Reason, _StateName, _State) ->
     ok.
 
--spec code_change(_,_,_,_) -> {'ok',_,_}.
 code_change(_OldVsn, StateName, State, _Extra) ->
     {ok, StateName, State}.
 

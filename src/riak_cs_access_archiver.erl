@@ -105,11 +105,9 @@ init([]) ->
     Mon = erlang:monitor(process, Riak),
     {ok, idle, #state{riak=Riak, mon=Mon}}.
 
--spec idle(_,_) -> {'next_state','idle',_}.
 idle(_Request, State) ->
     {next_state, idle, State}.
 
--spec archiving(_,_) -> {'next_state','archiving',_} | {'stop','normal',#state{next::'$end_of_table'}}.
 archiving(continue, #state{next='$end_of_table'}=State) ->
     {stop, normal, State};
 archiving(continue, #state{riak=Riak, table=Table,
@@ -127,26 +125,21 @@ archiving(continue, #state{riak=Riak, table=Table,
 archiving(_Request, State) ->
     {next_state, archiving, State}.
 
--spec idle(_,_,_) -> {'reply','ok','idle',_}.
 idle(_Request, _From, State) ->
     {reply, ok, idle, State}.
 
--spec archiving(_,_,_) -> {'reply','ok','archiving',_}.
 archiving(_Request, _From, State) ->
     {reply, ok, archiving, State}.
 
--spec handle_event(_,_,_) -> {'next_state',_,_}.
 handle_event(_Event, StateName, State) ->
     {next_state, StateName, State}.
 
--spec handle_sync_event(_,_,_,_) -> {'reply','ok' | {_,[{_,_}]},_,_}.
 handle_sync_event(status, _From, StateName, #state{slice=Slice}=State) ->
     Props = [{slice, Slice} || Slice /= undefined],
     {reply, {StateName, Props}, StateName, State};
 handle_sync_event(_Event, _From, StateName, State) ->
     {reply, ok, StateName, State}.
 
--spec handle_info(_,_,_) -> {'next_state',_,_} | {'stop',_,#state{}}.
 handle_info({'ETS-TRANSFER', Table, _From, Slice}, _StateName, State) ->
     continue(State#state{next=ets:first(Table), table=Table, slice=Slice});
 handle_info({'DOWN', _Mon, process, _Riak, _Reason}, StateName, State) ->
@@ -172,7 +165,6 @@ terminate(_Reason, _StateName, #state{table=Table,
     cleanup(Table, Riak, Mon),
     ok.
 
--spec code_change(_,_,_,_) -> {'ok',_,_}.
 code_change(_OldVsn, StateName, State, _Extra) ->
     {ok, StateName, State}.
 
@@ -237,7 +229,6 @@ cleanup_socket(undefined) ->
 cleanup_socket(Pid) ->
     riakc_pb_socket:stop(Pid).
 
--spec continue(#state{}) -> {'next_state','archiving',#state{}}.
 continue(State) ->
     gen_fsm:send_event(?MODULE, continue),
     {next_state, archiving, State}.

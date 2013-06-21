@@ -164,7 +164,6 @@ idle(_, State=#state{interval_remaining=IntervalRemaining}) ->
 %% @doc Async transitions from `fetching_next_fileset' are all due to
 %% messages the FSM sends itself, in order to have opportunities to
 %% handle messages from the outside world (like `status').
--spec fetching_next_fileset(_,_) -> {'next_state','fetching_next_fileset' | 'idle' | 'initiating_file_delete',_}.
 fetching_next_fileset(continue, #state{batch=[]}=State) ->
     %% finished with this batch
     _ = lager:info("Finished garbage collection: "
@@ -202,7 +201,6 @@ fetching_next_fileset(_, State) ->
 %% @doc This state initiates the deletion of a file from
 %% a set of manifests stored for a particular key in the
 %% garbage collection bucket.
--spec initiating_file_delete(_,_) -> {'next_state','fetching_next_fileset' | 'initiating_file_delete' | 'waiting_file_delete',_}.
 initiating_file_delete(continue, #state{batch=[_ManiSetKey | RestKeys],
                                         batch_count=BatchCount,
                                         current_files=[],
@@ -237,11 +235,9 @@ initiating_file_delete(continue, #state{current_files=[Manifest | _RestManifests
 initiating_file_delete(_, State) ->
     {next_state, initiating_file_delete, State}.
 
--spec waiting_file_delete(_,_) -> {'next_state','waiting_file_delete',_}.
 waiting_file_delete(_, State) ->
     {next_state, waiting_file_delete, State}.
 
--spec paused(_,_) -> {'next_state','paused',_}.
 paused(_, State) ->
     {next_state, paused, State}.
 
@@ -317,7 +313,6 @@ paused(Msg, _From, State) ->
     {reply, handle_common_sync_reply(Msg, Common, State), paused, State}.
 
 %% @doc there are no all-state events for this fsm
--spec handle_event(_,_,_) -> {'next_state',_,_}.
 handle_event(_Event, StateName, State) ->
     {next_state, StateName, State}.
 
@@ -335,7 +330,6 @@ handle_sync_event(stop, _From, _StateName, State) ->
 handle_sync_event(_Event, _From, StateName, State) ->
     ok_reply(StateName, State).
 
--spec handle_info(_,_,_) -> {'next_state',_,_}.
 handle_info(start_batch, idle, State) ->
     NewState = start_batch(State),
     {next_state, fetching_next_fileset, NewState};
@@ -353,7 +347,6 @@ terminate(_Reason, _StateName, _State) ->
     ok.
 
 %% @doc this fsm has no special upgrade process
--spec code_change(_,_,_,_) -> {'ok',_,_}.
 code_change(_OldVsn, StateName, State, _Extra) ->
     {ok, StateName, State}.
 

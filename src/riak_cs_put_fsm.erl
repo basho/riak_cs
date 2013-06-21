@@ -288,7 +288,6 @@ not_full({augment_data, NewData}, From,
             handle_receiving_last_chunk(NewData, State)
     end.
 
--spec all_received('finalize' | {'augment_data',<<>>},_,_) -> {'next_state','all_received',_}.
 all_received({augment_data, <<>>}, _From, State) ->
     {next_state, all_received, State};
 all_received(finalize, From, State) ->
@@ -313,14 +312,12 @@ done(finalize, _From, State=#state{manifest=Manifest,
 %%--------------------------------------------------------------------
 %%
 %%--------------------------------------------------------------------
--spec handle_event(_,_,_) -> {'next_state',_,_}.
 handle_event(_Event, StateName, State) ->
     {next_state, StateName, State}.
 
 %%--------------------------------------------------------------------
 %%
 %%--------------------------------------------------------------------
--spec handle_sync_event(_,_,_,_) -> {'reply','ok' | {_,_},_,_} | {'stop','normal','ok',_}.
 handle_sync_event(current_state, _From, StateName, State) ->
     Reply = {StateName, State},
     {reply, Reply, StateName, State};
@@ -357,7 +354,6 @@ terminate(_Reason, _StateName, #state{mani_pid=ManiPid,
 %%--------------------------------------------------------------------
 %%
 %%--------------------------------------------------------------------
--spec code_change(_,_,_,_) -> {'ok',_,_}.
 code_change(_OldVsn, StateName, State, _Extra) ->
     {ok, StateName, State}.
 

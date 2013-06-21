@@ -142,19 +142,16 @@ init([]) ->
 
 %% Asynchronous events
 
--spec prepare('timeout',#state{}) -> {'next_state','idle',#state{schedule::maybe_improper_list()}}.
 prepare(timeout, State) ->
     try_prepare(State).
 
 %% @doc Transitions out of idle are all synchronous events
--spec idle(_,_) -> {'next_state','idle',_}.
 idle(_, State) ->
     {next_state, idle, State}.
 
 %% @doc Async transitions from calculating are all due to messages the
 %% FSM sends itself, in order to have opportunities to handle messages
 %% from the outside world (like `status').
--spec calculating(_,_) -> {'next_state','calculating' | 'idle',_}.
 calculating(continue, #state{batch=[], current=Current}=State) ->
     %% finished with this batch
     _ = lager:info("Finished storage calculation in ~b seconds.",
@@ -172,7 +169,6 @@ calculating(continue, State) ->
 calculating(_, State) ->
     {next_state, calculating, State}.
 
--spec paused(_,_) -> {'next_state','paused',_}.
 paused(_, State) ->
     {next_state, paused, State}.
 
@@ -240,17 +236,14 @@ paused(_, _From, State) ->
     {reply, ok, paused, State}.
 
 %% @doc there are no all-state events for this fsm
--spec handle_event(_,_,_) -> {'next_state',_,_}.
 handle_event(_Event, StateName, State) ->
     {next_state, StateName, State}.
 
 %% @doc there are no all-state events for this fsm
--spec handle_sync_event(_,_,_,_) -> {'reply','ok',_,_}.
 handle_sync_event(_Event, _From, StateName, State) ->
     Reply = ok,
     {reply, Reply, StateName, State}.
 
--spec handle_info(_,_,_) -> {'next_state',_,_}.
 handle_info({start_batch, Next}, idle, #state{next=Next}=State) ->
     %% next is scheduled immediately in order to generate warnings if
     %% the current calculation runs over time (see next clause)
@@ -273,7 +266,6 @@ terminate(_Reason, _StateName, _State) ->
     ok.
 
 %% @doc this fsm has no special upgrade process
--spec code_change(_,_,_,_) -> {'ok',_,_}.
 code_change(_OldVsn, StateName, State, _Extra) ->
     {ok, StateName, State}.
 
