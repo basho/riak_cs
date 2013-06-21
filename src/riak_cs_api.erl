@@ -48,13 +48,13 @@ list_objects(_UserBuckets, Bucket, MaxKeys, Options, RiakPid) ->
     BinPid = riak_cs_utils:pid_to_binary(self()),
     CacheKey = << BinPid/binary, <<":">>/binary, Bucket/binary >>,
     UseCache = riak_cs_list_objects_ets_cache:cache_enabled(),
-    case riak_cs_list_objects_fsm:start_link(RiakPid,
-                                             self(),
-                                             ListKeysRequest,
-                                             CacheKey,
-                                             UseCache) of
+    case riak_cs_list_objects_utils:start_link(RiakPid,
+                                               self(),
+                                               ListKeysRequest,
+                                               CacheKey,
+                                               UseCache) of
         {ok, ListFSMPid} ->
-            riak_cs_list_objects_fsm:get_object_list(ListFSMPid);
+            riak_cs_list_objects_utils:get_object_list(ListFSMPid);
         {error, _}=Error ->
             Error
     end.

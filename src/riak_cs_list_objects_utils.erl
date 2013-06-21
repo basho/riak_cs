@@ -215,7 +215,7 @@ update_keys_and_prefixes({ManifestList, Prefixes},
 
 -spec get_key_list_multiplier() -> float().
 get_key_list_multiplier() ->
-    riak_cs_utils:get_env(riak_cs, key_list_multiplier,
+    riak_cs_config:get_env(riak_cs, key_list_multiplier,
                           ?KEY_LIST_MULTIPLIER).
 
 -spec set_key_list_multiplier(float()) -> 'ok'.
@@ -226,5 +226,5 @@ set_key_list_multiplier(Multiplier) ->
 
 -spec fold_objects_for_list_keys() -> boolean().
 fold_objects_for_list_keys() ->
-    riak_cs_utils:get_env(riak_cs, fold_objects_for_list_keys,
+    riak_cs_config:get_env(riak_cs, fold_objects_for_list_keys,
                           ?FOLD_OBJECTS_FOR_LIST_KEYS).
