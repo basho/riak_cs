@@ -210,8 +210,6 @@ handle_done(State=#state{object_buffer=ObjectBuffer,
     riak_cs_list_objects_utils:filter_prefix_keys(ObjectPrefixTuple, Request),
     ReachedEnd = ObjectBufferLength < NumKeysRequested andalso
                  UserMaxKeys > riak_cs_list_objects_utils:manifests_and_prefix_length(ObjectPrefixTuple2),
-    lager:error("Num keys requested is ~p", [NumKeysRequested]),
-    lager:error("Reached end is ~p", [ReachedEnd]),
 
     SlicedTaggedItems =
     riak_cs_list_objects_utils:manifests_and_prefix_slice(ObjectPrefixTuple2,
