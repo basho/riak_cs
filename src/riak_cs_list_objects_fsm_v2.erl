@@ -197,7 +197,6 @@ handle_done(State=#state{object_buffer=ObjectBuffer,
     ProfilingStateData = update_profiling_state_with_end(State,
                                                          os:timestamp(),
                                                          ObjectBufferLength),
-    ReachedEnd = ObjectBufferLength < NumKeysRequested,
     RangeUpdatedStateData = update_last_request_state(ProfilingStateData, ObjectBuffer),
 
     FilteredObjects = exclude_key_from_state(State, ObjectBuffer),
@@ -209,6 +208,10 @@ handle_done(State=#state{object_buffer=ObjectBuffer,
 
     ObjectPrefixTuple2 =
     riak_cs_list_objects_utils:filter_prefix_keys(ObjectPrefixTuple, Request),
+    ReachedEnd = ObjectBufferLength < NumKeysRequested andalso
+                 UserMaxKeys > riak_cs_list_objects_utils:manifests_and_prefix_length(ObjectPrefixTuple2),
+    lager:error("Num keys requested is ~p", [NumKeysRequested]),
+    lager:error("Reached end is ~p", [ReachedEnd]),
 
     SlicedTaggedItems =
     riak_cs_list_objects_utils:manifests_and_prefix_slice(ObjectPrefixTuple2,
@@ -261,19 +264,17 @@ make_2i_request(RiakcPid, State=#state{req=?LOREQ{name=BucketName}}) ->
     StartKey = make_start_key(State),
     EndKey = big_end_key(128),
     NumResults = 1002,
-    Opts = [{return_terms, true}, {max_results, NumResults}, {stream, true}],
     NewStateData = State#state{last_request_start_key=StartKey,
                                last_request_num_keys_requested=NumResults},
     NewStateData2 = update_profiling_state_with_start(NewStateData,
                                                       StartKey,
                                                       EndKey,
                                                       os:timestamp()),
-    Ref = riakc_pb_socket:get_index_range(RiakcPid,
-                                          ManifestBucket,
-                                          <<"$key">>,
-                                          StartKey,
-                                          EndKey,
-                                          Opts),
+    Opts = [{max_results, NumResults},
+            {start_key, StartKey}, {end_key, EndKey}],
+    Ref = riakc_pb_socket:cs_bucket_fold(RiakcPid,
+                                         ManifestBucket,
+                                         Opts),
     {NewStateData2, Ref}.
 
 -spec last_result_is_common_prefix(state()) -> boolean().
@@ -341,7 +342,7 @@ big_end_key(NumBytes) ->
 -spec map_active_manifests([orddict:orddict()]) -> list(lfs_manifest()).
 map_active_manifests(Manifests) ->
     ActiveTuples = [riak_cs_manifest_utils:active_manifest(M) ||
-                    M <- Manifests],
+            M <- Manifests],
     [A || {ok, A} <- ActiveTuples].
 
 -spec exclude_key_from_state(state(), list(riakc_obj:riakc_obj())) ->
@@ -425,7 +426,7 @@ update_last_request_state(State=#state{last_request_start_key=StartKey,
                                         StartTime :: float()) ->
     state().
 update_profiling_state_with_start(State=#state{profiling=Profiling},
-                            StartKey, EndKey, StartTime) ->
+                                  StartKey, EndKey, StartTime) ->
     TempData = {{StartKey, EndKey},
                 StartTime},
     NewProfiling = Profiling#profiling{temp_fold_objects_request=TempData},
