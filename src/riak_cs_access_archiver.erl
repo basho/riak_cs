@@ -98,15 +98,9 @@ status(Pid, Timeout) ->
 %%%===================================================================
 
 init([]) ->
-    case riak_connection() of
-        {ok, Riak} ->
-            Mon = erlang:monitor(process, Riak),
-            {ok, idle, #state{riak=Riak, mon=Mon}};
-        {error, Reason} ->
-            _ = lager:error("Access archiver connection to Riak failed (~p)",
-                            [Reason]),
-            {stop, Reason}
-    end.
+    {ok, Riak} = riak_connection(),
+    Mon = erlang:monitor(process, Riak),
+    {ok, idle, #state{riak=Riak, mon=Mon}}.
 
 idle(_Request, State) ->
     {next_state, idle, State}.
@@ -146,17 +140,10 @@ handle_sync_event(_Event, _From, StateName, State) ->
 handle_info({'ETS-TRANSFER', Table, _From, Slice}, _StateName, State) ->
     continue(State#state{next=ets:first(Table), table=Table, slice=Slice});
 handle_info({'DOWN', _Mon, process, _Riak, _Reason}, StateName, State) ->
-    case riak_connection() of
-        {ok, NewRiak} ->
-            NewMon = erlang:monitor(process, NewRiak),
-            gen_fsm:send_event(?MODULE, continue),
-            {next_state, StateName, State#state{riak=NewRiak, mon=NewMon}};
-        {error, Reason} ->
-            _ = lager:error("Access archiver connection to Riak failed"
-                             " (~p), stats for ~p were lost",
-                             [Reason, State#state.slice]),
-            {stop, Reason, State}
-    end;
+    {ok, NewRiak} = riak_connection(),
+    NewMon = erlang:monitor(process, NewRiak),
+    gen_fsm:send_event(?MODULE, continue),
+    {next_state, StateName, State#state{riak=NewRiak, mon=NewMon}};
 handle_info(_Info, StateName, State) ->
     {next_state, StateName, State}.
 
