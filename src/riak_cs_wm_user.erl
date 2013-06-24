@@ -107,25 +107,16 @@ create_path(RD, Ctx) -> {"/riak-cs/user", RD, Ctx}.
     {boolean() | {halt, term()}, term(), term()}.
 accept_json(RD, Ctx=#context{user=undefined}) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"accept_json">>),
-    Body = wrq:req_body(RD),
-    case catch mochijson2:decode(Body) of
-        {struct, UserItems} ->
-            ValidItems = lists:foldl(fun user_json_filter/2, [], UserItems),
-            UserName = proplists:get_value(name, ValidItems, ""),
-            Email= proplists:get_value(email, ValidItems, ""),
-            case riak_cs_utils:create_user(UserName, Email) of
-                {ok, User} ->
-                    CTypeWritten = wrq:set_resp_header("Content-Type", ?JSON_TYPE, RD),
-                    UserData = riak_cs_wm_utils:user_record_to_json(User),
-                    JsonDoc = list_to_binary(mochijson2:encode(UserData)),
-                    WrittenRD = wrq:set_resp_body(JsonDoc, CTypeWritten),
-                    {true, WrittenRD, Ctx};
-                {error, Reason} ->
-                    riak_cs_s3_response:api_error(Reason, RD, Ctx)
-            end;
-        {'EXIT', _} ->
-            riak_cs_s3_response:api_error(invalid_user_update, RD, Ctx)
-    end;
+    Body = riak_cs_json:from_json(wrq:req_body(RD)),
+    {UserName, Email} =
+        riak_cs_json:value_or_default(
+          riak_cs_json:get(Body, [{<<"name">>, <<"email">>}]),
+          {<<>>, <<>>}),
+    new_user_response(riak_cs_utils:create_user(binary_to_list(UserName),
+                                                binary_to_list(Email)),
+                      ?JSON_TYPE,
+                      RD,
+                      Ctx);
 accept_json(RD, Ctx) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"accept_json">>),
     Body = wrq:req_body(RD),
@@ -152,16 +143,10 @@ accept_xml(RD, Ctx=#context{user=undefined}) ->
                                      ParsedData#xmlElement.content),
             UserName = proplists:get_value(name, ValidItems, ""),
             Email= proplists:get_value(email, ValidItems, ""),
-            case riak_cs_utils:create_user(UserName, Email) of
-                {ok, User} ->
-                    CTypeWritten = wrq:set_resp_header("Content-Type", ?XML_TYPE, RD),
-                    UserData = riak_cs_wm_utils:user_record_to_xml(User),
-                    XmlDoc = riak_cs_xml:export_xml([UserData]),
-                    WrittenRD = wrq:set_resp_body(XmlDoc, CTypeWritten),
-                    {true, WrittenRD, Ctx};
-                {error, Reason} ->
-                    riak_cs_s3_response:api_error(Reason, RD, Ctx)
-            end
+            new_user_response(riak_cs_utils:create_user(UserName, Email),
+                              ?XML_TYPE,
+                              RD,
+                              Ctx)
     end;
 accept_xml(RD, Ctx) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"accept_xml">>),
@@ -179,16 +164,14 @@ accept_xml(RD, Ctx) ->
 
 produce_json(RD, #context{user=User}=Ctx) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"produce_json">>),
-    Body = mochijson2:encode(
-             riak_cs_wm_utils:user_record_to_json(User)),
+    Body = riak_cs_json:to_json(User),
     Etag = etag(Body),
     RD2 = wrq:set_resp_header("ETag", Etag, RD),
     {Body, RD2, Ctx}.
 
 produce_xml(RD, #context{user=User}=Ctx) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"produce_xml">>),
-    XmlDoc = riak_cs_wm_utils:user_record_to_xml(User),
-    Body = riak_cs_xml:export_xml([XmlDoc]),
+    Body = riak_cs_xml:to_xml(User),
     Etag = etag(Body),
     RD2 = wrq:set_resp_header("ETag", Etag, RD),
     {Body, RD2, Ctx}.
@@ -284,6 +267,13 @@ update_user_record(User=?RCS_USER{status=Status},
     update_user_record(User, RestUpdates, _RecordUpdated);
 update_user_record(User, [{status, Status} | RestUpdates], _RecordUpdated) ->
     update_user_record(User?RCS_USER{status=Status}, RestUpdates, true);
+update_user_record(User, [{name, Name} | RestUpdates], _RecordUpdated) ->
+    update_user_record(User?RCS_USER{name=Name}, RestUpdates, true);
+update_user_record(User, [{email, Email} | RestUpdates], _RecordUpdated) ->
+    DisplayName = riak_cs_utils:display_name(Email),
+    update_user_record(User?RCS_USER{email=Email, display_name=DisplayName},
+                       RestUpdates,
+                       true);
 update_user_record(User=?RCS_USER{}, [{new_key_secret, true} | RestUpdates], _) ->
     update_user_record(riak_cs_utils:update_key_secret(User), RestUpdates, true);
 update_user_record(_User, [_ | RestUpdates], _RecordUpdated) ->
@@ -310,14 +300,9 @@ handle_save_user_result({error, Reason}, _, RD, Ctx) ->
     riak_cs_s3_response:api_error(Reason, RD, Ctx).
 
 -spec set_resp_data(string(), term(), term()) -> term().
-set_resp_data(?JSON_TYPE, RD, #context{user=User}) ->
-    UserData = riak_cs_wm_utils:user_record_to_json(User),
-    JsonDoc = list_to_binary(mochijson2:encode(UserData)),
-    wrq:set_resp_body(JsonDoc, RD);
-set_resp_data(?XML_TYPE, RD, #context{user=User}) ->
-    UserData = riak_cs_wm_utils:user_record_to_xml(User),
-    XmlDoc = riak_cs_xml:export_xml([UserData]),
-    wrq:set_resp_body(XmlDoc, RD).
+set_resp_data(ContentType, RD, #context{user=User}) ->
+    UserDoc = format_user_record(User, ContentType),
+    wrq:set_resp_body(UserDoc, RD).
 
 -spec user_json_filter({binary(), binary()}, [{atom(), term()}]) -> [{atom(), term()}].
 user_json_filter({ItemKey, ItemValue}, Acc) ->
@@ -401,3 +386,21 @@ user_xml_filter(Element, Acc) ->
         _ ->
             Acc
     end.
+
+-spec new_user_response({ok, rcs_user()} | {error, term()},
+                        string(), #wm_reqdata{}, #context{}) ->
+                               {boolean, #wm_reqdata{}, #context{}}.
+new_user_response({ok, User}, ContentType, RD, Ctx) ->
+    UserDoc = format_user_record(User, ContentType),
+    WrittenRD =
+        wrq:set_resp_body(UserDoc,
+                          wrq:set_resp_header("Content-Type", ContentType, RD)),
+    {true, WrittenRD, Ctx};
+new_user_response({error, Reason}, _, RD, Ctx) ->
+    riak_cs_s3_response:api_error(Reason, RD, Ctx).
+
+-spec format_user_record(rcs_user(), string()) -> binary().
+format_user_record(User, ?JSON_TYPE) ->
+    riak_cs_json:to_json(User);
+format_user_record(User, ?XML_TYPE) ->
+    riak_cs_xml:to_xml(User).

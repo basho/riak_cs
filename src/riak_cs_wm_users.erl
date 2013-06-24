@@ -166,9 +166,9 @@ user_doc(Format, RiakPid, UserId, Status) ->
                              Status =:= undefined ->
             case Format of
                 xml ->
-                    riak_cs_wm_utils:user_record_to_xml(User);
+                    riak_cs_xml:to_xml(User);
                 json ->
-                    riak_cs_wm_utils:user_record_to_json(User)
+                    riak_cs_json:to_json(User)
             end;
         {ok, _} ->
             %% Status is defined and does not match the account status

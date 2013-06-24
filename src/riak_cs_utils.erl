@@ -35,6 +35,7 @@
          create_user/4,
          delete_bucket/4,
          delete_object/3,
+         display_name/1,
          encode_term/1,
          from_bucket_name/1,
          get_buckets/1,
@@ -734,9 +735,14 @@ riak_connection(Pool) ->
 %% @doc Save information about a Riak CS user
 -spec save_user(rcs_user(), riakc_obj:riakc_obj(), pid()) -> ok | {error, term()}.
 save_user(User, UserObj, RiakPid) ->
-    %% Metadata is currently never updated so if there
-    %% are siblings all copies should be the same
-    UpdUserObj = update_obj_value(UserObj, riak_cs_utils:encode_term(User)),
+    Indexes = [{?EMAIL_INDEX, User?RCS_USER.email},
+               {?ID_INDEX, User?RCS_USER.canonical_id}],
+    MD = dict:store(?MD_INDEX, Indexes, dict:new()),
+    UpdUserObj = riakc_obj:update_metadata(
+                   riakc_obj:update_value(UserObj,
+                                          riak_cs_utils:encode_term(User)),
+                   MD),
+    %% UpdUserObj = update_obj_value(UserObj, riak_cs_utils:encode_term(User)),
     riakc_pb_socket:put(RiakPid, UpdUserObj).
 
 %% @doc Set the ACL for a bucket. Existing ACLs are only
@@ -1383,13 +1389,12 @@ user_record(Name, Email, KeyId, Secret, Buckets) ->
     CanonicalId = generate_canonical_id(KeyId, Secret),
     DisplayName = display_name(Email),
     ?RCS_USER{name=Name,
-               display_name=DisplayName,
-               email=Email,
-               key_id=KeyId,
-               key_secret=Secret,
-               canonical_id=CanonicalId,
-               buckets=Buckets}.
-
+              display_name=DisplayName,
+              email=Email,
+              key_id=KeyId,
+              key_secret=Secret,
+              canonical_id=CanonicalId,
+              buckets=Buckets}.
 
 %% @doc Convert a pid to a binary
 -spec pid_to_binary(pid()) -> binary().

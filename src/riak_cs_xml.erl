@@ -65,7 +65,9 @@ to_xml(#acl_v1{}=Acl) ->
 to_xml(?LBRESP{}=ListBucketsResp) ->
     list_buckets_response_to_xml(ListBucketsResp);
 to_xml(?LORESP{}=ListObjsResp) ->
-    list_objects_response_to_xml(ListObjsResp).
+    list_objects_response_to_xml(ListObjsResp);
+to_xml(?RCS_USER{}=User) ->
+    user_record_to_xml(User).
 
 %% ===================================================================
 %% Internal functions
@@ -227,6 +229,31 @@ uri_for_group('AllUsers') ->
 uri_for_group('AuthUsers') ->
     ?AUTH_USERS_GROUP.
 
+%% @doc Convert a Riak CS user record to XML
+-spec user_record_to_xml(term()) -> binary().
+user_record_to_xml(?RCS_USER{email=Email,
+                              display_name=DisplayName,
+                              name=Name,
+                              key_id=KeyID,
+                              key_secret=KeySecret,
+                              canonical_id=CanonicalID,
+                              status=Status}) ->
+    StatusStr = case Status of
+                    enabled ->
+                        "enabled";
+                    _ ->
+                        "disabled"
+                end,
+    Content = [make_external_node('Email', Email),
+               make_external_node('DisplayName', DisplayName),
+               make_external_node('Name', Name),
+               make_external_node('KeyId', KeyID),
+               make_external_node('KeySecret', KeySecret),
+               make_external_node('Id', CanonicalID),
+               make_external_node('Status', StatusStr)],
+    XmlDoc = [make_internal_node('User', Content)],
+    export_xml(XmlDoc).
+
 %% ===================================================================
 %% Eunit tests
 %% ===================================================================
@@ -269,5 +296,16 @@ list_objects_response_to_xml_test() ->
                                   contents = [Content1, Content2],
                                   common_prefixes = []},
     ?assertEqual(Xml, riak_cs_xml:to_xml(ListObjectsResponse)).
+
+user_record_to_xml_test() ->
+    Xml = <<"<?xml version=\"1.0\" encoding=\"UTF-8\"?><User><Email>barf@spaceballs.com</Email><DisplayName>barf</DisplayName><Name>barfolomew</Name><KeyId>barf_key</KeyId><KeySecret>secretsauce</KeySecret><Id>1234</Id><Status>enabled</Status></User>">>,
+    User = ?RCS_USER{name="barfolomew",
+                     display_name="barf",
+                     email="barf@spaceballs.com",
+                     key_id="barf_key",
+                     key_secret="secretsauce",
+                     canonical_id="1234",
+                     status=enabled},
+    ?assertEqual(Xml, riak_cs_xml:to_xml(User)).
 
 -endif.
