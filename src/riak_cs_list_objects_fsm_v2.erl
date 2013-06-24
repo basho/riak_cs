@@ -208,8 +208,12 @@ handle_done(State=#state{object_buffer=ObjectBuffer,
 
     ObjectPrefixTuple2 =
     riak_cs_list_objects_utils:filter_prefix_keys(ObjectPrefixTuple, Request),
-    ReachedEnd = ObjectBufferLength < NumKeysRequested andalso
-                 UserMaxKeys > riak_cs_list_objects_utils:manifests_and_prefix_length(ObjectPrefixTuple2),
+    ReachedEnd = ObjectBufferLength < NumKeysRequested,
+    Truncated = UserMaxKeys < riak_cs_list_objects_utils:manifests_and_prefix_length(ObjectPrefixTuple2) andalso
+                %% this is because (strangely) S3 returns `false' for
+                %% `isTruncted' if `max-keys=0', even if there are more keys.
+                %% The `Ceph' tests were nice to find this.
+                UserMaxKeys =/= 0,
 
     SlicedTaggedItems =
     riak_cs_list_objects_utils:manifests_and_prefix_slice(ObjectPrefixTuple2,
@@ -226,7 +230,7 @@ handle_done(State=#state{object_buffer=ObjectBuffer,
         true ->
             Response =
             response_from_manifests_and_common_prefixes(Request,
-                                                        not ReachedEnd,
+                                                        Truncated,
                                                         {NewManis, NewPrefixes}),
             try_reply({ok, Response}, NewStateData);
         false ->
