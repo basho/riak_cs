@@ -60,7 +60,7 @@
         temp_fold_objects_request :: undefined |
                                      {Request :: {StartKey :: binary(),
                                                   EndKey :: binary()},
-                                      StartTime :: float()},
+                                      StartTime :: erlang:timestamp()},
         fold_objects_requests=[] :: [{Request :: {StartKey :: binary(),
                                                   EndKey :: binary()},
                                       NumKeysReturned :: non_neg_integer(),
@@ -74,7 +74,7 @@
                 req :: list_object_request(),
                 reply_ref :: undefined | {pid(), any()},
                 key_multiplier :: float(),
-                object_list_req_id :: undefined | non_neg_integer(),
+                object_list_req_id :: undefined | reference(),
                 reached_end_of_keyspace=false :: boolean(),
                 object_buffer=[] :: list(),
                 objects=[] :: list(),
@@ -95,13 +95,13 @@
                             {next_state, atom(), state(), non_neg_integer()} |
                             {stop, term(), state()}.
 
--type list_objects_event() :: {ReqID :: non_neg_integer(), done} |
-                              {ReqID :: non_neg_integer(), {objects, list()}} |
-                              {ReqID :: non_neg_integer(), {error, term()}}.
+-type list_objects_event() :: {ReqID :: reference(), done} |
+                              {ReqID :: reference(), {objects, list()}} |
+                              {ReqID :: reference(), {error, term()}}.
 
 %% `Start' and `End' are inclusive
 -type object_list_range()  :: {Start :: binary(), End :: binary()}.
--type object_list_ranges() :: [object_list_range()].
+-type object_list_ranges() :: list(object_list_range()).
 
 %%%===================================================================
 %%% API
@@ -135,7 +135,7 @@ prepare(timeout, State=#state{riakc_pid=RiakcPid}) ->
         {NewStateData, {ok, ReqId}} ->
             {next_state, waiting_object_list,
              NewStateData#state{object_list_req_id=ReqId}};
-        {NewStateData, {error, _Reason}}=Error ->
+        {NewStateData, {error, _Reason}=Error} ->
             try_reply(Error, NewStateData)
     end.
 
@@ -243,7 +243,7 @@ handle_done(State=#state{object_buffer=ObjectBuffer,
                 {NewStateData2, {ok, ReqId}} ->
                     {next_state, waiting_object_list,
                      NewStateData2#state{object_list_req_id=ReqId}};
-                {NewStateData2, {error, _Reason}}=Error ->
+                {NewStateData2, {error, _Reason}=Error} ->
                     try_reply(Error, NewStateData2)
             end
     end.
@@ -264,7 +264,8 @@ response_from_manifests_and_common_prefixes(Request,
     riak_cs_list_objects:new_response(Request, Truncated, CommonPrefixes,
                                       KeyContent).
 
--spec make_2i_request(pid(), state()) -> [riakc_obj:riakc_obj()].
+-spec make_2i_request(pid(), state()) ->
+                             {state(), {ok, reference()} | {error, term()}}.
 make_2i_request(RiakcPid, State=#state{req=?LOREQ{name=BucketName}}) ->
     ManifestBucket = riak_cs_utils:to_bucket_name(objects, BucketName),
     StartKey = make_start_key(State),
@@ -278,19 +279,16 @@ make_2i_request(RiakcPid, State=#state{req=?LOREQ{name=BucketName}}) ->
                                                       os:timestamp()),
     Opts = [{max_results, NumResults},
             {start_key, StartKey}, {end_key, EndKey}],
-    Ref = riakc_pb_socket:cs_bucket_fold(RiakcPid,
+    FoldResult = riakc_pb_socket:cs_bucket_fold(RiakcPid,
                                          ManifestBucket,
                                          Opts),
-    {NewStateData2, Ref}.
+    {NewStateData2, FoldResult}.
 
 -spec last_result_is_common_prefix(state()) -> boolean().
-last_result_is_common_prefix(#state{object_list_ranges=[]}) ->
-    false;
 last_result_is_common_prefix(#state{object_list_ranges=Ranges,
                                     req=Request}) ->
     Key = element(2, lists:last(Ranges)),
     key_is_common_prefix(Key, Request).
-
 
 -spec key_is_common_prefix(binary(), list_object_request()) ->
     boolean().
@@ -392,13 +390,15 @@ next_byte(<<Integer:8/integer>>=Byte) when Integer == 255 ->
 next_byte(<<Integer:8/integer>>) ->
     <<(Integer+1):8/integer>>.
 
--spec try_reply(Response :: {ok, list_object_response()} | {error, term()},
-                State :: state()) ->
+-spec try_reply({ok, list_object_response()} | {error, term()},
+                state()) ->
     fsm_state_return().
 try_reply(Response, State) ->
     NewStateData = State#state{response=Response},
     reply_or_wait(Response, NewStateData).
 
+-spec reply_or_wait({ok, list_object_response()} | {error, term()}, state()) ->
+                           fsm_state_return().
 reply_or_wait(_Response, State=#state{reply_ref=undefined}) ->
     {next_state, waiting_req, State};
 reply_or_wait(Response, State=#state{reply_ref=Ref}) ->
@@ -406,6 +406,8 @@ reply_or_wait(Response, State=#state{reply_ref=Ref}) ->
     Reason = make_reason(Response),
     {stop, Reason, State}.
 
+-spec make_reason({ok, list_object_response()} | {error, term()}) ->
+                         normal | term().
 make_reason({ok, _Response}) ->
     normal;
 make_reason({error, Reason}) ->
@@ -429,7 +431,7 @@ update_last_request_state(State=#state{last_request_start_key=StartKey,
 
 -spec update_profiling_state_with_start(state(), StartKey :: binary(),
                                         EndKey :: binary(),
-                                        StartTime :: float()) ->
+                                        StartTime :: erlang:timestamp()) ->
     state().
 update_profiling_state_with_start(State=#state{profiling=Profiling},
                                   StartKey, EndKey, StartTime) ->
@@ -438,7 +440,7 @@ update_profiling_state_with_start(State=#state{profiling=Profiling},
     NewProfiling = Profiling#profiling{temp_fold_objects_request=TempData},
     State#state{profiling=NewProfiling}.
 
--spec update_profiling_state_with_end(state(), EndTime :: float(),
+-spec update_profiling_state_with_end(state(), EndTime :: erlang:timestamp(),
                                       NumKeysReturned :: non_neg_integer()) ->
     state().
 update_profiling_state_with_end(State=#state{profiling=Profiling},
@@ -470,8 +472,9 @@ format_profiling_from_state(#state{req=Request,
                                    profiling=Profiling}) ->
     format_profiling(Request, Response, Profiling, self()).
 
--spec format_profiling(list_object_request(), profiling(),
+-spec format_profiling(list_object_request(),
                        list_object_response(),
+                       profiling(),
                        pid()) -> string().
 format_profiling(?LOREQ{max_keys=MaxKeys},
                  ?LORESP{contents=Contents, common_prefixes=CommonPrefixes},
