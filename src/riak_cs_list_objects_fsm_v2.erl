@@ -140,7 +140,9 @@ prepare(timeout, State=#state{riakc_pid=RiakcPid}) ->
     end.
 
 -spec waiting_object_list(list_objects_event(), state()) -> fsm_state_return().
-waiting_object_list({ReqId, {objects, ObjectList}},
+waiting_object_list({ReqId, {objects, _}=Objs}, State) ->
+    waiting_object_list({ReqId, [Objs, undefined]}, State);
+waiting_object_list({ReqId, [{objects, ObjectList} | _]},
                     State=#state{object_list_req_id=ReqId,
                                  object_buffer=ObjectBuffer}) ->
     NewStateData = State#state{object_buffer=ObjectBuffer ++ ObjectList},
@@ -278,10 +280,11 @@ make_2i_request(RiakcPid, State=#state{req=?LOREQ{name=BucketName}}) ->
                                                       EndKey,
                                                       os:timestamp()),
     Opts = [{max_results, NumResults},
-            {start_key, StartKey}, {end_key, EndKey}],
+            {start_key, StartKey},
+            {end_key, EndKey}],
     FoldResult = riakc_pb_socket:cs_bucket_fold(RiakcPid,
-                                         ManifestBucket,
-                                         Opts),
+                                                ManifestBucket,
+                                                Opts),
     {NewStateData2, FoldResult}.
 
 -spec last_result_is_common_prefix(state()) -> boolean().
