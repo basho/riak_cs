@@ -81,7 +81,9 @@ confirm_initial_stats(StatData) ->
                                   <<"object_head">>,
                                   <<"object_delete">>,
                                   <<"object_get_acl">>,
-                                  <<"object_put_acl">>]].
+                                  <<"object_put_acl">>]],
+    ?assertEqual([7,0,1], proplists:get_value(<<"request_pool">>, StatData)),
+    ?assertEqual([2,0,0], proplists:get_value(<<"bucket_list_pool">>, StatData)).
 
 confirm_stat_count(StatData, StatType, ExpectedCount) ->
     ?assertEqual(ExpectedCount, hd(proplists:get_value(StatType, StatData))).
