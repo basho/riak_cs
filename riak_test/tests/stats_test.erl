@@ -27,7 +27,7 @@
 -define(TEST_BUCKET, "riak-test-bucket").
 
 confirm() ->
-    {UserConfig, {RiakNodes, _CSNodes, _Stanchion}} = rtcs:setup(4),
+    {UserConfig, {RiakNodes, _CSNodes, _Stanchion}} = rtcs:setup(4, [{cs, cs_config()}]),
 
     confirm_initial_stats(query_stats(UserConfig, rtcs:cs_port(hd(RiakNodes)))),
 
@@ -81,7 +81,9 @@ confirm_initial_stats(StatData) ->
                                   <<"object_head">>,
                                   <<"object_delete">>,
                                   <<"object_get_acl">>,
-                                  <<"object_put_acl">>]].
+                                  <<"object_put_acl">>]],
+    ?assertEqual([127,0,1], proplists:get_value(<<"request_pool">>),
+    ?assertEqual([5,0,0], proplists:get_value(<<"bucket_list_pool">>).
 
 confirm_stat_count(StatData, StatType, ExpectedCount) ->
     ?assertEqual(ExpectedCount, hd(proplists:get_value(StatType, StatData))).
@@ -90,3 +92,6 @@ make_authorization(Config, Date) ->
     StringToSign = ["GET", $\n, [], $\n, [], $\n, Date, $\n, "/riak-cs/stats"],
     Signature = base64:encode_to_string(crypto:sha_mac(Config#aws_config.secret_access_key, StringToSign)),
     lists:flatten(["AWS ", Config#aws_config.access_key_id, $:, Signature]).
+
+cs_config() ->
+    rtcs:cs_config([ {request_pool, {128, 0} }, {bucket_list_pool, {5, 0} } ]).
