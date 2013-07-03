@@ -217,6 +217,9 @@
 %% users to set the setgid bit on files.  {exasperated}
 -define(TOMBSTONE_MODE_MARKER, 8#4000).
 
+%% Dropped data directory suffix: for asynchronously deleting lots of stuff
+-define(DROPPED_DIR_SUFFIX, ".dropped").
+
 -ifdef(TEST).
 -compile(export_all).
 -ifdef(EQC).
@@ -288,6 +291,12 @@ start(Partition, Config) ->
         ok = filelib:ensure_dir(Dir),
         ok = create_or_sanity_check_version_file(Dir, BlockSize, MaxBlocks,
                                                  BDepth, KDepth),
+
+        %% See also: drop() function
+        Cmd = lists:flatten(
+                io_lib:format("rm -rf ~s.*~s &", [Dir, ?DROPPED_DIR_SUFFIX])),
+        _ = os:cmd(Cmd),
+
         {ok,  #state{dir = Dir,
                      block_size = BlockSize,
                      max_blocks = MaxBlocks,
@@ -494,10 +503,22 @@ fold_common(ThisFoldFun, Acc, Opts, State) ->
 %% and return a fresh reference.
 -spec drop(state()) -> {ok, state()}.
 drop(State=#state{dir=Dir}) ->
-    Cmd = io_lib:format("rm -rf ~s", [Dir]),
+    %% Problem: we cannot afford to block the vnode.
+    %% Solution:
+    %% 1. Move dir out of the way with a unique name
+    %% 2. rm -rf in the background
+    %% 3. On restart, we must restart rm -rf on items that still exist.
+    %%    (see start() func for this part).
+    Dropped = dropped_name(Dir),
+    ok = file:rename(Dir, Dropped),
+    Cmd = io_lib:format("rm -rf ~s &", [Dropped]),
     _ = os:cmd(Cmd),
     ok = filelib:ensure_dir(Dir),
     {ok, State}.
+
+dropped_name(Dir) ->
+    Dir ++ lists:flatten(io_lib:format(".~w.~w.~w", tuple_to_list(now()))) ++
+        ?DROPPED_DIR_SUFFIX.
 
 %% @doc Returns true if this backend contains any
 %% non-tombstone values; otherwise returns false.
