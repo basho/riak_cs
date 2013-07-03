@@ -587,8 +587,6 @@ parse_config_and_env(Config) ->
                           [?MODULE, ?FS2_CONTIGUOUS_BLOCKS]),
                         ?FS2_CONTIGUOUS_BLOCKS
                 end,
-    %% B1stPrefixLen = get_prop_or_env(
-    %%               b_1st_prefixlen, Config, riak_kv, 0),
     B1stPrefixLen = get_prop_or_env(
                   b_1st_prefixlen, Config, riak_kv, ?TYPICAL_BUCKET_PREFIX_LEN),
     BDepth = get_prop_or_env(b_depth, Config, riak_kv, 2),
@@ -827,7 +825,7 @@ read_and_unpack_file_header(FH, #state{block_size = BlockSize}) ->
         {ok, Hdr} when byte_size(Hdr) == ?FILE1_HEADER_SIZE ->
             try
                 {ok, unpack_file_header(Hdr)}
-            catch _:_ ->
+            catch _X:_Y ->
                     {{parse_error, Hdr}, Default}
             end;
         Else ->
