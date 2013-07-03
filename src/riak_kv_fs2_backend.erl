@@ -543,8 +543,22 @@ callback(_Ref, _Term, S) ->
 parse_config_and_env(Config) ->
     ConfigRoot = get_prop_or_env(data_root, Config, riak_kv,
                                  {{"data_root unset, failing"}}),
-    BlockSize = get_prop_or_env(block_size, Config, riak_kv,
-                                {{"block_size unset, failing"}}),
+    %% Avoid operator error by adding internally-necessary fudge factor
+    %% size here, rather than relying on operator to do it.
+    %% If we want 1 megabyte block size, then internally we need
+    %% 1 megabyte + riak object size overhead + riak metadata dictionary
+    %% item overhead + etc etc.
+    %% See also:
+    %% * http://docs.aws.amazon.com/AmazonS3/latest/dev/BucketRestrictions.html
+    %% * http://docs.aws.amazon.com/AmazonS3/latest/dev/UsingMetadata.html
+    %% * size(term_to_binary(riak_object:new(<<>>, <<>>, <<>>))).
+    BlockSizeExtra =
+        63 +                                    % S3 bucket name length limit
+        1024 +                                  % S3 object name length limit
+        205 +                                   % #r_object minimum size
+        1024,                                   % CS's MD dict entries
+    BlockSize = BlockSizeExtra + get_prop_or_env(block_size, Config, riak_kv,
+                                               {{"block_size unset, failing"}}),
     true = (BlockSize < ?MAXVALSIZE),
     %% MaxBlocks should be present only for testing
     TestWarning = get(test_warning),
