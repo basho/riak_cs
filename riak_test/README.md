@@ -49,7 +49,9 @@
                         {stanchion_root, "/Users/kelly/rt/stanchion"},
                         {stanchion_current, "/Users/kelly/rt/stanchion/current"}
                        ]},
-         {src_paths, [{cs_src_root, "/Users/kelly/basho/riak_test_builds/riak_cs"}]}
+         {src_paths, [{cs_src_root, "/Users/kelly/basho/riak_test_builds/riak_cs"}]},
+         {build_type, oss},
+         {backend, {multi_backend, bitcask}}
         ]}.
     </pre>
 
@@ -62,6 +64,17 @@ setting up `riak_test` builds for Riak (by default
 `$HOME/rt/riak`). The same should be done for `RTEE_DEST_DIR` (default
 `$HOME/rt/riak_ee`), `RTCS_DEST_DIR` (default `$HOME/rt/riak_cs`) and
 `RTSTANCHION_DEST_DIR` (default `$HOME/rt/stanchion`).
+
+The `build_type` option is used to differentiate between an
+open-source (`oss`) build of RiakCS and the enterprise version (`ee`).
+The default is `oss` and this option can be omitted when these tests
+are used by open-source users.
+
+The `backend` option is used to indicate which Riak backend option
+should be used. The valid options are `{multi_backend, bitcask}` and
+`memory`. `{multi_backend, bitcask}` is the default option and
+represents the default recommended backed for production use of
+RiakCS.
 
 1. To build the `riak_test` files use the `compile-riak-test` Makefile
 target or run `./rebar riak_test_compile`.
