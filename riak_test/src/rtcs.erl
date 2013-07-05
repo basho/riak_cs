@@ -30,7 +30,8 @@
 -define(CSDEVS(N), lists:concat(["rcs-dev", N, "@127.0.0.1"])).
 -define(CSDEV(N), list_to_atom(?CSDEVS(N))).
 
--define(RIAK_CURRENT, build_paths.root).
+-define(RIAK_ROOT, build_paths.root).
+-define(RIAK_CURRENT, build_paths.current).
 -define(EE_ROOT, build_paths.ee_root).
 -define(EE_CURRENT, build_paths.ee_current).
 -define(CS_ROOT, build_paths.cs_root).
@@ -92,14 +93,14 @@ setup2x2(Configs) ->
 
 
 configs(CustomConfigs) ->
-    [{riak, proplists:get_value(riak, CustomConfigs, ee_config())},
+    [{riak, proplists:get_value(riak, CustomConfigs, riak_config())},
      {cs, proplists:get_value(cs, CustomConfigs, cs_config())},
      {stanchion, proplists:get_value(stanchion,
                                      CustomConfigs,
                                      stanchion_config())}].
 
 default_configs() ->
-    [{riak, ee_config()},
+    [{riak, riak_config()},
      {stanchion, stanchion_config()},
      {cs, cs_config()}].
 
@@ -134,15 +135,32 @@ create_admin_user(Node) ->
 cs_port(Node) ->
     8070 + rt_cs_dev:node_id(Node).
 
-ee_config() ->
+riak_config() ->
+    riak_config(
+      rt_config:get(build_type, oss),
+      rt_config:get(backend, {multi_backend, bitcask})).
+
+riak_config(oss, Backend) ->
+    riak_oss_config(Backend);
+riak_config(ee, Backend) ->
+    riak_ee_config(Backend).
+
+riak_oss_config(Backend) ->
     CSCurrent = rt_config:get(build_paths.cs_current),
     [
      lager_config(),
      {riak_core,
       [{default_bucket_props, [{allow_mult, true}]}]},
      {riak_kv,
+      [{add_paths, [CSCurrent ++ "/dev/dev1/lib/riak_cs/ebin"]}] ++
+          backend_config(Backend)
+      }
+    ].
+
+backend_config(memory) ->
+      [{storage_backend, riak_kv_memory_backend}];
+backend_config({multi_backend, BlocksBackend}) ->
       [
-       {add_paths, [CSCurrent ++ "/dev/dev1/lib/riak_cs/ebin"]},
        {storage_backend, riak_cs_kv_multi_backend},
        {multi_backend_prefix_list, [{<<"0b:">>, be_blocks}]},
        {multi_backend_default, be_default},
@@ -152,19 +170,26 @@ ee_config() ->
            {max_open_files, 20},
            {data_root, "./leveldb"}
           ]},
-         {be_blocks, riak_kv_bitcask_backend,
-          [
-           {data_root, "./bitcask"}
-          ]}
+         blocks_backend_config(BlocksBackend)
         ]}
-      ]},
-     {riak_repl,
-      [
-       {fullsync_on_connect, false},
-       {fullsync_interval, disabled},
-       {proxy_get, enabled}
-      ]}
-    ].
+      ].
+
+blocks_backend_config(fs) ->
+    {be_blocks, riak_kv_fs2_backend, [{data_root, "./fs2"},
+                                      {block_size, 1050000}]};
+blocks_backend_config(_) ->
+    {be_blocks, riak_kv_bitcask_backend, [{data_root, "./bitcask"}]}.
+
+riak_ee_config(Backend) ->
+    [repl_config() | riak_oss_config(Backend)].
+
+repl_config() ->
+    {riak_repl,
+     [
+      {fullsync_on_connect, false},
+      {fullsync_interval, disabled},
+      {proxy_get, enabled}
+     ]}.
 
 cs_config() ->
     cs_config([]).
@@ -230,6 +255,11 @@ stanchion_etcpath(Prefix) ->
 stanchioncmd(Path, Cmd) ->
     lists:flatten(io_lib:format("~s ~s", [stanchion_binpath(Path), Cmd])).
 
+riak_root_and_current(oss) ->
+    {?RIAK_ROOT, current};
+riak_root_and_current(ee) ->
+    {?EE_ROOT, ee_current}.
+
 deploy_nodes(NumNodes, InitialConfig) ->
     lager:info("Initial Config: ~p", [InitialConfig]),
     NodeConfig = [{current, InitialConfig} || _ <- lists:seq(1,NumNodes)],
@@ -242,7 +272,10 @@ deploy_nodes(NumNodes, InitialConfig) ->
     NodeMap = orddict:from_list(lists:zip(RiakNodes, lists:seq(1, NumNodes))),
     rt_config:set(rt_nodes, NodeMap),
 
-    VersionMap = lists:zip(lists:seq(1, NumNodes), lists:duplicate(NumNodes, ee_current)),
+    {RiakRoot, RiakCurrent} =
+        riak_root_and_current(rt_config:get(build_type, oss)),
+
+    VersionMap = lists:zip(lists:seq(1, NumNodes), lists:duplicate(NumNodes, RiakCurrent)),
     rt_config:set(rt_versions, VersionMap),
 
     lager:info("VersionMap: ~p", [VersionMap]),
@@ -255,7 +288,7 @@ deploy_nodes(NumNodes, InitialConfig) ->
     stop_all_nodes(NodeList),
 
     [reset_nodes(Project, Path) ||
-        {Project, Path} <- [{riak_ee, rt_config:get(?EE_ROOT)},
+        {Project, Path} <- [{riak_ee, rt_config:get(RiakRoot)},
                             {riak_cs, rt_config:get(?CS_ROOT)},
                             {stanchion, rt_config:get(?STANCHION_ROOT)}]],
 
