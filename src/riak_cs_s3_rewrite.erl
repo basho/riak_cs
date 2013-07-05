@@ -167,10 +167,10 @@ format_object_qs({SubResources, QueryParams}) ->
 -spec format_object_qs(subresources(), query_params(), string(), string()) -> string().
 format_object_qs(SubResources, QueryParams, [], []) ->
     [format_subresources(SubResources), format_query_params(QueryParams)];
-format_object_qs(_SubResources, _QueryParams, UploadId, []) ->
-    ["/uploads/", UploadId];
-format_object_qs(_SubResources, _QueryParams, UploadId, PartNum) ->
-    ["/uploads/", UploadId, "?partNumber=", PartNum].
+format_object_qs(_SubResources, QueryParams, UploadId, []) ->
+    ["/uploads/", UploadId, format_query_params(QueryParams)];
+format_object_qs(_SubResources, QueryParams, UploadId, PartNum) ->
+    ["/uploads/", UploadId, format_query_params([{"partNumber", PartNum} | QueryParams])].
 
 %% @doc Format a string that expresses the subresource request
 %% that can be appended to the URL.
@@ -355,6 +355,26 @@ rewrite_path_test() ->
     equal_paths("/buckets/testbucket/objects/testobject/uploads/2?partNumber=1",
                 rewrite_with(headers([{"host", "testbucket." ++ ?ROOT_HOST}]),
                              "/testobject?partNumber=1&uploadId=2")),
+    equal_paths("/buckets/testbucket/objects/testobject/uploads/2?AWSAccessKeyId=BF_BI8XYKFJSIW-NNAIR"
+                "&Expires=1364406757&Signature=x%2B0vteNN1YillZNw4yDGVQWrT2s%3D",
+                rewrite_with(headers([]),
+                             "/testbucket/testobject?Signature=x%2B0vteNN1YillZNw4yDGVQWrT2s%3D"
+                             "&Expires=1364406757&AWSAccessKeyId=BF_BI8XYKFJSIW-NNAIR&uploadId=2")),
+    equal_paths("/buckets/testbucket/objects/testobject/uploads/2?AWSAccessKeyId=BF_BI8XYKFJSIW-NNAIR"
+                "&Expires=1364406757&Signature=x%2B0vteNN1YillZNw4yDGVQWrT2s%3D",
+                rewrite_with(headers([{"host", "testbucket." ++ ?ROOT_HOST}]),
+                             "/testobject?Signature=x%2B0vteNN1YillZNw4yDGVQWrT2s%3D"
+                             "&Expires=1364406757&AWSAccessKeyId=BF_BI8XYKFJSIW-NNAIR&uploadId=2")),
+    equal_paths("/buckets/testbucket/objects/testobject/uploads/2?AWSAccessKeyId=BF_BI8XYKFJSIW-NNAIR"
+                "&Expires=1364406757&Signature=x%2B0vteNN1YillZNw4yDGVQWrT2s%3D&partNumber=1",
+                rewrite_with(headers([]),
+                             "/testbucket/testobject?Signature=x%2B0vteNN1YillZNw4yDGVQWrT2s%3D"
+                             "&Expires=1364406757&AWSAccessKeyId=BF_BI8XYKFJSIW-NNAIR&partNumber=1&uploadId=2")),
+    equal_paths("/buckets/testbucket/objects/testobject/uploads/2?AWSAccessKeyId=BF_BI8XYKFJSIW-NNAIR"
+                "&Expires=1364406757&Signature=x%2B0vteNN1YillZNw4yDGVQWrT2s%3D&partNumber=1",
+                rewrite_with(headers([{"host", "testbucket." ++ ?ROOT_HOST}]),
+                             "/testobject?Signature=x%2B0vteNN1YillZNw4yDGVQWrT2s%3D"
+                             "&Expires=1364406757&AWSAccessKeyId=BF_BI8XYKFJSIW-NNAIR&partNumber=1&uploadId=2")),
     equal_paths("/buckets/testbucket/objects/testobject?AWSAccessKeyId=BF_BI8XYKFJSIW-NNAIR"
                 "&Expires=1364406757&Signature=x%2B0vteNN1YillZNw4yDGVQWrT2s%3D",
                 rewrite_with(headers([]),
