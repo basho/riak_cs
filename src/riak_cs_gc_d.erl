@@ -58,6 +58,7 @@
 
 -include("riak_cs.hrl").
 -include("riak_cs_gc_d.hrl").
+-include_lib("riakc/include/riakc.hrl").
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -375,7 +376,8 @@ fetch_eligible_manifest_keys(RiakPid, IntervalStart) ->
     EndTime = list_to_binary(integer_to_list(IntervalStart)),
     eligible_manifest_keys(gc_index_query(RiakPid, EndTime)).
 
-eligible_manifest_keys({{ok, {keys, Keys}}, _}) ->
+eligible_manifest_keys({{ok, #index_results{keys=Keys}},
+                        _EndTime}) ->
     Keys;
 eligible_manifest_keys({{error, Reason}, EndTime}) ->
     _ = lager:warning("Error occurred trying to query from time 0 to ~p"

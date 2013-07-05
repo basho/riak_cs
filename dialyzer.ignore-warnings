@@ -1,4 +1,9 @@
 ############## Warnings from dependencies that we might/should fix?
+^glc_code.erl:
+^lager.erl:
+^lager_app.erl:
+^lager_util.erl:
+^lager_default_tracer.erl:
 ^mochiglobal.erl:
 ^mochiweb.erl:
 ^mochiweb_http.erl:

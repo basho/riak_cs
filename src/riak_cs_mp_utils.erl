@@ -24,6 +24,7 @@
 
 -include("riak_cs.hrl").
 -include_lib("riak_pb/include/riak_pb_kv_codec.hrl").
+-include_lib("riakc/include/riakc.hrl").
 
 -ifdef(TEST).
 -compile(export_all).
@@ -201,7 +202,7 @@ list_multipart_uploads(Bucket, {_Display, _Canon, CallerKeyId} = Caller,
                 HashBucket = riak_cs_utils:to_bucket_name(objects, Bucket),
                 case riakc_pb_socket:get_index(?PID(RiakcPid), HashBucket,
                                                Key2i, <<"1">>) of
-                    {ok, {keys, Names}} ->
+                    {ok, #index_results{keys=Names}} ->
                         MyCaller = case BucketOwnerP of
                                        true -> owner;
                                        _    -> CallerKeyId

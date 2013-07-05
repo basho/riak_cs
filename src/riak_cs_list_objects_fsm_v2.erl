@@ -95,7 +95,8 @@
                             {next_state, atom(), state(), non_neg_integer()} |
                             {stop, term(), state()}.
 
--type list_objects_event() :: {ReqID :: reference(), done} |
+-type continuation() :: binary() | 'undefined'.
+-type list_objects_event() :: {ReqID :: reference(), {done, {continuation, continuation()}}} |
                               {ReqID :: reference(), {objects, list()}} |
                               {ReqID :: reference(), {error, term()}}.
 
@@ -140,14 +141,14 @@ prepare(timeout, State=#state{riakc_pid=RiakcPid}) ->
     end.
 
 -spec waiting_object_list(list_objects_event(), state()) -> fsm_state_return().
-waiting_object_list({ReqId, {objects, _}=Objs}, State) ->
+waiting_object_list({ReqId, {ok, _}=Objs}, State) ->
     waiting_object_list({ReqId, [Objs, undefined]}, State);
-waiting_object_list({ReqId, [{objects, ObjectList} | _]},
+waiting_object_list({ReqId, [{ok, ObjectList} | _]},
                     State=#state{object_list_req_id=ReqId,
                                  object_buffer=ObjectBuffer}) ->
     NewStateData = State#state{object_buffer=ObjectBuffer ++ ObjectList},
     {next_state, waiting_object_list, NewStateData};
-waiting_object_list({ReqId, done}, State=#state{object_list_req_id=ReqId}) ->
+waiting_object_list({ReqId, {done, {continuation, _Continuation}}}, State=#state{object_list_req_id=ReqId}) ->
     handle_done(State);
 waiting_object_list({ReqId, {error, _Reason}=Error},
                     State=#state{object_list_req_id=ReqId}) ->

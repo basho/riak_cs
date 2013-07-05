@@ -79,6 +79,7 @@
 
 -include("riak_cs.hrl").
 -include_lib("riak_pb/include/riak_pb_kv_codec.hrl").
+-include_lib("riakc/include/riakc.hrl").
 
 -ifdef(TEST).
 -compile(export_all).
@@ -599,14 +600,14 @@ get_user_by_index(Index, Value, RiakPid) ->
 -spec get_user_index(binary(), binary(), pid()) -> {ok, string()} | {error, term()}.
 get_user_index(Index, Value, RiakPid) ->
     case riakc_pb_socket:get_index(RiakPid, ?USER_BUCKET, Index, Value) of
-        {ok, {keys, []}} ->
+        {ok, #index_results{keys=[]}} ->
             {error, notfound};
-        {ok, {keys, [Key | _]}} ->
+        {ok, #index_results{keys=[Key | _]}} ->
             {ok, binary_to_list(Key)};
         {error, Reason}=Error ->
-            _ = lager:warning("Error occurred trying to query ~p in user index ~p. Reason: ~p", [Value,
-                                                                                                 Index,
-                                                                                                 Reason]),
+            _ = lager:warning("Error occurred trying to query ~p in user"
+                              "index ~p. Reason: ~p",
+                              [Value, Index, Reason]),
             Error
     end.
 
