@@ -24,6 +24,12 @@
 ^webmachine_resource.erl:
 ^webmachine_sup.erl:
 ^webmachine_dispatcher.erl:
+^webmachine_router.erl:
+^lager.erl:
+^lager_app.erl:
+^lager_util.erl:
+^  lager_default_tracer:
+^glc_code.erl:
 ############## Warnings from dependencies that are outside our scope
 ^bread.erl:
 ^dtop.erl:
@@ -88,6 +94,8 @@
   calendar:hour/0
   calendar:month/0
   calendar:year/0
+  lager_default:info/1
+  gre:event/0
 ############## stuff defined in test (we should dialyze these someday)
   riakc_pb_socket_fake:start_link/0
 ############## functions due to riak_kv stuff in this repo
@@ -160,15 +168,15 @@ riak_cs_mp_utils.erl:522: The pattern <Bucket, OwnerStr> can never match since p
 ^riak_cs_lfs_utils.erl:119:
 riak_cs_gc.erl:.*: The pattern ..UUID, _... _. can never match the type ..$
 ############# Due to inadequate specs with our riak-erlang-client tag
-riak_cs_gc_d.erl:383: Function fetch_eligible_manifest_keys/2 will never be called
-riak_cs_gc_d.erl:387: Function eligible_manifest_keys/1 will never be called
-riak_cs_gc_d.erl:395: Function gc_index_query/2 will never be called
-^riak_cs_riakc_pool_worker.erl:48:
-riak_cs_storage_d.erl:384: Function fetch_user_list/1 will never be called
+riak_cs_gc_d.erl:[0-9]+: Function fetch_eligible_manifest_keys/2 will never be called
+riak_cs_gc_d.erl:[0-9]+: Function eligible_manifest_keys/1 will never be called
+riak_cs_gc_d.erl:[0-9]+: Function gc_index_query/2 will never be called
+^riak_cs_riakc_pool_worker.erl:54:
+riak_cs_storage_d.erl:[0-9]+: Function fetch_user_list/1 will never be called
 riak_cs_wm_ping.erl:46: The pattern 'undefined' can never match the type pid()
 ############## All the others..........
 riak_cs_blockall_auth.erl:23: Callback info about the riak_cs_auth behaviour is not available
-riak_cs_passthru_auth.erl:23: Callback info about the riak_cs_auth behaviour is not available
+riak_cs_s3_passthru_auth.erl:23: Callback info about the riak_cs_auth behaviour is not available
 riak_cs_s3_auth.erl:23: Callback info about the riak_cs_auth behaviour is not available
+riak_cs_keystone_auth.erl:23: Callback info about the riak_cs_auth behaviour is not available
 riak_cs_s3_policy.erl:26: Callback info about the riak_cs_policy behaviour is not available
-riak_cs_app.erl:88: Function will never be called

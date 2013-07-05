@@ -102,7 +102,7 @@ process_post(RD, Ctx=#context{local_context=LocalCtx,
                         {'UploadId', [binary_to_list(base64url:encode(UploadId))]}
                        ]
                      },
-            Body = riak_cs_s3_response:export_xml([XmlDoc]),
+            Body = riak_cs_xml:export_xml([XmlDoc]),
             RD2 = wrq:set_resp_body(Body, RD),
             {true, RD2, Ctx};
         {error, Reason} ->

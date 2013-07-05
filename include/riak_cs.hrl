@@ -86,8 +86,10 @@
                   submodule :: atom(),
                   exports_fun :: function(),
                   auth_module :: atom(),
+                  response_module :: atom(),
                   policy_module :: atom(),
-                  local_context :: term()
+                  local_context :: term(),
+                  api :: atom()
                  }).
 
 -record(key_context, {context :: #context{},
@@ -402,6 +404,10 @@
 -define(DEFAULT_PING_TIMEOUT, 5000).
 -define(JSON_TYPE, "application/json").
 -define(XML_TYPE, "application/xml").
+-define(S3_API_MOD, riak_cs_s3_rewrite).
+-define(OOS_API_MOD, riak_cs_oos_rewrite).
+-define(S3_RESPONSE_MOD, riak_cs_s3_response).
+-define(OOS_RESPONSE_MOD, riak_cs_oos_response).
 
 %% Major categories of Erlang-triggered DTrace probes
 %%

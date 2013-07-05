@@ -3,9 +3,9 @@ src/riak_cs_storage.erl:67: Warning object_size_map/3 calls undefined function r
 Warning map_keys_and_manifests/3 calls undefined function riak_object:get_values/1
 Warning map_keys_and_manifests/3 calls undefined function riak_object:key/1
 ######## kv backends calling into kv/core code
-src/riak_cs_kv_multi_backend.erl:369: Warning get_backend_bucketprops/2 calls undefined function riak_core_bucket:get_bucket/1
-src/riak_cs_kv_multi_backend.erl:142: Warning start/2 calls undefined function app_helper:get_prop_or_env/3
-src/riak_cs_kv_multi_backend.erl:142: Warning start/2 calls undefined function app_helper:get_prop_or_env/4
+src/riak_cs_kv_multi_backend.erl:462: Warning get_backend_bucketprops/2 calls undefined function riak_core_bucket:get_bucket/1
+src/riak_cs_kv_multi_backend.erl:146: Warning start/2 calls undefined function app_helper:get_prop_or_env/4
+src/riak_cs_kv_multi_backend.erl:146: Warning start/2 calls undefined function app_helper:get_prop_or_env/3
 src/riak_kv_fs2_backend.erl:89: Warning start/2 calls undefined function app_helper:get_prop_or_env/3
 src/riak_kv_fs2_backend.erl:89: Warning start/2 calls undefined function riak:stop/1
 src/riak_cs_block_server.erl:172: Warning handle_cast/2 calls undefined function riak_repl_pb_api:get/5
@@ -13,7 +13,7 @@ src/riak_cs_storage.erl:81: Warning object_size_map/3 calls undefined function r
 src/riak_cs_utils.erl:1467: Warning get_cluster_id/1 calls undefined function riak_repl_pb_api:get_clusterid/2
 ######## testing code
 src/riak_cs_manifest_fsm.erl:155: Warning init/1 calls undefined function riakc_pb_socket_fake:start_link/0
-src/riak_cs_get_fsm.erl:115: Warning init/1 calls undefined function riak_cs_dummy_reader:get_manifest/1
-src/riak_cs_get_fsm.erl:115: Warning init/1 calls undefined function riak_cs_dummy_reader:start_link/1
+src/riak_cs_get_fsm.erl:[0-9]+: Warning init/1 calls undefined function riak_cs_dummy_reader:get_manifest/1
+src/riak_cs_get_fsm.erl:[0-9]+: Warning init/1 calls undefined function riak_cs_dummy_reader:start_link/1
 ######## optional vm features
-src/riak_cs_sup.erl:59: Warning init/1 calls undefined function dtrace:init/0
+src/riak_cs_sup.erl:[0-9]+: Warning init/1 calls undefined function dtrace:init/0

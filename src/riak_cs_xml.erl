@@ -24,6 +24,7 @@
 -module(riak_cs_xml).
 
 -include("riak_cs.hrl").
+-include("riak_cs_api.hrl").
 -include("list_objects.hrl").
 
 -ifdef(TEST).
@@ -31,7 +32,8 @@
 -endif.
 
 %% Public API
--export([to_xml/1]).
+-export([export_xml/1,
+         to_xml/1]).
 
 -define(XML_SCHEMA_INSTANCE, "http://www.w3.org/2001/XMLSchema-instance").
 
@@ -44,6 +46,13 @@
 %% Public API
 %% ===================================================================
 
+%% This function is temporary and should be removed once all XML
+%% handling has been moved into this module.
+%% @TODO Remove this asap!
+export_xml(XmlDoc) ->
+    unicode:characters_to_binary(
+      xmerl:export_simple(XmlDoc, xmerl_xml, [{prolog, ?XML_PROLOG}]), unicode, unicode).
+
 -spec to_xml(term()) -> binary().
 to_xml(undefined) ->
     [];
@@ -53,6 +62,8 @@ to_xml(?ACL{}=Acl) ->
     acl_to_xml(Acl);
 to_xml(#acl_v1{}=Acl) ->
     acl_to_xml(Acl);
+to_xml(?LBRESP{}=ListBucketsResp) ->
+    list_buckets_response_to_xml(ListBucketsResp);
 to_xml(?LORESP{}=ListObjsResp) ->
     list_objects_response_to_xml(ListObjsResp).
 
@@ -101,6 +112,29 @@ list_objects_response_to_xml(Resp) ->
         KeyContents ++ CommonPrefixes,
     export_xml([make_internal_node('ListBucketResult', [{'xmlns', ?S3_XMLNS}],
                                    Contents)]).
+
+list_buckets_response_to_xml(Resp) ->
+    BucketsContent =
+        make_internal_node('Buckets',
+                           [bucket_to_xml(B?RCS_BUCKET.name,
+                                          B?RCS_BUCKET.creation_date) ||
+                               B <- Resp?LBRESP.buckets]),
+    UserContent = user_to_xml_owner(Resp?LBRESP.user),
+    Contents = [UserContent] ++ [BucketsContent],
+    export_xml([make_internal_node('ListAllMyBucketsResult',
+                                   [{'xmlns', ?S3_XMLNS}],
+                                   Contents)]).
+
+bucket_to_xml(Name, CreationDate) when is_binary(Name) ->
+    bucket_to_xml(binary_to_list(Name), CreationDate);
+bucket_to_xml(Name, CreationDate) ->
+    make_internal_node('Bucket',
+                       [make_external_node('Name', Name),
+                        make_external_node('CreationDate', CreationDate)]).
+
+user_to_xml_owner(?RCS_USER{canonical_id=CanonicalId, display_name=Name}) ->
+    make_internal_node('Owner', [make_external_node('ID', CanonicalId),
+                                 make_external_node('DisplayName', Name)]).
 
 key_content_to_xml(KeyContent) ->
     Contents =
@@ -173,11 +207,6 @@ make_owner(#list_objects_owner_v1{id=Id, display_name=Name}) ->
     Content = [make_external_node('ID', Id),
                make_external_node('DisplayName', Name)],
     make_internal_node('Owner', Content).
-
--spec export_xml([internal_node()]) -> binary().
-export_xml(XmlDoc) ->
-    unicode:characters_to_binary(
-      xmerl:export_simple(XmlDoc, xmerl_xml, [{prolog, ?XML_PROLOG}]), unicode, unicode).
 
 -spec format_value(atom() | integer() | binary() | list()) -> string().
 format_value(undefined) ->

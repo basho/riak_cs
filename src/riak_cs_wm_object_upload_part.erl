@@ -112,7 +112,7 @@ process_post(RD, Ctx=#context{local_context=LocalCtx,
                                {'ETag', [binary_to_list(UploadId64)]}
                               ]
                              },
-                    XmlBody = riak_cs_s3_response:export_xml([XmlDoc]),
+                    XmlBody = riak_cs_xml:export_xml([XmlDoc]),
                     RD2 = wrq:set_resp_body(XmlBody, RD),
                     {true, RD2, Ctx};
                 {error, notfound} ->
@@ -317,7 +317,7 @@ to_xml(RD, Ctx=#context{local_context=LocalCtx,
                        {'IsTruncated', ["false"]}   % TODO
                       ] ++ Us
                      },
-            Body = riak_cs_s3_response:export_xml([XmlDoc]),
+            Body = riak_cs_xml:export_xml([XmlDoc]),
             {Body, RD, Ctx};
         {error, notfound} ->
             riak_cs_s3_response:no_such_upload_response(UploadId, RD, Ctx);

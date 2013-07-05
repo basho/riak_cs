@@ -55,7 +55,9 @@ malformed_request(RD,Ctx=#context{local_context=LocalCtx0}) ->
 %% directly returning from the {@link forbidden/2} webmachine export.
 -spec authorize(#wm_reqdata{}, #context{}) ->
                        {boolean() | {halt, term()}, #wm_reqdata{}, #context{}}.
-authorize(RD, Ctx0=#context{local_context=LocalCtx0, riakc_pid=RiakPid}) ->
+authorize(RD, Ctx0=#context{local_context=LocalCtx0,
+                            response_module=ResponseMod,
+                            riakc_pid=RiakPid}) ->
     Method = wrq:method(RD),
     RequestedAccess =
         riak_cs_acl_utils:requested_access(Method, false),
@@ -65,9 +67,13 @@ authorize(RD, Ctx0=#context{local_context=LocalCtx0, riakc_pid=RiakPid}) ->
     %% Final step of {@link forbidden/2}: Authentication succeeded,
     case {Method, LocalCtx#key_context.manifest} of
         {'GET', notfound} ->
-            {{halt, 404}, riak_cs_access_log_handler:set_user(Ctx#context.user, RD), Ctx};
+            ResponseMod:api_error(no_such_key,
+                                  riak_cs_access_log_handler:set_user(Ctx#context.user, RD),
+                                  Ctx);
         {'HEAD', notfound} ->
-            {{halt, 404}, riak_cs_access_log_handler:set_user(Ctx#context.user, RD), Ctx};
+            ResponseMod:api_error(no_such_key,
+                                  riak_cs_access_log_handler:set_user(Ctx#context.user, RD),
+                                  Ctx);
         _ ->
             riak_cs_wm_utils:object_access_authorize_helper(object, true, RD, Ctx)
     end.
@@ -81,7 +87,7 @@ allowed_methods() ->
     ['HEAD', 'GET', 'DELETE', 'PUT'].
 
 -spec valid_entity_length(#wm_reqdata{}, #context{}) -> {boolean(), #wm_reqdata{}, #context{}}.
-valid_entity_length(RD, Ctx) ->
+valid_entity_length(RD, Ctx=#context{response_module=ResponseMod}) ->
     case wrq:method(RD) of
         'PUT' ->
             case catch(
@@ -90,7 +96,7 @@ valid_entity_length(RD, Ctx) ->
                 Length when is_integer(Length) ->
                     case Length =< riak_cs_lfs_utils:max_content_len() of
                         false ->
-                            riak_cs_s3_response:api_error(
+                            ResponseMod:api_error(
                               entity_too_large, RD, Ctx);
                         true ->
                             check_0length_metadata_update(Length, RD, Ctx)
@@ -129,8 +135,7 @@ content_types_provided(RD, Ctx=#context{local_context=LocalCtx,
 -spec generate_etag(#wm_reqdata{}, #context{}) -> {string(), #wm_reqdata{}, #context{}}.
 generate_etag(RD, Ctx=#context{local_context=LocalCtx}) ->
     Mfst = LocalCtx#key_context.manifest,
-    ContentMd5 = Mfst?MANIFEST.content_md5,
-    ETag = riak_cs_utils:etag_from_binary_no_quotes(ContentMd5),
+    ETag = riak_cs_utils:etag_from_binary_no_quotes(Mfst?MANIFEST.content_md5),
     {ETag, RD, Ctx}.
 
 -spec last_modified(#wm_reqdata{}, #context{}) -> {calendar:datetime(), #wm_reqdata{}, #context{}}.
@@ -141,14 +146,15 @@ last_modified(RD, Ctx=#context{local_context=LocalCtx}) ->
 
 -spec produce_body(#wm_reqdata{}, #context{}) ->
                           {{known_length_stream, non_neg_integer(), {<<>>, function()}}, #wm_reqdata{}, #context{}}.
-produce_body(RD, Ctx=#context{local_context=LocalCtx}) ->
+produce_body(RD, Ctx=#context{local_context=LocalCtx,
+                              response_module=ResponseMod}) ->
     #key_context{get_fsm_pid=GetFsmPid, manifest=Mfst} = LocalCtx,
     ResourceLength = Mfst?MANIFEST.content_length,
     case parse_range(RD, ResourceLength) of
         invalid_range ->
             %% HTTP/1.1 416 Requested Range Not Satisfiable
             riak_cs_get_fsm:stop(GetFsmPid),
-            riak_cs_s3_response:api_error(
+            ResponseMod:api_error(
               invalid_range,
               %% RD#wm_reqdata{resp_range=ignore_request}, Ctx);
               RD, Ctx);
@@ -173,7 +179,7 @@ produce_body(RD, Ctx=#context{local_context=LocalCtx,
     riak_cs_dtrace:dt_object_entry(?MODULE, Func, [], [UserName, BFile_str]),
     ContentMd5 = Mfst?MANIFEST.content_md5,
     LastModified = riak_cs_wm_utils:to_rfc_1123(Mfst?MANIFEST.created),
-    ETag = riak_cs_utils:etag_from_binary(ContentMd5),
+    ETag = format_etag(ContentMd5),
     NewRQ1 = lists:foldl(fun({K, V}, Rq) -> wrq:set_resp_header(K, V, Rq) end,
                          RD,
                          [{"ETag",  ETag},
@@ -245,42 +251,43 @@ handle_delete_object({ok, _UUIDsMarkedforDelete}, UserName, BFile_str, RD, Ctx) 
     {true, RD, Ctx}.
 
 -spec content_types_accepted(#wm_reqdata{}, #context{}) -> {[{string(), atom()}], #wm_reqdata{}, #context{}}.
-content_types_accepted(RD, Ctx=#context{local_context=LocalCtx0}) ->
-    case wrq:get_req_header("Content-Type", RD) of
-        undefined ->
-            DefaultCType = "application/octet-stream",
-            LocalCtx = LocalCtx0#key_context{putctype=DefaultCType},
-            {[{DefaultCType, accept_body}],
-             RD,
-             Ctx#context{local_context=LocalCtx}};
-        %% This was shamelessly ripped out of
-        %% https://github.com/basho/riak_kv/blob/0d91ca641a309f2962a216daa0cee869c82ffe26/src/riak_kv_wm_object.erl#L492
-        CType ->
-            {Media, _Params} = mochiweb_util:parse_header(CType),
-            case string:tokens(Media, "/") of
-                [_Type, _Subtype] ->
-                    %% accept whatever the user says
-                    LocalCtx = LocalCtx0#key_context{putctype=Media},
-                    {[{Media, accept_body}], RD, Ctx#context{local_context=LocalCtx}};
-                _ ->
-                    %% TODO:
-                    %% Maybe we should have caught
-                    %% this in malformed_request?
-                    {[],
-                     wrq:set_resp_header(
-                       "Content-Type",
-                       "text/plain",
-                       wrq:set_resp_body(
-                         ["\"", Media, "\""
-                          " is not a valid media type"
-                          " for the Content-type header.\n"],
-                         RD)),
-                     Ctx}
-            end
+content_types_accepted(RD, Ctx) ->
+    content_types_accepted(wrq:get_req_header("Content-Type", RD), RD, Ctx).
+
+-spec content_types_accepted(undefined | string(), #wm_reqdata{}, #context{}) ->
+                                    {[{string(), atom()}], #wm_reqdata{}, #context{}}.
+content_types_accepted(CT, RD, Ctx)
+  when CT =:= undefined;
+       CT =:= [] ->
+    content_types_accepted("application/octet-stream", RD, Ctx);
+content_types_accepted(CT, RD, Ctx=#context{local_context=LocalCtx0}) ->
+    %% This was shamelessly ripped out of
+    %% https://github.com/basho/riak_kv/blob/0d91ca641a309f2962a216daa0cee869c82ffe26/src/riak_kv_wm_object.erl#L492
+    {Media, _Params} = mochiweb_util:parse_header(CT),
+    case string:tokens(Media, "/") of
+        [_Type, _Subtype] ->
+            %% accept whatever the user says
+            LocalCtx = LocalCtx0#key_context{putctype=Media},
+            {[{Media, accept_body}], RD, Ctx#context{local_context=LocalCtx}};
+        _ ->
+            %% TODO:
+            %% Maybe we should have caught
+            %% this in malformed_request?
+            {[],
+             wrq:set_resp_header(
+               "Content-Type",
+               "text/plain",
+               wrq:set_resp_body(
+                 ["\"", Media, "\""
+                  " is not a valid media type"
+                  " for the Content-type header.\n"],
+                 RD)),
+             Ctx}
     end.
 
 -spec accept_body(#wm_reqdata{}, #context{}) -> {{halt, integer()}, #wm_reqdata{}, #context{}}.
 accept_body(RD, Ctx=#context{local_context=LocalCtx,
+                             response_module=ResponseMod,
                              riakc_pid=RiakcPid})
   when LocalCtx#key_context.update_metadata == true ->
     #key_context{bucket=Bucket, key=KeyStr, manifest=Mfst} = LocalCtx,
@@ -293,9 +300,9 @@ accept_body(RD, Ctx=#context{local_context=LocalCtx,
         ok ->
             ETag = riak_cs_utils:etag_from_binary(Mfst?MANIFEST.content_md5),
             RD2 = wrq:set_resp_header("ETag", ETag, RD),
-            riak_cs_s3_response:copy_object_response(Mfst, RD2, Ctx);
+            ResponseMod:copy_object_response(Mfst, RD2, Ctx);
         {error, Err} ->
-            riak_cs_s3_response:api_error(Err, RD, Ctx)
+            ResponseMod:api_error(Err, RD, Ctx)
     end;
 accept_body(RD, Ctx=#context{local_context=LocalCtx,
                              user=User,
@@ -404,3 +411,9 @@ zero_length_metadata_update_p(0, RD) ->
     end;
 zero_length_metadata_update_p(_, _) ->
     false.
+
+-spec format_etag(binary() | {binary(), string()}) -> string().
+format_etag({ContentMd5, Suffix}) ->
+    riak_cs_utils:etag_from_binary(ContentMd5, Suffix);
+format_etag(ContentMd5) ->
+    riak_cs_utils:etag_from_binary(ContentMd5).

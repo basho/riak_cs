@@ -42,10 +42,6 @@
          get_object_list/1,
          get_internal_state/1]).
 
-%% Observability
--export([get_key_list_multiplier/0,
-         set_key_list_multiplier/1]).
-
 %% gen_fsm callbacks
 -export([init/1,
          prepare/2,
@@ -157,20 +153,6 @@
 -type tagged_item_list() :: list(tagged_item()).
 
 %%%===================================================================
-%%% Observability
-%%%===================================================================
-
--spec get_key_list_multiplier() -> float().
-get_key_list_multiplier() ->
-    riak_cs_utils:get_env(riak_cs, key_list_multiplier,
-                          ?KEY_LIST_MULTIPLIER).
-
--spec set_key_list_multiplier(float()) -> 'ok'.
-set_key_list_multiplier(Multiplier) ->
-    application:set_env(riak_cs, key_list_multiplier,
-                        Multiplier).
-
-%%%===================================================================
 %%% API
 %%%===================================================================
 
@@ -206,7 +188,7 @@ init([RiakcPid, CallerPid, Request, CacheKey, UseCache]) ->
     %% be two `start_link' arities, and one will use a default
     %% val from app.config and the other will explicitly
     %% take a val
-    KeyMultiplier = get_key_list_multiplier(),
+    KeyMultiplier = riak_cs_config:key_list_multiplier(),
 
     State = #state{riakc_pid=RiakcPid,
                    caller_pid=CallerPid,

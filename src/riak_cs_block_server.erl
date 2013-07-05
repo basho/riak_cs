@@ -22,6 +22,12 @@
 
 -behaviour(gen_server).
 
+-ifdef(PULSE).
+-include_lib("pulse/include/pulse.hrl").
+-compile({parse_transform, pulse_instrument}).
+-compile({pulse_replace_module,[{gen_server,pulse_gen_server}]}).
+-endif.
+
 -include("riak_cs.hrl").
 -include_lib("riak_pb/include/riak_pb_kv_codec.hrl").
 
@@ -174,11 +180,11 @@ handle_cast({get_block, ReplyPid, Bucket, Key, ClusterID, UUID, BlockNumber}, St
     {FullBucket, FullKey} = full_bkey(Bucket, Key, UUID, BlockNumber),
     StartTime = os:timestamp(),
     GetOptions = [{r, 1}, {notfound_ok, false}, {basic_quorum, false}],
-    LocalClusterID = riak_cs_utils:get_cluster_id(RiakcPid),
+    LocalClusterID = riak_cs_config:cluster_id(RiakcPid),
     %% don't use proxy get if it's a local get
     %% or proxy get is disabled
     UseProxyGet = ClusterID /= undefined
-                    andalso riak_cs_utils:proxy_get_active()
+                    andalso riak_cs_config:proxy_get_active()
                     andalso LocalClusterID /= ClusterID,
     Object =
         case UseProxyGet of

@@ -23,8 +23,8 @@
 -module(riak_cs_utils).
 
 %% Public API
--export([anonymous_user_creation/0,
-         etag_from_binary/1,
+-export([etag_from_binary/1,
+         etag_from_binary/2,
          etag_from_binary_no_quotes/1,
          check_bucket_exists/2,
          chunked_md5/3,
@@ -32,19 +32,16 @@
          close_riak_connection/2,
          create_bucket/5,
          create_user/2,
-         cs_version/0,
+         create_user/4,
          delete_bucket/4,
          delete_object/3,
          encode_term/1,
          from_bucket_name/1,
-         get_admin_creds/0,
          get_buckets/1,
-         get_env/3,
          get_keys_and_manifests/3,
          has_tombstone/1,
          is_admin/1,
          map_keys_and_manifests/3,
-         md5_chunk_size/0,
          reduce_keys_and_manifests/2,
          get_object/3,
          get_manifests/3,
@@ -70,7 +67,6 @@
          set_bucket_acl/5,
          set_object_acl/5,
          set_bucket_policy/5,
-         set_md5_chunk_size/1,
          delete_bucket_policy/4,
          get_bucket_acl_policy/3,
          second_resolution_timestamp/1,
@@ -78,8 +74,6 @@
          to_bucket_name/2,
          update_key_secret/1,
          update_obj_value/2,
-         get_cluster_id/1,
-         proxy_get_active/0,
          pid_to_binary/1]).
 
 -include("riak_cs.hrl").
@@ -102,15 +96,13 @@
 %% Public API
 %% ===================================================================
 
-%% @doc Return the value of the `anonymous_user_creation' application
-%% environment variable.
--spec anonymous_user_creation() -> boolean().
-anonymous_user_creation() ->
-    EnvResponse = application:get_env(riak_cs, anonymous_user_creation),
-    handle_env_response(EnvResponse, false).
 
-%% @doc Convert the passed binary into a string where the numbers are represented in hexadecimal (lowercase and 0 prefilled).
+
+%% @doc Convert the passed binary into a string where the numbers are
+%% represented in hexadecimal (lowercase and 0 prefilled).
 -spec binary_to_hexlist(binary()) -> string().
+binary_to_hexlist({Bin, Suffix}) ->
+    binary_to_hexlist(Bin) ++ Suffix;
 binary_to_hexlist(Bin) ->
     XBin =
         [ begin
@@ -128,15 +120,26 @@ binary_to_hexlist(Bin) ->
 %% around it.
 -spec etag_from_binary(binary()) -> string().
 etag_from_binary(Binary) ->
-    "\"" ++ etag_from_binary_no_quotes(Binary) ++ "\"".
+    etag_from_binary(Binary, []).
+
+%% @doc Return a hexadecimal string of `Binary', with double quotes
+%% around it.
+-spec etag_from_binary(binary(), string()) -> string().
+etag_from_binary(Binary, []) ->
+    "\"" ++ etag_from_binary_no_quotes(Binary) ++ "\"";
+etag_from_binary(Binary, Suffix) ->
+    "\"" ++ etag_from_binary_no_quotes(Binary) ++ Suffix ++ "\"".
 
 %% @doc Return a hexadecimal string of `Binary', without double quotes
 %% around it.
--spec etag_from_binary_no_quotes(binary()) -> string().
+-spec etag_from_binary_no_quotes(binary() | {binary(), string()}) -> string().
+etag_from_binary_no_quotes({Binary, Suffix}) ->
+    binary_to_hexlist(Binary) ++ Suffix;
 etag_from_binary_no_quotes(Binary) ->
     binary_to_hexlist(Binary).
 
-%% @doc Convert the passed binary into a string where the numbers are represented in hexadecimal (lowercase and 0 prefilled).
+%% @doc Convert the passed binary into a string where the numbers are
+%% represented in hexadecimal (lowercase and 0 prefilled).
 -spec hexlist_to_binary(string()) -> binary().
 hexlist_to_binary(String) ->
     Bytes = length(String) div 2,
@@ -250,10 +253,16 @@ dash_char(Char) ->
 %% @doc Create a new Riak CS user
 -spec create_user(string(), string()) -> {ok, rcs_user()} | {error, term()}.
 create_user(Name, Email) ->
+    {KeyId, Secret} = generate_access_creds(Email),
+    create_user(Name, Email, KeyId, Secret).
+
+%% @doc Create a new Riak CS user
+-spec create_user(string(), string(), string(), string()) -> {ok, rcs_user()} | {error, term()}.
+create_user(Name, Email, KeyId, Secret) ->
     case validate_email(Email) of
         ok ->
-            User = user_record(Name, Email),
-            create_credentialed_user(get_admin_creds(), User);
+            User = user_record(Name, Email, KeyId, Secret),
+            create_credentialed_user(riak_cs_config:admin_creds(), User);
         {error, _Reason}=Error ->
             Error
     end.
@@ -268,27 +277,21 @@ create_credentialed_user({ok, AdminCreds}, User) ->
     {StIp, StPort, StSSL} = stanchion_data(),
     UserDoc = user_json(User),
     %% Make a call to the user request serialization service.
-    Result = velvet:create_user(StIp, StPort, "application/json", UserDoc, 
+    Result = velvet:create_user(StIp, StPort, "application/json", UserDoc,
         [{ssl, StSSL}, {auth_creds, AdminCreds}]),
     handle_create_user(Result, User).
 
 handle_create_user(ok, User) ->
     {ok, User};
 handle_create_user({error, {error_status, _, _, ErrorDoc}}, _User) ->
-    riak_cs_s3_response:error_response(ErrorDoc);
+    case riak_cs_config:api() of
+        s3 ->
+            riak_cs_s3_response:error_response(ErrorDoc);
+        oos ->
+            {error, ErrorDoc}
+    end;
 handle_create_user({error, _}=Error, _User) ->
     Error.
-
-%% @doc Get the active version of Riak CS to use in checks to
-%% determine if new features should be enabled.
--spec cs_version() -> pos_integer() | undefined.
-cs_version() ->
-    cs_version(application:get_env(riak_cs, cs_version)).
-
-cs_version({ok, Version}) ->
-    Version;
-cs_version(undefined) ->
-    undefined.
 
 %% @doc Delete a bucket
 -spec delete_bucket(rcs_user(), riakc_obj:riakc_obj(), binary(), pid()) ->
@@ -338,16 +341,12 @@ delete_object(Bucket, Key, RiakcPid) ->
 
 -spec encode_term(term()) -> binary().
 encode_term(Term) ->
-    case use_t2b_compression() of
+    case riak_cs_config:use_t2b_compression() of
         true ->
             term_to_binary(Term, [compressed]);
         false ->
             term_to_binary(Term)
     end.
-
--spec use_t2b_compression() -> boolean().
-use_t2b_compression() ->
-    get_env(riak_cs, compress_terms, ?COMPRESS_TERMS).
 
 %% Get the root bucket name for either a Riak CS object
 %% bucket or the data block bucket name.
@@ -395,16 +394,6 @@ stanchion_data() ->
             SSL = ?DEFAULT_STANCHION_SSL
     end,
     {IP, Port, SSL}.
-
-%% @doc Get an application environment variable or return a default term.
--spec get_env(atom(), atom(), term()) -> term().
-get_env(App, Key, Default) ->
-    case application:get_env(App, Key) of
-        {ok, Value} ->
-            Value;
-        _ ->
-            Default
-    end.
 
 %% @doc Return a list of keys for a bucket along
 %% with their associated objects.
@@ -484,15 +473,6 @@ map_keys_and_manifests(Object, _, _) ->
 %% work is done.
 reduce_keys_and_manifests(Acc, _) ->
     Acc.
-
-%% @doc Return the credentials of the admin user
--spec get_admin_creds() -> {ok, {string(), string()}} | {error, term()}.
-get_admin_creds() ->
-    KeyEnvResult = application:get_env(riak_cs, admin_key),
-    SecretEnvResult = application:get_env(riak_cs, admin_secret),
-    admin_creds_response(
-      handle_env_response(KeyEnvResult, undefined),
-      handle_env_response(SecretEnvResult, undefined)).
 
 %% @doc Get an object from Riak
 -spec get_object(binary(), binary(), pid()) ->
@@ -639,7 +619,7 @@ has_tombstone({MD, _V}) ->
 %% @doc Determine if the specified user account is a system admin.
 -spec is_admin(rcs_user()) -> boolean().
 is_admin(User) ->
-    is_admin(User, get_admin_creds()).
+    is_admin(User, riak_cs_config:admin_creds()).
 
 %% @doc Pretty-print a JSON string ... from riak_core's json_pp.erl
 json_pp_print(Str) when is_list(Str) ->
@@ -884,27 +864,6 @@ update_obj_value(Obj, Value) when is_binary(Value) ->
 %% ===================================================================
 %% Internal functions
 %% ===================================================================
-
--spec admin_creds_response(term(), term()) -> {ok, {term(), term()}} |
-                                              {error, atom()}.
-admin_creds_response(undefined, _) ->
-    _ = lager:warning("The admin user's key id"
-                      "has not been specified."),
-    {error, admin_key_undefined};
-admin_creds_response([], _) ->
-    _ = lager:warning("The admin user's key id"
-                      "has not been specified."),
-    {error, admin_key_undefined};
-admin_creds_response(_, undefined) ->
-    _ = lager:warning("The admin user's secret"
-                      "has not been specified."),
-    {error, admin_secret_undefined};
-admin_creds_response(_, []) ->
-    _ = lager:warning("The admin user's secret"
-                      "has not been specified."),
-    {error, admin_secret_undefined};
-admin_creds_response(Key, Secret) ->
-    {ok, {Key, Secret}}.
 
 %% @doc Generate a JSON document to use for a bucket
 %% ACL request.
@@ -1206,7 +1165,9 @@ generate_access_creds(UserId) ->
     {KeyId, Secret}.
 
 %% @doc Generate the canonical id for a user.
--spec generate_canonical_id(string(), string()) -> string().
+-spec generate_canonical_id(string(), undefined | string()) -> string().
+generate_canonical_id(_KeyID, undefined) ->
+    [];
 generate_canonical_id(KeyID, Secret) ->
     Bytes = 16,
     Id1 = crypto:md5(KeyID),
@@ -1236,12 +1197,6 @@ generate_secret(UserName, Key) ->
     base64url:encode_to_string(
       iolist_to_binary(<< SecretPart1:Bytes/binary,
                           SecretPart2:Bytes/binary >>)).
-
--spec handle_env_response(undefined | {ok, term()}, term()) -> term().
-handle_env_response(undefined, Default) ->
-    Default;
-handle_env_response({ok, Value}, _) ->
-    Value.
 
 %% @doc Determine if the specified user account is a system admin.
 -spec is_admin(rcs_user(), {ok, {string(), string()}} |
@@ -1297,7 +1252,7 @@ resolve_buckets([HeadUserRec | RestUserRecs], Buckets, _KeepDeleted) ->
                                   {error, term()}.
 serialized_bucket_op(Bucket, ACL, User, UserObj, BucketOp, StatName, RiakPid) ->
     StartTime = os:timestamp(),
-    case get_admin_creds() of
+    case riak_cs_config:admin_creds() of
         {ok, AdminCreds} ->
             BucketFun = bucket_fun(BucketOp,
                                    Bucket,
@@ -1416,15 +1371,15 @@ update_user_record(User=#moss_user_v1{}) ->
 
 %% @doc Return a user record for the specified user name and
 %% email address.
--spec user_record(string(), string()) -> rcs_user().
-user_record(Name, Email) ->
-    user_record(Name, Email, []).
+-spec user_record(string(), string(), string(), string()) -> rcs_user().
+user_record(Name, Email, KeyId, Secret) ->
+    user_record(Name, Email, KeyId, Secret, []).
 
 %% @doc Return a user record for the specified user name and
 %% email address.
--spec user_record(string(), string(), [cs_bucket()]) -> rcs_user().
-user_record(Name, Email, Buckets) ->
-    {KeyId, Secret} = generate_access_creds(Email),
+-spec user_record(string(), string(), string(), string(), [cs_bucket()]) ->
+                         rcs_user().
+user_record(Name, Email, KeyId, Secret, Buckets) ->
     CanonicalId = generate_canonical_id(KeyId, Secret),
     DisplayName = display_name(Email),
     ?RCS_USER{name=Name,
@@ -1435,57 +1390,6 @@ user_record(Name, Email, Buckets) ->
                canonical_id=CanonicalId,
                buckets=Buckets}.
 
-%% doc Return the current cluster ID. Used for repl
-%% After obtaining the clusterid the first time,
-%% store the value in app:set_env
--spec get_cluster_id(pid()) -> binary().
-get_cluster_id(Pid) ->
-    case application:get_env(riak_cs, cluster_id) of
-        {ok, ClusterID} ->
-            ClusterID;
-        undefined ->
-            Timeout = case application:get_env(riak_cs,cluster_id_timeout) of
-                          {ok, Value} -> Value;
-                          undefined   -> ?DEFAULT_CLUSTER_ID_TIMEOUT
-                      end,
-            maybe_get_cluster_id(proxy_get_active(), Pid, Timeout)
-    end.
-
-%% @doc If `proxy_get' is enabled then attempt to determine the cluster id
--spec maybe_get_cluster_id(boolean(), pid(), integer()) -> undefined | binary().
-maybe_get_cluster_id(true, Pid, Timeout) ->
-    try
-        case riak_repl_pb_api:get_clusterid(Pid, Timeout) of
-            {ok, ClusterID} ->
-                application:set_env(riak_cs, cluster_id, ClusterID),
-                ClusterID;
-            _ ->
-                _ = lager:debug("Unable to obtain cluster ID"),
-                undefined
-        end
-    catch _:_ ->
-            %% Disable `proxy_get' so we do not repeatedly have to
-            %% handle this same exception. This would happen if an OSS
-            %% install has `proxy_get' enabled.
-            application:set_env(riak_cs, proxy_get, disabled),
-            undefined
-    end;
-maybe_get_cluster_id(false, _, _) ->
-    undefined.
-
-%% doc Check app.config to see if repl proxy_get is enabled
-%% Defaults to false.
-proxy_get_active() ->
-    case application:get_env(riak_cs, proxy_get) of
-        {ok, enabled} ->
-            true;
-        {ok, disabled} ->
-            false;
-        {ok, _} ->
-            _ = lager:warning("proxy_get value in app.config is invalid"),
-            false;
-        undefined -> false
-    end.
 
 %% @doc Convert a pid to a binary
 -spec pid_to_binary(pid()) -> binary().
@@ -1506,15 +1410,3 @@ chunked_md5(Data, Context, ChunkSize) ->
             UpdContext = crypto:md5_update(Context, Chunk),
             chunked_md5(RestData, UpdContext, ChunkSize)
     end.
-
-%% @doc Return the configured md5 chunk size
--spec md5_chunk_size() -> non_neg_integer().
-md5_chunk_size() ->
-    get_env(riak_cs, md5_chunk_size, ?DEFAULT_MD5_CHUNK_SIZE).
-
-%% @doc Helper fun to set the md5 chunk size
--spec set_md5_chunk_size(non_neg_integer()) -> ok | {error, invalid_value}.
-set_md5_chunk_size(Size) when is_integer(Size) andalso Size > 0 ->
-    application:set_env(riak_cs, md5_chunk_size, Size);
-set_md5_chunk_size(_) ->
-    {error, invalid_value}.

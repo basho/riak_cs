@@ -81,7 +81,9 @@ to_xml(RD, Ctx=#context{local_context=LocalCtx,
                      [{'ID', [D?MULTIPART_DESCR.owner_key_id]},
                       {'DisplayName', [D?MULTIPART_DESCR.owner_display]}
                      ]},
-                    {'StorageClass', [string:to_upper(atom_to_list(D?MULTIPART_DESCR.storage_class))]},
+                    %% Just ignore the value in `D?MULTIPART_DESCR.storage_class',
+                    %% since there was a bug where it was writen as `regular'.
+                    {'StorageClass', ["STANDARD"]},
                     {'Initiated', [D?MULTIPART_DESCR.initiated]}
                    ]
                   } || D <- Ds],
@@ -108,7 +110,7 @@ to_xml(RD, Ctx=#context{local_context=LocalCtx,
                         {'IsTruncated', ["false"]}   % TODO
                       ] ++ Us ++ Cs
                      },
-            Body = riak_cs_s3_response:export_xml([XmlDoc]),
+            Body = riak_cs_xml:export_xml([XmlDoc]),
             {Body, RD, Ctx};
         {error, Reason} ->
             riak_cs_s3_response:api_error(Reason, RD, Ctx)

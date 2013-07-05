@@ -21,17 +21,18 @@
 -module(riak_cs_s3_response).
 -export([api_error/3,
          status_code/1,
+         respond/3,
          respond/4,
-         export_xml/1,
          error_response/1,
          error_response/5,
-         list_bucket_response/5,
-         list_all_my_buckets_response/3,
          copy_object_response/3,
          no_such_upload_response/3,
          error_code_to_atom/1]).
 
 -include("riak_cs.hrl").
+-include("riak_cs_api.hrl").
+-include("list_objects.hrl").
+-include_lib("webmachine/include/webmachine.hrl").
 -include_lib("xmerl/include/xmerl.hrl").
 
 -type xmlElement() :: #xmlElement{}.
@@ -72,7 +73,8 @@ error_message(malformed_policy_resource) -> "Policy has invalid resource";
 error_message(malformed_policy_principal) -> "Invalid principal in policy";
 error_message(malformed_policy_action) -> "Policy has invalid action";
 error_message(malformed_policy_condition) -> "Policy has invalid condition";
-error_message(no_such_bucket_policy) -> "The bucket policy does not exist";
+error_message(no_such_key) -> "The specified key does not exist.";
+error_message(no_such_bucket_policy) -> "The specified bucket does not have a bucket policy.";
 error_message(no_such_upload) ->
     "The specified upload does not exist. The upload ID may be invalid, or the upload may have been aborted or completed.";
 error_message(bad_request) -> "Bad Request";
@@ -93,6 +95,7 @@ error_code(bad_etag) -> "InvalidPart";
 error_code(bad_etag_order) -> "InvalidPartOrder";
 error_code(invalid_user_update) -> "InvalidUserUpdate";
 error_code(no_such_bucket) -> "NoSuchBucket";
+error_code(no_such_key) -> "NoSuchKey";
 error_code({riak_connect_failed, _}) -> "RiakConnectFailed";
 error_code(admin_key_undefined) -> "ServiceUnavailable";
 error_code(admin_secret_undefined) -> "ServiceUnavailable";
@@ -131,6 +134,7 @@ status_code(bad_etag) -> 400;
 status_code(bad_etag_order) -> 400;
 status_code(invalid_user_update) -> 400;
 status_code(no_such_bucket) -> 404;
+status_code(no_such_key) -> 404;
 status_code({riak_connect_failed, _}) -> 503;
 status_code(admin_key_undefined) -> 503;
 status_code(admin_secret_undefined) -> 503;
@@ -153,6 +157,14 @@ status_code(invalid_range) -> 416;
 status_code(invalid_bucket_name) -> 400;
 status_code(_) -> 503.
 
+-spec respond(term(), #wm_reqdata{}, #context{}) ->
+                     {binary(), #wm_reqdata{}, #context{}}.
+respond(?LBRESP{}=Response, RD, Ctx) ->
+    {riak_cs_xml:to_xml(Response), RD, Ctx};
+respond({ok, ?LORESP{}=Response}, RD, Ctx) ->
+    {riak_cs_xml:to_xml(Response), RD, Ctx};
+respond({error, _}=Error, RD, Ctx) ->
+    api_error(Error, RD, Ctx).
 
 respond(StatusCode, Body, ReqData, Ctx) ->
      UpdReqData = wrq:set_resp_body(Body,
@@ -161,9 +173,20 @@ respond(StatusCode, Body, ReqData, Ctx) ->
                                                         ReqData)),
     {{halt, StatusCode}, UpdReqData, Ctx}.
 
-api_error(Error, ReqData, Ctx) when is_atom(Error); is_tuple(Error) ->
-    error_response(status_code(Error), error_code(Error), error_message(Error),
-                   ReqData, Ctx).
+api_error(Error, RD, Ctx) when is_atom(Error) ->
+    error_response(status_code(Error),
+                   error_code(Error),
+                   error_message(Error),
+                   RD,
+                   Ctx);
+api_error({riak_connect_failed, _}=Error, RD, Ctx) ->
+    error_response(status_code(Error),
+                   error_code(Error),
+                   error_message(Error),
+                   RD,
+                   Ctx);
+api_error({error, Reason}, RD, Ctx) ->
+    api_error(Reason, RD, Ctx).
 
 error_response(ErrorDoc) when length(ErrorDoc) =:= 0 ->
     {error, error_code_to_atom("BadRequest")};
@@ -176,70 +199,7 @@ error_response(StatusCode, Code, Message, RD, Ctx) ->
                          {'Message', [Message]},
                          {'Resource', [string:strip(OrigResource, right, $/)]},
                          {'RequestId', [""]}]}],
-    respond(StatusCode, export_xml(XmlDoc), RD, Ctx).
-
-list_all_my_buckets_response(User, RD, Ctx) ->
-    BucketsDoc =
-        [begin
-             case is_binary(B?RCS_BUCKET.name) of
-                 true ->
-                     Name = binary_to_list(B?RCS_BUCKET.name);
-                 false ->
-                     Name = B?RCS_BUCKET.name
-             end,
-             {'Bucket',
-              [{'Name', [Name]},
-               {'CreationDate', [B?RCS_BUCKET.creation_date]}]}
-         end || B <- riak_cs_utils:get_buckets(User)],
-    Contents =  [user_to_xml_owner(User)] ++ [{'Buckets', BucketsDoc}],
-    XmlDoc = [{'ListAllMyBucketsResult', [{'xmlns', ?S3_XMLNS}], Contents}],
-    respond(200, export_xml(XmlDoc), RD, Ctx).
-
-list_bucket_response(User, Bucket, KeyObjPairs, RD, Ctx) ->
-    %% @TODO Once the optimization for storing small objects
-    %% is completed, a check will be required either here or
-    %% in `riak_cs_lfs_utils' to determine if the object
-    %% associated with each key is an `lfs_manifest' or not.
-    Contents = [begin
-                    % Key is just not a unicode string but just a
-                    % raw binary like <<229,159,188,231,142,137>>.
-                    % we need to convert to unicode string like [22524,29577].
-                    % this does not affect ascii characters.
-                    KeyString = unicode:characters_to_list(Key, unicode),
-                    case ObjResp of
-                        {ok, Manifest} ->
-                            Size = integer_to_list(
-                                     Manifest?MANIFEST.content_length),
-                            LastModified =
-                                riak_cs_wm_utils:to_iso_8601(
-                                  Manifest?MANIFEST.created),
-                            ETag = riak_cs_utils:etag_from_binary(Manifest?MANIFEST.content_md5),
-                            {'Contents', [{'Key', [KeyString]},
-                                          {'Size', [Size]},
-                                          {'LastModified', [LastModified]},
-                                          {'ETag', [ETag]},
-                                          user_to_xml_owner(User)]};
-                        {error, Reason} ->
-                            _ = lager:debug("Unable to fetch manifest for ~p. Reason: ~p",
-                                            [Key, Reason]),
-                            undefined
-                    end
-                end
-                || {Key, ObjResp} <- KeyObjPairs],
-    BucketProps = [{'Name', [Bucket?RCS_BUCKET.name]},
-                   {'Prefix', []},
-                   {'Marker', []},
-                   {'MaxKeys', ["1000"]},
-                   {'Delimiter', ["/"]},
-                   {'IsTruncated', ["false"]}],
-    XmlDoc = [{'ListBucketResult', BucketProps++
-                   lists:filter(fun(E) -> E /= undefined end,
-                                Contents)}],
-    respond(200, export_xml(XmlDoc), RD, Ctx).
-
-user_to_xml_owner(?RCS_USER{canonical_id=CanonicalId, display_name=Name}) ->
-    {'Owner', [{'ID', [CanonicalId]},
-               {'DisplayName', [Name]}]}.
+    respond(StatusCode, riak_cs_xml:export_xml(XmlDoc), RD, Ctx).
 
 copy_object_response(Manifest, RD, Ctx) ->
     LastModified = riak_cs_wm_utils:to_iso_8601(Manifest?MANIFEST.created),
@@ -247,11 +207,7 @@ copy_object_response(Manifest, RD, Ctx) ->
     XmlDoc = [{'CopyObjectResponse',
                [{'LastModified', [LastModified]},
                 {'ETag', [ETag]}]}],
-    respond(200, export_xml(XmlDoc), RD, Ctx).
-
-export_xml(XmlDoc) ->
-    unicode:characters_to_binary(
-      xmerl:export_simple(XmlDoc, xmerl_xml, [{prolog, ?XML_PROLOG}]), unicode, unicode).
+    respond(200, riak_cs_xml:export_xml(XmlDoc), RD, Ctx).
 
 no_such_upload_response(UploadId, RD, Ctx) ->
     XmlDoc = {'Error',
@@ -261,7 +217,7 @@ no_such_upload_response(UploadId, RD, Ctx) ->
                {'UploadId', [binary_to_list(base64url:encode(UploadId))]},
                {'HostId', ["host-id"]}
               ]},
-    Body = export_xml([XmlDoc]),
+    Body = riak_cs_xml:export_xml([XmlDoc]),
     respond(status_code(no_such_upload), Body, RD, Ctx).
 
 %% @doc Convert an error code string into its corresponding atom

@@ -8,6 +8,7 @@ ERLANG_BIN       = $(shell dirname $(shell which erl))
 REBAR           ?= $(BASE_DIR)/rebar
 OVERLAY_VARS    ?=
 CS_HTTP_PORT    ?= 8080
+PULSE_TESTS = riak_cs_get_fsm_pulse
 
 .PHONY: rel stagedevrel deps test
 
@@ -53,16 +54,18 @@ distclean: clean
 test: all
 	@./rebar skip_deps=true eunit
 
+pulse: all
+	@rm -rf $(BASE_DIR)/.eunit
+	@./rebar -D PULSE eunit skip_deps=true suites=$(PULSE_TESTS)
+
 test-client: test-clojure test-python test-erlang test-ruby test-php
 
-test-python: test-boto
+test-python:
+	@cd client_tests/python/ && make CS_HTTP_PORT=$(CS_HTTP_PORT)
 
 test-ruby:
 	@bundle --gemfile client_tests/ruby/Gemfile --path vendor
 	@cd client_tests/ruby && bundle exec rake spec
-
-test-boto:
-	@cd client_tests/python/ && make CS_HTTP_PORT=$(CS_HTTP_PORT)
 
 test-erlang: compile-client-test
 	@./rebar skip_deps=true client_test_run
@@ -146,7 +149,8 @@ dialyzer: compile
 	@echo Use "'make build_plt'" to build PLT prior to using this target.
 	@echo
 	@sleep 1
-	dialyzer -Wno_return -Wunmatched_returns --plt $(PLT) deps/*/ebin ebin | \
+	dialyzer -Wno_return -Wunmatched_returns -Wrace_conditions \
+		--plt $(PLT) deps/*/ebin ebin | \
 	    tee .dialyzer.raw-output | egrep -v -f ./dialyzer.ignore-warnings
 
 cleanplt:
@@ -170,6 +174,7 @@ package.src: deps
 	mkdir -p package
 	rm -rf package/$(PKG_ID)
 	git archive --format=tar --prefix=$(PKG_ID)/ $(PKG_REVISION)| (cd package && tar -xf -)
+	cp rebar.config.script package/$(PKG_ID)
 	make -C package/$(PKG_ID) deps
 	for dep in package/$(PKG_ID)/deps/*; do \
              echo "Processing dep: $${dep}"; \

@@ -54,7 +54,8 @@
          upload_part/6, upload_part/7,
          upload_part_1blob/2,
          upload_part_finished/7, upload_part_finished/8,
-         user_rec_to_3tuple/1
+         user_rec_to_3tuple/1,
+         is_multipart_manifest/1
         ]).
 -export([get_mp_manifest/1]).
 
@@ -135,35 +136,36 @@ initiate_multipart_upload(Bucket, Key, ContentType, {_,_,_} = Owner,
 make_content_types_accepted(RD, Ctx) ->
     make_content_types_accepted(RD, Ctx, unused_callback).
 
-make_content_types_accepted(RD, Ctx=#context{local_context=LocalCtx0}, Callback) ->
-    case wrq:get_req_header("Content-Type", RD) of
-        undefined ->
-            DefaultCType = "application/octet-stream",
-            LocalCtx = LocalCtx0#key_context{putctype=DefaultCType},
-            {[{DefaultCType, Callback}],
-             RD,
-             Ctx#context{local_context=LocalCtx}};
-        %% This was shamelessly ripped out of
-        %% https://github.com/basho/riak_kv/blob/0d91ca641a309f2962a216daa0cee869c82ffe26/src/riak_kv_wm_object.erl#L492
-        CType ->
-            {Media, _Params} = mochiweb_util:parse_header(CType),
-            case string:tokens(Media, "/") of
-                [_Type, _Subtype] ->
-                    %% accept whatever the user says
-                    LocalCtx = LocalCtx0#key_context{putctype=Media},
-                    {[{Media, Callback}], RD, Ctx#context{local_context=LocalCtx}};
-                _ ->
-                    {[],
-                     wrq:set_resp_header(
-                       "Content-Type",
-                       "text/plain",
-                       wrq:set_resp_body(
-                         ["\"", Media, "\""
-                          " is not a valid media type"
-                          " for the Content-type header.\n"],
-                         RD)),
-                     Ctx}
-            end
+make_content_types_accepted(RD, Ctx, Callback) ->
+    make_content_types_accepted(wrq:get_req_header("Content-Type", RD),
+                                RD,
+                                Ctx,
+                                Callback).
+
+make_content_types_accepted(CT, RD, Ctx, Callback)
+  when CT =:= undefined;
+       CT =:= [] ->
+    make_content_types_accepted("application/octet-stream", RD, Ctx, Callback);
+make_content_types_accepted(CT, RD, Ctx=#context{local_context=LocalCtx0}, Callback) ->
+    %% This was shamelessly ripped out of
+    %% https://github.com/basho/riak_kv/blob/0d91ca641a309f2962a216daa0cee869c82ffe26/src/riak_kv_wm_object.erl#L492
+    {Media, _Params} = mochiweb_util:parse_header(CT),
+    case string:tokens(Media, "/") of
+        [_Type, _Subtype] ->
+            %% accept whatever the user says
+            LocalCtx = LocalCtx0#key_context{putctype=Media},
+            {[{Media, Callback}], RD, Ctx#context{local_context=LocalCtx}};
+        _ ->
+            {[],
+             wrq:set_resp_header(
+               "Content-Type",
+               "text/plain",
+               wrq:set_resp_body(
+                 ["\"", Media, "\""
+                  " is not a valid media type"
+                  " for the Content-type header.\n"],
+                 RD)),
+             Ctx}
     end.
 
 make_special_error(Error) ->
@@ -178,7 +180,7 @@ make_special_error(Code, Message, RequestId, HostId) ->
                {'HostId', [HostId]}
               ]
              },
-    riak_cs_s3_response:export_xml([XmlDoc]).
+    riak_cs_xml:export_xml([XmlDoc]).
 
 list_multipart_uploads(Bucket, Caller, Opts) ->
     list_multipart_uploads(Bucket, Caller, Opts, nopid).
@@ -301,7 +303,7 @@ write_new_manifest(M, Opts, RiakcPidUnW) ->
                           AnAcl ->
                               AnAcl
                       end,
-                ClusterId = riak_cs_utils:get_cluster_id(?PID(RiakcPid)),
+                ClusterId = riak_cs_config:cluster_id(?PID(RiakcPid)),
                 M2 = M?MANIFEST{acl = Acl,
                                 cluster_id = ClusterId,
                                 write_start_time=os:timestamp()},
@@ -405,7 +407,7 @@ do_part_common2(complete, RiakcPid,
                           end,
                 NewManifest = Manifest?MANIFEST{state = active,
                                                 content_length = Bytes,
-                                                content_md5 = UUID,
+                                                content_md5 = {UUID, "-" ++ integer_to_list(ordsets:size(PartsToKeep))},
                                                 props = MProps2},
                 ok = riak_cs_manifest_fsm:add_new_manifest(ManiPid, NewManifest),
                 case PartsToDelete of
@@ -727,7 +729,7 @@ move_dead_parts_to_gc(Bucket, Key, PartsToDelete, RiakcPid) ->
     ok = riak_cs_gc:move_manifests_to_gc_bucket(PartDelMs, RiakcPid, false).
 
 enforce_part_size(PartsToKeep) ->
-    case riak_cs_utils:get_env(riak_cs, enforce_multipart_part_size, true) of
+    case riak_cs_config:enforce_multipart_part_size() of
         true ->
             eval_part_sizes([P?PART_MANIFEST.content_length || P <- PartsToKeep]);
         false ->

@@ -168,7 +168,7 @@ init({{Bucket, Key, ContentLength, ContentType,
                          riakc_pid=RiakPid,
                          make_new_manifest_p=MakeNewManifestP,
                          timeout=Timeout,
-                         md5_chunk_size=riak_cs_utils:md5_chunk_size()},
+                         md5_chunk_size=riak_cs_config:md5_chunk_size()},
      0}.
 
 %%--------------------------------------------------------------------
@@ -386,7 +386,7 @@ prepare(State=#state{bucket=Bucket,
     MaxBufferSize = (riak_cs_lfs_utils:put_fsm_buffer_size_factor() * BlockSize),
 
     %% for now, always populate cluster_id
-    ClusterID = riak_cs_utils:get_cluster_id(RiakPid),
+    ClusterID = riak_cs_config:cluster_id(RiakPid),
     Manifest =
         riak_cs_lfs_utils:new_manifest(Bucket,
                                          Key,

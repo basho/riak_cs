@@ -1,4 +1,13 @@
-case os:getenv("RIAK_CS_EE_DEPS") of
+
+UseEEDeps = case os:getenv("RIAK_CS_EE_DEPS") of
+                false ->
+                    false;
+                [] ->
+                    false;
+                _ ->
+                    true
+            end,
+case UseEEDeps of
     false ->
         Bytes = "%% -*- tab-width: 4;erlang-indent-level: 4;indent-tabs-mode: nil -*-
 %% ex: ts=4 sw=4 et
@@ -26,7 +35,7 @@ case os:getenv("RIAK_CS_EE_DEPS") of
 {solaris_pkgname, \"BASHOriak-cs\"}.",
         file:write_file("pkg.vars.config", Bytes),
         CONFIG;
-    _ ->
+    true ->
         case lists:keysearch(deps, 1, CONFIG) of
             {value, {deps, Deps}} ->
                 Bytes = "%% -*- tab-width: 4;erlang-indent-level: 4;indent-tabs-mode: nil -*-
