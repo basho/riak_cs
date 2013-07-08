@@ -185,7 +185,7 @@ fetching_next_fileset(continue, State=#state{batch=[FileSetKey | RestKeys],
                                        batch_skips=BatchSkips+1},
             NextState = fetching_next_fileset
     end,
-    gen_fsm:send_event(self(), continue),
+    ok = continue(),
     {next_state, NextState, NewStateData};
 fetching_next_fileset(_, State) ->
     {next_state, fetching_next_fileset, State}.
@@ -200,7 +200,7 @@ initiating_file_delete(continue, #state{batch=[_ManiSetKey | RestKeys],
                                         current_riak_object=RiakObj,
                                         riak=RiakPid}=State) ->
     finish_file_delete(twop_set:size(FileSet), FileSet, RiakObj, RiakPid),
-    gen_fsm:send_event(self(), continue),
+    ok = continue(),
     {next_state, fetching_next_fileset, State#state{batch=RestKeys,
                                                     batch_count=1+BatchCount}};
 initiating_file_delete(continue, #state{current_files=[Manifest | _RestManifests],
@@ -355,6 +355,15 @@ cancel_batch(#state{batch_start=BatchStart,
     schedule_next(State#state{batch=[],
                               riak=undefined}).
 
+-spec continue() -> ok.
+%% @private
+%% @doc Send an asynchronous `continue' event. This is used to advance
+%% the FSM to the next state and perform some blocking action. The blocking
+%% actions are done in the beginning of the next state to give the FSM a
+%% chance to respond to events from the outside world.
+continue() ->
+    gen_fsm:send_event(self(), continue).
+
 %% @doc How many seconds have passed from `Time' to now.
 -spec elapsed(undefined | non_neg_integer()) -> non_neg_integer().
 elapsed(undefined) ->
@@ -464,7 +473,7 @@ handle_cancel_timer(RemainderMillis) ->
 -spec resume_gc(#state{}) -> #state{}.
 resume_gc(State) ->
     _ = lager:info("Resuming garbage collection"),
-    gen_fsm:send_event(self(), continue),
+    ok = continue(),
     State#state{pause_state=undefined}.
 
 -spec ok_reply(atom(), #state{}) -> {reply, ok, atom(), #state{}}.
@@ -505,7 +514,7 @@ start_batch(State=#state{riak=undefined}) ->
     BatchStart = riak_cs_gc:timestamp(),
     Batch = fetch_eligible_manifest_keys(Riak, BatchStart),
     _ = lager:debug("Batch keys: ~p", [Batch]),
-    gen_fsm:send_event(self(), continue),
+    ok = continue(),
     State#state{batch_start=BatchStart,
                 batch=Batch,
                 batch_count=0,
@@ -548,7 +557,7 @@ handle_delete_fsm_reply({ok, {TotalBlocks, TotalBlocks}},
                         #state{current_files=[CurrentManifest | RestManifests],
                                current_fileset=FileSet,
                                block_count=BlockCount} = State) ->
-    gen_fsm:send_event(self(), continue),
+    ok = continue(),
     UpdFileSet = twop_set:del_element(CurrentManifest, FileSet),
     State#state{delete_fsm_pid=undefined,
                 current_fileset=UpdFileSet,
@@ -557,12 +566,12 @@ handle_delete_fsm_reply({ok, {TotalBlocks, TotalBlocks}},
 handle_delete_fsm_reply({ok, {NumDeleted, _TotalBlocks}},
                         #state{current_files=[_CurrentManifest | RestManifests],
                                block_count=BlockCount} = State) ->
-    gen_fsm:send_event(self(), continue),
+    ok = continue(),
     State#state{delete_fsm_pid=undefined,
                 current_files=RestManifests,
                 block_count=BlockCount+NumDeleted};
 handle_delete_fsm_reply({error, _}, #state{current_files=[_ | RestManifests]} = State) ->
-    gen_fsm:send_event(self(), continue),
+    ok = continue(),
     State#state{delete_fsm_pid=undefined,
                 current_files=RestManifests}.
 
