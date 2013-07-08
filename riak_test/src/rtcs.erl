@@ -112,7 +112,7 @@ config(Key, Secret, Port) ->
                     ?DEFAULT_PROTO,
                     ?PROXY_HOST,
                     Port,
-                    [{keep_alive_timeout, 100}]).
+                    []).
 
 create_user(Node, UserIndex) ->
     {A, B, C} = erlang:now(),
