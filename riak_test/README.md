@@ -88,6 +88,9 @@ prerequisites:
   access to the Boto S3 libraries.
 * Your $PATH must have Clojure's "lein" available.  "lein" is the main
   executable for the Leinigen tool.
+* Your system must have libevent installed. If you see an error for a 
+  missing 'event.h' file during test runs, this is because libevent is
+  not installed.
 
 1. Before running the Riak client tests, your
 `~/.riak_test.config` file must contain an entry for `cs_src_root` in
