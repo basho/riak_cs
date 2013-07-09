@@ -137,7 +137,7 @@ upload_and_assert_parts(Bucket, Key, UploadId, PartCount, Size, Config) ->
 
 upload_and_assert_part(Bucket, Key, UploadId, PartNum, PartData, Config) ->
     {RespHeaders, _UploadRes} = erlcloud_s3_multipart:upload_part(Bucket, Key, UploadId, PartNum, PartData, Config),
-    PartEtag = proplists:get_value("etag", RespHeaders),
+    PartEtag = proplists:get_value("ETag", RespHeaders),
     PartsTerm = erlcloud_s3_multipart:parts_to_term(
                   erlcloud_s3_multipart:list_parts(Bucket, Key, UploadId, [], Config)),
     Parts = proplists:get_value(parts, PartsTerm),
