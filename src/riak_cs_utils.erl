@@ -742,7 +742,6 @@ save_user(User, UserObj, RiakPid) ->
                    riakc_obj:update_value(UserObj,
                                           riak_cs_utils:encode_term(User)),
                    MD),
-    %% UpdUserObj = update_obj_value(UserObj, riak_cs_utils:encode_term(User)),
     riakc_pb_socket:put(RiakPid, UpdUserObj).
 
 %% @doc Set the ACL for a bucket. Existing ACLs are only
