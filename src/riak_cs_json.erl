@@ -57,7 +57,7 @@ from_json(JsonString) ->
 
 -type match_spec() :: {index, non_neg_integer()} | {key, binary(), binary()}.
 -type path_query() :: {find, match_spec()}.
--type path() :: [binary() | path_query()].
+-type path() :: [binary() | tuple() | path_query()].
 -spec get({struct, term()} | [term()] | undefined, path()) -> term().
 get({struct, _}=Object, Path) ->
     follow_path(Object, Path);

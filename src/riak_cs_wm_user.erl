@@ -103,7 +103,7 @@ post_is_create(RD, Ctx) -> {true, RD, Ctx}.
 
 create_path(RD, Ctx) -> {"/riak-cs/user", RD, Ctx}.
 
--spec accept_json(term(), term()) ->
+-spec accept_json(#wm_reqdata{}, #context{}) ->
     {boolean() | {halt, term()}, term(), term()}.
 accept_json(RD, Ctx=#context{user=undefined}) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"accept_json">>),
@@ -389,7 +389,7 @@ user_xml_filter(Element, Acc) ->
 
 -spec new_user_response({ok, rcs_user()} | {error, term()},
                         string(), #wm_reqdata{}, #context{}) ->
-                               {boolean, #wm_reqdata{}, #context{}}.
+                               {true | {halt, non_neg_integer()}, #wm_reqdata{}, #context{}}.
 new_user_response({ok, User}, ContentType, RD, Ctx) ->
     UserDoc = format_user_record(User, ContentType),
     WrittenRD =
