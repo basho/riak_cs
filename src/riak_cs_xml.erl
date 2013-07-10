@@ -67,7 +67,9 @@ to_xml(?LBRESP{}=ListBucketsResp) ->
 to_xml(?LORESP{}=ListObjsResp) ->
     list_objects_response_to_xml(ListObjsResp);
 to_xml(?RCS_USER{}=User) ->
-    user_record_to_xml(User).
+    user_record_to_xml(User);
+to_xml({users, Users}) ->
+    user_records_to_xml(Users).
 
 %% ===================================================================
 %% Internal functions
@@ -230,14 +232,23 @@ uri_for_group('AuthUsers') ->
     ?AUTH_USERS_GROUP.
 
 %% @doc Convert a Riak CS user record to XML
--spec user_record_to_xml(term()) -> binary().
-user_record_to_xml(?RCS_USER{email=Email,
-                              display_name=DisplayName,
-                              name=Name,
-                              key_id=KeyID,
-                              key_secret=KeySecret,
-                              canonical_id=CanonicalID,
-                              status=Status}) ->
+-spec user_record_to_xml(rcs_user()) -> binary().
+user_record_to_xml(User) ->
+    export_xml([user_node(User)]).
+
+%% @doc Convert a set of Riak CS user records to XML
+-spec user_records_to_xml([rcs_user()]) -> binary().
+user_records_to_xml(Users) ->
+    UserNodes = [user_node(User) || User <- Users],
+    export_xml([make_internal_node('Users', UserNodes)]).
+
+user_node(?RCS_USER{email=Email,
+                    display_name=DisplayName,
+                    name=Name,
+                    key_id=KeyID,
+                    key_secret=KeySecret,
+                    canonical_id=CanonicalID,
+                    status=Status}) ->
     StatusStr = case Status of
                     enabled ->
                         "enabled";
@@ -251,8 +262,7 @@ user_record_to_xml(?RCS_USER{email=Email,
                make_external_node('KeySecret', KeySecret),
                make_external_node('Id', CanonicalID),
                make_external_node('Status', StatusStr)],
-    XmlDoc = [make_internal_node('User', Content)],
-    export_xml(XmlDoc).
+    make_internal_node('User', Content).
 
 %% ===================================================================
 %% Eunit tests
