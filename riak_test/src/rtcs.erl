@@ -548,7 +548,23 @@ update_user(UserConfig, Port, Resource, ContentType, UpdateDoc) ->
     Condition = fun(Res) -> Res /= [] end,
     Output = wait_until(OutputFun, Condition, Retries, Delay),
     lager:debug("Update user output=~p~n",[Output]),
-    ok.
+    Output.
+
+list_users(UserConfig, Port, Resource, ContentType) ->
+    Date = httpd_util:rfc1123_date(),
+    Cmd="curl -s -H 'Date: " ++ Date ++
+        "' -H 'Content-Type: " ++ ContentType ++
+        "' -H 'Authorization: " ++
+        make_authorization("GET", Resource, ContentType, UserConfig, Date) ++
+        "' http://localhost:" ++ integer_to_list(Port) ++
+        Resource,
+    Delay = rt_config:get(rt_retry_delay),
+    Retries = rt_config:get(rt_max_wait_time) div Delay,
+    OutputFun = fun() -> os:cmd(Cmd) end,
+    Condition = fun(Res) -> Res /= [] end,
+    Output = wait_until(OutputFun, Condition, Retries, Delay),
+    lager:debug("List users output=~p~n",[Output]),
+    Output.
 
 wait_until(_, _, 0, _) ->
     fail;
