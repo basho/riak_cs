@@ -47,7 +47,11 @@ init(Config) ->
     %% Check if authentication is disabled and
     %% set that in the context.
     AuthBypass = not proplists:get_value(admin_auth_enabled, Config),
-    {ok, #context{auth_bypass=AuthBypass}}.
+    Api = riak_cs_config:api(),
+    RespModule = riak_cs_config:response_module(Api),
+    {ok, #context{auth_bypass=AuthBypass,
+                  api=Api,
+                  response_module=RespModule}}.
 
 -spec service_available(term(), term()) -> {true, term(), term()}.
 service_available(RD, Ctx) ->
