@@ -24,7 +24,7 @@ compile-int-test: all
 	@./rebar int_test_compile
 
 compile-riak-test: all
-	@./rebar riak_test_compile
+	@./rebar skip_deps=true riak_test_compile
 	## There are some Riak CS internal modules that our riak_test
 	## test would like to use.  But riak_test doesn't have a nice
 	## way of adding the -pz argument + code path that we need.
