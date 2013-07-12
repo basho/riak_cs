@@ -98,9 +98,21 @@ update_user_test(AdminConfig, Node, ContentType, Users) ->
     ?assertMatch({Email1, User1, _, Secret, "enabled"}, UserResult1),
     ?assertMatch({Email1, User1, _, Secret, "enabled"}, UserResult2),
 
+    %% Attempt to update the user's email to be the same as the admin
+    %% user and verify that the update attempt returns an error.
+    Resource = "/riak-cs/user/" ++ UserConfig#aws_config.access_key_id,
+    InvalidUpdateDoc = update_email_and_name_doc(ContentType, "admin@me.com", "admin"),
+
+    ErrorResult = parse_error_code(
+                    rtcs:update_user(UserConfig,
+                                     Port,
+                                     Resource,
+                                     ContentType,
+                                     InvalidUpdateDoc)),
+    ?assertEqual("UserAlreadyExists", ErrorResult),
+
     %% Test updating the user's name and email
     UpdateDoc = update_email_and_name_doc(ContentType, Email2, User2),
-    Resource = "/riak-cs/user/" ++ UserConfig#aws_config.access_key_id,
     _ = rtcs:update_user(UserConfig, Port, Resource, ContentType, UpdateDoc),
 
     %% Fetch the user record using the user's own credentials

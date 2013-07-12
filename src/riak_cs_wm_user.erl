@@ -116,7 +116,7 @@ accept_json(RD, Ctx=#context{user=undefined}) ->
         riak_cs_json:value_or_default(
           riak_cs_json:get(Body, [{<<"name">>, <<"email">>}]),
           {<<>>, <<>>}),
-    new_user_response(riak_cs_utils:create_user(binary_to_list(UserName),
+    user_response(riak_cs_utils:create_user(binary_to_list(UserName),
                                                 binary_to_list(Email)),
                       ?JSON_TYPE,
                       RD,
@@ -127,8 +127,10 @@ accept_json(RD, Ctx) ->
     case catch mochijson2:decode(Body) of
         {struct, UserItems} ->
             UpdateItems = lists:foldl(fun user_json_filter/2, [], UserItems),
-            UpdRD = wrq:set_resp_header("Content-Type", ?JSON_TYPE, RD),
-            update_user(UpdateItems, UpdRD, Ctx);
+            user_response(update_user(UpdateItems, RD, Ctx),
+                          ?JSON_TYPE,
+                          RD,
+                          Ctx);
         {'EXIT', _} ->
             riak_cs_s3_response:api_error(invalid_user_update, RD, Ctx)
     end.
@@ -147,10 +149,10 @@ accept_xml(RD, Ctx=#context{user=undefined}) ->
                                      ParsedData#xmlElement.content),
             UserName = proplists:get_value(name, ValidItems, ""),
             Email= proplists:get_value(email, ValidItems, ""),
-            new_user_response(riak_cs_utils:create_user(UserName, Email),
-                              ?XML_TYPE,
-                              RD,
-                              Ctx)
+            user_response(riak_cs_utils:create_user(UserName, Email),
+                          ?XML_TYPE,
+                          RD,
+                          Ctx)
     end;
 accept_xml(RD, Ctx) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"accept_xml">>),
@@ -162,8 +164,11 @@ accept_xml(RD, Ctx) ->
             UpdateItems = lists:foldl(fun user_xml_filter/2,
                                       [],
                                       ParsedData#xmlElement.content),
-            UpdRD = wrq:set_resp_header("Content-Type", ?XML_TYPE, RD),
-            update_user(UpdateItems, UpdRD, Ctx)
+            user_response(update_user(UpdateItems, RD, Ctx),
+                          ?XML_TYPE,
+                          RD,
+                          Ctx)
+
     end.
 
 produce_json(RD, #context{user=User}=Ctx) ->
@@ -254,8 +259,8 @@ handle_get_user_result({error, Reason}, RD, Ctx) ->
                       " Reason: ~p", [user_key(RD), Reason]),
     riak_cs_s3_response:api_error(invalid_access_key_id, RD, Ctx).
 
--spec update_user([{binary(), binary()}], term(), term()) ->
-    {boolean() | {halt, term()}, term(), term()}.
+-spec update_user([{atom(), term()}], #wm_reqdata{}, #context{}) ->
+    {ok, rcs_user()} | {halt, term()} | {error, term()}.
 update_user(UpdateItems, RD, Ctx=#context{user=User}) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"update_user">>),
     UpdateUserResult = update_user_record(User, UpdateItems, false),
@@ -284,24 +289,13 @@ update_user_record(_User, [_ | RestUpdates], _RecordUpdated) ->
     update_user_record(_User, RestUpdates, _RecordUpdated).
 
 -spec handle_update_result({boolean(), rcs_user()}, term(), term()) ->
-    {boolean() | {halt, term()}, term(), term()}.
-handle_update_result({false, _User}, RD, Ctx) ->
-    ContentType = wrq:get_resp_header("Content-Type", RD),
-    {{halt, 200}, set_resp_data(ContentType, RD, Ctx), Ctx};
-handle_update_result({true, User}, RD, Ctx) ->
+    {ok, rcs_user()} | {halt, term()} | {error, term()}.
+handle_update_result({false, _User}, _RD, _Ctx) ->
+    {halt, 200};
+handle_update_result({true, User}, _RD, Ctx) ->
     #context{user_object=UserObj,
              riakc_pid=RiakPid} = Ctx,
-    handle_save_user_result(
-      riak_cs_utils:save_user(User, UserObj, RiakPid), User, RD, Ctx).
-
--spec handle_save_user_result(ok | {error, term()}, rcs_user(), term(), term()) ->
-    {boolean() | {halt, term()}, term(), term()}.
-handle_save_user_result(ok, User, RD, Ctx) ->
-    ContentType = wrq:get_resp_header("Content-Type", RD),
-    UpdCtx = Ctx#context{user=User},
-    {{halt, 200}, set_resp_data(ContentType, RD, UpdCtx), UpdCtx};
-handle_save_user_result({error, Reason}, _, RD, Ctx) ->
-    riak_cs_s3_response:api_error(Reason, RD, Ctx).
+    riak_cs_utils:update_user(User, UserObj, RiakPid).
 
 -spec set_resp_data(string(), term(), term()) -> term().
 set_resp_data(ContentType, RD, #context{user=User}) ->
@@ -391,16 +385,18 @@ user_xml_filter(Element, Acc) ->
             Acc
     end.
 
--spec new_user_response({ok, rcs_user()} | {error, term()},
+-spec user_response({ok, rcs_user()} | {halt, term()} | {error, term()},
                         string(), #wm_reqdata{}, #context{}) ->
                                {true | {halt, non_neg_integer()}, #wm_reqdata{}, #context{}}.
-new_user_response({ok, User}, ContentType, RD, Ctx) ->
+user_response({ok, User}, ContentType, RD, Ctx) ->
     UserDoc = format_user_record(User, ContentType),
     WrittenRD =
         wrq:set_resp_body(UserDoc,
                           wrq:set_resp_header("Content-Type", ContentType, RD)),
     {true, WrittenRD, Ctx};
-new_user_response({error, Reason}, _, RD, Ctx) ->
+user_response({halt, 200}, ContentType, RD, Ctx) ->
+    {{halt, 200}, set_resp_data(ContentType, RD, Ctx), Ctx};
+user_response({error, Reason}, _, RD, Ctx) ->
     riak_cs_s3_response:api_error(Reason, RD, Ctx).
 
 -spec format_user_record(rcs_user(), string()) -> binary().
