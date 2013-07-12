@@ -155,6 +155,8 @@ gc_specific_manifests_to_delete(UUIDsToMark, RiakObject, Bucket, Key, RiakcPid) 
                    Key :: binary(),
                    RiakcPid :: pid()) ->
     {error, term()} | {ok, riakc_obj:riakc_obj()}.
+gc_specific_manifests([], RiakObject, _Bucket, _Key, _RiakcPid) ->
+    {ok, RiakObject};
 gc_specific_manifests(UUIDsToMark, RiakObject, Bucket, Key, RiakcPid) ->
     MarkedResult = mark_as_pending_delete(UUIDsToMark,
                                           RiakObject,
@@ -306,6 +308,8 @@ move_manifests_to_gc_bucket(Manifests, RiakcPid) ->
 %% `riak-cs-gc' bucket to schedule them for deletion.
 -spec move_manifests_to_gc_bucket([lfs_manifest()], pid(), boolean()) ->
     ok | {error, term()}.
+move_manifests_to_gc_bucket([], _RiakcPid, _AddLeewayP) ->
+    ok;
 move_manifests_to_gc_bucket(Manifests, RiakcPid, AddLeewayP) ->
     Key = generate_key(AddLeewayP),
     ManifestSet = build_manifest_set(Manifests),
