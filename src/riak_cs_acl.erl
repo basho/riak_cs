@@ -197,14 +197,22 @@ bucket_acl(Bucket, RiakPid) ->
 -spec bucket_acl_from_contents(binary(), riakc_obj:contents()) ->
                                       bucket_acl_result().
 bucket_acl_from_contents(_, [{MD, _}]) ->
-    MetaVals = dict:fetch(?MD_USERMETA, MD),
+    MetaVals = my_dict_fetch(?MD_USERMETA, MD),
     acl_from_meta(MetaVals);
 bucket_acl_from_contents(Bucket, Contents) ->
     {Metas, Vals} = lists:unzip(Contents),
     UniqueVals = lists:usort(Vals),
-    UserMetas = [dict:fetch(?MD_USERMETA, MD) || MD <- Metas],
+    UserMetas = [my_dict_fetch(?MD_USERMETA, MD) || MD <- Metas],
     riak_cs_utils:maybe_log_bucket_owner_error(Bucket, UniqueVals),
     resolve_bucket_metadata(UserMetas, UniqueVals).
+
+my_dict_fetch(Key, MD) ->
+    case dict:find(Key, MD) of
+        error ->
+            [];
+        {ok, Value} ->
+            Value
+    end.
 
 -spec resolve_bucket_metadata(list(riakc_obj:metadata()),
                                list(riakc_obj:value())) -> bucket_acl_result().
