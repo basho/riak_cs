@@ -406,7 +406,7 @@ find_md_usermeta(MD) ->
 
 resolve_block_object(RObj, RiakcPid) ->
     {{MD, Value}, NeedRepair} =
-        riak_kv_fs2_backend:resolve_robj_siblings(riakc_obj:get_contents(RObj)),
+        riak_cs_utils:resolve_robj_siblings(riakc_obj:get_contents(RObj)),
     if NeedRepair andalso is_binary(Value) ->
             RBucket = riakc_obj:bucket(RObj),
             RKey = riakc_obj:key(RObj),
