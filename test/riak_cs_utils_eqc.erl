@@ -14,12 +14,7 @@
 -include_lib("eqc/include/eqc.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
-%% eqc property
--export([prop_chunked_md5/0]).
-
-%% Helpers
--export([test/0,
-         test/1]).
+-compile(export_all).
 
 -define(QC_OUT(P),
         eqc:on_output(fun(Str, Args) ->
@@ -30,37 +25,28 @@
 %%====================================================================
 
 eqc_test_() ->
-    {spawn,
-     [
-      {timeout, 60, ?_assertEqual(true, quickcheck(eqc:testing_time(10, ?QC_OUT(prop_chunked_md5()))))}
-     ]
-    }.
+    Time = 8,
+    [
+     {timeout, Time*4, ?_assertEqual(true,
+                                     eqc:quickcheck(eqc:testing_time(Time,?QC_OUT(prop_md5()))))}
+    ].
 
 %% ====================================================================
 %% EQC Properties
 %% ====================================================================
 
-prop_chunked_md5() ->
-    ?FORALL({DataBlob, ChunkSize},
-            {eqc_gen:binary(2048), riak_cs_gen:md5_chunk_size()},
-            begin
-                Context = crypto:md5_init(),
-                ChunkedMd5Sum = crypto:md5_final(
-                                  riak_cs_utils:chunked_md5(DataBlob,
-                                                            Context,
-                                                            ChunkSize)),
-                Md5Sum = crypto:md5(DataBlob),
-                equals(ChunkedMd5Sum, Md5Sum)
-            end).
+prop_md5() ->
+    _ = crypto:start(),
+    ?FORALL(Bin, gen_bin(),
+            crypto:md5(Bin) == riak_cs_utils:md5(Bin)).
+
+gen_bin() ->
+    oneof([binary(),
+           ?LET({Size, Char}, {choose(5, 2*1024*1024 + 1024), choose(0, 255)},
+                list_to_binary(lists:duplicate(Size, Char)))]).
 
 %%====================================================================
 %% Helpers
 %%====================================================================
-
-test() ->
-    test(500).
-
-test(Iterations) ->
-    eqc:quickcheck(eqc:numtests(Iterations, prop_chunked_md5())).
 
 -endif.
