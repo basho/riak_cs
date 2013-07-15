@@ -27,7 +27,6 @@
          etag_from_binary/2,
          etag_from_binary_no_quotes/1,
          check_bucket_exists/2,
-         chunked_md5/3,
          close_riak_connection/1,
          close_riak_connection/2,
          create_bucket/5,
@@ -42,6 +41,10 @@
          has_tombstone/1,
          is_admin/1,
          map_keys_and_manifests/3,
+         md5/1,
+         md5_init/0,
+         md5_update/2,
+         md5_final/1,
          reduce_keys_and_manifests/2,
          get_object/3,
          get_manifests/3,
@@ -51,6 +54,7 @@
          get_user_by_index/3,
          get_user_index/3,
          hexlist_to_binary/1,
+         binary_to_hexlist/1,
          json_pp_print/1,
          list_keys/2,
          maybe_log_bucket_owner_error/2,
@@ -96,25 +100,37 @@
 %% Public API
 %% ===================================================================
 
-
-
-%% @doc Convert the passed binary into a string where the numbers are
-%% represented in hexadecimal (lowercase and 0 prefilled).
+%% @doc Convert the passed binary into a string where the numbers are represented in hexadecimal (lowercase and 0 prefilled).
 -spec binary_to_hexlist(binary()) -> string().
-binary_to_hexlist({Bin, Suffix}) ->
-    binary_to_hexlist(Bin) ++ Suffix;
-binary_to_hexlist(Bin) ->
-    XBin =
-        [ begin
-              Hex = erlang:integer_to_list(X, 16),
-              if
-                  X < 16 ->
-                      lists:flatten(["0" | Hex]);
-                  true ->
-                      Hex
-              end
-          end || X <- binary_to_list(Bin)],
-    string:to_lower(lists:flatten(XBin)).
+binary_to_hexlist(<<>>) ->
+    [];
+binary_to_hexlist(<<A:4, B:4, T/binary>>) ->
+    [num2hexchar(A), num2hexchar(B)|binary_to_hexlist(T)].
+
+num2hexchar(N) when N < 10 ->
+    N + $0;
+num2hexchar(N) when N < 16 ->
+    (N - 10) + $a.
+
+%% @doc Convert the passed binary into a string where the numbers are represented in hexadecimal (lowercase and 0 prefilled).
+-spec hexlist_to_binary(string()) -> binary().
+hexlist_to_binary(HS) ->
+    list_to_binary(hexlist_to_binary_2(HS)).
+
+hexlist_to_binary_2([]) ->
+    [];
+hexlist_to_binary_2([A,B|T]) ->
+    [hex2byte(A, B)|hexlist_to_binary_2(T)].
+
+hex2byte(A, B) ->
+    An = hexchar2num(A),
+    Bn = hexchar2num(B),
+    <<An:4, Bn:4>>.
+
+hexchar2num(C) when $0 =< C, C =< $9 ->
+    C - $0;
+hexchar2num(C) when $a =< C, C =< $f ->
+    (C - $a) + 10.
 
 %% @doc Return a hexadecimal string of `Binary', with double quotes
 %% around it.
@@ -137,14 +153,6 @@ etag_from_binary_no_quotes({Binary, Suffix}) ->
     binary_to_hexlist(Binary) ++ Suffix;
 etag_from_binary_no_quotes(Binary) ->
     binary_to_hexlist(Binary).
-
-%% @doc Convert the passed binary into a string where the numbers are
-%% represented in hexadecimal (lowercase and 0 prefilled).
--spec hexlist_to_binary(string()) -> binary().
-hexlist_to_binary(String) ->
-    Bytes = length(String) div 2,
-    Int = httpd_util:hexlist_to_integer(String),
-    <<Int:(Bytes*8)/integer>>.
 
 %% @doc Release a protobufs connection from the specified
 %% connection pool.
@@ -474,6 +482,31 @@ map_keys_and_manifests(Object, _, _) ->
 reduce_keys_and_manifests(Acc, _) ->
     Acc.
 
+-type context() :: binary().
+-type digest() :: binary().
+
+-spec md5(string() | binary()) -> digest().
+md5(Bin) when is_binary(Bin) ->
+    md5_final(md5_update(md5_init(), Bin));
+md5(List) when is_list(List) ->
+    md5(list_to_binary(List)).
+
+-spec md5_init() -> context().
+md5_init() ->
+    crypto:md5_init().
+
+-define(MAX_UPDATE_SIZE, (32*1024)).
+
+-spec md5_update(context(), binary()) -> context().
+md5_update(Ctx, Bin) when size(Bin) =< ?MAX_UPDATE_SIZE ->
+    crypto:md5_update(Ctx, Bin);
+md5_update(Ctx, <<Part:?MAX_UPDATE_SIZE/binary, Rest/binary>>) ->
+    md5_update(crypto:md5_update(Ctx, Part), Rest).
+
+-spec md5_final(context()) -> digest().
+md5_final(Ctx) ->
+    crypto:md5_final(Ctx).
+
 %% @doc Get an object from Riak
 -spec get_object(binary(), binary(), pid()) ->
                         {ok, riakc_obj:riakc_obj()} | {error, term()}.
@@ -614,7 +647,7 @@ get_user_index(Index, Value, RiakPid) ->
 has_tombstone({_, <<>>}) ->
     true;
 has_tombstone({MD, _V}) ->
-    dict:is_key(<<"X-Riak-Deleted">>, MD) =:= true.
+    dict:is_key(?MD_DELETED, MD) =:= true.
 
 %% @doc Determine if the specified user account is a system admin.
 -spec is_admin(rcs_user()) -> boolean().
@@ -842,7 +875,7 @@ to_bucket_name(Type, Bucket) ->
         blocks ->
             Prefix = ?BLOCK_BUCKET_PREFIX
     end,
-    BucketHash = crypto:md5(Bucket),
+    BucketHash = md5(Bucket),
     <<Prefix/binary, BucketHash/binary>>.
 
 
@@ -1170,8 +1203,8 @@ generate_canonical_id(_KeyID, undefined) ->
     [];
 generate_canonical_id(KeyID, Secret) ->
     Bytes = 16,
-    Id1 = crypto:md5(KeyID),
-    Id2 = crypto:md5(Secret),
+    Id1 = md5(KeyID),
+    Id2 = md5(Secret),
     binary_to_hexlist(
       iolist_to_binary(<< Id1:Bytes/binary,
                           Id2:Bytes/binary >>)).
@@ -1395,18 +1428,3 @@ user_record(Name, Email, KeyId, Secret, Buckets) ->
 -spec pid_to_binary(pid()) -> binary().
 pid_to_binary(Pid) ->
     list_to_binary(pid_to_list(Pid)).
-
-%% @doc Rapid calls to `md5_update' with largish data blocks (e.g. 1MB)
-%% can lead to erlang scheduler collapse
--spec chunked_md5(binary(), binary(), non_neg_integer()) -> binary().
-chunked_md5(<<>>, Context, _ChunkSize) ->
-    Context;
-chunked_md5(Data, Context, ChunkSize) ->
-    case byte_size(Data) < ChunkSize of
-        true ->
-            crypto:md5_update(Context, Data);
-        false ->
-            <<Chunk:ChunkSize/binary, RestData/binary>> = Data,
-            UpdContext = crypto:md5_update(Context, Chunk),
-            chunked_md5(RestData, UpdContext, ChunkSize)
-    end.
