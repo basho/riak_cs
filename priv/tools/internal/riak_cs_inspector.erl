@@ -216,6 +216,9 @@ print_gc_manifest_summary(_RiakcPid, _Key, _SiblingNo, header) ->
 print_gc_manifest_summary(_RiakcPid, Key, SiblingNo, {tombstone, {_Bucket, Key}}) ->
     io:format("~-32s: ~-8B ~-16s ~-32s ~16B ~-32s~n",
               [Key, SiblingNo, tombstone, tombstone, 0, tombstone]);
+print_gc_manifest_summary(_RiakcPid, Key, SiblingNo, empty_twop_set) ->
+    io:format("~-32s: ~-8B ~-16s ~-32s ~16B ~-32s~n",
+              [Key, SiblingNo, empty_twop_set, empty_twop_set, 0, empty_twop_set]);
 print_gc_manifest_summary(_RiakcPid, Key, SiblingNo, M) ->
     {_, CSKey} = m_attr(bkey, M),
     io:format("~-32s: ~-8B ~-16s ~-32s ~16B ~-32s~n",
@@ -483,7 +486,12 @@ get_gc_manifest(RiakcPid, Bucket, Key)->
                            tombstone ->
                                [{tombstone, {tombstone, {Bucket, Key}}}];
                            _ ->
-                               twop_set:to_list(binary_to_term(Value))
+                               case twop_set:to_list(binary_to_term(Value)) of
+                                   [] ->
+                                       [{empty_twop_set, empty_twop_set}];
+                                   Value ->
+                                       Value
+                               end
                        end]).
 
 full_bkey(Bucket, Key, UUID, BlockId) ->
