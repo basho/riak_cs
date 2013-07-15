@@ -39,6 +39,7 @@
 -record(state, {}).
 
 -define(IDS, [block_get,
+              block_get_retry,
               block_put,
               block_delete,
               service_get_buckets,
