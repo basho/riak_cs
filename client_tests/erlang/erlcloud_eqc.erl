@@ -1,8 +1,22 @@
-%% -------------------------------------------------------------------
+%% ---------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2012 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
 %%
-%% -------------------------------------------------------------------
+%% This file is provided to you under the Apache License,
+%% Version 2.0 (the "License"); you may not use this file
+%% except in compliance with the License.  You may obtain
+%% a copy of the License at
+%%
+%%   http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing,
+%% software distributed under the License is distributed on an
+%% "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+%% KIND, either express or implied.  See the License for the
+%% specific language governing permissions and limitations
+%% under the License.
+%%
+%% ---------------------------------------------------------------------
 
 %% @doc Quickcheck test module for `erlcloud' S3 API interaction with Riak CS.
 
@@ -21,8 +35,8 @@
 -compile(export_all).
 
 %% eqc properties
--export([prop_api_test/2
-         %% prop_parallel_api_test/2
+-export([prop_api_test/4
+         %% prop_parallel_api_test/4
         ]).
 
 %% States
@@ -36,7 +50,7 @@
 %% eqc_fsm callbacks
 -export([initial_state/0,
          initial_state_data/0,
-         initial_state_data/2,
+         initial_state_data/4,
          next_state_data/5,
          precondition/4,
          postcondition/5]).
@@ -44,7 +58,7 @@
 %% Helpers
 -export([test/0,
          test/2,
-         test/3,
+         test/5,
          create_user/3,
          user_name/0,
          user_email/0]).
@@ -58,15 +72,10 @@
 
 -define(S3_MODULE, erlcloud_s3).
 -define(DEFAULT_HOST, "s3.amazonaws.com").
--define(DEFAULT_PORT, 8080).
+-define(DEFAULT_PORT, 80).
+-define(DEFAULT_PROXY_HOST, "localhost").
+-define(DEFAULT_PROXY_PORT, 8080).
 -define(VALUE, "test value").
--define(EMPTY_OBJECT_LIST(B), [{name, B},
-                                {prefix,[]},
-                                {marker,[]},
-                                {delimiter,"/"},
-                                {max_keys,1000},
-                                {is_truncated,false},
-                                {contents,[]}]).
 
 -record(api_state, {aws_config :: aws_config(),
                     bucket :: string(),
@@ -79,7 +88,12 @@
 eqc_test_() ->
     {spawn,
      [
-      {timeout, 600, ?_assertEqual(true, quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_api_test(?DEFAULT_HOST, ?DEFAULT_PORT)))))}
+      {timeout, 600, ?_assertEqual(true,
+                                   quickcheck(numtests(?TEST_ITERATIONS,
+                                                       ?QC_OUT(prop_api_test(?DEFAULT_HOST,
+                                                                             ?DEFAULT_PORT,
+                                                                             ?DEFAULT_PROXY_HOST,
+                                                                             cs_port())))))}
       %% {timeout, 60, ?_assertEqual(true, quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_parallel_api_test(?DEFAULT_HOST, ?DEFAULT_PORT)))))}
      ]
     }.
@@ -88,9 +102,9 @@ eqc_test_() ->
 %% EQC Properties
 %% ====================================================================
 
-prop_api_test(Host, Port) ->
+prop_api_test(Host, Port, ProxyHost, ProxyPort) ->
     ?FORALL(Cmds,
-            commands(?MODULE, {start, initial_state_data(Host, Port)}),
+            eqc_gen:noshrink(commands(?MODULE, {start, initial_state_data(Host, Port, ProxyHost, ProxyPort)})),
             begin
                 RunningApps = application:which_applications(),
                 case lists:keymember(erlcloud, 1, RunningApps) of
@@ -117,7 +131,7 @@ prop_api_test(Host, Port) ->
             end
            ).
 
-%% prop_parallel_api_test(Host, Port) ->
+%% prop_parallel_api_test(Host, Port, ProxyHost, ProxyPort) ->
 %%     ?FORALL(Cmds={Seq, Par},
 %%             parallel_commands(?MODULE, {start, initial_state_data(Host, Port)}),
 %%             begin
@@ -190,10 +204,12 @@ initial_state() ->
 initial_state_data() ->
     #api_state{}.
 
-initial_state_data(Host, Port) ->
+initial_state_data(Host, Port, ProxyHost, ProxyPort) ->
     #api_state{aws_config=#aws_config{s3_host=Host,
                                       s3_port=Port,
-                                      s3_prot="http"}}.
+                                      s3_prot="http",
+                                      http_options=[{proxy_host, ProxyHost},
+                                                    {proxy_port, ProxyPort}]}}.
 
 next_state_data(start, user_created, S, AwsConfig, _C) ->
     S#api_state{aws_config=AwsConfig};
@@ -236,7 +252,7 @@ postcondition(user_created, bucket_created, _S, _C, _) ->
 postcondition(bucket_created, bucket_created, #api_state{bucket=Bucket}, {call, _, list_buckets, _}, [{buckets, [Bucket]}]) ->
     true;
 postcondition(bucket_created, bucket_created, #api_state{bucket=Bucket}, {call, _, list_objects, _}, R) ->
-    is_empty_object_list(Bucket, R);
+    ?P(is_empty_object_list(Bucket, R));
 postcondition(bucket_created, bucket_deleted, _S, _C, ok) ->
     true;
 postcondition(bucket_created, bucket_deleted, _S, _C, _) ->
@@ -272,16 +288,16 @@ test() ->
     test(?DEFAULT_HOST, ?DEFAULT_PORT).
 
 test(Host, Port) ->
-    test(Host, Port, 500).
+    test(Host, Port, ?DEFAULT_PROXY_HOST, cs_port(), 500).
 
-test(Host, Port, Iterations) ->
-    eqc:quickcheck(eqc:numtests(Iterations, prop_api_test(Host, Port))).
-    %% eqc:quickcheck(eqc:numtests(Iterations, prop_parallel_api_test(Host, Port))).
+test(Host, Port, ProxyHost, ProxyPort, Iterations) ->
+    eqc:quickcheck(eqc:numtests(Iterations, prop_api_test(Host, Port, ProxyHost, ProxyPort))).
+    %% eqc:quickcheck(eqc:numtests(Iterations, prop_parallel_api_test(Host, Port, ProxyHost, ProxyPort))).
 
 create_user(Name, Email, Config) ->
     process_post(
       post_user_request(
-        compose_url(Config#aws_config.s3_host, Config#aws_config.s3_port),
+        compose_url(Config),
         compose_request(Name, Email)),
      Config).
 
@@ -323,6 +339,11 @@ item_to_record_field({<<"key_secret">>, KeySecret}, User) ->
 item_to_record_field(_, User) ->
     User.
 
+compose_url(#aws_config{http_options=HTTPOptions}) ->
+    {_, Host} = lists:keyfind(proxy_host, 1, HTTPOptions),
+    {_, Port} = lists:keyfind(proxy_port, 1, HTTPOptions),
+    compose_url(Host, Port).
+
 compose_url(Host, Port) ->
     lists:flatten(["http://", Host, ":", integer_to_list(Port), "/riak-cs/user"]).
 
@@ -359,10 +380,9 @@ update_keys(Key, undefined) ->
 update_keys(Key, ExistingKeys) ->
     [Key | ExistingKeys].
 
-is_empty_object_list(Bucket, ?EMPTY_OBJECT_LIST(Bucket)) ->
-    true;
-is_empty_object_list(_, _) ->
-    false.
+is_empty_object_list(Bucket, ObjectList) ->
+    Bucket =:= proplists:get_value(name, ObjectList)
+        andalso [] =:= proplists:get_value(contents, ObjectList).
 
 verify_object_list_contents([], []) ->
     true;
@@ -371,5 +391,13 @@ verify_object_list_contents(_, []) ->
 verify_object_list_contents(ExpectedKeys, [HeadContent | RestContents]) ->
     Key = proplists:get_value(key, HeadContent),
     verify_object_list_contents(lists:delete(Key, ExpectedKeys), RestContents).
+
+cs_port() ->
+    case os:getenv("CS_HTTP_PORT") of
+        false ->
+            ?DEFAULT_PROXY_PORT;
+        Str ->
+            list_to_integer(Str)
+    end.
 
 -endif.

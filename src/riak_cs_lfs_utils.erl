@@ -1,8 +1,22 @@
-%% -------------------------------------------------------------------
+%% ---------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2011 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
 %%
-%% -------------------------------------------------------------------
+%% This file is provided to you under the Apache License,
+%% Version 2.0 (the "License"); you may not use this file
+%% except in compliance with the License.  You may obtain
+%% a copy of the License at
+%%
+%%   http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing,
+%% software distributed under the License is distributed on an
+%% "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+%% KIND, either express or implied.  See the License for the
+%% specific language governing permissions and limitations
+%% under the License.
+%%
+%% ---------------------------------------------------------------------
 
 -module(riak_cs_lfs_utils).
 
@@ -18,14 +32,15 @@
          put_concurrency/0,
          delete_concurrency/0,
          put_fsm_buffer_size_factor/0,
+         get_fsm_buffer_size_factor/0,
          safe_block_size_from_manifest/1,
          initial_blocks/2,
          block_sequences_for_manifest/1,
+         block_sequences_for_manifest/2,
          new_manifest/9,
          new_manifest/11,
          remove_write_block/2,
-         remove_delete_block/2,
-         sorted_blocks_remaining/1]).
+         remove_delete_block/2]).
 
 %% -------------------------------------------------------------------
 %% Public API
@@ -93,9 +108,94 @@ initial_blocks(ContentLength, BlockSize) ->
     UpperBound = block_count(ContentLength, BlockSize),
     lists:seq(0, (UpperBound - 1)).
 
-block_sequences_for_manifest(?MANIFEST{content_length=ContentLength}=Manifest) ->
+initial_blocks(ContentLength, SafeBlockSize, UUID) ->
+    Bs = initial_blocks(ContentLength, SafeBlockSize),
+    [{UUID, B} || B <- Bs].
+
+range_blocks(Start, End, SafeBlockSize, UUID) ->
+    SkipInitial = Start rem SafeBlockSize,
+    KeepFinal = (End rem SafeBlockSize) + 1,
+    _ = lager:debug("InitialBlock: ~p, FinalBlock: ~p~n",
+                [Start div SafeBlockSize, End div SafeBlockSize]),
+    _ = lager:debug("SkipInitial: ~p, KeepFinal: ~p~n", [SkipInitial, KeepFinal]),
+    {[{UUID, B} || B <- lists:seq(Start div SafeBlockSize, End div SafeBlockSize)],
+     SkipInitial, KeepFinal}.
+
+block_sequences_for_manifest(?MANIFEST{props=undefined}=Manifest) ->
+    block_sequences_for_manifest(Manifest?MANIFEST{props=[]});
+block_sequences_for_manifest(?MANIFEST{uuid=UUID,
+                                       content_length=ContentLength}=Manifest)->
     SafeBlockSize = safe_block_size_from_manifest(Manifest),
-    initial_blocks(ContentLength, SafeBlockSize).
+    case riak_cs_mp_utils:get_mp_manifest(Manifest) of
+        undefined ->
+            initial_blocks(ContentLength, SafeBlockSize, UUID);
+        MpM ->
+            PartManifests = MpM?MULTIPART_MANIFEST.parts,
+            lists:append([initial_blocks(PM?PART_MANIFEST.content_length,
+                                         SafeBlockSize,
+                                         PM?PART_MANIFEST.part_id) ||
+                             PM <- PartManifests])
+    end.
+
+block_sequences_for_manifest(?MANIFEST{props=undefined}=Manifest, {Start, End}) ->
+    block_sequences_for_manifest(Manifest?MANIFEST{props=[]}, {Start, End});
+block_sequences_for_manifest(?MANIFEST{uuid=UUID}=Manifest,
+                             {Start, End})->
+    SafeBlockSize = safe_block_size_from_manifest(Manifest),
+    case riak_cs_mp_utils:get_mp_manifest(Manifest) of
+        undefined ->
+            range_blocks(Start, End, SafeBlockSize, UUID);
+        MpM ->
+            PartManifests = MpM?MULTIPART_MANIFEST.parts,
+            block_sequences_for_part_manifests_skip(SafeBlockSize, PartManifests,
+                                                    Start, End)
+    end.
+
+block_sequences_for_part_manifests_skip(SafeBlockSize, [PM | Rest],
+                                        StartOffset, EndOffset) ->
+    _ = lager:debug("StartOffset: ~p, EndOffset: ~p, PartLength: ~p~n",
+                [StartOffset, EndOffset, PM?PART_MANIFEST.content_length]),
+    case PM?PART_MANIFEST.content_length of
+        %% Skipped
+        PartLength when PartLength =< StartOffset ->
+            block_sequences_for_part_manifests_skip(
+              SafeBlockSize, Rest,
+              StartOffset - PartLength, EndOffset - PartLength);
+        %% The first block, more blocks needed
+        PartLength when PartLength =< EndOffset ->
+            {Blocks, SkipInitial, _KeepFinal} =
+                range_blocks(StartOffset, PartLength - 1,
+                               SafeBlockSize, PM?PART_MANIFEST.part_id),
+            block_sequences_for_part_manifests_keep(
+              SafeBlockSize, SkipInitial, Rest,
+              EndOffset - PartLength, [Blocks]);
+        %% The first block, also the last
+        _PartLength ->
+            range_blocks(StartOffset, EndOffset,
+                         SafeBlockSize, PM?PART_MANIFEST.part_id)
+    end.
+
+block_sequences_for_part_manifests_keep(SafeBlockSize, SkipInitial, [PM | Rest],
+                                        EndOffset, ListOfBlocks) ->
+    _ = lager:debug("EndOffset: EndOffset: ~p, PartLength: ~p~n",
+                [EndOffset, PM?PART_MANIFEST.content_length]),
+    case PM?PART_MANIFEST.content_length of
+        %% More blocks needed
+        PartLength when PartLength =< EndOffset ->
+            block_sequences_for_part_manifests_keep(
+              SafeBlockSize, SkipInitial, Rest,
+              EndOffset - PartLength,
+              [initial_blocks(PM?PART_MANIFEST.content_length,
+                              SafeBlockSize, PM?PART_MANIFEST.part_id)
+               | ListOfBlocks]);
+        %% Reaches to the last block
+        _PartLength ->
+            {Blocks, _SkipInitial, KeepFinal}
+                = range_blocks(0, EndOffset,
+                               SafeBlockSize, PM?PART_MANIFEST.part_id),
+            {lists:append(lists:reverse([Blocks | ListOfBlocks])),
+             SkipInitial, KeepFinal}
+    end.
 
 %% @doc Return the configured file block fetch concurrency .
 -spec fetch_concurrency() -> pos_integer().
@@ -138,6 +238,17 @@ put_fsm_buffer_size_factor() ->
             Factor
     end.
 
+%% @doc Return the configured get fsm buffer
+%% size factor
+-spec get_fsm_buffer_size_factor() -> pos_integer().
+get_fsm_buffer_size_factor() ->
+    case application:get_env(riak_cs, fetch_buffer_factor) of
+        undefined ->
+            ?DEFAULT_FETCH_BUFFER_FACTOR;
+        {ok, Factor} ->
+            Factor
+    end.
+
 %% @doc Initialize a new file manifest
 -spec new_manifest(binary(),
                    binary(),
@@ -147,7 +258,7 @@ put_fsm_buffer_size_factor() ->
                    term(),
                    term(),
                    pos_integer(),
-                   acl()) -> lfs_manifest().
+                   acl() | no_acl_yet) -> lfs_manifest().
 new_manifest(Bucket, FileName, UUID, ContentLength, ContentType, ContentMd5, MetaData, BlockSize, Acl) ->
     new_manifest(Bucket, FileName, UUID, ContentLength, ContentType, ContentMd5, MetaData, BlockSize, Acl, [], undefined).
 
@@ -159,7 +270,7 @@ new_manifest(Bucket, FileName, UUID, ContentLength, ContentType, ContentMd5, Met
                    term(),
                    term(),
                    pos_integer(),
-                   acl(),
+                   acl() | no_acl_yet,
                    proplists:proplist(),
                    cluster_id()) -> lfs_manifest().
 new_manifest(Bucket, FileName, UUID, ContentLength, ContentType, ContentMd5, MetaData, BlockSize, Acl, Props, ClusterID) ->
@@ -206,6 +317,3 @@ remove_delete_block(Manifest, Chunk) ->
     Manifest?MANIFEST{delete_blocks_remaining=Updated,
                              state=ManiState,
                              last_block_deleted_time=os:timestamp()}.
-
-sorted_blocks_remaining(?MANIFEST{write_blocks_remaining=Remaining}) ->
-    lists:sort(ordsets:to_list(Remaining)).

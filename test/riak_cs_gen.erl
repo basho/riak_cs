@@ -1,8 +1,22 @@
-%% -------------------------------------------------------------------
+%% ---------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2011 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
 %%
-%% -------------------------------------------------------------------
+%% This file is provided to you under the Apache License,
+%% Version 2.0 (the "License"); you may not use this file
+%% except in compliance with the License.  You may obtain
+%% a copy of the License at
+%%
+%%   http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing,
+%% software distributed under the License is distributed on an
+%% "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+%% KIND, either express or implied.  See the License for the
+%% specific language governing permissions and limitations
+%% under the License.
+%%
+%% ---------------------------------------------------------------------
 
 %% @doc Common QuickCheck generators for Riak CS
 
@@ -14,6 +28,7 @@
 
 %% Generators
 -export([bucket/0,
+         bucket_or_blank/0,
          file_name/0,
          block_size/0,
          content_length/0,
@@ -23,7 +38,10 @@
          metadata/0,
          bounded_uuid/0,
          manifest_state/0,
-         datetime/0]).
+         datetime/0,
+         md5_chunk_size/0,
+         timestamp/0,
+         props/0]).
 
 %%====================================================================
 %% Generators
@@ -31,6 +49,9 @@
 
 bucket() ->
     non_blank_string().
+
+bucket_or_blank() ->
+    maybe_blank_string().
 
 file_name() ->
     non_blank_string().
@@ -66,6 +87,15 @@ datetime() ->
     {{choose(1,5000), choose(1,12), choose(1,28)},
      {choose(0, 23), choose(0, 59), choose(0, 59)}}.
 
+timestamp() ->
+    {choose(0, 5000), choose(0, 999999), choose(0, 999999)}.
+
+md5_chunk_size() ->
+    oneof([2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048]).
+
+props() ->
+    oneof([[], [{deleted, true}]]).
+
 %%====================================================================
 %% Helpers
 %%====================================================================
@@ -77,7 +107,10 @@ bounded_non_zero_nums() ->
     ?LET(X, not_zero(int()), X * 100000).
 
 non_blank_string() ->
-    ?LET(X,not_empty(list(lower_char())), list_to_binary(X)).
+    ?LET(X, not_empty(list(lower_char())), list_to_binary(X)).
+
+maybe_blank_string() ->
+    ?LET(X, list(lower_char()), list_to_binary(X)).
 
 %% Generate a lower 7-bit ACSII character that should not cause any problems
 %% with utf8 conversion.

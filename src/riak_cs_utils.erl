@@ -1,55 +1,83 @@
-%% -------------------------------------------------------------------
+%% ---------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2011 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
 %%
-%% -------------------------------------------------------------------
+%% This file is provided to you under the Apache License,
+%% Version 2.0 (the "License"); you may not use this file
+%% except in compliance with the License.  You may obtain
+%% a copy of the License at
+%%
+%%   http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing,
+%% software distributed under the License is distributed on an
+%% "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+%% KIND, either express or implied.  See the License for the
+%% specific language governing permissions and limitations
+%% under the License.
+%%
+%% ---------------------------------------------------------------------
 
 %% @doc riak_cs utility functions
 
 -module(riak_cs_utils).
 
 %% Public API
--export([anonymous_user_creation/0,
-         binary_to_hexlist/1,
+-export([etag_from_binary/1,
+         etag_from_binary/2,
+         etag_from_binary_no_quotes/1,
+         check_bucket_exists/2,
+         chunked_md5/3,
          close_riak_connection/1,
          close_riak_connection/2,
          create_bucket/5,
          create_user/2,
+         create_user/4,
          delete_bucket/4,
          delete_object/3,
+         encode_term/1,
          from_bucket_name/1,
-         get_admin_creds/0,
          get_buckets/1,
-         get_env/3,
          get_keys_and_manifests/3,
          has_tombstone/1,
          is_admin/1,
          map_keys_and_manifests/3,
+         reduce_keys_and_manifests/2,
          get_object/3,
          get_manifests/3,
+         manifests_from_riak_object/1,
+         active_manifest_from_response/1,
          get_user/2,
          get_user_by_index/3,
          get_user_index/3,
+         hexlist_to_binary/1,
          json_pp_print/1,
          list_keys/2,
+         maybe_log_bucket_owner_error/2,
          pow/2,
          pow/3,
          put_object/5,
+         put/2,
+         put/3,
          put_with_no_meta/2,
+         put_with_no_meta/3,
          riak_connection/0,
          riak_connection/1,
          save_user/3,
          set_bucket_acl/5,
          set_object_acl/5,
-         timestamp/1,
+         set_bucket_policy/5,
+         delete_bucket_policy/4,
+         get_bucket_acl_policy/3,
+         second_resolution_timestamp/1,
+         timestamp_to_seconds/1,
          to_bucket_name/2,
          update_key_secret/1,
-         get_cluster_id/1,
-         proxy_get_active/0]).
+         update_obj_value/2,
+         pid_to_binary/1]).
 
 -include("riak_cs.hrl").
 -include_lib("riak_pb/include/riak_pb_kv_codec.hrl").
--include_lib("xmerl/include/xmerl.hrl").
 
 -ifdef(TEST).
 -compile(export_all).
@@ -64,21 +92,17 @@
 -define(is_indent(C), (C == 91) orelse (C == 123)). % [, {
 -define(is_undent(C), (C == 93) orelse (C == 125)). % ], }
 
--type xmlElement() :: #xmlElement{}.
-
 %% ===================================================================
 %% Public API
 %% ===================================================================
 
-%% @doc Return the value of the `anonymous_user_creation' application
-%% environment variable.
--spec anonymous_user_creation() -> boolean().
-anonymous_user_creation() ->
-    EnvResponse = application:get_env(riak_cs, anonymous_user_creation),
-    handle_env_response(EnvResponse, false).
 
-%% @doc Convert the passed binary into a string where the numbers are represented in hexadecimal (lowercase and 0 prefilled).
+
+%% @doc Convert the passed binary into a string where the numbers are
+%% represented in hexadecimal (lowercase and 0 prefilled).
 -spec binary_to_hexlist(binary()) -> string().
+binary_to_hexlist({Bin, Suffix}) ->
+    binary_to_hexlist(Bin) ++ Suffix;
 binary_to_hexlist(Bin) ->
     XBin =
         [ begin
@@ -91,6 +115,36 @@ binary_to_hexlist(Bin) ->
               end
           end || X <- binary_to_list(Bin)],
     string:to_lower(lists:flatten(XBin)).
+
+%% @doc Return a hexadecimal string of `Binary', with double quotes
+%% around it.
+-spec etag_from_binary(binary()) -> string().
+etag_from_binary(Binary) ->
+    etag_from_binary(Binary, []).
+
+%% @doc Return a hexadecimal string of `Binary', with double quotes
+%% around it.
+-spec etag_from_binary(binary(), string()) -> string().
+etag_from_binary(Binary, []) ->
+    "\"" ++ etag_from_binary_no_quotes(Binary) ++ "\"";
+etag_from_binary(Binary, Suffix) ->
+    "\"" ++ etag_from_binary_no_quotes(Binary) ++ Suffix ++ "\"".
+
+%% @doc Return a hexadecimal string of `Binary', without double quotes
+%% around it.
+-spec etag_from_binary_no_quotes(binary() | {binary(), string()}) -> string().
+etag_from_binary_no_quotes({Binary, Suffix}) ->
+    binary_to_hexlist(Binary) ++ Suffix;
+etag_from_binary_no_quotes(Binary) ->
+    binary_to_hexlist(Binary).
+
+%% @doc Convert the passed binary into a string where the numbers are
+%% represented in hexadecimal (lowercase and 0 prefilled).
+-spec hexlist_to_binary(string()) -> binary().
+hexlist_to_binary(String) ->
+    Bytes = length(String) div 2,
+    Int = httpd_util:hexlist_to_integer(String),
+    <<Int:(Bytes*8)/integer>>.
 
 %% @doc Release a protobufs connection from the specified
 %% connection pool.
@@ -110,52 +164,134 @@ close_riak_connection(Pool, Pid) ->
                            ok |
                            {error, term()}.
 create_bucket(User, UserObj, Bucket, ACL, RiakPid) ->
-    serialized_bucket_op(Bucket,
-                         ACL,
-                         User,
-                         UserObj,
-                         create,
-                         bucket_create,
-                         RiakPid).
+    CurrentBuckets = get_buckets(User),
+
+    %% Do not attempt to create bucket if the user already owns it
+    AttemptCreate = not bucket_exists(CurrentBuckets, binary_to_list(Bucket)),
+    case AttemptCreate of
+        true ->
+            case valid_bucket_name(Bucket) of
+                true ->
+                    serialized_bucket_op(Bucket,
+                                         ACL,
+                                         User,
+                                         UserObj,
+                                         create,
+                                         bucket_create,
+                                         RiakPid);
+                false ->
+                    {error, invalid_bucket_name}
+            end;
+        false ->
+            ok
+    end.
+
+-spec valid_bucket_name(binary()) -> boolean().
+valid_bucket_name(Bucket) when byte_size(Bucket) < 3 orelse
+                               byte_size(Bucket) > 63 ->
+    false;
+valid_bucket_name(Bucket) ->
+    lists:all(fun(X) -> X end, [valid_bucket_label(Label) ||
+                                   Label <- binary:split(Bucket,
+                                                         <<".">>,
+                                                         [global])])
+        andalso not is_bucket_ip_addr(binary_to_list(Bucket)).
+
+-spec valid_bucket_label(binary()) -> boolean().
+valid_bucket_label(<<>>) ->
+    %% this clause gets called when we either have a `.' as the first or
+    %% last byte. Or if it appears twice in a row. Examples are:
+    %% `<<".myawsbucket">>'
+    %% `<<"myawsbucket.">>'
+    %% `<<"my..examplebucket">>'
+    false;
+valid_bucket_label(Label) ->
+    valid_bookend_char(binary:first(Label)) andalso
+        valid_bookend_char(binary:last(Label)) andalso
+        lists:all(fun(X) -> X end,
+                  [valid_bucket_char(C) || C <- middle_chars(Label)]).
+
+-spec middle_chars(binary()) -> list().
+middle_chars(B) when byte_size(B) < 3 ->
+    [];
+middle_chars(B) ->
+    %% `binary:at/2' is zero based
+    ByteSize = byte_size(B),
+    [binary:at(B, Position) || Position <- lists:seq(1, ByteSize - 2)].
+
+-spec is_bucket_ip_addr(string()) -> boolean().
+is_bucket_ip_addr(Bucket) ->
+    case inet_parse:ipv4strict_address(Bucket) of
+        {ok, _} ->
+            true;
+        {error, _} ->
+            false
+    end.
+
+-spec valid_bookend_char(integer()) -> boolean().
+valid_bookend_char(Char) ->
+    numeric_char(Char) orelse lower_case_char(Char).
+
+-spec valid_bucket_char(integer()) -> boolean().
+valid_bucket_char(Char) ->
+    numeric_char(Char) orelse
+        lower_case_char(Char) orelse
+        dash_char(Char).
+
+-spec numeric_char(integer()) -> boolean().
+numeric_char(Char) ->
+    Char >= $0 andalso Char =< $9.
+
+-spec lower_case_char(integer()) -> boolean().
+lower_case_char(Char) ->
+    Char >= $a andalso Char =< $z.
+
+-spec dash_char(integer()) -> boolean().
+dash_char(Char) ->
+    Char =:= $-.
 
 %% @doc Create a new Riak CS user
 -spec create_user(string(), string()) -> {ok, rcs_user()} | {error, term()}.
 create_user(Name, Email) ->
-    %% Validate the email address
+    {KeyId, Secret} = generate_access_creds(Email),
+    create_user(Name, Email, KeyId, Secret).
+
+%% @doc Create a new Riak CS user
+-spec create_user(string(), string(), string(), string()) -> {ok, rcs_user()} | {error, term()}.
+create_user(Name, Email, KeyId, Secret) ->
     case validate_email(Email) of
         ok ->
-            {StanchionIp, StanchionPort, StanchionSSL} =
-                stanchion_data(),
-            User = user_record(Name, Email),
-            case get_admin_creds() of
-                {ok, AdminCreds} ->
-                    %% Generate the user JSON document
-                    UserDoc = user_json(User),
-
-                    %% Make a call to the user request
-                    %% serialization service.
-                    CreateResult =
-                        velvet:create_user(StanchionIp,
-                                           StanchionPort,
-                                           "application/json",
-                                           UserDoc,
-                                           [{ssl, StanchionSSL},
-                                            {auth_creds, AdminCreds}]),
-                    case CreateResult of
-                        ok ->
-                            {ok, User};
-                        {error, {error_status, _, _, ErrorDoc}} ->
-                            ErrorCode = xml_error_code(ErrorDoc),
-                            {error, riak_cs_s3_response:error_code_to_atom(ErrorCode)};
-                        {error, _} ->
-                            CreateResult
-                    end;
-                {error, _Reason1}=Error1 ->
-                    Error1
-            end;
+            User = user_record(Name, Email, KeyId, Secret),
+            create_credentialed_user(riak_cs_config:admin_creds(), User);
         {error, _Reason}=Error ->
             Error
     end.
+
+-spec create_credentialed_user({error, term()}, rcs_user()) ->
+                                  {error, term()};
+                              ({ok, {term(), term()}}, rcs_user()) ->
+                                  {ok, rcs_user()} | {error, term()}.
+create_credentialed_user({error, _}=Error, _User) ->
+    Error;
+create_credentialed_user({ok, AdminCreds}, User) ->
+    {StIp, StPort, StSSL} = stanchion_data(),
+    UserDoc = user_json(User),
+    %% Make a call to the user request serialization service.
+    Result = velvet:create_user(StIp, StPort, "application/json", UserDoc,
+        [{ssl, StSSL}, {auth_creds, AdminCreds}]),
+    handle_create_user(Result, User).
+
+handle_create_user(ok, User) ->
+    {ok, User};
+handle_create_user({error, {error_status, _, _, ErrorDoc}}, _User) ->
+    case riak_cs_config:api() of
+        s3 ->
+            riak_cs_s3_response:error_response(ErrorDoc);
+        oos ->
+            {error, ErrorDoc}
+    end;
+handle_create_user({error, _}=Error, _User) ->
+    Error.
 
 %% @doc Delete a bucket
 -spec delete_bucket(rcs_user(), riakc_obj:riakc_obj(), binary(), pid()) ->
@@ -193,22 +329,23 @@ delete_bucket(User, UserObj, Bucket, RiakPid) ->
     end.
 
 %% @doc Mark all active manifests as pending_delete.
--spec delete_object(binary(), binary(), pid()) -> ok | {error, term()}.
+%% If successful, returns a list of the UUIDs that were marked for
+%% Garbage collection. Otherwise returns an error. Note,
+%% {error, notfound} counts as success in this case,
+%% with the list of UUIDs being [].
+-spec delete_object(binary(), binary(), pid()) ->
+    {ok, [binary()]} | {error, term()}.
 delete_object(Bucket, Key, RiakcPid) ->
-    StartTime = os:timestamp(),
-    case get_manifests(RiakcPid, Bucket, Key) of
-        {ok, RiakObject, Manifests} ->
-            ActiveManifests = riak_cs_manifest_utils:active_and_writing_manifests(Manifests),
-            ActiveUUIDs = [UUID || {UUID, _} <- ActiveManifests],
-            _ = riak_cs_gc:gc_manifests(Bucket,
-                                    Key,
-                                    Manifests,
-                                    ActiveUUIDs,
-                                    RiakObject,
-                                    RiakcPid),
-            ok = riak_cs_stats:update_with_start(object_delete, StartTime);
-        {error, _}=Error ->
-            Error
+    ok = riak_cs_stats:update_with_start(object_delete, os:timestamp()),
+    riak_cs_gc:gc_active_manifests(Bucket, Key, RiakcPid).
+
+-spec encode_term(term()) -> binary().
+encode_term(Term) ->
+    case riak_cs_config:use_t2b_compression() of
+        true ->
+            term_to_binary(Term, [compressed]);
+        false ->
+            term_to_binary(Term)
     end.
 
 %% Get the root bucket name for either a Riak CS object
@@ -258,16 +395,6 @@ stanchion_data() ->
     end,
     {IP, Port, SSL}.
 
-%% @doc Get an application environment variable or return a default term.
--spec get_env(atom(), atom(), term()) -> term().
-get_env(App, Key, Default) ->
-    case application:get_env(App, Key) of
-        {ok, Value} ->
-            Value;
-        _ ->
-            Default
-    end.
-
 %% @doc Return a list of keys for a bucket along
 %% with their associated objects.
 -spec get_keys_and_manifests(binary(), binary(), pid()) -> {ok, [lfs_manifest()]} | {error, term()}.
@@ -292,6 +419,8 @@ active_manifests(ManifestBucket, Prefix, RiakPid) ->
                     {ManifestBucket, [[<<"starts_with">>, Prefix]]}
             end,
     Query = [{map, {modfun, riak_cs_utils, map_keys_and_manifests},
+              undefined, false},
+             {reduce, {modfun, riak_cs_utils, reduce_keys_and_manifests},
               undefined, true}],
     {ok, ReqId} = riakc_pb_socket:mapred_stream(RiakPid, Input, Query, self()),
     receive_keys_and_manifests(ReqId, []).
@@ -339,14 +468,11 @@ map_keys_and_manifests(Object, _, _) ->
             []
     end.
 
-%% @doc Return the credentials of the admin user
--spec get_admin_creds() -> {ok, {string(), string()}} | {error, term()}.
-get_admin_creds() ->
-    KeyEnvResult = application:get_env(riak_cs, admin_key),
-    SecretEnvResult = application:get_env(riak_cs, admin_secret),
-    admin_creds_response(
-      handle_env_response(KeyEnvResult, undefined),
-      handle_env_response(SecretEnvResult, undefined)).
+%% Pipe all the bucket listing results through a passthrough reduce
+%% phase.  This is just a temporary kludge until the sink backpressure
+%% work is done.
+reduce_keys_and_manifests(Acc, _) ->
+    Acc.
 
 %% @doc Get an object from Riak
 -spec get_object(binary(), binary(), pid()) ->
@@ -357,34 +483,72 @@ get_object(BucketName, Key, RiakPid) ->
 %% internal fun to retrieve the riak object
 %% at a bucket/key
 -spec get_manifests_raw(pid(), binary(), binary()) ->
-    {ok, riakc_obj:riakc_obj()} | {error, notfound}.
+    {ok, riakc_obj:riakc_obj()} | {error, term()}.
 get_manifests_raw(RiakcPid, Bucket, Key) ->
     ManifestBucket = to_bucket_name(objects, Bucket),
     riakc_pb_socket:get(RiakcPid, ManifestBucket, Key).
 
 %% @doc
 -spec get_manifests(pid(), binary(), binary()) ->
-    {ok, term(), term()} | {error, notfound}.
+    {ok, term(), term()} | {error, term()}.
 get_manifests(RiakcPid, Bucket, Key) ->
     case get_manifests_raw(RiakcPid, Bucket, Key) of
         {ok, Object} ->
-            DecodedSiblings = [binary_to_term(V) ||
-                                  {_, V}=Content <- riakc_obj:get_contents(Object),
-                                  not has_tombstone(Content)],
-
-            %% Upgrade the manifests to be the latest erlang
-            %% record version
-            Upgraded = riak_cs_manifest_utils:upgrade_wrapped_manifests(DecodedSiblings),
-
-            %% resolve the siblings
-            Resolved = riak_cs_manifest_resolution:resolve(Upgraded),
-
-            %% prune old scheduled_delete manifests
-            Pruned = riak_cs_manifest_utils:prune(Resolved),
-            {ok, Object, Pruned};
-        {error, notfound}=NotFound ->
-            NotFound
+            Manifests = manifests_from_riak_object(Object),
+            _  = gc_deleted_while_writing_manifests(Object, Manifests, Bucket, Key, RiakcPid),
+            {ok, Object, Manifests};
+        {error, _Reason}=Error ->
+            Error
     end.
+
+gc_deleted_while_writing_manifests(Object, Manifests, Bucket, Key, RiakcPid) ->
+    UUIDs = riak_cs_manifest_utils:deleted_while_writing(Manifests),
+    riak_cs_gc:gc_specific_manifests(UUIDs, Object, Bucket, Key, RiakcPid).
+
+-spec manifests_from_riak_object(riakc_obj:riakc_obj()) -> orddict:orddict().
+manifests_from_riak_object(RiakObject) ->
+    %% For example, riak_cs_manifest_fsm:get_and_update/4 may wish to
+    %% update the #riakc_obj without a roundtrip to Riak first.  So we
+    %% need to see what the latest
+    Contents = try
+                   %% get_update_value will return the updatevalue or
+                   %% a single old original value.
+                   [{riakc_obj:get_update_metadata(RiakObject),
+                     riakc_obj:get_update_value(RiakObject)}]
+               catch throw:_ ->
+                       %% Original value had many contents
+                       riakc_obj:get_contents(RiakObject)
+               end,
+    DecodedSiblings = [binary_to_term(V) ||
+                          {_, V}=Content <- Contents,
+                          not has_tombstone(Content)],
+
+    %% Upgrade the manifests to be the latest erlang
+    %% record version
+    Upgraded = riak_cs_manifest_utils:upgrade_wrapped_manifests(DecodedSiblings),
+
+    %% resolve the siblings
+    Resolved = riak_cs_manifest_resolution:resolve(Upgraded),
+
+    %% prune old scheduled_delete manifests
+    riak_cs_manifest_utils:prune(Resolved).
+
+-spec active_manifest_from_response({ok, orddict:orddict()} |
+                                    {error, notfound}) ->
+    {ok, lfs_manifest()} | {error, notfound}.
+active_manifest_from_response({ok, Manifests}) ->
+    handle_active_manifests(riak_cs_manifest_utils:active_manifest(Manifests));
+active_manifest_from_response({error, notfound}=NotFound) ->
+    NotFound.
+
+%% @private
+-spec handle_active_manifests({ok, lfs_manifest()} |
+                              {error, no_active_manifest}) ->
+    {ok, lfs_manifest()} | {error, notfound}.
+handle_active_manifests({ok, _Active}=ActiveReply) ->
+    ActiveReply;
+handle_active_manifests({error, no_active_manifest}) ->
+    {error, notfound}.
 
 %% @doc Retrieve a Riak CS user's information based on their id string.
 -spec get_user('undefined' | list(), pid()) -> {ok, {rcs_user(), riakc_obj:riakc_obj()}} | {error, term()}.
@@ -405,7 +569,9 @@ get_user(KeyId, RiakPid) ->
                     {error, no_value};
                 _ ->
                     Values = [binary_to_term(Value) ||
-                                 Value <- riakc_obj:get_values(Obj)],
+                                 Value <- riakc_obj:get_values(Obj),
+                                 Value /= <<>>  % tombstone
+                             ],
                     User = update_user_record(hd(Values)),
                     Buckets = resolve_buckets(Values, [], KeepDeletedBuckets),
                     {ok, {User?RCS_USER{buckets=Buckets}, Obj}}
@@ -453,7 +619,7 @@ has_tombstone({MD, _V}) ->
 %% @doc Determine if the specified user account is a system admin.
 -spec is_admin(rcs_user()) -> boolean().
 is_admin(User) ->
-    is_admin(User, get_admin_creds()).
+    is_admin(User, riak_cs_config:admin_creds()).
 
 %% @doc Pretty-print a JSON string ... from riak_core's json_pp.erl
 json_pp_print(Str) when is_list(Str) ->
@@ -522,6 +688,14 @@ put_object(BucketName, Key, Value, Metadata, RiakPid) ->
     NewObj = riakc_obj:update_metadata(RiakObject, Metadata),
     riakc_pb_socket:put(RiakPid, NewObj).
 
+put(RiakcPid, RiakcObj) ->
+    put(RiakcPid, RiakcObj, []).
+
+put(RiakcPid, RiakcObj, Options) ->
+    riakc_pb_socket:put(RiakcPid, RiakcObj, Options).
+
+put_with_no_meta(RiakcPid, RiakcObj) ->
+    put_with_no_meta(RiakcPid, RiakcObj, []).
 %% @doc Put an object in Riak with empty
 %% metadata. This is likely used when because
 %% you want to avoid manually setting the metadata
@@ -529,11 +703,14 @@ put_object(BucketName, Key, Value, Metadata, RiakPid) ->
 %% if the previous object had metadata siblings,
 %% not explicitly setting the metadata will
 %% cause a siblings exception to be raised.
--spec put_with_no_meta(pid(), riakc_obj:riakc_obj()) ->
-    ok | {ok, riakc_obj:riakc_obj()} | {ok, riakc_obj:key()} | {error, term()}.
-put_with_no_meta(RiakcPid, RiakcObject) ->
+-spec put_with_no_meta(pid(), riakc_obj:riakc_obj(), term()) ->
+    ok | {ok, riakc_obj:riakc_obj()} | {ok, binary()} | {error, term()}.
+put_with_no_meta(RiakcPid, RiakcObject, Options) ->
     WithMeta = riakc_obj:update_metadata(RiakcObject, dict:new()),
-    riakc_pb_socket:put(RiakcPid, WithMeta).
+    io:format("put_NO_META LINE ~p contents ~p bucket ~p key ~p\n", [?LINE, length(riakc_obj:get_contents(WithMeta)), riakc_obj:bucket(WithMeta), riakc_obj:key(WithMeta)]),
+    catch exit(yoyo),
+    io:format("put_NO_META LINE ~p ~p\n", [?LINE, erlang:get_stacktrace()]),
+    riakc_pb_socket:put(RiakcPid, WithMeta, Options).
 
 %% @doc Get a protobufs connection to the riak cluster
 %% from the default connection pool.
@@ -555,15 +732,11 @@ riak_connection(Pool) ->
     end.
 
 %% @doc Save information about a Riak CS user
--spec save_user(rcs_user(), riakc_obj:riakc_obj(), pid()) -> ok.
+-spec save_user(rcs_user(), riakc_obj:riakc_obj(), pid()) -> ok | {error, term()}.
 save_user(User, UserObj, RiakPid) ->
     %% Metadata is currently never updated so if there
     %% are siblings all copies should be the same
-    [MD | _] = riakc_obj:get_metadatas(UserObj),
-    UpdUserObj = riakc_obj:update_metadata(
-                   riakc_obj:update_value(UserObj, term_to_binary(User)),
-                   MD),
-    %% @TODO Error handling
+    UpdUserObj = update_obj_value(UserObj, riak_cs_utils:encode_term(User)),
     riakc_pb_socket:put(RiakPid, UpdUserObj).
 
 %% @doc Set the ACL for a bucket. Existing ACLs are only
@@ -576,6 +749,28 @@ set_bucket_acl(User, UserObj, Bucket, ACL, RiakPid) ->
                          UserObj,
                          update_acl,
                          bucket_put_acl,
+                         RiakPid).
+
+%% @doc Set the policy for a bucket. Existing policy is only overwritten.
+-spec set_bucket_policy(rcs_user(), riakc_obj:riakc_obj(), binary(), []|policy()|acl(), pid()) -> ok | {error, term()}.
+set_bucket_policy(User, UserObj, Bucket, PolicyJson, RiakPid) ->
+    serialized_bucket_op(Bucket,
+                         PolicyJson,
+                         User,
+                         UserObj,
+                         update_policy,
+                         bucket_put_policy,
+                         RiakPid).
+
+%% @doc Set the policy for a bucket. Existing policy is only overwritten.
+-spec delete_bucket_policy(rcs_user(), riakc_obj:riakc_obj(), binary(), pid()) -> ok | {error, term()}.
+delete_bucket_policy(User, UserObj, Bucket, RiakPid) ->
+    serialized_bucket_op(Bucket,
+                         [],
+                         User,
+                         UserObj,
+                         delete_policy,
+                         bucket_put_policy,
                          RiakPid).
 
 %% @doc Set the ACL for an object. Existing ACLs are only
@@ -596,10 +791,46 @@ set_object_acl(Bucket, Key, Manifest, Acl, RiakPid) ->
     end,
     Res.
 
-%% @doc Generate a key for storing a set of manifests for deletion.
--spec timestamp(erlang:timestamp()) -> non_neg_integer().
-timestamp({MegaSecs, Secs, _MicroSecs}) ->
+% @doc fetch moss.bucket and return acl and policy
+-spec get_bucket_acl_policy(binary(), atom(), pid()) -> {acl(), policy()} | {error, term()}.
+get_bucket_acl_policy(Bucket, PolicyMod, RiakPid) ->
+    case check_bucket_exists(Bucket, RiakPid) of
+        {ok, Obj} ->
+            %% For buckets there should not be siblings, but in rare
+            %% cases it may happen so check for them and attempt to
+            %% resolve if possible.
+            Contents = riakc_obj:get_contents(Obj),
+            Acl = riak_cs_acl:bucket_acl_from_contents(Bucket, Contents),
+            Policy = PolicyMod:bucket_policy_from_contents(Bucket, Contents),
+            format_acl_policy_response(Acl, Policy);
+        {error, _}=Error ->
+            Error
+    end.
+
+-type policy_from_meta_result() :: {'ok', policy()} | {'error', 'policy_undefined'}.
+-type bucket_policy_result() :: policy_from_meta_result() | {'error', 'multiple_bucket_owners'}.
+-type acl_from_meta_result() :: {'ok', acl()} | {'error', 'acl_undefined'}.
+-type bucket_acl_result() :: acl_from_meta_result() | {'error', 'multiple_bucket_owners'}.
+-spec format_acl_policy_response(bucket_acl_result(), bucket_policy_result()) ->
+                                        {error, atom()} | {acl(), 'undefined' | policy()}.
+format_acl_policy_response({error, _}=Error, _) ->
+    Error;
+format_acl_policy_response(_, {error, multiple_bucket_owners}=Error) ->
+    Error;
+format_acl_policy_response({ok, Acl}, {error, policy_undefined}) ->
+    {Acl, undefined};
+format_acl_policy_response({ok, Acl}, {ok, Policy}) ->
+    {Acl, Policy}.
+
+-spec second_resolution_timestamp(erlang:timestamp()) -> non_neg_integer().
+%% @doc Return the number of seconds this timestamp represents. Truncated to
+%% seconds, as an integer.
+second_resolution_timestamp({MegaSecs, Secs, _MicroSecs}) ->
     (MegaSecs * 1000000) + Secs.
+
+-spec timestamp_to_seconds(erlang:timestamp()) -> float().
+timestamp_to_seconds({MegaSecs, Secs, MicroSecs}) ->
+    (MegaSecs * 1000000) + Secs + (MicroSecs / 1000000).
 
 %% Get the proper bucket name for either the Riak CS object
 %% bucket or the data block bucket.
@@ -622,30 +853,17 @@ update_key_secret(User=?RCS_USER{email=Email,
     EmailBin = list_to_binary(Email),
     User?RCS_USER{key_secret=generate_secret(EmailBin, KeyId)}.
 
+%% @doc Update the object's value blob, and take the first metadata
+%%      dictionary because we don't care about trying to merge them.
+-spec update_obj_value(riakc_obj:riakc_obj(), binary()) -> riakc_obj:riakc_obj().
+update_obj_value(Obj, Value) when is_binary(Value) ->
+    [MD | _] = riakc_obj:get_metadatas(Obj),
+    riakc_obj:update_metadata(riakc_obj:update_value(Obj, Value),
+                              MD).
+
 %% ===================================================================
 %% Internal functions
 %% ===================================================================
-
--spec admin_creds_response(term(), term()) -> {ok, {term(), term()}} |
-                                              {error, atom()}.
-admin_creds_response(undefined, _) ->
-    _ = lager:warning("The admin user's key id"
-                      "has not been specified."),
-    {error, admin_key_undefined};
-admin_creds_response([], _) ->
-    _ = lager:warning("The admin user's key id"
-                      "has not been specified."),
-    {error, admin_key_undefined};
-admin_creds_response(_, undefined) ->
-    _ = lager:warning("The admin user's secret"
-                      "has not been specified."),
-    {error, admin_secret_undefined};
-admin_creds_response(_, []) ->
-    _ = lager:warning("The admin user's secret"
-                      "has not been specified."),
-    {error, admin_secret_undefined};
-admin_creds_response(Key, Secret) ->
-    {ok, {Key, Secret}}.
 
 %% @doc Generate a JSON document to use for a bucket
 %% ACL request.
@@ -656,34 +874,108 @@ bucket_acl_json(ACL, KeyId)  ->
         mochijson2:encode({struct, [{<<"requester">>, list_to_binary(KeyId)},
                                     stanchion_acl_utils:acl_to_json_term(ACL)]}))).
 
+%% @doc Generate a JSON document to use for a bucket
+-spec bucket_policy_json(binary(), string()) -> string().
+bucket_policy_json(PolicyJson, KeyId)  ->
+    binary_to_list(
+      iolist_to_binary(
+        mochijson2:encode({struct, [{<<"requester">>, list_to_binary(KeyId)},
+                                    {<<"policy">>, PolicyJson}]
+                          }))).
+
 %% @doc Check if a bucket is empty
 -spec bucket_empty(binary(), pid()) -> boolean().
-bucket_empty(Bucket, RiakPid) ->
+bucket_empty(Bucket, RiakcPid) ->
     ManifestBucket = to_bucket_name(objects, Bucket),
     %% @TODO Use `stream_list_keys' instead and
-    %% break out as soon as an active manifest is found.
-    case list_keys(ManifestBucket, RiakPid) of
-        {ok, Keys} ->
-            FoldFun =
-                fun(Key, Acc) ->
-                        {ok, ManiPid} = riak_cs_manifest_fsm:start_link(Bucket, Key, RiakPid),
-                        case riak_cs_manifest_fsm:get_active_manifest(ManiPid) of
-                            {ok, _} ->
-                                [Key | Acc];
-                            {error, notfound} ->
-                                Acc
-                        end
-                end,
-            ActiveKeys = lists:foldl(FoldFun, [], Keys),
-            case ActiveKeys of
-                [] ->
-                    true;
-                _ ->
-                    false
-            end;
-        _ ->
-            false
+    ListKeysResult = list_keys(ManifestBucket, RiakcPid),
+    bucket_empty_handle_list_keys(RiakcPid,
+                                  Bucket,
+                                  ListKeysResult).
+
+-spec bucket_empty_handle_list_keys(pid(), binary(),
+                                    {ok, list()} |
+                                    {error, term()}) ->
+    boolean().
+bucket_empty_handle_list_keys(RiakcPid, Bucket, {ok, Keys}) ->
+    AnyPred = bucket_empty_any_pred(RiakcPid, Bucket),
+    %% `lists:any/2' will break out early as soon
+    %% as something returns `true'
+    not lists:any(AnyPred, Keys);
+bucket_empty_handle_list_keys(_RiakcPid, _Bucket, _Error) ->
+    false.
+
+-spec bucket_empty_any_pred(RiakcPid :: pid(), Bucket :: binary()) ->
+    fun((Key :: binary()) -> boolean()).
+bucket_empty_any_pred(RiakcPid, Bucket) ->
+    fun (Key) ->
+            key_exists(RiakcPid, Bucket, Key)
     end.
+
+%% @private
+%% `Bucket' should be the raw bucket name,
+%% we'll take care of calling `to_bucket_name'
+-spec key_exists(pid(), binary(), binary()) -> boolean().
+key_exists(RiakcPid, Bucket, Key) ->
+    key_exists_handle_get_manifests(get_manifests(RiakcPid, Bucket, Key)).
+
+%% @private
+-spec key_exists_handle_get_manifests({ok, riakc_obj:riakc_obj(), list()} |
+                                      {error, term()}) ->
+    boolean().
+key_exists_handle_get_manifests({ok, _Object, Manifests}) ->
+    active_to_bool(active_manifest_from_response({ok, Manifests}));
+key_exists_handle_get_manifests(Error) ->
+    active_to_bool(active_manifest_from_response(Error)).
+
+%% @private
+-spec active_to_bool({ok, term()} | {error, notfound}) -> boolean().
+active_to_bool({ok, _Active}) ->
+    true;
+active_to_bool({error, notfound}) ->
+    false.
+
+%% @doc Check if a bucket exists in the `buckets' bucket and verify
+%% that it has an owner assigned. If true return the object;
+%% otherwise, return an error.
+%%
+%% @TODO Rename current `bucket_exists' function to
+%% `bucket_exists_for_user' and rename this function
+%% `bucket_exists'.
+-spec check_bucket_exists(binary(), pid()) ->
+                                 {ok, riakc_obj:riakc_obj()} | {error, term()}.
+check_bucket_exists(Bucket, RiakPid) ->
+    case riak_cs_utils:get_object(?BUCKETS_BUCKET, Bucket, RiakPid) of
+        {ok, Obj} ->
+            %% Make sure the bucket has an owner
+            [Value | _] = Values = riakc_obj:get_values(Obj),
+            maybe_log_sibling_warning(Bucket, Values),
+            case Value of
+                <<"0">> ->
+                    {error, no_such_bucket};
+                _ ->
+                    {ok, Obj}
+            end;
+        {error, _}=Error ->
+            Error
+    end.
+
+-spec maybe_log_sibling_warning(binary(), list(riakc_obj:value())) -> ok.
+maybe_log_sibling_warning(Bucket, Values) when length(Values) > 1 ->
+    _ = lager:warning("The bucket ~s has ~b siblings that may need resolution.",
+                  [binary_to_list(Bucket), length(Values)]),
+    ok;
+maybe_log_sibling_warning(_, _) ->
+    ok.
+
+-spec maybe_log_bucket_owner_error(binary(), list(riakc_obj:value())) -> ok.
+maybe_log_bucket_owner_error(Bucket, Values) when length(Values) > 1 ->
+    _ = lager:error("The bucket ~s has ~b owners."
+                      " This situation requires administrator intervention.",
+                      [binary_to_list(Bucket), length(Values)]),
+    ok;
+maybe_log_bucket_owner_error(_, _) ->
+    ok.
 
 %% @doc Check if a bucket exists in a list of the user's buckets.
 %% @TODO This will need to change once globally unique buckets
@@ -733,6 +1025,30 @@ bucket_fun(update_acl, Bucket, ACL, KeyId, AdminCreds, StanchionData) ->
                                   AclDoc,
                                   [{ssl, StanchionSSL},
                                    {auth_creds, AdminCreds}])
+    end;
+bucket_fun(update_policy, Bucket, PolicyJson, KeyId, AdminCreds, StanchionData) ->
+    {StanchionIp, StanchionPort, StanchionSSL} = StanchionData,
+    %% Generate the bucket JSON document for the ACL request
+    PolicyDoc = bucket_policy_json(PolicyJson, KeyId),
+    fun() ->
+            velvet:set_bucket_policy(StanchionIp,
+                                     StanchionPort,
+                                     Bucket,
+                                     "application/json",
+                                     PolicyDoc,
+                                     [{ssl, StanchionSSL},
+                                      {auth_creds, AdminCreds}])
+    end;
+bucket_fun(delete_policy, Bucket, _, KeyId, AdminCreds, StanchionData) ->
+    {StanchionIp, StanchionPort, StanchionSSL} = StanchionData,
+    %% Generate the bucket JSON document for the ACL request
+    fun() ->
+            velvet:delete_bucket_policy(StanchionIp,
+                                        StanchionPort,
+                                        Bucket,
+                                        KeyId,
+                                        [{ssl, StanchionSSL},
+                                         {auth_creds, AdminCreds}])
     end;
 bucket_fun(delete, Bucket, _ACL, KeyId, AdminCreds, StanchionData) ->
     {StanchionIp, StanchionPort, StanchionSSL} = StanchionData,
@@ -849,7 +1165,9 @@ generate_access_creds(UserId) ->
     {KeyId, Secret}.
 
 %% @doc Generate the canonical id for a user.
--spec generate_canonical_id(string(), string()) -> string().
+-spec generate_canonical_id(string(), undefined | string()) -> string().
+generate_canonical_id(_KeyID, undefined) ->
+    [];
 generate_canonical_id(KeyID, Secret) ->
     Bytes = 16,
     Id1 = crypto:md5(KeyID),
@@ -880,12 +1198,6 @@ generate_secret(UserName, Key) ->
       iolist_to_binary(<< SecretPart1:Bytes/binary,
                           SecretPart2:Bytes/binary >>)).
 
--spec handle_env_response(undefined | {ok, term()}, term()) -> term().
-handle_env_response(undefined, Default) ->
-    Default;
-handle_env_response({ok, Value}, _) ->
-    Value.
-
 %% @doc Determine if the specified user account is a system admin.
 -spec is_admin(rcs_user(), {ok, {string(), string()}} |
                {error, term()}) -> boolean().
@@ -915,21 +1227,6 @@ keep_existing_bucket(?RCS_BUCKET{last_action=LastAction1,
             false
     end.
 
-%% @doc Process the top-level elements of the
--spec process_xml_error([xmlElement()]) -> string().
-process_xml_error([]) ->
-    [];
-process_xml_error([HeadElement | RestElements]) ->
-    _ = lager:debug("Element name: ~p", [HeadElement#xmlElement.name]),
-    ElementName = HeadElement#xmlElement.name,
-    case ElementName of
-        'Code' ->
-            [Content] = HeadElement#xmlElement.content,
-            Content#xmlText.value;
-        _ ->
-            process_xml_error(RestElements)
-    end.
-
 %% @doc Resolve the set of buckets for a user when
 %% siblings are encountered on a read of a user record.
 -spec resolve_buckets([rcs_user()], [cs_bucket()], boolean()) ->
@@ -945,7 +1242,7 @@ resolve_buckets([HeadUserRec | RestUserRecs], Buckets, _KeepDeleted) ->
 
 %% @doc Shared code used when doing a bucket creation or deletion.
 -spec serialized_bucket_op(binary(),
-                           acl(),
+                           [] | acl() | policy(),
                            rcs_user(),
                            riakc_obj:riakc_obj(),
                            bucket_operation(),
@@ -955,7 +1252,7 @@ resolve_buckets([HeadUserRec | RestUserRecs], Buckets, _KeepDeleted) ->
                                   {error, term()}.
 serialized_bucket_op(Bucket, ACL, User, UserObj, BucketOp, StatName, RiakPid) ->
     StartTime = os:timestamp(),
-    case get_admin_creds() of
+    case riak_cs_config:admin_creds() of
         {ok, AdminCreds} ->
             BucketFun = bucket_fun(BucketOp,
                                    Bucket,
@@ -983,8 +1280,7 @@ serialized_bucket_op(Bucket, ACL, User, UserObj, BucketOp, StatName, RiakPid) ->
                             X
                     end;
                 {error, {error_status, _, _, ErrorDoc}} ->
-                    ErrorCode = xml_error_code(ErrorDoc),
-                    {error, riak_cs_s3_response:error_code_to_atom(ErrorCode)};
+                    riak_cs_s3_response:error_response(ErrorDoc);
                 {error, _} ->
                     OpResult
             end;
@@ -1022,13 +1318,6 @@ validate_email(EmailAddr) ->
         _ ->
             ok
     end.
-
-%% @doc Get the value of the `Code' element from
-%% and XML document.
--spec xml_error_code(string()) -> string().
-xml_error_code(Xml) ->
-    {ParsedData, _Rest} = xmerl_scan:string(Xml, []),
-    process_xml_error(ParsedData#xmlElement.content).
 
 %% @doc Update a bucket record to convert the name from binary
 %% to string if necessary.
@@ -1082,15 +1371,15 @@ update_user_record(User=#moss_user_v1{}) ->
 
 %% @doc Return a user record for the specified user name and
 %% email address.
--spec user_record(string(), string()) -> rcs_user().
-user_record(Name, Email) ->
-    user_record(Name, Email, []).
+-spec user_record(string(), string(), string(), string()) -> rcs_user().
+user_record(Name, Email, KeyId, Secret) ->
+    user_record(Name, Email, KeyId, Secret, []).
 
 %% @doc Return a user record for the specified user name and
 %% email address.
--spec user_record(string(), string(), [cs_bucket()]) -> rcs_user().
-user_record(Name, Email, Buckets) ->
-    {KeyId, Secret} = generate_access_creds(Email),
+-spec user_record(string(), string(), string(), string(), [cs_bucket()]) ->
+                         rcs_user().
+user_record(Name, Email, KeyId, Secret, Buckets) ->
     CanonicalId = generate_canonical_id(KeyId, Secret),
     DisplayName = display_name(Email),
     ?RCS_USER{name=Name,
@@ -1101,39 +1390,23 @@ user_record(Name, Email, Buckets) ->
                canonical_id=CanonicalId,
                buckets=Buckets}.
 
-%% doc Return the current cluster ID. Used for repl
-%% After obtaining the clusterid the first time,
-%% store the value in app:set_env
--spec get_cluster_id(pid()) -> binary().
-get_cluster_id(Pid) ->
-    case application:get_env(riak_cs, cluster_id) of
-        {ok, ClusterID} ->
-            ClusterID;
-        undefined ->
-            Timeout = case application:get_env(riak_cs,cluster_id_timeout) of
-                          {ok, Value} -> Value;
-                          undefined   -> ?DEFAULT_CLUSTER_ID_TIMEOUT
-                      end,
-            case riak_repl_pb_api:get_clusterid(Pid, Timeout) of
-                {ok, ClusterID} ->
-                    application:set_env(riak_cs, cluster_id, ClusterID),
-                    ClusterID;
-                _ ->
-                    lager:debug("Unable to obtain cluster ID"),
-                    undefined
-            end
-    end.
 
-%% doc Check app.config to see if repl proxy_get is enabled
-%% Defaults to false.
-proxy_get_active() ->
-    case application:get_env(riak_cs, proxy_get) of
-        {ok, enabled} ->
-            true;
-        {ok, disabled} ->
-            false;
-        {ok, _} ->
-            lager:warning("proxy_get value in app.config is invalid"),
-            false;
-        undefined -> false
+%% @doc Convert a pid to a binary
+-spec pid_to_binary(pid()) -> binary().
+pid_to_binary(Pid) ->
+    list_to_binary(pid_to_list(Pid)).
+
+%% @doc Rapid calls to `md5_update' with largish data blocks (e.g. 1MB)
+%% can lead to erlang scheduler collapse
+-spec chunked_md5(binary(), binary(), non_neg_integer()) -> binary().
+chunked_md5(<<>>, Context, _ChunkSize) ->
+    Context;
+chunked_md5(Data, Context, ChunkSize) ->
+    case byte_size(Data) < ChunkSize of
+        true ->
+            crypto:md5_update(Context, Data);
+        false ->
+            <<Chunk:ChunkSize/binary, RestData/binary>> = Data,
+            UpdContext = crypto:md5_update(Context, Chunk),
+            chunked_md5(RestData, UpdContext, ChunkSize)
     end.

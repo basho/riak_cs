@@ -1,8 +1,22 @@
-%% -------------------------------------------------------------------
+%% ---------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2012 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
 %%
-%% -------------------------------------------------------------------
+%% This file is provided to you under the Apache License,
+%% Version 2.0 (the "License"); you may not use this file
+%% except in compliance with the License.  You may obtain
+%% a copy of the License at
+%%
+%%   http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing,
+%% software distributed under the License is distributed on an
+%% "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+%% KIND, either express or implied.  See the License for the
+%% specific language governing permissions and limitations
+%% under the License.
+%%
+%% ---------------------------------------------------------------------
 
 -module(riak_cs_wm_users).
 
@@ -25,7 +39,7 @@
 init(Config) ->
     %% Check if authentication is disabled and
     %% set that in the context.
-    AuthBypass = proplists:get_value(auth_bypass, Config),
+    AuthBypass = not proplists:get_value(admin_auth_enabled, Config),
     {ok, #context{auth_bypass=AuthBypass}}.
 
 -spec service_available(term(), term()) -> {true, term(), term()}.
@@ -36,11 +50,11 @@ service_available(RD, Ctx) ->
 allowed_methods(RD, Ctx) ->
     {['GET', 'HEAD'], RD, Ctx}.
 
-forbidden(RD, Ctx) ->
+forbidden(RD, Ctx=#context{auth_bypass=AuthBypass}) ->
     Next = fun(NewRD, NewCtx=#context{user=User}) ->
-                   forbidden(NewRD, NewCtx, User)
+                   forbidden(NewRD, NewCtx, User, AuthBypass)
            end,
-    riak_cs_wm_utils:find_and_auth_user(RD, Ctx, Next, false).
+    riak_cs_wm_utils:find_and_auth_user(RD, Ctx, Next, AuthBypass).
 
 content_types_provided(RD, Ctx) ->
     {[{?XML_TYPE, produce_xml}, {?JSON_TYPE, produce_json}], RD, Ctx}.
@@ -87,12 +101,14 @@ finish_request(RD, Ctx=#context{riakc_pid=RiakPid}) ->
 %% Internal functions
 %% -------------------------------------------------------------------
 
-forbidden(RD, Ctx, undefined) ->
+forbidden(RD, Ctx, undefined, true) ->
+    {false, RD, Ctx};
+forbidden(RD, Ctx, undefined, false) ->
     %% anonymous access disallowed
     riak_cs_wm_utils:deny_access(RD, Ctx);
-forbidden(RD, Ctx, User) ->
+forbidden(RD, Ctx, User, false) ->
     UserKeyId = User?RCS_USER.key_id,
-    case riak_cs_utils:get_admin_creds() of
+    case riak_cs_config:admin_creds() of
         {ok, {Admin, _}} when Admin == UserKeyId ->
             %% admin account is allowed
             {false, RD, Ctx};
@@ -131,7 +147,7 @@ wait_for_users(Format, RiakPid, ReqId, Boundary, Status) ->
 
 %% @doc Compile a multipart entity for a set of user documents.
 users_doc(UserDocs, xml, Boundary) ->
-    XmlDoc = riak_cs_s3_response:export_xml([{'Users', UserDocs}]),
+    XmlDoc = riak_cs_xml:export_xml([{'Users', UserDocs}]),
     ["\r\n--",
      Boundary,
      "\r\nContent-Type: ", ?XML_TYPE, "\r\n\r\n",

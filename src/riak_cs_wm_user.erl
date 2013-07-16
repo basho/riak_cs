@@ -1,8 +1,22 @@
-%% -------------------------------------------------------------------
+%% ---------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2012 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
 %%
-%% -------------------------------------------------------------------
+%% This file is provided to you under the Apache License,
+%% Version 2.0 (the "License"); you may not use this file
+%% except in compliance with the License.  You may obtain
+%% a copy of the License at
+%%
+%%   http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing,
+%% software distributed under the License is distributed on an
+%% "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+%% KIND, either express or implied.  See the License for the
+%% specific language governing permissions and limitations
+%% under the License.
+%%
+%% ---------------------------------------------------------------------
 
 -module(riak_cs_wm_user).
 
@@ -29,53 +43,60 @@
 %% -------------------------------------------------------------------
 
 init(Config) ->
-    dt_entry(<<"init">>),
+    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"init">>),
     %% Check if authentication is disabled and
     %% set that in the context.
-    AuthBypass = proplists:get_value(auth_bypass, Config),
+    AuthBypass = not proplists:get_value(admin_auth_enabled, Config),
     {ok, #context{auth_bypass=AuthBypass}}.
 
 -spec service_available(term(), term()) -> {true, term(), term()}.
 service_available(RD, Ctx) ->
-    dt_entry(<<"service_available">>),
+    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"service_available">>),
     riak_cs_wm_utils:service_available(RD, Ctx).
 
 -spec allowed_methods(term(), term()) -> {[atom()], term(), term()}.
 allowed_methods(RD, Ctx) ->
-    dt_entry(<<"allowed_methods">>),
+    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"allowed_methods">>),
     {['GET', 'HEAD', 'POST', 'PUT'], RD, Ctx}.
 
-forbidden(RD, Ctx) ->
-    dt_entry(<<"forbidden">>),
+forbidden(RD, Ctx=#context{auth_bypass=AuthBypass}) ->
+    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"forbidden">>),
+    Method = wrq:method(RD),
+    AnonOk = ((Method =:= 'PUT' orelse Method =:= 'POST') andalso
+              riak_cs_config:anonymous_user_creation())
+        orelse AuthBypass,
     Next = fun(NewRD, NewCtx=#context{user=User}) ->
                    forbidden(wrq:method(RD),
                              NewRD,
                              NewCtx,
                              User,
                              user_key(RD),
-                             riak_cs_utils:anonymous_user_creation())
+                             AnonOk)
            end,
     UserAuthResponse = riak_cs_wm_utils:find_and_auth_user(RD, Ctx, Next),
     handle_user_auth_response(UserAuthResponse).
 
 handle_user_auth_response({false, _RD, Ctx} = Ret) ->
-    dt_return(<<"forbidden">>, [], [extract_name(Ctx#context.user), <<"false">>]),
+    riak_cs_dtrace:dt_wm_return(?MODULE, <<"forbidden">>,
+                                [], [riak_cs_wm_utils:extract_name(Ctx#context.user), <<"false">>]),
     Ret;
 handle_user_auth_response({{halt, Code}, _RD, Ctx} = Ret) ->
-    dt_return(<<"forbidden">>, [Code], [extract_name(Ctx#context.user), <<"true">>]),
+    riak_cs_dtrace:dt_wm_return(?MODULE, <<"forbidden">>,
+                                [Code], [riak_cs_wm_utils:extract_name(Ctx#context.user), <<"true">>]),
     Ret;
 handle_user_auth_response({_Reason, _RD, Ctx} = Ret) ->
-    dt_return(<<"forbidden">>, [-1], [extract_name(Ctx#context.user), <<"true">>]),
+    riak_cs_dtrace:dt_wm_return(?MODULE, <<"forbidden">>,
+                                [-1], [riak_cs_wm_utils:extract_name(Ctx#context.user), <<"true">>]),
     Ret.
 
 -spec content_types_accepted(term(), term()) ->
     {[{string(), atom()}], term(), term()}.
 content_types_accepted(RD, Ctx) ->
-    dt_entry(<<"content_types_accepted">>),
+    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"content_types_accepted">>),
     {[{?XML_TYPE, accept_xml}, {?JSON_TYPE, accept_json}], RD, Ctx}.
 
 content_types_provided(RD, Ctx) ->
-    dt_entry(<<"content_types_provided">>),
+    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"content_types_provided">>),
     {[{?XML_TYPE, produce_xml}, {?JSON_TYPE, produce_json}], RD, Ctx}.
 
 post_is_create(RD, Ctx) -> {true, RD, Ctx}.
@@ -85,7 +106,7 @@ create_path(RD, Ctx) -> {"/riak-cs/user", RD, Ctx}.
 -spec accept_json(term(), term()) ->
     {boolean() | {halt, term()}, term(), term()}.
 accept_json(RD, Ctx=#context{user=undefined}) ->
-    dt_entry(<<"accept_json">>),
+    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"accept_json">>),
     Body = wrq:req_body(RD),
     case catch mochijson2:decode(Body) of
         {struct, UserItems} ->
@@ -106,7 +127,7 @@ accept_json(RD, Ctx=#context{user=undefined}) ->
             riak_cs_s3_response:api_error(invalid_user_update, RD, Ctx)
     end;
 accept_json(RD, Ctx) ->
-    dt_entry(<<"accept_json">>),
+    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"accept_json">>),
     Body = wrq:req_body(RD),
     case catch mochijson2:decode(Body) of
         {struct, UserItems} ->
@@ -120,7 +141,7 @@ accept_json(RD, Ctx) ->
 -spec accept_xml(term(), term()) ->
     {boolean() | {halt, term()}, term(), term()}.
 accept_xml(RD, Ctx=#context{user=undefined}) ->
-    dt_entry(<<"accept_xml">>),
+    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"accept_xml">>),
     Body = binary_to_list(wrq:req_body(RD)),
     case catch xmerl_scan:string(Body, []) of
         {'EXIT', _} ->
@@ -135,7 +156,7 @@ accept_xml(RD, Ctx=#context{user=undefined}) ->
                 {ok, User} ->
                     CTypeWritten = wrq:set_resp_header("Content-Type", ?XML_TYPE, RD),
                     UserData = riak_cs_wm_utils:user_record_to_xml(User),
-                    XmlDoc = riak_cs_s3_response:export_xml([UserData]),
+                    XmlDoc = riak_cs_xml:export_xml([UserData]),
                     WrittenRD = wrq:set_resp_body(XmlDoc, CTypeWritten),
                     {true, WrittenRD, Ctx};
                 {error, Reason} ->
@@ -143,7 +164,7 @@ accept_xml(RD, Ctx=#context{user=undefined}) ->
             end
     end;
 accept_xml(RD, Ctx) ->
-    dt_entry(<<"accept_xml">>),
+    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"accept_xml">>),
     Body = binary_to_list(wrq:req_body(RD)),
     case catch xmerl_scan:string(Body, []) of
         {'EXIT', _} ->
@@ -157,7 +178,7 @@ accept_xml(RD, Ctx) ->
     end.
 
 produce_json(RD, #context{user=User}=Ctx) ->
-    dt_entry(<<"produce_json">>),
+    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"produce_json">>),
     Body = mochijson2:encode(
              riak_cs_wm_utils:user_record_to_json(User)),
     Etag = etag(Body),
@@ -165,20 +186,20 @@ produce_json(RD, #context{user=User}=Ctx) ->
     {Body, RD2, Ctx}.
 
 produce_xml(RD, #context{user=User}=Ctx) ->
-    dt_entry(<<"produce_xml">>),
+    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"produce_xml">>),
     XmlDoc = riak_cs_wm_utils:user_record_to_xml(User),
-    Body = riak_cs_s3_response:export_xml([XmlDoc]),
+    Body = riak_cs_xml:export_xml([XmlDoc]),
     Etag = etag(Body),
     RD2 = wrq:set_resp_header("ETag", Etag, RD),
     {Body, RD2, Ctx}.
 
 finish_request(RD, Ctx=#context{riakc_pid=undefined}) ->
-    dt_entry(<<"finish_request">>, [0], []),
+    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"finish_request">>, [0], []),
     {true, RD, Ctx};
 finish_request(RD, Ctx=#context{riakc_pid=RiakPid}) ->
-    dt_entry(<<"finish_request">>, [1], []),
+    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"finish_request">>, [1], []),
     riak_cs_utils:close_riak_connection(RiakPid),
-    dt_return(<<"finish_request">>, [1], []),
+    riak_cs_dtrace:dt_wm_return(?MODULE, <<"finish_request">>, [1], []),
     {true, RD, Ctx#context{riakc_pid=undefined}}.
 
 %% -------------------------------------------------------------------
@@ -193,9 +214,7 @@ admin_check(false, RD, Ctx) ->
 
 %% @doc Calculate the etag of a response body
 etag(Body) ->
-    webmachine_util:quoted_string(
-      riak_cs_utils:binary_to_hexlist(
-        crypto:md5(Body))).
+        riak_cs_utils:etag_from_binary(crypto:md5(Body)).
 
 -spec forbidden(atom(),
                 term(),
@@ -207,10 +226,10 @@ etag(Body) ->
 forbidden(_Method, RD, Ctx, undefined, _UserPathKey, false) ->
     %% anonymous access disallowed
     riak_cs_wm_utils:deny_access(RD, Ctx);
-forbidden('POST', _RD, _Ctx, undefined, [], true) ->
+forbidden(_, _RD, _Ctx, undefined, [], true) ->
     {false, _RD, _Ctx};
-forbidden('PUT', _RD, _Ctx, undefined, [], true) ->
-    {false, _RD, _Ctx};
+forbidden(_, RD, Ctx, undefined, UserPathKey, true) ->
+    get_user({false, RD, Ctx}, UserPathKey);
 forbidden('POST', RD, Ctx, User, [], _) ->
     %% Admin is creating a new user
     admin_check(riak_cs_utils:is_admin(User), RD, Ctx);
@@ -220,7 +239,7 @@ forbidden(_Method, RD, Ctx, User, UserPathKey, _) when
       UserPathKey =:= User?RCS_USER.key_id;
       UserPathKey =:= [] ->
     %% User is accessing own account
-    AccessRD = riak_cs_access_logger:set_user(User, RD),
+    AccessRD = riak_cs_access_log_handler:set_user(User, RD),
     {false, AccessRD, Ctx};
 forbidden(_Method, RD, Ctx, User, UserPathKey, _) ->
     AdminCheckResult = admin_check(riak_cs_utils:is_admin(User), RD, Ctx),
@@ -251,11 +270,11 @@ handle_get_user_result({error, Reason}, RD, Ctx) ->
 -spec update_user([{binary(), binary()}], term(), term()) ->
     {boolean() | {halt, term()}, term(), term()}.
 update_user(UpdateItems, RD, Ctx=#context{user=User}) ->
-    dt_entry(<<"update_user">>),
+    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"update_user">>),
     UpdateUserResult = update_user_record(User, UpdateItems, false),
     handle_update_result(UpdateUserResult, RD, Ctx).
 
--spec update_user_record(rcs_user(), {atom(), term()}, boolean())
+-spec update_user_record('undefined' | rcs_user(), [{atom(), term()}], boolean())
                         -> {boolean(), rcs_user()}.
 update_user_record(_User, [], RecordUpdated) ->
     {RecordUpdated, _User};
@@ -297,7 +316,7 @@ set_resp_data(?JSON_TYPE, RD, #context{user=User}) ->
     wrq:set_resp_body(JsonDoc, RD);
 set_resp_data(?XML_TYPE, RD, #context{user=User}) ->
     UserData = riak_cs_wm_utils:user_record_to_xml(User),
-    XmlDoc = riak_cs_s3_response:export_xml([UserData]),
+    XmlDoc = riak_cs_xml:export_xml([UserData]),
     wrq:set_resp_body(XmlDoc, RD).
 
 -spec user_json_filter({binary(), binary()}, [{atom(), term()}]) -> [{atom(), term()}].
@@ -382,15 +401,3 @@ user_xml_filter(Element, Acc) ->
         _ ->
             Acc
     end.
-
-extract_name(X) ->
-    riak_cs_wm_utils:extract_name(X).
-
-dt_entry(Func) ->
-    dt_entry(Func, [], []).
-
-dt_entry(Func, Ints, Strings) ->
-    riak_cs_dtrace:dtrace(?DT_WM_OP, 1, Ints, ?MODULE, Func, Strings).
-
-dt_return(Func, Ints, Strings) ->
-    riak_cs_dtrace:dtrace(?DT_WM_OP, 2, Ints, ?MODULE, Func, Strings).

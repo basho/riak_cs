@@ -1,8 +1,22 @@
-%% -------------------------------------------------------------------
+%% ---------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2011 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
 %%
-%% -------------------------------------------------------------------
+%% This file is provided to you under the Apache License,
+%% Version 2.0 (the "License"); you may not use this file
+%% except in compliance with the License.  You may obtain
+%% a copy of the License at
+%%
+%%   http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing,
+%% software distributed under the License is distributed on an
+%% "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+%% KIND, either express or implied.  See the License for the
+%% specific language governing permissions and limitations
+%% under the License.
+%%
+%% ---------------------------------------------------------------------
 
 %% @doc Webmachine resource for serving usage stats.
 %%
@@ -86,6 +100,7 @@
 %%   <Storage>not_requested</Storage>
 %% </Usage>
 %% '''
+
 -module(riak_cs_wm_usage).
 
 -export([
@@ -100,6 +115,7 @@
          produce_xml/2,
          finish_request/2
         ]).
+-on_load(on_load/0).
 
 -ifdef(TEST).
 -ifdef(EQC).
@@ -130,6 +146,8 @@
 -define(KEY_ERRORS, 'Errors').
 -define(KEY_REASON, 'Reason').
 -define(KEY_MESSAGE, 'Message').
+-define(ATTR_START, 'StartTime').
+-define(ATTR_END, 'EndTime').
 
 -record(ctx, {
           auth_bypass :: boolean(),
@@ -141,10 +159,17 @@
           etag :: iolist()
          }).
 
+on_load() ->
+    %% put atoms into atom table, for binary_to_existing_atom/2 in xml_name/1
+    ?SUPPORTED_USAGE_FIELD = lists:map(fun(Bin) ->
+                                               binary_to_existing_atom(Bin, latin1)
+                                       end, ?SUPPORTED_USAGE_FIELD_BIN),
+    ok.
+
 init(Config) ->
     %% Check if authentication is disabled and
     %% set that in the context.
-    AuthBypass = proplists:get_value(auth_bypass, Config),
+    AuthBypass = not proplists:get_value(admin_auth_enabled, Config),
     {ok, #ctx{auth_bypass=AuthBypass}}.
 
 service_available(RD, Ctx) ->
@@ -208,7 +233,7 @@ generate_etag(RD, #ctx{etag=undefined}=Ctx) ->
             end
     end,
     {Body, NewRD, NewCtx} = ?MODULE:Producer(RD, Ctx),
-    Etag = riak_cs_utils:binary_to_hexlist(crypto:md5(Body)),
+    Etag = riak_cs_utils:etag_from_binary_no_quotes(crypto:md5(Body)),
     {Etag, NewRD, NewCtx#ctx{etag=Etag}};
 generate_etag(RD, #ctx{etag=Etag}=Ctx) ->
     {Etag, RD, Ctx}.
@@ -216,22 +241,24 @@ generate_etag(RD, #ctx{etag=Etag}=Ctx) ->
 forbidden(RD, #ctx{auth_bypass=AuthBypass, riak=Riak}=Ctx) ->
     BogusContext = #context{auth_bypass=AuthBypass, riakc_pid=Riak},
     Next = fun(NewRD, #context{user=User}) ->
-                   forbidden(NewRD, Ctx, User)
+                   forbidden(NewRD, Ctx, User, AuthBypass)
            end,
     Conv2Ctx = fun(_) -> Ctx end,
-    riak_cs_wm_utils:find_and_auth_user(RD, BogusContext, Next, Conv2Ctx, false).
+    riak_cs_wm_utils:find_and_auth_user(RD, BogusContext, Next, Conv2Ctx, AuthBypass).
 
-forbidden(RD, Ctx, undefined) ->
+forbidden(RD, Ctx, _, true) ->
+    {false, RD, Ctx};
+forbidden(RD, Ctx, undefined, false) ->
     %% anonymous access disallowed
     riak_cs_wm_utils:deny_access(RD, Ctx);
-forbidden(RD, Ctx, User) ->
+forbidden(RD, Ctx, User, false) ->
     case user_key(RD) == User?RCS_USER.key_id of
         true ->
             %% user is accessing own stats
-            AccessRD = riak_cs_access_logger:set_user(User, RD),
+            AccessRD = riak_cs_access_log_handler:set_user(User, RD),
             {false, AccessRD, Ctx};
         false ->
-            case riak_cs_utils:get_admin_creds() of
+            case riak_cs_config:admin_creds() of
                 {ok, {Admin, _}} when Admin == User?RCS_USER.key_id ->
                     %% admin can access anyone's stats
                     {false, RD, Ctx};
@@ -294,7 +321,7 @@ produce_xml(RD, #ctx{body=undefined}=Ctx) ->
     Storage = maybe_storage(RD, Ctx),
     Doc = [{?KEY_USAGE, [{?KEY_ACCESS, xml_access(Access)},
                          {?KEY_STORAGE, xml_storage(Storage)}]}],
-    Body = case riak_cs_s3_response:export_xml(Doc) of
+    Body = case riak_cs_xml:export_xml(Doc) of
                {error, Bin, _}         -> Bin;
                {incomplete, Bin, _}    -> Bin;
                Bin when is_binary(Bin) -> Bin
@@ -336,7 +363,12 @@ xml_sample_error({{Start, End}, Reason}, SubType, TypeLabel) ->
 
 %% @doc JSON deserializes with keys as binaries, but xmerl requires
 %% tag names to be atoms.
-xml_name(Other) -> binary_to_atom(Other, latin1).
+-spec xml_name(binary()) -> usage_field_type() | ?ATTR_START | ?ATTR_END.
+xml_name(?START_TIME) -> ?ATTR_START;
+xml_name(?END_TIME) -> ?ATTR_END;
+xml_name(UsageFieldName) ->
+    true = lists:member(UsageFieldName, ?SUPPORTED_USAGE_FIELD_BIN),
+    binary_to_existing_atom(UsageFieldName, latin1).
 
 xml_reason(Reason) ->
     [if is_atom(Reason) -> atom_to_binary(Reason, latin1);
@@ -445,7 +477,7 @@ xml_error_msg(Message) when is_binary(Message) ->
     xml_error_msg(binary_to_list(Message));
 xml_error_msg(Message) ->
     Doc = [{?KEY_ERROR, [{?KEY_MESSAGE, [Message]}]}],
-    riak_cs_s3_response:export_xml(Doc).
+    riak_cs_xml:export_xml(Doc).
 
 %% @doc Produce a datetime tuple from a ISO8601 string
 -spec datetime(binary()|string()) -> {ok, calendar:datetime()} | error.

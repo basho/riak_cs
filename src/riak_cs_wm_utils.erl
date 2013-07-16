@@ -1,31 +1,54 @@
-%% -------------------------------------------------------------------
+%% ---------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2011 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
 %%
-%% -------------------------------------------------------------------
+%% This file is provided to you under the Apache License,
+%% Version 2.0 (the "License"); you may not use this file
+%% except in compliance with the License.  You may obtain
+%% a copy of the License at
+%%
+%%   http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing,
+%% software distributed under the License is distributed on an
+%% "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+%% KIND, either express or implied.  See the License for the
+%% specific language governing permissions and limitations
+%% under the License.
+%%
+%% ---------------------------------------------------------------------
 
 -module(riak_cs_wm_utils).
 
 -export([service_available/2,
          service_available/3,
          parse_auth_header/2,
-         ensure_doc/1,
          iso_8601_datetime/0,
+         iso_8601_datetime/1,
          to_iso_8601/1,
          iso_8601_to_rfc_1123/1,
          to_rfc_1123/1,
+         iso_8601_to_erl_date/1,
          streaming_get/4,
          user_record_to_json/1,
          user_record_to_xml/1,
          find_and_auth_user/3,
          find_and_auth_user/4,
          find_and_auth_user/5,
-         validate_auth_header/3,
+         validate_auth_header/4,
+         ensure_doc/2,
          deny_access/2,
+         deny_invalid_key/2,
          extract_name/1,
          normalize_headers/1,
          extract_amazon_headers/1,
-         extract_user_metadata/1]).
+         extract_user_metadata/1,
+         shift_to_owner/4,
+         bucket_access_authorize_helper/4,
+         object_access_authorize_helper/4,
+         object_access_authorize_helper/5,
+         bucket_owner/2
+        ]).
 
 -include("riak_cs.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
@@ -37,13 +60,6 @@
 %% Public API
 %% ===================================================================
 
-service_available(RD, KeyCtx=#key_context{context=Ctx}) ->
-    case service_available(RD, Ctx) of
-        {true, UpdRD, UpdCtx} ->
-            {true, UpdRD, KeyCtx#key_context{context=UpdCtx}};
-        {false, _, _} ->
-            {false, RD, KeyCtx}
-    end;
 service_available(RD, Ctx) ->
     case riak_cs_utils:riak_connection() of
         {ok, Pid} ->
@@ -125,7 +141,7 @@ find_and_auth_user(RD,
                    Conv2KeyCtx,
                    AnonymousOk) ->
     handle_validation_response(
-      validate_auth_header(RD, AuthBypass, RiakPid),
+      validate_auth_header(RD, AuthBypass, RiakPid, ICtx),
       RD,
       ICtx,
       Next,
@@ -136,33 +152,43 @@ handle_validation_response({ok, User, UserObj}, RD, Ctx, Next, _, _) ->
     %% given keyid and signature matched, proceed
     Next(RD, Ctx#context{user=User,
                          user_object=UserObj});
-handle_validation_response({error, no_user_key}, RD, Ctx, Next, _, true) ->
+handle_validation_response({error, disconnected}, RD, Ctx, _Next, _, _Bool) ->
+    {{halt, 503}, RD, Ctx};
+handle_validation_response({error, Reason}, RD, Ctx, Next, _, true) ->
     %% no keyid was given, proceed anonymously
+    _ = lager:debug("No user key: ~p", [Reason]),
     Next(RD, Ctx);
 handle_validation_response({error, no_user_key}, RD, Ctx, _, Conv2KeyCtx, false) ->
     %% no keyid was given, deny access
+    _ = lager:debug("No user key, deny"),
     deny_access(RD, Conv2KeyCtx(Ctx));
 handle_validation_response({error, bad_auth}, RD, Ctx, _, Conv2KeyCtx, _) ->
     %% given keyid was found, but signature didn't match
+    _ = lager:debug("bad_auth"),
     deny_access(RD, Conv2KeyCtx(Ctx));
-handle_validation_response({error, _Reason}, RD, Ctx, _, Conv2KeyCtx, _) ->
+handle_validation_response({error, notfound}, RD, Ctx, _, Conv2KeyCtx, _) ->
+    %% no keyid was found
+    _ = lager:debug("key_id not found"),
+    deny_access(RD, Conv2KeyCtx(Ctx));
+handle_validation_response({error, Reason}, RD, Ctx, _, Conv2KeyCtx, _) ->
     %% no matching keyid was found, or lookup failed
+    _ = lager:debug("Authentication error: ~p", [Reason]),
     deny_invalid_key(RD, Conv2KeyCtx(Ctx)).
 
 %% @doc Look for an Authorization header in the request, and validate
 %% it if it exists.  Returns `{ok, User, UserObj}' if validation
 %% succeeds, or `{error, KeyId, Reason}' if any step fails.
--spec validate_auth_header(#wm_reqdata{}, term(), pid()) ->
+-spec validate_auth_header(#wm_reqdata{}, term(), pid(), #context{}|undefined) ->
                                   {ok, rcs_user(), riakc_obj:riakc_obj()} |
                                   {error, bad_auth | notfound | no_user_key | term()}.
-validate_auth_header(RD, AuthBypass, RiakPid) ->
+validate_auth_header(RD, AuthBypass, RiakPid, Ctx) ->
     AuthHeader = wrq:get_req_header("authorization", RD),
     case AuthHeader of
         undefined ->
             %% Check for auth info presented as query params
-            KeyId = wrq:get_qs_value(?QS_KEYID, RD),
+            KeyId0 = wrq:get_qs_value(?QS_KEYID, RD),
             EncodedSig = wrq:get_qs_value(?QS_SIGNATURE, RD),
-            {AuthMod, KeyId, Signature} = parse_auth_params(KeyId,
+            {AuthMod, KeyId, Signature} = parse_auth_params(KeyId0,
                                                             EncodedSig,
                                                             AuthBypass);
         _ ->
@@ -170,8 +196,7 @@ validate_auth_header(RD, AuthBypass, RiakPid) ->
     end,
     case riak_cs_utils:get_user(KeyId, RiakPid) of
         {ok, {User, UserObj}} when User?RCS_USER.status =:= enabled ->
-            Secret = User?RCS_USER.key_secret,
-            case AuthMod:authenticate(RD, Secret, Signature) of
+            case AuthMod:authenticate(User, Signature, RD, Ctx) of
                 ok ->
                     {ok, User, UserObj};
                 {error, _Reason} ->
@@ -194,39 +219,63 @@ validate_auth_header(RD, AuthBypass, RiakPid) ->
             {error, Reason}
     end.
 
+%% @doc Utility function for accessing
+%%      a riakc_obj without retrieving
+%%      it again if it's already in the
+%%      Ctx
+-spec ensure_doc(term(), pid()) -> term().
+ensure_doc(KeyCtx=#key_context{get_fsm_pid=undefined,
+                               bucket=Bucket,
+                               key=Key}, RiakcPid) ->
+    %% start the get_fsm
+    BinKey = list_to_binary(Key),
+    FetchConcurrency = riak_cs_lfs_utils:fetch_concurrency(),
+    BufferFactor = riak_cs_lfs_utils:get_fsm_buffer_size_factor(),
+    {ok, Pid} = riak_cs_get_fsm_sup:start_get_fsm(node(), Bucket, BinKey,
+                                                  self(), RiakcPid,
+                                                  FetchConcurrency,
+                                                  BufferFactor),
+    Manifest = riak_cs_get_fsm:get_manifest(Pid),
+    KeyCtx#key_context{get_fsm_pid=Pid, manifest=Manifest};
+ensure_doc(KeyCtx, _) ->
+    KeyCtx.
+
 %% @doc Produce an access-denied error message from a webmachine
 %% resource's `forbidden/2' function.
+deny_access(RD, Ctx=#context{response_module=ResponseMod}) ->
+    ResponseMod:api_error(access_denied, RD, Ctx);
 deny_access(RD, Ctx) ->
     riak_cs_s3_response:api_error(access_denied, RD, Ctx).
 
 %% @doc Prodice an invalid-access-keyid error message from a
 %% webmachine resource's `forbidden/2' function.
-deny_invalid_key(RD, Ctx) ->
-    riak_cs_s3_response:api_error(invalid_access_key_id, RD, Ctx).
+deny_invalid_key(RD, Ctx=#context{response_module=ResponseMod}) ->
+    ResponseMod:api_error(invalid_access_key_id, RD, Ctx).
 
-%% @doc Utility function for accessing
-%%      a riakc_obj without retrieving
-%%      it again if it's already in the
-%%      Ctx
--spec ensure_doc(term()) -> term().
-ensure_doc(Ctx=#key_context{get_fsm_pid=undefined,
-                            bucket=Bucket,
-                            key=Key,
-                            context=InnerCtx}) ->
-    RiakPid = InnerCtx#context.riakc_pid,
-    %% start the get_fsm
-    BinKey = list_to_binary(Key),
-    {ok, Pid} = riak_cs_get_fsm_sup:start_get_fsm(node(), Bucket, BinKey, self(), RiakPid),
-    Manifest = riak_cs_get_fsm:get_manifest(Pid),
-    Ctx#key_context{get_fsm_pid=Pid, manifest=Manifest};
-ensure_doc(Ctx) -> Ctx.
+%% @doc In the case is a user is authorized to perform an operation on
+%% a bucket but is not the owner of that bucket this function can be used
+%% to switch to the owner's record if it can be retrieved
+-spec shift_to_owner(#wm_reqdata{}, #context{}, string(), pid()) ->
+                            {boolean(), #wm_reqdata{}, #context{}}.
+shift_to_owner(RD, Ctx=#context{response_module=ResponseMod}, OwnerId, RiakPid)
+  when RiakPid /= undefined ->
+    case riak_cs_utils:get_user(OwnerId, RiakPid) of
+        {ok, {Owner, OwnerObject}} when Owner?RCS_USER.status =:= enabled ->
+            AccessRD = riak_cs_access_log_handler:set_user(Owner, RD),
+            {false, AccessRD, Ctx#context{user=Owner,
+                                          user_object=OwnerObject}};
+        {ok, _} ->
+            riak_cs_wm_utils:deny_access(RD, Ctx);
+        {error, _} ->
+            ResponseMod:api_error(bucket_owner_unavailable, RD, Ctx)
+    end.
 
 streaming_get(FsmPid, StartTime, UserName, BFile_str) ->
     case riak_cs_get_fsm:get_next_chunk(FsmPid) of
         {done, Chunk} ->
             ok = riak_cs_stats:update_with_start(object_get, StartTime),
-            riak_cs_wm_key:dt_return_object(<<"file_get">>, [],
-                                              [UserName, BFile_str]),
+            riak_cs_dtrace:dt_object_return(riak_cs_wm_object, <<"object_get">>,
+                                               [], [UserName, BFile_str]),
             {Chunk, done};
         {chunk, Chunk} ->
             {Chunk, fun() -> streaming_get(FsmPid, StartTime, UserName, BFile_str) end}
@@ -286,7 +335,10 @@ user_record_to_xml(?RCS_USER{email=Email,
 %% current time.
 -spec iso_8601_datetime() -> string().
 iso_8601_datetime() ->
-    {{Year, Month, Day}, {Hour, Min, Sec}} = erlang:universaltime(),
+    iso_8601_datetime(erlang:universaltime()).
+
+-spec iso_8601_datetime(calendar:datetime()) -> string().
+iso_8601_datetime({{Year, Month, Day}, {Hour, Min, Sec}}) ->
     iso_8601_format(Year, Month, Day, Hour, Min, Sec).
 
 %% @doc Convert an RFC 1123 date into an ISO 8601 formatted timestamp.
@@ -310,18 +362,26 @@ to_rfc_1123(Date) when is_list(Date) ->
             iso_8601_to_rfc_1123(Date)
     end.
 
-%% @doc Convert an ISO 8601 date to RFC 1123 date
+%% @doc Convert an ISO 8601 date to RFC 1123 date. This function
+%% assumes the input time is already in GMT time.
 -spec iso_8601_to_rfc_1123(binary() | string()) -> string().
 iso_8601_to_rfc_1123(Date) when is_list(Date) ->
-    iso_8601_to_rfc_1123(iolist_to_binary(Date));
-iso_8601_to_rfc_1123(Date) when is_binary(Date) ->
+    ErlDate = iso_8601_to_erl_date(Date),
+    httpd_util:rfc1123_date(erlang:universaltime_to_localtime(ErlDate)).
+
+%% @doc Convert an ISO 8601 date to Erlang datetime format.
+%% This function assumes the input time is already in GMT time.
+-spec iso_8601_to_erl_date(binary() | string()) -> calendar:datetime().
+iso_8601_to_erl_date(Date) when is_list(Date) ->
+    iso_8601_to_erl_date(iolist_to_binary(Date));
+iso_8601_to_erl_date(Date)  ->
     %% e.g. "2012-02-17T18:22:50.000Z"
     <<Yr:4/binary, _:1/binary, Mo:2/binary, _:1/binary, Da:2/binary,
       _T:1/binary,
       Hr:2/binary, _:1/binary, Mn:2/binary, _:1/binary, Sc:2/binary,
       _/binary>> = Date,
-    httpd_util:rfc1123_date({{b2i(Yr), b2i(Mo), b2i(Da)},
-                             {b2i(Hr), b2i(Mn), b2i(Sc)}}).
+    {{b2i(Yr), b2i(Mo), b2i(Da)},
+     {b2i(Hr), b2i(Mn), b2i(Sc)}}.
 
 extract_name(User) when is_list(User) ->
     User;
@@ -343,10 +403,13 @@ extract_amazon_headers(Headers) ->
         end,
     ordsets:from_list(lists:foldl(FilterFun, [], Headers)).
 
-%% @doc Extract user metadata ("x-amz-meta") from request header
-%% copied from riak_cs_s3_auth.erl
+%% @doc Extract user metadata from request header
+%% Expires, Content-Disposition, Content-Encoding and x-amz-meta-*
+%% TODO: pass in x-amz-server-side​-encryption?
+%% TODO: pass in x-amz-storage-​class?
+%% TODO: pass in x-amz-grant-* headers?
 extract_user_metadata(RD) ->
-    extract_metadata(normalize_headers(RD)).
+    extract_user_metadata(get_request_headers(RD), []).
 
 get_request_headers(RD) ->
     mochiweb_headers:to_list(wrq:req_headers(RD)).
@@ -360,18 +423,341 @@ normalize_headers(RD) ->
         end,
     ordsets:from_list(lists:foldl(FilterFun, [], Headers)).
 
-extract_metadata(Headers) ->
-    FilterFun =
-        fun({K, V}, Acc) ->
-                case lists:prefix("x-amz-meta-", K) of
-                    true ->
-                        V2 = unicode:characters_to_list(V, utf8),
-                        [{K, V2} | Acc];
-                    false ->
-                        Acc
-                end
-        end,
-    ordsets:from_list(lists:foldl(FilterFun, [], Headers)).
+extract_user_metadata([], Acc) ->
+    Acc;
+extract_user_metadata([{Name, Value} | Headers], Acc)
+  when Name =:= 'Expires' orelse Name =:= 'Content-Encoding'
+       orelse Name =:= "Content-Disposition" ->
+    extract_user_metadata(
+      Headers, [{any_to_list(Name), unicode:characters_to_list(Value, utf8)} | Acc]);
+extract_user_metadata([{Name, Value} | Headers], Acc) when is_list(Name) ->
+    LowerName = string:to_lower(any_to_list(Name)),
+    case LowerName of
+        "x-amz-meta" ++ _ ->
+            extract_user_metadata(
+              Headers, [{LowerName, unicode:characters_to_list(Value, utf8)} | Acc]);
+        _ ->
+            extract_user_metadata(Headers, Acc)
+    end;
+extract_user_metadata([_ | Headers], Acc) ->
+    extract_user_metadata(Headers, Acc).
+
+-spec bucket_access_authorize_helper(AccessType::atom(), boolean(),
+                                     RD::term(), Ctx::#context{}) -> term().
+bucket_access_authorize_helper(AccessType, Deletable, RD, Ctx) ->
+    #context{riakc_pid=RiakPid,
+             policy_module=PolicyMod} = Ctx,
+    Method = wrq:method(RD),
+    RequestedAccess =
+        riak_cs_acl_utils:requested_access(Method, is_acl_request(AccessType)),
+    Bucket = list_to_binary(wrq:path_info(bucket, RD)),
+    PermCtx = Ctx#context{bucket=Bucket,
+                          requested_perm=RequestedAccess},
+    handle_bucket_acl_policy_response(
+      riak_cs_utils:get_bucket_acl_policy(Bucket, PolicyMod, RiakPid),
+      AccessType,
+      Deletable,
+      RD,
+      PermCtx).
+
+handle_bucket_acl_policy_response({error, notfound}, _, _, RD, Ctx) ->
+    ResponseMod = Ctx#context.response_module,
+    ResponseMod:api_error(no_such_bucket, RD, Ctx);
+handle_bucket_acl_policy_response({error, Reason}, _, _, RD, Ctx) ->
+    ResponseMod = Ctx#context.response_module,
+    ResponseMod:api_error(Reason, RD, Ctx);
+handle_bucket_acl_policy_response({Acl, Policy}, AccessType, DeleteEligible, RD, Ctx) ->
+    #context{bucket=Bucket,
+             riakc_pid=RiakPid,
+             user=User,
+             requested_perm=RequestedAccess} = Ctx,
+    AclCheckRes = riak_cs_acl_utils:check_grants(User,
+                                                 Bucket,
+                                                 RequestedAccess,
+                                                 RiakPid,
+                                                 Acl),
+    Deletable = DeleteEligible andalso (RequestedAccess =:= 'WRITE'),
+    handle_acl_check_result(AclCheckRes, Acl, Policy, AccessType, Deletable, RD, Ctx).
+
+handle_acl_check_result(true, _, undefined, _, _, RD, Ctx) ->
+    %% because users are not allowed to create/destroy
+    %% buckets, we can assume that User is not
+    %% undefined here
+    AccessRD = riak_cs_access_log_handler:set_user(Ctx#context.user, RD),
+    {false, AccessRD, Ctx};
+handle_acl_check_result(true, _, Policy, AccessType, _, RD, Ctx) ->
+    %% because users are not allowed to create/destroy
+    %% buckets, we can assume that User is not
+    %% undefined here
+    User = Ctx#context.user,
+    PolicyMod = Ctx#context.policy_module,
+    AccessRD = riak_cs_access_log_handler:set_user(User, RD),
+    Access = PolicyMod:reqdata_to_access(RD, AccessType,
+                                         User?RCS_USER.canonical_id),
+    case PolicyMod:eval(Access, Policy) of
+        false ->     riak_cs_wm_utils:deny_access(AccessRD, Ctx);
+        _ ->      {false, AccessRD, Ctx}
+    end;
+handle_acl_check_result({true, _OwnerId}, _, _, _, true, RD, Ctx) ->
+    %% grants lied: this is a delete, and only the owner is allowed to
+    %% do that; setting user for the request anyway, so the error
+    %% tally is logged for them
+    AccessRD = riak_cs_access_log_handler:set_user(Ctx#context.user, RD),
+    riak_cs_wm_utils:deny_access(AccessRD, Ctx);
+handle_acl_check_result({true, OwnerId}, _, _, _, _, RD, Ctx) ->
+    %% this operation is allowed, but we need to get the owner's
+    %% record, and log the access against them instead of the actor
+    riak_cs_wm_utils:shift_to_owner(RD, Ctx, OwnerId, Ctx#context.riakc_pid);
+handle_acl_check_result(false, _, undefined, _, _Deletable, RD, Ctx) ->
+    %% No policy so emulate a policy eval failure to avoid code duplication
+    handle_policy_eval_result(Ctx#context.user, false, undefined, RD, Ctx);
+handle_acl_check_result(false, Acl, Policy, AccessType, _Deletable, RD, Ctx) ->
+    #context{riakc_pid=RiakPid,
+             user=User0} = Ctx,
+    PolicyMod = Ctx#context.policy_module,
+    User = case User0 of
+               undefined -> undefined;
+               _ ->         User0?RCS_USER.canonical_id
+           end,
+    Access = PolicyMod:reqdata_to_access(RD, AccessType, User),
+    PolicyResult = PolicyMod:eval(Access, Policy),
+    OwnerId = riak_cs_acl:owner_id(Acl, RiakPid),
+    handle_policy_eval_result(User, PolicyResult, OwnerId, RD, Ctx).
+
+handle_policy_eval_result(_, true, OwnerId, RD, Ctx) ->
+    %% Policy says yes while ACL says no
+    shift_to_owner(RD, Ctx, OwnerId, Ctx#context.riakc_pid);
+handle_policy_eval_result(User, _, _, RD, Ctx) ->
+    #context{riakc_pid=RiakPid,
+             response_module=ResponseMod,
+             user=User,
+             bucket=Bucket} = Ctx,
+    %% log bad requests against the actors that make them
+    AccessRD = riak_cs_access_log_handler:set_user(User, RD),
+    %% Check if the bucket actually exists so we can
+    %% make the correct decision to return a 404 or 403
+    case riak_cs_utils:check_bucket_exists(Bucket, RiakPid) of
+        {ok, _} ->
+            riak_cs_wm_utils:deny_access(AccessRD, Ctx);
+        {error, Reason} ->
+            ResponseMod:api_error(Reason, RD, Ctx)
+    end.
+
+-spec is_acl_request(atom()) -> boolean().
+is_acl_request(ReqType) when ReqType =:= bucket_acl orelse
+                             ReqType =:= object_acl ->
+    true;
+is_acl_request(_) ->
+    false.
+
+-type halt_or_bool() :: {halt, pos_integer()} | boolean().
+-type authorized_response() :: {halt_or_bool(), RD :: term(), Ctx :: term()}.
+
+-spec object_access_authorize_helper(AccessType::atom(), boolean(),
+                                     RD::term(), Ctx::term()) ->
+    authorized_response().
+object_access_authorize_helper(AccessType, Deletable, RD, Ctx) ->
+    object_access_authorize_helper(AccessType, Deletable, false, RD, Ctx).
+
+-spec object_access_authorize_helper(AccessType::atom(), boolean(), boolean(),
+                                     RD::term(), Ctx::term()) ->
+    authorized_response().
+object_access_authorize_helper(AccessType, Deletable, SkipAcl,
+                               RD, #context{policy_module=PolicyMod,
+                                            local_context=LocalCtx,
+                                            response_module=ResponseMod,
+                                            riakc_pid=RiakPid}=Ctx)
+  when ( AccessType =:= object_acl orelse
+         AccessType =:= object_part orelse
+         AccessType =:= object )
+       andalso is_boolean(Deletable)
+       andalso is_boolean(SkipAcl) ->
+    #key_context{bucket=Bucket} = LocalCtx,
+    case translate_bucket_policy(PolicyMod, Bucket, RiakPid) of
+        {error, multiple_bucket_owners=E} ->
+            %% We want to bail out early if there are siblings when
+            %% retrieving the bucket policy
+            ResponseMod:api_error(E, RD, Ctx);
+        {error, notfound} ->
+            %% The call to `check_bucket_exists' returned `notfound'
+            %% so we can assume to bucket does not exist.
+            ResponseMod:api_error(no_such_bucket, RD, Ctx);
+        Policy ->
+            check_object_authorization(AccessType, Deletable, SkipAcl, Policy, RD, Ctx)
+    end.
+
+check_object_authorization(AccessType, Deletable, SkipAcl, Policy,
+                           RD, #context{user=User,
+                                        policy_module=PolicyMod,
+                                        local_context=LocalCtx,
+                                        riakc_pid=RiakPid}=Ctx) ->
+    Method = wrq:method(RD),
+    #key_context{bucket=Bucket, manifest=Manifest} = LocalCtx,
+    CanonicalId = extract_canonical_id(User),
+    RequestedAccess = requested_access_helper(AccessType, Method),
+    ObjectAcl = extract_object_acl(Manifest),
+    Access = PolicyMod:reqdata_to_access(RD, AccessType, CanonicalId),
+    Acl = case SkipAcl of
+              true -> true;
+              false -> riak_cs_acl:object_access(Bucket,
+                                                 ObjectAcl,
+                                                 RequestedAccess,
+                                                 CanonicalId,
+                                                 RiakPid)
+          end,
+    case {Acl, PolicyMod:eval(Access, Policy)} of
+        {true, false} ->
+            %% return forbidden or 404 based on the `Method' and `Deletable'
+            %% values
+            actor_is_owner_but_denied_policy(User, RD, Ctx, Method, Deletable);
+        {true, _} ->
+            %% actor is the owner
+            actor_is_owner_and_allowed_policy(User, RD, Ctx, LocalCtx);
+        {{true, OwnerId}, false} ->
+            actor_is_not_owner_and_denied_policy(OwnerId, RD, Ctx,
+                                                 Method, Deletable);
+        {{true, OwnerId}, _} ->
+            %% actor is not the owner
+            actor_is_not_owner_but_allowed_policy(User, OwnerId, RD, Ctx, LocalCtx);
+        {false, true} ->
+            %% actor is not the owner, not permitted by ACL but permitted by policy
+            just_allowed_by_policy(ObjectAcl, RiakPid, RD, Ctx, LocalCtx);
+        {false, _} ->
+            % policy says undefined or false
+            %% ACL check failed, deny access
+            riak_cs_wm_utils:deny_access(RD, Ctx)
+    end.
+
+%% ===================================================================
+%% object_acces_authorize_helper helper functions
+
+-spec extract_canonical_id(rcs_user() | undefined) ->
+    undefined | string().
+extract_canonical_id(undefined) ->
+    undefined;
+extract_canonical_id(?RCS_USER{canonical_id=CanonicalID}) ->
+    CanonicalID.
+
+-spec requested_access_helper(object | object_part | object_acl, atom()) ->
+    acl_perm().
+requested_access_helper(object, Method) ->
+    riak_cs_acl_utils:requested_access(Method, false);
+requested_access_helper(object_part, Method) ->
+    requested_access_helper(object, Method);
+requested_access_helper(object_acl, Method) ->
+    riak_cs_acl_utils:requested_access(Method, true).
+
+-spec extract_object_acl(notfound | lfs_manifest()) ->
+    undefined | acl().
+extract_object_acl(notfound) ->
+    undefined;
+extract_object_acl(?MANIFEST{acl=Acl}) ->
+    Acl.
+
+-spec translate_bucket_policy(atom(), binary(), pid()) ->
+                                     policy() |
+                                     undefined |
+                                     {error, multiple_bucket_owners} |
+                                     {error, notfound}.
+translate_bucket_policy(PolicyMod, Bucket, RiakPid) ->
+    case PolicyMod:bucket_policy(Bucket, RiakPid) of
+        {ok, P} ->
+            P;
+        {error, policy_undefined} ->
+            undefined;
+        {error, notfound}=Error1 ->
+            Error1;
+        {error, multiple_bucket_owners}=Error2 ->
+             Error2
+    end.
+
+%% Helper functions for dealing with combinations of Object ACL
+%% and (bucket) Policy
+
+
+-spec actor_is_owner_but_denied_policy(User :: rcs_user(),
+                                       RD :: term(),
+                                       Ctx :: term(),
+                                       Method :: atom(),
+                                       Deletable :: boolean()) ->
+    authorized_response().
+actor_is_owner_but_denied_policy(User, RD, Ctx, Method, Deletable)
+        when Method =:= 'PUT' orelse
+             Method =:= 'POST' orelse
+             (Deletable andalso Method =:= 'DELETE') ->
+    AccessRD = riak_cs_access_log_handler:set_user(User, RD),
+    riak_cs_wm_utils:deny_access(AccessRD, Ctx);
+actor_is_owner_but_denied_policy(User, RD, Ctx, Method, Deletable)
+        when Method =:= 'GET' orelse
+             (Deletable andalso Method =:= 'HEAD') ->
+    {{halt, 404}, riak_cs_access_log_handler:set_user(User, RD), Ctx}.
+
+-spec actor_is_owner_and_allowed_policy(User :: rcs_user(),
+                                        RD :: term(),
+                                        Ctx :: term(),
+                                        LocalCtx :: term()) ->
+    authorized_response().
+actor_is_owner_and_allowed_policy(undefined, RD, Ctx, _LocalCtx) ->
+    {false, RD, Ctx};
+actor_is_owner_and_allowed_policy(User, RD, Ctx, LocalCtx) ->
+    AccessRD = riak_cs_access_log_handler:set_user(User, RD),
+    UpdLocalCtx = LocalCtx#key_context{owner=User?RCS_USER.key_id},
+    {false, AccessRD, Ctx#context{local_context=UpdLocalCtx}}.
+
+-spec actor_is_not_owner_and_denied_policy(OwnerId :: string(),
+                                           RD :: term(),
+                                           Ctx :: term(),
+                                           Method :: atom(),
+                                           Deletable :: boolean()) ->
+    authorized_response().
+actor_is_not_owner_and_denied_policy(OwnerId, RD, Ctx, Method, Deletable)
+        when Method =:= 'PUT' orelse
+        (Deletable andalso Method =:= 'DELETE') ->
+    AccessRD = riak_cs_access_log_handler:set_user(OwnerId, RD),
+    riak_cs_wm_utils:deny_access(AccessRD, Ctx);
+actor_is_not_owner_and_denied_policy(_OwnerId, RD, Ctx, Method, Deletable)
+        when Method =:= 'GET' orelse
+        (Deletable andalso Method =:= 'HEAD') ->
+    {{halt, 404}, RD, Ctx}.
+
+-spec actor_is_not_owner_but_allowed_policy(User :: rcs_user(),
+                                            OwnerId :: string(),
+                                            RD :: term(),
+                                            Ctx :: term(),
+                                            LocalCtx :: term()) ->
+    authorized_response().
+actor_is_not_owner_but_allowed_policy(undefined, OwnerId, RD, Ctx, LocalCtx) ->
+    %% This is an anonymous request so shift to the context of the
+    %% owner for the remainder of the request.
+    AccessRD = riak_cs_access_log_handler:set_user(OwnerId, RD),
+    UpdCtx = Ctx#context{local_context=LocalCtx#key_context{owner=OwnerId}},
+    shift_to_owner(AccessRD, UpdCtx, OwnerId, Ctx#context.riakc_pid);
+actor_is_not_owner_but_allowed_policy(_, OwnerId, RD, Ctx, LocalCtx) ->
+    AccessRD = riak_cs_access_log_handler:set_user(OwnerId, RD),
+    UpdCtx = Ctx#context{local_context=LocalCtx#key_context{owner=OwnerId}},
+    {false, AccessRD, UpdCtx}.
+
+-spec just_allowed_by_policy(ObjectAcl :: acl(),
+                              RiakPid :: pid(),
+                              RD :: term(),
+                              Ctx :: term(),
+                              LocalCtx :: term()) ->
+    authorized_response().
+just_allowed_by_policy(ObjectAcl, RiakPid, RD, Ctx, LocalCtx) ->
+    OwnerId = riak_cs_acl:owner_id(ObjectAcl, RiakPid),
+    AccessRD = riak_cs_access_log_handler:set_user(OwnerId, RD),
+    UpdLocalCtx = LocalCtx#key_context{owner=OwnerId},
+    {false, AccessRD, Ctx#context{local_context=UpdLocalCtx}}.
+
+-spec bucket_owner(binary(), pid()) -> undefined | acl_owner().
+bucket_owner(Bucket, RiakPid) ->
+    case riak_cs_acl:bucket_acl(Bucket, RiakPid) of
+        {ok, Acl} ->
+            Acl?ACL.owner;
+        {error, Reason} ->
+            _ = lager:debug("Failed to retrieve owner info for bucket ~p. Reason ~p", [Bucket, Reason]),
+            undefined
+    end.
 
 %% ===================================================================
 %% Internal functions

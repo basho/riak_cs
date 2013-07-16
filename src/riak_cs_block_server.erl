@@ -1,12 +1,32 @@
-%% -------------------------------------------------------------------
+%% ---------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2011 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
 %%
-%% -------------------------------------------------------------------
+%% This file is provided to you under the Apache License,
+%% Version 2.0 (the "License"); you may not use this file
+%% except in compliance with the License.  You may obtain
+%% a copy of the License at
+%%
+%%   http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing,
+%% software distributed under the License is distributed on an
+%% "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+%% KIND, either express or implied.  See the License for the
+%% specific language governing permissions and limitations
+%% under the License.
+%%
+%% ---------------------------------------------------------------------
 
 -module(riak_cs_block_server).
 
 -behaviour(gen_server).
+
+-ifdef(PULSE).
+-include_lib("pulse/include/pulse.hrl").
+-compile({parse_transform, pulse_instrument}).
+-compile({pulse_replace_module,[{gen_server,pulse_gen_server}]}).
+-endif.
 
 -include("riak_cs.hrl").
 -include_lib("riak_pb/include/riak_pb_kv_codec.hrl").
@@ -18,6 +38,7 @@
          get_block/5, get_block/6,
          put_block/6,
          delete_block/5,
+         maybe_stop_block_servers/1,
          stop/1]).
 
 %% gen_server callbacks
@@ -99,6 +120,13 @@ put_block(Pid, Bucket, Key, UUID, BlockNumber, Value) ->
 delete_block(Pid, Bucket, Key, UUID, BlockNumber) ->
     gen_server:cast(Pid, {delete_block, self(), Bucket, Key, UUID, BlockNumber}).
 
+-spec maybe_stop_block_servers(undefined | [pid()]) -> ok.
+maybe_stop_block_servers(undefined) ->
+    ok;
+maybe_stop_block_servers(BlockServerPids) ->
+    _ = [stop(P) || P <- BlockServerPids],
+    ok.
+
 stop(Pid) ->
     gen_server:call(Pid, stop, infinity).
 
@@ -152,11 +180,11 @@ handle_cast({get_block, ReplyPid, Bucket, Key, ClusterID, UUID, BlockNumber}, St
     {FullBucket, FullKey} = full_bkey(Bucket, Key, UUID, BlockNumber),
     StartTime = os:timestamp(),
     GetOptions = [{r, 1}, {notfound_ok, false}, {basic_quorum, false}],
-    LocalClusterID = riak_cs_utils:get_cluster_id(RiakcPid),
+    LocalClusterID = riak_cs_config:cluster_id(RiakcPid),
     %% don't use proxy get if it's a local get
     %% or proxy get is disabled
     UseProxyGet = ClusterID /= undefined
-                    andalso riak_cs_utils:proxy_get_active()
+                    andalso riak_cs_config:proxy_get_active()
                     andalso LocalClusterID /= ClusterID,
     Object =
         case UseProxyGet of
@@ -172,7 +200,7 @@ handle_cast({get_block, ReplyPid, Bucket, Key, ClusterID, UUID, BlockNumber}, St
             NotFound
     end,
     ok = riak_cs_stats:update_with_start(block_get, StartTime),
-    ok = riak_cs_get_fsm:chunk(ReplyPid, BlockNumber, ChunkValue),
+    ok = riak_cs_get_fsm:chunk(ReplyPid, {UUID, BlockNumber}, ChunkValue),
     dt_return(<<"get_block">>, [BlockNumber], [Bucket, Key]),
     {noreply, State};
 handle_cast({put_block, ReplyPid, Bucket, Key, UUID, BlockNumber, Value}, State=#state{riakc_pid=RiakcPid}) ->
@@ -199,12 +227,12 @@ handle_cast({delete_block, ReplyPid, Bucket, Key, UUID, BlockNumber}, State=#sta
     GetOptions = [{r, 1}, {notfound_ok, false}, {basic_quorum, false}, head],
     _ = case riakc_pb_socket:get(RiakcPid, FullBucket, FullKey, GetOptions) of
             {ok, RiakObject} ->
-                ok = delete_block(RiakcPid, ReplyPid, RiakObject, BlockNumber);
+                ok = delete_block(RiakcPid, ReplyPid, RiakObject, {UUID, BlockNumber});
         {error, notfound} ->
             %% If the block isn't found, assume it's been
             %% previously deleted by another delete FSM, and
             %% move on to the next block.
-            riak_cs_delete_fsm:block_deleted(ReplyPid, {ok, BlockNumber})
+            riak_cs_delete_fsm:block_deleted(ReplyPid, {ok, {UUID, BlockNumber}})
     end,
     ok = riak_cs_stats:update_with_start(block_delete, StartTime),
     dt_return(<<"delete_block">>, [BlockNumber], [Bucket, Key]),
@@ -212,36 +240,36 @@ handle_cast({delete_block, ReplyPid, Bucket, Key, UUID, BlockNumber}, State=#sta
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
-delete_block(RiakcPid, ReplyPid, RiakObject, BlockNumber) ->
-    Result = constrained_delete(RiakcPid, RiakObject, BlockNumber),
-    secondary_delete_check(Result, RiakcPid, RiakObject),
+delete_block(RiakcPid, ReplyPid, RiakObject, BlockId) ->
+    Result = constrained_delete(RiakcPid, RiakObject, BlockId),
+    _ = secondary_delete_check(Result, RiakcPid, RiakObject),
     riak_cs_delete_fsm:block_deleted(ReplyPid, Result),
     ok.
 
-constrained_delete(RiakcPid, RiakObject, BlockNumber) ->
+constrained_delete(RiakcPid, RiakObject, BlockId) ->
     DeleteOptions = [{r, all}, {pr, all}, {w, all}, {pw, all}],
     format_delete_result(
       riakc_pb_socket:delete_obj(RiakcPid, RiakObject, DeleteOptions),
-      BlockNumber).
+      BlockId).
 
 secondary_delete_check({error, {unsatisfied_constraint, _, _}}, RiakcPid, RiakObject) ->
     riakc_pb_socket:delete_obj(RiakcPid, RiakObject);
 secondary_delete_check(_, _, _) ->
     ok.
 
-format_delete_result(ok, BlockNumber) ->
-    {ok, BlockNumber};
-format_delete_result({error, Reason}, BlockNumber) when is_binary(Reason) ->
+format_delete_result(ok, BlockId) ->
+    {ok, BlockId};
+format_delete_result({error, Reason}, BlockId) when is_binary(Reason) ->
     %% Riak client sends back oddly formatted errors
-    format_delete_result({error, binary_to_list(Reason)}, BlockNumber);
-format_delete_result({error, "{r_val_unsatisfied," ++ _}, BlockNumber) ->
-    {error, {unsatisfied_constraint, r, BlockNumber}};
-format_delete_result({error, "{w_val_unsatisfied," ++ _}, BlockNumber) ->
-    {error, {unsatisfied_constraint, w, BlockNumber}};
-format_delete_result({error, "{pr_val_unsatisfied," ++ _}, BlockNumber) ->
-    {error, {unsatisfied_constraint, pr, BlockNumber}};
-format_delete_result({error, "{pw_val_unsatisfied," ++ _}, BlockNumber) ->
-    {error, {unsatisfied_constraint, pw, BlockNumber}};
+    format_delete_result({error, binary_to_list(Reason)}, BlockId);
+format_delete_result({error, "{r_val_unsatisfied," ++ _}, BlockId) ->
+    {error, {unsatisfied_constraint, r, BlockId}};
+format_delete_result({error, "{w_val_unsatisfied," ++ _}, BlockId) ->
+    {error, {unsatisfied_constraint, w, BlockId}};
+format_delete_result({error, "{pr_val_unsatisfied," ++ _}, BlockId) ->
+    {error, {unsatisfied_constraint, pr, BlockId}};
+format_delete_result({error, "{pw_val_unsatisfied," ++ _}, BlockId) ->
+    {error, {unsatisfied_constraint, pw, BlockId}};
 format_delete_result(Result, _) ->
     Result.
 
@@ -296,9 +324,9 @@ code_change(_OldVsn, State, _Extra) ->
 
 -spec full_bkey(binary(), binary(), binary(), pos_integer()) -> {binary(), binary()}.
 %% @private
-full_bkey(Bucket, Key, UUID, BlockNumber) ->
+full_bkey(Bucket, Key, UUID, BlockId) ->
     PrefixedBucket = riak_cs_utils:to_bucket_name(blocks, Bucket),
-    FullKey = riak_cs_lfs_utils:block_name(Key, UUID, BlockNumber),
+    FullKey = riak_cs_lfs_utils:block_name(Key, UUID, BlockId),
     {PrefixedBucket, FullKey}.
 
 dt_entry(Func, Ints, Strings) ->

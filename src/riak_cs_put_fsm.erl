@@ -1,8 +1,22 @@
-%% -------------------------------------------------------------------
+%% ---------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2011 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
 %%
-%% -------------------------------------------------------------------
+%% This file is provided to you under the Apache License,
+%% Version 2.0 (the "License"); you may not use this file
+%% except in compliance with the License.  You may obtain
+%% a copy of the License at
+%%
+%%   http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing,
+%% software distributed under the License is distributed on an
+%% "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+%% KIND, either express or implied.  See the License for the
+%% specific language governing permissions and limitations
+%% under the License.
+%%
+%% ---------------------------------------------------------------------
 
 %% @doc Module to manage storage of objects and files
 
@@ -13,10 +27,12 @@
 -include("riak_cs.hrl").
 
 %% API
--export([start_link/1,
+-export([start_link/1, start_link/2,
+         get_uuid/1,
          augment_data/2,
          block_written/2,
-         finalize/1]).
+         finalize/1,
+         force_stop/1]).
 
 %% gen_fsm callbacks
 -export([init/1,
@@ -36,14 +52,17 @@
 
 -define(SERVER, ?MODULE).
 -define(EMPTYORDSET, ordsets:new()).
+-define(MD5_CHUNK_SIZE, 64*1024).
 
 -record(state, {timeout :: timeout(),
                 block_size :: pos_integer(),
                 caller :: reference(),
+                uuid :: binary(),
                 md5 :: binary(),
                 reply_pid :: {pid(), reference()},
                 mani_pid :: undefined | pid(),
                 riakc_pid :: pid(),
+                make_new_manifest_p :: boolean(),
                 timer_ref :: reference(),
                 bucket :: binary(),
                 key :: binary(),
@@ -60,38 +79,47 @@
                 free_writers :: undefined | ordsets:ordset(pid()),
                 unacked_writes=ordsets:new() :: ordsets:ordset(non_neg_integer()),
                 next_block_id=0 :: non_neg_integer(),
-                all_writer_pids=[] :: list(pid())}).
+                all_writer_pids :: undefined | list(pid()),
+                md5_chunk_size :: non_neg_integer()}).
 
 %%%===================================================================
 %%% API
 %%%===================================================================
 
-%%--------------------------------------------------------------------
-%% @spec start_link() -> {ok, Pid} | ignore | {error, Error}
-%% @end
-%%--------------------------------------------------------------------
 -spec start_link({binary(), binary(), non_neg_integer(), binary(),
                   term(), pos_integer(), acl(), timeout(), pid(), pid()}) ->
                         {ok, pid()} | {error, term()}.
-start_link({Bucket,
-            Key,
-            ContentLength,
-            ContentType,
-            Metadata,
-            BlockSize,
-            Acl,
-            Timeout,
-            Caller,
-            RiakPid}) ->
-    Args = [{Bucket, Key, ContentLength, ContentType,
-             Metadata, BlockSize, Acl, Timeout, Caller, RiakPid}],
-    gen_fsm:start_link(?MODULE, Args, []).
+start_link(Tuple) when is_tuple(Tuple) ->
+    start_link(Tuple, true).
+
+-spec start_link({binary(), binary(), non_neg_integer(), binary(),
+                  term(), pos_integer(), acl(), timeout(), pid(), pid()},
+                 boolean()) ->
+                        {ok, pid()} | {error, term()}.
+start_link({_Bucket,
+            _Key,
+            _ContentLength,
+            _ContentType,
+            _Metadata,
+            _BlockSize,
+            _Acl,
+            _Timeout,
+            _Caller,
+            _RiakPid}=Arg1,
+           MakeNewManifestP) ->
+    gen_fsm:start_link(?MODULE, {Arg1, MakeNewManifestP}, []).
+
+get_uuid(Pid) ->
+    gen_fsm:sync_send_event(Pid, {get_uuid}, infinity).
 
 augment_data(Pid, Data) ->
     gen_fsm:sync_send_event(Pid, {augment_data, Data}, infinity).
 
 finalize(Pid) ->
     gen_fsm:sync_send_event(Pid, finalize, infinity).
+
+force_stop(Pid) ->
+    gen_fsm:sync_send_all_state_event(Pid, force_stop, infinity).
 
 block_written(Pid, BlockID) ->
     gen_fsm:send_event(Pid, {block_written, BlockID, self()}).
@@ -110,11 +138,13 @@ block_written(Pid, BlockID) ->
 %% so that I can be thinking about how it
 %% might be implemented. Does it actually
 %% make things more confusing?
--spec init([{binary(), binary(), non_neg_integer(), binary(),
-             term(), pos_integer(), acl(), timeout(), pid(), pid()}]) ->
+-spec init({{binary(), binary(), non_neg_integer(), binary(),
+             term(), pos_integer(), acl(), timeout(), pid(), pid()},
+            term()}) ->
                   {ok, prepare, #state{}, timeout()}.
-init([{Bucket, Key, ContentLength, ContentType,
-       Metadata, BlockSize, Acl, Timeout, Caller, RiakPid}]) ->
+init({{Bucket, Key, ContentLength, ContentType,
+       Metadata, BlockSize, Acl, Timeout, Caller, RiakPid},
+      MakeNewManifestP}) ->
     %% We need to do this (the monitor) for two reasons
     %% 1. We're started through a supervisor, so the
     %%    proc that actually intends to start us isn't
@@ -125,16 +155,20 @@ init([{Bucket, Key, ContentLength, ContentType,
     %%    live.
     CallerRef = erlang:monitor(process, Caller),
 
+    UUID = druuid:v4(),
     {ok, prepare, #state{bucket=Bucket,
                          key=Key,
                          block_size=BlockSize,
                          caller=CallerRef,
+                         uuid=UUID,
                          metadata=Metadata,
                          acl=Acl,
                          content_length=ContentLength,
                          content_type=ContentType,
                          riakc_pid=RiakPid,
-                         timeout=Timeout},
+                         make_new_manifest_p=MakeNewManifestP,
+                         timeout=Timeout,
+                         md5_chunk_size=riak_cs_config:md5_chunk_size()},
      0}.
 
 %%--------------------------------------------------------------------
@@ -158,6 +192,10 @@ prepare(finalize, From, State=#state{content_length=0}) ->
                                                    state=active,
                                                    last_block_written_time=os:timestamp()},
     done(finalize, From, NewState#state{md5=Md5, manifest=NewManifest});
+
+prepare({get_uuid}, _From, State) ->
+    {reply, State#state.uuid, prepare, State};
+
 prepare({augment_data, NewData}, From, State) ->
     #state{content_length=CLength,
            num_bytes_received=NumBytesReceived,
@@ -185,6 +223,8 @@ full({block_written, BlockID, WriterPid}, State=#state{reply_pid=Waiter}) ->
     gen_fsm:reply(Waiter, ok),
     {next_state, not_full, NewState#state{reply_pid=undefined}}.
 
+all_received({augment_data, <<>>}, State) ->
+    {next_state, all_received, State};
 all_received({block_written, BlockID, WriterPid}, State=#state{mani_pid=ManiPid,
                                                                timer_ref=TimerRef}) ->
 
@@ -198,7 +238,7 @@ all_received({block_written, BlockID, WriterPid}, State=#state{mani_pid=ManiPid,
                 ReplyPid ->
                     %% reply with the final manifest
                     _ = erlang:cancel_timer(TimerRef),
-                    case riak_cs_manifest_fsm:update_manifest_with_confirmation(ManiPid, Manifest) of
+                    case maybe_update_manifest_with_confirmation(ManiPid, Manifest) of
                         ok ->
                             gen_fsm:reply(ReplyPid, {ok, Manifest}),
                             {stop, normal, NewState};
@@ -221,6 +261,9 @@ all_received({block_written, BlockID, WriterPid}, State=#state{mani_pid=ManiPid,
 %% and it will be blocked waiting for a response from
 %% when we transitioned from not_full => full
 
+not_full({get_uuid}, _From, State) ->
+    {reply, State#state.uuid, not_full, State};
+
 not_full({augment_data, NewData}, From,
          State=#state{content_length=CLength,
                       num_bytes_received=NumBytesReceived,
@@ -237,6 +280,8 @@ not_full({augment_data, NewData}, From,
             handle_receiving_last_chunk(NewData, State)
     end.
 
+all_received({augment_data, <<>>}, _From, State) ->
+    {next_state, all_received, State};
 all_received(finalize, From, State) ->
     %% 1. stash the From pid into our
     %%    state so that we know to reply
@@ -249,7 +294,7 @@ done(finalize, _From, State=#state{manifest=Manifest,
     %% 1. reply immediately
     %%    with the finished manifest
     _ = erlang:cancel_timer(TimerRef),
-    case riak_cs_manifest_fsm:update_manifest_with_confirmation(ManiPid, Manifest) of
+    case maybe_update_manifest_with_confirmation(ManiPid, Manifest) of
         ok ->
             {stop, normal, {ok, Manifest}, State};
         Error ->
@@ -268,6 +313,8 @@ handle_event(_Event, StateName, State) ->
 handle_sync_event(current_state, _From, StateName, State) ->
     Reply = {StateName, State},
     {reply, Reply, StateName, State};
+handle_sync_event(force_stop, _From, _StateName, State) ->
+    {stop, normal, ok, State};
 handle_sync_event(_Event, _From, StateName, State) ->
     Reply = ok,
     {reply, Reply, StateName, State}.
@@ -278,7 +325,7 @@ handle_sync_event(_Event, _From, StateName, State) ->
 handle_info(save_manifest, StateName, State=#state{mani_pid=ManiPid,
                                                    manifest=Manifest}) ->
     %% 1. save the manifest
-    riak_cs_manifest_fsm:update_manifest(ManiPid, Manifest),
+    maybe_update_manifest(ManiPid, Manifest),
     TRef = erlang:send_after(60000, self(), save_manifest),
     {next_state, StateName, State#state{timer_ref=TRef}};
 %% TODO:
@@ -292,8 +339,8 @@ handle_info({'DOWN', CallerRef, process, _Pid, Reason}, _StateName, State=#state
 %%--------------------------------------------------------------------
 terminate(_Reason, _StateName, #state{mani_pid=ManiPid,
                                       all_writer_pids=BlockServerPids}) ->
-    maybe_stop_manifest_fsm(ManiPid),
-    maybe_stop_block_servers(BlockServerPids),
+    riak_cs_manifest_fsm:maybe_stop_manifest_fsm(ManiPid),
+    riak_cs_block_server:maybe_stop_block_servers(BlockServerPids),
     ok.
 
 %%--------------------------------------------------------------------
@@ -311,14 +358,17 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 prepare(State=#state{bucket=Bucket,
                      key=Key,
                      block_size=BlockSize,
+                     uuid=UUID,
                      content_length=ContentLength,
                      content_type=ContentType,
                      metadata=Metadata,
                      acl=Acl,
-                     riakc_pid=RiakPid})
+                     riakc_pid=RiakPid,
+                     make_new_manifest_p=MakeNewManifestP})
   when is_integer(ContentLength), ContentLength >= 0 ->
     %% 1. start the manifest_fsm proc
-    {ok, ManiPid} = riak_cs_manifest_fsm:start_link(Bucket, Key, RiakPid),
+    {ok, ManiPid} = maybe_riak_cs_manifest_fsm_start_link(
+                      MakeNewManifestP, Bucket, Key, RiakPid),
     %% TODO:
     %% this shouldn't be hardcoded.
     Md5 = crypto:md5_init(),
@@ -334,10 +384,9 @@ prepare(State=#state{bucket=Bucket,
                  end,
     FreeWriters = ordsets:from_list(WriterPids),
     MaxBufferSize = (riak_cs_lfs_utils:put_fsm_buffer_size_factor() * BlockSize),
-    UUID = druuid:v4(),
 
     %% for now, always populate cluster_id
-    ClusterID = riak_cs_utils:get_cluster_id(RiakPid),
+    ClusterID = riak_cs_config:cluster_id(RiakPid),
     Manifest =
         riak_cs_lfs_utils:new_manifest(Bucket,
                                          Key,
@@ -349,7 +398,7 @@ prepare(State=#state{bucket=Bucket,
                                          Metadata,
                                          BlockSize,
                                          Acl,
-                                         undefined,
+                                         [],
                                          ClusterID),
     NewManifest = Manifest?MANIFEST{write_start_time=os:timestamp()},
 
@@ -359,7 +408,7 @@ prepare(State=#state{bucket=Bucket,
     %% and if it is, what should
     %% it be?
     TRef = erlang:send_after(60000, self(), save_manifest),
-    riak_cs_manifest_fsm:add_new_manifest(ManiPid, NewManifest),
+    ok = maybe_add_new_manifest(ManiPid, NewManifest),
     State#state{manifest=NewManifest,
                 md5=Md5,
                 timer_ref=TRef,
@@ -475,12 +524,18 @@ handle_accept_chunk(NewData, State=#state{buffer_queue=BufferQueue,
                                           num_bytes_received=PreviousBytesReceived,
                                           md5=Md5,
                                           current_buffer_size=CurrentBufferSize,
-                                          content_length=ContentLength}) ->
+                                          content_length=ContentLength,
+                                          md5_chunk_size=Md5ChunkSize}) ->
 
-    NewMd5 = crypto:md5_update(Md5, NewData),
+    NewMd5 = riak_cs_utils:chunked_md5(NewData, Md5, Md5ChunkSize),
     NewRemainderData = combine_new_and_remainder_data(NewData, RemainderData),
     UpdatedBytesReceived = PreviousBytesReceived + size(NewData),
-
+    if UpdatedBytesReceived > ContentLength ->
+           exit({too_many_bytes_received, got, UpdatedBytesReceived,
+                 content_length, ContentLength});
+       true ->
+           ok
+    end,
     NewCurrentBufferSize = CurrentBufferSize + size(NewData),
 
     {NewBufferQueue, NewRemainderData2} =
@@ -503,9 +558,10 @@ handle_backpressure_for_chunk(NewData, From, State=#state{reply_pid=undefined,
                                                           remainder_data=RemainderData,
                                                           current_buffer_size=CurrentBufferSize,
                                                           num_bytes_received=PreviousBytesReceived,
-                                                          content_length=ContentLength}) ->
+                                                          content_length=ContentLength,
+                                                          md5_chunk_size=Md5ChunkSize}) ->
 
-    NewMd5 = crypto:md5_update(Md5, NewData),
+    NewMd5 = riak_cs_utils:chunked_md5(NewData, Md5, Md5ChunkSize),
     NewRemainderData = combine_new_and_remainder_data(NewData, RemainderData),
     UpdatedBytesReceived = PreviousBytesReceived + size(NewData),
 
@@ -529,9 +585,10 @@ handle_receiving_last_chunk(NewData, State=#state{buffer_queue=BufferQueue,
                                                   manifest=Manifest,
                                                   current_buffer_size=CurrentBufferSize,
                                                   num_bytes_received=PreviousBytesReceived,
-                                                  content_length=ContentLength}) ->
+                                                  content_length=ContentLength,
+                                                  md5_chunk_size=Md5ChunkSize}) ->
 
-    NewMd5 = crypto:md5_final(crypto:md5_update(Md5, NewData)),
+    NewMd5 = crypto:md5_final(riak_cs_utils:chunked_md5(NewData, Md5, Md5ChunkSize)),
     NewManifest = Manifest?MANIFEST{content_md5=NewMd5},
     NewRemainderData = combine_new_and_remainder_data(NewData, RemainderData),
     UpdatedBytesReceived = PreviousBytesReceived + size(NewData),
@@ -551,16 +608,22 @@ handle_receiving_last_chunk(NewData, State=#state{buffer_queue=BufferQueue,
     Reply = ok,
     {reply, Reply, all_received, NewStateData}.
 
--spec maybe_stop_manifest_fsm(undefined | pid()) -> ok.
-maybe_stop_manifest_fsm(undefined) ->
-    ok;
-maybe_stop_manifest_fsm(ManiPid) ->
-    riak_cs_manifest_fsm:stop(ManiPid),
-    ok.
+maybe_riak_cs_manifest_fsm_start_link(false, _Bucket, _Key, _RiakPid) ->
+    {ok, undefined};
+maybe_riak_cs_manifest_fsm_start_link(true, Bucket, Key, RiakPid) ->
+    riak_cs_manifest_fsm:start_link(Bucket, Key, RiakPid).
 
--spec maybe_stop_block_servers(undefined | pid()) -> ok.
-maybe_stop_block_servers(undefined) ->
+maybe_add_new_manifest(undefined, _NewManifest) ->
     ok;
-maybe_stop_block_servers(BlockServerPids) ->
-    _ = [riak_cs_block_server:stop(P) || P <- BlockServerPids],
-    ok.
+maybe_add_new_manifest(ManiPid, NewManifest) ->
+    riak_cs_manifest_fsm:add_new_manifest(ManiPid, NewManifest).
+
+maybe_update_manifest(undefined, _Manifest) ->
+    ok;
+maybe_update_manifest(ManiPid, Manifest) ->
+    riak_cs_manifest_fsm:update_manifest(ManiPid, Manifest).
+
+maybe_update_manifest_with_confirmation(undefined, _Manifest) ->
+    ok;
+maybe_update_manifest_with_confirmation(ManiPid, Manifest) ->
+    riak_cs_manifest_fsm:update_manifest_with_confirmation(ManiPid, Manifest).

@@ -1,3 +1,37 @@
+%% ---------------------------------------------------------------------
+%%
+%% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
+%%
+%% This file is provided to you under the Apache License,
+%% Version 2.0 (the "License"); you may not use this file
+%% except in compliance with the License.  You may obtain
+%% a copy of the License at
+%%
+%%   http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing,
+%% software distributed under the License is distributed on an
+%% "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+%% KIND, either express or implied.  See the License for the
+%% specific language governing permissions and limitations
+%% under the License.
+%%
+%% ---------------------------------------------------------------------
+
+-define(MANIFEST, #lfs_manifest_v3).
+
+-define(ACL, #acl_v2).
+-define(RCS_BUCKET, #moss_bucket_v1).
+-define(MOSS_USER, #rcs_user_v2).
+-define(RCS_USER, #rcs_user_v2).
+-define(MULTIPART_MANIFEST, #multipart_manifest_v1).
+-define(MULTIPART_MANIFEST_RECNAME, multipart_manifest_v1).
+-define(PART_MANIFEST, #part_manifest_v1).
+-define(PART_MANIFEST_RECNAME, part_manifest_v1).
+-define(MULTIPART_DESCR, #multipart_descr_v1).
+-define(COMPRESS_TERMS, false).
+-define(PART_DESCR, #part_descr_v1).
+
 -record(moss_user, {
           name :: string(),
           key_id :: string(),
@@ -31,42 +65,61 @@
           acl :: acl()}).
 
 -record(moss_bucket_v1, {
-          name :: string(),
+          name :: string() | binary(),
           last_action :: created | deleted,
           creation_date :: string(),
           modification_time :: erlang:timestamp(),
           acl :: acl()}).
 -type cs_bucket() :: #moss_bucket_v1{}.
--type bucket_operation() :: create | delete | update_acl.
+-type bucket_operation() :: create | delete | update_acl | update_policy
+                          | delete_policy.
 -type bucket_action() :: created | deleted.
 
 -record(context, {start_time :: erlang:timestamp(),
                   auth_bypass :: atom(),
-                  user :: moss_user(),
+                  user :: undefined | moss_user(),
                   user_object :: riakc_obj:riakc_obj(),
                   bucket :: binary(),
                   requested_perm :: acl_perm(),
-                  riakc_pid :: pid()
+                  riakc_pid :: pid(),
+                  riakc_pool :: atom(),
+                  submodule :: atom(),
+                  exports_fun :: function(),
+                  auth_module :: atom(),
+                  response_module :: atom(),
+                  policy_module :: atom(),
+                  local_context :: term(),
+                  api :: atom()
                  }).
 
 -record(key_context, {context :: #context{},
                       manifest :: 'notfound' | lfs_manifest(),
+                      upload_id :: 'undefined' | binary(),
+                      part_number :: 'undefined' | integer(),
+                      part_uuid :: 'undefined' | binary(),
                       get_fsm_pid :: pid(),
                       putctype :: string(),
                       bucket :: binary(),
                       key :: list(),
                       owner :: 'undefined' | string(),
-                      size :: non_neg_integer()}).
+                      size :: non_neg_integer(),
+                      content_md5 :: 'undefined' | binary(),
+                      update_metadata=false :: boolean()}).
 
 -type acl_perm() :: 'READ' | 'WRITE' | 'READ_ACP' | 'WRITE_ACP' | 'FULL_CONTROL'.
 -type acl_perms() :: [acl_perm()].
 -type group_grant() :: 'AllUsers' | 'AuthUsers'.
 -type acl_grantee() :: {string(), string()} | group_grant().
 -type acl_grant() :: {acl_grantee(), acl_perms()}.
--type acl_owner() :: {string(), string()} | {string(), string(), string()}.
+%% acl_v1 owner fields: {DisplayName, CanonicalId}
+-type acl_owner2() :: {string(), string()}.
+%% acl_owner3: {display name, canonical id, key id}
+-type acl_owner3() :: {string(), string(), string()}.
+-type acl_owner() :: acl_owner2() | acl_owner3().
 -record(acl_v1, {owner={"", ""} :: acl_owner(),
                  grants=[] :: [acl_grant()],
                  creation_time=now() :: erlang:timestamp()}).
+%% acl_v2 owner fields: {DisplayName, CanonicalId, KeyId}
 -record(acl_v2, {owner={"", "", ""} :: acl_owner(),
                  grants=[] :: [acl_grant()],
                  creation_time=now() :: erlang:timestamp()}).
@@ -196,7 +249,7 @@
 
         %% The ACL for the version of the object represented
         %% by this manifest.
-        acl :: acl(),
+        acl :: acl() | no_acl_yet,
 
         %% There are a couple of cases where we want to add record
         %% member'ish data without adding new members to the record,
@@ -207,7 +260,9 @@
         %%       record but don't want to go through the full code
         %%       refactoring and backward-compatibility tap dance
         %%       until sometime later.
-        props = [] :: proplists:proplist(),
+        %% 'undefined' is for backward compatibility with v3 manifests
+        %% written with Riak CS 1.2.2 or earlier.
+        props = [] :: 'undefined' | proplists:proplist(),
 
         %% cluster_id: A couple of uses, both short- and longer-term
         %%  possibilities:
@@ -231,12 +286,90 @@
 
 -type cs_uuid_and_manifest() :: {cs_uuid(), lfs_manifest()}.
 
--define(MANIFEST, #lfs_manifest_v3).
+-record(part_manifest_v1, {
+    bucket :: binary(),
+    key :: binary(),
 
--define(ACL, #acl_v2).
--define(RCS_BUCKET, #moss_bucket_v1).
--define(MOSS_USER, #rcs_user_v2).
--define(RCS_USER, #rcs_user_v2).
+    %% used to judge races between concurrent uploads
+    %% of the same part_number
+    start_time :: erlang:timestamp(),
+
+    %% one-of 1-10000, inclusive
+    part_number :: integer(),
+
+    %% a UUID to prevent conflicts with concurrent
+    %% uploads of the same {upload_id, part_number}.
+    part_id :: binary(),
+
+    %% each individual part upload always has a content-length
+    %% content_md5 is used for the part ETag, alas.
+    content_length :: integer(),
+    content_md5 :: 'undefined' | binary(),
+
+    %% block size just like in `lfs_manifest_v2'. Concievably,
+    %% parts for the same upload id could have different block_sizes.
+    block_size :: integer()
+}).
+-type part_manifest() :: #part_manifest_v1{}.
+
+-record(multipart_manifest_v1, {
+    upload_id :: binary(),
+    owner :: acl_owner3(),
+
+    %% since we don't have any point of strong
+    %% consistency (other than stanchion), we
+    %% can get concurrent `complete' and `abort'
+    %% requests. There are still some details to
+    %% work out, but what we observe here will
+    %% affect whether we accept future `complete'
+    %% or `abort' requests.
+
+    %% Stores references to all of the parts uploaded
+    %% with this `upload_id' so far. A part
+    %% can be uploaded more than once with the same
+    %% part number.  type = #part_manifest_vX
+    parts = ordsets:new() :: ordsets:ordset(?PART_MANIFEST{}),
+    %% List of UUIDs for parts that are done uploading.
+    %% The part number is redundant, so we only store
+    %% {UUID::binary(), PartETag::binary()} here.
+    done_parts = ordsets:new() :: ordsets:ordset({binary(), binary()}),
+    %% type = #part_manifest_vX
+    cleanup_parts = ordsets:new() :: ordsets:ordset(?PART_MANIFEST{}),
+
+    %% a place to stuff future information
+    %% without having to change
+    %% the record format
+    props = [] :: proplists:proplist()
+}).
+-type multipart_manifest() :: #multipart_manifest_v1{}.
+
+%% Basis of list multipart uploads output
+-record(multipart_descr_v1, {
+    %% Object key for the multipart upload
+    key :: binary(),
+
+    %% UUID of the multipart upload
+    upload_id :: binary(),
+
+    %% User that initiated the upload
+    owner_display :: string(),
+    owner_key_id :: string(),
+
+    %% storage class: no real options here
+    storage_class = standard,
+
+    %% Time that the upload was initiated
+    initiated :: string() %% conflict of func vs. type: riak_cs_wm_utils:iso_8601_datetime()
+}).
+
+%% Basis of multipart list parts output
+-record(part_descr_v1, {
+    part_number :: integer(),
+    last_modified :: string(),  % TODO ??
+    etag :: binary(),
+    size :: integer()
+}).
+
 -define(USER_BUCKET, <<"moss.users">>).
 -define(ACCESS_BUCKET, <<"moss.access">>).
 -define(STORAGE_BUCKET, <<"moss.storage">>).
@@ -246,10 +379,12 @@
 -define(DEFAULT_MAX_CONTENT_LENGTH, 5368709120). %% 5 GB
 -define(DEFAULT_LFS_BLOCK_SIZE, 1048576).%% 1 MB
 -define(XML_PROLOG, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>").
+-define(S3_XMLNS, 'http://s3.amazonaws.com/doc/2006-03-01/').
 -define(DEFAULT_STANCHION_IP, "127.0.0.1").
 -define(DEFAULT_STANCHION_PORT, 8085).
 -define(DEFAULT_STANCHION_SSL, true).
 -define(MD_ACL, <<"X-Moss-Acl">>).
+-define(MD_POLICY, <<"X-Rcs-Policy">>).
 -define(EMAIL_INDEX, <<"email_bin">>).
 -define(ID_INDEX, <<"c_id_bin">>).
 -define(KEY_INDEX, <<"$key">>).
@@ -263,9 +398,16 @@
 %% to determine the PUT buffer size.
 %% ex. 2 would mean BlockSize * 2
 -define(DEFAULT_PUT_BUFFER_FACTOR, 1).
+%% Similar to above, but for fetching
+%% This is also max ram per fetch request
+-define(DEFAULT_FETCH_BUFFER_FACTOR, 32).
 -define(DEFAULT_PING_TIMEOUT, 5000).
 -define(JSON_TYPE, "application/json").
 -define(XML_TYPE, "application/xml").
+-define(S3_API_MOD, riak_cs_s3_rewrite).
+-define(OOS_API_MOD, riak_cs_oos_rewrite).
+-define(S3_RESPONSE_MOD, riak_cs_s3_response).
+-define(OOS_RESPONSE_MOD, riak_cs_oos_response).
 
 %% Major categories of Erlang-triggered DTrace probes
 %%
@@ -317,3 +459,24 @@
 -define(DEFAULT_GC_RETRY_INTERVAL, 21600). %% 6 hours
 -define(EPOCH_START, <<"0">>).
 -define(DEFAULT_CLUSTER_ID_TIMEOUT,5000).
+-define(DEFAULT_AUTH_MODULE, riak_cs_s3_auth).
+-define(DEFAULT_LIST_OBJECTS_MAX_KEYS, 1000).
+-define(DEFAULT_MD5_CHUNK_SIZE, 1048576). %% 1 MB
+
+%% General system info
+-define(WORD_SIZE, erlang:system_info(wordsize)).
+
+-define(DEFAULT_POLICY_MODULE, riak_cs_s3_policy).
+
+-record(access_v1, {
+          method :: atom(), % PUT / GET / POST / ....
+          target :: atom(), % object | object_acl | ....
+          id :: string(),
+          bucket :: binary(),
+          key = <<>> :: undefined | binary(),
+          req %:: #wm_reqdata{} % request of webmachine
+         }).
+
+-type access() :: #access_v1{}.
+
+-type policy() :: riak_cs_s3_policy:policy1().

@@ -1,8 +1,22 @@
-%% -------------------------------------------------------------------
+%% ---------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2012 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
 %%
-%% -------------------------------------------------------------------
+%% This file is provided to you under the Apache License,
+%% Version 2.0 (the "License"); you may not use this file
+%% except in compliance with the License.  You may obtain
+%% a copy of the License at
+%%
+%%   http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing,
+%% software distributed under the License is distributed on an
+%% "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+%% KIND, either express or implied.  See the License for the
+%% specific language governing permissions and limitations
+%% under the License.
+%%
+%% ---------------------------------------------------------------------
 
 %% @doc Module of functions that provide a way to determine if a
 %% user may access a particular system resource.
@@ -20,10 +34,19 @@
 
 %% Public API
 -export([anonymous_bucket_access/3,
+         anonymous_bucket_access/4,
          anonymous_object_access/4,
+         anonymous_object_access/5,
          bucket_access/4,
+         bucket_access/5,
          bucket_acl/2,
-         object_access/5]).
+         bucket_acl_from_contents/2,
+         object_access/5,
+         object_access/6,
+         owner_id/2
+        ]).
+
+-define(ACL_UNDEF, {error, acl_undefined}).
 
 %% ===================================================================
 %% Public API
@@ -31,29 +54,35 @@
 
 %% @doc Determine if anonymous access is set for the bucket.
 -spec anonymous_bucket_access(binary(), atom(), pid()) -> {true, string()} | false.
-anonymous_bucket_access(_Bucket, undefined, _) ->
-    false;
 anonymous_bucket_access(Bucket, RequestedAccess, RiakPid) ->
+    anonymous_bucket_access(Bucket, RequestedAccess, RiakPid, undefined).
+
+-spec anonymous_bucket_access(binary(), atom(), pid(), acl()|undefined)
+                             -> {true, string()} | false.
+anonymous_bucket_access(_Bucket, undefined, _, _) ->
+    false;
+anonymous_bucket_access(Bucket, RequestedAccess, RiakPid, undefined) ->
     %% Fetch the bucket's ACL
     case bucket_acl(Bucket, RiakPid) of
-        {ok, Acl} ->
-            case RequestedAccess of
-                'WRITE' ->
-                    %% Only owners may delete buckets
-                    false;
-                _ ->
-                    case has_permission(acl_grants(Acl), RequestedAccess) of
-                        true ->
-                            {true, owner_id(Acl, RiakPid)};
-                        false ->
-                            false
-                    end
-            end;
+        {ok, BucketAcl} -> anonymous_bucket_access(Bucket, RequestedAccess, RiakPid, BucketAcl);
         {error, Reason} ->
             %% @TODO Think about bubbling this error up and providing
             %% feedback to requester.
             _ = lager:error("Anonymous bucket access check failed due to error. Reason: ~p", [Reason]),
             false
+    end;
+anonymous_bucket_access(_Bucket, RequestedAccess, RiakPid, BucketAcl) ->
+    case RequestedAccess of
+        'WRITE' ->
+            %% Only owners may delete buckets
+            false;
+        _ ->
+            case has_permission(acl_grants(BucketAcl), RequestedAccess) of
+                true ->
+                    {true, owner_id(BucketAcl, RiakPid)};
+                false ->
+                    false
+            end
     end.
 
 %% @doc Determine if anonymous access is set for the object.
@@ -61,21 +90,35 @@ anonymous_bucket_access(Bucket, RequestedAccess, RiakPid) ->
 -spec anonymous_object_access(binary(), acl(), atom(), pid()) ->
                                      {true, string()} |
                                      false.
-anonymous_object_access(_Bucket, _ObjAcl, undefined, _) ->
+anonymous_object_access(Bucket, ObjAcl, RequestedAccess, RiakPid) ->
+    anonymous_object_access(Bucket, ObjAcl, RequestedAccess, RiakPid, undefined).
+
+
+-spec anonymous_object_access(binary(), acl(), atom(), pid(), acl()|undefined) ->
+                                     {true, string()} | false.
+anonymous_object_access(_Bucket, _ObjAcl, undefined, _, _) ->
     false;
-anonymous_object_access(Bucket, _ObjAcl, 'WRITE', RiakPid) ->
+anonymous_object_access(Bucket, ObjAcl, 'WRITE', RiakPid, undefined) ->
     case bucket_acl(Bucket, RiakPid) of
         {ok, BucketAcl} ->
             %% `WRITE' is the only pertinent bucket-level
             %% permission when checking object access.
-            has_permission(acl_grants(BucketAcl), 'WRITE');
+            anonymous_object_access(Bucket, ObjAcl, 'WRITE', RiakPid, BucketAcl);
         {error, Reason} ->
             %% @TODO Think about bubbling this error up and providing
             %% feedback to requester.
             _ = lager:error("Anonymous object access check failed due to error. Reason: ~p", [Reason]),
             false
     end;
-anonymous_object_access(_Bucket, ObjAcl, RequestedAccess, RiakPid) ->
+anonymous_object_access(_Bucket, _ObjAcl, 'WRITE', RiakPid, BucketAcl) ->
+    HasObjPerm = has_permission(acl_grants(BucketAcl), 'WRITE'),
+    case HasObjPerm of
+        true ->
+            {true, owner_id(BucketAcl, RiakPid)};
+        _ ->
+            false
+    end;
+anonymous_object_access(_Bucket, ObjAcl, RequestedAccess, RiakPid, _) ->
     HasObjPerm = has_permission(acl_grants(ObjAcl), RequestedAccess),
     case HasObjPerm of
         true ->
@@ -85,26 +128,20 @@ anonymous_object_access(_Bucket, ObjAcl, RequestedAccess, RiakPid) ->
     end.
 
 %% @doc Determine if a user has the requested access to a bucket.
--spec bucket_access(binary(), atom(), string(), pid()) -> boolean() |
-                                                   {true, string()}.
-bucket_access(_Bucket, undefined, _CanonicalId, _) ->
-    false;
+-spec bucket_access(binary(), atom(), string(), pid()) ->
+                           boolean() | {true, string()}.
 bucket_access(Bucket, RequestedAccess, CanonicalId, RiakPid) ->
+    bucket_access(Bucket, RequestedAccess, CanonicalId, RiakPid, undefined).
+
+-spec bucket_access(binary(), atom(), string(), pid(), acl()|undefined ) ->
+                           boolean() | {true, string()}.
+bucket_access(_Bucket, undefined, _CanonicalId, _, _) ->
+    false;
+bucket_access(Bucket, RequestedAccess, CanonicalId, RiakPid, undefined) ->
     %% Fetch the bucket's ACL
     case bucket_acl(Bucket, RiakPid) of
         {ok, Acl} ->
-            IsOwner = is_owner(Acl, CanonicalId),
-            HasPerm = has_permission(acl_grants(Acl),
-                                     RequestedAccess,
-                                     CanonicalId),
-            case HasPerm of
-                true when IsOwner == true ->
-                    true;
-                true ->
-                    {true, owner_id(Acl, RiakPid)};
-                _ ->
-                    false
-            end;
+            bucket_access(Bucket, RequestedAccess, CanonicalId, RiakPid, Acl);
         {error, notfound} ->
             %% This indicates the bucket does not exist so
             %% allow the request to proceed.
@@ -114,52 +151,127 @@ bucket_access(Bucket, RequestedAccess, CanonicalId, RiakPid) ->
             %% feedback to requester.
             _ = lager:error("Bucket access check failed due to error. Reason: ~p", [Reason]),
             false
+    end;
+bucket_access(_, RequestedAccess, CanonicalId, RiakPid, Acl) ->
+    IsOwner = is_owner(Acl, CanonicalId),
+    HasPerm = has_permission(acl_grants(Acl),
+                             RequestedAccess,
+                             CanonicalId),
+    case HasPerm of
+        true when IsOwner == true ->
+            true;
+        true ->
+            {true, owner_id(Acl, RiakPid)};
+        false when IsOwner == true
+                   andalso RequestedAccess /= 'READ' ->
+            true;
+        _ ->
+            false
     end.
 
+
 %% @doc Get the ACL for a bucket
--spec bucket_acl(binary(), pid()) -> {ok, acl()} | {error, term()}.
+-type acl_from_meta_result() :: {'ok', acl()} | {'error', 'acl_undefined'}.
+-type bucket_acl_result() :: acl_from_meta_result() | {'error', 'multiple_bucket_owners'}.
+-type bucket_acl_riak_error() :: {error, 'notfound' | term()}.
+-spec bucket_acl(binary(), pid()) -> bucket_acl_result() | bucket_acl_riak_error().
 bucket_acl(Bucket, RiakPid) ->
-    case riak_cs_utils:get_object(?BUCKETS_BUCKET, Bucket, RiakPid) of
+    case riak_cs_utils:check_bucket_exists(Bucket, RiakPid) of
         {ok, Obj} ->
-            %% For buckets there will not be siblings.
-            MD = riakc_obj:get_metadata(Obj),
-            MetaVals = dict:fetch(?MD_USERMETA, MD),
-            acl_from_meta(MetaVals);
-        {error, _}=Error ->
-            Error
+            %% For buckets there should not be siblings, but in rare
+            %% cases it may happen so check for them and attempt to
+            %% resolve if possible.
+            Contents = riakc_obj:get_contents(Obj),
+            bucket_acl_from_contents(Bucket, Contents);
+        {error, Reason} ->
+            _ = lager:debug("Failed to fetch ACL. Bucket ~p "
+                            " does not exist. Reason: ~p",
+                            [Bucket, Reason]),
+            {error, notfound}
     end.
+
+%% @doc Attempt to resolve an ACL for the bucket based on the contents.
+%% We attempt resolution, but intentionally do not write back a resolved
+%% value. Instead the fact that the bucket has siblings is logged, but the
+%% condition should be rare so we avoid updating the value at this time.
+-spec bucket_acl_from_contents(binary(), riakc_obj:contents()) ->
+                                      bucket_acl_result().
+bucket_acl_from_contents(_, [{MD, _}]) ->
+    MetaVals = dict:fetch(?MD_USERMETA, MD),
+    acl_from_meta(MetaVals);
+bucket_acl_from_contents(Bucket, Contents) ->
+    {Metas, Vals} = lists:unzip(Contents),
+    UniqueVals = lists:usort(Vals),
+    UserMetas = [dict:fetch(?MD_USERMETA, MD) || MD <- Metas],
+    riak_cs_utils:maybe_log_bucket_owner_error(Bucket, UniqueVals),
+    resolve_bucket_metadata(UserMetas, UniqueVals).
+
+-spec resolve_bucket_metadata(list(riakc_obj:metadata()),
+                               list(riakc_obj:value())) -> bucket_acl_result().
+resolve_bucket_metadata(Metas, [_Val]) ->
+    Acls = [acl_from_meta(M) || M <- Metas],
+    resolve_bucket_acls(Acls);
+resolve_bucket_metadata(_Metas, _) ->
+    {error, multiple_bucket_owners}.
+
+-spec resolve_bucket_acls(list(acl_from_meta_result())) -> acl_from_meta_result().
+resolve_bucket_acls([Acl]) ->
+    Acl;
+resolve_bucket_acls(Acls) ->
+    lists:foldl(fun newer_acl/2, ?ACL_UNDEF, Acls).
+
+-spec newer_acl(acl_from_meta_result(), acl_from_meta_result()) ->
+                       acl_from_meta_result().
+newer_acl(Acl1, ?ACL_UNDEF) ->
+    Acl1;
+newer_acl({ok, Acl1}, {ok, Acl2})
+  when Acl1?ACL.creation_time >= Acl2?ACL.creation_time ->
+    {ok, Acl1};
+newer_acl(_, Acl2) ->
+    Acl2.
 
 %% @doc Determine if a user has the requested access to an object
 %% @TODO Enhance when doing object-level ACL work. This is a bit
 %% patchy until object ACLs are done. The bucket owner gets full
 %% control, but bucket-level ACLs only matter for writes otherwise.
--spec object_access(binary(), acl(), atom(), string(), pid()) -> boolean() |
-                                                             {true, string()}.
-object_access(_Bucket, _ObjAcl, undefined, _CanonicalId, _) ->
+-spec object_access(binary(), acl(), atom(), string(), pid())
+                   -> boolean() | {true, string()}.
+object_access(Bucket, ObjAcl, RequestedAccess, CanonicalId, RiakPid) ->
+    object_access(Bucket, ObjAcl, RequestedAccess, CanonicalId, RiakPid, undefined).
+
+
+-spec object_access(binary(), acl(), atom(), string(), pid(), undefined|acl())
+                   -> boolean() | {true, string()}.
+object_access(_Bucket, _ObjAcl, undefined, _CanonicalId, _, _) ->
     false;
-object_access(_Bucket, _ObjAcl, _RequestedAccess, undefined, _RiakPid) ->
+object_access(_Bucket, _ObjAcl, _RequestedAccess, undefined, _RiakPid, _) ->
     %% User record not provided, check for anonymous access
     anonymous_object_access(_Bucket, _ObjAcl, _RequestedAccess, _RiakPid);
-object_access(Bucket, _ObjAcl, 'WRITE', CanonicalId, RiakPid) ->
-    %% Fetch the bucket's ACL
+object_access(Bucket, ObjAcl, 'WRITE', CanonicalId, RiakPid, undefined) ->
     case bucket_acl(Bucket, RiakPid) of
         {ok, BucketAcl} ->
-            HasBucketPerm = has_permission(acl_grants(BucketAcl),
-                                           'WRITE',
-                                           CanonicalId),
-            case HasBucketPerm of
-                true ->
-                    {true, owner_id(BucketAcl, RiakPid)};
-                _ ->
-                    false
-            end;
+            object_access(Bucket, ObjAcl, 'WRITE', CanonicalId, RiakPid, BucketAcl);
         {error, Reason} ->
             %% @TODO Think about bubbling this error up and providing
             %% feedback to requester.
             _ = lager:error("Object access check failed due to error. Reason: ~p", [Reason]),
             false
     end;
-object_access(_Bucket, ObjAcl, RequestedAccess, CanonicalId, RiakPid) ->
+object_access(_Bucket, _ObjAcl, 'WRITE', CanonicalId, RiakPid, BucketAcl) ->
+    %% Fetch the bucket's ACL
+    IsBucketOwner = is_owner(BucketAcl, CanonicalId),
+    HasBucketPerm = has_permission(acl_grants(BucketAcl),
+                                   'WRITE',
+                                   CanonicalId),
+    case HasBucketPerm of
+        true when IsBucketOwner == true ->
+            true;
+        true ->
+            {true, owner_id(BucketAcl, RiakPid)};
+        _ ->
+            false
+    end;
+object_access(_Bucket, ObjAcl, RequestedAccess, CanonicalId, RiakPid, _) ->
     _ = lager:debug("ObjAcl: ~p~nCanonicalId: ~p", [ObjAcl, CanonicalId]),
     IsObjOwner = is_owner(ObjAcl, CanonicalId),
     HasObjPerm = has_permission(acl_grants(ObjAcl),
@@ -167,36 +279,21 @@ object_access(_Bucket, ObjAcl, RequestedAccess, CanonicalId, RiakPid) ->
                                 CanonicalId),
     _ = lager:debug("IsObjOwner: ~p", [IsObjOwner]),
     _ = lager:debug("HasObjPerm: ~p", [HasObjPerm]),
-    case HasObjPerm of
-        true when IsObjOwner == true ->
+    if
+        (RequestedAccess == 'READ_ACP' orelse
+         RequestedAccess == 'WRITE_ACP') andalso
+        IsObjOwner == true ->
+            %% The owner of an object may always read and modify the
+            %% ACL of an object
             true;
-        true ->
+        IsObjOwner == true andalso
+        HasObjPerm == true ->
+            true;
+        HasObjPerm == true ->
             {true, owner_id(ObjAcl, RiakPid)};
-        _ ->
+        true ->
             false
     end.
-
-%% ===================================================================
-%% Internal functions
-%% ===================================================================
-
-%% @doc Find the ACL in a list of metadata values and
-%% convert it to an erlang term representation. Return
-%% `undefined' if an ACL is not found.
--spec acl_from_meta([{string(), term()}]) -> {ok, acl()} | {error, acl_undefined}.
-acl_from_meta([]) ->
-    {error, acl_undefined};
-acl_from_meta([{?MD_ACL, Acl} | _]) ->
-    {ok, binary_to_term(Acl)};
-acl_from_meta([_ | RestMD]) ->
-    acl_from_meta(RestMD).
-
-%% @doc Get the grants from an ACL
--spec acl_grants(acl()) -> [acl_grant()].
-acl_grants(?ACL{grants=Grants}) ->
-    Grants;
-acl_grants(#acl_v1{grants=Grants}) ->
-    Grants.
 
 %% @doc Get the canonical id of the owner of an entity.
 -spec owner_id(acl(), pid()) -> string().
@@ -214,6 +311,28 @@ owner_id(#acl_v1{owner=OwnerData}, RiakPid) ->
             _ = lager:warning("Failed to retrieve key_id for user ~p with canonical_id ~p", [Name, CanonicalId]),
             []
     end.
+
+%% ===================================================================
+%% Internal functions
+%% ===================================================================
+
+%% @doc Find the ACL in a list of metadata values and
+%% convert it to an erlang term representation. Return
+%% `undefined' if an ACL is not found.
+-spec acl_from_meta([{string(), term()}]) -> acl_from_meta_result().
+acl_from_meta([]) ->
+    ?ACL_UNDEF;
+acl_from_meta([{?MD_ACL, Acl} | _]) ->
+    {ok, binary_to_term(Acl)};
+acl_from_meta([_ | RestMD]) ->
+    acl_from_meta(RestMD).
+
+%% @doc Get the grants from an ACL
+-spec acl_grants(acl()) -> [acl_grant()].
+acl_grants(?ACL{grants=Grants}) ->
+    Grants;
+acl_grants(#acl_v1{grants=Grants}) ->
+    Grants.
 
 %% @doc Iterate through a list of ACL grants and return
 %% any group grants.

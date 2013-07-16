@@ -1,8 +1,22 @@
-%% -------------------------------------------------------------------
+%% ---------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2011 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
 %%
-%% -------------------------------------------------------------------
+%% This file is provided to you under the Apache License,
+%% Version 2.0 (the "License"); you may not use this file
+%% except in compliance with the License.  You may obtain
+%% a copy of the License at
+%%
+%%   http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing,
+%% software distributed under the License is distributed on an
+%% "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+%% KIND, either express or implied.  See the License for the
+%% specific language governing permissions and limitations
+%% under the License.
+%%
+%% ---------------------------------------------------------------------
 
 %% @doc Riak Time Samples.
 
@@ -18,8 +32,7 @@
 %% When multiple samples for a time+postfix are stored, each is
 %% expressed as a sibling of the Riak object.  (TODO: compaction) It
 %% is therefore important to ensure that `allow_mult=true' is set for
-%% the bucket in which the samples are stored.  Use the {@link
-%% check_bucket_props/1} function to check and set this property.
+%% the bucket in which the samples are stored.
 
 %% The `Data' argument passed to {@link new_sample/6} is expected to
 %% be a proplist suitable for inclusion in the Mochijson2 structure
@@ -32,9 +45,7 @@
          find_samples/6,
          slice_containing/2,
          next_slice/2,
-         iso8601/1,
-         check_bucket_props/1,
-         check_bucket_props/2
+         iso8601/1
         ]).
 
 -include("rts.hrl").
@@ -184,56 +195,6 @@ iso8601({{Y,M,D},{H,I,S}}) ->
     iolist_to_binary(
       io_lib:format("~4..0b~2..0b~2..0bT~2..0b~2..0b~2..0bZ",
                     [Y, M, D, H, I, S])).
-
-%% @doc Attempt to check and set `allow_mult=true' on the named
-%% bucket.  A warning is printed in the logs if this operation fails.
--spec check_bucket_props(binary()) -> ok | {error, term()}.
-check_bucket_props(Bucket) ->
-    case riak_cs_utils:riak_connection() of
-        {ok, Riak} ->
-            try
-                check_bucket_props(Bucket, Riak)
-            after
-                riak_cs_utils:close_riak_connection(Riak)
-            end;
-        {error, Reason} ->
-            _ = lager:warning(
-                  "Unable to verify ~s bucket settings (~p).",
-                  [Bucket, Reason]),
-            {error, Reason}
-    end.
-
-check_bucket_props(Bucket, Riak) ->
-    case catch riakc_pb_socket:get_bucket(Riak, Bucket) of
-        {ok, Props} ->
-            case lists:keyfind(allow_mult, 1, Props) of
-                {allow_mult, true} ->
-                    _ = lager:debug("~s bucket was"
-                                    " already configured correctly.",
-                                    [Bucket]),
-                    ok;
-                _ ->
-                    case catch riakc_pb_socket:set_bucket(
-                           Riak, Bucket,
-                           [{allow_mult, true}]) of
-                        ok ->
-                            _ = lager:info("Configured ~s"
-                                           " bucket settings.",
-                                           [Bucket]),
-                            ok;
-                        {_error, Reason} ->
-                            _ = lager:warning("Unable to configure ~s"
-                                              " bucket settings (~p).",
-                                              [Bucket, Reason]),
-                            {error, Reason}
-                    end
-            end;
-        {_error, Reason} ->
-            _ = lager:warning(
-                  "Unable to verify ~s bucket settings (~p).",
-                  [Bucket, Reason]),
-            {error, Reason}
-    end.
 
 -ifdef(TEST).
 -ifdef(EQC).

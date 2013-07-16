@@ -1,10 +1,25 @@
-%% -------------------------------------------------------------------
+%% ---------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2012 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
 %%
-%% -------------------------------------------------------------------
+%% This file is provided to you under the Apache License,
+%% Version 2.0 (the "License"); you may not use this file
+%% except in compliance with the License.  You may obtain
+%% a copy of the License at
+%%
+%%   http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing,
+%% software distributed under the License is distributed on an
+%% "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+%% KIND, either express or implied.  See the License for the
+%% specific language governing permissions and limitations
+%% under the License.
+%%
+%% ---------------------------------------------------------------------
 
 %% @doc These functions are used by the riak-cs-gc command line script.
+
 -module(riak_cs_gc_console).
 
 -export([
@@ -74,6 +89,9 @@ resume() ->
 
 set_interval(undefined) ->
     output("Error: No interval value specified");
+set_interval(infinity) ->
+    output("The garbage collection interval was updated."),
+    riak_cs_gc_d:set_interval(infinity);
 set_interval(Interval) when is_integer(Interval) ->
     output("The garbage collection interval was updated."),
     riak_cs_gc_d:set_interval(Interval);
@@ -118,7 +136,7 @@ print_status(State, Details) ->
 
 print_state(idle) ->
     output("There is no garbage collection in progress");
-print_state(fetching_next_filest) ->
+print_state(fetching_next_fileset) ->
     output("A garbage collection batch is in progress");
 print_state(initiating_file_delete) ->
     output("A garbage collection batch is in progress");
@@ -170,5 +188,7 @@ human_time(Datetime)  -> rts:iso8601(Datetime).
 
 parse_interval_opts([]) ->
     undefined;
+parse_interval_opts(["infinity"]) ->
+    infinity;
 parse_interval_opts([Interval | _]) ->
     catch list_to_integer(Interval).

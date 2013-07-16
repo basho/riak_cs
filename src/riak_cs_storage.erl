@@ -1,8 +1,22 @@
-%% -------------------------------------------------------------------
+%% ---------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2011 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
 %%
-%% -------------------------------------------------------------------
+%% This file is provided to you under the Apache License,
+%% Version 2.0 (the "License"); you may not use this file
+%% except in compliance with the License.  You may obtain
+%% a copy of the License at
+%%
+%%   http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing,
+%% software distributed under the License is distributed on an
+%% "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+%% KIND, either express or implied.  See the License for the
+%% specific language governing permissions and limitations
+%% under the License.
+%%
+%% ---------------------------------------------------------------------
 
 %% @doc Tools for summing the storage a user has filled.
 
@@ -52,7 +66,7 @@ sum_bucket(Riak, Bucket) when is_list(Bucket) ->
 sum_bucket(Riak, Bucket) when is_binary(Bucket) ->
     FullBucket = riak_cs_utils:to_bucket_name(objects, Bucket),
     Query = [{map, {modfun, riak_cs_storage, object_size_map},
-              none, false},
+              [do_prereduce], false},
              {reduce, {modfun, riak_cs_storage, object_size_reduce},
               none, true}],
     case riakc_pb_socket:mapred(Riak, FullBucket, Query) of
@@ -71,11 +85,12 @@ object_size_map(Object, _, _) ->
         AllManifests = [ binary_to_term(V)
                          || V <- riak_object:get_values(Object) ],
         Resolved = riak_cs_manifest_resolution:resolve(AllManifests),
+        {MPparts, MPbytes} = count_multipart_parts(Resolved),
         case riak_cs_manifest_utils:active_manifest(Resolved) of
             {ok, ?MANIFEST{content_length=Length}} ->
-                [{1,Length}];
+                [{1 + MPparts, Length + MPbytes}];
             _ ->
-                []
+                [{MPparts, MPbytes}]
         end
     catch _:_ ->
             []
@@ -106,3 +121,17 @@ make_object(User, BucketList, SampleStart, SampleEnd) ->
 get_usage(Riak, User, Start, End) ->
     {ok, Period} = archive_period(),
     rts:find_samples(Riak, ?STORAGE_BUCKET, User, Start, End, Period).
+
+count_multipart_parts(Resolved) ->
+    lists:foldl(fun count_multipart_parts/2, {0, 0}, Resolved).
+
+count_multipart_parts({_UUID, M}, {MPparts, MPbytes} = Acc) ->
+    case {M?MANIFEST.state, proplists:get_value(multipart, M?MANIFEST.props)} of
+        {writing, MP} ->
+            Ps = MP?MULTIPART_MANIFEST.parts,
+            {MPparts + length(Ps),
+             MPbytes + lists:sum([P?PART_MANIFEST.content_length ||
+                                     P <- Ps])};
+        _ ->
+            Acc
+    end.

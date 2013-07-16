@@ -1,8 +1,22 @@
-%% -------------------------------------------------------------------
+%% ---------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2011 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
 %%
-%% -------------------------------------------------------------------
+%% This file is provided to you under the Apache License,
+%% Version 2.0 (the "License"); you may not use this file
+%% except in compliance with the License.  You may obtain
+%% a copy of the License at
+%%
+%%   http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing,
+%% software distributed under the License is distributed on an
+%% "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+%% KIND, either express or implied.  See the License for the
+%% specific language governing permissions and limitations
+%% under the License.
+%%
+%% ---------------------------------------------------------------------
 
 %% @doc The daemon that calculates Riak CS storage on the configured
 %% schedule.
@@ -22,6 +36,7 @@
 %% gen_fsm callbacks
 -export([init/1,
 
+         prepare/2,
          idle/2, idle/3,
          calculating/2, calculating/3,
          paused/2, paused/3,
@@ -47,8 +62,10 @@
           batch_count=0, %% count of users processed so far
           batch_skips=0, %% count of users skipped so far
           batch=[],      %% users left to process in this batch
-          recalc         %% recalculate a user's storage for this period?
+          recalc        %% recalculate a user's storage for this period?
          }).
+
+-type state() :: #state{}.
 
 %%%===================================================================
 %%% API
@@ -114,13 +131,12 @@ resume_batch() ->
 
 %% @doc Read the storage schedule and go to idle.
 init([]) ->
-    Schedule = read_storage_schedule(),
-    SchedState = schedule_next(#state{schedule=Schedule},
-                               calendar:universal_time()),
-    ok = rts:check_bucket_props(?STORAGE_BUCKET),
-    {ok, idle, SchedState}.
+    {ok, prepare, #state{}, 0}.
 
 %% Asynchronous events
+
+prepare(timeout, State) ->
+    try_prepare(State).
 
 %% @doc Transitions out of idle are all synchronous events
 idle(_, State) ->
@@ -245,6 +261,14 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
+
+-spec try_prepare(state()) -> {next_state, atom(), state()} |
+                              {next_state, atom(), state(), pos_integer()}.
+try_prepare(State) ->
+    Schedule = read_storage_schedule(),
+    SchedState = schedule_next(State#state{schedule=Schedule},
+                               calendar:universal_time()),
+    {next_state, idle, SchedState}.
 
 %% @doc The schedule will contain all valid times found in the
 %% configuration, and will be sorted in day order.
