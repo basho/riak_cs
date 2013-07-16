@@ -22,6 +22,7 @@
 -export([api_error/3,
          error_code_to_atom/1,
          error_response/5,
+         invalid_digest_response/3,
          respond/3,
          status_code/1]).
 
@@ -69,6 +70,22 @@ api_error({error, Reason}, RD, Ctx) ->
 
 error_response(StatusCode, _Code, _Message, RD, Ctx) ->
     {{halt, StatusCode}, RD, Ctx}.
+
+%% @TODO Figure out how this should actually be formatted
+invalid_digest_response(ContentMd5, RD, Ctx) ->
+    XmlDoc = {'Error',
+              [
+               {'Code', [error_code(invalid_digest)]},
+               {'Message', [error_message(invalid_digest)]},
+               {'Content-MD5', [ContentMd5]},
+               {'HostId', ["host-id"]}
+              ]},
+    Body = riak_cs_xml:export_xml([XmlDoc]),
+    UpdRD = wrq:set_resp_body(Body,
+                              wrq:set_resp_header("Content-Type",
+                                                  ?XML_TYPE,
+                                                  RD)),
+    {{halt, status_code(invalid_digest)}, UpdRD, Ctx}.
 
 %% @doc Convert an error code string into its corresponding atom
 -spec error_code_to_atom(string()) -> atom().
@@ -130,7 +147,10 @@ error_message(malformed_policy_action) -> "Policy has invalid action";
 error_message(malformed_policy_condition) -> "Policy has invalid condition";
 error_message(no_such_bucket_policy) -> "The bucket policy does not exist";
 error_message(no_such_upload) ->
-    "The specified upload does not exist. The upload ID may be invalid, or the upload may have been aborted or completed.";
+    "The specified upload does not exist. The upload ID may be invalid, "
+        "or the upload may have been aborted or completed.";
+error_message(invalid_digest) ->
+    "The Content-MD5 you specified was invalid.";
 error_message(bad_request) -> "Bad Request";
 error_message(invalid_argument) -> "Invalid Argument";
 error_message(unresolved_grant_email) -> "The e-mail address you provided does not match any account on record.";
@@ -162,6 +182,7 @@ error_code(malformed_policy_action) -> "MalformedPolicy";
 error_code(malformed_policy_condition) -> "MalformedPolicy";
 error_code(no_such_bucket_policy) -> "NoSuchBucketPolicy";
 error_code(no_such_upload) -> "NoSuchUpload";
+error_code(invalid_digest) -> "InvalidDigest";
 error_code(bad_request) -> "BadRequest";
 error_code(invalid_argument) -> "InvalidArgument";
 error_code(invalid_range) -> "InvalidRange";
@@ -201,6 +222,7 @@ status_code(malformed_policy_action) -> 400;
 status_code(malformed_policy_condition) -> 400;
 status_code(no_such_bucket_policy) -> 404;
 status_code(no_such_upload) -> 404;
+status_code(invalid_digest) -> 400;
 status_code(bad_request) -> 400;
 status_code(invalid_argument) -> 400;
 status_code(unresolved_grant_email) -> 400;
