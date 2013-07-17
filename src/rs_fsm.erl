@@ -678,7 +678,7 @@ gen_reply() ->
 
 prop_yoyo() ->
     ?FORALL(
-       {K, M, K_vec, M_vec}, gen_proto_reply_seq(),
+       {K, _M, K_vec, M_vec}, gen_proto_reply_seq(),
        begin
            FullSeq = make_reply_sequence(K_vec, M_vec),
            %% io:format("K: ~p ~p\n", [K, K_vec]),
@@ -687,7 +687,7 @@ prop_yoyo() ->
            NumOKs = length([x || {_, _, _, ok} <- FullSeq]),
            NumNotFs = length([x || {_, _, _, not_found} <- FullSeq]),
            _NumTOs = length([x || {_, _, _, timeout} <- FullSeq]),
-           Class = if NumOKs >= K ->
+           _Class = if NumOKs >= K ->
                            ok;
                       NumNotFs >= K ->
                            not_found;

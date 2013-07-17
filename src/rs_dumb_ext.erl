@@ -221,7 +221,7 @@ do_decode(Alg, BinSize, K, M, Ks, Ms, Dir, Exe) ->
     end.
     
 clean_up_dir(Dir) ->
-    TmpDir = filename:join(Dir, "bogus-name-for-ensure_dir"),
+    %% TmpDir = filename:join(Dir, "bogus-name-for-ensure_dir"),
     %% ok = filelib:ensure_dir(TmpDir),
     %% Files = filelib:wildcard(filename:join(Dir, "*")),
     %% [ok = file:delete(F) || F <- Files],
