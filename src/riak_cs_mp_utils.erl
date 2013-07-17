@@ -202,7 +202,7 @@ list_multipart_uploads(Bucket, {_Display, _Canon, CallerKeyId} = Caller,
                 HashBucket = riak_cs_utils:to_bucket_name(objects, Bucket),
                 case riakc_pb_socket:get_index(?PID(RiakcPid), HashBucket,
                                                Key2i, <<"1">>) of
-                    {ok, #index_results{keys=Names}} ->
+                    {ok, ?INDEX_RESULTS{keys=Names}} ->
                         MyCaller = case BucketOwnerP of
                                        true -> owner;
                                        _    -> CallerKeyId
