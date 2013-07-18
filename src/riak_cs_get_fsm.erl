@@ -308,8 +308,8 @@ waiting_chunks({chunk, Pid, {NextBlock, BlockReturnValue}},
     case BlockReturnValue of
         {error, _} = ErrorRes ->
             #state{bucket=Bucket, key=Key} = State,
-            lager:error("~p: Cannot get S3 ~p ~p block# ~p: ~p\n",
-                        [?MODULE, Bucket, Key, NextBlock, ErrorRes]),
+            _ = lager:error("~p: Cannot get S3 ~p ~p block# ~p: ~p\n",
+                            [?MODULE, Bucket, Key, NextBlock, ErrorRes]),
             %% Our terminate() will explicitly stop dependent processes,
             %% we don't need an abnormal exit to kill them for us.
             exit(normal);
