@@ -18,6 +18,21 @@
 %%
 %% ---------------------------------------------------------------------
 
+%% For excerpts from filelib.erl:
+%%
+%% Copyright Ericsson AB 1997-2011. All Rights Reserved.
+%%
+%% The contents of this file are subject to the Erlang Public License,
+%% Version 1.1, (the "License"); you may not use this file except in
+%% compliance with the License. You should have received a copy of the
+%% Erlang Public License along with this software. If not, it can be
+%% retrieved online at http://www.erlang.org/.
+%%
+%% Software distributed under the License is distributed on an "AS IS"
+%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+%% the License for the specific language governing rights and limitations
+%% under the License.
+
 %% @doc riak_fs2_backend: storage engine based on basic filesystem access
 %%
 %% Features:
@@ -240,6 +255,16 @@
 -define(MD_DELETED, <<"X-Riak-Deleted">>).
 -endif.
 
+%% From filelib.erl
+-define(HANDLE_ERROR(Expr),
+        try
+            Expr
+        catch
+            error:{badpattern,_}=UnUsUalVaRiAbLeNaMe ->
+                %% Get the stack backtrace correct.
+                erlang:error(UnUsUalVaRiAbLeNaMe)
+        end).
+
 -record(state, {
           dir        :: string(),
           block_size :: non_neg_integer(),
@@ -288,7 +313,7 @@ start(Partition, Config) ->
         {ConfigRoot, BlockSize, MaxBlocks, B1stPrefixLen, BDepth, KDepth} =
             parse_config_and_env(Config),
         Dir = filename:join([ConfigRoot,PartitionName]),
-        ok = filelib:ensure_dir(Dir),
+        ok = ef_ensure_dir(Dir),
         ok = create_or_sanity_check_version_file(Dir, BlockSize, MaxBlocks,
                                                  BDepth, KDepth),
 
@@ -338,7 +363,7 @@ get_object(<<?BLOCK_BUCKET_PREFIX, _/binary>> = Bucket,
     end;
 get_object(Bucket, Key, WantsBinary, State) ->
     File = location(State, Bucket, Key),
-    case filelib:is_file(File) of
+    case do_is_file(File) of
         false ->
             {error, not_found, State};
         true ->
@@ -401,7 +426,7 @@ put_object(<<?BLOCK_BUCKET_PREFIX, _/binary>> = Bucket,
     end;
 put_object(Bucket, PrimaryKey, _IndexSpecs, RObj, State) ->
     File = location(State, Bucket, PrimaryKey),
-    case filelib:ensure_dir(File) of
+    case ef_ensure_dir(File) of
         ok ->
             EncodedVal = serialize_term(RObj),
             case atomic_write(File, EncodedVal, State) of
@@ -428,11 +453,11 @@ delete(<<?BLOCK_BUCKET_PREFIX, _/binary>> = Bucket,
        _IndexSpecs, State) ->
     Key = convert_blocknum2key(UUID, BlockNum, State),
     File = location(State, Bucket, Key),
-    _ = file:delete(File),
+    _ = ef_delete(File),
     {ok, State};
 delete(Bucket, Key, _IndexSpecs, State) ->
     File = location(State, Bucket, Key),
-    case file:delete(File) of
+    case ef_delete(File) of
         ok -> {ok, State};
         {error, enoent} -> {ok, State};
         {error, Err} -> {error, Err, State}
@@ -510,10 +535,10 @@ drop(State=#state{dir=Dir}) ->
     %% 3. On restart, we must restart rm -rf on items that still exist.
     %%    (see start() func for this part).
     Dropped = dropped_name(Dir),
-    ok = file:rename(Dir, Dropped),
+    ok = ef_rename(Dir, Dropped),
     Cmd = io_lib:format("rm -rf ~s &", [Dropped]),
     _ = os:cmd(Cmd),
-    ok = filelib:ensure_dir(Dir),
+    ok = ef_ensure_dir(Dir),
     {ok, State}.
 
 dropped_name(Dir) ->
@@ -601,7 +626,7 @@ atomic_write(File, Val, State) ->
     FakeFile = File ++ ".tmpwrite",
     case write_file(FakeFile, pack_ondisk(Val, State)) of
         ok ->
-            file:rename(FakeFile, File);
+            ef_rename(FakeFile, File);
         X -> X
     end.
 
@@ -883,7 +908,7 @@ read_block(Bucket, RiakKey, UUID, BlockNum, State) ->
     Key = convert_blocknum2key(UUID, BlockNum, State),
     File = location(State, Bucket, Key),
     try
-        {ok, FI} = file:read_file_info(File),
+        {ok, FI} = ef_read_file_info(File),
         if FI#file_info.mode band ?TOMBSTONE_MODE_MARKER > 0 ->
                 make_tombstoned_0byte_obj(Bucket, RiakKey);
            true ->
@@ -964,7 +989,7 @@ put_block(Bucket, UUID, BlockNum, RObj, State) ->
 put_block_t_marker_check(Bucket, UUID, BlockNum, RObj, State) ->
     Key = convert_blocknum2key(UUID, BlockNum, State),
     File = location(State, Bucket, Key),
-    FI_perhaps = file:read_file_info(File),
+    FI_perhaps = ef_read_file_info(File),
     case FI_perhaps of
         {ok, FI} ->
             if FI#file_info.mode band ?TOMBSTONE_MODE_MARKER > 0 ->
@@ -982,7 +1007,7 @@ put_block_t_marker_check(Bucket, UUID, BlockNum, RObj, State) ->
 put_block_t_check(BlockNum, RObj, File, FI_perhaps, State) ->
     NewMode = fun(FI) ->
                       NewMode = FI#file_info.mode bor ?TOMBSTONE_MODE_MARKER,
-                      ok = file:change_mode(File, NewMode)
+                      ok = ef_change_mode(File, NewMode)
               end,
     case riak_object_is_deleted(RObj) of
         true ->
@@ -990,7 +1015,7 @@ put_block_t_check(BlockNum, RObj, File, FI_perhaps, State) ->
                 {ok, FI} ->
                     {ok = NewMode(FI), serialize_term(make_tombstoned_0byte_obj(RObj))};
                 {error, enoent} ->
-                    ok = filelib:ensure_dir(File),
+                    ok = ef_ensure_dir(File),
                     {ok, FH} = file:open(File, [write, raw]),
                     ok = file:close(FH),
                     {ok = NewMode(#file_info{mode = 8#600}), serialize_term(RObj)}
@@ -1029,7 +1054,7 @@ put_block3(BlockNum, RObj, File, FI_perhaps, State) ->
                         file:close(FH)
                 end;
             {error, enoent} ->
-                ok = filelib:ensure_dir(File),
+                ok = ef_ensure_dir(File),
                 put_block3(BlockNum, RObj, File, FI_perhaps, State);
             {error, _} = Error ->
                 Error
@@ -1051,7 +1076,7 @@ enumerate_chunks_in_file(Bucket, UUID, BlockBase,
                          #state{max_blocks=MaxBlocks} = State) ->
     Key = convert_blocknum2key(UUID, BlockBase, State),
     Path = location(State, Bucket, Key),
-    case file:read_file_info(Path) of
+    case ef_read_file_info(Path) of
         {error, _} ->
             [];
         {ok, FI} when FI#file_info.mode band ?TOMBSTONE_MODE_MARKER > 0 ->
@@ -1117,7 +1142,7 @@ make_version_path(Dir) ->
     Dir ++ "/.version.data".                    % Must hide name from globbing!
 
 make_version_file(File, BlockSize, MaxBlocks, BDepth, KDepth) ->
-    ok = filelib:ensure_dir(File),
+    ok = ef_ensure_dir(File),
     {ok, FH} = file:open(File, [write]),
     [ok = io:format(FH, "~p.\n", [X]) ||
         X <- [{backend, ?MODULE},
@@ -1271,7 +1296,7 @@ exec_stack_op({Bucket, Key} = BKey, FoldFun, Acc,
 
 %% Remember: all paths on the stack start with "/" but are not absolute.
 do_glob(Glob, Dir, #state{dir = PrefixDir}) ->
-    filelib:wildcard(Glob, PrefixDir ++ Dir).
+    ef_wildcard(Glob, PrefixDir ++ Dir).
 
 convert_blocknum2key(UUID, BlockNum, #state{max_blocks = MaxBlocks}) ->
     <<UUID/binary, ((BlockNum div MaxBlocks) * MaxBlocks):?BLOCK_FIELD_SIZE>>.
@@ -1381,7 +1406,7 @@ t3() ->
     Bucket = <<?BLOCK_BUCKET_PREFIX, "delme">>,
     K0 = <<0:(?UUID_BYTES*8), 0:?BLOCK_FIELD_SIZE>>,
     BlockSize = 10,                             % Too small!
-    V0 = <<42:((BlockSize+1)*8)>>,
+    V0 = <<42:((4321+BlockSize+1)*8)>>,
     O0 = riak_object:new(Bucket, K0, V0),
     os:cmd("rm -rf " ++ TestDir),
     {ok, S} = start(-1, [{data_root, TestDir},
@@ -1651,6 +1676,323 @@ find_rcs_bcsum(MD) ->
 find_md_usermeta(MD) ->
     dict:find(?MD_USERMETA, MD).
 
+%% file.erl and filelib.erl replacements
+%% filelib.erl code is subject to Ericsson et al. copyright.
+
+%% -spec ef_ensure_dir(Name) -> 'ok' | {'error', Reason} when
+%%       Name :: filename() | dirname(),
+%%       Reason :: file:posix().
+ef_ensure_dir("/") ->
+    ok;
+ef_ensure_dir(F) ->
+    Dir = filename:dirname(F),
+    case do_is_dir(Dir) of
+        true ->
+            ok;
+        false ->
+            ef_ensure_dir(Dir),
+            case ef_make_dir(Dir) of
+                {error,eexist}=EExist ->
+                    case do_is_dir(Dir) of
+                        true ->
+                            ok;
+                        false ->
+                            EExist
+                    end;
+                Err ->
+                    Err
+            end
+    end.
+
+do_is_dir(Dir) ->
+    case ef_read_file_info(Dir) of
+        {ok, #file_info{type=directory}} ->
+            true;
+        _ ->
+            false
+    end.
+
+do_is_file(Dir) ->
+    case ef_read_file_info(Dir) of
+        {ok, #file_info{type=regular}} ->
+            true;
+        {ok, #file_info{type=directory}} ->
+            true;
+        _ ->
+            false
+    end.
+
+ef_wildcard(Pattern, Cwd) when is_list(Pattern), (is_list(Cwd) or is_binary(Cwd)) ->
+    ?HANDLE_ERROR(do_wildcard(Pattern, Cwd)).
+
+do_wildcard(Pattern) when is_list(Pattern) ->
+    do_wildcard_comp(do_compile_wildcard(Pattern)).
+
+do_wildcard_comp({compiled_wildcard,{exists,File}}) ->
+    case ef_read_file_info(File) of
+        {ok,_} -> [File];
+        _ -> []
+    end;
+do_wildcard_comp({compiled_wildcard,[Base|Rest]}) ->
+    do_wildcard_1([Base], Rest).
+
+do_wildcard(Pattern, Cwd) when is_list(Pattern), (is_list(Cwd) or is_binary(Cwd)) ->
+    do_wildcard_comp(do_compile_wildcard(Pattern), Cwd).
+
+do_wildcard_comp({compiled_wildcard,{exists,File}}, Cwd) ->
+    case ef_read_file_info(filename:absname(File, Cwd)) of
+        {ok,_} -> [File];
+        _ -> []
+    end;
+do_wildcard_comp({compiled_wildcard,[current|Rest]}, Cwd0) ->
+    {Cwd,PrefixLen} = case filename:join([Cwd0]) of
+              Bin when is_binary(Bin) -> {Bin,byte_size(Bin)+1};
+              Other -> {Other,length(Other)+1}
+          end,          %Slash away redundant slashes.
+    [
+     if
+         is_binary(N) ->
+             <<_:PrefixLen/binary,Res/binary>> = N,
+             Res;
+         true ->
+             lists:nthtail(PrefixLen, N)
+     end || N <- do_wildcard_1([Cwd], Rest)];
+do_wildcard_comp({compiled_wildcard,[Base|Rest]}, _Cwd) ->
+    do_wildcard_1([Base], Rest).
+
+do_wildcard_1(Files, Pattern) ->
+    do_wildcard_2(Files, Pattern, []).
+
+do_wildcard_2([File|Rest], Pattern, Result) ->
+    do_wildcard_2(Rest, Pattern, do_wildcard_3(File, Pattern, Result));
+do_wildcard_2([], _, Result) ->
+    Result.
+
+do_wildcard_3(Base, [Pattern|Rest], Result) ->
+    case ef_list_dir(Base) of
+        {ok, Files0} ->
+            Files = lists:sort(Files0),
+            Matches = wildcard_4(Pattern, Files, Base, []),
+            do_wildcard_2(Matches, Rest, Result);
+        _ ->
+            Result
+    end;
+do_wildcard_3(Base, [], Result) ->
+    [Base|Result].
+
+wildcard_4(Pattern, [File|Rest], Base, Result) when is_binary(File) ->
+    case wildcard_5(Pattern, binary_to_list(File)) of
+        true ->
+            wildcard_4(Pattern, Rest, Base, [join(Base, File)|Result]);
+        false ->
+            wildcard_4(Pattern, Rest, Base, Result)
+    end;
+wildcard_4(Pattern, [File|Rest], Base, Result) ->
+    case wildcard_5(Pattern, File) of
+        true ->
+            wildcard_4(Pattern, Rest, Base, [join(Base, File)|Result]);
+        false ->
+            wildcard_4(Pattern, Rest, Base, Result)
+    end;
+wildcard_4(_Patt, [], _Base, Result) ->
+    Result.
+
+wildcard_5([question|Rest1], [_|Rest2]) ->
+    wildcard_5(Rest1, Rest2);
+wildcard_5([accept], _) ->
+    true;
+wildcard_5([star|Rest], File) ->
+    do_star(Rest, File);
+wildcard_5([{one_of, Ordset}|Rest], [C|File]) ->
+    case ordsets:is_element(C, Ordset) of
+        true  -> wildcard_5(Rest, File);
+        false -> false
+    end;
+wildcard_5([{alt, Alts}], File) ->
+    do_alt(Alts, File);
+wildcard_5([C|Rest1], [C|Rest2]) when is_integer(C) ->
+    wildcard_5(Rest1, Rest2);
+wildcard_5([X|_], [Y|_]) when is_integer(X), is_integer(Y) ->
+    false;
+wildcard_5([], []) ->
+    true;
+wildcard_5([], [_|_]) ->
+    false;
+wildcard_5([_|_], []) ->
+    false.
+
+do_compile_wildcard(Pattern) ->
+    {compiled_wildcard,compile_wildcard_1(Pattern)}.
+
+compile_wildcard_1(Pattern) ->
+    [Root|Rest] = filename:split(Pattern),
+    case filename:pathtype(Root) of
+        relative ->
+            compile_wildcard_2([Root|Rest], current);
+        _ ->
+            compile_wildcard_2(Rest, [Root])
+    end.
+
+compile_wildcard_2([Part|Rest], Root) ->
+    case compile_part(Part) of
+        Part ->
+            compile_wildcard_2(Rest, join(Root, Part));
+        Pattern ->
+            compile_wildcard_3(Rest, [Pattern,Root])
+    end;
+compile_wildcard_2([], Root) -> {exists,Root}.
+
+compile_wildcard_3([Part|Rest], Result) ->
+    compile_wildcard_3(Rest, [compile_part(Part)|Result]);
+compile_wildcard_3([], Result) ->
+    lists:reverse(Result).
+
+compile_part(Part) ->
+    compile_part(Part, false, []).
+
+compile_part_to_sep(Part) ->
+    compile_part(Part, true, []).
+
+compile_part([], true, _) ->
+    error(missing_delimiter);
+compile_part([$,|Rest], true, Result) ->
+    {ok, $,, lists:reverse(Result), Rest};
+compile_part([$}|Rest], true, Result) ->
+    {ok, $}, lists:reverse(Result), Rest};
+compile_part([$?|Rest], Upto, Result) ->
+    compile_part(Rest, Upto, [question|Result]);
+compile_part([$*], Upto, Result) ->
+    compile_part([], Upto, [accept|Result]);
+compile_part([$*|Rest], Upto, Result) ->
+    compile_part(Rest, Upto, [star|Result]);
+compile_part([$[|Rest], Upto, Result) ->
+    case compile_charset(Rest, ordsets:new()) of
+        {ok, Charset, Rest1} ->
+            compile_part(Rest1, Upto, [Charset|Result]);
+        error ->
+            compile_part(Rest, Upto, [$[|Result])
+    end;
+compile_part([${|Rest], Upto, Result) ->
+    case compile_alt(Rest) of
+        {ok, Alt} ->
+            lists:reverse(Result, [Alt]);
+        error ->
+            compile_part(Rest, Upto, [${|Result])
+    end;
+compile_part([X|Rest], Upto, Result) ->
+    compile_part(Rest, Upto, [X|Result]);
+compile_part([], _Upto, Result) ->
+    lists:reverse(Result).
+
+compile_charset([$]|Rest], Ordset) ->
+    compile_charset1(Rest, ordsets:add_element($], Ordset));
+compile_charset([$-|Rest], Ordset) ->
+    compile_charset1(Rest, ordsets:add_element($-, Ordset));
+compile_charset([], _Ordset) ->
+    error;
+compile_charset(List, Ordset) ->
+    compile_charset1(List, Ordset).
+
+compile_charset1([Lower, $-, Upper|Rest], Ordset) when Lower =< Upper ->
+    compile_charset1(Rest, compile_range(Lower, Upper, Ordset));
+compile_charset1([$]|Rest], Ordset) ->
+    {ok, {one_of, Ordset}, Rest};
+compile_charset1([X|Rest], Ordset) ->
+    compile_charset1(Rest, ordsets:add_element(X, Ordset));
+compile_charset1([], _Ordset) ->
+    error.
+
+compile_range(Lower, Current, Ordset) when Lower =< Current ->
+    compile_range(Lower, Current-1, ordsets:add_element(Current, Ordset));
+compile_range(_, _, Ordset) ->
+    Ordset.
+
+compile_alt(Pattern) ->
+    compile_alt(Pattern, []).
+
+compile_alt(Pattern, Result) ->
+    case compile_part_to_sep(Pattern) of
+        {ok, $,, AltPattern, Rest} ->
+            compile_alt(Rest, [AltPattern|Result]);
+        {ok, $}, AltPattern, Rest} ->
+            NewResult = [AltPattern|Result],
+            RestPattern = compile_part(Rest),
+            {ok, {alt, [Alt++RestPattern || Alt <- NewResult]}};
+        Pattern ->
+            error
+    end.
+
+join(current, File) -> File;
+join(Base, File) -> filename:join(Base, File).
+
+do_star(Pattern, [X|Rest]) ->
+    case wildcard_5(Pattern, [X|Rest]) of
+        true  -> true;
+        false -> do_star(Pattern, Rest)
+    end;
+do_star(Pattern, []) ->
+    wildcard_5(Pattern, []).
+
+do_alt([Alt|Rest], File) ->
+    case wildcard_5(Alt, File) of
+        true  -> true;
+        false -> do_alt(Rest, File)
+    end;
+do_alt([], _File) ->
+    false.
+
+ef_change_mode(Path, NewMode) ->
+    do_file_op(write_file_info, Path, #file_info{mode=NewMode}).
+
+ef_delete(File) ->
+    do_file_op(delete, File).
+
+ef_list_dir(File) ->
+    do_file_op(list_dir, File).
+
+ef_make_dir(Dir) ->
+    do_file_op(make_dir, Dir).
+
+ef_read_file_info(File) ->
+    do_file_op(read_file_info, File).
+
+ef_rename(Old, New) ->
+    do_file_op(rename, Old, New).
+
+do_file_op(FunName, Param1) ->
+    Port = get_efile_port(),
+    prim_file:FunName(Port, Param1).
+
+do_file_op(FunName, Param1, Param2) ->
+    Port = get_efile_port(),
+    prim_file:FunName(Port, Param1, Param2).
+
+get_efile_port() ->
+    Key = fs2_efile_port,
+    case get(Key) of
+        undefined ->
+            case prim_file_drv_open(efile, [binary]) of
+                {ok, Port} ->
+                    put(Key, Port),
+                    get_efile_port();
+                Err ->
+                    error_logger:error_msg("get_efile_port: ~p\n", [Err]),
+                    timer:sleep(1000),
+                    get_efile_port()
+            end;
+        Port ->
+            Port
+    end.
+
+prim_file_drv_open(Driver, Portopts) ->
+    try erlang:open_port({spawn, Driver}, Portopts) of
+        Port ->
+            {ok, Port}
+    catch
+        error:Reason ->
+            {error, Reason}
+    end.
+
 %% ===================================================================
 %% EUnit tests
 %% ===================================================================
@@ -1780,6 +2122,41 @@ create_or_sanity_test() ->
     after
         os:cmd("rm -rf ++ " ++ Dir)
     end.
+
+file_replacement_test() ->
+    Prefix0 = "file_replacement_test",
+    os:cmd("rm -rf ./" ++ Prefix0 ++ "*"),
+    Prefix = Prefix0 ++ "/",
+    ok = ef_make_dir(Prefix),
+
+    ok = ef_make_dir(Prefix ++ "dir1"),
+    ok = ef_ensure_dir(Prefix ++ "dir2/dir2b/dir2c/foo"),
+    {ok, _} = ef_read_file_info(Prefix ++ "dir1"),
+    {ok, _} = ef_read_file_info(Prefix ++ "dir2"),
+    {ok, _} = ef_read_file_info(Prefix ++ "dir2/dir2b"),
+    {ok, _} = ef_read_file_info(Prefix ++ "dir2/dir2b/dir2c"),
+    {error, enoent} = ef_read_file_info(Prefix ++ "dir2/dir2b/dir2c/X"),
+    P1 = Prefix ++ "dir1",
+    P2 = Prefix ++ "dir2",
+    [P1, P2] = ef_wildcard(Prefix ++ "*", "."),
+    ["dir1", "dir2"] = ef_wildcard("*", Prefix),
+
+    Content = <<"yo">>,
+    file:write_file(Prefix ++ "dir1/file1", Content),
+    {error, eexist} = ef_make_dir(Prefix ++ "dir1/file1"),
+    {ok, FI1 = #file_info{}} = ef_read_file_info(Prefix ++ "dir1/file1"),
+    OldMode = FI1#file_info.mode band 8#777,
+    ok = ef_rename(Prefix ++ "dir1/file1", Prefix ++ "dir1/file2"),
+    {error, enoent} = ef_rename(Prefix ++ "dir1/file1", Prefix ++ "dir1/file2"),
+    {ok, Content} = file:read_file(Prefix ++ "dir1/file2"),
+
+    NewMode = 8#333,
+    ok = ef_change_mode(Prefix ++ "dir1/file2", NewMode),
+    {ok, FI2 = #file_info{}} = ef_read_file_info(Prefix ++ "dir1/file2"),
+    true = (OldMode /= NewMode),
+    NewMode = FI2#file_info.mode band 8#777,
+
+    ok.
 
 -ifdef(EQC).
 
