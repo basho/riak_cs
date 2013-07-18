@@ -147,12 +147,13 @@ riak_config(ee, Backend) ->
 
 riak_oss_config(Backend) ->
     CSCurrent = rt_config:get(build_paths.cs_current),
+    AddPaths = filelib:wildcard(CSCurrent ++ "/dev/dev1/lib/riak_cs*/ebin"),
     [
      lager_config(),
      {riak_core,
       [{default_bucket_props, [{allow_mult, true}]}]},
      {riak_kv,
-      [{add_paths, [CSCurrent ++ "/dev/dev1/lib/riak_cs/ebin"]}] ++
+      [{add_paths, AddPaths}] ++
           backend_config(Backend)
       }
     ].
