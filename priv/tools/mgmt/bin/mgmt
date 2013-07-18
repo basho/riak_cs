@@ -1,0 +1,83 @@
+#!/usr/bin/env ruby
+require 'fog'
+require 'json'
+require 'gli'
+begin # XXX: Remove this begin/rescue before distributing your app
+require 'mgmt'
+rescue LoadError
+  STDERR.puts "In development, you need to use `bundle exec bin/mgmt` to run your app"
+  STDERR.puts "At install-time, RubyGems will make sure lib, etc. are in the load path"
+  STDERR.puts "Feel free to remove this message from bin/mgmt now"
+  exit 64
+end
+
+include GLI::App
+
+program_desc 'A simple CLI for Riak CS user management.'
+
+version Mgmt::VERSION
+
+# Global key-id flag
+desc 'Admin key-id'
+arg_name 'The key-id of the administrator'
+flag [:k,:key_id]
+
+# Global key-secret flag
+desc 'Admin key-secret'
+arg_name 'The key-secret of the administrator'
+flag [:s,:key_secret]
+
+desc 'Create a new user'
+arg_name 'name and email'
+command :create do |c|
+  c.action do |global_options,options,args|
+    name = args[0]
+    email = args[1]
+    response = $client.create_user(email, name)
+    puts JSON.generate(response.body)
+  end
+end
+
+# TODO: hide the secret keys by default, have an override switch
+# to force them to be printed.
+desc 'List the users in the system'
+arg_name 'Describe arguments to list here'
+command :list do |c|
+  c.action do |global_options,options,args|
+    response = $client.list_users
+    response.body.each do |u|
+      puts JSON.generate(u)
+    end
+  end
+end
+
+desc 'Describe edit here'
+arg_name 'Describe arguments to edit here'
+command :edit do |c|
+  c.action do |global_options,options,args|
+    puts "edit command ran"
+  end
+end
+
+pre do |global,command,options,args|
+  $client = Fog::RiakCS::Provisioning.new(:riakcs_access_key_id => global[:key_id],
+                                          :riakcs_secret_access_key => global[:key_secret],
+                                          :host => "s3.amazonaws.com",
+                                          :port => 80,
+                                          :connection_options => {:proxy => "http://localhost:8080"})
+  true
+end
+
+post do |global,command,options,args|
+  # Post logic here
+  # Use skips_post before a command to skip this
+  # block on that command only
+end
+
+on_error do |exception|
+  # Error logic here
+  # return false to skip default error handling
+  true
+end
+
+exit run(ARGV)

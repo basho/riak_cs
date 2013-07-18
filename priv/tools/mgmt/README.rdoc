@@ -1,0 +1,6 @@
+= mgmt
+
+Describe your project here
+
+:include:mgmt.rdoc
+
