@@ -45,8 +45,8 @@ test(UserConfig) ->
     %% object from the bucket until the bucket is empty again.
     delete_and_verify_objects(?TEST_BUCKET, Count1, UserConfig),
 
-    %% Put 100 objects in the bucket
-    Count2 = 100,
+    %% Put 2000 objects in the bucket
+    Count2 = 200,
     load_objects(?TEST_BUCKET, Count2, UserConfig),
 
     %% Successively list the buckets, verify the output, and delete an
@@ -125,7 +125,7 @@ load_objects(Bucket, Count, Config) ->
 load_objects(Bucket, Count, KeyPrefix, Config) ->
     [erlcloud_s3:put_object(Bucket,
                             KeyPrefix ++ integer_to_list(X),
-                            crypto:rand_bytes(1000),
+                            crypto:rand_bytes(100),
                             Config) || X <- lists:seq(1,Count)].
 
 verify_object_list(ObjList, ExpectedCount) ->
