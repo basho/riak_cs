@@ -1,0 +1,5 @@
+= mgmt
+
+Generate this with
+    mgmt rdoc
+After you have described your command line interface

@@ -40,7 +40,11 @@ init(Config) ->
     %% Check if authentication is disabled and
     %% set that in the context.
     AuthBypass = not proplists:get_value(admin_auth_enabled, Config),
-    {ok, #context{auth_bypass=AuthBypass}}.
+    Api = riak_cs_config:api(),
+    RespModule = riak_cs_config:response_module(Api),
+    {ok, #context{auth_bypass=AuthBypass,
+                  api=Api,
+                  response_module=RespModule}}.
 
 -spec service_available(term(), term()) -> {true, term(), term()}.
 service_available(RD, Ctx) ->
@@ -135,9 +139,10 @@ stream_users(Format, RiakPid, Boundary, Status) ->
 wait_for_users(Format, RiakPid, ReqId, Boundary, Status) ->
     receive
         {ReqId, {keys, UserIds}} ->
-            UserDocs = lists:flatten([user_doc(Format, RiakPid, binary_to_list(UserId), Status) ||
-                           UserId <- UserIds]),
-            Doc = users_doc(UserDocs, Format, Boundary),
+            FoldFun = user_fold_fun(RiakPid, Status),
+            Doc = users_doc(lists:foldl(FoldFun, [], UserIds),
+                            Format,
+                            Boundary),
             {Doc, fun() -> wait_for_users(Format, RiakPid, ReqId, Boundary, Status) end};
         {ReqId, done} ->
             {list_to_binary(["\r\n--", Boundary, "--"]), done};
@@ -147,36 +152,31 @@ wait_for_users(Format, RiakPid, ReqId, Boundary, Status) ->
 
 %% @doc Compile a multipart entity for a set of user documents.
 users_doc(UserDocs, xml, Boundary) ->
-    XmlDoc = riak_cs_xml:export_xml([{'Users', UserDocs}]),
     ["\r\n--",
      Boundary,
      "\r\nContent-Type: ", ?XML_TYPE, "\r\n\r\n",
-     XmlDoc];
+     riak_cs_xml:to_xml({users, UserDocs})];
 users_doc(UserDocs, json, Boundary) ->
     ["\r\n--",
      Boundary,
      "\r\nContent-Type: ", ?JSON_TYPE, "\r\n\r\n",
-     mochijson2:encode(UserDocs)].
+     riak_cs_json:to_json({users, UserDocs})].
 
-%% @doc Generate xml or json terms representing
-%% the information for a given user.
-user_doc(Format, RiakPid, UserId, Status) ->
-    case riak_cs_utils:get_user(UserId, RiakPid) of
-        {ok, {User, _}} when User?RCS_USER.status =:= Status;
-                             Status =:= undefined ->
-            case Format of
-                xml ->
-                    riak_cs_wm_utils:user_record_to_xml(User);
-                json ->
-                    riak_cs_wm_utils:user_record_to_json(User)
-            end;
-        {ok, _} ->
-            %% Status is defined and does not match the account status
-            [];
-        {error, Reason} ->
-            _ = lager:warning("Failed to fetch user record. KeyId: ~p"
-                          " Reason: ~p", [UserId, Reason]),
-            []
+%% @doc Return a fold function to retrieve and filter user accounts
+user_fold_fun(RiakPid, Status) ->
+    fun(UserId, Users) ->
+            case riak_cs_utils:get_user(binary_to_list(UserId), RiakPid) of
+                {ok, {User, _}} when User?RCS_USER.status =:= Status;
+                                     Status =:= undefined ->
+                    [User | Users];
+                {ok, _} ->
+                    %% Status is defined and does not match the account status
+                    Users;
+                {error, Reason} ->
+                    _ = lager:warning("Failed to fetch user record. KeyId: ~p"
+                                      " Reason: ~p", [UserId, Reason]),
+                    Users
+            end
     end.
 
 unique_id() ->

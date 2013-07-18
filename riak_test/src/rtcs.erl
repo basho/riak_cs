@@ -20,6 +20,7 @@
 -module(rtcs).
 -compile(export_all).
 -include_lib("eunit/include/eunit.hrl").
+-include_lib("erlcloud/include/erlcloud_aws.hrl").
 
 -import(rt, [join/2,
              wait_until_nodes_ready/1,
@@ -62,9 +63,9 @@ setup(NumNodes, Configs) ->
     rtcs:make_cluster(RiakNodes),
     rt:wait_until_ring_converged(RiakNodes),
     {AdminKeyId, AdminSecretKey} = setup_admin_user(NumNodes, Cfgs),
-    AdminConfig = rtcs:config(AdminKeyId,
-                              AdminSecretKey,
-                              rtcs:cs_port(hd(RiakNodes))),
+    AdminConfig = config(AdminKeyId,
+                         AdminSecretKey,
+                         rtcs:cs_port(hd(RiakNodes))),
     {AdminConfig, Nodes}.
 
 setup2x2() ->
@@ -566,6 +567,38 @@ create_user(Port, EmailAddr, Name) ->
     Id = binary_to_list(proplists:get_value(<<"id">>, JsonData)),
     {KeyId, KeySecret, Id}.
 
+update_user(UserConfig, Port, Resource, ContentType, UpdateDoc) ->
+    Date = httpd_util:rfc1123_date(),
+    Cmd="curl -s -X PUT -H 'Date: " ++ Date ++
+        "' -H 'Content-Type: " ++ ContentType ++
+        "' -H 'Authorization: " ++
+        make_authorization("PUT", Resource, ContentType, UserConfig, Date) ++
+        "' http://localhost:" ++ integer_to_list(Port) ++
+        Resource ++ " --data-binary " ++ UpdateDoc,
+    Delay = rt_config:get(rt_retry_delay),
+    Retries = rt_config:get(rt_max_wait_time) div Delay,
+    OutputFun = fun() -> os:cmd(Cmd) end,
+    Condition = fun(Res) -> Res /= [] end,
+    Output = wait_until(OutputFun, Condition, Retries, Delay),
+    lager:debug("Update user output=~p~n",[Output]),
+    Output.
+
+list_users(UserConfig, Port, Resource, ContentType) ->
+    Date = httpd_util:rfc1123_date(),
+    Cmd="curl -s -H 'Date: " ++ Date ++
+        "' -H 'Content-Type: " ++ ContentType ++
+        "' -H 'Authorization: " ++
+        make_authorization("GET", Resource, ContentType, UserConfig, Date) ++
+        "' http://localhost:" ++ integer_to_list(Port) ++
+        Resource,
+    Delay = rt_config:get(rt_retry_delay),
+    Retries = rt_config:get(rt_max_wait_time) div Delay,
+    OutputFun = fun() -> os:cmd(Cmd) end,
+    Condition = fun(Res) -> Res /= [] end,
+    Output = wait_until(OutputFun, Condition, Retries, Delay),
+    lager:debug("List users output=~p~n",[Output]),
+    Output.
+
 wait_until(_, _, 0, _) ->
     fail;
 wait_until(Fun, Condition, Retries, Delay) ->
@@ -576,3 +609,8 @@ wait_until(Fun, Condition, Retries, Delay) ->
         false ->
             wait_until(Fun, Condition, Retries-1, Delay)
     end.
+
+make_authorization(Method, Resource, ContentType, Config, Date) ->
+    StringToSign = [Method, $\n, [], $\n, ContentType, $\n, Date, $\n, Resource],
+    Signature = base64:encode_to_string(crypto:sha_mac(Config#aws_config.secret_access_key, StringToSign)),
+    lists:flatten(["AWS ", Config#aws_config.access_key_id, $:, Signature]).

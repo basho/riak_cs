@@ -1,0 +1,4 @@
+source 'https://rubygems.org'
+gem 'fog', :git => 'git://github.com/fog/fog.git', :ref => 'master'
+gem "pry"
+gemspec
