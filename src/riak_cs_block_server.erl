@@ -184,11 +184,11 @@ handle_cast({put_block, ReplyPid, Bucket, Key, UUID, BlockNumber, Value, BCSum},
                            {?USERMETA_KEY, Key},
                            {?USERMETA_BCSUM, BCSum}]),
     FailFun = fun(Error) ->
-                      lager:error("Put ~p ~p UUID ~p block ~p failed: ~p\n",
-                                  [Bucket, Key, UUID, BlockNumber, Error])
+                      _ = lager:error("Put ~p ~p UUID ~p block ~p failed: ~p\n",
+                                      [Bucket, Key, UUID, BlockNumber, Error])
               end,
     %% TODO: Handle put failure here.
-    ok = do_put_block(FullBucket, FullKey, undefined, Value, MD, RiakcPid, FailFun),
+    ok = do_put_block(FullBucket, FullKey, <<>>, Value, MD, RiakcPid, FailFun),
     riak_cs_put_fsm:block_written(ReplyPid, BlockNumber),
     dt_return(<<"put_block">>, [BlockNumber], [Bucket, Key]),
     {noreply, State};
@@ -283,11 +283,11 @@ do_get_block(ReplyPid, Bucket, Key, ClusterID, UUID, BlockNumber,
                             Retry(failure)
                     end;
                 {error, Other} ->
-                    lager:error("do_get_block: other error 2: ~p\n", [Other]),
+                    _ = lager:error("do_get_block: other error 2: ~p\n", [Other]),
                     Retry(failure)
             end;
         {error, Other} ->
-            lager:error("do_get_block: other error 1: ~p\n", [Other]),
+            _ = lager:error("do_get_block: other error 1: ~p\n", [Other]),
             Retry(failure)
     end.
 
@@ -407,29 +407,33 @@ find_md_usermeta(MD) ->
 resolve_block_object(RObj, RiakcPid) ->
     {{MD, Value}, NeedRepair} =
         riak_cs_utils:resolve_robj_siblings(riakc_obj:get_contents(RObj)),
-    if NeedRepair andalso is_binary(Value) ->
-            RBucket = riakc_obj:bucket(RObj),
-            RKey = riakc_obj:key(RObj),
-            S3Info = case find_md_usermeta(hd(riakc_obj:get_metadatas(RObj))) of
-                         {ok, Ps} ->
-                             Ps;
-                         error ->
-                             []
-                     end,
-            lager:info("Repairing riak ~p ~p for ~p\n",[RBucket, RKey, S3Info]),
-            Bucket = proplists:get_value(<<?USERMETA_BUCKET>>, S3Info),
-            Key = proplists:get_value(<<?USERMETA_KEY>>, S3Info),
-            VClock = riakc_obj:vclock(RObj),
-            FailFun = fun(Error) ->
-                          lager:error("Put S3 ~p ~p Riak ~p ~p failed: ~p\n",
-                                      [Bucket, Key, RBucket, RKey, Error])
-                      end,
-            do_put_block(RBucket, RKey, VClock, Value, MD, RiakcPid, FailFun);
-       NeedRepair andalso not is_binary(Value) ->
-            lager:error("All checksums fail: ~P\n", [RObj, 200]);
-       true ->
-            ok
-    end,
+    _ = if NeedRepair andalso is_binary(Value) ->
+                RBucket = riakc_obj:bucket(RObj),
+                RKey = riakc_obj:key(RObj),
+                [MD1|_] = riakc_obj:get_metadatas(RObj),
+                S3Info = case find_md_usermeta(MD1) of
+                             {ok, Ps} ->
+                                 Ps;
+                             error ->
+                                 []
+                         end,
+                _ = lager:info("Repairing riak ~p ~p for ~p\n",
+                               [RBucket, RKey, S3Info]),
+                Bucket = proplists:get_value(<<?USERMETA_BUCKET>>, S3Info),
+                Key = proplists:get_value(<<?USERMETA_KEY>>, S3Info),
+                VClock = riakc_obj:vclock(RObj),
+                FailFun =
+                    fun(Error) ->
+                         _ = lager:error("Put S3 ~p ~p Riak ~p ~p failed: ~p\n",
+                                         [Bucket, Key, RBucket, RKey, Error])
+                    end,
+                do_put_block(RBucket, RKey, VClock, Value, MD, RiakcPid,
+                             FailFun);
+           NeedRepair andalso not is_binary(Value) ->
+                _ = lager:error("All checksums fail: ~P\n", [RObj, 200]);
+           true ->
+                ok
+        end,
     if is_binary(Value) ->
             {ok, Value};
        true ->
@@ -449,7 +453,7 @@ do_put_block(FullBucket, FullKey, VClock, Value, MD, RiakcPid, FailFun) ->
             ok = riak_cs_stats:update_with_start(block_put, StartTime),
             ok;
         Else ->
-            FailFun(Else),
+            _ = FailFun(Else),
             Else
     end.
 

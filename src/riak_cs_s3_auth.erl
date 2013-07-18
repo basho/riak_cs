@@ -126,7 +126,7 @@ calculate_signature(KeyData, RD) ->
            Date,
            AmazonHeaders,
            Resource],
-    lager:debug("STS: ~p", [STS]),
+    _ = lager:debug("STS: ~p", [STS]),
     base64:encode_to_string(
       crypto:sha_mac(KeyData, STS)).
 
