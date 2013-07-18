@@ -19,33 +19,87 @@
 %% ---------------------------------------------------------------------
 
 %% @doc Module for riak_kv_yessir_backend callbacks to mimic CS-style storage
+%%
+%% Example of Riak "app.config", in the "riak_kv" application section:
+%% <pre>
+%% {storage_backend, riak_kv_yessir_backend},
+%% {yessir_aae_mode_encoding, constant_binary},
+%% {yessir_default_size, 2},
+%% {yessir_key_count, 5},
+%% {yessir_bucket_prefix_list, [
+%%   {<<"moss.users">>, {riak_cs_yessir_dummy, cb_moss_users}},
+%%   {<<"moss.buckets">>, {riak_cs_yessir_dummy, cb_moss_buckets}},
+%%   {<<"riak-cs-gc">>, {riak_cs_yessir_dummy, cb_not_found}},
+%%   {<<"0o:">>, {riak_cs_yessir_dummy, cb_object}},
+%%   {<<"0b:">>, {riak_cs_yessir_dummy, cb_block}}
+%%  ]},
+%% </pre>
+%%
+%% Where additional defaults can be overridden using the various
+%% yessir_dummy_* config items below, e.g.
+%% <pre>
+%% {yessir_dummy_display_name, "Dummy display name here"},
+%% </pre>
 
 -module(riak_cs_yessir_dummy).
 -compile(export_all).
 
+-define(TIMEKEY, yessir_dummy_time_key).
+
 default_num_buckets() ->
-    1.
+    speedy_default(yessir_dummy_num_buckets, 1).
 default_display_name() ->
-    "foobar".
+    speedy_default(yessir_dummy_display_name, "foobar").
 default_public_key() ->
-    "J2IP6WGUQ_FNGIAN9AFI".
+    speedy_default(yessir_dummy_public_key, "J2IP6WGUQ_FNGIAN9AFI").
 default_private_key() ->
-    "mbB-1VACNsrN0yLAUSpCFmXNNBpAC3X0lPmINA==".
+    speedy_default(yessir_dummy_private_key, "mbB-1VACNsrN0yLAUSpCFmXNNBpAC3X0lPmINA==").
 default_canonical_id() ->
-    "18983ba0e16e18a2b103ca16b84fad93d12a2fbed1c88048931fb91b0b844ad3".
+    speedy_default(yessir_dummy_canonical_id, "18983ba0e16e18a2b103ca16b84fad93d12a2fbed1c88048931fb91b0b844ad3").
 default_obj_size() ->
     %% 4*1024*1024 + 4.
-    80*1024*1024.
+    speedy_default(yessir_dummy_obj_size, 80*1024*1024).
 default_block_size() ->
-    1048576.
+    speedy_default(yessir_dummy_block_size, 1048576).
 default_acl() ->
+    speedy_default(yessir_dummy_acl,
     {acl_v2,{default_display_name(),
              default_canonical_id(),
              default_public_key()},
      [{{default_display_name(),
         default_canonical_id()},
        ['FULL_CONTROL']}],
-     {1370,310148,497003}}.
+     {1370,310148,497003}}).
+
+speedy_default(Key, Default) ->
+    case get({?TIMEKEY, Key}) of
+        undefined ->
+            ok;
+        LastTime ->
+            case timer:now_diff(os:timestamp(), LastTime) div 1000000 of
+                N when N > 60 ->
+                    erase(Key);
+                _N ->
+                    ok
+            end
+    end,
+    get_speedy_default(Key, Default).
+
+get_speedy_default(Key, Default) ->
+    case get(Key) of
+        undefined ->
+            Val = case application:get_env(riak_kv, Key) of
+                      undefined ->
+                          Default;
+                      {ok, X} ->
+                          X
+                  end,
+            put({?TIMEKEY, Key}, os:timestamp()),
+            put(Key, Val),
+            speedy_default(Key, Default);
+        Val ->
+            Val
+    end.
 
 get_memoized_checksum(Size) ->
     case whereis(?MODULE) of
@@ -83,7 +137,9 @@ run_memoized_server(D) ->
     end.
 
 my_md5(L) ->
-    crypto:md5_final(lists:foldl(fun(X, Ctx) -> crypto:md5_update(Ctx, X) end, crypto:md5_init(), L)).
+    crypto:md5_final(lists:foldl(fun(X, Ctx) ->
+                                         crypto:md5_update(Ctx, X)
+                                 end, crypto:md5_init(), L)).
 
 cb_moss_users(_Suffix, Bucket, Key) ->
     V = {rcs_user_v2,"foo bar",default_display_name(),"foobar@example.com",
@@ -94,12 +150,12 @@ cb_moss_users(_Suffix, Bucket, Key) ->
            "2013-05-02T19:57:03.000Z",{1367,524623,660302}, undefined} ||
              X <- lists:seq(1, default_num_buckets())],
          enabled},
-    make_riak_safe_obj(Bucket, Key, riak_object:to_binary(v0, V)).
+    riak_kv_yessir_backend:make_riak_safe_obj(Bucket, Key, riak_object:to_binary(v0, V)).
 
 cb_moss_buckets(_Suffix, Bucket, Key) ->
     V = list_to_binary(default_public_key()),
     Metas = [{<<"X-Moss-Acl">>, term_to_binary(default_acl())}],
-    make_riak_safe_obj(Bucket, Key, V, Metas).
+    riak_kv_yessir_backend:make_riak_safe_obj(Bucket, Key, V, Metas).
 
 cb_object(_Suffix, Bucket, Key) ->
     BlockSize = default_block_size(),
@@ -119,7 +175,7 @@ cb_object(_Suffix, Bucket, Key) ->
             [],undefined,undefined,undefined,undefined,
             default_acl(),
             [],undefined}}],
-    make_riak_safe_obj(Bucket, Key, riak_object:to_binary(v0, V)).
+    riak_kv_yessir_backend:make_riak_safe_obj(Bucket, Key, riak_object:to_binary(v0, V)).
 
 %% cb_block(_Suffix, _Bucket, _Key) ->
 %%     not_found.
@@ -133,14 +189,15 @@ cb_block(_Suffix, Bucket, Key) ->
             end,
     Bin = case get(Bytes) of
               undefined ->
-                  io:format("QQQ Bytes ~p\n", [Bytes]),
+                  io:format("DBG: ~p Caching checksum for Bytes ~p\n",
+                            [self(), Bytes]),
                   B = <<42:(Bytes*8)>>,
                   put(Bytes, B),
                   B;
               Else ->
                   Else
           end,
-    make_riak_safe_obj(Bucket, Key, Bin).
+    riak_kv_yessir_backend:make_riak_safe_obj(Bucket, Key, Bin).
 
 cb_not_found(_, _, _) ->
     not_found.
