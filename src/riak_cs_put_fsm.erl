@@ -155,7 +155,14 @@ init({{Bucket, Key, ContentLength, ContentType,
     %%    live.
     CallerRef = erlang:monitor(process, Caller),
 
-    UUID = druuid:v4(),
+    UUID = case application:get_env(riak_cs, yessir_backend_in_use) of
+               {ok, true} ->
+                   %% Use 5 random bytes at start, backchannel comms for rest
+                   <<UUIDa:5/binary, _/binary>> = erlang:md5([Bucket, Key]),
+                   <<UUIDa/binary, BlockSize:(3*8), ContentLength:(8*8)>>;
+               _ ->
+                   druuid:v4()
+           end,
     {ok, prepare, #state{bucket=Bucket,
                          key=Key,
                          block_size=BlockSize,
