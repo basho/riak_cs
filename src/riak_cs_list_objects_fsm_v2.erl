@@ -96,7 +96,7 @@
                             {stop, term(), state()}.
 
 -type continuation() :: binary() | 'undefined'.
--type list_objects_event() :: {ReqID :: reference(), {done, {continuation, continuation()}}} |
+-type list_objects_event() :: {ReqID :: reference(), {done, continuation()}} |
                               {ReqID :: reference(), {objects, list()}} |
                               {ReqID :: reference(), {error, term()}}.
 
@@ -148,7 +148,7 @@ waiting_object_list({ReqId, [{ok, ObjectList} | _]},
                                  object_buffer=ObjectBuffer}) ->
     NewStateData = State#state{object_buffer=ObjectBuffer ++ ObjectList},
     {next_state, waiting_object_list, NewStateData};
-waiting_object_list({ReqId, {done, {continuation, _Continuation}}}, State=#state{object_list_req_id=ReqId}) ->
+waiting_object_list({ReqId, {done, _Continuation}}, State=#state{object_list_req_id=ReqId}) ->
     handle_done(State);
 waiting_object_list({ReqId, {error, _Reason}=Error},
                     State=#state{object_list_req_id=ReqId}) ->
