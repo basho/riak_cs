@@ -45,7 +45,7 @@ test(UserConfig) ->
     %% object from the bucket until the bucket is empty again.
     delete_and_verify_objects(?TEST_BUCKET, Count1, UserConfig),
 
-    %% Put 2000 objects in the bucket
+    %% Put 200 objects in the bucket
     Count2 = 200,
     load_objects(?TEST_BUCKET, Count2, UserConfig),
 
