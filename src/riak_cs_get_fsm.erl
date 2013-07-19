@@ -408,7 +408,9 @@ read_blocks(#state{manifest=Manifest,
                    blocks_intransit=Intransit} = State) ->
     ClusterID = Manifest?MANIFEST.cluster_id,
     {UUID, Seq} = NextBlock,
-    riak_cs_block_server:get_block(ReaderPid, Bucket, Key, ClusterID, UUID, Seq),
+    BClass = riak_cs_lfs_utils:get_bclass(Manifest),
+    riak_cs_block_server:get_block(ReaderPid, Bucket, Key, ClusterID, UUID, Seq,
+                                   BClass),
     read_blocks(State#state{free_readers=RestFreeReaders,
                             blocks_order=BlocksOrder,
                             blocks_intransit=queue:in(NextBlock, Intransit)}).

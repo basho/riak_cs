@@ -103,13 +103,12 @@ handle_call(get_manifest, _From, #state{bucket=Bucket,
 handle_call(_Msg, _From, State) ->
     {reply, ok, State}.
 
-handle_cast({get_block, _From, _Bucket, _Key, UUID, BlockNumber}, State) ->
+handle_cast({get_block, _From, _Bucket, _Key, UUID, BlockNumber, _BClass}, State) ->
     send_fake_data(UUID, BlockNumber, State);
-handle_cast({get_block, _From, _Bucket, _Key, _ClusterID, UUID, BlockNumber}, State) ->
+handle_cast({get_block, _From, _Bucket, _Key, _ClusterID, UUID, BlockNumber, _BClass}, State) ->
     send_fake_data(UUID, BlockNumber, State);
 handle_cast(Event, State) ->
-    lager:warning("Received unknown cast event: ~p", [Event]),
-    {noreply, State}.
+    {stop, {?MODULE, unknown_event, Event}, State}.
 
 %% @doc @TODO
 -spec handle_info(term(), state()) ->

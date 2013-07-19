@@ -28,6 +28,7 @@
          block_name/3,
          block_name_to_term/1,
          block_size/0,
+         get_bclass/1,
          max_content_len/0,
          fetch_concurrency/0,
          put_concurrency/0,
@@ -83,6 +84,11 @@ block_size() ->
         {ok, BlockSize} ->
             BlockSize
     end.
+
+%% @doc Extract bucket bclass from manifest
+-spec get_bclass(lfs_manifest()) -> riak_cs_utils:bclass().
+get_bclass(?MANIFEST{props=Props}) ->
+    proplists:get_value(bclass, Props, v0).
 
 %% @doc Return the configured block size
 -spec max_content_len() -> pos_integer().
@@ -277,6 +283,7 @@ new_manifest(Bucket, FileName, UUID, ContentLength, ContentType, ContentMd5, Met
                    cluster_id()) -> lfs_manifest().
 new_manifest(Bucket, FileName, UUID, ContentLength, ContentType, ContentMd5, MetaData, BlockSize, Acl, Props, ClusterID) ->
     Blocks = ordsets:from_list(initial_blocks(ContentLength, BlockSize)),
+    BClass = calculate_bucket_class(ContentLength),
     ?MANIFEST{bkey={Bucket, FileName},
               uuid=UUID,
               state=writing,
@@ -287,7 +294,7 @@ new_manifest(Bucket, FileName, UUID, ContentLength, ContentType, ContentMd5, Met
               write_blocks_remaining=Blocks,
               metadata=MetaData,
               acl=Acl,
-              props=Props,
+              props=[{bclass, BClass}|Props],
               cluster_id=ClusterID}.
 
 %% @doc Remove a chunk from the
@@ -322,10 +329,21 @@ remove_delete_block(Manifest, Chunk) ->
 
 
 -spec chash_cs_keyfun({binary(), binary()}) -> binary().
-chash_cs_keyfun({<<?BLOCK_BUCKET_PREFIX, _/binary>> = Bucket,
-                 <<UUID:?UUID_BYTES/binary, BlockNum:?BLOCK_FIELD_SIZE>>}) ->
+chash_cs_keyfun({<<Prefix:3/binary, _/binary>> = Bucket,
+                 <<UUID:?UUID_BYTES/binary, BlockNum:?BLOCK_FIELD_SIZE>>})
+  when Prefix == ?BLOCK_BUCKET_PREFIX_V0;
+       Prefix == ?BLOCK_BUCKET_PREFIX_V1;
+       Prefix == ?BLOCK_BUCKET_PREFIX_V2 ->
     Contig = BlockNum div ?FS2_CONTIGUOUS_BLOCKS,
     chash:key_of({Bucket, <<UUID/binary, Contig:?BLOCK_FIELD_SIZE>>});
 chash_cs_keyfun({Bucket, Key}) ->
     %% Default object/ring hashing fun, direct passthrough of bkey.
     chash:key_of({Bucket, Key}).
+
+-spec calculate_bucket_class(integer()) -> 'v1' | 'v2'.
+calculate_bucket_class(ContentLength) ->
+    if ContentLength < 10*1024 ->
+            v1;
+       true ->
+            v2
+    end.

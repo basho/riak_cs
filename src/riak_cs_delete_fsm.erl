@@ -192,6 +192,7 @@ maybe_delete_blocks(State=#state{delete_blocks_remaining=[]}) ->
     State;
 maybe_delete_blocks(State=#state{bucket=Bucket,
                                  key=Key,
+                                 manifest=Manifest,
                                  free_deleters=FreeDeleters=[DeleterPid | _Rest],
                                  unacked_deletes=UnackedDeletes,
                                  delete_blocks_remaining=DeleteBlocksRemaining=
@@ -200,7 +201,8 @@ maybe_delete_blocks(State=#state{bucket=Bucket,
     NewDeleteBlocksRemaining = ordsets:del_element(BlockID, DeleteBlocksRemaining),
     {UUID, Seq} = BlockID,
     _ = lager:debug("Deleting block: ~p ~p ~p ~p", [Bucket, Key, UUID, Seq]),
-    riak_cs_block_server:delete_block(DeleterPid, Bucket, Key, UUID, Seq),
+    BClass = riak_cs_lfs_utils:get_bclass(Manifest),
+    riak_cs_block_server:delete_block(DeleterPid, Bucket, Key, UUID, Seq, BClass),
     NewFreeDeleters = ordsets:del_element(DeleterPid, FreeDeleters),
     maybe_delete_blocks(State#state{unacked_deletes=NewUnackedDeletes,
                                     free_deleters=NewFreeDeleters,

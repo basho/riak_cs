@@ -26,8 +26,10 @@
 %% druuid:v4() uses 16 bytes in raw form.
 -define(UUID_BYTES, 16).
 
--define(OBJECT_BUCKET_PREFIX, "0o:").       % Version # = 0
--define(BLOCK_BUCKET_PREFIX, "0b:").        % Version # = 0
+-define(OBJECT_BUCKET_PREFIX, <<"0o:">>).       % Version # = 0
+-define(BLOCK_BUCKET_PREFIX_V0, <<"0b:">>).     % Version # = 0
+-define(BLOCK_BUCKET_PREFIX_V1, <<"1b:">>).     % Version # = 1
+-define(BLOCK_BUCKET_PREFIX_V2, <<"2b:">>).     % Version # = 2
 
 %% Default maximum number of fixed-size chunks per on-disk file
 %% Overridden by 'fs2_backend_max_blocks_per_file' app env var.

@@ -224,7 +224,7 @@
                      (?VALSIZEFIELD div 8) +
                      (?CRCSIZEFIELD div 8)). % Differs from bitcask.hrl!
 -define(MAXVALSIZE, (1 bsl ?VALSIZEFIELD) - 1).
--define(TYPICAL_BUCKET_PREFIX_LEN, 3).  % To match ?BLOCK_BUCKET_PREFIX length
+-define(BUCKET_PREFIX_LEN, 3).  % To match ?BLOCK_BUCKET_PREFIX length
 
 %% !@#$!!@#$!@#$!@#$! Erlang's efile_drv does not support the sticky bit.
 %% So, we use something else: the setuid bit.
@@ -341,9 +341,12 @@ stop(_State) -> ok.
                      {ok, binary() | riak_object:riak_object(), state()} |
                      {ok, not_found, state()} |
                      {error, term(), state()}.
-get_object(<<?BLOCK_BUCKET_PREFIX, _/binary>> = Bucket,
+get_object(<<Prefix:?BUCKET_PREFIX_LEN/binary, _/binary>> = Bucket,
            <<UUID:?UUID_BYTES/binary, BlockNum:?BLOCK_FIELD_SIZE>> = Key,
-           WantsBinary, State) ->
+           WantsBinary, State)
+  when Prefix == ?BLOCK_BUCKET_PREFIX_V0;
+       Prefix == ?BLOCK_BUCKET_PREFIX_V1;
+       Prefix == ?BLOCK_BUCKET_PREFIX_V2 ->
     case read_block(Bucket, Key, UUID, BlockNum, State) of
         Bin when is_binary(Bin), WantsBinary == false ->
             try
@@ -409,9 +412,12 @@ put(Bucket, Key, IdxList, Val, State) ->
 -spec put_object(riak_object:bucket(), riak_object:key(), [index_spec()], riak_object:riak_object(), state()) ->
                  {{ok, state()}, EncodedVal::binary()} |
                  {{error, term()}, state()}.
-put_object(<<?BLOCK_BUCKET_PREFIX, _/binary>> = Bucket,
+put_object(<<Prefix:?BUCKET_PREFIX_LEN/binary, _/binary>> = Bucket,
            <<UUID:?UUID_BYTES/binary, BlockNum:?BLOCK_FIELD_SIZE>>,
-           _IndexSpecs, RObj, State) ->
+           _IndexSpecs, RObj, State)
+  when Prefix == ?BLOCK_BUCKET_PREFIX_V0;
+       Prefix == ?BLOCK_BUCKET_PREFIX_V1;
+       Prefix == ?BLOCK_BUCKET_PREFIX_V2 ->
     case resolve_robj_siblings(riak_object:get_contents(RObj)) of
         {{_MD, V} = MDV, _} when is_binary(V) ->
             RObj2 = case riak_object:get_values(RObj) of
@@ -448,9 +454,12 @@ put_object2(Bucket, UUID, BlockNum, RObj, State) ->
 -spec delete(riak_object:bucket(), riak_object:key(), [index_spec()], state()) ->
                     {ok, state()} |
                     {error, term(), state()}.
-delete(<<?BLOCK_BUCKET_PREFIX, _/binary>> = Bucket,
+delete(<<Prefix:?BUCKET_PREFIX_LEN/binary, _/binary>> = Bucket,
        <<UUID:?UUID_BYTES/binary, BlockNum:?BLOCK_FIELD_SIZE>>,
-       _IndexSpecs, State) ->
+       _IndexSpecs, State)
+  when Prefix == ?BLOCK_BUCKET_PREFIX_V0;
+       Prefix == ?BLOCK_BUCKET_PREFIX_V1;
+       Prefix == ?BLOCK_BUCKET_PREFIX_V2 ->
     Key = convert_blocknum2key(UUID, BlockNum, State),
     File = location(State, Bucket, Key),
     _ = ef_delete(File),
@@ -613,7 +622,7 @@ parse_config_and_env(Config) ->
                         ?FS2_CONTIGUOUS_BLOCKS
                 end,
     B1stPrefixLen = get_prop_or_env(
-                  b_1st_prefixlen, Config, riak_kv, ?TYPICAL_BUCKET_PREFIX_LEN),
+                  b_1st_prefixlen, Config, riak_kv, ?BUCKET_PREFIX_LEN),
     BDepth = get_prop_or_env(b_depth, Config, riak_kv, 2),
     KDepth = get_prop_or_env(k_depth, Config, riak_kv, 2),
     {ConfigRoot, BlockSize, MaxBlocks, B1stPrefixLen, BDepth, KDepth}.
@@ -1244,7 +1253,7 @@ exec_stack_op({glob_key_file, MidDir},  _FoldFun, Acc, State) ->
     {Ops, Acc};
 exec_stack_op({key_file, File},  _FoldFun, Acc, State) ->
     try
-        {<<?BLOCK_BUCKET_PREFIX, _/binary>> = Bucket,
+        {<<_Prefix:?BUCKET_PREFIX_LEN/binary, _/binary>> = Bucket,
          <<UUID:?UUID_BYTES/binary, BlockBase:?BLOCK_FIELD_SIZE>>} =
             location_to_bkey(File, State),
         BKeys = [{Bucket, <<UUID/binary, (BlockBase+Block):?BLOCK_FIELD_SIZE>>}
@@ -1317,7 +1326,7 @@ t0() ->
     %% accomodate the trailer, bad things happen.
     BlockSize = 22,
     TestDir = "./delme",
-    Bucket = <<?BLOCK_BUCKET_PREFIX, "delme">>,
+    Bucket = <<?BLOCK_BUCKET_PREFIX_V0:3/binary, "delme">>,
     K0 = <<0:(?UUID_BYTES*8), 0:?BLOCK_FIELD_SIZE>>,
     V0 = <<42:(BlockSize*8)>>,
     K1 = <<0:(?UUID_BYTES*8), 1:?BLOCK_FIELD_SIZE>>,
@@ -1336,7 +1345,7 @@ t0() ->
 t1() ->
     #t{} = #t{},
     TestDir = "./delme",
-    Bucket = <<?BLOCK_BUCKET_PREFIX, "delme">>,
+    Bucket = <<?BLOCK_BUCKET_PREFIX_V1:3/binary, "delme">>,
     K0 = <<0:(?UUID_BYTES*8), 0:?BLOCK_FIELD_SIZE>>,
     V0 = <<100:64>>,
     K1 = <<0:(?UUID_BYTES*8), 1:?BLOCK_FIELD_SIZE>>,
@@ -1371,9 +1380,9 @@ t1() ->
 t2() ->
     TestDir = "./delme",
     %% Scribble nonsense stuff for SLF temp debugging purposes
-    B1 = <<?BLOCK_BUCKET_PREFIX, "delme">>,
-    B2 = <<?BLOCK_BUCKET_PREFIX, "delme2">>,
-    B3 = <<?BLOCK_BUCKET_PREFIX, "delme22">>,
+    B1 = <<?BLOCK_BUCKET_PREFIX_V2:3/binary, "delme">>,
+    B2 = <<?BLOCK_BUCKET_PREFIX_V2:3/binary, "delme2">>,
+    B3 = <<?BLOCK_BUCKET_PREFIX_V2:3/binary, "delme22">>,
     os:cmd("rm -rf " ++ TestDir),
     BlockSize = base_ext_size() + 1024,
     {ok, S} = start(-1, [{data_root, TestDir},
@@ -1403,7 +1412,7 @@ t2() ->
 
 t3() ->
     TestDir = "./delme",
-    Bucket = <<?BLOCK_BUCKET_PREFIX, "delme">>,
+    Bucket = <<?BLOCK_BUCKET_PREFIX_V0:3/binary, "delme">>,
     K0 = <<0:(?UUID_BYTES*8), 0:?BLOCK_FIELD_SIZE>>,
     BlockSize = 10,                             % Too small!
     V0 = <<42:((4321+BlockSize+1)*8)>>,
@@ -1423,15 +1432,15 @@ t4() ->
 t4(SmallestBlock, BiggestBlock, BlocksPerFile, OrderFun)
   when SmallestBlock >= 0, SmallestBlock =< BiggestBlock ->
     TestDir = "./delme",
-    B1 = <<?BLOCK_BUCKET_PREFIX, "delme1">>,
-    B2 = <<?BLOCK_BUCKET_PREFIX, "delme2">>,
+    B1 = <<?BLOCK_BUCKET_PREFIX_V1:3/binary, "delme1">>,
+    B2 = <<?BLOCK_BUCKET_PREFIX_V1:3/binary, "delme2">>,
     TheTwoBs = [B1, B2],
     BlockSize = 4096,
     os:cmd("rm -rf " ++ TestDir),
     {ok, S} = start(-1, [{data_root, TestDir},
                          {block_size, BlockSize + base_ext_size()},
                          {max_blocks_per_file, BlocksPerFile}]),
-    Os = [riak_object:new(<<?BLOCK_BUCKET_PREFIX, "delme", Bp:8>>,
+    Os = [riak_object:new(<<?BLOCK_BUCKET_PREFIX_V1:3/binary, "delme", Bp:8>>,
                           <<0:(?UUID_BYTES*8), X:?BLOCK_FIELD_SIZE>>,
                           <<X:((BlockSize)*8)>>) ||
              Bp <- [$1, $2],
@@ -1473,7 +1482,7 @@ t4(SmallestBlock, BiggestBlock, BlocksPerFile, OrderFun)
     RestBlocks = 5,
     RestStatus =
         [begin
-             RestB = <<?BLOCK_BUCKET_PREFIX, "delme", Bp:8>>,
+             RestB = <<?BLOCK_BUCKET_PREFIX_V1:3/binary, "delme", Bp:8>>,
              %% Using X like for both UUID and block # will give us one
              %% file that's written in order, UUID=0, and the rest will be
              %% files written out of order.
@@ -1541,7 +1550,7 @@ t5() ->
                          {max_blocks_per_file, EndSeq - 2}]),
     true = is_empty(S),
 
-    Bs = [<<?BLOCK_BUCKET_PREFIX, X:32>> || X <- lists:seq(1, NumBuckets)],
+    Bs = [<<?BLOCK_BUCKET_PREFIX_V2:3/binary, X:32>> || X <- lists:seq(1, NumBuckets)],
     Os = [riak_object:new(B, <<UUID:(?UUID_BYTES*8), Seq:?BLOCK_FIELD_SIZE>>,
                           list_to_binary(["val ", integer_to_list(Seq)])) ||
              B <- Bs,
@@ -1592,7 +1601,7 @@ t6() ->
                          {max_blocks_per_file, EndSeq - 2}]),
     true = is_empty(S),
 
-    Bs = [<<?BLOCK_BUCKET_PREFIX, X:32>> || X <- lists:seq(1, NumBuckets)],
+    Bs = [<<?BLOCK_BUCKET_PREFIX_V0:3/binary, X:32>> || X <- lists:seq(1, NumBuckets)],
     Os = [riak_object:new(B, <<UUID:(?UUID_BYTES*8), Seq:?BLOCK_FIELD_SIZE>>,
                           list_to_binary(["val ", integer_to_list(Seq)])) ||
              B <- Bs,
@@ -2065,7 +2074,6 @@ t5_test() ->
 eqc_filter_delete(Bucket, Key, BKVs) ->
     try
         Extract = fun(B, K) ->
-                          <<?BLOCK_BUCKET_PREFIX, _/binary>> = B,
                           <<UUID:?UUID_BYTES/binary, _:?BLOCK_FIELD_SIZE>> = K,
                           {B, UUID}
                   end,
@@ -2164,11 +2172,12 @@ backend_eqc_fold_objects_transform(RObjs) ->
     [{BKey, riak_object:get_value(RObj)} || {BKey, RObj} <- RObjs].
 
 backend_eqc_filter_orddict_on_delete(
-                      <<?BLOCK_BUCKET_PREFIX, _/binary>> = DBucket,
+                      <<Prefix:3/binary, _/binary>> = DBucket,
                       <<DUUID:?UUID_BYTES/binary,
                         DBlockNum:?BLOCK_FIELD_SIZE>> = _DKey,
-                      Dict, Config) ->
-    %% backend_eqc deleted a key that uses our ?BLOCK_BUCKET_PREFIX + UUID
+                      Dict, Config)
+  when Prefix == ?BLOCK_BUCKET_PREFIX_V0 ->
+    %% backend_eqc deleted a key that uses our ?BLOCK_BUCKET_PREFIX_V0 + UUID
     %% scheme.  Filter out all other blocks that reside in the same file.
 
     {_ConfigRoot, BlockSize, MaxBlocks, B1stPrefixLen, BDepth, KDepth} =
@@ -2218,7 +2227,7 @@ backend_eqc_bucket_standard() ->
 
 backend_eqc_bucket_v1() ->
     ?LET(X, oneof([<<"v1_a">>, <<"v1_b">>]),
-         <<?BLOCK_BUCKET_PREFIX, X/binary>>).
+         <<?BLOCK_BUCKET_PREFIX_V0:3/binary, X/binary>>).
 
 backend_eqc_key_standard() ->
     oneof([<<"k1">>, <<"k2">>]).
@@ -2236,7 +2245,7 @@ basic_props_eqc() ->
 basic_props() ->
     [{data_root,  "test/fs-backend"},
      {block_size, 1024},
-     {b_1st_prefixlen, ?TYPICAL_BUCKET_PREFIX_LEN}].
+     {b_1st_prefixlen, ?BUCKET_PREFIX_LEN}].
 
 eqc_t4_wrapper(TestTime) ->
     eqc:quickcheck(eqc:testing_time(TestTime, prop_t4())).
@@ -2254,7 +2263,7 @@ eqc_test_() ->
          fun setup/0,
          fun cleanup/1,
          [
-          %% ?_assertEqual(?BLOCK_BUCKET_PREFIX,
+          %% ?_assertEqual(?BLOCK_BUCKET_PREFIX_V0,
           %%               backend_eqc:bucket_prefix_1()),
           %% ?_assertEqual(?UUID_BYTES,
           %%               backend_eqc:key_prefix_1()),
@@ -2330,7 +2339,7 @@ prop_nest_ordered() ->
 gen_bucket() ->
     ?LET(CharGen, oneof([$a, char()]),          % Limit to only $a's, sometimes
     ?LET({BPrefix, Bucket},
-         {vector(?TYPICAL_BUCKET_PREFIX_LEN, CharGen),
+         {vector(?BUCKET_PREFIX_LEN, CharGen),
           frequency([
                      {5, vector(3, CharGen)},
                      {5, non_empty(list(CharGen))}

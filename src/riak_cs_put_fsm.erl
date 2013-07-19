@@ -486,8 +486,10 @@ maybe_write_blocks(State=#state{buffer_queue=[ToWrite | RestBuffer],
     WriterPid = hd(ordsets:to_list(FreeWriters)),
     NewFreeWriters = ordsets:del_element(WriterPid, FreeWriters),
     NewUnackedWrites = ordsets:add_element(NextBlockID, UnackedWrites),
+    BClass = riak_cs_lfs_utils:get_bclass(Manifest),
 
-    riak_cs_block_server:put_block(WriterPid, Bucket, Key, UUID, NextBlockID, ToWrite),
+    riak_cs_block_server:put_block(WriterPid, Bucket, Key, UUID, NextBlockID,
+                                   BClass, ToWrite),
 
     maybe_write_blocks(State#state{buffer_queue=RestBuffer,
                                    free_writers=NewFreeWriters,
