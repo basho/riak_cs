@@ -201,10 +201,8 @@ handle_done(State=#state{object_buffer=ObjectBuffer,
                          common_prefixes=CommonPrefixes,
                          req=Request=?LOREQ{max_keys=UserMaxKeys}}) ->
     ObjectBufferLength = length(ObjectBuffer),
-    ProfilingStateData = update_profiling_state_with_end(State,
-                                                         os:timestamp(),
-                                                         ObjectBufferLength),
-    RangeUpdatedStateData = update_last_request_state(ProfilingStateData, ObjectBuffer),
+    RangeUpdatedStateData =
+    update_profiling_and_last_request(State, ObjectBuffer, ObjectBufferLength),
 
     FilteredObjects = exclude_key_from_state(State, ObjectBuffer),
     Manifests = [riak_cs_utils:manifests_from_riak_object(O) ||
@@ -216,12 +214,8 @@ handle_done(State=#state{object_buffer=ObjectBuffer,
     ObjectPrefixTuple2 =
     riak_cs_list_objects_utils:filter_prefix_keys(ObjectPrefixTuple, Request),
     ReachedEnd = ObjectBufferLength < NumKeysRequested,
-    Truncated = UserMaxKeys < riak_cs_list_objects_utils:manifests_and_prefix_length(ObjectPrefixTuple2) andalso
-                %% this is because (strangely) S3 returns `false' for
-                %% `isTruncted' if `max-keys=0', even if there are more keys.
-                %% The `Ceph' tests were nice to find this.
-                UserMaxKeys =/= 0,
 
+    Truncated = truncated(UserMaxKeys, ObjectPrefixTuple2),
     SlicedTaggedItems =
     riak_cs_list_objects_utils:manifests_and_prefix_slice(ObjectPrefixTuple2,
                                                           UserMaxKeys),
@@ -233,16 +227,29 @@ handle_done(State=#state{object_buffer=ObjectBuffer,
                                                common_prefixes=NewPrefixes,
                                                reached_end_of_keyspace=ReachedEnd,
                                                object_buffer=[]},
-    case enough_results(NewStateData) of
+    respond(NewStateData, NewManis, NewPrefixes, Truncated).
+
+-spec update_profiling_and_last_request(state(), list(), integer()) ->
+    state().
+update_profiling_and_last_request(State, ObjectBuffer, ObjectBufferLength) ->
+    State2 = update_profiling_state_with_end(State, os:timestamp(),
+                                             ObjectBufferLength),
+    update_last_request_state(State2, ObjectBuffer).
+
+-spec respond(state(), list(), ordsets:ordset(), boolean()) ->
+    fsm_state_return().
+respond(StateData=#state{req=Request},
+        Manifests, Prefixes, Truncated) ->
+    case enough_results(StateData) of
         true ->
             Response =
             response_from_manifests_and_common_prefixes(Request,
                                                         Truncated,
-                                                        {NewManis, NewPrefixes}),
-            try_reply({ok, Response}, NewStateData);
+                                                        {Manifests, Prefixes}),
+            try_reply({ok, Response}, StateData);
         false ->
-            RiakcPid = NewStateData#state.riakc_pid,
-            case make_2i_request(RiakcPid, NewStateData) of
+            RiakcPid = StateData#state.riakc_pid,
+            case make_2i_request(RiakcPid, StateData) of
                 {NewStateData2, {ok, ReqId}} ->
                     {next_state, waiting_object_list,
                      NewStateData2#state{object_list_req_id=ReqId}};
@@ -250,6 +257,14 @@ handle_done(State=#state{object_buffer=ObjectBuffer,
                     try_reply(Error, NewStateData2)
             end
     end.
+
+-spec truncated(non_neg_integer(), {list(), ordsets:ordset()}) -> boolean().
+truncated(NumKeysRequested, ObjectsAndPrefixes) ->
+    NumKeysRequested < riak_cs_list_objects_utils:manifests_and_prefix_length(ObjectsAndPrefixes) andalso
+    %% this is because (strangely) S3 returns `false' for
+    %% `isTruncted' if `max-keys=0', even if there are more keys.
+    %% The `Ceph' tests were nice to find this.
+    NumKeysRequested =/= 0.
 
 enough_results(#state{req=?LOREQ{max_keys=UserMaxKeys},
                       reached_end_of_keyspace=EndOfKeyspace,
@@ -296,32 +311,39 @@ last_result_is_common_prefix(#state{object_list_ranges=Ranges,
 
 -spec key_is_common_prefix(binary(), list_object_request()) ->
     boolean().
-%% TODO: please refactor this
 key_is_common_prefix(_Key, ?LOREQ{delimiter=undefined}) ->
     false;
 key_is_common_prefix(Key, ?LOREQ{prefix=Prefix,
                                  delimiter=Delimiter}) ->
     case Prefix of
         undefined ->
-            case binary:match(Key, [Delimiter]) of
+            handle_undefined_prefix(Key, Delimiter);
+        _Prefix ->
+            handle_prefix(Key, Prefix, Delimiter)
+    end.
+
+-spec handle_undefined_prefix(binary(), binary()) -> boolean().
+handle_undefined_prefix(Key, Delimiter) ->
+    case binary:match(Key, [Delimiter]) of
+        nomatch ->
+            false;
+        _Match ->
+            true
+    end.
+
+-spec handle_prefix(binary(), binary(), binary()) -> boolean().
+handle_prefix(Key, Prefix, Delimiter) ->
+    PrefixLen = byte_size(Prefix),
+    case Key of
+        <<Prefix:PrefixLen/binary, Rest/binary>> ->
+            case binary:match(Rest, [Delimiter]) of
                 nomatch ->
                     false;
                 _Match ->
                     true
             end;
-        _Prefix ->
-            PrefixLen = byte_size(Prefix),
-            case Key of
-                <<Prefix:PrefixLen/binary, Rest/binary>> ->
-                    case binary:match(Rest, [Delimiter]) of
-                        nomatch ->
-                            false;
-                        _Match ->
-                            true
-                    end;
-                _NoPrefix ->
-                    false
-            end
+        _NoPrefix ->
+            false
     end.
 
 -spec make_start_key(state()) -> binary().
