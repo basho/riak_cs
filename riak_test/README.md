@@ -5,13 +5,9 @@
     * Riak EE
     * Riak CS
     * Stanchion
-
-    **NOTE:** Currently you must use `stagedevrel` builds for
-      `riak_cs` so that the `riak` or `riak_ee` nodes have the correct
-      path to find the `riak_cs_kv_multibackend` module.
 1. Setup a `~/.riak_test.config` file like this:
 
-    <pre>
+```erlang
     {default, [
            {rt_max_wait_time, 180000},
            {rt_retry_delay, 1000}
@@ -32,11 +28,11 @@
         ]}.
 
     {rt_cs_dev, [
+         {rt_project, "riak_cs"},
          {rt_deps, [
                     "/Users/kelly/basho/riak_test_builds/riak/deps",
                     "/Users/kelly/basho/riak_test_builds/riak_cs/deps",
-                    "/Users/kelly/basho/riak_test_builds/stanchion/deps",
-                    "deps"
+                    "/Users/kelly/basho/riak_test_builds/stanchion/deps"
                    ]},
          {rt_retry_delay, 500},
          {rt_harness, rt_cs_dev},
@@ -49,21 +45,22 @@
                         {stanchion_root, "/Users/kelly/rt/stanchion"},
                         {stanchion_current, "/Users/kelly/rt/stanchion/current"}
                        ]},
+         {test_paths, ["/Users/kelly/basho/riak_test_builds/riak_cs/riak_test/ebin"]},
          {src_paths, [{cs_src_root, "/Users/kelly/basho/riak_test_builds/riak_cs"}]},
          {build_type, oss},
          {backend, {multi_backend, bitcask}}
         ]}.
-    </pre>
+```
 
 Running the RiakCS tests for `riak_test` use a different test harness
 (`rt_cs_dev`) than running the Riak tests and so requires a separate
-configuration section.  Notice the extra `riak_ee/deps`,
-`riak_cs/deps` and `stanchion/deps` in the `rt_deps`
-section. `RT_DEST_DIR` should be replaced by the path used when
-setting up `riak_test` builds for Riak (by default
-`$HOME/rt/riak`). The same should be done for `RTEE_DEST_DIR` (default
-`$HOME/rt/riak_ee`), `RTCS_DEST_DIR` (default `$HOME/rt/riak_cs`) and
-`RTSTANCHION_DEST_DIR` (default `$HOME/rt/stanchion`).
+configuration section. Notice the extra `riak_ee/deps`, `riak_cs/deps`
+and `stanchion/deps` in the `rt_deps` section. `RT_DEST_DIR` should be
+replaced by the path used when setting up `riak_test` builds for Riak
+(by default `$HOME/rt/riak`). The same should be done for
+`RTEE_DEST_DIR` (default `$HOME/rt/riak_ee`), `RTCS_DEST_DIR` (default
+`$HOME/rt/riak_cs`) and `RTSTANCHION_DEST_DIR` (default
+`$HOME/rt/stanchion`).
 
 The `build_type` option is used to differentiate between an
 open-source (`oss`) build of RiakCS and the enterprise version (`ee`).
@@ -76,12 +73,17 @@ should be used. The valid options are `{multi_backend, bitcask}` and
 represents the default recommended backed for production use of
 RiakCS.
 
+The `test_paths` option is a list of fully-qualified paths which
+`riak_test` will use to find additional tests. Since the Riak CS tests
+do not live inside the `riak_test` repository and escript, this should
+point to the compiled tests in `riak_cs/riak_test/ebin`.
+
 1. To build the `riak_test` files use the `compile-riak-test` Makefile
-target or run `./rebar riak_test_compile`.
+   target or run `./rebar riak_test_compile`.
 
 1. The Riak client tests are now automated by the
-`tests/external_client_tests.erl` test.  There are several
-prerequisites:
+   `tests/external_client_tests.erl` test.  There are several
+    prerequisites:
 
 * Your $PATH must have `erl` available.
 * Your $PATH must have a version of Python available that also has
@@ -102,6 +104,6 @@ commands `make clean-client-test` and then `make compile-client-test`.
 
 1. To execute a test, run the following from the `riak_test` repo:
 
-    ```
-    ./riak_test -c rt_cs_dev -d <PATH-TO-RIAK-CS-REPO>/riak_test/ebin/ -v
+    ```shell
+    ./riak_test -c rt_cs_dev -t TEST_NAME
     ```
