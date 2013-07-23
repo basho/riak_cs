@@ -76,7 +76,8 @@
          to_bucket_name/2,
          update_key_secret/1,
          update_obj_value/2,
-         pid_to_binary/1]).
+         pid_to_binary/1,
+         update_user/3]).
 
 -include("riak_cs.hrl").
 -include_lib("riak_pb/include/riak_pb_kv_codec.hrl").
@@ -278,10 +279,12 @@ create_credentialed_user({error, _}=Error, _User) ->
     Error;
 create_credentialed_user({ok, AdminCreds}, User) ->
     {StIp, StPort, StSSL} = stanchion_data(),
-    UserDoc = user_json(User),
     %% Make a call to the user request serialization service.
-    Result = velvet:create_user(StIp, StPort, "application/json", UserDoc,
-        [{ssl, StSSL}, {auth_creds, AdminCreds}]),
+    Result = velvet:create_user(StIp,
+                                StPort,
+                                "application/json",
+                                binary_to_list(riak_cs_json:to_json(User)),
+                                [{ssl, StSSL}, {auth_creds, AdminCreds}]),
     handle_create_user(Result, User).
 
 handle_create_user(ok, User) ->
@@ -295,6 +298,39 @@ handle_create_user({error, {error_status, _, _, ErrorDoc}}, _User) ->
     end;
 handle_create_user({error, _}=Error, _User) ->
     Error.
+
+handle_update_user(ok, User, UserObj, RiakPid) ->
+    _ = save_user(User, UserObj, RiakPid),
+    {ok, User};
+handle_update_user({error, {error_status, _, _, ErrorDoc}}, _User, _, _) ->
+    case riak_cs_config:api() of
+        s3 ->
+            riak_cs_s3_response:error_response(ErrorDoc);
+        oos ->
+            {error, ErrorDoc}
+    end;
+handle_update_user({error, _}=Error, _User, _, _) ->
+    Error.
+
+%% @doc Update a Riak CS user record
+-spec update_user(rcs_user(), riakc_obj:riakc_obj(), pid()) ->
+                         {ok, rcs_user()} | {error, term()}.
+update_user(User, UserObj, RiakPid) ->
+    {StIp, StPort, StSSL} = stanchion_data(),
+    case riak_cs_config:admin_creds() of
+        {ok, AdminCreds} ->
+            Options = [{ssl, StSSL}, {auth_creds, AdminCreds}],
+            %% Make a call to the user request serialization service.
+            Result = velvet:update_user(StIp,
+                                        StPort,
+                                        "application/json",
+                                        User?RCS_USER.key_id,
+                                        binary_to_list(riak_cs_json:to_json(User)),
+                                        Options),
+            handle_update_user(Result, User, UserObj, RiakPid);
+        {error, _}=Error ->
+            Error
+    end.
 
 %% @doc Delete a bucket
 -spec delete_bucket(rcs_user(), riakc_obj:riakc_obj(), binary(), pid()) ->
@@ -1298,26 +1334,6 @@ serialized_bucket_op(Bucket, ACL, User, UserObj, BucketOp, StatName, RiakPid) ->
         {error, Reason1} ->
             {error, Reason1}
     end.
-
-%% @doc Generate a JSON document to use for a user
-%% creation request.
--spec user_json(rcs_user()) -> string().
-user_json(User) ->
-    ?RCS_USER{name=UserName,
-               display_name=DisplayName,
-               email=Email,
-               key_id=KeyId,
-               key_secret=Secret,
-               canonical_id=CanonicalId} = User,
-    binary_to_list(
-      iolist_to_binary(
-        mochijson2:encode({struct, [{<<"email">>, list_to_binary(Email)},
-                                    {<<"display_name">>, list_to_binary(DisplayName)},
-                                    {<<"name">>, list_to_binary(UserName)},
-                                    {<<"key_id">>, list_to_binary(KeyId)},
-                                    {<<"key_secret">>, list_to_binary(Secret)},
-                                    {<<"canonical_id">>, list_to_binary(CanonicalId)}
-                                   ]}))).
 
 %% @doc Validate an email address.
 -spec validate_email(string()) -> ok | {error, term()}.
