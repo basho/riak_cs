@@ -18,35 +18,35 @@
 %%
 %% ---------------------------------------------------------------------
 
--module(riak_cs_list_objects_fsm_test).
-
--compile(export_all).
+-module(riak_cs_list_objects_utils_test).
 
 -ifdef(TEST).
+
+-compile(export_all).
 
 -include("riak_cs.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
-%% Tests for `riak_cs_list_objects_fsm:filter_prefix_keys/3'
+%% Tests for `riak_cs_list_objects_utils:filter_prefix_keys/2'
 
 filter_prefix_keys_test_() ->
     [
         %% simple test
         test_creator(riak_cs_list_objects:new_request(<<"bucket">>),
-                     {keys_and_manifests(), []}),
+                     {manifests(), []}),
 
         %% simple prefix
         test_creator(riak_cs_list_objects:new_request(<<"bucket">>,
                                                       1000,
                                                       [{prefix, <<"a">>}]),
-                     {keys_and_manifests([<<"a">>]), []}),
+                     {manifests([<<"a">>]), []}),
 
         %% simple prefix 2
         test_creator(riak_cs_list_objects:new_request(<<"bucket">>,
                                                       1000,
                                                       [{prefix, <<"photos/">>}]),
-                     {lists:sublist(keys_and_manifests(), 4,
-                      length(keys_and_manifests())), []}),
+                     {lists:sublist(manifests(), 4,
+                      length(manifests())), []}),
 
         %% prefix and delimiter
         test_creator(riak_cs_list_objects:new_request(<<"bucket">>,
@@ -68,19 +68,19 @@ filter_prefix_keys_test_() ->
         test_creator(riak_cs_list_objects:new_request(<<"bucket">>,
                                                       1000,
                                                       [{delimiter, <<"/">>}]),
-                     {keys_and_manifests([<<"a">>, <<"b">>, <<"c">>]),
+                     {manifests([<<"a">>, <<"b">>, <<"c">>]),
                       [<<"photos/">>]})
     ].
 
 %% Test creator
 
 test_creator(Request, Expected) ->
-    test_creator(keys_and_manifests(), Request, Expected).
+    test_creator(manifests(), Request, Expected).
 
-test_creator(Keys, Request, Expected) ->
+test_creator(Manifests, Request, Expected) ->
     fun () ->
             Result =
-                riak_cs_list_objects_fsm:filter_prefix_keys(Keys, [], Request),
+            riak_cs_list_objects_utils:filter_prefix_keys({Manifests, []}, Request),
             ?assertEqual(two_tuple_sort(Expected),
                          two_tuple_sort(Result))
     end.
@@ -91,11 +91,11 @@ two_tuple_sort({A, B}) ->
     {lists:sort(A),
      lists:sort(B)}.
 
-keys_and_manifests() ->
-    keys_and_manifests(keys()).
+manifests() ->
+    manifests(keys()).
 
-keys_and_manifests(Items) ->
-    [{K, fake_manifest} || K <- Items].
+manifests(Keys) ->
+    [?MANIFEST{bkey={<<"bucket">>, Key}} || Key <- Keys].
 
 keys() ->
     [<<"a">>, <<"b">>, <<"c">>, <<"photos/01/foo">>, <<"photos/01/bar">>,

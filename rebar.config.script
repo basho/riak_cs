@@ -65,7 +65,7 @@ case UseEEDeps of
                 file:write_file("pkg.vars.config", Bytes),
                 EE_DEPS =
                     [
-                     {riak_repl_pb_api,".*",{git,"git@github.com:basho/riak_repl_pb_api.git", {tag, "0.2.2"}}}
+                     {riak_repl_pb_api,".*",{git,"git@github.com:basho/riak_repl_pb_api.git", {tag, "0.2.3"}}}
                     ],
                 lists:keyreplace(deps, 1, CONFIG, {deps, Deps ++ EE_DEPS});
             _ ->
