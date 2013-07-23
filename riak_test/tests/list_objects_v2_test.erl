@@ -18,15 +18,14 @@
 %%
 %% ---------------------------------------------------------------------
 
--module(list_objects_test).
+-module(list_objects_v2_test).
 
 %% @doc Integration test for list the contents of a bucket
 
 -export([confirm/0]).
--include_lib("eunit/include/eunit.hrl").
-
--define(TEST_BUCKET, "riak-test-bucket").
 
 confirm() ->
-    {UserConfig, {_RiakNodes, _CSNodes, _Stanchion}} = rtcs:setup(4),
+    Config = [{riak, rtcs:riak_config()}, {stanchion, rtcs:stanchion_config()},
+              {cs, rtcs:cs_config([{fold_objects_for_list_keys, true}])}],
+    {UserConfig, {_RiakNodes, _CSNodes, _Stanchion}} = rtcs:setup(4, Config),
     list_objects_test_helper:test(UserConfig).

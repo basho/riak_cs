@@ -38,9 +38,7 @@
 
 %% API
 -export([start_link/3,
-         start_link/5,
-         get_object_list/1,
-         get_internal_state/1]).
+         start_link/5]).
 
 %% gen_fsm callbacks
 -export([init/1,
@@ -144,14 +142,6 @@
                          {mapred, Phase :: non_neg_integer(), list()}} |
                         {ReqID :: non_neg_integer, {error, term()}}.
 
--type key_and_manifest() :: {binary(), lfs_manifest()}.
--type manifests_and_prefixes() :: {list(key_and_manifest()), ordsets:ordset(binary())}.
-
--type tagged_item() :: {prefix, binary()} |
-                       {manifest, {binary(), lfs_manifest()}}.
-
--type tagged_item_list() :: list(tagged_item()).
-
 %%%===================================================================
 %%% API
 %%%===================================================================
@@ -164,16 +154,8 @@ start_link(RiakcPid, ListKeysRequest, CacheKey) ->
 -spec start_link(pid(), pid(), list_object_request(), term(), UseCache :: boolean()) ->
     {ok, pid()} | {error, term()}.
 start_link(RiakcPid, CallerPid, ListKeysRequest, CacheKey, UseCache) ->
-    gen_fsm:start_link(?MODULE, [RiakcPid, CallerPid, ListKeysRequest, CacheKey, UseCache], []).
-
--spec get_object_list(pid()) ->
-    {ok, list_object_response()} |
-    {error, term()}.
-get_object_list(FSMPid) ->
-    gen_fsm:sync_send_all_state_event(FSMPid, get_object_list, infinity).
-
-get_internal_state(FSMPid) ->
-    gen_fsm:sync_send_all_state_event(FSMPid, get_internal_state, infinity).
+    gen_fsm:start_link(?MODULE, [RiakcPid, CallerPid, ListKeysRequest,
+                                 CacheKey, UseCache], []).
 
 %%%===================================================================
 %%% gen_fsm callbacks
@@ -206,9 +188,11 @@ prepare(timeout, State=#state{riakc_pid=RiakcPid,
 -spec waiting_list_keys(list_keys_event(), state()) -> fsm_state_return().
 waiting_list_keys({ReqID, done}, State=#state{list_keys_req_id=ReqID}) ->
     handle_keys_done(State);
-waiting_list_keys({ReqID, {keys, Keys}}, State=#state{list_keys_req_id=ReqID}) ->
+waiting_list_keys({ReqID, {keys, Keys}},
+                  State=#state{list_keys_req_id=ReqID}) ->
     handle_keys_received(Keys, State);
-waiting_list_keys({ReqID, {error, Reason}}, State=#state{list_keys_req_id=ReqID}) ->
+waiting_list_keys({ReqID, {error, Reason}},
+                  State=#state{list_keys_req_id=ReqID}) ->
     %% if we get an error while we're in this state,
     %% we still have the option to return `HTTP 500'
     %% to the client, since we haven't written
@@ -283,9 +267,10 @@ maybe_write_to_cache(#state{use_cache=false}, _ListofListofKeys) ->
     ok;
 maybe_write_to_cache(#state{cache_key=CacheKey,
                             caller_pid=CallerPid}, ListofListofKeys) ->
+    ListOfListOfKeysLength = lists:flatlength(ListofListofKeys),
     case riak_cs_list_objects_ets_cache:can_write(CacheKey,
                                                   CallerPid,
-                                                  lists:flatlength(ListofListofKeys)) of
+                                                  ListOfListOfKeysLength) of
         true ->
             _ = lager:debug("writing to the cache"),
             riak_cs_list_objects_ets_cache:write(CacheKey, ListofListofKeys);
@@ -297,10 +282,12 @@ maybe_write_to_cache(#state{cache_key=CacheKey,
 %% @doc Either proceed using the cached key list or make the request
 %% to start a key listing.
 -type cache_lookup_result() :: {true, [binary()]} | false.
--spec fetch_key_list(pid(), list_object_request(), state(), cache_lookup_result()) -> fsm_state_return().
+-spec fetch_key_list(pid(), list_object_request(), state(),
+                     cache_lookup_result()) -> fsm_state_return().
 fetch_key_list(_, _, State, {true, Value}) ->
     _ = lager:debug("Using cached key list"),
-    NewState = prepare_state_for_first_mapred(Value, State#state{key_buffer=Value}),
+    NewState = prepare_state_for_first_mapred(Value,
+                                              State#state{key_buffer=Value}),
     maybe_map_reduce(NewState);
 fetch_key_list(RiakcPid, Request, State, false) ->
     _ = lager:debug("Requesting fresh key list"),
@@ -320,8 +307,7 @@ make_list_keys_request(RiakcPid, ?LOREQ{name=BucketName}) ->
     ManifestBucket = riak_cs_utils:to_bucket_name(objects, BucketName),
     riakc_pb_socket:stream_list_keys(RiakcPid,
                                      ManifestBucket,
-                                     ServerTimeout,
-                                     infinity).
+                                     ServerTimeout).
 
 -spec handle_streaming_list_keys_call(streaming_req_response(), state()) ->
     fsm_state_return().
@@ -346,7 +332,7 @@ handle_keys_done(State=#state{key_buffer=ListofListofKeys}) ->
 
 -spec prepare_state_for_first_mapred(list(), state()) -> state().
 prepare_state_for_first_mapred(KeyList, State=#state{req=Request,
-                                                       req_profiles=Profiling}) ->
+                                                     req_profiles=Profiling}) ->
     NumKeys = length(KeyList),
 
     %% profiling info
@@ -374,108 +360,6 @@ handle_keys_received(Keys, State=#state{key_buffer=PrevKeyBuffer}) ->
     NewState = State#state{key_buffer=[lists:sort(Keys) | PrevKeyBuffer]},
     {next_state, waiting_list_keys, NewState}.
 
--spec manifests_and_prefix_slice(manifests_and_prefixes(), non_neg_integer()) ->
-    tagged_item_list().
-manifests_and_prefix_slice(ManifestsAndPrefixes, MaxObjects) ->
-    TaggedList = tagged_manifest_and_prefix(ManifestsAndPrefixes),
-    Sorted = lists:sort(fun tagged_sort_fun/2, TaggedList),
-    lists:sublist(Sorted, MaxObjects).
-
--spec tagged_sort_fun(tagged_item(), tagged_item()) ->
-    boolean().
-tagged_sort_fun(A, B) ->
-    AKey = key_from_tag(A),
-    BKey = key_from_tag(B),
-    AKey =< BKey.
-
--spec key_from_tag(tagged_item()) -> binary().
-key_from_tag({manifest, {Key, _M}}) ->
-    Key;
-key_from_tag({prefix, Key}) ->
-    Key.
-
--spec tagged_manifest_and_prefix(manifests_and_prefixes()) ->
-    tagged_item_list().
-tagged_manifest_and_prefix({Manifests, Prefixes}) ->
-    tagged_manifest_list(Manifests) ++ tagged_prefix_list(Prefixes).
-
--spec tagged_manifest_list(list(key_and_manifest())) ->
-    list({manifest, key_and_manifest()}).
-tagged_manifest_list(KeyAndManifestList) ->
-    [{manifest, M} || M <- KeyAndManifestList].
-
--spec tagged_prefix_list(list(binary())) ->
-    list({prefix, binary()}).
-tagged_prefix_list(Prefixes) ->
-    [{prefix, P} || P <- ordsets:to_list(Prefixes)].
-
--spec untagged_manifest_and_prefix(tagged_item_list()) ->
-    manifests_and_prefixes().
-untagged_manifest_and_prefix(TaggedInput) ->
-    Pred = fun({manifest, _}) -> true;
-              (_Else) -> false end,
-    {A, B} = lists:partition(Pred, TaggedInput),
-    {[element(2, M) || M <- A],
-     [element(2, P) || P <- B]}.
-
--spec manifests_and_prefix_length(manifests_and_prefixes()) -> non_neg_integer().
-manifests_and_prefix_length({KeyAndManifestList, Prefixes}) ->
-    length(KeyAndManifestList) + ordsets:size(Prefixes).
-
--spec filter_prefix_keys(KeyAndManifestList :: list(manifests_and_prefixes()),
-                         CommonPrefixes :: ordsets:ordset(binary()),
-                         list_object_request()) ->
-    manifests_and_prefixes().
-filter_prefix_keys(KeyAndManifestList, CommonPrefixes, ?LOREQ{prefix=undefined,
-                                                              delimiter=undefined}) ->
-    {KeyAndManifestList, CommonPrefixes};
-filter_prefix_keys(KeyAndManifestList, CommonPrefixes, ?LOREQ{prefix=Prefix,
-                                                              delimiter=Delimiter}) ->
-    PrefixFilter =
-        fun(KeyAndManifest, Acc) ->
-                prefix_filter(KeyAndManifest, Acc, Prefix, Delimiter)
-        end,
-    lists:foldl(PrefixFilter, {[], CommonPrefixes}, KeyAndManifestList).
-
-prefix_filter({Key, _Manifest}=KeyAndManifest, Acc, undefined, Delimiter) ->
-    Group = extract_group(Key, Delimiter),
-    update_keys_and_prefixes(Acc, KeyAndManifest, <<>>, 0, Group);
-prefix_filter({Key, _Manifest}=KeyAndManifest,
-              {KeyAndManifestList, Prefixes}=Acc, Prefix, undefined) ->
-    PrefixLen = byte_size(Prefix),
-    case Key of
-        << Prefix:PrefixLen/binary, _/binary >> ->
-            {[KeyAndManifest | KeyAndManifestList], Prefixes};
-        _ ->
-            Acc
-    end;
-prefix_filter({Key, _Manifest}=KeyAndManifest,
-              {_KeyAndManifestList, _Prefixes}=Acc, Prefix, Delimiter) ->
-    PrefixLen = byte_size(Prefix),
-    case Key of
-        << Prefix:PrefixLen/binary, Rest/binary >> ->
-            Group = extract_group(Rest, Delimiter),
-            update_keys_and_prefixes(Acc, KeyAndManifest, Prefix, PrefixLen, Group);
-        _ ->
-            Acc
-    end.
-
-extract_group(Key, Delimiter) ->
-    case binary:match(Key, [Delimiter]) of
-        nomatch ->
-            nomatch;
-        {Pos, Len} ->
-            binary:part(Key, {0, Pos+Len})
-    end.
-
-update_keys_and_prefixes({KeyAndManifestList, Prefixes},
-                         KeyAndManifest, _, _, nomatch) ->
-    {[KeyAndManifest | KeyAndManifestList], Prefixes};
-update_keys_and_prefixes({KeyAndManifestList, Prefixes},
-                         _, Prefix, PrefixLen, Group) ->
-    NewPrefix = << Prefix:PrefixLen/binary, Group/binary >>,
-    {KeyAndManifestList, ordsets:add_element(NewPrefix, Prefixes)}.
-
 %% Map Reduce stuff
 %%--------------------------------------------------------------------
 
@@ -490,8 +374,9 @@ maybe_map_reduce(State=#state{object_buffer=ObjectBuffer,
 
 handle_enough_results(true, State) ->
     have_enough_results(State);
-handle_enough_results(false, State=#state{num_considerable_keys=TotalCandidateKeys,
-                                          mr_requests=MapRRequests}) ->
+handle_enough_results(false,
+                      State=#state{num_considerable_keys=TotalCandidateKeys,
+                                   mr_requests=MapRRequests}) ->
     MoreQuery = could_query_more_mapreduce(MapRRequests, TotalCandidateKeys),
     handle_could_query_more_map_reduce(MoreQuery, State).
 
@@ -524,19 +409,21 @@ prepare_state_for_mapred(State=#state{req=Request,
 
 -spec make_response(list_object_request(), list(), list()) ->
     list_object_response().
-make_response(Request=?LOREQ{max_keys=NumKeysRequested}, ObjectBuffer, CommonPrefixes) ->
+make_response(Request=?LOREQ{max_keys=NumKeysRequested},
+              ObjectBuffer, CommonPrefixes) ->
     ObjectPrefixTuple = {ObjectBuffer, CommonPrefixes},
-    NumObjects = manifests_and_prefix_length(ObjectPrefixTuple),
+    NumObjects =
+    riak_cs_list_objects_utils:manifests_and_prefix_length(ObjectPrefixTuple),
     IsTruncated = NumObjects > NumKeysRequested andalso NumKeysRequested > 0,
-    SlicedTaggedItems = manifests_and_prefix_slice(ObjectPrefixTuple,
-                                                   NumKeysRequested),
-    {NewManis, NewPrefixes} = untagged_manifest_and_prefix(SlicedTaggedItems),
-    KeyContents = lists:map(fun response_transformer/1, NewManis),
+    SlicedTaggedItems =
+    riak_cs_list_objects_utils:manifests_and_prefix_slice(ObjectPrefixTuple,
+                                                          NumKeysRequested),
+    {NewManis, NewPrefixes} =
+    riak_cs_list_objects_utils:untagged_manifest_and_prefix(SlicedTaggedItems),
+    KeyContents = lists:map(fun riak_cs_list_objects:manifest_to_keycontent/1,
+                            NewManis),
     riak_cs_list_objects:new_response(Request, IsTruncated, NewPrefixes,
                                       KeyContents).
-
-response_transformer({_Key, Manifest}) ->
-    riak_cs_list_objects:manifest_to_keycontent(Manifest).
 
 -spec next_mr_query_spec(list(),
                          non_neg_integer(),
@@ -569,8 +456,10 @@ next_keys({StartIdx, EndIdx}, Keys) ->
 handle_mapred_results(Results, State=#state{object_buffer=Buffer,
                                             common_prefixes=OldPrefixes,
                                             req=Request}) ->
-    CleanedResults = lists:map(fun clean_key_and_manifest/1, Results),
-    {NoPrefix, Prefixes} = filter_prefix_keys(CleanedResults, OldPrefixes, Request),
+    CleanedResults = lists:map(fun clean_manifest/1, Results),
+    {NoPrefix, Prefixes} =
+    riak_cs_list_objects_utils:filter_prefix_keys({CleanedResults, OldPrefixes},
+                                                  Request),
     NewBuffer = update_buffer(NoPrefix, Buffer),
     NewState = State#state{object_buffer=NewBuffer,
                            common_prefixes=Prefixes},
@@ -580,10 +469,10 @@ handle_mapred_results(Results, State=#state{object_buffer=Buffer,
 %% from the map/reduce call. Rather than change the m/r code
 %% (which would make rolling upgrades more difficult), we just
 %% transform the values of the list here.
--spec clean_key_and_manifest({binary(), {ok, lfs_manifest()}}) ->
-    {binary(), lfs_manifest()}.
-clean_key_and_manifest({Key, {ok, Manifest}}) ->
-    {Key, Manifest}.
+-spec clean_manifest({binary(), {ok, lfs_manifest()}}) ->
+    lfs_manifest().
+clean_manifest({_Key, {ok, Manifest}}) ->
+    Manifest.
 
 -spec update_buffer(list(), list()) -> list().
 update_buffer(Results, Buffer) ->
@@ -628,12 +517,14 @@ handle_map_reduce_call({ok, ReqID}, State) ->
 handle_map_reduce_call({error, Reason}, State) ->
     {stop, Reason, State}.
 
--spec enough_results(manifests_and_prefixes(),
+-spec enough_results(riak_cs_list_objects_utils:manifests_and_prefixes(),
                      list_object_request(),
                      non_neg_integer()) ->
     boolean().
-enough_results(ManifestsAndPrefixes, ?LOREQ{max_keys=MaxKeysRequested}, TotalCandidateKeys) ->
-    ResultsLength = manifests_and_prefix_length(ManifestsAndPrefixes),
+enough_results(ManifestsAndPrefixes,
+               ?LOREQ{max_keys=MaxKeysRequested}, TotalCandidateKeys) ->
+    ResultsLength =
+    riak_cs_list_objects_utils:manifests_and_prefix_length(ManifestsAndPrefixes),
     %% we have enough results if one of two things is true:
     %% 1. we have more results than requested
     %% 2. there are less keys than were requested even possible
@@ -734,17 +625,20 @@ round_up(X) ->
 %% is returned. If `Element' is greater than all elements
 %% in `List', then `length(List) + 1' is returned.
 %% `List' must be <em>sorted</em> and contain only unique elements.
--spec index_of_first_greater_element(list(non_neg_integer()), term()) -> pos_integer().
+-spec index_of_first_greater_element(list(non_neg_integer()), term()) ->
+    pos_integer().
 index_of_first_greater_element(List, Element) ->
     index_of_first_greater_element_helper(List, Element, 1).
 
 index_of_first_greater_element_helper([], _Element, 1) ->
     1;
-index_of_first_greater_element_helper([Fst], Element, Index) when Element < Fst ->
+index_of_first_greater_element_helper([Fst], Element, Index)
+        when Element < Fst ->
     Index;
 index_of_first_greater_element_helper([_Fst], _Element, Index) ->
     Index + 1;
-index_of_first_greater_element_helper([Head | _Rest], Element, Index) when Element < Head ->
+index_of_first_greater_element_helper([Head | _Rest], Element, Index)
+        when Element < Head ->
     Index;
 index_of_first_greater_element_helper([_Head | Rest], Element, Index) ->
     index_of_first_greater_element_helper(Rest, Element, Index + 1).
