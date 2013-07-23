@@ -30,8 +30,6 @@
          to_rfc_1123/1,
          iso_8601_to_erl_date/1,
          streaming_get/4,
-         user_record_to_json/1,
-         user_record_to_xml/1,
          find_and_auth_user/3,
          find_and_auth_user/4,
          find_and_auth_user/5,
@@ -280,56 +278,6 @@ streaming_get(FsmPid, StartTime, UserName, BFile_str) ->
         {chunk, Chunk} ->
             {Chunk, fun() -> streaming_get(FsmPid, StartTime, UserName, BFile_str) end}
     end.
-
-%% @doc Convert a Riak CS user record to JSON
--spec user_record_to_json(term()) -> {struct, [{atom(), term()}]}.
-user_record_to_json(?RCS_USER{email=Email,
-                              display_name=DisplayName,
-                              name=Name,
-                              key_id=KeyID,
-                              key_secret=KeySecret,
-                              canonical_id=CanonicalID,
-                              status=Status}) ->
-    case Status of
-        enabled ->
-            StatusBin = <<"enabled">>;
-        _ ->
-            StatusBin = <<"disabled">>
-    end,
-    UserData = [{email, list_to_binary(Email)},
-                {display_name, list_to_binary(DisplayName)},
-                {name, list_to_binary(Name)},
-                {key_id, list_to_binary(KeyID)},
-                {key_secret, list_to_binary(KeySecret)},
-                {id, list_to_binary(CanonicalID)},
-                {status, StatusBin}],
-    {struct, UserData}.
-
-%% @doc Convert a Riak CS user record to XML
--spec user_record_to_xml(term()) -> {atom(), [{atom(), term()}]}.
-user_record_to_xml(?RCS_USER{email=Email,
-                              display_name=DisplayName,
-                              name=Name,
-                              key_id=KeyID,
-                              key_secret=KeySecret,
-                              canonical_id=CanonicalID,
-                              status=Status}) ->
-    case Status of
-        enabled ->
-            StatusStr = "enabled";
-        _ ->
-            StatusStr = "disabled"
-    end,
-    {'User',
-      [
-       {'Email', [Email]},
-       {'DisplayName', [DisplayName]},
-       {'Name', [Name]},
-       {'KeyId', [KeyID]},
-       {'KeySecret', [KeySecret]},
-       {'Id', [CanonicalID]},
-       {'Status', [StatusStr]}
-      ]}.
 
 %% @doc Get an ISO 8601 formatted timestamp representing
 %% current time.
