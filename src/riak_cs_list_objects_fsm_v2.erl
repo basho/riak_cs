@@ -262,7 +262,7 @@ respond(StateData=#state{req=Request},
 truncated(NumKeysRequested, ObjectsAndPrefixes) ->
     NumKeysRequested < riak_cs_list_objects_utils:manifests_and_prefix_length(ObjectsAndPrefixes) andalso
     %% this is because (strangely) S3 returns `false' for
-    %% `isTruncted' if `max-keys=0', even if there are more keys.
+    %% `isTruncated' if `max-keys=0', even if there are more keys.
     %% The `Ceph' tests were nice to find this.
     NumKeysRequested =/= 0.
 
