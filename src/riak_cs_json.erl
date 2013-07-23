@@ -57,7 +57,7 @@ from_json(JsonString) ->
 
 -type match_spec() :: {index, non_neg_integer()} | {key, binary(), binary()}.
 -type path_query() :: {find, match_spec()}.
--type path() :: [binary() | path_query()].
+-type path() :: [binary() | tuple() | path_query()].
 -spec get({struct, term()} | [term()] | undefined, path()) -> term().
 get({struct, _}=Object, Path) ->
     follow_path(Object, Path);
@@ -76,6 +76,11 @@ to_json(?KEYSTONE_S3_AUTH_REQ{}=Req) ->
                       {<<"signature">>, Req?KEYSTONE_S3_AUTH_REQ.signature},
                       {<<"token">>, Req?KEYSTONE_S3_AUTH_REQ.token}]},
     iolist_to_binary(mochijson2:encode({struct, [{<<"credentials">>, Inner}]}));
+to_json(?RCS_USER{}=Req) ->
+    iolist_to_binary(mochijson2:encode(user_object(Req)));
+to_json({users, Users}) ->
+    UserList = [user_object(User) || User <- Users],
+    iolist_to_binary(mochijson2:encode(UserList));
 to_json(undefined) ->
     [];
 to_json([]) ->
@@ -136,6 +141,28 @@ target_tuple_values(Keys, JsonItems) ->
       [proplists:get_value(element(Index, Keys), JsonItems)
        || Index <- lists:seq(1, tuple_size(Keys))]).
 
+-spec user_object(rcs_user()) -> {struct, proplist:proplist()}.
+user_object(?RCS_USER{email=Email,
+                      display_name=DisplayName,
+                      name=Name,
+                      key_id=KeyID,
+                      key_secret=KeySecret,
+                      canonical_id=CanonicalID,
+                      status=Status}) ->
+    StatusBin = case Status of
+                    enabled ->
+                        <<"enabled">>;
+                    _ ->
+                        <<"disabled">>
+                end,
+    UserData = [{email, list_to_binary(Email)},
+                {display_name, list_to_binary(DisplayName)},
+                {name, list_to_binary(Name)},
+                {key_id, list_to_binary(KeyID)},
+                {key_secret, list_to_binary(KeySecret)},
+                {id, list_to_binary(CanonicalID)},
+                {status, StatusBin}],
+    {struct, UserData}.
 
 %% ===================================================================
 %% Eunit tests
