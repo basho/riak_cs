@@ -206,7 +206,7 @@ admin_check(false, RD, Ctx) ->
 
 %% @doc Calculate the etag of a response body
 etag(Body) ->
-        riak_cs_utils:etag_from_binary(crypto:md5(Body)).
+        riak_cs_utils:etag_from_binary(riak_cs_utils:md5(Body)).
 
 -spec forbidden(atom(),
                 term(),

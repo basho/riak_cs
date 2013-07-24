@@ -305,7 +305,17 @@ waiting_chunks({chunk, Pid, {NextBlock, BlockReturnValue}},
                       keep_bytes_final=KeepFinal
                      }=State) ->
     _ = lager:debug("Retrieved block ~p", [NextBlock]),
-
+    case BlockReturnValue of
+        {error, _} = ErrorRes ->
+            #state{bucket=Bucket, key=Key} = State,
+            _ = lager:error("~p: Cannot get S3 ~p ~p block# ~p: ~p\n",
+                            [?MODULE, Bucket, Key, NextBlock, ErrorRes]),
+            %% Our terminate() will explicitly stop dependent processes,
+            %% we don't need an abnormal exit to kill them for us.
+            exit(normal);
+        {ok, _} ->
+            ok
+    end,
     {ok, RawBlockValue} = BlockReturnValue,        % TODO: robustify!
     BlockValue = trim_block_value(RawBlockValue,
                                   NextBlock,
