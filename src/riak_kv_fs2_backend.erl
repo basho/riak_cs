@@ -136,9 +136,9 @@
 %% __ Double-check that the api_version & capabilities/0 func is doing
 %%    the right thing wrt riak_kv.
 %%
-%% __ http://erlang.org/pipermail/erlang-questions/2011-September/061147.html
-%%    __ Avoid `file` module whenever file_server_2 calls are used.
-%%    __ Avoid file:file_name_1() recursion silliness
+%% XX http://erlang.org/pipermail/erlang-questions/2011-September/061147.html
+%%    XX Avoid `file` module whenever file_server_2 calls are used.
+%%    XX Avoid file:file_name_1() recursion silliness
 %%
 %% __ Read cache: if reading 0th chunk, create read-ahead that will
 %%    read entire file async'ly and send it as a message to be recieved
@@ -269,11 +269,12 @@
           dir        :: string(),
           block_size :: non_neg_integer(),
           max_blocks :: non_neg_integer(),
-          b_1st_prefixlen :: pos_integer(),
-          b_depth    :: non_neg_integer(),
-          k_depth    :: non_neg_integer(),
-          %% Items below used by key listing stack only
-          fold_type  :: 'undefined' | 'buckets' | 'keys' | 'objects'
+          i_depth    :: non_neg_integer(),
+          %% Items used by reduce_stack only
+          last_path  :: string(),
+          last_fh    :: term()
+          %% %% Items below used by key listing stack only
+          %% fold_type  :: 'undefined' | 'buckets' | 'keys' | 'objects'
          }).
 
 %% File trailer
@@ -310,12 +311,12 @@ capabilities(_Bucket, _State) ->
 start(Partition, Config) ->
     PartitionName = integer_to_list(Partition),
     try
-        {ConfigRoot, BlockSize, MaxBlocks, B1stPrefixLen, BDepth, KDepth} =
+        {ConfigRoot, BlockSize, MaxBlocks, IDepth} =
             parse_config_and_env(Config),
         Dir = filename:join([ConfigRoot,PartitionName]),
         ok = ef_ensure_dir(Dir),
         ok = create_or_sanity_check_version_file(Dir, BlockSize, MaxBlocks,
-                                                 BDepth, KDepth),
+                                                 IDepth),
 
         %% See also: drop() function
         Cmd = lists:flatten(
@@ -325,9 +326,7 @@ start(Partition, Config) ->
         {ok,  #state{dir = Dir,
                      block_size = BlockSize,
                      max_blocks = MaxBlocks,
-                     b_1st_prefixlen = B1stPrefixLen,
-                     b_depth = BDepth,
-                     k_depth = KDepth}}
+                     i_depth = IDepth}}
     catch throw:Error ->
         {error, Error}
     end.
@@ -499,7 +498,8 @@ delete(Bucket, Key, _IndexSpecs, State) ->
                    state()) -> {ok, any()} | {async, fun()}.
 fold_buckets(FoldBucketsFun, Acc, Opts, State) ->
     fold_common(fold_buckets_fun(FoldBucketsFun), Acc, Opts,
-                State#state{fold_type = buckets}).
+                State#state{%fold_type = buckets
+                           }).
 
 %% @doc Fold over all the keys for one or all buckets.
 -spec fold_keys(riak_kv_backend:fold_keys_fun(),
@@ -508,7 +508,8 @@ fold_buckets(FoldBucketsFun, Acc, Opts, State) ->
                 state()) -> {ok, term()} | {async, fun()}.
 fold_keys(FoldKeysFun, Acc, Opts, State) ->
     fold_common(fold_keys_fun(FoldKeysFun), Acc, Opts,
-                State#state{fold_type = keys}).
+                State#state{%fold_type = keys
+                           }).
 
 %% @doc Fold over all the objects for one or all buckets.
 -spec fold_objects(riak_kv_backend:fold_objects_fun(),
@@ -517,10 +518,11 @@ fold_keys(FoldKeysFun, Acc, Opts, State) ->
                    state()) -> {ok, any()} | {async, fun()}.
 fold_objects(FoldObjectsFun, Acc, Opts, State) ->
     fold_common(fold_objects_fun(FoldObjectsFun), Acc, Opts,
-                State#state{fold_type = objects}).
+                State#state{%fold_type = objects
+                           }).
 
 fold_common(ThisFoldFun, Acc, Opts, State) ->
-    Bucket =  proplists:get_value(bucket, Opts),
+    Bucket = proplists:get_value(bucket, Opts),
     Stack = make_start_stack_objects(Bucket, State),
     ObjectFolder =
         fun() ->
@@ -621,11 +623,8 @@ parse_config_and_env(Config) ->
                           [?MODULE, ?FS2_CONTIGUOUS_BLOCKS]),
                         ?FS2_CONTIGUOUS_BLOCKS
                 end,
-    B1stPrefixLen = get_prop_or_env(
-                  b_1st_prefixlen, Config, riak_kv, ?BUCKET_PREFIX_LEN),
-    BDepth = get_prop_or_env(b_depth, Config, riak_kv, 2),
-    KDepth = get_prop_or_env(k_depth, Config, riak_kv, 2),
-    {ConfigRoot, BlockSize, MaxBlocks, B1stPrefixLen, BDepth, KDepth}.
+    IDepth = get_prop_or_env(i_depth, Config, riak_kv, 3),
+    {ConfigRoot, BlockSize, MaxBlocks, IDepth}.
 
 %% @spec atomic_write(File :: string(), Val :: binary()) ->
 %%       ok | {error, Reason :: term()}
@@ -667,61 +666,44 @@ fold_objects_fun(FoldObjectsFun) ->
 %% @doc produce the file-path at which the object for the given Bucket
 %%      and Key should be stored
 location(State, Bucket) ->
-    location(State, Bucket, no_key_provided).
+    location(State, Bucket, <<>>).
 
-location(#state{dir = Dir, b_depth = BDepth, k_depth = KDepth,
-               b_1st_prefixlen = B1stPrefixLen}, Bucket, Key) ->
-    B64 = encode_bucket(Bucket),
-    BDirs = if BDepth > 0 ->
-                    %% We know encode_bucket() has exactly 1:2 expansion ratio
-                    {BPrefix, BTail} = lists:split(2 * B1stPrefixLen, B64),
-                    [First|Rest] = nest(BTail, BDepth),
-                    filename:join([(BPrefix ++ First)|Rest]);
+location(#state{dir = Dir, i_depth = IDepth}, Bucket, Key) ->
+    B64 = encode_thingie(riak_cs_utils:md5([Bucket, Key])),
+    IDirs = if IDepth > 0 ->
+                    %% We know encode_thingie() has exactly 1:2 expansion ratio
+                    [First|Rest] = nest(B64, IDepth),
+                    filename:join([First|Rest]);
                true ->
                     ""
             end,
-    if Key == no_key_provided ->
-            filename:join([Dir, BDirs, B64]);
-       true ->
-            K64 = encode_key(Key),
-            KDirs = if KDepth > 0 -> filename:join(nest(K64, KDepth));
-                       true       -> ""
-                    end,
-            filename:join([Dir, BDirs, B64, KDirs, K64])
-    end.
+    filename:join([Dir, IDirs, B64]).
+    %% if Key == <<>> ->
+    %%         filename:join([Dir, IDirs, B64]);
+    %%    true ->
+    %%         filename:join([Dir, IDirs, B64])
+    %% end.
 
-%% @spec location_to_bkey(string(), state()) ->
+%% @spec location_to_bkeyhash(string(), state()) ->
 %%           {riak_object:bucket(), riak_object:key()}
-%% @doc reconstruct a Riak bucket/key pair, given the location at
+%% @doc reconstruct an hash md5(Riak bucket/key pair), given the location at
 %%      which its object is stored on-disk
-location_to_bkey("/" ++ Path, State) ->
-    location_to_bkey(Path, State);
-location_to_bkey(Path, #state{b_depth = BDepth, k_depth = KDepth}) ->
-    [B64|Rest] = drop_from_list(BDepth, string:tokens(Path, "/")),
-    [K64] = drop_from_list(KDepth, Rest),
-    {decode_bucket(B64), decode_key(K64)}.
+location_to_bkeyhash("/" ++ Path, State) ->
+    location_to_bkeyhash(Path, State);
+location_to_bkeyhash(Path, #state{i_depth = IDepth}) ->
+    [_B64|Rest] = drop_from_list(IDepth, string:tokens(Path, "/")),
+    {decode_thingie(Rest)}.
 
-%% @spec decode_bucket(string()) -> binary()
+%% @spec decode_thingie(string()) -> binary()
 %% @doc reconstruct a Riak bucket, given a filename
-%% @see encode_bucket/1
-decode_bucket(B64) ->
+%% @see encode_thingie/1
+decode_thingie(B64) ->
     hexlist_to_binary(B64).
 
-%% @spec decode_key(string()) -> binary()
-%% @doc reconstruct a Riak object key, given a filename
-%% @see encode_key/1
-decode_key(K64) ->
-    hexlist_to_binary(K64).
-
-%% @spec encode_bucket(binary()) -> string()
+%% @spec encode_thingie(binary()) -> string()
 %% @doc make a filename out of a Riak bucket
-encode_bucket(Bucket) ->
+encode_thingie(Bucket) ->
     binary_to_hexlist(Bucket).
-
-%% @spec encode_key(binary()) -> string()
-%% @doc make a filename out of a Riak object key
-encode_key(Key) ->
-    binary_to_hexlist(Key).
 
 %% @doc Convert the passed binary into a string where the numbers are represented in hexadecimal (lowercase and 0 prefilled).
 -spec binary_to_hexlist(binary()) -> string().
@@ -734,24 +716,6 @@ num2hexchar(N) when N < 10 ->
     N + $0;
 num2hexchar(N) when N < 16 ->
     (N - 10) + $a.
-
-%% time_binary_to_hexlist_small() ->
-%%     Num = 1000*1000,
-%%     Xs = lists:seq(1, Num),
-%%     Bin = <<0,255,1,254,3,253>>,
-%%     time_binary_to_hexlist(Num, Xs, Bin).
-
-%% time_binary_to_hexlist_big() ->
-%%     Num = 50*1000,
-%%     Xs = lists:seq(1, Num),
-%%     Bin = list_to_binary(lists:duplicate(20, <<0,255,1,254,3,253>>)),
-%%     time_binary_to_hexlist(Num, Xs, Bin).
-
-%% time_binary_to_hexlist(Num, Xs, Bin) ->
-%%     {USec, _} = timer:tc(fun() ->
-%%                                  [binary_to_hexlist(Bin) || _ <- Xs]
-%%                          end),
-%%     USec / Num.
 
 %% @doc Convert the passed binary into a string where the numbers are represented in hexadecimal (lowercase and 0 prefilled).
 -spec hexlist_to_binary(string()) -> binary().
@@ -913,14 +877,24 @@ calc_max_block(FileSize, #state{block_size = BlockSize,
             N
     end.
 
+is_tombstoned_file(File) ->
+    {ok, FI} = ef_read_file_info(File),
+    if FI#file_info.mode band ?TOMBSTONE_MODE_MARKER > 0 ->
+            true;
+       true ->
+            false
+    end.
+
 read_block(Bucket, RiakKey, UUID, BlockNum, State) ->
     Key = convert_blocknum2key(UUID, BlockNum, State),
     File = location(State, Bucket, Key),
+%%     read_block1(File, Bucket, RiakKey, BlockNum, State).
+%% read_block1(File, Bucket, RiakKey, BlockNum, State) ->
     try
-        {ok, FI} = ef_read_file_info(File),
-        if FI#file_info.mode band ?TOMBSTONE_MODE_MARKER > 0 ->
+        case is_tombstoned_file(File) of
+            true ->
                 make_tombstoned_0byte_obj(Bucket, RiakKey);
-           true ->
+            false ->
                 read_block2(File, BlockNum, State)
         end
     catch
@@ -929,7 +903,12 @@ read_block(Bucket, RiakKey, UUID, BlockNum, State) ->
     end.
 
 read_block2(File, BlockNum, State) ->
-    {ok, FH} = file:open(File, [read, raw, binary]),
+    FH = if State#state.last_fh == undefined ->
+                 {ok, NewFH} = file:open(File, [read, raw, binary]),
+                 NewFH;
+             true ->
+                 State#state.last_fh
+         end,
     BlockSize = read_blocksize_from_file_header(FH, State),
     Offset = calc_block_offset(BlockNum, State, BlockSize),
     try
@@ -946,9 +925,12 @@ read_block2(File, BlockNum, State) ->
             %% attempting to read ahead, i.e., N+e, where e > 0.
             not_found
     after
-        file:close(FH)
+        if State#state.last_fh == undefined ->
+                file:close(FH);
+           true ->
+                ok
+        end
     end.
-
 
 read_file(Path) ->
     MaxSize = 4*1024*1024,
@@ -1081,39 +1063,16 @@ put_block3(BlockNum, RObj, File, FI_perhaps, State) ->
 riak_object_is_deleted(ValRObj) ->
     catch riak_kv_util:is_x_deleted(ValRObj).
 
-enumerate_chunks_in_file(Bucket, UUID, BlockBase,
-                         #state{max_blocks=MaxBlocks} = State) ->
-    Key = convert_blocknum2key(UUID, BlockBase, State),
-    Path = location(State, Bucket, Key),
+enumerate_perhaps_chunks_in_file(Path, #state{max_blocks=MaxBlocks} = State) ->
     case ef_read_file_info(Path) of
         {error, _} ->
             [];
-        {ok, FI} when FI#file_info.mode band ?TOMBSTONE_MODE_MARKER > 0 ->
+        {ok, FI} ->
             %% We don't have to be 100% exact: if there are holes in the
             %% file, then we'll emit block numbers for those holes,
-            %% but Riak's AAE will fix things up eventually.
             MB = calc_max_block(FI#file_info.size, State),
-            [BlockNum || BlockNum <- lists:seq(0, erlang:max(MB,
-                                                             MaxBlocks - 1))];
-        {ok, FI} ->
-            case calc_max_block(FI#file_info.size, State) of
-                X when X >= MaxBlocks ->
-                    %% A trailer exists, so we need to assume that
-                    %% perhaps there might be holes in this file.
-                    MaxBlock = MaxBlocks - 1,
-                    Filt = fun(BlNum) ->
-                                   %% Key's use here is: a) incorrect, and
-                                   %% b) harmless.
-                                   is_binary(read_block(Bucket, Key, UUID,
-                                                        BlockBase + BlNum,
-                                                        State))
-                           end,
-                    [BlockNum || BlockNum <- lists:seq(0, MaxBlock),
-                                 Filt(BlockNum)];
-                N ->
-                    MaxBlock = N,
-                    [BlockNum || BlockNum <- lists:seq(0, MaxBlock)]
-            end
+            [BlockNum || BlockNum <- lists:seq(0, erlang:min(MB,
+                                                             MaxBlocks - 1))]
     end.
 
 get_prop_or_env(Key, Properties, App, Default) ->
@@ -1136,21 +1095,21 @@ get_prop_or_env_default(Default) ->
     Default.
 
 create_or_sanity_check_version_file(Dir, BlockSize, MaxBlocks,
-                                    BDepth, KDepth) ->
+                                    IDepth) ->
     VersionFile = make_version_path(Dir),
     case file:consult(VersionFile) of
         {ok, Terms} ->
             ok = sanity_check_terms(Terms, BlockSize, MaxBlocks,
-                                    BDepth, KDepth);
+                                    IDepth);
         {error, enoent} ->
             ok = make_version_file(VersionFile, BlockSize, MaxBlocks,
-                                   BDepth, KDepth)
+                                   IDepth)
     end.
 
 make_version_path(Dir) ->
     Dir ++ "/.version.data".                    % Must hide name from globbing!
 
-make_version_file(File, BlockSize, MaxBlocks, BDepth, KDepth) ->
+make_version_file(File, BlockSize, MaxBlocks, IDepth) ->
     ok = ef_ensure_dir(File),
     {ok, FH} = file:open(File, [write]),
     [ok = io:format(FH, "~p.\n", [X]) ||
@@ -1158,11 +1117,10 @@ make_version_file(File, BlockSize, MaxBlocks, BDepth, KDepth) ->
               {version_number, 1},
               {block_size, BlockSize},
               {max_blocks, MaxBlocks},
-              {b_depth, BDepth},
-              {k_depth, KDepth}]],
+              {i_depth, IDepth}]],
     ok = file:close(FH).
 
-sanity_check_terms(Terms, BlockSize, MaxBlocks, BDepth, KDepth) ->
+sanity_check_terms(Terms, BlockSize, MaxBlocks, IDepth) ->
     ?MODULE = proplists:get_value(backend, Terms),
     1 = proplists:get_value(version_number, Terms),
     %% Use negative number below because if we use the default
@@ -1171,8 +1129,7 @@ sanity_check_terms(Terms, BlockSize, MaxBlocks, BDepth, KDepth) ->
     Bogus = -9999999999999999999999999999,
     true = (BlockSize =< proplists:get_value(block_size, Terms, Bogus)),
     true = (MaxBlocks =< proplists:get_value(max_blocks, Terms, Bogus)),
-    BDepth = proplists:get_value(b_depth, Terms),
-    KDepth = proplists:get_value(k_depth, Terms),
+    IDepth = proplists:get_value(i_depth, Terms),
     ok.
 
 drop_from_list(0, L) ->
@@ -1187,28 +1144,24 @@ drop_from_list(_N, []) ->
 %% * Paths on the stack are relative to #state.dir.
 %% * Paths on the stack all start with "/", but they are not absolute paths!
 
-make_start_stack_objects(undefined, #state{b_depth = BDepth}) ->
-    case BDepth of
+make_start_stack_objects(undefined, #state{i_depth = IDepth}) ->
+    case IDepth of
         0 ->
             %% TODO: We have a problem with the version name file here,
             %%       which could collide with a real bucket name.
             [glob_buckets];
         N ->
             [{glob_bucket_intermediate, 1, N, ""}]
-    end;
-make_start_stack_objects(OnlyBucket, #state{k_depth = KDepth} = State) ->
-    Path = location(State, OnlyBucket),
-    %% Now mangle to stack path format
-    Start = string:sub_string(Path, length(State#state.dir) + 1),
-    [{glob_key_intermediate, 1, KDepth, Start}].
+    end.
 
 %% @doc Reduce (or fold, pick your name) over items in a work stack
-reduce_stack([], _FoldFun, Acc, _State) ->
+reduce_stack([], _FoldFun, Acc, State) ->
+    catch file:close(State#state.last_fh),
     Acc;
 reduce_stack([Op|Rest], FoldFun, Acc, State) ->
     try
-        {PushOps, Acc2} = exec_stack_op(Op, FoldFun, Acc, State),
-        reduce_stack(PushOps ++ Rest, FoldFun, Acc2, State)
+        {PushOps, State2, Acc2} = exec_stack_op(Op, FoldFun, Acc, State),
+        reduce_stack(PushOps ++ Rest, FoldFun, Acc2, State2)
     catch throw:{found_a_bucket, NewAcc} ->
             NewStack = lists:dropwhile(fun(pop_back_to_here) -> false;
                                           (_)                -> true
@@ -1221,87 +1174,76 @@ exec_stack_op({glob_bucket_intermediate, Level, MaxLevel, MidDir},
   when Level < MaxLevel ->
     Ops = [{glob_bucket_intermediate, Level+1, MaxLevel, MidDir ++ "/" ++Dir}||
               Dir <- do_glob("*", MidDir, State)],
-    {Ops, Acc};
+    {Ops, State, Acc};
 exec_stack_op({glob_bucket_intermediate, Level, MaxLevel, MidDir},
-              _FoldFun, Acc, State)
-  when Level == MaxLevel ->
-    Ops = [{glob_bucket, MidDir ++ "/" ++ Dir} ||
-              Dir <- do_glob("*", MidDir, State)],
-    {Ops, Acc};
-exec_stack_op({glob_bucket, BDir}, _FoldFun, Acc, #state{k_depth = KDepth} = State) ->
-    Optional = if State#state.fold_type == buckets -> [pop_back_to_here];
-                  true                             -> []
-               end,
-    Ops = [[{glob_key_intermediate, 1, KDepth, BDir ++ "/" ++ Dir}|Optional] ||
-              Dir <- do_glob("*", BDir, State)],
-    {lists:flatten(Ops), Acc};
-exec_stack_op({glob_key_intermediate, Level, MaxLevel, MidDir},
-              _FoldFun, Acc, State)
-  when Level < MaxLevel ->
-    Ops = [{glob_key_intermediate, Level+1, MaxLevel, MidDir ++ "/" ++ Dir} ||
-              Dir <- do_glob("*", MidDir, State)],
-    {Ops, Acc};
-exec_stack_op({glob_key_intermediate, Level, MaxLevel, MidDir},
               _FoldFun, Acc, State)
   when Level == MaxLevel ->
     Ops = [{glob_key_file, MidDir ++ "/" ++ Dir} ||
               Dir <- do_glob("*", MidDir, State)],
-    {Ops, Acc};
+    {Ops, State, Acc};
 exec_stack_op({glob_key_file, MidDir},  _FoldFun, Acc, State) ->
     Ops = [{key_file, MidDir ++ "/" ++ File} ||
               File <- do_glob("*", MidDir, State)],
-    {Ops, Acc};
-exec_stack_op({key_file, File},  _FoldFun, Acc, State) ->
-    try
-        {<<_Prefix:?BUCKET_PREFIX_LEN/binary, _/binary>> = Bucket,
-         <<UUID:?UUID_BYTES/binary, BlockBase:?BLOCK_FIELD_SIZE>>} =
-            location_to_bkey(File, State),
-        BKeys = [{Bucket, <<UUID/binary, (BlockBase+Block):?BLOCK_FIELD_SIZE>>}
-                 || Block <- enumerate_chunks_in_file(Bucket, UUID, BlockBase,
-                                                      State)],
-        {BKeys, Acc}
-    catch error:_Y ->
-            %% Binary pattern matching or base64 decoding failed, or
-            %% enumerate_chunks_in_file() did something bad.
-            %% TODO: can enumerate_chunks_in_file() fail in a way that will
-            %%       make us skip over useful data?
-            try
-                BKey = location_to_bkey(File, State),
-                {[BKey], Acc}
-            catch _X2:_Y2 ->
-                    %% TODO: shouldn't happen, because all filenames
-                    %% should be encoded with base64fs2, so decoding
-                    %% them should also always work.
-                    lager:error("ERROR: key_file ~p: ~p ~p\n", [File, _X2, _Y2]),
-                    {[], Acc}
-            end
+    {Ops, State, Acc};
+exec_stack_op({key_file, File}, _FoldFun, Acc, #state{dir=Dir} = State) ->
+    %% {[], FoldFun(File, value_unused_by_this_modules_fold_wrapper, Acc)}.
+    Path = Dir ++ File,
+    PerhapsBlocks = enumerate_perhaps_chunks_in_file(Path, State),
+    io:format("~s -> ~p\n", [Path, is_tombstoned_file(Path)]),
+    case is_tombstoned_file(Path) of
+        false ->
+            BKeys = [{file_chunk, Path, Block} || Block <- PerhapsBlocks],
+            %% io:format("BKeys ~s ~p\n", [File, BKeys]),
+            {BKeys, State, Acc};
+        true ->
+            %% LEFT OFF HERE
+            %% 1. We need to read a single chunk from this file,
+            %%    so we can extract the Riak BKey.
+            %% 2. Then for all PerhapsBlocks, create #r_object records
+            %%    w/proper Riak Keys w/proper block numbers in them.
+            %% 3. Fold each object through FoldFun
+            todoLEFTOFFHERE
     end;
-exec_stack_op(pop_back_to_here, _FoldFun, Acc, _State) ->
-    %% If we encounter this in normal processing, then treat it as a
-    %% no-op: we didn't find any files that contained at least one
-    %% non-tombstone block.
-    {[], Acc};
-exec_stack_op({_Bucket, _Key} = BKey, FoldFun, Acc,
-              #state{fold_type = buckets}) ->
-    %% enumerate_chunks_in_file() has figured out for us that the
-    %% file doesn't contain tombstones and contains at least one key
-    %% (probably).  If those facts weren't true, we couldn't be here.
-    %% So, we have high confidence (but not 100% certain) that at least
-    %% one key exists in this bucket.  So, let's skip all other keys
-    %% in the bucket via a 'throw'
-    NewAcc = FoldFun(BKey, value_unused_by_this_modules_fold_wrapper, Acc),
-    throw({found_a_bucket, NewAcc});
-exec_stack_op({_Bucket, _Key} = BKey, FoldFun, Acc,
-              #state{fold_type = keys}) ->
-    {[], FoldFun(BKey, value_unused_by_this_modules_fold_wrapper, Acc)};
-exec_stack_op({Bucket, Key} = BKey, FoldFun, Acc,
-              #state{fold_type = objects} = State) ->
-    case get_object(Bucket, Key, false, State) of
-        {ok, Value, _S} ->
-            {[], FoldFun(BKey, Value, Acc)};
-        _Else ->
-            {[], Acc}
-    end.
+exec_stack_op({file_chunk, Path, Block}, FoldFun, Acc, State0) ->
+    State = if Path == State0#state.last_path ->
+                    State0;
+               true ->
+                    catch file:close(State0#state.last_fh),
+                    %% TODO: concurrency race (low probability)
+                    {ok, NewFH} = file:open(Path, [read, raw, binary]),
+                    State0#state{last_path = Path,
+                                 last_fh = NewFH}
+            end,
+    Acc2 = case read_block2(Path, Block, State) of
+               Bin when is_binary(Bin) ->
+                   io:format(user, "LINE ~p\n", [?LINE]),
+                   try
+                       FoldFun(deserialize_term(Bin), Acc)
+                   catch EX:EY ->
+                           error_logger:error_msg("file_chunk fold_fun error: ~p ~p\n", [EX, EY]),
+                           Acc
+                   end;
+               %% RObj when is_tuple(RObj), element(1, RObj) == r_object ->
+               %%     io:format(user, "LINE ~p\n", [?LINE]),
+               %%     try
+               %%         FoldFun(RObj, Acc)
+               %%     catch EX:EY ->
+               %%             error_logger:error_msg("file_chunk fold_fun error: ~p ~p\n", [EX, EY]),
+               %%             Acc
+               %%     end;
+               _ ->
+                   Acc
+           end,
+    {[], State, Acc2}.
+
+%% exec_stack_op({Bucket, Key} = BKey, FoldFun, Acc,
+%%               #state{fold_type = objects} = State) ->
+%%     case get_object(Bucket, Key, false, State) of
+%%         {ok, Value, _S} ->
+%%             {[], FoldFun(BKey, Value, Acc)};
+%%         _Else ->
+%%             {[], Acc}
+%%     end.
 
 %% Remember: all paths on the stack start with "/" but are not absolute.
 do_glob(Glob, Dir, #state{dir = PrefixDir}) ->
