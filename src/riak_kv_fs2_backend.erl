@@ -184,7 +184,6 @@
 %% For QuickCheck testing use only
 -export([get/3, put/5]).
 %% Testing
--export([scan_file/1]).
 -export([t0/0, t1/0, t2/0, t3/0, t4/0, t5/0, t6/0]).
 
 -include("riak_cs.hrl").
@@ -522,8 +521,9 @@ fold_objects(FoldObjectsFun, Acc, Opts, State) ->
                            }).
 
 fold_common(ThisFoldFun, Acc, Opts, State) ->
-    Bucket = proplists:get_value(bucket, Opts),
-    Stack = make_start_stack_objects(Bucket, State),
+    ______Bucket = proplists:get_value(bucket, Opts),
+    %% TODO: Stack = make_start_stack_objects(Bucket, State),
+    Stack = make_start_stack_objects(State),
     ObjectFolder =
         fun() ->
                 reduce_stack(Stack, ThisFoldFun, Acc, State)
@@ -534,6 +534,10 @@ fold_common(ThisFoldFun, Acc, Opts, State) ->
         false ->
             {ok, ObjectFolder()}
     end.
+
+fold_lowlevel(FoldFunArity2, Acc, _Opts, State)
+  when is_function(FoldFunArity2, 2) ->
+    reduce_stack(make_start_stack_objects(State), FoldFunArity2, Acc, State).
 
 %% @doc Delete all objects from this backend
 %% and return a fresh reference.
@@ -1071,6 +1075,7 @@ enumerate_perhaps_chunks_in_file(Path, #state{max_blocks=MaxBlocks} = State) ->
             %% We don't have to be 100% exact: if there are holes in the
             %% file, then we'll emit block numbers for those holes,
             MB = calc_max_block(FI#file_info.size, State),
+            io:format("~s -> MB ~p\n", [Path, MB]),
             [BlockNum || BlockNum <- lists:seq(0, erlang:min(MB,
                                                              MaxBlocks - 1))]
     end.
@@ -1144,14 +1149,13 @@ drop_from_list(_N, []) ->
 %% * Paths on the stack are relative to #state.dir.
 %% * Paths on the stack all start with "/", but they are not absolute paths!
 
-make_start_stack_objects(undefined, #state{i_depth = IDepth}) ->
+make_start_stack_objects(#state{i_depth = IDepth}) ->
     case IDepth of
         0 ->
-            %% TODO: We have a problem with the version name file here,
-            %%       which could collide with a real bucket name.
-            [glob_buckets];
+            %% TODO: The stack machine doesn't support this, is it needed?
+            [st_glob_buckets];
         N ->
-            [{glob_bucket_intermediate, 1, N, ""}]
+            [{st_glob_bucket_intermediate, 1, N, ""}]
     end.
 
 %% @doc Reduce (or fold, pick your name) over items in a work stack
@@ -1169,40 +1173,44 @@ reduce_stack([Op|Rest], FoldFun, Acc, State) ->
             reduce_stack(NewStack, FoldFun, NewAcc, State)
     end.
 
-exec_stack_op({glob_bucket_intermediate, Level, MaxLevel, MidDir},
+exec_stack_op({st_glob_bucket_intermediate, Level, MaxLevel, MidDir},
               _FoldFun, Acc, State)
   when Level < MaxLevel ->
-    Ops = [{glob_bucket_intermediate, Level+1, MaxLevel, MidDir ++ "/" ++Dir}||
+    Ops = [{st_glob_bucket_intermediate, Level+1, MaxLevel, MidDir ++ "/" ++Dir}||
               Dir <- do_glob("*", MidDir, State)],
     {Ops, State, Acc};
-exec_stack_op({glob_bucket_intermediate, Level, MaxLevel, MidDir},
+exec_stack_op({st_glob_bucket_intermediate, Level, MaxLevel, MidDir},
               _FoldFun, Acc, State)
   when Level == MaxLevel ->
-    Ops = [{glob_key_file, MidDir ++ "/" ++ Dir} ||
+    Ops = [{st_glob_key_file, MidDir ++ "/" ++ Dir} ||
               Dir <- do_glob("*", MidDir, State)],
     {Ops, State, Acc};
-exec_stack_op({glob_key_file, MidDir},  _FoldFun, Acc, State) ->
-    Ops = [{key_file, MidDir ++ "/" ++ File} ||
+exec_stack_op({st_glob_key_file, MidDir},  _FoldFun, Acc, State) ->
+    Ops = [{st_key_file, MidDir ++ "/" ++ File} ||
               File <- do_glob("*", MidDir, State)],
     {Ops, State, Acc};
-exec_stack_op({key_file, File}, _FoldFun, Acc, #state{dir=Dir} = State) ->
+exec_stack_op({st_key_file, File}, _FoldFun, Acc, #state{dir=Dir} = State) ->
     %% {[], FoldFun(File, value_unused_by_this_modules_fold_wrapper, Acc)}.
     Path = Dir ++ File,
     PerhapsBlocks = enumerate_perhaps_chunks_in_file(Path, State),
-    io:format("~s -> ~p\n", [Path, is_tombstoned_file(Path)]),
     case is_tombstoned_file(Path) of
         false ->
             BKeys = [{file_chunk, Path, Block} || Block <- PerhapsBlocks],
             %% io:format("BKeys ~s ~p\n", [File, BKeys]),
             {BKeys, State, Acc};
         true ->
-            %% LEFT OFF HERE
-            %% 1. We need to read a single chunk from this file,
-            %%    so we can extract the Riak BKey.
-            %% 2. Then for all PerhapsBlocks, create #r_object records
-            %%    w/proper Riak Keys w/proper block numbers in them.
-            %% 3. Fold each object through FoldFun
-            todoLEFTOFFHERE
+            io:format(user, "LINE ~p\n", [?LINE]),
+            case find_any_robj_in_file(Path, PerhapsBlocks, State) of
+                not_found ->
+                    {[], State, Acc};
+                RObj ->
+                    Bucket = riak_object:bucket(RObj),
+                    <<UUID:(?UUID_BYTES*8), Seq:?BLOCK_FIELD_SIZE>> =
+                        riak_object:key(RObj),
+                    BaseSeq = Seq div State#state.max_blocks,
+                    Res = [{st_robj, make_tombstoned_0byte_obj(Bucket, <<UUID:(?UUID_BYTES*8), (BaseSeq + NewSeq):?BLOCK_FIELD_SIZE>>)} || NewSeq <- PerhapsBlocks],
+                    {Res, State, Acc}
+            end
     end;
 exec_stack_op({file_chunk, Path, Block}, FoldFun, Acc, State0) ->
     State = if Path == State0#state.last_path ->
@@ -1234,7 +1242,14 @@ exec_stack_op({file_chunk, Path, Block}, FoldFun, Acc, State0) ->
                _ ->
                    Acc
            end,
-    {[], State, Acc2}.
+    {[], State, Acc2};
+exec_stack_op({st_robj, RObj}, FoldFun, Acc, State) ->
+    try
+        {[], State, FoldFun(RObj, Acc)}
+    catch EX:EY ->
+            error_logger:error_msg("file_chunk fold_fun error st_robj: ~p ~p\n", [EX, EY]),
+            {[], State, Acc}
+    end.
 
 %% exec_stack_op({Bucket, Key} = BKey, FoldFun, Acc,
 %%               #state{fold_type = objects} = State) ->
@@ -1258,8 +1273,24 @@ serialize_term(Term) ->
 deserialize_term(Bin) ->
     binary_to_term(Bin).
 
-scan_file(_Path) ->
-    qqq.
+find_any_robj_in_file(Path, Blocks, State) ->
+    lists:foldl(fun(BlockNum, not_found = Acc) ->
+                        try
+                            try_to_read_block(Path, BlockNum, State)
+                        catch _:_ ->
+                                Acc
+                        end;
+                   (_BlockNum, Acc) ->
+                        Acc
+                end, not_found, Blocks).
+
+try_to_read_block(Path, BlockNum, State) ->
+    case read_block2(Path, BlockNum, State) of
+        Bin when is_binary(Bin) ->
+            deserialize_term(Bin);        % Caller can catch exception
+        _ ->
+            not_found
+    end.
 
 t0() ->
     %% Blocksize must be at last 15 or so: this test writes two blocks
