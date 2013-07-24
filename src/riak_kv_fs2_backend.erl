@@ -234,6 +234,8 @@
 %% Dropped data directory suffix: for asynchronously deleting lots of stuff
 -define(DROPPED_DIR_SUFFIX, ".dropped").
 
+-define(MAX_LOWLEVEL_FOLD_ERRORS, 100).
+
 -ifdef(TEST).
 -compile(export_all).
 -ifdef(EQC).
@@ -271,7 +273,8 @@
           i_depth    :: non_neg_integer(),
           %% Items used by reduce_stack only
           last_path  :: string(),
-          last_fh    :: term()
+          last_fh    :: term(),
+          fold_errors = 0 :: integer()
           %% %% Items below used by key listing stack only
           %% fold_type  :: 'undefined' | 'buckets' | 'keys' | 'objects'
          }).
@@ -535,9 +538,13 @@ fold_common(ThisFoldFun, Acc, Opts, State) ->
             {ok, ObjectFolder()}
     end.
 
-fold_lowlevel(FoldFunArity2, Acc, _Opts, State)
-  when is_function(FoldFunArity2, 2) ->
-    reduce_stack(make_start_stack_objects(State), FoldFunArity2, Acc, State).
+%% @doc Fold across all Riak objects in the underlying fs2 store.
+
+-type robj_fold_fun() :: fun((riak_object:riak_object(), term()) -> term()).
+-spec fold_lowlevel(robj_fold_fun(), term(), list(), #state{}) -> term().
+fold_lowlevel(FoldFun, Acc, _Opts, State)
+  when is_function(FoldFun, 2) ->
+    reduce_stack(make_start_stack_objects(State), FoldFun, Acc, State).
 
 %% @doc Delete all objects from this backend
 %% and return a fresh reference.
@@ -673,7 +680,7 @@ location(State, Bucket) ->
     location(State, Bucket, <<>>).
 
 location(#state{dir = Dir, i_depth = IDepth}, Bucket, Key) ->
-    B64 = encode_thingie(riak_cs_utils:md5([Bucket, Key])),
+    B64 = encode_thingie(crypto:sha([Bucket, Key])),
     IDirs = if IDepth > 0 ->
                     %% We know encode_thingie() has exactly 1:2 expansion ratio
                     [First|Rest] = nest(B64, IDepth),
@@ -682,11 +689,6 @@ location(#state{dir = Dir, i_depth = IDepth}, Bucket, Key) ->
                     ""
             end,
     filename:join([Dir, IDirs, B64]).
-    %% if Key == <<>> ->
-    %%         filename:join([Dir, IDirs, B64]);
-    %%    true ->
-    %%         filename:join([Dir, IDirs, B64])
-    %% end.
 
 %% @spec location_to_bkeyhash(string(), state()) ->
 %%           {riak_object:bucket(), riak_object:key()}
@@ -892,8 +894,6 @@ is_tombstoned_file(File) ->
 read_block(Bucket, RiakKey, UUID, BlockNum, State) ->
     Key = convert_blocknum2key(UUID, BlockNum, State),
     File = location(State, Bucket, Key),
-%%     read_block1(File, Bucket, RiakKey, BlockNum, State).
-%% read_block1(File, Bucket, RiakKey, BlockNum, State) ->
     try
         case is_tombstoned_file(File) of
             true ->
@@ -1075,7 +1075,6 @@ enumerate_perhaps_chunks_in_file(Path, #state{max_blocks=MaxBlocks} = State) ->
             %% We don't have to be 100% exact: if there are holes in the
             %% file, then we'll emit block numbers for those holes,
             MB = calc_max_block(FI#file_info.size, State),
-            io:format("~s -> MB ~p\n", [Path, MB]),
             [BlockNum || BlockNum <- lists:seq(0, erlang:min(MB,
                                                              MaxBlocks - 1))]
     end.
@@ -1159,6 +1158,7 @@ make_start_stack_objects(#state{i_depth = IDepth}) ->
     end.
 
 %% @doc Reduce (or fold, pick your name) over items in a work stack
+%%      We intentionally do *not* return State.
 reduce_stack([], _FoldFun, Acc, State) ->
     catch file:close(State#state.last_fh),
     Acc;
@@ -1196,10 +1196,8 @@ exec_stack_op({st_key_file, File}, _FoldFun, Acc, #state{dir=Dir} = State) ->
     case is_tombstoned_file(Path) of
         false ->
             BKeys = [{file_chunk, Path, Block} || Block <- PerhapsBlocks],
-            %% io:format("BKeys ~s ~p\n", [File, BKeys]),
             {BKeys, State, Acc};
         true ->
-            io:format(user, "LINE ~p\n", [?LINE]),
             case find_any_robj_in_file(Path, PerhapsBlocks, State) of
                 not_found ->
                     {[], State, Acc};
@@ -1208,7 +1206,11 @@ exec_stack_op({st_key_file, File}, _FoldFun, Acc, #state{dir=Dir} = State) ->
                     <<UUID:(?UUID_BYTES*8), Seq:?BLOCK_FIELD_SIZE>> =
                         riak_object:key(RObj),
                     BaseSeq = Seq div State#state.max_blocks,
-                    Res = [{st_robj, make_tombstoned_0byte_obj(Bucket, <<UUID:(?UUID_BYTES*8), (BaseSeq + NewSeq):?BLOCK_FIELD_SIZE>>)} || NewSeq <- PerhapsBlocks],
+                    Res = [begin
+                               K = <<UUID:(?UUID_BYTES*8),
+                                     (BaseSeq + NewSeq):?BLOCK_FIELD_SIZE>>,
+                               {st_robj, make_tombstoned_0byte_obj(Bucket, K)}
+                           end || NewSeq <- PerhapsBlocks],
                     {Res, State, Acc}
             end
     end;
@@ -1222,43 +1224,40 @@ exec_stack_op({file_chunk, Path, Block}, FoldFun, Acc, State0) ->
                     State0#state{last_path = Path,
                                  last_fh = NewFH}
             end,
-    Acc2 = case read_block2(Path, Block, State) of
-               Bin when is_binary(Bin) ->
-                   io:format(user, "LINE ~p\n", [?LINE]),
-                   try
-                       FoldFun(deserialize_term(Bin), Acc)
-                   catch EX:EY ->
-                           error_logger:error_msg("file_chunk fold_fun error: ~p ~p\n", [EX, EY]),
-                           Acc
-                   end;
-               %% RObj when is_tuple(RObj), element(1, RObj) == r_object ->
-               %%     io:format(user, "LINE ~p\n", [?LINE]),
-               %%     try
-               %%         FoldFun(RObj, Acc)
-               %%     catch EX:EY ->
-               %%             error_logger:error_msg("file_chunk fold_fun error: ~p ~p\n", [EX, EY]),
-               %%             Acc
-               %%     end;
-               _ ->
-                   Acc
-           end,
-    {[], State, Acc2};
+    case read_block2(Path, Block, State) of
+        Bin when is_binary(Bin) ->
+            try
+                {[], State, FoldFun(deserialize_term(Bin), Acc)}
+            catch EX:EY ->
+                    perhaps_log_fold_error(EX, EY,
+                                           Path, Block, Acc,
+                                           State)
+            end;
+        _ ->
+            {[], State, Acc}
+    end;
 exec_stack_op({st_robj, RObj}, FoldFun, Acc, State) ->
     try
         {[], State, FoldFun(RObj, Acc)}
     catch EX:EY ->
-            error_logger:error_msg("file_chunk fold_fun error st_robj: ~p ~p\n", [EX, EY]),
-            {[], State, Acc}
+            perhaps_log_fold_error(EX, EY,
+                                   "no-path", "no-block", Acc,
+                                   State)
     end.
 
-%% exec_stack_op({Bucket, Key} = BKey, FoldFun, Acc,
-%%               #state{fold_type = objects} = State) ->
-%%     case get_object(Bucket, Key, false, State) of
-%%         {ok, Value, _S} ->
-%%             {[], FoldFun(BKey, Value, Acc)};
-%%         _Else ->
-%%             {[], Acc}
-%%     end.
+perhaps_log_fold_error(EX, EY, Path, Block, Acc,
+                       #state{fold_errors = Errs} = State)
+ when Errs < ?MAX_LOWLEVEL_FOLD_ERRORS  ->
+    error_logger:error_msg("file_chunk fold_fun: ~s ~p: ~p ~P @ ~p\n",
+                           [Path, Block, EX, EY, 32, erlang:get_stacktrace()]),
+    {[], State#state{fold_errors = Errs + 1}, Acc};
+perhaps_log_fold_error(_EX, _EY, _Path, _Block, Acc,
+                       #state{fold_errors = ?MAX_LOWLEVEL_FOLD_ERRORS} = State) ->
+    error_logger:error_msg("file_chunk fold_fun: suppressing errors on dir ~s",
+                           [State#state.dir]),
+    {[], State#state{fold_errors = ?MAX_LOWLEVEL_FOLD_ERRORS + 1}, Acc};
+perhaps_log_fold_error(_EX, _EY, _Path, _Block, Acc, State) ->
+    {[], State, Acc}.
 
 %% Remember: all paths on the stack start with "/" but are not absolute.
 do_glob(Glob, Dir, #state{dir = PrefixDir}) ->
