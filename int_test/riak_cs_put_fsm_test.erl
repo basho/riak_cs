@@ -52,7 +52,7 @@ small_put() ->
     Md5 = make_md5(Data),
     Parts = [<<"0">>, <<"123">>, <<"45">>, <<"678">>, <<"9">>],
     [riak_cs_put_fsm:augment_data(Pid, D) || D <- Parts],
-    {ok, Manifest} = riak_cs_put_fsm:finalize(Pid),
+    {ok, Manifest} = riak_cs_put_fsm:finalize(Pid, undefined),
     ?assert(Manifest?MANIFEST.state == active andalso
             Manifest?MANIFEST.content_md5==Md5).
 
@@ -64,7 +64,7 @@ zero_byte_put() ->
                                      60000, self(), RiakPid}),
     Data = <<>>,
     Md5 = make_md5(Data),
-    {ok, Manifest} = riak_cs_put_fsm:finalize(Pid),
+    {ok, Manifest} = riak_cs_put_fsm:finalize(Pid, undefined),
     ?assert(Manifest?MANIFEST.state == active andalso
             Manifest?MANIFEST.content_md5==Md5).
 

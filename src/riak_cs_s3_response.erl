@@ -27,6 +27,7 @@
          error_response/5,
          copy_object_response/3,
          no_such_upload_response/3,
+         invalid_digest_response/3,
          error_code_to_atom/1]).
 
 -include("riak_cs.hrl").
@@ -76,7 +77,10 @@ error_message(malformed_policy_condition) -> "Policy has invalid condition";
 error_message(no_such_key) -> "The specified key does not exist.";
 error_message(no_such_bucket_policy) -> "The specified bucket does not have a bucket policy.";
 error_message(no_such_upload) ->
-    "The specified upload does not exist. The upload ID may be invalid, or the upload may have been aborted or completed.";
+    "The specified upload does not exist. The upload ID may be invalid, "
+        "or the upload may have been aborted or completed.";
+error_message(invalid_digest) ->
+    "The Content-MD5 you specified was invalid.";
 error_message(bad_request) -> "Bad Request";
 error_message(invalid_argument) -> "Invalid Argument";
 error_message(unresolved_grant_email) -> "The e-mail address you provided does not match any account on record.";
@@ -109,6 +113,7 @@ error_code(malformed_policy_action) -> "MalformedPolicy";
 error_code(malformed_policy_condition) -> "MalformedPolicy";
 error_code(no_such_bucket_policy) -> "NoSuchBucketPolicy";
 error_code(no_such_upload) -> "NoSuchUpload";
+error_code(invalid_digest) -> "InvalidDigest";
 error_code(bad_request) -> "BadRequest";
 error_code(invalid_argument) -> "InvalidArgument";
 error_code(invalid_range) -> "InvalidRange";
@@ -150,6 +155,7 @@ status_code(malformed_policy_action) -> 400;
 status_code(malformed_policy_condition) -> 400;
 status_code(no_such_bucket_policy) -> 404;
 status_code(no_such_upload) -> 404;
+status_code(invalid_digest) -> 400;
 status_code(bad_request) -> 400;
 status_code(invalid_argument) -> 400;
 status_code(unresolved_grant_email) -> 400;
@@ -219,6 +225,17 @@ no_such_upload_response(UploadId, RD, Ctx) ->
               ]},
     Body = riak_cs_xml:export_xml([XmlDoc]),
     respond(status_code(no_such_upload), Body, RD, Ctx).
+
+invalid_digest_response(ContentMd5, RD, Ctx) ->
+    XmlDoc = {'Error',
+              [
+               {'Code', [error_code(invalid_digest)]},
+               {'Message', [error_message(invalid_digest)]},
+               {'Content-MD5', [ContentMd5]},
+               {'HostId', ["host-id"]}
+              ]},
+    Body = riak_cs_xml:export_xml([XmlDoc]),
+    respond(status_code(invalid_digest), Body, RD, Ctx).
 
 %% @doc Convert an error code string into its corresponding atom
 -spec error_code_to_atom(string()) -> atom().
