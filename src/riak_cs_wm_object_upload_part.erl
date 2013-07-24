@@ -220,20 +220,15 @@ accept_body(RD, Ctx0=#context{local_context=LocalCtx0,
     Caller = riak_cs_mp_utils:user_rec_to_3tuple(Ctx0#context.user),
     try
         {t, {ok, UploadId}} =
-            {t, safe_base64url_decode(re:replace(wrq:path(RD), ".*/uploads/", "", [{return, binary}]))},
+            {t, riak_cs_utils:safe_base64url_decode(re:replace(wrq:path(RD), ".*/uploads/", "", [{return, binary}]))},
         {t, {ok, PartNumber}} =
-            {t, safe_list_to_integer(wrq:get_qs_value("partNumber", RD))},
-        {t3, {ok, ContentMD5}} = case wrq:get_req_header("Content-MD5", RD) of
-                                     undefined -> {t3, {ok, undefined}};
-                                     MD5Enc    -> {t3, safe_base64_decode(MD5Enc)}
-                                 end,
+            {t, riak_cs_utils:safe_list_to_integer(wrq:get_qs_value("partNumber", RD))},
         case riak_cs_mp_utils:upload_part(Bucket, Key, UploadId, PartNumber,
                                           Size, Caller, RiakcPid) of
             {upload_part_ready, PartUUID, PutPid} ->
                 LocalCtx = LocalCtx0#key_context{upload_id=UploadId,
                                                  part_number=PartNumber,
-                                                 part_uuid=PartUUID,
-                                                 content_md5=ContentMD5},
+                                                 part_uuid=PartUUID},
                 Ctx = Ctx0#context{local_context=LocalCtx},
                 accept_streambody(RD, Ctx, PutPid,
                                   wrq:stream_req_body(RD, BlockSize));
@@ -327,51 +322,29 @@ to_xml(RD, Ctx=#context{local_context=LocalCtx,
 
 
 finalize_request(RD, Ctx=#context{local_context=LocalCtx,
+                                  response_module=ResponseMod,
                                   riakc_pid=RiakcPid}, PutPid) ->
-    {ok, M} = riak_cs_put_fsm:finalize(PutPid),
     #key_context{bucket=Bucket,
                  key=Key,
                  upload_id=UploadId,
                  part_number=PartNumber,
-                 part_uuid=PartUUID,
-                 content_md5=ContentMD5} = LocalCtx,
+                 part_uuid=PartUUID} = LocalCtx,
     Caller = riak_cs_mp_utils:user_rec_to_3tuple(Ctx#context.user),
-    case riak_cs_mp_utils:upload_part_finished(
-           Bucket, Key, UploadId, PartNumber, PartUUID,
-           M?MANIFEST.content_md5, Caller, RiakcPid) of
-        ok ->
-            if ContentMD5 == undefined orelse
-               ContentMD5 == M?MANIFEST.content_md5 ->
-                    RD2 = wrq:set_resp_header("ETag", riak_cs_utils:etag_from_binary(M?MANIFEST.content_md5), RD),
+    ContentMD5 = wrq:get_req_header("content-md5", RD),
+    case riak_cs_put_fsm:finalize(PutPid, ContentMD5) of
+        {ok, M} ->
+            case riak_cs_mp_utils:upload_part_finished(
+                   Bucket, Key, UploadId, PartNumber, PartUUID,
+                   M?MANIFEST.content_md5, Caller, RiakcPid) of
+                ok ->
+                    ETag = riak_cs_utils:etag_from_binary(M?MANIFEST.content_md5),
+                    RD2 = wrq:set_resp_header("ETag", ETag, RD),
                     {{halt, 200}, RD2, Ctx};
-               true ->
-                    XErr = riak_cs_mp_utils:make_special_error("BadDigest"),
-                    RD2 = wrq:set_resp_body(XErr, RD),
-                    {{halt, 400}, RD2, Ctx}
+                {error, Reason} ->
+                    riak_cs_s3_response:api_error(Reason, RD, Ctx)
             end;
-        {error, Reason} ->
-            riak_cs_s3_response:api_error(Reason, RD, Ctx)
-    end.
-
-safe_base64_decode(Str) ->
-    try
-        X = base64:decode(Str),
-        {ok, X}
-    catch _:_ ->
-            bad
-    end.
-
-safe_base64url_decode(Str) ->
-    try
-        X = base64url:decode(Str),
-        {ok, X}
-    catch _:_ ->
-            bad
-    end.
-safe_list_to_integer(Str) ->
-    try
-        X = list_to_integer(Str),
-        {ok, X}
-    catch _:_ ->
-            bad
+        {error, invalid_digest} ->
+            ResponseMod:invalid_digest_response(ContentMD5, RD, Ctx);
+        {error, Reason1} ->
+            riak_cs_s3_response:api_error(Reason1, RD, Ctx)
     end.

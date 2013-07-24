@@ -264,7 +264,7 @@ upload_part(Bucket, Key, UploadId, PartNumber, Size, Caller, RiakcPidUnW) ->
 
 upload_part_1blob(PutPid, Blob) ->
     ok = riak_cs_put_fsm:augment_data(PutPid, Blob),
-    {ok, M} = riak_cs_put_fsm:finalize(PutPid),
+    {ok, M} = riak_cs_put_fsm:finalize(PutPid, undefined),
     {ok, M?MANIFEST.content_md5}.
 
 %% Once upon a time, in a naive land far away, I thought that it would

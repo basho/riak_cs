@@ -202,7 +202,7 @@ produce_body(RD, Ctx=#context{local_context=LocalCtx,
         end,
     if Method == 'HEAD' ->
             riak_cs_dtrace:dt_object_return(?MODULE, <<"object_head">>,
-                                               [], [UserName, BFile_str]),
+                                            [], [UserName, BFile_str]),
             ok = riak_cs_stats:update_with_start(object_head, StartTime);
        true ->
             ok
@@ -235,7 +235,7 @@ delete_resource(RD, Ctx=#context{local_context=LocalCtx,
     BFile_str = [Bucket, $,, Key],
     UserName = riak_cs_wm_utils:extract_name(Ctx#context.user),
     riak_cs_dtrace:dt_object_entry(?MODULE, <<"object_delete">>,
-                                      [], [UserName, BFile_str]),
+                                   [], [UserName, BFile_str]),
     riak_cs_get_fsm:stop(GetFsmPid),
     BinKey = list_to_binary(Key),
     DeleteObjectResponse = riak_cs_utils:delete_object(Bucket, BinKey, RiakcPid),
@@ -315,7 +315,7 @@ accept_body(RD, Ctx=#context{local_context=LocalCtx,
     BFile_str = [Bucket, $,, Key],
     UserName = riak_cs_wm_utils:extract_name(User),
     riak_cs_dtrace:dt_object_entry(?MODULE, <<"object_put">>,
-                                      [], [UserName, BFile_str]),
+                                   [], [UserName, BFile_str]),
     riak_cs_get_fsm:stop(GetFsmPid),
     Metadata = riak_cs_wm_utils:extract_user_metadata(RD),
     BlockSize = riak_cs_lfs_utils:block_size(),
@@ -341,7 +341,7 @@ accept_streambody(RD,
     finalize_request(RD, Ctx, Pid);
 accept_streambody(RD,
                   Ctx=#context{local_context=LocalCtx,
-                                       user=User},
+                               user=User},
                   Pid,
                   {Data, Next}) ->
     #key_context{bucket=Bucket,
@@ -364,6 +364,7 @@ accept_streambody(RD,
 finalize_request(RD,
                  Ctx=#context{local_context=LocalCtx,
                               start_time=StartTime,
+                              response_module=ResponseMod,
                               user=User},
                  Pid) ->
     #key_context{bucket=Bucket,
@@ -372,16 +373,24 @@ finalize_request(RD,
     BFile_str = [Bucket, $,, Key],
     UserName = riak_cs_wm_utils:extract_name(User),
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"finalize_request">>, [S], [UserName, BFile_str]),
-    %% TODO: probably want something that counts actual bytes uploaded
-    %% instead, to record partial/aborted uploads
-    AccessRD = riak_cs_access_log_handler:set_bytes_in(S, RD),
-
-    {ok, Manifest} = riak_cs_put_fsm:finalize(Pid),
-    ETag = riak_cs_utils:etag_from_binary(Manifest?MANIFEST.content_md5),
+    ContentMD5 = wrq:get_req_header("content-md5", RD),
+    Response =
+        case riak_cs_put_fsm:finalize(Pid, ContentMD5) of
+            {ok, Manifest} ->
+                ETag = riak_cs_utils:etag_from_binary(Manifest?MANIFEST.content_md5),
+                %% TODO: probably want something that counts actual bytes uploaded
+                %% instead, to record partial/aborted uploads
+                AccessRD = riak_cs_access_log_handler:set_bytes_in(S, RD),
+                {{halt, 200}, wrq:set_resp_header("ETag", ETag, AccessRD), Ctx};
+            {error, invalid_digest} ->
+                ResponseMod:invalid_digest_response(ContentMD5, RD, Ctx);
+            {error, Reason} ->
+                ResponseMod:api_error(Reason, RD, Ctx)
+        end,
     ok = riak_cs_stats:update_with_start(object_put, StartTime),
     riak_cs_dtrace:dt_wm_return(?MODULE, <<"finalize_request">>, [S], [UserName, BFile_str]),
     riak_cs_dtrace:dt_object_return(?MODULE, <<"object_put">>, [S], [UserName, BFile_str]),
-    {{halt, 200}, wrq:set_resp_header("ETag",  ETag, AccessRD), Ctx}.
+    Response.
 
 check_0length_metadata_update(Length, RD, Ctx=#context{local_context=LocalCtx}) ->
     %% The authorize() callback has already been called, which means

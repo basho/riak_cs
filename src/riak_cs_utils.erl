@@ -64,6 +64,9 @@
          put_with_no_meta/3,
          riak_connection/0,
          riak_connection/1,
+         safe_base64_decode/1,
+         safe_base64url_decode/1,
+         safe_list_to_integer/1,
          save_user/3,
          set_bucket_acl/5,
          set_object_acl/5,
@@ -1435,4 +1438,31 @@ chunked_md5(Data, Context, ChunkSize) ->
             <<Chunk:ChunkSize/binary, RestData/binary>> = Data,
             UpdContext = crypto:md5_update(Context, Chunk),
             chunked_md5(RestData, UpdContext, ChunkSize)
+    end.
+
+-spec safe_base64_decode(binary() | string()) -> {ok, binary()} | bad.
+safe_base64_decode(Str) ->
+    try
+        X = base64:decode(Str),
+        {ok, X}
+    catch _:_ ->
+            bad
+    end.
+
+-spec safe_base64url_decode(binary() | string()) -> {ok, binary()} | bad.
+safe_base64url_decode(Str) ->
+    try
+        X = base64url:decode(Str),
+        {ok, X}
+    catch _:_ ->
+            bad
+    end.
+
+-spec safe_list_to_integer(string()) -> {ok, integer()} | bad.
+safe_list_to_integer(Str) ->
+    try
+        X = list_to_integer(Str),
+        {ok, X}
+    catch _:_ ->
+            bad
     end.
