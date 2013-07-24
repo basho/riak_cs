@@ -254,7 +254,7 @@ do_get_block(ReplyPid, Bucket, Key, ClusterID, UUID, BlockNumber, BClass,
     Retry = fun(NewPause) ->
                ok = riak_cs_stats:update_with_start(block_get_retry, StartTime),
                do_get_block(ReplyPid, Bucket, Key, ClusterID, UUID, BlockNumber,
-                            State, NewPause)
+                             BClass, State, NewPause)
             end,
 %%% SLF TODO fix timeout
     case get_block_local(RiakcPid, FullBucket, FullKey, GetOptions1, 5*1000) of
