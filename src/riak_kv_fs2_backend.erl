@@ -550,10 +550,15 @@ fold_buckets(FoldBucketsFun, Acc, _Opts, State) ->
                 any(),
                 [{atom(), term()}],
                 state()) -> {ok, term()} | {async, fun()}.
-fold_keys(FoldKeysFun, Acc, Opts, State) ->
-    fold_common(fold_keys_fun(FoldKeysFun), Acc, Opts,
-                State#state{%fold_type = keys
-                           }).
+fold_keys(FoldKeysFun, Acc, _Opts, State) ->
+    Fun = fun(<<Bucket:(?BUCKET_PREFIX_LEN+16)/binary, Key/binary>>,
+              FAcc) ->
+                  FoldKeysFun({Bucket, Key}, FAcc)
+          end,
+    %% TODO: make this async!
+    FinalAcc = eleveldb:fold_keys(State#state.upper_db, Fun,
+                                  Acc, []),
+    {ok, FinalAcc}.
 
 %% @doc Fold over all the objects for one or all buckets.
 -spec fold_objects(riak_kv_backend:fold_objects_fun(),
