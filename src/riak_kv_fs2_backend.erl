@@ -473,6 +473,7 @@ put_object_lower(Bucket, UUID, BlockNum, RObj, State) ->
 put_block_upper(Bucket, UUID, BlockNum, RObj, State) ->
     Key = make_upper_key(Bucket, UUID, BlockNum),
     CSum = find_rcs_bcsum_or_else(riak_object:get_metadata(RObj)),
+    %% TODO: standardize & versionify this thing
     Val = term_to_binary({yy, riak_object:vclock(RObj), CSum}),
     ok = eleveldb:put(State#state.upper_db, Key, Val, (State#state.upper_db_opts)#upper_opts.write),
     ok.
@@ -566,7 +567,7 @@ fold_keys(FoldKeysFun, Acc, _Opts, State) ->
                    [{atom(), term()}],
                    state()) -> {ok, any()} | {async, fun()}.
 fold_objects(FoldObjectsFun, Acc, Opts, State) ->
-    fold_common(fold_objects_fun(FoldObjectsFun), Acc, Opts,
+    fold_common(FoldObjectsFun, Acc, Opts,
                 State#state{%fold_type = objects
                            }).
 
@@ -694,29 +695,6 @@ atomic_write(File, Val, State) ->
         ok ->
             ef_rename(FakeFile, File);
         X -> X
-    end.
-
-%% @private
-%% Return a function to fold over the buckets on this backend
-fold_buckets_fun(FoldBucketsFun) ->
-    fun({Bucket, _Nosuchkey}, _Nosuchvalue, Acc) ->
-            FoldBucketsFun(Bucket, Acc)
-    end.
-
-%% @private
-%% Return a function to fold over keys on this backend
-fold_keys_fun(FoldKeysFun) ->
-    fun(BKey, _Value, Acc) ->
-            {Bucket, Key} = BKey,
-            FoldKeysFun(Bucket, Key, Acc)
-    end.
-
-%% @private
-%% Return a function to fold over the objects on this backend
-fold_objects_fun(FoldObjectsFun) ->
-    fun(BKey, Value, Acc) ->
-            {Bucket, Key} = BKey,
-            FoldObjectsFun(Bucket, Key, Value, Acc)
     end.
 
 %% @spec location(state(), riak_object:bucket(), riak_object:key())
@@ -1214,7 +1192,7 @@ drop_from_list(_N, []) ->
 %% * Paths on the stack are relative to #state.dir.
 %% * Paths on the stack all start with "/", but they are not absolute paths!
 
-make_start_stack_objects(#state{i_depth = IDepth}) ->
+make_start_stack_objects(#state{dir = _Dir, i_depth = IDepth}) ->
     case IDepth of
         0 ->
             %% TODO: The stack machine doesn't support this, is it needed?
@@ -1293,7 +1271,11 @@ exec_stack_op({file_chunk, Path, Block}, FoldFun, Acc, State0) ->
     case read_block2(Path, Block, State) of
         Bin when is_binary(Bin) ->
             try
-                {[], State, FoldFun(deserialize_term(Bin), Acc)}
+                RObj = deserialize_term(Bin),
+                {[], State, FoldFun(riak_object:bucket(RObj),
+                                    riak_object:key(RObj),
+                                    riak_object:get_value(RObj),
+                                    Acc)}
             catch EX:EY ->
                     perhaps_log_fold_error(EX, EY,
                                            Path, Block, Acc,
