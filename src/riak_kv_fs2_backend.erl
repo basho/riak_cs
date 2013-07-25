@@ -531,10 +531,19 @@ delete(<<Prefix:?BUCKET_PREFIX_LEN/binary, _/binary>> = Bucket,
                    any(),
                    [],
                    state()) -> {ok, any()} | {async, fun()}.
-fold_buckets(FoldBucketsFun, Acc, Opts, State) ->
-    fold_common(fold_buckets_fun(FoldBucketsFun), Acc, Opts,
-                State#state{%fold_type = buckets
-                           }).
+fold_buckets(FoldBucketsFun, Acc, _Opts, State) ->
+    FiltFun = fun(<<Bucket:(?BUCKET_PREFIX_LEN+16)/binary, _Key/binary>>,
+                  {LastBucket, _InnerAcc} = FAcc)
+                 when Bucket == LastBucket ->
+                      FAcc;
+                 (<<Bucket:(?BUCKET_PREFIX_LEN+16)/binary, _Key/binary>>,
+                  {_LastBucket, InnerAcc}) ->
+                      {Bucket, FoldBucketsFun(Bucket, InnerAcc)}
+              end,
+    %% TODO: make this async!
+    {_, FinalAcc} = eleveldb:fold_keys(State#state.upper_db, FiltFun,
+                                       {<<>>, Acc}, []),
+    {ok, FinalAcc}.
 
 %% @doc Fold over all the keys for one or all buckets.
 -spec fold_keys(riak_kv_backend:fold_keys_fun(),
@@ -1770,6 +1779,8 @@ open_db(Dir, OpenOpts, RetriesLeft, _) ->
 %%       Name :: filename() | dirname(),
 %%       Reason :: file:posix().
 ef_ensure_dir("/") ->
+    ok;
+ef_ensure_dir(".") ->
     ok;
 ef_ensure_dir(F) ->
     Dir = filename:dirname(F),
