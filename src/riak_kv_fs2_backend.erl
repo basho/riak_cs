@@ -471,11 +471,15 @@ put_object_lower(Bucket, UUID, BlockNum, RObj, State) ->
     end.
 
 put_block_upper(Bucket, UUID, BlockNum, RObj, State) ->
-    Key = list_to_binary([Bucket, convert_blocknum2key(UUID, BlockNum, State)]),
+    Key = make_upper_key(Bucket, UUID, BlockNum),
     CSum = find_rcs_bcsum_or_else(riak_object:get_metadata(RObj)),
     Val = term_to_binary({yy, riak_object:vclock(RObj), CSum}),
     ok = eleveldb:put(State#state.upper_db, Key, Val, (State#state.upper_db_opts)#upper_opts.write),
     ok.
+
+make_upper_key(Bucket, UUID, BlockNum) ->    
+    list_to_binary([Bucket,
+                    <<UUID:?UUID_BYTES/binary, BlockNum:?BLOCK_FIELD_SIZE>>]).
 
 %% @doc Delete the object stored at BKey
 -spec delete(riak_object:bucket(), riak_object:key(), [index_spec()], state()) ->
@@ -489,15 +493,18 @@ delete(<<Prefix:?BUCKET_PREFIX_LEN/binary, _/binary>> = Bucket,
        Prefix == ?BLOCK_BUCKET_PREFIX_V2 ->
     Key = convert_blocknum2key(UUID, BlockNum, State),
     File = location(State, Bucket, Key),
+    PerhapsBlocks = enumerate_perhaps_chunks_in_file(File, State),
+
     _ = ef_delete(File),
-    {ok, State};
-delete(Bucket, Key, _IndexSpecs, State) ->
-    File = location(State, Bucket, Key),
-    case ef_delete(File) of
-        ok -> {ok, State};
-        {error, enoent} -> {ok, State};
-        {error, Err} -> {error, Err, State}
-    end.
+    if PerhapsBlocks == [] ->
+            ok;
+       true ->
+            BaseBlock = BlockNum div State#state.max_blocks,
+            DbDeletes = [{delete, make_upper_key(Bucket, UUID, BaseBlock+Block)}
+                         || Block <- PerhapsBlocks],
+            ok = eleveldb:write(State#state.upper_db, DbDeletes, (State#state.upper_db_opts)#upper_opts.write)
+    end,
+    {ok, State}.
 
 %% Notes about folding refactoring:
 %%
@@ -1248,14 +1255,14 @@ exec_stack_op({st_key_file, File}, _FoldFun, Acc, #state{dir=Dir} = State) ->
                     {[], State, Acc};
                 RObj ->
                     Bucket = riak_object:bucket(RObj),
-                    <<UUID:(?UUID_BYTES*8), Seq:?BLOCK_FIELD_SIZE>> =
+                    <<UUID:(?UUID_BYTES*8), BlockNum:?BLOCK_FIELD_SIZE>> =
                         riak_object:key(RObj),
-                    BaseSeq = Seq div State#state.max_blocks,
+                    BaseBlock = BlockNum div State#state.max_blocks,
                     Res = [begin
                                K = <<UUID:(?UUID_BYTES*8),
-                                     (BaseSeq + NewSeq):?BLOCK_FIELD_SIZE>>,
+                                     (BaseBlock + NewBlock):?BLOCK_FIELD_SIZE>>,
                                {st_robj, make_tombstoned_0byte_obj(Bucket, K)}
-                           end || NewSeq <- PerhapsBlocks],
+                           end || NewBlock <- PerhapsBlocks],
                     {Res, State, Acc}
             end
     end;
