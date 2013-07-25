@@ -472,9 +472,10 @@ put_object_lower(Bucket, UUID, BlockNum, RObj, State) ->
 
 put_block_upper(Bucket, UUID, BlockNum, RObj, State) ->
     Key = make_upper_key(Bucket, UUID, BlockNum),
+    ValSize = byte_size(riak_object:get_value(RObj)),
     CSum = find_rcs_bcsum_or_else(riak_object:get_metadata(RObj)),
     %% TODO: standardize & versionify this thing
-    Val = term_to_binary({yy, riak_object:vclock(RObj), CSum}),
+    Val = term_to_binary({yy, riak_object:vclock(RObj), CSum, ValSize}),
     ok = eleveldb:put(State#state.upper_db, Key, Val, (State#state.upper_db_opts)#upper_opts.write),
     ok.
 
@@ -530,9 +531,9 @@ delete(<<Prefix:?BUCKET_PREFIX_LEN/binary, _/binary>> = Bucket,
 %% @doc Fold over all the buckets.
 -spec fold_buckets(riak_kv_backend:fold_buckets_fun(),
                    any(),
-                   [],
+                   proplists:proplist(),
                    state()) -> {ok, any()} | {async, fun()}.
-fold_buckets(FoldBucketsFun, Acc, _Opts, State) ->
+fold_buckets(FoldBucketsFun, Acc, Opts, State) ->
     FiltFun = fun(<<Bucket:(?BUCKET_PREFIX_LEN+16)/binary, _Key/binary>>,
                   {LastBucket, _InnerAcc} = FAcc)
                  when Bucket == LastBucket ->
@@ -541,48 +542,63 @@ fold_buckets(FoldBucketsFun, Acc, _Opts, State) ->
                   {_LastBucket, InnerAcc}) ->
                       {Bucket, FoldBucketsFun(Bucket, InnerAcc)}
               end,
-    %% TODO: make this async!
-    {_, FinalAcc} = eleveldb:fold_keys(State#state.upper_db, FiltFun,
-                                       {<<>>, Acc}, []),
-    {ok, FinalAcc}.
+    ObjectFolder =
+        fun() ->
+                {_, FinalAcc} = eleveldb:fold_keys(State#state.upper_db,
+                                                   FiltFun,
+                                                   {<<>>, Acc}, []),
+                FinalAcc
+        end,
+    case proplists:get_value(async_fold, Opts, false) of
+        true ->
+            {async, ObjectFolder};
+        _ ->
+            {ok, ObjectFolder()}
+    end.
 
 %% @doc Fold over all the keys for one or all buckets.
 -spec fold_keys(riak_kv_backend:fold_keys_fun(),
                 any(),
-                [{atom(), term()}],
+                proplists:proplist(),
                 state()) -> {ok, term()} | {async, fun()}.
-fold_keys(FoldKeysFun, Acc, _Opts, State) ->
+fold_keys(FoldKeysFun, Acc, Opts, State) ->
     Fun = fun(<<Bucket:(?BUCKET_PREFIX_LEN+16)/binary, Key/binary>>,
               FAcc) ->
                   FoldKeysFun({Bucket, Key}, FAcc)
           end,
-    %% TODO: make this async!
-    FinalAcc = eleveldb:fold_keys(State#state.upper_db, Fun,
-                                  Acc, []),
-    {ok, FinalAcc}.
+    ObjectFolder =
+        fun() ->
+                eleveldb:fold_keys(State#state.upper_db, Fun,
+                                   Acc, [])
+        end,
+    case proplists:get_value(async_fold, Opts, false) of
+        true ->
+            {async, ObjectFolder};
+        _ ->
+            {ok, ObjectFolder()}
+    end.
 
 %% @doc Fold over all the objects for one or all buckets.
 -spec fold_objects(riak_kv_backend:fold_objects_fun(),
                    any(),
-                   [{atom(), term()}],
+                   proplists:proplist(),
                    state()) -> {ok, any()} | {async, fun()}.
 fold_objects(FoldObjectsFun, Acc, Opts, State) ->
-    fold_common(FoldObjectsFun, Acc, Opts,
+    fold_objects_lower(FoldObjectsFun, Acc, Opts,
                 State#state{%fold_type = objects
                            }).
 
-fold_common(ThisFoldFun, Acc, Opts, State) ->
+fold_objects_lower(ThisFoldFun, Acc, Opts, State) ->
     ______Bucket = proplists:get_value(bucket, Opts),
-    %% TODO: Stack = make_start_stack_objects(Bucket, State),
     Stack = make_start_stack_objects(State),
     ObjectFolder =
         fun() ->
                 reduce_stack(Stack, ThisFoldFun, Acc, State)
         end,
-    case lists:member(async_fold, Opts) of
+    case proplists:get_value(async_fold, Opts, false) of
         true ->
             {async, ObjectFolder};
-        false ->
+        _ ->
             {ok, ObjectFolder()}
     end.
 
