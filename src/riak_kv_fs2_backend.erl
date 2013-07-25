@@ -274,9 +274,18 @@
           %% Items used by reduce_stack only
           last_path  :: string(),
           last_fh    :: term(),
-          fold_errors = 0 :: integer()
+          fold_errors = 0 :: integer(),
+          upper_db_type :: atom(),
+          upper_db   :: term(),
+          upper_db_opts :: term()
           %% %% Items below used by key listing stack only
           %% fold_type  :: 'undefined' | 'buckets' | 'keys' | 'objects'
+         }).
+-record(upper_opts, {
+          open  :: term(),
+          read  :: term(),
+          write :: term(),
+          fold  :: term()
          }).
 
 %% File trailer
@@ -325,17 +334,37 @@ start(Partition, Config) ->
                 io_lib:format("rm -rf ~s.*~s &", [Dir, ?DROPPED_DIR_SUFFIX])),
         _ = os:cmd(Cmd),
 
+        %% Open our upper-level DB
+        OpenOpts = [{create_if_missing, true},
+                    {max_open_files, 50},
+                    {use_bloomfilter, true},
+                    {write_buffer_size, 34410590}],
+        ReadOpts = [],
+        WriteOpts = [],
+        FoldOpts = [{fill_cache,false}],
+        AllOpts = #upper_opts{open = OpenOpts,
+                              read = ReadOpts,
+                              write = WriteOpts,
+                              fold = FoldOpts},
+        UpperDir = Dir ++ "/.upperdb",
+        {ok, UpperDB} = open_db(UpperDir, OpenOpts),
+
         {ok,  #state{dir = Dir,
                      block_size = BlockSize,
                      max_blocks = MaxBlocks,
-                     i_depth = IDepth}}
+                     i_depth = IDepth,
+                     upper_db_type = eleveldb,
+                     upper_db = UpperDB,
+                     upper_db_opts = AllOpts}}
     catch throw:Error ->
         {error, Error}
     end.
 
 %% @doc Stop the backend
 -spec stop(state()) -> ok.
-stop(_State) -> ok.
+stop(State) ->
+    catch eleveldb:close(State#state.upper_db),
+    ok.
 
 %% @doc Get the object stored at the given bucket/key pair
 -spec get_object(riak_object:bucket(), riak_object:key(), boolean(), state()) ->
@@ -427,29 +456,26 @@ put_object(<<Prefix:?BUCKET_PREFIX_LEN/binary, _/binary>> = Bucket,
                         _ ->
                             riak_object:set_contents(RObj, [MDV])
                     end,
-            put_object2(Bucket, UUID, BlockNum, RObj2, State);
+            put_object_lower(Bucket, UUID, BlockNum, RObj2, State);
         Else ->
             {{error, {has_errors, Else}, State}, invalid_encoded_val_do_not_use}
-    end;
-put_object(Bucket, PrimaryKey, _IndexSpecs, RObj, State) ->
-    File = location(State, Bucket, PrimaryKey),
-    case ef_ensure_dir(File) of
-        ok ->
-            EncodedVal = serialize_term(RObj),
-            case atomic_write(File, EncodedVal, State) of
-                ok         -> {{ok, State}, EncodedVal};
-                {error, X} -> {{error, X, State}, EncodedVal}
-            end;
-        {error, X} -> {{error, X, State}, invalid_encoded_val_do_not_use}
     end.
 
-put_object2(Bucket, UUID, BlockNum, RObj, State) ->
+put_object_lower(Bucket, UUID, BlockNum, RObj, State) ->
     case put_block(Bucket, UUID, BlockNum, RObj, State) of
-        {ok, EncodedVal} ->
+        {ok, RObj2, EncodedVal} ->
+            ok = put_block_upper(Bucket, UUID, BlockNum, RObj2, State),
             {{ok, State}, EncodedVal};
         Reason ->
             {{error, Reason, State}, invalid_encoded_val_do_not_use}
     end.
+
+put_block_upper(Bucket, UUID, BlockNum, RObj, State) ->
+    Key = list_to_binary([Bucket, convert_blocknum2key(UUID, BlockNum, State)]),
+    CSum = find_rcs_bcsum_or_else(riak_object:get_metadata(RObj)),
+    Val = term_to_binary({yy, riak_object:vclock(RObj), CSum}),
+    ok = eleveldb:put(State#state.upper_db, Key, Val, (State#state.upper_db_opts)#upper_opts.write),
+    ok.
 
 %% @doc Delete the object stored at BKey
 -spec delete(riak_object:bucket(), riak_object:key(), [index_spec()], state()) ->
@@ -990,7 +1016,8 @@ put_block_t_marker_check(Bucket, UUID, BlockNum, RObj, State) ->
             if FI#file_info.mode band ?TOMBSTONE_MODE_MARKER > 0 ->
                     %% This UUID + block of chunks has got a tombstone
                     %% marker set, so there's nothing more to do here.
-                    {ok, serialize_term(make_tombstoned_0byte_obj(RObj))};
+                    RObj2 = make_tombstoned_0byte_obj(RObj),
+                    {ok, RObj2, serialize_term(RObj2)};
                true ->
                     put_block_t_check(BlockNum, RObj, File, FI_perhaps, State)
             end;
@@ -1008,12 +1035,12 @@ put_block_t_check(BlockNum, RObj, File, FI_perhaps, State) ->
         true ->
             case FI_perhaps of
                 {ok, FI} ->
-                    {ok = NewMode(FI), serialize_term(make_tombstoned_0byte_obj(RObj))};
+                    {ok = NewMode(FI), RObj, serialize_term(make_tombstoned_0byte_obj(RObj))};
                 {error, enoent} ->
                     ok = ef_ensure_dir(File),
                     {ok, FH} = file:open(File, [write, raw]),
                     ok = file:close(FH),
-                    {ok = NewMode(#file_info{mode = 8#600}), serialize_term(RObj)}
+                    {ok = NewMode(#file_info{mode = 8#600}), RObj, serialize_term(RObj)}
             end;
         _ ->
             put_block3(BlockNum, RObj, File, FI_perhaps, State)
@@ -1043,7 +1070,25 @@ put_block3(BlockNum, RObj, File, FI_perhaps, State) ->
                             Offset = calc_block_offset(BlockNum, State,
                                                        BlockSize),
                             ok = file:pwrite(FH, Offset, PackedBin),
-                            {ok, EncodedObj}
+                            %% TODO: This is a sad state of affairs, but
+                            %% I hadn't realized the limitation before Riak
+                            %% 1.4.0 was finished & released.  The EncodedVal
+                            %% that we return to riak_kv_vnode is not an
+                            %% opaque blob that will be used as-is by AAE.
+                            %% Instead, AAE fully assumes that this EncodedVal
+                            %% is a valid encoded Riak object, and it is going
+                            %% to unencode it, then update the vclock with
+                            %% a sorted one (but we never have more than one
+                            %% vclock actor, so this step is a no-op as far
+                            %% as we're concerned), re-encodes the r_object,
+                            %% and then hashes it with erlang:phash2() and
+                            %% then encodes the hash with term_to_binary().
+                            %%
+                            %% So, we're going to create a fake object
+                            %% that's barely big & valid enough to allow AAE
+                            %% to do its job.
+                            FakeRObj = make_fake_tiny_obj(RObj),
+                            {ok, RObj, riak_object:to_binary(v1, FakeRObj)}
                     end
                 after
                         file:close(FH)
@@ -1597,6 +1642,22 @@ make_tombstoned_0byte_obj(Bucket, Key) ->
                       dict:from_list([{?MD_DELETED, true}])),
       vclock:increment(<<"tombstone_actor">>, vclock:fresh())).
 
+%% To make a tiny object that's valid & good enough for AAE to do its job,
+%% we create an object that has:
+%% 1. an empty MD dict
+%% 2. The value of the object is the Riak CS block checksum.
+
+make_fake_tiny_obj(RObj) ->
+    Bucket = riak_object:bucket(RObj),
+    Key = riak_object:key(RObj),
+    FakeBody = find_rcs_bcsum_or_else(riak_object:get_metadata(RObj)),
+    VClock = riak_object:vclock(RObj),
+    make_fake_tiny_obj(Bucket, Key, FakeBody, VClock).
+
+make_fake_tiny_obj(Bucket, Key, FakeBody, VClock) ->
+    riak_object:set_vclock(riak_object:new(Bucket, Key, FakeBody),
+                           VClock).
+
 check_is_empty(S) ->
     EmptyFun = fun(_B, _K, _RObj, _Acc) ->
                        throw(it_is_not_empty)
@@ -1656,6 +1717,44 @@ find_rcs_bcsum(MD) ->
 
 find_md_usermeta(MD) ->
     dict:find(?MD_USERMETA, MD).
+
+find_rcs_bcsum_or_else(MD) ->
+    case find_rcs_bcsum(MD) of
+        undefined ->
+            <<>>;
+        Else ->
+            Else
+    end.
+
+open_db(Dir, OpenOpts) ->
+    RetriesLeft = app_helper:get_env(riak_kv, eleveldb_open_retries, 30),
+    open_db(Dir, OpenOpts, max(1, RetriesLeft), undefined).
+
+open_db(_Dir, _OpenOpts, 0, LastError) ->
+    {error, LastError};
+open_db(Dir, OpenOpts, RetriesLeft, _) ->
+    case eleveldb:open(Dir, OpenOpts) of
+        {ok, _Ref} = OK ->
+            OK;
+        %% Check specifically for lock error, this can be caused if
+        %% a crashed vnode takes some time to flush leveldb information
+        %% out to disk.  The process is gone, but the NIF resource cleanup
+        %% may not have completed.
+        {error, {db_open, OpenErr}=Reason} ->
+            case lists:prefix("IO error: lock ", OpenErr) of
+                true ->
+                    SleepFor = app_helper:get_env(riak_kv, eleveldb_open_retry_delay, 2000),
+                    lager:debug("Upper DB retrying ~p in ~p ms after error ~s\n",
+                                [Dir, SleepFor, OpenErr]),
+                    timer:sleep(SleepFor),
+                    open_db(Dir, OpenOpts, RetriesLeft - 1, Reason);
+                false ->
+                    {error, Reason}
+            end;
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
 
 %% file.erl and filelib.erl replacements
 %% filelib.erl code is subject to Ericsson et al. copyright.
