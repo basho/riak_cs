@@ -172,3 +172,15 @@
                   [((comp slurp :content) fetched-object)
                    ((comp etag-suffix :etag :metadata) fetched-object)]))))
         => [value, "-2"]))
+
+(let [bucket-name (random-string)
+      object-name (random-string)
+      value "this is the real value"
+      wrong-md5 "2945d7de2f70de5b8c0cb3fbcba4fe92"]
+  (fact "Bad content md5 throws an exception"
+        (with-random-client c
+          (do
+            (s3/create-bucket c bucket-name)
+            (s3/put-object c bucket-name object-name value
+                           {:content-md5 wrong-md5})))
+        => (throws AmazonS3Exception)))
