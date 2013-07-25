@@ -301,7 +301,8 @@ done(finalize, false, From, State=#state{manifest=Manifest,
     _ = maybe_update_manifest_with_confirmation(ManiPid, Manifest),
     _ = riak_cs_gc:gc_active_manifests(Bucket, Key, RiakPid),
     gen_fsm:reply(From, {error, invalid_digest}),
-    {stop, invalid_digest, State};
+    _ = lager:debug("Invalid digest in the PUT FSM"),
+    {stop, normal, State};
 done(finalize, true, From, State=#state{manifest=Manifest,
                                          mani_pid=ManiPid,
                                          timer_ref=TimerRef}) ->
