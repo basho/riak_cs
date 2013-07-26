@@ -480,3 +480,7 @@
 -type access() :: #access_v1{}.
 
 -type policy() :: riak_cs_s3_policy:policy1().
+
+-define(USERMETA_BUCKET, "RCS-bucket").
+-define(USERMETA_KEY,    "RCS-key").
+-define(USERMETA_BCSUM,  "RCS-bcsum").
