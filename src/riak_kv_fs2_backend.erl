@@ -562,14 +562,31 @@ fold_buckets(FoldBucketsFun, Acc, Opts, State) ->
                 proplists:proplist(),
                 state()) -> {ok, term()} | {async, fun()}.
 fold_keys(FoldKeysFun, Acc, Opts, State) ->
+    SingleBucket = proplists:get_value(bucket, Opts),
+    FirstKey = case SingleBucket of
+                   undefined ->
+                       <<>>;
+                   _ ->
+                       SingleBucket
+               end,
+    FoldOpts = [{first_key, FirstKey}|(State#state.upper_db_opts)#upper_opts.fold],
     Fun = fun(<<Bucket:(?BUCKET_PREFIX_LEN+16)/binary, Key/binary>>,
               FAcc) ->
-                  FoldKeysFun({Bucket, Key}, FAcc)
+                  if SingleBucket /= undefined, Bucket /= SingleBucket ->
+                          throw({break, FAcc});
+                     true ->
+                          FoldKeysFun({Bucket, Key}, FAcc)
+                  end
           end,
     ObjectFolder =
         fun() ->
-                eleveldb:fold_keys(State#state.upper_db, Fun,
-                                   Acc, [])
+                try
+                    eleveldb:fold_keys(State#state.upper_db, Fun,
+                                       Acc, FoldOpts)
+                catch
+                    {break, AccFinal} ->
+                        AccFinal
+                end
         end,
     case proplists:get_value(async_fold, Opts, false) of
         true ->
@@ -584,6 +601,8 @@ fold_keys(FoldKeysFun, Acc, Opts, State) ->
                    proplists:proplist(),
                    state()) -> {ok, any()} | {async, fun()}.
 fold_objects(FoldObjectsFun, Acc, Opts, State) ->
+    %% TODO: add single bucket filter
+    %% TODO: add AAE option
     fold_objects_lower(FoldObjectsFun, Acc, Opts,
                 State#state{%fold_type = objects
                            }).
