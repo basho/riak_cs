@@ -564,14 +564,7 @@ fold_buckets(FoldBucketsFun, Acc, Opts, State) ->
                 state()) -> {ok, term()} | {async, fun()}.
 fold_keys(FoldKeysFun, Acc, Opts, State) ->
     SingleBucket = proplists:get_value(bucket, Opts),
-    FirstKey = case SingleBucket of
-                   undefined ->
-                       <<>>;
-                   _ ->
-                       SingleBucket
-               end,
-    FoldOpts = [{first_key, FirstKey}|
-                (State#state.upper_db_opts)#upper_opts.fold],
+    FoldOpts = make_fold_opts(SingleBucket, State),
     Fun = fun(<<Bucket:(?BUCKET_PREFIX_LEN+16)/binary, Key/binary>>,
               FAcc) ->
                   if SingleBucket /= undefined, Bucket /= SingleBucket ->
@@ -597,10 +590,16 @@ fold_keys(FoldKeysFun, Acc, Opts, State) ->
             {ok, ObjectFolder()}
     end.
 
+make_fold_opts(SingleBucket, State) ->
+    FirstKey = case SingleBucket of
+                   undefined ->
+                       <<>>;
+                   _ ->
+                       SingleBucket
+               end,
+    [{first_key, FirstKey}|(State#state.upper_db_opts)#upper_opts.fold].
+
 %% @doc Fold over all the objects for one or all buckets.
-%%
-%% This func is equivalent to fold_objects_upper(), if such a thing really
-%% existed, to match the fold_objects_lower() func.
 %%
 %% We fold things in upper's DB's order.  This should still be mostly
 %% efficient: we won't scan files in directory order, but we *will* scan
@@ -612,6 +611,57 @@ fold_keys(FoldKeysFun, Acc, Opts, State) ->
                    proplists:proplist(),
                    state()) -> {ok, any()} | {async, fun()}.
 fold_objects(FoldObjectsFun, Acc, Opts, State) ->
+    fold_objects_upper(FoldObjectsFun, Acc, Opts, State).
+
+fold_objects_upper(FoldObjectsFun, Acc, Opts, State) ->
+    case proplists:get_value(aae_reconstruction, Opts) of
+        true ->
+            fold_objects_upper_aae_reconstruction(FoldObjectsFun, Acc, Opts,
+                                                  State);
+        _ ->
+            fold_objects_upper_regular(FoldObjectsFun, Acc, Opts, State)
+    end.
+
+fold_objects_upper_aae_reconstruction(FoldObjectsFun, Acc, Opts, State) ->
+    SingleBucket = proplists:get_value(bucket, Opts),
+    FoldOpts = make_fold_opts(SingleBucket, State),
+    Fun = fun({<<Bucket:(?BUCKET_PREFIX_LEN+16)/binary, Key/binary>>, Val},
+              FAcc) ->
+                  if SingleBucket /= undefined, Bucket /= SingleBucket ->
+                          throw({break, FAcc});
+                     true ->
+                          try
+                              {yy, VClock, CSum, _Size} = binary_to_term(Val),
+                              RObj = make_fake_tiny_obj(Bucket, Key, CSum,
+                                                        VClock),
+                              io:format("RObj ~P\n", [RObj, 10]),
+                              FoldObjectsFun(Bucket, Key, RObj, FAcc)
+                          catch
+                              throw:{break, FinalAcc} ->
+                                  %% Rethrow, alas
+                                  throw({break, FinalAcc});
+                              _:_ ->
+                                  FAcc
+                          end
+                  end
+          end,
+    ObjectFolder =
+        fun() ->
+                try
+                    eleveldb:fold(State#state.upper_db, Fun, Acc, FoldOpts)
+                catch
+                    {break, AccFinal} ->
+                        AccFinal
+                end
+        end,
+    case proplists:get_value(async_fold, Opts, false) of
+        true ->
+            {async, ObjectFolder};
+        _ ->
+            {ok, ObjectFolder()}
+    end.
+
+fold_objects_upper_regular(FoldObjectsFun, Acc, Opts, State) ->
     Fun = fun({Bucket, Key}, FAcc) ->
                   <<UUID:?UUID_BYTES/binary, BlockNum:?BLOCK_FIELD_SIZE>> = Key,
                   case read_block(Bucket, Key, UUID, BlockNum, State) of
