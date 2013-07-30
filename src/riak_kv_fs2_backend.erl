@@ -179,6 +179,7 @@
          is_empty/1,
          status/1,
          callback/3]).
+-export([fold_lower_level/4]).
 %% To avoid EUnit test dependency on riak_cs_utils
 -export([hexlist_to_binary/1, binary_to_hexlist/1, resolve_robj_siblings/1]).
 %% For QuickCheck testing use only
@@ -288,9 +289,9 @@
           fold  :: term()
          }).
 
-%% File trailer
--record(t, {
-          written_sequentially :: boolean()
+%% Lower level fold options state
+-record(fold_ll_s, {
+          opts = [] :: list()
          }).
 
 -type state() :: #state{}.
@@ -603,31 +604,59 @@ fold_keys(FoldKeysFun, Acc, Opts, State) ->
 fold_objects(FoldObjectsFun, Acc, Opts, State) ->
     %% TODO: add single bucket filter
     %% TODO: add AAE option
+    %% NOTE: fold here should be a fold_objects_upper(), which should
+    %% fold things in upper's order.  This should still be
+    %% mostly efficient: we won't scan files in directory order,
+    %% but we *will* scan blocks in sequential order, which should be
+    %% good enough for I/O throughput through the OS & file system.
     fold_objects_lower(FoldObjectsFun, Acc, Opts,
                 State#state{%fold_type = objects
                            }).
 
-fold_objects_lower(ThisFoldFun, Acc, Opts, State) ->
-    ______Bucket = proplists:get_value(bucket, Opts),
-    Stack = make_start_stack_objects(State),
+fold_objects_lower(FoldObjsFun, Acc, FoldOptsList, State) ->
+    ______Bucket = proplists:get_value(bucket, FoldOptsList),
+    Stack = make_start_stack_objects(FoldOptsList, State),
+    SingleBucket = proplists:get_value(bucket, FoldOptsList),
+    FoldOpts = (State#state.upper_db_opts)#upper_opts.fold,
+    Fun = fun(Bucket, Key, Obj, FAcc) ->
+                  if SingleBucket /= undefined, Bucket /= SingleBucket ->
+                          %% The lower-level backend doesn't have an efficient
+                          %% way of filtering out non-matching bucket names.
+                          FAcc;
+                     true ->
+                          FoldObjsFun(Bucket, Key, Obj, FAcc)
+                  end
+          end,
     ObjectFolder =
         fun() ->
-                reduce_stack(Stack, ThisFoldFun, Acc, State)
+                %% This catch is never used by the above fun, but here for
+                %% symmetry with other fold-evaluation funs.
+                try
+                    FoldS = make_fold_ll_s(FoldOpts),
+                    reduce_stack(Stack, Fun, Acc, FoldS, State)
+                catch
+                    {break, AccFinal} ->
+                        AccFinal
+                end
         end,
-    case proplists:get_value(async_fold, Opts, false) of
+    case proplists:get_value(async_fold, FoldOptsList, false) of
         true ->
             {async, ObjectFolder};
         _ ->
             {ok, ObjectFolder()}
     end.
 
+make_fold_ll_s(FoldOpts) ->
+    #fold_ll_s{opts = FoldOpts}.
+
 %% @doc Fold across all Riak objects in the underlying fs2 store.
 
 -type robj_fold_fun() :: fun((riak_object:riak_object(), term()) -> term()).
--spec fold_lowlevel(robj_fold_fun(), term(), list(), #state{}) -> term().
-fold_lowlevel(FoldFun, Acc, _Opts, State)
-  when is_function(FoldFun, 2) ->
-    reduce_stack(make_start_stack_objects(State), FoldFun, Acc, State).
+-spec fold_lower_level(robj_fold_fun(), term(), list(), #state{}) -> term().
+fold_lower_level(FoldFun, Acc, FoldOpts, State)
+  when is_function(FoldFun, 4) ->
+    FoldS = make_fold_ll_s(FoldOpts),
+    reduce_stack(make_start_stack_objects(FoldS, State), FoldFun, Acc, FoldS, State).
 
 %% @doc Delete all objects from this backend
 %% and return a fresh reference.
@@ -1227,7 +1256,7 @@ drop_from_list(_N, []) ->
 %% * Paths on the stack are relative to #state.dir.
 %% * Paths on the stack all start with "/", but they are not absolute paths!
 
-make_start_stack_objects(#state{dir = _Dir, i_depth = IDepth}) ->
+make_start_stack_objects(_FoldOpts, #state{dir = _Dir, i_depth = IDepth}) ->
     case IDepth of
         0 ->
             %% TODO: The stack machine doesn't support this, is it needed?
@@ -1238,18 +1267,19 @@ make_start_stack_objects(#state{dir = _Dir, i_depth = IDepth}) ->
 
 %% @doc Reduce (or fold, pick your name) over items in a work stack
 %%      We intentionally do *not* return State.
-reduce_stack([], _FoldFun, Acc, State) ->
+%%      The FoldS state rec isn't used at this time.
+reduce_stack([], _FoldFun, Acc, _FoldS, State) ->
     catch file:close(State#state.last_fh),
     Acc;
-reduce_stack([Op|Rest], FoldFun, Acc, State) ->
+reduce_stack([Op|Rest], FoldFun, Acc, FoldS, State) ->
     try
         {PushOps, State2, Acc2} = exec_stack_op(Op, FoldFun, Acc, State),
-        reduce_stack(PushOps ++ Rest, FoldFun, Acc2, State2)
+        reduce_stack(PushOps ++ Rest, FoldFun, Acc2, FoldS, State2)
     catch throw:{found_a_bucket, NewAcc} ->
             NewStack = lists:dropwhile(fun(pop_back_to_here) -> false;
                                           (_)                -> true
                                        end, Rest),
-            reduce_stack(NewStack, FoldFun, NewAcc, State)
+            reduce_stack(NewStack, FoldFun, NewAcc, FoldS, State)
     end.
 
 exec_stack_op({st_glob_bucket_intermediate, Level, MaxLevel, MidDir},
@@ -1309,9 +1339,13 @@ exec_stack_op({file_chunk, Path, Block}, FoldFun, Acc, State0) ->
                 RObj = deserialize_term(Bin),
                 {[], State, FoldFun(riak_object:bucket(RObj),
                                     riak_object:key(RObj),
-                                    riak_object:get_value(RObj),
+                                    RObj,
                                     Acc)}
-            catch EX:EY ->
+            catch
+                throw:{break, FinalAcc} ->
+                    %% Rethrow, alas
+                    throw({break, FinalAcc});
+                EX:EY ->
                     perhaps_log_fold_error(EX, EY,
                                            Path, Block, Acc,
                                            State)
@@ -1398,7 +1432,6 @@ t0() ->
     ok.
 
 t1() ->
-    #t{} = #t{},
     TestDir = "./delme",
     Bucket = <<?BLOCK_BUCKET_PREFIX_V1:3/binary, "delme">>,
     K0 = <<0:(?UUID_BYTES*8), 0:?BLOCK_FIELD_SIZE>>,
