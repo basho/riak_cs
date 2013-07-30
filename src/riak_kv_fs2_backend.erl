@@ -570,7 +570,8 @@ fold_keys(FoldKeysFun, Acc, Opts, State) ->
                    _ ->
                        SingleBucket
                end,
-    FoldOpts = [{first_key, FirstKey}|(State#state.upper_db_opts)#upper_opts.fold],
+    FoldOpts = [{first_key, FirstKey}|
+                (State#state.upper_db_opts)#upper_opts.fold],
     Fun = fun(<<Bucket:(?BUCKET_PREFIX_LEN+16)/binary, Key/binary>>,
               FAcc) ->
                   if SingleBucket /= undefined, Bucket /= SingleBucket ->
@@ -597,21 +598,47 @@ fold_keys(FoldKeysFun, Acc, Opts, State) ->
     end.
 
 %% @doc Fold over all the objects for one or all buckets.
+%%
+%% This func is equivalent to fold_objects_upper(), if such a thing really
+%% existed, to match the fold_objects_lower() func.
+%%
+%% We fold things in upper's DB's order.  This should still be mostly
+%% efficient: we won't scan files in directory order, but we *will* scan
+%% blocks of a single S3 object in sequential order, which should be good
+%% enough for I/O throughput through the OS & file system.
+
 -spec fold_objects(riak_kv_backend:fold_objects_fun(),
                    any(),
                    proplists:proplist(),
                    state()) -> {ok, any()} | {async, fun()}.
 fold_objects(FoldObjectsFun, Acc, Opts, State) ->
-    %% TODO: add single bucket filter
-    %% TODO: add AAE option
-    %% NOTE: fold here should be a fold_objects_upper(), which should
-    %% fold things in upper's order.  This should still be
-    %% mostly efficient: we won't scan files in directory order,
-    %% but we *will* scan blocks in sequential order, which should be
-    %% good enough for I/O throughput through the OS & file system.
-    fold_objects_lower(FoldObjectsFun, Acc, Opts,
-                State#state{%fold_type = objects
-                           }).
+    Fun = fun({Bucket, Key}, FAcc) ->
+                  <<UUID:?UUID_BYTES/binary, BlockNum:?BLOCK_FIELD_SIZE>> = Key,
+                  case read_block(Bucket, Key, UUID, BlockNum, State) of
+                      Bin when is_binary(Bin) ->
+                          try
+                              RObj = deserialize_term(Bin),
+                              FoldObjectsFun(Bucket, Key, RObj, FAcc)
+                          catch _:_ ->
+                                  FAcc
+                          end;
+                      RObj when element(1, RObj) == r_object ->
+                          try
+                              FoldObjectsFun(Bucket, Key, RObj, FAcc)
+                          catch _:_ ->
+                                  FAcc
+                          end;
+                      not_found ->
+                          %% Well, we just witnessed an upper vs. lower sync
+                          %% problem.  We can be not_found if there's a
+                          %% checksum error or other problem.  Delete it.
+                          UpperKey = make_upper_key(Bucket, UUID, BlockNum),
+                          _ = eleveldb:delete(State#state.upper_db,
+                                              UpperKey, []),
+                          FAcc
+                  end
+          end,
+    fold_keys(Fun, Acc, Opts, State).
 
 fold_objects_lower(FoldObjsFun, Acc, FoldOptsList, State) ->
     ______Bucket = proplists:get_value(bucket, FoldOptsList),
@@ -1312,11 +1339,11 @@ exec_stack_op({st_key_file, File}, _FoldFun, Acc, #state{dir=Dir} = State) ->
                     {[], State, Acc};
                 RObj ->
                     Bucket = riak_object:bucket(RObj),
-                    <<UUID:(?UUID_BYTES*8), BlockNum:?BLOCK_FIELD_SIZE>> =
+                    <<UUID:?UUID_BYTES/binary, BlockNum:?BLOCK_FIELD_SIZE>> =
                         riak_object:key(RObj),
                     BaseBlock = BlockNum div State#state.max_blocks,
                     Res = [begin
-                               K = <<UUID:(?UUID_BYTES*8),
+                               K = <<UUID:?UUID_BYTES/binary,
                                      (BaseBlock + NewBlock):?BLOCK_FIELD_SIZE>>,
                                {st_robj, make_tombstoned_0byte_obj(Bucket, K)}
                            end || NewBlock <- PerhapsBlocks],
@@ -1346,9 +1373,9 @@ exec_stack_op({file_chunk, Path, Block}, FoldFun, Acc, State0) ->
                     %% Rethrow, alas
                     throw({break, FinalAcc});
                 EX:EY ->
-                    perhaps_log_fold_error(EX, EY,
-                                           Path, Block, Acc,
-                                           State)
+                    perhaps_log_fold_ll_error(EX, EY,
+                                              Path, Block, Acc,
+                                              State)
             end;
         _ ->
             {[], State, Acc}
@@ -1357,23 +1384,23 @@ exec_stack_op({st_robj, RObj}, FoldFun, Acc, State) ->
     try
         {[], State, FoldFun(RObj, Acc)}
     catch EX:EY ->
-            perhaps_log_fold_error(EX, EY,
-                                   "no-path", "no-block", Acc,
-                                   State)
+            perhaps_log_fold_ll_error(EX, EY,
+                                      "no-path", "no-block", Acc,
+                                      State)
     end.
 
-perhaps_log_fold_error(EX, EY, Path, Block, Acc,
-                       #state{fold_errors = Errs} = State)
+perhaps_log_fold_ll_error(EX, EY, Path, Block, Acc,
+                          #state{fold_errors = Errs} = State)
  when Errs < ?MAX_LOWLEVEL_FOLD_ERRORS  ->
     error_logger:error_msg("file_chunk fold_fun: ~s ~p: ~p ~P @ ~p\n",
                            [Path, Block, EX, EY, 32, erlang:get_stacktrace()]),
     {[], State#state{fold_errors = Errs + 1}, Acc};
-perhaps_log_fold_error(_EX, _EY, _Path, _Block, Acc,
-                       #state{fold_errors = ?MAX_LOWLEVEL_FOLD_ERRORS} = State) ->
+perhaps_log_fold_ll_error(_EX, _EY, _Path, _Block, Acc,
+                          #state{fold_errors = ?MAX_LOWLEVEL_FOLD_ERRORS} = State) ->
     error_logger:error_msg("file_chunk fold_fun: suppressing errors on dir ~s",
                            [State#state.dir]),
     {[], State#state{fold_errors = ?MAX_LOWLEVEL_FOLD_ERRORS + 1}, Acc};
-perhaps_log_fold_error(_EX, _EY, _Path, _Block, Acc, State) ->
+perhaps_log_fold_ll_error(_EX, _EY, _Path, _Block, Acc, State) ->
     {[], State, Acc}.
 
 %% Remember: all paths on the stack start with "/" but are not absolute.
