@@ -783,9 +783,6 @@ put_with_no_meta(RiakcPid, RiakcObj) ->
     ok | {ok, riakc_obj:riakc_obj()} | {ok, binary()} | {error, term()}.
 put_with_no_meta(RiakcPid, RiakcObject, Options) ->
     WithMeta = riakc_obj:update_metadata(RiakcObject, dict:new()),
-    io:format("put_NO_META LINE ~p contents ~p bucket ~p key ~p\n", [?LINE, length(riakc_obj:get_contents(WithMeta)), riakc_obj:bucket(WithMeta), riakc_obj:key(WithMeta)]),
-    catch exit(yoyo),
-    io:format("put_NO_META LINE ~p ~p\n", [?LINE, erlang:get_stacktrace()]),
     riakc_pb_socket:put(RiakcPid, WithMeta, Options).
 
 
