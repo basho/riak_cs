@@ -29,7 +29,8 @@
          capabilities/2,
          start/2,
          stop/1,
-         %% get_object/4,                          % capability: uses_r_object
+         get/3,
+         get_object/4,                          % capability: uses_r_object
          %% put_object/5,                          % capability: uses_r_object
          %% delete/4,
          drop/1,
@@ -70,9 +71,8 @@ capabilities(State) ->
 
 %% @doc Return the capabilities of the backend.
 -spec capabilities(riak_object:bucket(), state()) -> {ok, [atom()]}.
-capabilities(Bucket, State) ->
-    [{Z_number, _}|_] = State#state.zone_list,
-    Caps = riak_kv_zone_mgr:capabilities(Z_number, Bucket),
+capabilities(Bucket, #state{partition=Partition, zone_list=[{Zone, _}|_]}) ->
+    Caps = riak_kv_zone_mgr:capabilities(Zone, Partition, Bucket),
     {ok, Caps}.
 
 start(Partition, Config) ->
@@ -93,21 +93,42 @@ stop(#state{mgrs=Mgrs}) ->
     [catch riak_kv_zone_mgr:halt(M) || M <- Mgrs],
     ok.
 
+%% @doc Get the object stored at the given bucket/key pair
+-spec get(riak_object:bucket(), riak_object:key(), state()) ->
+                 {ok, binary(), state()} |
+                 {ok, not_found, state()} |
+                 {error, term(), state()}.
+get(Bucket, Key, #state{partition=Partition} = State) ->
+    Zone = chash_to_zone(Bucket, Key, State),
+    {ok, R1, R2} = riak_kv_zone_mgr:get(Zone, Partition, Bucket, Key),
+    {R1, R2, State}.
+
+%% @doc Get the object stored at the given bucket/key pair
+-spec get_object(riak_object:bucket(), riak_object:key(), boolean(), state()) ->
+                     {ok, binary() | riak_object:riak_object(), state()} |
+                     {ok, not_found, state()} |
+                     {error, term(), state()}.
+get_object(Bucket, Key, WantsBinary, #state{partition=Partition} = State) ->
+    Zone = chash_to_zone(Bucket, Key, State),
+    {ok, R1, R2} = riak_kv_zone_mgr:get_object(Zone, Partition,
+                                               Bucket, Key, WantsBinary),
+    {R1, R2, State}.
+
 %% @doc Delete all objects from this backend
 %% and return a fresh reference.
 -spec drop(state()) -> {ok, state()}.
-drop(#state{zone_list=Zs} = State) ->
-    [_ = riak_kv_zone_mgr:drop(Zone) || {Zone, _} <- Zs],
+drop(#state{partition=Partition} = State) ->
+    [_ = riak_kv_zone_mgr:drop(Zone, Partition) || Zone <- zone_list(State)],
     {ok, State}.
 
 %% @doc Returns true if this backend contains any
 %% non-tombstone values; otherwise returns false.
 -spec is_empty(state()) -> boolean().
-is_empty(State) ->
+is_empty(#state{partition=Partition} = State) ->
     lists:foldl(fun(_Zone, false) ->
                         false;
                    (Zone, _) ->
-                        riak_kv_zone_mgr:is_empty(Zone)
+                        riak_kv_zone_mgr:is_empty(Zone, Partition)
                 end, true, zone_list(State)).
 
 %% @doc Get the status information for this fs backend
@@ -148,11 +169,19 @@ get_prop_or_env_default(Default) ->
 zone_list(#state{zone_list=Zs}) ->
     [Zone || {Zone, _} <- Zs].
 
+chash_to_zone(_Bucket, _Key, #state{zone_list=ZoneList}) ->
+    io:format("TODO: fixme chash_to_zone\n"),
+    {Zone, _} = lists:last(ZoneList),
+    Zone.
+
 %%%%%%%%%%%%%%%%%%%
 %% TEST
 %%%%%%%%%%%%%%%%%%%
 
 t0() ->
+    B = <<"b">>,
+    K = <<"k">>, 
+
     {ok, S} = start(0, [{zone_be_name, riak_kv_yessir_backend},
                         {zone_list, t_zones()}]),
 
@@ -161,7 +190,16 @@ t0() ->
     {ok, Caps} = capabilities(<<"foobucket">>, S),
 
     {ok, _} = drop(S),
+    {ok, _} = drop(S),
     false = is_empty(S),                        % yessir is always full
+    false = is_empty(S),                        % yessir is always full
+
+    {ok, XX0, _} = get(B, K, S),
+    true = is_binary(XX0),
+    {ok, XX1, _} = get_object(B, K, false, S),
+    true = is_tuple(XX1),
+    {ok, XX2, _} = get_object(B, K, true, S),
+    true = is_binary(XX2),
 
     stop(S),
     ok.

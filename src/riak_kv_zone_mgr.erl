@@ -28,16 +28,17 @@
 %% API
 -export([start_link/3, zone_name/1]).
 -export([%api_version/0,
-         capabilities/1,
          capabilities/2,
-         %% get_object/4,                          % capability: uses_r_object
+         capabilities/3,
+         get/4,
+         get_object/5,                          % capability: uses_r_object
          %% put_object/5,                          % capability: uses_r_object
          %% delete/4,
-         drop/1,
+         drop/2,
          %% fold_buckets/4,
          %% fold_keys/4,
          %% fold_objects/4,
-         is_empty/1,
+         is_empty/2,
          foodelme/0
         ]).
 -export([halt/1]).
@@ -48,8 +49,10 @@
          terminate/2, code_change/3]).
 
 -record(state, {
+          zone :: integer(),
           mod :: atom(),
-          s :: term()
+          mod_config :: list(),
+          s_dict :: dict()
          }).
 
 %%%===================================================================
@@ -63,23 +66,37 @@
 %% @spec start_link() -> {ok, Pid} | ignore | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
-start_link(Partition, Mod, Config) ->
-    gen_server:start_link(?MODULE, {Partition, Mod, Config}, []).
+start_link(Zone, Mod, Config)
+  when is_integer(Zone), is_atom(Mod), is_list(Config) ->
+    gen_server:start_link(?MODULE, {Zone, Mod, Config}, []).
 
-zone_name(Zone) ->
+zone_name(Zone)
+  when is_integer(Zone) ->
     list_to_atom("riak_kv_zone_" ++ integer_to_list(Zone)).
 
-capabilities(Zone) ->
-    capabilities(Zone, <<"no such bucket">>).
+capabilities(Zone, Partition)
+  when is_integer(Zone), is_integer(Partition) ->
+    capabilities(Zone, Partition, <<"no such bucket">>).
 
-capabilities(Zone, Bucket) ->
-    call_zone(Zone, {capabilities, Bucket}).
+capabilities(Zone, Partition, Bucket)
+  when is_integer(Zone), is_integer(Partition) ->
+    call_zone(Zone, {capabilities, Partition, Bucket}).
 
-drop(Zone) ->
-    call_zone(Zone, {drop}).
+drop(Zone, Partition)
+  when is_integer(Zone), is_integer(Partition) ->
+    call_zone(Zone, {drop, Partition}).
 
-is_empty(Zone) ->
-    call_zone(Zone, {is_empty}).
+get(Zone, Partition, Bucket, Key)
+  when is_integer(Zone), is_integer(Partition) ->
+    call_zone(Zone, {get, Partition, Bucket, Key}).
+
+get_object(Zone, Partition, Bucket, Key, WantsBinary)
+  when is_integer(Zone), is_integer(Partition) ->
+    call_zone(Zone, {get_object, Partition, Bucket, Key, WantsBinary}).
+
+is_empty(Zone, Partition)
+  when is_integer(Zone), is_integer(Partition) ->
+    call_zone(Zone, {is_empty, Partition}).
 
 halt(Pid) ->
     gen_server:call(Pid, {halt}, infinity).
@@ -99,14 +116,16 @@ halt(Pid) ->
 %%                     {stop, Reason}
 %% @end
 %%--------------------------------------------------------------------
-init({ZoneNumber, Mod, Config}) ->
+init({ZoneNumber, Mod, ModConfig}) ->
     register(zone_name(ZoneNumber), self()),
     try
-        {ok, S} = Mod:start(0, Config),
-        {ok, #state{mod=Mod, s=S}}
+        {ok, #state{zone=ZoneNumber,
+                    mod=Mod,
+                    mod_config=ModConfig,
+                    s_dict=dict:new()}}
     catch X:Y ->
-            error_logger:error_msg("~s:init(~p, ~p) -> ~p ~p @\n~p\n",
-                                   [?MODULE, ZoneNumber, Config, X, Y,
+            error_logger:error_msg("~s:init(~p, ~p, ~p) -> ~p ~p @\n~p\n",
+                                   [?MODULE, ZoneNumber, Mod, ModConfig, X, Y,
                                     erlang:get_stacktrace()]),
             {stop, {X,Y}}
     end.
@@ -127,15 +146,40 @@ init({ZoneNumber, Mod, Config}) ->
 %%--------------------------------------------------------------------
 handle_call({halt}, _From, State) ->
     {stop, normal, ok, State};
-handle_call({capabilities, Bucket}, _From, #state{mod=Mod, s=S} = State) ->
+handle_call({capabilities, Partition, Bucket}, _From, #state{mod=Mod} = State) ->
+    {NewState, S} = get_partition_state(Partition, State),
     Res = Mod:capabilities(Bucket, S),
-    {reply, Res, State};
-handle_call({drop}, _From, #state{mod=Mod, s=S} = State) ->
+    {reply, Res, NewState};
+handle_call({get, Partition, Bucket, Key}, _From, #state{mod=Mod} = State) ->
+    {NewState, S} = get_partition_state(Partition, State),
+    {R1, R2, _NewS} = Mod:get(Bucket, Key, S),
+    %% TODO: to be a good player, NewS* should be saved in our s_dict
+    {reply, {ok, R1, R2}, NewState};
+handle_call({get_object, Partition, Bucket, Key, WantsBinary},
+            _From, #state{mod=Mod} = State) ->
+    {NewState, S} = get_partition_state(Partition, State),
+    {R1, R2} = try
+                   {X1, X2, _NewSx} = Mod:get_object(Bucket, Key, WantsBinary, S),
+                   {X1, X2}
+               catch
+                   error:undef ->
+                       {Y1, Y2, _NewSy} = Mod:get(Bucket, Key, S),
+                       {Y1, Y2}
+               end,
+    %% TODO: to be a good player, NewS* should be saved in our s_dict
+    if R1 == ok, is_binary(R2), WantsBinary == false ->
+            {reply, {ok, R1, riak_object:from_binary(Bucket, Key, R2)}, NewState};
+       true ->
+            {reply, {ok, R1, R2}, NewState}
+    end;
+handle_call({drop, Partition}, _From, #state{mod=Mod} = State) ->
+    {NewState, S} = get_partition_state(Partition, State),
     Res = Mod:drop(S),
-    {reply, Res, State};
-handle_call({is_empty}, _From, #state{mod=Mod, s=S} = State) ->
+    {reply, Res, NewState};
+handle_call({is_empty, Partition}, _From, #state{mod=Mod} = State) ->
+    {NewState, S} = get_partition_state(Partition, State),
     Res = Mod:is_empty(S),
-    {reply, Res, State};
+    {reply, Res, NewState};
 handle_call(_Request, _From, State) ->
     io:format("~s ~p: call ~p\n", [?MODULE, ?LINE, _Request]),
     {reply, bad_call_buggy_go_home, State}.
@@ -179,7 +223,8 @@ handle_info(_Info, State) ->
 %% @spec terminate(Reason, State) -> void()
 %% @end
 %%--------------------------------------------------------------------
-terminate(_Reason, _State) ->
+terminate(Reason, _State) ->
+io:format("~p TODOODODODOD clean up the dict here, shutdown!!!!!!!!!!\n", [Reason]),
     ok.
 
 %%--------------------------------------------------------------------
@@ -202,4 +247,15 @@ foodelme() ->
 
 call_zone(Zone, Msg) ->
     gen_server:call(zone_name(Zone), Msg, infinity).
+
+get_partition_state(Partition,
+                    #state{s_dict=SD, mod=Mod, mod_config=ModConfig} = State) ->
+    case dict:find(Partition, SD) of
+        {ok, S} ->
+            {State, S};
+        error ->
+            %% TODO: handle module start error here
+            {ok, S} = Mod:start(0, ModConfig),
+            {State#state{s_dict=dict:store(Partition, S, SD)}, S}
+    end.
 
