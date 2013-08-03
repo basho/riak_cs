@@ -31,7 +31,8 @@
          stop/1,
          get/3,
          get_object/4,                          % capability: uses_r_object
-         %% put_object/5,                          % capability: uses_r_object
+         put/5,
+         put_object/5,                          % capability: uses_r_object
          %% delete/4,
          drop/1,
          %% fold_buckets/4,
@@ -43,7 +44,7 @@
         ]).
 
 -define(API_VERSION, 1).
--define(CAPABILITIES, [uses_r_object, async_fold, write_once_keys]).
+-define(CAPABILITIES, [uses_r_object, async_fold]).
 
 -record(state, {
           partition :: integer(),
@@ -73,7 +74,7 @@ capabilities(State) ->
 -spec capabilities(riak_object:bucket(), state()) -> {ok, [atom()]}.
 capabilities(Bucket, #state{partition=Partition, zone_list=[{Zone, _}|_]}) ->
     Caps = riak_kv_zone_mgr:capabilities(Zone, Partition, Bucket),
-    {ok, Caps}.
+    {ok, ?CAPABILITIES ++ Caps}.
 
 start(Partition, Config) ->
     Mod = get_prop_or_env(zone_be_name, Config, riak_kv, undefined),
@@ -113,6 +114,37 @@ get_object(Bucket, Key, WantsBinary, #state{partition=Partition} = State) ->
     {ok, R1, R2} = riak_kv_zone_mgr:get_object(Zone, Partition,
                                                Bucket, Key, WantsBinary),
     {R1, R2, State}.
+
+%% @doc Insert an object into the memory backend.
+-type index_spec() :: {add, Index, SecondaryKey} | {remove, Index, SecondaryKey}.
+-spec put(riak_object:bucket(), riak_object:key(), [index_spec()], binary(), state()) ->
+                 {ok, state()}.
+put(Bucket, Key, IndexSpecs, EncodedVal, #state{partition=Partition} = State) ->
+    Zone = chash_to_zone(Bucket, Key, State),
+    case riak_kv_zone_mgr:put(Zone, Partition,
+                              Bucket, Key, IndexSpecs, EncodedVal) of
+        ok ->
+            {ok, State};
+        Reason ->
+            {error, Reason, State}
+    end.
+
+%% @doc Store Val under Bucket and Key
+%%
+%% NOTE: Val is a copy of ValRObj that has been encoded by serialize_term()
+
+-spec put_object(riak_object:bucket(), riak_object:key(), [index_spec()], riak_object:riak_object(), state()) ->
+                 {{ok, state()}, EncodedVal::binary()} |
+                 {{error, term()}, state()}.
+put_object(Bucket, Key, IndexSpecs, RObj, #state{partition=Partition} = State)->
+    Zone = chash_to_zone(Bucket, Key, State),
+    case riak_kv_zone_mgr:put_object(Zone, Partition,
+                                     Bucket, Key, IndexSpecs, RObj) of
+        {ok, EncodedVal} ->
+            {{ok, State}, EncodedVal};
+        Else ->
+            {Else, State}
+    end.
 
 %% @doc Delete all objects from this backend
 %% and return a fresh reference.
@@ -186,8 +218,8 @@ t0() ->
                         {zone_list, t_zones()}]),
 
     {ok, ?API_VERSION} = api_version(),
-    {ok, Caps} = capabilities(S),
-    {ok, Caps} = capabilities(<<"foobucket">>, S),
+    {ok, AllCaps} = capabilities(S),
+    {ok, AllCaps} = capabilities(<<"foobucket">>, S),
 
     {ok, _} = drop(S),
     {ok, _} = drop(S),
@@ -200,6 +232,11 @@ t0() ->
     true = is_tuple(XX1),
     {ok, XX2, _} = get_object(B, K, true, S),
     true = is_binary(XX2),
+
+    RObj = riak_object:new(B, K, <<"val!">>),
+    {{ok, _}, EncodedValXX3} = put_object(B, K, [], RObj, S),
+    true = is_binary(EncodedValXX3),
+    {ok, _} = put(B, K, [], EncodedValXX3, S),
 
     stop(S),
     ok.

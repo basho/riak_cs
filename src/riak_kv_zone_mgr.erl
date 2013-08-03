@@ -32,7 +32,8 @@
          capabilities/3,
          get/4,
          get_object/5,                          % capability: uses_r_object
-         %% put_object/5,                          % capability: uses_r_object
+         put/6,
+         put_object/6,                          % capability: uses_r_object
          %% delete/4,
          drop/2,
          %% fold_buckets/4,
@@ -93,6 +94,14 @@ get(Zone, Partition, Bucket, Key)
 get_object(Zone, Partition, Bucket, Key, WantsBinary)
   when is_integer(Zone), is_integer(Partition) ->
     call_zone(Zone, {get_object, Partition, Bucket, Key, WantsBinary}).
+
+put(Zone, Partition, Bucket, Key, IndexSpecs, EncodedVal)
+  when is_integer(Zone), is_integer(Partition) ->
+    call_zone(Zone, {put, Partition, Bucket, Key, IndexSpecs, EncodedVal}).
+
+put_object(Zone, Partition, Bucket, Key, IndexSpecs, RObj)
+  when is_integer(Zone), is_integer(Partition) ->
+    call_zone(Zone, {put_object, Partition, Bucket, Key, IndexSpecs, RObj}).
 
 is_empty(Zone, Partition)
   when is_integer(Zone), is_integer(Partition) ->
@@ -171,6 +180,45 @@ handle_call({get_object, Partition, Bucket, Key, WantsBinary},
             {reply, {ok, R1, riak_object:from_binary(Bucket, Key, R2)}, NewState};
        true ->
             {reply, {ok, R1, R2}, NewState}
+    end;
+handle_call({put, Partition, Bucket, Key, IndexSpecs, EncodedVal},
+            _From, #state{mod=Mod} = State) ->
+    {NewState, S} = get_partition_state(Partition, State),
+    case Mod:put(Bucket, Key, IndexSpecs, EncodedVal, S) of
+        {ok, _NewS} ->
+            %% TODO: to be a good player, NewS* should be saved in our s_dict
+            {reply, ok, NewState};
+        {error, Reason, _NewS} ->
+            %% TODO: to be a good player, NewS* should be saved in our s_dict
+            {reply, Reason, NewState}
+    end;
+handle_call({put_object, Partition, Bucket, Key, IndexSpecs, RObj},
+            _From, #state{mod=Mod} = State) ->
+    {NewState, S} = get_partition_state(Partition, State),
+    try
+        Res = case Mod:put_object(Bucket, Key, IndexSpecs, RObj, S) of
+                  {{ok, _NewS}, EncodedVal} ->
+                      %% TODO: to be a good player, NewS* should be
+                      %% saved in our s_dict
+                      {ok, EncodedVal};
+                  Else ->
+                      %% TODO: to be a good player, NewS* should be
+                      %% saved in our s_dict
+                      Else
+              end,
+        {reply, Res, NewState}
+    catch error:undef ->
+            ObjFmt = riak_core_capability:get({riak_kv, object_format}, v0),
+            EncodedVal2 = riak_object:to_binary(ObjFmt, RObj),
+            Res2 = case Mod:put(Bucket, Key, IndexSpecs, EncodedVal2, S) of
+                       {ok, _NewS2} ->
+                           %% TODO: to be a good player, NewS* should be
+                           %% saved in our s_dict
+                           {ok, EncodedVal2};
+                       Else2 ->
+                           Else2
+                   end,
+            {reply, Res2, NewState}
     end;
 handle_call({drop, Partition}, _From, #state{mod=Mod} = State) ->
     {NewState, S} = get_partition_state(Partition, State),
