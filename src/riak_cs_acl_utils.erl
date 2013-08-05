@@ -22,6 +22,8 @@
 
 -module(riak_cs_acl_utils).
 
+-compile(export_all).
+
 -include("riak_cs.hrl").
 -include_lib("xmerl/include/xmerl.hrl").
 
@@ -93,15 +95,16 @@ canned_acl(HeaderVal, Owner, BucketOwner) ->
     {error, 'unresolved_grant_email'}.
 specific_acl_grant(A) ->
     _ = parse_grant_header_value(A),
-    ok.
+    {ok, #acl_v2{}}.
 
 -type grant_user_identifier() :: 'emailAddress' | 'id' | 'uri'.
 -spec parse_grant_header_value(string()) ->
-    [{grant_user_identifier(), string()}].
+    {ok, [{grant_user_identifier(), string()}]} |
+    {error, invalid_argument} |
+    {error, unresolved_grant_email}.
 parse_grant_header_value(HeaderValue) ->
     Mappings = split_header_values_and_strip(HeaderValue),
-    _ = [parse_mapping(M) || M <- Mappings],
-    ok.
+    promote_failure([parse_mapping(M) || M <- Mappings]).
 
 %% @doc split a string like:
 %% `"emailAddress=\"xyz@amazon.com\", emailAddress=\"abc@amazon.com\""'
@@ -115,12 +118,54 @@ split_header_values_and_strip(Value) ->
 -spec parse_mapping(string()) ->
     {ok, {grant_user_identifier(), Value :: string()}} |
     {error, invalid_argument}.
-parse_mapping("emailAddress=" ++ _QuotedEmail) ->
-    ok;
-parse_mapping("id=" ++ _QuotedID) ->
-    ok;
-parse_mapping("uri=" ++ _QuotedURI) ->
-    ok.
+parse_mapping("emailAddress=" ++ QuotedEmail) ->
+    wrap('emailAddress', remove_quotes(QuotedEmail));
+parse_mapping("id=" ++ QuotedID) ->
+    wrap('id', remove_quotes(QuotedID));
+parse_mapping("uri=" ++ QuotedURI) ->
+    wrap('uri', remove_quotes(QuotedURI));
+parse_mapping(_Else) ->
+    {error, invalid_argument}.
+
+-spec wrap(atom(), {'ok', term()} | {'error', atom()}) ->
+    {'error', atom()} | {ok, {atom(), term()}}.
+wrap(_Atom, {error, invalid_argument}=E) ->
+    E;
+wrap(Atom, {ok, Value}) ->
+    {ok, {Atom, Value}}.
+
+-spec remove_quotes(string()) -> {error, invalid_argument} | {ok, string()}.
+remove_quotes(String) ->
+    case starts_and_ends_with_quotes(String) of
+        false ->
+            {error, invalid_argument};
+        true ->
+            {ok, string:sub_string(String, 2, length(String) - 1)}
+    end.
+
+-spec starts_and_ends_with_quotes(string()) -> boolean().
+starts_and_ends_with_quotes(String) ->
+    hd(String) =:= 34 andalso lists:last(String) =:= 34.
+
+%% TODO: better list type spec
+-spec promote_failure(list()) -> list() | {'error', atom()}.
+promote_failure(List) ->
+    %% this will reverse the list, but we don't care
+    %% about order
+    case lists:foldl(fun fail_either/2, {false, []}, List) of
+        {true, _Acc} ->
+            {error, invalid_argument};
+        {false, Acc} ->
+            Acc
+    end.
+
+-spec fail_either(term(), {boolean(), list()}) ->
+    {boolean(), list()}.
+fail_either({error, _Reason}, {_Bool, Acc}) ->
+    %% don't cons the error onto the acc
+    {true, Acc};
+fail_either({ok, Val}, {Bool, Acc}) ->
+    {Bool, [Val | Acc]}.
 
 %% @doc Convert an XML document representing an ACL into
 %% an internal representation.

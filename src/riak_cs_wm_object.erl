@@ -320,6 +320,12 @@ accept_body(RD, Ctx=#context{local_context=LocalCtx,
     Metadata = riak_cs_wm_utils:extract_user_metadata(RD),
     BlockSize = riak_cs_lfs_utils:block_size(),
 
+    ReadGrant = wrq:get_req_header("x-amz-grant-read", RD),
+    _ = lager:error("The read grant is ~p", [ReadGrant]),
+
+    Headers = wrq:req_headers(RD),
+    _ = lager:error("All headers are: ~p", [Headers]),
+
     %% Check for `x-amz-acl' header to support
     %% non-default ACL at bucket creation time.
     ACL = riak_cs_acl_utils:canned_acl(
