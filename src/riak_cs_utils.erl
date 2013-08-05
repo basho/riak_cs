@@ -59,6 +59,7 @@
          json_pp_print/1,
          list_keys/2,
          maybe_log_bucket_owner_error/2,
+         n_val_1_get_requests/0,
          pow/2,
          pow/3,
          put_object/5,
@@ -736,6 +737,11 @@ list_keys(BucketName, RiakPid) ->
         {error, _}=Error ->
             Error
     end.
+
+-spec n_val_1_get_requests() -> boolean().
+n_val_1_get_requests() ->
+    riak_cs_config:get_env(riak_cs, n_val_1_get_requests,
+                           ?N_VAL_1_GET_REQUESTS).
 
 %% @doc Integer version of the standard pow() function; call the recursive accumulator to calculate.
 -spec pow(integer(), integer()) -> integer().
