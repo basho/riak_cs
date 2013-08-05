@@ -37,7 +37,7 @@
 -export([acl/4,
          default_acl/3,
          canned_acl/3,
-         specific_acl_grant/1,
+         specific_acl_grant/2,
          acl_from_xml/3,
          empty_acl_xml/0,
          requested_access/2,
@@ -89,13 +89,22 @@ canned_acl(HeaderVal, Owner, BucketOwner) ->
 %% canonical id, return `{error, unresolved_grant_email}'. Otherwise
 %% return an acl record.
 -spec specific_acl_grant([{HeaderName :: string(),
-                           HeaderValue :: string()}]) ->
+                           HeaderValue :: string()}],
+                         pid()) ->
     {ok, #acl_v2{}} |
     {error, 'invalid_argument'} |
     {error, 'unresolved_grant_email'}.
-specific_acl_grant(A) ->
-    _ = parse_grant_header_value(A),
-    {ok, #acl_v2{}}.
+specific_acl_grant(Headers, RiakcPid) ->
+    Grants = [{HeaderName, parse_grant_header_value(GrantString)} ||
+            {HeaderName, GrantString} <- Headers],
+    case promote_failure([Grant || {_HeaderName, Grant} <- Grants],
+                         invalid_argument) of
+        {error, invalid_argument}=E ->
+            E;
+       {ok, _GoodGrants} ->
+            {ok, [{HeaderName, emails_to_ids(Grant, RiakcPid)} ||
+                    {HeaderName, {ok, Grant}} <- Grants]}
+    end.
 
 -type grant_user_identifier() :: 'emailAddress' | 'id' | 'uri'.
 -spec parse_grant_header_value(string()) ->
@@ -104,7 +113,8 @@ specific_acl_grant(A) ->
     {error, unresolved_grant_email}.
 parse_grant_header_value(HeaderValue) ->
     Mappings = split_header_values_and_strip(HeaderValue),
-    promote_failure([parse_mapping(M) || M <- Mappings]).
+    promote_failure(lists:map(fun parse_mapping/1, Mappings),
+                    invalid_argument).
 
 %% @doc split a string like:
 %% `"emailAddress=\"xyz@amazon.com\", emailAddress=\"abc@amazon.com\""'
@@ -147,16 +157,32 @@ remove_quotes(String) ->
 starts_and_ends_with_quotes(String) ->
     hd(String) =:= 34 andalso lists:last(String) =:= 34.
 
+-spec emails_to_ids(list(), pid()) -> list() | {error, unresolved_grant_email}.
+emails_to_ids(Grants, RiakcPid) ->
+    %% TODO: thread this pid through to here
+    {EmailGrants, RestGrants} = lists:partition(fun email_grant/1, Grants),
+    Ids = [canonical_for_email(EmailAddress, RiakcPid) ||
+            {emailAddress, EmailAddress} <- EmailGrants],
+    case promote_failure(Ids, unresolved_grant_email) of
+        {error, unresolved_grant_email}=E ->
+            E;
+        {ok, AllIds} ->
+            RestGrants ++ [{id, ID} || ID <- AllIds]
+    end.
+
+email_grant({Atom, _Val}) ->
+    Atom =:= 'emailAddress'.
+
 %% TODO: better list type spec
--spec promote_failure(list()) -> list() | {'error', atom()}.
-promote_failure(List) ->
+-spec promote_failure(list(), atom()) -> {ok, list()} | {'error', atom()}.
+promote_failure(List, FailAtom) ->
     %% this will reverse the list, but we don't care
     %% about order
     case lists:foldl(fun fail_either/2, {false, []}, List) of
         {true, _Acc} ->
-            {error, invalid_argument};
+            {error, FailAtom};
         {false, Acc} ->
-            Acc
+            {ok, Acc}
     end.
 
 -spec fail_either(term(), {boolean(), list()}) ->
