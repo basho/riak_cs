@@ -34,7 +34,7 @@
          get_object/5,                          % capability: uses_r_object
          put/6,
          put_object/6,                          % capability: uses_r_object
-         %% delete/4,
+         delete/5,
          drop/2,
          %% fold_buckets/4,
          %% fold_keys/4,
@@ -102,6 +102,10 @@ put(Zone, Partition, Bucket, Key, IndexSpecs, EncodedVal)
 put_object(Zone, Partition, Bucket, Key, IndexSpecs, RObj)
   when is_integer(Zone), is_integer(Partition) ->
     call_zone(Zone, {put_object, Partition, Bucket, Key, IndexSpecs, RObj}).
+
+delete(Zone, Partition, Bucket, Key, IndexSpecs)
+  when is_integer(Zone), is_integer(Partition) ->
+    call_zone(Zone, {delete, Partition, Bucket, Key, IndexSpecs}).
 
 is_empty(Zone, Partition)
   when is_integer(Zone), is_integer(Partition) ->
@@ -220,6 +224,17 @@ handle_call({put_object, Partition, Bucket, Key, IndexSpecs, RObj},
                    end,
             {reply, Res2, NewState}
     end;
+handle_call({delete, Partition, Bucket, Key, IndexSpecs},
+            _From, #state{mod=Mod} = State) ->
+    {NewState, S} = get_partition_state(Partition, State),
+    Res = case Mod:delete(Bucket, Key, IndexSpecs, S) of
+              {ok, _NewS} ->
+                  ok;
+              {error, Reason, _NewS} ->
+                  {error, Reason}
+          end,
+    %% TODO: to be a good player, NewS* should be saved in our s_dict
+    {reply, Res, NewState};
 handle_call({drop, Partition}, _From, #state{mod=Mod} = State) ->
     {NewState, S} = get_partition_state(Partition, State),
     Res = Mod:drop(S),

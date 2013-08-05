@@ -33,7 +33,7 @@
          get_object/4,                          % capability: uses_r_object
          put/5,
          put_object/5,                          % capability: uses_r_object
-         %% delete/4,
+         delete/4,
          drop/1,
          %% fold_buckets/4,
          %% fold_keys/4,
@@ -146,6 +146,23 @@ put_object(Bucket, Key, IndexSpecs, RObj, #state{partition=Partition} = State)->
             {Else, State}
     end.
 
+%% @doc Delete an object from the bitcask backend
+%% NOTE: The bitcask backend does not currently support
+%% secondary indexing and the_IndexSpecs parameter
+%% is ignored.
+-spec delete(riak_object:bucket(), riak_object:key(), [index_spec()], state()) ->
+                    {ok, state()} |
+                    {error, term(), state()}.
+delete(Bucket, Key, IndexSpecs, #state{partition=Partition}=State) ->
+    Zone = chash_to_zone(Bucket, Key, State),
+    case riak_kv_zone_mgr:delete(Zone, Partition, Bucket, Key, IndexSpecs) of
+        {ok, EncodedVal} ->
+            {{ok, State}, EncodedVal};
+        Else ->
+            {Else, State}
+    end.
+
+
 %% @doc Delete all objects from this backend
 %% and return a fresh reference.
 -spec drop(state()) -> {ok, state()}.
@@ -237,6 +254,9 @@ t0() ->
     {{ok, _}, EncodedValXX3} = put_object(B, K, [], RObj, S),
     true = is_binary(EncodedValXX3),
     {ok, _} = put(B, K, [], EncodedValXX3, S),
+
+    {ok, _} = delete(B, K, [], S),
+    {ok, _} = delete(B, K, [], S),              % again, whee
 
     stop(S),
     ok.
