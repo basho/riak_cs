@@ -96,6 +96,7 @@ sample_plain_allow_policy()->
       "}" >>.
 
 sample_policy_check_test()->
+    application:set_env(riak_cs, trust_x_forwarded_for, true),
     JsonPolicy0 = sample_plain_allow_policy(),
     {ok, Policy} = riak_cs_s3_policy:policy_from_json(JsonPolicy0),
     Access = #access_v1{method='GET', target=object, id="spam/ham/egg",
@@ -201,6 +202,7 @@ sample_securetransport_statement()->
 
 
 secure_transport_test()->
+    application:set_env(riak_cs, trust_x_forwarded_for, true),
     JsonPolicy0 = sample_securetransport_statement(),
     {ok, Policy} = riak_cs_s3_policy:policy_from_json(JsonPolicy0),
     Req = #wm_reqdata{peer="192.168.0.1", scheme=https},
