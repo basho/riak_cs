@@ -69,20 +69,24 @@ user_listing_test(ExpectedUserCreds, UserConfig, Node, ContentType) ->
 
 update_user_json_test_case(AdminConfig, Node) ->
     Users = [{"fergus@brave.sco", "Fergus"},
-             {"merida@brave.sco", "Merida"}],
+             {"merida@brave.sco", "Merida"},
+             {"seamus@brave.sco", "Seamus"}],
     update_user_test(AdminConfig, Node, ?JSON, Users).
 
 update_user_xml_test_case(AdminConfig, Node) ->
     Users = [{"gru@despicable.me", "Gru"},
-             {"minion@despicable.me", "Minion"}],
+             {"minion@despicable.me", "Minion"},
+             {"dr.nefario@despicable.me", "DrNefario"}],
     update_user_test(AdminConfig, Node, ?XML, Users).
 
 update_user_test(AdminConfig, Node, ContentType, Users) ->
-    [{Email1, User1}, {Email2, User2}]= Users,
+    [{Email1, User1}, {Email2, User2}, {Email3, User3}]= Users,
     Port = rtcs:cs_port(Node),
     {Key, Secret, _} = rtcs:create_user(Port, Email1, User1),
+    {BadUserKey, BadUserSecret, _} = rtcs:create_user(Port, Email3, User3),
 
     UserConfig = rtcs:config(Key, Secret, Port),
+    BadUserConfig = rtcs:config(BadUserKey, BadUserSecret, Port),
 
     UserResource = "/riak-cs/user",
     AdminResource = UserResource ++ "/" ++ UserConfig#aws_config.access_key_id,
@@ -126,8 +130,19 @@ update_user_test(AdminConfig, Node, ContentType, Users) ->
     ?assertMatch({Email2, User2, _, Secret, "enabled"}, UserResult3),
     ?assertMatch({Email2, User2, _, Secret, "enabled"}, UserResult4),
 
-    %% Test updating a user's status
+    %% Test that attempting to update another user's status with a
+    %% non-admin account is disallowed
     UpdateDoc2 = update_status_doc(ContentType, "disabled"),
+    Resource = "/riak-cs/user/" ++ UserConfig#aws_config.access_key_id,
+    ErrorResult2 = parse_error_code(
+                    rtcs:update_user(BadUserConfig,
+                                     Port,
+                                     Resource,
+                                     ContentType,
+                                     UpdateDoc2)),
+    ?assertEqual("AccessDenied", ErrorResult2),
+
+    %% Test updating a user's own status
     Resource = "/riak-cs/user/" ++ UserConfig#aws_config.access_key_id,
     _ = rtcs:update_user(UserConfig, Port, Resource, ContentType, UpdateDoc2),
 
