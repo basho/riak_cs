@@ -131,6 +131,19 @@ eval_ip_address_test()->
                                               [garbage,{chiba, boo},"saitama",
                                                {'aws:SourceIp', {{23,23,0,0},{255,255,0,0}}}, hage])).
 
+eval_ip_address_test_trust_x_forwarded_for_false_test() ->
+    application:set_env(riak_cs, trust_x_forwarded_for, false),
+    Conds = [garbage,{chiba, boo},"saitama",
+             {'aws:SourceIp', {{23,23,0,0},{255,255,0,0}}}, hage],
+    %% This test fails because it tries to use the socket from wm_reqstate to
+    %% get the peer address, but it's not a real wm request. 
+    %% If trust_x_forwarded_for = true, it would just use the peer address and the call would
+    %% succeed
+    ?assertError({badrecord, wm_reqstate},
+        riak_cs_s3_policy:eval_ip_address(#wm_reqdata{peer="23.23.23.23"}, Conds)),
+    %% Reset env for next test
+    application:set_env(riak_cs, trust_x_forwarded_for, true).
+
 eval_ip_addresses_test()->
     ?assert(riak_cs_s3_policy:eval_ip_address(#wm_reqdata{peer = "23.23.23.23"},
                                               [{'aws:SourceIp', {{1,1,1,1}, {255,255,255,0}}},
