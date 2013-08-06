@@ -102,8 +102,25 @@ specific_acl_grant(Headers, RiakcPid) ->
         {error, invalid_argument}=E ->
             E;
        {ok, _GoodGrants} ->
-            {ok, [{HeaderName, emails_to_ids(Grant, RiakcPid)} ||
-                    {HeaderName, {ok, Grant}} <- Grants]}
+            %% TODO: we also need to 'promote errors' from `unresolved_grant_email'
+            EmailsTranslated =  [{HeaderName, emails_to_ids(Grant, RiakcPid)} ||
+                    {HeaderName, {ok, Grant}} <- Grants],
+            valid_headers_to_acl(EmailsTranslated)
+    end.
+
+headers_to_acl_grants(HeaderName, Grants) ->
+    GrantList = lists:map(fun header_to_grant/1, Grants),
+    ArrangedGrants = lists:foldl(fun add_grant/2, [], GrantList)
+
+header_to_grant(Permission, [{id, ID}]) ->
+    %% TODO: thread the display name through
+    {{'FAKE_DISPLAY_NAME', ID}, [Permission]};
+header_to_grant(Permission, [{uri, URI}]) ->
+    case URI of
+        ?ALL_USERS_GROUP ->
+            {'AllUsers', [Permission]};
+        ?AUTH_USERS_GROUP ->
+            {'AuthUsers', [Permission]}
     end.
 
 -type grant_user_identifier() :: 'emailAddress' | 'id' | 'uri'.
@@ -133,9 +150,20 @@ parse_mapping("emailAddress=" ++ QuotedEmail) ->
 parse_mapping("id=" ++ QuotedID) ->
     wrap('id', remove_quotes(QuotedID));
 parse_mapping("uri=" ++ QuotedURI) ->
-    wrap('uri', remove_quotes(QuotedURI));
+    NoQuote = remove_quotes(QuotedURI),
+    case valid_uri(NoQuote) of
+        true ->
+            wrap('uri', NoQuote);
+        false ->
+            {error, 'invalid_argument'}
+    end;
 parse_mapping(_Else) ->
     {error, invalid_argument}.
+
+-spec valid_uri(string()) -> boolean().
+valid_uri(URI) ->
+    %% log delivery is not yet a supported option
+    lists:member(URI, [?ALL_USERS_GROUP, ?AUTH_USERS_GROUP]).
 
 -spec wrap(atom(), {'ok', term()} | {'error', atom()}) ->
     {'error', atom()} | {ok, {atom(), term()}}.
