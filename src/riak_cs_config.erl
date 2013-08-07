@@ -40,7 +40,8 @@
          response_module/1,
          riak_cs_stat/0,
          set_md5_chunk_size/1,
-         use_t2b_compression/0
+         use_t2b_compression/0,
+         trust_x_forwarded_for/0
         ]).
 
 %% OpenStack config
@@ -221,6 +222,17 @@ proxy_get_active() ->
             _ = lager:warning("proxy_get value in app.config is invalid"),
             false;
         undefined -> false
+    end.
+
+-spec trust_x_forwarded_for() -> true | false.
+trust_x_forwarded_for() ->
+    case application:get_env(riak_cs, trust_x_forwarded_for) of
+        {ok, true} -> true;
+        {ok, false} -> false;    
+        {ok, _} ->
+            _ = lager:warning("trust_x_forwarded_for value in app.config is invalid"),
+            false;
+        undefined -> false %% secure by default!
     end.
 
 %% ===================================================================
