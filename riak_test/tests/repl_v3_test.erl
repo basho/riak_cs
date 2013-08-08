@@ -79,6 +79,7 @@ confirm() ->
     lager:info("Replication Modes = ~p", [ModeResA]),
     lager:info("Replication Modes = ~p", [ModeResB]),
 
+
     {ok, {_IP, BPort}} = rpc:call(BFirst, application, get_env,
                                   [riak_core, cluster_mgr]),
     repl_helpers:connect_clusters13(LeaderA, ANodes, BPort, "B"),
@@ -86,6 +87,8 @@ confirm() ->
     ?assertEqual(ok, repl_helpers:wait_for_connection13(LeaderA, "B")),
     rt:wait_until_ring_converged(ANodes),
 
+    repl_helpers:enable_realtime(LeaderA, "B"),
+    repl_helpers:start_realtime(LeaderA, "B"),
 
     PGEnableResult = rpc:call(LeaderA, riak_repl_console, proxy_get, [["enable","B"]]),
     lager:info("Enabled pg: ~p", [PGEnableResult]),
@@ -128,10 +131,8 @@ confirm() ->
     erlcloud_s3:put_object(?TEST_BUCKET, "object_three", Object3, U1C1Config),
 
     lager:info("disable proxy_get"),
-    %LeaderB = rpc:call(hd(BNodes), riak_repl_leader, leader_node, []),
-    %LeaderA = rpc:call(AFirst, riak_core_cluster_mgr, get_leader, []),
 
-    disable_pg(LeaderA, "B", ANodes, BNodes),
+    disable_pg(LeaderA, "B", ANodes, BNodes, BPort),
 
     %% not sure what this is for, but I'm not going to touch it right now
     timer:sleep(5000),
@@ -155,14 +156,14 @@ confirm() ->
             "object_three", U1C2Config)),
 
     lager:info("enable proxy_get"),
-    enable_pg(LeaderA, "B", ANodes, BNodes),
+    enable_pg(LeaderA, "B", ANodes, BNodes, BPort),
 
     lager:info("check we can read object_two via proxy get"),
     Obj6 = erlcloud_s3:get_object(?TEST_BUCKET, "object_two", U1C2Config),
     ?assertEqual(Object2, proplists:get_value(content, Obj6)),
 
     lager:info("disable proxy_get again"),
-    disable_pg(LeaderA, "B", ANodes, BNodes),
+    disable_pg(LeaderA, "B", ANodes, BNodes, BPort),
 
     lager:info("check we still can't read object_three"),
     ?assertError({aws_error, _}, erlcloud_s3:get_object(?TEST_BUCKET,
@@ -177,7 +178,7 @@ confirm() ->
     erlcloud_s3:delete_object(?TEST_BUCKET, "object_one", U1C1Config),
 
     lager:info("enable proxy_get"),
-    enable_pg(LeaderA, "B", ANodes, BNodes),
+    enable_pg(LeaderA, "B", ANodes, BNodes, BPort),
 
     lager:info("delete object_two while clusters are connected"),
     erlcloud_s3:delete_object(?TEST_BUCKET, "object_two", U1C1Config),
@@ -197,7 +198,7 @@ confirm() ->
                  erlcloud_s3:get_object(?TEST_BUCKET, "object_one", U1C2Config)),
 
     lager:info("disable proxy_get again"),
-    disable_pg(LeaderA, "B", ANodes, BNodes),
+    disable_pg(LeaderA, "B", ANodes, BNodes, BPort),
 
     Object3A = crypto:rand_bytes(4194304),
     ?assert(Object3 /= Object3A),
@@ -225,7 +226,7 @@ confirm() ->
     erlcloud_s3:put_object(?TEST_BUCKET, "object_five", Object5A, U1C1Config),
 
     lager:info("enable proxy_get"),
-    enable_pg(LeaderA, "B", ANodes, BNodes),
+    enable_pg(LeaderA, "B", ANodes, BNodes, BPort),
 
     lager:info("secondary cluster has old version of object three"),
     Obj10 = erlcloud_s3:get_object(?TEST_BUCKET, "object_three", U1C2Config),
@@ -260,11 +261,13 @@ confirm() ->
     ?assertEqual(Object4A, proplists:get_value(content,Obj15)),
     pass.
 
-enable_pg(SourceLeader, SinkName, ANodes, BNodes) ->
+enable_pg(SourceLeader, SinkName, ANodes, BNodes, BPort) ->
+    repl_helpers:connect_clusters13(SourceLeader, ANodes, BPort, SinkName),
     set_proxy_get(SourceLeader, "enable", SinkName, ANodes, BNodes).
 
-disable_pg(SourceLeader, SinkName, ANodes, BNodes) ->
-    set_proxy_get(SourceLeader, "disable", SinkName, ANodes, BNodes).
+disable_pg(SourceLeader, SinkName, ANodes, BNodes, _BPort) ->
+    set_proxy_get(SourceLeader, "disable", SinkName, ANodes, BNodes),
+    repl_helpers:disconnect_clusters13(SourceLeader, ANodes, SinkName).
 
 set_proxy_get(SourceLeader, EnableOrDisable, SinkName, ANodes, BNodes) ->
     PGEnableResult = rpc:call(SourceLeader, riak_repl_console, proxy_get,
