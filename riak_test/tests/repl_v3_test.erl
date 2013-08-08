@@ -81,9 +81,9 @@ confirm() ->
 
     {ok, {_IP, BPort}} = rpc:call(BFirst, application, get_env,
                                   [riak_core, cluster_mgr]),
-    repl_helpers:connect_clusters13(LeaderA, "127.0.0.1", BPort),
+    repl_helpers:connect_clusters13(LeaderA, ANodes, BPort, "B"),
 
-    ?assertEqual(ok, repl_util:wait_for_connection13(LeaderA, "B")),
+    ?assertEqual(ok, repl_helpers:wait_for_connection13(LeaderA, "B")),
     rt:wait_until_ring_converged(ANodes),
 
 
@@ -128,7 +128,9 @@ confirm() ->
     erlcloud_s3:put_object(?TEST_BUCKET, "object_three", Object3, U1C1Config),
 
     lager:info("disable proxy_get"),
-    LeaderB = rpc:call(hd(BNodes), riak_repl_leader, leader_node, []),
+    %LeaderB = rpc:call(hd(BNodes), riak_repl_leader, leader_node, []),
+    %LeaderA = rpc:call(AFirst, riak_core_cluster_mgr, get_leader, []),
+
     disable_pg(LeaderA, "B", ANodes, BNodes),
 
     %% not sure what this is for, but I'm not going to touch it right now
