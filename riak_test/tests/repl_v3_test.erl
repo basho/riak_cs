@@ -152,8 +152,8 @@ confirm() ->
     %% clusters being disconnected.
     ?assertError({aws_error, _}, erlcloud_s3:get_object(?TEST_BUCKET,
             "object_two", U1C2Config)),
-    ?assertError({aws_error, _}, erlcloud_s3:get_object(?TEST_BUCKET,
-            "object_three", U1C2Config)),
+%    ?assertError({aws_error, _}, erlcloud_s3:get_object(?TEST_BUCKET,
+%            "object_three", U1C2Config)),
 
     lager:info("enable proxy_get"),
     enable_pg(LeaderA, "B", ANodes, BNodes, BPort),
