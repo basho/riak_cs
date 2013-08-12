@@ -184,7 +184,8 @@ create_bucket(User, UserObj, Bucket, ACL, RiakPid) ->
     CurrentBuckets = get_buckets(User),
 
     %% Do not attempt to create bucket if the user already owns it
-    AttemptCreate = not bucket_exists(CurrentBuckets, binary_to_list(Bucket)),
+    AttemptCreate = riak_cs_config:disable_local_bucket_check() orelse
+        not bucket_exists(CurrentBuckets, binary_to_list(Bucket)),
     case AttemptCreate of
         true ->
             case valid_bucket_name(Bucket) of
