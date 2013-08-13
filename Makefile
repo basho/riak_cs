@@ -149,7 +149,7 @@ dialyzer: compile
 	@echo Use "'make build_plt'" to build PLT prior to using this target.
 	@echo
 	@sleep 1
-	dialyzer -Wno_return -Wunmatched_returns -Wrace_conditions \
+	dialyzer -Wno_return -Wunmatched_returns \
 		--plt $(PLT) deps/*/ebin ebin | \
 	    tee .dialyzer.raw-output | egrep -v -f ./dialyzer.ignore-warnings
 

@@ -27,6 +27,7 @@ from file_generator import FileGenerator
 from boto.exception import S3ResponseError
 from boto.s3.connection import S3Connection, OrdinaryCallingFormat
 from boto.s3.key import Key
+from boto.utils import compute_md5
 
 def create_user(host, port, name, email):
     url = '/riak-cs/user'
@@ -607,6 +608,17 @@ class ObjectMetadataTest(S3ApiVerificationTestBase):
         self.assertEqual(key.get_metadata("new-entry"), "NEW")
         # TODO: Expires header can be accessed by boto?
         # self.assertEqual(key.expires, "Tue, 19 Jan 2038 03:14:07 GMT")
+
+class ContentMd5Test(S3ApiVerificationTestBase):
+    def test_catches_bad_md5(self):
+        '''Make sure Riak CS catches a bad content-md5 header'''
+        key_name = str(uuid.uuid4())
+        bucket = self.conn.create_bucket(self.bucket_name)
+        key = Key(bucket, key_name)
+        s = StringIO('not the real content')
+        x = compute_md5(s)
+        with self.assertRaises(S3ResponseError):
+            key.set_contents_from_string('this is different from the md5 we calculated', md5=x)
 
 
 if __name__ == "__main__":

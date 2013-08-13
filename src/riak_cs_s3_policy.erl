@@ -28,6 +28,7 @@
 -include("riak_cs.hrl").
 -include("s3_api.hrl").
 -include_lib("webmachine/include/wm_reqdata.hrl").
+-include_lib("webmachine/include/wm_reqstate.hrl").
 -include_lib("riak_pb/include/riak_pb_kv_codec.hrl").
 
 %% Public API
@@ -492,7 +493,16 @@ eval_bool(#wm_reqdata{scheme=Scheme} = _Req, Conds) ->
 
 -spec eval_ip_address(#wm_reqdata{}, [{'aws:SourceIp', binary()}]) -> boolean().
 eval_ip_address(Req, Conds) ->
-    case parse_ip(Req#wm_reqdata.peer) of
+    IPAddress =
+        case riak_cs_config:trust_x_forwarded_for() of
+            true -> wrq:peer(Req);
+            false ->
+                ReqState = Req#wm_reqdata.wm_state,
+                Socket = ReqState#wm_reqstate.socket,
+                {ok, {Addr,_}} = mochiweb_socket:peername(Socket),
+                inet_parse:ntoa(Addr)
+        end,
+    case parse_ip(IPAddress) of
         {error, _} ->
             false;
         {Peer, _} ->

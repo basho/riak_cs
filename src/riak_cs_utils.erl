@@ -59,6 +59,7 @@
          json_pp_print/1,
          list_keys/2,
          maybe_log_bucket_owner_error/2,
+         n_val_1_get_requests/0,
          pow/2,
          pow/3,
          put_object/5,
@@ -183,7 +184,8 @@ create_bucket(User, UserObj, Bucket, ACL, RiakPid) ->
     CurrentBuckets = get_buckets(User),
 
     %% Do not attempt to create bucket if the user already owns it
-    AttemptCreate = not bucket_exists(CurrentBuckets, binary_to_list(Bucket)),
+    AttemptCreate = riak_cs_config:disable_local_bucket_check() orelse
+        not bucket_exists(CurrentBuckets, binary_to_list(Bucket)),
     case AttemptCreate of
         true ->
             case valid_bucket_name(Bucket) of
@@ -737,6 +739,11 @@ list_keys(BucketName, RiakPid) ->
             Error
     end.
 
+-spec n_val_1_get_requests() -> boolean().
+n_val_1_get_requests() ->
+    riak_cs_config:get_env(riak_cs, n_val_1_get_requests,
+                           ?N_VAL_1_GET_REQUESTS).
+
 %% @doc Integer version of the standard pow() function; call the recursive accumulator to calculate.
 -spec pow(integer(), integer()) -> integer().
 pow(Base, Power) ->
@@ -783,9 +790,6 @@ put_with_no_meta(RiakcPid, RiakcObj) ->
     ok | {ok, riakc_obj:riakc_obj()} | {ok, binary()} | {error, term()}.
 put_with_no_meta(RiakcPid, RiakcObject, Options) ->
     WithMeta = riakc_obj:update_metadata(RiakcObject, dict:new()),
-    io:format("put_NO_META LINE ~p contents ~p bucket ~p key ~p\n", [?LINE, length(riakc_obj:get_contents(WithMeta)), riakc_obj:bucket(WithMeta), riakc_obj:key(WithMeta)]),
-    catch exit(yoyo),
-    io:format("put_NO_META LINE ~p ~p\n", [?LINE, erlang:get_stacktrace()]),
     riakc_pb_socket:put(RiakcPid, WithMeta, Options).
 
 
