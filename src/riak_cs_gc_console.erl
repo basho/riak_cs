@@ -136,7 +136,7 @@ print_status(State, Details) ->
 
 print_state(idle) ->
     output("There is no garbage collection in progress");
-print_state(fetching_next_filest) ->
+print_state(fetching_next_fileset) ->
     output("A garbage collection batch is in progress");
 print_state(initiating_file_delete) ->
     output("A garbage collection batch is in progress");

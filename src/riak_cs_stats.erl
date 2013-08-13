@@ -39,6 +39,7 @@
 -record(state, {}).
 
 -define(IDS, [block_get,
+              block_get_retry,
               block_put,
               block_delete,
               service_get_buckets,
@@ -95,7 +96,11 @@ get_stats() ->
     [{legend, [meter_count, meter_rate, latency_mean, latency_median,
                latency_95, latency_99]}]
     ++
-    [raw_report_item(I) || I <- ?IDS].
+    [raw_report_item(I) || I <- ?IDS]
+    ++
+    [{legend, [workers, overflow, size]}]
+    ++
+    [raw_report_pool(P) || P <- [ request_pool, bucket_list_pool ]].
 
 %% ====================================================================
 %% gen_server callbacks
@@ -182,4 +187,11 @@ raw_report_item(BaseId) ->
              Latency95, Latency99]};
         undefined ->
             {BaseId, -1, -1, -1, -1, -1, -1}
+    end.
+
+raw_report_pool(Pool) ->
+    case poolboy:status(Pool) of
+        {_PoolState, PoolWorkers, PoolOverflow, PoolSize} ->
+            { Pool, [ PoolWorkers, PoolOverflow, PoolSize ] };
+        _ -> { Pool, [ -1, -1, -1 ] }
     end.

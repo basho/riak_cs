@@ -27,6 +27,7 @@ from file_generator import FileGenerator
 from boto.exception import S3ResponseError
 from boto.s3.connection import S3Connection, OrdinaryCallingFormat
 from boto.s3.key import Key
+from boto.utils import compute_md5
 
 def create_user(host, port, name, email):
     url = '/riak-cs/user'
@@ -60,9 +61,9 @@ class S3ApiVerificationTestBase(unittest.TestCase):
     host="127.0.0.1"
     try:
         port=int(os.environ['CS_HTTP_PORT'])
-    except:
+    except KeyError:
         port=8080
-    print "YYY I am using port %d" % port
+
 
     user1 = None
     user2 = None
@@ -153,6 +154,16 @@ class BasicTests(S3ApiVerificationTestBase):
         self.assertIn(self.key_name,
                       [k.key for k in bucket.get_all_keys()])
 
+    def test_put_object_with_trailing_slash(self):
+        bucket = self.conn.create_bucket(self.bucket_name)
+        key_name_with_slash = self.key_name + "/"
+        k = Key(bucket)
+        k.key = key_name_with_slash
+        k.set_contents_from_string(self.data)
+        self.assertEqual(k.get_contents_as_string(), self.data)
+        self.assertIn(key_name_with_slash,
+                      [k.key for k in bucket.get_all_keys()])
+
     def test_delete_object(self):
         bucket = self.conn.create_bucket(self.bucket_name)
         k = Key(bucket)
@@ -219,6 +230,17 @@ class MultiPartUploadTests(S3ApiVerificationTestBase):
     def test_small_strings_upload_4(self):
         parts = [str(uuid.uuid4()) for _ in xrange(20)]
         self.multipart_md5_helper(parts)
+
+    def test_standard_storage_class(self):
+        # Test for bug reported in
+        # https://github.com/basho/riak_cs/pull/575
+        bucket = self.conn.create_bucket(self.bucket_name)
+        key_name = 'test_standard_storage_class'
+        _never_finished_upload = bucket.initiate_multipart_upload(key_name)
+        uploads = list(bucket.list_multipart_uploads())
+        for u in uploads:
+            self.assertEqual(u.storage_class, 'STANDARD')
+        self.assertTrue(True)
 
 def one_kb_string():
     "Return a 1KB string of all a's"
@@ -371,6 +393,18 @@ class BucketPolicyTest(S3ApiVerificationTestBase):
         except S3ResponseError: pass
         else:                   self.fail()
 
+    def test_put_policy_invalid_ip(self):
+        bucket = self.conn.create_bucket(self.bucket_name)
+        bucket.delete_policy()
+        policy = '''
+{"Version":"2008-10-17","Statement":[{"Sid":"Stmtaaa","Effect":"Allow","Principal":"*","Action":["s3:GetObjectAcl","s3:GetObject"],"Resource":"arn:aws:s3:::%s/*","Condition":{"IpAddress":{"aws:SourceIp":"0"}}}]}
+''' % bucket.name
+        try: 
+            bucket.set_policy(policy, headers={'content-type':'application/json'})
+        except S3ResponseError as e:
+            self.assertEqual(e.status, 400)
+            self.assertEqual(e.reason, 'Bad Request')
+
     def test_put_policy(self):
         bucket = self.conn.create_bucket(self.bucket_name)
         bucket.delete_policy()
@@ -407,6 +441,22 @@ class BucketPolicyTest(S3ApiVerificationTestBase):
         self.assertTrue(bucket.set_policy(policy, headers={'content-type':'application/json'}))
         key.get_contents_as_string() ## throws nothing
 
+
+    def test_invalid_transport_addr_policy(self):
+        bucket = self.conn.create_bucket(self.bucket_name)
+        key_name = str(uuid.uuid4())
+        key = Key(bucket, key_name)
+        key.set_contents_from_string(self.data)
+
+        ## anyone may GET this object
+        policy = '''
+{"Version":"2008-10-17","Statement":[{"Sid":"Stmtaaa0","Effect":"Allow","Principal":"*","Action":["s3:GetObject"],"Resource":"arn:aws:s3:::%s/*","Condition":{"Bool":{"aws:SecureTransport":wat}}}]}
+''' % bucket.name
+        try: 
+            bucket.set_policy(policy, headers={'content-type':'application/json'})
+        except S3ResponseError as e:
+            self.assertEqual(e.status, 400)
+            self.assertEqual(e.reason, 'Bad Request')
 
     def test_transport_addr_policy(self):
         bucket = self.conn.create_bucket(self.bucket_name)
@@ -558,6 +608,17 @@ class ObjectMetadataTest(S3ApiVerificationTestBase):
         self.assertEqual(key.get_metadata("new-entry"), "NEW")
         # TODO: Expires header can be accessed by boto?
         # self.assertEqual(key.expires, "Tue, 19 Jan 2038 03:14:07 GMT")
+
+class ContentMd5Test(S3ApiVerificationTestBase):
+    def test_catches_bad_md5(self):
+        '''Make sure Riak CS catches a bad content-md5 header'''
+        key_name = str(uuid.uuid4())
+        bucket = self.conn.create_bucket(self.bucket_name)
+        key = Key(bucket, key_name)
+        s = StringIO('not the real content')
+        x = compute_md5(s)
+        with self.assertRaises(S3ResponseError):
+            key.set_contents_from_string('this is different from the md5 we calculated', md5=x)
 
 
 if __name__ == "__main__":

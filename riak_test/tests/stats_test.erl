@@ -54,9 +54,10 @@ confirm() ->
 query_stats(UserConfig, Port) ->
     lager:debug("Querying stats"),
     Date = httpd_util:rfc1123_date(),
+    Resource = "/riak-cs/stats",
     Cmd="curl -s -H 'Date: " ++ Date ++ "' -H 'Authorization: " ++
-        make_authorization(UserConfig, Date) ++ "' http://localhost:" ++
-        integer_to_list(Port) ++ "/riak-cs/stats",
+        rtcs:make_authorization("GET", Resource, [], UserConfig, Date) ++ "' http://localhost:" ++
+        integer_to_list(Port) ++ Resource,
     lager:info("Stats query cmd: ~p", [Cmd]),
     Output = os:cmd(Cmd),
     lager:debug("Stats output=~p~n",[Output]),
@@ -81,12 +82,9 @@ confirm_initial_stats(StatData) ->
                                   <<"object_head">>,
                                   <<"object_delete">>,
                                   <<"object_get_acl">>,
-                                  <<"object_put_acl">>]].
+                                  <<"object_put_acl">>]],
+    ?assertEqual([7,0,1], proplists:get_value(<<"request_pool">>, StatData)),
+    ?assertEqual([2,0,0], proplists:get_value(<<"bucket_list_pool">>, StatData)).
 
 confirm_stat_count(StatData, StatType, ExpectedCount) ->
     ?assertEqual(ExpectedCount, hd(proplists:get_value(StatType, StatData))).
-
-make_authorization(Config, Date) ->
-    StringToSign = ["GET", $\n, [], $\n, [], $\n, Date, $\n, "/riak-cs/stats"],
-    Signature = base64:encode_to_string(crypto:sha_mac(Config#aws_config.secret_access_key, StringToSign)),
-    lists:flatten(["AWS ", Config#aws_config.access_key_id, $:, Signature]).

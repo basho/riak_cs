@@ -64,7 +64,7 @@ setup_object(Bucket, Key, UserConfig) ->
 
 before_and_after_of_last_modified(Obj) ->
     Headers = proplists:get_value(headers, Obj),
-    LastModified = proplists:get_value("last-modified", Headers),
+    LastModified = proplists:get_value("Last-Modified", Headers),
     LastModifiedErlDate = httpd_util:convert_request_date(LastModified),
     LastModifiedSec = calendar:datetime_to_gregorian_seconds(LastModifiedErlDate),
     Before = rfc1123_date(LastModifiedSec - 1),
@@ -113,9 +113,9 @@ normal_get_case(Bucket, Key, ExpectedContent, Options, UserConfig) ->
     ?assertEqual(ExpectedContent, proplists:get_value(content, Obj)).
 
 not_modified_case(Bucket, Key, Options, UserConfig) ->
-    ?assertError({aws_error, {http_error, 304, "Not Modified", _Body}},
+    ?assertError({aws_error, {http_error, 304, _, _Body}},
                 erlcloud_s3:get_object(Bucket, Key, Options, UserConfig)).
 
 precondition_failed_case(Bucket, Key, Options, UserConfig) ->
-    ?assertError({aws_error, {http_error, 412, "Precondition Failed", _Body}},
+    ?assertError({aws_error, {http_error, 412, _, _Body}},
                  erlcloud_s3:get_object(Bucket, Key, Options, UserConfig)).

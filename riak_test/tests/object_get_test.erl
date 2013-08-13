@@ -183,7 +183,7 @@ assert_content_range(Skip, Length, Size, Obj) ->
     Expected = lists:flatten(
                  io_lib:format("bytes ~B-~B/~B", [Skip, Skip + Length - 1, Size])),
     Headers = proplists:get_value(headers, Obj),
-    ContentRange = proplists:get_value("content-range", Headers),
+    ContentRange = proplists:get_value("Content-Range", Headers),
     ?assertEqual(Expected, ContentRange).
 
 %% TODO: riak_test includes its own mochiweb by escriptizing.
@@ -218,7 +218,7 @@ upload_parts(Bucket, Key, UploadId, Config, PartCount, [Size | Sizes], Contents,
     Content = crypto:rand_bytes(Size),
     {RespHeaders, _UploadRes} = erlcloud_s3_multipart:upload_part(
                                   Bucket, Key, UploadId, PartCount, Content, Config),
-    PartEtag = proplists:get_value("etag", RespHeaders),
+    PartEtag = proplists:get_value("ETag", RespHeaders),
     lager:debug("UploadId: ~p~n", [UploadId]),
     lager:debug("PartEtag: ~p~n", [PartEtag]),
     upload_parts(Bucket, Key, UploadId, Config, PartCount + 1,

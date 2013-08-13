@@ -36,7 +36,8 @@
                   admin_ip,
                   admin_port,
                   ssl,
-                  admin_ssl]).
+                  admin_ssl,
+                  {rewrite_module, riak_cs_s3_rewrite}]).
 
 -type startlink_err() :: {'already_started', pid()} | 'shutdown' | term().
 -type startlink_ret() :: {'ok', pid()} | 'ignore' | {'error', startlink_err()}.
@@ -66,9 +67,10 @@ init([]) ->
 
 -spec process_specs() -> [supervisor:child_spec()].
 process_specs() ->
-    Archiver = {riak_cs_access_archiver_sup,
-                {riak_cs_access_archiver_sup, start_link, []},
-                permanent, 5000, worker, dynamic},
+    Archiver = {riak_cs_access_archiver_manager,
+                {riak_cs_access_archiver_manager, start_link, []},
+                permanent, 5000, worker,
+                [riak_cs_access_archiver_manager]},
     Storage = {riak_cs_storage_d,
                {riak_cs_storage_d, start_link, []},
                permanent, 5000, worker, [riak_cs_storage_d]},
@@ -89,6 +91,8 @@ process_specs() ->
     PutFsmSup = {riak_cs_put_fsm_sup,
                  {riak_cs_put_fsm_sup, start_link, []},
                  permanent, 5000, worker, dynamic},
+    DiagsSup = {riak_cs_diags, {riak_cs_diags, start_link, []},
+                   permanent, 5000, worker, dynamic},
     [Archiver,
      Storage,
      GC,
@@ -96,7 +100,8 @@ process_specs() ->
      ListObjectsETSCacheSup,
      DeleteFsmSup,
      GetFsmSup,
-     PutFsmSup].
+     PutFsmSup,
+     DiagsSup].
 
 -spec get_option_val({atom(), term()} | atom()) -> {atom(), term()}.
 get_option_val({Option, Default}) ->
@@ -157,7 +162,7 @@ object_web_config(Options) ->
      {ip, proplists:get_value(cs_ip, Options)},
      {port, proplists:get_value(cs_port, Options)},
      {nodelay, true},
-     {rewrite_module, riak_cs_s3_rewrite},
+     {rewrite_module, proplists:get_value(rewrite_module, Options)},
      {error_handler, riak_cs_wm_error_handler},
      {resource_module_option, submodule}] ++
         maybe_add_ssl_opts(proplists:get_value(ssl, Options)).

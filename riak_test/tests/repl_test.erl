@@ -6,28 +6,12 @@
 -define(TEST_BUCKET, "riak-test-bucket").
 
 confirm() ->
-    {_, {RiakNodes, _CSNodes, _Stanchion}} =
-        rtcs:deploy_nodes(4, [{riak, rtcs:ee_config()},
-                              {stanchion, rtcs:stanchion_config()},
-                              {cs, rtcs:cs_config()}]),
+    {UserConfig, {RiakNodes, _CSNodes, _Stanchion}} = rtcs:setup2x2(),
+    lager:info("UserConfig = ~p", [UserConfig]),
+    [A,B,C,D] = RiakNodes,
 
-    rt:wait_until_nodes_ready(RiakNodes),
-
-    {ANodes, BNodes} = lists:split(2, RiakNodes),
-
-    lager:info("Build cluster A"),
-    rtcs:make_cluster(ANodes),
-
-    lager:info("Build cluster B"),
-    rtcs:make_cluster(BNodes),
-
-    rt:wait_until_ring_converged(ANodes),
-    rt:wait_until_ring_converged(BNodes),
-
-    %% STFU sasl
-    application:load(sasl),
-    application:set_env(sasl, sasl_error_logger, false),
-    erlcloud:start(),
+    ANodes = [A,B],
+    BNodes = [C,D],
 
     AFirst = hd(ANodes),
     BFirst = hd(BNodes),
@@ -143,27 +127,12 @@ confirm() ->
                 erlcloud_s3:list_objects(?TEST_BUCKET, U1C2Config))]),
 
     lager:info("check that the 2 other objects can't be read"),
-    %% XXX I expect errors here, but I get successful objects containing <<>>
-    %?assertError({aws_error, _}, erlcloud_s3:get_object(?TEST_BUCKET,
-            %"object_two")),
-    %?assertError({aws_error, _}, erlcloud_s3:get_object(?TEST_BUCKET,
-            %"object_three")),
-
-    Obj4 = erlcloud_s3:get_object(?TEST_BUCKET, "object_two", U1C2Config),
-
-    %% Check content of Obj4
-    ?assertEqual(<<>>, proplists:get_value(content, Obj4)),
-    %% Check content_length of Obj4
-    ?assertEqual(integer_to_list(byte_size(Object2)),
-        proplists:get_value(content_length, Obj4)),
-
-    Obj5 = erlcloud_s3:get_object(?TEST_BUCKET, "object_three", U1C2Config),
-
-    %% Check content of Obj5
-    ?assertEqual(<<>>, proplists:get_value(content, Obj5)),
-    %% Check content_length of Obj5
-    ?assertEqual(integer_to_list(byte_size(Object3)),
-        proplists:get_value(content_length, Obj5)),
+    %% We expect errors here since proxy_get will fail due to the
+    %% clusters being disconnected.
+    ?assertError({aws_error, _}, erlcloud_s3:get_object(?TEST_BUCKET,
+            "object_two", U1C2Config)),
+    ?assertError({aws_error, _}, erlcloud_s3:get_object(?TEST_BUCKET,
+            "object_three", U1C2Config)),
 
     lager:info("reconnect clusters"),
     repl_helpers:add_site(hd(BNodes), {Ip, Port, "site1"}),
@@ -176,8 +145,8 @@ confirm() ->
     repl_helpers:del_site(LeaderB, "site1"),
 
     lager:info("check we still can't read object_three"),
-    Obj7 = erlcloud_s3:get_object(?TEST_BUCKET, "object_three", U1C2Config),
-    ?assertEqual(<<>>, proplists:get_value(content, Obj7)),
+    ?assertError({aws_error, _}, erlcloud_s3:get_object(?TEST_BUCKET,
+            "object_three", U1C2Config)),
 
     lager:info("check that proxy getting object_two wrote it locally, so we"
         " can read it"),

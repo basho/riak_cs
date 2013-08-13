@@ -1,28 +1,27 @@
-(comment 
----------------------------------------------------------------------
-Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
+;; Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
+;;
+;; This file is provided to you under the Apache License,
+;; Version 2.0 (the "License"); you may not use this file
+;; except in compliance with the License.  You may obtain
+;; a copy of the License at
+;;
+;;   http://www.apache.org/licenses/LICENSE-2.0
+;;
+;; Unless required by applicable law or agreed to in writing,
+;; software distributed under the License is distributed on an
+;; "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+;; KIND, either express or implied.  See the License for the
+;; specific language governing permissions and limitations
+;; under the License.
 
-This file is provided to you under the Apache License,
-Version 2.0 (the "License"); you may not use this file
-except in compliance with the License.  You may obtain
-a copy of the License at
-
-  http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing,
-software distributed under the License is distributed on an
-"AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
-KIND, either express or implied.  See the License for the
-specific language governing permissions and limitations
-under the License.
-
----------------------------------------------------------------------
-)
 (ns java-s3-tests.test.client
   (:import java.security.MessageDigest
            org.apache.commons.codec.binary.Hex
            com.amazonaws.services.s3.model.AmazonS3Exception
-           com.amazonaws.services.s3.model.ObjectMetadata)
+           com.amazonaws.services.s3.model.ObjectMetadata
+           com.amazonaws.services.s3.transfer.TransferManager
+           com.amazonaws.services.s3.transfer.TransferManagerConfiguration)
+
   (:require [aws.sdk.s3 :as s3])
   (:require [java-s3-tests.user-creation :as user-creation])
   (:use midje.sweet))
@@ -69,6 +68,33 @@ under the License.
 
 (defn random-string []
   (str (java.util.UUID/randomUUID)))
+
+(defn write-file [filename content]
+  (with-open [w (clojure.java.io/writer  filename :append false)]
+    (.write w content)))
+
+(defn etag-suffix [etag]
+  (subs etag (- (count etag) 2)))
+
+(defn create-manager [c]
+  (TransferManager. c))
+
+(defn configure-manager [tm]
+  (let [tm-config (.getConfiguration tm)]
+    (.setMultipartUploadThreshold tm-config 19)
+    (.setMinimumUploadPartSize tm-config 10)
+    (.setConfiguration tm tm-config)))
+
+(defn create-and-configure-manager [c]
+  (let [tm (create-manager c)]
+    (configure-manager tm)
+    tm))
+
+(defn upload-file [tm bucket-name object-name file-name]
+  (let [f (clojure.java.io/file file-name)
+        u (.upload tm bucket-name object-name f)]
+    (.waitForCompletion u)
+    (.delete f)))
 
 (fact "bogus creds raises an exception"
       (let [bogus-client
@@ -129,3 +155,32 @@ under the License.
                (s3/get-object
                  c bucket-name object-name))))
         => md5-sum))
+
+(let [bucket-name (random-string)
+      object-name (random-string)
+      value (str "aaaaaaaaaa" "bbbbbbbbbb")
+      file-name "./clj-mp-test.txt"]
+  (fact "mulitpart upload works"
+        (with-random-client c
+          (do
+            (s3/create-bucket c bucket-name)
+            (let [tm (create-and-configure-manager c)]
+              (write-file file-name value)
+              (upload-file tm bucket-name object-name file-name)
+              (let [fetched-object (s3/get-object
+                                      c bucket-name object-name)]
+                  [((comp slurp :content) fetched-object)
+                   ((comp etag-suffix :etag :metadata) fetched-object)]))))
+        => [value, "-2"]))
+
+(let [bucket-name (random-string)
+      object-name (random-string)
+      value "this is the real value"
+      wrong-md5 "2945d7de2f70de5b8c0cb3fbcba4fe92"]
+  (fact "Bad content md5 throws an exception"
+        (with-random-client c
+          (do
+            (s3/create-bucket c bucket-name)
+            (s3/put-object c bucket-name object-name value
+                           {:content-md5 wrong-md5})))
+        => (throws AmazonS3Exception)))

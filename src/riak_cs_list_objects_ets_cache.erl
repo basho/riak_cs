@@ -224,7 +224,7 @@ num_keys_to_bytes(NumKeys) ->
 
 
 unsafe_write(Key, Value) ->
-    TS = riak_cs_utils:timestamp(os:timestamp()),
+    TS = riak_cs_utils:second_resolution_timestamp(os:timestamp()),
     _ = lager:debug("Writing entry for ~p to LO Cache", [Key]),
     ets:insert(default_ets_table(), {Key, Value, TS}),
     ok.

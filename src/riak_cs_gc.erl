@@ -39,6 +39,9 @@
          move_manifests_to_gc_bucket/3,
          timestamp/0]).
 
+%% export for repl debugging and testing
+-export([get_active_manifests/3]).
+
 %%%===================================================================
 %%% Public API
 %%%===================================================================
@@ -62,15 +65,20 @@ gc_active_manifests(Bucket, Key, RiakcPid) ->
     {ok, [binary()]} | {error, term()}.
 gc_active_manifests(Bucket, Key, RiakcPid, UUIDs) ->
    case get_active_manifests(Bucket, Key, RiakcPid) of
-        {ok, _RiakObject, []} -> {ok, UUIDs};
+        {ok, _RiakObject, []} -> 
+            {ok, UUIDs};
         {ok, RiakObject, Manifests} ->
             UnchangedManifests = clean_manifests(Manifests, RiakcPid),
             case gc_manifests(UnchangedManifests, RiakObject, Bucket, Key, RiakcPid) of
-                {error, _}=Error -> Error;
-                NewUUIDs -> gc_active_manifests(Bucket, Key, RiakcPid, UUIDs ++ NewUUIDs)
+                {error, _}=Error -> 
+                    Error;
+                NewUUIDs -> 
+                    gc_active_manifests(Bucket, Key, RiakcPid, UUIDs ++ NewUUIDs)
             end;
-        {error, notfound} ->{ok, UUIDs};
-        {error, _}=Error -> Error
+        {error, notfound} ->
+            {ok, UUIDs};
+        {error, _}=Error -> 
+            Error
     end.
 
 -spec get_active_manifests(binary(), binary(), pid()) ->
@@ -84,7 +92,8 @@ get_active_manifests(Bucket, Key, RiakcPid) ->
                           {error, term()}.
 active_manifests({ok, RiakObject, Manifests}) -> 
     {ok, RiakObject, riak_cs_manifest_utils:active_manifests(Manifests)};
-active_manifests({error, _}=Error) -> Error.
+active_manifests({error, _}=Error) -> 
+    Error.
 
 -spec clean_manifests([lfs_manifest()], pid()) -> [lfs_manifest()].
 clean_manifests(ActiveManifests, RiakcPid) ->
@@ -106,9 +115,12 @@ is_multipart_clean(updated) ->
                    RiakcPid :: pid()) ->
     [binary()] | {error, term()}.
 gc_manifests(Manifests, RiakObject, Bucket, Key, RiakcPid) ->
-    catch lists:foldl(fun(M, UUIDs) -> 
-                          gc_manifest(M, RiakObject, Bucket, Key, RiakcPid, UUIDs) 
-                      end, [], Manifests).
+    F = fun(_M, {error, _}=Error) ->
+               Error;
+           (M, UUIDs) -> 
+               gc_manifest(M, RiakObject, Bucket, Key, RiakcPid, UUIDs) 
+        end, 
+    lists:foldl(F, [], Manifests).
 
 -spec gc_manifest(M :: lfs_manifest(),
                   RiakObject :: riakc_obj:riakc_obj(),
@@ -119,12 +131,22 @@ gc_manifests(Manifests, RiakObject, Bucket, Key, RiakcPid) ->
       [binary()] | no_return().
 gc_manifest(M, RiakObject, Bucket, Key, RiakcPid, UUIDs) ->
     UUID = M?MANIFEST.uuid,
-    check(gc_specific_manifests([UUID], RiakObject, Bucket, Key, RiakcPid), [UUID | UUIDs]).
+    check(gc_specific_manifests_to_delete([UUID], RiakObject, Bucket, Key, RiakcPid), [UUID | UUIDs]).
 
 check({ok, _}, Val) -> 
     Val;
 check({error, _}=Error, _Val) -> 
-    throw(Error).
+    Error.
+
+-spec gc_specific_manifests_to_delete(UUIDsToMark :: [binary()],
+                   RiakObject :: riakc_obj:riakc_obj(),
+                   Bucket :: binary(),
+                   Key :: binary(),
+                   RiakcPid :: pid()) ->
+    {error, term()} | {ok, riakc_obj:riakc_obj()}.
+gc_specific_manifests_to_delete(UUIDsToMark, RiakObject, Bucket, Key, RiakcPid) ->
+    MarkedResult = mark_as_deleted(UUIDsToMark, RiakObject, Bucket, Key, RiakcPid),
+    handle_mark_as_pending_delete(MarkedResult, Bucket, Key, UUIDsToMark, RiakcPid).
 
 %% @private
 -spec gc_specific_manifests(UUIDsToMark :: [binary()],
@@ -133,6 +155,8 @@ check({error, _}=Error, _Val) ->
                    Key :: binary(),
                    RiakcPid :: pid()) ->
     {error, term()} | {ok, riakc_obj:riakc_obj()}.
+gc_specific_manifests([], RiakObject, _Bucket, _Key, _RiakcPid) ->
+    {ok, RiakObject};
 gc_specific_manifests(UUIDsToMark, RiakObject, Bucket, Key, RiakcPid) ->
     MarkedResult = mark_as_pending_delete(UUIDsToMark,
                                           RiakObject,
@@ -224,11 +248,21 @@ leeway_seconds() ->
 %% @doc Generate a key for storing a set of manifests for deletion.
 -spec timestamp() -> non_neg_integer().
 timestamp() ->
-    riak_cs_utils:timestamp(os:timestamp()).
+    riak_cs_utils:second_resolution_timestamp(os:timestamp()).
 
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
+
+%% @doc Mark a list of manifests as `pending_delete' based upon the
+%% UUIDs specified, and also add {deleted, true} to the props member
+%% to signify an actual delete, and not an overwrite.
+-spec mark_as_deleted([binary()], riakc_obj:riakc_obj(), binary(), binary(), pid()) ->
+    {ok, riakc_obj:riakc_obj()} | {error, term()}.
+mark_as_deleted(UUIDsToMark, RiakObject, Bucket, Key, RiakcPid) ->
+    mark_manifests(RiakObject, Bucket, Key, UUIDsToMark,
+                   fun riak_cs_manifest_utils:mark_deleted/2,
+                   RiakcPid).
 
 %% @doc Mark a list of manifests as `pending_delete' based upon the
 %% UUIDs specified.
@@ -274,6 +308,8 @@ move_manifests_to_gc_bucket(Manifests, RiakcPid) ->
 %% `riak-cs-gc' bucket to schedule them for deletion.
 -spec move_manifests_to_gc_bucket([lfs_manifest()], pid(), boolean()) ->
     ok | {error, term()}.
+move_manifests_to_gc_bucket([], _RiakcPid, _AddLeewayP) ->
+    ok;
 move_manifests_to_gc_bucket(Manifests, RiakcPid, AddLeewayP) ->
     Key = generate_key(AddLeewayP),
     ManifestSet = build_manifest_set(Manifests),

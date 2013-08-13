@@ -36,12 +36,16 @@ parse_ip_test_()->
     [
      ?_assertEqual({{192,0,0,1}, {255,0,0,0}},
                    riak_cs_s3_policy:parse_ip(<<"192.0.0.1/8">>)),
-     ?_assertEqual({{192,3,0,1}, {255,255,0,0}},
+     ?_assertEqual({error, einval},
                    riak_cs_s3_policy:parse_ip(<<"192.3.1/16">>)),
      ?_assertEqual(<<"1.2.3.4">>,
                    riak_cs_s3_policy:print_ip(riak_cs_s3_policy:parse_ip(<<"1.2.3.4">>))),
      ?_assertEqual(<<"1.2.3.4/13">>,
-                   riak_cs_s3_policy:print_ip(riak_cs_s3_policy:parse_ip(<<"1.2.3.4/13">>)))
+                   riak_cs_s3_policy:print_ip(riak_cs_s3_policy:parse_ip(<<"1.2.3.4/13">>))),
+     ?_assertEqual({error, einval}, 
+                   riak_cs_s3_policy:parse_ip(<<"0">>)),
+     ?_assertEqual({error, einval}, 
+                   riak_cs_s3_policy:parse_ip(<<"0/0">>))
     ].
 
 empty_statement_conversion_test()->
@@ -92,6 +96,7 @@ sample_plain_allow_policy()->
       "}" >>.
 
 sample_policy_check_test()->
+    application:set_env(riak_cs, trust_x_forwarded_for, true),
     JsonPolicy0 = sample_plain_allow_policy(),
     {ok, Policy} = riak_cs_s3_policy:policy_from_json(JsonPolicy0),
     Access = #access_v1{method='GET', target=object, id="spam/ham/egg",
@@ -125,6 +130,19 @@ eval_ip_address_test()->
     ?assert(riak_cs_s3_policy:eval_ip_address(#wm_reqdata{peer = "23.23.23.23"},
                                               [garbage,{chiba, boo},"saitama",
                                                {'aws:SourceIp', {{23,23,0,0},{255,255,0,0}}}, hage])).
+
+eval_ip_address_test_trust_x_forwarded_for_false_test() ->
+    application:set_env(riak_cs, trust_x_forwarded_for, false),
+    Conds = [garbage,{chiba, boo},"saitama",
+             {'aws:SourceIp', {{23,23,0,0},{255,255,0,0}}}, hage],
+    %% This test fails because it tries to use the socket from wm_reqstate to
+    %% get the peer address, but it's not a real wm request. 
+    %% If trust_x_forwarded_for = true, it would just use the peer address and the call would
+    %% succeed
+    ?assertError({badrecord, wm_reqstate},
+        riak_cs_s3_policy:eval_ip_address(#wm_reqdata{peer="23.23.23.23"}, Conds)),
+    %% Reset env for next test
+    application:set_env(riak_cs, trust_x_forwarded_for, true).
 
 eval_ip_addresses_test()->
     ?assert(riak_cs_s3_policy:eval_ip_address(#wm_reqdata{peer = "23.23.23.23"},
@@ -197,6 +215,7 @@ sample_securetransport_statement()->
 
 
 secure_transport_test()->
+    application:set_env(riak_cs, trust_x_forwarded_for, true),
     JsonPolicy0 = sample_securetransport_statement(),
     {ok, Policy} = riak_cs_s3_policy:policy_from_json(JsonPolicy0),
     Req = #wm_reqdata{peer="192.168.0.1", scheme=https},

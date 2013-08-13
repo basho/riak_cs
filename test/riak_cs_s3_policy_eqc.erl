@@ -23,6 +23,7 @@
 -compile(export_all).
 
 -ifdef(TEST).
+-ifdef(EQC).
 
 -include("riak_cs.hrl").
 -include("s3_api.hrl").
@@ -59,6 +60,7 @@ prop_ip_filter() ->
     ?FORALL({Policy0, Access0, IP, PrefixDigit},
             {policy_v1(), access_v1(), inet_ip_address_v4(), choose(0,32)},
             begin
+                application:set_env(riak_cs, trust_x_forwarded_for, true),
                 %% replace IP in the policy with prefix mask
                 Statement0 = hd(Policy0?POLICY.statement),
                 IPStr0 = lists:flatten(io_lib:format("~s/~p",
@@ -125,6 +127,7 @@ prop_secure_transport() ->
 prop_eval() ->
     ?FORALL({Policy, Access}, {policy_v1(), access_v1()},
             begin
+                application:set_env(riak_cs, trust_x_forwarded_for, true),
                 JsonPolicy = riak_cs_s3_policy:policy_to_json_term(Policy),
                 case riak_cs_s3_policy:eval(Access, JsonPolicy) of
                     true -> true;
@@ -137,19 +140,20 @@ prop_eval() ->
 prop_policy_v1()->
     ?FORALL(Policy, policy_v1(),
             begin
-                 JsonPolicy =
+                application:set_env(riak_cs, trust_x_forwarded_for, true),
+                JsonPolicy =
                     riak_cs_s3_policy:policy_to_json_term(Policy),
-                 {ok, PolicyFromJson} =
+                {ok, PolicyFromJson} =
                     riak_cs_s3_policy:policy_from_json(JsonPolicy),
                 (Policy?POLICY.id =:= PolicyFromJson?POLICY.id)
                     andalso
                       (Policy?POLICY.version =:= PolicyFromJson?POLICY.version)
-                andalso
-                lists:all(fun({LHS, RHS}) ->
-                                  riak_cs_s3_policy:statement_eq(LHS, RHS)
-                          end,
-                          lists:zip(Policy?POLICY.statement,
-                                    PolicyFromJson?POLICY.statement))
+                    andalso
+                    lists:all(fun({LHS, RHS}) ->
+                                      riak_cs_s3_policy:statement_eq(LHS, RHS)
+                              end,
+                              lists:zip(Policy?POLICY.statement,
+                                        PolicyFromJson?POLICY.statement))
             end).
 
 
@@ -304,4 +308,5 @@ wm_reqdata() ->
             notes         = list(nonempty_binary_char_string()) %% any..?
            }).
 
+-endif.
 -endif.

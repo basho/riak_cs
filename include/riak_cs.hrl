@@ -86,8 +86,10 @@
                   submodule :: atom(),
                   exports_fun :: function(),
                   auth_module :: atom(),
+                  response_module :: atom(),
                   policy_module :: atom(),
-                  local_context :: term()
+                  local_context :: term(),
+                  api :: atom()
                  }).
 
 -record(key_context, {context :: #context{},
@@ -354,7 +356,7 @@
     owner_key_id :: string(),
 
     %% storage class: no real options here
-    storage_class = regular,
+    storage_class = standard,
 
     %% Time that the upload was initiated
     initiated :: string() %% conflict of func vs. type: riak_cs_wm_utils:iso_8601_datetime()
@@ -396,9 +398,17 @@
 %% to determine the PUT buffer size.
 %% ex. 2 would mean BlockSize * 2
 -define(DEFAULT_PUT_BUFFER_FACTOR, 1).
+%% Similar to above, but for fetching
+%% This is also max ram per fetch request
+-define(DEFAULT_FETCH_BUFFER_FACTOR, 32).
+-define(N_VAL_1_GET_REQUESTS, true).
 -define(DEFAULT_PING_TIMEOUT, 5000).
 -define(JSON_TYPE, "application/json").
 -define(XML_TYPE, "application/xml").
+-define(S3_API_MOD, riak_cs_s3_rewrite).
+-define(OOS_API_MOD, riak_cs_oos_rewrite).
+-define(S3_RESPONSE_MOD, riak_cs_s3_response).
+-define(OOS_RESPONSE_MOD, riak_cs_oos_response).
 
 %% Major categories of Erlang-triggered DTrace probes
 %%
@@ -471,3 +481,7 @@
 -type access() :: #access_v1{}.
 
 -type policy() :: riak_cs_s3_policy:policy1().
+
+-define(USERMETA_BUCKET, "RCS-bucket").
+-define(USERMETA_KEY,    "RCS-key").
+-define(USERMETA_BCSUM,  "RCS-bcsum").

@@ -8,6 +8,7 @@ ERLANG_BIN       = $(shell dirname $(shell which erl))
 REBAR           ?= $(BASE_DIR)/rebar
 OVERLAY_VARS    ?=
 CS_HTTP_PORT    ?= 8080
+PULSE_TESTS = riak_cs_get_fsm_pulse
 
 .PHONY: rel stagedevrel deps test
 
@@ -23,7 +24,7 @@ compile-int-test: all
 	@./rebar int_test_compile
 
 compile-riak-test: all
-	@./rebar riak_test_compile
+	@./rebar skip_deps=true riak_test_compile
 	## There are some Riak CS internal modules that our riak_test
 	## test would like to use.  But riak_test doesn't have a nice
 	## way of adding the -pz argument + code path that we need.
@@ -53,12 +54,18 @@ distclean: clean
 test: all
 	@./rebar skip_deps=true eunit
 
-test-client: test-clojure test-python test-erlang
+pulse: all
+	@rm -rf $(BASE_DIR)/.eunit
+	@./rebar -D PULSE eunit skip_deps=true suites=$(PULSE_TESTS)
 
-test-python: test-boto
+test-client: test-clojure test-python test-erlang test-ruby test-php
 
-test-boto:
-	env CS_HTTP_PORT=${CS_HTTP_PORT} python client_tests/python/boto_test.py
+test-python:
+	@cd client_tests/python/ && make CS_HTTP_PORT=$(CS_HTTP_PORT)
+
+test-ruby:
+	@bundle --gemfile client_tests/ruby/Gemfile --path vendor
+	@cd client_tests/ruby && bundle exec rake spec
 
 test-erlang: compile-client-test
 	@./rebar skip_deps=true client_test_run
@@ -67,6 +74,9 @@ test-clojure:
 	@command -v lein >/dev/null 2>&1 || { echo >&2 "I require lein but it's not installed. \
 	Please read client_tests/clojure/clj-s3/README."; exit 1; }
 	@cd client_tests/clojure/clj-s3 && lein do deps, midje
+
+test-php:
+	@cd client_tests/php && make
 
 test-int: compile-int-test
 	@./rebar skip_deps=true int_test_run
@@ -139,7 +149,8 @@ dialyzer: compile
 	@echo Use "'make build_plt'" to build PLT prior to using this target.
 	@echo
 	@sleep 1
-	dialyzer -Wno_return -Wunmatched_returns --plt $(PLT) deps/*/ebin ebin | \
+	dialyzer -Wno_return -Wunmatched_returns \
+		--plt $(PLT) deps/*/ebin ebin | \
 	    tee .dialyzer.raw-output | egrep -v -f ./dialyzer.ignore-warnings
 
 cleanplt:
@@ -157,12 +168,13 @@ xref: compile
 ## Packaging targets
 ##
 .PHONY: package
-export PKG_VERSION PKG_ID PKG_BUILD BASE_DIR ERLANG_BIN REBAR OVERLAY_VARS RELEASE
+export PKG_VERSION PKG_ID PKG_BUILD BASE_DIR ERLANG_BIN REBAR OVERLAY_VARS RELEASE RIAK_CS_EE_DEPS
 
 package.src: deps
 	mkdir -p package
 	rm -rf package/$(PKG_ID)
 	git archive --format=tar --prefix=$(PKG_ID)/ $(PKG_REVISION)| (cd package && tar -xf -)
+	cp rebar.config.script package/$(PKG_ID)
 	make -C package/$(PKG_ID) deps
 	for dep in package/$(PKG_ID)/deps/*; do \
              echo "Processing dep: $${dep}"; \

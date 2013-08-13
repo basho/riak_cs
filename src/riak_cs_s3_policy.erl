@@ -28,6 +28,7 @@
 -include("riak_cs.hrl").
 -include("s3_api.hrl").
 -include_lib("webmachine/include/wm_reqdata.hrl").
+-include_lib("webmachine/include/wm_reqstate.hrl").
 -include_lib("riak_pb/include/riak_pb_kv_codec.hrl").
 
 %% Public API
@@ -195,6 +196,7 @@ policy_from_json(JSON) ->
             case catch(lists:map(fun({struct,S})->
                                          statement_from_pairs(S, #statement{})
                                  end, Stmts0)) of
+
                       {error, _Reason} = E ->
                          E;
                       [] ->
@@ -491,9 +493,22 @@ eval_bool(#wm_reqdata{scheme=Scheme} = _Req, Conds) ->
 
 -spec eval_ip_address(#wm_reqdata{}, [{'aws:SourceIp', binary()}]) -> boolean().
 eval_ip_address(Req, Conds) ->
-    {Peer, _} = parse_ip(Req#wm_reqdata.peer),
-    IPConds = [ IPCond || {'aws:SourceIp', IPCond} <- Conds ],
-    eval_all_ip_addr(IPConds, Peer).
+    IPAddress =
+        case riak_cs_config:trust_x_forwarded_for() of
+            true -> wrq:peer(Req);
+            false ->
+                ReqState = Req#wm_reqdata.wm_state,
+                Socket = ReqState#wm_reqstate.socket,
+                {ok, {Addr,_}} = mochiweb_socket:peername(Socket),
+                inet_parse:ntoa(Addr)
+        end,
+    case parse_ip(IPAddress) of
+        {error, _} ->
+            false;
+        {Peer, _} ->
+            IPConds = [ IPCond || {'aws:SourceIp', IPCond} <- Conds ],
+            eval_all_ip_addr(IPConds, Peer)
+    end.
 
 eval_all_ip_addr([], _) -> false;
 eval_all_ip_addr([{IP,Prefix}|T], Peer) ->
@@ -739,13 +754,19 @@ condition_({<<"aws:CurrentTime">>, Bin}) when is_binary(Bin) ->
 condition_({<<"aws:EpochTime">>, Int}) when is_integer(Int) andalso Int >= 0 ->
     {'aws:EpochTime', Int};
 condition_({<<"aws:SecureTransport">>, MaybeBool}) ->
-    %% TODO: if this doesn't match return code like malformed condition -
-    %% while AWS never returns error in failing. Needs decision.
-    {ok, Bool} = parse_bool(MaybeBool),
-    {'aws:SecureTransport', Bool};
+    case parse_bool(MaybeBool) of
+        {error, _} ->
+            throw({error, malformed_policy_condition});
+        {ok, Bool} ->
+            {'aws:SecureTransport', Bool}
+    end;
 condition_({<<"aws:SourceIp">>, Bin}) when is_binary(Bin)->
-    IP = parse_ip(Bin),
-    {'aws:SourceIp', IP};
+    case parse_ip(Bin) of
+        {error, _} ->
+            throw({error, malformed_policy_condition});
+        IP ->
+            {'aws:SourceIp', IP}
+    end;
 condition_({<<"aws:UserAgent">>, Bin}) -> % TODO: check string condition
     {'aws:UserAgent', Bin};
 condition_({<<"aws:Referer">>, Bin}) -> % TODO: check string condition
@@ -788,26 +809,31 @@ parse_bool(_) -> {error, notbool}.
 % TODO: IPv6
 % <<"10.1.2.3/24">> -> {{10,1,2,3}, {255,255,255,0}}
 % "10.1.2.3/24 -> {{10,1,2,3}, {255,255,255,0}}
--spec parse_ip(binary() | string()) -> {inet:ip_address(), inet:ip_address()}.
+%% NOTE: Returns false on a bad ip
+-spec parse_ip(binary() | string()) -> {inet:ip_address(), inet:ip_address()} | {error, term()}.
 parse_ip(Bin) when is_binary(Bin) ->
     Str = binary_to_list(Bin),
     parse_ip(Str);
 parse_ip(Str) when is_list(Str) ->
-    case inet_parse:ipv4_address(Str) of
-        {error, _} ->
-            [IPStr, Bits0] = string:tokens(Str, "/"),
-            Bits = list_to_integer(lists:flatten(Bits0)),
-            Prefix0 = (16#FFFFFFFF bsl (32-Bits)) band 16#FFFFFFFF,
-            Prefix = { Prefix0 band 16#FF000000 bsr 24,
-                       Prefix0 band 16#FF0000 bsr 16,
-                       Prefix0 band 16#FF00 bsr 8,
-                       Prefix0 band 16#FF },
-            {ok, IP} =inet_parse:ipv4_address(IPStr),
-            {IP, Prefix};
-        {ok, IP} -> {IP, {255,255,255,255}}
+    {IPStr, Netmask} = parse_tokenized_ip(string:tokens(Str, "/")),
+    case inet_parse:ipv4strict_address(IPStr) of
+        {ok, IP} ->
+            {IP, Netmask};
+        Error ->
+            Error
     end.
-%% parse_ip(T) when is_tuple(T)-> T.
 
+-spec parse_tokenized_ip([string()]) -> {string(), inet:ip_address()}.
+parse_tokenized_ip([IP]) ->
+    {IP, {255, 255, 255, 255}};
+parse_tokenized_ip([IP, PrefixSize]) ->
+    Bits = list_to_integer(lists:flatten(PrefixSize)),
+    Prefix0 = (16#FFFFFFFF bsl (32-Bits)) band 16#FFFFFFFF,
+    Netmask = { Prefix0 band 16#FF000000 bsr 24,
+               Prefix0 band 16#FF0000 bsr 16,
+               Prefix0 band 16#FF00 bsr 8,
+               Prefix0 band 16#FF },
+    {IP, Netmask}.
 
 -ifdef(TEST).
 

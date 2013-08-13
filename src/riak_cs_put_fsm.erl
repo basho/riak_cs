@@ -31,7 +31,7 @@
          get_uuid/1,
          augment_data/2,
          block_written/2,
-         finalize/1,
+         finalize/2,
          force_stop/1]).
 
 %% gen_fsm callbacks
@@ -59,6 +59,7 @@
                 caller :: reference(),
                 uuid :: binary(),
                 md5 :: binary(),
+                reported_md5 :: undefined | string(),
                 reply_pid :: {pid(), reference()},
                 mani_pid :: undefined | pid(),
                 riakc_pid :: pid(),
@@ -79,8 +80,7 @@
                 free_writers :: undefined | ordsets:ordset(pid()),
                 unacked_writes=ordsets:new() :: ordsets:ordset(non_neg_integer()),
                 next_block_id=0 :: non_neg_integer(),
-                all_writer_pids :: undefined | list(pid()),
-                md5_chunk_size :: non_neg_integer()}).
+                all_writer_pids :: undefined | list(pid())}).
 
 %%%===================================================================
 %%% API
@@ -115,8 +115,8 @@ get_uuid(Pid) ->
 augment_data(Pid, Data) ->
     gen_fsm:sync_send_event(Pid, {augment_data, Data}, infinity).
 
-finalize(Pid) ->
-    gen_fsm:sync_send_event(Pid, finalize, infinity).
+finalize(Pid, ContentMD5) ->
+    gen_fsm:sync_send_event(Pid, {finalize, ContentMD5}, infinity).
 
 force_stop(Pid) ->
     gen_fsm:sync_send_all_state_event(Pid, force_stop, infinity).
@@ -167,8 +167,7 @@ init({{Bucket, Key, ContentLength, ContentType,
                          content_type=ContentType,
                          riakc_pid=RiakPid,
                          make_new_manifest_p=MakeNewManifestP,
-                         timeout=Timeout,
-                         md5_chunk_size=riak_cs_utils:md5_chunk_size()},
+                         timeout=Timeout},
      0}.
 
 %%--------------------------------------------------------------------
@@ -176,7 +175,7 @@ init({{Bucket, Key, ContentLength, ContentType,
 %%--------------------------------------------------------------------
 prepare(timeout, State=#state{content_length=0}) ->
     NewState = prepare(State),
-    Md5 = crypto:md5_final(NewState#state.md5),
+    Md5 = riak_cs_utils:md5_final(NewState#state.md5),
     NewManifest = NewState#state.manifest?MANIFEST{content_md5=Md5,
                                                    state=active,
                                                    last_block_written_time=os:timestamp()},
@@ -185,13 +184,15 @@ prepare(timeout, State) ->
     NewState = prepare(State),
     {next_state, not_full, NewState}.
 
-prepare(finalize, From, State=#state{content_length=0}) ->
+prepare({finalize, ContentMD5}, From, State=#state{content_length=0}) ->
     NewState = prepare(State),
-    Md5 = crypto:md5_final(NewState#state.md5),
+    Md5 = riak_cs_utils:md5_final(NewState#state.md5),
     NewManifest = NewState#state.manifest?MANIFEST{content_md5=Md5,
                                                    state=active,
                                                    last_block_written_time=os:timestamp()},
-    done(finalize, From, NewState#state{md5=Md5, manifest=NewManifest});
+    done(finalize, From, NewState#state{md5=Md5,
+                                        manifest=NewManifest,
+                                        reported_md5=ContentMD5});
 
 prepare({get_uuid}, _From, State) ->
     {reply, State#state.uuid, prepare, State};
@@ -225,27 +226,17 @@ full({block_written, BlockID, WriterPid}, State=#state{reply_pid=Waiter}) ->
 
 all_received({augment_data, <<>>}, State) ->
     {next_state, all_received, State};
-all_received({block_written, BlockID, WriterPid}, State=#state{mani_pid=ManiPid,
-                                                               timer_ref=TimerRef}) ->
-
+all_received({block_written, BlockID, WriterPid}, State) ->
     NewState = state_from_block_written(BlockID, WriterPid, State),
     Manifest = NewState#state.manifest?MANIFEST{state=active},
+    NewState2 = NewState#state{manifest=Manifest},
     case ordsets:size(NewState#state.unacked_writes) of
         0 ->
             case State#state.reply_pid of
                 undefined ->
                     {next_state, done, NewState};
                 ReplyPid ->
-                    %% reply with the final manifest
-                    _ = erlang:cancel_timer(TimerRef),
-                    case maybe_update_manifest_with_confirmation(ManiPid, Manifest) of
-                        ok ->
-                            gen_fsm:reply(ReplyPid, {ok, Manifest}),
-                            {stop, normal, NewState};
-                        Error ->
-                            gen_fsm:reply(ReplyPid, {error, Error}),
-                            {stop, Error, NewState}
-                    end
+                    done(finalize, ReplyPid, NewState2)
             end;
         _ ->
             {next_state, all_received, NewState}
@@ -282,24 +273,53 @@ not_full({augment_data, NewData}, From,
 
 all_received({augment_data, <<>>}, _From, State) ->
     {next_state, all_received, State};
-all_received(finalize, From, State) ->
+all_received({finalize, ContentMD5}, From, State) ->
     %% 1. stash the From pid into our
     %%    state so that we know to reply
     %%    later with the finished manifest
-    {next_state, all_received, State#state{reply_pid=From}}.
+    {next_state, all_received, State#state{reply_pid=From,
+                                           reported_md5=ContentMD5}}.
 
-done(finalize, _From, State=#state{manifest=Manifest,
-                                   mani_pid=ManiPid,
-                                   timer_ref=TimerRef}) ->
-    %% 1. reply immediately
-    %%    with the finished manifest
+done({finalize, ReportedMD5}, _From, State=#state{md5=MD5}) ->
+    done(finalize, is_digest_valid(MD5, ReportedMD5), _From, State);
+done(finalize, _From, State=#state{md5=MD5,
+                                   reported_md5=ReportedMD5}) ->
+    done(finalize, is_digest_valid(MD5, ReportedMD5), _From, State).
+
+
+done(finalize, false, From, State=#state{manifest=Manifest,
+                                         bucket=Bucket,
+                                         key=Key,
+                                         mani_pid=ManiPid,
+                                         riakc_pid=RiakPid,
+                                         timer_ref=TimerRef}) ->
+    _ = erlang:cancel_timer(TimerRef),
+    %% The digest is invalid. Write the manifest and immediately
+    %% schedule it for gc.
+    _ = maybe_update_manifest_with_confirmation(ManiPid, Manifest),
+    _ = riak_cs_gc:gc_active_manifests(Bucket, Key, RiakPid),
+    gen_fsm:reply(From, {error, invalid_digest}),
+    _ = lager:debug("Invalid digest in the PUT FSM"),
+    {stop, normal, State};
+done(finalize, true, From, State=#state{manifest=Manifest,
+                                         mani_pid=ManiPid,
+                                         timer_ref=TimerRef}) ->
+    %% 1. reply immediately with the finished manifest
     _ = erlang:cancel_timer(TimerRef),
     case maybe_update_manifest_with_confirmation(ManiPid, Manifest) of
         ok ->
-            {stop, normal, {ok, Manifest}, State};
+            gen_fsm:reply(From, {ok, Manifest}),
+            {stop, normal, State};
         Error ->
-            {stop, Error, {error, Error}, State}
+            gen_fsm:reply(From, {error, Error}),
+            {stop, Error, State}
     end.
+
+-spec is_digest_valid(binary(), undefined | string()) -> boolean().
+is_digest_valid(_, undefined) ->
+    true;
+is_digest_valid(CalculatedMD5, ReportedMD5) ->
+    base64:encode(CalculatedMD5) =:= list_to_binary(ReportedMD5).
 
 %%--------------------------------------------------------------------
 %%
@@ -371,7 +391,7 @@ prepare(State=#state{bucket=Bucket,
                       MakeNewManifestP, Bucket, Key, RiakPid),
     %% TODO:
     %% this shouldn't be hardcoded.
-    Md5 = crypto:md5_init(),
+    Md5 = riak_cs_utils:md5_init(),
     WriterPids = case ContentLength of
                      0 ->
                          %% Don't start any writers
@@ -380,26 +400,26 @@ prepare(State=#state{bucket=Bucket,
                          [];
                      _ ->
                          riak_cs_block_server:start_block_servers(RiakPid,
-                                                                    riak_cs_lfs_utils:put_concurrency())
+                                                                  riak_cs_lfs_utils:put_concurrency())
                  end,
     FreeWriters = ordsets:from_list(WriterPids),
     MaxBufferSize = (riak_cs_lfs_utils:put_fsm_buffer_size_factor() * BlockSize),
 
     %% for now, always populate cluster_id
-    ClusterID = riak_cs_utils:get_cluster_id(RiakPid),
+    ClusterID = riak_cs_config:cluster_id(RiakPid),
     Manifest =
         riak_cs_lfs_utils:new_manifest(Bucket,
-                                         Key,
-                                         UUID,
-                                         ContentLength,
-                                         ContentType,
-                                         %% we don't know the md5 yet
-                                         undefined,
-                                         Metadata,
-                                         BlockSize,
-                                         Acl,
-                                         [],
-                                         ClusterID),
+                                       Key,
+                                       UUID,
+                                       ContentLength,
+                                       ContentType,
+                                       %% we don't know the md5 yet
+                                       undefined,
+                                       Metadata,
+                                       BlockSize,
+                                       Acl,
+                                       [],
+                                       ClusterID),
     NewManifest = Manifest?MANIFEST{write_start_time=os:timestamp()},
 
     %% TODO:
@@ -524,17 +544,16 @@ handle_accept_chunk(NewData, State=#state{buffer_queue=BufferQueue,
                                           num_bytes_received=PreviousBytesReceived,
                                           md5=Md5,
                                           current_buffer_size=CurrentBufferSize,
-                                          content_length=ContentLength,
-                                          md5_chunk_size=Md5ChunkSize}) ->
+                                          content_length=ContentLength}) ->
 
-    NewMd5 = riak_cs_utils:chunked_md5(NewData, Md5, Md5ChunkSize),
+    NewMd5 = riak_cs_utils:md5_update(Md5, NewData),
     NewRemainderData = combine_new_and_remainder_data(NewData, RemainderData),
     UpdatedBytesReceived = PreviousBytesReceived + size(NewData),
     if UpdatedBytesReceived > ContentLength ->
-           exit({too_many_bytes_received, got, UpdatedBytesReceived,
-                 content_length, ContentLength});
+            exit({too_many_bytes_received, got, UpdatedBytesReceived,
+                  content_length, ContentLength});
        true ->
-           ok
+            ok
     end,
     NewCurrentBufferSize = CurrentBufferSize + size(NewData),
 
@@ -558,10 +577,9 @@ handle_backpressure_for_chunk(NewData, From, State=#state{reply_pid=undefined,
                                                           remainder_data=RemainderData,
                                                           current_buffer_size=CurrentBufferSize,
                                                           num_bytes_received=PreviousBytesReceived,
-                                                          content_length=ContentLength,
-                                                          md5_chunk_size=Md5ChunkSize}) ->
+                                                          content_length=ContentLength}) ->
 
-    NewMd5 = riak_cs_utils:chunked_md5(NewData, Md5, Md5ChunkSize),
+    NewMd5 = riak_cs_utils:md5_update(Md5, NewData),
     NewRemainderData = combine_new_and_remainder_data(NewData, RemainderData),
     UpdatedBytesReceived = PreviousBytesReceived + size(NewData),
 
@@ -585,10 +603,9 @@ handle_receiving_last_chunk(NewData, State=#state{buffer_queue=BufferQueue,
                                                   manifest=Manifest,
                                                   current_buffer_size=CurrentBufferSize,
                                                   num_bytes_received=PreviousBytesReceived,
-                                                  content_length=ContentLength,
-                                                  md5_chunk_size=Md5ChunkSize}) ->
+                                                  content_length=ContentLength}) ->
 
-    NewMd5 = crypto:md5_final(riak_cs_utils:chunked_md5(NewData, Md5, Md5ChunkSize)),
+    NewMd5 = riak_cs_utils:md5_final(riak_cs_utils:md5_update(Md5, NewData)),
     NewManifest = Manifest?MANIFEST{content_md5=NewMd5},
     NewRemainderData = combine_new_and_remainder_data(NewData, RemainderData),
     UpdatedBytesReceived = PreviousBytesReceived + size(NewData),

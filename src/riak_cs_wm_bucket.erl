@@ -43,13 +43,16 @@ content_types_provided(RD, Ctx) ->
 -spec content_types_accepted(#wm_reqdata{}, #context{}) ->
                                     {[{string(), atom()}], #wm_reqdata{}, #context{}}.
 content_types_accepted(RD, Ctx) ->
-    case wrq:get_req_header("content-type", RD) of
-        undefined ->
-            {[{"application/octet-stream", accept_body}], RD, Ctx};
-        CType ->
-            {Media, _Params} = mochiweb_util:parse_header(CType),
-            {[{Media, accept_body}], RD, Ctx}
-    end.
+    content_types_accepted(wrq:get_req_header("content-type", RD), RD, Ctx).
+
+-spec content_types_accepted(undefined | string(), #wm_reqdata{}, #context{}) ->
+                                    {[{string(), atom()}], #wm_reqdata{}, #context{}}.
+content_types_accepted(CT, RD, Ctx) when CT =:= undefined;
+                                         CT =:= [] ->
+    content_types_accepted("application/octet-stream", RD, Ctx);
+content_types_accepted(CT, RD, Ctx) ->
+    {Media, _Params} = mochiweb_util:parse_header(CT),
+    {[{Media, accept_body}], RD, Ctx}.
 
 -spec authorize(#wm_reqdata{}, #context{}) -> {boolean(), #wm_reqdata{}, #context{}}.
 authorize(RD, #context{user=User}=Ctx) ->
@@ -103,6 +106,7 @@ handle_read_request(RD, Ctx=#context{user=User,
 accept_body(RD, Ctx=#context{user=User,
                              user_object=UserObj,
                              bucket=Bucket,
+                             response_module=ResponseMod,
                              riakc_pid=RiakPid}) ->
     riak_cs_dtrace:dt_bucket_entry(?MODULE, <<"bucket_create">>,
                                       [], [riak_cs_wm_utils:extract_name(User), Bucket]),
@@ -124,10 +128,10 @@ accept_body(RD, Ctx=#context{user=User,
                                                [200], [riak_cs_wm_utils:extract_name(User), Bucket]),
             {{halt, 200}, RD, Ctx};
         {error, Reason} ->
-            Code = riak_cs_s3_response:status_code(Reason),
+            Code = ResponseMod:status_code(Reason),
             riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_create">>,
                                               [Code], [riak_cs_wm_utils:extract_name(User), Bucket]),
-            riak_cs_s3_response:api_error(Reason, RD, Ctx)
+            ResponseMod:api_error(Reason, RD, Ctx)
     end.
 
 %% @doc Callback for deleting a bucket.
@@ -135,6 +139,7 @@ accept_body(RD, Ctx=#context{user=User,
                              {boolean() | {'halt', term()}, #wm_reqdata{}, #context{}}.
 delete_resource(RD, Ctx=#context{user=User,
                                  user_object=UserObj,
+                                 response_module=ResponseMod,
                                  bucket=Bucket,
                                  riakc_pid=RiakPid}) ->
     riak_cs_dtrace:dt_bucket_entry(?MODULE, <<"bucket_delete">>,
@@ -148,8 +153,8 @@ delete_resource(RD, Ctx=#context{user=User,
                                                [200], [riak_cs_wm_utils:extract_name(User), Bucket]),
             {true, RD, Ctx};
         {error, Reason} ->
-            Code = riak_cs_s3_response:status_code(Reason),
+            Code = ResponseMod:status_code(Reason),
             riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_delete">>,
                                                [Code], [riak_cs_wm_utils:extract_name(User), Bucket]),
-            riak_cs_s3_response:api_error(Reason, RD, Ctx)
+            ResponseMod:api_error(Reason, RD, Ctx)
     end.

@@ -18,22 +18,14 @@
 %%
 %% ---------------------------------------------------------------------
 
--module(riak_cs_passthru_auth).
+-module(list_objects_v2_test).
 
--behavior(riak_cs_auth).
+%% @doc Integration test for list the contents of a bucket
 
--include("riak_cs.hrl").
+-export([confirm/0]).
 
--export([identify/2, authenticate/4]).
-
--spec identify(term(),term()) -> {string() | undefined, undefined}.
-identify(RD,_Ctx) ->
-    case wrq:get_req_header("authorization", RD) of
-        undefined -> {[], undefined};
-        Key -> {Key, undefined}
-    end.
-            
-
--spec authenticate(rcs_user(), undefined, term(), term()) -> ok.
-authenticate(_User, _AuthData, _RD, _Ctx) ->
-    ok.
+confirm() ->
+    Config = [{riak, rtcs:riak_config()}, {stanchion, rtcs:stanchion_config()},
+              {cs, rtcs:cs_config([{fold_objects_for_list_keys, true}])}],
+    {UserConfig, {_RiakNodes, _CSNodes, _Stanchion}} = rtcs:setup(4, Config),
+    list_objects_test_helper:test(UserConfig).
