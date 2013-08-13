@@ -1,42 +1,24 @@
 * Riak CS 1.4.0 リリースノート
 ** 修正された問題
-- Remove unnecessary keys in GC bucket
 - GCバケットで使われていないキーを削除
-- Fix query-string authentication for multi-part uploads
 - マルチパートアップロードのクエリ文字での認証を修正
-- Fix Storage Class for multi-part uploaded objects
 - マルチパートでアップロードされたオブジェクトのストレージクラスを修正
-- Fix etags for multi-part uploads
 - マルチパートアップロードされたオブジェクトのetagsを修正
-- Support reformat indexes in the Riak CS multi-backend
 - Riak CSのマルチバックエンドのインデックス修正をサポート
-- Fix unbounded memory-growth on GET requests with a slow connection
 - GETリクエストの際、通信が遅い場合のメモリ増大を修正
-- Reduce access-archiver memory use
 - アクセス統計処理のメモリ使用量を削減
-- Fix 500 on object ACL HEAD request
 - オブジェクトのACL HEADリクエストの際の500を修正
-- Fix semantics for concurrent upload and delete of the same key with a
-  multi-part upload
 - マルチパートでアップロードされたオブジェクトの並列アップロードや削除の際の競合の問題を解決
-- Verify content-md5 header if supplied
 - Content-md5のヘッダがあった場合に整合性をチェックするように修正
-- Handle transient Riak connection failures
 - Riakとのコネクションが切れた際のハンドリングを修正
-** Additions
-- Add preliminary support for the Swift API and Keystone authentication
+** 新規追加
 - Swift APIとKeystone認証のサポートを試験的に追加
-- Improve performance of object listing when using Riak 1.4.0 or greater
 - Riak 1.4.0以降と併用された場合のオブジェクト一覧取得のパフォーマンスを改善
-- Add ability to edit user account name and email address
 - ユーザーアカウント名とメールアドレスは変更可能に
-- Add support for v3 multi-data-center replication
 - データセンタ間レプリケーションv3のサポートを追加
-- Add configurable Riak connection timeouts
 - Riakとのコネクションタイムアウトを変更可能に
 - Lagerのsyslogサポートを追加
-- Only contact one vnode for immutable block requests
-- データブロックへのリクエスト時は1つのvノードへアクセス
+- データブロックへのリクエスト時は1つのvnodeへアクセス
 * Riak CS 1.3.1 Release Notes
 ** Bugs Fixed
 - Fix bug in handling of active object manifests in the case of
