@@ -101,21 +101,28 @@ specific_acl_grant(Headers, RiakcPid) ->
                          invalid_argument) of
         {error, invalid_argument}=E ->
             E;
-       {ok, _GoodGrants} ->
+        {ok, _GoodGrants} ->
             %% TODO: we also need to 'promote errors' from `unresolved_grant_email'
             EmailsTranslated =  [{HeaderName, emails_to_ids(Grant, RiakcPid)} ||
                     {HeaderName, {ok, Grant}} <- Grants],
             valid_headers_to_acl(EmailsTranslated)
     end.
 
-headers_to_acl_grants(HeaderName, Grants) ->
-    GrantList = lists:map(fun header_to_grant/1, Grants),
-    ArrangedGrants = lists:foldl(fun add_grant/2, [], GrantList)
+valid_headers_to_acl(Pairs) ->
+    Grants = [header_to_acl_grants(HeaderName, Grants) ||
+            {HeaderName, Grants} <- Pairs],
+    lists:foldl(fun add_grant/2, [], Grants).
 
-header_to_grant(Permission, [{id, ID}]) ->
+header_to_acl_grants(HeaderName, Grants) ->
+    GrantList = lists:map(fun (Identifier) -> header_to_grant(HeaderName, Identifier) end, Grants),
+    lists:foldl(fun add_grant/2, [], GrantList).
+
+-spec header_to_grant(acl_perm(), {grant_user_identifier(), string()}) ->
+    acl_grant().
+header_to_grant(Permission, {id, ID}) ->
     %% TODO: thread the display name through
     {{'FAKE_DISPLAY_NAME', ID}, [Permission]};
-header_to_grant(Permission, [{uri, URI}]) ->
+header_to_grant(Permission, {uri, URI}) ->
     case URI of
         ?ALL_USERS_GROUP ->
             {'AllUsers', [Permission]};
@@ -150,12 +157,16 @@ parse_mapping("emailAddress=" ++ QuotedEmail) ->
 parse_mapping("id=" ++ QuotedID) ->
     wrap('id', remove_quotes(QuotedID));
 parse_mapping("uri=" ++ QuotedURI) ->
-    NoQuote = remove_quotes(QuotedURI),
-    case valid_uri(NoQuote) of
-        true ->
-            wrap('uri', NoQuote);
-        false ->
-            {error, 'invalid_argument'}
+    case remove_quotes(QuotedURI) of
+        {ok, NoQuote}=OK ->
+            case valid_uri(NoQuote) of
+                true ->
+                    wrap('uri', OK);
+                false ->
+                    {error, 'invalid_argument'}
+            end;
+        {error, invalid_argument}=E ->
+            E
     end;
 parse_mapping(_Else) ->
     {error, invalid_argument}.
