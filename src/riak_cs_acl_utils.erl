@@ -111,7 +111,7 @@ specific_acl_grant(Headers, RiakcPid) ->
 valid_headers_to_acl(Pairs) ->
     Grants = [header_to_acl_grants(HeaderName, Grants) ||
             {HeaderName, Grants} <- Pairs],
-    lists:foldl(fun add_grant/2, [], Grants).
+    lists:foldl(fun add_grant/2, [], lists:flatten(Grants)).
 
 header_to_acl_grants(HeaderName, Grants) ->
     GrantList = lists:map(fun (Identifier) -> header_to_grant(HeaderName, Identifier) end, Grants),
