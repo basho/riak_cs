@@ -538,19 +538,19 @@ md5(List) when is_list(List) ->
 
 -spec md5_init() -> context().
 md5_init() ->
-    crypto:md5_init().
+    crypto:hash_init(md5).
 
 -define(MAX_UPDATE_SIZE, (32*1024)).
 
 -spec md5_update(context(), binary()) -> context().
 md5_update(Ctx, Bin) when size(Bin) =< ?MAX_UPDATE_SIZE ->
-    crypto:md5_update(Ctx, Bin);
+    crypto:hash_update(Ctx, Bin);
 md5_update(Ctx, <<Part:?MAX_UPDATE_SIZE/binary, Rest/binary>>) ->
-    md5_update(crypto:md5_update(Ctx, Part), Rest).
+    md5_update(crypto:hash_update(Ctx, Part), Rest).
 
 -spec md5_final(context()) -> digest().
 md5_final(Ctx) ->
-    crypto:md5_final(Ctx).
+    crypto:hash_final(Ctx).
 
 %% @doc Get an object from Riak
 -spec get_object(binary(), binary(), pid()) ->

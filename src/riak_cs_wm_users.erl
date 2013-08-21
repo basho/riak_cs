@@ -180,6 +180,6 @@ user_fold_fun(RiakPid, Status) ->
     end.
 
 unique_id() ->
-    Rand = crypto:sha(term_to_binary({make_ref(), now()})),
+    Rand = crypto:hash(sha, term_to_binary({make_ref(), now()})),
     <<I:160/integer>> = Rand,
     integer_to_list(I, 36).
