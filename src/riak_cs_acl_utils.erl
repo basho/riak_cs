@@ -329,7 +329,7 @@ add_grant(NewGrant, Grants) ->
             {Grantee, _} = G,
             Grantee =:= NewGrantee
     end,
-    {GranteeGrants, OtherGrants} = lists:splitwith(SplitFun, Grants),
+    {GranteeGrants, OtherGrants} = lists:partition(SplitFun, Grants),
     case GranteeGrants of
         [] ->
             [NewGrant | Grants];

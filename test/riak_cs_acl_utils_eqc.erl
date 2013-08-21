@@ -61,7 +61,7 @@ prop_add_grant() ->
                                         {Grants, elements(Grants)}),
             begin
                 CombinedGrants = lists:foldl(fun riak_cs_acl_utils:add_grant/2, [], Grants),
-                CombinedGrants =:= riak_cs_acl_utils:add_grant(RandomGrant, CombinedGrants)
+                lists:sort(CombinedGrants) =:= lists:sort(riak_cs_acl_utils:add_grant(RandomGrant, CombinedGrants))
             end).
 
 %%====================================================================
