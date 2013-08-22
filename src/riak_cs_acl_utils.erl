@@ -109,9 +109,9 @@ specific_acl_grant(Owner, Headers, RiakcPid) ->
                 {error, unresolved_grant_email}=E ->
                     E;
                 {ok, _GoodEmails} ->
-                    Grants = valid_headers_to_grants([{HeaderName, Val} || {HeaderName, {ok, Val}} <- EmailsTranslated]),
+                    AclGrants = valid_headers_to_grants([{HeaderName, Val} || {HeaderName, {ok, Val}} <- EmailsTranslated]),
                     {DisplayName, CanonicalId, KeyId} = Owner,
-                    acl(DisplayName, CanonicalId, KeyId, Grants)
+                    {ok, acl(DisplayName, CanonicalId, KeyId, AclGrants)}
             end
     end.
 
