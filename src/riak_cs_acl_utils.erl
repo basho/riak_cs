@@ -97,15 +97,18 @@ canned_acl(HeaderVal, Owner, BucketOwner) ->
 specific_acl_grant(Headers, RiakcPid) ->
     Grants = [{HeaderName, parse_grant_header_value(GrantString)} ||
             {HeaderName, GrantString} <- Headers],
-    case promote_failure([Grant || {_HeaderName, Grant} <- Grants],
-                         invalid_argument) of
+    case promote_failure([Grant || {_HeaderName, Grant} <- Grants]) of
         {error, invalid_argument}=E ->
             E;
         {ok, _GoodGrants} ->
-            %% TODO: we also need to 'promote errors' from `unresolved_grant_email'
             EmailsTranslated =  [{HeaderName, emails_to_ids(Grant, RiakcPid)} ||
                     {HeaderName, {ok, Grant}} <- Grants],
-            valid_headers_to_acl(EmailsTranslated)
+            case promote_failure([EmailOk || {_HeaderName, EmailOk} <- EmailsTranslated]) of
+                {error, unresolved_grant_email}=E ->
+                    E;
+                {ok, _GoodEmails} ->
+                    valid_headers_to_acl([{HeaderName, Val} || {HeaderName, {ok, Val}} <- EmailsTranslated])
+            end
     end.
 
 valid_headers_to_acl(Pairs) ->
@@ -137,8 +140,7 @@ header_to_grant(Permission, {uri, URI}) ->
     {error, unresolved_grant_email}.
 parse_grant_header_value(HeaderValue) ->
     Mappings = split_header_values_and_strip(HeaderValue),
-    promote_failure(lists:map(fun parse_mapping/1, Mappings),
-                    invalid_argument).
+    promote_failure(lists:map(fun parse_mapping/1, Mappings)).
 
 %% @doc split a string like:
 %% `"emailAddress=\"xyz@amazon.com\", emailAddress=\"abc@amazon.com\""'
@@ -196,41 +198,40 @@ remove_quotes(String) ->
 starts_and_ends_with_quotes(String) ->
     hd(String) =:= 34 andalso lists:last(String) =:= 34.
 
--spec emails_to_ids(list(), pid()) -> list() | {error, unresolved_grant_email}.
+-spec emails_to_ids(list(), pid()) -> {ok, list()} | {error, unresolved_grant_email}.
 emails_to_ids(Grants, RiakcPid) ->
-    %% TODO: thread this pid through to here
     {EmailGrants, RestGrants} = lists:partition(fun email_grant/1, Grants),
     Ids = [canonical_for_email(EmailAddress, RiakcPid) ||
             {emailAddress, EmailAddress} <- EmailGrants],
-    case promote_failure(Ids, unresolved_grant_email) of
+    case promote_failure(Ids) of
         {error, unresolved_grant_email}=E ->
             E;
         {ok, AllIds} ->
-            RestGrants ++ [{id, ID} || ID <- AllIds]
+            {ok, RestGrants ++ [{id, ID} || ID <- AllIds]}
     end.
 
 email_grant({Atom, _Val}) ->
     Atom =:= 'emailAddress'.
 
 %% TODO: better list type spec
--spec promote_failure(list(), atom()) -> {ok, list()} | {'error', atom()}.
-promote_failure(List, FailAtom) ->
+-spec promote_failure(list()) -> {ok, list()} | {'error', atom()}.
+promote_failure(List) ->
     %% this will reverse the list, but we don't care
     %% about order
-    case lists:foldl(fun fail_either/2, {false, []}, List) of
-        {true, _Acc} ->
-            {error, FailAtom};
-        {false, Acc} ->
-            {ok, Acc}
+    case lists:foldl(fun fail_either/2, {ok, []}, List) of
+        {{error, _Reason}=E, _Acc} ->
+            E;
+        {ok, _Acc}=Ok ->
+            Ok
     end.
 
 -spec fail_either(term(), {boolean(), list()}) ->
-    {boolean(), list()}.
-fail_either({error, _Reason}, {_Bool, Acc}) ->
+    {ok | {error, term()}, list()}.
+fail_either(E={error, _Reason}, {_OkOrError, Acc}) ->
     %% don't cons the error onto the acc
-    {true, Acc};
-fail_either({ok, Val}, {Bool, Acc}) ->
-    {Bool, [Val | Acc]}.
+    {E, Acc};
+fail_either({ok, Val}, {_OkOrError, Acc}) ->
+    {ok, [Val | Acc]}.
 
 %% @doc Convert an XML document representing an ACL into
 %% an internal representation.
