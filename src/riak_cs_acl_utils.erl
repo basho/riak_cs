@@ -37,7 +37,7 @@
 -export([acl/4,
          default_acl/3,
          canned_acl/3,
-         specific_acl_grant/2,
+         specific_acl_grant/3,
          acl_from_xml/3,
          empty_acl_xml/0,
          requested_access/2,
@@ -88,13 +88,14 @@ canned_acl(HeaderVal, Owner, BucketOwner) ->
 %% the header references an email address that cannot be mapped to a
 %% canonical id, return `{error, unresolved_grant_email}'. Otherwise
 %% return an acl record.
--spec specific_acl_grant([{HeaderName :: string(),
+-spec specific_acl_grant(Owner :: acl_owner(),
+                         [{HeaderName :: string(),
                            HeaderValue :: string()}],
                          pid()) ->
     {ok, #acl_v2{}} |
     {error, 'invalid_argument'} |
     {error, 'unresolved_grant_email'}.
-specific_acl_grant(Headers, RiakcPid) ->
+specific_acl_grant(Owner, Headers, RiakcPid) ->
     %% TODO: this function is getting a bit and confusing
     Grants = [{HeaderName, parse_grant_header_value(GrantString)} ||
             {HeaderName, GrantString} <- Headers],
@@ -108,11 +109,13 @@ specific_acl_grant(Headers, RiakcPid) ->
                 {error, unresolved_grant_email}=E ->
                     E;
                 {ok, _GoodEmails} ->
-                    valid_headers_to_acl([{HeaderName, Val} || {HeaderName, {ok, Val}} <- EmailsTranslated])
+                    Grants = valid_headers_to_grants([{HeaderName, Val} || {HeaderName, {ok, Val}} <- EmailsTranslated]),
+                    {DisplayName, CanonicalId, KeyId} = Owner,
+                    acl(DisplayName, CanonicalId, KeyId, Grants)
             end
     end.
 
-valid_headers_to_acl(Pairs) ->
+valid_headers_to_grants(Pairs) ->
     Grants = [header_to_acl_grants(HeaderName, Grants) ||
             {HeaderName, Grants} <- Pairs],
     lists:foldl(fun add_grant/2, [], lists:flatten(Grants)).
