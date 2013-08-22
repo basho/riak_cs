@@ -30,7 +30,7 @@
 -include_lib("eunit/include/eunit.hrl").
 
 %% eqc property
--export([prop_add_grant/0]).
+-export([prop_add_grant_idempotent/0]).
 
 %% Helpers
 -export([test/0,
@@ -48,7 +48,7 @@
 eqc_test_() ->
     {spawn,
      [
-      {timeout, 60, ?_assertEqual(true, quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_add_grant()))))}
+      {timeout, 60, ?_assertEqual(true, quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_add_grant_idempotent()))))}
      ]
     }.
 
@@ -56,7 +56,9 @@ eqc_test_() ->
 %% EQC Properties
 %% ====================================================================
 
-prop_add_grant() ->
+prop_add_grant_idempotent() ->
+    %% For all grants, adding the same grant twice with `add_grant'
+    %% should be idempotent.
     ?FORALL({Grants, RandomGrant}, ?LET(Grants, non_empty(list(grant())),
                                         {Grants, elements(Grants)}),
             begin
@@ -85,6 +87,6 @@ test() ->
     test(?TEST_ITERATIONS).
 
 test(Iterations) ->
-    eqc:quickcheck(eqc:numtests(Iterations, prop_add_grant())).
+    eqc:quickcheck(eqc:numtests(Iterations, prop_add_grant_idempotent())).
 
 -endif.

@@ -95,6 +95,7 @@ canned_acl(HeaderVal, Owner, BucketOwner) ->
     {error, 'invalid_argument'} |
     {error, 'unresolved_grant_email'}.
 specific_acl_grant(Headers, RiakcPid) ->
+    %% TODO: this function is getting a bit and confusing
     Grants = [{HeaderName, parse_grant_header_value(GrantString)} ||
             {HeaderName, GrantString} <- Headers],
     case promote_failure([Grant || {_HeaderName, Grant} <- Grants]) of
