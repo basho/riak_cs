@@ -66,6 +66,16 @@ prop_add_grant_idempotent() ->
                 lists:sort(CombinedGrants) =:= lists:sort(riak_cs_acl_utils:add_grant(RandomGrant, CombinedGrants))
             end).
 
+prop_grant_gives_permission() ->
+    ?FORALL({Grants, RandomGrant}, ?LET(Grants, non_empty(list(grant())),
+                                        {Grants, elements(Grants)}),
+            begin
+                CombinedGrants = lists:foldl(fun riak_cs_acl_utils:add_grant/2, [], Grants),
+                {{_DisplayName, CanonicalID}, [RequestedAccess]} = RandomGrant,
+                riak_cs_acl:has_permission(CombinedGrants, RequestedAccess, CanonicalID)
+            end).
+
+
 %%====================================================================
 %% Generators
 %%====================================================================
@@ -87,6 +97,7 @@ test() ->
     test(?TEST_ITERATIONS).
 
 test(Iterations) ->
-    eqc:quickcheck(eqc:numtests(Iterations, prop_add_grant_idempotent())).
+    eqc:quickcheck(eqc:numtests(Iterations, prop_add_grant_idempotent())),
+    eqc:quickcheck(eqc:numtests(Iterations, prop_grant_gives_permission())).
 
 -endif.
