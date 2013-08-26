@@ -77,10 +77,12 @@ get_riak_cluster_disk_usage() ->
     ClusterDiskUsageKB = PartitionUsedKB * NodeCount,
     ClusterDiskFreeKB = ClusterCapacityKB - ClusterDiskUsageKB,
     ObjectCapacityRemainingKB = round(ClusterDiskFreeKB / NVal),
-    {{<<"cluster_capacity">>, ClusterCapacityKB},
+    {struct, 
+    [{<<"cluster_capacity">>, ClusterCapacityKB},
      {<<"cluster_disk_usage_kb">>, ClusterDiskUsageKB},
      {<<"cluster_disk_free_kb">>, ClusterDiskFreeKB},
      {<<"cluster_node_count">>, NodeCount},
      {<<"n_val">>, NVal},
      {<<"object_storage_capacity_remaining_kb">>, ObjectCapacityRemainingKB}
+     ]
     }.

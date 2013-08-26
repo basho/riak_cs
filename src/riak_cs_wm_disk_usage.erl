@@ -72,7 +72,6 @@ allowed_methods(RD, Ctx) ->
 to_html(ReqData, Ctx) ->
     {Json, RD2, C2} = produce_body(ReqData, Ctx),
     {Json, RD2, C2}.
-    % {"TEST OK", ReqData, Ctx}.
 
 produce_body(RD, Ctx) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"produce_body">>),
@@ -95,7 +94,4 @@ finish_request(RD, Ctx=#test_context{}) ->
 %% -------------------------------------------------------------------
 
 get_disk_stats() ->
-    DiskData = disksup:get_disk_data(),
-    [Root|_] = DiskData,
-    {Id, KByte, Capacity} = Root,
-    {struct, [{id, Id}, {kb, KByte}, {percent_full, Capacity}]}.
+    riak_cs_riak_stats:get_riak_cluster_disk_usage().
