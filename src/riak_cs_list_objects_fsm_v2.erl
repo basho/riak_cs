@@ -351,7 +351,7 @@ make_start_key(#state{object_list_ranges=[], req=Request}) ->
     make_start_key_from_marker(Request);
 make_start_key(State=#state{object_list_ranges=PrevRanges,
                             common_prefixes=CommonPrefixes}) ->
-    case last_result_is_common_prefix(State) of
+    case last_result_is_common_prefix(State) andalso CommonPrefixes =/= [] of
         true ->
             LastPrefix = lists:last(lists:sort(ordsets:to_list(CommonPrefixes))),
             skip_past_prefix_and_delimiter(LastPrefix);
