@@ -184,7 +184,7 @@ handle_mark_as_pending_delete({ok, RiakObject}, Bucket, Key, UUIDsToMark, RiakcP
     %% riak_cs_manifest_utils:manifests_to_gc/2 appears correct.
     PDUUIDs = [UUID || {UUID, _} <- PDManifests],
     handle_move_result(MoveResult, RiakObject, Bucket, Key, PDUUIDs, RiakcPid);
-handle_mark_as_pending_delete({error, Error}=Error, _Bucket, _Key, _UUIDsToMark, _RiakcPid) ->
+handle_mark_as_pending_delete({error, _Error}=Error, _Bucket, _Key, _UUIDsToMark, _RiakcPid) ->
     _ = lager:warning("Failed to mark as pending_delete, reason: ~p", [Error]),
     Error.
 
