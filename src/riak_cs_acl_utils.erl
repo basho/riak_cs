@@ -109,32 +109,56 @@ specific_acl_grant(Owner, Headers, RiakcPid) ->
                 {error, unresolved_grant_email}=E ->
                     E;
                 {ok, _GoodEmails} ->
-                    AclGrants = valid_headers_to_grants([{HeaderName, Val} || {HeaderName, {ok, Val}} <- EmailsTranslated]),
-                    {DisplayName, CanonicalId, KeyId} = Owner,
-                    {ok, acl(DisplayName, CanonicalId, KeyId, AclGrants)}
+                    case valid_headers_to_grants([{HeaderName, Val} || {HeaderName, {ok, Val}} <- EmailsTranslated],
+                                                 RiakcPid) of
+                        {ok, AclGrants} ->
+                            {DisplayName, CanonicalId, KeyId} = Owner,
+                            {ok, acl(DisplayName, CanonicalId, KeyId, AclGrants)};
+                        {error, invalid_argument}=E ->
+                            E
+                    end
             end
     end.
 
-valid_headers_to_grants(Pairs) ->
-    Grants = [header_to_acl_grants(HeaderName, Grants) ||
+-spec valid_headers_to_grants(list(), pid()) ->
+    {ok, list()} | {error, invalid_argument}.
+valid_headers_to_grants(Pairs, RiakcPid) ->
+    MaybeGrants = [header_to_acl_grants(HeaderName, Grants, RiakcPid) ||
             {HeaderName, Grants} <- Pairs],
-    lists:foldl(fun add_grant/2, [], lists:flatten(Grants)).
+    case promote_failure(MaybeGrants) of
+        {ok, Grants} ->
+            {ok, lists:foldl(fun add_grant/2, [], lists:flatten(Grants))};
+        {error, invalid_argument}=E ->
+            E
+    end.
 
-header_to_acl_grants(HeaderName, Grants) ->
-    GrantList = lists:map(fun (Identifier) -> header_to_grant(HeaderName, Identifier) end, Grants),
-    lists:foldl(fun add_grant/2, [], GrantList).
+-spec header_to_acl_grants(term(), list(), pid()) ->
+    {ok, list()} | {error, invalid_argument}.
+header_to_acl_grants(HeaderName, Grants, RiakcPid) ->
+    MaybeGrantList = lists:map(fun (Identifier) ->
+                    header_to_grant(HeaderName, Identifier, RiakcPid) end, Grants),
+    case promote_failure(MaybeGrantList) of
+        {ok, GrantList} ->
+            {ok, lists:foldl(fun add_grant/2, [], GrantList)};
+        {error, invalid_argument}=E ->
+            E
+    end.
 
--spec header_to_grant(acl_perm(), {grant_user_identifier(), string()}) ->
-    acl_grant().
-header_to_grant(Permission, {id, ID}) ->
-    %% TODO: thread the display name through
-    {{'FAKE_DISPLAY_NAME', ID}, [Permission]};
-header_to_grant(Permission, {uri, URI}) ->
+-spec header_to_grant(acl_perm(), {grant_user_identifier(), string()}, pid()) ->
+    {ok, acl_grant()} | {error, invalid_argument}.
+header_to_grant(Permission, {id, ID}, RiakcPid) ->
+    case name_for_canonical(ID, RiakcPid) of
+        {ok, DisplayName} ->
+            {ok, {{DisplayName, ID}, [Permission]}};
+        {error, invalid_argument}=E ->
+            E
+    end;
+header_to_grant(Permission, {uri, URI}, _RiakcPid) ->
     case URI of
         ?ALL_USERS_GROUP ->
-            {'AllUsers', [Permission]};
+            {ok, {'AllUsers', [Permission]}};
         ?AUTH_USERS_GROUP ->
-            {'AuthUsers', [Permission]}
+            {ok, {'AuthUsers', [Permission]}}
     end.
 
 -type grant_user_identifier() :: 'emailAddress' | 'id' | 'uri'.
@@ -231,6 +255,8 @@ promote_failure(List) ->
 
 -spec fail_either(term(), {boolean(), list()}) ->
     {ok | {error, term()}, list()}.
+fail_either(_Elem, {{error, _Reason}=E, Acc}) ->
+    {E, Acc};
 fail_either(E={error, _Reason}, {_OkOrError, Acc}) ->
     %% don't cons the error onto the acc
     {E, Acc};
