@@ -241,8 +241,8 @@ emails_to_ids(Grants, RiakcPid) ->
 email_grant({Atom, _Val}) ->
     Atom =:= 'emailAddress'.
 
-%% TODO: better list type spec
--spec promote_failure(list()) -> {ok, list()} | {'error', atom()}.
+-spec promote_failure(list({ok, A} | {error, term()})) ->
+    {ok, list(A)} | {'error', term()}.
 promote_failure(List) ->
     %% this will reverse the list, but we don't care
     %% about order
