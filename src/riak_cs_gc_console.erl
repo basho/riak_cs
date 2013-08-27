@@ -22,14 +22,13 @@
 
 -module(riak_cs_gc_console).
 
--export([
-         batch/1,
+-export([batch/1,
          status/1,
          pause/1,
          resume/1,
          cancel/1,
-         'set-interval'/1
-        ]).
+         'set-interval'/1,
+         'set-leeway'/1]).
 
 -define(SAFELY(Code, Description),
         try
@@ -52,8 +51,8 @@
 
 %% @doc Kick off a gc round, unless one is already
 %% in progress.
-batch(_Opts) ->
-    ?SAFELY(start_batch(), "Starting garbage collection batch").
+batch(Opts) ->
+    ?SAFELY(start_batch(parse_batch_opts(Opts)), "Starting garbage collection batch").
 
 %% @doc Find out what the gc daemon is up to.
 status(_Opts) ->
@@ -71,12 +70,15 @@ resume(_Opts) ->
 'set-interval'(Opts) ->
     ?SAFELY(set_interval(parse_interval_opts(Opts)), "Setting the garbage collection interval").
 
+'set-leeway'(Opts) ->
+    ?SAFELY(set_leeway(parse_leeway_opts(Opts)), "Setting the garbage collection leeway time").
+
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
 
-start_batch() ->
-    handle_batch_start(riak_cs_gc_d:manual_batch([])).
+start_batch(Options) ->
+    handle_batch_start(riak_cs_gc_d:manual_batch(Options)).
 
 get_status() ->
     handle_status(riak_cs_gc_d:status()).
@@ -100,6 +102,14 @@ set_interval(Interval) when is_integer(Interval) ->
     riak_cs_gc_d:set_interval(Interval);
 set_interval({'EXIT', _}) ->
     output("Error: Invalid interval specified.").
+
+set_leeway(undefined) ->
+    output("Error: No leeway time value specified");
+set_leeway(Leeway) when is_integer(Leeway) ->
+    output("The garbage collection leeway time was updated."),
+    application:set_env(riak_cs, leeway_seconds, Leeway);
+set_leeway({'EXIT', _}) ->
+    output("Error: Invalid leeway time specified.").
 
 
 handle_batch_start(ok) ->
@@ -162,6 +172,10 @@ human_detail(interval, Interval) when is_integer(Interval) ->
     {"The current garbage collection interval is", integer_to_list(Interval)};
 human_detail(interval, _) ->
     {"The current garbage collection interval is", "undefined"};
+human_detail(leeway, Leeway) when is_integer(Leeway) ->
+    {"The current garbage collection leeway time is", integer_to_list(Leeway)};
+human_detail(leeway, _) ->
+    {"The current garbage collection leeway time is", "undefined"};
 human_detail(next, undefined) ->
     {"Next run scheduled for", "undefined"};
 human_detail(next, Time) ->
@@ -189,9 +203,19 @@ human_time(Seconds) ->
     Seconds0 = Seconds + ?DAYS_FROM_0_TO_1970*?SECONDS_PER_DAY,
     rts:iso8601(calendar:gregorian_seconds_to_datetime(Seconds0)).
 
+parse_batch_opts([]) ->
+    [];
+parse_batch_opts([Leeway | _]) ->
+    [{leeway, catch list_to_integer(Leeway)}].
+
 parse_interval_opts([]) ->
     undefined;
 parse_interval_opts(["infinity"]) ->
     infinity;
 parse_interval_opts([Interval | _]) ->
     catch list_to_integer(Interval).
+
+parse_leeway_opts([]) ->
+    undefined;
+parse_leeway_opts([Leeway | _]) ->
+    catch list_to_integer(Leeway).
