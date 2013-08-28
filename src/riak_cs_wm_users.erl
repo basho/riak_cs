@@ -77,7 +77,8 @@ produce_json(RD, Ctx=#context{riakc_pid=RiakPid}) ->
         _ ->
             Status = undefined
     end,
-    {{stream, {<<>>, fun() -> stream_users(json, RiakPid, Boundary, Status) end}}, UpdRD, Ctx}.
+    Response = {<<>>, fun() -> riak_cs_users:stream_users(json, RiakPid, Boundary, Status) end},
+    {{stream, Response}, UpdRD, Ctx}.
 
 produce_xml(RD, Ctx=#context{riakc_pid=RiakPid}) ->
     Boundary = unique_id(),
@@ -93,7 +94,8 @@ produce_xml(RD, Ctx=#context{riakc_pid=RiakPid}) ->
         _ ->
             Status = undefined
     end,
-    {{stream, {<<>>, fun() -> stream_users(xml, RiakPid, Boundary, Status) end}}, UpdRD, Ctx}.
+    Response = {<<>>, fun() -> riak_cs_users:stream_users(xml, RiakPid, Boundary, Status) end},
+    {{stream, Response}, UpdRD, Ctx}.
 
 finish_request(RD, Ctx=#context{riakc_pid=undefined}) ->
     {true, RD, Ctx};
@@ -121,63 +123,6 @@ forbidden(RD, Ctx, User, false) ->
             riak_cs_wm_utils:deny_access(RD, Ctx)
     end.
 
-stream_users(Format, RiakPid, Boundary, Status) ->
-    case riakc_pb_socket:stream_list_keys(RiakPid, ?USER_BUCKET) of
-        {ok, ReqId} ->
-            case riak_cs_utils:riak_connection() of
-                {ok, RiakPid2} ->
-                    Res = wait_for_users(Format, RiakPid2, ReqId, Boundary, Status),
-                    riak_cs_utils:close_riak_connection(RiakPid2),
-                    Res;
-                {error, _Reason} ->
-                    wait_for_users(Format, RiakPid, ReqId, Boundary, Status)
-            end;
-        {error, _Reason} ->
-            {<<>>, done}
-    end.
-
-wait_for_users(Format, RiakPid, ReqId, Boundary, Status) ->
-    receive
-        {ReqId, {keys, UserIds}} ->
-            FoldFun = user_fold_fun(RiakPid, Status),
-            Doc = users_doc(lists:foldl(FoldFun, [], UserIds),
-                            Format,
-                            Boundary),
-            {Doc, fun() -> wait_for_users(Format, RiakPid, ReqId, Boundary, Status) end};
-        {ReqId, done} ->
-            {list_to_binary(["\r\n--", Boundary, "--"]), done};
-        _ ->
-            wait_for_users(Format, RiakPid, ReqId, Boundary, Status)
-    end.
-
-%% @doc Compile a multipart entity for a set of user documents.
-users_doc(UserDocs, xml, Boundary) ->
-    ["\r\n--",
-     Boundary,
-     "\r\nContent-Type: ", ?XML_TYPE, "\r\n\r\n",
-     riak_cs_xml:to_xml({users, UserDocs})];
-users_doc(UserDocs, json, Boundary) ->
-    ["\r\n--",
-     Boundary,
-     "\r\nContent-Type: ", ?JSON_TYPE, "\r\n\r\n",
-     riak_cs_json:to_json({users, UserDocs})].
-
-%% @doc Return a fold function to retrieve and filter user accounts
-user_fold_fun(RiakPid, Status) ->
-    fun(UserId, Users) ->
-            case riak_cs_utils:get_user(binary_to_list(UserId), RiakPid) of
-                {ok, {User, _}} when User?RCS_USER.status =:= Status;
-                                     Status =:= undefined ->
-                    [User | Users];
-                {ok, _} ->
-                    %% Status is defined and does not match the account status
-                    Users;
-                {error, Reason} ->
-                    _ = lager:warning("Failed to fetch user record. KeyId: ~p"
-                                      " Reason: ~p", [UserId, Reason]),
-                    Users
-            end
-    end.
 
 unique_id() ->
     Rand = riak_cs_utils:sha(term_to_binary({make_ref(), now()})),
