@@ -1,0 +1,24 @@
+#!/bin/sh
+
+# Pull environment for this install
+. "{{runner_base_dir}}/lib/env.sh"
+
+# Make sure the user running this script is the owner and/or su to that user
+check_user $@
+
+# Make sure CWD is set to runner run dir
+cd $RUNNER_BASE_DIR
+
+# Check the first argument for instructions
+case "$1" in
+    switch|show)
+        # Make sure the local node IS running
+        node_up_check
+
+        $NODETOOL rpc riak_cs_stanchion_console $@
+        ;;
+    *)
+        echo "Usage: $SCRIPT { switch HOST PORT | show }"
+        exit 1
+        ;;
+esac
