@@ -353,16 +353,15 @@ handle_prefix(Key, Prefix, Delimiter) ->
 %% @doc Extract common prefix from `Key'. `Key' must contain `Delimiter', so
 %% you must first check with `key_is_common_prefix'.
 common_prefix_from_key(Key, Prefix, Delimiter) ->
-    RestKey = case Prefix of
+    case Prefix of
         undefined ->
-            Key;
+            riak_cs_list_objects_utils:extract_group(Key, Delimiter);
         _Prefix ->
             PrefixLen = byte_size(Prefix),
             << Prefix:PrefixLen/binary, Rest/binary >> = Key,
-            Rest
-    end,
-    riak_cs_list_objects_utils:extract_group(RestKey, Delimiter).
-
+            Group = riak_cs_list_objects_utils:extract_group(Rest, Delimiter),
+            <<Prefix/binary, Group/binary>>
+    end.
 
 -spec make_start_key(state()) -> binary().
 make_start_key(#state{object_list_ranges=[], req=Request}) ->
