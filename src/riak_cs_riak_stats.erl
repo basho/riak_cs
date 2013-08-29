@@ -30,7 +30,8 @@
          get_riak_disk_stat/1,
          get_riak_root_disk_usage/0,
          get_riak_node_count/0,
-         get_riak_cluster_disk_usage/0
+         get_riak_cluster_disk_usage/0,
+         get_riak_bitcask_nval/0
 ]).
 
 riak_stats() ->
@@ -67,11 +68,15 @@ get_riak_node_count() ->
     NodeList = get_riak_stat(<<"ring_members">>),
     length(NodeList).
 
+get_riak_bitcask_nval() ->
+    NVal = 3,  % TODO: hardcode for now, discover via api later
+    NVal.
+
 get_riak_cluster_disk_usage() ->
     {_PartitionKey, PartitionTotalKB, PercentageUsed} = get_riak_root_disk_usage(),
     PartitionUsedKB = round(PartitionTotalKB * PercentageUsed / 100),
     % PartitionFreeKB = PartitionTotalKB - PartitionUsedKB,
-    NVal = 3,  % TODO: hardcode for now, discover via api later
+    NVal = get_riak_bitcask_nval(),
     NodeCount = get_riak_node_count(),
     ClusterCapacityKB = PartitionTotalKB * NodeCount,
     ClusterDiskUsageKB = PartitionUsedKB * NodeCount,
