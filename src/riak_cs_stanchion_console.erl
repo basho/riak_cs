@@ -18,7 +18,7 @@
 %%
 %% ---------------------------------------------------------------------
 
-%% @doc These functions are used by the riak-cs-gc command line script.
+%% @doc These functions are used by the riak-cs-stanchion command line script.
 
 -module(riak_cs_stanchion_console).
 
@@ -44,8 +44,7 @@
 %%% Public API
 %%%===================================================================
 
-%% @doc Kick off a gc round, unless one is already
-%% in progress.
+%% @doc Switch Stanchion to a new one. Can be used for disabling.
 switch([Host, Port]) ->
     Msg = io_lib:format("Switching stanchion to ~s:~s", [Host, Port]),
     ?SAFELY(begin
