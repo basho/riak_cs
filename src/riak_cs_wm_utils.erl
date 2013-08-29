@@ -39,6 +39,7 @@
          deny_invalid_key/2,
          extract_name/1,
          normalize_headers/1,
+         extract_acl_headers/1,
          extract_amazon_headers/1,
          extract_user_metadata/1,
          shift_to_owner/4,
@@ -337,6 +338,31 @@ extract_name(?RCS_USER{name=Name}) ->
     Name;
 extract_name(_) ->
     "-unknown-".
+
+-spec extract_acl_headers(term()) -> [{acl_perm(), string()}].
+extract_acl_headers(Headers) ->
+    lists:foldl(fun({HeaderName, Value}, Acc) ->
+                case header_name_to_perm(HeaderName) of
+                    undefined ->
+                        Acc;
+                    HeaderAtom ->
+                        [{HeaderAtom, Value} | Acc]
+                end
+        end,
+                [], Headers).
+
+header_name_to_perm("x-amz-grant-read") ->
+    'READ';
+header_name_to_perm("x-amz-grant-write") ->
+    'WRITE';
+header_name_to_perm("x-amz-read-acp") ->
+    'READ_ACP';
+header_name_to_perm("x-amz-write-acp") ->
+    'WRITE_ACP';
+header_name_to_perm("x-amz-full-control") ->
+    'FULL_CONTROL';
+header_name_to_perm(_Else) ->
+    undefined.
 
 extract_amazon_headers(Headers) ->
     FilterFun =
