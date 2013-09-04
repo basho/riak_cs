@@ -373,7 +373,7 @@ acl_header_and_body(RD) ->
 has_acl_header(RD) ->
     has_canned_acl_header(RD) orelse has_specific_acl_header(RD).
 
--spec has_canned_acl_header(list()) -> boolean().
+-spec has_canned_acl_header(#wm_reqdata{}) -> boolean().
 has_canned_acl_header(RD) ->
     wrq:get_req_header("x-amz-acl", RD) =/= undefined.
 
