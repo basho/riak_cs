@@ -40,6 +40,7 @@
          extract_name/1,
          normalize_headers/1,
          extract_acl_headers/1,
+         acl_header_and_body/1,
          extract_amazon_headers/1,
          extract_user_metadata/1,
          shift_to_owner/4,
@@ -363,6 +364,28 @@ header_name_to_perm("x-amz-full-control") ->
     'FULL_CONTROL';
 header_name_to_perm(_Else) ->
     undefined.
+
+-spec acl_header_and_body(#wm_reqdata{}) -> boolean().
+acl_header_and_body(RD) ->
+    has_acl_header(RD) andalso has_body(RD).
+
+-spec has_acl_header(#wm_reqdata{}) -> boolean().
+has_acl_header(RD) ->
+    has_canned_acl_header(RD) orelse has_specific_acl_header(RD).
+
+-spec has_canned_acl_header(list()) -> boolean().
+has_canned_acl_header(RD) ->
+    wrq:get_req_header("x-amz-acl", RD) =/= undefined.
+
+-spec has_specific_acl_header(#wm_reqdata{}) -> boolean().
+has_specific_acl_header(RD) ->
+    Headers = normalize_headers(RD),
+    extract_amazon_headers(Headers) =/= [].
+
+-spec has_body(#wm_reqdata{}) -> boolean().
+%% TODO: should we just check if the content-length is 0 instead?
+has_body(RD) ->
+    wrq:req_body(RD) =/= undefined.
 
 extract_amazon_headers(Headers) ->
     FilterFun =
