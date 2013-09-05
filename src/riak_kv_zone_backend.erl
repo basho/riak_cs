@@ -71,6 +71,9 @@ capabilities(State) ->
     capabilities(fake_bucket_name, State).
 
 %% @doc Return the capabilities of the backend.
+%%
+%% NOTE: We assume that all zones are homogenous, so we only fetch the
+%%       capabilities list from the first zone.
 -spec capabilities(riak_object:bucket(), state()) -> {ok, [atom()]}.
 capabilities(Bucket, #state{partition=Partition, zone_list=[{Zone, _}|_]}) ->
     Caps = riak_kv_zone_mgr:capabilities(Zone, Partition, Bucket),
@@ -219,8 +222,8 @@ zone_list(#state{zone_list=Zs}) ->
     [Zone || {Zone, _} <- Zs].
 
 chash_to_zone(_Bucket, _Key, #state{zone_list=ZoneList}) ->
-    io:format("TODO: fixme chash_to_zone\n"),
     {Zone, _} = lists:last(ZoneList),
+    io:format("TODO: fixme chash_to_zone: map to ~p\n", [Zone]),
     Zone.
 
 %%%%%%%%%%%%%%%%%%%

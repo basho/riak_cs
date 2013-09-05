@@ -20,6 +20,38 @@
 
 %% @doc riak_kv_zone_mgr: gen_server glue between riak_kv_zone_backend.erl
 %%      and zone manager (which uses a real riak_kv backend to do its work).
+%%
+%% A zone manager is an Erlang process that "owns" the riak_kv storage
+%% manager backend that manages a single zone's storage.  For example, if
+%% the node has 3 zones, and each zone uses the fs2 storage management
+%% backend from riak_kv, then there will be 5 gen_servers using this module.
+%% Each gen_server will handle a single instance of the fs2 backend.
+%%
+%%       |-zone-1-gen_server-|-fs2-backend-instance-
+%%       |
+%% |-----|-zone-2-gen_server-|-fs2-backend-instance-
+%%       |
+%%       |-zone-3-gen_server-|-fs2-backend-instance-
+%%
+%% Each zone manager gen_server process will have a registered name,
+%% e.g. riak_kv_zone_N where N is an integer.  This name will be used by lhe
+%% riak_kv_zone_backend module when it needs to forward (e.g., via
+%% gen_server:call()) an get/put/whatever operation to a particular zone.
+%%
+%% Older drafts of this module used a backend storage manager instance per
+%% vnode/partition.  That scheme was simple(r) to code for, but uses too
+%% many storage manager instances.  For example, if we had a machine with 64
+%% disks and therefore up to 64 separate zones, and if the Riak node had 20
+%% vnodes, then there would be 64 * 20 = 1,280 storage manager instances in
+%% use simultaneously.  More most backends, memory/capacity planning &
+%% configuration/tuning parameter planning is difficult enough for 10
+%% instances; 1280 instances is far too many.
+%%
+%% The alternative is to play games with prefixes of the keys stored by each
+%% zone: add a vnode/partition prefix to the key for each write, and strip
+%% off the vnode prefix from the key for each write.  That is what we'll do.
+%% The prefix length should be configurable: 2 bytes for up to 64K
+%% partitions.
 
 -module(riak_kv_zone_mgr).
 
@@ -53,7 +85,9 @@
           zone :: integer(),
           mod :: atom(),
           mod_config :: list(),
-          s_dict :: dict()
+          be_state :: term(),
+          p2z_dets :: reference(),
+          p2z_map :: dict()
          }).
 
 %%%===================================================================
@@ -131,11 +165,23 @@ halt(Pid) ->
 %%--------------------------------------------------------------------
 init({ZoneNumber, Mod, ModConfig}) ->
     register(zone_name(ZoneNumber), self()),
+    PDataDir = app_helper:get_env(riak_core, platform_data_dir),
+    DetsName = lists:flatten(io_lib:format("zone_p2z_~w_map", [ZoneNumber])),
+    DetsFile = lists:flatten(io_lib:format("~s/zone_p2z_~w/map",
+                                           [PDataDir, ZoneNumber])),
     try
+        %% TODO: handle module start error here
+        {ok, BE_State} = Mod:start(0, ModConfig),
+        filelib:ensure_dir(DetsFile),
+        {ok, Dets} = dets:open_file(DetsName, [{access, read_write},
+                                               {file, DetsFile},
+                                               {repair, true}]),
         {ok, #state{zone=ZoneNumber,
                     mod=Mod,
                     mod_config=ModConfig,
-                    s_dict=dict:new()}}
+                    be_state=BE_State,
+                    p2z_dets=Dets,
+                    p2z_map=dict:new()}}
     catch X:Y ->
             error_logger:error_msg("~s:init(~p, ~p, ~p) -> ~p ~p @\n~p\n",
                                    [?MODULE, ZoneNumber, Mod, ModConfig, X, Y,
@@ -159,89 +205,87 @@ init({ZoneNumber, Mod, ModConfig}) ->
 %%--------------------------------------------------------------------
 handle_call({halt}, _From, State) ->
     {stop, normal, ok, State};
-handle_call({capabilities, Partition, Bucket}, _From, #state{mod=Mod} = State) ->
-    {NewState, S} = get_partition_state(Partition, State),
-    Res = Mod:capabilities(Bucket, S),
+handle_call({capabilities, Partition, Bucket}, _From,
+            #state{mod=Mod, be_state=BE_state} = State) ->
+    {NewState, ZPrefix} = get_partition_prefix(Partition, State),
+    Res = Mod:capabilities(Bucket, BE_state),
     {reply, Res, NewState};
-handle_call({get, Partition, Bucket, Key}, _From, #state{mod=Mod} = State) ->
-    {NewState, S} = get_partition_state(Partition, State),
-    {R1, R2, _NewS} = Mod:get(Bucket, Key, S),
-    %% TODO: to be a good player, NewS* should be saved in our s_dict
-    {reply, {ok, R1, R2}, NewState};
+handle_call({get, Partition, Bucket, Key}, _From,
+            #state{mod=Mod, be_state=BE_state} = State) ->
+    {NewState, ZPrefix} = get_partition_prefix(Partition, State),
+    {R1, R2, NewBE_state} = Mod:get(Bucket, Key, BE_state),
+    {reply, {ok, R1, R2}, NewState#state{be_state=NewBE_state}};
 handle_call({get_object, Partition, Bucket, Key, WantsBinary},
-            _From, #state{mod=Mod} = State) ->
-    {NewState, S} = get_partition_state(Partition, State),
-    {R1, R2} = try
-                   {X1, X2, _NewSx} = Mod:get_object(Bucket, Key, WantsBinary, S),
-                   {X1, X2}
-               catch
-                   error:undef ->
-                       {Y1, Y2, _NewSy} = Mod:get(Bucket, Key, S),
-                       {Y1, Y2}
-               end,
-    %% TODO: to be a good player, NewS* should be saved in our s_dict
+            _From, #state{mod=Mod, be_state=BE_state} = State) ->
+    {NewState, ZPrefix} = get_partition_prefix(Partition, State),
+    {R1, R2, NewBE_state} =
+        try
+            Mod:get_object(Bucket, Key, WantsBinary, BE_state)
+        catch
+            error:undef ->
+                Mod:get(Bucket, Key, BE_state)
+        end,
     if R1 == ok, is_binary(R2), WantsBinary == false ->
-            {reply, {ok, R1, riak_object:from_binary(Bucket, Key, R2)}, NewState};
+            {reply,
+             {ok, R1, riak_object:from_binary(Bucket, Key, R2)},
+             NewState#state{be_state=NewBE_state}};
        true ->
-            {reply, {ok, R1, R2}, NewState}
+            {reply, {ok, R1, R2}, NewState#state{be_state=NewBE_state}}
     end;
 handle_call({put, Partition, Bucket, Key, IndexSpecs, EncodedVal},
-            _From, #state{mod=Mod} = State) ->
-    {NewState, S} = get_partition_state(Partition, State),
-    case Mod:put(Bucket, Key, IndexSpecs, EncodedVal, S) of
-        {ok, _NewS} ->
-            %% TODO: to be a good player, NewS* should be saved in our s_dict
-            {reply, ok, NewState};
-        {error, Reason, _NewS} ->
-            %% TODO: to be a good player, NewS* should be saved in our s_dict
-            {reply, Reason, NewState}
+            _From, #state{mod=Mod, be_state=BE_state} = State) ->
+    {NewState, ZPrefix} = get_partition_prefix(Partition, State),
+    case Mod:put(Bucket, Key, IndexSpecs, EncodedVal, BE_state) of
+        {ok, NewBE_state} ->
+            {reply, ok, NewState#state{be_state=NewBE_state}};
+        {error, Reason, NewBE_state} ->
+            {reply, Reason, NewState#state{be_state=NewBE_state}}
     end;
 handle_call({put_object, Partition, Bucket, Key, IndexSpecs, RObj},
-            _From, #state{mod=Mod} = State) ->
-    {NewState, S} = get_partition_state(Partition, State),
+            _From, #state{mod=Mod, be_state=BE_state} = State) ->
+    {NewState, ZPrefix} = get_partition_prefix(Partition, State),
     try
-        Res = case Mod:put_object(Bucket, Key, IndexSpecs, RObj, S) of
-                  {{ok, _NewS}, EncodedVal} ->
-                      %% TODO: to be a good player, NewS* should be
-                      %% saved in our s_dict
+        Res = case Mod:put_object(Bucket, Key, IndexSpecs, RObj, BE_state) of
+                  {{ok, NewBE_state}, EncodedVal} ->
                       {ok, EncodedVal};
                   Else ->
-                      %% TODO: to be a good player, NewS* should be
-                      %% saved in our s_dict
+                      NewBE_state = BE_state,
                       Else
               end,
-        {reply, Res, NewState}
+        {reply, Res, NewState#state{be_state=NewBE_state}}
     catch error:undef ->
             ObjFmt = riak_core_capability:get({riak_kv, object_format}, v0),
             EncodedVal2 = riak_object:to_binary(ObjFmt, RObj),
-            Res2 = case Mod:put(Bucket, Key, IndexSpecs, EncodedVal2, S) of
-                       {ok, _NewS2} ->
-                           %% TODO: to be a good player, NewS* should be
-                           %% saved in our s_dict
+            Res2 = case Mod:put(Bucket, Key, IndexSpecs, EncodedVal2,
+                                BE_state) of
+                       {ok, NewBE_state2} ->
                            {ok, EncodedVal2};
                        Else2 ->
+                           NewBE_state2 = BE_state,
                            Else2
                    end,
-            {reply, Res2, NewState}
+            {reply, Res2, NewState#state{be_state=NewBE_state2}}
     end;
 handle_call({delete, Partition, Bucket, Key, IndexSpecs},
-            _From, #state{mod=Mod} = State) ->
-    {NewState, S} = get_partition_state(Partition, State),
-    Res = case Mod:delete(Bucket, Key, IndexSpecs, S) of
-              {ok, _NewS} ->
+            _From, #state{mod=Mod, be_state=BE_state} = State) ->
+    {NewState, ZPrefix} = get_partition_prefix(Partition, State),
+    Res = case Mod:delete(Bucket, Key, IndexSpecs, BE_state) of
+              {ok, NewBE_state} ->
                   ok;
-              {error, Reason, _NewS} ->
+              {error, Reason, NewBE_state} ->
                   {error, Reason}
           end,
-    %% TODO: to be a good player, NewS* should be saved in our s_dict
+    %% TODO: to be a good player, NewS* should be saved in our p2z_map
+    {reply, Res, NewState#state{be_state=NewBE_state}};
+handle_call({drop, Partition}, _From, #state{mod=Mod,
+                                             be_state=BE_state} = State) ->
+    {NewState, ZPrefix} = get_partition_prefix(Partition, State),
+    Res = Mod:drop(BE_state),
     {reply, Res, NewState};
-handle_call({drop, Partition}, _From, #state{mod=Mod} = State) ->
-    {NewState, S} = get_partition_state(Partition, State),
-    Res = Mod:drop(S),
-    {reply, Res, NewState};
-handle_call({is_empty, Partition}, _From, #state{mod=Mod} = State) ->
-    {NewState, S} = get_partition_state(Partition, State),
-    Res = Mod:is_empty(S),
+handle_call({is_empty, Partition}, _From, #state{mod=Mod,
+                                                 be_state=BE_state} = State) ->
+    {NewState, ZPrefix} = get_partition_prefix(Partition, State),
+    Res = Mod:is_empty(BE_state),
     {reply, Res, NewState};
 handle_call(_Request, _From, State) ->
     io:format("~s ~p: call ~p\n", [?MODULE, ?LINE, _Request]),
@@ -286,8 +330,16 @@ handle_info(_Info, State) ->
 %% @spec terminate(Reason, State) -> void()
 %% @end
 %%--------------------------------------------------------------------
-terminate(Reason, _State) ->
+terminate(Reason, #state{zone=Zone, p2z_map=P2Z, mod=Mod} = _State) ->
+    [begin
+         io:format("DBG: Zone ~p, stopping vnode ~p\n", [Zone, VNode]),
+         catch lager:info("Stopping zone ~p", [Zone]),
+         XX =
+         (catch Mod:stop(S))
+, io:format("XX = ~p\n", [XX])
+     end || {VNode, S} <- lists:sort(dict:to_list(P2Z))],
 io:format("~p TODOODODODOD clean up the dict here, shutdown!!!!!!!!!!\n", [Reason]),
+%% io:format("  ~P\n", [_State, 30]),
     ok.
 
 %%--------------------------------------------------------------------
@@ -311,14 +363,28 @@ foodelme() ->
 call_zone(Zone, Msg) ->
     gen_server:call(zone_name(Zone), Msg, infinity).
 
-get_partition_state(Partition,
-                    #state{s_dict=SD, mod=Mod, mod_config=ModConfig} = State) ->
-    case dict:find(Partition, SD) of
-        {ok, S} ->
-            {State, S};
+get_partition_prefix(Partition, #state{p2z_map=P2Z, mod=Mod,
+                                       mod_config=ModConfig} = State) ->
+    case dict:find(Partition, P2Z) of
+        {ok, ZPrefix} ->
+            {State, ZPrefix};
         error ->
-            %% TODO: handle module start error here
-            {ok, S} = Mod:start(0, ModConfig),
-            {State#state{s_dict=dict:store(Partition, S, SD)}, S}
+            {ZPrefix, NewP2Z} = assign_partition_prefix(Partition, State),
+            {State#state{p2z_map=NewP2Z}, ZPrefix}
     end.
 
+assign_partition_prefix(Partition, #state{p2z_map=P2Z,
+                                          p2z_dets=Dets} = State) ->
+    Largest = erlang:max([ZP || {_, ZP} <- dict:to_list(P2Z)]),
+    ZPrefix = Largest + 1,
+    ok = dets:insert(Dets, {Partition, ZPrefix}),
+    ok = dets:sync(Dets),
+    os:cmd("/bin/sync"),
+    NewP2Z = dets_to_dict(State#state.p2z_dets),
+    {ZPrefix, NewP2Z}.
+
+dets_to_dict(#state{p2z_dets=Dets}) ->
+    L = dets:foldl(fun(T, Acc) ->
+                           [T|Acc]
+                   end, [], Dets),
+    dict:from_list(L).
