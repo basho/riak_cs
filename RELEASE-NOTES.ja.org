@@ -1,3 +1,13 @@
+* Riak CS 1.4.1 リリースノート
+** 修正された問題
+- Fix list objects crash when more than the first 1001 keys are in
+  the pending delete state
+- 最初の1001個のキーがpending delete状態だったときにlist objectsがクラッシュ
+  する問題を修正
+- Fix crash in garbage collection daemon
+- GCデーモンがクラッシュする問題を解決
+- Fix packaging bug by updating node_package dependency
+- node_packageをアップデートしパッケージ作成の問題を解決
 * Riak CS 1.4.0 リリースノート
 ** 修正された問題
 - GCバケットで使われていないキーを削除
