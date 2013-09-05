@@ -207,23 +207,25 @@ handle_call({halt}, _From, State) ->
     {stop, normal, ok, State};
 handle_call({capabilities, Partition, Bucket}, _From,
             #state{mod=Mod, be_state=BE_state} = State) ->
-    {NewState, ZPrefix} = get_partition_prefix(Partition, State),
+    {NewState, _ZPrefix} = get_partition_prefix(Partition, State),
     Res = Mod:capabilities(Bucket, BE_state),
     {reply, Res, NewState};
 handle_call({get, Partition, Bucket, Key}, _From,
             #state{mod=Mod, be_state=BE_state} = State) ->
     {NewState, ZPrefix} = get_partition_prefix(Partition, State),
-    {R1, R2, NewBE_state} = Mod:get(Bucket, Key, BE_state),
+    ZBucket = make_zbucket(ZPrefix, Bucket, State),
+    {R1, R2, NewBE_state} = Mod:get(ZBucket, Key, BE_state),
     {reply, {ok, R1, R2}, NewState#state{be_state=NewBE_state}};
 handle_call({get_object, Partition, Bucket, Key, WantsBinary},
             _From, #state{mod=Mod, be_state=BE_state} = State) ->
     {NewState, ZPrefix} = get_partition_prefix(Partition, State),
+    ZBucket = make_zbucket(ZPrefix, Bucket, State),
     {R1, R2, NewBE_state} =
         try
-            Mod:get_object(Bucket, Key, WantsBinary, BE_state)
+            Mod:get_object(ZBucket, Key, WantsBinary, BE_state)
         catch
             error:undef ->
-                Mod:get(Bucket, Key, BE_state)
+                Mod:get(ZBucket, Key, BE_state)
         end,
     if R1 == ok, is_binary(R2), WantsBinary == false ->
             {reply,
@@ -235,7 +237,8 @@ handle_call({get_object, Partition, Bucket, Key, WantsBinary},
 handle_call({put, Partition, Bucket, Key, IndexSpecs, EncodedVal},
             _From, #state{mod=Mod, be_state=BE_state} = State) ->
     {NewState, ZPrefix} = get_partition_prefix(Partition, State),
-    case Mod:put(Bucket, Key, IndexSpecs, EncodedVal, BE_state) of
+    ZBucket = make_zbucket(ZPrefix, Bucket, State),
+    case Mod:put(ZBucket, Key, IndexSpecs, EncodedVal, BE_state) of
         {ok, NewBE_state} ->
             {reply, ok, NewState#state{be_state=NewBE_state}};
         {error, Reason, NewBE_state} ->
@@ -244,8 +247,9 @@ handle_call({put, Partition, Bucket, Key, IndexSpecs, EncodedVal},
 handle_call({put_object, Partition, Bucket, Key, IndexSpecs, RObj},
             _From, #state{mod=Mod, be_state=BE_state} = State) ->
     {NewState, ZPrefix} = get_partition_prefix(Partition, State),
+    ZBucket = make_zbucket(ZPrefix, Bucket, State),
     try
-        Res = case Mod:put_object(Bucket, Key, IndexSpecs, RObj, BE_state) of
+        Res = case Mod:put_object(ZBucket, Key, IndexSpecs, RObj, BE_state) of
                   {{ok, NewBE_state}, EncodedVal} ->
                       {ok, EncodedVal};
                   Else ->
@@ -269,7 +273,8 @@ handle_call({put_object, Partition, Bucket, Key, IndexSpecs, RObj},
 handle_call({delete, Partition, Bucket, Key, IndexSpecs},
             _From, #state{mod=Mod, be_state=BE_state} = State) ->
     {NewState, ZPrefix} = get_partition_prefix(Partition, State),
-    Res = case Mod:delete(Bucket, Key, IndexSpecs, BE_state) of
+    ZBucket = make_zbucket(ZPrefix, Bucket, State),
+    Res = case Mod:delete(ZBucket, Key, IndexSpecs, BE_state) of
               {ok, NewBE_state} ->
                   ok;
               {error, Reason, NewBE_state} ->
@@ -279,12 +284,12 @@ handle_call({delete, Partition, Bucket, Key, IndexSpecs},
     {reply, Res, NewState#state{be_state=NewBE_state}};
 handle_call({drop, Partition}, _From, #state{mod=Mod,
                                              be_state=BE_state} = State) ->
-    {NewState, ZPrefix} = get_partition_prefix(Partition, State),
+    {NewState, _ZPrefix} = get_partition_prefix(Partition, State),
     Res = Mod:drop(BE_state),
     {reply, Res, NewState};
 handle_call({is_empty, Partition}, _From, #state{mod=Mod,
                                                  be_state=BE_state} = State) ->
-    {NewState, ZPrefix} = get_partition_prefix(Partition, State),
+    {NewState, _ZPrefix} = get_partition_prefix(Partition, State),
     Res = Mod:is_empty(BE_state),
     {reply, Res, NewState};
 handle_call(_Request, _From, State) ->
@@ -363,8 +368,7 @@ foodelme() ->
 call_zone(Zone, Msg) ->
     gen_server:call(zone_name(Zone), Msg, infinity).
 
-get_partition_prefix(Partition, #state{p2z_map=P2Z, mod=Mod,
-                                       mod_config=ModConfig} = State) ->
+get_partition_prefix(Partition, #state{p2z_map=P2Z} = State) ->
     case dict:find(Partition, P2Z) of
         {ok, ZPrefix} ->
             {State, ZPrefix};
@@ -388,3 +392,6 @@ dets_to_dict(#state{p2z_dets=Dets}) ->
                            [T|Acc]
                    end, [], Dets),
     dict:from_list(L).
+
+make_zbucket(ZPrefix, Bucket, _State) ->
+    <<ZPrefix:16, Bucket/binary>>.
