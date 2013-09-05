@@ -1,3 +1,9 @@
+* Riak CS 1.4.1 Release Notes
+** Bugs Fixed
+- Fix list objects crash when more than the first 1001 keys are in
+  the pending delete state
+- Fix crash in garbage collection daemon
+- Fix packaging bug by updating node_package dependency
 * Riak CS 1.4.0 Release Notes
 ** Bugs Fixed
 - Remove unnecessary keys in GC bucket
