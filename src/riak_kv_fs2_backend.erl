@@ -102,21 +102,20 @@
 %% which doesn't help spread the love of bucket subdir hashing levels.
 %% Is this avoidable?  If not, we need a change of hashing the dir levels.
 %%
-%% __ Add patch to CS that will 1. add Riak header that contains checksum.
+%% XX Add patch to CS that will 1. add Riak header that contains checksum.
 %%    2. Will not crash horribly if put fails.
 %%    3. Will detect siblings correctly on get and pick the version
 %%       that matches the block checksum.
 %%    4. Will repair the block when #3 hits.
 %%    Also, in conjunction with this backend:
-%%    __ Since we're already peeking into the Riak object metadata to
+%%    XX Since we're already peeking into the Riak object metadata to
 %%       check for tombstones, also check for the block checksum and
 %%       refuse to write the block if it is corrupted.  This would
 %%       avoid propagation of corruption in a couple of places:
 %%       a. AAE replicates a bad block and clobbers a good one
 %%       b. Handoff sends a bad block to a vnode and clobbers a good one
 %%
-%% __ Double-check that the api_version & capabilities/0 func is doing
-%% __ Add capability to extend put() and get() to avoid getting an
+%% XX Add capability to extend put() and get() to avoid getting an
 %%    already-encoded-Riak-object and returning same.  If
 %%    riak_kv_vnode gives us an encoded object, we need to unencoded
 %%    it just to see if there's a tombstone in the metadata.  We know
