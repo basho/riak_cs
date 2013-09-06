@@ -37,7 +37,8 @@
 -endif.
 
 %% API
--export([start_link/2]).
+-export([start_link/2,
+         big_end_key/1]).
 
 %% Observability
 -export([]).
