@@ -35,11 +35,17 @@ eqc_test_() ->
 %% EQC Properties
 %% ====================================================================
 
+-ifdef(new_hash).
 prop_md5() ->
     _ = crypto:start(),
     ?FORALL(Bin, gen_bin(),
-            %% TODO: stanchion_utils is from velvet, needs update
-            stanchion_utils:md5(Bin) == riak_cs_utils:md5(Bin)).
+            crypto:hash(md5, Bin) == riak_cs_utils:md5(Bin)).
+-else.
+prop_md5() ->
+    _ = crypto:start(),
+    ?FORALL(Bin, gen_bin(),
+            crypto:md5(Bin) == riak_cs_utils:md5(Bin)).
+-endif.
 
 gen_bin() ->
     oneof([binary(),
