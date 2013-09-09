@@ -176,12 +176,13 @@ init({ZoneNumber, Mod, ModConfig}) ->
         {ok, Dets} = dets:open_file(DetsName, [{access, read_write},
                                                {file, DetsFile},
                                                {repair, true}]),
+        P2Z = dets_to_dict(Dets),
         {ok, #state{zone=ZoneNumber,
                     mod=Mod,
                     mod_config=ModConfig,
                     be_state=BE_State,
                     p2z_dets=Dets,
-                    p2z_map=dict:new()}}
+                    p2z_map=P2Z}}
     catch X:Y ->
             error_logger:error_msg("~s:init(~p, ~p, ~p) -> ~p ~p @\n~p\n",
                                    [?MODULE, ZoneNumber, Mod, ModConfig, X, Y,
@@ -282,11 +283,9 @@ handle_call({delete, Partition, Bucket, Key, IndexSpecs},
           end,
     %% TODO: to be a good player, NewS* should be saved in our p2z_map
     {reply, Res, NewState#state{be_state=NewBE_state}};
-handle_call({drop, Partition}, _From, #state{mod=Mod,
-                                             be_state=BE_state} = State) ->
-    {NewState, _ZPrefix} = get_partition_prefix(Partition, State),
-    Res = Mod:drop(BE_state),
-    {reply, Res, NewState};
+handle_call({drop, Partition}, _From, State) ->
+    NewState = delete_partition_prefix(Partition, State),
+    {reply, yupyup, NewState};
 handle_call({is_empty, Partition}, _From, #state{mod=Mod,
                                                  be_state=BE_state} = State) ->
     {NewState, _ZPrefix} = get_partition_prefix(Partition, State),
@@ -335,16 +334,11 @@ handle_info(_Info, State) ->
 %% @spec terminate(Reason, State) -> void()
 %% @end
 %%--------------------------------------------------------------------
-terminate(Reason, #state{zone=Zone, p2z_map=P2Z, mod=Mod} = _State) ->
-    [begin
-         io:format("DBG: Zone ~p, stopping vnode ~p\n", [Zone, VNode]),
-         catch lager:info("Stopping zone ~p", [Zone]),
-         XX =
-         (catch Mod:stop(S))
-, io:format("XX = ~p\n", [XX])
-     end || {VNode, S} <- lists:sort(dict:to_list(P2Z))],
-io:format("~p TODOODODODOD clean up the dict here, shutdown!!!!!!!!!!\n", [Reason]),
-%% io:format("  ~P\n", [_State, 30]),
+terminate(Reason, #state{zone=Zone, mod=Mod, be_state=BE_state,
+                         p2z_dets=Dets} = _State) ->
+    io:format("DBG: Zone ~p, stopping for Reason ~p\n", [Zone, Reason]),
+    (catch Mod:stop(BE_state)),
+    dets:close(Dets),
     ok.
 
 %%--------------------------------------------------------------------
@@ -377,21 +371,122 @@ get_partition_prefix(Partition, #state{p2z_map=P2Z} = State) ->
             {State#state{p2z_map=NewP2Z}, ZPrefix}
     end.
 
-assign_partition_prefix(Partition, #state{p2z_map=P2Z,
-                                          p2z_dets=Dets} = State) ->
-    Largest = erlang:max([ZP || {_, ZP} <- dict:to_list(P2Z)]),
-    ZPrefix = Largest + 1,
+assign_partition_prefix(Partition, #state{p2z_dets=Dets} = State) ->
+    DKey = {admin, largest},
+    LargestPrefix = case dets:lookup(Dets, DKey) of
+                        [{DKey, LP}] ->
+                            LP;
+                        [] ->
+                            -1
+                    end,
+    ZPrefix = LargestPrefix + 1,
+    ok = dets:insert(Dets, {DKey, ZPrefix}),
+    ok = sync_dets(Dets),
     ok = dets:insert(Dets, {Partition, ZPrefix}),
-    ok = dets:sync(Dets),
-    os:cmd("/bin/sync"),
+    ok = sync_dets(Dets),
     NewP2Z = dets_to_dict(State#state.p2z_dets),
     {ZPrefix, NewP2Z}.
 
-dets_to_dict(#state{p2z_dets=Dets}) ->
-    L = dets:foldl(fun(T, Acc) ->
-                           [T|Acc]
-                   end, [], Dets),
-    dict:from_list(L).
+delete_partition_prefix(Partition, #state{p2z_dets=Dets} = State) ->
+    %% TODO: Delete old keys
+    %%   1. Keep track of partition/ZPrefix deletions in progress
+    %%   2. Restart partition/ZPrefix deletion to finish interrupted deletions
+    dets:delete(Dets, Partition),
+    ok = sync_dets(Dets),
+    P2Z = dets_to_dict(Dets),
+    State#state{p2z_map=P2Z}.
+
+dets_to_dict(Dets) ->
+    L = dets:foldl(fun(T, Acc) -> [T|Acc] end, [], Dets),
+    Sanity =
+        fun({Partition, Idx}, D) when is_integer(Partition) ->
+                case dict:find(Idx, D) of
+                    error ->
+                        dict:store(Idx, Partition, D);
+                    {ok, UsedPartition} ->
+                        error_logger:error_msg("TODO: duplicate index ~p used by both ~p and ~p, ignoring the latter", [Idx, UsedPartition, Partition]),
+                        D
+                end;
+           (_, D) ->
+                %% This clause gracefully skips keys like {admin, largest}
+                D
+        end,
+    D2 = lists:foldl(Sanity, dict:new(), L),
+    dict:from_list([{Partition, Idx} || {Idx, Partition} <- dict:to_list(D2)]).
 
 make_zbucket(ZPrefix, Bucket, _State) ->
     <<ZPrefix:16, Bucket/binary>>.
+
+sync_dets(Dets) ->
+    ok = dets:sync(Dets),
+    os:cmd("/bin/sync"),
+    ok.
+
+%%% TEST
+
+smoke0() ->
+    BsCs = [{riak_kv_bitcask_backend, [{data_root, "./test-deleteme"}]},
+            {riak_kv_memory_backend, []},
+            {riak_kv_eleveldb_backend, [{create_if_missing, true},
+                                        {write_buffer_size, 32*1024}]}],
+    [ok = smoke0_int(BE, Config) || {BE, Config} <- BsCs].
+
+smoke0_int(Backend, BE_config) ->
+    B = <<"bucket">>,
+    K = <<"key">>,
+    {ok, Z42a} = ?MODULE:start_link(42, Backend, BE_config),
+    ok = ?MODULE:put(42, 1, B, K, [], <<"val1">>),
+    ok = ?MODULE:put(42, 2, B, K, [], <<"val2">>),
+    ok = ?MODULE:put(42, 3, B, K, [], <<"val3">>),
+    ok = ?MODULE:halt(Z42a),
+
+    {ok, Z42b} = ?MODULE:start_link(42, Backend, BE_config),
+    if Backend == riak_kv_memory_backend ->
+            skip;
+       true ->
+            {ok, ok, <<"val3">>} = ?MODULE:get(42, 3, B, K),
+            {ok, ok, <<"val2">>} = ?MODULE:get(42, 2, B, K),
+            {ok, ok, <<"val1">>} = ?MODULE:get(42, 1, B, K),
+            {ok, error, not_found} = ?MODULE:get(42, 929382398, B, K),
+            {ok, error, not_found} = ?MODULE:get(42, 1, B, <<"does not exist">>)
+    end,
+
+    O = riak_object:new(B, K, <<"Hello, world!">>),
+    O_bin = riak_object:to_binary(v0, O),
+
+    ok = ?MODULE:put(42, 700, B, K, [], O_bin),
+    {ok, ok, O_bin} = ?MODULE:get_object(42, 700, B, K, true),
+    {ok, ok, O} = ?MODULE:get_object(42, 700, B, K, false),
+    %% OK, now do the same for put_object()
+    {ok, _} = ?MODULE:put_object(42, 700, B, K, [], O),
+    {ok, ok, O_bin} = ?MODULE:get_object(42, 700, B, K, true),
+    {ok, ok, O} = ?MODULE:get_object(42, 700, B, K, false),
+
+    [ok = ?MODULE:delete(42, Part, B, K, []) || Part <- [1,2,3]],
+    %% Delete again, still ok (because backend doesn't care if K doesn't exist)
+    [ok = ?MODULE:delete(42, Part, B, K, []) || Part <- [1,2,3]],
+    [{ok, error, not_found} = ?MODULE:get(42, Part, B, K) || Part <- [1,2,3]],
+
+    %% Drop test: put stuff in, drop, the nothing exists
+    DropVal = <<"dropval!">>,
+    [ok = ?MODULE:put(42, Part, B, <<Key:32>>, [], DropVal) ||
+        Part <- [2,3,4], Key <- lists:seq(1,100)],
+    ?MODULE:drop(42, 2),
+    [{ok, error, not_found} = ?MODULE:get(42, Part, B, <<Key:32>>) ||
+        Part <- [2], Key <- lists:seq(1,100)],
+    [{ok, ok, DropVal} = ?MODULE:get(42, Part, B, <<Key:32>>) ||
+        Part <- [3,4], Key <- lists:seq(1,100)],
+
+    ok = ?MODULE:halt(Z42b),
+    ok.
+
+t1() ->
+    RefBE = riak_kv_memory_backend,
+    Part1 = 1,
+    _Part2 = 2,
+    Zone10 = 10,
+
+    {ok, _ZoneS} = ?MODULE:start_link(Zone10, RefBE, []),
+    {ok, _MemS} = RefBE:start(Part1, []),
+
+    ok.
