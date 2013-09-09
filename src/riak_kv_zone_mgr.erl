@@ -87,7 +87,8 @@
           mod_config :: list(),
           be_state :: term(),
           p2z_dets :: reference(),
-          p2z_map :: dict()
+          p2z_map :: dict(),
+          cleanup_pid :: pid()
          }).
 
 %%%===================================================================
@@ -177,6 +178,9 @@ init({ZoneNumber, Mod, ModConfig}) ->
                                                {file, DetsFile},
                                                {repair, true}]),
         P2Z = dets_to_dict(Dets),
+
+        Cleanup = start_cleanup_pid(),
+        send_cleanup_reminders(Dets, Cleanup),
         {ok, #state{zone=ZoneNumber,
                     mod=Mod,
                     mod_config=ModConfig,
@@ -281,11 +285,12 @@ handle_call({delete, Partition, Bucket, Key, IndexSpecs},
               {error, Reason, NewBE_state} ->
                   {error, Reason}
           end,
-    %% TODO: to be a good player, NewS* should be saved in our p2z_map
     {reply, Res, NewState#state{be_state=NewBE_state}};
 handle_call({drop, Partition}, _From, State) ->
-    NewState = delete_partition_prefix(Partition, State),
-    {reply, yupyup, NewState};
+    {NewState, ZPrefix} = get_partition_prefix(Partition, State),
+    NewState2 = delete_partition_prefix(Partition, NewState),
+    tell_self_async_cleanup(Partition, ZPrefix),
+    {reply, yupyup, NewState2};
 handle_call({is_empty, Partition}, _From, #state{mod=Mod,
                                                  be_state=BE_state} = State) ->
     {NewState, _ZPrefix} = get_partition_prefix(Partition, State),
@@ -319,8 +324,18 @@ handle_cast(_Msg, State) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
+handle_info({async_cleanup, Partition, ZPrefix},
+            #state{cleanup_pid=undefined} = State) ->
+    io:format("TODO: implement async delete here!  Part ~p prefix ~p\n",
+              [Partition, ZPrefix]),
+    {noreply, State};
+handle_info({async_cleanup, Partition, ZPrefix},
+            #state{cleanup_waiting=DP} = State) ->
+    io:format("TODO: queuing async delete here!  Part ~p prefix ~p\n",
+              [Partition, ZPrefix]),
+    {noreply, State#state{cleanup_waiting=[{Partition, ZPrefix}|DP]}};
 handle_info(_Info, State) ->
-    io:format("~s ~p\n", [?MODULE, ?LINE]),
+    io:format("WHAT?? ~s ~p got ~p\n", [?MODULE, ?LINE, _Info]),
     {noreply, State}.
 
 %%--------------------------------------------------------------------
@@ -391,10 +406,12 @@ delete_partition_prefix(Partition, #state{p2z_dets=Dets} = State) ->
     %% TODO: Delete old keys
     %%   1. Keep track of partition/ZPrefix deletions in progress
     %%   2. Restart partition/ZPrefix deletion to finish interrupted deletions
-    dets:delete(Dets, Partition),
+    {NewState, ZPrefix} = get_partition_prefix(Partition, State),
+    ok = insert_pending_delete(Dets, Partition, ZPrefix),
+    ok = dets:delete(Dets, Partition),
     ok = sync_dets(Dets),
     P2Z = dets_to_dict(Dets),
-    State#state{p2z_map=P2Z}.
+    NewState#state{p2z_map=P2Z}.
 
 dets_to_dict(Dets) ->
     L = dets:foldl(fun(T, Acc) -> [T|Acc] end, [], Dets),
@@ -421,6 +438,85 @@ sync_dets(Dets) ->
     ok = dets:sync(Dets),
     os:cmd("/bin/sync"),
     ok.
+
+insert_pending_delete(Dets, Partition, ZPrefix) ->
+    DKey = {admin, pending},
+    Pending = case dets:lookup(Dets, DKey) of
+               [{DKey, L}] ->
+                   [{Partition, ZPrefix}|L];
+               [] ->
+                   []
+           end,
+    ok = dets:insert(Dets, {DKey, Pending}).
+
+tell_self_async_cleanup(Partition, ZPrefix) ->
+    io:format("DBG: TELL SELF ~p ~p\n", [Partition, ZPrefix]),
+    self() ! {async_cleanup, Partition, ZPrefix}.
+
+send_cleanup_reminders(Dets) ->
+    DKey = {admin, pending},
+    case dets:lookup(Dets, DKey) of
+        [{DKey, L}] ->
+            [tell_self_async_cleanup(P, ZP) || {P, ZP} <- L];
+        [] ->
+            ok
+    end,
+    ok.
+
+start_cleanup_pid() ->
+    Parent = self(),
+    spawn_link(fun() ->
+                       cleanup_loop(Parent)
+               end).
+
+%% The Riak KV backend fold API doesn't give us what we want.
+%% So we must work around the limitations.
+%%
+%% In an ideal world, we would be able to do stuff like:
+%% 1. As we fold over keys, we write them to a temp file.
+%% 2. At the end of the fold, we flush the temp file, seek to the beginning,
+%%    and then asyncly delete the keys.
+%% 3. Have some nice throttling feature/feedback loop.
+%%
+%% The KV backend fold API doesn't tell us when the fold is finished.
+%% {sigh}  So, we must rely on side-effects entirely to do our work.
+%%
+%% SKETCH:
+%%  0. Parent sends 'give_me_work' message to cleanup pid IFF @ init time.
+%%  1. Whenever cleanup pid has work to be done, it sends 'has_work + item'
+%%     message to parent for the first item in queue only.
+%%  2. When parent receives has_work + item' message, it does that work
+%%     sync'ly.
+%%  3. When #2 finished, it sends a 'give_me_work' message to cleanup pid.
+%%
+%% Hopefully this sequence will be good enough?  If there's a lot of
+%% "real" work for the zone mgr to do, then the delay between #3 & receiving
+%% of #4 message will allow lots of real work to queue up and to get work
+%% time fairly?
+%%     
+%% Cleanup pid sketch:
+%%
+%% 0. Cleanup pid must never forget state of 'give_me_work' receipt.
+%% 1. It will queue other work items magically RAM efficiently.
+%%    e.g. use disk_log?
+%% 2. Alternate between disk logs?  Reading (for sending to parent) &
+%%    writing (stuff streaming in from folder)?  Hmmmm.
+
+%% OLD SKETCH (no longer in consideration)
+%%  1. Play gen_server timeout games:
+%%    a. Wrap any return with dynamic calculation of timeout
+%%        - Every so often, ask cleanup worker for work
+%%        - If no work, timeout = 1000 (?), lather rinse repeat
+%%        - If work, timeout = 0
+%%        - Any handle_call sets timeout to something like 10?
+%%  2. If cleanup pid has wor.........
+
+cleanup_loop(Parent) ->
+    receive
+        {async_cleanup, Partition, ZPrefix} ->
+            io:format("TODO: logging: cleanup part ~p ZPrefix ~p\n", [Partition, ZPrefix]),
+            FoldFun = make_cleanup_fold_fun(self()),
+            Parent ! {fold_pretty_please, Fun
 
 %%% TEST
 
@@ -469,13 +565,14 @@ smoke0_int(Backend, BE_config) ->
 
     %% Drop test: put stuff in, drop, the nothing exists
     DropVal = <<"dropval!">>,
+    DropKeys = 5,
     [ok = ?MODULE:put(42, Part, B, <<Key:32>>, [], DropVal) ||
-        Part <- [2,3,4], Key <- lists:seq(1,100)],
+        Part <- [2,3,4], Key <- lists:seq(1, DropKeys)],
     ?MODULE:drop(42, 2),
     [{ok, error, not_found} = ?MODULE:get(42, Part, B, <<Key:32>>) ||
-        Part <- [2], Key <- lists:seq(1,100)],
+        Part <- [2], Key <- lists:seq(1, DropKeys)],
     [{ok, ok, DropVal} = ?MODULE:get(42, Part, B, <<Key:32>>) ||
-        Part <- [3,4], Key <- lists:seq(1,100)],
+        Part <- [3,4], Key <- lists:seq(1, DropKeys)],
 
     ok = ?MODULE:halt(Z42b),
     ok.
