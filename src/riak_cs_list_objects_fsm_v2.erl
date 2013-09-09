@@ -346,14 +346,33 @@ handle_prefix(Key, Prefix, Delimiter) ->
             false
     end.
 
+-spec common_prefix_from_key(Key :: binary(),
+                             Prefix :: binary(),
+                             Delimiter :: binary()) ->
+    binary().
+%% @doc Extract common prefix from `Key'. `Key' must contain `Delimiter', so
+%% you must first check with `key_is_common_prefix'.
+common_prefix_from_key(Key, Prefix, Delimiter) ->
+    case Prefix of
+        undefined ->
+            riak_cs_list_objects_utils:extract_group(Key, Delimiter);
+        _Prefix ->
+            PrefixLen = byte_size(Prefix),
+            << Prefix:PrefixLen/binary, Rest/binary >> = Key,
+            Group = riak_cs_list_objects_utils:extract_group(Rest, Delimiter),
+            <<Prefix/binary, Group/binary>>
+    end.
+
 -spec make_start_key(state()) -> binary().
 make_start_key(#state{object_list_ranges=[], req=Request}) ->
     make_start_key_from_marker(Request);
 make_start_key(State=#state{object_list_ranges=PrevRanges,
-                            common_prefixes=CommonPrefixes}) ->
+                            req=?LOREQ{prefix=Prefix,
+                                       delimiter=Delimiter}}) ->
     case last_result_is_common_prefix(State) of
         true ->
-            LastPrefix = lists:last(lists:sort(ordsets:to_list(CommonPrefixes))),
+            Key = element(2, lists:last(PrevRanges)),
+            LastPrefix = common_prefix_from_key(Key, Prefix, Delimiter),
             skip_past_prefix_and_delimiter(LastPrefix);
         false ->
             element(2, lists:last(PrevRanges))
