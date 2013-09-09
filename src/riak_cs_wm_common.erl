@@ -37,6 +37,7 @@
          process_post/2,
          resp_body/2,
          multiple_choices/2,
+         accept_body_wrapper/2,
          accept_body/2,
          produce_body/2,
          allowed_methods/2,
@@ -329,6 +330,16 @@ multiple_choices(RD, Ctx=#context{submodule=Mod,
     catch _:_ ->
             {false, RD, Ctx}
     end.
+
+-spec accept_body_wrapper(term(), term()) ->
+    {boolean() | {halt, term()}, term(), term()}.
+%% We need to make this an explicitly-named function because
+%% Webmachine's content types accepted doesn't allow you to
+%% pass in functions, only atoms that will be called as functions
+%% in the same module.
+accept_body_wrapper(RD, Ctx) ->
+    F = riak_cs_wm_utils:error_if_acl_headers_and_acl_body(fun accept_body/2),
+    F(RD, Ctx).
 
 -spec accept_body(#wm_reqdata{}, #context{}) ->
                          {boolean() | {'halt', non_neg_integer()}, #wm_reqdata{}, #context{}}.

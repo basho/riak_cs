@@ -48,10 +48,10 @@ content_types_provided(RD, Ctx) ->
 content_types_accepted(RD, Ctx) ->
     case wrq:get_req_header("content-type", RD) of
         undefined ->
-            {[{"application/octet-stream", accept_body}], RD, Ctx};
+            {[{"application/octet-stream", accept_body_wrapper}], RD, Ctx};
         CType ->
             {Media, _Params} = mochiweb_util:parse_header(CType),
-            {[{Media, accept_body}], RD, Ctx}
+            {[{Media, accept_body_wrapper}], RD, Ctx}
     end.
 
 -spec authorize(#wm_reqdata{}, #context{}) -> {boolean() | {halt, non_neg_integer()}, #wm_reqdata{}, #context{}}.
