@@ -38,7 +38,8 @@ eqc_test_() ->
 prop_md5() ->
     _ = crypto:start(),
     ?FORALL(Bin, gen_bin(),
-            crypto:md5(Bin) == riak_cs_utils:md5(Bin)).
+            %% TODO: stanchion_utils is from velvet, needs update
+            stanchion_utils:md5(Bin) == riak_cs_utils:md5(Bin)).
 
 gen_bin() ->
     oneof([binary(),

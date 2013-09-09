@@ -86,9 +86,6 @@ parse_auth_header("AWS " ++ Key) ->
 parse_auth_header(_) ->
     {undefined, undefined}.
 
-%% TODO:
-%% can this be replaced with stanchion_auth:request_sinature/2?
-%% - which is included in velvet.
 calculate_signature(KeyData, RD) ->
     Headers = riak_cs_wm_utils:normalize_headers(RD),
     AmazonHeaders = riak_cs_wm_utils:extract_amazon_headers(Headers),
@@ -131,13 +128,7 @@ calculate_signature(KeyData, RD) ->
            Resource],
     _ = lager:debug("STS: ~p", [STS]),
 
-    %% This is for compatibility for R16B and R15B
-    %% R15B does not have crypto:hmac/3, which looks
-    %% newly added in R16B. in future crypto:hmac_final/1
-    %% will probably replaced with crypto:hmac/3
-    %% like crypto:hmac(sha, KeyData, STS)
-    Ctx = crypto:hmac_update(crypto:hmac_init(sha, KeyData), STS),
-    base64:encode_to_string(crypto:hmac_final(Ctx)).
+    base64:encode_to_string(riak_cs_utils:sha_mac(KeyData, STS)).
 
 check_auth(PresentedSignature, CalculatedSignature) ->
     PresentedSignature == CalculatedSignature.
