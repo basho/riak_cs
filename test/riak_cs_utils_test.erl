@@ -303,4 +303,8 @@ bucket_resolution_test() ->
     ?assertEqual([hd(lists:reverse(BucketList4))], ResBuckets4),
     ?assertEqual([hd(BucketList5)], ResBuckets5).
 
+hash_test() ->
+    %% to prevent undef or else
+    true = is_binary(riak_cs_utils:sha(<<"deadbeef">>)).
+
 -endif.

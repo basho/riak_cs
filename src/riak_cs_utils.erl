@@ -43,6 +43,7 @@
          is_admin/1,
          map_keys_and_manifests/3,
          sha_mac/2,
+         sha/1,
          md5/1,
          md5_init/0,
          md5_update/2,
@@ -529,13 +530,15 @@ reduce_keys_and_manifests(Acc, _) ->
     Acc.
 
 -spec sha_mac(iolist() | binary(), iolist() | binary()) -> binary().
-%% -spec sha(binary()) -> binary().
+-spec sha(binary()) -> binary().
 
 -ifdef(new_hash).
 sha_mac(Key,STS) -> crypto:hmac(sha, Key,STS).
+sha(Bin) -> crypto:hash(sha, Bin).
 
 -else.
 sha_mac(Key,STS) -> crypto:sha_mac(Key,STS).
+sha(Bin) -> crypto:sha(Bin).
 
 -endif.
 
