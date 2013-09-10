@@ -10,12 +10,19 @@ OVERLAY_VARS    ?=
 CS_HTTP_PORT    ?= 8080
 PULSE_TESTS = riak_cs_get_fsm_pulse
 
+VSN := $(shell erl -eval 'io:format("~s~n", [erlang:system_info(otp_release)]), init:stop().' | grep 'R' | sed -e 's,R\(..\)B.*,\1,')
+NEW_HASH := $(shell expr $(VSN) \>= 16)
+
 .PHONY: rel stagedevrel deps test
 
 all: deps compile
 
 compile:
-	@./rebar compile
+ifeq ($(NEW_HASH),1)
+	@(./rebar compile -Dnew_hash)
+else
+	@(./rebar compile)
+endif
 
 compile-client-test: all
 	@./rebar client_test_compile
@@ -52,11 +59,19 @@ distclean: clean
 	@rm -rf $(PKG_ID).tar.gz
 
 test: all
+ifeq ($(NEW_HASH),1)
+	@(./rebar skip_deps=true -Dnew_hash eunit)
+else
 	@./rebar skip_deps=true eunit
+endif
 
 pulse: all
 	@rm -rf $(BASE_DIR)/.eunit
+ifeq ($(NEW_HASH),1)
+	@./rebar -D PULSE -D new_hash eunit skip_deps=true suites=$(PULSE_TESTS)
+else
 	@./rebar -D PULSE eunit skip_deps=true suites=$(PULSE_TESTS)
+endif
 
 test-client: test-clojure test-python test-erlang test-ruby test-php
 
