@@ -28,7 +28,10 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
--export([open/1, in/2, out/1, is_empty/1]).
+-define(QC_OUT(P),
+        eqc:on_output(fun(Str, Args) -> io:format(user, Str, Args) end, P)).
+
+-export([new/1, in/2, out/1, is_empty/1]).
 
 -type disk_log() :: term().
 
@@ -42,7 +45,7 @@
           future_n :: non_neg_integer()
          }).
 
-open(ParentDir) ->
+new(ParentDir) ->
     filelib:ensure_dir(ParentDir ++ "/ignored"),
     
     {ok, Future} = open_future(ParentDir),
@@ -64,10 +67,11 @@ out(#dlq{past_n=0, future_n=0} = Q) ->
 out(#dlq{past_n=0} = Q) ->
     out(past_to_present(Q));
 out(#dlq{past=Past, past_terms=[], past_cont=Cont} = Q) ->
+    %% io:format(user, "c", []),    % Useful to watch during QuickCheck tests
     case disk_log:chunk(Past, Cont) of
         eof ->
             io:format("TODO HEY, unexpected eof when past_n is ~p\n", [Q#dlq.past_n]),
-            throw(todo);
+            throw({todo, ?MODULE, ?LINE});
         T ->
             Cont2 = element(1, T),
             Terms = element(2, T),
@@ -101,8 +105,10 @@ past_to_present(#dlq{dir=ParentDir,
     if PastN == 0 ->
             ok;
        true ->
-            io:format("TODO HEY HEY, past_to_present: PastN is ~p\n", [PastN])
+            io:format("TODO HEY HEY, past_to_present: PastN is ~p\n", [PastN]),
+            throw({todo, ?MODULE, ?LINE})
     end,
+    %% io:format(user, "p", []),    % Useful to watch during QuickCheck tests
     NewPastN = FutureN,
     disk_log:close(Past),
     disk_log:close(Future),
@@ -124,7 +130,7 @@ open_disk_log(Path, RWorRO) ->
 smoke_test() ->
     Dir = "/tmp/" ++ atom_to_list(?MODULE),
     os:cmd("rm -rf " ++ Dir),
-    {ok, Q0} = open(Dir),
+    {ok, Q0} = new(Dir),
     true = is_empty(Q0),
 
     Q10 = in(x, Q0),
@@ -148,6 +154,88 @@ smoke_test() ->
 
     ok.
 
-%% LEFT OFF: QuickCheck model this thing
+%% This is about 17 seconds on my laptop:
+%% eqc:quickcheck(riak_cs_disk_log_q:prop_queue()).
+%%
+%% This is about 35 seconds on my laptop:
+%% eqc:quickcheck(eqc_gen:resize(40, riak_cs_disk_log_q:prop_queue())).
+%%
+%% This is about 5 minutes on my laptop:
+%% eqc:quickcheck(eqc:numtests(500, eqc_gen:resize(60, riak_cs_disk_log_q:prop_queue()))).
+
+-ifdef(EQC).
+
+quickcheck_test_() ->
+    Time = 20,
+    {spawn,
+     [
+      {timeout, Time*4,
+       ?_assertEqual(
+          true,
+          eqc:quickcheck(
+            ?QC_OUT(eqc:testing_time(
+                      Time, eqc_gen:resize(
+                              40, riak_cs_disk_log_q:prop_queue())))))}
+     ]}.
+
+prop_queue() ->
+    ?FORALL(Cmds,
+            gen_queue_commands(),
+            true = run_qs_in_lockstep(Cmds)).
+
+gen_queue_commands() ->
+    list(frequency([{1,  is_empty},
+                    {10, {in, gen_term()}},
+                    {5,  out}])).
+
+gen_term() ->
+    X_bytes = 50*1024,
+    X_int = 8*1000,
+    X_bigint = 2*1000,
+    oneof([?LET(Bytes,
+                choose(0, X_bytes),
+                list_to_binary(lists:duplicate(Bytes, $x))),
+           ?LET(Size,
+                choose(1, X_int),
+                vector(Size, int())),
+           ?LET(Size,
+                choose(1, X_bigint),
+                vector(Size, largeint()))]).
+
+run_qs_in_lockstep(Cmds) ->
+    Dir = "./delete-me.quickcheck-" ++ atom_to_list(?MODULE),
+    os:cmd("rm -rf " ++ Dir),
+    {ok, DLQ} = new(Dir),
+    run_qs_in_lockstep(Cmds, queue:new(), DLQ).
+
+run_qs_in_lockstep([], Q, DLQ) ->
+    drain(Q, queue) == drain(DLQ, ?MODULE);
+run_qs_in_lockstep([is_empty|Rest], Q, DLQ) ->
+    case queue:is_empty(Q) == is_empty(DLQ) of
+        true ->
+            run_qs_in_lockstep(Rest, Q, DLQ);
+        Else ->
+            {bummer, is_empty, Else}
+    end;
+run_qs_in_lockstep([out|Rest], Q, DLQ) ->
+    {Q_res, NewQ} = queue:out(Q),
+    {DLQ_res, NewDLQ} = out(DLQ),
+    if Q_res == DLQ_res ->
+            run_qs_in_lockstep(Rest, NewQ, NewDLQ);
+       true ->
+            {bummer, out, Q_res, vs, DLQ_res}
+    end;
+run_qs_in_lockstep([{in, Term}|Rest], Q, DLQ) ->
+    run_qs_in_lockstep(Rest, queue:in(Term, Q), in(Term, DLQ)).
+
+drain(Q, Mod) ->
+    case Mod:out(Q) of
+        {empty, _} ->
+            [];
+        {{value, X}, NewQ} ->
+            [X|drain(NewQ, Mod)]
+    end.
+
+-endif. %EQC
 
 -endif. %TEST
