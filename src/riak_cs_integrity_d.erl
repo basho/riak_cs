@@ -9,7 +9,8 @@
          pause_audit/0,
          continue_audit/0,
          continue_audit/1,
-         stop_audit/0]).
+         stop_audit/0,
+         start_repair/0]).
 
 %% gen_fsm callbacks
 -export([init/1,
@@ -33,7 +34,7 @@
                 buckets=[]               :: list(binary()),
                 request_id               :: term(),
                 bucket_fold_opts         :: list(),
-                audit_pid_info           :: tuple(),
+                worker                   :: tuple(),
                 audit_info=#audit_info{} :: #audit_info{}}).
 
 -define(BUCKET_TOMBSTONE, <<"0">>).
@@ -68,13 +69,21 @@ continue_audit() ->
 continue_audit(StartKey) ->
     gen_fsm:sync_send_event(?MODULE, {continue_audit, StartKey}).
 
+-spec start_repair() -> ok | {error, atom()}.
+start_repair() ->
+    gen_fsm:sync_send_event(?MODULE, start_repair).
+
 %% ====================================================================
 %% gen_fsm states
 %% ====================================================================
 stopped(stop_audit, _, State) ->
     {reply, {error, audit_not_running}, stopped, State};
 stopped(start_audit, _From, State) ->
-    {reply, ok, list_buckets, State, 0}.
+    {reply, ok, list_buckets, State, 0};
+stopped(start_repair, _From, State) ->
+    {reply, ok, repair, State, 0};
+stopped(stop_repair, _, State) ->
+    {reply, {error, repair_not_running}, stopped, State}.
 
 list_buckets(timeout, S=#state{riakc_pid=undefined})
   when S#state.riak_version < <<"1.4">> ->
@@ -118,7 +127,7 @@ waiting_bucket_list({ReqId, {done, _Continuation}}, S=#state{request_id=ReqId}) 
 
 audit(timeout, State) ->
     {AuditPid, AuditRef} = audit_buckets(State),
-    NewState = State#state{audit_pid_info={AuditPid, AuditRef}},
+    NewState = State#state{worker={AuditPid, AuditRef}},
     {next_state, audit, NewState};
 
 audit({audit_buckets_result, BadBuckets}, 
@@ -133,26 +142,47 @@ audit({audit_buckets_result, BadBuckets},
         false ->
             case length(State#state.buckets) < ?BUCKET_PAGE_SIZE of
                 true ->
+                    riak_cs_utils:close_riak_connection(Pid),
                     print_audit_results(AuditInfo),
                     NewState = State#state{riakc_pid=undefined, 
-                                           audit_pid_info=undefined,
+                                           worker=undefined,
                                            audit_info=AuditInfo,
                                            buckets=[]},
                     {next_state, stopped, NewState};
                 false ->
-                    NewState = State#state{audit_info=AuditInfo, audit_pid_info=undefined},
+                    NewState = State#state{audit_info=AuditInfo, worker=undefined},
                     NewState2 = update_bucket_fold_opts(NewState),
                     gen_fsm:send_event(?MODULE, continue),
                     {next_state, list_buckets, NewState2}
             end
     end.
 
+repair(timeout, State={audit_info=AuditInfo}) ->
+    case is_clean(AuditInfo) of
+        true ->
+            lager:info("No problems have been detected on your system.~n");
+        false ->
+            {ok, Pid} = riak_cs_utils:riak_connection(),
+            print_audit_info(AuditInfo),
+            Worker = repair_buckets(AuditInfo),
+            NewState = State#state{worker=Worker, riakc_pid=Pid},
+            {next_state, repair, NewState}
+    end;
+repair(repair_buckets_complete, State=#state{riakc_pid=Pid}) ->
+    riak_cs_utils:close_riak_connection(Pid),
+    NewState = reset_state(State),
+    {next_state, stopped, NewState}.
+
 %% ====================================================================
 %% Internal Functions
 %% ====================================================================
 
-reset_state(State) ->
-    #state{riak_version=State#state.riak_version}.
+repair_buckets(Pid, #audit_info{bad_buckets=BadBuckets) ->
+    spawn_monitor(fun() ->
+        [delete_user_bucket(Bucket) || Bucket <- BadBuckets],
+    end).
+
+
 
 audit_buckets(#state{buckets=Buckets, riakc_pid=Pid, users=Users}) ->
     spawn_monitor(fun() ->
@@ -161,10 +191,21 @@ audit_buckets(#state{buckets=Buckets, riakc_pid=Pid, users=Users}) ->
         gen_fsm:send_event(?MODULE, {audit_buckets_result, BadBuckets})
     end).
 
+print_audit_info(#audit_info{bad_buckets=BadBuckets}) ->
+    lager:info("An audit of your system found the following errors:~n"),
+    lager:info("Number of Bad Buckets: ~p~n", length(BadBuckets)).
+
+is_clean(#audit_info{bad_buckets=[]}) ->
+    true;
+is_clean(_) ->
+    false.
+
+reset_state(State) ->
+    #state{riak_version=State#state.riak_version}.
+
 update_bucket_fold_opts(S=#state{bucket_fold_opts=Opts, buckets=Buckets}) ->
     NewOpts = lists:keyreplace(start_key, 1, Opts, 
         {start_key, hd(lists:reverse(Buckets))}),
-    io:format("NewOpts = ~p~n", [NewOpts]), 
     S#state{buckets=[], bucket_fold_opts=NewOpts}.
 
 print_audit_results(AuditInfo) ->
@@ -205,6 +246,13 @@ bad_buckets_for_user(UserId, DeletedBuckets, BadBuckets, Pid) ->
     end,
     lists:foldl(FoldFun, BadBuckets, Buckets).
 
+delete_user_bucket({Bucket, UserId}) ->
+    {ok, Obj} = riakc_pb_socket:get(Pid, ?USER_BUCKET, UserId),
+    NewUser = lists:filter(fun(V) ->
+                  Bucket =/= element(8, binary_to_term(V))
+              end, riakc_obj:get_values(Obj)),
+    
+
 get_user_buckets({ok, Obj}) ->
     [element(8, binary_to_term(V)) || V <- riakc_obj:get_values(Obj)];
 get_user_buckets(_) ->
@@ -226,7 +274,7 @@ is_bad_bucket(Bucket, _) when element(3, Bucket) =:= deleted ->
 is_bad_bucket(Bucket, DeletedBuckets) ->
     Name = list_to_binary(element(2, Bucket)),
     lists:member(Name, DeletedBuckets).
-    
+
 %% ====================================================================
 %% gen_fsm callbacks
 %% ====================================================================
@@ -247,7 +295,7 @@ handle_sync_event(_Event, _From, StateName, State) ->
     {reply, {error, no_such_event}, StateName, State}.
 
 handle_info({'DOWN', Ref, _, Pid, Status}, StateName, 
-  S=#state{audit_pid_info={_, Ref}}) ->
+  S=#state{worker={_, Ref}}) ->
     lager:error("Audit process failed in state ~p for Pid=~p, Status=~p~n",
         [StateName, Pid, Status]),
     lager:error("Failure State = ~p~n", [S]),
