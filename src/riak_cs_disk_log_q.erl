@@ -45,6 +45,9 @@
           future_n :: non_neg_integer()
          }).
 
+-type dlq() :: #dlq{}.
+-export_type([dlq/0]).
+
 new(ParentDir) ->
     filelib:ensure_dir(ParentDir ++ "/ignored"),
     
@@ -119,11 +122,18 @@ past_to_present(#dlq{dir=ParentDir,
           future=NewFuture, future_n=0}.
 
 open_disk_log(Path, RWorRO) ->
-    disk_log:open([{name, now()},
-                   {file, Path},
-                   {mode, RWorRO},
-                   {type, halt},
-                   {format, internal}]).
+    case disk_log:open([{name, now()},
+                        {file, Path},
+                        {mode, RWorRO},
+                        {type, halt},
+                        {format, internal}]) of
+        {ok, _Log} = Res1 ->
+            Res1;
+        {repaired, Log, _, _} ->
+            {ok, Log};
+        Else ->
+            Else
+    end.
 
 -ifdef(TEST).
 
