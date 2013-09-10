@@ -91,6 +91,14 @@
           cleanup_pid :: pid()
          }).
 
+-record(clean, {
+          parent :: pid(),
+          parent_waiting :: boolean(),
+          q :: riak_cs_disk_log_q:dlq(),
+          timer :: timer:tref(),
+          cleanups :: queue()
+         }).
+
 %%%===================================================================
 %%% API
 %%%===================================================================
@@ -170,6 +178,9 @@ init({ZoneNumber, Mod, ModConfig}) ->
     DetsName = lists:flatten(io_lib:format("zone_p2z_~w_map", [ZoneNumber])),
     DetsFile = lists:flatten(io_lib:format("~s/zone_p2z_~w/map",
                                            [PDataDir, ZoneNumber])),
+    DropName = lists:flatten(io_lib:format("~s/zone_drop_queue.~w",
+                                           [PDataDir, ZoneNumber])),
+    os:cmd("rm -rf " ++ DropName),  % Persistence across restarts not desired
     try
         %% TODO: handle module start error here
         {ok, BE_State} = Mod:start(0, ModConfig),
@@ -179,14 +190,16 @@ init({ZoneNumber, Mod, ModConfig}) ->
                                                {repair, true}]),
         P2Z = dets_to_dict(Dets),
 
-        Cleanup = start_cleanup_pid(),
+        Cleanup = start_cleanup_pid(DropName),
+        send_give_me_work(Cleanup),
         send_cleanup_reminders(Dets, Cleanup),
         {ok, #state{zone=ZoneNumber,
                     mod=Mod,
                     mod_config=ModConfig,
                     be_state=BE_State,
                     p2z_dets=Dets,
-                    p2z_map=P2Z}}
+                    p2z_map=P2Z,
+                    cleanup_pid=Cleanup}}
     catch X:Y ->
             error_logger:error_msg("~s:init(~p, ~p, ~p) -> ~p ~p @\n~p\n",
                                    [?MODULE, ZoneNumber, Mod, ModConfig, X, Y,
@@ -289,7 +302,7 @@ handle_call({delete, Partition, Bucket, Key, IndexSpecs},
 handle_call({drop, Partition}, _From, State) ->
     {NewState, ZPrefix} = get_partition_prefix(Partition, State),
     NewState2 = delete_partition_prefix(Partition, NewState),
-    tell_self_async_cleanup(Partition, ZPrefix),
+    tell_async_cleanup(NewState2#state.cleanup_pid, Partition, ZPrefix),
     {reply, yupyup, NewState2};
 handle_call({is_empty, Partition}, _From, #state{mod=Mod,
                                                  be_state=BE_state} = State) ->
@@ -324,16 +337,16 @@ handle_cast(_Msg, State) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_info({async_cleanup, Partition, ZPrefix},
-            #state{cleanup_pid=undefined} = State) ->
-    io:format("TODO: implement async delete here!  Part ~p prefix ~p\n",
-              [Partition, ZPrefix]),
-    {noreply, State};
-handle_info({async_cleanup, Partition, ZPrefix},
-            #state{cleanup_waiting=DP} = State) ->
-    io:format("TODO: queuing async delete here!  Part ~p prefix ~p\n",
-              [Partition, ZPrefix]),
-    {noreply, State#state{cleanup_waiting=[{Partition, ZPrefix}|DP]}};
+%% handle_info({async_cleanup, Partition, ZPrefix},
+%%             #state{cleanup_pid=undefined} = State) ->
+%%     io:format("TODO: implement async delete here!  Part ~p prefix ~p\n",
+%%               [Partition, ZPrefix]),
+%%     {noreply, State};
+%% handle_info({async_cleanup, Partition, ZPrefix},
+%%             #state{cleanup_waiting=DP} = State) ->
+%%     io:format("TODO: queuing async delete here!  Part ~p prefix ~p\n",
+%%               [Partition, ZPrefix]),
+%%     {noreply, State#state{cleanup_waiting=[{Partition, ZPrefix}|DP]}};
 handle_info(_Info, State) ->
     io:format("WHAT?? ~s ~p got ~p\n", [?MODULE, ?LINE, _Info]),
     {noreply, State}.
@@ -350,10 +363,12 @@ handle_info(_Info, State) ->
 %% @end
 %%--------------------------------------------------------------------
 terminate(Reason, #state{zone=Zone, mod=Mod, be_state=BE_state,
-                         p2z_dets=Dets} = _State) ->
+                         p2z_dets=Dets, cleanup_pid=CleanupPid} = _State) ->
     io:format("DBG: Zone ~p, stopping for Reason ~p\n", [Zone, Reason]),
     (catch Mod:stop(BE_state)),
     dets:close(Dets),
+    unlink(CleanupPid),
+    exit(CleanupPid, terminate_please),
     ok.
 
 %%--------------------------------------------------------------------
@@ -449,24 +464,24 @@ insert_pending_delete(Dets, Partition, ZPrefix) ->
            end,
     ok = dets:insert(Dets, {DKey, Pending}).
 
-tell_self_async_cleanup(Partition, ZPrefix) ->
-    io:format("DBG: TELL SELF ~p ~p\n", [Partition, ZPrefix]),
-    self() ! {async_cleanup, Partition, ZPrefix}.
+tell_async_cleanup(CleanupPid, Partition, ZPrefix) ->
+    io:format("DBG: TELL ~p ~p ~p\n", [CleanupPid, Partition, ZPrefix]),
+    CleanupPid ! {async_cleanup, Partition, ZPrefix}.
 
-send_cleanup_reminders(Dets) ->
+send_cleanup_reminders(Dets, CleanupPid) ->
     DKey = {admin, pending},
     case dets:lookup(Dets, DKey) of
         [{DKey, L}] ->
-            [tell_self_async_cleanup(P, ZP) || {P, ZP} <- L];
+            [tell_async_cleanup(CleanupPid, P, ZP) || {P, ZP} <- L];
         [] ->
             ok
     end,
     ok.
 
-start_cleanup_pid() ->
+start_cleanup_pid(DropQueueName) ->
     Parent = self(),
     spawn_link(fun() ->
-                       cleanup_loop(Parent)
+                       cleanup_loop(Parent, DropQueueName)
                end).
 
 %% The Riak KV backend fold API doesn't give us what we want.
@@ -511,14 +526,90 @@ start_cleanup_pid() ->
 %%        - Any handle_call sets timeout to something like 10?
 %%  2. If cleanup pid has wor.........
 
-cleanup_loop(Parent) ->
-    receive
-        {async_cleanup, Partition, ZPrefix} ->
-            io:format("TODO: logging: cleanup part ~p ZPrefix ~p\n", [Partition, ZPrefix]),
-            FoldFun = make_cleanup_fold_fun(self()),
-            Parent ! {fold_pretty_please, Fun
+send_give_me_work(Cleanup) ->
+    Cleanup ! give_me_work.
 
-%%% TEST
+%% cleanup_loop(Parent) ->
+%%     cleanup_loop(Parent, )
+
+cleanup_loop(Parent, DropQueueName) ->
+    {ok, Q} = riak_cs_disk_log_q:new(DropQueueName),
+    {ok, TRef} = timer:send_interval(30*1000, perhaps_start_next_fold),
+    %% Send one sooner, just to start quicker if there's work to do.
+    timer:send_after(5*1000, perhaps_start_next_fold),
+    idle_0(#clean{parent=Parent,
+                  parent_waiting=false,
+                  q=Q,
+                  timer=TRef,
+                  cleanups=queue:new()}).
+
+idle_0(#clean{parent_waiting=false, q=Q, cleanups=Cleanups}=CS) ->
+    receive
+        perhaps_start_next_fold ->
+            perhaps_start_fold(CS, fun(NewCS) -> idle_0(NewCS) end);
+        {async_cleanup, Partition, ZPrefix} = Msg ->
+            io:format("TODO: logging: cleanup part ~p ZPrefix ~p\n", [Partition, ZPrefix]),
+            idle_0(CS#clean{cleanups=queue:in(Msg, Cleanups)});
+        give_me_work ->
+            wants_work(CS#clean{parent_waiting=true});
+        {delete_this, Key} ->
+            true = riak_cs_disk_log_q:is_empty(Q),
+            NewQ = riak_cs_disk_log_q:in(Key, Q),
+            idle_N(CS#clean{q=NewQ})
+    end.
+
+perhaps_start_fold(#clean{cleanups=Cleanups}=CS, ResumeFun) ->
+    case queue:out(Cleanups) of
+        {empty, _} ->
+            ok;
+        {{value, XX}, NewCleanups} ->
+            io:format("TODO, start a new fold: ~p\n", [XX]),
+            ResumeFun(CS#clean{cleanups=NewCleanups})
+    end.
+
+wants_work(#clean{parent_waiting=true, parent=Parent, cleanups=Cleanups}=CS) ->
+    receive
+        perhaps_start_next_fold ->
+            perhaps_start_fold(CS, fun(NewCS) -> wants_work(NewCS) end);
+        {async_cleanup, Partition, ZPrefix} = Msg ->
+            io:format("TODO: logging: cleanup part ~p ZPrefix ~p\n", [Partition, ZPrefix]),
+            wants_work(CS#clean{cleanups=queue:in(Msg, Cleanups)});
+        give_me_work ->
+            exit({wtf, already_in, wants_work, got, give_me_work}),
+            wants_work(CS);
+        {delete_this, _Key} = Msg ->
+            io:format("TODO: Line ~p Msg ~p\n", [?LINE, Msg]),
+            Parent ! Msg,
+            idle_0(CS#clean{parent_waiting=false})
+    end.
+
+idle_N(#clean{parent_waiting=Waiting, parent=Parent, q=Q, cleanups=Cleanups}=CS) ->
+    receive
+        perhaps_start_next_fold ->
+            perhaps_start_fold(CS, fun(NewCS) -> idle_N(NewCS) end);
+        {async_cleanup, Partition, ZPrefix} = Msg ->
+            io:format("TODO: logging: cleanup part ~p ZPrefix ~p\n", [Partition, ZPrefix]),
+            idle_N(CS#clean{cleanups=queue:in(Msg, Cleanups)});
+        give_me_work ->
+            false = Waiting,                    % sanity
+            case riak_cs_disk_log_q:out(Q) of
+                {empty, _} ->
+                    exit({wtf, idle_N, q, is_empty});
+                {{value, Key}, NewQ} ->
+                    Parent ! {delete_this, Key},
+                    NewCS = CS#clean{parent_waiting=false, q=NewQ},
+                    case riak_cs_disk_log_q:is_empty(NewQ) of
+                        true ->
+                            idle_0(NewCS);
+                        false ->
+                            idle_N(NewCS)
+                    end
+            end;
+        {delete_this, _Key} = Msg ->
+            NewQ = riak_cs_disk_log_q:in(Msg, Q),
+            idle_N(CS#clean{q=NewQ})
+    end.
+
 
 smoke0() ->
     BsCs = [{riak_kv_bitcask_backend, [{data_root, "./test-deleteme"}]},
