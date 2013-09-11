@@ -268,7 +268,7 @@ content_types_accepted(CT, RD, Ctx=#context{local_context=LocalCtx0}) ->
         [_Type, _Subtype] ->
             %% accept whatever the user says
             LocalCtx = LocalCtx0#key_context{putctype=Media},
-            {[{Media, accept_body}], RD, Ctx#context{local_context=LocalCtx}};
+            {[{Media, ensure_no_canned_acl_and_header_grant}], RD, Ctx#context{local_context=LocalCtx}};
         _ ->
             %% TODO:
             %% Maybe we should have caught

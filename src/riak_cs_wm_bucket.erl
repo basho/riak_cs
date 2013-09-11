@@ -52,7 +52,7 @@ content_types_accepted(CT, RD, Ctx) when CT =:= undefined;
     content_types_accepted("application/octet-stream", RD, Ctx);
 content_types_accepted(CT, RD, Ctx) ->
     {Media, _Params} = mochiweb_util:parse_header(CT),
-    {[{Media, accept_body}], RD, Ctx}.
+    {[{Media, ensure_no_canned_acl_and_header_grant}], RD, Ctx}.
 
 -spec authorize(#wm_reqdata{}, #context{}) -> {boolean(), #wm_reqdata{}, #context{}}.
 authorize(RD, #context{user=User}=Ctx) ->

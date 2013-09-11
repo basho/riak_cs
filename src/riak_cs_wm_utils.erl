@@ -40,6 +40,7 @@
          extract_name/1,
          normalize_headers/1,
          error_if_acl_headers_and_acl_body/1,
+         error_if_canned_acl_and_header_grant/1,
          extract_acl_headers/1,
          acl_header_and_body/1,
          extract_amazon_headers/1,
@@ -374,6 +375,25 @@ error_if_acl_headers_and_acl_body(OkFun) ->
                 true ->
                     riak_cs_s3_response:api_error(unexpected_content, Req, Ctx);
                 false ->
+                    case has_canned_acl_and_header_grant(Req) of
+                        true ->
+                            riak_cs_s3_response:api_error(canned_acl_and_header_grant,
+                                                          Req, Ctx);
+                        false ->
+                            OkFun(Req, Ctx)
+                    end
+            end
+    end.
+
+-spec error_if_canned_acl_and_header_grant(fun()) ->
+                    fun((#wm_reqdata{}, term()) -> term()).
+error_if_canned_acl_and_header_grant(OkFun) ->
+    fun(Req, Ctx) ->
+            case has_canned_acl_and_header_grant(Req) of
+                true ->
+                    riak_cs_s3_response:api_error(canned_acl_and_header_grant,
+                                                  Req, Ctx);
+                false ->
                     OkFun(Req, Ctx)
             end
     end.
@@ -385,6 +405,10 @@ acl_header_and_body(RD) ->
 -spec has_acl_header(#wm_reqdata{}) -> boolean().
 has_acl_header(RD) ->
     has_canned_acl_header(RD) orelse has_specific_acl_header(RD).
+
+-spec has_canned_acl_and_header_grant(#wm_reqdata{}) -> boolean().
+has_canned_acl_and_header_grant(RD) ->
+    has_canned_acl_header(RD) andalso has_specific_acl_header(RD).
 
 -spec has_canned_acl_header(#wm_reqdata{}) -> boolean().
 has_canned_acl_header(RD) ->

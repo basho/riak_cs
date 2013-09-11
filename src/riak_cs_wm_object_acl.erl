@@ -113,7 +113,7 @@ content_types_accepted(RD, Ctx=#context{local_context=LocalCtx0}) ->
         undefined ->
             DefaultCType = "application/octet-stream",
             LocalCtx = LocalCtx0#key_context{putctype=DefaultCType},
-            {[{DefaultCType, accept_body_wrapper}],
+            {[{DefaultCType, ensure_no_acl_headers_and_body}],
              RD,
              Ctx#context{local_context=LocalCtx}};
         %% This was shamelessly ripped out of
@@ -124,7 +124,7 @@ content_types_accepted(RD, Ctx=#context{local_context=LocalCtx0}) ->
                 [_Type, _Subtype] ->
                     %% accept whatever the user says
                     LocalCtx = LocalCtx0#key_context{putctype=Media},
-                    {[{Media, accept_body_wrapper}], RD, Ctx#context{local_context=LocalCtx}};
+                    {[{Media, ensure_no_acl_headers_and_body}], RD, Ctx#context{local_context=LocalCtx}};
                 _ ->
                     %% TODO:
                     %% Maybe we should have caught

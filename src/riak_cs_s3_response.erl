@@ -86,7 +86,8 @@ error_message(invalid_argument) -> "Invalid Argument";
 error_message(unresolved_grant_email) -> "The e-mail address you provided does not match any account on record.";
 error_message(invalid_range) -> "The requested range is not satisfiable";
 error_message(invalid_bucket_name) -> "The specified bucket is not valid.";
-error_message(unexpected_content) -> "This request does not support content.";
+error_message(unexpected_content) -> "This request does not support content";
+error_message(canned_acl_and_header_grant) -> "Specifying both Canned ACLs and Header Grants is not allowed";
 error_message(_) -> "Please reduce your request rate.".
 
 error_code(invalid_access_key_id) -> "InvalidAccessKeyId";
@@ -121,6 +122,7 @@ error_code(invalid_range) -> "InvalidRange";
 error_code(invalid_bucket_name) -> "InvalidBucketName";
 error_code(unresolved_grant_email) -> "UnresolvableGrantByEmailAddress";
 error_code(unexpected_content) -> "UnexpectedContent";
+error_code(canned_acl_and_header_grant) -> "InvalidRequest";
 error_code(ErrorName) ->
     ok = lager:debug("Unknown Error Name: ~p", [ErrorName]),
     "ServiceUnavailable".
@@ -164,6 +166,7 @@ status_code(unresolved_grant_email) -> 400;
 status_code(invalid_range) -> 416;
 status_code(invalid_bucket_name) -> 400;
 status_code(unexpected_content) -> 400;
+status_code(canned_acl_and_header_grant) -> 400;
 status_code(_) -> 503.
 
 -spec respond(term(), #wm_reqdata{}, #context{}) ->
