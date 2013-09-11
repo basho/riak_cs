@@ -633,7 +633,7 @@ handle_get_manifests_result(_) ->
 
 -spec is_multipart_manifest(?MANIFEST{}) -> boolean().
 is_multipart_manifest(?MANIFEST{props=Props}) ->
-    case proplists:get_value(multipart, Props) of
+    case proplists:get_value(multipart, riak_cs_manifest_utils:fix_props(Props)) of
         undefined ->
             false;
         _ ->
@@ -642,7 +642,7 @@ is_multipart_manifest(?MANIFEST{props=Props}) ->
 
 -spec multipart_description(?MANIFEST{}) -> ?MULTIPART_DESCR{}.
 multipart_description(Manifest) ->
-    MpM =  proplists:get_value(multipart, Manifest?MANIFEST.props),
+    MpM =  proplists:get_value(multipart, riak_cs_manifest_utils:fix_props(Manifest?MANIFEST.props)),
     ?MULTIPART_DESCR{
        key = element(2, Manifest?MANIFEST.bkey),
        upload_id = Manifest?MANIFEST.uuid,
@@ -783,12 +783,12 @@ get_mp_manifest(?MANIFEST{props = Props}) when is_list(Props) ->
     %%       to version v2 and beyond, this might be a good place to add
     %%       a record conversion function to handle older versions of
     %%       the multipart record?
-    proplists:get_value(multipart, Props, undefined);
+    proplists:get_value(multipart, riak_cs_manifest_utils:fix_props(Props), undefined);
 get_mp_manifest(_) ->
     undefined.
 
 replace_mp_manifest(MpM, Props) ->
-    [{multipart, MpM}|proplists:delete(multipart, Props)].
+    [{multipart, MpM}|proplists:delete(multipart, riak_cs_manifest_utils:fix_props(Props))].
 
 %% ===================================================================
 %% EUnit tests

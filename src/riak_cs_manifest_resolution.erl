@@ -128,8 +128,8 @@ resolve_deleted_blocks(A, B) ->
     safe_intersection(ADeleted, BDeleted).
 
 resolve_props(A, B) ->
-    Ps_A = A?MANIFEST.props,
-    Ps_B = B?MANIFEST.props,
+    Ps_A = riak_cs_manifest_utils:fix_props(A?MANIFEST.props),
+    Ps_B = riak_cs_manifest_utils:fix_props(B?MANIFEST.props),
     {_, _, New} = lists:foldl(fun resolve_a_prop/2,
                               {Ps_A, Ps_B, []},
                               [fun resolve_prop_multipart/2,

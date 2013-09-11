@@ -98,7 +98,7 @@ print_multipart_manifest(Props, Indent) ->
     end.
 
 deleted(Props) ->
-    lists:keymember(deleted, 1, Props).
+    lists:keymember(deleted, 1, riak_cs_manifest_utils:fix_props(Props)).
 
 %% ====================================================================
 %% gen_server callbacks
