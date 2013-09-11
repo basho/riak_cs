@@ -163,7 +163,7 @@ mark_deleted(Dict, UUIDsToMark) ->
                 true ->
                     V?MANIFEST{state=pending_delete,
                                delete_marked_time=os:timestamp(),
-                               props=[{deleted, true} | V?MANIFEST.props]};
+                               props=[{deleted, true} | fix_props(V?MANIFEST.props)]};
                 false ->
                     V
             end
@@ -304,7 +304,7 @@ upgrade_manifest(#lfs_manifest_v2{block_size=BlockSize,
               last_block_deleted_time=LastBlockDeletedTime,
               delete_blocks_remaining=DeleteBlocksRemaining,
               acl=Acl,
-              props=Properties,
+              props=fix_props(Properties),
               cluster_id=ClusterID};
 
 upgrade_manifest(?MANIFEST{}=M) ->
@@ -339,7 +339,7 @@ manifest_is_active(_Manifest) -> false.
 
 -spec delete_time(lfs_manifest()) -> erlang:timestamp() | undefined.
 delete_time(Manifest) ->
-    case proplists:is_defined(deleted, Manifest?MANIFEST.props) of
+    case proplists:is_defined(deleted, fix_props(Manifest?MANIFEST.props)) of
         true ->
             Manifest?MANIFEST.delete_marked_time;
         false ->
@@ -434,6 +434,11 @@ seconds_diff(T2, T1) ->
     TimeDiffMicrosends = timer:now_diff(T2, T1),
     SecondsTime = TimeDiffMicrosends / (1000 * 1000),
     erlang:trunc(SecondsTime).
+
+fix_props(L) when is_list(L) ->
+    L;
+fix_props(_) ->
+    [].
 
 %% ===================================================================
 %% EUnit tests

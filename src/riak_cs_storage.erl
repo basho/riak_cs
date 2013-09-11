@@ -126,7 +126,7 @@ count_multipart_parts(Resolved) ->
     lists:foldl(fun count_multipart_parts/2, {0, 0}, Resolved).
 
 count_multipart_parts({_UUID, M}, {MPparts, MPbytes} = Acc) ->
-    case {M?MANIFEST.state, proplists:get_value(multipart, M?MANIFEST.props)} of
+    case {M?MANIFEST.state, proplists:get_value(multipart, riak_cs_manifest_utils:fix_props(M?MANIFEST.props))} of
         {writing, MP} ->
             Ps = MP?MULTIPART_MANIFEST.parts,
             {MPparts + length(Ps),
