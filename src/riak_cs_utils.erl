@@ -42,6 +42,8 @@
          has_tombstone/1,
          is_admin/1,
          map_keys_and_manifests/3,
+         sha_mac/2,
+         sha/1,
          md5/1,
          md5_init/0,
          md5_update/2,
@@ -527,6 +529,19 @@ map_keys_and_manifests(Object, _, _) ->
 reduce_keys_and_manifests(Acc, _) ->
     Acc.
 
+-spec sha_mac(iolist() | binary(), iolist() | binary()) -> binary().
+-spec sha(binary()) -> binary().
+
+-ifdef(new_hash).
+sha_mac(Key,STS) -> crypto:hmac(sha, Key,STS).
+sha(Bin) -> crypto:hash(sha, Bin).
+
+-else.
+sha_mac(Key,STS) -> crypto:sha_mac(Key,STS).
+sha(Bin) -> crypto:sha(Bin).
+
+-endif.
+
 -type context() :: binary().
 -type digest() :: binary().
 
@@ -536,22 +551,30 @@ md5(Bin) when is_binary(Bin) ->
 md5(List) when is_list(List) ->
     md5(list_to_binary(List)).
 
--spec md5_init() -> context().
-md5_init() ->
-    crypto:md5_init().
-
 -define(MAX_UPDATE_SIZE, (32*1024)).
-
+-spec md5_init() -> context().
 -spec md5_update(context(), binary()) -> context().
+-spec md5_final(context()) -> digest().
+
+-ifdef(new_hash).
+md5_init() -> crypto:hash_init(md5).
+
+md5_update(Ctx, Bin) when size(Bin) =< ?MAX_UPDATE_SIZE ->
+    crypto:hash_update(Ctx, Bin);
+md5_update(Ctx, <<Part:?MAX_UPDATE_SIZE/binary, Rest/binary>>) ->
+    md5_update(crypto:hash_update(Ctx, Part), Rest).
+
+md5_final(Ctx) -> crypto:hash_final(Ctx).
+-else.
+md5_init() -> crypto:md5_init().
+
 md5_update(Ctx, Bin) when size(Bin) =< ?MAX_UPDATE_SIZE ->
     crypto:md5_update(Ctx, Bin);
 md5_update(Ctx, <<Part:?MAX_UPDATE_SIZE/binary, Rest/binary>>) ->
     md5_update(crypto:md5_update(Ctx, Part), Rest).
 
--spec md5_final(context()) -> digest().
-md5_final(Ctx) ->
-    crypto:md5_final(Ctx).
-
+md5_final(Ctx) -> crypto:md5_final(Ctx).
+-endif.
 %% @doc Get an object from Riak
 -spec get_object(binary(), binary(), pid()) ->
                         {ok, riakc_obj:riakc_obj()} | {error, term()}.
