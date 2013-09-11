@@ -42,7 +42,8 @@
          prune/1,
          prune/2,
          upgrade_wrapped_manifests/1,
-         upgrade_manifest/1]).
+         upgrade_manifest/1,
+         fix_props/1]).
 
 %%%===================================================================
 %%% API
