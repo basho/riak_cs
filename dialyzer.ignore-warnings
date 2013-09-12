@@ -1,87 +1,31 @@
-############## Warnings from dependencies that we might/should fix?
-^glc_code.erl:
+############## Warnings from dependencies that we might/should fix
+^riak_kv_pb.erl:
+^riak_pb.erl:
+^riak_pb_codec.erl:
+^riak_search_pb.erl:
+^riak_pb_search_codec.erl:
+^riakc_pb_socket.erl:1352:
+^riakc_pb_socket.erl:1689:
 ^lager.erl:
 ^lager_app.erl:
 ^lager_util.erl:
-^lager_default_tracer.erl:
+^  lager_default_tracer:
 ^mochiglobal.erl:
 ^mochiweb.erl:
 ^mochiweb_http.erl:
 ^mochiweb_request.erl:
 ^mochiweb_socket_server.erl:
-^protobuffs.erl:
 ^protobuffs_compile.erl:
-^riak_kv_pb.erl:
-^riak_pb.erl:
-^riak_repl_pb.erl:
-^riak_repl_pb_api.erl:
-^riak_search_pb.erl:
-^riakc_pb_socket.erl:
 ^webmachine.erl:
 ^webmachine_decision_core.erl:
-^webmachine_logger.erl:
 ^webmachine_log.erl:
 ^webmachine_log_handler.erl:
 ^webmachine_perf_log_handler.erl:
 ^webmachine_mochiweb.erl:
-^webmachine_perf_logger.erl:
 ^webmachine_request.erl:
 ^webmachine_resource.erl:
 ^webmachine_sup.erl:
 ^webmachine_dispatcher.erl:
-^webmachine_router.erl:
-^lager.erl:
-^lager_app.erl:
-^lager_util.erl:
-^  lager_default_tracer:
-^glc_code.erl:
-############## Warnings from dependencies that are outside our scope
-^bread.erl:
-^dtop.erl:
-^dtopConsumer.erl:
-^eper.erl:
-^erlcloud.erl:
-^erlcloud_elb.erl:
-^erlcloud_s3.erl:
-^folsom_ets.erl:
-^folsom_metrics_spiral.erl:
-^folsom_sample_exdec.erl:
-^folsom_sup.erl:
-^giddyup.erl:
-^gperfGtk.erl:
-^ibrowse_http_client.erl
-^leexinc.hrl:
-^logReader.erl:
-^mapred_verify.erl:
-^meck.erl:
-^meck_cover.erl:
-^ntopConsumer.erl:
-^pokemon_pb.erl:
-^prfDog.erl:
-^prfHost.erl:
-^prfSys.erl:
-^prfTarg.erl:
-^prfTrc.erl:
-^prf_crypto.erl:
-^redbug.erl:
-^reloader.erl:
-^rhc.erl:
-^rhc_listkeys.erl:
-^rhc_obj.erl:
-^riak_test.erl:
-^riak_test_group_leader.erl:
-^riak_test_runner.erl:
-^rt.erl:
-^rtdev.erl:
-^sherk.erl:
-^sherk_aquire.erl:
-^sherk_ets.erl:
-^sherk_scan.erl:
-^sherk_tab.erl:
-^sherk_target.erl:
-^syslog.erl:
-^watchdog.erl:
-############## datatypes due to riak_kv and other deps
   riak_kv_backend:fold_buckets_fun/0
   riak_kv_backend:fold_keys_fun/0
   riak_kv_backend:fold_objects_fun/0
@@ -93,95 +37,80 @@
   riak_object:key/1
   riak_object:new/3
   riak_object:update_metadata/2
-  riak_repl_pb_api:get/5
-  riak_repl_pb_api:get_clusterid/2
-  calendar:day/0
-  calendar:hour/0
-  calendar:month/0
-  calendar:year/0
+############## Warnings from dependencies that are outside our scope
+^bread.erl:
+^dtop.erl:
+^dtopConsumer.erl:
+^eper.erl:
+^erlcloud.erl:
+^erlcloud_ec2.erl:
+^erlcloud_elb.erl:
+^erlcloud_mturk.erl:
+^erlcloud_s3.erl:
+^folsom_ets.erl:
+^folsom_sample_exdec.erl:
+^folsom_sup.erl:
+^gperfGtk.erl:
+^ibrowse_http_client.erl
+^leexinc.hrl:
+^logReader.erl:
+^meck_code_gen.erl:
+^meck_cover.erl:
+^meck_proc.erl:
+^ntopConsumer.erl:
+^pokemon_pb.erl:
+^prfDog.erl:
+^prfHost.erl:
+^prfSys.erl:
+^prfTarg.erl:
+^prfTrc.erl:
+^prf_crypto.erl:
+^redbug.erl:
+^reloader.erl:
+^sherk.erl:
+^sherk_aquire.erl:
+^sherk_ets.erl:
+^sherk_scan.erl:
+^sherk_tab.erl:
+^sherk_target.erl:
+^syslog.erl:
+^watchdog.erl:
+^glc_code.erl:
   lager_default:info/1
   gre:event/0
-############## stuff defined in test (we should dialyze these someday)
-  riakc_pb_socket_fake:start_link/0
+  hamcrest:assert_that/2
+  hamcrest:is_matcher/1
+############## our code, but don't know how to fix
+^riak_cs_gc.erl:185:
+^riak_cs_stats.erl:200:
 ############## functions due to riak_kv stuff in this repo
   app_helper:get_prop_or_env/3
   app_helper:get_prop_or_env/4
 ############## harmless/intentional missing functions
+  calendar:day/0
+  calendar:hour/0
+  calendar:month/0
+  calendar:year/0
   dtrace:init/0
-  edoc:application/3
-  edoc:get_doc/3
-  edoc:layout/2
-  edoc_data:overview/4
-  edoc_data:package/4
-  edoc_extract:file/4
-  edoc_lib:copy_file/2
-  edoc_lib:join_uri/2
-  edoc_lib:run_layout/2
-  edoc_lib:segment/2
-  edoc_lib:strip_space/1
-  edoc_lib:transpose/1
-  edoc_lib:write_file/3
-  edoc_lib:write_file/4
-  edoc_lib:write_info_file/4
-  edoc_refs:relative_package_path/2
-  edoc_report:report/2
-  edoc_report:warning/2
   erlsom:sax/3
-  eunit:test/1
-  eunit_lib:command/1
   fdsrv:bind_socket/2
   fdsrv:start/0
   fdsrv:stop/0
   gtknode:cmd/2
   gtknode:start/1
-  rebar_config:get_global/3
-  rebar_config:set/3
-  rebar_erlc_compiler:compile/2
-  rebar_file_utils:rm_rf/1
-  rebar_utils:ebin_dir/0
-  riak:client_connect/1
+  gre:event/0
+  hamcrest:matchspec/0
+  meck_history:history_record/0
+  ordsets:ordset/0
+############## stuff defined in riak (we should dialyze these someday)
+  riak_repl_pb_api:get/5
+  riak_repl_pb_api:get_clusterid/2
   riak:stop/1
   riak_core_bucket:get_bucket/1
-  riak_core_ring:all_members/1
-  riak_core_ring:all_owners/1
-  riak_core_ring:claimant/1
-  riak_core_ring:member_status/2
-  riak_core_ring:pending_changes/1
-  riak_core_ring:ready_members/1
-  riak_core_ring:ring_ready/1
-  riak_cs_dummy_reader:get_manifest/1
-  riak_cs_dummy_reader:start_link/1
-  riak_kv_mapred_filters:build_exprs/1
-  xmerl:export_simple/2
-  xmerl:export_simple/3
-  xmerl:export_simple_content/2
-  xmerl_html:'#element#'/5
-  xmerl_lib:end_tag/1
-  xmerl_lib:expand_element/1
-  xmerl_lib:find_attribute/2
-  xmerl_lib:mapxml/2
-  xmerl_lib:start_tag/2
-  xmerl_scan:string/1
-  xmerl_scan:string/2
-  xmerl_ucs:from_utf16be/1
-  xmerl_ucs:from_utf8/1
-  xmerl_ucs:to_utf8/1
-  xmerl_xpath:string/2
-############# stuff dialyzer has stumped us on - mostly unused code where
-############# we've gone in and added a throw / log to be sure
-riak_cs_mp_utils.erl:522: The pattern <Bucket, OwnerStr> can never match since previous clauses completely covered the type <_,'undefined' | {_,_,_}>
-^riak_cs_lfs_utils.erl:119:
-riak_cs_gc.erl:.*: The pattern ..UUID, _... _. can never match the type ..$
-############# Due to inadequate specs with our riak-erlang-client tag
-riak_cs_gc_d.erl:[0-9]+: Function fetch_eligible_manifest_keys/2 will never be called
-riak_cs_gc_d.erl:[0-9]+: Function eligible_manifest_keys/1 will never be called
-riak_cs_gc_d.erl:[0-9]+: Function gc_index_query/2 will never be called
-^riak_cs_riakc_pool_worker.erl:54:
-riak_cs_storage_d.erl:[0-9]+: Function fetch_user_list/1 will never be called
-riak_cs_wm_ping.erl:46: The pattern 'undefined' can never match the type pid()
-############## All the others..........
-riak_cs_blockall_auth.erl:23: Callback info about the riak_cs_auth behaviour is not available
-riak_cs_s3_passthru_auth.erl:23: Callback info about the riak_cs_auth behaviour is not available
-riak_cs_s3_auth.erl:23: Callback info about the riak_cs_auth behaviour is not available
-riak_cs_keystone_auth.erl:23: Callback info about the riak_cs_auth behaviour is not available
-riak_cs_s3_policy.erl:26: Callback info about the riak_cs_policy behaviour is not available
+  riak_object:get_values/1
+  riak_object:key/1
+  riak_kv_backend:fold_buckets_fun/0
+  riak_kv_backend:fold_keys_fun/0
+  riak_kv_backend:fold_objects_fun/0
+  riak_object:bucket/0
+  riak_object:key/0

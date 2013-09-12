@@ -193,5 +193,9 @@ raw_report_pool(Pool) ->
     case poolboy:status(Pool) of
         {_PoolState, PoolWorkers, PoolOverflow, PoolSize} ->
             { Pool, [ PoolWorkers, PoolOverflow, PoolSize ] };
+
+        %% riak_cs_stats.erl:200: The variable _ can never match since previous clauses completely covered the type {atom(),integer(),integer(),integer()}
+        %% dialyer says above match always succeeds. We still don't
+        %% trust against future code change.
         _ -> { Pool, [ -1, -1, -1 ] }
     end.

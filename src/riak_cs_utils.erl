@@ -542,7 +542,9 @@ sha(Bin) -> crypto:sha(Bin).
 
 -endif.
 
--type context() :: binary().
+-type crypto_context() :: {'md4' | 'md5' | 'ripemd160' | 'sha' |
+                           'sha224' | 'sha256' | 'sha384' | 'sha512',
+                           binary()}.
 -type digest() :: binary().
 
 -spec md5(string() | binary()) -> digest().
@@ -552,9 +554,9 @@ md5(List) when is_list(List) ->
     md5(list_to_binary(List)).
 
 -define(MAX_UPDATE_SIZE, (32*1024)).
--spec md5_init() -> context().
--spec md5_update(context(), binary()) -> context().
--spec md5_final(context()) -> digest().
+-spec md5_init() -> crypto_context().
+-spec md5_update(crypto_context(), binary()) -> crypto_context().
+-spec md5_final(crypto_context()) -> digest().
 
 -ifdef(new_hash).
 md5_init() -> crypto:hash_init(md5).
@@ -984,11 +986,16 @@ format_acl_policy_response({ok, Acl}, {ok, Policy}) ->
 second_resolution_timestamp({MegaSecs, Secs, _MicroSecs}) ->
     (MegaSecs * 1000000) + Secs.
 
--spec timestamp_to_seconds(erlang:timestamp()) -> float().
+%% same as timestamp_to_milliseconds below
+-spec timestamp_to_seconds(erlang:timestamp()) -> number().
 timestamp_to_seconds({MegaSecs, Secs, MicroSecs}) ->
     (MegaSecs * 1000000) + Secs + (MicroSecs / 1000000).
 
--spec timestamp_to_milliseconds(erlang:timestamp()) -> float().
+%% riak_cs_utils.erl:991: Invalid type specification for function riak_cs_utils:timestamp_to_milliseconds/1. The success typing is ({number(),number(),number()}) -> float()
+%% this is also a derp that dialyzer shows above message when defined
+%% like this, as manpage says it's three-integer tuple :
+%% -spec timestamp_to_milliseconds(erlang:timestamp()) -> integer().
+-spec timestamp_to_milliseconds(erlang:timestamp()) -> number().
 timestamp_to_milliseconds(Timestamp) ->
     timestamp_to_seconds(Timestamp) * 1000.
 
@@ -1337,7 +1344,7 @@ generate_canonical_id(KeyID, Secret) ->
                           Id2:Bytes/binary >>)).
 
 %% @doc Generate an access key for a user
--spec generate_key(binary()) -> [iodata()].
+-spec generate_key(binary()) -> [byte()].
 generate_key(UserName) ->
     Ctx = crypto:hmac_init(sha, UserName),
     Ctx1 = crypto:hmac_update(Ctx, druuid:v4()),

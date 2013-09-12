@@ -20,12 +20,27 @@
 
 -module(riak_cs_auth).
 
--export([behaviour_info/1]).
+%% -export([behaviour_info/1]).
 
--compile(export_all).
+-include("riak_cs.hrl").
+%% -compile(export_all).
 
--spec behaviour_info(atom()) -> 'undefined' | [{atom(), arity()}].
-behaviour_info(callbacks) ->
-    [{identify, 2}, {authenticate, 4}];
-behaviour_info(_Other) ->
-    undefined.
+-type wm_reqdata() :: tuple().
+-type wm_context() :: tuple().
+
+%% TODO: arguments of identify/2, and 3rd&4th arguments of
+%%       authenticate/4 are actually #wm_reqdata{} and #context{}
+%%       from webmachine, but can't compile after webmachine.hrl import.
+-callback identify(RD :: wm_reqdata(), Ctx :: wm_context()) ->
+    failed | {string() | undefined, string() | tuple()} |
+    {string(), undefined}.
+
+-callback authenticate(rcs_user(), string() | {string(), term()} | undefined,
+                       wm_reqdata(), wm_context()) ->
+    ok | {error, atom()}.     
+
+%% -spec behaviour_info(atom()) -> 'undefined' | [{atom(), arity()}].
+%% behaviour_info(callbacks) ->
+%%     [{identify, 2}, {authenticate, 4}];
+%% behaviour_info(_Other) ->
+%%     undefined.

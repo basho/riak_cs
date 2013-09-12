@@ -504,8 +504,9 @@ extract_timings(Requests) ->
     [extract_timing(R) || R <- Requests].
 
 %% TODO: time to make legit types out of these
--spec extract_timing({term(), non_neg_integer(), {term(), term()}}) ->
-    {term(), term()}.
+-spec extract_timing({term(), non_neg_integer(),
+                      {erlang:timestamp(), erlang:timestamp()}}) ->
+    {non_neg_integer(), non_neg_integer()}.
 extract_timing({_Range, NumKeysReturned, {StartTime, EndTime}}) ->
     MillisecondDiff = riak_cs_utils:timestamp_to_milliseconds(EndTime) -
                       riak_cs_utils:timestamp_to_milliseconds(StartTime),
