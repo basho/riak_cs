@@ -127,8 +127,8 @@ calculate_signature(KeyData, RD) ->
            AmazonHeaders,
            Resource],
     _ = lager:debug("STS: ~p", [STS]),
-    base64:encode_to_string(
-      crypto:sha_mac(KeyData, STS)).
+
+    base64:encode_to_string(riak_cs_utils:sha_mac(KeyData, STS)).
 
 check_auth(PresentedSignature, CalculatedSignature) ->
     PresentedSignature == CalculatedSignature.

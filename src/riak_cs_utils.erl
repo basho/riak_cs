@@ -42,6 +42,8 @@
          has_tombstone/1,
          is_admin/1,
          map_keys_and_manifests/3,
+         sha_mac/2,
+         sha/1,
          md5/1,
          md5_init/0,
          md5_update/2,
@@ -527,7 +529,22 @@ map_keys_and_manifests(Object, _, _) ->
 reduce_keys_and_manifests(Acc, _) ->
     Acc.
 
--type context() :: binary().
+-spec sha_mac(iolist() | binary(), iolist() | binary()) -> binary().
+-spec sha(binary()) -> binary().
+
+-ifdef(new_hash).
+sha_mac(Key,STS) -> crypto:hmac(sha, Key,STS).
+sha(Bin) -> crypto:hash(sha, Bin).
+
+-else.
+sha_mac(Key,STS) -> crypto:sha_mac(Key,STS).
+sha(Bin) -> crypto:sha(Bin).
+
+-endif.
+
+-type crypto_context() :: {'md4' | 'md5' | 'ripemd160' | 'sha' |
+                           'sha224' | 'sha256' | 'sha384' | 'sha512',
+                           binary()}.
 -type digest() :: binary().
 
 -spec md5(string() | binary()) -> digest().
@@ -536,22 +553,30 @@ md5(Bin) when is_binary(Bin) ->
 md5(List) when is_list(List) ->
     md5(list_to_binary(List)).
 
--spec md5_init() -> context().
-md5_init() ->
-    crypto:md5_init().
-
 -define(MAX_UPDATE_SIZE, (32*1024)).
+-spec md5_init() -> crypto_context().
+-spec md5_update(crypto_context(), binary()) -> crypto_context().
+-spec md5_final(crypto_context()) -> digest().
 
--spec md5_update(context(), binary()) -> context().
+-ifdef(new_hash).
+md5_init() -> crypto:hash_init(md5).
+
+md5_update(Ctx, Bin) when size(Bin) =< ?MAX_UPDATE_SIZE ->
+    crypto:hash_update(Ctx, Bin);
+md5_update(Ctx, <<Part:?MAX_UPDATE_SIZE/binary, Rest/binary>>) ->
+    md5_update(crypto:hash_update(Ctx, Part), Rest).
+
+md5_final(Ctx) -> crypto:hash_final(Ctx).
+-else.
+md5_init() -> crypto:md5_init().
+
 md5_update(Ctx, Bin) when size(Bin) =< ?MAX_UPDATE_SIZE ->
     crypto:md5_update(Ctx, Bin);
 md5_update(Ctx, <<Part:?MAX_UPDATE_SIZE/binary, Rest/binary>>) ->
     md5_update(crypto:md5_update(Ctx, Part), Rest).
 
--spec md5_final(context()) -> digest().
-md5_final(Ctx) ->
-    crypto:md5_final(Ctx).
-
+md5_final(Ctx) -> crypto:md5_final(Ctx).
+-endif.
 %% @doc Get an object from Riak
 -spec get_object(binary(), binary(), pid()) ->
                         {ok, riakc_obj:riakc_obj()} | {error, term()}.
@@ -961,11 +986,16 @@ format_acl_policy_response({ok, Acl}, {ok, Policy}) ->
 second_resolution_timestamp({MegaSecs, Secs, _MicroSecs}) ->
     (MegaSecs * 1000000) + Secs.
 
--spec timestamp_to_seconds(erlang:timestamp()) -> float().
+%% same as timestamp_to_milliseconds below
+-spec timestamp_to_seconds(erlang:timestamp()) -> number().
 timestamp_to_seconds({MegaSecs, Secs, MicroSecs}) ->
     (MegaSecs * 1000000) + Secs + (MicroSecs / 1000000).
 
--spec timestamp_to_milliseconds(erlang:timestamp()) -> float().
+%% riak_cs_utils.erl:991: Invalid type specification for function riak_cs_utils:timestamp_to_milliseconds/1. The success typing is ({number(),number(),number()}) -> float()
+%% this is also a derp that dialyzer shows above message when defined
+%% like this, as manpage says it's three-integer tuple :
+%% -spec timestamp_to_milliseconds(erlang:timestamp()) -> integer().
+-spec timestamp_to_milliseconds(erlang:timestamp()) -> number().
 timestamp_to_milliseconds(Timestamp) ->
     timestamp_to_seconds(Timestamp) * 1000.
 
@@ -1314,7 +1344,7 @@ generate_canonical_id(KeyID, Secret) ->
                           Id2:Bytes/binary >>)).
 
 %% @doc Generate an access key for a user
--spec generate_key(binary()) -> [iodata()].
+-spec generate_key(binary()) -> [byte()].
 generate_key(UserName) ->
     Ctx = crypto:hmac_init(sha, UserName),
     Ctx1 = crypto:hmac_update(Ctx, druuid:v4()),

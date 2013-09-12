@@ -181,14 +181,14 @@ format_subresources([{Key, []} | _]) ->
     ["/", Key].
 
 %% @doc Format a proplist of query parameters into a string
--spec format_query_params(query_params()) -> string().
+-spec format_query_params(query_params()) -> iolist().
 format_query_params([]) ->
     [];
 format_query_params(QueryParams) ->
     format_query_params(QueryParams, []).
 
 %% @doc Format a proplist of query parameters into a string
--spec format_query_params(query_params(), list()) -> list().
+-spec format_query_params(query_params(), iolist()) -> iolist().
 format_query_params([], QS) ->
     ["?", QS];
 format_query_params([{Key, []} | RestParams], []) ->
