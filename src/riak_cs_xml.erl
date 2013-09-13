@@ -36,6 +36,7 @@
          to_xml/1]).
 
 -define(XML_SCHEMA_INSTANCE, "http://www.w3.org/2001/XMLSchema-instance").
+-define(ELEMENT, '#element#').
 
 -type attributes() :: [{atom(), string()}].
 -type external_node() :: {atom(), [string()]}.
@@ -157,15 +158,15 @@ common_prefix_to_xml(CommonPrefix) ->
 
 -spec make_internal_node(atom(), term()) -> internal_node().
 make_internal_node(Name, Content) ->
-    {Name, Content}.
+    {{?ELEMENT, Name}, Content}.
 
 -spec make_internal_node(atom(), attributes(), term()) -> internal_node().
 make_internal_node(Name, Attributes, Content) ->
-    {Name, Attributes, Content}.
+    { {?ELEMENT, Name}, Attributes, Content}.
 
 -spec make_external_node(atom(), term()) -> external_node().
 make_external_node(Name, Content) ->
-    {Name, [format_value(Content)]}.
+    { {?ELEMENT, Name}, [format_value(Content)]}.
 
 %% @doc Assemble the xml for the set of grantees for an acl.
 -spec make_grants([acl_grant()]) -> [internal_node()].
