@@ -542,11 +542,6 @@ sha(Bin) -> crypto:sha(Bin).
 
 -endif.
 
--type crypto_context() :: {'md4' | 'md5' | 'ripemd160' | 'sha' |
-                           'sha224' | 'sha256' | 'sha384' | 'sha512',
-                           binary()}.
--type digest() :: binary().
-
 -spec md5(string() | binary()) -> digest().
 md5(Bin) when is_binary(Bin) ->
     md5_final(md5_update(md5_init(), Bin));
