@@ -4,8 +4,7 @@
 ^riak_pb_codec.erl:
 ^riak_search_pb.erl:
 ^riak_pb_search_codec.erl:
-^riakc_pb_socket.erl:1352:
-^riakc_pb_socket.erl:1689:
+^riak_repl_pb.erl:
 ^lager.erl:
 ^lager_app.erl:
 ^lager_util.erl:
@@ -30,8 +29,6 @@
 ^reloader.erl:
 ^syslog.erl:
   lager_default:info/1
-  riak_repl_pb_api:get/5
-  riak_repl_pb_api:get_clusterid/2
   riak_kv_backend:fold_buckets_fun/0
   riak_kv_backend:fold_keys_fun/0
   riak_kv_backend:fold_objects_fun/0
@@ -57,6 +54,12 @@
 ^riak_cs_gc.erl:185:
 ^riak_cs_stats.erl:200:
 ^riak_cs_mp_utils:547: The pattern <Bucket, OwnerStr> can never match since previous clauses completely covered the type <_,'undefined' | {_,_,_}>
+riak_cs_block_server.erl:303: The pattern Success = {'ok', _} can never match the type {'error',_}
+riak_cs_block_server.erl:339: The pattern {'ok', RiakObject} can never match the type {'error',_}
+riak_cs_config.erl:187: The pattern {'ok', ClusterID} can never match the type {'error',_}
+riak_repl_pb_api.erl:33: The pattern {'ok', {MsgCode, Msg}} can never match the type {'error',_} | {'ok',binary()}
+riak_repl_pb_api.erl:66: The pattern {'ok', {130, Msg}} can never match the type {'error',_} | {'ok',binary()}
+riak_repl_pb_api.erl:63: The pattern {'ok', {MsgCode, MsgData}} can never match the type {'error',_} | {'ok',binary()}
 ############## Warnings from dependencies that are outside our scope
 ^bread.erl:
 ^dtop.erl:

@@ -298,6 +298,8 @@ handle_local_notfound(RiakcPid, FullBucket, FullKey, GetOptions2,
                 true when ProxyActive ->
                     case get_block_remote(RiakcPid, FullBucket, FullKey,
                                           ClusterID, GetOptions2) of
+                        %% riak_cs_block_server.erl:303: The pattern Success = {'ok', _} can never match the type {'error',_}
+                        %% how can it be 'never match'? It matches the following tuple!!!!
                         {ok, _} = Success ->
                             ProceedFun(Success);
                         {error, _} ->
@@ -332,6 +334,8 @@ get_block_local(RiakcPid, FullBucket, FullKey, GetOptions, Timeout) ->
 get_block_remote(RiakcPid, FullBucket, FullKey, ClusterID, GetOptions) ->
     case riak_repl_pb_api:get(RiakcPid, FullBucket, FullKey,
                               ClusterID, GetOptions) of
+        %% riak_cs_block_server.erl:338: The pattern {'ok', RiakObject} can never match the type {'error',_}
+        %% how can it be 'never match'? It actually matches.
         {ok, RiakObject} ->
             resolve_block_object(RiakObject, RiakcPid);
         Else ->
