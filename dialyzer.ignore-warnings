@@ -26,6 +26,10 @@
 ^webmachine_resource.erl:
 ^webmachine_sup.erl:
 ^webmachine_dispatcher.erl:
+^glc_code.erl:
+^reloader.erl:
+^syslog.erl:
+  lager_default:info/1
   riak_repl_pb_api:get/5
   riak_repl_pb_api:get_clusterid/2
   riak_kv_backend:fold_buckets_fun/0
@@ -82,17 +86,13 @@
 ^prfTrc.erl:
 ^prf_crypto.erl:
 ^redbug.erl:
-^reloader.erl:
 ^sherk.erl:
 ^sherk_aquire.erl:
 ^sherk_ets.erl:
 ^sherk_scan.erl:
 ^sherk_tab.erl:
 ^sherk_target.erl:
-^syslog.erl:
 ^watchdog.erl:
-^glc_code.erl:
-  lager_default:info/1
   gre:event/0
   hamcrest:assert_that/2
   hamcrest:is_matcher/1
