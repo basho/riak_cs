@@ -113,16 +113,16 @@
 %%
 %%                                               <-- {bg_work_delete, BKey}
 %%                                               <-- {bg_work_delete, BKey}
-%%                                               <-- {flow_control, self()}
-%%                                         {flow_control, ack} -->
+%%                                               <-- {bg_flow_control, self()}
+%%                                         {bg_flow_control, ack} -->
 %%                                               <-- {bg_work_delete, BKey}
 %%                                               <-- ... delete/flow_control...
-%%                                               <-- {fold_keys_finished,Z,ZP,N}
+%%                                               <-- {bg_fold_keys_finished,Z,ZP,N}
 %%
 %%                                                ** exit(normal)
 %%
 %%                                   ** When we get the
-%%                                   {fold_keys_finished,...}
+%%                                   {bg_fold_keys_finished,...}
 %%                                   message, we convert it to a
 %%                                   {pending_drop_is_complete,...}
 %%                                   message and then
@@ -175,7 +175,7 @@
         ]).
 %% Testing
 -export([halt/1,
-         smoke0/0, t1/0, t2/0]).
+         smoke0/0, t1/0, t2/0, t3/0]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -476,7 +476,7 @@ handle_info({bg_work_fold_keys, Partition, ZPrefix, Fun, Acc},
                [?MODULE, Zone, self(), Partition, ZPrefix]),
     spawn_link(fun() ->
                        {ok, Dropped} = Mod:fold_keys(Fun, Acc, [], BE_state),
-                       CleanupPid ! {fold_keys_finished,
+                       CleanupPid ! {bg_fold_keys_finished,
                                      Partition, ZPrefix, Dropped},
                        Elapsed = timer:now_diff(now(), Start) div 1000000,
                        lager:info("~s: zone ~p ~p: "
@@ -506,6 +506,7 @@ handle_info({'EXIT', Pid, Reason},
   when Pid == CleanupPid ->
     lager:info("~s: zone ~p ~p: restarting cleanup pid, old one exited: ~p",
                [?MODULE, Zone, self(), Reason]),
+    io:format("\n\n\n\t\t\tSLEEPING 5 seconds ... DELETEME!!!!! \n\n\n"), timer:sleep(5000),
     NewCleanupPid = start_cleanup_pid(Zone, DropName, Dets),
     {noreply, State#state{cleanup_pid=NewCleanupPid}};
 handle_info({'EXIT', _Pid, normal}, State) ->
@@ -533,8 +534,7 @@ terminate(Reason, #state{zone=Zone, mod=Mod, be_state=BE_state,
     io:format("DBG: Zone ~p, stopping for Reason ~p\n", [Zone, Reason]),
     (catch Mod:stop(BE_state)),
     dets:close(Dets),
-    unlink(CleanupPid),
-    exit(CleanupPid, terminate_please),
+    riak_kv_zone_mgr2:stop(CleanupPid),
     ok.
 
 %%--------------------------------------------------------------------
@@ -673,7 +673,7 @@ send_cleanup_reminders(Zone, Dets, CleanupPid) ->
     ok.
 
 start_cleanup_pid(Zone, DropQueueName, Dets) ->
-    CleanupPid = riak_kv_zone_mgr2:start(Zone, DropQueueName),
+    {ok, CleanupPid} = riak_kv_zone_mgr2:start(Zone, DropQueueName),
     send_give_me_work(CleanupPid),
     send_cleanup_reminders(Zone, Dets, CleanupPid),
     CleanupPid.
@@ -774,13 +774,15 @@ smoke0_int(Backend, BE_config) ->
     %% Drop test: put stuff in, drop, the nothing exists
     DropVal = <<"dropval!">>,
     DropKeys = 5,
+    TestParts = [2,3,4],
+    DropParts = [2],
     [ok = ?MODULE:put(42, Part, B, <<Key:32>>, [], DropVal) ||
-        Part <- [2,3,4], Key <- lists:seq(1, DropKeys)],
-    ?MODULE:drop(42, 2),
-    [{ok, error, not_found} = ?MODULE:get(42, Part, B, <<Key:32>>) ||
-        Part <- [2], Key <- lists:seq(1, DropKeys)],
+        Part <- TestParts, Key <- lists:seq(1, DropKeys)],
+    [?MODULE:drop(42, Part) || Part <- DropParts],
+    [{ok, error, not_found} = ?MODULE:get(42, Part, B, <<Key:32>>)||
+        Part <- DropParts, Key <- lists:seq(1, DropKeys)],
     [{ok, ok, DropVal} = ?MODULE:get(42, Part, B, <<Key:32>>) ||
-        Part <- [3,4], Key <- lists:seq(1, DropKeys)],
+        Part <- TestParts -- DropParts, Key <- lists:seq(1, DropKeys)],
 
     ok = ?MODULE:halt(Z42b),
     ok.
@@ -814,3 +816,27 @@ t2() ->
     RefBE = riak_kv_memory_backend,
     RefConfig = proplists:get_value(RefBE, smoke_configs()),
     ?MODULE:start_link(10, RefBE, RefConfig).
+
+t3() ->
+    catch application:start(sasl),
+    catch lager:start(),
+    RefBE = riak_kv_memory_backend,
+    RefConfig = proplists:get_value(RefBE, smoke_configs()),
+    Zone10 = 10,
+    ?MODULE:start_link(Zone10, RefBE, RefConfig),
+
+    %% Drop test: put stuff in, drop, the nothing exists
+    B = <<"bucket">>,
+    DropVal = <<"dropval!">>,
+    DropKeys = 10,
+    TestParts = [2,3,4,5],
+    DropParts = [2,4],
+    [ok = ?MODULE:put(Zone10, Part, B, <<Key:32>>, [], DropVal) ||
+        Part <- TestParts, Key <- lists:seq(1, DropKeys)],
+    [?MODULE:drop(Zone10, Part) || Part <- DropParts],
+    [{ok, error, not_found} = ?MODULE:get(Zone10, Part, B, <<Key:32>>) ||
+        Part <- DropParts, Key <- lists:seq(1, DropKeys)],
+    [{ok, ok, DropVal} = ?MODULE:get(Zone10, Part, B, <<Key:32>>) ||
+        Part <- TestParts -- DropParts, Key <- lists:seq(1, DropKeys)],
+
+    ok.

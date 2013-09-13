@@ -18,12 +18,16 @@
 %%
 %% ---------------------------------------------------------------------
 
--module(riak_kv_zone_mgr2).
-
 %% @doc riak_kv_zone_mgr2: async background work manager for
 %%      riak_kv_zone_backend.erl
 
--export([start/2]).
+-module(riak_kv_zone_mgr2).
+-behaviour(gen_server).
+
+-export([start/2, stop/1, send_check_start_next_fold/1]).
+%% gen_server callbacks
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2,
+         terminate/2, code_change/3]).
 
 -record(clean, {
           zone :: integer(),
@@ -37,124 +41,67 @@
 
 start(Zone, DropQueueName) ->
     Parent = self(),
-    spawn_link(fun() ->
-                       cleanup_loop(Zone, Parent, DropQueueName)
-               end).
+    gen_server:start_link(?MODULE, {Zone, Parent, DropQueueName}, []).
 
-cleanup_loop(Zone, Parent, DropQueueName) ->
+stop(Pid) ->
+    gen_server:call(Pid, {stop}, infinity).
+
+send_check_start_next_fold(Pid) ->
+    Pid ! check_start_next_fold.
+
+init({Zone, Parent, DropQueueName}) ->
     {ok, Q} = riak_cs_disk_log_q:new(DropQueueName),
-    {ok, TRef} = timer:send_interval(30*1000, perhaps_start_next_fold),
+    {ok, TRef} = timer:send_interval(30*1000, check_start_next_fold),
     %% Send one sooner, just to start quicker if there's work to do.
-    timer:send_after(5*1000, perhaps_start_next_fold),
-    idle_0(#clean{zone=Zone,
-                  parent=Parent,
-                  parent_waiting=false,
-                  q=Q,
-                  timer=TRef,
-                  cleanups=queue:new(),
-                  am_folding=false}).
+    timer:send_after(5*1000, check_start_next_fold),
+    {ok, #clean{zone=Zone,
+                parent=Parent,
+                parent_waiting=false,
+                q=Q,
+                timer=TRef,
+                cleanups=queue:new(),
+                am_folding=false}}.
 
-idle_0(#clean{zone=Zone, parent_waiting=false, q=Q, cleanups=Cleanups}=CS) ->
-    receive
-        perhaps_start_next_fold ->
-            perhaps_start_fold(CS, fun(NewCS) -> idle_0(NewCS) end);
-        {fold_keys_finished, Partition, ZPrefix, Dropped} ->
-            Msg = helper_fold_keys_finished(Partition, ZPrefix, Dropped),
-            idle_N(CS#clean{am_folding=false,
-                            q=riak_cs_disk_log_q:in(Msg, Q)});
-        {partition_dropped, Partition, ZPrefix} = Msg ->
-            lager:info("~s: zone ~p ~p: idle_0: "
-                       "queue drop partition ~p prefix ~p",
-                       [?MODULE, Zone, self(), Partition, ZPrefix]),
-            idle_0(CS#clean{cleanups=queue:in(Msg, Cleanups)});
-        give_me_work ->
-            wants_work(CS#clean{parent_waiting=true});
-        {flow_control, FoldPid} ->
-            FoldPid ! {flow_control, ack},
-            idle_0(CS);
-        {bg_work_delete, _BKey} = Msg ->
-            true = riak_cs_disk_log_q:is_empty(Q),
-            NewQ = riak_cs_disk_log_q:in(Msg, Q),
-            idle_N(CS#clean{q=NewQ})
-    end.
+handle_call({stop}, _From, CS) ->
+    {stop, normal, ok, CS};
+handle_call(Call, _From, CS) ->
+    io:format(user, "~s: Unknown call ~p\n", [?MODULE, Call]),
+    {reply, no_such_call, CS}.
 
-perhaps_start_fold(#clean{am_folding=true} = CS, ResumeFun) ->
-    ResumeFun(CS);
-perhaps_start_fold(#clean{am_folding=false,
-                          parent=Parent, cleanups=Cleanups}=CS, ResumeFun) ->
-    case queue:out(Cleanups) of
-        {empty, _} ->
-            ResumeFun(CS);
-        {{value, {partition_dropped, Partition, ZPrefix}}, NewCleanups} ->
-            Fun = make_drop_cleanup_fun(ZPrefix),
-            Parent ! {bg_work_fold_keys, Partition, ZPrefix, Fun, 0},
-            ResumeFun(CS#clean{cleanups=NewCleanups,
-                               parent_waiting=false, am_folding=true})
-    end.
+handle_cast(Cast, CS) ->
+    io:format(user, "~s: Unknown cast ~p\n", [?MODULE, Cast]),
+    {noreply, CS}.
 
-wants_work(#clean{zone=Zone,
-                  parent=Parent,
-                  cleanups=Cleanups}=CS) ->
-    receive
-        perhaps_start_next_fold ->
-            perhaps_start_fold(CS, fun(NewCS) -> wants_work(NewCS) end);
-        {fold_keys_finished, Partition, ZPrefix, Dropped} ->
-            Msg = helper_fold_keys_finished(Partition, ZPrefix, Dropped),
-            Parent ! Msg,
-            idle_0(CS#clean{am_folding=false,
-                            parent_waiting=false});
-        {partition_dropped, Partition, ZPrefix} = Msg ->
-            lager:info("~s: zone ~p ~p: queue drop partition ~p prefix ~p",
-                       [?MODULE, Zone, self(), Partition, ZPrefix]),
-            wants_work(CS#clean{cleanups=queue:in(Msg, Cleanups)});
-        give_me_work ->
-            wants_work(CS);
-        {flow_control, FoldPid} ->
-            FoldPid ! {flow_control, ack},
-            wants_work(CS);
-        {bg_work_delete, _BKey} = Msg ->
-            Parent ! Msg,
-            idle_0(CS#clean{parent_waiting=false})
-    end.
+handle_info(give_me_work, CS) ->
+    {noreply, do_give_me_work(CS)};
+handle_info({bg_work_delete, _BKey} = Msg, CS) ->
+    {noreply, do_bg_work_msg(Msg, CS)};
+handle_info({bg_fold_keys_finished, Partition, ZPrefix, Dropped}, CS)->
+    self() ! check_start_next_fold,
+    Msg2 = {pending_drop_is_complete, Partition, ZPrefix, Dropped},
+    {noreply, do_bg_work_msg(Msg2, CS#clean{am_folding=false})};
+handle_info({flow_control, FoldPid}, CS) ->
+    FoldPid ! {flow_control, ack},
+    {noreply, CS};
+handle_info(check_start_next_fold, CS) ->
+    {noreply, do_check_start_fold(CS)};
+handle_info({partition_dropped, Partition, ZPrefix} = Msg,
+            #clean{zone=Zone, cleanups=Cleanups} = CS) ->
+    lager:info("~s: zone ~p ~p: idle_0: queue drop partition ~p prefix ~p",
+               [?MODULE, Zone, self(), Partition, ZPrefix]),
+    {noreply, CS#clean{cleanups=queue:in(Msg, Cleanups)}};
+handle_info(Info, CS) ->
+    lager:info("~s: unknown message: ~p", [?MODULE, Info]),
+    {noreply, CS}.
 
-idle_N(#clean{zone=Zone, parent=Parent, q=Q, cleanups=Cleanups}=CS) ->
-    receive
-        perhaps_start_next_fold ->
-            perhaps_start_fold(CS, fun(NewCS) -> idle_N(NewCS) end);
-        {fold_keys_finished, Partition, ZPrefix, Dropped} ->
-            Msg = helper_fold_keys_finished(Partition, ZPrefix, Dropped),
-            idle_N(CS#clean{am_folding=false,
-                            q=riak_cs_disk_log_q:in(Msg, Q)});
-        {partition_dropped, Partition, ZPrefix} = Msg ->
-            lager:info("~s: zone ~p ~p: idle_N: "
-                       "queue drop partition ~p prefix ~p",
-                       [?MODULE, Zone, self(), Partition, ZPrefix]),
-            idle_N(CS#clean{cleanups=queue:in(Msg, Cleanups)});
-        give_me_work ->
-            case riak_cs_disk_log_q:out(Q) of
-                {empty, _} ->
-                    exit({wtf, idle_N, q, is_empty});
-                {{value, Msg}, NewQ} ->
-                    Parent ! Msg,
-                    NewCS = CS#clean{parent_waiting=false, q=NewQ},
-                    case riak_cs_disk_log_q:is_empty(NewQ) of
-                        true ->
-                            idle_0(NewCS);
-                        false ->
-                            idle_N(NewCS)
-                    end
-            end;
-        {flow_control, FoldPid} ->
-            FoldPid ! {flow_control, ack},
-            idle_N(CS);
-        {bg_work_delete, _BKey} = Msg ->
-            NewQ = riak_cs_disk_log_q:in(Msg, Q),
-            idle_N(CS#clean{q=NewQ})
-    end.
+terminate(_Reason, CS) ->
+    timer:cancel(CS#clean.timer),
+    ok.
 
-helper_fold_keys_finished(Partition, ZPrefix, Dropped) ->
-    self() ! perhaps_start_next_fold,
-    {pending_drop_is_complete, Partition, ZPrefix, Dropped}.
+code_change(_OldVsn, CS, _Extra) ->
+    {ok, CS}.
+
+%%% Internal
 
 make_drop_cleanup_fun(ZPrefix) ->
     %% {sigh}  Using the {bucket, ...} fold limiting option for KV
@@ -180,3 +127,33 @@ make_drop_cleanup_fun(ZPrefix) ->
             Acc
     end.
 
+do_give_me_work(#clean{parent=Parent, q=Q} = CS) ->
+    case riak_cs_disk_log_q:is_empty(Q) of
+        true ->
+            CS#clean{parent_waiting=true};
+        false ->
+            {{value, Msg}, NewQ} = riak_cs_disk_log_q:out(Q),
+            Parent ! Msg,
+            CS#clean{q=NewQ, parent_waiting=false}
+    end.
+
+do_check_start_fold(#clean{am_folding=true} = CS) ->
+    CS;
+do_check_start_fold(#clean{am_folding=false,
+                           parent=Parent, cleanups=Cleanups}=CS) ->
+    case queue:out(Cleanups) of
+        {empty, _} ->
+            CS;
+        {{value, {partition_dropped, Partition, ZPrefix}}, NewCleanups} ->
+            Fun = make_drop_cleanup_fun(ZPrefix),
+            Parent ! {bg_work_fold_keys, Partition, ZPrefix, Fun, 0},
+            CS#clean{cleanups=NewCleanups,
+                     parent_waiting=false,
+                     am_folding=true}
+    end.
+
+do_bg_work_msg(Msg, #clean{parent_waiting=false, q=Q} = CS) ->
+    CS#clean{q=riak_cs_disk_log_q:in(Msg, Q)};
+do_bg_work_msg(Msg, #clean{parent_waiting=true, parent=Parent} = CS) ->
+    Parent ! Msg,
+    CS#clean{parent_waiting=false}.
