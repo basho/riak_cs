@@ -107,9 +107,8 @@ make_drop_cleanup_fun(ZPrefix) ->
     %% {sigh}  Using the {bucket, ...} fold limiting option for KV
     %% will not work for our purposes.  We need to fold over all keys,
     %% and ignore the ones that we are not interested in.  {sigh}
-    %% TODO Fix prefix length assumption
     MgrWorker = self(),
-    fun(<<Prefix:16, _KvBucket/binary>>=FullBucket, Key, Acc)
+    fun(<<Prefix:24, _KvBucket/binary>>=FullBucket, Key, Acc)
           when Prefix == ZPrefix ->
             %% if Acc rem 500 == 0 ->
             if Acc rem 2 == 0 ->

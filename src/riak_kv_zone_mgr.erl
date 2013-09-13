@@ -111,13 +111,13 @@
 %%                                   empty) or queued to disk.
 %%                                   Ditto for all subsequent ones.
 %%
-%%                                               <-- {bg_work_delete, BKey}
-%%                                               <-- {bg_work_delete, BKey}
-%%                                               <-- {bg_flow_control, self()}
-%%                                         {bg_flow_control, ack} -->
-%%                                               <-- {bg_work_delete, BKey}
-%%                                               <-- ... delete/flow_control...
-%%                                               <-- {bg_fold_keys_finished,Z,ZP,N}
+%%                                            <-- {bg_work_delete, BKey}
+%%                                            <-- {bg_work_delete, BKey}
+%%                                            <-- {bg_flow_control, self()}
+%%                                      {bg_flow_control, ack} -->
+%%                                            <-- {bg_work_delete, BKey}
+%%                                            <-- ... delete/flow_control...
+%%                                            <-- {bg_fold_keys_finished,Z,ZP,N}
 %%
 %%                                                ** exit(normal)
 %%
@@ -610,8 +610,7 @@ dets_to_dict(Dets) ->
     dict:from_list([{Partition, Idx} || {Idx, Partition} <- dict:to_list(D2)]).
 
 make_zbucket(ZPrefix, Bucket, _State) ->
-    %% TODO Fix prefix length assumption
-    <<ZPrefix:16, Bucket/binary>>.
+    <<ZPrefix:24, Bucket/binary>>.
 
 sync_dets(Dets) ->
     ok = dets:sync(Dets),
