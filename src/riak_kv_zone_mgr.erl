@@ -584,9 +584,6 @@ assign_partition_prefix(Partition, #state{p2z_dets=Dets} = State) ->
     {ZPrefix, NewP2Z}.
 
 delete_partition_prefix(Partition, #state{p2z_dets=Dets} = State) ->
-    %% TODO: Delete old keys
-    %%   1. Keep track of partition/ZPrefix deletions in progress
-    %%   2. Restart partition/ZPrefix deletion to finish interrupted deletions
     {NewState, ZPrefix} = get_partition_prefix(Partition, State),
     ok = insert_pending_drop(Dets, Partition, ZPrefix),
     ok = dets:delete(Dets, Partition),
@@ -677,50 +674,6 @@ start_cleanup_pid(Zone, DropQueueName, Dets) ->
     send_give_me_work(CleanupPid),
     send_cleanup_reminders(Zone, Dets, CleanupPid),
     CleanupPid.
-
-%% TODO: Delete/mangle/edit/something:::::::::::::::::::
-%%
-%% The Riak KV backend fold API doesn't give us what we want.
-%% So we must work around the limitations.
-%%
-%% In an ideal world, we would be able to do stuff like:
-%% 1. As we fold over keys, we write them to a temp file.
-%% 2. At the end of the fold, we flush the temp file, seek to the beginning,
-%%    and then asyncly delete the keys.
-%% 3. Have some nice throttling feature/feedback loop.
-%%
-%% The KV backend fold API doesn't tell us when the fold is finished.
-%% {sigh}  So, we must rely on side-effects entirely to do our work.
-%%
-%% SKETCH:
-%%  0. Parent sends 'give_me_work' message to cleanup pid IFF @ init time.
-%%  1. Whenever cleanup pid has work to be done, it sends 'has_work + item'
-%%     message to parent for the first item in queue only.
-%%  2. When parent receives has_work + item' message, it does that work
-%%     sync'ly.
-%%  3. When #2 finished, it sends a 'give_me_work' message to cleanup pid.
-%%
-%% Hopefully this sequence will be good enough?  If there's a lot of
-%% "real" work for the zone mgr to do, then the delay between #3 & receiving
-%% of #4 message will allow lots of real work to queue up and to get work
-%% time fairly?
-%%     
-%% Cleanup pid sketch:
-%%
-%% 0. Cleanup pid must never forget state of 'give_me_work' receipt.
-%% 1. It will queue other work items magically RAM efficiently.
-%%    e.g. use disk_log?
-%% 2. Alternate between disk logs?  Reading (for sending to parent) &
-%%    writing (stuff streaming in from folder)?  Hmmmm.
-
-%% OLD SKETCH (no longer in consideration)
-%%  1. Play gen_server timeout games:
-%%    a. Wrap any return with dynamic calculation of timeout
-%%        - Every so often, ask cleanup worker for work
-%%        - If no work, timeout = 1000 (?), lather rinse repeat
-%%        - If work, timeout = 0
-%%        - Any handle_call sets timeout to something like 10?
-%%  2. If cleanup pid has wor.........
 
 send_give_me_work(CleanupPid) ->
     CleanupPid ! give_me_work.
