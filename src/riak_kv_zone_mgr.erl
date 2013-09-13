@@ -80,7 +80,7 @@
 %%                                   ** Flow control message:
 %%                                   cleanup_pid must receive
 %%                                   this message before sending
-%%                                   any work, i.e. {delete_this,...}
+%%                                   any work, i.e. {bg_work_delete,...}
 %%                                   to the zone mgr.
 %%
 %%   {partition_dropped, Partition, ZPrefix} -->
@@ -95,14 +95,14 @@
 %%  until the cleanup_pid gives
 %%  permission.
 %%
-%%           <-- {please_fold_keys, P, ZP, FoldFun, Acc}
+%%           <-- {bg_work_fold_keys, P, ZP, FoldFun, Acc}
 %%
 %%                                   ** Only one fold is permitted
 %%                                   at a time.
-%%  ** We spawn_monitor() the
+%%  ** We spawn_link() the
 %%  async fold process to do the
 %%  backend's fold_keys().
-%%                                               <-- {delete_this, BKey}
+%%                                               <-- {bg_work_delete, BKey}
 %%
 %%                                   ** When this message is
 %%                                   received by cleanup_pid, it
@@ -111,11 +111,11 @@
 %%                                   empty) or queued to disk.
 %%                                   Ditto for all subsequent ones.
 %%
-%%                                               <-- {delete_this, BKey}
-%%                                               <-- {delete_this, BKey}
+%%                                               <-- {bg_work_delete, BKey}
+%%                                               <-- {bg_work_delete, BKey}
 %%                                               <-- {flow_control, self()}
 %%                                         {flow_control, ack} -->
-%%                                               <-- {delete_this, BKey}
+%%                                               <-- {bg_work_delete, BKey}
 %%                                               <-- ... delete/flow_control...
 %%                                               <-- {fold_keys_finished,Z,ZP,N}
 %%
@@ -129,12 +129,12 @@
 %%                                   either send directly to
 %%                                   the zone manager (queue is
 %%                                   empty) or queued to disk.
-%%                                   (Just like {delete_this,...})
+%%                                   (Just like {bg_work_delete,...})
 %%
 %%                   give_me_work -->
-%%              <-- {delete_this, BKey}
+%%              <-- {bg_work_delete, BKey}
 %%                   give_me_work -->
-%%              <-- {delete_this, BKey}
+%%              <-- {bg_work_delete, BKey}
 %%                   give_me_work -->
 %%                  ......
 %%              <-- {pending_drop_is_complete, Partition, ZPrefix, Dropped}
@@ -173,9 +173,9 @@
          is_empty/2,
          foodelme/0
         ]).
--export([halt/1]).
 %% Testing
--export([smoke0/0, t1/0, t2/0]).
+-export([halt/1,
+         smoke0/0, t1/0, t2/0]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -188,6 +188,7 @@
           be_state :: term(),
           p2z_dets :: reference(),
           p2z_map :: dict(),
+          drop_name :: string(),
           cleanup_pid :: pid(),
           drops = 0 :: integer(),
           drop_errors = 0 :: integer()
@@ -294,16 +295,22 @@ init({Zone, Mod, ModConfig})
                                                {repair, true}]),
         P2Z = dets_to_dict(Dets),
 
-        Cleanup = start_cleanup_pid(Zone, DropName),
-        send_give_me_work(Cleanup),
-        send_cleanup_reminders(Zone, Dets, Cleanup),
+        %% This process should not be crashing for trivial/minor reasons:
+        %% we're part of a Riak kv backend/vnode implementation, and
+        %% vnodes should only crash for major problems only.
+        %%
+        %% The cleanup pid should never crash, but ... if it did crash,
+        %% then crashing us would be bad.  So, we trap_exit.
+        process_flag(trap_exit, true),
+        CleanupPid = start_cleanup_pid(Zone, DropName, Dets),
         {ok, #state{zone=Zone,
                     mod=Mod,
                     mod_config=ModConfig,
                     be_state=BE_State,
                     p2z_dets=Dets,
                     p2z_map=P2Z,
-                    cleanup_pid=Cleanup}}
+                    drop_name=DropName,
+                    cleanup_pid=CleanupPid}}
     catch X:Y ->
             error_logger:error_msg("~s:init(~p, ~p, ~p) -> ~p ~p @\n~p\n",
                                    [?MODULE, Zone, Mod, ModConfig, X, Y,
@@ -444,9 +451,10 @@ handle_cast(_Msg, State) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_info({delete_this, {ZBucket, Key}},
+handle_info({bg_work_delete, {ZBucket, Key}},
             #state{mod=Mod, be_state=BE_state, cleanup_pid=CleanupPid,
                    zone=Zone, drops=Drops, drop_errors=DErrors} = State) ->
+    send_give_me_work(CleanupPid),
     IndexSpecs = [],
     case Mod:delete(ZBucket, Key, IndexSpecs, BE_state) of
         {ok, NewBE_state} ->
@@ -461,7 +469,6 @@ handle_info({delete_this, {ZBucket, Key}},
                     ok
             end
     end,
-    send_give_me_work(CleanupPid),
     NewDrops = Drops + 1,
     if NewDrops rem 10000 == 0 ->
             lager:info("~s: zone ~p ~p: dropped ~p keys",
@@ -470,11 +477,12 @@ handle_info({delete_this, {ZBucket, Key}},
             ok
     end,
     {noreply, State#state{be_state=NewBE_state, drops=NewDrops}};
-handle_info({please_fold_keys, Partition, ZPrefix, Fun, Acc},
+handle_info({bg_work_fold_keys, Partition, ZPrefix, Fun, Acc},
             #state{cleanup_pid=CleanupPid, zone=Zone,
                    mod=Mod, be_state=BE_state} = State) ->
+    send_give_me_work(CleanupPid),
     Start = now(),
-    lager:info("~s: zone ~p ~p: start drop partition ~p prefix ~p",
+    lager:info("~s: zone ~p ~p: start fold for partition ~p prefix ~p",
                [?MODULE, Zone, self(), Partition, ZPrefix]),
     spawn_link(fun() ->
                        {ok, Dropped} = Mod:fold_keys(Fun, Acc, [], BE_state),
@@ -482,7 +490,7 @@ handle_info({please_fold_keys, Partition, ZPrefix, Fun, Acc},
                                      Partition, ZPrefix, Dropped},
                        Elapsed = timer:now_diff(now(), Start) div 1000000,
                        lager:info("~s: zone ~p ~p: "
-                                  " finished fold for partition ~p prefix ~p "
+                                  "finished fold for partition ~p prefix ~p "
                                   "got ~p keys in ~p seconds",
                                   [?MODULE, Zone, self(),
                                    Partition, ZPrefix, Dropped, Elapsed]),
@@ -490,17 +498,26 @@ handle_info({please_fold_keys, Partition, ZPrefix, Fun, Acc},
                end),
     {noreply, State};
 handle_info({pending_drop_is_complete, Partition, ZPrefix, Dropped},
-            #state{zone=Zone, p2z_dets=Dets} = State) ->
+            #state{zone=Zone, p2z_dets=Dets, cleanup_pid=CleanupPid} = State) ->
+    send_give_me_work(CleanupPid),
     Start = get_pending_drop(Dets, Partition, ZPrefix),
     Elapsed = timer:now_diff(now(), Start) div 1000000,
     lager:info("~s: zone ~p ~p: "
-               " finished all processing for partition ~p prefix ~p "
-               "dropped ~p keys in ~p total elapsed seconds",
+               "finished all processing for partition ~p prefix ~p "
+               "dropped ~p keys at ~p seconds after drop request was queued",
                [?MODULE, Zone, self(),
                 Partition, ZPrefix, Dropped, Elapsed]),
     ok = delete_pending_drop(Dets, Partition, ZPrefix),
     ok = sync_dets(Dets),
     {noreply, State};
+handle_info({'EXIT', Pid, Reason},
+            #state{cleanup_pid=CleanupPid, zone=Zone, drop_name=DropName,
+                   p2z_dets=Dets} = State)
+  when Pid == CleanupPid ->
+    lager:info("~s: zone ~p ~p: restarting cleanup pid, old one exited: ~p",
+               [?MODULE, Zone, self(), Reason]),
+    NewCleanupPid = start_cleanup_pid(Zone, DropName, Dets),
+    {noreply, State#state{cleanup_pid=NewCleanupPid}};
 handle_info(_Info, State) ->
     io:format("WHAT?? ~s ~p got ~p\n", [?MODULE, ?LINE, _Info]),
     {noreply, State}.
@@ -654,7 +671,7 @@ send_cleanup_reminders(Zone, Dets, CleanupPid) ->
                  lager:info("~s: zone ~p ~p: reminder drop partition ~p prefix ~p",
                             [?MODULE, Zone, self(), P, ZP]),
                  tell_async_cleanup(CleanupPid, P, ZP)
-             end || {P, ZP} <- L];
+             end || {{P, ZP}, _StartTime} <- lists:reverse(L)];
         [] ->
             ok
     end,
@@ -678,17 +695,20 @@ make_drop_cleanup_fun(ZPrefix) ->
                true ->
                     ok
             end,
-            MgrWorker ! {delete_this, {FullBucket, Key}},
+            MgrWorker ! {bg_work_delete, {FullBucket, Key}},
             Acc + 1;
        (_Bucket, _Key, Acc) ->
             Acc
     end.
 
-start_cleanup_pid(Zone, DropQueueName) ->
+start_cleanup_pid(Zone, DropQueueName, Dets) ->
     Parent = self(),
-    spawn_link(fun() ->
-                       cleanup_loop(Zone, Parent, DropQueueName)
-               end).
+    CleanupPid = spawn_link(fun() ->
+                                    cleanup_loop(Zone, Parent, DropQueueName)
+                            end),
+    send_give_me_work(CleanupPid),
+    send_cleanup_reminders(Zone, Dets, CleanupPid),
+    CleanupPid.
 
 %% TODO: Delete/mangle/edit/something:::::::::::::::::::
 %%
@@ -734,8 +754,8 @@ start_cleanup_pid(Zone, DropQueueName) ->
 %%        - Any handle_call sets timeout to something like 10?
 %%  2. If cleanup pid has wor.........
 
-send_give_me_work(Cleanup) ->
-    Cleanup ! give_me_work.
+send_give_me_work(CleanupPid) ->
+    CleanupPid ! give_me_work.
 
 cleanup_loop(Zone, Parent, DropQueueName) ->
     {ok, Q} = riak_cs_disk_log_q:new(DropQueueName),
@@ -766,29 +786,30 @@ idle_0(#clean{zone=Zone, parent_waiting=false, q=Q, cleanups=Cleanups}=CS) ->
         give_me_work ->
             wants_work(CS#clean{parent_waiting=true});
         {flow_control, FoldPid} ->
-io:format("DBG: flow control ~p\n", [FoldPid]),
             FoldPid ! {flow_control, ack},
             idle_0(CS);
-        {delete_this, _BKey} = Msg ->
+        {bg_work_delete, _BKey} = Msg ->
             true = riak_cs_disk_log_q:is_empty(Q),
             NewQ = riak_cs_disk_log_q:in(Msg, Q),
             idle_N(CS#clean{q=NewQ})
     end.
 
-perhaps_start_fold(#clean{am_folding=true}, _ResumeFun) ->
-    ok;
+perhaps_start_fold(#clean{am_folding=true} = CS, ResumeFun) ->
+    ResumeFun(CS);
 perhaps_start_fold(#clean{am_folding=false,
                           parent=Parent, cleanups=Cleanups}=CS, ResumeFun) ->
     case queue:out(Cleanups) of
         {empty, _} ->
-            ok;
+            ResumeFun(CS);
         {{value, {partition_dropped, Partition, ZPrefix}}, NewCleanups} ->
             Fun = make_drop_cleanup_fun(ZPrefix),
-            Parent ! {please_fold_keys, Partition, ZPrefix, Fun, 0},
-            ResumeFun(CS#clean{cleanups=NewCleanups, am_folding=true})
+            Parent ! {bg_work_fold_keys, Partition, ZPrefix, Fun, 0},
+            ResumeFun(CS#clean{cleanups=NewCleanups,
+                               parent_waiting=false, am_folding=true})
     end.
 
-wants_work(#clean{zone=Zone, parent_waiting=true, parent=Parent,
+wants_work(#clean{zone=Zone,
+                  parent=Parent,
                   cleanups=Cleanups}=CS) ->
     receive
         perhaps_start_next_fold ->
@@ -799,24 +820,20 @@ wants_work(#clean{zone=Zone, parent_waiting=true, parent=Parent,
             idle_0(CS#clean{am_folding=false,
                             parent_waiting=false});
         {partition_dropped, Partition, ZPrefix} = Msg ->
-            lager:info("~s: zone ~p ~p: wants_work: "
-                       "queue drop partition ~p prefix ~p",
+            lager:info("~s: zone ~p ~p: queue drop partition ~p prefix ~p",
                        [?MODULE, Zone, self(), Partition, ZPrefix]),
             wants_work(CS#clean{cleanups=queue:in(Msg, Cleanups)});
         give_me_work ->
-            exit({wtf, already_in, wants_work, got, give_me_work}),
             wants_work(CS);
         {flow_control, FoldPid} ->
-io:format("DBG: flow control ~p\n", [FoldPid]),
             FoldPid ! {flow_control, ack},
             wants_work(CS);
-        {delete_this, _BKey} = Msg ->
+        {bg_work_delete, _BKey} = Msg ->
             Parent ! Msg,
             idle_0(CS#clean{parent_waiting=false})
     end.
 
-idle_N(#clean{zone=Zone, parent_waiting=Waiting, parent=Parent, q=Q,
-              cleanups=Cleanups}=CS) ->
+idle_N(#clean{zone=Zone, parent=Parent, q=Q, cleanups=Cleanups}=CS) ->
     receive
         perhaps_start_next_fold ->
             perhaps_start_fold(CS, fun(NewCS) -> idle_N(NewCS) end);
@@ -830,7 +847,6 @@ idle_N(#clean{zone=Zone, parent_waiting=Waiting, parent=Parent, q=Q,
                        [?MODULE, Zone, self(), Partition, ZPrefix]),
             idle_N(CS#clean{cleanups=queue:in(Msg, Cleanups)});
         give_me_work ->
-            false = Waiting,                    % sanity
             case riak_cs_disk_log_q:out(Q) of
                 {empty, _} ->
                     exit({wtf, idle_N, q, is_empty});
@@ -845,10 +861,9 @@ idle_N(#clean{zone=Zone, parent_waiting=Waiting, parent=Parent, q=Q,
                     end
             end;
         {flow_control, FoldPid} ->
-io:format("DBG: flow control ~p\n", [FoldPid]),
             FoldPid ! {flow_control, ack},
             idle_N(CS);
-        {delete_this, _BKey} = Msg ->
+        {bg_work_delete, _BKey} = Msg ->
             NewQ = riak_cs_disk_log_q:in(Msg, Q),
             idle_N(CS#clean{q=NewQ})
     end.
