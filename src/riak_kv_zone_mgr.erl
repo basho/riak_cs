@@ -168,7 +168,7 @@
          delete/5,
          drop/2,
          %% fold_buckets/4,
-         %% fold_keys/4,
+         fold_keys/5,
          %% fold_objects/4,
          is_empty/2,
          foodelme/0
@@ -224,6 +224,10 @@ capabilities(Zone, Partition, Bucket)
 drop(Zone, Partition)
   when is_integer(Zone), is_integer(Partition) ->
     call_zone(Zone, {drop, Partition}).
+
+fold_keys(Zone, Partition, X_TODO, Y, Z)
+  when is_integer(Zone), is_integer(Partition) ->
+    call_zone(Zone, {fold_keys, Partition, X_TODO, Y, Z}).
 
 get(Zone, Partition, Bucket, Key)
   when is_integer(Zone), is_integer(Partition) ->
@@ -475,6 +479,8 @@ handle_info({bg_work_fold_keys, Partition, ZPrefix, Fun, Acc},
     lager:info("~s: zone ~p ~p: start fold for partition ~p prefix ~p",
                [?MODULE, Zone, self(), Partition, ZPrefix]),
     spawn_link(fun() ->
+                       %% TODO: check for Mod's capability of ordered keys
+                       %%       and single bucket fold.  If present, use them.
                        {ok, Dropped} = Mod:fold_keys(Fun, Acc, [], BE_state),
                        CleanupPid ! {bg_fold_keys_finished,
                                      Partition, ZPrefix, Dropped},

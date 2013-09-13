@@ -36,7 +36,7 @@
          delete/4,
          drop/1,
          %% fold_buckets/4,
-         %% fold_keys/4,
+         fold_keys/4,
          %% fold_objects/4,
          is_empty/1,
          status/1,
@@ -156,7 +156,7 @@ put_object(Bucket, Key, IndexSpecs, RObj, #state{partition=Partition} = State)->
 -spec delete(riak_object:bucket(), riak_object:key(), [index_spec()], state()) ->
                     {ok, state()} |
                     {error, term(), state()}.
-delete(Bucket, Key, IndexSpecs, #state{partition=Partition}=State) ->
+delete(Bucket, Key, IndexSpecs, #state{partition=Partition} = State) ->
     Zone = chash_to_zone(Bucket, Key, State),
     case riak_kv_zone_mgr:delete(Zone, Partition, Bucket, Key, IndexSpecs) of
         {ok, EncodedVal} ->
@@ -172,6 +172,26 @@ delete(Bucket, Key, IndexSpecs, #state{partition=Partition}=State) ->
 drop(#state{partition=Partition} = State) ->
     [_ = riak_kv_zone_mgr:drop(Zone, Partition) || Zone <- zone_list(State)],
     {ok, State}.
+
+fold_keys(_FoldKeysFun, _Acc, Opts, #state{partition=_Partition} = _State) ->
+    %% TODO: add filter for single bucket
+    _FoldFun = fold_keys_fun(todoTODO_FoldKeysFun, undefined),
+    case lists:member(async_fold, Opts) of
+        true ->
+            BucketFolder =
+                fun() ->
+                        todoTODO
+                end,
+            {async, BucketFolder};
+        false ->
+            todoTODO
+    end.
+
+    %% lists:foldl(fun(_Zone, false) ->
+    %%                     false;
+    %%                (Zone, _) ->
+    %%                     riak_kv_zone_mgr:is_empty(Zone, Partition)
+    %%             end, true, zone_list(State)).
 
 %% @doc Returns true if this backend contains any
 %% non-tombstone values; otherwise returns false.
@@ -226,6 +246,36 @@ chash_to_zone(_Bucket, _Key, #state{zone_list=ZoneList}) ->
     io:format("TODO: fixme chash_to_zone: map to ~p\n", [Zone]),
     Zone.
 
+%% @private
+%% Return a function to fold over keys on this backend
+fold_keys_fun(FoldKeysFun, undefined) ->
+    fun({{Bucket, Key}, _}, Acc) ->
+            FoldKeysFun(Bucket, Key, Acc);
+       (_Else, Acc) ->
+            io:format("SLF TODO: Wha? ~s ~p got ~P\n", [?MODULE, ?LINE, _Else, 20]),
+            Acc
+    end;
+fold_keys_fun(FoldKeysFun, {bucket, FilterBucket}) ->
+    fun({{Bucket, Key}, _}, Acc) when Bucket == FilterBucket ->
+            FoldKeysFun(Bucket, Key, Acc);
+       (_Else, Acc) ->
+            io:format("SLF TODO: Wha? ~s ~p got ~P\n", [?MODULE, ?LINE, _Else, 20]),
+            Acc
+    end.
+
+fold_via_harvest_fold_items(0, _Fun, Acc) ->
+    Acc;
+fold_via_harvest_fold_items(N, Fun, Acc) ->
+    %% TODO add protection in case a zone mgr fold farmer dies.
+    receive
+        {farmer_item, X, Y} ->
+            %% TODO try/catch or similar?
+            fold_via_harvest_fold_items(N, Fun, Fun(X, Y, Acc));
+        farmer_done ->
+            fold_via_harvest_fold_items(N - 1, Fun, Acc)
+    end.
+
+
 %%%%%%%%%%%%%%%%%%%
 %% TEST
 %%%%%%%%%%%%%%%%%%%
@@ -233,8 +283,11 @@ chash_to_zone(_Bucket, _Key, #state{zone_list=ZoneList}) ->
 t0() ->
     B = <<"b">>,
     K = <<"k">>, 
+    V = <<"value">>,
+    O = riak_object:new(B, K, V),
+    O_bin = riak_object:to_binary(v0, O),
 
-    {ok, S} = start(0, [{zone_be_name, riak_kv_yessir_backend},
+    {ok, S} = start(0, [{zone_be_name, riak_kv_memory_backend},
                         {zone_list, t_zones()}]),
 
     {ok, ?API_VERSION} = api_version(),
@@ -243,13 +296,15 @@ t0() ->
 
     {ok, _} = drop(S),
     {ok, _} = drop(S),
-    false = is_empty(S),                        % yessir is always full
-    false = is_empty(S),                        % yessir is always full
+    true = is_empty(S),
+    true = is_empty(S),
 
+    {ok, _} = put(B, K, [], O_bin, S),
     {ok, XX0, _} = get(B, K, S),
     true = is_binary(XX0),
     {ok, XX1, _} = get_object(B, K, false, S),
     true = is_tuple(XX1),
+    XX1 = O,
     {ok, XX2, _} = get_object(B, K, true, S),
     true = is_binary(XX2),
 
