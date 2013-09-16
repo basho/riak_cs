@@ -41,6 +41,7 @@
          normalize_headers/1,
          error_if_acl_headers_and_acl_body/1,
          error_if_canned_acl_and_header_grant/1,
+         acl_from_headers/4,
          extract_acl_headers/1,
          acl_header_and_body/1,
          extract_amazon_headers/1,
@@ -341,6 +342,31 @@ extract_name(?RCS_USER{name=Name}) ->
     Name;
 extract_name(_) ->
     "-unknown-".
+
+%% TODO: not sure if this should live here or in
+%% `riak_cs_acl_utils'
+%% @doc Create an acl from the request headers. At this point, we should
+%% have already verified that there is only a canned acl header or specific
+%% header grants.
+-spec acl_from_headers(Headers :: list(),
+                       Owner :: acl_owner(),
+                       BucketOwner :: undefined | acl_owner(),
+                       Pid :: pid()) ->
+    {ok, #acl_v2{}} |
+    {error, 'invalid_argument'} |
+    {error, 'unresolved_grant_email'}.
+acl_from_headers(Headers, Owner, BucketOwner, Pid) ->
+    %% TODO: time to make a macro for `"x-amz-acl"'
+    case proplists:get_value("x-amz-acl", Headers, {error, undefined}) of
+        {error, undefined} ->
+            RenamedHeaders = extract_acl_headers(Headers),
+            riak_cs_acl_utils:specific_acl_grant(Owner, RenamedHeaders, Pid);
+        %% Note value may still be `undefined'. That's ok,
+        %% `canned_acl' accepts that.
+        Value ->
+            {ok, riak_cs_acl_utils:canned_acl(Value, Owner, BucketOwner)}
+    end.
+
 
 -spec extract_acl_headers(term()) -> [{acl_perm(), string()}].
 extract_acl_headers(Headers) ->
