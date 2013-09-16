@@ -320,14 +320,15 @@ accept_body(RD, Ctx=#context{local_context=LocalCtx,
     Metadata = riak_cs_wm_utils:extract_user_metadata(RD),
     BlockSize = riak_cs_lfs_utils:block_size(),
 
-    %% Check for `x-amz-acl' header to support
-    %% non-default ACL at bucket creation time.
-    ACL = riak_cs_acl_utils:canned_acl(
-            wrq:get_req_header("x-amz-acl", RD),
-            {User?RCS_USER.display_name,
+    %% ACL
+    Headers = riak_cs_wm_utils:normalize_headers(RD),
+    Owner = {User?RCS_USER.display_name,
              User?RCS_USER.canonical_id,
              User?RCS_USER.key_id},
-            riak_cs_wm_utils:bucket_owner(Bucket, RiakcPid)),
+    BucketOwner = riak_cs_wm_utils:bucket_owner(Bucket, RiakcPid),
+    %% TODO: at this point, ACL might still be an error
+    {ok, ACL} = riak_cs_wm_utils:acl_from_headers(Headers, Owner, BucketOwner, RiakcPid),
+
     Args = [{Bucket, list_to_binary(Key), Size, list_to_binary(ContentType),
              Metadata, BlockSize, ACL, timer:seconds(60), self(), RiakcPid}],
     {ok, Pid} = riak_cs_put_fsm_sup:start_put_fsm(node(), Args),

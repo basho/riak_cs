@@ -89,7 +89,7 @@ canned_acl(HeaderVal, Owner, BucketOwner) ->
 %% canonical id, return `{error, unresolved_grant_email}'. Otherwise
 %% return an acl record.
 -spec specific_acl_grant(Owner :: acl_owner(),
-                         [{HeaderName :: string(),
+                         [{HeaderName :: acl_perm(),
                            HeaderValue :: string()}],
                          pid()) ->
     {ok, #acl_v2{}} |

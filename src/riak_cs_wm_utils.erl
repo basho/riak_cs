@@ -357,12 +357,18 @@ extract_name(_) ->
     {error, 'unresolved_grant_email'}.
 acl_from_headers(Headers, Owner, BucketOwner, Pid) ->
     %% TODO: time to make a macro for `"x-amz-acl"'
+    %% `Headers' is an ordset. Is there a faster way to retrieve this? Or
+    %% maybe a better data structure?
     case proplists:get_value("x-amz-acl", Headers, {error, undefined}) of
         {error, undefined} ->
             RenamedHeaders = extract_acl_headers(Headers),
-            riak_cs_acl_utils:specific_acl_grant(Owner, RenamedHeaders, Pid);
-        %% Note value may still be `undefined'. That's ok,
-        %% `canned_acl' accepts that.
+            case RenamedHeaders of
+                [] ->
+                    {DisplayName, CanonicalId, KeyID} = Owner,
+                    {ok, riak_cs_acl_utils:default_acl(DisplayName, CanonicalId, KeyID)};
+                _Else ->
+                    riak_cs_acl_utils:specific_acl_grant(Owner, RenamedHeaders, Pid)
+            end;
         Value ->
             {ok, riak_cs_acl_utils:canned_acl(Value, Owner, BucketOwner)}
     end.
