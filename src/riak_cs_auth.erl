@@ -20,10 +20,7 @@
 
 -module(riak_cs_auth).
 
-%% -export([behaviour_info/1]).
-
 -include("riak_cs.hrl").
-%% -compile(export_all).
 
 -type wm_reqdata() :: tuple().
 -type wm_context() :: tuple().
@@ -38,9 +35,3 @@
 -callback authenticate(rcs_user(), string() | {string(), term()} | undefined,
                        wm_reqdata(), wm_context()) ->
     ok | {error, atom()}.     
-
-%% -spec behaviour_info(atom()) -> 'undefined' | [{atom(), arity()}].
-%% behaviour_info(callbacks) ->
-%%     [{identify, 2}, {authenticate, 4}];
-%% behaviour_info(_Other) ->
-%%     undefined.
