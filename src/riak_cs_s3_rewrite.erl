@@ -36,6 +36,15 @@
 -type query_params() :: [{string(), string()}].
 -type subresources() :: [subresource()].
 
+-define(OPTIONAL_HEADER_SUBS,
+        [{"x-amz-copy-source", "x-copy-from"},
+         {"x-amz-metadata-directive", "x-copy-metadata-directive"},
+         {"x-amz-copy-source-if-match", "x-copy-from-if-match"},
+         {"x-amz-copy-source-if-none-match", "x-copy-from-if-none-match"},
+         {"x-amz-copy-source-if-unmodified-since", "x-copy-from-if-unmodified-since"},
+         {"x-amz-copy-source-if-modified-since", "x-copy-from-if-modified-since"}
+        ]).
+
 %% @doc Function to rewrite headers prior to processing by webmachine.
 -spec rewrite(atom(), atom(), {integer(), integer()}, gb_tree(), string()) ->
                      {gb_tree(), string()}.
@@ -50,9 +59,7 @@ rewrite(Method, _Scheme, _Vsn, Headers, Url) ->
                                  mochiweb_util:unquote(Path),
                                  QueryString,
                                  HostBucket),
-    RewrittenHeaders = mochiweb_headers:default(?RCS_REWRITE_HEADER,
-                                                rcs_rewrite_header(Url, HostBucket),
-                                                Headers),
+    RewrittenHeaders = rewrite_headers(Url, HostBucket, Headers),
     {RewrittenHeaders, RewrittenPath}.
 
 -spec original_resource(term()) -> undefined | {string(), [{term(),term()}]}.
@@ -63,6 +70,28 @@ original_resource(RD) ->
             {Path, QS, _} = mochiweb_util:urlsplit_path(RawPath),
             {Path, mochiweb_util:parse_qs(QS)}
     end.
+
+%% @doc Add headers for the raw path, the API version, and the account.
+-spec rewrite_headers(string(), string(), gb_tree()) -> gb_tree().
+rewrite_headers(Url, HostBucket, Headers) ->
+    write_optional_headers(
+      mochiweb_headers:default(?RCS_REWRITE_HEADER,
+                               rcs_rewrite_header(Url, HostBucket),
+                               Headers)).
+
+
+-spec write_optional_headers(gb_tree()) -> gb_tree().
+write_optional_headers(Headers) ->
+    FoldFun =
+        fun({Header, NewHeader}, Acc) ->
+                case mochiweb_headers:get_value(Header, Acc) of
+                    undefined ->
+                        Acc;
+                    Value ->
+                        mochiweb_headers:enter(NewHeader, Value, Acc)
+                end
+        end,
+    lists:foldl(FoldFun, Headers, ?OPTIONAL_HEADER_SUBS).
 
 %% @doc Internal function to handle rewriting the URL
 -spec rewrite_path(atom(),string(), string(), undefined | string()) -> string().
@@ -388,9 +417,23 @@ rewrite_path_test() ->
 
 rewrite_header_test() ->
     Path = "/testbucket?y=z&a=b&m=n",
-    {Headers, _} = rewrite_with(headers([]), Path),
-    ?assertEqual(Path, mochiweb_headers:get_value(?RCS_REWRITE_HEADER, Headers)).
-
+    CopyHeaders = [{"x-amz-copy-source", "/testbucket/object1"},
+                   {"x-amz-metadata-directive", "COPY"},
+                   {"x-amz-copy-source-if-match", "ETAG1"},
+                   {"x-amz-copy-source-if-none-match", "ETAG2"},
+                   {"x-amz-copy-source-if-unmodified-since", "01234"},
+                   {"x-amz-copy-source-if-modified-since", "56789"}
+                  ],
+    {Headers1, _} = rewrite_with(headers([]), Path),
+    {Headers2, _} = rewrite_with(headers(CopyHeaders), Path),
+    ?assertEqual(Path, mochiweb_headers:get_value(?RCS_REWRITE_HEADER, Headers1)),
+    ?assertEqual(Path, mochiweb_headers:get_value(?RCS_REWRITE_HEADER, Headers2)),
+    ?assertEqual("/testbucket/object1", mochiweb_headers:get_value("x-copy-from", Headers2)),
+    ?assertEqual("COPY", mochiweb_headers:get_value("x-copy-metadata-directive", Headers2)),
+    ?assertEqual("ETAG1", mochiweb_headers:get_value("x-copy-from-if-match", Headers2)),
+    ?assertEqual("ETAG2", mochiweb_headers:get_value("x-copy-from-if-none-match", Headers2)),
+    ?assertEqual("01234", mochiweb_headers:get_value("x-copy-from-if-unmodified-since", Headers2)),
+    ?assertEqual("56789", mochiweb_headers:get_value("x-copy-from-if-modified-since", Headers2)).
 
 %% Helper function for eunit tests
 headers(HeadersList) ->
