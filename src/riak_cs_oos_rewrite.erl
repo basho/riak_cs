@@ -27,6 +27,7 @@
 -define(RCS_REWRITE_HEADER, "x-rcs-rewrite-path").
 -define(OOS_API_VSN_HEADER, "x-oos-api-version").
 -define(OOS_ACCOUNT_HEADER, "x-oos-account").
+-define(OPTIONAL_HEADER_SUBS, []).
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -63,9 +64,30 @@ parse_path(Path) ->
 %% @doc Add headers for the raw path, the API version, and the account.
 -spec rewrite_headers(gb_tree(), string(), string(), string()) -> gb_tree().
 rewrite_headers(Headers, RawPath, ApiVsn, Account) ->
-    UpdHdrs0 = mochiweb_headers:default(?RCS_REWRITE_HEADER, RawPath, Headers),
-    UpdHdrs1 = mochiweb_headers:enter(?OOS_API_VSN_HEADER, ApiVsn, UpdHdrs0),
-    mochiweb_headers:enter(?OOS_ACCOUNT_HEADER, Account, UpdHdrs1).
+    write_optional_headers(write_required_headers(Headers, RawPath, ApiVsn, Account)).
+
+-spec write_required_headers(gb_tree(), string(), string(), string()) -> gb_tree().
+write_required_headers(Headers, RawPath, ApiVsn, Account) ->
+    FoldFun =
+        fun({Header, Value}, Acc) ->
+                mochiweb_headers:enter(Header, Value, Acc)
+        end,
+    lists:foldl(FoldFun, Headers, [{?RCS_REWRITE_HEADER, RawPath},
+                                   {?OOS_API_VSN_HEADER, ApiVsn},
+                                   {?OOS_ACCOUNT_HEADER, Account}]).
+
+-spec write_optional_headers(gb_tree()) -> gb_tree().
+write_optional_headers(Headers) ->
+    FoldFun =
+        fun({Header, NewHeader}, Acc) ->
+                case mochiweb_headers:get_value(Header) of
+                    undefined ->
+                        Acc;
+                    Value ->
+                        mochiweb_headers:enter(NewHeader, Value, Acc)
+                end
+        end,
+    lists:foldl(FoldFun, Headers, ?OPTIONAL_HEADER_SUBS).
 
 %% @doc Internal function to handle rewriting the URL. Only `v1' of
 %% the API is supported since right now it is the only version that
