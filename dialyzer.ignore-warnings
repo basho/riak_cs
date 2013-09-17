@@ -58,7 +58,7 @@ riak_cs_block_server.erl:303: The pattern Success = {'ok', _} can never match th
 riak_cs_block_server.erl:339: The pattern {'ok', RiakObject} can never match the type {'error',_}
 riak_cs_config.erl:187: The pattern {'ok', ClusterID} can never match the type {'error',_}
 riak_repl_pb_api.erl:33: The pattern {'ok', {MsgCode, Msg}} can never match the type {'error',_} | {'ok',binary()}
-riak_repl_pb_api.erl:66: The pattern {'ok', {130, Msg}} can never match the type {'error',_} | {'ok',binary()}
+riak_repl_pb_api.erl:66: The pattern {'ok',
 riak_repl_pb_api.erl:63: The pattern {'ok', {MsgCode, MsgData}} can never match the type {'error',_} | {'ok',binary()}
 ############## Warnings from dependencies that are outside our scope
 ^bread.erl:
