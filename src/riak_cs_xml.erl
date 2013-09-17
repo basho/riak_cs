@@ -49,9 +49,25 @@
 %% This function is temporary and should be removed once all XML
 %% handling has been moved into this module.
 %% @TODO Remove this asap!
-export_xml(XmlDoc) ->
-    unicode:characters_to_binary(
-      xmerl:export_simple(XmlDoc, xmerl_xml, [{prolog, ?XML_PROLOG}]), unicode, unicode).
+export_xml(XmlStruct) ->
+    unicode:characters_to_binary(export_xml(XmlStruct, [], [?XML_PROLOG]),
+                                 unicode, unicode).
+
+export_xml([], [], ExportAcc) ->
+    ExportAcc;
+export_xml([], [{Tag, Rest} | TmpAcc], ExportAcc) ->
+    export_xml(Rest, TmpAcc, [ExportAcc, $<, $/, atom_to_list(Tag), $>]);
+export_xml([{Tag, Content} | Rest], TmpAcc, ExportAcc) ->
+    export_xml([{Tag, [], Content} | Rest], TmpAcc, ExportAcc);
+export_xml([{Tag, Attrs, Content} | Rest], TmpAcc, ExportAcc) ->
+    %% TODO(shino): special branch for empty tag? (c.f. xmerl_lib:is_empty_data)
+    export_xml(Content, [{Tag, Rest} | TmpAcc],
+               [ExportAcc, $<, atom_to_list(Tag),
+                [[$  ,atom_to_list(K), $=, $", xmerl_lib:export_attribute(V), $"]
+                 || {K, V} <- Attrs],
+                $>]);
+export_xml([Text | Rest], TmpAcc, ExportAcc) ->
+    export_xml(Rest, TmpAcc, [ExportAcc, xmerl_lib:export_text(Text)]).
 
 -spec to_xml(term()) -> binary().
 to_xml(undefined) ->
