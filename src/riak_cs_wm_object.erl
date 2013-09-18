@@ -78,8 +78,6 @@ authorize(RD, Ctx0=#context{local_context=LocalCtx0,
             riak_cs_wm_utils:object_access_authorize_helper(object, true, RD, Ctx)
     end.
 
-
-
 %% @doc Get the list of methods this resource supports.
 -spec allowed_methods() -> [atom()].
 allowed_methods() ->
@@ -87,26 +85,28 @@ allowed_methods() ->
     ['HEAD', 'GET', 'DELETE', 'PUT'].
 
 -spec valid_entity_length(#wm_reqdata{}, #context{}) -> {boolean(), #wm_reqdata{}, #context{}}.
-valid_entity_length(RD, Ctx=#context{response_module=ResponseMod}) ->
-    case wrq:method(RD) of
-        'PUT' ->
-            case catch(
-                   list_to_integer(
-                     wrq:get_req_header("Content-Length", RD))) of
-                Length when is_integer(Length) ->
-                    case Length =< riak_cs_lfs_utils:max_content_len() of
-                        false ->
-                            ResponseMod:api_error(
-                              entity_too_large, RD, Ctx);
-                        true ->
-                            check_0length_metadata_update(Length, RD, Ctx)
-                    end;
-                _ ->
-                    {false, RD, Ctx}
-            end;
-        _ ->
-            {true, RD, Ctx}
-    end.
+valid_entity_length(RD, Ctx) ->
+    ContentLength = wrq:get_req_header("Content-Length", RD),
+    valid_entity_length(RD,
+                        Ctx,
+                        wrq:method(RD),
+                        catch(list_to_integer(ContentLength))).
+
+-spec valid_entity_length(#wm_reqdata{}, #context{}, atom(), integer() | {'EXIT', term()}) ->
+                                 {boolean(), #wm_reqdata{}, #context{}}.
+valid_entity_length(RD, Ctx, 'PUT', {'EXIT', _}) ->
+    %% The Content-Length supplied did not represent an integer
+    {false, RD, Ctx};
+valid_entity_length(RD, Ctx, 'PUT', ContentLength) ->
+    case ContentLength =< riak_cs_lfs_utils:max_content_len() of
+        false ->
+            #context{response_module=ResponseMod} = Ctx,
+            ResponseMod:api_error(entity_too_large, RD, Ctx);
+        true ->
+            check_0length_metadata_update(ContentLength, RD, Ctx)
+    end;
+valid_entity_length(RD, Ctx, _, _) ->
+    {true, RD, Ctx}.
 
 -spec content_types_provided(#wm_reqdata{}, #context{}) -> {[{string(), atom()}], #wm_reqdata{}, #context{}}.
 content_types_provided(RD, Ctx=#context{local_context=LocalCtx,
