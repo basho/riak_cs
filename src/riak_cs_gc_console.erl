@@ -182,9 +182,8 @@ human_detail(Name, Value) ->
     {io_lib:format("~p", [Name]), io_lib:format("~p", [Value])}.
 
 human_time(undefined) -> "unknown/never";
-human_time(Seconds) when is_integer(Seconds) ->
-    human_time(calendar:gregorian_seconds_to_datetime(Seconds));
-human_time(Datetime)  -> rts:iso8601(Datetime).
+human_time(Seconds) ->
+    rts:iso8601(calendar:gregorian_seconds_to_datetime(Seconds)).
 
 parse_interval_opts([]) ->
     undefined;
