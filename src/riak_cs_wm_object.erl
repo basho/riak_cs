@@ -408,35 +408,6 @@ finalize_request(RD,
     riak_cs_dtrace:dt_object_return(?MODULE, <<"object_put">>, [S], [UserName, BFile_str]),
     Response.
 
-check_0length_metadata_update(Length, RD, Ctx=#context{local_context=LocalCtx}) ->
-    %% The authorize() callback has already been called, which means
-    %% that ensure_doc() has been called, so the local context
-    %% manifest is up-to-date: the object exists or it doesn't.
-    case (not is_atom(LocalCtx#key_context.manifest) andalso
-          zero_length_metadata_update_p(Length, RD)) of
-        false ->
-            UpdLocalCtx = LocalCtx#key_context{size=Length},
-            {true, RD, Ctx#context{local_context=UpdLocalCtx}};
-        true ->
-            UpdLocalCtx = LocalCtx#key_context{size=Length,
-                                               update_metadata=true},
-            {true, RD, Ctx#context{local_context=UpdLocalCtx}}
-    end.
-
-zero_length_metadata_update_p(0, RD) ->
-    OrigPath = wrq:get_req_header("x-rcs-rewrite-path", RD),
-    case wrq:get_req_header("x-amz-copy-source", RD) of
-        undefined ->
-            false;
-        [$/ | _] = Path ->
-            Path == OrigPath;
-        Path ->
-            %% boto (version 2.7.0) does NOT prepend "/"
-            [$/ | Path] == OrigPath
-    end;
-zero_length_metadata_update_p(_, _) ->
-    false.
-
 -spec format_etag(binary() | {binary(), string()}) -> string().
 format_etag({ContentMd5, Suffix}) ->
     riak_cs_utils:etag_from_binary(ContentMd5, Suffix);
