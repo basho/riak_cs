@@ -20,8 +20,8 @@
 
 -record(state, {
           interval :: 'infinity' | non_neg_integer(),
-          last :: undefined | calendar:datetime(), % the last time a deletion was scheduled
-          next :: undefined | calendar:datetime(), % the next scheduled gc time
+          last :: undefined | non_neg_integer(), % the last time a deletion was scheduled
+          next :: undefined | non_neg_integer(), % the next scheduled gc time
           riak :: undefined | pid(), % Riak connection pid
           current_files :: [lfs_manifest()],
           current_fileset :: twop_set:twop_set(),
