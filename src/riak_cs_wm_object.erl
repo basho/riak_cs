@@ -103,7 +103,7 @@ valid_entity_length(RD, Ctx, 'PUT', ContentLength) ->
             #context{response_module=ResponseMod} = Ctx,
             ResponseMod:api_error(entity_too_large, RD, Ctx);
         true ->
-            check_0length_metadata_update(ContentLength, RD, Ctx)
+            {true, RD, Ctx}
     end;
 valid_entity_length(RD, Ctx, _, _) ->
     {true, RD, Ctx}.
@@ -285,11 +285,26 @@ content_types_accepted(CT, RD, Ctx=#context{local_context=LocalCtx0}) ->
              Ctx}
     end.
 
--spec accept_body(#wm_reqdata{}, #context{}) -> {{halt, integer()}, #wm_reqdata{}, #context{}}.
-accept_body(RD, Ctx=#context{local_context=LocalCtx,
-                             response_module=ResponseMod,
-                             riakc_pid=RiakcPid})
-  when LocalCtx#key_context.update_metadata == true ->
+-spec is_copy_request(#wm_reqdata{}) -> boolean().
+is_copy_request(RD) ->
+    case wrq:get_req_header("x-copy-from", RD) of
+        undefined ->
+            false;
+        _ ->
+            true
+    end.
+
+-spec accept_body(#wm_reqdata{}, #context{}) ->
+                         {{halt, integer()}, #wm_reqdata{}, #context{}}.
+accept_body(RD, Ctx) ->
+    accept_body(RD, Ctx, is_copy_request(RD)).
+
+-spec accept_body(#wm_reqdata{}, #context{}, boolean()) ->
+                         {{halt, integer()}, #wm_reqdata{}, #context{}}.
+accept_body(RD, Ctx, true) ->
+    #context{local_context=LocalCtx,
+             response_module=ResponseMod,
+             riakc_pid=RiakcPid} = Ctx,
     #key_context{bucket=Bucket, key=KeyStr, manifest=Mfst} = LocalCtx,
     Acl = Mfst?MANIFEST.acl,
     NewAcl = Acl?ACL{creation_time = now()},
@@ -304,9 +319,10 @@ accept_body(RD, Ctx=#context{local_context=LocalCtx,
         {error, Err} ->
             ResponseMod:api_error(Err, RD, Ctx)
     end;
-accept_body(RD, Ctx=#context{local_context=LocalCtx,
-                             user=User,
-                             riakc_pid=RiakcPid}) ->
+accept_body(RD, Ctx, false) ->
+    #context{local_context=LocalCtx,
+             user=User,
+             riakc_pid=RiakcPid} = Ctx,
     #key_context{bucket=Bucket,
                  key=Key,
                  putctype=ContentType,
