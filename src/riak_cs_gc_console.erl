@@ -43,6 +43,9 @@
 
 -define(SCRIPT_NAME, "riak-cs-gc").
 
+-define(SECONDS_PER_DAY, 86400).
+-define(DAYS_FROM_0_TO_1970, 719528).
+
 %%%===================================================================
 %%% Public API
 %%%===================================================================
@@ -183,7 +186,8 @@ human_detail(Name, Value) ->
 
 human_time(undefined) -> "unknown/never";
 human_time(Seconds) ->
-    rts:iso8601(calendar:gregorian_seconds_to_datetime(Seconds)).
+    Seconds0 = Seconds + ?DAYS_FROM_0_TO_1970*?SECONDS_PER_DAY,
+    rts:iso8601(calendar:gregorian_seconds_to_datetime(Seconds0)).
 
 parse_interval_opts([]) ->
     undefined;
