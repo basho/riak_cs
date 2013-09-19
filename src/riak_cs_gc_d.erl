@@ -490,10 +490,7 @@ schedule_next(#state{interval=infinity}=State) ->
     State;
 schedule_next(#state{batch_start=Current,
                      interval=Interval}=State) ->
-    Next = calendar:gregorian_seconds_to_datetime(
-             riak_cs_gc:timestamp() + Interval),
-    _ = lager:debug("Scheduling next garbage collection for ~p",
-                    [Next]),
+    Next = riak_cs_gc:timestamp() + Interval,
     TimerRef = erlang:send_after(Interval*1000, self(), start_batch),
     State#state{batch_start=undefined,
                 last=Current,
