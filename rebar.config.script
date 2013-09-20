@@ -1,4 +1,16 @@
-
+UpdConfig =
+    case erlang:system_info(otp_release) =< "R15B01" of
+        true ->
+            CONFIG;
+        false ->
+            HashDefine = [{d,new_hash}],
+            case lists:keysearch(erl_opts, 1, CONFIG) of
+                {value, {erl_opts, Opts}} ->
+                    lists:keyreplace(erl_opts,1,CONFIG,{erl_opts,Opts++HashDefine});
+                false ->
+                    [{erl_opts, HashDefine}]
+           end
+    end,
 UseEEDeps = case os:getenv("RIAK_CS_EE_DEPS") of
                 false ->
                     false;
@@ -34,9 +46,9 @@ case UseEEDeps of
 {license_full_text, \"This software is provided under license from Basho Technologies.\"}.
 {solaris_pkgname, \"BASHOriak-cs\"}.",
         file:write_file("pkg.vars.config", Bytes),
-        CONFIG;
+        UpdConfig;
     true ->
-        case lists:keysearch(deps, 1, CONFIG) of
+        case lists:keysearch(deps, 1, UpdConfig) of
             {value, {deps, Deps}} ->
                 Bytes = "%% -*- tab-width: 4;erlang-indent-level: 4;indent-tabs-mode: nil -*-
 %% ex: ts=4 sw=4 et
@@ -67,8 +79,8 @@ case UseEEDeps of
                     [
                      {riak_repl_pb_api,".*",{git,"git@github.com:basho/riak_repl_pb_api.git", {tag, "0.2.4"}}}
                     ],
-                lists:keyreplace(deps, 1, CONFIG, {deps, Deps ++ EE_DEPS});
+                lists:keyreplace(deps, 1, UpdConfig, {deps, Deps ++ EE_DEPS});
             _ ->
-                CONFIG
+                UpdConfig
         end
 end.
