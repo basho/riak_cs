@@ -8,7 +8,7 @@ UpdConfig =
                 {value, {erl_opts, Opts}} ->
                     lists:keyreplace(erl_opts,1,CONFIG,{erl_opts,Opts++HashDefine});
                 false ->
-                    [{erl_opts, HashDefine}]
+                    CONFIG ++ [{erl_opts, HashDefine}]
            end
     end,
 UseEEDeps = case os:getenv("RIAK_CS_EE_DEPS") of
