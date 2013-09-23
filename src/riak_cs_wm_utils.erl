@@ -390,11 +390,11 @@ header_name_to_perm("x-amz-grant-read") ->
     'READ';
 header_name_to_perm("x-amz-grant-write") ->
     'WRITE';
-header_name_to_perm("x-amz-read-acp") ->
+header_name_to_perm("x-amz-grant-read-acp") ->
     'READ_ACP';
-header_name_to_perm("x-amz-write-acp") ->
+header_name_to_perm("x-amz-grant-write-acp") ->
     'WRITE_ACP';
-header_name_to_perm("x-amz-full-control") ->
+header_name_to_perm("x-amz-grant-full-control") ->
     'FULL_CONTROL';
 header_name_to_perm(_Else) ->
     undefined.
