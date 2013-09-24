@@ -327,12 +327,17 @@ accept_body(RD, Ctx=#context{local_context=LocalCtx,
              User?RCS_USER.key_id},
     BucketOwner = riak_cs_wm_utils:bucket_owner(Bucket, RiakcPid),
     %% TODO: at this point, ACL might still be an error
-    {ok, ACL} = riak_cs_wm_utils:acl_from_headers(Headers, Owner, BucketOwner, RiakcPid),
-
-    Args = [{Bucket, list_to_binary(Key), Size, list_to_binary(ContentType),
-             Metadata, BlockSize, ACL, timer:seconds(60), self(), RiakcPid}],
-    {ok, Pid} = riak_cs_put_fsm_sup:start_put_fsm(node(), Args),
-    accept_streambody(RD, Ctx, Pid, wrq:stream_req_body(RD, riak_cs_lfs_utils:block_size())).
+    case riak_cs_wm_utils:acl_from_headers(Headers, Owner, BucketOwner, RiakcPid) of
+        {ok, ACL} ->
+            Args = [{Bucket, list_to_binary(Key), Size, list_to_binary(ContentType),
+                     Metadata, BlockSize, ACL, timer:seconds(60), self(), RiakcPid}],
+            {ok, Pid} = riak_cs_put_fsm_sup:start_put_fsm(node(), Args),
+            accept_streambody(RD, Ctx, Pid, wrq:stream_req_body(RD, riak_cs_lfs_utils:block_size()));
+        %% Error should only ever be `invalid_argument' or
+        %% `unresolved_grant_email'.
+        {error, Error} ->
+            riak_cs_s3_response:api_error(Error, RD, Ctx)
+    end.
 
 -spec accept_streambody(#wm_reqdata{}, #context{}, pid(), term()) -> {{halt, integer()}, #wm_reqdata{}, #context{}}.
 accept_streambody(RD,

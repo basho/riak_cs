@@ -26,6 +26,7 @@
 
 -define(BUCKET, "cs-631-test-bucket").
 -define(KEY_1, "key-1").
+-define(KEY_2, "key-2").
 -define(VALUE, <<"632-test-value">>).
 
 
@@ -45,4 +46,9 @@ test_canned_acl_and_grants_returns_400(UserConfig) ->
                 erlcloud_s3:put_object(?BUCKET, ?KEY_1, ?VALUE,
                                       Acl, Headers, UserConfig)).
 
-
+test_unknown_canonical_id_grant_returns_400(UserConfig) ->
+    Acl = [],
+    Headers = [{"x-amz-grant-write", "id=\"badbadbadbadbadbadbadbadbadbadbadbadbadbadbadbadbadbadbad9badbad\""}],
+    ?assertError({aws_error, {http_error, 400, _, _}},
+                erlcloud_s3:put_object(?BUCKET, ?KEY_2, ?VALUE,
+                                      Acl, Headers, UserConfig)).
