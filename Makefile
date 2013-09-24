@@ -176,6 +176,8 @@ package.src: deps
 	git archive --format=tar --prefix=$(PKG_ID)/ $(PKG_REVISION)| (cd package && tar -xf -)
 	cp rebar.config.script package/$(PKG_ID)
 	make -C package/$(PKG_ID) deps
+	mkdir -p package/$(PKG_ID)/priv
+	git --git-dir=.git describe --tags >package/$(PKG_ID)/priv/vsn.git
 	for dep in package/$(PKG_ID)/deps/*; do \
              echo "Processing dep: $${dep}"; \
              mkdir -p $${dep}/priv; \
