@@ -31,14 +31,14 @@
 -define(CSDEVS(N), lists:concat(["rcs-dev", N, "@127.0.0.1"])).
 -define(CSDEV(N), list_to_atom(?CSDEVS(N))).
 
--define(RIAK_ROOT, build_paths.root).
--define(RIAK_CURRENT, build_paths.current).
--define(EE_ROOT, build_paths.ee_root).
--define(EE_CURRENT, build_paths.ee_current).
--define(CS_ROOT, build_paths.cs_root).
--define(CS_CURRENT, build_paths.cs_current).
--define(STANCHION_ROOT, build_paths.stanchion_root).
--define(STANCHION_CURRENT, build_paths.stanchion_current).
+-define(RIAK_ROOT, <<"build_paths.root">>).
+-define(RIAK_CURRENT, <<"build_paths.current">>).
+-define(EE_ROOT, <<"build_paths.ee_root">>).
+-define(EE_CURRENT, <<"build_paths.ee_current">>).
+-define(CS_ROOT, <<"build_paths.cs_root">>).
+-define(CS_CURRENT, <<"build_paths.cs_current">>).
+-define(STANCHION_ROOT, <<"build_paths.stanchion_root">>).
+-define(STANCHION_CURRENT, <<"build_paths.stanchion_current">>).
 
 -define(PROXY_HOST, "localhost").
 -define(S3_HOST, "s3.amazonaws.com").
@@ -147,7 +147,7 @@ riak_config(ee, Backend) ->
     riak_ee_config(Backend).
 
 riak_oss_config(Backend) ->
-    CSCurrent = rt_config:get(build_paths.cs_current),
+    CSCurrent = rt_config:get(<<"build_paths.cs_current">>),
     AddPaths = filelib:wildcard(CSCurrent ++ "/dev/dev1/lib/riak_cs*/ebin"),
     [
      lager_config(),
@@ -615,5 +615,16 @@ wait_until(Fun, Condition, Retries, Delay) ->
 
 make_authorization(Method, Resource, ContentType, Config, Date) ->
     StringToSign = [Method, $\n, [], $\n, ContentType, $\n, Date, $\n, Resource],
-    Signature = base64:encode_to_string(crypto:sha_mac(Config#aws_config.secret_access_key, StringToSign)),
+    Signature =
+        base64:encode_to_string(sha_mac(Config#aws_config.secret_access_key, StringToSign)),
     lists:flatten(["AWS ", Config#aws_config.access_key_id, $:, Signature]).
+
+-ifdef(new_hash).
+sha_mac(Key,STS) -> crypto:hmac(sha, Key,STS).
+sha(Bin) -> crypto:hash(sha, Bin).
+
+-else.
+sha_mac(Key,STS) -> crypto:sha_mac(Key,STS).
+sha(Bin) -> crypto:sha(Bin).
+
+-endif.
