@@ -522,20 +522,14 @@ update_manifest_with_confirmation(RiakcPid, Manifest) ->
         ok = riak_cs_manifest_fsm:stop(ManiPid)
     end.
 
+-spec make_2i_key(binary()) -> binary().
 make_2i_key(Bucket) ->
     make_2i_key2(Bucket, "").
 
+-spec make_2i_key(binary(), acl_owner()|undefined) -> binary().
 make_2i_key(Bucket, {_, _, OwnerStr}) ->
     make_2i_key2(Bucket, OwnerStr);
 make_2i_key(Bucket, undefined) ->
-    %% I can't figure this one out:
-    %%     riak_cs_mp_utils.erl:516: Guard test is_list(OwnerStr::'undefined') can never succeed
-    %% or, if I try to work around:
-    %%     riak_cs_mp_utils.erl:529: The pattern <Bucket, OwnerStr> can never match since previous clauses completely covered the type <_,'undefined' | {_,_,_}>
-    %%
-    %% If I use "typer" to infer types for this func, the 'undefined' atom
-    %% is not inferred.  'undefined' isn't part of the valid type for
-    %% ?MULTIPART_MANIFEST.owner.  {sigh}
     _ = try
             really_does_not_exist = get(really_does_not_exist)
         catch _:_ ->
@@ -543,9 +537,16 @@ make_2i_key(Bucket, undefined) ->
                             [?MODULE, erlang:get_stacktrace()])
         end,
     iolist_to_binary(["rcs@undefined@", Bucket, "_bin"]);
+%% still occurs:
+%%     riak_cs_mp_utils.erl:546: The pattern <Bucket, OwnerStr> can never match since previous clauses completely covered the type <_,'undefined' | {_,_,_}>
+%%
+%% If I use "typer" to infer types for this func, the 'undefined' atom
+%% is not inferred.  'undefined' isn't part of the valid type for
+%% ?MULTIPART_MANIFEST.owner.  {sigh}
 make_2i_key(Bucket, OwnerStr) when is_list(OwnerStr) ->
     make_2i_key2(Bucket, OwnerStr).
 
+-spec make_2i_key2(binary(), string()) -> binary().
 make_2i_key2(Bucket, OwnerStr) ->
     iolist_to_binary(["rcs@", OwnerStr, "@", Bucket, "_bin"]).
 

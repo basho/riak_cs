@@ -1,0 +1,3 @@
+####### Dialyzer reports following when riak_repl is not loaded
+  riak_repl_pb_api:get/5
+  riak_repl_pb_api:get_clusterid/2

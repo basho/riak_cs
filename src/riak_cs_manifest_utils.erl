@@ -84,7 +84,7 @@ active_manifests(Dict) ->
 
 %% @doc Return a list of all manifests in the
 %% `active' or `writing' state
--spec active_and_writing_manifests(orddict:orddict()) -> [lfs_manifest()].
+-spec active_and_writing_manifests(orddict:orddict()) -> [{binary(), lfs_manifest()}].
 active_and_writing_manifests(Dict) ->
     orddict:to_list(filter_manifests_by_state(Dict, [active, writing])).
 
@@ -355,7 +355,7 @@ deleted_while_writing(Manifests) ->
     DeleteTime = latest_delete_time(ManifestList),
     find_deleted_active_manifests(ManifestList, DeleteTime).
 
--spec find_deleted_active_manifests([lfs_manifest()], term()) -> [lfs_manifest()].
+-spec find_deleted_active_manifests([lfs_manifest()], term()) -> [cs_uuid()].
 find_deleted_active_manifests(_Manifests, undefined) ->
     [];
 find_deleted_active_manifests(Manifests, DeleteTime) ->
