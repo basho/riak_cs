@@ -549,20 +549,25 @@ md5(List) when is_list(List) ->
     md5(list_to_binary(List)).
 
 -define(MAX_UPDATE_SIZE, (32*1024)).
+
+-ifdef(new_hash).
 -spec md5_init() -> crypto_context().
 -spec md5_update(crypto_context(), binary()) -> crypto_context().
 -spec md5_final(crypto_context()) -> digest().
 
--ifdef(new_hash).
 md5_init() -> crypto:hash_init(md5).
 
 md5_update(Ctx, Bin) when size(Bin) =< ?MAX_UPDATE_SIZE ->
     crypto:hash_update(Ctx, Bin);
 md5_update(Ctx, <<Part:?MAX_UPDATE_SIZE/binary, Rest/binary>>) ->
     md5_update(crypto:hash_update(Ctx, Part), Rest).
-
 md5_final(Ctx) -> crypto:hash_final(Ctx).
+
 -else.
+-spec md5_init() -> binary().
+-spec md5_update(binary(), binary()) -> binary().
+-spec md5_final(binary()) -> digest().
+
 md5_init() -> crypto:md5_init().
 
 md5_update(Ctx, Bin) when size(Bin) =< ?MAX_UPDATE_SIZE ->
