@@ -56,6 +56,8 @@ original_resource(RD) ->
 %% the account identifier, and the remainder of the path information
 %% pertaining to the requested object storage operation.
 -spec parse_path(string()) -> {string(), string(), string()}.
+parse_path(Path="/riak-cs" ++ _) ->
+    {"v1", undefined, Path};
 parse_path(Path) ->
     [ApiVsn, Account | RestPath] = string:tokens(Path, "/"),
     {ApiVsn, Account, "/" ++ string:join(RestPath, "/")}.
@@ -69,7 +71,7 @@ rewrite_headers(Headers, RawPath, ApiVsn, Account) ->
 
 %% @doc Internal function to handle rewriting the URL. Only `v1' of
 %% the API is supported since right now it is the only version that
-%% exists, but crash if another version is specfified.
+%% exists, but crash if another version is specified.
 -spec rewrite_path(string(), atom(), string(), string()) -> string().
 rewrite_path("v1", Method, Path, QS) ->
     rewrite_v1_path(Method, Path, QS).
