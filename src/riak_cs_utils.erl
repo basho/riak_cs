@@ -88,7 +88,9 @@
          update_key_secret/1,
          update_obj_value/2,
          pid_to_binary/1,
-         update_user/3]).
+         update_user/3,
+         stanchion_data/0
+        ]).
 
 -include("riak_cs.hrl").
 -include_lib("riak_pb/include/riak_pb_kv_codec.hrl").
