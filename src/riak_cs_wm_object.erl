@@ -283,29 +283,40 @@ content_types_accepted(CT, RD, Ctx=#context{local_context=LocalCtx0}) ->
              Ctx}
     end.
 
--spec accept_body(#wm_reqdata{}, #context{}) -> {{halt, integer()}, #wm_reqdata{}, #context{}}.
-accept_body(RD, Ctx=#context{riak_client=RcPid,
-                             local_context=LocalCtx,
-                             response_module=ResponseMod})
-  when LocalCtx#key_context.update_metadata == true ->
-    #key_context{bucket=Bucket, key=KeyStr, manifest=Mfst} = LocalCtx,
-    Acl = Mfst?MANIFEST.acl,
-    NewAcl = Acl?ACL{creation_time = now()},
-    Metadata = riak_cs_wm_utils:extract_user_metadata(RD),
-    case riak_cs_utils:set_object_acl(Bucket, list_to_binary(KeyStr),
-                                      Mfst?MANIFEST{metadata=Metadata}, NewAcl,
-                                      RcPid) of
-        ok ->
-            ETag = riak_cs_utils:etag_from_binary(Mfst?MANIFEST.content_md5),
-            RD2 = wrq:set_resp_header("ETag", ETag, RD),
-            ResponseMod:copy_object_response(Mfst, RD2, Ctx);
-        {error, Err} ->
-            ResponseMod:api_error(Err, RD, Ctx)
-    end;
-accept_body(RD, Ctx=#context{local_context=LocalCtx,
-                             user=User,
-                             acl=ACL,
-                             riak_client=RcPid}) ->
+-spec get_copy_source(#wm_reqdata{}) -> undefined | {binary(), binary()} |
+    {error, atom()}.
+get_copy_source(RD) ->
+    case wrq:get_req_header("x-copy-from", RD) of
+        undefined ->
+            undefined;
+        [H | T] ->
+            case H of
+                "/" ->
+                    Bucket = lists:takewhile(fun(Char) ->
+                                                 Char /= $/
+                                             end, T),
+                    Key = lists:nthtail(length(Bucket)+1, T),
+                    {list_to_binary(Bucket), list_to_binary(Key)};
+                _ ->
+                    {error, invalid_x_copy_from_path}
+            end
+    end.
+
+
+-spec accept_body(#wm_reqdata{}, #context{}) ->
+                         {{halt, integer()}, #wm_reqdata{}, #context{}}.
+accept_body(RD, Ctx) ->
+    accept_body(RD, Ctx, get_copy_source(RD)).
+
+-spec accept_body(#wm_reqdata{}, #context{}, undefined |
+                                             {error, atom()} |
+                                             {string(), string()}) ->
+    {{halt, integer()}, #wm_reqdata{}, #context{}}.
+accept_body(RD, Ctx, undefined) ->
+    #context{local_context=LocalCtx,
+             user=User,
+             acl=ACL,
+             riakc_pid=RiakcPid} = Ctx,
     #key_context{bucket=Bucket,
                  key=Key,
                  putctype=ContentType,
@@ -323,7 +334,48 @@ accept_body(RD, Ctx=#context{local_context=LocalCtx,
     Args = [{Bucket, list_to_binary(Key), Size, list_to_binary(ContentType),
              Metadata, BlockSize, ACL, timer:seconds(60), self(), RcPid}],
     {ok, Pid} = riak_cs_put_fsm_sup:start_put_fsm(node(), Args),
-    accept_streambody(RD, Ctx, Pid, wrq:stream_req_body(RD, riak_cs_lfs_utils:block_size())).
+    accept_streambody(RD, Ctx, Pid, wrq:stream_req_body(RD, riak_cs_lfs_utils:block_size()));
+accept_body(RD, #context{response_module=ResponseMod}=Ctx, {error, _}=Err) ->
+    ResponseMod:api_error(Err, RD, Ctx);
+accept_body(RD, Ctx, {SrcBucket, SrcKey}) ->
+    #context{local_context=LocalCtx,
+             response_module=ResponseMod,
+             riakc_pid=RiakcPid} = Ctx,
+    #key_context{bucket=Bucket, key=KeyStr, manifest=Mfst} = LocalCtx,
+    Acl = Mfst?MANIFEST.acl,
+    NewAcl = Acl?ACL{creation_time = os:timestamp()},
+    Metadata = riak_cs_wm_utils:extract_user_metadata(RD),
+    Key = list_to_binary(KeyStr),
+    ETag = riak_cs_utils:etag_from_binary(Mfst?MANIFEST.content_md5),
+    case riak_cs_utils:set_object_acl(Bucket, Key,
+                                      Mfst?MANIFEST{metadata=Metadata}, NewAcl,
+                                      RiakcPid) of
+        ok ->
+            case get_manifest(RiakcPid, SrcBucket, SrcKey) of
+                {ok, SrcManifest} ->
+                    CopyCtx = #copy_ctx{src_manifest=SrcManifest,
+                                        dst_bucket=Bucket,
+                                        dst_key=Key,
+                                        dst_metadata=Metadata,
+                                        dst_acl=NewAcl},
+                    ok = riak_cs_copy_object:copy(CopyCtx),
+                    RD2 = wrq:set_resp_header("ETag", ETag, RD),
+                    ResponseMod:copy_object_response(Mfst, RD2, Ctx);
+                Error ->
+                    ResponseMod:api_error(Error, RD, Ctx)
+            end;
+        {error, Err} ->
+            ResponseMod:api_error(Err, RD, Ctx)
+    end.
+
+-spec get_manifest(pid(), binary(), binary()) -> ?MANIFEST{} | {error, term()}.
+get_manifest(RiakcPid, Bucket, Key) ->
+    case riak_cs_utils:get_manifests(RiakcPid, Bucket, Key) of
+        {ok, _, Manifests} ->
+            riak_cs_manifest_utils:active_manifest(orddict:from_list(Manifests));
+        Error ->
+            Error
+    end.
 
 -spec accept_streambody(#wm_reqdata{}, #context{}, pid(), term()) -> {{halt, integer()}, #wm_reqdata{}, #context{}}.
 accept_streambody(RD,
