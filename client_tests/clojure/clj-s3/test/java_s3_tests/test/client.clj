@@ -18,6 +18,10 @@
   (:import java.security.MessageDigest
            org.apache.commons.codec.binary.Hex
            com.amazonaws.services.s3.model.AmazonS3Exception
+           com.amazonaws.services.s3.model.AccessControlList
+           com.amazonaws.services.s3.model.CanonicalGrantee
+           com.amazonaws.services.s3.model.Permission
+           com.amazonaws.services.s3.model.PutObjectRequest
            com.amazonaws.services.s3.model.ObjectMetadata
            com.amazonaws.services.s3.transfer.TransferManager
            com.amazonaws.services.s3.transfer.TransferManagerConfiguration)
@@ -28,6 +32,10 @@
 
 (def ^:internal riak-cs-host-with-protocol "http://localhost")
 (def ^:internal riak-cs-host "localhost")
+
+(defn input-stream-from-string
+  [s]
+  (java.io.ByteArrayInputStream. (.getBytes s "UTF-8")))
 
 (defn get-riak-cs-port-str
   "Try to get a TCP port number from the OS environment"
@@ -183,4 +191,33 @@
             (s3/create-bucket c bucket-name)
             (s3/put-object c bucket-name object-name value
                            {:content-md5 wrong-md5})))
+        => (throws AmazonS3Exception)))
+
+(def bad-canonical-id
+  "0f80b2d002a3d018faaa4a956ce8aa243332a30e878f5dc94f82749984ebb30b")
+
+(def full-control
+  (Permission/FullControl))
+
+(let [bucket-name (random-string)
+      object-name (random-string)
+      value-string "this is the real value"]
+  (fact "Nonexistent canonical-id grant header returns HTTP 400 on
+        a put object request (not just an ACL subresource request)"
+        (with-random-client c
+          (do
+            ;; create a bucket
+            (s3/create-bucket c bucket-name)
+
+            (let [value (input-stream-from-string value-string)
+                  bad-id-grantee (CanonicalGrantee. bad-canonical-id)
+                  metadata (ObjectMetadata.)
+                  req (PutObjectRequest. bucket-name object-name value metadata)
+                  acl (AccessControlList.)]
+
+              ;; grant permission to the nonexistent-user
+              (.grantPermission acl bad-id-grantee full-control)
+
+              (.setAccessControlList req acl)
+              (.putObject c req))))
         => (throws AmazonS3Exception)))
