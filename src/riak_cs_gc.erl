@@ -42,6 +42,8 @@
 %% export for repl debugging and testing
 -export([get_active_manifests/3]).
 
+-define(GC_KEY_SUFFIX_MAX, 1000).
+
 %%%===================================================================
 %%% Public API
 %%%===================================================================
@@ -248,7 +250,10 @@ leeway_seconds() ->
 %% @doc Generate a key for storing a set of manifests for deletion.
 -spec timestamp() -> non_neg_integer().
 timestamp() ->
-    riak_cs_utils:second_resolution_timestamp(os:timestamp()).
+    timestamp(os:timestamp()).
+
+timestamp(ErlangTime) ->
+    riak_cs_utils:second_resolution_timestamp(ErlangTime).
 
 %%%===================================================================
 %%% Internal functions
@@ -340,11 +345,15 @@ build_manifest_set(Manifests) ->
 %% garbage collection bucket.
 -spec generate_key(boolean()) -> binary().
 generate_key(AddLeewayP) ->
+    Now = os:timestamp(),
+    random:seed(Now),
     list_to_binary(
-      integer_to_list(
-        timestamp() + if not AddLeewayP -> 0;
-                         true           -> leeway_seconds()
-                      end)).
+      [integer_to_list(
+         timestamp(Now) + if not AddLeewayP -> 0;
+                             true           -> leeway_seconds()
+                          end),
+       $_,
+       integer_to_list(random:uniform(?GC_KEY_SUFFIX_MAX))]).
 
 %% @doc Given a list of riakc_obj-flavored object (with potentially
 %%      many siblings and perhaps a tombstone), decode and merge them.
