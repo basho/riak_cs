@@ -370,6 +370,13 @@
     size :: integer()
 }).
 
+-record(copy_ctx, {src_manifest :: #lfs_manifest_v3{},
+                   dst_bucket :: binary(),
+                   dst_key :: binary(),
+                   dst_manifest :: #lfs_manifest_v3{},
+                   dst_metadata :: list(),
+                   dst_acl :: acl()}).
+
 -define(USER_BUCKET, <<"moss.users">>).
 -define(ACCESS_BUCKET, <<"moss.access">>).
 -define(STORAGE_BUCKET, <<"moss.storage">>).
