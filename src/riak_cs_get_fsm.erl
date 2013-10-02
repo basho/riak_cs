@@ -429,12 +429,18 @@ read_blocks(#state{manifest=Manifest,
                    free_readers=[ReaderPid | RestFreeReaders],
                    blocks_order=[NextBlock|BlocksOrder],
                    blocks_intransit=Intransit} = State) ->
-    ClusterID = Manifest?MANIFEST.cluster_id,
+    ClusterID = cluster_id_or_default(Manifest?MANIFEST.cluster_id),
     {UUID, Seq} = NextBlock,
     riak_cs_block_server:get_block(ReaderPid, Bucket, Key, ClusterID, UUID, Seq),
     read_blocks(State#state{free_readers=RestFreeReaders,
                             blocks_order=BlocksOrder,
                             blocks_intransit=queue:in(NextBlock, Intransit)}).
+
+-spec cluster_id_or_default(cluster_id()) -> cluster_id().
+cluster_id_or_default(undefined) ->
+    riak_cs_config:get_env(riak_cs, default_proxy_cluster_id, undefined);
+cluster_id_or_default(ClusterID) ->
+    ClusterID.
 
 trim_block_value(RawBlockValue, CurrentBlock,
                  {CurrentBlock, CurrentBlock},
