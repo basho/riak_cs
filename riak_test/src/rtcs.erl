@@ -250,6 +250,9 @@ riakcs_etcpath(Prefix, N) ->
 riakcscmd(Path, N, Cmd) ->
     lists:flatten(io_lib:format("~s ~s", [riakcs_binpath(Path, N), Cmd])).
 
+riakcs_switchcmd(Path, N, Cmd) ->
+    lists:flatten(io_lib:format("~s-stanchion ~s", [riakcs_binpath(Path, N), Cmd])).
+
 stanchion_binpath(Prefix) ->
     io_lib:format("~s/dev/stanchion/bin/stanchion", [Prefix]).
 
@@ -479,6 +482,17 @@ start_cs(N) ->
 
 stop_cs(N) ->
     Cmd = riakcscmd(rt_config:get(?CS_CURRENT), N, "stop"),
+    lager:info("Running ~p", [Cmd]),
+    os:cmd(Cmd).
+
+switch_stanchion_cs(N, Host, Port) ->
+    SubCmd = io_lib:format("switch ~s ~p", [Host, Port]),
+    Cmd = riakcs_switchcmd(rt_config:get(?CS_CURRENT), N, SubCmd),
+    lager:info("Running ~p", [Cmd]),
+    os:cmd(Cmd).
+
+show_stanchion_cs(N) ->
+    Cmd = riakcs_switchcmd(rt_config:get(?CS_CURRENT), N, "show"),
     lager:info("Running ~p", [Cmd]),
     os:cmd(Cmd).
 
