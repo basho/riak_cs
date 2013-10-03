@@ -61,7 +61,7 @@ case UseEEDeps of
 {package_install_user, \"riakcs\"}.
 {package_install_group, \"riak\"}.
 {package_install_user_desc, \"Riak CS user\"}.
-{package_commands, {list, [[{name, \"riak-cs\"}], [{name, \"riak-cs-access\"}], [{name, \"riak-cs-gc\"}], [{name, \"riak-cs-storage\"}]]}}.
+{package_commands, {list, [[{name, \"riak-cs\"}], [{name, \"riak-cs-access\"}], [{name, \"riak-cs-gc\"}], [{name, \"riak-cs-storage\"}], [{name, \"riak-cs-stanchion\"}]]}}.
 {package_shortdesc, \"Riak CS\"}.
 {package_patch_dir, \"basho-patches\"}.
 {package_desc, \"Riak CS\"}.
