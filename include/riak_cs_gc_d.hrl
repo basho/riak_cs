@@ -35,5 +35,6 @@
           pause_state :: undefined | atom(), % state of the fsm when a delete batch was paused
           interval_remaining :: undefined | non_neg_integer(), % used when moving from paused -> idle
           timer_ref :: reference(),
-          delete_fsm_pid :: pid()
+          delete_fsm_pid :: pid(),
+          initial_delay :: non_neg_integer()
          }).
