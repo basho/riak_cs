@@ -573,7 +573,13 @@ get_object(BucketName, Key, RiakPid) ->
     {ok, riakc_obj:riakc_obj()} | {error, term()}.
 get_manifests_raw(RiakcPid, Bucket, Key) ->
     ManifestBucket = to_bucket_name(objects, Bucket),
-    riakc_pb_socket:get(RiakcPid, ManifestBucket, Key).
+    StartTime = os:timestamp(),
+    Manifests = riakc_pb_socket:get(RiakcPid, ManifestBucket, Key),
+    EndTime = os:timestamp(),
+    TimeDiff = timer:now_diff(EndTime, StartTime),
+    _ = lager:debug("Took ~B microseconds to read manifest: ~p",
+                    [TimeDiff, [Bucket, Key]]),
+    Manifests.
 
 %% @doc
 -spec get_manifests(pid(), binary(), binary()) ->
