@@ -394,12 +394,21 @@ delete_object(Bucket, Key, RiakcPid) ->
 
 -spec encode_term(term()) -> binary().
 encode_term(Term) ->
-    case riak_cs_config:use_t2b_compression() of
+    StartTime = os:timestamp(),
+    UseCompression = riak_cs_config:use_t2b_compression(),
+    Binary = case UseCompression of
         true ->
             term_to_binary(Term, [compressed]);
         false ->
             term_to_binary(Term)
-    end.
+    end,
+    EndTime = os:timestamp(),
+    TimeDiff = timer:now_diff(EndTime, StartTime),
+    Size = byte_size(Binary),
+    _ = lager:debug("term_to_binary took ~B microseconds for ~B bytes, with"
+                    " compression ~p.",
+                    [TimeDiff, Size, UseCompression]),
+    Binary.
 
 %% Get the root bucket name for either a Riak CS object
 %% bucket or the data block bucket name.
