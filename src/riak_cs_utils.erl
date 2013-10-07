@@ -606,6 +606,7 @@ manifests_from_riak_object(RiakObject) ->
                        %% Original value had many contents
                        riakc_obj:get_contents(RiakObject)
                end,
+    _ = debug_log_siblings_and_sizes(Contents),
     DecodedSiblings = [binary_to_term(V) ||
                           {_, V}=Content <- Contents,
                           not has_tombstone(Content)],
@@ -619,6 +620,12 @@ manifests_from_riak_object(RiakObject) ->
 
     %% prune old scheduled_delete manifests
     riak_cs_manifest_utils:prune(Resolved).
+
+debug_log_siblings_and_sizes(Contents) ->
+    NumSiblings = length(Contents),
+    Sizes = [byte_size(V) || {_, V} <- Contents],
+    lager:debug("Deserialized ~B manifests with byte sizes ~p",
+                [NumSiblings, Sizes]).
 
 -spec active_manifest_from_response({ok, orddict:orddict()} |
                                     {error, notfound}) ->
