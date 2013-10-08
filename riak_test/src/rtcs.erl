@@ -206,7 +206,7 @@ cs_config(UserExtra) ->
           [
            {connection_pools,
             [
-             {request_pool, {8, 0} },
+             {request_pool, {128, 0} },
              {bucket_list_pool, {2, 0} }
             ]},
            {proxy_get, enabled},

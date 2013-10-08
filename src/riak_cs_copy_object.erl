@@ -4,7 +4,7 @@
 
 %%API
 -export([copy/1]).
-    
+
 -define(timeout, timer:minutes(5)).
 
 -spec copy(pid()) -> ok.
@@ -12,12 +12,15 @@ copy(CopyCtx) ->
     {ok, GetFsmPid} = start_get_fsm(CopyCtx),
     {ok, PutFsmPid} = start_put_fsm(CopyCtx),
     Manifest = CopyCtx#copy_ctx.src_manifest,
+    _Manifest = riak_cs_get_fsm:get_manifest(GetFsmPid),
+    riak_cs_get_fsm:continue(GetFsmPid, {0, Manifest?MANIFEST.content_length}),
     get_and_put(GetFsmPid, PutFsmPid, Manifest?MANIFEST.content_md5).
 
 -spec get_and_put(pid(), pid(), list()) -> ok | {error, term()}.
 get_and_put(GetPid, PutPid, MD5) ->
     case riak_cs_get_fsm:get_next_chunk(GetPid) of
         {done, <<>>} ->
+            io:format("Finalizing DAT PUT FSM~n"),
             riak_cs_put_fsm:finalize(PutPid, MD5),
             ok;
         {chunk, Block} ->
@@ -40,10 +43,10 @@ start_get_fsm(#copy_ctx{src_manifest=M}) ->
                                       BufferFactor).
 
 -spec start_put_fsm(#copy_ctx{}) -> {ok, pid()}.
-start_put_fsm(#copy_ctx{dst_acl=Acl, 
-                        src_manifest=M, 
+start_put_fsm(#copy_ctx{dst_acl=Acl,
+                        src_manifest=M,
                         dst_metadata=Metadata,
-                        dst_bucket=Bucket, 
+                        dst_bucket=Bucket,
                         dst_key=Key}) ->
     BlockSize = riak_cs_lfs_utils:block_size(),
     {ok, RiakcPid} = riak_cs_utils:riak_connection(),

@@ -33,6 +33,7 @@ confirm() ->
 -else.
 
 -include_lib("eunit/include/eunit.hrl").
+-include_lib("erlcloud/include/erlcloud_aws.hrl").
 
 %% keys for non-multipart objects
 -define(SRC_BUCKET, "copy-object-test-bucket-src").
@@ -40,6 +41,7 @@ confirm() ->
 
 confirm() ->
     {UserConfig, {_RiakNodes, CSNodes, _Stanchion}} = rtcs:setup(4),
+    io:format("UserConfig = ~p~n", [UserConfig]),
 
     lager:info("User is valid on the cluster, and has no buckets"),
     ?assertEqual([{buckets, []}], erlcloud_s3:list_buckets(UserConfig)),
@@ -49,9 +51,11 @@ confirm() ->
 
     lager:info("creating bucket ~p", [?DST_BUCKET]),
     ?assertEqual(ok, erlcloud_s3:create_bucket(?DST_BUCKET, UserConfig)),
+
     CSNode1 = hd(CSNodes),
     {module, _} = rpc:call(CSNode1, code, load_file, [copy_object_eqc]),
-    Result = rpc:call(CSNode1, copy_object_eqc, run, []),
+    KeyId = UserConfig#aws_config.access_key_id,
+    Result = rpc:call(CSNode1, copy_object_eqc, run, [KeyId]),
     ?assertEqual(Result, pass).
 
 -endif.
