@@ -37,6 +37,7 @@
          ensure_doc/2,
          deny_access/2,
          deny_invalid_key/2,
+         extract_key/2,
          extract_name/1,
          normalize_headers/1,
          error_if_acl_headers_and_acl_body/1,
@@ -335,6 +336,15 @@ iso_8601_to_erl_date(Date)  ->
       _/binary>> = Date,
     {{b2i(Yr), b2i(Mo), b2i(Da)},
      {b2i(Hr), b2i(Mn), b2i(Sc)}}.
+
+-spec extract_key(#wm_reqdata{}, #context{}) -> #context{}.
+extract_key(RD,Ctx=#context{local_context=LocalCtx0}) ->
+    Bucket = list_to_binary(wrq:path_info(bucket, RD)),
+    %% need to unquote twice since we re-urlencode the string during rewrite in
+    %% order to trick webmachine dispatching
+    Key = mochiweb_util:unquote(mochiweb_util:unquote(wrq:path_info(object, RD))),
+    LocalCtx = LocalCtx0#key_context{bucket=Bucket, key=Key},
+    Ctx#context{local_context=LocalCtx}.
 
 extract_name(User) when is_list(User) ->
     User;

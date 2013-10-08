@@ -94,6 +94,7 @@
 
 -record(key_context, {context :: #context{},
                       manifest :: 'notfound' | lfs_manifest(),
+                      acl :: 'undefined' | acl(),
                       upload_id :: 'undefined' | binary(),
                       part_number :: 'undefined' | integer(),
                       part_uuid :: 'undefined' | binary(),

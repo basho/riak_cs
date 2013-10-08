@@ -35,14 +35,10 @@
 init(Ctx) ->
     {ok, Ctx#context{local_context=#key_context{}}}.
 
-%% TODO: copy/pasted from from wm_object, move somewhere common
-malformed_request(RD,Ctx=#context{local_context=LocalCtx0}) ->
-    Bucket = list_to_binary(wrq:path_info(bucket, RD)),
-    %% need to unquote twice since we re-urlencode the string during rewrite in
-    %% order to trick webmachine dispatching
-    Key = mochiweb_util:unquote(mochiweb_util:unquote(wrq:path_info(object, RD))),
-    LocalCtx = LocalCtx0#key_context{bucket=Bucket, key=Key},
-    {false, RD, Ctx#context{local_context=LocalCtx}}.
+-spec malformed_request(#wm_reqdata{}, #context{}) -> {false, #wm_reqdata{}, #context{}}.
+malformed_request(RD,Ctx) ->
+    NewCtx = riak_cs_wm_utils:extract_key(RD, Ctx),
+    {false, RD, NewCtx}.
 
 %% @doc Get the type of access requested and the manifest with the
 %% object ACL and compare the permission requested with the permission
