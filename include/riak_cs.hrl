@@ -458,6 +458,7 @@
 -define(DEFAULT_LEEWAY_SECONDS, 86400). %% 24-hours
 -define(DEFAULT_GC_INTERVAL, 900). %% 15 minutes
 -define(DEFAULT_GC_RETRY_INTERVAL, 21600). %% 6 hours
+-define(DEFAULT_GC_KEY_SUFFIX_MAX, 256).
 -define(EPOCH_START, <<"0">>).
 -define(DEFAULT_CLUSTER_ID_TIMEOUT,5000).
 -define(DEFAULT_AUTH_MODULE, riak_cs_s3_auth).

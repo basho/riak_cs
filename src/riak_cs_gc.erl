@@ -42,8 +42,6 @@
 %% export for repl debugging and testing
 -export([get_active_manifests/3]).
 
--define(GC_KEY_SUFFIX_MAX, 1000).
-
 %%%===================================================================
 %%% Public API
 %%%===================================================================
@@ -357,7 +355,7 @@ key_timestamp(Time, false) ->
 
 key_suffix(Time) ->
     random:seed(Time),
-    integer_to_list(random:uniform(?GC_KEY_SUFFIX_MAX)).
+    integer_to_list(random:uniform(riak_cs_config:gc_key_suffix_max())).
 
 %% @doc Given a list of riakc_obj-flavored object (with potentially
 %%      many siblings and perhaps a tombstone), decode and merge them.
