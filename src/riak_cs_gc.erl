@@ -346,14 +346,18 @@ build_manifest_set(Manifests) ->
 -spec generate_key(boolean()) -> binary().
 generate_key(AddLeewayP) ->
     Now = os:timestamp(),
-    random:seed(Now),
-    list_to_binary(
-      [integer_to_list(
-         timestamp(Now) + if not AddLeewayP -> 0;
-                             true           -> leeway_seconds()
-                          end),
-       $_,
-       integer_to_list(random:uniform(?GC_KEY_SUFFIX_MAX))]).
+    list_to_binary([integer_to_list(key_timestamp(Now, AddLeewayP)),
+                    $_,
+                    key_suffix(Now)]).
+
+key_timestamp(Time, true) ->
+    timestamp(Time) + leeway_seconds();
+key_timestamp(Time, false) ->
+    timestamp(Time).
+
+key_suffix(Time) ->
+    random:seed(Time),
+    integer_to_list(random:uniform(?GC_KEY_SUFFIX_MAX)).
 
 %% @doc Given a list of riakc_obj-flavored object (with potentially
 %%      many siblings and perhaps a tombstone), decode and merge them.
