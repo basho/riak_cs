@@ -103,7 +103,9 @@ valid_entity_length(RD, Ctx, 'PUT', ContentLength) ->
             #context{response_module=ResponseMod} = Ctx,
             ResponseMod:api_error(entity_too_large, RD, Ctx);
         true ->
-            {true, RD, Ctx}
+            LocalCtx = Ctx#context.local_context,
+            UpdLocalCtx = LocalCtx#key_context{size=ContentLength},
+            {true, RD, Ctx#context{local_context=UpdLocalCtx}}
     end;
 valid_entity_length(RD, Ctx, _, _) ->
     {true, RD, Ctx}.
