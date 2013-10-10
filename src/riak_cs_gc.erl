@@ -260,7 +260,11 @@ leeway_seconds() ->
 %% @doc Generate a key for storing a set of manifests for deletion.
 -spec timestamp() -> non_neg_integer().
 timestamp() ->
-    riak_cs_utils:second_resolution_timestamp(os:timestamp()).
+    timestamp(os:timestamp()).
+
+-spec timestamp(erlang:timestamp()) -> non_neg_integer().
+timestamp(ErlangTime) ->
+    riak_cs_utils:second_resolution_timestamp(ErlangTime).
 
 %%%===================================================================
 %%% Internal functions
@@ -352,11 +356,19 @@ build_manifest_set(Manifests) ->
 %% garbage collection bucket.
 -spec generate_key(boolean()) -> binary().
 generate_key(AddLeewayP) ->
-    list_to_binary(
-      integer_to_list(
-        timestamp() + if not AddLeewayP -> 0;
-                         true           -> leeway_seconds()
-                      end)).
+    Now = os:timestamp(),
+    list_to_binary([key_timestamp(Now, AddLeewayP), $_, key_suffix(Now)]).
+
+-spec key_timestamp(erlang:timestamp(), boolean()) -> string().
+key_timestamp(Time, true) ->
+    integer_to_list(timestamp(Time) + leeway_seconds());
+key_timestamp(Time, false) ->
+    integer_to_list(timestamp(Time)).
+
+-spec key_suffix(erlang:timestamp()) -> string().
+key_suffix(Time) ->
+    _ = random:seed(Time),
+    integer_to_list(random:uniform(riak_cs_config:gc_key_suffix_max())).
 
 %% @doc Given a list of riakc_obj-flavored object (with potentially
 %%      many siblings and perhaps a tombstone), decode and merge them.
