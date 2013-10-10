@@ -358,10 +358,11 @@ operation(#wm_log_data{resource_module=riak_cs_wm_object}) ->
 operation(#wm_log_data{method=Method}) ->
     iolist_to_binary([<<"Unknown">>, atom_to_binary(Method, latin1)]).
 
-stats(#wm_log_data{response_code=Code,
+stats(#wm_log_data{response_code=CodeOrCodeAndReason,
                    notes=Notes,
                    headers=Headers,
                    response_length=Length}) ->
+    Code = extract_code(CodeOrCodeAndReason),
     Prefix = if Code >= 500 -> <<"SystemError">>;
                 Code >= 400 -> <<"UserError">>;
                 true        -> <<"">>
@@ -389,3 +390,11 @@ stats(#wm_log_data{response_code=Code,
        [{iolist_to_binary([Prefix,<<"BytesOut">>,BytesOutType]), Length}
         || Length > 0],
        {iolist_to_binary([Prefix,<<"Count">>]), 1}]).
+
+%% @doc Extract the HTTP response code from either
+%% a two-tuple of code and reason, or just the raw code.
+-spec extract_code({integer(), term()} | integer()) -> integer().
+extract_code({Code, _Reason}) when is_integer(Code) ->
+    Code;
+extract_code(Code) when is_integer(Code) ->
+    Code.
