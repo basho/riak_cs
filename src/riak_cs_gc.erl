@@ -250,6 +250,7 @@ leeway_seconds() ->
 timestamp() ->
     timestamp(os:timestamp()).
 
+-spec timestamp(erlang:timestamp()) -> non_neg_integer().
 timestamp(ErlangTime) ->
     riak_cs_utils:second_resolution_timestamp(ErlangTime).
 
@@ -344,17 +345,17 @@ build_manifest_set(Manifests) ->
 -spec generate_key(boolean()) -> binary().
 generate_key(AddLeewayP) ->
     Now = os:timestamp(),
-    list_to_binary([integer_to_list(key_timestamp(Now, AddLeewayP)),
-                    $_,
-                    key_suffix(Now)]).
+    list_to_binary([key_timestamp(Now, AddLeewayP), $_, key_suffix(Now)]).
 
+-spec key_timestamp(erlang:timestamp(), boolean()) -> string().
 key_timestamp(Time, true) ->
-    timestamp(Time) + leeway_seconds();
+    integer_to_list(timestamp(Time) + leeway_seconds());
 key_timestamp(Time, false) ->
-    timestamp(Time).
+    integer_to_list(timestamp(Time)).
 
+-spec key_suffix(erlang:timestamp()) -> string().
 key_suffix(Time) ->
-    random:seed(Time),
+    _ = random:seed(Time),
     integer_to_list(random:uniform(riak_cs_config:gc_key_suffix_max())).
 
 %% @doc Given a list of riakc_obj-flavored object (with potentially
