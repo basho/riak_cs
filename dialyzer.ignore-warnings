@@ -40,6 +40,10 @@
   riak_object:key/1
   riak_object:new/3
   riak_object:update_metadata/2
+riak_repl_pb_api.erl:33: The call riakc_pb_socket:tunnel
+riak_repl_pb_api.erl:54: The call riakc_pb_socket:tunnel
+riakc_pb_socket.erl:1352: Expression produces a value of type #request{
+riakc_pb_socket.erl:1689: Expression produces a value of type #request{
 ############## stuff defined in test code
   riak_cs_dummy_reader:get_manifest/1
   riak_cs_dummy_reader:start_link/1
@@ -57,9 +61,9 @@
 riak_cs_block_server.erl:303: The pattern Success = {'ok', _} can never match the type {'error',_}
 riak_cs_block_server.erl:339: The pattern {'ok', RiakObject} can never match the type {'error',_}
 riak_cs_config.erl:187: The pattern {'ok', ClusterID} can never match the type {'error',_}
-riak_repl_pb_api.erl:33: The pattern {'ok', {MsgCode, Msg}} can never match the type {'error',_} | {'ok',binary()}
-riak_repl_pb_api.erl:66: The pattern {'ok',
-riak_repl_pb_api.erl:63: The pattern {'ok', {MsgCode, MsgData}} can never match the type {'error',_} | {'ok',binary()}
+riak_repl_pb_api.erl:34: The pattern {'ok', {MsgCode, Msg}} can never match the type {'error',_} | {'ok',binary()}
+riak_repl_pb_api.erl:61: The pattern {'ok',
+riak_repl_pb_api.erl:68: The pattern {'ok', {MsgCode, MsgData}} can never match the type {'error',_} | {'ok',binary()}
 ############## Warnings from dependencies that are outside our scope
 ^bread.erl:
 ^dtop.erl:
