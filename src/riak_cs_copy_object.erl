@@ -11,8 +11,8 @@
 test(KeyId, SrcBucket, SrcKey, DstBucket, DstKey) ->
     {ok, RiakcPid} = riak_cs_utils:riak_connection(),
     {ok, {User, _}} = riak_cs_utils:get_user(KeyId, RiakcPid),
-    {ok, _, [{_, Manifest} | _]} =
-        riak_cs_utils:get_manifests(RiakcPid, SrcBucket, SrcKey),
+    {ok, _, Manifests} = riak_cs_utils:get_manifests(RiakcPid, SrcBucket, SrcKey),
+    {ok, Manifest} = riak_cs_manifest_utils:active_manifest(orddict:from_list(Manifests)),
     Acl = ?ACL{owner={User?RCS_USER.display_name,
                       User?RCS_USER.canonical_id,
                       User?RCS_USER.key_id},
