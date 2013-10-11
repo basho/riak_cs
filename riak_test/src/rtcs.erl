@@ -153,6 +153,8 @@ riak_oss_config(Backend) ->
      lager_config(),
      {riak_core,
       [{default_bucket_props, [{allow_mult, true}]}]},
+     {riak_api,
+      [{pb_backlog, 256}]},
      {riak_kv,
       [{add_paths, AddPaths}] ++
           backend_config(Backend)
