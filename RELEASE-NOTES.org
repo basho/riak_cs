@@ -1,3 +1,22 @@
+* Riak CS 1.4.2 Release Notes
+** Bugs Fixed
+- Fix issue with Enterprise build on Debian Linux distributions.
+- Fix source tarball build.
+- Fix access statistics bug that caused all accesses to be treated as
+  errors.
+- Make logging in bucket listing map phase function lager version
+  agnostic to avoid issues when using versions of Riak older than 1.4.
+- Handle undefined =props= field in manifests to fix issue accessing
+  objects written with a version of Riak CS older than 1.3.0.
+** Additions
+- Add option to delay initial GC sweep on a node using the
+  initial_gc_delay configuration option.
+- Append random suffix to GC bucket keys to avoid hot keys and improve
+  performance during periods of frequent deletion.
+- Add default_proxy_cluster_id option to provide a way to specify a
+  default cluster id to be used when the cluster id is undefined. This is
+  to facilitate migration from the OSS version to the
+  Enterprise version.
 * Riak CS 1.4.1 Release Notes
 ** Bugs Fixed
 - Fix list objects crash when more than the first 1001 keys are in
