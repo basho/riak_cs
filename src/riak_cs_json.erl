@@ -141,7 +141,7 @@ target_tuple_values(Keys, JsonItems) ->
       [proplists:get_value(element(Index, Keys), JsonItems)
        || Index <- lists:seq(1, tuple_size(Keys))]).
 
--spec user_object(rcs_user()) -> {struct, proplist:proplist()}.
+-spec user_object(rcs_user()) -> {struct, proplists:proplist()}.
 user_object(?RCS_USER{email=Email,
                       display_name=DisplayName,
                       name=Name,

@@ -498,14 +498,15 @@ update_profiling_state_with_end(State=#state{profiling=Profiling},
                                        [NewRequest | OldRequests]},
     State#state{profiling=NewProfiling}.
 
--spec extract_timings(list()) -> [{Millis :: non_neg_integer(),
+-spec extract_timings(list()) -> [{Millis :: number(),
                                    NumResults :: non_neg_integer()}].
 extract_timings(Requests) ->
     [extract_timing(R) || R <- Requests].
 
 %% TODO: time to make legit types out of these
--spec extract_timing({term(), non_neg_integer(), {term(), term()}}) ->
-    {term(), term()}.
+-spec extract_timing({term(), non_neg_integer(),
+                      {erlang:timestamp(), erlang:timestamp()}}) ->
+                            {number(), non_neg_integer()}.
 extract_timing({_Range, NumKeysReturned, {StartTime, EndTime}}) ->
     MillisecondDiff = riak_cs_utils:timestamp_to_milliseconds(EndTime) -
                       riak_cs_utils:timestamp_to_milliseconds(StartTime),

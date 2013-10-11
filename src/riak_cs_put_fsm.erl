@@ -58,7 +58,7 @@
                 block_size :: pos_integer(),
                 caller :: reference(),
                 uuid :: binary(),
-                md5 :: binary(),
+                md5 :: crypto_context() | digest(),
                 reported_md5 :: undefined | string(),
                 reply_pid :: {pid(), reference()},
                 mani_pid :: undefined | pid(),
@@ -109,6 +109,7 @@ start_link({_Bucket,
            MakeNewManifestP) ->
     gen_fsm:start_link(?MODULE, {Arg1, MakeNewManifestP}, []).
 
+%% -spec get_uuid(pid()) -> binary().
 get_uuid(Pid) ->
     gen_fsm:sync_send_event(Pid, {get_uuid}, infinity).
 

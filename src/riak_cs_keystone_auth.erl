@@ -48,7 +48,9 @@ identify(RD, #context{api=s3}) ->
 identify(RD, #context{api=oos}) ->
     validate_token(oos, wrq:get_req_header("x-auth-token", RD)).
 
--spec authenticate(rcs_user(), {string(), term()}, #wm_reqdata{}, #context{}) ->
+-spec authenticate(rcs_user(),
+                   {string(), term()}|tuple(),
+                   #wm_reqdata{}, #context{}) ->
                           ok | {error, invalid_authentication}.
 authenticate(_User, {_, TokenItems}, _RD, _Ctx) ->
     %% @TODO Expand authentication check for non-operators who may
