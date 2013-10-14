@@ -102,7 +102,7 @@ mp_get_cases(UserConfig) ->
     SmallContent = multipart_upload(?TEST_BUCKET, ?KEY_MP_SMALL,
                                     [mb(3)], UserConfig),
     LargeContent = multipart_upload(?TEST_BUCKET, ?KEY_MP_LARGE,
-                                    [mb(10), mb(5), mb(9) + 123, mb(6), mb(400)], % 30MB + 523 B
+                                    [mb(10), mb(5), mb(9) + 123, mb(6), 400], % 30MB + 523 B
                                     UserConfig),
 
     %% Range GET for single part / single block

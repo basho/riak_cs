@@ -31,6 +31,7 @@
 %% export Public API
 -export([decode_and_merge_siblings/2,
          gc_interval/0,
+         initial_gc_delay/0,
          gc_retry_interval/0,
          gc_active_manifests/3,
          gc_specific_manifests/5,
@@ -55,7 +56,7 @@
 %% Note that any error is irrespective of the current position of the GC states.
 %% Some manifests may have been GC'd and then an error occurs. In this case the
 %% client will only get the error response.
--spec gc_active_manifests(binary(), binary(), pid()) -> 
+-spec gc_active_manifests(binary(), binary(), pid()) ->
     {ok, [binary()]} | {error, term()}.
 gc_active_manifests(Bucket, Key, RiakcPid) ->
     gc_active_manifests(Bucket, Key, RiakcPid, []).
@@ -65,19 +66,19 @@ gc_active_manifests(Bucket, Key, RiakcPid) ->
     {ok, [binary()]} | {error, term()}.
 gc_active_manifests(Bucket, Key, RiakcPid, UUIDs) ->
    case get_active_manifests(Bucket, Key, RiakcPid) of
-        {ok, _RiakObject, []} -> 
+        {ok, _RiakObject, []} ->
             {ok, UUIDs};
         {ok, RiakObject, Manifests} ->
             UnchangedManifests = clean_manifests(Manifests, RiakcPid),
             case gc_manifests(UnchangedManifests, RiakObject, Bucket, Key, RiakcPid) of
-                {error, _}=Error -> 
+                {error, _}=Error ->
                     Error;
-                NewUUIDs -> 
+                NewUUIDs ->
                     gc_active_manifests(Bucket, Key, RiakcPid, UUIDs ++ NewUUIDs)
             end;
         {error, notfound} ->
             {ok, UUIDs};
-        {error, _}=Error -> 
+        {error, _}=Error ->
             Error
     end.
 
@@ -87,25 +88,25 @@ get_active_manifests(Bucket, Key, RiakcPid) ->
     active_manifests(riak_cs_utils:get_manifests(RiakcPid, Bucket, Key)).
 
 -spec active_manifests({ok, riakc_obj:riakc_obj(), [lfs_manifest()]}) ->
-                          {ok, riakc_obj:riakc_obj(), [lfs_manifest()]}; 
+                          {ok, riakc_obj:riakc_obj(), [lfs_manifest()]};
                       ({error, term()}) ->
                           {error, term()}.
-active_manifests({ok, RiakObject, Manifests}) -> 
+active_manifests({ok, RiakObject, Manifests}) ->
     {ok, RiakObject, riak_cs_manifest_utils:active_manifests(Manifests)};
-active_manifests({error, _}=Error) -> 
+active_manifests({error, _}=Error) ->
     Error.
 
 -spec clean_manifests([lfs_manifest()], pid()) -> [lfs_manifest()].
 clean_manifests(ActiveManifests, RiakcPid) ->
-    [M || M <- ActiveManifests, clean_multipart_manifest(M, RiakcPid)]. 
+    [M || M <- ActiveManifests, clean_multipart_manifest(M, RiakcPid)].
 
 -spec clean_multipart_manifest(lfs_manifest(), pid()) -> true | false.
 clean_multipart_manifest(M, RiakcPid) ->
     is_multipart_clean(riak_cs_mp_utils:clean_multipart_unused_parts(M, RiakcPid)).
 
-is_multipart_clean(same) -> 
+is_multipart_clean(same) ->
     true;
-is_multipart_clean(updated) -> 
+is_multipart_clean(updated) ->
     false.
 
 -spec gc_manifests(Manifests :: [lfs_manifest()],
@@ -117,9 +118,9 @@ is_multipart_clean(updated) ->
 gc_manifests(Manifests, RiakObject, Bucket, Key, RiakcPid) ->
     F = fun(_M, {error, _}=Error) ->
                Error;
-           (M, UUIDs) -> 
-               gc_manifest(M, RiakObject, Bucket, Key, RiakcPid, UUIDs) 
-        end, 
+           (M, UUIDs) ->
+               gc_manifest(M, RiakObject, Bucket, Key, RiakcPid, UUIDs)
+        end,
     lists:foldl(F, [], Manifests).
 
 -spec gc_manifest(M :: lfs_manifest(),
@@ -133,9 +134,9 @@ gc_manifest(M, RiakObject, Bucket, Key, RiakcPid, UUIDs) ->
     UUID = M?MANIFEST.uuid,
     check(gc_specific_manifests_to_delete([UUID], RiakObject, Bucket, Key, RiakcPid), [UUID | UUIDs]).
 
-check({ok, _}, Val) -> 
+check({ok, _}, Val) ->
     Val;
-check({error, _}=Error, _Val) -> 
+check({error, _}=Error, _Val) ->
     Error.
 
 -spec gc_specific_manifests_to_delete(UUIDsToMark :: [binary()],
@@ -211,6 +212,17 @@ gc_interval() ->
             Interval
     end.
 
+%% @doc Return the number of seconds to wait in addition to the
+%% specified GC interval before scheduling the initial GC collection.
+-spec initial_gc_delay() -> non_neg_integer().
+initial_gc_delay() ->
+    case application:get_env(riak_cs, initial_gc_delay) of
+        undefined ->
+            0;
+        {ok, Delay} ->
+            Delay
+    end.
+
 %% @doc Return the number of seconds to wait before rescheduling a
 %% `pending_delete' manifest for garbage collection.
 -spec gc_retry_interval() -> non_neg_integer().
@@ -248,7 +260,11 @@ leeway_seconds() ->
 %% @doc Generate a key for storing a set of manifests for deletion.
 -spec timestamp() -> non_neg_integer().
 timestamp() ->
-    riak_cs_utils:second_resolution_timestamp(os:timestamp()).
+    timestamp(os:timestamp()).
+
+-spec timestamp(erlang:timestamp()) -> non_neg_integer().
+timestamp(ErlangTime) ->
+    riak_cs_utils:second_resolution_timestamp(ErlangTime).
 
 %%%===================================================================
 %%% Internal functions
@@ -340,11 +356,19 @@ build_manifest_set(Manifests) ->
 %% garbage collection bucket.
 -spec generate_key(boolean()) -> binary().
 generate_key(AddLeewayP) ->
-    list_to_binary(
-      integer_to_list(
-        timestamp() + if not AddLeewayP -> 0;
-                         true           -> leeway_seconds()
-                      end)).
+    Now = os:timestamp(),
+    list_to_binary([key_timestamp(Now, AddLeewayP), $_, key_suffix(Now)]).
+
+-spec key_timestamp(erlang:timestamp(), boolean()) -> string().
+key_timestamp(Time, true) ->
+    integer_to_list(timestamp(Time) + leeway_seconds());
+key_timestamp(Time, false) ->
+    integer_to_list(timestamp(Time)).
+
+-spec key_suffix(erlang:timestamp()) -> string().
+key_suffix(Time) ->
+    _ = random:seed(Time),
+    integer_to_list(random:uniform(riak_cs_config:gc_key_suffix_max())).
 
 %% @doc Given a list of riakc_obj-flavored object (with potentially
 %%      many siblings and perhaps a tombstone), decode and merge them.
