@@ -42,7 +42,9 @@
          riak_cs_stat/0,
          set_md5_chunk_size/1,
          use_t2b_compression/0,
-         trust_x_forwarded_for/0
+         trust_x_forwarded_for/0,
+         gc_key_suffix_max/0,
+         set_gc_key_suffix_max/1
         ]).
 
 %% OpenStack config
@@ -241,6 +243,18 @@ trust_x_forwarded_for() ->
             false;
         undefined -> false %% secure by default!
     end.
+
+%% @doc Return the max value for GC bucket key suffix.
+%% A suffix value is a random integer between 1 and the returned value.
+-spec gc_key_suffix_max() -> pos_integer().
+gc_key_suffix_max() ->
+    get_env(riak_cs, gc_key_suffix_max, ?DEFAULT_GC_KEY_SUFFIX_MAX).
+
+-spec set_gc_key_suffix_max(integer()) -> ok | {error, invalid_value}.
+set_gc_key_suffix_max(MaxValue) when is_integer(MaxValue) andalso MaxValue > 0 ->
+    application:set_env(riak_cs, gc_key_suffix_max, MaxValue);
+set_gc_key_suffix_max(_MaxValue) ->
+    {error, invalid_value}.
 
 %% ===================================================================
 %% S3 config options

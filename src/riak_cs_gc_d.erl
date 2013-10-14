@@ -142,7 +142,9 @@ stop() ->
 
 init(_Args) ->
     Interval = riak_cs_gc:gc_interval(),
-    SchedState = schedule_next(#state{interval=Interval}),
+    InitialDelay = riak_cs_gc:initial_gc_delay(),
+    SchedState = schedule_next(#state{interval=Interval,
+                                      initial_delay=InitialDelay}),
     {ok, idle, SchedState}.
 
 %% Asynchronous events
@@ -489,13 +491,30 @@ schedule_next(#state{interval=infinity}=State) ->
     %% nothing to schedule, all triggers manual
     State;
 schedule_next(#state{batch_start=Current,
-                     interval=Interval}=State) ->
+                     interval=Interval,
+                     initial_delay=undefined}=State) ->
     Next = riak_cs_gc:timestamp() + Interval,
+    _ = lager:debug("Scheduling next garbage collection for ~p",
+                    [Next]),
     TimerRef = erlang:send_after(Interval*1000, self(), start_batch),
     State#state{batch_start=undefined,
                 last=Current,
                 next=Next,
-                timer_ref=TimerRef}.
+                timer_ref=TimerRef};
+schedule_next(#state{batch_start=Current,
+                     interval=Interval,
+                     initial_delay=InitialDelay}=State) ->
+    Next = calendar:gregorian_seconds_to_datetime(
+             riak_cs_gc:timestamp() + Interval),
+    _ = lager:debug("Scheduling next garbage collection for ~p",
+                    [Next]),
+    TimerValue = Interval * 1000 + InitialDelay * 1000,
+    TimerRef = erlang:send_after(TimerValue, self(), start_batch),
+    State#state{batch_start=undefined,
+                last=Current,
+                next=Next,
+                timer_ref=TimerRef,
+                initial_delay=undefined}.
 
 %% @doc Actually kick off the batch.  After calling this function, you
 %% must advance the FSM state to `fetching_next_fileset'.

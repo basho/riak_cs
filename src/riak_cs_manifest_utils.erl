@@ -288,27 +288,33 @@ upgrade_manifest(#lfs_manifest_v2{block_size=BlockSize,
                                  props=Properties,
                                  cluster_id=ClusterID}) ->
 
-    ?MANIFEST{block_size=BlockSize,
-              bkey=Bkey,
-              metadata=Metadata,
-              created=Created,
-              uuid=UUID,
-              content_length=ContentLength,
-              content_type=ContentType,
-              content_md5=ContentMd5,
-              state=State,
-              write_start_time=WriteStartTime,
-              last_block_written_time=LastBlockWrittenTime,
-              write_blocks_remaining=WriteBlocksRemaining,
-              delete_marked_time=DeleteMarkedTime,
-              last_block_deleted_time=LastBlockDeletedTime,
-              delete_blocks_remaining=DeleteBlocksRemaining,
-              acl=Acl,
-              props=Properties,
-              cluster_id=ClusterID};
+    upgrade_manifest(?MANIFEST{block_size=BlockSize,
+                               bkey=Bkey,
+                               metadata=Metadata,
+                               created=Created,
+                               uuid=UUID,
+                               content_length=ContentLength,
+                               content_type=ContentType,
+                               content_md5=ContentMd5,
+                               state=State,
+                               write_start_time=WriteStartTime,
+                               last_block_written_time=LastBlockWrittenTime,
+                               write_blocks_remaining=WriteBlocksRemaining,
+                               delete_marked_time=DeleteMarkedTime,
+                               last_block_deleted_time=LastBlockDeletedTime,
+                               delete_blocks_remaining=DeleteBlocksRemaining,
+                               acl=Acl,
+                               props=Properties,
+                               cluster_id=ClusterID});
 
-upgrade_manifest(?MANIFEST{}=M) ->
-    M.
+upgrade_manifest(?MANIFEST{props=Props}=M) ->
+    M?MANIFEST{props=fixup_props(Props)}.
+
+-spec fixup_props(undefined | list()) -> list().
+fixup_props(undefined) ->
+    [];
+fixup_props(Props) when is_list(Props) ->
+    Props.
 
 %%%===================================================================
 %%% Internal functions
