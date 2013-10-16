@@ -159,11 +159,19 @@ gc_specific_manifests_to_delete(UUIDsToMark, RiakObject, Bucket, Key, RiakcPid) 
 gc_specific_manifests([], RiakObject, _Bucket, _Key, _RiakcPid) ->
     {ok, RiakObject};
 gc_specific_manifests(UUIDsToMark, RiakObject, Bucket, Key, RiakcPid) ->
+    StartTime = os:timestamp(),
     MarkedResult = mark_as_pending_delete(UUIDsToMark,
                                           RiakObject,
                                           Bucket, Key,
                                           RiakcPid),
-    handle_mark_as_pending_delete(MarkedResult, Bucket, Key, UUIDsToMark, RiakcPid).
+
+    Res = handle_mark_as_pending_delete(MarkedResult, Bucket, Key, UUIDsToMark, RiakcPid),
+    EndTime = os:timestamp(),
+    TimeDiff = timer:now_diff(EndTime, StartTime),
+    _ = lager:debug("gc_specific_manifests call for ~p:~p took"
+                    " ~B microseconds",
+                    [Bucket, Key, TimeDiff]),
+    Res.
 
 %% @private
 -spec handle_mark_as_pending_delete({ok, riakc_obj:riakc_obj()},
@@ -177,7 +185,15 @@ gc_specific_manifests(UUIDsToMark, RiakObject, Bucket, Key, RiakcPid) ->
 handle_mark_as_pending_delete({ok, RiakObject}, Bucket, Key, UUIDsToMark, RiakcPid) ->
     Manifests = riak_cs_utils:manifests_from_riak_object(RiakObject),
     PDManifests = riak_cs_manifest_utils:manifests_to_gc(UUIDsToMark, Manifests),
+
+    StartTime = os:timestamp(),
     MoveResult = move_manifests_to_gc_bucket(PDManifests, RiakcPid),
+    EndTime = os:timestamp(),
+    TimeDiff = timer:now_diff(EndTime, StartTime),
+    _ = lager:debug("move_manifests_to_gc_bucket call for ~p:~p took"
+                    " ~B microseconds",
+                    [Bucket, Key, TimeDiff]),
+
     %% riak_cs_gc.erl:89: The pattern [{UUID, _} | _] can never match
     %% the type [] Oi, this is a stumper.  Just overwrite a file once,
     %% and it's obvious that PDManifests is a non-empty list and
@@ -285,19 +301,32 @@ mark_as_deleted(UUIDsToMark, RiakObject, Bucket, Key, RiakcPid) ->
 -spec mark_as_pending_delete([binary()], riakc_obj:riakc_obj(), binary(), binary(), pid()) ->
     {ok, riakc_obj:riakc_obj()} | {error, term()}.
 mark_as_pending_delete(UUIDsToMark, RiakObject, Bucket, Key, RiakcPid) ->
-    mark_manifests(RiakObject, Bucket, Key, UUIDsToMark,
-                   fun riak_cs_manifest_utils:mark_pending_delete/2,
-                   RiakcPid).
+    StartTime = os:timestamp(),
+    Res = mark_manifests(RiakObject, Bucket, Key, UUIDsToMark,
+                         fun riak_cs_manifest_utils:mark_pending_delete/2,
+                         RiakcPid),
+    EndTime = os:timestamp(),
+    TimeDiff = timer:now_diff(EndTime, StartTime),
+    _ = lager:debug("mark_as_pending_delete call for ~p:~p took"
+                    " ~B microseconds",
+                    [Bucket, Key, TimeDiff]),
+    Res.
 
 %% @doc Mark a list of manifests as `scheduled_delete' based upon the
 %% UUIDs specified.
 -spec mark_as_scheduled_delete([binary()], riakc_obj:riakc_obj(), binary(), binary(), pid()) ->
     {ok, riakc_obj:riakc_obj()} | {error, term()}.
 mark_as_scheduled_delete(UUIDsToMark, RiakObject, Bucket, Key, RiakcPid) ->
-    mark_manifests(RiakObject, Bucket, Key, UUIDsToMark,
+    StartTime = os:timestamp(),
+    Res = mark_manifests(RiakObject, Bucket, Key, UUIDsToMark,
                    fun riak_cs_manifest_utils:mark_scheduled_delete/2,
-                   RiakcPid).
-
+                   RiakcPid),
+    EndTime = os:timestamp(),
+    TimeDiff = timer:now_diff(EndTime, StartTime),
+    _ = lager:debug("mark_as_scheduled_delete call for ~p:~p took"
+                    " ~B microseconds",
+                    [Bucket, Key, TimeDiff]),
+    Res.
 
 %% @doc Call a `riak_cs_manifest_utils' function on a set of manifests
 %% to update the state of the manifests specified by `UUIDsToMark'
@@ -305,8 +334,22 @@ mark_as_scheduled_delete(UUIDsToMark, RiakObject, Bucket, Key, RiakcPid) ->
 -spec mark_manifests(riakc_obj:riakc_obj(), binary(), binary(), [binary()], fun(), pid()) ->
                     {ok, riakc_obj:riakc_obj()} | {error, term()}.
 mark_manifests(RiakObject, Bucket, Key, UUIDsToMark, ManiFunction, RiakcPid) ->
+    GetManisStartTime = os:timestamp(),
     Manifests = riak_cs_utils:manifests_from_riak_object(RiakObject),
+    GetManisEndTime = os:timestamp(),
+    GetManisTimeDiff = timer:now_diff(GetManisEndTime, GetManisStartTime),
+    _ = lager:debug("manifests_from_riak_object call for ~p:~p took"
+                    " ~B microseconds",
+                    [Bucket, Key, GetManisTimeDiff]),
+
+    ManiStartTime = os:timestamp(),
     Marked = ManiFunction(Manifests, UUIDsToMark),
+    ManiEndTime = os:timestamp(),
+    ManiTimeDiff = timer:now_diff(ManiEndTime, ManiStartTime),
+    _ = lager:debug("ManiFunction call for ~p:~p took"
+                    " ~B microseconds",
+                    [Bucket, Key, ManiTimeDiff]),
+
     UpdObj0 = riak_cs_utils:update_obj_value(RiakObject,
                                              riak_cs_utils:encode_term(Marked)),
     UpdObj = riak_cs_manifest_fsm:update_md_with_multipart_2i(
@@ -315,7 +358,14 @@ mark_manifests(RiakObject, Bucket, Key, UUIDsToMark, ManiFunction, RiakcPid) ->
     %% use [returnbody] so that we get back the object
     %% with vector clock. This allows us to do a PUT
     %% again without having to re-retrieve the object
-    riak_cs_utils:put(RiakcPid, UpdObj, [return_body]).
+    PutStartTime = os:timestamp(),
+    Res = riak_cs_utils:put(RiakcPid, UpdObj, [return_body]),
+    PutEndTime = os:timestamp(),
+    PutTimeDiff = timer:now_diff(PutEndTime, PutStartTime),
+    _ = lager:debug("mark_manifesets write to Riak for ~p:~p took"
+                    " ~B microseconds",
+                    [Bucket, Key, PutTimeDiff]),
+    Res.
 
 move_manifests_to_gc_bucket(Manifests, RiakcPid) ->
     move_manifests_to_gc_bucket(Manifests, RiakcPid, true).
