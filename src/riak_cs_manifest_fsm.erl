@@ -307,30 +307,76 @@ get_and_update(RiakcPid, WrappedManifests, Bucket, Key) ->
     case riak_cs_utils:get_manifests(RiakcPid, Bucket, Key) of
         {ok, RiakObject, Manifests} ->
             StartTime = os:timestamp(),
+
+            StartTime1 = os:timestamp(),
             NewManiAdded = riak_cs_manifest_resolution:resolve([WrappedManifests, Manifests]),
+            EndTime1 = os:timestamp(),
+            TimeDiff1 = timer:now_diff(EndTime1, StartTime1),
+            _ = lager:debug("Took ~B microseconds in call to "
+                            "riak_cs_manifest_resolution:resolve/1",
+                            [TimeDiff1]),
+
             %% Update the object here so that if there are any
             %% overwritten UUIDs, then gc_specific_manifests() will
             %% operate on NewManiAdded and save it to Riak when it is
             %% finished.
+
+            StartTime2 = os:timestamp(),
             ObjectToWrite0 = riak_cs_utils:update_obj_value(
                                RiakObject, riak_cs_utils:encode_term(NewManiAdded)),
+            EndTime2 = os:timestamp(),
+            TimeDiff2 = timer:now_diff(EndTime2, StartTime2),
+            _ = lager:debug("Took ~B microseconds in call to "
+                            "riak_cs_utils:update_obj_value/2",
+                            [TimeDiff2]),
+
+            StartTime3 = os:timestamp(),
             ObjectToWrite = update_md_with_multipart_2i(
                               ObjectToWrite0, NewManiAdded, Bucket, Key),
+            EndTime3 = os:timestamp(),
+            TimeDiff3 = timer:now_diff(EndTime3, StartTime3),
+            _ = lager:debug("Took ~B microseconds in call to "
+                            "update_md_with_multipart_2i",
+                            [TimeDiff3]),
+
+            StartTime6 = os:timestamp(),
             {Result, NewRiakObject} =
               case riak_cs_manifest_utils:overwritten_UUIDs(NewManiAdded) of
                 [] ->
-                    riak_cs_utils:put(RiakcPid, ObjectToWrite, [return_body]);
+                    StartTime4 = os:timestamp(),
+                    Res = riak_cs_utils:put(RiakcPid, ObjectToWrite, [return_body]),
+                    EndTime4 = os:timestamp(),
+                    TimeDiff4 = timer:now_diff(EndTime4, StartTime4),
+                    _ = lager:debug("Took ~B microseconds in call to "
+                                    "riak_cs_utils:put with return_body",
+                                    [TimeDiff4]),
+                    Res;
                 OverwrittenUUIDs ->
-                    riak_cs_gc:gc_specific_manifests(OverwrittenUUIDs,
-                                                     ObjectToWrite,
-                                                     Bucket, Key,
-                                                     RiakcPid)
+                    StartTime5 = os:timestamp(),
+                    Res = riak_cs_gc:gc_specific_manifests(OverwrittenUUIDs,
+                                                           ObjectToWrite,
+                                                           Bucket, Key,
+                                                           RiakcPid),
+                    EndTime5 = os:timestamp(),
+                    TimeDiff5 = timer:now_diff(EndTime5, StartTime5),
+                    _ = lager:debug("Took ~B microseconds in call to "
+                                    "riak_cs_utils:put with return_body",
+                                    [TimeDiff5]),
+                    Res
             end,
+            EndTime6 = os:timestamp(),
+            TimeDiff6 = timer:now_diff(EndTime6, StartTime6),
+            _ = lager:debug("Took ~B microseconds in call to "
+                            "overwritten case statement",
+                            [TimeDiff6]),
+
             EndTime = os:timestamp(),
             TimeDiff = timer:now_diff(EndTime, StartTime),
             _ = lager:debug("Adding manifest to existing key took"
                             " ~B microseconds",
                             [TimeDiff]),
+
+
             {Result, NewRiakObject, Manifests};
         {error, notfound} ->
             StartTime = os:timestamp(),
