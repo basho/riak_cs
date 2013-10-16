@@ -802,7 +802,22 @@ put(RiakcPid, RiakcObj) ->
     put(RiakcPid, RiakcObj, []).
 
 put(RiakcPid, RiakcObj, Options) ->
-    riakc_pb_socket:put(RiakcPid, RiakcObj, Options).
+    StartTime = os:timestamp(),
+    Result = riakc_pb_socket:put(RiakcPid, RiakcObj, Options),
+    EndTime = os:timestamp(),
+    TimeDiff = timer:now_diff(EndTime, StartTime),
+    Bucket = riakc_obj:bucket(RiakcObj),
+    Prefix = ?OBJECT_BUCKET_PREFIX,
+    _ = case Bucket of
+        <<Prefix:3/binary, _Rest/binary>> ->
+            Key = riakc_obj:key(RiakcObj),
+            lager:debug("Took ~B microseconds to write manifest ~p",
+                        [TimeDiff, [Bucket, Key]]);
+        _Else ->
+            %% could be a block object, or something else like a user/bucket object
+            ok
+    end,
+    Result.
 
 put_with_no_meta(RiakcPid, RiakcObj) ->
     put_with_no_meta(RiakcPid, RiakcObj, []).
