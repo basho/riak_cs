@@ -306,6 +306,7 @@ get_and_update(RiakcPid, WrappedManifests, Bucket, Key) ->
     %% dict
     case riak_cs_utils:get_manifests(RiakcPid, Bucket, Key) of
         {ok, RiakObject, Manifests} ->
+            StartTime = os:timestamp(),
             NewManiAdded = riak_cs_manifest_resolution:resolve([WrappedManifests, Manifests]),
             %% Update the object here so that if there are any
             %% overwritten UUIDs, then gc_specific_manifests() will
@@ -325,13 +326,24 @@ get_and_update(RiakcPid, WrappedManifests, Bucket, Key) ->
                                                      Bucket, Key,
                                                      RiakcPid)
             end,
+            EndTime = os:timestamp(),
+            TimeDiff = timer:now_diff(EndTime, StartTime),
+            _ = lager:debug("Adding manifest to existing key took"
+                            " ~B microseconds",
+                            [TimeDiff]),
             {Result, NewRiakObject, Manifests};
         {error, notfound} ->
+            StartTime = os:timestamp(),
             ManifestBucket = riak_cs_utils:to_bucket_name(objects, Bucket),
             ObjectToWrite0 = riakc_obj:new(ManifestBucket, Key, riak_cs_utils:encode_term(WrappedManifests)),
             ObjectToWrite = update_md_with_multipart_2i(
                               ObjectToWrite0, WrappedManifests, Bucket, Key),
             PutResult = riak_cs_utils:put(RiakcPid, ObjectToWrite),
+            EndTime = os:timestamp(),
+            TimeDiff = timer:now_diff(EndTime, StartTime),
+            _ = lager:debug("Adding manifest to notfound key took"
+                            " ~B microseconds",
+                            [TimeDiff]),
             {PutResult, undefined, undefined}
     end.
 
