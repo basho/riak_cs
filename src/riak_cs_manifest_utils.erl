@@ -94,22 +94,12 @@ active_and_writing_manifests(Dict) ->
 overwritten_UUIDs(Dict) ->
     case active_manifest(Dict) of
         {error, no_active_manifest} ->
-            lists:foldl(fun overwritten_UUIDs_no_active_fold/2,
-                        [],
-                        orddict:to_list(Dict));
+            [];
         {ok, Active} ->
             lists:foldl(overwritten_UUIDs_active_fold_helper(Active),
                         [],
                         orddict:to_list(Dict))
     end.
-
--spec overwritten_UUIDs_no_active_fold({binary(), lfs_manifest},
-                                       [binary()]) -> [binary()].
-overwritten_UUIDs_no_active_fold({_, ?MANIFEST{state=State}}, Acc)
-        when State =:= writing ->
-    Acc;
-overwritten_UUIDs_no_active_fold({UUID, _}, Acc) ->
-    [UUID | Acc].
 
 -spec overwritten_UUIDs_active_fold_helper(lfs_manifest()) ->
     fun(({binary(), lfs_manifest()}, [binary()]) -> [binary()]).
@@ -254,9 +244,8 @@ prune(Dict) ->
 
 -spec prune(orddict:orddict(), erlang:timestamp()) -> orddict:orddict().
 prune(Dict, Time) ->
-    orddict:from_list(
-      [KV || {_K, V}=KV <- orddict:to_list(Dict), not (needs_pruning(V, Time))]
-     ).
+     orddict:filter(fun (_Key, Value) -> not needs_pruning(Value, Time) end,
+                    Dict).
 
 -spec upgrade_wrapped_manifests([orddict:orddict()]) -> [orddict:orddict()].
 upgrade_wrapped_manifests(ListofOrdDicts) ->
