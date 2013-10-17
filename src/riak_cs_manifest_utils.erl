@@ -22,6 +22,7 @@
 
 -module(riak_cs_manifest_utils).
 
+-compile(export_all).
 -include("riak_cs.hrl").
 -ifdef(TEST).
 -compile(export_all).
@@ -254,9 +255,8 @@ prune(Dict) ->
 
 -spec prune(orddict:orddict(), erlang:timestamp()) -> orddict:orddict().
 prune(Dict, Time) ->
-    orddict:from_list(
-      [KV || {_K, V}=KV <- orddict:to_list(Dict), not (needs_pruning(V, Time))]
-     ).
+      orddict:filter(fun (_Key, Value) -> not needs_pruning(Value, Time) end,
+                     Dict).
 
 -spec upgrade_wrapped_manifests([orddict:orddict()]) -> [orddict:orddict()].
 upgrade_wrapped_manifests(ListofOrdDicts) ->

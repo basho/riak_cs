@@ -360,7 +360,7 @@ get_and_update(RiakcPid, WrappedManifests, Bucket, Key) ->
                     EndTime5 = os:timestamp(),
                     TimeDiff5 = timer:now_diff(EndTime5, StartTime5),
                     _ = lager:debug("Took ~B microseconds in call to "
-                                    "riak_cs_utils:put with return_body",
+                                    "gc_specific_manifests",
                                     [TimeDiff5]),
                     Res
             end,
@@ -377,7 +377,7 @@ get_and_update(RiakcPid, WrappedManifests, Bucket, Key) ->
                             [TimeDiff]),
 
 
-            {Result, NewRiakObject, Manifests};
+            {Result, NewRiakObject, riak_cs_utils:manifests_from_riak_object(NewRiakObject)};
         {error, notfound} ->
             StartTime = os:timestamp(),
             ManifestBucket = riak_cs_utils:to_bucket_name(objects, Bucket),
