@@ -31,10 +31,12 @@
          cs_version/0,
          disable_local_bucket_check/0,
          enforce_multipart_part_size/0,
+         gc_batch_size/0,
          get_env/3,
          key_list_multiplier/0,
          set_key_list_multiplier/1,
          md5_chunk_size/0,
+         paginated_indexes/0,
          policy_module/0,
          proxy_get_active/0,
          response_module/0,
@@ -135,6 +137,10 @@ disable_local_bucket_check() ->
 enforce_multipart_part_size() ->
     get_env(riak_cs, enforce_multipart_part_size, true).
 
+-spec gc_batch_size() -> non_neg_integer().
+gc_batch_size() ->
+    get_env(riak_cs, gc_batch_size, ?DEFAULT_GC_BATCH_SIZE).
+
 -spec key_list_multiplier() -> float().
 key_list_multiplier() ->
     get_env(riak_cs, key_list_multiplier, ?KEY_LIST_MULTIPLIER).
@@ -146,6 +152,10 @@ set_key_list_multiplier(Multiplier) ->
 -spec policy_module() -> atom().
 policy_module() ->
     get_env(riak_cs, policy_module, ?DEFAULT_POLICY_MODULE).
+
+-spec paginated_indexes() -> atom().
+paginated_indexes() ->
+    get_env(riak_cs, paginated_indexes, false).
 
 -spec response_module() -> atom().
 response_module() ->
