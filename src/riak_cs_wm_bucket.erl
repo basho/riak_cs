@@ -23,6 +23,7 @@
 -export([content_types_provided/2,
          to_xml/2,
          allowed_methods/0,
+         malformed_request/2,
          content_types_accepted/2,
          accept_body/2,
          delete_resource/2,
@@ -35,6 +36,16 @@
 -spec allowed_methods() -> [atom()].
 allowed_methods() ->
     ['HEAD', 'PUT', 'DELETE'].
+
+-spec malformed_request(#wm_reqdata{}, #context{}) -> {false, #wm_reqdata{}, #context{}}.
+malformed_request(RD, Ctx) ->
+    case riak_cs_wm_utils:has_canned_acl_and_header_grant(RD) of
+        true ->
+            riak_cs_s3_response:api_error(canned_acl_and_header_grant,
+                                          RD, Ctx);
+        false ->
+            {false, RD, Ctx}
+    end.
 
 -spec content_types_provided(#wm_reqdata{}, #context{}) -> {[{string(), atom()}], #wm_reqdata{}, #context{}}.
 content_types_provided(RD, Ctx) ->
@@ -52,7 +63,7 @@ content_types_accepted(CT, RD, Ctx) when CT =:= undefined;
     content_types_accepted("application/octet-stream", RD, Ctx);
 content_types_accepted(CT, RD, Ctx) ->
     {Media, _Params} = mochiweb_util:parse_header(CT),
-    {[{Media, ensure_no_canned_acl_and_header_grant}], RD, Ctx}.
+    {[{Media, accept_body}], RD, Ctx}.
 
 -spec authorize(#wm_reqdata{}, #context{}) -> {boolean(), #wm_reqdata{}, #context{}}.
 authorize(RD, #context{user=User}=Ctx) ->

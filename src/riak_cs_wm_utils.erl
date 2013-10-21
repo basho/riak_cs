@@ -40,11 +40,10 @@
          extract_key/2,
          extract_name/1,
          normalize_headers/1,
-         error_if_acl_headers_and_acl_body/1,
-         error_if_canned_acl_and_header_grant/1,
          acl_from_headers/4,
          extract_acl_headers/1,
-         acl_header_and_body/1,
+         has_acl_header_and_body/1,
+         has_canned_acl_and_header_grant/1,
          extract_amazon_headers/1,
          extract_user_metadata/1,
          shift_to_owner/4,
@@ -409,39 +408,8 @@ header_name_to_perm("x-amz-grant-full-control") ->
 header_name_to_perm(_Else) ->
     undefined.
 
--spec error_if_acl_headers_and_acl_body(fun()) ->
-                    fun((#wm_reqdata{}, term()) -> term()).
-error_if_acl_headers_and_acl_body(OkFun) ->
-    fun(Req, Ctx) ->
-            case acl_header_and_body(Req) of
-                true ->
-                    riak_cs_s3_response:api_error(unexpected_content, Req, Ctx);
-                false ->
-                    case has_canned_acl_and_header_grant(Req) of
-                        true ->
-                            riak_cs_s3_response:api_error(canned_acl_and_header_grant,
-                                                          Req, Ctx);
-                        false ->
-                            OkFun(Req, Ctx)
-                    end
-            end
-    end.
-
--spec error_if_canned_acl_and_header_grant(fun()) ->
-                    fun((#wm_reqdata{}, term()) -> term()).
-error_if_canned_acl_and_header_grant(OkFun) ->
-    fun(Req, Ctx) ->
-            case has_canned_acl_and_header_grant(Req) of
-                true ->
-                    riak_cs_s3_response:api_error(canned_acl_and_header_grant,
-                                                  Req, Ctx);
-                false ->
-                    OkFun(Req, Ctx)
-            end
-    end.
-
--spec acl_header_and_body(#wm_reqdata{}) -> boolean().
-acl_header_and_body(RD) ->
+-spec has_acl_header_and_body(#wm_reqdata{}) -> boolean().
+has_acl_header_and_body(RD) ->
     has_acl_header(RD) andalso has_body(RD).
 
 -spec has_acl_header(#wm_reqdata{}) -> boolean().

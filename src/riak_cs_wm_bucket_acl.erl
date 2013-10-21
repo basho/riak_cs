@@ -23,6 +23,7 @@
 -export([content_types_provided/2,
          to_xml/2,
          allowed_methods/0,
+         malformed_request/2,
          content_types_accepted/2,
          accept_body/2]).
 
@@ -39,6 +40,16 @@
 allowed_methods() ->
     ['GET', 'PUT'].
 
+-spec malformed_request(#wm_reqdata{}, #context{}) -> {false, #wm_reqdata{}, #context{}}.
+malformed_request(RD, Ctx) ->
+    case riak_cs_wm_utils:has_acl_header_and_body(RD) of
+        true ->
+            riak_cs_s3_response:api_error(unexpected_content,
+                                          RD, Ctx);
+        false ->
+            {false, RD, Ctx}
+    end.
+
 -spec content_types_provided(#wm_reqdata{}, #context{}) -> {[{string(), atom()}], #wm_reqdata{}, #context{}}.
 content_types_provided(RD, Ctx) ->
     {[{"application/xml", to_xml}], RD, Ctx}.
@@ -48,10 +59,10 @@ content_types_provided(RD, Ctx) ->
 content_types_accepted(RD, Ctx) ->
     case wrq:get_req_header("content-type", RD) of
         undefined ->
-            {[{"application/octet-stream", ensure_no_acl_headers_and_body}], RD, Ctx};
+            {[{"application/octet-stream", accept_body}], RD, Ctx};
         CType ->
             {Media, _Params} = mochiweb_util:parse_header(CType),
-            {[{Media, ensure_no_acl_headers_and_body}], RD, Ctx}
+            {[{Media, accept_body}], RD, Ctx}
     end.
 
 -spec authorize(#wm_reqdata{}, #context{}) -> {boolean() | {halt, non_neg_integer()}, #wm_reqdata{}, #context{}}.

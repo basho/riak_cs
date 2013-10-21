@@ -37,8 +37,14 @@ init(Ctx) ->
 
 -spec malformed_request(#wm_reqdata{}, #context{}) -> {false, #wm_reqdata{}, #context{}}.
 malformed_request(RD,Ctx) ->
-    NewCtx = riak_cs_wm_utils:extract_key(RD, Ctx),
-    {false, RD, NewCtx}.
+    case riak_cs_wm_utils:has_acl_header_and_body(RD) of
+        true ->
+            riak_cs_s3_response:api_error(unexpected_content,
+                                          RD, Ctx);
+        false ->
+            NewCtx = riak_cs_wm_utils:extract_key(RD, Ctx),
+            {false, RD, NewCtx}
+    end.
 
 %% @doc Get the type of access requested and the manifest with the
 %% object ACL and compare the permission requested with the permission
@@ -109,7 +115,7 @@ content_types_accepted(RD, Ctx=#context{local_context=LocalCtx0}) ->
         undefined ->
             DefaultCType = "application/octet-stream",
             LocalCtx = LocalCtx0#key_context{putctype=DefaultCType},
-            {[{DefaultCType, ensure_no_acl_headers_and_body}],
+            {[{DefaultCType, accept_body}],
              RD,
              Ctx#context{local_context=LocalCtx}};
         %% This was shamelessly ripped out of
@@ -120,7 +126,7 @@ content_types_accepted(RD, Ctx=#context{local_context=LocalCtx0}) ->
                 [_Type, _Subtype] ->
                     %% accept whatever the user says
                     LocalCtx = LocalCtx0#key_context{putctype=Media},
-                    {[{Media, ensure_no_acl_headers_and_body}], RD, Ctx#context{local_context=LocalCtx}};
+                    {[{Media, accept_body}], RD, Ctx#context{local_context=LocalCtx}};
                 _ ->
                     %% TODO:
                     %% Maybe we should have caught
