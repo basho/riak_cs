@@ -325,7 +325,8 @@ get_and_update(RiakcPid, WrappedManifests, Bucket, Key) ->
                                                      Bucket, Key,
                                                      RiakcPid)
             end,
-            {Result, NewRiakObject, Manifests};
+            UpdatedManifests = riak_cs_utils:manifests_from_riak_object(NewRiakObject),
+            {Result, NewRiakObject, UpdatedManifests};
         {error, notfound} ->
             ManifestBucket = riak_cs_utils:to_bucket_name(objects, Bucket),
             ObjectToWrite0 = riakc_obj:new(ManifestBucket, Key, riak_cs_utils:encode_term(WrappedManifests)),
