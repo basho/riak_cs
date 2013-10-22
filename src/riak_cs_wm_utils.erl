@@ -39,12 +39,18 @@
          deny_invalid_key/2,
          extract_key/2,
          extract_name/1,
-         normalize_headers/1,
+         maybe_update_context_with_acl_from_headers/2,
+         maybe_acl_from_context_and_request/2,
          acl_from_headers/4,
          extract_acl_headers/1,
          has_acl_header_and_body/1,
+         has_acl_header/1,
          has_canned_acl_and_header_grant/1,
+         has_canned_acl_header/1,
+         has_specific_acl_header/1,
+         has_body/1,
          extract_amazon_headers/1,
+         normalize_headers/1,
          extract_user_metadata/1,
          shift_to_owner/4,
          bucket_access_authorize_helper/4,
@@ -58,6 +64,10 @@
 
 -define(QS_KEYID, "AWSAccessKeyId").
 -define(QS_SIGNATURE, "Signature").
+
+-type acl_or_error() ::  {ok, #acl_v2{}} |
+                         {error, 'invalid_argument'} |
+                         {error, 'unresolved_grant_email'}.
 
 %% ===================================================================
 %% Public API
@@ -352,6 +362,42 @@ extract_name(?RCS_USER{name=Name}) ->
 extract_name(_) ->
     "-unknown-".
 
+-spec maybe_update_context_with_acl_from_headers(#wm_reqdata{}, #context{}) ->
+    {error, {{halt, term()}, #wm_reqdata{}, #context{}}} |
+    {ok, #context{}}.
+maybe_update_context_with_acl_from_headers(RD, Ctx=#context{user=User}) ->
+    case maybe_acl_from_context_and_request(RD, Ctx) of
+        {ok, {error, BadAclReason}} ->
+            {error, riak_cs_s3_response:api_error(BadAclReason, RD, Ctx)};
+        %% pattern match on the ACL record type for a data-type
+        %% sanity-check
+        {ok, {ok, Acl=?ACL{}}} ->
+            {ok, Ctx#context{acl=Acl}};
+        error ->
+            DefaultAcl = riak_cs_acl_utils:default_acl(User?RCS_USER.display_name,
+                                                       User?RCS_USER.canonical_id,
+                                                       User?RCS_USER.key_id),
+            {ok, Ctx#context{acl=DefaultAcl}}
+    end.
+
+-spec maybe_acl_from_context_and_request(#wm_reqdata{}, #context{}) ->
+    {ok, acl_or_error()} | error.
+maybe_acl_from_context_and_request(RD, #context{user=User,
+                                                local_context=Local,
+                                                riakc_pid=RiakcPid}) ->
+    Bucket = Local#key_context.bucket,
+    case has_acl_header(RD) of
+        true ->
+            Headers = normalize_headers(RD),
+            BucketOwner = bucket_owner(Bucket, RiakcPid),
+            Owner = {User?RCS_USER.display_name,
+                     User?RCS_USER.canonical_id,
+                     User?RCS_USER.key_id},
+            {ok, acl_from_headers(Headers, Owner, BucketOwner, RiakcPid)};
+        false ->
+            error
+    end.
+
 %% TODO: not sure if this should live here or in
 %% `riak_cs_acl_utils'
 %% @doc Create an acl from the request headers. At this point, we should
@@ -361,9 +407,7 @@ extract_name(_) ->
                        Owner :: acl_owner(),
                        BucketOwner :: undefined | acl_owner(),
                        Pid :: pid()) ->
-    {ok, #acl_v2{}} |
-    {error, 'invalid_argument'} |
-    {error, 'unresolved_grant_email'}.
+    acl_or_error().
 acl_from_headers(Headers, Owner, BucketOwner, Pid) ->
     %% TODO: time to make a macro for `"x-amz-acl"'
     %% `Headers' is an ordset. Is there a faster way to retrieve this? Or

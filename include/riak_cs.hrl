@@ -80,6 +80,7 @@
                   user :: undefined | moss_user(),
                   user_object :: riakc_obj:riakc_obj(),
                   bucket :: binary(),
+                  acl :: 'undefined' | acl(),
                   requested_perm :: acl_perm(),
                   riakc_pid :: pid(),
                   riakc_pool :: atom(),
@@ -93,7 +94,6 @@
                  }).
 
 -record(key_context, {manifest :: 'notfound' | lfs_manifest(),
-                      acl :: 'undefined' | acl(),
                       upload_id :: 'undefined' | binary(),
                       part_number :: 'undefined' | integer(),
                       part_uuid :: 'undefined' | binary(),
