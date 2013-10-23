@@ -20,20 +20,12 @@
 
 -module(stanchion_switch_test).
 
-%% @doc `riak_test' module for testing object get behavior.
+%% @doc `riak_test' module for testing riak-cs-stanchion switch command.
 
 -export([confirm/0]).
 -include_lib("eunit/include/eunit.hrl").
 
-%% keys for non-multipart objects
 -define(TEST_BUCKET,        "riak-test-bucket").
--define(KEY_SINGLE_BLOCK,   "riak_test_key1").
--define(KEY_MULTIPLE_BLOCK, "riak_test_key2").
-
-%% keys for multipart uploaded objects
--define(KEY_MP_TINY,        "riak_test_mp_tiny").  % single part, single block
--define(KEY_MP_SMALL,       "riak_test_mp_small"). % single part, multiple blocks
--define(KEY_MP_LARGE,       "riak_test_mp_large"). % multiple parts
 
 -define(BACKUP_PORT, 9096).
 
