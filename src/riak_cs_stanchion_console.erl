@@ -59,10 +59,10 @@ switch([Host, Port]) ->
                 %% in case of multiple stanchion working.
                 ok = application:set_env(riak_cs, stanchion_ip, Host),
                 ok = application:set_env(riak_cs, stanchion_port, NewPort),
-                Msg2 = io_lib:format("Succesfully witched stanchion to ~s:~s: This change is only effective until restart.~n",
+                Msg2 = io_lib:format("Succesfully switched stanchion to ~s:~s: This change is only effective until restart.",
                                     [Host, Port]),
                 _ = lager:info(Msg2),
-                io:format("~sTo make permanent change, be sure to edit app.config file.~n", [Msg2])
+                io:format("~s~nTo make permanent change, be sure to edit app.config file.~n", [Msg2])
             end, Msg).
 
 
@@ -75,4 +75,4 @@ show([]) ->
                          end,
                 io:format("Current Stanchion Adderss: ~s~s:~s~n",
                           [Scheme, Host, integer_to_list(Port)])
-            end, "Retrieving Stanchion info failed").
+            end, "Retrieving Stanchion info").
