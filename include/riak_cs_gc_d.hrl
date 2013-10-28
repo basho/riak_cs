@@ -18,14 +18,13 @@
 %%
 %% ---------------------------------------------------------------------
 
--record(state, {
+-include("riak_cs.hrl").
+
+-record(gc_d_state, {
           interval :: 'infinity' | non_neg_integer(),
           last :: undefined | non_neg_integer(), % the last time a deletion was scheduled
           next :: undefined | calendar:datetime(), % the next scheduled gc time
           riak :: undefined | pid(), % Riak connection pid
-          current_files :: [lfs_manifest()],
-          current_fileset :: twop_set:twop_set(),
-          current_riak_object :: riakc_obj:riakc_obj(),
           batch_start :: undefined | non_neg_integer(), % start of the current gc interval
           batch_count=0 :: non_neg_integer(),
           batch_skips=0 :: non_neg_integer(), % Count of filesets skipped in this batch
@@ -35,8 +34,36 @@
           pause_state :: undefined | atom(), % state of the fsm when a delete batch was paused
           interval_remaining :: undefined | non_neg_integer(), % used when moving from paused -> idle
           timer_ref :: reference(),
-          delete_fsm_pid :: pid(),
           initial_delay :: non_neg_integer(),
           leeway :: non_neg_integer(),
+          worker_pids=[] :: [pid()],
+          max_workers=0 :: non_neg_integer(),
+          active_workers=0 :: non_neg_integer(),
           continuation :: undefined | binary() % Used for paginated 2I querying of GC bucket
          }).
+
+-record(gc_worker_state, {
+          riak_pid :: undefined | pid(), % Riak connection pid
+          current_files :: [lfs_manifest()],
+          current_fileset :: twop_set:twop_set(),
+          current_riak_object :: riakc_obj:riakc_obj(),
+          batch_start :: undefined | non_neg_integer(), % start of the current gc interval
+          batch_count=0 :: non_neg_integer(),
+          batch_skips=0 :: non_neg_integer(), % Count of filesets skipped in this batch
+          batch=[] :: undefined | [binary()], % `undefined' only for testing
+          manif_count=0 :: non_neg_integer(),
+          block_count=0 :: non_neg_integer(),
+          delete_fsm_pid :: pid()
+         }).
+
+
+%% Number of seconds to keep manifests in the `scheduled_delete' state
+%% before beginning to delete the file blocks and before the file
+%% manifest may be pruned.
+-define(DEFAULT_LEEWAY_SECONDS, 86400). %% 24-hours
+-define(DEFAULT_GC_INTERVAL, 900). %% 15 minutes
+-define(DEFAULT_GC_RETRY_INTERVAL, 21600). %% 6 hours
+-define(DEFAULT_GC_KEY_SUFFIX_MAX, 256).
+-define(DEFAULT_GC_BATCH_SIZE, 1000).
+-define(DEFAULT_GC_WORKERS, 10).
+-define(EPOCH_START, <<"0">>).

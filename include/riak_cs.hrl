@@ -455,15 +455,6 @@
 %% perhaps add later? -define(DT_AUTH_OP,         704).
 -define(DT_WM_OP,           705).
 
-%% Number of seconds to keep manifests in the `scheduled_delete' state
-%% before beginning to delete the file blocks and before the file
-%% manifest may be pruned.
--define(DEFAULT_LEEWAY_SECONDS, 86400). %% 24-hours
--define(DEFAULT_GC_INTERVAL, 900). %% 15 minutes
--define(DEFAULT_GC_RETRY_INTERVAL, 21600). %% 6 hours
--define(DEFAULT_GC_KEY_SUFFIX_MAX, 256).
--define(DEFAULT_GC_BATCH_SIZE, 1000).
--define(EPOCH_START, <<"0">>).
 -define(DEFAULT_CLUSTER_ID_TIMEOUT,5000).
 -define(DEFAULT_AUTH_MODULE, riak_cs_s3_auth).
 -define(DEFAULT_LIST_OBJECTS_MAX_KEYS, 1000).
