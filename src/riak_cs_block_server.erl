@@ -281,6 +281,9 @@ try_local_get(RiakcPid, FullBucket, FullKey, GetOptions1, GetOptions2,
             handle_local_notfound(RiakcPid, FullBucket, FullKey, GetOptions2,
                                   ProceedFun, RetryFun, NumRetries, UseProxyGet,
                                   ProxyActive, ClusterID);
+        {error, disconnected} ->
+            _ = lager:error("do_get_block: socket disconnected"),
+            RetryFun(NumRetries + 1);
         {error, Other} ->
             _ = lager:error("do_get_block: other error 1: ~p\n", [Other]),
             RetryFun(failure)
@@ -312,6 +315,9 @@ handle_local_notfound(RiakcPid, FullBucket, FullKey, GetOptions2,
                 false ->
                     RetryFun(failure)
             end;
+        {error, disconnected} ->
+            _ = lager:error("do_get_block: socket disconnected"),
+            RetryFun(NumRetries + 1);
         {error, Other} ->
             _ = lager:error("do_get_block: other error 2: ~p\n", [Other]),
             RetryFun(failure)
