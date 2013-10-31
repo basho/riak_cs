@@ -224,7 +224,7 @@ waiting_continue_or_stop({continue, Range}, #state{manifest=Manifest,
             case Readers of
                 undefined ->
                     FreeReaders =
-                    riak_cs_block_server:start_block_servers(RiakPid,
+                    riak_cs_block_server:start_block_servers(Manifest, RiakPid,
                         FetchConcurrency),
                     _ = lager:debug("Block Servers: ~p", [FreeReaders]);
                 _ ->

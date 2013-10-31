@@ -275,18 +275,19 @@ new_manifest(Bucket, FileName, UUID, ContentLength, ContentType, ContentMd5, Met
                    cluster_id()) -> lfs_manifest().
 new_manifest(Bucket, FileName, UUID, ContentLength, ContentType, ContentMd5, MetaData, BlockSize, Acl, Props, ClusterID) ->
     Blocks = ordsets:from_list(initial_blocks(ContentLength, BlockSize)),
-    ?MANIFEST{bkey={Bucket, FileName},
-              uuid=UUID,
-              state=writing,
-              content_length=ContentLength,
-              content_type=ContentType,
-              content_md5=ContentMd5,
-              block_size=BlockSize,
-              write_blocks_remaining=Blocks,
-              metadata=MetaData,
-              acl=Acl,
-              props=Props,
-              cluster_id=ClusterID}.
+    Manifest = ?MANIFEST{bkey={Bucket, FileName},
+                         uuid=UUID,
+                         state=writing,
+                         content_length=ContentLength,
+                         content_type=ContentType,
+                         content_md5=ContentMd5,
+                         block_size=BlockSize,
+                         write_blocks_remaining=Blocks,
+                         metadata=MetaData,
+                         acl=Acl,
+                         props=Props,
+                         cluster_id=ClusterID},
+    riak_cs_multi_container:assign_container_id(block, Manifest).
 
 %% @doc Remove a chunk from the
 %%      write_blocks_remaining field of Manifest

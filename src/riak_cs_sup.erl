@@ -134,18 +134,28 @@ web_specs(Options) ->
 -spec pool_specs(proplist()) -> [supervisor:child_spec()].
 pool_specs(Options) ->
     WorkerStop = fun(Worker) -> riak_cs_riakc_pool_worker:stop(Worker) end,
-    [pool_spec(Name, Workers, Overflow, WorkerStop)
-     || {Name, {Workers, Overflow}} <- proplists:get_value(connection_pools, Options)].
+    DefaultPools = proplists:get_value(connection_pools, Options),
+    DefaultAddress = riak_cs_config:get_env(riak_cs, riak_ip, "127.0.0.1"),
+    DefaultPort = riak_cs_config:get_env(riak_cs, riak_pb_port, 8087),
+    MultiClusterPools = riak_cs_multi_container:pool_specs(),
+    lager:log(warning, self(), "MultiClusterPools: ~p~n", [MultiClusterPools]),
+    [pool_spec(Name, Workers, Overflow, DefaultAddress, DefaultPort, WorkerStop)
+     || {Name, {Workers, Overflow}} <- DefaultPools]
+        ++
+    [pool_spec(Name, Workers, Overflow, Address, Port, WorkerStop)
+     || {Name, {Workers, Overflow, Address, Port}} <- MultiClusterPools].
 
--spec pool_spec(atom(), non_neg_integer(), non_neg_integer(), function()) ->
+-spec pool_spec(atom(), non_neg_integer(), non_neg_integer(),
+                string(), non_neg_integer(), function()) ->
                        supervisor:child_spec().
-pool_spec(Name, Workers, Overflow, WorkerStop) ->
+pool_spec(Name, Workers, Overflow, Address, Port, WorkerStop) ->
     {Name,
      {poolboy, start_link, [[{name, {local, Name}},
                              {worker_module, riak_cs_riakc_pool_worker},
                              {size, Workers},
                              {max_overflow, Overflow},
-                             {stop_fun, WorkerStop}]]},
+                             {stop_fun, WorkerStop}],
+                            [{address, Address}, {port, Port}]]},
      permanent, 5000, worker, [poolboy]}.
 
 -spec web_spec(atom(), proplist()) -> supervisor:child_spec().
