@@ -32,9 +32,8 @@
 -include_lib("riak_pb/include/riak_pb_kv_codec.hrl").
 
 %% API
--export([start_link/0,
-         start_link/1,
-         start_block_servers/2,
+-export([start_link/1,
+         start_block_servers/3,
          get_block/5, get_block/6,
          put_block/6,
          delete_block/5,
@@ -60,14 +59,11 @@
 %% @doc
 %% Starts the server
 %%
-%% @spec start_link() -> {ok, Pid} | ignore | {error, Error}
+%% @spec start_link(PoolName) -> {ok, Pid} | ignore | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
-start_link() ->
-    gen_server:start_link(?MODULE, [], []).
-
-start_link(RiakPid) ->
-    gen_server:start_link(?MODULE, [RiakPid], []).
+start_link(PoolOrPid) ->
+    gen_server:start_link(?MODULE, [PoolOrPid], []).
 
 %% @doc Start (up to) 'MaxNumServers'
 %% riak_cs_block_server procs.
@@ -87,16 +83,40 @@ start_link(RiakPid) ->
 %% MinWorkers. If the timeout occurs, this function
 %% could return an error, or the pids it has
 %% so far (which might be less than MinWorkers).
--spec start_block_servers(pid(), pos_integer()) -> [pid()].
-start_block_servers(RiakcPid, 1) ->
-    {ok, Pid} = start_link(RiakcPid),
-    [Pid];
-start_block_servers(RiakcPid, MaxNumServers) ->
-    case start_link() of
+-spec start_block_servers(lfs_manifest(), pid(), pos_integer()) -> [pid()].
+start_block_servers(Manifest, RiakcPid, MaxNumServers) ->
+    case riak_cs_multi_container:pool_name(block, Manifest) of
+        undefined ->
+            start_block_servers_for_default(RiakcPid, MaxNumServers, []);
+        PoolName ->
+            start_block_servers_for_pool(PoolName, MaxNumServers, [])
+    end.
+
+start_block_servers_for_pool(PoolName, 0, Pids) ->
+    case length(Pids) of
+        0 ->
+            %% TODO(shino): error tupple, logging?
+            error({no_server, PoolName});
+        _ ->
+            Pids
+    end;
+start_block_servers_for_pool(PoolName, NumWorkers, Pids) ->
+    case start_link({pool, PoolName}) of
         {ok, Pid} ->
-            [Pid | start_block_servers(RiakcPid, (MaxNumServers - 1))];
+            start_block_servers_for_pool(PoolName, NumWorkers - 1, [Pid | Pids]);
+        %% TODO: normal??? busy?
         {error, normal} ->
-            start_block_servers(RiakcPid, 1)
+            Pids
+    end.
+
+start_block_servers_for_default(RiakcPid, 1, Pids) ->
+    [start_link({pid, RiakcPid}) | Pids];
+start_block_servers_for_default(RiakcPid, NumWorkers, Pids) ->
+    case start_link({pool, request_pool}) of
+        {ok, Pid} ->
+            start_block_servers_for_default(RiakcPid, NumWorkers - 1, [Pid | Pids]);
+        {error, normal} ->
+            start_block_servers_for_default(RiakcPid, 1, Pids)
     end.
 
 -spec get_block(pid(), binary(), binary(), binary(), pos_integer()) -> ok.
@@ -133,13 +153,15 @@ stop(Pid) ->
 %%% gen_server callbacks
 %%%===================================================================
 
-init([RiakPid]) ->
+init([{pid, RiakPid}]) ->
+    lager:log(warning, self(), "RiakPid: ~p~n", [RiakPid]),
     process_flag(trap_exit, true),
     {ok, #state{riakc_pid=RiakPid,
                 close_riak_connection=false}};
-init([]) ->
+init([{pool, PoolName}]) ->
+    lager:log(warning, self(), "PoolName: ~p~n", [PoolName]),
     process_flag(trap_exit, true),
-    case riak_cs_utils:riak_connection() of
+    case riak_cs_utils:riak_connection(PoolName) of
         {ok, RiakPid} ->
             {ok, #state{riakc_pid=RiakPid}};
         {error, all_workers_busy} ->

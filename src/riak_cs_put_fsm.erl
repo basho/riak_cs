@@ -392,20 +392,6 @@ prepare(State=#state{bucket=Bucket,
                       MakeNewManifestP, Bucket, Key, RiakPid),
     %% TODO:
     %% this shouldn't be hardcoded.
-    Md5 = riak_cs_utils:md5_init(),
-    WriterPids = case ContentLength of
-                     0 ->
-                         %% Don't start any writers
-                         %% if we're not going to need
-                         %% to write any blocks
-                         [];
-                     _ ->
-                         riak_cs_block_server:start_block_servers(RiakPid,
-                                                                  riak_cs_lfs_utils:put_concurrency())
-                 end,
-    FreeWriters = ordsets:from_list(WriterPids),
-    MaxBufferSize = (riak_cs_lfs_utils:put_fsm_buffer_size_factor() * BlockSize),
-
     %% for now, always populate cluster_id
     ClusterID = riak_cs_config:cluster_id(RiakPid),
     Manifest =
@@ -422,6 +408,22 @@ prepare(State=#state{bucket=Bucket,
                                        [],
                                        ClusterID),
     NewManifest = Manifest?MANIFEST{write_start_time=os:timestamp()},
+
+    Md5 = riak_cs_utils:md5_init(),
+    WriterPids = case ContentLength of
+                     0 ->
+                         %% Don't start any writers
+                         %% if we're not going to need
+                         %% to write any blocks
+                         [];
+                     _ ->
+                         riak_cs_block_server:start_block_servers(
+                           NewManifest,
+                           RiakPid,
+                           riak_cs_lfs_utils:put_concurrency())
+                 end,
+    FreeWriters = ordsets:from_list(WriterPids),
+    MaxBufferSize = (riak_cs_lfs_utils:put_fsm_buffer_size_factor() * BlockSize),
 
     %% TODO:
     %% this time probably

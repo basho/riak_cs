@@ -19,6 +19,7 @@
 %% ---------------------------------------------------------------------
 
 -define(MANIFEST, #lfs_manifest_v3).
+-define(MANIFEST_REC, lfs_manifest_v3).
 
 -define(ACL, #acl_v2).
 -define(RCS_BUCKET, #moss_bucket_v1).
