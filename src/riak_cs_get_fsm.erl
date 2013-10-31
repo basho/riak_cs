@@ -221,14 +221,14 @@ waiting_continue_or_stop({continue, Range}, #state{manifest=Manifest,
             TotalBlocks = length(BlocksOrder),
 
             %% Start the block servers
-            case Readers of
+            FreeReaders = case Readers of
                 undefined ->
-                    FreeReaders =
-                    riak_cs_block_server:start_block_servers(RiakPid,
+                    R = riak_cs_block_server:start_block_servers(RiakPid,
                         FetchConcurrency),
-                    _ = lager:debug("Block Servers: ~p", [FreeReaders]);
+                    _ = lager:debug("Block Servers: ~p", [R]),
+                    R;
                 _ ->
-                    FreeReaders = Readers
+                    Readers
             end,
             %% start retrieving the first set of blocks
             UpdState = State#state{blocks_order=BlocksOrder,

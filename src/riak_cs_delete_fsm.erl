@@ -238,15 +238,16 @@ blocks_to_delete_from_manifest(Manifest=?MANIFEST{state=State,
   when State =:= pending_delete;State =:= writing; State =:= scheduled_delete ->
     case riak_cs_lfs_utils:block_sequences_for_manifest(Manifest) of
         []=Blocks ->
-            UpdManifest = Manifest?MANIFEST{delete_blocks_remaining=[],
-                                            state=deleted};
+            {Manifest?MANIFEST{delete_blocks_remaining=[],
+                               state=deleted},
+             Blocks};
         Blocks ->
-            UpdManifest = Manifest?MANIFEST{delete_blocks_remaining=Blocks}
-    end,
-    {UpdManifest, Blocks};
+            {Manifest?MANIFEST{delete_blocks_remaining=Blocks},
+             Blocks}
+    end;
 blocks_to_delete_from_manifest(Manifest) ->
     {Manifest,
-        Manifest?MANIFEST.delete_blocks_remaining}.
+     Manifest?MANIFEST.delete_blocks_remaining}.
 
 %% ===================================================================
 %% Test API

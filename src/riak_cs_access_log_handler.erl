@@ -155,13 +155,13 @@ init(_) ->
                                max_size=FlushSize,
                                size=0},
             case schedule_archival(InitState) of
-                {ok, SchedState} -> ok;
+                {ok, _SchedState}=OK ->
+                    OK;
                 {error, _Behind} ->
                     %% startup was right on a boundary, just try again,
                     %% and fail if this one also fails
-                    {ok, SchedState} = schedule_archival(InitState)
-            end,
-            {ok, SchedState};
+                    schedule_archival(InitState)
+            end;
         {{error, Reason}, _} ->
             _ = lager:error("Error starting access logger: ~s", [Reason]),
             %% can't simply {error, Reason} out here, because

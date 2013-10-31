@@ -176,17 +176,18 @@ fetching_next_fileset(continue, State=#state{batch=[FileSetKey | RestKeys],
                                              riak=RiakPid
                                             }) ->
     %% Fetch the next set of manifests for deletion
+    {NewStateData, NextState} =
     case fetch_next_fileset(FileSetKey, RiakPid) of
         {ok, FileSet, RiakObj} ->
-            NewStateData = State#state{current_files=twop_set:to_list(FileSet),
+            {State#state{current_files=twop_set:to_list(FileSet),
                                        current_fileset=FileSet,
                                        current_riak_object=RiakObj,
                                        manif_count=ManifCount+twop_set:size(FileSet)},
-            NextState = initiating_file_delete;
+            initiating_file_delete};
         {error, _} ->
-            NewStateData = State#state{batch=RestKeys,
-                                       batch_skips=BatchSkips+1},
-            NextState = fetching_next_fileset
+            {State#state{batch=RestKeys,
+                         batch_skips=BatchSkips+1},
+             fetching_next_fileset}
     end,
     ok = continue(),
     {next_state, NextState, NewStateData};
