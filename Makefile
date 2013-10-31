@@ -10,7 +10,7 @@ OVERLAY_VARS    ?=
 CS_HTTP_PORT    ?= 8080
 PULSE_TESTS = riak_cs_get_fsm_pulse
 
-.PHONY: rel stagedevrel deps test
+.PHONY: rel stagedevrel deps test depgraph graphviz
 
 all: deps compile
 
@@ -50,6 +50,15 @@ clean:
 distclean: clean
 	@./rebar delete-deps
 	@rm -rf $(PKG_ID).tar.gz
+
+## Create a dependency graph png
+depgraph: graphviz
+	@echo "Note: If you have nothing in deps/ this might be boring"
+	@echo "Creating dependency graph..."
+	@misc/mapdeps.erl | dot -Tpng -oriak-cs.png
+	@echo "Dependency graph created as riak-cs.png"
+graphviz:
+	$(if $(shell which dot),,$(error "To make the depgraph, you need graphviz installed"))
 
 test: all
 	@./rebar skip_deps=true eunit
