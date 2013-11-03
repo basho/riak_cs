@@ -663,6 +663,8 @@ fold_objects_upper_aae_reconstruction(FoldObjectsFun, Acc, Opts, State) ->
 
 fold_objects_upper_regular(FoldObjectsFun, Acc, Opts, State) ->
     Fun = fun({Bucket, Key}, FAcc) ->
+                  io:format("FO_u_r_: Bucket ~p = ~p\n", [size(Bucket), Bucket]),
+                  io:format("FO_u_r_: Key ~p = ~p\n", [size(Key), Key]),
                   <<UUID:?UUID_BYTES/binary, BlockNum:?BLOCK_FIELD_SIZE>> = Key,
                   case read_block(Bucket, Key, UUID, BlockNum, State) of
                       Bin when is_binary(Bin) ->
@@ -1502,45 +1504,56 @@ t0() ->
     os:cmd("rm -rf " ++ TestDir),
     {ok, S} = start(-1, [{data_root, TestDir},
                          {block_size, base_ext_size() + 100 + BlockSize}]),
-    {{ok, S}, _} = put_object(Bucket, K1, [], O1, S),
-    {{ok, S}, _} = put_object(Bucket, K0, [], O0, S),
-    {ok, O0, S} = get_object(Bucket, K0, false, S),
-    {ok, O1, S} = get_object(Bucket, K1, false, S),
-    ok.
+    try
+        {{ok, S}, _} = put_object(Bucket, K1, [], O1, S),
+        {{ok, S}, _} = put_object(Bucket, K0, [], O0, S),
+        {ok, O0, S} = get_object(Bucket, K0, false, S),
+        {ok, O1, S} = get_object(Bucket, K1, false, S),
+        ok
+    after
+        stop(S)
+    end.
 
 t1() ->
     TestDir = "./delme",
     Bucket = <<?BLOCK_BUCKET_PREFIX_V1:3/binary, "delme">>,
-    K0 = <<0:(?UUID_BYTES*8), 0:?BLOCK_FIELD_SIZE>>,
+    K0 = <<42:(?UUID_BYTES*8), 0:?BLOCK_FIELD_SIZE>>,
     V0 = <<100:64>>,
-    K1 = <<0:(?UUID_BYTES*8), 1:?BLOCK_FIELD_SIZE>>,
+    K1 = <<42:(?UUID_BYTES*8), 1:?BLOCK_FIELD_SIZE>>,
     V1 = <<101:64>>,
     O0 = riak_object:new(Bucket, K0, V0),
     O1 = riak_object:new(Bucket, K1, V1),
     os:cmd("rm -rf " ++ TestDir),
     {ok, S} = start(-1, [{data_root, TestDir},
                          {block_size, base_ext_size() + 1024}]),
-    {{ok, S4}, _} = put_object(Bucket, K0, [], O0, S),
-    {ok, [{{Bucket, K0}, O0}]} = fold_objects(fun(B, K, O, Acc) ->
-                                                      [{{B, K}, O}|Acc]
-                                              end, [], [], S4),
-    {{ok, S5}, _} = put_object(Bucket, K1, [], O1, S4),
-    {ok, O0, _} = get_object(Bucket, K0, false, S5),
-    {ok, O1, _} = get_object(Bucket, K1, false, S5),
-    {ok, X} = fold_objects(fun(B, K, V, Acc) ->
-                                   [{{B, K}, V}|Acc]
-                           end, [], [], S5),
-    [{{Bucket, K0}, O0}, {{Bucket, K1}, O1}] = lists:reverse(X),
+    try
+        io:format("t1: Key ~p = ~p\n", [size(K0), K0]),
+        {{ok, S4}, _} = put_object(Bucket, K0, [], O0, S),
+        {ok, O0, _} = get_object(Bucket, K0, false, S4),
+        io:format("t1: got ok!!!!\n"),
+        {ok, [{{Bucket, K0}, O0}]} = fold_objects(fun(B, K, O, Acc) ->
+                                                          [{{B, K}, O}|Acc]
+                                                  end, [], [], S4),
+        {{ok, S5}, _} = put_object(Bucket, K1, [], O1, S4),
+        {ok, O0, _} = get_object(Bucket, K0, false, S5),
+        {ok, O1, _} = get_object(Bucket, K1, false, S5),
+        {ok, X} = fold_objects(fun(B, K, V, Acc) ->
+                                       [{{B, K}, V}|Acc]
+                               end, [], [], S5),
+        [{{Bucket, K0}, O0}, {{Bucket, K1}, O1}] = lists:reverse(X),
 
-    {ok, S6} = delete(Bucket, K0, unused, S5),
-    %% Remember, this backend is different than the usual riak_kv backend:
-    %% if someone deletes an object that's stored inside some file-on-disk
-    %% F, then any other key that also is mapped to file F will also be
-    %% deleted at the same time.
-    {ok, []} = fold_objects(fun(B, K, O, Acc) ->
-                                    [{{B, K}, O}|Acc]
-                            end, [], [], S6),
-    ok.
+        {ok, S6} = delete(Bucket, K0, unused, S5),
+        %% Remember, this backend is different than the usual riak_kv backend:
+        %% if someone deletes an object that's stored inside some file-on-disk
+        %% F, then any other key that also is mapped to file F will also be
+        %% deleted at the same time.
+        {ok, []} = fold_objects(fun(B, K, O, Acc) ->
+                                        [{{B, K}, O}|Acc]
+                                end, [], [], S6),
+        ok
+    after
+        stop(S)
+    end.
 
 t2() ->
     TestDir = "./delme",
@@ -1585,9 +1598,13 @@ t3() ->
     os:cmd("rm -rf " ++ TestDir),
     {ok, S} = start(-1, [{data_root, TestDir},
                          {block_size, BlockSize}]),
-    {{error, {invalid_data_size, _, _}, S}, _EncodedVal} =
-        put_object(Bucket, K0, [], O0, S),
-    ok.
+    try
+        {{error, {invalid_data_size, _, _}, S}, _EncodedVal} =
+            put_object(Bucket, K0, [], O0, S),
+        ok
+    after
+        stop(S)
+    end.
 
 %% t4() = folding tests
 
@@ -1605,103 +1622,107 @@ t4(SmallestBlock, BiggestBlock, BlocksPerFile, OrderFun)
     {ok, S} = start(-1, [{data_root, TestDir},
                          {block_size, BlockSize + base_ext_size()},
                          {max_blocks_per_file, BlocksPerFile}]),
-    Os = [riak_object:new(<<?BLOCK_BUCKET_PREFIX_V1:3/binary, "delme", Bp:8>>,
-                          <<0:(?UUID_BYTES*8), X:?BLOCK_FIELD_SIZE>>,
-                          <<X:((BlockSize)*8)>>) ||
-             Bp <- [$1, $2],
-             X <- lists:seq(SmallestBlock, BiggestBlock)],
-    [{{ok, S}, _} = put_object(riak_object:bucket(O),
-                               riak_object:key(O),
-                               [], O, S) || O <- OrderFun(Os)],
+    try
+        Os = [riak_object:new(<<?BLOCK_BUCKET_PREFIX_V1:3/binary, "delme", Bp:8>>,
+                              <<0:(?UUID_BYTES*8), X:?BLOCK_FIELD_SIZE>>,
+                              <<X:((BlockSize)*8)>>) ||
+                 Bp <- [$1, $2],
+                 X <- lists:seq(SmallestBlock, BiggestBlock)],
+        [{{ok, S}, _} = put_object(riak_object:bucket(O),
+                                   riak_object:key(O),
+                                   [], O, S) || O <- OrderFun(Os)],
 
-    put(t4_paranoid_counter, 0),
-    [begin
-         OnlyB = proplists:get_value(bucket, FoldOpts, all_buckets),
-         BucketFilt = fun(B) -> OnlyB == all_buckets orelse B == OnlyB end,
-         %% Fold objects
-         {ok, FoundOs} = fold_objects(fun(_B, _K, RObj, Acc) ->
-                                              [RObj|Acc]
-                                      end, [], FoldOpts, S),
-         OnlyOs = [O || O <- Os,
-                        B <- [riak_object:bucket(O)],
-                        BucketFilt(B)],
-         {OnlyB, true} = {OnlyB, (lists:sort(OnlyOs) == lists:reverse(FoundOs))},
-         %% Fold keys
-         {ok, FoundBKs} = fold_keys(fun(B, K, Acc) ->
-                                            [{B, K}|Acc]
-                                    end, [], FoldOpts, S),
-         OnlyBKs = [{riak_object:bucket(O),
-                     riak_object:key(O)} || O <- Os,
-                                            B <- [riak_object:bucket(O)],
-                                            BucketFilt(B)],
-         {OnlyB, true} = {OnlyB, sets:is_subset(
-                                   sets:from_list(OnlyBKs),
-                                   sets:from_list(FoundBKs))},
-         put(t4_paranoid_counter, get(t4_paranoid_counter) + 1)
-     end || FoldOpts <- [[], [{bucket, B1}], [{bucket, B2}]] ],
-    3 = get(t4_paranoid_counter),               % Extra paranoia...
-
-    %% Set up for fold buckets
-    RestBegin = $3,             % We already have buckets ending with $1 & $2
-    RestEnd = $9,
-    RestBlocks = 5,
-    RestStatus =
+        put(t4_paranoid_counter, 0),
         [begin
-             RestB = <<?BLOCK_BUCKET_PREFIX_V1:3/binary, "delme", Bp:8>>,
-             %% Using X like for both UUID and block # will give us one
-             %% file that's written in order, UUID=0, and the rest will be
-             %% files written out of order.
-             RestOs = [riak_object:new(
-                         RestB,
-                         <<X:(?UUID_BYTES*8), X:?BLOCK_FIELD_SIZE>>,
-                         <<"val!">>) ||
-                          X <- lists:seq(0, RestBlocks)],
-             [{{ok, S}, _} = put_object(riak_object:bucket(O),
-                                        riak_object:key(O),
-                                        [], O, S) ||
-                 O <- RestOs],
-             if Bp rem 3 == 0 ->
-                     {exists, RestB};
-                Bp rem 3 == 1 ->
-                     DelMD = dict:store(?MD_DELETED, true, dict:new()),
-                     [begin
-                          Od = riak_object:new(
-                                 RestB,
-                                 <<X:(?UUID_BYTES*8),X:?BLOCK_FIELD_SIZE>>,
-                                 <<>>, DelMD),
-                         {{ok, S}, _} = put_object(
+             OnlyB = proplists:get_value(bucket, FoldOpts, all_buckets),
+             BucketFilt = fun(B) -> OnlyB == all_buckets orelse B == OnlyB end,
+             %% Fold objects
+             {ok, FoundOs} = fold_objects(fun(_B, _K, RObj, Acc) ->
+                                                  [RObj|Acc]
+                                          end, [], FoldOpts, S),
+             OnlyOs = [O || O <- Os,
+                            B <- [riak_object:bucket(O)],
+                            BucketFilt(B)],
+             {OnlyB, true} = {OnlyB, (lists:sort(OnlyOs) == lists:reverse(FoundOs))},
+             %% Fold keys
+             {ok, FoundBKs} = fold_keys(fun(B, K, Acc) ->
+                                                [{B, K}|Acc]
+                                        end, [], FoldOpts, S),
+             OnlyBKs = [{riak_object:bucket(O),
+                         riak_object:key(O)} || O <- Os,
+                                                B <- [riak_object:bucket(O)],
+                                                BucketFilt(B)],
+             {OnlyB, true} = {OnlyB, sets:is_subset(
+                                       sets:from_list(OnlyBKs),
+                                       sets:from_list(FoundBKs))},
+             put(t4_paranoid_counter, get(t4_paranoid_counter) + 1)
+         end || FoldOpts <- [[], [{bucket, B1}], [{bucket, B2}]] ],
+        3 = get(t4_paranoid_counter),               % Extra paranoia...
+
+        %% Set up for fold buckets
+        RestBegin = $3,             % We already have buckets ending with $1 & $2
+        RestEnd = $9,
+        RestBlocks = 5,
+        RestStatus =
+            [begin
+                 RestB = <<?BLOCK_BUCKET_PREFIX_V1:3/binary, "delme", Bp:8>>,
+                 %% Using X like for both UUID and block # will give us one
+                 %% file that's written in order, UUID=0, and the rest will be
+                 %% files written out of order.
+                 RestOs = [riak_object:new(
+                             RestB,
+                             <<X:(?UUID_BYTES*8), X:?BLOCK_FIELD_SIZE>>,
+                             <<"val!">>) ||
+                              X <- lists:seq(0, RestBlocks)],
+                 [{{ok, S}, _} = put_object(riak_object:bucket(O),
+                                            riak_object:key(O),
+                                            [], O, S) ||
+                     O <- RestOs],
+                 if Bp rem 3 == 0 ->
+                         {exists, RestB};
+                    Bp rem 3 == 1 ->
+                         DelMD = dict:store(?MD_DELETED, true, dict:new()),
+                         [begin
+                              Od = riak_object:new(
                                      RestB,
                                      <<X:(?UUID_BYTES*8),X:?BLOCK_FIELD_SIZE>>,
-                                     [], Od, S)
-                      end || X <- lists:seq(0, RestBlocks)],
-                     {tombstone, RestB};
-                Bp rem 3 == 2 ->
-                     [{ok, S} = delete(RestB,
-                                      <<X:(?UUID_BYTES*8),X:?BLOCK_FIELD_SIZE>>,
-                                      unused, S) ||
-                         X <- lists:seq(0, RestBlocks)],
-                     {deleted, RestB}
-             end
-         end || Bp <- lists:seq(RestBegin, RestEnd)],
-    RestRemainingBuckets = [B || {Status, B} <- RestStatus,
-                                 Status == exists orelse
-                                 Status == tombstone],
-    %% Fold buckets
-    {ok, FoundBs} = fold_buckets(fun(B, Acc) -> [B|Acc] end, [], [], S),
-    %% FoundBs should contain only the buckets in TheTwoBs and
-    %% the buckets in RestStatus that are 'exists' status.
-    %% The items that we marked with tombstones or explicitly deleted
-    %% should be gone, and if they aren't gone, FoundBs will be too big.
-    %% Also, FoundBs should come out in the proper order (don't sort it!).
-    true = (lists:sort(TheTwoBs ++ RestRemainingBuckets) == lists:reverse(FoundBs)),
+                                     <<>>, DelMD),
+                              {{ok, S}, _} = put_object(
+                                               RestB,
+                                               <<X:(?UUID_BYTES*8),X:?BLOCK_FIELD_SIZE>>,
+                                               [], Od, S)
+                          end || X <- lists:seq(0, RestBlocks)],
+                         {tombstone, RestB};
+                    Bp rem 3 == 2 ->
+                         [{ok, S} = delete(RestB,
+                                           <<X:(?UUID_BYTES*8),X:?BLOCK_FIELD_SIZE>>,
+                                           unused, S) ||
+                             X <- lists:seq(0, RestBlocks)],
+                         {deleted, RestB}
+                 end
+             end || Bp <- lists:seq(RestBegin, RestEnd)],
+        RestRemainingBuckets = [B || {Status, B} <- RestStatus,
+                                     Status == exists orelse
+                                         Status == tombstone],
+        %% Fold buckets
+        {ok, FoundBs} = fold_buckets(fun(B, Acc) -> [B|Acc] end, [], [], S),
+        %% FoundBs should contain only the buckets in TheTwoBs and
+        %% the buckets in RestStatus that are 'exists' status.
+        %% The items that we marked with tombstones or explicitly deleted
+        %% should be gone, and if they aren't gone, FoundBs will be too big.
+        %% Also, FoundBs should come out in the proper order (don't sort it!).
+        true = (lists:sort(TheTwoBs ++ RestRemainingBuckets) == lists:reverse(FoundBs)),
 
-    %% TODO? In the section for setup of the fold buckets, perhaps
-    %% use bucket names of varying lengths to try to find an error in
-    %% the order that the fold provides (i.e. not in reverse
-    %% lexicographic order)?
-    %% TODO? In the fold objects and fold keys tests, use bucket names of
-    %% different lengths, for the same reason as above?
-    ok.
+        %% TODO? In the section for setup of the fold buckets, perhaps
+        %% use bucket names of varying lengths to try to find an error in
+        %% the order that the fold provides (i.e. not in reverse
+        %% lexicographic order)?
+        %% TODO? In the fold objects and fold keys tests, use bucket names of
+        %% different lengths, for the same reason as above?
+        ok
+    after
+        stop(S)
+    end.
 
 t5() ->
     TestDir = "./delme-t5",
@@ -1713,46 +1734,50 @@ t5() ->
     {ok, S} = start(-1, [{data_root, TestDir},
                          {block_size, BlockSize},
                          {max_blocks_per_file, EndSeq - 2}]),
-    true = is_empty(S),
+    try
+        true = is_empty(S),
 
-    Bs = [<<?BLOCK_BUCKET_PREFIX_V2:3/binary, X:32>> || X <- lists:seq(1, NumBuckets)],
-    Os = [riak_object:new(B, <<UUID:(?UUID_BYTES*8), Seq:?BLOCK_FIELD_SIZE>>,
-                          list_to_binary(["val ", integer_to_list(Seq)])) ||
-             B <- Bs,
-             UUID <- [55, 56, 57],
-             Seq <- lists:seq(0, EndSeq)],
-    [{{ok, _}, _} = put_object(riak_object:bucket(RObj),
-                               riak_object:key(RObj),
-                               [], RObj, S) || RObj <- Os],
-    false = is_empty(S),
+        Bs = [<<?BLOCK_BUCKET_PREFIX_V2:3/binary, X:32>> || X <- lists:seq(1, NumBuckets)],
+        Os = [riak_object:new(B, <<UUID:(?UUID_BYTES*8), Seq:?BLOCK_FIELD_SIZE>>,
+                              list_to_binary(["val ", integer_to_list(Seq)])) ||
+                 B <- Bs,
+                 UUID <- [55, 56, 57],
+                 Seq <- lists:seq(0, EndSeq)],
+        [{{ok, _}, _} = put_object(riak_object:bucket(RObj),
+                                   riak_object:key(RObj),
+                                   [], RObj, S) || RObj <- Os],
+        false = is_empty(S),
 
-    LastO = lists:last(Os),
-    AllButLastBucketOs =
-        [O || O <- Os, riak_object:bucket(O) /= riak_object:bucket(LastO)],
-    [{ok, _} = delete(riak_object:bucket(O), riak_object:key(O), [], S) ||
-        O <- AllButLastBucketOs],
-    false = is_empty(S),
+        LastO = lists:last(Os),
+        AllButLastBucketOs =
+            [O || O <- Os, riak_object:bucket(O) /= riak_object:bucket(LastO)],
+        [{ok, _} = delete(riak_object:bucket(O), riak_object:key(O), [], S) ||
+            O <- AllButLastBucketOs],
+        false = is_empty(S),
 
-    LastBucketOs = Os -- AllButLastBucketOs,
-    DelMD = dict:store(?MD_DELETED, true, dict:new()),
-    [{{ok, _}, _} = begin
-                        B = riak_object:bucket(O),
-                        K = riak_object:key(O),
-                        V = riak_object:get_value(O),
-                        DelO = riak_object:new(B, K, V, DelMD),
-                        put_object(B, K, [], DelO, S)
-                    end || O <- LastBucketOs],
-    [begin
-         {ok, O2, _} = get_object(riak_object:bucket(O), riak_object:key(O),
-                                  false, S),
-         true = riak_object_is_deleted(O2)
-     end || O <- LastBucketOs],
-    false = is_empty(S),
-    [{ok, _} = delete(riak_object:bucket(O), riak_object:key(O), [], S) ||
-        O <- LastBucketOs],
-    true = is_empty(S),
+        LastBucketOs = Os -- AllButLastBucketOs,
+        DelMD = dict:store(?MD_DELETED, true, dict:new()),
+        [{{ok, _}, _} = begin
+                            B = riak_object:bucket(O),
+                            K = riak_object:key(O),
+                            V = riak_object:get_value(O),
+                            DelO = riak_object:new(B, K, V, DelMD),
+                            put_object(B, K, [], DelO, S)
+                        end || O <- LastBucketOs],
+        [begin
+             {ok, O2, _} = get_object(riak_object:bucket(O), riak_object:key(O),
+                                      false, S),
+             true = riak_object_is_deleted(O2)
+         end || O <- LastBucketOs],
+        false = is_empty(S),
+        [{ok, _} = delete(riak_object:bucket(O), riak_object:key(O), [], S) ||
+            O <- LastBucketOs],
+        true = is_empty(S),
 
-    ok.
+        ok
+    after
+        stop(S)
+    end.
 
 t6() ->
     TestDir = "./delme-t6",
@@ -1764,18 +1789,22 @@ t6() ->
     {ok, S} = start(-1, [{data_root, TestDir},
                          {block_size, BlockSize},
                          {max_blocks_per_file, EndSeq - 2}]),
-    true = is_empty(S),
+    try
+        true = is_empty(S),
 
-    Bs = [<<?BLOCK_BUCKET_PREFIX_V0:3/binary, X:32>> || X <- lists:seq(1, NumBuckets)],
-    Os = [riak_object:new(B, <<UUID:(?UUID_BYTES*8), Seq:?BLOCK_FIELD_SIZE>>,
-                          list_to_binary(["val ", integer_to_list(Seq)])) ||
-             B <- Bs,
-             UUID <- [55, 56, 57],
-             Seq <- lists:seq(EndSeq, EndSeq)],
-    [{{ok, _}, _} = put_object(riak_object:bucket(RObj),
-                               riak_object:key(RObj),
-                               [], RObj, S) || RObj <- Os],
-    false = is_empty(S).
+        Bs = [<<?BLOCK_BUCKET_PREFIX_V0:3/binary, X:32>> || X <- lists:seq(1, NumBuckets)],
+        Os = [riak_object:new(B, <<UUID:(?UUID_BYTES*8), Seq:?BLOCK_FIELD_SIZE>>,
+                              list_to_binary(["val ", integer_to_list(Seq)])) ||
+                 B <- Bs,
+                 UUID <- [55, 56, 57],
+                 Seq <- lists:seq(EndSeq, EndSeq)],
+        [{{ok, _}, _} = put_object(riak_object:bucket(RObj),
+                                   riak_object:key(RObj),
+                                   [], RObj, S) || RObj <- Os],
+        false = is_empty(S)
+    after
+        stop(S)
+    end.
 
 base_ext_size() ->
     erlang:external_size(riak_object:new(<<>>, <<>>, <<>>)) + 128.
@@ -2330,13 +2359,12 @@ create_or_sanity_test() ->
     BlockSize = 20,
     MaxBlocks = 21,
     BDepth = 2,
-    KDepth = 3,
 
     os:cmd("rm -rf ++ " ++ Dir),
-    Base = fun(A, B, C, D) ->
+    Base = fun(A, B, C, _D) ->
                try
                    ok = create_or_sanity_check_version_file(
-                          Dir, BlockSize+A, MaxBlocks+B, BDepth+C, KDepth+D)
+                          Dir, BlockSize+A, MaxBlocks+B, BDepth+C)
                catch _:_ ->
                        bad
                end
@@ -2345,8 +2373,8 @@ create_or_sanity_test() ->
         ok  = Base(0, 0, 0, 0),
         bad = Base(1, 0, 0, 0),
         bad = Base(0, 1, 0, 0),
-        bad = Base(0, 0, 1, 0),
-        bad = Base(0, 0, 0, 1),
+        %% bad = Base(0, 0, 1, 0),
+        %% bad = Base(0, 0, 0, 1),
         ok
     after
         os:cmd("rm -rf ++ " ++ Dir)
@@ -2401,14 +2429,11 @@ backend_eqc_filter_orddict_on_delete(
     %% backend_eqc deleted a key that uses our ?BLOCK_BUCKET_PREFIX_V0 + UUID
     %% scheme.  Filter out all other blocks that reside in the same file.
 
-    {_ConfigRoot, BlockSize, MaxBlocks, B1stPrefixLen, BDepth, KDepth} =
+    {_ConfigRoot, BlockSize, MaxBlocks, _B1stPrefixLen, _BDepth, _KDepth} =
         parse_config_and_env(Config),
     State = #state{dir = "does/not/matter",
                    block_size = BlockSize,
-                   max_blocks = MaxBlocks,
-                   b_1st_prefixlen = B1stPrefixLen,
-                   b_depth = BDepth,
-                   k_depth = KDepth},
+                   max_blocks = MaxBlocks},
     DeletedKey = convert_blocknum2key(DUUID, DBlockNum, State),
     DeletedPath = location(State, DBucket, DeletedKey),
     F = fun({Bucket, <<UUID:?UUID_BYTES/binary, BlockNum:?BLOCK_FIELD_SIZE>>},
@@ -2539,10 +2564,7 @@ prop_nest_ordered() ->
             begin
                 rm_rf_test_dir_contents(),
                 {ok, S} = ?MODULE:start(0, basic_props()),
-                #state{b_depth = BDepth,
-                       b_1st_prefixlen = B1stPrefixLen} = S,
-   ?IMPLIES(all_names_at_least_as_long_as(BucketList,
-                                          BDepth + B1stPrefixLen),
+   ?IMPLIES(true,
             begin
 
                 [ok = insert_sample_key(Bucket, S) || Bucket <- BucketList],
