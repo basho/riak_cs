@@ -242,12 +242,13 @@
 -ifdef(EQC).
 %% EQC testing assistants
 -export([eqc_filter_delete/3]).
--export([prop_nest_ordered/0, eqc_nest_tester/0]).
+-export([prop_nest_ordered/0, eqc_nest_tester/1]).
 -export([backend_eqc_fold_objects_transform/1,
          backend_eqc_filter_orddict_on_delete/4,
          backend_eqc_bucket/0,
          backend_eqc_key/0,
          backend_eqc_postcondition_fold_keys/2]).
+-export([backend_eunit_bucket/1, backend_eunit_key/1]).
 -include_lib("eqc/include/eqc.hrl").
 -endif.
 -include_lib("eunit/include/eunit.hrl").
@@ -418,6 +419,7 @@ get_object(Bucket, Key, WantsBinary, State) ->
 
 %% EQC use only
 get(Bucket, Key, State) ->
+    %% io:format(user, "get Bucket ~w Key ~w\n", [Bucket, Key]),
     case get_object(Bucket, Key, false, State) of
         {ok, RObj, State} ->
             {ok, riak_object:get_value(RObj), State};
@@ -427,10 +429,11 @@ get(Bucket, Key, State) ->
 
 %% EQC use only
 put(Bucket, Key, IdxList, Val, State) ->
+    %% io:format(user, "put Bucket ~w Key ~w\n", [Bucket, Key]),
     RObj = riak_object:new(Bucket, Key, Val),
     case put_object(Bucket, Key, IdxList, RObj, State) of
-        {{ok, _}, _} ->
-            ok;
+        %% {{ok, _}, _} ->
+        %%     ok;
         {Else, _} ->
             Else
     end.
@@ -2452,11 +2455,12 @@ backend_eqc_filter_orddict_on_delete(
     %% backend_eqc deleted a key that uses our ?BLOCK_BUCKET_PREFIX_V0 + UUID
     %% scheme.  Filter out all other blocks that reside in the same file.
 
-    {_ConfigRoot, BlockSize, MaxBlocks, _B1stPrefixLen, _BDepth, _KDepth} =
+    {_ConfigRoot, BlockSize, MaxBlocks, _IDepth} =
         parse_config_and_env(Config),
     State = #state{dir = "does/not/matter",
                    block_size = BlockSize,
-                   max_blocks = MaxBlocks},
+                   max_blocks = MaxBlocks,
+                   i_depth = 3},
     DeletedKey = convert_blocknum2key(DUUID, DBlockNum, State),
     DeletedPath = location(State, DBucket, DeletedKey),
     F = fun({Bucket, <<UUID:?UUID_BYTES/binary, BlockNum:?BLOCK_FIELD_SIZE>>},
@@ -2474,12 +2478,19 @@ backend_eqc_filter_orddict_on_delete(_Bucket, _Key, Dict, _State) ->
     Dict.
 
 backend_eqc_bucket() ->
-    oneof([backend_eqc_bucket_standard(),
-           backend_eqc_bucket_v1()]).
+    ?LET(X, frequency([{10, 99000},
+                       { 4, 99001},
+                       { 1, 99002}]),
+         <<?BLOCK_BUCKET_PREFIX_V0:3/binary, X:(?UUID_BYTES*8)>>).
 
 backend_eqc_key() ->
-    oneof([backend_eqc_key_standard(),
-           backend_eqc_key_v1()]).
+    UUID = 42,
+    BigBlockNum = 77239823, % Arbitrary, but bigger than any real
+                            % max_blocks_per_file value
+    ?LET(X, frequency([{10, 99000},
+                       { 5, 99001},
+                       { 3, BigBlockNum}]),
+         <<UUID:(?UUID_BYTES*8), X:?BLOCK_FIELD_SIZE>>).
 
 backend_eqc_postcondition_fold_keys(Expected, Result) ->
     case sets:is_subset(sets:from_list(Expected),
@@ -2491,30 +2502,17 @@ backend_eqc_postcondition_fold_keys(Expected, Result) ->
              {expected, Expected}, {result, Result}]
     end.
 
-backend_eqc_bucket_standard() ->
-    oneof([<<"b1">>, <<"b2">>]).
+backend_eunit_bucket(Suffix) ->
+    <<?BLOCK_BUCKET_PREFIX_V1:3/binary, Suffix:(?UUID_BYTES*8)>>.
 
-backend_eqc_bucket_v1() ->
-    ?LET(X, oneof([<<"v1_a">>, <<"v1_b">>]),
-         <<?BLOCK_BUCKET_PREFIX_V0:3/binary, X/binary>>).
-
-backend_eqc_key_standard() ->
-    oneof([<<"k1">>, <<"k2">>]).
-
-backend_eqc_key_v1() ->
-    UUID = 42,
-    BigBlockNum = 77239823, % Arbitrary, but bigger than any real
-                            % max_blocks_per_file value
-    ?LET(X, oneof([0, 1, BigBlockNum]),
-         <<UUID:(?UUID_BYTES*8), X:?BLOCK_FIELD_SIZE>>).
+backend_eunit_key(Suffix) ->
+    <<4243:(?UUID_BYTES*8), Suffix:?BLOCK_FIELD_SIZE>>.
 
 basic_props_eqc() ->
-    [{b_1st_prefixlen, 0} | basic_props()].
+    basic_props().
 
 basic_props() ->
-    [{data_root,  "test/fs-backend"},
-     {block_size, 1024},
-     {b_1st_prefixlen, ?BUCKET_PREFIX_LEN}].
+    [{data_root,  "test/fs-backend"}, {block_size, 1024}].
 
 eqc_t4_wrapper(TestTime) ->
     eqc:quickcheck(eqc:testing_time(TestTime, prop_t4())).
@@ -2525,7 +2523,7 @@ eqc_test_() ->
     EQC_prop0 = backend_eqc:property(?MODULE, false, basic_props_eqc()),
     EQC_prop1 = eqc_statem:more_commands(75, EQC_prop0),
     EQC_prop2 = eqc:testing_time(TestTime1, EQC_prop1),
-    TestTime3 = 10,
+    TestTime2 = TestTime3 = 10,
     {spawn,
      [{inorder,
        [{setup,
@@ -2540,18 +2538,18 @@ eqc_test_() ->
           %%               backend_eqc:key_suffix_1()),
           {timeout, 2 * TestTime1,
            {"EQC_prop2", [?_assertEqual(true, eqc:quickcheck(EQC_prop2))]}},
-          {timeout, 60000,
-           {"eqc_nest_tester", [?_assertEqual(true, eqc_nest_tester())]}},
+          {timeout, 2 * TestTime2,
+           {"eqc_nest_tester", [?_assertEqual(true, eqc_nest_tester(TestTime2))]}},
           {timeout, 2 * TestTime3,
            {"eqc_t4_wrapper", [?_assertEqual(true, eqc_t4_wrapper(TestTime3))]}}
          ]}]}]}.
 -endif. % TEST_FS2_BACKEND_IN_RIAK_KV
 
-eqc_nest_tester() ->
+eqc_nest_tester(TestTime) ->
     setup(),
     os:cmd("mkdir -p test/fs-backend"),
     rm_rf_test_dir_contents(),
-    X = eqc:quickcheck(eqc:numtests(250, prop_nest_ordered())),
+    X = eqc:quickcheck(eqc:testing_time(TestTime, prop_nest_ordered())),
     cleanup(x),
     X = true.
 
@@ -2587,12 +2585,13 @@ prop_nest_ordered() ->
             begin
                 rm_rf_test_dir_contents(),
                 {ok, S} = ?MODULE:start(0, basic_props()),
-   ?IMPLIES(true,
+   ?IMPLIES(length(BucketList) > 1,
             begin
 
                 [ok = insert_sample_key(Bucket, S) || Bucket <- BucketList],
                 {ok, Bs} = ?MODULE:fold_buckets(fun(B, Acc) -> [B|Acc] end, [],
                                                 [], S),
+                ?MODULE:stop(S),
                 %% rm_rf_test_dir_contents(),
                 case lists:usort(BucketList) == lists:reverse(Bs) of
                     true -> true;
@@ -2603,20 +2602,16 @@ prop_nest_ordered() ->
             end)).
 
 gen_bucket() ->
-    ?LET(CharGen, oneof([$a, char()]),          % Limit to only $a's, sometimes
     ?LET({BPrefix, Bucket},
-         {vector(?BUCKET_PREFIX_LEN, CharGen),
-          frequency([
-                     {5, vector(3, CharGen)},
-                     {5, non_empty(list(CharGen))}
-                    ])},
-         iolist_to_binary([BPrefix, Bucket]))).
+         {oneof([?BLOCK_BUCKET_PREFIX_V0, ?BLOCK_BUCKET_PREFIX_V1, ?BLOCK_BUCKET_PREFIX_V2]),
+          choose(0, (1 bsl 32) - 1)},
+         <<BPrefix/binary, Bucket:(?UUID_BYTES*8)>>).
 
 all_names_at_least_as_long_as(Names, Len) ->
     lists:all(fun(N) -> byte_size(N) >= Len end, Names).
 
 insert_sample_key(Bucket, S) ->
-    Key = <<"key">>,
+    Key = <<55:(?UUID_BYTES*8), 66:?BLOCK_FIELD_SIZE>>,
     O = riak_object:new(Bucket, Key, <<"val">>),
     {{ok, _}, _} = ?MODULE:put_object(Bucket, Key, [], O, S),
     ok.
