@@ -24,6 +24,7 @@
            com.amazonaws.services.s3.model.Grant
            com.amazonaws.services.s3.model.Permission
            com.amazonaws.services.s3.model.PutObjectRequest
+           com.amazonaws.services.s3.model.CreateBucketRequest
            com.amazonaws.services.s3.model.ObjectMetadata
            com.amazonaws.services.s3.transfer.TransferManager
            com.amazonaws.services.s3.transfer.TransferManagerConfiguration)
@@ -250,4 +251,20 @@
               (contains?
                 (.getGrants (.getObjectAcl c bucket-name object-name))
                 grant))))
+        => truthy))
+
+(let [bucket-name (random-string)
+      object-name (random-string)
+      grant (Grant. all-users read-grant)]
+  (fact "Creating a bucket with an ACL returns the same ACL when you read
+        the ACL"
+        (with-random-client c
+            (let [acl (AccessControlList.)
+                  req (CreateBucketRequest. bucket-name)]
+              (.grantPermission acl all-users read-grant)
+              (.setAccessControlList req acl)
+              (.createBucket c req)
+              (contains?
+                (.getGrants (.getBucketAcl c bucket-name))
+                grant)))
         => truthy))
