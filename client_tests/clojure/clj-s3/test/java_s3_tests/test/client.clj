@@ -20,6 +20,8 @@
            com.amazonaws.services.s3.model.AmazonS3Exception
            com.amazonaws.services.s3.model.AccessControlList
            com.amazonaws.services.s3.model.CanonicalGrantee
+           com.amazonaws.services.s3.model.GroupGrantee
+           com.amazonaws.services.s3.model.Grant
            com.amazonaws.services.s3.model.Permission
            com.amazonaws.services.s3.model.PutObjectRequest
            com.amazonaws.services.s3.model.ObjectMetadata
@@ -199,6 +201,9 @@
 (def full-control
   (Permission/FullControl))
 
+(def read-grant
+  (Permission/Read))
+
 (let [bucket-name (random-string)
       object-name (random-string)
       value-string "this is the real value"]
@@ -221,3 +226,28 @@
               (.setAccessControlList req acl)
               (.putObject c req))))
         => (throws AmazonS3Exception)))
+
+(def all-users (GroupGrantee/AllUsers))
+
+(let [bucket-name (random-string)
+      object-name (random-string)
+      value-string "this is the real value"
+      grant (Grant. all-users read-grant)]
+  (fact "Creating an object with an ACL returns the same ACL when you read
+        the ACL"
+        (with-random-client c
+          (do
+            ;; create a bucket
+            (s3/create-bucket c bucket-name)
+
+            (let [value (input-stream-from-string value-string)
+                  metadata (ObjectMetadata.)
+                  acl (AccessControlList.)
+                  req (PutObjectRequest. bucket-name object-name value metadata)]
+              (.grantPermission acl all-users read-grant)
+              (.setAccessControlList req acl)
+              (.putObject c req)
+              (contains?
+                (.getGrants (.getObjectAcl c bucket-name object-name))
+                grant))))
+        => truthy))
