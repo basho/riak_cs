@@ -353,7 +353,8 @@ extract_key(RD,Ctx=#context{local_context=LocalCtx0}) ->
     %% order to trick webmachine dispatching
     Key = mochiweb_util:unquote(mochiweb_util:unquote(wrq:path_info(object, RD))),
     LocalCtx = LocalCtx0#key_context{bucket=Bucket, key=Key},
-    Ctx#context{local_context=LocalCtx}.
+    Ctx#context{bucket=Bucket,
+                local_context=LocalCtx}.
 
 extract_name(User) when is_list(User) ->
     User;
@@ -383,9 +384,8 @@ maybe_update_context_with_acl_from_headers(RD, Ctx=#context{user=User}) ->
 -spec maybe_acl_from_context_and_request(#wm_reqdata{}, #context{}) ->
     {ok, acl_or_error()} | error.
 maybe_acl_from_context_and_request(RD, #context{user=User,
-                                                local_context=Local,
+                                                bucket=Bucket,
                                                 riakc_pid=RiakcPid}) ->
-    Bucket = Local#key_context.bucket,
     case has_acl_header(RD) of
         true ->
             Headers = normalize_headers(RD),

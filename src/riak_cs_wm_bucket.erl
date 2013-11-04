@@ -63,7 +63,7 @@ content_types_accepted(CT, RD, Ctx) when CT =:= undefined;
     content_types_accepted("application/octet-stream", RD, Ctx);
 content_types_accepted(CT, RD, Ctx) ->
     {Media, _Params} = mochiweb_util:parse_header(CT),
-    {[{Media, accept_body}], RD, Ctx}.
+    {[{Media, add_acl_to_context_then_accept}], RD, Ctx}.
 
 -spec authorize(#wm_reqdata{}, #context{}) -> {boolean(), #wm_reqdata{}, #context{}}.
 authorize(RD, #context{user=User}=Ctx) ->
@@ -115,25 +115,18 @@ handle_read_request(RD, Ctx=#context{user=User,
 %% @doc Process request body on `PUT' request.
 -spec accept_body(#wm_reqdata{}, #context{}) -> {{halt, integer()}, #wm_reqdata{}, #context{}}.
 accept_body(RD, Ctx=#context{user=User,
+                             acl=ACL,
                              user_object=UserObj,
                              bucket=Bucket,
                              response_module=ResponseMod,
                              riakc_pid=RiakPid}) ->
     riak_cs_dtrace:dt_bucket_entry(?MODULE, <<"bucket_create">>,
                                       [], [riak_cs_wm_utils:extract_name(User), Bucket]),
-    %% Check for `x-amz-acl' header to support
-    %% non-default ACL at bucket creation time.
-    ACL = riak_cs_acl_utils:canned_acl(
-            wrq:get_req_header("x-amz-acl", RD),
-            {User?RCS_USER.display_name,
-             User?RCS_USER.canonical_id,
-             User?RCS_USER.key_id},
-            undefined),
     case riak_cs_utils:create_bucket(User,
-                                       UserObj,
-                                       Bucket,
-                                       ACL,
-                                       RiakPid) of
+                                     UserObj,
+                                     Bucket,
+                                     ACL,
+                                     RiakPid) of
         ok ->
             riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_create">>,
                                                [200], [riak_cs_wm_utils:extract_name(User), Bucket]),
