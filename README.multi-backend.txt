@@ -1,20 +1,18 @@
 Configuring Riak KV's multi backend storage manager for use with Riak CS
 ========================================================================
 
-TODO: Proofread all of these paths and steps.
-
-Step 1: Copy the storage manager object code (a single BEAM file) from
+Step 1: Copy the storage manager object code (four BEAM files) from
         the Riak CS package to the Riak package's patch dir.
 
     Step a: Locate the multi backend storage manager object code.
 
             RCS Linux installation path:
-                /usr/lib64/riak_cs/lib/riak_moss-*/ebin/riak_cs_kv_multi_backend.beam
+                /usr/lib64/riak_cs/lib/riak_cs-*/ebin/riak_cs_kv_multi_backend.beam
             RCS Solaris installation path:
-                /opt/riak_cs/lib/riak_moss-*/ebin/riak_cs_kv_multi_backend.beam
+                /opt/riak_cs/lib/riak_cs-*/ebin/riak_cs_kv_multi_backend.beam
 
             Developer source (after a "make stage" or "make dev" compilation):
-                ./rel/riak_cs/lib/riak_moss-*/ebin/riak_cs_kv_multi_backend.beam
+                ./rel/riak_cs/lib/riak_cs-*/ebin/riak_cs_kv_multi_backend.beam
 
     Step b: Locate the patch directory for Riak
 
@@ -27,13 +25,18 @@ Step 1: Copy the storage manager object code (a single BEAM file) from
             Developer source (after a "make stage" or "make dev" compilation):
                 ./rel/riak/lib/basho-patches
 
-    Step c: Copy the BEAM file from step a to the directory in step b.
+    Step c: Copy the BEAM files from step a to the directory in step b.
             For example:
 
-                cp /usr/lib64/riak_cs/lib/riak_moss-*/ebin/riak_cs_kv_multi_backend.beam /usr/lib64/riak/lib/basho-patches
+                cp /usr/lib64/riak_cs/lib/riak_cs-*/ebin/riak_cs_kv_multi_backend.beam /usr/lib64/riak/lib/basho-patches
+                cp /usr/lib64/riak_cs/lib/riak_cs-*/ebin/riak_kv_fs2_backend.beam /usr/lib64/riak/lib/basho-patches
+                cp /usr/lib64/riak_cs/lib/riak_cs-*/ebin/riak_cs_utils.beam /usr/lib64/riak/lib/basho-patches
+                cp /usr/lib64/riak_cs/lib/riak_cs-*/ebin/riak_cs_lfs_utils.beam /usr/lib64/riak/lib/basho-patches
 
 Step 2: Edit the Riak "app.config" file to configure the multi backend
-        storage manager
+        storage manager.  If you wish to use the experimental FS2
+        backend with Riak & Riak CS, then please jump to the
+        "README.fs2-backend.txt" instructions now.
 
     Step a: Identify the directory that will be storing Riak's data.
 

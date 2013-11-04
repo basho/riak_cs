@@ -42,7 +42,8 @@
          new_manifest/9,
          new_manifest/11,
          remove_write_block/2,
-         remove_delete_block/2]).
+         remove_delete_block/2,
+         calculate_bucket_class/1]).
 -export([chash_cs_keyfun/1]).
 
 %% -------------------------------------------------------------------
@@ -342,7 +343,15 @@ chash_cs_keyfun({Bucket, Key}) ->
 
 -spec calculate_bucket_class(integer()) -> 'v1' | 'v2'.
 calculate_bucket_class(ContentLength) ->
-    if ContentLength < 10*1024 ->
+    Dividing = case application:get_env(riak_cs, small_object_divider) of
+                   {ok, N} when is_integer(N), N >= 0 ->
+                       N;
+                   undefined ->
+                       125*1024;
+                   _ ->
+                       0
+               end,
+    if ContentLength < Dividing ->
             v1;
        true ->
             v2
