@@ -473,7 +473,7 @@ gc_index_query(RiakPid, EndTime, BatchSize, Continuation) ->
                    EndTime,
                    BatchSize,
                    Continuation,
-                   riak_cs_config:paginated_indexes()).
+                   riak_cs_config:gc_paginated_indexes()).
 
 -spec gc_index_query(pid(), binary(), non_neg_integer(), binary(), boolean()) ->
                             {riakc_pb_socket:index_results(), binary()}.

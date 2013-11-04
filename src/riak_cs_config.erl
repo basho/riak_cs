@@ -36,7 +36,7 @@
          key_list_multiplier/0,
          set_key_list_multiplier/1,
          md5_chunk_size/0,
-         paginated_indexes/0,
+         gc_paginated_indexes/0,
          policy_module/0,
          proxy_get_active/0,
          response_module/0,
@@ -153,9 +153,9 @@ set_key_list_multiplier(Multiplier) ->
 policy_module() ->
     get_env(riak_cs, policy_module, ?DEFAULT_POLICY_MODULE).
 
--spec paginated_indexes() -> atom().
-paginated_indexes() ->
-    get_env(riak_cs, paginated_indexes, false).
+-spec gc_paginated_indexes() -> atom().
+gc_paginated_indexes() ->
+    get_env(riak_cs, gc_paginated_indexes, false).
 
 -spec response_module() -> atom().
 response_module() ->
