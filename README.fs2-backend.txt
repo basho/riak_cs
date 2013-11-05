@@ -81,6 +81,13 @@ Step 3: Continue editing "app.config" and add the following to
             {allow_mult,true}
         ]},
 
+Step 3b: If you haven't changed the setting of the Protocol Buffers
+         listener socket backlog buffer to something much larger
+         than its default value, please add/edit the following in
+         the 'riak_api' section of Riak's "app.config" file, e.g.,
+
+        {pb_backlog, 256},
+
 Step 4: In the "app.config" file for Riak CS (e.g. the
         "/etc/riak-cs/app.config" file), add the following config item
         to the beginning of the 'riak_cs' application section:
