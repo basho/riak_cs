@@ -255,6 +255,33 @@
 
 (let [bucket-name (random-string)
       object-name (random-string)
+      value-string "this is the real value"]
+  (fact "Creating an object with an (non-canned) ACL returns the same ACL
+        when you read the ACL"
+        (with-random-client c
+          (do
+            ;; create a bucket
+            (s3/create-bucket c bucket-name)
+
+            (let [value (input-stream-from-string value-string)
+                  metadata (ObjectMetadata.)
+                  user-two-id (:id (user-creation/create-random-user
+                                     riak-cs-host-with-protocol
+                                     (get-riak-cs-port)))
+                  id-grantee (CanonicalGrantee. user-two-id)
+                  grant (Grant. id-grantee read-grant)
+                  acl (AccessControlList.)
+                  req (PutObjectRequest. bucket-name object-name value metadata)]
+              (.grantPermission acl id-grantee read-grant)
+              (.setAccessControlList req acl)
+              (.putObject c req)
+              (contains?
+                (.getGrants (.getObjectAcl c bucket-name object-name))
+                grant))))
+        => truthy))
+
+(let [bucket-name (random-string)
+      object-name (random-string)
       grant (Grant. all-users read-grant)]
   (fact "Creating a bucket with an ACL returns the same ACL when you read
         the ACL"
