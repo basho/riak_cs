@@ -37,7 +37,7 @@
           initial_delay :: non_neg_integer(),
           leeway :: non_neg_integer(),
           worker_pids=[] :: [pid()],
-          max_workers=0 :: non_neg_integer(),
+          max_workers=5 :: non_neg_integer(),
           active_workers=0 :: non_neg_integer(),
           continuation :: undefined | binary() % Used for paginated 2I querying of GC bucket
          }).

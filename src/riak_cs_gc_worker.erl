@@ -48,13 +48,15 @@
 -include("riak_cs_gc_d.hrl").
 -include_lib("riakc/include/riakc.hrl").
 
+-export([current_state/1]).
+
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 
 %% Test API
 -export([test_link/0,
          test_link/1,
-         current_state/0,
+         current_state/1,
          change_state/1,
          status_data/1]).
 
@@ -86,6 +88,7 @@ init([Keys]) ->
     %% this does not check out a worker from the riak
     %% connection pool; instead it creates a fresh new worker
     {ok, Pid} = riak_cs_riakc_pool_worker:start_link([]),
+    ok = continue(),
     {ok, fetching_next_fileset, ?STATE{batch=Keys, riak_pid=Pid}}.
 
 %% Asynchronous events
@@ -95,13 +98,12 @@ init([Keys]) ->
 %% handle messages from the outside world (like `status').
 fetching_next_fileset(continue, ?STATE{batch=[]}=State) ->
     %% finished with this batch
-    gen_fsm:send_event(?GC_D, {batch_complete, State}),
-    {stop, normal, ok, State};
+    gen_fsm:send_event(?GC_D, {batch_complete, self(), State}),
+    {stop, normal, State};
 fetching_next_fileset(continue, State=?STATE{batch=[FileSetKey | RestKeys],
                                              batch_skips=BatchSkips,
                                              manif_count=ManifCount,
-                                             riak_pid=RiakPid
-                                            }) ->
+                                             riak_pid=RiakPid}) ->
     %% Fetch the next set of manifests for deletion
     {NextState, NextStateData} =
         case fetch_next_fileset(FileSetKey, RiakPid) of
@@ -111,7 +113,7 @@ fetching_next_fileset(continue, State=?STATE{batch=[FileSetKey | RestKeys],
                              current_fileset=FileSet,
                              current_riak_object=RiakObj,
                              manif_count=ManifCount+twop_set:size(FileSet)}};
-            {error, _} ->
+            {error, _Reason} ->
                 {fetching_next_fileset,
                  State?STATE{batch=RestKeys,
                              batch_skips=BatchSkips+1}}
@@ -140,7 +142,7 @@ initiating_file_delete(continue, ?STATE{current_files=[Manifest | _RestManifests
     %% deletion of the file blocks.
     %% Don't worry about delete_fsm failures. Manifests are
     %% rescheduled after a certain time.
-    Args = [RiakPid, Manifest, []],
+    Args = [RiakPid, Manifest, self(), []],
     %% The delete FSM is hard-coded to send a sync event to our registered
     %% name upon terminate(), so we do not have to pass our pid to it
     %% in order to get a reply.
@@ -302,6 +304,11 @@ handle_delete_fsm_reply({error, _}, ?STATE{current_files=[_ | RestManifests]} = 
 %% Test API
 %% ===================================================================
 
+%% @doc Get the current state of the fsm for testing inspection
+-spec current_state(pid()) -> {atom(), ?STATE{}} | {error, term()}.
+current_state(Pid) ->
+    gen_fsm:sync_send_all_state_event(Pid, current_state).
+
 -ifdef(TEST).
 
 %% @doc Start the garbage collection server
@@ -313,10 +320,7 @@ test_link(Interval) ->
     application:set_env(riak_cs, gc_interval, Interval),
     test_link().
 
-%% @doc Get the current state of the fsm for testing inspection
--spec current_state() -> {atom(), ?STATE{}} | {error, term()}.
-current_state() ->
-    gen_fsm:sync_send_all_state_event(?SERVER, current_state).
+
 
 %% @doc Manipulate the current state of the fsm for testing
 change_state(State) ->

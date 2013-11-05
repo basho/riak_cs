@@ -151,9 +151,9 @@ print_state(idle) ->
     output("There is no garbage collection in progress");
 print_state(fetching_next_fileset) ->
     output("A garbage collection batch is in progress");
-print_state(initiating_file_delete) ->
+print_state(feeding_workers) ->
     output("A garbage collection batch is in progress");
-print_state(waiting_file_delete) ->
+print_state(waiting_for_workers) ->
     output("A garbage collection batch is in progress");
 print_state(paused) ->
     output("A garbage collection batch is currently paused").
