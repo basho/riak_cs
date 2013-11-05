@@ -855,7 +855,7 @@ location(State, Bucket) ->
     location(State, Bucket, <<>>).
 
 location(#state{dir = Dir, i_depth = IDepth}, Bucket, Key) ->
-    B64 = encode_thingie(crypto:sha([Bucket, Key])),
+    B64 = encode_thingie(riak_cs_utils:sha([Bucket, Key])),
     IDirs = if IDepth > 0 ->
                     %% We know encode_thingie() has exactly 1:2 expansion ratio
                     [First|Rest] = nest(B64, IDepth),
@@ -1885,6 +1885,8 @@ resolve_robj_siblings(Cs) ->
 rate_a_dict(MD, V) ->
     %% The lower the score, the better.
     case dict:find(?MD_DELETED, MD) of
+        {ok, "true"} ->
+            -10;                                % Trump everything
         {ok, true} ->
             -10;                                % Trump everything
         error ->

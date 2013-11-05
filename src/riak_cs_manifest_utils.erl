@@ -314,7 +314,36 @@ upgrade_manifest(?MANIFEST{props=Props}=M) ->
 fixup_props(undefined) ->
     [];
 fixup_props(Props) when is_list(Props) ->
-    Props.
+    [fixup_a_prop(P) || P <- Props].
+
+fixup_a_prop({multipart, ?MULTIPART_MANIFEST{} = MPM}) ->
+    NewMPM = fixup_multipart_manifest(MPM),
+    {multipart, NewMPM};
+fixup_a_prop(OkAsIs) ->
+    OkAsIs.                                     % passthrough
+
+fixup_multipart_manifest(?MULTIPART_MANIFEST{
+                            parts = Parts,
+                            cleanup_parts = CleanupParts} = MPM) ->
+    MPM?MULTIPART_MANIFEST{parts = fixup_part_parts(Parts),
+                           cleanup_parts = fixup_part_parts(CleanupParts)}.
+
+fixup_part_parts(Parts) ->
+    [fixup_a_part_manifest(P) || P <- Parts].
+
+fixup_a_part_manifest(?PART_MANIFEST{} = PM) ->
+    PM;
+fixup_a_part_manifest(#part_manifest_v1{} = PM) ->
+    ?PART_MANIFEST{bucket = PM#part_manifest_v1.bucket,
+                   key = PM#part_manifest_v1.key,
+                   start_time = PM#part_manifest_v1.start_time,
+                   part_number = PM#part_manifest_v1.part_number,
+                   part_id = PM#part_manifest_v1.part_id,
+                   content_length = PM#part_manifest_v1.content_length,
+                   content_md5 = PM#part_manifest_v1.content_md5,
+                   block_size = PM#part_manifest_v1.block_size,
+                   bclass = 'v0',
+                   props = []}.
 
 %%%===================================================================
 %%% Internal functions

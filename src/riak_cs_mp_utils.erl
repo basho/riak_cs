@@ -252,7 +252,7 @@ new_manifest(Bucket, Key, ContentType, {_, _, _} = Owner, Opts) ->
                                        no_acl_yet),
     MpM = ?MULTIPART_MANIFEST{upload_id = UUID,
                               owner = Owner},
-    M?MANIFEST{props = replace_mp_manifest(MpM, M?MANIFEST.props)}.
+    M?MANIFEST{props=replace_mp_manifest(MpM, M?MANIFEST.props)}.
 
 upload_part(Bucket, Key, UploadId, PartNumber, Size, Caller) ->
     upload_part(Bucket, Key, UploadId, PartNumber, Size, Caller, nopid).
@@ -470,13 +470,16 @@ do_part_common2(upload_part, RiakcPid, M, _Obj, MpM, Props) ->
                   props = MProps} = M,
         ?MULTIPART_MANIFEST{parts = Parts} = MpM,
         PartUUID = riak_cs_put_fsm:get_uuid(PutPid),
+        BClass = riak_cs_lfs_utils:calculate_bucket_class(Size),
         PM = ?PART_MANIFEST{bucket = Bucket,
                             key = Key,
                             start_time = os:timestamp(),
                             part_number = PartNumber,
                             part_id = PartUUID,
                             content_length = Size,
-                            block_size = BlockSize},
+                            block_size = BlockSize,
+                            bclass = BClass,
+                            props = []},
         NewMpM = MpM?MULTIPART_MANIFEST{parts = ordsets:add_element(PM, Parts)},
         NewM = M?MANIFEST{content_length = ContentLength + Size,
                           props = replace_mp_manifest(NewMpM, MProps)},
@@ -697,7 +700,7 @@ comb_parts(MpM, PartETags) ->
                             dict:filter(fun(K, _V) ->
                                              not dict:is_key(K, Keep) end,
                                         All))],
-    {KeepBytes, lists:reverse(KeepPMs), ToDelete}.
+    {KeepBytes, ordsets:from_list(KeepPMs), ToDelete}.
 
 comb_parts_fold({PartNum, _ETag} = _K,
                 {_All, _Keep, _Delete, LastPartNum, _Bytes, _KeepPMs})
