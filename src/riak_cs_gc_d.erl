@@ -405,7 +405,7 @@ start_worker(State=?STATE{batch=[NextBatch | RestBatches],
                           worker_pids=WorkerPids}) ->
      case ?GC_WORKER:start_link(NextBatch) of
          {ok, Pid} ->
-             lager:info("Starting worker: ~p", [Pid]),
+             _ = lager:debug("Starting worker: ~p", [Pid]),
              State?STATE{batch=RestBatches,
                          active_workers=ActiveWorkers + 1,
                          worker_pids=[Pid | WorkerPids]};
