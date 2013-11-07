@@ -205,6 +205,9 @@
 (def read-grant
   (Permission/Read))
 
+(def write-grant
+  (Permission/Write))
+
 (let [bucket-name (random-string)
       object-name (random-string)
       value-string "this is the real value"]
@@ -294,4 +297,23 @@
               (contains?
                 (.getGrants (.getBucketAcl c bucket-name))
                 grant)))
+        => truthy))
+
+(let [bucket-name (random-string)]
+  (fact "Creating a bucket with an (non-canned) ACL returns the same ACL
+        when you read the ACL"
+        (with-random-client c
+          (let [user-two-id (:id (user-creation/create-random-user
+                                   riak-cs-host-with-protocol
+                                   (get-riak-cs-port)))
+                id-grantee (CanonicalGrantee. user-two-id)
+                grant (Grant. id-grantee write-grant)
+                acl (AccessControlList.)
+                req (CreateBucketRequest. bucket-name)]
+            (.grantPermission acl id-grantee write-grant)
+            (.setAccessControlList req acl)
+            (.createBucket c req)
+            (contains?
+              (.getGrants (.getBucketAcl c bucket-name))
+              grant)))
         => truthy))
