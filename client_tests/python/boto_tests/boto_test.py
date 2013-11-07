@@ -50,8 +50,9 @@ def md5_from_key(boto_key):
     return m.hexdigest()
 
 # `parts_list` should be a list of file-like objects
-def upload_multipart(bucket, key_name, parts_list, metadata={}):
-    upload = bucket.initiate_multipart_upload(key_name, metadata=metadata)
+def upload_multipart(bucket, key_name, parts_list, metadata={}, policy=None):
+    upload = bucket.initiate_multipart_upload(key_name, metadata=metadata,
+                                              policy=policy)
     for index, val in enumerate(parts_list):
         upload.upload_part_from_file(val, index + 1)
     upload.complete_upload()
@@ -230,6 +231,19 @@ class MultiPartUploadTests(S3ApiVerificationTestBase):
     def test_small_strings_upload_4(self):
         parts = [str(uuid.uuid4()) for _ in xrange(20)]
         self.multipart_md5_helper(parts)
+
+    def test_acl_is_set(self):
+        parts = [str(uuid.uuid4()) for _ in xrange(5)]
+        key_name = str(uuid.uuid4())
+        stringio_parts = [StringIO(p) for p in parts]
+        expected_md5 = md5.new(''.join(parts)).hexdigest()
+        bucket = self.conn.create_bucket(self.bucket_name)
+        upload = upload_multipart(bucket, key_name, stringio_parts,
+                                  policy='public-read')
+        key = Key(bucket, key_name)
+        actual_md5 = md5_from_key(key)
+        self.assertEqual(expected_md5, actual_md5)
+        self.assertEqual(key.get_acl().to_xml(), self.prAcl(self.user1))
 
     def test_standard_storage_class(self):
         # Test for bug reported in

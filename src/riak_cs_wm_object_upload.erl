@@ -41,8 +41,14 @@ init(Ctx) ->
 
 -spec malformed_request(#wm_reqdata{}, #context{}) -> {false, #wm_reqdata{}, #context{}}.
 malformed_request(RD,Ctx) ->
-    NewCtx = riak_cs_wm_utils:extract_key(RD, Ctx),
-    {false, RD, NewCtx}.
+    ContextWithKey = riak_cs_wm_utils:extract_key(RD, Ctx),
+    case riak_cs_wm_utils:has_canned_acl_and_header_grant(RD) of
+        true ->
+            riak_cs_s3_response:api_error(canned_acl_and_header_grant,
+                                          RD, ContextWithKey);
+        false ->
+            {false, RD, ContextWithKey}
+    end.
 
 %% @doc Get the type of access requested and the manifest with the
 %% object ACL and compare the permission requested with the permission
@@ -68,8 +74,17 @@ allowed_methods() ->
 post_is_create(RD, Ctx) ->
     {false, RD, Ctx}.
 
-process_post(RD, Ctx=#context{local_context=LocalCtx,
-                              riakc_pid=RiakcPid}) ->
+process_post(RD, Ctx) ->
+    case riak_cs_wm_utils:maybe_update_context_with_acl_from_headers(RD, Ctx) of
+        {ok, ContextWithAcl} ->
+            process_post_helper(RD, ContextWithAcl);
+        {error, HaltResponse} ->
+            HaltResponse
+    end.
+
+process_post_helper(RD, Ctx=#context{local_context=LocalCtx,
+                                     acl=ACL,
+                                     riakc_pid=RiakcPid}) ->
     #key_context{bucket=Bucket, key=Key} = LocalCtx,
     ContentType = try
                       list_to_binary(wrq:get_req_header("Content-Type", RD))
@@ -78,10 +93,6 @@ process_post(RD, Ctx=#context{local_context=LocalCtx,
                           <<"binary/octet-stream">>
                   end,
     User = riak_cs_mp_utils:user_rec_to_3tuple(Ctx#context.user),
-    ACL = riak_cs_acl_utils:canned_acl(
-            wrq:get_req_header("x-amz-acl", RD),
-            User,
-            riak_cs_wm_utils:bucket_owner(Bucket, RiakcPid)),
     Metadata = riak_cs_wm_utils:extract_user_metadata(RD),
     Opts = [{acl, ACL}, {meta_data, Metadata}],
 
