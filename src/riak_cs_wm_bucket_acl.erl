@@ -59,10 +59,10 @@ content_types_provided(RD, Ctx) ->
 content_types_accepted(RD, Ctx) ->
     case wrq:get_req_header("content-type", RD) of
         undefined ->
-            {[{"application/octet-stream", accept_body}], RD, Ctx};
+            {[{"application/octet-stream", add_acl_to_context_then_accept}], RD, Ctx};
         CType ->
             {Media, _Params} = mochiweb_util:parse_header(CType),
-            {[{Media, accept_body}], RD, Ctx}
+            {[{Media, add_acl_to_context_then_accept}], RD, Ctx}
     end.
 
 -spec authorize(#wm_reqdata{}, #context{}) -> {boolean() | {halt, non_neg_integer()}, #wm_reqdata{}, #context{}}.
@@ -97,6 +97,7 @@ to_xml(RD, Ctx=#context{start_time=StartTime,
 -spec accept_body(#wm_reqdata{}, #context{}) -> {{halt, non_neg_integer()}, #wm_reqdata{}, #context{}}.
 accept_body(RD, Ctx=#context{user=User,
                              user_object=UserObj,
+                             acl=AclFromHeadersOrDefault,
                              bucket=Bucket,
                              riakc_pid=RiakPid}) ->
     riak_cs_dtrace:dt_bucket_entry(?MODULE, <<"bucket_put_acl">>,
@@ -105,15 +106,7 @@ accept_body(RD, Ctx=#context{user=User,
     AclRes =
         case Body of
             [] ->
-                %% Check for `x-amz-acl' header to support
-                %% the use of a canned ACL.
-                CannedAcl = riak_cs_acl_utils:canned_acl(
-                              wrq:get_req_header("x-amz-acl", RD),
-                              {User?RCS_USER.display_name,
-                               User?RCS_USER.canonical_id,
-                               User?RCS_USER.key_id},
-                              riak_cs_wm_utils:bucket_owner(Bucket, RiakPid)),
-                {ok, CannedAcl};
+                {ok, AclFromHeadersOrDefault};
             _ ->
                 riak_cs_acl_utils:validate_acl(
                   riak_cs_acl_utils:acl_from_xml(Body,
