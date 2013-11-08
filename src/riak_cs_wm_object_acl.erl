@@ -115,7 +115,7 @@ content_types_accepted(RD, Ctx=#context{local_context=LocalCtx0}) ->
         undefined ->
             DefaultCType = "application/octet-stream",
             LocalCtx = LocalCtx0#key_context{putctype=DefaultCType},
-            {[{DefaultCType, accept_body}],
+            {[{DefaultCType, add_acl_to_context_then_accept}],
              RD,
              Ctx#context{local_context=LocalCtx}};
         %% This was shamelessly ripped out of
@@ -126,7 +126,7 @@ content_types_accepted(RD, Ctx=#context{local_context=LocalCtx0}) ->
                 [_Type, _Subtype] ->
                     %% accept whatever the user says
                     LocalCtx = LocalCtx0#key_context{putctype=Media},
-                    {[{Media, accept_body}], RD, Ctx#context{local_context=LocalCtx}};
+                    {[{Media, add_acl_to_context_then_accept}], RD, Ctx#context{local_context=LocalCtx}};
                 _ ->
                     %% TODO:
                     %% Maybe we should have caught
@@ -177,6 +177,7 @@ accept_body(RD, Ctx=#context{local_context=#key_context{get_fsm_pid=GetFsmPid,
                                                         key=KeyStr,
                                                         bucket=Bucket},
                              user=User,
+                             acl=AclFromHeadersOrDefault,
                              requested_perm='WRITE_ACP',
                              riakc_pid=RiakPid})  when Bucket /= undefined,
                                                         KeyStr /= undefined,
@@ -191,15 +192,7 @@ accept_body(RD, Ctx=#context{local_context=#key_context{get_fsm_pid=GetFsmPid,
     AclRes =
         case Body of
             [] ->
-                %% Check for `x-amz-acl' header to support
-                %% the use of a canned ACL.
-                CannedAcl = riak_cs_acl_utils:canned_acl(
-                              wrq:get_req_header("x-amz-acl", RD),
-                              {User?RCS_USER.display_name,
-                               User?RCS_USER.canonical_id,
-                               User?RCS_USER.key_id},
-                              riak_cs_wm_utils:bucket_owner(Bucket, RiakPid)),
-                {ok, CannedAcl};
+                {ok, AclFromHeadersOrDefault};
             _ ->
                 riak_cs_acl_utils:validate_acl(
                   riak_cs_acl_utils:acl_from_xml(Body,
