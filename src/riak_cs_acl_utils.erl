@@ -120,8 +120,10 @@ specific_acl_grant(Owner, Headers, RiakcPid) ->
             end
     end.
 
+%% @doc Attempt to parse a list of ACL headers into a list
+%% of `acl_grant()'s.
 -spec valid_headers_to_grants(list(), pid()) ->
-    {ok, list()} | {error, invalid_argument}.
+    {ok, list(acl_grant())} | {error, invalid_argument}.
 valid_headers_to_grants(Pairs, RiakcPid) ->
     MaybeGrants = [header_to_acl_grants(HeaderName, Grants, RiakcPid) ||
             {HeaderName, Grants} <- Pairs],
@@ -132,8 +134,11 @@ valid_headers_to_grants(Pairs, RiakcPid) ->
             E
     end.
 
--spec header_to_acl_grants(term(), list(), pid()) ->
-    {ok, list()} | {error, invalid_argument}.
+%% @doc Attempt to turn a `acl_perm()' and list of grants
+%% into a list of `acl_grant()'s. At this point, email
+%% addresses have already been resolved, and headers parsed.
+-spec header_to_acl_grants(acl_perm(), list(), pid()) ->
+    {ok, list(acl_grant())} | {error, invalid_argument}.
 header_to_acl_grants(HeaderName, Grants, RiakcPid) ->
     MaybeGrantList = lists:map(fun (Identifier) ->
                     header_to_grant(HeaderName, Identifier, RiakcPid) end, Grants),
@@ -144,6 +149,9 @@ header_to_acl_grants(HeaderName, Grants, RiakcPid) ->
             E
     end.
 
+%% Attempt to turn an `acl_perm()' and `grant_user_identifier()'
+%% into an `acl_grant()'. If the `grant_user_identifier()' uses an
+%% id, and the name can't be found, returns `{error, invalid_argument}'.
 -spec header_to_grant(acl_perm(), {grant_user_identifier(), string()}, pid()) ->
     {ok, acl_grant()} | {error, invalid_argument}.
 header_to_grant(Permission, {id, ID}, RiakcPid) ->
@@ -161,6 +169,8 @@ header_to_grant(Permission, {uri, URI}, _RiakcPid) ->
             {ok, {'AuthUsers', [Permission]}}
     end.
 
+%% @doc Attempt to parse a header into
+%% a list of grant identifiers and strings.
 -type grant_user_identifier() :: 'emailAddress' | 'id' | 'uri'.
 -spec parse_grant_header_value(string()) ->
     {ok, [{grant_user_identifier(), string()}]} |
@@ -179,6 +189,10 @@ parse_grant_header_value(HeaderValue) ->
 split_header_values_and_strip(Value) ->
     [string:strip(V) || V <- string:tokens(Value, ",")].
 
+%% @doc Attempt to parse a single grant, like:
+%% `"emailAddress=\"name@example.com\""'
+%% If the value can't be parsed, return
+%% `{error, invalid_argument}'.
 -spec parse_mapping(string()) ->
     {ok, {grant_user_identifier(), Value :: string()}} |
     {error, invalid_argument}.
@@ -201,11 +215,14 @@ parse_mapping("uri=" ++ QuotedURI) ->
 parse_mapping(_Else) ->
     {error, invalid_argument}.
 
+%% @doc Return true if `URI' is a valid group grant URI.
 -spec valid_uri(string()) -> boolean().
 valid_uri(URI) ->
     %% log delivery is not yet a supported option
     lists:member(URI, [?ALL_USERS_GROUP, ?AUTH_USERS_GROUP]).
 
+%% @doc Combine the first and second argument, if the second
+%% is wrapped in `ok'. Otherwise return the second argugment.
 -spec wrap(atom(), {'ok', term()} | {'error', atom()}) ->
     {'error', atom()} | {ok, {atom(), term()}}.
 wrap(_Atom, {error, invalid_argument}=E) ->
@@ -213,6 +230,8 @@ wrap(_Atom, {error, invalid_argument}=E) ->
 wrap(Atom, {ok, Value}) ->
     {ok, {Atom, Value}}.
 
+%% If `String' is enclosed in quotation marks, remove them. Otherwise
+%% return an error.
 -spec remove_quotes(string()) -> {error, invalid_argument} | {ok, string()}.
 remove_quotes(String) ->
     case starts_and_ends_with_quotes(String) of
@@ -222,10 +241,15 @@ remove_quotes(String) ->
             {ok, string:sub_string(String, 2, length(String) - 1)}
     end.
 
+%% @doc Return true if `String' is enclosed in quotation
+%% marks.
 -spec starts_and_ends_with_quotes(string()) -> boolean().
 starts_and_ends_with_quotes(String) ->
     hd(String) =:= 34 andalso lists:last(String) =:= 34.
 
+%% @doc Attempt to turn a list of grants that use email addresses
+%% into a list of grants that only use canonical ids. Returns an error
+%% if any of the emails cannot be turned into canonical ids.
 -spec emails_to_ids(list(), pid()) -> {ok, list()} | {error, unresolved_grant_email}.
 emails_to_ids(Grants, RiakcPid) ->
     {EmailGrants, RestGrants} = lists:partition(fun email_grant/1, Grants),
@@ -238,9 +262,13 @@ emails_to_ids(Grants, RiakcPid) ->
             {ok, RestGrants ++ [{id, ID} || ID <- AllIds]}
     end.
 
+-spec email_grant({atom(), term}) -> boolean().
 email_grant({Atom, _Val}) ->
     Atom =:= 'emailAddress'.
 
+%% @doc Turn a list of ok-values or errors into either
+%% an ok of list, or an error. Returns the latter is any
+%% of the values in the input list are an error.
 -spec promote_failure(list({ok, A} | {error, term()})) ->
     {ok, list(A)} | {'error', term()}.
 promote_failure(List) ->
@@ -253,7 +281,11 @@ promote_failure(List) ->
             Ok
     end.
 
--spec fail_either(term(), {boolean(), list()}) ->
+%% @doc Return an error if either argument is an error. Otherwise,
+%% cons the value from the first argument onto the accumulator
+%% in the second.
+-spec fail_either({ok, term()} | {error, term()},
+                  {{error, term()} | 'ok', list()}) ->
     {ok | {error, term()}, list()}.
 fail_either(_Elem, {{error, _Reason}=E, Acc}) ->
     {E, Acc};
