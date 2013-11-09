@@ -331,6 +331,8 @@ multiple_choices(RD, Ctx=#context{submodule=Mod,
             {false, RD, Ctx}
     end.
 
+%% @doc Add an ACL (or default ACL) to the context, parsed from headers. If
+%% parsing the headers fails, halt the request.
 add_acl_to_context_then_accept(RD, Ctx) ->
     case riak_cs_wm_utils:maybe_update_context_with_acl_from_headers(RD, Ctx) of
         {ok, ContextWithAcl} ->

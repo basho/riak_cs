@@ -346,6 +346,8 @@ iso_8601_to_erl_date(Date)  ->
     {{b2i(Yr), b2i(Mo), b2i(Da)},
      {b2i(Hr), b2i(Mn), b2i(Sc)}}.
 
+%% @doc Return a new context where the bucket and key for the s3 object
+%% have been inserted.
 -spec extract_key(#wm_reqdata{}, #context{}) -> #context{}.
 extract_key(RD,Ctx=#context{local_context=LocalCtx0}) ->
     Bucket = list_to_binary(wrq:path_info(bucket, RD)),
@@ -363,6 +365,9 @@ extract_name(?RCS_USER{name=Name}) ->
 extract_name(_) ->
     "-unknown-".
 
+%% @doc Add an ACL to the context, from parsing the headers. If there is
+%% an error parsing the header, halt the request. If there is no ACL
+%% information in the headers, use the default ACL.
 -spec maybe_update_context_with_acl_from_headers(#wm_reqdata{}, #context{}) ->
     {error, {{halt, term()}, #wm_reqdata{}, #context{}}} |
     {ok, #context{}}.
@@ -381,6 +386,10 @@ maybe_update_context_with_acl_from_headers(RD, Ctx=#context{user=User}) ->
             {ok, Ctx#context{acl=DefaultAcl}}
     end.
 
+%% @doc Return an ACL if one can be parsed from the headers. If there
+%% are no ACL headers, return `error'. In this case, it's not unexpected
+%% to get the `error' value back, but it's name is used for convention.
+%% It could also reasonable be called `nothing'.
 -spec maybe_acl_from_context_and_request(#wm_reqdata{}, #context{}) ->
     {ok, acl_or_error()} | error.
 maybe_acl_from_context_and_request(RD, #context{user=User,
@@ -427,6 +436,7 @@ acl_from_headers(Headers, Owner, BucketOwner, Pid) ->
     end.
 
 
+%% @doc Extract the ACL-related headers from a list of headers.
 -spec extract_acl_headers(term()) -> [{acl_perm(), string()}].
 extract_acl_headers(Headers) ->
     lists:foldl(fun({HeaderName, Value}, Acc) ->
@@ -439,6 +449,9 @@ extract_acl_headers(Headers) ->
         end,
                 [], Headers).
 
+%% @doc Turn a ACL header into the corresponding
+%% atom.
+-spec header_name_to_perm(list()) -> atom().
 header_name_to_perm("x-amz-grant-read") ->
     'READ';
 header_name_to_perm("x-amz-grant-write") ->
@@ -452,27 +465,38 @@ header_name_to_perm("x-amz-grant-full-control") ->
 header_name_to_perm(_Else) ->
     undefined.
 
+%% @doc Return true if the request has both:
+%% 1. an ACL-related header
+%% 2. a non-empty request body
 -spec has_acl_header_and_body(#wm_reqdata{}) -> boolean().
 has_acl_header_and_body(RD) ->
     has_acl_header(RD) andalso has_body(RD).
 
+%% @doc Return true if the request has either
+%% a canned ACL header, or a specific-grant header.
 -spec has_acl_header(#wm_reqdata{}) -> boolean().
 has_acl_header(RD) ->
     has_canned_acl_header(RD) orelse has_specific_acl_header(RD).
 
+%% @doc Return true if the request has _both_ a
+%% a canned header ACL and a specific-grant header.
 -spec has_canned_acl_and_header_grant(#wm_reqdata{}) -> boolean().
 has_canned_acl_and_header_grant(RD) ->
     has_canned_acl_header(RD) andalso has_specific_acl_header(RD).
 
+%% @doc Return true if the request uses a canned ACL header.
 -spec has_canned_acl_header(#wm_reqdata{}) -> boolean().
 has_canned_acl_header(RD) ->
     wrq:get_req_header("x-amz-acl", RD) =/= undefined.
 
+%% @doc Return true if the request has at least one
+%% specific-grant header.
 -spec has_specific_acl_header(#wm_reqdata{}) -> boolean().
 has_specific_acl_header(RD) ->
     Headers = normalize_headers(RD),
     extract_acl_headers(Headers) =/= [].
 
+%% @doc Return true if the request has a non-empty body.
 -spec has_body(#wm_reqdata{}) -> boolean().
 %% TODO: should we just check if the content-length is 0 instead?
 has_body(RD) ->
