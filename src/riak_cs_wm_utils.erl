@@ -38,9 +38,20 @@
          respond_api_error/3,
          deny_access/2,
          deny_invalid_key/2,
+         extract_key/2,
          extract_name/1,
-         normalize_headers/1,
+         maybe_update_context_with_acl_from_headers/2,
+         maybe_acl_from_context_and_request/2,
+         acl_from_headers/4,
+         extract_acl_headers/1,
+         has_acl_header_and_body/1,
+         has_acl_header/1,
+         has_canned_acl_and_header_grant/1,
+         has_canned_acl_header/1,
+         has_specific_acl_header/1,
+         has_body/1,
          extract_amazon_headers/1,
+         normalize_headers/1,
          extract_user_metadata/1,
          shift_to_owner/4,
          bucket_access_authorize_helper/4,
@@ -55,6 +66,10 @@
 
 -define(QS_KEYID, "AWSAccessKeyId").
 -define(QS_SIGNATURE, "Signature").
+
+-type acl_or_error() ::  {ok, #acl_v2{}} |
+                         {error, 'invalid_argument'} |
+                         {error, 'unresolved_grant_email'}.
 
 %% ===================================================================
 %% Public API
@@ -359,12 +374,161 @@ iso_8601_to_erl_date(Date)  ->
     {{b2i(Yr), b2i(Mo), b2i(Da)},
      {b2i(Hr), b2i(Mn), b2i(Sc)}}.
 
+%% @doc Return a new context where the bucket and key for the s3 object
+%% have been inserted.
+-spec extract_key(#wm_reqdata{}, #context{}) -> #context{}.
+extract_key(RD,Ctx=#context{local_context=LocalCtx0}) ->
+    Bucket = list_to_binary(wrq:path_info(bucket, RD)),
+    %% need to unquote twice since we re-urlencode the string during rewrite in
+    %% order to trick webmachine dispatching
+    Key = mochiweb_util:unquote(mochiweb_util:unquote(wrq:path_info(object, RD))),
+    LocalCtx = LocalCtx0#key_context{bucket=Bucket, key=Key},
+    Ctx#context{bucket=Bucket,
+                local_context=LocalCtx}.
+
 extract_name(User) when is_list(User) ->
     User;
 extract_name(?RCS_USER{name=Name}) ->
     Name;
 extract_name(_) ->
     "-unknown-".
+
+%% @doc Add an ACL to the context, from parsing the headers. If there is
+%% an error parsing the header, halt the request. If there is no ACL
+%% information in the headers, use the default ACL.
+-spec maybe_update_context_with_acl_from_headers(#wm_reqdata{}, #context{}) ->
+    {error, {{halt, term()}, #wm_reqdata{}, #context{}}} |
+    {ok, #context{}}.
+maybe_update_context_with_acl_from_headers(RD, Ctx=#context{user=User}) ->
+    case maybe_acl_from_context_and_request(RD, Ctx) of
+        {ok, {error, BadAclReason}} ->
+            {error, riak_cs_s3_response:api_error(BadAclReason, RD, Ctx)};
+        %% pattern match on the ACL record type for a data-type
+        %% sanity-check
+        {ok, {ok, Acl=?ACL{}}} ->
+            {ok, Ctx#context{acl=Acl}};
+        error ->
+            DefaultAcl = riak_cs_acl_utils:default_acl(User?RCS_USER.display_name,
+                                                       User?RCS_USER.canonical_id,
+                                                       User?RCS_USER.key_id),
+            {ok, Ctx#context{acl=DefaultAcl}}
+    end.
+
+%% @doc Return an ACL if one can be parsed from the headers. If there
+%% are no ACL headers, return `error'. In this case, it's not unexpected
+%% to get the `error' value back, but it's name is used for convention.
+%% It could also reasonable be called `nothing'.
+-spec maybe_acl_from_context_and_request(#wm_reqdata{}, #context{}) ->
+    {ok, acl_or_error()} | error.
+maybe_acl_from_context_and_request(RD, #context{user=User,
+                                                bucket=Bucket,
+                                                riakc_pid=RiakcPid}) ->
+    case has_acl_header(RD) of
+        true ->
+            Headers = normalize_headers(RD),
+            BucketOwner = bucket_owner(Bucket, RiakcPid),
+            Owner = {User?RCS_USER.display_name,
+                     User?RCS_USER.canonical_id,
+                     User?RCS_USER.key_id},
+            {ok, acl_from_headers(Headers, Owner, BucketOwner, RiakcPid)};
+        false ->
+            error
+    end.
+
+%% TODO: not sure if this should live here or in
+%% `riak_cs_acl_utils'
+%% @doc Create an acl from the request headers. At this point, we should
+%% have already verified that there is only a canned acl header or specific
+%% header grants.
+-spec acl_from_headers(Headers :: list(),
+                       Owner :: acl_owner(),
+                       BucketOwner :: undefined | acl_owner(),
+                       Pid :: pid()) ->
+    acl_or_error().
+acl_from_headers(Headers, Owner, BucketOwner, Pid) ->
+    %% TODO: time to make a macro for `"x-amz-acl"'
+    %% `Headers' is an ordset. Is there a faster way to retrieve this? Or
+    %% maybe a better data structure?
+    case proplists:get_value("x-amz-acl", Headers, {error, undefined}) of
+        {error, undefined} ->
+            RenamedHeaders = extract_acl_headers(Headers),
+            case RenamedHeaders of
+                [] ->
+                    {DisplayName, CanonicalId, KeyID} = Owner,
+                    {ok, riak_cs_acl_utils:default_acl(DisplayName, CanonicalId, KeyID)};
+                _Else ->
+                    riak_cs_acl_utils:specific_acl_grant(Owner, RenamedHeaders, Pid)
+            end;
+        Value ->
+            {ok, riak_cs_acl_utils:canned_acl(Value, Owner, BucketOwner)}
+    end.
+
+
+%% @doc Extract the ACL-related headers from a list of headers.
+-spec extract_acl_headers(term()) -> [{acl_perm(), string()}].
+extract_acl_headers(Headers) ->
+    lists:foldl(fun({HeaderName, Value}, Acc) ->
+                case header_name_to_perm(HeaderName) of
+                    undefined ->
+                        Acc;
+                    HeaderAtom ->
+                        [{HeaderAtom, Value} | Acc]
+                end
+        end,
+                [], Headers).
+
+%% @doc Turn a ACL header into the corresponding
+%% atom.
+-spec header_name_to_perm(list()) -> atom().
+header_name_to_perm("x-amz-grant-read") ->
+    'READ';
+header_name_to_perm("x-amz-grant-write") ->
+    'WRITE';
+header_name_to_perm("x-amz-grant-read-acp") ->
+    'READ_ACP';
+header_name_to_perm("x-amz-grant-write-acp") ->
+    'WRITE_ACP';
+header_name_to_perm("x-amz-grant-full-control") ->
+    'FULL_CONTROL';
+header_name_to_perm(_Else) ->
+    undefined.
+
+%% @doc Return true if the request has both:
+%% 1. an ACL-related header
+%% 2. a non-empty request body
+-spec has_acl_header_and_body(#wm_reqdata{}) -> boolean().
+has_acl_header_and_body(RD) ->
+    has_acl_header(RD) andalso has_body(RD).
+
+%% @doc Return true if the request has either
+%% a canned ACL header, or a specific-grant header.
+-spec has_acl_header(#wm_reqdata{}) -> boolean().
+has_acl_header(RD) ->
+    has_canned_acl_header(RD) orelse has_specific_acl_header(RD).
+
+%% @doc Return true if the request has _both_ a
+%% a canned header ACL and a specific-grant header.
+-spec has_canned_acl_and_header_grant(#wm_reqdata{}) -> boolean().
+has_canned_acl_and_header_grant(RD) ->
+    has_canned_acl_header(RD) andalso has_specific_acl_header(RD).
+
+%% @doc Return true if the request uses a canned ACL header.
+-spec has_canned_acl_header(#wm_reqdata{}) -> boolean().
+has_canned_acl_header(RD) ->
+    wrq:get_req_header("x-amz-acl", RD) =/= undefined.
+
+%% @doc Return true if the request has at least one
+%% specific-grant header.
+-spec has_specific_acl_header(#wm_reqdata{}) -> boolean().
+has_specific_acl_header(RD) ->
+    Headers = normalize_headers(RD),
+    extract_acl_headers(Headers) =/= [].
+
+%% @doc Return true if the request has a non-empty body.
+-spec has_body(#wm_reqdata{}) -> boolean().
+%% TODO: should we just check if the content-length is 0 instead?
+has_body(RD) ->
+    wrq:req_body(RD) =/= <<>>.
 
 extract_amazon_headers(Headers) ->
     FilterFun =

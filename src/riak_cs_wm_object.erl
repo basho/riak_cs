@@ -41,20 +41,22 @@ init(Ctx) ->
     {ok, Ctx#context{local_context=#key_context{}}}.
 
 -spec malformed_request(#wm_reqdata{}, #context{}) -> {false, #wm_reqdata{}, #context{}}.
-malformed_request(RD,Ctx=#context{local_context=LocalCtx0}) ->
-    Bucket = list_to_binary(wrq:path_info(bucket, RD)),
-    %% need to unquote twice since we re-urlencode the string during rewrite in
-    %% order to trick webmachine dispatching
-    Key = mochiweb_util:unquote(mochiweb_util:unquote(wrq:path_info(object, RD))),
-    LocalCtx = LocalCtx0#key_context{bucket=Bucket, key=Key},
-    {false, RD, Ctx#context{local_context=LocalCtx}}.
+malformed_request(RD, Ctx) ->
+    ContextWithKey = riak_cs_wm_utils:extract_key(RD, Ctx),
+    case riak_cs_wm_utils:has_canned_acl_and_header_grant(RD) of
+        true ->
+            riak_cs_s3_response:api_error(canned_acl_and_header_grant,
+                                          RD, ContextWithKey);
+        false ->
+            {false, RD, ContextWithKey}
+    end.
 
 %% @doc Get the type of access requested and the manifest with the
 %% object ACL and compare the permission requested with the permission
 %% granted, and allow or deny access. Returns a result suitable for
 %% directly returning from the {@link forbidden/2} webmachine export.
 -spec authorize(#wm_reqdata{}, #context{}) ->
-                       {boolean() | {halt, term()}, #wm_reqdata{}, #context{}}.
+    {boolean() | {halt, term()}, #wm_reqdata{}, #context{}}.
 authorize(RD, Ctx0=#context{local_context=LocalCtx0,
                             riakc_pid=RiakPid}) ->
     Method = wrq:method(RD),
@@ -263,7 +265,7 @@ content_types_accepted(CT, RD, Ctx=#context{local_context=LocalCtx0}) ->
         [_Type, _Subtype] ->
             %% accept whatever the user says
             LocalCtx = LocalCtx0#key_context{putctype=Media},
-            {[{Media, accept_body}], RD, Ctx#context{local_context=LocalCtx}};
+            {[{Media, add_acl_to_context_then_accept}], RD, Ctx#context{local_context=LocalCtx}};
         _ ->
             %% TODO:
             %% Maybe we should have caught
@@ -301,6 +303,7 @@ accept_body(RD, Ctx=#context{local_context=LocalCtx,
     end;
 accept_body(RD, Ctx=#context{local_context=LocalCtx,
                              user=User,
+                             acl=ACL,
                              riakc_pid=RiakcPid}) ->
     #key_context{bucket=Bucket,
                  key=Key,
@@ -308,6 +311,7 @@ accept_body(RD, Ctx=#context{local_context=LocalCtx,
                  putctype=ContentType,
                  size=Size,
                  get_fsm_pid=GetFsmPid} = LocalCtx,
+
     BFile_str = [Bucket, $,, Key],
     UserName = riak_cs_wm_utils:extract_name(User),
     riak_cs_dtrace:dt_object_entry(?MODULE, <<"object_put">>,
@@ -316,14 +320,6 @@ accept_body(RD, Ctx=#context{local_context=LocalCtx,
     Metadata = riak_cs_wm_utils:extract_user_metadata(RD),
     BlockSize = riak_cs_lfs_utils:block_size(),
 
-    %% Check for `x-amz-acl' header to support
-    %% non-default ACL at bucket creation time.
-    ACL = riak_cs_acl_utils:canned_acl(
-            wrq:get_req_header("x-amz-acl", RD),
-            {User?RCS_USER.display_name,
-             User?RCS_USER.canonical_id,
-             User?RCS_USER.key_id},
-            riak_cs_wm_utils:bucket_owner(BucketObj)),
     Args = [{Bucket, list_to_binary(Key), Size, list_to_binary(ContentType),
              Metadata, BlockSize, ACL, timer:seconds(60), self(), RiakcPid}],
     {ok, Pid} = riak_cs_put_fsm_sup:start_put_fsm(node(), Args),

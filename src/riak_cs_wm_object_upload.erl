@@ -40,14 +40,15 @@ init(Ctx) ->
     {ok, Ctx#context{local_context=#key_context{}}}.
 
 -spec malformed_request(#wm_reqdata{}, #context{}) -> {false, #wm_reqdata{}, #context{}}.
-malformed_request(RD,Ctx=#context{local_context=LocalCtx0}) ->
-    Bucket = list_to_binary(wrq:path_info(bucket, RD)),
-    %% need to unquote twice since we re-urlencode the string during rewrite in
-    %% order to trick webmachine dispatching
-    %% NOTE: Bucket::binary(), *but* Key::string()
-    Key = mochiweb_util:unquote(mochiweb_util:unquote(wrq:path_info(object, RD))),
-    LocalCtx = LocalCtx0#key_context{bucket=Bucket, key=Key},
-    {false, RD, Ctx#context{local_context=LocalCtx}}.
+malformed_request(RD,Ctx) ->
+    ContextWithKey = riak_cs_wm_utils:extract_key(RD, Ctx),
+    case riak_cs_wm_utils:has_canned_acl_and_header_grant(RD) of
+        true ->
+            riak_cs_s3_response:api_error(canned_acl_and_header_grant,
+                                          RD, ContextWithKey);
+        false ->
+            {false, RD, ContextWithKey}
+    end.
 
 %% @doc Get the type of access requested and the manifest with the
 %% object ACL and compare the permission requested with the permission
@@ -76,9 +77,18 @@ allowed_methods() ->
 post_is_create(RD, Ctx) ->
     {false, RD, Ctx}.
 
-process_post(RD, Ctx=#context{local_context=LocalCtx,
-                              riakc_pid=RiakcPid}) ->
-    #key_context{bucket=Bucket, bucket_object=BucketObj, key=Key} = LocalCtx,
+process_post(RD, Ctx) ->
+    case riak_cs_wm_utils:maybe_update_context_with_acl_from_headers(RD, Ctx) of
+        {ok, ContextWithAcl} ->
+            process_post_helper(RD, ContextWithAcl);
+        {error, HaltResponse} ->
+            HaltResponse
+    end.
+
+process_post_helper(RD, Ctx=#context{local_context=LocalCtx,
+                                     acl=ACL,
+                                     riakc_pid=RiakcPid}) ->
+    #key_context{bucket=Bucket, key=Key} = LocalCtx,
     ContentType = try
                       list_to_binary(wrq:get_req_header("Content-Type", RD))
                   catch error:badarg ->
@@ -86,10 +96,6 @@ process_post(RD, Ctx=#context{local_context=LocalCtx,
                           <<"binary/octet-stream">>
                   end,
     User = riak_cs_mp_utils:user_rec_to_3tuple(Ctx#context.user),
-    ACL = riak_cs_acl_utils:canned_acl(
-            wrq:get_req_header("x-amz-acl", RD),
-            User,
-            riak_cs_wm_utils:bucket_owner(BucketObj)),
     Metadata = riak_cs_wm_utils:extract_user_metadata(RD),
     Opts = [{acl, ACL}, {meta_data, Metadata}],
 
