@@ -36,5 +36,6 @@
           interval_remaining :: undefined | non_neg_integer(), % used when moving from paused -> idle
           timer_ref :: reference(),
           delete_fsm_pid :: pid(),
-          initial_delay :: non_neg_integer()
+          initial_delay :: non_neg_integer(),
+          continuation :: undefined | binary() % Used for paginated 2I querying of GC bucket
          }).
