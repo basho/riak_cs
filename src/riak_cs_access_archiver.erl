@@ -67,7 +67,7 @@
 %% @end
 %%--------------------------------------------------------------------
 start_link() ->
-    gen_fsm:start_link({local, ?MODULE}, ?MODULE, [], []).
+    gen_fsm:start_link(?MODULE, [], []).
 
 %% @doc Find out what the archiver is up to.  Should return `{ok,
 %% State, Props}' where `State' is `idle' or `archiving' if the
