@@ -72,6 +72,6 @@ zero_byte_put() ->
 %%% Internal functions
 %%%===================================================================
 make_md5(Bin) ->
-    M = crypto:md5_init(),
-    M1 = crypto:md5_update(M, Bin),
-    crypto:md5_final(M1).
+    M = riak_cs_utils:md5_init(),
+    M1 = riak_cs_utils:md5_update(M, Bin),
+    riak_cs_utils:md5_final(M1).
