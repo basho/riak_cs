@@ -35,7 +35,7 @@
 %% helpers
 -export([test/0, test/1]).
 
--define(TEST_ITERATIONS, 500).
+-define(TEST_ITERATIONS, 100).
 -define(QC_OUT(P),
     eqc:on_output(fun(Str, Args) ->
                 io:format(user, Str, Args) end, P)).
@@ -51,7 +51,9 @@ eqc_test_() ->
        fun cleanup/1,
        [%% Run the quickcheck tests
         {timeout, 300,
-            ?_assertEqual(true, quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT((prop_active_manifests())))))}
+         ?_assertEqual(true, quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT((prop_active_manifests())))))},
+        {timeout, 300,
+         ?_assertEqual(true, quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT((prop_prune_manifests())))))}
        ]
       }
      ]
@@ -95,6 +97,42 @@ prop_active_manifests() ->
             end
         end).
 
+prop_prune_manifests() ->
+    ?FORALL({Manifests, MaxCount},
+            {eqc_gen:resize(50, manifests()), frequency([{9, nat()}, {1, 'unlimited'}])},
+        begin
+            AlteredManifests = lists:map(fun(M) -> M?MANIFEST{uuid=druuid:v4()} end, Manifests),
+            AsDict = orddict:from_list([{M?MANIFEST.uuid, M} || M <- AlteredManifests]),
+            NowTime = {-1, -1, -1},
+            case MaxCount of
+                'unlimited' ->
+                    %% We should not prune any manifests if the prune
+                    %% count is set to `unlimited'.
+                    AsDict =:= riak_cs_manifest_utils:prune(AsDict, NowTime, MaxCount);
+                _ ->
+                    prune_helper(AsDict, NowTime, MaxCount)
+            end
+        end).
+
+prune_helper(AsDict, NowTime, MaxCount) ->
+    Pruned = riak_cs_manifest_utils:prune(AsDict, NowTime, MaxCount),
+    RemainingScheduledDelete = riak_cs_manifest_utils:filter_manifests_by_state(Pruned, [scheduled_delete]),
+    RemainingScheduledDeleteUUIDs = [UUID || {UUID, _Mani} <- RemainingScheduledDelete],
+    RemainingScheduledDeleteTimes = [M?MANIFEST.scheduled_delete_time || {_UUID, M} <- RemainingScheduledDelete],
+
+    AllScheduledDelete = riak_cs_manifest_utils:filter_manifests_by_state(AsDict, [scheduled_delete]),
+    DroppedScheduledDelete = orddict:filter(fun (UUID, _) -> not lists:member(UUID, RemainingScheduledDeleteUUIDs) end, AllScheduledDelete),
+    DroppedScheduledDeleteTimes = [M?MANIFEST.scheduled_delete_time || {_UUID, M} <- DroppedScheduledDelete],
+
+    PredFun = fun(Time) -> lists:all(fun(KeptTime) -> KeptTime =< Time end, RemainingScheduledDeleteTimes) end,
+
+    %% Assert that both we have have kept less than or equal
+    %% to `MaxCount' `scheduled_delete' manifests, and that
+    %% all of the manifests we did prune have timestamps
+    %% greater than the ones we kept.
+    conjunction([{dropped_older_than_kept, lists:all(PredFun, DroppedScheduledDeleteTimes)},
+                 {count_pruned, length(RemainingScheduledDelete) =< MaxCount}]).
+
 %%====================================================================
 %% Generators
 %%====================================================================
@@ -125,6 +163,7 @@ process_manifest(Manifest=?MANIFEST{state=State}) ->
                               props=riak_cs_gen:props()};
         scheduled_delete ->
             Manifest?MANIFEST{delete_marked_time=riak_cs_gen:timestamp(),
+                              scheduled_delete_time=riak_cs_gen:timestamp(),
                               props=riak_cs_gen:props()}
     end.
 
@@ -142,6 +181,7 @@ test() ->
     test(100).
 
 test(Iterations) ->
-    eqc:quickcheck(eqc:numtests(Iterations, prop_active_manifests())).
+    [eqc:quickcheck(eqc:numtests(Iterations, prop_active_manifests())),
+     eqc:quickcheck(eqc:numtests(Iterations, prop_prune_manifests()))].
 
 -endif. %EQC

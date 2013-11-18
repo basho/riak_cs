@@ -40,7 +40,7 @@
          mark_scheduled_delete/2,
          manifests_to_gc/2,
          prune/1,
-         prune/2,
+         prune/3,
          upgrade_wrapped_manifests/1,
          upgrade_manifest/1]).
 
@@ -240,12 +240,35 @@ retry_from_marked_time(MarkedTime, Now) ->
 %%      see needs_pruning() for definition of needing pruning.
 -spec prune(orddict:orddict()) -> orddict:orddict().
 prune(Dict) ->
-    prune(Dict, erlang:now()).
+    MaxCount = riak_cs_gc:max_scheduled_delete_manifests(),
+    prune(Dict, erlang:now(), MaxCount).
 
--spec prune(orddict:orddict(), erlang:timestamp()) -> orddict:orddict().
-prune(Dict, Time) ->
-     orddict:filter(fun (_Key, Value) -> not needs_pruning(Value, Time) end,
-                    Dict).
+-spec prune(orddict:orddict(),
+            erlang:timestamp(),
+            unlimited | non_neg_integer()) -> orddict:orddict().
+prune(Dict, Time, MaxCount) ->
+    Filtered = orddict:filter(fun (_Key, Value) -> not needs_pruning(Value, Time) end,
+                              Dict),
+    prune_count(Filtered, MaxCount).
+
+-spec prune_count(orddict:orddict(), unlimited | non_neg_integer()) ->
+    orddict:orddict().
+prune_count(Manifests, unlimited) ->
+    Manifests;
+prune_count(Manifests, MaxCount) ->
+    ScheduledDelete = filter_manifests_by_state(Manifests, [scheduled_delete]),
+    UUIDAndTime = [{M?MANIFEST.uuid, M?MANIFEST.scheduled_delete_time} ||
+                   {_UUID, M} <- ScheduledDelete],
+    case length(UUIDAndTime) > MaxCount of
+        true ->
+            SortedByTimeRecentFirst = lists:keysort(2, UUIDAndTime),
+            UUIDsToPrune = sets:from_list([UUID || {UUID, _ScheduledDeleteTime} <-
+                                           lists:nthtail(MaxCount, SortedByTimeRecentFirst)]),
+            orddict:filter(fun (UUID, _Value) -> not sets:is_element(UUID, UUIDsToPrune) end,
+                       Manifests);
+        false ->
+            Manifests
+    end.
 
 -spec upgrade_wrapped_manifests([orddict:orddict()]) -> [orddict:orddict()].
 upgrade_wrapped_manifests(ListofOrdDicts) ->

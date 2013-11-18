@@ -37,6 +37,7 @@
          gc_specific_manifests/5,
          epoch_start/0,
          leeway_seconds/0,
+         max_scheduled_delete_manifests/0,
          move_manifests_to_gc_bucket/3,
          timestamp/0]).
 
@@ -255,6 +256,19 @@ leeway_seconds() ->
             ?DEFAULT_LEEWAY_SECONDS;
         {ok, LeewaySeconds} ->
             LeewaySeconds
+    end.
+
+%% @doc Return the maximimum number of manifests that can be in the
+%% `scheduled_delete' state for a given key. `unlimited' means there
+%% is no maximum, and pruning will not happen based on count. This is
+%% the default.
+-spec max_scheduled_delete_manifests() -> non_neg_integer() | unlimited.
+max_scheduled_delete_manifests() ->
+    case application:get_env(riak_cs, max_scheduled_delete_manifests) of
+        undefined ->
+            unlimited;
+        {ok, MaxCount} ->
+            MaxCount
     end.
 
 %% @doc Generate a key for storing a set of manifests for deletion.
