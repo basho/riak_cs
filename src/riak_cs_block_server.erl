@@ -276,14 +276,14 @@ try_local_get(RiakcPid, FullBucket, FullKey, GetOptions1, GetOptions2,
             ProceedFun(Success);
         {error, {insufficient_vnodes,_,need,_}} ->
             RetryFun(NumRetries + 2);
-        {error, Why} when Why == notfound; Why == timeout;
-                          Why == <<"{insufficient_vnodes,0,need,1}">> ->
+        {error, Why} when Why == notfound;
+                          Why == timeout;
+                          Why == disconnected;
+                          Why == <<"{insufficient_vnodes,0,need,1}">>;
+                          Why == {insufficient_vnodes,0,need,1} ->
             handle_local_notfound(RiakcPid, FullBucket, FullKey, GetOptions2,
                                   ProceedFun, RetryFun, NumRetries, UseProxyGet,
                                   ProxyActive, ClusterID);
-        {error, disconnected} ->
-            _ = lager:error("do_get_block: socket disconnected"),
-            RetryFun(NumRetries + 1);
         {error, Other} ->
             _ = lager:error("do_get_block: other error 1: ~p\n", [Other]),
             RetryFun(failure)
@@ -296,7 +296,9 @@ handle_local_notfound(RiakcPid, FullBucket, FullKey, GetOptions2,
     case get_block_local(RiakcPid, FullBucket, FullKey, GetOptions2, 60*1000) of
         {ok, _} = Success ->
             ProceedFun(Success);
-        {error, Why} when Why == notfound; Why == timeout ->
+        {error, Why} when Why == notfound;
+                          Why == timeout;
+                          Why == disconnected ->
             case UseProxyGet of
                 true when ProxyActive ->
                     case get_block_remote(RiakcPid, FullBucket, FullKey,
@@ -315,9 +317,6 @@ handle_local_notfound(RiakcPid, FullBucket, FullKey, GetOptions2,
                 false ->
                     RetryFun(failure)
             end;
-        {error, disconnected} ->
-            _ = lager:error("do_get_block: socket disconnected"),
-            RetryFun(NumRetries + 1);
         {error, Other} ->
             _ = lager:error("do_get_block: other error 2: ~p\n", [Other]),
             RetryFun(failure)
