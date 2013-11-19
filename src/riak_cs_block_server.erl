@@ -110,7 +110,8 @@ start_block_servers_for_pool(PoolName, NumWorkers, Pids) ->
     end.
 
 start_block_servers_for_default(RiakcPid, 1, Pids) ->
-    [start_link({pid, RiakcPid}) | Pids];
+    {ok, Pid} = start_link({pid, RiakcPid}),
+    [Pid | Pids];
 start_block_servers_for_default(RiakcPid, NumWorkers, Pids) ->
     case start_link({pool, request_pool}) of
         {ok, Pid} ->
@@ -154,12 +155,12 @@ stop(Pid) ->
 %%%===================================================================
 
 init([{pid, RiakPid}]) ->
-    lager:log(warning, self(), "RiakPid: ~p~n", [RiakPid]),
+    lager:log(warning, self(), "riak_cs_block_server:init RiakPid: ~p~n", [RiakPid]),
     process_flag(trap_exit, true),
     {ok, #state{riakc_pid=RiakPid,
                 close_riak_connection=false}};
 init([{pool, PoolName}]) ->
-    lager:log(warning, self(), "PoolName: ~p~n", [PoolName]),
+    lager:log(warning, self(), "riak_cs_block_server:init PoolName: ~p~n", [PoolName]),
     process_flag(trap_exit, true),
     case riak_cs_utils:riak_connection(PoolName) of
         {ok, RiakPid} ->
