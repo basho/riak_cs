@@ -172,8 +172,9 @@ handle_receiving_manifest(State=#state{riakc_pid=RiakcPid,
     case ordsets:size(BlocksToDelete) > 0 of
         true ->
             AllDeleteWorkers =
-                riak_cs_block_server:start_block_servers(Manifest, RiakcPid,
-                    riak_cs_lfs_utils:delete_concurrency()),
+                riak_cs_block_server:start_block_servers(
+                  Manifest, RiakcPid,
+                  riak_cs_lfs_utils:delete_concurrency()),
             FreeDeleters = ordsets:from_list(AllDeleteWorkers),
 
             NewState1 = NewState#state{all_delete_workers=AllDeleteWorkers,

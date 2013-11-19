@@ -75,16 +75,21 @@ register_props(Type, [{ContainerId, Address, Port} | Rest], PoolSpecs) ->
                    {?WORKERS, ?OVERFLOW, Address, Port}},
     register_props(block, Rest, [NewPoolSpec | PoolSpecs]).
 
--spec pool_name(pool_type(), container_id() | lfs_manifest()) -> atom().
+%% Translate container ID in buckets and manifests to pool name.
+%% 'undefined' in second argument means buckets and manifests were stored
+%% under single cluster configuration.
+-spec pool_name(pool_type(), undefined | container_id() | lfs_manifest()) -> atom().
+pool_name(_Type, undefined) ->
+    undefined;
+pool_name(block, Manifest) when is_record(Manifest, ?MANIFEST_REC) ->
+    pool_name(block, container_id_from_manifest(Manifest));
 pool_name(Type, ContainerId) when is_binary(ContainerId) ->
     case ets:lookup(?ETS_TAB, {Type, ContainerId}) of
         [] ->
             undefined;
         [#pool{name = Name}] ->
             Name
-    end;
-pool_name(block, Manifest) when is_record(Manifest, ?MANIFEST_REC) ->
-    pool_name(block, container_id_from_manifest(Manifest)).
+    end.
 
 -spec container_id_from_manifest(lfs_manifest()) -> undefined | container_id().
 container_id_from_manifest(?MANIFEST{props = Props}) ->

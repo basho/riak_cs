@@ -44,8 +44,9 @@ riak_host_port() ->
 
 -spec start_link(term()) -> {ok, pid()} | {error, term()}.
 start_link(Args) ->
-    Address = proplists:get_value(address, Args, "127.0.0.1"),
-    Port = proplists:get_value(port, Args, 8087),
+    {DefaultHost, DefaultPort} = riak_host_port(),
+    Address = proplists:get_value(address, Args, DefaultHost),
+    Port = proplists:get_value(port, Args, DefaultPort),
     Timeout = case application:get_env(riak_cs, riakc_connect_timeout) of
         {ok, ConfigValue} ->
             ConfigValue;
