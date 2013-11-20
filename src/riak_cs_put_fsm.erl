@@ -288,16 +288,16 @@ done(finalize, _From, State=#state{md5=MD5,
 
 
 done(finalize, false, From, State=#state{manifest=Manifest,
-                                         bucket=Bucket,
-                                         key=Key,
                                          mani_pid=ManiPid,
-                                         riakc_pid=RiakPid,
                                          timer_ref=TimerRef}) ->
     _ = erlang:cancel_timer(TimerRef),
-    %% The digest is invalid. Write the manifest and immediately
-    %% schedule it for gc.
-    _ = maybe_update_manifest_with_confirmation(ManiPid, Manifest),
-    _ = riak_cs_gc:gc_active_manifests(Bucket, Key, RiakPid),
+    %% reset the state from `active' to `pending_delete', this means
+    %% that it's never persisted in the active state
+    Props = Manifest?MANIFEST.props,
+    NotActive = Manifest?MANIFEST{state=pending_delete,
+                                  props=[{bad_checksum, true} | Props]},
+
+    ok = maybe_update_manifest_with_confirmation(ManiPid, NotActive),
     gen_fsm:reply(From, {error, invalid_digest}),
     _ = lager:debug("Invalid digest in the PUT FSM"),
     {stop, normal, State};
