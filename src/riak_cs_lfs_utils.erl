@@ -287,7 +287,7 @@ new_manifest(Bucket, FileName, UUID, ContentLength, ContentType, ContentMd5, Met
                          acl=Acl,
                          props=Props,
                          cluster_id=ClusterID},
-    riak_cs_multi_container:assign_container_id(block, Manifest).
+    riak_cs_mc:assign_container_id(block, Manifest).
 
 %% @doc Remove a chunk from the
 %%      write_blocks_remaining field of Manifest

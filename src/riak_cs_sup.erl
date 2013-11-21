@@ -137,7 +137,7 @@ pool_specs(Options) ->
     DefaultPools = proplists:get_value(connection_pools, Options),
     DefaultAddress = riak_cs_config:get_env(riak_cs, riak_ip, "127.0.0.1"),
     DefaultPort = riak_cs_config:get_env(riak_cs, riak_pb_port, 8087),
-    MultiClusterPools = riak_cs_multi_container:pool_specs(),
+    MultiClusterPools = riak_cs_mc:pool_specs(),
     lager:log(warning, self(), "MultiClusterPools: ~p~n", [MultiClusterPools]),
     [pool_spec(Name, Workers, Overflow, DefaultAddress, DefaultPort, WorkerStop)
      || {Name, {Workers, Overflow}} <- DefaultPools]
