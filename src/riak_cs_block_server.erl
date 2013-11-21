@@ -85,7 +85,7 @@ start_link(PoolOrPid) ->
 %% so far (which might be less than MinWorkers).
 -spec start_block_servers(lfs_manifest(), pid(), pos_integer()) -> [pid()].
 start_block_servers(Manifest, RiakcPid, MaxNumServers) ->
-    case riak_cs_multi_container:pool_name(block, Manifest) of
+    case riak_cs_mc:pool_name(block, Manifest) of
         undefined ->
             start_block_servers_for_default(RiakcPid, MaxNumServers, []);
         PoolName ->

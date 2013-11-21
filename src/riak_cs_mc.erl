@@ -20,7 +20,7 @@
 
 %% @doc Support multi containers (multi Riak clusters) in single Riak CS system
 
--module(riak_cs_multi_container).
+-module(riak_cs_mc).
 
 -export([pool_specs/0]).
 -export([pool_name/2, default_container_id/1,
@@ -28,16 +28,19 @@
 
 -export([tab_info/0]).
 
+-export_typ([pool_key/0, pool_type/0, container_id/0]).
+
 -type pool_type() :: blocks | manifests.
 %% Use "container ID" instead of "cluster ID".
 %% The reason is cluster ID is improper in case of multi-datacenter replication.
 -type container_id() :: binary().
+-type pool_key() :: {pool_type(), container_id()}.
 
 %% FIXME: hardcoded, use values of connection_pools?
 -define(WORKERS, 128).
 -define(OVERFLOW, 0).
 -define(ETS_TAB, ?MODULE).
--record(pool, {key :: {pool_type(), container_id()},
+-record(pool, {key :: pool_key(),
                type :: pool_type(), % for match spec
                ip :: string(),
                port :: non_neg_integer(),
