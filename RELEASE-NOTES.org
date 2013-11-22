@@ -6,7 +6,8 @@
 - Don't delete current object version on overwrite with incorrect md5
 ** Additions
 - Improve performance of manifest pruning
-- Optionally use paginated 2i for the GC daemon
+- Optionally use paginated 2i for the GC daemon. This is to help prevent
+  timeouts when collecting data that can be garbage collected.
 - Improve handling of Riak disconnects on block fetches
 - Update to lager 2.0.1
 - Optionally prune manifests based on count, in addition to time
