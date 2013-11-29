@@ -113,23 +113,13 @@ default_container_id (manifest) ->
 %% return new manifest
 -spec assign_container_id(pool_type(), lfs_manifest()) -> lfs_manifest().
 assign_container_id(Type, ?MANIFEST{props = Props} = Manifest) ->
-    %% TODO: Which is better, ets:select or state in new gen_server?
-    %%       Free space management will require gen_server?
-    %%       After that, ETS may be nice for scalability for read.
-    MS = ets:fun2ms(fun(#pool{key = Key, type = TypeInRecord})
-                          when TypeInRecord =:= Type ->
-                            Key end),
-    Ids = [Id || {_, Id} <- ets:select(?ETS_TAB, MS)],
-    lager:log(warning, self(), "{Type, Ids}: ~p~n", [{Type, Ids}]),
-    %% FIXME: Must take into account free percentage of each container.
-    %% Current implementation is totally stub
-    case length(Ids) of
-        0 ->
+    case ets:first(?ETS_TAB) of
+        %% single container
+        '$end_of_table' ->
             Manifest;
-        Length ->
-            random:seed(os:timestamp()),
-            ContainerId = lists:nth(random:uniform(Length), Ids),
-            lager:log(warning, self(), "ContainerId: ~p~n", [ContainerId]),
+        %% multiple containers
+        _Key ->
+            {ok, ContainerId} = riak_cs_mc_server:allocate(Type),
             Manifest?MANIFEST{props = [{block_container, ContainerId} | Props]}
     end.
 
