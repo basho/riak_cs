@@ -91,6 +91,8 @@ process_specs() ->
     PutFsmSup = {riak_cs_put_fsm_sup,
                  {riak_cs_put_fsm_sup, start_link, []},
                  permanent, 5000, worker, dynamic},
+    MC = {riak_cs_mc_server, {riak_cs_mc_server, start_link, []},
+          permanent, 5000, worker, [riak_cs_mc_server]},
     DiagsSup = {riak_cs_diags, {riak_cs_diags, start_link, []},
                    permanent, 5000, worker, dynamic},
     [Archiver,
@@ -101,6 +103,7 @@ process_specs() ->
      DeleteFsmSup,
      GetFsmSup,
      PutFsmSup,
+     MC,
      DiagsSup].
 
 -spec get_option_val({atom(), term()} | atom()) -> {atom(), term()}.
