@@ -109,10 +109,10 @@ handle_call(get_manifest, _From, #state{bucket=Bucket,
 handle_call(_Msg, _From, State) ->
     {reply, ok, State}.
 
-handle_cast({get_block, _From, _Bucket, _Key, UUID, BlockNumber, _BClass}, State) ->
-    send_fake_data(UUID, BlockNumber, State);
-handle_cast({get_block, _From, _Bucket, _Key, _ClusterID, UUID, BlockNumber, _BClass}, State) ->
-    send_fake_data(UUID, BlockNumber, State);
+handle_cast({get_block, _From, _Bucket, _Key, UUID, BlockNumber, BClass}, State) ->
+    send_fake_data(UUID, BlockNumber, BClass, State);
+handle_cast({get_block, _From, _Bucket, _Key, _ClusterID, UUID, BlockNumber, BClass}, State) ->
+    send_fake_data(UUID, BlockNumber, BClass, State);
 handle_cast(Event, State) ->
     {stop, {?MODULE, unknown_event, Event}, State}.
 
@@ -133,8 +133,8 @@ terminate(_Reason, _State) ->
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
-send_fake_data(UUID, BlockNumber, #state{caller_pid=CallerPid,remaining=Remaining}=State) ->
+send_fake_data(UUID, BlockNumber, BClass, #state{caller_pid=CallerPid,remaining=Remaining}=State) ->
     Bytes = erlang:min(State#state.block_size, Remaining),
     FakeData = <<BlockNumber:(8*Bytes)/little-integer>>,
-    riak_cs_get_fsm:chunk(CallerPid, {UUID, BlockNumber}, {ok, FakeData}),
+    riak_cs_get_fsm:chunk(CallerPid, UUID, BlockNumber, BClass, {ok, FakeData}),
     {noreply, State#state{remaining = Remaining - Bytes}}.

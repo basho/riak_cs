@@ -246,10 +246,10 @@ do_get_block(ReplyPid, Bucket, Key, ClusterID, UseProxyGet, ProxyActive,
                  UUID, BlockNumber, BClass, RiakcPid, 0).
 
 do_get_block(ReplyPid, _Bucket, _Key, _ClusterID, _UseProxyGet, _ProxyActive,
-             UUID, BlockNumber, _BClass, _RiakcPid, NumRetries)
+             UUID, BlockNumber, BClass, _RiakcPid, NumRetries)
   when is_atom(NumRetries) orelse NumRetries > 5 ->
     Sorry = {error, notfound},
-    ok = riak_cs_get_fsm:chunk(ReplyPid, {UUID, BlockNumber}, Sorry);
+    ok = riak_cs_get_fsm:chunk(ReplyPid, UUID, BlockNumber, BClass, Sorry);
 do_get_block(ReplyPid, Bucket, Key, ClusterID, UseProxyGet, ProxyActive,
              UUID, BlockNumber, BClass, RiakcPid, NumRetries) ->
     ok = sleep_retries(NumRetries),
@@ -263,7 +263,7 @@ do_get_block(ReplyPid, Bucket, Key, ClusterID, UseProxyGet, ProxyActive,
 
     ProceedFun = fun(OkReply) ->
             ok = riak_cs_stats:update_with_start(block_get_retry, StartTime),
-            ok = riak_cs_get_fsm:chunk(ReplyPid, {UUID, BlockNumber}, OkReply),
+            ok = riak_cs_get_fsm:chunk(ReplyPid, UUID, BlockNumber, BClass, OkReply),
             dt_return(<<"get_block">>, [BlockNumber], [Bucket, Key])
       end,
     RetryFun = fun(NewPause) ->
@@ -369,7 +369,7 @@ normal_nval_block_get(ReplyPid, Bucket, Key, ClusterID, UseProxyGet, UUID,
             NotFound
     end,
     ok = riak_cs_stats:update_with_start(block_get, StartTime),
-    ok = riak_cs_get_fsm:chunk(ReplyPid, {UUID, BlockNumber}, ChunkValue),
+    ok = riak_cs_get_fsm:chunk(ReplyPid, UUID, BlockNumber, BClass, ChunkValue),
     dt_return(<<"get_block">>, [BlockNumber], [Bucket, Key]).
 
 delete_block(RiakcPid, ReplyPid, RiakObject, BlockId) ->
