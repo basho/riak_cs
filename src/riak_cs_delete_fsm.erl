@@ -50,7 +50,7 @@
                 uuid :: binary(),
                 manifest :: lfs_manifest(),
                 riakc_pid :: pid(),
-                delete_blocks_remaining :: ordsets:ordset({binary(), integer()}),
+                delete_blocks_remaining :: ordsets:ordset(riak_cs_utils:next_block()),
                 unacked_deletes=ordsets:new() :: ordsets:ordset(integer()),
                 all_delete_workers=[] :: list(pid()),
                 free_deleters = ordsets:new() :: ordsets:ordset(pid()),
@@ -68,7 +68,7 @@ start_link(RiakcPid, Manifest, Options) ->
     Args = [RiakcPid, Manifest, Options],
     gen_fsm:start_link(?MODULE, Args, []).
 
--spec block_deleted(pid(), {ok, {binary(), integer()}} | {error, binary()}) -> ok.
+-spec block_deleted(pid(), {ok, {binary(), integer(), riak_cs_utils:bclass()}} | {error, binary()}) -> ok.
 block_deleted(Pid, Response) ->
     gen_fsm:send_event(Pid, {block_deleted, Response, self()}).
 

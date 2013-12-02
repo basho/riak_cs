@@ -121,6 +121,8 @@ initial_blocks(ContentLength, SafeBlockSize, UUID) ->
     Bs = initial_blocks(ContentLength, SafeBlockSize),
     [{UUID, B} || B <- Bs].
 
+-spec range_blocks(integer(), integer(), integer(), binary(), riak_cs_utils:bclass())->
+      {[riak_cs_utils:next_block()], integer(), integer()}.
 range_blocks(Start, End, SafeBlockSize, UUID, BClass) ->
     SkipInitial = Start rem SafeBlockSize,
     KeepFinal = (End rem SafeBlockSize) + 1,

@@ -198,7 +198,7 @@ handle_cast({put_block, ReplyPid, Bucket, Key,
                                       [Bucket, Key, UUID, BlockNumber, Error])
               end,
     %% TODO: Handle put failure here.
-    ok = do_put_block(FullBucket, FullKey, undefined, Value, MD, RiakcPid, FailFun),
+    ok = do_put_block(FullBucket, FullKey, <<>>, Value, MD, RiakcPid, FailFun),
     riak_cs_put_fsm:block_written(ReplyPid, BlockNumber),
     dt_return(<<"put_block">>, [BlockNumber], [Bucket, Key]),
     {noreply, State};
@@ -454,7 +454,7 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
--spec full_bkey(binary(), binary(), binary(), pos_integer(), riak_cs_utils:any_bclass()) -> {binary(), binary()}.
+-spec full_bkey(binary(), binary(), binary(), pos_integer(), riak_cs_utils:bclass()) -> {binary(), binary()}.
 %% @private
 full_bkey(Bucket, Key, UUID, BlockId, BClass) ->
     PrefixedBucket = riak_cs_utils:to_bucket_name(blocks, Bucket, BClass),

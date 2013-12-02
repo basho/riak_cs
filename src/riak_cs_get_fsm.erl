@@ -65,7 +65,7 @@
          terminate/3,
          code_change/4]).
 
--type block_name() :: {binary(), integer()}.
+-type block_name() :: {binary(), integer(), riak_cs_utils:bclass()}.
 
 -record(state, {from :: {pid(), reference()},
                 mani_fsm_pid :: pid(),
@@ -116,6 +116,7 @@ get_next_chunk(Pid) ->
 manifest(Pid, ManifestValue) ->
     gen_fsm:send_event(Pid, {object, self(), ManifestValue}).
 
+-spec chunk(pid(), binary(), integer(), riak_cs_utils:bclass(), term()) -> ok.
 chunk(Pid, UUID, BlockNumber, BClass, ChunkValue) ->
     %% {UUID, BlockNumber, BClass} is the NextBlock tuple
     gen_fsm:send_event(Pid, {chunk, self(), {UUID, BlockNumber, BClass}, ChunkValue}).

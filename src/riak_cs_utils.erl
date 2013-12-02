@@ -113,8 +113,8 @@
 %% ===================================================================
 
 -type bclass() :: 'v0' | 'v1' | 'v2'.
--type any_bclass() :: bclass() | 'unknown'.
--export_type([bclass/0, any_bclass/0]).
+-type next_block() :: {binary(), non_neg_integer(), bclass()}.
+-export_type([bclass/0, next_block/0]).
 
 %% @doc Convert the passed binary into a string where the numbers are represented in hexadecimal (lowercase and 0 prefilled).
 -spec binary_to_hexlist(binary()) -> string().
@@ -1003,9 +1003,9 @@ timestamp_to_milliseconds(Timestamp) ->
 %% bucket or the data block bucket.
 -spec to_bucket_name(objects | blocks, binary()) -> binary().
 to_bucket_name(Type, Bucket) ->
-    to_bucket_name(Type, Bucket, "utterly invalid bucket class").
+    to_bucket_name(Type, Bucket, {bogus,"utterly invalid bucket class"}).
 
--spec to_bucket_name(objects | blocks, binary(), integer()) -> binary().
+-spec to_bucket_name(objects | blocks, binary(), {bogus,_}|bclass()) -> binary().
 to_bucket_name(Type, Bucket, BClass) ->
     Prefix = case Type of
                  objects ->

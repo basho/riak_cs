@@ -282,8 +282,8 @@ put(Bucket, PrimaryKey, IndexSpecs, Value, State) ->
 %% @doc Insert an object with secondary index
 %% information into the kv backend
 -spec put_object(riak_object:bucket(), riak_object:key(), [index_spec()], riak_object:riak_object(), state()) ->
-                 {ok, state()} |
-                 {error, term(), state()}.
+                 {{ok, state()}, binary()} |
+                 {{error, term(), state()}, binary()}.
 put_object(Bucket, PrimaryKey, IndexSpecs, RObj, State) ->
     {Name, Module, SubState} = get_backend(Bucket, State),
     case Module:put_object(Bucket, PrimaryKey, IndexSpecs, RObj, SubState) of

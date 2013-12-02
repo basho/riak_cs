@@ -43,6 +43,7 @@
          prune/2,
          upgrade_wrapped_manifests/1,
          upgrade_manifest/1]).
+-export([fool_dialyzer_fixup_a_part_manifest/0]).
 
 %%%===================================================================
 %%% API
@@ -330,6 +331,9 @@ fixup_multipart_manifest(?MULTIPART_MANIFEST{
 
 fixup_part_parts(Parts) ->
     [fixup_a_part_manifest(P) || P <- Parts].
+
+fool_dialyzer_fixup_a_part_manifest() ->
+    fixup_a_part_manifest(#part_manifest_v1{}).
 
 fixup_a_part_manifest(?PART_MANIFEST{} = PM) ->
     PM;
