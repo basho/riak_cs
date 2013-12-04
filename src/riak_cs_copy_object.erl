@@ -36,7 +36,7 @@ copy(CopyCtx) ->
     {ok, PutFsmPid} = start_put_fsm(CopyCtx, PutRiakcPid),
     Manifest = CopyCtx#copy_ctx.src_manifest,
     _RetrievedManifest = riak_cs_get_fsm:get_manifest(GetFsmPid),
-    riak_cs_get_fsm:continue(GetFsmPid, {0, Manifest?MANIFEST.content_length}),
+    riak_cs_get_fsm:continue(GetFsmPid, {0, Manifest?MANIFEST.content_length-1}),
     ok = get_and_put(GetFsmPid, PutFsmPid, Manifest?MANIFEST.content_md5),
     riak_cs_utils:close_riak_connection(GetRiakcPid),
     riak_cs_utils:close_riak_connection(PutRiakcPid),
@@ -48,7 +48,7 @@ get_and_put(GetPid, PutPid, MD5) ->
     case riak_cs_get_fsm:get_next_chunk(GetPid) of
         {done, <<>>} ->
             io:format("Finalizing DAT PUT FSM~n"),
-            riak_cs_put_fsm:finalize(PutPid, MD5),
+            riak_cs_put_fsm:finalize(PutPid, binary_to_list(MD5)),
             ok;
         {chunk, Block} ->
             io:format("GOT DAT CHUNK~n"),
