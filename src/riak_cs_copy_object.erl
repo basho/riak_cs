@@ -5,9 +5,10 @@
 %%API
 -export([copy/1]).
 
-%% TEST API: To be removed
+%% TEST API
 -export([test/5]).
 
+-spec test(string(), binary(), binary(), binary(), binary()) -> ok.
 test(KeyId, SrcBucket, SrcKey, DstBucket, DstKey) ->
     {ok, RiakcPid} = riak_cs_utils:riak_connection(),
     {ok, {User, _}} = riak_cs_utils:get_user(KeyId, RiakcPid),
@@ -36,22 +37,20 @@ copy(CopyCtx) ->
     {ok, PutFsmPid} = start_put_fsm(CopyCtx, PutRiakcPid),
     Manifest = CopyCtx#copy_ctx.src_manifest,
     _RetrievedManifest = riak_cs_get_fsm:get_manifest(GetFsmPid),
+    %% Then end is the index of the last byte, not the length, so subtract 1
     riak_cs_get_fsm:continue(GetFsmPid, {0, Manifest?MANIFEST.content_length-1}),
-    ok = get_and_put(GetFsmPid, PutFsmPid, Manifest?MANIFEST.content_md5),
+    {ok, _Manifest} = get_and_put(GetFsmPid, PutFsmPid,
+        base64:encode(Manifest?MANIFEST.content_md5)),
     riak_cs_utils:close_riak_connection(GetRiakcPid),
     riak_cs_utils:close_riak_connection(PutRiakcPid),
     ok.
 
 -spec get_and_put(pid(), pid(), list()) -> ok | {error, term()}.
 get_and_put(GetPid, PutPid, MD5) ->
-    io:format("GET NEXT CHUNK~n"),
     case riak_cs_get_fsm:get_next_chunk(GetPid) of
         {done, <<>>} ->
-            io:format("Finalizing DAT PUT FSM~n"),
-            riak_cs_put_fsm:finalize(PutPid, binary_to_list(MD5)),
-            ok;
+            riak_cs_put_fsm:finalize(PutPid, binary_to_list(MD5));
         {chunk, Block} ->
-            io:format("GOT DAT CHUNK~n"),
             riak_cs_put_fsm:augment_data(PutPid, Block),
             get_and_put(GetPid, PutPid, MD5)
     end.
