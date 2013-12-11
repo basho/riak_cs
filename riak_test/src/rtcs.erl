@@ -166,23 +166,43 @@ backend_config(memory) ->
 backend_config({multi_backend, BlocksBackend}) ->
       [
        {storage_backend, riak_cs_kv_multi_backend},
-       {multi_backend_prefix_list, [{<<"0b:">>, be_blocks}]},
+       {multi_backend_prefix_list, multi_backend_prefix_list(BlocksBackend)},
        {multi_backend_default, be_default},
-       {multi_backend,
-        [{be_default, riak_kv_eleveldb_backend,
-          [
-           {max_open_files, 20},
-           {data_root, "./leveldb"}
-          ]},
-         blocks_backend_config(BlocksBackend)
-        ]}
+       {multi_backend, [default_backend_config() | component_backend_config(BlocksBackend)]}
       ].
 
-blocks_backend_config(fs) ->
-    {be_blocks, riak_kv_fs2_backend, [{data_root, "./fs2"},
-                                      {block_size, 1050000}]};
-blocks_backend_config(_) ->
-    {be_blocks, riak_kv_bitcask_backend, [{data_root, "./bitcask"}]}.
+multi_backend_prefix_list(fs) ->
+    [{<<"0b:">>, be_legacy_blocks},
+     {<<"1b:">>, be_small},
+     {<<"2b:">>, be_blocks}];
+multi_backend_prefix_list(_) ->
+    [{<<"0b:">>, be_blocks}].
+
+default_backend_config() ->
+    {be_default, riak_kv_eleveldb_backend,
+     [
+      {max_open_files, 20},
+      {data_root, "./leveldb"}
+     ]}.
+
+component_backend_config(fs) ->
+    [{be_legacy_blocks, riak_kv_bitcask_backend,
+      [
+       {data_root, "./bitcask"},
+       {block_size, 1200000}
+      ]},
+     {be_small, riak_kv_eleveldb_backend,
+      [
+       {max_open_files, 50},
+       {data_root, "./leveldb.small"}
+      ]},
+     {be_blocks, riak_kv_fs2_backend,
+      [
+       {data_root, "./fs2.large"},
+       {block_size, 1200000}
+      ]}];
+component_backend_config(_) ->
+    [{be_blocks, riak_kv_bitcask_backend, [{data_root, "./bitcask"}]}].
 
 riak_ee_config(Backend) ->
     [repl_config() | riak_oss_config(Backend)].
