@@ -49,7 +49,7 @@ reverse_test() ->
                          s3_port=?DEFAULT_PORT,
                          s3_prot="http",
                          http_options=[{proxy_host, ?DEFAULT_PROXY_HOST},
-                                       {proxy_port, ?DEFAULT_PROXY_PORT}]},
+                                       {proxy_port, cs_port()}]},
     %% create_user("foo", "foo", Config).          % 400 Bad Request
     C2 = create_user(user_name(), user_email(), Config),
     Bucket = bucket(),
