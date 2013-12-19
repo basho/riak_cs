@@ -620,6 +620,27 @@ class ContentMd5Test(S3ApiVerificationTestBase):
         with self.assertRaises(S3ResponseError):
             key.set_contents_from_string('this is different from the md5 we calculated', md5=x)
 
+    def test_bad_md5_leaves_old_object_alone(self):
+        '''Github #705 Regression test:
+           Make sure that overwriting an object using a bad md5
+           simply leaves the old version in place.'''
+        key_name = str(uuid.uuid4())
+        bucket = self.conn.create_bucket(self.bucket_name)
+        value = 'good value'
+
+        good_key = Key(bucket, key_name)
+        good_key.set_contents_from_string(value)
+
+        bad_key = Key(bucket, key_name)
+        s = StringIO('not the real content')
+        x = compute_md5(s)
+        try:
+            bad_key.set_contents_from_string('this is different from the md5 we calculated', md5=x)
+        except S3ResponseError:
+            pass
+        self.assertEqual(good_key.get_contents_as_string(), value)
+
+
 
 if __name__ == "__main__":
     unittest.main()
