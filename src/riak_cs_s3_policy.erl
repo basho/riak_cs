@@ -268,6 +268,14 @@ bucket_policy(Bucket, RiakPid) ->
             {error, notfound}
     end.
 
+my_dict_fetch(Key, MD) ->
+    case dict:find(Key, MD) of
+        error ->
+            [];
+        {ok, Value} ->
+            Value
+    end.
+
 %% @doc Attempt to resolve a policy for the bucket based on the contents.
 %% We attempt resolution, but intentionally do not write back a resolved
 %% value. Instead the fact that the bucket has siblings is logged, but the
@@ -275,12 +283,12 @@ bucket_policy(Bucket, RiakPid) ->
 -spec bucket_policy_from_contents(binary(), riakc_obj:contents()) ->
                                          bucket_policy_result().
 bucket_policy_from_contents(_, [{MD, _}]) ->
-    MetaVals = dict:fetch(?MD_USERMETA, MD),
+    MetaVals = my_dict_fetch(?MD_USERMETA, MD),
     policy_from_meta(MetaVals);
 bucket_policy_from_contents(Bucket, Contents) ->
     {Metas, Vals} = lists:unzip(Contents),
     UniqueVals = lists:usort(Vals),
-    UserMetas = [dict:fetch(?MD_USERMETA, MD) || MD <- Metas],
+    UserMetas = [my_dict_fetch(?MD_USERMETA, MD) || MD <- Metas],
     riak_cs_utils:maybe_log_bucket_owner_error(Bucket, UniqueVals),
     resolve_bucket_metadata(UserMetas, UniqueVals).
 

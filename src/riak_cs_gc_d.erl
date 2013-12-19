@@ -595,8 +595,7 @@ schedule_next(#state{batch_start=Current,
 schedule_next(#state{batch_start=Current,
                      interval=Interval,
                      initial_delay=InitialDelay}=State) ->
-    Next = calendar:gregorian_seconds_to_datetime(
-             riak_cs_gc:timestamp() + Interval),
+    Next = riak_cs_gc:timestamp() + Interval,
     _ = lager:debug("Scheduling next garbage collection for ~p",
                     [Next]),
     TimerValue = Interval * 1000 + InitialDelay * 1000,

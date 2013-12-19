@@ -35,9 +35,9 @@
 -export([start_link/0,
          start_link/1,
          start_block_servers/2,
-         get_block/5, get_block/6,
-         put_block/6,
-         delete_block/5,
+         get_block/6, get_block/7,
+         put_block/7,
+         delete_block/6,
          maybe_stop_block_servers/1,
          stop/1]).
 
@@ -50,6 +50,7 @@
          code_change/3]).
 
 -record(state, {riakc_pid :: pid(),
+                bclass :: riak_cs_utils:bclass(),
                 close_riak_connection=true :: boolean()}).
 
 %%%===================================================================
@@ -99,25 +100,31 @@ start_block_servers(RiakcPid, MaxNumServers) ->
             start_block_servers(RiakcPid, 1)
     end.
 
--spec get_block(pid(), binary(), binary(), binary(), pos_integer()) -> ok.
-get_block(Pid, Bucket, Key, UUID, BlockNumber) ->
-    gen_server:cast(Pid, {get_block, self(), Bucket, Key, undefined, UUID, BlockNumber}).
+-spec get_block(pid(), binary(), binary(), binary(), pos_integer(),
+                riak_cs_utils:bclass()) -> ok.
+get_block(Pid, Bucket, Key, UUID, BlockNumber, BClass) ->
+    get_block(Pid, Bucket, Key, undefined, UUID, BlockNumber, BClass).
 
 %% @doc get a block which is know to have originated on cluster ClusterID.
 %% If it's not found locally, it might get returned from the replication
 %% cluster if a connection exists to that cluster. This is proxy-get().
--spec get_block(pid(), binary(), binary(), binary(), binary(), pos_integer()) -> ok.
-get_block(Pid, Bucket, Key, ClusterID, UUID, BlockNumber) ->
-    gen_server:cast(Pid, {get_block, self(), Bucket, Key, ClusterID, UUID, BlockNumber}).
+-spec get_block(pid(), binary(), binary(), binary() | undefined, binary(),
+                pos_integer(), riak_cs_utils:bclass()) -> ok.
+get_block(Pid, Bucket, Key, ClusterID, UUID, BlockNumber, BClass) ->
+    gen_server:cast(Pid, {get_block, self(), Bucket, Key, ClusterID,
+                          UUID, BlockNumber, BClass}).
 
--spec put_block(pid(), binary(), binary(), binary(), pos_integer(), binary()) -> ok.
-put_block(Pid, Bucket, Key, UUID, BlockNumber, Value) ->
+-spec put_block(pid(), binary(), binary(), binary(), pos_integer(),
+                riak_cs_utils:bclass(), binary()) -> ok.
+put_block(Pid, Bucket, Key, UUID, BlockNumber, BClass, Value) ->
     gen_server:cast(Pid, {put_block, self(), Bucket, Key, UUID, BlockNumber,
-                          Value, riak_cs_utils:md5(Value)}).
+                          BClass, Value, riak_cs_utils:md5(Value)}).
 
--spec delete_block(pid(), binary(), binary(), binary(), pos_integer()) -> ok.
-delete_block(Pid, Bucket, Key, UUID, BlockNumber) ->
-    gen_server:cast(Pid, {delete_block, self(), Bucket, Key, UUID, BlockNumber}).
+-spec delete_block(pid(), binary(), binary(), binary(), pos_integer(),
+                   riak_cs_utils:bclass()) -> ok.
+delete_block(Pid, Bucket, Key, UUID, BlockNumber, BClass) ->
+    gen_server:cast(Pid, {delete_block, self(), Bucket, Key,
+                          UUID, BlockNumber, BClass}).
 
 -spec maybe_stop_block_servers(undefined | [pid()]) -> ok.
 maybe_stop_block_servers(undefined) ->
@@ -174,14 +181,15 @@ handle_call(stop, _From, State) ->
 %% @end
 %%--------------------------------------------------------------------
 
-handle_cast({get_block, ReplyPid, Bucket, Key, ClusterID, UUID, BlockNumber},
-            State=#state{riakc_pid=RiakcPid}) ->
-    get_block(ReplyPid, Bucket, Key, ClusterID, UUID, BlockNumber, RiakcPid),
+handle_cast({get_block, ReplyPid, Bucket, Key, ClusterID,
+             UUID, BlockNumber, BClass}, State=#state{riakc_pid=RiakcPid}) ->
+    get_block(ReplyPid, Bucket, Key, ClusterID, UUID, BlockNumber, BClass, RiakcPid),
     {noreply, State};
-handle_cast({put_block, ReplyPid, Bucket, Key, UUID, BlockNumber, Value, BCSum},
+handle_cast({put_block, ReplyPid, Bucket, Key,
+             UUID, BlockNumber, BClass, Value, BCSum},
             State=#state{riakc_pid=RiakcPid}) ->
     dt_entry(<<"put_block">>, [BlockNumber], [Bucket, Key]),
-    {FullBucket, FullKey} = full_bkey(Bucket, Key, UUID, BlockNumber),
+    {FullBucket, FullKey} = full_bkey(Bucket, Key, UUID, BlockNumber, BClass),
     MD = make_md_usermeta([{?USERMETA_BUCKET, Bucket},
                            {?USERMETA_KEY, Key},
                            {?USERMETA_BCSUM, BCSum}]),
@@ -194,21 +202,22 @@ handle_cast({put_block, ReplyPid, Bucket, Key, UUID, BlockNumber, Value, BCSum},
     riak_cs_put_fsm:block_written(ReplyPid, BlockNumber),
     dt_return(<<"put_block">>, [BlockNumber], [Bucket, Key]),
     {noreply, State};
-handle_cast({delete_block, ReplyPid, Bucket, Key, UUID, BlockNumber}, State=#state{riakc_pid=RiakcPid}) ->
+handle_cast({delete_block, ReplyPid, Bucket, Key, UUID, BlockNumber, BClass},
+            State=#state{riakc_pid=RiakcPid}) ->
     dt_entry(<<"delete_block">>, [BlockNumber], [Bucket, Key]),
-    {FullBucket, FullKey} = full_bkey(Bucket, Key, UUID, BlockNumber),
+    {FullBucket, FullKey} = full_bkey(Bucket, Key, UUID, BlockNumber, BClass),
     StartTime = os:timestamp(),
 
     %% do a get first to get the vclock (only do a head request though)
     GetOptions = [{r, 1}, {notfound_ok, false}, {basic_quorum, false}, head],
     _ = case riakc_pb_socket:get(RiakcPid, FullBucket, FullKey, GetOptions) of
             {ok, RiakObject} ->
-                ok = delete_block(RiakcPid, ReplyPid, RiakObject, {UUID, BlockNumber});
+                ok = delete_block(RiakcPid, ReplyPid, RiakObject, {UUID, BlockNumber, BClass});
         {error, notfound} ->
             %% If the block isn't found, assume it's been
             %% previously deleted by another delete FSM, and
             %% move on to the next block.
-            riak_cs_delete_fsm:block_deleted(ReplyPid, {ok, {UUID, BlockNumber}})
+            riak_cs_delete_fsm:block_deleted(ReplyPid, {ok, {UUID, BlockNumber, BClass}})
     end,
     ok = riak_cs_stats:update_with_start(block_delete, StartTime),
     dt_return(<<"delete_block">>, [BlockNumber], [Bucket, Key]),
@@ -216,7 +225,7 @@ handle_cast({delete_block, ReplyPid, Bucket, Key, UUID, BlockNumber}, State=#sta
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
-get_block(ReplyPid, Bucket, Key, ClusterID, UUID, BlockNumber, RiakcPid) ->
+get_block(ReplyPid, Bucket, Key, ClusterID, UUID, BlockNumber, BClass, RiakcPid) ->
     %% don't use proxy get if it's a local get
     %% or proxy get is disabled
     ProxyActive = riak_cs_config:proxy_get_active(),
@@ -225,28 +234,28 @@ get_block(ReplyPid, Bucket, Key, ClusterID, UUID, BlockNumber, RiakcPid) ->
     case riak_cs_utils:n_val_1_get_requests() of
         true ->
             do_get_block(ReplyPid, Bucket, Key, ClusterID, UseProxyGet, ProxyActive, UUID,
-                         BlockNumber, RiakcPid);
+                         BlockNumber, BClass, RiakcPid);
         false ->
             normal_nval_block_get(ReplyPid, Bucket, Key, ClusterID,
-                                  UseProxyGet, UUID, BlockNumber, RiakcPid)
+                                  UseProxyGet, UUID, BlockNumber, BClass, RiakcPid)
     end.
 
 do_get_block(ReplyPid, Bucket, Key, ClusterID, UseProxyGet, ProxyActive,
-             UUID, BlockNumber, RiakcPid) ->
+             UUID, BlockNumber, BClass, RiakcPid) ->
     do_get_block(ReplyPid, Bucket, Key, ClusterID, UseProxyGet, ProxyActive,
-                 UUID, BlockNumber, RiakcPid, 0).
+                 UUID, BlockNumber, BClass, RiakcPid, 0).
 
 do_get_block(ReplyPid, _Bucket, _Key, _ClusterID, _UseProxyGet, _ProxyActive,
-             UUID, BlockNumber, _RiakcPid, NumRetries)
+             UUID, BlockNumber, BClass, _RiakcPid, NumRetries)
   when is_atom(NumRetries) orelse NumRetries > 5 ->
     Sorry = {error, notfound},
-    ok = riak_cs_get_fsm:chunk(ReplyPid, {UUID, BlockNumber}, Sorry);
+    ok = riak_cs_get_fsm:chunk(ReplyPid, UUID, BlockNumber, BClass, Sorry);
 do_get_block(ReplyPid, Bucket, Key, ClusterID, UseProxyGet, ProxyActive,
-             UUID, BlockNumber, RiakcPid, NumRetries) ->
+             UUID, BlockNumber, BClass, RiakcPid, NumRetries) ->
     ok = sleep_retries(NumRetries),
 
     dt_entry(<<"get_block">>, [BlockNumber], [Bucket, Key]),
-    {FullBucket, FullKey} = full_bkey(Bucket, Key, UUID, BlockNumber),
+    {FullBucket, FullKey} = full_bkey(Bucket, Key, UUID, BlockNumber, BClass),
 
     StartTime = os:timestamp(),
     GetOptions1 = n_val_one_options(),
@@ -254,13 +263,13 @@ do_get_block(ReplyPid, Bucket, Key, ClusterID, UseProxyGet, ProxyActive,
 
     ProceedFun = fun(OkReply) ->
             ok = riak_cs_stats:update_with_start(block_get_retry, StartTime),
-            ok = riak_cs_get_fsm:chunk(ReplyPid, {UUID, BlockNumber}, OkReply),
+            ok = riak_cs_get_fsm:chunk(ReplyPid, UUID, BlockNumber, BClass, OkReply),
             dt_return(<<"get_block">>, [BlockNumber], [Bucket, Key])
       end,
     RetryFun = fun(NewPause) ->
                ok = riak_cs_stats:update_with_start(block_get_retry, StartTime),
                do_get_block(ReplyPid, Bucket, Key, ClusterID, UseProxyGet,
-                            ProxyActive, UUID, BlockNumber, RiakcPid, NewPause)
+                            ProxyActive, UUID, BlockNumber, BClass, RiakcPid, NewPause)
             end,
 
     Timeout = timer:seconds(5),
@@ -303,8 +312,6 @@ handle_local_notfound(RiakcPid, FullBucket, FullKey, GetOptions2,
                 true when ProxyActive ->
                     case get_block_remote(RiakcPid, FullBucket, FullKey,
                                           ClusterID, GetOptions2) of
-                        %% riak_cs_block_server.erl:303: The pattern Success = {'ok', _} can never match the type {'error',_}
-                        %% how can it be 'never match'? It matches the following tuple!!!!
                         {ok, _} = Success ->
                             ProceedFun(Success);
                         {error, _} ->
@@ -339,8 +346,6 @@ get_block_local(RiakcPid, FullBucket, FullKey, GetOptions, Timeout) ->
 get_block_remote(RiakcPid, FullBucket, FullKey, ClusterID, GetOptions) ->
     case riak_repl_pb_api:get(RiakcPid, FullBucket, FullKey,
                               ClusterID, GetOptions) of
-        %% riak_cs_block_server.erl:338: The pattern {'ok', RiakObject} can never match the type {'error',_}
-        %% how can it be 'never match'? It actually matches.
         {ok, RiakObject} ->
             resolve_block_object(RiakObject, RiakcPid);
         Else ->
@@ -350,10 +355,10 @@ get_block_remote(RiakcPid, FullBucket, FullKey, ClusterID, GetOptions) ->
 %% @doc This is the 'legacy' block get, before we introduced the ability
 %% to modify n-val per GET request.
 normal_nval_block_get(ReplyPid, Bucket, Key, ClusterID, UseProxyGet, UUID,
-                      BlockNumber, RiakcPid) ->
+                      BlockNumber, BClass, RiakcPid) ->
     dt_entry(<<"get_block">>, [BlockNumber], [Bucket, Key]),
 
-    {FullBucket, FullKey} = full_bkey(Bucket, Key, UUID, BlockNumber),
+    {FullBucket, FullKey} = full_bkey(Bucket, Key, UUID, BlockNumber, BClass),
     StartTime = os:timestamp(),
     GetOptions = [{r, 1}, {notfound_ok, false}, {basic_quorum, false}],
     Object = case UseProxyGet of
@@ -369,7 +374,7 @@ normal_nval_block_get(ReplyPid, Bucket, Key, ClusterID, UseProxyGet, UUID,
             NotFound
     end,
     ok = riak_cs_stats:update_with_start(block_get, StartTime),
-    ok = riak_cs_get_fsm:chunk(ReplyPid, {UUID, BlockNumber}, ChunkValue),
+    ok = riak_cs_get_fsm:chunk(ReplyPid, UUID, BlockNumber, BClass, ChunkValue),
     dt_return(<<"get_block">>, [BlockNumber], [Bucket, Key]).
 
 delete_block(RiakcPid, ReplyPid, RiakObject, BlockId) ->
@@ -454,10 +459,10 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
--spec full_bkey(binary(), binary(), binary(), pos_integer()) -> {binary(), binary()}.
+-spec full_bkey(binary(), binary(), binary(), pos_integer(), riak_cs_utils:bclass()) -> {binary(), binary()}.
 %% @private
-full_bkey(Bucket, Key, UUID, BlockId) ->
-    PrefixedBucket = riak_cs_utils:to_bucket_name(blocks, Bucket),
+full_bkey(Bucket, Key, UUID, BlockId, BClass) ->
+    PrefixedBucket = riak_cs_utils:to_bucket_name(blocks, Bucket, BClass),
     FullKey = riak_cs_lfs_utils:block_name(Key, UUID, BlockId),
     {PrefixedBucket, FullKey}.
 
@@ -466,7 +471,7 @@ find_md_usermeta(MD) ->
 
 resolve_block_object(RObj, RiakcPid) ->
     {{MD, Value}, NeedRepair} =
-                                riak_cs_utils:resolve_robj_siblings(riakc_obj:get_contents(RObj)),
+        riak_kv_fs2_backend:resolve_robj_siblings(riakc_obj:get_contents(RObj)),
     _ = if NeedRepair andalso is_binary(Value) ->
             RBucket = riakc_obj:bucket(RObj),
             RKey = riakc_obj:key(RObj),
@@ -496,7 +501,7 @@ resolve_block_object(RObj, RiakcPid) ->
     end,
     if is_binary(Value) ->
             {ok, Value};
-        true ->
+       true ->
             {error, notfound}
     end.
 
@@ -506,7 +511,7 @@ make_md_usermeta(Props) ->
 do_put_block(FullBucket, FullKey, VClock, Value, MD, RiakcPid, FailFun) ->
     RiakObject0 = riakc_obj:new(FullBucket, FullKey, Value),
     RiakObject = riakc_obj:set_vclock(
-            riakc_obj:update_metadata(RiakObject0, MD), VClock),
+                   riakc_obj:update_metadata(RiakObject0, MD), VClock),
     StartTime = os:timestamp(),
     case riakc_pb_socket:put(RiakcPid, RiakObject) of
         ok ->

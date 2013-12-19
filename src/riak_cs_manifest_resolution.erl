@@ -133,7 +133,8 @@ resolve_props(A, B) ->
     {_, _, New} = lists:foldl(fun resolve_a_prop/2,
                               {Ps_A, Ps_B, []},
                               [fun resolve_prop_multipart/2,
-                               fun resolve_prop_multipart_cleanup/2]),
+                               fun resolve_prop_multipart_cleanup/2,
+                               fun resolve_prop_bclass/2]),
     New.
 
 resolve_a_prop(Resolver, {Ps_A, Ps_B, Ps_merged}) ->
@@ -168,6 +169,20 @@ resolve_prop_multipart_cleanup(Ps_A, Ps_B) ->
             {Ps_A, Ps_B, [multipart_clean]};
         false ->
             {Ps_A, Ps_B, []}
+    end.
+
+resolve_prop_bclass(Ps_A, Ps_B) ->
+    case {proplists:get_value(bclass, Ps_A),
+          proplists:get_value(bclass, Ps_B)} of
+        {undefined, undefined} ->
+            {Ps_A, Ps_B, []};
+        {undefined, B} ->
+            {Ps_A, Ps_B, [{bclass, B}]};
+        {A, undefined} ->
+            {Ps_A, Ps_B, [{bclass, A}]};
+        {A, B} ->
+            true = (A == B),
+            {Ps_A, Ps_B, [{bclass, A}]}
     end.
 
 %% NOTE:

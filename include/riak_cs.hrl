@@ -26,8 +26,8 @@
 -define(RCS_USER, #rcs_user_v2).
 -define(MULTIPART_MANIFEST, #multipart_manifest_v1).
 -define(MULTIPART_MANIFEST_RECNAME, multipart_manifest_v1).
--define(PART_MANIFEST, #part_manifest_v1).
--define(PART_MANIFEST_RECNAME, part_manifest_v1).
+-define(PART_MANIFEST, #part_manifest_v2).
+-define(PART_MANIFEST_RECNAME, part_manifest_v2).
 -define(MULTIPART_DESCR, #multipart_descr_v1).
 -define(COMPRESS_TERMS, false).
 -define(PART_DESCR, #part_descr_v1).
@@ -310,7 +310,39 @@
     %% parts for the same upload id could have different block_sizes.
     block_size :: integer()
 }).
--type part_manifest() :: #part_manifest_v1{}.
+
+-record(part_manifest_v2, {
+    %% We use 'ordsets' and must have the parts sort in increasing part order.
+    %% one-of 1-10000, inclusive
+    part_number :: integer(),
+
+    bucket :: binary(),
+    key :: binary(),
+
+    %% used to judge races between concurrent uploads
+    %% of the same part_number
+    start_time :: erlang:timestamp(),
+
+    %% a UUID to prevent conflicts with concurrent
+    %% uploads of the same {upload_id, part_number}.
+    part_id :: binary(),
+
+    %% each individual part upload always has a content-length
+    %% content_md5 is used for the part ETag, alas.
+    content_length :: integer(),
+    content_md5 :: 'undefined' | binary(),
+
+    %% block size just like in `lfs_manifest_v2'. Concievably,
+    %% parts for the same upload id could have different block_sizes.
+    block_size :: integer(),
+
+    %% Block class
+    bclass = 'v0' :: riak_cs_utils:bclass(),
+
+    %% Misc properties
+    props = [] :: proplists:proplist()
+}).
+-type part_manifest() :: #part_manifest_v2{}.
 
 -record(multipart_manifest_v1, {
     upload_id :: binary(),

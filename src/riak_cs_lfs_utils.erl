@@ -21,12 +21,14 @@
 -module(riak_cs_lfs_utils).
 
 -include("riak_cs.hrl").
+-include("riak_cs_lfs.hrl").
 
 -export([block_count/2,
          block_keynames/3,
          block_name/3,
          block_name_to_term/1,
          block_size/0,
+         get_bclass/1,
          max_content_len/0,
          fetch_concurrency/0,
          put_concurrency/0,
@@ -40,7 +42,9 @@
          new_manifest/9,
          new_manifest/11,
          remove_write_block/2,
-         remove_delete_block/2]).
+         remove_delete_block/2,
+         calculate_bucket_class/1]).
+-export([chash_cs_keyfun/1]).
 
 %% -------------------------------------------------------------------
 %% Public API
@@ -82,6 +86,11 @@ block_size() ->
             BlockSize
     end.
 
+%% @doc Extract bucket bclass from manifest
+-spec get_bclass(lfs_manifest()) -> riak_cs_utils:bclass().
+get_bclass(?MANIFEST{props=Props}) ->
+    proplists:get_value(bclass, Props, v0).
+
 %% @doc Return the configured block size
 -spec max_content_len() -> pos_integer().
 max_content_len() ->
@@ -112,30 +121,21 @@ initial_blocks(ContentLength, SafeBlockSize, UUID) ->
     Bs = initial_blocks(ContentLength, SafeBlockSize),
     [{UUID, B} || B <- Bs].
 
-range_blocks(Start, End, SafeBlockSize, UUID) ->
+-spec range_blocks(integer(), integer(), integer(), binary(), riak_cs_utils:bclass())->
+      {[riak_cs_utils:next_block()], integer(), integer()}.
+range_blocks(Start, End, SafeBlockSize, UUID, BClass) ->
     SkipInitial = Start rem SafeBlockSize,
     KeepFinal = (End rem SafeBlockSize) + 1,
     _ = lager:debug("InitialBlock: ~p, FinalBlock: ~p~n",
                 [Start div SafeBlockSize, End div SafeBlockSize]),
     _ = lager:debug("SkipInitial: ~p, KeepFinal: ~p~n", [SkipInitial, KeepFinal]),
-    {[{UUID, B} || B <- lists:seq(Start div SafeBlockSize, End div SafeBlockSize)],
+    {[{UUID, B, BClass} || B <- lists:seq(Start div SafeBlockSize, End div SafeBlockSize)],
      SkipInitial, KeepFinal}.
 
 block_sequences_for_manifest(?MANIFEST{props=undefined}=Manifest) ->
     block_sequences_for_manifest(Manifest?MANIFEST{props=[]});
-block_sequences_for_manifest(?MANIFEST{uuid=UUID,
-                                       content_length=ContentLength}=Manifest)->
-    SafeBlockSize = safe_block_size_from_manifest(Manifest),
-    case riak_cs_mp_utils:get_mp_manifest(Manifest) of
-        undefined ->
-            initial_blocks(ContentLength, SafeBlockSize, UUID);
-        MpM ->
-            PartManifests = MpM?MULTIPART_MANIFEST.parts,
-            lists:append([initial_blocks(PM?PART_MANIFEST.content_length,
-                                         SafeBlockSize,
-                                         PM?PART_MANIFEST.part_id) ||
-                             PM <- PartManifests])
-    end.
+block_sequences_for_manifest(?MANIFEST{content_length=ContentLength}=Manifest)->
+    block_sequences_for_manifest(Manifest, {0, ContentLength-1}).
 
 block_sequences_for_manifest(?MANIFEST{props=undefined}=Manifest, {Start, End}) ->
     block_sequences_for_manifest(Manifest?MANIFEST{props=[]}, {Start, End});
@@ -144,7 +144,8 @@ block_sequences_for_manifest(?MANIFEST{uuid=UUID}=Manifest,
     SafeBlockSize = safe_block_size_from_manifest(Manifest),
     case riak_cs_mp_utils:get_mp_manifest(Manifest) of
         undefined ->
-            range_blocks(Start, End, SafeBlockSize, UUID);
+            BClass = riak_cs_lfs_utils:get_bclass(Manifest),
+            range_blocks(Start, End, SafeBlockSize, UUID, BClass);
         MpM ->
             PartManifests = MpM?MULTIPART_MANIFEST.parts,
             block_sequences_for_part_manifests_skip(SafeBlockSize, PartManifests,
@@ -155,6 +156,7 @@ block_sequences_for_part_manifests_skip(SafeBlockSize, [PM | Rest],
                                         StartOffset, EndOffset) ->
     _ = lager:debug("StartOffset: ~p, EndOffset: ~p, PartLength: ~p~n",
                 [StartOffset, EndOffset, PM?PART_MANIFEST.content_length]),
+    BClass = PM?PART_MANIFEST.bclass,
     case PM?PART_MANIFEST.content_length of
         %% Skipped
         PartLength when PartLength =< StartOffset ->
@@ -165,14 +167,14 @@ block_sequences_for_part_manifests_skip(SafeBlockSize, [PM | Rest],
         PartLength when PartLength =< EndOffset ->
             {Blocks, SkipInitial, _KeepFinal} =
                 range_blocks(StartOffset, PartLength - 1,
-                               SafeBlockSize, PM?PART_MANIFEST.part_id),
+                               SafeBlockSize, PM?PART_MANIFEST.part_id, BClass),
             block_sequences_for_part_manifests_keep(
               SafeBlockSize, SkipInitial, Rest,
               EndOffset - PartLength, [Blocks]);
         %% The first block, also the last
         _PartLength ->
             range_blocks(StartOffset, EndOffset,
-                         SafeBlockSize, PM?PART_MANIFEST.part_id)
+                         SafeBlockSize, PM?PART_MANIFEST.part_id, BClass)
     end.
 
 block_sequences_for_part_manifests_keep(SafeBlockSize, SkipInitial, [PM | Rest],
@@ -182,17 +184,20 @@ block_sequences_for_part_manifests_keep(SafeBlockSize, SkipInitial, [PM | Rest],
     case PM?PART_MANIFEST.content_length of
         %% More blocks needed
         PartLength when PartLength =< EndOffset ->
+            IBlocks = initial_blocks(PM?PART_MANIFEST.content_length,
+                                     SafeBlockSize, PM?PART_MANIFEST.part_id),
+            BClass = PM?PART_MANIFEST.bclass,
+            IBlocksBClass = [{X, Y, BClass} || {X, Y} <- IBlocks],
             block_sequences_for_part_manifests_keep(
               SafeBlockSize, SkipInitial, Rest,
               EndOffset - PartLength,
-              [initial_blocks(PM?PART_MANIFEST.content_length,
-                              SafeBlockSize, PM?PART_MANIFEST.part_id)
-               | ListOfBlocks]);
+              [IBlocksBClass | ListOfBlocks]);
         %% Reaches to the last block
         _PartLength ->
+            BClass = PM?PART_MANIFEST.bclass,
             {Blocks, _SkipInitial, KeepFinal}
                 = range_blocks(0, EndOffset,
-                               SafeBlockSize, PM?PART_MANIFEST.part_id),
+                               SafeBlockSize, PM?PART_MANIFEST.part_id, BClass),
             {lists:append(lists:reverse([Blocks | ListOfBlocks])),
              SkipInitial, KeepFinal}
     end.
@@ -275,6 +280,7 @@ new_manifest(Bucket, FileName, UUID, ContentLength, ContentType, ContentMd5, Met
                    cluster_id()) -> lfs_manifest().
 new_manifest(Bucket, FileName, UUID, ContentLength, ContentType, ContentMd5, MetaData, BlockSize, Acl, Props, ClusterID) ->
     Blocks = ordsets:from_list(initial_blocks(ContentLength, BlockSize)),
+    BClass = calculate_bucket_class(ContentLength),
     ?MANIFEST{bkey={Bucket, FileName},
               uuid=UUID,
               state=writing,
@@ -285,7 +291,7 @@ new_manifest(Bucket, FileName, UUID, ContentLength, ContentType, ContentMd5, Met
               write_blocks_remaining=Blocks,
               metadata=MetaData,
               acl=Acl,
-              props=Props,
+              props=[{bclass, BClass}|Props],
               cluster_id=ClusterID}.
 
 %% @doc Remove a chunk from the
@@ -317,3 +323,32 @@ remove_delete_block(Manifest, Chunk) ->
     Manifest?MANIFEST{delete_blocks_remaining=Updated,
                              state=ManiState,
                              last_block_deleted_time=os:timestamp()}.
+
+
+-spec chash_cs_keyfun({binary(), binary()}) -> binary().
+chash_cs_keyfun({<<Prefix:3/binary, _/binary>> = Bucket,
+                 <<UUID:?UUID_BYTES/binary, BlockNum:?BLOCK_FIELD_SIZE>>})
+  when Prefix == ?BLOCK_BUCKET_PREFIX_V0;
+       Prefix == ?BLOCK_BUCKET_PREFIX_V1;
+       Prefix == ?BLOCK_BUCKET_PREFIX_V2 ->
+    Contig = BlockNum div ?FS2_CONTIGUOUS_BLOCKS,
+    chash:key_of({Bucket, <<UUID/binary, Contig:?BLOCK_FIELD_SIZE>>});
+chash_cs_keyfun({Bucket, Key}) ->
+    %% Default object/ring hashing fun, direct passthrough of bkey.
+    chash:key_of({Bucket, Key}).
+
+-spec calculate_bucket_class(integer()) -> 'v1' | 'v2'.
+calculate_bucket_class(ContentLength) ->
+    Dividing = case application:get_env(riak_cs, small_object_divider) of
+                   {ok, N} when is_integer(N), N >= 0 ->
+                       N;
+                   undefined ->
+                       125*1024;
+                   _ ->
+                       0
+               end,
+    if ContentLength < Dividing ->
+            v1;
+       true ->
+            v2
+    end.

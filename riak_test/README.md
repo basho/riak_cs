@@ -68,10 +68,10 @@ The default is `oss` and this option can be omitted when these tests
 are used by open-source users.
 
 The `backend` option is used to indicate which Riak backend option
-should be used. The valid options are `{multi_backend, bitcask}` and
-`memory`. `{multi_backend, bitcask}` is the default option and
-represents the default recommended backed for production use of
-RiakCS.
+should be used. The valid options are `{multi_backend, bitcask}`,
+`{multi_backend, fs}` and `memory`. `{multi_backend, bitcask}` is the
+default option and represents the default recommended backed for
+production use of Riak CS.
 
 The `test_paths` option is a list of fully-qualified paths which
 `riak_test` will use to find additional tests. Since the Riak CS tests
@@ -90,7 +90,7 @@ point to the compiled tests in `riak_cs/riak_test/ebin`.
   access to the Boto S3 libraries.
 * Your $PATH must have Clojure's "lein" available.  "lein" is the main
   executable for the Leinigen tool.
-* Your system must have libevent installed. If you see an error for a 
+* Your system must have libevent installed. If you see an error for a
   missing 'event.h' file during test runs, this is because libevent is
   not installed.
 

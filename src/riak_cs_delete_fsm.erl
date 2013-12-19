@@ -50,7 +50,7 @@
                 uuid :: binary(),
                 manifest :: lfs_manifest(),
                 riakc_pid :: pid(),
-                delete_blocks_remaining :: ordsets:ordset({binary(), integer()}),
+                delete_blocks_remaining :: ordsets:ordset(riak_cs_utils:next_block()),
                 unacked_deletes=ordsets:new() :: ordsets:ordset(integer()),
                 all_delete_workers=[] :: list(pid()),
                 free_deleters = ordsets:new() :: ordsets:ordset(pid()),
@@ -68,7 +68,7 @@ start_link(RiakcPid, Manifest, Options) ->
     Args = [RiakcPid, Manifest, Options],
     gen_fsm:start_link(?MODULE, Args, []).
 
--spec block_deleted(pid(), {ok, {binary(), integer()}} | {error, binary()}) -> ok.
+-spec block_deleted(pid(), {ok, {binary(), integer(), riak_cs_utils:bclass()}} | {error, binary()}) -> ok.
 block_deleted(Pid, Response) ->
     gen_fsm:send_event(Pid, {block_deleted, Response, self()}).
 
@@ -161,7 +161,8 @@ deleting_state_result(_, State) ->
     {next_state, atom(), state()}.
 handle_receiving_manifest(State=#state{riakc_pid=RiakcPid,
                                        manifest=Manifest}) ->
-    {NewManifest, BlocksToDelete} = blocks_to_delete_from_manifest(Manifest),
+    {NewManifest, BlocksToDelete} =
+        blocks_to_delete_from_manifest(Manifest),
     BlockCount = ordsets:size(BlocksToDelete),
     NewState = State#state{manifest=NewManifest,
                            delete_blocks_remaining=BlocksToDelete,
@@ -198,9 +199,10 @@ maybe_delete_blocks(State=#state{bucket=Bucket,
                                      [BlockID | _RestBlocks]}) ->
     NewUnackedDeletes = ordsets:add_element(BlockID, UnackedDeletes),
     NewDeleteBlocksRemaining = ordsets:del_element(BlockID, DeleteBlocksRemaining),
-    {UUID, Seq} = BlockID,
-    _ = lager:debug("Deleting block: ~p ~p ~p ~p", [Bucket, Key, UUID, Seq]),
-    riak_cs_block_server:delete_block(DeleterPid, Bucket, Key, UUID, Seq),
+    {UUID, Seq, BClass} = BlockID,
+    _ = lager:debug("Deleting block: ~p ~p ~p ~p ~p",
+                    [Bucket, Key, UUID, Seq, BClass]),
+    riak_cs_block_server:delete_block(DeleterPid, Bucket, Key, UUID, Seq, BClass),
     NewFreeDeleters = ordsets:del_element(DeleterPid, FreeDeleters),
     maybe_delete_blocks(State#state{unacked_deletes=NewUnackedDeletes,
                                     free_deleters=NewFreeDeleters,
@@ -237,10 +239,10 @@ blocks_to_delete_from_manifest(Manifest=?MANIFEST{state=State,
                                                   delete_blocks_remaining=undefined})
   when State =:= pending_delete;State =:= writing; State =:= scheduled_delete ->
     case riak_cs_lfs_utils:block_sequences_for_manifest(Manifest) of
-        []=Blocks ->
+        {[] = Blocks, _, _} ->
             UpdManifest = Manifest?MANIFEST{delete_blocks_remaining=[],
                                             state=deleted};
-        Blocks ->
+        {Blocks, _, _} ->
             UpdManifest = Manifest?MANIFEST{delete_blocks_remaining=Blocks}
     end,
     {UpdManifest, Blocks};

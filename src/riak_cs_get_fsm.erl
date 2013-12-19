@@ -45,7 +45,7 @@
          stop/1,
          continue/2,
          manifest/2,
-         chunk/3,
+         chunk/5,
          get_manifest/1,
          get_next_chunk/1]).
 
@@ -65,7 +65,7 @@
          terminate/3,
          code_change/4]).
 
--type block_name() :: {binary(), integer()}.
+-type block_name() :: {binary(), integer(), riak_cs_utils:bclass()}.
 
 -record(state, {from :: {pid(), reference()},
                 mani_fsm_pid :: pid(),
@@ -116,8 +116,10 @@ get_next_chunk(Pid) ->
 manifest(Pid, ManifestValue) ->
     gen_fsm:send_event(Pid, {object, self(), ManifestValue}).
 
-chunk(Pid, ChunkSeq, ChunkValue) ->
-    gen_fsm:send_event(Pid, {chunk, self(), {ChunkSeq, ChunkValue}}).
+-spec chunk(pid(), binary(), integer(), riak_cs_utils:bclass(), term()) -> ok.
+chunk(Pid, UUID, BlockNumber, BClass, ChunkValue) ->
+    %% {UUID, BlockNumber, BClass} is the NextBlock tuple
+    gen_fsm:send_event(Pid, {chunk, self(), {UUID, BlockNumber, BClass}, ChunkValue}).
 
 %% ====================================================================
 %% gen_fsm callbacks
@@ -295,7 +297,7 @@ waiting_chunks(timeout, State = #state{got_blocks = Got}) ->
     UpdState = read_blocks(State),
     {next_state, waiting_chunks, UpdState};
 
-waiting_chunks({chunk, Pid, {NextBlock, BlockReturnValue}},
+waiting_chunks({chunk, Pid, NextBlock, BlockReturnValue},
                #state{from=From,
                       got_blocks=Got,
                       free_readers=FreeReaders,
@@ -317,10 +319,9 @@ waiting_chunks({chunk, Pid, {NextBlock, BlockReturnValue}},
             ok
     end,
     {ok, RawBlockValue} = BlockReturnValue,        % TODO: robustify!
-    BlockValue = trim_block_value(RawBlockValue,
-                                  NextBlock,
-                                  {InitialBlock, FinalBlock},
-                                  {SkipInitial, KeepFinal}),
+    BlockValue = trim_block_value(RawBlockValue, NextBlock,
+                                  InitialBlock, FinalBlock,
+                                  SkipInitial, KeepFinal),
     UpdGot = orddict:store(NextBlock, BlockValue, Got),
     %% TODO: _ = lager:debug("BlocksLeft: ~p", [BlocksLeft]),
     GotSize = orddict:size(UpdGot),
@@ -430,8 +431,9 @@ read_blocks(#state{manifest=Manifest,
                    blocks_order=[NextBlock|BlocksOrder],
                    blocks_intransit=Intransit} = State) ->
     ClusterID = cluster_id_or_default(Manifest?MANIFEST.cluster_id),
-    {UUID, Seq} = NextBlock,
-    riak_cs_block_server:get_block(ReaderPid, Bucket, Key, ClusterID, UUID, Seq),
+    {UUID, Seq, BClass} = NextBlock,
+    riak_cs_block_server:get_block(ReaderPid, Bucket, Key, ClusterID, UUID, Seq,
+                                   BClass),
     read_blocks(State#state{free_readers=RestFreeReaders,
                             blocks_order=BlocksOrder,
                             blocks_intransit=queue:in(NextBlock, Intransit)}).
@@ -443,24 +445,24 @@ cluster_id_or_default(ClusterID) ->
     ClusterID.
 
 trim_block_value(RawBlockValue, CurrentBlock,
-                 {CurrentBlock, CurrentBlock},
-                 {SkipInitial, KeepFinal}) ->
+                 CurrentBlock, CurrentBlock,
+                 SkipInitial, KeepFinal) ->
     ValueLength = KeepFinal - SkipInitial,
     <<_Skip:SkipInitial/binary, Value:ValueLength/binary, _Rest/binary>> = RawBlockValue,
     Value;
 trim_block_value(RawBlockValue, CurrentBlock,
-                 {CurrentBlock, _FinalBlock},
-                 {SkipInitial, _KeepFinal}) ->
+                 CurrentBlock, _FinalBlock,
+                 SkipInitial, _KeepFinal) ->
     <<_Skip:SkipInitial/binary, Value/binary>> = RawBlockValue,
     Value;
 trim_block_value(RawBlockValue, CurrentBlock,
-                 {_InitialBlock, CurrentBlock},
-                 {_SkipInitial, KeepFinal}) ->
+                 _InitialBlock, CurrentBlock,
+                 _SkipInitial, KeepFinal) ->
     <<Value:KeepFinal/binary, _Rest/binary>> = RawBlockValue,
     Value;
 trim_block_value(RawBlockValue, _CurrentBlock,
-                 {_InitialBlock, _FinalBlock},
-                 {_SkipInitial, _KeepFinal}) ->
+                 _InitialBlock, _FinalBlock,
+                 _SkipInitial, _KeepFinal) ->
     RawBlockValue.
 
 %% ===================================================================
