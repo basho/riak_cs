@@ -42,6 +42,8 @@
 -export([init/1,
          idle/2,
          idle/3,
+         fetching_next_batch/2,
+         fetching_next_batch/3,
          fetching_next_fileset/2,
          fetching_next_fileset/3,
          initiating_file_delete/2,
@@ -156,10 +158,27 @@ idle(_, State=#state{interval_remaining=IntervalRemaining}) ->
     TimerRef = erlang:send_after(IntervalRemaining, self(), start_batch),
     {next_state, idle, State#state{timer_ref=TimerRef}}.
 
-%% @doc Async transitions from `fetching_next_fileset' are all due to
+%% @doc Async transitions from `fetching_next_batch' are all due to
 %% messages the FSM sends itself, in order to have opportunities to
 %% handle messages from the outside world (like `status').
-fetching_next_fileset(continue, #state{batch=[]}=State) ->
+fetching_next_batch(_, State=#state{batch=undefined}) ->
+    %% This clause is for testing only
+    {next_state, fetching_next_batch, State};
+fetching_next_batch(continue, #state{batch_start=undefined,
+                                     continuation=undefined,
+                                     riak=RiakPid}=State) ->
+    BatchStart = riak_cs_gc:timestamp(),
+    %% Fetch the next set of manifests for deletion
+    {Batch, Continuation} =
+        fetch_eligible_manifest_keys(RiakPid, BatchStart, undefined),
+    _ = lager:debug("Batch keys: ~p", [Batch]),
+    NewStateData = State#state{batch=Batch,
+                               batch_start=BatchStart,
+                               continuation=Continuation},
+    NextState = fetching_next_fileset,
+    ok = continue(),
+    {next_state, NextState, NewStateData};
+fetching_next_batch(continue, #state{continuation=undefined}=State) ->
     %% finished with this batch
     _ = lager:info("Finished garbage collection: "
                    "~b seconds, ~p batch_count, ~p batch_skips, "
@@ -168,8 +187,32 @@ fetching_next_fileset(continue, #state{batch=[]}=State) ->
                     State#state.batch_skips, State#state.manif_count,
                     State#state.block_count]),
     riak_cs_riakc_pool_worker:stop(State#state.riak),
-    NewState = schedule_next(State#state{riak=undefined}),
+    NewState = schedule_next(State#state{riak=undefined,
+                                         batch_start=undefined}),
     {next_state, idle, NewState};
+fetching_next_batch(continue, State=#state{batch_start=BatchStart,
+                                           continuation=Continuation,
+                                           riak=RiakPid
+                                          }) ->
+    %% Fetch the next set of manifests for deletion
+    {Batch, UpdContinuation} =
+        fetch_eligible_manifest_keys(RiakPid, BatchStart, Continuation),
+    _ = lager:debug("Batch keys: ~p", [Batch]),
+    NewStateData = State#state{batch=Batch,
+                               continuation=UpdContinuation},
+    NextState = fetching_next_fileset,
+    ok = continue(),
+    {next_state, NextState, NewStateData};
+fetching_next_batch(_, State) ->
+    {next_state, fetching_next_batch, State}.
+
+%% @doc Async transitions from `fetching_next_fileset' are all due to
+%% messages the FSM sends itself, in order to have opportunities to
+%% handle messages from the outside world (like `status').
+fetching_next_fileset(continue, #state{batch=[]}=State) ->
+    %% finished with this batch
+    ok = continue(),
+    {next_state, fetching_next_batch, State};
 fetching_next_fileset(continue, State=#state{batch=[FileSetKey | RestKeys],
                                              batch_skips=BatchSkips,
                                              manif_count=ManifCount,
@@ -239,9 +282,9 @@ paused(_, State) ->
 %% Synchronous events
 
 idle({manual_batch, Options}, _From, State) ->
-    ok_reply(fetching_next_fileset, start_manual_batch(
-                                       lists:member(testing, Options),
-                                       State));
+    ok_reply(fetching_next_batch, start_manual_batch(
+                                    lists:member(testing, Options),
+                                    State));
 idle(pause, _From, State) ->
     ok_reply(paused, pause_gc(idle, State));
 idle({set_interval, Interval}, _From, State)
@@ -254,6 +297,18 @@ idle(Msg, _From, State) ->
               {cancel_batch, {error, no_batch}},
               {resume, {error, not_paused}}],
     {reply, handle_common_sync_reply(Msg, Common, State), idle, State}.
+
+fetching_next_batch(pause, _From, State) ->
+    ok_reply(paused, pause_gc(fetching_next_batch, State));
+fetching_next_batch(cancel_batch, _From, State) ->
+    ok_reply(idle, cancel_batch(State));
+fetching_next_batch({set_interval, Interval}, _From, State) ->
+    ok_reply(fetching_next_batch, State#state{interval=Interval});
+fetching_next_batch(Msg, _From, State) ->
+    Common = [{status, {ok, {fetching_next_batch, status_data(State)}}},
+              {manual_batch, {error, already_deleting}},
+              {resume, {error, not_paused}}],
+    {reply, handle_common_sync_reply(Msg, Common, State), fetching_next_batch, State}.
 
 fetching_next_fileset(pause, _From, State) ->
     ok_reply(paused, pause_gc(fetching_next_fileset, State));
@@ -326,10 +381,10 @@ handle_sync_event(_Event, _From, StateName, State) ->
 
 handle_info(start_batch, idle, State) ->
     NewState = start_batch(State),
-    {next_state, fetching_next_fileset, NewState};
+    {next_state, fetching_next_batch, NewState};
 handle_info(start_batch, InBatch, State) ->
     _ = lager:info("Unable to start garbage collection batch"
-                    " because a previous batch is still working."),
+                   " because a previous batch is still working."),
     {next_state, InBatch, State};
 handle_info(_Info, StateName, State) ->
     {next_state, StateName, State}.
@@ -382,11 +437,18 @@ elapsed(Time) ->
 
 %% @doc Fetch the list of keys for file manifests that are eligible
 %% for delete.
--spec fetch_eligible_manifest_keys(pid(), non_neg_integer()) -> [binary()].
-fetch_eligible_manifest_keys(RiakPid, IntervalStart) ->
+-spec fetch_eligible_manifest_keys(pid(), non_neg_integer(), undefined | binary()) ->
+                                          {[binary()], undefined | binary()}.
+fetch_eligible_manifest_keys(RiakPid, IntervalStart, Continuation) ->
     EndTime = list_to_binary(integer_to_list(IntervalStart)),
-    eligible_manifest_keys(gc_index_query(RiakPid, EndTime)).
+    QueryResults = gc_index_query(RiakPid,
+                                  EndTime,
+                                  riak_cs_config:gc_batch_size(),
+                                  Continuation),
+    {eligible_manifest_keys(QueryResults), continuation(QueryResults)}.
 
+-spec eligible_manifest_keys({{ok, riakc_pb_socket:index_results()} | {error, term()},
+                              binary()}) -> [binary()].
 eligible_manifest_keys({{ok, ?INDEX_RESULTS{keys=Keys}},
                         _EndTime}) ->
     Keys;
@@ -396,7 +458,36 @@ eligible_manifest_keys({{error, Reason}, EndTime}) ->
                       [EndTime, Reason]),
     [].
 
-gc_index_query(RiakPid, EndTime) ->
+-spec continuation({{ok, riakc_pb_socket:index_results()} | {error, term()},
+                    binary()}) -> undefined | binary().
+continuation({{ok, ?INDEX_RESULTS{continuation=Continuation}},
+              _EndTime}) ->
+    Continuation;
+continuation({{error, _}, _EndTime}) ->
+    undefined.
+
+-spec gc_index_query(pid(), binary(), non_neg_integer(), binary()) ->
+                            {riakc_pb_socket:index_results(), binary()}.
+gc_index_query(RiakPid, EndTime, BatchSize, Continuation) ->
+    gc_index_query(RiakPid,
+                   EndTime,
+                   BatchSize,
+                   Continuation,
+                   riak_cs_config:gc_paginated_indexes()).
+
+-spec gc_index_query(pid(), binary(), non_neg_integer(), binary(), boolean()) ->
+                            {riakc_pb_socket:index_results(), binary()}.
+gc_index_query(RiakPid, EndTime, BatchSize, Continuation, true) ->
+    Options = [{max_results, BatchSize},
+               {continuation, Continuation}],
+    QueryResult = riakc_pb_socket:get_index_range(RiakPid,
+                                                  ?GC_BUCKET,
+                                                  ?KEY_INDEX,
+                                                  riak_cs_gc:epoch_start(),
+                                                  EndTime,
+                                                  Options),
+    {QueryResult, EndTime};
+gc_index_query(RiakPid, EndTime, _, _, false) ->
     QueryResult = riakc_pb_socket:get_index(RiakPid,
                                             ?GC_BUCKET,
                                             ?KEY_INDEX,
@@ -419,8 +510,8 @@ fetch_next_fileset(ManifestSetKey, RiakPid) ->
             Error;
         {error, Reason}=Error ->
             _ = lager:info("Error occurred trying to read the fileset"
-                              "for ~p for gc. Reason: ~p",
-                              [ManifestSetKey, Reason]),
+                           "for ~p for gc. Reason: ~p",
+                           [ManifestSetKey, Reason]),
             Error
     end.
 
@@ -529,13 +620,8 @@ start_batch(State=#state{riak=undefined}) ->
     %% connection, and avoids duplicating the configuration
     %% lookup code
     {ok, Riak} = riak_cs_riakc_pool_worker:start_link([]),
-    BatchStart = riak_cs_gc:timestamp(),
-    Batch = fetch_eligible_manifest_keys(Riak, BatchStart),
-    _ = lager:debug("Batch keys: ~p", [Batch]),
     ok = continue(),
-    State#state{batch_start=BatchStart,
-                batch=Batch,
-                batch_count=0,
+    State#state{batch_count=0,
                 batch_skips=0,
                 manif_count=0,
                 block_count=0,
@@ -545,7 +631,7 @@ start_batch(State=#state{riak=undefined}) ->
 start_manual_batch(true, State) ->
     State#state{batch=undefined};
 start_manual_batch(false, State) ->
-    start_batch(State).
+    start_batch(State#state{batch=[]}).
 
 %% @doc Extract a list of status information from a state record.
 %%
