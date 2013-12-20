@@ -126,5 +126,19 @@ compilation_config(TestType, Conf) ->
     C2 = rebar_config:set(C1, plugins, undefined),
     ErlOpts = rebar_utils:erl_opts(Conf),
     ErlOpts1 = proplists:delete(src_dirs, ErlOpts),
-    ErlOpts2 = [{d, 'TEST'}, {d, 'EQC'}, {outdir, option(TestType, test_output, Conf)}, {src_dirs, option(TestType, test_paths, Conf)} | ErlOpts1],
+    ErlOpts2 =
+        case eqc_present() of
+            true ->
+                [{d, 'TEST'}, {d, 'EQC'}, {outdir, option(TestType, test_output, Conf)}, {src_dirs, option(TestType, test_paths, Conf)} | ErlOpts1];
+            false ->
+                [{d, 'TEST'}, {outdir, option(TestType, test_output, Conf)}, {src_dirs, option(TestType, test_paths, Conf)} | ErlOpts1]
+        end,
     rebar_config:set(C2, erl_opts, ErlOpts2).
+
+eqc_present() ->
+    case catch eqc:version() of
+        {'EXIT', {undef, _}} ->
+            false;
+        _ ->
+            true
+    end.
