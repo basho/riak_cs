@@ -39,17 +39,27 @@ copy(CopyCtx) ->
     _RetrievedManifest = riak_cs_get_fsm:get_manifest(GetFsmPid),
     %% Then end is the index of the last byte, not the length, so subtract 1
     riak_cs_get_fsm:continue(GetFsmPid, {0, Manifest?MANIFEST.content_length-1}),
-    {ok, _Manifest} = get_and_put(GetFsmPid, PutFsmPid,
-        base64:encode(Manifest?MANIFEST.content_md5)),
+    MD5 = get_content_md5(Manifest?MANIFEST.content_md5),
+io:format("MD5 = ~p~n", [MD5]),
+    {ok, _Manifest} = get_and_put(GetFsmPid, PutFsmPid, MD5),
     riak_cs_utils:close_riak_connection(GetRiakcPid),
     riak_cs_utils:close_riak_connection(PutRiakcPid),
     ok.
+
+-spec get_content_md5(tuple() | binary()) -> string().
+get_content_md5({_MD5, _Str}) ->
+    %%Suffix = list_to_binary(Str),
+    %%<<MD5/binary, Suffix/binary>>,
+    undefined;
+get_content_md5(MD5) ->
+    base64:encode(MD5).
 
 -spec get_and_put(pid(), pid(), list()) -> ok | {error, term()}.
 get_and_put(GetPid, PutPid, MD5) ->
     case riak_cs_get_fsm:get_next_chunk(GetPid) of
         {done, <<>>} ->
-            riak_cs_put_fsm:finalize(PutPid, binary_to_list(MD5));
+            riak_cs_put_fsm:finalize(PutPid, undefined);
+      %%      riak_cs_put_fsm:finalize(PutPid, binary_to_list(MD5));
         {chunk, Block} ->
             riak_cs_put_fsm:augment_data(PutPid, Block),
             get_and_put(GetPid, PutPid, MD5)
