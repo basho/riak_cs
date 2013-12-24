@@ -298,23 +298,27 @@ process_owner([], Acl, _) ->
     {ok, Acl};
 process_owner([HeadElement | RestElements], Acl, RiakPid) ->
     Owner = Acl?ACL.owner,
-    [Content] = HeadElement#xmlElement.content,
-    Value = Content#xmlText.value,
-    ElementName = HeadElement#xmlElement.name,
-    case ElementName of
-        'ID' ->
-            _ = lager:debug("Owner ID value: ~p", [Value]),
-            {OwnerName, _, OwnerKeyId} = Owner,
-            UpdOwner = {OwnerName, Value, OwnerKeyId};
-        'DisplayName' ->
-            _ = lager:debug("Owner Name content: ~p", [Value]),
-            {_, OwnerId, OwnerKeyId} = Owner,
-            UpdOwner = {Value, OwnerId, OwnerKeyId};
-        _ ->
-            _ = lager:debug("Encountered unexpected element: ~p", [ElementName]),
-            UpdOwner = Owner
-    end,
-    process_owner(RestElements, Acl?ACL{owner=UpdOwner}, RiakPid).
+    case HeadElement#xmlElement.content of
+        [Content] ->
+            Value = Content#xmlText.value,
+            ElementName = HeadElement#xmlElement.name,
+            case ElementName of
+                'ID' ->
+                    _ = lager:debug("Owner ID value: ~p", [Value]),
+                    {OwnerName, _, OwnerKeyId} = Owner,
+                    UpdOwner = {OwnerName, Value, OwnerKeyId};
+                'DisplayName' ->
+                    _ = lager:debug("Owner Name content: ~p", [Value]),
+                    {_, OwnerId, OwnerKeyId} = Owner,
+                    UpdOwner = {Value, OwnerId, OwnerKeyId};
+                _ ->
+                    _ = lager:debug("Encountered unexpected element: ~p", [ElementName]),
+                    UpdOwner = Owner
+            end,
+            process_owner(RestElements, Acl?ACL{owner=UpdOwner}, RiakPid);
+        [] ->
+            process_owner(RestElements, Acl, RiakPid)
+    end.
 
 %% @doc Process an XML element containing the grants for the acl.
 -spec process_grants([xmlElement()], acl(), pid()) ->
@@ -394,38 +398,42 @@ process_grantee([], {{[], CanonicalId}, _Perms}, _, RiakPid) ->
 process_grantee([], Grant, _, _) ->
     Grant;
 process_grantee([HeadElement | RestElements], Grant, AclOwner, RiakPid) ->
-    [Content] = HeadElement#xmlElement.content,
-    Value = Content#xmlText.value,
-    ElementName = HeadElement#xmlElement.name,
-    case ElementName of
-        'ID' ->
-            _ = lager:debug("ID value: ~p", [Value]),
-            {{Name, _}, Perms} = Grant,
-            UpdGrant = {{Name, Value}, Perms};
-        'EmailAddress' ->
-            _ = lager:debug("Email value: ~p", [Value]),
-            UpdGrant =
-                case canonical_for_email(Value, RiakPid) of
-                    {ok, Id} ->
-                        %% Get the canonical id for a given email address
-                        _ = lager:debug("ID value: ~p", [Id]),
-                        {{Name, _}, Perms} = Grant,
-                        {{Name, Id}, Perms};
-                    {error, _}=Error ->
-                        Error
-                end;
-        'URI' ->
-            {_, Perms} = Grant,
-            case Value of
-                ?AUTH_USERS_GROUP ->
-                    UpdGrant = {'AuthUsers', Perms};
-                ?ALL_USERS_GROUP ->
-                    UpdGrant = {'AllUsers', Perms};
+    case HeadElement#xmlElement.content of
+        [Content] ->
+            Value = Content#xmlText.value,
+            ElementName = HeadElement#xmlElement.name,
+            case ElementName of
+                'ID' ->
+                    _ = lager:debug("ID value: ~p", [Value]),
+                    {{Name, _}, Perms} = Grant,
+                    UpdGrant = {{Name, Value}, Perms};
+                'EmailAddress' ->
+                    _ = lager:debug("Email value: ~p", [Value]),
+                    UpdGrant =
+                        case canonical_for_email(Value, RiakPid) of
+                            {ok, Id} ->
+                                %% Get the canonical id for a given email address
+                                _ = lager:debug("ID value: ~p", [Id]),
+                                {{Name, _}, Perms} = Grant,
+                                {{Name, Id}, Perms};
+                            {error, _}=Error ->
+                                Error
+                        end;
+                'URI' ->
+                    {_, Perms} = Grant,
+                    case Value of
+                        ?AUTH_USERS_GROUP ->
+                            UpdGrant = {'AuthUsers', Perms};
+                        ?ALL_USERS_GROUP ->
+                            UpdGrant = {'AllUsers', Perms};
+                        _ ->
+                            %% Not yet supporting log delivery group
+                            UpdGrant = Grant
+                    end;
                 _ ->
-                    %% Not yet supporting log delivery group
                     UpdGrant = Grant
             end;
-        _ ->
+        [] ->
             UpdGrant = Grant
     end,
     case UpdGrant of
