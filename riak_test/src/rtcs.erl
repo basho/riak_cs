@@ -250,6 +250,9 @@ riakcs_etcpath(Prefix, N) ->
 riakcscmd(Path, N, Cmd) ->
     lists:flatten(io_lib:format("~s ~s", [riakcs_binpath(Path, N), Cmd])).
 
+riakcs_accesscmd(Path, N, Cmd) ->
+    lists:flatten(io_lib:format("~s-access ~s", [riakcs_binpath(Path, N), Cmd])).
+
 stanchion_binpath(Prefix) ->
     io_lib:format("~s/dev/stanchion/bin/stanchion", [Prefix]).
 
@@ -489,6 +492,11 @@ start_stanchion() ->
 
 stop_stanchion() ->
     Cmd = stanchioncmd(rt_config:get(?STANCHION_CURRENT), "stop"),
+    lager:info("Running ~p", [Cmd]),
+    os:cmd(Cmd).
+
+flush_access(N) ->
+    Cmd = riakcs_accesscmd(rt_config:get(?CS_CURRENT), N, "flush"),
     lager:info("Running ~p", [Cmd]),
     os:cmd(Cmd).
 
