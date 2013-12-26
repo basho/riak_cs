@@ -155,28 +155,28 @@ calculate_sts(RD) ->
         {Path,QS} -> [Path, canonicalize_qs(lists:sort(QS))]
     end,
     Expires = wrq:get_qs_value("Expires", RD),
-    case Expires of
+    Date = case Expires of
         undefined ->
             case proplists:is_defined("x-amz-date", Headers) of
                 true ->
-                    Date = "\n";
+                    "\n";
                 false ->
-                    Date = [wrq:get_req_header("date", RD), "\n"]
+                    [wrq:get_req_header("date", RD), "\n"]
             end;
         _ ->
-            Date = Expires ++ "\n"
+            Expires ++ "\n"
     end,
-    case wrq:get_req_header("content-md5", RD) of
+    CMD5 = case wrq:get_req_header("content-md5", RD) of
         undefined ->
-            CMD5 = [];
-        CMD5 ->
-            ok
+            [];
+        M ->
+            M
     end,
-    case wrq:get_req_header("content-type", RD) of
+    ContentType = case wrq:get_req_header("content-type", RD) of
         undefined ->
-            ContentType = [];
-        ContentType ->
-            ok
+            [];
+        CType  ->
+            CType
     end,
     list_to_binary([atom_to_list(wrq:method(RD)), "\n",
                     CMD5,

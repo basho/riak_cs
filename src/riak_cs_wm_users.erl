@@ -69,13 +69,13 @@ produce_json(RD, Ctx=#context{riakc_pid=RiakPid}) ->
                                 "multipart/mixed; boundary="++Boundary,
                                 RD),
     StatusQsVal = wrq:get_qs_value("status", RD),
-    case StatusQsVal of
+    Status = case StatusQsVal of
         "enabled" ->
-            Status = enabled;
+            enabled;
         "disabled" ->
-            Status = disabled;
+            disabled;
         _ ->
-            Status = undefined
+            undefined
     end,
     {{stream, {<<>>, fun() -> stream_users(json, RiakPid, Boundary, Status) end}}, UpdRD, Ctx}.
 
@@ -85,13 +85,13 @@ produce_xml(RD, Ctx=#context{riakc_pid=RiakPid}) ->
                                 "multipart/mixed; boundary="++Boundary,
                                 RD),
     StatusQsVal = wrq:get_qs_value("status", RD),
-    case StatusQsVal of
+    Status = case StatusQsVal of
         "enabled" ->
-            Status = enabled;
+            enabled;
         "disabled" ->
-            Status = disabled;
+            disabled;
         _ ->
-            Status = undefined
+            undefined
     end,
     {{stream, {<<>>, fun() -> stream_users(xml, RiakPid, Boundary, Status) end}}, UpdRD, Ctx}.
 

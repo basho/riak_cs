@@ -28,18 +28,8 @@
 
 -spec riak_host_port() -> {string(), pos_integer()}.
 riak_host_port() ->
-    case application:get_env(riak_cs, riak_ip) of
-        {ok, Host} ->
-            ok;
-        undefined ->
-            Host = "127.0.0.1"
-    end,
-    case application:get_env(riak_cs, riak_pb_port) of
-        {ok, Port} ->
-            ok;
-        undefined ->
-            Port = 8087
-    end,
+    Host = application:get_env(riak_cs, riak_ip, "127.0.0.1"),
+    Port = application:get_env(riak_cs, riak_pb_port, 8087),
     {Host, Port}.
 
 -spec start_link(term()) -> {ok, pid()} | {error, term()}.

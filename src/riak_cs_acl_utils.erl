@@ -301,18 +301,18 @@ process_owner([HeadElement | RestElements], Acl, RiakPid) ->
     [Content] = HeadElement#xmlElement.content,
     Value = Content#xmlText.value,
     ElementName = HeadElement#xmlElement.name,
-    case ElementName of
+    UpdOwner = case ElementName of
         'ID' ->
             _ = lager:debug("Owner ID value: ~p", [Value]),
             {OwnerName, _, OwnerKeyId} = Owner,
-            UpdOwner = {OwnerName, Value, OwnerKeyId};
+            {OwnerName, Value, OwnerKeyId};
         'DisplayName' ->
             _ = lager:debug("Owner Name content: ~p", [Value]),
             {_, OwnerId, OwnerKeyId} = Owner,
-            UpdOwner = {Value, OwnerId, OwnerKeyId};
+            {Value, OwnerId, OwnerKeyId};
         _ ->
             _ = lager:debug("Encountered unexpected element: ~p", [ElementName]),
-            UpdOwner = Owner
+            Owner
     end,
     process_owner(RestElements, Acl?ACL{owner=UpdOwner}, RiakPid).
 
@@ -397,36 +397,35 @@ process_grantee([HeadElement | RestElements], Grant, AclOwner, RiakPid) ->
     [Content] = HeadElement#xmlElement.content,
     Value = Content#xmlText.value,
     ElementName = HeadElement#xmlElement.name,
-    case ElementName of
+    UpdGrant = case ElementName of
         'ID' ->
             _ = lager:debug("ID value: ~p", [Value]),
             {{Name, _}, Perms} = Grant,
-            UpdGrant = {{Name, Value}, Perms};
+            {{Name, Value}, Perms};
         'EmailAddress' ->
             _ = lager:debug("Email value: ~p", [Value]),
-            UpdGrant =
-                case canonical_for_email(Value, RiakPid) of
-                    {ok, Id} ->
-                        %% Get the canonical id for a given email address
-                        _ = lager:debug("ID value: ~p", [Id]),
-                        {{Name, _}, Perms} = Grant,
-                        {{Name, Id}, Perms};
-                    {error, _}=Error ->
-                        Error
-                end;
+            case canonical_for_email(Value, RiakPid) of
+                {ok, Id} ->
+                    %% Get the canonical id for a given email address
+                    _ = lager:debug("ID value: ~p", [Id]),
+                    {{Name, _}, Perms} = Grant,
+                    {{Name, Id}, Perms};
+                {error, _}=Error ->
+                    Error
+            end;
         'URI' ->
             {_, Perms} = Grant,
             case Value of
                 ?AUTH_USERS_GROUP ->
-                    UpdGrant = {'AuthUsers', Perms};
+                    {'AuthUsers', Perms};
                 ?ALL_USERS_GROUP ->
-                    UpdGrant = {'AllUsers', Perms};
+                    {'AllUsers', Perms};
                 _ ->
                     %% Not yet supporting log delivery group
-                    UpdGrant = Grant
+                    Grant
             end;
         _ ->
-            UpdGrant = Grant
+            Grant
     end,
     case UpdGrant of
         {error, _} ->
@@ -441,11 +440,11 @@ process_grantee([HeadElement | RestElements], Grant, AclOwner, RiakPid) ->
 process_permission([Content], Grant) ->
     Value = list_to_existing_atom(Content#xmlText.value),
     {Grantee, Perms} = Grant,
-    case lists:member(Value, Perms) of
+    UpdPerms = case lists:member(Value, Perms) of
         true ->
-            UpdPerms = Perms;
+            Perms;
         false ->
-            UpdPerms = [Value | Perms]
+            [Value | Perms]
     end,
     {Grantee, UpdPerms}.
 

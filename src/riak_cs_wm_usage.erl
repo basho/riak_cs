@@ -220,16 +220,19 @@ content_types_provided(RD, Ctx) ->
     {Types, RD, Ctx}.
 
 generate_etag(RD, #ctx{etag=undefined}=Ctx) ->
-    case content_types_provided(RD, Ctx) of
-        {[{_Type, Producer}], _, _} -> ok;
+    Producer = case content_types_provided(RD, Ctx) of
+        {[{_Type, Prod}], _, _} ->
+            Prod;
         {Choices, _, _} ->
             Accept = wrq:get_req_header("Accept", RD),
             ChosenType = webmachine_util:choose_media_type(
                            [ Type || {Type, _} <- Choices ],
                            Accept),
             case [ P || {T, P} <- Choices, T == ChosenType ] of
-                [] -> Producer = element(2, hd(Choices));
-                [Producer|_] -> ok
+                [] ->
+                    element(2, hd(Choices));
+                [Prod|_] ->
+                    Prod
             end
     end,
     {Body, NewRD, NewCtx} = ?MODULE:Producer(RD, Ctx),
@@ -460,12 +463,12 @@ error_msg(RD, Message) ->
     {CTP, _, _} = content_types_provided(RD, #ctx{}),
     PTypes = [Type || {Type,_Fun} <- CTP],
     AcceptHdr = wrq:get_req_header("accept", RD),
+    {Type, Body} =
     case webmachine_util:choose_media_type(PTypes, AcceptHdr) of
-        ?JSON_TYPE=Type ->
-            Body = json_error_msg(Message);
+        ?JSON_TYPE=T ->
+            {T, json_error_msg(Message)};
         _ ->
-            Type = ?XML_TYPE,
-            Body = xml_error_msg(Message)
+            {?XML_TYPE, xml_error_msg(Message)}
     end,
     wrq:set_resp_header("content-type", Type, wrq:set_resp_body(Body, RD)).
 

@@ -181,16 +181,15 @@ handle_validation_response({error, Reason}, RD, Ctx, _, Conv2KeyCtx, _) ->
                                   {error, bad_auth | notfound | no_user_key | term()}.
 validate_auth_header(RD, AuthBypass, RiakPid, Ctx) ->
     AuthHeader = wrq:get_req_header("authorization", RD),
+    {AuthMod, KeyId, Signature} =
     case AuthHeader of
         undefined ->
             %% Check for auth info presented as query params
             KeyId0 = wrq:get_qs_value(?QS_KEYID, RD),
             EncodedSig = wrq:get_qs_value(?QS_SIGNATURE, RD),
-            {AuthMod, KeyId, Signature} = parse_auth_params(KeyId0,
-                                                            EncodedSig,
-                                                            AuthBypass);
+            parse_auth_params(KeyId0, EncodedSig, AuthBypass);
         _ ->
-            {AuthMod, KeyId, Signature} = parse_auth_header(AuthHeader, AuthBypass)
+            parse_auth_header(AuthHeader, AuthBypass)
     end,
     case riak_cs_utils:get_user(KeyId, RiakPid) of
         {ok, {User, UserObj}} when User?RCS_USER.status =:= enabled ->

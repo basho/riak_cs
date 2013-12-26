@@ -358,19 +358,17 @@ delete_bucket(User, UserObj, Bucket, RiakPid) ->
     CurrentBuckets = get_buckets(User),
 
     %% Buckets can only be deleted if they exist
+    {AttemptDelete, LocalError} =
     case bucket_exists(CurrentBuckets, binary_to_list(Bucket)) of
         true ->
             case bucket_empty(Bucket, RiakPid) of
                 true ->
-                    AttemptDelete = true,
-                    LocalError = ok;
+                    {true, ok};
                 false ->
-                    AttemptDelete = false,
-                    LocalError = {error, bucket_not_empty}
+                    {false, {error, bucket_not_empty}}
             end;
         false ->
-            AttemptDelete = true,
-            LocalError = ok
+            {true, ok}
     end,
     case AttemptDelete of
         true ->
@@ -429,26 +427,26 @@ get_buckets(?RCS_USER{buckets=Buckets}) ->
 %% @doc Return `stanchion' configuration data.
 -spec stanchion_data() -> {string(), pos_integer(), boolean()}.
 stanchion_data() ->
-    case application:get_env(riak_cs, stanchion_ip) of
-        {ok, IP} ->
-            ok;
+    IP = case application:get_env(riak_cs, stanchion_ip) of
+        {ok, I} ->
+            I;
         undefined ->
             _ = lager:warning("No IP address or host name for stanchion access defined. Using default."),
-            IP = ?DEFAULT_STANCHION_IP
+            ?DEFAULT_STANCHION_IP
     end,
-    case application:get_env(riak_cs, stanchion_port) of
-        {ok, Port} ->
-            ok;
+    Port = case application:get_env(riak_cs, stanchion_port) of
+        {ok, P} ->
+            P;
         undefined ->
             _ = lager:warning("No port for stanchion access defined. Using default."),
-            Port = ?DEFAULT_STANCHION_PORT
+            ?DEFAULT_STANCHION_PORT
     end,
-    case application:get_env(riak_cs, stanchion_ssl) of
-        {ok, SSL} ->
-            ok;
+    SSL = case application:get_env(riak_cs, stanchion_ssl) of
+        {ok, S} ->
+            S;
         undefined ->
             _ = lager:warning("No ssl flag for stanchion access defined. Using default."),
-            SSL = ?DEFAULT_STANCHION_SSL
+            ?DEFAULT_STANCHION_SSL
     end,
     {IP, Port, SSL}.
 
@@ -1010,11 +1008,11 @@ timestamp_to_milliseconds(Timestamp) ->
 %% bucket or the data block bucket.
 -spec to_bucket_name(objects | blocks, binary()) -> binary().
 to_bucket_name(Type, Bucket) ->
-    case Type of
+    Prefix = case Type of
         objects ->
-            Prefix = ?OBJECT_BUCKET_PREFIX;
+            ?OBJECT_BUCKET_PREFIX;
         blocks ->
-            Prefix = ?BLOCK_BUCKET_PREFIX
+            ?BLOCK_BUCKET_PREFIX
     end,
     BucketHash = md5(Bucket),
     <<Prefix/binary, BucketHash/binary>>.
@@ -1248,13 +1246,13 @@ bucket_json(Bucket, ACL, KeyId)  ->
 %% @doc Return a bucket record for the specified bucket name.
 -spec bucket_record(binary(), bucket_operation()) -> cs_bucket().
 bucket_record(Name, Operation) ->
-    case Operation of
+    Action = case Operation of
         create ->
-            Action = created;
+            created;
         delete ->
-            Action = deleted;
+            deleted;
         _ ->
-            Action = undefined
+            undefined
     end,
     ?RCS_BUCKET{name=binary_to_list(Name),
                  last_action=Action,
