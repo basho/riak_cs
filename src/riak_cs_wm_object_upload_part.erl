@@ -66,21 +66,27 @@ authorize(RD, Ctx0=#context{local_context=LocalCtx0, riakc_pid=RiakPid}) ->
         riak_cs_acl_utils:requested_access(Method, false),
     LocalCtx = riak_cs_wm_utils:ensure_doc(LocalCtx0, RiakPid),
     Ctx = Ctx0#context{requested_perm=RequestedAccess, local_context=LocalCtx},
+    authorize(RD, Ctx,
+              LocalCtx#key_context.bucket_object,
+              Method, LocalCtx#key_context.manifest).
 
-    %% Final step of {@link forbidden/2}: Authentication succeeded,
-    case {Method, LocalCtx#key_context.manifest} of
-        {'GET', notfound} ->
-            %% List Parts
-            %% Object ownership will be checked by riak_cs_mp_utils:do_part_common(),
-            %% so we give blanket permission here - Never check ACL but Policy.
-            riak_cs_wm_utils:object_access_authorize_helper(object_part, true, true, RD, Ctx);
-        {'HEAD', notfound} ->
-            {{halt, 404},
-             riak_cs_access_log_handler:set_user(Ctx#context.user, RD), Ctx};
-        _ ->
-            %% Initiate/Complete/Abort multipart
-            riak_cs_wm_utils:object_access_authorize_helper(object_part, true, false, RD, Ctx)
-    end.
+authorize(RD, Ctx, notfound = _BucketObj, _Method, _Manifest) ->
+    authorize_error(RD, Ctx, no_such_bucket);
+authorize(RD, Ctx, _BucketObj, 'GET', notfound = _Manifest) ->
+    %% List Parts
+    %% Object ownership will be checked by riak_cs_mp_utils:do_part_common(),
+    %% so we give blanket permission here - Never check ACL but Policy.
+    riak_cs_wm_utils:object_access_authorize_helper(object_part, true, true, RD, Ctx);
+authorize(RD, Ctx, _BucketObj, 'HEAD', notfound = _Manifest) ->
+    authorize_error(RD, Ctx, no_such_key);
+authorize(RD, Ctx, _BucketObj, _Method, _Manifest) ->
+    %% Initiate/Complete/Abort multipart
+    riak_cs_wm_utils:object_access_authorize_helper(object_part, true, false, RD, Ctx).
+
+authorize_error(RD, Ctx, ErrorAtom) ->
+    ResponseMod = Ctx#context.response_module,
+    NewRD = riak_cs_access_log_handler:set_user(Ctx#context.user, RD),
+    ResponseMod:api_error(ErrorAtom, NewRD, Ctx).
 
 %% @doc Get the list of methods this resource supports.
 -spec allowed_methods() -> [atom()].

@@ -39,7 +39,8 @@
          anonymous_object_access/5,
          bucket_access/4,
          bucket_access/5,
-         bucket_acl/2,
+         fetch_bucket_acl/2,
+         bucket_acl/1,
          bucket_acl_from_contents/2,
          object_access/5,
          object_access/6,
@@ -63,7 +64,7 @@ anonymous_bucket_access(_Bucket, undefined, _, _) ->
     false;
 anonymous_bucket_access(Bucket, RequestedAccess, RiakPid, undefined) ->
     %% Fetch the bucket's ACL
-    case bucket_acl(Bucket, RiakPid) of
+    case fetch_bucket_acl(Bucket, RiakPid) of
         {ok, BucketAcl} -> anonymous_bucket_access(Bucket, RequestedAccess, RiakPid, BucketAcl);
         {error, Reason} ->
             %% @TODO Think about bubbling this error up and providing
@@ -87,30 +88,30 @@ anonymous_bucket_access(_Bucket, RequestedAccess, RiakPid, BucketAcl) ->
 
 %% @doc Determine if anonymous access is set for the object.
 %% @TODO Enhance when doing object ACLs
--spec anonymous_object_access(binary(), acl(), atom(), pid()) ->
+-spec anonymous_object_access(riakc_obj:riakc_obj(), acl(), atom(), pid()) ->
                                      {true, string()} |
                                      false.
-anonymous_object_access(Bucket, ObjAcl, RequestedAccess, RiakPid) ->
-    anonymous_object_access(Bucket, ObjAcl, RequestedAccess, RiakPid, undefined).
+anonymous_object_access(BucketObj, ObjAcl, RequestedAccess, RiakPid) ->
+    anonymous_object_access(BucketObj, ObjAcl, RequestedAccess, RiakPid, undefined).
 
 
--spec anonymous_object_access(binary(), acl(), atom(), pid(), acl()|undefined) ->
+-spec anonymous_object_access(riakc_obj:riakc_obj(), acl(), atom(), pid(), acl()|undefined) ->
                                      {true, string()} | false.
-anonymous_object_access(_Bucket, _ObjAcl, undefined, _, _) ->
+anonymous_object_access(_BucketObj, _ObjAcl, undefined, _, _) ->
     false;
-anonymous_object_access(Bucket, ObjAcl, 'WRITE', RiakPid, undefined) ->
-    case bucket_acl(Bucket, RiakPid) of
+anonymous_object_access(BucketObj, ObjAcl, 'WRITE', RiakPid, undefined) ->
+    case bucket_acl(BucketObj) of
         {ok, BucketAcl} ->
             %% `WRITE' is the only pertinent bucket-level
             %% permission when checking object access.
-            anonymous_object_access(Bucket, ObjAcl, 'WRITE', RiakPid, BucketAcl);
+            anonymous_object_access(BucketObj, ObjAcl, 'WRITE', RiakPid, BucketAcl);
         {error, Reason} ->
             %% @TODO Think about bubbling this error up and providing
             %% feedback to requester.
             _ = lager:error("Anonymous object access check failed due to error. Reason: ~p", [Reason]),
             false
     end;
-anonymous_object_access(_Bucket, _ObjAcl, 'WRITE', RiakPid, BucketAcl) ->
+anonymous_object_access(_BucketObj, _ObjAcl, 'WRITE', RiakPid, BucketAcl) ->
     HasObjPerm = has_permission(acl_grants(BucketAcl), 'WRITE'),
     case HasObjPerm of
         true ->
@@ -118,7 +119,7 @@ anonymous_object_access(_Bucket, _ObjAcl, 'WRITE', RiakPid, BucketAcl) ->
         _ ->
             false
     end;
-anonymous_object_access(_Bucket, ObjAcl, RequestedAccess, RiakPid, _) ->
+anonymous_object_access(_BucketObj, ObjAcl, RequestedAccess, RiakPid, _) ->
     HasObjPerm = has_permission(acl_grants(ObjAcl), RequestedAccess),
     case HasObjPerm of
         true ->
@@ -139,7 +140,7 @@ bucket_access(_Bucket, undefined, _CanonicalId, _, _) ->
     false;
 bucket_access(Bucket, RequestedAccess, CanonicalId, RiakPid, undefined) ->
     %% Fetch the bucket's ACL
-    case bucket_acl(Bucket, RiakPid) of
+    case fetch_bucket_acl(Bucket, RiakPid) of
         {ok, Acl} ->
             bucket_access(Bucket, RequestedAccess, CanonicalId, RiakPid, Acl);
         {error, notfound} ->
@@ -170,25 +171,30 @@ bucket_access(_, RequestedAccess, CanonicalId, RiakPid, Acl) ->
     end.
 
 
-%% @doc Get the ACL for a bucket
 -type acl_from_meta_result() :: {'ok', acl()} | {'error', 'acl_undefined'}.
 -type bucket_acl_result() :: acl_from_meta_result() | {'error', 'multiple_bucket_owners'}.
 -type bucket_acl_riak_error() :: {error, 'notfound' | term()}.
--spec bucket_acl(binary(), pid()) -> bucket_acl_result() | bucket_acl_riak_error().
-bucket_acl(Bucket, RiakPid) ->
+-spec fetch_bucket_acl(binary(), pid()) -> bucket_acl_result() | bucket_acl_riak_error().
+fetch_bucket_acl(Bucket, RiakPid) ->
     case riak_cs_utils:check_bucket_exists(Bucket, RiakPid) of
         {ok, Obj} ->
-            %% For buckets there should not be siblings, but in rare
-            %% cases it may happen so check for them and attempt to
-            %% resolve if possible.
-            Contents = riakc_obj:get_contents(Obj),
-            bucket_acl_from_contents(Bucket, Contents);
+            bucket_acl(Obj);
         {error, Reason} ->
             _ = lager:debug("Failed to fetch ACL. Bucket ~p "
                             " does not exist. Reason: ~p",
                             [Bucket, Reason]),
             {error, notfound}
     end.
+
+%% @doc Get the ACL for a bucket
+-spec bucket_acl(riakc_obj:riakc_obj()) -> bucket_acl_result().
+bucket_acl(BucketObj) ->
+    %% For buckets there should not be siblings, but in rare
+    %% cases it may happen so check for them and attempt to
+    %% resolve if possible.
+    BucketName = riakc_obj:key(BucketObj),
+    Contents = riakc_obj:get_contents(BucketObj),
+    bucket_acl_from_contents(BucketName, Contents).
 
 %% @doc Attempt to resolve an ACL for the bucket based on the contents.
 %% We attempt resolution, but intentionally do not write back a resolved
@@ -234,30 +240,30 @@ newer_acl(_, Acl2) ->
 %% @TODO Enhance when doing object-level ACL work. This is a bit
 %% patchy until object ACLs are done. The bucket owner gets full
 %% control, but bucket-level ACLs only matter for writes otherwise.
--spec object_access(binary(), acl(), atom(), string(), pid())
+-spec object_access(riakc_obj:riakc_obj(), acl(), atom(), string(), pid())
                    -> boolean() | {true, string()}.
-object_access(Bucket, ObjAcl, RequestedAccess, CanonicalId, RiakPid) ->
-    object_access(Bucket, ObjAcl, RequestedAccess, CanonicalId, RiakPid, undefined).
+object_access(BucketObj, ObjAcl, RequestedAccess, CanonicalId, RiakPid) ->
+    object_access(BucketObj, ObjAcl, RequestedAccess, CanonicalId, RiakPid, undefined).
 
 
--spec object_access(binary(), acl(), atom(), string(), pid(), undefined|acl())
+-spec object_access(riakc_obj:riakc_obj(), acl(), atom(), string(), pid(), undefined|acl())
                    -> boolean() | {true, string()}.
-object_access(_Bucket, _ObjAcl, undefined, _CanonicalId, _, _) ->
+object_access(_BucketObj, _ObjAcl, undefined, _CanonicalId, _, _) ->
     false;
-object_access(_Bucket, _ObjAcl, _RequestedAccess, undefined, _RiakPid, _) ->
+object_access(_BucketObj, _ObjAcl, _RequestedAccess, undefined, _RiakPid, _) ->
     %% User record not provided, check for anonymous access
-    anonymous_object_access(_Bucket, _ObjAcl, _RequestedAccess, _RiakPid);
-object_access(Bucket, ObjAcl, 'WRITE', CanonicalId, RiakPid, undefined) ->
-    case bucket_acl(Bucket, RiakPid) of
+    anonymous_object_access(_BucketObj, _ObjAcl, _RequestedAccess, _RiakPid);
+object_access(BucketObj, ObjAcl, 'WRITE', CanonicalId, RiakPid, undefined) ->
+    case bucket_acl(BucketObj) of
         {ok, BucketAcl} ->
-            object_access(Bucket, ObjAcl, 'WRITE', CanonicalId, RiakPid, BucketAcl);
+            object_access(BucketObj, ObjAcl, 'WRITE', CanonicalId, RiakPid, BucketAcl);
         {error, Reason} ->
             %% @TODO Think about bubbling this error up and providing
             %% feedback to requester.
             _ = lager:error("Object access check failed due to error. Reason: ~p", [Reason]),
             false
     end;
-object_access(_Bucket, _ObjAcl, 'WRITE', CanonicalId, RiakPid, BucketAcl) ->
+object_access(_BucketObj, _ObjAcl, 'WRITE', CanonicalId, RiakPid, BucketAcl) ->
     %% Fetch the bucket's ACL
     IsBucketOwner = is_owner(BucketAcl, CanonicalId),
     HasBucketPerm = has_permission(acl_grants(BucketAcl),
@@ -271,7 +277,7 @@ object_access(_Bucket, _ObjAcl, 'WRITE', CanonicalId, RiakPid, BucketAcl) ->
         _ ->
             false
     end;
-object_access(_Bucket, ObjAcl, RequestedAccess, CanonicalId, RiakPid, _) ->
+object_access(_BucketObj, ObjAcl, RequestedAccess, CanonicalId, RiakPid, _) ->
     _ = lager:debug("ObjAcl: ~p~nCanonicalId: ~p", [ObjAcl, CanonicalId]),
     IsObjOwner = is_owner(ObjAcl, CanonicalId),
     HasObjPerm = has_permission(acl_grants(ObjAcl),

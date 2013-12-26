@@ -72,7 +72,7 @@ to_json(RD, Ctx=#context{start_time=_StartTime,
     riak_cs_dtrace:dt_bucket_entry(?MODULE, <<"bucket_get_policy">>,
                                       [], [riak_cs_wm_utils:extract_name(User), Bucket]),
 
-    case riak_cs_s3_policy:bucket_policy(Bucket, RiakPid) of
+    case riak_cs_s3_policy:fetch_bucket_policy(Bucket, RiakPid) of
         {ok, PolicyJson} ->
             {PolicyJson, RD, Ctx};
         {error, policy_undefined} ->

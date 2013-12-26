@@ -56,29 +56,29 @@ malformed_request(RD,Ctx=#context{local_context=LocalCtx0}) ->
 -spec authorize(#wm_reqdata{}, #context{}) ->
                        {boolean() | {halt, term()}, #wm_reqdata{}, #context{}}.
 authorize(RD, Ctx0=#context{local_context=LocalCtx0,
-                            response_module=ResponseMod,
                             riakc_pid=RiakPid}) ->
     Method = wrq:method(RD),
     RequestedAccess =
         riak_cs_acl_utils:requested_access(Method, false),
     LocalCtx = riak_cs_wm_utils:ensure_doc(LocalCtx0, RiakPid),
-    Ctx = Ctx0#context{requested_perm=RequestedAccess,local_context=LocalCtx},
+    Ctx = Ctx0#context{requested_perm=RequestedAccess, local_context=LocalCtx},
+    authorize(RD, Ctx,
+              LocalCtx#key_context.bucket_object,
+              Method, LocalCtx#key_context.manifest).
 
-    %% Final step of {@link forbidden/2}: Authentication succeeded,
-    case {Method, LocalCtx#key_context.manifest} of
-        {'GET', notfound} ->
-            ResponseMod:api_error(no_such_key,
-                                  riak_cs_access_log_handler:set_user(Ctx#context.user, RD),
-                                  Ctx);
-        {'HEAD', notfound} ->
-            ResponseMod:api_error(no_such_key,
-                                  riak_cs_access_log_handler:set_user(Ctx#context.user, RD),
-                                  Ctx);
-        _ ->
-            riak_cs_wm_utils:object_access_authorize_helper(object, true, RD, Ctx)
-    end.
+authorize(RD, Ctx, notfound = _BucketObj, _Method, _Manifest) ->
+    authorize_error(RD, Ctx, no_such_bucket);
+authorize(RD, Ctx, _BucketObj, 'GET', notfound = _Manifest) ->
+    authorize_error(RD, Ctx, no_such_key);
+authorize(RD, Ctx, _BucketObj, 'HEAD', notfound = _Manifest) ->
+    authorize_error(RD, Ctx, no_such_key);
+authorize(RD, Ctx, _BucketObj, _Method, _Manifest) ->
+    riak_cs_wm_utils:object_access_authorize_helper(object, true, RD, Ctx).
 
-
+authorize_error(RD, Ctx, ErrorAtom) ->
+    ResponseMod = Ctx#context.response_module,
+    NewRD = riak_cs_access_log_handler:set_user(Ctx#context.user, RD),
+    ResponseMod:api_error(ErrorAtom, NewRD, Ctx).
 
 %% @doc Get the list of methods this resource supports.
 -spec allowed_methods() -> [atom()].
@@ -309,6 +309,7 @@ accept_body(RD, Ctx=#context{local_context=LocalCtx,
                              riakc_pid=RiakcPid}) ->
     #key_context{bucket=Bucket,
                  key=Key,
+                 bucket_object=BucketObj,
                  putctype=ContentType,
                  size=Size,
                  get_fsm_pid=GetFsmPid} = LocalCtx,
@@ -327,7 +328,7 @@ accept_body(RD, Ctx=#context{local_context=LocalCtx,
             {User?RCS_USER.display_name,
              User?RCS_USER.canonical_id,
              User?RCS_USER.key_id},
-            riak_cs_wm_utils:bucket_owner(Bucket, RiakcPid)),
+            riak_cs_wm_utils:bucket_owner(BucketObj)),
     Args = [{Bucket, list_to_binary(Key), Size, list_to_binary(ContentType),
              Metadata, BlockSize, ACL, timer:seconds(60), self(), RiakcPid}],
     {ok, Pid} = riak_cs_put_fsm_sup:start_put_fsm(node(), Args),

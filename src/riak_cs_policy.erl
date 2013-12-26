@@ -22,6 +22,8 @@
 
 -include("riak_cs.hrl").
 
+-callback fetch_bucket_policy(binary(), pid()) -> {ok, policy()} | {error, term()}.
+-callback bucket_policy(riakc_obj:riakc_obj()) -> {ok, policy()} | {error, term()}.
 -callback eval(access(), policy() | undefined | binary() ) -> boolean() | undefined.
 -callback check_policy(access(), policy()) -> ok | {error, atom()}.
 -callback reqdata_to_access(RD :: term(), Target::atom(), ID::binary()|undefined) -> access().

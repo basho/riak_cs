@@ -33,7 +33,8 @@
 
 %% Public API
 -export([
-         bucket_policy/2,
+         fetch_bucket_policy/2,
+         bucket_policy/1,
          bucket_policy_from_contents/2,
          eval/2,
          check_policy/2,
@@ -247,13 +248,13 @@ log_supported_actions()->
                    [lists:map(fun atom_to_list/1, supported_bucket_action())]),
     ok.
 
-%% @doc Get the policy for a bucket
+%% @doc Fetch the policy for a bucket
 -type policy_from_meta_result() :: {'ok', policy()} | {'error', 'policy_undefined'}.
 -type bucket_policy_result() :: policy_from_meta_result() |
                                 {'error', 'notfound'} |
                                 {'error', 'multiple_bucket_owners'}.
--spec bucket_policy(binary(), pid()) -> bucket_policy_result().
-bucket_policy(Bucket, RiakPid) ->
+-spec fetch_bucket_policy(binary(), pid()) -> bucket_policy_result().
+fetch_bucket_policy(Bucket, RiakPid) ->
     case riak_cs_utils:check_bucket_exists(Bucket, RiakPid) of
         {ok, Obj} ->
             %% For buckets there should not be siblings, but in rare
@@ -267,6 +268,16 @@ bucket_policy(Bucket, RiakPid) ->
                             [Bucket, Reason]),
             {error, notfound}
     end.
+
+%% @doc Extract the policy for a bucket object
+-spec bucket_policy(riakc_obj:riakc_obj()) -> bucket_policy_result().
+bucket_policy(BucketObj) ->
+    %% For buckets there should not be siblings, but in rare
+    %% cases it may happen so check for them and attempt to
+    %% resolve if possible.
+    BucketName = riakc_obj:key(BucketObj),
+    Contents = riakc_obj:get_contents(BucketObj),
+    bucket_policy_from_contents(BucketName, Contents).
 
 %% @doc Attempt to resolve a policy for the bucket based on the contents.
 %% We attempt resolution, but intentionally do not write back a resolved
