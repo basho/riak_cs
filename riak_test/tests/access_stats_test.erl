@@ -41,7 +41,7 @@ confirm() ->
     pass.
 
 generate_some_accesses(UserConfig) ->
-    Begin = datetime(),
+    Begin = rtcs:datetime(),
     lager:info("creating bucket ~p", [?BUCKET]),
     %% Create bucket
     ?assertEqual(ok, erlcloud_s3:create_bucket(?BUCKET, UserConfig)),
@@ -57,7 +57,7 @@ generate_some_accesses(UserConfig) ->
     _ = erlcloud_s3:delete_object(?BUCKET, ?KEY, UserConfig),
     %% Delete bucket
     ?assertEqual(ok, erlcloud_s3:delete_bucket(?BUCKET, UserConfig)),
-    End = datetime(),
+    End = rtcs:datetime(),
     {Begin, End}.
 
 flush_access_stats() ->
@@ -88,17 +88,13 @@ assert_access_stats(UserConfig, {Begin, End}) ->
     ?assertEqual(  1, sum_samples([<<"BucketDelete">>, <<"Count">>], Samples)),
     pass.
 
-datetime() ->
-    {{YYYY,MM,DD}, {H,M,S}} = calendar:universal_time(),
-    io_lib:format("~4..0B~2..0B~2..0BT~2..0B~2..0B~2..0BZ", [YYYY, MM, DD, H, M, S]).
-
 node_samples_from_usage(Node, Usage) ->
-    ListOfNodeStats = json_get([<<"Access">>, <<"Nodes">>], Usage),
+    ListOfNodeStats = rtcs:json_get([<<"Access">>, <<"Nodes">>], Usage),
     lager:debug("ListOfNodeStats: ~p", [ListOfNodeStats]),
     [NodeStats | _] = lists:dropwhile(fun(NodeStats) ->
-                                              json_get(<<"Node">>, NodeStats) =/= Node
+                                              rtcs:json_get(<<"Node">>, NodeStats) =/= Node
                                       end, ListOfNodeStats),
-    json_get(<<"Samples">>, NodeStats).
+    rtcs:json_get(<<"Samples">>, NodeStats).
 
 %% Sum up statistics entries in possibly multiple samples
 sum_samples(Keys, Samples) ->
@@ -106,22 +102,10 @@ sum_samples(Keys, Samples) ->
 sum_samples(_Keys, [], Sum) ->
     Sum;
 sum_samples(Keys, [Sample | Samples], Sum) ->
-    InSample = case json_get(Keys, Sample) of
+    InSample = case rtcs:json_get(Keys, Sample) of
                    notfound ->
                        0;
                    Value when is_integer(Value) ->
                        Value
                   end,
     sum_samples(Keys, Samples, Sum + InSample).
-
-json_get(Key, Json) when is_binary(Key) ->
-    json_get([Key], Json);
-json_get([], Json) ->
-    Json;
-json_get([Key | Keys], {struct, JsonProps}) ->
-    case lists:keyfind(Key, 1, JsonProps) of
-        false ->
-            notfound;
-        {Key, Value} ->
-            json_get(Keys, Value)
-    end.

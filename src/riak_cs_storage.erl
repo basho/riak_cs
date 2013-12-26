@@ -46,10 +46,27 @@ sum_user(Riak, User) when is_binary(User) ->
 sum_user(Riak, User) when is_list(User) ->
     case riak_cs_utils:get_user(User, Riak) of
         {ok, {?RCS_USER{buckets=Buckets}, _UserObj}} ->
-            {ok, [ {B, sum_bucket(Riak, B)}
-                   || ?RCS_BUCKET{name=B} <- Buckets ]};
+            BucketUsages = [maybe_sum_bucket(Riak, User, B)
+                            || ?RCS_BUCKET{name=B} <- Buckets],
+            {ok, BucketUsages};
         {error, Error} ->
             {error, Error}
+    end.
+
+%% @doc Output a log when calculating total usage of a bucket.
+%%      This log is *very* important because unless this log
+%%      there are no other way for operator to know a calculation
+%%      which riak_cs_storage_d failed.
+-spec maybe_sum_bucket(pid(), string(), string()) ->
+                              {string(), non_neg_integer()|string()}.
+maybe_sum_bucket(Riak, User, Bucket) ->
+    case sum_bucket(Riak, Bucket) of
+        {ok, BucketUsage} -> BucketUsage;
+        {error, _} = E ->
+            _ = lager:error("failed to calculate usage of "
+                            "bucket '~s' of user '~s'. Reason: ~p",
+                            [Bucket, User, E]),
+            {Bucket, iolist_to_binary(io_lib:format("~p", [E]))}
     end.
 
 %% @doc Sum the number of bytes stored in active files in the named

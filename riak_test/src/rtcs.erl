@@ -625,3 +625,21 @@ make_authorization(Method, Resource, ContentType, Config, Date) ->
     StringToSign = [Method, $\n, [], $\n, ContentType, $\n, Date, $\n, Resource],
     Signature = base64:encode_to_string(crypto:sha_mac(Config#aws_config.secret_access_key, StringToSign)),
     lists:flatten(["AWS ", Config#aws_config.access_key_id, $:, Signature]).
+
+datetime() ->
+    {{YYYY,MM,DD}, {H,M,S}} = calendar:universal_time(),
+    io_lib:format("~4..0B~2..0B~2..0BT~2..0B~2..0B~2..0BZ", [YYYY, MM, DD, H, M, S]).
+
+
+
+json_get(Key, Json) when is_binary(Key) ->
+    json_get([Key], Json);
+json_get([], Json) ->
+    Json;
+json_get([Key | Keys], {struct, JsonProps}) ->
+    case lists:keyfind(Key, 1, JsonProps) of
+        false ->
+            notfound;
+        {Key, Value} ->
+            json_get(Keys, Value)
+    end.

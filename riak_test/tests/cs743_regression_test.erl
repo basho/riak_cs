@@ -24,19 +24,20 @@
 %% issue 286</a>.
 
 -export([confirm/0]).
+
+-include_lib("erlcloud/include/erlcloud_aws.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 -define(TEST_BUCKET, "riak-test-bucket").
 
 confirm() ->
     Config = [{riak, rtcs:riak_config()}, {stanchion, rtcs:stanchion_config()},
-
               {cs,
                [{riakc, [{mapred_timeout,1}]}] %% make storage calc timeout
-               ++ rtcs:cs_config()}],
+               ++ rtcs:cs_config([{storage_archive_period, 1}])}],
     {UserConfig, {_RiakNodes, CSNodes, _Stanchion}} = rtcs:setup(4, Config),
 
-
+    Begin = rtcs:datetime(),
     run_storage_batch(hd(CSNodes)),
     lager:info("creating bucket ~p", [?TEST_BUCKET]),
     ?assertEqual(ok, erlcloud_s3:create_bucket(?TEST_BUCKET, UserConfig)),
@@ -44,9 +45,36 @@ confirm() ->
     N = 1024,
     lager:info("creating ~p objects in ~p", [N, ?TEST_BUCKET]),
     ok = etoomanyobjects(N, UserConfig),
+    timer:sleep(1000),
 
     run_storage_batch(hd(CSNodes)),
+    timer:sleep(1000),
+    End = rtcs:datetime(),
+
+    assert_storage_stats(UserConfig, Begin, End),
     pass.
+
+assert_storage_stats(UserConfig, Begin, End) ->
+    KeyId = UserConfig#aws_config.access_key_id,
+    StatsKey = lists:flatten(["usage/", KeyId, "/bj/", Begin, "/", End, "/"]),
+    GetResult = erlcloud_s3:get_object("riak-cs", StatsKey, UserConfig),
+    lager:info("Storage stats response: ~p", [GetResult]),
+    Usage = mochijson2:decode(proplists:get_value(content, GetResult)),
+    lager:info("Storage Usage: ~p", [Usage]),
+    Samples = rtcs:json_get([<<"Storage">>, <<"Samples">>], Usage),
+
+    ?assert(lists:any(
+              fun(Sample) ->
+                      case rtcs:json_get(list_to_binary(?TEST_BUCKET), Sample) of
+                          notfound -> false;
+                          ErrorStr ->
+                              ?assert(not is_integer(ErrorStr)),
+                              ?assertEqual(<<"{error,{timeout,[]}}">>, ErrorStr),
+                              true
+                      end
+              end,
+              Samples)).
+    %% supposed to be "{error, timeout}"
 
 run_storage_batch(CSNode) ->
     {ok, Status0} = rpc:call(CSNode, riak_cs_storage_d, status, []),
