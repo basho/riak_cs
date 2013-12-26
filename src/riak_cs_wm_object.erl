@@ -287,41 +287,36 @@ content_types_accepted(CT, RD, Ctx=#context{local_context=LocalCtx0}) ->
              Ctx}
     end.
 
--spec is_copy_request(#wm_reqdata{}) -> boolean().
-is_copy_request(RD) ->
+-spec get_copy_source(#wm_reqdata{}) -> | undefined | {string(), string()} |
+    {error, atom()}.
+get_copy_source(RD) ->
     case wrq:get_req_header("x-copy-from", RD) of
         undefined ->
-            false;
-        _ ->
-            true
+            undefined;
+        [H | T] ->
+            case H of
+                "/" ->
+                    Bucket = lists:takewhile(fun(Char) ->
+                                                 Char != $/
+                                             end, T),
+                    Key = lists:nthtail(length(Bucket)+1, T),
+                    {Bucket, Key}
+                _ ->
+                    {error, invalid_x_copy_from_path}
+            end
     end.
+
 
 -spec accept_body(#wm_reqdata{}, #context{}) ->
                          {{halt, integer()}, #wm_reqdata{}, #context{}}.
 accept_body(RD, Ctx) ->
-    accept_body(RD, Ctx, is_copy_request(RD)).
+    accept_body(RD, Ctx, get_copy_source(RD)).
 
--spec accept_body(#wm_reqdata{}, #context{}, boolean()) ->
-                         {{halt, integer()}, #wm_reqdata{}, #context{}}.
-accept_body(RD, Ctx, true) ->
-    #context{local_context=LocalCtx,
-             response_module=ResponseMod,
-             riakc_pid=RiakcPid} = Ctx,
-    #key_context{bucket=Bucket, key=KeyStr, manifest=Mfst} = LocalCtx,
-    Acl = Mfst?MANIFEST.acl,
-    NewAcl = Acl?ACL{creation_time = os:timestamp()},
-    Metadata = riak_cs_wm_utils:extract_user_metadata(RD),
-    case riak_cs_utils:set_object_acl(Bucket, list_to_binary(KeyStr),
-                                      Mfst?MANIFEST{metadata=Metadata}, NewAcl,
-                                      RiakcPid) of
-        ok ->
-            ETag = riak_cs_utils:etag_from_binary(Mfst?MANIFEST.content_md5),
-            RD2 = wrq:set_resp_header("ETag", ETag, RD),
-            ResponseMod:copy_object_response(Mfst, RD2, Ctx);
-        {error, Err} ->
-            ResponseMod:api_error(Err, RD, Ctx)
-    end;
-accept_body(RD, Ctx, false) ->
+-spec accept_body(#wm_reqdata{}, #context{}, undefined |
+                                             {error, atom()} |
+                                             {string(), string()}) ->
+    {{halt, integer()}, #wm_reqdata{}, #context{}}.
+accept_body(RD, Ctx, undefined) ->
     #context{local_context=LocalCtx,
              user=User,
              riakc_pid=RiakcPid} = Ctx,
@@ -349,7 +344,34 @@ accept_body(RD, Ctx, false) ->
     Args = [{Bucket, list_to_binary(Key), Size, list_to_binary(ContentType),
              Metadata, BlockSize, ACL, timer:seconds(60), self(), RiakcPid}],
     {ok, Pid} = riak_cs_put_fsm_sup:start_put_fsm(node(), Args),
-    accept_streambody(RD, Ctx, Pid, wrq:stream_req_body(RD, riak_cs_lfs_utils:block_size())).
+    accept_streambody(RD, Ctx, Pid, wrq:stream_req_body(RD, riak_cs_lfs_utils:block_size()));
+accept_body(RD, #context{response_module=ResponseMod}=Ctx, {error, _}=Err) ->
+    ResponseMod:api_error(Err, Rd, Ctx)
+accept_body(RD, Ctx, {SrcBucket, SrcKey}) ->
+    #context{local_context=LocalCtx,
+             response_module=ResponseMod,
+             riakc_pid=RiakcPid} = Ctx,
+    #key_context{bucket=Bucket, key=KeyStr, manifest=Mfst} = LocalCtx,
+    Acl = Mfst?MANIFEST.acl,
+    NewAcl = Acl?ACL{creation_time = os:timestamp()},
+    Metadata = riak_cs_wm_utils:extract_user_metadata(RD),
+    case riak_cs_utils:set_object_acl(Bucket, list_to_binary(KeyStr),
+                                      Mfst?MANIFEST{metadata=Metadata}, NewAcl,
+                                      RiakcPid) of
+        ok ->
+            %% TODO: implement get_manifest
+            CopyCtx = #copy_ctx{src_manifest=get_manifest(),
+                                dst_bucket=Bucket,
+                                dst_key=Key,
+                                dst_metadata=Metadata,
+                                dst_acl=NewAcl},
+            ok = riak_cs_copy_object:copy(CopyCtx),
+            ETag = riak_cs_utils:etag_from_binary(Mfst?MANIFEST.content_md5),
+            RD2 = wrq:set_resp_header("ETag", ETag, RD),
+            ResponseMod:copy_object_response(Mfst, RD2, Ctx);
+        {error, Err} ->
+            ResponseMod:api_error(Err, RD, Ctx)
+    end.
 
 -spec accept_streambody(#wm_reqdata{}, #context{}, pid(), term()) -> {{halt, integer()}, #wm_reqdata{}, #context{}}.
 accept_streambody(RD,

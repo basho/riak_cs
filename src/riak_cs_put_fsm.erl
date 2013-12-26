@@ -317,9 +317,12 @@ done(finalize, true, From, State=#state{manifest=Manifest,
     end.
 
 -spec is_digest_valid(binary(), undefined | string()) -> boolean().
-is_digest_valid(_, undefined) ->
+is_digest_valid(D1, undefined) ->
+    io:format("Calculated = ~p, Reported = undefined~n", [D1]),
     true;
 is_digest_valid(CalculatedMD5, ReportedMD5) ->
+    io:format("Calculated = ~p, Reported = ~p~n",
+        [CalculatedMD5, ReportedMD5]),
     base64:encode(CalculatedMD5) =:= list_to_binary(ReportedMD5).
 
 %%--------------------------------------------------------------------
