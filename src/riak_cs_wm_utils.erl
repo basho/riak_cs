@@ -35,6 +35,7 @@
          find_and_auth_user/5,
          validate_auth_header/4,
          ensure_doc/2,
+         respond_api_error/3,
          deny_access/2,
          deny_invalid_key/2,
          extract_name/1,
@@ -247,12 +248,30 @@ setup_manifest(KeyCtx=#key_context{bucket=Bucket,
     Manifest = riak_cs_get_fsm:get_manifest(Pid),
     KeyCtx#key_context{get_fsm_pid=Pid, manifest=Manifest}.
 
+%% @doc Produce an api error by using response_module.
+respond_api_error(RD, Ctx, ErrorAtom) ->
+    ResponseMod = Ctx#context.response_module,
+    NewRD = maybe_log_user(RD, Ctx),
+    ResponseMod:api_error(ErrorAtom, NewRD, Ctx).
+
+%% @doc Only set the user for the access logger to catch if there is a
+%% user to catch.
+maybe_log_user(RD, Context) ->
+    case Context#context.user of
+        undefined ->
+            RD;
+        User ->
+            riak_cs_access_log_handler:set_user(User, RD)
+    end.
+
 %% @doc Produce an access-denied error message from a webmachine
 %% resource's `forbidden/2' function.
 deny_access(RD, Ctx=#context{response_module=ResponseMod}) ->
     ResponseMod:api_error(access_denied, RD, Ctx);
 deny_access(RD, Ctx) ->
     riak_cs_s3_response:api_error(access_denied, RD, Ctx).
+
+
 
 %% @doc Prodice an invalid-access-keyid error message from a
 %% webmachine resource's `forbidden/2' function.

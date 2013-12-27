@@ -64,14 +64,9 @@ authorize(RD, Ctx0=#context{local_context=LocalCtx0, riakc_pid=RiakPid}) ->
     authorize(RD, Ctx, LocalCtx#key_context.bucket_object).
 
 authorize(RD, Ctx, notfound = _BucketObj) ->
-    authorize_error(RD, Ctx, no_such_bucket);
+    riak_cs_wm_utils:respond_api_error(RD, Ctx, no_such_bucket);
 authorize(RD, Ctx, _BucketObj) ->
     riak_cs_wm_utils:object_access_authorize_helper(object_part, false, RD, Ctx).
-
-authorize_error(RD, Ctx, ErrorAtom) ->
-    ResponseMod = Ctx#context.response_module,
-    NewRD = riak_cs_access_log_handler:set_user(Ctx#context.user, RD),
-    ResponseMod:api_error(ErrorAtom, NewRD, Ctx).
 
 %% @doc Get the list of methods this resource supports.
 -spec allowed_methods() -> [atom()].

@@ -60,28 +60,13 @@ authorize(RD, Ctx0=#context{local_context=LocalCtx0, riakc_pid=RiakPid}) ->
               Method, LocalCtx#key_context.manifest).
 
 authorize(RD, Ctx, notfound = _BucketObj, _Method, _Manifest) ->
-    authorize_error(RD, Ctx, no_such_bucket);
+    riak_cs_wm_utils:respond_api_error(RD, Ctx, no_such_bucket);
 authorize(RD, Ctx, _BucketObj, 'GET', notfound = _Manifest) ->
-    authorize_error(RD, Ctx, no_such_key);
+    riak_cs_wm_utils:respond_api_error(RD, Ctx, no_such_key);
 authorize(RD, Ctx, _BucketObj, 'HEAD', notfound = _Manifest) ->
-    authorize_error(RD, Ctx, no_such_key);
+    riak_cs_wm_utils:respond_api_error(RD, Ctx, no_such_key);
 authorize(RD, Ctx, _BucketObj, _Method, _Manifest) ->
     riak_cs_wm_utils:object_access_authorize_helper(object_acl, false, RD, Ctx).
-
-authorize_error(RD, Ctx, ErrorAtom) ->
-    ResponseMod = Ctx#context.response_module,
-    NewRD = maybe_log_user(RD, Ctx),
-    ResponseMod:api_error(ErrorAtom, NewRD, Ctx).
-
-%% @doc Only set the user for the access logger to catch if there is a
-%% user to catch.
-maybe_log_user(RD, Context) ->
-    case Context#context.user of
-        undefined ->
-            RD;
-        User ->
-            riak_cs_access_log_handler:set_user(User, RD)
-    end.
 
 %% @doc Get the list of methods this resource supports.
 -spec allowed_methods() -> [atom()].
