@@ -225,8 +225,7 @@ validate_auth_header(RD, AuthBypass, RiakPid, Ctx) ->
 -spec ensure_doc(term(), pid()) -> term().
 ensure_doc(KeyCtx=#key_context{bucket_object=undefined,
                                bucket=Bucket}, RiakcPid) ->
-    %% TODO: function prefix (check_) is misleading
-    case riak_cs_utils:check_bucket_exists(Bucket, RiakcPid) of
+    case riak_cs_utils:fetch_bucket_object(Bucket, RiakcPid) of
         {ok, Obj} ->
             setup_manifest(KeyCtx#key_context{bucket_object = Obj}, RiakcPid);
         {error, Reason} when Reason =:= notfound orelse Reason =:= no_such_bucket ->
@@ -494,7 +493,7 @@ handle_policy_eval_result(User, _, _, RD, Ctx) ->
     AccessRD = riak_cs_access_log_handler:set_user(User, RD),
     %% Check if the bucket actually exists so we can
     %% make the correct decision to return a 404 or 403
-    case riak_cs_utils:check_bucket_exists(Bucket, RiakPid) of
+    case riak_cs_utils:fetch_bucket_object(Bucket, RiakPid) of
         {ok, _} ->
             riak_cs_wm_utils:deny_access(AccessRD, Ctx);
         {error, Reason} ->
@@ -536,7 +535,7 @@ object_access_authorize_helper(AccessType, Deletable, SkipAcl,
             %% retrieving the bucket policy
             ResponseMod:api_error(E, RD, Ctx);
         {error, notfound} ->
-            %% The call to `check_bucket_exists' returned `notfound'
+            %% The call to `fetch_bucket_object' returned `notfound'
             %% so we can assume to bucket does not exist.
             ResponseMod:api_error(no_such_bucket, RD, Ctx);
         Policy ->

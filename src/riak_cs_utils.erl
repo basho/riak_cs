@@ -26,7 +26,7 @@
 -export([etag_from_binary/1,
          etag_from_binary/2,
          etag_from_binary_no_quotes/1,
-         check_bucket_exists/2,
+         fetch_bucket_object/2,
          close_riak_connection/1,
          close_riak_connection/2,
          create_bucket/5,
@@ -959,7 +959,7 @@ set_object_acl(Bucket, Key, Manifest, Acl, RiakPid) ->
 % @doc fetch moss.bucket and return acl and policy
 -spec get_bucket_acl_policy(binary(), atom(), pid()) -> {acl(), policy()} | {error, term()}.
 get_bucket_acl_policy(Bucket, PolicyMod, RiakPid) ->
-    case check_bucket_exists(Bucket, RiakPid) of
+    case fetch_bucket_object(Bucket, RiakPid) of
         {ok, Obj} ->
             %% For buckets there should not be siblings, but in rare
             %% cases it may happen so check for them and attempt to
@@ -1116,9 +1116,9 @@ active_to_bool({error, notfound}) ->
 %% @TODO Rename current `bucket_exists' function to
 %% `bucket_exists_for_user' and rename this function
 %% `bucket_exists'.
--spec check_bucket_exists(binary(), pid()) ->
+-spec fetch_bucket_object(binary(), pid()) ->
                                  {ok, riakc_obj:riakc_obj()} | {error, term()}.
-check_bucket_exists(Bucket, RiakPid) ->
+fetch_bucket_object(Bucket, RiakPid) ->
     case riak_cs_utils:get_object(?BUCKETS_BUCKET, Bucket, RiakPid) of
         {ok, Obj} ->
             %% Make sure the bucket has an owner

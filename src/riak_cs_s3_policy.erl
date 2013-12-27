@@ -255,7 +255,7 @@ log_supported_actions()->
                                 {'error', 'multiple_bucket_owners'}.
 -spec fetch_bucket_policy(binary(), pid()) -> bucket_policy_result().
 fetch_bucket_policy(Bucket, RiakPid) ->
-    case riak_cs_utils:check_bucket_exists(Bucket, RiakPid) of
+    case riak_cs_utils:fetch_bucket_object(Bucket, RiakPid) of
         {ok, Obj} ->
             %% For buckets there should not be siblings, but in rare
             %% cases it may happen so check for them and attempt to

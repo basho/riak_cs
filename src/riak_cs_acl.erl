@@ -176,7 +176,7 @@ bucket_access(_, RequestedAccess, CanonicalId, RiakPid, Acl) ->
 -type bucket_acl_riak_error() :: {error, 'notfound' | term()}.
 -spec fetch_bucket_acl(binary(), pid()) -> bucket_acl_result() | bucket_acl_riak_error().
 fetch_bucket_acl(Bucket, RiakPid) ->
-    case riak_cs_utils:check_bucket_exists(Bucket, RiakPid) of
+    case riak_cs_utils:fetch_bucket_object(Bucket, RiakPid) of
         {ok, Obj} ->
             bucket_acl(Obj);
         {error, Reason} ->
