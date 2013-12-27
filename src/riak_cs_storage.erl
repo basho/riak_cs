@@ -58,10 +58,11 @@ sum_user(Riak, User) when is_list(User) ->
 %%      there are no other way for operator to know a calculation
 %%      which riak_cs_storage_d failed.
 -spec maybe_sum_bucket(pid(), string(), string()) ->
-                              {string(), non_neg_integer()|string()}.
+                              {string(), term()|string()}.
 maybe_sum_bucket(Riak, User, Bucket) ->
     case sum_bucket(Riak, Bucket) of
-        {ok, BucketUsage} -> BucketUsage;
+        {struct, _} = BucketUsage -> BucketUsage;
+
         {error, _} = E ->
             _ = lager:error("failed to calculate usage of "
                             "bucket '~s' of user '~s'. Reason: ~p",
