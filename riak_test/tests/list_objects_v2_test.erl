@@ -27,5 +27,5 @@
 confirm() ->
     Config = [{riak, rtcs:riak_config()}, {stanchion, rtcs:stanchion_config()},
               {cs, rtcs:cs_config([{fold_objects_for_list_keys, true}])}],
-    {UserConfig, {_RiakNodes, _CSNodes, _Stanchion}} = rtcs:setup(4, Config),
+    {UserConfig, {_RiakNodes, _CSNodes, _Stanchion}} = rtcs:setup(1, Config),
     list_objects_test_helper:test(UserConfig).

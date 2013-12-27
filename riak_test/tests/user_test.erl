@@ -31,7 +31,7 @@
 -define(XML, "application/xml").
 
 confirm() ->
-    {AdminUserConfig, {RiakNodes, _CSNodes, _Stanchion}} = rtcs:setup(4),
+    {AdminUserConfig, {RiakNodes, _CSNodes, _Stanchion}} = rtcs:setup(1),
 
     HeadRiakNode = hd(RiakNodes),
     AdminUserCreds = {AdminUserConfig#aws_config.access_key_id,

@@ -27,7 +27,7 @@
 -define(TEST_BUCKET, "riak-test-bucket").
 
 confirm() ->
-    {UserConfig, {RiakNodes, _CSNodes, _Stanchion}} = rtcs:setup(4),
+    {UserConfig, {RiakNodes, _CSNodes, _Stanchion}} = rtcs:setup(1),
 
     confirm_initial_stats(query_stats(UserConfig, rtcs:cs_port(hd(RiakNodes)))),
 
