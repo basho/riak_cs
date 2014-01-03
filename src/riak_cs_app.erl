@@ -52,18 +52,22 @@ stop(_State) ->
     ok.
 
 -spec sanity_check(boolean(), boolean()) -> {ok, pid()} | {error, term()}.
-sanity_check(true, true) ->
+sanity_check(true, {ok, true}) ->
     riak_cs_sup:start_link();
 sanity_check(false, _) ->
     _ = lager:error("You must update your Riak CS app.config. Please see the"
                     "release notes for more information on updating you"
                     "configuration."),
     {error, bad_config};
-sanity_check(true, false) ->
+sanity_check(true, {ok, false}) ->
         _ = lager:error("Invalid Riak bucket properties detected. Please "
                         "verify that allow_mult is set to true for all "
                         "buckets."),
-    {error, invalid_bucket_props}.
+    {error, invalid_bucket_props};
+sanity_check(true, {error, Reason}) ->
+        _ = lager:error("Could not verify bucket properties. Error was"
+                       " ~p.", [Reason]),
+    {error, error_verifying_props}.
 
 -spec is_config_valid() -> boolean().
 is_config_valid() ->
@@ -75,7 +79,7 @@ get_env_response_to_bool({ok, _}) ->
 get_env_response_to_bool(_) ->
     false.
 
--spec check_bucket_props() -> boolean().
+-spec check_bucket_props() -> {ok, boolean()} | {error, term()}.
 check_bucket_props() ->
     Buckets = [?USER_BUCKET,
                ?ACCESS_BUCKET,
@@ -83,14 +87,23 @@ check_bucket_props() ->
                ?BUCKETS_BUCKET],
     {ok, Riak} = riak_connection(),
     try
-        lists:all(fun(X) -> X =:= ok end,
-                  [check_bucket_props(Bucket, Riak) ||
-                      Bucket <- Buckets])
+        Results = [check_bucket_props(Bucket, Riak) ||
+                   Bucket <- Buckets],
+        lists:foldl(fun promote_errors/2, {ok, true}, Results)
     after
         riakc_pb_socket:stop(Riak)
     end.
 
--spec check_bucket_props(binary(), pid()) -> ok | {error, failed}.
+promote_errors(_Elem, {error, _Reason}=E) ->
+    E;
+promote_errors({error, _Reason}=E, _Acc) ->
+    E;
+promote_errors({ok, false}=F, _Acc) ->
+    F;
+promote_errors({ok, true}, Acc) ->
+    Acc.
+
+-spec check_bucket_props(binary(), pid()) -> {ok, boolean()} | {error, term()}.
 check_bucket_props(Bucket, Riak) ->
     case catch riakc_pb_socket:get_bucket(Riak, Bucket) of
         {ok, Props} ->
@@ -99,16 +112,16 @@ check_bucket_props(Bucket, Riak) ->
                     _ = lager:debug("~s bucket was"
                                     " already configured correctly.",
                                     [Bucket]),
-                    ok;
+                    {ok, true};
                 _ ->
                     _ = lager:warning("~p is misconfigured", [Bucket]),
-                    {error, failed}
+                    {ok, false}
             end;
-        {_error, Reason} ->
+        {error, Reason}=E ->
             _ = lager:warning(
                   "Unable to verify ~s bucket settings (~p).",
                   [Bucket, Reason]),
-            {error, failed}
+            E
     end.
 
 riak_connection() ->
