@@ -144,7 +144,7 @@ orgs-README:
 
 APPS = kernel stdlib sasl erts ssl tools os_mon runtime_tools crypto inets \
 	xmerl webtool eunit syntax_tools compiler
-PLT = $(HOME)/.riak-cs_dialyzer_plt
+PLT ?= $(HOME)/.riak-cs_dialyzer_plt
 
 check_plt: compile
 	dialyzer --check_plt --plt $(PLT) --apps $(APPS)
