@@ -40,28 +40,10 @@ init(_Config) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"init">>),
     {ok, #ping_context{}}.
 
--spec service_available(term(), term()) -> {boolean(), term(), term()}.
+-spec service_available(#wm_reqdata{}, #context{}) -> {boolean(), #wm_reqdata{}, #context{}}.
 service_available(RD, Ctx) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"service_available">>),
-    case poolboy:checkout(request_pool, true, ping_timeout()) of
-        full ->
-            case riak_cs_riakc_pool_worker:start_link([]) of
-                {ok, Pid} ->
-                    UpdCtx = Ctx#ping_context{riakc_pid=Pid,
-                                              pool_pid=false};
-                {error, _} ->
-                    Pid = undefined,
-                    UpdCtx = Ctx
-            end;
-        Pid ->
-            UpdCtx = Ctx#ping_context{riakc_pid=Pid}
-    end,
-    case (catch riakc_pb_socket:ping(Pid, ping_timeout())) of
-        pong ->
-            Available = true;
-        _ ->
-            Available = false
-    end,
+    {Available, UpdCtx} = riak_ping(get_connection_pid(), Ctx),
     {Available, RD, UpdCtx}.
 
 -spec allowed_methods(term(), term()) -> {[atom()], term(), term()}.
@@ -76,7 +58,7 @@ finish_request(RD, Ctx=#ping_context{riakc_pid=undefined}) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"finish_request">>, [0], []),
     {true, RD, Ctx};
 finish_request(RD, Ctx=#ping_context{riakc_pid=RiakPid,
-                                pool_pid=PoolPid}) ->
+                                     pool_pid=PoolPid}) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"finish_request">>, [1], []),
     case PoolPid of
         true ->
@@ -103,3 +85,42 @@ ping_timeout() ->
         {ok, Timeout} ->
             Timeout
     end.
+
+-spec get_connection_pid() -> {pid(), boolean()}.
+get_connection_pid() ->
+    case poolboy_checkout() of
+        full ->
+            non_pool_connection();
+        Pid ->
+            {Pid, true}
+    end.
+
+-spec poolboy_checkout() -> full | pid().
+poolboy_checkout() ->
+    case catch poolboy:checkout(request_pool, true, ping_timeout()) of
+        {'EXIT', _Reason} ->
+            full;
+        Result ->
+            Result
+    end.
+
+-spec non_pool_connection() -> {undefined | pid(), false}.
+non_pool_connection() ->
+    case riak_cs_riakc_pool_worker:start_link([]) of
+        {ok, Pid} ->
+            {Pid, false};
+        {error, _} ->
+            {undefined, false}
+    end.
+
+-spec riak_ping({undefined | pid(), boolean()}, #context{}) -> {boolean(), #context{}}.
+riak_ping({undefined, PoolPid}, Ctx) ->
+    {false, Ctx#ping_context{riakc_pid=undefined, pool_pid=PoolPid}};
+riak_ping({Pid, PoolPid}, Ctx) ->
+    Available = case catch riakc_pb_socket:ping(Pid, ping_timeout()) of
+                    pong ->
+                        true;
+                    _ ->
+                        false
+                end,
+    {Available, Ctx#ping_context{riakc_pid=Pid, pool_pid=PoolPid}}.
