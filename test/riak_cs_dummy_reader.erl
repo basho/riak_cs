@@ -81,6 +81,7 @@ get_manifest(Pid) ->
 %% @doc Initialize the server.
 -spec init([pid()] | {test, [pid()]}) -> {ok, state()} | {stop, term()}.
 init([CallerPid, Bucket, Key, ContentLength, BlockSize]) ->
+    process_flag(trap_exit, true),
     %% Get a connection to riak
     random:seed(now()),
     {ok, #state{content_length=ContentLength,

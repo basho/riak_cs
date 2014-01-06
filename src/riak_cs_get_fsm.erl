@@ -289,6 +289,8 @@ perhaps_send_to_user(From, #state{got_blocks=Got,
             end
     end.
 
+waiting_chunks(stop, State) ->
+    {stop, normal, State};
 waiting_chunks(timeout, State = #state{got_blocks = Got}) ->
     GotSize = orddict:size(Got),
     _ = lager:debug("starting fetch again with ~p left in queue", [GotSize]),
@@ -382,9 +384,8 @@ terminate(_Reason, _StateName, #state{test=false,
     riak_cs_manifest_fsm:maybe_stop_manifest_fsm(ManiPid),
     riak_cs_block_server:maybe_stop_block_servers(BlockServerPids),
     ok;
-terminate(_Reason, _StateName, #state{test=true,
-                                      free_readers=ReaderPids}) ->
-    [catch exit(Pid, kill) || Pid <- ReaderPids].
+terminate(_Reason, _StateName, #state{test=true}) ->
+    ok.
 
 %% @private
 code_change(_OldVsn, StateName, State, _Extra) -> {ok, StateName, State}.

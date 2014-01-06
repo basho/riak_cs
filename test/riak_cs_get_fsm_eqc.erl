@@ -105,7 +105,8 @@ prop_get_fsm() ->
     ?FORALL(State, #state{content_length=?LET(X, riak_cs_gen:bounded_content_length(), X * 10)},
         ?FORALL(Cmds, eqc_statem:more_commands(10, commands(?MODULE, {start, State})),
                 begin
-                    {H,{_F,_S},Res} = run_commands(?MODULE, Cmds),
+                    {H,{_F, NewState},Res} = run_commands(?MODULE, Cmds),
+                    stop_fsm(NewState#state.fsm_pid),
                     ?WHENFAIL(io:format("history is ~p ~n", [[StateRecord#state{last_chunk=last_chunk_substitute} || {{_StateName, StateRecord}, _Results}<- H]]), equals(ok, Res))
                 end)).
 
@@ -128,7 +129,15 @@ start_fsm(ContentLength, BlockSize) ->
 get_chunk(FSMPid) ->
     riak_cs_get_fsm:get_next_chunk(FSMPid).
 
-stop_fsm() -> ok.
+stop_fsm(FsmPid) ->
+    case is_pid(FsmPid) of
+        true ->
+            riak_cs_get_fsm:stop(FsmPid);
+        %% In case of length(History)=:=0, fsm is now spawned.
+        false ->
+            ok
+    end,
+    ok.
 
 %%====================================================================
 %% Helpers
@@ -159,7 +168,7 @@ start(#state{content_length=ContentLength}) ->
 
 waiting_chunk(#state{fsm_pid=Pid}) ->
     [{waiting_chunk, {call, ?MODULE, get_chunk, [Pid]}},
-     {stop, {call, ?MODULE, stop_fsm, []}}].
+     {stop, {call, ?MODULE, stop_fsm, [Pid]}}].
 
 stop(_S) ->
     [].
