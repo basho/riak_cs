@@ -46,20 +46,15 @@
          waiting_chunk/1,
          stop/1]).
 
-%% Helpers
-%% TODO: export!
--export([]).
-
 -define(QC_OUT(P),
         eqc:on_output(fun(Str, Args) ->
                               io:format(user, Str, Args) end, P)).
 -define(TEST_ITERATIONS, 500).
 
--record(state, {fsm_pid :: pid(), %% real pid}
-                content_length :: integer(), %% not symbolic
-                total_blocks :: integer(), %% not symbolic
-                last_chunk :: binary(), %% not symbolic
-                counter=0 :: integer()}). %% not symbolic
+-record(state, {fsm_pid        :: pid(),       %% real pid of riak_cs_get_fsm}
+                content_length :: integer(),   %% not symbolic
+                total_blocks   :: integer(),   %% not symbolic
+                counter=0      :: integer()}). %% not symbolic
 
 %%====================================================================
 %% Eunit tests
@@ -103,12 +98,24 @@ test(Iterations) ->
 prop_get_fsm() ->
     application:set_env(riak_cs, lfs_block_size, 1048576),
     ?FORALL(State, #state{content_length=?LET(X, riak_cs_gen:bounded_content_length(), X * 10)},
-        ?FORALL(Cmds, eqc_statem:more_commands(10, commands(?MODULE, {start, State})),
-                begin
-                    {H,{_F, NewState},Res} = run_commands(?MODULE, Cmds),
-                    stop_fsm(NewState#state.fsm_pid),
-                    ?WHENFAIL(io:format("history is ~p ~n", [[StateRecord#state{last_chunk=last_chunk_substitute} || {{_StateName, StateRecord}, _Results}<- H]]), equals(ok, Res))
-                end)).
+    ?FORALL(Cmds, eqc_statem:more_commands(10, commands(?MODULE, {start, State})),
+            begin
+                {H, {_F, FinalState}, Res} = run_commands(?MODULE, Cmds),
+                #state{fsm_pid=FsmPid, content_length=ContentLength,
+                       total_blocks=TotalBlocks, counter=Counter} = FinalState,
+                stop_fsm(FsmPid),
+                %% Collect stats how much percentages of blocks are consumed.
+                ConsumedPercentage =
+                    case TotalBlocks of
+                        undefined -> no_consumption;
+                        _ -> min(100, trunc(100*(Counter)/TotalBlocks))
+                    end,
+                collect(with_title(consumed_percentage), ConsumedPercentage,
+                collect(with_title(content_length_mm), ContentLength/1000000,
+                collect(with_title(command_length), length(Cmds),
+                        ?WHENFAIL(io:format("history is ~p ~n", [[S || {S, _Rs} <- H]]),
+                                  equals(ok, Res)))))
+            end)).
 
 %%====================================================================
 %% Generators
@@ -129,42 +136,29 @@ start_fsm(ContentLength, BlockSize) ->
 get_chunk(FSMPid) ->
     riak_cs_get_fsm:get_next_chunk(FSMPid).
 
-stop_fsm(FsmPid) ->
-    case is_pid(FsmPid) of
-        true ->
-            riak_cs_get_fsm:stop(FsmPid);
-        %% In case of length(History)=:=0, fsm is now spawned.
-        false ->
-            ok
-    end,
+stop_fsm(FsmPid) when is_pid(FsmPid) ->
+    riak_cs_get_fsm:stop(FsmPid);
+%% fsm is not spawned when length of history is zero or one
+stop_fsm(_FsmPid) ->
     ok.
-
-%%====================================================================
-%% Helpers
-%%====================================================================
-
-check_chunk(Counter, Chunk) ->
-    <<NewCounter:32/little, _/binary>> = Chunk,
-    Counter == NewCounter.
 
 %%====================================================================
 %% eqc_fsm callbacks
 %%====================================================================
 
 initial_state() ->
-    {start, true}.
+    error(not_used).
 
 next_state_data(start, waiting_chunk, #state{content_length=ContentLength}=S, R, _C) ->
-    BlockSize = riak_cs_lfs_utils:block_size(),
-    BlockCount = riak_cs_lfs_utils:block_count(ContentLength, BlockSize),
-    S#state{total_blocks=(BlockCount-1), fsm_pid=R};
-next_state_data(waiting_chunk, waiting_chunk, #state{counter=Counter}=S, R, _C) ->
-    S#state{counter=Counter+1,last_chunk=R};
-next_state_data(_From, _To, S, _R, _C) ->
+    BlockCount = riak_cs_lfs_utils:block_count(ContentLength, block_size()),
+    S#state{total_blocks=BlockCount, fsm_pid=R};
+next_state_data(waiting_chunk, waiting_chunk, #state{counter=Counter}=S, _R, _C) ->
+    S#state{counter=Counter+1};
+next_state_data(waiting_chunk, stop, S, _R, _C) ->
     S.
 
 start(#state{content_length=ContentLength}) ->
-    [{waiting_chunk, {call, ?MODULE, start_fsm, [ContentLength, riak_cs_lfs_utils:block_size()]}}].
+    [{waiting_chunk, {call, ?MODULE, start_fsm, [ContentLength, block_size()]}}].
 
 waiting_chunk(#state{fsm_pid=Pid}) ->
     [{waiting_chunk, {call, ?MODULE, get_chunk, [Pid]}},
@@ -173,18 +167,33 @@ waiting_chunk(#state{fsm_pid=Pid}) ->
 stop(_S) ->
     [].
 
-precondition(waiting_chunk,stop,#state{counter=Counter, total_blocks=TotalBlocks},_C) ->
-    Counter == TotalBlocks;
-precondition(waiting_chunk,waiting_chunk,#state{counter=Counter, total_blocks=TotalBlocks},_C) ->
-    Counter < TotalBlocks;
-precondition(_From,_To,_S,_C) ->
-    true.
+precondition(start, waiting_chunk, _S, _C) ->
+    true;
+precondition(waiting_chunk, waiting_chunk,
+             #state{counter=Counter, total_blocks=TotalBlocks}, _C) ->
+    Counter =< TotalBlocks;
+precondition(waiting_chunk, stop,
+             #state{counter=Counter, total_blocks=TotalBlocks}, _C) ->
+    Counter =:= TotalBlocks + 1.
 
-postcondition(waiting_chunk, waiting_chunk, #state{counter=Counter,last_chunk={done, Chunk},total_blocks=Counter}, _C, _R) ->
-    check_chunk((Counter-1), Chunk);
-postcondition(waiting_chunk, waiting_chunk, #state{counter=Counter,last_chunk={chunk, Chunk}}, _C, _R) ->
-    check_chunk((Counter-1), Chunk);
-postcondition(_From, _To, _S, _C, _R) ->
-    true.
+postcondition(start, waiting_chunk, _State, _C, _R) ->
+    true;
+postcondition(waiting_chunk, waiting_chunk, #state{counter=Counter}, _C, Response) ->
+    validate_waiting_chunk_response(Counter, Response);
+postcondition(waiting_chunk, stop, #state{counter=Counter, total_blocks=TotalBlocks}, _C, _R) ->
+    Counter =:= TotalBlocks + 1.
+
+%%====================================================================
+%% Helpers
+%%====================================================================
+
+validate_waiting_chunk_response(Counter, {chunk, Chunk}) ->
+    <<CounterInChunk:32/little, _/binary>> = Chunk,
+    Counter =:= CounterInChunk;
+validate_waiting_chunk_response(_Counter, {done, Chunk}) ->
+    Chunk =:= <<>>.
+
+block_size() ->
+    riak_cs_lfs_utils:block_size().
 
 -endif.
