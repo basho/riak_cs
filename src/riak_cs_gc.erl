@@ -38,7 +38,7 @@
          epoch_start/0,
          leeway_seconds/0,
          max_scheduled_delete_manifests/0,
-         move_manifests_to_gc_bucket/3,
+         move_manifests_to_gc_bucket/2,
          timestamp/0]).
 
 %% export for repl debugging and testing
@@ -179,11 +179,6 @@ handle_mark_as_pending_delete({ok, RiakObject}, Bucket, Key, UUIDsToMark, RiakcP
     Manifests = riak_cs_utils:manifests_from_riak_object(RiakObject),
     PDManifests = riak_cs_manifest_utils:manifests_to_gc(UUIDsToMark, Manifests),
     MoveResult = move_manifests_to_gc_bucket(PDManifests, RiakcPid),
-    %% riak_cs_gc.erl:185: The pattern [{UUID, _} | _] can never match
-    %% the type [] Oi, this is a stumper.  Just overwrite a file once,
-    %% and it's obvious that PDManifests is a non-empty list and
-    %% indeed has 2-tuples.  And the spec for
-    %% riak_cs_manifest_utils:manifests_to_gc/2 appears correct.
     PDUUIDs = [UUID || {UUID, _} <- PDManifests],
     handle_move_result(MoveResult, RiakObject, Bucket, Key, PDUUIDs, RiakcPid);
 handle_mark_as_pending_delete({error, _Error}=Error, _Bucket, _Key, _UUIDsToMark, _RiakcPid) ->
@@ -199,7 +194,7 @@ handle_mark_as_pending_delete({error, _Error}=Error, _Bucket, _Key, _UUIDsToMark
     {ok, riakc_obj:riakc_obj()} | {error, term()}.
 handle_move_result(ok, RiakObject, Bucket, Key, PDUUIDs, RiakcPid) ->
     mark_as_scheduled_delete(PDUUIDs, RiakObject, Bucket, Key, RiakcPid);
-handle_move_result({error, _Error}=Error, _RiakObject, _Bucket, _Key, _PDUUIDs, _RiakcPid) ->
+handle_move_result({error, _Reason}=Error, _RiakObject, _Bucket, _Key, _PDUUIDs, _RiakcPid) ->
     Error.
 
 %% @doc Return the number of seconds to wait after finishing garbage
@@ -331,17 +326,14 @@ mark_manifests(RiakObject, Bucket, Key, UUIDsToMark, ManiFunction, RiakcPid) ->
     %% again without having to re-retrieve the object
     riak_cs_utils:put(RiakcPid, UpdObj, [return_body]).
 
-move_manifests_to_gc_bucket(Manifests, RiakcPid) ->
-    move_manifests_to_gc_bucket(Manifests, RiakcPid, true).
-
 %% @doc Copy data for a list of manifests to the
 %% `riak-cs-gc' bucket to schedule them for deletion.
--spec move_manifests_to_gc_bucket([lfs_manifest()], pid(), boolean()) ->
+-spec move_manifests_to_gc_bucket([cs_uuid_and_manifest()], pid()) ->
     ok | {error, term()}.
-move_manifests_to_gc_bucket([], _RiakcPid, _AddLeewayP) ->
+move_manifests_to_gc_bucket([], _RiakcPid) ->
     ok;
-move_manifests_to_gc_bucket(Manifests, RiakcPid, AddLeewayP) ->
-    Key = generate_key(AddLeewayP),
+move_manifests_to_gc_bucket(Manifests, RiakcPid) ->
+    Key = generate_key(),
     ManifestSet = build_manifest_set(Manifests),
     ObjectToWrite = case riakc_pb_socket:get(RiakcPid, ?GC_BUCKET, Key) of
         {error, notfound} ->
@@ -362,22 +354,17 @@ move_manifests_to_gc_bucket(Manifests, RiakcPid, AddLeewayP) ->
     _ = lager:debug("Manifests scheduled for deletion: ~p", [ManifestSet]),
     riak_cs_utils:put(RiakcPid, ObjectToWrite).
 
--spec build_manifest_set([lfs_manifest()]) -> twop_set:twop_set().
+-spec build_manifest_set([cs_uuid_and_manifest()]) -> twop_set:twop_set().
 build_manifest_set(Manifests) ->
     lists:foldl(fun twop_set:add_element/2, twop_set:new(), Manifests).
 
 %% @doc Generate a key for storing a set of manifests in the
 %% garbage collection bucket.
--spec generate_key(boolean()) -> binary().
-generate_key(AddLeewayP) ->
-    Now = os:timestamp(),
-    list_to_binary([key_timestamp(Now, AddLeewayP), $_, key_suffix(Now)]).
-
--spec key_timestamp(erlang:timestamp(), boolean()) -> string().
-key_timestamp(Time, true) ->
-    integer_to_list(timestamp(Time) + leeway_seconds());
-key_timestamp(Time, false) ->
-    integer_to_list(timestamp(Time)).
+-spec generate_key() -> binary().
+generate_key() ->
+    list_to_binary([integer_to_list(timestamp()),
+                    $_,
+                    key_suffix(os:timestamp())]).
 
 -spec key_suffix(erlang:timestamp()) -> string().
 key_suffix(Time) ->

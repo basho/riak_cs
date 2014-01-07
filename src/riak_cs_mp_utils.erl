@@ -728,7 +728,7 @@ move_dead_parts_to_gc(Bucket, Key, PartsToDelete, RiakcPid) ->
                     ?PART_MANIFEST{part_id=P_UUID,
                                    content_length=ContentLength,
                                    block_size=P_BlockSize} <- PartsToDelete],
-    ok = riak_cs_gc:move_manifests_to_gc_bucket(PartDelMs, RiakcPid, false).
+    ok = riak_cs_gc:move_manifests_to_gc_bucket(PartDelMs, RiakcPid).
 
 enforce_part_size(PartsToKeep) ->
     case riak_cs_config:enforce_multipart_part_size() of
