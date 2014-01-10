@@ -55,27 +55,18 @@ authorize(RD, Ctx0=#context{local_context=LocalCtx0, riakc_pid=RiakPid}) ->
         riak_cs_acl_utils:requested_access(Method, true),
     LocalCtx = riak_cs_wm_utils:ensure_doc(LocalCtx0, RiakPid),
     Ctx = Ctx0#context{requested_perm=RequestedAccess,local_context=LocalCtx},
+    authorize(RD, Ctx,
+              LocalCtx#key_context.bucket_object,
+              Method, LocalCtx#key_context.manifest).
 
-    %% Final step of {@link forbidden/2}: Authentication succeeded,
-    case {Method, LocalCtx#key_context.manifest} of
-        {'GET', notfound} ->
-            {{halt, 404}, maybe_log_user(RD, Ctx), Ctx};
-        {'HEAD', notfound} ->
-            {{halt, 404}, maybe_log_user(RD, Ctx), Ctx};
-        _ ->
-            riak_cs_wm_utils:object_access_authorize_helper(object_acl, false, RD, Ctx)
-    end.
-
-
-%% @doc Only set the user for the access logger to catch if there is a
-%% user to catch.
-maybe_log_user(RD, Context) ->
-    case Context#context.user of
-        undefined ->
-            RD;
-        User ->
-            riak_cs_access_log_handler:set_user(User, RD)
-    end.
+authorize(RD, Ctx, notfound = _BucketObj, _Method, _Manifest) ->
+    riak_cs_wm_utils:respond_api_error(RD, Ctx, no_such_bucket);
+authorize(RD, Ctx, _BucketObj, 'GET', notfound = _Manifest) ->
+    riak_cs_wm_utils:respond_api_error(RD, Ctx, no_such_key);
+authorize(RD, Ctx, _BucketObj, 'HEAD', notfound = _Manifest) ->
+    riak_cs_wm_utils:respond_api_error(RD, Ctx, no_such_key);
+authorize(RD, Ctx, _BucketObj, _Method, _Manifest) ->
+    riak_cs_wm_utils:object_access_authorize_helper(object_acl, false, RD, Ctx).
 
 %% @doc Get the list of methods this resource supports.
 -spec allowed_methods() -> [atom()].
@@ -173,7 +164,8 @@ produce_body(RD, Ctx=#context{local_context=LocalCtx,
 accept_body(RD, Ctx=#context{local_context=#key_context{get_fsm_pid=GetFsmPid,
                                                         manifest=Mfst,
                                                         key=KeyStr,
-                                                        bucket=Bucket},
+                                                        bucket=Bucket,
+                                                        bucket_object=BucketObj},
                              user=User,
                              requested_perm='WRITE_ACP',
                              riakc_pid=RiakPid})  when Bucket /= undefined,
@@ -196,7 +188,7 @@ accept_body(RD, Ctx=#context{local_context=#key_context{get_fsm_pid=GetFsmPid,
                               {User?RCS_USER.display_name,
                                User?RCS_USER.canonical_id,
                                User?RCS_USER.key_id},
-                              riak_cs_wm_utils:bucket_owner(Bucket, RiakPid)),
+                              riak_cs_wm_utils:bucket_owner(BucketObj)),
                 {ok, CannedAcl};
             _ ->
                 riak_cs_acl_utils:validate_acl(

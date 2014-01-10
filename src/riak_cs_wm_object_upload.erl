@@ -61,9 +61,12 @@ authorize(RD, Ctx0=#context{local_context=LocalCtx0, riakc_pid=RiakPid}) ->
         riak_cs_acl_utils:requested_access(Method, false),
     LocalCtx = riak_cs_wm_utils:ensure_doc(LocalCtx0, RiakPid),
     Ctx = Ctx0#context{requested_perm=RequestedAccess,local_context=LocalCtx},
+    authorize(RD, Ctx, LocalCtx#key_context.bucket_object).
 
+authorize(RD, Ctx, notfound = _BucketObj) ->
+    riak_cs_wm_utils:respond_api_error(RD, Ctx, no_such_bucket);
+authorize(RD, Ctx, _BucketObj) ->
     riak_cs_wm_utils:object_access_authorize_helper(object_part, false, RD, Ctx).
-
 
 %% @doc Get the list of methods this resource supports.
 -spec allowed_methods() -> [atom()].
@@ -75,7 +78,7 @@ post_is_create(RD, Ctx) ->
 
 process_post(RD, Ctx=#context{local_context=LocalCtx,
                               riakc_pid=RiakcPid}) ->
-    #key_context{bucket=Bucket, key=Key} = LocalCtx,
+    #key_context{bucket=Bucket, bucket_object=BucketObj, key=Key} = LocalCtx,
     ContentType = try
                       list_to_binary(wrq:get_req_header("Content-Type", RD))
                   catch error:badarg ->
@@ -86,7 +89,7 @@ process_post(RD, Ctx=#context{local_context=LocalCtx,
     ACL = riak_cs_acl_utils:canned_acl(
             wrq:get_req_header("x-amz-acl", RD),
             User,
-            riak_cs_wm_utils:bucket_owner(Bucket, RiakcPid)),
+            riak_cs_wm_utils:bucket_owner(BucketObj)),
     Metadata = riak_cs_wm_utils:extract_user_metadata(RD),
     Opts = [{acl, ACL}, {meta_data, Metadata}],
 

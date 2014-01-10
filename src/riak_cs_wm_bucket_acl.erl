@@ -67,7 +67,7 @@ to_xml(RD, Ctx=#context{start_time=StartTime,
                         riakc_pid=RiakPid}) ->
     riak_cs_dtrace:dt_bucket_entry(?MODULE, <<"bucket_get_acl">>,
                                       [], [riak_cs_wm_utils:extract_name(User), Bucket]),
-    case riak_cs_acl:bucket_acl(Bucket, RiakPid) of
+    case riak_cs_acl:fetch_bucket_acl(Bucket, RiakPid) of
         {ok, Acl} ->
             X = {riak_cs_xml:to_xml(Acl), RD, Ctx},
             ok = riak_cs_stats:update_with_start(bucket_get_acl, StartTime),
@@ -101,7 +101,7 @@ accept_body(RD, Ctx=#context{user=User,
                               {User?RCS_USER.display_name,
                                User?RCS_USER.canonical_id,
                                User?RCS_USER.key_id},
-                              riak_cs_wm_utils:bucket_owner(Bucket, RiakPid)),
+                              riak_cs_wm_utils:fetch_bucket_owner(Bucket, RiakPid)),
                 {ok, CannedAcl};
             _ ->
                 riak_cs_acl_utils:validate_acl(

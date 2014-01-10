@@ -35,6 +35,7 @@
          find_and_auth_user/5,
          validate_auth_header/4,
          ensure_doc/2,
+         respond_api_error/3,
          deny_access/2,
          deny_invalid_key/2,
          extract_name/1,
@@ -45,7 +46,8 @@
          bucket_access_authorize_helper/4,
          object_access_authorize_helper/4,
          object_access_authorize_helper/5,
-         bucket_owner/2
+         fetch_bucket_owner/2,
+         bucket_owner/1
         ]).
 
 -include("riak_cs.hrl").
@@ -222,9 +224,19 @@ validate_auth_header(RD, AuthBypass, RiakPid, Ctx) ->
 %%      it again if it's already in the
 %%      Ctx
 -spec ensure_doc(term(), pid()) -> term().
-ensure_doc(KeyCtx=#key_context{get_fsm_pid=undefined,
-                               bucket=Bucket,
-                               key=Key}, RiakcPid) ->
+ensure_doc(KeyCtx=#key_context{bucket_object=undefined,
+                               bucket=Bucket}, RiakcPid) ->
+    case riak_cs_utils:fetch_bucket_object(Bucket, RiakcPid) of
+        {ok, Obj} ->
+            setup_manifest(KeyCtx#key_context{bucket_object = Obj}, RiakcPid);
+        {error, Reason} when Reason =:= notfound orelse Reason =:= no_such_bucket ->
+            KeyCtx#key_context{bucket_object = notfound}
+    end;
+ensure_doc(KeyCtx, _) ->
+    KeyCtx.
+
+setup_manifest(KeyCtx=#key_context{bucket=Bucket,
+                                   key=Key}, RiakcPid) ->
     %% start the get_fsm
     BinKey = list_to_binary(Key),
     FetchConcurrency = riak_cs_lfs_utils:fetch_concurrency(),
@@ -234,9 +246,23 @@ ensure_doc(KeyCtx=#key_context{get_fsm_pid=undefined,
                                                   FetchConcurrency,
                                                   BufferFactor),
     Manifest = riak_cs_get_fsm:get_manifest(Pid),
-    KeyCtx#key_context{get_fsm_pid=Pid, manifest=Manifest};
-ensure_doc(KeyCtx, _) ->
-    KeyCtx.
+    KeyCtx#key_context{get_fsm_pid=Pid, manifest=Manifest}.
+
+%% @doc Produce an api error by using response_module.
+respond_api_error(RD, Ctx, ErrorAtom) ->
+    ResponseMod = Ctx#context.response_module,
+    NewRD = maybe_log_user(RD, Ctx),
+    ResponseMod:api_error(ErrorAtom, NewRD, Ctx).
+
+%% @doc Only set the user for the access logger to catch if there is a
+%% user to catch.
+maybe_log_user(RD, Context) ->
+    case Context#context.user of
+        undefined ->
+            RD;
+        User ->
+            riak_cs_access_log_handler:set_user(User, RD)
+    end.
 
 %% @doc Produce an access-denied error message from a webmachine
 %% resource's `forbidden/2' function.
@@ -244,6 +270,8 @@ deny_access(RD, Ctx=#context{response_module=ResponseMod}) ->
     ResponseMod:api_error(access_denied, RD, Ctx);
 deny_access(RD, Ctx) ->
     riak_cs_s3_response:api_error(access_denied, RD, Ctx).
+
+
 
 %% @doc Prodice an invalid-access-keyid error message from a
 %% webmachine resource's `forbidden/2' function.
@@ -484,7 +512,7 @@ handle_policy_eval_result(User, _, _, RD, Ctx) ->
     AccessRD = riak_cs_access_log_handler:set_user(User, RD),
     %% Check if the bucket actually exists so we can
     %% make the correct decision to return a 404 or 403
-    case riak_cs_utils:check_bucket_exists(Bucket, RiakPid) of
+    case riak_cs_utils:fetch_bucket_object(Bucket, RiakPid) of
         {ok, _} ->
             riak_cs_wm_utils:deny_access(AccessRD, Ctx);
         {error, Reason} ->
@@ -513,21 +541,20 @@ object_access_authorize_helper(AccessType, Deletable, RD, Ctx) ->
 object_access_authorize_helper(AccessType, Deletable, SkipAcl,
                                RD, #context{policy_module=PolicyMod,
                                             local_context=LocalCtx,
-                                            response_module=ResponseMod,
-                                            riakc_pid=RiakPid}=Ctx)
+                                            response_module=ResponseMod}=Ctx)
   when ( AccessType =:= object_acl orelse
          AccessType =:= object_part orelse
          AccessType =:= object )
        andalso is_boolean(Deletable)
        andalso is_boolean(SkipAcl) ->
-    #key_context{bucket=Bucket} = LocalCtx,
-    case translate_bucket_policy(PolicyMod, Bucket, RiakPid) of
+    #key_context{bucket_object=BucketObj} = LocalCtx,
+    case translate_bucket_policy(PolicyMod, BucketObj) of
         {error, multiple_bucket_owners=E} ->
             %% We want to bail out early if there are siblings when
             %% retrieving the bucket policy
             ResponseMod:api_error(E, RD, Ctx);
         {error, notfound} ->
-            %% The call to `check_bucket_exists' returned `notfound'
+            %% The call to `fetch_bucket_object' returned `notfound'
             %% so we can assume to bucket does not exist.
             ResponseMod:api_error(no_such_bucket, RD, Ctx);
         Policy ->
@@ -540,14 +567,14 @@ check_object_authorization(AccessType, Deletable, SkipAcl, Policy,
                                         local_context=LocalCtx,
                                         riakc_pid=RiakPid}=Ctx) ->
     Method = wrq:method(RD),
-    #key_context{bucket=Bucket, manifest=Manifest} = LocalCtx,
+    #key_context{bucket=_Bucket, bucket_object=BucketObj, manifest=Manifest} = LocalCtx,
     CanonicalId = extract_canonical_id(User),
     RequestedAccess = requested_access_helper(AccessType, Method),
     ObjectAcl = extract_object_acl(Manifest),
     Access = PolicyMod:reqdata_to_access(RD, AccessType, CanonicalId),
     Acl = case SkipAcl of
               true -> true;
-              false -> riak_cs_acl:object_access(Bucket,
+              false -> riak_cs_acl:object_access(BucketObj,
                                                  ObjectAcl,
                                                  RequestedAccess,
                                                  CanonicalId,
@@ -602,13 +629,13 @@ extract_object_acl(notfound) ->
 extract_object_acl(?MANIFEST{acl=Acl}) ->
     Acl.
 
--spec translate_bucket_policy(atom(), binary(), pid()) ->
+-spec translate_bucket_policy(atom(), riakc_obj:riakc_obj()) ->
                                      policy() |
                                      undefined |
                                      {error, multiple_bucket_owners} |
                                      {error, notfound}.
-translate_bucket_policy(PolicyMod, Bucket, RiakPid) ->
-    case PolicyMod:bucket_policy(Bucket, RiakPid) of
+translate_bucket_policy(PolicyMod, BucketObj) ->
+    case PolicyMod:bucket_policy(BucketObj) of
         {ok, P} ->
             P;
         {error, policy_undefined} ->
@@ -697,13 +724,24 @@ just_allowed_by_policy(ObjectAcl, RiakPid, RD, Ctx, LocalCtx) ->
     UpdLocalCtx = LocalCtx#key_context{owner=OwnerId},
     {false, AccessRD, Ctx#context{local_context=UpdLocalCtx}}.
 
--spec bucket_owner(binary(), pid()) -> undefined | acl_owner().
-bucket_owner(Bucket, RiakPid) ->
-    case riak_cs_acl:bucket_acl(Bucket, RiakPid) of
+-spec fetch_bucket_owner(binary(), pid()) -> undefined | acl_owner().
+fetch_bucket_owner(Bucket, RiakPid) ->
+    case riak_cs_acl:fetch_bucket_acl(Bucket, RiakPid) of
         {ok, Acl} ->
             Acl?ACL.owner;
         {error, Reason} ->
             _ = lager:debug("Failed to retrieve owner info for bucket ~p. Reason ~p", [Bucket, Reason]),
+            undefined
+    end.
+
+-spec bucket_owner(riakc_obj:riakc_obj()) -> undefined | acl_owner().
+bucket_owner(BucketObj) ->
+    case riak_cs_acl:bucket_acl(BucketObj) of
+        {ok, Acl} ->
+            Acl?ACL.owner;
+        {error, Reason} ->
+            _ = lager:debug("Failed to retrieve owner info for bucket ~p. Reason ~p",
+                            [riakc_obj:key(BucketObj), Reason]),
             undefined
     end.
 

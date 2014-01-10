@@ -100,6 +100,7 @@
                       get_fsm_pid :: pid(),
                       putctype :: string(),
                       bucket :: binary(),
+                      bucket_object :: undefined | notfound | riakc_obj:riakc_obj(),
                       key :: list(),
                       owner :: 'undefined' | string(),
                       size :: non_neg_integer(),
