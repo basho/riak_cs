@@ -6,7 +6,7 @@
 -define(TEST_BUCKET, "riak_test_bucket").
 
 confirm() ->
-    {_UserConfig, {RiakNodes, _CSNodes, _Stanchion}} = rtcs:setup(1, [{cs, cs_config()}]),
+    {_UserConfig, {RiakNodes, _CSNodes, _Stanchion}} = rtcs:setup(4, [{cs, cs_config()}]),
 
     CS_http_port = rtcs:cs_port(hd(RiakNodes)),
 
