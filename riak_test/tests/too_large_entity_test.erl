@@ -34,7 +34,7 @@
 -define(BAD_PART_SIZE, 2*1024*1024).
 
 confirm() ->
-    {UserConfig, {_RiakNodes, _CSNodes, _Stanchion}} = rtcs:setup(4, [{cs, cs_config()}]),
+    {UserConfig, {_RiakNodes, _CSNodes, _Stanchion}} = rtcs:setup(1, [{cs, cs_config()}]),
 
     lager:info("User is valid on the cluster, and has no buckets"),
     ?assertEqual([{buckets, []}], erlcloud_s3:list_buckets(UserConfig)),

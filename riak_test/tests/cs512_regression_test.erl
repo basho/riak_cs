@@ -48,7 +48,7 @@ assert_notfound(UserConfig) ->
         erlcloud_s3:get_object(?BUCKET, ?KEY, UserConfig)).
 
 setup() ->
-    {UserConfig, _} = rtcs:setup(4),
+    {UserConfig, _} = rtcs:setup(1),
     ?assertEqual([{buckets, []}], erlcloud_s3:list_buckets(UserConfig)),
     ?assertEqual(ok, erlcloud_s3:create_bucket(?BUCKET, UserConfig)),
     ?assertMatch([{buckets, [[{name, ?BUCKET}, _]]}],

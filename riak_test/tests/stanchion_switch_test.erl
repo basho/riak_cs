@@ -39,7 +39,7 @@ backup_stanchion_config() ->
       }].
 
 confirm() ->
-    {UserConfig, {RiakNodes, _CSNodes, _Stanchion}} = rtcs:setup(4),
+    {UserConfig, {RiakNodes, _CSNodes, _Stanchion}} = rtcs:setup(1),
 
     lists:foreach(fun(RiakNode) ->
                           N = rt_cs_dev:node_id(RiakNode),
