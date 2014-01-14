@@ -10,11 +10,13 @@ OVERLAY_VARS    ?=
 CS_HTTP_PORT    ?= 8080
 PULSE_TESTS = riak_cs_get_fsm_pulse
 
-.PHONY: rel stagedevrel deps test depgraph graphviz
+.PHONY: rel stagedevrel deps test depgraph graphviz all compile
 
-all: deps compile
+include tools.mk
 
-compile:
+all: compile
+
+compile: deps
 	@(./rebar compile)
 
 compile-client-test: all
@@ -59,9 +61,6 @@ depgraph: graphviz
 	@echo "Dependency graph created as riak-cs.png"
 graphviz:
 	$(if $(shell which dot),,$(error "To make the depgraph, you need graphviz installed"))
-
-test: all
-	@./rebar skip_deps=true eunit
 
 pulse: all
 	@rm -rf $(BASE_DIR)/.eunit
@@ -130,9 +129,6 @@ devclean: clean
 ##
 ## Doc targets
 ##
-docs:
-	./rebar skip_deps=true doc
-
 orgs: orgs-doc orgs-README
 
 orgs-doc:
@@ -142,39 +138,9 @@ orgs-README:
 	@emacs -l orgbatch.el -batch --eval="(riak-export-doc-file \"README.org\" 'ascii)"
 	@mv README.txt README
 
-APPS = kernel stdlib sasl erts ssl tools os_mon runtime_tools crypto inets \
+DIALYZER_APPS = kernel stdlib sasl erts ssl tools os_mon runtime_tools crypto inets \
 	xmerl webtool eunit syntax_tools compiler
 PLT ?= $(HOME)/.riak-cs_dialyzer_plt
-
-check_plt: compile
-	dialyzer --check_plt --plt $(PLT) --apps $(APPS)
-
-build_plt: compile
-	dialyzer --build_plt --output_plt $(PLT) --apps $(APPS)
-
-dialyzer: compile
-	@echo
-	@echo Use "'make check_plt'" to check PLT prior to using this target.
-	@echo Use "'make build_plt'" to build PLT prior to using this target.
-	@echo
-	@sleep 1
-ifdef RIAK_CS_EE_DEPS
-	dialyzer -Wno_return -Wunmatched_returns \
-		--plt $(PLT) deps/*/ebin ebin | tee .dialyzer.raw-output | \
-		egrep -v -f ./dialyzer.ignore-warnings
-else
-	dialyzer -Wno_return -Wunmatched_returns \
-		--plt $(PLT) deps/*/ebin ebin | tee .dialyzer.raw-output | \
-		egrep -v -f ./dialyzer.ignore-warnings -f ./dialyzer.ignore-warnings.norepl
-endif
-
-cleanplt:
-	@echo
-	@echo "Are you sure?  It takes about 1/2 hour to re-build."
-	@echo Deleting $(PLT) in 5 seconds.
-	@echo
-	sleep 5
-	rm $(PLT)
 
 xref: compile
 	./rebar xref skip_deps=true | grep -v unused | egrep -v -f ./xref.ignore-warnings
