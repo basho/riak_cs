@@ -4,13 +4,13 @@ This is a bugfix release. The major fixes are to the storage calculation.
 
 ## Bugs Fixed
 
-* create basho-patches directory [riak_cs/775](https://github.com/basho/riak_cs/issues/775)
+* Create basho-patches directory [riak_cs/775](https://github.com/basho/riak_cs/issues/775) .
 
-* `sub_bucket` timeout crashes all storage calculation fixed by [riak_cs/759](https://github.com/basho/riak_cs/issues/759)
+* `sum_bucket` timeout crashes all storage calculation is fixed by [riak_cs/759](https://github.com/basho/riak_cs/issues/759) .
 
-* Access archiver crash fixed by [riak_cs/758](https://github.com/basho/riak_cs/issues/758)
+* Throttling access archiver is fixed by [riak_cs/758](https://github.com/basho/riak_cs/issues/758) .
 
-* Throttling access archiver fixed by [riak_cs/747](https://github.com/basho/riak_cs/issues/747)
+* Access archiver crash is fixed by [riak_cs/747](https://github.com/basho/riak_cs/issues/747) .
 
 
 # Riak CS 1.4.3 Release Notes
