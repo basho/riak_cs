@@ -22,12 +22,12 @@
 
 -module(riak_cs_acl_utils).
 
--compile(export_all).
-
 -include("riak_cs.hrl").
 -include_lib("xmerl/include/xmerl.hrl").
 
 -ifdef(TEST).
+
+-compile(export_all).
 
 -include_lib("eunit/include/eunit.hrl").
 
