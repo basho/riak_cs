@@ -155,12 +155,10 @@ stop(Pid) ->
 %%%===================================================================
 
 init([{pid, RiakPid}]) ->
-    lager:log(warning, self(), "riak_cs_block_server:init RiakPid: ~p~n", [RiakPid]),
     process_flag(trap_exit, true),
     {ok, #state{riakc_pid=RiakPid,
                 close_riak_connection=false}};
 init([{pool, PoolName}]) ->
-    lager:log(warning, self(), "riak_cs_block_server:init PoolName: ~p~n", [PoolName]),
     process_flag(trap_exit, true),
     case riak_cs_utils:riak_connection(PoolName) of
         {ok, RiakPid} ->

@@ -118,11 +118,13 @@ accept_body(RD, Ctx=#context{user=User,
              User?RCS_USER.canonical_id,
              User?RCS_USER.key_id},
             undefined),
+    ContainerId = riak_cs_mc:assign_container_id(manifest),
     case riak_cs_utils:create_bucket(User,
-                                       UserObj,
-                                       Bucket,
-                                       ACL,
-                                       RiakPid) of
+                                     UserObj,
+                                     Bucket,
+                                     ContainerId,
+                                     ACL,
+                                     RiakPid) of
         ok ->
             riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_create">>,
                                                [200], [riak_cs_wm_utils:extract_name(User), Bucket]),

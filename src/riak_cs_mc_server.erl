@@ -73,7 +73,17 @@ dummy_date_for_update() ->
                ]
               ]
      },
-     {manifest, []}
+     {manifest, [
+                 [{container_id, <<"manifest-A">>},
+                  {free, 100},
+                  {total, 200}
+                 ],
+                 [{container_id, <<"manifest-B">>},
+                  {free, 150},
+                  {total, 220}
+                 ]
+                ]
+     }
     ].
 
 -spec allocate(riak_cs_mc:pool_type()) -> {ok, riak_cs_mc:container_id()} |
@@ -109,18 +119,18 @@ init([]) ->
     {ok, NewState}.
 
 handle_call({allocate, Type}, _From, State)
-  when Type =:= block orelse Type =:= manifests->
+  when Type =:= block orelse Type =:= manifest ->
     ContainerId = case Type of
                     block ->
                           decide_container(State#state.blocks);
-                    manifests ->
+                    manifest ->
                           decide_container(State#state.manifests)
                   end,
     {reply, {ok, ContainerId}, State};
 handle_call(status, _From, #state{blocks=Blocks, manifests=Manifests} = State) ->
     {reply, {ok, [{blocks, Blocks}, {manifests, Manifests}]}, State};
-handle_call(_Request, _From, State) ->
-    {reply, {error, unknown_request}, State}.
+handle_call(Request, _From, State) ->
+    {reply, {error, {unknown_request, Request}}, State}.
 
 handle_cast(_Msg, State) ->
     %% TODO: handle messages from GET process and update State.
