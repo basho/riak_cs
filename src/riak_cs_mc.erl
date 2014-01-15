@@ -48,6 +48,7 @@
 
 -include_lib("stdlib/include/ms_transform.hrl").
 -include("riak_cs.hrl").
+-include_lib("riak_pb/include/riak_pb_kv_codec.hrl").
 
 %% Return pool specs from application configuration.
 %% This function assumes that it is called ONLY ONCE at initialization.
@@ -86,11 +87,14 @@ register_props(Type, [{ContainerId, Address, Port} | Rest], PoolSpecs) ->
 %% 'undefined' in second argument means buckets and manifests were stored
 %% under single cluster configuration.
 -spec pool_name(pool_type(), undefined | container_id() | lfs_manifest()) -> atom().
-pool_name(_Type, undefined) ->
-    undefined;
 pool_name(block, Manifest) when is_record(Manifest, ?MANIFEST_REC) ->
-    pool_name(block, container_id_from_manifest(Manifest));
-pool_name(Type, ContainerId) when is_binary(ContainerId) ->
+    container_pool_name(block, container_id_from_manifest(Manifest));
+pool_name(manifest, BucketObj) ->
+    container_pool_name(manifest, container_id_from_bucket(BucketObj)).
+
+container_pool_name(_Type, undefined) ->
+    undefined;
+container_pool_name(Type, ContainerId) when is_binary(ContainerId) ->
     case ets:lookup(?ETS_TAB, {Type, ContainerId}) of
         [] ->
             undefined;
@@ -106,6 +110,28 @@ container_id_from_manifest(?MANIFEST{props = Props}) ->
         _ ->
             proplists:get_value(block_container, Props)
     end.
+
+-spec container_id_from_bucket(riakc_obj:riakc_obj()) -> undefined | container_id().
+container_id_from_bucket(BucketObj) ->
+    Contents = riakc_obj:get_contents(BucketObj),
+    container_id_from_contents(Contents).
+
+container_id_from_contents([]) ->
+    undefined;
+container_id_from_contents([{MD, _} | Contents]) ->
+    case container_id_from_meta(dict:fetch(?MD_USERMETA, MD)) of
+        undefined ->
+            container_id_from_contents(Contents);
+        ContainerId ->
+            ContainerId
+    end.
+
+container_id_from_meta([]) ->
+    undefined;
+container_id_from_meta([{?MD_CONTAINER, Value} | _]) ->
+    binary_to_term(Value);
+container_id_from_meta([_ | MDs]) ->
+    container_id_from_meta(MDs).
 
 -spec default_container_id(pool_type()) -> container_id().
 default_container_id(block) ->
