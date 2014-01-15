@@ -24,7 +24,7 @@
 
 -export([pool_specs/0]).
 -export([pool_name/2, default_container_id/1,
-         assign_container_id/2]).
+         assign_container_id/1, assign_container_id/2]).
 
 -export([tab_info/0]).
 
@@ -55,21 +55,25 @@
 -spec pool_specs() -> [{atom(), {non_neg_integer(), non_neg_integer()}}].
 pool_specs() ->
     init_ets(),
-    BlockPools = case application:get_env(riak_cs, block_containers) of
-                     undefined ->
-                         application:set_env(riak_cs, default_block_container, undefined),
-                         [];
-                     [] ->
-                         application:set_env(riak_cs, default_block_container, undefined),
-                         [];
-                     {ok, BlockContainers} ->
-                         register_props(block, BlockContainers, [])
-                 end,
-    BlockPools.
+    BlockPools = register_props(block_containers, default_block_container),
+    ManifestPools = register_props(manifest_containers, default_manifest_container),
+    BlockPools ++ ManifestPools.
+
+register_props(PoolConfigName, DefaultConfigName) ->
+    Pools = case application:get_env(riak_cs, PoolConfigName) of
+                undefined ->
+                    application:set_env(riak_cs, DefaultConfigName, undefined),
+                    [];
+                [] ->
+                    application:set_env(riak_cs, DefaultConfigName, undefined),
+                    [];
+                {ok, Containers} ->
+                    register_props(block, Containers, [])
+            end,
+    Pools.
 
 %% FIXME: manifests
 register_props(_, [], Names) ->
-    lager:log(warning, self(), "Names: ~p~n", [Names]),
     Names;
 register_props(Type, [{ContainerId, Address, Port} | Rest], PoolSpecs) ->
     lager:log(warning, self(), "{ContainerId, Type, Address, Port}: ~p~n",
@@ -109,17 +113,26 @@ default_container_id(block) ->
 default_container_id (manifest) ->
     application:get_env(riak_cs, default_manifest_container_id).
 
-%% Choose container ID to store blocks for new manifest and
-%% return new manifest
--spec assign_container_id(pool_type(), lfs_manifest()) -> lfs_manifest().
-assign_container_id(Type, ?MANIFEST{props = Props} = Manifest) ->
+%% Choose container ID for new bucket or new manifest
+assign_container_id(Type) ->
     case ets:first(?ETS_TAB) of
         %% single container
         '$end_of_table' ->
-            Manifest;
+            undefined;
         %% multiple containers
         _Key ->
             {ok, ContainerId} = riak_cs_mc_server:allocate(Type),
+            ContainerId
+    end.
+
+%% Choose container ID to store blocks for new manifest and
+%% return new manifest
+-spec assign_container_id(pool_type(), lfs_manifest()) -> lfs_manifest().
+assign_container_id(block, ?MANIFEST{props = Props} = Manifest) ->
+    case assign_container_id(block) of
+        undefined ->
+            Manifest;
+        ContainerId ->
             Manifest?MANIFEST{props = [{block_container, ContainerId} | Props]}
     end.
 

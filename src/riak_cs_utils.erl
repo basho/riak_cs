@@ -29,7 +29,7 @@
          fetch_bucket_object/2,
          close_riak_connection/1,
          close_riak_connection/2,
-         create_bucket/5,
+         create_bucket/6,
          create_user/2,
          create_user/4,
          delete_bucket/4,
@@ -181,10 +181,11 @@ close_riak_connection(Pool, Pid) ->
 
 %% @doc Create a bucket in the global namespace or return
 %% an error if it already exists.
--spec create_bucket(rcs_user(), term(), binary(), acl(), pid()) ->
+-spec create_bucket(rcs_user(), term(), riak_cs_mc:container_id(),
+                    binary(), acl(), pid()) ->
                            ok |
                            {error, term()}.
-create_bucket(User, UserObj, Bucket, ACL, RiakPid) ->
+create_bucket(User, UserObj, Bucket, ContainerId, ACL, RiakPid) ->
     CurrentBuckets = get_buckets(User),
 
     %% Do not attempt to create bucket if the user already owns it
@@ -195,6 +196,7 @@ create_bucket(User, UserObj, Bucket, ACL, RiakPid) ->
             case valid_bucket_name(Bucket) of
                 true ->
                     serialized_bucket_op(Bucket,
+                                         ContainerId,
                                          ACL,
                                          User,
                                          UserObj,
@@ -1171,15 +1173,16 @@ bucket_exists(Buckets, CheckBucket) ->
 %% call to the stanchion client module for either
 %% bucket creation or deletion.
 -spec bucket_fun(bucket_operation(),
+                 riak_cs_mc:container_id(),
                  binary(),
                  acl(),
                  string(),
                  {string(), string()},
                  {string(), pos_integer(), boolean()}) -> function().
-bucket_fun(create, Bucket, ACL, KeyId, AdminCreds, StanchionData) ->
+bucket_fun(create, Bucket, ContainerId, ACL, KeyId, AdminCreds, StanchionData) ->
     {StanchionIp, StanchionPort, StanchionSSL} = StanchionData,
     %% Generate the bucket JSON document
-    BucketDoc = bucket_json(Bucket, ACL, KeyId),
+    BucketDoc = bucket_json(Bucket, ContainerId, ACL, KeyId),
     fun() ->
             velvet:create_bucket(StanchionIp,
                                  StanchionPort,
@@ -1188,7 +1191,7 @@ bucket_fun(create, Bucket, ACL, KeyId, AdminCreds, StanchionData) ->
                                  [{ssl, StanchionSSL},
                                   {auth_creds, AdminCreds}])
     end;
-bucket_fun(update_acl, Bucket, ACL, KeyId, AdminCreds, StanchionData) ->
+bucket_fun(update_acl, Bucket, _ContainerId, ACL, KeyId, AdminCreds, StanchionData) ->
     {StanchionIp, StanchionPort, StanchionSSL} = StanchionData,
     %% Generate the bucket JSON document for the ACL request
     AclDoc = bucket_acl_json(ACL, KeyId),
@@ -1201,7 +1204,7 @@ bucket_fun(update_acl, Bucket, ACL, KeyId, AdminCreds, StanchionData) ->
                                   [{ssl, StanchionSSL},
                                    {auth_creds, AdminCreds}])
     end;
-bucket_fun(update_policy, Bucket, PolicyJson, KeyId, AdminCreds, StanchionData) ->
+bucket_fun(update_policy, Bucket, _ContainerId, PolicyJson, KeyId, AdminCreds, StanchionData) ->
     {StanchionIp, StanchionPort, StanchionSSL} = StanchionData,
     %% Generate the bucket JSON document for the ACL request
     PolicyDoc = bucket_policy_json(PolicyJson, KeyId),
@@ -1214,7 +1217,7 @@ bucket_fun(update_policy, Bucket, PolicyJson, KeyId, AdminCreds, StanchionData) 
                                      [{ssl, StanchionSSL},
                                       {auth_creds, AdminCreds}])
     end;
-bucket_fun(delete_policy, Bucket, _, KeyId, AdminCreds, StanchionData) ->
+bucket_fun(delete_policy, Bucket, _ContainerId, _, KeyId, AdminCreds, StanchionData) ->
     {StanchionIp, StanchionPort, StanchionSSL} = StanchionData,
     %% Generate the bucket JSON document for the ACL request
     fun() ->
@@ -1225,7 +1228,7 @@ bucket_fun(delete_policy, Bucket, _, KeyId, AdminCreds, StanchionData) ->
                                         [{ssl, StanchionSSL},
                                          {auth_creds, AdminCreds}])
     end;
-bucket_fun(delete, Bucket, _ACL, KeyId, AdminCreds, StanchionData) ->
+bucket_fun(delete, Bucket, _ContainerId, _ACL, KeyId, AdminCreds, StanchionData) ->
     {StanchionIp, StanchionPort, StanchionSSL} = StanchionData,
     fun() ->
             velvet:delete_bucket(StanchionIp,
@@ -1238,13 +1241,20 @@ bucket_fun(delete, Bucket, _ACL, KeyId, AdminCreds, StanchionData) ->
 
 %% @doc Generate a JSON document to use for a bucket
 %% creation request.
--spec bucket_json(binary(), acl(), string()) -> string().
-bucket_json(Bucket, ACL, KeyId)  ->
+-spec bucket_json(binary(), riak_cs_mc:container_id(), acl(), string()) -> string().
+bucket_json(Bucket, ContainerId, ACL, KeyId)  ->
+    ContainerElement = case ContainerId of
+                           undefined ->
+                               [];
+                           _ ->
+                               [{<<"container">>, ContainerId}]
+                       end,
     binary_to_list(
       iolist_to_binary(
         mochijson2:encode({struct, [{<<"bucket">>, Bucket},
                                     {<<"requester">>, list_to_binary(KeyId)},
-                                    stanchion_acl_utils:acl_to_json_term(ACL)]}))).
+                                    stanchion_acl_utils:acl_to_json_term(ACL)] ++
+                                    ContainerElement}))).
 
 %% @doc Return a bucket record for the specified bucket name.
 -spec bucket_record(binary(), bucket_operation()) -> cs_bucket().
@@ -1443,11 +1453,26 @@ resolve_buckets([HeadUserRec | RestUserRecs], Buckets, _KeepDeleted) ->
                                   ok |
                                   {error, term()}.
 serialized_bucket_op(Bucket, ACL, User, UserObj, BucketOp, StatName, RiakPid) ->
+    serialized_bucket_op(Bucket, undefined, ACL, User, UserObj, BucketOp, StatName, RiakPid).
+
+%% @doc Shared code used when doing a bucket creation or deletion.
+-spec serialized_bucket_op(binary(),
+                           riak_cs_mc:container_id() | undefined,
+                           [] | acl() | policy(),
+                           rcs_user(),
+                           riakc_obj:riakc_obj(),
+                           bucket_operation(),
+                           atom(),
+                           pid()) ->
+                                  ok |
+                                  {error, term()}.
+serialized_bucket_op(Bucket, ContainerId, ACL, User, UserObj, BucketOp, StatName, RiakPid) ->
     StartTime = os:timestamp(),
     case riak_cs_config:admin_creds() of
         {ok, AdminCreds} ->
             BucketFun = bucket_fun(BucketOp,
                                    Bucket,
+                                   ContainerId,
                                    ACL,
                                    User?RCS_USER.key_id,
                                    AdminCreds,
