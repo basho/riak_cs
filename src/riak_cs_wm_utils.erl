@@ -243,6 +243,7 @@ ensure_doc(KeyCtx=#key_context{bucket_object=undefined,
                                bucket=Bucket}, RiakcPid) ->
     case riak_cs_utils:fetch_bucket_object(Bucket, RiakcPid) of
         {ok, Obj} ->
+            lager:log(warning, self(), "Obj: ~p~n", [Obj]),
             setup_manifest(KeyCtx#key_context{bucket_object = Obj}, RiakcPid);
         {error, Reason} when Reason =:= notfound orelse Reason =:= no_such_bucket ->
             KeyCtx#key_context{bucket_object = notfound}
@@ -250,13 +251,13 @@ ensure_doc(KeyCtx=#key_context{bucket_object=undefined,
 ensure_doc(KeyCtx, _) ->
     KeyCtx.
 
-setup_manifest(KeyCtx=#key_context{bucket=Bucket,
+setup_manifest(KeyCtx=#key_context{bucket_object=BucketObj,
                                    key=Key}, RiakcPid) ->
     %% start the get_fsm
     BinKey = list_to_binary(Key),
     FetchConcurrency = riak_cs_lfs_utils:fetch_concurrency(),
     BufferFactor = riak_cs_lfs_utils:get_fsm_buffer_size_factor(),
-    {ok, Pid} = riak_cs_get_fsm_sup:start_get_fsm(node(), Bucket, BinKey,
+    {ok, Pid} = riak_cs_get_fsm_sup:start_get_fsm(node(), BucketObj, BinKey,
                                                   self(), RiakcPid,
                                                   FetchConcurrency,
                                                   BufferFactor),

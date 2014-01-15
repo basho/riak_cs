@@ -1257,8 +1257,9 @@ bucket_json(Bucket, ContainerId, ACL, KeyId)  ->
                                     ContainerElement}))).
 
 %% @doc Return a bucket record for the specified bucket name.
--spec bucket_record(binary(), bucket_operation()) -> cs_bucket().
-bucket_record(Name, Operation) ->
+-spec bucket_record(binary(), bucket_operation(), riak_cs_mc:container_id()) ->
+                           cs_bucket().
+bucket_record(Name, Operation, ContainerId) ->
     case Operation of
         create ->
             Action = created;
@@ -1268,9 +1269,10 @@ bucket_record(Name, Operation) ->
             Action = undefined
     end,
     ?RCS_BUCKET{name=binary_to_list(Name),
-                 last_action=Action,
-                 creation_date=riak_cs_wm_utils:iso_8601_datetime(),
-                 modification_time=os:timestamp()}.
+                last_action=Action,
+                creation_date=riak_cs_wm_utils:iso_8601_datetime(),
+                modification_time=os:timestamp(),
+                manifest_container=ContainerId}.
 
 %% @doc Check for and resolve any conflict between
 %% a bucket record from a user record sibling and
@@ -1482,7 +1484,7 @@ serialized_bucket_op(Bucket, ContainerId, ACL, User, UserObj, BucketOp, StatName
             OpResult = BucketFun(),
             case OpResult of
                 ok ->
-                    BucketRecord = bucket_record(Bucket, BucketOp),
+                    BucketRecord = bucket_record(Bucket, BucketOp, ContainerId),
                     case update_user_buckets(User, BucketRecord) of
                         {ok, ignore} when BucketOp == update_acl ->
                             ok = riak_cs_stats:update_with_start(StatName,
@@ -1521,8 +1523,17 @@ validate_email(EmailAddr) ->
 -spec update_bucket_record(term()) -> cs_bucket().
 update_bucket_record(Bucket=?RCS_BUCKET{name=Name}) when is_binary(Name) ->
     Bucket?RCS_BUCKET{name=binary_to_list(Name)};
-update_bucket_record(Bucket) ->
-    Bucket.
+update_bucket_record(Bucket=?RCS_BUCKET{}) ->
+    Bucket;
+update_bucket_record(#moss_bucket_v1{name=Name} = Bucket) when is_binary(Name) ->
+    update_bucket_record(Bucket#moss_bucket_v1{name=binary_to_list(Name)});
+update_bucket_record(#moss_bucket_v1{} = Bucket) ->
+    ?RCS_BUCKET{name=Bucket#moss_bucket_v1.name,
+                last_action=Bucket#moss_bucket_v1.last_action,
+                creation_date=Bucket#moss_bucket_v1.creation_date,
+                modification_time=Bucket#moss_bucket_v1.modification_time,
+                manifest_container=undefined,
+                acl=Bucket#moss_bucket_v1.acl}.
 
 %% @doc Check if a user already has an ownership of
 %% a bucket and update the bucket list if needed.
@@ -1554,8 +1565,8 @@ update_user_buckets(User, Bucket) ->
 
 %% @doc Update a user record from a previous version if necessary.
 -spec update_user_record(rcs_user()) -> rcs_user().
-update_user_record(User=?RCS_USER{}) ->
-    User;
+update_user_record(User=?RCS_USER{buckets=Buckets}) ->
+    User?RCS_USER{buckets=[update_bucket_record(Bucket) || Bucket <- Buckets]};
 update_user_record(User=#moss_user_v1{}) ->
     ?RCS_USER{name=User#moss_user_v1.name,
               display_name=User#moss_user_v1.display_name,
