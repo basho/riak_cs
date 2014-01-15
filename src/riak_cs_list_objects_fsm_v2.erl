@@ -236,7 +236,7 @@ update_profiling_and_last_request(State, ObjectBuffer, ObjectBufferLength) ->
                                              ObjectBufferLength),
     update_last_request_state(State2, ObjectBuffer).
 
--spec respond(state(), list(), ordsets:ordset(), boolean()) ->
+-spec respond(state(), list(), ordsets:ordset(term()), boolean()) ->
     fsm_state_return().
 respond(StateData=#state{req=Request},
         Manifests, Prefixes, Truncated) ->
@@ -258,7 +258,7 @@ respond(StateData=#state{req=Request},
             end
     end.
 
--spec truncated(non_neg_integer(), {list(), ordsets:ordset()}) -> boolean().
+-spec truncated(non_neg_integer(), {list(), ordsets:ordset(term())}) -> boolean().
 truncated(NumKeysRequested, ObjectsAndPrefixes) ->
     NumKeysRequested < riak_cs_list_objects_utils:manifests_and_prefix_length(ObjectsAndPrefixes) andalso
     %% this is because (strangely) S3 returns `false' for

@@ -89,7 +89,6 @@ to_xml(RD, Ctx=#context{local_context=LocalCtx,
                   } || D <- Ds],
             Cs = [{'CommonPrefixes',
                    [
-                    % WTH? The pattern [Common | _] can never match the type []
                     {'Prefix', [binary_to_list(Common)]}
                    ]} || Common <- Commons],
             Get = fun(Name) -> case proplists:get_value(Name, Opts) of

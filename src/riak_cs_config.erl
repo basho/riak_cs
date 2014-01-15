@@ -194,8 +194,6 @@ cluster_id(Pid) ->
 maybe_get_cluster_id(true, Pid, Timeout) ->
     try
         case riak_repl_pb_api:get_clusterid(Pid, Timeout) of
-            %% riak_cs_config.erl:187: The pattern {'ok', ClusterID} can never match the type {'error',_}
-            %% It actually matches to '_'
             {ok, ClusterID} ->
                 application:set_env(riak_cs, cluster_id, ClusterID),
                 ClusterID;

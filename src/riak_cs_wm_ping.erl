@@ -40,7 +40,7 @@ init(_Config) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"init">>),
     {ok, #ping_context{}}.
 
--spec service_available(#wm_reqdata{}, #context{}) -> {boolean(), #wm_reqdata{}, #context{}}.
+-spec service_available(#wm_reqdata{}, #ping_context{}) -> {boolean(), #wm_reqdata{}, #ping_context{}}.
 service_available(RD, Ctx) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"service_available">>),
     {Available, UpdCtx} = riak_ping(get_connection_pid(), Ctx),
@@ -113,9 +113,7 @@ non_pool_connection() ->
             {undefined, false}
     end.
 
--spec riak_ping({undefined | pid(), boolean()}, #context{}) -> {boolean(), #context{}}.
-riak_ping({undefined, PoolPid}, Ctx) ->
-    {false, Ctx#ping_context{riakc_pid=undefined, pool_pid=PoolPid}};
+-spec riak_ping({pid(), boolean()}, #ping_context{}) -> {boolean(), #ping_context{}}.
 riak_ping({Pid, PoolPid}, Ctx) ->
     Available = case catch riakc_pb_socket:ping(Pid, ping_timeout()) of
                     pong ->
