@@ -109,7 +109,7 @@
   resulted in 500 errors returned to the client.
 - Reduce likelihood of sibling creation when creating a bucket.
 - Return a 404 instead of a 403 when accessing a deleted object.
-- Unquote URLs to accommodate clients that URL encode =/= characters
+- Unquote URLs to accommodate clients that URL encode `/` characters
   in URLs.
 - Deny anonymous service-level requests to avoid unnecessary error
   messages trying to list the buckets owned by an undefined user.
@@ -140,7 +140,7 @@
   nor fetched.
 - Speed up bucket_empty check and fix process leak. This bug was
   originally found when a user was having trouble with `s3cmd
-  rb :s3//foo --recursive`. The operation first tries to delete the
+  rb s3://foo --recursive`. The operation first tries to delete the
   (potentially large) bucket, which triggers our bucket empty
   check. If the bucket has more than 32k items, we run out of
   processes unless +P is set higher (because of the leak).
