@@ -48,7 +48,8 @@
 eqc_test_() ->
     {spawn,
      [
-      {timeout, 60, ?_assertEqual(true, quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_add_grant_idempotent()))))}
+      {timeout, 60, ?_assertEqual(true, quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_add_grant_idempotent()))))},
+      {timeout, 60, ?_assertEqual(true, quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_grant_gives_permission()))))}
      ]
     }.
 
