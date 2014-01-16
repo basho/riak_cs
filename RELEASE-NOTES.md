@@ -114,7 +114,7 @@ This is a bugfix release. The major fixes are to the storage calculation.
   resulted in 500 errors returned to the client.
 - Reduce likelihood of sibling creation when creating a bucket.
 - Return a 404 instead of a 403 when accessing a deleted object.
-- Unquote URLs to accommodate clients that URL encode =/= characters
+- Unquote URLs to accommodate clients that URL encode `/` characters
   in URLs.
 - Deny anonymous service-level requests to avoid unnecessary error
   messages trying to list the buckets owned by an undefined user.
