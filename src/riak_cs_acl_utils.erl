@@ -242,10 +242,12 @@ remove_quotes(String) ->
     end.
 
 %% @doc Return true if `String' is enclosed in quotation
-%% marks.
+%% marks. The enclosed string must also be non-empty.
 -spec starts_and_ends_with_quotes(string()) -> boolean().
 starts_and_ends_with_quotes(String) ->
-    hd(String) =:= 34 andalso lists:last(String) =:= 34.
+    length(String) > 2 andalso
+    hd(String) =:= 34 andalso
+    lists:last(String) =:= 34.
 
 %% @doc Attempt to turn a list of grants that use email addresses
 %% into a list of grants that only use canonical ids. Returns an error
