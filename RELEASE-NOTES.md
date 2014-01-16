@@ -145,7 +145,7 @@ This is a bugfix release. The major fixes are to the storage calculation.
   nor fetched.
 - Speed up bucket_empty check and fix process leak. This bug was
   originally found when a user was having trouble with `s3cmd
-  rb :s3//foo --recursive`. The operation first tries to delete the
+  rb s3://foo --recursive`. The operation first tries to delete the
   (potentially large) bucket, which triggers our bucket empty
   check. If the bucket has more than 32k items, we run out of
   processes unless +P is set higher (because of the leak).
