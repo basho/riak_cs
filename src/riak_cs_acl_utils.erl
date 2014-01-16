@@ -185,7 +185,7 @@ parse_grant_header_value(HeaderValue) ->
 %% into:
 %% `["emailAddress=\"xyz@amazon.com\"",
 %%  "emailAddress=\"abc@amazon.com\""]'
--spec split_header_values_and_strip(string()) -> string().
+-spec split_header_values_and_strip(string()) -> [string()].
 split_header_values_and_strip(Value) ->
     [string:strip(V) || V <- string:tokens(Value, ",")].
 
