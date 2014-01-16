@@ -309,10 +309,7 @@ acl_from_xml(Xml, KeyId, RiakPid) ->
 %% into XML.
 -spec empty_acl_xml() -> binary().
 empty_acl_xml() ->
-    XmlDoc =
-             [{'AccessControlPolicy',
-               [
-                    ]}],
+    XmlDoc = [{'AccessControlPolicy',[]}],
     unicode:characters_to_binary(
         xmerl:export_simple(XmlDoc, xmerl_xml, [{prolog, ?XML_PROLOG}])).
 
