@@ -8,7 +8,7 @@ This is a bugfix release. The major fixes are to the storage calculation.
 
 * `sum_bucket` timeout crashes all storage calculation is fixed by [riak_cs/759](https://github.com/basho/riak_cs/issues/759) .
 
-* Throttling access archiver is fixed by [riak_cs/758](https://github.com/basho/riak_cs/issues/758) .
+* Failure to throttle access archiver is fixed by [riak_cs/758](https://github.com/basho/riak_cs/issues/758) .
 
 * Access archiver crash is fixed by [riak_cs/747](https://github.com/basho/riak_cs/issues/747) .
 
