@@ -56,11 +56,13 @@
 -spec pool_specs() -> [{atom(), {non_neg_integer(), non_neg_integer()}}].
 pool_specs() ->
     init_ets(),
-    BlockPools = register_props(block_containers, default_block_container),
-    ManifestPools = register_props(manifest_containers, default_manifest_container),
+    BlockPools = register_containers(block, block_containers,
+                                     default_block_container),
+    ManifestPools = register_containers(manifest, manifest_containers,
+                                        default_manifest_container),
     BlockPools ++ ManifestPools.
 
-register_props(PoolConfigName, DefaultConfigName) ->
+register_containers(Type, PoolConfigName, DefaultConfigName) ->
     Pools = case application:get_env(riak_cs, PoolConfigName) of
                 undefined ->
                     application:set_env(riak_cs, DefaultConfigName, undefined),
@@ -69,11 +71,10 @@ register_props(PoolConfigName, DefaultConfigName) ->
                     application:set_env(riak_cs, DefaultConfigName, undefined),
                     [];
                 {ok, Containers} ->
-                    register_props(block, Containers, [])
+                    register_props(Type, Containers, [])
             end,
     Pools.
 
-%% FIXME: manifests
 register_props(_, [], Names) ->
     Names;
 register_props(Type, [{ContainerId, Address, Port} | Rest], PoolSpecs) ->
@@ -81,7 +82,7 @@ register_props(Type, [{ContainerId, Address, Port} | Rest], PoolSpecs) ->
               [{ContainerId, Type, Address, Port}]),
     NewPoolSpec = {register_and_get_pool_name(Type, ContainerId, Address, Port),
                    {?WORKERS, ?OVERFLOW, Address, Port}},
-    register_props(block, Rest, [NewPoolSpec | PoolSpecs]).
+    register_props(Type, Rest, [NewPoolSpec | PoolSpecs]).
 
 %% Translate container ID in buckets and manifests to pool name.
 -spec pool_name(pool_type(), undefined | container_id() | lfs_manifest()) -> atom().
@@ -95,6 +96,7 @@ pool_name(manifest, BucketObj) ->
 container_pool_name(_Type, undefined) ->
     undefined;
 container_pool_name(Type, ContainerId) when is_binary(ContainerId) ->
+    lager:debug("Type: ~p~n", [Type]),
     case ets:lookup(?ETS_TAB, {Type, ContainerId}) of
         [] ->
             %% TODO: Misconfiguration? Should throw error?
@@ -134,7 +136,6 @@ container_id_from_meta([]) ->
 container_id_from_meta([{?MD_CONTAINER, Value} | _]) ->
     binary_to_term(Value);
 container_id_from_meta([_MD | MDs]) ->
-    lager:log(warning, self(), "_MD: ~p~n", [_MD]),
     container_id_from_meta(MDs).
 
 -spec default_container_id(pool_type()) -> container_id().

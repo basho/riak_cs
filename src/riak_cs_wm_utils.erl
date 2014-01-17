@@ -242,6 +242,7 @@ setup_manifest(KeyCtx=#key_context{bucket=Bucket,
     FetchConcurrency = riak_cs_lfs_utils:fetch_concurrency(),
     BufferFactor = riak_cs_lfs_utils:get_fsm_buffer_size_factor(),
     ManifestPool = riak_cs_mc:pool_name(manifest, BucketObj),
+    lager:debug("ManifestPool: ~p~n", [ManifestPool]),
     ManiRiakcPid = case ManifestPool of
                        undefined ->
                            RiakcPid;
