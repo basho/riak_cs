@@ -44,6 +44,19 @@ clean-riak-test:
 deps:
 	@./rebar get-deps
 
+##
+## Lock Targets
+##
+##  see https://github.com/seth/rebar_lock_deps_plugin
+lock: deps compile
+	./rebar lock-deps
+
+locked-all: locked-deps compile
+
+locked-deps:
+	@echo "Using rebar.config.lock file to fetch dependencies"
+	./rebar -C rebar.config.lock get-deps
+
 clean:
 	@./rebar clean
 
