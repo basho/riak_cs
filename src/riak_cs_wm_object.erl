@@ -31,7 +31,8 @@
          content_types_accepted/2,
          accept_body/2,
          delete_resource/2,
-         valid_entity_length/2]).
+         valid_entity_length/2,
+         finish_request/2]).
 
 -include("riak_cs.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
@@ -422,3 +423,8 @@ format_etag({ContentMd5, Suffix}) ->
     riak_cs_utils:etag_from_binary(ContentMd5, Suffix);
 format_etag(ContentMd5) ->
     riak_cs_utils:etag_from_binary(ContentMd5).
+
+-spec finish_request(#wm_reqdata{}, #context{}) -> {true, #wm_reqdata{}, #context{}}.
+finish_request(RD, Ctx=#context{local_context=KeyCtx}) ->
+    NewKeyCtx = riak_cs_wm_utils:finish_doc(KeyCtx),
+    {true, RD, Ctx#context{local_context=NewKeyCtx}}.

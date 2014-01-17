@@ -28,7 +28,7 @@
 
 -export([tab_info/0]).
 
--export_typ([pool_key/0, pool_type/0, container_id/0]).
+-export_type([pool_key/0, pool_type/0, container_id/0]).
 
 -type pool_type() :: blocks | manifests.
 %% Use "container ID" instead of "cluster ID".
@@ -84,19 +84,21 @@ register_props(Type, [{ContainerId, Address, Port} | Rest], PoolSpecs) ->
     register_props(block, Rest, [NewPoolSpec | PoolSpecs]).
 
 %% Translate container ID in buckets and manifests to pool name.
-%% 'undefined' in second argument means buckets and manifests were stored
-%% under single cluster configuration.
 -spec pool_name(pool_type(), undefined | container_id() | lfs_manifest()) -> atom().
 pool_name(block, Manifest) when is_record(Manifest, ?MANIFEST_REC) ->
     container_pool_name(block, container_id_from_manifest(Manifest));
 pool_name(manifest, BucketObj) ->
     container_pool_name(manifest, container_id_from_bucket(BucketObj)).
 
+%% 'undefined' in second argument means buckets and manifests were stored
+%% under single container configuration.
 container_pool_name(_Type, undefined) ->
     undefined;
 container_pool_name(Type, ContainerId) when is_binary(ContainerId) ->
     case ets:lookup(?ETS_TAB, {Type, ContainerId}) of
         [] ->
+            %% TODO: Misconfiguration? Should throw error?
+            %% Another possibility is number of containers are reduced.
             undefined;
         [#pool{name = Name}] ->
             Name
@@ -106,18 +108,19 @@ container_pool_name(Type, ContainerId) when is_binary(ContainerId) ->
 container_id_from_manifest(?MANIFEST{props = Props}) ->
     case Props of
         undefined ->
-            undefined;
+            application:get_env(riak_cs, default_block_container);
         _ ->
             proplists:get_value(block_container, Props)
     end.
 
 -spec container_id_from_bucket(riakc_obj:riakc_obj()) -> undefined | container_id().
 container_id_from_bucket(BucketObj) ->
+    lager:log(warning, self(), "BucketObj: ~p~n", [BucketObj]),
     Contents = riakc_obj:get_contents(BucketObj),
     container_id_from_contents(Contents).
 
 container_id_from_contents([]) ->
-    undefined;
+    application:get_env(riak_cs, default_manifest_container);
 container_id_from_contents([{MD, _} | Contents]) ->
     case container_id_from_meta(dict:fetch(?MD_USERMETA, MD)) of
         undefined ->
@@ -130,7 +133,8 @@ container_id_from_meta([]) ->
     undefined;
 container_id_from_meta([{?MD_CONTAINER, Value} | _]) ->
     binary_to_term(Value);
-container_id_from_meta([_ | MDs]) ->
+container_id_from_meta([_MD | MDs]) ->
+    lager:log(warning, self(), "_MD: ~p~n", [_MD]),
     container_id_from_meta(MDs).
 
 -spec default_container_id(pool_type()) -> container_id().

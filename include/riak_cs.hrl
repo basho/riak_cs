@@ -106,6 +106,8 @@
                       upload_id :: 'undefined' | binary(),
                       part_number :: 'undefined' | integer(),
                       part_uuid :: 'undefined' | binary(),
+                      manifest_riakc_pid :: pid(),
+                      manifest_pool :: atom(),
                       get_fsm_pid :: pid(),
                       putctype :: string(),
                       bucket :: binary(),
