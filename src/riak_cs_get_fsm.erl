@@ -123,9 +123,10 @@ chunk(Pid, ChunkSeq, ChunkValue) ->
 %% gen_fsm callbacks
 %% ====================================================================
 
-init([Bucket, Key, Caller, RiakPid, FetchConcurrency, BufferFactor])
-  when is_binary(Bucket), is_binary(Key), is_pid(Caller), is_pid(RiakPid),
+init([Bucket, Key, Caller, RiakcPid, FetchConcurrency, BufferFactor])
+  when is_binary(Bucket), is_binary(Key), is_pid(Caller), is_pid(RiakcPid),
         FetchConcurrency > 0, BufferFactor > 0 ->
+
     %% We need to do this (the monitor) for two reasons
     %% 1. We're started through a supervisor, so the
     %%    proc that actually intends to start us isn't
@@ -147,7 +148,7 @@ init([Bucket, Key, Caller, RiakPid, FetchConcurrency, BufferFactor])
     State = #state{bucket=Bucket,
                    caller=CallerRef,
                    key=Key,
-                   riakc_pid=RiakPid,
+                   riakc_pid=RiakcPid,
                    buffer_factor=BufferFactor,
                    fetch_concurrency=FetchConcurrency},
     {ok, prepare, State, 0};
