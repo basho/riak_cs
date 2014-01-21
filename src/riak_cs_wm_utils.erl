@@ -421,12 +421,13 @@ maybe_update_context_with_acl_from_headers(RD, Ctx=#context{user=User}) ->
 -spec maybe_acl_from_context_and_request(#wm_reqdata{}, #context{}) ->
     {ok, acl_or_error()} | error.
 maybe_acl_from_context_and_request(RD, #context{user=User,
-                                                bucket=Bucket,
+                                                local_context=KeyContext,
                                                 riakc_pid=RiakcPid}) ->
+    BucketObj = KeyContext#key_context.bucket_object,
     case has_acl_header(RD) of
         true ->
             Headers = normalize_headers(RD),
-            BucketOwner = bucket_owner(Bucket, RiakcPid),
+            BucketOwner = bucket_owner(BucketObj),
             Owner = {User?RCS_USER.display_name,
                      User?RCS_USER.canonical_id,
                      User?RCS_USER.key_id},

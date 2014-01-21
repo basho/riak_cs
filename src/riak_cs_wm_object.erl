@@ -307,7 +307,6 @@ accept_body(RD, Ctx=#context{local_context=LocalCtx,
                              riakc_pid=RiakcPid}) ->
     #key_context{bucket=Bucket,
                  key=Key,
-                 bucket_object=BucketObj,
                  putctype=ContentType,
                  size=Size,
                  get_fsm_pid=GetFsmPid} = LocalCtx,
