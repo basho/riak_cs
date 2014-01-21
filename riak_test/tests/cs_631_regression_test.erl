@@ -37,6 +37,7 @@ confirm() ->
               {cs, rtcs:cs_config([{fold_objects_for_list_keys, true}])}],
     {UserConfig, {_RiakNodes, _CSNodes, _Stanchion}} = rtcs:setup(4, Config),
     ?assertEqual(ok, erlcloud_s3:create_bucket(?BUCKET, UserConfig)),
+    test_unknown_canonical_id_grant_returns_400(UserConfig),
     test_canned_acl_and_grants_returns_400(UserConfig).
 
 test_canned_acl_and_grants_returns_400(UserConfig) ->
