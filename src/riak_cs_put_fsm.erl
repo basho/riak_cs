@@ -62,7 +62,8 @@
                 reported_md5 :: undefined | string(),
                 reply_pid :: {pid(), reference()},
                 mani_pid :: undefined | pid(),
-                riakc_pid :: pid(),
+                mani_riakc :: pid(),
+                def_riakc :: pid(),   % riakc for block_server
                 make_new_manifest_p :: boolean(),
                 timer_ref :: reference(),
                 bucket :: binary(),
@@ -87,13 +88,13 @@
 %%%===================================================================
 
 -spec start_link({binary(), binary(), non_neg_integer(), binary(),
-                  term(), pos_integer(), acl(), timeout(), pid(), pid()}) ->
+                  term(), pos_integer(), acl(), timeout(), pid(), pid(), pid()}) ->
                         {ok, pid()} | {error, term()}.
 start_link(Tuple) when is_tuple(Tuple) ->
     start_link(Tuple, true).
 
 -spec start_link({binary(), binary(), non_neg_integer(), binary(),
-                  term(), pos_integer(), acl(), timeout(), pid(), pid()},
+                  term(), pos_integer(), acl(), timeout(), pid(), pid(), pid()},
                  boolean()) ->
                         {ok, pid()} | {error, term()}.
 start_link({_Bucket,
@@ -105,7 +106,8 @@ start_link({_Bucket,
             _Acl,
             _Timeout,
             _Caller,
-            _RiakPid}=Arg1,
+            _ManiRiakc,
+            _DefRiakc}=Arg1,
            MakeNewManifestP) ->
     gen_fsm:start_link(?MODULE, {Arg1, MakeNewManifestP}, []).
 
@@ -140,11 +142,11 @@ block_written(Pid, BlockID) ->
 %% might be implemented. Does it actually
 %% make things more confusing?
 -spec init({{binary(), binary(), non_neg_integer(), binary(),
-             term(), pos_integer(), acl(), timeout(), pid(), pid()},
+             term(), pos_integer(), acl(), timeout(), pid(), pid(), pid()},
             term()}) ->
                   {ok, prepare, #state{}, timeout()}.
 init({{Bucket, Key, ContentLength, ContentType,
-       Metadata, BlockSize, Acl, Timeout, Caller, RiakPid},
+       Metadata, BlockSize, Acl, Timeout, Caller, ManiRiakc, DefRiakc},
       MakeNewManifestP}) ->
     %% We need to do this (the monitor) for two reasons
     %% 1. We're started through a supervisor, so the
@@ -166,7 +168,8 @@ init({{Bucket, Key, ContentLength, ContentType,
                          acl=Acl,
                          content_length=ContentLength,
                          content_type=ContentType,
-                         riakc_pid=RiakPid,
+                         mani_riakc=ManiRiakc,
+                         def_riakc=DefRiakc,
                          make_new_manifest_p=MakeNewManifestP,
                          timeout=Timeout},
      0}.
@@ -384,16 +387,17 @@ prepare(State=#state{bucket=Bucket,
                      content_type=ContentType,
                      metadata=Metadata,
                      acl=Acl,
-                     riakc_pid=RiakPid,
+                     mani_riakc=ManiRiakc,
+                     def_riakc=DefRiakc,
                      make_new_manifest_p=MakeNewManifestP})
   when is_integer(ContentLength), ContentLength >= 0 ->
     %% 1. start the manifest_fsm proc
     {ok, ManiPid} = maybe_riak_cs_manifest_fsm_start_link(
-                      MakeNewManifestP, Bucket, Key, RiakPid),
+                      MakeNewManifestP, Bucket, Key, ManiRiakc),
     %% TODO:
     %% this shouldn't be hardcoded.
     %% for now, always populate cluster_id
-    ClusterID = riak_cs_config:cluster_id(RiakPid),
+    ClusterID = riak_cs_config:cluster_id(ManiRiakc),
     Manifest =
         riak_cs_lfs_utils:new_manifest(Bucket,
                                        Key,
@@ -419,7 +423,7 @@ prepare(State=#state{bucket=Bucket,
                      _ ->
                          riak_cs_block_server:start_block_servers(
                            NewManifest,
-                           RiakPid,
+                           DefRiakc,
                            riak_cs_lfs_utils:put_concurrency())
                  end,
     FreeWriters = ordsets:from_list(WriterPids),

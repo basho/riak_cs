@@ -252,7 +252,7 @@ setup_manifest(KeyCtx=#key_context{bucket=Bucket,
                            NewPid
                    end,
     {ok, FsmPid} = riak_cs_get_fsm_sup:start_get_fsm(node(), Bucket, BinKey,
-                                                     self(), ManiRiakcPid,
+                                                     self(), ManiRiakcPid, RiakcPid,
                                                      FetchConcurrency,
                                                      BufferFactor),
     Manifest = riak_cs_get_fsm:get_manifest(FsmPid),

@@ -41,7 +41,7 @@
 -include("riak_cs.hrl").
 
 %% API
--export([start_link/6,
+-export([start_link/7,
          stop/1,
          continue/2,
          manifest/2,
@@ -69,7 +69,8 @@
 
 -record(state, {from :: {pid(), reference()},
                 mani_fsm_pid :: pid(),
-                riakc_pid :: pid(),
+                mani_riakc :: pid(),
+                def_riakc :: pid(),     % riakc for block server
                 bucket :: term(),
                 caller :: reference(),
                 key :: term(),
@@ -94,12 +95,12 @@
 %% Public API
 %% ===================================================================
 
--spec start_link(binary(), binary(), pid(), pid(), pos_integer(),
+-spec start_link(binary(), binary(), pid(), pid(), pid(), pos_integer(),
                  pos_integer()) -> {ok, pid()} | {error, term()}.
 
-start_link(Bucket, Key, Caller, RiakPid, FetchConcurrency, BufferFactor) ->
-    gen_fsm:start_link(?MODULE, [Bucket, Key, Caller, RiakPid,
-                                FetchConcurrency, BufferFactor], []).
+start_link(Bucket, Key, Caller, ManiRiakc, DefRiakc, FetchConcurrency, BufferFactor) ->
+    gen_fsm:start_link(?MODULE, [Bucket, Key, Caller, ManiRiakc, DefRiakc,
+                                 FetchConcurrency, BufferFactor], []).
 
 stop(Pid) ->
     gen_fsm:send_event(Pid, stop).
@@ -123,9 +124,10 @@ chunk(Pid, ChunkSeq, ChunkValue) ->
 %% gen_fsm callbacks
 %% ====================================================================
 
-init([Bucket, Key, Caller, RiakcPid, FetchConcurrency, BufferFactor])
-  when is_binary(Bucket), is_binary(Key), is_pid(Caller), is_pid(RiakcPid),
-        FetchConcurrency > 0, BufferFactor > 0 ->
+init([Bucket, Key, Caller, ManiRiakc, DefRiakc, FetchConcurrency, BufferFactor])
+  when is_binary(Bucket), is_binary(Key), is_pid(Caller),
+       is_pid(ManiRiakc), is_pid(DefRiakc),
+       FetchConcurrency > 0, BufferFactor > 0 ->
 
     %% We need to do this (the monitor) for two reasons
     %% 1. We're started through a supervisor, so the
@@ -148,13 +150,14 @@ init([Bucket, Key, Caller, RiakcPid, FetchConcurrency, BufferFactor])
     State = #state{bucket=Bucket,
                    caller=CallerRef,
                    key=Key,
-                   riakc_pid=RiakcPid,
+                   mani_riakc=ManiRiakc,
+                   def_riakc=DefRiakc,
                    buffer_factor=BufferFactor,
                    fetch_concurrency=FetchConcurrency},
     {ok, prepare, State, 0};
 init([test, Bucket, Key, Caller, ContentLength, BlockSize, FetchConcurrency,
       BufferFactor]) ->
-    {ok, prepare, State1, 0} = init([Bucket, Key, Caller, self(),
+    {ok, prepare, State1, 0} = init([Bucket, Key, Caller, self(), self(),
                                      FetchConcurrency, BufferFactor]),
 
     %% purposely have the timeout happen
@@ -209,7 +212,7 @@ waiting_continue_or_stop({continue, Range}, #state{manifest=Manifest,
                                                    key=Key,
                                                    fetch_concurrency=FetchConcurrency,
                                                    free_readers=Readers,
-                                                   riakc_pid=RiakPid}=State) ->
+                                                   def_riakc=DefRiakc}=State) ->
     {BlocksOrder, SkipInitial, KeepFinal} =
         riak_cs_lfs_utils:block_sequences_for_manifest(Manifest, Range),
     case BlocksOrder of
@@ -225,7 +228,7 @@ waiting_continue_or_stop({continue, Range}, #state{manifest=Manifest,
             case Readers of
                 undefined ->
                     FreeReaders =
-                    riak_cs_block_server:start_block_servers(Manifest, RiakPid,
+                    riak_cs_block_server:start_block_servers(Manifest, DefRiakc,
                         FetchConcurrency),
                     _ = lager:debug("Block Servers: ~p", [FreeReaders]);
                 _ ->
@@ -397,16 +400,16 @@ code_change(_OldVsn, StateName, State, _Extra) -> {ok, StateName, State}.
 -spec prepare(#state{}) -> #state{}.
 prepare(#state{bucket=Bucket,
                key=Key,
-               riakc_pid=RiakPid}=State) ->
+               mani_riakc=ManiRiakc}=State) ->
     %% start the process that will
     %% fetch the value, be it manifest
     %% or regular object
-    {ok, ManiPid} = riak_cs_manifest_fsm:start_link(Bucket, Key, RiakPid),
+    {ok, ManiPid} = riak_cs_manifest_fsm:start_link(Bucket, Key, ManiRiakc),
     case riak_cs_manifest_fsm:get_active_manifest(ManiPid) of
         {ok, Manifest} ->
             _ = lager:debug("Manifest: ~p", [Manifest]),
             case riak_cs_mp_utils:clean_multipart_unused_parts(Manifest,
-                                                               RiakPid) of
+                                                               ManiRiakc) of
                 same ->
                     State#state{manifest=Manifest,
                                 mani_fsm_pid=ManiPid};

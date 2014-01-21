@@ -78,8 +78,8 @@ register_containers(Type, PoolConfigName, DefaultConfigName) ->
 register_props(_, [], Names) ->
     Names;
 register_props(Type, [{ContainerId, Address, Port} | Rest], PoolSpecs) ->
-    lager:log(warning, self(), "{ContainerId, Type, Address, Port}: ~p~n",
-              [{ContainerId, Type, Address, Port}]),
+    lager:debug("{ContainerId, Type, Address, Port}: ~p~n",
+                [{ContainerId, Type, Address, Port}]),
     NewPoolSpec = {register_and_get_pool_name(Type, ContainerId, Address, Port),
                    {?WORKERS, ?OVERFLOW, Address, Port}},
     register_props(Type, Rest, [NewPoolSpec | PoolSpecs]).
@@ -117,7 +117,7 @@ container_id_from_manifest(?MANIFEST{props = Props}) ->
 
 -spec container_id_from_bucket(riakc_obj:riakc_obj()) -> undefined | container_id().
 container_id_from_bucket(BucketObj) ->
-    lager:log(warning, self(), "BucketObj: ~p~n", [BucketObj]),
+    lager:debug("BucketObj: ~p~n", [BucketObj]),
     Contents = riakc_obj:get_contents(BucketObj),
     container_id_from_contents(Contents).
 
