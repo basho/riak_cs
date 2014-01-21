@@ -76,9 +76,9 @@ allowed_methods() ->
 post_is_create(RD, Ctx) ->
     {false, RD, Ctx}.
 
-process_post(RD, Ctx=#context{local_context=LocalCtx,
-                              riakc_pid=RiakcPid}) ->
-    #key_context{bucket=Bucket, bucket_object=BucketObj, key=Key} = LocalCtx,
+process_post(RD, Ctx=#context{local_context=LocalCtx}) ->
+    #key_context{bucket=Bucket, bucket_object=BucketObj, key=Key,
+                 manifest_riakc_pid=ManiRiakc} = LocalCtx,
     ContentType = try
                       list_to_binary(wrq:get_req_header("Content-Type", RD))
                   catch error:badarg ->
@@ -95,7 +95,7 @@ process_post(RD, Ctx=#context{local_context=LocalCtx,
 
     case riak_cs_mp_utils:initiate_multipart_upload(Bucket, list_to_binary(Key),
                                                     ContentType, User, Opts,
-                                                    RiakcPid) of
+                                                    ManiRiakc) of
         {ok, UploadId} ->
             XmlDoc = {'InitiateMultipartUploadResult',
                        [{'xmlns', "http://s3.amazonaws.com/doc/2006-03-01/"}],
