@@ -24,7 +24,8 @@
 
 -export([pool_specs/0]).
 -export([pool_name/2, default_container_id/1,
-         assign_container_id/1, assign_container_id/2]).
+         assign_container_id/1, set_container_id_to_manifest/2,
+         container_id_from_manifest/1]).
 
 -export([tab_info/0]).
 
@@ -158,14 +159,11 @@ assign_container_id(Type) ->
 
 %% Choose container ID to store blocks for new manifest and
 %% return new manifest
--spec assign_container_id(pool_type(), lfs_manifest()) -> lfs_manifest().
-assign_container_id(block, ?MANIFEST{props = Props} = Manifest) ->
-    case assign_container_id(block) of
-        undefined ->
-            Manifest;
-        ContainerId ->
-            Manifest?MANIFEST{props = [{block_container, ContainerId} | Props]}
-    end.
+-spec set_container_id_to_manifest(container_id() | undefined, lfs_manifest()) -> lfs_manifest().
+set_container_id_to_manifest(undefined, Manifest) ->
+    Manifest;
+set_container_id_to_manifest(ContainerId, ?MANIFEST{props = Props} = Manifest) ->
+    Manifest?MANIFEST{props = [{block_container, ContainerId} | Props]}.
 
 init_ets() ->
     ets:new(?ETS_TAB, [{keypos, 2}, named_table, protected,

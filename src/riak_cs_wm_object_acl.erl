@@ -164,16 +164,17 @@ produce_body(RD, Ctx=#context{local_context=LocalCtx,
 -spec accept_body(term(), term()) ->
     {boolean() | {halt, term()}, term(), term()}.
 accept_body(RD, Ctx=#context{local_context=#key_context{get_fsm_pid=GetFsmPid,
+                                                        manifest_riakc_pid=ManiRiakc,
                                                         manifest=Mfst,
                                                         key=KeyStr,
                                                         bucket=Bucket},
                              user=User,
                              acl=AclFromHeadersOrDefault,
                              requested_perm='WRITE_ACP',
-                             riakc_pid=RiakPid})  when Bucket /= undefined,
+                             riakc_pid=DefRiakc})  when Bucket /= undefined,
                                                         KeyStr /= undefined,
                                                         Mfst /= undefined,
-                                                        RiakPid /= undefined ->
+                                                        DefRiakc /= undefined ->
     BFile_str = [Bucket, $,, KeyStr],
     UserName = riak_cs_wm_utils:extract_name(User),
     riak_cs_dtrace:dt_object_entry(?MODULE, <<"object_put_acl">>,
@@ -186,16 +187,18 @@ accept_body(RD, Ctx=#context{local_context=#key_context{get_fsm_pid=GetFsmPid,
                 {ok, AclFromHeadersOrDefault};
             _ ->
                 riak_cs_acl_utils:validate_acl(
+                  %% Pass the default riakc because it is used to resolve users
+                  %% from canonical IDs
                   riak_cs_acl_utils:acl_from_xml(Body,
                                                  User?RCS_USER.key_id,
-                                                 RiakPid),
+                                                 DefRiakc),
                   User?RCS_USER.canonical_id)
         end,
     case AclRes of
         {ok, Acl} ->
             %% Write new ACL to active manifest
             Key = list_to_binary(KeyStr),
-            case riak_cs_utils:set_object_acl(Bucket, Key, Mfst, Acl, RiakPid) of
+            case riak_cs_utils:set_object_acl(Bucket, Key, Mfst, Acl, ManiRiakc) of
                 ok ->
                     riak_cs_dtrace:dt_object_return(?MODULE, <<"object_put_acl">>,
                                                     [200], [UserName, BFile_str]),
