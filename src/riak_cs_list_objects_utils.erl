@@ -98,7 +98,7 @@ get_internal_state(FSMPid) ->
 %%% Shared Helpers
 %%%===================================================================
 
--spec manifests_and_prefix_length({list(), ordsets:ordset()}) ->
+-spec manifests_and_prefix_length({list(), ordsets:ordset(term())}) ->
                                    non_neg_integer().
 manifests_and_prefix_length({List, Set}) ->
     length(List) + ordsets:size(Set).

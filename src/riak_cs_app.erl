@@ -51,7 +51,7 @@ start(_Type, _StartArgs) ->
 stop(_State) ->
     ok.
 
--spec sanity_check(boolean(), boolean()) -> {ok, pid()} | {error, term()}.
+-spec sanity_check(boolean(), {ok, boolean()} | {error, term()}) -> {ok, pid()} | {error, term()}.
 sanity_check(true, {ok, true}) ->
     riak_cs_sup:start_link();
 sanity_check(false, _) ->
