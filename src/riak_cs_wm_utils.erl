@@ -924,16 +924,12 @@ fetch_bucket_owner(Bucket, RiakPid) ->
             undefined
     end.
 
--spec bucket_owner(riakc_obj:riakc_obj()) -> undefined | acl_owner().
+-spec bucket_owner(undefined | riakc_obj:riakc_obj()) -> undefined | acl_owner().
+bucket_owner(undefined) ->
+    undefined;
 bucket_owner(BucketObj) ->
-    case riak_cs_acl:bucket_acl(BucketObj) of
-        {ok, Acl} ->
-            Acl?ACL.owner;
-        {error, Reason} ->
-            _ = lager:debug("Failed to retrieve owner info for bucket ~p. Reason ~p",
-                            [riakc_obj:key(BucketObj), Reason]),
-            undefined
-    end.
+    {ok, Acl} = riak_cs_acl:bucket_acl(BucketObj),
+    Acl.
 
 %% ===================================================================
 %% Internal functions
