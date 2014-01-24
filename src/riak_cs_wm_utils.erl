@@ -419,8 +419,6 @@ maybe_update_context_with_acl_from_headers(RD,
                                                                User?RCS_USER.key_id),
                     {ok, Ctx#context{acl=DefaultAcl}}
             end;
-        {error, notfound} ->
-            {error, riak_cs_s3_response:api_error(no_such_bucket, RD, Ctx)};
         {error, Reason} ->
             _ = lager:error("Failed to retrieve bucket objects for reason ~p", [Reason]),
             {error, {{halt, 500}, RD, Ctx}}
@@ -434,6 +432,8 @@ bucket_obj_from_local_context(#key_context{bucket_object=BucketObject},
 bucket_obj_from_local_context(undefined, BucketName, RiakcPid) ->
     case riak_cs_utils:fetch_bucket_object(BucketName, RiakcPid) of
         {error, notfound} ->
+            {ok, undefined};
+        {error, no_such_bucket} ->
             {ok, undefined};
         Else ->
             Else
