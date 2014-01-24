@@ -929,7 +929,7 @@ bucket_owner(undefined) ->
     undefined;
 bucket_owner(BucketObj) ->
     {ok, Acl} = riak_cs_acl:bucket_acl(BucketObj),
-    Acl.
+    Acl?ACL.owner.
 
 %% ===================================================================
 %% Internal functions
