@@ -41,7 +41,7 @@
          extract_key/2,
          extract_name/1,
          maybe_update_context_with_acl_from_headers/2,
-         maybe_acl_from_context_and_request/2,
+         maybe_acl_from_context_and_request/3,
          acl_from_headers/4,
          extract_acl_headers/1,
          has_acl_header_and_body/1,
@@ -399,31 +399,56 @@ extract_name(_) ->
 -spec maybe_update_context_with_acl_from_headers(#wm_reqdata{}, #context{}) ->
     {error, {{halt, term()}, #wm_reqdata{}, #context{}}} |
     {ok, #context{}}.
-maybe_update_context_with_acl_from_headers(RD, Ctx=#context{user=User}) ->
-    case maybe_acl_from_context_and_request(RD, Ctx) of
-        {ok, {error, BadAclReason}} ->
-            {error, riak_cs_s3_response:api_error(BadAclReason, RD, Ctx)};
-        %% pattern match on the ACL record type for a data-type
-        %% sanity-check
-        {ok, {ok, Acl=?ACL{}}} ->
-            {ok, Ctx#context{acl=Acl}};
-        error ->
-            DefaultAcl = riak_cs_acl_utils:default_acl(User?RCS_USER.display_name,
-                                                       User?RCS_USER.canonical_id,
-                                                       User?RCS_USER.key_id),
-            {ok, Ctx#context{acl=DefaultAcl}}
+maybe_update_context_with_acl_from_headers(RD,
+                                           Ctx=#context{user=User,
+                                                        bucket=BucketName,
+                                                        local_context=LocalCtx,
+                                                        riakc_pid=RiakcPid}) ->
+    case bucket_obj_from_local_context(LocalCtx, BucketName, RiakcPid) of
+        {ok, BucketObject} ->
+            case maybe_acl_from_context_and_request(RD, Ctx, BucketObject) of
+                {ok, {error, BadAclReason}} ->
+                    {error, riak_cs_s3_response:api_error(BadAclReason, RD, Ctx)};
+                %% pattern match on the ACL record type for a data-type
+                %% sanity-check
+                {ok, {ok, Acl=?ACL{}}} ->
+                    {ok, Ctx#context{acl=Acl}};
+                error ->
+                    DefaultAcl = riak_cs_acl_utils:default_acl(User?RCS_USER.display_name,
+                                                               User?RCS_USER.canonical_id,
+                                                               User?RCS_USER.key_id),
+                    {ok, Ctx#context{acl=DefaultAcl}}
+            end;
+        {error, notfound} ->
+            {error, riak_cs_s3_response:api_error(no_such_bucket, RD, Ctx)};
+        {error, Reason} ->
+            _ = lager:error("Failed to retrieve bucket objects for reason ~p", [Reason]),
+            {error, {{halt, 500}, RD, Ctx}}
+    end.
+
+-spec bucket_obj_from_local_context(term(), binary(), pid()) ->
+    {ok, term()} | {'error', term()}.
+bucket_obj_from_local_context(#key_context{bucket_object=BucketObject},
+                              _BucketName, _Pid) ->
+    {ok, BucketObject};
+bucket_obj_from_local_context(undefined, BucketName, RiakcPid) ->
+    case riak_cs_utils:fetch_bucket_object(BucketName, RiakcPid) of
+        {error, notfound} ->
+            {ok, undefined};
+        Else ->
+            Else
     end.
 
 %% @doc Return an ACL if one can be parsed from the headers. If there
 %% are no ACL headers, return `error'. In this case, it's not unexpected
 %% to get the `error' value back, but it's name is used for convention.
 %% It could also reasonable be called `nothing'.
--spec maybe_acl_from_context_and_request(#wm_reqdata{}, #context{}) ->
+-spec maybe_acl_from_context_and_request(#wm_reqdata{}, #context{},
+                                         riakc_obj:riakc_obj()) ->
     {ok, acl_or_error()} | error.
 maybe_acl_from_context_and_request(RD, #context{user=User,
-                                                local_context=KeyContext,
-                                                riakc_pid=RiakcPid}) ->
-    BucketObj = KeyContext#key_context.bucket_object,
+                                                riakc_pid=RiakcPid},
+                                  BucketObj) ->
     case has_acl_header(RD) of
         true ->
             Headers = normalize_headers(RD),
