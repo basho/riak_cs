@@ -271,7 +271,7 @@ enough_results(#state{req=?LOREQ{max_keys=UserMaxKeys},
                       objects=Objects,
                       common_prefixes=CommonPrefixes}) ->
     riak_cs_list_objects_utils:manifests_and_prefix_length({Objects, CommonPrefixes})
-    >= UserMaxKeys
+    > UserMaxKeys
     orelse EndOfKeyspace.
 
 response_from_manifests_and_common_prefixes(Request,
