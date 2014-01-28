@@ -1,6 +1,6 @@
 %% ---------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2014 Basho Technologies, Inc.  All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -26,15 +26,23 @@
 -include_lib("eqc/include/eqc.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
+-include_lib("riak_cs.hrl").
+-include("list_objects.hrl").
+
 %% eqc properties
 -export([prop_skip_past_prefix_and_delimiter/0,
-         prop_prefix_must_be_in_between/0]).
+         prop_prefix_must_be_in_between/0,
+         prop_list_all_active_keys_without_delimiter/0,
+         prop_list_all_active_keys_with_delimiter/0]).
 
 %% Helpers
 -export([test/0,
          test/1]).
 
 -define(TEST_ITERATIONS, 1000).
+%% The propperty prop_list_all_active_keys is slow so decrease the number.
+%% TODO: More large number is better?
+-define(TEST_ITERATIONS_FOR_LIST, 100).
 -define(QC_OUT(P),
         eqc:on_output(fun(Str, Args) -> io:format(user, Str, Args) end, P)).
 
@@ -43,8 +51,19 @@
 %%====================================================================
 
 eqc_test_() ->
-    [?_assert(quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_skip_past_prefix_and_delimiter())))),
-     ?_assert(quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_prefix_must_be_in_between()))))].
+    [
+     ?_assert(quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_skip_past_prefix_and_delimiter())))),
+     ?_assert(quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_prefix_must_be_in_between())))),
+     {timeout, 10*60, % 10min.
+      ?_assert(quickcheck(numtests(
+                            ?TEST_ITERATIONS_FOR_LIST,
+                            ?QC_OUT(prop_list_all_active_keys_without_delimiter()))))}
+     ,
+     {timeout, 10*60, % 10min.
+      ?_assert(quickcheck(numtests(
+                            ?TEST_ITERATIONS_FOR_LIST,
+                            ?QC_OUT(prop_list_all_active_keys_with_delimiter()))))}
+    ].
 
 %% ====================================================================
 %% EQC Properties
@@ -64,6 +83,36 @@ less_than_prop(Binary) ->
         _Else ->
             Binary < riak_cs_list_objects_fsm_v2:skip_past_prefix_and_delimiter(Binary)
     end.
+
+%% No delimiter, flat keys.
+prop_list_all_active_keys_without_delimiter() ->
+    prop_list_all_active_keys([]).
+
+%% Delimiter "/"
+prop_list_all_active_keys_with_delimiter() ->
+    prop_list_all_active_keys([{delimiter, <<$/>>}]).
+
+%% @doc For sets manifests, list all manifests by calling riak_cs_list_objects_fsm_v2
+%% repeatedly and compare the list to all active manifests.
+%% TODO: random max-keys
+prop_list_all_active_keys(ListOpts) ->
+    ?FORALL({NumKeys, Flavor}, {boudary_aware_num_keys(), manifest_state_gen_flaver()},
+    %% Generating lists of manifests seems natural but it is slow.
+    %% As workaround, only states are generated here.
+    ?FORALL(KeysAndStates, manifest_keys_and_states(NumKeys, Flavor),
+            begin
+                Manifests = [manifest(Key, State) || {Key, State} <- KeysAndStates],
+                Sorted = sort_manifests(Manifests),
+                %% io:format("Manifests: ~p~n", [Sorted]),
+                Listed = keys_in_list(list_manifests(Sorted, ListOpts)),
+                Expected = active_manifest_keys(KeysAndStates, ListOpts),
+                collect(with_title(list_length), NumKeys,
+                        ?WHENFAIL(
+                           format_diff({NumKeys, Flavor}, Expected, Listed, Sorted),
+                           Expected =:= Listed
+                       ))
+            end
+           )).
 
 %% ====================================================================
 
@@ -90,6 +139,64 @@ bool_in_between(A, B) ->
 non_empty_binary() ->
     ?SUCHTHAT(B, binary(), B =/= <<>>).
 
+%% @doc Generator of integers which is near multiple of 1000.
+%% 1000 is the max-keys of GET Bucket API.
+%% http://docs.aws.amazon.com/AmazonS3/latest/API/RESTBucketGET.html
+boudary_aware_num_keys() ->
+    MaxMultiplier = 10,
+    frequency([{1, choose(0, 10)},
+               {MaxMultiplier,
+                ?LET({Multiplier, Offset}, {choose(1, MaxMultiplier), choose(-10, 10)},
+                     Multiplier * 1000 + Offset)}]).
+
+manifest_state_gen_flaver() ->
+    frequency([
+               {1, all_active},
+               {1, all_deleted},
+               {1, almost_active},
+               {1, almost_deleted},
+               {1, half_active}
+              ]).
+
+manifest_states(NumKeys, Flavor) ->
+    vector(NumKeys, manifest_state(Flavor)).
+
+manifest_keys_and_states(NumKeys, Flavor) ->
+    [{manifest_key_with_prefix(Index), manifest_state(Flavor)} ||
+        Index <- lists:seq(1, NumKeys)].
+
+manifest_key_with_prefix(Index) ->
+    {manifest_prefix(handful), manifest_key_simple(Index)}.
+
+manifest_prefix(handful) ->
+    oneof([no_prefix, <<"ABC">>, <<"0123456">>, <<"ZZZZZZZZ">>]).
+
+manifest_state(all_active) ->
+    active;
+manifest_state(all_deleted) ->
+    scheduled_delete;
+manifest_state(almost_active) ->
+    frequency([
+               {1, writing},
+               {3000, active},
+               {1, pending_delete},
+               {1, scheduled_delete}
+              ]);
+manifest_state(almost_deleted) ->
+    frequency([
+               {1, writing},
+               {1, active},
+               {1, pending_delete},
+               {3000, scheduled_delete}
+              ]);
+manifest_state(half_active) ->
+    frequency([
+               {1, writing},
+               {3, active},
+               {1, pending_delete},
+               {1, scheduled_delete}
+              ]).
+
 %%====================================================================
 %% Test Helpers
 %%====================================================================
@@ -99,6 +206,201 @@ test() ->
 
 test(Iterations) ->
     eqc:quickcheck(eqc:numtests(Iterations, prop_skip_past_prefix_and_delimiter())),
-    eqc:quickcheck(eqc:numtests(Iterations, prop_prefix_must_be_in_between())).
+    eqc:quickcheck(eqc:numtests(Iterations, prop_prefix_must_be_in_between())),
+    eqc:quickcheck(eqc:numtests(Iterations, prop_list_all_active_keys_without_delimiter())).
+
+test(Iterations, Prop) ->
+    eqc:quickcheck(eqc:numtests(Iterations, ?MODULE:Prop())).
+
+
+%% TODO: Common prefix, more randomness
+manifest_key_simple(Index) ->
+    list_to_binary(integer_to_list(Index)).
+
+manifest(Key, State) ->
+    Raw = raw_manifest(Key, State),
+    process_manifest(Raw).
+
+raw_manifest(Key, State) ->
+    ?MANIFEST{uuid = <<"uuid-1">>,
+              bkey={<<"bucket">>, bin_key(Key)},
+              state=State,
+              content_md5 = <<"Content-MD5">>,
+              content_length=100,
+              acl=?ACL{owner={"display-name", "canonical-id", "key-id"}}}.
+
+bin_key({no_prefix, Rest}) ->
+    Rest;
+bin_key({Prefix, Rest}) ->
+    <<Prefix/binary, $/, Rest/binary>>;
+bin_key(Key) ->
+    Key.
+
+process_manifest(Manifest=?MANIFEST{state=State}) ->
+    case State of
+        writing ->
+            Manifest?MANIFEST{last_block_written_time=os:timestamp(),
+                              write_blocks_remaining=blocks_set()};
+        active ->
+            %% this clause isn't needed but it makes things more clear imho
+            Manifest?MANIFEST{last_block_deleted_time=os:timestamp()};
+        pending_delete ->
+            Manifest?MANIFEST{last_block_deleted_time=os:timestamp(),
+                              delete_blocks_remaining=blocks_set()};
+        scheduled_delete ->
+            Manifest?MANIFEST{last_block_deleted_time=os:timestamp(),
+                              scheduled_delete_time=os:timestamp(),
+                              delete_blocks_remaining=blocks_set()};
+        deleted ->
+            Manifest?MANIFEST{last_block_deleted_time=os:timestamp()}
+    end.
+
+blocks_set() ->
+    ordsets:new().
+
+sort_manifests(Manifests) ->
+    lists:sort(fun(?MANIFEST{bkey=BKey1}, ?MANIFEST{bkey=BKey2}) ->
+                       BKey1 < BKey2
+               end, Manifests).
+
+active_manifest_keys(KeysAndStates, ListOpts) ->
+    active_manifest_keys(KeysAndStates,
+                         proplists:get_value(delimiter, ListOpts, undefined),
+                         proplists:get_value(prefix, ListOpts, undefined)).
+
+active_manifest_keys(KeysAndStates, undefined=_Delimiter, undefined=_Prefix) ->
+    Keys = [bin_key({Prefix, Key}) || {{Prefix, Key}, State} <- KeysAndStates,
+                                       State =:= active],
+    {[], lists:usort(Keys)};
+active_manifest_keys(KeysAndStates, <<$/>>=_Delimiter, undefined=_Prefix) ->
+    Keys = [Key || {{Prefix, Key}, State} <- KeysAndStates,
+                   State =:= active,
+                   Prefix =:= no_prefix],
+    CommonPrefixes = [<<Prefix/binary, $/>> ||
+                         {{Prefix, _Key}, State} <- KeysAndStates,
+                         State =:= active,
+                         Prefix =/= no_prefix],
+    {lists:usort(CommonPrefixes), lists:usort(Keys)}.
+
+keys_in_list({CPrefixes, Contents}) ->
+    {CPrefixes, [Key || #list_objects_key_content_v1{key=Key} <- Contents]}.
+
+list_manifests(Manifests, Opts) ->
+    {ok, DummyRiakc} = riak_cs_dummy_riakc_list_objects_v2:start_link([Manifests]),
+    list_manifests_to_the_end(DummyRiakc, Opts, [], [], []).
+
+list_manifests_to_the_end(DummyRiakc, Opts, CPrefixesAcc, ContestsAcc, MarkerAcc) ->
+    Bucket = <<"bucket">>,
+    %% TODO: Generator?
+    MaxKeys = 1000,
+    %% delimeter, marker and prefix should be generated?
+    ListKeysRequest = riak_cs_list_objects:new_request(Bucket,
+                                                       MaxKeys,
+                                                       Opts),
+    {ok, FsmPid} = riak_cs_list_objects_fsm_v2:start_link(DummyRiakc, ListKeysRequest),
+    {ok, ListResp} = riak_cs_list_objects_utils:get_object_list(FsmPid),
+    CommonPrefixes = ListResp?LORESP.common_prefixes,
+    Contents = ListResp?LORESP.contents,
+    %% io:format("ListResp: ~p~n", [ListResp]),
+    %% io:format("CommonPrefixes: ~p~n", [CommonPrefixes]),
+    %% io:format("Contents: ~p~n", [Contents]),
+    NewCPrefixAcc = [CommonPrefixes | CPrefixesAcc],
+    NewContentsAcc = [Contents | ContestsAcc],
+    %% io:format("is_truncated: ~p~n", [ListResp?LORESP.is_truncated]),
+    case ListResp?LORESP.is_truncated of
+        true ->
+            LastEntry=lists:last(Contents),
+            Marker=LastEntry#list_objects_key_content_v1.key,
+            list_manifests_to_the_end(DummyRiakc, update_maker(Marker, Opts),
+                                      NewCPrefixAcc, NewContentsAcc,
+                                      [Marker | MarkerAcc]);
+        false ->
+            riak_cs_dummy_riakc_list_objects_v2:stop(DummyRiakc),
+            %% io:format("Markers: ~p~n", [lists:reverse(MarkerAcc)]),
+            %% TODO: Should assert every result but last has exactly 1,000 entries?
+            {lists:append(lists:reverse(NewCPrefixAcc)),
+             lists:append(lists:reverse(NewContentsAcc))}
+    end.
+
+update_maker(Marker, Opts) ->
+    lists:keystore(marker, 1, Opts, {marker, Marker}).
+
+format_diff({NumKeys, Flavor},
+            {ExpectedCPs, ExpectedKeys}, {ListedCPs, ListedKeys}, Manifests) ->
+    output_entries(Manifests),
+    io:nl(),
+    io:format("Expected CPs: ~p~n", [ExpectedCPs]),
+    io:format("Listed   CPs: ~p~n", [ListedCPs]),
+    io:format("Expected Keys: ~p~n", [ExpectedKeys]),
+    io:format("Listed   Keys: ~p~n", [ListedKeys]),
+    io:nl(),
+    io:format("Expected length(CPs): ~p~n", [length(ExpectedCPs)]),
+    io:format("Listed   length(CPs): ~p~n", [length(ListedCPs)]),
+    io:format("Expected length(Keys): ~p~n", [length(ExpectedKeys)]),
+    io:format("Listed   length(Keys): ~p~n", [length(ListedKeys)]),
+    first_diff_cp(ExpectedCPs, ListedCPs),
+    first_diff_key(ExpectedKeys, ListedKeys, Manifests),
+    io:format("NumKeys: ~p~n", [NumKeys]),
+    io:format("StateFlavor: ~p~n", [Flavor]),
+    ok.
+
+output_entries(Manifests) ->
+    FileName = <<".riak_cs_list_objects_fsm_v2_eqc.txt">>,
+    io:format("Write states and keys to file: ~s ...", [filename:absname(FileName)]),
+    {ok, File} = file:open(FileName, [write, raw]),
+    output_entries(File, Manifests, 1),
+    io:format(" Done.~n").
+
+output_entries(File, [], _) ->
+    file:close(File);
+output_entries(File, [M | Manifests], LineNo) ->
+    {_, Key} = M?MANIFEST.bkey,
+    State = M?MANIFEST.state,
+    ok = file:write(File, [integer_to_list(LineNo), $,,
+                           atom_to_list(State), $,, Key, $\n]),
+    output_entries(File, Manifests, LineNo + 1).
+
+first_diff_cp([], []) ->
+    io:format("No diff in CPs.~n");
+first_diff_cp([], [CPInList | _Rest]) ->
+    io:format("Listed results has more CPs.~n"),
+    print_cp(CPInList, "CPInList");
+first_diff_cp([CPInExpected | _Rest], []) ->
+    io:format("Expected results has more CPs.~n"),
+    print_cp(CPInExpected, "CPInExpected");
+first_diff_cp([CP | Expected], [CP | Listed]) ->
+    first_diff_cp(Expected, Listed);
+first_diff_cp([CPInExpected | _Expected], [CPInList | _Listed]) ->
+    io:format("first_diff_cp: CPInExpected=~p, CPInList=~p~n",
+              [CPInExpected, CPInList]).
+
+print_cp(Key, Label) ->
+    io:format("    ~s=~p~n", [Label, Key]).
+
+first_diff_key([], [], _Manifests) ->
+    io:format("No diff in Keys.~n");
+first_diff_key([], [KeyInList | _Rest], Manifests) ->
+    io:format("Listed results has more keys.~n"),
+    print_key_and_manifest(KeyInList, "KeyInList", Manifests);
+first_diff_key([KeyInExpected | _Rest], [], Manifests) ->
+    io:format("Expected results has more keys.~n"),
+    print_key_and_manifest(KeyInExpected, "KeyInExpected", Manifests);
+first_diff_key([Key | Expected], [Key | Listed], Manifests) ->
+    first_diff_key(Expected, Listed, Manifests);
+first_diff_key([KeyInExpected | _Expected], [KeyInList | _Listed], Manifests) ->
+    io:format("first_diff_key: KeyInExpected=~p, KeyInList=~p~n",
+              [KeyInExpected, KeyInList]),
+    print_key_and_manifest(KeyInExpected, "KeyInExpected", Manifests),
+    print_key_and_manifest(KeyInList, "KeyInList", Manifests).
+
+print_key_and_manifest(Key, Label, []) ->
+    io:format("    ~s=~p is not in Manifests~n", [Label, Key]);
+print_key_and_manifest(Key, Label, [M | Manifests]) ->
+    case M?MANIFEST.bkey of
+        {_, Key} ->
+            io:format("    ~s=~p Manifest:~n~p~n", [Label, Key, M]);
+        _ ->
+            print_key_and_manifest(Key, Label, Manifests)
+    end.
 
 -endif.
