@@ -35,14 +35,16 @@
 init(Ctx) ->
     {ok, Ctx#context{local_context=#key_context{}}}.
 
-%% TODO: copy/pasted from from wm_object, move somewhere common
-malformed_request(RD,Ctx=#context{local_context=LocalCtx0}) ->
-    Bucket = list_to_binary(wrq:path_info(bucket, RD)),
-    %% need to unquote twice since we re-urlencode the string during rewrite in
-    %% order to trick webmachine dispatching
-    Key = mochiweb_util:unquote(mochiweb_util:unquote(wrq:path_info(object, RD))),
-    LocalCtx = LocalCtx0#key_context{bucket=Bucket, key=Key},
-    {false, RD, Ctx#context{local_context=LocalCtx}}.
+-spec malformed_request(#wm_reqdata{}, #context{}) -> {false, #wm_reqdata{}, #context{}}.
+malformed_request(RD,Ctx) ->
+    case riak_cs_wm_utils:has_acl_header_and_body(RD) of
+        true ->
+            riak_cs_s3_response:api_error(unexpected_content,
+                                          RD, Ctx);
+        false ->
+            NewCtx = riak_cs_wm_utils:extract_key(RD, Ctx),
+            {false, RD, NewCtx}
+    end.
 
 %% @doc Get the type of access requested and the manifest with the
 %% object ACL and compare the permission requested with the permission
@@ -104,7 +106,7 @@ content_types_accepted(RD, Ctx=#context{local_context=LocalCtx0}) ->
         undefined ->
             DefaultCType = "application/octet-stream",
             LocalCtx = LocalCtx0#key_context{putctype=DefaultCType},
-            {[{DefaultCType, accept_body}],
+            {[{DefaultCType, add_acl_to_context_then_accept}],
              RD,
              Ctx#context{local_context=LocalCtx}};
         %% This was shamelessly ripped out of
@@ -115,7 +117,7 @@ content_types_accepted(RD, Ctx=#context{local_context=LocalCtx0}) ->
                 [_Type, _Subtype] ->
                     %% accept whatever the user says
                     LocalCtx = LocalCtx0#key_context{putctype=Media},
-                    {[{Media, accept_body}], RD, Ctx#context{local_context=LocalCtx}};
+                    {[{Media, add_acl_to_context_then_accept}], RD, Ctx#context{local_context=LocalCtx}};
                 _ ->
                     %% TODO:
                     %% Maybe we should have caught
@@ -164,9 +166,9 @@ produce_body(RD, Ctx=#context{local_context=LocalCtx,
 accept_body(RD, Ctx=#context{local_context=#key_context{get_fsm_pid=GetFsmPid,
                                                         manifest=Mfst,
                                                         key=KeyStr,
-                                                        bucket=Bucket,
-                                                        bucket_object=BucketObj},
+                                                        bucket=Bucket},
                              user=User,
+                             acl=AclFromHeadersOrDefault,
                              requested_perm='WRITE_ACP',
                              riakc_pid=RiakPid})  when Bucket /= undefined,
                                                         KeyStr /= undefined,
@@ -181,15 +183,7 @@ accept_body(RD, Ctx=#context{local_context=#key_context{get_fsm_pid=GetFsmPid,
     AclRes =
         case Body of
             [] ->
-                %% Check for `x-amz-acl' header to support
-                %% the use of a canned ACL.
-                CannedAcl = riak_cs_acl_utils:canned_acl(
-                              wrq:get_req_header("x-amz-acl", RD),
-                              {User?RCS_USER.display_name,
-                               User?RCS_USER.canonical_id,
-                               User?RCS_USER.key_id},
-                              riak_cs_wm_utils:bucket_owner(BucketObj)),
-                {ok, CannedAcl};
+                {ok, AclFromHeadersOrDefault};
             _ ->
                 riak_cs_acl_utils:validate_acl(
                   riak_cs_acl_utils:acl_from_xml(Body,

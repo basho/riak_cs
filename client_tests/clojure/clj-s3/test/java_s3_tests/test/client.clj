@@ -18,6 +18,13 @@
   (:import java.security.MessageDigest
            org.apache.commons.codec.binary.Hex
            com.amazonaws.services.s3.model.AmazonS3Exception
+           com.amazonaws.services.s3.model.AccessControlList
+           com.amazonaws.services.s3.model.CanonicalGrantee
+           com.amazonaws.services.s3.model.GroupGrantee
+           com.amazonaws.services.s3.model.Grant
+           com.amazonaws.services.s3.model.Permission
+           com.amazonaws.services.s3.model.PutObjectRequest
+           com.amazonaws.services.s3.model.CreateBucketRequest
            com.amazonaws.services.s3.model.ObjectMetadata
            com.amazonaws.services.s3.transfer.TransferManager
            com.amazonaws.services.s3.transfer.TransferManagerConfiguration)
@@ -28,6 +35,10 @@
 
 (def ^:internal riak-cs-host-with-protocol "http://localhost")
 (def ^:internal riak-cs-host "localhost")
+
+(defn input-stream-from-string
+  [s]
+  (java.io.ByteArrayInputStream. (.getBytes s "UTF-8")))
 
 (defn get-riak-cs-port-str
   "Try to get a TCP port number from the OS environment"
@@ -184,3 +195,125 @@
             (s3/put-object c bucket-name object-name value
                            {:content-md5 wrong-md5})))
         => (throws AmazonS3Exception)))
+
+(def bad-canonical-id
+  "0f80b2d002a3d018faaa4a956ce8aa243332a30e878f5dc94f82749984ebb30b")
+
+(def full-control
+  (Permission/FullControl))
+
+(def read-grant
+  (Permission/Read))
+
+(def write-grant
+  (Permission/Write))
+
+(let [bucket-name (random-string)
+      object-name (random-string)
+      value-string "this is the real value"]
+  (fact "Nonexistent canonical-id grant header returns HTTP 400 on
+        a put object request (not just an ACL subresource request)"
+        (with-random-client c
+          (do
+            ;; create a bucket
+            (s3/create-bucket c bucket-name)
+
+            (let [value (input-stream-from-string value-string)
+                  bad-id-grantee (CanonicalGrantee. bad-canonical-id)
+                  metadata (ObjectMetadata.)
+                  req (PutObjectRequest. bucket-name object-name value metadata)
+                  acl (AccessControlList.)]
+
+              ;; grant permission to the nonexistent-user
+              (.grantPermission acl bad-id-grantee full-control)
+
+              (.setAccessControlList req acl)
+              (.putObject c req))))
+        => (throws AmazonS3Exception)))
+
+(def all-users (GroupGrantee/AllUsers))
+
+(let [bucket-name (random-string)
+      object-name (random-string)
+      value-string "this is the real value"
+      grant (Grant. all-users read-grant)]
+  (fact "Creating an object with an ACL returns the same ACL when you read
+        the ACL"
+        (with-random-client c
+          (do
+            ;; create a bucket
+            (s3/create-bucket c bucket-name)
+
+            (let [value (input-stream-from-string value-string)
+                  metadata (ObjectMetadata.)
+                  acl (AccessControlList.)
+                  req (PutObjectRequest. bucket-name object-name value metadata)]
+              (.grantPermission acl all-users read-grant)
+              (.setAccessControlList req acl)
+              (.putObject c req)
+              (contains?
+                (.getGrants (.getObjectAcl c bucket-name object-name))
+                grant))))
+        => truthy))
+
+(let [bucket-name (random-string)
+      object-name (random-string)
+      value-string "this is the real value"]
+  (fact "Creating an object with an (non-canned) ACL returns the same ACL
+        when you read the ACL"
+        (with-random-client c
+          (do
+            ;; create a bucket
+            (s3/create-bucket c bucket-name)
+
+            (let [value (input-stream-from-string value-string)
+                  metadata (ObjectMetadata.)
+                  user-two-id (:id (user-creation/create-random-user
+                                     riak-cs-host-with-protocol
+                                     (get-riak-cs-port)))
+                  id-grantee (CanonicalGrantee. user-two-id)
+                  grant (Grant. id-grantee read-grant)
+                  acl (AccessControlList.)
+                  req (PutObjectRequest. bucket-name object-name value metadata)]
+              (.grantPermission acl id-grantee read-grant)
+              (.setAccessControlList req acl)
+              (.putObject c req)
+              (contains?
+                (.getGrants (.getObjectAcl c bucket-name object-name))
+                grant))))
+        => truthy))
+
+(let [bucket-name (random-string)
+      object-name (random-string)
+      grant (Grant. all-users read-grant)]
+  (fact "Creating a bucket with an ACL returns the same ACL when you read
+        the ACL"
+        (with-random-client c
+            (let [acl (AccessControlList.)
+                  req (CreateBucketRequest. bucket-name)]
+              (.grantPermission acl all-users read-grant)
+              (.setAccessControlList req acl)
+              (.createBucket c req)
+              (contains?
+                (.getGrants (.getBucketAcl c bucket-name))
+                grant)))
+        => truthy))
+
+(let [bucket-name (random-string)]
+  (fact "Creating a bucket with an (non-canned) ACL returns the same ACL
+        when you read the ACL"
+        (with-random-client c
+          (let [user-two-id (:id (user-creation/create-random-user
+                                   riak-cs-host-with-protocol
+                                   (get-riak-cs-port)))
+                id-grantee (CanonicalGrantee. user-two-id)
+                grant (Grant. id-grantee write-grant)
+                acl (AccessControlList.)
+                req (CreateBucketRequest. bucket-name)]
+            (.grantPermission acl id-grantee write-grant)
+            (.setAccessControlList req acl)
+            (.createBucket c req)
+            (contains?
+              (.getGrants (.getBucketAcl c bucket-name))
+              grant)))
+        => truthy))

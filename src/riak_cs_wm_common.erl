@@ -37,6 +37,7 @@
          process_post/2,
          resp_body/2,
          multiple_choices/2,
+         add_acl_to_context_then_accept/2,
          accept_body/2,
          produce_body/2,
          allowed_methods/2,
@@ -328,6 +329,16 @@ multiple_choices(RD, Ctx=#context{submodule=Mod,
         resource_call(Mod, multiple_choices, [RD, Ctx], ExportsFun)
     catch _:_ ->
             {false, RD, Ctx}
+    end.
+
+%% @doc Add an ACL (or default ACL) to the context, parsed from headers. If
+%% parsing the headers fails, halt the request.
+add_acl_to_context_then_accept(RD, Ctx) ->
+    case riak_cs_wm_utils:maybe_update_context_with_acl_from_headers(RD, Ctx) of
+        {ok, ContextWithAcl} ->
+            accept_body(RD, ContextWithAcl);
+        {error, HaltResponse} ->
+            HaltResponse
     end.
 
 -spec accept_body(#wm_reqdata{}, #context{}) ->
