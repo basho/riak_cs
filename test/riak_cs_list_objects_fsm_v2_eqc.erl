@@ -31,7 +31,8 @@
 
 %% eqc properties
 -export([prop_skip_past_prefix_and_delimiter/0,
-         prop_prefix_must_be_in_between/0]).
+         prop_prefix_must_be_in_between/0,
+         prop_list_all_active_keys/0]).
 
 %% Helpers
 -export([test/0,
@@ -47,7 +48,8 @@
 
 eqc_test_() ->
     [?_assert(quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_skip_past_prefix_and_delimiter())))),
-     ?_assert(quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_prefix_must_be_in_between()))))].
+     ?_assert(quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_prefix_must_be_in_between())))),
+     ?_assert(quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_list_all_active_keys()))))].
 
 %% ====================================================================
 %% EQC Properties
@@ -67,6 +69,24 @@ less_than_prop(Binary) ->
         _Else ->
             Binary < riak_cs_list_objects_fsm_v2:skip_past_prefix_and_delimiter(Binary)
     end.
+
+%% @doc For sets manifests, list all manifests by calling riak_cs_list_objects_fsm_v2
+%% repeatedly and compare the list to all active manifests.
+prop_list_all_active_keys() ->
+    ?FORALL({NumKeys, Flavor}, {boudary_aware_num_keys(), manifest_state_gen_flaver()},
+            ?FORALL(Manifests, manifests(NumKeys, Flavor),
+                    begin
+                        Sorted = sort_manifests(Manifests),
+                        %% io:format("Manifests: ~p~n", [Sorted]),
+                        Listed = keys_in_list(list_manifests(Sorted)),
+                        Expected = active_manifest_keys(Sorted),
+                        collect(with_title(list_length), length(Sorted),
+                                ?WHENFAIL(
+                                   format_diff(Expected, Listed, Sorted),
+                                   Expected =:= Listed
+                               ))
+                    end
+                   )).
 
 %% ====================================================================
 
@@ -93,6 +113,93 @@ bool_in_between(A, B) ->
 non_empty_binary() ->
     ?SUCHTHAT(B, binary(), B =/= <<>>).
 
+%% @doc Generator of integers which is near multiple of 1000.
+%% 1000 is the max-keys of GET Bucket API.
+%% http://docs.aws.amazon.com/AmazonS3/latest/API/RESTBucketGET.html
+boudary_aware_num_keys() ->
+    MaxMultiplier = 10,
+    frequency([{1, choose(0, 10)},
+               {MaxMultiplier,
+                ?LET({Multiplier, Offset}, {choose(1, MaxMultiplier), choose(-10, 10)},
+                     Multiplier * 1000 + Offset)}]).
+
+manifest_state_gen_flaver() ->
+    frequency([
+               {1, all_active},
+               {1, all_deleted},
+               {1, almost_active},
+               {1, almost_deleted},
+               {1, random}
+              ]).
+
+manifests(NumKeys, Flavor) ->
+    %% TODO: Better generator implementation?
+    %% - Using ?LET to bind NumKeys from nat() gen?
+    %% - Using vector(NumKeys, manifest())?
+    [manifest(I, Flavor) || I <- lists:seq(1, NumKeys)].
+
+raw_manifest(Index, Flavor) ->
+    ?MANIFEST{uuid=riak_cs_gen:bounded_uuid(),
+              %% TODO: Key should be some generators and unique.
+              bkey={<<"bucket">>, manifest_key(Index)},
+              state=manifest_state(Flavor),
+              content_md5 = <<"Content-MD5">>,
+              content_length=100,
+              acl=?ACL{owner={"display-name", "canonical-id", "key-id"}}}.
+
+%% TODO: Common prefix, more randomness
+manifest_key(Index) ->
+    list_to_binary(integer_to_list(Index)).
+
+manifest(Index, Flavor) ->
+    ?LET(Manifest, raw_manifest(Index, Flavor), process_manifest(Manifest)).
+
+manifest_state(all_active) ->
+    active;
+manifest_state(all_deleted) ->
+    scheduled_delete;
+manifest_state(almost_active) ->
+    frequency([
+               {1, writing},
+               {3000, active},
+               {1, pending_delete},
+               {1, scheduled_delete}
+              ]);
+manifest_state(almost_deleted) ->
+    frequency([
+               {1, writing},
+               {1, active},
+               {1, pending_delete},
+               {3000, scheduled_delete}
+              ]);
+manifest_state(random) ->
+    oneof([writing, active, pending_delete, scheduled_delete]).
+
+%% TODO: More simplified generator suffices?
+process_manifest(Manifest=?MANIFEST{state=State}) ->
+    case State of
+        writing ->
+            Manifest?MANIFEST{last_block_written_time=os:timestamp(),
+                              write_blocks_remaining=blocks_set()};
+        active ->
+            %% this clause isn't
+            %% needed but it makes
+            %% things more clear imho
+            Manifest?MANIFEST{last_block_deleted_time=os:timestamp()};
+        pending_delete ->
+            Manifest?MANIFEST{last_block_deleted_time=os:timestamp(),
+                              delete_blocks_remaining=blocks_set()};
+        scheduled_delete ->
+            Manifest?MANIFEST{last_block_deleted_time=os:timestamp(),
+                              scheduled_delete_time=os:timestamp(),
+                              delete_blocks_remaining=blocks_set()};
+        deleted ->
+            Manifest?MANIFEST{last_block_deleted_time=os:timestamp()}
+    end.
+
+blocks_set() ->
+    ?LET(L, eqc_gen:list(int()), ordsets:from_list(L)).
+
 %%====================================================================
 %% Test Helpers
 %%====================================================================
@@ -102,27 +209,55 @@ test() ->
 
 test(Iterations) ->
     eqc:quickcheck(eqc:numtests(Iterations, prop_skip_past_prefix_and_delimiter())),
-    eqc:quickcheck(eqc:numtests(Iterations, prop_prefix_must_be_in_between())).
-
-test2(Iterations) ->
+    eqc:quickcheck(eqc:numtests(Iterations, prop_prefix_must_be_in_between())),
     eqc:quickcheck(eqc:numtests(Iterations, prop_list_all_active_keys())).
 
+test(Iterations, Prop) ->
+    eqc:quickcheck(eqc:numtests(Iterations, ?MODULE:Prop())).
 
-prop_list_all_active_keys() ->
-    ?FORALL({NumKeys, Flavor}, {boudary_aware_num_keys(), manifest_state_flaver()},
-            ?FORALL(Manifests, manifests(NumKeys, Flavor),
-                    begin
-                        Sorted = sort_manifests(Manifests),
-                        %% io:format("Manifests: ~p~n", [Sorted]),
-                        Listed = keys_in_list(list_manifests(Sorted)),
-                        Expected = active_manifest_keys(Sorted),
-                        collect(with_title(list_length), length(Sorted),
-                                ?WHENFAIL(
-                                   format_diff(Expected, Listed, Sorted),
-                                   Expected =:= Listed
-                               ))
-                    end
-                   )).
+
+sort_manifests(Manifests) ->
+    lists:sort(fun(?MANIFEST{bkey=BKey1}, ?MANIFEST{bkey=BKey2}) ->
+                       BKey1 < BKey2
+               end, Manifests).
+
+active_manifest_keys(Manifests) ->
+    [element(2, M?MANIFEST.bkey) || M <- Manifests, M?MANIFEST.state =:= active].
+
+keys_in_list(ListedContents) ->
+    [Key || #list_objects_key_content_v1{key=Key} <- ListedContents].
+
+list_manifests(Manifests) ->
+    {ok, DummyRiakc} = riak_cs_dummy_riakc_list_objects_v2:start_link([Manifests]),
+    list_manifests_to_the_end(DummyRiakc, [], []).
+
+list_manifests_to_the_end(DummyRiakc, Opts, Acc) ->
+    Bucket = <<"bucket">>,
+    %% TODO: Generator?
+    MaxKeys = 1000,
+    %% delimeter, marker and prefix should be generated?
+    ListKeysRequest = riak_cs_list_objects:new_request(Bucket,
+                                                       MaxKeys,
+                                                       Opts),
+    {ok, FsmPid} = riak_cs_list_objects_fsm_v2:start_link(DummyRiakc, ListKeysRequest),
+    {ok, ListResp} = riak_cs_list_objects_utils:get_object_list(FsmPid),
+    %% io:format("ListResp: ~p~n", [ListResp]),
+    %% TODO: CommonPrefix?
+    Contents = ListResp?LORESP.contents,
+    %% io:format("Contents: ~p~n", [Contents]),
+    NewAcc = [Contents | Acc],
+    %% io:format("is_truncated: ~p~n", [ListResp?LORESP.is_truncated]),
+    case ListResp?LORESP.is_truncated of
+        true ->
+            LastEntry=lists:last(Contents),
+            Marker=LastEntry#list_objects_key_content_v1.key,
+            %% io:format("NextMarker: ~p~n", [Marker]),
+            list_manifests_to_the_end(DummyRiakc, [{marker, Marker}], NewAcc);
+        false ->
+            riak_cs_dummy_riakc_list_objects_v2:stop(DummyRiakc),
+            %% TODO: Should assert every result but last has exactly 1,000 keys?
+            lists:append(lists:reverse(NewAcc))
+    end.
 
 format_diff(Expected, Listed, Manifests) ->
     io:format("Expected Keys: ~p~n", [Expected]),
@@ -155,113 +290,5 @@ print_key_and_manifest(Key, Label, [M | Manifests]) ->
         _ ->
             print_key_and_manifest(Key, Label, Manifests)
     end.
-
-%% TODO: Entries with same key should be _merge_'d
-sort_manifests(Manifests) ->
-    lists:sort(fun(?MANIFEST{bkey=BKey1}, ?MANIFEST{bkey=BKey2}) ->
-                       BKey1 < BKey2
-               end, Manifests).
-
-active_manifest_keys(Manifests) ->
-    [element(2, M?MANIFEST.bkey) || M <- Manifests, M?MANIFEST.state =:= active].
-
-keys_in_list(ListedContents) ->
-    [Key || #list_objects_key_content_v1{key=Key} <- ListedContents].
-
-list_manifests(Manifests) ->
-    {ok, DummyRiakc} = riak_cs_dummy_riakc_list_objects_v2:start_link([Manifests]),
-    list_manifests_to_the_end(DummyRiakc, [], []).
-
-list_manifests_to_the_end(DummyRiakc, Opts, Acc) ->
-    Bucket = <<"bucket">>,
-    %% TODO: Generator?
-    MaxKeys = 1000,
-    %% delimeter, marker and prefix should be generated?
-    ListKeysRequest = riak_cs_list_objects:new_request(Bucket,
-                                                       MaxKeys,
-                                                       Opts),
-    {ok, FsmPid} = riak_cs_list_objects_fsm_v2:start_link(DummyRiakc, ListKeysRequest),
-    {ok, ListResp} = riak_cs_list_objects_utils:get_object_list(FsmPid),
-    %% io:format("ListResp: ~p~n", [ListResp]),
-    %% TODO: CommonPrefix?
-    Contents = ListResp?LORESP.contents,
-    %% io:format("Contents: ~p~n", [Contents]),
-    NewAcc = [Contents | Acc],
-    io:format("is_truncated: ~p~n", [ListResp?LORESP.is_truncated]),
-    case ListResp?LORESP.is_truncated of
-        true ->
-            LastEntry=lists:last(Contents),
-            Marker=LastEntry#list_objects_key_content_v1.key,
-            io:format("NextMarker: ~p~n", [Marker]),
-            list_manifests_to_the_end(DummyRiakc, [{marker, Marker}], NewAcc);
-        false ->
-            riak_cs_dummy_riakc_list_objects_v2:stop(DummyRiakc),
-            %% TODO: Should assert every result but last has exactly 1,000 keys?
-            lists:append(lists:reverse(NewAcc))
-    end.
-
-%%====================================================================
-%% Generators
-%%====================================================================
-
-boudary_aware_num_keys() ->
-    %% TODO(shino): generates integers around 0, 1000, 2000, 3000,...
-    %% nat().
-    %% 3000.
-    frequency([{1, choose(0, 10)},
-               {3, ?LET({Multiplier, Offset}, {choose(1, 3), choose(-10, 10)},
-                        Multiplier * 1000 + Offset)}]).
-
-manifest_state_flaver() ->
-    %% TODO: all_active, almost_deleted, all_deleted, random
-    frequency([{1, almost_active}]).
-
-manifests(NumKeys, Flavor) ->
-    %% TODO: Using ?LET to bind NumKeys from nat() gen is better? difference?
-    %% vector(NumKeys, manifest()).
-    [manifest(I, Flavor) || I <- lists:seq(1, NumKeys)].
-
-raw_manifest(Index, Flavor) ->
-    ?MANIFEST{uuid=riak_cs_gen:bounded_uuid(),
-              %% TODO: Key should be some generators and unique.
-              bkey={<<"bucket">>, list_to_binary(integer_to_list(Index))},
-              state=manifest_state(Flavor),
-              content_md5 = <<"Content-MD5">>,
-              content_length=100,
-              acl=?ACL{owner={"display-name", "canonical-id", "key-id"}}}.
-
-manifest(Index, Flavor) ->
-    ?LET(Manifest, raw_manifest(Index, Flavor), process_manifest(Manifest)).
-
-manifest_state(almost_active) ->
-    frequency([{1, writing},
-               {3000, active},
-               {1, pending_delete},
-               {1, scheduled_delete}]).
-
-%% TODO: More simplified generator suffices?
-process_manifest(Manifest=?MANIFEST{state=State}) ->
-    case State of
-        writing ->
-            Manifest?MANIFEST{last_block_written_time=os:timestamp(),
-                              write_blocks_remaining=blocks_set()};
-        active ->
-            %% this clause isn't
-            %% needed but it makes
-            %% things more clear imho
-            Manifest?MANIFEST{last_block_deleted_time=os:timestamp()};
-        pending_delete ->
-            Manifest?MANIFEST{last_block_deleted_time=os:timestamp(),
-                              delete_blocks_remaining=blocks_set()};
-        scheduled_delete ->
-            Manifest?MANIFEST{last_block_deleted_time=os:timestamp(),
-                              scheduled_delete_time=os:timestamp(),
-                              delete_blocks_remaining=blocks_set()};
-        deleted ->
-            Manifest?MANIFEST{last_block_deleted_time=os:timestamp()}
-    end.
-
-blocks_set() ->
-    ?LET(L, eqc_gen:list(int()), ordsets:from_list(L)).
 
 -endif.
