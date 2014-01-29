@@ -1,6 +1,6 @@
 %% ---------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2014 Basho Technologies, Inc.  All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -169,18 +169,17 @@ keys_in_list(ListedContents) ->
     [Key || #list_objects_key_content_v1{key=Key} <- ListedContents].
 
 list_manifests(Manifests) ->
-    {ok, DummyRiakc} = riak_cs_dummy_riakc:start_link([Manifests]),
-    list_manifests_to_the_end(DummyRiakc, []).
+    {ok, DummyRiakc} = riak_cs_dummy_riakc_list_objects_v2:start_link([Manifests]),
+    list_manifests_to_the_end(DummyRiakc, [], []).
 
-list_manifests_to_the_end(DummyRiakc, Acc) ->
+list_manifests_to_the_end(DummyRiakc, Opts, Acc) ->
     Bucket = <<"bucket">>,
     %% TODO: Generator?
     MaxKeys = 1000,
     %% delimeter, marker and prefix should be generated?
-    Options = [],
     ListKeysRequest = riak_cs_list_objects:new_request(Bucket,
                                                        MaxKeys,
-                                                       Options),
+                                                       Opts),
     {ok, FsmPid} = riak_cs_list_objects_fsm_v2:start_link(DummyRiakc, ListKeysRequest),
     {ok, ListResp} = riak_cs_list_objects_utils:get_object_list(FsmPid),
     %% io:format("ListResp: ~p~n", [ListResp]),
@@ -188,10 +187,15 @@ list_manifests_to_the_end(DummyRiakc, Acc) ->
     Contents = ListResp?LORESP.contents,
     %% io:format("Contents: ~p~n", [Contents]),
     NewAcc = [Contents | Acc],
+    io:format("is_truncated: ~p~n", [ListResp?LORESP.is_truncated]),
     case ListResp?LORESP.is_truncated of
         true ->
-            list_manifests_to_the_end(DummyRiakc, NewAcc);
+            LastEntry=lists:last(Contents),
+            Marker=LastEntry#list_objects_key_content_v1.key,
+            io:format("NextMarker: ~p~n", [Marker]),
+            list_manifests_to_the_end(DummyRiakc, [{marker, Marker}], NewAcc);
         false ->
+            riak_cs_dummy_riakc_list_objects_v2:stop(DummyRiakc),
             %% TODO: Should assert every result but last has exactly 1,000 keys?
             lists:append(lists:reverse(NewAcc))
     end.

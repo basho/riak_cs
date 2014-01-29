@@ -18,9 +18,9 @@
 %%
 %% ---------------------------------------------------------------------
 
-%% @doc Module to return manifests to cs_bucket_fold reqs
+%% @doc Module to return manifests for cs_bucket_fold requests
 
--module(riak_cs_dummy_riakc).
+-module(riak_cs_dummy_riakc_list_objects_v2).
 
 -behaviour(gen_server).
 
@@ -34,7 +34,7 @@
 -endif.
 
 %% API
--export([start_link/1]).
+-export([start_link/1, stop/1]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -44,11 +44,13 @@
          terminate/2,
          code_change/3]).
 
--record(state, {manifests :: [term()],
-                reqid :: term(),
-                caller :: pid(),
-                max_results :: integer()
-               }).
+-record(state, {
+          manifests :: [term()],
+          reqid :: term(),
+          caller :: pid(),
+          max_results :: integer(),
+          replied_at_least_once=false :: boolean()
+         }).
 
 -type state() :: #state{}.
 
@@ -56,10 +58,15 @@
 %% Public API
 %% ===================================================================
 
-%% @doc Start a `riak_cs_reader'.
+%% @doc Start a dummy `riakc_pb_socket'.
 -spec start_link(list()) -> {ok, pid()} | {error, term()}.
 start_link(Args) ->
     gen_server:start_link(?MODULE, Args, []).
+
+%% @doc Stop the process
+-spec stop(pid()) -> ok.
+stop(Pid) ->
+    gen_server:call(Pid, stop).
 
 %% ===================================================================
 %% gen_server callbacks
@@ -73,6 +80,12 @@ init([Manifests]) ->
 %% @doc Unused
 -spec handle_call(term(), {pid(), term()}, state()) ->
                          {reply, ok, state()}.
+handle_call({req, #rpbcsbucketreq{start_key = <<0>>} = _Req,
+             _Timeout, _Ctx}, _From,
+            #state{replied_at_least_once=true}=State) ->
+    %% Already replied first set of manifests but requested again from the beginning
+    %% Forbit repeated call so that EQC does not fall into infinite loop.
+    {reply, {error, second_list_request}, State};
 handle_call({req, #rpbcsbucketreq{max_results=MaxResults,
                                   start_key=StartKey} = _Req,
              _Timeout, {ReqId, Caller}=_Ctx}, _From,
@@ -83,7 +96,10 @@ handle_call({req, #rpbcsbucketreq{max_results=MaxResults,
     %% io:format("MaxResults: ~p~n", [MaxResults]),
     gen_server:cast(self(), {send_manifests, StartKey}),
     {reply, {ok, ReqId}, State#state{reqid=ReqId, caller=Caller,
-                                     max_results=MaxResults}};
+                                     max_results=MaxResults,
+                                     replied_at_least_once=true}};
+handle_call(stop, _From, State) ->
+    {stop, normal, ok, State};
 handle_call(_Msg, _From, State) ->
     io:format("=============== Received unknown call message: ~p~n", [_Msg]),
     {reply, ok, State}.
@@ -115,10 +131,11 @@ terminate(_Reason, _State) ->
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
-
 send_manifests_and_done(Caller, ReqId, StartKey, MaxResults, Manifests) ->
+    %% io:format("{Caller, ReqId, StartKey, MaxResults}: ~p~n",
+    %%           [{Caller, ReqId, StartKey, MaxResults}]),
     {Head, Rest} = take_n(StartKey, MaxResults, Manifests),
-    RiakcObjs = manifests_to_objs(Head),
+    RiakcObjs = manifests_to_robjs(Head),
     Msg = {ok, RiakcObjs},
     Caller ! {ReqId, Msg},
     DoneMsg = {done, continuation_ignored},
@@ -139,11 +156,11 @@ take_n(N, Manifests) ->
             {Manifests, []}
     end.
 
-manifests_to_objs(Manifests) ->
-    [manifest_to_obj(M) || M <- Manifests].
+manifests_to_robjs(Manifests) ->
+    [manifest_to_robj(M) || M <- Manifests].
 
 %% TODO: Metadatas
-manifest_to_obj(?MANIFEST{bkey={Bucket, Key}, uuid=UUID}=M) ->
+manifest_to_robj(?MANIFEST{bkey={Bucket, Key}, uuid=UUID}=M) ->
     Dict = riak_cs_manifest_utils:new_dict(UUID, M),
     ManifestBucket = riak_cs_utils:to_bucket_name(objects, Bucket),
     riakc_obj:new(ManifestBucket, Key, riak_cs_utils:encode_term(Dict)).
