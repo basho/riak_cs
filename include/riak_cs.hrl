@@ -80,6 +80,7 @@
                   user :: undefined | moss_user(),
                   user_object :: riakc_obj:riakc_obj(),
                   bucket :: binary(),
+                  acl :: 'undefined' | acl(),
                   requested_perm :: acl_perm(),
                   riakc_pid :: pid(),
                   riakc_pool :: atom(),
@@ -92,8 +93,7 @@
                   api :: atom()
                  }).
 
--record(key_context, {context :: #context{},
-                      manifest :: 'notfound' | lfs_manifest(),
+-record(key_context, {manifest :: 'notfound' | lfs_manifest(),
                       upload_id :: 'undefined' | binary(),
                       part_number :: 'undefined' | integer(),
                       part_uuid :: 'undefined' | binary(),
@@ -110,7 +110,9 @@
 -type acl_perm() :: 'READ' | 'WRITE' | 'READ_ACP' | 'WRITE_ACP' | 'FULL_CONTROL'.
 -type acl_perms() :: [acl_perm()].
 -type group_grant() :: 'AllUsers' | 'AuthUsers'.
--type acl_grantee() :: {string(), string()} | group_grant().
+-type acl_grantee() :: {DisplayName :: string(),
+                        CanonicalID :: string()} |
+                       group_grant().
 -type acl_grant() :: {acl_grantee(), acl_perms()}.
 %% acl_v1 owner fields: {DisplayName, CanonicalId}
 -type acl_owner2() :: {string(), string()}.

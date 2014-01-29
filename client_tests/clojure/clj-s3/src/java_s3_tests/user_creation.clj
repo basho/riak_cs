@@ -33,8 +33,7 @@
     (make-url-with-resource location "/riak-cs/user")))
 
 (defn ^:internal parse-response-body [string]
-  (let [data (cheshire/parse-string string true)]
-    (select-keys data [:key_id :key_secret])))
+  (cheshire/parse-string string true))
 
 (defn ^:internal parse-response [response]
   (parse-response-body (:body response)))
