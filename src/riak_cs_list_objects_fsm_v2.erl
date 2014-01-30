@@ -213,16 +213,18 @@ handle_done(State=#state{object_buffer=ObjectBuffer,
 
     ObjectPrefixTuple2 =
     riak_cs_list_objects_utils:filter_prefix_keys(ObjectPrefixTuple, Request),
+
+    lager:error("ObjectBufferLength is ~p", [ObjectBufferLength]),
+    lager:error("NumKeysRequested is ~p", [NumKeysRequested]),
+
     ReachedEnd = ObjectBufferLength < NumKeysRequested,
+    lager:error("Reached end is ~p", [ReachedEnd]),
 
     Truncated = truncated(UserMaxKeys, ObjectPrefixTuple2),
-    SlicedTaggedItems =
-    riak_cs_list_objects_utils:manifests_and_prefix_slice(ObjectPrefixTuple2,
-                                                          UserMaxKeys),
+    lager:error("Truncated is ~p", [Truncated]),
 
-    {NewManis, NewPrefixes} =
-    riak_cs_list_objects_utils:untagged_manifest_and_prefix(SlicedTaggedItems),
 
+    {NewManis, NewPrefixes} = ObjectPrefixTuple2,
     NewStateData = RangeUpdatedStateData#state{objects=NewManis,
                                                common_prefixes=NewPrefixes,
                                                reached_end_of_keyspace=ReachedEnd,
@@ -238,14 +240,21 @@ update_profiling_and_last_request(State, ObjectBuffer, ObjectBufferLength) ->
 
 -spec respond(state(), list(), ordsets:ordset(), boolean()) ->
     fsm_state_return().
-respond(StateData=#state{req=Request},
+respond(StateData=#state{req=Request=?LOREQ{max_keys=UserMaxKeys}},
         Manifests, Prefixes, Truncated) ->
     case enough_results(StateData) of
         true ->
+
+            SlicedTaggedItems =
+            riak_cs_list_objects_utils:manifests_and_prefix_slice({Manifests,
+                                                                   Prefixes},
+                                                                  UserMaxKeys),
+            {NewManis, NewPrefixes} =
+            riak_cs_list_objects_utils:untagged_manifest_and_prefix(SlicedTaggedItems),
             Response =
             response_from_manifests_and_common_prefixes(Request,
                                                         Truncated,
-                                                        {Manifests, Prefixes}),
+                                                        {NewManis, NewPrefixes}),
             try_reply({ok, Response}, StateData);
         false ->
             RiakcPid = StateData#state.riakc_pid,
@@ -439,6 +448,7 @@ next_byte(<<Integer:8/integer>>) ->
                 state()) ->
     fsm_state_return().
 try_reply(Response, State) ->
+    lager:error("Try reply"),
     NewStateData = State#state{response=Response},
     reply_or_wait(Response, NewStateData).
 
