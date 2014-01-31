@@ -235,7 +235,8 @@ update_profiling_and_last_request(State, ObjectBuffer, ObjectBufferLength) ->
 
 -spec respond(state(), list(), ordsets:ordset()) ->
     fsm_state_return().
-respond(StateData=#state{req=Request=?LOREQ{max_keys=UserMaxKeys}},
+respond(StateData=#state{req=Request=?LOREQ{max_keys=UserMaxKeys,
+                                            delimiter=Delimiter}},
         Manifests, Prefixes) ->
     case enough_results(StateData) of
         true ->
@@ -243,12 +244,14 @@ respond(StateData=#state{req=Request=?LOREQ{max_keys=UserMaxKeys}},
             SlicedTaggedItems =
             riak_cs_list_objects_utils:manifests_and_prefix_slice({Manifests, Prefixes},
                                                                   UserMaxKeys),
+            NextMarker = next_marker(Delimiter, SlicedTaggedItems),
 
             {NewManis, NewPrefixes} =
             riak_cs_list_objects_utils:untagged_manifest_and_prefix(SlicedTaggedItems),
             Response =
             response_from_manifests_and_common_prefixes(Request,
                                                         Truncated,
+                                                        NextMarker,
                                                         {NewManis, NewPrefixes}),
             try_reply({ok, Response}, StateData);
         false ->
@@ -278,12 +281,33 @@ enough_results(#state{req=?LOREQ{max_keys=UserMaxKeys},
     > UserMaxKeys
     orelse EndOfKeyspace.
 
+-spec next_marker(undefined | binary(),
+                  riak_cs_list_objects_utils:tagged_item_list()) ->
+    next_marker().
+next_marker(undefined, _List) ->
+    undefined;
+next_marker(_Delimiter, []) ->
+    undefined;
+next_marker(_Delimiter, List) ->
+    next_marker_from_element(lists:last(List)).
+
+-spec next_marker_from_element(riak_cs_list_objects_utils:tagged_item()) ->
+    next_marker().
+next_marker_from_element({prefix, Name}) ->
+    Name;
+next_marker_from_element({manifest, ?MANIFEST{bkey={_Bucket, Key}}}) ->
+    Key;
+next_marker_from_element({manifest, {Key, ?MANIFEST{}}}) ->
+    Key.
+
 response_from_manifests_and_common_prefixes(Request,
                                             Truncated,
+                                            NextMarker,
                                             {Manifests, CommonPrefixes}) ->
     KeyContent = lists:map(fun riak_cs_list_objects:manifest_to_keycontent/1,
                            Manifests),
-    riak_cs_list_objects:new_response(Request, Truncated, CommonPrefixes,
+    riak_cs_list_objects:new_response(Request, Truncated, NextMarker,
+                                      CommonPrefixes,
                                       KeyContent).
 
 -spec make_2i_request(pid(), state()) ->
@@ -385,8 +409,21 @@ make_start_key(State=#state{object_list_ranges=PrevRanges,
 -spec make_start_key_from_marker(list_object_request()) -> binary().
 make_start_key_from_marker(?LOREQ{marker=undefined}) ->
     <<0:8/integer>>;
-make_start_key_from_marker(?LOREQ{marker=Marker}) ->
-    Marker.
+make_start_key_from_marker(?LOREQ{marker=Marker,
+                                  delimiter=undefined}) ->
+    Marker;
+make_start_key_from_marker(?LOREQ{marker=Marker,
+                                  delimiter=Delimiter}) ->
+    DelSize = byte_size(Delimiter),
+    case binary:longest_common_suffix([Marker, Delimiter]) of
+        DelSize ->
+            %% when the `Marker' itself ends with the delimiter,
+            %% then we should skip past the entire set of keys
+            %% that would be rolled up into that common delimiter
+            skip_past_prefix_and_delimiter(Marker);
+        _Else ->
+            Marker
+    end.
 
 big_end_key(NumBytes) ->
     MaxByte = <<255:8/integer>>,

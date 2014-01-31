@@ -109,8 +109,13 @@ list_objects_response_to_xml(Resp) ->
                          Prefix <- Resp?LORESP.common_prefixes],
     Contents = [make_external_node('Name', Resp?LORESP.name),
                 make_external_node('Prefix', Resp?LORESP.prefix),
-                make_external_node('Marker', Resp?LORESP.marker),
-                make_external_node('MaxKeys', Resp?LORESP.max_keys),
+                make_external_node('Marker', Resp?LORESP.marker)] ++
+                %% use a list-comprehension trick to only include
+                %% the `NextMarker' element if it's not `undefined'
+               [make_external_node('NextMarker', NextMarker) ||
+                NextMarker <- [Resp?LORESP.next_marker],
+                NextMarker =/= undefined] ++
+               [make_external_node('MaxKeys', Resp?LORESP.max_keys),
                 make_external_node('Delimiter', Resp?LORESP.delimiter),
                 make_external_node('IsTruncated', Resp?LORESP.is_truncated)] ++
         KeyContents ++ CommonPrefixes,
