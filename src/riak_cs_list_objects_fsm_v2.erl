@@ -202,7 +202,8 @@ handle_done(State=#state{object_buffer=ObjectBuffer,
                          objects=PrevObjects,
                          last_request_num_keys_requested=NumKeysRequested,
                          common_prefixes=CommonPrefixes,
-                         req=Request=?LOREQ{max_keys=UserMaxKeys}}) ->
+                         req=Request}) ->
+
     ObjectBufferLength = length(ObjectBuffer),
     RangeUpdatedStateData =
     update_profiling_and_last_request(State, ObjectBuffer, ObjectBufferLength),
@@ -214,23 +215,16 @@ handle_done(State=#state{object_buffer=ObjectBuffer,
     NewObjects = PrevObjects ++ Active,
     ObjectPrefixTuple = {NewObjects, CommonPrefixes},
 
-    ObjectPrefixTuple2 =
+    {NewManis, NewPrefixes} =
     riak_cs_list_objects_utils:filter_prefix_keys(ObjectPrefixTuple, Request),
     ReachedEnd = ObjectBufferLength < NumKeysRequested,
 
-    Truncated = truncated(UserMaxKeys, ObjectPrefixTuple2),
-    SlicedTaggedItems =
-    riak_cs_list_objects_utils:manifests_and_prefix_slice(ObjectPrefixTuple2,
-                                                          UserMaxKeys),
-
-    {NewManis, NewPrefixes} =
-    riak_cs_list_objects_utils:untagged_manifest_and_prefix(SlicedTaggedItems),
 
     NewStateData = RangeUpdatedStateData#state{objects=NewManis,
                                                common_prefixes=NewPrefixes,
                                                reached_end_of_keyspace=ReachedEnd,
                                                object_buffer=[]},
-    respond(NewStateData, NewManis, NewPrefixes, Truncated).
+    respond(NewStateData, NewManis, NewPrefixes).
 
 -spec update_profiling_and_last_request(state(), list(), integer()) ->
     state().
@@ -239,16 +233,23 @@ update_profiling_and_last_request(State, ObjectBuffer, ObjectBufferLength) ->
                                              ObjectBufferLength),
     update_last_request_state(State2, ObjectBuffer).
 
--spec respond(state(), list(), ordsets:ordset(), boolean()) ->
+-spec respond(state(), list(), ordsets:ordset()) ->
     fsm_state_return().
-respond(StateData=#state{req=Request},
-        Manifests, Prefixes, Truncated) ->
+respond(StateData=#state{req=Request=?LOREQ{max_keys=UserMaxKeys}},
+        Manifests, Prefixes) ->
     case enough_results(StateData) of
         true ->
+            Truncated = truncated(UserMaxKeys, {Manifests, Prefixes}),
+            SlicedTaggedItems =
+            riak_cs_list_objects_utils:manifests_and_prefix_slice({Manifests, Prefixes},
+                                                                  UserMaxKeys),
+
+            {NewManis, NewPrefixes} =
+            riak_cs_list_objects_utils:untagged_manifest_and_prefix(SlicedTaggedItems),
             Response =
             response_from_manifests_and_common_prefixes(Request,
                                                         Truncated,
-                                                        {Manifests, Prefixes}),
+                                                        {NewManis, NewPrefixes}),
             try_reply({ok, Response}, StateData);
         false ->
             RiakcPid = StateData#state.riakc_pid,
@@ -274,7 +275,7 @@ enough_results(#state{req=?LOREQ{max_keys=UserMaxKeys},
                       objects=Objects,
                       common_prefixes=CommonPrefixes}) ->
     riak_cs_list_objects_utils:manifests_and_prefix_length({Objects, CommonPrefixes})
-    >= UserMaxKeys
+    > UserMaxKeys
     orelse EndOfKeyspace.
 
 response_from_manifests_and_common_prefixes(Request,
