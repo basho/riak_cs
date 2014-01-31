@@ -311,8 +311,7 @@ list_manifests_to_the_end(DummyRiakc, Opts, UserPage, BatchSize, CPrefixesAcc, C
     %% io:format("is_truncated: ~p~n", [ListResp?LORESP.is_truncated]),
     case ListResp?LORESP.is_truncated of
         true ->
-            LastEntry = lists:last(Contents),
-            Marker = LastEntry#list_objects_key_content_v1.key,
+            Marker = create_marker(ListResp),
             list_manifests_to_the_end(DummyRiakc, update_marker(Marker, Opts),
                                       UserPage, BatchSize,
                                       NewCPrefixAcc, NewContentsAcc,
@@ -324,6 +323,13 @@ list_manifests_to_the_end(DummyRiakc, Opts, UserPage, BatchSize, CPrefixesAcc, C
             {lists:append(lists:reverse(NewCPrefixAcc)),
              lists:append(lists:reverse(NewContentsAcc))}
     end.
+
+create_marker(?LORESP{next_marker=undefined,
+                      contents=Contents}) ->
+    LastEntry = lists:last(Contents),
+    LastEntry#list_objects_key_content_v1.key;
+create_marker(?LORESP{next_marker=NextMarker}) ->
+    NextMarker.
 
 update_marker(Marker, Opts) ->
     lists:keystore(marker, 1, Opts, {marker, Marker}).
