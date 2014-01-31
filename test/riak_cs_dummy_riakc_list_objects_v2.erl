@@ -84,7 +84,7 @@ handle_call({req, #rpbcsbucketreq{start_key = <<0>>} = _Req,
              _Timeout, _Ctx}, _From,
             #state{replied_at_least_once=true}=State) ->
     %% Already replied first set of manifests but requested again from the beginning
-    %% Forbit repeated call so that EQC does not fall into infinite loop.
+    %% Forbid repeated call so that EQC does not fall into infinite loop.
     {reply, {error, second_list_request}, State};
 handle_call({req, #rpbcsbucketreq{max_results=MaxResults,
                                   start_key=StartKey} = _Req,

@@ -96,7 +96,7 @@ prop_list_all_active_keys_with_delimiter() ->
 %% repeatedly and compare the list to all active manifests.
 %% TODO: random max-keys
 prop_list_all_active_keys(ListOpts) ->
-    ?FORALL({NumKeys, Flavor}, {boudary_aware_num_keys(), manifest_state_gen_flaver()},
+    ?FORALL({NumKeys, Flavor, UserPage, BatchSize}, {boundary_aware_num_keys(), manifest_state_gen_flaver(), user_page(), batch_size()},
     %% Generating lists of manifests seems natural but it is slow.
     %% As workaround, only states are generated here.
     ?FORALL(KeysAndStates, manifest_keys_and_states(NumKeys, Flavor),
@@ -104,7 +104,7 @@ prop_list_all_active_keys(ListOpts) ->
                 Manifests = [manifest(Key, State) || {Key, State} <- KeysAndStates],
                 Sorted = sort_manifests(Manifests),
                 %% io:format("Manifests: ~p~n", [Sorted]),
-                Listed = keys_in_list(list_manifests(Sorted, ListOpts)),
+                Listed = keys_in_list(list_manifests(Sorted, ListOpts, UserPage, BatchSize)),
                 Expected = active_manifest_keys(KeysAndStates, ListOpts),
                 collect(with_title(list_length), NumKeys,
                         ?WHENFAIL(
@@ -142,12 +142,15 @@ non_empty_binary() ->
 %% @doc Generator of integers which is near multiple of 1000.
 %% 1000 is the max-keys of GET Bucket API.
 %% http://docs.aws.amazon.com/AmazonS3/latest/API/RESTBucketGET.html
-boudary_aware_num_keys() ->
-    MaxMultiplier = 10,
-    frequency([{1, choose(0, 10)},
-               {MaxMultiplier,
-                ?LET({Multiplier, Offset}, {choose(1, MaxMultiplier), choose(-10, 10)},
-                     Multiplier * 1000 + Offset)}]).
+boundary_aware_num_keys() ->
+    ?LET(X, nat(), X + 1).
+
+%% Naturals starting at 1, not 0.
+batch_size() ->
+    ?LET(X, nat(), X + 1).
+
+user_page() ->
+    ?LET(X, nat(), X + 1).
 
 manifest_state_gen_flaver() ->
     frequency([
@@ -285,19 +288,18 @@ active_manifest_keys(KeysAndStates, <<$/>>=_Delimiter, undefined=_Prefix) ->
 keys_in_list({CPrefixes, Contents}) ->
     {CPrefixes, [Key || #list_objects_key_content_v1{key=Key} <- Contents]}.
 
-list_manifests(Manifests, Opts) ->
+list_manifests(Manifests, Opts, UserPage, BatchSize) ->
     {ok, DummyRiakc} = riak_cs_dummy_riakc_list_objects_v2:start_link([Manifests]),
-    list_manifests_to_the_end(DummyRiakc, Opts, [], [], []).
+    list_manifests_to_the_end(DummyRiakc, Opts, UserPage, BatchSize, [], [], []).
 
-list_manifests_to_the_end(DummyRiakc, Opts, CPrefixesAcc, ContestsAcc, MarkerAcc) ->
+list_manifests_to_the_end(DummyRiakc, Opts, UserPage, BatchSize, CPrefixesAcc, ContestsAcc, MarkerAcc) ->
     Bucket = <<"bucket">>,
     %% TODO: Generator?
-    MaxKeys = 1000,
     %% delimeter, marker and prefix should be generated?
     ListKeysRequest = riak_cs_list_objects:new_request(Bucket,
-                                                       MaxKeys,
+                                                       UserPage,
                                                        Opts),
-    {ok, FsmPid} = riak_cs_list_objects_fsm_v2:start_link(DummyRiakc, ListKeysRequest),
+    {ok, FsmPid} = riak_cs_list_objects_fsm_v2:start_link(DummyRiakc, ListKeysRequest, BatchSize),
     {ok, ListResp} = riak_cs_list_objects_utils:get_object_list(FsmPid),
     CommonPrefixes = ListResp?LORESP.common_prefixes,
     Contents = ListResp?LORESP.contents,
@@ -309,9 +311,10 @@ list_manifests_to_the_end(DummyRiakc, Opts, CPrefixesAcc, ContestsAcc, MarkerAcc
     %% io:format("is_truncated: ~p~n", [ListResp?LORESP.is_truncated]),
     case ListResp?LORESP.is_truncated of
         true ->
-            LastEntry=lists:last(Contents),
-            Marker=LastEntry#list_objects_key_content_v1.key,
-            list_manifests_to_the_end(DummyRiakc, update_maker(Marker, Opts),
+            LastEntry = lists:last(Contents),
+            Marker = LastEntry#list_objects_key_content_v1.key,
+            list_manifests_to_the_end(DummyRiakc, update_marker(Marker, Opts),
+                                      UserPage, BatchSize,
                                       NewCPrefixAcc, NewContentsAcc,
                                       [Marker | MarkerAcc]);
         false ->
@@ -322,7 +325,7 @@ list_manifests_to_the_end(DummyRiakc, Opts, CPrefixesAcc, ContestsAcc, MarkerAcc
              lists:append(lists:reverse(NewContentsAcc))}
     end.
 
-update_maker(Marker, Opts) ->
+update_marker(Marker, Opts) ->
     lists:keystore(marker, 1, Opts, {marker, Marker}).
 
 format_diff({NumKeys, Flavor},

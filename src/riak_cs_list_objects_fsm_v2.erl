@@ -37,7 +37,8 @@
 -endif.
 
 %% API
--export([start_link/2]).
+-export([start_link/2,
+         start_link/3]).
 
 %% Observability
 -export([]).
@@ -73,7 +74,7 @@
 -record(state, {riakc_pid :: pid(),
                 req :: list_object_request(),
                 reply_ref :: undefined | {pid(), any()},
-                key_multiplier :: float(),
+                fold_objects_batch_size :: pos_integer(),
                 object_list_req_id :: undefined | reference(),
                 reached_end_of_keyspace=false :: boolean(),
                 object_buffer=[] :: list(),
@@ -111,22 +112,24 @@
 -spec start_link(pid(), list_object_request()) ->
     {ok, pid()} | {error, term()}.
 start_link(RiakcPid, ListKeysRequest) ->
-    gen_fsm:start_link(?MODULE, [RiakcPid, ListKeysRequest], []).
+    FoldObjectsBatchSize = 1002,
+    start_link(RiakcPid, ListKeysRequest, FoldObjectsBatchSize).
+
+-spec start_link(pid(), list_object_request(), pos_integer()) ->
+    {ok, pid()} | {error, term()}.
+start_link(RiakcPid, ListKeysRequest, FoldObjectsBatchSize) ->
+    BatchSize2 = max(2, FoldObjectsBatchSize),
+    gen_fsm:start_link(?MODULE, [RiakcPid, ListKeysRequest, BatchSize2], []).
 
 %%%===================================================================
 %%% gen_fsm callbacks
 %%%===================================================================
 
 -spec init(list()) -> {ok, prepare, state(), 0}.
-init([RiakcPid, Request]) ->
-    %% TODO: this should not be hardcoded. Maybe there should
-    %% be two `start_link' arities, and one will use a default
-    %% val from app.config and the other will explicitly
-    %% take a val
-    KeyMultiplier = riak_cs_list_objects_utils:get_key_list_multiplier(),
+init([RiakcPid, Request, FoldObjectsBatchSize]) ->
 
     State = #state{riakc_pid=RiakcPid,
-                   key_multiplier=KeyMultiplier,
+                   fold_objects_batch_size=FoldObjectsBatchSize,
                    req=Request},
     {ok, prepare, State, 0}.
 
@@ -284,18 +287,18 @@ response_from_manifests_and_common_prefixes(Request,
 
 -spec make_2i_request(pid(), state()) ->
                              {state(), {ok, reference()} | {error, term()}}.
-make_2i_request(RiakcPid, State=#state{req=?LOREQ{name=BucketName}}) ->
+make_2i_request(RiakcPid, State=#state{req=?LOREQ{name=BucketName},
+                                       fold_objects_batch_size=BatchSize}) ->
     ManifestBucket = riak_cs_utils:to_bucket_name(objects, BucketName),
     StartKey = make_start_key(State),
     EndKey = big_end_key(128),
-    NumResults = 1002,
     NewStateData = State#state{last_request_start_key=StartKey,
-                               last_request_num_keys_requested=NumResults},
+                               last_request_num_keys_requested=BatchSize},
     NewStateData2 = update_profiling_state_with_start(NewStateData,
                                                       StartKey,
                                                       EndKey,
                                                       os:timestamp()),
-    Opts = [{max_results, NumResults},
+    Opts = [{max_results, BatchSize},
             {start_key, StartKey},
             {end_key, EndKey}],
     FoldResult = riakc_pb_socket:cs_bucket_fold(RiakcPid,
