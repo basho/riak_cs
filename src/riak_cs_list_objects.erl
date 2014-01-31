@@ -28,7 +28,7 @@
 %% API
 -export([new_request/1,
          new_request/3,
-         new_response/4,
+         new_response/5,
          manifest_to_keycontent/1]).
 
 %%%===================================================================
@@ -68,6 +68,7 @@ process_options_helper({marker, Val}, Req) ->
 
 -spec new_response(list_object_request(),
                    IsTruncated :: boolean(),
+                   NextMarker :: binary(),
                    CommonPrefixes :: list(list_objects_common_prefixes()),
                    ObjectContents :: list(list_objects_key_content())) ->
     list_object_response().
@@ -76,12 +77,13 @@ new_response(?LOREQ{name=Name,
                     prefix=Prefix,
                     delimiter=Delimiter,
                     marker=Marker},
-             IsTruncated, CommonPrefixes, ObjectContents) ->
+             IsTruncated, NextMarker, CommonPrefixes, ObjectContents) ->
     ?LORESP{name=Name,
             max_keys=MaxKeys,
             prefix=Prefix,
             delimiter=Delimiter,
             marker=Marker,
+            next_marker=NextMarker,
             is_truncated=IsTruncated,
             contents=ObjectContents,
             common_prefixes=CommonPrefixes}.
