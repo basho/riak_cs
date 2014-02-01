@@ -112,7 +112,7 @@
 -spec start_link(pid(), list_object_request()) ->
     {ok, pid()} | {error, term()}.
 start_link(RiakcPid, ListKeysRequest) ->
-    FoldObjectsBatchSize = 2,
+    FoldObjectsBatchSize = 1002,
     start_link(RiakcPid, ListKeysRequest, FoldObjectsBatchSize).
 
 -spec start_link(pid(), list_object_request(), pos_integer()) ->
