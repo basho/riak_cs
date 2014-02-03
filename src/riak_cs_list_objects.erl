@@ -68,7 +68,7 @@ process_options_helper({marker, Val}, Req) ->
 
 -spec new_response(list_object_request(),
                    IsTruncated :: boolean(),
-                   NextMarker :: binary(),
+                   NextMarker :: next_marker(),
                    CommonPrefixes :: list(list_objects_common_prefixes()),
                    ObjectContents :: list(list_objects_key_content())) ->
     list_object_response().
