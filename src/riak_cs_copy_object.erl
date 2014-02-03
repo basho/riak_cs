@@ -40,7 +40,6 @@ copy(CopyCtx) ->
     %% Then end is the index of the last byte, not the length, so subtract 1
     riak_cs_get_fsm:continue(GetFsmPid, {0, Manifest?MANIFEST.content_length-1}),
     MD5 = get_content_md5(Manifest?MANIFEST.content_md5),
-io:format("MD5 = ~p~n", [MD5]),
     {ok, _Manifest} = get_and_put(GetFsmPid, PutFsmPid, MD5),
     riak_cs_utils:close_riak_connection(GetRiakcPid),
     riak_cs_utils:close_riak_connection(PutRiakcPid),
