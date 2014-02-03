@@ -40,9 +40,6 @@
          test/1]).
 
 -define(TEST_ITERATIONS, 1000).
-%% The propperty prop_list_all_active_keys is slow so decrease the number.
-%% TODO: More large number is better?
--define(TEST_ITERATIONS_FOR_LIST, 100).
 -define(QC_OUT(P),
         eqc:on_output(fun(Str, Args) -> io:format(user, Str, Args) end, P)).
 
@@ -56,12 +53,11 @@ eqc_test_() ->
      ?_assert(quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_prefix_must_be_in_between())))),
      {timeout, 10*60, % 10min.
       ?_assert(quickcheck(numtests(
-                            ?TEST_ITERATIONS_FOR_LIST,
-                            ?QC_OUT(prop_list_all_active_keys_without_delimiter()))))}
-     ,
+                            ?TEST_ITERATIONS,
+                            ?QC_OUT(prop_list_all_active_keys_without_delimiter()))))},
      {timeout, 10*60, % 10min.
       ?_assert(quickcheck(numtests(
-                            ?TEST_ITERATIONS_FOR_LIST,
+                            ?TEST_ITERATIONS,
                             ?QC_OUT(prop_list_all_active_keys_with_delimiter()))))}
     ].
 
@@ -96,7 +92,7 @@ prop_list_all_active_keys_with_delimiter() ->
 %% repeatedly and compare the list to all active manifests.
 %% TODO: random max-keys
 prop_list_all_active_keys(ListOpts) ->
-    ?FORALL({NumKeys, Flavor, UserPage, BatchSize}, {boundary_aware_num_keys(), manifest_state_gen_flaver(), user_page(), batch_size()},
+    ?FORALL({NumKeys, Flavor, UserPage, BatchSize}, {num_keys(), manifest_state_gen_flavor(), user_page(), batch_size()},
     %% Generating lists of manifests seems natural but it is slow.
     %% As workaround, only states are generated here.
     ?FORALL(KeysAndStates, manifest_keys_and_states(NumKeys, Flavor),
@@ -139,10 +135,7 @@ bool_in_between(A, B) ->
 non_empty_binary() ->
     ?SUCHTHAT(B, binary(), B =/= <<>>).
 
-%% @doc Generator of integers which is near multiple of 1000.
-%% 1000 is the max-keys of GET Bucket API.
-%% http://docs.aws.amazon.com/AmazonS3/latest/API/RESTBucketGET.html
-boundary_aware_num_keys() ->
+num_keys() ->
     ?LET(X, nat(), X + 1).
 
 %% Naturals starting at 1, not 0.
@@ -152,7 +145,7 @@ batch_size() ->
 user_page() ->
     ?LET(X, nat(), X + 1).
 
-manifest_state_gen_flaver() ->
+manifest_state_gen_flavor() ->
     frequency([
                {1, all_active},
                {1, all_deleted},
@@ -160,9 +153,6 @@ manifest_state_gen_flaver() ->
                {1, almost_deleted},
                {1, half_active}
               ]).
-
-manifest_states(NumKeys, Flavor) ->
-    vector(NumKeys, manifest_state(Flavor)).
 
 manifest_keys_and_states(NumKeys, Flavor) ->
     [{manifest_key_with_prefix(Index), manifest_state(Flavor)} ||
@@ -210,7 +200,8 @@ test() ->
 test(Iterations) ->
     eqc:quickcheck(eqc:numtests(Iterations, prop_skip_past_prefix_and_delimiter())),
     eqc:quickcheck(eqc:numtests(Iterations, prop_prefix_must_be_in_between())),
-    eqc:quickcheck(eqc:numtests(Iterations, prop_list_all_active_keys_without_delimiter())).
+    eqc:quickcheck(eqc:numtests(Iterations, prop_list_all_active_keys_without_delimiter())),
+    eqc:quickcheck(eqc:numtests(Iterations, prop_list_all_active_keys_with_delimiter())).
 
 test(Iterations, Prop) ->
     eqc:quickcheck(eqc:numtests(Iterations, ?MODULE:Prop())).
@@ -242,24 +233,16 @@ bin_key(Key) ->
 process_manifest(Manifest=?MANIFEST{state=State}) ->
     case State of
         writing ->
-            Manifest?MANIFEST{last_block_written_time=os:timestamp(),
-                              write_blocks_remaining=blocks_set()};
+            Manifest?MANIFEST{last_block_written_time=os:timestamp()};
         active ->
             %% this clause isn't needed but it makes things more clear imho
             Manifest?MANIFEST{last_block_deleted_time=os:timestamp()};
         pending_delete ->
-            Manifest?MANIFEST{last_block_deleted_time=os:timestamp(),
-                              delete_blocks_remaining=blocks_set()};
+            Manifest?MANIFEST{last_block_deleted_time=os:timestamp()};
         scheduled_delete ->
             Manifest?MANIFEST{last_block_deleted_time=os:timestamp(),
-                              scheduled_delete_time=os:timestamp(),
-                              delete_blocks_remaining=blocks_set()};
-        deleted ->
-            Manifest?MANIFEST{last_block_deleted_time=os:timestamp()}
+                              scheduled_delete_time=os:timestamp()}
     end.
-
-blocks_set() ->
-    ordsets:new().
 
 sort_manifests(Manifests) ->
     lists:sort(fun(?MANIFEST{bkey=BKey1}, ?MANIFEST{bkey=BKey2}) ->
@@ -303,12 +286,8 @@ list_manifests_to_the_end(DummyRiakc, Opts, UserPage, BatchSize, CPrefixesAcc, C
     {ok, ListResp} = riak_cs_list_objects_utils:get_object_list(FsmPid),
     CommonPrefixes = ListResp?LORESP.common_prefixes,
     Contents = ListResp?LORESP.contents,
-    %% io:format("ListResp: ~p~n", [ListResp]),
-    %% io:format("CommonPrefixes: ~p~n", [CommonPrefixes]),
-    %% io:format("Contents: ~p~n", [Contents]),
     NewCPrefixAcc = [CommonPrefixes | CPrefixesAcc],
     NewContentsAcc = [Contents | ContestsAcc],
-    %% io:format("is_truncated: ~p~n", [ListResp?LORESP.is_truncated]),
     case ListResp?LORESP.is_truncated of
         true ->
             Marker = create_marker(ListResp),
@@ -318,8 +297,7 @@ list_manifests_to_the_end(DummyRiakc, Opts, UserPage, BatchSize, CPrefixesAcc, C
                                       [Marker | MarkerAcc]);
         false ->
             riak_cs_dummy_riakc_list_objects_v2:stop(DummyRiakc),
-            %% io:format("Markers: ~p~n", [lists:reverse(MarkerAcc)]),
-            %% TODO: Should assert every result but last has exactly 1,000 entries?
+            %% TODO: Should assert every result but last has exactly max-results?
             {lists:append(lists:reverse(NewCPrefixAcc)),
              lists:append(lists:reverse(NewContentsAcc))}
     end.
