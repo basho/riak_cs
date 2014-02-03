@@ -92,20 +92,24 @@ prop_list_all_active_keys_with_delimiter() ->
 %% repeatedly and compare the list to all active manifests.
 %% TODO: random max-keys
 prop_list_all_active_keys(ListOpts) ->
-    ?FORALL({NumKeys, Flavor, UserPage, BatchSize}, {num_keys(), manifest_state_gen_flavor(), user_page(), batch_size()},
+    ?FORALL({NumKeys, StateFlavor, PrefixFlavor, UserPage, BatchSize},
+            {num_keys(), manifest_state_gen_flavor(), manifest_prefix_gen_flavor(),
+             user_page(), batch_size()},
     %% Generating lists of manifests seems natural but it is slow.
     %% As workaround, only states are generated here.
-    ?FORALL(KeysAndStates, manifest_keys_and_states(NumKeys, Flavor),
+    ?FORALL(KeysAndStates, manifest_keys_and_states(NumKeys, StateFlavor, PrefixFlavor),
             begin
                 Manifests = [manifest(Key, State) || {Key, State} <- KeysAndStates],
                 Sorted = sort_manifests(Manifests),
                 %% io:format("Manifests: ~p~n", [Sorted]),
                 Listed = keys_in_list(list_manifests(Sorted, ListOpts, UserPage, BatchSize)),
                 Expected = active_manifest_keys(KeysAndStates, ListOpts),
-                collect(with_title(list_length), NumKeys,
+                collect(with_title(pages), trunc(NumKeys/UserPage),
+                collect(with_title(batches), trunc(NumKeys/BatchSize),
                         ?WHENFAIL(
-                           format_diff({NumKeys, Flavor}, Expected, Listed, Sorted),
-                           Expected =:= Listed
+                           format_diff({NumKeys, StateFlavor, PrefixFlavor},
+                                       Expected, Listed, Sorted),
+                           Expected =:= Listed)
                        ))
             end
            )).
@@ -154,15 +158,25 @@ manifest_state_gen_flavor() ->
                {1, half_active}
               ]).
 
-manifest_keys_and_states(NumKeys, Flavor) ->
-    [{manifest_key_with_prefix(Index), manifest_state(Flavor)} ||
+manifest_keys_and_states(NumKeys, StateFlavor, PrefixFlavor) ->
+    [{manifest_key_with_prefix(PrefixFlavor, Index), manifest_state(StateFlavor)} ||
         Index <- lists:seq(1, NumKeys)].
 
-manifest_key_with_prefix(Index) ->
-    {manifest_prefix(handful), manifest_key_simple(Index)}.
+manifest_key_with_prefix(PrefixFlavor, Index) ->
+    {manifest_prefix(PrefixFlavor), manifest_key_simple(Index)}.
 
+manifest_prefix_gen_flavor() ->
+    oneof([flat, single, handful, many]).
+
+manifest_prefix(flat) ->
+    no_prefix;
+manifest_prefix(single) ->
+    <<"ABC">>;
 manifest_prefix(handful) ->
-    oneof([no_prefix, <<"ABC">>, <<"0123456">>, <<"ZZZZZZZZ">>]).
+    oneof([no_prefix, <<"ABC">>, <<"0123456">>, <<"ZZZZZZZZ">>]);
+manifest_prefix(many) ->
+    frequency([{1, no_prefix},
+               {10, ?LET(P, vector(30, choose($A, $Z)), list_to_binary(P))}]).
 
 manifest_state(all_active) ->
     active;
@@ -312,7 +326,7 @@ create_marker(?LORESP{next_marker=NextMarker}) ->
 update_marker(Marker, Opts) ->
     lists:keystore(marker, 1, Opts, {marker, Marker}).
 
-format_diff({NumKeys, Flavor},
+format_diff({NumKeys, StateFlavor, PrefixFlavor},
             {ExpectedCPs, ExpectedKeys}, {ListedCPs, ListedKeys}, Manifests) ->
     output_entries(Manifests),
     io:nl(),
@@ -328,7 +342,8 @@ format_diff({NumKeys, Flavor},
     first_diff_cp(ExpectedCPs, ListedCPs),
     first_diff_key(ExpectedKeys, ListedKeys, Manifests),
     io:format("NumKeys: ~p~n", [NumKeys]),
-    io:format("StateFlavor: ~p~n", [Flavor]),
+    io:format("StateFlavor: ~p~n", [StateFlavor]),
+    io:format("PrefixFlavor: ~p~n", [PrefixFlavor]),
     ok.
 
 output_entries(Manifests) ->
