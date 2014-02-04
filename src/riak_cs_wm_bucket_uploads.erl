@@ -71,8 +71,8 @@ to_xml(RD, Ctx=#context{local_context=LocalCtx,
         {ok, {Ds, Commons}} ->
             Us = [{'Upload',
                    [
-                    {'Key', [unicode:characters_to_list(D?MULTIPART_DESCR.key, unicode)]},
-                    {'UploadId', [binary_to_list(base64url:encode(D?MULTIPART_DESCR.upload_id))]},
+                    {'Key', [D?MULTIPART_DESCR.key]},
+                    {'UploadId', [base64url:encode(D?MULTIPART_DESCR.upload_id)]},
                     {'Initiator',               % TODO: replace with ARN data?
                      [{'ID', [D?MULTIPART_DESCR.owner_key_id]},
                       {'DisplayName', [D?MULTIPART_DESCR.owner_display]}
@@ -90,27 +90,27 @@ to_xml(RD, Ctx=#context{local_context=LocalCtx,
             Cs = [{'CommonPrefixes',
                    [
                     % WTH? The pattern [Common | _] can never match the type []
-                    {'Prefix', [binary_to_list(Common)]}
+                    {'Prefix', [Common]}
                    ]} || Common <- Commons],
             Get = fun(Name) -> case proplists:get_value(Name, Opts) of
                                    undefined -> [];
-                                   X         -> binary_to_list(X)
+                                   X         -> X
                                end
                   end,
             XmlDoc = {'ListMultipartUploadsResult',
                        [{'xmlns', "http://s3.amazonaws.com/doc/2006-03-01/"}],
                        [
-                        {'Bucket', [binary_to_list(Bucket)]},
+                        {'Bucket', [Bucket]},
                         {'KeyMarker', [Get(key_marker)]},
                         {'NextKeyMarker', []},      % TODO
                         {'NextUploadIdMarker', [Get(upload_id_marker)]},
                         {'Delimiter', [Get(delimiter)]},
                         {'Prefix', [Get(prefix)]},
-                        {'MaxUploads', ["1000"]},     % TODO
+                        {'MaxUploads', [1000]},     % TODO
                         {'IsTruncated', ["false"]}   % TODO
                       ] ++ Us ++ Cs
                      },
-            Body = riak_cs_xml:export_xml([XmlDoc]),
+            Body = riak_cs_xml:to_xml([XmlDoc]),
             {Body, RD, Ctx};
         {error, Reason} ->
             riak_cs_s3_response:api_error(Reason, RD, Ctx)
