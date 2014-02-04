@@ -181,7 +181,7 @@ make_special_error(Code, Message, RequestId, HostId) ->
                {'HostId', [HostId]}
               ]
              },
-    riak_cs_xml:export_xml([XmlDoc]).
+    riak_cs_xml:to_xml([XmlDoc]).
 
 list_multipart_uploads(Bucket, Caller, Opts) ->
     list_multipart_uploads(Bucket, Caller, Opts, nopid).
