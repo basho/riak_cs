@@ -54,8 +54,8 @@ def upload_multipart(bucket, key_name, parts_list, metadata={}):
     upload = bucket.initiate_multipart_upload(key_name, metadata=metadata)
     for index, val in enumerate(parts_list):
         upload.upload_part_from_file(val, index + 1)
-    upload.complete_upload()
-    return upload
+    result = upload.complete_upload()
+    return upload, result
 
 class S3ApiVerificationTestBase(unittest.TestCase):
     host="127.0.0.1"
@@ -208,10 +208,12 @@ class MultiPartUploadTests(S3ApiVerificationTestBase):
         stringio_parts = [StringIO(p) for p in parts]
         expected_md5 = md5.new(''.join(parts)).hexdigest()
         bucket = self.conn.create_bucket(self.bucket_name)
-        upload = upload_multipart(bucket, key_name, stringio_parts)
+        upload, result = upload_multipart(bucket, key_name, stringio_parts)
         key = Key(bucket, key_name)
         actual_md5 = md5_from_key(key)
         self.assertEqual(expected_md5, actual_md5)
+        self.assertEqual(key_name, result.key_name)
+        return upload, result
 
     def test_small_strings_upload_1(self):
         parts = ['this is part one', 'part two is just a rewording',

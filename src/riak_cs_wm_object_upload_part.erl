@@ -107,12 +107,12 @@ process_post(RD, Ctx=#context{local_context=LocalCtx,
                               [{'xmlns', "http://s3.amazonaws.com/doc/2006-03-01/"}],
                               [
                                {'Location', [lists:append(["http://", binary_to_list(Bucket), ".s3.amazonaws.com/", Key])]},
-                               {'Bucket', [binary_to_list(Bucket)]},
+                               {'Bucket', [Bucket]},
                                {'Key', [Key]},
-                               {'ETag', [binary_to_list(UploadId64)]}
+                               {'ETag', [UploadId64]}
                               ]
                              },
-                    XmlBody = riak_cs_xml:export_xml([XmlDoc]),
+                    XmlBody = riak_cs_xml:to_xml([XmlDoc]),
                     RD2 = wrq:set_resp_body(XmlBody, RD),
                     {true, RD2, Ctx};
                 {error, notfound} ->
