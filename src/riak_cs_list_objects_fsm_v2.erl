@@ -273,6 +273,12 @@ truncated(NumKeysRequested, ObjectsAndPrefixes) ->
     %% The `Ceph' tests were nice to find this.
     NumKeysRequested =/= 0.
 
+-spec enough_results(state()) -> boolean().
+%% @doc Return a `boolean' determining whether enough results have been
+%% returned from the fold objects queries to return to the user. In order
+%% to tell if the result-set is truncated, we either need one more result
+%% than the user has asked for (hence `>' and not `>='), or to know
+%% that we've already reached the end of the fold objects results.
 enough_results(#state{req=?LOREQ{max_keys=UserMaxKeys},
                       reached_end_of_keyspace=EndOfKeyspace,
                       objects=Objects,
