@@ -18,3 +18,5 @@ current_counterexample.eqc
 priv/riak_cs_drv.so
 pkg.vars.config
 client_tests/python/ceph_tests/s3-tests
+.eqc-info
+.riak_cs_list_objects_fsm_v2_eqc.txt
