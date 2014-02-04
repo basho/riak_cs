@@ -56,8 +56,8 @@ export_xml(XmlDoc) ->
 -spec to_xml(term()) -> binary().
 to_xml(undefined) ->
     [];
-to_xml([]) ->
-    [];
+to_xml(SimpleForm) when is_list(SimpleForm) ->
+    simple_form_to_xml(SimpleForm);
 to_xml(?ACL{}=Acl) ->
     acl_to_xml(Acl);
 to_xml(#acl_v1{}=Acl) ->
@@ -74,6 +74,21 @@ to_xml({users, Users}) ->
 %% ===================================================================
 %% Internal functions
 %% ===================================================================
+
+%% @doc Convert simple form into XML.
+simple_form_to_xml(Elements) ->
+    XmlDoc = format_elements(Elements),
+    export_xml(XmlDoc).
+
+format_elements(Elements) ->
+    [format_element(E) || E <- Elements].
+
+format_element({Tag, Elements}) ->
+    {Tag, format_elements(Elements)};
+format_element({Tag, Attrs, Elements}) ->
+    {Tag, Attrs, format_elements(Elements)};
+format_element(Value) ->
+    format_value(Value).
 
 %% @doc Convert an internal representation of an ACL
 %% into XML.
@@ -213,6 +228,14 @@ make_owner(#list_objects_owner_v1{id=Id, display_name=Name}) ->
     make_internal_node('Owner', Content).
 
 -spec format_value(atom() | integer() | binary() | list()) -> string().
+%% @doc Format value depending on its type
+%% Handling of characters (binaries or lists of integers) are as follows:
+%% - For binaries, we assume that they are encoded by UTF-8.
+%% - For lists, we assume they are converted from UTF-8 encoded binaries
+%%   by applying binary_to_list/1.
+%%   This is tricky point but binary_to_list/1 treats binaries as if it is
+%%   Latin-1 encoded, so we should turn them back by list_to_binary first.
+%%   Then we can apply unicode:characters_to_binary safely.
 format_value(undefined) ->
     [];
 format_value(Val) when is_atom(Val) ->
@@ -222,7 +245,7 @@ format_value(Val) when is_binary(Val) ->
 format_value(Val) when is_integer(Val) ->
     integer_to_list(Val);
 format_value(Val) when is_list(Val) ->
-    Val.
+    format_value(list_to_binary(Val)).
 
 %% @doc Map a ACL group atom to its corresponding URI.
 -spec uri_for_group(atom()) -> string().
