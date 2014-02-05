@@ -245,7 +245,7 @@ parse_user_records(Output, ?JSON) ->
          KeySecret = binary_to_list(proplists:get_value(<<"key_secret">>, UserJson)),
          Status = binary_to_list(proplists:get_value(<<"status">>, UserJson)),
          {Email, Name, KeyId, KeySecret, Status}
-     end || UserJson <- JsonData];
+     end || {struct, UserJson} <- JsonData];
 parse_user_records(Output, ?XML) ->
     {ParsedData, _Rest} = xmerl_scan:string(Output, []),
     [lists:foldl(fun user_fields_from_xml/2,
