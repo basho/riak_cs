@@ -25,23 +25,24 @@
 -include("riak_cs.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
+%% TODO: import test like this to riak_cs_acl_utils.erl
 well_indented_xml() ->
-    Xml="<AccessControlPolicy>\n"
-        "  <Owner>\n"
-        "    <ID>eb874c6afce06925157eda682f1b3c6eb0f3b983bbee3673ae62f41cce21f6b1</ID>\n"
-        "    <DisplayName>admin</DisplayName>\n"
-        "  </Owner>\n"
-        "  <AccessControlList>\n"
-        "    <Grant>\n"
-        "      <Grantee xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"CanonicalUser\">\n"
-        "        <ID>eb874c6afce06925157eda682f1b3c6eb0f3b983bbee3673ae62f41cce21f6b1</ID>\n"
-        "        <DisplayName>admin</DisplayName>\n"
-        "      </Grantee>\n"
-        "      <Permission>FULL_CONTROL</Permission>\n"
-        "    </Grant>\n"
-        "  </AccessControlList>\n"
-        "</AccessControlPolicy>\n",
-    Xml.
+    Xml="<AccessControlPolicy>"
+        "  <Owner>"
+        "    <ID>eb874c6afce06925157eda682f1b3c6eb0f3b983bbee3673ae62f41cce21f6b1</ID>"
+        "    <DisplayName>admin</DisplayName>"
+        "  </Owner>"
+        "  <AccessControlList>"
+        "    <Grant>"
+        "      <Grantee xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"CanonicalUser\">"
+        "        <ID>eb874c6afce06925157eda682f1b3c6eb0f3b983bbee3673ae62f41cce21f6b1</ID>"
+        "        <DisplayName>admin</DisplayName>"
+        "      </Grantee>"
+        "      <Permission>FULL_CONTROL</Permission>"
+        "    </Grant>"
+        "  </AccessControlList>"
+        "</AccessControlPolicy>",
+    io_lib:format(Xml, []).
 
 well_indented_xml_test() ->
     Xml = well_indented_xml(),

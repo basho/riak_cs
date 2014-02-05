@@ -479,29 +479,32 @@ name_for_canonical(CanonicalId, RiakPid) ->
     {error, unresolved_grant_email}.
 process_acl_contents([], Acl, _) ->
     {ok, Acl};
-process_acl_contents([HeadElement | RestElements], Acl, RiakPid) ->
-    Content = HeadElement#xmlElement.content,
-    _ = lager:debug("Element name: ~p", [HeadElement#xmlElement.name]),
-    ElementName = HeadElement#xmlElement.name,
+process_acl_contents([#xmlElement{content=Content,
+                                  name=ElementName}
+                      | RestElements], Acl, RiakPid) ->
+    _ = lager:debug("Element name: ~p", [ElementName]),
     UpdAclRes =
-                case ElementName of
-        'Owner' ->
-            process_owner(Content, Acl, RiakPid);
-        'AccessControlList' ->
-            process_grants(Content, Acl, RiakPid);
-        _ ->
-            _ = lager:debug("Encountered unexpected element: ~p", [ElementName]),
+        case ElementName of
+            'Owner' ->
+                process_owner(Content, Acl, RiakPid);
+            'AccessControlList' ->
+                process_grants(Content, Acl, RiakPid);
+            _ ->
+                _ = lager:debug("Encountered unexpected element: ~p", [ElementName]),
             Acl
-    end,
+        end,
     case UpdAclRes of
         {ok, UpdAcl} ->
             process_acl_contents(RestElements, UpdAcl, RiakPid);
         {error, _}=Error ->
             Error
-    end.
+    end;
+process_acl_contents([#xmlText{value=" "} | RestElements], Acl, RiakPid) ->
+    %% skip normalized space
+    process_acl_contents(RestElements, Acl, RiakPid).
 
 %% @doc Process an XML element containing acl owner information.
--spec process_owner([riak_cs_xml:xmlElement()], acl(), pid()) -> {ok, #acl_v2{}}.
+-spec process_owner([riak_cs_xml:xmlNode()], acl(), pid()) -> {ok, #acl_v2{}}.
 process_owner([], Acl=?ACL{owner={[], CanonicalId, KeyId}}, RiakPid) ->
     {ok, DisplayName} = name_for_canonical(CanonicalId, RiakPid),
     case name_for_canonical(CanonicalId, RiakPid) of
@@ -512,83 +515,94 @@ process_owner([], Acl=?ACL{owner={[], CanonicalId, KeyId}}, RiakPid) ->
     end;
 process_owner([], Acl, _) ->
     {ok, Acl};
-process_owner([HeadElement | RestElements], Acl, RiakPid) ->
+process_owner([#xmlElement{content=[Content],
+                           name=ElementName} |
+               RestElements], Acl, RiakPid) ->
     Owner = Acl?ACL.owner,
-    [Content] = HeadElement#xmlElement.content,
-    Value = Content#xmlText.value,
-    ElementName = HeadElement#xmlElement.name,
-    case ElementName of
-        'ID' ->
-            _ = lager:debug("Owner ID value: ~p", [Value]),
-            {OwnerName, _, OwnerKeyId} = Owner,
-            UpdOwner = {OwnerName, Value, OwnerKeyId};
-        'DisplayName' ->
-            _ = lager:debug("Owner Name content: ~p", [Value]),
-            {_, OwnerId, OwnerKeyId} = Owner,
-            UpdOwner = {Value, OwnerId, OwnerKeyId};
+    case Content of
+        #xmlText{value=Value} ->
+            UpdOwner =
+                case ElementName of
+                    'ID' ->
+                        _ = lager:debug("Owner ID value: ~p", [Value]),
+                        {OwnerName, _, OwnerKeyId} = Owner,
+                        {OwnerName, Value, OwnerKeyId};
+                    'DisplayName' ->
+                        _ = lager:debug("Owner Name content: ~p", [Value]),
+                        {_, OwnerId, OwnerKeyId} = Owner,
+                        {Value, OwnerId, OwnerKeyId};
+                    _ ->
+                        _ = lager:debug("Encountered unexpected element: ~p", [ElementName]),
+                        Owner
+            end,
+            process_owner(RestElements, Acl?ACL{owner=UpdOwner}, RiakPid);
         _ ->
-            _ = lager:debug("Encountered unexpected element: ~p", [ElementName]),
-            UpdOwner = Owner
-    end,
-    process_owner(RestElements, Acl?ACL{owner=UpdOwner}, RiakPid).
+            process_owner(RestElements, Acl, RiakPid)
+    end;
+process_owner([_ | RestElements], Acl, RiakPid) ->
+    %% this pattern matches with text, comment, etc..
+    process_owner(RestElements, Acl, RiakPid).
 
 %% @doc Process an XML element containing the grants for the acl.
--spec process_grants([riak_cs_xml:xmlElement()], acl(), pid()) ->
+-spec process_grants([riak_cs_xml:xmlNode()], acl(), pid()) ->
     {ok, #acl_v2{}} |
     {error, invalid_argument} |
     {error, unresolved_grant_email}.
 process_grants([], Acl, _) ->
     {ok, Acl};
-process_grants([HeadElement | RestElements], Acl, RiakPid) ->
-    Content = HeadElement#xmlElement.content,
-    ElementName = HeadElement#xmlElement.name,
+process_grants([#xmlElement{content=Content,
+                            name=ElementName} |
+                RestElements], Acl, RiakPid) ->
     UpdAcl =
-             case ElementName of
-        'Grant' ->
-            Grant = process_grant(Content, {{"", ""}, []}, Acl?ACL.owner, RiakPid),
-            case Grant of
-                {error, _} ->
-                    Grant;
-                _ ->
+        case ElementName of
+            'Grant' ->
+                Grant = process_grant(Content, {{"", ""}, []}, Acl?ACL.owner, RiakPid),
+                case Grant of
+                    {error, _} ->
+                        Grant;
+                    _ ->
                     Acl?ACL{grants=add_grant(Grant, Acl?ACL.grants)}
-            end;
-        _ ->
-            _ = lager:debug("Encountered unexpected grants element: ~p", [ElementName]),
-            Acl
-    end,
+                end;
+            _ ->
+                _ = lager:debug("Encountered unexpected grants element: ~p", [ElementName]),
+                Acl
+        end,
     case UpdAcl of
-        {error, _} ->
-            UpdAcl;
-        _ ->
-            process_grants(RestElements, UpdAcl, RiakPid)
-    end.
+        {error, _} -> UpdAcl;
+        _ -> process_grants(RestElements, UpdAcl, RiakPid)
+    end;
+process_grants([_ | RestElements], Acl, RiakPid) ->
+    %% this pattern matches with text, comment, etc..    
+    process_grants(RestElements, Acl, RiakPid).
 
 %% @doc Process an XML element containing the grants for the acl.
 -spec process_grant([riak_cs_xml:xmlElement()], acl_grant(), acl_owner(), pid()) ->
     acl_grant() | {error, atom()}.
 process_grant([], Grant, _, _) ->
     Grant;
-process_grant([HeadElement | RestElements], Grant, AclOwner, RiakPid) ->
-    Content = HeadElement#xmlElement.content,
-    ElementName = HeadElement#xmlElement.name,
+process_grant([#xmlElement{content=Content,
+                           name=ElementName} |
+               RestElements], Grant, AclOwner, RiakPid) ->
     _ = lager:debug("ElementName: ~p", [ElementName]),
     _ = lager:debug("Content: ~p", [Content]),
     UpdGrant =
-               case ElementName of
-        'Grantee' ->
-            process_grantee(Content, Grant, AclOwner, RiakPid);
-        'Permission' ->
-            process_permission(Content, Grant);
-        _ ->
-            _ = lager:debug("Encountered unexpected grant element: ~p", [ElementName]),
-            Grant
-    end,
+        case ElementName of
+            'Grantee' ->
+                process_grantee(Content, Grant, AclOwner, RiakPid);
+            'Permission' ->
+                process_permission(Content, Grant);
+            _ ->
+                _ = lager:debug("Encountered unexpected grant element: ~p", [ElementName]),
+                Grant
+        end,
     case UpdGrant of
         {error, _}=Error ->
             Error;
         _ ->
             process_grant(RestElements, UpdGrant, AclOwner, RiakPid)
-    end.
+    end;
+process_grant([#xmlText{}|RestElements], Grant, Owner, RiakPid) ->
+    process_grant(RestElements, Grant, Owner, RiakPid).
 
 %% @doc Process an XML element containing information about
 %% an ACL permission grantee.
@@ -609,10 +623,10 @@ process_grantee([], {{[], CanonicalId}, _Perms}, _, RiakPid) ->
     end;
 process_grantee([], Grant, _, _) ->
     Grant;
-process_grantee([HeadElement | RestElements], Grant, AclOwner, RiakPid) ->
-    [Content] = HeadElement#xmlElement.content,
+process_grantee([#xmlElement{content=[Content],
+                             name=ElementName} |
+                 RestElements], Grant, AclOwner, RiakPid) ->
     Value = Content#xmlText.value,
-    ElementName = HeadElement#xmlElement.name,
     case ElementName of
         'ID' ->
             _ = lager:debug("ID value: ~p", [Value]),
@@ -649,7 +663,9 @@ process_grantee([HeadElement | RestElements], Grant, AclOwner, RiakPid) ->
             UpdGrant;
         _ ->
             process_grantee(RestElements, UpdGrant, AclOwner, RiakPid)
-    end.
+    end;
+process_grantee([#xmlText{}|RestElements], Grant, Owner, RiakPid) ->
+    process_grant(RestElements, Grant, Owner, RiakPid).
 
 %% @doc Process an XML element containing information about
 %% an ACL permission.
@@ -657,12 +673,10 @@ process_grantee([HeadElement | RestElements], Grant, AclOwner, RiakPid) ->
 process_permission([Content], Grant) ->
     Value = list_to_existing_atom(Content#xmlText.value),
     {Grantee, Perms} = Grant,
-    case lists:member(Value, Perms) of
-        true ->
-            UpdPerms = Perms;
-        false ->
-            UpdPerms = [Value | Perms]
-    end,
+    UpdPerms = case lists:member(Value, Perms) of
+                   true -> Perms;
+                   false -> [Value | Perms]
+               end,
     {Grantee, UpdPerms}.
 
 
