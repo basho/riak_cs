@@ -361,6 +361,7 @@ operation(#wm_log_data{method=Method}) ->
 stats(#wm_log_data{response_code=CodeOrCodeAndReason,
                    notes=Notes,
                    headers=Headers,
+                   method=Method,
                    response_length=Length}) ->
     Code = extract_code(CodeOrCodeAndReason),
     Prefix = if Code >= 500 -> <<"SystemError">>;
@@ -377,6 +378,11 @@ stats(#wm_log_data{response_code=CodeOrCodeAndReason,
                           _                      -> 0
                       end
               end,
+    BytesOut = case Method of
+                   'HEAD' -> 0;
+                   _ -> Length
+               end,
+
     BytesOutType = case lists:keyfind(?EXPECT_BYTES_OUT, 1, Notes) of
                        {?EXPECT_BYTES_OUT, EL} when EL /= Length ->
                            <<"Incomplete">>;
@@ -387,8 +393,8 @@ stats(#wm_log_data{response_code=CodeOrCodeAndReason,
     lists:flatten(
       [[{iolist_to_binary([Prefix,<<"BytesIn">>]), BytesIn}
         || BytesIn > 0],
-       [{iolist_to_binary([Prefix,<<"BytesOut">>,BytesOutType]), Length}
-        || Length > 0],
+       [{iolist_to_binary([Prefix,<<"BytesOut">>,BytesOutType]), BytesOut}
+        || BytesOut > 0],
        {iolist_to_binary([Prefix,<<"Count">>]), 1}]).
 
 %% @doc Extract the HTTP response code from either
