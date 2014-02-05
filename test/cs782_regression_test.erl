@@ -42,7 +42,7 @@ well_indented_xml() ->
         "    </Grant>"
         "  </AccessControlList>"
         "</AccessControlPolicy>",
-    io_lib:format(Xml, []).
+    Xml.
 
 well_indented_xml_test() ->
     Xml = well_indented_xml(),

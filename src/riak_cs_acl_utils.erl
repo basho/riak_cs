@@ -499,6 +499,8 @@ process_acl_contents([#xmlElement{content=Content,
         {error, _}=Error ->
             Error
     end;
+process_acl_contents([#xmlComment{} | RestElements], Acl, RiakPid) ->
+    process_acl_contents(RestElements, Acl, RiakPid);
 process_acl_contents([#xmlText{value=" "} | RestElements], Acl, RiakPid) ->
     %% skip normalized space
     process_acl_contents(RestElements, Acl, RiakPid).
@@ -571,8 +573,9 @@ process_grants([#xmlElement{content=Content,
         {error, _} -> UpdAcl;
         _ -> process_grants(RestElements, UpdAcl, RiakPid)
     end;
-process_grants([_ | RestElements], Acl, RiakPid) ->
-    %% this pattern matches with text, comment, etc..    
+process_grants([ #xmlComment{} | RestElements], Acl, RiakPid) ->
+    process_grants(RestElements, Acl, RiakPid);
+process_grants([ #xmlText{} | RestElements], Acl, RiakPid) ->
     process_grants(RestElements, Acl, RiakPid).
 
 %% @doc Process an XML element containing the grants for the acl.
@@ -601,6 +604,8 @@ process_grant([#xmlElement{content=Content,
         _ ->
             process_grant(RestElements, UpdGrant, AclOwner, RiakPid)
     end;
+process_grant([#xmlComment{}|RestElements], Grant, Owner, RiakPid) ->
+    process_grant(RestElements, Grant, Owner, RiakPid);
 process_grant([#xmlText{}|RestElements], Grant, Owner, RiakPid) ->
     process_grant(RestElements, Grant, Owner, RiakPid).
 
@@ -767,5 +772,30 @@ canned_acl_test() ->
                    {{"owner1", "OWNERID1"},  ['FULL_CONTROL']}], _}, BucketOwnerFCAcl2),
     ?assertMatch({acl_v2,{"tester1","TESTID1","TESTKEYID1"},
                   [{{"tester1","TESTID1"},['FULL_CONTROL']}], _}, BucketOwnerFCAcl3).
+
+
+indented_xml_with_comments() ->
+    Xml="<!-- comments here --> <AccessControlPolicy> <!-- comments here -->"
+        "  <Owner> <!-- blah blah blah -->"
+        "    <ID>eb874c6afce06925157eda682f1b3c6eb0f3b983bbee3673ae62f41cce21f6b1</ID>"
+        " <!-- c -->   <DisplayName>admin</DisplayName> <!--"
+        " \n --> </Owner>"
+        "  <AccessControlList> <!-- c -->"
+        "    <Grant>  <!-- c -->"
+        "      <Grantee xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"CanonicalUser\">"
+        "    <!-- c -->     <ID>eb874c6afce06925157eda682f1b3c6eb0f3b983bbee3673ae62f41cce21f6b1</ID>  <!-- c -->"
+        "        <DisplayName>admin</DisplayName> <!-- c -->"
+        "      </Grantee> <!-- c -->"
+        "      <Permission>FULL_CONTROL</Permission> <!-- c -->"
+        "    </Grant> <!-- c -->"
+        "  </AccessControlList> <!-- c -->"
+        "</AccessControlPolicy>    <!-- c -->",
+    Xml.
+comment_space_test() ->
+    Xml = indented_xml_with_comments(),
+    %% if cs782 alive, error:{badrecord,xmlElement} thrown here.
+    {ok, ?ACL{} = _Acl} = riak_cs_acl_utils:acl_from_xml(Xml, boom, foo),
+    ok.
+
 
 -endif.
