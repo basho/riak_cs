@@ -191,9 +191,10 @@ content_types_accepted(RD, Ctx) ->
     %% e.g., PUT /ObjectName?partNumber=PartNumber&uploadId=UploadId
     riak_cs_mp_utils:make_content_types_accepted(RD, Ctx, accept_body).
 
-parse_body(Body) ->
+parse_body(Body0) ->
     try
-        {ParsedData, _Rest} = xmerl_scan:string(re:replace(Body, "&quot;", "", [global, {return, list}]), []),
+        Body = re:replace(Body0, "&quot;", "", [global, {return, list}]),
+        {ok, ParsedData} = riak_cs_xml:scan(Body),
         #xmlElement{name='CompleteMultipartUpload'} = ParsedData,
         Nums = [list_to_integer(T#xmlText.value) ||
                    T <- xmerl_xpath:string("//CompleteMultipartUpload/Part/PartNumber/text()", ParsedData)],

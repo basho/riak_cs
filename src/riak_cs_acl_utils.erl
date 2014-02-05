@@ -46,8 +46,6 @@
          validate_acl/2
         ]).
 
--type xmlElement() :: #xmlElement{}.
--type xmlText() :: #xmlText{}.
 
 %% ===================================================================
 %% Public API
@@ -301,11 +299,15 @@ fail_either({ok, Val}, {_OkOrError, Acc}) ->
 %% an internal representation.
 -spec acl_from_xml(string(), string(), pid()) -> {ok, #acl_v2{}} |
     {error, 'invalid_argument'} |
-    {error, 'unresolved_grant_email'}.
+    {error, 'unresolved_grant_email'} |
+    {error, 'malformed_acl_error'}.
 acl_from_xml(Xml, KeyId, RiakPid) ->
-    {ParsedData, _Rest} = xmerl_scan:string(Xml, []),
-    BareAcl = ?ACL{owner={[], [], KeyId}},
-    process_acl_contents(ParsedData#xmlElement.content, BareAcl, RiakPid).
+    case riak_cs_xml:scan(Xml) of
+        {error, malformed_xml} -> {error, malformed_acl_error};
+        {ok, ParsedData} ->
+            BareAcl = ?ACL{owner={[], [], KeyId}},
+            process_acl_contents(ParsedData#xmlElement.content, BareAcl, RiakPid)
+    end.
 
 %% @doc Convert an internal representation of an ACL
 %% into XML.
@@ -471,7 +473,7 @@ name_for_canonical(CanonicalId, RiakPid) ->
     end.
 
 %% @doc Process the top-level elements of the
--spec process_acl_contents([xmlElement()], acl(), pid()) ->
+-spec process_acl_contents([riak_cs_xml:xmlElement()], acl(), pid()) ->
     {ok, #acl_v2{}} |
     {error, invalid_argument} |
     {error, unresolved_grant_email}.
@@ -499,7 +501,7 @@ process_acl_contents([HeadElement | RestElements], Acl, RiakPid) ->
     end.
 
 %% @doc Process an XML element containing acl owner information.
--spec process_owner([xmlElement()], acl(), pid()) -> {ok, #acl_v2{}}.
+-spec process_owner([riak_cs_xml:xmlElement()], acl(), pid()) -> {ok, #acl_v2{}}.
 process_owner([], Acl=?ACL{owner={[], CanonicalId, KeyId}}, RiakPid) ->
     {ok, DisplayName} = name_for_canonical(CanonicalId, RiakPid),
     case name_for_canonical(CanonicalId, RiakPid) of
@@ -531,7 +533,7 @@ process_owner([HeadElement | RestElements], Acl, RiakPid) ->
     process_owner(RestElements, Acl?ACL{owner=UpdOwner}, RiakPid).
 
 %% @doc Process an XML element containing the grants for the acl.
--spec process_grants([xmlElement()], acl(), pid()) ->
+-spec process_grants([riak_cs_xml:xmlElement()], acl(), pid()) ->
     {ok, #acl_v2{}} |
     {error, invalid_argument} |
     {error, unresolved_grant_email}.
@@ -562,7 +564,7 @@ process_grants([HeadElement | RestElements], Acl, RiakPid) ->
     end.
 
 %% @doc Process an XML element containing the grants for the acl.
--spec process_grant([xmlElement()], acl_grant(), acl_owner(), pid()) ->
+-spec process_grant([riak_cs_xml:xmlElement()], acl_grant(), acl_owner(), pid()) ->
     acl_grant() | {error, atom()}.
 process_grant([], Grant, _, _) ->
     Grant;
@@ -590,7 +592,7 @@ process_grant([HeadElement | RestElements], Grant, AclOwner, RiakPid) ->
 
 %% @doc Process an XML element containing information about
 %% an ACL permission grantee.
--spec process_grantee([xmlElement()], acl_grant(), acl_owner(), pid()) ->
+-spec process_grantee([riak_cs_xml:xmlElement()], acl_grant(), acl_owner(), pid()) ->
     acl_grant() |
     {error, invalid_argument} |
     {error, unresolved_grant_email}.
@@ -651,7 +653,7 @@ process_grantee([HeadElement | RestElements], Grant, AclOwner, RiakPid) ->
 
 %% @doc Process an XML element containing information about
 %% an ACL permission.
--spec process_permission([xmlText()], acl_grant()) -> acl_grant().
+-spec process_permission([riak_cs_xml:xmlText()], acl_grant()) -> acl_grant().
 process_permission([Content], Grant) ->
     Value = list_to_existing_atom(Content#xmlText.value),
     {Grantee, Perms} = Grant,

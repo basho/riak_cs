@@ -30,9 +30,11 @@
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 -endif.
+-include_lib("xmerl/include/xmerl.hrl").
 
 %% Public API
--export([export_xml/1,
+-export([scan/1,
+         export_xml/1,
          to_xml/1]).
 
 -define(XML_SCHEMA_INSTANCE, "http://www.w3.org/2001/XMLSchema-instance").
@@ -42,9 +44,33 @@
 -type internal_node() :: {atom(), [internal_node() | external_node()]} |
                          {atom(), attributes(), [internal_node() | external_node()]}.
 
+%% these types should be defined in xmerl.hrl or xmerl.erl
+%% for now they're defined here for convenience.
+-type xmlElement() :: #xmlElement{}.
+-type xmlText() :: #xmlText{}.
+-type xmlComment() :: #xmlComment{}.
+-type xmlPI() :: #xmlPI{}.
+-type xmlDocument() :: #xmlDocument{}.
+-type xmlNode() ::  xmlElement() | xmlText() | xmlComment() |
+                    xmlPI() | xmlDocument().
+-export_type([xmlNode/0]).
+
 %% ===================================================================
 %% Public API
 %% ===================================================================
+
+
+%% @doc parse XML and produce xmlElement (other comments and else are bad)
+%% in R15B03 (and maybe later version), xmerl_scan:string/2 may return any
+%% xml nodes, such as defined as xmlNode() above. It it unsafe because
+%% `String` is the Body sent from client, which can be anything.
+-spec scan(string()) -> {ok, xmlElement()} | {error, malformed_xml}.
+scan(String) ->
+    case catch xmerl_scan:string(String, []) of
+        {'EXIT', _} -> {error, malformed_xml};
+        { #xmlElement{} = ParsedData, _Rest} -> {ok, ParsedData};
+        _ -> {error, malformed_xml}
+    end.
 
 %% This function is temporary and should be removed once all XML
 %% handling has been moved into this module.
