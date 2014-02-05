@@ -80,7 +80,7 @@ invalid_digest_response(ContentMd5, RD, Ctx) ->
                {'Content-MD5', [ContentMd5]},
                {'HostId', ["host-id"]}
               ]},
-    Body = riak_cs_xml:export_xml([XmlDoc]),
+    Body = riak_cs_xml:to_xml([XmlDoc]),
     UpdRD = wrq:set_resp_body(Body,
                               wrq:set_resp_header("Content-Type",
                                                   ?XML_TYPE,
