@@ -501,7 +501,6 @@ process_acl_contents([HeadElement | RestElements], Acl, RiakPid) ->
 %% @doc Process an XML element containing acl owner information.
 -spec process_owner([xmlElement()], acl(), pid()) -> {ok, #acl_v2{}}.
 process_owner([], Acl=?ACL{owner={[], CanonicalId, KeyId}}, RiakPid) ->
-    {ok, DisplayName} = name_for_canonical(CanonicalId, RiakPid),
     case name_for_canonical(CanonicalId, RiakPid) of
         {ok, DisplayName} ->
             {ok, Acl?ACL{owner={DisplayName, CanonicalId, KeyId}}};
