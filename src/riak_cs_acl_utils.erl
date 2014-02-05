@@ -512,23 +512,29 @@ process_owner([], Acl, _) ->
     {ok, Acl};
 process_owner([HeadElement | RestElements], Acl, RiakPid) ->
     Owner = Acl?ACL.owner,
-    [Content] = HeadElement#xmlElement.content,
-    Value = Content#xmlText.value,
-    ElementName = HeadElement#xmlElement.name,
-    case ElementName of
-        'ID' ->
-            _ = lager:debug("Owner ID value: ~p", [Value]),
-            {OwnerName, _, OwnerKeyId} = Owner,
-            UpdOwner = {OwnerName, Value, OwnerKeyId};
-        'DisplayName' ->
-            _ = lager:debug("Owner Name content: ~p", [Value]),
-            {_, OwnerId, OwnerKeyId} = Owner,
-            UpdOwner = {Value, OwnerId, OwnerKeyId};
-        _ ->
-            _ = lager:debug("Encountered unexpected element: ~p", [ElementName]),
-            UpdOwner = Owner
-    end,
-    process_owner(RestElements, Acl?ACL{owner=UpdOwner}, RiakPid).
+    case HeadElement#xmlElement.content of
+        [Content] ->
+            Value = Content#xmlText.value,
+            ElementName = HeadElement#xmlElement.name,
+            UpdOwner =
+                case ElementName of
+                    'ID' ->
+                        _ = lager:debug("Owner ID value: ~p", [Value]),
+                        {OwnerName, _, OwnerKeyId} = Owner,
+                        {OwnerName, Value, OwnerKeyId};
+                    'DisplayName' ->
+                        _ = lager:debug("Owner Name content: ~p", [Value]),
+                        {_, OwnerId, OwnerKeyId} = Owner,
+                        {Value, OwnerId, OwnerKeyId};
+                    _ ->
+                        _ = lager:debug("Encountered unexpected element: ~p", [ElementName]),
+                        Owner
+                end,
+            process_owner(RestElements, Acl?ACL{owner=UpdOwner}, RiakPid);
+        [] ->
+            _ = lager:debug("Owner Element Empty: ~p", [Owner]),
+            process_owner(RestElements, Acl, RiakPid)
+    end.
 
 %% @doc Process an XML element containing the grants for the acl.
 -spec process_grants([xmlElement()], acl(), pid()) ->
