@@ -26,6 +26,7 @@
 -export([confirm/0]).
 
 -include_lib("erlcloud/include/erlcloud_aws.hrl").
+-include_lib("xmerl/include/xmerl.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 -define(BUCKET, "access-stats-test-1").
@@ -37,7 +38,8 @@ confirm() ->
     {UserConfig, {_RiakNodes, _CSNodes, _Stanchion}} = rtcs:setup(4, Config),
     {Begin, End} = generate_some_accesses(UserConfig),
     flush_access_stats(),
-    assert_access_stats(UserConfig, {Begin, End}),
+    assert_access_stats(json, UserConfig, {Begin, End}),
+    assert_access_stats(xml, UserConfig, {Begin, End}),
     pass.
 
 generate_some_accesses(UserConfig) ->
@@ -66,46 +68,69 @@ flush_access_stats() ->
     ExpectRegexp = "0 more archives to flush\nAll access logs were flushed.\n$",
     ?assertMatch({match, _}, re:run(Res, ExpectRegexp)).
 
-assert_access_stats(UserConfig, {Begin, End}) ->
+assert_access_stats(Format, UserConfig, {Begin, End}) ->
     KeyId = UserConfig#aws_config.access_key_id,
-    StatsKey = lists:flatten(["usage/", KeyId, "/aj/", Begin, "/", End, "/"]),
+    FormatInstruction = case Format of
+                            json -> "j";
+                            xml -> "x"
+                        end,
+    StatsKey = lists:flatten(["usage/", KeyId, "/a", FormatInstruction, "/",
+                              Begin, "/", End, "/"]),
     GetResult = erlcloud_s3:get_object("riak-cs", StatsKey, UserConfig),
     lager:debug("GET Access stats response: ~p", [GetResult]),
-    Usage = mochijson2:decode(proplists:get_value(content, GetResult)),
-    lager:debug("Usage Response: ~p", [Usage]),
-    Samples = node_samples_from_usage(<<"rcs-dev1@127.0.0.1">>, Usage),
-    lager:info("Access samples: ~p", [Samples]),
+    Content = proplists:get_value(content, GetResult),
+    Samples = node_samples_from_content(Format, "rcs-dev1@127.0.0.1", Content),
+    lager:debug("Access samples (~s): ~p", [Format, Samples]),
 
-    ?assertEqual(  1, sum_samples([<<"BucketCreate">>, <<"Count">>], Samples)),
-    ?assertEqual(  2, sum_samples([<<"KeyWrite">>, <<"Count">>], Samples)),
-    ?assertEqual(200, sum_samples([<<"KeyWrite">>, <<"BytesIn">>], Samples)),
-    ?assertEqual(  0, sum_samples([<<"KeyWrite">>, <<"BytesOut">>], Samples)),
-    ?assertEqual(  1, sum_samples([<<"KeyRead">>, <<"Count">>], Samples)),
-    ?assertEqual(  0, sum_samples([<<"KeyRead">>, <<"BytesIn">>], Samples)),
-    ?assertEqual(100, sum_samples([<<"KeyRead">>, <<"BytesOut">>], Samples)),
-    ?assertEqual(  1, sum_samples([<<"BucketRead">>, <<"Count">>], Samples)),
-    ?assertEqual(  1, sum_samples([<<"KeyDelete">>, <<"Count">>], Samples)),
-    ?assertEqual(  1, sum_samples([<<"BucketDelete">>, <<"Count">>], Samples)),
+    ?assertEqual(  1, sum_samples(Format, "BucketCreate", "Count", Samples)),
+    ?assertEqual(  2, sum_samples(Format, "KeyWrite",     "Count", Samples)),
+    ?assertEqual(200, sum_samples(Format, "KeyWrite",     "BytesIn", Samples)),
+    ?assertEqual(  0, sum_samples(Format, "KeyWrite",     "BytesOut", Samples)),
+    ?assertEqual(  1, sum_samples(Format, "KeyRead",      "Count", Samples)),
+    ?assertEqual(  0, sum_samples(Format, "KeyRead",      "BytesIn", Samples)),
+    ?assertEqual(100, sum_samples(Format, "KeyRead",      "BytesOut", Samples)),
+    ?assertEqual(  1, sum_samples(Format, "BucketRead",   "Count", Samples)),
+    ?assertEqual(  1, sum_samples(Format, "KeyDelete",    "Count", Samples)),
+    ?assertEqual(  1, sum_samples(Format, "BucketDelete", "Count", Samples)),
     pass.
 
-node_samples_from_usage(Node, Usage) ->
+node_samples_from_content(json, Node, Content) ->
+    Usage = mochijson2:decode(Content),
     ListOfNodeStats = rtcs:json_get([<<"Access">>, <<"Nodes">>], Usage),
     lager:debug("ListOfNodeStats: ~p", [ListOfNodeStats]),
-    [NodeStats | _] = lists:dropwhile(fun(NodeStats) ->
-                                              rtcs:json_get(<<"Node">>, NodeStats) =/= Node
-                                      end, ListOfNodeStats),
-    rtcs:json_get(<<"Samples">>, NodeStats).
+    NodeBin = list_to_binary(Node),
+    [NodeStats | _] = lists:dropwhile(
+                        fun(NodeStats) ->
+                                rtcs:json_get(<<"Node">>, NodeStats) =/= NodeBin
+                        end, ListOfNodeStats),
+    rtcs:json_get(<<"Samples">>, NodeStats);
+node_samples_from_content(xml, Node, Content) ->
+    {Usage, _Rest} = xmerl_scan:string(unicode:characters_to_list(Content, utf8)),
+    xmerl_xpath:string("/Usage/Access/Nodes/Node[@name='" ++ Node ++ "']/Sample", Usage).
+
+sum_samples(json, OperationType, StatsKey, Data) ->
+    sum_samples_json([list_to_binary(OperationType), list_to_binary(StatsKey)], Data);
+sum_samples(xml, OperationType, StatsKey, Data) ->
+    sum_samples_xml(OperationType, StatsKey, Data).
 
 %% Sum up statistics entries in possibly multiple samples
-sum_samples(Keys, Samples) ->
-    sum_samples(Keys, Samples, 0).
-sum_samples(_Keys, [], Sum) ->
+sum_samples_json(Keys, Samples) ->
+    sum_samples_json(Keys, Samples, 0).
+sum_samples_json(_Keys, [], Sum) ->
     Sum;
-sum_samples(Keys, [Sample | Samples], Sum) ->
+sum_samples_json(Keys, [Sample | Samples], Sum) ->
     InSample = case rtcs:json_get(Keys, Sample) of
                    notfound ->
                        0;
                    Value when is_integer(Value) ->
                        Value
                   end,
-    sum_samples(Keys, Samples, Sum + InSample).
+    sum_samples_json(Keys, Samples, Sum + InSample).
+
+sum_samples_xml(OperationType, StatsKey, Samples) ->
+    lists:sum([list_to_integer(T#xmlText.value) ||
+                  Sample <- Samples,
+                  T <- xmerl_xpath:string(
+                         "/Sample/Operation[@type='" ++ OperationType ++ "']/" ++
+                             StatsKey ++ " /text()",
+                         Sample)]).
