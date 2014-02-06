@@ -51,6 +51,8 @@ generate_some_accesses(UserConfig) ->
     _ = erlcloud_s3:put_object(?BUCKET, ?KEY, Block, UserConfig),
     %% Get 100-byte object, once
     _ = erlcloud_s3:get_object(?BUCKET, ?KEY, UserConfig),
+    %% Head Object
+    _ = erlcloud_s3:head_object(?BUCKET, ?KEY, UserConfig),
     %% List objects (GET bucket)
     _ = erlcloud_s3:list_objects(?BUCKET, UserConfig),
     %% Delete object
@@ -83,6 +85,8 @@ assert_access_stats(UserConfig, {Begin, End}) ->
     ?assertEqual(  1, sum_samples([<<"KeyRead">>, <<"Count">>], Samples)),
     ?assertEqual(  0, sum_samples([<<"KeyRead">>, <<"BytesIn">>], Samples)),
     ?assertEqual(100, sum_samples([<<"KeyRead">>, <<"BytesOut">>], Samples)),
+    ?assertEqual(  1, sum_samples([<<"KeyStat">>, <<"Count">>], Samples)),
+    ?assertEqual(  0, sum_samples([<<"KeyStat">>, <<"BytesOut">>], Samples)),
     ?assertEqual(  1, sum_samples([<<"BucketRead">>, <<"Count">>], Samples)),
     ?assertEqual(  1, sum_samples([<<"KeyDelete">>, <<"Count">>], Samples)),
     ?assertEqual(  1, sum_samples([<<"BucketDelete">>, <<"Count">>], Samples)),
