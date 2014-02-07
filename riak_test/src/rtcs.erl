@@ -250,6 +250,9 @@ riakcs_etcpath(Prefix, N) ->
 riakcscmd(Path, N, Cmd) ->
     lists:flatten(io_lib:format("~s ~s", [riakcs_binpath(Path, N), Cmd])).
 
+riakcs_accesscmd(Path, N, Cmd) ->
+    lists:flatten(io_lib:format("~s-access ~s", [riakcs_binpath(Path, N), Cmd])).
+
 stanchion_binpath(Prefix) ->
     io_lib:format("~s/dev/stanchion/bin/stanchion", [Prefix]).
 
@@ -492,6 +495,11 @@ stop_stanchion() ->
     lager:info("Running ~p", [Cmd]),
     os:cmd(Cmd).
 
+flush_access(N) ->
+    Cmd = riakcs_accesscmd(rt_config:get(?CS_CURRENT), N, "flush"),
+    lager:info("Running ~p", [Cmd]),
+    os:cmd(Cmd).
+
 update_cs_config(Prefix, N, Config, {AdminKey, AdminSecret}) ->
     CSSection = proplists:get_value(riak_cs, Config),
     UpdConfig = [{riak_cs, update_admin_creds(CSSection, AdminKey, AdminSecret)} |
@@ -617,3 +625,21 @@ make_authorization(Method, Resource, ContentType, Config, Date) ->
     StringToSign = [Method, $\n, [], $\n, ContentType, $\n, Date, $\n, Resource],
     Signature = base64:encode_to_string(crypto:sha_mac(Config#aws_config.secret_access_key, StringToSign)),
     lists:flatten(["AWS ", Config#aws_config.access_key_id, $:, Signature]).
+
+datetime() ->
+    {{YYYY,MM,DD}, {H,M,S}} = calendar:universal_time(),
+    io_lib:format("~4..0B~2..0B~2..0BT~2..0B~2..0B~2..0BZ", [YYYY, MM, DD, H, M, S]).
+
+
+
+json_get(Key, Json) when is_binary(Key) ->
+    json_get([Key], Json);
+json_get([], Json) ->
+    Json;
+json_get([Key | Keys], {struct, JsonProps}) ->
+    case lists:keyfind(Key, 1, JsonProps) of
+        false ->
+            notfound;
+        {Key, Value} ->
+            json_get(Keys, Value)
+    end.

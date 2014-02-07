@@ -87,7 +87,7 @@ status(Pid, Timeout) ->
             %% the process's mailbox (modulo status query messages),
             %% since that's how ETS tables are transfered.
             [{message_queue_len, MessageCount}] =
-                process_info(whereis(?MODULE), [message_queue_len]),
+                process_info(Pid, [message_queue_len]),
             {ok, busy, [{message_queue_len, MessageCount}]};
         {'EXIT',{Reason,_}} ->
             {error, Reason}
@@ -142,7 +142,7 @@ handle_info({'ETS-TRANSFER', Table, _From, Slice}, _StateName, State) ->
 handle_info({'DOWN', _Mon, process, _Riak, _Reason}, StateName, State) ->
     {ok, NewRiak} = riak_connection(),
     NewMon = erlang:monitor(process, NewRiak),
-    gen_fsm:send_event(?MODULE, continue),
+    gen_fsm:send_event(self(), continue),
     {next_state, StateName, State#state{riak=NewRiak, mon=NewMon}};
 handle_info(_Info, StateName, State) ->
     {next_state, StateName, State}.
@@ -220,7 +220,7 @@ cleanup_socket(Pid) ->
     riakc_pb_socket:stop(Pid).
 
 continue(State) ->
-    gen_fsm:send_event(?MODULE, continue),
+    gen_fsm:send_event(self(), continue),
     {next_state, archiving, State}.
 
 archive_user(User, Riak, Table, Slice) ->
