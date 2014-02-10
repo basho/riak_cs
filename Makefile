@@ -12,8 +12,6 @@ PULSE_TESTS = riak_cs_get_fsm_pulse
 
 .PHONY: rel stagedevrel deps test depgraph graphviz all compile
 
-include tools.mk
-
 all: compile
 
 compile: deps
@@ -197,3 +195,5 @@ package: package.src
 
 pkgclean: distclean
 	rm -rf package
+
+include tools.mk
