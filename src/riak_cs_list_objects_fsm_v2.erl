@@ -217,14 +217,40 @@ handle_done(State=#state{object_buffer=ObjectBuffer,
 
     {NewManis, NewPrefixes} =
     riak_cs_list_objects_utils:filter_prefix_keys(ObjectPrefixTuple, Request),
-    ReachedEnd = ObjectBufferLength < NumKeysRequested,
 
+    ReachedEnd = reached_end_of_keyspace(ObjectBufferLength,
+                                         NumKeysRequested,
+                                         Active,
+                                         Request?LOREQ.prefix),
 
     NewStateData = RangeUpdatedStateData#state{objects=NewManis,
                                                common_prefixes=NewPrefixes,
                                                reached_end_of_keyspace=ReachedEnd,
                                                object_buffer=[]},
+    _ = lager:debug("Ranges: ~p", [NewStateData#state.object_list_ranges]),
     respond(NewStateData, NewManis, NewPrefixes).
+
+-spec reached_end_of_keyspace(non_neg_integer(),
+                              undefined | pos_integer(),
+                              list(lfs_manifest()),
+                              undefined | binary()) -> boolean().
+reached_end_of_keyspace(BufferLength, NumKeysRequested, _, _)
+  when BufferLength < NumKeysRequested ->
+    true;
+reached_end_of_keyspace(_, _, _ActiveObjects, undefined) ->
+    false;
+reached_end_of_keyspace(_BufferLength, _NumKeysRequested, [], _) ->
+    false;
+reached_end_of_keyspace(_, _, ActiveObjects, Prefix) ->
+    M = lists:last(ActiveObjects),
+    {_, LastKey} = M?MANIFEST.bkey,
+    PrefixLen = byte_size(Prefix),
+    case LastKey of
+        << Prefix:PrefixLen/binary, _/binary >> ->
+            false;
+        _ ->
+            LastKey > Prefix
+    end.
 
 -spec update_profiling_and_last_request(state(), list(), integer()) ->
     state().
@@ -401,7 +427,7 @@ common_prefix_from_key(Key, Prefix, Delimiter) ->
 
 -spec make_start_key(state()) -> binary().
 make_start_key(#state{object_list_ranges=[], req=Request}) ->
-    make_start_key_from_marker(Request);
+    make_start_key_from_marker_and_prefix(Request);
 make_start_key(State=#state{object_list_ranges=PrevRanges,
                             common_prefixes=CommonPrefixes,
                             req=?LOREQ{prefix=Prefix,
@@ -420,14 +446,18 @@ make_start_key(State=#state{object_list_ranges=PrevRanges,
             Key
     end.
 
--spec make_start_key_from_marker(list_object_request()) -> binary().
-make_start_key_from_marker(?LOREQ{marker=undefined}) ->
+-spec make_start_key_from_marker_and_prefix(list_object_request()) -> binary().
+make_start_key_from_marker_and_prefix(?LOREQ{marker=undefined,
+                                             prefix=undefined}) ->
     <<0:8/integer>>;
-make_start_key_from_marker(?LOREQ{marker=Marker,
-                                  delimiter=undefined}) ->
+make_start_key_from_marker_and_prefix(?LOREQ{marker=undefined,
+                                             prefix=Prefix}) ->
+    Prefix;
+make_start_key_from_marker_and_prefix(?LOREQ{marker=Marker,
+                                             delimiter=undefined}) ->
     Marker;
-make_start_key_from_marker(?LOREQ{marker=Marker,
-                                  delimiter=Delimiter}) ->
+make_start_key_from_marker_and_prefix(?LOREQ{marker=Marker,
+                                             delimiter=Delimiter}) ->
     DelSize = byte_size(Delimiter),
     case binary:longest_common_suffix([Marker, Delimiter]) of
         DelSize ->
