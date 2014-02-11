@@ -48,18 +48,33 @@
 %%====================================================================
 
 eqc_test_() ->
-    [
-     ?_assert(quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_skip_past_prefix_and_delimiter())))),
-     ?_assert(quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_prefix_must_be_in_between())))),
-     {timeout, 10*60, % 10min.
-      ?_assert(quickcheck(numtests(
-                            ?TEST_ITERATIONS,
-                            ?QC_OUT(prop_list_all_active_keys_without_delimiter()))))},
-     {timeout, 10*60, % 10min.
-      ?_assert(quickcheck(numtests(
-                            ?TEST_ITERATIONS,
-                            ?QC_OUT(prop_list_all_active_keys_with_delimiter()))))}
-    ].
+    {spawn,
+     [
+      {setup,
+       fun setup/0,
+       fun cleanup/1,
+       [
+        ?_assert(quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_skip_past_prefix_and_delimiter())))),
+        ?_assert(quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_prefix_must_be_in_between())))),
+        {timeout, 10*60, % 10min.
+         ?_assert(quickcheck(numtests(
+                               ?TEST_ITERATIONS,
+                               ?QC_OUT(prop_list_all_active_keys_without_delimiter()))))},
+        {timeout, 10*60, % 10min.
+         ?_assert(quickcheck(numtests(
+                               ?TEST_ITERATIONS,
+                               ?QC_OUT(prop_list_all_active_keys_with_delimiter()))))}
+       ]
+      }
+     ]}.
+
+setup() ->
+    error_logger:tty(false),
+    error_logger:logfile({open, "riak_cs_list_objects_fsm_v2_eqc.log"}),
+    ok.
+
+cleanup(_) ->
+    ok.
 
 %% ====================================================================
 %% EQC Properties
