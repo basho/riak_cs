@@ -52,7 +52,7 @@
 -endif.
 
 -define(API_VERSION, 1).
--define(CAPABILITIES, [async_fold, index_reformat]).
+-define(CAPABILITIES, [async_fold, index_reformat, iterator_refresh]).
 
 -record (state, {backends :: [{atom(), atom(), term()}],
                  bprefix_list :: [{binary(), atom()}],
