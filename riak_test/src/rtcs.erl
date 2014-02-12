@@ -636,7 +636,7 @@ make_authorization(Method, Resource, ContentType, Config, Date) ->
 
 datetime() ->
     {{YYYY,MM,DD}, {H,M,S}} = calendar:universal_time(),
-    io_lib:format("~4..0B~2..0B~2..0BT~2..0B~2..0B~2..0BZ", [YYYY, MM, DD, H, M, S]).
+    lists:flatten(io_lib:format("~4..0B~2..0B~2..0BT~2..0B~2..0B~2..0BZ", [YYYY, MM, DD, H, M, S])).
 
 
 
