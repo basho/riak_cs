@@ -211,7 +211,7 @@ error_response(StatusCode, Code, Message, RD, Ctx) ->
                          {'Message', [Message]},
                          {'Resource', [string:strip(OrigResource, right, $/)]},
                          {'RequestId', [""]}]}],
-    respond(StatusCode, riak_cs_xml:export_xml(XmlDoc), RD, Ctx).
+    respond(StatusCode, riak_cs_xml:to_xml(XmlDoc), RD, Ctx).
 
 copy_object_response(Manifest, RD, Ctx) ->
     LastModified = riak_cs_wm_utils:to_iso_8601(Manifest?MANIFEST.created),
@@ -219,17 +219,17 @@ copy_object_response(Manifest, RD, Ctx) ->
     XmlDoc = [{'CopyObjectResponse',
                [{'LastModified', [LastModified]},
                 {'ETag', [ETag]}]}],
-    respond(200, riak_cs_xml:export_xml(XmlDoc), RD, Ctx).
+    respond(200, riak_cs_xml:to_xml(XmlDoc), RD, Ctx).
 
 no_such_upload_response(UploadId, RD, Ctx) ->
     XmlDoc = {'Error',
               [
                {'Code', [error_code(no_such_upload)]},
                {'Message', [error_message(no_such_upload)]},
-               {'UploadId', [binary_to_list(base64url:encode(UploadId))]},
+               {'UploadId', [base64url:encode(UploadId)]},
                {'HostId', ["host-id"]}
               ]},
-    Body = riak_cs_xml:export_xml([XmlDoc]),
+    Body = riak_cs_xml:to_xml([XmlDoc]),
     respond(status_code(no_such_upload), Body, RD, Ctx).
 
 invalid_digest_response(ContentMd5, RD, Ctx) ->
@@ -240,7 +240,7 @@ invalid_digest_response(ContentMd5, RD, Ctx) ->
                {'Content-MD5', [ContentMd5]},
                {'HostId', ["host-id"]}
               ]},
-    Body = riak_cs_xml:export_xml([XmlDoc]),
+    Body = riak_cs_xml:to_xml([XmlDoc]),
     respond(status_code(invalid_digest), Body, RD, Ctx).
 
 %% @doc Convert an error code string into its corresponding atom
