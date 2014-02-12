@@ -98,7 +98,7 @@ process_post(RD, Ctx=#context{local_context=LocalCtx,
                        [{'xmlns', "http://s3.amazonaws.com/doc/2006-03-01/"}],
                        [
                         {'Bucket', [binary_to_list(Bucket)]},
-                        {'Key', [Key]},
+                        {'Key', [unicode:characters_to_list(list_to_binary(Key), unicode)]},
                         {'UploadId', [binary_to_list(base64url:encode(UploadId))]}
                        ]
                      },
