@@ -253,6 +253,9 @@ riakcscmd(Path, N, Cmd) ->
 riakcs_accesscmd(Path, N, Cmd) ->
     lists:flatten(io_lib:format("~s-access ~s", [riakcs_binpath(Path, N), Cmd])).
 
+riakcs_storagecmd(Path, N, Cmd) ->
+    lists:flatten(io_lib:format("~s-storage ~s", [riakcs_binpath(Path, N), Cmd])).
+
 stanchion_binpath(Prefix) ->
     io_lib:format("~s/dev/stanchion/bin/stanchion", [Prefix]).
 
@@ -497,6 +500,11 @@ stop_stanchion() ->
 
 flush_access(N) ->
     Cmd = riakcs_accesscmd(rt_config:get(?CS_CURRENT), N, "flush"),
+    lager:info("Running ~p", [Cmd]),
+    os:cmd(Cmd).
+
+calculate_storage(N) ->
+    Cmd = riakcs_storagecmd(rt_config:get(?CS_CURRENT), N, "batch -r"),
     lager:info("Running ~p", [Cmd]),
     os:cmd(Cmd).
 
