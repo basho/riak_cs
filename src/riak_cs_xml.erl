@@ -82,8 +82,8 @@ export_xml(XmlDoc) ->
 -spec to_xml(term()) -> binary().
 to_xml(undefined) ->
     [];
-to_xml([]) ->
-    [];
+to_xml(SimpleForm) when is_list(SimpleForm) ->
+    simple_form_to_xml(SimpleForm);
 to_xml(?ACL{}=Acl) ->
     acl_to_xml(Acl);
 to_xml(#acl_v1{}=Acl) ->
@@ -100,6 +100,21 @@ to_xml({users, Users}) ->
 %% ===================================================================
 %% Internal functions
 %% ===================================================================
+
+%% @doc Convert simple form into XML.
+simple_form_to_xml(Elements) ->
+    XmlDoc = format_elements(Elements),
+    export_xml(XmlDoc).
+
+format_elements(Elements) ->
+    [format_element(E) || E <- Elements].
+
+format_element({Tag, Elements}) ->
+    {Tag, format_elements(Elements)};
+format_element({Tag, Attrs, Elements}) ->
+    {Tag, Attrs, format_elements(Elements)};
+format_element(Value) ->
+    format_value(Value).
 
 %% @doc Convert an internal representation of an ACL
 %% into XML.
