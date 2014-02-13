@@ -25,9 +25,11 @@
 -behavior(gen_server).
 
 -export([start_link/0]).
--export([allocate/1, status/0, update/1]).
+-export([allocate/1, status/0, input/1, refresh/0]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          terminate/2, code_change/3]).
+%% not used now...
+-export([calc_weight/2]).
 
 -ifdef(TEST).
 -compile(export_all).
@@ -57,34 +59,7 @@
          }).
 
 start_link() ->
-    %% FIXME: PUT dummy data
-    update(dummy_date_for_update()),
     gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
-
-dummy_date_for_update() ->
-    [{block, [
-               [{container_id, <<"block-A">>},
-                {free, 100},
-                {total, 200}
-               ],
-               [{container_id, <<"block-B">>},
-                {free, 150},
-                {total, 220}
-               ]
-              ]
-     },
-     {manifest, [
-                 [{container_id, <<"manifest-A">>},
-                  {free, 100},
-                  {total, 200}
-                 ],
-                 [{container_id, <<"manifest-B">>},
-                  {free, 150},
-                  {total, 220}
-                 ]
-                ]
-     }
-    ].
 
 -spec allocate(riak_cs_mc:pool_type()) -> {ok, riak_cs_mc:container_id()} |
                                           {error, term()}.
@@ -94,27 +69,32 @@ allocate(Type) ->
 status() ->
     gen_server:call(?SERVER, status).
 
-%% FreeInfo is expected nested proplists. Example:
-%% [{block, [[{container_id, <<"block-A">>},
-%%            {free, 100},
-%%            {total, 200}
-%%           ],
-%%           [{container_id, <<"block-B">>},
-%%            {free, 150},
-%%            {total, 220}
-%%           ]],
-%%  },
-%%  {manifest, [...]}
-%% ]
-update(FreeInfo) ->
-    calc_weight_and_put(FreeInfo).
+refresh() ->
+    gen_server:call(?SERVER, refresh).
+
+input(Json) ->
+    case json_to_usages(Json) of
+        {ok, Usages} ->
+            put_and_refresh(Usages);
+        {error, Reason} ->
+            lager:debug("riak_cs_mc_server:update failed: ~p~n", [Reason]),
+            {error, Reason}
+    end.
+
+put_and_refresh(Usages) ->
+    case put_usages(Usages) of
+        ok ->
+            refresh();
+        {error, Reason} ->
+            {error, Reason}
+    end.
 
 init([]) ->
     random:seed(os:timestamp()),
     %% FIXME
     %% 1. Schedule retreival (in loop)
     %% 2. Implement retreival and update functionality (use default connection pool)
-    NewState = get_usage(#state{}),
+    {ok, _, NewState} = refresh_usage(#state{}),
     schedule(),
     {ok, NewState}.
 
@@ -129,6 +109,13 @@ handle_call({allocate, Type}, _From, State)
     {reply, {ok, ContainerId}, State};
 handle_call(status, _From, #state{blocks=Blocks, manifests=Manifests} = State) ->
     {reply, {ok, [{blocks, Blocks}, {manifests, Manifests}]}, State};
+handle_call(refresh, _From, State) ->
+    case refresh_usage(State) of
+        {ok, Usages, NewState} ->
+            {reply, {ok, Usages}, NewState};
+        {error, Reason, NewState} ->
+            {reply, {error, Reason}, NewState}
+    end;
 handle_call(Request, _From, State) ->
     {reply, {error, {unknown_request, Request}}, State}.
 
@@ -178,7 +165,8 @@ decide_container(Point, [#usage{weight = Weight} | Usages]) ->
     decide_container(Point - Weight, Usages).
 
 %% Connect to default cluster and GET {riak-cs-mc, usage}, then recalculate weights.
-get_usage(State) ->
+%% TODO: GET operation can be blocked. Make it by spawned process to be able to allocate
+refresh_usage(State) ->
     case riak_cs_utils:riak_connection() of
         {ok, Riakc} ->
             Result = riakc_pb_socket:get(Riakc, ?USAGE_BUCKET, ?USAGE_KEY),
@@ -190,51 +178,28 @@ get_usage(State) ->
 
 handle_usage_info({error, Reason}, #state{failed_count = Count} = State) ->
     lager:error("Retrieval of cluster usage information failed. Reason: ~@", [Reason]),
-    State#state{failed_count = Count + 1};
+    {error, Reason, State#state{failed_count = Count + 1}};
 handle_usage_info({ok, Obj}, State) ->
     %% TODO: Should blocks and manifests fields be cleared here?
     %% TODO: How to handle siblings?
     [Value | _] = riakc_obj:get_values(Obj),
-    update_usage_state(binary_to_term(Value), State#state{failed_count = 0}).
+    Usages = binary_to_term(Value),
+    {ok, Usages, update_usage_state(Usages, State#state{failed_count = 0})}.
 
 update_usage_state([], State) ->
     State;
-update_usage_state([{Type, Usages} | Rest], State) ->
-    UsageForType = [usage_list_to_record(U, #usage{}) || U <- Usages],
+update_usage_state([{Type, UsagesForType} | Rest], State) ->
     NewState = case Type of
                    block ->
-                       State#state{blocks = UsageForType};
+                       State#state{blocks = UsagesForType};
                    manifest ->
-                       State#state{manifests = UsageForType}
+                       State#state{manifests = UsagesForType}
                end,
     update_usage_state(Rest, NewState).
-
-usage_list_to_record([], Rec) ->
-    Rec;
-usage_list_to_record([{container_id, C} | Rest], Rec) ->
-    usage_list_to_record(Rest, Rec#usage{container_id = C});
-usage_list_to_record([{weight, W} | Rest], Rec) ->
-    usage_list_to_record(Rest, Rec#usage{weight = W});
-usage_list_to_record([{free, F} | Rest], Rec) ->
-    usage_list_to_record(Rest, Rec#usage{free = F});
-usage_list_to_record([{total, T} | Rest], Rec) ->
-    usage_list_to_record(Rest, Rec#usage{total = T});
-%% Ignore unknown props
-usage_list_to_record([_ | Rest], Rec) ->
-    usage_list_to_record(Rest, Rec).
 
 schedule() ->
     %% TODO: GET to riak should be in async.
     'NOT_IMPLEMENTED_YET'.
-
-calc_weight_and_put(FreeInfo) ->
-    Weights = calc_weight(FreeInfo, []),
-    case riak_cs_utils:riak_connection() of
-        {ok, Riakc} ->
-            put_new_weight(Riakc, Weights);
-        {error, _Reason} = E ->
-            E
-    end.
 
 calc_weight([], Acc) ->
     Acc;
@@ -259,7 +224,73 @@ calc_weight(ContainerInfo) ->
             trunc((FreeRatio - Threashold) * ?WEIGHT_MULTIPLIER)
     end.
 
-put_new_weight(Riakc, Weights) ->
+json_to_usages({struct, JSON}) ->
+    json_to_usages(JSON, []).
+
+json_to_usages([], Usages) ->
+    {ok, Usages};
+json_to_usages([{TypeBin, Containers} | Rest], Usages) ->
+    case TypeBin of
+        <<"manifest">> ->
+            json_to_usages(manifest, Containers, Rest, Usages);
+        <<"block">> ->
+            json_to_usages(block, Containers, Rest, Usages);
+        _ ->
+            {error, {bad_request, TypeBin}}
+    end.
+
+json_to_usages(Type, Containers, RestTypes, Usages) ->
+    case json_to_usages_by_type(Type, Containers) of
+        {ok, TypeUsage} ->
+            json_to_usages(RestTypes, [TypeUsage | Usages]);
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
+json_to_usages_by_type(Type, Containers) ->
+    json_to_usages_by_type(Type, Containers, []).
+
+json_to_usages_by_type(Type, [], Usages) ->
+    {ok, {Type, Usages}};
+json_to_usages_by_type(Type, [Container | Rest], Usages) ->
+    case json_to_usage(Container) of
+        {ok, Usage} ->
+            json_to_usages_by_type(Type, Rest, [Usage | Usages]);
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
+json_to_usage({struct, Container}) ->
+    json_to_usage(Container, #usage{}).
+
+json_to_usage([], #usage{container_id=Id, weight=Weight} = Usage)
+  when Id =/= undefined andalso Weight =/= undefined ->
+    {ok, Usage};
+json_to_usage([], Usage) ->
+    {error, {bad_request, Usage}};
+json_to_usage([{<<"id">>, Id} | Rest], Usage)
+  when is_binary(Id) ->
+    json_to_usage(Rest, Usage#usage{container_id = Id});
+json_to_usage([{<<"weight">>, Weight} | Rest], Usage)
+  when is_integer(Weight) andalso Weight >= 0 ->
+    json_to_usage(Rest, Usage#usage{weight = Weight});
+json_to_usage([{<<"free">>, Free} | Rest], Usage) ->
+    json_to_usage(Rest, Usage#usage{free = Free});
+json_to_usage([{<<"total">>, Total} | Rest], Usage) ->
+    json_to_usage(Rest, Usage#usage{total = Total});
+json_to_usage(Json, _Usage) ->
+    {error, {bad_request, Json}}.
+
+%% Connect to default cluster and put usages to {riak-cs-mc, usage}
+put_usages(Usages) ->
+    case riak_cs_utils:riak_connection() of
+        {ok, Riakc} ->
+            update_to_new_usages(Riakc, Usages);
+        {error, _Reason} = E ->
+            E
+    end.
+
+update_to_new_usages(Riakc, Weights) ->
     Current = case riakc_pb_socket:get(Riakc, ?USAGE_BUCKET, ?USAGE_KEY) of
                   {error, notfound} ->
                       {ok, riakc_obj:new(?USAGE_BUCKET, ?USAGE_KEY)};
@@ -268,23 +299,24 @@ put_new_weight(Riakc, Weights) ->
                   {ok, Obj} ->
                       {ok, Obj}
               end,
-    update_value(Riakc, Weights, Current).
+    update_usages(Riakc, Weights, Current).
 
-update_value(Riakc, _Weights, {error, Reason}) ->
+update_usages(Riakc, _Usages, {error, Reason}) ->
     riak_cs_utils:close_riak_connection(Riakc),
     lager:error("Retrieval of cluster usage information failed. Reason: ~@", [Reason]),
     {error, Reason};
-update_value(Riakc, Weights, {ok, Obj}) ->
+update_usages(Riakc, Usages, {ok, Obj}) ->
     NewObj = riakc_obj:update_value(
                riakc_obj:update_metadata(Obj, dict:new()),
-               term_to_binary(Weights)),
+               term_to_binary(Usages)),
     PutRes = riakc_pb_socket:put(Riakc, NewObj),
     riak_cs_utils:close_riak_connection(Riakc),
     case PutRes of
         ok ->
             ok;
         {error, Reason} ->
-            lager:error("Update of cluster usage information failed. Reason: ~@", [Reason])
+            lager:error("Update of cluster usage information failed. Reason: ~@", [Reason]),
+            {error, Reason}
     end.
 
 %% ===================================================================
