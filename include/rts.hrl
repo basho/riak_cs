@@ -26,16 +26,16 @@
 -type usage_field_type() :: 'Count' | 'UserErrorCount' | 'SystemErrorCount'
                           | 'BytesIn' | 'UserErrorBytesIn' | 'SystemErrorBytesIn'
                           | 'BytesOut' | 'UserErrorBytesOut' | 'SystemErrorBytesOut'
-                          | 'BytesOutIncomplete'.
+                          | 'BytesOutIncomplete' | 'Objects'| 'Bytes'.
 
 -define(SUPPORTED_USAGE_FIELD,
         ['Count' , 'UserErrorCount' , 'SystemErrorCount',
          'BytesIn' , 'UserErrorBytesIn' , 'SystemErrorBytesIn',
          'BytesOut' , 'UserErrorBytesOut' , 'SystemErrorBytesOut',
-         'BytesOutIncomplete']).
+         'BytesOutIncomplete', 'Objects', 'Bytes']).
 
 -define(SUPPORTED_USAGE_FIELD_BIN,
         [<<"Count">> , <<"UserErrorCount">> , <<"SystemErrorCount">>,
          <<"BytesIn">> , <<"UserErrorBytesIn">> , <<"SystemErrorBytesIn">>,
          <<"BytesOut">> , <<"UserErrorBytesOut">> , <<"SystemErrorBytesOut">>,
-         <<"BytesOutIncomplete">>]).
+         <<"BytesOutIncomplete">>, <<"Objects">>, <<"Bytes">>]).
