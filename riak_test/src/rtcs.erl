@@ -602,12 +602,12 @@ update_user(UserConfig, Port, Resource, ContentType, UpdateDoc) ->
     lager:debug("Update user output=~p~n",[Output]),
     Output.
 
-list_users(UserConfig, Port, Resource, ContentType) ->
+list_users(UserConfig, Port, Resource, AcceptContentType) ->
     Date = httpd_util:rfc1123_date(),
     Cmd="curl -s -H 'Date: " ++ Date ++
-        "' -H 'Content-Type: " ++ ContentType ++
+        "' -H 'Accept: " ++ AcceptContentType ++
         "' -H 'Authorization: " ++
-        make_authorization("GET", Resource, ContentType, UserConfig, Date) ++
+        make_authorization("GET", Resource, "", UserConfig, Date) ++
         "' http://localhost:" ++ integer_to_list(Port) ++
         Resource,
     Delay = rt_config:get(rt_retry_delay),
