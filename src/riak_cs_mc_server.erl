@@ -176,8 +176,11 @@ refresh_usage(State) ->
             handle_usage_info(E, State)
     end.
 
+handle_usage_info({error, notfound}, State) ->
+    lager:debug("Cluster usage not found"),
+    {ok, [], State#state{failed_count = 0}};
 handle_usage_info({error, Reason}, #state{failed_count = Count} = State) ->
-    lager:error("Retrieval of cluster usage information failed. Reason: ~@", [Reason]),
+    lager:error("Retrieval of cluster usage information failed. Reason: ~p", [Reason]),
     {error, Reason, State#state{failed_count = Count + 1}};
 handle_usage_info({ok, Obj}, State) ->
     %% TODO: Should blocks and manifests fields be cleared here?
@@ -295,6 +298,7 @@ update_to_new_usages(Riakc, Weights) ->
                   {error, notfound} ->
                       {ok, riakc_obj:new(?USAGE_BUCKET, ?USAGE_KEY)};
                   {error, Other} ->
+                      lager:log(warning, self(), "Other: ~p~n", [Other]),
                       {error, Other};
                   {ok, Obj} ->
                       {ok, Obj}
@@ -303,7 +307,7 @@ update_to_new_usages(Riakc, Weights) ->
 
 update_usages(Riakc, _Usages, {error, Reason}) ->
     riak_cs_utils:close_riak_connection(Riakc),
-    lager:error("Retrieval of cluster usage information failed. Reason: ~@", [Reason]),
+    lager:error("Retrieval of cluster usage information failed. Reason: ~p", [Reason]),
     {error, Reason};
 update_usages(Riakc, Usages, {ok, Obj}) ->
     NewObj = riakc_obj:update_value(
