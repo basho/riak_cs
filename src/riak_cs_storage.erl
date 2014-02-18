@@ -46,10 +46,27 @@ sum_user(Riak, User) when is_binary(User) ->
 sum_user(Riak, User) when is_list(User) ->
     case riak_cs_utils:get_user(User, Riak) of
         {ok, {?RCS_USER{buckets=Buckets}, _UserObj}} ->
-            {ok, [ {B, sum_bucket(Riak, B)}
-                   || ?RCS_BUCKET{name=B} <- Buckets ]};
+            {ok, [ {B?RCS_BUCKET.name, sum_bucket_with_pool(Riak, B)}
+                   || B <- Buckets ]};
         {error, Error} ->
             {error, Error}
+    end.
+
+-spec sum_bucket_with_pool(pid(), cs_bucket()) -> term() | {error, term()}.
+sum_bucket_with_pool(DefaultRiakc, ?RCS_BUCKET{name=Name} = Bucket) ->
+    case riak_cs_mc:pool_name(manifest, Bucket) of
+        undefined ->
+            sum_bucket(DefaultRiakc, Name);
+        PoolName ->
+            %% TODO: riak_cs_utils:with_riak_connection(PoolName, Fun) is useful?
+            case riak_cs_utils:riak_connection(PoolName) of
+                {ok, Riakc} ->
+                    Res = sum_bucket(Riakc, Name),
+                    riak_cs_utils:close_riak_connection(Riakc),
+                    Res;
+                {error, Reason} ->
+                    {error, Reason}
+            end
     end.
 
 %% @doc Sum the number of bytes stored in active files in the named
