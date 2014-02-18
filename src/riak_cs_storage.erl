@@ -63,13 +63,30 @@ sum_user(Riak, User) when is_list(User) ->
 maybe_sum_bucket(Riak, User, Bucket) when is_list(Bucket)->
     maybe_sum_bucket(Riak, User, list_to_binary(Bucket));
 maybe_sum_bucket(Riak, User, Bucket) when is_binary(Bucket)->
-    case sum_bucket(Riak, Bucket) of
+    case sum_bucket_with_pool(Riak, Bucket) of
         {struct, _} = BucketUsage -> {Bucket, BucketUsage};
         {error, _} = E ->
             _ = lager:error("failed to calculate usage of "
                             "bucket '~s' of user '~s'. Reason: ~p",
                             [Bucket, User, E]),
             {Bucket, iolist_to_binary(io_lib:format("~p", [E]))}
+    end.
+
+-spec sum_bucket_with_pool(pid(), cs_bucket()) -> term() | {error, term()}.
+sum_bucket_with_pool(DefaultRiakc, ?RCS_BUCKET{name=Name} = Bucket) ->
+    case riak_cs_mc:pool_name(manifest, Bucket) of
+        undefined ->
+            sum_bucket(DefaultRiakc, Name);
+        PoolName ->
+            %% TODO: riak_cs_utils:with_riak_connection(PoolName, Fun) is useful?
+            case riak_cs_utils:riak_connection(PoolName) of
+                {ok, Riakc} ->
+                    Res = sum_bucket(Riakc, Name),
+                    riak_cs_utils:close_riak_connection(Riakc),
+                    Res;
+                {error, Reason} ->
+                    {error, Reason}
+            end
     end.
 
 %% @doc Sum the number of bytes stored in active files in the named

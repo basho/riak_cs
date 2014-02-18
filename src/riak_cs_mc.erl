@@ -86,9 +86,13 @@ register_props(Type, [{ContainerId, Address, Port} | Rest], PoolSpecs) ->
     register_props(Type, Rest, [NewPoolSpec | PoolSpecs]).
 
 %% Translate container ID in buckets and manifests to pool name.
--spec pool_name(pool_type(), undefined | container_id() | lfs_manifest()) -> atom().
+-spec pool_name(pool_type(),
+                undefined | riakc_obj:riakc_obj() | lfs_manifest() | cs_bucket()) ->
+                       atom().
 pool_name(block, Manifest) when is_record(Manifest, ?MANIFEST_REC) ->
     container_pool_name(block, container_id_from_manifest(Manifest));
+pool_name(manifest, ?RCS_BUCKET{} = Bucket) ->
+    container_pool_name(manifest, container_id_from_cs_bucket(Bucket));
 pool_name(manifest, BucketObj) ->
     container_pool_name(manifest, container_id_from_bucket(BucketObj)).
 
@@ -115,6 +119,12 @@ container_id_from_manifest(?MANIFEST{props = Props}) ->
         _ ->
             proplists:get_value(block_container, Props)
     end.
+
+-spec container_id_from_cs_bucket(cs_bucket()) -> undefined | container_id().
+container_id_from_cs_bucket(?RCS_BUCKET{manifest_container=undefined}) ->
+    application:get_env(riak_cs, default_manifest_container);
+container_id_from_cs_bucket(?RCS_BUCKET{manifest_container=ContainerId}) ->
+    ContainerId.
 
 -spec container_id_from_bucket(riakc_obj:riakc_obj()) -> undefined | container_id().
 container_id_from_bucket(BucketObj) ->
