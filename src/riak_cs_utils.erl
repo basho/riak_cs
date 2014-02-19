@@ -647,7 +647,8 @@ get_user(KeyId, RiakPid) ->
                 1 ->
                     Value = binary_to_term(riakc_obj:get_value(Obj)),
                     User = update_user_record(Value),
-                    {ok, {User, Obj}};
+                    Buckets = resolve_buckets([Value], [], KeepDeletedBuckets),
+                    {ok, {User?RCS_USER{buckets=Buckets}, Obj}};
                 0 ->
                     {error, no_value};
                 _ ->
@@ -1289,12 +1290,12 @@ fetch_user(Key, RiakPid) ->
     StrongOptions = [{r, all}, {pr, all}, {notfound_ok, false}],
     case riakc_pb_socket:get(RiakPid, ?USER_BUCKET, Key, StrongOptions) of
         {ok, Obj} ->
-            {ok, {Obj, true}};
+            {ok, {Obj, false}};
         {error, _} ->
             WeakOptions = [{r, quorum}, {pr, one}, {notfound_ok, false}],
             case riakc_pb_socket:get(RiakPid, ?USER_BUCKET, Key, WeakOptions) of
                 {ok, Obj} ->
-                    {ok, {Obj, false}};
+                    {ok, {Obj, true}};
                 {error, Reason} ->
                     {error, Reason}
             end
