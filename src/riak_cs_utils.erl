@@ -1263,13 +1263,15 @@ bucket_sorter(?RCS_BUCKET{name=Bucket1},
     Bucket1 =< Bucket2.
 
 %% @doc Return true if the last action for the bucket
-%% is deleted and the action occurred over 24 hours ago.
+%% is deleted and the action occurred over the configurable
+%% maximum prune-time.
 -spec cleanup_bucket(cs_bucket()) -> boolean().
 cleanup_bucket(?RCS_BUCKET{last_action=created}) ->
     false;
 cleanup_bucket(?RCS_BUCKET{last_action=deleted,
                             modification_time=ModTime}) ->
-    timer:now_diff(os:timestamp(), ModTime) > 86400.
+    timer:now_diff(os:timestamp(), ModTime) >
+    riak_cs_config:user_buckets_prune_time().
 
 %% @doc Strip off the user name portion of an email address
 -spec display_name(string()) -> string().
