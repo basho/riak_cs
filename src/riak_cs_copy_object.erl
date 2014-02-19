@@ -47,18 +47,15 @@ copy(CopyCtx) ->
 
 -spec get_content_md5(tuple() | binary()) -> string().
 get_content_md5({_MD5, _Str}) ->
-    %%Suffix = list_to_binary(Str),
-    %%<<MD5/binary, Suffix/binary>>,
     undefined;
 get_content_md5(MD5) ->
-    base64:encode(MD5).
+    base64:encode_to_string(MD5).
 
 -spec get_and_put(pid(), pid(), list()) -> ok | {error, term()}.
 get_and_put(GetPid, PutPid, MD5) ->
     case riak_cs_get_fsm:get_next_chunk(GetPid) of
         {done, <<>>} ->
-            riak_cs_put_fsm:finalize(PutPid, undefined);
-      %%      riak_cs_put_fsm:finalize(PutPid, binary_to_list(MD5));
+            riak_cs_put_fsm:finalize(PutPid, MD5);
         {chunk, Block} ->
             riak_cs_put_fsm:augment_data(PutPid, Block),
             get_and_put(GetPid, PutPid, MD5)
