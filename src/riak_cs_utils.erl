@@ -1271,7 +1271,11 @@ cleanup_bucket(?RCS_BUCKET{last_action=created}) ->
     false;
 cleanup_bucket(?RCS_BUCKET{last_action=deleted,
                             modification_time=ModTime}) ->
-    timer:now_diff(os:timestamp(), ModTime) >
+    %% the prune-time is specified in seconds, so we must
+    %% convert Erlang timestamps to seconds first
+    NowSeconds = second_resolution_timestamp(os:timestamp()),
+    ModTimeSeconds = second_resolution_timestamp(ModTime),
+    (NowSeconds - ModTimeSeconds) >
     riak_cs_config:user_buckets_prune_time().
 
 %% @doc Strip off the user name portion of an email address
