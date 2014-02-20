@@ -253,6 +253,9 @@ riakcscmd(Path, N, Cmd) ->
 riakcs_accesscmd(Path, N, Cmd) ->
     lists:flatten(io_lib:format("~s-access ~s", [riakcs_binpath(Path, N), Cmd])).
 
+riakcs_storagecmd(Path, N, Cmd) ->
+    lists:flatten(io_lib:format("~s-storage ~s", [riakcs_binpath(Path, N), Cmd])).
+
 stanchion_binpath(Prefix) ->
     io_lib:format("~s/dev/stanchion/bin/stanchion", [Prefix]).
 
@@ -500,6 +503,11 @@ flush_access(N) ->
     lager:info("Running ~p", [Cmd]),
     os:cmd(Cmd).
 
+calculate_storage(N) ->
+    Cmd = riakcs_storagecmd(rt_config:get(?CS_CURRENT), N, "batch -r"),
+    lager:info("Running ~p", [Cmd]),
+    os:cmd(Cmd).
+
 update_cs_config(Prefix, N, Config, {AdminKey, AdminSecret}) ->
     CSSection = proplists:get_value(riak_cs, Config),
     UpdConfig = [{riak_cs, update_admin_creds(CSSection, AdminKey, AdminSecret)} |
@@ -594,12 +602,12 @@ update_user(UserConfig, Port, Resource, ContentType, UpdateDoc) ->
     lager:debug("Update user output=~p~n",[Output]),
     Output.
 
-list_users(UserConfig, Port, Resource, ContentType) ->
+list_users(UserConfig, Port, Resource, AcceptContentType) ->
     Date = httpd_util:rfc1123_date(),
     Cmd="curl -s -H 'Date: " ++ Date ++
-        "' -H 'Content-Type: " ++ ContentType ++
+        "' -H 'Accept: " ++ AcceptContentType ++
         "' -H 'Authorization: " ++
-        make_authorization("GET", Resource, ContentType, UserConfig, Date) ++
+        make_authorization("GET", Resource, "", UserConfig, Date) ++
         "' http://localhost:" ++ integer_to_list(Port) ++
         Resource,
     Delay = rt_config:get(rt_retry_delay),
@@ -628,7 +636,7 @@ make_authorization(Method, Resource, ContentType, Config, Date) ->
 
 datetime() ->
     {{YYYY,MM,DD}, {H,M,S}} = calendar:universal_time(),
-    io_lib:format("~4..0B~2..0B~2..0BT~2..0B~2..0B~2..0BZ", [YYYY, MM, DD, H, M, S]).
+    lists:flatten(io_lib:format("~4..0B~2..0B~2..0BT~2..0B~2..0B~2..0BZ", [YYYY, MM, DD, H, M, S])).
 
 
 

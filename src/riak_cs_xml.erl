@@ -30,9 +30,11 @@
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 -endif.
+-include_lib("xmerl/include/xmerl.hrl").
 
 %% Public API
--export([export_xml/1,
+-export([scan/1,
+         export_xml/1,
          to_xml/1]).
 
 -define(XML_SCHEMA_INSTANCE, "http://www.w3.org/2001/XMLSchema-instance").
@@ -42,9 +44,33 @@
 -type internal_node() :: {atom(), [internal_node() | external_node()]} |
                          {atom(), attributes(), [internal_node() | external_node()]}.
 
+%% these types should be defined in xmerl.hrl or xmerl.erl
+%% for now they're defined here for convenience.
+-type xmlElement() :: #xmlElement{}.
+-type xmlText() :: #xmlText{}.
+-type xmlComment() :: #xmlComment{}.
+-type xmlPI() :: #xmlPI{}.
+-type xmlDocument() :: #xmlDocument{}.
+-type xmlNode() ::  xmlElement() | xmlText() | xmlComment() |
+                    xmlPI() | xmlDocument().
+-export_type([xmlNode/0, xmlElement/0, xmlText/0]).
+
 %% ===================================================================
 %% Public API
 %% ===================================================================
+
+
+%% @doc parse XML and produce xmlElement (other comments and else are bad)
+%% in R15B03 (and maybe later version), xmerl_scan:string/2 may return any
+%% xml nodes, such as defined as xmlNode() above. It it unsafe because
+%% `String` is the Body sent from client, which can be anything.
+-spec scan(string()) -> {ok, xmlElement()} | {error, malformed_xml}.
+scan(String) ->
+    case catch xmerl_scan:string(String, [{space, normalize}]) of
+        {'EXIT', _E} ->  {error, malformed_xml};
+        { #xmlElement{} = ParsedData, _Rest} -> {ok, ParsedData};
+        _E -> {error, malformed_xml}
+    end.
 
 %% This function is temporary and should be removed once all XML
 %% handling has been moved into this module.
@@ -56,8 +82,8 @@ export_xml(XmlDoc) ->
 -spec to_xml(term()) -> binary().
 to_xml(undefined) ->
     [];
-to_xml([]) ->
-    [];
+to_xml(SimpleForm) when is_list(SimpleForm) ->
+    simple_form_to_xml(SimpleForm);
 to_xml(?ACL{}=Acl) ->
     acl_to_xml(Acl);
 to_xml(#acl_v1{}=Acl) ->
@@ -74,6 +100,21 @@ to_xml({users, Users}) ->
 %% ===================================================================
 %% Internal functions
 %% ===================================================================
+
+%% @doc Convert simple form into XML.
+simple_form_to_xml(Elements) ->
+    XmlDoc = format_elements(Elements),
+    export_xml(XmlDoc).
+
+format_elements(Elements) ->
+    [format_element(E) || E <- Elements].
+
+format_element({Tag, Elements}) ->
+    {Tag, format_elements(Elements)};
+format_element({Tag, Attrs, Elements}) ->
+    {Tag, Attrs, format_elements(Elements)};
+format_element(Value) ->
+    format_value(Value).
 
 %% @doc Convert an internal representation of an ACL
 %% into XML.
@@ -109,8 +150,13 @@ list_objects_response_to_xml(Resp) ->
                          Prefix <- Resp?LORESP.common_prefixes],
     Contents = [make_external_node('Name', Resp?LORESP.name),
                 make_external_node('Prefix', Resp?LORESP.prefix),
-                make_external_node('Marker', Resp?LORESP.marker),
-                make_external_node('MaxKeys', Resp?LORESP.max_keys),
+                make_external_node('Marker', Resp?LORESP.marker)] ++
+                %% use a list-comprehension trick to only include
+                %% the `NextMarker' element if it's not `undefined'
+               [make_external_node('NextMarker', NextMarker) ||
+                NextMarker <- [Resp?LORESP.next_marker],
+                NextMarker =/= undefined] ++
+               [make_external_node('MaxKeys', Resp?LORESP.max_keys),
                 make_external_node('Delimiter', Resp?LORESP.delimiter),
                 make_external_node('IsTruncated', Resp?LORESP.is_truncated)] ++
         KeyContents ++ CommonPrefixes,
@@ -213,6 +259,14 @@ make_owner(#list_objects_owner_v1{id=Id, display_name=Name}) ->
     make_internal_node('Owner', Content).
 
 -spec format_value(atom() | integer() | binary() | list()) -> string().
+%% @doc Format value depending on its type
+%% Handling of characters (binaries or lists of integers) are as follows:
+%% - For binaries, we assume that they are encoded by UTF-8.
+%% - For lists, we assume they are converted from UTF-8 encoded binaries
+%%   by applying binary_to_list/1.
+%%   This is tricky point but binary_to_list/1 treats binaries as if it is
+%%   Latin-1 encoded, so we should turn them back by list_to_binary first.
+%%   Then we can apply unicode:characters_to_binary safely.
 format_value(undefined) ->
     [];
 format_value(Val) when is_atom(Val) ->
@@ -222,7 +276,7 @@ format_value(Val) when is_binary(Val) ->
 format_value(Val) when is_integer(Val) ->
     integer_to_list(Val);
 format_value(Val) when is_list(Val) ->
-    Val.
+    format_value(list_to_binary(Val)).
 
 %% @doc Map a ACL group atom to its corresponding URI.
 -spec uri_for_group(atom()) -> string().
