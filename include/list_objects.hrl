@@ -102,3 +102,4 @@
 -define(MAX_CACHE_BYTES, 104857600). % 100MB
 -define(KEY_LIST_MULTIPLIER, 1.1).
 -define(FOLD_OBJECTS_FOR_LIST_KEYS, false).
+-define(FOLD_OBJECTS_TIMEOUT, timer:minutes(1)).
