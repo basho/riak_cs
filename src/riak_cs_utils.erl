@@ -647,7 +647,8 @@ get_user(KeyId, RiakPid) ->
                 1 ->
                     Value = binary_to_term(riakc_obj:get_value(Obj)),
                     User = update_user_record(Value),
-                    {ok, {User, Obj}};
+                    Buckets = resolve_buckets([Value], [], KeepDeletedBuckets),
+                    {ok, {User?RCS_USER{buckets=Buckets}, Obj}};
                 0 ->
                     {error, no_value};
                 _ ->
@@ -1263,13 +1264,19 @@ bucket_sorter(?RCS_BUCKET{name=Bucket1},
     Bucket1 =< Bucket2.
 
 %% @doc Return true if the last action for the bucket
-%% is deleted and the action occurred over 24 hours ago.
+%% is deleted and the action occurred over the configurable
+%% maximum prune-time.
 -spec cleanup_bucket(cs_bucket()) -> boolean().
 cleanup_bucket(?RCS_BUCKET{last_action=created}) ->
     false;
 cleanup_bucket(?RCS_BUCKET{last_action=deleted,
                             modification_time=ModTime}) ->
-    timer:now_diff(os:timestamp(), ModTime) > 86400.
+    %% the prune-time is specified in seconds, so we must
+    %% convert Erlang timestamps to seconds first
+    NowSeconds = second_resolution_timestamp(os:timestamp()),
+    ModTimeSeconds = second_resolution_timestamp(ModTime),
+    (NowSeconds - ModTimeSeconds) >
+    riak_cs_config:user_buckets_prune_time().
 
 %% @doc Strip off the user name portion of an email address
 -spec display_name(string()) -> string().
@@ -1281,18 +1288,29 @@ display_name(Email) ->
 %% If the initial read fails retry using
 %% R=quorum and PR=1, but indicate that bucket deletion
 %% indicators should not be cleaned up.
--spec fetch_user(binary(), pid()) ->
-                        {ok, {term(), boolean()}} | {error, term()}.
+-spec fetch_user(KeyID :: binary(),
+                 RiakConnection :: pid()) ->
+    {ok, {riakc_obj(), KeepDeletedBuckets :: boolean()}} |
+    {error, term()}.
 fetch_user(Key, RiakPid) ->
     StrongOptions = [{r, all}, {pr, all}, {notfound_ok, false}],
     case riakc_pb_socket:get(RiakPid, ?USER_BUCKET, Key, StrongOptions) of
         {ok, Obj} ->
-            {ok, {Obj, true}};
+            %% since we read from all primaries, we're
+            %% less concerned with there being an 'out-of-date'
+            %% replica that we might conflict with (and not
+            %% be able to properly resolve conflicts).
+            KeepDeletedBuckets = false,
+            {ok, {Obj, KeepDeletedBuckets}};
         {error, _} ->
             WeakOptions = [{r, quorum}, {pr, one}, {notfound_ok, false}],
             case riakc_pb_socket:get(RiakPid, ?USER_BUCKET, Key, WeakOptions) of
                 {ok, Obj} ->
-                    {ok, {Obj, false}};
+                    %% We weren't able to read from all primary
+                    %% vnodes, so don't risk losing information
+                    %% by pruning the bucket list.
+                    KeepDeletedBuckets = true,
+                    {ok, {Obj, KeepDeletedBuckets}};
                 {error, Reason} ->
                     {error, Reason}
             end
