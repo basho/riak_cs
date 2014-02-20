@@ -1284,18 +1284,29 @@ display_name(Email) ->
 %% If the initial read fails retry using
 %% R=quorum and PR=1, but indicate that bucket deletion
 %% indicators should not be cleaned up.
--spec fetch_user(binary(), pid()) ->
-                        {ok, {term(), boolean()}} | {error, term()}.
+-spec fetch_user(KeyID :: binary(),
+                 RiakConnection :: pid()) ->
+    {ok, {riakc_obj(), KeepDeletedBuckets :: boolean()}} |
+    {error, term()}.
 fetch_user(Key, RiakPid) ->
     StrongOptions = [{r, all}, {pr, all}, {notfound_ok, false}],
     case riakc_pb_socket:get(RiakPid, ?USER_BUCKET, Key, StrongOptions) of
         {ok, Obj} ->
-            {ok, {Obj, false}};
+            %% since we read from all primaries, we're
+            %% less concerned with there be an 'out-of-date'
+            %% replica that we might conflict with (and not
+            %% be able to properly resolve conflicts).
+            KeepDeletedBuckets = false,
+            {ok, {Obj, KeepDeletedBuckets}};
         {error, _} ->
             WeakOptions = [{r, quorum}, {pr, one}, {notfound_ok, false}],
             case riakc_pb_socket:get(RiakPid, ?USER_BUCKET, Key, WeakOptions) of
                 {ok, Obj} ->
-                    {ok, {Obj, true}};
+                    %% We weren't able to read from all primary
+                    %% vnodes, so don't risk losing information
+                    %% by pruning the bucket list.
+                    KeepDeletedBuckets = true,
+                    {ok, {Obj, KeepDeletedBuckets}};
                 {error, Reason} ->
                     {error, Reason}
             end

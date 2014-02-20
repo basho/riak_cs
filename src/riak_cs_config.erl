@@ -270,7 +270,7 @@ set_gc_key_suffix_max(_MaxValue) ->
 user_buckets_prune_time() ->
     get_env(riak_cs, user_buckets_prune_time, ?USER_BUCKETS_PRUNE_TIME).
 
--spec set_user_buckets_prune_time(integer()) -> ok | {error, invalid_value}.
+-spec set_user_buckets_prune_time(pos_integer()) -> ok | {error, invalid_value}.
 set_user_buckets_prune_time(PruneTime) when is_integer(PruneTime) andalso PruneTime > 0 ->
     application:set_env(riak_cs, user_buckets_prune_time, PruneTime);
 set_user_buckets_prune_time(_PruneTime) ->
