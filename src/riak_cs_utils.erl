@@ -1297,7 +1297,7 @@ fetch_user(Key, RiakPid) ->
     case riakc_pb_socket:get(RiakPid, ?USER_BUCKET, Key, StrongOptions) of
         {ok, Obj} ->
             %% since we read from all primaries, we're
-            %% less concerned with there be an 'out-of-date'
+            %% less concerned with there being an 'out-of-date'
             %% replica that we might conflict with (and not
             %% be able to properly resolve conflicts).
             KeepDeletedBuckets = false,
