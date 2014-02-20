@@ -1,3 +1,20 @@
+# Riak CS 1.4.5 Release Notes
+
+## Bugs Fixes
+
+* Fix several 'data hiding' bugs with the v2 list objects FSM [riak_cs/788](https://github.com/basho/riak_cs/pull/788)
+* Don't treat HEAD requests toward BytesOut in access statistics [riak_cs/791](https://github.com/basho/riak_cs/pull/791)
+* Handle whitespace in POST/PUT XML documents [riak_cs/795](https://github.com/basho/riak_cs/pull/795)
+* Fix bad bucketname in storage usage [riak_cs/800](https://github.com/basho/riak_cs/pull/800)
+* Handle unicode user-names and XML [riak_cs/807](https://github.com/basho/riak_cs/pull/807)
+* Fix missing XML fields on storage usage [riak_cs/808](https://github.com/basho/riak_cs/pull/808)
+* Adjust fold-objects timeout [riak_cs/811](https://github.com/basho/riak_cs/pull/811)
+* Prune deleted buckets from user record [riak_cs/812](https://github.com/basho/riak_cs/pull/812)
+
+## Additions
+
+* Optimize the list objects v2 FSM for prefix requests [riak_cs/804](https://github.com/basho/riak_cs/pull/804)
+
 # Riak CS 1.4.4 Release Notes
 
 This is a bugfix release. The major fixes are to the storage calculation.
