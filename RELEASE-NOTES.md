@@ -1,6 +1,6 @@
 # Riak CS 1.4.5 Release Notes
 
-## Bugs Fixes
+## Bugs Fixed
 
 * Fix several 'data hiding' bugs with the v2 list objects FSM [riak_cs/788](https://github.com/basho/riak_cs/pull/788)
 * Don't treat HEAD requests toward BytesOut in access statistics [riak_cs/791](https://github.com/basho/riak_cs/pull/791)
