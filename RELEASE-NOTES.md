@@ -6,6 +6,12 @@
 * Don't treat HEAD requests toward BytesOut in access statistics [riak_cs/791](https://github.com/basho/riak_cs/pull/791)
 * Handle whitespace in POST/PUT XML documents [riak_cs/795](https://github.com/basho/riak_cs/pull/795)
 * Fix bad bucketname in storage usage [riak_cs/800](https://github.com/basho/riak_cs/pull/800)
+  Riak CS 1.4.4 introduced a bug where storage calculations made while running
+  that version would have the bucket-name replaced by the string "struct". This
+  version fixes the bug, but can't go back and retroactively fix the old
+  storage calculations. Aggregations on an entire user-account should still
+  be accurate, but you won't be able to break-down storage by bucket, as they
+  will all share the name "struct".
 * Handle unicode user-names and XML [riak_cs/807](https://github.com/basho/riak_cs/pull/807)
 * Fix missing XML fields on storage usage [riak_cs/808](https://github.com/basho/riak_cs/pull/808)
 * Adjust fold-objects timeout [riak_cs/811](https://github.com/basho/riak_cs/pull/811)
