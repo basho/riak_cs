@@ -29,9 +29,15 @@ endif
 dialyzer: ${PLT} ${LOCAL_PLT}
 	@echo "==> $(shell basename $(shell pwd)) (dialyzer)"
 	@if [ -f $(LOCAL_PLT) ]; then \
-		dialyzer $(DIALYZER_FLAGS) --plts $(PLT) $(LOCAL_PLT) -c ebin; \
+		PLTS="$(PLT) $(LOCAL_PLT)"; \
 	else \
-		dialyzer $(DIALYZER_FLAGS) --plts $(PLT) -c ebin; \
+		PLTS=$(PLT); \
+	fi; \
+	if [ -f dialyzer_expected ]; then \
+		dialyzer $(DIALYZER_FLAGS) --plts $${PLTS} -c ebin | tee dialyzer_warnings && \
+		diff -U0 dialyzer_expected dialyzer_warnings; \
+	else \
+		dialyzer $(DIALYZER_FLAGS) --plts $${PLTS} -c ebin; \
 	fi
 
 cleanplt:
