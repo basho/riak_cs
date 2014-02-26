@@ -321,11 +321,7 @@ produce_xml(RD, #ctx{body=undefined}=Ctx) ->
     Storage = maybe_storage(RD, Ctx),
     Doc = [{?KEY_USAGE, [{?KEY_ACCESS, xml_access(Access)},
                          {?KEY_STORAGE, xml_storage(Storage)}]}],
-    Body = case riak_cs_xml:to_xml(Doc) of
-               {error, Bin, _}         -> Bin;
-               {incomplete, Bin, _}    -> Bin;
-               Bin when is_binary(Bin) -> Bin
-           end,
+    Body = riak_cs_xml:to_xml(Doc),
     {Body, RD, Ctx#ctx{body=Body}};
 produce_xml(RD, #ctx{body=Body}=Ctx) ->
     {Body, RD, Ctx}.
