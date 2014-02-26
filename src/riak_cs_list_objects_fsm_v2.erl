@@ -37,7 +37,8 @@
 -endif.
 
 %% API
--export([start_link/2]).
+-export([start_link/2,
+         start_link/3]).
 
 %% Observability
 -export([]).
@@ -73,7 +74,7 @@
 -record(state, {riakc_pid :: pid(),
                 req :: list_object_request(),
                 reply_ref :: undefined | {pid(), any()},
-                key_multiplier :: float(),
+                fold_objects_batch_size :: pos_integer(),
                 object_list_req_id :: undefined | reference(),
                 reached_end_of_keyspace=false :: boolean(),
                 object_buffer=[] :: list(),
@@ -111,22 +112,24 @@
 -spec start_link(pid(), list_object_request()) ->
     {ok, pid()} | {error, term()}.
 start_link(RiakcPid, ListKeysRequest) ->
-    gen_fsm:start_link(?MODULE, [RiakcPid, ListKeysRequest], []).
+    FoldObjectsBatchSize = 1002,
+    start_link(RiakcPid, ListKeysRequest, FoldObjectsBatchSize).
+
+-spec start_link(pid(), list_object_request(), pos_integer()) ->
+    {ok, pid()} | {error, term()}.
+start_link(RiakcPid, ListKeysRequest, FoldObjectsBatchSize) ->
+    BatchSize2 = max(2, FoldObjectsBatchSize),
+    gen_fsm:start_link(?MODULE, [RiakcPid, ListKeysRequest, BatchSize2], []).
 
 %%%===================================================================
 %%% gen_fsm callbacks
 %%%===================================================================
 
 -spec init(list()) -> {ok, prepare, state(), 0}.
-init([RiakcPid, Request]) ->
-    %% TODO: this should not be hardcoded. Maybe there should
-    %% be two `start_link' arities, and one will use a default
-    %% val from app.config and the other will explicitly
-    %% take a val
-    KeyMultiplier = riak_cs_list_objects_utils:get_key_list_multiplier(),
+init([RiakcPid, Request, FoldObjectsBatchSize]) ->
 
     State = #state{riakc_pid=RiakcPid,
-                   key_multiplier=KeyMultiplier,
+                   fold_objects_batch_size=FoldObjectsBatchSize,
                    req=Request},
     {ok, prepare, State, 0}.
 
@@ -199,7 +202,8 @@ handle_done(State=#state{object_buffer=ObjectBuffer,
                          objects=PrevObjects,
                          last_request_num_keys_requested=NumKeysRequested,
                          common_prefixes=CommonPrefixes,
-                         req=Request=?LOREQ{max_keys=UserMaxKeys}}) ->
+                         req=Request}) ->
+
     ObjectBufferLength = length(ObjectBuffer),
     RangeUpdatedStateData =
     update_profiling_and_last_request(State, ObjectBuffer, ObjectBufferLength),
@@ -211,23 +215,42 @@ handle_done(State=#state{object_buffer=ObjectBuffer,
     NewObjects = PrevObjects ++ Active,
     ObjectPrefixTuple = {NewObjects, CommonPrefixes},
 
-    ObjectPrefixTuple2 =
-    riak_cs_list_objects_utils:filter_prefix_keys(ObjectPrefixTuple, Request),
-    ReachedEnd = ObjectBufferLength < NumKeysRequested,
-
-    Truncated = truncated(UserMaxKeys, ObjectPrefixTuple2),
-    SlicedTaggedItems =
-    riak_cs_list_objects_utils:manifests_and_prefix_slice(ObjectPrefixTuple2,
-                                                          UserMaxKeys),
-
     {NewManis, NewPrefixes} =
-    riak_cs_list_objects_utils:untagged_manifest_and_prefix(SlicedTaggedItems),
+    riak_cs_list_objects_utils:filter_prefix_keys(ObjectPrefixTuple, Request),
+
+    ReachedEnd = reached_end_of_keyspace(ObjectBufferLength,
+                                         NumKeysRequested,
+                                         Active,
+                                         Request?LOREQ.prefix),
 
     NewStateData = RangeUpdatedStateData#state{objects=NewManis,
                                                common_prefixes=NewPrefixes,
                                                reached_end_of_keyspace=ReachedEnd,
                                                object_buffer=[]},
-    respond(NewStateData, NewManis, NewPrefixes, Truncated).
+    _ = lager:debug("Ranges: ~p", [NewStateData#state.object_list_ranges]),
+    respond(NewStateData, NewManis, NewPrefixes).
+
+-spec reached_end_of_keyspace(non_neg_integer(),
+                              undefined | pos_integer(),
+                              list(lfs_manifest()),
+                              undefined | binary()) -> boolean().
+reached_end_of_keyspace(BufferLength, NumKeysRequested, _, _)
+  when BufferLength < NumKeysRequested ->
+    true;
+reached_end_of_keyspace(_, _, _ActiveObjects, undefined) ->
+    false;
+reached_end_of_keyspace(_BufferLength, _NumKeysRequested, [], _) ->
+    false;
+reached_end_of_keyspace(_, _, ActiveObjects, Prefix) ->
+    M = lists:last(ActiveObjects),
+    {_, LastKey} = M?MANIFEST.bkey,
+    PrefixLen = byte_size(Prefix),
+    case LastKey of
+        << Prefix:PrefixLen/binary, _/binary >> ->
+            false;
+        _ ->
+            LastKey > Prefix
+    end.
 
 -spec update_profiling_and_last_request(state(), list(), integer()) ->
     state().
@@ -236,16 +259,26 @@ update_profiling_and_last_request(State, ObjectBuffer, ObjectBufferLength) ->
                                              ObjectBufferLength),
     update_last_request_state(State2, ObjectBuffer).
 
--spec respond(state(), list(), ordsets:ordset(), boolean()) ->
+-spec respond(state(), list(), ordsets:ordset()) ->
     fsm_state_return().
-respond(StateData=#state{req=Request},
-        Manifests, Prefixes, Truncated) ->
+respond(StateData=#state{req=Request=?LOREQ{max_keys=UserMaxKeys,
+                                            delimiter=Delimiter}},
+        Manifests, Prefixes) ->
     case enough_results(StateData) of
         true ->
+            Truncated = truncated(UserMaxKeys, {Manifests, Prefixes}),
+            SlicedTaggedItems =
+            riak_cs_list_objects_utils:manifests_and_prefix_slice({Manifests, Prefixes},
+                                                                  UserMaxKeys),
+            NextMarker = next_marker(Delimiter, SlicedTaggedItems),
+
+            {NewManis, NewPrefixes} =
+            riak_cs_list_objects_utils:untagged_manifest_and_prefix(SlicedTaggedItems),
             Response =
             response_from_manifests_and_common_prefixes(Request,
                                                         Truncated,
-                                                        {Manifests, Prefixes}),
+                                                        NextMarker,
+                                                        {NewManis, NewPrefixes}),
             try_reply({ok, Response}, StateData);
         false ->
             RiakcPid = StateData#state.riakc_pid,
@@ -266,38 +299,66 @@ truncated(NumKeysRequested, ObjectsAndPrefixes) ->
     %% The `Ceph' tests were nice to find this.
     NumKeysRequested =/= 0.
 
+-spec enough_results(state()) -> boolean().
+%% @doc Return a `boolean' determining whether enough results have been
+%% returned from the fold objects queries to return to the user. In order
+%% to tell if the result-set is truncated, we either need one more result
+%% than the user has asked for (hence `>' and not `>='), or to know
+%% that we've already reached the end of the fold objects results.
 enough_results(#state{req=?LOREQ{max_keys=UserMaxKeys},
                       reached_end_of_keyspace=EndOfKeyspace,
                       objects=Objects,
                       common_prefixes=CommonPrefixes}) ->
     riak_cs_list_objects_utils:manifests_and_prefix_length({Objects, CommonPrefixes})
-    >= UserMaxKeys
+    > UserMaxKeys
     orelse EndOfKeyspace.
+
+-spec next_marker(undefined | binary(),
+                  riak_cs_list_objects_utils:tagged_item_list()) ->
+    next_marker().
+next_marker(undefined, _List) ->
+    undefined;
+next_marker(_Delimiter, []) ->
+    undefined;
+next_marker(_Delimiter, List) ->
+    next_marker_from_element(lists:last(List)).
+
+-spec next_marker_from_element(riak_cs_list_objects_utils:tagged_item()) ->
+    next_marker().
+next_marker_from_element({prefix, Name}) ->
+    Name;
+next_marker_from_element({manifest, ?MANIFEST{bkey={_Bucket, Key}}}) ->
+    Key;
+next_marker_from_element({manifest, {Key, ?MANIFEST{}}}) ->
+    Key.
 
 response_from_manifests_and_common_prefixes(Request,
                                             Truncated,
+                                            NextMarker,
                                             {Manifests, CommonPrefixes}) ->
     KeyContent = lists:map(fun riak_cs_list_objects:manifest_to_keycontent/1,
                            Manifests),
-    riak_cs_list_objects:new_response(Request, Truncated, CommonPrefixes,
+    riak_cs_list_objects:new_response(Request, Truncated, NextMarker,
+                                      CommonPrefixes,
                                       KeyContent).
 
 -spec make_2i_request(pid(), state()) ->
                              {state(), {ok, reference()} | {error, term()}}.
-make_2i_request(RiakcPid, State=#state{req=?LOREQ{name=BucketName}}) ->
+make_2i_request(RiakcPid, State=#state{req=?LOREQ{name=BucketName},
+                                       fold_objects_batch_size=BatchSize}) ->
     ManifestBucket = riak_cs_utils:to_bucket_name(objects, BucketName),
     StartKey = make_start_key(State),
     EndKey = big_end_key(128),
-    NumResults = 1002,
     NewStateData = State#state{last_request_start_key=StartKey,
-                               last_request_num_keys_requested=NumResults},
+                               last_request_num_keys_requested=BatchSize},
     NewStateData2 = update_profiling_state_with_start(NewStateData,
                                                       StartKey,
                                                       EndKey,
                                                       os:timestamp()),
-    Opts = [{max_results, NumResults},
+    Opts = [{max_results, BatchSize},
             {start_key, StartKey},
-            {end_key, EndKey}],
+            {end_key, EndKey},
+            {timeout, riak_cs_list_objects_utils:fold_objects_timeout()}],
     FoldResult = riakc_pb_socket:cs_bucket_fold(RiakcPid,
                                                 ManifestBucket,
                                                 Opts),
@@ -365,24 +426,47 @@ common_prefix_from_key(Key, Prefix, Delimiter) ->
 
 -spec make_start_key(state()) -> binary().
 make_start_key(#state{object_list_ranges=[], req=Request}) ->
-    make_start_key_from_marker(Request);
+    make_start_key_from_marker_and_prefix(Request);
 make_start_key(State=#state{object_list_ranges=PrevRanges,
+                            common_prefixes=CommonPrefixes,
                             req=?LOREQ{prefix=Prefix,
                                        delimiter=Delimiter}}) ->
+    Key = element(2, lists:last(PrevRanges)),
     case last_result_is_common_prefix(State) of
         true ->
-            Key = element(2, lists:last(PrevRanges)),
             LastPrefix = common_prefix_from_key(Key, Prefix, Delimiter),
-            skip_past_prefix_and_delimiter(LastPrefix);
+            case ordsets:is_element(LastPrefix, CommonPrefixes) of
+                true ->
+                    skip_past_prefix_and_delimiter(LastPrefix);
+                false ->
+                    Key
+            end;
         false ->
-            element(2, lists:last(PrevRanges))
+            Key
     end.
 
--spec make_start_key_from_marker(list_object_request()) -> binary().
-make_start_key_from_marker(?LOREQ{marker=undefined}) ->
+-spec make_start_key_from_marker_and_prefix(list_object_request()) -> binary().
+make_start_key_from_marker_and_prefix(?LOREQ{marker=undefined,
+                                             prefix=undefined}) ->
     <<0:8/integer>>;
-make_start_key_from_marker(?LOREQ{marker=Marker}) ->
-    Marker.
+make_start_key_from_marker_and_prefix(?LOREQ{marker=undefined,
+                                             prefix=Prefix}) ->
+    Prefix;
+make_start_key_from_marker_and_prefix(?LOREQ{marker=Marker,
+                                             delimiter=undefined}) ->
+    Marker;
+make_start_key_from_marker_and_prefix(?LOREQ{marker=Marker,
+                                             delimiter=Delimiter}) ->
+    DelSize = byte_size(Delimiter),
+    case binary:longest_common_suffix([Marker, Delimiter]) of
+        DelSize ->
+            %% when the `Marker' itself ends with the delimiter,
+            %% then we should skip past the entire set of keys
+            %% that would be rolled up into that common delimiter
+            skip_past_prefix_and_delimiter(Marker);
+        _Else ->
+            Marker
+    end.
 
 big_end_key(NumBytes) ->
     MaxByte = <<255:8/integer>>,

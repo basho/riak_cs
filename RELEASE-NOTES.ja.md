@@ -1,3 +1,20 @@
+# Riak CS 1.4.5 リリースノート
+
+## 修正されたバグ
+
+* list objects v2 fsm のいくつかのデータが「見えない」バグを修正 [riak_cs/788](https://github.com/basho/riak_cs/pull/788)
+* HEADリクエスト時にアクセス集計していた問題を修正 [riak_cs/791](https://github.com/basho/riak_cs/pull/791)
+* POST/PUTリクエスト時のXML中の空白文字の対処 [riak_cs/795](https://github.com/basho/riak_cs/pull/795)
+* ストレージ使用量計算時の誤ったバケット名を修正 [riak_cs/800](https://github.com/basho/riak_cs/pull/800)
+* Unicodeのユーザ名とXMLの対応 [riak_cs/807](https://github.com/basho/riak_cs/pull/807)
+* ストレージ使用量で必要なXMLフィールドを追加 [riak_cs/808](https://github.com/basho/riak_cs/pull/808)
+* オブジェクトのfoldのタイムアウトを揃えた [riak_cs/811](https://github.com/basho/riak_cs/pull/811)
+* 削除されたバケットをユーザーのレコードから削除 [riak_cs/812](https://github.com/basho/riak_cs/pull/812)
+
+## 新規追加
+
+* オブジェクト一覧表示のv2 FSMでプレフィクスを使用する最適化を追加 [riak_cs/804](https://github.com/basho/riak_cs/pull/804)
+
 # Riak CS 1.4.4 リリースノート
 
 これはバグフィックスのためのリリースです。統計計算の修正が含まれています。

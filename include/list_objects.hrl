@@ -21,6 +21,9 @@
 %% see also: http://docs.amazonwebservices.com/AmazonS3/latest/API/RESTBucketGET.html
 %% non mandatory keys have `| undefined' as a
 %% type option.
+%%
+%% This record actually does not need to be versioned,
+%% as it's never persisted.
 -record(list_objects_request_v1, {
         %% the name of the bucket
         name :: binary(),
@@ -39,6 +42,10 @@
 -type list_object_request() :: #list_objects_request_v1{}.
 -define(LOREQ, #list_objects_request_v1).
 
+-type next_marker() :: 'undefined' | binary().
+
+%% This record actually does not need to be versioned,
+%% as it's never persisted.
 -record(list_objects_response_v1, {
         %% Params just echoed back from the request --------------------------
 
@@ -55,8 +62,12 @@
         %% a binary to group keys by
         delimiter :: binary() | undefined,
 
-        %% the key to start with
+        %% the marker used in the _request_
         marker :: binary() | undefined,
+
+        %% the (optional) marker to use for pagination
+        %% in the _next_ request
+        next_marker :: next_marker(),
 
         %% The actual response -----------------------------------------------
         is_truncated :: boolean(),
@@ -91,3 +102,4 @@
 -define(MAX_CACHE_BYTES, 104857600). % 100MB
 -define(KEY_LIST_MULTIPLIER, 1.1).
 -define(FOLD_OBJECTS_FOR_LIST_KEYS, false).
+-define(FOLD_OBJECTS_TIMEOUT, timer:minutes(1)).

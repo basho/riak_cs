@@ -54,8 +54,8 @@ def upload_multipart(bucket, key_name, parts_list, metadata={}):
     upload = bucket.initiate_multipart_upload(key_name, metadata=metadata)
     for index, val in enumerate(parts_list):
         upload.upload_part_from_file(val, index + 1)
-    upload.complete_upload()
-    return upload
+    result = upload.complete_upload()
+    return upload, result
 
 class S3ApiVerificationTestBase(unittest.TestCase):
     host="127.0.0.1"
@@ -203,15 +203,17 @@ class BasicTests(S3ApiVerificationTestBase):
         self.assertEqual(k.get_acl().to_xml(), self.prAcl(self.user1))
 
 class MultiPartUploadTests(S3ApiVerificationTestBase):
-    def multipart_md5_helper(self, parts):
-        key_name = str(uuid.uuid4())
+    def multipart_md5_helper(self, parts, key_suffix=u''):
+        key_name = unicode(str(uuid.uuid4())) + key_suffix
         stringio_parts = [StringIO(p) for p in parts]
         expected_md5 = md5.new(''.join(parts)).hexdigest()
         bucket = self.conn.create_bucket(self.bucket_name)
-        upload = upload_multipart(bucket, key_name, stringio_parts)
+        upload, result = upload_multipart(bucket, key_name, stringio_parts)
         key = Key(bucket, key_name)
         actual_md5 = md5_from_key(key)
         self.assertEqual(expected_md5, actual_md5)
+        self.assertEqual(key_name, result.key_name)
+        return upload, result
 
     def test_small_strings_upload_1(self):
         parts = ['this is part one', 'part two is just a rewording',
@@ -241,6 +243,21 @@ class MultiPartUploadTests(S3ApiVerificationTestBase):
         for u in uploads:
             self.assertEqual(u.storage_class, 'STANDARD')
         self.assertTrue(True)
+
+    def test_upload_japanese_key(self):
+        parts = ['this is part one', 'part two is just a rewording',
+                 'surprise that part three is pretty much the same',
+                 'and the last part is number four']
+        self.multipart_md5_helper(parts, key_suffix=u'日本語サフィックス')
+
+    def test_list_japanese_key(self):
+        bucket = self.conn.create_bucket(self.bucket_name)
+        key_name = u'test_日本語キーのリスト'
+        _never_finished_upload = bucket.initiate_multipart_upload(key_name)
+        uploads = list(bucket.list_multipart_uploads())
+        for u in uploads:
+            self.assertEqual(u.key_name, key_name)
+
 
 def one_kb_string():
     "Return a 1KB string of all a's"

@@ -119,6 +119,9 @@ error_code(invalid_argument) -> "InvalidArgument";
 error_code(invalid_range) -> "InvalidRange";
 error_code(invalid_bucket_name) -> "InvalidBucketName";
 error_code(unresolved_grant_email) -> "UnresolvableGrantByEmailAddress";
+error_code(unexpected_content) -> "UnexpectedContent";
+error_code(canned_acl_and_header_grant) -> "InvalidRequest";
+error_code(malformed_acl_error) -> "MalformedACLError";
 error_code(ErrorName) ->
     ok = lager:debug("Unknown Error Name: ~p", [ErrorName]),
     "ServiceUnavailable".
@@ -161,6 +164,9 @@ status_code(invalid_argument) -> 400;
 status_code(unresolved_grant_email) -> 400;
 status_code(invalid_range) -> 416;
 status_code(invalid_bucket_name) -> 400;
+status_code(unexpected_content) -> 400;
+status_code(canned_acl_and_header_grant) -> 400;
+status_code(malformed_acl_error) -> 400;
 status_code(_) -> 503.
 
 -spec respond(term(), #wm_reqdata{}, #context{}) ->
@@ -205,7 +211,7 @@ error_response(StatusCode, Code, Message, RD, Ctx) ->
                          {'Message', [Message]},
                          {'Resource', [string:strip(OrigResource, right, $/)]},
                          {'RequestId', [""]}]}],
-    respond(StatusCode, riak_cs_xml:export_xml(XmlDoc), RD, Ctx).
+    respond(StatusCode, riak_cs_xml:to_xml(XmlDoc), RD, Ctx).
 
 copy_object_response(Manifest, RD, Ctx) ->
     LastModified = riak_cs_wm_utils:to_iso_8601(Manifest?MANIFEST.created),
@@ -213,17 +219,17 @@ copy_object_response(Manifest, RD, Ctx) ->
     XmlDoc = [{'CopyObjectResponse',
                [{'LastModified', [LastModified]},
                 {'ETag', [ETag]}]}],
-    respond(200, riak_cs_xml:export_xml(XmlDoc), RD, Ctx).
+    respond(200, riak_cs_xml:to_xml(XmlDoc), RD, Ctx).
 
 no_such_upload_response(UploadId, RD, Ctx) ->
     XmlDoc = {'Error',
               [
                {'Code', [error_code(no_such_upload)]},
                {'Message', [error_message(no_such_upload)]},
-               {'UploadId', [binary_to_list(base64url:encode(UploadId))]},
+               {'UploadId', [base64url:encode(UploadId)]},
                {'HostId', ["host-id"]}
               ]},
-    Body = riak_cs_xml:export_xml([XmlDoc]),
+    Body = riak_cs_xml:to_xml([XmlDoc]),
     respond(status_code(no_such_upload), Body, RD, Ctx).
 
 invalid_digest_response(ContentMd5, RD, Ctx) ->
@@ -234,7 +240,7 @@ invalid_digest_response(ContentMd5, RD, Ctx) ->
                {'Content-MD5', [ContentMd5]},
                {'HostId', ["host-id"]}
               ]},
-    Body = riak_cs_xml:export_xml([XmlDoc]),
+    Body = riak_cs_xml:to_xml([XmlDoc]),
     respond(status_code(invalid_digest), Body, RD, Ctx).
 
 %% @doc Convert an error code string into its corresponding atom
@@ -263,7 +269,9 @@ error_code_to_atom(ErrorCode) ->
 %% and XML document.
 -spec xml_error_code(string()) -> string().
 xml_error_code(Xml) ->
-    {ParsedData, _Rest} = xmerl_scan:string(Xml, []),
+    %% here comes response from velvet (Stanchion),
+    %% this scan should match, otherwise bug.
+    {ok, ParsedData} = riak_cs_xml:scan(Xml),
     process_xml_error(ParsedData#xmlElement.content).
 
 %% @doc Process the top-level elements of the
