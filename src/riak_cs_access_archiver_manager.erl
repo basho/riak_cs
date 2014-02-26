@@ -145,7 +145,7 @@ handle_call(status, _From, State=#state{backlog=Backlog, workers=Workers}) ->
     Props = [{backlog, length(Backlog)},
              {workers, Workers}],
         {reply, {ok, Props}, State};
-handle_call({archive, _, _}, _From, State=#state{workers=Workers,
+handle_call(archive, _From, State=#state{workers=Workers,
                                                  max_workers=MaxWorkers})
   when length(Workers) >= MaxWorkers ->
     %% All workers are busy so the manager takes ownership and adds an

@@ -106,12 +106,12 @@ process_post_helper(RD, Ctx=#context{local_context=LocalCtx,
             XmlDoc = {'InitiateMultipartUploadResult',
                        [{'xmlns', "http://s3.amazonaws.com/doc/2006-03-01/"}],
                        [
-                        {'Bucket', [binary_to_list(Bucket)]},
+                        {'Bucket', [Bucket]},
                         {'Key', [Key]},
-                        {'UploadId', [binary_to_list(base64url:encode(UploadId))]}
+                        {'UploadId', [base64url:encode(UploadId)]}
                        ]
                      },
-            Body = riak_cs_xml:export_xml([XmlDoc]),
+            Body = riak_cs_xml:to_xml([XmlDoc]),
             RD2 = wrq:set_resp_body(Body, RD),
             {true, RD2, Ctx};
         {error, Reason} ->

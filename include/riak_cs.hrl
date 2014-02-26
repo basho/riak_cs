@@ -464,6 +464,7 @@
 -define(DEFAULT_GC_KEY_SUFFIX_MAX, 256).
 -define(DEFAULT_GC_BATCH_SIZE, 1000).
 -define(EPOCH_START, <<"0">>).
+-define(USER_BUCKETS_PRUNE_TIME, 86400). %% one-day in seconds
 -define(DEFAULT_CLUSTER_ID_TIMEOUT,5000).
 -define(DEFAULT_AUTH_MODULE, riak_cs_s3_auth).
 -define(DEFAULT_LIST_OBJECTS_MAX_KEYS, 1000).

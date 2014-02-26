@@ -61,7 +61,8 @@
 %% Observability / Configuration
 -export([get_key_list_multiplier/0,
          set_key_list_multiplier/1,
-         fold_objects_for_list_keys/0]).
+         fold_objects_for_list_keys/0,
+         fold_objects_timeout/0]).
 
 %%%===================================================================
 %%% API
@@ -229,3 +230,8 @@ set_key_list_multiplier(Multiplier) ->
 fold_objects_for_list_keys() ->
     riak_cs_config:get_env(riak_cs, fold_objects_for_list_keys,
                           ?FOLD_OBJECTS_FOR_LIST_KEYS).
+
+-spec fold_objects_timeout() -> non_neg_integer().
+fold_objects_timeout() ->
+    riak_cs_config:get_env(riak_cs, fold_objects_timeout,
+                           ?FOLD_OBJECTS_TIMEOUT).

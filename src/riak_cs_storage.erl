@@ -46,10 +46,30 @@ sum_user(Riak, User) when is_binary(User) ->
 sum_user(Riak, User) when is_list(User) ->
     case riak_cs_utils:get_user(User, Riak) of
         {ok, {?RCS_USER{buckets=Buckets}, _UserObj}} ->
-            {ok, [ {B, sum_bucket(Riak, B)}
-                   || ?RCS_BUCKET{name=B} <- Buckets ]};
+            BucketUsages = [maybe_sum_bucket(Riak, User, B)
+                            || ?RCS_BUCKET{name=B} <- Buckets],
+            {ok, BucketUsages};
         {error, Error} ->
             {error, Error}
+    end.
+
+%% @doc Output a log when calculating total usage of a bucket.
+%%      This log is *very* important because unless this log
+%%      there are no other way for operator to know a calculation
+%%      which riak_cs_storage_d failed.
+-spec maybe_sum_bucket(pid(), string(), string()|binary()) ->
+                              {binary(), [{binary(), integer()}]} |
+                              {binary(), binary()}.
+maybe_sum_bucket(Riak, User, Bucket) when is_list(Bucket)->
+    maybe_sum_bucket(Riak, User, list_to_binary(Bucket));
+maybe_sum_bucket(Riak, User, Bucket) when is_binary(Bucket)->
+    case sum_bucket(Riak, Bucket) of
+        {struct, _} = BucketUsage -> {Bucket, BucketUsage};
+        {error, _} = E ->
+            _ = lager:error("failed to calculate usage of "
+                            "bucket '~s' of user '~s'. Reason: ~p",
+                            [Bucket, User, E]),
+            {Bucket, iolist_to_binary(io_lib:format("~p", [E]))}
     end.
 
 %% @doc Sum the number of bytes stored in active files in the named
@@ -60,10 +80,9 @@ sum_user(Riak, User) when is_list(User) ->
 %% The result is a mochijson structure with two fields: `Objects',
 %% which is the number of objects that were counted in the bucket, and
 %% `Bytes', which is the total size of all of those objects.
--spec sum_bucket(pid(), string() | binary()) -> term() | {error, term()}.
-sum_bucket(Riak, Bucket) when is_list(Bucket) ->
-    sum_bucket(Riak, list_to_binary(Bucket));
-sum_bucket(Riak, Bucket) when is_binary(Bucket) ->
+-spec sum_bucket(pid(), binary()) -> {struct, [{binary(), integer()}]}
+                                   | {error, term()}.
+sum_bucket(Riak, Bucket) ->
     FullBucket = riak_cs_utils:to_bucket_name(objects, Bucket),
     Query = [{map, {modfun, riak_cs_storage, object_size_map},
               [do_prereduce], false},

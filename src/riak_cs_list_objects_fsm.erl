@@ -422,7 +422,7 @@ make_response(Request=?LOREQ{max_keys=NumKeysRequested},
     riak_cs_list_objects_utils:untagged_manifest_and_prefix(SlicedTaggedItems),
     KeyContents = lists:map(fun riak_cs_list_objects:manifest_to_keycontent/1,
                             NewManis),
-    riak_cs_list_objects:new_response(Request, IsTruncated, NewPrefixes,
+    riak_cs_list_objects:new_response(Request, IsTruncated, undefined, NewPrefixes,
                                       KeyContents).
 
 -spec next_mr_query_spec(list(),
