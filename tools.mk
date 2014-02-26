@@ -9,23 +9,23 @@ LOCAL_PLT = .local_dialyzer_plt
 DIALYZER_FLAGS ?= -Wunmatched_returns
 
 ${PLT}: compile
-ifneq (,$(wildcard $(PLT)))
-	dialyzer --check_plt --plt $(PLT) --apps $(DIALYZER_APPS) && \
-		dialyzer --add_to_plt --plt $(PLT) --output_plt $(PLT) --apps $(DIALYZER_APPS) ; test $$? -ne 1
-else
-	dialyzer --build_plt --output_plt $(PLT) --apps $(DIALYZER_APPS); test $$? -ne 1
-endif
+	@if [ -f $(PLT) ]; then \
+		dialyzer --check_plt --plt $(PLT) --apps $(DIALYZER_APPS) && \
+		dialyzer --add_to_plt --plt $(PLT) --output_plt $(PLT) --apps $(DIALYZER_APPS) ; test $$? -ne 1; \
+	else \
+		dialyzer --build_plt --output_plt $(PLT) --apps $(DIALYZER_APPS); test $$? -ne 1; \
+	fi
 
 ${LOCAL_PLT}: compile
-ifneq (,$(wildcard deps/*))
-ifneq (,$(wildcard $(LOCAL_PLT)))
-	dialyzer --check_plt --plt $(LOCAL_PLT) deps/*/ebin  && \
-		dialyzer --add_to_plt --plt $(LOCAL_PLT) --output_plt $(LOCAL_PLT) deps/*/ebin ; test $$? -ne 1
-else
-	dialyzer --build_plt --output_plt $(LOCAL_PLT) deps/*/ebin ; test $$? -ne 1
-endif
-endif
-
+	@if [ -d deps ]; then \
+		if [ -f $(LOCAL_PLT) ]; then \
+			dialyzer --check_plt --plt $(LOCAL_PLT) deps/*/ebin  && \
+			dialyzer --add_to_plt --plt $(LOCAL_PLT) --output_plt $(LOCAL_PLT) deps/*/ebin ; test $$? -ne 1; \
+		else \
+			dialyzer --build_plt --output_plt $(LOCAL_PLT) deps/*/ebin ; test $$? -ne 1; \
+		fi \
+	fi
+		
 dialyzer: ${PLT} ${LOCAL_PLT}
 	@echo "==> $(shell basename $(shell pwd)) (dialyzer)"
 	@if [ -f $(LOCAL_PLT) ]; then \
