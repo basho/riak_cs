@@ -103,12 +103,12 @@ process_post(RD, Ctx=#context{local_context=LocalCtx,
                               [{'xmlns', "http://s3.amazonaws.com/doc/2006-03-01/"}],
                               [
                                {'Location', [lists:append(["http://", binary_to_list(Bucket), ".s3.amazonaws.com/", Key])]},
-                               {'Bucket', [binary_to_list(Bucket)]},
+                               {'Bucket', [Bucket]},
                                {'Key', [Key]},
-                               {'ETag', [binary_to_list(UploadId64)]}
+                               {'ETag', [UploadId64]}
                               ]
                              },
-                    XmlBody = riak_cs_xml:export_xml([XmlDoc]),
+                    XmlBody = riak_cs_xml:to_xml([XmlDoc]),
                     RD2 = wrq:set_resp_body(XmlBody, RD),
                     {true, RD2, Ctx};
                 {error, notfound} ->
@@ -191,9 +191,10 @@ content_types_accepted(RD, Ctx) ->
     %% e.g., PUT /ObjectName?partNumber=PartNumber&uploadId=UploadId
     riak_cs_mp_utils:make_content_types_accepted(RD, Ctx, accept_body).
 
-parse_body(Body) ->
+parse_body(Body0) ->
     try
-        {ParsedData, _Rest} = xmerl_scan:string(re:replace(Body, "&quot;", "", [global, {return, list}]), []),
+        Body = re:replace(Body0, "&quot;", "", [global, {return, list}]),
+        {ok, ParsedData} = riak_cs_xml:scan(Body),
         #xmlElement{name='CompleteMultipartUpload'} = ParsedData,
         Nums = [list_to_integer(T#xmlText.value) ||
                    T <- xmerl_xpath:string("//CompleteMultipartUpload/Part/PartNumber/text()", ParsedData)],
@@ -276,10 +277,10 @@ to_xml(RD, Ctx=#context{local_context=LocalCtx,
         {ok, Ps} ->
             Us = [{'Part',
                    [
-                    {'PartNumber', [integer_to_list(P?PART_DESCR.part_number)]},
+                    {'PartNumber', [P?PART_DESCR.part_number]},
                     {'LastModified', [P?PART_DESCR.last_modified]},
                     {'ETag', [riak_cs_utils:etag_from_binary(P?PART_DESCR.etag)]},
-                    {'Size', [integer_to_list(P?PART_DESCR.size)]}
+                    {'Size', [P?PART_DESCR.size]}
                    ]
                   } || P <- lists:sort(Ps)],
             PartNumbers = [P?PART_DESCR.part_number || P <- Ps],
@@ -290,9 +291,9 @@ to_xml(RD, Ctx=#context{local_context=LocalCtx,
             XmlDoc = {'ListPartsResult',
                       [{'xmlns', "http://s3.amazonaws.com/doc/2006-03-01/"}],
                       [
-                       {'Bucket', [binary_to_list(Bucket)]},
+                       {'Bucket', [Bucket]},
                        {'Key', [Key]},
-                       {'UploadId', [binary_to_list(base64url:encode(UploadId))]},
+                       {'UploadId', [base64url:encode(UploadId)]},
                        {'Initiator',    % TODO: replace with ARN data?
                         [{'ID', [UserKeyId]},
                          {'DisplayName', [UserDisplay]}
@@ -302,13 +303,13 @@ to_xml(RD, Ctx=#context{local_context=LocalCtx,
                          {'DisplayName', [UserDisplay]}
                         ]},
                        {'StorageClass', ["STANDARD"]}, % TODO
-                       {'PartNumberMarker', ["1"]},    % TODO
-                       {'NextPartNumberMarker', [integer_to_list(MaxPartNumber)]}, % TODO
-                       {'MaxParts', [integer_to_list(length(Us))]}, % TODO
+                       {'PartNumberMarker', [1]},    % TODO
+                       {'NextPartNumberMarker', [MaxPartNumber]}, % TODO
+                       {'MaxParts', [length(Us)]}, % TODO
                        {'IsTruncated', ["false"]}   % TODO
                       ] ++ Us
                      },
-            Body = riak_cs_xml:export_xml([XmlDoc]),
+            Body = riak_cs_xml:to_xml([XmlDoc]),
             {Body, RD, Ctx};
         {error, notfound} ->
             riak_cs_s3_response:no_such_upload_response(UploadId, RD, Ctx);

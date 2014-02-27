@@ -20,3 +20,5 @@ pkg.vars.config
 client_tests/python/ceph_tests/s3-tests
 riak-cs.png
 .local_dialyzer_plt
+.eqc-info
+.riak_cs_list_objects_fsm_v2_eqc.txt

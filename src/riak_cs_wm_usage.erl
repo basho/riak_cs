@@ -321,11 +321,7 @@ produce_xml(RD, #ctx{body=undefined}=Ctx) ->
     Storage = maybe_storage(RD, Ctx),
     Doc = [{?KEY_USAGE, [{?KEY_ACCESS, xml_access(Access)},
                          {?KEY_STORAGE, xml_storage(Storage)}]}],
-    Body = case riak_cs_xml:export_xml(Doc) of
-               {error, Bin, _}         -> Bin;
-               {incomplete, Bin, _}    -> Bin;
-               Bin when is_binary(Bin) -> Bin
-           end,
+    Body = riak_cs_xml:to_xml(Doc),
     {Body, RD, Ctx#ctx{body=Body}};
 produce_xml(RD, #ctx{body=Body}=Ctx) ->
     {Body, RD, Ctx}.
@@ -477,7 +473,7 @@ xml_error_msg(Message) when is_binary(Message) ->
     xml_error_msg(binary_to_list(Message));
 xml_error_msg(Message) ->
     Doc = [{?KEY_ERROR, [{?KEY_MESSAGE, [Message]}]}],
-    riak_cs_xml:export_xml(Doc).
+    riak_cs_xml:to_xml(Doc).
 
 %% @doc Produce a datetime tuple from a ISO8601 string
 -spec datetime(binary()|string()) -> {ok, calendar:datetime()} | error.

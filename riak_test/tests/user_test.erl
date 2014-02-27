@@ -34,38 +34,52 @@ confirm() ->
     {AdminUserConfig, {RiakNodes, _CSNodes, _Stanchion}} = rtcs:setup(1),
 
     HeadRiakNode = hd(RiakNodes),
-    AdminUserCreds = {AdminUserConfig#aws_config.access_key_id,
-                      AdminUserConfig#aws_config.secret_access_key},
-    user_listing_json_test_case([AdminUserCreds], AdminUserConfig, HeadRiakNode),
-    user_listing_xml_test_case([AdminUserCreds], AdminUserConfig, HeadRiakNode),
+    AdminUser = {"admin@me.com", "admin",
+                 AdminUserConfig#aws_config.access_key_id,
+                 AdminUserConfig#aws_config.secret_access_key,
+                 "enabled"},
+    user_listing_json_test_case([AdminUser], AdminUserConfig, HeadRiakNode),
+    user_listing_xml_test_case([AdminUser], AdminUserConfig, HeadRiakNode),
 
-    %% Create 2 users and re-run user listing test cases
+    %% Create 3 users and re-run user listing test cases
     Port = rtcs:cs_port(HeadRiakNode),
-    {TestKey1, TestSecret1, _} = rtcs:create_user(Port, "bart@simpsons.com", "bart"),
-    {TestKey2, TestSecret2, _} = rtcs:create_user(Port, "homer@simpsons.com", "homer"),
-    UserCreds = ordsets:from_list([AdminUserCreds,
-                                   {TestKey1, TestSecret1},
-                                   {TestKey2, TestSecret2}]),
-
-    user_listing_json_test_case(UserCreds, AdminUserConfig, HeadRiakNode),
-    user_listing_xml_test_case(UserCreds, AdminUserConfig, HeadRiakNode),
-
+    Users = [AdminUser |
+             create_users(Port, [{"bart@simpsons.com", "bart"},
+                                 {"homer@simpsons.com", "homer"},
+                                 {"taro@example.co.jp", japanese_aiueo()}], [])],
+    user_listing_json_test_case(Users, AdminUserConfig, HeadRiakNode),
+    user_listing_xml_test_case(Users, AdminUserConfig, HeadRiakNode),
     update_user_json_test_case(AdminUserConfig, HeadRiakNode),
     update_user_xml_test_case(AdminUserConfig, HeadRiakNode),
     pass.
 
-user_listing_json_test_case(UserCreds, UserConfig, Node) ->
-    user_listing_test(UserCreds, UserConfig, Node, ?JSON).
+japanese_aiueo() ->
+    %% To avoid dependency on source code encoding, create list from chars.
+    %% These five numbers represents "あいうえお" (A-I-U-E-O in Japanese).
+    %% unicode:characters_to_binary([12354,12356,12358,12360,12362]).
+    Chars = [12354,12356,12358,12360,12362],
+    binary_to_list(unicode:characters_to_binary(Chars)).
 
-user_listing_xml_test_case(UserCreds, UserConfig, Node) ->
-    user_listing_test(UserCreds, UserConfig, Node, ?XML).
+create_users(_Port, [], Acc) ->
+    ordsets:from_list(Acc);
+create_users(Port, [{Email, Name} | Users], Acc) ->
+    {Key, Secret, _Id} = rtcs:create_user(Port, Email, Name),
+    create_users(Port, Users, [{Email, Name, Key, Secret, "enabled"} | Acc]).
 
-user_listing_test(ExpectedUserCreds, UserConfig, Node, ContentType) ->
+user_listing_json_test_case(Users, UserConfig, Node) ->
+    user_listing_test(Users, UserConfig, Node, ?JSON).
+
+user_listing_xml_test_case(Users, UserConfig, Node) ->
+    user_listing_test(Users, UserConfig, Node, ?XML).
+
+user_listing_test(ExpectedUsers, UserConfig, Node, ContentType) ->
     Resource = "/riak-cs/users",
     Port = rtcs:cs_port(Node),
-    UserCreds = parse_user_creds(
-                  rtcs:list_users(UserConfig, Port, Resource, ContentType)),
-    ?assertEqual(ExpectedUserCreds, UserCreds).
+    Users = parse_user_info(
+              rtcs:list_users(UserConfig, Port, Resource, ContentType)),
+    lager:log(warning, self(), "ExpectedUsers: ~p~n", [ExpectedUsers]),
+    lager:log(warning, self(), "Users: ~p~n", [Users]),
+    ?assertEqual(ExpectedUsers, Users).
 
 update_user_json_test_case(AdminConfig, Node) ->
     Users = [{"fergus@brave.sco", "Fergus"},
@@ -245,7 +259,7 @@ parse_user_records(Output, ?JSON) ->
          KeySecret = binary_to_list(proplists:get_value(<<"key_secret">>, UserJson)),
          Status = binary_to_list(proplists:get_value(<<"status">>, UserJson)),
          {Email, Name, KeyId, KeySecret, Status}
-     end || UserJson <- JsonData];
+     end || {struct, UserJson} <- JsonData];
 parse_user_records(Output, ?XML) ->
     {ParsedData, _Rest} = xmerl_scan:string(Output, []),
     [lists:foldl(fun user_fields_from_xml/2,
@@ -262,7 +276,7 @@ user_fields_from_xml(Element, {Email, Name, KeyId, Secret, Status}=Acc) ->
             [Content | _] = Element#xmlElement.content,
             case is_record(Content, xmlText) of
                 true ->
-                    {Content#xmlText.value, Name, KeyId, Secret, Status};
+                    {xml_text_value(Content), Name, KeyId, Secret, Status};
                 false ->
                     Acc
             end;
@@ -270,7 +284,7 @@ user_fields_from_xml(Element, {Email, Name, KeyId, Secret, Status}=Acc) ->
             [Content | _] = Element#xmlElement.content,
             case is_record(Content, xmlText) of
                 true ->
-                    {Email, Content#xmlText.value, KeyId, Secret, Status};
+                    {Email, xml_text_value(Content), KeyId, Secret, Status};
                 false ->
                     Acc
             end;
@@ -302,6 +316,11 @@ user_fields_from_xml(Element, {Email, Name, KeyId, Secret, Status}=Acc) ->
             Acc
     end.
 
+xml_text_value(XmlText) ->
+    %% xmerl return list of UTF-8 characters, each element of it represent
+    %% one character (or codepoint), not one byte.
+    binary_to_list(unicode:characters_to_binary(XmlText#xmlText.value)).
+
 parse_error_code(Output) ->
     {ParsedData, _Rest} = xmerl_scan:string(Output, []),
     lists:foldl(fun error_code_from_xml/2,
@@ -324,27 +343,19 @@ error_code_from_xml(Element, Acc) ->
             Acc
     end.
 
-parse_user_creds(Output) ->
+parse_user_info(Output) ->
     [Boundary | Tokens] = string:tokens(Output, "\r\n"),
-    parse_user_creds(Tokens, Boundary, []).
+    parse_user_info(Tokens, Boundary, []).
 
-parse_user_creds([_LastToken], _, UserCreds) ->
-    ordsets:from_list(UserCreds);
-parse_user_creds(["Content-Type: application/xml", RawXml | RestTokens],
-                 Boundary, UserCreds) ->
-    UpdUserCreds = update_user_creds(parse_user_records(RawXml, ?XML),
-                                    UserCreds),
-    parse_user_creds(RestTokens, Boundary, UpdUserCreds);
-parse_user_creds(["Content-Type: application/json", RawJson | RestTokens],
-                 Boundary, UserCreds) ->
-    UpdUserCreds = update_user_creds(parse_user_records(RawJson, ?JSON),
-                                     UserCreds),
-    parse_user_creds(RestTokens, Boundary, UpdUserCreds);
-parse_user_creds([_ | RestTokens], Boundary, UserCreds) ->
-    parse_user_creds(RestTokens, Boundary, UserCreds).
-
-update_user_creds(UserRecords, UserCreds) ->
-    FoldFun = fun({_, _, KeyId, Secret, _}, Acc) ->
-                      [{KeyId, Secret} | Acc]
-              end,
-    lists:foldl(FoldFun, UserCreds, UserRecords).
+parse_user_info([_LastToken], _, Users) ->
+    ordsets:from_list(Users);
+parse_user_info(["Content-Type: application/xml", RawXml | RestTokens],
+                 Boundary, Users) ->
+    UpdUsers = parse_user_records(RawXml, ?XML) ++ Users,
+    parse_user_info(RestTokens, Boundary, UpdUsers);
+parse_user_info(["Content-Type: application/json", RawJson | RestTokens],
+                 Boundary, Users) ->
+    UpdUsers = parse_user_records(RawJson, ?JSON) ++ Users,
+    parse_user_info(RestTokens, Boundary, UpdUsers);
+parse_user_info([_ | RestTokens], Boundary, Users) ->
+    parse_user_info(RestTokens, Boundary, Users).

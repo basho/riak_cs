@@ -140,10 +140,10 @@ accept_json(RD, Ctx) ->
 accept_xml(RD, Ctx=#context{user=undefined}) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"accept_xml">>),
     Body = binary_to_list(wrq:req_body(RD)),
-    case catch xmerl_scan:string(Body, []) of
-        {'EXIT', _} ->
+    case riak_cs_xml:scan(Body) of
+        {error, malformed_xml} ->
             riak_cs_s3_response:api_error(invalid_user_update, RD, Ctx);
-        {ParsedData, _Rest} ->
+        {ok, ParsedData} ->
             ValidItems = lists:foldl(fun user_xml_filter/2,
                                      [],
                                      ParsedData#xmlElement.content),
@@ -157,10 +157,10 @@ accept_xml(RD, Ctx=#context{user=undefined}) ->
 accept_xml(RD, Ctx) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"accept_xml">>),
     Body = binary_to_list(wrq:req_body(RD)),
-    case catch xmerl_scan:string(Body, []) of
-        {'EXIT', _} ->
+    case riak_cs_xml:scan(Body) of
+        {error, malformed_xml} ->
             riak_cs_s3_response:api_error(invalid_user_update, RD, Ctx);
-        {ParsedData, _Rest} ->
+        {ok, ParsedData} ->
             UpdateItems = lists:foldl(fun user_xml_filter/2,
                                       [],
                                       ParsedData#xmlElement.content),

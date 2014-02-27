@@ -46,7 +46,9 @@
          use_t2b_compression/0,
          trust_x_forwarded_for/0,
          gc_key_suffix_max/0,
-         set_gc_key_suffix_max/1
+         set_gc_key_suffix_max/1,
+         user_buckets_prune_time/0,
+         set_user_buckets_prune_time/1
         ]).
 
 %% OpenStack config
@@ -262,6 +264,16 @@ gc_key_suffix_max() ->
 set_gc_key_suffix_max(MaxValue) when is_integer(MaxValue) andalso MaxValue > 0 ->
     application:set_env(riak_cs, gc_key_suffix_max, MaxValue);
 set_gc_key_suffix_max(_MaxValue) ->
+    {error, invalid_value}.
+
+-spec user_buckets_prune_time() -> pos_integer().
+user_buckets_prune_time() ->
+    get_env(riak_cs, user_buckets_prune_time, ?USER_BUCKETS_PRUNE_TIME).
+
+-spec set_user_buckets_prune_time(pos_integer()) -> ok | {error, invalid_value}.
+set_user_buckets_prune_time(PruneTime) when is_integer(PruneTime) andalso PruneTime > 0 ->
+    application:set_env(riak_cs, user_buckets_prune_time, PruneTime);
+set_user_buckets_prune_time(_PruneTime) ->
     {error, invalid_value}.
 
 %% ===================================================================
