@@ -22,3 +22,5 @@ riak-cs.png
 .local_dialyzer_plt
 .eqc-info
 .riak_cs_list_objects_fsm_v2_eqc.txt
+dialyzer_warnings
+dialyzer_unhandled_warnings
