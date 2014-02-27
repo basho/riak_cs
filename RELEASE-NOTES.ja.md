@@ -6,6 +6,18 @@
 * HEADリクエスト時にアクセス集計していた問題を修正 [riak_cs/791](https://github.com/basho/riak_cs/pull/791)
 * POST/PUTリクエスト時のXML中の空白文字の対処 [riak_cs/795](https://github.com/basho/riak_cs/pull/795)
 * ストレージ使用量計算時の誤ったバケット名を修正 [riak_cs/800](https://github.com/basho/riak_cs/pull/800)
+  Riak CS 1.4.4 introduced a bug where storage calculations made while running
+  that version would have the bucket-name replaced by the string "struct". This
+  version fixes the bug, but can't go back and retroactively fix the old
+  storage calculations. Aggregations on an entire user-account should still
+  be accurate, but you won't be able to break-down storage by bucket, as they
+  will all share the name "struct".
+  Riak CS 1.4.4 で入り込んだバグにより、そのバージョンを使用している期間の
+  ストレージ計算はバケット名が文字列 "struct" に置き換わった結果となっていました。
+  本バージョン 1.4.5 でこのバグ自体は修正されましたが、すでに計算済みの古い結果を
+  さかのぼって修正することは不可能です。バケット名が "struct" に置き換わってしまった
+  計算結果では、個別バケットの使用量を知ることはできませんが、その場合であっても
+  個々のユーザに関して所有バケットにわたる合計は正しい数字を示します。
 * Unicodeのユーザ名とXMLの対応 [riak_cs/807](https://github.com/basho/riak_cs/pull/807)
 * ストレージ使用量で必要なXMLフィールドを追加 [riak_cs/808](https://github.com/basho/riak_cs/pull/808)
 * オブジェクトのfoldのタイムアウトを揃えた [riak_cs/811](https://github.com/basho/riak_cs/pull/811)
