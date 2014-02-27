@@ -58,7 +58,6 @@ start_link() ->
                          non_neg_integer()},
                         [supervisor:child_spec()]}}.
 init([]) ->
-    catch dtrace:init(),                   % NIF load trigger (R14B04)
     catch dyntrace:p(),                    % NIF load trigger (R15B01+)
     Options = [get_option_val(Option) || Option <- ?OPTIONS],
     {ok, { {one_for_one, 10, 10}, pool_specs(Options) ++
