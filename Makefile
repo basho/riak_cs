@@ -153,9 +153,6 @@ DIALYZER_APPS = kernel stdlib sasl erts ssl tools os_mon runtime_tools crypto in
 	xmerl webtool eunit syntax_tools compiler
 PLT ?= $(HOME)/.riak-cs_dialyzer_plt
 
-xref: compile
-	./rebar xref skip_deps=true | grep -v unused | egrep -v -f ./xref.ignore-warnings
-
 ##
 ## Packaging targets
 ##

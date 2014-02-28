@@ -259,7 +259,7 @@ update_profiling_and_last_request(State, ObjectBuffer, ObjectBufferLength) ->
                                              ObjectBufferLength),
     update_last_request_state(State2, ObjectBuffer).
 
--spec respond(state(), list(), ordsets:ordset()) ->
+-spec respond(state(), list(), list_objects_common_prefixes()) ->
     fsm_state_return().
 respond(StateData=#state{req=Request=?LOREQ{max_keys=UserMaxKeys,
                                             delimiter=Delimiter}},

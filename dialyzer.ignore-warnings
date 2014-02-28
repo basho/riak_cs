@@ -1,0 +1,22 @@
+# Errors
+Function get_block_remote/5 has no local return
+# Warnings
+Unknown functions:
+  app_helper:get_prop_or_env/3
+  app_helper:get_prop_or_env/4
+  dtrace:init/0
+  riak:stop/1
+  riak_core_bucket:get_bucket/1
+  riak_cs_dummy_reader:get_manifest/1
+  riak_cs_dummy_reader:start_link/1
+  riak_object:bucket/1
+  riak_object:get_values/1
+  riak_object:key/1
+  riakc_pb_socket_fake:start_link/0
+Unknown types:
+  riak_kv_backend:fold_buckets_fun/0
+  riak_kv_backend:fold_keys_fun/0
+  riak_kv_backend:fold_objects_fun/0
+  riak_object:bucket/0
+  riak_object:key/0
+  riakc_pb_socket:index_results/0
