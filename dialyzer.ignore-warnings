@@ -1,6 +1,5 @@
 # Errors
 Function get_block_remote/5 has no local return
-
 # Warnings
 Unknown functions:
   app_helper:get_prop_or_env/3
