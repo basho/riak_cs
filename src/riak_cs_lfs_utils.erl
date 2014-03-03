@@ -278,9 +278,9 @@ new_manifest(Bucket, FileName, UUID, ContentLength, ContentType, ContentMd5,
                    cluster_id()) -> lfs_manifest().
 new_manifest(Bucket, FileName, UUID, ContentLength, ContentType, ContentMd5,
              MetaData, BlockSize, Acl, Props, ClusterID) ->
-    ContainerId = riak_cs_mc:assign_container_id(block),
+    BagId = riak_cs_mc:assign_bag_id(block),
     new_manifest(Bucket, FileName, UUID, ContentLength, ContentType, ContentMd5,
-                 MetaData, BlockSize, Acl, Props, ClusterID, ContainerId).
+                 MetaData, BlockSize, Acl, Props, ClusterID, BagId).
 
 -spec new_manifest(binary(),
                    binary(),
@@ -293,9 +293,9 @@ new_manifest(Bucket, FileName, UUID, ContentLength, ContentType, ContentMd5,
                    acl() | no_acl_yet,
                    proplists:proplist(),
                    cluster_id(),
-                   ContainerId::binary()) -> lfs_manifest().
+                   BagId::binary()) -> lfs_manifest().
 new_manifest(Bucket, FileName, UUID, ContentLength, ContentType, ContentMd5,
-             MetaData, BlockSize, Acl, Props, ClusterID, ContainerId) ->
+             MetaData, BlockSize, Acl, Props, ClusterID, BagId) ->
     Blocks = ordsets:from_list(initial_blocks(ContentLength, BlockSize)),
     Manifest = ?MANIFEST{bkey={Bucket, FileName},
                          uuid=UUID,
@@ -309,7 +309,7 @@ new_manifest(Bucket, FileName, UUID, ContentLength, ContentType, ContentMd5,
                          acl=Acl,
                          props=Props,
                          cluster_id=ClusterID},
-    riak_cs_mc:set_container_id_to_manifest(ContainerId, Manifest).
+    riak_cs_mc:set_bag_id_to_manifest(BagId, Manifest).
 
 %% @doc Remove a chunk from the
 %%      write_blocks_remaining field of Manifest

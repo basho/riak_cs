@@ -40,17 +40,17 @@
 %%% Public API
 %%%===================================================================
 
-%% @doc Show multi-container weight information
+%% @doc Show weight information for all bags
 status(_Opts) ->
-    ?SAFELY(get_status(), "Checking multi-container status").
+    ?SAFELY(get_status(), "Show current weight information").
 
 refresh(_Opts) ->
     ?SAFELY(handle_result(riak_cs_mc_server:refresh()),
-            "Refresh multi-container weight").
+            "Refresh weight information").
 
 input(Args) ->
     ?SAFELY(handle_result(riak_cs_mc_server:input(parse_input_args(Args))),
-            "Updating the multi-container weight information").
+            "Updating the weight information").
 
 %%%===================================================================
 %%% Internal functions

@@ -18,24 +18,24 @@
 %%
 %% ---------------------------------------------------------------------
 
-%% @doc Support multi containers (multi Riak clusters) in single Riak CS system
+%% @doc Support multi Riak clusters in single Riak CS system
 
 -module(riak_cs_mc).
 
 -export([pool_specs/0]).
--export([pool_name/2, default_container_id/1,
-         assign_container_id/1, set_container_id_to_manifest/2,
-         container_id_from_manifest/1]).
+-export([pool_name/2, default_bag_id/1,
+         assign_bag_id/1, set_bag_id_to_manifest/2,
+         bag_id_from_manifest/1]).
 
 -export([tab_info/0]).
 
--export_type([pool_key/0, pool_type/0, container_id/0]).
+-export_type([pool_key/0, pool_type/0, bag_id/0]).
 
 -type pool_type() :: blocks | manifests.
-%% Use "container ID" instead of "cluster ID".
-%% The reason is cluster ID is improper in case of multi-datacenter replication.
--type container_id() :: binary().
--type pool_key() :: {pool_type(), container_id()}.
+%% Use "bag ID" instead of "cluster ID".
+%% There are more than one clusters in case of MDC.
+-type bag_id() :: binary().
+-type pool_key() :: {pool_type(), bag_id()}.
 
 %% FIXME: hardcoded, use values of connection_pools?
 -define(WORKERS, 128).
@@ -57,13 +57,11 @@
 -spec pool_specs() -> [{atom(), {non_neg_integer(), non_neg_integer()}}].
 pool_specs() ->
     init_ets(),
-    BlockPools = register_containers(block, block_containers,
-                                     default_block_container),
-    ManifestPools = register_containers(manifest, manifest_containers,
-                                        default_manifest_container),
+    BlockPools = register_bags(block, block_bags, default_block_bag),
+    ManifestPools = register_bags(manifest, manifest_bags, default_manifest_bag),
     BlockPools ++ ManifestPools.
 
-register_containers(Type, PoolConfigName, DefaultConfigName) ->
+register_bags(Type, PoolConfigName, DefaultConfigName) ->
     Pools = case application:get_env(riak_cs, PoolConfigName) of
                 undefined ->
                     application:set_env(riak_cs, DefaultConfigName, undefined),
@@ -71,123 +69,122 @@ register_containers(Type, PoolConfigName, DefaultConfigName) ->
                 [] ->
                     application:set_env(riak_cs, DefaultConfigName, undefined),
                     [];
-                {ok, Containers} ->
-                    register_props(Type, Containers, [])
+                {ok, Bags} ->
+                    register_props(Type, Bags, [])
             end,
     Pools.
 
 register_props(_, [], Names) ->
     Names;
-register_props(Type, [{ContainerId, Address, Port} | Rest], PoolSpecs) ->
-    lager:debug("{ContainerId, Type, Address, Port}: ~p~n",
-                [{ContainerId, Type, Address, Port}]),
-    NewPoolSpec = {register_and_get_pool_name(Type, ContainerId, Address, Port),
+register_props(Type, [{BagId, Address, Port} | Rest], PoolSpecs) ->
+    lager:debug("{BagId, Type, Address, Port}: ~p~n", [{BagId, Type, Address, Port}]),
+    NewPoolSpec = {register_and_get_pool_name(Type, BagId, Address, Port),
                    {?WORKERS, ?OVERFLOW, Address, Port}},
     register_props(Type, Rest, [NewPoolSpec | PoolSpecs]).
 
-%% Translate container ID in buckets and manifests to pool name.
+%% Translate bag ID in buckets and manifests to pool name.
 -spec pool_name(pool_type(),
                 undefined | riakc_obj:riakc_obj() | lfs_manifest() | cs_bucket()) ->
                        atom().
 pool_name(block, Manifest) when is_record(Manifest, ?MANIFEST_REC) ->
-    container_pool_name(block, container_id_from_manifest(Manifest));
+    bag_pool_name(block, bag_id_from_manifest(Manifest));
 pool_name(manifest, ?RCS_BUCKET{} = Bucket) ->
-    container_pool_name(manifest, container_id_from_cs_bucket(Bucket));
+    bag_pool_name(manifest, bag_id_from_cs_bucket(Bucket));
 pool_name(manifest, BucketObj) ->
-    container_pool_name(manifest, container_id_from_bucket(BucketObj)).
+    bag_pool_name(manifest, bag_id_from_bucket(BucketObj)).
 
 %% 'undefined' in second argument means buckets and manifests were stored
-%% under single container configuration.
-container_pool_name(_Type, undefined) ->
+%% under single bag configuration.
+bag_pool_name(_Type, undefined) ->
     undefined;
-container_pool_name(Type, ContainerId) when is_binary(ContainerId) ->
+bag_pool_name(Type, BagId) when is_binary(BagId) ->
     lager:debug("Type: ~p~n", [Type]),
-    case ets:lookup(?ETS_TAB, {Type, ContainerId}) of
+    case ets:lookup(?ETS_TAB, {Type, BagId}) of
         [] ->
             %% TODO: Misconfiguration? Should throw error?
-            %% Another possibility is number of containers are reduced.
+            %% Another possibility is number of bags are reduced.
             undefined;
         [#pool{name = Name}] ->
             Name
     end.
 
--spec container_id_from_manifest(lfs_manifest()) -> undefined | container_id().
-container_id_from_manifest(?MANIFEST{props = Props}) ->
+-spec bag_id_from_manifest(lfs_manifest()) -> undefined | bag_id().
+bag_id_from_manifest(?MANIFEST{props = Props}) ->
     case Props of
         undefined ->
-            application:get_env(riak_cs, default_block_container);
+            application:get_env(riak_cs, default_block_bag);
         _ ->
-            proplists:get_value(block_container, Props)
+            proplists:get_value(block_bag, Props)
     end.
 
--spec container_id_from_cs_bucket(cs_bucket()) -> undefined | container_id().
-container_id_from_cs_bucket(?RCS_BUCKET{manifest_container=undefined}) ->
-    application:get_env(riak_cs, default_manifest_container);
-container_id_from_cs_bucket(?RCS_BUCKET{manifest_container=ContainerId}) ->
-    ContainerId.
+-spec bag_id_from_cs_bucket(cs_bucket()) -> undefined | bag_id().
+bag_id_from_cs_bucket(?RCS_BUCKET{manifest_bag=undefined}) ->
+    application:get_env(riak_cs, default_manifest_bag);
+bag_id_from_cs_bucket(?RCS_BUCKET{manifest_bag=BagId}) ->
+    BagId.
 
--spec container_id_from_bucket(riakc_obj:riakc_obj()) -> undefined | container_id().
-container_id_from_bucket(BucketObj) ->
+-spec bag_id_from_bucket(riakc_obj:riakc_obj()) -> undefined | bag_id().
+bag_id_from_bucket(BucketObj) ->
     lager:debug("BucketObj: ~p~n", [BucketObj]),
     Contents = riakc_obj:get_contents(BucketObj),
-    container_id_from_contents(Contents).
+    bag_id_from_contents(Contents).
 
-container_id_from_contents([]) ->
-    application:get_env(riak_cs, default_manifest_container);
-container_id_from_contents([{MD, _} | Contents]) ->
-    case container_id_from_meta(dict:fetch(?MD_USERMETA, MD)) of
+bag_id_from_contents([]) ->
+    application:get_env(riak_cs, default_manifest_bag);
+bag_id_from_contents([{MD, _} | Contents]) ->
+    case bag_id_from_meta(dict:fetch(?MD_USERMETA, MD)) of
         undefined ->
-            container_id_from_contents(Contents);
-        ContainerId ->
-            ContainerId
+            bag_id_from_contents(Contents);
+        BagId ->
+            BagId
     end.
 
-container_id_from_meta([]) ->
+bag_id_from_meta([]) ->
     undefined;
-container_id_from_meta([{?MD_CONTAINER, Value} | _]) ->
+bag_id_from_meta([{?MD_BAG, Value} | _]) ->
     binary_to_term(Value);
-container_id_from_meta([_MD | MDs]) ->
-    container_id_from_meta(MDs).
+bag_id_from_meta([_MD | MDs]) ->
+    bag_id_from_meta(MDs).
 
--spec default_container_id(pool_type()) -> container_id().
-default_container_id(block) ->
-    application:get_env(riak_cs, default_block_container_id);
-default_container_id (manifest) ->
-    application:get_env(riak_cs, default_manifest_container_id).
+-spec default_bag_id(pool_type()) -> bag_id().
+default_bag_id(block) ->
+    application:get_env(riak_cs, default_block_bag_id);
+default_bag_id(manifest) ->
+    application:get_env(riak_cs, default_manifest_bag_id).
 
-%% Choose container ID for new bucket or new manifest
-assign_container_id(Type) ->
+%% Choose bag ID for new bucket or new manifest
+assign_bag_id(Type) ->
     case ets:first(?ETS_TAB) of
-        %% single container
+        %% single bag
         '$end_of_table' ->
             undefined;
-        %% multiple containers
+        %% multiple bags
         _Key ->
-            {ok, ContainerId} = riak_cs_mc_server:allocate(Type),
-            ContainerId
+            {ok, BagId} = riak_cs_mc_server:allocate(Type),
+            BagId
     end.
 
-%% Choose container ID to store blocks for new manifest and
+%% Choose bag ID to store blocks for new manifest and
 %% return new manifest
--spec set_container_id_to_manifest(container_id() | undefined, lfs_manifest()) -> lfs_manifest().
-set_container_id_to_manifest(undefined, Manifest) ->
+-spec set_bag_id_to_manifest(bag_id() | undefined, lfs_manifest()) -> lfs_manifest().
+set_bag_id_to_manifest(undefined, Manifest) ->
     Manifest;
-set_container_id_to_manifest(ContainerId, ?MANIFEST{props = Props} = Manifest) ->
-    Manifest?MANIFEST{props = [{block_container, ContainerId} | Props]}.
+set_bag_id_to_manifest(BagId, ?MANIFEST{props = Props} = Manifest) ->
+    Manifest?MANIFEST{props = [{block_bag, BagId} | Props]}.
 
 init_ets() ->
     ets:new(?ETS_TAB, [{keypos, 2}, named_table, protected,
                        {read_concurrency, true}]).
 
 -spec register_and_get_pool_name(pool_type(), string(),
-                                 non_neg_integer(), container_id()) -> atom().
-register_and_get_pool_name(Type, ContainerId, IP, Port) ->
-    %% TODO: Better to check container_id for safety
-    %%       Or get container_id on the fly?
-    %% TODO(shino): IP and Port are better than ContainerId?
+                                 non_neg_integer(), bag_id()) -> atom().
+register_and_get_pool_name(Type, BagId, IP, Port) ->
+    %% TODO: Better to check bag_id for safety
+    %%       Or get bag_id on the fly?
+    %% TODO(shino): IP and Port are better than BagId?
     %%              Or just serial number?
-    Name = list_to_atom(lists:flatten(io_lib:format("~s:~s", [Type, ContainerId]))),
-    ets:insert(?ETS_TAB, #pool{key = {Type, ContainerId},
+    Name = list_to_atom(lists:flatten(io_lib:format("~s:~s", [Type, BagId]))),
+    ets:insert(?ETS_TAB, #pool{key = {Type, BagId},
                                type = Type,
                                ip = IP,
                                port = Port,

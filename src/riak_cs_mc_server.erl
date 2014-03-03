@@ -18,7 +18,7 @@
 %%
 %% ---------------------------------------------------------------------
 
-%% @doc The server process which periodically retreives information of multi containers
+%% @doc The server process which periodically retreives information of multi bags
 
 -module(riak_cs_mc_server).
 
@@ -45,7 +45,7 @@
 
 %% FIXME make it more specific
 -record(usage, {
-          container_id :: riak_cs_mc:container_id(),
+          bag_id :: riak_cs_mc:bag_id(),
           weight :: non_neg_integer(),
           free :: non_neg_integer(),
           total :: non_neg_integer()
@@ -61,7 +61,7 @@
 start_link() ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
 
--spec allocate(riak_cs_mc:pool_type()) -> {ok, riak_cs_mc:container_id()} |
+-spec allocate(riak_cs_mc:pool_type()) -> {ok, riak_cs_mc:bag_id()} |
                                           {error, term()}.
 allocate(Type) ->
     gen_server:call(?SERVER, {allocate, Type}).
@@ -100,13 +100,13 @@ init([]) ->
 
 handle_call({allocate, Type}, _From, State)
   when Type =:= block orelse Type =:= manifest ->
-    ContainerId = case Type of
-                    block ->
-                          decide_container(State#state.blocks);
-                    manifest ->
-                          decide_container(State#state.manifests)
-                  end,
-    {reply, {ok, ContainerId}, State};
+    BagId = case Type of
+                block ->
+                    decide_bag(State#state.blocks);
+                manifest ->
+                    decide_bag(State#state.manifests)
+            end,
+    {reply, {ok, BagId}, State};
 handle_call(status, _From, #state{blocks=Blocks, manifests=Manifests} = State) ->
     {reply, {ok, [{blocks, Blocks}, {manifests, Manifests}]}, State};
 handle_call(refresh, _From, State) ->
@@ -123,16 +123,6 @@ handle_cast(_Msg, State) ->
     %% TODO: handle messages from GET process and update State.
     {noreply, State}.
 
-%%--------------------------------------------------------------------
-%% @private
-%% @doc
-%% Handling all non call/cast messages
-%%
-%% @spec handle_info(Info, State) -> {noreply, State} |
-%%                                   {noreply, State, Timeout} |
-%%                                   {stop, Reason, State}
-%% @end
-%%--------------------------------------------------------------------
 handle_info(_Info, State) ->
     {noreply, State}.
 
@@ -142,27 +132,28 @@ terminate(_Reason, _State) ->
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
-%% Decide container to allocate block/manifest randomly weighted by free ratio.
-%% container    weight    cummulative-weight   point (1..60)
-%% Container1   20        20                    1..20
-%% Container2   10        30                   21..30
-%% Container3    0        30                   N/A
-%% Container4   30        60                   31..60
--spec decide_container([{riak_cs_mc:pool_key(), usage()}]) ->
-                              {riak_cs_mc:pool_key(), usage()}.
-decide_container(Usages) ->
+%% NOTE: NOT USED currently
+%% Decide bag to allocate block/manifest randomly weighted by free ratio.
+%% bag    weight    cummulative-weight   point (1..60)
+%% bag1   20        20                    1..20
+%% bag2   10        30                   21..30
+%% bag3    0        30                   N/A
+%% bag4   30        60                   31..60
+-spec decide_bag([{riak_cs_mc:pool_key(), usage()}]) ->
+                        {riak_cs_mc:pool_key(), usage()}.
+decide_bag(Usages) ->
     %% TODO: if the sum must be a constant value, we can skip this summation.
     %% FIXME: What to do if every usage has weight=0?
     SumOfWeights = lists:sum([Weight || #usage{weight = Weight} <- Usages]),
     Point = random:uniform(SumOfWeights),
-    decide_container(Point, Usages).
+    decide_bag(Point, Usages).
 
 %% Always Point => 1 holds, usage with weight=0 never selected.
-decide_container(Point, [#usage{container_id = ContainerId, weight = Weight} | _Usages])
+decide_bag(Point, [#usage{bag_id = BagId, weight = Weight} | _Usages])
   when Point =< Weight ->
-    ContainerId;
-decide_container(Point, [#usage{weight = Weight} | Usages]) ->
-    decide_container(Point - Weight, Usages).
+    BagId;
+decide_bag(Point, [#usage{weight = Weight} | Usages]) ->
+    decide_bag(Point - Weight, Usages).
 
 %% Connect to default cluster and GET {riak-cs-mc, usage}, then recalculate weights.
 %% TODO: GET operation can be blocked. Make it by spawned process to be able to allocate
@@ -212,14 +203,14 @@ calc_weight([{Type, FreeInfoPerType} | Rest], Acc) ->
 
 update_weight([], Updated) ->
     Updated;
-update_weight([ContainerInfo | Rest], Updated) ->
-    Weight = calc_weight(ContainerInfo),
-    update_weight(Rest, [[{weight, Weight} | ContainerInfo] | Updated]).
+update_weight([BagInfo | Rest], Updated) ->
+    Weight = calc_weight(BagInfo),
+    update_weight(Rest, [[{weight, Weight} | BagInfo] | Updated]).
 
-calc_weight(ContainerInfo) ->
+calc_weight(BagInfo) ->
     Threashold = riak_cs_config:get_env(riak_cs, free_ratio_threashold, 20) / 100,
-    {free, F} = lists:keyfind(free, 1, ContainerInfo),
-    {total, T} = lists:keyfind(total, 1, ContainerInfo),
+    {free, F} = lists:keyfind(free, 1, BagInfo),
+    {total, T} = lists:keyfind(total, 1, BagInfo),
     case F / T of
         TooSmallFreeSpace when TooSmallFreeSpace =< Threashold ->
             0;
@@ -232,48 +223,48 @@ json_to_usages({struct, JSON}) ->
 
 json_to_usages([], Usages) ->
     {ok, Usages};
-json_to_usages([{TypeBin, Containers} | Rest], Usages) ->
+json_to_usages([{TypeBin, Bags} | Rest], Usages) ->
     case TypeBin of
         <<"manifest">> ->
-            json_to_usages(manifest, Containers, Rest, Usages);
+            json_to_usages(manifest, Bags, Rest, Usages);
         <<"block">> ->
-            json_to_usages(block, Containers, Rest, Usages);
+            json_to_usages(block, Bags, Rest, Usages);
         _ ->
             {error, {bad_request, TypeBin}}
     end.
 
-json_to_usages(Type, Containers, RestTypes, Usages) ->
-    case json_to_usages_by_type(Type, Containers) of
+json_to_usages(Type, Bags, RestTypes, Usages) ->
+    case json_to_usages_by_type(Type, Bags) of
         {ok, TypeUsage} ->
             json_to_usages(RestTypes, [TypeUsage | Usages]);
         {error, Reason} ->
             {error, Reason}
     end.
 
-json_to_usages_by_type(Type, Containers) ->
-    json_to_usages_by_type(Type, Containers, []).
+json_to_usages_by_type(Type, Bags) ->
+    json_to_usages_by_type(Type, Bags, []).
 
 json_to_usages_by_type(Type, [], Usages) ->
     {ok, {Type, Usages}};
-json_to_usages_by_type(Type, [Container | Rest], Usages) ->
-    case json_to_usage(Container) of
+json_to_usages_by_type(Type, [Bag | Rest], Usages) ->
+    case json_to_usage(Bag) of
         {ok, Usage} ->
             json_to_usages_by_type(Type, Rest, [Usage | Usages]);
         {error, Reason} ->
             {error, Reason}
     end.
 
-json_to_usage({struct, Container}) ->
-    json_to_usage(Container, #usage{}).
+json_to_usage({struct, Bag}) ->
+    json_to_usage(Bag, #usage{}).
 
-json_to_usage([], #usage{container_id=Id, weight=Weight} = Usage)
+json_to_usage([], #usage{bag_id=Id, weight=Weight} = Usage)
   when Id =/= undefined andalso Weight =/= undefined ->
     {ok, Usage};
 json_to_usage([], Usage) ->
     {error, {bad_request, Usage}};
 json_to_usage([{<<"id">>, Id} | Rest], Usage)
   when is_binary(Id) ->
-    json_to_usage(Rest, Usage#usage{container_id = Id});
+    json_to_usage(Rest, Usage#usage{bag_id = Id});
 json_to_usage([{<<"weight">>, Weight} | Rest], Usage)
   when is_integer(Weight) andalso Weight >= 0 ->
     json_to_usage(Rest, Usage#usage{weight = Weight});
@@ -327,31 +318,31 @@ update_usages(Riakc, Usages, {ok, Obj}) ->
 %% EUnit tests
 %% ===================================================================
 -ifdef(TEST).
-decide_container_test() ->
+decide_bag_test() ->
     %% Better to convert to quickcheck?
     Usages = dummy_usages(),
-    ListOfPointAndContainerId = [
-                                 %% <<"block-Z*">> are never selected
-                                 {  1, <<"block-A">>},
-                                 { 10, <<"block-A">>},
-                                 { 30, <<"block-A">>},
-                                 { 31, <<"block-B">>},
-                                 {100, <<"block-B">>},
-                                 {101, <<"block-C">>},
-                                 {110, <<"block-C">>},
-                                 {120, <<"block-C">>}],
-    [?assertEqual(ContainerId, ?debugVal(decide_container(Point, Usages)))
-     || {Point, ContainerId} <- ListOfPointAndContainerId].
+    ListOfPointAndBagId = [
+                           %% <<"block-Z*">> are never selected
+                           {  1, <<"block-A">>},
+                           { 10, <<"block-A">>},
+                           { 30, <<"block-A">>},
+                           { 31, <<"block-B">>},
+                           {100, <<"block-B">>},
+                           {101, <<"block-C">>},
+                           {110, <<"block-C">>},
+                           {120, <<"block-C">>}],
+    [?assertEqual(BagId, ?debugVal(decide_bag(Point, Usages)))
+     || {Point, BagId} <- ListOfPointAndBagId].
 
 dummy_usages() ->
      [
-      #usage{container=<<"block-Z1">>, weight= 0},
-      #usage{container=<<"block-Z2">>, weight= 0},
-      #usage{container=<<"block-A">>,  weight=30},
-      #usage{container=<<"block-B">>,  weight=70},
-      #usage{container=<<"block-Z3">>, weight= 0},
-      #usage{container=<<"block-C">>,  weight=20},
-      #usage{container=<<"block-Z4">>, weight= 0}
+      #usage{bag = <<"block-Z1">>, weight= 0},
+      #usage{bag = <<"block-Z2">>, weight= 0},
+      #usage{bag = <<"block-A">>,  weight=30},
+      #usage{bag = <<"block-B">>,  weight=70},
+      #usage{bag = <<"block-Z3">>, weight= 0},
+      #usage{bag = <<"block-C">>,  weight=20},
+      #usage{bag = <<"block-Z4">>, weight= 0}
      ].
 
 -endif.

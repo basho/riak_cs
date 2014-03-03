@@ -77,7 +77,7 @@
           last_action :: created | deleted,
           creation_date :: string(),
           modification_time :: erlang:timestamp(),
-          manifest_container :: undefined | binary(),
+          manifest_bag :: undefined | binary(),
           acl :: acl()}).
 -type cs_bucket() :: #rcs_bucket_v2{}.
 -type bucket_operation() :: create | delete | update_acl | update_policy
@@ -397,7 +397,7 @@
 -define(DEFAULT_STANCHION_IP, "127.0.0.1").
 -define(DEFAULT_STANCHION_PORT, 8085).
 -define(DEFAULT_STANCHION_SSL, true).
--define(MD_CONTAINER, <<"X-Rcs-Container">>).
+-define(MD_BAG, <<"X-Rcs-Bag">>).
 -define(MD_ACL, <<"X-Moss-Acl">>).
 -define(MD_POLICY, <<"X-Rcs-Policy">>).
 -define(EMAIL_INDEX, <<"email_bin">>).

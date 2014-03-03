@@ -134,7 +134,7 @@ resolve_props(A, B) ->
                               {Ps_A, Ps_B, []},
                               [fun resolve_prop_multipart/2,
                                fun resolve_prop_multipart_cleanup/2,
-                               fun resolve_prop_block_container/2]),
+                               fun resolve_prop_block_bag/2]),
     New.
 
 resolve_a_prop(Resolver, {Ps_A, Ps_B, Ps_merged}) ->
@@ -171,12 +171,12 @@ resolve_prop_multipart_cleanup(Ps_A, Ps_B) ->
             {Ps_A, Ps_B, []}
     end.
 
-resolve_prop_block_container(Ps_A, Ps_B) ->
-    case {proplists:get_value(block_container, Ps_A),
-          proplists:get_value(block_container, Ps_B)} of
-        {ContainerId, ContainerId} when ContainerId =/= undefined ->
-            %% ContainerId is set at the start and not modified.
-            {Ps_A, Ps_B, [{block_container, ContainerId}]}
+resolve_prop_block_bag(Ps_A, Ps_B) ->
+    case {proplists:get_value(block_bag, Ps_A),
+          proplists:get_value(block_bag, Ps_B)} of
+        {BagId, BagId} when BagId =/= undefined ->
+            %% BagId is set at the start and not modified.
+            {Ps_A, Ps_B, [{block_bag, BagId}]}
     end.
 
 

@@ -102,8 +102,8 @@ clean_multipart_unused_parts(?MANIFEST{bkey=BKey, props=Props} = Manifest,
                 {false, PartsToDelete} ->
                     _ = try
                         {Bucket, Key} = BKey,
-                        ContainerId = riak_cs_mc:container_id_from_manifest(Manifest),
-                        ok = move_dead_parts_to_gc(Bucket, Key, ContainerId,
+                        BagId = riak_cs_mc:bag_id_from_manifest(Manifest),
+                        ok = move_dead_parts_to_gc(Bucket, Key, BagId,
                                                    PartsToDelete, RiakcPid),
                         UpdManifest = Manifest?MANIFEST{props=[multipart_clean|Props]},
                         ok = update_manifest_with_confirmation(RiakcPid, UpdManifest)
@@ -423,8 +423,8 @@ do_part_common2(complete, ManiRiakc, _DefRiakc,
                         %% Create fake S3 object manifests for this part,
                         %% then pass them to the GC monster for immediate
                         %% deletion.
-                        ContainerId = riak_cs_mc:container_id_from_manifest(NewManifest),
-                        ok = move_dead_parts_to_gc(Bucket, Key, ContainerId,
+                        BagId = riak_cs_mc:bag_id_from_manifest(NewManifest),
+                        ok = move_dead_parts_to_gc(Bucket, Key, BagId,
                                                    PartsToDelete, ManiRiakc),
                         MProps3 = [multipart_clean|MProps2],
                         New2Manifest = NewManifest?MANIFEST{props = MProps3},
@@ -705,7 +705,7 @@ comb_parts_fold({PartNum, _ETag} = K,
             throw(bad_etag)
     end.
 
-move_dead_parts_to_gc(Bucket, Key, ContainerId, PartsToDelete, RiakcPid) ->
+move_dead_parts_to_gc(Bucket, Key, BagId, PartsToDelete, RiakcPid) ->
     PartDelMs = [{P_UUID,
                   riak_cs_lfs_utils:new_manifest(
                     Bucket,
@@ -719,7 +719,7 @@ move_dead_parts_to_gc(Bucket, Key, ContainerId, PartsToDelete, RiakcPid) ->
                     no_acl_yet,
                     [],
                     undefined,
-                    ContainerId)} ||
+                    BagId)} ||
                     ?PART_MANIFEST{part_id=P_UUID,
                                    content_length=ContentLength,
                                    block_size=P_BlockSize} <- PartsToDelete],
