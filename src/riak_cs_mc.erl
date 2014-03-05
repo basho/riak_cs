@@ -22,7 +22,7 @@
 
 -module(riak_cs_mc).
 
--export([pool_specs/0]).
+-export([pool_specs/1]).
 -export([pool_name/2, default_bag_id/1,
          assign_bag_id/1, set_bag_id_to_manifest/2,
          bag_id_from_manifest/1]).
@@ -31,10 +31,6 @@
 
 -export_type([pool_key/0, pool_type/0, bag_id/0, usage/0]).
 
-%% FIXME: hardcoded, use values of connection_pools?
-%% FIXME: separate pools for normal get/put and list
--define(WORKERS, 128).
--define(OVERFLOW, 0).
 -define(ETS_TAB, ?MODULE).
 -record(pool, {key :: pool_key(),
                type :: pool_type(), % for match spec
@@ -57,14 +53,20 @@
 %% Return pool specs from application configuration.
 %% This function assumes that it is called ONLY ONCE at initialization.
 %% TODO: return specs from ETS after initialization?
--spec pool_specs() -> [{atom(), {non_neg_integer(), non_neg_integer()}}].
-pool_specs() ->
+-spec pool_specs(term()) -> [{atom(), {non_neg_integer(), non_neg_integer()}}].
+pool_specs(DefaultPools) ->
     init_ets(),
-    BlockPools = register_bags(block, block_bags, default_block_bag),
-    ManifestPools = register_bags(manifest, manifest_bags, default_manifest_bag),
-    BlockPools ++ ManifestPools.
+    ReqPoolSize = proplists:get_value(request_pool, DefaultPools),
+    ListPoolSize = proplists:get_value(bucket_list_pool, DefaultPools),
+    BlockPools = register_bags(block, ReqPoolSize,
+                               block_bags, default_block_bag_id),
+    ManifestPools = register_bags(manifest, ReqPoolSize,
+                                  manifest_bags, default_manifest_bag_id),
+    ManifestListPools = register_bags(manifest_list, ListPoolSize,
+                                      manifest_bags, default_manifest_bag_id),
+    BlockPools ++ ManifestPools ++ ManifestListPools.
 
-register_bags(Type, PoolConfigName, DefaultConfigName) ->
+register_bags(Type, PoolSize, PoolConfigName, DefaultConfigName) ->
     Pools = case application:get_env(riak_cs, PoolConfigName) of
                 undefined ->
                     application:set_env(riak_cs, DefaultConfigName, undefined),
@@ -73,17 +75,17 @@ register_bags(Type, PoolConfigName, DefaultConfigName) ->
                     application:set_env(riak_cs, DefaultConfigName, undefined),
                     [];
                 {ok, Bags} ->
-                    register_props(Type, Bags, [])
+                    register_props(Type, PoolSize, Bags, [])
             end,
     Pools.
 
-register_props(_, [], Names) ->
+register_props(_Type, _PoolSize, [], Names) ->
     Names;
-register_props(Type, [{BagId, Address, Port} | Rest], PoolSpecs) ->
+register_props(Type, PoolSize, [{BagId, Address, Port} | Rest], PoolSpecs) ->
     lager:debug("{BagId, Type, Address, Port}: ~p~n", [{BagId, Type, Address, Port}]),
     NewPoolSpec = {register_and_get_pool_name(Type, BagId, Address, Port),
-                   {?WORKERS, ?OVERFLOW, Address, Port}},
-    register_props(Type, Rest, [NewPoolSpec | PoolSpecs]).
+                   PoolSize, {Address, Port}},
+    register_props(Type, PoolSize, Rest, [NewPoolSpec | PoolSpecs]).
 
 %% Translate bag ID in buckets and manifests to pool name.
 -spec pool_name(pool_type(),
@@ -94,7 +96,9 @@ pool_name(block, Manifest) when is_record(Manifest, ?MANIFEST_REC) ->
 pool_name(manifest, ?RCS_BUCKET{} = Bucket) ->
     bag_pool_name(manifest, bag_id_from_cs_bucket(Bucket));
 pool_name(manifest, BucketObj) ->
-    bag_pool_name(manifest, bag_id_from_bucket(BucketObj)).
+    bag_pool_name(manifest, bag_id_from_bucket(BucketObj));
+pool_name(manifest_list, BucketObj) ->
+    bag_pool_name(manifest_list, bag_id_from_bucket(BucketObj)).
 
 %% 'undefined' in second argument means buckets and manifests were stored
 %% under single bag configuration.

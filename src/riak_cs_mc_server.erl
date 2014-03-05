@@ -81,7 +81,8 @@ handle_call(Request, _From, State) ->
 
 handle_cast({new_weights, Weights}, State) ->
     NewState = update_usage_state(Weights, State),
-    lager:log(warning, self(), "new_weights: ~p~n", [NewState]),
+    %% TODO: write log only when weigts are updated.
+    %% lager:info("new_weights: ~p~n", [NewState]),
     {noreply, NewState};
 handle_cast(_Msg, State) ->
     {noreply, State}.
