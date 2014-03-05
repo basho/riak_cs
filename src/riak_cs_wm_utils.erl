@@ -571,8 +571,8 @@ extract_amazon_headers(Headers) ->
 
 %% @doc Extract user metadata from request header
 %% Expires, Content-Disposition, Content-Encoding and x-amz-meta-*
-%% TODO: pass in x-amz-server-side​-encryption?
-%% TODO: pass in x-amz-storage-​class?
+%% TODO: pass in x-amz-server-side-encryption?
+%% TODO: pass in x-amz-storage-class?
 %% TODO: pass in x-amz-grant-* headers?
 extract_user_metadata(RD) ->
     extract_user_metadata(get_request_headers(RD), []).
