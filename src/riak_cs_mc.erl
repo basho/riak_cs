@@ -29,15 +29,10 @@
 
 -export([tab_info/0]).
 
--export_type([pool_key/0, pool_type/0, bag_id/0]).
-
--type pool_type() :: blocks | manifests.
-%% Use "bag ID" instead of "cluster ID".
-%% There are more than one clusters in case of MDC.
--type bag_id() :: binary().
--type pool_key() :: {pool_type(), bag_id()}.
+-export_type([pool_key/0, pool_type/0, bag_id/0, usage/0]).
 
 %% FIXME: hardcoded, use values of connection_pools?
+%% FIXME: separate pools for normal get/put and list
 -define(WORKERS, 128).
 -define(OVERFLOW, 0).
 -define(ETS_TAB, ?MODULE).
@@ -48,8 +43,16 @@
                name :: atom()}).
 
 -include_lib("stdlib/include/ms_transform.hrl").
--include("riak_cs.hrl").
 -include_lib("riak_pb/include/riak_pb_kv_codec.hrl").
+-include("riak_cs.hrl").
+-include("riak_cs_mc.hrl").
+
+-type pool_type() :: blocks | manifests.
+%% Use "bag ID" instead of "cluster ID".
+%% There are more than one clusters in case of MDC.
+-type bag_id() :: binary().
+-type pool_key() :: {pool_type(), bag_id()}.
+-type usage() :: #usage{}.
 
 %% Return pool specs from application configuration.
 %% This function assumes that it is called ONLY ONCE at initialization.

@@ -29,8 +29,9 @@
             Code
         catch
             Type:Reason ->
-                io:format("~s failed:~n  ~p:~p~n",
-                          [Description, Type, Reason]),
+                ST = erlang:get_stacktrace(),
+                io:format("~s failed:~n  ~p:~p~n  ~p",
+                          [Description, Type, Reason, ST]),
                 error
         end).
 
@@ -45,11 +46,11 @@ status(_Opts) ->
     ?SAFELY(get_status(), "Show current weight information").
 
 refresh(_Opts) ->
-    ?SAFELY(handle_result(riak_cs_mc_server:refresh()),
+    ?SAFELY(handle_result(riak_cs_mc_worker:refresh()),
             "Refresh weight information").
 
 input(Args) ->
-    ?SAFELY(handle_result(riak_cs_mc_server:input(parse_input_args(Args))),
+    ?SAFELY(handle_result(riak_cs_mc_worker:input(parse_input_args(Args))),
             "Updating the weight information").
 
 %%%===================================================================

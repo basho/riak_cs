@@ -66,6 +66,10 @@ init([]) ->
 
 -spec process_specs() -> [supervisor:child_spec()].
 process_specs() ->
+    McServer = {riak_cs_mc_server, {riak_cs_mc_server, start_link, []},
+                permanent, 5000, worker, [riak_cs_mc_server]},
+    McWorker = {riak_cs_mc_worker, {riak_cs_mc_worker, start_link, []},
+                permanent, 5000, worker, [riak_cs_mc_worker]},
     Archiver = {riak_cs_access_archiver_manager,
                 {riak_cs_access_archiver_manager, start_link, []},
                 permanent, 5000, worker,
@@ -90,11 +94,11 @@ process_specs() ->
     PutFsmSup = {riak_cs_put_fsm_sup,
                  {riak_cs_put_fsm_sup, start_link, []},
                  permanent, 5000, worker, dynamic},
-    MC = {riak_cs_mc_server, {riak_cs_mc_server, start_link, []},
-          permanent, 5000, worker, [riak_cs_mc_server]},
     DiagsSup = {riak_cs_diags, {riak_cs_diags, start_link, []},
                    permanent, 5000, worker, dynamic},
-    [Archiver,
+    [McServer,
+     McWorker,
+     Archiver,
      Storage,
      GC,
      Stats,
@@ -102,7 +106,6 @@ process_specs() ->
      DeleteFsmSup,
      GetFsmSup,
      PutFsmSup,
-     MC,
      DiagsSup].
 
 -spec get_option_val({atom(), term()} | atom()) -> {atom(), term()}.
