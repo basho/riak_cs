@@ -174,6 +174,8 @@ resolve_prop_multipart_cleanup(Ps_A, Ps_B) ->
 resolve_prop_block_bag(Ps_A, Ps_B) ->
     case {proplists:get_value(block_bag, Ps_A),
           proplists:get_value(block_bag, Ps_B)} of
+        {undefined, undefined} ->
+            {Ps_A, Ps_B, []};
         {BagId, BagId} when BagId =/= undefined ->
             %% BagId is set at the start and not modified.
             {Ps_A, Ps_B, [{block_bag, BagId}]}
