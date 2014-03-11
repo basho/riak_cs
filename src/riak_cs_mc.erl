@@ -64,6 +64,12 @@ pool_specs(DefaultPools) ->
                                   manifest_bags, default_manifest_bag_id),
     ManifestListPools = register_bags(manifest_list, ListPoolSize,
                                       manifest_bags, default_manifest_bag_id),
+    case {BlockPools, ManifestPools} of
+        {[], []} ->
+            application:set_env(riak_cs, multi_bag_enabled, false);
+        _ ->
+            application:set_env(riak_cs, multi_bag_enabled, true)
+    end,
     BlockPools ++ ManifestPools ++ ManifestListPools.
 
 register_bags(Type, PoolSize, PoolConfigName, DefaultConfigName) ->
@@ -105,7 +111,6 @@ pool_name(manifest_list, BucketObj) ->
 bag_pool_name(_Type, undefined) ->
     undefined;
 bag_pool_name(Type, BagId) when is_binary(BagId) ->
-    lager:debug("Type: ~p~n", [Type]),
     case ets:lookup(?ETS_TAB, {Type, BagId}) of
         [] ->
             %% TODO: Misconfiguration? Should throw error?
@@ -132,7 +137,6 @@ bag_id_from_cs_bucket(?RCS_BUCKET{manifest_bag=BagId}) ->
 
 -spec bag_id_from_bucket(riakc_obj:riakc_obj()) -> undefined | bag_id().
 bag_id_from_bucket(BucketObj) ->
-    lager:debug("BucketObj: ~p~n", [BucketObj]),
     Contents = riakc_obj:get_contents(BucketObj),
     bag_id_from_contents(Contents).
 
@@ -161,15 +165,18 @@ default_bag_id(manifest) ->
 
 %% Choose bag ID for new bucket or new manifest
 assign_bag_id(Type) ->
-    case ets:first(?ETS_TAB) of
-        %% single bag
-        '$end_of_table' ->
+    case multi_bag_enabled() of
+        false ->
             undefined;
-        %% multiple bags
-        _Key ->
+        true ->
             {ok, BagId} = riak_cs_mc_server:allocate(Type),
             BagId
     end.
+
+-spec multi_bag_enabled() -> boolean().
+multi_bag_enabled() ->
+    {ok, B} = application:get_env(riak_cs, multi_bag_enabled),
+    B.
 
 %% Choose bag ID to store blocks for new manifest and
 %% return new manifest

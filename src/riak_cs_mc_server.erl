@@ -145,18 +145,18 @@ decide_bag_test() ->
                            {101, <<"block-C">>},
                            {110, <<"block-C">>},
                            {120, <<"block-C">>}],
-    [?assertEqual(BagId, ?debugVal(decide_bag(Point, Usages)))
+    [?assertEqual(BagId, decide_bag(Point, Usages))
      || {Point, BagId} <- ListOfPointAndBagId].
 
 dummy_usages() ->
      [
-      #usage{bag = <<"block-Z1">>, weight= 0},
-      #usage{bag = <<"block-Z2">>, weight= 0},
-      #usage{bag = <<"block-A">>,  weight=30},
-      #usage{bag = <<"block-B">>,  weight=70},
-      #usage{bag = <<"block-Z3">>, weight= 0},
-      #usage{bag = <<"block-C">>,  weight=20},
-      #usage{bag = <<"block-Z4">>, weight= 0}
+      #usage{bag_id = <<"block-Z1">>, weight= 0},
+      #usage{bag_id = <<"block-Z2">>, weight= 0},
+      #usage{bag_id = <<"block-A">>,  weight=30},
+      #usage{bag_id = <<"block-B">>,  weight=70},
+      #usage{bag_id = <<"block-Z3">>, weight= 0},
+      #usage{bag_id = <<"block-C">>,  weight=20},
+      #usage{bag_id = <<"block-Z4">>, weight= 0}
      ].
 
 -endif.
