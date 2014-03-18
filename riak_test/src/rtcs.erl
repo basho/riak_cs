@@ -49,29 +49,31 @@ setup(NumNodes) ->
     setup(NumNodes, default_configs()).
 
 setup(NumNodes, Configs) ->
-    %% Start the erlcloud app
-    erlcloud:start(),
-
-    %% STFU sasl
-    application:load(sasl),
-    application:set_env(sasl, sasl_error_logger, false),
-
-    Cfgs = configs(Configs),
-    {RiakNodes, _CSNodes, _Stanchion} = Nodes = deploy_nodes(NumNodes, Cfgs),
-    rt:wait_until_nodes_ready(RiakNodes),
-    lager:info("Make cluster"),
-    rtcs:make_cluster(RiakNodes),
-    rt:wait_until_ring_converged(RiakNodes),
-    {AdminKeyId, AdminSecretKey} = setup_admin_user(NumNodes, Cfgs),
-    AdminConfig = config(AdminKeyId,
-                         AdminSecretKey,
-                         rtcs:cs_port(hd(RiakNodes))),
-    {AdminConfig, Nodes}.
+    JoinFun = fun(Nodes) ->
+                      [First|Rest] = Nodes,
+                      [join(Node, First) || Node <- Rest]
+              end,
+    setup_clusters(Configs, JoinFun, NumNodes).
 
 setup2x2() ->
     setup2x2(default_configs()).
 
 setup2x2(Configs) ->
+    JoinFun = fun(Nodes) ->
+                      [A,B,C,D] = Nodes,
+                      join(B,A),
+                      join(D,C)
+              end,
+    setup_clusters(Configs, JoinFun, 4).
+
+setup1x1x1() ->
+    setup1x1x1(default_configs()).
+
+setup1x1x1(Configs) ->
+    JoinFun = fun(_Nodes) -> ok end,
+    setup_clusters(Configs, JoinFun, 3).
+
+setup_clusters(Configs, JoinFun, NumNodes) ->
     %% Start the erlcloud app
     erlcloud:start(),
 
@@ -81,12 +83,14 @@ setup2x2(Configs) ->
 
     Cfgs = configs(Configs),
     lager:info("Configs = ~p", [ Cfgs]),
-    {RiakNodes, _CSNodes, _Stanchion} = Nodes = deploy_nodes(4, Cfgs),
+    {RiakNodes, _CSNodes, _Stanchion} = Nodes = deploy_nodes(NumNodes, Cfgs),
     rt:wait_until_nodes_ready(RiakNodes),
     lager:info("Make cluster"),
-    rtcs:make_2x2_clusters(RiakNodes),
+    JoinFun(RiakNodes),
+    ?assertEqual(ok, wait_until_nodes_ready(RiakNodes)),
+    ?assertEqual(ok, wait_until_no_pending_changes(RiakNodes)),
     rt:wait_until_ring_converged(RiakNodes),
-    {AdminKeyId, AdminSecretKey} = setup_admin_user(4, Cfgs),
+    {AdminKeyId, AdminSecretKey} = setup_admin_user(NumNodes, Cfgs),
     AdminConfig = rtcs:config(AdminKeyId,
                               AdminSecretKey,
                               rtcs:cs_port(hd(RiakNodes))),
@@ -258,6 +262,9 @@ riakcs_accesscmd(Path, N, Cmd) ->
 
 riakcs_storagecmd(Path, N, Cmd) ->
     lists:flatten(io_lib:format("~s-storage ~s", [riakcs_binpath(Path, N), Cmd])).
+
+riakcs_bagcmd(Path, N, Args) ->
+    lists:flatten(io_lib:format("~s-mc ~s", [riakcs_binpath(Path, N), Args])).
 
 stanchion_binpath(Prefix) ->
     io_lib:format("~s/dev/stanchion/bin/stanchion", [Prefix]).
@@ -467,20 +474,6 @@ reset_nodes(Project, Path) ->
     rtdev:run_git(Path, "reset HEAD --hard"),
     rtdev:run_git(Path, "clean -fd").
 
-make_cluster(Nodes) ->
-    [First|Rest] = Nodes,
-    [join(Node, First) || Node <- Rest],
-    ?assertEqual(ok, wait_until_nodes_ready(Nodes)),
-    ?assertEqual(ok, wait_until_no_pending_changes(Nodes)).
-
-make_2x2_clusters(Nodes) ->
-    [A,B,C,D] = Nodes,
-    join(B,A),
-    join(D,C),
-    ?assertEqual(ok, wait_until_nodes_ready(Nodes)),
-    ?assertEqual(ok, wait_until_no_pending_changes(Nodes)).
-
-
 start_cs(N) ->
     Cmd = riakcscmd(rt_config:get(?CS_CURRENT), N, "start"),
     lager:info("Running ~p", [Cmd]),
@@ -519,6 +512,16 @@ flush_access(N) ->
 
 calculate_storage(N) ->
     Cmd = riakcs_storagecmd(rt_config:get(?CS_CURRENT), N, "batch -r"),
+    lager:info("Running ~p", [Cmd]),
+    os:cmd(Cmd).
+
+bag_input(N, Input) ->
+    Cmd = riakcs_bagcmd(rt_config:get(?CS_CURRENT), N, ["input '", Input, "'"]),
+    lager:info("Running ~p", [Cmd]),
+    os:cmd(Cmd).
+
+bag_refresh(N) ->
+    Cmd = riakcs_bagcmd(rt_config:get(?CS_CURRENT), N, "refresh"),
     lager:info("Running ~p", [Cmd]),
     os:cmd(Cmd).
 
