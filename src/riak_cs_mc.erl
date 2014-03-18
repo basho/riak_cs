@@ -27,7 +27,9 @@
          assign_bag_id/1, set_bag_id_to_manifest/2,
          bag_id_from_manifest/1]).
 
--export([tab_info/0]).
+-export([is_multi_bag_ebabled/0,
+         pool_status/0,
+         tab_info/0]).
 
 -export_type([pool_key/0, pool_type/0, bag_id/0, usage/0]).
 
@@ -205,7 +207,15 @@ register_and_get_pool_name(Type, BagId, IP, Port) ->
                                name = Name}),
     Name.
 
+-spec is_multi_bag_ebabled() -> boolean().
+is_multi_bag_ebabled() ->
+    application:get_env(riak_cs, multi_bag_enabled).
+
 %% For Debugging
 
 tab_info() ->
     ets:tab2list(?ETS_TAB).
+
+pool_status() ->
+    [{Type, BagId, Name, poolboy:status(Name)} ||
+        #pool{key={Type, BagId}, name=Name} <- ets:tab2list(?ETS_TAB)].

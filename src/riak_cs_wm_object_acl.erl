@@ -27,7 +27,8 @@
          content_types_accepted/2,
          content_types_provided/2,
          accept_body/2,
-         produce_body/2]).
+         produce_body/2,
+         finish_request/2]).
 
 -include("riak_cs.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
@@ -215,3 +216,9 @@ accept_body(RD, Ctx=#context{local_context=#key_context{get_fsm_pid=GetFsmPid,
                                             [Code], [UserName, BFile_str]),
             riak_cs_s3_response:api_error(Reason2, RD, Ctx)
     end.
+
+-spec finish_request(#wm_reqdata{}, #context{}) -> {true, #wm_reqdata{}, #context{}}.
+finish_request(RD, Ctx=#context{local_context=KeyCtx}) ->
+    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"finish_request">>, [0], []),
+    NewKeyCtx = riak_cs_wm_utils:finish_doc(KeyCtx),
+    {true, RD, Ctx#context{local_context=NewKeyCtx}}.

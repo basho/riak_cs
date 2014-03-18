@@ -61,17 +61,22 @@ status() ->
 init([]) ->
     {ok, #state{}}.
 
-handle_call({allocate, _Type}, _From, #state{initialized = false} = State) ->
-    {reply, {error, not_initialized}, State};
-handle_call({allocate, Type}, _From, State)
+handle_call({allocate, Type}, _From, #state{initialized = true} = State)
   when Type =:= block orelse Type =:= manifest ->
-    BagId = case Type of
+    Decision = case Type of
                 block ->
                     decide_bag(State#state.blocks);
                 manifest ->
                     decide_bag(State#state.manifests)
             end,
-    {reply, {ok, BagId}, State};
+    case Decision of
+        {ok, BagId} ->
+            {reply, {ok, BagId}, State};
+        {error, no_bag} ->
+            {reply, {error, no_bag}, State}
+    end;
+handle_call({allocate, _Type}, _From, #state{initialized = false} = State) ->
+    {reply, {error, not_initialized}, State};
 handle_call(status, _From, #state{initialized=Initialized, 
                                   blocks=Blocks, manifests=Manifests} = State) ->
     {reply, {ok, [{initialized, Initialized},
@@ -81,7 +86,7 @@ handle_call(Request, _From, State) ->
 
 handle_cast({new_weights, Weights}, State) ->
     NewState = update_usage_state(Weights, State),
-    %% TODO: write log only when weigts are updated.
+    %% TODO: write log only when weights are updated.
     %% lager:info("new_weights: ~p~n", [NewState]),
     {noreply, NewState};
 handle_cast(_Msg, State) ->
@@ -103,7 +108,10 @@ code_change(_OldVsn, State, _Extra) ->
 %% bag3    0        30                   N/A
 %% bag4   30        60                   31..60
 -spec decide_bag([{riak_cs_mc:pool_key(), riak_cs_mc:usage()}]) ->
-                        {riak_cs_mc:pool_key(), riak_cs_mc:usage()}.
+                        {ok, {riak_cs_mc:pool_key(), riak_cs_mc:usage()}} |
+                        {error, no_bag}.
+decide_bag([]) ->
+    {error, no_bag};
 decide_bag(Usages) ->
     %% TODO: SumOfWeights can be stored in state
     SumOfWeights = lists:sum([Weight || #usage{weight = Weight} <- Usages]),
@@ -113,7 +121,7 @@ decide_bag(Usages) ->
 %% Always "1 =< Point" holds, usage with weight=0 never selected.
 decide_bag(Point, [#usage{bag_id = BagId, weight = Weight} | _Usages])
   when Point =< Weight ->
-    BagId;
+    {ok, BagId};
 decide_bag(Point, [#usage{weight = Weight} | Usages]) ->
     decide_bag(Point - Weight, Usages).
 

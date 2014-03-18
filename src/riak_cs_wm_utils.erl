@@ -283,7 +283,7 @@ finish_doc(KeyCtx = #key_context{manifest_pool=undefined}) ->
     KeyCtx;
 finish_doc(KeyCtx = #key_context{manifest_pool=ManifestPool,
                                  manifest_riakc_pid=ManiRiakcPid}) ->
-    ok = riak_cs_util:close_riak_connection(ManifestPool, ManiRiakcPid),
+    ok = riak_cs_utils:close_riak_connection(ManifestPool, ManiRiakcPid),
     KeyCtx#key_context{manifest_riakc_pid=undefined}.
 
 %% @doc Produce an api error by using response_module.

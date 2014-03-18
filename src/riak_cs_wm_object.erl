@@ -423,5 +423,6 @@ format_etag(ContentMd5) ->
 
 -spec finish_request(#wm_reqdata{}, #context{}) -> {true, #wm_reqdata{}, #context{}}.
 finish_request(RD, Ctx=#context{local_context=KeyCtx}) ->
+    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"finish_request">>, [0], []),
     NewKeyCtx = riak_cs_wm_utils:finish_doc(KeyCtx),
     {true, RD, Ctx#context{local_context=NewKeyCtx}}.

@@ -143,9 +143,10 @@ valid_entity_length(RD, Ctx=#context{local_context=LocalCtx}) ->
             {true, RD, Ctx}
     end.
 
-finish_request(RD, Ctx) ->
+finish_request(RD, Ctx=#context{local_context=KeyCtx}) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"finish_request">>, [0], []),
-    {true, RD, Ctx}.
+    NewKeyCtx = riak_cs_wm_utils:finish_doc(KeyCtx),
+    {true, RD, Ctx#context{local_context=NewKeyCtx}}.
 
 -spec content_types_provided(#wm_reqdata{}, #context{}) -> {[{string(), atom()}], #wm_reqdata{}, #context{}}.
 content_types_provided(RD, Ctx=#context{}) ->

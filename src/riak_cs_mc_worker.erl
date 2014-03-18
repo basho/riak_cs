@@ -97,8 +97,7 @@ handle_cast(_Msg, State) ->
 
 handle_info(Event, State) when Event =:= refresh_by_timer orelse Event =:= timeout ->
     case refresh_by_timer(State) of
-        {ok, Usages, NewState} ->
-            riak_cs_mc_server:new_weights(Usages),
+        {ok, _Usages, NewState} ->
             {noreply, NewState};
         {error, Reason, NewState} ->
             lager:error("Refresh of cluster usage information failed. Reason: ~@", [Reason]),
@@ -118,8 +117,9 @@ refresh_by_timer(State) ->
         {ok, Usages, State1} ->
             State2 = schedule(State1),
             {ok, Usages, State2};
-        {error, _Reason, _State} = E ->
-            E
+        {error, Reason, State1} ->
+            State2 = schedule(State1),
+            {error, Reason, State2}
     end.
 
 %% Connect to default cluster and GET weight information
@@ -143,6 +143,7 @@ handle_usage_info({ok, Obj}, State) ->
     %% TODO: How to handle siblings
     [Value | _] = riakc_obj:get_values(Obj),
     Weights = binary_to_term(Value),
+    riak_cs_mc_server:new_weights(Weights),
     {ok, Weights, State#state{failed_count = 0, weights = Weights}}.
 
 schedule(State) ->
