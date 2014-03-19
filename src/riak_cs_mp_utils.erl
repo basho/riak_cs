@@ -102,7 +102,7 @@ clean_multipart_unused_parts(?MANIFEST{bkey=BKey, props=Props} = Manifest,
                 {false, PartsToDelete} ->
                     _ = try
                         {Bucket, Key} = BKey,
-                        BagId = riak_cs_mc:bag_id_from_manifest(Manifest),
+                        BagId = riak_cs_bag:bag_id_from_manifest(Manifest),
                         ok = move_dead_parts_to_gc(Bucket, Key, BagId,
                                                    PartsToDelete, RiakcPid),
                         UpdManifest = Manifest?MANIFEST{props=[multipart_clean|Props]},
@@ -423,7 +423,7 @@ do_part_common2(complete, ManiRiakc, _DefRiakc,
                         %% Create fake S3 object manifests for this part,
                         %% then pass them to the GC monster for immediate
                         %% deletion.
-                        BagId = riak_cs_mc:bag_id_from_manifest(NewManifest),
+                        BagId = riak_cs_bag:bag_id_from_manifest(NewManifest),
                         ok = move_dead_parts_to_gc(Bucket, Key, BagId,
                                                    PartsToDelete, ManiRiakc),
                         MProps3 = [multipart_clean|MProps2],

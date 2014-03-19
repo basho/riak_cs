@@ -18,9 +18,9 @@
 %%
 %% ---------------------------------------------------------------------
 
-%% @doc These functions are used by the riak-cs-mc command line script.
+%% @doc These functions are used by the riak-cs-bag command line script.
 
--module(riak_cs_mc_console).
+-module(riak_cs_bag_console).
 
 -export([status/1, input/1, refresh/1]).
 
@@ -35,7 +35,7 @@
                 error
         end).
 
--define(SCRIPT_NAME, "riak-cs-mc").
+-define(SCRIPT_NAME, "riak-cs-bag").
 
 %%%===================================================================
 %%% Public API
@@ -46,11 +46,11 @@ status(_Opts) ->
     ?SAFELY(get_status(), "Show current weight information").
 
 refresh(_Opts) ->
-    ?SAFELY(handle_result(riak_cs_mc_worker:refresh()),
+    ?SAFELY(handle_result(riak_cs_bag_worker:refresh()),
             "Refresh weight information").
 
 input(Args) ->
-    ?SAFELY(handle_result(riak_cs_mc_worker:input(parse_input_args(Args))),
+    ?SAFELY(handle_result(riak_cs_bag_worker:input(parse_input_args(Args))),
             "Updating the weight information").
 
 %%%===================================================================
@@ -58,7 +58,7 @@ input(Args) ->
 %%%===================================================================
 
 get_status() ->
-    handle_status(riak_cs_mc_server:status()).
+    handle_status(riak_cs_bag_server:status()).
 
 handle_status({ok, Status}) ->
     %% TODO: More readable format

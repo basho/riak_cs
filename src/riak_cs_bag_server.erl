@@ -20,7 +20,7 @@
 
 %% @doc The server process which periodically retreives information of multi bags
 
--module(riak_cs_mc_server).
+-module(riak_cs_bag_server).
 
 -behavior(gen_server).
 
@@ -29,7 +29,7 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          terminate/2, code_change/3]).
 
--include("riak_cs_mc.hrl").
+-include("riak_cs_bag.hrl").
 
 -ifdef(TEST).
 -compile(export_all).
@@ -40,15 +40,15 @@
 
 -record(state, {
           initialized = false :: boolean(),
-          blocks = [] :: [{riak_cs_mc:pool_key(), riak_cs_mc:usage()}],
-          manifests = [] :: [{riak_cs_mc:pool_key(), riak_cs_mc:usage()}]
+          blocks = [] :: [{riak_cs_bag:pool_key(), riak_cs_bag:weight_info()}],
+          manifests = [] :: [{riak_cs_bag:pool_key(), riak_cs_bag:weight_info()}]
          }).
 
 start_link() ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
 
--spec allocate(riak_cs_mc:pool_type()) -> {ok, riak_cs_mc:bag_id()} |
-                                          {error, term()}.
+-spec allocate(riak_cs_bag:pool_type()) -> {ok, riak_cs_bag:bag_id()} |
+                                           {error, term()}.
 allocate(Type) ->
     gen_server:call(?SERVER, {allocate, Type}).
 
@@ -85,7 +85,7 @@ handle_call(Request, _From, State) ->
     {reply, {error, {unknown_request, Request}}, State}.
 
 handle_cast({new_weights, Weights}, State) ->
-    NewState = update_usage_state(Weights, State),
+    NewState = update_weight_state(Weights, State),
     %% TODO: write log only when weights are updated.
     %% lager:info("new_weights: ~p~n", [NewState]),
     {noreply, NewState};
@@ -107,64 +107,65 @@ code_change(_OldVsn, State, _Extra) ->
 %% bag2   10        30                   21..30
 %% bag3    0        30                   N/A
 %% bag4   30        60                   31..60
--spec decide_bag([{riak_cs_mc:pool_key(), riak_cs_mc:usage()}]) ->
-                        {ok, {riak_cs_mc:pool_key(), riak_cs_mc:usage()}} |
+-spec decide_bag([{riak_cs_bag:pool_key(), riak_cs_bag:weight_info()}]) ->
+                        {ok, {riak_cs_bag:pool_key(), riak_cs_bag:weight_info()}} |
                         {error, no_bag}.
 decide_bag([]) ->
     {error, no_bag};
-decide_bag(Usages) ->
+decide_bag(WeightInfoList) ->
     %% TODO: SumOfWeights can be stored in state
-    SumOfWeights = lists:sum([Weight || #usage{weight = Weight} <- Usages]),
+    SumOfWeights = lists:sum([Weight || #weight_info{weight = Weight} <- WeightInfoList]),
     Point = random:uniform(SumOfWeights),
-    decide_bag(Point, Usages).
+    decide_bag(Point, WeightInfoList).
 
-%% Always "1 =< Point" holds, usage with weight=0 never selected.
-decide_bag(Point, [#usage{bag_id = BagId, weight = Weight} | _Usages])
+%% Always "1 =< Point" holds, bag_id with weight=0 never selected.
+decide_bag(Point, [#weight_info{bag_id = BagId, weight = Weight} | _WeightInfoList])
   when Point =< Weight ->
     {ok, BagId};
-decide_bag(Point, [#usage{weight = Weight} | Usages]) ->
-    decide_bag(Point - Weight, Usages).
+decide_bag(Point, [#weight_info{weight = Weight} | WeightInfoList]) ->
+    decide_bag(Point - Weight, WeightInfoList).
 
-update_usage_state([], State) ->
+update_weight_state([], State) ->
     State#state{initialized = true};
-update_usage_state([{Type, UsagesForType} | Rest], State) ->
+update_weight_state([{Type, WeightsForType} | Rest], State) ->
     NewState = case Type of
                    block ->
-                       State#state{blocks = UsagesForType};
+                       State#state{blocks = WeightsForType};
                    manifest ->
-                       State#state{manifests = UsagesForType}
+                       State#state{manifests = WeightsForType}
                end,
-    update_usage_state(Rest, NewState).
+    update_weight_state(Rest, NewState).
 
 %% ===================================================================
 %% EUnit tests
 %% ===================================================================
 -ifdef(TEST).
+
 decide_bag_test() ->
     %% Better to convert to quickcheck?
-    Usages = dummy_usages(),
+    WeightInfoList = dummy_weights(),
     ListOfPointAndBagId = [
-                           %% <<"block-Z*">> are never selected
-                           {  1, <<"block-A">>},
-                           { 10, <<"block-A">>},
-                           { 30, <<"block-A">>},
-                           { 31, <<"block-B">>},
-                           {100, <<"block-B">>},
-                           {101, <<"block-C">>},
-                           {110, <<"block-C">>},
-                           {120, <<"block-C">>}],
-    [?assertEqual(BagId, decide_bag(Point, Usages))
-     || {Point, BagId} <- ListOfPointAndBagId].
+                           %% <<"bag-Z*">> are never selected
+                           {  1, <<"bag-A">>},
+                           { 10, <<"bag-A">>},
+                           { 30, <<"bag-A">>},
+                           { 31, <<"bag-B">>},
+                           {100, <<"bag-B">>},
+                           {101, <<"bag-C">>},
+                           {110, <<"bag-C">>},
+                           {120, <<"bag-C">>}],
+    [?assertEqual({ok, BagId}, decide_bag(Point, WeightInfoList)) ||
+        {Point, BagId} <- ListOfPointAndBagId].
 
-dummy_usages() ->
+dummy_weights() ->
      [
-      #usage{bag_id = <<"block-Z1">>, weight= 0},
-      #usage{bag_id = <<"block-Z2">>, weight= 0},
-      #usage{bag_id = <<"block-A">>,  weight=30},
-      #usage{bag_id = <<"block-B">>,  weight=70},
-      #usage{bag_id = <<"block-Z3">>, weight= 0},
-      #usage{bag_id = <<"block-C">>,  weight=20},
-      #usage{bag_id = <<"block-Z4">>, weight= 0}
+      #weight_info{bag_id = <<"bag-Z1">>, weight= 0},
+      #weight_info{bag_id = <<"bag-Z2">>, weight= 0},
+      #weight_info{bag_id = <<"bag-A">>,  weight=30},
+      #weight_info{bag_id = <<"bag-B">>,  weight=70},
+      #weight_info{bag_id = <<"bag-Z3">>, weight= 0},
+      #weight_info{bag_id = <<"bag-C">>,  weight=20},
+      #weight_info{bag_id = <<"bag-Z4">>, weight= 0}
      ].
 
 -endif.

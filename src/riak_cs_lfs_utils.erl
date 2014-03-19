@@ -278,7 +278,7 @@ new_manifest(Bucket, FileName, UUID, ContentLength, ContentType, ContentMd5,
                    cluster_id()) -> lfs_manifest().
 new_manifest(Bucket, FileName, UUID, ContentLength, ContentType, ContentMd5,
              MetaData, BlockSize, Acl, Props, ClusterID) ->
-    BagId = riak_cs_mc:assign_bag_id(block),
+    BagId = riak_cs_bag:assign_bag_id(block),
     new_manifest(Bucket, FileName, UUID, ContentLength, ContentType, ContentMd5,
                  MetaData, BlockSize, Acl, Props, ClusterID, BagId).
 
@@ -309,7 +309,7 @@ new_manifest(Bucket, FileName, UUID, ContentLength, ContentType, ContentMd5,
                          acl=Acl,
                          props=Props,
                          cluster_id=ClusterID},
-    riak_cs_mc:set_bag_id_to_manifest(BagId, Manifest).
+    riak_cs_bag:set_bag_id_to_manifest(BagId, Manifest).
 
 %% @doc Remove a chunk from the
 %%      write_blocks_remaining field of Manifest

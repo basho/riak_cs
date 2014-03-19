@@ -66,10 +66,10 @@ init([]) ->
 
 -spec process_specs() -> [supervisor:child_spec()].
 process_specs() ->
-    McServer = {riak_cs_mc_server, {riak_cs_mc_server, start_link, []},
-                permanent, 5000, worker, [riak_cs_mc_server]},
-    McWorker = {riak_cs_mc_worker, {riak_cs_mc_worker, start_link, []},
-                permanent, 5000, worker, [riak_cs_mc_worker]},
+    BagServer = {riak_cs_bag_server, {riak_cs_bag_server, start_link, []},
+                 permanent, 5000, worker, [riak_cs_bag_server]},
+    BagWorker = {riak_cs_bag_worker, {riak_cs_bag_worker, start_link, []},
+                 permanent, 5000, worker, [riak_cs_bag_worker]},
     Archiver = {riak_cs_access_archiver_manager,
                 {riak_cs_access_archiver_manager, start_link, []},
                 permanent, 5000, worker,
@@ -96,8 +96,8 @@ process_specs() ->
                  permanent, 5000, worker, dynamic},
     DiagsSup = {riak_cs_diags, {riak_cs_diags, start_link, []},
                    permanent, 5000, worker, dynamic},
-    [McServer,
-     McWorker,
+    [BagServer,
+     BagWorker,
      Archiver,
      Storage,
      GC,
@@ -142,13 +142,13 @@ pool_specs(Options) ->
     DefaultPools = proplists:get_value(connection_pools, Options),
     DefaultAddress = riak_cs_config:get_env(riak_cs, riak_ip, "127.0.0.1"),
     DefaultPort = riak_cs_config:get_env(riak_cs, riak_pb_port, 8087),
-    MultiClusterPools = riak_cs_mc:pool_specs(DefaultPools),
-    lager:debug("MultiClusterPools: ~p~n", [MultiClusterPools]),
+    MultiBagPools = riak_cs_bag:pool_specs(DefaultPools),
+    lager:debug("multi bag pools: ~p~n", [MultiBagPools]),
     [pool_spec(Name, Workers, Overflow, DefaultAddress, DefaultPort, WorkerStop)
      || {Name, {Workers, Overflow}} <- DefaultPools]
         ++
     [pool_spec(Name, Workers, Overflow, Address, Port, WorkerStop)
-     || {Name, {Workers, Overflow}, {Address, Port}} <- MultiClusterPools].
+     || {Name, {Workers, Overflow}, {Address, Port}} <- MultiBagPools].
 
 -spec pool_spec(atom(), non_neg_integer(), non_neg_integer(),
                 string(), non_neg_integer(), function()) ->

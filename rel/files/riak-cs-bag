@@ -15,7 +15,7 @@ case "$1" in
         # Make sure the local node IS running
         node_up_check
 
-        $NODETOOL rpc riak_cs_mc_console "$@"
+        $NODETOOL rpc riak_cs_bag_console "$@"
         ;;
     *)
         echo "Usage: $SCRIPT { status|update <JSON_data> }"

@@ -181,7 +181,7 @@ close_riak_connection(Pool, Pid) ->
 
 %% @doc Create a bucket in the global namespace or return
 %% an error if it already exists.
--spec create_bucket(rcs_user(), term(), riak_cs_mc:bag_id(),
+-spec create_bucket(rcs_user(), term(), riak_cs_bag:bag_id(),
                     binary(), acl(), pid()) ->
                            ok |
                            {error, term()}.
@@ -1173,7 +1173,7 @@ bucket_exists(Buckets, CheckBucket) ->
 %% call to the stanchion client module for either
 %% bucket creation or deletion.
 -spec bucket_fun(bucket_operation(),
-                 riak_cs_mc:bag_id(),
+                 riak_cs_bag:bag_id(),
                  binary(),
                  acl(),
                  string(),
@@ -1241,7 +1241,7 @@ bucket_fun(delete, Bucket, _BagId, _ACL, KeyId, AdminCreds, StanchionData) ->
 
 %% @doc Generate a JSON document to use for a bucket
 %% creation request.
--spec bucket_json(binary(), riak_cs_mc:bag_id(), acl(), string()) -> string().
+-spec bucket_json(binary(), riak_cs_bag:bag_id(), acl(), string()) -> string().
 bucket_json(Bucket, BagId, ACL, KeyId)  ->
     BagElement = case BagId of
                            undefined ->
@@ -1257,7 +1257,7 @@ bucket_json(Bucket, BagId, ACL, KeyId)  ->
                                     BagElement}))).
 
 %% @doc Return a bucket record for the specified bucket name.
--spec bucket_record(binary(), bucket_operation(), riak_cs_mc:bag_id()) ->
+-spec bucket_record(binary(), bucket_operation(), riak_cs_bag:bag_id()) ->
                            cs_bucket().
 bucket_record(Name, Operation, BagId) ->
     case Operation of
@@ -1459,7 +1459,7 @@ serialized_bucket_op(Bucket, ACL, User, UserObj, BucketOp, StatName, RiakPid) ->
 
 %% @doc Shared code used when doing a bucket creation or deletion.
 -spec serialized_bucket_op(binary(),
-                           riak_cs_mc:bag_id() | undefined,
+                           riak_cs_bag:bag_id() | undefined,
                            [] | acl() | policy(),
                            rcs_user(),
                            riakc_obj:riakc_obj(),

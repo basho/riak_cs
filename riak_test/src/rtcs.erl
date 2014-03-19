@@ -264,7 +264,7 @@ riakcs_storagecmd(Path, N, Cmd) ->
     lists:flatten(io_lib:format("~s-storage ~s", [riakcs_binpath(Path, N), Cmd])).
 
 riakcs_bagcmd(Path, N, Args) ->
-    lists:flatten(io_lib:format("~s-mc ~s", [riakcs_binpath(Path, N), Args])).
+    lists:flatten(io_lib:format("~s-bag ~s", [riakcs_binpath(Path, N), Args])).
 
 stanchion_binpath(Prefix) ->
     io_lib:format("~s/dev/stanchion/bin/stanchion", [Prefix]).

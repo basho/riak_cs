@@ -20,7 +20,7 @@
 
 %% @doc Support multi Riak clusters in single Riak CS system
 
--module(riak_cs_mc).
+-module(riak_cs_bag).
 
 -export([pool_specs/1]).
 -export([pool_name/2, default_bag_id/1,
@@ -31,7 +31,7 @@
          pool_status/0,
          tab_info/0]).
 
--export_type([pool_key/0, pool_type/0, bag_id/0, usage/0]).
+-export_type([pool_key/0, pool_type/0, bag_id/0, weight_info/0]).
 
 -define(ETS_TAB, ?MODULE).
 -record(pool, {key :: pool_key(),
@@ -43,14 +43,14 @@
 -include_lib("stdlib/include/ms_transform.hrl").
 -include_lib("riak_pb/include/riak_pb_kv_codec.hrl").
 -include("riak_cs.hrl").
--include("riak_cs_mc.hrl").
+-include("riak_cs_bag.hrl").
 
--type pool_type() :: blocks | manifests.
+-type pool_type() :: block | manifest.
 %% Use "bag ID" instead of "cluster ID".
 %% There are more than one clusters in case of MDC.
 -type bag_id() :: binary().
 -type pool_key() :: {pool_type(), bag_id()}.
--type usage() :: #usage{}.
+-type weight_info() :: #weight_info{}.
 
 %% Return pool specs from application configuration.
 %% This function assumes that it is called ONLY ONCE at initialization.
@@ -171,7 +171,7 @@ assign_bag_id(Type) ->
         false ->
             undefined;
         true ->
-            {ok, BagId} = riak_cs_mc_server:allocate(Type),
+            {ok, BagId} = riak_cs_bag_server:allocate(Type),
             BagId
     end.
 

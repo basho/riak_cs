@@ -1,6 +1,6 @@
 %% ---------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2014 Basho Technologies, Inc.  All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -20,7 +20,7 @@
 
 %% @doc The worker process executing possibly long running tasks
 
--module(riak_cs_mc_worker).
+-module(riak_cs_bag_worker).
 
 -behavior(gen_server).
 
@@ -30,7 +30,7 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          terminate/2, code_change/3]).
 
--include("riak_cs_mc.hrl").
+-include("riak_cs_bag.hrl").
 
 -ifdef(TEST).
 -compile(export_all).
@@ -41,8 +41,8 @@
           timer_ref :: reference() | undefined,
           %% Consecutive refresh failures
           failed_count = 0 :: non_neg_integer(),
-          weights = [] :: [{riak_cs_mc:pool_type(),
-                            [{riak_cs_mc:pool_key(), riak_cs_mc:usage()}]}]
+          weights = [] :: [{riak_cs_bag:pool_type(),
+                            [{riak_cs_bag:pool_key(), riak_cs_bag:weight_info()}]}]
          }).
 
 -define(SERVER, ?MODULE).
@@ -58,11 +58,11 @@ refresh() ->
     gen_server:call(?SERVER, refresh).
 
 input(Json) ->
-    case json_to_usages(Json) of
-        {ok, Usages} ->
-            verify_input_usages(Usages);
+    case json_to_weight_info_list(Json) of
+        {ok, WeightInfoList} ->
+            verify_weight_info_list_input(WeightInfoList);
         {error, Reason} ->
-            lager:debug("riak_cs_mc_worker:input failed: ~p~n", [Reason]),
+            lager:debug("riak_cs_bag_worker:input failed: ~p~n", [Reason]),
             {error, Reason}
     end.
 
@@ -83,9 +83,9 @@ handle_call(status, _From, #state{failed_count=FailedCount} = State) ->
 handle_call(weights, _From, #state{weights = Weights} = State) ->
     {reply, {ok, Weights}, State};
 handle_call(refresh, _From, State) ->
-    case fetch_usage(State) of
-        {ok, Usages, NewState} ->
-            {reply, {ok, Usages}, NewState};
+    case fetch_weights(State) of
+        {ok, WeightInfoList, NewState} ->
+            {reply, {ok, WeightInfoList}, NewState};
         {error, Reason, NewState} ->
             {reply, {error, Reason}, NewState}
     end;
@@ -97,10 +97,10 @@ handle_cast(_Msg, State) ->
 
 handle_info(Event, State) when Event =:= refresh_by_timer orelse Event =:= timeout ->
     case refresh_by_timer(State) of
-        {ok, _Usages, NewState} ->
+        {ok, _WeightInfoList, NewState} ->
             {noreply, NewState};
         {error, Reason, NewState} ->
-            lager:error("Refresh of cluster usage information failed. Reason: ~@", [Reason]),
+            lager:error("Refresh of cluster weight information failed. Reason: ~p", [Reason]),
             {noreply, NewState}
     end;
 handle_info(_Info, State) ->
@@ -113,37 +113,37 @@ code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 refresh_by_timer(State) ->
-    case fetch_usage(State) of
-        {ok, Usages, State1} ->
+    case fetch_weights(State) of
+        {ok, WeightInfoList, State1} ->
             State2 = schedule(State1),
-            {ok, Usages, State2};
+            {ok, WeightInfoList, State2};
         {error, Reason, State1} ->
             State2 = schedule(State1),
             {error, Reason, State2}
     end.
 
 %% Connect to default cluster and GET weight information
-fetch_usage(State) ->
+fetch_weights(State) ->
     case riak_cs_utils:riak_connection() of
         {ok, Riakc} ->
-            Result = riakc_pb_socket:get(Riakc, ?USAGE_BUCKET, ?USAGE_KEY),
+            Result = riakc_pb_socket:get(Riakc, ?WEIGHT_BUCKET, ?WEIGHT_KEY),
             riak_cs_utils:close_riak_connection(Riakc),
-            handle_usage_info(Result, State);
+            handle_weight_info_list(Result, State);
         {error, _Reason} = E ->
-            handle_usage_info(E, State)
+            handle_weight_info_list(E, State)
     end.
 
-handle_usage_info({error, notfound}, State) ->
-    lager:debug("Cluster usage not found"),
+handle_weight_info_list({error, notfound}, State) ->
+    lager:debug("Bag weight information is not found"),
     {ok, [], State#state{failed_count = 0}};
-handle_usage_info({error, Reason}, #state{failed_count = Count} = State) ->
-    lager:error("Retrieval of cluster usage information failed. Reason: ~p", [Reason]),
+handle_weight_info_list({error, Reason}, #state{failed_count = Count} = State) ->
+    lager:error("Retrieval of bag weight information failed. Reason: ~p", [Reason]),
     {error, Reason, State#state{failed_count = Count + 1}};
-handle_usage_info({ok, Obj}, State) ->
+handle_weight_info_list({ok, Obj}, State) ->
     %% TODO: How to handle siblings
     [Value | _] = riakc_obj:get_values(Obj),
     Weights = binary_to_term(Value),
-    riak_cs_mc_server:new_weights(Weights),
+    riak_cs_bag_server:new_weights(Weights),
     {ok, Weights, State#state{failed_count = 0, weights = Weights}}.
 
 schedule(State) ->
@@ -151,109 +151,109 @@ schedule(State) ->
     Ref = erlang:send_after(Interval, self(), refresh_by_timer),
     State#state{timer_ref = Ref}.
 
-json_to_usages({struct, JSON}) ->
-    json_to_usages(JSON, []).
+json_to_weight_info_list({struct, JSON}) ->
+    json_to_weight_info_list(JSON, []).
 
-json_to_usages([], Usages) ->
-    {ok, Usages};
-json_to_usages([{TypeBin, Bags} | Rest], Usages) ->
+json_to_weight_info_list([], WeightInfoList) ->
+    {ok, WeightInfoList};
+json_to_weight_info_list([{TypeBin, Bags} | Rest], WeightInfoList) ->
     case TypeBin of
         <<"manifest">> ->
-            json_to_usages(manifest, Bags, Rest, Usages);
+            json_to_weight_info_list(manifest, Bags, Rest, WeightInfoList);
         <<"block">> ->
-            json_to_usages(block, Bags, Rest, Usages);
+            json_to_weight_info_list(block, Bags, Rest, WeightInfoList);
         _ ->
             {error, {bad_request, TypeBin}}
     end.
 
-json_to_usages(Type, Bags, RestTypes, Usages) ->
-    case json_to_usages_by_type(Type, Bags) of
-        {ok, TypeUsage} ->
-            json_to_usages(RestTypes, [TypeUsage | Usages]);
+json_to_weight_info_list(Type, Bags, RestTypes, WeightInfoList) ->
+    case json_to_weight_info_list_by_type(Type, Bags) of
+        {ok, WeightInfoListPerType} ->
+            json_to_weight_info_list(RestTypes, [WeightInfoListPerType | WeightInfoList]);
         {error, Reason} ->
             {error, Reason}
     end.
 
-json_to_usages_by_type(Type, Bags) ->
-    json_to_usages_by_type(Type, Bags, []).
+json_to_weight_info_list_by_type(Type, Bags) ->
+    json_to_weight_info_list_by_type(Type, Bags, []).
 
-json_to_usages_by_type(Type, [], Usages) ->
-    {ok, {Type, Usages}};
-json_to_usages_by_type(Type, [Bag | Rest], Usages) ->
-    case json_to_usage(Bag) of
-        {ok, Usage} ->
-            json_to_usages_by_type(Type, Rest, [Usage | Usages]);
+json_to_weight_info_list_by_type(Type, [], WeightInfoList) ->
+    {ok, {Type, WeightInfoList}};
+json_to_weight_info_list_by_type(Type, [Bag | Rest], WeightInfoList) ->
+    case json_to_weight_info(Bag) of
+        {ok, WeightInfo} ->
+            json_to_weight_info_list_by_type(Type, Rest, [WeightInfo | WeightInfoList]);
         {error, Reason} ->
             {error, Reason}
     end.
 
-json_to_usage({struct, Bag}) ->
-    json_to_usage(Bag, #usage{}).
+json_to_weight_info({struct, Bag}) ->
+    json_to_weight_info(Bag, #weight_info{}).
 
-json_to_usage([], #usage{bag_id=Id, weight=Weight} = Usage)
+json_to_weight_info([], #weight_info{bag_id=Id, weight=Weight} = WeightInfo)
   when Id =/= undefined andalso Weight =/= undefined ->
-    {ok, Usage};
-json_to_usage([], Usage) ->
-    {error, {bad_request, Usage}};
-json_to_usage([{<<"id">>, Id} | Rest], Usage)
+    {ok, WeightInfo};
+json_to_weight_info([], WeightInfo) ->
+    {error, {bad_request, WeightInfo}};
+json_to_weight_info([{<<"id">>, Id} | Rest], WeightInfo)
   when is_binary(Id) ->
-    json_to_usage(Rest, Usage#usage{bag_id = Id});
-json_to_usage([{<<"weight">>, Weight} | Rest], Usage)
+    json_to_weight_info(Rest, WeightInfo#weight_info{bag_id = Id});
+json_to_weight_info([{<<"weight">>, Weight} | Rest], WeightInfo)
   when is_integer(Weight) andalso Weight >= 0 ->
-    json_to_usage(Rest, Usage#usage{weight = Weight});
-json_to_usage([{<<"free">>, Free} | Rest], Usage) ->
-    json_to_usage(Rest, Usage#usage{free = Free});
-json_to_usage([{<<"total">>, Total} | Rest], Usage) ->
-    json_to_usage(Rest, Usage#usage{total = Total});
-json_to_usage(Json, _Usage) ->
+    json_to_weight_info(Rest, WeightInfo#weight_info{weight = Weight});
+json_to_weight_info([{<<"free">>, Free} | Rest], WeightInfo) ->
+    json_to_weight_info(Rest, WeightInfo#weight_info{free = Free});
+json_to_weight_info([{<<"total">>, Total} | Rest], WeightInfo) ->
+    json_to_weight_info(Rest, WeightInfo#weight_info{total = Total});
+json_to_weight_info(Json, _WeightInfo) ->
     {error, {bad_request, Json}}.
 
-verify_input_usages(Usages) ->
+verify_weight_info_list_input(WeightInfoList) ->
     %% TODO implement verify logic or consistency checks
-    put_and_refresh(Usages).
+    overwrite_and_refresh(WeightInfoList).
 
-put_and_refresh(Usages) ->
-    case put_usages(Usages) of
+overwrite_and_refresh(WeightInfoList) ->
+    case overwrite_weight_info(WeightInfoList) of
         ok ->
             refresh();
         {error, Reason} ->
             {error, Reason}
     end.
 
-%% Connect to default cluster and put usages to {riak-cs-mc, usage}
-put_usages(Usages) ->
+%% Connect to default cluster and overwrite weights at {riak-cs-bag, weight}
+overwrite_weight_info(WeightInfoList) ->
     case riak_cs_utils:riak_connection() of
         {ok, Riakc} ->
-            update_to_new_usages(Riakc, Usages);
+            update_to_new_weight_info(Riakc, WeightInfoList);
         {error, _Reason} = E ->
             E
     end.
 
-update_to_new_usages(Riakc, Weights) ->
-    Current = case riakc_pb_socket:get(Riakc, ?USAGE_BUCKET, ?USAGE_KEY) of
+update_to_new_weight_info(Riakc, WeightInfoList) ->
+    Current = case riakc_pb_socket:get(Riakc, ?WEIGHT_BUCKET, ?WEIGHT_KEY) of
                   {error, notfound} ->
-                      {ok, riakc_obj:new(?USAGE_BUCKET, ?USAGE_KEY)};
+                      {ok, riakc_obj:new(?WEIGHT_BUCKET, ?WEIGHT_KEY)};
                   {error, Reason} ->
                       {error, Reason};
                   {ok, Obj} ->
                       {ok, Obj}
               end,
-    update_usages(Riakc, Weights, Current).
+    update_weight_info(Riakc, WeightInfoList, Current).
 
-update_usages(Riakc, _Usages, {error, Reason}) ->
+update_weight_info(Riakc, _WeightInfoList, {error, Reason}) ->
     riak_cs_utils:close_riak_connection(Riakc),
-    lager:error("Retrieval of cluster usage information failed. Reason: ~p", [Reason]),
+    lager:error("Retrieval of bag weight information failed. Reason: ~p", [Reason]),
     {error, Reason};
-update_usages(Riakc, Usages, {ok, Obj}) ->
+update_weight_info(Riakc, WeightInfoList, {ok, Obj}) ->
     NewObj = riakc_obj:update_value(
                riakc_obj:update_metadata(Obj, dict:new()),
-               term_to_binary(Usages)),
+               term_to_binary(WeightInfoList)),
     PutRes = riakc_pb_socket:put(Riakc, NewObj),
     riak_cs_utils:close_riak_connection(Riakc),
     case PutRes of
         ok ->
             ok;
         {error, Reason} ->
-            lager:error("Update of cluster usage information failed. Reason: ~@", [Reason]),
+            lager:error("Update of bag weight information failed. Reason: ~p", [Reason]),
             {error, Reason}
     end.
