@@ -49,16 +49,14 @@ confirm() ->
 
 config() ->
     CustomConfig = 
-        [{manifest_bags,
+        [{multi_bag,
           [
-           {<<"bag-B">>, "127.0.0.1", 10027}
+           {"bag-A", "127.0.0.1", 10017},
+           {"bag-B", "127.0.0.1", 10027},
+           {"bag-C", "127.0.0.1", 10037}
           ]},
-         {default_manifest_bag_id, <<"bag-A">>},
-         {block_bags,
-          [
-           {<<"bag-C">>, "127.0.0.1", 10037}
-          ]},
-         {default_block_bag_id, <<"bag-A">>}],
+         {default_bag, [{manifest, "bag-A"},
+                        {block,    "bag-A"}]}],
     [{cs, rtcs:cs_config(CustomConfig)}].
 
 weights() ->
@@ -73,9 +71,7 @@ weights() ->
 
 bag_input() ->
     InputRes = rtcs:bag_input(1, mochijson2:encode(weights())),
-    lager:info("riak-cs-mc input result: ~s", [InputRes]),
-    RefreshRes = rtcs:bag_refresh(1),
-    lager:info("riak-cs-mc refresh result: ~s", [RefreshRes]).
+    lager:info("riak-cs-mc input result: ~s", [InputRes]).
 
 assert_object_in_each_bag(RiakNodes, UserConfig, UploadType) ->
     {Bucket, Key, Content} = upload(UserConfig, UploadType),

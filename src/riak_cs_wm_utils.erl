@@ -256,7 +256,7 @@ setup_manifest(KeyCtx=#key_context{bucket=Bucket,
     BinKey = list_to_binary(Key),
     FetchConcurrency = riak_cs_lfs_utils:fetch_concurrency(),
     BufferFactor = riak_cs_lfs_utils:get_fsm_buffer_size_factor(),
-    ManifestPool = riak_cs_bag:pool_name(manifest, BucketObj),
+    ManifestPool = riak_cs_bag:pool_name(request_pool, BucketObj),
     lager:debug("ManifestPool: ~p~n", [ManifestPool]),
     ManiRiakcPid = case ManifestPool of
                        undefined ->

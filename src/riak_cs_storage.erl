@@ -73,7 +73,7 @@ maybe_sum_bucket(Riak, User, ?RCS_BUCKET{name=Name} = Bucket) when is_binary(Nam
 
 -spec sum_bucket_with_pool(pid(), cs_bucket()) -> term() | {error, term()}.
 sum_bucket_with_pool(DefaultRiakc, ?RCS_BUCKET{name=Name} = Bucket) ->
-    case riak_cs_bag:pool_name(manifest, Bucket) of
+    case riak_cs_bag:pool_name(request_pool, Bucket) of
         undefined ->
             sum_bucket(DefaultRiakc, Name);
         PoolName ->

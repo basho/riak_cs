@@ -31,7 +31,7 @@
          pool_status/0,
          tab_info/0]).
 
--export_type([pool_key/0, pool_type/0, bag_id/0, weight_info/0]).
+-export_type([allocate_type/0, pool_key/0, pool_type/0, bag_id/0, weight_info/0]).
 
 -define(ETS_TAB, ?MODULE).
 -record(pool, {key :: pool_key(),
@@ -45,68 +45,60 @@
 -include("riak_cs.hrl").
 -include("riak_cs_bag.hrl").
 
--type pool_type() :: block | manifest.
+-type allocate_type() :: manifest | block.
+-type pool_type() :: request_pool | bucket_list_pool.
 %% Use "bag ID" instead of "cluster ID".
 %% There are more than one clusters in case of MDC.
 -type bag_id() :: binary().
 -type pool_key() :: {pool_type(), bag_id()}.
 -type weight_info() :: #weight_info{}.
 
+-spec is_multi_bag_ebabled() -> boolean().
+is_multi_bag_ebabled() ->
+    application:get_env(riak_cs, multi_bag) =/= undefined.
+
 %% Return pool specs from application configuration.
 %% This function assumes that it is called ONLY ONCE at initialization.
 %% TODO: return specs from ETS after initialization?
 -spec pool_specs(term()) -> [{atom(), {non_neg_integer(), non_neg_integer()}}].
-pool_specs(DefaultPools) ->
+pool_specs(MasterPoolConfig) ->
     init_ets(),
-    ReqPoolSize = proplists:get_value(request_pool, DefaultPools),
-    ListPoolSize = proplists:get_value(bucket_list_pool, DefaultPools),
-    BlockPools = register_bags(block, ReqPoolSize,
-                               block_bags, default_block_bag_id),
-    ManifestPools = register_bags(manifest, ReqPoolSize,
-                                  manifest_bags, default_manifest_bag_id),
-    ManifestListPools = register_bags(manifest_list, ListPoolSize,
-                                      manifest_bags, default_manifest_bag_id),
-    case {BlockPools, ManifestPools} of
-        {[], []} ->
-            application:set_env(riak_cs, multi_bag_enabled, false);
-        _ ->
-            application:set_env(riak_cs, multi_bag_enabled, true)
-    end,
-    BlockPools ++ ManifestPools ++ ManifestListPools.
+    case application:get_env(riak_cs, multi_bag) of
+        undefined ->
+            [];
+        {ok, BagConfig} ->
+            register_pools(BagConfig, BagConfig, MasterPoolConfig, [])
+    end.
 
-register_bags(Type, PoolSize, PoolConfigName, DefaultConfigName) ->
-    Pools = case application:get_env(riak_cs, PoolConfigName) of
-                undefined ->
-                    application:set_env(riak_cs, DefaultConfigName, undefined),
-                    [];
-                [] ->
-                    application:set_env(riak_cs, DefaultConfigName, undefined),
-                    [];
-                {ok, Bags} ->
-                    register_props(Type, PoolSize, Bags, [])
-            end,
-    Pools.
-
-register_props(_Type, _PoolSize, [], Names) ->
-    Names;
-register_props(Type, PoolSize, [{BagId, Address, Port} | Rest], PoolSpecs) ->
-    lager:debug("{BagId, Type, Address, Port}: ~p~n", [{BagId, Type, Address, Port}]),
-    NewPoolSpec = {register_and_get_pool_name(Type, BagId, Address, Port),
-                   PoolSize, {Address, Port}},
-    register_props(Type, PoolSize, Rest, [NewPoolSpec | PoolSpecs]).
+register_pools(_OriginalBagConfig, _BagConfig, [], PoolSpecs) ->
+    PoolSpecs;
+register_pools(OriginalBagConfig, [],
+               [_ | MasterPoolConfigRest],
+               PoolSpecs) ->
+    register_pools(OriginalBagConfig, OriginalBagConfig,
+                   MasterPoolConfigRest, PoolSpecs);
+register_pools(OriginalBagConfig, [{BagIdStr, Address, Port} | Bags],
+               [{PoolType, PoolSize} | _] = MasterPoolConfig,
+               PoolSpecs) ->
+    BagId = list_to_binary(BagIdStr),
+    lager:debug("{PoolType, BagId, Address, Port}: ~p~n",
+                [{PoolType, BagId, Address, Port}]),
+    NewPoolSpec = {
+      register_and_get_pool_name(PoolType, BagId, Address, Port),
+      PoolSize, {Address, Port}},
+    register_pools(OriginalBagConfig, Bags,
+                   MasterPoolConfig, [NewPoolSpec | PoolSpecs]).
 
 %% Translate bag ID in buckets and manifests to pool name.
 -spec pool_name(pool_type(),
                 undefined | riakc_obj:riakc_obj() | lfs_manifest() | cs_bucket()) ->
                        atom().
-pool_name(block, Manifest) when is_record(Manifest, ?MANIFEST_REC) ->
-    bag_pool_name(block, bag_id_from_manifest(Manifest));
-pool_name(manifest, ?RCS_BUCKET{} = Bucket) ->
-    bag_pool_name(manifest, bag_id_from_cs_bucket(Bucket));
-pool_name(manifest, BucketObj) ->
-    bag_pool_name(manifest, bag_id_from_bucket(BucketObj));
-pool_name(manifest_list, BucketObj) ->
-    bag_pool_name(manifest_list, bag_id_from_bucket(BucketObj)).
+pool_name(request_pool = PoolType, Manifest) when is_record(Manifest, ?MANIFEST_REC) ->
+    bag_pool_name(PoolType, bag_id_from_manifest(Manifest));
+pool_name(request_pool = PoolType, ?RCS_BUCKET{} = Bucket) ->
+    bag_pool_name(PoolType, bag_id_from_cs_bucket(Bucket));
+pool_name(PoolType, BucketObj) ->
+    bag_pool_name(PoolType, bag_id_from_bucket(BucketObj)).
 
 %% 'undefined' in second argument means buckets and manifests were stored
 %% under single bag configuration.
@@ -126,14 +118,17 @@ bag_pool_name(Type, BagId) when is_binary(BagId) ->
 bag_id_from_manifest(?MANIFEST{props = Props}) ->
     case Props of
         undefined ->
-            application:get_env(riak_cs, default_block_bag);
+            undefined;
         _ ->
-            proplists:get_value(block_bag, Props)
+            case lists:keyfind(block_bag, 1, Props) of
+                false -> undefined;
+                {block_bag, BagId} -> BagId
+            end
     end.
 
 -spec bag_id_from_cs_bucket(cs_bucket()) -> undefined | bag_id().
 bag_id_from_cs_bucket(?RCS_BUCKET{manifest_bag=undefined}) ->
-    application:get_env(riak_cs, default_manifest_bag);
+    undefined;
 bag_id_from_cs_bucket(?RCS_BUCKET{manifest_bag=BagId}) ->
     BagId.
 
@@ -159,26 +154,30 @@ bag_id_from_meta([{?MD_BAG, Value} | _]) ->
 bag_id_from_meta([_MD | MDs]) ->
     bag_id_from_meta(MDs).
 
--spec default_bag_id(pool_type()) -> bag_id().
-default_bag_id(block) ->
-    application:get_env(riak_cs, default_block_bag_id);
-default_bag_id(manifest) ->
-    application:get_env(riak_cs, default_manifest_bag_id).
+-spec default_bag_id(pool_type()) -> undefined | bag_id().
+default_bag_id(Type) ->
+    case application:get_env(riak_cs, default_bag) of
+        undefined ->
+            undefined;
+        {ok, DefaultBags} ->
+            case lists:keyfind(Type, 1, DefaultBags) of
+                false ->
+                    undefined;
+                {Type, BagId} ->
+                    list_to_binary(BagId)
+            end
+    end.
 
 %% Choose bag ID for new bucket or new manifest
+-spec assign_bag_id(allocate_type()) -> undefined | bag_id().
 assign_bag_id(Type) ->
-    case multi_bag_enabled() of
+    case is_multi_bag_ebabled() of
         false ->
             undefined;
         true ->
             {ok, BagId} = riak_cs_bag_server:allocate(Type),
             BagId
     end.
-
--spec multi_bag_enabled() -> boolean().
-multi_bag_enabled() ->
-    {ok, B} = application:get_env(riak_cs, multi_bag_enabled),
-    B.
 
 %% Choose bag ID to store blocks for new manifest and
 %% return new manifest
@@ -192,24 +191,18 @@ init_ets() ->
     ets:new(?ETS_TAB, [{keypos, 2}, named_table, protected,
                        {read_concurrency, true}]).
 
--spec register_and_get_pool_name(pool_type(), string(),
-                                 non_neg_integer(), bag_id()) -> atom().
-register_and_get_pool_name(Type, BagId, IP, Port) ->
+-spec register_and_get_pool_name(pool_type(), bag_id(),
+                                 string(), bag_id()) -> atom().
+register_and_get_pool_name(PoolType, BagId, IP, Port) ->
     %% TODO: Better to check bag_id for safety
     %%       Or get bag_id on the fly?
-    %% TODO(shino): IP and Port are better than BagId?
-    %%              Or just serial number?
-    Name = list_to_atom(lists:flatten(io_lib:format("~s:~s", [Type, BagId]))),
-    ets:insert(?ETS_TAB, #pool{key = {Type, BagId},
-                               type = Type,
+    Name = list_to_atom(lists:flatten(io_lib:format("~s:~s", [PoolType, BagId]))),
+    ets:insert(?ETS_TAB, #pool{key = {PoolType, BagId},
+                               type = PoolType,
                                ip = IP,
                                port = Port,
                                name = Name}),
     Name.
-
--spec is_multi_bag_ebabled() -> boolean().
-is_multi_bag_ebabled() ->
-    application:get_env(riak_cs, multi_bag_enabled).
 
 %% For Debugging
 

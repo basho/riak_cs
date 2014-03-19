@@ -47,8 +47,8 @@
 start_link() ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
 
--spec allocate(riak_cs_bag:pool_type()) -> {ok, riak_cs_bag:bag_id()} |
-                                           {error, term()}.
+-spec allocate(riak_cs_bag:allocate_type()) -> {ok, riak_cs_bag:bag_id()} |
+                                               {error, term()}.
 allocate(Type) ->
     gen_server:call(?SERVER, {allocate, Type}).
 
@@ -108,7 +108,7 @@ code_change(_OldVsn, State, _Extra) ->
 %% bag3    0        30                   N/A
 %% bag4   30        60                   31..60
 -spec decide_bag([{riak_cs_bag:pool_key(), riak_cs_bag:weight_info()}]) ->
-                        {ok, {riak_cs_bag:pool_key(), riak_cs_bag:weight_info()}} |
+                        {ok, riak_cs_bag:bag_id()} |
                         {error, no_bag}.
 decide_bag([]) ->
     {error, no_bag};

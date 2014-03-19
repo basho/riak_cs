@@ -50,7 +50,7 @@ list_objects(_UserBuckets, Bucket, MaxKeys, Options, RiakcPid) ->
     UseCache = riak_cs_list_objects_ets_cache:cache_enabled(),
     case riak_cs_utils:fetch_bucket_object(Bucket, RiakcPid) of
         {ok, BucketObj} ->
-            ManifestPool = riak_cs_bag:pool_name(manifest_list, BucketObj),
+            ManifestPool = riak_cs_bag:pool_name(bucket_list_pool, BucketObj),
             ManiRiakcPid = case ManifestPool of
                                undefined ->
                                    RiakcPid;
