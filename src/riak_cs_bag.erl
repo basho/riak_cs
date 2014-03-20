@@ -1,6 +1,6 @@
 %% ---------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2014 Basho Technologies, Inc.  All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -22,9 +22,10 @@
 
 -module(riak_cs_bag).
 
--export([pool_specs/1]).
--export([pool_name/2, default_bag_id/1,
-         assign_bag_id/1, set_bag_id_to_manifest/2,
+-export([pool_specs/1,
+         pool_name/2]).
+-export([assign_bag_id/1,
+         set_bag_id_to_manifest/2,
          bag_id_from_manifest/1]).
 
 -export([is_multi_bag_ebabled/0,
@@ -102,8 +103,8 @@ pool_name(PoolType, BucketObj) ->
 
 %% 'undefined' in second argument means buckets and manifests were stored
 %% under single bag configuration.
-bag_pool_name(_Type, undefined) ->
-    undefined;
+bag_pool_name(Type, undefined) ->
+    default_bag_id(Type);
 bag_pool_name(Type, BagId) when is_binary(BagId) ->
     case ets:lookup(?ETS_TAB, {Type, BagId}) of
         [] ->
