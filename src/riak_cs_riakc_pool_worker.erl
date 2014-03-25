@@ -43,8 +43,10 @@ riak_host_port() ->
     {Host, Port}.
 
 -spec start_link(term()) -> {ok, pid()} | {error, term()}.
-start_link(_Args) ->
-    {Host, Port} = riak_host_port(),
+start_link(Args) ->
+    {DefaultHost, DefaultPort} = riak_host_port(),
+    Address = proplists:get_value(address, Args, DefaultHost),
+    Port = proplists:get_value(port, Args, DefaultPort),
     Timeout = case application:get_env(riak_cs, riakc_connect_timeout) of
         {ok, ConfigValue} ->
             ConfigValue;
@@ -53,7 +55,7 @@ start_link(_Args) ->
     end,
     StartOptions = [{connect_timeout, Timeout},
                     {auto_reconnect, true}],
-    riakc_pb_socket:start_link(Host, Port, StartOptions).
+    riakc_pb_socket:start_link(Address, Port, StartOptions).
 
 stop(undefined) ->
     ok;

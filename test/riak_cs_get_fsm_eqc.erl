@@ -75,6 +75,7 @@ eqc_test_() ->
     }.
 
 setup() ->
+    application:set_env(riak_cs, multi_bag_enabled, false),
     ok.
 
 cleanup(_) ->

@@ -122,9 +122,11 @@ accept_body(RD, Ctx=#context{user=User,
                              riakc_pid=RiakPid}) ->
     riak_cs_dtrace:dt_bucket_entry(?MODULE, <<"bucket_create">>,
                                       [], [riak_cs_wm_utils:extract_name(User), Bucket]),
+    BagId = riak_cs_bag:assign_bag_id(manifest),
     case riak_cs_utils:create_bucket(User,
                                      UserObj,
                                      Bucket,
+                                     BagId,
                                      ACL,
                                      RiakPid) of
         ok ->

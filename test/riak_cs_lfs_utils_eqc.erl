@@ -82,6 +82,7 @@ prop_manifest_manipulation() ->
 
             begin
                 application:set_env(riak_cs, lfs_block_size, 1048576),
+                application:set_env(riak_cs, multi_bag_enabled, false),
                 Manifest = riak_cs_lfs_utils:new_manifest(Bucket,
                                                           FileName,
                                                           UUID,

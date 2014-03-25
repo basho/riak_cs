@@ -66,6 +66,7 @@ setup() ->
     application:load(sasl),
     application:load(riak_cs),
     application:set_env(sasl, sasl_error_logger, {file, "cs_get_fsm_sasl.log"}),
+    application:set_env(riak_cs, multi_bag_enabled, false),
     error_logger:tty(false),
     application:start(lager).
 

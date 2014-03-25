@@ -46,8 +46,7 @@ sum_user(Riak, User) when is_binary(User) ->
 sum_user(Riak, User) when is_list(User) ->
     case riak_cs_utils:get_user(User, Riak) of
         {ok, {?RCS_USER{buckets=Buckets}, _UserObj}} ->
-            BucketUsages = [maybe_sum_bucket(Riak, User, B)
-                            || ?RCS_BUCKET{name=B} <- Buckets],
+            BucketUsages = [maybe_sum_bucket(Riak, User, B) || B <- Buckets],
             {ok, BucketUsages};
         {error, Error} ->
             {error, Error}
@@ -57,19 +56,36 @@ sum_user(Riak, User) when is_list(User) ->
 %%      This log is *very* important because unless this log
 %%      there are no other way for operator to know a calculation
 %%      which riak_cs_storage_d failed.
--spec maybe_sum_bucket(pid(), string(), string()|binary()) ->
+-spec maybe_sum_bucket(pid(), string(), cs_bucket()) ->
                               {binary(), [{binary(), integer()}]} |
                               {binary(), binary()}.
-maybe_sum_bucket(Riak, User, Bucket) when is_list(Bucket)->
-    maybe_sum_bucket(Riak, User, list_to_binary(Bucket));
-maybe_sum_bucket(Riak, User, Bucket) when is_binary(Bucket)->
-    case sum_bucket(Riak, Bucket) of
-        {struct, _} = BucketUsage -> {Bucket, BucketUsage};
+maybe_sum_bucket(Riak, User, ?RCS_BUCKET{name=Name} = Bucket) when is_list(Name) ->
+    maybe_sum_bucket(Riak, User, Bucket?RCS_BUCKET{name=list_to_binary(Name)});
+maybe_sum_bucket(Riak, User, ?RCS_BUCKET{name=Name} = Bucket) when is_binary(Name) ->
+    case sum_bucket_with_pool(Riak, Bucket) of
+        {struct, _} = BucketUsage -> {Name, BucketUsage};
         {error, _} = E ->
             _ = lager:error("failed to calculate usage of "
                             "bucket '~s' of user '~s'. Reason: ~p",
-                            [Bucket, User, E]),
-            {Bucket, iolist_to_binary(io_lib:format("~p", [E]))}
+                            [Name, User, E]),
+            {Name, iolist_to_binary(io_lib:format("~p", [E]))}
+    end.
+
+-spec sum_bucket_with_pool(pid(), cs_bucket()) -> term() | {error, term()}.
+sum_bucket_with_pool(DefaultRiakc, ?RCS_BUCKET{name=Name} = Bucket) ->
+    case riak_cs_bag:pool_name(request_pool, Bucket) of
+        undefined ->
+            sum_bucket(DefaultRiakc, Name);
+        PoolName ->
+            %% TODO: riak_cs_utils:with_riak_connection(PoolName, Fun) is useful?
+            case riak_cs_utils:riak_connection(PoolName) of
+                {ok, Riakc} ->
+                    Res = sum_bucket(Riakc, Name),
+                    riak_cs_utils:close_riak_connection(Riakc),
+                    Res;
+                {error, Reason} ->
+                    {error, Reason}
+            end
     end.
 
 %% @doc Sum the number of bytes stored in active files in the named

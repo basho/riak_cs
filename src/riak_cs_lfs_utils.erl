@@ -39,6 +39,7 @@
          block_sequences_for_manifest/2,
          new_manifest/9,
          new_manifest/11,
+         new_manifest/12,
          remove_write_block/2,
          remove_delete_block/2]).
 
@@ -259,8 +260,10 @@ get_fsm_buffer_size_factor() ->
                    term(),
                    pos_integer(),
                    acl() | no_acl_yet) -> lfs_manifest().
-new_manifest(Bucket, FileName, UUID, ContentLength, ContentType, ContentMd5, MetaData, BlockSize, Acl) ->
-    new_manifest(Bucket, FileName, UUID, ContentLength, ContentType, ContentMd5, MetaData, BlockSize, Acl, [], undefined).
+new_manifest(Bucket, FileName, UUID, ContentLength, ContentType, ContentMd5,
+             MetaData, BlockSize, Acl) ->
+    new_manifest(Bucket, FileName, UUID, ContentLength, ContentType, ContentMd5,
+                 MetaData, BlockSize, Acl, [], undefined).
 
 -spec new_manifest(binary(),
                    binary(),
@@ -273,20 +276,40 @@ new_manifest(Bucket, FileName, UUID, ContentLength, ContentType, ContentMd5, Met
                    acl() | no_acl_yet,
                    proplists:proplist(),
                    cluster_id()) -> lfs_manifest().
-new_manifest(Bucket, FileName, UUID, ContentLength, ContentType, ContentMd5, MetaData, BlockSize, Acl, Props, ClusterID) ->
+new_manifest(Bucket, FileName, UUID, ContentLength, ContentType, ContentMd5,
+             MetaData, BlockSize, Acl, Props, ClusterID) ->
+    BagId = riak_cs_bag:assign_bag_id(block),
+    new_manifest(Bucket, FileName, UUID, ContentLength, ContentType, ContentMd5,
+                 MetaData, BlockSize, Acl, Props, ClusterID, BagId).
+
+-spec new_manifest(binary(),
+                   binary(),
+                   binary(),
+                   non_neg_integer(),
+                   binary(),
+                   term(),
+                   term(),
+                   pos_integer(),
+                   acl() | no_acl_yet,
+                   proplists:proplist(),
+                   cluster_id(),
+                   BagId::binary()) -> lfs_manifest().
+new_manifest(Bucket, FileName, UUID, ContentLength, ContentType, ContentMd5,
+             MetaData, BlockSize, Acl, Props, ClusterID, BagId) ->
     Blocks = ordsets:from_list(initial_blocks(ContentLength, BlockSize)),
-    ?MANIFEST{bkey={Bucket, FileName},
-              uuid=UUID,
-              state=writing,
-              content_length=ContentLength,
-              content_type=ContentType,
-              content_md5=ContentMd5,
-              block_size=BlockSize,
-              write_blocks_remaining=Blocks,
-              metadata=MetaData,
-              acl=Acl,
-              props=Props,
-              cluster_id=ClusterID}.
+    Manifest = ?MANIFEST{bkey={Bucket, FileName},
+                         uuid=UUID,
+                         state=writing,
+                         content_length=ContentLength,
+                         content_type=ContentType,
+                         content_md5=ContentMd5,
+                         block_size=BlockSize,
+                         write_blocks_remaining=Blocks,
+                         metadata=MetaData,
+                         acl=Acl,
+                         props=Props,
+                         cluster_id=ClusterID},
+    riak_cs_bag:set_bag_id_to_manifest(BagId, Manifest).
 
 %% @doc Remove a chunk from the
 %%      write_blocks_remaining field of Manifest
