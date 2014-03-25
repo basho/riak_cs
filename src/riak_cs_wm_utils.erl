@@ -570,7 +570,7 @@ extract_amazon_headers(Headers) ->
     ordsets:from_list(lists:foldl(FilterFun, [], Headers)).
 
 %% @doc Extract user metadata from request header
-%% Expires, Content-Disposition, Content-Encoding and x-amz-meta-*
+%% Expires, Content-Disposition, Content-Encoding, Cache-Control and x-amz-meta-*
 %% TODO: pass in x-amz-server-side-encryption?
 %% TODO: pass in x-amz-storage-class?
 %% TODO: pass in x-amz-grant-* headers?
@@ -593,7 +593,7 @@ extract_user_metadata([], Acc) ->
     Acc;
 extract_user_metadata([{Name, Value} | Headers], Acc)
   when Name =:= 'Expires' orelse Name =:= 'Content-Encoding'
-       orelse Name =:= "Content-Disposition" ->
+       orelse Name =:= "Content-Disposition" orelse Name =:= 'Cache-Control' ->
     extract_user_metadata(
       Headers, [{any_to_list(Name), unicode:characters_to_list(Value, utf8)} | Acc]);
 extract_user_metadata([{Name, Value} | Headers], Acc) when is_list(Name) ->
