@@ -15,11 +15,16 @@ cd $RUNNER_BASE_DIR
 SCRIPT=`basename $0`
 
 usage() {
-    echo "Usage: $SCRIPT { cluster-info | gc | access | storage | stanchion }"
+    echo "Usage: $SCRIPT { status | cluster-info | gc | access | storage | stanchion }"
 }
 
 # Check the first argument for instructions
 case "$1" in
+    status)
+        node_up_check
+
+        $NODETOOL rpc_infinity riak_cs_console status
+        ;;
     cluster[_-]info)
         if [ $# -lt 2 ]; then
             echo "Usage: $SCRIPT $1 <output_file>"

@@ -30,7 +30,8 @@
          report_json/0,
          report_pretty_json/0,
          report_str/0,
-         get_stats/0]).
+         get_stats/0,
+         get_stats_v2/0]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -101,6 +102,24 @@ get_stats() ->
     [{legend, [workers, overflow, size]}]
     ++
     [raw_report_pool(P) || P <- [ request_pool, bucket_list_pool ]].
+
+get_stats_v2() ->
+    lists:flatten(
+        [console_report_item(raw_report_item(I)) || I <- ?IDS]
+        ++
+        [console_report_pool(raw_report_pool(P)) || P <- [ request_pool, bucket_list_pool ]]
+        ++
+        cpu_stats()
+        ++
+        mem_stats()
+        ++
+        disk_stats()
+        ++
+        system_stats()
+        ++
+        app_stats()
+        ++
+        memory_stats()).
 
 %% ====================================================================
 %% gen_server callbacks
@@ -186,9 +205,77 @@ raw_report_item(BaseId) ->
             {BaseId, [MeterCount, MeterRate, LatencyMean, LatencyMedian,
              Latency95, Latency99]};
         undefined ->
-            {BaseId, -1, -1, -1, -1, -1, -1}
+            {BaseId, [-1, -1, -1, -1, -1, -1]}
     end.
 
 raw_report_pool(Pool) ->
     {_PoolState, PoolWorkers, PoolOverflow, PoolSize} = poolboy:status(Pool),
     {Pool, [PoolWorkers, PoolOverflow, PoolSize]}.
+
+console_report_item({BaseId, [MeterCount, MeterRate, LatencyMean, LatencyMedian, Latency95, Latency99]}) ->
+    [{list_to_atom(atom_to_list(BaseId) ++ K), V} || {K, V} <-
+        [{"_count", MeterCount},
+         {"_rate", MeterRate},
+         {"_time_mean", LatencyMean},
+         {"_time_median", LatencyMedian},
+         {"_time_95", Latency95},
+         {"_time_99", Latency99}]].
+
+console_report_pool({Pool, [PoolWorkers, PoolOverflow, PoolSize]}) ->
+    [{list_to_atom(atom_to_list(Pool) ++ K), V} || {K, V} <-
+        [{"_workers", PoolWorkers},
+         {"_overflow", PoolOverflow},
+         {"_size", PoolSize}]].
+
+memory_stats() ->
+    [{list_to_atom("memory_" ++ atom_to_list(K)), V} || {K,V} <- erlang:memory()].
+
+app_stats() ->
+    [{list_to_atom(atom_to_list(A) ++ "_version"), list_to_binary(V)}
+     || {A,_,V} <- application:which_applications()].
+
+%% @spec cpu_stats() -> proplist()
+%% @doc Get stats on the cpu, as given by the cpu_sup module
+%%      of the os_mon application.
+cpu_stats() ->
+    [{cpu_nprocs, cpu_sup:nprocs()},
+     {cpu_avg1, cpu_sup:avg1()},
+     {cpu_avg5, cpu_sup:avg5()},
+     {cpu_avg15, cpu_sup:avg15()}].
+
+%% @spec mem_stats() -> proplist()
+%% @doc Get stats on the memory, as given by the memsup module
+%%      of the os_mon application.
+mem_stats() ->
+    {Total, Alloc, _} = memsup:get_memory_data(),
+    [{mem_total, Total},
+     {mem_allocated, Alloc}].
+
+%% @spec disk_stats() -> proplist()
+%% @doc Get stats on the disk, as given by the disksup module
+%%      of the os_mon application.
+disk_stats() ->
+    [{disk, disksup:get_disk_data()}].
+
+system_stats() ->
+    [{nodename, node()},
+     {sys_driver_version, list_to_binary(erlang:system_info(driver_version))},
+     {sys_global_heaps_size, safe_global_heap_size()},
+     {sys_heap_type, erlang:system_info(heap_type)},
+     {sys_logical_processors, erlang:system_info(logical_processors)},
+     {sys_otp_release, list_to_binary(erlang:system_info(otp_release))},
+     {sys_process_count, erlang:system_info(process_count)},
+     {sys_smp_support, erlang:system_info(smp_support)},
+     {sys_system_version, list_to_binary(string:strip(erlang:system_info(system_version), right, $\n))},
+     {sys_system_architecture, list_to_binary(erlang:system_info(system_architecture))},
+     {sys_threads_enabled, erlang:system_info(threads)},
+     {sys_thread_pool_size, erlang:system_info(thread_pool_size)},
+     {sys_wordsize, erlang:system_info(wordsize)}].
+
+safe_global_heap_size() ->
+    try erlang:system_info(global_heaps_size) of
+        N -> N
+    catch
+        error:badarg ->
+            deprecated
+    end.

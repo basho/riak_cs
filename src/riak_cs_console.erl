@@ -21,12 +21,29 @@
 -module(riak_cs_console).
 
 -export([
+         status/1,
          cluster_info/1
         ]).
 
 %%%===================================================================
 %%% Public API
 %%%===================================================================
+
+status([]) ->
+    try
+        Stats = riak_cs_stats:get_stats_v2(),
+        StatString = format_stats(Stats,
+            ["-------------------------------------------\n",
+                io_lib:format("1-minute stats for ~p~n",[node()])]),
+        io:format("~s\n", [StatString])
+    catch
+        Exception:Reason ->
+            lager:error("Status failed ~p:~p",
+                [Exception, Reason]),
+            io:format("Status failed, see log for details~n"),
+            error
+    end.
+
 
 %% in progress.
 cluster_info([OutFile]) ->
@@ -49,3 +66,8 @@ cluster_info([OutFile]) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
+
+format_stats([], Acc) ->
+    lists:reverse(Acc);
+format_stats([{Stat, V}|T], Acc) ->
+    format_stats(T, [io_lib:format("~p : ~p~n", [Stat, V])|Acc]).
