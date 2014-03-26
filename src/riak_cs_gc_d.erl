@@ -268,10 +268,10 @@ paused(_, State) ->
 
 idle({manual_batch, Options}, _From, State) ->
     Leeway = leeway_option(Options),
-    ok_reply(fetching_next_fileset, start_manual_batch(
-                                      lists:member(testing, Options),
-                                      Leeway,
-                                      State));
+    ok_reply(fetching_next_batch, start_manual_batch(
+                                    lists:member(testing, Options),
+                                    Leeway,
+                                    State));
 idle(pause, _From, State) ->
     ok_reply(paused, pause_gc(idle, State));
 idle({set_interval, Interval}, _From, State)
@@ -353,7 +353,7 @@ handle_sync_event(_Event, _From, StateName, State) ->
 
 handle_info({start_batch, Leeway}, idle, State) ->
     NewState = start_batch(Leeway, State),
-    {next_state, fetching_next_fileset, NewState};
+    {next_state, fetching_next_batch, NewState};
 handle_info({start_batch, _}, InBatch, State) ->
     _ = lager:info("Unable to start garbage collection batch"
                    " because a previous batch is still working."),
@@ -452,7 +452,7 @@ elapsed(Time) ->
                                           {[binary()], undefined | binary()}.
 fetch_eligible_manifest_keys(RiakPid, IntervalStart, Leeway, Continuation) ->
     EndTime = list_to_binary(integer_to_list(IntervalStart - Leeway)),
-    UsePaginatedIndexes = riak_cs_config:paginated_indexes(),
+    UsePaginatedIndexes = riak_cs_config:gc_paginated_indexes(),
     QueryResults = gc_index_query(RiakPid,
                                   EndTime,
                                   riak_cs_config:gc_batch_size(),
@@ -557,37 +557,23 @@ ok_reply(NextState, NextStateData) ->
 schedule_next(?STATE{interval=infinity}=State) ->
     %% nothing to schedule, all triggers manual
     State;
-schedule_next(?STATE{batch_start=Current,
-                     interval=Interval,
-                     initial_delay=undefined}=State) ->
-    Next = calendar:gregorian_seconds_to_datetime(
-             riak_cs_gc:timestamp() + Interval),
-    _ = lager:debug("Scheduling next garbage collection for ~p",
-                    [Next]),
-    TimerRef = erlang:send_after(Interval*1000,
-                                 self(),
+schedule_next(?STATE{initial_delay=undefined}=State) ->
+    schedule_next(State, 0);
+schedule_next(?STATE{initial_delay=InitialDelay}=State) ->
+    schedule_next(State?STATE{initial_delay=undefined}, InitialDelay).
+
+schedule_next(?STATE{next=Last, interval=Interval}=State, InitialDelay) ->
+    RevisedNext = riak_cs_gc:timestamp() + Interval,
+    TimerValue = Interval * 1000 + InitialDelay * 1000,
+    TimerRef = erlang:send_after(TimerValue, self(),
                                  {start_batch, riak_cs_gc:leeway_seconds()}),
     State?STATE{batch_start=undefined,
-                last=Current,
-                next=Next,
-                timer_ref=TimerRef};
-schedule_next(?STATE{batch_start=Current,
-                     interval=Interval,
-                     initial_delay=InitialDelay}=State) ->
-    Next = calendar:gregorian_seconds_to_datetime(
-             riak_cs_gc:timestamp() + Interval),
-    _ = lager:debug("Scheduling next garbage collection for ~p",
-                    [Next]),
-    TimerValue = Interval * 1000 + InitialDelay * 1000,
-    TimerRef = erlang:send_after(TimerValue, self(), start_batch),
-    State?STATE{batch_start=undefined,
-                last=Current,
-                next=Next,
-                timer_ref=TimerRef,
-                initial_delay=undefined}.
+                last=Last,
+                next=RevisedNext,
+                timer_ref=TimerRef}.
 
 %% @doc Actually kick off the batch.  After calling this function, you
-%% must advance the FSM state to `fetching_next_fileset'.
+%% must advance the FSM state to `fetching_next_batch'.
 %% Intentionally pattern match on an undefined Riak handle.
 start_batch(Leeway, State=?STATE{riak=undefined}) ->
     %% this does not check out a worker from the riak
@@ -613,7 +599,7 @@ start_batch(Leeway, State=?STATE{riak=undefined}) ->
                 leeway=Leeway,
                 riak=Riak}.
 
--spec start_manual_batch(boolean(), non_neg_integer(), ?STATE{}) -> ?STATE{}.
+-spec start_manual_batch(Testing::boolean(), non_neg_integer(), ?STATE{}) -> ?STATE{}.
 start_manual_batch(true, _, State) ->
     State?STATE{batch=undefined};
 start_manual_batch(false, Leeway, State) ->

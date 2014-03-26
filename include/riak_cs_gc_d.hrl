@@ -23,7 +23,7 @@
 -record(gc_d_state, {
           interval :: 'infinity' | non_neg_integer(),
           last :: undefined | non_neg_integer(), % the last time a deletion was scheduled
-          next :: undefined | calendar:datetime(), % the next scheduled gc time
+          next :: undefined | non_neg_integer(), % the next scheduled gc time
           riak :: undefined | pid(), % Riak connection pid
           batch_start :: undefined | non_neg_integer(), % start of the current gc interval
           batch_count=0 :: non_neg_integer(),
