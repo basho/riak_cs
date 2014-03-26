@@ -1,0 +1,100 @@
+#!/bin/sh
+# -*- tab-width:4;indent-tabs-mode:nil -*-
+# ex: ts=4 sw=4 et
+
+# Pull environment for this install
+. "{{runner_base_dir}}/lib/env.sh"
+
+# Make sure the user running this script is the owner and/or su to that user
+check_user $@
+
+# Make sure CWD is set to runner run dir
+cd $RUNNER_BASE_DIR
+
+# Identify the script name
+SCRIPT=`basename $0`
+
+usage() {
+    echo "Usage: $SCRIPT { cluster-info|gc|access|storage|stanchion }"
+}
+
+# Check the first argument for instructions
+case "$1" in
+    cluster[_-]info)
+        if [ $# -lt 2 ]; then
+            echo "Usage: $SCRIPT $1 <output_file>"
+            exit 1
+        fi
+        shift
+
+        # Make sure the local node is running
+        node_up_check
+
+        $NODETOOL rpc_infinity riak_cs_console cluster_info $@
+        ;;
+    gc)
+        case "$2" in
+            batch|status|pause|resume|cancel|set-interval|set-leeway)
+                # Make sure the local node IS running
+                node_up_check
+                shift
+
+                $NODETOOL rpc riak_cs_gc_console $@
+                ;;
+            *)
+                echo "Usage: $SCRIPT { batch [<leeway_seconds>]|status|pause|resume|cancel|" \
+                    "set-interval <interval_seconds>|set-leeway <leeway_seconds> }"
+                exit 1
+                ;;
+        esac
+        ;;
+    storage)
+        case "$2" in
+            batch|status|pause|resume|cancel)
+                # Make sure the local node IS running
+                node_up_check
+                shift
+
+                $NODETOOL rpc riak_cs_storage_console $@
+                ;;
+            *)
+                echo "Usage: $SCRIPT $1 { batch|status|pause|resume|cancel }"
+                exit 1
+                ;;
+        esac
+        ;;
+    access)
+        case "$2" in
+            flush)
+                # Make sure the local node IS running
+                node_up_check
+                shift
+
+                $NODETOOL rpc riak_cs_access_console flush $@
+                ;;
+            *)
+                echo "Usage: $SCRIPT $1 { flush }"
+                exit 1
+                ;;
+        esac
+        ;;
+    stanchion)
+        case "$2" in
+            switch|show)
+                # Make sure the local node IS running
+                node_up_check
+                shift
+
+                $NODETOOL rpc riak_cs_stanchion_console $@
+                ;;
+            *)
+                echo "Usage: $SCRIPT $1 { switch HOST PORT | show }"
+                exit 1
+                ;;
+        esac
+        ;;
+    *)
+        usage
+        exit 1
+        ;;
+esac

@@ -14,6 +14,7 @@
                   webmachine,
                   poolboy,
                   lager,
+                  cluster_info,
                   folsom
                  ]},
   {mod, { riak_cs_app, []}},
