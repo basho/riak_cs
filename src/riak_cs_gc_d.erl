@@ -56,6 +56,8 @@
          terminate/3,
          code_change/4]).
 
+-export([current_state/0]).
+
 -include("riak_cs_gc_d.hrl").
 -include_lib("riakc/include/riakc.hrl").
 
@@ -65,13 +67,10 @@
 %% Test API
 -export([test_link/0,
          test_link/1,
-         current_state/0,
          change_state/1,
          status_data/1]).
 
 -endif.
-
--export([current_state/0]).
 
 -define(SERVER, ?MODULE).
 -define(STATE, #gc_d_state).
@@ -143,11 +142,13 @@ stop() ->
 
 %% @doc Read the storage schedule and go to idle.
 
-init(_Args) ->
+init(Args) ->
     Interval = riak_cs_gc:gc_interval(),
     InitialDelay = riak_cs_gc:initial_gc_delay(),
+    Testing = lists:member(testing, Args),
     SchedState = schedule_next(?STATE{interval=Interval,
-                                      initial_delay=InitialDelay}),
+                                      initial_delay=InitialDelay,
+                                      testing=Testing}),
     {ok, idle, SchedState}.
 
 %% Asynchronous events
@@ -331,7 +332,7 @@ paused({set_interval, Interval}, _From, State) ->
 paused(Msg, _From, State) ->
     Common = [{status, {ok, {paused, status_data(State)}}},
               {pause, {error, already_paused}},
-              {manual_batch, ok}],
+              {manual_batch, {error, already_paused}}],
     {reply, handle_common_sync_reply(Msg, Common, State), paused, State}.
 
 %% @doc there are no all-state events for this fsm
@@ -400,6 +401,8 @@ handle_batch_complete(WorkerPid, WorkerState, State) ->
 %% @doc Start a GC worker and return the apprpriate next state and
 %% updated state record.
 -spec start_worker(?STATE{}) -> ?STATE{}.
+start_worker(State=?STATE{testing=true}) ->
+    State;
 start_worker(State=?STATE{batch=[NextBatch | RestBatches],
                           active_workers=ActiveWorkers,
                           worker_pids=WorkerPids}) ->
@@ -655,8 +658,6 @@ test_link() ->
 test_link(Interval) ->
     application:set_env(riak_cs, gc_interval, Interval),
     test_link().
-
-
 
 %% @doc Manipulate the current state of the fsm for testing
 change_state(State) ->

@@ -56,7 +56,6 @@
 %% Test API
 -export([test_link/0,
          test_link/1,
-         current_state/1,
          change_state/1,
          status_data/1]).
 
@@ -311,6 +310,9 @@ current_state(Pid) ->
 
 -ifdef(TEST).
 
+%% FIXME multiple processes
+-define(SERVER, ?MODULE).
+
 %% @doc Start the garbage collection server
 test_link() ->
     gen_fsm:start_link({local, ?SERVER}, ?MODULE, [testing], []).
@@ -320,10 +322,16 @@ test_link(Interval) ->
     application:set_env(riak_cs, gc_interval, Interval),
     test_link().
 
-
-
 %% @doc Manipulate the current state of the fsm for testing
 change_state(State) ->
     gen_fsm:sync_send_all_state_event(?SERVER, {change_state, State}).
+
+status_data(State) ->
+    [{riak_pid, State?STATE.riak_pid},
+     {batch_count, State?STATE.batch_count},
+     {batch_skips, State?STATE.batch_skips},
+     {manif_count, State?STATE.manif_count},
+     {block_count, State?STATE.block_count}
+    ].
 
 -endif.
