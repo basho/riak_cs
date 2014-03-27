@@ -69,8 +69,7 @@
                  PPP).
 
 -define(STATE, #gc_d_state).
--record(mc_state, {current_state :: atom(),
-                   previous_state :: atom()}).
+-record(mc_state, {}).
 
 %%====================================================================
 %% Eunit tests
@@ -125,11 +124,9 @@ prop_manual_commands() ->
 
 prop_status() ->
     ?FORALL({Interval, Last, Next,
-             Start, Count,
-             Skips, Batch},
-            {eqc_gen:int(), riak_cs_gen:datetime(), riak_cs_gen:datetime(),
-             eqc_gen:int(), eqc_gen:int(),
-             eqc_gen:int(), eqc_gen:list(eqc_gen:int())},
+             Start, Count, Skips, Batch},
+            {int(), riak_cs_gen:datetime(), riak_cs_gen:datetime(),
+             int(), int(), int(), list(int())},
             begin
                 State = ?STATE{interval=Interval,
                                last=Last,
@@ -205,104 +202,63 @@ initial_state() ->
     idle.
 
 initial_state_data() ->
-    #mc_state{previous_state = idle}.
+    #mc_state{}.
 
-next_state_data({paused, _}, {paused, _}, S, _R, {call, ?GCD_MODULE, cancel_batch, []}) ->
-    S#mc_state{previous_state=idle};
-next_state_data(From, To, S, _R, _C) when From == To ->
-    S;
-next_state_data(From, To, S, _R, _C) ->
-    S#mc_state{current_state=To,
-               previous_state=From}.
+next_state_data(_From, _To, S, _R, _C) ->
+    S.
 
 precondition(_From, _To, _S, _C) ->
     true.
 
-%% `idle' state transitions
-postcondition(idle, idle, _S ,{call, _M, cancel_batch, _}, R) ->
-    {ActualState, _} = riak_cs_gc_d:current_state(),
-    ?P(ActualState =:= idle andalso R =:= {error, no_batch});
-postcondition(idle, {paused, _}, _S ,{call, _M, pause, _}, R) ->
-    {ActualState, _} = riak_cs_gc_d:current_state(),
-    ?P(ActualState =:= paused andalso R =:= ok);
-postcondition(idle, fetching_next_batch, _S ,{call, _M, manual_batch, _}, R) ->
-    {ActualState, _} = riak_cs_gc_d:current_state(),
-    ?P(ActualState =:= fetching_next_batch andalso R =:= ok);
-
-%% `fetching_next_batch' state transitions
-postcondition(fetching_next_batch, fetching_next_batch, _S ,{call, _M, manual_batch, _}, R) ->
-    {ActualState, _} = riak_cs_gc_d:current_state(),
-    ?P(ActualState =:= fetching_next_batch andalso R =:= {error, already_deleting});
-postcondition(fetching_next_batch, {paused, _}, _S ,{call, _M, pause, _}, R) ->
-    {ActualState, _} = riak_cs_gc_d:current_state(),
-    ?P(ActualState =:= paused andalso R =:= ok);
-postcondition(fetching_next_batch, idle, _S ,{call, _M, cancel_batch, _}, R) ->
-    {ActualState, _} = riak_cs_gc_d:current_state(),
-    ?P(ActualState =:= idle andalso R =:= ok);
-postcondition(fetching_next_batch, feeding_workers, _S ,{call, _M, change_state, _}, R) ->
-    {ActualState, _} = riak_cs_gc_d:current_state(),
-    ?P(ActualState =:= feeding_workers andalso R =:= ok);
-
-%% `feeding_workers' state transitions
-postcondition(feeding_workers, feeding_workers, _S ,{call, _M, manual_batch, _}, R) ->
-    {ActualState, _} = riak_cs_gc_d:current_state(),
-    ?P(ActualState =:= feeding_workers andalso R =:= {error, already_deleting});
-postcondition(feeding_workers, {paused, _}, _S ,{call, _M, pause, _}, R) ->
-    {ActualState, _} = riak_cs_gc_d:current_state(),
-    ?P(ActualState =:= paused andalso R =:= ok);
-postcondition(feeding_workers, idle, _S ,{call, _M, cancel_batch, _}, R) ->
-    {ActualState, _} = riak_cs_gc_d:current_state(),
-    ?P(ActualState =:= idle andalso R =:= ok);
-postcondition(feeding_workers, fetching_next_batch, _S ,{call, _M, change_state, _}, R) ->
-    {ActualState, _} = riak_cs_gc_d:current_state(),
-    ?P(ActualState =:= fetching_next_batch andalso R =:= ok);
-postcondition(feeding_workers, waiting_for_workers, _S ,{call, _M, change_state, _}, R) ->
-    {ActualState, _} = riak_cs_gc_d:current_state(),
-    ?P(ActualState =:= waiting_for_workers andalso R =:= ok);
-
-%% `waiting_for_workers' state transitions
-postcondition(waiting_for_workers, waiting_for_workers, _S ,{call, _M, manual_batch, _}, R) ->
-    {ActualState, _} = riak_cs_gc_d:current_state(),
-    ?P(ActualState =:= waiting_for_workers andalso R =:= {error, already_deleting});
-postcondition(waiting_for_workers, {paused, _}, _S ,{call, _M, pause, _}, R) ->
-    {ActualState, _} = riak_cs_gc_d:current_state(),
-    ?P(ActualState =:= paused andalso R =:= ok);
-postcondition(waiting_for_workers, idle, _S ,{call, _M, cancel_batch, _}, R) ->
-    {ActualState, _} = riak_cs_gc_d:current_state(),
-    ?P(ActualState =:= idle andalso R =:= ok);
-postcondition(waiting_for_workers, feeding_workers, _S ,{call, _M, change_state, _}, R) ->
-    {ActualState, _} = riak_cs_gc_d:current_state(),
-    ?P(ActualState =:= feeding_workers andalso R =:= ok);
-
-%% `paused' state transitions
-postcondition({paused, _}, {paused, _}, _S ,{call, _M, manual_batch, _}, R) ->
-    {ActualState, _} = riak_cs_gc_d:current_state(),
-    ?P(ActualState =:= paused andalso R =:= {error, already_paused});
-postcondition({paused, _}, {paused, _}, _S ,{call, _M, cancel_batch, _}, R) ->
-    {ActualState, _} = riak_cs_gc_d:current_state(),
-    ?P(ActualState =:= paused andalso R =:= ok);
-postcondition({paused, _}, {paused, _}, _S ,{call, _M, pause, _}, R) ->
-    {ActualState, _} = riak_cs_gc_d:current_state(),
-    ?P(ActualState =:= paused andalso R =:= {error, already_paused});
-postcondition({paused, _}, PrevState, #mc_state{previous_state=PrevState} ,{call, _M, resume, _}, R) ->
-    {ActualState, _} = riak_cs_gc_d:current_state(),
-    ?P(ActualState =:= PrevState andalso R =:= ok);
-
-%% General handling of `resume' calls when the `From' state
-%% is not `paused'.
-postcondition(_From, To, _S ,{call, _M, resume, _}, R) ->
-    {ActualState, _} = riak_cs_gc_d:current_state(),
-    ?P(ActualState =:= To andalso R =:= {error, not_paused});
-%% Handling of arbitrary calls that should return `ok'.
-postcondition(_From, To, _S ,{call, _M, _F, _}, R) ->
-    {ActualState, _} = riak_cs_gc_d:current_state(),
-    ?P(ActualState =:= actual_state(To) andalso R =:= ok);
-%% Catch all
-postcondition(_From, _To, _S , _C, _R) ->
-    true.
+postcondition(From, To, S , {call, _M, ManualCommad, _A}=C, R) ->
+    {Actual, _} = riak_cs_gc_d:current_state(),
+    ?assertEqual(actual_state(To), Actual),
+    ExpectedRes = expected_result(From, To, ManualCommad),
+    case R of
+        ExpectedRes -> true;
+        _ ->
+            eqc:format("Result:   ~p~n", [R]),
+            eqc:format("Expected: ~p~n", [ExpectedRes]),
+            eqc:format("when {From, To, S, C}: ~p~n", [{From, To, S, C}]),
+            false
+    end.
 
 actual_state({State, _}) -> State;
 actual_state(S) -> S.
+
+%% Handling of `set_interval' calls. Always succeeds.
+expected_result(From, From, set_interval) ->
+    ok;
+
+%% Handling of `pause' and `resume' calls. Just becomes paused and back.
+expected_result({paused, StateToResume}, {paused, StateToResume}, pause) ->
+    {error, already_paused};
+expected_result(From, {paused, From}, pause)  ->
+    ok;
+expected_result({paused, StateToResume}, StateToResume, resume) ->
+    ok;
+expected_result(From, From, resume) when is_atom(From) ->
+    {error, not_paused};
+
+%% Handling of `manual_batch' and `cancel_batch'.
+%% Almost just becomes fetching_next_batch and back to idle,
+%% only `cancel_batch' at paused is special.
+expected_result({paused, From}, {paused, From}, manual_batch) ->
+    {error, already_paused};
+expected_result({paused, _StateAtPause}, {paused, idle}, cancel_batch) ->
+    ok;
+expected_result(idle, fetching_next_batch, manual_batch) ->
+    ok;
+expected_result(From, From, manual_batch) ->
+    {error, already_deleting};
+expected_result(idle, idle, cancel_batch) ->
+    {error, no_batch};
+expected_result(_From, idle, cancel_batch) ->
+    ok;
+
+%% `change_state'
+expected_result(_From, _To, change_state) ->
+    ok.
 
 weight(idle, fetching_next_batch, _) -> 10;
 weight(fetching_next_batch, feeding_workers, _) -> 5;
