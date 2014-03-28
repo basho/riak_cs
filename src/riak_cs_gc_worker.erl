@@ -164,22 +164,16 @@ waiting_file_delete(_, State) ->
 
 %% Synchronous events
 
-fetching_next_fileset(Msg, _From, State) ->
-    Common = [{manual_batch, {error, already_deleting}},
-              {resume, {error, not_paused}}],
-    {reply, handle_common_sync_reply(Msg, Common, State), fetching_next_fileset, State}.
+fetching_next_fileset(_Msg, _From, State) ->
+    {next_state, fetching_next_fileset, State}.
 
-initiating_file_delete(Msg, _From, State) ->
-    Common = [{manual_batch, {error, already_deleting}},
-              {resume, {error, not_paused}}],
-    {reply, handle_common_sync_reply(Msg, Common, State), initiating_file_delete, State}.
+initiating_file_delete(_Msg, _From, State) ->
+    {next_state, initiating_file_delete, State}.
 
 waiting_file_delete({Pid, DelFsmReply}, _From, State=?STATE{delete_fsm_pid=Pid}) ->
     ok_reply(initiating_file_delete, handle_delete_fsm_reply(DelFsmReply, State));
-waiting_file_delete(Msg, _From, State) ->
-    Common = [{manual_batch, {error, already_deleting}},
-              {resume, {error, not_paused}}],
-    {reply, handle_common_sync_reply(Msg, Common, State), waiting_file_delete, State}.
+waiting_file_delete(_Msg, _From, State) ->
+    {next_state, initiating_file_delete, State}.
 
 %% @doc there are no all-state events for this fsm
 handle_event(_Event, StateName, State) ->
@@ -257,7 +251,6 @@ finish_file_delete(0, _, RiakObj, RiakPid) ->
     ok;
 finish_file_delete(_, FileSet, _RiakObj, _RiakPid) ->
     _ = lager:debug("Remaining file keys: ~p", [twop_set:to_list(FileSet)]),
-
     %% NOTE: we used to do a PUT here, but now with multidc replication
     %% we run garbage collection seprarately on each cluster, so we don't
     %% want to send this update to another data center. When we delete this
@@ -268,11 +261,6 @@ finish_file_delete(_, FileSet, _RiakObj, _RiakPid) ->
 -spec ok_reply(atom(), ?STATE{}) -> {reply, ok, atom(), ?STATE{}}.
 ok_reply(NextState, NextStateData) ->
     {reply, ok, NextState, NextStateData}.
-
-handle_common_sync_reply(Msg, Common, _State) when is_atom(Msg) ->
-    proplists:get_value(Msg, Common, unknown_command);
-handle_common_sync_reply({MsgBase, _}, Common, State) when is_atom(MsgBase) ->
-    handle_common_sync_reply(MsgBase, Common, State).
 
 %% Refactor TODO:
 %%   1. delete_fsm_pid=undefined is desirable in both ok & error cases?

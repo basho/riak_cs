@@ -42,6 +42,7 @@
 -export([init/1,
          idle/2,
          idle/3,
+         eligible_manifest_key_sets/3,
          fetching_next_batch/2,
          fetching_next_batch/3,
          feeding_workers/2,
@@ -472,7 +473,7 @@ eligible_manifest_keys({{ok, ?INDEX_RESULTS{keys=Keys}},
 eligible_manifest_keys({{ok, ?INDEX_RESULTS{keys=Keys}},
                         _EndTime},
                        false) ->
-    eligible_manifest_key_sets(Keys);
+    eligible_manifest_key_sets(riak_cs_config:gc_batch_size(), Keys, []);
 eligible_manifest_keys({{error, Reason}, EndTime}, _) ->
     _ = lager:warning("Error occurred trying to query from time 0 to ~p"
                       "in gc key index. Reason: ~p",
@@ -480,12 +481,21 @@ eligible_manifest_keys({{error, Reason}, EndTime}, _) ->
     [].
 
 %% @doc Break a list of gc-eligible keys from the GC bucket into smaller sets
-%% to be processed by different GC workers. This is primarily used when paginated
-%%
--spec eligible_manifest_key_sets([binary()]) -> [[binary()]].
-eligible_manifest_key_sets(Keys) ->
-    BatchSize = riak_cs_config:gc_batch_size(),
-    [lists:sublist(Keys, Index, BatchSize) || Index <- lists:seq(1, length(Keys), BatchSize)].
+%% to be processed by different GC workers.
+-spec eligible_manifest_key_sets(non_neg_integer(), [term()], [[term()]]) ->
+                                        [[term()]].
+eligible_manifest_key_sets(_BatchSize, [], Acc) ->
+    lists:reverse(Acc);
+eligible_manifest_key_sets(BatchSize, Keys, Acc) ->
+    {Batch, Rest} = split(BatchSize, Keys, []),
+    eligible_manifest_key_sets(BatchSize, Rest, [Batch | Acc]).
+
+split(_, [], Acc) ->
+    {lists:reverse(Acc), []};
+split(0, L, Acc) ->
+    {lists:reverse(Acc), L};
+split(N, [H|T], Acc) ->
+    split(N-1, T, [H|Acc]).
 
 -spec continuation({{ok, riakc_pb_socket:index_results()} | {error, term()},
                     binary()}) -> undefined | binary().
@@ -640,7 +650,7 @@ leeway_option(Options) ->
     end.
 
 %% ===================================================================
-%% Test API
+%% Test API and tests
 %% ===================================================================
 
 %% @doc Get the current state of the fsm for testing inspection
@@ -662,5 +672,14 @@ test_link(Interval) ->
 %% @doc Manipulate the current state of the fsm for testing
 change_state(State) ->
     gen_fsm:sync_send_all_state_event(?SERVER, {change_state, State}).
+
+eligible_manifest_key_sets_test() ->
+    ?assertEqual([], eligible_manifest_key_sets(3, [], [])),
+    ?assertEqual([[1]], eligible_manifest_key_sets(3, [1], [])),
+    ?assertEqual([[1,2,3]], eligible_manifest_key_sets(3, lists:seq(1,3), [])),
+    ?assertEqual([[1,2,3],[4]], eligible_manifest_key_sets(3, lists:seq(1,4), [])),
+    ?assertEqual([[1,2,3],[4,5,6]], eligible_manifest_key_sets(3, lists:seq(1,6), [])),
+    ?assertEqual([[1,2,3],[4,5,6],[7,8,9],[10]],
+                 eligible_manifest_key_sets(3, lists:seq(1,10), [])).
 
 -endif.
