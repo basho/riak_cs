@@ -185,8 +185,13 @@ fetching_next_batch(continue, ?STATE{batch_start=undefined,
     {next_state, feeding_workers, NewStateData};
 fetching_next_batch(continue, ?STATE{active_workers=0,
                                      batch=[],
-                                     continuation=undefined}=State) ->
+                                     continuation=undefined,
+                                     batch_caller=Caller}=State) ->
     %% finished with this batch
+    case Caller of
+        undefined -> ok;
+        _ -> Caller ! {batch_finished, State}
+    end,
     _ = lager:info("Finished garbage collection: "
                    "~b seconds, ~p batch_count, ~p batch_skips, "
                    "~p manif_count, ~p block_count\n",
@@ -195,7 +200,8 @@ fetching_next_batch(continue, ?STATE{active_workers=0,
                     State?STATE.block_count]),
     riak_cs_riakc_pool_worker:stop(State?STATE.riak),
     NewState = schedule_next(State?STATE{riak=undefined,
-                                         batch_start=undefined}),
+                                         batch_start=undefined,
+                                         batch_caller=undefined}),
     {next_state, idle, NewState};
 fetching_next_batch(continue, ?STATE{batch=[],
                                      continuation=undefined}=State) ->
@@ -268,12 +274,12 @@ paused(_, State) ->
 
 %% Synchronous events
 
-idle({manual_batch, Options}, _From, State) ->
+idle({manual_batch, Options}, {CallerPid, _Tag}=_From, State) ->
     Leeway = leeway_option(Options),
     ok_reply(fetching_next_batch, start_manual_batch(
                                     lists:member(testing, Options),
                                     Leeway,
-                                    State));
+                                    State?STATE{batch_caller=CallerPid}));
 idle(pause, _From, State) ->
     ok_reply(paused, pause_gc(idle, State));
 idle({set_interval, Interval}, _From, State)
@@ -507,22 +513,19 @@ continuation({{error, _}, _EndTime}) ->
 
 -spec gc_index_query(pid(), binary(), non_neg_integer(), undefined | binary(), boolean()) ->
                             {riakc_pb_socket:index_results(), binary()}.
-gc_index_query(RiakPid, EndTime, BatchSize, Continuation, true) ->
-    Options = [{max_results, BatchSize},
-               {continuation, Continuation}],
-    QueryResult = riakc_pb_socket:get_index_range(RiakPid,
-                                                  ?GC_BUCKET,
-                                                  ?KEY_INDEX,
-                                                  riak_cs_gc:epoch_start(),
-                                                  EndTime,
-                                                  Options),
-    {QueryResult, EndTime};
-gc_index_query(RiakPid, EndTime, _, _, false) ->
-    QueryResult = riakc_pb_socket:get_index(RiakPid,
-                                            ?GC_BUCKET,
-                                            ?KEY_INDEX,
-                                            riak_cs_gc:epoch_start(),
-                                            EndTime),
+gc_index_query(RiakPid, EndTime, BatchSize, Continuation, UsePaginatedIndexes) ->
+    Options = case UsePaginatedIndexes of
+                  true ->
+                      [{max_results, BatchSize},
+                       {continuation, Continuation}];
+                  false ->
+                      []
+              end,
+    QueryResult = riakc_pb_socket:get_index_range(
+                    RiakPid,
+                    ?GC_BUCKET, ?KEY_INDEX,
+                    riak_cs_gc:epoch_start(), EndTime,
+                    Options),
     {QueryResult, EndTime}.
 
 %% @doc Take required actions to pause garbage collection and update
@@ -598,12 +601,6 @@ start_batch(Leeway, State=?STATE{riak=undefined}) ->
     %% connection, and avoids duplicating the configuration
     %% lookup code
     {ok, Riak} = riak_cs_riakc_pool_worker:start_link([]),
-    BatchStart = riak_cs_gc:timestamp(),
-    Batch = fetch_eligible_manifest_keys(Riak,
-                                         BatchStart,
-                                         Leeway,
-                                         undefined),
-    _ = lager:debug("Batch keys: ~p", [Batch]),
     ok = continue(),
     State?STATE{batch_count=0,
                 batch_skips=0,

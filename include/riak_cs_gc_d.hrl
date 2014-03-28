@@ -26,6 +26,7 @@
           next :: undefined | non_neg_integer(), % the next scheduled gc time
           riak :: undefined | pid(), % Riak connection pid
           batch_start :: undefined | non_neg_integer(), % start of the current gc interval
+          batch_caller :: undefined | pid(), % caller of manual_batch
           batch_count=0 :: non_neg_integer(),
           batch_skips=0 :: non_neg_integer(), % Count of filesets skipped in this batch
           batch=[] :: undefined | [binary()], % `undefined' only for testing
