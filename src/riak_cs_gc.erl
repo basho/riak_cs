@@ -33,6 +33,7 @@
          gc_interval/0,
          initial_gc_delay/0,
          gc_retry_interval/0,
+         gc_max_workers/0,
          gc_active_manifests/3,
          gc_specific_manifests/5,
          epoch_start/0,
@@ -228,6 +229,16 @@ gc_retry_interval() ->
             ?DEFAULT_GC_RETRY_INTERVAL;
         {ok, RetryInterval} ->
             RetryInterval
+    end.
+
+%% @doc Return the max number of workers which can run concurrently.
+-spec gc_max_workers() -> non_neg_integer().
+gc_max_workers() ->
+    case application:get_env(riak_cs, gc_max_workers) of
+        undefined ->
+            ?DEFAULT_GC_WORKERS;
+        {ok, Workers} ->
+            Workers
     end.
 
 %% @doc Return the start of GC epoch represented as a binary.

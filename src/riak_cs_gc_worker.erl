@@ -21,7 +21,6 @@
 %% @doc A worker module that handles garbage collection of deleted
 %% file manifests and blocks at the direction of the garbace
 %% collection daemon.
-%%
 
 -module(riak_cs_gc_worker).
 
@@ -49,17 +48,6 @@
 -include_lib("riakc/include/riakc.hrl").
 
 -export([current_state/1]).
-
--ifdef(TEST).
--include_lib("eunit/include/eunit.hrl").
-
-%% Test API
--export([test_link/0,
-         test_link/1,
-         change_state/1,
-         status_data/1]).
-
--endif.
 
 -define(STATE, #gc_worker_state).
 -define(GC_D, riak_cs_gc_d).
@@ -288,38 +276,10 @@ handle_delete_fsm_reply({error, _}, ?STATE{current_files=[_ | RestManifests]} = 
                 current_files=RestManifests}.
 
 %% ===================================================================
-%% Test API
+%% For debug
 %% ===================================================================
 
-%% @doc Get the current state of the fsm for testing inspection
+%% @doc Get the current state of the fsm for debugging inspection
 -spec current_state(pid()) -> {atom(), ?STATE{}} | {error, term()}.
 current_state(Pid) ->
     gen_fsm:sync_send_all_state_event(Pid, current_state).
-
--ifdef(TEST).
-
-%% FIXME multiple processes
--define(SERVER, ?MODULE).
-
-%% @doc Start the garbage collection server
-test_link() ->
-    gen_fsm:start_link({local, ?SERVER}, ?MODULE, [testing], []).
-
-%% @doc Start the garbage collection server
-test_link(Interval) ->
-    application:set_env(riak_cs, gc_interval, Interval),
-    test_link().
-
-%% @doc Manipulate the current state of the fsm for testing
-change_state(State) ->
-    gen_fsm:sync_send_all_state_event(?SERVER, {change_state, State}).
-
-status_data(State) ->
-    [{riak_pid, State?STATE.riak_pid},
-     {batch_count, State?STATE.batch_count},
-     {batch_skips, State?STATE.batch_skips},
-     {manif_count, State?STATE.manif_count},
-     {block_count, State?STATE.block_count}
-    ].
-
--endif.

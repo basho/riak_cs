@@ -24,6 +24,43 @@
 %% @TODO Differences in the fsm state and the state record
 %% get confusing. Maybe s/State/StateData.
 
+%% State transitions by event (not including transitions by command)
+%% 1. There is outer loop of `idle' <==> `fetching_next_batch'.
+%%    Single GC run starts by `idle'->`fetching_next_batch' and ends by
+%%    `fetching_next_batch'->`idle'.
+%% 2. `fetching_next_batch', `feeding_workers' and `waiting_for_workers'
+%%    make up inner loop. If there is a room for workers, this process fetches
+%%    fileset keys by 2i. Then it moves to `feeding_workers' and feeds sets of
+%%    fileset keys to workers. If workers are full or 2i reaches the end,
+%%    it collects results from workers at `waiting_for_workers'.
+%%
+%%                   idle <---------------+         Extra:{paused, StateToResume}
+%%                    |                   |
+%%       [manual_batch or timer]          | [no fileset keys AND
+%%                    |                   |  no worker]
+%%                    V                   |
+%%              fetching_next_batch ------+
+%%                    |        ^
+%%                    |        |
+%%                    |        +----------------------+
+%% [no fileset keys]  |                               |
+%%   +----------------+                               |
+%%   |                |                       [no fileset keys]
+%%   |          [fileset keys]                        |
+%%   |                |                               |
+%%   |           feeding_workers ---------------------+
+%%   |                |     ^                         |
+%%   |                |     |                         |
+%%   |                |     +---------+--+            |
+%%   |                |               |  |            |
+%%   |                |        [more workers AND      |
+%%   |       +--------+         more fileset keys]    |
+%%   |       |        |               |  |            |
+%%   |  [all active]  |               |  |            |
+%%   |       |        +---------------+  |            |
+%%   |       V                           |            |
+%%   +--> waiting_for_workers -----------+------------+
+
 -module(riak_cs_gc_d).
 
 -behaviour(gen_fsm).
@@ -88,11 +125,11 @@ start_link() ->
 %% @doc Status is returned as a 2-tuple of `{State, Details}'.  State
 %% should be `idle', `deleting', or `paused'.  When `idle' the
 %% details (a proplist) will include the schedule, as well as the
-%% times of the last calculation and the next planned calculation.
-%% When `calculating' or `paused' details also the scheduled time of
-%% the active calculation, the number of seconds the process has been
-%% calculating so far, and counts of how many users have been
-%% processed and how many are left.
+%% times of the last GC and the next planned GC.
+%% When `deleting' or `paused' details also the scheduled time of
+%% the active GC, the number of seconds the process has been
+%% running so far, and counts of how many filesets have been
+%% processed.
 status() ->
     gen_fsm:sync_send_event(?SERVER, status, infinity).
 
@@ -106,7 +143,7 @@ status() ->
 manual_batch(Options) ->
     gen_fsm:sync_send_event(?SERVER, {manual_batch, Options}, infinity).
 
-%% @doc Cancel the calculation currently in progress.  Returns `ok' if
+%% @doc Cancel the garbage collection currently in progress.  Returns `ok' if
 %% a batch was canceled, or `{error, no_batch}' if there was no batch
 %% in progress.
 cancel_batch() ->
@@ -146,9 +183,11 @@ stop() ->
 init(Args) ->
     Interval = riak_cs_gc:gc_interval(),
     InitialDelay = riak_cs_gc:initial_gc_delay(),
+    MaxWorkers =  riak_cs_gc:gc_max_workers(),
     Testing = lists:member(testing, Args),
     SchedState = schedule_next(?STATE{interval=Interval,
                                       initial_delay=InitialDelay,
+                                      max_workers=MaxWorkers,
                                       testing=Testing}),
     {ok, idle, SchedState}.
 
@@ -186,12 +225,12 @@ fetching_next_batch(continue, ?STATE{batch_start=undefined,
 fetching_next_batch(continue, ?STATE{active_workers=0,
                                      batch=[],
                                      continuation=undefined,
-                                     batch_caller=Caller}=State) ->
-    %% finished with this batch
-    case Caller of
-        undefined -> ok;
-        _ -> Caller ! {batch_finished, State}
-    end,
+                                     batch_caller=Caller} = State) ->
+    %% finished with this GC run
+    _ = case Caller of
+            undefined -> ok;
+            _ -> Caller ! {batch_finished, State}
+        end,
     _ = lager:info("Finished garbage collection: "
                    "~b seconds, ~p batch_count, ~p batch_skips, "
                    "~p manif_count, ~p block_count\n",
@@ -471,7 +510,7 @@ fetch_eligible_manifest_keys(RiakPid, IntervalStart, Leeway, Continuation) ->
     {eligible_manifest_keys(QueryResults, UsePaginatedIndexes), continuation(QueryResults)}.
 
 -spec eligible_manifest_keys({{ok, riakc_pb_socket:index_results()} | {error, term()},
-                              binary()}, boolean()) -> [binary()].
+                              binary()}, UsePaginatedIndexes::boolean()) -> [binary()].
 eligible_manifest_keys({{ok, ?INDEX_RESULTS{keys=Keys}},
                         _EndTime},
                        true) ->
