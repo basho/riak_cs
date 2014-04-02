@@ -31,7 +31,7 @@
 
 status([]) ->
     try
-        Stats = riak_cs_stats:get_stats_v2(),
+        Stats = riak_cs_stats:get_console_stats(),
         StatString = format_stats(Stats,
             ["-------------------------------------------\n",
                 io_lib:format("1-minute stats for ~p~n",[node()])]),

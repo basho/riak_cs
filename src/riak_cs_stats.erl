@@ -31,7 +31,7 @@
          report_pretty_json/0,
          report_str/0,
          get_stats/0,
-         get_stats_v2/0]).
+         get_console_stats/0]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -94,20 +94,23 @@ report_pretty_json() ->
 -spec get_stats() -> [{legend, [atom()]} |
                       {atom(), [number()]}].
 get_stats() ->
-    [{legend, [meter_count, meter_rate, latency_mean, latency_median,
-               latency_95, latency_99]}]
-    ++
-    [raw_report_item(I) || I <- ?IDS]
-    ++
-    [{legend, [workers, overflow, size]}]
-    ++
-    [raw_report_pool(P) || P <- [ request_pool, bucket_list_pool ]].
-
-get_stats_v2() ->
     lists:flatten(
-        [console_report_item(raw_report_item(I)) || I <- ?IDS]
+        [{legend, [meter_count, meter_rate, latency_mean, latency_median,
+                   latency_95, latency_99]}]
         ++
-        [console_report_pool(raw_report_pool(P)) || P <- [ request_pool, bucket_list_pool ]]
+        [raw_report_item(I) || I <- ?IDS]
+        ++
+        [{legend, [workers, overflow, size]}]
+        ++
+        [raw_report_pool(P) || P <- [ request_pool, bucket_list_pool ]]
+        ++
+        memory_stats()).
+
+get_console_stats() ->
+    lists:flatten(
+        [raw_report_item(I) || I <- ?IDS]
+        ++
+        [raw_report_pool(P) || P <- [ request_pool, bucket_list_pool ]]
         ++
         cpu_stats()
         ++
@@ -211,21 +214,6 @@ raw_report_item(BaseId) ->
 raw_report_pool(Pool) ->
     {_PoolState, PoolWorkers, PoolOverflow, PoolSize} = poolboy:status(Pool),
     {Pool, [PoolWorkers, PoolOverflow, PoolSize]}.
-
-console_report_item({BaseId, [MeterCount, MeterRate, LatencyMean, LatencyMedian, Latency95, Latency99]}) ->
-    [{list_to_atom(atom_to_list(BaseId) ++ K), V} || {K, V} <-
-        [{"_count", MeterCount},
-         {"_rate", MeterRate},
-         {"_time_mean", LatencyMean},
-         {"_time_median", LatencyMedian},
-         {"_time_95", Latency95},
-         {"_time_99", Latency99}]].
-
-console_report_pool({Pool, [PoolWorkers, PoolOverflow, PoolSize]}) ->
-    [{list_to_atom(atom_to_list(Pool) ++ K), V} || {K, V} <-
-        [{"_workers", PoolWorkers},
-         {"_overflow", PoolOverflow},
-         {"_size", PoolSize}]].
 
 memory_stats() ->
     [{list_to_atom("memory_" ++ atom_to_list(K)), V} || {K,V} <- erlang:memory()].
