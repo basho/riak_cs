@@ -54,10 +54,9 @@
 %% number of blocks per manifest
 -define(BLOCK_NUM_IN_MANIFEST, 20).
 
--define(TEST_ITERATIONS, 500).
 -define(QC_OUT(P),
         eqc:on_output(fun(Str, Args) -> io:format(user, Str, Args) end, P)).
--define(TIMEOUT, 30).
+-define(TESTING_TIME, 30).
 
 %%====================================================================
 %% Eunit tests
@@ -82,12 +81,12 @@ eqc_test_() ->
              meck:unload()
      end,
      [
-      {timeout, ?TIMEOUT,
-       ?_assert(quickcheck(numtests(?TEST_ITERATIONS,
-                                    ?QC_OUT(prop_gc_manual_batch(no_error)))))},
-      {timeout, ?TIMEOUT,
-       ?_assert(quickcheck(numtests(?TEST_ITERATIONS,
-                                    ?QC_OUT(prop_gc_manual_batch(with_errors)))))}
+      {timeout, ?TESTING_TIME*2,
+       ?_assert(quickcheck(eqc:testing_time(?TESTING_TIME,
+                                            ?QC_OUT(prop_gc_manual_batch(no_error)))))},
+      {timeout, ?TESTING_TIME*2,
+       ?_assert(quickcheck(eqc:testing_time(?TESTING_TIME,
+                                            ?QC_OUT(prop_gc_manual_batch(with_errors)))))}
      ]}.
 
 %% EQC of single GC runs.
