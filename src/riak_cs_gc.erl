@@ -31,6 +31,7 @@
 %% export Public API
 -export([decode_and_merge_siblings/2,
          gc_interval/0,
+         set_gc_interval/1,
          initial_gc_delay/0,
          gc_retry_interval/0,
          gc_max_workers/0,
@@ -38,6 +39,7 @@
          gc_specific_manifests/5,
          epoch_start/0,
          leeway_seconds/0,
+         set_leeway_seconds/1,
          max_scheduled_delete_manifests/0,
          move_manifests_to_gc_bucket/2,
          timestamp/0]).
@@ -209,6 +211,14 @@ gc_interval() ->
             Interval
     end.
 
+-spec set_gc_interval(infinity | non_neg_integer()) -> ok | {error, invalid_value}.
+set_gc_interval(infinity) ->
+    application:set_env(riak_cs, gc_interval, infinity);
+set_gc_interval(Interval) when is_integer(Interval) andalso Interval > 0 ->
+    application:set_env(riak_cs, gc_interval, Interval);
+set_gc_interval(_Interval) ->
+    {error, invalid_value}.
+
 %% @doc Return the number of seconds to wait in addition to the
 %% specified GC interval before scheduling the initial GC collection.
 -spec initial_gc_delay() -> non_neg_integer().
@@ -263,6 +273,13 @@ leeway_seconds() ->
         {ok, LeewaySeconds} ->
             LeewaySeconds
     end.
+
+-spec set_leeway_seconds(non_neg_integer()) -> ok | {error, invalid_value}.
+set_leeway_seconds(LeewaySeconds)
+  when is_integer(LeewaySeconds) andalso LeewaySeconds > 0 ->
+    application:set_env(riak_cs, leeway_seconds, LeewaySeconds);
+set_leeway_seconds(_LeewaySeconds) ->
+    {error, invalid_value}.
 
 %% @doc Return the maximimum number of manifests that can be in the
 %% `scheduled_delete' state for a given key. `unlimited' means there

@@ -165,9 +165,9 @@ resume() ->
 %% a garbage collection sweep. Setting the interval to a value of
 %% `infinity' effectively disable garbage collection. The daemon still
 %% runs, but does not carry out any file deletion.
--spec set_interval(infinity | non_neg_integer()) -> ok | {error, term()}.
-set_interval(Interval) when is_integer(Interval) orelse Interval == infinity ->
-    gen_fsm:sync_send_event(?SERVER, {set_interval, Interval}, infinity).
+-spec set_interval(term()) -> ok | {error, term()}.
+set_interval(Interval) ->
+    gen_fsm:sync_send_all_state_event(?SERVER, {set_interval, Interval}, infinity).
 
 %% @doc Stop the daemon
 -spec stop() -> ok | {error, term()}.
@@ -321,9 +321,6 @@ idle({manual_batch, Options}, {CallerPid, _Tag}=_From, State) ->
                                     State?STATE{batch_caller=CallerPid}));
 idle(pause, _From, State) ->
     ok_reply(paused, pause_gc(idle, State));
-idle({set_interval, Interval}, _From, State)
-  when is_integer(Interval) orelse Interval == infinity ->
-    ok_reply(idle, State?STATE{interval=Interval});
 idle(Msg, _From, State) ->
     Common = [{status, {ok, {idle, [{interval, State?STATE.interval},
                                     {leeway, riak_cs_gc:leeway_seconds()},
@@ -337,8 +334,6 @@ fetching_next_batch(pause, _From, State) ->
     ok_reply(paused, pause_gc(fetching_next_batch, State));
 fetching_next_batch(cancel_batch, _From, State) ->
     ok_reply(idle, cancel_batch(State));
-fetching_next_batch({set_interval, Interval}, _From, State) ->
-    ok_reply(fetching_next_batch, State?STATE{interval=Interval});
 fetching_next_batch(Msg, _From, State) ->
     Common = [{status, {ok, {fetching_next_batch, status_data(State)}}},
               {manual_batch, {error, already_deleting}},
@@ -349,8 +344,6 @@ feeding_workers(pause, _From, State) ->
     ok_reply(paused, pause_gc(feeding_workers, State));
 feeding_workers(cancel_batch, _From, State) ->
     ok_reply(idle, cancel_batch(State));
-feeding_workers({set_interval, Interval}, _From, State) ->
-    ok_reply(feeding_workers, State?STATE{interval=Interval});
 feeding_workers(Msg, _From, State) ->
     Common = [{status, {ok, {feeding_workers, status_data(State)}}},
               {manual_batch, {error, already_deleting}},
@@ -361,8 +354,6 @@ waiting_for_workers(pause, _From, State) ->
     ok_reply(paused, pause_gc(waiting_for_workers, State));
 waiting_for_workers(cancel_batch, _From, State) ->
     ok_reply(idle, cancel_batch(State));
-waiting_for_workers({set_interval, Interval}, _From, State) ->
-    ok_reply(waiting_for_workers, State?STATE{interval=Interval});
 waiting_for_workers(Msg, _From, State) ->
     Common = [{status, {ok, {waiting_for_workers, status_data(State)}}},
               {manual_batch, {error, already_deleting}},
@@ -373,8 +364,6 @@ paused(resume, _From, State=?STATE{pause_state=PauseState}) ->
     ok_reply(PauseState, resume_gc(State));
 paused(cancel_batch, _From, State) ->
     ok_reply(paused, cancel_batch(State?STATE{pause_state=idle}));
-paused({set_interval, Interval}, _From, State) ->
-    ok_reply(paused, State?STATE{interval=Interval});
 paused(Msg, _From, State) ->
     Common = [{status, {ok, {paused, status_data(State)}}},
               {pause, {error, already_paused}},
@@ -389,6 +378,12 @@ handle_event(_Event, StateName, State) ->
 %% the same regardless of the current state.
 -spec handle_sync_event(term(), term(), atom(), ?STATE{}) ->
                                {reply, term(), atom(), ?STATE{}}.
+handle_sync_event({set_interval, Interval}, _From, StateName, State) ->
+    {Reply, NewState} = case riak_cs_gc:set_gc_interval(Interval) of
+                            ok -> {ok, State?STATE{interval=Interval}};
+                            {error, Reason} -> {{error, Reason}, State}
+                        end,
+    {reply, Reply, StateName, NewState};
 handle_sync_event(current_state, _From, StateName, State) ->
     {reply, {StateName, State}, StateName, State};
 handle_sync_event({change_state, NewStateName}, _From, _StateName, State) ->

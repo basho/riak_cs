@@ -89,7 +89,7 @@ eqc_test_() ->
 %% ====================================================================
 
 prop_set_interval() ->
-    ?FORALL(Interval, int(),
+    ?FORALL(Interval, ?LET(Nat, nat(), Nat + 1),
             catch begin
                 catch riak_cs_gc_d:stop(),
                 {ok, _} = riak_cs_gc_d:test_link(?DEFAULT_GC_INTERVAL),
@@ -125,8 +125,8 @@ prop_manual_commands() ->
 prop_status() ->
     ?FORALL({Interval, Last, Next,
              Start, Count, Skips, Batch},
-            {int(), riak_cs_gen:datetime(), riak_cs_gen:datetime(),
-             int(), int(), int(), list(int())},
+            {nat(), riak_cs_gen:datetime(), riak_cs_gen:datetime(),
+             nat(), nat(), nat(), list(nat())},
             begin
                 State = ?STATE{interval=Interval,
                                last=Last,

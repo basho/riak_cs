@@ -95,25 +95,34 @@ resume() ->
 set_interval(undefined) ->
     output("Error: No interval value specified"),
     error;
-set_interval(infinity) ->
-    output("The garbage collection interval was updated."),
-    riak_cs_gc_d:set_interval(infinity);
-set_interval(Interval) when is_integer(Interval) ->
-    output("The garbage collection interval was updated."),
-    riak_cs_gc_d:set_interval(Interval);
 set_interval({'EXIT', _}) ->
     output("Error: Invalid interval specified."),
-    error.
+    error;
+set_interval(Interval) ->
+    case riak_cs_gc_d:set_interval(Interval) of
+        ok ->
+            output("The garbage collection interval was updated."),
+            ok;
+        {error, _} ->
+            output("Error: Invalid interval specified."),
+            error
+    end.
 
 set_leeway(undefined) ->
     output("Error: No leeway time value specified"),
     error;
-set_leeway(Leeway) when is_integer(Leeway) ->
-    output("The garbage collection leeway time was updated."),
-    application:set_env(riak_cs, leeway_seconds, Leeway);
 set_leeway({'EXIT', _}) ->
     output("Error: Invalid leeway time specified."),
-    error.
+    error;
+set_leeway(Leeway) ->
+    case riak_cs_gc:set_leeway_seconds(Leeway) of
+        ok ->
+            output("The garbage collection leeway time was updated."),
+            ok;
+        {error, _} ->
+            output("Error: Invalid leeway time specified."),
+            error
+    end.
 
 handle_batch_start(ok) ->
     output("Garbage collection batch started."),
