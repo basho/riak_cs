@@ -707,12 +707,12 @@ change_state(State) ->
     gen_fsm:sync_send_all_state_event(?SERVER, {change_state, State}).
 
 split_eligible_manifest_keys_test() ->
-    ?assertEqual([], eligible_manifest_key_sets(3, [], [])),
-    ?assertEqual([[1]], eligible_manifest_key_sets(3, [1], [])),
-    ?assertEqual([[1,2,3]], eligible_manifest_key_sets(3, lists:seq(1,3), [])),
-    ?assertEqual([[1,2,3],[4]], eligible_manifest_key_sets(3, lists:seq(1,4), [])),
-    ?assertEqual([[1,2,3],[4,5,6]], eligible_manifest_key_sets(3, lists:seq(1,6), [])),
+    ?assertEqual([], split_eligible_manifest_keys(3, [], [])),
+    ?assertEqual([[1]], split_eligible_manifest_keys(3, [1], [])),
+    ?assertEqual([[1,2,3]], split_eligible_manifest_keys(3, lists:seq(1,3), [])),
+    ?assertEqual([[1,2,3],[4]], split_eligible_manifest_keys(3, lists:seq(1,4), [])),
+    ?assertEqual([[1,2,3],[4,5,6]], split_eligible_manifest_keys(3, lists:seq(1,6), [])),
     ?assertEqual([[1,2,3],[4,5,6],[7,8,9],[10]],
-                 eligible_manifest_key_sets(3, lists:seq(1,10), [])).
+                 split_eligible_manifest_keys(3, lists:seq(1,10), [])).
 
 -endif.
