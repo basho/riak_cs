@@ -79,7 +79,6 @@
 -export([init/1,
          idle/2,
          idle/3,
-         eligible_manifest_key_sets/3,
          fetching_next_batch/2,
          fetching_next_batch/3,
          feeding_workers/2,
@@ -509,11 +508,14 @@ fetch_eligible_manifest_keys(RiakPid, IntervalStart, Leeway, Continuation) ->
 eligible_manifest_keys({{ok, ?INDEX_RESULTS{keys=Keys}},
                         _EndTime},
                        true) ->
-    [Keys];
+    case Keys of
+        [] -> [];
+        _  -> [Keys]
+    end;
 eligible_manifest_keys({{ok, ?INDEX_RESULTS{keys=Keys}},
                         _EndTime},
                        false) ->
-    eligible_manifest_key_sets(riak_cs_config:gc_batch_size(), Keys, []);
+    split_eligible_manifest_keys(riak_cs_config:gc_batch_size(), Keys, []);
 eligible_manifest_keys({{error, Reason}, EndTime}, _) ->
     _ = lager:warning("Error occurred trying to query from time 0 to ~p"
                       "in gc key index. Reason: ~p",
@@ -522,13 +524,13 @@ eligible_manifest_keys({{error, Reason}, EndTime}, _) ->
 
 %% @doc Break a list of gc-eligible keys from the GC bucket into smaller sets
 %% to be processed by different GC workers.
--spec eligible_manifest_key_sets(non_neg_integer(), [term()], [[term()]]) ->
+-spec split_eligible_manifest_keys(non_neg_integer(), [term()], [[term()]]) ->
                                         [[term()]].
-eligible_manifest_key_sets(_BatchSize, [], Acc) ->
+split_eligible_manifest_keys(_BatchSize, [], Acc) ->
     lists:reverse(Acc);
-eligible_manifest_key_sets(BatchSize, Keys, Acc) ->
+split_eligible_manifest_keys(BatchSize, Keys, Acc) ->
     {Batch, Rest} = split(BatchSize, Keys, []),
-    eligible_manifest_key_sets(BatchSize, Rest, [Batch | Acc]).
+    split_eligible_manifest_keys(BatchSize, Rest, [Batch | Acc]).
 
 split(_, [], Acc) ->
     {lists:reverse(Acc), []};
@@ -704,7 +706,7 @@ test_link(Interval) ->
 change_state(State) ->
     gen_fsm:sync_send_all_state_event(?SERVER, {change_state, State}).
 
-eligible_manifest_key_sets_test() ->
+split_eligible_manifest_keys_test() ->
     ?assertEqual([], eligible_manifest_key_sets(3, [], [])),
     ?assertEqual([[1]], eligible_manifest_key_sets(3, [1], [])),
     ?assertEqual([[1,2,3]], eligible_manifest_key_sets(3, lists:seq(1,3), [])),
