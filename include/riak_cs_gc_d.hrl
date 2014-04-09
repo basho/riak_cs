@@ -22,35 +22,48 @@
 
 -record(gc_d_state, {
           interval :: 'infinity' | non_neg_integer(),
-          last :: undefined | non_neg_integer(), % the last time a deletion was scheduled
-          next :: undefined | non_neg_integer(), % the next scheduled gc time
-          riak :: undefined | pid(), % Riak connection pid
-          batch_start :: undefined | non_neg_integer(), % start of the current gc interval
-          batch_caller :: undefined | pid(), % caller of manual_batch
+          %% the last time a deletion was scheduled
+          last :: undefined | non_neg_integer(),
+          %% the next scheduled gc time
+          next :: undefined | non_neg_integer(),
+          %% Riak connection pid
+          riak :: undefined | pid(),
+          %% start of the current gc interval
+          batch_start :: undefined | non_neg_integer(),
+          %% caller of manual_batch
+          %% Currently only used in `riak_cs_gc_single_run_eqc`.
+          batch_caller :: undefined | pid(),
           batch_count=0 :: non_neg_integer(),
-          batch_skips=0 :: non_neg_integer(), % Count of filesets skipped in this batch
+          %% Count of filesets skipped in this batch
+          batch_skips=0 :: non_neg_integer(),
           batch=[] :: undefined | [binary()], % `undefined' only for testing
           manif_count=0 :: non_neg_integer(),
           block_count=0 :: non_neg_integer(),
-          pause_state :: undefined | atom(), % state of the fsm when a delete batch was paused
-          interval_remaining :: undefined | non_neg_integer(), % used when moving from paused -> idle
+          %% state of the fsm when a delete batch was paused
+          pause_state :: undefined | atom(),
+          %% used when moving from paused -> idle
+          interval_remaining :: undefined | non_neg_integer(),
           timer_ref :: reference(),
           initial_delay :: non_neg_integer(),
           leeway :: non_neg_integer(),
           worker_pids=[] :: [pid()],
           max_workers :: non_neg_integer(),
           active_workers=0 :: non_neg_integer(),
-          continuation :: undefined | binary(), % Used for paginated 2I querying of GC bucket
+          %% Used for paginated 2I querying of GC bucket
+          continuation :: undefined | binary(),
           testing=false :: boolean()
          }).
 
 -record(gc_worker_state, {
-          riak_pid :: undefined | pid(), % Riak connection pid
+          %% Riak connection pid
+          riak_pid :: undefined | pid(),
           current_files :: [lfs_manifest()],
           current_fileset :: twop_set:twop_set(),
           current_riak_object :: riakc_obj:riakc_obj(),
-          batch_count=0 :: non_neg_integer(), % Count of filesets collected successfully
-          batch_skips=0 :: non_neg_integer(), % Count of filesets skipped in this batch
+          %% Count of filesets collected successfully
+          batch_count=0 :: non_neg_integer(),
+          %% Count of filesets skipped in this batch
+          batch_skips=0 :: non_neg_integer(),
           batch=[] :: undefined | [binary()], % `undefined' only for testing
           manif_count=0 :: non_neg_integer(),
           block_count=0 :: non_neg_integer(),
