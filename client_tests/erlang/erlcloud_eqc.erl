@@ -22,7 +22,6 @@
 
 -module(erlcloud_eqc).
 
--include("riak_cs.hrl").
 -include("riak_cs_gc_d.hrl").
 
 -include_lib("erlcloud/include/erlcloud_aws.hrl").

@@ -24,6 +24,43 @@
 %% @TODO Differences in the fsm state and the state record
 %% get confusing. Maybe s/State/StateData.
 
+%% State transitions by event (not including transitions by command)
+%% 1. There is outer loop of `idle' <==> `fetching_next_batch'.
+%%    Single GC run starts by `idle'->`fetching_next_batch' and ends by
+%%    `fetching_next_batch'->`idle'.
+%% 2. `fetching_next_batch', `feeding_workers' and `waiting_for_workers'
+%%    make up inner loop. If there is a room for workers, this process fetches
+%%    fileset keys by 2i. Then it moves to `feeding_workers' and feeds sets of
+%%    fileset keys to workers. If workers are full or 2i reaches the end,
+%%    it collects results from workers at `waiting_for_workers'.
+%%
+%%                   idle <---------------+         Extra:{paused, StateToResume}
+%%                    |                   |
+%%       [manual_batch or timer]          | [no fileset keys AND
+%%                    |                   |  no worker]
+%%                    V                   |
+%%              fetching_next_batch ------+
+%%                    |        ^
+%%                    |        |
+%%                    |        +----------------------+
+%% [no fileset keys]  |                               |
+%%   +----------------+                               |
+%%   |                |                       [no fileset keys]
+%%   |          [fileset keys]                        |
+%%   |                |                               |
+%%   |           feeding_workers ---------------------+
+%%   |                |     ^                         |
+%%   |                |     |                         |
+%%   |                |     +---------+--+            |
+%%   |                |               |  |            |
+%%   |                |        [more workers AND      |
+%%   |       +--------+         more fileset keys]    |
+%%   |       |        |               |  |            |
+%%   |  [all active]  |               |  |            |
+%%   |       |        +---------------+  |            |
+%%   |       V                           |            |
+%%   +--> waiting_for_workers -----------+------------+
+
 -module(riak_cs_gc_d).
 
 -behaviour(gen_fsm).
@@ -44,12 +81,10 @@
          idle/3,
          fetching_next_batch/2,
          fetching_next_batch/3,
-         fetching_next_fileset/2,
-         fetching_next_fileset/3,
-         initiating_file_delete/2,
-         initiating_file_delete/3,
-         waiting_file_delete/2,
-         waiting_file_delete/3,
+         feeding_workers/2,
+         feeding_workers/3,
+         waiting_for_workers/2,
+         waiting_for_workers/3,
          paused/2,
          paused/3,
          handle_event/3,
@@ -58,7 +93,8 @@
          terminate/3,
          code_change/4]).
 
--include("riak_cs.hrl").
+-export([current_state/0]).
+
 -include("riak_cs_gc_d.hrl").
 -include_lib("riakc/include/riakc.hrl").
 
@@ -68,13 +104,18 @@
 %% Test API
 -export([test_link/0,
          test_link/1,
-         current_state/0,
          change_state/1,
          status_data/1]).
 
 -endif.
 
+%% 'keys()` is defined in `riakc.hrl'.
+%% The name is general so declare local type for readability.
+-type index_result_keys() :: keys().
+
 -define(SERVER, ?MODULE).
+-define(STATE, #gc_d_state).
+-define(GC_WORKER, riak_cs_gc_worker).
 
 %%%===================================================================
 %%% API
@@ -87,11 +128,11 @@ start_link() ->
 %% @doc Status is returned as a 2-tuple of `{State, Details}'.  State
 %% should be `idle', `deleting', or `paused'.  When `idle' the
 %% details (a proplist) will include the schedule, as well as the
-%% times of the last calculation and the next planned calculation.
-%% When `calculating' or `paused' details also the scheduled time of
-%% the active calculation, the number of seconds the process has been
-%% calculating so far, and counts of how many users have been
-%% processed and how many are left.
+%% times of the last GC and the next planned GC.
+%% When `deleting' or `paused' details also the scheduled time of
+%% the active GC, the number of seconds the process has been
+%% running so far, and counts of how many filesets have been
+%% processed.
 status() ->
     gen_fsm:sync_send_event(?SERVER, status, infinity).
 
@@ -105,7 +146,7 @@ status() ->
 manual_batch(Options) ->
     gen_fsm:sync_send_event(?SERVER, {manual_batch, Options}, infinity).
 
-%% @doc Cancel the calculation currently in progress.  Returns `ok' if
+%% @doc Cancel the garbage collection currently in progress.  Returns `ok' if
 %% a batch was canceled, or `{error, no_batch}' if there was no batch
 %% in progress.
 cancel_batch() ->
@@ -127,9 +168,9 @@ resume() ->
 %% a garbage collection sweep. Setting the interval to a value of
 %% `infinity' effectively disable garbage collection. The daemon still
 %% runs, but does not carry out any file deletion.
--spec set_interval(infinity | non_neg_integer()) -> ok | {error, term()}.
-set_interval(Interval) when is_integer(Interval) orelse Interval == infinity ->
-    gen_fsm:sync_send_event(?SERVER, {set_interval, Interval}, infinity).
+-spec set_interval(term()) -> ok | {error, term()}.
+set_interval(Interval) ->
+    gen_fsm:sync_send_all_state_event(?SERVER, {set_interval, Interval}, infinity).
 
 %% @doc Stop the daemon
 -spec stop() -> ok | {error, term()}.
@@ -142,31 +183,35 @@ stop() ->
 
 %% @doc Read the storage schedule and go to idle.
 
-init(_Args) ->
+init(Args) ->
     Interval = riak_cs_gc:gc_interval(),
     InitialDelay = riak_cs_gc:initial_gc_delay(),
-    SchedState = schedule_next(#state{interval=Interval,
-                                      initial_delay=InitialDelay}),
+    MaxWorkers =  riak_cs_gc:gc_max_workers(),
+    Testing = lists:member(testing, Args),
+    SchedState = schedule_next(?STATE{interval=Interval,
+                                      initial_delay=InitialDelay,
+                                      max_workers=MaxWorkers,
+                                      testing=Testing}),
     {ok, idle, SchedState}.
 
 %% Asynchronous events
 
 %% @doc Transitions out of idle are all synchronous events
-idle(_, State=#state{interval_remaining=undefined}) ->
+idle(_, State=?STATE{interval_remaining=undefined}) ->
     {next_state, idle, State};
-idle(_, State=#state{interval_remaining=IntervalRemaining}) ->
+idle(_, State=?STATE{interval_remaining=IntervalRemaining}) ->
     TimerRef = erlang:send_after(IntervalRemaining,
                                  self(),
                                  {start_batch, riak_cs_gc:leeway_seconds()}),
-    {next_state, idle, State#state{timer_ref=TimerRef}}.
+    {next_state, idle, State?STATE{timer_ref=TimerRef}}.
 
 %% @doc Async transitions from `fetching_next_batch' are all due to
 %% messages the FSM sends itself, in order to have opportunities to
 %% handle messages from the outside world (like `status').
-fetching_next_batch(_, State=#state{batch=undefined}) ->
+fetching_next_batch(_, State=?STATE{batch=undefined}) ->
     %% This clause is for testing only
     {next_state, fetching_next_batch, State};
-fetching_next_batch(continue, #state{batch_start=undefined,
+fetching_next_batch(continue, ?STATE{batch_start=undefined,
                                      continuation=undefined,
                                      leeway=Leeway,
                                      riak=RiakPid}=State) ->
@@ -175,132 +220,115 @@ fetching_next_batch(continue, #state{batch_start=undefined,
     {Batch, Continuation} =
         fetch_eligible_manifest_keys(RiakPid, BatchStart, Leeway, undefined),
     _ = lager:debug("Batch keys: ~p", [Batch]),
-    NewStateData = State#state{batch=Batch,
+    NewStateData = State?STATE{batch=Batch,
                                batch_start=BatchStart,
                                continuation=Continuation},
-    NextState = fetching_next_fileset,
     ok = continue(),
-    {next_state, NextState, NewStateData};
-fetching_next_batch(continue, #state{continuation=undefined}=State) ->
-    %% finished with this batch
+    {next_state, feeding_workers, NewStateData};
+fetching_next_batch(continue, ?STATE{active_workers=0,
+                                     batch=[],
+                                     continuation=undefined,
+                                     batch_caller=Caller} = State) ->
+    %% finished with this GC run
+    _ = case Caller of
+            undefined -> ok;
+            _ -> Caller ! {batch_finished, State}
+        end,
     _ = lager:info("Finished garbage collection: "
                    "~b seconds, ~p batch_count, ~p batch_skips, "
                    "~p manif_count, ~p block_count\n",
-                   [elapsed(State#state.batch_start), State#state.batch_count,
-                    State#state.batch_skips, State#state.manif_count,
-                    State#state.block_count]),
-    riak_cs_riakc_pool_worker:stop(State#state.riak),
-    NewState = schedule_next(State#state{riak=undefined,
-                                         batch_start=undefined}),
+                   [elapsed(State?STATE.batch_start), State?STATE.batch_count,
+                    State?STATE.batch_skips, State?STATE.manif_count,
+                    State?STATE.block_count]),
+    riak_cs_riakc_pool_worker:stop(State?STATE.riak),
+    NewState = schedule_next(State?STATE{riak=undefined,
+                                         batch_start=undefined,
+                                         batch_caller=undefined}),
     {next_state, idle, NewState};
-fetching_next_batch(continue, State=#state{batch_start=BatchStart,
-                                           continuation=Continuation,
-                                           leeway=Leeway,
-                                           riak=RiakPid
-                                          }) ->
+fetching_next_batch(continue, ?STATE{batch=[],
+                                     continuation=undefined}=State) ->
+    {next_state, waiting_for_workers, State};
+fetching_next_batch(continue, ?STATE{continuation=undefined}=State) ->
+    {next_state, feeding_workers, State};
+fetching_next_batch(continue, ?STATE{batch_start=BatchStart,
+                                     continuation=Continuation,
+                                     leeway=Leeway,
+                                     riak=RiakPid}=State) ->
     %% Fetch the next set of manifests for deletion
     {Batch, UpdContinuation} =
         fetch_eligible_manifest_keys(RiakPid, BatchStart, Leeway, Continuation),
     _ = lager:debug("Batch keys: ~p", [Batch]),
-    NewStateData = State#state{batch=Batch,
+    NewStateData = State?STATE{batch=Batch,
                                continuation=UpdContinuation},
-    NextState = fetching_next_fileset,
     ok = continue(),
-    {next_state, NextState, NewStateData};
+    {next_state, feeding_workers, NewStateData};
+fetching_next_batch({batch_complete, WorkerPid, WorkerState}, State) ->
+    NewStateData = handle_batch_complete(WorkerPid, WorkerState, State),
+    ok = continue(),
+    {next_state, fetching_next_batch, NewStateData};
 fetching_next_batch(_, State) ->
     {next_state, fetching_next_batch, State}.
 
-%% @doc Async transitions from `fetching_next_fileset' are all due to
+%% @doc Async transitions from `feeding_workers' are all due to
 %% messages the FSM sends itself, in order to have opportunities to
 %% handle messages from the outside world (like `status').
-fetching_next_fileset(continue, #state{batch=[]}=State) ->
-    %% finished with this batch
+feeding_workers(continue, ?STATE{max_workers=WorkerCount,
+                                 active_workers=WorkerCount}=State)
+  when WorkerCount > 0 ->
+    %% Worker capacity has been reached so must wait for a worker to
+    %% finish before assigning more work.
+    {next_state, waiting_for_workers, State};
+feeding_workers(continue, ?STATE{batch=[]}=State) ->
+    %% No outstanding work to hand out
     ok = continue(),
     {next_state, fetching_next_batch, State};
-fetching_next_fileset(continue, State=#state{batch=[FileSetKey | RestKeys],
-                                             batch_skips=BatchSkips,
-                                             manif_count=ManifCount,
-                                             riak=RiakPid
-                                            }) ->
-    %% Fetch the next set of manifests for deletion
-    case fetch_next_fileset(FileSetKey, RiakPid) of
-        {ok, FileSet, RiakObj} ->
-            NewStateData = State#state{current_files=twop_set:to_list(FileSet),
-                                       current_fileset=FileSet,
-                                       current_riak_object=RiakObj,
-                                       manif_count=ManifCount+twop_set:size(FileSet)},
-            NextState = initiating_file_delete;
-        {error, _} ->
-            NewStateData = State#state{batch=RestKeys,
-                                       batch_skips=BatchSkips+1},
-            NextState = fetching_next_fileset
-    end,
+feeding_workers(continue, State) ->
+    %% Start worker process
+    NextStateData = start_worker(State),
     ok = continue(),
-    {next_state, NextState, NewStateData};
-fetching_next_fileset(_, State) ->
-    {next_state, fetching_next_fileset, State}.
+    {next_state, feeding_workers, NextStateData};
+feeding_workers({batch_complete, WorkerPid, WorkerState}, State) ->
+    NewStateData = handle_batch_complete(WorkerPid, WorkerState, State),
+    ok = continue(),
+    {next_state, feeding_workers, NewStateData};
+feeding_workers(_, State) ->
+    {next_state, feeding_workers, State}.
 
 %% @doc This state initiates the deletion of a file from
 %% a set of manifests stored for a particular key in the
 %% garbage collection bucket.
-initiating_file_delete(continue, #state{batch=[_ManiSetKey | RestKeys],
-                                        batch_count=BatchCount,
-                                        current_files=[],
-                                        current_fileset=FileSet,
-                                        current_riak_object=RiakObj,
-                                        riak=RiakPid}=State) ->
-    finish_file_delete(twop_set:size(FileSet), FileSet, RiakObj, RiakPid),
+waiting_for_workers({batch_complete, WorkerPid, WorkerState}, State=?STATE{batch=[]}) ->
+    NewStateData = handle_batch_complete(WorkerPid, WorkerState, State),
     ok = continue(),
-    {next_state, fetching_next_fileset, State#state{batch=RestKeys,
-                                                    batch_count=1+BatchCount}};
-initiating_file_delete(continue, #state{current_files=[Manifest | _RestManifests],
-                                        riak=RiakPid}=State) ->
-    %% Use an instance of `riak_cs_delete_fsm' to handle the
-    %% deletion of the file blocks.
-    %% Don't worry about delete_fsm failures. Manifests are
-    %% rescheduled after a certain time.
-    Args = [RiakPid, Manifest, []],
-    %% The delete FSM is hard-coded to send a sync event to our registered
-    %% name upon terminate(), so we do not have to pass our pid to it
-    %% in order to get a reply.
-    {ok, Pid} = riak_cs_delete_fsm_sup:start_delete_fsm(node(), Args),
+    {next_state, fetching_next_batch, NewStateData};
+waiting_for_workers({batch_complete, WorkerPid, WorkerState}, State) ->
+    NewStateData = handle_batch_complete(WorkerPid, WorkerState, State),
+    ok = continue(),
+    {next_state, feeding_workers, NewStateData};
+waiting_for_workers(_, State) ->
+    {next_state, waiting_for_workers, State}.
 
-    %% Link to the delete fsm, so that if it dies,
-    %% we go down too. In the future we might want to do
-    %% something more complicated like retry
-    %% a particular key N times before moving on, but for
-    %% now this is the easiest thing to do. If we need to manually
-    %% skip an object to GC, we can change the epoch start
-    %% time in app.config
-    link(Pid),
-    {next_state, waiting_file_delete, State#state{delete_fsm_pid = Pid}};
-initiating_file_delete(_, State) ->
-    {next_state, initiating_file_delete, State}.
-
-waiting_file_delete(_, State) ->
-    {next_state, waiting_file_delete, State}.
-
+paused({batch_complete, WorkerPid, WorkerState}, State=?STATE{batch=[]}) ->
+    NewStateData = handle_batch_complete(WorkerPid, WorkerState, State),
+    {next_state, paused, NewStateData};
 paused(_, State) ->
     {next_state, paused, State}.
 
 %% Synchronous events
 
-idle({manual_batch, Options}, _From, State) ->
+idle({manual_batch, Options}, {CallerPid, _Tag}=_From, State) ->
     Leeway = leeway_option(Options),
-    ok_reply(fetching_next_fileset, start_manual_batch(
-                                      lists:member(testing, Options),
-                                      Leeway,
-                                      State));
+    ok_reply(fetching_next_batch, start_manual_batch(
+                                    lists:member(testing, Options),
+                                    Leeway,
+                                    State?STATE{batch_caller=CallerPid}));
 idle(pause, _From, State) ->
     ok_reply(paused, pause_gc(idle, State));
-idle({set_interval, Interval}, _From, State)
-  when is_integer(Interval) orelse Interval == infinity ->
-    ok_reply(idle, State#state{interval=Interval});
 idle(Msg, _From, State) ->
-    Common = [{status, {ok, {idle, [{interval, State#state.interval},
+    Common = [{status, {ok, {idle, [{interval, State?STATE.interval},
                                     {leeway, riak_cs_gc:leeway_seconds()},
-                                    {last, State#state.last},
-                                    {next, State#state.next}]}}},
+                                    {last, State?STATE.last},
+                                    {next, State?STATE.next}]}}},
               {cancel_batch, {error, no_batch}},
               {resume, {error, not_paused}}],
     {reply, handle_common_sync_reply(Msg, Common, State), idle, State}.
@@ -309,64 +337,40 @@ fetching_next_batch(pause, _From, State) ->
     ok_reply(paused, pause_gc(fetching_next_batch, State));
 fetching_next_batch(cancel_batch, _From, State) ->
     ok_reply(idle, cancel_batch(State));
-fetching_next_batch({set_interval, Interval}, _From, State) ->
-    ok_reply(fetching_next_batch, State#state{interval=Interval});
 fetching_next_batch(Msg, _From, State) ->
     Common = [{status, {ok, {fetching_next_batch, status_data(State)}}},
               {manual_batch, {error, already_deleting}},
               {resume, {error, not_paused}}],
     {reply, handle_common_sync_reply(Msg, Common, State), fetching_next_batch, State}.
 
-fetching_next_fileset(pause, _From, State) ->
-    ok_reply(paused, pause_gc(fetching_next_fileset, State));
-fetching_next_fileset(cancel_batch, _From, State) ->
+feeding_workers(pause, _From, State) ->
+    ok_reply(paused, pause_gc(feeding_workers, State));
+feeding_workers(cancel_batch, _From, State) ->
     ok_reply(idle, cancel_batch(State));
-fetching_next_fileset({set_interval, Interval}, _From, State) ->
-    ok_reply(fetching_next_fileset, State#state{interval=Interval});
-fetching_next_fileset(Msg, _From, State) ->
-    Common = [{status, {ok, {fetching_next_fileset, status_data(State)}}},
+feeding_workers(Msg, _From, State) ->
+    Common = [{status, {ok, {feeding_workers, status_data(State)}}},
               {manual_batch, {error, already_deleting}},
               {resume, {error, not_paused}}],
-    {reply, handle_common_sync_reply(Msg, Common, State), fetching_next_fileset, State}.
+    {reply, handle_common_sync_reply(Msg, Common, State), feeding_workers, State}.
 
-initiating_file_delete(pause, _From, State) ->
-    ok_reply(paused, pause_gc(initiating_file_delete, State));
-initiating_file_delete(cancel_batch, _From, State) ->
+waiting_for_workers(pause, _From, State) ->
+    ok_reply(paused, pause_gc(waiting_for_workers, State));
+waiting_for_workers(cancel_batch, _From, State) ->
     ok_reply(idle, cancel_batch(State));
-initiating_file_delete({set_interval, Interval}, _From, State) ->
-    ok_reply(initiating_file_delete, State#state{interval=Interval});
-initiating_file_delete(Msg, _From, State) ->
-    Common = [{status, {ok, {initiating_file_delete, status_data(State)}}},
+waiting_for_workers(Msg, _From, State) ->
+    Common = [{status, {ok, {waiting_for_workers, status_data(State)}}},
               {manual_batch, {error, already_deleting}},
               {resume, {error, not_paused}}],
-    {reply, handle_common_sync_reply(Msg, Common, State), initiating_file_delete, State}.
+    {reply, handle_common_sync_reply(Msg, Common, State), waiting_for_workers, State}.
 
-waiting_file_delete({Pid, DelFsmReply}, _From, State=#state{delete_fsm_pid=Pid}) ->
-    ok_reply(initiating_file_delete, handle_delete_fsm_reply(DelFsmReply, State));
-waiting_file_delete(pause, _From, State) ->
-    ok_reply(paused, pause_gc(waiting_file_delete, State));
-waiting_file_delete(cancel_batch, _From, State) ->
-    ok_reply(idle, cancel_batch(State));
-waiting_file_delete({set_interval, Interval}, _From, State) ->
-    ok_reply(waiting_file_delete, State#state{interval=Interval});
-waiting_file_delete(Msg, _From, State) ->
-    Common = [{status, {ok, {waiting_file_delete, status_data(State)}}},
-              {manual_batch, {error, already_deleting}},
-              {resume, {error, not_paused}}],
-    {reply, handle_common_sync_reply(Msg, Common, State), waiting_file_delete, State}.
-
-paused({Pid, DelFsmReply}, _From, State=#state{delete_fsm_pid=Pid}) ->
-    ok_reply(paused, handle_delete_fsm_reply(DelFsmReply, State));
-paused(resume, _From, State=#state{pause_state=PauseState}) ->
+paused(resume, _From, State=?STATE{pause_state=PauseState}) ->
     ok_reply(PauseState, resume_gc(State));
 paused(cancel_batch, _From, State) ->
-    ok_reply(paused, cancel_batch(State#state{pause_state=idle}));
-paused({set_interval, Interval}, _From, State) ->
-    ok_reply(paused, State#state{interval=Interval});
+    ok_reply(paused, cancel_batch(State?STATE{pause_state=idle}));
 paused(Msg, _From, State) ->
     Common = [{status, {ok, {paused, status_data(State)}}},
               {pause, {error, already_paused}},
-              {manual_batch, ok}],
+              {manual_batch, {error, already_paused}}],
     {reply, handle_common_sync_reply(Msg, Common, State), paused, State}.
 
 %% @doc there are no all-state events for this fsm
@@ -375,8 +379,14 @@ handle_event(_Event, StateName, State) ->
 
 %% @doc Handle synchronous events that should be handled
 %% the same regardless of the current state.
--spec handle_sync_event(term(), term(), atom(), #state{}) ->
-                               {reply, term(), atom(), #state{}}.
+-spec handle_sync_event(term(), term(), atom(), ?STATE{}) ->
+                               {reply, term(), atom(), ?STATE{}}.
+handle_sync_event({set_interval, Interval}, _From, StateName, State) ->
+    {Reply, NewState} = case riak_cs_gc:set_gc_interval(Interval) of
+                            ok -> {ok, State?STATE{interval=Interval}};
+                            {error, Reason} -> {{error, Reason}, State}
+                        end,
+    {reply, Reply, StateName, NewState};
 handle_sync_event(current_state, _From, StateName, State) ->
     {reply, {StateName, State}, StateName, State};
 handle_sync_event({change_state, NewStateName}, _From, _StateName, State) ->
@@ -388,7 +398,7 @@ handle_sync_event(_Event, _From, StateName, State) ->
 
 handle_info({start_batch, Leeway}, idle, State) ->
     NewState = start_batch(Leeway, State),
-    {next_state, fetching_next_fileset, NewState};
+    {next_state, fetching_next_batch, NewState};
 handle_info({start_batch, _}, InBatch, State) ->
     _ = lager:info("Unable to start garbage collection batch"
                    " because a previous batch is still working."),
@@ -409,23 +419,64 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
+%% @doc Handle a `batch_complete' event from a GC worker process.
+-spec handle_batch_complete(pid(), #gc_worker_state{}, ?STATE{}) -> ?STATE{}.
+handle_batch_complete(WorkerPid, WorkerState, State) ->
+    ?STATE{active_workers=ActiveWorkers,
+           worker_pids=WorkerPids,
+           batch_count=BatchCount,
+           batch_skips=BatchSkips,
+           manif_count=ManifestCount,
+           block_count=BlockCount} = State,
+    #gc_worker_state{batch_count=WorkerBatchCount,
+                     batch_skips=WorkerBatchSkips,
+                     manif_count=WorkerManifestCount,
+                     block_count=WorkerBlockCount} = WorkerState,
+    UpdWorkerPids = lists:delete(WorkerPid, WorkerPids),
+    %% @TODO Workout the terminiology for these stats. i.e. Is batch
+    %% count just an increment or represenative of something else.
+    State?STATE{active_workers=ActiveWorkers - 1,
+                worker_pids=UpdWorkerPids,
+                batch_count=BatchCount + WorkerBatchCount,
+                batch_skips=BatchSkips + WorkerBatchSkips,
+                manif_count=ManifestCount + WorkerManifestCount,
+                block_count=BlockCount + WorkerBlockCount}.
+
+%% @doc Start a GC worker and return the apprpriate next state and
+%% updated state record.
+-spec start_worker(?STATE{}) -> ?STATE{}.
+start_worker(State=?STATE{testing=true}) ->
+    State;
+start_worker(State=?STATE{batch=[NextBatch | RestBatches],
+                          active_workers=ActiveWorkers,
+                          worker_pids=WorkerPids}) ->
+     case ?GC_WORKER:start_link(NextBatch) of
+         {ok, Pid} ->
+             _ = lager:debug("Starting worker: ~p", [Pid]),
+             State?STATE{batch=RestBatches,
+                         active_workers=ActiveWorkers + 1,
+                         worker_pids=[Pid | WorkerPids]};
+         {error, _Reason} ->
+             State
+     end.
+
 %% @doc Cancel the current batch of files set for garbage collection.
--spec cancel_batch(#state{}) -> #state{}.
-cancel_batch(#state{batch_start=BatchStart,
+-spec cancel_batch(?STATE{}) -> ?STATE{}.
+cancel_batch(?STATE{batch_start=BatchStart,
                     riak=RiakPid}=State) ->
     %% Interrupt the batch of deletes
     _ = lager:info("Canceled garbage collection batch after ~b seconds.",
                    [elapsed(BatchStart)]),
     riak_cs_riakc_pool_worker:stop(RiakPid),
-    schedule_next(State#state{batch=[],
+    schedule_next(State?STATE{batch=[],
                               riak=undefined}).
 
--spec continue() -> ok.
 %% @private
 %% @doc Send an asynchronous `continue' event. This is used to advance
 %% the FSM to the next state and perform some blocking action. The blocking
 %% actions are done in the beginning of the next state to give the FSM a
 %% chance to respond to events from the outside world.
+-spec continue() -> ok.
 continue() ->
     gen_fsm:send_event(self(), continue).
 
@@ -448,22 +499,50 @@ elapsed(Time) ->
                                           {[binary()], undefined | binary()}.
 fetch_eligible_manifest_keys(RiakPid, IntervalStart, Leeway, Continuation) ->
     EndTime = list_to_binary(integer_to_list(IntervalStart - Leeway)),
+    UsePaginatedIndexes = riak_cs_config:gc_paginated_indexes(),
     QueryResults = gc_index_query(RiakPid,
                                   EndTime,
                                   riak_cs_config:gc_batch_size(),
-                                  Continuation),
-    {eligible_manifest_keys(QueryResults), continuation(QueryResults)}.
+                                  Continuation,
+                                  UsePaginatedIndexes),
+    {eligible_manifest_keys(QueryResults, UsePaginatedIndexes), continuation(QueryResults)}.
 
--spec eligible_manifest_keys({{ok, riakc_pb_socket:index_results()} | {error, term()},
-                              binary()}) -> [binary()].
+-spec eligible_manifest_keys({{ok, index_results()} | {error, term()},
+                              binary()}, UsePaginatedIndexes::boolean()) ->
+                                    [index_result_keys()].
 eligible_manifest_keys({{ok, ?INDEX_RESULTS{keys=Keys}},
-                        _EndTime}) ->
-    Keys;
-eligible_manifest_keys({{error, Reason}, EndTime}) ->
+                        _EndTime},
+                       true) ->
+    case Keys of
+        [] -> [];
+        _  -> [Keys]
+    end;
+eligible_manifest_keys({{ok, ?INDEX_RESULTS{keys=Keys}},
+                        _EndTime},
+                       false) ->
+    split_eligible_manifest_keys(riak_cs_config:gc_batch_size(), Keys, []);
+eligible_manifest_keys({{error, Reason}, EndTime}, _) ->
     _ = lager:warning("Error occurred trying to query from time 0 to ~p"
                       "in gc key index. Reason: ~p",
                       [EndTime, Reason]),
     [].
+
+%% @doc Break a list of gc-eligible keys from the GC bucket into smaller sets
+%% to be processed by different GC workers.
+-spec split_eligible_manifest_keys(non_neg_integer(), index_result_keys(), [[index_result_keys()]]) ->
+                                        [[term()]].
+split_eligible_manifest_keys(_BatchSize, [], Acc) ->
+    lists:reverse(Acc);
+split_eligible_manifest_keys(BatchSize, Keys, Acc) ->
+    {Batch, Rest} = split(BatchSize, Keys, []),
+    split_eligible_manifest_keys(BatchSize, Rest, [Batch | Acc]).
+
+split(_, [], Acc) ->
+    {lists:reverse(Acc), []};
+split(0, L, Acc) ->
+    {lists:reverse(Acc), L};
+split(N, [H|T], Acc) ->
+    split(N-1, T, [H|Acc]).
 
 -spec continuation({{ok, riakc_pb_socket:index_results()} | {error, term()},
                     binary()}) -> undefined | binary().
@@ -473,88 +552,35 @@ continuation({{ok, ?INDEX_RESULTS{continuation=Continuation}},
 continuation({{error, _}, _EndTime}) ->
     undefined.
 
--spec gc_index_query(pid(), binary(), non_neg_integer(), undefined | binary()) ->
-                            {riakc_pb_socket:index_results(), binary()}.
-gc_index_query(RiakPid, EndTime, BatchSize, Continuation) ->
-    gc_index_query(RiakPid,
-                   EndTime,
-                   BatchSize,
-                   Continuation,
-                   riak_cs_config:gc_paginated_indexes()).
-
 -spec gc_index_query(pid(), binary(), non_neg_integer(), undefined | binary(), boolean()) ->
                             {riakc_pb_socket:index_results(), binary()}.
-gc_index_query(RiakPid, EndTime, BatchSize, Continuation, true) ->
-    Options = [{max_results, BatchSize},
-               {continuation, Continuation}],
-    QueryResult = riakc_pb_socket:get_index_range(RiakPid,
-                                                  ?GC_BUCKET,
-                                                  ?KEY_INDEX,
-                                                  riak_cs_gc:epoch_start(),
-                                                  EndTime,
-                                                  Options),
-    {QueryResult, EndTime};
-gc_index_query(RiakPid, EndTime, _, _, false) ->
-    QueryResult = riakc_pb_socket:get_index(RiakPid,
-                                            ?GC_BUCKET,
-                                            ?KEY_INDEX,
-                                            riak_cs_gc:epoch_start(),
-                                            EndTime),
+gc_index_query(RiakPid, EndTime, BatchSize, Continuation, UsePaginatedIndexes) ->
+    Options = case UsePaginatedIndexes of
+                  true ->
+                      [{max_results, BatchSize},
+                       {continuation, Continuation}];
+                  false ->
+                      []
+              end,
+    QueryResult = riakc_pb_socket:get_index_range(
+                    RiakPid,
+                    ?GC_BUCKET, ?KEY_INDEX,
+                    riak_cs_gc:epoch_start(), EndTime,
+                    Options),
     {QueryResult, EndTime}.
-
-%% @doc Delete the blocks for the next set of manifests in the batch
--spec fetch_next_fileset(binary(), pid()) ->
-                                {ok, twop_set:twop_set(), riakc_obj:riakc_obj()} |
-                                {error, term()}.
-fetch_next_fileset(ManifestSetKey, RiakPid) ->
-    %% Get the set of manifests represented by the key
-    case riak_cs_utils:get_object(?GC_BUCKET, ManifestSetKey, RiakPid) of
-        {ok, RiakObj} ->
-            ManifestSet = riak_cs_gc:decode_and_merge_siblings(
-                            RiakObj, twop_set:new()),
-            {ok, ManifestSet, RiakObj};
-        {error, notfound}=Error ->
-            Error;
-        {error, Reason}=Error ->
-            _ = lager:info("Error occurred trying to read the fileset"
-                           "for ~p for gc. Reason: ~p",
-                           [ManifestSetKey, Reason]),
-            Error
-    end.
-
-%% @doc Finish a file set delete process by either deleting the file
-%% set from the GC bucket or updating the value to remove file set
-%% members that were succesfully deleted.
--spec finish_file_delete(non_neg_integer(),
-                         twop_set:twop_set(),
-                         riakc_obj:riakc_obj(),
-                         pid()) -> ok.
-finish_file_delete(0, _, RiakObj, RiakPid) ->
-    %% Delete the key from the GC bucket
-    _ = riakc_pb_socket:delete_obj(RiakPid, RiakObj),
-    ok;
-finish_file_delete(_, FileSet, _RiakObj, _RiakPid) ->
-    _ = lager:debug("Remaining file keys: ~p", [twop_set:to_list(FileSet)]),
-
-    %% NOTE: we used to do a PUT here, but now with multidc replication
-    %% we run garbage collection seprarately on each cluster, so we don't
-    %% want to send this update to another data center. When we delete this
-    %% key in its entirety later, that delete will _not_ be replicated,
-    %% as we explicitly do not replicate tombstones in Riak CS.
-    ok.
 
 %% @doc Take required actions to pause garbage collection and update
 %% the state record for the transition to `paused'.
--spec pause_gc(atom(), #state{}) -> #state{}.
-pause_gc(idle, State=#state{interval=Interval,
+-spec pause_gc(atom(), ?STATE{}) -> ?STATE{}.
+pause_gc(idle, State=?STATE{interval=Interval,
                             timer_ref=TimerRef}) ->
     _ = lager:info("Pausing garbage collection"),
     Remainder = cancel_timer(Interval, TimerRef),
-    State#state{pause_state=idle,
+    State?STATE{pause_state=idle,
                 interval_remaining=Remainder};
 pause_gc(State, StateData) ->
     _ = lager:info("Pausing garbage collection"),
-    StateData#state{pause_state=State}.
+    StateData?STATE{pause_state=State}.
 
 -spec cancel_timer(timeout(), 'undefined' | timer:tref()) -> 'undefined' | integer().
 cancel_timer(_, undefined) ->
@@ -572,55 +598,41 @@ handle_cancel_timer(false) ->
 handle_cancel_timer(RemainderMillis) ->
     RemainderMillis.
 
--spec resume_gc(#state{}) -> #state{}.
+-spec resume_gc(?STATE{}) -> ?STATE{}.
 resume_gc(State) ->
     _ = lager:info("Resuming garbage collection"),
     ok = continue(),
-    State#state{pause_state=undefined}.
+    State?STATE{pause_state=undefined}.
 
--spec ok_reply(atom(), #state{}) -> {reply, ok, atom(), #state{}}.
+-spec ok_reply(atom(), ?STATE{}) -> {reply, ok, atom(), ?STATE{}}.
 ok_reply(NextState, NextStateData) ->
     {reply, ok, NextState, NextStateData}.
 
 %% @doc Setup the automatic trigger to start the next
 %% scheduled batch calculation.
--spec schedule_next(#state{}) -> #state{}.
-schedule_next(#state{interval=infinity}=State) ->
+-spec schedule_next(?STATE{}) -> ?STATE{}.
+schedule_next(?STATE{interval=infinity}=State) ->
     %% nothing to schedule, all triggers manual
     State;
-schedule_next(#state{batch_start=Current,
-                     interval=Interval,
-                     initial_delay=undefined}=State) ->
-    Next = calendar:gregorian_seconds_to_datetime(
-             riak_cs_gc:timestamp() + Interval),
-    _ = lager:debug("Scheduling next garbage collection for ~p",
-                    [Next]),
-    TimerRef = erlang:send_after(Interval*1000,
-                                 self(),
-                                 {start_batch, riak_cs_gc:leeway_seconds()}),
-    State#state{batch_start=undefined,
-                last=Current,
-                next=Next,
-                timer_ref=TimerRef};
-schedule_next(#state{batch_start=Current,
-                     interval=Interval,
-                     initial_delay=InitialDelay}=State) ->
-    Next = calendar:gregorian_seconds_to_datetime(
-             riak_cs_gc:timestamp() + Interval),
-    _ = lager:debug("Scheduling next garbage collection for ~p",
-                    [Next]),
+schedule_next(?STATE{initial_delay=undefined}=State) ->
+    schedule_next(State, 0);
+schedule_next(?STATE{initial_delay=InitialDelay}=State) ->
+    schedule_next(State?STATE{initial_delay=undefined}, InitialDelay).
+
+schedule_next(?STATE{next=Last, interval=Interval}=State, InitialDelay) ->
+    RevisedNext = riak_cs_gc:timestamp() + Interval,
     TimerValue = Interval * 1000 + InitialDelay * 1000,
-    TimerRef = erlang:send_after(TimerValue, self(), start_batch),
-    State#state{batch_start=undefined,
-                last=Current,
-                next=Next,
-                timer_ref=TimerRef,
-                initial_delay=undefined}.
+    TimerRef = erlang:send_after(TimerValue, self(),
+                                 {start_batch, riak_cs_gc:leeway_seconds()}),
+    State?STATE{batch_start=undefined,
+                last=Last,
+                next=RevisedNext,
+                timer_ref=TimerRef}.
 
 %% @doc Actually kick off the batch.  After calling this function, you
-%% must advance the FSM state to `fetching_next_fileset'.
+%% must advance the FSM state to `fetching_next_batch'.
 %% Intentionally pattern match on an undefined Riak handle.
-start_batch(Leeway, State=#state{riak=undefined}) ->
+start_batch(Leeway, State=?STATE{riak=undefined}) ->
     %% this does not check out a worker from the riak
     %% connection pool; instead it creates a fresh new worker,
     %% the idea being that we don't want to delay deletion
@@ -630,40 +642,34 @@ start_batch(Leeway, State=#state{riak=undefined}) ->
     %% connection, and avoids duplicating the configuration
     %% lookup code
     {ok, Riak} = riak_cs_riakc_pool_worker:start_link([]),
-    BatchStart = riak_cs_gc:timestamp(),
-    Batch = fetch_eligible_manifest_keys(Riak,
-                                         BatchStart,
-                                         Leeway,
-                                         undefined),
-    _ = lager:debug("Batch keys: ~p", [Batch]),
     ok = continue(),
-    State#state{batch_count=0,
+    State?STATE{batch_count=0,
                 batch_skips=0,
                 manif_count=0,
                 block_count=0,
                 leeway=Leeway,
                 riak=Riak}.
 
--spec start_manual_batch(boolean(), non_neg_integer(), #state{}) -> #state{}.
+-spec start_manual_batch(Testing::boolean(), non_neg_integer(), ?STATE{}) -> ?STATE{}.
 start_manual_batch(true, _, State) ->
-    State#state{batch=undefined};
+    State?STATE{batch=undefined};
 start_manual_batch(false, Leeway, State) ->
-    start_batch(Leeway, State).
+    start_batch(Leeway, State?STATE{batch=[]}).
 
 %% @doc Extract a list of status information from a state record.
 %%
 %% CAUTION: Do not add side-effects to this function: it is called specutively.
--spec status_data(#state{}) -> [{atom(), term()}].
+-spec status_data(?STATE{}) -> [{atom(), term()}].
 status_data(State) ->
-    [{interval, State#state.interval},
+    [{interval, State?STATE.interval},
      {leeway, riak_cs_gc:leeway_seconds()},
-     {last, State#state.last},
-     {current, State#state.batch_start},
-     {next, State#state.next},
-     {elapsed, elapsed(State#state.batch_start)},
-     {files_deleted, State#state.batch_count},
-     {files_skipped, State#state.batch_skips},
-     {files_left, if is_list(State#state.batch) -> length(State#state.batch);
+     {last, State?STATE.last},
+     {current, State?STATE.batch_start},
+     {next, State?STATE.next},
+     {elapsed, elapsed(State?STATE.batch_start)},
+     {files_deleted, State?STATE.batch_count},
+     {files_skipped, State?STATE.batch_skips},
+     {files_left, if is_list(State?STATE.batch) -> length(State?STATE.batch);
                      true                       -> 0
                   end}].
 
@@ -671,31 +677,6 @@ handle_common_sync_reply(Msg, Common, _State) when is_atom(Msg) ->
     proplists:get_value(Msg, Common, unknown_command);
 handle_common_sync_reply({MsgBase, _}, Common, State) when is_atom(MsgBase) ->
     handle_common_sync_reply(MsgBase, Common, State).
-
-%% Refactor TODO:
-%%   1. delete_fsm_pid=undefined is desirable in both ok & error cases?
-%%   2. It's correct to *not* change pause_state?
-handle_delete_fsm_reply({ok, {TotalBlocks, TotalBlocks}},
-                        #state{current_files=[CurrentManifest | RestManifests],
-                               current_fileset=FileSet,
-                               block_count=BlockCount} = State) ->
-    ok = continue(),
-    UpdFileSet = twop_set:del_element(CurrentManifest, FileSet),
-    State#state{delete_fsm_pid=undefined,
-                current_fileset=UpdFileSet,
-                current_files=RestManifests,
-                block_count=BlockCount+TotalBlocks};
-handle_delete_fsm_reply({ok, {NumDeleted, _TotalBlocks}},
-                        #state{current_files=[_CurrentManifest | RestManifests],
-                               block_count=BlockCount} = State) ->
-    ok = continue(),
-    State#state{delete_fsm_pid=undefined,
-                current_files=RestManifests,
-                block_count=BlockCount+NumDeleted};
-handle_delete_fsm_reply({error, _}, #state{current_files=[_ | RestManifests]} = State) ->
-    ok = continue(),
-    State#state{delete_fsm_pid=undefined,
-                current_files=RestManifests}.
 
 -spec leeway_option(list()) -> non_neg_integer().
 leeway_option(Options) ->
@@ -707,8 +688,13 @@ leeway_option(Options) ->
     end.
 
 %% ===================================================================
-%% Test API
+%% Test API and tests
 %% ===================================================================
+
+%% @doc Get the current state of the fsm for testing inspection
+-spec current_state() -> {atom(), ?STATE{}} | {error, term()}.
+current_state() ->
+    gen_fsm:sync_send_all_state_event(?SERVER, current_state).
 
 -ifdef(TEST).
 
@@ -721,13 +707,17 @@ test_link(Interval) ->
     application:set_env(riak_cs, gc_interval, Interval),
     test_link().
 
-%% @doc Get the current state of the fsm for testing inspection
--spec current_state() -> {atom(), #state{}} | {error, term()}.
-current_state() ->
-    gen_fsm:sync_send_all_state_event(?SERVER, current_state).
-
 %% @doc Manipulate the current state of the fsm for testing
 change_state(State) ->
     gen_fsm:sync_send_all_state_event(?SERVER, {change_state, State}).
+
+split_eligible_manifest_keys_test() ->
+    ?assertEqual([], split_eligible_manifest_keys(3, [], [])),
+    ?assertEqual([[1]], split_eligible_manifest_keys(3, [1], [])),
+    ?assertEqual([[1,2,3]], split_eligible_manifest_keys(3, lists:seq(1,3), [])),
+    ?assertEqual([[1,2,3],[4]], split_eligible_manifest_keys(3, lists:seq(1,4), [])),
+    ?assertEqual([[1,2,3],[4,5,6]], split_eligible_manifest_keys(3, lists:seq(1,6), [])),
+    ?assertEqual([[1,2,3],[4,5,6],[7,8,9],[10]],
+                 split_eligible_manifest_keys(3, lists:seq(1,10), [])).
 
 -endif.
