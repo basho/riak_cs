@@ -35,8 +35,8 @@
             Code
         catch
             Type:Reason ->
-                io:format("~s failed:~n  ~p:~p~n",
-                          [Description, Type, Reason]),
+                io:format("~s failed:~n  ~p:~p~n~p~n",
+                          [Description, Type, Reason, erlang:get_stacktrace()]),
                 error
         end).
 
@@ -93,24 +93,36 @@ resume() ->
     handle_resumption(riak_cs_gc_d:resume()).
 
 set_interval(undefined) ->
-    output("Error: No interval value specified");
-set_interval(infinity) ->
-    output("The garbage collection interval was updated."),
-    riak_cs_gc_d:set_interval(infinity);
-set_interval(Interval) when is_integer(Interval) ->
-    output("The garbage collection interval was updated."),
-    riak_cs_gc_d:set_interval(Interval);
+    output("Error: No interval value specified"),
+    error;
 set_interval({'EXIT', _}) ->
-    output("Error: Invalid interval specified.").
+    output("Error: Invalid interval specified."),
+    error;
+set_interval(Interval) ->
+    case riak_cs_gc_d:set_interval(Interval) of
+        ok ->
+            output("The garbage collection interval was updated."),
+            ok;
+        {error, _} ->
+            output("Error: Invalid interval specified."),
+            error
+    end.
 
 set_leeway(undefined) ->
-    output("Error: No leeway time value specified");
-set_leeway(Leeway) when is_integer(Leeway) ->
-    output("The garbage collection leeway time was updated."),
-    application:set_env(riak_cs, leeway_seconds, Leeway);
+    output("Error: No leeway time value specified"),
+    error;
 set_leeway({'EXIT', _}) ->
-    output("Error: Invalid leeway time specified.").
-
+    output("Error: Invalid leeway time specified."),
+    error;
+set_leeway(Leeway) ->
+    case riak_cs_gc:set_leeway_seconds(Leeway) of
+        ok ->
+            output("The garbage collection leeway time was updated."),
+            ok;
+        {error, _} ->
+            output("Error: Invalid leeway time specified."),
+            error
+    end.
 
 handle_batch_start(ok) ->
     output("Garbage collection batch started."),
@@ -118,6 +130,9 @@ handle_batch_start(ok) ->
 handle_batch_start({error, already_deleting}) ->
     output("Error: A garbage collection batch"
            " is already in progress."),
+    error;
+handle_batch_start({error, already_paused}) ->
+    output("The garbage collection daemon was already paused."),
     error.
 
 handle_status({ok, {State, Details}}) ->
@@ -128,17 +143,20 @@ handle_status(_) ->
 handle_batch_cancellation(ok) ->
     output("The garbage collection batch was canceled.");
 handle_batch_cancellation({error, no_batch}) ->
-    output("No garbage collection batch was running.").
+    output("No garbage collection batch was running."),
+    error.
 
 handle_pause(ok) ->
     output("The garbage collection daemon was paused.");
 handle_pause({error, already_paused}) ->
-    output("The garbage collection daemon was already paused.").
+    output("The garbage collection daemon was already paused."),
+    error.
 
 handle_resumption(ok) ->
     output("The garbage collection daemon was resumed.");
 handle_resumption({error, not_paused}) ->
-    output("The garbage collection daemon was not paused.").
+    output("The garbage collection daemon was not paused."),
+    error.
 
 output(Output) ->
     io:format(Output ++ "~n").
@@ -151,9 +169,9 @@ print_state(idle) ->
     output("There is no garbage collection in progress");
 print_state(fetching_next_fileset) ->
     output("A garbage collection batch is in progress");
-print_state(initiating_file_delete) ->
+print_state(feeding_workers) ->
     output("A garbage collection batch is in progress");
-print_state(waiting_file_delete) ->
+print_state(waiting_for_workers) ->
     output("A garbage collection batch is in progress");
 print_state(paused) ->
     output("A garbage collection batch is currently paused").

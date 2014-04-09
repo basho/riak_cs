@@ -32,7 +32,7 @@
 -endif.
 
 %% API
--export([start_link/3,
+-export([start_link/4,
          block_deleted/2]).
 
 %% gen_fsm callbacks
@@ -50,6 +50,7 @@
                 uuid :: binary(),
                 manifest :: lfs_manifest(),
                 riakc_pid :: pid(),
+                gc_worker_pid :: pid(),
                 delete_blocks_remaining :: ordsets:ordset({binary(), integer()}),
                 unacked_deletes=ordsets:new() :: ordsets:ordset(integer()),
                 all_delete_workers=[] :: list(pid()),
@@ -64,8 +65,8 @@
 %% ===================================================================
 
 %% @doc Start a `riak_cs_delete_fsm'.
-start_link(RiakcPid, Manifest, Options) ->
-    Args = [RiakcPid, Manifest, Options],
+start_link(RiakcPid, Manifest, GCWorkerPid, Options) ->
+    Args = [RiakcPid, Manifest, GCWorkerPid, Options],
     gen_fsm:start_link(?MODULE, Args, []).
 
 -spec block_deleted(pid(), {ok, {binary(), integer()}} | {error, binary()}) -> ok.
@@ -76,13 +77,14 @@ block_deleted(Pid, Response) ->
 %% gen_fsm callbacks
 %% ====================================================================
 
-init([RiakcPid, {UUID, Manifest}, _Options]) ->
+init([RiakcPid, {UUID, Manifest}, GCWorkerPid, _Options]) ->
     {Bucket, Key} = Manifest?MANIFEST.bkey,
     State = #state{bucket=Bucket,
                    key=Key,
                    manifest=Manifest,
                    uuid=UUID,
-                   riakc_pid=RiakcPid},
+                   riakc_pid=RiakcPid,
+                   gc_worker_pid=GCWorkerPid},
     {ok, prepare, State, 0}.
 
 %% @TODO Make sure we avoid any race conditions here
@@ -120,7 +122,7 @@ terminate(Reason, _StateName, #state{all_delete_workers=AllDeleteWorkers,
                                      riakc_pid=RiakcPid} = State) ->
     manifest_cleanup(ManifestState, Bucket, Key, UUID, RiakcPid),
     _ = [riak_cs_block_server:stop(P) || P <- AllDeleteWorkers],
-    notify_gc_daemon(Reason, State),
+    notify_gc_worker(Reason, State),
     ok.
 
 code_change(_OldVsn, StateName, State, _Extra) ->
@@ -206,9 +208,11 @@ maybe_delete_blocks(State=#state{bucket=Bucket,
                                     free_deleters=NewFreeDeleters,
                                     delete_blocks_remaining=NewDeleteBlocksRemaining}).
 
--spec notify_gc_daemon(term(), state()) -> term().
-notify_gc_daemon(Reason, State) ->
-    gen_fsm:sync_send_event(riak_cs_gc_d, notification_msg(Reason, State), infinity).
+-spec notify_gc_worker(term(), state()) -> term().
+notify_gc_worker(Reason, State) ->
+    gen_fsm:sync_send_event(State#state.gc_worker_pid,
+                            notification_msg(Reason, State),
+                            infinity).
 
 -spec notification_msg(term(), state()) -> {pid(),
                                             {ok, {non_neg_integer(), non_neg_integer()}} |

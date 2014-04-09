@@ -22,7 +22,6 @@
 
 -module(riak_cs_gc_d_eqc).
 
--include("riak_cs.hrl").
 -include("riak_cs_gc_d.hrl").
 
 -ifdef(EQC).
@@ -38,9 +37,8 @@
 %% States
 -export([idle/1,
          fetching_next_batch/1,
-         fetching_next_fileset/1,
-         initiating_file_delete/1,
-         waiting_file_delete/1,
+         feeding_workers/1,
+         waiting_for_workers/1,
          paused/2]).
 
 %% eqc_fsm callbacks
@@ -63,10 +61,15 @@
 -define(TEST_ITERATIONS, 500).
 -define(GCD_MODULE, riak_cs_gc_d).
 
--define(P(EXPR), PPP = (EXPR), case PPP of true -> ok; _ -> io:format(user, "PPP ~p at line ~p\n", [PPP, ?LINE]) end, PPP).
+-define(P(EXPR), PPP = (EXPR),
+                 case PPP of
+                     true -> ok;
+                     _ -> io:format(user, "PPP=~p at line ~p: ~s~n", [PPP, ?LINE, ??EXPR])
+                 end,
+                 PPP).
 
--record(mc_state, {current_state :: atom(),
-                   previous_state :: atom()}).
+-define(STATE, #gc_d_state).
+-record(mc_state, {}).
 
 %%====================================================================
 %% Eunit tests
@@ -86,7 +89,7 @@ eqc_test_() ->
 %% ====================================================================
 
 prop_set_interval() ->
-    ?FORALL(Interval, int(),
+    ?FORALL(Interval, ?LET(Nat, nat(), Nat + 1),
             catch begin
                 catch riak_cs_gc_d:stop(),
                 {ok, _} = riak_cs_gc_d:test_link(?DEFAULT_GC_INTERVAL),
@@ -94,8 +97,8 @@ prop_set_interval() ->
                 riak_cs_gc_d:set_interval(Interval),
                 {_, State2} = riak_cs_gc_d:current_state(),
                 riak_cs_gc_d:stop(),
-                conjunction([{initial_interval, equals(?DEFAULT_GC_INTERVAL, State1#state.interval)},
-                             {updated_interval, equals(Interval, State2#state.interval)}
+                conjunction([{initial_interval, equals(?DEFAULT_GC_INTERVAL, State1?STATE.interval)},
+                             {updated_interval, equals(Interval, State2?STATE.interval)}
                             ])
             end).
 
@@ -110,25 +113,22 @@ prop_manual_commands() ->
                 aggregate(zip(state_names(H), command_names(Cmds)),
                           ?WHENFAIL(
                              begin
-                                 ?debugFmt("\nCmds: ~p~n",
-                                           [zip(state_names(H),
-                                                command_names(Cmds))]),
-                                 ?debugFmt("\nResult: ~p~n", [Res]),
-                                 ?debugFmt("\nHistory: ~p~n", [H])
+                                 eqc:format("Cmds: ~p~n~n",
+                                            [zip(state_names(H),
+                                                 command_names(Cmds))]),
+                                 eqc:format("Result: ~p~n~n", [Res]),
+                                 eqc:format("History: ~p~n~n", [H])
                              end,
                              equals(ok, Res)))
-            end
-           ).
+            end).
 
 prop_status() ->
     ?FORALL({Interval, Last, Next,
-             Start, Count,
-             Skips, Batch},
-            {eqc_gen:int(), riak_cs_gen:datetime(),
-             riak_cs_gen:datetime(), eqc_gen:int(), eqc_gen:int(),
-             eqc_gen:int(), eqc_gen:list(eqc_gen:int())},
+             Start, Count, Skips, Batch},
+            {nat(), riak_cs_gen:datetime(), riak_cs_gen:datetime(),
+             nat(), nat(), nat(), list(nat())},
             begin
-                State = #state{interval=Interval,
+                State = ?STATE{interval=Interval,
                                last=Last,
                                next=Next,
                                batch_start=Start,
@@ -155,7 +155,7 @@ idle(_S) ->
      {history, {call, ?GCD_MODULE, resume, []}},
      {history, {call, ?GCD_MODULE, set_interval, [infinity]}},
      {{paused, idle}, {call, ?GCD_MODULE, pause, []}},
-     {fetching_next_fileset, {call, ?GCD_MODULE, manual_batch, [[testing]]}}
+     {fetching_next_batch, {call, ?GCD_MODULE, manual_batch, [[testing]]}}
     ].
 
 fetching_next_batch(_S) ->
@@ -165,38 +165,28 @@ fetching_next_batch(_S) ->
      {history, {call, ?GCD_MODULE, set_interval, [infinity]}},
      {idle, {call, ?GCD_MODULE, cancel_batch, []}},
      {{paused, fetching_next_batch}, {call, ?GCD_MODULE, pause, []}},
-     {fetching_next_fileset, {call, ?GCD_MODULE, change_state, [fetching_next_fileset]}}
+     {feeding_workers, {call, ?GCD_MODULE, change_state, [feeding_workers]}}
     ].
 
-fetching_next_fileset(_S) ->
+feeding_workers(_S) ->
     [
      {history, {call, ?GCD_MODULE, manual_batch, [[testing]]}},
      {history, {call, ?GCD_MODULE, resume, []}},
      {history, {call, ?GCD_MODULE, set_interval, [infinity]}},
      {idle, {call, ?GCD_MODULE, cancel_batch, []}},
-     {{paused, fetching_next_fileset}, {call, ?GCD_MODULE, pause, []}},
+     {{paused, feeding_workers}, {call, ?GCD_MODULE, pause, []}},
      {fetching_next_batch, {call, ?GCD_MODULE, change_state, [fetching_next_batch]}},
-     {initiating_file_delete, {call, ?GCD_MODULE, change_state, [initiating_file_delete]}}
+     {waiting_for_workers, {call, ?GCD_MODULE, change_state, [waiting_for_workers]}}
     ].
 
-initiating_file_delete(_S) ->
+waiting_for_workers(_S) ->
     [
      {history, {call, ?GCD_MODULE, manual_batch, [[testing]]}},
      {history, {call, ?GCD_MODULE, resume, []}},
      {history, {call, ?GCD_MODULE, set_interval, [infinity]}},
      {idle, {call, ?GCD_MODULE, cancel_batch, []}},
-     {{paused,initiating_file_delete}, {call, ?GCD_MODULE, pause, []}},
-     {waiting_file_delete, {call, ?GCD_MODULE, change_state, [waiting_file_delete]}}
-    ].
-
-waiting_file_delete(_S) ->
-    [
-     {history, {call, ?GCD_MODULE, manual_batch, [[testing]]}},
-     {history, {call, ?GCD_MODULE, resume, []}},
-     {history, {call, ?GCD_MODULE, set_interval, [infinity]}},
-     {idle, {call, ?GCD_MODULE, cancel_batch, []}},
-     {{paused, waiting_file_delete}, {call, ?GCD_MODULE, pause, []}},
-     {initiating_file_delete, {call, ?GCD_MODULE, change_state, [initiating_file_delete]}}
+     {{paused, waiting_for_workers}, {call, ?GCD_MODULE, pause, []}},
+     {feeding_workers, {call, ?GCD_MODULE, change_state, [feeding_workers]}}
     ].
 
 paused(PrevState, _S) ->
@@ -212,165 +202,68 @@ initial_state() ->
     idle.
 
 initial_state_data() ->
-    #mc_state{previous_state = idle}.
+    #mc_state{}.
 
-next_state_data({paused, _}, {paused, _}, S, _R, {call, ?GCD_MODULE, cancel_batch, []}) ->
-    S#mc_state{previous_state=idle};
-next_state_data(From, To, S, _R, _C) when From == To ->
-    S;
-next_state_data(From, To, S, _R, _C) ->
-    S#mc_state{current_state=To,
-               previous_state=From}.
+next_state_data(_From, _To, S, _R, _C) ->
+    S.
 
 precondition(_From, _To, _S, _C) ->
     true.
 
-%% `idle' state transitions
-postcondition(idle, idle, _S ,{call, _M, cancel_batch, _}, R) ->
-    {ActualState, _} = riak_cs_gc_d:current_state(),
-    ?P(ActualState =:= idle andalso R =:= {error, no_batch});
-postcondition(idle, {paused, _}, _S ,{call, _M, pause, _}, R) ->
-    {ActualState, _} = riak_cs_gc_d:current_state(),
-    ?P(ActualState =:= paused andalso R =:= ok);
-%% `fetching_next_batch' state transitions
-postcondition(idle, fetching_next_fileset, _S ,{call, _M, manual_batch, _}, R) ->
-    {ActualState, _} = riak_cs_gc_d:current_state(),
-    ?P(ActualState =:= fetching_next_fileset andalso R =:= ok);
-postcondition(_From, fetching_next_batch, _S ,{call, _M, manual_batch, _}, R) ->
-    {ActualState, _} = riak_cs_gc_d:current_state(),
-    ?P(ActualState =:= fetching_next_batch andalso R =:= {error, already_deleting});
-postcondition(fetching_next_batch, {paused, _}, _S ,{call, _M, pause, _}, R) ->
-    {ActualState, _} = riak_cs_gc_d:current_state(),
-    ?P(ActualState =:= paused andalso R =:= ok);
-postcondition(fetching_next_batch, idle, _S ,{call, _M, cancel_batch, _}, R) ->
-    {ActualState, _} = riak_cs_gc_d:current_state(),
-    ?P(ActualState =:= idle andalso R =:= ok);
-postcondition(fetching_next_batch, fetching_next_fileset, _S ,{call, _M, change_state, _}, R) ->
-    {ActualState, _} = riak_cs_gc_d:current_state(),
-    ?P(ActualState =:= fetching_next_fileset andalso R =:= ok);
-%% `fetching_next_fileset' state transitions
-postcondition(_From, fetching_next_fileset, _S ,{call, _M, manual_batch, _}, R) ->
-    {ActualState, _} = riak_cs_gc_d:current_state(),
-    ?P(ActualState =:= fetching_next_fileset andalso R =:= {error, already_deleting});
-postcondition(fetching_next_fileset, {paused, _}, _S ,{call, _M, pause, _}, R) ->
-    {ActualState, _} = riak_cs_gc_d:current_state(),
-    ?P(ActualState =:= paused andalso R =:= ok);
-postcondition(fetching_next_fileset, idle, _S ,{call, _M, cancel_batch, _}, R) ->
-    {ActualState, _} = riak_cs_gc_d:current_state(),
-    ?P(ActualState =:= idle andalso R =:= ok);
-postcondition(fetching_next_fileset, fetching_next_batch, _S ,{call, _M, change_state, _}, R) ->
-    {ActualState, _} = riak_cs_gc_d:current_state(),
-    ?P(ActualState =:= fetching_next_batch andalso R =:= ok);
-postcondition(fetching_next_fileset, initiating_file_delete, _S ,{call, _M, change_state, _}, R) ->
-    {ActualState, _} = riak_cs_gc_d:current_state(),
-    ?P(ActualState =:= initiating_file_delete andalso R =:= ok);
-%% Transitions to `initiating_file_delete' state
-postcondition(_From, initiating_file_delete, #mc_state{current_state=initiating_file_delete} ,{call, _M, manual_batch, _}, R) ->
-    {ActualState, _} = riak_cs_gc_d:current_state(),
-    ?P(ActualState =:= initiating_file_delete andalso R =:= {error, already_deleting});
-postcondition(initiating_file_delete, {paused, _}, _S ,{call, _M, pause, _}, R) ->
-    {ActualState, _} = riak_cs_gc_d:current_state(),
-    ?P(ActualState =:= paused andalso R =:= ok);
-postcondition(initiating_file_delete, idle, _S ,{call, _M, cancel_batch, _}, R) ->
-    {ActualState, _} = riak_cs_gc_d:current_state(),
-    ?P(ActualState =:= idle andalso R =:= ok);
-postcondition(initiating_file_delete, waiting_file_delete, _S ,{call, _M, change_state, _}, R) ->
-    {ActualState, _} = riak_cs_gc_d:current_state(),
-    ?P(ActualState =:= waiting_file_delete andalso R =:= ok);
-%% `waiting_file_delete' transitions
-postcondition(_From, waiting_file_delete, _S ,{call, _M, manual_batch, _}, R) ->
-    {ActualState, _} = riak_cs_gc_d:current_state(),
-    ?P(ActualState =:= waiting_file_delete andalso R =:= {error, already_deleting});
-postcondition(waiting_file_delete, {paused, _}, _S ,{call, _M, pause, _}, R) ->
-    {ActualState, _} = riak_cs_gc_d:current_state(),
-    ?P(ActualState =:= paused andalso R =:= ok);
-postcondition(waiting_file_delete, idle, _S ,{call, _M, cancel_batch, _}, R) ->
-    {ActualState, _} = riak_cs_gc_d:current_state(),
-    ?P(ActualState =:= idle andalso R =:= ok);
-postcondition(waiting_file_delete, initiating_file_delete, _S ,{call, _M, change_state, _}, R) ->
-    {ActualState, _} = riak_cs_gc_d:current_state(),
-    ?P(ActualState =:= initiating_file_delete andalso R =:= ok);
-%% `paused' transitions
-postcondition({paused, _}, {paused, _}, _S ,{call, _M, cancel_batch, _}, R) ->
-    {ActualState, _} = riak_cs_gc_d:current_state(),
-    ?P(ActualState =:= paused andalso R =:= ok);
-postcondition({paused, _}, {paused, _}, _S ,{call, _M, pause, _}, R) ->
-    {ActualState, _} = riak_cs_gc_d:current_state(),
-    ?P(ActualState =:= paused andalso R =:= {error, already_paused});
-postcondition({paused, _}, PrevState, #mc_state{previous_state=PrevState} ,{call, _M, resume, _}, R) ->
-    {ActualState, _} = riak_cs_gc_d:current_state(),
-    ?P(ActualState =:= PrevState andalso R =:= ok);
-%% General handling of `resume' calls when the `From' state
-%% is not `paused'.
-postcondition(_From, To, _S ,{call, _M, resume, _}, R) ->
-    {ActualState, _} = riak_cs_gc_d:current_state(),
-    ?P(ActualState =:= To andalso R =:= {error, not_paused});
-%% Handling of arbitrary calls that should return `ok'.
-postcondition(_From, To, _S ,{call, _M, _F, _}, R) ->
-    {ActualState, _} = riak_cs_gc_d:current_state(),
-    ?P(ActualState =:= actual_state(To) andalso R =:= ok);
-%% Catch all
-postcondition(_From, _To, _S , _C, _R) ->
-    true.
+postcondition(From, To, S , {call, _M, ManualCommad, _A}=C, R) ->
+    {Actual, _} = riak_cs_gc_d:current_state(),
+    ?assertEqual(actual_state(To), Actual),
+    ExpectedRes = expected_result(From, To, ManualCommad),
+    case R of
+        ExpectedRes -> true;
+        _ ->
+            eqc:format("Result:   ~p~n", [R]),
+            eqc:format("Expected: ~p~n", [ExpectedRes]),
+            eqc:format("when {From, To, S, C}: ~p~n", [{From, To, S, C}]),
+            false
+    end.
 
 actual_state({State, _}) -> State;
 actual_state(S) -> S.
 
-weight(fetching_next_batch,fetching_next_batch,{call,riak_cs_gc_d,manual_batch,[[testing]]}) -> 64;
-weight(fetching_next_batch,fetching_next_batch,{call,riak_cs_gc_d,resume,[]}) -> 64;
-weight(fetching_next_batch,fetching_next_batch,{call,riak_cs_gc_d,set_interval,[infinity]}) -> 64;
-weight(fetching_next_batch,idle,{call,riak_cs_gc_d,cancel_batch,[]}) -> 64;
-weight(fetching_next_batch,fetching_next_fileset,{call,riak_cs_gc_d,change_state,[fetching_next_fileset]}) -> 556;
-weight(fetching_next_batch,{paused,fetching_next_batch},{call,riak_cs_gc_d,pause,[]}) -> 191;
-weight(fetching_next_fileset,fetching_next_fileset,{call,riak_cs_gc_d,manual_batch,[[testing]]}) -> 64;
-weight(fetching_next_fileset,fetching_next_fileset,{call,riak_cs_gc_d,resume,[]}) -> 64;
-weight(fetching_next_fileset,fetching_next_fileset,{call,riak_cs_gc_d,set_interval,[infinity]}) -> 64;
-weight(fetching_next_fileset,idle,{call,riak_cs_gc_d,cancel_batch,[]}) -> 64;
-weight(fetching_next_fileset,initiating_file_delete,{call,riak_cs_gc_d,change_state,[initiating_file_delete]}) -> 556;
-weight(fetching_next_fileset,fetching_next_batch,{call,riak_cs_gc_d,change_state,[fetching_next_batch]}) -> 330;
-weight(fetching_next_fileset,{paused,fetching_next_fileset},{call,riak_cs_gc_d,pause,[]}) -> 191;
-weight(idle,fetching_next_fileset,{call,riak_cs_gc_d,manual_batch,[[testing]]}) -> 798;
-weight(idle,idle,{call,riak_cs_gc_d,cancel_batch,[]}) -> 64;
-weight(idle,idle,{call,riak_cs_gc_d,resume,[]}) -> 64;
-weight(idle,idle,{call,riak_cs_gc_d,set_interval,[infinity]}) -> 64;
-weight(idle,{paused,idle},{call,riak_cs_gc_d,pause,[]}) -> 127;
-weight(initiating_file_delete,idle,{call,riak_cs_gc_d,cancel_batch,[]}) -> 127;
-weight(initiating_file_delete,initiating_file_delete,{call,riak_cs_gc_d,manual_batch,[[testing]]}) -> 46;
-weight(initiating_file_delete,initiating_file_delete,{call,riak_cs_gc_d,resume,[]}) -> 46;
-weight(initiating_file_delete,initiating_file_delete,{call,riak_cs_gc_d,set_interval,[infinity]}) -> 46;
-weight(initiating_file_delete,waiting_file_delete,{call,riak_cs_gc_d,change_state,[waiting_file_delete]}) -> 192;
-weight(initiating_file_delete,{paused,initiating_file_delete},{call,riak_cs_gc_d,pause,[]}) -> 129;
-weight(waiting_file_delete,idle,{call,riak_cs_gc_d,cancel_batch,[]}) -> 176;
-weight(waiting_file_delete,initiating_file_delete,{call,riak_cs_gc_d,change_state,[initiating_file_delete]}) -> 125;
-weight(waiting_file_delete,waiting_file_delete,{call,riak_cs_gc_d,manual_batch,[[testing]]}) -> 124;
-weight(waiting_file_delete,waiting_file_delete,{call,riak_cs_gc_d,resume,[]}) -> 124;
-weight(waiting_file_delete,waiting_file_delete,{call,riak_cs_gc_d,set_interval,[infinity]}) -> 124;
-weight(waiting_file_delete,{paused,waiting_file_delete},{call,riak_cs_gc_d,pause,[]}) -> 285;
-weight({paused,fetching_next_batch},fetching_next_batch,{call,riak_cs_gc_d,resume,[]}) -> 149;
-weight({paused,fetching_next_batch},{paused,fetching_next_batch},{call,riak_cs_gc_d,manual_batch,[[testing]]}) -> 124;
-weight({paused,fetching_next_batch},{paused,fetching_next_batch},{call,riak_cs_gc_d,pause,[]}) -> 124;
-weight({paused,fetching_next_batch},{paused,fetching_next_batch},{call,riak_cs_gc_d,set_interval,[infinity]}) -> 124;
-weight({paused,fetching_next_batch},{paused,idle},{call,riak_cs_gc_d,cancel_batch,[]}) -> 178;
-weight({paused,fetching_next_fileset},fetching_next_fileset,{call,riak_cs_gc_d,resume,[]}) -> 149;
-weight({paused,fetching_next_fileset},{paused,fetching_next_fileset},{call,riak_cs_gc_d,manual_batch,[[testing]]}) -> 124;
-weight({paused,fetching_next_fileset},{paused,fetching_next_fileset},{call,riak_cs_gc_d,pause,[]}) -> 124;
-weight({paused,fetching_next_fileset},{paused,fetching_next_fileset},{call,riak_cs_gc_d,set_interval,[infinity]}) -> 124;
-weight({paused,fetching_next_fileset},{paused,idle},{call,riak_cs_gc_d,cancel_batch,[]}) -> 178;
-weight({paused,idle},idle,{call,riak_cs_gc_d,resume,[]}) -> 683;
-weight({paused,idle},{paused,idle},{call,riak_cs_gc_d,cancel_batch,[]}) -> 128;
-weight({paused,idle},{paused,idle},{call,riak_cs_gc_d,manual_batch,[[testing]]}) -> 128;
-weight({paused,idle},{paused,idle},{call,riak_cs_gc_d,pause,[]}) -> 128;
-weight({paused,idle},{paused,idle},{call,riak_cs_gc_d,set_interval,[infinity]}) -> 128;
-weight({paused,initiating_file_delete},initiating_file_delete,{call,riak_cs_gc_d,resume,[]}) -> 128;
-weight({paused,initiating_file_delete},{paused,idle},{call,riak_cs_gc_d,cancel_batch,[]}) -> 193;
-weight({paused,initiating_file_delete},{paused,initiating_file_delete},{call,riak_cs_gc_d,manual_batch,[[testing]]}) -> 128;
-weight({paused,initiating_file_delete},{paused,initiating_file_delete},{call,riak_cs_gc_d,pause,[]}) -> 128;
-weight({paused,initiating_file_delete},{paused,initiating_file_delete},{call,riak_cs_gc_d,set_interval,[infinity]}) -> 128;
-weight({paused,waiting_file_delete},waiting_file_delete,{call,riak_cs_gc_d,resume,[]}) -> 1;
-weight({paused,waiting_file_delete},{paused,idle},{call,riak_cs_gc_d,cancel_batch,[]}) -> 1;
-weight({paused,waiting_file_delete},{paused,waiting_file_delete},{call,riak_cs_gc_d,manual_batch,[[testing]]}) -> 1;
-weight({paused,waiting_file_delete},{paused,waiting_file_delete},{call,riak_cs_gc_d,pause,[]}) -> 1;
-weight({paused,waiting_file_delete},{paused,waiting_file_delete},{call,riak_cs_gc_d,set_interval,[infinity]}) -> 1.
+%% Handling of `set_interval' calls. Always succeeds.
+expected_result(From, From, set_interval) ->
+    ok;
+
+%% Handling of `pause' and `resume' calls. Just becomes paused and back.
+expected_result({paused, StateToResume}, {paused, StateToResume}, pause) ->
+    {error, already_paused};
+expected_result(From, {paused, From}, pause)  ->
+    ok;
+expected_result({paused, StateToResume}, StateToResume, resume) ->
+    ok;
+expected_result(From, From, resume) when is_atom(From) ->
+    {error, not_paused};
+
+%% Handling of `manual_batch' and `cancel_batch'.
+%% Almost just becomes fetching_next_batch and back to idle,
+%% only `cancel_batch' at paused is special.
+expected_result({paused, From}, {paused, From}, manual_batch) ->
+    {error, already_paused};
+expected_result({paused, _StateAtPause}, {paused, idle}, cancel_batch) ->
+    ok;
+expected_result(idle, fetching_next_batch, manual_batch) ->
+    ok;
+expected_result(From, From, manual_batch) ->
+    {error, already_deleting};
+expected_result(idle, idle, cancel_batch) ->
+    {error, no_batch};
+expected_result(_From, idle, cancel_batch) ->
+    ok;
+
+%% `change_state'
+expected_result(_From, _To, change_state) ->
+    ok.
+
+weight(idle, fetching_next_batch, _) -> 10;
+weight(fetching_next_batch, feeding_workers, _) -> 5;
+weight(feeding_workers, waiting_for_workers, _) -> 3;
+weight(_, _, _) -> 1.
 
 %%====================================================================
 %% Helpers
@@ -381,5 +274,8 @@ test() ->
 
 test(Iterations) ->
     eqc:quickcheck(eqc:numtests(Iterations, prop_status())).
+
+test(Iterations, Prop) ->
+    eqc:quickcheck(eqc:numtests(Iterations, ?MODULE:Prop())).
 
 -endif.
