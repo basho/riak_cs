@@ -109,6 +109,10 @@
 
 -endif.
 
+%% 'keys()` is defined in `riakc.hrl'.
+%% The name is general so declare local type for readability.
+-type index_result_keys() :: keys().
+
 -define(SERVER, ?MODULE).
 -define(STATE, #gc_d_state).
 -define(GC_WORKER, riak_cs_gc_worker).
@@ -503,8 +507,9 @@ fetch_eligible_manifest_keys(RiakPid, IntervalStart, Leeway, Continuation) ->
                                   UsePaginatedIndexes),
     {eligible_manifest_keys(QueryResults, UsePaginatedIndexes), continuation(QueryResults)}.
 
--spec eligible_manifest_keys({{ok, riakc_pb_socket:index_results()} | {error, term()},
-                              binary()}, UsePaginatedIndexes::boolean()) -> [binary()].
+-spec eligible_manifest_keys({{ok, index_results()} | {error, term()},
+                              binary()}, UsePaginatedIndexes::boolean()) ->
+                                    [index_result_keys()].
 eligible_manifest_keys({{ok, ?INDEX_RESULTS{keys=Keys}},
                         _EndTime},
                        true) ->
@@ -524,7 +529,7 @@ eligible_manifest_keys({{error, Reason}, EndTime}, _) ->
 
 %% @doc Break a list of gc-eligible keys from the GC bucket into smaller sets
 %% to be processed by different GC workers.
--spec split_eligible_manifest_keys(non_neg_integer(), [term()], [[term()]]) ->
+-spec split_eligible_manifest_keys(non_neg_integer(), index_result_keys(), [[index_result_keys()]]) ->
                                         [[term()]].
 split_eligible_manifest_keys(_BatchSize, [], Acc) ->
     lists:reverse(Acc);
