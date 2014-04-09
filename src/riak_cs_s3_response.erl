@@ -88,7 +88,9 @@ error_message(invalid_range) -> "The requested range is not satisfiable";
 error_message(invalid_bucket_name) -> "The specified bucket is not valid.";
 error_message(unexpected_content) -> "This request does not support content";
 error_message(canned_acl_and_header_grant) -> "Specifying both Canned ACLs and Header Grants is not allowed";
-error_message(_) -> "Please reduce your request rate.".
+error_message(ErrorName) ->
+    _ = lager:debug("Unknown Error Name: ~p", [ErrorName]),
+    "Please reduce your request rate.".
 
 error_code(invalid_access_key_id) -> "InvalidAccessKeyId";
 error_code(access_denied) -> "AccessDenied";
@@ -125,7 +127,7 @@ error_code(unexpected_content) -> "UnexpectedContent";
 error_code(canned_acl_and_header_grant) -> "InvalidRequest";
 error_code(malformed_acl_error) -> "MalformedACLError";
 error_code(ErrorName) ->
-    ok = lager:debug("Unknown Error Name: ~p", [ErrorName]),
+    _ = lager:debug("Unknown Error Name: ~p", [ErrorName]),
     "ServiceUnavailable".
 
 %% These should match:
@@ -169,7 +171,9 @@ status_code(invalid_bucket_name) -> 400;
 status_code(unexpected_content) -> 400;
 status_code(canned_acl_and_header_grant) -> 400;
 status_code(malformed_acl_error) -> 400;
-status_code(_) -> 503.
+status_code(ErrorName) ->
+    _ = lager:debug("Unknown Error Name: ~p", [ErrorName]),
+    503.
 
 -spec respond(term(), #wm_reqdata{}, #context{}) ->
                      {binary(), #wm_reqdata{}, #context{}}.
