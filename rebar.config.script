@@ -61,7 +61,7 @@ case UseEEDeps of
 {package_install_user, \"riakcs\"}.
 {package_install_group, \"riak\"}.
 {package_install_user_desc, \"Riak CS user\"}.
-{package_commands, {list, [[{name, \"riak-cs\"}], [{name, \"riak-cs-access\"}], [{name, \"riak-cs-gc\"}], [{name, \"riak-cs-storage\"}], [{name, \"riak-cs-stanchion\"}], [{name, \"riak-cs-debug\"}], [{name, \"riak-cs-admin\"}]]}}.
+{package_commands, {list, [[{name, \"riak-cs\"}], [{name, \"riak-cs-access\"}], [{name, \"riak-cs-gc\"}], [{name, \"riak-cs-storage\"}], [{name, \"riak-cs-stanchion\"}], [{name, \"riak-cs-debug\"}], [{name, \"riak-cs-admin\"}], [{name, \"riak-cs-multibag\"}]]}}.
 {package_shortdesc, \"Riak CS\"}.
 {package_patch_dir, \"basho-patches\"}.
 {package_desc, \"Riak CS\"}.
@@ -78,7 +78,7 @@ case UseEEDeps of
                 file:write_file("pkg.vars.config", Bytes),
                 EE_DEPS =
                     [
-                     {riak_repl_pb_api,".*",{git,"git@github.com:basho/riak_repl_pb_api.git", {tag, "0.2.5"}}}
+                     {riak_cs_multibag,".*",{git,"git@github.com:basho/riak_cs_multibag.git", {branch, "feature/multi-bag"}}}
                     ],
                 lists:keyreplace(deps, 1, UpdConfig, {deps, Deps ++ EE_DEPS});
             _ ->
