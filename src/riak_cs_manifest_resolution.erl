@@ -133,7 +133,8 @@ resolve_props(A, B) ->
     {_, _, New} = lists:foldl(fun resolve_a_prop/2,
                               {Ps_A, Ps_B, []},
                               [fun resolve_prop_multipart/2,
-                               fun resolve_prop_multipart_cleanup/2]),
+                               fun resolve_prop_multipart_cleanup/2,
+                               fun resolve_prop_block_bag/2]),
     New.
 
 resolve_a_prop(Resolver, {Ps_A, Ps_B, Ps_merged}) ->
@@ -169,6 +170,17 @@ resolve_prop_multipart_cleanup(Ps_A, Ps_B) ->
         false ->
             {Ps_A, Ps_B, []}
     end.
+
+resolve_prop_block_bag(Ps_A, Ps_B) ->
+    case {proplists:get_value(block_bag, Ps_A),
+          proplists:get_value(block_bag, Ps_B)} of
+        {undefined, undefined} ->
+            {Ps_A, Ps_B, []};
+        {BagId, BagId} when BagId =/= undefined ->
+            %% BagId is set at the start and not modified.
+            {Ps_A, Ps_B, [{block_bag, BagId}]}
+    end.
+
 
 %% NOTE:
 %% There was a bit of a gaff

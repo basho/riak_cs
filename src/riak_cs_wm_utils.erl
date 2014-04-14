@@ -35,6 +35,7 @@
          find_and_auth_user/5,
          validate_auth_header/4,
          ensure_doc/2,
+         finish_doc/1,
          respond_api_error/3,
          deny_access/2,
          deny_invalid_key/2,
@@ -234,10 +235,8 @@ validate_auth_header(RD, AuthBypass, RiakPid, Ctx) ->
             {error, Reason}
     end.
 
-%% @doc Utility function for accessing
-%%      a riakc_obj without retrieving
-%%      it again if it's already in the
-%%      Ctx
+%% @doc Utility function for building #key_contest
+%% Spawns manifest FSM
 -spec ensure_doc(term(), pid()) -> term().
 ensure_doc(KeyCtx=#key_context{bucket_object=undefined,
                                bucket=Bucket}, RiakcPid) ->
@@ -251,17 +250,41 @@ ensure_doc(KeyCtx, _) ->
     KeyCtx.
 
 setup_manifest(KeyCtx=#key_context{bucket=Bucket,
+                                   bucket_object=BucketObj,
                                    key=Key}, RiakcPid) ->
     %% start the get_fsm
     BinKey = list_to_binary(Key),
     FetchConcurrency = riak_cs_lfs_utils:fetch_concurrency(),
     BufferFactor = riak_cs_lfs_utils:get_fsm_buffer_size_factor(),
-    {ok, Pid} = riak_cs_get_fsm_sup:start_get_fsm(node(), Bucket, BinKey,
-                                                  self(), RiakcPid,
-                                                  FetchConcurrency,
-                                                  BufferFactor),
-    Manifest = riak_cs_get_fsm:get_manifest(Pid),
-    KeyCtx#key_context{get_fsm_pid=Pid, manifest=Manifest}.
+    ManifestPool = riak_cs_bag_registrar:pool_name(request_pool, BucketObj),
+    lager:debug("ManifestPool: ~p~n", [ManifestPool]),
+    ManiRiakcPid = case ManifestPool of
+                       undefined ->
+                           RiakcPid;
+                       PoolName ->
+                           %% TODO: Handle {error, Reason}
+                           {ok, NewPid} = riak_cs_utils:riak_connection(PoolName),
+                           NewPid
+                   end,
+    {ok, FsmPid} = riak_cs_get_fsm_sup:start_get_fsm(node(), Bucket, BinKey,
+                                                     self(), ManiRiakcPid, RiakcPid,
+                                                     FetchConcurrency,
+                                                     BufferFactor),
+    Manifest = riak_cs_get_fsm:get_manifest(FsmPid),
+    KeyCtx#key_context{get_fsm_pid=FsmPid,
+                       manifest=Manifest,
+                       manifest_pool=ManifestPool,
+                       manifest_riakc_pid=ManiRiakcPid}.
+
+%% @doc Utility function for cleaning key_context, which was build by ensure_doc/2.
+-spec finish_doc(term()) -> term().
+finish_doc(KeyCtx = #key_context{manifest_pool=undefined}) ->
+    %% Did not use a manifest specific riakc process
+    KeyCtx;
+finish_doc(KeyCtx = #key_context{manifest_pool=ManifestPool,
+                                 manifest_riakc_pid=ManiRiakcPid}) ->
+    ok = riak_cs_utils:close_riak_connection(ManifestPool, ManiRiakcPid),
+    KeyCtx#key_context{manifest_riakc_pid=undefined}.
 
 %% @doc Produce an api error by using response_module.
 respond_api_error(RD, Ctx, ErrorAtom) ->
