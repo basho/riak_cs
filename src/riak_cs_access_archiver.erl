@@ -48,11 +48,11 @@
 
 -record(state,
         {
-          riak,      %% the riak connection we're using
-          mon,       %% the monitor watching our riak connection
-          table,     %% the logger table being archived
-          slice,     %% the logger slice being archived
-          next      %% the next entry in the table to archive
+          riak_client, %% the riak connection we're using
+          mon,         %% the monitor watching our riak connection
+          table,       %% the logger table being archived
+          slice,       %% the logger slice being archived
+          next         %% the next entry in the table to archive
         }).
 
 %%%===================================================================
@@ -98,18 +98,18 @@ status(Pid, Timeout) ->
 %%%===================================================================
 
 init([]) ->
-    {ok, Riak} = riak_connection(),
-    Mon = erlang:monitor(process, Riak),
-    {ok, idle, #state{riak=Riak, mon=Mon}}.
+    {ok, RcPid} = start_riak_client(),
+    Mon = erlang:monitor(process, RcPid),
+    {ok, idle, #state{riak_client=RcPid, mon=Mon}}.
 
 idle(_Request, State) ->
     {next_state, idle, State}.
 
 archiving(continue, #state{next='$end_of_table'}=State) ->
     {stop, normal, State};
-archiving(continue, #state{riak=Riak, table=Table,
+archiving(continue, #state{riak_client=RcPid, table=Table,
                            next=Key, slice=Slice}=State) ->
-    case archive_user(Key, Riak, Table, Slice) of
+    case archive_user(Key, RcPid, Table, Slice) of
         retry ->
             %% wait for 'DOWN' to reconnect client,
             %% then retry this user
@@ -139,26 +139,26 @@ handle_sync_event(_Event, _From, StateName, State) ->
 
 handle_info({'ETS-TRANSFER', Table, _From, Slice}, _StateName, State) ->
     continue(State#state{next=ets:first(Table), table=Table, slice=Slice});
-handle_info({'DOWN', _Mon, process, _Riak, _Reason}, StateName, State) ->
-    {ok, NewRiak} = riak_connection(),
-    NewMon = erlang:monitor(process, NewRiak),
+handle_info({'DOWN', _Mon, process, _RcPid, _Reason}, StateName, State) ->
+    {ok, NewRcPid} = start_riak_client(),
+    NewMon = erlang:monitor(process, NewRcPid),
     gen_fsm:send_event(self(), continue),
-    {next_state, StateName, State#state{riak=NewRiak, mon=NewMon}};
+    {next_state, StateName, State#state{riak_client=NewRcPid, mon=NewMon}};
 handle_info(_Info, StateName, State) ->
     {next_state, StateName, State}.
 
 terminate(Reason, StateName, #state{table=Table,
-                                riak=Riak,
-                                mon=Mon})
+                                    riak_client=RcPid,
+                                    mon=Mon})
   when Reason =:= normal; StateName =:= idle ->
-    cleanup(Table, Riak, Mon),
+    cleanup(Table, RcPid, Mon),
     ok;
 terminate(_Reason, _StateName, #state{table=Table,
-                                      riak=Riak,
+                                      riak_client=RcPid,
                                       mon=Mon}) ->
     _ = lager:warning("Access archiver stopping with work left to do;"
                       " logs will be dropped"),
-    cleanup(Table, Riak, Mon),
+    cleanup(Table, RcPid, Mon),
     ok.
 
 code_change(_OldVsn, StateName, State, _Extra) ->
@@ -168,17 +168,13 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
-riak_connection() ->
-    {Host, Port} = riak_cs_config:riak_host_port(),
-    StartOptions = [{connect_timeout, riak_cs_config:connect_timeout()},
-                    {auto_reconnect, true}],
-    riakc_pb_socket:start_link(Host, Port, StartOptions).
+start_riak_client() ->
+    riak_cs_riak_client:start_link([]).
 
-
-cleanup(Table, Pid, Mon) ->
+cleanup(Table, RcPid, Mon) ->
     cleanup_table(Table),
     cleanup_monitor(Mon),
-    cleanup_socket(Pid).
+    cleanup_riak_client(RcPid).
 
 cleanup_table(undefined) ->
     ok;
@@ -190,22 +186,23 @@ cleanup_monitor(undefined) ->
 cleanup_monitor(Mon) ->
     erlang:demonitor(Mon, [flush]).
 
-cleanup_socket(undefined) ->
+cleanup_riak_client(undefined) ->
     ok;
-cleanup_socket(Pid) ->
-    riakc_pb_socket:stop(Pid).
+cleanup_riak_client(RcPid) ->
+    riak_cs_riak_client:stop(RcPid).
 
 continue(State) ->
     gen_fsm:send_event(self(), continue),
     {next_state, archiving, State}.
 
-archive_user(User, Riak, Table, Slice) ->
+archive_user(User, RcPid, Table, Slice) ->
     Accesses = [ A || {_, A} <- ets:lookup(Table, User) ],
     Record = riak_cs_access:make_object(User, Accesses, Slice),
-    store(User, Riak, Record, Slice).
+    store(User, RcPid, Record, Slice).
 
-store(User, Riak, Record, Slice) ->
-    case catch riakc_pb_socket:put(Riak, Record) of
+store(User, RcPid, Record, Slice) ->
+    {ok, MasterPbc} = riak_cs_riak_client:master_pbc(RcPid),
+    case catch riakc_pb_socket:put(MasterPbc, Record) of
         ok ->
             ok = lager:debug("Archived access stats for ~s ~p",
                              [User, Slice]);

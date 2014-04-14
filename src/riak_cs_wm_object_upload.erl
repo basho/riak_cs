@@ -29,8 +29,7 @@
          post_is_create/2,
          process_post/2,
          multiple_choices/2,
-         valid_entity_length/2,
-         finish_request/2]).
+         valid_entity_length/2]).
 
 -include("riak_cs.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
@@ -56,11 +55,11 @@ malformed_request(RD,Ctx) ->
 %% directly returning from the {@link forbidden/2} webmachine export.
 -spec authorize(#wm_reqdata{}, #context{}) ->
                        {boolean() | {halt, term()}, #wm_reqdata{}, #context{}}.
-authorize(RD, Ctx0=#context{local_context=LocalCtx0, riakc_pid=RiakPid}) ->
+authorize(RD, Ctx0=#context{local_context=LocalCtx0, riak_client=RcPid}) ->
     Method = wrq:method(RD),
     RequestedAccess =
         riak_cs_acl_utils:requested_access(Method, false),
-    LocalCtx = riak_cs_wm_utils:ensure_doc(LocalCtx0, RiakPid),
+    LocalCtx = riak_cs_wm_utils:ensure_doc(LocalCtx0, RcPid),
     Ctx = Ctx0#context{requested_perm=RequestedAccess,local_context=LocalCtx},
     authorize(RD, Ctx, LocalCtx#key_context.bucket_object).
 
@@ -85,9 +84,7 @@ process_post(RD, Ctx) ->
             HaltResponse
     end.
 
-process_post_helper(RD, Ctx=#context{local_context=LocalCtx,
-                                     acl=ACL,
-                                     riakc_pid=RiakcPid}) ->
+process_post_helper(RD, Ctx=#context{riak_client=RcPid, local_context=LocalCtx, acl=ACL}) ->
     #key_context{bucket=Bucket, key=Key} = LocalCtx,
     ContentType = try
                       list_to_binary(wrq:get_req_header("Content-Type", RD))
@@ -101,7 +98,7 @@ process_post_helper(RD, Ctx=#context{local_context=LocalCtx,
 
     case riak_cs_mp_utils:initiate_multipart_upload(Bucket, list_to_binary(Key),
                                                     ContentType, User, Opts,
-                                                    RiakcPid) of
+                                                    RcPid) of
         {ok, UploadId} ->
             XmlDoc = {'InitiateMultipartUploadResult',
                        [{'xmlns', "http://s3.amazonaws.com/doc/2006-03-01/"}],
@@ -143,10 +140,6 @@ valid_entity_length(RD, Ctx=#context{local_context=LocalCtx}) ->
         _ ->
             {true, RD, Ctx}
     end.
-
-finish_request(RD, Ctx) ->
-    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"finish_request">>, [0], []),
-    {true, RD, Ctx}.
 
 -spec content_types_provided(#wm_reqdata{}, #context{}) -> {[{string(), atom()}], #wm_reqdata{}, #context{}}.
 content_types_provided(RD, Ctx=#context{}) ->

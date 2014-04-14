@@ -26,7 +26,7 @@
 %% Public API
 -export([
          fetch_bucket_object/2,
-         create_bucket/5,
+         create_bucket/6,
          delete_bucket/4,
          get_buckets/1,
          set_bucket_acl/5,
@@ -56,10 +56,10 @@
 
 %% @doc Create a bucket in the global namespace or return
 %% an error if it already exists.
--spec create_bucket(rcs_user(), term(), binary(), acl(), pid()) ->
+-spec create_bucket(rcs_user(), term(), binary(), bag_id(), acl(), pid()) ->
                            ok |
                            {error, term()}.
-create_bucket(User, UserObj, Bucket, ACL, RiakPid) ->
+create_bucket(User, UserObj, Bucket, BagId, ACL, RcPid) ->
     CurrentBuckets = get_buckets(User),
 
     %% Do not attempt to create bucket if the user already owns it
@@ -70,12 +70,13 @@ create_bucket(User, UserObj, Bucket, ACL, RiakPid) ->
             case valid_bucket_name(Bucket) of
                 true ->
                     serialized_bucket_op(Bucket,
+                                         BagId,
                                          ACL,
                                          User,
                                          UserObj,
                                          create,
                                          bucket_create,
-                                         RiakPid);
+                                         RcPid);
                 false ->
                     {error, invalid_bucket_name}
             end;
@@ -151,16 +152,16 @@ dash_char(Char) ->
 -spec delete_bucket(rcs_user(), riakc_obj:riakc_obj(), binary(), pid()) ->
                            ok |
                            {error, remaining_multipart_upload}.
-delete_bucket(User, UserObj, Bucket, RiakPid) ->
+delete_bucket(User, UserObj, Bucket, RcPid) ->
     CurrentBuckets = get_buckets(User),
 
     %% Buckets can only be deleted if they exist
     {AttemptDelete, LocalError} =
         case bucket_exists(CurrentBuckets, binary_to_list(Bucket)) of
             true ->
-                case bucket_empty(Bucket, RiakPid) of
-                    true -> {true, ok};
-                    false -> {false, {error, bucket_not_empty}}
+                case bucket_empty(Bucket, RcPid) of
+                    {ok, true}  -> {true, ok};
+                    {ok, false} -> {false, {error, bucket_not_empty}}
                 end;
             false -> {true, ok}
         end,
@@ -168,7 +169,7 @@ delete_bucket(User, UserObj, Bucket, RiakPid) ->
         true ->
             %% TODO: output log if failed in cleaning up existing uploads.
             %% The number of retry is hardcoded.
-            {ok, Count} = delete_all_uploads(Bucket, RiakPid),
+            {ok, Count} = delete_all_uploads(Bucket, RcPid),
             _ = lager:debug("deleted ~p multiparts before bucket deletion.", [Count]),
             %% This call still may return {error, remaining_multipart_upload}
             %% even if all uploads cleaned up above, because concurrent
@@ -180,33 +181,33 @@ delete_bucket(User, UserObj, Bucket, RiakPid) ->
                                  UserObj,
                                  delete,
                                  bucket_delete,
-                                 RiakPid);
+                                 RcPid);
         false ->
             LocalError
     end.
 
 %% @doc TODO: this function is to be moved to riak_cs_multipart_utils or else?
 -spec delete_all_uploads(binary(), pid()) -> {ok, non_neg_integer()} | {error, term()}.
-delete_all_uploads(Bucket, RiakPid) ->
-    delete_old_uploads(Bucket, RiakPid, <<255>>).
+delete_all_uploads(Bucket, RcPid) ->
+    delete_old_uploads(Bucket, RcPid, <<255>>).
 
 %% @doc deletes all multipart uploads older than Timestamp.
 %% input binary format of iso8068
 -spec delete_old_uploads(binary(), pid(), binary()) ->
                                 {ok, non_neg_integer()} | {error, term()}.
-delete_old_uploads(Bucket, RiakPid, Timestamp) when is_binary(Timestamp) ->
+delete_old_uploads(Bucket, RcPid, Timestamp) when is_binary(Timestamp) ->
     Opts = [{delimiter, undefined}, {max_uploads, undefined},
             {prefix, undefined}, {key_marker, <<>>},
             {upload_id_marker, <<>>}],
-    {ok, {Ds, _Commons}} = riak_cs_mp_utils:list_all_multipart_uploads(Bucket, Opts, RiakPid),
-    fold_delete_uploads(Bucket, RiakPid, Ds, Timestamp, 0).
+    {ok, {Ds, _Commons}} = riak_cs_mp_utils:list_all_multipart_uploads(Bucket, Opts, RcPid),
+    fold_delete_uploads(Bucket, RcPid, Ds, Timestamp, 0).
 
-fold_delete_uploads(_Bucket, _RiakPid, [], _Timestamp, Count) -> {ok, Count};
-fold_delete_uploads(Bucket, RiakPid, [D|Ds], Timestamp, Count)->
+fold_delete_uploads(_Bucket, _RcPid, [], _Timestamp, Count) -> {ok, Count};
+fold_delete_uploads(Bucket, RcPid, [D|Ds], Timestamp, Count)->
     Key = D?MULTIPART_DESCR.key,
 
     %% cannot fail here
-    {ok, Obj, Manifests} = riak_cs_utils:get_manifests(RiakPid, Bucket, Key),
+    {ok, Obj, Manifests} = riak_cs_utils:get_manifests(RcPid, Bucket, Key),
 
     UploadId = D?MULTIPART_DESCR.upload_id,
 
@@ -218,9 +219,9 @@ fold_delete_uploads(Bucket, RiakPid, [D|Ds], Timestamp, Count)->
                            %% <<"2012-02-17T18:22:50.000Z">> < <<"2014-05-11-....">> => true
                            andalso M?MANIFEST.created < Timestamp ->
             case riak_cs_gc:gc_specific_manifests(
-                   [M?MANIFEST.uuid], Obj, Bucket, Key, RiakPid) of
+                   [M?MANIFEST.uuid], Obj, Bucket, Key, RcPid) of
                 {ok, _NewObj} ->
-                    fold_delete_uploads(Bucket, RiakPid, Ds, Timestamp, Count+1);
+                    fold_delete_uploads(Bucket, RcPid, Ds, Timestamp, Count+1);
                 E ->
                     lager:debug("cannot delete multipart manifest: ~p ~p (~p)",
                                 [{Bucket, Key}, M?MANIFEST.uuid, E]),
@@ -229,30 +230,31 @@ fold_delete_uploads(Bucket, RiakPid, [D|Ds], Timestamp, Count)->
         _E ->
             lager:debug("skipping multipart manifest: ~p ~p (~p)",
                         [{Bucket, Key}, UploadId, _E]),
-            fold_delete_uploads(Bucket, RiakPid, Ds, Timestamp, Count)
+            fold_delete_uploads(Bucket, RcPid, Ds, Timestamp, Count)
     end.
 
 -spec fold_all_buckets(fun(), term(), pid()) -> {ok, term()} | {error, any()}.
-fold_all_buckets(Fun, Acc0, Pid) when is_function(Fun) ->
-    iterate_csbuckets(Pid, Acc0, Fun, undefined).
+fold_all_buckets(Fun, Acc0, RcPid) when is_function(Fun) ->
+    iterate_csbuckets(RcPid, Acc0, Fun, undefined).
 
 -spec iterate_csbuckets(pid(), term(), fun(), binary()|undefined) ->
                                {ok, term()} | {error, any()}.
-iterate_csbuckets(Pid, Acc0, Fun, Cont0) ->
+iterate_csbuckets(RcPid, Acc0, Fun, Cont0) ->
 
     Options = case Cont0 of
                   undefined -> [];
                   _ ->         [{continuation, Cont0}]
               end ++ [{max_results, 1024}],
 
-    case riakc_pb_socket:get_index_range(Pid, ?BUCKETS_BUCKET,
+    {ok, MasterPbc} = riak_cs_riak_client:master_pbc(RcPid),
+    case riakc_pb_socket:get_index_range(MasterPbc, ?BUCKETS_BUCKET,
                                          <<"$key">>, <<0>>, <<255>>,
                                          Options) of
 
         {ok, ?INDEX_RESULTS{keys=Keys0, continuation=Cont}} ->
 
             Foldfun = fun(Key, Acc1) ->
-                              Res = riakc_pb_socket:get(Pid, ?BUCKETS_BUCKET, Key),
+                              Res = riakc_pb_socket:get(MasterPbc, ?BUCKETS_BUCKET, Key),
                               Fun(Key, Res, Acc1)
                       end,
             Acc2 = lists:foldl(Foldfun, Acc0, Keys0),
@@ -260,7 +262,7 @@ iterate_csbuckets(Pid, Acc0, Fun, Cont0) ->
                 undefined ->
                     {ok, Acc2};
                 _ ->
-                    iterate_csbuckets(Pid, Acc2, Fun, Cont)
+                    iterate_csbuckets(RcPid, Acc2, Fun, Cont)
             end;
 
         Error ->
@@ -277,41 +279,41 @@ get_buckets(?RCS_USER{buckets=Buckets}) ->
 %% @doc Set the ACL for a bucket. Existing ACLs are only
 %% replaced, they cannot be updated.
 -spec set_bucket_acl(rcs_user(), riakc_obj:riakc_obj(), binary(), acl(), pid()) -> ok | {error, term()}.
-set_bucket_acl(User, UserObj, Bucket, ACL, RiakPid) ->
+set_bucket_acl(User, UserObj, Bucket, ACL, RcPid) ->
     serialized_bucket_op(Bucket,
                          ACL,
                          User,
                          UserObj,
                          update_acl,
                          bucket_put_acl,
-                         RiakPid).
+                         RcPid).
 
 %% @doc Set the policy for a bucket. Existing policy is only overwritten.
 -spec set_bucket_policy(rcs_user(), riakc_obj:riakc_obj(), binary(), []|policy()|acl(), pid()) -> ok | {error, term()}.
-set_bucket_policy(User, UserObj, Bucket, PolicyJson, RiakPid) ->
+set_bucket_policy(User, UserObj, Bucket, PolicyJson, RcPid) ->
     serialized_bucket_op(Bucket,
                          PolicyJson,
                          User,
                          UserObj,
                          update_policy,
                          bucket_put_policy,
-                         RiakPid).
+                         RcPid).
 
 %% @doc Set the policy for a bucket. Existing policy is only overwritten.
 -spec delete_bucket_policy(rcs_user(), riakc_obj:riakc_obj(), binary(), pid()) -> ok | {error, term()}.
-delete_bucket_policy(User, UserObj, Bucket, RiakPid) ->
+delete_bucket_policy(User, UserObj, Bucket, RcPid) ->
     serialized_bucket_op(Bucket,
                          [],
                          User,
                          UserObj,
                          delete_policy,
                          bucket_put_policy,
-                         RiakPid).
+                         RcPid).
 
 % @doc fetch moss.bucket and return acl and policy
 -spec get_bucket_acl_policy(binary(), atom(), pid()) -> {acl(), policy()} | {error, term()}.
-get_bucket_acl_policy(Bucket, PolicyMod, RiakPid) ->
-    case fetch_bucket_object(Bucket, RiakPid) of
+get_bucket_acl_policy(Bucket, PolicyMod, RcPid) ->
+    case fetch_bucket_object(Bucket, RcPid) of
         {ok, Obj} ->
             %% For buckets there should not be siblings, but in rare
             %% cases it may happen so check for them and attempt to
@@ -363,48 +365,59 @@ bucket_policy_json(PolicyJson, KeyId)  ->
                           }))).
 
 %% @doc Check if a bucket is empty
--spec bucket_empty(binary(), pid()) -> boolean().
-bucket_empty(Bucket, RiakcPid) ->
+-spec bucket_empty(binary(), pid()) -> {ok, boolean()} | {error, term()}.
+bucket_empty(Bucket, RcPid) ->
     ManifestBucket = riak_cs_utils:to_bucket_name(objects, Bucket),
-    %% @TODO Use `stream_list_keys' instead and
-    ListKeysResult = riak_cs_utils:list_keys(ManifestBucket, RiakcPid),
-    bucket_empty_handle_list_keys(RiakcPid,
-                                  Bucket,
-                                  ListKeysResult).
+    %% @TODO Use `stream_list_keys' instead
+    {ok, ManifestPbc} = riak_cs_riak_client:manifest_pbc(RcPid),
+    ListKeysResult = riak_cs_pbc:list_keys(ManifestPbc, ManifestBucket),
+    {ok, bucket_empty_handle_list_keys(RcPid, Bucket, ListKeysResult)}.
 
 -spec bucket_empty_handle_list_keys(pid(), binary(),
                                     {ok, list()} |
                                     {error, term()}) ->
     boolean().
-bucket_empty_handle_list_keys(RiakcPid, Bucket, {ok, Keys}) ->
-    AnyPred = bucket_empty_any_pred(RiakcPid, Bucket),
+bucket_empty_handle_list_keys(RcPid, Bucket, {ok, Keys}) ->
+    AnyPred = bucket_empty_any_pred(RcPid, Bucket),
     %% `lists:any/2' will break out early as soon
     %% as something returns `true'
     not lists:any(AnyPred, Keys);
-bucket_empty_handle_list_keys(_RiakcPid, _Bucket, _Error) ->
+bucket_empty_handle_list_keys(_RcPid, _Bucket, _Error) ->
     false.
 
--spec bucket_empty_any_pred(RiakcPid :: pid(), Bucket :: binary()) ->
+-spec bucket_empty_any_pred(RcPid :: pid(), Bucket :: binary()) ->
     fun((Key :: binary()) -> boolean()).
-bucket_empty_any_pred(RiakcPid, Bucket) ->
+bucket_empty_any_pred(RcPid, Bucket) ->
     fun (Key) ->
-            riak_cs_utils:key_exists(RiakcPid, Bucket, Key)
+            riak_cs_utils:key_exists(RcPid, Bucket, Key)
     end.
 
 %% @doc Fetches the bucket object and verify its status.
 -spec fetch_bucket_object(binary(), pid()) ->
                                  {ok, riakc_obj:riakc_obj()} | {error, term()}.
-fetch_bucket_object(Bucket, RiakPid) ->
-    case riak_cs_utils:get_object(?BUCKETS_BUCKET, Bucket, RiakPid) of
+fetch_bucket_object(BucketName, RcPid) ->
+    case fetch_bucket_object_raw(BucketName, RcPid) of
         {ok, Obj} ->
-            [Value | _] = Values = riakc_obj:get_values(Obj),
-            maybe_log_sibling_warning(Bucket, Values),
+            [Value | _] = riakc_obj:get_values(Obj),
             case Value of
                 ?FREE_BUCKET_MARKER ->
                     {error, no_such_bucket};
                 _ ->
                     {ok, Obj}
             end;
+        {error, _}=Error ->
+            Error
+    end.
+
+%% @doc Fetches the bucket object, even it is marked as free
+-spec fetch_bucket_object_raw(binary(), pid()) ->
+                                 {ok, riakc_obj:riakc_obj()} | {error, term()}.
+fetch_bucket_object_raw(BucketName, RcPid) ->
+    case riak_cs_riak_client:get_bucket(RcPid, BucketName) of
+        {ok, Obj} ->
+            Values = riakc_obj:get_values(Obj),
+            maybe_log_sibling_warning(BucketName, Values),
+            {ok, Obj};
         {error, _}=Error ->
             Error
     end.
@@ -446,14 +459,15 @@ bucket_exists(Buckets, CheckBucket) ->
 %% bucket creation or deletion.
 -spec bucket_fun(bucket_operation(),
                  binary(),
+                 bag_id(),
                  acl(),
                  string(),
                  {string(), string()},
                  {string(), pos_integer(), boolean()}) -> function().
-bucket_fun(create, Bucket, ACL, KeyId, AdminCreds, StanchionData) ->
+bucket_fun(create, Bucket, BagId, ACL, KeyId, AdminCreds, StanchionData) ->
     {StanchionIp, StanchionPort, StanchionSSL} = StanchionData,
     %% Generate the bucket JSON document
-    BucketDoc = bucket_json(Bucket, ACL, KeyId),
+    BucketDoc = bucket_json(Bucket, BagId, ACL, KeyId),
     fun() ->
             velvet:create_bucket(StanchionIp,
                                  StanchionPort,
@@ -462,7 +476,7 @@ bucket_fun(create, Bucket, ACL, KeyId, AdminCreds, StanchionData) ->
                                  [{ssl, StanchionSSL},
                                   {auth_creds, AdminCreds}])
     end;
-bucket_fun(update_acl, Bucket, ACL, KeyId, AdminCreds, StanchionData) ->
+bucket_fun(update_acl, Bucket, _BagId, ACL, KeyId, AdminCreds, StanchionData) ->
     {StanchionIp, StanchionPort, StanchionSSL} = StanchionData,
     %% Generate the bucket JSON document for the ACL request
     AclDoc = bucket_acl_json(ACL, KeyId),
@@ -475,7 +489,7 @@ bucket_fun(update_acl, Bucket, ACL, KeyId, AdminCreds, StanchionData) ->
                                   [{ssl, StanchionSSL},
                                    {auth_creds, AdminCreds}])
     end;
-bucket_fun(update_policy, Bucket, PolicyJson, KeyId, AdminCreds, StanchionData) ->
+bucket_fun(update_policy, Bucket, _BagId, PolicyJson, KeyId, AdminCreds, StanchionData) ->
     {StanchionIp, StanchionPort, StanchionSSL} = StanchionData,
     %% Generate the bucket JSON document for the ACL request
     PolicyDoc = bucket_policy_json(PolicyJson, KeyId),
@@ -488,7 +502,7 @@ bucket_fun(update_policy, Bucket, PolicyJson, KeyId, AdminCreds, StanchionData) 
                                      [{ssl, StanchionSSL},
                                       {auth_creds, AdminCreds}])
     end;
-bucket_fun(delete_policy, Bucket, _, KeyId, AdminCreds, StanchionData) ->
+bucket_fun(delete_policy, Bucket, _BagId, _, KeyId, AdminCreds, StanchionData) ->
     {StanchionIp, StanchionPort, StanchionSSL} = StanchionData,
     %% Generate the bucket JSON document for the ACL request
     fun() ->
@@ -499,7 +513,7 @@ bucket_fun(delete_policy, Bucket, _, KeyId, AdminCreds, StanchionData) ->
                                         [{ssl, StanchionSSL},
                                          {auth_creds, AdminCreds}])
     end;
-bucket_fun(delete, Bucket, _ACL, KeyId, AdminCreds, StanchionData) ->
+bucket_fun(delete, Bucket, _BagId, _ACL, KeyId, AdminCreds, StanchionData) ->
     {StanchionIp, StanchionPort, StanchionSSL} = StanchionData,
     fun() ->
             velvet:delete_bucket(StanchionIp,
@@ -512,13 +526,18 @@ bucket_fun(delete, Bucket, _ACL, KeyId, AdminCreds, StanchionData) ->
 
 %% @doc Generate a JSON document to use for a bucket
 %% creation request.
--spec bucket_json(binary(), acl(), string()) -> string().
-bucket_json(Bucket, ACL, KeyId)  ->
+-spec bucket_json(binary(), bag_id(), acl(), string()) -> string().
+bucket_json(Bucket, BagId, ACL, KeyId)  ->
+    BagElement = case BagId of
+                     undefined -> [];
+                     _ -> [{<<"bag">>, BagId}]
+                 end,
     binary_to_list(
       iolist_to_binary(
         mochijson2:encode({struct, [{<<"bucket">>, Bucket},
                                     {<<"requester">>, list_to_binary(KeyId)},
-                                    stanchion_acl_utils:acl_to_json_term(ACL)]}))).
+                                    stanchion_acl_utils:acl_to_json_term(ACL)] ++
+                          BagElement}))).
 
 %% @doc Return a bucket record for the specified bucket name.
 -spec bucket_record(binary(), bucket_operation()) -> cs_bucket().
@@ -627,12 +646,28 @@ resolve_buckets([HeadUserRec | RestUserRecs], Buckets, _KeepDeleted) ->
                            pid()) ->
                                   ok |
                                   {error, term()}.
-serialized_bucket_op(Bucket, ACL, User, UserObj, BucketOp, StatName, RiakPid) ->
+serialized_bucket_op(Bucket, ACL, User, UserObj, BucketOp, StatName, RcPid) ->
+    serialized_bucket_op(Bucket, undefined, ACL, User, UserObj,
+                         BucketOp, StatName, RcPid).
+
+%% @doc Shared code used when doing a bucket creation or deletion.
+-spec serialized_bucket_op(binary(),
+                           bag_id(),
+                           [] | acl() | policy(),
+                           rcs_user(),
+                           riakc_obj:riakc_obj(),
+                           bucket_operation(),
+                           atom(),
+                           pid()) ->
+                                  ok |
+                                  {error, term()}.
+serialized_bucket_op(Bucket, BagId, ACL, User, UserObj, BucketOp, StatName, RcPid) ->
     StartTime = os:timestamp(),
     case riak_cs_config:admin_creds() of
         {ok, AdminCreds} ->
             BucketFun = bucket_fun(BucketOp,
                                    Bucket,
+                                   BagId,
                                    ACL,
                                    User?RCS_USER.key_id,
                                    AdminCreds,
@@ -651,7 +686,7 @@ serialized_bucket_op(Bucket, ACL, User, UserObj, BucketOp, StatName, RiakPid) ->
                         {ok, ignore} ->
                             OpResult;
                         {ok, UpdUser} ->
-                            X = riak_cs_utils:save_user(UpdUser, UserObj, RiakPid),
+                            X = riak_cs_utils:save_user(UpdUser, UserObj, RcPid),
                             ok = riak_cs_stats:update_with_start(StatName,
                                                                  StartTime),
                             X

@@ -39,16 +39,19 @@ list_buckets(User=?RCS_USER{buckets=Buckets}) ->
                           {ok, ?LORESP{}} | {error, term()}.
 list_objects([], _, _, _, _) ->
     {error, no_such_bucket};
-list_objects(_UserBuckets, _Bucket, {error, _}=Error, _Options, _RiakPid) ->
+list_objects(_UserBuckets, _Bucket, {error, _}=Error, _Options, _RcPid) ->
     Error;
-list_objects(_UserBuckets, Bucket, MaxKeys, Options, RiakPid) ->
+list_objects(_UserBuckets, Bucket, MaxKeys, Options, RcPid) ->
     ListKeysRequest = riak_cs_list_objects:new_request(Bucket,
                                                        MaxKeys,
                                                        Options),
     BinPid = riak_cs_utils:pid_to_binary(self()),
     CacheKey = << BinPid/binary, <<":">>/binary, Bucket/binary >>,
     UseCache = riak_cs_list_objects_ets_cache:cache_enabled(),
-    case riak_cs_list_objects_utils:start_link(RiakPid,
+    list_objects(RcPid, ListKeysRequest, CacheKey, UseCache).
+
+list_objects(RcPid, ListKeysRequest, CacheKey, UseCache) ->
+    case riak_cs_list_objects_utils:start_link(RcPid,
                                                self(),
                                                ListKeysRequest,
                                                CacheKey,

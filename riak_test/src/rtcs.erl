@@ -49,29 +49,31 @@ setup(NumNodes) ->
     setup(NumNodes, default_configs()).
 
 setup(NumNodes, Configs) ->
-    %% Start the erlcloud app
-    erlcloud:start(),
-
-    %% STFU sasl
-    application:load(sasl),
-    application:set_env(sasl, sasl_error_logger, false),
-
-    Cfgs = configs(Configs),
-    {RiakNodes, _CSNodes, _Stanchion} = Nodes = deploy_nodes(NumNodes, Cfgs),
-    rt:wait_until_nodes_ready(RiakNodes),
-    lager:info("Make cluster"),
-    rtcs:make_cluster(RiakNodes),
-    rt:wait_until_ring_converged(RiakNodes),
-    {AdminKeyId, AdminSecretKey} = setup_admin_user(NumNodes, Cfgs),
-    AdminConfig = config(AdminKeyId,
-                         AdminSecretKey,
-                         rtcs:cs_port(hd(RiakNodes))),
-    {AdminConfig, Nodes}.
+    JoinFun = fun(Nodes) ->
+                      [First|Rest] = Nodes,
+                      [join(Node, First) || Node <- Rest]
+              end,
+    setup_clusters(Configs, JoinFun, NumNodes).
 
 setup2x2() ->
     setup2x2(default_configs()).
 
 setup2x2(Configs) ->
+    JoinFun = fun(Nodes) ->
+                      [A,B,C,D] = Nodes,
+                      join(B,A),
+                      join(D,C)
+              end,
+    setup_clusters(Configs, JoinFun, 4).
+
+setup1x1x1() ->
+    setup1x1x1(default_configs()).
+
+setup1x1x1(Configs) ->
+    JoinFun = fun(_Nodes) -> ok end,
+    setup_clusters(Configs, JoinFun, 3).
+
+setup_clusters(Configs, JoinFun, NumNodes) ->
     %% Start the erlcloud app
     erlcloud:start(),
 
@@ -81,12 +83,14 @@ setup2x2(Configs) ->
 
     Cfgs = configs(Configs),
     lager:info("Configs = ~p", [ Cfgs]),
-    {RiakNodes, _CSNodes, _Stanchion} = Nodes = deploy_nodes(4, Cfgs),
+    {RiakNodes, _CSNodes, _Stanchion} = Nodes = deploy_nodes(NumNodes, Cfgs),
     rt:wait_until_nodes_ready(RiakNodes),
     lager:info("Make cluster"),
-    rtcs:make_2x2_clusters(RiakNodes),
+    JoinFun(RiakNodes),
+    ?assertEqual(ok, wait_until_nodes_ready(RiakNodes)),
+    ?assertEqual(ok, wait_until_no_pending_changes(RiakNodes)),
     rt:wait_until_ring_converged(RiakNodes),
-    {AdminKeyId, AdminSecretKey} = setup_admin_user(4, Cfgs),
+    {AdminKeyId, AdminSecretKey} = setup_admin_user(NumNodes, Cfgs),
     AdminConfig = rtcs:config(AdminKeyId,
                               AdminSecretKey,
                               rtcs:cs_port(hd(RiakNodes))),
@@ -223,6 +227,25 @@ cs_config(UserExtra) ->
           ]
      }].
 
+cs_config(UserExtra, OtherApps) ->
+    [
+     lager_config(),
+     {riak_cs,
+      UserExtra ++
+          [
+           {connection_pools,
+            [
+             {request_pool, {8, 0} },
+             {bucket_list_pool, {2, 0} }
+            ]},
+           {proxy_get, enabled},
+           {anonymous_user_creation, true},
+           {riak_pb_port, 10017},
+           {stanchion_port, 9095},
+           {cs_version, 010300}
+          ]
+     }] ++ OtherApps.
+
 stanchion_config() ->
     [
      lager_config(),
@@ -231,6 +254,17 @@ stanchion_config() ->
        {stanchion_port, 9095},
        {riak_pb_port, 10017}
       ]
+     }].
+
+stanchion_config(UserExtra) ->
+    [
+     lager_config(),
+     {stanchion,
+      UserExtra ++
+          [
+           {stanchion_port, 9095},
+           {riak_pb_port, 10017}
+          ]
      }].
 
 lager_config() ->
@@ -281,6 +315,9 @@ riak_root_and_current(oss) ->
     {?RIAK_ROOT, current};
 riak_root_and_current(ee) ->
     {?EE_ROOT, ee_current}.
+
+cs_current() ->
+    ?CS_CURRENT.
 
 deploy_nodes(NumNodes, InitialConfig) ->
     lager:info("Initial Config: ~p", [InitialConfig]),
@@ -475,20 +512,6 @@ reset_nodes(Project, Path) ->
     lager:debug("Project path for reset: ~p", [Path]),
     rtdev:run_git(Path, "reset HEAD --hard"),
     rtdev:run_git(Path, "clean -fd").
-
-make_cluster(Nodes) ->
-    [First|Rest] = Nodes,
-    [join(Node, First) || Node <- Rest],
-    ?assertEqual(ok, wait_until_nodes_ready(Nodes)),
-    ?assertEqual(ok, wait_until_no_pending_changes(Nodes)).
-
-make_2x2_clusters(Nodes) ->
-    [A,B,C,D] = Nodes,
-    join(B,A),
-    join(D,C),
-    ?assertEqual(ok, wait_until_nodes_ready(Nodes)),
-    ?assertEqual(ok, wait_until_no_pending_changes(Nodes)).
-
 
 start_cs(N) ->
     Cmd = riakcscmd(rt_config:get(?CS_CURRENT), N, "start"),

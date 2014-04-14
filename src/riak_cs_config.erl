@@ -50,7 +50,8 @@
          user_buckets_prune_time/0,
          set_user_buckets_prune_time/1,
          riak_host_port/0,
-         connect_timeout/0
+         connect_timeout/0,
+         is_multibag_enabled/0
         ]).
 
 %% OpenStack config
@@ -179,7 +180,7 @@ use_t2b_compression() ->
 %% After obtaining the clusterid the first time,
 %% store the value in app:set_env
 -spec cluster_id(pid()) -> binary().
-cluster_id(Pid) ->
+cluster_id(RcPid) ->
     case application:get_env(riak_cs, cluster_id) of
         {ok, ClusterID} ->
             ClusterID;
@@ -190,14 +191,16 @@ cluster_id(Pid) ->
                           undefined   ->
                               ?DEFAULT_CLUSTER_ID_TIMEOUT
                       end,
-            maybe_get_cluster_id(proxy_get_active(), Pid, Timeout)
+            maybe_get_cluster_id(proxy_get_active(), RcPid, Timeout)
     end.
 
 %% @doc If `proxy_get' is enabled then attempt to determine the cluster id
 -spec maybe_get_cluster_id(boolean(), pid(), integer()) -> undefined | binary().
-maybe_get_cluster_id(true, Pid, Timeout) ->
+maybe_get_cluster_id(true, RcPid, Timeout) ->
     try
-        case riak_repl_pb_api:get_clusterid(Pid, Timeout) of
+        %% TODO && FIXME!!: DO NOT support multibag YET!!!
+        {ok, MasterPbc} = riak_cs_riak_client:master_pbc(RcPid),
+        case riak_repl_pb_api:get_clusterid(MasterPbc, Timeout) of
             {ok, ClusterID} ->
                 application:set_env(riak_cs, cluster_id, ClusterID),
                 ClusterID;
@@ -299,6 +302,10 @@ connect_timeout() ->
         undefined ->
             10000
     end.
+
+-spec is_multibag_enabled() -> boolean().
+is_multibag_enabled() ->
+    application:get_env(riak_cs_multibag, bags) =/= undefined.
 
 %% ===================================================================
 %% S3 config options

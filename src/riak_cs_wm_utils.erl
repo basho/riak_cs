@@ -77,17 +77,12 @@
 %% ===================================================================
 
 service_available(RD, Ctx) ->
-    case riak_cs_utils:riak_connection() of
-        {ok, Pid} ->
-            {true, RD, Ctx#context{riakc_pid=Pid}};
-        {error, _Reason} ->
-            {false, RD, Ctx}
-    end.
+    service_available(request_pool, RD, Ctx).
 
 service_available(Pool, RD, Ctx) ->
     case riak_cs_utils:riak_connection(Pool) of
-        {ok, Pid} ->
-            {true, RD, Ctx#context{riakc_pid=Pid}};
+        {ok, RcPid} ->
+            {true, RD, Ctx#context{riak_client=RcPid}};
         {error, _Reason} ->
             {false, RD, Ctx}
     end.
@@ -152,12 +147,12 @@ find_and_auth_user(RD, ICtx, Next, AnonymousOk) ->
 
 find_and_auth_user(RD,
                    #context{auth_bypass=AuthBypass,
-                            riakc_pid=RiakPid}=ICtx,
+                            riak_client=RcPid}=ICtx,
                    Next,
                    Conv2KeyCtx,
                    AnonymousOk) ->
     handle_validation_response(
-      validate_auth_header(RD, AuthBypass, RiakPid, ICtx),
+      validate_auth_header(RD, AuthBypass, RcPid, ICtx),
       RD,
       ICtx,
       Next,
@@ -226,7 +221,7 @@ handle_auth_admin(RD, Ctx, User, false) ->
 -spec validate_auth_header(#wm_reqdata{}, term(), pid(), #context{}|undefined) ->
                                   {ok, rcs_user(), riakc_obj:riakc_obj()} |
                                   {error, bad_auth | notfound | no_user_key | term()}.
-validate_auth_header(RD, AuthBypass, RiakPid, Ctx) ->
+validate_auth_header(RD, AuthBypass, RcPid, Ctx) ->
     AuthHeader = wrq:get_req_header("authorization", RD),
     case AuthHeader of
         undefined ->
@@ -239,7 +234,7 @@ validate_auth_header(RD, AuthBypass, RiakPid, Ctx) ->
         _ ->
             {AuthMod, KeyId, Signature} = parse_auth_header(AuthHeader, AuthBypass)
     end,
-    case riak_cs_utils:get_user(KeyId, RiakPid) of
+    case riak_cs_utils:get_user(KeyId, RcPid) of
         {ok, {User, UserObj}} when User?RCS_USER.status =:= enabled ->
             case AuthMod:authenticate(User, Signature, RD, Ctx) of
                 ok ->
@@ -264,16 +259,14 @@ validate_auth_header(RD, AuthBypass, RiakPid, Ctx) ->
             {error, Reason}
     end.
 
-%% @doc Utility function for accessing
-%%      a riakc_obj without retrieving
-%%      it again if it's already in the
-%%      Ctx
+%% @doc Utility function for building #key_contest
+%% Spawns manifest FSM
 -spec ensure_doc(term(), pid()) -> term().
 ensure_doc(KeyCtx=#key_context{bucket_object=undefined,
-                               bucket=Bucket}, RiakcPid) ->
-    case riak_cs_bucket:fetch_bucket_object(Bucket, RiakcPid) of
+                               bucket=Bucket}, RcPid) ->
+    case riak_cs_bucket:fetch_bucket_object(Bucket, RcPid) of
         {ok, Obj} ->
-            setup_manifest(KeyCtx#key_context{bucket_object = Obj}, RiakcPid);
+            setup_manifest(KeyCtx#key_context{bucket_object = Obj}, RcPid);
         {error, Reason} when Reason =:= notfound orelse Reason =:= no_such_bucket ->
             KeyCtx#key_context{bucket_object = notfound}
     end;
@@ -281,17 +274,18 @@ ensure_doc(KeyCtx, _) ->
     KeyCtx.
 
 setup_manifest(KeyCtx=#key_context{bucket=Bucket,
-                                   key=Key}, RiakcPid) ->
+                                   key=Key}, RcPid) ->
     %% start the get_fsm
     BinKey = list_to_binary(Key),
     FetchConcurrency = riak_cs_lfs_utils:fetch_concurrency(),
     BufferFactor = riak_cs_lfs_utils:get_fsm_buffer_size_factor(),
-    {ok, Pid} = riak_cs_get_fsm_sup:start_get_fsm(node(), Bucket, BinKey,
-                                                  self(), RiakcPid,
-                                                  FetchConcurrency,
-                                                  BufferFactor),
-    Manifest = riak_cs_get_fsm:get_manifest(Pid),
-    KeyCtx#key_context{get_fsm_pid=Pid, manifest=Manifest}.
+    {ok, FsmPid} = riak_cs_get_fsm_sup:start_get_fsm(node(), Bucket, BinKey,
+                                                     self(), RcPid,
+                                                     FetchConcurrency,
+                                                     BufferFactor),
+    Manifest = riak_cs_get_fsm:get_manifest(FsmPid),
+    KeyCtx#key_context{get_fsm_pid=FsmPid,
+                       manifest=Manifest}.
 
 %% @doc Produce an api error by using response_module.
 respond_api_error(RD, Ctx, ErrorAtom) ->
@@ -328,9 +322,9 @@ deny_invalid_key(RD, Ctx=#context{response_module=ResponseMod}) ->
 %% to switch to the owner's record if it can be retrieved
 -spec shift_to_owner(#wm_reqdata{}, #context{}, string(), pid()) ->
                             {boolean(), #wm_reqdata{}, #context{}}.
-shift_to_owner(RD, Ctx=#context{response_module=ResponseMod}, OwnerId, RiakPid)
-  when RiakPid /= undefined ->
-    case riak_cs_utils:get_user(OwnerId, RiakPid) of
+shift_to_owner(RD, Ctx=#context{response_module=ResponseMod}, OwnerId, RcPid)
+  when RcPid /= undefined ->
+    case riak_cs_utils:get_user(OwnerId, RcPid) of
         {ok, {Owner, OwnerObject}} when Owner?RCS_USER.status =:= enabled ->
             AccessRD = riak_cs_access_log_handler:set_user(Owner, RD),
             {false, AccessRD, Ctx#context{user=Owner,
@@ -433,8 +427,8 @@ maybe_update_context_with_acl_from_headers(RD,
                                            Ctx=#context{user=User,
                                                         bucket=BucketName,
                                                         local_context=LocalCtx,
-                                                        riakc_pid=RiakcPid}) ->
-    case bucket_obj_from_local_context(LocalCtx, BucketName, RiakcPid) of
+                                                        riak_client=RcPid}) ->
+    case bucket_obj_from_local_context(LocalCtx, BucketName, RcPid) of
         {ok, BucketObject} ->
             case maybe_acl_from_context_and_request(RD, Ctx, BucketObject) of
                 {ok, {error, BadAclReason}} ->
@@ -459,8 +453,8 @@ maybe_update_context_with_acl_from_headers(RD,
 bucket_obj_from_local_context(#key_context{bucket_object=BucketObject},
                               _BucketName, _Pid) ->
     {ok, BucketObject};
-bucket_obj_from_local_context(undefined, BucketName, RiakcPid) ->
-    case riak_cs_bucket:fetch_bucket_object(BucketName, RiakcPid) of
+bucket_obj_from_local_context(undefined, BucketName, RcPid) ->
+    case riak_cs_bucket:fetch_bucket_object(BucketName, RcPid) of
         {error, notfound} ->
             {ok, undefined};
         {error, no_such_bucket} ->
@@ -477,7 +471,7 @@ bucket_obj_from_local_context(undefined, BucketName, RiakcPid) ->
                                          riakc_obj:riakc_obj()) ->
     {ok, acl_or_error()} | error.
 maybe_acl_from_context_and_request(RD, #context{user=User,
-                                                riakc_pid=RiakcPid},
+                                                riak_client=RcPid},
                                   BucketObj) ->
     case has_acl_header(RD) of
         true ->
@@ -486,7 +480,7 @@ maybe_acl_from_context_and_request(RD, #context{user=User,
             Owner = {User?RCS_USER.display_name,
                      User?RCS_USER.canonical_id,
                      User?RCS_USER.key_id},
-            {ok, acl_from_headers(Headers, Owner, BucketOwner, RiakcPid)};
+            {ok, acl_from_headers(Headers, Owner, BucketOwner, RcPid)};
         false ->
             error
     end.
@@ -641,7 +635,7 @@ extract_user_metadata([_ | Headers], Acc) ->
 -spec bucket_access_authorize_helper(AccessType::atom(), boolean(),
                                      RD::term(), Ctx::#context{}) -> term().
 bucket_access_authorize_helper(AccessType, Deletable, RD, Ctx) ->
-    #context{riakc_pid=RiakPid,
+    #context{riak_client=RcPid,
              policy_module=PolicyMod} = Ctx,
     Method = wrq:method(RD),
     RequestedAccess =
@@ -650,7 +644,7 @@ bucket_access_authorize_helper(AccessType, Deletable, RD, Ctx) ->
     PermCtx = Ctx#context{bucket=Bucket,
                           requested_perm=RequestedAccess},
     handle_bucket_acl_policy_response(
-      riak_cs_bucket:get_bucket_acl_policy(Bucket, PolicyMod, RiakPid),
+      riak_cs_bucket:get_bucket_acl_policy(Bucket, PolicyMod, RcPid),
       AccessType,
       Deletable,
       RD,
@@ -664,13 +658,13 @@ handle_bucket_acl_policy_response({error, Reason}, _, _, RD, Ctx) ->
     ResponseMod:api_error(Reason, RD, Ctx);
 handle_bucket_acl_policy_response({Acl, Policy}, AccessType, DeleteEligible, RD, Ctx) ->
     #context{bucket=Bucket,
-             riakc_pid=RiakPid,
+             riak_client=RcPid,
              user=User,
              requested_perm=RequestedAccess} = Ctx,
     AclCheckRes = riak_cs_acl_utils:check_grants(User,
                                                  Bucket,
                                                  RequestedAccess,
-                                                 RiakPid,
+                                                 RcPid,
                                                  Acl),
     Deletable = DeleteEligible andalso (RequestedAccess =:= 'WRITE'),
     handle_acl_check_result(AclCheckRes, Acl, Policy, AccessType, Deletable, RD, Ctx).
@@ -703,12 +697,12 @@ handle_acl_check_result({true, _OwnerId}, _, _, _, true, RD, Ctx) ->
 handle_acl_check_result({true, OwnerId}, _, _, _, _, RD, Ctx) ->
     %% this operation is allowed, but we need to get the owner's
     %% record, and log the access against them instead of the actor
-    riak_cs_wm_utils:shift_to_owner(RD, Ctx, OwnerId, Ctx#context.riakc_pid);
+    riak_cs_wm_utils:shift_to_owner(RD, Ctx, OwnerId, Ctx#context.riak_client);
 handle_acl_check_result(false, _, undefined, _, _Deletable, RD, Ctx) ->
     %% No policy so emulate a policy eval failure to avoid code duplication
     handle_policy_eval_result(Ctx#context.user, false, undefined, RD, Ctx);
 handle_acl_check_result(false, Acl, Policy, AccessType, _Deletable, RD, Ctx) ->
-    #context{riakc_pid=RiakPid,
+    #context{riak_client=RcPid,
              user=User0} = Ctx,
     PolicyMod = Ctx#context.policy_module,
     User = case User0 of
@@ -717,14 +711,14 @@ handle_acl_check_result(false, Acl, Policy, AccessType, _Deletable, RD, Ctx) ->
            end,
     Access = PolicyMod:reqdata_to_access(RD, AccessType, User),
     PolicyResult = PolicyMod:eval(Access, Policy),
-    OwnerId = riak_cs_acl:owner_id(Acl, RiakPid),
+    OwnerId = riak_cs_acl:owner_id(Acl, RcPid),
     handle_policy_eval_result(User, PolicyResult, OwnerId, RD, Ctx).
 
 handle_policy_eval_result(_, true, OwnerId, RD, Ctx) ->
     %% Policy says yes while ACL says no
-    shift_to_owner(RD, Ctx, OwnerId, Ctx#context.riakc_pid);
+    shift_to_owner(RD, Ctx, OwnerId, Ctx#context.riak_client);
 handle_policy_eval_result(User, _, _, RD, Ctx) ->
-    #context{riakc_pid=RiakPid,
+    #context{riak_client=RcPid,
              response_module=ResponseMod,
              user=User,
              bucket=Bucket} = Ctx,
@@ -732,7 +726,7 @@ handle_policy_eval_result(User, _, _, RD, Ctx) ->
     AccessRD = riak_cs_access_log_handler:set_user(User, RD),
     %% Check if the bucket actually exists so we can
     %% make the correct decision to return a 404 or 403
-    case riak_cs_bucket:fetch_bucket_object(Bucket, RiakPid) of
+    case riak_cs_bucket:fetch_bucket_object(Bucket, RcPid) of
         {ok, _} ->
             riak_cs_wm_utils:deny_access(AccessRD, Ctx);
         {error, Reason} ->
@@ -751,13 +745,13 @@ is_acl_request(_) ->
 
 -spec object_access_authorize_helper(AccessType::atom(), boolean(),
                                      RD::term(), Ctx::term()) ->
-    authorized_response().
+                                            authorized_response().
 object_access_authorize_helper(AccessType, Deletable, RD, Ctx) ->
     object_access_authorize_helper(AccessType, Deletable, false, RD, Ctx).
 
 -spec object_access_authorize_helper(AccessType::atom(), boolean(), boolean(),
                                      RD::term(), Ctx::term()) ->
-    authorized_response().
+                                            authorized_response().
 object_access_authorize_helper(AccessType, Deletable, SkipAcl,
                                RD, #context{policy_module=PolicyMod,
                                             local_context=LocalCtx,
@@ -785,7 +779,7 @@ check_object_authorization(AccessType, Deletable, SkipAcl, Policy,
                            RD, #context{user=User,
                                         policy_module=PolicyMod,
                                         local_context=LocalCtx,
-                                        riakc_pid=RiakPid}=Ctx) ->
+                                        riak_client=RcPid}=Ctx) ->
     Method = wrq:method(RD),
     #key_context{bucket=_Bucket, bucket_object=BucketObj, manifest=Manifest} = LocalCtx,
     CanonicalId = extract_canonical_id(User),
@@ -798,7 +792,7 @@ check_object_authorization(AccessType, Deletable, SkipAcl, Policy,
                                                  ObjectAcl,
                                                  RequestedAccess,
                                                  CanonicalId,
-                                                 RiakPid)
+                                                 RcPid)
           end,
     case {Acl, PolicyMod:eval(Access, Policy)} of
         {true, false} ->
@@ -816,9 +810,9 @@ check_object_authorization(AccessType, Deletable, SkipAcl, Policy,
             actor_is_not_owner_but_allowed_policy(User, OwnerId, RD, Ctx, LocalCtx);
         {false, true} ->
             %% actor is not the owner, not permitted by ACL but permitted by policy
-            just_allowed_by_policy(ObjectAcl, RiakPid, RD, Ctx, LocalCtx);
+            just_allowed_by_policy(ObjectAcl, RcPid, RD, Ctx, LocalCtx);
         {false, _} ->
-            % policy says undefined or false
+                                                % policy says undefined or false
             %% ACL check failed, deny access
             riak_cs_wm_utils:deny_access(RD, Ctx)
     end.
@@ -827,14 +821,14 @@ check_object_authorization(AccessType, Deletable, SkipAcl, Policy,
 %% object_acces_authorize_helper helper functions
 
 -spec extract_canonical_id(rcs_user() | undefined) ->
-    undefined | string().
+                                  undefined | string().
 extract_canonical_id(undefined) ->
     undefined;
 extract_canonical_id(?RCS_USER{canonical_id=CanonicalID}) ->
     CanonicalID.
 
 -spec requested_access_helper(object | object_part | object_acl, atom()) ->
-    acl_perm().
+                                     acl_perm().
 requested_access_helper(object, Method) ->
     riak_cs_acl_utils:requested_access(Method, false);
 requested_access_helper(object_part, Method) ->
@@ -843,7 +837,7 @@ requested_access_helper(object_acl, Method) ->
     riak_cs_acl_utils:requested_access(Method, true).
 
 -spec extract_object_acl(notfound | lfs_manifest()) ->
-    undefined | acl().
+                                undefined | acl().
 extract_object_acl(notfound) ->
     undefined;
 extract_object_acl(?MANIFEST{acl=Acl}) ->
@@ -863,7 +857,7 @@ translate_bucket_policy(PolicyMod, BucketObj) ->
         {error, notfound}=Error1 ->
             Error1;
         {error, multiple_bucket_owners}=Error2 ->
-             Error2
+            Error2
     end.
 
 %% Helper functions for dealing with combinations of Object ACL
@@ -875,23 +869,23 @@ translate_bucket_policy(PolicyMod, BucketObj) ->
                                        Ctx :: term(),
                                        Method :: atom(),
                                        Deletable :: boolean()) ->
-    authorized_response().
+                                              authorized_response().
 actor_is_owner_but_denied_policy(User, RD, Ctx, Method, Deletable)
-        when Method =:= 'PUT' orelse
-             Method =:= 'POST' orelse
-             (Deletable andalso Method =:= 'DELETE') ->
+  when Method =:= 'PUT' orelse
+       Method =:= 'POST' orelse
+       (Deletable andalso Method =:= 'DELETE') ->
     AccessRD = riak_cs_access_log_handler:set_user(User, RD),
     riak_cs_wm_utils:deny_access(AccessRD, Ctx);
 actor_is_owner_but_denied_policy(User, RD, Ctx, Method, Deletable)
-        when Method =:= 'GET' orelse
-             (Deletable andalso Method =:= 'HEAD') ->
+  when Method =:= 'GET' orelse
+       (Deletable andalso Method =:= 'HEAD') ->
     {{halt, 404}, riak_cs_access_log_handler:set_user(User, RD), Ctx}.
 
 -spec actor_is_owner_and_allowed_policy(User :: rcs_user(),
                                         RD :: term(),
                                         Ctx :: term(),
                                         LocalCtx :: term()) ->
-    authorized_response().
+                                               authorized_response().
 actor_is_owner_and_allowed_policy(undefined, RD, Ctx, _LocalCtx) ->
     {false, RD, Ctx};
 actor_is_owner_and_allowed_policy(User, RD, Ctx, LocalCtx) ->
@@ -904,15 +898,15 @@ actor_is_owner_and_allowed_policy(User, RD, Ctx, LocalCtx) ->
                                            Ctx :: term(),
                                            Method :: atom(),
                                            Deletable :: boolean()) ->
-    authorized_response().
+                                                  authorized_response().
 actor_is_not_owner_and_denied_policy(OwnerId, RD, Ctx, Method, Deletable)
-        when Method =:= 'PUT' orelse
-        (Deletable andalso Method =:= 'DELETE') ->
+  when Method =:= 'PUT' orelse
+       (Deletable andalso Method =:= 'DELETE') ->
     AccessRD = riak_cs_access_log_handler:set_user(OwnerId, RD),
     riak_cs_wm_utils:deny_access(AccessRD, Ctx);
 actor_is_not_owner_and_denied_policy(_OwnerId, RD, Ctx, Method, Deletable)
-        when Method =:= 'GET' orelse
-        (Deletable andalso Method =:= 'HEAD') ->
+  when Method =:= 'GET' orelse
+       (Deletable andalso Method =:= 'HEAD') ->
     {{halt, 404}, RD, Ctx}.
 
 -spec actor_is_not_owner_but_allowed_policy(User :: rcs_user(),
@@ -920,33 +914,33 @@ actor_is_not_owner_and_denied_policy(_OwnerId, RD, Ctx, Method, Deletable)
                                             RD :: term(),
                                             Ctx :: term(),
                                             LocalCtx :: term()) ->
-    authorized_response().
+                                                   authorized_response().
 actor_is_not_owner_but_allowed_policy(undefined, OwnerId, RD, Ctx, LocalCtx) ->
     %% This is an anonymous request so shift to the context of the
     %% owner for the remainder of the request.
     AccessRD = riak_cs_access_log_handler:set_user(OwnerId, RD),
     UpdCtx = Ctx#context{local_context=LocalCtx#key_context{owner=OwnerId}},
-    shift_to_owner(AccessRD, UpdCtx, OwnerId, Ctx#context.riakc_pid);
+    shift_to_owner(AccessRD, UpdCtx, OwnerId, Ctx#context.riak_client);
 actor_is_not_owner_but_allowed_policy(_, OwnerId, RD, Ctx, LocalCtx) ->
     AccessRD = riak_cs_access_log_handler:set_user(OwnerId, RD),
     UpdCtx = Ctx#context{local_context=LocalCtx#key_context{owner=OwnerId}},
     {false, AccessRD, UpdCtx}.
 
 -spec just_allowed_by_policy(ObjectAcl :: acl(),
-                              RiakPid :: pid(),
+                              RcPid :: pid(),
                               RD :: term(),
                               Ctx :: term(),
                               LocalCtx :: term()) ->
     authorized_response().
-just_allowed_by_policy(ObjectAcl, RiakPid, RD, Ctx, LocalCtx) ->
-    OwnerId = riak_cs_acl:owner_id(ObjectAcl, RiakPid),
+just_allowed_by_policy(ObjectAcl, RcPid, RD, Ctx, LocalCtx) ->
+    OwnerId = riak_cs_acl:owner_id(ObjectAcl, RcPid),
     AccessRD = riak_cs_access_log_handler:set_user(OwnerId, RD),
     UpdLocalCtx = LocalCtx#key_context{owner=OwnerId},
     {false, AccessRD, Ctx#context{local_context=UpdLocalCtx}}.
 
 -spec fetch_bucket_owner(binary(), pid()) -> undefined | acl_owner().
-fetch_bucket_owner(Bucket, RiakPid) ->
-    case riak_cs_acl:fetch_bucket_acl(Bucket, RiakPid) of
+fetch_bucket_owner(Bucket, RcPid) ->
+    case riak_cs_acl:fetch_bucket_acl(Bucket, RcPid) of
         {ok, Acl} ->
             Acl?ACL.owner;
         {error, Reason} ->

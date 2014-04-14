@@ -32,8 +32,7 @@
          valid_entity_length/2,
          delete_resource/2,
          accept_body/2,
-         to_xml/2,
-         finish_request/2]).
+         to_xml/2]).
 
 -include("riak_cs.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
@@ -55,11 +54,11 @@ malformed_request(RD,Ctx) ->
 %% directly returning from the {@link forbidden/2} webmachine export.
 -spec authorize(#wm_reqdata{}, #context{}) ->
                        {boolean() | {halt, term()}, #wm_reqdata{}, #context{}}.
-authorize(RD, Ctx0=#context{local_context=LocalCtx0, riakc_pid=RiakPid}) ->
+authorize(RD, Ctx0=#context{local_context=LocalCtx0, riak_client=RcPid}) ->
     Method = wrq:method(RD),
     RequestedAccess =
         riak_cs_acl_utils:requested_access(Method, false),
-    LocalCtx = riak_cs_wm_utils:ensure_doc(LocalCtx0, RiakPid),
+    LocalCtx = riak_cs_wm_utils:ensure_doc(LocalCtx0, RcPid),
     Ctx = Ctx0#context{requested_perm=RequestedAccess, local_context=LocalCtx},
     authorize(RD, Ctx,
               LocalCtx#key_context.bucket_object,
@@ -86,8 +85,7 @@ allowed_methods() ->
 post_is_create(RD, Ctx) ->
     {false, RD, Ctx}.
 
-process_post(RD, Ctx=#context{local_context=LocalCtx,
-                              riakc_pid=RiakcPid}) ->
+process_post(RD, Ctx=#context{local_context=LocalCtx, riak_client=RcPid}) ->
     #key_context{bucket=Bucket, key=Key} = LocalCtx,
     User = riak_cs_mp_utils:user_rec_to_3tuple(Ctx#context.user),
     UploadId64 = re:replace(wrq:path(RD), ".*/uploads/", "", [{return, binary}]),
@@ -97,7 +95,8 @@ process_post(RD, Ctx=#context{local_context=LocalCtx,
             {{halt,477}, RD, Ctx};
         {PartETags, UploadId} ->
             case riak_cs_mp_utils:complete_multipart_upload(
-                   Bucket, list_to_binary(Key), UploadId, PartETags, User, RiakcPid) of
+                   Bucket, list_to_binary(Key), UploadId, PartETags, User,
+                   RcPid) of
                 ok ->
                     XmlDoc = {'CompleteMultipartUploadResult',
                               [{'xmlns', "http://s3.amazonaws.com/doc/2006-03-01/"}],
@@ -147,7 +146,7 @@ valid_entity_length(RD, Ctx=#context{local_context=LocalCtx}) ->
 -spec delete_resource(#wm_reqdata{}, #context{}) ->
                              {boolean() | {'halt', term()}, #wm_reqdata{}, #context{}}.
 delete_resource(RD, Ctx=#context{local_context=LocalCtx,
-                                 riakc_pid=RiakcPid}) ->
+                                 riak_client=RcPid}) ->
     case (catch base64url:decode(wrq:path_info('uploadId', RD))) of
         {'EXIT', _Reason} ->
             {{halt, 404}, RD, Ctx};
@@ -156,7 +155,7 @@ delete_resource(RD, Ctx=#context{local_context=LocalCtx,
             Key = list_to_binary(KeyStr),
             User = riak_cs_mp_utils:user_rec_to_3tuple(Ctx#context.user),
             case riak_cs_mp_utils:abort_multipart_upload(Bucket, Key, UploadId,
-                                                         User, RiakcPid) of
+                                                         User, RcPid) of
                 ok ->
                     {true, RD, Ctx};
                 {error, notfound} ->
@@ -165,10 +164,6 @@ delete_resource(RD, Ctx=#context{local_context=LocalCtx,
                     riak_cs_s3_response:api_error(Reason, RD, Ctx)
             end
     end.
-
-finish_request(RD, Ctx) ->
-    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"finish_request">>, [0], []),
-    {true, RD, Ctx}.
 
 -spec content_types_provided(#wm_reqdata{}, #context{}) -> {[{string(), atom()}], #wm_reqdata{}, #context{}}.
 content_types_provided(RD, Ctx=#context{}) ->
@@ -207,7 +202,7 @@ parse_body(Body0) ->
 
 -spec accept_body(#wm_reqdata{}, #context{}) -> {{halt, integer()}, #wm_reqdata{}, #context{}}.
 accept_body(RD, Ctx0=#context{local_context=LocalCtx0,
-                              riakc_pid=RiakcPid}) ->
+                              riak_client=RcPid}) ->
     #key_context{bucket=Bucket,
                  key=Key,
                  size=Size,
@@ -221,7 +216,7 @@ accept_body(RD, Ctx0=#context{local_context=LocalCtx0,
         {t, {ok, PartNumber}} =
             {t, riak_cs_utils:safe_list_to_integer(wrq:get_qs_value("partNumber", RD))},
         case riak_cs_mp_utils:upload_part(Bucket, Key, UploadId, PartNumber,
-                                          Size, Caller, RiakcPid) of
+                                          Size, Caller, RcPid) of
             {upload_part_ready, PartUUID, PutPid} ->
                 LocalCtx = LocalCtx0#key_context{upload_id=UploadId,
                                                  part_number=PartNumber,
@@ -267,13 +262,13 @@ accept_streambody(RD,
     end.
 
 to_xml(RD, Ctx=#context{local_context=LocalCtx,
-                        riakc_pid=RiakcPid}) ->
+                        riak_client=RcPid}) ->
     #key_context{bucket=Bucket, key=Key} = LocalCtx,
     UploadId = base64url:decode(re:replace(wrq:path(RD), ".*/uploads/",
                                            "", [{return, binary}])),
     {UserDisplay, _Canon, UserKeyId} = User =
         riak_cs_mp_utils:user_rec_to_3tuple(Ctx#context.user),
-    case riak_cs_mp_utils:list_parts(Bucket, Key, UploadId, User, [], RiakcPid) of
+    case riak_cs_mp_utils:list_parts(Bucket, Key, UploadId, User, [], RcPid) of
         {ok, Ps} ->
             Us = [{'Part',
                    [
@@ -320,7 +315,7 @@ to_xml(RD, Ctx=#context{local_context=LocalCtx,
 
 finalize_request(RD, Ctx=#context{local_context=LocalCtx,
                                   response_module=ResponseMod,
-                                  riakc_pid=RiakcPid}, PutPid) ->
+                                  riak_client=RcPid}, PutPid) ->
     #key_context{bucket=Bucket,
                  key=Key,
                  upload_id=UploadId,
@@ -332,7 +327,7 @@ finalize_request(RD, Ctx=#context{local_context=LocalCtx,
         {ok, M} ->
             case riak_cs_mp_utils:upload_part_finished(
                    Bucket, Key, UploadId, PartNumber, PartUUID,
-                   M?MANIFEST.content_md5, Caller, RiakcPid) of
+                   M?MANIFEST.content_md5, Caller, RcPid) of
                 ok ->
                     ETag = riak_cs_utils:etag_from_binary(M?MANIFEST.content_md5),
                     RD2 = wrq:set_resp_header("ETag", ETag, RD),

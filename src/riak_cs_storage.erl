@@ -47,13 +47,12 @@
 %% `{BucketName, Bytes}`.
 -spec sum_user(pid(), string()) -> {ok, [{string(), integer()}]}
                                  | {error, term()}.
-sum_user(Riak, User) when is_binary(User) ->
-    sum_user(Riak, binary_to_list(User));
-sum_user(Riak, User) when is_list(User) ->
-    case riak_cs_utils:get_user(User, Riak) of
+sum_user(RcPid, User) when is_binary(User) ->
+    sum_user(RcPid, binary_to_list(User));
+sum_user(RcPid, User) when is_list(User) ->
+    case riak_cs_utils:get_user(User, RcPid) of
         {ok, {?RCS_USER{buckets=Buckets}, _UserObj}} ->
-            BucketUsages = [maybe_sum_bucket(Riak, User, B)
-                            || ?RCS_BUCKET{name=B} <- Buckets],
+            BucketUsages = [maybe_sum_bucket(RcPid, User, B) || B <- Buckets],
             {ok, BucketUsages};
         {error, Error} ->
             {error, Error}
@@ -63,19 +62,19 @@ sum_user(Riak, User) when is_list(User) ->
 %%      This log is *very* important because unless this log
 %%      there are no other way for operator to know a calculation
 %%      which riak_cs_storage_d failed.
--spec maybe_sum_bucket(pid(), string(), string()|binary()) ->
+-spec maybe_sum_bucket(pid(), string(), cs_bucket()) ->
                               {binary(), [{binary(), integer()}]} |
                               {binary(), binary()}.
-maybe_sum_bucket(Riak, User, Bucket) when is_list(Bucket)->
-    maybe_sum_bucket(Riak, User, list_to_binary(Bucket));
-maybe_sum_bucket(Riak, User, Bucket) when is_binary(Bucket)->
-    case sum_bucket(Riak, Bucket) of
-        {struct, _} = BucketUsage -> {Bucket, BucketUsage};
+maybe_sum_bucket(RcPid, User, ?RCS_BUCKET{name=Name} = Bucket) when is_list(Name) ->
+    maybe_sum_bucket(RcPid, User, Bucket?RCS_BUCKET{name=list_to_binary(Name)});
+maybe_sum_bucket(RcPid, User, ?RCS_BUCKET{name=Name} = _Bucket) when is_binary(Name) ->
+    case sum_bucket(RcPid, Name) of
+        {struct, _} = BucketUsage -> {Name, BucketUsage};
         {error, _} = E ->
             _ = lager:error("failed to calculate usage of "
                             "bucket '~s' of user '~s'. Reason: ~p",
-                            [Bucket, User, E]),
-            {Bucket, iolist_to_binary(io_lib:format("~p", [E]))}
+                            [Name, User, E]),
+            {Name, iolist_to_binary(io_lib:format("~p", [E]))}
     end.
 
 %% @doc Sum the number of bytes stored in active files in the named
@@ -88,13 +87,15 @@ maybe_sum_bucket(Riak, User, Bucket) when is_binary(Bucket)->
 %% `Bytes', which is the total size of all of those objects.
 -spec sum_bucket(pid(), binary()) -> {struct, [{binary(), integer()}]}
                                    | {error, term()}.
-sum_bucket(Riak, Bucket) ->
-    FullBucket = riak_cs_utils:to_bucket_name(objects, Bucket),
+sum_bucket(RcPid, BucketName) ->
     Query = [{map, {modfun, riak_cs_storage, object_size_map},
               [do_prereduce], false},
              {reduce, {modfun, riak_cs_storage, object_size_reduce},
               none, true}],
-    case riakc_pb_socket:mapred(Riak, FullBucket, Query) of
+    ok = riak_cs_riak_client:set_bucket_name(RcPid, BucketName),
+    {ok, ManifestPbc} = riak_cs_riak_client:manifest_pbc(RcPid),
+    ManifestBucket = riak_cs_utils:to_bucket_name(objects, BucketName),
+    case riakc_pb_socket:mapred(ManifestPbc, ManifestBucket, Query) of
         {ok, Results} ->
             {1, [{Objects, Bytes}]} = lists:keyfind(1, 1, Results),
             {struct, [{<<"Objects">>, Objects},

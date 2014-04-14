@@ -138,9 +138,9 @@ merge_stats(Stats, Acc) ->
                 calendar:datetime(),
                 calendar:datetime()) ->
          {Usage::orddict:orddict(), Errors::[{slice(), term()}]}.
-get_usage(Riak, User, Start, End) ->
+get_usage(RcPid, User, Start, End) ->
     {ok, Period} = archive_period(),
-    {Usage, Errors} = rts:find_samples(Riak, ?ACCESS_BUCKET, User,
+    {Usage, Errors} = rts:find_samples(RcPid, ?ACCESS_BUCKET, User,
                                        Start, End, Period),
     {group_by_node(Usage), Errors}.
 

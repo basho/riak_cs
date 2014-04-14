@@ -76,12 +76,12 @@
 %% old mechanism if `fold_objects_for_list_keys' is false, otherwise uses
 %% the new one. After getting a pid back, the API is the same, so users don't
 %% need to differentiate.
-start_link(RiakcPid, CallerPid, ListKeysRequest, CacheKey, UseCache) ->
+start_link(RcPid, CallerPid, ListKeysRequest, CacheKey, UseCache) ->
     case fold_objects_for_list_keys() of
         true ->
-            riak_cs_list_objects_fsm_v2:start_link(RiakcPid, ListKeysRequest);
+            riak_cs_list_objects_fsm_v2:start_link(RcPid, ListKeysRequest);
         false ->
-            riak_cs_list_objects_fsm:start_link(RiakcPid, CallerPid,
+            riak_cs_list_objects_fsm:start_link(RcPid, CallerPid,
                                                 ListKeysRequest, CacheKey,
                                                 UseCache)
     end.

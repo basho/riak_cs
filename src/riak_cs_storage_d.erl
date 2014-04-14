@@ -57,12 +57,12 @@
           current,       %% what schedule we're calculating for now
           next,          %% the next scheduled time
 
-          riak,          %% client we're currently using
+          riak_client,   %% client we're currently using
           batch_start,   %% the time we actually started
           batch_count=0, %% count of users processed so far
           batch_skips=0, %% count of users skipped so far
           batch=[],      %% users left to process in this batch
-          recalc        %% recalculate a user's storage for this period?
+          recalc         %% recalculate a user's storage for this period?
          }).
 
 -type state() :: #state{}.
@@ -149,8 +149,8 @@ calculating(continue, #state{batch=[], current=Current}=State) ->
     %% finished with this batch
     _ = lager:info("Finished storage calculation in ~b seconds.",
                    [elapsed(State#state.batch_start)]),
-    riak_cs_riakc_pool_worker:stop(State#state.riak),
-    NewState = State#state{riak=undefined,
+    riak_cs_riak_client:stop(State#state.riak_client),
+    NewState = State#state{riak_client=undefined,
                            last=Current,
                            current=undefined},
     {next_state, idle, NewState};
@@ -204,8 +204,8 @@ calculating(cancel_batch, _From, #state{current=Current}=State) ->
     %% finished with this batch
     _ = lager:info("Canceled storage calculation after ~b seconds.",
                    [elapsed(State#state.batch_start)]),
-    riak_cs_riakc_pool_worker:stop(State#state.riak),
-    NewState = State#state{riak=undefined,
+    riak_cs_riak_client:stop(State#state.riak_client),
+    NewState = State#state{riak_client=undefined,
                            last=Current,
                            current=undefined,
                            batch=[]},
@@ -340,21 +340,22 @@ start_batch(Options, Time, State) ->
     %% pool is empty; pool workers just happen to be literally the
     %% socket process, so "starting" one here is the same as opening a
     %% connection, and avoids duplicating the configuration lookup code
-    {ok, Riak} = riak_cs_riakc_pool_worker:start_link([]),
-    Batch = fetch_user_list(Riak),
+    {ok, RcPid} = riak_cs_riak_client:start_link([]),
+    Batch = fetch_user_list(RcPid),
 
     gen_fsm:send_event(?SERVER, continue),
     State#state{batch_start=BatchStart,
                 current=Time,
-                riak=Riak,
+                riak_client=RcPid,
                 batch=Batch,
                 batch_count=0,
                 batch_skips=0,
                 recalc=Recalc}.
 
 %% @doc Grab the whole list of Riak CS users.
-fetch_user_list(Riak) ->
-    case riakc_pb_socket:list_keys(Riak, ?USER_BUCKET) of
+fetch_user_list(RcPid) ->
+    {ok, MasterPbc} = riak_cs_riak_client:master_pbc(RcPid),
+    case riakc_pb_socket:list_keys(MasterPbc, ?USER_BUCKET) of
         {ok, Users} -> Users;
         {error, Error} ->
             _ = lager:error("Storage calculator was unable"
@@ -364,13 +365,13 @@ fetch_user_list(Riak) ->
     end.
 
 %% @doc Compute storage for the next user in the batch.
-calculate_next_user(#state{riak=Riak,
+calculate_next_user(#state{riak_client=RcPid,
                            batch=[User|Rest],
                            recalc=Recalc}=State) ->
     Start = calendar:universal_time(),
-    case recalc(Recalc, Riak, User, Start) of
+    case recalc(Recalc, RcPid, User, Start) of
         true ->
-            _ = case riak_cs_storage:sum_user(Riak, User) of
+            _ = case riak_cs_storage:sum_user(RcPid, User) of
                     {ok, BucketList} ->
                         End = calendar:universal_time(),
                         store_user(State, User, BucketList, Start, End);
@@ -383,13 +384,13 @@ calculate_next_user(#state{riak=Riak,
             State#state{batch=Rest, batch_skips=1+State#state.batch_skips}
     end.
 
-recalc(true, _Riak, _User, _Time) ->
+recalc(true, _RcPid, _User, _Time) ->
     %% the user demanded recalculations
     true;
-recalc(false, Riak, User, Time) ->
+recalc(false, RcPid, User, Time) ->
     {ok, Period} = riak_cs_storage:archive_period(),
     {Start, End} = rts:slice_containing(Time, Period),
-    case riak_cs_storage:get_usage(Riak, User, Start, End) of
+    case riak_cs_storage:get_usage(RcPid, User, Start, End) of
         {[], _} ->
             %% No samples were found for this time period (or all
             %% attempts ended in error); calculate
@@ -400,9 +401,10 @@ recalc(false, Riak, User, Time) ->
     end.
 
 %% @doc Archive a user's storage calculation.
-store_user(#state{riak=Riak}, User, BucketList, Start, End) ->
+store_user(#state{riak_client=RcPid}, User, BucketList, Start, End) ->
     Obj = riak_cs_storage:make_object(User, BucketList, Start, End),
-    case riakc_pb_socket:put(Riak, Obj) of
+    {ok, MasterPbc} = riak_cs_riak_client:master_pbc(RcPid),
+    case riakc_pb_socket:put(MasterPbc, Obj) of
         ok -> ok;
         {error, Error} ->
             _ = lager:error("Error storing storage for user ~s (~p)",

@@ -72,17 +72,17 @@ cleanup_orphan_multipart(Timestamp) when is_list(Timestamp) ->
     cleanup_orphan_multipart(list_to_binary(Timestamp));
 cleanup_orphan_multipart(Timestamp) when is_binary(Timestamp) ->
 
-    {ok, Pid} = riak_cs_riakc_pool_worker:start_link([]),
+    {ok, RcPid} = riak_cs_riak_client:start_link([]),
     _ = lager:info("cleaning up with timestamp ~s", [Timestamp]),
     _ = io:format("cleaning up with timestamp ~s", [Timestamp]),
     Fun = fun(BucketName, GetResult, Acc0) ->
-                  _ = maybe_cleanup_csbucket(Pid, BucketName, GetResult, Timestamp),
+                  _ = maybe_cleanup_csbucket(RcPid, BucketName, GetResult, Timestamp),
                   Acc0
           end,
-    _ = riak_cs_bucket:fold_all_buckets(Fun, [], Pid),
+    _ = riak_cs_bucket:fold_all_buckets(Fun, [], RcPid),
 
-    ok = riak_cs_riakc_pool_worker:stop(Pid),
-    _ = lager:info("~nAll old unaborted orphan multipart uploads has deleted.~n", []),
+    ok = riak_cs_riak_client:stop(RcPid),
+    _ = lager:info("All old unaborted orphan multipart uploads has deleted.", []),
     _ = io:format("~nAll old unaborted orphan multipart uploads has deleted.~n", []).
 
 
@@ -94,17 +94,19 @@ cleanup_orphan_multipart(Timestamp) when is_binary(Timestamp) ->
 -spec maybe_cleanup_csbucket(pid(), binary(),
                              {ok, riakc_obj()}|{error, term()},
                              binary()) -> ok.
-maybe_cleanup_csbucket(Pid, BucketName, {ok, RiakObj}, Timestamp) ->
+maybe_cleanup_csbucket(RcPid, BucketName, {ok, RiakObj}, Timestamp) ->
     case riakc_obj:get_values(RiakObj) of
         [?FREE_BUCKET_MARKER] ->
             %% deleted bucket, ensure if no uploads exists
             io:format("\rchecking bucket ~s:", [BucketName]),
-            case riak_cs_bucket:delete_old_uploads(BucketName, Pid,
+            case riak_cs_bucket:delete_old_uploads(BucketName, RcPid,
                                                    Timestamp) of
                 {ok, 0} -> ok;
                 {ok, Count} ->  io:format(" aborted ~p uploads.~n",
                                           [Count]);
-                Error -> io:format("Error: ~p <<< ~n", [Error])
+                Error ->
+                    lager:warning("Error in deleting old uploads: ~p~n", [Error]),
+                    io:format("Error in deleting old uploads: ~p <<< ~n", [Error])
             end;
 
         [<<>>] -> %% tombstone, can't happen
