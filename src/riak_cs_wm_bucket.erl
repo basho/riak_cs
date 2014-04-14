@@ -125,6 +125,7 @@ accept_body(RD, Ctx=#context{user=User,
     case riak_cs_bucket:create_bucket(User,
                                       UserObj,
                                       Bucket,
+                                      BagId,
                                       ACL,
                                       RiakPid) of
         ok ->

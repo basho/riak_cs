@@ -959,8 +959,9 @@ validate_email(EmailAddr) ->
 
 %% @doc Update a user record from a previous version if necessary.
 -spec update_user_record(rcs_user()) -> rcs_user().
-update_user_record(User=?RCS_USER{}) ->
-    User;
+update_user_record(User=?RCS_USER{buckets=Buckets}) ->
+    User?RCS_USER{buckets=[riak_cs_bucket:update_bucket_record(Bucket) ||
+                              Bucket <- Buckets]};
 update_user_record(User=#moss_user_v1{}) ->
     ?RCS_USER{name=User#moss_user_v1.name,
               display_name=User#moss_user_v1.display_name,
