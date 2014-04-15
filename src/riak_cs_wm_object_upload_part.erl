@@ -86,7 +86,7 @@ allowed_methods() ->
 post_is_create(RD, Ctx) ->
     {false, RD, Ctx}.
 
-process_post(RD, Ctx=#context{local_context=LocalCtx, riakc_pid=DefRiakc}) ->
+process_post(RD, Ctx=#context{local_context=LocalCtx, riakc_pid=MasterRiakc}) ->
     #key_context{bucket=Bucket, key=Key, manifest_riakc_pid=ManiRiakc} = LocalCtx,
     User = riak_cs_mp_utils:user_rec_to_3tuple(Ctx#context.user),
     UploadId64 = re:replace(wrq:path(RD), ".*/uploads/", "", [{return, binary}]),
@@ -97,7 +97,7 @@ process_post(RD, Ctx=#context{local_context=LocalCtx, riakc_pid=DefRiakc}) ->
         {PartETags, UploadId} ->
             case riak_cs_mp_utils:complete_multipart_upload(
                    Bucket, list_to_binary(Key), UploadId, PartETags, User,
-                   ManiRiakc, DefRiakc) of
+                   ManiRiakc, MasterRiakc) of
                 ok ->
                     XmlDoc = {'CompleteMultipartUploadResult',
                               [{'xmlns', "http://s3.amazonaws.com/doc/2006-03-01/"}],
@@ -147,7 +147,7 @@ valid_entity_length(RD, Ctx=#context{local_context=LocalCtx}) ->
 -spec delete_resource(#wm_reqdata{}, #context{}) ->
                              {boolean() | {'halt', term()}, #wm_reqdata{}, #context{}}.
 delete_resource(RD, Ctx=#context{local_context=LocalCtx,
-                                 riakc_pid=DefRiakc}) ->
+                                 riakc_pid=MasterRiakc}) ->
     case (catch base64url:decode(wrq:path_info('uploadId', RD))) of
         {'EXIT', _Reason} ->
             {{halt, 404}, RD, Ctx};
@@ -157,7 +157,7 @@ delete_resource(RD, Ctx=#context{local_context=LocalCtx,
             Key = list_to_binary(KeyStr),
             User = riak_cs_mp_utils:user_rec_to_3tuple(Ctx#context.user),
             case riak_cs_mp_utils:abort_multipart_upload(Bucket, Key, UploadId,
-                                                         User, ManiRiakc, DefRiakc) of
+                                                         User, ManiRiakc, MasterRiakc) of
                 ok ->
                     {true, RD, Ctx};
                 {error, notfound} ->
@@ -211,7 +211,7 @@ parse_body(Body0) ->
 
 -spec accept_body(#wm_reqdata{}, #context{}) -> {{halt, integer()}, #wm_reqdata{}, #context{}}.
 accept_body(RD, Ctx0=#context{local_context=LocalCtx0,
-                              riakc_pid=DefRiakc}) ->
+                              riakc_pid=MasterRiakc}) ->
     #key_context{bucket=Bucket,
                  key=Key,
                  size=Size,
@@ -226,7 +226,7 @@ accept_body(RD, Ctx0=#context{local_context=LocalCtx0,
         {t, {ok, PartNumber}} =
             {t, riak_cs_utils:safe_list_to_integer(wrq:get_qs_value("partNumber", RD))},
         case riak_cs_mp_utils:upload_part(Bucket, Key, UploadId, PartNumber,
-                                          Size, Caller, ManiRiakc, DefRiakc) of
+                                          Size, Caller, ManiRiakc, MasterRiakc) of
             {upload_part_ready, PartUUID, PutPid} ->
                 LocalCtx = LocalCtx0#key_context{upload_id=UploadId,
                                                  part_number=PartNumber,
@@ -272,14 +272,14 @@ accept_streambody(RD,
     end.
 
 to_xml(RD, Ctx=#context{local_context=LocalCtx,
-                        riakc_pid=DefRiakc}) ->
+                        riakc_pid=MasterRiakc}) ->
     #key_context{bucket=Bucket, key=Key, manifest_riakc_pid=ManiRiakc} = LocalCtx,
     UploadId = base64url:decode(re:replace(wrq:path(RD), ".*/uploads/",
                                            "", [{return, binary}])),
     {UserDisplay, _Canon, UserKeyId} = User =
         riak_cs_mp_utils:user_rec_to_3tuple(Ctx#context.user),
     case riak_cs_mp_utils:list_parts(Bucket, Key, UploadId, User, [],
-                                     ManiRiakc, DefRiakc) of
+                                     ManiRiakc, MasterRiakc) of
         {ok, Ps} ->
             Us = [{'Part',
                    [
@@ -326,7 +326,7 @@ to_xml(RD, Ctx=#context{local_context=LocalCtx,
 
 finalize_request(RD, Ctx=#context{local_context=LocalCtx,
                                   response_module=ResponseMod,
-                                  riakc_pid=DefRiakc}, PutPid) ->
+                                  riakc_pid=MasterRiakc}, PutPid) ->
     #key_context{bucket=Bucket,
                  key=Key,
                  upload_id=UploadId,
@@ -339,7 +339,7 @@ finalize_request(RD, Ctx=#context{local_context=LocalCtx,
         {ok, M} ->
             case riak_cs_mp_utils:upload_part_finished(
                    Bucket, Key, UploadId, PartNumber, PartUUID,
-                   M?MANIFEST.content_md5, Caller, ManiRiakc, DefRiakc) of
+                   M?MANIFEST.content_md5, Caller, ManiRiakc, MasterRiakc) of
                 ok ->
                     ETag = riak_cs_utils:etag_from_binary(M?MANIFEST.content_md5),
                     RD2 = wrq:set_resp_header("ETag", ETag, RD),

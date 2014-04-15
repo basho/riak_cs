@@ -70,7 +70,7 @@
 -record(state, {from :: {pid(), reference()},
                 mani_fsm_pid :: pid(),
                 mani_riakc :: pid(),
-                def_riakc :: pid(),     % riakc for block server
+                master_riakc :: pid(), % riakc for block server
                 bucket :: term(),
                 caller :: reference(),
                 key :: term(),
@@ -98,8 +98,8 @@
 -spec start_link(binary(), binary(), pid(), pid(), pid(), pos_integer(),
                  pos_integer()) -> {ok, pid()} | {error, term()}.
 
-start_link(Bucket, Key, Caller, ManiRiakc, DefRiakc, FetchConcurrency, BufferFactor) ->
-    gen_fsm:start_link(?MODULE, [Bucket, Key, Caller, ManiRiakc, DefRiakc,
+start_link(Bucket, Key, Caller, ManiRiakc, MasterRiakc, FetchConcurrency, BufferFactor) ->
+    gen_fsm:start_link(?MODULE, [Bucket, Key, Caller, ManiRiakc, MasterRiakc,
                                  FetchConcurrency, BufferFactor], []).
 
 stop(Pid) ->
@@ -124,9 +124,9 @@ chunk(Pid, ChunkSeq, ChunkValue) ->
 %% gen_fsm callbacks
 %% ====================================================================
 
-init([Bucket, Key, Caller, ManiRiakc, DefRiakc, FetchConcurrency, BufferFactor])
+init([Bucket, Key, Caller, ManiRiakc, MasterRiakc, FetchConcurrency, BufferFactor])
   when is_binary(Bucket), is_binary(Key), is_pid(Caller),
-       is_pid(ManiRiakc), is_pid(DefRiakc),
+       is_pid(ManiRiakc), is_pid(MasterRiakc),
        FetchConcurrency > 0, BufferFactor > 0 ->
 
     %% We need to do this (the monitor) for two reasons
@@ -151,7 +151,7 @@ init([Bucket, Key, Caller, ManiRiakc, DefRiakc, FetchConcurrency, BufferFactor])
                    caller=CallerRef,
                    key=Key,
                    mani_riakc=ManiRiakc,
-                   def_riakc=DefRiakc,
+                   master_riakc=MasterRiakc,
                    buffer_factor=BufferFactor,
                    fetch_concurrency=FetchConcurrency},
     {ok, prepare, State, 0};
@@ -212,7 +212,7 @@ waiting_continue_or_stop({continue, Range}, #state{manifest=Manifest,
                                                    key=Key,
                                                    fetch_concurrency=FetchConcurrency,
                                                    free_readers=Readers,
-                                                   def_riakc=DefRiakc}=State) ->
+                                                   master_riakc=MasterRiakc}=State) ->
     {BlocksOrder, SkipInitial, KeepFinal} =
         riak_cs_lfs_utils:block_sequences_for_manifest(Manifest, Range),
     case BlocksOrder of
@@ -228,7 +228,7 @@ waiting_continue_or_stop({continue, Range}, #state{manifest=Manifest,
             case Readers of
                 undefined ->
                     FreeReaders =
-                    riak_cs_block_server:start_block_servers(Manifest, DefRiakc,
+                    riak_cs_block_server:start_block_servers(Manifest, MasterRiakc,
                         FetchConcurrency),
                     _ = lager:debug("Block Servers: ~p", [FreeReaders]);
                 _ ->

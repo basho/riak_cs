@@ -63,7 +63,7 @@
                 reply_pid :: {pid(), reference()},
                 mani_pid :: undefined | pid(),
                 mani_riakc :: pid(),
-                def_riakc :: pid(),   % riakc for block_server
+                master_riakc :: pid(),
                 make_new_manifest_p :: boolean(),
                 timer_ref :: reference(),
                 bucket :: binary(),
@@ -107,7 +107,7 @@ start_link({_Bucket,
             _Timeout,
             _Caller,
             _ManiRiakc,
-            _DefRiakc}=Arg1,
+            _MasterRiakc}=Arg1,
            MakeNewManifestP) ->
     gen_fsm:start_link(?MODULE, {Arg1, MakeNewManifestP}, []).
 
@@ -146,7 +146,7 @@ block_written(Pid, BlockID) ->
             term()}) ->
                   {ok, prepare, #state{}, timeout()}.
 init({{Bucket, Key, ContentLength, ContentType,
-       Metadata, BlockSize, Acl, Timeout, Caller, ManiRiakc, DefRiakc},
+       Metadata, BlockSize, Acl, Timeout, Caller, ManiRiakc, MasterRiakc},
       MakeNewManifestP}) ->
     %% We need to do this (the monitor) for two reasons
     %% 1. We're started through a supervisor, so the
@@ -169,7 +169,7 @@ init({{Bucket, Key, ContentLength, ContentType,
                          content_length=ContentLength,
                          content_type=ContentType,
                          mani_riakc=ManiRiakc,
-                         def_riakc=DefRiakc,
+                         master_riakc=MasterRiakc,
                          make_new_manifest_p=MakeNewManifestP,
                          timeout=Timeout},
      0}.
@@ -388,7 +388,7 @@ prepare(State=#state{bucket=Bucket,
                      metadata=Metadata,
                      acl=Acl,
                      mani_riakc=ManiRiakc,
-                     def_riakc=DefRiakc,
+                     master_riakc=MasterRiakc,
                      make_new_manifest_p=MakeNewManifestP})
   when is_integer(ContentLength), ContentLength >= 0 ->
     %% 1. start the manifest_fsm proc
@@ -423,7 +423,7 @@ prepare(State=#state{bucket=Bucket,
                      _ ->
                          riak_cs_block_server:start_block_servers(
                            NewManifest,
-                           DefRiakc,
+                           MasterRiakc,
                            riak_cs_lfs_utils:put_concurrency())
                  end,
     FreeWriters = ordsets:from_list(WriterPids),

@@ -72,10 +72,10 @@ maybe_sum_bucket(Riak, User, ?RCS_BUCKET{name=Name} = Bucket) when is_binary(Nam
     end.
 
 -spec sum_bucket_with_pool(pid(), cs_bucket()) -> term() | {error, term()}.
-sum_bucket_with_pool(DefaultRiakc, ?RCS_BUCKET{name=Name} = Bucket) ->
+sum_bucket_with_pool(MasterRiakc, ?RCS_BUCKET{name=Name} = Bucket) ->
     case riak_cs_bag_registrar:pool_name(request_pool, Bucket) of
         undefined ->
-            sum_bucket(DefaultRiakc, Name);
+            sum_bucket(MasterRiakc, Name);
         PoolName ->
             %% TODO: riak_cs_utils:with_riak_connection(PoolName, Fun) is useful?
             case riak_cs_utils:riak_connection(PoolName) of

@@ -172,10 +172,10 @@ accept_body(RD, Ctx=#context{local_context=#key_context{get_fsm_pid=GetFsmPid,
                              user=User,
                              acl=AclFromHeadersOrDefault,
                              requested_perm='WRITE_ACP',
-                             riakc_pid=DefRiakc})  when Bucket /= undefined,
+                             riakc_pid=MasterRiakc})  when Bucket /= undefined,
                                                         KeyStr /= undefined,
                                                         Mfst /= undefined,
-                                                        DefRiakc /= undefined ->
+                                                        MasterRiakc /= undefined ->
     BFile_str = [Bucket, $,, KeyStr],
     UserName = riak_cs_wm_utils:extract_name(User),
     riak_cs_dtrace:dt_object_entry(?MODULE, <<"object_put_acl">>,
@@ -192,7 +192,7 @@ accept_body(RD, Ctx=#context{local_context=#key_context{get_fsm_pid=GetFsmPid,
                   %% from canonical IDs
                   riak_cs_acl_utils:acl_from_xml(Body,
                                                  User?RCS_USER.key_id,
-                                                 DefRiakc),
+                                                 MasterRiakc),
                   User?RCS_USER.canonical_id)
         end,
     case AclRes of

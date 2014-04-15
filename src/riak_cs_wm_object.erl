@@ -305,7 +305,7 @@ accept_body(RD, Ctx=#context{local_context=LocalCtx,
 accept_body(RD, Ctx=#context{local_context=LocalCtx,
                              user=User,
                              acl=ACL,
-                             riakc_pid=DefaultRiakc}) ->
+                             riakc_pid=MasterRiakc}) ->
     #key_context{bucket=Bucket,
                  key=Key,
                  putctype=ContentType,
@@ -323,7 +323,7 @@ accept_body(RD, Ctx=#context{local_context=LocalCtx,
 
     Args = [{Bucket, list_to_binary(Key), Size, list_to_binary(ContentType),
              Metadata, BlockSize, ACL, timer:seconds(60), self(),
-             ManiRiakc, DefaultRiakc}],
+             ManiRiakc, MasterRiakc}],
     {ok, Pid} = riak_cs_put_fsm_sup:start_put_fsm(node(), Args),
     accept_streambody(RD, Ctx, Pid, wrq:stream_req_body(RD, riak_cs_lfs_utils:block_size())).
 
