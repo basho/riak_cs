@@ -567,6 +567,7 @@ class ObjectMetadataTest(S3ApiVerificationTestBase):
     metadata = {
         "Content-Disposition": 'attachment; filename="metaname.txt"',
         "Content-Encoding": 'identity',
+        "Cache-Control": "max-age=3600",
         "Expires": "Tue, 19 Jan 2038 03:14:07 GMT",
         "mtime": "1364742057",
         "UID": "0",
@@ -574,6 +575,7 @@ class ObjectMetadataTest(S3ApiVerificationTestBase):
 
     updated_metadata = {
         "Content-Disposition": 'attachment; filename="newname.txt"',
+        "Cache-Control": "private",
         "Expires": "Tue, 19 Jan 2038 03:14:07 GMT",
         "mtime": "2222222222",
         "uid": "0",
@@ -606,6 +608,7 @@ class ObjectMetadataTest(S3ApiVerificationTestBase):
         self.assertEqual(key.content_disposition,
                          'attachment; filename="metaname.txt"')
         self.assertEqual(key.content_encoding, "identity")
+        self.assertEqual(key.cache_control, "max-age=3600")
         # TODO: Expires header can be accessed by boto?
         # self.assertEqual(key.expires, "Tue, 19 Jan 2038 03:14:07 GMT")
         self.assertEqual(key.get_metadata("mtime"), "1364742057")
@@ -631,6 +634,7 @@ class ObjectMetadataTest(S3ApiVerificationTestBase):
         # updated
         self.assertEqual(key.content_disposition,
                          'attachment; filename="newname.txt"')
+        self.assertEqual(key.cache_control, "private")
         self.assertEqual(key.get_metadata("mtime"), "2222222222")
         # removed
         self.assertEqual(key.content_encoding, None)
