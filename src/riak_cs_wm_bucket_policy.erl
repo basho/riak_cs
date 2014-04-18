@@ -102,7 +102,7 @@ accept_body(RD, Ctx=#context{user=User,
             Access = PolicyMod:reqdata_to_access(RD, bucket_policy, User#rcs_user_v2.canonical_id),
             case PolicyMod:check_policy(Access, Policy) of
                 ok ->
-                    case riak_cs_utils:set_bucket_policy(User, UserObj, Bucket, PolicyJson, RiakPid) of
+                    case riak_cs_bucket:set_bucket_policy(User, UserObj, Bucket, PolicyJson, RiakPid) of
                         ok ->
                             riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_put_policy">>,
                                                             [200], [riak_cs_wm_utils:extract_name(User), Bucket]),
@@ -130,7 +130,7 @@ delete_resource(RD, Ctx=#context{user=User,
     riak_cs_dtrace:dt_object_entry(?MODULE, <<"bucket_policy_delete">>,
                                    [], [RD, Ctx, RiakPid]),
 
-    case riak_cs_utils:delete_bucket_policy(User, UserObj, Bucket, RiakPid) of
+    case riak_cs_bucket:delete_bucket_policy(User, UserObj, Bucket, RiakPid) of
         ok ->
             riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_put_policy">>,
                                             [200], [riak_cs_wm_utils:extract_name(User), Bucket]),

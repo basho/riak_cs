@@ -255,7 +255,7 @@ log_supported_actions()->
                                 {'error', 'multiple_bucket_owners'}.
 -spec fetch_bucket_policy(binary(), pid()) -> bucket_policy_result().
 fetch_bucket_policy(Bucket, RiakPid) ->
-    case riak_cs_utils:fetch_bucket_object(Bucket, RiakPid) of
+    case riak_cs_bucket:fetch_bucket_object(Bucket, RiakPid) of
         {ok, Obj} ->
             %% For buckets there should not be siblings, but in rare
             %% cases it may happen so check for them and attempt to
@@ -292,7 +292,7 @@ bucket_policy_from_contents(Bucket, Contents) ->
     {Metas, Vals} = lists:unzip(Contents),
     UniqueVals = lists:usort(Vals),
     UserMetas = [dict:fetch(?MD_USERMETA, MD) || MD <- Metas],
-    riak_cs_utils:maybe_log_bucket_owner_error(Bucket, UniqueVals),
+    riak_cs_bucket:maybe_log_bucket_owner_error(Bucket, UniqueVals),
     resolve_bucket_metadata(UserMetas, UniqueVals).
 
 -spec resolve_bucket_metadata(list(riakc_obj:metadata()),
