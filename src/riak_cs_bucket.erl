@@ -178,14 +178,21 @@ delete_bucket(User, UserObj, Bucket, RiakPid) ->
 
 delete_all_uploads(User, Bucket, RiakPid) ->
     User3Tuple = riak_cs_mp_utils:user_rec_to_3tuple(User),
-    {ok, {Ds, _Commons}} = riak_cs_mp_utils:list_multipart_uploads(Bucket, User3Tuple, [], RiakPid),
+
+    Opts = [{delimiter, undefined}, {max_uploads, undefined},
+            {prefix, undefined}, {key_marker, <<>>},
+            {upload_id_marker, <<>>}],
+    {ok, {Ds, _Commons}} = riak_cs_mp_utils:list_multipart_uploads(Bucket, User3Tuple, Opts, RiakPid),
     fold_delete_uploads(Bucket, RiakPid, Ds).
 
 fold_delete_uploads(_Bucket, _RiakPid, []) -> ok;
 fold_delete_uploads(Bucket, RiakPid, [D|Ds])->
     Key = D?MULTIPART_DESCR.key,
-    UploadId = base64url:encode(D?MULTIPART_DESCR.upload_id),
+
+    %% cannot fail here
     {ok, Obj, Manifests} = riak_cs_utils:get_manifests(RiakPid, Bucket, Key),
+
+    UploadId = D?MULTIPART_DESCR.upload_id,
 
     %% find_manifest_with_uploadid
     case lists:keyfind(UploadId, 1, Manifests) of
@@ -194,10 +201,14 @@ fold_delete_uploads(Bucket, RiakPid, [D|Ds])->
                    [M?MANIFEST.uuid], Obj, Bucket, Key, RiakPid) of
                 {ok, _NewObj} ->
                     fold_delete_uploads(Bucket, RiakPid, Ds);
-                Error ->
-                    Error
+                E ->
+                    lager:debug("cannot delete multipart manifest: ~p ~p (~p)",
+                                [{Bucket, Key}, M?MANIFEST.uuid, E]),
+                    E
             end;
-        _ ->
+        _E ->
+            lager:debug("skipping multipart manifest: ~p ~p (~p)",
+                        [{Bucket, Key}, UploadId, _E]),
             fold_delete_uploads(Bucket, RiakPid, Ds)
     end.
 

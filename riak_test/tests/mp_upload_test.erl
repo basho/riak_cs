@@ -22,7 +22,7 @@
 
 %% @doc `riak_test' module for testing multipart upload behavior.
 
--export([confirm/0]).
+-export([confirm/0, upload_id_present/2]).
 -include_lib("eunit/include/eunit.hrl").
 
 -define(TEST_BUCKET, "riak-test-bucket").
