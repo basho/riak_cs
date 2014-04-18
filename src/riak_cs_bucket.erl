@@ -65,6 +65,7 @@ create_bucket(User, UserObj, Bucket, ACL, RiakPid) ->
         true ->
             case valid_bucket_name(Bucket) of
                 true ->
+                    ok = delete_all_uploads(User, Bucket, RiakPid),
                     serialized_bucket_op(Bucket,
                                          ACL,
                                          User,
@@ -151,22 +152,19 @@ delete_bucket(User, UserObj, Bucket, RiakPid) ->
     CurrentBuckets = get_buckets(User),
 
     %% Buckets can only be deleted if they exist
-    case bucket_exists(CurrentBuckets, binary_to_list(Bucket)) of
-        true ->
-            case bucket_empty(Bucket, RiakPid) of
-                true ->
-                    AttemptDelete = true,
-                    LocalError = ok;
-                false ->
-                    AttemptDelete = false,
-                    LocalError = {error, bucket_not_empty}
-            end;
-        false ->
-            AttemptDelete = true,
-            LocalError = ok
-    end,
+    {AttemptDelete, LocalError} =
+        case bucket_exists(CurrentBuckets, binary_to_list(Bucket)) of
+            true ->
+                case bucket_empty(Bucket, RiakPid) of
+                    true -> {true, ok};
+                    false -> {false, {error, bucket_not_empty}}
+                end;
+            false -> {true, ok}
+        end,
     case AttemptDelete of
         true ->
+            %% TODO: output log if failed in cleaning up existing uploads.
+            ok = delete_all_uploads(User, Bucket, RiakPid),
             serialized_bucket_op(Bucket,
                                  ?ACL{},
                                  User,
@@ -178,11 +176,35 @@ delete_bucket(User, UserObj, Bucket, RiakPid) ->
             LocalError
     end.
 
+delete_all_uploads(User, Bucket, RiakPid) ->
+    User3Tuple = riak_cs_mp_utils:user_rec_to_3tuple(User),
+    {ok, {Ds, _Commons}} = riak_cs_mp_utils:list_multipart_uploads(Bucket, User3Tuple, [], RiakPid),
+    fold_delete_uploads(Bucket, RiakPid, Ds).
+
+fold_delete_uploads(_Bucket, _RiakPid, []) -> ok;
+fold_delete_uploads(Bucket, RiakPid, [D|Ds])->
+    Key = D?MULTIPART_DESCR.key,
+    UploadId = base64url:encode(D?MULTIPART_DESCR.upload_id),
+    {ok, Obj, Manifests} = riak_cs_utils:get_manifests(RiakPid, Bucket, Key),
+
+    %% find_manifest_with_uploadid
+    case lists:keyfind(UploadId, 1, Manifests) of
+        {UploadId, M} when M?MANIFEST.state == writing ->
+            case riak_cs_gc:gc_specific_manifests(
+                   [M?MANIFEST.uuid], Obj, Bucket, Key, RiakPid) of
+                {ok, _NewObj} ->
+                    fold_delete_uploads(Bucket, RiakPid, Ds);
+                Error ->
+                    Error
+            end;
+        _ ->
+            fold_delete_uploads(Bucket, RiakPid, Ds)
+    end.
+
 %% @doc Return a user's buckets.
 -spec get_buckets(rcs_user()) -> [cs_bucket()].
 get_buckets(?RCS_USER{buckets=Buckets}) ->
     [Bucket || Bucket <- Buckets, Bucket?RCS_BUCKET.last_action /= deleted].
-
 
 %% @doc Set the ACL for a bucket. Existing ACLs are only
 %% replaced, they cannot be updated.
