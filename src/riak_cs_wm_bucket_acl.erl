@@ -116,11 +116,11 @@ accept_body(RD, Ctx=#context{user=User,
         end,
     case AclRes of
         {ok, ACL} ->
-            case riak_cs_utils:set_bucket_acl(User,
-                                              UserObj,
-                                              Bucket,
-                                              ACL,
-                                              RiakPid) of
+            case riak_cs_bucket:set_bucket_acl(User,
+                                               UserObj,
+                                               Bucket,
+                                               ACL,
+                                               RiakPid) of
                 ok ->
                     riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_put_acl">>,
                                                     [200], [riak_cs_wm_utils:extract_name(User), Bucket]),

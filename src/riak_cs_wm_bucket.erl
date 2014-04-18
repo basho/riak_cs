@@ -100,7 +100,7 @@ handle_read_request(RD, Ctx=#context{user=User,
     %% override the content-type on HEAD
     HeadRD = wrq:set_resp_header("content-type", "text/html", RD),
     StrBucket = binary_to_list(Bucket),
-    case [B || B <- riak_cs_utils:get_buckets(User),
+    case [B || B <- riak_cs_bucket:get_buckets(User),
                B?RCS_BUCKET.name =:= StrBucket] of
         [] ->
             riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_head">>,
@@ -122,11 +122,11 @@ accept_body(RD, Ctx=#context{user=User,
                              riakc_pid=RiakPid}) ->
     riak_cs_dtrace:dt_bucket_entry(?MODULE, <<"bucket_create">>,
                                       [], [riak_cs_wm_utils:extract_name(User), Bucket]),
-    case riak_cs_utils:create_bucket(User,
-                                     UserObj,
-                                     Bucket,
-                                     ACL,
-                                     RiakPid) of
+    case riak_cs_bucket:create_bucket(User,
+                                      UserObj,
+                                      Bucket,
+                                      ACL,
+                                      RiakPid) of
         ok ->
             riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_create">>,
                                                [200], [riak_cs_wm_utils:extract_name(User), Bucket]),
@@ -148,7 +148,7 @@ delete_resource(RD, Ctx=#context{user=User,
                                  riakc_pid=RiakPid}) ->
     riak_cs_dtrace:dt_bucket_entry(?MODULE, <<"bucket_delete">>,
                                       [], [riak_cs_wm_utils:extract_name(User), Bucket]),
-    case riak_cs_utils:delete_bucket(User,
+    case riak_cs_bucket:delete_bucket(User,
                                        UserObj,
                                        Bucket,
                                        RiakPid) of

@@ -641,7 +641,7 @@ is_caller_bucket_owner(RiakcPid, Bucket, CallerKeyId) ->
     {m_icbo, {ok, {C, _}}} = {m_icbo, riak_cs_utils:get_user(CallerKeyId,
                                                              RiakcPid)},
     Buckets = [iolist_to_binary(B?RCS_BUCKET.name) ||
-                  B <- riak_cs_utils:get_buckets(C)],
+                  B <- riak_cs_bucket:get_buckets(C)],
     lists:member(Bucket, Buckets).
 
 find_manifest_with_uploadid(UploadId, Manifests) ->

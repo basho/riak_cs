@@ -177,7 +177,7 @@ bucket_access(_, RequestedAccess, CanonicalId, RiakPid, Acl) ->
 -type bucket_acl_riak_error() :: {error, 'notfound' | term()}.
 -spec fetch_bucket_acl(binary(), pid()) -> bucket_acl_result() | bucket_acl_riak_error().
 fetch_bucket_acl(Bucket, RiakPid) ->
-    case riak_cs_utils:fetch_bucket_object(Bucket, RiakPid) of
+    case riak_cs_bucket:fetch_bucket_object(Bucket, RiakPid) of
         {ok, Obj} ->
             bucket_acl(Obj);
         {error, Reason} ->
@@ -210,7 +210,7 @@ bucket_acl_from_contents(Bucket, Contents) ->
     {Metas, Vals} = lists:unzip(Contents),
     UniqueVals = lists:usort(Vals),
     UserMetas = [dict:fetch(?MD_USERMETA, MD) || MD <- Metas],
-    riak_cs_utils:maybe_log_bucket_owner_error(Bucket, UniqueVals),
+    riak_cs_bucket:maybe_log_bucket_owner_error(Bucket, UniqueVals),
     resolve_bucket_metadata(UserMetas, UniqueVals).
 
 -spec resolve_bucket_metadata(list(riakc_obj:metadata()),
