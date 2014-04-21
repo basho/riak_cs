@@ -92,14 +92,8 @@ start_block_servers(Manifest, RiakcPid, MaxNumServers) ->
             start_block_servers_for_pool(PoolName, MaxNumServers, [])
     end.
 
-start_block_servers_for_pool(PoolName, 0, Pids) ->
-    case length(Pids) of
-        0 ->
-            %% TODO(shino): error tupple, logging?
-            error({no_server, PoolName});
-        _ ->
-            Pids
-    end;
+start_block_servers_for_pool(_PoolName, 0, Pids) ->
+    Pids;
 start_block_servers_for_pool(PoolName, NumWorkers, Pids) ->
     case start_link({pool, PoolName}) of
         {ok, Pid} ->
