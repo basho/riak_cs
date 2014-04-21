@@ -24,7 +24,6 @@
 
 -module(riak_cs_gc_single_run_eqc).
 
--include_lib("riakc/include/riakc.hrl").
 -include("riak_cs_gc_d.hrl").
 
 -ifdef(EQC).
@@ -110,6 +109,8 @@ gc_manual_batch(ListOfFilesetKeysInput) ->
         %% For `riak-cs-gc' 2i query, use a process to hold `ListOfFilesetKeysInput'.
         meck:expect(riakc_pb_socket, get_index_range,
                     dummy_get_index_range_fun(ListOfFilesetKeysInput)),
+        meck:expect(riak_cs_bag_registrar, list_pool,
+                    fun(_) -> [{request_pool, request_pool, master, []}] end),
 
         {ok, _} = riak_cs_gc_d:start_link(),
         riak_cs_gc_d:manual_batch([]),

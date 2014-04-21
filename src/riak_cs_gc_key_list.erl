@@ -18,57 +18,74 @@
 %%
 %% ---------------------------------------------------------------------
 
-%% @doc Module to capsulate key listing logic for GC daemon.
+%% @doc Key listing logic for GC daemon.
 
 -module(riak_cs_gc_key_list).
 
 %% API
--export([new/3, next/1]).
+-export([new/2, next/1]).
 
--export_type([index_result_keys/0]).
-
--include_lib("riakc/include/riakc.hrl").
 -include("riak_cs_gc_d.hrl").
 
--record(key_list_state, {
-          %% Riak connection pid
-          riak :: undefined | pid(),
-          %% start of the current gc interval
-          batch_start :: undefined | non_neg_integer(),
-          leeway :: non_neg_integer(),
-          %% Used for paginated 2I querying of GC bucket
-          continuation :: continuation()
-         }).
-
-%% 'keys()` is defined in `riakc.hrl'.
-%% The name is general so declare local type for readability.
--type index_result_keys() :: keys().
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+-endif.
 
 %% @doc Start the garbage collection server
--spec new(pid(), non_neg_integer(), non_neg_integer()) ->
-                 {ok, {[index_result_keys()], #key_list_state{}}}.
-new(Riakc, BatchStart, Leeway) ->
-    {Batch, Continuation} =
-        fetch_eligible_manifest_keys(Riakc, BatchStart, Leeway, undefined),
-    lager:debug("new Batch: ~p~n", [Batch]),
-    {ok, {Batch, #key_list_state{riak=Riakc, batch_start=BatchStart, leeway=Leeway,
-                                 continuation=Continuation}}}.
+-spec new(non_neg_integer(), non_neg_integer()) -> {gc_key_list_result(), gc_key_list_state()}.
+new(BatchStart, Leeway) ->
+    Pools = riak_cs_bag_registrar:list_pool(request_pool),
+    State =  #gc_key_list_state{remaining_pools = Pools,
+                                batch_start=BatchStart,
+                                leeway=Leeway},
+    next_pool(State).
 
 %% @doc Fetch next key list and returns it with updated state
--spec next(#key_list_state{}) -> {ok, {[index_result_keys()], #key_list_state{}}}.
-next(#key_list_state{continuation=undefined} = _State) ->
-    {ok, {[], undefined}};
-next(#key_list_state{riak=Riakc, batch_start=BatchStart, leeway=Leeway,
-                     continuation=Continuation} = State) ->
+-spec next(gc_key_list_state()) -> {gc_key_list_result(), gc_key_list_state()}.
+next(#gc_key_list_state{current_riak=RiakPid,
+                        continuation=undefined} = State) ->
+    ok = riak_cs_riakc_pool_worker:stop(RiakPid),
+    next_pool(State#gc_key_list_state{current_riak=undefined});
+next(#gc_key_list_state{current_riak=RiakPid,
+                        current_bag_id=BagId,
+                        current_worker_opts=WorkerOpts,
+                        batch_start=BatchStart, leeway=Leeway,
+                        continuation=Continuation} = State) ->
     {Batch, UpdContinuation} =
-        fetch_eligible_manifest_keys(Riakc, BatchStart, Leeway, Continuation),
+        fetch_eligible_manifest_keys(RiakPid, BatchStart, Leeway, Continuation),
     lager:debug("next Batch: ~p~n", [Batch]),
-    {ok, {Batch, State#key_list_state{riak=Riakc, continuation=UpdContinuation}}}.
+    {#gc_key_list_result{bag_id=BagId, worker_opts=WorkerOpts, batch=Batch},
+     State#gc_key_list_state{continuation=UpdContinuation}}.
+
+%% @doc Fetch next key list and returns it with updated state
+-spec next_pool(gc_key_list_state()) -> {gc_key_list_result(), gc_key_list_state()}.
+next_pool(#gc_key_list_state{remaining_pools=[]}) ->
+    {#gc_key_list_result{bag_id=undefined, worker_opts=[], batch=[]},
+     undefined};
+next_pool(#gc_key_list_state{
+             batch_start=BatchStart, leeway=Leeway,
+             remaining_pools=[{_PoolName, _Type, BagId, WorkerOpts}|Rest]}=State) ->
+    case riak_cs_riakc_pool_worker:start_link(WorkerOpts) of
+        {ok, RiakPid} ->
+            {Batch, Continuation} =
+                fetch_eligible_manifest_keys(RiakPid, BatchStart, Leeway, undefined),
+            lager:debug("next_pool ~s Batch: ~p~n", [_PoolName, Batch]),
+            {#gc_key_list_result{bag_id=BagId, worker_opts=WorkerOpts, batch=Batch},
+             State#gc_key_list_state{remaining_pools=Rest,
+                                     current_riak=RiakPid,
+                                     current_bag_id=BagId,
+                                     current_worker_opts=WorkerOpts,
+                                     continuation=Continuation}};
+        {error, Reason} ->
+            lager:error("Connection error for bag ~s in garbage collection: ~p",
+                        [BagId, Reason]),
+            next_pool(State#gc_key_list_state{remaining_pools=Rest})
+    end.
 
 %% @doc Fetch the list of keys for file manifests that are eligible
 %% for delete.
 -spec fetch_eligible_manifest_keys(pid(), non_neg_integer(), non_neg_integer(), continuation()) ->
-                                          {[binary()], continuation()}.
+                                          {[index_result_keys()], continuation()}.
 fetch_eligible_manifest_keys(RiakPid, IntervalStart, Leeway, Continuation) ->
     EndTime = list_to_binary(integer_to_list(IntervalStart - Leeway)),
     UsePaginatedIndexes = riak_cs_config:gc_paginated_indexes(),
@@ -101,20 +118,20 @@ eligible_manifest_keys({{error, Reason}, EndTime}, _) ->
 
 %% @doc Break a list of gc-eligible keys from the GC bucket into smaller sets
 %% to be processed by different GC workers.
--spec split_eligible_manifest_keys(non_neg_integer(), index_result_keys(), [[index_result_keys()]]) ->
-                                        [[index_result_keys()]].
+-spec split_eligible_manifest_keys(non_neg_integer(), index_result_keys(), [index_result_keys()]) ->
+                                          [index_result_keys()].
 split_eligible_manifest_keys(_BatchSize, [], Acc) ->
     lists:reverse(Acc);
 split_eligible_manifest_keys(BatchSize, Keys, Acc) ->
-    {Batch, Rest} = split(BatchSize, Keys, []),
+    {Batch, Rest} = split_at_most_n(BatchSize, Keys, []),
     split_eligible_manifest_keys(BatchSize, Rest, [Batch | Acc]).
 
-split(_, [], Acc) ->
+split_at_most_n(_, [], Acc) ->
     {lists:reverse(Acc), []};
-split(0, L, Acc) ->
+split_at_most_n(0, L, Acc) ->
     {lists:reverse(Acc), L};
-split(N, [H|T], Acc) ->
-    split(N-1, T, [H|Acc]).
+split_at_most_n(N, [H|T], Acc) ->
+    split_at_most_n(N-1, T, [H|Acc]).
 
 -spec continuation({{ok, riakc_pb_socket:index_results()} | {error, term()}, binary()}) ->
                           continuation().
@@ -140,3 +157,20 @@ gc_index_query(RiakPid, EndTime, BatchSize, Continuation, UsePaginatedIndexes) -
                     riak_cs_gc:epoch_start(), EndTime,
                     Options),
     {QueryResult, EndTime}.
+
+-ifdef(TEST).
+
+%% ===================================================================
+%% Tests
+%% ===================================================================
+
+split_eligible_manifest_keys_test() ->
+    ?assertEqual([], split_eligible_manifest_keys(3, [], [])),
+    ?assertEqual([[1]], split_eligible_manifest_keys(3, [1], [])),
+    ?assertEqual([[1,2,3]], split_eligible_manifest_keys(3, lists:seq(1,3), [])),
+    ?assertEqual([[1,2,3],[4]], split_eligible_manifest_keys(3, lists:seq(1,4), [])),
+    ?assertEqual([[1,2,3],[4,5,6]], split_eligible_manifest_keys(3, lists:seq(1,6), [])),
+    ?assertEqual([[1,2,3],[4,5,6],[7,8,9],[10]],
+                 split_eligible_manifest_keys(3, lists:seq(1,10), [])).
+
+-endif.

@@ -41,8 +41,8 @@ choose_bag_id(_PoolType) ->
 set_bag_id_to_manifest(_BagId, Manifest) ->
     Manifest.
 
-list_pool(_PoolType) ->
-    [].
+list_pool(PoolType) ->
+    [{PoolType, PoolType, master, []}].
 
 pool_status() ->
     [].

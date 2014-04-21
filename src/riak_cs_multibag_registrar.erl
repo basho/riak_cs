@@ -89,7 +89,8 @@ choose_bag_id(PoolType) ->
     riak_cs_multibag:choose_bag_id(PoolType).
 
 list_pool(PoolType) ->
-    riak_cs_multibag:list_pool(PoolType).
+    [{PoolType, PoolType, master, []} |
+     riak_cs_multibag:list_pool(PoolType)].
 
 pool_status() ->
     riak_cs_multibag:list_pool().

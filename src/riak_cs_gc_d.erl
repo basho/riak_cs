@@ -207,15 +207,17 @@ fetching_next_batch(_, State=?STATE{batch=undefined}) ->
     %% This clause is for testing only
     {next_state, fetching_next_batch, State};
 fetching_next_batch(continue, ?STATE{batch_start=undefined,
-                                     leeway=Leeway,
-                                     riak=RiakPid}=State) ->
+                                     leeway=Leeway}=State) ->
     BatchStart = riak_cs_gc:timestamp(),
     %% Fetch the next set of manifests for deletion
-    {ok, {Batch, KeyListState}} = riak_cs_gc_key_list:new(RiakPid, BatchStart, Leeway),
+    {KeyListRes, KeyListState} =
+        riak_cs_gc_key_list:new(BatchStart, Leeway),
+    #gc_key_list_result{worker_opts=WorkerOpts, batch=Batch} = KeyListRes,
     _ = lager:debug("Initial batch keys: ~p", [Batch]),
     NewStateData = State?STATE{batch=Batch,
                                batch_start=BatchStart,
-                               key_list_state=KeyListState},
+                               key_list_state=KeyListState,
+                               worker_opts=WorkerOpts},
     ok = continue(),
     {next_state, feeding_workers, NewStateData};
 fetching_next_batch(continue, ?STATE{active_workers=0,
@@ -233,9 +235,7 @@ fetching_next_batch(continue, ?STATE{active_workers=0,
                    [elapsed(State?STATE.batch_start), State?STATE.batch_count,
                     State?STATE.batch_skips, State?STATE.manif_count,
                     State?STATE.block_count]),
-    riak_cs_riakc_pool_worker:stop(State?STATE.riak),
-    NewState = schedule_next(State?STATE{riak=undefined,
-                                         batch_start=undefined,
+    NewState = schedule_next(State?STATE{batch_start=undefined,
                                          batch_caller=undefined}),
     {next_state, idle, NewState};
 fetching_next_batch(continue, ?STATE{batch=[],
@@ -245,11 +245,12 @@ fetching_next_batch(continue, ?STATE{key_list_state=undefined}=State) ->
     {next_state, feeding_workers, State};
 fetching_next_batch(continue, ?STATE{key_list_state=KeyListState}=State) ->
     %% Fetch the next set of manifests for deletion
-    {ok, {Batch, UpdKeyListState}} =
-        riak_cs_gc_key_list:next(KeyListState),
+    {KeyListRes, UpdKeyListState} = riak_cs_gc_key_list:next(KeyListState),
+    #gc_key_list_result{worker_opts=WorkerOpts, batch=Batch} = KeyListRes,
     _ = lager:debug("Next batch keys: ~p", [Batch]),
     NewStateData = State?STATE{batch=Batch,
-                               key_list_state=UpdKeyListState},
+                               key_list_state=UpdKeyListState,
+                               worker_opts=WorkerOpts},
     ok = continue(),
     {next_state, feeding_workers, NewStateData};
 fetching_next_batch({batch_complete, WorkerPid, WorkerState}, State) ->
@@ -438,9 +439,10 @@ handle_batch_complete(WorkerPid, WorkerState, State) ->
 start_worker(State=?STATE{testing=true}) ->
     State;
 start_worker(State=?STATE{batch=[NextBatch | RestBatches],
+                          worker_opts=WorkerOpts,
                           active_workers=ActiveWorkers,
                           worker_pids=WorkerPids}) ->
-     case ?GC_WORKER:start_link(NextBatch) of
+     case ?GC_WORKER:start_link(WorkerOpts, NextBatch) of
          {ok, Pid} ->
              State?STATE{batch=RestBatches,
                          active_workers=ActiveWorkers + 1,
@@ -452,17 +454,14 @@ start_worker(State=?STATE{batch=[NextBatch | RestBatches],
 %% @doc Cancel the current batch of files set for garbage collection.
 -spec cancel_batch(?STATE{}) -> ?STATE{}.
 cancel_batch(?STATE{batch_start=BatchStart,
-                    worker_pids=WorkerPids,
-                    riak=RiakPid}=State) ->
+                    worker_pids=WorkerPids}=State) ->
     %% Interrupt the batch of deletes
     _ = lager:info("Canceled garbage collection batch after ~b seconds.",
                    [elapsed(BatchStart)]),
     [riak_cs_gc_worker:stop(P) || P <- WorkerPids],
-    riak_cs_riakc_pool_worker:stop(RiakPid),
     schedule_next(State?STATE{batch=[],
                               worker_pids=[],
-                              active_workers=0,
-                              riak=undefined}).
+                              active_workers=0}).
 
 %% @private
 %% @doc Send an asynchronous `continue' event. This is used to advance
@@ -549,7 +548,7 @@ schedule_next(?STATE{next=Last, interval=Interval}=State, InitialDelay) ->
 %% @doc Actually kick off the batch.  After calling this function, you
 %% must advance the FSM state to `fetching_next_batch'.
 %% Intentionally pattern match on an undefined Riak handle.
-start_batch(Leeway, State=?STATE{riak=undefined}) ->
+start_batch(Leeway, State) ->
     %% this does not check out a worker from the riak
     %% connection pool; instead it creates a fresh new worker,
     %% the idea being that we don't want to delay deletion
@@ -558,14 +557,12 @@ start_batch(Leeway, State=?STATE{riak=undefined}) ->
     %% so "starting" one here is the same as opening a
     %% connection, and avoids duplicating the configuration
     %% lookup code
-    {ok, Riak} = riak_cs_riakc_pool_worker:start_link([]),
     ok = continue(),
     State?STATE{batch_count=0,
                 batch_skips=0,
                 manif_count=0,
                 block_count=0,
-                leeway=Leeway,
-                riak=Riak}.
+                leeway=Leeway}.
 
 -spec start_manual_batch(Testing::boolean(), non_neg_integer(), ?STATE{}) -> ?STATE{}.
 start_manual_batch(true, _, State) ->
@@ -627,14 +624,5 @@ test_link(Interval) ->
 %% @doc Manipulate the current state of the fsm for testing
 change_state(State) ->
     gen_fsm:sync_send_all_state_event(?SERVER, {change_state, State}).
-
-split_eligible_manifest_keys_test() ->
-    ?assertEqual([], split_eligible_manifest_keys(3, [], [])),
-    ?assertEqual([[1]], split_eligible_manifest_keys(3, [1], [])),
-    ?assertEqual([[1,2,3]], split_eligible_manifest_keys(3, lists:seq(1,3), [])),
-    ?assertEqual([[1,2,3],[4]], split_eligible_manifest_keys(3, lists:seq(1,4), [])),
-    ?assertEqual([[1,2,3],[4,5,6]], split_eligible_manifest_keys(3, lists:seq(1,6), [])),
-    ?assertEqual([[1,2,3],[4,5,6],[7,8,9],[10]],
-                 split_eligible_manifest_keys(3, lists:seq(1,10), [])).
 
 -endif.
