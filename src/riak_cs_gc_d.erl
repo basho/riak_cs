@@ -96,7 +96,6 @@
 -export([current_state/0]).
 
 -include("riak_cs_gc_d.hrl").
--include_lib("riakc/include/riakc.hrl").
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -108,10 +107,6 @@
          status_data/1]).
 
 -endif.
-
-%% 'keys()` is defined in `riakc.hrl'.
-%% The name is general so declare local type for readability.
--type index_result_keys() :: keys().
 
 -define(SERVER, ?MODULE).
 -define(STATE, #gc_d_state).
@@ -212,22 +207,20 @@ fetching_next_batch(_, State=?STATE{batch=undefined}) ->
     %% This clause is for testing only
     {next_state, fetching_next_batch, State};
 fetching_next_batch(continue, ?STATE{batch_start=undefined,
-                                     continuation=undefined,
                                      leeway=Leeway,
                                      riak=RiakPid}=State) ->
     BatchStart = riak_cs_gc:timestamp(),
     %% Fetch the next set of manifests for deletion
-    {Batch, Continuation} =
-        fetch_eligible_manifest_keys(RiakPid, BatchStart, Leeway, undefined),
-    _ = lager:debug("Batch keys: ~p", [Batch]),
+    {ok, {Batch, KeyListState}} = riak_cs_gc_key_list:new(RiakPid, BatchStart, Leeway),
+    _ = lager:debug("Initial batch keys: ~p", [Batch]),
     NewStateData = State?STATE{batch=Batch,
                                batch_start=BatchStart,
-                               continuation=Continuation},
+                               key_list_state=KeyListState},
     ok = continue(),
     {next_state, feeding_workers, NewStateData};
 fetching_next_batch(continue, ?STATE{active_workers=0,
                                      batch=[],
-                                     continuation=undefined,
+                                     key_list_state=undefined,
                                      batch_caller=Caller} = State) ->
     %% finished with this GC run
     _ = case Caller of
@@ -246,20 +239,17 @@ fetching_next_batch(continue, ?STATE{active_workers=0,
                                          batch_caller=undefined}),
     {next_state, idle, NewState};
 fetching_next_batch(continue, ?STATE{batch=[],
-                                     continuation=undefined}=State) ->
+                                     key_list_state=undefined}=State) ->
     {next_state, waiting_for_workers, State};
-fetching_next_batch(continue, ?STATE{continuation=undefined}=State) ->
+fetching_next_batch(continue, ?STATE{key_list_state=undefined}=State) ->
     {next_state, feeding_workers, State};
-fetching_next_batch(continue, ?STATE{batch_start=BatchStart,
-                                     continuation=Continuation,
-                                     leeway=Leeway,
-                                     riak=RiakPid}=State) ->
+fetching_next_batch(continue, ?STATE{key_list_state=KeyListState}=State) ->
     %% Fetch the next set of manifests for deletion
-    {Batch, UpdContinuation} =
-        fetch_eligible_manifest_keys(RiakPid, BatchStart, Leeway, Continuation),
-    _ = lager:debug("Batch keys: ~p", [Batch]),
+    {ok, {Batch, UpdKeyListState}} =
+        riak_cs_gc_key_list:next(KeyListState),
+    _ = lager:debug("Next batch keys: ~p", [Batch]),
     NewStateData = State?STATE{batch=Batch,
-                               continuation=UpdContinuation},
+                               key_list_state=UpdKeyListState},
     ok = continue(),
     {next_state, feeding_workers, NewStateData};
 fetching_next_batch({batch_complete, WorkerPid, WorkerState}, State) ->
@@ -452,7 +442,6 @@ start_worker(State=?STATE{batch=[NextBatch | RestBatches],
                           worker_pids=WorkerPids}) ->
      case ?GC_WORKER:start_link(NextBatch) of
          {ok, Pid} ->
-             _ = lager:debug("Starting worker: ~p", [Pid]),
              State?STATE{batch=RestBatches,
                          active_workers=ActiveWorkers + 1,
                          worker_pids=[Pid | WorkerPids]};
@@ -496,82 +485,6 @@ elapsed(Time) ->
         false ->
             0
     end.
-
-%% @doc Fetch the list of keys for file manifests that are eligible
-%% for delete.
--spec fetch_eligible_manifest_keys(pid(), non_neg_integer(), non_neg_integer(), undefined | binary()) ->
-                                          {[binary()], undefined | binary()}.
-fetch_eligible_manifest_keys(RiakPid, IntervalStart, Leeway, Continuation) ->
-    EndTime = list_to_binary(integer_to_list(IntervalStart - Leeway)),
-    UsePaginatedIndexes = riak_cs_config:gc_paginated_indexes(),
-    QueryResults = gc_index_query(RiakPid,
-                                  EndTime,
-                                  riak_cs_config:gc_batch_size(),
-                                  Continuation,
-                                  UsePaginatedIndexes),
-    {eligible_manifest_keys(QueryResults, UsePaginatedIndexes), continuation(QueryResults)}.
-
--spec eligible_manifest_keys({{ok, index_results()} | {error, term()},
-                              binary()}, UsePaginatedIndexes::boolean()) ->
-                                    [index_result_keys()].
-eligible_manifest_keys({{ok, ?INDEX_RESULTS{keys=Keys}},
-                        _EndTime},
-                       true) ->
-    case Keys of
-        [] -> [];
-        _  -> [Keys]
-    end;
-eligible_manifest_keys({{ok, ?INDEX_RESULTS{keys=Keys}},
-                        _EndTime},
-                       false) ->
-    split_eligible_manifest_keys(riak_cs_config:gc_batch_size(), Keys, []);
-eligible_manifest_keys({{error, Reason}, EndTime}, _) ->
-    _ = lager:warning("Error occurred trying to query from time 0 to ~p"
-                      "in gc key index. Reason: ~p",
-                      [EndTime, Reason]),
-    [].
-
-%% @doc Break a list of gc-eligible keys from the GC bucket into smaller sets
-%% to be processed by different GC workers.
--spec split_eligible_manifest_keys(non_neg_integer(), index_result_keys(), [[index_result_keys()]]) ->
-                                        [[term()]].
-split_eligible_manifest_keys(_BatchSize, [], Acc) ->
-    lists:reverse(Acc);
-split_eligible_manifest_keys(BatchSize, Keys, Acc) ->
-    {Batch, Rest} = split(BatchSize, Keys, []),
-    split_eligible_manifest_keys(BatchSize, Rest, [Batch | Acc]).
-
-split(_, [], Acc) ->
-    {lists:reverse(Acc), []};
-split(0, L, Acc) ->
-    {lists:reverse(Acc), L};
-split(N, [H|T], Acc) ->
-    split(N-1, T, [H|Acc]).
-
--spec continuation({{ok, riakc_pb_socket:index_results()} | {error, term()},
-                    binary()}) -> undefined | binary().
-continuation({{ok, ?INDEX_RESULTS{continuation=Continuation}},
-              _EndTime}) ->
-    Continuation;
-continuation({{error, _}, _EndTime}) ->
-    undefined.
-
--spec gc_index_query(pid(), binary(), non_neg_integer(), undefined | binary(), boolean()) ->
-                            {riakc_pb_socket:index_results(), binary()}.
-gc_index_query(RiakPid, EndTime, BatchSize, Continuation, UsePaginatedIndexes) ->
-    Options = case UsePaginatedIndexes of
-                  true ->
-                      [{max_results, BatchSize},
-                       {continuation, Continuation}];
-                  false ->
-                      []
-              end,
-    QueryResult = riakc_pb_socket:get_index_range(
-                    RiakPid,
-                    ?GC_BUCKET, ?KEY_INDEX,
-                    riak_cs_gc:epoch_start(), EndTime,
-                    Options),
-    {QueryResult, EndTime}.
 
 %% @doc Take required actions to pause garbage collection and update
 %% the state record for the transition to `paused'.
