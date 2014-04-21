@@ -149,9 +149,9 @@ delete_resource(RD, Ctx=#context{user=User,
     riak_cs_dtrace:dt_bucket_entry(?MODULE, <<"bucket_delete">>,
                                       [], [riak_cs_wm_utils:extract_name(User), Bucket]),
     case riak_cs_bucket:delete_bucket(User,
-                                       UserObj,
-                                       Bucket,
-                                       RiakPid) of
+                                      UserObj,
+                                      Bucket,
+                                      RiakPid) of
         ok ->
             riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_delete">>,
                                                [200], [riak_cs_wm_utils:extract_name(User), Bucket]),

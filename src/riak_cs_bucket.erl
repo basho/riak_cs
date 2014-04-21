@@ -164,16 +164,37 @@ delete_bucket(User, UserObj, Bucket, RiakPid) ->
     case AttemptDelete of
         true ->
             %% TODO: output log if failed in cleaning up existing uploads.
-            ok = delete_all_uploads(User, Bucket, RiakPid),
-            serialized_bucket_op(Bucket,
-                                 ?ACL{},
-                                 User,
-                                 UserObj,
-                                 delete,
-                                 bucket_delete,
-                                 RiakPid);
+            %% The number of retry is hardcoded.
+            retry_delete_bucket(User, UserObj, Bucket, RiakPid, 5);
         false ->
             LocalError
+    end.
+
+retry_delete_bucket(_, _, Bucket, _, 0) ->
+    %% TODO: this is a debug log.
+    lager:error("All retry on deleting bucket '~s' failed "
+                "because multipart upload still exists (or newly created).",
+                [Bucket]),
+    %% TODO: needs discussion,or "please reduce multipart initiation
+    %% rate".
+    {error, too_much_multipart_initiation};
+retry_delete_bucket(User,  UserObj, Bucket, RiakPid, RetryCount) ->
+    ok = delete_all_uploads(User, Bucket, RiakPid),
+    case serialized_bucket_op(Bucket,
+                              ?ACL{},
+                              User,
+                              UserObj,
+                              delete,
+                              bucket_delete,
+                              RiakPid) of
+        ok -> ok;
+        {error, remaining_multipart_upload} ->
+            retry_delete_bucket(User, UserObj, Bucket,
+                                RiakPid, RetryCount-1);
+        Error ->
+            lager:error("Deleting bucket '~s' failed. reason: ~p",
+                        [Bucket, Error]),
+            Error
     end.
 
 delete_all_uploads(User, Bucket, RiakPid) ->
@@ -606,6 +627,15 @@ serialized_bucket_op(Bucket, ACL, User, UserObj, BucketOp, StatName, RiakPid) ->
                                                                  StartTime),
                             X
                     end;
+
+                {error, {error_status, 428, _, _ErrorDoc}}
+                  when BucketOp =:= delete ->
+                    %% needs retry for delete op.
+                    %% 428 assumes MultipartUploadRemaining for now
+                    %% if a new feature that needs retry could come
+                    %% up, add branch here.
+                    {error, remaining_multipart_upload};
+
                 {error, {error_status, _, _, ErrorDoc}} ->
                     riak_cs_s3_response:error_response(ErrorDoc);
                 {error, _} ->
