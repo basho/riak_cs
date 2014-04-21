@@ -68,6 +68,12 @@ confirm() ->
     UploadList1 = erlcloud_s3_multipart:list_uploads(?TEST_BUCKET, [], UserConfig),
     verify_upload_list(UploadList1, Count2),
 
+    %% List uploads and verify all 100 are returned with empty options.
+    %% Some s3 tools send empty parameters.
+    EmptyOptions = [{delimiter, ""}, {prefix, ""}],
+    UploadList1 = erlcloud_s3_multipart:list_uploads(?TEST_BUCKET, EmptyOptions, UserConfig),
+    verify_upload_list(UploadList1, Count2),
+
     %% @TODO Use max-uploads option to request first 50 results
     %% Options1 = [{max_uploads, 50}],
     %% UploadList2 = erlcloud_s3_multipart:list_uploads(?TEST_BUCKET, Options1, UserConfig),
