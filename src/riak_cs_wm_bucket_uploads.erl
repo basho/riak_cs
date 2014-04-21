@@ -150,5 +150,6 @@ make_list_mp_uploads_opts(RD) ->
 assemble_options(Parameters, Default, RD) ->
     [case wrq:get_qs_value(Name, RD) of
          undefined -> {PropName, Default};
+         []        -> {PropName, Default};
          X         -> {PropName, list_to_binary(X)}
      end || {Name, PropName} <- Parameters].
