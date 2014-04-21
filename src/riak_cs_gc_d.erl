@@ -463,12 +463,16 @@ start_worker(State=?STATE{batch=[NextBatch | RestBatches],
 %% @doc Cancel the current batch of files set for garbage collection.
 -spec cancel_batch(?STATE{}) -> ?STATE{}.
 cancel_batch(?STATE{batch_start=BatchStart,
+                    worker_pids=WorkerPids,
                     riak=RiakPid}=State) ->
     %% Interrupt the batch of deletes
     _ = lager:info("Canceled garbage collection batch after ~b seconds.",
                    [elapsed(BatchStart)]),
+    [riak_cs_gc_worker:stop(P) || P <- WorkerPids],
     riak_cs_riakc_pool_worker:stop(RiakPid),
     schedule_next(State?STATE{batch=[],
+                              worker_pids=[],
+                              active_workers=0,
                               riak=undefined}).
 
 %% @private
