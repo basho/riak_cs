@@ -77,7 +77,6 @@ sum_bucket_with_pool(MasterRiakc, ?RCS_BUCKET{name=Name} = Bucket) ->
         undefined ->
             sum_bucket(MasterRiakc, Name);
         PoolName ->
-            %% TODO: riak_cs_utils:with_riak_connection(PoolName, Fun) is useful?
             case riak_cs_utils:riak_connection(PoolName) of
                 {ok, Riakc} ->
                     Res = sum_bucket(Riakc, Name),

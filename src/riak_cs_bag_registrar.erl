@@ -23,7 +23,7 @@
 -export([process_specs/0, pool_specs/1, pool_name/2, choose_bag_id/1,
          set_bag_id_to_manifest/2,
          list_pool/1, pool_status/0]).
--export([registar_module/0, is_multibag_ebabled/0]).
+-export([registar_module/0, is_multibag_enabled/0]).
 
 -export_type([bag_id/0, pool_type/0]).
 
@@ -64,11 +64,11 @@ list_pool(PoolType) ->
 pool_status() ->
     (registar_module()):list_pool().
 
-is_multibag_ebabled() ->
+is_multibag_enabled() ->
     application:get_env(riak_cs_multibag, bags) =/= undefined.
 
 registar_module() ->
-    case is_multibag_ebabled() of
+    case is_multibag_enabled() of
         true ->
             riak_cs_multibag_registrar;
         false ->
