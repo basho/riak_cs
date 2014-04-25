@@ -156,7 +156,9 @@ error_message(invalid_argument) -> "Invalid Argument";
 error_message(unresolved_grant_email) -> "The e-mail address you provided does not match any account on record.";
 error_message(invalid_range) -> "The requested range is not satisfiable";
 error_message(invalid_bucket_name) -> "The specified bucket is not valid.";
-error_message(_) -> "Please reduce your request rate.".
+error_message(ErrorName) ->
+    _ = lager:debug("Unknown error: ~p", [ErrorName]),
+    "Please reduce your request rate.".
 
 error_code(invalid_access_key_id) -> "InvalidAccessKeyId";
 error_code(access_denied) -> "AccessDenied";
@@ -189,7 +191,7 @@ error_code(invalid_range) -> "InvalidRange";
 error_code(invalid_bucket_name) -> "InvalidBucketName";
 error_code(unresolved_grant_email) -> "UnresolvableGrantByEmailAddress";
 error_code(ErrorName) ->
-    ok = lager:debug("Unknown Error Name: ~p", [ErrorName]),
+    _ = lager:debug("Unknown error: ~p", [ErrorName]),
     "ServiceUnavailable".
 
 %% These should match:
@@ -228,4 +230,6 @@ status_code(invalid_argument) -> 400;
 status_code(unresolved_grant_email) -> 400;
 status_code(invalid_range) -> 416;
 status_code(invalid_bucket_name) -> 400;
-status_code(_) -> 503.
+status_code(ErrorName) ->
+    _ = lager:debug("Unknown error: ~p", [ErrorName]),
+    503.
