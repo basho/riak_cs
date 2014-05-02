@@ -221,10 +221,6 @@ cs_config(UserExtra) ->
           ]
      }].
 
-cs_config(UserExtra, MultiBagConf) ->
-    cs_config(UserExtra) ++
-        [{riak_cs_multibag, MultiBagConf}].
-
 stanchion_config() ->
     [
      lager_config(),
@@ -267,9 +263,6 @@ riakcs_accesscmd(Path, N, Cmd) ->
 riakcs_storagecmd(Path, N, Cmd) ->
     lists:flatten(io_lib:format("~s-storage ~s", [riakcs_binpath(Path, N), Cmd])).
 
-riakcs_bagcmd(Path, N, Args) ->
-    lists:flatten(io_lib:format("~s-bag ~s", [riakcs_binpath(Path, N), Args])).
-
 stanchion_binpath(Prefix) ->
     io_lib:format("~s/dev/stanchion/bin/stanchion", [Prefix]).
 
@@ -283,6 +276,9 @@ riak_root_and_current(oss) ->
     {?RIAK_ROOT, current};
 riak_root_and_current(ee) ->
     {?EE_ROOT, ee_current}.
+
+cs_current() ->
+    ?CS_CURRENT.
 
 deploy_nodes(NumNodes, InitialConfig) ->
     lager:info("Initial Config: ~p", [InitialConfig]),
@@ -516,16 +512,6 @@ flush_access(N) ->
 
 calculate_storage(N) ->
     Cmd = riakcs_storagecmd(rt_config:get(?CS_CURRENT), N, "batch -r"),
-    lager:info("Running ~p", [Cmd]),
-    os:cmd(Cmd).
-
-bag_input(N, Input) ->
-    Cmd = riakcs_bagcmd(rt_config:get(?CS_CURRENT), N, ["input '", Input, "'"]),
-    lager:info("Running ~p", [Cmd]),
-    os:cmd(Cmd).
-
-bag_refresh(N) ->
-    Cmd = riakcs_bagcmd(rt_config:get(?CS_CURRENT), N, "refresh"),
     lager:info("Running ~p", [Cmd]),
     os:cmd(Cmd).
 
