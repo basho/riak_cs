@@ -20,7 +20,7 @@
 
 -module(riak_cs_singlebag_registrar).
 
--export([process_specs/0, pool_specs/1, pool_name/2, choose_bag_id/1,
+-export([process_specs/0, pool_specs/1, pool_name/3, choose_bag_id/1,
          set_bag_id_to_manifest/2,
          list_pool/1, pool_status/0]).
 
@@ -32,8 +32,8 @@ process_specs() ->
 pool_specs(_Props) ->
     [].
 
-pool_name(_PoolType, _Target) ->
-    undefined.
+pool_name(_MasterPid, _PoolType, _Target) ->
+    {ok, undefined}.
 
 choose_bag_id(_PoolType) ->
     undefined.

@@ -20,7 +20,7 @@
 
 -module(riak_cs_multibag_registrar).
 
--export([process_specs/0, pool_specs/1, pool_name/2, choose_bag_id/1,
+-export([process_specs/0, pool_specs/1, pool_name/3, choose_bag_id/1,
          set_bag_id_to_manifest/2,
          list_pool/1, pool_status/0]).
 
@@ -35,14 +35,20 @@ process_specs() ->
 pool_specs(Props) ->
     riak_cs_multibag:pool_specs(Props).
 
--spec pool_name(riak_cs_bag_registrar:pool_type(),
-                undefined | riakc_obj:riakc_obj() | lfs_manifest() | cs_bucket()) ->
-                       atom().
-pool_name(request_pool = PoolType, Manifest) when is_record(Manifest, ?MANIFEST_REC) ->
+-spec pool_name(pid(), riak_cs_bag_registrar:pool_type(),
+                lfs_manifest() | cs_bucket() | riakc_obj:riakc_obj()) ->
+                       {ok, atom()} | {error, term()}.
+pool_name(_MasterRiakc, request_pool = PoolType, Manifest)
+  when is_record(Manifest, ?MANIFEST_REC) ->
     riak_cs_multibag:pool_name_for_bag(PoolType, bag_id_from_manifest(Manifest));
-pool_name(request_pool = PoolType, ?RCS_BUCKET{} = Bucket) ->
-    riak_cs_multibag:pool_name_for_bag(PoolType, bag_id_from_cs_bucket(Bucket));
-pool_name(PoolType, BucketObj) ->
+pool_name(MasterRiakc, request_pool = PoolType, ?RCS_BUCKET{} = Bucket) ->
+    case bag_id_from_bucket_record(MasterRiakc, Bucket) of
+        {ok, BagId} ->
+            riak_cs_multibag:pool_name_for_bag(PoolType, BagId);
+        {error, Reason} ->
+            {error, Reason}
+    end;
+pool_name(_MasterRiakc, PoolType, BucketObj) ->
     riak_cs_multibag:pool_name_for_bag(PoolType, bag_id_from_bucket(BucketObj)).
 
 -spec bag_id_from_manifest(lfs_manifest()) -> riak_cs_bag_registrar:bag_id().
@@ -57,11 +63,23 @@ bag_id_from_manifest(?MANIFEST{props = Props}) ->
             end
     end.
 
--spec bag_id_from_cs_bucket(cs_bucket()) -> riak_cs_bag_registrar:bag_id().
-bag_id_from_cs_bucket(?RCS_BUCKET{manifest_bag=undefined}) ->
-    undefined;
-bag_id_from_cs_bucket(?RCS_BUCKET{manifest_bag=BagId}) ->
-    BagId.
+-spec bag_id_from_bucket_record(pid(), cs_bucket()) ->
+                                       {ok, riak_cs_bag_registrar:bag_id()} |
+                                       {error, term()}.
+bag_id_from_bucket_record(MasterRiakc, ?RCS_BUCKET{name=BucketName})
+  when is_list(BucketName) ->
+    bag_id_from_bucket_name(MasterRiakc, list_to_binary(BucketName));
+bag_id_from_bucket_record(MasterRiakc, ?RCS_BUCKET{name=BucketName})
+  when is_binary(BucketName) ->
+    bag_id_from_bucket_name(MasterRiakc, BucketName).
+
+bag_id_from_bucket_name(MasterRiakc, BucketName) ->
+    case riak_cs_utils:fetch_bucket_object(BucketName, MasterRiakc) of
+        {ok, BucketObj} ->
+            {ok, bag_id_from_bucket(BucketObj)};
+        {error, Reason} ->
+            {error, Reason}
+    end.
 
 -spec bag_id_from_bucket(riakc_obj:riakc_obj()) -> riak_cs_bag_registrar:bag_id().
 bag_id_from_bucket(BucketObj) ->
@@ -69,7 +87,7 @@ bag_id_from_bucket(BucketObj) ->
     bag_id_from_contents(Contents).
 
 bag_id_from_contents([]) ->
-    application:get_env(riak_cs, default_manifest_bag);
+    undefined;
 bag_id_from_contents([{MD, _} | Contents]) ->
     case bag_id_from_meta(dict:fetch(?MD_USERMETA, MD)) of
         undefined ->

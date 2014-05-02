@@ -239,10 +239,10 @@ validate_auth_header(RD, AuthBypass, RiakPid, Ctx) ->
 %% Spawns manifest FSM
 -spec ensure_doc(term(), pid()) -> term().
 ensure_doc(KeyCtx=#key_context{bucket_object=undefined,
-                               bucket=Bucket}, RiakcPid) ->
-    case riak_cs_bucket:fetch_bucket_object(Bucket, RiakcPid) of
+                               bucket=Bucket}, MasterRiakcPid) ->
+    case riak_cs_bucket:fetch_bucket_object(Bucket, MasterRiakcPid) of
         {ok, Obj} ->
-            setup_manifest(KeyCtx#key_context{bucket_object = Obj}, RiakcPid);
+            setup_manifest(KeyCtx#key_context{bucket_object = Obj}, MasterRiakcPid);
         {error, Reason} when Reason =:= notfound orelse Reason =:= no_such_bucket ->
             KeyCtx#key_context{bucket_object = notfound}
     end;
@@ -251,23 +251,24 @@ ensure_doc(KeyCtx, _) ->
 
 setup_manifest(KeyCtx=#key_context{bucket=Bucket,
                                    bucket_object=BucketObj,
-                                   key=Key}, RiakcPid) ->
+                                   key=Key}, MasterRiakcPid) ->
     %% start the get_fsm
     BinKey = list_to_binary(Key),
     FetchConcurrency = riak_cs_lfs_utils:fetch_concurrency(),
     BufferFactor = riak_cs_lfs_utils:get_fsm_buffer_size_factor(),
-    ManifestPool = riak_cs_bag_registrar:pool_name(request_pool, BucketObj),
+    {ok, ManifestPool} = riak_cs_bag_registrar:pool_name(
+                           MasterRiakcPid, request_pool, BucketObj),
     lager:debug("ManifestPool: ~p~n", [ManifestPool]),
     ManiRiakcPid = case ManifestPool of
                        undefined ->
-                           RiakcPid;
+                           MasterRiakcPid;
                        PoolName ->
                            %% TODO: Handle {error, Reason}
                            {ok, NewPid} = riak_cs_utils:riak_connection(PoolName),
                            NewPid
                    end,
     {ok, FsmPid} = riak_cs_get_fsm_sup:start_get_fsm(node(), Bucket, BinKey,
-                                                     self(), ManiRiakcPid, RiakcPid,
+                                                     self(), ManiRiakcPid, MasterRiakcPid,
                                                      FetchConcurrency,
                                                      BufferFactor),
     Manifest = riak_cs_get_fsm:get_manifest(FsmPid),

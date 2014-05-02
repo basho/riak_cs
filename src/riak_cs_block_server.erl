@@ -84,34 +84,34 @@ start_link(PoolOrPid) ->
 %% could return an error, or the pids it has
 %% so far (which might be less than MinWorkers).
 -spec start_block_servers(lfs_manifest(), pid(), pos_integer()) -> [pid()].
-start_block_servers(Manifest, RiakcPid, MaxNumServers) ->
-    case riak_cs_bag_registrar:pool_name(request_pool, Manifest) of
-        undefined ->
-            start_block_servers_for_default(RiakcPid, MaxNumServers, []);
-        PoolName ->
-            start_block_servers_for_pool(PoolName, MaxNumServers, [])
+start_block_servers(Manifest, MasterRiakcPid, MaxNumServers) ->
+    case riak_cs_bag_registrar:pool_name(MasterRiakcPid, request_pool, Manifest) of
+        {ok, undefined} ->
+            start_block_servers_master(MasterRiakcPid, MaxNumServers, []);
+        {ok, PoolName} ->
+            start_block_servers_non_master(PoolName, MaxNumServers, [])
     end.
 
-start_block_servers_for_pool(_PoolName, 0, Pids) ->
+start_block_servers_non_master(_PoolName, 0, Pids) ->
     Pids;
-start_block_servers_for_pool(PoolName, NumWorkers, Pids) ->
+start_block_servers_non_master(PoolName, NumWorkers, Pids) ->
     case start_link({pool, PoolName}) of
         {ok, Pid} ->
-            start_block_servers_for_pool(PoolName, NumWorkers - 1, [Pid | Pids]);
+            start_block_servers_non_master(PoolName, NumWorkers - 1, [Pid | Pids]);
         %% TODO: normal??? busy?
         {error, normal} ->
             Pids
     end.
 
-start_block_servers_for_default(RiakcPid, 1, Pids) ->
+start_block_servers_master(RiakcPid, 1, Pids) ->
     {ok, Pid} = start_link({pid, RiakcPid}),
     [Pid | Pids];
-start_block_servers_for_default(RiakcPid, NumWorkers, Pids) ->
+start_block_servers_master(RiakcPid, NumWorkers, Pids) ->
     case start_link({pool, request_pool}) of
         {ok, Pid} ->
-            start_block_servers_for_default(RiakcPid, NumWorkers - 1, [Pid | Pids]);
+            start_block_servers_master(RiakcPid, NumWorkers - 1, [Pid | Pids]);
         {error, normal} ->
-            start_block_servers_for_default(RiakcPid, 1, Pids)
+            start_block_servers_master(RiakcPid, 1, Pids)
     end.
 
 -spec get_block(pid(), binary(), binary(), binary(), pos_integer()) -> ok.

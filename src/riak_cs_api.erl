@@ -41,19 +41,20 @@ list_objects([], _, _, _, _) ->
     {error, no_such_bucket};
 list_objects(_UserBuckets, _Bucket, {error, _}=Error, _Options, _RiakcPid) ->
     Error;
-list_objects(_UserBuckets, Bucket, MaxKeys, Options, RiakcPid) ->
+list_objects(_UserBuckets, Bucket, MaxKeys, Options, MasterRiakcPid) ->
     ListKeysRequest = riak_cs_list_objects:new_request(Bucket,
                                                        MaxKeys,
                                                        Options),
     BinPid = riak_cs_utils:pid_to_binary(self()),
     CacheKey = << BinPid/binary, <<":">>/binary, Bucket/binary >>,
     UseCache = riak_cs_list_objects_ets_cache:cache_enabled(),
-    case riak_cs_utils:fetch_bucket_object(Bucket, RiakcPid) of
+    case riak_cs_utils:fetch_bucket_object(Bucket, MasterRiakcPid) of
         {ok, BucketObj} ->
-            ManifestPool = riak_cs_bag_registrar:pool_name(bucket_list_pool, BucketObj),
+            {ok, ManifestPool} = riak_cs_bag_registrar:pool_name(
+                                   MasterRiakcPid, bucket_list_pool, BucketObj),
             ManiRiakcPid = case ManifestPool of
                                undefined ->
-                                   RiakcPid;
+                                   MasterRiakcPid;
                                PoolName ->
                                    %% TODO: Handle {error, Reason}
                                    {ok, NewPid} = riak_cs_utils:riak_connection(PoolName),

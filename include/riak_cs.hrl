@@ -22,7 +22,7 @@
 -define(MANIFEST_REC, lfs_manifest_v3).
 
 -define(ACL, #acl_v2).
--define(RCS_BUCKET, #rcs_bucket_v2).
+-define(RCS_BUCKET, #moss_bucket_v1).
 -define(MOSS_USER, #rcs_user_v2).
 -define(RCS_USER, #rcs_user_v2).
 -define(MULTIPART_MANIFEST, #multipart_manifest_v1).
@@ -72,14 +72,7 @@
           modification_time :: erlang:timestamp(),
           acl :: acl()}).
 
--record(rcs_bucket_v2, {
-          name :: string() | binary(),
-          last_action :: created | deleted,
-          creation_date :: string(),
-          modification_time :: erlang:timestamp(),
-          manifest_bag :: undefined | binary(),
-          acl :: acl()}).
--type cs_bucket() :: #rcs_bucket_v2{}.
+-type cs_bucket() :: #moss_bucket_v1{}.
 -type bucket_operation() :: create | delete | update_acl | update_policy
                           | delete_policy.
 -type bucket_action() :: created | deleted.

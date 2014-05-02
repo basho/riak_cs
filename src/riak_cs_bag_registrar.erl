@@ -20,7 +20,7 @@
 
 -module(riak_cs_bag_registrar).
 
--export([process_specs/0, pool_specs/1, pool_name/2, choose_bag_id/1,
+-export([process_specs/0, pool_specs/1, pool_name/3, choose_bag_id/1,
          set_bag_id_to_manifest/2,
          list_pool/1, pool_status/0]).
 -export([registar_module/0, is_multibag_enabled/0]).
@@ -32,6 +32,7 @@
 -callback process_specs() -> [term()].
 -callback pool_specs(proplists:proplists()) ->
     [{atom(), {non_neg_integer(), non_neg_integer()}}].
+-callback pool_name(pid(), pool_type(), term()) -> {ok, atom()} | {error, term()}.
 -callback choose_bag_id(manifest | block, term()) -> bag_id().
 -callback set_bag_id_to_manifest(bag_id(), lfs_manifest()) -> lfs_manifest().
 -callback list_pool(pool_type()) -> [{Name::atom(), pool_type(), bag_id()}].
@@ -48,9 +49,9 @@ pool_specs(Props) ->
     (registar_module()):pool_specs(Props).
 
 %% Translate bag ID in buckets and manifests to pool name.
--spec pool_name(pool_type(), term()) -> atom().
-pool_name(PoolType, Target) ->
-    (registar_module()):pool_name(PoolType, Target).
+-spec pool_name(pid(), pool_type(), term()) -> {ok, atom()} | {error, term()}.
+pool_name(MasterRiakc, PoolType, Target) ->
+    (registar_module()):pool_name(MasterRiakc, PoolType, Target).
 
 choose_bag_id(AllocateType) ->
     (registar_module()):choose_bag_id(AllocateType).
