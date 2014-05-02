@@ -136,12 +136,14 @@ web_specs(Options) ->
 -spec pool_specs(proplist()) -> [supervisor:child_spec()].
 pool_specs(Options) ->
     WorkerStop = fun(Worker) -> riak_cs_riakc_pool_worker:stop(Worker) end,
-    DefaultPools = proplists:get_value(connection_pools, Options),
-    DefaultAddress = riak_cs_config:get_env(riak_cs, riak_ip, "127.0.0.1"),
-    DefaultPort = riak_cs_config:get_env(riak_cs, riak_pb_port, 8087),
-    MultiBagPools = riak_cs_bag_registrar:pool_specs(DefaultPools),
-    [pool_spec(Name, Workers, Overflow, DefaultAddress, DefaultPort, WorkerStop)
-     || {Name, {Workers, Overflow}} <- DefaultPools]
+    MasterPools = proplists:get_value(connection_pools, Options),
+    MasterAddress = riak_cs_config:get_env(riak_cs, riak_ip, "127.0.0.1"),
+    MasterPort = riak_cs_config:get_env(riak_cs, riak_pb_port, 8087),
+    %% Reuse the master configutraion of pool types (request_pool, bucket_list_pool)
+    %% and fixed/overflow sizes
+    MultiBagPools = riak_cs_bag_registrar:pool_specs(MasterPools),
+    [pool_spec(Name, Workers, Overflow, MasterAddress, MasterPort, WorkerStop)
+     || {Name, {Workers, Overflow}} <- MasterPools]
         ++
     [pool_spec(Name, Workers, Overflow, Address, Port, WorkerStop)
      || {Name, {Workers, Overflow}, {Address, Port}} <- MultiBagPools].

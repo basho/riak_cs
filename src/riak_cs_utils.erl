@@ -690,13 +690,13 @@ find_md_usermeta(MD) ->
     dict:find(?MD_USERMETA, MD).
 
 %% @doc Get a protobufs connection to the riak cluster
-%% from the default connection pool.
+%% from the `request_pool' connection pool of the master bag.
 -spec riak_connection() -> {ok, pid()} | {error, term()}.
 riak_connection() ->
     riak_connection(request_pool).
 
 %% @doc Get a protobufs connection to the riak cluster
-%% from the specified connection pool.
+%% from the specified connection pool of the master bag.
 -spec riak_connection(atom()) -> {ok, pid()} | {error, term()}.
 riak_connection(Pool) ->
     case catch poolboy:checkout(Pool, false) of

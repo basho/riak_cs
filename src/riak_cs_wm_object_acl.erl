@@ -188,7 +188,7 @@ accept_body(RD, Ctx=#context{local_context=#key_context{get_fsm_pid=GetFsmPid,
                 {ok, AclFromHeadersOrDefault};
             _ ->
                 riak_cs_acl_utils:validate_acl(
-                  %% Pass the default riakc because it is used to resolve users
+                  %% Pass the master riakc because it is used to resolve users
                   %% from canonical IDs
                   riak_cs_acl_utils:acl_from_xml(Body,
                                                  User?RCS_USER.key_id,
