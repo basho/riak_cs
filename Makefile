@@ -150,7 +150,7 @@ orgs-README:
 	@mv README.txt README
 
 DIALYZER_APPS = kernel stdlib sasl erts ssl tools os_mon runtime_tools crypto inets \
-	xmerl webtool eunit syntax_tools compiler
+	webtool eunit syntax_tools compiler
 PLT ?= $(HOME)/.riak-cs_dialyzer_plt
 
 ##
