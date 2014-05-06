@@ -171,13 +171,11 @@ delete_bucket(User, UserObj, Bucket, RiakPid) ->
     end.
 
 retry_delete_bucket(_, _, Bucket, _, 0) ->
-    %% TODO: this is a debug log.
     lager:error("All retry on deleting bucket '~s' failed "
                 "because multipart upload still exists (or newly created).",
                 [Bucket]),
-    %% TODO: needs discussion,or "please reduce multipart initiation
-    %% rate".
-    {error, too_much_multipart_initiation};
+    %% TODO: needs discussion,or "please reduce your request rate".
+    {error, multipart_delete_retry_exhausted};
 retry_delete_bucket(User,  UserObj, Bucket, RiakPid, RetryCount) ->
     ok = delete_all_uploads(User, Bucket, RiakPid),
     case serialized_bucket_op(Bucket,
