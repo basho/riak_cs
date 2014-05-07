@@ -102,8 +102,9 @@ object_size_map({error, notfound}, _, _) ->
 object_size_map(Object, _, _) ->
     try
         AllManifests = [ binary_to_term(V)
-                         || V <- riak_object:get_values(Object) ],
-        Resolved = riak_cs_manifest_resolution:resolve(AllManifests),
+                         || V <- riak_object:get_values(Object), V /= <<>> ],
+        Upgraded = riak_cs_manifest_utils:upgrade_wrapped_manifests(AllManifests),
+        Resolved = riak_cs_manifest_resolution:resolve(Upgraded),
         {MPparts, MPbytes} = count_multipart_parts(Resolved),
         case riak_cs_manifest_utils:active_manifest(Resolved) of
             {ok, ?MANIFEST{content_length=Length}} ->
