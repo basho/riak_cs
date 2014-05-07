@@ -36,6 +36,12 @@
          object_size_reduce/2
         ]).
 
+-ifdef(TEST).
+-compile(export_all).
+-include_lib("eunit/include/eunit.hrl").
+-endif.
+
+
 %% @doc Sum the number of bytes stored in active files in all of the
 %% given user's directories.  The result is a list of pairs of
 %% `{BucketName, Bytes}`.
@@ -100,20 +106,16 @@ sum_bucket(Riak, Bucket) ->
 object_size_map({error, notfound}, _, _) ->
     [];
 object_size_map(Object, _, _) ->
-    try
-        AllManifests = [ binary_to_term(V)
-                         || V <- riak_object:get_values(Object) ],
-        Resolved = riak_cs_manifest_resolution:resolve(AllManifests),
-        {MPparts, MPbytes} = count_multipart_parts(Resolved),
-        case riak_cs_manifest_utils:active_manifest(Resolved) of
-            {ok, ?MANIFEST{content_length=Length}} ->
-                [{1 + MPparts, Length + MPbytes}];
-            _ ->
-                [{MPparts, MPbytes}]
-        end
-    catch _:_ ->
-            []
-    end.
+    Handler = fun(Resolved) ->
+                      {MPparts, MPbytes} = count_multipart_parts(Resolved),
+                      case riak_cs_manifest_utils:active_manifest(Resolved) of
+                          {ok, ?MANIFEST{content_length=Length}} ->
+                              [{1 + MPparts, Length + MPbytes}];
+                          _ ->
+                              [{MPparts, MPbytes}]
+                      end
+              end,
+    riak_cs_utils:maybe_process_resolved(Object, Handler).
 
 object_size_reduce(Sizes, _) ->
     {Objects,Bytes} = lists:unzip(Sizes),
@@ -141,16 +143,62 @@ get_usage(Riak, User, Start, End) ->
     {ok, Period} = archive_period(),
     rts:find_samples(Riak, ?STORAGE_BUCKET, User, Start, End, Period).
 
+-spec count_multipart_parts([{binary(), lfs_manifest()}]) ->
+                                   {non_neg_integer(), non_neg_integer()}.
 count_multipart_parts(Resolved) ->
     lists:foldl(fun count_multipart_parts/2, {0, 0}, Resolved).
 
-count_multipart_parts({_UUID, M}, {MPparts, MPbytes} = Acc) ->
-    case {M?MANIFEST.state, proplists:get_value(multipart, M?MANIFEST.props)} of
-        {writing, MP} ->
-            Ps = MP?MULTIPART_MANIFEST.parts,
+-spec count_multipart_parts([{binary(), lfs_manifest()}],
+                            {non_neg_integer(), non_neg_integer()}) ->
+                                   {non_neg_integer(), non_neg_integer()}.
+count_multipart_parts({_UUID, ?MANIFEST{props=Props, state=writing} = M},
+                      {MPparts, MPbytes} = Acc)
+  when is_list(Props) ->
+    case proplists:get_value(multipart, Props) of
+        ?MULTIPART_MANIFEST{parts=Ps} = _  ->
             {MPparts + length(Ps),
              MPbytes + lists:sum([P?PART_MANIFEST.content_length ||
                                      P <- Ps])};
-        _ ->
+        undefined ->
+            %% Maybe not a multipart
+            Acc;
+        Other ->
+            %% strange thing happened
+            _ = lager:log(warning, self(),
+                          "strange writing multipart manifest detected at ~p: ~p",
+                          [M?MANIFEST.bkey, Other]),
             Acc
-    end.
+    end;
+count_multipart_parts(_, Acc) ->
+    %% Other state than writing, won't be counted
+    %% active manifests will be counted later
+    Acc.
+
+-ifdef(TEST).
+
+count_multipart_parts_test_() ->
+    ZeroZero = {0, 0},
+    ValidMPManifest = ?MULTIPART_MANIFEST{parts=[?PART_MANIFEST{content_length=10}]},
+    [?_assertEqual(ZeroZero,
+                   count_multipart_parts({<<"pocketburgers">>,
+                                          ?MANIFEST{props=pocketburgers, state=writing}},
+                                         ZeroZero)),
+     ?_assertEqual(ZeroZero,
+                   count_multipart_parts({<<"pocketburgers">>,
+                                          ?MANIFEST{props=pocketburgers, state=iamyourfather}},
+                                         ZeroZero)),
+     ?_assertEqual(ZeroZero,
+                   count_multipart_parts({<<"pocketburgers">>,
+                                          ?MANIFEST{props=[], state=writing}},
+                                         ZeroZero)),
+     ?_assertEqual(ZeroZero,
+                   count_multipart_parts({<<"pocketburgers">>,
+                                          ?MANIFEST{props=[{multipart, pocketburger}], state=writing}},
+                                         ZeroZero)),
+     ?_assertEqual({1, 10},
+                   count_multipart_parts({<<"pocketburgers">>,
+                                          ?MANIFEST{props=[{multipart, ValidMPManifest}], state=writing}},
+                                         ZeroZero))
+    ].
+
+-endif.

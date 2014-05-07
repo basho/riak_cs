@@ -42,6 +42,7 @@
          has_tombstone/1,
          is_admin/1,
          map_keys_and_manifests/3,
+         maybe_process_resolved/2,
          md5/1,
          md5_init/0,
          md5_update/2,
@@ -504,17 +505,24 @@ receive_keys_and_manifests(ReqId, Acc) ->
 map_keys_and_manifests({error, notfound}, _, _) ->
     [];
 map_keys_and_manifests(Object, _, _) ->
+    Handler = fun(Resolved) ->
+                      case riak_cs_manifest_utils:active_manifest(Resolved) of
+                          {ok, Manifest} ->
+                              [{riak_object:key(Object), {ok, Manifest}}];
+                          _ ->
+                              []
+                      end
+              end,
+    maybe_process_resolved(Object, Handler).
+
+maybe_process_resolved(Object, ResolvedManifestsHandler) ->
     try
         AllManifests = [ binary_to_term(V)
-                         || V <- riak_object:get_values(Object) ],
+                         || {_, V} = Content <- riak_object:get_contents(Object),
+                            not has_tombstone(Content) ],
         Upgraded = riak_cs_manifest_utils:upgrade_wrapped_manifests(AllManifests),
         Resolved = riak_cs_manifest_resolution:resolve(Upgraded),
-        case riak_cs_manifest_utils:active_manifest(Resolved) of
-            {ok, Manifest} ->
-                [{riak_object:key(Object), {ok, Manifest}}];
-            _ ->
-                []
-        end
+        ResolvedManifestsHandler(Resolved)
     catch Type:Reason ->
             _ = lager:log(error,
                           self(),
