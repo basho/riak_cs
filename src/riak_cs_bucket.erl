@@ -634,42 +634,24 @@ serialized_bucket_op(Bucket, ACL, User, UserObj, BucketOp, StatName, RiakPid) ->
             {error, Reason1}
     end.
 
+%% @doc needs retry for delete op.  409 assumes
+%% MultipartUploadRemaining for now if a new feature that needs retry
+%% could come up, add branch here. See tests in
+%% tests/riak_cs_bucket_test.erl
+-spec handle_delete_response(200..503, string(), delete|create) ->
+                                    {error, remaining_multipart_upload} |
+                                    {error, atom()}.
 handle_delete_response(409, ErrorDoc, delete) ->
-    %% {error, {error_status, 409, _, ErrorDoc}}
-    %% when BucketOp =:= delete ->
-    %% needs retry for delete op.
-    %% 409 assumes MultipartUploadRemaining for now
-    %% if a new feature that needs retry could come
-    %% up, add branch here.
-
-    %% The ErrorDoc is like
-    %%<?xml version="1.0" encoding="UTF-8"?><Error>
-    %% <Code>MultipartUploadRemaining</Code>
-    %% <Message>Multipart uploads still remaining.</Message><Resource>/buckets/riak-test-bucket</Resource><RequestId></RequestId></Error>
-    %% which is defined at stanchion_response.erl
-    {#xmlElement{name='Error',
-                 content=XmlNodes}, _} = xmerl_scan:string(ErrorDoc, [{space, normalize}]),
-    find_code(XmlNodes, ErrorDoc);
-
-handle_delete_response(_, ErrorDoc, _) ->
-    riak_cs_s3_response:error_response(ErrorDoc).
-
-find_code([], ErrorDoc) ->
-    riak_cs_s3_response:error_response(ErrorDoc);
-find_code([#xmlElement{name='Code', content=[XmlText]}|_], ErrorDoc) ->
-    case XmlText of
-        #xmlText{value=Value} ->
-            case lists:flatten(Value) of
-                "MultipartUploadRemaining" ->
-                    {error, remaining_multipart_upload};
-                _ ->
-                    riak_cs_s3_response:error_response(ErrorDoc)
-            end;
+    %% TODO: add unit tests for this function.
+    Value = riak_cs_s3_response:xml_error_code(ErrorDoc),
+    case lists:flatten(Value) of
+        "MultipartUploadRemaining" ->
+            {error, remaining_multipart_upload};
         _ ->
             riak_cs_s3_response:error_response(ErrorDoc)
     end;
-find_code([_|Nodes], ErrorDoc) ->
-    find_code(Nodes, ErrorDoc).
+handle_delete_response(_, ErrorDoc, _) ->
+    riak_cs_s3_response:error_response(ErrorDoc).
 
 %% @doc Update a bucket record to convert the name from binary
 %% to string if necessary.
