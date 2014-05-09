@@ -176,7 +176,7 @@ retry_delete_bucket(_, _, Bucket, _, 0) ->
     %% TODO: needs discussion,or "please reduce your request rate".
     {error, multipart_delete_retry_exhausted};
 retry_delete_bucket(User,  UserObj, Bucket, RiakPid, RetryCount) ->
-    ok = delete_all_uploads(User, Bucket, RiakPid),
+    ok = delete_all_uploads(Bucket, RiakPid),
     case serialized_bucket_op(Bucket,
                               ?ACL{},
                               User,
@@ -194,13 +194,11 @@ retry_delete_bucket(User,  UserObj, Bucket, RiakPid, RetryCount) ->
             Error
     end.
 
-delete_all_uploads(User, Bucket, RiakPid) ->
-    User3Tuple = riak_cs_mp_utils:user_rec_to_3tuple(User),
-
+delete_all_uploads(Bucket, RiakPid) ->
     Opts = [{delimiter, undefined}, {max_uploads, undefined},
             {prefix, undefined}, {key_marker, <<>>},
             {upload_id_marker, <<>>}],
-    {ok, {Ds, _Commons}} = riak_cs_mp_utils:list_multipart_uploads(Bucket, User3Tuple, Opts, RiakPid),
+    {ok, {Ds, _Commons}} = riak_cs_mp_utils:list_all_multipart_uploads(Bucket, Opts, RiakPid),
     fold_delete_uploads(Bucket, RiakPid, Ds).
 
 fold_delete_uploads(_Bucket, _RiakPid, []) -> ok;
