@@ -458,7 +458,7 @@ cancel_batch(?STATE{batch_start=BatchStart,
     %% Interrupt the batch of deletes
     _ = lager:info("Canceled garbage collection batch after ~b seconds.",
                    [elapsed(BatchStart)]),
-    [riak_cs_gc_worker:stop(P) || P <- WorkerPids],
+    _ = [riak_cs_gc_worker:stop(P) || P <- WorkerPids],
     schedule_next(State?STATE{batch=[],
                               worker_pids=[],
                               active_workers=0}).

@@ -21,7 +21,7 @@
 -module(riak_cs_bag_registrar).
 
 -export([process_specs/0, pool_specs/1, pool_name/3, choose_bag_id/1,
-         set_bag_id_to_manifest/2,
+         set_bag_id_to_manifest/2, bag_id_from_manifest/1,
          list_pool/1, pool_status/0]).
 -export([registar_module/0, is_multibag_enabled/0]).
 
@@ -30,11 +30,12 @@
 -include("riak_cs.hrl").
 
 -callback process_specs() -> [term()].
--callback pool_specs(proplists:proplists()) ->
+-callback pool_specs(proplists:proplist()) ->
     [{atom(), {non_neg_integer(), non_neg_integer()}}].
 -callback pool_name(pid(), pool_type(), term()) -> {ok, atom()} | {error, term()}.
 -callback choose_bag_id(manifest | block, term()) -> bag_id().
 -callback set_bag_id_to_manifest(bag_id(), lfs_manifest()) -> lfs_manifest().
+-callback bag_id_from_manifest(lfs_manifest()) -> bag_id().
 -callback list_pool(pool_type()) -> [{Name::atom(), pool_type(), bag_id()}].
 -callback pool_status() -> [term()].
 -callback tab_info() -> term().
@@ -58,6 +59,9 @@ choose_bag_id(AllocateType) ->
 
 set_bag_id_to_manifest(BagId, Manifest) ->
     (registar_module()):set_bag_id_to_manifest(BagId, Manifest).
+
+bag_id_from_manifest(Manifest) ->
+    (registar_module()):bag_id_from_manifest(Manifest).
 
 list_pool(PoolType) ->
     (registar_module()):list_pool(PoolType).

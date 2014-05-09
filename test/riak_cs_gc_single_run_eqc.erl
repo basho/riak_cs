@@ -215,7 +215,7 @@ dummy_get_index_range_fun(ListOfFilesetKeysInput) ->
     end.
 
 %% {ok, Reply} for 2i request which includes `NumFilesetKeys' keys
--spec dummy_get_index_range(fileset_keys_input(), proplists:proplists()) ->
+-spec dummy_get_index_range(fileset_keys_input(), proplists:proplist()) ->
                                    {ok, ?INDEX_RESULTS{}}.
 dummy_get_index_range({NumFilesetKeys, no_error}, Opts) ->
     dummy_get_index_range(NumFilesetKeys, <<"no_error">>, Opts);

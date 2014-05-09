@@ -55,7 +55,7 @@
           %% Used for paginated 2I querying of GC bucket
           key_list_state :: undefined | term(),
           %% Options to use when start workers
-          worker_opts :: proplists:proplists(),
+          worker_opts :: proplists:proplist(),
           testing=false :: boolean()
          }).
 
@@ -69,18 +69,18 @@
           batch_count=0 :: non_neg_integer(),
           %% Count of filesets skipped in this batch
           batch_skips=0 :: non_neg_integer(),
-          batch=[] :: undefined | [index_result_keys()], % `undefined' only for testing
+          batch=[] :: undefined | [binary()], % `undefined' only for testing
           manif_count=0 :: non_neg_integer(),
           block_count=0 :: non_neg_integer(),
           delete_fsm_pid :: pid()
          }).
 
 -record(gc_key_list_state, {
-          remaining_pools :: [{atom(), atom(), riak_cs_bag_registrar:bag_id(), proplists:proplists()}],
+          remaining_pools :: [{atom(), atom(), riak_cs_bag_registrar:bag_id(), proplists:proplist()}],
           %% Riak connection pid
           current_riak :: undefined | pid(),
           current_bag_id :: riak_cs_bag_registrar:bag_id(),
-          current_worker_opts :: proplists:proplists(),
+          current_worker_opts :: proplists:proplist(),
           %% start of the current gc interval
           batch_start :: undefined | non_neg_integer(),
           leeway :: non_neg_integer(),
@@ -90,7 +90,7 @@
 
 -record(gc_key_list_result, {
           bag_id :: riak_cs_bag_registrar:bag_id(),
-          worker_opts :: proplists:proplists(),
+          worker_opts :: proplists:proplist(),
           batch :: [index_result_keys()]
          }).
 

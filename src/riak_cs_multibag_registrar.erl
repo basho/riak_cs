@@ -21,7 +21,7 @@
 -module(riak_cs_multibag_registrar).
 
 -export([process_specs/0, pool_specs/1, pool_name/3, choose_bag_id/1,
-         set_bag_id_to_manifest/2,
+         set_bag_id_to_manifest/2, bag_id_from_manifest/1,
          list_pool/1, pool_status/0]).
 
 -behaiviour(riak_cs_bag_registrar).
