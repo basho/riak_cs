@@ -65,7 +65,6 @@ create_bucket(User, UserObj, Bucket, ACL, RiakPid) ->
         true ->
             case valid_bucket_name(Bucket) of
                 true ->
-                    ok = delete_all_uploads(User, Bucket, RiakPid),
                     serialized_bucket_op(Bucket,
                                          ACL,
                                          User,
