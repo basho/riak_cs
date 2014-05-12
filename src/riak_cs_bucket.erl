@@ -1,6 +1,6 @@
 %% ---------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2014 Basho Technologies, Inc.  All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -41,7 +41,6 @@
 -include("riak_cs.hrl").
 -include_lib("riak_pb/include/riak_pb_kv_codec.hrl").
 -include_lib("riakc/include/riakc.hrl").
--include_lib("xmerl/include/xmerl.hrl").
 
 -ifdef(TEST).
 -compile(export_all).
@@ -351,19 +350,12 @@ bucket_empty_any_pred(RiakcPid, Bucket) ->
             riak_cs_utils:key_exists(RiakcPid, Bucket, Key)
     end.
 
-%% @doc Check if a bucket exists in the `buckets' bucket and verify
-%% that it has an owner assigned. If true return the object;
-%% otherwise, return an error.
-%%
-%% @TODO Rename current `bucket_exists' function to
-%% `bucket_exists_for_user' and rename this function
-%% `bucket_exists'.
+%% @doc Fetches the bucket object and verify its status.
 -spec fetch_bucket_object(binary(), pid()) ->
                                  {ok, riakc_obj:riakc_obj()} | {error, term()}.
 fetch_bucket_object(Bucket, RiakPid) ->
     case riak_cs_utils:get_object(?BUCKETS_BUCKET, Bucket, RiakPid) of
         {ok, Obj} ->
-            %% Make sure the bucket has an owner
             [Value | _] = Values = riakc_obj:get_values(Obj),
             maybe_log_sibling_warning(Bucket, Values),
             case Value of

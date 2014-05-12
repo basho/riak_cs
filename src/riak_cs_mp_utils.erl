@@ -232,8 +232,6 @@ list_multipart_uploads_with_2ikey(Bucket,
             Else2
     end.
 
-
-
 list_parts(Bucket, Key, UploadId, Caller, Opts) ->
     list_parts(Bucket, Key, UploadId, Caller, Opts, nopid).
 
