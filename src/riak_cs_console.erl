@@ -76,66 +76,49 @@ cleanup_orphan_multipart(Timestamp) when is_binary(Timestamp) ->
     {Host, Port} = riak_cs_config:riak_host_port(),
     Options = [{connect_timeout, riak_cs_config:connect_timeout()}],
     {ok, Pid} = riakc_pb_socket:start_link(Host, Port, Options),
-    Bucket = ?BUCKETS_BUCKET,
-    {ok, Results} = riakc_pb_socket:get_index_range(Pid, Bucket,
-                                                    <<"$key">>,
-                                                    <<0>>, <<255>>,
-                                                    [{max_results, 1024}]),
+
     _ = io:format("cleaning up with timestamp ~s", [Timestamp]),
-    _ = iterate_csbuckets(Pid, Results, [], Timestamp),
+    Fun = fun(BucketName, GetResult, Acc0) ->
+                  _ = maybe_cleanup_csbucket(Pid, BucketName, GetResult, Timestamp),
+                  Acc0
+          end,
+    _ = riak_cs_bucket:fold_all_buckets(Fun, [], Pid),
+
     ok = riakc_pb_socket:stop(Pid),
-    _ = io:format("all unaborted orphan multipart uploads before ~s has deleted",
+    _ = io:format("~nall unaborted orphan multipart uploads before ~s has deleted.~n",
                   [Timestamp]).
 
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
 
--spec iterate_csbuckets(pid(), ?INDEX_RESULTS{}, [], binary()) -> ok | {error, term()}.
-iterate_csbuckets(_Pid, ?INDEX_RESULTS{keys=[]}, _List, _) -> ok;
 
-iterate_csbuckets(Pid,
-                  _IndexResults0 = ?INDEX_RESULTS{keys=Keys0,
-                                                  terms=_Terms,
-                                                  continuation=Cont},
-                  List, Timestamp) ->
-
-    %% process Keys0 here
-    _ = [ maybe_cleanup_csbucket(Pid, Key, Timestamp) || Key <- Keys0 ],
-
-    Options = [{max_results, 1024}, {continuation, Cont}],
-    case riakc_pb_socket:get_index_range(Pid, ?BUCKETS_BUCKET,
-                                         <<"$key">>,
-                                         <<0>>, <<255>>,
-                                         Options) of
-        {ok, IndexResults} ->
-            iterate_csbuckets(Pid, IndexResults, List ++ Keys0, Timestamp);
-        Error ->
-            io:format("~p", [Error])
-    end.
-
--spec maybe_cleanup_csbucket(pid(), binary(), binary()) -> ok.
-maybe_cleanup_csbucket(Pid, BucketName, Timestamp) ->
-    case riakc_pb_socket:get(Pid, ?BUCKETS_BUCKET, BucketName) of
-        {ok, RiakObj} ->
-            case riakc_obj:get_values(RiakObj) of
-                [<<"0">>] -> %% deleted bucket, ensure if no uploads exists
-                    io:format("checking bucket ~s:~n", [BucketName]),
-                    riak_cs_bucket:delete_old_uploads(BucketName, Pid, Timestamp),
-                    io:format("done.~n", []);
-
-                [<<>>] -> %% tombstone, can't happen
-                    io:format("tombstone found on bucket ~s", [BucketName]),
-                    ok;
-                [_] -> %% active bucket, do nothing
-                    ok;
-                L when is_list(L) andalso length(L) > 1 -> %% siblings!! whoa!!
-                    io:format("siblings found on bucket ~s", [BucketName]),
-                    ok
+-spec maybe_cleanup_csbucket(pid(), binary(),
+                             {ok, riakc_obj()}|{error, term()},
+                             binary()) -> ok.
+maybe_cleanup_csbucket(Pid, BucketName, {ok, RiakObj}, Timestamp) ->
+    case riakc_obj:get_values(RiakObj) of
+        [<<"0">>] -> %% deleted bucket, ensure if no uploads exists
+            io:format("\rchecking bucket ~s:", [BucketName]),
+            case riak_cs_bucket:delete_old_uploads(BucketName, Pid,
+                                                   Timestamp) of
+                {ok, 0} -> ok;
+                {ok, Count} ->  io:format(" aborted ~p uploads.~n",
+                                          [Count]);
+                Error -> io:format("Error: ~p <<< ~n", [Error])
             end;
-        {error, notfound} ->
+
+        [<<>>] -> %% tombstone, can't happen
+            io:format("tombstone found on bucket ~s~n", [BucketName]),
             ok;
-        {error, _} = Error ->
-            io:format("Error: ~p on processing ~s", [Error, BucketName]),
-            Error
-    end.
+        [_] -> %% active bucket, do nothing
+            ok;
+        L when is_list(L) andalso length(L) > 1 -> %% siblings!! whoa!!
+            io:format("siblings found on bucket ~s~n", [BucketName]),
+            ok
+    end;
+maybe_cleanup_csbucket(_, _, {error, notfound}, _) ->
+    ok;
+maybe_cleanup_csbucket(_, BucketName, {error, _} = Error, _) ->
+    io:format("Error: ~p on processing ~s", [Error, BucketName]),
+    Error.

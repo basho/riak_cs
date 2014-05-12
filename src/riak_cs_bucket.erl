@@ -37,7 +37,8 @@
          resolve_buckets/3,
          update_bucket_record/1,
          delete_all_uploads/2,
-         delete_old_uploads/3
+         delete_old_uploads/3,
+         fold_all_buckets/3
         ]).
 
 -include("riak_cs.hrl").
@@ -193,10 +194,10 @@ delete_old_uploads(Bucket, RiakPid, Timestamp) when is_binary(Timestamp) ->
             {prefix, undefined}, {key_marker, <<>>},
             {upload_id_marker, <<>>}],
     {ok, {Ds, _Commons}} = riak_cs_mp_utils:list_all_multipart_uploads(Bucket, Opts, RiakPid),
-    fold_delete_uploads(Bucket, RiakPid, Ds, Timestamp).
+    fold_delete_uploads(Bucket, RiakPid, Ds, Timestamp, 0).
 
-fold_delete_uploads(_Bucket, _RiakPid, [], _Timestamp) -> ok;
-fold_delete_uploads(Bucket, RiakPid, [D|Ds], Timestamp)->
+fold_delete_uploads(_Bucket, _RiakPid, [], _Timestamp, Count) -> {ok, Count};
+fold_delete_uploads(Bucket, RiakPid, [D|Ds], Timestamp, Count)->
     Key = D?MULTIPART_DESCR.key,
 
     %% cannot fail here
@@ -214,7 +215,7 @@ fold_delete_uploads(Bucket, RiakPid, [D|Ds], Timestamp)->
             case riak_cs_gc:gc_specific_manifests(
                    [M?MANIFEST.uuid], Obj, Bucket, Key, RiakPid) of
                 {ok, _NewObj} ->
-                    fold_delete_uploads(Bucket, RiakPid, Ds, Timestamp);
+                    fold_delete_uploads(Bucket, RiakPid, Ds, Timestamp, Count+1);
                 E ->
                     lager:debug("cannot delete multipart manifest: ~p ~p (~p)",
                                 [{Bucket, Key}, M?MANIFEST.uuid, E]),
@@ -223,8 +224,40 @@ fold_delete_uploads(Bucket, RiakPid, [D|Ds], Timestamp)->
         _E ->
             lager:debug("skipping multipart manifest: ~p ~p (~p)",
                         [{Bucket, Key}, UploadId, _E]),
-            fold_delete_uploads(Bucket, RiakPid, Ds, Timestamp)
+            fold_delete_uploads(Bucket, RiakPid, Ds, Timestamp, Count)
     end.
+
+-spec fold_all_buckets(fun(), term(), pid()) -> ok.
+fold_all_buckets(Fun, Acc0, Pid) when is_function(Fun) ->
+    iterate_csbuckets(Pid, Acc0, Fun, undefined).
+
+-spec iterate_csbuckets(pid(), term(), fun(), binary()|undefined) -> ok | {error, term()}.
+iterate_csbuckets(Pid, Acc0, Fun, Cont0) ->
+
+    Options = [{max_results, 1024}, {continuation, Cont0}],
+    case riakc_pb_socket:get_index_range(Pid, ?BUCKETS_BUCKET,
+                                         <<"$key">>, <<0>>, <<255>>,
+                                         Options) of
+
+        {ok, ?INDEX_RESULTS{keys=Keys0, terms=_Terms, continuation=Cont}} ->
+
+            Acc = lists:foldl(fun(Key, Acc1) ->
+                                      GetResult = riakc_pb_socket:get(Pid, ?BUCKETS_BUCKET, Key),
+                                      Fun(Key, GetResult, Acc1)
+                              end, Acc0, Keys0),
+
+            case Cont of
+                undefined ->
+                    {ok, Acc};
+                _ ->
+                    iterate_csbuckets(Pid, Acc, Fun, Cont)
+            end;
+
+        Error ->
+            io:format("~p", [Error]),
+            {error, {Error, Acc0}}
+    end.
+
 
 %% @doc Return a user's buckets.
 -spec get_buckets(rcs_user()) -> [cs_bucket()].
