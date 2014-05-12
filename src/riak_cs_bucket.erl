@@ -35,7 +35,9 @@
          get_bucket_acl_policy/3,
          maybe_log_bucket_owner_error/2,
          resolve_buckets/3,
-         update_bucket_record/1
+         update_bucket_record/1,
+         delete_all_uploads/2,
+         delete_old_uploads/3
         ]).
 
 -include("riak_cs.hrl").
@@ -180,15 +182,21 @@ delete_bucket(User, UserObj, Bucket, RiakPid) ->
             LocalError
     end.
 
+%% @doc TODO: this function is to be moved to riak_cs_multipart_utils or else?
 delete_all_uploads(Bucket, RiakPid) ->
+    delete_old_uploads(Bucket, RiakPid, <<255>>).
+
+%% @doc deletes all multipart uploads older than Timestamp.
+%% input binary format of iso8068
+delete_old_uploads(Bucket, RiakPid, Timestamp) when is_binary(Timestamp) ->
     Opts = [{delimiter, undefined}, {max_uploads, undefined},
             {prefix, undefined}, {key_marker, <<>>},
             {upload_id_marker, <<>>}],
     {ok, {Ds, _Commons}} = riak_cs_mp_utils:list_all_multipart_uploads(Bucket, Opts, RiakPid),
-    fold_delete_uploads(Bucket, RiakPid, Ds).
+    fold_delete_uploads(Bucket, RiakPid, Ds, Timestamp).
 
-fold_delete_uploads(_Bucket, _RiakPid, []) -> ok;
-fold_delete_uploads(Bucket, RiakPid, [D|Ds])->
+fold_delete_uploads(_Bucket, _RiakPid, [], _Timestamp) -> ok;
+fold_delete_uploads(Bucket, RiakPid, [D|Ds], Timestamp)->
     Key = D?MULTIPART_DESCR.key,
 
     %% cannot fail here
@@ -198,11 +206,15 @@ fold_delete_uploads(Bucket, RiakPid, [D|Ds])->
 
     %% find_manifest_with_uploadid
     case lists:keyfind(UploadId, 1, Manifests) of
-        {UploadId, M} when M?MANIFEST.state == writing ->
+
+        {UploadId, M} when M?MANIFEST.state == writing
+                           %% comparing timestamp here, like
+                           %% <<"2012-02-17T18:22:50.000Z">> < <<"2014-05-11-....">> => true
+                           andalso M?MANIFEST.created < Timestamp ->
             case riak_cs_gc:gc_specific_manifests(
                    [M?MANIFEST.uuid], Obj, Bucket, Key, RiakPid) of
                 {ok, _NewObj} ->
-                    fold_delete_uploads(Bucket, RiakPid, Ds);
+                    fold_delete_uploads(Bucket, RiakPid, Ds, Timestamp);
                 E ->
                     lager:debug("cannot delete multipart manifest: ~p ~p (~p)",
                                 [{Bucket, Key}, M?MANIFEST.uuid, E]),
@@ -211,7 +223,7 @@ fold_delete_uploads(Bucket, RiakPid, [D|Ds])->
         _E ->
             lager:debug("skipping multipart manifest: ~p ~p (~p)",
                         [{Bucket, Key}, UploadId, _E]),
-            fold_delete_uploads(Bucket, RiakPid, Ds)
+            fold_delete_uploads(Bucket, RiakPid, Ds, Timestamp)
     end.
 
 %% @doc Return a user's buckets.

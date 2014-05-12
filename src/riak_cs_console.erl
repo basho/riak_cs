@@ -121,15 +121,7 @@ maybe_cleanup_csbucket(Pid, BucketName, Timestamp) ->
             case riakc_obj:get_values(RiakObj) of
                 [<<"0">>] -> %% deleted bucket, ensure if no uploads exists
                     io:format("checking bucket ~s:~n", [BucketName]),
-                    HashBucket = riak_cs_utils:to_bucket_name(objects, BucketName),
-                    %% TODO: this list_keys/2 might take longer times,
-                    %% will leave this to check correctness. If this gets
-                    %% to be an issue, it's easy to run in iterated style
-                    %% with backpressure.
-                    {ok, Keys} = riakc_pb_socket:list_keys(Pid, HashBucket),
-                    _ = [maybe_cleanup_manifest(Pid, Timestamp,
-                                                riakc_pb_socket:get(Pid, HashBucket, Key))
-                         || Key <- Keys],
+                    riak_cs_bucket:delete_old_uploads(BucketName, Pid, Timestamp),
                     io:format("done.~n", []);
 
                 [<<>>] -> %% tombstone, can't happen
@@ -147,30 +139,3 @@ maybe_cleanup_csbucket(Pid, BucketName, Timestamp) ->
             io:format("Error: ~p on processing ~s", [Error, BucketName]),
             Error
     end.
-
--spec maybe_cleanup_manifest(pid(), binary(), {ok, riakc_obj()} | {error, term()}) -> no_return().
-maybe_cleanup_manifest(Pid, Timestamp, {ok, Obj}) ->
-    case riak_cs_utils:manifests_from_riak_object(Obj) of
-        [{_, M}|_] = Manifests ->
-            UUIDs = lists:foldl(fun({UUID,Manifest}, Acc) ->
-                                        IsMultipart = proplists:is_defined(multipart,
-                                                                           Manifest?MANIFEST.props),
-                                        %% compare timestamp here, like
-                                        %% <<"2012-02-17T18:22:50.000Z">> < <<"2014-05-11-....">> => true
-                                        IsOld = Manifest?MANIFEST.created < Timestamp,
-                                        case {Manifest?MANIFEST.state, IsMultipart, IsOld} of
-                                            {writing, true, true} -> [UUID|Acc];
-                                            _ -> Acc
-                                        end
-                                end, [], Manifests),
-            {Bucket, Key} = M?MANIFEST.bkey,
-            case riak_cs_gc:gc_specific_manifests(UUIDs, Obj, Bucket, Key, Pid) of
-                {ok, _} -> ok;
-                _ -> error
-            end;
-        [] -> ok
-    end;
-maybe_cleanup_manifest(_, _, {error, notfound}) ->
-    ok;
-maybe_cleanup_manifest(_, _, _) ->
-    ok.
