@@ -241,7 +241,7 @@ validate_auth_header(RD, AuthBypass, RiakPid, Ctx) ->
 -spec ensure_doc(term(), pid()) -> term().
 ensure_doc(KeyCtx=#key_context{bucket_object=undefined,
                                bucket=Bucket}, RiakcPid) ->
-    case riak_cs_utils:fetch_bucket_object(Bucket, RiakcPid) of
+    case riak_cs_bucket:fetch_bucket_object(Bucket, RiakcPid) of
         {ok, Obj} ->
             setup_manifest(KeyCtx#key_context{bucket_object = Obj}, RiakcPid);
         {error, Reason} when Reason =:= notfound orelse Reason =:= no_such_bucket ->
@@ -430,7 +430,7 @@ bucket_obj_from_local_context(#key_context{bucket_object=BucketObject},
                               _BucketName, _Pid) ->
     {ok, BucketObject};
 bucket_obj_from_local_context(undefined, BucketName, RiakcPid) ->
-    case riak_cs_utils:fetch_bucket_object(BucketName, RiakcPid) of
+    case riak_cs_bucket:fetch_bucket_object(BucketName, RiakcPid) of
         {error, notfound} ->
             {ok, undefined};
         {error, no_such_bucket} ->
@@ -620,7 +620,7 @@ bucket_access_authorize_helper(AccessType, Deletable, RD, Ctx) ->
     PermCtx = Ctx#context{bucket=Bucket,
                           requested_perm=RequestedAccess},
     handle_bucket_acl_policy_response(
-      riak_cs_utils:get_bucket_acl_policy(Bucket, PolicyMod, RiakPid),
+      riak_cs_bucket:get_bucket_acl_policy(Bucket, PolicyMod, RiakPid),
       AccessType,
       Deletable,
       RD,
@@ -702,7 +702,7 @@ handle_policy_eval_result(User, _, _, RD, Ctx) ->
     AccessRD = riak_cs_access_log_handler:set_user(User, RD),
     %% Check if the bucket actually exists so we can
     %% make the correct decision to return a 404 or 403
-    case riak_cs_utils:fetch_bucket_object(Bucket, RiakPid) of
+    case riak_cs_bucket:fetch_bucket_object(Bucket, RiakPid) of
         {ok, _} ->
             riak_cs_wm_utils:deny_access(AccessRD, Ctx);
         {error, Reason} ->

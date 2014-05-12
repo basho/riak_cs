@@ -28,7 +28,8 @@
          copy_object_response/3,
          no_such_upload_response/3,
          invalid_digest_response/3,
-         error_code_to_atom/1]).
+         error_code_to_atom/1,
+         xml_error_code/1]).
 
 -include("riak_cs.hrl").
 -include("riak_cs_api.hrl").
@@ -284,6 +285,8 @@ xml_error_code(Xml) ->
 -spec process_xml_error([xmlElement()]) -> string().
 process_xml_error([]) ->
     [];
+process_xml_error([#xmlText{value=" "}|Rest]) ->
+    process_xml_error(Rest);
 process_xml_error([HeadElement | RestElements]) ->
     _ = lager:debug("Element name: ~p", [HeadElement#xmlElement.name]),
     ElementName = HeadElement#xmlElement.name,
@@ -294,3 +297,5 @@ process_xml_error([HeadElement | RestElements]) ->
         _ ->
             process_xml_error(RestElements)
     end.
+
+

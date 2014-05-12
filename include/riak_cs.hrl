@@ -488,3 +488,6 @@
 -define(USERMETA_BUCKET, "RCS-bucket").
 -define(USERMETA_KEY,    "RCS-key").
 -define(USERMETA_BCSUM,  "RCS-bcsum").
+
+-define(OBJECT_BUCKET_PREFIX, <<"0o:">>).       % Version # = 0
+-define(BLOCK_BUCKET_PREFIX, <<"0b:">>).        % Version # = 0
