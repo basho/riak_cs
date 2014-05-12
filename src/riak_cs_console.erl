@@ -65,26 +65,27 @@ cluster_info([OutFile]) ->
 %% $ riak-cs attach
 %% 1> riak_cs_console:cleanup_orphan_multipart().
 %% cleaning up with timestamp 2014-05-11-....
--spec cleanup_orphan_multipart() -> ok.
+-spec cleanup_orphan_multipart() -> no_return().
 cleanup_orphan_multipart() ->
     cleanup_orphan_multipart(riak_cs_wm_utils:iso_8601_datetime()).
 
--spec cleanup_orphan_multipart(string()|binary()) -> ok.
+-spec cleanup_orphan_multipart(string()|binary()) -> no_return().
 cleanup_orphan_multipart(Timestamp) when is_list(Timestamp) ->
     cleanup_orphan_multipart(list_to_binary(Timestamp));
 cleanup_orphan_multipart(Timestamp) when is_binary(Timestamp) ->
     {Host, Port} = riak_cs_config:riak_host_port(),
     Options = [{connect_timeout, riak_cs_config:connect_timeout()}],
     {ok, Pid} = riakc_pb_socket:start_link(Host, Port, Options),
-    {ok, Results} = riakc_pb_socket:get_index_range(Pid, ?BUCKETS_BUCKET,
-                                                    {binary_index, <<"$key">>},
+    Bucket = ?BUCKETS_BUCKET,
+    {ok, Results} = riakc_pb_socket:get_index_range(Pid, Bucket,
+                                                    <<"$key">>,
                                                     <<0>>, <<255>>,
-                                                    {max_results, 1024}),
-    io:format("cleaning up with timestamp ~s", [Timestamp]),
-    iterate_csbuckets(Pid, Results, [], Timestamp),
-    riakc_pb_socket:stop(Pid),
-    io:format("all unaborted orphan multipart uploads before ~s has deleted",
-              [Timestamp]).
+                                                    [{max_results, 1024}]),
+    _ = io:format("cleaning up with timestamp ~s", [Timestamp]),
+    _ = iterate_csbuckets(Pid, Results, [], Timestamp),
+    ok = riakc_pb_socket:stop(Pid),
+    _ = io:format("all unaborted orphan multipart uploads before ~s has deleted",
+                  [Timestamp]).
 
 %%%===================================================================
 %%% Internal functions
@@ -104,7 +105,7 @@ iterate_csbuckets(Pid,
 
     Options = [{max_results, 1024}, {continuation, Cont}],
     case riakc_pb_socket:get_index_range(Pid, ?BUCKETS_BUCKET,
-                                         {binary_index, <<"$key">>},
+                                         <<"$key">>,
                                          <<0>>, <<255>>,
                                          Options) of
         {ok, IndexResults} ->
@@ -147,9 +148,10 @@ maybe_cleanup_csbucket(Pid, BucketName, Timestamp) ->
             Error
     end.
 
-maybe_cleanup_manifest(Pid, {ok, Obj}, Timestamp) ->
+-spec maybe_cleanup_manifest(pid(), binary(), {ok, riakc_obj()} | {error, term()}) -> no_return().
+maybe_cleanup_manifest(Pid, Timestamp, {ok, Obj}) ->
     case riak_cs_utils:manifests_from_riak_object(Obj) of
-        [M|_] = Manifests ->
+        [{_, M}|_] = Manifests ->
             UUIDs = lists:foldl(fun({UUID,Manifest}, Acc) ->
                                         IsMultipart = proplists:is_defined(multipart,
                                                                            Manifest?MANIFEST.props),
@@ -166,10 +168,9 @@ maybe_cleanup_manifest(Pid, {ok, Obj}, Timestamp) ->
                 {ok, _} -> ok;
                 _ -> error
             end;
-        [] -> ok;
-        _ -> error
+        [] -> ok
     end;
-maybe_cleanup_manifest(_, {error, notfound}, _) ->
+maybe_cleanup_manifest(_, _, {error, notfound}) ->
     ok;
 maybe_cleanup_manifest(_, _, _) ->
     ok.
