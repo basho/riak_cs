@@ -89,6 +89,7 @@ error_message(invalid_range) -> "The requested range is not satisfiable";
 error_message(invalid_bucket_name) -> "The specified bucket is not valid.";
 error_message(unexpected_content) -> "This request does not support content";
 error_message(canned_acl_and_header_grant) -> "Specifying both Canned ACLs and Header Grants is not allowed";
+error_message(remaining_multipart_upload) -> "Concurrent multipart upload initiation detected. Please stop it to delete bucket.";
 error_message(_) -> "Please reduce your request rate.".
 
 error_code(invalid_access_key_id) -> "InvalidAccessKeyId";
@@ -125,6 +126,7 @@ error_code(unresolved_grant_email) -> "UnresolvableGrantByEmailAddress";
 error_code(unexpected_content) -> "UnexpectedContent";
 error_code(canned_acl_and_header_grant) -> "InvalidRequest";
 error_code(malformed_acl_error) -> "MalformedACLError";
+error_code(remaining_multipart_upload) -> "MultipartUploadRemaining";
 error_code(ErrorName) ->
     ok = lager:debug("Unknown Error Name: ~p", [ErrorName]),
     "ServiceUnavailable".
@@ -170,6 +172,7 @@ status_code(invalid_bucket_name) -> 400;
 status_code(unexpected_content) -> 400;
 status_code(canned_acl_and_header_grant) -> 400;
 status_code(malformed_acl_error) -> 400;
+status_code(remaining_multipart_upload) -> 409;
 status_code(_) -> 503.
 
 -spec respond(term(), #wm_reqdata{}, #context{}) ->

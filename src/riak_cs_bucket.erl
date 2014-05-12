@@ -146,7 +146,7 @@ dash_char(Char) ->
 %% @doc Delete a bucket
 -spec delete_bucket(rcs_user(), riakc_obj:riakc_obj(), binary(), pid()) ->
                            ok |
-                           {error, term()}.
+                           {error, remaining_multipart_upload}.
 delete_bucket(User, UserObj, Bucket, RiakPid) ->
     CurrentBuckets = get_buckets(User),
 
@@ -164,34 +164,20 @@ delete_bucket(User, UserObj, Bucket, RiakPid) ->
         true ->
             %% TODO: output log if failed in cleaning up existing uploads.
             %% The number of retry is hardcoded.
-            retry_delete_bucket(User, UserObj, Bucket, RiakPid, 5);
+            ok = delete_all_uploads(Bucket, RiakPid),
+            %% This call still may return {error, remaining_multipart_upload}
+            %% even if all uploads cleaned up above, because concurrent
+            %% multiple deletion may happen. Then Riak CS returns 409 confliction
+            %% which is not in S3 specification....
+            serialized_bucket_op(Bucket,
+                                 ?ACL{},
+                                 User,
+                                 UserObj,
+                                 delete,
+                                 bucket_delete,
+                                 RiakPid);
         false ->
             LocalError
-    end.
-
-retry_delete_bucket(_, _, Bucket, _, 0) ->
-    lager:error("All retry on deleting bucket '~s' failed "
-                "because multipart upload still exists (or newly created).",
-                [Bucket]),
-    %% TODO: needs discussion,or "please reduce your request rate".
-    {error, multipart_delete_retry_exhausted};
-retry_delete_bucket(User,  UserObj, Bucket, RiakPid, RetryCount) ->
-    ok = delete_all_uploads(Bucket, RiakPid),
-    case serialized_bucket_op(Bucket,
-                              ?ACL{},
-                              User,
-                              UserObj,
-                              delete,
-                              bucket_delete,
-                              RiakPid) of
-        ok -> ok;
-        {error, remaining_multipart_upload} ->
-            retry_delete_bucket(User, UserObj, Bucket,
-                                RiakPid, RetryCount-1);
-        Error ->
-            lager:error("Deleting bucket '~s' failed. reason: ~p",
-                        [Bucket, Error]),
-            Error
     end.
 
 delete_all_uploads(Bucket, RiakPid) ->
