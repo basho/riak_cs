@@ -167,7 +167,8 @@ delete_bucket(User, UserObj, Bucket, RiakPid) ->
         true ->
             %% TODO: output log if failed in cleaning up existing uploads.
             %% The number of retry is hardcoded.
-            ok = delete_all_uploads(Bucket, RiakPid),
+            {ok, Count} = delete_all_uploads(Bucket, RiakPid),
+            _ = lager:debug("deleted ~p multiparts before bucket deletion.", [Count]),
             %% This call still may return {error, remaining_multipart_upload}
             %% even if all uploads cleaned up above, because concurrent
             %% multiple deletion may happen. Then Riak CS returns 409 confliction
@@ -184,11 +185,14 @@ delete_bucket(User, UserObj, Bucket, RiakPid) ->
     end.
 
 %% @doc TODO: this function is to be moved to riak_cs_multipart_utils or else?
+-spec delete_all_uploads(binary(), pid()) -> {ok, non_neg_integer()} | {error, term()}.
 delete_all_uploads(Bucket, RiakPid) ->
     delete_old_uploads(Bucket, RiakPid, <<255>>).
 
 %% @doc deletes all multipart uploads older than Timestamp.
 %% input binary format of iso8068
+-spec delete_old_uploads(binary(), pid(), binary()) ->
+                                {ok, non_neg_integer()} | {error, term()}.
 delete_old_uploads(Bucket, RiakPid, Timestamp) when is_binary(Timestamp) ->
     Opts = [{delimiter, undefined}, {max_uploads, undefined},
             {prefix, undefined}, {key_marker, <<>>},
@@ -664,17 +668,19 @@ serialized_bucket_op(Bucket, ACL, User, UserObj, BucketOp, StatName, RiakPid) ->
 -spec handle_delete_response(200..503, string(), delete|create) ->
                                     {error, remaining_multipart_upload} |
                                     {error, atom()}.
-handle_delete_response(409, ErrorDoc, delete) ->
+handle_delete_response(409, ErrorDoc, Op) when Op =:= delete orelse Op =:= create ->
     Value = riak_cs_s3_response:xml_error_code(ErrorDoc),
     case lists:flatten(Value) of
         "MultipartUploadRemaining" ->
             %% See logs in Stanhcion
-            _ = lager:error("Concurrent multipart upload might have happened on bucket delete.", []),
+            _ = lager:error("Concurrent multipart upload might have happened on bucket deletion/creation.", []),
             {error, remaining_multipart_upload};
-        _ ->
+        Other ->
+            _ = lager:debug("errordoc: ~p => ~s", [Other, ErrorDoc]),
             riak_cs_s3_response:error_response(ErrorDoc)
     end;
-handle_delete_response(_, ErrorDoc, _) ->
+handle_delete_response(_C, ErrorDoc, _M) ->
+    _ = lager:error("unexpected errordoc: (~p, ~p) ~s", [_C, _M, ErrorDoc]),
     riak_cs_s3_response:error_response(ErrorDoc).
 
 %% @doc Update a bucket record to convert the name from binary
