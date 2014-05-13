@@ -673,7 +673,8 @@ handle_delete_response(409, ErrorDoc, Op) when Op =:= delete orelse Op =:= creat
     case lists:flatten(Value) of
         "MultipartUploadRemaining" ->
             %% See logs in Stanhcion
-            _ = lager:error("Concurrent multipart upload might have happened on bucket deletion/creation.", []),
+            _ = lager:error("Concurrent multipart upload might have"
+                            " happened on bucket deletion/creation.", []),
             {error, remaining_multipart_upload};
         Other ->
             _ = lager:debug("errordoc: ~p => ~s", [Other, ErrorDoc]),
