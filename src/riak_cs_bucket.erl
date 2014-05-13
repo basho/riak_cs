@@ -231,30 +231,36 @@ fold_delete_uploads(Bucket, RiakPid, [D|Ds], Timestamp, Count)->
             fold_delete_uploads(Bucket, RiakPid, Ds, Timestamp, Count)
     end.
 
--spec fold_all_buckets(fun(), term(), pid()) -> ok.
+-spec fold_all_buckets(fun(), term(), pid()) -> {ok, term()} | {error, any()}.
 fold_all_buckets(Fun, Acc0, Pid) when is_function(Fun) ->
     iterate_csbuckets(Pid, Acc0, Fun, undefined).
 
--spec iterate_csbuckets(pid(), term(), fun(), binary()|undefined) -> ok | {error, term()}.
+-spec iterate_csbuckets(pid(), term(), fun(), binary()|undefined) ->
+                               {ok, term()} | {error, any()}.
 iterate_csbuckets(Pid, Acc0, Fun, Cont0) ->
 
-    Options = [{max_results, 1024}, {continuation, Cont0}],
+    Options = case Cont0 of
+                  undefined -> [];
+                  _ ->         [{continuation, Cont0}]
+              end ++ [{max_results, 1024}],
+
     case riakc_pb_socket:get_index_range(Pid, ?BUCKETS_BUCKET,
                                          <<"$key">>, <<0>>, <<255>>,
                                          Options) of
 
-        {ok, ?INDEX_RESULTS{keys=Keys0, terms=_Terms, continuation=Cont}} ->
+        {ok, ?INDEX_RESULTS{keys=Keys0, terms=_Terms,
+                            continuation=Cont}} ->
 
-            Acc = lists:foldl(fun(Key, Acc1) ->
-                                      GetResult = riakc_pb_socket:get(Pid, ?BUCKETS_BUCKET, Key),
-                                      Fun(Key, GetResult, Acc1)
-                              end, Acc0, Keys0),
-
+            Foldfun = fun(Key, Acc1) ->
+                              GetResult = riakc_pb_socket:get(Pid, ?BUCKETS_BUCKET, Key),
+                              Fun(Key, GetResult, Acc1)
+                      end,
+            Acc2 = lists:foldl(Foldfun, Acc0, Keys0),
             case Cont of
                 undefined ->
-                    {ok, Acc};
+                    {ok, Acc2};
                 _ ->
-                    iterate_csbuckets(Pid, Acc, Fun, Cont)
+                    iterate_csbuckets(Pid, Acc2, Fun, Cont)
             end;
 
         Error ->
