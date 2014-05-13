@@ -665,10 +665,11 @@ serialized_bucket_op(Bucket, ACL, User, UserObj, BucketOp, StatName, RiakPid) ->
                                     {error, remaining_multipart_upload} |
                                     {error, atom()}.
 handle_delete_response(409, ErrorDoc, delete) ->
-    %% TODO: add unit tests for this function.
     Value = riak_cs_s3_response:xml_error_code(ErrorDoc),
     case lists:flatten(Value) of
         "MultipartUploadRemaining" ->
+            %% See logs in Stanhcion
+            _ = lager:error("Concurrent multipart upload might have happened on bucket delete.", []),
             {error, remaining_multipart_upload};
         _ ->
             riak_cs_s3_response:error_response(ErrorDoc)
