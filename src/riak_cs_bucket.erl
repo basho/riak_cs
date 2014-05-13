@@ -248,12 +248,11 @@ iterate_csbuckets(Pid, Acc0, Fun, Cont0) ->
                                          <<"$key">>, <<0>>, <<255>>,
                                          Options) of
 
-        {ok, ?INDEX_RESULTS{keys=Keys0, terms=_Terms,
-                            continuation=Cont}} ->
+        {ok, ?INDEX_RESULTS{keys=Keys0, continuation=Cont}} ->
 
             Foldfun = fun(Key, Acc1) ->
-                              GetResult = riakc_pb_socket:get(Pid, ?BUCKETS_BUCKET, Key),
-                              Fun(Key, GetResult, Acc1)
+                              Res = riakc_pb_socket:get(Pid, ?BUCKETS_BUCKET, Key),
+                              Fun(Key, Res, Acc1)
                       end,
             Acc2 = lists:foldl(Foldfun, Acc0, Keys0),
             case Cont of
@@ -264,7 +263,7 @@ iterate_csbuckets(Pid, Acc0, Fun, Cont0) ->
             end;
 
         Error ->
-            io:format("~p", [Error]),
+            _ = lager:error("iterating CS buckets: ~p", [Error]),
             {error, {Error, Acc0}}
     end.
 
