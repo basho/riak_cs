@@ -71,10 +71,9 @@ cleanup_orphan_multipart() ->
 cleanup_orphan_multipart(Timestamp) when is_list(Timestamp) ->
     cleanup_orphan_multipart(list_to_binary(Timestamp));
 cleanup_orphan_multipart(Timestamp) when is_binary(Timestamp) ->
-    {Host, Port} = riak_cs_config:riak_host_port(),
-    Options = [{connect_timeout, riak_cs_config:connect_timeout()}],
-    {ok, Pid} = riakc_pb_socket:start_link(Host, Port, Options),
 
+    {ok, Pid} = riak_cs_riakc_pool_worker:start_link([]),
+    _ = lager:info("cleaning up with timestamp ~s", [Timestamp]),
     _ = io:format("cleaning up with timestamp ~s", [Timestamp]),
     Fun = fun(BucketName, GetResult, Acc0) ->
                   _ = maybe_cleanup_csbucket(Pid, BucketName, GetResult, Timestamp),
@@ -82,7 +81,8 @@ cleanup_orphan_multipart(Timestamp) when is_binary(Timestamp) ->
           end,
     _ = riak_cs_bucket:fold_all_buckets(Fun, [], Pid),
 
-    ok = riakc_pb_socket:stop(Pid),
+    ok = riak_cs_riakc_pool_worker:stop(Pid),
+    _ = lager:info("~nall old unaborted orphan multipart uploads has deleted.~n", []),
     _ = io:format("~nall old unaborted orphan multipart uploads has deleted.~n", []).
 
 
