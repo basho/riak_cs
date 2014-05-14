@@ -34,7 +34,7 @@ handle_delete_response_test() ->
     %% which is defined at stanchion_response.erl
     ?assertEqual({error, remaining_multipart_upload},
                  riak_cs_bucket:handle_stanchion_response(409, ErrorDoc, delete, <<>>)),
-    ?assertEqual({error, remaining_multipart_upload},
+    ?assertEqual({error, {remaining_multipart_upload_on_deleted_bucket, <<>>}},
                  riak_cs_bucket:handle_stanchion_response(409, ErrorDoc, create, <<>>)),
     ErrorResponse = riak_cs_s3_response:error_response(ErrorDoc),
     ?assertEqual(ErrorResponse,
