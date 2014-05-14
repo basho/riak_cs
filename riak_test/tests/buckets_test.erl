@@ -28,12 +28,9 @@
 %% keys for non-multipart objects
 -define(TEST_BUCKET,        "riak-test-bucket").
 -define(KEY_SINGLE_BLOCK,   "riak_test_key1").
--define(KEY_MULTIPLE_BLOCK, "riak_test_key2").
 
 %% keys for multipart uploaded objects
--define(KEY_MP_TINY,        "riak_test_mp_tiny").  % single part, single block
--define(KEY_MP_SMALL,       "riak_test_mp_small"). % single part, multiple blocks
--define(KEY_MP_LARGE,       "riak_test_mp_large"). % multiple parts
+-define(KEY_MP,        "riak_test_mp").  % single part, single block
 
 
 confirm() ->
@@ -116,7 +113,7 @@ verify_bucket_mpcleanup(UserConfig) ->
 %% @doc in race condition: on delete_bucket
 verify_bucket_mpcleanup_racecond_andfix(UserConfig, UserConfig1,
                                         RiakNode, CSNode) ->
-    Key = ?KEY_MP_TINY,
+    Key = ?KEY_MP,
     Bucket = ?TEST_BUCKET,
     ?assertEqual(ok, erlcloud_s3:create_bucket(Bucket, UserConfig)),
     InitUploadRes = erlcloud_s3_multipart:initiate_upload(Bucket, Key, [], [], UserConfig),

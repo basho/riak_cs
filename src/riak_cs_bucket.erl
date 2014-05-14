@@ -678,11 +678,16 @@ handle_stanchion_response(409, ErrorDoc, Op, Bucket)
   when Op =:= delete orelse Op =:= create ->
 
     Value = riak_cs_s3_response:xml_error_code(ErrorDoc),
-    case lists:flatten(Value) of
-        "MultipartUploadRemaining" ->
+    case {lists:flatten(Value), Op} of
+        {"MultipartUploadRemaining", delete} ->
             _ = lager:error("Concurrent multipart upload might have"
-                            " happened on creating/deleting bucket '~s'.", [Bucket]),
+                            " happened on deleting bucket '~s'.", [Bucket]),
             {error, remaining_multipart_upload};
+        {"MultipartUploadRemaining", create} ->
+            %% might be security issue
+            _ = lager:critical("Multipart upload remains in deleted bucket (~s)"
+                               " Clean up the deleted buckets now.", [Bucket]),
+            {error, {remaining_multipart_upload_on_deleted_bucket, Bucket}};
         Other ->
             _ = lager:debug("errordoc: ~p => ~s", [Other, ErrorDoc]),
             riak_cs_s3_response:error_response(ErrorDoc)

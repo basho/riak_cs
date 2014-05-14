@@ -82,8 +82,8 @@ cleanup_orphan_multipart(Timestamp) when is_binary(Timestamp) ->
     _ = riak_cs_bucket:fold_all_buckets(Fun, [], Pid),
 
     ok = riak_cs_riakc_pool_worker:stop(Pid),
-    _ = lager:info("~nall old unaborted orphan multipart uploads has deleted.~n", []),
-    _ = io:format("~nall old unaborted orphan multipart uploads has deleted.~n", []).
+    _ = lager:info("~nAll old unaborted orphan multipart uploads has deleted.~n", []),
+    _ = io:format("~nAll old unaborted orphan multipart uploads has deleted.~n", []).
 
 
 %%%===================================================================
