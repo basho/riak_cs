@@ -36,11 +36,9 @@ update_riakc_obj(Node, B, K, NewObj) ->
     Riakc = rt:pbc(Node),
     Result = case riakc_pb_socket:get(Riakc, B, K, [deletedvclock]) of
                  {ok, OldObj} ->
-                     %% io:format(user, "========================== OldObj: ~p~n", [OldObj]),
                      Updated = riakc_obj:update_value(riakc_obj:update_metadata(OldObj, NewMD), NewValue),
                      riakc_pb_socket:put(Riakc, Updated);
                  {error, notfound} ->
-                     %% io:format(user, "========================== OldObj: ~p~n", [notfound]),
                      Obj = riakc_obj:new(B, K, NewValue),
                      Updated = riakc_obj:update_metadata(Obj, NewMD),
                      riakc_pb_socket:put(Riakc, Updated)
@@ -51,6 +49,5 @@ update_riakc_obj(Node, B, K, NewObj) ->
 list_keys(Node, B) ->
     Riakc = rt:pbc(Node),
     {ok, Keys} = riakc_pb_socket:list_keys(Riakc, B),
-    io:format(user, "========================== Keys in ~p: ~p~n", [B, Keys]),
     riakc_pb_socket:stop(Riakc),
     {ok, Keys}.
