@@ -48,7 +48,9 @@
          gc_key_suffix_max/0,
          set_gc_key_suffix_max/1,
          user_buckets_prune_time/0,
-         set_user_buckets_prune_time/1
+         set_user_buckets_prune_time/1,
+         riak_host_port/0,
+         connect_timeout/0
         ]).
 
 %% OpenStack config
@@ -275,6 +277,28 @@ set_user_buckets_prune_time(PruneTime) when is_integer(PruneTime) andalso PruneT
     application:set_env(riak_cs, user_buckets_prune_time, PruneTime);
 set_user_buckets_prune_time(_PruneTime) ->
     {error, invalid_value}.
+
+%% @doc copied from `riak_cs_access_archiver'
+-spec riak_host_port() -> {inet:hostname(), inet:port_number()}.
+riak_host_port() ->
+    Host = case application:get_env(riak_cs, riak_ip) of
+               {ok, Host0} -> Host0;
+               undefined -> "127.0.0.1"
+           end,
+    Port = case application:get_env(riak_cs, riak_pb_port) of
+               {ok, Port0 } -> Port0;
+               undefined -> 8087
+           end,
+    {Host, Port}.
+
+-spec connect_timeout() -> pos_integer().
+connect_timeout() ->
+    case application:get_env(riak_cs, riakc_connect_timeout) of
+        {ok, ConfigValue} ->
+            ConfigValue;
+        undefined ->
+            10000
+    end.
 
 %% ===================================================================
 %% S3 config options

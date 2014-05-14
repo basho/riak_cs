@@ -56,7 +56,7 @@ api_request(RD, Ctx=#context{bucket=Bucket,
     UserName = riak_cs_wm_utils:extract_name(User),
     riak_cs_dtrace:dt_bucket_entry(?MODULE, <<"list_keys">>, [], [UserName, Bucket]),
     Res = riak_cs_api:list_objects(
-            [B || B <- riak_cs_utils:get_buckets(User),
+            [B || B <- riak_cs_bucket:get_buckets(User),
                   B?RCS_BUCKET.name =:= binary_to_list(Bucket)],
             Ctx#context.bucket,
             get_max_keys(RD),
