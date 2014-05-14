@@ -58,9 +58,9 @@ cluster_info([OutFile]) ->
 %% cleanup.  This functions takes rather long time, because it
 %% 1. iterates all existing and deleted buckets in moss.buckets
 %% 2. if the bucket is deleted then search for all uncompleted
-%%    multipart uploads, by calling stanchion_server:cleanup_nonexistent_bucket
-%%    because this sequence should not be interrupted by concurrent
-%%    bucket creation.
+%%    multipart uploads.
+%% Note: this sequence should not be interrupted by concurrent
+%%       bucket creation and multipart upload initiation..
 %% usage:
 %% $ riak-cs attach
 %% 1> riak_cs_console:cleanup_orphan_multipart().
