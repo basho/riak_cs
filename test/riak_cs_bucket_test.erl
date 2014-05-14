@@ -33,14 +33,14 @@ handle_delete_response_test() ->
         "<Resource>/buckets/riak-test-bucket</Resource><RequestId></RequestId></Error>",
     %% which is defined at stanchion_response.erl
     ?assertEqual({error, remaining_multipart_upload},
-                 riak_cs_bucket:handle_delete_response(409, ErrorDoc, delete)),
+                 riak_cs_bucket:handle_stanchion_response(409, ErrorDoc, delete, <<>>)),
     ?assertEqual({error, remaining_multipart_upload},
-                 riak_cs_bucket:handle_delete_response(409, ErrorDoc, create)),
+                 riak_cs_bucket:handle_stanchion_response(409, ErrorDoc, create, <<>>)),
     ErrorResponse = riak_cs_s3_response:error_response(ErrorDoc),
     ?assertEqual(ErrorResponse,
-                 riak_cs_bucket:handle_delete_response(503, ErrorDoc, delete)),
+                 riak_cs_bucket:handle_stanchion_response(503, ErrorDoc, delete, <<>>)),
     ?assertEqual(ErrorResponse,
-                 riak_cs_bucket:handle_delete_response(204, ErrorDoc, delete)).
+                 riak_cs_bucket:handle_stanchion_response(204, ErrorDoc, delete, <<>>)).
 
 
 bucket_resolution_test() ->

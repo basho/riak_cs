@@ -85,8 +85,8 @@ cleanup_orphan_multipart(Timestamp) when is_binary(Timestamp) ->
     _ = riak_cs_bucket:fold_all_buckets(Fun, [], Pid),
 
     ok = riakc_pb_socket:stop(Pid),
-    _ = io:format("~nall unaborted orphan multipart uploads before ~s has deleted.~n",
-                  [Timestamp]).
+    _ = io:format("~nall old unaborted orphan multipart uploads has deleted.~n", []).
+
 
 %%%===================================================================
 %%% Internal functions
@@ -98,7 +98,8 @@ cleanup_orphan_multipart(Timestamp) when is_binary(Timestamp) ->
                              binary()) -> ok.
 maybe_cleanup_csbucket(Pid, BucketName, {ok, RiakObj}, Timestamp) ->
     case riakc_obj:get_values(RiakObj) of
-        [<<"0">>] -> %% deleted bucket, ensure if no uploads exists
+        [?FREE_BUCKET_MARKER] ->
+            %% deleted bucket, ensure if no uploads exists
             io:format("\rchecking bucket ~s:", [BucketName]),
             case riak_cs_bucket:delete_old_uploads(BucketName, Pid,
                                                    Timestamp) of

@@ -400,7 +400,7 @@ fetch_bucket_object(Bucket, RiakPid) ->
             [Value | _] = Values = riakc_obj:get_values(Obj),
             maybe_log_sibling_warning(Bucket, Values),
             case Value of
-                <<"0">> ->
+                ?FREE_BUCKET_MARKER ->
                     {error, no_such_bucket};
                 _ ->
                     {ok, Obj}
@@ -658,7 +658,7 @@ serialized_bucket_op(Bucket, ACL, User, UserObj, BucketOp, StatName, RiakPid) ->
                     end;
 
                 {error, {error_status, Status, _, ErrorDoc}} ->
-                    handle_delete_response(Status, ErrorDoc, BucketOp);
+                    handle_stanchion_response(Status, ErrorDoc, BucketOp, Bucket);
 
                 {error, _} ->
                     OpResult
@@ -671,23 +671,24 @@ serialized_bucket_op(Bucket, ACL, User, UserObj, BucketOp, StatName, RiakPid) ->
 %% MultipartUploadRemaining for now if a new feature that needs retry
 %% could come up, add branch here. See tests in
 %% tests/riak_cs_bucket_test.erl
--spec handle_delete_response(200..503, string(), delete|create) ->
+-spec handle_stanchion_response(200..503, string(), delete|create, binary()) ->
                                     {error, remaining_multipart_upload} |
                                     {error, atom()}.
-handle_delete_response(409, ErrorDoc, Op) when Op =:= delete orelse Op =:= create ->
+handle_stanchion_response(409, ErrorDoc, Op, Bucket)
+  when Op =:= delete orelse Op =:= create ->
+
     Value = riak_cs_s3_response:xml_error_code(ErrorDoc),
     case lists:flatten(Value) of
         "MultipartUploadRemaining" ->
-            %% See logs in Stanhcion
             _ = lager:error("Concurrent multipart upload might have"
-                            " happened on bucket deletion/creation.", []),
+                            " happened on creating/deleting bucket '~s'.", [Bucket]),
             {error, remaining_multipart_upload};
         Other ->
             _ = lager:debug("errordoc: ~p => ~s", [Other, ErrorDoc]),
             riak_cs_s3_response:error_response(ErrorDoc)
     end;
-handle_delete_response(_C, ErrorDoc, _M) ->
-    _ = lager:error("unexpected errordoc: (~p, ~p) ~s", [_C, _M, ErrorDoc]),
+handle_stanchion_response(_C, ErrorDoc, _M, _) ->
+    %% _ = lager:error("unexpected errordoc: (~p, ~p) ~s", [_C, _M, ErrorDoc]),
     riak_cs_s3_response:error_response(ErrorDoc).
 
 %% @doc Update a bucket record to convert the name from binary
