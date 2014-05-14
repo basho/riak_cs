@@ -45,6 +45,7 @@
          clean_multipart_unused_parts/2,
          complete_multipart_upload/5, complete_multipart_upload/6,
          initiate_multipart_upload/5, initiate_multipart_upload/6,
+         list_all_multipart_uploads/3,
          list_multipart_uploads/3, list_multipart_uploads/4,
          list_parts/5, list_parts/6,
          make_content_types_accepted/2,
@@ -183,6 +184,12 @@ make_special_error(Code, Message, RequestId, HostId) ->
              },
     riak_cs_xml:to_xml([XmlDoc]).
 
+
+list_all_multipart_uploads(Bucket, Opts, RiakcPid) ->
+    list_multipart_uploads_with_2ikey(Bucket, Opts,
+                                      RiakcPid,
+                                      make_2i_key(Bucket)).
+
 list_multipart_uploads(Bucket, Caller, Opts) ->
     list_multipart_uploads(Bucket, Caller, Opts, nopid).
 
@@ -199,19 +206,9 @@ list_multipart_uploads(Bucket, {_Display, _Canon, CallerKeyId} = Caller,
                             false ->
                                 make_2i_key(Bucket, Caller)
                         end,
-                HashBucket = riak_cs_utils:to_bucket_name(objects, Bucket),
-                case riakc_pb_socket:get_index(?PID(RiakcPid), HashBucket,
-                                               Key2i, <<"1">>) of
-                    {ok, ?INDEX_RESULTS{keys=Names}} ->
-                        MyCaller = case BucketOwnerP of
-                                       true -> owner;
-                                       _    -> CallerKeyId
-                                   end,
-                        {ok, list_multipart_uploads2(Bucket, ?PID(RiakcPid),
-                                                     Names, Opts, MyCaller)};
-                    Else2 ->
-                        Else2
-                end
+                list_multipart_uploads_with_2ikey(Bucket, Opts,
+                                                  ?PID(RiakcPid),
+                                                  Key2i)
             catch error:{badmatch, {m_icbo, _}} ->
                     {error, access_denied}
             after
@@ -219,6 +216,20 @@ list_multipart_uploads(Bucket, {_Display, _Canon, CallerKeyId} = Caller,
             end;
         Else ->
             Else
+    end.
+
+list_multipart_uploads_with_2ikey(Bucket,
+                                  Opts, RiakcPid, Key2i) ->
+    HashBucket = riak_cs_utils:to_bucket_name(objects, Bucket),
+    case riakc_pb_socket:get_index(RiakcPid, HashBucket,
+                                   Key2i, <<"1">>) of
+
+        {ok, ?INDEX_RESULTS{keys=Names}} ->
+            {ok, list_multipart_uploads2(Bucket, RiakcPid,
+                                         Names, Opts)};
+
+        Else2 ->
+            Else2
     end.
 
 list_parts(Bucket, Key, UploadId, Caller, Opts) ->
@@ -534,7 +545,7 @@ make_2i_key(Bucket, {_, _, OwnerStr}) ->
 make_2i_key2(Bucket, OwnerStr) ->
     iolist_to_binary(["rcs@", OwnerStr, "@", Bucket, "_bin"]).
 
-list_multipart_uploads2(Bucket, RiakcPid, Names, Opts, _CallerKeyId) ->
+list_multipart_uploads2(Bucket, RiakcPid, Names, Opts) ->
     FilterFun =
         fun(K, Acc) ->
                 filter_uploads_list(Bucket, K, Opts, RiakcPid, Acc)
@@ -641,7 +652,7 @@ is_caller_bucket_owner(RiakcPid, Bucket, CallerKeyId) ->
     {m_icbo, {ok, {C, _}}} = {m_icbo, riak_cs_utils:get_user(CallerKeyId,
                                                              RiakcPid)},
     Buckets = [iolist_to_binary(B?RCS_BUCKET.name) ||
-                  B <- riak_cs_utils:get_buckets(C)],
+                  B <- riak_cs_bucket:get_buckets(C)],
     lists:member(Bucket, Buckets).
 
 find_manifest_with_uploadid(UploadId, Manifests) ->

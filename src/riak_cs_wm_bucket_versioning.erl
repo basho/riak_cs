@@ -49,7 +49,7 @@ authorize(RD, Ctx) ->
                     {binary() | {halt, term()}, #wm_reqdata{}, #context{}}.
 to_xml(RD, Ctx=#context{user=User,bucket=Bucket}) ->
     StrBucket = binary_to_list(Bucket),
-    case [B || B <- riak_cs_utils:get_buckets(User),
+    case [B || B <- riak_cs_bucket:get_buckets(User),
                B?RCS_BUCKET.name =:= StrBucket] of
         [] ->
             riak_cs_s3_response:api_error(no_such_bucket, RD, Ctx);
