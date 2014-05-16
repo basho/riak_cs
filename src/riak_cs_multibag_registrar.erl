@@ -74,7 +74,7 @@ bag_id_from_bucket_record(MasterRiakc, ?RCS_BUCKET{name=BucketName})
     bag_id_from_bucket_name(MasterRiakc, BucketName).
 
 bag_id_from_bucket_name(MasterRiakc, BucketName) ->
-    case riak_cs_utils:fetch_bucket_object(BucketName, MasterRiakc) of
+    case riak_cs_bucket:fetch_bucket_object(BucketName, MasterRiakc) of
         {ok, BucketObj} ->
             {ok, bag_id_from_bucket(BucketObj)};
         {error, Reason} ->

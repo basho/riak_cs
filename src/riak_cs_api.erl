@@ -48,7 +48,7 @@ list_objects(_UserBuckets, Bucket, MaxKeys, Options, MasterRiakcPid) ->
     BinPid = riak_cs_utils:pid_to_binary(self()),
     CacheKey = << BinPid/binary, <<":">>/binary, Bucket/binary >>,
     UseCache = riak_cs_list_objects_ets_cache:cache_enabled(),
-    case riak_cs_utils:fetch_bucket_object(Bucket, MasterRiakcPid) of
+    case riak_cs_bucket:fetch_bucket_object(Bucket, MasterRiakcPid) of
         {ok, BucketObj} ->
             {ok, ManifestPool} = riak_cs_bag_registrar:pool_name(
                                    MasterRiakcPid, bucket_list_pool, BucketObj),
