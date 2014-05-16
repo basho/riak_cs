@@ -55,6 +55,6 @@ invalid_names() ->
 
 make_test_from_name_and_success(Name, Success) ->
     ?_assertEqual(Success,
-                  riak_cs_utils:valid_bucket_name(Name)).
+                  riak_cs_bucket:valid_bucket_name(Name)).
 
 -endif.

@@ -28,7 +28,8 @@
          copy_object_response/3,
          no_such_upload_response/3,
          invalid_digest_response/3,
-         error_code_to_atom/1]).
+         error_code_to_atom/1,
+         xml_error_code/1]).
 
 -include("riak_cs.hrl").
 -include("riak_cs_api.hrl").
@@ -88,6 +89,7 @@ error_message(invalid_range) -> "The requested range is not satisfiable";
 error_message(invalid_bucket_name) -> "The specified bucket is not valid.";
 error_message(unexpected_content) -> "This request does not support content";
 error_message(canned_acl_and_header_grant) -> "Specifying both Canned ACLs and Header Grants is not allowed";
+error_message(remaining_multipart_upload) -> "Concurrent multipart upload initiation detected. Please stop it to delete bucket.";
 error_message(ErrorName) ->
     _ = lager:debug("Unknown error: ~p", [ErrorName]),
     "Please reduce your request rate.".
@@ -126,6 +128,7 @@ error_code(unresolved_grant_email) -> "UnresolvableGrantByEmailAddress";
 error_code(unexpected_content) -> "UnexpectedContent";
 error_code(canned_acl_and_header_grant) -> "InvalidRequest";
 error_code(malformed_acl_error) -> "MalformedACLError";
+error_code(remaining_multipart_upload) -> "MultipartUploadRemaining";
 error_code(ErrorName) ->
     _ = lager:debug("Unknown error: ~p", [ErrorName]),
     "ServiceUnavailable".
@@ -171,6 +174,7 @@ status_code(invalid_bucket_name) -> 400;
 status_code(unexpected_content) -> 400;
 status_code(canned_acl_and_header_grant) -> 400;
 status_code(malformed_acl_error) -> 400;
+status_code(remaining_multipart_upload) -> 409;
 status_code(ErrorName) ->
     _ = lager:debug("Unknown error: ~p", [ErrorName]),
     503.
@@ -284,6 +288,8 @@ xml_error_code(Xml) ->
 -spec process_xml_error([xmlElement()]) -> string().
 process_xml_error([]) ->
     [];
+process_xml_error([#xmlText{value=" "}|Rest]) ->
+    process_xml_error(Rest);
 process_xml_error([HeadElement | RestElements]) ->
     _ = lager:debug("Element name: ~p", [HeadElement#xmlElement.name]),
     ElementName = HeadElement#xmlElement.name,
@@ -294,3 +300,5 @@ process_xml_error([HeadElement | RestElements]) ->
         _ ->
             process_xml_error(RestElements)
     end.
+
+
