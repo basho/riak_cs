@@ -36,6 +36,7 @@
          maybe_log_bucket_owner_error/2,
          resolve_buckets/3,
          update_bucket_record/1,
+         apply_with_manifest_conn/4,
          delete_all_uploads/2,
          delete_old_uploads/3,
          fold_all_buckets/3
@@ -161,8 +162,8 @@ delete_bucket(User, UserObj, Bucket, RiakPid) ->
         case bucket_exists(CurrentBuckets, binary_to_list(Bucket)) of
             true ->
                 case bucket_empty(Bucket, RiakPid) of
-                    true -> {true, ok};
-                    false -> {false, {error, bucket_not_empty}}
+                    {ok, true}  -> {true, ok};
+                    {ok, false} -> {false, {error, bucket_not_empty}}
                 end;
             false -> {true, ok}
         end,
@@ -187,6 +188,33 @@ delete_bucket(User, UserObj, Bucket, RiakPid) ->
             LocalError
     end.
 
+-spec apply_with_manifest_conn(binary(), pid(), request_pool | bucket_list_pool, fun()) ->
+                                            {ok, term()} | {error, term()}.
+apply_with_manifest_conn(Bucket, MasterRiakcPid, PoolType, Fun) ->
+    case fetch_bucket_object_raw(Bucket, MasterRiakcPid) of
+        {ok, BucketObj} ->
+            {ok, ManifestPool} = riak_cs_bag_registrar:pool_name(
+                                   MasterRiakcPid, PoolType, BucketObj),
+            ManiRiakcPid = case ManifestPool of
+                               undefined ->
+                                   MasterRiakcPid;
+                               PoolName ->
+                                   %% TODO: Handle {error, Reason}
+                                   {ok, NewPid} = riak_cs_utils:riak_connection(PoolName),
+                                   NewPid
+                           end,
+            try
+                Fun(ManiRiakcPid)
+            after
+                case ManiRiakcPid of
+                    MasterRiakcPid -> ok;
+                    _ -> riak_cs_utils:close_riak_connection(ManiRiakcPid)
+                end
+            end;
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
 %% @doc TODO: this function is to be moved to riak_cs_multipart_utils or else?
 -spec delete_all_uploads(binary(), pid()) -> {ok, non_neg_integer()} | {error, term()}.
 delete_all_uploads(Bucket, RiakPid) ->
@@ -196,12 +224,20 @@ delete_all_uploads(Bucket, RiakPid) ->
 %% input binary format of iso8068
 -spec delete_old_uploads(binary(), pid(), binary()) ->
                                 {ok, non_neg_integer()} | {error, term()}.
-delete_old_uploads(Bucket, RiakPid, Timestamp) when is_binary(Timestamp) ->
+delete_old_uploads(Bucket, MasterRiakcPid, Timestamp) when is_binary(Timestamp) ->
     Opts = [{delimiter, undefined}, {max_uploads, undefined},
             {prefix, undefined}, {key_marker, <<>>},
             {upload_id_marker, <<>>}],
-    {ok, {Ds, _Commons}} = riak_cs_mp_utils:list_all_multipart_uploads(Bucket, Opts, RiakPid),
-    fold_delete_uploads(Bucket, RiakPid, Ds, Timestamp, 0).
+    apply_with_manifest_conn(
+      Bucket, MasterRiakcPid, request_pool,
+      fun(ManiRiakcPid) ->
+              delete_old_uploads_with_manifest_conn(
+                Bucket, ManiRiakcPid, Opts, Timestamp)
+      end).
+
+delete_old_uploads_with_manifest_conn(Bucket, ManiRiakcPid, Opts, Timestamp) ->
+    {ok, {Ds, _Commons}} = riak_cs_mp_utils:list_all_multipart_uploads(Bucket, Opts, ManiRiakcPid),
+    fold_delete_uploads(Bucket, ManiRiakcPid, Ds, Timestamp, 0).
 
 fold_delete_uploads(_Bucket, _RiakPid, [], _Timestamp, Count) -> {ok, Count};
 fold_delete_uploads(Bucket, RiakPid, [D|Ds], Timestamp, Count)->
@@ -365,48 +401,63 @@ bucket_policy_json(PolicyJson, KeyId)  ->
                           }))).
 
 %% @doc Check if a bucket is empty
--spec bucket_empty(binary(), pid()) -> boolean().
-bucket_empty(Bucket, RiakcPid) ->
+-spec bucket_empty(binary(), pid()) -> {ok, boolean()} | {error, term()}.
+bucket_empty(Bucket, MasterRiakcPid) ->
     ManifestBucket = riak_cs_utils:to_bucket_name(objects, Bucket),
     %% @TODO Use `stream_list_keys' instead and
-    ListKeysResult = riak_cs_utils:list_keys(ManifestBucket, RiakcPid),
-    bucket_empty_handle_list_keys(RiakcPid,
-                                  Bucket,
-                                  ListKeysResult).
+    riak_cs_bucket:apply_with_manifest_conn(
+      Bucket, MasterRiakcPid, request_pool,
+      fun(ManiRiakcPid) ->
+              ListKeysResult = riak_cs_utils:list_keys(ManifestBucket, ManiRiakcPid),
+              {ok, bucket_empty_handle_list_keys(ManiRiakcPid, Bucket,
+                                                 ListKeysResult)}
+      end).
 
 -spec bucket_empty_handle_list_keys(pid(), binary(),
                                     {ok, list()} |
                                     {error, term()}) ->
     boolean().
-bucket_empty_handle_list_keys(RiakcPid, Bucket, {ok, Keys}) ->
-    AnyPred = bucket_empty_any_pred(RiakcPid, Bucket),
+bucket_empty_handle_list_keys(ManiRiakcPid, Bucket, {ok, Keys}) ->
+    AnyPred = bucket_empty_any_pred(ManiRiakcPid, Bucket),
     %% `lists:any/2' will break out early as soon
     %% as something returns `true'
     not lists:any(AnyPred, Keys);
 bucket_empty_handle_list_keys(_RiakcPid, _Bucket, _Error) ->
     false.
 
--spec bucket_empty_any_pred(RiakcPid :: pid(), Bucket :: binary()) ->
+-spec bucket_empty_any_pred(ManiRiakcPid :: pid(), Bucket :: binary()) ->
     fun((Key :: binary()) -> boolean()).
-bucket_empty_any_pred(RiakcPid, Bucket) ->
+bucket_empty_any_pred(ManiRiakcPid, Bucket) ->
     fun (Key) ->
-            riak_cs_utils:key_exists(RiakcPid, Bucket, Key)
+            riak_cs_utils:key_exists(ManiRiakcPid, Bucket, Key)
     end.
 
 %% @doc Fetches the bucket object and verify its status.
 -spec fetch_bucket_object(binary(), pid()) ->
                                  {ok, riakc_obj:riakc_obj()} | {error, term()}.
 fetch_bucket_object(Bucket, RiakPid) ->
-    case riak_cs_utils:get_object(?BUCKETS_BUCKET, Bucket, RiakPid) of
+    case fetch_bucket_object_raw(Bucket, RiakPid) of
         {ok, Obj} ->
-            [Value | _] = Values = riakc_obj:get_values(Obj),
-            maybe_log_sibling_warning(Bucket, Values),
+            [Value | _] = riakc_obj:get_values(Obj),
             case Value of
                 ?FREE_BUCKET_MARKER ->
                     {error, no_such_bucket};
                 _ ->
                     {ok, Obj}
             end;
+        {error, _}=Error ->
+            Error
+    end.
+
+%% @doc Fetches the bucket object, even it is marked as free
+-spec fetch_bucket_object_raw(binary(), pid()) ->
+                                 {ok, riakc_obj:riakc_obj()} | {error, term()}.
+fetch_bucket_object_raw(Bucket, RiakPid) ->
+    case riak_cs_utils:get_object(?BUCKETS_BUCKET, Bucket, RiakPid) of
+        {ok, Obj} ->
+            Values = riakc_obj:get_values(Obj),
+            maybe_log_sibling_warning(Bucket, Values),
+            {ok, Obj};
         {error, _}=Error ->
             Error
     end.

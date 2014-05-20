@@ -82,7 +82,7 @@ cleanup_orphan_multipart(Timestamp) when is_binary(Timestamp) ->
     _ = riak_cs_bucket:fold_all_buckets(Fun, [], Pid),
 
     ok = riak_cs_riakc_pool_worker:stop(Pid),
-    _ = lager:info("~nAll old unaborted orphan multipart uploads has deleted.~n", []),
+    _ = lager:info("All old unaborted orphan multipart uploads has deleted.", []),
     _ = io:format("~nAll old unaborted orphan multipart uploads has deleted.~n", []).
 
 
@@ -104,7 +104,9 @@ maybe_cleanup_csbucket(Pid, BucketName, {ok, RiakObj}, Timestamp) ->
                 {ok, 0} -> ok;
                 {ok, Count} ->  io:format(" aborted ~p uploads.~n",
                                           [Count]);
-                Error -> io:format("Error: ~p <<< ~n", [Error])
+                Error ->
+                    lager:warning("Error in deleting old uploads: ~p~n", [Error]),
+                    io:format("Error in deleting old uploads: ~p <<< ~n", [Error])
             end;
 
         [<<>>] -> %% tombstone, can't happen

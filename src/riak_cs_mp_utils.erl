@@ -187,11 +187,6 @@ make_special_error(Code, Message, RequestId, HostId) ->
     riak_cs_xml:to_xml([XmlDoc]).
 
 
-list_all_multipart_uploads(Bucket, Opts, RiakcPid) ->
-    list_multipart_uploads_with_2ikey(Bucket, Opts,
-                                      RiakcPid,
-                                      make_2i_key(Bucket)).
-
 list_multipart_uploads(Bucket, Caller, Opts) ->
     list_multipart_uploads(Bucket, Caller, Opts, nopid).
 
@@ -208,9 +203,12 @@ list_multipart_uploads(Bucket, {_Display, _Canon, CallerKeyId} = Caller,
                             false ->
                                 make_2i_key(Bucket, Caller)
                         end,
-                list_multipart_uploads_with_2ikey(Bucket, Opts,
-                                                  ?PID(RiakcPid),
-                                                  Key2i)
+                riak_cs_bucket:apply_with_manifest_conn(
+                  Bucket, ?PID(RiakcPid), request_pool,
+                  fun(ManiRiakcPid) ->
+                          list_multipart_uploads_with_2ikey(
+                            Bucket, Opts, ManiRiakcPid, Key2i)
+                  end)
             catch error:{badmatch, {m_icbo, _}} ->
                     {error, access_denied}
             after
@@ -220,14 +218,18 @@ list_multipart_uploads(Bucket, {_Display, _Canon, CallerKeyId} = Caller,
             Else
     end.
 
-list_multipart_uploads_with_2ikey(Bucket,
-                                  Opts, RiakcPid, Key2i) ->
+list_all_multipart_uploads(Bucket, Opts, ManiRiakcPid) ->
+    list_multipart_uploads_with_2ikey(Bucket, Opts,
+                                      ManiRiakcPid,
+                                      make_2i_key(Bucket)).
+
+list_multipart_uploads_with_2ikey(Bucket, Opts, ManiRiakcPid, Key2i) ->
     HashBucket = riak_cs_utils:to_bucket_name(objects, Bucket),
-    case riakc_pb_socket:get_index(RiakcPid, HashBucket,
+    case riakc_pb_socket:get_index(ManiRiakcPid, HashBucket,
                                    Key2i, <<"1">>) of
 
         {ok, ?INDEX_RESULTS{keys=Names}} ->
-            {ok, list_multipart_uploads2(Bucket, RiakcPid,
+            {ok, list_multipart_uploads2(Bucket, ManiRiakcPid,
                                          Names, Opts)};
 
         Else2 ->
@@ -553,16 +555,16 @@ make_2i_key(Bucket, {_, _, OwnerStr}) ->
 make_2i_key2(Bucket, OwnerStr) ->
     iolist_to_binary(["rcs@", OwnerStr, "@", Bucket, "_bin"]).
 
-list_multipart_uploads2(Bucket, RiakcPid, Names, Opts) ->
+list_multipart_uploads2(Bucket, ManiRiakcPid, Names, Opts) ->
     FilterFun =
         fun(K, Acc) ->
-                filter_uploads_list(Bucket, K, Opts, RiakcPid, Acc)
+                filter_uploads_list(Bucket, K, Opts, ManiRiakcPid, Acc)
         end,
     {Manifests, Prefixes} = lists:foldl(FilterFun, {[], ordsets:new()}, Names),
     {lists:sort(Manifests), ordsets:to_list(Prefixes)}.
 
-filter_uploads_list(Bucket, Key, Opts, RiakcPid, Acc) ->
-    multipart_manifests_for_key(Bucket, Key, Opts, Acc, RiakcPid).
+filter_uploads_list(Bucket, Key, Opts, ManiRiakcPid, Acc) ->
+    multipart_manifests_for_key(Bucket, Key, Opts, Acc, ManiRiakcPid).
 
 parameter_filter(M, Acc, _, _, KeyMarker, _)
   when M?MULTIPART_DESCR.key =< KeyMarker->
@@ -608,10 +610,10 @@ update_keys_and_prefixes({Keys, Prefixes}, _, Prefix, PrefixLen, Group) ->
     NewPrefix = << Prefix:PrefixLen/binary, Group/binary >>,
     {Keys, ordsets:add_element(NewPrefix, Prefixes)}.
 
-multipart_manifests_for_key(Bucket, Key, Opts, Acc, RiakcPid) ->
+multipart_manifests_for_key(Bucket, Key, Opts, Acc, ManiRiakcPid) ->
     ParameterFilter = build_parameter_filter(Opts),
     Manifests = handle_get_manifests_result(
-                  riak_cs_utils:get_manifests(RiakcPid, Bucket, Key)),
+                  riak_cs_utils:get_manifests(ManiRiakcPid, Bucket, Key)),
     lists:foldl(ParameterFilter, Acc, Manifests).
 
 build_parameter_filter(Opts) ->

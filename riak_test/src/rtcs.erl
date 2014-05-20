@@ -221,6 +221,25 @@ cs_config(UserExtra) ->
           ]
      }].
 
+cs_config(UserExtra, OtherApps) ->
+    [
+     lager_config(),
+     {riak_cs,
+      UserExtra ++
+          [
+           {connection_pools,
+            [
+             {request_pool, {8, 0} },
+             {bucket_list_pool, {2, 0} }
+            ]},
+           {proxy_get, enabled},
+           {anonymous_user_creation, true},
+           {riak_pb_port, 10017},
+           {stanchion_port, 9095},
+           {cs_version, 010300}
+          ]
+     }] ++ OtherApps.
+
 stanchion_config() ->
     [
      lager_config(),
@@ -229,6 +248,17 @@ stanchion_config() ->
        {stanchion_port, 9095},
        {riak_pb_port, 10017}
       ]
+     }].
+
+stanchion_config(UserExtra) ->
+    [
+     lager_config(),
+     {stanchion,
+      UserExtra ++
+          [
+           {stanchion_port, 9095},
+           {riak_pb_port, 10017}
+          ]
      }].
 
 lager_config() ->

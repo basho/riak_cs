@@ -409,26 +409,26 @@ get_object(BucketName, Key, RiakPid) ->
 %% at a bucket/key
 -spec get_manifests_raw(pid(), binary(), binary()) ->
     {ok, riakc_obj:riakc_obj()} | {error, term()}.
-get_manifests_raw(RiakcPid, Bucket, Key) ->
+get_manifests_raw(ManiRiakcPid, Bucket, Key) ->
     ManifestBucket = to_bucket_name(objects, Bucket),
-    riakc_pb_socket:get(RiakcPid, ManifestBucket, Key).
+    riakc_pb_socket:get(ManiRiakcPid, ManifestBucket, Key).
 
 %% @doc
 -spec get_manifests(pid(), binary(), binary()) ->
     {ok, term(), term()} | {error, term()}.
-get_manifests(RiakcPid, Bucket, Key) ->
-    case get_manifests_raw(RiakcPid, Bucket, Key) of
+get_manifests(ManiRiakcPid, Bucket, Key) ->
+    case get_manifests_raw(ManiRiakcPid, Bucket, Key) of
         {ok, Object} ->
             Manifests = manifests_from_riak_object(Object),
-            _  = gc_deleted_while_writing_manifests(Object, Manifests, Bucket, Key, RiakcPid),
+            _  = gc_deleted_while_writing_manifests(Object, Manifests, Bucket, Key, ManiRiakcPid),
             {ok, Object, Manifests};
         {error, _Reason}=Error ->
             Error
     end.
 
-gc_deleted_while_writing_manifests(Object, Manifests, Bucket, Key, RiakcPid) ->
+gc_deleted_while_writing_manifests(Object, Manifests, Bucket, Key, ManiRiakcPid) ->
     UUIDs = riak_cs_manifest_utils:deleted_while_writing(Manifests),
-    riak_cs_gc:gc_specific_manifests(UUIDs, Object, Bucket, Key, RiakcPid).
+    riak_cs_gc:gc_specific_manifests(UUIDs, Object, Bucket, Key, ManiRiakcPid).
 
 -spec manifests_from_riak_object(riakc_obj:riakc_obj()) -> orddict:orddict().
 manifests_from_riak_object(RiakObject) ->
@@ -790,8 +790,8 @@ update_obj_value(Obj, Value) when is_binary(Value) ->
 %% `Bucket' should be the raw bucket name,
 %% we'll take care of calling `to_bucket_name'
 -spec key_exists(pid(), binary(), binary()) -> boolean().
-key_exists(RiakcPid, Bucket, Key) ->
-    key_exists_handle_get_manifests(get_manifests(RiakcPid, Bucket, Key)).
+key_exists(ManiRiakcPid, Bucket, Key) ->
+    key_exists_handle_get_manifests(get_manifests(ManiRiakcPid, Bucket, Key)).
 
 %% @doc Return `stanchion' configuration data.
 -spec stanchion_data() -> {string(), pos_integer(), boolean()}.
