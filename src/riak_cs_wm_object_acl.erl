@@ -27,7 +27,8 @@
          content_types_accepted/2,
          content_types_provided/2,
          accept_body/2,
-         produce_body/2]).
+         produce_body/2,
+         finish_request/2]).
 
 -include("riak_cs.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
@@ -164,16 +165,17 @@ produce_body(RD, Ctx=#context{local_context=LocalCtx,
 -spec accept_body(term(), term()) ->
     {boolean() | {halt, term()}, term(), term()}.
 accept_body(RD, Ctx=#context{local_context=#key_context{get_fsm_pid=GetFsmPid,
+                                                        manifest_riakc_pid=ManiRiakc,
                                                         manifest=Mfst,
                                                         key=KeyStr,
                                                         bucket=Bucket},
                              user=User,
                              acl=AclFromHeadersOrDefault,
                              requested_perm='WRITE_ACP',
-                             riakc_pid=RiakPid})  when Bucket /= undefined,
+                             riakc_pid=MasterRiakc})  when Bucket /= undefined,
                                                         KeyStr /= undefined,
                                                         Mfst /= undefined,
-                                                        RiakPid /= undefined ->
+                                                        MasterRiakc /= undefined ->
     BFile_str = [Bucket, $,, KeyStr],
     UserName = riak_cs_wm_utils:extract_name(User),
     riak_cs_dtrace:dt_object_entry(?MODULE, <<"object_put_acl">>,
@@ -186,16 +188,18 @@ accept_body(RD, Ctx=#context{local_context=#key_context{get_fsm_pid=GetFsmPid,
                 {ok, AclFromHeadersOrDefault};
             _ ->
                 riak_cs_acl_utils:validate_acl(
+                  %% Pass the master riakc because it is used to resolve users
+                  %% from canonical IDs
                   riak_cs_acl_utils:acl_from_xml(Body,
                                                  User?RCS_USER.key_id,
-                                                 RiakPid),
+                                                 MasterRiakc),
                   User?RCS_USER.canonical_id)
         end,
     case AclRes of
         {ok, Acl} ->
             %% Write new ACL to active manifest
             Key = list_to_binary(KeyStr),
-            case riak_cs_utils:set_object_acl(Bucket, Key, Mfst, Acl, RiakPid) of
+            case riak_cs_utils:set_object_acl(Bucket, Key, Mfst, Acl, ManiRiakc) of
                 ok ->
                     riak_cs_dtrace:dt_object_return(?MODULE, <<"object_put_acl">>,
                                                     [200], [UserName, BFile_str]),
@@ -212,3 +216,9 @@ accept_body(RD, Ctx=#context{local_context=#key_context{get_fsm_pid=GetFsmPid,
                                             [Code], [UserName, BFile_str]),
             riak_cs_s3_response:api_error(Reason2, RD, Ctx)
     end.
+
+-spec finish_request(#wm_reqdata{}, #context{}) -> {true, #wm_reqdata{}, #context{}}.
+finish_request(RD, Ctx=#context{local_context=KeyCtx}) ->
+    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"finish_request">>, [0], []),
+    NewKeyCtx = riak_cs_wm_utils:finish_doc(KeyCtx),
+    {true, RD, Ctx#context{local_context=NewKeyCtx}}.

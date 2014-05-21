@@ -19,6 +19,11 @@
 %% ---------------------------------------------------------------------
 
 -include("riak_cs.hrl").
+-include_lib("riakc/include/riakc.hrl").
+
+%% 'keys()` is defined in `riakc.hrl'.
+%% The name is general so declare local type for readability.
+-type index_result_keys() :: keys().
 
 -record(gc_d_state, {
           interval :: 'infinity' | non_neg_integer(),
@@ -26,8 +31,6 @@
           last :: undefined | non_neg_integer(),
           %% the next scheduled gc time
           next :: undefined | non_neg_integer(),
-          %% Riak connection pid
-          riak :: undefined | pid(),
           %% start of the current gc interval
           batch_start :: undefined | non_neg_integer(),
           %% caller of manual_batch
@@ -36,7 +39,7 @@
           batch_count=0 :: non_neg_integer(),
           %% Count of filesets skipped in this batch
           batch_skips=0 :: non_neg_integer(),
-          batch=[] :: undefined | [binary()], % `undefined' only for testing
+          batch=[] :: undefined | [index_result_keys()], % `undefined' only for testing
           manif_count=0 :: non_neg_integer(),
           block_count=0 :: non_neg_integer(),
           %% state of the fsm when a delete batch was paused
@@ -50,7 +53,9 @@
           max_workers :: non_neg_integer(),
           active_workers=0 :: non_neg_integer(),
           %% Used for paginated 2I querying of GC bucket
-          continuation :: undefined | binary(),
+          key_list_state :: undefined | term(),
+          %% Options to use when start workers
+          worker_opts :: proplists:proplist(),
           testing=false :: boolean()
          }).
 
@@ -70,6 +75,27 @@
           delete_fsm_pid :: pid()
          }).
 
+-record(gc_key_list_state, {
+          remaining_pools :: [{atom(), atom(), riak_cs_bag_registrar:bag_id(), proplists:proplist()}],
+          %% Riak connection pid
+          current_riak :: undefined | pid(),
+          current_bag_id :: riak_cs_bag_registrar:bag_id(),
+          current_worker_opts :: proplists:proplist(),
+          %% start of the current gc interval
+          batch_start :: undefined | non_neg_integer(),
+          leeway :: non_neg_integer(),
+          %% Used for paginated 2I querying of GC bucket
+          continuation :: continuation()
+         }).
+
+-record(gc_key_list_result, {
+          bag_id :: riak_cs_bag_registrar:bag_id(),
+          worker_opts :: proplists:proplist(),
+          batch :: [index_result_keys()]
+         }).
+
+-type gc_key_list_state() :: #gc_key_list_state{}.
+-type gc_key_list_result() :: #gc_key_list_result{}.
 
 %% Number of seconds to keep manifests in the `scheduled_delete' state
 %% before beginning to delete the file blocks and before the file

@@ -27,7 +27,7 @@
 -behaviour(gen_fsm).
 
 %% API
--export([start_link/1,
+-export([start_link/2,
          stop/1]).
 
 %% gen_fsm callbacks
@@ -45,7 +45,6 @@
          code_change/4]).
 
 -include("riak_cs_gc_d.hrl").
--include_lib("riakc/include/riakc.hrl").
 
 -export([current_state/1]).
 
@@ -57,8 +56,8 @@
 %%%===================================================================
 
 %% @doc Start the garbage collection server
-start_link(Keys) ->
-    gen_fsm:start_link(?MODULE, [Keys], []).
+start_link(PoolOpts, Keys) ->
+    gen_fsm:start_link(?MODULE, [PoolOpts, Keys], []).
 
 %% @doc Stop the daemon
 -spec stop(pid()) -> ok | {error, term()}.
@@ -71,10 +70,10 @@ stop(Pid) ->
 
 %% @doc Read the storage schedule and go to idle.
 
-init([Keys]) ->
+init([PoolOpts, Keys]) ->
     %% this does not check out a worker from the riak
     %% connection pool; instead it creates a fresh new worker
-    {ok, Pid} = riak_cs_riakc_pool_worker:start_link([]),
+    {ok, Pid} = riak_cs_riakc_pool_worker:start_link(PoolOpts),
     ok = continue(),
     {ok, fetching_next_fileset, ?STATE{batch=Keys, riak_pid=Pid}}.
 

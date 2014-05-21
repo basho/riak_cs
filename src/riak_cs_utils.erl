@@ -409,26 +409,26 @@ get_object(BucketName, Key, RiakPid) ->
 %% at a bucket/key
 -spec get_manifests_raw(pid(), binary(), binary()) ->
     {ok, riakc_obj:riakc_obj()} | {error, term()}.
-get_manifests_raw(RiakcPid, Bucket, Key) ->
+get_manifests_raw(ManiRiakcPid, Bucket, Key) ->
     ManifestBucket = to_bucket_name(objects, Bucket),
-    riakc_pb_socket:get(RiakcPid, ManifestBucket, Key).
+    riakc_pb_socket:get(ManiRiakcPid, ManifestBucket, Key).
 
 %% @doc
 -spec get_manifests(pid(), binary(), binary()) ->
     {ok, term(), term()} | {error, term()}.
-get_manifests(RiakcPid, Bucket, Key) ->
-    case get_manifests_raw(RiakcPid, Bucket, Key) of
+get_manifests(ManiRiakcPid, Bucket, Key) ->
+    case get_manifests_raw(ManiRiakcPid, Bucket, Key) of
         {ok, Object} ->
             Manifests = manifests_from_riak_object(Object),
-            _  = gc_deleted_while_writing_manifests(Object, Manifests, Bucket, Key, RiakcPid),
+            _  = gc_deleted_while_writing_manifests(Object, Manifests, Bucket, Key, ManiRiakcPid),
             {ok, Object, Manifests};
         {error, _Reason}=Error ->
             Error
     end.
 
-gc_deleted_while_writing_manifests(Object, Manifests, Bucket, Key, RiakcPid) ->
+gc_deleted_while_writing_manifests(Object, Manifests, Bucket, Key, ManiRiakcPid) ->
     UUIDs = riak_cs_manifest_utils:deleted_while_writing(Manifests),
-    riak_cs_gc:gc_specific_manifests(UUIDs, Object, Bucket, Key, RiakcPid).
+    riak_cs_gc:gc_specific_manifests(UUIDs, Object, Bucket, Key, ManiRiakcPid).
 
 -spec manifests_from_riak_object(riakc_obj:riakc_obj()) -> orddict:orddict().
 manifests_from_riak_object(RiakObject) ->
@@ -690,13 +690,13 @@ find_md_usermeta(MD) ->
     dict:find(?MD_USERMETA, MD).
 
 %% @doc Get a protobufs connection to the riak cluster
-%% from the default connection pool.
+%% from the `request_pool' connection pool of the master bag.
 -spec riak_connection() -> {ok, pid()} | {error, term()}.
 riak_connection() ->
     riak_connection(request_pool).
 
 %% @doc Get a protobufs connection to the riak cluster
-%% from the specified connection pool.
+%% from the specified connection pool of the master bag.
 -spec riak_connection(atom()) -> {ok, pid()} | {error, term()}.
 riak_connection(Pool) ->
     case catch poolboy:checkout(Pool, false) of
@@ -790,8 +790,8 @@ update_obj_value(Obj, Value) when is_binary(Value) ->
 %% `Bucket' should be the raw bucket name,
 %% we'll take care of calling `to_bucket_name'
 -spec key_exists(pid(), binary(), binary()) -> boolean().
-key_exists(RiakcPid, Bucket, Key) ->
-    key_exists_handle_get_manifests(get_manifests(RiakcPid, Bucket, Key)).
+key_exists(ManiRiakcPid, Bucket, Key) ->
+    key_exists_handle_get_manifests(get_manifests(ManiRiakcPid, Bucket, Key)).
 
 %% @doc Return `stanchion' configuration data.
 -spec stanchion_data() -> {string(), pos_integer(), boolean()}.
@@ -959,8 +959,9 @@ validate_email(EmailAddr) ->
 
 %% @doc Update a user record from a previous version if necessary.
 -spec update_user_record(rcs_user()) -> rcs_user().
-update_user_record(User=?RCS_USER{}) ->
-    User;
+update_user_record(User=?RCS_USER{buckets=Buckets}) ->
+    User?RCS_USER{buckets=[riak_cs_bucket:update_bucket_record(Bucket) ||
+                              Bucket <- Buckets]};
 update_user_record(User=#moss_user_v1{}) ->
     ?RCS_USER{name=User#moss_user_v1.name,
               display_name=User#moss_user_v1.display_name,

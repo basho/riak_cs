@@ -19,6 +19,7 @@
 %% ---------------------------------------------------------------------
 
 -define(MANIFEST, #lfs_manifest_v3).
+-define(MANIFEST_REC, lfs_manifest_v3).
 
 -define(ACL, #acl_v2).
 -define(RCS_BUCKET, #moss_bucket_v1).
@@ -70,6 +71,7 @@
           creation_date :: string(),
           modification_time :: erlang:timestamp(),
           acl :: acl()}).
+
 -type cs_bucket() :: #moss_bucket_v1{}.
 -type bucket_operation() :: create | delete | update_acl | update_policy
                           | delete_policy.
@@ -97,6 +99,8 @@
                       upload_id :: 'undefined' | binary(),
                       part_number :: 'undefined' | integer(),
                       part_uuid :: 'undefined' | binary(),
+                      manifest_riakc_pid :: pid(),
+                      manifest_pool :: atom(),
                       get_fsm_pid :: pid(),
                       putctype :: string(),
                       bucket :: binary(),
@@ -386,6 +390,7 @@
 -define(DEFAULT_STANCHION_IP, "127.0.0.1").
 -define(DEFAULT_STANCHION_PORT, 8085).
 -define(DEFAULT_STANCHION_SSL, true).
+-define(MD_BAG, <<"X-Rcs-Bag">>).
 -define(MD_ACL, <<"X-Moss-Acl">>).
 -define(MD_POLICY, <<"X-Rcs-Policy">>).
 -define(EMAIL_INDEX, <<"email_bin">>).
