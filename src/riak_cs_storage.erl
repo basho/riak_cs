@@ -109,9 +109,22 @@ object_size_map(Object, _, _) ->
     Handler = fun(Resolved) ->
                       {MPparts, MPbytes} = count_multipart_parts(Resolved),
                       case riak_cs_manifest_utils:active_manifest(Resolved) of
-                          {ok, ?MANIFEST{content_length=Length}} ->
+                          {ok, ?MANIFEST{content_length=Length}=M} ->
+                              _ = lager:log(error,
+                                            self(),
+                                            "Riak CS object map ??? for ~p:~p with ~p",
+                                            [riak_object:bucket(Object),
+                                             riak_object:key(Object),
+                                             M?MANIFEST.props]),
+
                               [{1 + MPparts, Length + MPbytes}];
-                          _ ->
+                          _Other ->
+                              _ = lager:log(error,
+                                            self(),
+                                            "Riak CS object map ??? for ~p:~p with ~p",
+                                            [riak_object:bucket(Object),
+                                             riak_object:key(Object),
+                                             _Other]),
                               [{MPparts, MPbytes}]
                       end
               end,

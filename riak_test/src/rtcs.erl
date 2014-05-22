@@ -512,6 +512,12 @@ flush_access(N) ->
     lager:info("Running ~p", [Cmd]),
     os:cmd(Cmd).
 
+gc(N, SubCmd) ->
+    Cmd = riakcs_gccmd(rt_config:get(?CS_CURRENT), N, SubCmd),
+    lager:info("Running ~p", [Cmd]),
+    os:cmd(Cmd).
+    
+
 calculate_storage(N) ->
     Cmd = riakcs_storagecmd(rt_config:get(?CS_CURRENT), N, "batch -r"),
     lager:info("Running ~p", [Cmd]),
