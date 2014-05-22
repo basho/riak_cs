@@ -42,6 +42,7 @@
          has_tombstone/1,
          is_admin/1,
          map_keys_and_manifests/3,
+         maybe_process_resolved/3,
          md5/1,
          md5_init/0,
          md5_update/2,
@@ -504,26 +505,36 @@ receive_keys_and_manifests(ReqId, Acc) ->
 map_keys_and_manifests({error, notfound}, _, _) ->
     [];
 map_keys_and_manifests(Object, _, _) ->
+    Handler = fun(Resolved) ->
+                      case riak_cs_manifest_utils:active_manifest(Resolved) of
+                          {ok, Manifest} ->
+                              [{riak_object:key(Object), {ok, Manifest}}];
+                          _ ->
+                              []
+                      end
+              end,
+    maybe_process_resolved(Object, Handler, []).
+
+maybe_process_resolved(Object, ResolvedManifestsHandler, ErrorReturn) ->
     try
         AllManifests = [ binary_to_term(V)
-                         || V <- riak_object:get_values(Object) ],
+                         || {_, V} = Content <- riak_object:get_contents(Object),
+                            not has_tombstone(Content) ],
         Upgraded = riak_cs_manifest_utils:upgrade_wrapped_manifests(AllManifests),
         Resolved = riak_cs_manifest_resolution:resolve(Upgraded),
-        case riak_cs_manifest_utils:active_manifest(Resolved) of
-            {ok, Manifest} ->
-                [{riak_object:key(Object), {ok, Manifest}}];
-            _ ->
-                []
-        end
+        ResolvedManifestsHandler(Resolved)
     catch Type:Reason ->
+            StackTrace = erlang:get_stacktrace(),
             _ = lager:log(error,
                           self(),
-                          "Riak CS object list map failed for ~p:~p with reason ~p:~p",
+                          "Riak CS object list map failed for ~p:~p with reason ~p:~p"
+                          "at ~p",
                           [riak_object:bucket(Object),
                            riak_object:key(Object),
                            Type,
-                           Reason]),
-            []
+                           Reason,
+                           StackTrace]),
+            ErrorReturn
     end.
 
 %% Pipe all the bucket listing results through a passthrough reduce
