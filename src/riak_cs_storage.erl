@@ -101,9 +101,7 @@ object_size_map({error, notfound}, _, _) ->
     [];
 object_size_map(Object, _, _) ->
     try
-        AllManifests = [ binary_to_term(V)
-                         || V <- riak_object:get_values(Object) ],
-        Resolved = riak_cs_manifest_resolution:resolve(AllManifests),
+        Resolved = riak_cs_utils:manifests_from_riak_object(Object),
         {MPparts, MPbytes} = count_multipart_parts(Resolved),
         case riak_cs_manifest_utils:active_manifest(Resolved) of
             {ok, ?MANIFEST{content_length=Length}} ->
@@ -111,7 +109,14 @@ object_size_map(Object, _, _) ->
             _ ->
                 [{MPparts, MPbytes}]
         end
-    catch _:_ ->
+    catch Type:Reason ->
+            _ = lager:log(error,
+                          self(),
+                          "Riak CS object list map failed for ~p:~p with reason ~p:~p",
+                          [riak_object:bucket(Object),
+                           riak_object:key(Object),
+                           Type,
+                           Reason]),
             []
     end.
 
@@ -141,16 +146,30 @@ get_usage(Riak, User, Start, End) ->
     {ok, Period} = archive_period(),
     rts:find_samples(Riak, ?STORAGE_BUCKET, User, Start, End, Period).
 
+-spec count_multipart_parts([{binary(), lfs_manifest()}]) ->
+                                   {non_neg_integer(), non_neg_integer()}.
 count_multipart_parts(Resolved) ->
     lists:foldl(fun count_multipart_parts/2, {0, 0}, Resolved).
 
-count_multipart_parts({_UUID, M}, {MPparts, MPbytes} = Acc) ->
-    case {M?MANIFEST.state, proplists:get_value(multipart, M?MANIFEST.props)} of
-        {writing, MP} ->
-            Ps = MP?MULTIPART_MANIFEST.parts,
+-spec count_multipart_parts([{binary(), lfs_manifest()}],
+                            {non_neg_integer(), non_neg_integer()}) ->
+                                   {non_neg_integer(), non_neg_integer()}.
+count_multipart_parts({_UUID, ?MANIFEST{props=Props, state=writing} = M},
+                      {MPparts, MPbytes} = Acc)
+  when is_list(Props) ->
+    case proplists:get_value(multipart, Props) of
+        ?MULTIPART_MANIFEST{parts=Ps} = _  ->
             {MPparts + length(Ps),
              MPbytes + lists:sum([P?PART_MANIFEST.content_length ||
                                      P <- Ps])};
-        _ ->
+        undefined ->
+            %% Or just a writing manifest, not an multipart
+            Acc;
+        Other ->
+            %% Some other thingy
+            lager:log(error, "bad multipart manifest of ~p: ~p",
+                      [M?MANIFEST.bkey, Other]),
             Acc
-    end.
+    end;
+count_multipart_parts(_, Acc) ->
+    Acc.
