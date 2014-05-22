@@ -146,9 +146,14 @@ get_usage(Riak, User, Start, End) ->
     {ok, Period} = archive_period(),
     rts:find_samples(Riak, ?STORAGE_BUCKET, User, Start, End, Period).
 
+-spec count_multipart_parts([{binary(), lfs_manifest()}]) ->
+                                   {non_neg_integer(), non_neg_integer()}.
 count_multipart_parts(Resolved) ->
     lists:foldl(fun count_multipart_parts/2, {0, 0}, Resolved).
 
+-spec count_multipart_parts([{binary(), lfs_manifest()}],
+                            {non_neg_integer(), non_neg_integer()}) ->
+                                   {non_neg_integer(), non_neg_integer()}.
 count_multipart_parts({_UUID, ?MANIFEST{props=Props, state=writing} = M},
                       {MPparts, MPbytes} = Acc)
   when is_list(Props) ->
