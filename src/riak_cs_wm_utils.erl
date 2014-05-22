@@ -30,6 +30,7 @@
          to_rfc_1123/1,
          iso_8601_to_erl_date/1,
          streaming_get/4,
+         find_and_auth_admin/3,
          find_and_auth_user/3,
          find_and_auth_user/4,
          find_and_auth_user/5,
@@ -163,6 +164,15 @@ find_and_auth_user(RD,
       Conv2KeyCtx,
       AnonymousOk).
 
+find_and_auth_admin(RD, Ctx, AuthBypass) ->
+    Next = fun(NewRD, NewCtx=#context{user=User}) ->
+                   handle_auth_admin(NewRD,
+                                     NewCtx,
+                                     User,
+                                     AuthBypass)
+           end,
+    find_and_auth_user(RD, Ctx, Next, AuthBypass).
+
 handle_validation_response({ok, User, UserObj}, RD, Ctx, Next, _, _) ->
     %% given keyid and signature matched, proceed
     Next(RD, Ctx#context{user=User,
@@ -189,6 +199,26 @@ handle_validation_response({error, Reason}, RD, Ctx, _, Conv2KeyCtx, _) ->
     %% no matching keyid was found, or lookup failed
     _ = lager:debug("Authentication error: ~p", [Reason]),
     deny_invalid_key(RD, Conv2KeyCtx(Ctx)).
+
+handle_auth_admin(RD, Ctx, undefined, true) ->
+    {false, RD, Ctx};
+handle_auth_admin(RD, Ctx, undefined, false) ->
+    %% anonymous access disallowed
+    riak_cs_wm_utils:deny_access(RD, Ctx);
+handle_auth_admin(RD, Ctx, User, false) ->
+    UserKeyId = User?RCS_USER.key_id,
+    case riak_cs_config:admin_creds() of
+        {ok, {Admin, _}} when Admin == UserKeyId ->
+            %% admin account is allowed
+            riak_cs_dtrace:dt_wm_return(?MODULE, <<"forbidden">>,
+                                        [], [<<"false">>, Admin]),
+            {false, RD, Ctx};
+        _ ->
+            %% non-admin account is not allowed -> 403
+            Res = riak_cs_wm_utils:deny_access(RD, Ctx),
+            riak_cs_dtrace:dt_wm_return(?MODULE, <<"forbidden">>, [], [<<"true">>]),
+            Res
+    end.
 
 %% @doc Look for an Authorization header in the request, and validate
 %% it if it exists.  Returns `{ok, User, UserObj}' if validation

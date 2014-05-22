@@ -97,10 +97,7 @@ produce_body(RD, Ctx) ->
 
 forbidden(RD, Ctx=#context{auth_bypass=AuthBypass}) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"forbidden">>),
-    Next = fun(NewRD, NewCtx=#context{user=User}) ->
-                   forbidden(NewRD, NewCtx, User, AuthBypass)
-           end,
-    riak_cs_wm_utils:find_and_auth_user(RD, Ctx, Next, AuthBypass).
+    riak_cs_wm_utils:find_and_auth_admin(RD, Ctx, AuthBypass).
 
 finish_request(RD, #context{riakc_pid=undefined}=Ctx) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"finish_request">>, [0], []),
@@ -123,27 +120,3 @@ pretty_print(RD1, C1=#context{}) ->
 
 get_stats() ->
     riak_cs_stats:get_stats().
-
-%% -------------------------------------------------------------------
-%% Internal functions
-%% -------------------------------------------------------------------
-
-forbidden(RD, Ctx, undefined, true) ->
-    {false, RD, Ctx};
-forbidden(RD, Ctx, undefined, false) ->
-    %% anonymous access disallowed
-    riak_cs_wm_utils:deny_access(RD, Ctx);
-forbidden(RD, Ctx, User, false) ->
-    UserKeyId = User?RCS_USER.key_id,
-    case riak_cs_config:admin_creds() of
-        {ok, {Admin, _}} when Admin == UserKeyId ->
-            %% admin account is allowed
-            riak_cs_dtrace:dt_wm_return(?MODULE, <<"forbidden">>,
-                                        [], [<<"false">>, Admin]),
-            {false, RD, Ctx};
-        _ ->
-            %% non-admin account is not allowed -> 403
-            Res = riak_cs_wm_utils:deny_access(RD, Ctx),
-            riak_cs_dtrace:dt_wm_return(?MODULE, <<"forbidden">>, [], [<<"true">>]),
-            Res
-    end.
