@@ -149,13 +149,22 @@ get_usage(Riak, User, Start, End) ->
 count_multipart_parts(Resolved) ->
     lists:foldl(fun count_multipart_parts/2, {0, 0}, Resolved).
 
-count_multipart_parts({_UUID, M}, {MPparts, MPbytes} = Acc) ->
-    case {M?MANIFEST.state, proplists:get_value(multipart, M?MANIFEST.props)} of
-        {writing, MP} ->
-            Ps = MP?MULTIPART_MANIFEST.parts,
+count_multipart_parts({_UUID, ?MANIFEST{props=Props, state=writing} = M},
+                      {MPparts, MPbytes} = Acc)
+  when is_list(Props) ->
+    case proplists:get_value(multipart, Props) of
+        ?MULTIPART_MANIFEST{parts=Ps} = _  ->
             {MPparts + length(Ps),
              MPbytes + lists:sum([P?PART_MANIFEST.content_length ||
                                      P <- Ps])};
-        _ ->
+        undefined ->
+            %% Or just a writing manifest, not an multipart
+            Acc;
+        Other ->
+            %% Some other thingy
+            lager:log(error, "bad multipart manifest of ~p: ~p",
+                      [M?MANIFEST.bkey, Other]),
             Acc
-    end.
+    end;
+count_multipart_parts(_, Acc) ->
+    Acc.
