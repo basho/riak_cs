@@ -115,7 +115,7 @@ object_size_map(Object, _, _) ->
                               [{MPparts, MPbytes}]
                       end
               end,
-    riak_cs_utils:maybe_process_resolved(Object, Handler).
+    riak_cs_utils:maybe_process_resolved(Object, Handler, []).
 
 object_size_reduce(Sizes, _) ->
     {Objects,Bytes} = lists:unzip(Sizes),
@@ -143,12 +143,12 @@ get_usage(Riak, User, Start, End) ->
     {ok, Period} = archive_period(),
     rts:find_samples(Riak, ?STORAGE_BUCKET, User, Start, End, Period).
 
--spec count_multipart_parts([{binary(), lfs_manifest()}]) ->
+-spec count_multipart_parts([{cs_uuid(), lfs_manifest()}]) ->
                                    {non_neg_integer(), non_neg_integer()}.
 count_multipart_parts(Resolved) ->
     lists:foldl(fun count_multipart_parts/2, {0, 0}, Resolved).
 
--spec count_multipart_parts([{binary(), lfs_manifest()}],
+-spec count_multipart_parts({cs_uuid(), lfs_manifest()},
                             {non_neg_integer(), non_neg_integer()}) ->
                                    {non_neg_integer(), non_neg_integer()}.
 count_multipart_parts({_UUID, ?MANIFEST{props=Props, state=writing} = M},

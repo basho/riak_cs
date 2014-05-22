@@ -89,6 +89,7 @@
   riak_object:get_metadata/1
   riak_object:get_value/1
   riak_object:get_values/1
+  riak_object:get_contents/1
   riak_object:key/0
   riak_object:key/1
   riak_object:new/3

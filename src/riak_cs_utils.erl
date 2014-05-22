@@ -42,7 +42,7 @@
          has_tombstone/1,
          is_admin/1,
          map_keys_and_manifests/3,
-         maybe_process_resolved/2,
+         maybe_process_resolved/3,
          md5/1,
          md5_init/0,
          md5_update/2,
@@ -513,9 +513,9 @@ map_keys_and_manifests(Object, _, _) ->
                               []
                       end
               end,
-    maybe_process_resolved(Object, Handler).
+    maybe_process_resolved(Object, Handler, []).
 
-maybe_process_resolved(Object, ResolvedManifestsHandler) ->
+maybe_process_resolved(Object, ResolvedManifestsHandler, ErrorReturn) ->
     try
         AllManifests = [ binary_to_term(V)
                          || {_, V} = Content <- riak_object:get_contents(Object),
@@ -524,14 +524,17 @@ maybe_process_resolved(Object, ResolvedManifestsHandler) ->
         Resolved = riak_cs_manifest_resolution:resolve(Upgraded),
         ResolvedManifestsHandler(Resolved)
     catch Type:Reason ->
+            StackTrace = erlang:get_stacktrace(),
             _ = lager:log(error,
                           self(),
-                          "Riak CS object list map failed for ~p:~p with reason ~p:~p",
+                          "Riak CS object list map failed for ~p:~p with reason ~p:~p"
+                          "at ~p",
                           [riak_object:bucket(Object),
                            riak_object:key(Object),
                            Type,
-                           Reason]),
-            []
+                           Reason,
+                           StackTrace]),
+            ErrorReturn
     end.
 
 %% Pipe all the bucket listing results through a passthrough reduce

@@ -28,18 +28,25 @@
 -include_lib("xmerl/include/xmerl.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
+-include("riak_cs.hrl").
+
 -define(BUCKET1, "storage-stats-test-1").
 -define(BUCKET2, "storage-stats-test-2").
 -define(BUCKET3, "storage-stats-test-3").
 -define(KEY, "1").
 
 confirm() ->
-    Config = [{riak, rtcs:riak_config()}, {stanchion, rtcs:stanchion_config()},
+    Config = [%%{riak, rtcs:riak_config([{riak_kv, [{delete_mode, keep}]}])},
+              {riak, rtcs:riak_config()},
+              {stanchion, rtcs:stanchion_config()},
               {cs, rtcs:cs_config([{fold_objects_for_list_keys, true}])}],
-    {UserConfig, {_RiakNodes, _CSNodes, _Stanchion}} = rtcs:setup(1, Config),
+    {UserConfig, {RiakNodes, _CSNodes, _Stanchion}} = rtcs:setup(1, Config),
     TestSpecs = [store_object(?BUCKET1, UserConfig),
                  delete_object(?BUCKET2, UserConfig),
                  store_objects(?BUCKET3, UserConfig)],
+
+    verify_cs840_regression(?BUCKET3, UserConfig, RiakNodes),
+
     {Begin, End} = calc_storage_stats(),
     {JsonStat, XmlStat} = storage_stats_request(UserConfig, Begin, End),
     lists:map(fun(Spec) ->
@@ -47,6 +54,49 @@ confirm() ->
                       assert_storage_xml_stats(Spec, XmlStat)
               end, TestSpecs),
     pass.
+
+
+%% @doc garbage data to check #840 regression,
+%% due to this garbages, following tests may fail
+verify_cs840_regression(CSBucket, UserConfig, RiakNodes) ->
+    
+    %% tombstone  (see above adding {delete_mode, keep} to riak_kv
+    CSKey0 = <<"notfound_anymore">>,
+    ?assertEqual([{version_id, "null"}],
+                 erlcloud_s3:put_object(CSBucket, CSKey0, <<"pocketburgers">>, UserConfig)),
+    ?assertEqual([{delete_marker, false}, {version_id, "null"}],
+                 erlcloud_s3:delete_object(CSBucket, CSKey0, UserConfig)),
+    rtcs:riakcs_gccmd("batch"),
+
+    Pid = rt:pbc(hd(RiakNodes)),
+
+    %% None of thes objects should not be calculated effective in storage
+    test_writing_various_props(Pid, CSBucket, UserConfig,
+                               %% state=writing, .props=undefined
+                               [{<<"somedumb_key">>, undefined},
+                                %% state=writing, /= multipart, normal writing object
+                                {<<"somedumb_key0">>, []},
+                                %% badly created ongoing multipart upload (not really)
+                                {<<"somedump_key1">>, [{multipart, pocketburgerking}]}]),
+
+    ok = riakc_pb_socket:stop(Pid),
+    ok.
+    %% garbage end
+
+test_writing_various_props(Pid, CSBucket, UserConfig, VariousProps) ->
+    F = fun({CSKey, Props}) ->
+                ?assertEqual([{version_id, "null"}],
+                             erlcloud_s3:put_object(CSBucket, CSKey, <<"pocketburgers">>, UserConfig)),
+                Bucket = <<"0o:", (stanchion_utils:md5(CSBucket))/binary>>,
+                RiakObject0 = riakc_pb_socket:get(Pid, Bucket, CSKey),
+                {UUID, Manifest0} = hd([binary_to_term(V) || V <- riakc_object:get_contents(RiakObject0)]),
+                Manifest1 = Manifest0?MANIFEST{state=writing, props=Props},
+                RiakObject = riakc_object:udpate_value(RiakObject0,
+                                                       term_to_binary([{UUID, Manifest1}])),
+                ok = riakc_pb_socket:put(RiakObject)
+        end,
+    lists:foreach(F, VariousProps).
+
 
 store_object(Bucket, UserConfig) ->
     lager:info("creating bucket ~p", [Bucket]),
