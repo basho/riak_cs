@@ -136,10 +136,16 @@ create_admin_user(Node) ->
 cs_port(Node) ->
     8070 + rt_cs_dev:node_id(Node).
 
+
 riak_config() ->
     riak_config(
       rt_config:get(build_type, oss),
       rt_config:get(backend, {multi_backend, bitcask})).
+
+riak_config(CustomConfig) ->
+    orddict:merge(fun(_, LHS, RHS) -> LHS ++ RHS end,
+                  orddict:from_list(lists:sort(CustomConfig)),
+                  orddict:from_list(lists:sort(riak_config()))).
 
 riak_config(oss, Backend) ->
     riak_oss_config(Backend);
@@ -249,6 +255,9 @@ riakcs_etcpath(Prefix, N) ->
 
 riakcscmd(Path, N, Cmd) ->
     lists:flatten(io_lib:format("~s ~s", [riakcs_binpath(Path, N), Cmd])).
+
+riakcs_gccmd(Path, N, Cmd) ->
+    lists:flatten(io_lib:format("~s-gc ~s", [riakcs_binpath(Path, N), Cmd])).
 
 riakcs_accesscmd(Path, N, Cmd) ->
     lists:flatten(io_lib:format("~s-access ~s", [riakcs_binpath(Path, N), Cmd])).
@@ -502,6 +511,12 @@ flush_access(N) ->
     Cmd = riakcs_accesscmd(rt_config:get(?CS_CURRENT), N, "flush"),
     lager:info("Running ~p", [Cmd]),
     os:cmd(Cmd).
+
+gc(N, SubCmd) ->
+    Cmd = riakcs_gccmd(rt_config:get(?CS_CURRENT), N, SubCmd),
+    lager:info("Running ~p", [Cmd]),
+    os:cmd(Cmd).
+    
 
 calculate_storage(N) ->
     Cmd = riakcs_storagecmd(rt_config:get(?CS_CURRENT), N, "batch -r"),

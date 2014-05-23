@@ -85,11 +85,11 @@
   riak_kv_backend:fold_buckets_fun/0
   riak_kv_backend:fold_keys_fun/0
   riak_kv_backend:fold_objects_fun/0
-  riak_object:bucket/0
+  riak_object:bucket/1
   riak_object:get_metadata/1
   riak_object:get_value/1
   riak_object:get_values/1
-  riak_object:key/0
+  riak_object:get_contents/1
   riak_object:key/1
   riak_object:new/3
   riak_object:update_metadata/2
