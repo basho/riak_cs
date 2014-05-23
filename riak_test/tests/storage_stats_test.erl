@@ -123,7 +123,7 @@ mess_with_active_undefined(Pid) ->
                                         term_to_binary([{UUID, Manifest1}])),
     ok = riakc_pb_socket:put(Pid, RiakObject).
 
-%% @doc messing with tombstone  (see above adding {delete_mode, keep} to riak_kv)
+%% @doc messing with tombstone (see above adding {delete_mode, keep} to riak_kv)
 mess_with_tombstone(Pid, UserConfig) ->
     CSKey = ?KEY,
     Block = crypto:rand_bytes(100),
