@@ -11,7 +11,7 @@ Unknown functions:
   riak_cs_dummy_reader:get_manifest/1
   riak_cs_dummy_reader:start_link/1
   riak_object:bucket/1
-  riak_object:get_values/1
+  riak_object:get_contents/1
   riak_object:key/1
   riakc_pb_socket_fake:start_link/0
 Unknown types:
