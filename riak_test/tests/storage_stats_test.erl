@@ -79,18 +79,49 @@ verify_cs840_regression(UserConfig, RiakNodes) ->
     Pid = rt:pbc(hd(RiakNodes)),
 
     %% None of thes objects should not be calculated effective in storage
-    mess_with_state_various_props(Pid, UserConfig,
-                                  %% state=writing, .props=undefined
-                                  [{?BUCKET4, ?KEY, writing, undefined},
-                                   %% badly created ongoing multipart upload (not really)
-                                   {?BUCKET5, ?KEY, writing, [{multipart, undefined}]},
-                                   {?BUCKET6, ?KEY, writing, [{multipart, pocketburgerking}]},
-                                   %% state=active, .props=undefined
-                                   {?BUCKET7, ?KEY, active, undefined}]),
+    ok = mess_with_writing_various_props(Pid, UserConfig,
+                                         %% state=writing, .props=undefined
+                                         [{?BUCKET4, ?KEY, writing, undefined},
+                                          %% badly created ongoing multipart upload (not really)
+                                          {?BUCKET5, ?KEY, writing, [{multipart, undefined}]},
+                                          {?BUCKET6, ?KEY, writing, [{multipart, pocketburgerking}]}]),
+
+    %% state=active, .props=undefined
+    ok = mess_with_active_undefined(Pid), %% {?BUCKET7, ?KEY, active, undefined}]),
 
     ok = mess_with_tombstone(Pid, UserConfig),
     ok = riakc_pb_socket:stop(Pid),
     ok.
+
+mess_with_writing_various_props(Pid, UserConfig, VariousProps) ->
+    F = fun({CSBucket, CSKey, NewState, Props}) ->
+                Bucket = <<"0o:", (crypto:md5(list_to_binary(CSBucket)))/binary>>,
+                {ok, RiakObject0} = riakc_pb_socket:get(Pid, Bucket, list_to_binary(CSKey)),
+                [{UUID, Manifest0}|_] = hd([binary_to_term(V) || V <- riakc_obj:get_values(RiakObject0)]),
+                Manifest1 = Manifest0?MANIFEST{state=NewState, props=Props},
+                RiakObject = riakc_obj:update_value(RiakObject0,
+                                                    term_to_binary([{UUID, Manifest1}])),
+                lager:info("~p", [Manifest1?MANIFEST.props]),
+
+                Block = crypto:rand_bytes(100),
+                ?assertEqual([{version_id, "null"}], erlcloud_s3:put_object(CSBucket, CSKey,
+                                                                            Block, UserConfig)),
+                ok = riakc_pb_socket:put(Pid, RiakObject),
+                assure_num_siblings(Pid, Bucket, list_to_binary(CSKey), 2)
+        end,
+    lists:foreach(F, VariousProps).
+
+
+mess_with_active_undefined(Pid) ->
+    CSBucket = ?BUCKET7, CSKey = ?KEY,
+
+    Bucket = <<"0o:", (crypto:md5(list_to_binary(CSBucket)))/binary>>,
+    {ok, RiakObject0} = riakc_pb_socket:get(Pid, Bucket, list_to_binary(CSKey)),
+    [{UUID, Manifest0}|_] = hd([binary_to_term(V) || V <- riakc_obj:get_values(RiakObject0)]),
+    Manifest1 = Manifest0?MANIFEST{props=undefined},
+    RiakObject = riakc_obj:update_value(RiakObject0,
+                                        term_to_binary([{UUID, Manifest1}])),
+    ok = riakc_pb_socket:put(Pid, RiakObject).
 
 %% @doc messing with tombstone  (see above adding {delete_mode, keep} to riak_kv)
 mess_with_tombstone(Pid, UserConfig) ->
@@ -102,7 +133,7 @@ mess_with_tombstone(Pid, UserConfig) ->
 
     %% %% This leaves a tombstone which messes up the storage calc
     ok = riakc_pb_socket:delete(Pid, Bucket, list_to_binary(CSKey)),
-    lager:info("listkeys: ~p", [riakc_pb_socket:list_keys(Pid, Bucket)]),
+    %% lager:info("listkeys: ~p", [riakc_pb_socket:list_keys(Pid, Bucket)]),
 
     ?assertEqual([{version_id, "null"}], erlcloud_s3:put_object(?BUCKET8, CSKey,
                                                                 Block, UserConfig)),
@@ -130,24 +161,6 @@ assure_num_siblings(Pid, Bucket, Key, Num) ->
     {ok, RiakObject0} = riakc_pb_socket:get(Pid, Bucket, Key),
     Contents = riakc_obj:get_values(RiakObject0),
     ?assertEqual(Num, length(Contents)).
-
-mess_with_state_various_props(Pid, UserConfig, VariousProps) ->
-    F = fun({CSBucket, CSKey, NewState, Props}) ->
-                Bucket = <<"0o:", (crypto:md5(list_to_binary(CSBucket)))/binary>>,
-                {ok, RiakObject0} = riakc_pb_socket:get(Pid, Bucket, list_to_binary(CSKey)),
-                [{UUID, Manifest0}|_] = hd([binary_to_term(V) || V <- riakc_obj:get_values(RiakObject0)]),
-                Manifest1 = Manifest0?MANIFEST{state=NewState, props=Props, content_length=10},
-                RiakObject = riakc_obj:update_value(RiakObject0,
-                                                    term_to_binary([{UUID, Manifest1}])),
-                lager:info("~p", [Manifest1?MANIFEST.props]),
-
-                Block = crypto:rand_bytes(100),
-                ?assertEqual([{version_id, "null"}], erlcloud_s3:put_object(CSBucket, CSKey,
-                                                                            Block, UserConfig)),
-                ok = riakc_pb_socket:put(Pid, RiakObject),
-                assure_num_siblings(Pid, Bucket, list_to_binary(CSKey), 2)
-        end,
-    lists:foreach(F, VariousProps).
 
 
 store_object(Bucket, UserConfig) ->
