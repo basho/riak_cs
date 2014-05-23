@@ -667,10 +667,12 @@ make_authorization(Method, Resource, ContentType, Config, Date) ->
 -ifdef(new_hash).
 sha_mac(Key,STS) -> crypto:hmac(sha, Key,STS).
 sha(Bin) -> crypto:hash(sha, Bin).
+md5(Bin) -> crypto:hash(md5, Bin).
 
 -else.
 sha_mac(Key,STS) -> crypto:sha_mac(Key,STS).
 sha(Bin) -> crypto:sha(Bin).
+md5(Bin) -> crypto:md5(Bin).
 
 -endif.
 

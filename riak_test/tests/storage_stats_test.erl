@@ -95,7 +95,7 @@ verify_cs840_regression(UserConfig, RiakNodes) ->
 
 mess_with_writing_various_props(Pid, UserConfig, VariousProps) ->
     F = fun({CSBucket, CSKey, NewState, Props}) ->
-                Bucket = <<"0o:", (crypto:md5(list_to_binary(CSBucket)))/binary>>,
+                Bucket = <<"0o:", (rtcs:md5(list_to_binary(CSBucket)))/binary>>,
                 {ok, RiakObject0} = riakc_pb_socket:get(Pid, Bucket, list_to_binary(CSKey)),
                 [{UUID, Manifest0}|_] = hd([binary_to_term(V) || V <- riakc_obj:get_values(RiakObject0)]),
                 Manifest1 = Manifest0?MANIFEST{state=NewState, props=Props},
@@ -115,7 +115,7 @@ mess_with_writing_various_props(Pid, UserConfig, VariousProps) ->
 mess_with_active_undefined(Pid) ->
     CSBucket = ?BUCKET7, CSKey = ?KEY,
 
-    Bucket = <<"0o:", (crypto:md5(list_to_binary(CSBucket)))/binary>>,
+    Bucket = <<"0o:", (rtcs:md5(list_to_binary(CSBucket)))/binary>>,
     {ok, RiakObject0} = riakc_pb_socket:get(Pid, Bucket, list_to_binary(CSKey)),
     [{UUID, Manifest0}|_] = hd([binary_to_term(V) || V <- riakc_obj:get_values(RiakObject0)]),
     Manifest1 = Manifest0?MANIFEST{props=undefined},
@@ -129,7 +129,7 @@ mess_with_tombstone(Pid, UserConfig) ->
     Block = crypto:rand_bytes(100),
     ?assertEqual([{version_id, "null"}], erlcloud_s3:put_object(?BUCKET8, CSKey,
                                                                 Block, UserConfig)),
-    Bucket = <<"0o:", (crypto:md5(list_to_binary(?BUCKET8)))/binary>>,
+    Bucket = <<"0o:", (rtcs:md5(list_to_binary(?BUCKET8)))/binary>>,
 
     %% %% This leaves a tombstone which messes up the storage calc
     ok = riakc_pb_socket:delete(Pid, Bucket, list_to_binary(CSKey)),
