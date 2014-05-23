@@ -33,7 +33,7 @@ confirm() ->
     confirm_auth_bypass("riak-cs", "stats", UserConfig, Port),
     confirm_auth_bypass("riak-cs", "users", UserConfig, Port),
     confirm_auth_bypass("riak-cs", "user/"  ++ KeyId, UserConfig, Port),
-    confirm_auth_bypass("riak-cs", "usage/" ++ KeyId ++ "/a/" ++ rtcs:datetime() ++ "/" ++ rtcs:datetime(),
+    confirm_auth_bypass("riak-cs", "usage/" ++ KeyId ++ "/ab/" ++ rtcs:datetime() ++ "/" ++ rtcs:datetime(),
                         UserConfig, Port),
     pass.
 
