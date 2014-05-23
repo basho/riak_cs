@@ -28,25 +28,140 @@
 -include_lib("xmerl/include/xmerl.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
+-include("riak_cs.hrl").
+
 -define(BUCKET1, "storage-stats-test-1").
 -define(BUCKET2, "storage-stats-test-2").
 -define(BUCKET3, "storage-stats-test-3").
+
+-define(BUCKET4, "storage-stats-test-4").
+-define(BUCKET5, "storage-stats-test-5").
+-define(BUCKET6, "storage-stats-test-6").
+-define(BUCKET7, "storage-stats-test-7").
+-define(BUCKET8, "storage-stats-test-8").
 -define(KEY, "1").
 
+-define(HIDDEN_KEY, "5=pockets").
+
 confirm() ->
-    Config = [{riak, rtcs:riak_config()}, {stanchion, rtcs:stanchion_config()},
+    Config = [{riak, rtcs:riak_config([{riak_kv, [{delete_mode, keep}]}])},
+              {stanchion, rtcs:stanchion_config()},
               {cs, rtcs:cs_config([{fold_objects_for_list_keys, true}])}],
-    {UserConfig, {_RiakNodes, _CSNodes, _Stanchion}} = rtcs:setup(1, Config),
+    {UserConfig, {RiakNodes, _CSNodes, _Stanchion}} = rtcs:setup(1, Config),
     TestSpecs = [store_object(?BUCKET1, UserConfig),
                  delete_object(?BUCKET2, UserConfig),
-                 store_objects(?BUCKET3, UserConfig)],
+                 store_objects(?BUCKET3, UserConfig),
+
+                 %% for CS #840 regression
+                 store_object(?BUCKET4, UserConfig),
+                 store_object(?BUCKET5, UserConfig),
+                 store_object(?BUCKET6, UserConfig),
+                 store_object(?BUCKET7, UserConfig),
+                 store_object(?BUCKET8, UserConfig)
+                ],
+
+    verify_cs840_regression(UserConfig, RiakNodes),
+
     {Begin, End} = calc_storage_stats(),
     {JsonStat, XmlStat} = storage_stats_request(UserConfig, Begin, End),
-    lists:map(fun(Spec) ->
-                      assert_storage_json_stats(Spec, JsonStat),
-                      assert_storage_xml_stats(Spec, XmlStat)
-              end, TestSpecs),
+    lists:foreach(fun(Spec) ->
+                          assert_storage_json_stats(Spec, JsonStat),
+                          assert_storage_xml_stats(Spec, XmlStat)
+                  end, TestSpecs),
     pass.
+
+%% @doc garbage data to check #840 regression,
+%% due to this garbages, following tests may fail
+%% makes manifest in BUCKET(4,5,6,7,8) to garbage, which can
+%% be generated from former versions of riak cs than 1.4.5
+verify_cs840_regression(UserConfig, RiakNodes) ->
+
+    Pid = rt:pbc(hd(RiakNodes)),
+
+    %% None of thes objects should not be calculated effective in storage
+    ok = mess_with_writing_various_props(Pid, UserConfig,
+                                         %% state=writing, .props=undefined
+                                         [{?BUCKET4, ?KEY, writing, undefined},
+                                          %% badly created ongoing multipart upload (not really)
+                                          {?BUCKET5, ?KEY, writing, [{multipart, undefined}]},
+                                          {?BUCKET6, ?KEY, writing, [{multipart, pocketburgerking}]}]),
+
+    %% state=active, .props=undefined
+    ok = mess_with_active_undefined(Pid), %% {?BUCKET7, ?KEY, active, undefined}]),
+
+    ok = mess_with_tombstone(Pid, UserConfig),
+    ok = riakc_pb_socket:stop(Pid),
+    ok.
+
+mess_with_writing_various_props(Pid, UserConfig, VariousProps) ->
+    F = fun({CSBucket, CSKey, NewState, Props}) ->
+                Bucket = <<"0o:", (rtcs:md5(list_to_binary(CSBucket)))/binary>>,
+                {ok, RiakObject0} = riakc_pb_socket:get(Pid, Bucket, list_to_binary(CSKey)),
+                [{UUID, Manifest0}|_] = hd([binary_to_term(V) || V <- riakc_obj:get_values(RiakObject0)]),
+                Manifest1 = Manifest0?MANIFEST{state=NewState, props=Props},
+                RiakObject = riakc_obj:update_value(RiakObject0,
+                                                    term_to_binary([{UUID, Manifest1}])),
+                lager:info("~p", [Manifest1?MANIFEST.props]),
+
+                Block = crypto:rand_bytes(100),
+                ?assertEqual([{version_id, "null"}], erlcloud_s3:put_object(CSBucket, CSKey,
+                                                                            Block, UserConfig)),
+                ok = riakc_pb_socket:put(Pid, RiakObject),
+                assure_num_siblings(Pid, Bucket, list_to_binary(CSKey), 2)
+        end,
+    lists:foreach(F, VariousProps).
+
+
+mess_with_active_undefined(Pid) ->
+    CSBucket = ?BUCKET7, CSKey = ?KEY,
+
+    Bucket = <<"0o:", (rtcs:md5(list_to_binary(CSBucket)))/binary>>,
+    {ok, RiakObject0} = riakc_pb_socket:get(Pid, Bucket, list_to_binary(CSKey)),
+    [{UUID, Manifest0}|_] = hd([binary_to_term(V) || V <- riakc_obj:get_values(RiakObject0)]),
+    Manifest1 = Manifest0?MANIFEST{props=undefined},
+    RiakObject = riakc_obj:update_value(RiakObject0,
+                                        term_to_binary([{UUID, Manifest1}])),
+    ok = riakc_pb_socket:put(Pid, RiakObject).
+
+%% @doc messing with tombstone (see above adding {delete_mode, keep} to riak_kv)
+mess_with_tombstone(Pid, UserConfig) ->
+    CSKey = ?KEY,
+    Block = crypto:rand_bytes(100),
+    ?assertEqual([{version_id, "null"}], erlcloud_s3:put_object(?BUCKET8, CSKey,
+                                                                Block, UserConfig)),
+    Bucket = <<"0o:", (rtcs:md5(list_to_binary(?BUCKET8)))/binary>>,
+
+    %% %% This leaves a tombstone which messes up the storage calc
+    ok = riakc_pb_socket:delete(Pid, Bucket, list_to_binary(CSKey)),
+    %% lager:info("listkeys: ~p", [riakc_pb_socket:list_keys(Pid, Bucket)]),
+
+    ?assertEqual([{version_id, "null"}], erlcloud_s3:put_object(?BUCKET8, CSKey,
+                                                                Block, UserConfig)),
+
+    {ok, RiakObject0} = riakc_pb_socket:get(Pid, Bucket, list_to_binary(CSKey)),
+    assure_num_siblings(Pid, Bucket, list_to_binary(CSKey), 1),
+
+    Block2 = crypto:rand_bytes(100),
+    ?assertEqual([{version_id, "null"}], erlcloud_s3:put_object(?BUCKET8, CSKey,
+                                                                Block2, UserConfig)),
+
+    ok = riakc_pb_socket:delete_vclock(Pid, Bucket, list_to_binary(CSKey),
+                                       riakc_obj:vclock(RiakObject0)),
+
+    %% Two siblings, alive object and new tombstone
+    assure_num_siblings(Pid, Bucket, list_to_binary(CSKey), 2),
+
+    %% Here at last, ?BUCKET8 should have ?KEY alive and counted, but
+    %% #840 causes, ?KEY won't be counted in usage calc
+    Obj = erlcloud_s3:get_object(?BUCKET8, CSKey, UserConfig),
+    ?assertEqual(byte_size(Block2), list_to_integer(proplists:get_value(content_length, Obj))),
+    ?assertEqual(Block2, proplists:get_value(content, Obj)).
+
+assure_num_siblings(Pid, Bucket, Key, Num) ->
+    {ok, RiakObject0} = riakc_pb_socket:get(Pid, Bucket, Key),
+    Contents = riakc_obj:get_values(RiakObject0),
+    ?assertEqual(Num, length(Contents)).
+
 
 store_object(Bucket, UserConfig) ->
     lager:info("creating bucket ~p", [Bucket]),
