@@ -78,10 +78,7 @@ verify_cs840_regression(UserConfig, RiakNodes) ->
 
     Pid = rt:pbc(hd(RiakNodes)),
 
-    %% bucket7 should be counted
-
-
-    %% %% None of thes objects should not be calculated effective in storage
+    %% None of thes objects should not be calculated effective in storage
     mess_with_state_various_props(Pid, UserConfig,
                                   %% state=writing, .props=undefined
                                   [{?BUCKET4, ?KEY, writing, undefined},
@@ -95,9 +92,8 @@ verify_cs840_regression(UserConfig, RiakNodes) ->
     ok = riakc_pb_socket:stop(Pid),
     ok.
 
+%% @doc messing with tombstone  (see above adding {delete_mode, keep} to riak_kv)
 mess_with_tombstone(Pid, UserConfig) ->
-    %% %% tombstone  (see above adding {delete_mode, keep} to riak_kv
-    %% Put 100-byte object
     CSKey = ?KEY,
     Block = crypto:rand_bytes(100),
     ?assertEqual([{version_id, "null"}], erlcloud_s3:put_object(?BUCKET8, CSKey,
