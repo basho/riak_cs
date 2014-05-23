@@ -55,10 +55,8 @@ allowed_methods(RD, Ctx) ->
     {['GET', 'HEAD'], RD, Ctx}.
 
 forbidden(RD, Ctx=#context{auth_bypass=AuthBypass}) ->
-    Next = fun(NewRD, NewCtx=#context{user=User}) ->
-                   forbidden(NewRD, NewCtx, User, AuthBypass)
-           end,
-    riak_cs_wm_utils:find_and_auth_user(RD, Ctx, Next, AuthBypass).
+    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"forbidden">>),
+    riak_cs_wm_utils:find_and_auth_admin(RD, Ctx, AuthBypass).
 
 content_types_provided(RD, Ctx) ->
     {[{?XML_TYPE, produce_xml}, {?JSON_TYPE, produce_json}], RD, Ctx}.
@@ -104,22 +102,6 @@ finish_request(RD, Ctx=#context{riakc_pid=RiakPid}) ->
 %% -------------------------------------------------------------------
 %% Internal functions
 %% -------------------------------------------------------------------
-
-forbidden(RD, Ctx, undefined, true) ->
-    {false, RD, Ctx};
-forbidden(RD, Ctx, undefined, false) ->
-    %% anonymous access disallowed
-    riak_cs_wm_utils:deny_access(RD, Ctx);
-forbidden(RD, Ctx, User, false) ->
-    UserKeyId = User?RCS_USER.key_id,
-    case riak_cs_config:admin_creds() of
-        {ok, {Admin, _}} when Admin == UserKeyId ->
-            %% admin account is allowed
-            {false, RD, Ctx};
-        _ ->
-            %% no one else is allowed
-            riak_cs_wm_utils:deny_access(RD, Ctx)
-    end.
 
 stream_users(Format, RiakPid, Boundary, Status) ->
     case riakc_pb_socket:stream_list_keys(RiakPid, ?USER_BUCKET) of
