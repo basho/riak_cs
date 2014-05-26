@@ -159,7 +159,9 @@ produce_body(RD, Ctx=#context{local_context=LocalCtx,
             produce_body(RD, Ctx, RangeIndexes, RespRange)
     end.
 
-produce_body(RD, Ctx=#context{local_context=LocalCtx,
+produce_body(RD, Ctx=#context{rc_pool=RcPool,
+                              riak_client=RcPid,
+                              local_context=LocalCtx,
                               start_time=StartTime,
                               user=User},
              {Start, End}, RespRange) ->
@@ -183,19 +185,20 @@ produce_body(RD, Ctx=#context{local_context=LocalCtx,
                           {"Last-Modified", LastModified}
                          ] ++  Mfst?MANIFEST.metadata),
     NewRQ2 = wrq:set_resp_range(RespRange, NewRQ1),
-    StreamBody =
-        case Method == 'HEAD'
-            orelse
-            ResourceLength == 0 of
+    NoBody = Method =:= 'HEAD' orelse ResourceLength =:= 0,
+    lager:log(warning, self(), "********** NoBody: ~p~n", [NoBody]),
+    {NewCtx, StreamBody} =
+        case NoBody of
             true ->
                 riak_cs_get_fsm:stop(GetFsmPid),
-                fun() -> {<<>>, done} end;
+                {Ctx, fun() -> {<<>>, done} end};
             false ->
                 riak_cs_get_fsm:continue(GetFsmPid, {Start, End}),
-                {<<>>, fun() ->
-                               riak_cs_wm_utils:streaming_get(
-                                 GetFsmPid, StartTime, UserName, BFile_str)
-                       end}
+                {Ctx#context{auto_rc_close=false},
+                 {<<>>, fun() ->
+                                riak_cs_wm_utils:streaming_get(
+                                  RcPool, RcPid, GetFsmPid, StartTime, UserName, BFile_str)
+                        end}}
         end,
     if Method == 'HEAD' ->
             riak_cs_dtrace:dt_object_return(?MODULE, <<"object_head">>,
@@ -204,7 +207,7 @@ produce_body(RD, Ctx=#context{local_context=LocalCtx,
        true ->
             ok
     end,
-    {{known_length_stream, ResourceLength, StreamBody}, NewRQ2, Ctx}.
+    {{known_length_stream, ResourceLength, StreamBody}, NewRQ2, NewCtx}.
 
 parse_range(RD, ResourceLength) ->
     case wrq:get_req_header("range", RD) of

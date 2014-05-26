@@ -86,6 +86,7 @@
                   requested_perm :: acl_perm(),
                   riak_client :: pid(),
                   rc_pool :: atom(),
+                  auto_rc_close = true :: boolean(),
                   submodule :: atom(),
                   exports_fun :: function(),
                   auth_module :: atom(),

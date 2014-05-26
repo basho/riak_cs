@@ -363,9 +363,11 @@ produce_body(RD, Ctx=#context{user=User,
     Res.
 
 -spec finish_request(#wm_reqdata{}, #context{}) -> {boolean(), #wm_reqdata{}, #context{}}.
-finish_request(RD, Ctx=#context{riak_client=undefined,
+finish_request(RD, Ctx=#context{riak_client=RcPid,
+                                auto_rc_close=AutoRcClose,
                                 submodule=Mod,
-                                exports_fun=ExportsFun}) ->
+                                exports_fun=ExportsFun})
+  when RcPid =:= undefined orelse AutoRcClose =:= false ->
     riak_cs_dtrace:dt_wm_entry({?MODULE, Mod}, <<"finish_request">>, [0], []),
     Res = resource_call(Mod,
                         finish_request,
@@ -374,8 +376,8 @@ finish_request(RD, Ctx=#context{riak_client=undefined,
     riak_cs_dtrace:dt_wm_return({?MODULE, Mod}, <<"finish_request">>, [0], []),
     Res;
 finish_request(RD, Ctx0=#context{riak_client=RcPid,
-                                 submodule=Mod,
                                  rc_pool=Pool,
+                                 submodule=Mod,
                                  exports_fun=ExportsFun}) ->
     riak_cs_dtrace:dt_wm_entry({?MODULE, Mod}, <<"finish_request">>, [1], []),
     riak_cs_riak_client:checkin(Pool, RcPid),
