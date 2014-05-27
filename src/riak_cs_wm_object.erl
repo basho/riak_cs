@@ -1,6 +1,6 @@
 %% ---------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2014 Basho Technologies, Inc.  All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -283,40 +283,44 @@ content_types_accepted(CT, RD, Ctx=#context{local_context=LocalCtx0}) ->
              Ctx}
     end.
 
--spec get_copy_source(#wm_reqdata{}) -> undefined | {binary(), binary()} |
-    {error, atom()}.
-get_copy_source(RD) ->
-    case wrq:get_req_header("x-copy-from", RD) of
-        undefined ->
-            undefined;
-        [H | T] ->
-            case H of
-                "/" ->
-                    Bucket = lists:takewhile(fun(Char) ->
-                                                 Char /= $/
-                                             end, T),
-                    Key = lists:nthtail(length(Bucket)+1, T),
-                    {list_to_binary(Bucket), list_to_binary(Key)};
-                _ ->
-                    {error, invalid_x_copy_from_path}
-            end
-    end.
-
-
 -spec accept_body(#wm_reqdata{}, #context{}) ->
                          {{halt, integer()}, #wm_reqdata{}, #context{}}.
-accept_body(RD, Ctx) ->
-    accept_body(RD, Ctx, get_copy_source(RD)).
+accept_body(RD, Ctx=#context{riak_client=RcPid,
+                             local_context=LocalCtx,
+                             response_module=ResponseMod})
+  when LocalCtx#key_context.update_metadata == true ->
+    %% zero-body put copy - just updating metadata
+    #key_context{bucket=Bucket, key=KeyStr, manifest=Mfst} = LocalCtx,
+    Acl = Mfst?MANIFEST.acl,
+    NewAcl = Acl?ACL{creation_time = now()},
+    Metadata = riak_cs_wm_utils:extract_user_metadata(RD),
+    case riak_cs_utils:set_object_acl(Bucket, list_to_binary(KeyStr),
+                                      Mfst?MANIFEST{metadata=Metadata}, NewAcl,
+                                      RcPid) of
+        ok ->
+            ETag = riak_cs_utils:etag_from_binary(Mfst?MANIFEST.content_md5),
+            RD2 = wrq:set_resp_header("ETag", ETag, RD),
+            ResponseMod:copy_object_response(Mfst, RD2, Ctx);
+        {error, Err} ->
+            ResponseMod:api_error(Err, RD, Ctx)
+    end;
+accept_body(RD, #context{response_module=ResponseMod} = Ctx) ->
+    case riak_cs_copy_object:get_copy_source(RD) of
+        undefined ->
+            handle_normal_put(RD, Ctx);
+        {error, _} = Err ->
+            ResponseMod:api_error(Err, RD, Ctx);
+        {SrcBucket, SrcKey} ->
+            handle_copy_put(RD, Ctx, SrcBucket, SrcKey)
+    end.
 
--spec accept_body(#wm_reqdata{}, #context{}, undefined |
-                                             {error, atom()} |
-                                             {string(), string()}) ->
+-spec handle_normal_put(#wm_reqdata{}, #context{}) ->
     {{halt, integer()}, #wm_reqdata{}, #context{}}.
-accept_body(RD, Ctx, undefined) ->
+handle_normal_put(RD, Ctx) ->
     #context{local_context=LocalCtx,
              user=User,
              acl=ACL,
-             riakc_pid=RiakcPid} = Ctx,
+             riak_client=RcPid} = Ctx,
     #key_context{bucket=Bucket,
                  key=Key,
                  putctype=ContentType,
@@ -334,47 +338,65 @@ accept_body(RD, Ctx, undefined) ->
     Args = [{Bucket, list_to_binary(Key), Size, list_to_binary(ContentType),
              Metadata, BlockSize, ACL, timer:seconds(60), self(), RcPid}],
     {ok, Pid} = riak_cs_put_fsm_sup:start_put_fsm(node(), Args),
-    accept_streambody(RD, Ctx, Pid, wrq:stream_req_body(RD, riak_cs_lfs_utils:block_size()));
-accept_body(RD, #context{response_module=ResponseMod}=Ctx, {error, _}=Err) ->
-    ResponseMod:api_error(Err, RD, Ctx);
-accept_body(RD, Ctx, {SrcBucket, SrcKey}) ->
+    accept_streambody(RD, Ctx, Pid, wrq:stream_req_body(RD, riak_cs_lfs_utils:block_size())).
+
+%% @doc the head is PUT copy path
+-spec handle_copy_put(#wm_reqdata{}, #context{}, binary(), binary()) ->
+                               {boolean()|{halt, integer()}, #wm_reqdata{}, #context{}}.
+handle_copy_put(RD, Ctx, SrcBucket, SrcKey) ->
     #context{local_context=LocalCtx,
              response_module=ResponseMod,
-             riakc_pid=RiakcPid} = Ctx,
-    #key_context{bucket=Bucket, key=KeyStr, manifest=Mfst} = LocalCtx,
-    Acl = Mfst?MANIFEST.acl,
-    NewAcl = Acl?ACL{creation_time = os:timestamp()},
-    Metadata = riak_cs_wm_utils:extract_user_metadata(RD),
+             acl=Acl,
+             riak_client=RcPid} = Ctx,
+    %% manifest is always notfound|undefined here
+    #key_context{bucket=Bucket, key=KeyStr} = LocalCtx,
     Key = list_to_binary(KeyStr),
-    ETag = riak_cs_utils:etag_from_binary(Mfst?MANIFEST.content_md5),
-    case riak_cs_utils:set_object_acl(Bucket, Key,
-                                      Mfst?MANIFEST{metadata=Metadata}, NewAcl,
-                                      RiakcPid) of
-        ok ->
-            case get_manifest(RiakcPid, SrcBucket, SrcKey) of
-                {ok, SrcManifest} ->
-                    CopyCtx = #copy_ctx{src_manifest=SrcManifest,
-                                        dst_bucket=Bucket,
-                                        dst_key=Key,
-                                        dst_metadata=Metadata,
-                                        dst_acl=NewAcl},
-                    ok = riak_cs_copy_object:copy(CopyCtx),
-                    RD2 = wrq:set_resp_header("ETag", ETag, RD),
-                    ResponseMod:copy_object_response(Mfst, RD2, Ctx);
-                Error ->
-                    ResponseMod:api_error(Error, RD, Ctx)
-            end;
-        {error, Err} ->
-            ResponseMod:api_error(Err, RD, Ctx)
-    end.
 
--spec get_manifest(pid(), binary(), binary()) -> ?MANIFEST{} | {error, term()}.
-get_manifest(RiakcPid, Bucket, Key) ->
-    case riak_cs_utils:get_manifests(RiakcPid, Bucket, Key) of
-        {ok, _, Manifests} ->
-            riak_cs_manifest_utils:active_manifest(orddict:from_list(Manifests));
-        Error ->
-            Error
+    {ok, ReadRcPid} = riak_cs_riak_client:checkout(),
+    try
+
+        %% You'll also need permission to access source object, but RD and
+        %% Ctx is of target object. Then access permission to source
+        %% object has to be checked here. First of all, get manifest.
+        case riak_cs_manifest:fetch(ReadRcPid, SrcBucket, SrcKey) of
+            {ok, SrcManifest} ->
+
+                case riak_cs_copy_object:test_condition_and_permission(SrcManifest, RD, Ctx) of
+
+                    {false, _, _} ->
+
+                        %% start copying
+                        _ = lager:debug("copying! > ~s ~s => ~s ~s via ~p",
+                                        [SrcBucket, SrcKey, Bucket, Key, ReadRcPid]),
+
+                        Metadata = riak_cs_wm_utils:extract_user_metadata(RD),
+                        NewAcl = Acl?ACL{creation_time=os:timestamp()},
+                        {ok, PutFsmPid} = riak_cs_copy_object:start_put_fsm(Bucket, Key, SrcManifest,
+                                                                            Metadata, NewAcl, RcPid),
+
+                        %% This ain't fail because all permission and 404
+                        %% possibility has been already checked.
+                        {ok, DstManifest} = riak_cs_copy_object:copy(PutFsmPid, SrcManifest, ReadRcPid),
+                        ETag = riak_cs_utils:etag_from_binary(DstManifest?MANIFEST.content_md5),
+                        RD2 = wrq:set_resp_header("ETag", ETag, RD),
+                        ResponseMod:copy_object_response(DstManifest, RD2,
+                                                         Ctx#context{local_context=LocalCtx});
+                    {true, _RD, _OtherCtx} ->
+                        %% access to source object not authorized
+                        %% TODO: check the return value / http status
+                        _ = lager:debug("access to source object denied (~s, ~s)", [SrcBucket, SrcKey]),
+                        {{halt, 403}, RD, Ctx};
+
+                    {Result, _, _} = Error ->
+                        _ = lager:debug("~p on ~s ~s", [Result, SrcBucket, SrcKey]),
+                        Error
+
+                end;
+            {error, Err} ->
+                ResponseMod:api_error(Err, RD, Ctx)
+        end
+    after
+        riak_cs_riak_client:checkin(ReadRcPid)
     end.
 
 -spec accept_streambody(#wm_reqdata{}, #context{}, pid(), term()) -> {{halt, integer()}, #wm_reqdata{}, #context{}}.
@@ -401,9 +423,8 @@ accept_streambody(RD,
     end.
 
 %% TODO:
-%% We need to do some checking to make sure
-%% the bucket exists for the user who is doing
-%% this PUT
+%% We need to do some checking to make sure the bucket exists
+%% for the user who is doing this PUT
 -spec finalize_request(#wm_reqdata{}, #context{}, pid()) -> {{halt, 200}, #wm_reqdata{}, #context{}}.
 finalize_request(RD,
                  Ctx=#context{local_context=LocalCtx,

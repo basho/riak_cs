@@ -430,7 +430,7 @@ class BucketPolicyTest(S3ApiVerificationTestBase):
         policy = '''
 {"Version":"2008-10-17","Statement":[{"Sid":"Stmtaaa","Effect":"Allow","Principal":"*","Action":["s3:GetObjectAcl","s3:GetObject"],"Resource":"arn:aws:s3:::%s/*","Condition":{"IpAddress":{"aws:SourceIp":"0"}}}]}
 ''' % bucket.name
-        try: 
+        try:
             bucket.set_policy(policy, headers={'content-type':'application/json'})
         except S3ResponseError as e:
             self.assertEqual(e.status, 400)
@@ -483,7 +483,7 @@ class BucketPolicyTest(S3ApiVerificationTestBase):
         policy = '''
 {"Version":"2008-10-17","Statement":[{"Sid":"Stmtaaa0","Effect":"Allow","Principal":"*","Action":["s3:GetObject"],"Resource":"arn:aws:s3:::%s/*","Condition":{"Bool":{"aws:SecureTransport":wat}}}]}
 ''' % bucket.name
-        try: 
+        try:
             bucket.set_policy(policy, headers={'content-type':'application/json'})
         except S3ResponseError as e:
             self.assertEqual(e.status, 400)
@@ -675,7 +675,28 @@ class ContentMd5Test(S3ApiVerificationTestBase):
             pass
         self.assertEqual(good_key.get_contents_as_string(), value)
 
+class ContentMd5Test(S3ApiVerificationTestBase):
 
+    def test_put_copy_object(self):
+        bucket = self.conn.create_bucket(self.bucket_name)
+        k = Key(bucket)
+        k.key = self.key_name
+        k.set_contents_from_string(self.data)
+        self.assertEqual(k.get_contents_as_string(), self.data)
+        self.assertIn(self.key_name,
+                      [k.key for k in bucket.get_all_keys()])
+
+        target_bucket_name = str(uuid.uuid4())
+        target_key_name = str(uuid.uuid4())
+        target_bucket = self.conn.create_bucket(target_bucket_name)
+
+        target_bucket.copy_key(target_key_name, self.bucket_name, self.key_name)
+
+        target_key = Key(target_bucket)
+        target_key.key = target_key_name
+        self.assertEqual(k.get_contents_as_string(), self.data)
+        self.assertIn(target_key_name,
+                      [k.key for k in target_bucket.get_all_keys()])
 
 if __name__ == "__main__":
     unittest.main()

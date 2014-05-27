@@ -45,3 +45,36 @@ upload_parts(Bucket, Key, UploadId, Config, PartCount, [Size | Sizes], Contents,
     lager:debug("PartEtag: ~p~n", [PartEtag]),
     upload_parts(Bucket, Key, UploadId, Config, PartCount + 1,
                  Sizes, [Content | Contents], [{PartCount, PartEtag} | Parts]).
+
+upload_part_copy(BucketName, Key, UploadId, PartNum, SrcBucket, SrcKey, Config) ->
+    
+    Url = "/" ++ Key,
+    Source = filename:join([SrcBucket, SrcKey]),
+    Subresources = [{"partNumber", integer_to_list(PartNum)},
+                    {"uploadId", UploadId}],
+    Headers = [%%{"content-length", byte_size(PartData)},
+               {"x-amz-copy-source", Source}],
+    erlcloud_s3:s3_request(Config, put, BucketName, Url,
+                           Subresources, [], {<<>>, []}, Headers).
+
+upload_and_assert_part(Bucket, Key, UploadId, PartNum, PartData, Config) ->
+    {RespHeaders, _UploadRes} = erlcloud_s3_multipart:upload_part(Bucket, Key, UploadId, PartNum, PartData, Config),
+    assert_part(Bucket, Key, UploadId, PartNum, Config, RespHeaders).
+
+
+assert_part(Bucket, Key, UploadId, PartNum, Config, RespHeaders) ->
+    PartEtag = proplists:get_value("ETag", RespHeaders),
+    PartsTerm = erlcloud_s3_multipart:parts_to_term(
+                  erlcloud_s3_multipart:list_parts(Bucket, Key, UploadId, [], Config)),
+    %% lager:debug("~p", [PartsTerm]),
+    Parts = proplists:get_value(parts, PartsTerm),
+    ?assertEqual(Bucket, proplists:get_value(bucket, PartsTerm)),
+    ?assertEqual(Key, proplists:get_value(key, PartsTerm)),
+    ?assertEqual(UploadId, proplists:get_value(upload_id, PartsTerm)),
+    verify_part(PartEtag, proplists:get_value(PartNum, Parts)),
+    PartEtag.
+
+verify_part(_, undefined) ->
+    ?assert(false);
+verify_part(ExpectedEtag, PartInfo) ->
+    ?assertEqual(ExpectedEtag, proplists:get_value(etag, PartInfo)).
