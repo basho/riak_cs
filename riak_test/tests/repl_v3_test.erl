@@ -151,9 +151,9 @@ confirm() ->
     %% We expect errors here since proxy_get will fail due to the
     %% clusters being disconnected.
     ?assertError({aws_error, _}, erlcloud_s3:get_object(?TEST_BUCKET,
-            "object_two", U1C2Config)),
-%    ?assertError({aws_error, _}, erlcloud_s3:get_object(?TEST_BUCKET,
-%            "object_three", U1C2Config)),
+                                                        "object_two", U1C2Config)),
+    ?assertError({aws_error, _}, erlcloud_s3:get_object(?TEST_BUCKET,
+                                                        "object_three", U1C2Config)),
 
     lager:info("enable proxy_get"),
     enable_pg(LeaderA, "B", ANodes, BNodes, BPort),
@@ -165,9 +165,9 @@ confirm() ->
     lager:info("disable proxy_get again"),
     disable_pg(LeaderA, "B", ANodes, BNodes, BPort),
 
-    %lager:info("check we still can't read object_three"),
-    %?assertError({aws_error, _}, erlcloud_s3:get_object(?TEST_BUCKET,
-    %        "object_three", U1C2Config)),
+    lager:info("check we still can't read object_three"),
+    ?assertError({aws_error, _}, erlcloud_s3:get_object(?TEST_BUCKET,
+            "object_three", U1C2Config)),
 
     lager:info("check that proxy getting object_two wrote it locally, so we"
         " can read it"),
