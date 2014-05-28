@@ -31,6 +31,7 @@
 %% Supervisor callbacks
 -export([init/1]).
 
+-include("riak_cs.hrl").
 
 %% ===================================================================
 %% API functions
@@ -42,11 +43,12 @@ start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
 %% @doc Start a `riak_cs_get_fsm' child process.
--spec start_get_fsm(node(), binary(), binary(), pid(), pid(), pos_integer(),
+-spec start_get_fsm(node(), binary(), binary(), pid(), riak_client(), pos_integer(),
                     pos_integer()) ->
                            {ok, pid()} | {error, term()}.  %% SLF: R14B04's supervisor:startchild_ret() is broken?
-start_get_fsm(Node, Bucket, Key, Caller, RiakPid, FetchConcurrency, BufferFactor) ->
-    supervisor:start_child({?MODULE, Node}, [Bucket, Key, Caller, RiakPid,
+start_get_fsm(Node, Bucket, Key, Caller, RcPid,
+              FetchConcurrency, BufferFactor) ->
+    supervisor:start_child({?MODULE, Node}, [Bucket, Key, Caller, RcPid,
                                             FetchConcurrency, BufferFactor]).
 
 %% ===================================================================

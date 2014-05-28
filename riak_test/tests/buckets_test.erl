@@ -138,7 +138,8 @@ verify_bucket_mpcleanup_racecond_andfix(UserConfig, UserConfig1,
 
     %% but we have a cleanup script, for existing system with 1.4.x or earlier
     %% DO cleanup here
-    _Res = rpc:call(CSNode, riak_cs_console, cleanup_orphan_multipart, []),
+    Res = rpc:call(CSNode, riak_cs_console, cleanup_orphan_multipart, []),
+    lager:info("Result of cleanup_orphan_multipart: ~p~n", [Res]),
 
     %% list_keys here? wait for GC?
 

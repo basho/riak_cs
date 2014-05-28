@@ -24,7 +24,6 @@
 
 -module(riak_cs_gc_single_run_eqc).
 
--include_lib("riakc/include/riakc.hrl").
 -include("riak_cs_gc_d.hrl").
 
 -ifdef(EQC).
@@ -208,13 +207,13 @@ next_fileset_keys_input(KeysInputServer) ->
 dummy_get_index_range_fun(ListOfFilesetKeysInput) ->
     KeysInputServer =
         spawn_link(fun() -> fileset_keys_input_server(ListOfFilesetKeysInput) end),
-    fun(_RiakcPid, _B, _K, _Start, _End, Opts) ->
+    fun(_Pbc, _B, _K, _Start, _End, Opts) ->
             FilesetKeysInput = next_fileset_keys_input(KeysInputServer),
             dummy_get_index_range(FilesetKeysInput, Opts)
     end.
 
 %% {ok, Reply} for 2i request which includes `NumFilesetKeys' keys
--spec dummy_get_index_range(fileset_keys_input(), proplists:proplists()) ->
+-spec dummy_get_index_range(fileset_keys_input(), proplists:proplist()) ->
                                    {ok, ?INDEX_RESULTS{}}.
 dummy_get_index_range({NumFilesetKeys, no_error}, Opts) ->
     dummy_get_index_range(NumFilesetKeys, <<"no_error">>, Opts);
@@ -248,7 +247,7 @@ meck_delete_fsm_sup() ->
     meck:expect(riak_cs_delete_fsm_sup, start_delete_fsm,
                 fun dummy_start_delete_fsm/2).
 
-dummy_start_delete_fsm(_Node, [_RiakcPid, {_UUID, ?MANIFEST{bkey={_, K}}=_Manifest},
+dummy_start_delete_fsm(_Node, [_RcPid, {_UUID, ?MANIFEST{bkey={_, K}}=_Manifest},
                                From, _Args]) ->
     TotalBlocks = ?BLOCK_NUM_IN_MANIFEST,
     NumDeleted = case re:run(K, <<"^error:in_block_delete/">>) of
@@ -268,11 +267,11 @@ dummy_start_delete_fsm(_Node, [_RiakcPid, {_UUID, ?MANIFEST{bkey={_, K}}=_Manife
 %% DELETE returns simply `ok' or `error'.
 %% ====================================================================
 meck_fileset_get_and_delete() ->
-    meck:new(riak_cs_utils, [passthrough]),
-    meck:expect(riak_cs_utils, get_object, fun dummy_get_object/3),
+    meck:new(riak_cs_pbc, [passthrough]),
+    meck:expect(riak_cs_pbc, get_object, fun dummy_get_object/3),
     meck:expect(riakc_pb_socket, delete_obj, fun dummy_delete_object/2).
 
-dummy_get_object(<<"riak-cs-gc">>=B, K, _RiakcPid) ->
+dummy_get_object(_Pbc, <<"riak-cs-gc">>=B, K) ->
     case re:run(K, <<"^error:in_fileset_fetch/">>) of
         nomatch ->
             {ok, riakc_obj:new_obj(B, K, vclock,
@@ -281,10 +280,10 @@ dummy_get_object(<<"riak-cs-gc">>=B, K, _RiakcPid) ->
         {match, _} ->
             {error, {dummy_error, in_fileset_fetch}}
     end;
-dummy_get_object(_B, _K, _RiakcPid) ->
+dummy_get_object(_Pbc, _B, _K) ->
     error.
 
-dummy_delete_object(_RiakcPid, RiakObj) ->
+dummy_delete_object(_Pbc, RiakObj) ->
     Key = riakc_obj:key(RiakObj),
     case re:run(Key, <<"^error:in_block_delete/">>) of
         nomatch ->
@@ -317,14 +316,14 @@ build_fileset_bin(FilesetKey, Count) ->
 %% Mock helpers for `riak_cs_riakc_pool_worker''s `start_link' and `stop'.
 %% ====================================================================
 meck_pool_worker() ->
-    meck:new(riak_cs_riakc_pool_worker, [passthrough]),
-    meck:expect(riak_cs_riakc_pool_worker, start_link,
-                fun(_) ->
-                        Pid = spawn_link(fun dummy_riakc/0),
+    meck:new(riak_cs_utils, [passthrough]),
+    meck:expect(riak_cs_utils, riak_connection,
+                fun(_Pool) ->
+                        Pid = spawn_link(fun dummy_pbc/0),
                         {ok, Pid}
                 end),
-    meck:expect(riak_cs_riakc_pool_worker, stop,
-                fun(Pid) ->
+    meck:expect(riak_cs_utils, close_riak_connection,
+                fun(_Pool, Pid) ->
                         Pid ! stop,
                         ok
                 end).
@@ -332,11 +331,11 @@ meck_pool_worker() ->
 %% Although this dummy process is actually not needed for EQC,
 %% it would still be useful for debugging when missing mock
 %% and riakc is called directly.
-dummy_riakc() ->
+dummy_pbc() ->
     receive
         stop -> ok;
         M -> io:format(user, "dummy_worker received M: ~p~n", [M]),
-             dummy_riakc()
+             dummy_pbc()
     end.
 
 -spec i2b(integer()) -> binary().

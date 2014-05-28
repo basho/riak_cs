@@ -49,7 +49,7 @@
                 key :: binary(),
                 uuid :: binary(),
                 manifest :: lfs_manifest(),
-                riakc_pid :: pid(),
+                riak_client :: riak_client(),
                 gc_worker_pid :: pid(),
                 delete_blocks_remaining :: ordsets:ordset({binary(), integer()}),
                 unacked_deletes=ordsets:new() :: ordsets:ordset(integer()),
@@ -65,8 +65,8 @@
 %% ===================================================================
 
 %% @doc Start a `riak_cs_delete_fsm'.
-start_link(RiakcPid, Manifest, GCWorkerPid, Options) ->
-    Args = [RiakcPid, Manifest, GCWorkerPid, Options],
+start_link(RcPid, Manifest, GCWorkerPid, Options) ->
+    Args = [RcPid, Manifest, GCWorkerPid, Options],
     gen_fsm:start_link(?MODULE, Args, []).
 
 -spec block_deleted(pid(), {ok, {binary(), integer()}} | {error, binary()}) -> ok.
@@ -77,13 +77,13 @@ block_deleted(Pid, Response) ->
 %% gen_fsm callbacks
 %% ====================================================================
 
-init([RiakcPid, {UUID, Manifest}, GCWorkerPid, _Options]) ->
+init([RcPid, {UUID, Manifest}, GCWorkerPid, _Options]) ->
     {Bucket, Key} = Manifest?MANIFEST.bkey,
     State = #state{bucket=Bucket,
                    key=Key,
                    manifest=Manifest,
                    uuid=UUID,
-                   riakc_pid=RiakcPid,
+                   riak_client=RcPid,
                    gc_worker_pid=GCWorkerPid},
     {ok, prepare, State, 0}.
 
@@ -119,8 +119,8 @@ terminate(Reason, _StateName, #state{all_delete_workers=AllDeleteWorkers,
                                      bucket=Bucket,
                                      key=Key,
                                      uuid=UUID,
-                                     riakc_pid=RiakcPid} = State) ->
-    manifest_cleanup(ManifestState, Bucket, Key, UUID, RiakcPid),
+                                     riak_client=RcPid} = State) ->
+    manifest_cleanup(ManifestState, Bucket, Key, UUID, RcPid),
     _ = [riak_cs_block_server:stop(P) || P <- AllDeleteWorkers],
     notify_gc_worker(Reason, State),
     ok.
@@ -161,7 +161,7 @@ deleting_state_result(_, State) ->
 
 -spec handle_receiving_manifest(state()) ->
     {next_state, atom(), state()}.
-handle_receiving_manifest(State=#state{riakc_pid=RiakcPid,
+handle_receiving_manifest(State=#state{riak_client=RcPid,
                                        manifest=Manifest}) ->
     {NewManifest, BlocksToDelete} = blocks_to_delete_from_manifest(Manifest),
     BlockCount = ordsets:size(BlocksToDelete),
@@ -170,20 +170,24 @@ handle_receiving_manifest(State=#state{riakc_pid=RiakcPid,
                            total_blocks=BlockCount},
 
     %% Handle the case where there are 0 blocks to delete,
-    %% i.e. content length of 0
+    %% i.e. content length of 0,
+    %% and can not check-out any workers.
     case ordsets:size(BlocksToDelete) > 0 of
         true ->
             AllDeleteWorkers =
-                riak_cs_block_server:start_block_servers(RiakcPid,
-                    riak_cs_lfs_utils:delete_concurrency()),
-            FreeDeleters = ordsets:from_list(AllDeleteWorkers),
-
-            NewState1 = NewState#state{all_delete_workers=AllDeleteWorkers,
-                                       free_deleters=FreeDeleters},
-
-            StateAfterDeleteStart = maybe_delete_blocks(NewState1),
-
-            {next_state, deleting, StateAfterDeleteStart};
+                riak_cs_block_server:start_block_servers(
+                  Manifest, RcPid,
+                  riak_cs_lfs_utils:delete_concurrency()),
+            case length(AllDeleteWorkers) of
+                0 ->
+                    {stop, normal, NewState};
+                _ ->
+                    FreeDeleters = ordsets:from_list(AllDeleteWorkers),
+                    NewState1 = NewState#state{all_delete_workers=AllDeleteWorkers,
+                                               free_deleters=FreeDeleters},
+                    StateAfterDeleteStart = maybe_delete_blocks(NewState1),
+                    {next_state, deleting, StateAfterDeleteStart}
+            end;
         false ->
             {stop, normal, NewState}
     end.
@@ -223,9 +227,9 @@ notification_msg(normal, #state{deleted_blocks = DeletedBlocks,
 notification_msg(Reason, _State) ->
     {self(), {error, Reason}}.
 
--spec manifest_cleanup(atom(), binary(), binary(), binary(), pid()) -> ok.
-manifest_cleanup(deleted, Bucket, Key, UUID, RiakcPid) ->
-    {ok, ManiFsmPid} = riak_cs_manifest_fsm:start_link(Bucket, Key, RiakcPid),
+-spec manifest_cleanup(atom(), binary(), binary(), binary(), riak_client()) -> ok.
+manifest_cleanup(deleted, Bucket, Key, UUID, RcPid) ->
+    {ok, ManiFsmPid} = riak_cs_manifest_fsm:start_link(Bucket, Key, RcPid),
     _ = try
             _ = riak_cs_manifest_fsm:delete_specific_manifest(ManiFsmPid, UUID)
         after

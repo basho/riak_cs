@@ -58,11 +58,11 @@ malformed_request(RD, Ctx) ->
 -spec authorize(#wm_reqdata{}, #context{}) ->
     {boolean() | {halt, term()}, #wm_reqdata{}, #context{}}.
 authorize(RD, Ctx0=#context{local_context=LocalCtx0,
-                            riakc_pid=RiakPid}) ->
+                            riak_client=RcPid}) ->
     Method = wrq:method(RD),
     RequestedAccess =
         riak_cs_acl_utils:requested_access(Method, false),
-    LocalCtx = riak_cs_wm_utils:ensure_doc(LocalCtx0, RiakPid),
+    LocalCtx = riak_cs_wm_utils:ensure_doc(LocalCtx0, RcPid),
     Ctx = Ctx0#context{requested_perm=RequestedAccess, local_context=LocalCtx},
     authorize(RD, Ctx,
               LocalCtx#key_context.bucket_object,
@@ -107,7 +107,7 @@ valid_entity_length(RD, Ctx=#context{response_module=ResponseMod}) ->
 
 -spec content_types_provided(#wm_reqdata{}, #context{}) -> {[{string(), atom()}], #wm_reqdata{}, #context{}}.
 content_types_provided(RD, Ctx=#context{local_context=LocalCtx,
-                                        riakc_pid=RiakcPid}) ->
+                                        riak_client=RcPid}) ->
     Mfst = LocalCtx#key_context.manifest,
     %% TODO:
     %% As I understand S3, the content types provided
@@ -116,7 +116,7 @@ content_types_provided(RD, Ctx=#context{local_context=LocalCtx,
     %% `response-content-type` header in the request.
     Method = wrq:method(RD),
     if Method == 'GET'; Method == 'HEAD' ->
-            UpdLocalCtx = riak_cs_wm_utils:ensure_doc(LocalCtx, RiakcPid),
+            UpdLocalCtx = riak_cs_wm_utils:ensure_doc(LocalCtx, RcPid),
             ContentType = binary_to_list(Mfst?MANIFEST.content_type),
             case ContentType of
                 _ ->
@@ -159,7 +159,9 @@ produce_body(RD, Ctx=#context{local_context=LocalCtx,
             produce_body(RD, Ctx, RangeIndexes, RespRange)
     end.
 
-produce_body(RD, Ctx=#context{local_context=LocalCtx,
+produce_body(RD, Ctx=#context{rc_pool=RcPool,
+                              riak_client=RcPid,
+                              local_context=LocalCtx,
                               start_time=StartTime,
                               user=User},
              {Start, End}, RespRange) ->
@@ -183,19 +185,19 @@ produce_body(RD, Ctx=#context{local_context=LocalCtx,
                           {"Last-Modified", LastModified}
                          ] ++  Mfst?MANIFEST.metadata),
     NewRQ2 = wrq:set_resp_range(RespRange, NewRQ1),
-    StreamBody =
-        case Method == 'HEAD'
-            orelse
-            ResourceLength == 0 of
+    NoBody = Method =:= 'HEAD' orelse ResourceLength =:= 0,
+    {NewCtx, StreamBody} =
+        case NoBody of
             true ->
                 riak_cs_get_fsm:stop(GetFsmPid),
-                fun() -> {<<>>, done} end;
+                {Ctx, fun() -> {<<>>, done} end};
             false ->
                 riak_cs_get_fsm:continue(GetFsmPid, {Start, End}),
-                {<<>>, fun() ->
-                               riak_cs_wm_utils:streaming_get(
-                                 GetFsmPid, StartTime, UserName, BFile_str)
-                       end}
+                {Ctx#context{auto_rc_close=false},
+                 {<<>>, fun() ->
+                                riak_cs_wm_utils:streaming_get(
+                                  RcPool, RcPid, GetFsmPid, StartTime, UserName, BFile_str)
+                        end}}
         end,
     if Method == 'HEAD' ->
             riak_cs_dtrace:dt_object_return(?MODULE, <<"object_head">>,
@@ -204,7 +206,7 @@ produce_body(RD, Ctx=#context{local_context=LocalCtx,
        true ->
             ok
     end,
-    {{known_length_stream, ResourceLength, StreamBody}, NewRQ2, Ctx}.
+    {{known_length_stream, ResourceLength, StreamBody}, NewRQ2, NewCtx}.
 
 parse_range(RD, ResourceLength) ->
     case wrq:get_req_header("range", RD) of
@@ -224,8 +226,7 @@ parse_range(RD, ResourceLength) ->
 
 %% @doc Callback for deleting an object.
 -spec delete_resource(#wm_reqdata{}, #context{}) -> {true, #wm_reqdata{}, #context{}}.
-delete_resource(RD, Ctx=#context{local_context=LocalCtx,
-                                 riakc_pid=RiakcPid}) ->
+delete_resource(RD, Ctx=#context{local_context=LocalCtx, riak_client=RcPid}) ->
     #key_context{bucket=Bucket,
                  key=Key,
                  get_fsm_pid=GetFsmPid} = LocalCtx,
@@ -235,7 +236,7 @@ delete_resource(RD, Ctx=#context{local_context=LocalCtx,
                                    [], [UserName, BFile_str]),
     riak_cs_get_fsm:stop(GetFsmPid),
     BinKey = list_to_binary(Key),
-    DeleteObjectResponse = riak_cs_utils:delete_object(Bucket, BinKey, RiakcPid),
+    DeleteObjectResponse = riak_cs_utils:delete_object(Bucket, BinKey, RcPid),
     handle_delete_object(DeleteObjectResponse, UserName, BFile_str, RD, Ctx).
 
 %% @private
@@ -283,9 +284,9 @@ content_types_accepted(CT, RD, Ctx=#context{local_context=LocalCtx0}) ->
     end.
 
 -spec accept_body(#wm_reqdata{}, #context{}) -> {{halt, integer()}, #wm_reqdata{}, #context{}}.
-accept_body(RD, Ctx=#context{local_context=LocalCtx,
-                             response_module=ResponseMod,
-                             riakc_pid=RiakcPid})
+accept_body(RD, Ctx=#context{riak_client=RcPid,
+                             local_context=LocalCtx,
+                             response_module=ResponseMod})
   when LocalCtx#key_context.update_metadata == true ->
     #key_context{bucket=Bucket, key=KeyStr, manifest=Mfst} = LocalCtx,
     Acl = Mfst?MANIFEST.acl,
@@ -293,7 +294,7 @@ accept_body(RD, Ctx=#context{local_context=LocalCtx,
     Metadata = riak_cs_wm_utils:extract_user_metadata(RD),
     case riak_cs_utils:set_object_acl(Bucket, list_to_binary(KeyStr),
                                       Mfst?MANIFEST{metadata=Metadata}, NewAcl,
-                                      RiakcPid) of
+                                      RcPid) of
         ok ->
             ETag = riak_cs_utils:etag_from_binary(Mfst?MANIFEST.content_md5),
             RD2 = wrq:set_resp_header("ETag", ETag, RD),
@@ -304,7 +305,7 @@ accept_body(RD, Ctx=#context{local_context=LocalCtx,
 accept_body(RD, Ctx=#context{local_context=LocalCtx,
                              user=User,
                              acl=ACL,
-                             riakc_pid=RiakcPid}) ->
+                             riak_client=RcPid}) ->
     #key_context{bucket=Bucket,
                  key=Key,
                  putctype=ContentType,
@@ -320,7 +321,7 @@ accept_body(RD, Ctx=#context{local_context=LocalCtx,
     BlockSize = riak_cs_lfs_utils:block_size(),
 
     Args = [{Bucket, list_to_binary(Key), Size, list_to_binary(ContentType),
-             Metadata, BlockSize, ACL, timer:seconds(60), self(), RiakcPid}],
+             Metadata, BlockSize, ACL, timer:seconds(60), self(), RcPid}],
     {ok, Pid} = riak_cs_put_fsm_sup:start_put_fsm(node(), Args),
     accept_streambody(RD, Ctx, Pid, wrq:stream_req_body(RD, riak_cs_lfs_utils:block_size())).
 

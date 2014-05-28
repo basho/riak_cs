@@ -1,5 +1,8 @@
 REBAR ?= ./rebar
 
+compile-no-deps:
+	${REBAR} compile skip_deps=true
+
 test: compile
 	${REBAR} eunit skip_deps=true
 
@@ -31,7 +34,7 @@ ${LOCAL_PLT}: compile
 		fi \
 	fi
 
-dialyzer: ${PLT} ${LOCAL_PLT}
+dialyzer-run:
 	@echo "==> $(shell basename $(shell pwd)) (dialyzer)"
 	@if [ -f $(LOCAL_PLT) ]; then \
 		PLTS="$(PLT) $(LOCAL_PLT)"; \
@@ -44,12 +47,16 @@ dialyzer: ${PLT} ${LOCAL_PLT}
 			exit 1; \
 		fi; \
 		dialyzer $(DIALYZER_FLAGS) --plts $${PLTS} -c ebin > dialyzer_warnings ; \
-		egrep -v "^\s*(done|Checking|Proceeding)" dialyzer_warnings | grep -F -f dialyzer.ignore-warnings -v > dialyzer_unhandled_warnings ; \
+		egrep -v "^\s*(done|Checking|Proceeding|Compiling)" dialyzer_warnings | grep -F -f dialyzer.ignore-warnings -v > dialyzer_unhandled_warnings ; \
 		cat dialyzer_unhandled_warnings ; \
 		[ $$(cat dialyzer_unhandled_warnings | wc -l) -eq 0 ] ; \
 	else \
 		dialyzer $(DIALYZER_FLAGS) --plts $${PLTS} -c ebin; \
 	fi
+
+dialyzer-quick: compile-no-deps dialyzer-run
+
+dialyzer: ${PLT} ${LOCAL_PLT} dialyzer-run
 
 cleanplt:
 	@echo

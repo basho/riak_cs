@@ -20,7 +20,10 @@
 
 %% @doc Module to return manifests for cs_bucket_fold requests
 
--module(riak_cs_dummy_riakc_list_objects_v2).
+%% Fake up some `handle_call' of `riak_cs_riak_client' and `riakc_pb_socket'
+%% both in this single module (a bit of abuse, sorry).
+
+-module(riak_cs_dummy_riak_client_list_objects_v2).
 
 -behaviour(gen_server).
 
@@ -80,6 +83,8 @@ init([Manifests]) ->
 %% @doc Unused
 -spec handle_call(term(), {pid(), term()}, state()) ->
                          {reply, ok, state()}.
+handle_call(manifest_pbc, _From, State) ->
+    {reply, {ok, self()}, State};
 handle_call({req, #rpbcsbucketreq{start_key = <<0>>} = _Req,
              _Timeout, _Ctx}, _From,
             #state{replied_at_least_once=true}=State) ->

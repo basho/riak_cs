@@ -79,9 +79,9 @@ service_available(RD, Ctx) ->
         false ->
             {false, RD, Ctx};
         true ->
-            case riak_cs_utils:riak_connection() of
+            case riak_cs_riak_client:checkout() of
                 {ok, Pid} ->
-                    {true, RD, Ctx#context{riakc_pid = Pid}};
+                    {true, RD, Ctx#context{riak_client = Pid}};
                 _ ->
                     {false, RD, Ctx}
             end
@@ -99,14 +99,14 @@ forbidden(RD, Ctx=#context{auth_bypass=AuthBypass}) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"forbidden">>),
     riak_cs_wm_utils:find_and_auth_admin(RD, Ctx, AuthBypass).
 
-finish_request(RD, #context{riakc_pid=undefined}=Ctx) ->
+finish_request(RD, #context{riak_client=undefined}=Ctx) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"finish_request">>, [0], []),
     {true, RD, Ctx};
-finish_request(RD, #context{riakc_pid=RiakPid}=Ctx) ->
+finish_request(RD, #context{riak_client=RcPid}=Ctx) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"finish_request">>, [1], []),
-    riak_cs_utils:close_riak_connection(RiakPid),
+    riak_cs_riak_client:checkin(RcPid),
     riak_cs_dtrace:dt_wm_return(?MODULE, <<"finish_request">>, [1], []),
-    {true, RD, Ctx#context{riakc_pid=undefined}}.
+    {true, RD, Ctx#context{riak_client=undefined}}.
 
 %% @spec pretty_print(webmachine:wrq(), context()) ->
 %%          {string(), webmachine:wrq(), context()}
