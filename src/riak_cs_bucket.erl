@@ -250,26 +250,26 @@ iterate_csbuckets(RcPid, Acc0, Fun, Cont0) ->
     case riakc_pb_socket:get_index_range(MasterPbc, ?BUCKETS_BUCKET,
                                          <<"$key">>, <<0>>, <<255>>,
                                          Options) of
-
-        {ok, ?INDEX_RESULTS{keys=Keys0, continuation=Cont}} ->
-
-            Foldfun = fun(Key, Acc1) ->
-                              Res = riakc_pb_socket:get(MasterPbc, ?BUCKETS_BUCKET, Key),
-                              Fun(Key, Res, Acc1)
-                      end,
-            Acc2 = lists:foldl(Foldfun, Acc0, Keys0),
+        {ok, ?INDEX_RESULTS{keys=BucketNames, continuation=Cont}} ->
+            Foldfun = iterate_csbuckets_fold_fun(Fun),
+            Acc2 = lists:foldl(Foldfun, Acc0, BucketNames),
             case Cont of
                 undefined ->
                     {ok, Acc2};
                 _ ->
                     iterate_csbuckets(RcPid, Acc2, Fun, Cont)
             end;
-
         Error ->
             _ = lager:error("iterating CS buckets: ~p", [Error]),
             {error, {Error, Acc0}}
     end.
 
+iterate_csbuckets_fold_fun(FunForOneBucket) ->
+    fun(BucketName, Acc) ->
+            {ok, RcPidForOneBucket} = riak_cs_riak_client:start_link([]),
+            Res = riak_cs_riak_client:get_bucket(RcPidForOneBucket, BucketName),
+            FunForOneBucket(RcPidForOneBucket, BucketName, Res, Acc)
+    end.
 
 %% @doc Return a user's buckets.
 -spec get_buckets(rcs_user()) -> [cs_bucket()].
