@@ -186,7 +186,6 @@ produce_body(RD, Ctx=#context{rc_pool=RcPool,
                          ] ++  Mfst?MANIFEST.metadata),
     NewRQ2 = wrq:set_resp_range(RespRange, NewRQ1),
     NoBody = Method =:= 'HEAD' orelse ResourceLength =:= 0,
-    lager:log(warning, self(), "********** NoBody: ~p~n", [NoBody]),
     {NewCtx, StreamBody} =
         case NoBody of
             true ->
