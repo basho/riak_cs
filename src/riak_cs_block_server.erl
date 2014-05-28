@@ -48,7 +48,7 @@
          terminate/2,
          code_change/3]).
 
--record(state, {riak_client :: pid(),
+-record(state, {riak_client :: riak_client(),
                 close_riak_connection=true :: boolean()}).
 
 %%%===================================================================
@@ -60,7 +60,7 @@
 %% Starts the server
 %%
 %% @spec start_link(lfs_manifest()) -> {ok, Pid} | ignore | {error, Error}
-%% @spec start_link(lfs_manifest(), pid()) -> {ok, Pid} | ignore | {error, Error}
+%% @spec start_link(lfs_manifest(), riak_client()) -> {ok, Pid} | ignore | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
 start_link(Manifest) ->
@@ -87,7 +87,7 @@ start_link(Manifest, RcPid) ->
 %% MinWorkers. If the timeout occurs, this function
 %% could return an error, or the pids it has
 %% so far (which might be less than MinWorkers).
--spec start_block_servers(lfs_manifest(), pid(), pos_integer()) -> [pid()].
+-spec start_block_servers(lfs_manifest(), riak_client(), pos_integer()) -> [pid()].
 start_block_servers(Manifest, RcPid, MaxNumServers) ->
     start_block_servers(Manifest, RcPid, MaxNumServers, []).
 
@@ -531,7 +531,7 @@ n_val_one_options() ->
 r_one_options() ->
     [{r, 1}, {notfound_ok, false}, {basic_quorum, false}].
 
--spec use_proxy_get(pid(), term()) -> boolean().
+-spec use_proxy_get(riak_client(), term()) -> boolean().
 use_proxy_get(RcPid, ClusterID) ->
     LocalClusterID = riak_cs_config:cluster_id(RcPid),
     ClusterID /= undefined andalso LocalClusterID /= ClusterID.

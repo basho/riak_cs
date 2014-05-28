@@ -61,7 +61,7 @@
                 md5 :: crypto_context() | digest(),
                 reported_md5 :: undefined | string(),
                 reply_pid :: {pid(), reference()},
-                riak_client :: pid(),
+                riak_client :: riak_client(),
                 mani_pid :: undefined | pid(),
                 make_new_manifest_p :: boolean(),
                 timer_ref :: reference(),
@@ -87,13 +87,13 @@
 %%%===================================================================
 
 -spec start_link({binary(), binary(), non_neg_integer(), binary(),
-                  term(), pos_integer(), acl(), timeout(), pid(), pid()}) ->
+                  term(), pos_integer(), acl(), timeout(), pid(), riak_client()}) ->
                         {ok, pid()} | {error, term()}.
 start_link(Tuple) when is_tuple(Tuple) ->
     start_link(Tuple, true).
 
 -spec start_link({binary(), binary(), non_neg_integer(), binary(),
-                  term(), pos_integer(), acl(), timeout(), pid(), pid()},
+                  term(), pos_integer(), acl(), timeout(), pid(), riak_client()},
                  boolean()) ->
                         {ok, pid()} | {error, term()}.
 start_link({_Bucket,
@@ -140,7 +140,7 @@ block_written(Pid, BlockID) ->
 %% might be implemented. Does it actually
 %% make things more confusing?
 -spec init({{binary(), binary(), non_neg_integer(), binary(),
-             term(), pos_integer(), acl(), timeout(), pid(), pid()},
+             term(), pos_integer(), acl(), timeout(), pid(), riak_client()},
             term()}) ->
                   {ok, prepare, #state{}, timeout()}.
 init({{Bucket, Key, ContentLength, ContentType,

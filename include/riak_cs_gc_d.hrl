@@ -61,7 +61,7 @@
 
 -record(gc_worker_state, {
           %% Riak connection pid
-          riak_client :: undefined | pid(),
+          riak_client :: undefined | riak_client(),
           current_files :: [lfs_manifest()],
           current_fileset :: twop_set:twop_set(),
           current_riak_object :: riakc_obj:riakc_obj(),
@@ -78,7 +78,7 @@
 -record(gc_key_list_state, {
           remaining_bags :: [{bag_id(), string(), non_neg_integer()}],
           %% Riak connection pid
-          current_riak_client :: undefined | pid(),
+          current_riak_client :: undefined | riak_client(),
           current_bag_id :: bag_id(),
           %% start of the current gc interval
           batch_start :: undefined | non_neg_integer(),

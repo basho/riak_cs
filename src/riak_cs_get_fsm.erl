@@ -68,7 +68,7 @@
 -type block_name() :: {binary(), integer()}.
 
 -record(state, {from :: {pid(), reference()},
-                riak_client :: pid(),
+                riak_client :: riak_client(),
                 mani_fsm_pid :: pid(),
                 bucket :: term(),
                 caller :: reference(),
@@ -94,7 +94,7 @@
 %% Public API
 %% ===================================================================
 
--spec start_link(binary(), binary(), pid(), pid(), pos_integer(),
+-spec start_link(binary(), binary(), pid(), riak_client(), pos_integer(),
                  pos_integer()) -> {ok, pid()} | {error, term()}.
 
 start_link(Bucket, Key, Caller, RcPid, FetchConcurrency, BufferFactor) ->

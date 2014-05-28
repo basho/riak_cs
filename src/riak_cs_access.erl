@@ -133,7 +133,7 @@ merge_stats(Stats, Acc) ->
 %% `Start' and `End' times, inclusive.  The result is an orddict in
 %% which the keys are Riak CS node names.  The value for each key is a
 %% list of samples.  Each sample is an orddict full of metrics.
--spec get_usage(pid(),
+-spec get_usage(riak_client(),
                 term(), %% TODO: riak_cs:user_key() type doesn't exist
                 calendar:datetime(),
                 calendar:datetime()) ->

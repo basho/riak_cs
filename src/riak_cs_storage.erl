@@ -45,7 +45,7 @@
 %% @doc Sum the number of bytes stored in active files in all of the
 %% given user's directories.  The result is a list of pairs of
 %% `{BucketName, Bytes}`.
--spec sum_user(pid(), string()) -> {ok, [{string(), integer()}]}
+-spec sum_user(riak_client(), string()) -> {ok, [{string(), integer()}]}
                                  | {error, term()}.
 sum_user(RcPid, User) when is_binary(User) ->
     sum_user(RcPid, binary_to_list(User));
@@ -62,7 +62,7 @@ sum_user(RcPid, User) when is_list(User) ->
 %%      This log is *very* important because unless this log
 %%      there are no other way for operator to know a calculation
 %%      which riak_cs_storage_d failed.
--spec maybe_sum_bucket(pid(), string(), cs_bucket()) ->
+-spec maybe_sum_bucket(riak_client(), string(), cs_bucket()) ->
                               {binary(), [{binary(), integer()}]} |
                               {binary(), binary()}.
 maybe_sum_bucket(RcPid, User, ?RCS_BUCKET{name=Name} = Bucket) when is_list(Name) ->
@@ -85,7 +85,7 @@ maybe_sum_bucket(RcPid, User, ?RCS_BUCKET{name=Name} = _Bucket) when is_binary(N
 %% The result is a mochijson structure with two fields: `Objects',
 %% which is the number of objects that were counted in the bucket, and
 %% `Bytes', which is the total size of all of those objects.
--spec sum_bucket(pid(), binary()) -> {struct, [{binary(), integer()}]}
+-spec sum_bucket(riak_client(), binary()) -> {struct, [{binary(), integer()}]}
                                    | {error, term()}.
 sum_bucket(RcPid, BucketName) ->
     Query = [{map, {modfun, riak_cs_storage, object_size_map},

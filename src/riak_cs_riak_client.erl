@@ -72,9 +72,11 @@ start_link(_Args) ->
 stop(Pid) ->
     gen_server:call(Pid, stop).
 
+-spec checkout() -> {ok, riak_client()} | {error, term()}.
 checkout() ->
     checkout(request_pool).
 
+-spec checkout(atom()) -> {ok, riak_client()} | {error, term()}.
 checkout(Pool) ->
     case catch poolboy:checkout(Pool, false) of
         full ->
@@ -86,9 +88,11 @@ checkout(Pool) ->
             {ok, RcPid}
     end.
 
+-spec checkin(riak_client()) -> ok.
 checkin(RcPid) ->
     checkin(request_pool, RcPid).
 
+-spec checkin(atom(), riak_client()) -> ok.
 checkin(Pool, RcPid) ->
     ok = gen_server:call(RcPid, cleanup),
     poolboy:checkin(Pool, RcPid).
@@ -99,54 +103,54 @@ pbc_pool_name(master) ->
 pbc_pool_name(BagId) when is_binary(BagId) ->
     list_to_atom(lists:flatten(io_lib:format("pbc_pool_~s", [BagId]))).
 
--spec get_bucket(pid(), binary()) -> {ok, riakc_obj:riakc_obj()} | {error, term()}.
-get_bucket(Pid, BucketName) when is_binary(BucketName) ->
-    gen_server:call(Pid, {get_bucket, BucketName}).
+-spec get_bucket(riak_client(), binary()) -> {ok, riakc_obj:riakc_obj()} | {error, term()}.
+get_bucket(RcPid, BucketName) when is_binary(BucketName) ->
+    gen_server:call(RcPid, {get_bucket, BucketName}).
 
--spec set_bucket_name(pid(), binary()) -> ok | {error, term()}.
-set_bucket_name(Pid, BucketName) when is_binary(BucketName) ->
-    gen_server:call(Pid, {set_bucket_name, BucketName}).
+-spec set_bucket_name(riak_client(), binary()) -> ok | {error, term()}.
+set_bucket_name(RcPid, BucketName) when is_binary(BucketName) ->
+    gen_server:call(RcPid, {set_bucket_name, BucketName}).
 
 %% @doc Perform an initial read attempt with R=PR=N.
 %% If the initial read fails retry using
 %% R=quorum and PR=1, but indicate that bucket deletion
 %% indicators should not be cleaned up.
--spec get_user(RiakClientPid :: pid(),
-               KeyID :: binary()) ->
+-spec get_user(riak_client(),
+               UserKey :: binary()) ->
                       {ok, {riakc_obj:riakc_obj(), KeepDeletedBuckets :: boolean()}} |
                       {error, term()}.
-get_user(Pid, UserKey) when is_binary(UserKey) ->
-    gen_server:call(Pid, {get_user, UserKey}).
+get_user(RcPid, UserKey) when is_binary(UserKey) ->
+    gen_server:call(RcPid, {get_user, UserKey}).
 
--spec save_user(pid(), rcs_user(), riakc_obj:riakc_obj()) -> ok | {error, term()}.
-save_user(Pid, User, OldUserObj) ->
-    gen_server:call(Pid, {save_user, User, OldUserObj}).
+-spec save_user(riak_client(), rcs_user(), riakc_obj:riakc_obj()) -> ok | {error, term()}.
+save_user(RcPid, User, OldUserObj) ->
+    gen_server:call(RcPid, {save_user, User, OldUserObj}).
 
 
--spec set_manifest(pid(), lfs_manifest()) -> ok | {error, term()}.
-set_manifest(Pid, Manifest) ->
-    gen_server:call(Pid, {set_manifest, Manifest}).
+-spec set_manifest(riak_client(), lfs_manifest()) -> ok | {error, term()}.
+set_manifest(RcPid, Manifest) ->
+    gen_server:call(RcPid, {set_manifest, Manifest}).
 
--spec set_manifest_bag(pid(), binary()) -> ok | {error, term()}.
-set_manifest_bag(Pid, ManifestBagId) ->
-    gen_server:call(Pid, {set_manifest_bag, ManifestBagId}).
+-spec set_manifest_bag(riak_client(), binary()) -> ok | {error, term()}.
+set_manifest_bag(RcPid, ManifestBagId) ->
+    gen_server:call(RcPid, {set_manifest_bag, ManifestBagId}).
 
 %% TODO: Using this function is more or less a cheat.
 %% It's better to export new  function to manipulate manifests
 %% from this module.
--spec master_pbc(RiakClientPid::pid()) -> {ok, MasterPbc::pid()} | {error, term()}.
-master_pbc(Pid) ->
-    gen_server:call(Pid, master_pbc).
+-spec master_pbc(riak_client()) -> {ok, MasterPbc::pid()} | {error, term()}.
+master_pbc(RcPid) ->
+    gen_server:call(RcPid, master_pbc).
 
 %% TODO: Also this is cheat
--spec manifest_pbc(RiakClientPid::pid()) -> {ok, ManifetPbc::pid()} | {error, term()}.
-manifest_pbc(Pid) ->
-    gen_server:call(Pid, manifest_pbc).
+-spec manifest_pbc(riak_client()) -> {ok, ManifetPbc::pid()} | {error, term()}.
+manifest_pbc(RcPid) ->
+    gen_server:call(RcPid, manifest_pbc).
 
 %% TODO: Also this is cheat
--spec block_pbc(RiakClientPid::pid()) -> {ok, BlockPbc::pid()} | {error, term()}.
-block_pbc(Pid) ->
-    gen_server:call(Pid, block_pbc).
+-spec block_pbc(riak_client()) -> {ok, BlockPbc::pid()} | {error, term()}.
+block_pbc(RcPid) ->
+    gen_server:call(RcPid, block_pbc).
 
 %%% Internal functions
 

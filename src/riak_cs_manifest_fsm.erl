@@ -71,7 +71,7 @@
                 key :: binary(),
                 riak_object :: term(),
                 manifests :: term(), % an orddict mapping UUID -> Manifest
-                riak_client :: pid()
+                riak_client :: riak_client()
             }).
 
 %%%===================================================================
@@ -276,7 +276,7 @@ handle_get_manifests(State=#state{riak_client=RcPid,
 %% delete the manifest corresponding to `UUID', and then
 %% write the value back to Riak or delete the manifest value
 %% if there are no manifests remaining.
--spec get_and_delete(pid(), binary(), binary(), binary()) -> ok |
+-spec get_and_delete(riak_client(), binary(), binary(), binary()) -> ok |
                                                              {error, term()}.
 get_and_delete(RcPid, UUID, Bucket, Key) ->
     case riak_cs_utils:get_manifests(RcPid, Bucket, Key) of
@@ -341,7 +341,7 @@ manifest_pbc(RcPid) ->
     {ok, ManifestPbc} = riak_cs_riak_client:manifest_pbc(RcPid),
     ManifestPbc.
 
--spec update_from_previous_read(pid(), riakc_obj:riakc_obj(),
+-spec update_from_previous_read(riak_client(), riakc_obj:riakc_obj(),
                                 binary(), binary(),
                                 orddict:orddict(), orddict:orddict()) ->
     ok | {error, term()}.

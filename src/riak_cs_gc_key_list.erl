@@ -83,7 +83,7 @@ next_pool(#gc_key_list_state{
 
 %% @doc Fetch the list of keys for file manifests that are eligible
 %% for delete.
--spec fetch_eligible_manifest_keys(pid(), non_neg_integer(), non_neg_integer(), continuation()) ->
+-spec fetch_eligible_manifest_keys(riak_client(), non_neg_integer(), non_neg_integer(), continuation()) ->
                                           {[index_result_keys()], continuation()}.
 fetch_eligible_manifest_keys(RcPid, IntervalStart, Leeway, Continuation) ->
     EndTime = list_to_binary(integer_to_list(IntervalStart - Leeway)),
@@ -140,7 +140,7 @@ continuation({{ok, ?INDEX_RESULTS{continuation=Continuation}},
 continuation({{error, _}, _EndTime}) ->
     undefined.
 
--spec gc_index_query(pid(), binary(), non_neg_integer(), continuation(), boolean()) ->
+-spec gc_index_query(riak_client(), binary(), non_neg_integer(), continuation(), boolean()) ->
                             {{ok, riakc_pb_socket:index_results()} | {error, term()}, binary()}.
 gc_index_query(RcPid, EndTime, BatchSize, Continuation, UsePaginatedIndexes) ->
     Options = case UsePaginatedIndexes of

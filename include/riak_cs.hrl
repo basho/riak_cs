@@ -84,7 +84,7 @@
                   bucket :: binary(),
                   acl :: 'undefined' | acl(),
                   requested_perm :: acl_perm(),
-                  riak_client :: pid(),
+                  riak_client :: riak_client(),
                   rc_pool :: atom(),
                   auto_rc_close = true :: boolean(),
                   submodule :: atom(),
@@ -132,10 +132,9 @@
 -type acl() :: #acl_v1{} | #acl_v2{}.
 
 -type cluster_id() :: undefined | binary(). %% flattened string as binary
-
 -type cs_uuid() :: binary().
-
 -type bag_id() :: undefined | binary().
+-type riak_client() :: riak_client().
 
 -record(lfs_manifest_v2, {
         version=2 :: integer(),

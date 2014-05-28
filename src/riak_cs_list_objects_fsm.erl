@@ -69,7 +69,7 @@
 -type profiling() :: #profiling{}.
 
 
--record(state, {riak_client :: pid(),
+-record(state, {riak_client :: riak_client(),
                 caller_pid :: pid(),
                 req :: list_object_request(),
 
@@ -146,12 +146,12 @@
 %%% API
 %%%===================================================================
 
--spec start_link(pid(), list_object_request(), term()) ->
+-spec start_link(riak_client(), list_object_request(), term()) ->
     {ok, pid()} | {error, term()}.
 start_link(RcPid, ListKeysRequest, CacheKey) ->
     start_link(RcPid, self(), ListKeysRequest, CacheKey, true).
 
--spec start_link(pid(), pid(), list_object_request(), term(), UseCache :: boolean()) ->
+-spec start_link(riak_client(), pid(), list_object_request(), term(), UseCache :: boolean()) ->
     {ok, pid()} | {error, term()}.
 start_link(RcPid, CallerPid, ListKeysRequest, CacheKey, UseCache) ->
     gen_fsm:start_link(?MODULE, [RcPid, CallerPid, ListKeysRequest,
@@ -253,7 +253,7 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 %% List Keys stuff
 %%--------------------------------------------------------------------
 
--spec maybe_fetch_key_list(pid(), list_object_request(), state()) ->
+-spec maybe_fetch_key_list(riak_client(), list_object_request(), state()) ->
     fsm_state_return().
 maybe_fetch_key_list(RcPid, Request, State=#state{use_cache=true,
                                                      cache_key=CacheKey}) ->
@@ -282,7 +282,7 @@ maybe_write_to_cache(#state{cache_key=CacheKey,
 %% @doc Either proceed using the cached key list or make the request
 %% to start a key listing.
 -type cache_lookup_result() :: {true, [binary()]} | false.
--spec fetch_key_list(pid(), list_object_request(), state(),
+-spec fetch_key_list(riak_client(), list_object_request(), state(),
                      cache_lookup_result()) -> fsm_state_return().
 fetch_key_list(_, _, State, {true, Value}) ->
     _ = lager:debug("Using cached key list"),
@@ -299,7 +299,7 @@ fetch_key_list(RcPid, Request, State, false) ->
 %% TODO:
 %% could this also be a phase-less map-reduce request
 %% with key filters?
--spec make_list_keys_request(pid(), list_object_request()) ->
+-spec make_list_keys_request(riak_client(), list_object_request()) ->
     streaming_req_response().
 make_list_keys_request(RcPid, ?LOREQ{name=BucketName}) ->
     %% hardcoded for now
@@ -480,7 +480,7 @@ update_buffer(Results, Buffer) ->
     %% TODO: is this the fastest way to do this?
     lists:merge(lists:sort(Results), Buffer).
 
--spec make_map_reduce_request(pid(), binary(), list()) ->
+-spec make_map_reduce_request(riak_client(), binary(), list()) ->
     streaming_req_response().
 make_map_reduce_request(RcPid, ManifestBucketName, Keys) ->
     BKeyTuples = make_bkeys(ManifestBucketName, Keys),
@@ -490,7 +490,7 @@ make_map_reduce_request(RcPid, ManifestBucketName, Keys) ->
 make_bkeys(ManifestBucketName, Keys) ->
     [{ManifestBucketName, Key} || Key <- Keys].
 
--spec send_map_reduce_request(pid(), list()) -> streaming_req_response().
+-spec send_map_reduce_request(riak_client(), list()) -> streaming_req_response().
 send_map_reduce_request(RcPid, BKeyTuples) ->
     %% TODO: change this:
     %% hardcode 60 seconds for now

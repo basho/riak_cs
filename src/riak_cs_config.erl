@@ -179,7 +179,7 @@ use_t2b_compression() ->
 %% doc Return the current cluster ID. Used for repl
 %% After obtaining the clusterid the first time,
 %% store the value in app:set_env
--spec cluster_id(pid()) -> binary().
+-spec cluster_id(riak_client()) -> binary().
 cluster_id(RcPid) ->
     case application:get_env(riak_cs, cluster_id) of
         {ok, ClusterID} ->
@@ -195,7 +195,7 @@ cluster_id(RcPid) ->
     end.
 
 %% @doc If `proxy_get' is enabled then attempt to determine the cluster id
--spec maybe_get_cluster_id(boolean(), pid(), integer()) -> undefined | binary().
+-spec maybe_get_cluster_id(boolean(), riak_client(), integer()) -> undefined | binary().
 maybe_get_cluster_id(true, RcPid, Timeout) ->
     try
         %% TODO && FIXME!!: DO NOT support multibag YET!!!

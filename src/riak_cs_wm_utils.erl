@@ -218,7 +218,7 @@ handle_auth_admin(RD, Ctx, User, false) ->
 %% @doc Look for an Authorization header in the request, and validate
 %% it if it exists.  Returns `{ok, User, UserObj}' if validation
 %% succeeds, or `{error, KeyId, Reason}' if any step fails.
--spec validate_auth_header(#wm_reqdata{}, term(), pid(), #context{}|undefined) ->
+-spec validate_auth_header(#wm_reqdata{}, term(), riak_client(), #context{}|undefined) ->
                                   {ok, rcs_user(), riakc_obj:riakc_obj()} |
                                   {error, bad_auth | notfound | no_user_key | term()}.
 validate_auth_header(RD, AuthBypass, RcPid, Ctx) ->
@@ -261,7 +261,7 @@ validate_auth_header(RD, AuthBypass, RcPid, Ctx) ->
 
 %% @doc Utility function for building #key_contest
 %% Spawns manifest FSM
--spec ensure_doc(term(), pid()) -> term().
+-spec ensure_doc(term(), riak_client()) -> term().
 ensure_doc(KeyCtx=#key_context{bucket_object=undefined,
                                bucket=Bucket}, RcPid) ->
     case riak_cs_bucket:fetch_bucket_object(Bucket, RcPid) of
@@ -320,7 +320,7 @@ deny_invalid_key(RD, Ctx=#context{response_module=ResponseMod}) ->
 %% @doc In the case is a user is authorized to perform an operation on
 %% a bucket but is not the owner of that bucket this function can be used
 %% to switch to the owner's record if it can be retrieved
--spec shift_to_owner(#wm_reqdata{}, #context{}, string(), pid()) ->
+-spec shift_to_owner(#wm_reqdata{}, #context{}, string(), riak_client()) ->
                             {boolean(), #wm_reqdata{}, #context{}}.
 shift_to_owner(RD, Ctx=#context{response_module=ResponseMod}, OwnerId, RcPid)
   when RcPid /= undefined ->
@@ -449,10 +449,10 @@ maybe_update_context_with_acl_from_headers(RD,
             {error, {{halt, 500}, RD, Ctx}}
     end.
 
--spec bucket_obj_from_local_context(term(), binary(), pid()) ->
+-spec bucket_obj_from_local_context(term(), binary(), riak_client()) ->
     {ok, term()} | {'error', term()}.
 bucket_obj_from_local_context(#key_context{bucket_object=BucketObject},
-                              _BucketName, _Pid) ->
+                              _BucketName, _RcPid) ->
     {ok, BucketObject};
 bucket_obj_from_local_context(undefined, BucketName, RcPid) ->
     case riak_cs_bucket:fetch_bucket_object(BucketName, RcPid) of
@@ -494,9 +494,9 @@ maybe_acl_from_context_and_request(RD, #context{user=User,
 -spec acl_from_headers(Headers :: list(),
                        Owner :: acl_owner(),
                        BucketOwner :: undefined | acl_owner(),
-                       Pid :: pid()) ->
+                       riak_client()) ->
     acl_or_error().
-acl_from_headers(Headers, Owner, BucketOwner, Pid) ->
+acl_from_headers(Headers, Owner, BucketOwner, RcPid) ->
     %% TODO: time to make a macro for `"x-amz-acl"'
     %% `Headers' is an ordset. Is there a faster way to retrieve this? Or
     %% maybe a better data structure?
@@ -508,7 +508,7 @@ acl_from_headers(Headers, Owner, BucketOwner, Pid) ->
                     {DisplayName, CanonicalId, KeyID} = Owner,
                     {ok, riak_cs_acl_utils:default_acl(DisplayName, CanonicalId, KeyID)};
                 _Else ->
-                    riak_cs_acl_utils:specific_acl_grant(Owner, RenamedHeaders, Pid)
+                    riak_cs_acl_utils:specific_acl_grant(Owner, RenamedHeaders, RcPid)
             end;
         Value ->
             {ok, riak_cs_acl_utils:canned_acl(Value, Owner, BucketOwner)}
@@ -928,7 +928,7 @@ actor_is_not_owner_but_allowed_policy(_, OwnerId, RD, Ctx, LocalCtx) ->
     {false, AccessRD, UpdCtx}.
 
 -spec just_allowed_by_policy(ObjectAcl :: acl(),
-                              RcPid :: pid(),
+                              RcPid :: riak_client(),
                               RD :: term(),
                               Ctx :: term(),
                               LocalCtx :: term()) ->
@@ -939,7 +939,7 @@ just_allowed_by_policy(ObjectAcl, RcPid, RD, Ctx, LocalCtx) ->
     UpdLocalCtx = LocalCtx#key_context{owner=OwnerId},
     {false, AccessRD, Ctx#context{local_context=UpdLocalCtx}}.
 
--spec fetch_bucket_owner(binary(), pid()) -> undefined | acl_owner().
+-spec fetch_bucket_owner(binary(), riak_client()) -> undefined | acl_owner().
 fetch_bucket_owner(Bucket, RcPid) ->
     case riak_cs_acl:fetch_bucket_acl(Bucket, RcPid) of
         {ok, Acl} ->

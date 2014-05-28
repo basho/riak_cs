@@ -49,7 +49,7 @@
                 key :: binary(),
                 uuid :: binary(),
                 manifest :: lfs_manifest(),
-                riak_client :: pid(),
+                riak_client :: riak_client(),
                 gc_worker_pid :: pid(),
                 delete_blocks_remaining :: ordsets:ordset({binary(), integer()}),
                 unacked_deletes=ordsets:new() :: ordsets:ordset(integer()),
@@ -227,7 +227,7 @@ notification_msg(normal, #state{deleted_blocks = DeletedBlocks,
 notification_msg(Reason, _State) ->
     {self(), {error, Reason}}.
 
--spec manifest_cleanup(atom(), binary(), binary(), binary(), pid()) -> ok.
+-spec manifest_cleanup(atom(), binary(), binary(), binary(), riak_client()) -> ok.
 manifest_cleanup(deleted, Bucket, Key, UUID, RcPid) ->
     {ok, ManiFsmPid} = riak_cs_manifest_fsm:start_link(Bucket, Key, RcPid),
     _ = try

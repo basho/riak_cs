@@ -109,13 +109,13 @@
 %%% API
 %%%===================================================================
 
--spec start_link(pid(), list_object_request()) ->
+-spec start_link(riak_client(), list_object_request()) ->
     {ok, pid()} | {error, term()}.
 start_link(RcPid, ListKeysRequest) ->
     FoldObjectsBatchSize = 1002,
     start_link(RcPid, ListKeysRequest, FoldObjectsBatchSize).
 
--spec start_link(pid(), list_object_request(), pos_integer()) ->
+-spec start_link(riak_client(), list_object_request(), pos_integer()) ->
     {ok, pid()} | {error, term()}.
 start_link(RcPid, ListKeysRequest, FoldObjectsBatchSize) ->
     BatchSize2 = max(2, FoldObjectsBatchSize),
@@ -342,7 +342,7 @@ response_from_manifests_and_common_prefixes(Request,
                                       CommonPrefixes,
                                       KeyContent).
 
--spec make_2i_request(pid(), state()) ->
+-spec make_2i_request(riak_client(), state()) ->
                              {state(), {ok, reference()} | {error, term()}}.
 make_2i_request(RcPid, State=#state{req=?LOREQ{name=BucketName},
                                     fold_objects_batch_size=BatchSize}) ->

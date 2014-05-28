@@ -48,6 +48,7 @@
          iso8601/1
         ]).
 
+-include("riak_cs.hrl").
 -include("rts.hrl").
 -ifdef(TEST).
 -ifdef(EQC).
@@ -61,7 +62,6 @@
 
 -type datetime() :: calendar:datetime().
 -type slice() :: {Start :: datetime(), End :: datetime()}.
--type riak_client() :: pid().
 -type mochijson2() :: term().
 
 %% @doc Just create the new sample object (don't store it).

@@ -35,7 +35,7 @@ list_buckets(User=?RCS_USER{buckets=Buckets}) ->
                                Bucket?RCS_BUCKET.last_action /= deleted]}.
 
 -type options() :: [{atom(), 'undefined' | binary()}].
--spec list_objects([string()], binary(), non_neg_integer(), options(), pid()) ->
+-spec list_objects([string()], binary(), non_neg_integer(), options(), riak_client()) ->
                           {ok, ?LORESP{}} | {error, term()}.
 list_objects([], _, _, _, _) ->
     {error, no_such_bucket};

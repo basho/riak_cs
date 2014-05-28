@@ -91,7 +91,7 @@ cleanup_orphan_multipart(Timestamp) when is_binary(Timestamp) ->
 %%%===================================================================
 
 
--spec maybe_cleanup_csbucket(pid(), binary(),
+-spec maybe_cleanup_csbucket(riak_client(), binary(),
                              {ok, riakc_obj()}|{error, term()},
                              binary()) -> ok.
 maybe_cleanup_csbucket(RcPid, BucketName, {ok, RiakObj}, Timestamp) ->

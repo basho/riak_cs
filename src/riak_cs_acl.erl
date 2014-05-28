@@ -55,11 +55,11 @@
 %% ===================================================================
 
 %% @doc Determine if anonymous access is set for the bucket.
--spec anonymous_bucket_access(binary(), atom(), pid()) -> {true, string()} | false.
+-spec anonymous_bucket_access(binary(), atom(), riak_client()) -> {true, string()} | false.
 anonymous_bucket_access(Bucket, RequestedAccess, RcPid) ->
     anonymous_bucket_access(Bucket, RequestedAccess, RcPid, undefined).
 
--spec anonymous_bucket_access(binary(), atom(), pid(), acl()|undefined)
+-spec anonymous_bucket_access(binary(), atom(), riak_client(), acl()|undefined)
                              -> {true, string()} | false.
 anonymous_bucket_access(_Bucket, undefined, _, _) ->
     false;
@@ -89,14 +89,14 @@ anonymous_bucket_access(_Bucket, RequestedAccess, RcPid, BucketAcl) ->
 
 %% @doc Determine if anonymous access is set for the object.
 %% @TODO Enhance when doing object ACLs
--spec anonymous_object_access(riakc_obj:riakc_obj(), acl(), atom(), pid()) ->
+-spec anonymous_object_access(riakc_obj:riakc_obj(), acl(), atom(), riak_client()) ->
                                      {true, string()} |
                                      false.
 anonymous_object_access(BucketObj, ObjAcl, RequestedAccess, RcPid) ->
     anonymous_object_access(BucketObj, ObjAcl, RequestedAccess, RcPid, undefined).
 
 
--spec anonymous_object_access(riakc_obj:riakc_obj(), acl(), atom(), pid(), acl()|undefined) ->
+-spec anonymous_object_access(riakc_obj:riakc_obj(), acl(), atom(), riak_client(), acl()|undefined) ->
                                      {true, string()} | false.
 anonymous_object_access(_BucketObj, _ObjAcl, undefined, _, _) ->
     false;
@@ -130,12 +130,12 @@ anonymous_object_access(_BucketObj, ObjAcl, RequestedAccess, RcPid, _) ->
     end.
 
 %% @doc Determine if a user has the requested access to a bucket.
--spec bucket_access(binary(), atom(), string(), pid()) ->
+-spec bucket_access(binary(), atom(), string(), riak_client()) ->
                            boolean() | {true, string()}.
 bucket_access(Bucket, RequestedAccess, CanonicalId, RcPid) ->
     bucket_access(Bucket, RequestedAccess, CanonicalId, RcPid, undefined).
 
--spec bucket_access(binary(), atom(), string(), pid(), acl()|undefined ) ->
+-spec bucket_access(binary(), atom(), string(), riak_client(), acl()|undefined ) ->
                            boolean() | {true, string()}.
 bucket_access(_Bucket, undefined, _CanonicalId, _, _) ->
     false;
@@ -175,7 +175,7 @@ bucket_access(_, RequestedAccess, CanonicalId, RcPid, Acl) ->
 -type acl_from_meta_result() :: {'ok', acl()} | {'error', 'acl_undefined'}.
 -type bucket_acl_result() :: acl_from_meta_result() | {'error', 'multiple_bucket_owners'}.
 -type bucket_acl_riak_error() :: {error, 'notfound' | term()}.
--spec fetch_bucket_acl(binary(), pid()) -> bucket_acl_result() | bucket_acl_riak_error().
+-spec fetch_bucket_acl(binary(), riak_client()) -> bucket_acl_result() | bucket_acl_riak_error().
 fetch_bucket_acl(Bucket, RcPid) ->
     case riak_cs_bucket:fetch_bucket_object(Bucket, RcPid) of
         {ok, Obj} ->
@@ -241,13 +241,13 @@ newer_acl(_, Acl2) ->
 %% @TODO Enhance when doing object-level ACL work. This is a bit
 %% patchy until object ACLs are done. The bucket owner gets full
 %% control, but bucket-level ACLs only matter for writes otherwise.
--spec object_access(riakc_obj:riakc_obj(), acl(), atom(), string(), pid())
+-spec object_access(riakc_obj:riakc_obj(), acl(), atom(), string(), riak_client())
                    -> boolean() | {true, string()}.
 object_access(BucketObj, ObjAcl, RequestedAccess, CanonicalId, RcPid) ->
     object_access(BucketObj, ObjAcl, RequestedAccess, CanonicalId, RcPid, undefined).
 
 
--spec object_access(riakc_obj:riakc_obj(), acl(), atom(), string(), pid(), undefined|acl())
+-spec object_access(riakc_obj:riakc_obj(), acl(), atom(), string(), riak_client(), undefined|acl())
                    -> boolean() | {true, string()}.
 object_access(_BucketObj, _ObjAcl, undefined, _CanonicalId, _, _) ->
     false;
@@ -303,7 +303,7 @@ object_access(_BucketObj, ObjAcl, RequestedAccess, CanonicalId, RcPid, _) ->
     end.
 
 %% @doc Get the canonical id of the owner of an entity.
--spec owner_id(acl(), pid()) -> string().
+-spec owner_id(acl(), riak_client()) -> string().
 owner_id(?ACL{owner=Owner}, _) ->
     {_, _, OwnerId} = Owner,
     OwnerId;

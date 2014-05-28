@@ -69,7 +69,7 @@
 %%%===================================================================
 
 
--spec start_link(pid(), pid(), list_object_request(), term(),
+-spec start_link(riak_client(), pid(), list_object_request(), term(),
                  UseCache :: boolean()) ->
     {ok, pid()} | {error, term()}.
 %% @doc An abstraction between the old and new list-keys mechanism. Uses the

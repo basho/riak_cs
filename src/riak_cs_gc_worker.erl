@@ -208,7 +208,7 @@ continue() ->
     gen_fsm:send_event(self(), continue).
 
 %% @doc Delete the blocks for the next set of manifests in the batch
--spec fetch_next_fileset(binary(), pid()) ->
+-spec fetch_next_fileset(binary(), riak_client()) ->
                                 {ok, twop_set:twop_set(), riakc_obj:riakc_obj()} |
                                 {error, term()}.
 fetch_next_fileset(ManifestSetKey, RcPid) ->
@@ -234,7 +234,7 @@ fetch_next_fileset(ManifestSetKey, RcPid) ->
 -spec finish_file_delete(non_neg_integer(),
                          twop_set:twop_set(),
                          riakc_obj:riakc_obj(),
-                         pid()) -> ok.
+                         riak_client()) -> ok.
 finish_file_delete(0, _, RiakObj, RcPid) ->
     %% Delete the key from the GC bucket
     {ok, ManifestPbc} = riak_cs_riak_client:manifest_pbc(RcPid),
