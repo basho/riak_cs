@@ -25,7 +25,7 @@
 -export([confirm/0]).
 
 confirm() ->
-    {UserConfig, {_RiakNodes, CSNodes, _Stanchion}} = rtcs:setup(4),
+    {UserConfig, {_RiakNodes, CSNodes, _Stanchion}} = rtcs:setup(2),
     assert_v2_is_default(CSNodes),
     list_objects_test_helper:test(UserConfig).
 
