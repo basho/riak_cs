@@ -691,6 +691,15 @@ wait_until(Fun, Condition, Retries, Delay) ->
             wait_until(Fun, Condition, Retries-1, Delay)
     end.
 
+%% ObjectKind = user | bucket | manifest | block | ...
+pbc(RiakNodes, ObjectKind, CsBucket, CsKey) ->
+    pbc(rt_config:get(flavor, basic), ObjectKind, RiakNodes, CsBucket, CsKey).
+
+pbc(basic, _ObjectKind, RiakNodes, _CsBucket, _CsKey) ->
+    rt:pbc(hd(RiakNodes));
+pbc({multibag, _} = Flavor, ObjectKind, RiakNodes, CsBucket, CsKey) ->
+    rtcs_bag:pbc(Flavor, ObjectKind, RiakNodes, CsBucket, CsKey).
+
 make_authorization(Method, Resource, ContentType, Config, Date) ->
     StringToSign = [Method, $\n, [], $\n, ContentType, $\n, Date, $\n, Resource],
     Signature =

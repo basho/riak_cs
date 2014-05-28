@@ -51,7 +51,7 @@ confirm() ->
     ok = verify_bucket_mpcleanup(UserConfig),
 
     ok = verify_bucket_mpcleanup_racecond_andfix(UserConfig, UserConfig1,
-                                                 hd(RiakNodes), hd(CSNodes)),
+                                                 RiakNodes, hd(CSNodes)),
 
     pass.
 
@@ -112,7 +112,7 @@ verify_bucket_mpcleanup(UserConfig) ->
 
 %% @doc in race condition: on delete_bucket
 verify_bucket_mpcleanup_racecond_andfix(UserConfig, UserConfig1,
-                                        RiakNode, CSNode) ->
+                                        RiakNodes, CSNode) ->
     Key = ?KEY_MP,
     Bucket = ?TEST_BUCKET,
     ?assertEqual(ok, erlcloud_s3:create_bucket(Bucket, UserConfig)),
@@ -120,13 +120,12 @@ verify_bucket_mpcleanup_racecond_andfix(UserConfig, UserConfig1,
     lager:info("InitUploadRes = ~p", [InitUploadRes]),
 
     %% Reserve riak object to emulate prior 1.4.5 behavior afterwards
-    RiakBucket = riakc_helper:to_bucket_name(Bucket),
-    {ok, ManiObj} = riakc_helper:get_riakc_obj(RiakNode, RiakBucket, Key),
+    {ok, ManiObj} = rc_helper:get_riakc_obj(RiakNodes, manifest, Bucket, Key),
 
     ?assertEqual(ok, erlcloud_s3:delete_bucket(?TEST_BUCKET, UserConfig)),
 
     %% emulate a race condition, during the deletion MP initiate happened
-    ok = riakc_helper:update_riakc_obj(RiakNode, RiakBucket, Key, ManiObj),
+    ok = rc_helper:update_riakc_obj(RiakNodes, manifest, Bucket, Key, ManiObj),
 
     %% then fail on creation
     %%TODO: check fail fail fail => 500
