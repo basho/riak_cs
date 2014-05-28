@@ -2,7 +2,7 @@
 
 ## Additions
 
-* a new command `riak-cs-debug` which retrieves diagnosis info includes `cluster-info` [riak_cs/#769](https://github.com/basho/riak_cs/pull/769), [riak_cs/#832](https://github.com/basho/riak_cs/pull/832)
+* a new command `riak-cs-debug` which retrieves diagnosis info including `cluster-info` [riak_cs/#769](https://github.com/basho/riak_cs/pull/769), [riak_cs/#832](https://github.com/basho/riak_cs/pull/832)
 * tie up all existing commands into a new command `riak-cs-admin` [riak_cs/#839](https://github.com/basho/riak_cs/pull/839)
 * add a command `riak-cs-stanchion` to switch Stanchion manually [riak_cs/#657](https://github.com/basho/riak_cs/pull/657)
 * Performance of garbage collection has been improved via Concurrent GC [riak_cs/#830](https://github.com/basho/riak_cs/pull/830)
@@ -22,7 +22,7 @@
 * Riak-CS-GC timestamp for scheduler is in the year 0043, not 2013. [riak_cs/#713](https://github.com/basho/riak_cs/pull/713) fixed by [riak_cs/#676](https://github.com/basho/riak_cs/pull/676)
 * Excessive calls to OTP code_server process #669 fixed by [riak_cs/#675](https://github.com/basho/riak_cs/pull/675)
 * Return HTTP 400 if content-md5 does not match [riak_cs/#596](https://github.com/basho/riak_cs/pull/596)
-* /riak-cs/stats and `admin_auth_enabled=false` don't work together correctly. [riak_cs/#719](https://github.com/basho/riak_cs/pull/719)
+* `/riak-cs/stats` and `admin_auth_enabled=false` don't work together correctly. [riak_cs/#719](https://github.com/basho/riak_cs/pull/719)
 * Storage calculation doesn't handle tombstones, nor handle undefined manifest.props [riak_cs/#849](https://github.com/basho/riak_cs/pull/849)
 * MP initiated objects remains after delete/create buckets #475 fixed by [riak_cs/#857](https://github.com/basho/riak_cs/pull/857) and [stanchon/#78](https://github.com/basho/stanchion/pull/78)
 * handling empty query string on list multipart upload [riak_cs/#843](https://github.com/basho/riak_cs/pull/843)
@@ -31,6 +31,8 @@
 
 ## Notes on Upgrading
 
+### Unaborted or uncompleted multipart uploads
+
 [riak_cs/#475](https://github.com/basho/riak_cs/issues/475) was a
 security issue that flaws remaining multipart uploads, where an newly
 created bucket may include unaborted or uncompleted multipart uploads
@@ -38,11 +40,11 @@ which was created in previous epoch of the bucket with same name. This
 was fixed by:
 
 - on creating buckets; checking if live multipart exists and if
-  exists, return 500 failure to client
+  exists, return 500 failure to client.
 
 - on deleting buckets; trying to clean up all live multipart remains,
   and checking if live multipart remains (in stanchion). if exists,
-  return 409 failure to client
+  return 409 failure to client.
 
 Note that a few operation is needed after upgrading from 1.4.x (or
 former) to 1.5.0.
@@ -54,6 +56,48 @@ former) to 1.5.0.
   client can create bucket if unfinished multipart upload remains
   under deleted bucket. You can find [critical] log if such bucket
   creation is attempted.
+
+### Leeway seconds and disk space
+
+[riak_cs/#470](https://github.com/basho/riak_cs/pull/470) changed the
+behaviour of object deletion and garbage collection. Timestamp in
+garbage collection bucket was changed from the current time when the
+object is deleted, to the future time when the object is to be
+deleted. Garbage collector was also changed to collect objects until
+'now - leeway seconds', from collecting objects until 'now'.
+
+Before:
+
+```
+           t1                         t2
+-----------+--------------------------+-------------------
+           DELETE object:             GC triggered:
+           marked as                  collects objects
+           "t1+leeway"                marked as "t2"
+```
+
+After:
+
+```
+           t1                         t2
+-----------+--------------------------+-------------------
+           DELETE object:             GC triggered:
+           marked as "t1"             collects objects
+           in GC bucket               marked as "t2 - leeway"
+```
+
+This leads that there exists a period where no objects are collected
+right after upgrade to 1.5.0, say, `t0`, until `t0 + leeway` . And
+objects deleted just before `t0` won't be collected until `t0 +
+2*leeway` .
+
+Also, all CS nodes which don't run GC should be upgraded before CS
+node which does run GC upgraded to let leeway second system work
+properly. Or stop GC while upgrading whole cluster, by running
+`riak-cs-admin gc interval infinity` .
+
+Multi-datacenter cluster should be upgraded more carefully, as to
+make sure GC is not running while upgrading.
 
 
 # Riak CS 1.4.5 Release Notes
