@@ -45,7 +45,6 @@
          md5_update/2,
          md5_final/1,
          reduce_keys_and_manifests/2,
-         get_object/3,
          get_manifests/3,
          manifests_from_riak_object/1,
          active_manifest_from_response/1,
@@ -55,16 +54,10 @@
          hexlist_to_binary/1,
          binary_to_hexlist/1,
          json_pp_print/1,
-         list_keys/2,
          key_exists/3,
          n_val_1_get_requests/0,
          pow/2,
          pow/3,
-         put_object/5,
-         put/2,
-         put/3,
-         put_with_no_meta/2,
-         put_with_no_meta/3,
          resolve_robj_siblings/1,
          riak_connection/0,
          riak_connection/1,
@@ -410,11 +403,6 @@ md5_update(Ctx, <<Part:?MAX_UPDATE_SIZE/binary, Rest/binary>>) ->
 
 md5_final(Ctx) -> crypto:md5_final(Ctx).
 -endif.
-%% @doc Get an object from Riak
--spec get_object(binary(), binary(), pid()) ->
-                        {ok, riakc_obj:riakc_obj()} | {error, term()}.
-get_object(BucketName, Key, RiakPid) ->
-    riakc_pb_socket:get(RiakPid, BucketName, Key).
 
 %% internal fun to retrieve the riak object
 %% at a bucket/key
@@ -494,7 +482,7 @@ get_user(KeyId, RcPid) ->
     %% Check for and resolve siblings to get a
     %% coherent view of the bucket ownership.
     BinKey = list_to_binary(KeyId),
-    case fetch_user(BinKey, RiakPid) of
+    case riak_cs_riak_client:get_user(RcPid, BinKey) of
         {ok, {Obj, KeepDeletedBuckets}} ->
             case riakc_obj:value_count(Obj) of
                 1 ->
@@ -583,21 +571,6 @@ json_pp_print([], _I, _Q, Acc) -> % done
 
 json_pp_indent(I) -> lists:duplicate(I*4, ?SPACE).
 
-%% @doc List the keys from a bucket
--spec list_keys(binary(), pid()) -> {ok, [binary()]} | {error, term()}.
-list_keys(BucketName, RiakPid) ->
-    case riakc_pb_socket:list_keys(RiakPid, BucketName) of
-        {ok, Keys} ->
-            %% TODO:
-            %% This is a naive implementation,
-            %% the longer-term solution is likely
-            %% going to involve 2i and merging the
-            %% results from each of the vnodes.
-            {ok, lists:sort(Keys)};
-        {error, _}=Error ->
-            Error
-    end.
-
 -spec n_val_1_get_requests() -> boolean().
 n_val_1_get_requests() ->
     riak_cs_config:get_env(riak_cs, n_val_1_get_requests,
@@ -617,40 +590,6 @@ pow(Base, Power, Acc) ->
         _ ->
             pow(Base, Power - 1, Acc * Base)
     end.
-
-%% @doc Store an object in Riak
--spec put_object(binary(), undefined | binary(), binary(), [term()], pid()) -> ok | {error, term()}.
-put_object(BucketName, undefined, Value, Metadata, _RiakPid) ->
-    error_logger:warning_msg("Attempt to put object into ~p with undefined key "
-                             "and value ~P and dict ~p\n",
-                             [BucketName, Value, 30, Metadata]),
-    {error, bad_key};
-put_object(BucketName, Key, Value, Metadata, RiakPid) ->
-    RiakObject = riakc_obj:new(BucketName, Key, Value),
-    NewObj = riakc_obj:update_metadata(RiakObject, Metadata),
-    riakc_pb_socket:put(RiakPid, NewObj).
-
-put(RiakcPid, RiakcObj) ->
-    put(RiakcPid, RiakcObj, []).
-
-put(RiakcPid, RiakcObj, Options) ->
-    riakc_pb_socket:put(RiakcPid, RiakcObj, Options).
-
-put_with_no_meta(RiakcPid, RiakcObj) ->
-    put_with_no_meta(RiakcPid, RiakcObj, []).
-%% @doc Put an object in Riak with empty
-%% metadata. This is likely used when because
-%% you want to avoid manually setting the metadata
-%% to an empty dict. You'd want to do this because
-%% if the previous object had metadata siblings,
-%% not explicitly setting the metadata will
-%% cause a siblings exception to be raised.
--spec put_with_no_meta(pid(), riakc_obj:riakc_obj(), term()) ->
-    ok | {ok, riakc_obj:riakc_obj()} | {ok, binary()} | {error, term()}.
-put_with_no_meta(RiakcPid, RiakcObject, Options) ->
-    WithMeta = riakc_obj:update_metadata(RiakcObject, dict:new()),
-    riakc_pb_socket:put(RiakcPid, WithMeta, Options).
-
 
 -type resolve_ok() :: {term(), binary()}.
 -type resolve_error() :: {atom(), atom()}.
@@ -720,16 +659,9 @@ riak_connection(Pool) ->
     end.
 
 %% @doc Save information about a Riak CS user
--spec save_user(rcs_user(), riakc_obj:riakc_obj(), pid()) -> ok | {error, term()}.
-save_user(User, UserObj, RiakPid) ->
-    Indexes = [{?EMAIL_INDEX, User?RCS_USER.email},
-               {?ID_INDEX, User?RCS_USER.canonical_id}],
-    MD = dict:store(?MD_INDEX, Indexes, dict:new()),
-    UpdUserObj = riakc_obj:update_metadata(
-                   riakc_obj:update_value(UserObj,
-                                          riak_cs_utils:encode_term(User)),
-                   MD),
-    riakc_pb_socket:put(RiakPid, UpdUserObj).
+-spec save_user(rcs_user(), riakc_obj:riakc_obj(), riak_client()) -> ok | {error, term()}.
+save_user(User, UserObj, RcPid) ->
+    riak_cs_riak_client:save_user(RcPid, User, UserObj).
 
 %% @doc Set the ACL for an object. Existing ACLs are only
 %% replaced, they cannot be updated.
@@ -873,38 +805,6 @@ active_to_bool({error, notfound}) ->
 display_name(Email) ->
     Index = string:chr(Email, $@),
     string:sub_string(Email, 1, Index-1).
-
-%% @doc Perform an initial read attempt with R=PR=N.
-%% If the initial read fails retry using
-%% R=quorum and PR=1, but indicate that bucket deletion
-%% indicators should not be cleaned up.
--spec fetch_user(KeyID :: binary(),
-                 RiakConnection :: pid()) ->
-    {ok, {riakc_obj(), KeepDeletedBuckets :: boolean()}} |
-    {error, term()}.
-fetch_user(Key, RiakPid) ->
-    StrongOptions = [{r, all}, {pr, all}, {notfound_ok, false}],
-    case riakc_pb_socket:get(RiakPid, ?USER_BUCKET, Key, StrongOptions) of
-        {ok, Obj} ->
-            %% since we read from all primaries, we're
-            %% less concerned with there being an 'out-of-date'
-            %% replica that we might conflict with (and not
-            %% be able to properly resolve conflicts).
-            KeepDeletedBuckets = false,
-            {ok, {Obj, KeepDeletedBuckets}};
-        {error, _} ->
-            WeakOptions = [{r, quorum}, {pr, one}, {notfound_ok, false}],
-            case riakc_pb_socket:get(RiakPid, ?USER_BUCKET, Key, WeakOptions) of
-                {ok, Obj} ->
-                    %% We weren't able to read from all primary
-                    %% vnodes, so don't risk losing information
-                    %% by pruning the bucket list.
-                    KeepDeletedBuckets = true,
-                    {ok, {Obj, KeepDeletedBuckets}};
-                {error, Reason} ->
-                    {error, Reason}
-            end
-    end.
 
 %% @doc Generate a new set of access credentials for user.
 -spec generate_access_creds(string()) -> {iodata(), iodata()}.

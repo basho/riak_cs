@@ -19,6 +19,7 @@
 %% ---------------------------------------------------------------------
 
 -define(MANIFEST, #lfs_manifest_v3).
+-define(MANIFEST_REC, lfs_manifest_v3).
 
 -define(ACL, #acl_v2).
 -define(RCS_BUCKET, #moss_bucket_v1).
@@ -70,6 +71,7 @@
           creation_date :: string(),
           modification_time :: erlang:timestamp(),
           acl :: acl()}).
+
 -type cs_bucket() :: #moss_bucket_v1{}.
 -type bucket_operation() :: create | delete | update_acl | update_policy
                           | delete_policy.
@@ -82,8 +84,8 @@
                   bucket :: binary(),
                   acl :: 'undefined' | acl(),
                   requested_perm :: acl_perm(),
-                  riakc_pid :: pid(),
-                  riakc_pool :: atom(),
+                  riak_client :: riak_client(),
+                  rc_pool :: atom(),
                   submodule :: atom(),
                   exports_fun :: function(),
                   auth_module :: atom(),
@@ -129,8 +131,9 @@
 -type acl() :: #acl_v1{} | #acl_v2{}.
 
 -type cluster_id() :: undefined | binary(). %% flattened string as binary
-
 -type cs_uuid() :: binary().
+-type bag_id() :: undefined | binary().
+-type riak_client() :: riak_client().
 
 -record(lfs_manifest_v2, {
         version=2 :: integer(),
@@ -386,6 +389,7 @@
 -define(DEFAULT_STANCHION_IP, "127.0.0.1").
 -define(DEFAULT_STANCHION_PORT, 8085).
 -define(DEFAULT_STANCHION_SSL, true).
+-define(MD_BAG, <<"X-Rcs-Bag">>).
 -define(MD_ACL, <<"X-Moss-Acl">>).
 -define(MD_POLICY, <<"X-Rcs-Policy">>).
 -define(EMAIL_INDEX, <<"email_bin">>).
