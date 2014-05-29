@@ -77,12 +77,7 @@
 %% ===================================================================
 
 service_available(RD, Ctx) ->
-    case riak_cs_utils:riak_connection() of
-        {ok, RcPid} ->
-            {true, RD, Ctx#context{riak_client=RcPid}};
-        {error, _Reason} ->
-            {false, RD, Ctx}
-    end.
+    service_available(request_pool, RD, Ctx).
 
 service_available(Pool, RD, Ctx) ->
     case riak_cs_utils:riak_connection(Pool) of
@@ -751,13 +746,13 @@ is_acl_request(_) ->
 
 -spec object_access_authorize_helper(AccessType::atom(), boolean(),
                                      RD::term(), Ctx::term()) ->
-    authorized_response().
+                                            authorized_response().
 object_access_authorize_helper(AccessType, Deletable, RD, Ctx) ->
     object_access_authorize_helper(AccessType, Deletable, false, RD, Ctx).
 
 -spec object_access_authorize_helper(AccessType::atom(), boolean(), boolean(),
                                      RD::term(), Ctx::term()) ->
-    authorized_response().
+                                            authorized_response().
 object_access_authorize_helper(AccessType, Deletable, SkipAcl,
                                RD, #context{policy_module=PolicyMod,
                                             local_context=LocalCtx,
@@ -818,7 +813,7 @@ check_object_authorization(AccessType, Deletable, SkipAcl, Policy,
             %% actor is not the owner, not permitted by ACL but permitted by policy
             just_allowed_by_policy(ObjectAcl, RcPid, RD, Ctx, LocalCtx);
         {false, _} ->
-            % policy says undefined or false
+            %% policy says undefined or false
             %% ACL check failed, deny access
             riak_cs_wm_utils:deny_access(RD, Ctx)
     end.
@@ -827,14 +822,14 @@ check_object_authorization(AccessType, Deletable, SkipAcl, Policy,
 %% object_acces_authorize_helper helper functions
 
 -spec extract_canonical_id(rcs_user() | undefined) ->
-    undefined | string().
+                                  undefined | string().
 extract_canonical_id(undefined) ->
     undefined;
 extract_canonical_id(?RCS_USER{canonical_id=CanonicalID}) ->
     CanonicalID.
 
 -spec requested_access_helper(object | object_part | object_acl, atom()) ->
-    acl_perm().
+                                     acl_perm().
 requested_access_helper(object, Method) ->
     riak_cs_acl_utils:requested_access(Method, false);
 requested_access_helper(object_part, Method) ->
@@ -843,7 +838,7 @@ requested_access_helper(object_acl, Method) ->
     riak_cs_acl_utils:requested_access(Method, true).
 
 -spec extract_object_acl(notfound | lfs_manifest()) ->
-    undefined | acl().
+                                undefined | acl().
 extract_object_acl(notfound) ->
     undefined;
 extract_object_acl(?MANIFEST{acl=Acl}) ->
@@ -863,7 +858,7 @@ translate_bucket_policy(PolicyMod, BucketObj) ->
         {error, notfound}=Error1 ->
             Error1;
         {error, multiple_bucket_owners}=Error2 ->
-             Error2
+            Error2
     end.
 
 %% Helper functions for dealing with combinations of Object ACL
@@ -875,23 +870,23 @@ translate_bucket_policy(PolicyMod, BucketObj) ->
                                        Ctx :: term(),
                                        Method :: atom(),
                                        Deletable :: boolean()) ->
-    authorized_response().
+                                              authorized_response().
 actor_is_owner_but_denied_policy(User, RD, Ctx, Method, Deletable)
-        when Method =:= 'PUT' orelse
-             Method =:= 'POST' orelse
-             (Deletable andalso Method =:= 'DELETE') ->
+  when Method =:= 'PUT' orelse
+       Method =:= 'POST' orelse
+       (Deletable andalso Method =:= 'DELETE') ->
     AccessRD = riak_cs_access_log_handler:set_user(User, RD),
     riak_cs_wm_utils:deny_access(AccessRD, Ctx);
 actor_is_owner_but_denied_policy(User, RD, Ctx, Method, Deletable)
-        when Method =:= 'GET' orelse
-             (Deletable andalso Method =:= 'HEAD') ->
+  when Method =:= 'GET' orelse
+       (Deletable andalso Method =:= 'HEAD') ->
     {{halt, 404}, riak_cs_access_log_handler:set_user(User, RD), Ctx}.
 
 -spec actor_is_owner_and_allowed_policy(User :: rcs_user(),
                                         RD :: term(),
                                         Ctx :: term(),
                                         LocalCtx :: term()) ->
-    authorized_response().
+                                               authorized_response().
 actor_is_owner_and_allowed_policy(undefined, RD, Ctx, _LocalCtx) ->
     {false, RD, Ctx};
 actor_is_owner_and_allowed_policy(User, RD, Ctx, LocalCtx) ->
@@ -904,15 +899,15 @@ actor_is_owner_and_allowed_policy(User, RD, Ctx, LocalCtx) ->
                                            Ctx :: term(),
                                            Method :: atom(),
                                            Deletable :: boolean()) ->
-    authorized_response().
+                                                  authorized_response().
 actor_is_not_owner_and_denied_policy(OwnerId, RD, Ctx, Method, Deletable)
-        when Method =:= 'PUT' orelse
-        (Deletable andalso Method =:= 'DELETE') ->
+  when Method =:= 'PUT' orelse
+       (Deletable andalso Method =:= 'DELETE') ->
     AccessRD = riak_cs_access_log_handler:set_user(OwnerId, RD),
     riak_cs_wm_utils:deny_access(AccessRD, Ctx);
 actor_is_not_owner_and_denied_policy(_OwnerId, RD, Ctx, Method, Deletable)
-        when Method =:= 'GET' orelse
-        (Deletable andalso Method =:= 'HEAD') ->
+  when Method =:= 'GET' orelse
+       (Deletable andalso Method =:= 'HEAD') ->
     {{halt, 404}, RD, Ctx}.
 
 -spec actor_is_not_owner_but_allowed_policy(User :: rcs_user(),
@@ -920,7 +915,7 @@ actor_is_not_owner_and_denied_policy(_OwnerId, RD, Ctx, Method, Deletable)
                                             RD :: term(),
                                             Ctx :: term(),
                                             LocalCtx :: term()) ->
-    authorized_response().
+                                                   authorized_response().
 actor_is_not_owner_but_allowed_policy(undefined, OwnerId, RD, Ctx, LocalCtx) ->
     %% This is an anonymous request so shift to the context of the
     %% owner for the remainder of the request.
