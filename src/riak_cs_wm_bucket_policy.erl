@@ -68,11 +68,11 @@ authorize(RD, Ctx) ->
 to_json(RD, Ctx=#context{start_time=_StartTime,
                          user=User,
                          bucket=Bucket,
-                         riakc_pid=RiakPid}) ->
+                         riak_client=RcPid}) ->
     riak_cs_dtrace:dt_bucket_entry(?MODULE, <<"bucket_get_policy">>,
                                       [], [riak_cs_wm_utils:extract_name(User), Bucket]),
 
-    case riak_cs_s3_policy:fetch_bucket_policy(Bucket, RiakPid) of
+    case riak_cs_s3_policy:fetch_bucket_policy(Bucket, RcPid) of
         {ok, PolicyJson} ->
             {PolicyJson, RD, Ctx};
         {error, policy_undefined} ->
@@ -92,7 +92,7 @@ accept_body(RD, Ctx=#context{user=User,
                              user_object=UserObj,
                              bucket=Bucket,
                              policy_module=PolicyMod,
-                             riakc_pid=RiakPid}) ->
+                             riak_client=RcPid}) ->
     riak_cs_dtrace:dt_bucket_entry(?MODULE, <<"bucket_put_policy">>,
                                    [], [riak_cs_wm_utils:extract_name(User), Bucket]),
 
@@ -102,7 +102,7 @@ accept_body(RD, Ctx=#context{user=User,
             Access = PolicyMod:reqdata_to_access(RD, bucket_policy, User#rcs_user_v2.canonical_id),
             case PolicyMod:check_policy(Access, Policy) of
                 ok ->
-                    case riak_cs_bucket:set_bucket_policy(User, UserObj, Bucket, PolicyJson, RiakPid) of
+                    case riak_cs_bucket:set_bucket_policy(User, UserObj, Bucket, PolicyJson, RcPid) of
                         ok ->
                             riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_put_policy">>,
                                                             [200], [riak_cs_wm_utils:extract_name(User), Bucket]),
@@ -126,11 +126,11 @@ accept_body(RD, Ctx=#context{user=User,
 delete_resource(RD, Ctx=#context{user=User,
                                  user_object=UserObj,
                                  bucket=Bucket,
-                                 riakc_pid=RiakPid}) ->
+                                 riak_client=RcPid}) ->
     riak_cs_dtrace:dt_object_entry(?MODULE, <<"bucket_policy_delete">>,
-                                   [], [RD, Ctx, RiakPid]),
+                                   [], [RD, Ctx, RcPid]),
 
-    case riak_cs_bucket:delete_bucket_policy(User, UserObj, Bucket, RiakPid) of
+    case riak_cs_bucket:delete_bucket_policy(User, UserObj, Bucket, RcPid) of
         ok ->
             riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_put_policy">>,
                                             [200], [riak_cs_wm_utils:extract_name(User), Bucket]),

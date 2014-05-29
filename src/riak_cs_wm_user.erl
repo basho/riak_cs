@@ -185,14 +185,14 @@ produce_xml(RD, #context{user=User}=Ctx) ->
     RD2 = wrq:set_resp_header("ETag", Etag, RD),
     {Body, RD2, Ctx}.
 
-finish_request(RD, Ctx=#context{riakc_pid=undefined}) ->
+finish_request(RD, Ctx=#context{riak_client=undefined}) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"finish_request">>, [0], []),
     {true, RD, Ctx};
-finish_request(RD, Ctx=#context{riakc_pid=RiakPid}) ->
+finish_request(RD, Ctx=#context{riak_client=RcPid}) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"finish_request">>, [1], []),
     riak_cs_utils:close_riak_connection(RiakPid),
     riak_cs_dtrace:dt_wm_return(?MODULE, <<"finish_request">>, [1], []),
-    {true, RD, Ctx#context{riakc_pid=undefined}}.
+    {true, RD, Ctx#context{riak_client=undefined}}.
 
 %% -------------------------------------------------------------------
 %% Internal functions
@@ -241,7 +241,7 @@ forbidden(_Method, RD, Ctx, User, UserPathKey, _) ->
                       {boolean() | {halt, term()}, term(), term()}.
 get_user({false, RD, Ctx}, UserPathKey) ->
     handle_get_user_result(
-      riak_cs_utils:get_user(UserPathKey, Ctx#context.riakc_pid),
+      riak_cs_utils:get_user(UserPathKey, Ctx#context.riak_client),
       RD,
       Ctx);
 get_user(AdminCheckResult, _) ->
@@ -294,8 +294,8 @@ handle_update_result({false, _User}, _RD, _Ctx) ->
     {halt, 200};
 handle_update_result({true, User}, _RD, Ctx) ->
     #context{user_object=UserObj,
-             riakc_pid=RiakPid} = Ctx,
-    riak_cs_utils:update_user(User, UserObj, RiakPid).
+             riak_client=RcPid} = Ctx,
+    riak_cs_utils:update_user(User, UserObj, RcPid).
 
 -spec set_resp_data(string(), term(), term()) -> term().
 set_resp_data(ContentType, RD, #context{user=User}) ->

@@ -69,7 +69,7 @@
 -type profiling() :: #profiling{}.
 
 
--record(state, {riakc_pid :: pid(),
+-record(state, {riak_client :: riak_client(),
                 caller_pid :: pid(),
                 req :: list_object_request(),
 
@@ -146,15 +146,15 @@
 %%% API
 %%%===================================================================
 
--spec start_link(pid(), list_object_request(), term()) ->
+-spec start_link(riak_client(), list_object_request(), term()) ->
     {ok, pid()} | {error, term()}.
-start_link(RiakcPid, ListKeysRequest, CacheKey) ->
-    start_link(RiakcPid, self(), ListKeysRequest, CacheKey, true).
+start_link(RcPid, ListKeysRequest, CacheKey) ->
+    start_link(RcPid, self(), ListKeysRequest, CacheKey, true).
 
--spec start_link(pid(), pid(), list_object_request(), term(), UseCache :: boolean()) ->
+-spec start_link(riak_client(), pid(), list_object_request(), term(), UseCache :: boolean()) ->
     {ok, pid()} | {error, term()}.
-start_link(RiakcPid, CallerPid, ListKeysRequest, CacheKey, UseCache) ->
-    gen_fsm:start_link(?MODULE, [RiakcPid, CallerPid, ListKeysRequest,
+start_link(RcPid, CallerPid, ListKeysRequest, CacheKey, UseCache) ->
+    gen_fsm:start_link(?MODULE, [RcPid, CallerPid, ListKeysRequest,
                                  CacheKey, UseCache], []).
 
 %%%===================================================================
@@ -162,7 +162,7 @@ start_link(RiakcPid, CallerPid, ListKeysRequest, CacheKey, UseCache) ->
 %%%===================================================================
 
 -spec init(list()) -> {ok, prepare, state(), 0}.
-init([RiakcPid, CallerPid, Request, CacheKey, UseCache]) ->
+init([RcPid, CallerPid, Request, CacheKey, UseCache]) ->
     %% TODO: should we be linking or monitoring
     %% the proc that called us?
 
@@ -172,7 +172,7 @@ init([RiakcPid, CallerPid, Request, CacheKey, UseCache]) ->
     %% take a val
     KeyMultiplier = riak_cs_config:key_list_multiplier(),
 
-    State = #state{riakc_pid=RiakcPid,
+    State = #state{riak_client=RcPid,
                    caller_pid=CallerPid,
                    key_multiplier=KeyMultiplier,
                    req=Request,
@@ -181,9 +181,9 @@ init([RiakcPid, CallerPid, Request, CacheKey, UseCache]) ->
     {ok, prepare, State, 0}.
 
 -spec prepare(timeout, state()) -> fsm_state_return().
-prepare(timeout, State=#state{riakc_pid=RiakcPid,
+prepare(timeout, State=#state{riak_client=RcPid,
                               req=Request}) ->
-    maybe_fetch_key_list(RiakcPid, Request, State).
+    maybe_fetch_key_list(RcPid, Request, State).
 
 -spec waiting_list_keys(list_keys_event(), state()) -> fsm_state_return().
 waiting_list_keys({ReqID, done}, State=#state{list_keys_req_id=ReqID}) ->
@@ -253,14 +253,14 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 %% List Keys stuff
 %%--------------------------------------------------------------------
 
--spec maybe_fetch_key_list(pid(), list_object_request(), state()) ->
+-spec maybe_fetch_key_list(riak_client(), list_object_request(), state()) ->
     fsm_state_return().
-maybe_fetch_key_list(RiakcPid, Request, State=#state{use_cache=true,
+maybe_fetch_key_list(RcPid, Request, State=#state{use_cache=true,
                                                      cache_key=CacheKey}) ->
     CacheResult = riak_cs_list_objects_ets_cache:lookup(CacheKey),
-    fetch_key_list(RiakcPid, Request, State, CacheResult);
-maybe_fetch_key_list(RiakcPid, Request, State=#state{use_cache=false}) ->
-    fetch_key_list(RiakcPid, Request, State, false).
+    fetch_key_list(RcPid, Request, State, CacheResult);
+maybe_fetch_key_list(RcPid, Request, State=#state{use_cache=false}) ->
+    fetch_key_list(RcPid, Request, State, false).
 
 -spec maybe_write_to_cache(state(), list()) -> ok.
 maybe_write_to_cache(#state{use_cache=false}, _ListofListofKeys) ->
@@ -282,26 +282,26 @@ maybe_write_to_cache(#state{cache_key=CacheKey,
 %% @doc Either proceed using the cached key list or make the request
 %% to start a key listing.
 -type cache_lookup_result() :: {true, [binary()]} | false.
--spec fetch_key_list(pid(), list_object_request(), state(),
+-spec fetch_key_list(riak_client(), list_object_request(), state(),
                      cache_lookup_result()) -> fsm_state_return().
 fetch_key_list(_, _, State, {true, Value}) ->
     _ = lager:debug("Using cached key list"),
     NewState = prepare_state_for_first_mapred(Value,
                                               State#state{key_buffer=Value}),
     maybe_map_reduce(NewState);
-fetch_key_list(RiakcPid, Request, State, false) ->
+fetch_key_list(RcPid, Request, State, false) ->
     _ = lager:debug("Requesting fresh key list"),
     handle_streaming_list_keys_call(
-      make_list_keys_request(RiakcPid, Request),
+      make_list_keys_request(RcPid, Request),
       State).
 
 %% function to create a list keys request
 %% TODO:
 %% could this also be a phase-less map-reduce request
 %% with key filters?
--spec make_list_keys_request(pid(), list_object_request()) ->
+-spec make_list_keys_request(riak_client(), list_object_request()) ->
     streaming_req_response().
-make_list_keys_request(RiakcPid, ?LOREQ{name=BucketName}) ->
+make_list_keys_request(RcPid, ?LOREQ{name=BucketName}) ->
     %% hardcoded for now
     ServerTimeout = timer:seconds(60),
     ManifestBucket = riak_cs_utils:to_bucket_name(objects, BucketName),
@@ -384,12 +384,12 @@ handle_enough_results(false,
     fsm_state_return().
 handle_could_query_more_map_reduce(true,
                                    State=#state{req=Request,
-                                                riakc_pid=RiakcPid}) ->
+                                                riak_client=RcPid}) ->
     NewStateData = prepare_state_for_mapred(State),
     KeysToQuery = next_keys_from_state(NewStateData),
     BucketName = Request?LOREQ.name,
     ManifestBucketName = riak_cs_utils:to_bucket_name(objects, BucketName),
-    MapReduceRequestResult = make_map_reduce_request(RiakcPid,
+    MapReduceRequestResult = make_map_reduce_request(RcPid,
                                                      ManifestBucketName,
                                                      KeysToQuery),
     handle_map_reduce_call(MapReduceRequestResult, NewStateData);
@@ -479,18 +479,18 @@ update_buffer(Results, Buffer) ->
     %% TODO: is this the fastest way to do this?
     lists:merge(lists:sort(Results), Buffer).
 
--spec make_map_reduce_request(pid(), binary(), list()) ->
+-spec make_map_reduce_request(riak_client(), binary(), list()) ->
     streaming_req_response().
-make_map_reduce_request(RiakcPid, ManifestBucketName, Keys) ->
+make_map_reduce_request(RcPid, ManifestBucketName, Keys) ->
     BKeyTuples = make_bkeys(ManifestBucketName, Keys),
-    send_map_reduce_request(RiakcPid, BKeyTuples).
+    send_map_reduce_request(RcPid, BKeyTuples).
 
 -spec make_bkeys(binary(), list()) -> list().
 make_bkeys(ManifestBucketName, Keys) ->
     [{ManifestBucketName, Key} || Key <- Keys].
 
--spec send_map_reduce_request(pid(), list()) -> streaming_req_response().
-send_map_reduce_request(RiakcPid, BKeyTuples) ->
+-spec send_map_reduce_request(riak_client(), list()) -> streaming_req_response().
+send_map_reduce_request(RcPid, BKeyTuples) ->
     %% TODO: change this:
     %% hardcode 60 seconds for now
     Timeout = timer:seconds(60),

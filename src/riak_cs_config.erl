@@ -178,8 +178,8 @@ use_t2b_compression() ->
 %% doc Return the current cluster ID. Used for repl
 %% After obtaining the clusterid the first time,
 %% store the value in app:set_env
--spec cluster_id(pid()) -> binary().
-cluster_id(Pid) ->
+-spec cluster_id(riak_client()) -> binary().
+cluster_id(RcPid) ->
     case application:get_env(riak_cs, cluster_id) of
         {ok, ClusterID} ->
             ClusterID;
@@ -190,7 +190,7 @@ cluster_id(Pid) ->
                           undefined   ->
                               ?DEFAULT_CLUSTER_ID_TIMEOUT
                       end,
-            maybe_get_cluster_id(proxy_get_active(), Pid, Timeout)
+            maybe_get_cluster_id(proxy_get_active(), RcPid, Timeout)
     end.
 
 %% @doc If `proxy_get' is enabled then attempt to determine the cluster id

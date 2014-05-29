@@ -68,8 +68,8 @@
 -type block_name() :: {binary(), integer()}.
 
 -record(state, {from :: {pid(), reference()},
+                riak_client :: riak_client(),
                 mani_fsm_pid :: pid(),
-                riakc_pid :: pid(),
                 bucket :: term(),
                 caller :: reference(),
                 key :: term(),
@@ -94,12 +94,12 @@
 %% Public API
 %% ===================================================================
 
--spec start_link(binary(), binary(), pid(), pid(), pos_integer(),
+-spec start_link(binary(), binary(), pid(), riak_client(), pos_integer(),
                  pos_integer()) -> {ok, pid()} | {error, term()}.
 
-start_link(Bucket, Key, Caller, RiakPid, FetchConcurrency, BufferFactor) ->
-    gen_fsm:start_link(?MODULE, [Bucket, Key, Caller, RiakPid,
-                                FetchConcurrency, BufferFactor], []).
+start_link(Bucket, Key, Caller, RcPid, FetchConcurrency, BufferFactor) ->
+    gen_fsm:start_link(?MODULE, [Bucket, Key, Caller, RcPid,
+                                 FetchConcurrency, BufferFactor], []).
 
 stop(Pid) ->
     gen_fsm:send_event(Pid, stop).
@@ -123,9 +123,11 @@ chunk(Pid, ChunkSeq, ChunkValue) ->
 %% gen_fsm callbacks
 %% ====================================================================
 
-init([Bucket, Key, Caller, RiakPid, FetchConcurrency, BufferFactor])
-  when is_binary(Bucket), is_binary(Key), is_pid(Caller), is_pid(RiakPid),
-        FetchConcurrency > 0, BufferFactor > 0 ->
+init([Bucket, Key, Caller, RcPid, FetchConcurrency, BufferFactor])
+  when is_binary(Bucket), is_binary(Key), is_pid(Caller),
+       is_pid(RcPid),
+       FetchConcurrency > 0, BufferFactor > 0 ->
+
     %% We need to do this (the monitor) for two reasons
     %% 1. We're started through a supervisor, so the
     %%    proc that actually intends to start us isn't
@@ -147,7 +149,7 @@ init([Bucket, Key, Caller, RiakPid, FetchConcurrency, BufferFactor])
     State = #state{bucket=Bucket,
                    caller=CallerRef,
                    key=Key,
-                   riakc_pid=RiakPid,
+                   riak_client=RcPid,
                    buffer_factor=BufferFactor,
                    fetch_concurrency=FetchConcurrency},
     {ok, prepare, State, 0};
@@ -208,7 +210,7 @@ waiting_continue_or_stop({continue, Range}, #state{manifest=Manifest,
                                                    key=Key,
                                                    fetch_concurrency=FetchConcurrency,
                                                    free_readers=Readers,
-                                                   riakc_pid=RiakPid}=State) ->
+                                                   riak_client=RcPid}=State) ->
     {BlocksOrder, SkipInitial, KeepFinal} =
         riak_cs_lfs_utils:block_sequences_for_manifest(Manifest, Range),
     case BlocksOrder of
@@ -397,16 +399,15 @@ code_change(_OldVsn, StateName, State, _Extra) -> {ok, StateName, State}.
 -spec prepare(#state{}) -> #state{}.
 prepare(#state{bucket=Bucket,
                key=Key,
-               riakc_pid=RiakPid}=State) ->
+               riak_client=RcPid}=State) ->
     %% start the process that will
     %% fetch the value, be it manifest
     %% or regular object
-    {ok, ManiPid} = riak_cs_manifest_fsm:start_link(Bucket, Key, RiakPid),
+    {ok, ManiPid} = riak_cs_manifest_fsm:start_link(Bucket, Key, RcPid),
     case riak_cs_manifest_fsm:get_active_manifest(ManiPid) of
         {ok, Manifest} ->
             _ = lager:debug("Manifest: ~p", [Manifest]),
-            case riak_cs_mp_utils:clean_multipart_unused_parts(Manifest,
-                                                               RiakPid) of
+            case riak_cs_mp_utils:clean_multipart_unused_parts(Manifest, RcPid) of
                 same ->
                     State#state{manifest=Manifest,
                                 mani_fsm_pid=ManiPid};

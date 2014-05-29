@@ -61,7 +61,7 @@ forbidden(RD, Ctx=#context{auth_bypass=AuthBypass}) ->
 content_types_provided(RD, Ctx) ->
     {[{?XML_TYPE, produce_xml}, {?JSON_TYPE, produce_json}], RD, Ctx}.
 
-produce_json(RD, Ctx=#context{riakc_pid=RiakPid}) ->
+produce_json(RD, Ctx=#context{riak_client=RcPid}) ->
     Boundary = unique_id(),
     UpdRD = wrq:set_resp_header("Content-Type",
                                 "multipart/mixed; boundary="++Boundary,
@@ -75,9 +75,9 @@ produce_json(RD, Ctx=#context{riakc_pid=RiakPid}) ->
         _ ->
             Status = undefined
     end,
-    {{stream, {<<>>, fun() -> stream_users(json, RiakPid, Boundary, Status) end}}, UpdRD, Ctx}.
+    {{stream, {<<>>, fun() -> stream_users(json, RcPid, Boundary, Status) end}}, UpdRD, Ctx}.
 
-produce_xml(RD, Ctx=#context{riakc_pid=RiakPid}) ->
+produce_xml(RD, Ctx=#context{riak_client=RcPid}) ->
     Boundary = unique_id(),
     UpdRD = wrq:set_resp_header("Content-Type",
                                 "multipart/mixed; boundary="++Boundary,
@@ -91,9 +91,9 @@ produce_xml(RD, Ctx=#context{riakc_pid=RiakPid}) ->
         _ ->
             Status = undefined
     end,
-    {{stream, {<<>>, fun() -> stream_users(xml, RiakPid, Boundary, Status) end}}, UpdRD, Ctx}.
+    {{stream, {<<>>, fun() -> stream_users(xml, RcPid, Boundary, Status) end}}, UpdRD, Ctx}.
 
-finish_request(RD, Ctx=#context{riakc_pid=undefined}) ->
+finish_request(RD, Ctx=#context{riak_client=undefined}) ->
     {true, RD, Ctx};
 finish_request(RD, Ctx=#context{riakc_pid=RiakPid}) ->
     riak_cs_utils:close_riak_connection(RiakPid),
@@ -112,24 +112,24 @@ stream_users(Format, RiakPid, Boundary, Status) ->
                     riak_cs_utils:close_riak_connection(RiakPid2),
                     Res;
                 {error, _Reason} ->
-                    wait_for_users(Format, RiakPid, ReqId, Boundary, Status)
+                    wait_for_users(Format, RcPid, ReqId, Boundary, Status)
             end;
         {error, _Reason} ->
             {<<>>, done}
     end.
 
-wait_for_users(Format, RiakPid, ReqId, Boundary, Status) ->
+wait_for_users(Format, RcPid, ReqId, Boundary, Status) ->
     receive
         {ReqId, {keys, UserIds}} ->
-            FoldFun = user_fold_fun(RiakPid, Status),
+            FoldFun = user_fold_fun(RcPid, Status),
             Doc = users_doc(lists:foldl(FoldFun, [], UserIds),
                             Format,
                             Boundary),
-            {Doc, fun() -> wait_for_users(Format, RiakPid, ReqId, Boundary, Status) end};
+            {Doc, fun() -> wait_for_users(Format, RcPid, ReqId, Boundary, Status) end};
         {ReqId, done} ->
             {list_to_binary(["\r\n--", Boundary, "--"]), done};
         _ ->
-            wait_for_users(Format, RiakPid, ReqId, Boundary, Status)
+            wait_for_users(Format, RcPid, ReqId, Boundary, Status)
     end.
 
 %% @doc Compile a multipart entity for a set of user documents.
@@ -145,9 +145,9 @@ users_doc(UserDocs, json, Boundary) ->
      riak_cs_json:to_json({users, UserDocs})].
 
 %% @doc Return a fold function to retrieve and filter user accounts
-user_fold_fun(RiakPid, Status) ->
+user_fold_fun(RcPid, Status) ->
     fun(UserId, Users) ->
-            case riak_cs_utils:get_user(binary_to_list(UserId), RiakPid) of
+            case riak_cs_utils:get_user(binary_to_list(UserId), RcPid) of
                 {ok, {User, _}} when User?RCS_USER.status =:= Status;
                                      Status =:= undefined ->
                     [User | Users];

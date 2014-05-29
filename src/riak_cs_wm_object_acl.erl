@@ -50,12 +50,12 @@ malformed_request(RD,Ctx) ->
 %% object ACL and compare the permission requested with the permission
 %% granted, and allow or deny access. Returns a result suitable for
 %% directly returning from the {@link forbidden/2} webmachine export.
-authorize(RD, Ctx0=#context{local_context=LocalCtx0, riakc_pid=RiakPid}) ->
+authorize(RD, Ctx0=#context{local_context=LocalCtx0, riak_client=RcPid}) ->
     Method = wrq:method(RD),
     RequestedAccess =
         %% This is really the only difference between authorize/2 in this module and riak_cs_wm_object
         riak_cs_acl_utils:requested_access(Method, true),
-    LocalCtx = riak_cs_wm_utils:ensure_doc(LocalCtx0, RiakPid),
+    LocalCtx = riak_cs_wm_utils:ensure_doc(LocalCtx0, RcPid),
     Ctx = Ctx0#context{requested_perm=RequestedAccess,local_context=LocalCtx},
     authorize(RD, Ctx,
               LocalCtx#key_context.bucket_object,
@@ -78,7 +78,7 @@ allowed_methods() ->
 
 -spec content_types_provided(#wm_reqdata{}, #context{}) -> {[{string(), atom()}], #wm_reqdata{}, #context{}}.
 content_types_provided(RD, Ctx=#context{local_context=LocalCtx,
-                                        riakc_pid=RiakcPid}) ->
+                                        riak_client=RcPid}) ->
     Mfst = LocalCtx#key_context.manifest,
     %% TODO:
     %% As I understand S3, the content types provided
@@ -87,7 +87,7 @@ content_types_provided(RD, Ctx=#context{local_context=LocalCtx,
     %% `response-content-type` header in the request.
     Method = wrq:method(RD),
     if Method == 'GET'; Method == 'HEAD' ->
-            UpdLocalCtx = riak_cs_wm_utils:ensure_doc(LocalCtx, RiakcPid),
+            UpdLocalCtx = riak_cs_wm_utils:ensure_doc(LocalCtx, RcPid),
             ContentType = binary_to_list(Mfst?MANIFEST.content_type),
             case ContentType of
                 _ ->
@@ -170,10 +170,10 @@ accept_body(RD, Ctx=#context{local_context=#key_context{get_fsm_pid=GetFsmPid,
                              user=User,
                              acl=AclFromHeadersOrDefault,
                              requested_perm='WRITE_ACP',
-                             riakc_pid=RiakPid})  when Bucket /= undefined,
-                                                        KeyStr /= undefined,
-                                                        Mfst /= undefined,
-                                                        RiakPid /= undefined ->
+                             riak_client=RcPid})  when Bucket /= undefined,
+                                                      KeyStr /= undefined,
+                                                      Mfst /= undefined,
+                                                      RcPid /= undefined ->
     BFile_str = [Bucket, $,, KeyStr],
     UserName = riak_cs_wm_utils:extract_name(User),
     riak_cs_dtrace:dt_object_entry(?MODULE, <<"object_put_acl">>,
@@ -188,14 +188,14 @@ accept_body(RD, Ctx=#context{local_context=#key_context{get_fsm_pid=GetFsmPid,
                 riak_cs_acl_utils:validate_acl(
                   riak_cs_acl_utils:acl_from_xml(Body,
                                                  User?RCS_USER.key_id,
-                                                 RiakPid),
+                                                 RcPid),
                   User?RCS_USER.canonical_id)
         end,
     case AclRes of
         {ok, Acl} ->
             %% Write new ACL to active manifest
             Key = list_to_binary(KeyStr),
-            case riak_cs_utils:set_object_acl(Bucket, Key, Mfst, Acl, RiakPid) of
+            case riak_cs_utils:set_object_acl(Bucket, Key, Mfst, Acl, RcPid) of
                 ok ->
                     riak_cs_dtrace:dt_object_return(?MODULE, <<"object_put_acl">>,
                                                     [200], [UserName, BFile_str]),

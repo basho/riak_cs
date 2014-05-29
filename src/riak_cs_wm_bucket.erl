@@ -119,14 +119,14 @@ accept_body(RD, Ctx=#context{user=User,
                              user_object=UserObj,
                              bucket=Bucket,
                              response_module=ResponseMod,
-                             riakc_pid=RiakPid}) ->
+                             riak_client=RcPid}) ->
     riak_cs_dtrace:dt_bucket_entry(?MODULE, <<"bucket_create">>,
                                       [], [riak_cs_wm_utils:extract_name(User), Bucket]),
     case riak_cs_bucket:create_bucket(User,
                                       UserObj,
                                       Bucket,
                                       ACL,
-                                      RiakPid) of
+                                      RcPid) of
         ok ->
             riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_create">>,
                                                [200], [riak_cs_wm_utils:extract_name(User), Bucket]),
@@ -145,13 +145,13 @@ delete_resource(RD, Ctx=#context{user=User,
                                  user_object=UserObj,
                                  response_module=ResponseMod,
                                  bucket=Bucket,
-                                 riakc_pid=RiakPid}) ->
+                                 riak_client=RcPid}) ->
     riak_cs_dtrace:dt_bucket_entry(?MODULE, <<"bucket_delete">>,
                                       [], [riak_cs_wm_utils:extract_name(User), Bucket]),
     case riak_cs_bucket:delete_bucket(User,
                                       UserObj,
                                       Bucket,
-                                      RiakPid) of
+                                      RcPid) of
         ok ->
             riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_delete">>,
                                                [200], [riak_cs_wm_utils:extract_name(User), Bucket]),

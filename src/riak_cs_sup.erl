@@ -30,6 +30,8 @@
 %% supervisor callbacks
 -export([init/1]).
 
+-include("riak_cs.hrl").
+
 -define(OPTIONS, [connection_pools,
                   {cs_ip, "0.0.0.0"},
                   {cs_port, 80},

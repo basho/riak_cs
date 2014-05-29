@@ -48,11 +48,11 @@
 
 -record(state,
         {
-          riak,      %% the riak connection we're using
-          mon,       %% the monitor watching our riak connection
-          table,     %% the logger table being archived
-          slice,     %% the logger slice being archived
-          next      %% the next entry in the table to archive
+          riak_client, %% the riak connection we're using
+          mon,         %% the monitor watching our riak connection
+          table,       %% the logger table being archived
+          slice,       %% the logger slice being archived
+          next         %% the next entry in the table to archive
         }).
 
 %%%===================================================================
@@ -107,9 +107,9 @@ idle(_Request, State) ->
 
 archiving(continue, #state{next='$end_of_table'}=State) ->
     {stop, normal, State};
-archiving(continue, #state{riak=Riak, table=Table,
+archiving(continue, #state{riak_client=RcPid, table=Table,
                            next=Key, slice=Slice}=State) ->
-    case archive_user(Key, Riak, Table, Slice) of
+    case archive_user(Key, RcPid, Table, Slice) of
         retry ->
             %% wait for 'DOWN' to reconnect client,
             %% then retry this user
@@ -148,17 +148,17 @@ handle_info(_Info, StateName, State) ->
     {next_state, StateName, State}.
 
 terminate(Reason, StateName, #state{table=Table,
-                                riak=Riak,
-                                mon=Mon})
+                                    riak_client=RcPid,
+                                    mon=Mon})
   when Reason =:= normal; StateName =:= idle ->
-    cleanup(Table, Riak, Mon),
+    cleanup(Table, RcPid, Mon),
     ok;
 terminate(_Reason, _StateName, #state{table=Table,
-                                      riak=Riak,
+                                      riak_client=RcPid,
                                       mon=Mon}) ->
     _ = lager:warning("Access archiver stopping with work left to do;"
                       " logs will be dropped"),
-    cleanup(Table, Riak, Mon),
+    cleanup(Table, RcPid, Mon),
     ok.
 
 code_change(_OldVsn, StateName, State, _Extra) ->
@@ -199,10 +199,10 @@ continue(State) ->
     gen_fsm:send_event(self(), continue),
     {next_state, archiving, State}.
 
-archive_user(User, Riak, Table, Slice) ->
+archive_user(User, RcPid, Table, Slice) ->
     Accesses = [ A || {_, A} <- ets:lookup(Table, User) ],
     Record = riak_cs_access:make_object(User, Accesses, Slice),
-    store(User, Riak, Record, Slice).
+    store(User, RcPid, Record, Slice).
 
 store(User, Riak, Record, Slice) ->
     case catch riakc_pb_socket:put(Riak, Record) of

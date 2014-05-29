@@ -30,7 +30,7 @@
 -include_lib("webmachine/include/webmachine.hrl").
 
 -record(ping_context, {pool_pid=true :: boolean(),
-                       riakc_pid :: 'undefined' | pid()}).
+                       riak_client :: undefined | riak_client()}).
 
 %% -------------------------------------------------------------------
 %% Webmachine callbacks
@@ -54,10 +54,10 @@ allowed_methods(RD, Ctx) ->
 to_html(ReqData, Ctx) ->
     {"OK", ReqData, Ctx}.
 
-finish_request(RD, Ctx=#ping_context{riakc_pid=undefined}) ->
+finish_request(RD, Ctx=#ping_context{riak_client=undefined}) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"finish_request">>, [0], []),
     {true, RD, Ctx};
-finish_request(RD, Ctx=#ping_context{riakc_pid=RiakPid,
+finish_request(RD, Ctx=#ping_context{riak_client=RcPid,
                                      pool_pid=PoolPid}) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"finish_request">>, [1], []),
     case PoolPid of
@@ -67,7 +67,7 @@ finish_request(RD, Ctx=#ping_context{riakc_pid=RiakPid,
             riak_cs_riakc_pool_worker:stop(RiakPid)
     end,
     riak_cs_dtrace:dt_wm_return(?MODULE, <<"finish_request">>, [1], []),
-    {true, RD, Ctx#ping_context{riakc_pid=undefined}}.
+    {true, RD, Ctx#ping_context{riak_client=undefined}}.
 
 %% -------------------------------------------------------------------
 %% Internal functions
@@ -86,7 +86,7 @@ ping_timeout() ->
             Timeout
     end.
 
--spec get_connection_pid() -> {pid(), boolean()}.
+-spec get_connection_pid() -> {riak_client(), boolean()}.
 get_connection_pid() ->
     case poolboy_checkout() of
         full ->
@@ -121,4 +121,4 @@ riak_ping({Pid, PoolPid}, Ctx) ->
                     _ ->
                         false
                 end,
-    {Available, Ctx#ping_context{riakc_pid=Pid, pool_pid=PoolPid}}.
+    {Available, Ctx#ping_context{riak_client=RcPid, pool_pid=PoolPid}}.

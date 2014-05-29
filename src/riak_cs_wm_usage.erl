@@ -151,7 +151,7 @@
 
 -record(ctx, {
           auth_bypass :: boolean(),
-          riak :: pid(),
+          riak_client :: pid(),
           user :: rcs_user(),
           start_time :: calendar:datetime(),
           end_time :: calendar:datetime(),
@@ -202,8 +202,8 @@ malformed_request(RD, Ctx) ->
             {true, error_msg(RD, <<"Invalid start-time format">>), Ctx}
     end.
 
-resource_exists(RD, #ctx{riak=Riak}=Ctx) ->
-    case riak_cs_utils:get_user(user_key(RD), Riak) of
+resource_exists(RD, #ctx{riak_client=RcPid}=Ctx) ->
+    case riak_cs_utils:get_user(user_key(RD), RcPid) of
         {ok, {User, _UserObj}} ->
             {true, RD, Ctx#ctx{user=User}};
         {error, _} ->
@@ -238,8 +238,8 @@ generate_etag(RD, #ctx{etag=undefined}=Ctx) ->
 generate_etag(RD, #ctx{etag=Etag}=Ctx) ->
     {Etag, RD, Ctx}.
 
-forbidden(RD, #ctx{auth_bypass=AuthBypass, riak=Riak}=Ctx) ->
-    BogusContext = #context{auth_bypass=AuthBypass, riakc_pid=Riak},
+forbidden(RD, #ctx{auth_bypass=AuthBypass, riak_client=RcPid}=Ctx) ->
+    BogusContext = #context{auth_bypass=AuthBypass, riak_client=RcPid},
     Next = fun(NewRD, #context{user=User}) ->
                    forbidden(NewRD, Ctx, User, AuthBypass)
            end,
@@ -268,7 +268,7 @@ forbidden(RD, Ctx, User, false) ->
             end
     end.
 
-finish_request(RD, #ctx{riak=undefined}=Ctx) ->
+finish_request(RD, #ctx{riak_client=undefined}=Ctx) ->
     {true, RD, Ctx};
 finish_request(RD, #ctx{riak=Riak}=Ctx) ->
     riak_cs_utils:close_riak_connection(Riak),
@@ -393,11 +393,11 @@ maybe_access(RD, Ctx) ->
 maybe_storage(RD, Ctx) ->
     usage_if(RD, Ctx, "b", riak_cs_storage).
 
-usage_if(RD, #ctx{riak=Riak, start_time=Start, end_time=End},
+usage_if(RD, #ctx{riak_client=RcPid, start_time=Start, end_time=End},
          QParam, Module) ->
     case true_param(RD, QParam) of
         true ->
-            Module:get_usage(Riak, user_key(RD), Start, End);
+            Module:get_usage(RcPid, user_key(RD), Start, End);
         false ->
             not_requested
     end.

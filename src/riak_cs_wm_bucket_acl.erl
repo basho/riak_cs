@@ -75,10 +75,10 @@ authorize(RD, Ctx) ->
 to_xml(RD, Ctx=#context{start_time=StartTime,
                         user=User,
                         bucket=Bucket,
-                        riakc_pid=RiakPid}) ->
+                        riak_client=RcPid}) ->
     riak_cs_dtrace:dt_bucket_entry(?MODULE, <<"bucket_get_acl">>,
                                       [], [riak_cs_wm_utils:extract_name(User), Bucket]),
-    case riak_cs_acl:fetch_bucket_acl(Bucket, RiakPid) of
+    case riak_cs_acl:fetch_bucket_acl(Bucket, RcPid) of
         {ok, Acl} ->
             X = {riak_cs_xml:to_xml(Acl), RD, Ctx},
             ok = riak_cs_stats:update_with_start(bucket_get_acl, StartTime),
@@ -99,7 +99,7 @@ accept_body(RD, Ctx=#context{user=User,
                              user_object=UserObj,
                              acl=AclFromHeadersOrDefault,
                              bucket=Bucket,
-                             riakc_pid=RiakPid}) ->
+                             riak_client=RcPid}) ->
     riak_cs_dtrace:dt_bucket_entry(?MODULE, <<"bucket_put_acl">>,
                                       [], [riak_cs_wm_utils:extract_name(User), Bucket]),
     Body = binary_to_list(wrq:req_body(RD)),
@@ -111,7 +111,7 @@ accept_body(RD, Ctx=#context{user=User,
                 riak_cs_acl_utils:validate_acl(
                   riak_cs_acl_utils:acl_from_xml(Body,
                                                  User?RCS_USER.key_id,
-                                                 RiakPid),
+                                                 RcPid),
                   User?RCS_USER.canonical_id)
         end,
     case AclRes of
@@ -120,7 +120,7 @@ accept_body(RD, Ctx=#context{user=User,
                                                UserObj,
                                                Bucket,
                                                ACL,
-                                               RiakPid) of
+                                               RcPid) of
                 ok ->
                     riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_put_acl">>,
                                                     [200], [riak_cs_wm_utils:extract_name(User), Bucket]),

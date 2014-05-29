@@ -214,8 +214,8 @@ handle_create_user({error, {error_status, _, _, ErrorDoc}}, _User) ->
 handle_create_user({error, _}=Error, _User) ->
     Error.
 
-handle_update_user(ok, User, UserObj, RiakPid) ->
-    _ = save_user(User, UserObj, RiakPid),
+handle_update_user(ok, User, UserObj, RcPid) ->
+    _ = save_user(User, UserObj, RcPid),
     {ok, User};
 handle_update_user({error, {error_status, _, _, ErrorDoc}}, _User, _, _) ->
     case riak_cs_config:api() of
@@ -228,9 +228,9 @@ handle_update_user({error, _}=Error, _User, _, _) ->
     Error.
 
 %% @doc Update a Riak CS user record
--spec update_user(rcs_user(), riakc_obj:riakc_obj(), pid()) ->
+-spec update_user(rcs_user(), riakc_obj:riakc_obj(), riak_client()) ->
                          {ok, rcs_user()} | {error, term()}.
-update_user(User, UserObj, RiakPid) ->
+update_user(User, UserObj, RcPid) ->
     {StIp, StPort, StSSL} = stanchion_data(),
     case riak_cs_config:admin_creds() of
         {ok, AdminCreds} ->
@@ -242,7 +242,7 @@ update_user(User, UserObj, RiakPid) ->
                                         User?RCS_USER.key_id,
                                         binary_to_list(riak_cs_json:to_json(User)),
                                         Options),
-            handle_update_user(Result, User, UserObj, RiakPid);
+            handle_update_user(Result, User, UserObj, RcPid);
         {error, _}=Error ->
             Error
     end.
@@ -253,11 +253,11 @@ update_user(User, UserObj, RiakPid) ->
 %% Garbage collection. Otherwise returns an error. Note,
 %% {error, notfound} counts as success in this case,
 %% with the list of UUIDs being [].
--spec delete_object(binary(), binary(), pid()) ->
+-spec delete_object(binary(), binary(), riak_client()) ->
     {ok, [binary()]} | {error, term()}.
-delete_object(Bucket, Key, RiakcPid) ->
+delete_object(Bucket, Key, RcPid) ->
     ok = riak_cs_stats:update_with_start(object_delete, os:timestamp()),
-    riak_cs_gc:gc_active_manifests(Bucket, Key, RiakcPid).
+    riak_cs_gc:gc_active_manifests(Bucket, Key, RcPid).
 
 -spec encode_term(term()) -> binary().
 encode_term(Term) ->
@@ -270,17 +270,17 @@ encode_term(Term) ->
 
 %% @doc Return a list of keys for a bucket along
 %% with their associated objects.
--spec get_keys_and_manifests(binary(), binary(), pid()) -> {ok, [lfs_manifest()]} | {error, term()}.
-get_keys_and_manifests(BucketName, Prefix, RiakPid) ->
+-spec get_keys_and_manifests(binary(), binary(), riak_client()) -> {ok, [lfs_manifest()]} | {error, term()}.
+get_keys_and_manifests(BucketName, Prefix, RcPid) ->
     ManifestBucket = to_bucket_name(objects, BucketName),
-    case active_manifests(ManifestBucket, Prefix, RiakPid) of
+    case active_manifests(ManifestBucket, Prefix, RcPid) of
         {ok, KeyManifests} ->
             {ok, lists:keysort(1, KeyManifests)};
         {error, Reason} ->
             {error, Reason}
     end.
 
-active_manifests(ManifestBucket, Prefix, RiakPid) ->
+active_manifests(ManifestBucket, Prefix, RcPid) ->
     Input = case Prefix of
                 <<>> -> ManifestBucket;
                 _ ->
@@ -425,21 +425,21 @@ get_manifests_raw(RiakcPid, Bucket, Key) ->
     riakc_pb_socket:get(RiakcPid, ManifestBucket, Key).
 
 %% @doc
--spec get_manifests(pid(), binary(), binary()) ->
+-spec get_manifests(riak_client(), binary(), binary()) ->
     {ok, term(), term()} | {error, term()}.
-get_manifests(RiakcPid, Bucket, Key) ->
-    case get_manifests_raw(RiakcPid, Bucket, Key) of
+get_manifests(RcPid, Bucket, Key) ->
+    case get_manifests_raw(RcPid, Bucket, Key) of
         {ok, Object} ->
             Manifests = manifests_from_riak_object(Object),
-            _  = gc_deleted_while_writing_manifests(Object, Manifests, Bucket, Key, RiakcPid),
+            _  = gc_deleted_while_writing_manifests(Object, Manifests, Bucket, Key, RcPid),
             {ok, Object, Manifests};
         {error, _Reason}=Error ->
             Error
     end.
 
-gc_deleted_while_writing_manifests(Object, Manifests, Bucket, Key, RiakcPid) ->
+gc_deleted_while_writing_manifests(Object, Manifests, Bucket, Key, RcPid) ->
     UUIDs = riak_cs_manifest_utils:deleted_while_writing(Manifests),
-    riak_cs_gc:gc_specific_manifests(UUIDs, Object, Bucket, Key, RiakcPid).
+    riak_cs_gc:gc_specific_manifests(UUIDs, Object, Bucket, Key, RcPid).
 
 -spec manifests_from_riak_object(riakc_obj:riakc_obj()) -> orddict:orddict().
 manifests_from_riak_object(RiakObject) ->
@@ -487,10 +487,10 @@ handle_active_manifests({error, no_active_manifest}) ->
     {error, notfound}.
 
 %% @doc Retrieve a Riak CS user's information based on their id string.
--spec get_user('undefined' | list(), pid()) -> {ok, {rcs_user(), riakc_obj:riakc_obj()}} | {error, term()}.
-get_user(undefined, _RiakPid) ->
+-spec get_user('undefined' | list(), riak_client()) -> {ok, {rcs_user(), riakc_obj:riakc_obj()}} | {error, term()}.
+get_user(undefined, _RcPid) ->
     {error, no_user_key};
-get_user(KeyId, RiakPid) ->
+get_user(KeyId, RcPid) ->
     %% Check for and resolve siblings to get a
     %% coherent view of the bucket ownership.
     BinKey = list_to_binary(KeyId),
@@ -520,13 +520,13 @@ get_user(KeyId, RiakPid) ->
 %% @doc Retrieve a Riak CS user's information based on their
 %% canonical id string.
 %% @TODO May want to use mapreduce job for this.
--spec get_user_by_index(binary(), binary(), pid()) ->
+-spec get_user_by_index(binary(), binary(), riak_client()) ->
                                {ok, {rcs_user(), term()}} |
                                {error, term()}.
-get_user_by_index(Index, Value, RiakPid) ->
-    case get_user_index(Index, Value, RiakPid) of
+get_user_by_index(Index, Value, RcPid) ->
+    case get_user_index(Index, Value, RcPid) of
         {ok, KeyId} ->
-            get_user(KeyId, RiakPid);
+            get_user(KeyId, RcPid);
         {error, _}=Error1 ->
             Error1
     end.
@@ -733,11 +733,11 @@ save_user(User, UserObj, RiakPid) ->
 
 %% @doc Set the ACL for an object. Existing ACLs are only
 %% replaced, they cannot be updated.
--spec set_object_acl(binary(), binary(), lfs_manifest(), acl(), pid()) ->
+-spec set_object_acl(binary(), binary(), lfs_manifest(), acl(), riak_client()) ->
             ok | {error, term()}.
-set_object_acl(Bucket, Key, Manifest, Acl, RiakPid) ->
+set_object_acl(Bucket, Key, Manifest, Acl, RcPid) ->
     StartTime = os:timestamp(),
-    {ok, ManiPid} = riak_cs_manifest_fsm:start_link(Bucket, Key, RiakPid),
+    {ok, ManiPid} = riak_cs_manifest_fsm:start_link(Bucket, Key, RcPid),
     _ActiveMfst = riak_cs_manifest_fsm:get_active_manifest(ManiPid),
     UpdManifest = Manifest?MANIFEST{acl=Acl},
     Res = riak_cs_manifest_fsm:update_manifest_with_confirmation(ManiPid, UpdManifest),
@@ -800,9 +800,9 @@ update_obj_value(Obj, Value) when is_binary(Value) ->
 %% @private
 %% `Bucket' should be the raw bucket name,
 %% we'll take care of calling `to_bucket_name'
--spec key_exists(pid(), binary(), binary()) -> boolean().
-key_exists(RiakcPid, Bucket, Key) ->
-    key_exists_handle_get_manifests(get_manifests(RiakcPid, Bucket, Key)).
+-spec key_exists(riak_client(), binary(), binary()) -> boolean().
+key_exists(RcPid, Bucket, Key) ->
+    key_exists_handle_get_manifests(get_manifests(RcPid, Bucket, Key)).
 
 %% @doc Return `stanchion' configuration data.
 -spec stanchion_data() -> {string(), pos_integer(), boolean()}.
