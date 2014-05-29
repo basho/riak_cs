@@ -77,8 +77,6 @@ user_listing_test(ExpectedUsers, UserConfig, Node, ContentType) ->
     Port = rtcs:cs_port(Node),
     Users = parse_user_info(
               rtcs:list_users(UserConfig, Port, Resource, ContentType)),
-    lager:log(warning, self(), "ExpectedUsers: ~p~n", [ExpectedUsers]),
-    lager:log(warning, self(), "Users: ~p~n", [Users]),
     ?assertEqual(ExpectedUsers, Users).
 
 update_user_json_test_case(AdminConfig, Node) ->
