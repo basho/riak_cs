@@ -813,156 +813,7 @@ eval_part_sizes_wrapper(L) ->
             false
     end.
 
--ifdef(EQC).
-
-eval_part_sizes_eqc_test() ->
-    true = eqc:quickcheck(eqc:numtests(500, prop_part_sizes())).
-
-prop_part_sizes() ->
-    Min = ?MIN_MP_PART_SIZE,
-    Min_1 = Min - 1,
-    MinMinus100 = Min - 100,
-    MinPlus100 = Min + 100,
-    ?FORALL({L, Last, Either},
-            {list(choose(Min, MinPlus100)), choose(0, Min_1), choose(MinMinus100, MinPlus100)},
-            true == eval_part_sizes_wrapper(L ++ [Last]) andalso
-            false == eval_part_sizes_wrapper(L ++ [Min_1] ++ L ++ [Either])
-           ).
-
--endif. % EQC
-
-%% The test_0() and test_1() commands can be used while Riak CS is running.
-%% In fact, it's preferred (?) to do it that way because then all of the
-%% Poolboy infrastructure is already set up.  However, then there's the
-%% problem of getting the EUnit-compiled version of this module!
-%% So, there are a couple of work-arounds:
-%%
-%% 1. If Riak CS is running via "make stage" or "make rel", do at the console:
-%%       code:add_patha("../../.eunit").
-%%       l(riak_cs_mp_utils).
-%%       code:which(riak_cs_mp_utils).    % To verify EUnit version is loaded
-%%
-%% 2. Run without Riak CS:
-%%       erl -pz .eunit ebin deps/*/ebin
-%%    ... and then...
-%%       riak_cs_mp_utils:test_setup().   % Scott's preferred environment
-%%    or
-%%       riak_cs_mp_utils:test_setup(RiakIpAddress, RiakPbPortNumber).
-%%
-%% Finally, to run the tests:
-%%       ok = riak_cs_mp_utils:test_0().
-%%       ok = riak_cs_mp_utils:test_1().
-
-test_setup() ->
-    test_setup("127.0.0.1", 8081).
-
-test_setup(RiakIp, RiakPbPort) ->
-    PoolList = [{request_pool,{128,0}},{bucket_list_pool,{5,0}}],
-    WorkerStop = fun(Worker) -> riak_cs_riakc_pool_worker:stop(Worker) end,
-    PoolSpecs = [{Name,
-                  {poolboy, start_link, [[{name, {local, Name}},
-                                          {worker_module, riak_cs_riakc_pool_worker},
-                                          {size, Workers},
-                                          {max_overflow, Overflow},
-                                          {stop_fun, WorkerStop}]]},
-                  permanent, 5000, worker, [poolboy]}
-                 || {Name, {Workers, Overflow}} <- PoolList],
-    application:set_env(riak_cs, riak_ip, RiakIp),
-    application:set_env(riak_cs, riak_pb_port, RiakPbPort),
-    [{ok, _}, {ok, _}] =
-        [erlang:apply(M, F, A) || {_, {M, F, A}, _, _, _, _} <- PoolSpecs],
-    application:start(folsom),
-    riak_cs_stats:start_link(),
-    ok.
-
-test_0() ->
-    test_cleanup_users(),
-    test_cleanup_data(),
-    test_create_users(),
-
-    ID1 = test_initiate(test_user1()),
-    ID2 = test_initiate(test_user2()),
-    _ID1b = test_initiate(test_user1()),
-
-    {ok, {X1, _}} = test_list_uploadids(test_user1(), []),
-    3 = length(X1),
-    {ok, {X2, _}} = test_list_uploadids(test_user2(), []),
-    1 = length(X2),
-    {error, access_denied} = test_list_uploadids(test_userNONE(), []),
-
-    {error, access_denied} = test_abort(ID1, test_user2()),
-    {error,notfound} = test_abort(<<"no such upload_id">>, test_user2()),
-    ok = test_abort(ID1, test_user1()),
-    {error, notfound} = test_abort(ID1, test_user1()),
-
-    {error, access_denied} = test_complete(ID2, [], test_user1()),
-    {error,notfound} = test_complete(<<"no such upload_id">>, [], test_user2()),
-    ok = test_complete(ID2, [], test_user2()),
-    {error, notfound} = test_complete(ID2, [], test_user2()),
-
-    {ok, {X3, _}} = test_list_uploadids(test_user1(), []),
-    1 = length(X3),
-    {ok, {X4, _}} = test_list_uploadids(test_user2(), []),
-    0 = length(X4),
-
-    ok.
-
-test_1() ->
-    test_cleanup_users(),
-    test_cleanup_data(),
-    test_create_users(),
-
-    ID1 = test_initiate(test_user1()),
-    Bytes = 50,
-    {ok, _PartID1, MD51} = test_upload_part(ID1, 1, <<42:(8*Bytes)>>, test_user1()),
-    {ok, _PartID4, MD54} = test_upload_part(ID1, 4, <<43:(8*Bytes)>>, test_user1()),
-    {ok, _PartID9, MD59} = test_upload_part(ID1, 9, <<44:(8*Bytes)>>, test_user1()),
-    ok = test_complete(ID1, [{1, MD51}, {4, MD54}, {9, MD59}], test_user1()).
-
-test_initiate(User) ->
-    {ok, ID} = initiate_multipart_upload(
-                 test_bucket1(), test_key1(), <<"text/plain">>, User, []),
-    ID.
-
-test_abort(UploadId, User) ->
-    abort_multipart_upload(test_bucket1(), test_key1(), UploadId, User).
-
-test_complete(UploadId, PartETags, User) ->
-    complete_multipart_upload(test_bucket1(), test_key1(), UploadId, PartETags, User).
-
-test_list_uploadids(User, Opts) ->
-    list_multipart_uploads(test_bucket1(), User, Opts).
-
-test_upload_part(UploadId, PartNumber, Blob, User) ->
-    Size = byte_size(Blob),
-    {upload_part_ready, PartUUID, PutPid} =
-        upload_part(test_bucket1(), test_key1(), UploadId, PartNumber, Size, User),
-    {ok, MD5} = upload_part_1blob(PutPid, Blob),
-    {error, notfound} =
-        upload_part_finished(<<"no-such-bucket">>, test_key1(), UploadId,
-                             PartNumber, PartUUID, MD5, User),
-    {error, notfound} =
-        upload_part_finished(test_bucket1(), <<"no-such-key">>, UploadId,
-                             PartNumber, PartUUID, MD5, User),
-    {U1, U2, U3} = User,
-    NoSuchUser = {U1 ++ "foo", U2 ++ "foo", U3 ++ "foo"},
-    {error, access_denied} =
-        upload_part_finished(test_bucket1(), test_key1(), UploadId,
-                             PartNumber, PartUUID, MD5, NoSuchUser),
-    {error, notfound} =
-        upload_part_finished(test_bucket1(), test_key1(), <<"no-such-upload-id">>,
-                             PartNumber, PartUUID, MD5, User),
-    {error, notfound} =
-         upload_part_finished(test_bucket1(), test_key1(), UploadId,
-                              PartNumber, <<"no-such-part-id">>, MD5, User),
-    ok = upload_part_finished(test_bucket1(), test_key1(), UploadId,
-                              PartNumber, PartUUID, MD5, User),
-    {error, notfound} =
-         upload_part_finished(test_bucket1(), test_key1(), UploadId,
-                              PartNumber, PartUUID, MD5, User),
-    {ok, PartUUID, MD5}.
-
-test_comb_parts() ->
+comb_parts_test() ->
     Num = 5,
     GoodETags = [{X, <<(X+$0):8>>} || X <- lists:seq(1, Num)],
     GoodDones = [{ETag, ETag} || {_, ETag} <- GoodETags],
@@ -997,58 +848,22 @@ test_comb_parts() ->
 
     ok.
 
-test_create_users() ->
-    %% info for test_user1()
-    %% NOTE: This user has a "test" bucket in its buckets list,
-    %%       therefore test_user1() is the owner of the "test" bucket.
-    ok = test_put(<<"moss.users">>, <<"J2IP6WGUQ_FNGIAN9AFI">>, <<131,104,9,100,0,11,114,99,115,95,117,115,101,114,95,118,50,107,0,7,102,111,111,32,98,97,114,107,0,6,102,111,111,98,97,114,107,0,18,102,111,111,98,97,114,64,101,120,97,109,112,108,101,46,99,111,109,107,0,20,74,50,73,80,54,87,71,85,81,95,70,78,71,73,65,78,57,65,70,73,107,0,40,109,98,66,45,49,86,65,67,78,115,114,78,48,121,76,65,85,83,112,67,70,109,88,78,78,66,112,65,67,51,88,48,108,80,109,73,78,65,61,61,107,0,64,49,56,57,56,51,98,97,48,101,49,54,101,49,56,97,50,98,49,48,51,99,97,49,54,98,56,52,102,97,100,57,51,100,49,50,97,50,102,98,101,100,49,99,56,56,48,52,56,57,51,49,102,98,57,49,98,48,98,56,52,52,97,100,51,108,0,0,0,1,104,6,100,0,14,109,111,115,115,95,98,117,99,107,101,116,95,118,49,107,0,4,116,101,115,116,100,0,7,99,114,101,97,116,101,100,107,0,24,50,48,49,50,45,49,50,45,48,56,84,48,48,58,51,53,58,49,57,46,48,48,48,90,104,3,98,0,0,5,74,98,0,14,36,199,98,0,6,176,191,100,0,9,117,110,100,101,102,105,110,101,100,106,100,0,7,101,110,97,98,108,101,100>>),
-    %% info for test_user2()
-    ok = test_put(<<"moss.users">>, <<"LAHU4GBJIRQD55BJNET7">>, <<131,104,9,100,0,11,114,99,115,95,117,115,101,114,95,118,50,107,0,8,102,111,111,32,98,97,114,50,107,0,7,102,111,111,98,97,114,50,107,0,19,102,111,111,98,97,114,50,64,101,120,97,109,112,108,101,46,99,111,109,107,0,20,76,65,72,85,52,71,66,74,73,82,81,68,53,53,66,74,78,69,84,55,107,0,40,121,104,73,48,56,73,122,50,71,112,55,72,100,103,85,70,50,101,103,85,49,83,99,82,53,97,72,50,49,85,116,87,110,87,110,99,69,103,61,61,107,0,64,51,50,57,99,51,51,50,98,57,101,102,102,52,57,56,57,57,99,50,99,54,101,53,49,56,53,100,101,55,102,100,57,55,99,100,99,54,100,54,52,54,99,53,53,100,51,101,56,52,101,102,49,57,48,48,54,99,55,52,54,99,51,54,56,106,100,0,7,101,110,97,98,108,101,100>>),
-    ok.
+-ifdef(EQC).
 
-test_bucket1() ->
-    <<"test">>.
+eval_part_sizes_eqc_test()                                                              ->
+    true = eqc:quickcheck(eqc:numtests(500, prop_part_sizes())).
 
-test_key1() ->
-    <<"mp0">>.
+prop_part_sizes()                                                                       ->
+    Min = ?MIN_MP_PART_SIZE,
+    Min_1 = Min - 1,
+    MinMinus100 = Min - 100,
+    MinPlus100 = Min + 100,
+    ?FORALL({L, Last, Either},
+            {list(choose(Min, MinPlus100)), choose(0, Min_1), choose(MinMinus100, MinPlus100)},
+            true == eval_part_sizes_wrapper(L ++ [Last]) andalso
+            false == eval_part_sizes_wrapper(L ++ [Min_1] ++ L ++ [Either])
+           ).
 
-test_cleanup_data() ->
-    _ = test_delete(test_hash_objects_bucket(test_bucket1()), test_key1()),
-    ok.
-
-test_cleanup_users() ->
-    _ = test_delete(<<"moss.users">>, list_to_binary(element(3, test_user1()))),
-    _ = test_delete(<<"moss.users">>, list_to_binary(element(3, test_user2()))),
-    ok.
-
-test_hash_objects_bucket(Bucket) ->
-    riak_cs_utils:to_bucket_name(objects, Bucket).
-
-test_delete(Bucket, Key) ->
-    {ok, RiakcPid} = riak_cs_utils:riak_connection(),
-    Res = riakc_pb_socket:delete(RiakcPid, Bucket, Key),
-    riak_cs_utils:close_riak_connection(RiakcPid),
-    Res.
-
-test_put(Bucket, Key, Value) ->
-    {ok, RiakcPid} = riak_cs_utils:riak_connection(),
-    Res = riakc_pb_socket:put(RiakcPid, riakc_obj:new(Bucket, Key, Value)),
-    riak_cs_utils:close_riak_connection(RiakcPid),
-    Res.
-
-test_user1() ->
-    {"foobar", "18983ba0e16e18a2b103ca16b84fad93d12a2fbed1c88048931fb91b0b844ad3", "J2IP6WGUQ_FNGIAN9AFI"}.
-
-test_user1_secret() ->
-    "mbB-1VACNsrN0yLAUSpCFmXNNBpAC3X0lPmINA==".
-
-test_user2() ->
-    {"foobar2", "329c332b9eff49899c2c6e5185de7fd97cdc6d646c55d3e84ef19006c746c368", "LAHU4GBJIRQD55BJNET7"}.
-
-test_user2_secret() ->
-    "yhI08Iz2Gp7HdgUF2egU1ScR5aH21UtWnWncEg==".
-
-test_userNONE() ->
-    {"bar", "bar", "bar"}.
+-endif. % EQC
 
 -endif.

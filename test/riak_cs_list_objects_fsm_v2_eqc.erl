@@ -301,17 +301,17 @@ keys_in_list({CPrefixes, Contents}) ->
     {CPrefixes, [Key || #list_objects_key_content_v1{key=Key} <- Contents]}.
 
 list_manifests(Manifests, Opts, UserPage, BatchSize) ->
-    {ok, DummyRiakc} = riak_cs_dummy_riakc_list_objects_v2:start_link([Manifests]),
-    list_manifests_to_the_end(DummyRiakc, Opts, UserPage, BatchSize, [], [], []).
+    {ok, DummyRc} = riak_cs_dummy_riak_client_list_objects_v2:start_link([Manifests]),
+    list_manifests_to_the_end(DummyRc, Opts, UserPage, BatchSize, [], [], []).
 
-list_manifests_to_the_end(DummyRiakc, Opts, UserPage, BatchSize, CPrefixesAcc, ContestsAcc, MarkerAcc) ->
+list_manifests_to_the_end(DummyRc, Opts, UserPage, BatchSize, CPrefixesAcc, ContestsAcc, MarkerAcc) ->
     Bucket = <<"bucket">>,
     %% TODO: Generator?
     %% delimeter, marker and prefix should be generated?
     ListKeysRequest = riak_cs_list_objects:new_request(Bucket,
                                                        UserPage,
                                                        Opts),
-    {ok, FsmPid} = riak_cs_list_objects_fsm_v2:start_link(DummyRiakc, ListKeysRequest, BatchSize),
+    {ok, FsmPid} = riak_cs_list_objects_fsm_v2:start_link(DummyRc, ListKeysRequest, BatchSize),
     {ok, ListResp} = riak_cs_list_objects_utils:get_object_list(FsmPid),
     CommonPrefixes = ListResp?LORESP.common_prefixes,
     Contents = ListResp?LORESP.contents,
@@ -320,12 +320,12 @@ list_manifests_to_the_end(DummyRiakc, Opts, UserPage, BatchSize, CPrefixesAcc, C
     case ListResp?LORESP.is_truncated of
         true ->
             Marker = create_marker(ListResp),
-            list_manifests_to_the_end(DummyRiakc, update_marker(Marker, Opts),
+            list_manifests_to_the_end(DummyRc, update_marker(Marker, Opts),
                                       UserPage, BatchSize,
                                       NewCPrefixAcc, NewContentsAcc,
                                       [Marker | MarkerAcc]);
         false ->
-            riak_cs_dummy_riakc_list_objects_v2:stop(DummyRiakc),
+            riak_cs_dummy_riak_client_list_objects_v2:stop(DummyRc),
             %% TODO: Should assert every result but last has exactly max-results?
             {lists:append(lists:reverse(NewCPrefixAcc)),
              lists:append(lists:reverse(NewContentsAcc))}

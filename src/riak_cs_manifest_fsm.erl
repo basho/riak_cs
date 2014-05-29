@@ -160,8 +160,8 @@ init([Bucket, Key, RcPid]) ->
 init([test, Bucket, Key]) ->
     %% creating the "mock" riakc_pb_socket
     %% gen_server here
-    {ok, Pid} = riakc_pb_socket_fake:start_link(),
-    {ok, waiting_command, #state{bucket=Bucket, key=Key, riakc_pid=Pid}}.
+    {ok, FakePbc} = riakc_pb_socket_fake:start_link(),
+    {ok, waiting_command, #state{bucket=Bucket, key=Key, riak_client=FakePbc}}.
 
 %% This clause is for adding a new
 %% manifest that doesn't exist yet.
