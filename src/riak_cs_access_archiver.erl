@@ -98,9 +98,9 @@ status(Pid, Timeout) ->
 %%%===================================================================
 
 init([]) ->
-    {ok, Riak} = riak_connection(),
-    Mon = erlang:monitor(process, Riak),
-    {ok, idle, #state{riak=Riak, mon=Mon}}.
+    {ok, RcPid} = start_riak_client(),
+    Mon = erlang:monitor(process, RcPid),
+    {ok, idle, #state{riak_client=RcPid, mon=Mon}}.
 
 idle(_Request, State) ->
     {next_state, idle, State}.
@@ -139,11 +139,11 @@ handle_sync_event(_Event, _From, StateName, State) ->
 
 handle_info({'ETS-TRANSFER', Table, _From, Slice}, _StateName, State) ->
     continue(State#state{next=ets:first(Table), table=Table, slice=Slice});
-handle_info({'DOWN', _Mon, process, _Riak, _Reason}, StateName, State) ->
-    {ok, NewRiak} = riak_connection(),
-    NewMon = erlang:monitor(process, NewRiak),
+handle_info({'DOWN', _Mon, process, _RcPid, _Reason}, StateName, State) ->
+    {ok, NewRcPid} = start_riak_client(),
+    NewMon = erlang:monitor(process, NewRcPid),
     gen_fsm:send_event(self(), continue),
-    {next_state, StateName, State#state{riak=NewRiak, mon=NewMon}};
+    {next_state, StateName, State#state{riak_client=NewRcPid, mon=NewMon}};
 handle_info(_Info, StateName, State) ->
     {next_state, StateName, State}.
 
@@ -168,17 +168,13 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
-riak_connection() ->
-    {Host, Port} = riak_cs_config:riak_host_port(),
-    StartOptions = [{connect_timeout, riak_cs_config:connect_timeout()},
-                    {auto_reconnect, true}],
-    riakc_pb_socket:start_link(Host, Port, StartOptions).
+start_riak_client() ->
+    riak_cs_riak_client:start_link([]).
 
-
-cleanup(Table, Pid, Mon) ->
+cleanup(Table, RcPid, Mon) ->
     cleanup_table(Table),
     cleanup_monitor(Mon),
-    cleanup_socket(Pid).
+    cleanup_riak_client(RcPid).
 
 cleanup_table(undefined) ->
     ok;
@@ -190,10 +186,10 @@ cleanup_monitor(undefined) ->
 cleanup_monitor(Mon) ->
     erlang:demonitor(Mon, [flush]).
 
-cleanup_socket(undefined) ->
+cleanup_riak_client(undefined) ->
     ok;
-cleanup_socket(Pid) ->
-    riakc_pb_socket:stop(Pid).
+cleanup_riak_client(RcPid) ->
+    riak_cs_riak_client:stop(RcPid).
 
 continue(State) ->
     gen_fsm:send_event(self(), continue),

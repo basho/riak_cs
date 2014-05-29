@@ -154,7 +154,7 @@ etag_from_binary_no_quotes(Binary) ->
 %% connection pool.
 -spec close_riak_connection(pid()) -> ok.
 close_riak_connection(Pid) ->
-    close_riak_connection(request_pool, Pid).
+    close_riak_connection(riak_cs_riak_client:pbc_pool_name(master), Pid).
 
 %% @doc Release a protobufs connection from the specified
 %% connection pool.

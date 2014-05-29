@@ -425,15 +425,12 @@ handle_info(_Info, State) ->
 %% @spec terminate(Reason, State) -> void()
 %% @end
 %%--------------------------------------------------------------------
-terminate(_Reason, #state{riakc_pid=RiakcPid,
-                          close_riak_connection=CloseConn}) ->
-    case CloseConn of
-        true ->
-            riak_cs_utils:close_riak_connection(RiakcPid),
-            ok;
-        false ->
-            ok
-    end.
+terminate(_Reason, #state{close_riak_connection=false}) ->
+    ok;
+terminate(_Reason, #state{riak_client=RcPid,
+                          close_riak_connection=true}) ->
+
+    ok = riak_cs_riak_client:checkin(request_pool, RcPid).
 
 %%--------------------------------------------------------------------
 %% @private

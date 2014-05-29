@@ -210,7 +210,7 @@ list_multipart_uploads(Bucket, {_Display, _Canon, CallerKeyId} = Caller,
             catch error:{badmatch, {m_icbo, _}} ->
                     {error, access_denied}
             after
-                wrap_close_riak_connection(RiakcPid)
+                wrap_close_riak_client(RcPid)
             end;
         Else ->
             Else
@@ -302,8 +302,8 @@ user_rec_to_3tuple(U) ->
 write_new_manifest(M, Opts, RcPidUnW) ->
     MpM = get_mp_manifest(M),
     Owner = MpM?MULTIPART_MANIFEST.owner,
-    case wrap_riak_connection(RiakcPidUnW) of
-        {ok, RiakcPid} ->
+    case wrap_riak_client(RcPidUnW) of
+        {ok, RcPid} ->
             try
                 Acl = case proplists:get_value(acl, Opts) of
                           undefined ->
@@ -326,7 +326,7 @@ write_new_manifest(M, Opts, RcPidUnW) ->
                     ok = riak_cs_manifest_fsm:stop(ManiPid)
                 end
             after
-                wrap_close_riak_connection(RiakcPid)
+                wrap_close_riak_client(RcPid)
             end;
         Else ->
             Else
@@ -366,7 +366,7 @@ do_part_common(Op, Bucket, Key, UploadId, {_,_,CallerKeyId} = _Caller, Props, Rc
                   error:{badmatch, {m_umwc, _}} ->
                     {error, riak_unavailable}
             after
-                wrap_close_riak_connection(RiakcPid)
+                wrap_close_riak_client(RcPid)
             end;
         Else ->
             Else
@@ -750,25 +750,25 @@ eval_part_sizes(L) ->
 %%
 %% If we're to allocate our own Riak client pids, we use the atom 'nopid'.
 
-wrap_riak_connection(nopid) ->
-    case riak_cs_utils:riak_connection() of
-        {ok, RiakcPid} ->
-            {ok, {local_pid, RiakcPid}};
+wrap_riak_client(nopid) ->
+    case riak_cs_riak_client:checkout() of
+        {ok, RcPid} ->
+            {ok, {local_pid, RcPid}};
         Else ->
             Else
     end;
-wrap_riak_connection(RiakcPid) ->
-    {ok, {remote_pid, RiakcPid}}.
+wrap_riak_client(RcPid) ->
+    {ok, {remote_pid, RcPid}}.
 
-wrap_close_riak_connection({local_pid, RiakcPid}) ->
-    riak_cs_utils:close_riak_connection(RiakcPid);
-wrap_close_riak_connection({remote_pid, _RiakcPid}) ->
+wrap_close_riak_client({local_pid, RcPid}) ->
+    riak_cs_riak_client:checkin(RcPid);
+wrap_close_riak_client({remote_pid, _RcPid}) ->
     ok.
 
-get_riakc_pid({local_pid, RiakcPid}) ->
-    RiakcPid;
-get_riakc_pid({remote_pid, RiakcPid}) ->
-    RiakcPid.
+get_riak_client_pid({local_pid, RcPid}) ->
+    RcPid;
+get_riak_client_pid({remote_pid, RcPid}) ->
+    RcPid.
 
 -spec get_mp_manifest(lfs_manifest()) -> multipart_manifest() | 'undefined'.
 get_mp_manifest(?MANIFEST{props = Props}) when is_list(Props) ->

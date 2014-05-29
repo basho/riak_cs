@@ -173,9 +173,9 @@ init(Config) ->
     {ok, #ctx{auth_bypass=AuthBypass}}.
 
 service_available(RD, Ctx) ->
-    case riak_cs_utils:riak_connection() of
-        {ok, Riak} ->
-            {true, RD, Ctx#ctx{riak=Riak}};
+    case riak_cs_riak_client:checkout() of
+        {ok, RcPid} ->
+            {true, RD, Ctx#ctx{riak_client=RcPid}};
         {error, _} ->
             {false, error_msg(RD, <<"Usage database connection failed">>), Ctx}
     end.
@@ -270,9 +270,9 @@ forbidden(RD, Ctx, User, false) ->
 
 finish_request(RD, #ctx{riak_client=undefined}=Ctx) ->
     {true, RD, Ctx};
-finish_request(RD, #ctx{riak=Riak}=Ctx) ->
-    riak_cs_utils:close_riak_connection(Riak),
-    {true, RD, Ctx#ctx{riak=undefined}}.
+finish_request(RD, #ctx{riak_client=RcPid}=Ctx) ->
+    riak_cs_riak_client:checkin(RcPid),
+    {true, RD, Ctx#ctx{riak_client=undefined}}.
 
 %% JSON Production %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 produce_json(RD, #ctx{body=undefined}=Ctx) ->

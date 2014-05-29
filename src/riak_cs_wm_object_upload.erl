@@ -29,8 +29,7 @@
          post_is_create/2,
          process_post/2,
          multiple_choices/2,
-         valid_entity_length/2,
-         finish_request/2]).
+         valid_entity_length/2]).
 
 -include("riak_cs.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
@@ -141,10 +140,6 @@ valid_entity_length(RD, Ctx=#context{local_context=LocalCtx}) ->
         _ ->
             {true, RD, Ctx}
     end.
-
-finish_request(RD, Ctx) ->
-    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"finish_request">>, [0], []),
-    {true, RD, Ctx}.
 
 -spec content_types_provided(#wm_reqdata{}, #context{}) -> {[{string(), atom()}], #wm_reqdata{}, #context{}}.
 content_types_provided(RD, Ctx=#context{}) ->

@@ -32,8 +32,7 @@
          valid_entity_length/2,
          delete_resource/2,
          accept_body/2,
-         to_xml/2,
-         finish_request/2]).
+         to_xml/2]).
 
 -include("riak_cs.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
@@ -165,10 +164,6 @@ delete_resource(RD, Ctx=#context{local_context=LocalCtx,
                     riak_cs_s3_response:api_error(Reason, RD, Ctx)
             end
     end.
-
-finish_request(RD, Ctx) ->
-    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"finish_request">>, [0], []),
-    {true, RD, Ctx}.
 
 -spec content_types_provided(#wm_reqdata{}, #context{}) -> {[{string(), atom()}], #wm_reqdata{}, #context{}}.
 content_types_provided(RD, Ctx=#context{}) ->

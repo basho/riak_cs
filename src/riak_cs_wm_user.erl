@@ -190,7 +190,7 @@ finish_request(RD, Ctx=#context{riak_client=undefined}) ->
     {true, RD, Ctx};
 finish_request(RD, Ctx=#context{riak_client=RcPid}) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"finish_request">>, [1], []),
-    riak_cs_utils:close_riak_connection(RiakPid),
+    riak_cs_riak_client:checkin(RcPid),
     riak_cs_dtrace:dt_wm_return(?MODULE, <<"finish_request">>, [1], []),
     {true, RD, Ctx#context{riak_client=undefined}}.
 

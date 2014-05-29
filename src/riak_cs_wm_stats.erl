@@ -79,7 +79,7 @@ service_available(RD, Ctx) ->
         false ->
             {false, RD, Ctx};
         true ->
-            case riak_cs_utils:riak_connection() of
+            case riak_cs_riak_client:checkout() of
                 {ok, Pid} ->
                     {true, RD, Ctx#context{riak_client = Pid}};
                 _ ->
@@ -104,7 +104,7 @@ finish_request(RD, #context{riak_client=undefined}=Ctx) ->
     {true, RD, Ctx};
 finish_request(RD, #context{riak_client=RcPid}=Ctx) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"finish_request">>, [1], []),
-    riak_cs_utils:close_riak_connection(RiakPid),
+    riak_cs_riak_client:checkin(RcPid),
     riak_cs_dtrace:dt_wm_return(?MODULE, <<"finish_request">>, [1], []),
     {true, RD, Ctx#context{riak_client=undefined}}.
 

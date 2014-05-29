@@ -149,8 +149,8 @@ calculating(continue, #state{batch=[], current=Current}=State) ->
     %% finished with this batch
     _ = lager:info("Finished storage calculation in ~b seconds.",
                    [elapsed(State#state.batch_start)]),
-    riak_cs_riakc_pool_worker:stop(State#state.riak),
-    NewState = State#state{riak=undefined,
+    riak_cs_riak_client:stop(State#state.riak_client),
+    NewState = State#state{riak_client=undefined,
                            last=Current,
                            current=undefined},
     {next_state, idle, NewState};
@@ -204,8 +204,8 @@ calculating(cancel_batch, _From, #state{current=Current}=State) ->
     %% finished with this batch
     _ = lager:info("Canceled storage calculation after ~b seconds.",
                    [elapsed(State#state.batch_start)]),
-    riak_cs_riakc_pool_worker:stop(State#state.riak),
-    NewState = State#state{riak=undefined,
+    riak_cs_riak_client:stop(State#state.riak_client),
+    NewState = State#state{riak_client=undefined,
                            last=Current,
                            current=undefined,
                            batch=[]},
@@ -340,13 +340,13 @@ start_batch(Options, Time, State) ->
     %% pool is empty; pool workers just happen to be literally the
     %% socket process, so "starting" one here is the same as opening a
     %% connection, and avoids duplicating the configuration lookup code
-    {ok, Riak} = riak_cs_riakc_pool_worker:start_link([]),
-    Batch = fetch_user_list(Riak),
+    {ok, RcPid} = riak_cs_riak_client:start_link([]),
+    Batch = fetch_user_list(RcPid),
 
     gen_fsm:send_event(?SERVER, continue),
     State#state{batch_start=BatchStart,
                 current=Time,
-                riak=Riak,
+                riak_client=RcPid,
                 batch=Batch,
                 batch_count=0,
                 batch_skips=0,

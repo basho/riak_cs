@@ -159,7 +159,9 @@ produce_body(RD, Ctx=#context{local_context=LocalCtx,
             produce_body(RD, Ctx, RangeIndexes, RespRange)
     end.
 
-produce_body(RD, Ctx=#context{local_context=LocalCtx,
+produce_body(RD, Ctx=#context{rc_pool=RcPool,
+                              riak_client=RcPid,
+                              local_context=LocalCtx,
                               start_time=StartTime,
                               user=User},
              {Start, End}, RespRange) ->

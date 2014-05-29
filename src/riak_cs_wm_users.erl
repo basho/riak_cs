@@ -95,21 +95,22 @@ produce_xml(RD, Ctx=#context{riak_client=RcPid}) ->
 
 finish_request(RD, Ctx=#context{riak_client=undefined}) ->
     {true, RD, Ctx};
-finish_request(RD, Ctx=#context{riakc_pid=RiakPid}) ->
-    riak_cs_utils:close_riak_connection(RiakPid),
-    {true, RD, Ctx#context{riakc_pid=undefined}}.
+finish_request(RD, Ctx=#context{riak_client=RcPid}) ->
+    riak_cs_riak_client:checkin(RcPid),
+    {true, RD, Ctx#context{riak_client=undefined}}.
 
 %% -------------------------------------------------------------------
 %% Internal functions
 %% -------------------------------------------------------------------
 
-stream_users(Format, RiakPid, Boundary, Status) ->
-    case riakc_pb_socket:stream_list_keys(RiakPid, ?USER_BUCKET) of
+stream_users(Format, RcPid, Boundary, Status) ->
+    {ok, MasterPbc} = riak_cs_riak_client:master_pbc(RcPid),
+    case riakc_pb_socket:stream_list_keys(MasterPbc, ?USER_BUCKET) of
         {ok, ReqId} ->
-            case riak_cs_utils:riak_connection() of
-                {ok, RiakPid2} ->
-                    Res = wait_for_users(Format, RiakPid2, ReqId, Boundary, Status),
-                    riak_cs_utils:close_riak_connection(RiakPid2),
+            case riak_cs_riak_client:start_link([]) of
+                {ok, RcPid2} ->
+                    Res = wait_for_users(Format, RcPid2, ReqId, Boundary, Status),
+                    riak_cs_utils:close_riak_connection(RcPid2),
                     Res;
                 {error, _Reason} ->
                     wait_for_users(Format, RcPid, ReqId, Boundary, Status)

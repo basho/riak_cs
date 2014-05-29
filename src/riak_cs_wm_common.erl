@@ -91,22 +91,16 @@ init(Config) ->
     resource_call(Mod, init, [Ctx], ExportsFun).
 
 -spec service_available(#wm_reqdata{}, #context{}) -> {boolean(), #wm_reqdata{}, #context{}}.
-service_available(RD, Ctx=#context{submodule=Mod,riakc_pool=undefined}) ->
+service_available(RD, Ctx=#context{rc_pool=undefined}) ->
+    service_available(RD, Ctx#context{rc_pool=request_pool});
+service_available(RD, Ctx=#context{submodule=Mod, rc_pool=Pool}) ->
     riak_cs_dtrace:dt_wm_entry({?MODULE, Mod}, <<"service_available">>),
-    case riak_cs_utils:riak_connection() of
-        {ok, Pid} ->
+    case riak_cs_riak_client:checkout(Pool) of
+        {ok, RcPid} ->
             riak_cs_dtrace:dt_wm_return({?MODULE, Mod}, <<"service_available">>, [1], []),
             {true, RD, Ctx#context{riak_client=RcPid}};
         {error, _Reason} ->
             riak_cs_dtrace:dt_wm_return({?MODULE, Mod}, <<"service_available">>, [0], []),
-            {false, RD, Ctx}
-    end;
-service_available(RD, Ctx=#context{submodule=Mod,riakc_pool=Pool}) ->
-    riak_cs_dtrace:dt_wm_entry({?MODULE, Mod}, <<"service_available">>),
-    case riak_cs_utils:riak_connection(Pool) of
-        {ok, Pid} ->
-            {true, RD, Ctx#context{riakc_pid=Pid}};
-        {error, _Reason} ->
             {false, RD, Ctx}
     end.
 
@@ -379,17 +373,13 @@ finish_request(RD, Ctx=#context{riakc_pid=undefined,
                         ExportsFun),
     riak_cs_dtrace:dt_wm_return({?MODULE, Mod}, <<"finish_request">>, [0], []),
     Res;
-finish_request(RD, Ctx0=#context{riakc_pid=RiakcPid,
+finish_request(RD, Ctx0=#context{riak_client=RcPid,
+                                 rc_pool=Pool,
                                  submodule=Mod,
-                                 riakc_pool=Pool,
                                  exports_fun=ExportsFun}) ->
     riak_cs_dtrace:dt_wm_entry({?MODULE, Mod}, <<"finish_request">>, [1], []),
-    case Pool of
-        undefined -> riak_cs_utils:close_riak_connection(RiakcPid);
-        _ -> riak_cs_utils:close_riak_connection(Pool, RiakcPid)
-    end,
-    riak_cs_utils:close_riak_connection(RiakcPid),
-    Ctx = Ctx0#context{riakc_pid=undefined},
+    riak_cs_riak_client:checkin(Pool, RcPid),
+    Ctx = Ctx0#context{riak_client=undefined},
     Res = resource_call(Mod,
                         finish_request,
                         [RD, Ctx],

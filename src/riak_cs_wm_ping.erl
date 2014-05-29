@@ -62,9 +62,9 @@ finish_request(RD, Ctx=#ping_context{riak_client=RcPid,
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"finish_request">>, [1], []),
     case PoolPid of
         true ->
-            riak_cs_utils:close_riak_connection(RiakPid);
+            riak_cs_riak_client:checkin(RcPid);
         false ->
-            riak_cs_riakc_pool_worker:stop(RiakPid)
+            riak_cs_riak_client:stop(RcPid)
     end,
     riak_cs_dtrace:dt_wm_return(?MODULE, <<"finish_request">>, [1], []),
     {true, RD, Ctx#ping_context{riak_client=undefined}}.
@@ -88,27 +88,27 @@ ping_timeout() ->
 
 -spec get_connection_pid() -> {riak_client(), boolean()}.
 get_connection_pid() ->
-    case poolboy_checkout() of
+    case pool_checkout() of
         full ->
             non_pool_connection();
-        Pid ->
-            {Pid, true}
+        RcPid ->
+            {RcPid, true}
     end.
 
--spec poolboy_checkout() -> full | pid().
-poolboy_checkout() ->
-    case catch poolboy:checkout(request_pool, true, ping_timeout()) of
-        {'EXIT', _Reason} ->
-            full;
-        Result ->
-            Result
+-spec pool_checkout() -> full | riak_client().
+pool_checkout() ->
+    case riak_cs_riak_client:checkout(request_pool) of
+        {ok, RcPid} ->
+            RcPid;
+        {error, _Reason} ->
+            full
     end.
 
--spec non_pool_connection() -> {undefined | pid(), false}.
+-spec non_pool_connection() -> {undefined | riak_client(), false}.
 non_pool_connection() ->
-    case riak_cs_riakc_pool_worker:start_link([]) of
-        {ok, Pid} ->
-            {Pid, false};
+    case riak_cs_riak_client:start_link([]) of
+        {ok, RcPid} ->
+            {RcPid, false};
         {error, _} ->
             {undefined, false}
     end.
