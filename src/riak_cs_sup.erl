@@ -62,12 +62,14 @@ start_link() ->
 init([]) ->
     catch dyntrace:p(),                    % NIF load trigger (R15B01+)
     Options = [get_option_val(Option) || Option <- ?OPTIONS],
-    {ok, { {one_for_one, 10, 10}, pool_specs(Options) ++
+    PoolSpecs = pool_specs(Options),
+    {ok, { {one_for_one, 10, 10}, PoolSpecs ++
                process_specs() ++
                web_specs(Options)}}.
 
 -spec process_specs() -> [supervisor:child_spec()].
 process_specs() ->
+    BagProcessSpecs = riak_cs_mb_helper:process_specs(),
     Archiver = {riak_cs_access_archiver_manager,
                 {riak_cs_access_archiver_manager, start_link, []},
                 permanent, 5000, worker,
@@ -94,15 +96,16 @@ process_specs() ->
                  permanent, 5000, worker, dynamic},
     DiagsSup = {riak_cs_diags, {riak_cs_diags, start_link, []},
                    permanent, 5000, worker, dynamic},
-    [Archiver,
-     Storage,
-     GC,
-     Stats,
-     ListObjectsETSCacheSup,
-     DeleteFsmSup,
-     GetFsmSup,
-     PutFsmSup,
-     DiagsSup].
+    BagProcessSpecs ++
+        [Archiver,
+         Storage,
+         GC,
+         Stats,
+         ListObjectsETSCacheSup,
+         DeleteFsmSup,
+         GetFsmSup,
+         PutFsmSup,
+         DiagsSup].
 
 -spec get_option_val({atom(), term()} | atom()) -> {atom(), term()}.
 get_option_val({Option, Default}) ->
@@ -134,19 +137,46 @@ web_specs(Options) ->
 
 -spec pool_specs(proplist()) -> [supervisor:child_spec()].
 pool_specs(Options) ->
-    WorkerStop = fun(Worker) -> riak_cs_riakc_pool_worker:stop(Worker) end,
-    [pool_spec(Name, Workers, Overflow, WorkerStop)
-     || {Name, {Workers, Overflow}} <- proplists:get_value(connection_pools, Options)].
+    rc_pool_specs(Options) ++
+        pbc_pool_specs(Options).
 
--spec pool_spec(atom(), non_neg_integer(), non_neg_integer(), function()) ->
+rc_pool_specs(Options) ->
+    WorkerStop = fun(Worker) -> riak_cs_riak_client:stop(Worker) end,
+    MasterPools = proplists:get_value(connection_pools, Options),
+    [{Name,
+      {poolboy, start_link, [[{name, {local, Name}},
+                              {worker_module, riak_cs_riak_client},
+                              {size, Workers},
+                              {max_overflow, Overflow},
+                              {stop_fun, WorkerStop}],
+                             []]},
+      permanent, 5000, worker, [poolboy]} ||
+        {Name, {Workers, Overflow}} <- MasterPools].
+
+pbc_pool_specs(Options) ->
+    WorkerStop = fun(Worker) -> riak_cs_riakc_pool_worker:stop(Worker) end,
+    %% Use sums of fixed/overflow for pbc pool
+    MasterPools = proplists:get_value(connection_pools, Options),
+    {FixedSum, OverflowSum} = lists:foldl(fun({_, {Fixed, Overflow}}, {FAcc, OAcc}) ->
+                                                  {Fixed + FAcc, Overflow + OAcc}
+                                          end,
+                                          {0, 0}, MasterPools),
+    Bags = riak_cs_mb_helper:bags(),
+    [pbc_pool_spec(BagId, FixedSum, OverflowSum, Address, Port, WorkerStop)
+     || {BagId, Address, Port} <- Bags].
+
+-spec pbc_pool_spec(bag_id(), non_neg_integer(), non_neg_integer(),
+                string(), non_neg_integer(), function()) ->
                        supervisor:child_spec().
-pool_spec(Name, Workers, Overflow, WorkerStop) ->
+pbc_pool_spec(BagId, Fixed, Overflow, Address, Port, WorkerStop) ->
+    Name = riak_cs_riak_client:pbc_pool_name(BagId),
     {Name,
      {poolboy, start_link, [[{name, {local, Name}},
                              {worker_module, riak_cs_riakc_pool_worker},
-                             {size, Workers},
+                             {size, Fixed},
                              {max_overflow, Overflow},
-                             {stop_fun, WorkerStop}]]},
+                             {stop_fun, WorkerStop}],
+                            [{address, Address}, {port, Port}]]},
      permanent, 5000, worker, [poolboy]}.
 
 -spec web_spec(atom(), proplist()) -> supervisor:child_spec().

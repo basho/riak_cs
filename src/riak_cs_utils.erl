@@ -643,13 +643,13 @@ find_md_usermeta(MD) ->
     dict:find(?MD_USERMETA, MD).
 
 %% @doc Get a protobufs connection to the riak cluster
-%% from the default connection pool.
+%% from the `request_pool' connection pool of the master bag.
 -spec riak_connection() -> {ok, pid()} | {error, term()}.
 riak_connection() ->
-    riak_connection(request_pool).
+    riak_connection(riak_cs_riak_client:pbc_pool_name(master)).
 
 %% @doc Get a protobufs connection to the riak cluster
-%% from the specified connection pool.
+%% from the specified connection pool of the master bag.
 -spec riak_connection(atom()) -> {ok, pid()} | {error, term()}.
 riak_connection(Pool) ->
     case catch poolboy:checkout(Pool, false) of
@@ -873,8 +873,9 @@ validate_email(EmailAddr) ->
 
 %% @doc Update a user record from a previous version if necessary.
 -spec update_user_record(rcs_user()) -> rcs_user().
-update_user_record(User=?RCS_USER{}) ->
-    User;
+update_user_record(User=?RCS_USER{buckets=Buckets}) ->
+    User?RCS_USER{buckets=[riak_cs_bucket:update_bucket_record(Bucket) ||
+                              Bucket <- Buckets]};
 update_user_record(User=#moss_user_v1{}) ->
     ?RCS_USER{name=User#moss_user_v1.name,
               display_name=User#moss_user_v1.display_name,
