@@ -31,6 +31,7 @@
 %% Supervisor callbacks
 -export([init/1]).
 
+-include("riak_cs.hrl").
 
 %% ===================================================================
 %% API functions

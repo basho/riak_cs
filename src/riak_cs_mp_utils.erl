@@ -426,7 +426,9 @@ do_part_common2(complete, RcPid,
                         %% Create fake S3 object manifests for this part,
                         %% then pass them to the GC monster for immediate
                         %% deletion.
-                        ok = move_dead_parts_to_gc(Bucket, Key, PartsToDelete, RiakcPid),
+                        BagId = riak_cs_mb_helper:bag_id_from_manifest(NewManifest),
+                        ok = move_dead_parts_to_gc(Bucket, Key, BagId,
+                                                   PartsToDelete, RcPid),
                         MProps3 = [multipart_clean|MProps2],
                         New2Manifest = NewManifest?MANIFEST{props = MProps3},
                         ok = riak_cs_manifest_fsm:update_manifest(
@@ -705,7 +707,7 @@ comb_parts_fold({PartNum, _ETag} = K,
             throw(bad_etag)
     end.
 
-move_dead_parts_to_gc(Bucket, Key, PartsToDelete, RiakcPid) ->
+move_dead_parts_to_gc(Bucket, Key, BagId, PartsToDelete, RcPid) ->
     PartDelMs = [{P_UUID,
                   riak_cs_lfs_utils:new_manifest(
                     Bucket,
@@ -716,7 +718,10 @@ move_dead_parts_to_gc(Bucket, Key, PartsToDelete, RiakcPid) ->
                     undefined,
                     [],
                     P_BlockSize,
-                    no_acl_yet)} ||
+                    no_acl_yet,
+                    [],
+                    undefined,
+                    BagId)} ||
                     ?PART_MANIFEST{part_id=P_UUID,
                                    content_length=ContentLength,
                                    block_size=P_BlockSize} <- PartsToDelete],
