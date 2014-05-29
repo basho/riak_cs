@@ -185,11 +185,6 @@ make_special_error(Code, Message, RequestId, HostId) ->
     riak_cs_xml:to_xml([XmlDoc]).
 
 
-list_all_multipart_uploads(Bucket, Opts, RiakcPid) ->
-    list_multipart_uploads_with_2ikey(Bucket, Opts,
-                                      RiakcPid,
-                                      make_2i_key(Bucket)).
-
 list_multipart_uploads(Bucket, Caller, Opts) ->
     list_multipart_uploads(Bucket, Caller, Opts, nopid).
 
@@ -216,10 +211,15 @@ list_multipart_uploads(Bucket, {_Display, _Canon, CallerKeyId} = Caller,
             Else
     end.
 
-list_multipart_uploads_with_2ikey(Bucket,
-                                  Opts, RiakcPid, Key2i) ->
+list_all_multipart_uploads(Bucket, Opts, RcPid) ->
+    list_multipart_uploads_with_2ikey(Bucket, Opts,
+                                      RcPid,
+                                      make_2i_key(Bucket)).
+
+list_multipart_uploads_with_2ikey(Bucket, Opts, RcPid, Key2i) ->
     HashBucket = riak_cs_utils:to_bucket_name(objects, Bucket),
-    case riakc_pb_socket:get_index(RiakcPid, HashBucket,
+    {ok, ManifestPbc} = riak_cs_riak_client:manifest_pbc(RcPid),
+    case riakc_pb_socket:get_index(ManifestPbc, HashBucket,
                                    Key2i, <<"1">>) of
 
         {ok, ?INDEX_RESULTS{keys=Names}} ->

@@ -113,8 +113,9 @@ sample_in_bounds(Start, End) ->
 -spec sample_puller(riak_client(), binary(), iolist()) -> fun().
 sample_puller(RcPid, Bucket, Postfix) ->
     fun(Slice, {Samples, Errors}) ->
+            {ok, MasterPbc} = riak_cs_riak_client:master_pbc(RcPid),
             case riakc_pb_socket:get(
-                   Riak, Bucket, slice_key(Slice, Postfix)) of
+                   MasterPbc, Bucket, slice_key(Slice, Postfix)) of
                 {ok, Object} ->
                     RawSamples =
                         [ catch element(2, {struct,_}=mochijson2:decode(V))

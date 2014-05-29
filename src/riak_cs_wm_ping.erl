@@ -113,9 +113,10 @@ non_pool_connection() ->
             {undefined, false}
     end.
 
--spec riak_ping({pid(), boolean()}, #ping_context{}) -> {boolean(), #ping_context{}}.
-riak_ping({Pid, PoolPid}, Ctx) ->
-    Available = case catch riakc_pb_socket:ping(Pid, ping_timeout()) of
+-spec riak_ping({riak_client(), boolean()}, #ping_context{}) -> {boolean(), #ping_context{}}.
+riak_ping({RcPid, PoolPid}, Ctx) ->
+    {ok, MasterPbc} = riak_cs_riak_client:master_pbc(RcPid),
+    Available = case catch riakc_pb_socket:ping(MasterPbc, ping_timeout()) of
                     pong ->
                         true;
                     _ ->

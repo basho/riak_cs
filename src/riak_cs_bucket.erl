@@ -366,16 +366,15 @@ bucket_policy_json(PolicyJson, KeyId)  ->
                           }))).
 
 %% @doc Check if a bucket is empty
--spec bucket_empty(binary(), pid()) -> boolean().
-bucket_empty(Bucket, RiakcPid) ->
+-spec bucket_empty(binary(), riak_client()) -> {ok, boolean()} | {error, term()}.
+bucket_empty(Bucket, RcPid) ->
     ManifestBucket = riak_cs_utils:to_bucket_name(objects, Bucket),
-    %% @TODO Use `stream_list_keys' instead and
-    ListKeysResult = riak_cs_utils:list_keys(ManifestBucket, RiakcPid),
-    bucket_empty_handle_list_keys(RiakcPid,
-                                  Bucket,
-                                  ListKeysResult).
+    %% @TODO Use `stream_list_keys' instead
+    {ok, ManifestPbc} = riak_cs_riak_client:manifest_pbc(RcPid),
+    ListKeysResult = riak_cs_pbc:list_keys(ManifestPbc, ManifestBucket),
+    {ok, bucket_empty_handle_list_keys(RcPid, Bucket, ListKeysResult)}.
 
--spec bucket_empty_handle_list_keys(pid(), binary(),
+-spec bucket_empty_handle_list_keys(riak_client(), binary(),
                                     {ok, list()} |
                                     {error, term()}) ->
     boolean().

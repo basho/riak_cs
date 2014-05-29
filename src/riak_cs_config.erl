@@ -194,10 +194,12 @@ cluster_id(RcPid) ->
     end.
 
 %% @doc If `proxy_get' is enabled then attempt to determine the cluster id
--spec maybe_get_cluster_id(boolean(), pid(), integer()) -> undefined | binary().
-maybe_get_cluster_id(true, Pid, Timeout) ->
+-spec maybe_get_cluster_id(boolean(), riak_client(), integer()) -> undefined | binary().
+maybe_get_cluster_id(true, RcPid, Timeout) ->
     try
-        case riak_repl_pb_api:get_clusterid(Pid, Timeout) of
+        %% TODO && FIXME!!: DO NOT support multibag YET!!!
+        {ok, MasterPbc} = riak_cs_riak_client:master_pbc(RcPid),
+        case riak_repl_pb_api:get_clusterid(MasterPbc, Timeout) of
             {ok, ClusterID} ->
                 application:set_env(riak_cs, cluster_id, ClusterID),
                 ClusterID;

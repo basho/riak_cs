@@ -201,7 +201,7 @@ handle_cast({delete_block, ReplyPid, Bucket, Key, UUID, BlockNumber}, State=#sta
 
     %% do a get first to get the vclock (only do a head request though)
     GetOptions = [{r, 1}, {notfound_ok, false}, {basic_quorum, false}, head],
-    _ = case riakc_pb_socket:get(RiakcPid, FullBucket, FullKey, GetOptions) of
+    _ = case riakc_pb_socket:get(block_pbc(RcPid), FullBucket, FullKey, GetOptions) of
             {ok, RiakObject} ->
                 ok = delete_block(RcPid, ReplyPid, RiakObject, {UUID, BlockNumber});
         {error, notfound} ->
@@ -322,8 +322,8 @@ handle_local_notfound(RcPid, FullBucket, FullKey, GetOptions2,
             RetryFun(failure)
     end.
 
-get_block_local(RiakcPid, FullBucket, FullKey, GetOptions, Timeout) ->
-    case riakc_pb_socket:get(RiakcPid, FullBucket, FullKey, GetOptions, Timeout) of
+get_block_local(RcPid, FullBucket, FullKey, GetOptions, Timeout) ->
+    case riakc_pb_socket:get(block_pbc(RcPid), FullBucket, FullKey, GetOptions, Timeout) of
         {ok, RiakObject} ->
             resolve_block_object(RiakObject, RcPid);
         %% %% Corrupted siblings hack: just add another....
@@ -334,8 +334,8 @@ get_block_local(RiakcPid, FullBucket, FullKey, GetOptions, Timeout) ->
             Else
     end.
 
-get_block_remote(RiakcPid, FullBucket, FullKey, ClusterID, GetOptions) ->
-    case riak_repl_pb_api:get(RiakcPid, FullBucket, FullKey,
+get_block_remote(RcPid, FullBucket, FullKey, ClusterID, GetOptions) ->
+    case riak_repl_pb_api:get(block_pbc(RcPid), FullBucket, FullKey,
                               ClusterID, GetOptions) of
         {ok, RiakObject} ->
             resolve_block_object(RiakObject, RcPid);
@@ -354,9 +354,9 @@ normal_nval_block_get(ReplyPid, Bucket, Key, ClusterID, UseProxyGet, UUID,
     GetOptions = [{r, 1}, {notfound_ok, false}, {basic_quorum, false}],
     Object = case UseProxyGet of
         false ->
-            riakc_pb_socket:get(RiakcPid, FullBucket, FullKey, GetOptions);
+            riakc_pb_socket:get(block_pbc(RcPid), FullBucket, FullKey, GetOptions);
         true ->
-            riak_repl_pb_api:get(RiakcPid, FullBucket, FullKey, ClusterID, GetOptions)
+            riak_repl_pb_api:get(block_pbc(RcPid), FullBucket, FullKey, ClusterID, GetOptions)
     end,
     ChunkValue = case Object of
         {ok, RiakObject} ->
@@ -374,14 +374,14 @@ delete_block(RcPid, ReplyPid, RiakObject, BlockId) ->
     riak_cs_delete_fsm:block_deleted(ReplyPid, Result),
     ok.
 
-constrained_delete(RiakcPid, RiakObject, BlockId) ->
+constrained_delete(RcPid, RiakObject, BlockId) ->
     DeleteOptions = [{r, all}, {pr, all}, {w, all}, {pw, all}],
     format_delete_result(
-        riakc_pb_socket:delete_obj(RiakcPid, RiakObject, DeleteOptions),
+        riakc_pb_socket:delete_obj(block_pbc(RcPid), RiakObject, DeleteOptions),
         BlockId).
 
-secondary_delete_check({error, {unsatisfied_constraint, _, _}}, RiakcPid, RiakObject) ->
-    riakc_pb_socket:delete_obj(RiakcPid, RiakObject);
+secondary_delete_check({error, {unsatisfied_constraint, _, _}}, RcPid, RiakObject) ->
+    riakc_pb_socket:delete_obj(block_pbc(RcPid), RiakObject);
 secondary_delete_check(_, _, _) ->
     ok.
 
@@ -501,7 +501,7 @@ do_put_block(FullBucket, FullKey, VClock, Value, MD, RcPid, FailFun) ->
     RiakObject = riakc_obj:set_vclock(
             riakc_obj:update_metadata(RiakObject0, MD), VClock),
     StartTime = os:timestamp(),
-    case riakc_pb_socket:put(RiakcPid, RiakObject) of
+    case riakc_pb_socket:put(block_pbc(RcPid), RiakObject) of
         ok ->
             ok = riak_cs_stats:update_with_start(block_put, StartTime),
             ok;
@@ -536,3 +536,7 @@ dt_entry(Func, Ints, Strings) ->
 
 dt_return(Func, Ints, Strings) ->
     riak_cs_dtrace:dtrace(?DT_BLOCK_OP, 2, Ints, ?MODULE, Func, Strings).
+
+block_pbc(RcPid) ->
+    {ok, BlockPbc} = riak_cs_riak_client:block_pbc(RcPid),
+    BlockPbc.

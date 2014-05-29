@@ -288,7 +288,8 @@ active_manifests(ManifestBucket, Prefix, RcPid) ->
               undefined, false},
              {reduce, {modfun, riak_cs_utils, reduce_keys_and_manifests},
               undefined, true}],
-    {ok, ReqId} = riakc_pb_socket:mapred_stream(RiakPid, Input, Query, self()),
+    {ok, ManifestPbc} = riak_cs_riak_client:manifest_pbc(RcPid),
+    {ok, ReqId} = riakc_pb_socket:mapred_stream(ManifestPbc, Input, Query, self()),
     receive_keys_and_manifests(ReqId, []).
 
 %% Stream keys to avoid riakc_pb_socket:wait_for_mapred/2's use of
@@ -406,11 +407,12 @@ md5_final(Ctx) -> crypto:md5_final(Ctx).
 
 %% internal fun to retrieve the riak object
 %% at a bucket/key
--spec get_manifests_raw(pid(), binary(), binary()) ->
+-spec get_manifests_raw(riak_client(), binary(), binary()) ->
     {ok, riakc_obj:riakc_obj()} | {error, term()}.
-get_manifests_raw(RiakcPid, Bucket, Key) ->
+get_manifests_raw(RcPid, Bucket, Key) ->
     ManifestBucket = to_bucket_name(objects, Bucket),
-    riakc_pb_socket:get(RiakcPid, ManifestBucket, Key).
+    {ok, ManifestPbc} = riak_cs_riak_client:manifest_pbc(RcPid),
+    riakc_pb_socket:get(ManifestPbc, ManifestBucket, Key).
 
 %% @doc
 -spec get_manifests(riak_client(), binary(), binary()) ->
@@ -520,9 +522,10 @@ get_user_by_index(Index, Value, RcPid) ->
     end.
 
 %% @doc Query `Index' for `Value' in the users bucket.
--spec get_user_index(binary(), binary(), pid()) -> {ok, string()} | {error, term()}.
-get_user_index(Index, Value, RiakPid) ->
-    case riakc_pb_socket:get_index(RiakPid, ?USER_BUCKET, Index, Value) of
+-spec get_user_index(binary(), binary(), riak_client()) -> {ok, string()} | {error, term()}.
+get_user_index(Index, Value, RcPid) ->
+    {ok, MasterPbc} = riak_cs_riak_client:master_pbc(RcPid),
+    case riakc_pb_socket:get_index(MasterPbc, ?USER_BUCKET, Index, Value) of
         {ok, ?INDEX_RESULTS{keys=[]}} ->
             {error, notfound};
         {ok, ?INDEX_RESULTS{keys=[Key | _]}} ->

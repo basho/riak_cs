@@ -305,7 +305,8 @@ make_list_keys_request(RcPid, ?LOREQ{name=BucketName}) ->
     %% hardcoded for now
     ServerTimeout = timer:seconds(60),
     ManifestBucket = riak_cs_utils:to_bucket_name(objects, BucketName),
-    riakc_pb_socket:stream_list_keys(RiakcPid,
+    {ok, ManifestPbc} = riak_cs_riak_client:manifest_pbc(RcPid),
+    riakc_pb_socket:stream_list_keys(ManifestPbc,
                                      ManifestBucket,
                                      ServerTimeout).
 
@@ -493,8 +494,9 @@ make_bkeys(ManifestBucketName, Keys) ->
 send_map_reduce_request(RcPid, BKeyTuples) ->
     %% TODO: change this:
     %% hardcode 60 seconds for now
+    {ok, ManifestPbc} = riak_cs_riak_client:manifest_pbc(RcPid),
     Timeout = timer:seconds(60),
-    riakc_pb_socket:mapred_stream(RiakcPid,
+    riakc_pb_socket:mapred_stream(ManifestPbc,
                                   BKeyTuples,
                                   mapred_query(),
                                   self(),

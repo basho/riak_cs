@@ -285,14 +285,14 @@ get_and_delete(RcPid, UUID, Bucket, Key) ->
             UpdatedManifests = orddict:erase(UUID, ResolvedManifests),
             case UpdatedManifests of
                 [] ->
-                    riakc_pb_socket:delete_obj(RiakcPid, RiakObject);
+                    riakc_pb_socket:delete_obj(manifest_pbc(RcPid), RiakObject);
                 _ ->
                     ObjectToWrite0 =
                         riak_cs_utils:update_obj_value(
                           RiakObject, riak_cs_utils:encode_term(UpdatedManifests)),
                     ObjectToWrite = update_md_with_multipart_2i(
                                       ObjectToWrite0, UpdatedManifests, Bucket, Key),
-                    riak_cs_utils:put(RiakcPid, ObjectToWrite)
+                    riak_cs_pbc:put(manifest_pbc(RcPid), ObjectToWrite)
             end;
         {error, notfound} ->
             ok
@@ -319,7 +319,7 @@ get_and_update(RcPid, WrappedManifests, Bucket, Key) ->
             {Result, NewRiakObject} =
               case riak_cs_manifest_utils:overwritten_UUIDs(NewManiAdded) of
                 [] ->
-                    riak_cs_utils:put(RiakcPid, ObjectToWrite, [return_body]);
+                    riak_cs_pbc:put(manifest_pbc(RcPid), ObjectToWrite, [return_body]);
                 OverwrittenUUIDs ->
                     riak_cs_gc:gc_specific_manifests(OverwrittenUUIDs,
                                                      ObjectToWrite,
@@ -333,10 +333,13 @@ get_and_update(RcPid, WrappedManifests, Bucket, Key) ->
             ObjectToWrite0 = riakc_obj:new(ManifestBucket, Key, riak_cs_utils:encode_term(WrappedManifests)),
             ObjectToWrite = update_md_with_multipart_2i(
                               ObjectToWrite0, WrappedManifests, Bucket, Key),
-            PutResult = riak_cs_utils:put(RiakcPid, ObjectToWrite),
+            PutResult = riak_cs_pbc:put(manifest_pbc(RcPid), ObjectToWrite),
             {PutResult, undefined, undefined}
     end.
 
+manifest_pbc(RcPid) ->
+    {ok, ManifestPbc} = riak_cs_riak_client:manifest_pbc(RcPid),
+    ManifestPbc.
 
 -spec update_from_previous_read(riak_client(), riakc_obj:riakc_obj(),
                                 binary(), binary(),
@@ -354,7 +357,7 @@ update_from_previous_read(RcPid, RiakObject, Bucket, Key,
     %% currently we don't do
     %% anything to make sure
     %% this call succeeded
-    riak_cs_utils:put(RiakcPid, NewRiakObject).
+    riak_cs_pbc:put(manifest_pbc(RcPid), NewRiakObject).
 
 update_md_with_multipart_2i(RiakObject, WrappedManifests, Bucket, Key) ->
     %% During testing, it's handy to delete Riak keys in the

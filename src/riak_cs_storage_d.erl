@@ -353,8 +353,9 @@ start_batch(Options, Time, State) ->
                 recalc=Recalc}.
 
 %% @doc Grab the whole list of Riak CS users.
-fetch_user_list(Riak) ->
-    case riakc_pb_socket:list_keys(Riak, ?USER_BUCKET) of
+fetch_user_list(RcPid) ->
+    {ok, MasterPbc} = riak_cs_riak_client:master_pbc(RcPid),
+    case riakc_pb_socket:list_keys(MasterPbc, ?USER_BUCKET) of
         {ok, Users} -> Users;
         {error, Error} ->
             _ = lager:error("Storage calculator was unable"
@@ -400,9 +401,10 @@ recalc(false, RcPid, User, Time) ->
     end.
 
 %% @doc Archive a user's storage calculation.
-store_user(#state{riak=Riak}, User, BucketList, Start, End) ->
+store_user(#state{riak_client=RcPid}, User, BucketList, Start, End) ->
     Obj = riak_cs_storage:make_object(User, BucketList, Start, End),
-    case riakc_pb_socket:put(Riak, Obj) of
+    {ok, MasterPbc} = riak_cs_riak_client:master_pbc(RcPid),
+    case riakc_pb_socket:put(MasterPbc, Obj) of
         ok -> ok;
         {error, Error} ->
             _ = lager:error("Error storing storage for user ~s (~p)",

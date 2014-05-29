@@ -352,7 +352,8 @@ mark_manifests(RiakObject, Bucket, Key, UUIDsToMark, ManiFunction, RcPid) ->
     %% use [returnbody] so that we get back the object
     %% with vector clock. This allows us to do a PUT
     %% again without having to re-retrieve the object
-    riak_cs_utils:put(RiakcPid, UpdObj, [return_body]).
+    {ok, ManifestPbc} = riak_cs_riak_client:manifest_pbc(RcPid),
+    riak_cs_pbc:put(ManifestPbc, UpdObj, [return_body]).
 
 %% @doc Copy data for a list of manifests to the
 %% `riak-cs-gc' bucket to schedule them for deletion.
@@ -363,7 +364,8 @@ move_manifests_to_gc_bucket([], _RcPid) ->
 move_manifests_to_gc_bucket(Manifests, RcPid) ->
     Key = generate_key(),
     ManifestSet = build_manifest_set(Manifests),
-    ObjectToWrite = case riakc_pb_socket:get(RiakcPid, ?GC_BUCKET, Key) of
+    {ok, ManifestPbc} = riak_cs_riak_client:manifest_pbc(RcPid),
+    ObjectToWrite = case riakc_pb_socket:get(ManifestPbc, ?GC_BUCKET, Key) of
         {error, notfound} ->
             %% There was no previous value, so we'll
             %% create a new riak object and write it
@@ -380,7 +382,7 @@ move_manifests_to_gc_bucket(Manifests, RcPid) ->
 
     %% Create a set from the list of manifests
     _ = lager:debug("Manifests scheduled for deletion: ~p", [ManifestSet]),
-    riak_cs_utils:put(RiakcPid, ObjectToWrite).
+    riak_cs_pbc:put(ManifestPbc, ObjectToWrite).
 
 -spec build_manifest_set([cs_uuid_and_manifest()]) -> twop_set:twop_set().
 build_manifest_set(Manifests) ->

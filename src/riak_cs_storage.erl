@@ -94,7 +94,10 @@ sum_bucket(Riak, Bucket) ->
               [do_prereduce], false},
              {reduce, {modfun, riak_cs_storage, object_size_reduce},
               none, true}],
-    case riakc_pb_socket:mapred(Riak, FullBucket, Query) of
+    ok = riak_cs_riak_client:set_bucket_name(RcPid, BucketName),
+    {ok, ManifestPbc} = riak_cs_riak_client:manifest_pbc(RcPid),
+    ManifestBucket = riak_cs_utils:to_bucket_name(objects, BucketName),
+    case riakc_pb_socket:mapred(ManifestPbc, ManifestBucket, Query) of
         {ok, Results} ->
             {1, [{Objects, Bytes}]} = lists:keyfind(1, 1, Results),
             {struct, [{<<"Objects">>, Objects},
