@@ -27,7 +27,7 @@
 -behaviour(gen_fsm).
 
 %% API
--export([start_link/1,
+-export([start_link/2,
          stop/1]).
 
 %% gen_fsm callbacks
@@ -45,7 +45,6 @@
          code_change/4]).
 
 -include("riak_cs_gc_d.hrl").
--include_lib("riakc/include/riakc.hrl").
 
 -export([current_state/1]).
 
@@ -57,8 +56,8 @@
 %%%===================================================================
 
 %% @doc Start the garbage collection server
-start_link(Keys) ->
-    gen_fsm:start_link(?MODULE, [Keys], []).
+start_link(BagId, Keys) ->
+    gen_fsm:start_link(?MODULE, [BagId, Keys], []).
 
 %% @doc Stop the daemon
 -spec stop(pid()) -> ok | {error, term()}.
@@ -71,10 +70,12 @@ stop(Pid) ->
 
 %% @doc Read the storage schedule and go to idle.
 
-init([Keys]) ->
+init([BagId, Keys]) ->
     %% this does not check out a worker from the riak
     %% connection pool; instead it creates a fresh new worker
-    {ok, Pid} = riak_cs_riakc_pool_worker:start_link([]),
+    %% TODO: Newly start PBC clients of underlying bags
+    {ok, RcPid} = riak_cs_riak_client:start_link([]),
+    ok = riak_cs_riak_client:set_manifest_bag(RcPid, BagId),
     ok = continue(),
     {ok, fetching_next_fileset, ?STATE{batch=Keys, riak_client=RcPid}}.
 
@@ -185,8 +186,8 @@ handle_info(_Info, StateName, State) ->
 
 %% @doc TODO: log warnings if this fsm is asked to terminate in the
 %% middle of running a gc batch
-terminate(_Reason, _StateName, _State=?STATE{riak_pid=RiakPid}) ->
-    riak_cs_riakc_pool_worker:stop(RiakPid),
+terminate(_Reason, _StateName, _State=?STATE{riak_client=RcPid}) ->
+    riak_cs_riak_client:stop(RcPid),
     ok.
 
 %% @doc this fsm has no special upgrade process
