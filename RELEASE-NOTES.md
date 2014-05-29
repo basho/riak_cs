@@ -2,18 +2,18 @@
 
 ## Additions
 
-* a new command `riak-cs-debug` which retrieves diagnosis info including `cluster-info` [riak_cs/#769](https://github.com/basho/riak_cs/pull/769), [riak_cs/#832](https://github.com/basho/riak_cs/pull/832)
-* tie up all existing commands into a new command `riak-cs-admin` [riak_cs/#839](https://github.com/basho/riak_cs/pull/839)
-* add a command `riak-cs-stanchion` to switch Stanchion manually [riak_cs/#657](https://github.com/basho/riak_cs/pull/657)
+* A new command `riak-cs-debug` which retrieves diagnosis info including `cluster-info` [riak_cs/#769](https://github.com/basho/riak_cs/pull/769), [riak_cs/#832](https://github.com/basho/riak_cs/pull/832)
+* Tie up all existing commands into a new command `riak-cs-admin` [riak_cs/#839](https://github.com/basho/riak_cs/pull/839)
+* Add a command `riak-cs-stanchion` to switch Stanchion IP and port manually [riak_cs/#657](https://github.com/basho/riak_cs/pull/657)
 * Performance of garbage collection has been improved via Concurrent GC [riak_cs/#830](https://github.com/basho/riak_cs/pull/830)
-* iterator refresh [riak_cs/#805](https://github.com/basho/riak_cs/pull/805)
+* Iterator refresh [riak_cs/#805](https://github.com/basho/riak_cs/pull/805)
 * fold_objects made default in Riak CS [riak_cs/#737](https://github.com/basho/riak_cs/pull/737), [riak_cs/#785](https://github.com/basho/riak_cs/pull/785)
 * Syslog support through lager_syslog [riak_cs/#617](https://github.com/basho/riak_cs/pull/617)
 * Add support for Cache-Control header [riak_cs/#821](https://github.com/basho/riak_cs/pull/821)
 * Allow objects to be reaped sooner than leeway interval. [riak_cs/#470](https://github.com/basho/riak_cs/pull/470)
 * Add option to allow a delay for the initial GC collection [riak_cs/#688](https://github.com/basho/riak_cs/pull/688)
 * Update to lager 2.0.3
-* compiles with R16B0x (Releases still by R15B01)
+* Compiles with R16B0x (Releases still by R15B01)
 
 ## Bugs Fixed
 
@@ -31,13 +31,12 @@
 
 ## Notes on Upgrading
 
-### Unaborted or uncompleted multipart uploads
+### Unaborted or incomplete multipart uploads
 
 [riak_cs/#475](https://github.com/basho/riak_cs/issues/475) was a
-security issue that flaws remaining multipart uploads, where an newly
-created bucket may include unaborted or uncompleted multipart uploads
-which was created in previous epoch of the bucket with same name. This
-was fixed by:
+security issue where a newly created bucket may include unaborted or
+incomplete multipart uploads which was created in previous epoch of
+the bucket with same name. This was fixed by:
 
 - on creating buckets; checking if live multipart exists and if
   exists, return 500 failure to client.
@@ -46,7 +45,7 @@ was fixed by:
   and checking if live multipart remains (in stanchion). if exists,
   return 409 failure to client.
 
-Note that a few operation is needed after upgrading from 1.4.x (or
+Note that a few operations are needed after upgrading from 1.4.x (or
 former) to 1.5.0.
 
 - run `riak_cs_console:cleanup_orphan_multipart/0` or
@@ -60,8 +59,8 @@ former) to 1.5.0.
 ### Leeway seconds and disk space
 
 [riak_cs/#470](https://github.com/basho/riak_cs/pull/470) changed the
-behaviour of object deletion and garbage collection. Timestamp in
-garbage collection bucket was changed from the current time when the
+behaviour of object deletion and garbage collection. The timestamps in
+garbage collection bucket were changed from the current time when the
 object is deleted, to the future time when the object is to be
 deleted. Garbage collector was also changed to collect objects until
 'now - leeway seconds', from collecting objects until 'now'.
@@ -70,7 +69,7 @@ Before:
 
 ```
            t1                         t2
------------+--------------------------+-------------------
+-----------+--------------------------+------------------->
            DELETE object:             GC triggered:
            marked as                  collects objects
            "t1+leeway"                marked as "t2"
@@ -80,7 +79,7 @@ After:
 
 ```
            t1                         t2
------------+--------------------------+-------------------
+-----------+--------------------------+------------------->
            DELETE object:             GC triggered:
            marked as "t1"             collects objects
            in GC bucket               marked as "t2 - leeway"
@@ -94,7 +93,7 @@ objects deleted just before `t0` won't be collected until `t0 +
 Also, all CS nodes which don't run GC should be upgraded before CS
 node which does run GC upgraded to let leeway second system work
 properly. Or stop GC while upgrading whole cluster, by running
-`riak-cs-admin gc interval infinity` .
+`riak-cs-gc interval infinity` .
 
 Multi-datacenter cluster should be upgraded more carefully, as to
 make sure GC is not running while upgrading.
