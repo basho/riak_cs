@@ -152,6 +152,44 @@ wait_until_leader(Node) ->
         end),
     ?assertEqual(ok, Res).
 
+
+wait_until_13_leader(Node) ->
+    wait_until_new_leader(Node, undefined).
+
+%% taken from 
+%% https://github.com/basho/riak_test/blob/master/tests/repl_util.erl
+wait_until_new_leader(Node, OldLeader) ->
+    Res = rt:wait_until(Node,
+        fun(_) ->
+                Status = rpc:call(Node, riak_core_cluster_mgr, get_leader, []),
+                case Status of
+                    {badrpc, _} ->
+                        false;
+                    undefined ->
+                        false;
+                    OldLeader ->
+                        false;
+                    _Other ->
+                        true
+                end
+        end),
+    ?assertEqual(ok, Res).
+
+wait_until_leader_converge([Node|_] = Nodes) ->
+    rt:wait_until(Node,
+        fun(_) ->
+                length(lists:usort([begin
+                        case rpc:call(N, riak_core_cluster_mgr, get_leader, []) of
+                            undefined ->
+                                false;
+                            L ->
+                                %lager:info("Leader for ~p is ~p",
+                                %[N,L]),
+                                L
+                        end
+                end || N <- Nodes])) == 1
+        end).
+
 wait_until_connection(Node) ->
     rt:wait_until(Node,
         fun(_) ->
