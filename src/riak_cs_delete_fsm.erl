@@ -170,20 +170,24 @@ handle_receiving_manifest(State=#state{riak_client=RcPid,
                            total_blocks=BlockCount},
 
     %% Handle the case where there are 0 blocks to delete,
-    %% i.e. content length of 0
+    %% i.e. content length of 0,
+    %% and can not check-out any workers.
     case ordsets:size(BlocksToDelete) > 0 of
         true ->
             AllDeleteWorkers =
-                riak_cs_block_server:start_block_servers(RiakcPid,
-                    riak_cs_lfs_utils:delete_concurrency()),
-            FreeDeleters = ordsets:from_list(AllDeleteWorkers),
-
-            NewState1 = NewState#state{all_delete_workers=AllDeleteWorkers,
-                                       free_deleters=FreeDeleters},
-
-            StateAfterDeleteStart = maybe_delete_blocks(NewState1),
-
-            {next_state, deleting, StateAfterDeleteStart};
+                riak_cs_block_server:start_block_servers(
+                  Manifest, RcPid,
+                  riak_cs_lfs_utils:delete_concurrency()),
+            case length(AllDeleteWorkers) of
+                0 ->
+                    {stop, normal, NewState};
+                _ ->
+                    FreeDeleters = ordsets:from_list(AllDeleteWorkers),
+                    NewState1 = NewState#state{all_delete_workers=AllDeleteWorkers,
+                                               free_deleters=FreeDeleters},
+                    StateAfterDeleteStart = maybe_delete_blocks(NewState1),
+                    {next_state, deleting, StateAfterDeleteStart}
+            end;
         false ->
             {stop, normal, NewState}
     end.
