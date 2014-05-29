@@ -246,17 +246,13 @@ iterate_csbuckets(RcPid, Acc0, Fun, Cont0) ->
                   _ ->         [{continuation, Cont0}]
               end ++ [{max_results, 1024}],
 
-    case riakc_pb_socket:get_index_range(Pid, ?BUCKETS_BUCKET,
+    {ok, MasterPbc} = riak_cs_riak_client:master_pbc(RcPid),
+    case riakc_pb_socket:get_index_range(MasterPbc, ?BUCKETS_BUCKET,
                                          <<"$key">>, <<0>>, <<255>>,
                                          Options) of
-
-        {ok, ?INDEX_RESULTS{keys=Keys0, continuation=Cont}} ->
-
-            Foldfun = fun(Key, Acc1) ->
-                              Res = riakc_pb_socket:get(Pid, ?BUCKETS_BUCKET, Key),
-                              Fun(Key, Res, Acc1)
-                      end,
-            Acc2 = lists:foldl(Foldfun, Acc0, Keys0),
+        {ok, ?INDEX_RESULTS{keys=BucketNames, continuation=Cont}} ->
+            Foldfun = iterate_csbuckets_fold_fun(Fun),
+            Acc2 = lists:foldl(Foldfun, Acc0, BucketNames),
             case Cont of
                 undefined ->
                     {ok, Acc2};
@@ -268,6 +264,12 @@ iterate_csbuckets(RcPid, Acc0, Fun, Cont0) ->
             {error, {Error, Acc0}}
     end.
 
+iterate_csbuckets_fold_fun(FunForOneBucket) ->
+    fun(BucketName, Acc) ->
+            {ok, RcPidForOneBucket} = riak_cs_riak_client:start_link([]),
+            Res = riak_cs_riak_client:get_bucket(RcPidForOneBucket, BucketName),
+            FunForOneBucket(RcPidForOneBucket, BucketName, Res, Acc)
+    end.
 
 %% @doc Return a user's buckets.
 -spec get_buckets(rcs_user()) -> [cs_bucket()].
@@ -407,6 +409,19 @@ fetch_bucket_object(BucketName, RcPid) ->
                 _ ->
                     {ok, Obj}
             end;
+        {error, _}=Error ->
+            Error
+    end.
+
+%% @doc Fetches the bucket object, even it is marked as free
+-spec fetch_bucket_object_raw(binary(), riak_client()) ->
+                                 {ok, riakc_obj:riakc_obj()} | {error, term()}.
+fetch_bucket_object_raw(BucketName, RcPid) ->
+    case riak_cs_riak_client:get_bucket(RcPid, BucketName) of
+        {ok, Obj} ->
+            Values = riakc_obj:get_values(Obj),
+            maybe_log_sibling_warning(BucketName, Values),
+            {ok, Obj};
         {error, _}=Error ->
             Error
     end.
