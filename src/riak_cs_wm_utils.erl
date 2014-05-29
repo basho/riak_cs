@@ -29,7 +29,7 @@
          iso_8601_to_rfc_1123/1,
          to_rfc_1123/1,
          iso_8601_to_erl_date/1,
-         streaming_get/4,
+         streaming_get/6,
          find_and_auth_admin/3,
          find_and_auth_user/3,
          find_and_auth_user/4,
@@ -340,15 +340,16 @@ shift_to_owner(RD, Ctx=#context{response_module=ResponseMod}, OwnerId, RcPid)
             ResponseMod:api_error(bucket_owner_unavailable, RD, Ctx)
     end.
 
-streaming_get(FsmPid, StartTime, UserName, BFile_str) ->
+streaming_get(RcPool, RcPid, FsmPid, StartTime, UserName, BFile_str) ->
     case riak_cs_get_fsm:get_next_chunk(FsmPid) of
         {done, Chunk} ->
             ok = riak_cs_stats:update_with_start(object_get, StartTime),
+            riak_cs_riak_client:checkin(RcPool, RcPid),
             riak_cs_dtrace:dt_object_return(riak_cs_wm_object, <<"object_get">>,
                                                [], [UserName, BFile_str]),
             {Chunk, done};
         {chunk, Chunk} ->
-            {Chunk, fun() -> streaming_get(FsmPid, StartTime, UserName, BFile_str) end}
+            {Chunk, fun() -> streaming_get(RcPool, RcPid, FsmPid, StartTime, UserName, BFile_str) end}
     end.
 
 %% @doc Get an ISO 8601 formatted timestamp representing
