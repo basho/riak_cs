@@ -53,7 +53,7 @@
           max_workers :: non_neg_integer(),
           active_workers=0 :: non_neg_integer(),
           %% Used for paginated 2I querying of GC bucket
-          key_list_state :: undefined | term(),
+          key_list_state :: undefined | gc_key_list_state(),
           %% Options to use when start workers
           bag_id :: binary(),
           testing=false :: boolean()

@@ -19,7 +19,6 @@
 %% ---------------------------------------------------------------------
 
 -define(MANIFEST, #lfs_manifest_v3).
--define(MANIFEST_REC, lfs_manifest_v3).
 
 -define(ACL, #acl_v2).
 -define(RCS_BUCKET, #moss_bucket_v1).
@@ -85,7 +84,7 @@
                   acl :: 'undefined' | acl(),
                   requested_perm :: acl_perm(),
                   riak_client :: riak_client(),
-                  rc_pool :: atom(),
+                  rc_pool :: atom(),    % pool name which riak_client belongs to
                   auto_rc_close = true :: boolean(),
                   submodule :: atom(),
                   exports_fun :: function(),
@@ -134,7 +133,7 @@
 -type cluster_id() :: undefined | binary(). %% flattened string as binary
 -type cs_uuid() :: binary().
 -type bag_id() :: undefined | binary().
--type riak_client() :: riak_client().
+-type riak_client() :: pid().
 
 -record(lfs_manifest_v2, {
         version=2 :: integer(),
