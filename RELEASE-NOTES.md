@@ -1,3 +1,104 @@
+# Riak CS 1.5.0 Release Notes
+
+## Additions
+
+* A new command `riak-cs-debug` which retrieves diagnosis info including `cluster-info` [riak_cs/#769](https://github.com/basho/riak_cs/pull/769), [riak_cs/#832](https://github.com/basho/riak_cs/pull/832)
+* Tie up all existing commands into a new command `riak-cs-admin` [riak_cs/#839](https://github.com/basho/riak_cs/pull/839)
+* Add a command `riak-cs-stanchion` to switch Stanchion IP and port manually [riak_cs/#657](https://github.com/basho/riak_cs/pull/657)
+* Performance of garbage collection has been improved via Concurrent GC [riak_cs/#830](https://github.com/basho/riak_cs/pull/830)
+* Iterator refresh [riak_cs/#805](https://github.com/basho/riak_cs/pull/805)
+* fold_objects made default in Riak CS [riak_cs/#737](https://github.com/basho/riak_cs/pull/737), [riak_cs/#785](https://github.com/basho/riak_cs/pull/785)
+* Syslog support through lager_syslog [riak_cs/#617](https://github.com/basho/riak_cs/pull/617)
+* Add support for Cache-Control header [riak_cs/#821](https://github.com/basho/riak_cs/pull/821)
+* Allow objects to be reaped sooner than leeway interval. [riak_cs/#470](https://github.com/basho/riak_cs/pull/470)
+* Add option to allow a delay for the initial GC collection [riak_cs/#688](https://github.com/basho/riak_cs/pull/688)
+* Update to lager 2.0.3
+* Compiles with R16B0x (Releases still by R15B01)
+
+## Bugs Fixed
+
+* `sanity_check(true,false)` logs invalid error on `riakc_pb_socket` error [riak_cs/#683](https://github.com/basho/riak_cs/pull/683)
+* Ignore Owner with an empty ID in AccessControlPolicy blob [riak_cs/#755](https://github.com/basho/riak_cs/pull/755)
+* Riak-CS-GC timestamp for scheduler is in the year 0043, not 2013. [riak_cs/#713](https://github.com/basho/riak_cs/pull/713) fixed by [riak_cs/#676](https://github.com/basho/riak_cs/pull/676)
+* Excessive calls to OTP code_server process #669 fixed by [riak_cs/#675](https://github.com/basho/riak_cs/pull/675)
+* Return HTTP 400 if content-md5 does not match [riak_cs/#596](https://github.com/basho/riak_cs/pull/596)
+* `/riak-cs/stats` and `admin_auth_enabled=false` don't work together correctly. [riak_cs/#719](https://github.com/basho/riak_cs/pull/719)
+* Storage calculation doesn't handle tombstones, nor handle undefined manifest.props [riak_cs/#849](https://github.com/basho/riak_cs/pull/849)
+* MP initiated objects remains after delete/create buckets #475 fixed by [riak_cs/#857](https://github.com/basho/riak_cs/pull/857) and [stanchon/#78](https://github.com/basho/stanchion/pull/78)
+* handling empty query string on list multipart upload [riak_cs/#843](https://github.com/basho/riak_cs/pull/843)
+* Setting ACLs via headers at PUT Object creation [riak_cs/#631](https://github.com/basho/riak_cs/pull/631)
+* Improve handling of poolboy timeouts during ping requests [riak_cs/#763](https://github.com/basho/riak_cs/pull/763)
+
+## Notes on Upgrading
+
+### Unaborted or incomplete multipart uploads
+
+[riak_cs/#475](https://github.com/basho/riak_cs/issues/475) was a
+security issue where a newly created bucket may include unaborted or
+incomplete multipart uploads which was created in previous epoch of
+the bucket with same name. This was fixed by:
+
+- on creating buckets; checking if live multipart exists and if
+  exists, return 500 failure to client.
+
+- on deleting buckets; trying to clean up all live multipart remains,
+  and checking if live multipart remains (in stanchion). if exists,
+  return 409 failure to client.
+
+Note that a few operations are needed after upgrading from 1.4.x (or
+former) to 1.5.0.
+
+- run `riak_cs_console:cleanup_orphan_multipart/0` or
+  `riak_cs_console:cleanup_orphan_multipart/1` in an attached console
+  to cleanup all buckets
+- there might be a time period until above cleanup finished, where no
+  client can create bucket if unfinished multipart upload remains
+  under deleted bucket. You can find [critical] log if such bucket
+  creation is attempted.
+
+### Leeway seconds and disk space
+
+[riak_cs/#470](https://github.com/basho/riak_cs/pull/470) changed the
+behaviour of object deletion and garbage collection. The timestamps in
+garbage collection bucket were changed from the current time when the
+object is deleted, to the future time when the object is to be
+deleted. Garbage collector was also changed to collect objects until
+'now - leeway seconds', from collecting objects until 'now'.
+
+Before:
+
+```
+           t1                         t2
+-----------+--------------------------+------------------->
+           DELETE object:             GC triggered:
+           marked as                  collects objects
+           "t1+leeway"                marked as "t2"
+```
+
+After:
+
+```
+           t1                         t2
+-----------+--------------------------+------------------->
+           DELETE object:             GC triggered:
+           marked as "t1"             collects objects
+           in GC bucket               marked as "t2 - leeway"
+```
+
+This leads that there exists a period where no objects are collected
+right after upgrade to 1.5.0, say, `t0`, until `t0 + leeway` . And
+objects deleted just before `t0` won't be collected until `t0 +
+2*leeway` .
+
+Also, all CS nodes which don't run GC should be upgraded before CS
+node which does run GC upgraded to let leeway second system work
+properly. Or stop GC while upgrading whole cluster, by running
+`riak-cs-gc interval infinity` .
+
+Multi-datacenter cluster should be upgraded more carefully, as to
+make sure GC is not running while upgrading.
+
+
 # Riak CS 1.4.5 Release Notes
 
 ## Bugs Fixed
