@@ -45,7 +45,6 @@
          md5_update/2,
          md5_final/1,
          reduce_keys_and_manifests/2,
-         get_object/3,
          get_manifests/3,
          manifests_from_riak_object/1,
          active_manifest_from_response/1,
@@ -55,16 +54,10 @@
          hexlist_to_binary/1,
          binary_to_hexlist/1,
          json_pp_print/1,
-         list_keys/2,
          key_exists/3,
          n_val_1_get_requests/0,
          pow/2,
          pow/3,
-         put_object/5,
-         put/2,
-         put/3,
-         put_with_no_meta/2,
-         put_with_no_meta/3,
          resolve_robj_siblings/1,
          riak_connection/0,
          riak_connection/1,
@@ -161,7 +154,7 @@ etag_from_binary_no_quotes(Binary) ->
 %% connection pool.
 -spec close_riak_connection(pid()) -> ok.
 close_riak_connection(Pid) ->
-    close_riak_connection(request_pool, Pid).
+    close_riak_connection(riak_cs_riak_client:pbc_pool_name(master), Pid).
 
 %% @doc Release a protobufs connection from the specified
 %% connection pool.
@@ -214,8 +207,8 @@ handle_create_user({error, {error_status, _, _, ErrorDoc}}, _User) ->
 handle_create_user({error, _}=Error, _User) ->
     Error.
 
-handle_update_user(ok, User, UserObj, RiakPid) ->
-    _ = save_user(User, UserObj, RiakPid),
+handle_update_user(ok, User, UserObj, RcPid) ->
+    _ = save_user(User, UserObj, RcPid),
     {ok, User};
 handle_update_user({error, {error_status, _, _, ErrorDoc}}, _User, _, _) ->
     case riak_cs_config:api() of
@@ -228,9 +221,9 @@ handle_update_user({error, _}=Error, _User, _, _) ->
     Error.
 
 %% @doc Update a Riak CS user record
--spec update_user(rcs_user(), riakc_obj:riakc_obj(), pid()) ->
+-spec update_user(rcs_user(), riakc_obj:riakc_obj(), riak_client()) ->
                          {ok, rcs_user()} | {error, term()}.
-update_user(User, UserObj, RiakPid) ->
+update_user(User, UserObj, RcPid) ->
     {StIp, StPort, StSSL} = stanchion_data(),
     case riak_cs_config:admin_creds() of
         {ok, AdminCreds} ->
@@ -242,7 +235,7 @@ update_user(User, UserObj, RiakPid) ->
                                         User?RCS_USER.key_id,
                                         binary_to_list(riak_cs_json:to_json(User)),
                                         Options),
-            handle_update_user(Result, User, UserObj, RiakPid);
+            handle_update_user(Result, User, UserObj, RcPid);
         {error, _}=Error ->
             Error
     end.
@@ -253,11 +246,11 @@ update_user(User, UserObj, RiakPid) ->
 %% Garbage collection. Otherwise returns an error. Note,
 %% {error, notfound} counts as success in this case,
 %% with the list of UUIDs being [].
--spec delete_object(binary(), binary(), pid()) ->
+-spec delete_object(binary(), binary(), riak_client()) ->
     {ok, [binary()]} | {error, term()}.
-delete_object(Bucket, Key, RiakcPid) ->
+delete_object(Bucket, Key, RcPid) ->
     ok = riak_cs_stats:update_with_start(object_delete, os:timestamp()),
-    riak_cs_gc:gc_active_manifests(Bucket, Key, RiakcPid).
+    riak_cs_gc:gc_active_manifests(Bucket, Key, RcPid).
 
 -spec encode_term(term()) -> binary().
 encode_term(Term) ->
@@ -270,17 +263,17 @@ encode_term(Term) ->
 
 %% @doc Return a list of keys for a bucket along
 %% with their associated objects.
--spec get_keys_and_manifests(binary(), binary(), pid()) -> {ok, [lfs_manifest()]} | {error, term()}.
-get_keys_and_manifests(BucketName, Prefix, RiakPid) ->
+-spec get_keys_and_manifests(binary(), binary(), riak_client()) -> {ok, [lfs_manifest()]} | {error, term()}.
+get_keys_and_manifests(BucketName, Prefix, RcPid) ->
     ManifestBucket = to_bucket_name(objects, BucketName),
-    case active_manifests(ManifestBucket, Prefix, RiakPid) of
+    case active_manifests(ManifestBucket, Prefix, RcPid) of
         {ok, KeyManifests} ->
             {ok, lists:keysort(1, KeyManifests)};
         {error, Reason} ->
             {error, Reason}
     end.
 
-active_manifests(ManifestBucket, Prefix, RiakPid) ->
+active_manifests(ManifestBucket, Prefix, RcPid) ->
     Input = case Prefix of
                 <<>> -> ManifestBucket;
                 _ ->
@@ -295,7 +288,8 @@ active_manifests(ManifestBucket, Prefix, RiakPid) ->
               undefined, false},
              {reduce, {modfun, riak_cs_utils, reduce_keys_and_manifests},
               undefined, true}],
-    {ok, ReqId} = riakc_pb_socket:mapred_stream(RiakPid, Input, Query, self()),
+    {ok, ManifestPbc} = riak_cs_riak_client:manifest_pbc(RcPid),
+    {ok, ReqId} = riakc_pb_socket:mapred_stream(ManifestPbc, Input, Query, self()),
     receive_keys_and_manifests(ReqId, []).
 
 %% Stream keys to avoid riakc_pb_socket:wait_for_mapred/2's use of
@@ -410,36 +404,32 @@ md5_update(Ctx, <<Part:?MAX_UPDATE_SIZE/binary, Rest/binary>>) ->
 
 md5_final(Ctx) -> crypto:md5_final(Ctx).
 -endif.
-%% @doc Get an object from Riak
--spec get_object(binary(), binary(), pid()) ->
-                        {ok, riakc_obj:riakc_obj()} | {error, term()}.
-get_object(BucketName, Key, RiakPid) ->
-    riakc_pb_socket:get(RiakPid, BucketName, Key).
 
 %% internal fun to retrieve the riak object
 %% at a bucket/key
--spec get_manifests_raw(pid(), binary(), binary()) ->
+-spec get_manifests_raw(riak_client(), binary(), binary()) ->
     {ok, riakc_obj:riakc_obj()} | {error, term()}.
-get_manifests_raw(RiakcPid, Bucket, Key) ->
+get_manifests_raw(RcPid, Bucket, Key) ->
     ManifestBucket = to_bucket_name(objects, Bucket),
-    riakc_pb_socket:get(RiakcPid, ManifestBucket, Key).
+    {ok, ManifestPbc} = riak_cs_riak_client:manifest_pbc(RcPid),
+    riakc_pb_socket:get(ManifestPbc, ManifestBucket, Key).
 
 %% @doc
--spec get_manifests(pid(), binary(), binary()) ->
+-spec get_manifests(riak_client(), binary(), binary()) ->
     {ok, term(), term()} | {error, term()}.
-get_manifests(RiakcPid, Bucket, Key) ->
-    case get_manifests_raw(RiakcPid, Bucket, Key) of
+get_manifests(RcPid, Bucket, Key) ->
+    case get_manifests_raw(RcPid, Bucket, Key) of
         {ok, Object} ->
             Manifests = manifests_from_riak_object(Object),
-            _  = gc_deleted_while_writing_manifests(Object, Manifests, Bucket, Key, RiakcPid),
+            _  = gc_deleted_while_writing_manifests(Object, Manifests, Bucket, Key, RcPid),
             {ok, Object, Manifests};
         {error, _Reason}=Error ->
             Error
     end.
 
-gc_deleted_while_writing_manifests(Object, Manifests, Bucket, Key, RiakcPid) ->
+gc_deleted_while_writing_manifests(Object, Manifests, Bucket, Key, RcPid) ->
     UUIDs = riak_cs_manifest_utils:deleted_while_writing(Manifests),
-    riak_cs_gc:gc_specific_manifests(UUIDs, Object, Bucket, Key, RiakcPid).
+    riak_cs_gc:gc_specific_manifests(UUIDs, Object, Bucket, Key, RcPid).
 
 -spec manifests_from_riak_object(riakc_obj:riakc_obj()) -> orddict:orddict().
 manifests_from_riak_object(RiakObject) ->
@@ -487,14 +477,14 @@ handle_active_manifests({error, no_active_manifest}) ->
     {error, notfound}.
 
 %% @doc Retrieve a Riak CS user's information based on their id string.
--spec get_user('undefined' | list(), pid()) -> {ok, {rcs_user(), riakc_obj:riakc_obj()}} | {error, term()}.
-get_user(undefined, _RiakPid) ->
+-spec get_user('undefined' | list(), riak_client()) -> {ok, {rcs_user(), riakc_obj:riakc_obj()}} | {error, term()}.
+get_user(undefined, _RcPid) ->
     {error, no_user_key};
-get_user(KeyId, RiakPid) ->
+get_user(KeyId, RcPid) ->
     %% Check for and resolve siblings to get a
     %% coherent view of the bucket ownership.
     BinKey = list_to_binary(KeyId),
-    case fetch_user(BinKey, RiakPid) of
+    case riak_cs_riak_client:get_user(RcPid, BinKey) of
         {ok, {Obj, KeepDeletedBuckets}} ->
             case riakc_obj:value_count(Obj) of
                 1 ->
@@ -520,21 +510,22 @@ get_user(KeyId, RiakPid) ->
 %% @doc Retrieve a Riak CS user's information based on their
 %% canonical id string.
 %% @TODO May want to use mapreduce job for this.
--spec get_user_by_index(binary(), binary(), pid()) ->
+-spec get_user_by_index(binary(), binary(), riak_client()) ->
                                {ok, {rcs_user(), term()}} |
                                {error, term()}.
-get_user_by_index(Index, Value, RiakPid) ->
-    case get_user_index(Index, Value, RiakPid) of
+get_user_by_index(Index, Value, RcPid) ->
+    case get_user_index(Index, Value, RcPid) of
         {ok, KeyId} ->
-            get_user(KeyId, RiakPid);
+            get_user(KeyId, RcPid);
         {error, _}=Error1 ->
             Error1
     end.
 
 %% @doc Query `Index' for `Value' in the users bucket.
--spec get_user_index(binary(), binary(), pid()) -> {ok, string()} | {error, term()}.
-get_user_index(Index, Value, RiakPid) ->
-    case riakc_pb_socket:get_index(RiakPid, ?USER_BUCKET, Index, Value) of
+-spec get_user_index(binary(), binary(), riak_client()) -> {ok, string()} | {error, term()}.
+get_user_index(Index, Value, RcPid) ->
+    {ok, MasterPbc} = riak_cs_riak_client:master_pbc(RcPid),
+    case riakc_pb_socket:get_index(MasterPbc, ?USER_BUCKET, Index, Value) of
         {ok, ?INDEX_RESULTS{keys=[]}} ->
             {error, notfound};
         {ok, ?INDEX_RESULTS{keys=[Key | _]}} ->
@@ -583,21 +574,6 @@ json_pp_print([], _I, _Q, Acc) -> % done
 
 json_pp_indent(I) -> lists:duplicate(I*4, ?SPACE).
 
-%% @doc List the keys from a bucket
--spec list_keys(binary(), pid()) -> {ok, [binary()]} | {error, term()}.
-list_keys(BucketName, RiakPid) ->
-    case riakc_pb_socket:list_keys(RiakPid, BucketName) of
-        {ok, Keys} ->
-            %% TODO:
-            %% This is a naive implementation,
-            %% the longer-term solution is likely
-            %% going to involve 2i and merging the
-            %% results from each of the vnodes.
-            {ok, lists:sort(Keys)};
-        {error, _}=Error ->
-            Error
-    end.
-
 -spec n_val_1_get_requests() -> boolean().
 n_val_1_get_requests() ->
     riak_cs_config:get_env(riak_cs, n_val_1_get_requests,
@@ -617,40 +593,6 @@ pow(Base, Power, Acc) ->
         _ ->
             pow(Base, Power - 1, Acc * Base)
     end.
-
-%% @doc Store an object in Riak
--spec put_object(binary(), undefined | binary(), binary(), [term()], pid()) -> ok | {error, term()}.
-put_object(BucketName, undefined, Value, Metadata, _RiakPid) ->
-    error_logger:warning_msg("Attempt to put object into ~p with undefined key "
-                             "and value ~P and dict ~p\n",
-                             [BucketName, Value, 30, Metadata]),
-    {error, bad_key};
-put_object(BucketName, Key, Value, Metadata, RiakPid) ->
-    RiakObject = riakc_obj:new(BucketName, Key, Value),
-    NewObj = riakc_obj:update_metadata(RiakObject, Metadata),
-    riakc_pb_socket:put(RiakPid, NewObj).
-
-put(RiakcPid, RiakcObj) ->
-    put(RiakcPid, RiakcObj, []).
-
-put(RiakcPid, RiakcObj, Options) ->
-    riakc_pb_socket:put(RiakcPid, RiakcObj, Options).
-
-put_with_no_meta(RiakcPid, RiakcObj) ->
-    put_with_no_meta(RiakcPid, RiakcObj, []).
-%% @doc Put an object in Riak with empty
-%% metadata. This is likely used when because
-%% you want to avoid manually setting the metadata
-%% to an empty dict. You'd want to do this because
-%% if the previous object had metadata siblings,
-%% not explicitly setting the metadata will
-%% cause a siblings exception to be raised.
--spec put_with_no_meta(pid(), riakc_obj:riakc_obj(), term()) ->
-    ok | {ok, riakc_obj:riakc_obj()} | {ok, binary()} | {error, term()}.
-put_with_no_meta(RiakcPid, RiakcObject, Options) ->
-    WithMeta = riakc_obj:update_metadata(RiakcObject, dict:new()),
-    riakc_pb_socket:put(RiakcPid, WithMeta, Options).
-
 
 -type resolve_ok() :: {term(), binary()}.
 -type resolve_error() :: {atom(), atom()}.
@@ -701,13 +643,13 @@ find_md_usermeta(MD) ->
     dict:find(?MD_USERMETA, MD).
 
 %% @doc Get a protobufs connection to the riak cluster
-%% from the default connection pool.
+%% from the `request_pool' connection pool of the master bag.
 -spec riak_connection() -> {ok, pid()} | {error, term()}.
 riak_connection() ->
-    riak_connection(request_pool).
+    riak_connection(riak_cs_riak_client:pbc_pool_name(master)).
 
 %% @doc Get a protobufs connection to the riak cluster
-%% from the specified connection pool.
+%% from the specified connection pool of the master bag.
 -spec riak_connection(atom()) -> {ok, pid()} | {error, term()}.
 riak_connection(Pool) ->
     case catch poolboy:checkout(Pool, false) of
@@ -720,24 +662,17 @@ riak_connection(Pool) ->
     end.
 
 %% @doc Save information about a Riak CS user
--spec save_user(rcs_user(), riakc_obj:riakc_obj(), pid()) -> ok | {error, term()}.
-save_user(User, UserObj, RiakPid) ->
-    Indexes = [{?EMAIL_INDEX, User?RCS_USER.email},
-               {?ID_INDEX, User?RCS_USER.canonical_id}],
-    MD = dict:store(?MD_INDEX, Indexes, dict:new()),
-    UpdUserObj = riakc_obj:update_metadata(
-                   riakc_obj:update_value(UserObj,
-                                          riak_cs_utils:encode_term(User)),
-                   MD),
-    riakc_pb_socket:put(RiakPid, UpdUserObj).
+-spec save_user(rcs_user(), riakc_obj:riakc_obj(), riak_client()) -> ok | {error, term()}.
+save_user(User, UserObj, RcPid) ->
+    riak_cs_riak_client:save_user(RcPid, User, UserObj).
 
 %% @doc Set the ACL for an object. Existing ACLs are only
 %% replaced, they cannot be updated.
--spec set_object_acl(binary(), binary(), lfs_manifest(), acl(), pid()) ->
+-spec set_object_acl(binary(), binary(), lfs_manifest(), acl(), riak_client()) ->
             ok | {error, term()}.
-set_object_acl(Bucket, Key, Manifest, Acl, RiakPid) ->
+set_object_acl(Bucket, Key, Manifest, Acl, RcPid) ->
     StartTime = os:timestamp(),
-    {ok, ManiPid} = riak_cs_manifest_fsm:start_link(Bucket, Key, RiakPid),
+    {ok, ManiPid} = riak_cs_manifest_fsm:start_link(Bucket, Key, RcPid),
     _ActiveMfst = riak_cs_manifest_fsm:get_active_manifest(ManiPid),
     UpdManifest = Manifest?MANIFEST{acl=Acl},
     Res = riak_cs_manifest_fsm:update_manifest_with_confirmation(ManiPid, UpdManifest),
@@ -800,9 +735,9 @@ update_obj_value(Obj, Value) when is_binary(Value) ->
 %% @private
 %% `Bucket' should be the raw bucket name,
 %% we'll take care of calling `to_bucket_name'
--spec key_exists(pid(), binary(), binary()) -> boolean().
-key_exists(RiakcPid, Bucket, Key) ->
-    key_exists_handle_get_manifests(get_manifests(RiakcPid, Bucket, Key)).
+-spec key_exists(riak_client(), binary(), binary()) -> boolean().
+key_exists(RcPid, Bucket, Key) ->
+    key_exists_handle_get_manifests(get_manifests(RcPid, Bucket, Key)).
 
 %% @doc Return `stanchion' configuration data.
 -spec stanchion_data() -> {string(), pos_integer(), boolean()}.
@@ -874,38 +809,6 @@ display_name(Email) ->
     Index = string:chr(Email, $@),
     string:sub_string(Email, 1, Index-1).
 
-%% @doc Perform an initial read attempt with R=PR=N.
-%% If the initial read fails retry using
-%% R=quorum and PR=1, but indicate that bucket deletion
-%% indicators should not be cleaned up.
--spec fetch_user(KeyID :: binary(),
-                 RiakConnection :: pid()) ->
-    {ok, {riakc_obj(), KeepDeletedBuckets :: boolean()}} |
-    {error, term()}.
-fetch_user(Key, RiakPid) ->
-    StrongOptions = [{r, all}, {pr, all}, {notfound_ok, false}],
-    case riakc_pb_socket:get(RiakPid, ?USER_BUCKET, Key, StrongOptions) of
-        {ok, Obj} ->
-            %% since we read from all primaries, we're
-            %% less concerned with there being an 'out-of-date'
-            %% replica that we might conflict with (and not
-            %% be able to properly resolve conflicts).
-            KeepDeletedBuckets = false,
-            {ok, {Obj, KeepDeletedBuckets}};
-        {error, _} ->
-            WeakOptions = [{r, quorum}, {pr, one}, {notfound_ok, false}],
-            case riakc_pb_socket:get(RiakPid, ?USER_BUCKET, Key, WeakOptions) of
-                {ok, Obj} ->
-                    %% We weren't able to read from all primary
-                    %% vnodes, so don't risk losing information
-                    %% by pruning the bucket list.
-                    KeepDeletedBuckets = true,
-                    {ok, {Obj, KeepDeletedBuckets}};
-                {error, Reason} ->
-                    {error, Reason}
-            end
-    end.
-
 %% @doc Generate a new set of access credentials for user.
 -spec generate_access_creds(string()) -> {iodata(), iodata()}.
 generate_access_creds(UserId) ->
@@ -970,8 +873,9 @@ validate_email(EmailAddr) ->
 
 %% @doc Update a user record from a previous version if necessary.
 -spec update_user_record(rcs_user()) -> rcs_user().
-update_user_record(User=?RCS_USER{}) ->
-    User;
+update_user_record(User=?RCS_USER{buckets=Buckets}) ->
+    User?RCS_USER{buckets=[riak_cs_bucket:update_bucket_record(Bucket) ||
+                              Bucket <- Buckets]};
 update_user_record(User=#moss_user_v1{}) ->
     ?RCS_USER{name=User#moss_user_v1.name,
               display_name=User#moss_user_v1.display_name,

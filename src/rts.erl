@@ -61,8 +61,8 @@
 
 -type datetime() :: calendar:datetime().
 -type slice() :: {Start :: datetime(), End :: datetime()}.
--type riakc_pb_socket() :: pid().
 -type mochijson2() :: term().
+-type riak_client() :: pid().
 
 %% @doc Just create the new sample object (don't store it).
 -spec new_sample(binary(), iolist(),
@@ -84,12 +84,12 @@ new_sample(Bucket, KeyPostfix, Start, End, Period, Data) ->
 %% This implementation reads each slice object from riak, and does the
 %% extraction/etc. on the client side.  It would be a a trivial
 %% modification to do this via MapReduce instead.
--spec find_samples(riakc_pb_socket(), binary(), iolist(),
+-spec find_samples(riak_client(), binary(), iolist(),
                    datetime(), datetime(), integer()) ->
          {Samples::[mochijson2()], Errors::[{slice(), Reason::term()}]}.
-find_samples(Riak, Bucket, KeyPostfix, Start, End, Period) ->
+find_samples(RcPid, Bucket, KeyPostfix, Start, End, Period) ->
     Slices = slices_filling(Start, End, Period),
-    Puller = sample_puller(Riak, Bucket, KeyPostfix),
+    Puller = sample_puller(RcPid, Bucket, KeyPostfix),
     {Samples, Errors} = lists:foldl(Puller, {[], []}, Slices),
     {lists:filter(sample_in_bounds(Start, End), Samples), Errors}.
 
@@ -110,11 +110,12 @@ sample_in_bounds(Start, End) ->
     end.
 
 %% @doc Make a thunk that looks up samples for a given bucket+prefix.
--spec sample_puller(riakc_pb_socket(), binary(), iolist()) -> fun().
-sample_puller(Riak, Bucket, Postfix) ->
+-spec sample_puller(riak_client(), binary(), iolist()) -> fun().
+sample_puller(RcPid, Bucket, Postfix) ->
     fun(Slice, {Samples, Errors}) ->
+            {ok, MasterPbc} = riak_cs_riak_client:master_pbc(RcPid),
             case riakc_pb_socket:get(
-                   Riak, Bucket, slice_key(Slice, Postfix)) of
+                   MasterPbc, Bucket, slice_key(Slice, Postfix)) of
                 {ok, Object} ->
                     RawSamples =
                         [ catch element(2, {struct,_}=mochijson2:decode(V))

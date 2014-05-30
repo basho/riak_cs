@@ -27,7 +27,7 @@
 -behaviour(gen_fsm).
 
 %% API
--export([start_link/1,
+-export([start_link/2,
          stop/1]).
 
 %% gen_fsm callbacks
@@ -45,7 +45,6 @@
          code_change/4]).
 
 -include("riak_cs_gc_d.hrl").
--include_lib("riakc/include/riakc.hrl").
 
 -export([current_state/1]).
 
@@ -57,8 +56,8 @@
 %%%===================================================================
 
 %% @doc Start the garbage collection server
-start_link(Keys) ->
-    gen_fsm:start_link(?MODULE, [Keys], []).
+start_link(BagId, Keys) ->
+    gen_fsm:start_link(?MODULE, [BagId, Keys], []).
 
 %% @doc Stop the daemon
 -spec stop(pid()) -> ok | {error, term()}.
@@ -71,12 +70,14 @@ stop(Pid) ->
 
 %% @doc Read the storage schedule and go to idle.
 
-init([Keys]) ->
+init([BagId, Keys]) ->
     %% this does not check out a worker from the riak
     %% connection pool; instead it creates a fresh new worker
-    {ok, Pid} = riak_cs_riakc_pool_worker:start_link([]),
+    %% TODO: Newly start PBC clients of underlying bags
+    {ok, RcPid} = riak_cs_riak_client:start_link([]),
+    ok = riak_cs_riak_client:set_manifest_bag(RcPid, BagId),
     ok = continue(),
-    {ok, fetching_next_fileset, ?STATE{batch=Keys, riak_pid=Pid}}.
+    {ok, fetching_next_fileset, ?STATE{batch=Keys, riak_client=RcPid}}.
 
 %% Asynchronous events
 
@@ -90,10 +91,10 @@ fetching_next_fileset(continue, ?STATE{batch=[]}=State) ->
 fetching_next_fileset(continue, State=?STATE{batch=[FileSetKey | RestKeys],
                                              batch_skips=BatchSkips,
                                              manif_count=ManifCount,
-                                             riak_pid=RiakPid}) ->
+                                             riak_client=RcPid}) ->
     %% Fetch the next set of manifests for deletion
     {NextState, NextStateData} =
-        case fetch_next_fileset(FileSetKey, RiakPid) of
+        case fetch_next_fileset(FileSetKey, RcPid) of
             {ok, FileSet, RiakObj} ->
                 {initiating_file_delete,
                  State?STATE{current_files=twop_set:to_list(FileSet),
@@ -118,18 +119,18 @@ initiating_file_delete(continue, ?STATE{batch=[_ManiSetKey | RestKeys],
                                         current_files=[],
                                         current_fileset=FileSet,
                                         current_riak_object=RiakObj,
-                                        riak_pid=RiakPid}=State) ->
-    finish_file_delete(twop_set:size(FileSet), FileSet, RiakObj, RiakPid),
+                                        riak_client=RcPid}=State) ->
+    finish_file_delete(twop_set:size(FileSet), FileSet, RiakObj, RcPid),
     ok = continue(),
     {next_state, fetching_next_fileset, State?STATE{batch=RestKeys,
                                                     batch_count=1+BatchCount}};
 initiating_file_delete(continue, ?STATE{current_files=[Manifest | _RestManifests],
-                                        riak_pid=RiakPid}=State) ->
+                                        riak_client=RcPid}=State) ->
     %% Use an instance of `riak_cs_delete_fsm' to handle the
     %% deletion of the file blocks.
     %% Don't worry about delete_fsm failures. Manifests are
     %% rescheduled after a certain time.
-    Args = [RiakPid, Manifest, self(), []],
+    Args = [RcPid, Manifest, self(), []],
     %% The delete FSM is hard-coded to send a sync event to our registered
     %% name upon terminate(), so we do not have to pass our pid to it
     %% in order to get a reply.
@@ -185,8 +186,8 @@ handle_info(_Info, StateName, State) ->
 
 %% @doc TODO: log warnings if this fsm is asked to terminate in the
 %% middle of running a gc batch
-terminate(_Reason, _StateName, _State=?STATE{riak_pid=RiakPid}) ->
-    riak_cs_riakc_pool_worker:stop(RiakPid),
+terminate(_Reason, _StateName, _State=?STATE{riak_client=RcPid}) ->
+    riak_cs_riak_client:stop(RcPid),
     ok.
 
 %% @doc this fsm has no special upgrade process
@@ -207,12 +208,13 @@ continue() ->
     gen_fsm:send_event(self(), continue).
 
 %% @doc Delete the blocks for the next set of manifests in the batch
--spec fetch_next_fileset(binary(), pid()) ->
+-spec fetch_next_fileset(binary(), riak_client()) ->
                                 {ok, twop_set:twop_set(), riakc_obj:riakc_obj()} |
                                 {error, term()}.
-fetch_next_fileset(ManifestSetKey, RiakPid) ->
+fetch_next_fileset(ManifestSetKey, RcPid) ->
     %% Get the set of manifests represented by the key
-    case riak_cs_utils:get_object(?GC_BUCKET, ManifestSetKey, RiakPid) of
+    {ok, ManifestPbc} = riak_cs_riak_client:manifest_pbc(RcPid),
+    case riak_cs_pbc:get_object(ManifestPbc, ?GC_BUCKET, ManifestSetKey) of
         {ok, RiakObj} ->
             ManifestSet = riak_cs_gc:decode_and_merge_siblings(
                             RiakObj, twop_set:new()),
@@ -232,12 +234,13 @@ fetch_next_fileset(ManifestSetKey, RiakPid) ->
 -spec finish_file_delete(non_neg_integer(),
                          twop_set:twop_set(),
                          riakc_obj:riakc_obj(),
-                         pid()) -> ok.
-finish_file_delete(0, _, RiakObj, RiakPid) ->
+                         riak_client()) -> ok.
+finish_file_delete(0, _, RiakObj, RcPid) ->
     %% Delete the key from the GC bucket
-    _ = riakc_pb_socket:delete_obj(RiakPid, RiakObj),
+    {ok, ManifestPbc} = riak_cs_riak_client:manifest_pbc(RcPid),
+    _ = riakc_pb_socket:delete_obj(ManifestPbc, RiakObj),
     ok;
-finish_file_delete(_, FileSet, _RiakObj, _RiakPid) ->
+finish_file_delete(_, FileSet, _RiakObj, _RcPid) ->
     _ = lager:debug("Remaining file keys: ~p", [twop_set:to_list(FileSet)]),
     %% NOTE: we used to do a PUT here, but now with multidc replication
     %% we run garbage collection seprarately on each cluster, so we don't

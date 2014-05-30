@@ -36,7 +36,7 @@
 
 -spec init(#context{}) -> {ok, #context{}}.
 init(Ctx) ->
-    {ok, Ctx#context{riakc_pool=?RIAKCPOOL}}.
+    {ok, Ctx#context{rc_pool=?RIAKCPOOL}}.
 
 -spec allowed_methods() -> [atom()].
 allowed_methods() ->
@@ -51,6 +51,7 @@ authorize(RD, Ctx) ->
 
 -spec api_request(#wm_reqdata{}, #context{}) -> {ok, ?LORESP{}} | {error, term()}.
 api_request(RD, Ctx=#context{bucket=Bucket,
+                             riak_client=RcPid,
                              user=User,
                              start_time=StartTime}) ->
     UserName = riak_cs_wm_utils:extract_name(User),
@@ -61,7 +62,7 @@ api_request(RD, Ctx=#context{bucket=Bucket,
             Ctx#context.bucket,
             get_max_keys(RD),
             get_options(RD),
-            Ctx#context.riakc_pid),
+            RcPid),
     ok = riak_cs_stats:update_with_start(bucket_list_keys, StartTime),
     riak_cs_dtrace:dt_bucket_return(?MODULE, <<"list_keys">>, [200], [UserName, Bucket]),
     Res.

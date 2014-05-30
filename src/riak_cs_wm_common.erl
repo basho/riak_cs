@@ -91,22 +91,16 @@ init(Config) ->
     resource_call(Mod, init, [Ctx], ExportsFun).
 
 -spec service_available(#wm_reqdata{}, #context{}) -> {boolean(), #wm_reqdata{}, #context{}}.
-service_available(RD, Ctx=#context{submodule=Mod,riakc_pool=undefined}) ->
+service_available(RD, Ctx=#context{rc_pool=undefined}) ->
+    service_available(RD, Ctx#context{rc_pool=request_pool});
+service_available(RD, Ctx=#context{submodule=Mod, rc_pool=Pool}) ->
     riak_cs_dtrace:dt_wm_entry({?MODULE, Mod}, <<"service_available">>),
-    case riak_cs_utils:riak_connection() of
-        {ok, Pid} ->
+    case riak_cs_riak_client:checkout(Pool) of
+        {ok, RcPid} ->
             riak_cs_dtrace:dt_wm_return({?MODULE, Mod}, <<"service_available">>, [1], []),
-            {true, RD, Ctx#context{riakc_pid=Pid}};
+            {true, RD, Ctx#context{riak_client=RcPid}};
         {error, _Reason} ->
             riak_cs_dtrace:dt_wm_return({?MODULE, Mod}, <<"service_available">>, [0], []),
-            {false, RD, Ctx}
-    end;
-service_available(RD, Ctx=#context{submodule=Mod,riakc_pool=Pool}) ->
-    riak_cs_dtrace:dt_wm_entry({?MODULE, Mod}, <<"service_available">>),
-    case riak_cs_utils:riak_connection(Pool) of
-        {ok, Pid} ->
-            {true, RD, Ctx#context{riakc_pid=Pid}};
-        {error, _Reason} ->
             {false, RD, Ctx}
     end.
 
@@ -158,7 +152,7 @@ validate_content_checksum(RD, Ctx=#context{submodule=Mod, exports_fun=ExportsFun
 -spec forbidden(#wm_reqdata{}, #context{}) -> {boolean() | {halt, non_neg_integer()}, #wm_reqdata{}, #context{}}.
 forbidden(RD, Ctx=#context{auth_module=AuthMod,
                            submodule=Mod,
-                           riakc_pid=RiakPid,
+                           riak_client=RcPid,
                            exports_fun=ExportsFun}) ->
     {AuthResult, AnonOk} =
         case AuthMod:identify(RD, Ctx) of
@@ -168,12 +162,12 @@ forbidden(RD, Ctx=#context{auth_module=AuthMod,
                                            [],
                                            [riak_cs_wm_utils:extract_name(UserKey)]),
                 UserLookupResult = maybe_create_user(
-                                     riak_cs_utils:get_user(UserKey, RiakPid),
+                                     riak_cs_utils:get_user(UserKey, RcPid),
                                      UserKey,
                                      Ctx#context.api,
                                      Ctx#context.auth_module,
                                      AuthData,
-                                     RiakPid),
+                                     RcPid),
                 {authenticate(UserLookupResult, RD, Ctx, AuthData),
                  resource_call(Mod, anon_ok, [], ExportsFun)};
             failed ->
@@ -202,7 +196,7 @@ forbidden(RD, Ctx=#context{auth_module=AuthMod,
 
 maybe_create_user({ok, {_, _}}=UserResult, _, _, _, _, _) ->
     UserResult;
-maybe_create_user({error, NE}, KeyId, oos, _, {UserData, _}, RiakPid)
+maybe_create_user({error, NE}, KeyId, oos, _, {UserData, _}, RcPid)
   when NE =:= not_found;
        NE =:= notfound;
        NE =:= no_user_key ->
@@ -210,8 +204,8 @@ maybe_create_user({error, NE}, KeyId, oos, _, {UserData, _}, RiakPid)
     {_, Secret} = riak_cs_oos_utils:user_ec2_creds(UserId, KeyId),
     %% Attempt to create a Riak CS user to represent the OS tenant
     _ = riak_cs_utils:create_user(Name, Email, KeyId, Secret),
-    riak_cs_utils:get_user(KeyId, RiakPid);
-maybe_create_user({error, NE}, KeyId, s3, riak_cs_keystone_auth, {UserData, _}, RiakPid)
+    riak_cs_utils:get_user(KeyId, RcPid);
+maybe_create_user({error, NE}, KeyId, s3, riak_cs_keystone_auth, {UserData, _}, RcPid)
   when NE =:= not_found;
        NE =:= notfound;
        NE =:= no_user_key ->
@@ -219,7 +213,7 @@ maybe_create_user({error, NE}, KeyId, s3, riak_cs_keystone_auth, {UserData, _}, 
     {_, Secret} = riak_cs_oos_utils:user_ec2_creds(UserId, KeyId),
     %% Attempt to create a Riak CS user to represent the OS tenant
     _ = riak_cs_utils:create_user(Name, Email, KeyId, Secret),
-    riak_cs_utils:get_user(KeyId, RiakPid);
+    riak_cs_utils:get_user(KeyId, RcPid);
 maybe_create_user({error, Reason}=Error, _, Api, _, _, _) ->
     _ = lager:error("Retrieval of user record for ~p failed. Reason: ~p",
                     [Api, Reason]),
@@ -369,9 +363,11 @@ produce_body(RD, Ctx=#context{user=User,
     Res.
 
 -spec finish_request(#wm_reqdata{}, #context{}) -> {boolean(), #wm_reqdata{}, #context{}}.
-finish_request(RD, Ctx=#context{riakc_pid=undefined,
+finish_request(RD, Ctx=#context{riak_client=RcPid,
+                                auto_rc_close=AutoRcClose,
                                 submodule=Mod,
-                                exports_fun=ExportsFun}) ->
+                                exports_fun=ExportsFun})
+  when RcPid =:= undefined orelse AutoRcClose =:= false ->
     riak_cs_dtrace:dt_wm_entry({?MODULE, Mod}, <<"finish_request">>, [0], []),
     Res = resource_call(Mod,
                         finish_request,
@@ -379,17 +375,13 @@ finish_request(RD, Ctx=#context{riakc_pid=undefined,
                         ExportsFun),
     riak_cs_dtrace:dt_wm_return({?MODULE, Mod}, <<"finish_request">>, [0], []),
     Res;
-finish_request(RD, Ctx0=#context{riakc_pid=RiakcPid,
+finish_request(RD, Ctx0=#context{riak_client=RcPid,
+                                 rc_pool=Pool,
                                  submodule=Mod,
-                                 riakc_pool=Pool,
                                  exports_fun=ExportsFun}) ->
     riak_cs_dtrace:dt_wm_entry({?MODULE, Mod}, <<"finish_request">>, [1], []),
-    case Pool of
-        undefined -> riak_cs_utils:close_riak_connection(RiakcPid);
-        _ -> riak_cs_utils:close_riak_connection(Pool, RiakcPid)
-    end,
-    riak_cs_utils:close_riak_connection(RiakcPid),
-    Ctx = Ctx0#context{riakc_pid=undefined},
+    riak_cs_riak_client:checkin(Pool, RcPid),
+    Ctx = Ctx0#context{riak_client=undefined},
     Res = resource_call(Mod,
                         finish_request,
                         [RD, Ctx],

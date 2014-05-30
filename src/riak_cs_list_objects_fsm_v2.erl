@@ -71,7 +71,7 @@
 -type profiling() :: #profiling{}.
 
 
--record(state, {riakc_pid :: pid(),
+-record(state, {riak_client :: pid(),
                 req :: list_object_request(),
                 reply_ref :: undefined | {pid(), any()},
                 fold_objects_batch_size :: pos_integer(),
@@ -109,33 +109,33 @@
 %%% API
 %%%===================================================================
 
--spec start_link(pid(), list_object_request()) ->
+-spec start_link(riak_client(), list_object_request()) ->
     {ok, pid()} | {error, term()}.
-start_link(RiakcPid, ListKeysRequest) ->
+start_link(RcPid, ListKeysRequest) ->
     FoldObjectsBatchSize = 1002,
-    start_link(RiakcPid, ListKeysRequest, FoldObjectsBatchSize).
+    start_link(RcPid, ListKeysRequest, FoldObjectsBatchSize).
 
--spec start_link(pid(), list_object_request(), pos_integer()) ->
+-spec start_link(riak_client(), list_object_request(), pos_integer()) ->
     {ok, pid()} | {error, term()}.
-start_link(RiakcPid, ListKeysRequest, FoldObjectsBatchSize) ->
+start_link(RcPid, ListKeysRequest, FoldObjectsBatchSize) ->
     BatchSize2 = max(2, FoldObjectsBatchSize),
-    gen_fsm:start_link(?MODULE, [RiakcPid, ListKeysRequest, BatchSize2], []).
+    gen_fsm:start_link(?MODULE, [RcPid, ListKeysRequest, BatchSize2], []).
 
 %%%===================================================================
 %%% gen_fsm callbacks
 %%%===================================================================
 
 -spec init(list()) -> {ok, prepare, state(), 0}.
-init([RiakcPid, Request, FoldObjectsBatchSize]) ->
+init([RcPid, Request, FoldObjectsBatchSize]) ->
 
-    State = #state{riakc_pid=RiakcPid,
+    State = #state{riak_client=RcPid,
                    fold_objects_batch_size=FoldObjectsBatchSize,
                    req=Request},
     {ok, prepare, State, 0}.
 
 -spec prepare(timeout, state()) -> fsm_state_return().
-prepare(timeout, State=#state{riakc_pid=RiakcPid}) ->
-    case make_2i_request(RiakcPid, State) of
+prepare(timeout, State=#state{riak_client=RcPid}) ->
+    case make_2i_request(RcPid, State) of
         {NewStateData, {ok, ReqId}} ->
             {next_state, waiting_object_list,
              NewStateData#state{object_list_req_id=ReqId}};
@@ -281,8 +281,8 @@ respond(StateData=#state{req=Request=?LOREQ{max_keys=UserMaxKeys,
                                                         {NewManis, NewPrefixes}),
             try_reply({ok, Response}, StateData);
         false ->
-            RiakcPid = StateData#state.riakc_pid,
-            case make_2i_request(RiakcPid, StateData) of
+            RcPid = StateData#state.riak_client,
+            case make_2i_request(RcPid, StateData) of
                 {NewStateData2, {ok, ReqId}} ->
                     {next_state, waiting_object_list,
                      NewStateData2#state{object_list_req_id=ReqId}};
@@ -342,10 +342,10 @@ response_from_manifests_and_common_prefixes(Request,
                                       CommonPrefixes,
                                       KeyContent).
 
--spec make_2i_request(pid(), state()) ->
+-spec make_2i_request(riak_client(), state()) ->
                              {state(), {ok, reference()} | {error, term()}}.
-make_2i_request(RiakcPid, State=#state{req=?LOREQ{name=BucketName},
-                                       fold_objects_batch_size=BatchSize}) ->
+make_2i_request(RcPid, State=#state{req=?LOREQ{name=BucketName},
+                                    fold_objects_batch_size=BatchSize}) ->
     ManifestBucket = riak_cs_utils:to_bucket_name(objects, BucketName),
     StartKey = make_start_key(State),
     EndKey = big_end_key(128),
@@ -359,7 +359,8 @@ make_2i_request(RiakcPid, State=#state{req=?LOREQ{name=BucketName},
             {start_key, StartKey},
             {end_key, EndKey},
             {timeout, riak_cs_list_objects_utils:fold_objects_timeout()}],
-    FoldResult = riakc_pb_socket:cs_bucket_fold(RiakcPid,
+    {ok, ManifestPbc} = riak_cs_riak_client:manifest_pbc(RcPid),
+    FoldResult = riakc_pb_socket:cs_bucket_fold(ManifestPbc,
                                                 ManifestBucket,
                                                 Opts),
     {NewStateData2, FoldResult}.

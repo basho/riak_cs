@@ -61,8 +61,8 @@
                 md5 :: crypto_context() | digest(),
                 reported_md5 :: undefined | string(),
                 reply_pid :: {pid(), reference()},
+                riak_client :: riak_client(),
                 mani_pid :: undefined | pid(),
-                riakc_pid :: pid(),
                 make_new_manifest_p :: boolean(),
                 timer_ref :: reference(),
                 bucket :: binary(),
@@ -87,13 +87,13 @@
 %%%===================================================================
 
 -spec start_link({binary(), binary(), non_neg_integer(), binary(),
-                  term(), pos_integer(), acl(), timeout(), pid(), pid()}) ->
+                  term(), pos_integer(), acl(), timeout(), pid(), riak_client()}) ->
                         {ok, pid()} | {error, term()}.
 start_link(Tuple) when is_tuple(Tuple) ->
     start_link(Tuple, true).
 
 -spec start_link({binary(), binary(), non_neg_integer(), binary(),
-                  term(), pos_integer(), acl(), timeout(), pid(), pid()},
+                  term(), pos_integer(), acl(), timeout(), pid(), riak_client()},
                  boolean()) ->
                         {ok, pid()} | {error, term()}.
 start_link({_Bucket,
@@ -105,7 +105,7 @@ start_link({_Bucket,
             _Acl,
             _Timeout,
             _Caller,
-            _RiakPid}=Arg1,
+            _RcPid}=Arg1,
            MakeNewManifestP) ->
     gen_fsm:start_link(?MODULE, {Arg1, MakeNewManifestP}, []).
 
@@ -140,11 +140,11 @@ block_written(Pid, BlockID) ->
 %% might be implemented. Does it actually
 %% make things more confusing?
 -spec init({{binary(), binary(), non_neg_integer(), binary(),
-             term(), pos_integer(), acl(), timeout(), pid(), pid()},
+             term(), pos_integer(), acl(), timeout(), pid(), riak_client()},
             term()}) ->
                   {ok, prepare, #state{}, timeout()}.
 init({{Bucket, Key, ContentLength, ContentType,
-       Metadata, BlockSize, Acl, Timeout, Caller, RiakPid},
+       Metadata, BlockSize, Acl, Timeout, Caller, RcPid},
       MakeNewManifestP}) ->
     %% We need to do this (the monitor) for two reasons
     %% 1. We're started through a supervisor, so the
@@ -166,7 +166,7 @@ init({{Bucket, Key, ContentLength, ContentType,
                          acl=Acl,
                          content_length=ContentLength,
                          content_type=ContentType,
-                         riakc_pid=RiakPid,
+                         riak_client=RcPid,
                          make_new_manifest_p=MakeNewManifestP,
                          timeout=Timeout},
      0}.
@@ -303,8 +303,8 @@ done(finalize, false, From, State=#state{manifest=Manifest,
     _ = lager:debug("Invalid digest in the PUT FSM"),
     {stop, normal, State};
 done(finalize, true, From, State=#state{manifest=Manifest,
-                                         mani_pid=ManiPid,
-                                         timer_ref=TimerRef}) ->
+                                        mani_pid=ManiPid,
+                                        timer_ref=TimerRef}) ->
     %% 1. reply immediately with the finished manifest
     _ = erlang:cancel_timer(TimerRef),
     case maybe_update_manifest_with_confirmation(ManiPid, Manifest) of
@@ -384,30 +384,16 @@ prepare(State=#state{bucket=Bucket,
                      content_type=ContentType,
                      metadata=Metadata,
                      acl=Acl,
-                     riakc_pid=RiakPid,
+                     riak_client=RcPid,
                      make_new_manifest_p=MakeNewManifestP})
   when is_integer(ContentLength), ContentLength >= 0 ->
     %% 1. start the manifest_fsm proc
     {ok, ManiPid} = maybe_riak_cs_manifest_fsm_start_link(
-                      MakeNewManifestP, Bucket, Key, RiakPid),
+                      MakeNewManifestP, Bucket, Key, RcPid),
     %% TODO:
     %% this shouldn't be hardcoded.
-    Md5 = riak_cs_utils:md5_init(),
-    WriterPids = case ContentLength of
-                     0 ->
-                         %% Don't start any writers
-                         %% if we're not going to need
-                         %% to write any blocks
-                         [];
-                     _ ->
-                         riak_cs_block_server:start_block_servers(RiakPid,
-                                                                  riak_cs_lfs_utils:put_concurrency())
-                 end,
-    FreeWriters = ordsets:from_list(WriterPids),
-    MaxBufferSize = (riak_cs_lfs_utils:put_fsm_buffer_size_factor() * BlockSize),
-
     %% for now, always populate cluster_id
-    ClusterID = riak_cs_config:cluster_id(RiakPid),
+    ClusterID = riak_cs_config:cluster_id(RcPid),
     Manifest =
         riak_cs_lfs_utils:new_manifest(Bucket,
                                        Key,
@@ -422,6 +408,22 @@ prepare(State=#state{bucket=Bucket,
                                        [],
                                        ClusterID),
     NewManifest = Manifest?MANIFEST{write_start_time=os:timestamp()},
+
+    Md5 = riak_cs_utils:md5_init(),
+    WriterPids = case ContentLength of
+                     0 ->
+                         %% Don't start any writers
+                         %% if we're not going to need
+                         %% to write any blocks
+                         [];
+                     _ ->
+                         riak_cs_block_server:start_block_servers(
+                           NewManifest,
+                           RcPid,
+                           riak_cs_lfs_utils:put_concurrency())
+                 end,
+    FreeWriters = ordsets:from_list(WriterPids),
+    MaxBufferSize = (riak_cs_lfs_utils:put_fsm_buffer_size_factor() * BlockSize),
 
     %% TODO:
     %% this time probably
@@ -626,10 +628,10 @@ handle_receiving_last_chunk(NewData, State=#state{buffer_queue=BufferQueue,
     Reply = ok,
     {reply, Reply, all_received, NewStateData}.
 
-maybe_riak_cs_manifest_fsm_start_link(false, _Bucket, _Key, _RiakPid) ->
+maybe_riak_cs_manifest_fsm_start_link(false, _Bucket, _Key, _RcPid) ->
     {ok, undefined};
-maybe_riak_cs_manifest_fsm_start_link(true, Bucket, Key, RiakPid) ->
-    riak_cs_manifest_fsm:start_link(Bucket, Key, RiakPid).
+maybe_riak_cs_manifest_fsm_start_link(true, Bucket, Key, RcPid) ->
+    riak_cs_manifest_fsm:start_link(Bucket, Key, RcPid).
 
 maybe_add_new_manifest(undefined, _NewManifest) ->
     ok;

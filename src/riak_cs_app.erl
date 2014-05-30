@@ -85,13 +85,13 @@ check_bucket_props() ->
                ?ACCESS_BUCKET,
                ?STORAGE_BUCKET,
                ?BUCKETS_BUCKET],
-    {ok, Riak} = riak_connection(),
+    {ok, MasterPbc} = riak_connection(),
     try
-        Results = [check_bucket_props(Bucket, Riak) ||
+        Results = [check_bucket_props(Bucket, MasterPbc) ||
                    Bucket <- Buckets],
         lists:foldl(fun promote_errors/2, {ok, true}, Results)
     after
-        riakc_pb_socket:stop(Riak)
+        riakc_pb_socket:stop(MasterPbc)
     end.
 
 promote_errors(_Elem, {error, _Reason}=E) ->
@@ -104,8 +104,8 @@ promote_errors({ok, true}, Acc) ->
     Acc.
 
 -spec check_bucket_props(binary(), pid()) -> {ok, boolean()} | {error, term()}.
-check_bucket_props(Bucket, Riak) ->
-    case catch riakc_pb_socket:get_bucket(Riak, Bucket) of
+check_bucket_props(Bucket, MasterPbc) ->
+    case catch riakc_pb_socket:get_bucket(MasterPbc, Bucket) of
         {ok, Props} ->
             case lists:keyfind(allow_mult, 1, Props) of
                 {allow_mult, true} ->
