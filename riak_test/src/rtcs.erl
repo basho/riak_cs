@@ -45,6 +45,15 @@
 -define(S3_PORT, 80).
 -define(DEFAULT_PROTO, "http").
 
+-define(REQUEST_POOL_SIZE, 8).
+-define(BUCKET_LIST_POOL_SIZE, 2).
+
+request_pool_size() ->
+    ?REQUEST_POOL_SIZE.
+
+bucket_list_pool_size() ->
+    ?BUCKET_LIST_POOL_SIZE.
+
 setup(NumNodes) ->
     setup(NumNodes, default_configs()).
 
@@ -206,26 +215,10 @@ repl_config() ->
      ]}.
 
 cs_config() ->
-    cs_config([]).
+    cs_config([], []).
 
 cs_config(UserExtra) ->
-    [
-     lager_config(),
-     {riak_cs,
-      UserExtra ++
-          [
-           {connection_pools,
-            [
-             {request_pool, {8, 0} },
-             {bucket_list_pool, {2, 0} }
-            ]},
-           {proxy_get, enabled},
-           {anonymous_user_creation, true},
-           {riak_pb_port, 10017},
-           {stanchion_port, 9095},
-           {cs_version, 010300}
-          ]
-     }].
+    cs_config(UserExtra, []).
 
 cs_config(UserExtra, OtherApps) ->
     [
@@ -235,8 +228,8 @@ cs_config(UserExtra, OtherApps) ->
           [
            {connection_pools,
             [
-             {request_pool, {8, 0} },
-             {bucket_list_pool, {2, 0} }
+             {request_pool, {request_pool_size(), 0} },
+             {bucket_list_pool, {bucket_list_pool_size(), 0} }
             ]},
            {proxy_get, enabled},
            {anonymous_user_creation, true},
