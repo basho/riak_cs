@@ -48,7 +48,8 @@
          {test_paths, ["/Users/kelly/basho/riak_test_builds/riak_cs/riak_test/ebin"]},
          {src_paths, [{cs_src_root, "/Users/kelly/basho/riak_test_builds/riak_cs"}]},
          {build_type, oss},
-         {backend, {multi_backend, bitcask}}
+         {backend, {multi_backend, bitcask}},
+         {flavor, basic}
         ]}.
 ```
 
@@ -77,6 +78,19 @@ The `test_paths` option is a list of fully-qualified paths which
 `riak_test` will use to find additional tests. Since the Riak CS tests
 do not live inside the `riak_test` repository and escript, this should
 point to the compiled tests in `riak_cs/riak_test/ebin`.
+
+The `flavor` option is used to vary environment setup.  Some
+`riak_test` modules use only S3 API and does not depend on details,
+such as number of riak nodes, riak's backend, MDC or not, multibag or
+not.  By adding flavor setting to riak_test config, such generic test
+cases can be utilized to verify Riak CS's behavior in various setups.
+The scope of setup functions affected by flavors are `rtcs:setup/1`
+and `rtcs:setup/2`.  Other setup functions, for example
+`rtcs:setup2x2` used by `repl_test`, does not change their behavior.
+The valid option values are `basic` (default) and `{multibag, disjoint}`.
+`{multibag, disjoint}` setup multibag environment with 3 bags, the master
+bag with two riak nodes and two additional bags with one riak node each.
+
 
 1. To build the `riak_test` files use the `compile-riak-test` Makefile
    target or run `./rebar riak_test_compile`.
