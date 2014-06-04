@@ -35,7 +35,7 @@ confirm() ->
               {cs,
                [{riakc, [{mapred_timeout,1}]}] %% make storage calc timeout
                ++ rtcs:cs_config([{storage_archive_period, 1}])}],
-    {UserConfig, {_RiakNodes, CSNodes, _Stanchion}} = rtcs:setup(4, Config),
+    {UserConfig, {_RiakNodes, CSNodes, _Stanchion}} = rtcs:setup(2, Config),
 
     Begin = rtcs:datetime(),
     run_storage_batch(hd(CSNodes)),

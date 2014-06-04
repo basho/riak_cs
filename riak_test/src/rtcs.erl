@@ -49,11 +49,9 @@ setup(NumNodes) ->
     setup(NumNodes, default_configs()).
 
 setup(NumNodes, Configs) ->
-    JoinFun = fun(Nodes) ->
-                      [First|Rest] = Nodes,
-                      [join(Node, First) || Node <- Rest]
-              end,
-    setup_clusters(Configs, JoinFun, NumNodes).
+    Flavor = rt_config:get(flavor, basic),
+    lager:info("Flavor : ~p", [Flavor]),
+    flavored_setup(NumNodes, Flavor, Configs).
 
 setup2x2() ->
     setup2x2(default_configs()).
@@ -66,12 +64,24 @@ setup2x2(Configs) ->
               end,
     setup_clusters(Configs, JoinFun, 4).
 
-setup1x1x1() ->
-    setup1x1x1(default_configs()).
+setupNx1x1(N) ->
+    setupNx1x1(N, default_configs()).
 
-setup1x1x1(Configs) ->
-    JoinFun = fun(_Nodes) -> ok end,
-    setup_clusters(Configs, JoinFun, 3).
+setupNx1x1(N, Configs) ->
+    JoinFun = fun(Nodes) ->
+                      [Target | Joiners] = lists:sublist(Nodes, N),
+                      [join(J, Target) || J <- Joiners]
+              end,
+    setup_clusters(Configs, JoinFun, N + 1 + 1).
+
+flavored_setup(NumNodes, basic, Configs) ->
+    JoinFun = fun(Nodes) ->
+                      [First|Rest] = Nodes,
+                      [join(Node, First) || Node <- Rest]
+              end,
+    setup_clusters(Configs, JoinFun, NumNodes);
+flavored_setup(NumNodes, {multibag, _} = Flavor, Configs) ->
+    rtcs_bag:flavored_setup(NumNodes, Flavor, Configs).
 
 setup_clusters(Configs, JoinFun, NumNodes) ->
     %% Start the erlcloud app
@@ -680,6 +690,15 @@ wait_until(Fun, Condition, Retries, Delay) ->
         false ->
             wait_until(Fun, Condition, Retries-1, Delay)
     end.
+
+%% Kind = objects | blocks | users | buckets ...
+pbc(RiakNodes, ObjectKind, CsBucket, CsKey) ->
+    pbc(rt_config:get(flavor, basic), ObjectKind, RiakNodes, CsBucket, CsKey).
+
+pbc(basic, _ObjectKind, RiakNodes, _CsBucket, _CsKey) ->
+    rt:pbc(hd(RiakNodes));
+pbc({multibag, _} = Flavor, ObjectKind, RiakNodes, CsBucket, CsKey) ->
+    rtcs_bag:pbc(Flavor, ObjectKind, RiakNodes, CsBucket, CsKey).
 
 make_authorization(Method, Resource, ContentType, Config, Date) ->
     StringToSign = [Method, $\n, [], $\n, ContentType, $\n, Date, $\n, Resource],

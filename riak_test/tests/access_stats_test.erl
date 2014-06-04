@@ -35,7 +35,7 @@
 confirm() ->
     Config = [{riak, rtcs:riak_config()}, {stanchion, rtcs:stanchion_config()},
               {cs, rtcs:cs_config([{fold_objects_for_list_keys, true}])}],
-    {UserConfig, {_RiakNodes, _CSNodes, _Stanchion}} = rtcs:setup(4, Config),
+    {UserConfig, {_RiakNodes, _CSNodes, _Stanchion}} = rtcs:setup(2, Config),
     {Begin, End} = generate_some_accesses(UserConfig),
     flush_access_stats(),
     assert_access_stats(json, UserConfig, {Begin, End}),
