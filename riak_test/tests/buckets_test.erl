@@ -120,12 +120,12 @@ verify_bucket_mpcleanup_racecond_andfix(UserConfig, UserConfig1,
     lager:info("InitUploadRes = ~p", [InitUploadRes]),
 
     %% Reserve riak object to emulate prior 1.4.5 behavior afterwards
-    {ok, ManiObj} = rc_helper:get_riakc_obj(RiakNodes, manifest, Bucket, Key),
+    {ok, ManiObj} = rc_helper:get_riakc_obj(RiakNodes, objects, Bucket, Key),
 
     ?assertEqual(ok, erlcloud_s3:delete_bucket(?TEST_BUCKET, UserConfig)),
 
     %% emulate a race condition, during the deletion MP initiate happened
-    ok = rc_helper:update_riakc_obj(RiakNodes, manifest, Bucket, Key, ManiObj),
+    ok = rc_helper:update_riakc_obj(RiakNodes, objects, Bucket, Key, ManiObj),
 
     %% then fail on creation
     %%TODO: check fail fail fail => 500

@@ -22,28 +22,30 @@
 -compile(export_all).
 -include_lib("eunit/include/eunit.hrl").
 
-to_riak_bucket(manifest, CSBucket) ->
+to_riak_bucket(objects, CSBucket) ->
     %%  or make version switch here.
     <<"0o:", (stanchion_utils:md5(CSBucket))/binary>>;
-to_riak_bucket(block, CSBucket) ->
+to_riak_bucket(blocks, CSBucket) ->
     %%  or make version switch here.
     <<"0b:", (stanchion_utils:md5(CSBucket))/binary>>;
 to_riak_bucket(_, CSBucket) ->
     CSBucket.
 
-to_riak_key(manifest, CsKey) ->
+to_riak_key(objects, CsKey) ->
     CsKey;
 to_riak_key(_,_) ->
     throw(not_yet_implemented).
 
-get_riakc_obj(RiakNodes, ObjectKind, CsBucket, CsKey) ->
-    Pbc = rtcs:pbc(RiakNodes, ObjectKind, CsBucket, CsKey),
-    RiakBucket = to_riak_bucket(ObjectKind, CsBucket),
-    RiakKey = to_riak_key(ObjectKind, CsKey),
+-spec get_riakc_obj([term()], objects | blocks, binary(), term()) -> term().
+get_riakc_obj(RiakNodes, Kind, CsBucket, CsKey) ->
+    Pbc = rtcs:pbc(RiakNodes, Kind, CsBucket, CsKey),
+    RiakBucket = to_riak_bucket(Kind, CsBucket),
+    RiakKey = to_riak_key(Kind, CsKey),
     Result = riakc_pb_socket:get(Pbc, RiakBucket, RiakKey),
     riakc_pb_socket:stop(Pbc),
     Result.
 
+-spec update_riakc_obj([term()], objects | blocks, binary(), term(), riakc_obj:riakc_obj()) -> term().
 update_riakc_obj(RiakNodes, ObjectKind, CsBucket, CsKey, NewObj) ->
     NewMD = riakc_obj:get_metadata(NewObj),
     NewValue = riakc_obj:get_value(NewObj),

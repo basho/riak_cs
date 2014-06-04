@@ -50,7 +50,7 @@ setup(NumNodes) ->
 
 setup(NumNodes, Configs) ->
     Flavor = rt_config:get(flavor, basic),
-    lager:info("Use flavor : ~p", [Flavor]),
+    lager:info("Flavor : ~p", [Flavor]),
     flavored_setup(NumNodes, Flavor, Configs).
 
 setup2x2() ->
@@ -691,7 +691,7 @@ wait_until(Fun, Condition, Retries, Delay) ->
             wait_until(Fun, Condition, Retries-1, Delay)
     end.
 
-%% ObjectKind = user | bucket | manifest | block | ...
+%% Kind = objects | blocks | users | buckets ...
 pbc(RiakNodes, ObjectKind, CsBucket, CsKey) ->
     pbc(rt_config:get(flavor, basic), ObjectKind, RiakNodes, CsBucket, CsKey).
 
