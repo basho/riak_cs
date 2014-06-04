@@ -76,7 +76,7 @@ confirm() ->
 %% be generated from former versions of riak cs than 1.4.5
 verify_cs840_regression(UserConfig, RiakNodes) ->
 
-    Pid = rtcs:pbc(RiakNodes, manifest, cs_bucket_not_used_now, cs_key_not_used_now),
+    Pid = rtcs:pbc(RiakNodes, objects, cs_bucket_not_used_now, cs_key_not_used_now),
 
     %% None of thes objects should not be calculated effective in storage
     ok = mess_with_writing_various_props(Pid, UserConfig,
