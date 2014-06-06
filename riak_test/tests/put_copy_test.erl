@@ -31,12 +31,10 @@
 -define(KEY, "pocket").
 
 -define(DATA0, <<"pocket">>).
--define(DATA1, <<"burger">>).
 
 -define(BUCKET2, "put-target-bucket").
 -define(KEY2, "sidepocket").
 -define(KEY3, "superpocket").
-
 -define(BUCKET3, "the-other-put-target-bucket").
 
 confirm() ->
@@ -110,8 +108,8 @@ verify_others_copy(UserConfig, OtherUserConfig) ->
 
 verify_multipart_copy(UserConfig) ->
     %% ~6MB iolist
-    MillionPockets = [ <<"pocket">> || _ <- lists:seq(1, 1000000)],
-    MillionBurgers = [ <<"burger">> || _ <- lists:seq(1, 1000000)],
+    MillionPockets = binary:copy(<<"pocket">>, 1000000),
+    MillionBurgers = binary:copy(<<"burger">>, 1000000),
 
     ?assertEqual([{version_id,"null"}],
                  erlcloud_s3:put_object(?BUCKET, ?KEY, MillionPockets, UserConfig)),
@@ -215,6 +213,9 @@ verify_security(Alice, Bob, Charlie) ->
     %% >> Charlie can't do it
     %% try copying Alice's private object to Charlie's
     ?assert403(erlcloud_s3:copy_object(CharliesBucket, AlicesObject,
+                                       AlicesBucket, AlicesObject, Charlie)),
+
+    ?assert403(erlcloud_s3:copy_object(AlicesPublicBucket, AlicesObject,
                                        AlicesBucket, AlicesObject, Charlie)),
 
     %% try copy Alice's public object to Bob's

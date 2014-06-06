@@ -26,6 +26,7 @@
          error_response/1,
          error_response/5,
          copy_object_response/3,
+         copy_part_response/3,
          no_such_upload_response/3,
          invalid_digest_response/3,
          error_code_to_atom/1,
@@ -224,12 +225,19 @@ error_response(StatusCode, Code, Message, RD, Ctx) ->
     respond(StatusCode, riak_cs_xml:to_xml(XmlDoc), RD, Ctx).
 
 copy_object_response(Manifest, RD, Ctx) ->
+    copy_response(Manifest, 'CopyObjectResult', RD, Ctx).
+
+copy_part_response(Manifest, RD, Ctx) ->
+    copy_response(Manifest, 'CopyPartResult', RD, Ctx).
+
+copy_response(Manifest, TagName, RD, Ctx) ->
     LastModified = riak_cs_wm_utils:to_iso_8601(Manifest?MANIFEST.created),
     ETag = riak_cs_utils:etag_from_binary(Manifest?MANIFEST.content_md5),
-    XmlDoc = [{'CopyObjectResponse',
+    XmlDoc = [{TagName,
                [{'LastModified', [LastModified]},
                 {'ETag', [ETag]}]}],
     respond(200, riak_cs_xml:to_xml(XmlDoc), RD, Ctx).
+
 
 no_such_upload_response(UploadId, RD, Ctx) ->
     XmlDoc = {'Error',

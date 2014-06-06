@@ -1,42 +1,62 @@
+%% ---------------------------------------------------------------------
+%%
+%% Copyright (c) 2007-2014 Basho Technologies, Inc.  All Rights Reserved.
+%%
+%% This file is provided to you under the Apache License,
+%% Version 2.0 (the "License"); you may not use this file
+%% except in compliance with the License.  You may obtain
+%% a copy of the License at
+%%
+%%   http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing,
+%% software distributed under the License is distributed on an
+%% "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+%% KIND, either express or implied.  See the License for the
+%% specific language governing permissions and limitations
+%% under the License.
+%%
+%% ---------------------------------------------------------------------
+
+%% @doc Object copying Note that Riak CS does not verify checksum in case
+%% of copy specified with range copy with "x-amz-copy-source-range". Nor
+%% in the case where the source object was uploaded via multipart upload.
+
 -module(riak_cs_copy_object).
 
 -include("riak_cs.hrl").
 
-%%API
--export([test_condition_and_permission/3,
+-export([test_condition_and_permission/4,
          start_put_fsm/6, get_copy_source/1,
          copy/3, copy/4,
          copy_range/2]).
 
 -include_lib("webmachine/include/webmachine.hrl").
 
-
 %% @doc tests condition and permission on source object:
 %% * x-amz-copy-source-if-* stuff
 %% * bucket/object acl
 %% * bucket policy
--spec test_condition_and_permission(lfs_manifest(), #wm_reqdata{}, #context{}) ->
+-spec test_condition_and_permission(riak_client(), lfs_manifest(), #wm_reqdata{}, #context{}) ->
                                            {boolean()|{halt, non_neg_integer()}, #wm_reqdata{}, #context{}}.
-test_condition_and_permission(SrcManifest, RD, Ctx) ->
+test_condition_and_permission(RcPid, SrcManifest, RD, Ctx) ->
 
     ContentMD5 = base64:encode_to_string(SrcManifest?MANIFEST.content_md5),
-    LastUpdate = SrcManifest?MANIFEST.last_block_written_time,
+    LastUpdate = SrcManifest?MANIFEST.created,
 
     %% TODO: write tests around these conditions, any kind of test is okay
     case condition_check(RD, ContentMD5, LastUpdate) of
         ok ->
-            _ = authorize_on_src(SrcManifest, RD, Ctx);
+            _ = authorize_on_src(RcPid, SrcManifest, RD, Ctx);
         Other ->
             {Other, RD, Ctx}
     end.
 
 %% @doc tests permission on acl, policy
--spec authorize_on_src(lfs_manifest(), #wm_reqdata{}, #context{}) ->
+-spec authorize_on_src(riak_client(), lfs_manifest(), #wm_reqdata{}, #context{}) ->
                               {boolean()|{halt, non_neg_integer()}, #wm_reqdata{}, #context{}}.
-authorize_on_src(SrcManifest, RD,
-                 #context{auth_module=AuthMod,
-                          local_context=LocalCtx,
-                          riak_client=RcPid} = Ctx) ->
+authorize_on_src(RcPid, SrcManifest, RD,
+                 #context{auth_module=AuthMod, local_context=LocalCtx} = Ctx) ->
     {SrcBucket, SrcKey} = SrcManifest?MANIFEST.bkey,
     {ok, SrcBucketObj} = riak_cs_bucket:fetch_bucket_object(SrcBucket, RcPid),
     {ok, SrcBucketAcl} = riak_cs_acl:bucket_acl(SrcBucketObj),
@@ -78,8 +98,6 @@ authorize_on_src(SrcManifest, RD,
                                                         OtherRD, OtherCtx).
 
 
--define(timeout, timer:minutes(5)).
-
 %% @doc just kicks up put fsm
 -spec start_put_fsm(binary(), binary(), lfs_manifest(),
                     proplists:proplist(), acl(), riak_client()) -> {ok, pid()}.
@@ -93,7 +111,7 @@ start_put_fsm(Bucket, Key, M, Metadata, Acl, RcPid) ->
                                         Metadata,
                                         BlockSize,
                                         Acl,
-                                        ?timeout,
+                                        timer:seconds(60),
                                         self(),
                                         RcPid}]).
 
@@ -131,25 +149,34 @@ handle_copy_source(Path0) when is_list(Path0) ->
 -spec copy(pid(), lfs_manifest(), riak_client()) ->
                   {ok, DstManifest::lfs_manifest()} | {error, term()}.
 copy(PutFsmPid, SrcManifest, ReadRcPid) ->
-    copy(PutFsmPid, SrcManifest, ReadRcPid,
-         {0, SrcManifest?MANIFEST.content_length-1}).
+    copy(PutFsmPid, SrcManifest, ReadRcPid, undefined).
 
 %% @doc runs copy, Target PUT FSM pid and source object manifest are
 %% specified. This function kicks up GET FSM of source object and
 %% streams blocks to specified PUT FSM.
 -spec copy(pid(), lfs_manifest(), riak_client(),
-           {non_neg_integer(), non_neg_integer()}|fail) ->
+           {non_neg_integer(), non_neg_integer()}|fail|undefined) ->
                   {ok, DstManifest::lfs_manifest()} | {error, term()}.
 copy(_, _, _, fail) ->
     {error, bad_request};
-copy(PutFsmPid, SrcManifest, ReadRcPid, Range) ->
-
+copy(PutFsmPid, SrcManifest, ReadRcPid, Range0) ->
     {ok, GetFsmPid} = start_get_fsm(SrcManifest, ReadRcPid),
-
     _RetrievedManifest = riak_cs_get_fsm:get_manifest(GetFsmPid),
-    %% Then end is the index of the last byte, not the length, so subtract 1
+
+    {MD5, Range} =
+        case Range0 of
+            undefined ->
+                %% normal PUT Copy; where whole MD5 will be checked
+                %% before and after
+                SrcMD5 = get_content_md5(SrcManifest?MANIFEST.content_md5),
+                {SrcMD5, {0, SrcManifest?MANIFEST.content_length-1}};
+            {_, _} ->
+                %% Range specified PUT Copy; where no MD5 checksum
+                %% will be checked: see riak_cs_put_fsm:is_digest_valid/2
+                {undefined, Range0}
+        end,
+
     riak_cs_get_fsm:continue(GetFsmPid, Range),
-    MD5 = get_content_md5(SrcManifest?MANIFEST.content_md5),
     get_and_put(GetFsmPid, PutFsmPid, MD5).
 
 -spec get_content_md5(tuple() | binary()) -> string().
@@ -230,11 +257,13 @@ condition_check(RD, ETag, LastUpdate) ->
     end.
 
 
-%% @doc retrieve "x-amx-copy-source-range"
+%% @doc retrieve "x-amz-copy-source-range"
 -spec copy_range(#wm_reqdata{}, ?MANIFEST{}) -> {non_neg_integer(), non_neg_integer()} | fail.
 copy_range(RD, ?MANIFEST{content_length=Len}) ->
     case wrq:get_req_header("x-amz-copy-source-range", RD) of
-        undefined -> {0, Len-1};
+        undefined ->
+            %% Then end is the index of the last byte, not the length, so subtract 1
+            {0, Len-1};
         Str ->
             case mochiweb_http:parse_range_request(Str) of
                 %% Use only the first range

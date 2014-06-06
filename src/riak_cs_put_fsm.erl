@@ -322,9 +322,10 @@ is_digest_valid(D1, undefined) ->
     _ = lager:debug("Calculated = ~p, Reported = undefined~n", [D1]),
     true;
 is_digest_valid(CalculatedMD5, ReportedMD5) ->
+    StringCalculatedMD5 = base64:encode(CalculatedMD5),
     _ = lager:debug("Calculated = ~p, Reported = ~p~n",
-                    [CalculatedMD5, ReportedMD5]),
-    base64:encode(CalculatedMD5) =:= list_to_binary(ReportedMD5).
+                    [StringCalculatedMD5, ReportedMD5]),
+    StringCalculatedMD5 =:= list_to_binary(ReportedMD5).
 
 %%--------------------------------------------------------------------
 %%

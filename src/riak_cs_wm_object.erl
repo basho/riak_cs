@@ -349,7 +349,7 @@ handle_copy_put(RD, Ctx, SrcBucket, SrcKey) ->
              acl=Acl,
              riak_client=RcPid} = Ctx,
     %% manifest is always notfound|undefined here
-    #key_context{bucket=Bucket, key=KeyStr} = LocalCtx,
+    #key_context{bucket=Bucket, key=KeyStr, get_fsm_pid=GetFsmPid} = LocalCtx,
     Key = list_to_binary(KeyStr),
 
     {ok, ReadRcPid} = riak_cs_riak_client:checkout(),
@@ -361,7 +361,12 @@ handle_copy_put(RD, Ctx, SrcBucket, SrcKey) ->
         case riak_cs_manifest:fetch(ReadRcPid, SrcBucket, SrcKey) of
             {ok, SrcManifest} ->
 
-                case riak_cs_copy_object:test_condition_and_permission(SrcManifest, RD, Ctx) of
+                EntityTooLarge = SrcManifest?MANIFEST.content_length > riak_cs_lfs_utils:max_content_len(),
+
+                case riak_cs_copy_object:test_condition_and_permission(ReadRcPid, SrcManifest, RD, Ctx) of
+
+                    {false, _, _} when EntityTooLarge ->
+                        ResponseMod:api_error(entity_too_large, RD, Ctx);
 
                     {false, _, _} ->
 
@@ -396,6 +401,7 @@ handle_copy_put(RD, Ctx, SrcBucket, SrcKey) ->
                 ResponseMod:api_error(Err, RD, Ctx)
         end
     after
+        riak_cs_get_fsm:stop(GetFsmPid),
         riak_cs_riak_client:checkin(ReadRcPid)
     end.
 
