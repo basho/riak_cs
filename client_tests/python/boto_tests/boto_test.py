@@ -430,7 +430,7 @@ class BucketPolicyTest(S3ApiVerificationTestBase):
         policy = '''
 {"Version":"2008-10-17","Statement":[{"Sid":"Stmtaaa","Effect":"Allow","Principal":"*","Action":["s3:GetObjectAcl","s3:GetObject"],"Resource":"arn:aws:s3:::%s/*","Condition":{"IpAddress":{"aws:SourceIp":"0"}}}]}
 ''' % bucket.name
-        try: 
+        try:
             bucket.set_policy(policy, headers={'content-type':'application/json'})
         except S3ResponseError as e:
             self.assertEqual(e.status, 400)
@@ -483,7 +483,7 @@ class BucketPolicyTest(S3ApiVerificationTestBase):
         policy = '''
 {"Version":"2008-10-17","Statement":[{"Sid":"Stmtaaa0","Effect":"Allow","Principal":"*","Action":["s3:GetObject"],"Resource":"arn:aws:s3:::%s/*","Condition":{"Bool":{"aws:SecureTransport":wat}}}]}
 ''' % bucket.name
-        try: 
+        try:
             bucket.set_policy(policy, headers={'content-type':'application/json'})
         except S3ResponseError as e:
             self.assertEqual(e.status, 400)
@@ -675,6 +675,70 @@ class ContentMd5Test(S3ApiVerificationTestBase):
             pass
         self.assertEqual(good_key.get_contents_as_string(), value)
 
+class SimpleCopyTest(S3ApiVerificationTestBase):
+
+    def create_test_object(self):
+        bucket = self.conn.create_bucket(self.bucket_name)
+        k = Key(bucket)
+        k.key = self.key_name
+        k.set_contents_from_string(self.data)
+        self.assertEqual(k.get_contents_as_string(), self.data)
+        self.assertIn(self.key_name,
+                      [k.key for k in bucket.get_all_keys()])
+        return k
+
+    def test_put_copy_object(self):
+        k = self.create_test_object()
+
+        target_bucket_name = str(uuid.uuid4())
+        target_key_name = str(uuid.uuid4())
+        target_bucket = self.conn.create_bucket(target_bucket_name)
+
+        target_bucket.copy_key(target_key_name, self.bucket_name, self.key_name)
+
+        target_key = Key(target_bucket)
+        target_key.key = target_key_name
+        self.assertEqual(target_key.get_contents_as_string(), self.data)
+        self.assertIn(target_key_name,
+                      [k.key for k in target_bucket.get_all_keys()])
+
+    def maybe_test_upload_part_copy(self):
+        k = self.create_test_object()
+
+        target_bucket_name = str(uuid.uuid4())
+        target_key_name = str(uuid.uuid4())
+        target_bucket = self.conn.create_bucket(target_bucket_name)
+        start_offset=0
+        end_offset=9
+        target_bucket = self.conn.create_bucket(target_bucket_name)
+        upload = bucket.initiate_multipart_upload(target_key_name)
+        upload.copy_part_from_key(self.bucket_name, self.key_name, part_num=1,
+                                  start=start_offset, end=end_offset)
+        upload.complete_upload()
+        print([k.key for k in target_bucket.get_all_keys()])
+
+        target_key = Key(target_bucket)
+        target_key.key = target_key_name
+        self.assertEqual(self.data[start_offset:(end_offset+1)],
+                         target_key.get_contents_as_string())
+
+    def test_upload_part_from_mp(self):
+        bucket = self.conn.create_bucket(self.bucket_name)
+        key_name = str(uuid.uuid4())
+        (upload, result) = upload_multipart(bucket, key_name, [StringIO(self.data)])
+
+        target_bucket_name = str(uuid.uuid4())
+        target_bucket = self.conn.create_bucket(target_bucket_name)
+        start_offset=0
+        end_offset=9
+        upload2 = target_bucket.initiate_multipart_upload(key_name)
+        upload2.copy_part_from_key(self.bucket_name, self.key_name, part_num=1,
+                                   start=start_offset, end=end_offset)
+        upload2.complete_upload()
+
+        target_key = Key(target_bucket, key_name)
+        self.assertEqual(self.data[start_offset:(end_offset+1)],
+                         target_key.get_contents_as_string())
 
 
 if __name__ == "__main__":

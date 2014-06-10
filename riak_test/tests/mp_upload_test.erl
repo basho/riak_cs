@@ -133,30 +133,14 @@ confirm() ->
     pass.
 
 upload_and_assert_parts(Bucket, Key, UploadId, PartCount, Size, Config) ->
-    [{X, upload_and_assert_part(Bucket,
-                                Key,
-                                UploadId,
-                                X,
-                                generate_part_data(X, Size),
-                                Config)}
+    [{X, rtcs_multipart:upload_and_assert_part(Bucket,
+                                               Key,
+                                               UploadId,
+                                               X,
+                                               generate_part_data(X, Size),
+                                               Config)}
      || X <- lists:seq(1, PartCount)].
 
-upload_and_assert_part(Bucket, Key, UploadId, PartNum, PartData, Config) ->
-    {RespHeaders, _UploadRes} = erlcloud_s3_multipart:upload_part(Bucket, Key, UploadId, PartNum, PartData, Config),
-    PartEtag = proplists:get_value("ETag", RespHeaders),
-    PartsTerm = erlcloud_s3_multipart:parts_to_term(
-                  erlcloud_s3_multipart:list_parts(Bucket, Key, UploadId, [], Config)),
-    Parts = proplists:get_value(parts, PartsTerm),
-    ?assertEqual(Bucket, proplists:get_value(bucket, PartsTerm)),
-    ?assertEqual(Key, proplists:get_value(key, PartsTerm)),
-    ?assertEqual(UploadId, proplists:get_value(upload_id, PartsTerm)),
-    verify_part(PartEtag, proplists:get_value(PartNum, Parts)),
-    PartEtag.
-
-verify_part(_, undefined) ->
-    ?assert(false);
-verify_part(ExpectedEtag, PartInfo) ->
-    ?assertEqual(ExpectedEtag, proplists:get_value(etag, PartInfo)).
 
 generate_part_data(X, Size)
   when 0 =< X, X =< 255 ->

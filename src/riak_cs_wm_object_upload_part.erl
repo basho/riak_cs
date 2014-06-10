@@ -202,40 +202,81 @@ parse_body(Body0) ->
 
 -spec accept_body(#wm_reqdata{}, #context{}) -> {{halt, integer()}, #wm_reqdata{}, #context{}}.
 accept_body(RD, Ctx0=#context{local_context=LocalCtx0,
+                              response_module=ResponseMod,
                               riak_client=RcPid}) ->
-    #key_context{bucket=Bucket,
+    #key_context{bucket=DstBucket,
                  key=Key,
                  size=Size,
                  get_fsm_pid=GetFsmPid} = LocalCtx0,
     catch riak_cs_get_fsm:stop(GetFsmPid),
     BlockSize = riak_cs_lfs_utils:block_size(),
     Caller = riak_cs_mp_utils:user_rec_to_3tuple(Ctx0#context.user),
-    try
-        {t, {ok, UploadId}} =
-            {t, riak_cs_utils:safe_base64url_decode(re:replace(wrq:path(RD), ".*/uploads/", "", [{return, binary}]))},
-        {t, {ok, PartNumber}} =
-            {t, riak_cs_utils:safe_list_to_integer(wrq:get_qs_value("partNumber", RD))},
-        case riak_cs_mp_utils:upload_part(Bucket, Key, UploadId, PartNumber,
-                                          Size, Caller, RcPid) of
-            {upload_part_ready, PartUUID, PutPid} ->
-                LocalCtx = LocalCtx0#key_context{upload_id=UploadId,
-                                                 part_number=PartNumber,
-                                                 part_uuid=PartUUID},
-                Ctx = Ctx0#context{local_context=LocalCtx},
-                accept_streambody(RD, Ctx, PutPid,
-                                  wrq:stream_req_body(RD, BlockSize));
-            {error, notfond} ->
-                riak_cs_s3_response:no_such_upload_response(UploadId, RD, Ctx0);
-            {error, Reason} ->
-                riak_cs_s3_response:api_error(Reason, RD, Ctx0)
-        end
-    catch
-        error:{badmatch, {t, _}} ->
-            {{halt, 400}, RD, Ctx0};
-        error:{badmatch, {t3, _}} ->
-            XErrT3 = riak_cs_mp_utils:make_special_error("InvalidDigest"),
-            RDT3 = wrq:set_resp_body(XErrT3, RD),
-            {{halt, 400}, RDT3, Ctx0}
+
+    DstKey = list_to_binary(Key),
+
+    {SrcManifest, ExactSize, ReadRcPid} =
+        %% checking existence of "x-amz-copy-source"
+        case riak_cs_copy_object:get_copy_source(RD) of
+            undefined ->
+                %% normal upload, use size claimed via HTTP request
+                {undefined, Size, undefined};
+            {SrcBucket0, SrcKey0} ->
+                %% case copy, use size from copy source manifest
+                {ok, ReadRcPid0} = riak_cs_riak_client:checkout(),
+                {ok, SrcManifest0} = riak_cs_manifest:fetch(ReadRcPid0, SrcBucket0, SrcKey0),
+                {Start,End} = riak_cs_copy_object:copy_range(RD, SrcManifest0),
+                {SrcManifest0, End - Start + 1, ReadRcPid0}
+        end,
+
+    case ExactSize =< riak_cs_lfs_utils:max_content_len() of
+        false ->
+            ResponseMod:api_error(entity_too_large, RD, Ctx0);
+
+        true ->
+            try
+                {t, {ok, UploadId}} =
+                    {t, riak_cs_utils:safe_base64url_decode(re:replace(wrq:path(RD), ".*/uploads/", "", [{return, binary}]))},
+                {t, {ok, PartNumber}} =
+                    {t, riak_cs_utils:safe_list_to_integer(wrq:get_qs_value("partNumber", RD))},
+
+                case riak_cs_mp_utils:upload_part(DstBucket, Key, UploadId, PartNumber,
+                                                  ExactSize, Caller, RcPid) of
+                    {upload_part_ready, PartUUID, PutPid} ->
+                        LocalCtx = LocalCtx0#key_context{upload_id=UploadId,
+                                                         part_number=PartNumber,
+                                                         part_uuid=PartUUID},
+                        Ctx = Ctx0#context{local_context=LocalCtx},
+
+                        case riak_cs_copy_object:get_copy_source(RD) of
+                            undefined ->
+                                %% Normal upload part
+                                accept_streambody(RD, Ctx, PutPid,
+                                                  wrq:stream_req_body(RD, BlockSize));
+                            {error, Reason} ->
+                                riak_cs_s3_response:api_error(Reason, RD, Ctx);
+
+                            {_SrcBucket, _SrcKey} -> %% they're already in SrcManifest
+                                %% upload part by copy
+                                try
+                                    maybe_copy_part(PutPid, DstBucket, DstKey, SrcManifest,
+                                                    ReadRcPid, RD, Ctx)
+                                after
+                                    riak_cs_riak_client:checkin(ReadRcPid)
+                                end
+                        end;
+                    {error, notfond} ->
+                        riak_cs_s3_response:no_such_upload_response(UploadId, RD, Ctx0);
+                    {error, Reason} ->
+                        riak_cs_s3_response:api_error(Reason, RD, Ctx0)
+                end
+            catch
+                error:{badmatch, {t, _}} ->
+                    {{halt, 400}, RD, Ctx0};
+                error:{badmatch, {t3, _}} ->
+                    XErrT3 = riak_cs_mp_utils:make_special_error("InvalidDigest"),
+                    RDT3 = wrq:set_resp_body(XErrT3, RD),
+                    {{halt, 400}, RDT3, Ctx0}
+            end
     end.
 
 -spec accept_streambody(#wm_reqdata{}, #context{}, pid(), term()) -> {{halt, integer()}, #wm_reqdata{}, #context{}}.
@@ -339,4 +380,61 @@ finalize_request(RD, Ctx=#context{local_context=LocalCtx,
             ResponseMod:invalid_digest_response(ContentMD5, RD, Ctx);
         {error, Reason1} ->
             riak_cs_s3_response:api_error(Reason1, RD, Ctx)
+    end.
+
+-spec maybe_copy_part(pid(), binary(), binary(), lfs_manifest(), riak_client(),
+                      #wm_reqdata{}, #context{}) ->
+                             {{halt, integer()}, #wm_reqdata{}, #context{}}.
+maybe_copy_part(PutPid,
+                DstBucket, DstKey,
+                ?MANIFEST{bkey={SrcBucket, SrcKey}} = SrcManifest,
+                ReadRcPid,
+                RD, #context{riak_client=RcPid,
+                             local_context=LocalCtx,
+                             user=User} = Ctx) ->
+
+    #key_context{upload_id=UploadId,
+                 part_number=PartNumber,
+                 part_uuid=PartUUID} = LocalCtx,
+    Caller = riak_cs_mp_utils:user_rec_to_3tuple(User),
+
+    case riak_cs_copy_object:test_condition_and_permission(ReadRcPid, SrcManifest, RD, Ctx) of
+        {false, _, _} ->
+
+            %% start copying
+            _ = lager:debug("copying! > ~s ~s => ~s ~s via ~p",
+                            [SrcBucket, SrcKey, DstBucket, DstKey, ReadRcPid]),
+
+            Range = riak_cs_copy_object:copy_range(RD, SrcManifest),
+            %% This ain't fail because all permission and 404
+            %% possibility has been already checked.
+            case riak_cs_copy_object:copy(PutPid, SrcManifest, ReadRcPid, Range) of
+
+                {ok, DstManifest} ->
+                    case riak_cs_mp_utils:upload_part_finished(
+                           DstBucket, DstKey, UploadId, PartNumber, PartUUID,
+                           DstManifest?MANIFEST.content_md5, Caller, RcPid) of
+                        ok ->
+                            ETag = riak_cs_utils:etag_from_binary(DstManifest?MANIFEST.content_md5),
+                            RD2 = wrq:set_resp_header("ETag", ETag, RD),
+                            riak_cs_s3_response:copy_part_response(DstManifest, RD2, Ctx);
+
+                        {error, Reason0} ->
+                            riak_cs_s3_response:api_error(Reason0, RD, Ctx)
+                    end;
+
+                {error, Reason} ->
+                    riak_cs_s3_response:api_error(Reason, RD, Ctx)
+            end;
+
+        {true, _RD, _OtherCtx} ->
+            %% access to source object not authorized
+            %% TODO: check the return value
+            _ = lager:debug("access to source object denied (~s, ~s)", [SrcBucket, SrcKey]),
+            {{halt, 403}, RD, Ctx};
+
+        Error ->
+            _ = lager:debug("unknown error: ~p", [Error]),
+            %% ResponseMod:api_error(Error, RD, Ctx#context{local_context=LocalCtx})
+            Error
     end.

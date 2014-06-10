@@ -411,6 +411,7 @@ md5_final(Ctx) -> crypto:md5_final(Ctx).
     {ok, riakc_obj:riakc_obj()} | {error, term()}.
 get_manifests_raw(RcPid, Bucket, Key) ->
     ManifestBucket = to_bucket_name(objects, Bucket),
+    ok = riak_cs_riak_client:set_bucket_name(RcPid, Bucket),
     {ok, ManifestPbc} = riak_cs_riak_client:manifest_pbc(RcPid),
     riakc_pb_socket:get(ManifestPbc, ManifestBucket, Key).
 

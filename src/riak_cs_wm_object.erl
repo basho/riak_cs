@@ -1,6 +1,6 @@
 %% ---------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2014 Basho Technologies, Inc.  All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -283,11 +283,13 @@ content_types_accepted(CT, RD, Ctx=#context{local_context=LocalCtx0}) ->
              Ctx}
     end.
 
--spec accept_body(#wm_reqdata{}, #context{}) -> {{halt, integer()}, #wm_reqdata{}, #context{}}.
+-spec accept_body(#wm_reqdata{}, #context{}) ->
+                         {{halt, integer()}, #wm_reqdata{}, #context{}}.
 accept_body(RD, Ctx=#context{riak_client=RcPid,
                              local_context=LocalCtx,
                              response_module=ResponseMod})
   when LocalCtx#key_context.update_metadata == true ->
+    %% zero-body put copy - just updating metadata
     #key_context{bucket=Bucket, key=KeyStr, manifest=Mfst} = LocalCtx,
     Acl = Mfst?MANIFEST.acl,
     NewAcl = Acl?ACL{creation_time = now()},
@@ -302,10 +304,23 @@ accept_body(RD, Ctx=#context{riak_client=RcPid,
         {error, Err} ->
             ResponseMod:api_error(Err, RD, Ctx)
     end;
-accept_body(RD, Ctx=#context{local_context=LocalCtx,
-                             user=User,
-                             acl=ACL,
-                             riak_client=RcPid}) ->
+accept_body(RD, #context{response_module=ResponseMod} = Ctx) ->
+    case riak_cs_copy_object:get_copy_source(RD) of
+        undefined ->
+            handle_normal_put(RD, Ctx);
+        {error, _} = Err ->
+            ResponseMod:api_error(Err, RD, Ctx);
+        {SrcBucket, SrcKey} ->
+            handle_copy_put(RD, Ctx, SrcBucket, SrcKey)
+    end.
+
+-spec handle_normal_put(#wm_reqdata{}, #context{}) ->
+    {{halt, integer()}, #wm_reqdata{}, #context{}}.
+handle_normal_put(RD, Ctx) ->
+    #context{local_context=LocalCtx,
+             user=User,
+             acl=ACL,
+             riak_client=RcPid} = Ctx,
     #key_context{bucket=Bucket,
                  key=Key,
                  putctype=ContentType,
@@ -324,6 +339,71 @@ accept_body(RD, Ctx=#context{local_context=LocalCtx,
              Metadata, BlockSize, ACL, timer:seconds(60), self(), RcPid}],
     {ok, Pid} = riak_cs_put_fsm_sup:start_put_fsm(node(), Args),
     accept_streambody(RD, Ctx, Pid, wrq:stream_req_body(RD, riak_cs_lfs_utils:block_size())).
+
+%% @doc the head is PUT copy path
+-spec handle_copy_put(#wm_reqdata{}, #context{}, binary(), binary()) ->
+                               {boolean()|{halt, integer()}, #wm_reqdata{}, #context{}}.
+handle_copy_put(RD, Ctx, SrcBucket, SrcKey) ->
+    #context{local_context=LocalCtx,
+             response_module=ResponseMod,
+             acl=Acl,
+             riak_client=RcPid} = Ctx,
+    %% manifest is always notfound|undefined here
+    #key_context{bucket=Bucket, key=KeyStr, get_fsm_pid=GetFsmPid} = LocalCtx,
+    Key = list_to_binary(KeyStr),
+
+    {ok, ReadRcPid} = riak_cs_riak_client:checkout(),
+    try
+
+        %% You'll also need permission to access source object, but RD and
+        %% Ctx is of target object. Then access permission to source
+        %% object has to be checked here. First of all, get manifest.
+        case riak_cs_manifest:fetch(ReadRcPid, SrcBucket, SrcKey) of
+            {ok, SrcManifest} ->
+
+                EntityTooLarge = SrcManifest?MANIFEST.content_length > riak_cs_lfs_utils:max_content_len(),
+
+                case riak_cs_copy_object:test_condition_and_permission(ReadRcPid, SrcManifest, RD, Ctx) of
+
+                    {false, _, _} when EntityTooLarge ->
+                        ResponseMod:api_error(entity_too_large, RD, Ctx);
+
+                    {false, _, _} ->
+
+                        %% start copying
+                        _ = lager:debug("copying! > ~s ~s => ~s ~s via ~p",
+                                        [SrcBucket, SrcKey, Bucket, Key, ReadRcPid]),
+
+                        Metadata = riak_cs_wm_utils:extract_user_metadata(RD),
+                        NewAcl = Acl?ACL{creation_time=os:timestamp()},
+                        {ok, PutFsmPid} = riak_cs_copy_object:start_put_fsm(Bucket, Key, SrcManifest,
+                                                                            Metadata, NewAcl, RcPid),
+
+                        %% This ain't fail because all permission and 404
+                        %% possibility has been already checked.
+                        {ok, DstManifest} = riak_cs_copy_object:copy(PutFsmPid, SrcManifest, ReadRcPid),
+                        ETag = riak_cs_utils:etag_from_binary(DstManifest?MANIFEST.content_md5),
+                        RD2 = wrq:set_resp_header("ETag", ETag, RD),
+                        ResponseMod:copy_object_response(DstManifest, RD2,
+                                                         Ctx#context{local_context=LocalCtx});
+                    {true, _RD, _OtherCtx} ->
+                        %% access to source object not authorized
+                        %% TODO: check the return value / http status
+                        _ = lager:debug("access to source object denied (~s, ~s)", [SrcBucket, SrcKey]),
+                        {{halt, 403}, RD, Ctx};
+
+                    {Result, _, _} = Error ->
+                        _ = lager:debug("~p on ~s ~s", [Result, SrcBucket, SrcKey]),
+                        Error
+
+                end;
+            {error, Err} ->
+                ResponseMod:api_error(Err, RD, Ctx)
+        end
+    after
+        riak_cs_get_fsm:stop(GetFsmPid),
+        riak_cs_riak_client:checkin(ReadRcPid)
+    end.
 
 -spec accept_streambody(#wm_reqdata{}, #context{}, pid(), term()) -> {{halt, integer()}, #wm_reqdata{}, #context{}}.
 accept_streambody(RD,
@@ -349,9 +429,8 @@ accept_streambody(RD,
     end.
 
 %% TODO:
-%% We need to do some checking to make sure
-%% the bucket exists for the user who is doing
-%% this PUT
+%% We need to do some checking to make sure the bucket exists
+%% for the user who is doing this PUT
 -spec finalize_request(#wm_reqdata{}, #context{}, pid()) -> {{halt, 200}, #wm_reqdata{}, #context{}}.
 finalize_request(RD,
                  Ctx=#context{local_context=LocalCtx,

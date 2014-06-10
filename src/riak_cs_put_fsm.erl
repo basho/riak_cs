@@ -317,10 +317,15 @@ done(finalize, true, From, State=#state{manifest=Manifest,
     end.
 
 -spec is_digest_valid(binary(), undefined | string()) -> boolean().
-is_digest_valid(_, undefined) ->
+is_digest_valid(D1, undefined) ->
+    %% reported MD5 is not in request header
+    _ = lager:debug("Calculated = ~p, Reported = undefined~n", [D1]),
     true;
 is_digest_valid(CalculatedMD5, ReportedMD5) ->
-    base64:encode(CalculatedMD5) =:= list_to_binary(ReportedMD5).
+    StringCalculatedMD5 = base64:encode(CalculatedMD5),
+    _ = lager:debug("Calculated = ~p, Reported = ~p~n",
+                    [StringCalculatedMD5, ReportedMD5]),
+    StringCalculatedMD5 =:= list_to_binary(ReportedMD5).
 
 %%--------------------------------------------------------------------
 %%

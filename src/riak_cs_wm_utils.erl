@@ -599,6 +599,7 @@ extract_amazon_headers(Headers) ->
 %% TODO: pass in x-amz-server-side-encryption?
 %% TODO: pass in x-amz-storage-class?
 %% TODO: pass in x-amz-grant-* headers?
+-spec extract_user_metadata(#wm_reqdata{}) -> proplists:proplist().
 extract_user_metadata(RD) ->
     extract_user_metadata(get_request_headers(RD), []).
 
@@ -742,16 +743,16 @@ is_acl_request(_) ->
     false.
 
 -type halt_or_bool() :: {halt, pos_integer()} | boolean().
--type authorized_response() :: {halt_or_bool(), RD :: term(), Ctx :: term()}.
+-type authorized_response() :: {halt_or_bool(), RD :: #wm_reqdata{}, Ctx :: #context{}}.
 
 -spec object_access_authorize_helper(AccessType::atom(), boolean(),
-                                     RD::term(), Ctx::term()) ->
+                                     RD:: #wm_reqdata{}, Ctx:: #context{}) ->
                                             authorized_response().
 object_access_authorize_helper(AccessType, Deletable, RD, Ctx) ->
     object_access_authorize_helper(AccessType, Deletable, false, RD, Ctx).
 
 -spec object_access_authorize_helper(AccessType::atom(), boolean(), boolean(),
-                                     RD::term(), Ctx::term()) ->
+                                     RD:: #wm_reqdata{}, Ctx:: #context{}) ->
                                             authorized_response().
 object_access_authorize_helper(AccessType, Deletable, SkipAcl,
                                RD, #context{policy_module=PolicyMod,
