@@ -22,7 +22,6 @@
 
 -export([service_available/2,
          service_available/3,
-         parse_auth_header/2,
          iso_8601_datetime/0,
          iso_8601_datetime/1,
          to_iso_8601/1,
@@ -96,10 +95,6 @@ service_available(Pool, RD, Ctx) ->
                                                  string() | undefined}.
 parse_auth_header(KeyId, true) when KeyId =/= undefined ->
     {riak_cs_passthru_auth, KeyId, undefined};
-parse_auth_header(_, true) ->
-    {riak_cs_passthru_auth, [], undefined};
-parse_auth_header(undefined, false) ->
-    {riak_cs_blockall_auth, undefined, undefined};
 parse_auth_header("AWS " ++ Key, _) ->
     case string:tokens(Key, ":") of
         [KeyId, KeyData] ->
