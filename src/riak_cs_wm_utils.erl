@@ -113,8 +113,8 @@ parse_auth_header(_, _) ->
                                                            string() | undefined}.
 parse_auth_params(KeyId, _, true) when KeyId =/= undefined ->
     {riak_cs_passthru_auth, KeyId, undefined};
-parse_auth_params(_, _, true) ->
-    {riak_cs_passthru_auth, [], undefined};
+parse_auth_params(undefined, _, true) ->
+    {riak_cs_passthru_auth, undefined, undefined};
 parse_auth_params(undefined, _, false) ->
     {riak_cs_blockall_auth, undefined, undefined};
 parse_auth_params(_, undefined, _) ->
