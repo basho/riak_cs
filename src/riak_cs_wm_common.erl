@@ -214,6 +214,10 @@ maybe_create_user({error, NE}, KeyId, s3, riak_cs_keystone_auth, {UserData, _}, 
     %% Attempt to create a Riak CS user to represent the OS tenant
     _ = riak_cs_utils:create_user(Name, Email, KeyId, Secret),
     riak_cs_utils:get_user(KeyId, RcPid);
+maybe_create_user({error, no_user_key}=Error, _, _, _, _, _) ->
+    %% Anonymous access may be authorized by ACL or policy afterwards,
+    %% no logging here.
+    Error;
 maybe_create_user({error, Reason}=Error, _, Api, _, _, _) ->
     _ = lager:error("Retrieval of user record for ~p failed. Reason: ~p",
                     [Api, Reason]),
