@@ -15,6 +15,7 @@
 * PUT Copy on both objects and upload parts as technical preview [riak_cs/#548](https://github.com/basho/riak_cs/pull/548)
 * Update to lager 2.0.3
 * Compiles with R16B0x (Releases still by R15B01)
+* Changed default value of `gc_paginated_index` to `true` [riak_cs/#881](https://github.com/basho/riak_cs/issues/881)
 
 ## Bugs Fixed
 
