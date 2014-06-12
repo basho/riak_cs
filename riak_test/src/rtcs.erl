@@ -181,7 +181,9 @@ riak_oss_config(Backend) ->
     [
      lager_config(),
      {riak_core,
-      [{default_bucket_props, [{allow_mult, true}]}]},
+      [{default_bucket_props, [{allow_mult, true}]},
+       {ring_creation_size, 8}]
+     },
      {riak_api,
       [{pb_backlog, 256}]},
      {riak_kv,
@@ -392,15 +394,25 @@ setup_admin_user(NumNodes, InitialConfig) ->
     Nodes = {RiakNodes, CSNodes, StanchionNode},
 
     %% Create admin user and set in cs and stanchion configs
-    AdminCreds = create_admin_user(hd(RiakNodes)),
+    {KeyID, KeySecret} = AdminCreds = create_admin_user(hd(RiakNodes)),
 
     %% Restart cs and stanchion nodes so admin user takes effect
-    stop_cs_and_stanchion_nodes(NodeList),
+    %% stop_cs_and_stanchion_nodes(NodeList),
 
     set_admin_creds_in_configs(NodeList, Configs, AdminCreds),
 
-    start_cs_and_stanchion_nodes(NodeList),
-    [ok = rt:wait_until_pingable(N) || N <- CSNodes ++ [StanchionNode]],
+    UpdateFun = fun({Node, App}) ->
+                        ok = rpc:call(Node, application, set_env,
+                                      [App, admin_key, KeyID]),
+                        ok = rpc:call(Node, application, set_env,
+                                      [App, admin_secret, KeySecret])
+                end,
+    ZippedNodes = [{StanchionNode, stanchion} |
+             [ {CSNode, riak_cs} || CSNode <- CSNodes ]],
+    lists:foreach(UpdateFun, ZippedNodes),
+
+    %% start_cs_and_stanchion_nodes(NodeList),
+    %% [ok = rt:wait_until_pingable(N) || N <- CSNodes ++ [StanchionNode]],
 
     lager:info("NodeConfig: ~p", [ NodeConfig ]),
     lager:info("RiakNodes: ~p", [RiakNodes]),
@@ -443,13 +455,13 @@ start_all_nodes(NodeList) ->
                     N = rt_cs_dev:node_id(RiakNode),
                     rtdev:run_riak(N, rt_cs_dev:relpath(rt_cs_dev:node_version(N)), "start"),
                     rt:wait_for_service(RiakNode, riak_kv),
-                    start_stanchion(),
-                    start_cs(N);
+                    spawn(fun() -> start_stanchion() end),
+                    spawn(fun() -> start_cs(N) end);
                ({_CSNode, RiakNode}) ->
                     N = rt_cs_dev:node_id(RiakNode),
                     rtdev:run_riak(N, rt_cs_dev:relpath(rt_cs_dev:node_version(N)), "start"),
                     rt:wait_for_service(RiakNode, riak_kv),
-                    start_cs(N)
+                    spawn(fun() -> start_cs(N) end)
             end, NodeList).
 
 stop_all_nodes(NodeList) ->
