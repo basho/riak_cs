@@ -114,8 +114,6 @@ confirm() ->
     LeaderB = rpc:call(hd(BNodes), riak_repl_leader, leader_node, []),
     repl_helpers:del_site(LeaderB, "site1"),
 
-    timer:sleep(5000),
-
     lager:info("check we can still read the fullsynced object"),
 
     Obj3 = erlcloud_s3:get_object(?TEST_BUCKET, "object_one", U1C2Config),

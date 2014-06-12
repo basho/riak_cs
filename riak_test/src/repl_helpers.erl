@@ -3,6 +3,10 @@
 -include_lib("eunit/include/eunit.hrl").
 
 verify_sites_balanced(NumSites, BNodes0) ->
+    rt:wait_until(fun() ->
+                          L = rpc:call(hd(BNodes0), riak_repl_leader, leader_node, []),
+                          L =/= undefined
+                  end),
     Leader = rpc:call(hd(BNodes0), riak_repl_leader, leader_node, []),
     case node_has_version(Leader, "1.2.0") of
         true ->
@@ -45,14 +49,12 @@ add_site(Node, {IP, Port, Name}) ->
     lager:info("Add site ~p ~p:~p at node ~p", [Name, IP, Port, Node]),
     Args = [IP, integer_to_list(Port), Name],
     Res = rpc:call(Node, riak_repl_console, add_site, [Args]),
-    ?assertEqual(ok, Res),
-    timer:sleep(timer:seconds(5)).
+    ?assertEqual(ok, Res).
 
 del_site(Node, Name) ->
     lager:info("Del site ~p at ~p", [Name, Node]),
     Res = rpc:call(Node, riak_repl_console, del_site, [[Name]]),
-    ?assertEqual(ok, Res),
-    timer:sleep(timer:seconds(5)).
+    ?assertEqual(ok, Res).
 
 verify_listeners(Listeners) ->
     Strs = [IP ++ ":" ++ integer_to_list(Port) || {IP, Port, _} <- Listeners],
@@ -73,7 +75,6 @@ add_listeners(Nodes=[FirstNode|_]) ->
     IPs = lists:duplicate(length(Nodes), "127.0.0.1"),
     PN = lists:zip3(IPs, Ports, Nodes),
     [add_listener(FirstNode, Node, IP, Port) || {IP, Port, Node} <- PN],
-    timer:sleep(timer:seconds(5)),
     PN.
 
 add_listener(N, Node, IP, Port) ->
@@ -86,14 +87,16 @@ gen_ports(Start, Len) ->
     lists:seq(Start, Start + Len - 1).
 
 verify_site_ips(Leader, Site, Listeners) ->
-    Status = rpc:call(Leader, riak_repl_console, status, [quiet]),
-    Key = lists:flatten([Site, "_ips"]),
-    IPStr = proplists:get_value(Key, Status),
-    IPs = lists:sort(re:split(IPStr, ", ")),
-    ExpectedIPs = lists:sort(
-        [list_to_binary([IP, ":", integer_to_list(Port)]) || {IP, Port, _Node} <-
-            Listeners]),
-    ?assertEqual(ExpectedIPs, IPs).
+    rt:wait_until(
+      fun() -> Status = rpc:call(Leader, riak_repl_console, status, [quiet]),
+               Key = lists:flatten([Site, "_ips"]),
+               IPStr = proplists:get_value(Key, Status),
+               IPs = lists:sort(re:split(IPStr, ", ")),
+               ExpectedIPs = lists:sort(
+                               [list_to_binary([IP, ":", integer_to_list(Port)]) ||
+                                   {IP, Port, _Node} <- Listeners]),
+               ExpectedIPs =:= IPs
+      end).
 
 start_and_wait_until_fullsync_complete(Node) ->
     Status0 = rpc:call(Node, riak_repl_console, status, [quiet]),

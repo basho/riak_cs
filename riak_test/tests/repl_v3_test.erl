@@ -131,14 +131,9 @@ confirm() ->
     erlcloud_s3:put_object(?TEST_BUCKET, "object_three", Object3, U1C1Config),
 
     lager:info("disable proxy_get"),
-
     disable_pg(LeaderA, "B", ANodes, BNodes, BPort),
 
-    %% not sure what this is for, but I'm not going to touch it right now
-    timer:sleep(5000),
-
     lager:info("check we can still read the fullsynced object"),
-
     Obj3 = erlcloud_s3:get_object(?TEST_BUCKET, "object_one", U1C2Config),
     ?assertEqual(Object1, proplists:get_value(content,Obj3)),
 
@@ -282,6 +277,5 @@ set_proxy_get(SourceLeader, EnableOrDisable, SinkName, ANodes, BNodes) ->
     end,
     rt:wait_until_ring_converged(ANodes),
     rt:wait_until_ring_converged(BNodes),
-    timer:sleep(10000).
-
+    ok.
 
