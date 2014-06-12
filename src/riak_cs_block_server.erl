@@ -238,16 +238,17 @@ get_block(ReplyPid, Bucket, Key, ClusterID, UUID, BlockNumber, RcPid) ->
 
 do_get_block(ReplyPid, Bucket, Key, ClusterID, UseProxyGet, ProxyActive,
              UUID, BlockNumber, RcPid) ->
+    MaxRetries = riak_cs_config:get_env(riak_cs, block_get_max_retries, 5),
     do_get_block(ReplyPid, Bucket, Key, ClusterID, UseProxyGet, ProxyActive,
-                 UUID, BlockNumber, RcPid, 0).
+                 UUID, BlockNumber, RcPid, MaxRetries, 0).
 
 do_get_block(ReplyPid, _Bucket, _Key, _ClusterID, _UseProxyGet, _ProxyActive,
-             UUID, BlockNumber, _RcPid, NumRetries)
-  when is_atom(NumRetries) orelse NumRetries > 5 ->
+             UUID, BlockNumber, _RcPid, MaxRetries, NumRetries)
+  when is_atom(NumRetries) orelse NumRetries > MaxRetries ->
     Sorry = {error, notfound},
     ok = riak_cs_get_fsm:chunk(ReplyPid, {UUID, BlockNumber}, Sorry);
 do_get_block(ReplyPid, Bucket, Key, ClusterID, UseProxyGet, ProxyActive,
-             UUID, BlockNumber, RcPid, NumRetries) ->
+             UUID, BlockNumber, RcPid, MaxRetries, NumRetries) ->
     ok = sleep_retries(NumRetries),
 
     dt_entry(<<"get_block">>, [BlockNumber], [Bucket, Key]),
@@ -265,7 +266,7 @@ do_get_block(ReplyPid, Bucket, Key, ClusterID, UseProxyGet, ProxyActive,
     RetryFun = fun(NewPause) ->
                ok = riak_cs_stats:update_with_start(block_get_retry, StartTime),
                do_get_block(ReplyPid, Bucket, Key, ClusterID, UseProxyGet,
-                            ProxyActive, UUID, BlockNumber, RcPid, NewPause)
+                            ProxyActive, UUID, BlockNumber, RcPid, MaxRetries, NewPause)
             end,
 
     Timeout = timer:seconds(5),

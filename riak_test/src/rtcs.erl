@@ -241,6 +241,7 @@ cs_config(UserExtra, OtherApps) ->
              {request_pool, {request_pool_size(), 0} },
              {bucket_list_pool, {bucket_list_pool_size(), 0} }
             ]},
+           {block_get_max_retries, 1},
            {proxy_get, enabled},
            {anonymous_user_creation, true},
            {riak_pb_port, 10017},
