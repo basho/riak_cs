@@ -20,14 +20,15 @@
 
 -module(cs512_regression_test).
 
--export([confirm/0]).
+-export([verify_cs512/1]).
 -include_lib("eunit/include/eunit.hrl").
 
--define(BUCKET, "riak-test-bucket").
+-define(BUCKET, "riak-test-bucket-cs512").
 -define(KEY, "test-key").
 
-confirm() ->
-    {ok, UserConfig} = setup(),
+verify_cs512(UserConfig) ->
+    %% {ok, UserConfig} = setup(),
+    ?assertEqual(ok, erlcloud_s3:create_bucket(?BUCKET, UserConfig)),
     put_and_get(UserConfig, <<"OLD">>),
     put_and_get(UserConfig, <<"NEW">>),
     delete(UserConfig),
@@ -47,10 +48,10 @@ assert_notfound(UserConfig) ->
         {aws_error, {http_error, 404, _, _}},
         erlcloud_s3:get_object(?BUCKET, ?KEY, UserConfig)).
 
-setup() ->
-    {UserConfig, _} = rtcs:setup(1),
-    ?assertEqual([{buckets, []}], erlcloud_s3:list_buckets(UserConfig)),
-    ?assertEqual(ok, erlcloud_s3:create_bucket(?BUCKET, UserConfig)),
-    ?assertMatch([{buckets, [[{name, ?BUCKET}, _]]}],
-        erlcloud_s3:list_buckets(UserConfig)),
-    {ok, UserConfig}.
+%% setup() ->
+%%     {UserConfig, _} = rtcs:setup(1),
+%%     ?assertEqual([{buckets, []}], erlcloud_s3:list_buckets(UserConfig)),
+%%     ?assertEqual(ok, erlcloud_s3:create_bucket(?BUCKET, UserConfig)),
+%%     ?assertMatch([{buckets, [[{name, ?BUCKET}, _]]}],
+%%         erlcloud_s3:list_buckets(UserConfig)),
+%%     {ok, UserConfig}.

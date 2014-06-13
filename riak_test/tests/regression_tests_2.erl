@@ -17,20 +17,25 @@
 %% under the License.
 %%
 %% ---------------------------------------------------------------------
-
--module(cs_654_regression_test).
-%% @doc Integration test for [https://github.com/basho/riak_cs/issues/654]
+%% @doc regression_tests running with two node cluster, while
+%% regression_tests.erl is for single node cluster
+-module(regression_tests_2).
 
 -compile(export_all).
 -include_lib("eunit/include/eunit.hrl").
 
-
--export([confirm/0]).
-
 confirm() ->
+    
     Config = [{riak, rtcs:riak_config()}, {stanchion, rtcs:stanchion_config()},
               {cs, rtcs:cs_config([{fold_objects_for_list_keys, true}])}],
     {UserConfig, {_RiakNodes, _CSNodes, _Stanchion}} = rtcs:setup(2, Config),
+    verify_cs654(UserConfig),
+    cs_631_regression_test:verify_cs631(UserConfig),
+    cs_781_regression_test:run_test(UserConfig),
+    pass.
+
+%% @doc Integration test for [https://github.com/basho/riak_cs/issues/654]
+verify_cs654(UserConfig) ->
     run_test_empty_common_prefixes(UserConfig),
     run_test_no_duplicate_key(UserConfig),
     run_test_no_infinite_loop(UserConfig).
