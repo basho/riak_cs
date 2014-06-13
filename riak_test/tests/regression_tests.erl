@@ -22,21 +22,25 @@
 
 %% @doc this module gathers various regression tests which can be
 %% separate easily. Regression tests which needs configuration change
-%% can be written as different module.
+%% can be written as different module. In case of rtcs:setup(1) with
+%% vanilla CS setup used. Otherwise feel free to create an independent
+%% module like cs743_regression_test.
 
 -export([confirm/0]).
 -include_lib("eunit/include/eunit.hrl").
--include_lib("xmerl/include/xmerl.hrl").
 
 -define(TEST_BUCKET_CS347, "test-bucket-cs347").
 
 confirm() ->
-    SetupInfo = rtcs:setup(1),
-    verify_cs296(SetupInfo, "test-bucket-cs296"),
-    verify_cs347(SetupInfo, ?TEST_BUCKET_CS347),
-    verify_cs436(SetupInfo, "test-bucket-cs436"),
-    {UserConfig, _} = SetupInfo,
-    cs512_regression_test:verify_cs512(UserConfig),
+    {UserConfig, _} = SetupInfo = rtcs:setup(1),
+
+    pass = verify_cs296(SetupInfo, "test-bucket-cs296"),
+    pass = verify_cs347(SetupInfo, "test-bucket-cs347"),
+    pass = verify_cs436(SetupInfo, "test-bucket-cs436"),
+    pass = verify_cs512(UserConfig, "test-bucket-cs512"),
+
+    %% Append your next regression tests here
+
     pass.
 
 %% @doc Regression test for `riak_cs' <a href="https://github.com/basho/riak_cs/issues/296">
@@ -75,8 +79,7 @@ verify_cs347(_SetupInfo = {UserConfig, {_RiakNodes, _CSNodes, _Stanchion}}, Buck
             Result ->
                 Result
         end,
-    lager:info("~p", [ListObjectRes1]),
-    ?assert(verify_error_response(ListObjectRes1)),
+    ?assert(rtcs:check_no_such_bucket(ListObjectRes1, "/"++?TEST_BUCKET_CS347)),
 
     lager:info("creating bucket ~p", [BucketName]),
     ?assertEqual(ok, erlcloud_s3:create_bucket(BucketName, UserConfig)),
@@ -94,25 +97,8 @@ verify_cs347(_SetupInfo = {UserConfig, {_RiakNodes, _CSNodes, _Stanchion}}, Buck
             Result2 ->
                 Result2
         end,
-    ?assert(verify_error_response(ListObjectRes2)),
+    ?assert(rtcs:check_no_such_bucket(ListObjectRes2, "/"++?TEST_BUCKET_CS347)),
     pass.
-
-verify_error_response({_, 404, _, RespStr}) ->
-    {RespXml, _} = xmerl_scan:string(RespStr),
-    lists:any(fun process_error_content/1, RespXml#xmlElement.content).
-
-process_error_content(Element) ->
-    verify_error_child_element(Element#xmlElement.name,
-                               Element#xmlElement.content).
-
-verify_error_child_element('Code', [Content]) ->
-    Content#xmlText.value =:= "NoSuchBucket";
-verify_error_child_element('Message', [Content]) ->
-    Content#xmlText.value =:= "The specified bucket does not exist.";
-verify_error_child_element('Resource', [Content]) ->
-    Content#xmlText.value =:= "/" ++ ?TEST_BUCKET_CS347;
-verify_error_child_element(_, _) ->
-    true.
 
 
 %% @doc Regression test for `riak_cs' <a href="https://github.com/basho/riak_cs/issues/436">
@@ -148,3 +134,26 @@ verify_cs436(_SetupInfo = {UserConfig, {_RiakNodes, _CSNodes, _Stanchion}}, Buck
                                         UserConfig)),
     pass.
 
+-define(KEY, "cs512-key").
+
+verify_cs512(UserConfig, BucketName) ->
+    %% {ok, UserConfig} = setup(),
+    ?assertEqual(ok, erlcloud_s3:create_bucket(BucketName, UserConfig)),
+    put_and_get(UserConfig, BucketName, <<"OLD">>),
+    put_and_get(UserConfig, BucketName, <<"NEW">>),
+    delete(UserConfig, BucketName),
+    assert_notfound(UserConfig,BucketName),
+    pass.
+
+put_and_get(UserConfig, BucketName, Data) ->
+    erlcloud_s3:put_object(BucketName, ?KEY, Data, UserConfig),
+    Props = erlcloud_s3:get_object(BucketName, ?KEY, UserConfig),
+    ?assertEqual(proplists:get_value(content, Props), Data).
+
+delete(UserConfig, BucketName) ->
+    erlcloud_s3:delete_object(BucketName, ?KEY, UserConfig).
+
+assert_notfound(UserConfig, BucketName) ->
+    ?assertException(_,
+                     {aws_error, {http_error, 404, _, _}},
+                     erlcloud_s3:get_object(BucketName, ?KEY, UserConfig)).

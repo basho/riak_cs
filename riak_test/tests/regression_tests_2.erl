@@ -17,8 +17,13 @@
 %% under the License.
 %%
 %% ---------------------------------------------------------------------
+
 %% @doc regression_tests running with two node cluster, while
-%% regression_tests.erl is for single node cluster
+%% regression_tests.erl is for single node cluster In case of
+%% rtcs:setup(2) with vanilla CS setup used. Otherwise feel free to
+%% create an independent module like cs743_regression_test.
+
+
 -module(regression_tests_2).
 
 -compile(export_all).
@@ -29,10 +34,38 @@ confirm() ->
               {cs, rtcs:cs_config([{fold_objects_for_list_keys, true}])}],
     {UserConfig, {_RiakNodes, _CSNodes, _Stanchion}} = rtcs:setup(2, Config),
 
-    verify_cs654(UserConfig),
-    cs_631_regression_test:verify_cs631(UserConfig),
-    cs_781_regression_test:run_test(UserConfig),
+    pass = verify_cs631(UserConfig, "cs-631-test-bukcet"),
+    pass = verify_cs654(UserConfig),
+    pass = verify_cs781(UserConfig, "cs-781-test-bucket"),
+
+    %% Append your next regression tests here
+
     pass.
+
+
+%% @doc Integration test for [https://github.com/basho/riak_cs/issues/631]
+verify_cs631(UserConfig, BucketName) ->
+    ?assertEqual(ok, erlcloud_s3:create_bucket(BucketName, UserConfig)),
+    test_unknown_canonical_id_grant_returns_400(UserConfig, BucketName),
+    test_canned_acl_and_grants_returns_400(UserConfig, BucketName).
+
+-define(KEY_1, "key-1").
+-define(KEY_2, "key-2").
+-define(VALUE, <<"632-test-value">>).
+
+test_canned_acl_and_grants_returns_400(UserConfig, BucketName) ->
+    Acl = [{acl, public_read}],
+    Headers = [{"x-amz-grant-write", "email=\"doesnmatter@example.com\""}],
+    ?assertError({aws_error, {http_error, 400, _, _}},
+                erlcloud_s3:put_object(BucketName, ?KEY_1, ?VALUE,
+                                      Acl, Headers, UserConfig)).
+
+test_unknown_canonical_id_grant_returns_400(UserConfig, BucketName) ->
+    Acl = [],
+    Headers = [{"x-amz-grant-write", "id=\"badbadbadbadbadbadbadbadbadbadbadbadbadbadbadbadbadbadbad9badbad\""}],
+    ?assertError({aws_error, {http_error, 400, _, _}},
+                erlcloud_s3:put_object(BucketName, ?KEY_2, ?VALUE,
+                                      Acl, Headers, UserConfig)).
 
 %% @doc Integration test for [https://github.com/basho/riak_cs/issues/654]
 verify_cs654(UserConfig) ->
@@ -146,3 +179,25 @@ run_test_no_infinite_loop(UserConfig) ->
     [SingleResult] = proplists:get_value(common_prefixes, Response),
     ?assertEqual("0/", proplists:get_value(prefix, SingleResult)),
     pass.
+
+
+
+format_int(Int) ->
+    binary_to_list(iolist_to_binary(io_lib:format("~4..0B", [Int]))).
+
+%% @doc Integration test for [https://github.com/basho/riak_cs/issues/781]
+verify_cs781(UserConfig, BucketName) ->
+    ?assertEqual(ok, erlcloud_s3:create_bucket(BucketName, UserConfig)),
+    Count = 1003,
+    [erlcloud_s3:put_object(BucketName,
+                            format_int(X),
+                            crypto:rand_bytes(100),
+                            UserConfig) || X <- lists:seq(1, Count)],
+    erlcloud_s3:delete_object(BucketName, format_int(1), UserConfig),
+    erlcloud_s3:delete_object(BucketName, format_int(2), UserConfig),
+    ?assertEqual(true,
+                 proplists:get_value(is_truncated,
+                                     erlcloud_s3:list_objects(BucketName,
+                                                              [],
+                                                              UserConfig))).
+

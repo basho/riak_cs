@@ -21,6 +21,7 @@
 -compile(export_all).
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("erlcloud/include/erlcloud_aws.hrl").
+-include_lib("xmerl/include/xmerl.hrl").
 
 -import(rt, [join/2,
              wait_until_nodes_ready/1,
@@ -741,4 +742,29 @@ json_get([Key | Keys], {struct, JsonProps}) ->
             notfound;
         {Key, Value} ->
             json_get(Keys, Value)
+    end.
+
+check_no_such_bucket(Response, Resource) ->
+    check_error_response(Response,
+                         404,
+                         "NoSuchBucket",
+                         "The specified bucket does not exist.",
+                         Resource).
+
+check_error_response({_, Status, _, RespStr} = _Response,
+                     Status,
+                     Code, Message, Resource) ->
+    {RespXml, _} = xmerl_scan:string(RespStr),
+    lists:all(error_child_element_verifier(Code, Message, Resource),
+              RespXml#xmlElement.content).
+
+error_child_element_verifier(Code, Message, Resource) ->
+    fun(#xmlElement{name='Code', content=[Content]}) ->
+            Content#xmlText.value =:= Code;
+       (#xmlElement{name='Message', content=[Content]}) ->
+            Content#xmlText.value =:= Message;
+       (#xmlElement{name='Resource', content=[Content]}) ->
+            Content#xmlText.value =:= Resource;
+       (_) ->
+            true
     end.
