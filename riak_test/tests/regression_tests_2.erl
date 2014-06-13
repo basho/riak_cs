@@ -200,5 +200,6 @@ verify_cs781(UserConfig, BucketName) ->
                  proplists:get_value(is_truncated,
                                      erlcloud_s3:list_objects(BucketName,
                                                               [],
-                                                              UserConfig))).
+                                                              UserConfig))),
+    pass.
 
