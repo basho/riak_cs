@@ -47,7 +47,8 @@ confirm() ->
 verify_cs631(UserConfig, BucketName) ->
     ?assertEqual(ok, erlcloud_s3:create_bucket(BucketName, UserConfig)),
     test_unknown_canonical_id_grant_returns_400(UserConfig, BucketName),
-    test_canned_acl_and_grants_returns_400(UserConfig, BucketName).
+    test_canned_acl_and_grants_returns_400(UserConfig, BucketName),
+    pass.
 
 -define(KEY_1, "key-1").
 -define(KEY_2, "key-2").
@@ -57,15 +58,15 @@ test_canned_acl_and_grants_returns_400(UserConfig, BucketName) ->
     Acl = [{acl, public_read}],
     Headers = [{"x-amz-grant-write", "email=\"doesnmatter@example.com\""}],
     ?assertError({aws_error, {http_error, 400, _, _}},
-                erlcloud_s3:put_object(BucketName, ?KEY_1, ?VALUE,
-                                      Acl, Headers, UserConfig)).
+                 erlcloud_s3:put_object(BucketName, ?KEY_1, ?VALUE,
+                                        Acl, Headers, UserConfig)).
 
 test_unknown_canonical_id_grant_returns_400(UserConfig, BucketName) ->
     Acl = [],
     Headers = [{"x-amz-grant-write", "id=\"badbadbadbadbadbadbadbadbadbadbadbadbadbadbadbadbadbadbad9badbad\""}],
     ?assertError({aws_error, {http_error, 400, _, _}},
-                erlcloud_s3:put_object(BucketName, ?KEY_2, ?VALUE,
-                                      Acl, Headers, UserConfig)).
+                 erlcloud_s3:put_object(BucketName, ?KEY_2, ?VALUE,
+                                        Acl, Headers, UserConfig)).
 
 %% @doc Integration test for [https://github.com/basho/riak_cs/issues/654]
 verify_cs654(UserConfig) ->
