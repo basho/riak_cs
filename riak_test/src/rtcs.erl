@@ -694,6 +694,7 @@ wait_until(Fun, Condition, Retries, Delay) ->
         true ->
             Result;
         false ->
+            timer:sleep(Delay),
             wait_until(Fun, Condition, Retries-1, Delay)
     end.
 
