@@ -97,14 +97,16 @@ process_post(RD, Ctx=#context{local_context=LocalCtx, riak_client=RcPid}) ->
             case riak_cs_mp_utils:complete_multipart_upload(
                    Bucket, list_to_binary(Key), UploadId, PartETags, User,
                    RcPid) of
-                ok ->
+                {ok, ?MANIFEST{content_md5 = {ContentMD5, Suffix}} = _NewManifest} ->
+                    ETag = riak_cs_utils:etag_from_binary(ContentMD5, Suffix),
+                    _ = lager:debug("checksum of all parts checksum: ~p", [ETag]),
                     XmlDoc = {'CompleteMultipartUploadResult',
                               [{'xmlns', "http://s3.amazonaws.com/doc/2006-03-01/"}],
                               [
                                {'Location', [lists:append(["http://", binary_to_list(Bucket), ".s3.amazonaws.com/", Key])]},
                                {'Bucket', [Bucket]},
                                {'Key', [Key]},
-                               {'ETag', [UploadId64]}
+                               {'ETag', [ETag]}
                               ]
                              },
                     XmlBody = riak_cs_xml:to_xml([XmlDoc]),

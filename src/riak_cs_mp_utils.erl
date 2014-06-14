@@ -382,7 +382,7 @@ do_part_common2(abort, RcPid, M, Obj, _Mpm, _Props) ->
                 Else3
         end;
 do_part_common2(complete, RcPid,
-                ?MANIFEST{uuid = UUID, props = MProps} = Manifest,
+                ?MANIFEST{uuid = _UUID, props = MProps} = Manifest,
                 _Obj, MpM, Props) ->
     %% The content_md5 is used by WM to create the ETags header.
     %% However/fortunately/sigh-of-relief, Amazon's S3 doesn't use
@@ -400,40 +400,42 @@ do_part_common2(complete, RcPid,
         {Bucket, Key} = Manifest?MANIFEST.bkey,
         {ok, ManiPid} = riak_cs_manifest_fsm:start_link(Bucket, Key, RcPid),
         try
-                {Bytes, PartsToKeep, PartsToDelete} = comb_parts(MpM, PartETags),
-                true = enforce_part_size(PartsToKeep),
-                NewMpM = MpM?MULTIPART_MANIFEST{parts = PartsToKeep,
-                                                done_parts = [],
-                                                cleanup_parts = PartsToDelete},
-                %% If [] = PartsToDelete, then we only need to update
-                %% the manifest once.
-                MProps2 = case PartsToDelete of
-                              [] ->
-                                  [multipart_clean] ++
-                                   replace_mp_manifest(NewMpM, MProps);
-                              _ ->
-                                  replace_mp_manifest(NewMpM, MProps)
-                          end,
-                NewManifest = Manifest?MANIFEST{state = active,
-                                                content_length = Bytes,
-                                                content_md5 = {UUID, "-" ++ integer_to_list(ordsets:size(PartsToKeep))},
-                                                props = MProps2},
-                ok = riak_cs_manifest_fsm:add_new_manifest(ManiPid, NewManifest),
-                case PartsToDelete of
-                    [] ->
-                        ok;
-                    _ ->
-                        %% Create fake S3 object manifests for this part,
-                        %% then pass them to the GC monster for immediate
-                        %% deletion.
-                        BagId = riak_cs_mb_helper:bag_id_from_manifest(NewManifest),
-                        ok = move_dead_parts_to_gc(Bucket, Key, BagId,
-                                                   PartsToDelete, RcPid),
-                        MProps3 = [multipart_clean|MProps2],
-                        New2Manifest = NewManifest?MANIFEST{props = MProps3},
-                        ok = riak_cs_manifest_fsm:update_manifest(
-                               ManiPid, New2Manifest)
-                end
+            {Bytes, OverAllMD5, PartsToKeep, PartsToDelete} = comb_parts(MpM, PartETags),
+            true = enforce_part_size(PartsToKeep),
+            NewMpM = MpM?MULTIPART_MANIFEST{parts = PartsToKeep,
+                                            done_parts = [],
+                                            cleanup_parts = PartsToDelete},
+            %% If [] = PartsToDelete, then we only need to update
+            %% the manifest once.
+            MProps2 = case PartsToDelete of
+                          [] ->
+                              [multipart_clean] ++
+                                  replace_mp_manifest(NewMpM, MProps);
+                          _ ->
+                              replace_mp_manifest(NewMpM, MProps)
+                      end,
+            ContentMD5 = {OverAllMD5, "-" ++ integer_to_list(ordsets:size(PartsToKeep))},
+            NewManifest = Manifest?MANIFEST{state = active,
+                                            content_length = Bytes,
+                                            content_md5 = ContentMD5,
+                                            props = MProps2},
+            ok = riak_cs_manifest_fsm:add_new_manifest(ManiPid, NewManifest),
+            case PartsToDelete of
+                [] ->
+                    {ok, NewManifest};
+                _ ->
+                    %% Create fake S3 object manifests for this part,
+                    %% then pass them to the GC monster for immediate
+                    %% deletion.
+                    BagId = riak_cs_mb_helper:bag_id_from_manifest(NewManifest),
+                    ok = move_dead_parts_to_gc(Bucket, Key, BagId,
+                                               PartsToDelete, RcPid),
+                    MProps3 = [multipart_clean|MProps2],
+                    New2Manifest = NewManifest?MANIFEST{props = MProps3},
+                    ok = riak_cs_manifest_fsm:update_manifest(
+                           ManiPid, New2Manifest),
+                    {ok, New2Manifest}
+            end
         after
             ok = riak_cs_manifest_fsm:stop(ManiPid)
         end
@@ -662,6 +664,18 @@ find_manifest_with_uploadid(UploadId, Manifests) ->
             M
     end.
 
+%% @doc In #885 (https://github.com/basho/riak_cs/issues/855) it
+%% happened to be revealed that ETag is generated as
+%%
+%% > ETag = MD5(Sum(p \in numberParts, MD5(PartBytes(p))) + "-" + numberParts
+%%
+%% by an Amazon support guy, Hubert.
+%% https://forums.aws.amazon.com/thread.jspa?messageID=456442
+-spec comb_parts(multipart_manifest(), list({non_neg_integer(), binary()})) ->
+                        {KeepBytes::non_neg_integer(),
+                         OverAllMD5::binary(),
+                         PartsToKeep::list(),
+                         PartsToDelete::list()}.
 comb_parts(MpM, PartETags) ->
     Done = orddict:from_list(ordsets:to_list(MpM?MULTIPART_MANIFEST.done_parts)),
     %% TODO: Strictly speaking, this implementation could have
@@ -683,26 +697,27 @@ comb_parts(MpM, PartETags) ->
                 PM <- Parts]),
     Keep0 = dict:new(),
     Delete0 = dict:new(),
-    {_, Keep, _Delete, _, KeepBytes, KeepPMs} =
+    {_, Keep, _Delete, _, KeepBytes, KeepPMs, MD5Context} =
         lists:foldl(fun comb_parts_fold/2,
-                    {All, Keep0, Delete0, 0, 0, []}, PartETags),
+                    {All, Keep0, Delete0, 0, 0, [], riak_cs_utils:md5_init()}, PartETags),
     ToDelete = [PM || {_, PM} <-
                           dict:to_list(
                             dict:filter(fun(K, _V) ->
                                              not dict:is_key(K, Keep) end,
                                         All))],
-    {KeepBytes, lists:reverse(KeepPMs), ToDelete}.
+    {KeepBytes, riak_cs_utils:md5_final(MD5Context), lists:reverse(KeepPMs), ToDelete}.
 
 comb_parts_fold({PartNum, _ETag} = _K,
-                {_All, _Keep, _Delete, LastPartNum, _Bytes, _KeepPMs})
+                {_All, _Keep, _Delete, LastPartNum, _Bytes, _KeepPMs, _})
   when PartNum =< LastPartNum orelse PartNum < 1 ->
     throw(bad_etag_order);
-comb_parts_fold({PartNum, _ETag} = K,
-                {All, Keep, Delete, _LastPartNum, Bytes, KeepPMs}) ->
+comb_parts_fold({PartNum, ETag} = K,
+                {All, Keep, Delete, _LastPartNum, Bytes, KeepPMs, MD5Context}) ->
     case {dict:find(K, All), dict:is_key(K, Keep)} of
         {{ok, PM}, false} ->
             {All, dict:store(K, true, Keep), Delete, PartNum,
-             Bytes + PM?PART_MANIFEST.content_length, [PM|KeepPMs]};
+             Bytes + PM?PART_MANIFEST.content_length, [PM|KeepPMs],
+             riak_cs_utils:md5_update(MD5Context, ETag)};
         _X ->
             throw(bad_etag)
     end.
