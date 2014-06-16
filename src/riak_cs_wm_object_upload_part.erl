@@ -103,6 +103,7 @@ process_post(RD, Ctx=#context{local_context=LocalCtx, riak_client=RcPid}) ->
                     XmlDoc = {'CompleteMultipartUploadResult',
                               [{'xmlns', "http://s3.amazonaws.com/doc/2006-03-01/"}],
                               [
+                               %% TODO: use cs_root from app.config
                                {'Location', [lists:append(["http://", binary_to_list(Bucket), ".s3.amazonaws.com/", Key])]},
                                {'Bucket', [Bucket]},
                                {'Key', [Key]},

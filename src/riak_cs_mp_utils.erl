@@ -852,11 +852,22 @@ comb_parts_test() ->
             ok
     end,
 
-    {15, Keep1, []} = comb_parts(MpM1, GoodETags),
+    MD51 = riak_cs_utils:md5_final(lists:foldl(fun({_, ETag}, MD5Context) ->
+                                                       riak_cs_utils:md5_update(MD5Context, ETag)
+                                               end,
+                                               riak_cs_utils:md5_init(),
+                                               GoodETags)),
+    MD52 = riak_cs_utils:md5_final(lists:foldl(fun({_, ETag}, MD5Context) ->
+                                                       riak_cs_utils:md5_update(MD5Context, ETag)
+                                               end,
+                                               riak_cs_utils:md5_init(),
+                                               tl(GoodETags))),
+
+    {15, MD51, Keep1, []} = comb_parts(MpM1, GoodETags),
     5 = length(Keep1),
     Keep1 = lists:usort(Keep1),
 
-    {14, Keep2, [PM2]} = comb_parts(MpM1, tl(GoodETags)),
+    {14, MD52, Keep2, [PM2]} = comb_parts(MpM1, tl(GoodETags)),
     4 = length(Keep2),
     Keep2 = lists:usort(Keep2),
     1 = PM2?PART_MANIFEST.part_number,
