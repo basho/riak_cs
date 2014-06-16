@@ -30,6 +30,8 @@
 * handling empty query string on list multipart upload [riak_cs/#843](https://github.com/basho/riak_cs/pull/843)
 * Setting ACLs via headers at PUT Object creation [riak_cs/#631](https://github.com/basho/riak_cs/pull/631)
 * Improve handling of poolboy timeouts during ping requests [riak_cs/#763](https://github.com/basho/riak_cs/pull/763)
+* Remove unnecessary log message on anonymous access [riak_cs/#876](https://github.com/basho/riak_cs/issues/876)
+* Fix inconsistent ETag on objects uploaded by multipart [riak_cs/#855](https://github.com/basho/riak_cs/issues/855)
 
 ## Notes on Upgrading
 
@@ -92,10 +94,10 @@ right after upgrade to 1.5.0, say, `t0`, until `t0 + leeway` . And
 objects deleted just before `t0` won't be collected until `t0 +
 2*leeway` .
 
-Also, all CS nodes which don't run GC should be upgraded before CS
-node which does run GC upgraded to let leeway second system work
-properly. Or stop GC while upgrading whole cluster, by running
-`riak-cs-gc interval infinity` .
+Also, all CS nodes which run GC should be upgraded *first.* CS nodes
+which do not run GC should be upgraded later, to let leeway second
+system work properly. Or stop GC while upgrading whole cluster, by
+running `riak-cs-gc interval infinity` .
 
 Multi-datacenter cluster should be upgraded more carefully, as to
 make sure GC is not running while upgrading.
