@@ -158,7 +158,7 @@ create_admin_user(Node) ->
     {KeyId, Secret}.
 
 cs_port(Node) ->
-    8070 + rt_cs_dev:node_id(Node).
+    15008 + 10 * rt_cs_dev:node_id(Node).
 
 
 riak_config() ->
