@@ -11,12 +11,12 @@
 %%
 %% etc/app.config
 %%
-{cs_ip,           "127.0.0.1"}.
-{cs_port,         8071}.
+{cs_ip,             "127.0.0.1"}.
+{cs_port,           @CSPORT@}.
 {admin_ip,          "127.0.0.1"}.
-{admin_port,        8010}.
+{admin_port,        @ADMINPORT@}.
 {riak_ip,           "127.0.0.1"}.
-{riak_pb_port,      8081}.
+{riak_pb_port,      @RIAKPBPORT@}.
 {auth_bypass,       false}.
 {admin_key,         "admin-key"}.
 {admin_secret,      "admin-secret"}.
@@ -32,8 +32,8 @@
 %%
 %% etc/vm.args
 %%
-{node,         "rcs-dev1@127.0.0.1"}.
-{crash_dump,   "log/erl_crash.dump"}.
+{node,         "@NODE@"}.
+{crash_dump,   "{{platform_log_dir}}/erl_crash.dump"}.
 
 %%
 %% bin/riak_cs
@@ -47,3 +47,4 @@
 {runner_patch_dir,   "$RUNNER_BASE_DIR/lib/basho-patches"}.
 {pipe_dir,           "/tmp/$RUNNER_BASE_DIR/"}.
 {runner_user,        ""}.
+{runner_wait_process, "riak_cs_put_fsm_sup"}.

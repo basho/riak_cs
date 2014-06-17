@@ -2,12 +2,13 @@
 .eunit/*
 deps/*
 rel/riak-cs
+rel/vars/dev*_vars.config
 ebin/*.beam
 ebin/*.app
 riak_test/ebin/*
 riak_test/bin/riak-cs*
 doc
-dev
+dev/
 /package/
 log/
 *~

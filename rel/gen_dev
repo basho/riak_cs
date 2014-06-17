@@ -1,0 +1,25 @@
+#! /bin/sh
+#
+# gen_dev dev4 vars.src vars
+#
+# Generate an overlay config for devNNN from vars.src and write to vars
+#
+
+NAME=$1
+TEMPLATE=$2
+VARFILE=$3
+
+NODE="rcs-$NAME@127.0.0.1"
+
+NUMBER=${NAME##dev}
+RIAKBASE=$((10000 + 10 * $NUMBER))
+CSBASE=$((15000 + 10 * $NUMBER))
+RIAKPBPORT=$(($RIAKBASE + 7))
+CSPORT=$(($CSBASE + 8))
+ADMINPORT=$(($CSBASE + 9))
+
+echo "Generating $NAME - node='$NODE' riakpbport=$RIAKPBPORT csport=$CSPORT adminport=$ADMINPORT"
+sed -e "s/@NODE@/$NODE/" \
+    -e "s/@RIAKPBPORT@/$RIAKPBPORT/" \
+    -e "s/@CSPORT@/$CSPORT/" \
+    -e "s/@ADMINPORT@/$ADMINPORT/" < $TEMPLATE > $VARFILE
