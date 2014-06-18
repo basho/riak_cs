@@ -472,11 +472,12 @@ do_part_common2(upload_part, RcPid, M, _Obj, MpM, Props) ->
     {Bucket, Key, _UploadId, _Caller, PartNumber, Size} =
         proplists:get_value(upload_part, Props),
     BlockSize = riak_cs_lfs_utils:block_size(),
+    BagId = riak_cs_mb_helper:bag_id_from_manifest(M),
     {ok, PutPid} = riak_cs_put_fsm:start_link(
                      {Bucket, Key, Size, <<"x-riak/multipart-part">>,
                       orddict:new(), BlockSize, M?MANIFEST.acl,
                       infinity, self(), RcPid},
-                     false),
+                     {false, BagId}),
     try
         ?MANIFEST{content_length = ContentLength,
                   props = MProps} = M,
