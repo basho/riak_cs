@@ -63,7 +63,7 @@
                 reply_pid :: {pid(), reference()},
                 riak_client :: riak_client(),
                 mani_pid :: undefined | pid(),
-                make_new_manifest_p :: boolean(),
+                make_new_manifest_p ::  true | {false, bag_id()},
                 timer_ref :: reference(),
                 bucket :: binary(),
                 key :: binary(),
