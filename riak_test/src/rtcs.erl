@@ -74,15 +74,16 @@ setup2x2(Configs) ->
               end,
     setup_clusters(Configs, JoinFun, 4).
 
-setupNx1x1(N) ->
-    setupNx1x1(N, default_configs()).
+%% 1 cluster with N nodes + M cluster with 1 node
+setupNxMsingles(N, M) ->
+    setupNxMsingles(N, M, default_configs()).
 
-setupNx1x1(N, Configs) ->
+setupNxMsingles(N, M, Configs) ->
     JoinFun = fun(Nodes) ->
                       [Target | Joiners] = lists:sublist(Nodes, N),
                       [join(J, Target) || J <- Joiners]
               end,
-    setup_clusters(Configs, JoinFun, N + 1 + 1).
+    setup_clusters(Configs, JoinFun, N + M).
 
 flavored_setup(NumNodes, basic, Configs) ->
     JoinFun = fun(Nodes) ->
@@ -700,13 +701,13 @@ wait_until(Fun, Condition, Retries, Delay) ->
     end.
 
 %% Kind = objects | blocks | users | buckets ...
-pbc(RiakNodes, ObjectKind, CsBucket, CsKey) ->
-    pbc(rt_config:get(flavor, basic), ObjectKind, RiakNodes, CsBucket, CsKey).
+pbc(RiakNodes, ObjectKind, Opts) ->
+    pbc(rt_config:get(flavor, basic), ObjectKind, RiakNodes, Opts).
 
-pbc(basic, _ObjectKind, RiakNodes, _CsBucket, _CsKey) ->
+pbc(basic, _ObjectKind, RiakNodes, _Opts) ->
     rt:pbc(hd(RiakNodes));
-pbc({multibag, _} = Flavor, ObjectKind, RiakNodes, CsBucket, CsKey) ->
-    rtcs_bag:pbc(Flavor, ObjectKind, RiakNodes, CsBucket, CsKey).
+pbc({multibag, _} = Flavor, ObjectKind, RiakNodes, Opts) ->
+    rtcs_bag:pbc(Flavor, ObjectKind, RiakNodes, Opts).
 
 make_authorization(Method, Resource, ContentType, Config, Date) ->
     StringToSign = [Method, $\n, [], $\n, ContentType, $\n, Date, $\n, Resource],
