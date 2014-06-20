@@ -77,7 +77,7 @@ pulse: all
 	@rm -rf $(BASE_DIR)/.eunit
 	@./rebar -D PULSE eunit skip_deps=true suites=$(PULSE_TESTS)
 
-test-client: test-clojure test-python test-erlang test-ruby test-php
+test-client: test-clojure test-python test-erlang test-ruby test-php test-go
 
 test-python:
 	@cd client_tests/python/ && make CS_HTTP_PORT=$(CS_HTTP_PORT)
@@ -96,6 +96,9 @@ test-clojure:
 
 test-php:
 	@cd client_tests/php && make
+
+test-go:
+	@cd client_tests/go && make
 
 test-int: compile-int-test
 	@./rebar skip_deps=true int_test_run
