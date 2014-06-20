@@ -12,6 +12,9 @@ HashMacroAdded =
             end
     end,
 
+{ok, VsnString} = rebar_utils:sh("git describe --always --tags", [{cd, "."}, {use_stdout, false}]),
+Version = string:strip(VsnString, right, $\n),
+
 {IsEE, Package} = case os:getenv("RIAK_CS_EE_DEPS") of
                       false -> {false, "riak-cs"};
                       _     -> {true, "riak-cs-ee"}
@@ -77,7 +80,7 @@ case IsEE of
 {vendor_contact_email, \"packaging@basho.com\"}.
 {license_full_text, \"This software is provided under license from Basho Technologies.\"}.
 {solaris_pkgname, \"BASHOriak-cs\"}.",
-        file:write_file("pkg.vars.config", Bytes);
+        file:write_file("pkg.vars.config", Bytes ++ io_lib:format("~n{package_version, \"~s\"}.~n",[ Version ]));
     true ->
         Bytes = "%% -*- tab-width: 4;erlang-indent-level: 4;indent-tabs-mode: nil -*-
 %% ex: ts=4 sw=4 et
@@ -104,7 +107,7 @@ case IsEE of
 {license_full_text, \"This software is provided under license from Basho Technologies.\"}.
 {solaris_pkgname, \"BASHOriak-cs-ee\"}.
 {debuild_extra_options, \"-e RIAK_CS_EE_DEPS=true\"}.",
-        file:write_file("pkg.vars.config", Bytes)
+        file:write_file("pkg.vars.config", Bytes ++ io_lib:format("~n{package_version, \"~s\"}.~n",[ Version ]))
 end,
 
 FinalConfig.
