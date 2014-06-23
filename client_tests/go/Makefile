@@ -8,6 +8,7 @@ CS_KEY       ?= $(shell date '+%s')
 TMPDIR       := $(PWD)/tmp
 RANDFILE     := $(TMPDIR)/rand-50MB
 GETFILE      := $(TMPDIR)/rand-get
+GOOPTS       := --no-ssl
 
 export GOPATH     := $(PWD)/env
 export PATH       := $(GOPATH)/bin:$(PATH)
@@ -20,9 +21,9 @@ all: test-mp-put-get
 ## Test multipart upload completes without error
 ## See: https://github.com/basho/riak_cs/issues/855
 test-mp-put-get: gof3r $(RANDFILE)
-	gof3r put --without-ssl -s 5242880 -p $(RANDFILE) -b $(CS_BUCKET) -k $(CS_KEY)
+	gof3r put $(GOOPTS) -s 5242880 -p $(RANDFILE) -b $(CS_BUCKET) -k $(CS_KEY)
 	rm -f $(GETFILE)
-	gof3r get --without-ssl -b $(CS_BUCKET) -k $(CS_KEY) - > $(GETFILE)
+	gof3r get $(GOOPTS) -b $(CS_BUCKET) -k $(CS_KEY) - > $(GETFILE)
 	diff $(RANDFILE) $(GETFILE)
 	rm -f $(GETFILE)
 
