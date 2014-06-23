@@ -1,12 +1,14 @@
 -module(external_client_tests).
 
 -export([confirm/0]).
+-include_lib("erlcloud/include/erlcloud_aws.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
--define(TEST_BUCKET, "riak_test_bucket").
+-define(TEST_BUCKET, "external-client-test").
 
 confirm() ->
-    {_UserConfig, {RiakNodes, _CSNodes, _Stanchion}} = rtcs:setup(2, [{cs, cs_config()}]),
+    {UserConfig, {RiakNodes, _CSNodes, _Stanchion}} = rtcs:setup(2, [{cs, cs_config()}]),
+    ?assertEqual(ok, erlcloud_s3:create_bucket("external-client-test", UserConfig)),
 
     CS_http_port = rtcs:cs_port(hd(RiakNodes)),
 
@@ -20,8 +22,18 @@ confirm() ->
     os:cmd("rm -f " ++ StdoutStderr),
 
     Cmd = lists:flatten(
-            io_lib:format("cd ~s; env CS_HTTP_PORT=~p make test-client > ~s 2>&1 ; echo Res $?",
-                          [CS_src_dir, CS_http_port, StdoutStderr])),
+            io_lib:format("cd ~s; env "
+                          "CS_HTTP_PORT=~B "
+                          "HTTP_PROXY=127.0.0.1:~B "
+                          "AWS_ACCESS_KEY_ID=~s "
+                          "AWS_SECRET_ACCESS_KEY=~s "
+                          "CS_BUCKET=~s "
+                          "make test-client > ~s 2>&1 ; echo Res $?",
+                          [CS_src_dir, CS_http_port, CS_http_port,
+                           UserConfig#aws_config.access_key_id,
+                           UserConfig#aws_config.secret_access_key,
+                           ?TEST_BUCKET,
+                           StdoutStderr])),
     lager:debug("Cmd = ~s", [Cmd]),
     Res = os:cmd(Cmd),
     lager:debug("Res = ~s", [Res]),
