@@ -92,8 +92,8 @@ sum_bucket(BucketName) ->
               [do_prereduce], false},
              {reduce, {modfun, riak_cs_storage, object_size_reduce},
               none, true}],
-    %% Manifests may exists in different bag for each bucket,
-    %% use new one to map/reduce and fetch manifest objects.
+    %% We cannot reuse RcPid because different bucket may use different bag.
+    %% This is why each sum_bucket/1 call retrieves new client on every bucket.
     {ok, RcPid} = riak_cs_riak_client:checkout(),
     try
         ok = riak_cs_riak_client:set_bucket_name(RcPid, BucketName),

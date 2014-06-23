@@ -56,7 +56,7 @@ confirm() ->
             O <- proplists:get_value(contents, ObjList2)]),
 
     Obj = erlcloud_s3:get_object(?TEST_BUCKET, "object_one", U1C1Config),
-    assert_content(Object1, proplists:get_value(content, Obj)),
+    assert_equal_binary(Object1, proplists:get_value(content, Obj)),
 
     lager:info("set up replication between clusters"),
 
@@ -98,7 +98,7 @@ confirm() ->
     lager:info("Object written on primary cluster is readable from secondary "
         "cluster"),
     Obj2 = erlcloud_s3:get_object(?TEST_BUCKET, "object_one", U1C2Config),
-    assert_content(Object1, proplists:get_value(content, Obj2)),
+    assert_equal_binary(Object1, proplists:get_value(content, Obj2)),
 
     lager:info("write 2 more objects to the primary cluster"),
 
@@ -117,7 +117,7 @@ confirm() ->
     lager:info("check we can still read the fullsynced object"),
 
     Obj3 = erlcloud_s3:get_object(?TEST_BUCKET, "object_one", U1C2Config),
-    assert_content(Object1, proplists:get_value(content,Obj3)),
+    assert_equal_binary(Object1, proplists:get_value(content,Obj3)),
 
     lager:info("check all 3 objects are listed on the secondary cluster"),
     ?assertEqual(["object_one", "object_three", "object_two"],
@@ -137,7 +137,7 @@ confirm() ->
 
     lager:info("check we can read object_two via proxy get"),
     Obj6 = erlcloud_s3:get_object(?TEST_BUCKET, "object_two", U1C2Config),
-    assert_content(Object2, proplists:get_value(content, Obj6)),
+    assert_equal_binary(Object2, proplists:get_value(content, Obj6)),
 
     lager:info("disconnect the clusters again"),
     repl_helpers:del_site(LeaderB, "site1"),
@@ -149,7 +149,7 @@ confirm() ->
     lager:info("check that proxy getting object_two wrote it locally, so we"
         " can read it"),
     Obj8 = erlcloud_s3:get_object(?TEST_BUCKET, "object_two", U1C2Config),
-    assert_content(Object2, proplists:get_value(content, Obj8)),
+    assert_equal_binary(Object2, proplists:get_value(content, Obj8)),
 
     lager:info("delete object_one while clusters are disconnected"),
     erlcloud_s3:delete_object(?TEST_BUCKET, "object_one", U1C1Config),
@@ -162,7 +162,7 @@ confirm() ->
 
     lager:info("object_one is still visible on secondary cluster"),
     Obj9 = erlcloud_s3:get_object(?TEST_BUCKET, "object_one", U1C2Config),
-    assert_content(Object1, proplists:get_value(content, Obj9)),
+    assert_equal_binary(Object1, proplists:get_value(content, Obj9)),
 
     lager:info("object_two is deleted"),
     ?assertError({aws_error, _},
@@ -207,26 +207,26 @@ confirm() ->
 
     lager:info("secondary cluster has old version of object three"),
     Obj10 = erlcloud_s3:get_object(?TEST_BUCKET, "object_three", U1C2Config),
-    assert_content(Object3, proplists:get_value(content, Obj10)),
+    assert_equal_binary(Object3, proplists:get_value(content, Obj10)),
 
     lager:info("secondary cluster has 'B' version of object four"),
     Obj11 = erlcloud_s3:get_object(?TEST_BUCKET, "object_four", U1C2Config),
-    assert_content(Object4B, proplists:get_value(content, Obj11)),
+    assert_equal_binary(Object4B, proplists:get_value(content, Obj11)),
 
     repl_helpers:start_and_wait_until_fullsync_complete(LeaderA),
 
     lager:info("secondary cluster has new version of object three"),
     Obj12 = erlcloud_s3:get_object(?TEST_BUCKET, "object_three", U1C2Config),
-    assert_content(Object3A, proplists:get_value(content, Obj12)),
+    assert_equal_binary(Object3A, proplists:get_value(content, Obj12)),
 
     lager:info("secondary cluster has 'B' version of object four"),
     Obj13 = erlcloud_s3:get_object(?TEST_BUCKET, "object_four", U1C2Config),
-    assert_content(Object4B, proplists:get_value(content, Obj13)),
+    assert_equal_binary(Object4B, proplists:get_value(content, Obj13)),
 
     lager:info("secondary cluster has 'A' version of object five, because it "
         "was written later"),
     Obj14 = erlcloud_s3:get_object(?TEST_BUCKET, "object_five", U1C2Config),
-    assert_content(Object5A, proplists:get_value(content, Obj14)),
+    assert_equal_binary(Object5A, proplists:get_value(content, Obj14)),
 
     lager:info("write 'A' version of object four again on primary cluster"),
 
@@ -235,15 +235,15 @@ confirm() ->
     lager:info("secondary cluster now has 'A' version of object four"),
 
     Obj15 = erlcloud_s3:get_object(?TEST_BUCKET, "object_four", U1C2Config),
-    assert_content(Object4A, proplists:get_value(content,Obj15)),
+    assert_equal_binary(Object4A, proplists:get_value(content,Obj15)),
     pass.
 
-assert_content(Expected, Expected) ->
+assert_equal_binary(Expected, Expected) ->
     ok;
-assert_content(Expected, Actual) ->
-    lager:error("assert_content failed"),
+assert_equal_binary(Expected, Actual) ->
+    lager:error("assert_equal_binary failed"),
     lager:error("Expected length: ~p~n", [length(Expected)]),
     lager:error("Actual length  : ~p~n", [length(Actual)]),
     Prefix = binary:longest_common_prefix([Expected, Actual]),
     lager:error("Common prefix length: ~p~n", [length(Prefix)]),
-    error(asset_content_fail).
+    error(assert_equal_binary_fail).
