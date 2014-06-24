@@ -145,7 +145,7 @@ separate_bucket_from_path([C | Rest], Acc) ->
 %% rewrite rules.
 -spec format_bucket_qs(atom(), query_params(), subresources()) -> string().
 format_bucket_qs('POST', [{"delete", []}], []) ->
-    "/objects";
+    "/delete";
 format_bucket_qs(Method, QueryParams, [])
   when Method =:= 'GET'; Method =:= 'POST' ->
     ["/objects",
@@ -294,10 +294,10 @@ rewrite_path_test() ->
                 rewrite_with(headers([{"host", "testbucket." ++ ?ROOT_HOST}]),
                              "/?uploads&upload-id-marker=blah&key-marker=bob"
                              "&max-uploads=10&prefix=ABC&delimiter=D")),
-    equal_paths("/buckets/testbucket/objects",
+    equal_paths("/buckets/testbucket/delete",
                 rewrite_with('POST', headers([]),
                              "/testbucket/?delete")),
-    equal_paths("/buckets/testbucket/objects",
+    equal_paths("/buckets/testbucket/delete",
                 rewrite_with('POST', headers([{"host", "testbucket." ++ ?ROOT_HOST}]),
                              "/?delete")),
     %% Object Operations

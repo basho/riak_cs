@@ -35,8 +35,7 @@
 %% Public API
 -export([scan/1,
          export_xml/1,
-         to_xml/1,
-         simple_form_to_xml/1]).
+         to_xml/1]).
 
 -define(XML_SCHEMA_INSTANCE, "http://www.w3.org/2001/XMLSchema-instance").
 
