@@ -76,11 +76,14 @@ process_post(RD, Ctx=#context{bucket=Bucket,
             Access0 = PolicyMod:reqdata_to_access(RD, object, CanonicalId),
 
             %% map: keys => delete_results => xmlElements
-            Results = [ handle_key(RcPid, Bucket, list_to_binary(Key),
+            Results =
+                lists:map(fun(Key) ->
+                                  BinKey = unicode:characters_to_binary(Key),
+                                  handle_key(RcPid, Bucket, BinKey,
                                    check_permission(
-                                     RcPid, Bucket, list_to_binary(Key),
+                                     RcPid, Bucket, BinKey,
                                      Access0, CanonicalId, Policy, PolicyMod, BucketObj))
-                        || Key <- Keys ],
+                          end, Keys),
 
             %% xmlDoc => return body.
             Xml = riak_cs_xml:to_xml([{'DeleteResult', [{'xmlns', ?S3_XMLNS}], Results}]),
