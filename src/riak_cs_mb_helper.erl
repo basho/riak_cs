@@ -23,7 +23,7 @@
 -module(riak_cs_mb_helper).
 
 -export([process_specs/0, bags/0,
-         choose_bag_id/1,
+         choose_bag_id/2,
          set_bag_id_to_manifest/2,
          bag_id_from_manifest/1]).
 
@@ -44,8 +44,8 @@ bags() ->
     ?MB_ENABLED([{<<"master">>, MasterAddress, MasterPort}],
                 riak_cs_multibag:bags()).
 
-choose_bag_id(PoolType) ->
-    ?MB_ENABLED(undefined, riak_cs_multibag:choose_bag_id(PoolType)).
+choose_bag_id(PoolType, Seed) ->
+    ?MB_ENABLED(undefined, riak_cs_multibag:choose_bag_id(PoolType, Seed)).
 
 set_bag_id_to_manifest(undefined, Manifest) ->
     Manifest;

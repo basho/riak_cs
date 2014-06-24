@@ -26,7 +26,7 @@
 
 -export([
          sum_user/2,
-         sum_bucket/2,
+         sum_bucket/1,
          make_object/4,
          get_usage/4,
          archive_period/0
@@ -52,7 +52,7 @@ sum_user(RcPid, User) when is_binary(User) ->
 sum_user(RcPid, User) when is_list(User) ->
     case riak_cs_utils:get_user(User, RcPid) of
         {ok, {?RCS_USER{buckets=Buckets}, _UserObj}} ->
-            BucketUsages = [maybe_sum_bucket(RcPid, User, B) || B <- Buckets],
+            BucketUsages = [maybe_sum_bucket(User, B) || B <- Buckets],
             {ok, BucketUsages};
         {error, Error} ->
             {error, Error}
@@ -62,13 +62,13 @@ sum_user(RcPid, User) when is_list(User) ->
 %%      This log is *very* important because unless this log
 %%      there are no other way for operator to know a calculation
 %%      which riak_cs_storage_d failed.
--spec maybe_sum_bucket(riak_client(), string(), cs_bucket()) ->
+-spec maybe_sum_bucket(string(), cs_bucket()) ->
                               {binary(), [{binary(), integer()}]} |
                               {binary(), binary()}.
-maybe_sum_bucket(RcPid, User, ?RCS_BUCKET{name=Name} = Bucket) when is_list(Name) ->
-    maybe_sum_bucket(RcPid, User, Bucket?RCS_BUCKET{name=list_to_binary(Name)});
-maybe_sum_bucket(RcPid, User, ?RCS_BUCKET{name=Name} = _Bucket) when is_binary(Name) ->
-    case sum_bucket(RcPid, Name) of
+maybe_sum_bucket(User, ?RCS_BUCKET{name=Name} = Bucket) when is_list(Name) ->
+    maybe_sum_bucket(User, Bucket?RCS_BUCKET{name=list_to_binary(Name)});
+maybe_sum_bucket(User, ?RCS_BUCKET{name=Name} = _Bucket) when is_binary(Name) ->
+    case sum_bucket(Name) of
         {struct, _} = BucketUsage -> {Name, BucketUsage};
         {error, _} = E ->
             _ = lager:error("failed to calculate usage of "
@@ -85,23 +85,30 @@ maybe_sum_bucket(RcPid, User, ?RCS_BUCKET{name=Name} = _Bucket) when is_binary(N
 %% The result is a mochijson structure with two fields: `Objects',
 %% which is the number of objects that were counted in the bucket, and
 %% `Bytes', which is the total size of all of those objects.
--spec sum_bucket(riak_client(), binary()) -> {struct, [{binary(), integer()}]}
+-spec sum_bucket(binary()) -> {struct, [{binary(), integer()}]}
                                    | {error, term()}.
-sum_bucket(RcPid, BucketName) ->
+sum_bucket(BucketName) ->
     Query = [{map, {modfun, riak_cs_storage, object_size_map},
               [do_prereduce], false},
              {reduce, {modfun, riak_cs_storage, object_size_reduce},
               none, true}],
-    ok = riak_cs_riak_client:set_bucket_name(RcPid, BucketName),
-    {ok, ManifestPbc} = riak_cs_riak_client:manifest_pbc(RcPid),
-    ManifestBucket = riak_cs_utils:to_bucket_name(objects, BucketName),
-    case riakc_pb_socket:mapred(ManifestPbc, ManifestBucket, Query) of
-        {ok, Results} ->
-            {1, [{Objects, Bytes}]} = lists:keyfind(1, 1, Results),
-            {struct, [{<<"Objects">>, Objects},
-                      {<<"Bytes">>, Bytes}]};
-        {error, Error} ->
-            {error, Error}
+    %% We cannot reuse RcPid because different bucket may use different bag.
+    %% This is why each sum_bucket/1 call retrieves new client on every bucket.
+    {ok, RcPid} = riak_cs_riak_client:checkout(),
+    try
+        ok = riak_cs_riak_client:set_bucket_name(RcPid, BucketName),
+        {ok, ManifestPbc} = riak_cs_riak_client:manifest_pbc(RcPid),
+        ManifestBucket = riak_cs_utils:to_bucket_name(objects, BucketName),
+        case riakc_pb_socket:mapred(ManifestPbc, ManifestBucket, Query) of
+            {ok, Results} ->
+                {1, [{Objects, Bytes}]} = lists:keyfind(1, 1, Results),
+                {struct, [{<<"Objects">>, Objects},
+                          {<<"Bytes">>, Bytes}]};
+            {error, Error} ->
+                {error, Error}
+        end
+    after
+        riak_cs_riak_client:checkin(RcPid)
     end.
 
 object_size_map({error, notfound}, _, _) ->

@@ -278,7 +278,7 @@ new_manifest(Bucket, FileName, UUID, ContentLength, ContentType, ContentMd5,
                    cluster_id()) -> lfs_manifest().
 new_manifest(Bucket, FileName, UUID, ContentLength, ContentType, ContentMd5,
              MetaData, BlockSize, Acl, Props, ClusterID) ->
-    BagId = riak_cs_mb_helper:choose_bag_id(block),
+    BagId = riak_cs_mb_helper:choose_bag_id(block, {Bucket, FileName, UUID}),
     new_manifest(Bucket, FileName, UUID, ContentLength, ContentType, ContentMd5,
                  MetaData, BlockSize, Acl, Props, ClusterID, BagId).
 

@@ -38,7 +38,7 @@ to_riak_key(_,_) ->
 
 -spec get_riakc_obj([term()], objects | blocks, binary(), term()) -> term().
 get_riakc_obj(RiakNodes, Kind, CsBucket, CsKey) ->
-    Pbc = rtcs:pbc(RiakNodes, Kind, CsBucket, CsKey),
+    Pbc = rtcs:pbc(RiakNodes, Kind, CsBucket),
     RiakBucket = to_riak_bucket(Kind, CsBucket),
     RiakKey = to_riak_key(Kind, CsKey),
     Result = riakc_pb_socket:get(Pbc, RiakBucket, RiakKey),
@@ -49,7 +49,7 @@ get_riakc_obj(RiakNodes, Kind, CsBucket, CsKey) ->
 update_riakc_obj(RiakNodes, ObjectKind, CsBucket, CsKey, NewObj) ->
     NewMD = riakc_obj:get_metadata(NewObj),
     NewValue = riakc_obj:get_value(NewObj),
-    Pbc = rtcs:pbc(RiakNodes, ObjectKind, CsBucket, CsKey),
+    Pbc = rtcs:pbc(RiakNodes, ObjectKind, CsBucket),
     RiakBucket = to_riak_bucket(ObjectKind, CsBucket),
     RiakKey = to_riak_key(ObjectKind, CsKey),
     Result = case riakc_pb_socket:get(Pbc, RiakBucket, RiakKey, [deletedvclock]) of
