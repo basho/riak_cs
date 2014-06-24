@@ -69,6 +69,7 @@ base_resources() ->
      {["buckets"], riak_cs_wm_common, props(riak_cs_wm_buckets)},
      {["buckets", bucket], riak_cs_wm_common, props(riak_cs_wm_bucket)},
      {["buckets", bucket, "objects"], riak_cs_wm_common, props(riak_cs_wm_objects)},
+     {["buckets", bucket, "delete"], riak_cs_wm_common, props(riak_cs_wm_objects)},
      {["buckets", bucket, "acl"], riak_cs_wm_common, props(riak_cs_wm_bucket_acl)},
      {["buckets", bucket, "location"], riak_cs_wm_common, props(riak_cs_wm_bucket_location)},
      {["buckets", bucket, "versioning"], riak_cs_wm_common, props(riak_cs_wm_bucket_versioning)},

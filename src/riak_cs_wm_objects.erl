@@ -22,6 +22,8 @@
 
 -export([init/1,
          allowed_methods/0,
+         post_is_create/2,
+         process_post/2,
          api_request/2
         ]).
 
@@ -31,23 +33,85 @@
 -include("riak_cs_api.hrl").
 -include("list_objects.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
+-include_lib("xmerl/include/xmerl.hrl").
 
 -define(RIAKCPOOL, bucket_list_pool).
 
 -spec init(#context{}) -> {ok, #context{}}.
 init(Ctx) ->
+    lager:debug("~p", [Ctx]),
     {ok, Ctx#context{rc_pool=?RIAKCPOOL}}.
 
 -spec allowed_methods() -> [atom()].
 allowed_methods() ->
-    %% TODO: POST (multi-delete)
-    ['GET'].
+    %% POST is for multi-delete
+    %% GET is for object listing
+    ['GET', 'POST'].
 
 %% TODO: change to authorize/spec/cleanup unneeded cases
 %% TODO: requires update for multi-delete
 -spec authorize(#wm_reqdata{}, #context{}) -> {boolean(), #wm_reqdata{}, #context{}}.
 authorize(RD, Ctx) ->
-    riak_cs_wm_utils:bucket_access_authorize_helper(bucket, false, RD, Ctx).
+    case wrq:method(RD) of
+        'GET' ->
+            riak_cs_wm_utils:bucket_access_authorize_helper(bucket, false, RD, Ctx);
+        'POST' ->
+            %% TODO: authorization is played per each objects?
+            %% or paththrough and check each key at process_post?
+            riak_cs_wm_utils:bucket_access_authorize_helper(bucket, true, RD, Ctx)
+    end.
+
+post_is_create(RD, Ctx) ->
+    {false, RD, Ctx}.
+
+-spec process_post(#wm_reqdata{}, #context{}) -> {term(), #wm_reqdata{}, #context{}}.
+process_post(RD, Ctx=#context{bucket=Bucket, riak_client=RcPid, user=User}) ->
+    UserName = riak_cs_wm_utils:extract_name(User),
+    riak_cs_dtrace:dt_bucket_entry(?MODULE, <<"multiple_delete">>, [], [UserName, Bucket]),
+
+    Keys = parse_body(binary_to_list(wrq:req_body(RD))),
+    lager:debug("deleting keys at ~p: ~p", [Bucket, Keys]),
+
+    %% map: keys => delete_results => xmlElements
+    Results = [ handle_key(RcPid, Bucket, list_to_binary(Key)) || Key <- Keys ],
+
+    %% xmlDoc => return body.
+    Xml = riak_cs_xml:simple_form_to_xml([{'DeleteResult', [{'xmlns', ?S3_XMLNS}], Results}]),
+
+    RD2 = wrq:set_resp_body(Xml, RD),
+    riak_cs_dtrace:dt_bucket_return(?MODULE, <<"multiple_delete">>, [200], []),
+    {true, RD2, Ctx}.
+
+%% bucket/key => delete => xml indicating each result
+-spec handle_key(riak_client(), binary(), binary()) -> tuple().
+handle_key(RcPid, Bucket, Key) ->
+    %% TODO: no authorization and permission check here;
+    %% do we even need them, or should we?
+    case riak_cs_utils:delete_object(Bucket, Key, RcPid) of
+        {ok, _UUIDsMarkedforDelete} ->
+            {'Deleted', [{'Key', [Key]}]};
+        {error, Error} ->
+            {'Error',
+             [{'Key', [Key]},
+              {'Code', [riak_cs_s3_response:error_code(Error)]},
+              {'Message', [riak_cs_s3_response:error_message(Error)]}]}
+    end.
+
+-spec parse_body(string()) -> [string()].
+parse_body(Body0) ->
+    try
+        Body = re:replace(Body0, "&quot;", "", [global, {return, list}]),
+        {ok, ParsedData} = riak_cs_xml:scan(Body),
+        #xmlElement{name='Delete'} = ParsedData,
+        Keys = [T#xmlText.value ||
+                   T <- xmerl_xpath:string("//Delete/Object/Key/text()", ParsedData)]
+        %% VersionIds = [riak_cs_utils:hexlist_to_binary(string:strip(T#xmlText.value, both, $")) ||
+        %%                  T <- xmerl_xpath:string("//Delete/Object/VersionId/text()", ParsedData)],
+        
+    catch _:_ ->
+            bad
+    end.
+
 
 -spec api_request(#wm_reqdata{}, #context{}) -> {ok, ?LORESP{}} | {error, term()}.
 api_request(RD, Ctx=#context{bucket=Bucket,
