@@ -471,7 +471,7 @@
 -define(DEFAULT_POLICY_MODULE, riak_cs_s3_policy).
 
 -record(access_v1, {
-          method :: atom(), % PUT / GET / POST / ....
+          method :: 'PUT' | 'GET' | 'POST' | 'DELETE' | 'HEAD',
           target :: atom(), % object | object_acl | ....
           id :: string(),
           bucket :: binary(),
