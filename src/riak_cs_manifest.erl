@@ -20,7 +20,8 @@
 
 -module(riak_cs_manifest).
 
--export([fetch/3]).
+-export([fetch/3,
+         etag/1]).
 
 -include("riak_cs.hrl").
 
@@ -33,4 +34,8 @@ fetch(RcPid, Bucket, Key) ->
             Error
     end.
 
-
+-spec etag(lfs_manifest()) -> string().
+etag(?MANIFEST{content_md5={MD5, Suffix}}) ->
+    riak_cs_utils:etag_from_binary(MD5, Suffix);
+etag(?MANIFEST{content_md5=MD5}) ->
+    riak_cs_utils:etag_from_binary(MD5).
