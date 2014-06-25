@@ -21,7 +21,8 @@
 -module(riak_cs_manifest).
 
 -export([fetch/3,
-         etag/1]).
+         etag/1,
+         etag_no_quotes/1]).
 
 -include("riak_cs.hrl").
 
@@ -39,3 +40,6 @@ etag(?MANIFEST{content_md5={MD5, Suffix}}) ->
     riak_cs_utils:etag_from_binary(MD5, Suffix);
 etag(?MANIFEST{content_md5=MD5}) ->
     riak_cs_utils:etag_from_binary(MD5).
+
+etag_no_quotes(?MANIFEST{content_md5=ContentMD5}) ->
+    riak_cs_utils:etag_from_binary_no_quotes(ContentMD5).

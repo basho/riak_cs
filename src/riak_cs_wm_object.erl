@@ -132,7 +132,7 @@ content_types_provided(RD, Ctx=#context{local_context=LocalCtx,
 -spec generate_etag(#wm_reqdata{}, #context{}) -> {string(), #wm_reqdata{}, #context{}}.
 generate_etag(RD, Ctx=#context{local_context=LocalCtx}) ->
     Mfst = LocalCtx#key_context.manifest,
-    ETag = riak_cs_manifest:etag(Mfst),
+    ETag = riak_cs_manifest:etag_no_quotes(Mfst),
     {ETag, RD, Ctx}.
 
 -spec last_modified(#wm_reqdata{}, #context{}) -> {calendar:datetime(), #wm_reqdata{}, #context{}}.
