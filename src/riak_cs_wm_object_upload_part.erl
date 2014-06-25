@@ -97,8 +97,8 @@ process_post(RD, Ctx=#context{local_context=LocalCtx, riak_client=RcPid}) ->
             case riak_cs_mp_utils:complete_multipart_upload(
                    Bucket, list_to_binary(Key), UploadId, PartETags, User,
                    RcPid) of
-                {ok, ?MANIFEST{content_md5 = {ContentMD5, Suffix}} = _NewManifest} ->
-                    ETag = riak_cs_utils:etag_from_binary(ContentMD5, Suffix),
+                {ok, NewManifest} ->
+                    ETag = riak_cs_manifest:etag(NewManifest),
                     _ = lager:debug("checksum of all parts checksum: ~p", [ETag]),
                     XmlDoc = {'CompleteMultipartUploadResult',
                               [{'xmlns', "http://s3.amazonaws.com/doc/2006-03-01/"}],
@@ -373,7 +373,7 @@ finalize_request(RD, Ctx=#context{local_context=LocalCtx,
                    Bucket, Key, UploadId, PartNumber, PartUUID,
                    M?MANIFEST.content_md5, Caller, RcPid) of
                 ok ->
-                    ETag = riak_cs_utils:etag_from_binary(M?MANIFEST.content_md5),
+                    ETag = riak_cs_manifest:etag(M),
                     RD2 = wrq:set_resp_header("ETag", ETag, RD),
                     {{halt, 200}, RD2, Ctx};
                 {error, Reason} ->
@@ -418,7 +418,7 @@ maybe_copy_part(PutPid,
                            DstBucket, DstKey, UploadId, PartNumber, PartUUID,
                            DstManifest?MANIFEST.content_md5, Caller, RcPid) of
                         ok ->
-                            ETag = riak_cs_utils:etag_from_binary(DstManifest?MANIFEST.content_md5),
+                            ETag = riak_cs_manifest:etag(DstManifest),
                             RD2 = wrq:set_resp_header("ETag", ETag, RD),
                             riak_cs_s3_response:copy_part_response(DstManifest, RD2, Ctx);
 

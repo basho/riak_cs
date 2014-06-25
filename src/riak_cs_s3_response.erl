@@ -232,7 +232,7 @@ copy_part_response(Manifest, RD, Ctx) ->
 
 copy_response(Manifest, TagName, RD, Ctx) ->
     LastModified = riak_cs_wm_utils:to_iso_8601(Manifest?MANIFEST.created),
-    ETag = riak_cs_utils:etag_from_binary(Manifest?MANIFEST.content_md5),
+    ETag = riak_cs_manifest:etag(Manifest),
     XmlDoc = [{TagName,
                [{'LastModified', [LastModified]},
                 {'ETag', [ETag]}]}],
