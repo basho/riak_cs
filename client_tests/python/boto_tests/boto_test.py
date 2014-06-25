@@ -756,6 +756,19 @@ class SimpleCopyTest(S3ApiVerificationTestBase):
         self.assertEqual(self.data[start_offset:(end_offset+1)],
                          target_key.get_contents_as_string())
 
+    def test_put_copy_from_non_existing_key_404(self):
+        bucket = self.conn.create_bucket(self.bucket_name)
+
+        target_bucket_name = str(uuid.uuid4())
+        target_key_name = str(uuid.uuid4())
+        target_bucket = self.conn.create_bucket(target_bucket_name)
+        try:
+            target_bucket.copy_key(target_key_name, self.bucket_name, 'not_existing')
+            self.fail()
+        except S3ResponseError as e:
+            print e
+            self.assertEqual(e.status, 404)
+            self.assertEqual(e.reason, 'Object Not Found')
 
 if __name__ == "__main__":
     unittest.main()
