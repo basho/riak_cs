@@ -702,7 +702,7 @@ class SimpleCopyTest(S3ApiVerificationTestBase):
         self.assertIn(target_key_name,
                       [k.key for k in target_bucket.get_all_keys()])
 
-    def maybe_test_upload_part_copy(self):
+    def test_upload_part_from_non_mp(self):
         k = self.create_test_object()
 
         target_bucket_name = str(uuid.uuid4())
@@ -711,7 +711,7 @@ class SimpleCopyTest(S3ApiVerificationTestBase):
         start_offset=0
         end_offset=9
         target_bucket = self.conn.create_bucket(target_bucket_name)
-        upload = bucket.initiate_multipart_upload(target_key_name)
+        upload = target_bucket.initiate_multipart_upload(target_key_name)
         upload.copy_part_from_key(self.bucket_name, self.key_name, part_num=1,
                                   start=start_offset, end=end_offset)
         upload.complete_upload()
