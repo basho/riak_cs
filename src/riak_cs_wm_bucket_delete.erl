@@ -102,7 +102,7 @@ handle_with_bucket_obj({ok, BucketObj},
                                                Access0, CanonicalId, Policy, PolicyMod, BucketObj))
                           end, BinKeys),
 
-    %% xmlDoc => return body.
+            %% xmlDoc => return body.
             Xml = riak_cs_xml:to_xml([{'DeleteResult', [{'xmlns', ?S3_XMLNS}], Results}]),
 
             RD2 = wrq:set_resp_body(Xml, RD),
@@ -115,7 +115,6 @@ handle_with_bucket_obj({ok, BucketObj},
                               ok | {error, access_denied}.
 check_permission(RcPid, Bucket, Key,
                  Access0, CanonicalId, Policy, PolicyMod, BucketObj) ->
-
     case riak_cs_manifest:fetch(RcPid, Bucket, Key) of
         {ok, Manifest} ->
             ObjectAcl = riak_cs_manifest:object_acl(Manifest),
@@ -135,13 +134,11 @@ check_permission(RcPid, Bucket, Key,
 
 %% bucket/key => delete => xml indicating each result
 -spec handle_key(riak_client(), binary(), binary(), term()) -> tuple().
-
 handle_key(_RcPid, _Bucket, Key, {error, Error}) ->
     {'Error',
      [{'Key', [Key]},
       {'Code', [riak_cs_s3_response:error_code(Error)]},
       {'Message', [riak_cs_s3_response:error_message(Error)]}]};
-
 handle_key(RcPid, Bucket, Key, ok) ->
     case riak_cs_utils:delete_object(Bucket, Key, RcPid) of
         {ok, _UUIDsMarkedforDelete} ->
@@ -150,7 +147,7 @@ handle_key(RcPid, Bucket, Key, ok) ->
             handle_key(RcPid, Bucket, Key, Error)
     end.
 
--spec parse_body(string()) -> {ok, [binary()]}.
+-spec parse_body(string()) -> {ok, [binary()]} | {error, malformed_xml}.
 parse_body(Body) ->
     case riak_cs_xml:scan(Body) of
         {ok, ParsedData} ->
