@@ -41,11 +41,11 @@
                                            {boolean()|{halt, non_neg_integer()}, #wm_reqdata{}, #context{}}.
 test_condition_and_permission(RcPid, SrcManifest, RD, Ctx) ->
 
-    ContentMD5 = base64:encode_to_string(SrcManifest?MANIFEST.content_md5),
+    ETag = riak_cs_manifest:etag(SrcManifest),
     LastUpdate = SrcManifest?MANIFEST.created,
 
     %% TODO: write tests around these conditions, any kind of test is okay
-    case condition_check(RD, ContentMD5, LastUpdate) of
+    case condition_check(RD, ETag, LastUpdate) of
         ok ->
             _ = authorize_on_src(RcPid, SrcManifest, RD, Ctx);
         Other ->
