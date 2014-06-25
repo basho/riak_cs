@@ -173,6 +173,18 @@ class BasicTests(S3ApiVerificationTestBase):
         self.assertNotIn(self.key_name,
                          [k.key for k in bucket.get_all_keys()])
 
+    def test_delete_objects(self):
+        bucket = self.conn.create_bucket(self.bucket_name)
+        keys = ['0', '1', u'Unicodeあいうえお', '2']
+        for key in keys:
+            k = Key(bucket)
+            k.key = key
+            k.set_contents_from_string(key)
+
+        self.assertEqual(keys.sort(), bucket.get_all_keys().sort())
+        bucket.delete_keys(keys)
+        self.assertEqual([], bucket.get_all_keys())
+
     def test_delete_bucket(self):
         bucket = self.conn.get_bucket(self.bucket_name)
         bucket.delete()
