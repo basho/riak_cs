@@ -702,6 +702,22 @@ class SimpleCopyTest(S3ApiVerificationTestBase):
         self.assertIn(target_key_name,
                       [k.key for k in target_bucket.get_all_keys()])
 
+    def test_put_copy_object_from_mp(self):
+        bucket = self.conn.create_bucket(self.bucket_name)
+        (upload, result) = upload_multipart(bucket, self.key_name, [StringIO(self.data)])
+
+        target_bucket_name = str(uuid.uuid4())
+        target_key_name = str(uuid.uuid4())
+        target_bucket = self.conn.create_bucket(target_bucket_name)
+
+        target_bucket.copy_key(target_key_name, self.bucket_name, self.key_name)
+
+        target_key = Key(target_bucket)
+        target_key.key = target_key_name
+        self.assertEqual(target_key.get_contents_as_string(), self.data)
+        self.assertIn(target_key_name,
+                      [k.key for k in target_bucket.get_all_keys()])
+
     def test_upload_part_from_non_mp(self):
         k = self.create_test_object()
 
