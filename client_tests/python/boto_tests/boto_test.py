@@ -182,7 +182,12 @@ class BasicTests(S3ApiVerificationTestBase):
             k.set_contents_from_string(key)
 
         self.assertEqual(keys.sort(), bucket.get_all_keys().sort())
-        bucket.delete_keys(keys)
+        result = bucket.delete_keys(keys)
+        self.assertEqual(keys.sort(), result.deleted)
+        self.assertEqual([], result.errors)
+        result = bucket.delete_keys(['nosuchkeys'])
+        self.assertEqual([], result.deleted)
+        self.assertEqual(['nosuchkeys'], result.errors)
         self.assertEqual([], bucket.get_all_keys())
 
     def test_delete_bucket(self):
