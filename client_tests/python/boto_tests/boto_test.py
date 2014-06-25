@@ -176,19 +176,24 @@ class BasicTests(S3ApiVerificationTestBase):
     def test_delete_objects(self):
         bucket = self.conn.create_bucket(self.bucket_name)
         keys = ['0', '1', u'Unicodeあいうえお', '2']
+        keys.sort()
         for key in keys:
             k = Key(bucket)
             k.key = key
             k.set_contents_from_string(key)
 
-        self.assertEqual(keys.sort(), bucket.get_all_keys().sort())
+        all_keys = [k.key for k in bucket.get_all_keys()]
+        all_keys.sort()
+        self.assertEqual(keys, all_keys)
         result = bucket.delete_keys(keys)
-        self.assertEqual(keys.sort(), result.deleted)
+
+        self.assertEqual(keys, [k.key for k in result.deleted])
         self.assertEqual([], result.errors)
         result = bucket.delete_keys(['nosuchkeys'])
         self.assertEqual([], result.deleted)
-        self.assertEqual(['nosuchkeys'], result.errors)
-        self.assertEqual([], bucket.get_all_keys())
+        self.assertEqual(['nosuchkeys'], [k.key for k in result.errors])
+        all_keys = [k.key for k in bucket.get_all_keys()]
+        self.assertEqual([], all_keys)
 
     def test_delete_bucket(self):
         bucket = self.conn.get_bucket(self.bucket_name)
