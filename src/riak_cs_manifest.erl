@@ -22,7 +22,8 @@
 
 -export([fetch/3,
          etag/1,
-         etag_no_quotes/1]).
+         etag_no_quotes/1,
+         object_acl/1]).
 
 -include("riak_cs.hrl").
 
@@ -41,5 +42,13 @@ etag(?MANIFEST{content_md5={MD5, Suffix}}) ->
 etag(?MANIFEST{content_md5=MD5}) ->
     riak_cs_utils:etag_from_binary(MD5).
 
+-spec etag_no_quotes(lfs_manifest()) -> string().
 etag_no_quotes(?MANIFEST{content_md5=ContentMD5}) ->
     riak_cs_utils:etag_from_binary_no_quotes(ContentMD5).
+
+-spec object_acl(notfound|lfs_manifest()) -> undefined|acl().
+object_acl(notfound) ->
+    undefined;
+object_acl(?MANIFEST{acl=Acl}) ->
+    Acl.
+

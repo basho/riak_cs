@@ -23,6 +23,8 @@
          status_code/1,
          respond/3,
          respond/4,
+         error_message/1,
+         error_code/1,
          error_response/1,
          error_response/5,
          copy_object_response/3,

@@ -18,6 +18,8 @@
 %%
 %% ---------------------------------------------------------------------
 
+%% @doc WM resource for object listing
+
 -module(riak_cs_wm_objects).
 
 -export([init/1,
@@ -40,7 +42,7 @@ init(Ctx) ->
 
 -spec allowed_methods() -> [atom()].
 allowed_methods() ->
-    %% TODO: POST (multi-delete)
+    %% GET is for object listing
     ['GET'].
 
 %% TODO: change to authorize/spec/cleanup unneeded cases

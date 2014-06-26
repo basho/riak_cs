@@ -359,8 +359,6 @@ resource_matches(BucketBin, KeyBin, #statement{resource=Resources})
                  (_) -> false
               end, Resources).
 
-
-
 % functions to eval:
 -spec eval_statement(access(), #statement{}) -> boolean() | undefined.
 eval_statement(#access_v1{method=M, target=T, req=Req, bucket=B, key=K} = _Access,
