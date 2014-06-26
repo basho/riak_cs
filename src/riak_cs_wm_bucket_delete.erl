@@ -38,7 +38,7 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
--define(RIAKCPOOL, bucket_list_pool).
+-define(RIAKCPOOL, request_pool).
 
 -spec init(#context{}) -> {ok, #context{}}.
 init(Ctx) ->
@@ -128,6 +128,8 @@ check_permission(RcPid, Bucket, Key,
             end;
         {error, notfound} ->
             {error, no_such_key};
+        {error, no_active_manifest} ->
+            {error, no_such_key};
         E ->
             E
     end.
@@ -150,15 +152,17 @@ handle_key(RcPid, Bucket, Key, ok) ->
 -spec parse_body(string()) -> {ok, [binary()]} | {error, malformed_xml}.
 parse_body(Body) ->
     case riak_cs_xml:scan(Body) of
-        {ok, ParsedData} ->
-            #xmlElement{name='Delete'} = ParsedData,
+        {ok, #xmlElement{name='Delete'} = ParsedData} ->
             Keys = [ unicode:characters_to_binary(
                        [ T#xmlText.value || T <- xmerl_xpath:string("//Key/text()", Node)]
-                      ) || Node <- xmerl_xpath:string("//Delete/Object/node()", ParsedData) ],
-            {ok, Keys};
+                      ) || Node <- xmerl_xpath:string("//Delete/Object/node()", ParsedData),
+                           is_record(Node, xmlElement) ],
         %% TODO: handle version id
         %% VersionIds = [riak_cs_utils:hexlist_to_binary(string:strip(T#xmlText.value, both, $")) ||
         %%                  T <- xmerl_xpath:string("//Delete/Object/VersionId/text()", ParsedData)],
+            {ok, Keys};
+        {ok, _ParsedData} ->
+            {error, malformed_xml};
         Error ->
              Error
     end.
@@ -166,7 +170,7 @@ parse_body(Body) ->
 -ifdef(TEST).
 
 parse_body_test() ->
-    Body = "<Delete><Object><Key>&lt;/Key&gt;</Key></Object></Delete>",
+    Body = "<Delete> <Object> <Key>&lt;/Key&gt;</Key> </Object> </Delete>",
     ?assertEqual({ok, [<<"</Key>">>]}, parse_body(Body)).
 
 -endif.
