@@ -112,7 +112,7 @@ handle_with_bucket_obj({ok, BucketObj},
 
 -spec check_permission(riak_client(), binary(), binary(),
                        access(), string(), policy()|undefined, atom(), riakc_obj:riakc_obj()) ->
-                              ok | {error, access_denied}.
+                              ok | {error, access_denied|notfound|no_active_manifest}.
 check_permission(RcPid, Bucket, Key,
                  Access0, CanonicalId, Policy, PolicyMod, BucketObj) ->
     case riak_cs_manifest:fetch(RcPid, Bucket, Key) of
@@ -131,7 +131,9 @@ check_permission(RcPid, Bucket, Key,
     end.
 
 %% bucket/key => delete => xml indicating each result
--spec handle_key(riak_client(), binary(), binary(), term()) -> tuple().
+-spec handle_key(riak_client(), binary(), binary(),
+                ok | {error, access_denied|notfound|no_active_manifest}) ->
+                        {'Deleted', list(tuple())} | {'Error', list(tuple())}.
 handle_key(_RcPid, _Bucket, Key, {error, notfound}) ->
     %% delete is RESTful, thus this is success
     {'Deleted', [{'Key', [Key]}]};
