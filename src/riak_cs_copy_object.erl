@@ -159,6 +159,14 @@ copy(PutFsmPid, SrcManifest, ReadRcPid) ->
                   {ok, DstManifest::lfs_manifest()} | {error, term()}.
 copy(_, _, _, fail) ->
     {error, bad_request};
+copy(PutFsmPid, ?MANIFEST{content_length=0} = _SrcManifest,
+     _ReadRcPid, _) ->
+    %% Zero-size copy will successfully create zero-size object
+    riak_cs_put_fsm:finalize(PutFsmPid, undefined);
+copy(PutFsmPid, _SrcManifest, _ReadRcPid, {Start, End})
+  when Start =:= End ->
+    %% Zero-size copy will successfully create zero-size object
+    riak_cs_put_fsm:finalize(PutFsmPid, undefined);
 copy(PutFsmPid, SrcManifest, ReadRcPid, Range0) ->
     {ok, GetFsmPid} = start_get_fsm(SrcManifest, ReadRcPid),
     _RetrievedManifest = riak_cs_get_fsm:get_manifest(GetFsmPid),
