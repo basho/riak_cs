@@ -126,16 +126,18 @@ check_permission(RcPid, Bucket, Key,
                 {ok, _} -> ok;
                 {error, _} -> {error, access_denied}
             end;
-        {error, notfound} ->
-            {error, no_such_key};
-        {error, no_active_manifest} ->
-            {error, no_such_key};
         E ->
             E
     end.
 
 %% bucket/key => delete => xml indicating each result
 -spec handle_key(riak_client(), binary(), binary(), term()) -> tuple().
+handle_key(_RcPid, _Bucket, Key, {error, notfound}) ->
+    %% delete is RESTful, thus this is success
+    {'Deleted', [{'Key', [Key]}]};
+handle_key(_RcPid, _Bucket, Key, {error, no_active_manifest}) ->
+    %% delete is RESTful, thus this is success
+    {'Deleted', [{'Key', [Key]}]};
 handle_key(_RcPid, _Bucket, Key, {error, Error}) ->
     {'Error',
      [{'Key', [Key]},
