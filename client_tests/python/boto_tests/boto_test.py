@@ -190,8 +190,8 @@ class BasicTests(S3ApiVerificationTestBase):
         self.assertEqual(keys, [k.key for k in result.deleted])
         self.assertEqual([], result.errors)
         result = bucket.delete_keys(['nosuchkeys'])
-        self.assertEqual([], result.deleted)
-        self.assertEqual(['nosuchkeys'], [k.key for k in result.errors])
+        self.assertEqual([], result.errors)
+        self.assertEqual(['nosuchkeys'], [k.key for k in result.deleted])
         all_keys = [k.key for k in bucket.get_all_keys()]
         self.assertEqual([], all_keys)
 
