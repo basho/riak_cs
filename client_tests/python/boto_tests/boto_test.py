@@ -446,35 +446,57 @@ class BucketPolicyTest(S3ApiVerificationTestBase):
         except S3ResponseError: pass
         else:                   self.fail()
 
-    def test_put_policy_invalid_ip(self):
+    def create_bucket_and_set_policy(self, policy_template):
         bucket = self.conn.create_bucket(self.bucket_name)
         bucket.delete_policy()
-        policy = '''
+        policy = policy_template % bucket.name
+        bucket.set_policy(policy, headers={'content-type':'application/json'})
+        return bucket
+
+    def test_put_policy_invalid_ip(self):
+        policy_template = '''
 {"Version":"2008-10-17","Statement":[{"Sid":"Stmtaaa","Effect":"Allow","Principal":"*","Action":["s3:GetObjectAcl","s3:GetObject"],"Resource":"arn:aws:s3:::%s/*","Condition":{"IpAddress":{"aws:SourceIp":"0"}}}]}
-''' % bucket.name
+'''
         try:
-            bucket.set_policy(policy, headers={'content-type':'application/json'})
+            self.create_bucket_and_set_policy(policy_template)
         except S3ResponseError as e:
             self.assertEqual(e.status, 400)
             self.assertEqual(e.reason, 'Bad Request')
 
     def test_put_policy(self):
-        bucket = self.conn.create_bucket(self.bucket_name)
-        bucket.delete_policy()
-        policy = '''
+        ### old version name
+        policy_template = '''
 {"Version":"2008-10-17","Statement":[{"Sid":"Stmtaaa","Effect":"Allow","Principal":"*","Action":["s3:GetObjectAcl","s3:GetObject"],"Resource":"arn:aws:s3:::%s/*","Condition":{"IpAddress":{"aws:SourceIp":"127.0.0.1/32"}}}]}
-''' % bucket.name
-        self.assertTrue(bucket.set_policy(policy, headers={'content-type':'application/json'}))
-
+'''
+        bucket = self.create_bucket_and_set_policy(policy_template)
         got_policy = bucket.get_policy()
-        self.assertEqual(policy, got_policy)
+        self.assertEqual(policy_template % bucket.name , got_policy)
+
+    def test_put_policy_2(self):
+        ### new version name, also regression of #911
+        policy_template = '''
+{"Version":"2012-10-17","Statement":[{"Sid":"Stmtaaa","Effect":"Allow","Principal":"*","Action":["s3:GetObjectAcl","s3:GetObject"],"Resource":"arn:aws:s3:::%s/*","Condition":{"IpAddress":{"aws:SourceIp":"127.0.0.1/32"}}}]}
+'''
+        bucket = self.create_bucket_and_set_policy(policy_template)
+        got_policy = bucket.get_policy()
+        self.assertEqual(policy_template % bucket.name, got_policy)
+
+    def test_put_policy_3(self):
+        policy_template = '''
+{"Version":"somebadversion","Statement":[{"Sid":"Stmtaaa","Effect":"Allow","Principal":"*","Action":["s3:GetObjectAcl","s3:GetObject"],"Resource":"arn:aws:s3:::%s/*","Condition":{"IpAddress":{"aws:SourceIp":"127.0.0.1/32"}}}]}
+'''
+        try:
+            self.create_bucket_and_set_policy(policy_template)
+        except S3ResponseError as e:
+            self.assertEqual(e.status, 400)
+            self.assertEqual(e.reason, 'Bad Request')
+
 
     def test_ip_addr_policy(self):
-        bucket = self.conn.create_bucket(self.bucket_name)
-        policy = '''
+        policy_template = '''
 {"Version":"2008-10-17","Statement":[{"Sid":"Stmtaaa","Effect":"Deny","Principal":"*","Action":["s3:GetObject"],"Resource":"arn:aws:s3:::%s/*","Condition":{"IpAddress":{"aws:SourceIp":"%s"}}}]}
-''' % (bucket.name, self.host)
-        self.assertTrue(bucket.set_policy(policy, headers={'content-type':'application/json'}))
+''' % ('%s', self.host)
+        bucket = self.create_bucket_and_set_policy(policy_template)
 
         key_name = str(uuid.uuid4())
         key = Key(bucket, key_name)

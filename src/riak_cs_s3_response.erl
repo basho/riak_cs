@@ -42,10 +42,11 @@
 
 -type xmlElement() :: #xmlElement{}.
 
--spec error_message(atom() | {'riak_connect_failed', term()}) -> string().
--spec error_code(atom() | {'riak_connect_failed', term()}) -> string().
--spec status_code(atom() | {'riak_connect_failed', term()}) -> pos_integer().
+-type error_reason() :: atom()
+                  | {'riak_connect_failed', term()}
+                  | {'malformed_policy_version', string()}.
 
+-spec error_message(error_reason()) -> string().
 error_message(invalid_access_key_id) ->
     "The AWS Access Key Id you provided does not exist in our records.";
 error_message(invalid_email_address) ->
@@ -99,6 +100,7 @@ error_message(ErrorName) ->
     _ = lager:debug("Unknown error: ~p", [ErrorName]),
     "Please reduce your request rate.".
 
+-spec error_code(error_reason()) -> string().
 error_code(invalid_access_key_id) -> "InvalidAccessKeyId";
 error_code(access_denied) -> "AccessDenied";
 error_code(bucket_not_empty) -> "BucketNotEmpty";
@@ -142,6 +144,7 @@ error_code(ErrorName) ->
 %% These should match:
 %% http://docs.aws.amazon.com/AmazonS3/latest/API/ErrorResponses.html
 
+-spec status_code(error_reason()) -> pos_integer().
 status_code(invalid_access_key_id) -> 403;
 status_code(invalid_email_address) -> 400;
 status_code(access_denied) ->  403;
@@ -209,6 +212,12 @@ api_error(Error, RD, Ctx) when is_atom(Error) ->
                    RD,
                    Ctx);
 api_error({riak_connect_failed, _}=Error, RD, Ctx) ->
+    error_response(status_code(Error),
+                   error_code(Error),
+                   error_message(Error),
+                   RD,
+                   Ctx);
+api_error({malformed_policy_version, _} = Error, RD, Ctx) ->
     error_response(status_code(Error),
                    error_code(Error),
                    error_message(Error),
