@@ -422,6 +422,7 @@ get_manifests(RcPid, Bucket, Key) ->
     case get_manifests_raw(RcPid, Bucket, Key) of
         {ok, Object} ->
             Manifests = manifests_from_riak_object(Object),
+            maybe_log_warning(Bucket, Key, Object, Manifests),
             _  = gc_deleted_while_writing_manifests(Object, Manifests, Bucket, Key, RcPid),
             {ok, Object, Manifests};
         {error, _Reason}=Error ->
@@ -431,6 +432,40 @@ get_manifests(RcPid, Bucket, Key) ->
 gc_deleted_while_writing_manifests(Object, Manifests, Bucket, Key, RcPid) ->
     UUIDs = riak_cs_manifest_utils:deleted_while_writing(Manifests),
     riak_cs_gc:gc_specific_manifests(UUIDs, Object, Bucket, Key, RcPid).
+
+-spec maybe_log_warning(binary(), binary(), riakc_obj:riakc_obj(), [term()]) -> ok.
+maybe_log_warning(Bucket, Key, Object, Manifests) ->
+    maybe_log_warning(
+      Bucket, Key,
+      riakc_obj:value_count(Object),
+      riak_cs_config:get_env(riak_cs, manifest_warn_siblings,
+                             ?DEFAULT_MANIFEST_WARN_SIBLINGS),
+      "Many manifest siblings for key", "siblings"),
+    maybe_log_warning(
+      Bucket, Key,
+      %% Approximate object size by the sum of only values, ignoring metadata
+      lists:sum([byte_size(V) || V <- riakc_obj:get_values(Object)]),
+      riak_cs_config:get_env(riak_cs, manifest_warn_bytes,
+                             ?DEFAULT_MANIFEST_WARN_BYTES),
+      "Large manifest size for key", "bytes"),
+    maybe_log_warning(
+      Bucket, Key,
+      length(Manifests),
+      riak_cs_config:get_env(riak_cs, manifest_warn_history,
+                             ?DEFAULT_MANIFEST_WARN_HISTORY),
+      "Long manifest history for key", "manifests"),
+    ok.
+
+-spec maybe_log_warning(binary(), binary(), disabled | non_neg_integer(),
+                        non_neg_integer(), string(), string()) -> ok.
+maybe_log_warning(Bucket, Key, Actual, Threshold, MessagePrefix, MessageSuffix) ->
+    case Threshold of
+        disabled -> ok;
+        _ when Actual < Threshold -> ok;
+        _ -> _ = lager:warning("~s ~s/~s: ~p ~s",
+                               [MessagePrefix, Bucket, Key, Actual, MessageSuffix])
+    end.
+
 
 -spec manifests_from_riak_object(riakc_obj:riakc_obj()) -> orddict:orddict().
 manifests_from_riak_object(RiakObject) ->
