@@ -32,6 +32,7 @@
 * Improve handling of poolboy timeouts during ping requests [riak_cs/#763](https://github.com/basho/riak_cs/pull/763)
 * Remove unnecessary log message on anonymous access [riak_cs/#876](https://github.com/basho/riak_cs/issues/876)
 * Fix inconsistent ETag on objects uploaded by multipart [riak_cs/#855](https://github.com/basho/riak_cs/issues/855)
+* Fix policy version validation in PUT Bucket Policy [riak_cs/#911](https://github.com/basho/riak_cs/issues/911)
 
 ## Notes on Upgrading
 
@@ -101,7 +102,6 @@ running `riak-cs-gc interval infinity` .
 
 Multi-datacenter cluster should be upgraded more carefully, as to
 make sure GC is not running while upgrading.
-
 
 # Riak CS 1.4.5 Release Notes
 
