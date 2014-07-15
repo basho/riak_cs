@@ -95,6 +95,7 @@ error_message(invalid_range) -> "The requested range is not satisfiable";
 error_message(invalid_bucket_name) -> "The specified bucket is not valid.";
 error_message(unexpected_content) -> "This request does not support content";
 error_message(canned_acl_and_header_grant) -> "Specifying both Canned ACLs and Header Grants is not allowed";
+error_message(malformed_xml) -> "The XML you provided was not well-formed or did not validate against our published schema";
 error_message(remaining_multipart_upload) -> "Concurrent multipart upload initiation detected. Please stop it to delete bucket.";
 error_message(ErrorName) ->
     _ = lager:debug("Unknown error: ~p", [ErrorName]),
@@ -136,6 +137,7 @@ error_code(unresolved_grant_email) -> "UnresolvableGrantByEmailAddress";
 error_code(unexpected_content) -> "UnexpectedContent";
 error_code(canned_acl_and_header_grant) -> "InvalidRequest";
 error_code(malformed_acl_error) -> "MalformedACLError";
+error_code(malformed_xml) -> "MalformedXML";
 error_code(remaining_multipart_upload) -> "MultipartUploadRemaining";
 error_code(ErrorName) ->
     _ = lager:debug("Unknown error: ~p", [ErrorName]),
@@ -184,6 +186,7 @@ status_code(invalid_bucket_name) -> 400;
 status_code(unexpected_content) -> 400;
 status_code(canned_acl_and_header_grant) -> 400;
 status_code(malformed_acl_error) -> 400;
+status_code(malformed_xml) -> 400;
 status_code(remaining_multipart_upload) -> 409;
 status_code(ErrorName) ->
     _ = lager:debug("Unknown error: ~p", [ErrorName]),

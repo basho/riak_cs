@@ -86,6 +86,9 @@ handle_with_bucket_obj({ok, BucketObj},
     case parse_body(binary_to_list(wrq:req_body(RD))) of
         {error, _} = Error ->
             ResponseMod:api_error(Error, RD, Ctx);
+        {ok, BinKeys} when length(BinKeys) > 1000 ->
+            %% Delete Multiple Objects accepts a request to delete up to 1000 Objects.
+            ResponseMod:api_error(malformed_xml, RD, Ctx);
         {ok, BinKeys} ->
             lager:debug("deleting keys at ~p: ~p", [Bucket, BinKeys]),
 
