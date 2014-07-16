@@ -110,7 +110,7 @@ init([]) ->
 handle_call({get_manifests, Bucket, Key}, _From, State) ->
     {ok, Pid} = riak_cs_utils:riak_connection(),
     try
-        {ok, _, Manifests} = riak_cs_utils:get_manifests(Pid, Bucket, Key),
+        {ok, _, Manifests} = riak_cs_manifest:get_manifests(Pid, Bucket, Key),
         {reply, Manifests, State}
     catch _:_=E ->
         {reply, {error, E}, State}

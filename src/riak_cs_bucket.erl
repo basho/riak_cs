@@ -207,7 +207,7 @@ fold_delete_uploads(Bucket, RcPid, [D|Ds], Timestamp, Count)->
     Key = D?MULTIPART_DESCR.key,
 
     %% cannot fail here
-    {ok, Obj, Manifests} = riak_cs_utils:get_manifests(RcPid, Bucket, Key),
+    {ok, Obj, Manifests} = riak_cs_manifest:get_manifests(RcPid, Bucket, Key),
 
     UploadId = D?MULTIPART_DESCR.upload_id,
 

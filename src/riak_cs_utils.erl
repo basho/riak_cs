@@ -45,8 +45,6 @@
          md5_update/2,
          md5_final/1,
          reduce_keys_and_manifests/2,
-         get_manifests/3,
-         manifests_from_riak_object/1,
          active_manifest_from_response/1,
          get_user/2,
          get_user_by_index/3,
@@ -405,96 +403,6 @@ md5_update(Ctx, <<Part:?MAX_UPDATE_SIZE/binary, Rest/binary>>) ->
 md5_final(Ctx) -> crypto:md5_final(Ctx).
 -endif.
 
-%% internal fun to retrieve the riak object
-%% at a bucket/key
--spec get_manifests_raw(riak_client(), binary(), binary()) ->
-    {ok, riakc_obj:riakc_obj()} | {error, term()}.
-get_manifests_raw(RcPid, Bucket, Key) ->
-    ManifestBucket = to_bucket_name(objects, Bucket),
-    ok = riak_cs_riak_client:set_bucket_name(RcPid, Bucket),
-    {ok, ManifestPbc} = riak_cs_riak_client:manifest_pbc(RcPid),
-    riakc_pb_socket:get(ManifestPbc, ManifestBucket, Key).
-
-%% @doc
--spec get_manifests(riak_client(), binary(), binary()) ->
-    {ok, term(), term()} | {error, term()}.
-get_manifests(RcPid, Bucket, Key) ->
-    case get_manifests_raw(RcPid, Bucket, Key) of
-        {ok, Object} ->
-            Manifests = manifests_from_riak_object(Object),
-            maybe_log_warning(Bucket, Key, Object, Manifests),
-            _  = gc_deleted_while_writing_manifests(Object, Manifests, Bucket, Key, RcPid),
-            {ok, Object, Manifests};
-        {error, _Reason}=Error ->
-            Error
-    end.
-
-gc_deleted_while_writing_manifests(Object, Manifests, Bucket, Key, RcPid) ->
-    UUIDs = riak_cs_manifest_utils:deleted_while_writing(Manifests),
-    riak_cs_gc:gc_specific_manifests(UUIDs, Object, Bucket, Key, RcPid).
-
--spec maybe_log_warning(binary(), binary(), riakc_obj:riakc_obj(), [term()]) -> ok.
-maybe_log_warning(Bucket, Key, Object, Manifests) ->
-    maybe_log_warning(
-      Bucket, Key,
-      riakc_obj:value_count(Object),
-      riak_cs_config:get_env(riak_cs, manifest_warn_siblings,
-                             ?DEFAULT_MANIFEST_WARN_SIBLINGS),
-      "Many manifest siblings for key", "siblings"),
-    maybe_log_warning(
-      Bucket, Key,
-      %% Approximate object size by the sum of only values, ignoring metadata
-      lists:sum([byte_size(V) || V <- riakc_obj:get_values(Object)]),
-      riak_cs_config:get_env(riak_cs, manifest_warn_bytes,
-                             ?DEFAULT_MANIFEST_WARN_BYTES),
-      "Large manifest size for key", "bytes"),
-    maybe_log_warning(
-      Bucket, Key,
-      length(Manifests),
-      riak_cs_config:get_env(riak_cs, manifest_warn_history,
-                             ?DEFAULT_MANIFEST_WARN_HISTORY),
-      "Long manifest history for key", "manifests"),
-    ok.
-
--spec maybe_log_warning(binary(), binary(), disabled | non_neg_integer(),
-                        non_neg_integer(), string(), string()) -> ok.
-maybe_log_warning(Bucket, Key, Actual, Threshold, MessagePrefix, MessageSuffix) ->
-    case Threshold of
-        disabled -> ok;
-        _ when Actual < Threshold -> ok;
-        _ -> _ = lager:warning("~s ~s/~s: ~p ~s",
-                               [MessagePrefix, Bucket, Key, Actual, MessageSuffix])
-    end.
-
-
--spec manifests_from_riak_object(riakc_obj:riakc_obj()) -> orddict:orddict().
-manifests_from_riak_object(RiakObject) ->
-    %% For example, riak_cs_manifest_fsm:get_and_update/4 may wish to
-    %% update the #riakc_obj without a roundtrip to Riak first.  So we
-    %% need to see what the latest
-    Contents = try
-                   %% get_update_value will return the updatevalue or
-                   %% a single old original value.
-                   [{riakc_obj:get_update_metadata(RiakObject),
-                     riakc_obj:get_update_value(RiakObject)}]
-               catch throw:_ ->
-                       %% Original value had many contents
-                       riakc_obj:get_contents(RiakObject)
-               end,
-    DecodedSiblings = [binary_to_term(V) ||
-                          {_, V}=Content <- Contents,
-                          not has_tombstone(Content)],
-
-    %% Upgrade the manifests to be the latest erlang
-    %% record version
-    Upgraded = riak_cs_manifest_utils:upgrade_wrapped_manifests(DecodedSiblings),
-
-    %% resolve the siblings
-    Resolved = riak_cs_manifest_resolution:resolve(Upgraded),
-
-    %% prune old scheduled_delete manifests
-    riak_cs_manifest_utils:prune(Resolved).
-
 -spec active_manifest_from_response({ok, orddict:orddict()} |
                                     {error, notfound}) ->
     {ok, lfs_manifest()} | {error, notfound}.
@@ -773,7 +681,7 @@ update_obj_value(Obj, Value) when is_binary(Value) ->
 %% we'll take care of calling `to_bucket_name'
 -spec key_exists(riak_client(), binary(), binary()) -> boolean().
 key_exists(RcPid, Bucket, Key) ->
-    key_exists_handle_get_manifests(get_manifests(RcPid, Bucket, Key)).
+    key_exists_handle_get_manifests(riak_cs_manifest:get_manifests(RcPid, Bucket, Key)).
 
 %% @doc Return `stanchion' configuration data.
 -spec stanchion_data() -> {string(), pos_integer(), boolean()}.

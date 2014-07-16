@@ -263,7 +263,7 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 handle_get_manifests(State=#state{riak_client=RcPid,
                            bucket=Bucket,
                            key=Key}) ->
-    case riak_cs_utils:get_manifests(RcPid, Bucket, Key) of
+    case riak_cs_manifest:get_manifests(RcPid, Bucket, Key) of
         {ok, RiakObject, Resolved} ->
             Reply = {ok, Resolved},
             NewState = State#state{riak_object=RiakObject, manifests=Resolved},
@@ -279,7 +279,7 @@ handle_get_manifests(State=#state{riak_client=RcPid,
 -spec get_and_delete(riak_client(), binary(), binary(), binary()) -> ok |
                                                              {error, term()}.
 get_and_delete(RcPid, UUID, Bucket, Key) ->
-    case riak_cs_utils:get_manifests(RcPid, Bucket, Key) of
+    case riak_cs_manifest:get_manifests(RcPid, Bucket, Key) of
         {ok, RiakObject, Manifests} ->
             ResolvedManifests = riak_cs_manifest_resolution:resolve([Manifests]),
             UpdatedManifests = orddict:erase(UUID, ResolvedManifests),
@@ -305,7 +305,7 @@ get_and_update(RcPid, WrappedManifests, Bucket, Key) ->
     %% NOTE: it would also be nice to assert that the
     %% UUID being added doesn't already exist in the
     %% dict
-    case riak_cs_utils:get_manifests(RcPid, Bucket, Key) of
+    case riak_cs_manifest:get_manifests(RcPid, Bucket, Key) of
         {ok, RiakObject, Manifests} ->
             NewManiAdded = riak_cs_manifest_resolution:resolve([WrappedManifests, Manifests]),
             %% Update the object here so that if there are any
@@ -326,7 +326,7 @@ get_and_update(RcPid, WrappedManifests, Bucket, Key) ->
                                                      Bucket, Key,
                                                      RcPid)
             end,
-            UpdatedManifests = riak_cs_utils:manifests_from_riak_object(NewRiakObject),
+            UpdatedManifests = riak_cs_manifest:manifests_from_riak_object(NewRiakObject),
             {Result, NewRiakObject, UpdatedManifests};
         {error, notfound} ->
             ManifestBucket = riak_cs_utils:to_bucket_name(objects, Bucket),
