@@ -340,7 +340,7 @@ do_part_common(Op, Bucket, Key, UploadId, {_,_,CallerKeyId} = _Caller, Props, Rc
     case wrap_riak_client(RcPidUnW) of
         {ok, RcPid} ->
             try
-                case riak_cs_utils:get_manifests(?PID(RcPid), Bucket, Key) of
+                case riak_cs_manifest:get_manifests(?PID(RcPid), Bucket, Key) of
                     {ok, Obj, Manifests} ->
                         case find_manifest_with_uploadid(UploadId, Manifests) of
                             false ->
@@ -606,7 +606,7 @@ update_keys_and_prefixes({Keys, Prefixes}, _, Prefix, PrefixLen, Group) ->
 multipart_manifests_for_key(Bucket, Key, Opts, Acc, RcPid) ->
     ParameterFilter = build_parameter_filter(Opts),
     Manifests = handle_get_manifests_result(
-                  riak_cs_utils:get_manifests(RcPid, Bucket, Key)),
+                  riak_cs_manifest:get_manifests(RcPid, Bucket, Key)),
     lists:foldl(ParameterFilter, Acc, Manifests).
 
 build_parameter_filter(Opts) ->

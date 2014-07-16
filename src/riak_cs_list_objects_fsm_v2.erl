@@ -209,7 +209,7 @@ handle_done(State=#state{object_buffer=ObjectBuffer,
     update_profiling_and_last_request(State, ObjectBuffer, ObjectBufferLength),
 
     FilteredObjects = exclude_key_from_state(State, ObjectBuffer),
-    Manifests = [riak_cs_utils:manifests_from_riak_object(O) ||
+    Manifests = [riak_cs_manifest:manifests_from_riak_object(O) ||
                  O <- FilteredObjects],
     Active = map_active_manifests(Manifests),
     NewObjects = PrevObjects ++ Active,

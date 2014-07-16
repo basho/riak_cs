@@ -464,6 +464,9 @@
 -define(DEFAULT_AUTH_MODULE, riak_cs_s3_auth).
 -define(DEFAULT_LIST_OBJECTS_MAX_KEYS, 1000).
 -define(DEFAULT_MD5_CHUNK_SIZE, 1048576). %% 1 MB
+-define(DEFAULT_MANIFEST_WARN_SIBLINGS, 20).
+-define(DEFAULT_MANIFEST_WARN_BYTES, 5*1024*1024). %% 5MB
+-define(DEFAULT_MANIFEST_WARN_HISTORY, 30).
 
 %% General system info
 -define(WORD_SIZE, erlang:system_info(wordsize)).
