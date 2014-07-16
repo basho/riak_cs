@@ -40,7 +40,7 @@
                 error
         end).
 
--define(SCRIPT_NAME, "riak-cs-gc").
+-define(SCRIPT_NAME, "riak-cs-admin gc").
 
 -define(SECONDS_PER_DAY, 86400).
 -define(DAYS_FROM_0_TO_1970, 719528).
@@ -136,8 +136,7 @@ handle_batch_start({error, already_paused}) ->
     error.
 
 handle_status({ok, {State, Details}}) ->
-    print_status(State, Details);
-handle_status(_) ->
+    print_status(State, Details),
     ok.
 
 handle_batch_cancellation(ok) ->
@@ -147,13 +146,15 @@ handle_batch_cancellation({error, no_batch}) ->
     error.
 
 handle_pause(ok) ->
-    output("The garbage collection daemon was paused.");
+    output("The garbage collection daemon was paused."),
+    ok;
 handle_pause({error, already_paused}) ->
     output("The garbage collection daemon was already paused."),
     error.
 
 handle_resumption(ok) ->
-    output("The garbage collection daemon was resumed.");
+    output("The garbage collection daemon was resumed."),
+    ok;
 handle_resumption({error, not_paused}) ->
     output("The garbage collection daemon was not paused."),
     error.
@@ -162,8 +163,9 @@ output(Output) ->
     io:format(Output ++ "~n").
 
 print_status(State, Details) ->
-    print_state(State),
-    print_details(Details).
+    _ = print_state(State),
+    _ = print_details(Details),
+    ok.
 
 print_state(idle) ->
     output("There is no garbage collection in progress");

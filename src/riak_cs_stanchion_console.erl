@@ -37,7 +37,7 @@
                 error
         end).
 
--define(SCRIPT_NAME, "riak-cs-stanchion").
+-define(SCRIPT_NAME, "riak-cs-admin stanchion").
 -include("riak_cs.hrl").
 
 %%%===================================================================
@@ -63,8 +63,10 @@ switch([Host, Port]) ->
                                     [Host, Port]),
                 _ = lager:info(Msg2),
                 io:format("~s~nTo make permanent change, be sure to edit app.config file.~n", [Msg2])
-            end, Msg).
-
+            end, Msg);
+switch(_) ->
+    io:format("Usage: riak-cs-admin stanchion switch IP Port~n"),
+    error.
 
 show([]) ->
     ?SAFELY(begin
