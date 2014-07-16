@@ -169,7 +169,7 @@ print_status(State, Details) ->
 
 print_state(idle) ->
     output("There is no garbage collection in progress");
-print_state(fetching_next_fileset) ->
+print_state(fetching_next_batch) ->
     output("A garbage collection batch is in progress");
 print_state(feeding_workers) ->
     output("A garbage collection batch is in progress");
