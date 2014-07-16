@@ -34,7 +34,7 @@ confirm() ->
 
     lists:foreach(fun(RiakNode) ->
                           N = rtcs_dev:node_id(RiakNode),
-                          ?assertEqual("Current Stanchion Adderss: http://127.0.0.1:9095\n",
+                          ?assertEqual("Current Stanchion Address: http://127.0.0.1:9095\n",
                                        rtcs_exec:show_stanchion_cs(N))
                   end, RiakNodes),
 
@@ -66,7 +66,7 @@ confirm() ->
     lists:foreach(fun(RiakNode) ->
                           N = rtcs_dev:node_id(RiakNode),
                           rtcs_exec:switch_stanchion_cs(N, "127.0.0.1", ?BACKUP_PORT),
-                          ?assertEqual("Current Stanchion Adderss: http://127.0.0.1:9096\n",
+                          ?assertEqual("Current Stanchion Address: http://127.0.0.1:9096\n",
                                        rtcs_exec:show_stanchion_cs(N))
                   end, RiakNodes),
 
