@@ -36,7 +36,12 @@
 %% in progress.
 cluster_info([OutFile]) ->
     try
-        cluster_info:dump_local_node(OutFile)
+        case cluster_info:dump_local_node(OutFile) of
+            [ok] -> ok;
+            Result ->
+                io:format("Cluster_info failed ~p~n", [Result]),
+                error
+        end
     catch
         error:{badmatch, {error, eacces}} ->
             io:format("Cluster_info failed, permission denied writing to ~p~n", [OutFile]);

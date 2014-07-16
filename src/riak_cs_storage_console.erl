@@ -40,7 +40,7 @@
                 error
         end).
 
--define(SCRIPT_NAME, "riak-cs-storage").
+-define(SCRIPT_NAME, "riak-cs-admin storage").
 -define(BATCH_OPTIONS, [{recalc, $r, "recalc", boolean,
                          "recalculate all users for this period"
                          " (default=false)"}]).
@@ -72,8 +72,9 @@ status(_Opts) ->
     ?SAFELY(
        begin
            {ok, {State, Details}} = riak_cs_storage_d:status(),
-           print_state(State),
-           print_details(Details)
+           _ = print_state(State),
+           _ = print_details(Details),
+           ok
        end,
        "Checking storage calculation status").
 
