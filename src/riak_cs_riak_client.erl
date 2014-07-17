@@ -62,13 +62,17 @@
          }).
 
 start_link(_Args) ->
-    case riak_cs_config:is_multibag_enabled() of
-        true ->
-            gen_server:start_link(riak_cs_multibag_riak_client, [], []);
-        false ->
-            gen_server:start_link(?MODULE, [], [])
+    case application:get_env(riak_cs, riak_client) of
+        {ok, Mod} ->
+            gen_server:start_link(Mod, [], []);
+        undefined ->
+            Mod = case riak_cs_config:is_multibag_enabled() of
+                      true  -> riak_cs_multibag_riak_client;
+                      false -> ?MODULE
+                  end,
+            application:set_env(riak_cs, riak_client, Mod),
+            gen_server:start_link(Mod, [], [])
     end.
-
 stop(Pid) ->
     gen_server:call(Pid, stop).
 
