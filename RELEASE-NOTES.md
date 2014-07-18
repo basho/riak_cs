@@ -10,7 +10,6 @@
 * `fold_objects_for_list_keys` made default in Riak CS [riak_cs/#737](https://github.com/basho/riak_cs/pull/737), [riak_cs/#785](https://github.com/basho/riak_cs/pull/785)
 * Add support for Cache-Control header [riak_cs/#821](https://github.com/basho/riak_cs/pull/821)
 * Allow objects to be reaped sooner than leeway interval. [riak_cs/#470](https://github.com/basho/riak_cs/pull/470)
-* Add option to allow a delay for the initial GC collection [riak_cs/#688](https://github.com/basho/riak_cs/pull/688)
 * PUT Copy on both objects and upload parts [riak_cs/#548](https://github.com/basho/riak_cs/pull/548)
 * Update to lager 2.0.3
 * Compiles with R16B0x (Releases still by R15B01)
