@@ -20,7 +20,7 @@
 ## Bugs Fixed
 
 * Align `ERL_MAX_PORTS` with Riak default: 64000 [riak_cs/#636](https://github.com/basho/riak_cs/pull/636)
-* Allow Riak CS admin resources to be used with OpenStack api [riak_cs/#666](https://github.com/basho/riak_cs/pull/666)
+* Allow Riak CS admin resources to be used with OpenStack API [riak_cs/#666](https://github.com/basho/riak_cs/pull/666)
 * Fix path substitution code to fix Solaris source builds [riak_cs/#733](https://github.com/basho/riak_cs/pull/733)
 * `sanity_check(true,false)` logs invalid error on `riakc_pb_socket` error [riak_cs/#683](https://github.com/basho/riak_cs/pull/683)
 * Ignore Owner with an empty ID in AccessControlPolicy blob [riak_cs/#755](https://github.com/basho/riak_cs/pull/755)
@@ -29,7 +29,7 @@
 * Return HTTP 400 if content-md5 does not match [riak_cs/#596](https://github.com/basho/riak_cs/pull/596)
 * `/riak-cs/stats` and `admin_auth_enabled=false` don't work together correctly. [riak_cs/#719](https://github.com/basho/riak_cs/pull/719)
 * Storage calculation doesn't handle tombstones, nor handle undefined manifest.props [riak_cs/#849](https://github.com/basho/riak_cs/pull/849)
-* MP initiated objects remains after delete/create buckets #475 fixed by [riak_cs/#857](https://github.com/basho/riak_cs/pull/857) and [stanchon/#78](https://github.com/basho/stanchion/pull/78)
+* MP initiated objects remains after delete/create buckets #475 fixed by [riak_cs/#857](https://github.com/basho/riak_cs/pull/857) and [stanchion/#78](https://github.com/basho/stanchion/pull/78)
 * handling empty query string on list multipart upload [riak_cs/#843](https://github.com/basho/riak_cs/pull/843)
 * Setting ACLs via headers at PUT Object creation [riak_cs/#631](https://github.com/basho/riak_cs/pull/631)
 * Improve handling of poolboy timeouts during ping requests [riak_cs/#763](https://github.com/basho/riak_cs/pull/763)
@@ -105,7 +105,7 @@ which do not run GC should be upgraded later, to let leeway second
 system work properly. Or stop GC while upgrading whole cluster, by
 running `riak-cs-gc interval infinity` .
 
-Multi-datacenter cluster should be upgraded more carefully, as to
+Multi data center cluster should be upgraded more carefully, as to
 make sure GC is not running while upgrading.
 
 # Riak CS 1.4.5 Release Notes
