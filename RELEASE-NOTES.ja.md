@@ -2,69 +2,39 @@
 
 ## 新規追加
 
-* A new command `riak-cs-debug` including `cluster-info` [riak_cs/#769](https://github.com/basho/riak_cs/pull/769), [riak_cs/#832](https://github.com/basho/riak_cs/pull/832)
 * `cluster-info` 取得を含む新規コマンド `riak-cs-debug` を追加 [riak_cs/#769](https://github.com/basho/riak_cs/pull/769), [riak_cs/#832](https://github.com/basho/riak_cs/pull/832)
-* Tie up all existing commands into a new command `riak-cs-admin` [riak_cs/#839](https://github.com/basho/riak_cs/pull/839)
 * 既存コマンド群を新規コマンド `riak-cs-admin` へ統合 [riak_cs/#839](https://github.com/basho/riak_cs/pull/839)
-* Add a command `riak-cs-admin stanchion` to switch Stanchion IP and port manually [riak_cs/#657](https://github.com/basho/riak_cs/pull/657)
 * Stanchion の IP、ポートを変更する新規コマンド `riak-cs-admin stanchion` を追加 [riak_cs/#657](https://github.com/basho/riak_cs/pull/657)
-* Performance of garbage collection has been improved via Concurrent GC [riak_cs/#830](https://github.com/basho/riak_cs/pull/830)
 * 並行 GC によるガベージコレクション性能の向上 [riak_cs/#830](https://github.com/basho/riak_cs/pull/830)
 * Iterator refresh [riak_cs/#805](https://github.com/basho/riak_cs/pull/805)
-* Iterator refresh [riak_cs/#805](https://github.com/basho/riak_cs/pull/805)
-* `fold_objects_for_list_keys` made default in Riak CS [riak_cs/#737](https://github.com/basho/riak_cs/pull/737), [riak_cs/#785](https://github.com/basho/riak_cs/pull/785)
 * `fold_objects_for_list_keys` 設定をデフォルト有効に変更 [riak_cs/#737](https://github.com/basho/riak_cs/pull/737), [riak_cs/#785](https://github.com/basho/riak_cs/pull/785)
-* Add support for Cache-Control header [riak_cs/#821](https://github.com/basho/riak_cs/pull/821)
 * Cache-Control ヘッダーのサポートを追加 [riak_cs/#821](https://github.com/basho/riak_cs/pull/821)
-* Allow objects to be reaped sooner than leeway interval. [riak_cs/#470](https://github.com/basho/riak_cs/pull/470)
 * 猶予期間(`leeway_seconds`)内でもオブジェクトをガベージコレクション可能にする変更 [riak_cs/#470](https://github.com/basho/riak_cs/pull/470)
-* PUT Copy on both objects and upload parts [riak_cs/#548](https://github.com/basho/riak_cs/pull/548)
 * オブジェクト、マルチパートともに PUT Copy API を追加 [riak_cs/#548](https://github.com/basho/riak_cs/pull/548)
-* Update to lager 2.0.3
 * lager 2.0.3 へ更新
-* Compiles with R16B0x (Releases still by R15B01)
 * R16B0x をビルド環境に追加 (リリースは R15B01 でビルド)
 * `gc_paginated_index` 設定をデフォルト有効に変更 [riak_cs/#881](https://github.com/basho/riak_cs/issues/881)
-* Add new API: Delete Multiple Objects [riak_cs/#728](https://github.com/basho/riak_cs/pull/728)
 * 新規 API: Delete Multiple Objects の追加[riak_cs/#728](https://github.com/basho/riak_cs/pull/728)
-* Add warning logs for manifests, siblings, bytes and history [riak_cs/#915](https://github.com/basho/riak_cs/pull/915)
 * マニフェストに対して siblings, バイト、履歴の肥大化を警告するログ追加 [riak_cs/#915](https://github.com/basho/riak_cs/pull/915)
 
 ## 修正されたバグ
 
-* Align `ERL_MAX_PORTS` with Riak default: 64000 [riak_cs/#636](https://github.com/basho/riak_cs/pull/636)
 * `ERL_MAX_PORTS` を Riak のデフォルトに合わせ 64000 へ変更 [riak_cs/#636](https://github.com/basho/riak_cs/pull/636)
-* Allow Riak CS admin resources to be used with OpenStack API [riak_cs/#666](https://github.com/basho/riak_cs/pull/666)
 * Riak CS 管理リソースを OpenStack API でも利用可能にする修正 [riak_cs/#666](https://github.com/basho/riak_cs/pull/666)
-* Fix path substitution code to fix Solaris source builds [riak_cs/#733](https://github.com/basho/riak_cs/pull/733)
 * Solaris でのソースビルドのバグ修正のため、パス代入コードの変更 [riak_cs/#733](https://github.com/basho/riak_cs/pull/733)
-* `sanity_check(true,false)` logs invalid error on `riakc_pb_socket` error [riak_cs/#683](https://github.com/basho/riak_cs/pull/683)
 * `riakc_pb_socket` エラー時の `sanity_check(true,false)` バグを修正 [riak_cs/#683](https://github.com/basho/riak_cs/pull/683)
-* Riak-CS-GC timestamp for scheduler is in the year 0043, not 2013. [riak_cs/#713](https://github.com/basho/riak_cs/pull/713) fixed by [riak_cs/#676](https://github.com/basho/riak_cs/pull/676)
 * Riak-CS-GC のスケジューラタイムスタンプが 2013 ではなく 0043 になるバグを修正 [riak_cs/#713](https://github.com/basho/riak_cs/pull/713) fixed by [riak_cs/#676](https://github.com/basho/riak_cs/pull/676)
-* Excessive calls to OTP code_server process #669 fixed by [riak_cs/#675](https://github.com/basho/riak_cs/pull/675)
 * OTP code_server プロセスを過剰に呼び出すバグを修正 [riak_cs/#675](https://github.com/basho/riak_cs/pull/675)
-* Return HTTP 400 if content-md5 does not match [riak_cs/#596](https://github.com/basho/riak_cs/pull/596)
 * content-md5 が一致しない場合に HTTP 400 を返すよう修正 [riak_cs/#596](https://github.com/basho/riak_cs/pull/596)
-* `/riak-cs/stats` and `admin_auth_enabled=false` don't work together correctly. [riak_cs/#719](https://github.com/basho/riak_cs/pull/719)
 * `/riak-cs/stats` が `admin_auth_enabled=false` の時に動作しないバグを修正. [riak_cs/#719](https://github.com/basho/riak_cs/pull/719)
-* Storage calculation doesn't handle tombstones, nor handle undefined manifest.props [riak_cs/#849](https://github.com/basho/riak_cs/pull/849)
 * ストレージ計算で tombstone および undefined の manifest.props を処理できないバグを修正 [riak_cs/#849](https://github.com/basho/riak_cs/pull/849)
-* MP initiated objects remains after delete/create buckets #475 fixed by [riak_cs/#857](https://github.com/basho/riak_cs/pull/857) and [stanchion/#78](https://github.com/basho/stanchion/pull/78)
 * 未完了のマルチパートオブジェクトが、バケットの削除、作成後にも残るバグを修正 [riak_cs/#857](https://github.com/basho/riak_cs/pull/857) and [stanchion/#78](https://github.com/basho/stanchion/pull/78)
-* handling empty query string on list multipart upload [riak_cs/#843](https://github.com/basho/riak_cs/pull/843)
 * list multipart upload の空クエリパラメータの扱いを修正 [riak_cs/#843](https://github.com/basho/riak_cs/pull/843)
-* Setting ACLs via headers at PUT Object creation [riak_cs/#631](https://github.com/basho/riak_cs/pull/631)
 * PUT Object 時にヘッダ指定の ACL が設定されないバグを修正 [riak_cs/#631](https://github.com/basho/riak_cs/pull/631)
-* Improve handling of poolboy timeouts during ping requests [riak_cs/#763](https://github.com/basho/riak_cs/pull/763)
 * ping リクエストの poolboy タイムアウト処理を改善 [riak_cs/#763](https://github.com/basho/riak_cs/pull/763)
-* Remove unnecessary log message on anonymous access [riak_cs/#876](https://github.com/basho/riak_cs/issues/876)
 * 匿名アクセス時の不要なログを削除 [riak_cs/#876](https://github.com/basho/riak_cs/issues/876)
-* Fix inconsistent ETag on objects uploaded by multipart [riak_cs/#855](https://github.com/basho/riak_cs/issues/855)
 * マルチパートでアップロードされたオブジェクトの ETag 不正を修正 [riak_cs/#855](https://github.com/basho/riak_cs/issues/855)
-* Fix policy version validation in PUT Bucket Policy [riak_cs/#911](https://github.com/basho/riak_cs/issues/911)
 * PUT Bucket Policy のポリシーバージョン確認の不具合を修正[riak_cs/#911](https://github.com/basho/riak_cs/issues/911)
-* Fix return code of several commands, to return 0 for success [riak_cs/#908](https://github.com/basho/riak_cs/issues/908)
 * コマンド成功時に終了コード 0 を返すよう修正 [riak_cs/#908](https://github.com/basho/riak_cs/issues/908)
 
 
@@ -72,62 +42,30 @@
 
 ### 未完了のマルチパートアップロード
 
-[riak_cs/#475](https://github.com/basho/riak_cs/issues/475) was a
-security issue where a newly created bucket may include unaborted or
-incomplete multipart uploads which was created in previous epoch of
-the bucket with same name. This was fixed by:
-
 [riak_cs/#475](https://github.com/basho/riak_cs/issues/475) はセキュリティ
 に関する問題で、以前に作られた同名のバケットに
 対する未完了のマルチパートアップロードが、新しく作成されたバケットに
 含まれてしまう可能性があります。これは次のように修正されました。
 
-- on creating buckets; checking if live multipart exists and if
-  exists, return 500 failure to client.
-
 - バケット作成時には、有効なマルチパートが存在するかを確認し、
   存在する場合には 500 エラーをクライアントに返します。
-
-- on deleting buckets; trying to clean up all live multipart remains,
-  and checking if live multipart remains (in stanchion). if exists,
-  return 409 failure to client.
 
 - バケット削除時には、まず存在する有効なマルチパートの削除を試みた後に、
   有効なマルチパートが存在するかを(Stanchion 上で)再度確認します。
   存在する場合には 409 エラーをクライアントに返します。
 
-
-Note that a few operations are needed after upgrading from 1.4.x (or
-former) to 1.5.0.
-
 1.4.x (またはそれより前のバージョン)から 1.5.0 へのアップグレード後には
 いくつかの操作が必要です。
-
-- run `riak_cs_console:cleanup_orphan_multipart/0` or
-  `riak_cs_console:cleanup_orphan_multipart/1` in an attached console
-  to cleanup all buckets
 
 - すべてのバケットを正常な状態にするため、アタッチしたコンソールで
   `riak_cs_console:cleanup_orphan_multipart/0` または
   `riak_cs_console:cleanup_orphan_multipart/1` を実行します。
-
-- there might be a time period until above cleanup finished, where no
-  client can create bucket if unfinished multipart upload remains
-  under deleted bucket. You can find [critical] log if such bucket
-  creation is attempted.
 
 - 上記操作が終了するまでの期間は、削除済みのバケットで、未完了のマルチパート
   アップロードを含むバケットは再作成が出来ない場合があります。
   このような再作成の失敗は [critical] ログで確認可能です。
 
 ### ガベージコレクションの猶予期間(Leeway seconds)とディスク空き容量
-
-[riak_cs/#470](https://github.com/basho/riak_cs/pull/470) changed the
-behaviour of object deletion and garbage collection. The timestamps in
-garbage collection bucket were changed from the future time when the
-object is to be deleted, to the current time when the object is
-deleted, Garbage collector was also changed to collect objects until
-'now - leeway seconds', from collecting objects until 'now' previously.
 
 [riak_cs/#470](https://github.com/basho/riak_cs/pull/470) は、
 オブジェクト削除とガベージコレクションの振る舞いを次のように変更します。
@@ -156,20 +94,10 @@ deleted, Garbage collector was also changed to collect objects until
            とマークされる             オブジェクトを回収
 ```
 
-This leads that there exists a period where no objects are collected
-right after upgrade to 1.5.0, say, `t0`, until `t0 + leeway` . And
-objects deleted just before `t0` won't be collected until `t0 +
-2*leeway` .
-
 これにより、1.5.0 へのアップグレード直後にはオブジェクトが回収されない
 期間ができます。つまり `t0` から `t0 + leeway` までの期間です。
 そして `t0` 直前に削除されたオブジェクトは `t0 + 2 * leeway` 時点で
 回収可能になります。
-
-Also, all CS nodes which run GC should be upgraded *first.* CS nodes
-which do not run GC should be upgraded later, to let leeway second
-system work properly. Or stop GC while upgrading whole cluster, by
-running `riak-cs-gc interval infinity` .
 
 ローリングアップグレードに際しては、GC を実行している CS ノードを
 **最初に** アップグレードする必要があります。
@@ -178,9 +106,6 @@ GC を実行しない CS ノードは、猶予期間が正しく動作するた�
 また、`riak-cs-admin gc set-interval infinity` コマンドを実行して
 ガベージコレクションを無効にしておくと、ノードの順序を
 気にすることなくアップグレードが可能です。
-
-Multi data center cluster should be upgraded more carefully, as to
-make sure GC is not running while upgrading.
 
 マルチデータセンター構成のクラスタは、より慎重になる必要があります。
 ガベージコレクションを確実に無効化してからアップグレードしてください。
