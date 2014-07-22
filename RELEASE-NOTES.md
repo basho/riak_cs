@@ -23,7 +23,6 @@
 * Allow Riak CS admin resources to be used with OpenStack API [riak_cs/#666](https://github.com/basho/riak_cs/pull/666)
 * Fix path substitution code to fix Solaris source builds [riak_cs/#733](https://github.com/basho/riak_cs/pull/733)
 * `sanity_check(true,false)` logs invalid error on `riakc_pb_socket` error [riak_cs/#683](https://github.com/basho/riak_cs/pull/683)
-* Ignore Owner with an empty ID in AccessControlPolicy blob [riak_cs/#755](https://github.com/basho/riak_cs/pull/755)
 * Riak-CS-GC timestamp for scheduler is in the year 0043, not 2013. [riak_cs/#713](https://github.com/basho/riak_cs/pull/713) fixed by [riak_cs/#676](https://github.com/basho/riak_cs/pull/676)
 * Excessive calls to OTP code_server process #669 fixed by [riak_cs/#675](https://github.com/basho/riak_cs/pull/675)
 * Return HTTP 400 if content-md5 does not match [riak_cs/#596](https://github.com/basho/riak_cs/pull/596)
@@ -70,12 +69,12 @@ former) to 1.5.0.
 
 [riak_cs/#470](https://github.com/basho/riak_cs/pull/470) changed the
 behaviour of object deletion and garbage collection. The timestamps in
-garbage collection bucket were changed from the current time when the
-object is deleted, to the future time when the object is to be
-deleted. Garbage collector was also changed to collect objects until
-'now - leeway seconds', from collecting objects until 'now'.
+garbage collection bucket were changed from the future time when the
+object is to be deleted, to the current time when the object is
+deleted, Garbage collector was also changed to collect objects until
+'now - leeway seconds', from collecting objects until 'now' previously.
 
-Before:
+Before (-1.4.x):
 
 ```
            t1                         t2
@@ -85,7 +84,7 @@ Before:
            "t1+leeway"                marked as "t2"
 ```
 
-After:
+After (1.5.0-):
 
 ```
            t1                         t2
@@ -103,7 +102,7 @@ objects deleted just before `t0` won't be collected until `t0 +
 Also, all CS nodes which run GC should be upgraded *first.* CS nodes
 which do not run GC should be upgraded later, to let leeway second
 system work properly. Or stop GC while upgrading whole cluster, by
-running `riak-cs-gc interval infinity` .
+running `riak-cs-admin gc set-interval infinity` .
 
 Multi data center cluster should be upgraded more carefully, as to
 make sure GC is not running while upgrading.
