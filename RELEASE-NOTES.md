@@ -69,12 +69,12 @@ former) to 1.5.0.
 
 [riak_cs/#470](https://github.com/basho/riak_cs/pull/470) changed the
 behaviour of object deletion and garbage collection. The timestamps in
-garbage collection bucket were changed from the current time when the
-object is deleted, to the future time when the object is to be
-deleted. Garbage collector was also changed to collect objects until
-'now - leeway seconds', from collecting objects until 'now'.
+garbage collection bucket were changed from the future time when the
+object is to be deleted, to the current time when the object is
+deleted, Garbage collector was also changed to collect objects until
+'now - leeway seconds', from collecting objects until 'now' previously.
 
-Before:
+Before (-1.4.x):
 
 ```
            t1                         t2
@@ -84,7 +84,7 @@ Before:
            "t1+leeway"                marked as "t2"
 ```
 
-After:
+After (1.5.0-):
 
 ```
            t1                         t2
@@ -102,7 +102,7 @@ objects deleted just before `t0` won't be collected until `t0 +
 Also, all CS nodes which run GC should be upgraded *first.* CS nodes
 which do not run GC should be upgraded later, to let leeway second
 system work properly. Or stop GC while upgrading whole cluster, by
-running `riak-cs-gc interval infinity` .
+running `riak-cs-admin gc set-interval infinity` .
 
 Multi data center cluster should be upgraded more carefully, as to
 make sure GC is not running while upgrading.
