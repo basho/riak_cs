@@ -2,23 +2,26 @@
 
 ## Additions
 
-* A new command `riak-cs-debug` which retrieves diagnosis info including `cluster-info` [riak_cs/#769](https://github.com/basho/riak_cs/pull/769), [riak_cs/#832](https://github.com/basho/riak_cs/pull/832)
+* A new command `riak-cs-debug` including `cluster-info` [riak_cs/#769](https://github.com/basho/riak_cs/pull/769), [riak_cs/#832](https://github.com/basho/riak_cs/pull/832)
 * Tie up all existing commands into a new command `riak-cs-admin` [riak_cs/#839](https://github.com/basho/riak_cs/pull/839)
-* Add a command `riak-cs-stanchion` to switch Stanchion IP and port manually [riak_cs/#657](https://github.com/basho/riak_cs/pull/657)
+* Add a command `riak-cs-admin stanchion` to switch Stanchion IP and port manually [riak_cs/#657](https://github.com/basho/riak_cs/pull/657)
 * Performance of garbage collection has been improved via Concurrent GC [riak_cs/#830](https://github.com/basho/riak_cs/pull/830)
 * Iterator refresh [riak_cs/#805](https://github.com/basho/riak_cs/pull/805)
-* fold_objects made default in Riak CS [riak_cs/#737](https://github.com/basho/riak_cs/pull/737), [riak_cs/#785](https://github.com/basho/riak_cs/pull/785)
-* Syslog support through lager_syslog [riak_cs/#617](https://github.com/basho/riak_cs/pull/617)
+* `fold_objects_for_list_keys` made default in Riak CS [riak_cs/#737](https://github.com/basho/riak_cs/pull/737), [riak_cs/#785](https://github.com/basho/riak_cs/pull/785)
 * Add support for Cache-Control header [riak_cs/#821](https://github.com/basho/riak_cs/pull/821)
 * Allow objects to be reaped sooner than leeway interval. [riak_cs/#470](https://github.com/basho/riak_cs/pull/470)
-* Add option to allow a delay for the initial GC collection [riak_cs/#688](https://github.com/basho/riak_cs/pull/688)
-* PUT Copy on both objects and upload parts as technical preview [riak_cs/#548](https://github.com/basho/riak_cs/pull/548)
+* PUT Copy on both objects and upload parts [riak_cs/#548](https://github.com/basho/riak_cs/pull/548)
 * Update to lager 2.0.3
 * Compiles with R16B0x (Releases still by R15B01)
 * Change default value of `gc_paginated_index` to `true` [riak_cs/#881](https://github.com/basho/riak_cs/issues/881)
+* Add new API: Delete Multiple Objects [riak_cs/#728](https://github.com/basho/riak_cs/pull/728)
+* Add warning logs for manifests, siblings, bytes and history [riak_cs/#915](https://github.com/basho/riak_cs/pull/915)
 
 ## Bugs Fixed
 
+* Align `ERL_MAX_PORTS` with Riak default: 64000 [riak_cs/#636](https://github.com/basho/riak_cs/pull/636)
+* Allow Riak CS admin resources to be used with OpenStack API [riak_cs/#666](https://github.com/basho/riak_cs/pull/666)
+* Fix path substitution code to fix Solaris source builds [riak_cs/#733](https://github.com/basho/riak_cs/pull/733)
 * `sanity_check(true,false)` logs invalid error on `riakc_pb_socket` error [riak_cs/#683](https://github.com/basho/riak_cs/pull/683)
 * Ignore Owner with an empty ID in AccessControlPolicy blob [riak_cs/#755](https://github.com/basho/riak_cs/pull/755)
 * Riak-CS-GC timestamp for scheduler is in the year 0043, not 2013. [riak_cs/#713](https://github.com/basho/riak_cs/pull/713) fixed by [riak_cs/#676](https://github.com/basho/riak_cs/pull/676)
@@ -26,17 +29,19 @@
 * Return HTTP 400 if content-md5 does not match [riak_cs/#596](https://github.com/basho/riak_cs/pull/596)
 * `/riak-cs/stats` and `admin_auth_enabled=false` don't work together correctly. [riak_cs/#719](https://github.com/basho/riak_cs/pull/719)
 * Storage calculation doesn't handle tombstones, nor handle undefined manifest.props [riak_cs/#849](https://github.com/basho/riak_cs/pull/849)
-* MP initiated objects remains after delete/create buckets #475 fixed by [riak_cs/#857](https://github.com/basho/riak_cs/pull/857) and [stanchon/#78](https://github.com/basho/stanchion/pull/78)
+* MP initiated objects remains after delete/create buckets #475 fixed by [riak_cs/#857](https://github.com/basho/riak_cs/pull/857) and [stanchion/#78](https://github.com/basho/stanchion/pull/78)
 * handling empty query string on list multipart upload [riak_cs/#843](https://github.com/basho/riak_cs/pull/843)
 * Setting ACLs via headers at PUT Object creation [riak_cs/#631](https://github.com/basho/riak_cs/pull/631)
 * Improve handling of poolboy timeouts during ping requests [riak_cs/#763](https://github.com/basho/riak_cs/pull/763)
 * Remove unnecessary log message on anonymous access [riak_cs/#876](https://github.com/basho/riak_cs/issues/876)
 * Fix inconsistent ETag on objects uploaded by multipart [riak_cs/#855](https://github.com/basho/riak_cs/issues/855)
 * Fix policy version validation in PUT Bucket Policy [riak_cs/#911](https://github.com/basho/riak_cs/issues/911)
+* Fix return code of several commands, to return 0 for success [riak_cs/#908](https://github.com/basho/riak_cs/issues/908)
+
 
 ## Notes on Upgrading
 
-### Unaborted or incomplete multipart uploads
+### Incomplete multipart uploads
 
 [riak_cs/#475](https://github.com/basho/riak_cs/issues/475) was a
 security issue where a newly created bucket may include unaborted or
@@ -100,7 +105,7 @@ which do not run GC should be upgraded later, to let leeway second
 system work properly. Or stop GC while upgrading whole cluster, by
 running `riak-cs-gc interval infinity` .
 
-Multi-datacenter cluster should be upgraded more carefully, as to
+Multi data center cluster should be upgraded more carefully, as to
 make sure GC is not running while upgrading.
 
 # Riak CS 1.4.5 Release Notes
