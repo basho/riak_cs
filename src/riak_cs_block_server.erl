@@ -314,11 +314,7 @@ handle_local_notfound(RcPid, FullBucket, FullKey, GetOptions2,
                 {ok, _} = Success ->
                     ProceedFun(Success);
                 {error, _} ->
-                    if UseProxyGet ->
-                            RetryFun(NumRetries + 1);
-                       true ->
-                            RetryFun(failure)
-                    end
+                    RetryFun(NumRetries + 1)
             end;
         {error, notfound} when UseProxyGet ->
             RetryFun(NumRetries + 1);
