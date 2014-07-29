@@ -298,13 +298,15 @@ try_local_get(RcPid, FullBucket, FullKey, GetOptions1, GetOptions2,
 handle_local_notfound(RcPid, FullBucket, FullKey, GetOptions2,
                       ProceedFun, RetryFun, NumRetries, UseProxyGet,
                       ProxyActive, ClusterID) ->
-    %%% SLF TODO fix timeout
+
     case get_block_local(RcPid, FullBucket, FullKey, GetOptions2, 60*1000) of
         {ok, _} = Success ->
             ProceedFun(Success);
-        {error, Why} when Why == notfound;
-                          Why == timeout;
-                          Why == disconnected ->
+        {error, Why} when Why == disconnected;
+                          Why == timeout ->
+            _ = lager:debug("get_block_local/5 failed: {error, ~p}", [Why]),
+            RetryFun(NumRetries + 1);
+        {error, notfound} ->
             case UseProxyGet of
                 true when ProxyActive ->
                     case get_block_remote(RcPid, FullBucket, FullKey,
