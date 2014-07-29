@@ -302,29 +302,29 @@ handle_local_notfound(RcPid, FullBucket, FullKey, GetOptions2,
     case get_block_local(RcPid, FullBucket, FullKey, GetOptions2, 60*1000) of
         {ok, _} = Success ->
             ProceedFun(Success);
+
         {error, Why} when Why == disconnected;
                           Why == timeout ->
             _ = lager:debug("get_block_local/5 failed: {error, ~p}", [Why]),
             RetryFun(NumRetries + 1);
-        {error, notfound} ->
-            case UseProxyGet of
-                true when ProxyActive ->
-                    case get_block_remote(RcPid, FullBucket, FullKey,
-                                          ClusterID, GetOptions2) of
-                        {ok, _} = Success ->
-                            ProceedFun(Success);
-                        {error, _} ->
-                            if UseProxyGet ->
-                                    RetryFun(NumRetries + 1);
-                                true ->
-                                    RetryFun(failure)
-                            end
-                    end;
-                true when not ProxyActive ->
-                    RetryFun(NumRetries + 1);
-                false ->
-                    RetryFun(failure)
+
+        {error, notfound} when UseProxyGet andalso ProxyActive->
+            case get_block_remote(RcPid, FullBucket, FullKey,
+                                  ClusterID, GetOptions2) of
+                {ok, _} = Success ->
+                    ProceedFun(Success);
+                {error, _} ->
+                    if UseProxyGet ->
+                            RetryFun(NumRetries + 1);
+                       true ->
+                            RetryFun(failure)
+                    end
             end;
+        {error, notfound} when UseProxyGet ->
+            RetryFun(NumRetries + 1);
+        {error, notfound} ->
+            RetryFun(failure);
+
         {error, Other} ->
             _ = lager:error("do_get_block: other error 2: ~p\n", [Other]),
             RetryFun(failure)
