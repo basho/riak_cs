@@ -107,6 +107,15 @@ running `riak-cs-admin gc set-interval infinity` .
 Multi data center cluster should be upgraded more carefully, as to
 make sure GC is not running while upgrading.
 
+## Known Issues and Limitations
+
+* If a client sends another request in the same connection while
+  waiting for copy finish, the copy also will be aborted.  This is a
+  side effect of client disconnect detection in case of object copy.
+  See [#932](https://github.com/basho/riak_cs/pull/932) for further
+  information.
+
+
 # Riak CS 1.4.5 Release Notes
 
 ## Bugs Fixed
