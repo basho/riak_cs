@@ -83,8 +83,8 @@ cleanup_orphan_multipart(Timestamp) when is_binary(Timestamp) ->
     _ = lager:info("cleaning up with timestamp ~s", [Timestamp]),
     _ = io:format("cleaning up with timestamp ~s", [Timestamp]),
     Fun = fun(RcPidForOneBucket, BucketName, GetResult, Acc0) ->
-                  _ = maybe_cleanup_csbucket(RcPidForOneBucket, BucketName,
-                                             GetResult, Timestamp),
+                  ok = maybe_cleanup_csbucket(RcPidForOneBucket, BucketName,
+                                              GetResult, Timestamp),
                   Acc0
           end,
     _ = riak_cs_bucket:fold_all_buckets(Fun, [], RcPid),
@@ -102,7 +102,7 @@ cleanup_orphan_multipart(Timestamp) when is_binary(Timestamp) ->
 -spec maybe_cleanup_csbucket(riak_client(),
                              binary(),
                              {ok, riakc_obj()}|{error, term()},
-                             binary()) -> ok.
+                             binary()) -> ok | {error, term()}.
 maybe_cleanup_csbucket(RcPidForOneBucket, BucketName, {ok, RiakObj}, Timestamp) ->
     case riakc_obj:get_values(RiakObj) of
         [?FREE_BUCKET_MARKER] ->
@@ -115,7 +115,8 @@ maybe_cleanup_csbucket(RcPidForOneBucket, BucketName, {ok, RiakObj}, Timestamp) 
                                           [Count]);
                 Error ->
                     lager:warning("Error in deleting old uploads: ~p~n", [Error]),
-                    io:format("Error in deleting old uploads: ~p <<< ~n", [Error])
+                    io:format("Error in deleting old uploads: ~p <<< ~n", [Error]),
+                    Error
             end;
 
         [<<>>] -> %% tombstone, can't happen
@@ -130,5 +131,6 @@ maybe_cleanup_csbucket(RcPidForOneBucket, BucketName, {ok, RiakObj}, Timestamp) 
 maybe_cleanup_csbucket(_, _, {error, notfound}, _) ->
     ok;
 maybe_cleanup_csbucket(_, BucketName, {error, _} = Error, _) ->
-    io:format("Error: ~p on processing ~s", [Error, BucketName]),
+    lager:error("~p on processing ~s", [Error, BucketName]),
+    io:format("Error: ~p on processing ~s\n", [Error, BucketName]),
     Error.

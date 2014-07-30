@@ -267,8 +267,12 @@ iterate_csbuckets(RcPid, Acc0, Fun, Cont0) ->
 iterate_csbuckets_fold_fun(FunForOneBucket) ->
     fun(BucketName, Acc) ->
             {ok, RcPidForOneBucket} = riak_cs_riak_client:start_link([]),
-            Res = riak_cs_riak_client:get_bucket(RcPidForOneBucket, BucketName),
-            FunForOneBucket(RcPidForOneBucket, BucketName, Res, Acc)
+            try
+                BucketRes = riak_cs_riak_client:get_bucket(RcPidForOneBucket, BucketName),
+                FunForOneBucket(RcPidForOneBucket, BucketName, BucketRes, Acc)
+            after
+                riak_cs_riak_client:stop(RcPidForOneBucket)
+            end
     end.
 
 %% @doc Return a user's buckets.
