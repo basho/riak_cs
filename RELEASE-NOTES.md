@@ -36,7 +36,7 @@
 * Fix inconsistent ETag on objects uploaded by multipart [riak_cs/#855](https://github.com/basho/riak_cs/issues/855)
 * Fix policy version validation in PUT Bucket Policy [riak_cs/#911](https://github.com/basho/riak_cs/issues/911)
 * Fix return code of several commands, to return 0 for success [riak_cs/#908](https://github.com/basho/riak_cs/issues/908)
-
+* Fix `{error, disconnected}` repainted with notfound [riak_cs/#929](https://github.com/basho/riak_cs/issues/929)
 
 ## Notes on Upgrading
 
@@ -57,9 +57,13 @@ the bucket with same name. This was fixed by:
 Note that a few operations are needed after upgrading from 1.4.x (or
 former) to 1.5.0.
 
-- run `riak_cs_console:cleanup_orphan_multipart/0` or
-  `riak_cs_console:cleanup_orphan_multipart/1` in an attached console
-  to cleanup all buckets
+- run `riak-cs-admin cleanup-orphan-multipart` to cleanup all
+  buckets. It would be safer to specify timestamp with ISO 8601 format
+  like `2014-07-30T11:09:30.000Z` as an argument. Then the cleaner
+  does not clean up multipart uploads newer than that timestamp. Some
+  corner cases can be prevented where multipart uploads conflicting
+  with bucket deletion and this cleanup.
+
 - there might be a time period until above cleanup finished, where no
   client can create bucket if unfinished multipart upload remains
   under deleted bucket. You can find [critical] log if such bucket
@@ -115,6 +119,10 @@ make sure GC is not running while upgrading.
   See [#932](https://github.com/basho/riak_cs/pull/932) for further
   information.
 
+* Copying objects in OOS interface is not implemented.
+
+* Multibag is added as Enterprise feature, but it is in early preview
+  status. It won't work well with a cluster with `proxy_get` setup.
 
 # Riak CS 1.4.5 Release Notes
 
