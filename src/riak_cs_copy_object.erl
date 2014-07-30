@@ -200,7 +200,7 @@ get_content_md5(MD5) ->
                  -> {ok, lfs_manifest()} | {error, term()}.
 get_and_put(GetPid, PutPid, MD5, ContFun) ->
     case ContFun() of
-        true -> 
+        true ->
             case riak_cs_get_fsm:get_next_chunk(GetPid) of
                 {done, <<>>} ->
                     riak_cs_get_fsm:stop(GetPid),
@@ -298,6 +298,7 @@ copy_range(RD, ?MANIFEST{content_length=Len}) ->
 
 %% @doc  nasty  hack,  do  not  use this  other  than  for  disconnect
 %% detection in copying objects.
+-spec connection_checker(inet:socket()) -> fun(() -> boolean()).
 connection_checker(Socket) ->
     fun() ->
             case inet:peername(Socket) of
