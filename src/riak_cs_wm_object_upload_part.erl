@@ -36,6 +36,7 @@
 
 -include("riak_cs.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
+-include_lib("webmachine/include/wm_reqstate.hrl").
 -include_lib("xmerl/include/xmerl.hrl").
 
 -spec init(#context{}) -> {ok, #context{}}.
@@ -411,7 +412,17 @@ maybe_copy_part(PutPid,
             Range = riak_cs_copy_object:copy_range(RD, SrcManifest),
             %% This ain't fail because all permission and 404
             %% possibility has been already checked.
-            case riak_cs_copy_object:copy(PutPid, SrcManifest, ReadRcPid, Range) of
+
+            %%Fd = (RD#wm_reqdata.wm_state)#wm_state.socket,
+            FDWatcher = fun() ->
+                                %%case inet:peername((RD#wm_reqdata.wm_state)#wm_reqstate.socket) of
+                                case inet:getfd((RD#wm_reqdata.wm_state)#wm_reqstate.socket) of
+                                    {ok, _} -> true;
+                                    {error, _} -> false
+                                end
+                        end,
+
+            case riak_cs_copy_object:copy(PutPid, SrcManifest, ReadRcPid, FDWatcher, Range) of
 
                 {ok, DstManifest} ->
                     case riak_cs_mp_utils:upload_part_finished(
