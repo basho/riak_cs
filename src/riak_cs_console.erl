@@ -70,9 +70,11 @@ cluster_info([OutFile]) ->
 %% cleaning up with timestamp 2014-05-11-....
 -spec cleanup_orphan_multipart() -> no_return().
 cleanup_orphan_multipart() ->
-    cleanup_orphan_multipart(riak_cs_wm_utils:iso_8601_datetime()).
+    cleanup_orphan_multipart([]).
 
 -spec cleanup_orphan_multipart(string()|binary()) -> no_return().
+cleanup_orphan_multipart([]) ->
+    cleanup_orphan_multipart(riak_cs_wm_utils:iso_8601_datetime());
 cleanup_orphan_multipart(Timestamp) when is_list(Timestamp) ->
     cleanup_orphan_multipart(list_to_binary(Timestamp));
 cleanup_orphan_multipart(Timestamp) when is_binary(Timestamp) ->
@@ -88,8 +90,8 @@ cleanup_orphan_multipart(Timestamp) when is_binary(Timestamp) ->
     _ = riak_cs_bucket:fold_all_buckets(Fun, [], RcPid),
 
     ok = riak_cs_riak_client:stop(RcPid),
-    _ = lager:info("All old unaborted orphan multipart uploads has deleted.", []),
-    _ = io:format("~nAll old unaborted orphan multipart uploads has deleted.~n", []).
+    _ = lager:info("All old unaborted orphan multipart uploads have been deleted.", []),
+    _ = io:format("~nAll old unaborted orphan multipart uploads have been deleted.~n", []).
 
 
 %%%===================================================================
