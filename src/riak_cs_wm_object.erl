@@ -379,16 +379,11 @@ handle_copy_put(RD, Ctx, SrcBucket, SrcKey) ->
                         {ok, PutFsmPid} = riak_cs_copy_object:start_put_fsm(Bucket, Key, SrcManifest,
                                                                             Metadata, NewAcl, RcPid),
 
+                        %% Prepare for connection loss or client close
+                        FDWatcher = riak_cs_copy_object:connection_checker((RD#wm_reqdata.wm_state)#wm_reqstate.socket),
+
                         %% This ain't fail because all permission and 404
                         %% possibility has been already checked.
-                        %Fd = (RD#wm_reqdata.wm_state)#wm_state.socket,
-                        FDWatcher = fun() ->
-                                            %%case inet:peername((RD#wm_reqdata.wm_state)#wm_reqstate.socket) of
-                                            case inet:getfd((RD#wm_reqdata.wm_state)#wm_reqstate.socket) of
-                                                {ok, _} -> true;
-                                                {error, _} -> false
-                                            end
-                                    end,
                         {ok, DstManifest} = riak_cs_copy_object:copy(PutFsmPid, SrcManifest, ReadRcPid, FDWatcher),
                         ETag = riak_cs_manifest:etag(DstManifest),
                         RD2 = wrq:set_resp_header("ETag", ETag, RD),

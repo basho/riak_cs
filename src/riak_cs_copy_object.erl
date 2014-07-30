@@ -31,6 +31,9 @@
          copy/4, copy/5,
          copy_range/2]).
 
+%% Do not use this
+-export([connection_checker/1]).
+
 -include_lib("webmachine/include/webmachine.hrl").
 
 %% @doc tests condition and permission on source object:
@@ -207,8 +210,10 @@ get_and_put(GetPid, PutPid, MD5, ContFun) ->
                     get_and_put(GetPid, PutPid, MD5, ContFun)
             end;
         false ->
-            riak_cs_get_fsm:stop(GetPid),
-            riak_cs_put_fsm:force_stop(PutPid)
+            _ = lager:debug("Connection lost during a copy", []),
+            catch riak_cs_get_fsm:stop(GetPid),
+            catch riak_cs_put_fsm:force_stop(PutPid),
+            {error, connection_lost}
     end.
 
 -spec start_get_fsm(lfs_manifest(), riak_client()) -> {ok, pid()}.
@@ -287,5 +292,26 @@ copy_range(RD, ?MANIFEST{content_length=Len}) ->
                 [{Start, End}|_]  -> {Start, End};
                 [] -> fail;
                 fail -> fail
+            end
+    end.
+
+
+%% @doc  nasty  hack,  do  not  use this  other  than  for  disconnect
+%% detection in copying objects.
+connection_checker(Socket) ->
+    fun() ->
+            case inet:peername(Socket) of
+                {error,_E} ->
+                    false;
+                {ok,_} ->
+                    case gen_tcp:recv(Socket, 1, 0) of
+                        {error, timeout} ->
+                            true;
+                        {error, _E} ->
+                            false;
+                        {ok, _} ->
+                            %% This cannot happen....
+                            throw(copy_interrupted)
+                    end
             end
     end.

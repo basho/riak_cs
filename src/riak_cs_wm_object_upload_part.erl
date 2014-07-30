@@ -410,18 +410,12 @@ maybe_copy_part(PutPid,
                             [SrcBucket, SrcKey, DstBucket, DstKey, ReadRcPid]),
 
             Range = riak_cs_copy_object:copy_range(RD, SrcManifest),
+
+            %% Prepare for connection loss or client close
+            FDWatcher = riak_cs_copy_object:connection_checker((RD#wm_reqdata.wm_state)#wm_reqstate.socket),
+
             %% This ain't fail because all permission and 404
             %% possibility has been already checked.
-
-            %%Fd = (RD#wm_reqdata.wm_state)#wm_state.socket,
-            FDWatcher = fun() ->
-                                %%case inet:peername((RD#wm_reqdata.wm_state)#wm_reqstate.socket) of
-                                case inet:getfd((RD#wm_reqdata.wm_state)#wm_reqstate.socket) of
-                                    {ok, _} -> true;
-                                    {error, _} -> false
-                                end
-                        end,
-
             case riak_cs_copy_object:copy(PutPid, SrcManifest, ReadRcPid, FDWatcher, Range) of
 
                 {ok, DstManifest} ->
