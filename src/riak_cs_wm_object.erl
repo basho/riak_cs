@@ -35,6 +35,7 @@
 
 -include("riak_cs.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
+-include_lib("webmachine/include/wm_reqstate.hrl").
 
 -spec init(#context{}) -> {ok, #context{}}.
 init(Ctx) ->
@@ -378,9 +379,12 @@ handle_copy_put(RD, Ctx, SrcBucket, SrcKey) ->
                         {ok, PutFsmPid} = riak_cs_copy_object:start_put_fsm(Bucket, Key, SrcManifest,
                                                                             Metadata, NewAcl, RcPid),
 
+                        %% Prepare for connection loss or client close
+                        FDWatcher = riak_cs_copy_object:connection_checker((RD#wm_reqdata.wm_state)#wm_reqstate.socket),
+
                         %% This ain't fail because all permission and 404
                         %% possibility has been already checked.
-                        {ok, DstManifest} = riak_cs_copy_object:copy(PutFsmPid, SrcManifest, ReadRcPid),
+                        {ok, DstManifest} = riak_cs_copy_object:copy(PutFsmPid, SrcManifest, ReadRcPid, FDWatcher),
                         ETag = riak_cs_manifest:etag(DstManifest),
                         RD2 = wrq:set_resp_header("ETag", ETag, RD),
                         ResponseMod:copy_object_response(DstManifest, RD2,
