@@ -59,8 +59,9 @@ former) to 1.5.0.
 
 - run `riak-cs-admin cleanup-orphan-multipart` to cleanup all
   buckets. It would be safer to specify timestamp with ISO 8601 format
-  like `2014-07-30T11:09:30.000Z` as an argument. Then the cleaner
-  does not clean up multipart uploads newer than that timestamp. Some
+  like `2014-07-30T11:09:30.000Z` as an argument. For example, in
+  which time all CS nodes upgrade has finished. Then the cleaner does
+  not clean up multipart uploads newer than that timestamp. Some
   corner cases can be prevented where multipart uploads conflicting
   with bucket deletion and this cleanup.
 
@@ -122,7 +123,8 @@ make sure GC is not running while upgrading.
 * Copying objects in OOS interface is not implemented.
 
 * Multibag is added as Enterprise feature, but it is in early preview
-  status. It won't work well with a cluster with `proxy_get` setup.
+  status. `proxy_get` setup among clusters multibag on is not
+  implemented yet.
 
 # Riak CS 1.4.5 Release Notes
 
