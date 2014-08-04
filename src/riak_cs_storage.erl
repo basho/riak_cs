@@ -44,7 +44,7 @@
 
 %% @doc Sum the number of bytes stored in active files in all of the
 %% given user's directories.  The result is a list of pairs of
-%% `{BucketName, Bytes}`.
+%% `{BucketName, Bytes}'.
 -spec sum_user(riak_client(), string()) -> {ok, [{string(), integer()}]}
                                  | {error, term()}.
 sum_user(RcPid, User) when is_binary(User) ->

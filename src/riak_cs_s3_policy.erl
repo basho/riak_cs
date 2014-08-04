@@ -690,6 +690,7 @@ parse_principals([{<<"AWS">>,<<"*">>}|TL], Principal) ->
 %% TODO: CanonicalUser as principal is not yet supported,
 %%  Because to use at Riak CS, key_id is better to specify user, because
 %%  getting canonical ID from Riak is not enough efficient
+%% ```
 %% parse_principals([{<<"CanonicalUser">>,CanonicalIds}|TL], Principal) ->
 %%     case CanonicalIds of
 %%         [H|_] when is_binary(H) ->
@@ -703,6 +704,7 @@ parse_principals([{<<"AWS">>,<<"*">>}|TL], Principal) ->
 %%             %% in case of just a string ["CAFEBABE..."]
 %%             parse_principals(TL, [{canonical_id, binary_to_list(CanonicalId)}|Principal])
 %%     end.
+%% '''
 
 print_principal('*') -> <<"*">>;
 print_principal({aws, '*'}) ->
@@ -831,9 +833,11 @@ parse_bool(MaybeBool) when is_binary(MaybeBool) ->
     end;
 parse_bool(_) -> {error, notbool}.
 
-% TODO: IPv6
-% <<"10.1.2.3/24">> -> {{10,1,2,3}, {255,255,255,0}}
-% "10.1.2.3/24 -> {{10,1,2,3}, {255,255,255,0}}
+%% TODO: IPv6
+%% ```
+%% <<"10.1.2.3/24">> -> {{10,1,2,3}, {255,255,255,0}}
+%% "10.1.2.3/24 -> {{10,1,2,3}, {255,255,255,0}}
+%% '''
 %% NOTE: Returns false on a bad ip
 -spec parse_ip(binary() | string()) -> {inet:ip_address(), inet:ip_address()} | {error, term()}.
 parse_ip(Bin) when is_binary(Bin) ->
