@@ -25,9 +25,9 @@
 -type wm_reqdata() :: tuple().
 -type wm_context() :: tuple().
 
-%% TODO: arguments of identify/2, and 3rd&4th arguments of
-%%       authenticate/4 are actually #wm_reqdata{} and #context{}
-%%       from webmachine, but can't compile after webmachine.hrl import.
+%% TODO: arguments of `identify/2', and 3rd and 4th arguments of
+%%       authenticate/4 are actually `#wm_reqdata{}' and `#context{}'
+%%       from webmachine, but can't compile after `webmachine.hrl' import.
 -callback identify(RD :: wm_reqdata(), Ctx :: wm_context()) ->
     failed | {string() | undefined, string() | tuple()} |
     {string(), undefined}.

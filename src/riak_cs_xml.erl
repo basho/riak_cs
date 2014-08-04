@@ -63,7 +63,7 @@
 %% @doc parse XML and produce xmlElement (other comments and else are bad)
 %% in R15B03 (and maybe later version), xmerl_scan:string/2 may return any
 %% xml nodes, such as defined as xmlNode() above. It it unsafe because
-%% `String` is the Body sent from client, which can be anything.
+%% `String' is the Body sent from client, which can be anything.
 -spec scan(string()) -> {ok, xmlElement()} | {error, malformed_xml}.
 scan(String) ->
     case catch xmerl_scan:string(String, [{space, normalize}]) of

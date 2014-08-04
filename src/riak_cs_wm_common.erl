@@ -571,7 +571,7 @@ default_produce_body(RD, Ctx=#context{submodule=Mod,
             ResponseMod:api_error(Reason, RD, Ctx)
     end.
 
-%% @doc this function will be called by `post_authenticate/2` if the user successfully
+%% @doc this function will be called by `post_authenticate/2' if the user successfully
 %% authenticates and the submodule does not provide an implementation
 %% of authorize/2. The default implementation does not perform any authorization
 %% and simply returns false to signify the request is not fobidden
