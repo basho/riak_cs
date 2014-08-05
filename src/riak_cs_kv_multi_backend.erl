@@ -20,6 +20,56 @@
 %%
 %% -------------------------------------------------------------------
 
+%% @doc riak_kv_multi_backend allows you to run multiple backends within a
+%% single Riak instance. The 'backend' property of a bucket specifies
+%% the backend in which the object should be stored. If no 'backend'
+%% is specified, then the 'multi_backend_default' setting is used.
+%% If this is unset, then the first defined backend is used.
+%%
+%% If the 'multi_backend_prefix_list' list is defined and is non-empty,
+%% that list determines bucket name prefixes -> backend names.  (Default
+%% value = empty list.)  For example:
+%%
+%% ```
+%%     {multi_backend_prefix_list, [{<<"c">>, be_1}, {<<"p">>, be_2}]},
+%% '''
+%%
+%% ... would use the backend named 'be_1' for all buckets that begin
+%% with the prefix "c" and use the backend named 'be_2' for all
+%% backends that begin with the prefix "p".
+%%
+%% NOTE: The 'multi_backend_prefix_list' is checked *prior* to
+%%       checking the bucket-specific configuration in Core's ring.
+%%       (By definition, bucket-specific configuration must match the
+%%       entire bucket name.)
+%%
+%% === Configuration ===
+%%
+%% ```
+%%     {storage_backend, riak_kv_multi_backend},
+%%     {multi_backend_default, first_backend},
+%%     %% format for PrefixTuples: {<<"bucket_prefix_string">>, backend_name}
+%%     {multi_backend_prefix_list, [PrefixTuples]},
+%%     {multi_backend, [
+%%       % format: {name, module, [Configs]}
+%%       {first_backend, riak_xxx_backend, [
+%%         {config1, ConfigValue1},
+%%         {config2, ConfigValue2}
+%%       ]},
+%%       {second_backend, riak_yyy_backend, [
+%%         {config1, ConfigValue1},
+%%         {config2, ConfigValue2}
+%%       ]}
+%%     ]}
+%% '''
+%%
+%%
+%% Then, tell a bucket which one to use...
+%%
+%%     `riak_core_bucket:set_bucket(&lt;&lt;"MY_BUCKET"&gt;&gt;, [{backend, second_backend}])'
+%%
+%%
+
 -module (riak_cs_kv_multi_backend).
 %% -behavior(riak_kv_backend). % Not building within riak_kv
 
@@ -60,52 +110,6 @@
 
 -type state() :: #state{}.
 -type config() :: [{atom(), term()}].
-
-%% @doc riak_kv_multi_backend allows you to run multiple backends within a
-%% single Riak instance. The 'backend' property of a bucket specifies
-%% the backend in which the object should be stored. If no 'backend'
-%% is specified, then the 'multi_backend_default' setting is used.
-%% If this is unset, then the first defined backend is used.
-%%
-%% If the 'multi_backend_prefix_list' list is defined and is non-empty,
-%% that list determines bucket name prefixes -> backend names.  (Default
-%% value = empty list.)  For example:
-%%
-%%     {multi_backend_prefix_list, [{<<"c">>, be_1}, {<<"p">>, be_2}]},
-%%
-%% ... would use the backend named 'be_1' for all buckets that begin
-%% with the prefix "c" and use the backend named 'be_2' for all
-%% backends that begin with the prefix "p".
-%%
-%% NOTE: The 'multi_backend_prefix_list' is checked *prior* to
-%%       checking the bucket-specific configuration in Core's ring.
-%%       (By definition, bucket-specific configuration must match the
-%%       entire bucket name.)
-%%
-%% === Configuration ===
-%%
-%%     {storage_backend, riak_kv_multi_backend},
-%%     {multi_backend_default, first_backend},
-%%     %% format for PrefixTuples: {<<"bucket_prefix_string">>, backend_name}
-%%     {multi_backend_prefix_list, [PrefixTuples]},
-%%     {multi_backend, [
-%%       % format: {name, module, [Configs]}
-%%       {first_backend, riak_xxx_backend, [
-%%         {config1, ConfigValue1},
-%%         {config2, ConfigValue2}
-%%       ]},
-%%       {second_backend, riak_yyy_backend, [
-%%         {config1, ConfigValue1},
-%%         {config2, ConfigValue2}
-%%       ]}
-%%     ]}
-%%
-%%
-%% Then, tell a bucket which one to use...
-%%
-%%     riak_core_bucket:set_bucket(&lt;&lt;"MY_BUCKET"&gt;&gt;, [{backend, second_backend}])
-%%
-%%
 
 %% ===================================================================
 %% Public API
@@ -600,7 +604,7 @@ error_filter(_) ->
     false.
 
 %% @private
-%% @edoc Check sanity of the BPrefixList against the backends we've started.
+%% @doc Check sanity of the BPrefixList against the backends we've started.
 bprefix_sanity_check(Backends, BPrefixList) ->
     BackendNames = [Name || {Name, _Mod, _St} <- Backends],
     MyNames = [Name || {_BPrefix, Name} <- BPrefixList],
@@ -612,7 +616,7 @@ bprefix_sanity_check(Backends, BPrefixList) ->
     end.
 
 %% @private
-%% @edoc Check BucketName against a list of prefixes
+%% @doc Check BucketName against a list of prefixes
 match_bucket_prefix(_Bucket, []) ->
     undefined;
 %% match_bucket_prefix(Bucket, [{Prefix, _Name}|BPrefixList])
@@ -714,7 +718,6 @@ backend_can_index_reformat(Mod, ModState) ->
 
 %% -ifdef(EQC).
 
-%% @private
 %% eqc_test_() ->
 %%     {spawn,
 %%      [{inorder,

@@ -354,15 +354,19 @@ maybe_process_resolved(Object, ResolvedManifestsHandler, ErrorReturn) ->
 reduce_keys_and_manifests(Acc, _) ->
     Acc.
 
--spec sha_mac(iolist() | binary(), iolist() | binary()) -> binary().
--spec sha(binary()) -> binary().
 
 -ifdef(new_hash).
+-spec sha_mac(iolist() | binary(), iolist() | binary()) -> binary().
 sha_mac(Key,STS) -> crypto:hmac(sha, Key,STS).
+
+-spec sha(binary()) -> binary().
 sha(Bin) -> crypto:hash(sha, Bin).
 
 -else.
+-spec sha_mac(iolist() | binary(), iolist() | binary()) -> binary().
 sha_mac(Key,STS) -> crypto:sha_mac(Key,STS).
+
+-spec sha(binary()) -> binary().
 sha(Bin) -> crypto:sha(Bin).
 
 -endif.
@@ -377,29 +381,28 @@ md5(List) when is_list(List) ->
 
 -ifdef(new_hash).
 -spec md5_init() -> crypto_context().
--spec md5_update(crypto_context(), binary()) -> crypto_context().
--spec md5_final(crypto_context()) -> digest().
-
 md5_init() -> crypto:hash_init(md5).
 
+-spec md5_update(crypto_context(), binary()) -> crypto_context().
 md5_update(Ctx, Bin) when size(Bin) =< ?MAX_UPDATE_SIZE ->
     crypto:hash_update(Ctx, Bin);
 md5_update(Ctx, <<Part:?MAX_UPDATE_SIZE/binary, Rest/binary>>) ->
     md5_update(crypto:hash_update(Ctx, Part), Rest).
+
+-spec md5_final(crypto_context()) -> digest().
 md5_final(Ctx) -> crypto:hash_final(Ctx).
 
 -else.
 -spec md5_init() -> binary().
--spec md5_update(binary(), binary()) -> binary().
--spec md5_final(binary()) -> digest().
-
 md5_init() -> crypto:md5_init().
 
+-spec md5_update(binary(), binary()) -> binary().
 md5_update(Ctx, Bin) when size(Bin) =< ?MAX_UPDATE_SIZE ->
     crypto:md5_update(Ctx, Bin);
 md5_update(Ctx, <<Part:?MAX_UPDATE_SIZE/binary, Rest/binary>>) ->
     md5_update(crypto:md5_update(Ctx, Part), Rest).
 
+-spec md5_final(binary()) -> digest().
 md5_final(Ctx) -> crypto:md5_final(Ctx).
 -endif.
 

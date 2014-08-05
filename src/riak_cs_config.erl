@@ -159,7 +159,7 @@ policy_module() ->
     get_env(riak_cs, policy_module, ?DEFAULT_POLICY_MODULE).
 
 %% @doc paginated 2i is supported after Riak 1.4
-%% When using Riak CS >= 1.5 with Riak =< 1.3 (it rarely happens)
+%% When using Riak CS `>= 1.5' with Riak `=< 1.3' (it rarely happens)
 %% this should be set as false at app.config.
 -spec gc_paginated_indexes() -> atom().
 gc_paginated_indexes() ->
