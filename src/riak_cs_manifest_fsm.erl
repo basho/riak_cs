@@ -172,9 +172,15 @@ waiting_command({add_new_dict, WrappedManifest},
                 State=#state{riak_client=RcPid,
                              bucket=Bucket,
                              key=Key}) ->
-    {_, RiakObj, Manifests} = get_and_update(RcPid, WrappedManifest, Bucket, Key),
-    UpdState = State#state{riak_object=RiakObj, manifests=Manifests},
-    {next_state, waiting_update_command, UpdState}.
+    case get_and_update(RcPid, WrappedManifest, Bucket, Key) of
+        {ok, RiakObj, Manifests} ->
+            UpdState = State#state{riak_object=RiakObj, manifests=Manifests},
+            {next_state, waiting_update_command, UpdState};
+        {Res, _RiakObj, _Manifests} ->
+            lager:warning("Error in get_and_update: ~p~n", [Res]),
+            %% TODO: How to error report? Add flag to state and report after?
+            {next_state, waiting_update_command, State}
+    end.
 
 waiting_update_command({update_manifests, WrappedManifests},
                        State=#state{riak_client=RcPid,
