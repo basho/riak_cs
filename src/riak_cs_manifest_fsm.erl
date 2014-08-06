@@ -299,6 +299,17 @@ get_and_delete(RcPid, UUID, Bucket, Key) ->
     end.
 
 get_and_update(RcPid, WrappedManifests, Bucket, Key) ->
+    MaxRetries = riak_cs_config:get_env(riak_cs, manifest_update_max_retries, 5),
+    get_and_update(RcPid, WrappedManifests, Bucket, Key, MaxRetries, 0).
+
+get_and_update(_RcPid, _WrappedManifests, _Bucket, _Key, MaxRetries, Retries)
+  when MaxRetries < Retries ->
+    {{error, retry_exceeded}, undefined, undefined};
+get_and_update(RcPid, WrappedManifests, Bucket, Key, MaxRetries, Retries) ->
+    case Retries of
+        0 -> ok;
+        _ -> sleep_retries(Retries)
+    end,
     %% retrieve the current (resolved) value at {Bucket, Key},
     %% add the new manifest, and then write the value
     %% back to Riak
@@ -307,27 +318,28 @@ get_and_update(RcPid, WrappedManifests, Bucket, Key) ->
     %% dict
     case riak_cs_manifest:get_manifests(RcPid, Bucket, Key) of
         {ok, RiakObject, Manifests} ->
-            NewManiAdded = riak_cs_manifest_resolution:resolve([WrappedManifests, Manifests]),
-            %% Update the object here so that if there are any
-            %% overwritten UUIDs, then gc_specific_manifests() will
-            %% operate on NewManiAdded and save it to Riak when it is
-            %% finished.
-            ObjectToWrite0 = riak_cs_utils:update_obj_value(
-                               RiakObject, riak_cs_utils:encode_term(NewManiAdded)),
-            ObjectToWrite = update_md_with_multipart_2i(
-                              ObjectToWrite0, NewManiAdded, Bucket, Key),
-            {Result, NewRiakObject} =
-              case riak_cs_manifest_utils:overwritten_UUIDs(NewManiAdded) of
-                [] ->
-                    riak_cs_pbc:put(manifest_pbc(RcPid), ObjectToWrite, [return_body]);
-                OverwrittenUUIDs ->
-                    riak_cs_gc:gc_specific_manifests(OverwrittenUUIDs,
-                                                     ObjectToWrite,
-                                                     Bucket, Key,
-                                                     RcPid)
-            end,
-            UpdatedManifests = riak_cs_manifest:manifests_from_riak_object(NewRiakObject),
-            {Result, NewRiakObject, UpdatedManifests};
+            Siblings = riakc_obj:value_count(RiakObject),
+            SuppressionThreshold = riak_cs_config:get_env(
+                                     riak_cs, manifest_siblings_suppress, 5),
+            case Siblings of
+                _ when SuppressionThreshold =< Siblings ->
+                    %% If we had retried ALWAYS when #(siblings) was above threashold,
+                    %% no resolution would happen once threashold was exceeded.
+                    %% To give chance for sibling resolusion, update will go ahead
+                    %% with small ratio even threashold is exceeded.
+                    %% The let-through ratio is 1/10 = 10 percent.
+                    case crypto:rand_uniform(0, 10) of
+                        0 ->
+                            lager:debug("You are LUCKY! Go ahead! Retries=~p, Siblings=~p", [Retries, Siblings]),
+                            update(RcPid, Manifests, RiakObject, WrappedManifests, Bucket, Key);
+                        _ ->
+                            %% TODO: Need some stats to detect/monitor retries
+                            lager:debug("SORRY, please retry. Retries=~p, Siblings=~p", [Retries, Siblings]),
+                            get_and_update(RcPid, WrappedManifests, Bucket, Key, MaxRetries, Retries + 1)
+                    end;
+                _ ->
+                    update(RcPid, Manifests, RiakObject, WrappedManifests, Bucket, Key)
+            end;
         {error, notfound} ->
             ManifestBucket = riak_cs_utils:to_bucket_name(objects, Bucket),
             ObjectToWrite0 = riakc_obj:new(ManifestBucket, Key, riak_cs_utils:encode_term(WrappedManifests)),
@@ -336,6 +348,47 @@ get_and_update(RcPid, WrappedManifests, Bucket, Key) ->
             PutResult = riak_cs_pbc:put(manifest_pbc(RcPid), ObjectToWrite),
             {PutResult, undefined, undefined}
     end.
+
+%% Sleep some interval according to the retry number.
+%% Concurrent requests for the same key from clients trigger manifest
+%% sibling explosion. Bring in some randomness so that retries of
+%% concurrent requests will not fire conincidently.
+-spec sleep_retries(non_neg_integer()) -> ok.
+sleep_retries(N) ->
+    %% TODO: Need penalty for many siblings (e.g. over 2*SuppressionThreshold)
+    MeanSleepMS = num_retries_to_sleep_millis(N),
+    Delta = MeanSleepMS div 2,
+    timer:sleep(crypto:rand_uniform(MeanSleepMS - Delta, MeanSleepMS + Delta)).
+
+% 0 sec for first try, and 1, 2, 4, 8,... seconds for subsequent retries.
+-spec num_retries_to_sleep_millis(non_neg_integer()) -> non_neg_integer().
+num_retries_to_sleep_millis(0) ->
+    0;
+num_retries_to_sleep_millis(N) ->
+    500 * riak_cs_utils:pow(2, N).
+
+update(RcPid, OldManifests, OldRiakObject, WrappedManifests, Bucket, Key) ->
+    NewManiAdded = riak_cs_manifest_resolution:resolve([WrappedManifests, OldManifests]),
+    %% Update the object here so that if there are any
+    %% overwritten UUIDs, then gc_specific_manifests() will
+    %% operate on NewManiAdded and save it to Riak when it is
+    %% finished.
+    ObjectToWrite0 = riak_cs_utils:update_obj_value(
+                       OldRiakObject, riak_cs_utils:encode_term(NewManiAdded)),
+    ObjectToWrite = update_md_with_multipart_2i(
+                      ObjectToWrite0, NewManiAdded, Bucket, Key),
+    {Result, NewRiakObject} =
+        case riak_cs_manifest_utils:overwritten_UUIDs(NewManiAdded) of
+            [] ->
+                riak_cs_pbc:put(manifest_pbc(RcPid), ObjectToWrite, [return_body]);
+            OverwrittenUUIDs ->
+                riak_cs_gc:gc_specific_manifests(OverwrittenUUIDs,
+                                                 ObjectToWrite,
+                                                 Bucket, Key,
+                                                 RcPid)
+        end,
+    UpdatedManifests = riak_cs_manifest:manifests_from_riak_object(NewRiakObject),
+    {Result, NewRiakObject, UpdatedManifests}.
 
 manifest_pbc(RcPid) ->
     {ok, ManifestPbc} = riak_cs_riak_client:manifest_pbc(RcPid),
