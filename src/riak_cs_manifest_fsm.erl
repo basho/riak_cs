@@ -299,35 +299,15 @@ get_and_delete(RcPid, UUID, Bucket, Key) ->
     end.
 
 get_and_update(RcPid, WrappedManifests, Bucket, Key) ->
-    %% retrieve the current (resolved) value at {Bucket, Key},
-    %% add the new manifest, and then write the value
-    %% back to Riak
-    %% NOTE: it would also be nice to assert that the
-    %% UUID being added doesn't already exist in the
-    %% dict
     case riak_cs_manifest:get_manifests(RcPid, Bucket, Key) of
         {ok, RiakObject, Manifests} ->
-            NewManiAdded = riak_cs_manifest_resolution:resolve([WrappedManifests, Manifests]),
-            %% Update the object here so that if there are any
-            %% overwritten UUIDs, then gc_specific_manifests() will
-            %% operate on NewManiAdded and save it to Riak when it is
-            %% finished.
-            ObjectToWrite0 = riak_cs_utils:update_obj_value(
-                               RiakObject, riak_cs_utils:encode_term(NewManiAdded)),
-            ObjectToWrite = update_md_with_multipart_2i(
-                              ObjectToWrite0, NewManiAdded, Bucket, Key),
-            {Result, NewRiakObject} =
-              case riak_cs_manifest_utils:overwritten_UUIDs(NewManiAdded) of
-                [] ->
-                    riak_cs_pbc:put(manifest_pbc(RcPid), ObjectToWrite, [return_body]);
-                OverwrittenUUIDs ->
-                    riak_cs_gc:gc_specific_manifests(OverwrittenUUIDs,
-                                                     ObjectToWrite,
-                                                     Bucket, Key,
-                                                     RcPid)
-            end,
-            UpdatedManifests = riak_cs_manifest:manifests_from_riak_object(NewRiakObject),
-            {Result, NewRiakObject, UpdatedManifests};
+            case update(RcPid, Manifests, RiakObject, WrappedManifests, Bucket, Key) of
+                {ok, _, _} = Res ->
+                    maybe_backpressure_sleep(riakc_obj:value_count(RiakObject)),
+                    Res;
+                OtherRes ->
+                    OtherRes
+            end;
         {error, notfound} ->
             ManifestBucket = riak_cs_utils:to_bucket_name(objects, Bucket),
             ObjectToWrite0 = riakc_obj:new(ManifestBucket, Key, riak_cs_utils:encode_term(WrappedManifests)),
@@ -336,6 +316,47 @@ get_and_update(RcPid, WrappedManifests, Bucket, Key) ->
             PutResult = riak_cs_pbc:put(manifest_pbc(RcPid), ObjectToWrite),
             {PutResult, undefined, undefined}
     end.
+
+maybe_backpressure_sleep(Siblings) ->
+    BackpressureThreshold = riak_cs_config:get_env(
+                              riak_cs, manifest_siblings_bp_threashold, 5),
+    maybe_backpressure_sleep(Siblings, BackpressureThreshold).
+
+maybe_backpressure_sleep(Siblings, BackpressureThreshold)
+  when Siblings < BackpressureThreshold ->
+    ok;
+maybe_backpressure_sleep(Siblings, _BackpressureThreshold) ->
+    MaxSleep = riak_cs_config:get_env(riak_cs, manifest_siblings_bp_max_sleep, 10*1000),
+    Coefficient = riak_cs_config:get_env(riak_cs, manifest_siblings_bp_coefficient, 200),
+    MeanSleepMS = min(Coefficient * Siblings, MaxSleep),
+    Delta = MeanSleepMS div 2,
+    SleepMS = crypto:rand_uniform(MeanSleepMS - Delta, MeanSleepMS + Delta),
+    lager:debug("maybe_backpressure_sleep: Siblings=~p, SleepMS=~p~n", [Siblings, SleepMS]),
+    ok = riak_cs_stats:update(manifest_siblings_bp_sleep, SleepMS * 1000),
+    timer:sleep(SleepMS).
+
+update(RcPid, OldManifests, OldRiakObject, WrappedManifests, Bucket, Key) ->
+    NewManiAdded = riak_cs_manifest_resolution:resolve([WrappedManifests, OldManifests]),
+    %% Update the object here so that if there are any
+    %% overwritten UUIDs, then gc_specific_manifests() will
+    %% operate on NewManiAdded and save it to Riak when it is
+    %% finished.
+    ObjectToWrite0 = riak_cs_utils:update_obj_value(
+                       OldRiakObject, riak_cs_utils:encode_term(NewManiAdded)),
+    ObjectToWrite = update_md_with_multipart_2i(
+                      ObjectToWrite0, NewManiAdded, Bucket, Key),
+    {Result, NewRiakObject} =
+        case riak_cs_manifest_utils:overwritten_UUIDs(NewManiAdded) of
+            [] ->
+                riak_cs_pbc:put(manifest_pbc(RcPid), ObjectToWrite, [return_body]);
+            OverwrittenUUIDs ->
+                riak_cs_gc:gc_specific_manifests(OverwrittenUUIDs,
+                                                 ObjectToWrite,
+                                                 Bucket, Key,
+                                                 RcPid)
+        end,
+    UpdatedManifests = riak_cs_manifest:manifests_from_riak_object(NewRiakObject),
+    {Result, NewRiakObject, UpdatedManifests}.
 
 manifest_pbc(RcPid) ->
     {ok, ManifestPbc} = riak_cs_riak_client:manifest_pbc(RcPid),
