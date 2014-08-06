@@ -40,6 +40,13 @@
 
 ## Notes on Upgrading
 
+### Riak Version
+
+This release of Riak CS was tested with Riak 1.4.10. Be sure to
+consult the
+[Compatibility Matrix](http://docs.basho.com/riakcs/latest/cookbooks/Version-Compatibility/)
+to ensure that you are using the correct version.
+
 ### Incomplete multipart uploads
 
 [riak_cs/#475](https://github.com/basho/riak_cs/issues/475) was a
@@ -58,16 +65,18 @@ Note that a few operations are needed after upgrading from 1.4.x (or
 former) to 1.5.0.
 
 - run `riak-cs-admin cleanup-orphan-multipart` to cleanup all
-  buckets. It would be safer to specify timestamp with ISO 8601 format
-  like `2014-07-30T11:09:30.000Z` as an argument. For example, in
-  which time all CS nodes upgrade has finished. Then the cleaner does
-  not clean up multipart uploads newer than that timestamp. Some
-  corner cases can be prevented where multipart uploads conflicting
-  with bucket deletion and this cleanup.
+  buckets. To avoid some corner cases where multipart uploads can
+  conflict with bucket deletion, this command can also be run with a
+  timestamp with ISO 8601 format such as `2014-07-30T11:09:30.000Z` as
+  an argument. When this argument is provided, the cleanup operation
+  will not clean up multipart uploads that are newer than the provided
+  timestamp. If used, this should be set to a time when you expect
+  your upgrade to be completed.
 
 - there might be a time period until above cleanup finished, where no
   client can create bucket if unfinished multipart upload remains
-  under deleted bucket. You can find [critical] log if such bucket
+  under deleted bucket. You can find [critical] log (`"Multipart
+  upload remains in deleted bucket <bucketname>"`) if such bucket
   creation is attempted.
 
 ### Leeway seconds and disk space
@@ -77,7 +86,7 @@ behaviour of object deletion and garbage collection. The timestamps in
 garbage collection bucket were changed from the future time when the
 object is to be deleted, to the current time when the object is
 deleted, Garbage collector was also changed to collect objects until
-'now - leeway seconds', from collecting objects until 'now' previously.
+'now - leeway seconds', from collecting objects until 'now'.
 
 Before (-1.4.x):
 
@@ -99,32 +108,34 @@ After (1.5.0-):
            in GC bucket               marked as "t2 - leeway"
 ```
 
-This leads that there exists a period where no objects are collected
-right after upgrade to 1.5.0, say, `t0`, until `t0 + leeway` . And
-objects deleted just before `t0` won't be collected until `t0 +
-2*leeway` .
+This means that there will be a period where no objects are collected
+immediately following an upgrade to 1.5.0. If your cluster is upgraded
+at `t0`, no objects will be cleaned up until `t0 + leeway` . Objects
+deleted just before `t0` won't be collected until `t0 + 2*leeway` .
 
 Also, all CS nodes which run GC should be upgraded *first.* CS nodes
-which do not run GC should be upgraded later, to let leeway second
-system work properly. Or stop GC while upgrading whole cluster, by
-running `riak-cs-admin gc set-interval infinity` .
+which do not run GC should be upgraded later, to ensure the leeway
+setting is intiated properly. Alternatively, you may stop GC while
+upgrading, by running `riak-cs-admin gc set-interval infinity` .
 
 Multi data center cluster should be upgraded more carefully, as to
 make sure GC is not running while upgrading.
 
 ## Known Issues and Limitations
 
-* If a client sends another request in the same connection while
-  waiting for copy finish, the copy also will be aborted.  This is a
-  side effect of client disconnect detection in case of object copy.
-  See [#932](https://github.com/basho/riak_cs/pull/932) for further
-  information.
+* If a second client request is made using the same connection while a
+  copy operation is in progress, the copy will be aborted. This is a
+  side effect of the way Riak CS currently handles client disconnect
+  detection. See [#932](https://github.com/basho/riak_cs/pull/932) for
+  further information.
 
-* Copying objects in OOS interface is not implemented.
+* Copying objects in OOS interface is not yet implemented.
 
-* Multibag is added as Enterprise feature, but it is in early preview
-  status. `proxy_get` setup among clusters multibag on is not
-  implemented yet.
+* Multibag, the ability to store object manifests and blocks in
+  separate clusters or groups of clusters, has been added as
+  Enterprise feature, but it is in early preview status. `proxy_get`
+  has not yet been implemented for this preview feature.  Multibag is
+  intended for single DC only at this time.
 
 # Riak CS 1.4.5 Release Notes
 
