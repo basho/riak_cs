@@ -42,7 +42,7 @@
 
 ### Riak Version
 
-ここリリースは Riak 1.4.10 上でテストされました。
+このリリースは Riak 1.4.10 上でテストされました。
 [互換性マトリクス](http://docs.basho.com/riakcs/latest/cookbooks/Version-Compatibility/)
 を参考に、正しいバージョンを使用していることを確認してください。
 
