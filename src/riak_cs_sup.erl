@@ -96,6 +96,22 @@ process_specs() ->
                  permanent, 5000, worker, dynamic},
     DiagsSup = {riak_cs_diags, {riak_cs_diags, start_link, []},
                    permanent, 5000, worker, dynamic},
+    %% The user record cache is not ~1KB, with optimization it'll be 300B
+    %% If million users had exist that'll be just ~1GB
+    %% to turn this on, set user_cache_enabled=true
+    UserKeyEtsCache = {'moss.users.cache',
+                       {riak_cs_record_cache, start_link,
+                        ['moss.users.cache', fun riak_cs_user:get_user/2]},
+                       permanent, 5000, worker, dynamic},
+    %% The bucket cache might be also <1KB if the acl is small,
+    %% If million users had exist then 1KB * 100 * 1M ~100GB
+    %% TODO: that's why we'll need capped cache in future
+    %% or just leave this as default: off.
+    %% turn it on by bucket_cache_enabled=true in app.config.
+    BucketKeyEtsCache = {'moss.buckets.cache',
+                         {riak_cs_record_cache, start_link,
+                          ['moss.buckets.cache', fun riak_cs_bucket:fetch_bucket_object/2]},
+                         permanent, 5000, worker, dynamic},
     BagProcessSpecs ++
         [Archiver,
          Storage,
@@ -105,7 +121,9 @@ process_specs() ->
          DeleteFsmSup,
          GetFsmSup,
          PutFsmSup,
-         DiagsSup].
+         DiagsSup,
+         UserKeyEtsCache,
+         BucketKeyEtsCache].
 
 -spec get_option_val({atom(), term()} | atom()) -> {atom(), term()}.
 get_option_val({Option, Default}) ->

@@ -233,7 +233,7 @@ validate_auth_header(RD, AuthBypass, RcPid, Ctx) ->
         _ ->
             {AuthMod, KeyId, Signature} = parse_auth_header(AuthHeader, AuthBypass)
     end,
-    case riak_cs_user:get_user(KeyId, RcPid) of
+    case riak_cs_user:maybe_cached_get_user(KeyId, RcPid) of
         {ok, {User, UserObj}} when User?RCS_USER.status =:= enabled ->
             case AuthMod:authenticate(User, Signature, RD, Ctx) of
                 ok ->
@@ -263,7 +263,7 @@ validate_auth_header(RD, AuthBypass, RcPid, Ctx) ->
 -spec ensure_doc(term(), riak_client()) -> term().
 ensure_doc(KeyCtx=#key_context{bucket_object=undefined,
                                bucket=Bucket}, RcPid) ->
-    case riak_cs_bucket:fetch_bucket_object(Bucket, RcPid) of
+    case riak_cs_bucket:maybe_cache_fetch_bucket_object(Bucket, RcPid) of
         {ok, Obj} ->
             setup_manifest(KeyCtx#key_context{bucket_object = Obj}, RcPid);
         {error, Reason} when Reason =:= notfound orelse Reason =:= no_such_bucket ->
@@ -323,7 +323,7 @@ deny_invalid_key(RD, Ctx=#context{response_module=ResponseMod}) ->
                             {boolean(), #wm_reqdata{}, #context{}}.
 shift_to_owner(RD, Ctx=#context{response_module=ResponseMod}, OwnerId, RcPid)
   when RcPid /= undefined ->
-    case riak_cs_user:get_user(OwnerId, RcPid) of
+    case riak_cs_user:maybe_cached_get_user(OwnerId, RcPid) of
         {ok, {Owner, OwnerObject}} when Owner?RCS_USER.status =:= enabled ->
             AccessRD = riak_cs_access_log_handler:set_user(Owner, RD),
             {false, AccessRD, Ctx#context{user=Owner,
@@ -454,7 +454,7 @@ bucket_obj_from_local_context(#key_context{bucket_object=BucketObject},
                               _BucketName, _RcPid) ->
     {ok, BucketObject};
 bucket_obj_from_local_context(undefined, BucketName, RcPid) ->
-    case riak_cs_bucket:fetch_bucket_object(BucketName, RcPid) of
+    case riak_cs_bucket:maybe_cache_fetch_bucket_object(BucketName, RcPid) of
         {error, notfound} ->
             {ok, undefined};
         {error, no_such_bucket} ->
@@ -727,7 +727,7 @@ handle_policy_eval_result(User, _, _, RD, Ctx) ->
     AccessRD = riak_cs_access_log_handler:set_user(User, RD),
     %% Check if the bucket actually exists so we can
     %% make the correct decision to return a 404 or 403
-    case riak_cs_bucket:fetch_bucket_object(Bucket, RcPid) of
+    case riak_cs_bucket:maybe_cache_fetch_bucket_object(Bucket, RcPid) of
         {ok, _} ->
             riak_cs_wm_utils:deny_access(AccessRD, Ctx);
         {error, Reason} ->
