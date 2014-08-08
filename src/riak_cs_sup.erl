@@ -96,6 +96,8 @@ process_specs() ->
                  permanent, 5000, worker, dynamic},
     DiagsSup = {riak_cs_diags, {riak_cs_diags, start_link, []},
                    permanent, 5000, worker, dynamic},
+    UserKeyEtsCache = {riak_cs_user_ets_cache, {riak_cs_user_ets_cache, start_link, []},
+                       permanent, 5000, worker, dynamic},
     BagProcessSpecs ++
         [Archiver,
          Storage,
@@ -105,7 +107,8 @@ process_specs() ->
          DeleteFsmSup,
          GetFsmSup,
          PutFsmSup,
-         DiagsSup].
+         DiagsSup,
+         UserKeyEtsCache].
 
 -spec get_option_val({atom(), term()} | atom()) -> {atom(), term()}.
 get_option_val({Option, Default}) ->
