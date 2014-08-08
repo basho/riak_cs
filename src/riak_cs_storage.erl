@@ -50,7 +50,7 @@
 sum_user(RcPid, User) when is_binary(User) ->
     sum_user(RcPid, binary_to_list(User));
 sum_user(RcPid, User) when is_list(User) ->
-    case riak_cs_utils:get_user(User, RcPid) of
+    case riak_cs_user:get_user(User, RcPid) of
         {ok, {?RCS_USER{buckets=Buckets}, _UserObj}} ->
             BucketUsages = [maybe_sum_bucket(User, B) || B <- Buckets],
             {ok, BucketUsages};

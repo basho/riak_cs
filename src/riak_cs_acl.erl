@@ -309,7 +309,7 @@ owner_id(?ACL{owner=Owner}, _) ->
     OwnerId;
 owner_id(#acl_v1{owner=OwnerData}, RcPid) ->
     {Name, CanonicalId} = OwnerData,
-    case riak_cs_utils:get_user_by_index(?ID_INDEX,
+    case riak_cs_user:get_user_by_index(?ID_INDEX,
                                            list_to_binary(CanonicalId),
                                            RcPid) of
         {ok, {Owner, _}} ->

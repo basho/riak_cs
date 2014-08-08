@@ -203,7 +203,7 @@ malformed_request(RD, Ctx) ->
     end.
 
 resource_exists(RD, #ctx{riak_client=RcPid}=Ctx) ->
-    case riak_cs_utils:get_user(user_key(RD), RcPid) of
+    case riak_cs_user:get_user(user_key(RD), RcPid) of
         {ok, {User, _UserObj}} ->
             {true, RD, Ctx#ctx{user=User}};
         {error, _} ->
