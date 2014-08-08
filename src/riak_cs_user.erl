@@ -31,6 +31,7 @@
          get_user/2,
          get_user_by_index/3,
          get_user_index/3,
+         to_3tuple/1,
          save_user/3,
          update_key_secret/1,
          update_user/3
@@ -190,6 +191,12 @@ get_user_index(Index, Value, RcPid) ->
 -spec is_admin(rcs_user()) -> boolean().
 is_admin(User) ->
     is_admin(User, riak_cs_config:admin_creds()).
+
+-spec to_3tuple(rcs_user()) -> tuple().
+to_3tuple(U) ->
+    %% acl_owner3: {display name, canonical id, key id}
+    {U?RCS_USER.display_name, U?RCS_USER.canonical_id,
+     U?RCS_USER.key_id}.
 
 %% @doc Save information about a Riak CS user
 -spec save_user(rcs_user(), riakc_obj:riakc_obj(), riak_client()) -> ok | {error, term()}.

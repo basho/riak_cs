@@ -64,7 +64,7 @@ allowed_methods() ->
 to_xml(RD, Ctx=#context{local_context=LocalCtx,
                         riak_client=RcPid}) ->
     #key_context{bucket=Bucket} = LocalCtx,
-    User = riak_cs_mp_utils:user_rec_to_3tuple(Ctx#context.user),
+    User = riak_cs_user:to_3tuple(Ctx#context.user),
     Opts = make_list_mp_uploads_opts(RD),
     case riak_cs_mp_utils:list_multipart_uploads(Bucket, User, Opts, RcPid) of
         {ok, {Ds, Commons}} ->
