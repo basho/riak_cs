@@ -448,7 +448,7 @@ owner_grant({Name, CanonicalId, _}) ->
 -spec canonical_for_email(string(), riak_client()) -> {ok, string()} |
     {error, unresolved_grant_email} .
 canonical_for_email(Email, RcPid) ->
-    case riak_cs_utils:get_user_by_index(?EMAIL_INDEX,
+    case riak_cs_user:get_user_by_index(?EMAIL_INDEX,
                                          list_to_binary(Email),
                                          RcPid) of
         {ok, {User, _}} ->
@@ -463,7 +463,7 @@ canonical_for_email(Email, RcPid) ->
 -spec name_for_canonical(string(), riak_client()) -> {ok, string()} |
     {error, 'invalid_argument'}.
 name_for_canonical(CanonicalId, RcPid) ->
-    case riak_cs_utils:get_user_by_index(?ID_INDEX,
+    case riak_cs_user:get_user_by_index(?ID_INDEX,
                                          list_to_binary(CanonicalId),
                                          RcPid) of
         {ok, {User, _}} ->

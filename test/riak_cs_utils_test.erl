@@ -71,7 +71,7 @@ riak_cs_utils_test_() ->
 name_matches() ->
     Name = "fooser",
     Email = "fooser@fooser.com",
-    {ok, User} = riak_cs_utils:create_user(Name, Email),
+    {ok, User} = riak_cs_user:create_user(Name, Email),
     {"name matches test",
      fun() ->
              [
@@ -88,10 +88,10 @@ bucket_appears() ->
     Name = "fooser",
     Email = "fooser@fooser.com",
     BucketName = "fooser-bucket",
-    {ok, User} = riak_cs_utils:create_user(Name, Email),
+    {ok, User} = riak_cs_user:create_user(Name, Email),
     KeyID = User?RCS_USER.key_id,
     riak_cs_bucket:create_bucket(KeyID, BucketName),
-    {ok, UserAfter} = riak_cs_utils:get_user(KeyID),
+    {ok, UserAfter} = riak_cs_user:get_user(KeyID),
     AfterBucketNames = [B#moss_bucket.name ||
                            B <- riak_cs_bucket:get_buckets(UserAfter)],
     {"bucket appears test",
@@ -115,7 +115,7 @@ key_appears() ->
     Email = "fooser@fooser.com",
     BucketName = "key_appears",
     KeyName = "testkey",
-    {ok, User} = riak_cs_utils:create_user(Name, Email),
+    {ok, User} = riak_cs_user:create_user(Name, Email),
     KeyID = User?RCS_USER.key_id,
     ok = riak_cs_bucket:create_bucket(KeyID, BucketName),
     riak_cs_utils:put_object(BucketName, KeyName,
@@ -140,7 +140,7 @@ content_type_sticks() ->
     KeyName = "testkey",
     CType = "x-foo/bar",
     Metadata = dict:from_list([{<<"content-type">>, CType}]),
-    {ok, User} = riak_cs_utils:create_user(Name, Email),
+    {ok, User} = riak_cs_user:create_user(Name, Email),
     KeyID = User?RCS_USER.key_id,
     ok = riak_cs_bucket:create_bucket(KeyID, BucketName),
     riak_cs_utils:put_object(BucketName, KeyName,
@@ -163,7 +163,7 @@ keys_are_sorted() ->
     BucketName = "keys_are_sorted",
     Keys = [<<"dog">>, <<"zebra">>, <<"aardvark">>, <<01>>, <<"panda">>],
 
-    {ok, User} = riak_cs_utils:create_user(Name, Email),
+    {ok, User} = riak_cs_user:create_user(Name, Email),
     KeyID = User?RCS_USER.key_id,
     ok = riak_cs_bucket:create_bucket(KeyID, BucketName),
 

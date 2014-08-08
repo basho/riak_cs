@@ -148,7 +148,7 @@ users_doc(UserDocs, json, Boundary) ->
 %% @doc Return a fold function to retrieve and filter user accounts
 user_fold_fun(RcPid, Status) ->
     fun(UserId, Users) ->
-            case riak_cs_utils:get_user(binary_to_list(UserId), RcPid) of
+            case riak_cs_user:get_user(binary_to_list(UserId), RcPid) of
                 {ok, {User, _}} when User?RCS_USER.status =:= Status;
                                      Status =:= undefined ->
                     [User | Users];
