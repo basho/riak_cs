@@ -56,7 +56,6 @@
          upload_part/6, upload_part/7,
          upload_part_1blob/2,
          upload_part_finished/7, upload_part_finished/8,
-         user_rec_to_3tuple/1,
          is_multipart_manifest/1
         ]).
 -export([get_mp_manifest/1]).
@@ -293,11 +292,6 @@ upload_part_finished(Bucket, Key, UploadId, _PartNumber, PartUUID, MD5,
     Extra = {PartUUID, MD5},
     do_part_common(upload_part_finished, Bucket, Key, UploadId,
                    Caller, [{upload_part_finished, Extra}], RcPidUnW).
-
-user_rec_to_3tuple(U) ->
-    %% acl_owner3: {display name, canonical id, key id}
-    {U?RCS_USER.display_name, U?RCS_USER.canonical_id,
-     U?RCS_USER.key_id}.
 
 write_new_manifest(M, Opts, RcPidUnW) ->
     MpM = get_mp_manifest(M),
