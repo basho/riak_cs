@@ -100,7 +100,7 @@ RUNNER_BASE_DIR={{runner_base_dir}}
 cs_base_dir={{runner_base_dir}}
 cs_bin_dir={{runner_script_dir}}
 cs_etc_dir={{runner_etc_dir}}
-cs_log_dir="$cs_base_dir"/{{platform_log_dir}}
+cs_log_dir={{runner_log_dir}}
 
 get_cfgs=0
 get_logs=0
@@ -440,7 +440,7 @@ if [ 1 -eq $get_logs ]; then
             fi
 
             lager_file="`echo $lager_path | awk -F/ '{print $NF}'`"
-            lager_dir="`echo $lager_path | awk -F/$lager_file '{print $1}'`"
+            lager_dir="`echo $lager_path | awk -F/$lager_file '{print $1}'|sed 's|/./|/|'`"
             if [ "$cs_log_dir" != "$lager_dir" ]; then
                 if [ -n "`find "${lager_dir}" -maxdepth 1 -name "${lager_file}*" -print -quit`" ]; then
                     mkdir_or_die "${start_dir}"/"${debug_dir}"/logs/lager_"${lager_num}"
