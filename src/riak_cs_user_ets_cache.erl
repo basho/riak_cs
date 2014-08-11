@@ -19,7 +19,7 @@
 
 -include("riak_cs.hrl").
 -define(SERVER, ?MODULE).
--define(TTL, 1024000). %% microseconds
+-define(TTL, 4096000). %% microseconds
 -define(COMPACTION_INTERVAL, 1024000). %% milliseconds
 
 -record(state, {}).
