@@ -386,6 +386,10 @@ if [ 1 -eq $get_riakcmds ]; then
     dump riak_cs_version "$cs_bin_dir"/riak-cs version
     dump riak_cs_gc_status "$cs_bin_dir"/riak-cs-admin gc status
     dump riak_cs_storage_status "$cs_bin_dir"/riak-cs-admin storage status
+    if [ -f "$cs_bin_dir/riak-cs-multibag" ]; then
+      dump riak_cs_multibag_list_bags "$cs_bin_dir"/riak-cs-multibag list-bags
+      dump riak_cs_multibag_weight "$cs_bin_dir"/riak-cs-multibag weight
+    fi
 
     CI=`pwd`/cluster-info.html
     touch $CI
