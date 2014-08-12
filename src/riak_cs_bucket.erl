@@ -64,11 +64,13 @@ create_bucket(User, UserObj, Bucket, BagId, ACL, RcPid) ->
 
     %% Do not attempt to create bucket if the user already owns it
     AttemptCreate = riak_cs_config:disable_local_bucket_check() orelse
-        not (bucket_exists(CurrentBuckets, binary_to_list(Bucket))
-             and length(CurrentBuckets) < riak_cs_config:max_buckets_per_user()),
+        not bucket_exists(CurrentBuckets, binary_to_list(Bucket)),
     case AttemptCreate of
         true ->
+            BucketLimit = riak_cs_config:max_buckets_per_user(),
             case valid_bucket_name(Bucket) of
+                true when length(CurrentBuckets) >= BucketLimit ->
+                    {error, {toomanybuckets, length(CurrentBuckets), BucketLimit}};
                 true ->
                     serialized_bucket_op(Bucket,
                                          BagId,
