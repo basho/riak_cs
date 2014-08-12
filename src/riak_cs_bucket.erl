@@ -407,23 +407,30 @@ bucket_empty_any_pred(RcPid, Bucket) ->
 -spec fetch_bucket_object(binary(), riak_client()) ->
                                  {ok, riakc_obj:riakc_obj()} | {error, term()}.
 fetch_bucket_object(BucketName, RcPid) ->
-    case fetch_bucket_object_raw(BucketName, RcPid) of
-        {ok, Obj} ->
-            [Value | _] = riakc_obj:get_values(Obj),
-            case Value of
-                ?FREE_BUCKET_MARKER ->
-                    {error, no_such_bucket};
-                _ ->
-                    {ok, Obj}
+    case riak_cs_config:is_single_user_mode() of
+        false ->
+            case fetch_bucket_object_from_riak(BucketName, RcPid) of
+                {ok, Obj} ->
+                    [Value | _] = riakc_obj:get_values(Obj),
+                    case Value of
+                        ?FREE_BUCKET_MARKER ->
+                            {error, no_such_bucket};
+                        _ ->
+                            {ok, Obj}
+                    end;
+                {error, _}=Error ->
+                    Error
             end;
-        {error, _}=Error ->
-            Error
+        true ->
+            {ok, {Key, _Secret}} = riak_cs_config:admin_creds(),
+            Obj = riakc_obj:new(?BUCKETS_BUCKET, BucketName, list_to_binary(Key)),
+            {ok, Obj}
     end.
 
 %% @doc Fetches the bucket object, even it is marked as free
--spec fetch_bucket_object_raw(binary(), riak_client()) ->
-                                 {ok, riakc_obj:riakc_obj()} | {error, term()}.
-fetch_bucket_object_raw(BucketName, RcPid) ->
+-spec fetch_bucket_object_from_riak(binary(), riak_client()) ->
+                                           {ok, riakc_obj:riakc_obj()} | {error, term()}.
+fetch_bucket_object_from_riak(BucketName, RcPid) ->
     case riak_cs_riak_client:get_bucket(RcPid, BucketName) of
         {ok, Obj} ->
             Values = riakc_obj:get_values(Obj),

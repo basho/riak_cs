@@ -26,6 +26,8 @@
          api/0,
          auth_bypass/0,
          admin_auth_enabled/0,
+         is_single_user_mode/0,
+         single_users_buckets/0,
          auth_module/0,
          cluster_id/1,
          cs_version/0,
@@ -134,6 +136,23 @@ admin_auth_enabled() ->
 -spec auth_module() -> atom().
 auth_module() ->
     get_env(riak_cs, auth_module, ?DEFAULT_AUTH_MODULE).
+
+%% @doc Single user mode is a special mode, where small-object access
+%%  is dominant and querying to moss.users or moss.buckets could be
+%%  bottleneck. In single user mode, no user creation,
+%%  enabling/disabling and bucket creation, deletion, modification is
+%%  permitted. Even ACL cannot be set. Just authorization. Thus in
+%%  single user mode, Stanchion is not required.
+-spec is_single_user_mode() -> boolean().
+is_single_user_mode() ->
+    get_env(riak_cs, single_mode, false).
+
+%% @doc In single user mode, there are no buckets by default. Buckets
+%% should by created by specifying their name at all Riak CS's
+%% `app.config'.
+-spec single_users_buckets() -> [string()].
+single_users_buckets() ->
+    get_env(riak_cs, single_users_buckets, []).
 
 -spec disable_local_bucket_check() -> boolean().
 disable_local_bucket_check() ->

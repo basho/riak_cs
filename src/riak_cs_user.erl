@@ -131,30 +131,11 @@ update_user(User, UserObj, RcPid) ->
 get_user(undefined, _RcPid) ->
     {error, no_user_key};
 get_user(KeyId, RcPid) ->
-    %% Check for and resolve siblings to get a
-    %% coherent view of the bucket ownership.
-    BinKey = list_to_binary(KeyId),
-    case riak_cs_riak_client:get_user(RcPid, BinKey) of
-        {ok, {Obj, KeepDeletedBuckets}} ->
-            case riakc_obj:value_count(Obj) of
-                1 ->
-                    Value = binary_to_term(riakc_obj:get_value(Obj)),
-                    User = update_user_record(Value),
-                    Buckets = riak_cs_bucket:resolve_buckets([Value], [], KeepDeletedBuckets),
-                    {ok, {User?RCS_USER{buckets=Buckets}, Obj}};
-                0 ->
-                    {error, no_value};
-                _ ->
-                    Values = [binary_to_term(Value) ||
-                                 Value <- riakc_obj:get_values(Obj),
-                                 Value /= <<>>  % tombstone
-                             ],
-                    User = update_user_record(hd(Values)),
-                    Buckets = riak_cs_bucket:resolve_buckets(Values, [], KeepDeletedBuckets),
-                    {ok, {User?RCS_USER{buckets=Buckets}, Obj}}
-            end;
-        Error ->
-            Error
+    case riak_cs_config:is_single_user_mode() of
+        false ->
+            get_user_from_riak(KeyId, RcPid);
+        true ->
+            get_user_from_config(KeyId)
     end.
 
 %% @doc Retrieve a Riak CS user's information based on their
@@ -201,7 +182,13 @@ to_3tuple(U) ->
 %% @doc Save information about a Riak CS user
 -spec save_user(rcs_user(), riakc_obj:riakc_obj(), riak_client()) -> ok | {error, term()}.
 save_user(User, UserObj, RcPid) ->
-    riak_cs_riak_client:save_user(RcPid, User, UserObj).
+    case riak_cs_config:is_single_user_mode() of
+        false ->
+            riak_cs_riak_client:save_user(RcPid, User, UserObj);
+        true ->
+            _ = lager:error("Single user mode doesn't permit saving users."),
+            {error, single_user_mode}
+    end.
 
 
 %% @doc Generate a new `key_secret' for a user record.
@@ -220,6 +207,53 @@ display_name(Email) ->
 %% ===================================================================
 %% Internal functions
 %% ===================================================================
+
+-spec get_user_from_riak(string(), riak_client()) -> {ok, {rcs_user(), riakc_obj:riakc_obj()}} | {error, term()}.
+get_user_from_riak(KeyId, RcPid) ->
+    %% Check for and resolve siblings to get a
+    %% coherent view of the bucket ownership.
+    BinKey = list_to_binary(KeyId),
+    case riak_cs_riak_client:get_user(RcPid, BinKey) of
+        {ok, {Obj, KeepDeletedBuckets}} ->
+            case riakc_obj:value_count(Obj) of
+                1 ->
+                    Value = binary_to_term(riakc_obj:get_value(Obj)),
+                    User = update_user_record(Value),
+                    Buckets = riak_cs_bucket:resolve_buckets([Value], [], KeepDeletedBuckets),
+                    {ok, {User?RCS_USER{buckets=Buckets}, Obj}};
+                0 ->
+                    {error, no_value};
+                _ ->
+                    Values = [binary_to_term(Value) ||
+                                 Value <- riakc_obj:get_values(Obj),
+                                 Value /= <<>>  % tombstone
+                             ],
+                    User = update_user_record(hd(Values)),
+                    Buckets = riak_cs_bucket:resolve_buckets(Values, [], KeepDeletedBuckets),
+                    {ok, {User?RCS_USER{buckets=Buckets}, Obj}}
+            end;
+        Error ->
+            Error
+    end.
+
+-spec get_user_from_config(string()) -> {ok, {rcs_user(), riakc_obj:riakc_obj()}} | {error, term()}.
+get_user_from_config(KeyId) ->
+    BucketNames = riak_cs_config:single_users_buckets(),
+    Buckets = [?RCS_BUCKET{name=BucketName,
+                           last_action=created,
+                           creation_date="1970-01-01T00:00:00.000Z",
+                           modification_time={0,0,0}}
+               || BucketName <- BucketNames],
+    case riak_cs_config:admin_creds() of
+        {ok, {KeyId, Secret}} ->
+            User = user_record("admin", "admin@example.com", KeyId, Secret, Buckets),
+            RiakcObj = riakc_obj:new(?USER_BUCKET, list_to_binary(KeyId),
+                                     term_to_binary(User)),
+            {ok, {User, RiakcObj}};
+        _E ->
+            _ = lager:debug("bad admin creds or bad key id: ~p", [_E]),
+            {error, no_user_key}
+    end.
 
 %% @doc Generate a new set of access credentials for user.
 -spec generate_access_creds(string()) -> {iodata(), iodata()}.
@@ -315,4 +349,3 @@ user_record(Name, Email, KeyId, Secret, CanonicalId, Buckets) ->
               key_secret=Secret,
               canonical_id=CanonicalId,
               buckets=Buckets}.
-
