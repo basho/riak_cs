@@ -167,7 +167,7 @@ block_sort_fun(SafeBlockSize) ->
             PartBlocks = initial_blocks(PartManifest?PART_MANIFEST.content_length,
                                         SafeBlockSize,
                                         PartManifest?PART_MANIFEST.part_id),
-            lists:usort(Parts ++ PartBlocks)
+            lists:usort(PartBlocks ++ Parts)
     end.
 
 block_sequences_for_part_manifests_skip(SafeBlockSize, [PM | Rest],
