@@ -145,7 +145,7 @@ auth_module() ->
 %%  single user mode, Stanchion is not required.
 -spec is_single_user_mode() -> boolean().
 is_single_user_mode() ->
-    get_env(riak_cs, single_mode, false).
+    get_env(riak_cs, single_user_mode, false).
 
 %% @doc In single user mode, there are no buckets by default. Buckets
 %% should by created by specifying their name at all Riak CS's

@@ -423,6 +423,7 @@ fetch_bucket_object(BucketName, RcPid) ->
             end;
         true ->
             {ok, {Key, _Secret}} = riak_cs_config:admin_creds(),
+            %% This object is just dummy; can't mimic true Riak object.
             Obj = riakc_obj:new(?BUCKETS_BUCKET, BucketName, list_to_binary(Key)),
             {ok, Obj}
     end.
