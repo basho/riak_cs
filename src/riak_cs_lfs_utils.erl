@@ -109,10 +109,14 @@ initial_blocks(ContentLength, BlockSize) ->
     UpperBound = block_count(ContentLength, BlockSize),
     lists:seq(0, (UpperBound - 1)).
 
+-spec initial_blocks(integer(), integer(), binary()) ->
+                            [{binary(), integer()}].
 initial_blocks(ContentLength, SafeBlockSize, UUID) ->
     Bs = initial_blocks(ContentLength, SafeBlockSize),
     [{UUID, B} || B <- Bs].
 
+-spec range_blocks(integer(), integer(), integer(), binary()) ->
+                            {[{binary(), integer()}], integer(), integer()}.
 range_blocks(Start, End, SafeBlockSize, UUID) ->
     SkipInitial = Start rem SafeBlockSize,
     KeepFinal = (End rem SafeBlockSize) + 1,
@@ -122,6 +126,8 @@ range_blocks(Start, End, SafeBlockSize, UUID) ->
     {[{UUID, B} || B <- lists:seq(Start div SafeBlockSize, End div SafeBlockSize)],
      SkipInitial, KeepFinal}.
 
+-spec block_sequences_for_manifest(lfs_manifest()) ->
+                                          ordsets:ordset({binary(), integer()}).
 block_sequences_for_manifest(?MANIFEST{props=undefined}=Manifest) ->
     block_sequences_for_manifest(Manifest?MANIFEST{props=[]});
 block_sequences_for_manifest(?MANIFEST{uuid=UUID,
@@ -129,15 +135,16 @@ block_sequences_for_manifest(?MANIFEST{uuid=UUID,
     SafeBlockSize = safe_block_size_from_manifest(Manifest),
     case riak_cs_mp_utils:get_mp_manifest(Manifest) of
         undefined ->
-            initial_blocks(ContentLength, SafeBlockSize, UUID);
+            ordsets:from_list(
+              initial_blocks(ContentLength, SafeBlockSize, UUID));
         MpM ->
             PartManifests = MpM?MULTIPART_MANIFEST.parts,
-            lists:append([initial_blocks(PM?PART_MANIFEST.content_length,
-                                         SafeBlockSize,
-                                         PM?PART_MANIFEST.part_id) ||
-                             PM <- PartManifests])
+            ordsets:from_list(
+              lists:foldl(block_sort_fun(SafeBlockSize), [], PartManifests))
     end.
 
+-spec block_sequences_for_manifest(lfs_manifest(), {integer(), integer()}) ->
+                                          {[{binary(), integer()}], integer(), integer()}.
 block_sequences_for_manifest(?MANIFEST{props=undefined}=Manifest, {Start, End}) ->
     block_sequences_for_manifest(Manifest?MANIFEST{props=[]}, {Start, End});
 block_sequences_for_manifest(?MANIFEST{uuid=UUID}=Manifest,
@@ -150,6 +157,17 @@ block_sequences_for_manifest(?MANIFEST{uuid=UUID}=Manifest,
             PartManifests = MpM?MULTIPART_MANIFEST.parts,
             block_sequences_for_part_manifests_skip(SafeBlockSize, PartManifests,
                                                     Start, End)
+    end.
+
+
+-type block_sort_fun() :: fun((part_manifest(), list(part_manifest())) -> list(part_manifest())).
+-spec block_sort_fun(pos_integer()) -> block_sort_fun().
+block_sort_fun(SafeBlockSize) ->
+    fun(PartManifest, Parts) ->
+            PartBlocks = initial_blocks(PartManifest?PART_MANIFEST.content_length,
+                                        SafeBlockSize,
+                                        PartManifest?PART_MANIFEST.part_id),
+            lists:usort(PartBlocks ++ Parts)
     end.
 
 block_sequences_for_part_manifests_skip(SafeBlockSize, [PM | Rest],

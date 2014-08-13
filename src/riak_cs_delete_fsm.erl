@@ -244,13 +244,16 @@ manifest_cleanup(_, _, _, _, _) ->
 blocks_to_delete_from_manifest(Manifest=?MANIFEST{state=State,
                                                   delete_blocks_remaining=undefined})
   when State =:= pending_delete;State =:= writing; State =:= scheduled_delete ->
-    case riak_cs_lfs_utils:block_sequences_for_manifest(Manifest) of
-        []=Blocks ->
-            UpdManifest = Manifest?MANIFEST{delete_blocks_remaining=[],
-                                            state=deleted};
-        Blocks ->
-            UpdManifest = Manifest?MANIFEST{delete_blocks_remaining=Blocks}
-    end,
+    {UpdState, Blocks} =
+        case riak_cs_lfs_utils:block_sequences_for_manifest(Manifest) of
+            [] ->
+                {deleted, ordsets:new()};
+            BlockSequence ->
+                {State, BlockSequence}
+
+        end,
+    UpdManifest = Manifest?MANIFEST{delete_blocks_remaining=Blocks,
+                                    state=UpdState},
     {UpdManifest, Blocks};
 blocks_to_delete_from_manifest(Manifest) ->
     {Manifest,
