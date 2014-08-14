@@ -88,7 +88,7 @@ post_is_create(RD, Ctx) ->
 
 process_post(RD, Ctx=#context{local_context=LocalCtx, riak_client=RcPid}) ->
     #key_context{bucket=Bucket, key=Key} = LocalCtx,
-    User = riak_cs_mp_utils:user_rec_to_3tuple(Ctx#context.user),
+    User = riak_cs_user:to_3tuple(Ctx#context.user),
     UploadId64 = re:replace(wrq:path(RD), ".*/uploads/", "", [{return, binary}]),
     Body = binary_to_list(wrq:req_body(RD)),
     case {parse_body(Body), catch base64url:decode(UploadId64)} of
@@ -157,7 +157,7 @@ delete_resource(RD, Ctx=#context{local_context=LocalCtx,
         UploadId ->
             #key_context{bucket=Bucket, key=KeyStr} = LocalCtx,
             Key = list_to_binary(KeyStr),
-            User = riak_cs_mp_utils:user_rec_to_3tuple(Ctx#context.user),
+            User = riak_cs_user:to_3tuple(Ctx#context.user),
             case riak_cs_mp_utils:abort_multipart_upload(Bucket, Key, UploadId,
                                                          User, RcPid) of
                 ok ->
@@ -214,7 +214,7 @@ accept_body(RD, Ctx0=#context{local_context=LocalCtx0,
                  get_fsm_pid=GetFsmPid} = LocalCtx0,
     catch riak_cs_get_fsm:stop(GetFsmPid),
     BlockSize = riak_cs_lfs_utils:block_size(),
-    Caller = riak_cs_mp_utils:user_rec_to_3tuple(Ctx0#context.user),
+    Caller = riak_cs_user:to_3tuple(Ctx0#context.user),
 
     DstKey = list_to_binary(Key),
 
@@ -312,7 +312,7 @@ to_xml(RD, Ctx=#context{local_context=LocalCtx,
     UploadId = base64url:decode(re:replace(wrq:path(RD), ".*/uploads/",
                                            "", [{return, binary}])),
     {UserDisplay, _Canon, UserKeyId} = User =
-        riak_cs_mp_utils:user_rec_to_3tuple(Ctx#context.user),
+        riak_cs_user:to_3tuple(Ctx#context.user),
     case riak_cs_mp_utils:list_parts(Bucket, Key, UploadId, User, [], RcPid) of
         {ok, Ps} ->
             Us = [{'Part',
@@ -366,7 +366,7 @@ finalize_request(RD, Ctx=#context{local_context=LocalCtx,
                  upload_id=UploadId,
                  part_number=PartNumber,
                  part_uuid=PartUUID} = LocalCtx,
-    Caller = riak_cs_mp_utils:user_rec_to_3tuple(Ctx#context.user),
+    Caller = riak_cs_user:to_3tuple(Ctx#context.user),
     ContentMD5 = wrq:get_req_header("content-md5", RD),
     case riak_cs_put_fsm:finalize(PutPid, ContentMD5) of
         {ok, M} ->
@@ -400,7 +400,7 @@ maybe_copy_part(PutPid,
     #key_context{upload_id=UploadId,
                  part_number=PartNumber,
                  part_uuid=PartUUID} = LocalCtx,
-    Caller = riak_cs_mp_utils:user_rec_to_3tuple(User),
+    Caller = riak_cs_user:to_3tuple(User),
 
     case riak_cs_copy_object:test_condition_and_permission(ReadRcPid, SrcManifest, RD, Ctx) of
         {false, _, _} ->

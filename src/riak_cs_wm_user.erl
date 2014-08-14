@@ -116,7 +116,7 @@ accept_json(RD, Ctx=#context{user=undefined}) ->
         riak_cs_json:value_or_default(
           riak_cs_json:get(Body, [{<<"name">>, <<"email">>}]),
           {<<>>, <<>>}),
-    user_response(riak_cs_utils:create_user(binary_to_list(UserName),
+    user_response(riak_cs_user:create_user(binary_to_list(UserName),
                                                 binary_to_list(Email)),
                       ?JSON_TYPE,
                       RD,
@@ -149,7 +149,7 @@ accept_xml(RD, Ctx=#context{user=undefined}) ->
                                      ParsedData#xmlElement.content),
             UserName = proplists:get_value(name, ValidItems, ""),
             Email= proplists:get_value(email, ValidItems, ""),
-            user_response(riak_cs_utils:create_user(UserName, Email),
+            user_response(riak_cs_user:create_user(UserName, Email),
                           ?XML_TYPE,
                           RD,
                           Ctx)
@@ -224,9 +224,9 @@ forbidden(_, RD, Ctx, undefined, UserPathKey, true) ->
     get_user({false, RD, Ctx}, UserPathKey);
 forbidden('POST', RD, Ctx, User, [], _) ->
     %% Admin is creating a new user
-    admin_check(riak_cs_utils:is_admin(User), RD, Ctx);
+    admin_check(riak_cs_user:is_admin(User), RD, Ctx);
 forbidden('PUT', RD, Ctx, User, [], _) ->
-    admin_check(riak_cs_utils:is_admin(User), RD, Ctx);
+    admin_check(riak_cs_user:is_admin(User), RD, Ctx);
 forbidden(_Method, RD, Ctx, User, UserPathKey, _) when
       UserPathKey =:= User?RCS_USER.key_id;
       UserPathKey =:= [] ->
@@ -234,14 +234,14 @@ forbidden(_Method, RD, Ctx, User, UserPathKey, _) when
     AccessRD = riak_cs_access_log_handler:set_user(User, RD),
     {false, AccessRD, Ctx};
 forbidden(_Method, RD, Ctx, User, UserPathKey, _) ->
-    AdminCheckResult = admin_check(riak_cs_utils:is_admin(User), RD, Ctx),
+    AdminCheckResult = admin_check(riak_cs_user:is_admin(User), RD, Ctx),
     get_user(AdminCheckResult, UserPathKey).
 
 -spec get_user({boolean() | {halt, term()}, term(), term()}, string()) ->
                       {boolean() | {halt, term()}, term(), term()}.
 get_user({false, RD, Ctx}, UserPathKey) ->
     handle_get_user_result(
-      riak_cs_utils:get_user(UserPathKey, Ctx#context.riak_client),
+      riak_cs_user:get_user(UserPathKey, Ctx#context.riak_client),
       RD,
       Ctx);
 get_user(AdminCheckResult, _) ->
@@ -279,12 +279,12 @@ update_user_record(User, [{status, Status} | RestUpdates], _RecordUpdated) ->
 update_user_record(User, [{name, Name} | RestUpdates], _RecordUpdated) ->
     update_user_record(User?RCS_USER{name=Name}, RestUpdates, true);
 update_user_record(User, [{email, Email} | RestUpdates], _RecordUpdated) ->
-    DisplayName = riak_cs_utils:display_name(Email),
+    DisplayName = riak_cs_user:display_name(Email),
     update_user_record(User?RCS_USER{email=Email, display_name=DisplayName},
                        RestUpdates,
                        true);
 update_user_record(User=?RCS_USER{}, [{new_key_secret, true} | RestUpdates], _) ->
-    update_user_record(riak_cs_utils:update_key_secret(User), RestUpdates, true);
+    update_user_record(riak_cs_user:update_key_secret(User), RestUpdates, true);
 update_user_record(_User, [_ | RestUpdates], _RecordUpdated) ->
     update_user_record(_User, RestUpdates, _RecordUpdated).
 
@@ -295,7 +295,7 @@ handle_update_result({false, _User}, _RD, _Ctx) ->
 handle_update_result({true, User}, _RD, Ctx) ->
     #context{user_object=UserObj,
              riak_client=RcPid} = Ctx,
-    riak_cs_utils:update_user(User, UserObj, RcPid).
+    riak_cs_user:update_user(User, UserObj, RcPid).
 
 -spec set_resp_data(string(), term(), term()) -> term().
 set_resp_data(ContentType, RD, #context{user=User}) ->

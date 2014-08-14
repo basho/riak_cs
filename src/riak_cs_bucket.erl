@@ -694,7 +694,7 @@ serialized_bucket_op(Bucket, BagId, ACL, User, UserObj, BucketOp, StatName, RcPi
                         {ok, ignore} ->
                             OpResult;
                         {ok, UpdUser} ->
-                            X = riak_cs_utils:save_user(UpdUser, UserObj, RcPid),
+                            X = riak_cs_user:save_user(UpdUser, UserObj, RcPid),
                             ok = riak_cs_stats:update_with_start(StatName,
                                                                  StartTime),
                             X

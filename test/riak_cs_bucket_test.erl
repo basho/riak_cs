@@ -45,7 +45,7 @@ handle_delete_response_test() ->
 
 bucket_resolution_test() ->
     %% @TODO Replace or augment this with eqc testing.
-    UserRecord = riak_cs_utils:user_record("uncle fester",
+    UserRecord = riak_cs_user:user_record("uncle fester",
                                            "fester@tester.com",
                                            "festersquest",
                                            "wasthebest"),
