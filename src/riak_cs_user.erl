@@ -18,7 +18,7 @@
 %%
 %% ---------------------------------------------------------------------
 
-%% @doc riak_cs utility functions
+%% @doc riak_cs user related functions
 
 -module(riak_cs_user).
 
@@ -30,7 +30,6 @@
          is_admin/1,
          get_user/2,
          get_user_by_index/3,
-         get_user_index/3,
          to_3tuple/1,
          save_user/3,
          update_key_secret/1,
@@ -158,7 +157,7 @@ get_user(KeyId, RcPid) ->
     end.
 
 %% @doc Retrieve a Riak CS user's information based on their
-%% canonical id string.
+%% canonical id string or email.
 %% @TODO May want to use mapreduce job for this.
 -spec get_user_by_index(binary(), binary(), riak_client()) ->
                                {ok, {rcs_user(), term()}} |
@@ -192,7 +191,7 @@ get_user_index(Index, Value, RcPid) ->
 is_admin(User) ->
     is_admin(User, riak_cs_config:admin_creds()).
 
--spec to_3tuple(rcs_user()) -> tuple().
+-spec to_3tuple(rcs_user()) -> acl_owner().
 to_3tuple(U) ->
     %% acl_owner3: {display name, canonical id, key id}
     {U?RCS_USER.display_name, U?RCS_USER.canonical_id,
