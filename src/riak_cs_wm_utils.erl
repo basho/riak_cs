@@ -382,7 +382,7 @@ to_rfc_1123(Date) when is_list(Date) ->
 -spec iso_8601_to_rfc_1123(binary() | string()) -> string().
 iso_8601_to_rfc_1123(Date) when is_list(Date) ->
     ErlDate = iso_8601_to_erl_date(Date),
-    httpd_util:rfc1123_date(erlang:universaltime_to_localtime(ErlDate)).
+    webmachine_util:rfc1123_date(ErlDate).
 
 %% @doc Convert an ISO 8601 date to Erlang datetime format.
 %% This function assumes the input time is already in GMT time.
