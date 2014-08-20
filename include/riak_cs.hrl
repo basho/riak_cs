@@ -467,6 +467,7 @@
 -define(DEFAULT_MANIFEST_WARN_SIBLINGS, 20).
 -define(DEFAULT_MANIFEST_WARN_BYTES, 5*1024*1024). %% 5MB
 -define(DEFAULT_MANIFEST_WARN_HISTORY, 30).
+-define(DEFAULT_MAX_PART_NUMBER, 10000).
 
 %% General system info
 -define(WORD_SIZE, erlang:system_info(wordsize)).
