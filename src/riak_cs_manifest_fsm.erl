@@ -320,18 +320,17 @@ get_and_update(RcPid, WrappedManifests, Bucket, Key, MaxRetries, Retries) ->
                                      riak_cs, manifest_siblings_suppress, 5),
             case Siblings of
                 _ when SuppressionThreshold =< Siblings ->
-                    %% If we had retried ALWAYS when #(siblings) was above threashold,
-                    %% no resolution would happen once threashold was exceeded.
-                    %% To give chance for sibling resolusion, update will go ahead
-                    %% with small ratio even threashold is exceeded.
+                    %% If we had retried ALWAYS when #(siblings) was above threshold,
+                    %% no resolution would happen once threshold was exceeded.
+                    %% To give chance for sibling resolution, update will go ahead
+                    %% with small ratio even threshold is exceeded.
                     %% The let-through ratio is 1/10 = 10 percent.
                     case crypto:rand_uniform(0, 10) of
                         0 ->
-                            lager:debug("You are LUCKY! Go ahead! Retries=~p, Siblings=~p", [Retries, Siblings]),
+                            lager:debug("Move on and update manifests: Retries=~p, Siblings=~p", [Retries, Siblings]),
                             update(RcPid, Manifests, RiakObject, WrappedManifests, Bucket, Key);
                         _ ->
-                            %% TODO: Need some stats to detect/monitor retries
-                            lager:debug("SORRY, please retry. Retries=~p, Siblings=~p", [Retries, Siblings]),
+                            lager:debug("Retry again from getting manifests: Retries=~p, Siblings=~p", [Retries, Siblings]),
                             get_and_update(RcPid, WrappedManifests, Bucket, Key, MaxRetries, Retries + 1)
                     end;
                 _ ->
@@ -355,10 +354,12 @@ get_and_update(RcPid, WrappedManifests, Bucket, Key, MaxRetries, Retries) ->
 sleep_retries(0) ->
     ok;
 sleep_retries(N) ->
-    %% TODO: Need penalty for many siblings? (e.g. over 2*SuppressionThreshold)
+    %% TODO: Need penalty for many siblings? (e.g. Double when over 2*SuppressionThreshold)
     MeanSleepMS = num_retries_to_sleep_millis(N),
     Delta = MeanSleepMS div 2,
-    timer:sleep(crypto:rand_uniform(MeanSleepMS - Delta, MeanSleepMS + Delta)).
+    SleepMS = crypto:rand_uniform(MeanSleepMS - Delta, MeanSleepMS + Delta),
+    ok = riak_cs_stats:update(manifest_update_retry_sleep, SleepMS * 1000),
+    timer:sleep(SleepMS).
 
 -spec num_retries_to_sleep_millis(pos_integer()) -> pos_integer().
 num_retries_to_sleep_millis(N) ->
