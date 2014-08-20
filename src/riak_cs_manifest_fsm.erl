@@ -306,10 +306,7 @@ get_and_update(_RcPid, _WrappedManifests, _Bucket, _Key, MaxRetries, Retries)
   when MaxRetries < Retries ->
     {{error, retry_exceeded}, undefined, undefined};
 get_and_update(RcPid, WrappedManifests, Bucket, Key, MaxRetries, Retries) ->
-    case Retries of
-        0 -> ok;
-        _ -> sleep_retries(Retries)
-    end,
+    _ = sleep_retries(Retries),
     %% retrieve the current (resolved) value at {Bucket, Key},
     %% add the new manifest, and then write the value
     %% back to Riak
@@ -350,20 +347,20 @@ get_and_update(RcPid, WrappedManifests, Bucket, Key, MaxRetries, Retries) ->
     end.
 
 %% Sleep some interval according to the retry number.
+%% 0 sec for first try, and 1, 2, 4, 8,... seconds for subsequent retries in average.
 %% Concurrent requests for the same key from clients trigger manifest
 %% sibling explosion. Bring in some randomness so that retries of
 %% concurrent requests will not fire conincidently.
 -spec sleep_retries(non_neg_integer()) -> ok.
+sleep_retries(0) ->
+    ok;
 sleep_retries(N) ->
-    %% TODO: Need penalty for many siblings (e.g. over 2*SuppressionThreshold)
+    %% TODO: Need penalty for many siblings? (e.g. over 2*SuppressionThreshold)
     MeanSleepMS = num_retries_to_sleep_millis(N),
     Delta = MeanSleepMS div 2,
     timer:sleep(crypto:rand_uniform(MeanSleepMS - Delta, MeanSleepMS + Delta)).
 
-% 0 sec for first try, and 1, 2, 4, 8,... seconds for subsequent retries.
--spec num_retries_to_sleep_millis(non_neg_integer()) -> non_neg_integer().
-num_retries_to_sleep_millis(0) ->
-    0;
+-spec num_retries_to_sleep_millis(pos_integer()) -> pos_integer().
 num_retries_to_sleep_millis(N) ->
     500 * riak_cs_utils:pow(2, N).
 
