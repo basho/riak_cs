@@ -57,6 +57,8 @@ error_message(bucket_not_empty) ->
     "The bucket you tried to delete is not empty.";
 error_message(bucket_already_exists) ->
     "The requested bucket name is not available. The bucket namespace is shared by all users of the system. Please select a different name and try again.";
+error_message(toomanybuckets) ->
+    "You have attempted to create more buckets than allowed";
 error_message(user_already_exists) ->
     "The specified email address has already been registered. Email addresses must be unique among all users of the system. Please try again with a different email address.";
 error_message(entity_too_large) ->
@@ -106,6 +108,7 @@ error_code(invalid_access_key_id) -> "InvalidAccessKeyId";
 error_code(access_denied) -> "AccessDenied";
 error_code(bucket_not_empty) -> "BucketNotEmpty";
 error_code(bucket_already_exists) -> "BucketAlreadyExists";
+error_code(toomanybuckets) -> "TooManyBuckets";
 error_code(user_already_exists) -> "UserAlreadyExists";
 error_code(entity_too_large) -> "EntityTooLarge";
 error_code(entity_too_small) -> "EntityTooSmall";
@@ -153,6 +156,7 @@ status_code(access_denied) ->  403;
 status_code(bucket_not_empty) ->  409;
 status_code(bucket_already_exists) -> 409;
 status_code(user_already_exists) -> 409;
+status_code(toomanybuckets) -> 400;
 %% yes, 400, really, not 413
 status_code(entity_too_large) -> 400;
 status_code(entity_too_small) -> 400;
@@ -226,6 +230,8 @@ api_error({malformed_policy_version, _} = Error, RD, Ctx) ->
                    error_message(Error),
                    RD,
                    Ctx);
+api_error({toomanybuckets, Current, BucketLimit}, RD, Ctx) ->
+    toomanybuckets_response(Current, BucketLimit, RD, Ctx);
 api_error({error, Reason}, RD, Ctx) ->
     api_error(Reason, RD, Ctx).
 
@@ -241,6 +247,17 @@ error_response(StatusCode, Code, Message, RD, Ctx) ->
                          {'Resource', [string:strip(OrigResource, right, $/)]},
                          {'RequestId', [""]}]}],
     respond(StatusCode, riak_cs_xml:to_xml(XmlDoc), RD, Ctx).
+
+toomanybuckets_response(Current,BucketLimit,RD,Ctx) ->
+    XmlDoc = {'Error',
+              [
+               {'Code', [error_code(toomanybuckets)]},
+               {'Message', [error_message(toomanybuckets)]},
+               {'CurrentNumberOfBuckets', [Current]},
+               {'AllowedNumberOfBuckets', [BucketLimit]}
+              ]},
+    Body = riak_cs_xml:to_xml([XmlDoc]),
+    respond(status_code(toomanybuckets), Body, RD, Ctx).
 
 copy_object_response(Manifest, RD, Ctx) ->
     copy_response(Manifest, 'CopyObjectResult', RD, Ctx).

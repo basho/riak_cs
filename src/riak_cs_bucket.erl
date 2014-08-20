@@ -67,7 +67,10 @@ create_bucket(User, UserObj, Bucket, BagId, ACL, RcPid) ->
         not bucket_exists(CurrentBuckets, binary_to_list(Bucket)),
     case AttemptCreate of
         true ->
+            BucketLimit = riak_cs_config:max_buckets_per_user(),
             case valid_bucket_name(Bucket) of
+                true when length(CurrentBuckets) >= BucketLimit ->
+                    {error, {toomanybuckets, length(CurrentBuckets), BucketLimit}};
                 true ->
                     serialized_bucket_op(Bucket,
                                          BagId,

@@ -382,6 +382,7 @@
 -define(BUCKETS_BUCKET, <<"moss.buckets">>).
 -define(GC_BUCKET, <<"riak-cs-gc">>).
 -define(FREE_BUCKET_MARKER, <<"0">>).
+-define(DEFAULT_MAX_BUCKETS_PER_USER, 100).
 -define(DEFAULT_MAX_CONTENT_LENGTH, 5368709120). %% 5 GB
 -define(DEFAULT_LFS_BLOCK_SIZE, 1048576).%% 1 MB
 -define(XML_PROLOG, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>").

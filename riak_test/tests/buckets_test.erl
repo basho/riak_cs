@@ -55,6 +55,8 @@ confirm() ->
 
     ok = verify_cleanup_orphan_mp(UserConfig, UserConfig1, RiakNodes, hd(CSNodes)),
 
+    ok = verify_max_buckets_per_user(UserConfig),
+
     pass.
 
 
@@ -190,3 +192,22 @@ prepare_bucket_with_orphan_mp(BucketName, Key, UserConfig, RiakNodes) ->
 
     %% emulate a race condition, during the deletion MP initiate happened
     ok = rc_helper:update_riakc_obj(RiakNodes, objects, BucketName, Key, ManiObj).
+
+
+verify_max_buckets_per_user(UserConfig) ->
+    [{buckets, Buckets}] = erlcloud_s3:list_buckets(UserConfig),
+    lager:debug("existing buckets: ~p", [Buckets]),
+    BucketNameBase = "toomanybuckets",
+    [begin
+         BucketName = BucketNameBase++integer_to_list(N),
+         lager:debug("creating bucket ~p", [BucketName]),
+         ?assertEqual(ok,
+                      erlcloud_s3:create_bucket(BucketName, UserConfig))
+     end
+     || N <- lists:seq(1,100-length(Buckets))],
+    lager:debug("100 buckets created", []),
+    BucketName1 = BucketNameBase ++ "101",
+    ?assertError({aws_error, {http_error, 400, [], _}},
+                 erlcloud_s3:create_bucket(BucketName1, UserConfig)),
+    ok.
+    
