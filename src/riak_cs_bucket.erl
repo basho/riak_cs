@@ -424,7 +424,14 @@ fetch_bucket_object(BucketName, RcPid) ->
         true ->
             {ok, {Key, _Secret}} = riak_cs_config:admin_creds(),
             %% This object is just dummy; can't mimic true Riak object.
-            Obj = riakc_obj:new(?BUCKETS_BUCKET, BucketName, list_to_binary(Key)),
+            {ok,{User,_}} = riak_cs_user:get_user(Key, self()),
+            lager:debug("user: ~p", [User]),
+            CanonicalId = User?RCS_USER.canonical_id,
+            Acl = riak_cs_acl_utils:default_acl(<<"admin-displayname">>, CanonicalId, Key),
+            UserMeta = [{?MD_ACL, term_to_binary(Acl)}], %% {?MD_POLICY, term_to_binary(#policy_v1{})}],
+            Obj = riakc_obj:new_obj(?BUCKETS_BUCKET, BucketName, <<"vclock">>,
+                                    [{dict:from_list([{?MD_USERMETA, UserMeta}]), list_to_binary(Key)}]),
+            lager:debug("acl: ~p canonical id: ~p", [Acl, CanonicalId]),
             {ok, Obj}
     end.
 
