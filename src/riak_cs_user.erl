@@ -58,7 +58,8 @@ create_user(Name, Email) ->
 create_user(Name, Email, KeyId, Secret) ->
     case validate_email(Email) of
         ok ->
-            User = user_record(Name, Email, KeyId, Secret),
+            CanonicalId = generate_canonical_id(KeyId),
+            User = user_record(Name, Email, KeyId, Secret, CanonicalId),
             create_credentialed_user(riak_cs_config:admin_creds(), User);
         {error, _Reason}=Error ->
             Error
@@ -229,13 +230,11 @@ generate_access_creds(UserId) ->
     {KeyId, Secret}.
 
 %% @doc Generate the canonical id for a user.
--spec generate_canonical_id(string(), undefined | string()) -> string().
-generate_canonical_id(_KeyID, undefined) ->
-    [];
-generate_canonical_id(KeyID, Secret) ->
+-spec generate_canonical_id(string()) -> string().
+generate_canonical_id(KeyID) ->
     Bytes = 16,
     Id1 = riak_cs_utils:md5(KeyID),
-    Id2 = riak_cs_utils:md5(Secret),
+    Id2 = riak_cs_utils:md5(druuid:v4()),
     riak_cs_utils:binary_to_hexlist(
       iolist_to_binary(<< Id1:Bytes/binary,
                           Id2:Bytes/binary >>)).
@@ -299,16 +298,15 @@ update_user_record(User=#moss_user_v1{}) ->
 
 %% @doc Return a user record for the specified user name and
 %% email address.
--spec user_record(string(), string(), string(), string()) -> rcs_user().
-user_record(Name, Email, KeyId, Secret) ->
-    user_record(Name, Email, KeyId, Secret, []).
+-spec user_record(string(), string(), string(), string(), string()) -> rcs_user().
+user_record(Name, Email, KeyId, Secret, CanonicalId) ->
+    user_record(Name, Email, KeyId, Secret, CanonicalId, []).
 
 %% @doc Return a user record for the specified user name and
 %% email address.
--spec user_record(string(), string(), string(), string(), [cs_bucket()]) ->
+-spec user_record(string(), string(), string(), string(), string(), [cs_bucket()]) ->
                          rcs_user().
-user_record(Name, Email, KeyId, Secret, Buckets) ->
-    CanonicalId = generate_canonical_id(KeyId, Secret),
+user_record(Name, Email, KeyId, Secret, CanonicalId, Buckets) ->
     DisplayName = display_name(Email),
     ?RCS_USER{name=Name,
               display_name=DisplayName,

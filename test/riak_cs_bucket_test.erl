@@ -46,9 +46,10 @@ handle_delete_response_test() ->
 bucket_resolution_test() ->
     %% @TODO Replace or augment this with eqc testing.
     UserRecord = riak_cs_user:user_record("uncle fester",
-                                           "fester@tester.com",
-                                           "festersquest",
-                                           "wasthebest"),
+                                          "fester@tester.com",
+                                          "festersquest",
+                                          "wasthebest",
+                                          "cid"),
     BucketList1 = [riak_cs_bucket:bucket_record(<<"bucket1">>, create),
                    riak_cs_bucket:bucket_record(<<"bucket2">>, create),
                    riak_cs_bucket:bucket_record(<<"bucket3">>, create)],
