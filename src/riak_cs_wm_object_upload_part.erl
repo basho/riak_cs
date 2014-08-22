@@ -47,7 +47,7 @@ init(Ctx) ->
 -spec malformed_request(#wm_reqdata{}, #context{}) -> {false, #wm_reqdata{}, #context{}}.
 malformed_request(RD,Ctx) ->
     Method = wrq:method(RD),
-    case Method == 'PUT' andalso invalid_part_number(RD) of
+    case Method == 'PUT' andalso not valid_part_number(RD) of
         %% For multipart upload part,
         true ->
             riak_cs_s3_response:api_error(invalid_part_number, RD, Ctx);
@@ -56,12 +56,12 @@ malformed_request(RD,Ctx) ->
             {false, RD, NewCtx}
     end.
 
-invalid_part_number(RD)  ->
+valid_part_number(RD)  ->
     case riak_cs_utils:safe_list_to_integer(wrq:get_qs_value("partNumber", RD)) of
         {ok, PartNumber} ->
-            PartNumber < 1 orelse ?DEFAULT_MAX_PART_NUMBER < PartNumber;
+            1 =< PartNumber andalso PartNumber =< ?DEFAULT_MAX_PART_NUMBER;
         _ ->
-            true
+            false
     end.
 
 %% @doc Get the type of access requested and the manifest with the
