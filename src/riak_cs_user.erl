@@ -131,7 +131,7 @@ update_user(User, UserObj, RcPid) ->
 get_user(undefined, _RcPid) ->
     {error, no_user_key};
 get_user(KeyId, RcPid) ->
-    case riak_cs_config:is_single_user_mode() of
+    case riak_cs_config:single_user_mode() of
         false ->
             get_user_from_riak(KeyId, RcPid);
         true ->
@@ -182,7 +182,7 @@ to_3tuple(U) ->
 %% @doc Save information about a Riak CS user
 -spec save_user(rcs_user(), riakc_obj:riakc_obj(), riak_client()) -> ok | {error, term()}.
 save_user(User, UserObj, RcPid) ->
-    case riak_cs_config:is_single_user_mode() of
+    case riak_cs_config:single_user_mode() of
         false ->
             riak_cs_riak_client:save_user(RcPid, User, UserObj);
         true ->
@@ -238,15 +238,12 @@ get_user_from_riak(KeyId, RcPid) ->
 
 -spec get_user_from_config(string()) -> {ok, {rcs_user(), riakc_obj:riakc_obj()}} | {error, term()}.
 get_user_from_config(KeyId) ->
-    BucketNames = riak_cs_config:single_users_buckets(),
-    Buckets = [?RCS_BUCKET{name=BucketName,
-                           last_action=created,
-                           creation_date="1970-01-01T00:00:00.000Z",
-                           modification_time={0,0,0}}
-               || BucketName <- BucketNames],
     case riak_cs_config:admin_creds() of
         {ok, {KeyId, Secret}} ->
-            User = user_record("admin", "admin@example.com", KeyId, Secret, Buckets),
+            CanonicalId = riak_cs_config:single_users_canonical_id(),
+            User0 = user_record("admin", "admin@example.com", KeyId, Secret, CanonicalId),
+            Buckets = riak_cs_bucket:single_user_mode_buckets(User0),
+            User = User0?RCS_USER{buckets=Buckets},
             RiakcObj = riakc_obj:new(?USER_BUCKET, list_to_binary(KeyId),
                                      term_to_binary(User)),
             {ok, {User, RiakcObj}};

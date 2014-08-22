@@ -26,8 +26,9 @@
          api/0,
          auth_bypass/0,
          admin_auth_enabled/0,
-         is_single_user_mode/0,
+         single_user_mode/0,
          single_users_buckets/0,
+         single_users_canonical_id/0,
          auth_module/0,
          cluster_id/1,
          cs_version/0,
@@ -143,16 +144,24 @@ auth_module() ->
 %%  enabling/disabling and bucket creation, deletion, modification is
 %%  permitted. Even ACL cannot be set. Just authorization. Thus in
 %%  single user mode, Stanchion is not required.
--spec is_single_user_mode() -> boolean().
-is_single_user_mode() ->
-    get_env(riak_cs, single_user_mode, false).
+-spec single_user_mode() -> boolean().
+single_user_mode() ->
+    case get_env(riak_cs, single_user_mode, undefined) of
+        enabled -> true;
+        _ -> false
+    end.
 
 %% @doc In single user mode, there are no buckets by default. Buckets
 %% should by created by specifying their name at all Riak CS's
 %% `app.config'.
--spec single_users_buckets() -> [string()].
+-spec single_users_buckets() -> [string()|{string(), proplists:proplist()}].
 single_users_buckets() ->
     get_env(riak_cs, single_users_buckets, []).
+
+%% @doc
+-spec single_users_canonical_id() -> [string()].
+single_users_canonical_id() ->
+    get_env(riak_cs, single_users_canonical_id, "").
 
 -spec disable_local_bucket_check() -> boolean().
 disable_local_bucket_check() ->

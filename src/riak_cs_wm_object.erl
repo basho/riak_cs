@@ -76,7 +76,7 @@ authorize(RD, Ctx, _BucketObj, 'GET', notfound = _Manifest) ->
 authorize(RD, Ctx, _BucketObj, 'HEAD', notfound = _Manifest) ->
     riak_cs_wm_utils:respond_api_error(RD, Ctx, no_such_key);
 authorize(RD, Ctx, _BucketObj, _Method, _Manifest) ->
-    case riak_cs_config:is_single_user_mode() of
+    case riak_cs_config:single_user_mode() of
         false ->
             riak_cs_wm_utils:object_access_authorize_helper(object, true, RD, Ctx);
         true ->
