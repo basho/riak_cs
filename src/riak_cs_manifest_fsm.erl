@@ -299,7 +299,7 @@ get_and_delete(RcPid, UUID, Bucket, Key) ->
     end.
 
 get_and_update(RcPid, WrappedManifests, Bucket, Key) ->
-    MaxRetries = riak_cs_config:get_env(riak_cs, manifest_update_max_retries, 5),
+    MaxRetries = riak_cs_config:get_env(riak_cs, manifest_update_max_retries, 4),
     get_and_update(RcPid, WrappedManifests, Bucket, Key, MaxRetries, 0).
 
 get_and_update(_RcPid, _WrappedManifests, _Bucket, _Key, MaxRetries, Retries)
@@ -315,26 +315,11 @@ get_and_update(RcPid, WrappedManifests, Bucket, Key, MaxRetries, Retries) ->
     %% dict
     case riak_cs_manifest:get_manifests(RcPid, Bucket, Key) of
         {ok, RiakObject, Manifests} ->
-            Siblings = riakc_obj:value_count(RiakObject),
-            SuppressionThreshold = riak_cs_config:get_env(
-                                     riak_cs, manifest_siblings_suppress, 5),
-            case Siblings of
-                _ when SuppressionThreshold =< Siblings ->
-                    %% If we had retried ALWAYS when #(siblings) was above threshold,
-                    %% no resolution would happen once threshold was exceeded.
-                    %% To give chance for sibling resolution, update will go ahead
-                    %% with small ratio even threshold is exceeded.
-                    %% The let-through ratio is 1/10 = 10 percent.
-                    case crypto:rand_uniform(0, 10) of
-                        0 ->
-                            lager:debug("Move on and update manifests: Retries=~p, Siblings=~p", [Retries, Siblings]),
-                            update(RcPid, Manifests, RiakObject, WrappedManifests, Bucket, Key);
-                        _ ->
-                            lager:debug("Retry again from getting manifests: Retries=~p, Siblings=~p", [Retries, Siblings]),
-                            get_and_update(RcPid, WrappedManifests, Bucket, Key, MaxRetries, Retries + 1)
-                    end;
-                _ ->
-                    update(RcPid, Manifests, RiakObject, WrappedManifests, Bucket, Key)
+            case retry_get_or_move_on_to_update(RiakObject, MaxRetries, Retries) of
+                move_on ->
+                    update(RcPid, Manifests, RiakObject, WrappedManifests, Bucket, Key);
+                retry ->
+                    get_and_update(RcPid, WrappedManifests, Bucket, Key, MaxRetries, Retries + 1)
             end;
         {error, notfound} ->
             ManifestBucket = riak_cs_utils:to_bucket_name(objects, Bucket),
@@ -345,8 +330,51 @@ get_and_update(RcPid, WrappedManifests, Bucket, Key, MaxRetries, Retries) ->
             {PutResult, undefined, undefined}
     end.
 
+retry_get_or_move_on_to_update(RiakObject, MaxRetries, MaxRetries) ->
+    %% If cuncurrency is small, e.g. 10, then the possibility that any update can
+    %% not `move_on' to update may be non-negligible.
+    %% Assuming #(siblings) =~ concurrency (=10), the possiblity is:
+    %% 0.9 ^ (4[retries] * 10[concurrency]) =~ 1.5 percent
+    %% Let force update when #(siblings) < 15.
+    Siblings = riakc_obj:value_count(RiakObject),
+    ForceUpdateThreshold = riak_cs_config:get_env(
+                             riak_cs, manifest_siblings_force_update_at_last_retry, 15),
+    case Siblings of
+        _ when ForceUpdateThreshold =< Siblings ->
+            lager:debug("Last retry, go to roll dice: Retries=~p, Siblings=~p", [MaxRetries, Siblings]),
+            retry_get_or_move_on_to_update(RiakObject, MaxRetries);
+        _ ->
+            lager:debug("Last retry, move on and update: Retries=~p, Siblings=~p", [MaxRetries, Siblings]),
+            move_on
+    end;
+retry_get_or_move_on_to_update(RiakObject, _MaxRetries, Retries) ->
+    retry_get_or_move_on_to_update(RiakObject, Retries).
+
+retry_get_or_move_on_to_update(RiakObject, Retries) ->
+    Siblings = riakc_obj:value_count(RiakObject),
+    SuppressionThreshold = riak_cs_config:get_env(
+                             riak_cs, manifest_siblings_suppress, 5),
+    case Siblings of
+        _ when SuppressionThreshold =< Siblings ->
+            %% If we had retried ALWAYS when #(siblings) was above threshold,
+            %% no resolution would happen once threshold was exceeded.
+            %% To give chance for sibling resolution, update will go ahead
+            %% with small ratio even threshold is exceeded.
+            %% The let-through ratio is 1/10 = 10 percent.
+            case crypto:rand_uniform(0, 10) of
+                0 ->
+                    lager:debug("Move on and update manifests: Retries=~p, Siblings=~p", [Retries, Siblings]),
+                    move_on;
+                _ ->
+                    lager:debug("Retry again from getting manifests: Retries=~p, Siblings=~p", [Retries, Siblings]),
+                    retry
+            end;
+        _ ->
+            move_on
+    end.
+
 %% Sleep some interval according to the retry number.
-%% 0 sec for first try, and 1, 2, 4, 8,... seconds for subsequent retries in average.
+%% 0 sec for first try, and 0.5, 1, 2, 4, ... seconds for subsequent retries in average.
 %% Concurrent requests for the same key from clients trigger manifest
 %% sibling explosion. Bring in some randomness so that retries of
 %% concurrent requests will not fire conincidently.
@@ -363,7 +391,7 @@ sleep_retries(N) ->
 
 -spec num_retries_to_sleep_millis(pos_integer()) -> pos_integer().
 num_retries_to_sleep_millis(N) ->
-    500 * riak_cs_utils:pow(2, N).
+    250 * riak_cs_utils:pow(2, N).
 
 update(RcPid, OldManifests, OldRiakObject, WrappedManifests, Bucket, Key) ->
     NewManiAdded = riak_cs_manifest_resolution:resolve([WrappedManifests, OldManifests]),
