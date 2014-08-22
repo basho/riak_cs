@@ -44,7 +44,8 @@ init(Ctx) ->
     %% {ok, Ctx#context{local_context=#key_context{}}}.
     {ok, Ctx#context{local_context=#key_context{}}}.
 
--spec malformed_request(#wm_reqdata{}, #context{}) -> {false, #wm_reqdata{}, #context{}}.
+-spec malformed_request(#wm_reqdata{}, #context{}) ->
+    {false, #wm_reqdata{}, #context{}} | {{halt, pos_integer()}, #wm_reqdata{}, #context{}}.
 malformed_request(RD,Ctx) ->
     Method = wrq:method(RD),
     case Method == 'PUT' andalso not valid_part_number(RD) of
