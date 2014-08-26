@@ -130,7 +130,7 @@ confirm() ->
     ?assertEqual(ok, erlcloud_s3:delete_bucket(?TEST_BUCKET, UserConfig)),
 
     ?assertError({aws_error, {http_error, 404, _, _}}, erlcloud_s3:list_objects(?TEST_BUCKET, UserConfig)),
-    pass.
+    rtcs:pass().
 
 upload_and_assert_parts(Bucket, Key, UploadId, PartCount, Size, Config) ->
     [{X, rtcs_multipart:upload_and_assert_part(Bucket,

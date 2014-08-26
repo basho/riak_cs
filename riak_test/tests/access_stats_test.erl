@@ -40,7 +40,8 @@ confirm() ->
     flush_access_stats(),
     assert_access_stats(json, UserConfig, {Begin, End}),
     assert_access_stats(xml, UserConfig, {Begin, End}),
-    pass.
+
+    rtcs:pass().
 
 generate_some_accesses(UserConfig) ->
     Begin = rtcs:datetime(),
