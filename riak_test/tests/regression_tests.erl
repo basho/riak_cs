@@ -34,14 +34,14 @@
 confirm() ->
     {UserConfig, _} = SetupInfo = rtcs:setup(1),
 
-    pass = verify_cs296(SetupInfo, "test-bucket-cs296"),
-    pass = verify_cs347(SetupInfo, "test-bucket-cs347"),
-    pass = verify_cs436(SetupInfo, "test-bucket-cs436"),
-    pass = verify_cs512(UserConfig, "test-bucket-cs512"),
+    ok = verify_cs296(SetupInfo, "test-bucket-cs296"),
+    ok = verify_cs347(SetupInfo, "test-bucket-cs347"),
+    ok = verify_cs436(SetupInfo, "test-bucket-cs436"),
+    ok = verify_cs512(UserConfig, "test-bucket-cs512"),
 
     %% Append your next regression tests here
 
-    pass.
+    rtcs:pass().
 
 %% @doc Regression test for `riak_cs' <a href="https://github.com/basho/riak_cs/issues/296">
 %% issue 296</a>. The issue description is: 403 instead of 404 returned when
@@ -62,7 +62,7 @@ verify_cs296(_SetupInfo = {UserConfig, {_RiakNodes, _CSNodes, _Stanchion}}, Buck
     ?assertEqual(ok, erlcloud_s3:delete_bucket(BucketName, UserConfig)),
 
     ?assertError({aws_error, {http_error, 404, _, _}}, erlcloud_s3:list_objects(BucketName, UserConfig)),
-    pass.
+    ok.
 
 %% @doc Regression test for `riak_cs' <a href="https://github.com/basho/riak_cs/issues/347">
 %% issue 347</a>. The issue description is: No response body in 404 to the
@@ -98,7 +98,7 @@ verify_cs347(_SetupInfo = {UserConfig, {_RiakNodes, _CSNodes, _Stanchion}}, Buck
                 Result2
         end,
     ?assert(rtcs:check_no_such_bucket(ListObjectRes2, "/"++?TEST_BUCKET_CS347)),
-    pass.
+    ok.
 
 
 %% @doc Regression test for `riak_cs' <a href="https://github.com/basho/riak_cs/issues/436">
@@ -132,7 +132,7 @@ verify_cs436(_SetupInfo = {UserConfig, {_RiakNodes, _CSNodes, _Stanchion}}, Buck
                                         "somekey",
                                         crypto:rand_bytes(100),
                                         UserConfig)),
-    pass.
+    ok.
 
 -define(KEY, "cs512-key").
 
@@ -143,7 +143,7 @@ verify_cs512(UserConfig, BucketName) ->
     put_and_get(UserConfig, BucketName, <<"NEW">>),
     delete(UserConfig, BucketName),
     assert_notfound(UserConfig,BucketName),
-    pass.
+    ok.
 
 put_and_get(UserConfig, BucketName, Data) ->
     erlcloud_s3:put_object(BucketName, ?KEY, Data, UserConfig),

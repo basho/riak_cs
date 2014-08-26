@@ -25,7 +25,7 @@ confirm() ->
            {"CS_BUCKET",             ?TEST_BUCKET}],
     case execute_cmd(Cmd, [{cd, CsSrcDir}, {env, Env}, {args, Args}]) of
         ok ->
-            pass;
+            rtcs:pass();
         {error, Reason} ->
             lager:error("Error : ~p", [Reason]),
             error({external_client_tests, Reason})

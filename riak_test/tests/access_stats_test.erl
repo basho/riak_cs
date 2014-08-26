@@ -43,7 +43,8 @@ confirm() ->
     assert_access_stats(json, UserConfig, {Begin, End}),
     assert_access_stats(xml, UserConfig, {Begin, End}),
     verify_stats_lost_logging(UserConfig, RiakNodes, CSNodes),
-    pass.
+
+    rtcs:pass().
 
 generate_some_accesses(UserConfig) ->
     Begin = rtcs:datetime(),

@@ -34,13 +34,13 @@ confirm() ->
               {cs, rtcs:cs_config([{fold_objects_for_list_keys, true}])}],
     {UserConfig, {_RiakNodes, _CSNodes, _Stanchion}} = rtcs:setup(2, Config),
 
-    pass = verify_cs631(UserConfig, "cs-631-test-bukcet"),
-    pass = verify_cs654(UserConfig),
-    pass = verify_cs781(UserConfig, "cs-781-test-bucket"),
+    ok = verify_cs631(UserConfig, "cs-631-test-bukcet"),
+    ok = verify_cs654(UserConfig),
+    ok = verify_cs781(UserConfig, "cs-781-test-bucket"),
 
     %% Append your next regression tests here
 
-    pass.
+    rtcs:pass().
 
 
 %% @doc Integration test for [https://github.com/basho/riak_cs/issues/631]
@@ -48,7 +48,7 @@ verify_cs631(UserConfig, BucketName) ->
     ?assertEqual(ok, erlcloud_s3:create_bucket(BucketName, UserConfig)),
     test_unknown_canonical_id_grant_returns_400(UserConfig, BucketName),
     test_canned_acl_and_grants_returns_400(UserConfig, BucketName),
-    pass.
+    ok.
 
 -define(KEY_1, "key-1").
 -define(KEY_2, "key-2").
@@ -99,7 +99,7 @@ run_test_empty_common_prefixes(UserConfig) ->
                                      erlcloud_s3:list_objects(?TEST_BUCKET_1,
                                                               ListObjectsOptions,
                                                               UserConfig))),
-    pass.
+    ok.
 
 %% Test for issue in comment
 %% [https://github.com/basho/riak_cs/pull/655#issuecomment-23309088]
@@ -150,7 +150,7 @@ run_test_no_duplicate_key(UserConfig) ->
                                         UserConfig),
     [SingleResult] = proplists:get_value(contents, Response),
     ?assertEqual("1.txt", proplists:get_value(key, SingleResult)),
-    pass.
+    ok.
 
 %% Test for issue in comment
 %% [https://github.com/basho/riak_cs/pull/655#issuecomment-23390742]
@@ -179,7 +179,7 @@ run_test_no_infinite_loop(UserConfig) ->
                                         UserConfig),
     [SingleResult] = proplists:get_value(common_prefixes, Response),
     ?assertEqual("0/", proplists:get_value(prefix, SingleResult)),
-    pass.
+    ok.
 
 
 
@@ -201,5 +201,5 @@ verify_cs781(UserConfig, BucketName) ->
                                      erlcloud_s3:list_objects(BucketName,
                                                               [],
                                                               UserConfig))),
-    pass.
+    ok.
 

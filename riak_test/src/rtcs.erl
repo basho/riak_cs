@@ -118,6 +118,15 @@ setup_clusters(Configs, JoinFun, NumNodes) ->
     {AdminConfig, Nodes}.
 
 
+pass() ->
+    teardown(),
+    pass.
+
+teardown() ->
+    %% catch application:stop(sasl),
+    catch application:stop(erlcloud),
+    catch application:stop(ibrowse).
+
 configs(CustomConfigs) ->
     [{riak, proplists:get_value(riak, CustomConfigs, riak_config())},
      {cs, proplists:get_value(cs, CustomConfigs, cs_config())},
