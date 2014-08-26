@@ -639,12 +639,12 @@ resolve_buckets([], Buckets, true) ->
     lists:sort(fun bucket_sorter/2, Buckets);
 resolve_buckets([], Buckets, false) ->
     lists:sort(fun bucket_sorter/2, [Bucket || Bucket <- Buckets, not cleanup_bucket(Bucket)]);
-resolve_buckets([UserRec], [], KeepDeletedBuckets) ->
+resolve_buckets([HeadUserRec | RestUserRecs], [], KeepDeletedBuckets) ->
     %% We can assume there are no bucket duplication under a single
     %% user record.  It's already resolved. This function works
     %% without this head, but this head makes it very effecient in
     %% case of thousands of bucket records under single user.
-    resolve_buckets([], UserRec?RCS_USER.buckets, KeepDeletedBuckets);
+    resolve_buckets(RestUserRecs, HeadUserRec?RCS_USER.buckets, KeepDeletedBuckets);
 resolve_buckets([HeadUserRec | RestUserRecs], Buckets, _KeepDeleted) ->
     HeadBuckets = HeadUserRec?RCS_USER.buckets,
     UpdBuckets = lists:foldl(fun bucket_resolver/2, Buckets, HeadBuckets),
