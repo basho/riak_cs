@@ -44,10 +44,26 @@ init(Ctx) ->
     %% {ok, Ctx#context{local_context=#key_context{}}}.
     {ok, Ctx#context{local_context=#key_context{}}}.
 
--spec malformed_request(#wm_reqdata{}, #context{}) -> {false, #wm_reqdata{}, #context{}}.
+-spec malformed_request(#wm_reqdata{}, #context{}) ->
+    {false, #wm_reqdata{}, #context{}} | {{halt, pos_integer()}, #wm_reqdata{}, #context{}}.
 malformed_request(RD,Ctx) ->
-    NewCtx = riak_cs_wm_utils:extract_key(RD, Ctx),
-    {false, RD, NewCtx}.
+    Method = wrq:method(RD),
+    case Method == 'PUT' andalso not valid_part_number(RD) of
+        %% For multipart upload part,
+        true ->
+            riak_cs_s3_response:api_error(invalid_part_number, RD, Ctx);
+        false ->
+            NewCtx = riak_cs_wm_utils:extract_key(RD, Ctx),
+            {false, RD, NewCtx}
+    end.
+
+valid_part_number(RD)  ->
+    case riak_cs_utils:safe_list_to_integer(wrq:get_qs_value("partNumber", RD)) of
+        {ok, PartNumber} ->
+            1 =< PartNumber andalso PartNumber =< ?DEFAULT_MAX_PART_NUMBER;
+        _ ->
+            false
+    end.
 
 %% @doc Get the type of access requested and the manifest with the
 %% object ACL and compare the permission requested with the permission
