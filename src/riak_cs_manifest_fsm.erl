@@ -326,7 +326,7 @@ maybe_backpressure_sleep(Siblings, BackpressureThreshold)
   when Siblings < BackpressureThreshold ->
     ok;
 maybe_backpressure_sleep(Siblings, _BackpressureThreshold) ->
-    MaxSleep = riak_cs_config:get_env(riak_cs, manifest_siblings_bp_max_sleep, 10*1000),
+    MaxSleep = riak_cs_config:get_env(riak_cs, manifest_siblings_bp_max_sleep, 30*1000),
     Coefficient = riak_cs_config:get_env(riak_cs, manifest_siblings_bp_coefficient, 200),
     MeanSleepMS = min(Coefficient * Siblings, MaxSleep),
     Delta = MeanSleepMS div 2,
