@@ -519,26 +519,7 @@ key_exists(RcPid, Bucket, Key) ->
 %% @doc Return `stanchion' configuration data.
 -spec stanchion_data() -> {string(), pos_integer(), boolean()}.
 stanchion_data() ->
-    IP = case application:get_env(riak_cs, stanchion_ip) of
-             {ok, IP0} -> IP0;
-             undefined ->
-                 _ = lager:warning("No IP address or host name for stanchion access defined. Using default."),
-                 ?DEFAULT_STANCHION_IP
-         end,
-    Port = case application:get_env(riak_cs, stanchion_port) of
-               {ok, Port0} -> Port0;
-               undefined ->
-                   _ = lager:warning("No port for stanchion access defined. Using default."),
-                   ?DEFAULT_STANCHION_PORT
-           end,
-    SSL = case application:get_env(riak_cs, stanchion_ssl) of
-              {ok, SSL0} -> SSL0;
-              undefined ->
-                  _ = lager:warning("No ssl flag for stanchion access defined. Using default."),
-                  ?DEFAULT_STANCHION_SSL
-          end,
-    {IP, Port, SSL}.
-
+    riak_cs_config:stanchion().
 
 %% Get the root bucket name for either a Riak CS object
 %% bucket or the data block bucket name.

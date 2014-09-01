@@ -297,8 +297,10 @@ cs_config(UserExtra, OtherApps) ->
            {block_get_max_retries, 1},
            {proxy_get, enabled},
            {anonymous_user_creation, true},
-           {riak_pb_port, 10017},
-           {stanchion_port, 9095},
+           {stanchion_host, {"127.0.0.1", 9095}},
+           {riak_host, {"127.0.0.1", 10017}},
+           %%{riak_pb_port, 10017},
+           %%{stanchion_port, 9095},
            {cs_version, 010300}
           ]
      }] ++ OtherApps.
@@ -713,7 +715,7 @@ update_cs_config(Prefix, N, Config) ->
     CSSection = proplists:get_value(riak_cs, Config),
     UpdConfig = [{riak_cs, update_cs_port(CSSection, N)} |
                  proplists:delete(riak_cs, Config)],
-    update_app_config(riakcs_etcpath(Prefix, N) ++ "/app.config", UpdConfig).
+    update_app_config(riakcs_etcpath(Prefix, N) ++ "/advanced.config", UpdConfig).
 
 update_admin_creds(Config, AdminKey, AdminSecret) ->
     [{admin_key, AdminKey}, {admin_secret, AdminSecret} |
@@ -721,7 +723,7 @@ update_admin_creds(Config, AdminKey, AdminSecret) ->
                       proplists:delete(admin_key, Config))].
 
 update_cs_port(Config, N) ->
-    Config2 = [{riak_pb_port, pb_port(N)} | proplists:delete(riak_pb_port, Config)],
+    Config2 = [{riak_host, {"127.0.0.1", pb_port(N)}} | proplists:delete(riak_host, Config)],
     [{cs_port, cs_port(N)} | proplists:delete(cs_port, Config2)].
 
 update_stanchion_config(Prefix, Config, {AdminKey, AdminSecret}) ->

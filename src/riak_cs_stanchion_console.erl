@@ -57,8 +57,7 @@ switch([Host, Port]) ->
                 %% Or, set this configuration to dummy host/port
                 %% to block bucket/user creation/deletion
                 %% in case of multiple stanchion working.
-                ok = application:set_env(riak_cs, stanchion_ip, Host),
-                ok = application:set_env(riak_cs, stanchion_port, NewPort),
+                ok = application:set_env(riak_cs, stanchion_host, {Host, NewPort}),
                 Msg2 = io_lib:format("Succesfully switched stanchion to ~s:~s: This change is only effective until restart.",
                                     [Host, Port]),
                 _ = lager:info(Msg2),

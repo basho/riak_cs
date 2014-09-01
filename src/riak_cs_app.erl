@@ -131,7 +131,7 @@ check_bucket_props(Bucket, MasterPbc) ->
     end.
 
 riak_connection() ->
-    {Host, Port} = riak_host_port(),
+    {Host, Port} = riak_cs_config:riak_host_port(),
     Timeout = case application:get_env(riak_cs, riakc_connect_timeout) of
                   {ok, ConfigValue} ->
                       ConfigValue;
@@ -141,22 +141,3 @@ riak_connection() ->
     StartOptions = [{connect_timeout, Timeout},
                     {auto_reconnect, true}],
     riakc_pb_socket:start_link(Host, Port, StartOptions).
-
-%% @TODO This is duplicated code from
-%% `riak_cs_riakc_pool_worker'. Move this to `riak_cs_config' once
-%% that has been merged.
--spec riak_host_port() -> {string(), pos_integer()}.
-riak_host_port() ->
-    case application:get_env(riak_cs, riak_ip) of
-        {ok, Host} ->
-            ok;
-        undefined ->
-            Host = "127.0.0.1"
-    end,
-    case application:get_env(riak_cs, riak_pb_port) of
-        {ok, Port} ->
-            ok;
-        undefined ->
-            Port = 8087
-    end,
-    {Host, Port}.

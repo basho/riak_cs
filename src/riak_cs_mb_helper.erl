@@ -40,7 +40,7 @@ process_specs() ->
     ?MB_ENABLED([], riak_cs_multibag:process_specs()).
 
 bags() ->
-    {MasterAddress, MasterPort} = riak_cs_riakc_pool_worker:riak_host_port(),
+    {MasterAddress, MasterPort} = riak_cs_config:riak_host_port(),
     ?MB_ENABLED([{<<"master">>, MasterAddress, MasterPort}],
                 riak_cs_multibag:bags()).
 
