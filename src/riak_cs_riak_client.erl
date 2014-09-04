@@ -143,17 +143,17 @@ set_manifest_bag(RcPid, ManifestBagId) ->
 %% from this module.
 -spec master_pbc(riak_client()) -> {ok, MasterPbc::pid()} | {error, term()}.
 master_pbc(RcPid) ->
-    gen_server:call(RcPid, master_pbc, infinity).
+    gen_server:call(RcPid, master_pbc).
 
 %% TODO: Also this is cheat
 -spec manifest_pbc(riak_client()) -> {ok, ManifetPbc::pid()} | {error, term()}.
 manifest_pbc(RcPid) ->
-    gen_server:call(RcPid, manifest_pbc, infinity).
+    gen_server:call(RcPid, manifest_pbc).
 
 %% TODO: Also this is cheat
 -spec block_pbc(riak_client()) -> {ok, BlockPbc::pid()} | {error, term()}.
 block_pbc(RcPid) ->
-    gen_server:call(RcPid, block_pbc, infinity).
+    gen_server:call(RcPid, block_pbc).
 
 %%% Internal functions
 
