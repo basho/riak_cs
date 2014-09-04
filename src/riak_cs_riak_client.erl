@@ -70,7 +70,7 @@ start_link(_Args) ->
     end.
 
 stop(Pid) ->
-    gen_server:call(Pid, stop, infinity).
+    gen_server:call(Pid, stop).
 
 -spec checkout() -> {ok, riak_client()} | {error, term()}.
 checkout() ->
@@ -78,14 +78,17 @@ checkout() ->
 
 -spec checkout(atom()) -> {ok, riak_client()} | {error, term()}.
 checkout(Pool) ->
-    case catch poolboy:checkout(Pool, false) of
-        full ->
-            {error, all_workers_busy};
-        {'EXIT', Error} ->
-            {error, {poolboy_error, Error}};
-        RcPid ->
-            ok = gen_server:call(RcPid, cleanup, infinity),
-            {ok, RcPid}
+    try
+        case poolboy:checkout(Pool, false) of
+            full ->
+                {error, all_workers_busy};
+            RcPid ->
+                ok = gen_server:call(RcPid, cleanup),
+                {ok, RcPid}
+        end
+    catch
+        _:Error ->
+            {error, {poolboy_error, Error}}
     end.
 
 -spec checkin(riak_client()) -> ok.
@@ -94,7 +97,7 @@ checkin(RcPid) ->
 
 -spec checkin(atom(), riak_client()) -> ok.
 checkin(Pool, RcPid) ->
-    ok = gen_server:call(RcPid, cleanup, infinity),
+    ok = gen_server:call(RcPid, cleanup),
     poolboy:checkin(Pool, RcPid).
 
 -spec pbc_pool_name(master | bag_id()) -> atom().
@@ -129,11 +132,11 @@ save_user(RcPid, User, OldUserObj) ->
 
 -spec set_manifest(riak_client(), lfs_manifest()) -> ok | {error, term()}.
 set_manifest(RcPid, Manifest) ->
-    gen_server:call(RcPid, {set_manifest, Manifest}, infinity).
+    gen_server:call(RcPid, {set_manifest, Manifest}).
 
 -spec set_manifest_bag(riak_client(), binary()) -> ok | {error, term()}.
 set_manifest_bag(RcPid, ManifestBagId) ->
-    gen_server:call(RcPid, {set_manifest_bag, ManifestBagId}, infinity).
+    gen_server:call(RcPid, {set_manifest_bag, ManifestBagId}).
 
 %% TODO: Using this function is more or less a cheat.
 %% It's better to export new  function to manipulate manifests
