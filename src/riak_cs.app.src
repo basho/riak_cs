@@ -15,7 +15,8 @@
                   poolboy,
                   lager,
                   cluster_info,
-                  folsom
+                  folsom,
+                  yoyaku
                  ]},
   {mod, { riak_cs_app, []}},
   {env, [

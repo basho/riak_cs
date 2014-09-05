@@ -205,7 +205,8 @@
         %% state properties
         %% -----------------------------------------------------------------
         state=undefined :: undefined | writing | active |
-                           pending_delete | scheduled_delete | deleted,
+                           pending_delete | scheduled_delete | deleted |
+                           archived,
 
         %% writing/active state
         %% -----------------------------------------------------------------
