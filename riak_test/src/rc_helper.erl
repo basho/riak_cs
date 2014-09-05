@@ -33,8 +33,10 @@ to_riak_bucket(_, CSBucket) ->
 
 to_riak_key(objects, CsKey) ->
     CsKey;
-to_riak_key(_,_) ->
-    throw(not_yet_implemented).
+to_riak_key(blocks, {UUID, Seq}) ->
+    <<UUID/binary, Seq:32>>;
+to_riak_key(Kind, _) ->
+    error({not_yet_implemented, Kind}).
 
 -spec get_riakc_obj([term()], objects | blocks, binary(), term()) -> term().
 get_riakc_obj(RiakNodes, Kind, CsBucket, CsKey) ->
