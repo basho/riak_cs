@@ -22,7 +22,7 @@
 -define(SUBRESOURCES, ["acl", "location", "logging", "notification", "partNumber",
                        "policy", "requestPayment", "torrent", "uploadId", "uploads",
                        "versionId", "versioning", "versions", "website",
-                       "delete"]).
+                       "delete", "lifecycle", "restore"]).
 
 % type and record definitions for S3 policy API
 -type s3_object_action() :: 's3:GetObject'       | 's3:GetObjectVersion'
@@ -143,3 +143,29 @@
 
 -define(POLICY, #policy_v1).
 -define(ARN,    #arn_v1).
+
+%% for Lifecycle API
+
+-record(lifecycle_transition_v1, {
+          days :: non_neg_integer(),
+          storage_class = cold_storage :: cold_storage
+         }).
+
+-record(lifecycle_rule_v1, {
+          id = <<>> :: binary(),
+          prefix = <<>> :: binary(),
+          status = disabled :: enabled | disabled,
+          transition :: #lifecycle_transition_v1{} | undefined,
+          expiration :: non_neg_integer() | undefined
+         }).
+
+%% These members are for #lifecycle_rule_v2{}, combined with versioning API
+%% noncurrent_version_transition :: #lifecycle_noncurrent_version_transition_v1{} | undefined,
+%% noncurrent_version_expiration :: #lifecycle_noncurrent_version_expiratoin_v1{} | undefined
+                                              
+-record(lifecycle_config_v1, {
+          rules :: #lifecycle_rule_v1{}
+         }).
+
+-define(LIFECYCLE_CONFIG, #lifecycle_config_v1).
+-type lifecycle_config() :: ?LIFECYCLE_CONFIG{}.

@@ -75,7 +75,8 @@ base_resources() ->
      {["buckets", bucket, "versioning"], riak_cs_wm_common, props(riak_cs_wm_bucket_versioning)},
      %% Object resources
      {["buckets", bucket, "objects", object], riak_cs_wm_common, props(riak_cs_wm_object)},
-     {["buckets", bucket, "objects", object, "acl"], riak_cs_wm_common, props(riak_cs_wm_object_acl)}
+     {["buckets", bucket, "objects", object, "acl"], riak_cs_wm_common, props(riak_cs_wm_object_acl)},
+     {["buckets", bucket, "objects", object, "restore"], riak_cs_wm_common, props(riak_cs_wm_object_restore)}
     ].
 
 -spec one_three_resources(undefined | pos_integer()) -> [dispatch_rule()].
@@ -88,6 +89,7 @@ one_three_resources(_Version) ->
      %% Bucket resources
      {["buckets", bucket, "uploads"], riak_cs_wm_common, props(riak_cs_wm_bucket_uploads)},
      {["buckets", bucket, "policy"], riak_cs_wm_common, props(riak_cs_wm_bucket_policy)},
+     {["buckets", bucket, "lifecycle"], riak_cs_wm_common, props(riak_cs_wm_bucket_lifecycle)},
      %% Object resources
      {["buckets", bucket, "objects", object, "uploads", uploadId], riak_cs_wm_common, props(riak_cs_wm_object_upload_part)},
      {["buckets", bucket, "objects", object, "uploads"], riak_cs_wm_common, props(riak_cs_wm_object_upload)}

@@ -66,7 +66,7 @@ gc_active_manifests(Bucket, Key, RcPid) ->
     gc_active_manifests(Bucket, Key, RcPid, []).
 
 %% @private
--spec gc_active_manifests(binary(), binary(), riak_client(), [binary]) ->
+-spec gc_active_manifests(binary(), binary(), riak_client(), [binary()]) ->
     {ok, [binary()]} | {error, term()}.
 gc_active_manifests(Bucket, Key, RcPid, UUIDs) ->
    case get_active_manifests(Bucket, Key, RcPid) of
@@ -153,7 +153,6 @@ gc_specific_manifests_to_delete(UUIDsToMark, RiakObject, Bucket, Key, RcPid) ->
     MarkedResult = mark_as_deleted(UUIDsToMark, RiakObject, Bucket, Key, RcPid),
     handle_mark_as_pending_delete(MarkedResult, Bucket, Key, UUIDsToMark, RcPid).
 
-%% @private
 -spec gc_specific_manifests(UUIDsToMark :: [binary()],
                    RiakObject :: riakc_obj:riakc_obj(),
                    Bucket :: binary(),

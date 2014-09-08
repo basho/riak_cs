@@ -29,6 +29,7 @@
 %% API
 -export([start_link/1, start_link/2,
          get_uuid/1,
+         get_manifest/1,
          augment_data/2,
          block_written/2,
          finalize/2,
@@ -112,6 +113,9 @@ start_link({_Bucket,
 %% -spec get_uuid(pid()) -> binary().
 get_uuid(Pid) ->
     gen_fsm:sync_send_event(Pid, {get_uuid}, infinity).
+
+get_manifest(Pid) ->
+    gen_fsm:sync_send_all_state_event(Pid, get_manifest, infinity).
 
 augment_data(Pid, Data) ->
     gen_fsm:sync_send_event(Pid, {augment_data, Data}, infinity).
@@ -339,6 +343,8 @@ handle_event(_Event, StateName, State) ->
 handle_sync_event(current_state, _From, StateName, State) ->
     Reply = {StateName, State},
     {reply, Reply, StateName, State};
+handle_sync_event(get_manifest, _From, StateName, State) ->
+    {reply, State#state.manifest, StateName, State};
 handle_sync_event(force_stop, _From, _StateName, State) ->
     {stop, normal, ok, State};
 handle_sync_event(_Event, _From, StateName, State) ->

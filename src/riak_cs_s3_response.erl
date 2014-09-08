@@ -85,6 +85,7 @@ error_message(malformed_policy_action) -> "Policy has invalid action";
 error_message(malformed_policy_condition) -> "Policy has invalid condition";
 error_message(no_such_key) -> "The specified key does not exist.";
 error_message(no_such_bucket_policy) -> "The specified bucket does not have a bucket policy.";
+error_message(no_such_bucket_lifecycle) -> "The lifecycle configuration does not exist";
 error_message(no_such_upload) ->
     "The specified upload does not exist. The upload ID may be invalid, "
         "or the upload may have been aborted or completed.";
@@ -131,6 +132,7 @@ error_code(malformed_policy_principal) -> "MalformedPolicy";
 error_code(malformed_policy_action) -> "MalformedPolicy";
 error_code(malformed_policy_condition) -> "MalformedPolicy";
 error_code(no_such_bucket_policy) -> "NoSuchBucketPolicy";
+error_code(no_such_bucket_lifecycle) -> "NoSuchLifecycleConfiguration";
 error_code(no_such_upload) -> "NoSuchUpload";
 error_code(invalid_digest) -> "InvalidDigest";
 error_code(bad_request) -> "BadRequest";
@@ -182,6 +184,7 @@ status_code(malformed_policy_principal) -> 400;
 status_code(malformed_policy_action) -> 400;
 status_code(malformed_policy_condition) -> 400;
 status_code(no_such_bucket_policy) -> 404;
+status_code(no_such_bucket_lifecycle) -> 404;
 status_code(no_such_upload) -> 404;
 status_code(invalid_digest) -> 400;
 status_code(bad_request) -> 400;

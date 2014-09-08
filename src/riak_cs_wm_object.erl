@@ -81,7 +81,7 @@ authorize(RD, Ctx, _BucketObj, _Method, _Manifest) ->
 %% @doc Get the list of methods this resource supports.
 -spec allowed_methods() -> [atom()].
 allowed_methods() ->
-    %% TODO: POST
+    %% TODO: POST upload
     ['HEAD', 'GET', 'DELETE', 'PUT'].
 
 -spec valid_entity_length(#wm_reqdata{}, #context{}) -> {boolean(), #wm_reqdata{}, #context{}}.
@@ -444,12 +444,19 @@ finalize_request(RD,
                               user=User},
                  Pid) ->
     #key_context{bucket=Bucket,
+                 bucket_object=BucketObj,
                  key=Key,
                  size=S} = LocalCtx,
     BFile_str = [Bucket, $,, Key],
     UserName = riak_cs_wm_utils:extract_name(User),
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"finalize_request">>, [S], [UserName, BFile_str]),
     ContentMD5 = wrq:get_req_header("content-md5", RD),
+
+    %% For lifecycle; now doing it by default;;;;
+    Manifest0 = riak_cs_put_fsm:get_manifest(Pid),
+    UUID = riak_cs_manifest:uuid(Manifest0),
+    riak_cs_s3_lifecycle:maybe_handle_lifecycle(UUID, Manifest0, BucketObj),
+
     Response =
         case riak_cs_put_fsm:finalize(Pid, ContentMD5) of
             {ok, Manifest} ->

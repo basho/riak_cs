@@ -204,12 +204,12 @@ handle_cast({delete_block, ReplyPid, Bucket, Key, UUID, BlockNumber}, State=#sta
     _ = case riakc_pb_socket:get(block_pbc(RcPid), FullBucket, FullKey, GetOptions) of
             {ok, RiakObject} ->
                 ok = delete_block(RcPid, ReplyPid, RiakObject, {UUID, BlockNumber});
-        {error, notfound} ->
-            %% If the block isn't found, assume it's been
-            %% previously deleted by another delete FSM, and
-            %% move on to the next block.
-            riak_cs_delete_fsm:block_deleted(ReplyPid, {ok, {UUID, BlockNumber}})
-    end,
+            {error, notfound} ->
+                %% If the block isn't found, assume it's been
+                %% previously deleted by another delete FSM, and
+                %% move on to the next block.
+                riak_cs_delete_fsm:block_deleted(ReplyPid, {ok, {UUID, BlockNumber}})
+        end,
     ok = riak_cs_stats:update_with_start(block_delete, StartTime),
     dt_return(<<"delete_block">>, [BlockNumber], [Bucket, Key]),
     {noreply, State};

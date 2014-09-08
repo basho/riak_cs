@@ -87,7 +87,7 @@
 %% @end
 %%--------------------------------------------------------------------
 start_link(Bucket, Key, RcPid) ->
-    gen_fsm:start_link(?MODULE, [Bucket, Key, RcPid], []).
+    gen_fsm:start_link(?MODULE, [Bucket, Key, RcPid], [{debug, [log]}]).
 
 get_all_manifests(Pid) ->
     gen_fsm:sync_send_event(Pid, get_manifests, infinity).
@@ -213,6 +213,7 @@ waiting_command({update_manifests_with_confirmation, _}=Cmd, From, State) ->
     %% Used by multipart commit: this FSM was just started a moment
     %% ago, and we don't need this FSM to re-do work that multipart
     %% commit has already done.
+                    lager:debug(">>> ~p ~p", [?FILE, ?LINE]),
     waiting_update_command(Cmd, From, State).
 
 
@@ -222,6 +223,7 @@ waiting_update_command({update_manifests_with_confirmation, WrappedManifests}, _
                                                          key=Key,
                                                          riak_object=undefined,
                                                          manifests=undefined}) ->
+                    lager:debug(">>> ~p ~p", [?FILE, ?LINE]),
     {Reply, _, _} = get_and_update(RcPid, WrappedManifests, Bucket, Key),
     {reply, Reply, waiting_update_command, State};
 waiting_update_command({update_manifests_with_confirmation, WrappedManifests}, _From,

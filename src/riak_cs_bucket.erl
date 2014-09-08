@@ -31,8 +31,12 @@
          get_buckets/1,
          set_bucket_acl/5,
          set_bucket_policy/5,
+         set_bucket_lifecycle/5,
          delete_bucket_policy/4,
+         delete_bucket_lifecycle/4,
          get_bucket_acl_policy/3,
+         get_bucket_properties/3,
+         get_bucket_properties/2,
          maybe_log_bucket_owner_error/2,
          resolve_buckets/3,
          update_bucket_record/1,
@@ -321,7 +325,8 @@ delete_bucket_policy(User, UserObj, Bucket, RcPid) ->
                          bucket_put_policy,
                          RcPid).
 
-% @doc fetch moss.bucket and return acl and policy
+%% @doc fetch moss.bucket and return acl and policy
+%% TODO: merge with codes getting lifecycle
 -spec get_bucket_acl_policy(binary(), atom(), riak_client()) ->
                                    {acl(), policy()} | {error, term()}.
 get_bucket_acl_policy(Bucket, PolicyMod, RcPid) ->
@@ -352,6 +357,54 @@ format_acl_policy_response({ok, Acl}, {error, policy_undefined}) ->
     {Acl, undefined};
 format_acl_policy_response({ok, Acl}, {ok, Policy}) ->
     {Acl, Policy}.
+
+delete_bucket_lifecycle(User, UserObj, Bucket, RcPid) ->
+    serialized_bucket_op(Bucket,
+                         "",
+                         User,
+                         UserObj,
+                         delete_lifecycle,
+                         bucket_put_lifecycle,
+                         RcPid).
+
+%% @doc gets metadata in Bucket Object
+get_bucket_properties(Bucket, Property, RcPid) when
+      Property =:= lifecycle -> %% or policy, acl
+    %% TODO: refactor with Bucket ACL, Policy, Lifecycle
+    case fetch_bucket_object(Bucket, RcPid) of
+        {ok, Obj} ->
+            get_bucket_properties(Obj, Property);
+        {error, Reason} ->
+            _ = lager:debug("Failed to fetch policy. Bucket ~p "
+                            " does not exist. Reason: ~p",
+                            [Bucket, Reason]),
+            {error, notfound}
+    end.
+
+get_bucket_properties(BucketObj, lifecycle) ->
+    %% For buckets there should not be siblings, but in rare
+    %% cases it may happen so check for them and attempt to
+    %% resolve if possible.
+    Contents = riakc_obj:get_contents(BucketObj),
+    [{MD, _}|_] = Contents,
+    MetaVals = dict:fetch(?MD_USERMETA, MD),
+    case proplists:get_value(?MD_LIFECYCLE, MetaVals) of
+        undefined ->
+            %% actually not an error, at first lifecycle should be undefined
+            {error, property_not_defined};
+        LifecycleBin ->
+            {ok, binary_to_term(LifecycleBin)}
+    end.
+    
+    
+set_bucket_lifecycle(User, UserObj, Bucket, LifecycleXML, RcPid) ->
+    serialized_bucket_op(Bucket,
+                         LifecycleXML,
+                         User,
+                         UserObj,
+                         update_lifecycle,
+                         bucket_put_lifecycle,
+                         RcPid).
 
 
 %% ===================================================================
@@ -518,12 +571,39 @@ bucket_fun(delete_policy, Bucket, _BagId, _, KeyId, AdminCreds, StanchionData) -
     {StanchionIp, StanchionPort, StanchionSSL} = StanchionData,
     %% Generate the bucket JSON document for the ACL request
     fun() ->
-            velvet:delete_bucket_policy(StanchionIp,
-                                        StanchionPort,
-                                        Bucket,
-                                        KeyId,
-                                        [{ssl, StanchionSSL},
-                                         {auth_creds, AdminCreds}])
+            velvet:delete_bucket_property(policy, StanchionIp,
+                                          StanchionPort,
+                                          Bucket,
+                                          KeyId,
+                                          [{ssl, StanchionSSL},
+                                           {auth_creds, AdminCreds}])
+    end;
+bucket_fun(update_lifecycle, Bucket, _BagId, LifecycleXML, KeyId, AdminCreds, StanchionData) ->
+    Path = filename:join(["/buckets", Bucket, "lifecycle"]),
+    
+    {StanchionIp, StanchionPort, StanchionSSL} = StanchionData,
+    %% Generate the bucket JSON document for the ACL request
+    fun() ->
+            velvet:update_bucket(StanchionIp,
+                                 StanchionPort,
+                                 binary_to_list(Path),
+                                 "text/xml",
+                                 LifecycleXML,
+                                 [{ssl, StanchionSSL},
+                                  {auth_creds, AdminCreds},
+                                  {header, [{"X-Rcs-Requester", KeyId}]}],
+                                 204)
+    end;
+bucket_fun(delete_lifecycle, Bucket, _BagId, _, KeyId, AdminCreds, StanchionData) ->
+    {StanchionIp, StanchionPort, StanchionSSL} = StanchionData,
+    %% Generate the bucket JSON document for the ACL request
+    fun() ->
+            velvet:delete_bucket_property(lifecycle, StanchionIp,
+                                          StanchionPort,
+                                          Bucket,
+                                          KeyId,
+                                          [{ssl, StanchionSSL},
+                                           {auth_creds, AdminCreds}])
     end;
 bucket_fun(delete, Bucket, _BagId, _ACL, KeyId, AdminCreds, StanchionData) ->
     {StanchionIp, StanchionPort, StanchionSSL} = StanchionData,

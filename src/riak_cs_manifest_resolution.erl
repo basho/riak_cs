@@ -132,7 +132,8 @@ resolve_props(A, B) ->
     Ps_B = B?MANIFEST.props,
     {_, _, New} = lists:foldl(fun resolve_a_prop/2,
                               {Ps_A, Ps_B, []},
-                              [fun resolve_prop_multipart/2,
+                              [fun resolve_prop_archival/2,
+                               fun resolve_prop_multipart/2,
                                fun resolve_prop_multipart_cleanup/2,
                                fun resolve_prop_block_bag/2]),
     New.
@@ -140,6 +141,23 @@ resolve_props(A, B) ->
 resolve_a_prop(Resolver, {Ps_A, Ps_B, Ps_merged}) ->
     {_, _, New} = Resolver(Ps_A, Ps_B),
     {Ps_A, Ps_B, New ++ Ps_merged}.
+
+resolve_prop_archival(Ps_A, Ps_B) ->
+    Archived = case {proplists:get_value(archived, Ps_A),
+                     proplists:get_value(archived, Ps_B)} of
+                   {undefined, undefined} ->
+                       case {proplists:get_value(archiving, Ps_A),
+                             proplists:get_value(archiving, Ps_B)} of
+                           {undefined, undefined} -> [];
+                           {undefined, B} -> [{archiving, B}];
+                           {A, undefined} -> [{archiving, A}];
+                           {A, A} ->         [{archiving, A}]
+                       end;
+                   {undefined, B} ->         [{archived, B}];
+                   {A, undefined} ->         [{archived, A}];
+                   {A, A} ->                 [{archived, A}]
+               end,
+    {Ps_A, Ps_B, Archived}.
 
 resolve_prop_multipart(Ps_A, Ps_B) ->
     case {proplists:get_value(multipart, Ps_A),

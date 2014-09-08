@@ -229,6 +229,24 @@ list_objects(RiakcPid, "riak-cs-gc" = Bucket)->
     [print_gc_manifest_summary(RiakcPid, Key, SiblingNo, M)
      || Key <- lists:sort(ManifestKeys),
         {SiblingNo, _UUID, M} <- get_gc_manifest(RiakcPid, Bucket, Key)];
+list_objects(RiakcPid, "riak-cs-lifecycle" = Bucket)->
+    ManifestKeys =
+        case os:getenv("CS_INSPECTOR_INPUT") of
+            false ->
+                {ok, Keys} = riakc_pb_socket:list_keys(RiakcPid, Bucket),
+                Keys;
+            InputFileName ->
+                {ok, Bin} = file:read_file(InputFileName),
+                binary:split(Bin, <<"\n">>, [global, trim])
+        end,
+    [begin
+         io:format("Key: ~s~n", [Key]),
+         {ok, RiakObj} = riakc_pb_socket:get(RiakcPid, <<"riak-cs-lifecycle">>, Key),
+         Contents = riakc_obj:get_contents(RiakObj),
+         [io:format("~p~n", [binary_to_term(Content)])
+          || {_, Content} <- Contents]
+     end
+     || Key <- lists:sort(ManifestKeys)];
 list_objects(RiakcPid, Bucket)->
     print_manifest_summary(pid, bucket, sibling_no, header),
     ManifestBucketName = riak_cs_utils:to_bucket_name(objects, Bucket),
@@ -236,6 +254,21 @@ list_objects(RiakcPid, Bucket)->
     [print_manifest_summary(RiakcPid, Bucket, SiblingNo, M)
      || Key <- lists:sort(ManifestKeys),
         {SiblingNo, _UUID, M} <- get_manifest(RiakcPid, Bucket, Key)].
+
+print_lifecycle_summary(_RiakcPid, _Key, _SiblingNo, header) ->
+    io:format("~-32..=s: ~-8..=s ~-16..=s ~-32..=s ~-16..=s ~-32..=s~n",
+              ["Key ", "Sibl. ", "State ", "UUID ", "Content-Length", "CS Key "]);
+print_lifecycle_summary(_RiakcPid, Key, SiblingNo, {tombstone, {_Bucket, Key}}) ->
+    io:format("~-32s: ~-8B ~-16s ~-32s ~16B ~-32s~n",
+              [Key, SiblingNo, tombstone, tombstone, 0, tombstone]);
+print_lifecycle_summary(_RiakcPid, Key, SiblingNo, empty_twop_set) ->
+    io:format("~-32s: ~-8B ~-16s ~-32s ~16B ~-32s~n",
+              [Key, SiblingNo, empty_twop_set, empty_twop_set, 0, empty_twop_set]);
+print_lifecycle_summary(_RiakcPid, Key, SiblingNo, M) ->
+    {_, CSKey} = m_attr(bkey, M),
+    io:format("~-32s: ~-8B ~-16s ~-32s ~16B ~-32s~n",
+              [Key, SiblingNo, m_attr(state, M), uuid_hex(M),
+               m_attr(content_length, M), CSKey]).
 
 print_gc_manifest_summary(_RiakcPid, _Key, _SiblingNo, header) ->
     io:format("~-32..=s: ~-8..=s ~-16..=s ~-32..=s ~-16..=s ~-32..=s~n",

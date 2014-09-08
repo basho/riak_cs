@@ -59,7 +59,10 @@
                 all_delete_workers=[] :: list(pid()),
                 free_deleters = ordsets:new() :: ordsets:ordset(pid()),
                 deleted_blocks = 0 :: non_neg_integer(),
-                total_blocks = 0 :: non_neg_integer()}).
+                total_blocks = 0 :: non_neg_integer(),
+                %% A flag whether to delete the manifest or keep it
+                %% and change the props as needed.
+                archived = undefined :: filename:filename()}).
 
 -type state() :: #state{}.
 
@@ -80,15 +83,17 @@ block_deleted(Pid, Response) ->
 %% gen_fsm callbacks
 %% ====================================================================
 
-init([RcPid, {UUID, Manifest}, GCWorkerPid, GCKey, _Options]) ->
+init([RcPid, {UUID, Manifest}, GCWorkerPid, GCKey, Options]) ->
     {Bucket, Key} = Manifest?MANIFEST.bkey,
+    ArchiveFile = proplists:get_value(archived, Options),
     State = #state{bucket=Bucket,
                    key=Key,
                    manifest=Manifest,
                    uuid=UUID,
                    riak_client=RcPid,
                    gc_worker_pid=GCWorkerPid,
-                   gc_key=GCKey},
+                   gc_key=GCKey,
+                   archived=ArchiveFile},
     {ok, prepare, State, 0}.
 
 %% @TODO Make sure we avoid any race conditions here
@@ -119,14 +124,39 @@ handle_info(_Info, StateName, State) ->
     {next_state, StateName, State}.
 
 terminate(Reason, _StateName, #state{all_delete_workers=AllDeleteWorkers,
-                                     manifest=?MANIFEST{state=ManifestState},
+                                     manifest=?MANIFEST{state=ManifestState,
+                                                        props=Props} = M,
                                      bucket=Bucket,
                                      key=Key,
                                      uuid=UUID,
-                                     riak_client=RcPid} = State) ->
-    manifest_cleanup(ManifestState, Bucket, Key, UUID, RcPid),
-    _ = [riak_cs_block_server:stop(P) || P <- AllDeleteWorkers],
-    notify_gc_worker(Reason, State),
+                                     riak_client=RcPid,
+                                     archived=ArchiveFile} = State) ->
+    Archived = proplists:get_value(archiving, Props),
+    lager:debug("~p / ~p", [ArchiveFile, Archived]),
+    case ArchiveFile of
+        undefined ->
+            manifest_cleanup(ManifestState, Bucket, Key, UUID, RcPid),
+            _ = [riak_cs_block_server:stop(P) || P <- AllDeleteWorkers],
+            notify_gc_worker(Reason, State);
+        
+        _ when ArchiveFile =:= Archived ->
+            NewProps = [{archived, ArchiveFile}
+                        |proplists:delete(archived, proplists:delete(archiving, Props))],
+            lager:debug("OldProps: ~p", [Props]),
+            lager:debug("NewProps: ~p", [NewProps]),
+            ArchivedManifest = M?MANIFEST{state=active, props=NewProps},
+            lager:debug("updating manifest as: ~p", [ArchivedManifest]),
+            manifest_update(ArchivedManifest, Bucket, Key, RcPid),
+            lager:debug("updatd manifest", []),
+            _ = [riak_cs_block_server:stop(P) || P <- AllDeleteWorkers],
+            lager:debug("block server stopped", []),
+            %% Wrong name, but a kludge
+            LifecycleWorker = State#state.gc_worker_pid,
+            lager:debug("Sending message to ~p", [LifecycleWorker]),
+            LifecycleWorker ! {block_delete_done, UUID},
+            lager:debug("done:)", [])
+
+    end,
     ok.
 
 code_change(_OldVsn, StateName, State, _Extra) ->
@@ -264,6 +294,16 @@ manifest_cleanup(deleted, Bucket, Key, UUID, RcPid) ->
 manifest_cleanup(_, _, _, _, _) ->
     ok.
 
+-spec manifest_update(lfs_manifest(), binary(), binary(), riak_client()) -> ok.
+manifest_update(Manifest, Bucket, Key, RcPid) ->
+    {ok, ManiFsmPid} = riak_cs_manifest_fsm:start_link(Bucket, Key, RcPid),
+    _ = try
+            riak_cs_manifest_fsm:update_manifest_with_confirmation(ManiFsmPid, Manifest)
+        after
+            _ = riak_cs_manifest_fsm:stop(ManiFsmPid)
+        end,
+    ok.
+
 -spec blocks_to_delete_from_manifest(lfs_manifest()) ->
                                             {ok, {lfs_manifest(), ordsets:ordset(integer())}} |
                                             {error, term()}.
@@ -281,6 +321,25 @@ blocks_to_delete_from_manifest(Manifest=?MANIFEST{state=State,
     UpdManifest = Manifest?MANIFEST{delete_blocks_remaining=Blocks,
                                     state=UpdState},
     {ok, {UpdManifest, Blocks}};
+blocks_to_delete_from_manifest(Manifest=?MANIFEST{state=State,
+                                                  delete_blocks_remaining=undefined,
+                                                  props=Props})
+  when State =:= active ->
+    case proplists:get_value(archiving, Props) of
+        undefined ->     {error, invalid_state};
+        _ ->
+            {UpdState, Blocks} =
+                case riak_cs_lfs_utils:block_sequences_for_manifest(Manifest) of
+                    [] ->
+                        {active, ordsets:new()};
+                    BlockSequence ->
+                        {State, BlockSequence}
+                            
+                end,
+            UpdManifest = Manifest?MANIFEST{delete_blocks_remaining=Blocks,
+                                            state=UpdState},
+            {ok, {UpdManifest, Blocks}}
+    end;
 blocks_to_delete_from_manifest(?MANIFEST{delete_blocks_remaining=undefined}) ->
     {error, invalid_state};
 blocks_to_delete_from_manifest(Manifest) ->
