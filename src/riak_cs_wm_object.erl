@@ -454,7 +454,8 @@ finalize_request(RD,
     %% For lifecycle; now doing it by default;;;;
     Manifest0 = riak_cs_put_fsm:get_manifest(Pid),
     UUID = riak_cs_manifest:uuid(Manifest0),
-    ok = riak_cs_s3_lifecycle:schedule_lifecycle(UUID, Manifest0, delete),
+    %% ok = riak_cs_s3_lifecycle:schedule_lifecycle(UUID, Manifest0, delete),
+    ok = riak_cs_s3_lifecycle:schedule_lifecycle(UUID, Manifest0, archive),
 
     Response =
         case riak_cs_put_fsm:finalize(Pid, ContentMD5) of

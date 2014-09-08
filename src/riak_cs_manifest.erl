@@ -26,6 +26,7 @@
          etag/1,
          bkey/1,
          uuid/1,
+         content_length/1,
          etag_no_quotes/1,
          object_acl/1]).
 
@@ -92,6 +93,8 @@ etag(?MANIFEST{content_md5=MD5}) ->
 
 -spec bkey(lfs_manifest()) -> {binary(), binary()}.
 bkey(?MANIFEST{bkey=BKey}) -> BKey.
+
+content_length(?MANIFEST{content_length=Length}) -> Length.
 
 -spec etag_no_quotes(lfs_manifest()) -> string().
 etag_no_quotes(?MANIFEST{content_md5=ContentMD5}) ->

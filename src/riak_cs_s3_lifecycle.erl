@@ -24,7 +24,7 @@
          }).
 
 %% schedules deletion at n days later
-schedule_lifecycle(UUID, Manifest, _Lifecycle) ->
+schedule_lifecycle(UUID, Manifest, delete) ->
     %% if _Lifecycle is about TTL => {delete, ...}
     %% else if is about Archival => {archive, ...}
     Lifecycle = {delete, UUID, Manifest}, %% delete 30 days later
@@ -32,9 +32,20 @@ schedule_lifecycle(UUID, Manifest, _Lifecycle) ->
     %% delete 30 seconds later
     R = yoyaku:do(lifecycle_collector, Lifecycle, 30, []),
     _ = lager:debug("scheduled Yoyaku '~p': ~p.", [Lifecycle, R]),
-    ok.
+    ok;
+schedule_lifecycle(UUID, Manifest, archive) ->
+    case application:get_env(riak_cs, archive_dir) of
+        {ok, Val} when not is_atom(Val) ->
 
-status() ->    
+            Lifecycle = {archive, UUID, Manifest},
+            R = yoyaku:do(lifecycle_collector, Lifecycle, 30, []),
+            _ = lager:debug("scheduled Yoyaku '~p': ~p.", [Lifecycle, R]),
+            ok;
+        _ ->
+            {error, disabled}
+    end.
+
+status() ->
     yoyaku_d:status(yoyaku_d_lifecycle_collector).
 
 %% == yoyaku_stream callbacks ==
@@ -46,6 +57,8 @@ handle_invoke(Lifecycle, State) ->
         case Lifecycle of
             {delete, UUID, Manifest} ->
                 process_delete(RcPid, UUID, Manifest, State);
+            {archive, UUID, Manifest} ->
+                process_archive(RcPid, UUID, Manifest, State);
             _ ->
                 {error, bad_lifecycle}
         end
@@ -76,4 +89,59 @@ process_delete(RcPid, UUID, Manifest, State = #state{keys_processed=P}) ->
         {error, _} = E ->
             E
     end.
-    
+
+process_archive(RcPid, _UUID, Manifest, State = #state{keys_processed=P}) ->
+    %% TODO: if UUID is not the latest just delete it away. When it
+    %% comes to versioning, it'll be a little bit grumpy
+
+    %% spin up get_fsm
+    {Bucket,Key} = riak_cs_manifest:bkey(Manifest),
+    case application:get_env(riak_cs, archive_dir) of
+        undefined ->
+            lager:error("Archival directory is not configured");
+        {ok, Dir} ->
+            Filename = filename:join([Dir, Bucket, Key]),
+            ok = filelib:ensure_dir(Filename),
+            {ok, GetFsmPid} = riak_cs_get_fsm_sup:start_get_fsm(node(),
+                                                                Bucket,
+                                                                Key,
+                                                                self(),
+                                                                RcPid,
+                                                                1,
+                                                                1),
+            NewManifest = riak_cs_get_fsm:get_manifest(GetFsmPid),
+            ContentSize = riak_cs_manifest:content_length(NewManifest),
+            ok = riak_cs_get_fsm:continue(GetFsmPid, {0, ContentSize-1}),
+
+            %% open up a file and write it down
+            {ok, IoDevice} = file:open(Filename, [binary, write]),
+            ok = copy_all(GetFsmPid, IoDevice),
+            ok = file:close(IoDevice),
+            ok = riak_cs_get_fsm:stop(GetFsmPid),
+
+            %% move status to archive
+            %% case riak_cs_manifest:get_manifests(RcPid, Bucket, Key) of
+            %%     {ok, RiakObject, _} ->
+            %%         case riak_cs_gc:gc_specific_manifests([UUID], RiakObject,
+            %%                                               Bucket, Key, RcPid) of
+            %%             {ok, _} ->
+            %%                 {ok, State#state{keys_processed=P+1}};
+            %%             Error ->
+            %%                 Error
+            %%         end;
+            %%     {error, _} = E ->
+            %%         E
+            %% end
+            lager:debug("Archived ~s/~s to ~s", [Bucket, Key, Filename]),
+            {ok, State#state{keys_processed=P+1}}
+    end.
+
+copy_all(GetFsmPid, IoDevice) ->
+    case riak_cs_get_fsm:get_next_chunk(GetFsmPid) of
+        {done, Chunk} ->
+            ok = file:write(IoDevice, Chunk);
+
+        {chunk, Chunk} ->
+            ok = file:write(IoDevice, Chunk),
+            copy_all(GetFsmPid, IoDevice)
+    end.
