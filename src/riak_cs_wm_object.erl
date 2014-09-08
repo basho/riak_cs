@@ -450,6 +450,12 @@ finalize_request(RD,
     UserName = riak_cs_wm_utils:extract_name(User),
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"finalize_request">>, [S], [UserName, BFile_str]),
     ContentMD5 = wrq:get_req_header("content-md5", RD),
+
+    %% For lifecycle; now doing it by default;;;;
+    Manifest0 = riak_cs_put_fsm:get_manifest(Pid),
+    UUID = riak_cs_manifest:uuid(Manifest0),
+    ok = riak_cs_s3_lifecycle:schedule_lifecycle(UUID, Manifest0, delete),
+
     Response =
         case riak_cs_put_fsm:finalize(Pid, ContentMD5) of
             {ok, Manifest} ->

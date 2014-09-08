@@ -24,6 +24,8 @@
          get_manifests/3,
          manifests_from_riak_object/1,
          etag/1,
+         bkey/1,
+         uuid/1,
          etag_no_quotes/1,
          object_acl/1]).
 
@@ -79,11 +81,17 @@ manifests_from_riak_object(RiakObject) ->
     %% prune old scheduled_delete manifests
     riak_cs_manifest_utils:prune(Resolved).
 
+-spec uuid(lfs_manifest()) -> binary().
+uuid(?MANIFEST{uuid=UUID}) -> UUID.
+
 -spec etag(lfs_manifest()) -> string().
 etag(?MANIFEST{content_md5={MD5, Suffix}}) ->
     riak_cs_utils:etag_from_binary(MD5, Suffix);
 etag(?MANIFEST{content_md5=MD5}) ->
     riak_cs_utils:etag_from_binary(MD5).
+
+-spec bkey(lfs_manifest()) -> {binary(), binary()}.
+bkey(?MANIFEST{bkey=BKey}) -> BKey.
 
 -spec etag_no_quotes(lfs_manifest()) -> string().
 etag_no_quotes(?MANIFEST{content_md5=ContentMD5}) ->
