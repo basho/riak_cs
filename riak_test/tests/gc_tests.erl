@@ -95,9 +95,14 @@ change_state_to_active(Pbc, TargetBKey, [GCKey|Rest]) ->
             change_state_to_active(Pbc, TargetBKey, Rest);
         [{TargetUUID, TargetManifest}] ->
             lager:info("Target BKey ~p found in GC bucket ~p", [TargetBKey, GCKey]),
-            NewManifestSet = lists:foldl(fun twop_set:add_element/2, twop_set:new(),
-                                         [{TargetUUID, TargetManifest?MANIFEST{state = active}} |
-                                          lists:keydelete(TargetUUID, 1, Manifests)]),
+            NewManifestSet =
+                lists:foldl(fun twop_set:add_element/2, twop_set:new(),
+                            [{TargetUUID,
+                              TargetManifest?MANIFEST{
+                                               state = active,
+                                               delete_marked_time=undefined,
+                                               delete_blocks_remaining=undefined}} |
+                             lists:keydelete(TargetUUID, 1, Manifests)]),
             UpdObj = riakc_obj:update_value(Obj0, term_to_binary(NewManifestSet)),
             ok = riakc_pb_socket:put(Pbc, UpdObj),
             lager:info("Bad state manifests have been put at ~p: ~p~n",
