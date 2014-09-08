@@ -65,11 +65,11 @@ setup_obj(RiakNodes, UserConfig) ->
     erlcloud_s3:delete_object(?TEST_BUCKET, ?TEST_KEY_BAD_STATE, UserConfig),
     %% Change the state in the manifest in gc bucket to active.
     %% See https://github.com/basho/riak_cs/issues/827#issuecomment-54567839
-    Pbc = rtcs:pbc(RiakNodes, gc_bucket, not_used),
-    {ok, GCKeys} = riakc_pb_socket:list_keys(Pbc, ?GC_BUCKET),
+    GCPbc = rtcs:pbc(RiakNodes, objects, ?TEST_BUCKET),
+    {ok, GCKeys} = riakc_pb_socket:list_keys(GCPbc, ?GC_BUCKET),
     BKey = {list_to_binary(?TEST_BUCKET), list_to_binary(?TEST_KEY_BAD_STATE)},
     lager:info("Changing state to active ~p, ~p", [?TEST_BUCKET, ?TEST_KEY_BAD_STATE]),
-    {ok, GCKey, UUID} = change_state_to_active(Pbc, BKey, GCKeys),
+    {ok, GCKey, UUID} = change_state_to_active(GCPbc, BKey, GCKeys),
 
     %% Put and delete some more objects
     [begin
@@ -79,7 +79,7 @@ setup_obj(RiakNodes, UserConfig) ->
          erlcloud_s3:delete_object(?TEST_BUCKET, Key, UserConfig)
      end || {Suffix, Size} <- [{"Z", 0}, {"Y", 150}, {"X", 1}]],
 
-    riakc_pb_socket:stop(Pbc),
+    riakc_pb_socket:stop(GCPbc),
     {GCKey, {BKey, UUID}}.
 
 change_state_to_active(_Pbc, TargetBKey, []) ->
@@ -121,14 +121,14 @@ verify_gc_run(Node, GCKey) ->
 
 %% Verify riak objects in gc buckets, manifest, block are all remaining.
 verify_riak_object_remaining_for_bad_key(RiakNodes, GCKey, {{Bucket, Key}, UUID}) ->
-    {ok, _BlockObj} = rc_helper:get_riakc_obj(RiakNodes, blocks, Bucket, {UUID, 0}),
+    {ok, _BlockObj} = rc_helper:get_riakc_obj(RiakNodes, blocks, Bucket, {Key, UUID, 0}),
     {ok, _ManifestObj} = rc_helper:get_riakc_obj(RiakNodes, objects, Bucket, Key),
 
-    Pbc = rtcs:pbc(RiakNodes, gc_bucket, not_used),
-    {ok, FileSetObj} = riakc_pb_socket:get(Pbc, ?GC_BUCKET, GCKey),
+    GCPbc = rtcs:pbc(RiakNodes, objects, Bucket),
+    {ok, FileSetObj} = riakc_pb_socket:get(GCPbc, ?GC_BUCKET, GCKey),
     Manifests = twop_set:to_list(binary_to_term(riakc_obj:get_value(FileSetObj))),
     {UUID, Manifest} = lists:keyfind(UUID, 1, Manifests),
-    riakc_pb_socket:stop(Pbc),
-    lager:info("BAD manifest in GC bucket remains, stand off orphan manfiests/blocks: ~p",
-               [Manifest]),
+    riakc_pb_socket:stop(GCPbc),
+    lager:info("As expected, BAD manifest in GC bucket remains,"
+               " stand off orphan manfiests/blocks: ~p", [Manifest]),
     ok.
