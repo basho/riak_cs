@@ -248,7 +248,7 @@ meck_delete_fsm_sup() ->
                 fun dummy_start_delete_fsm/2).
 
 dummy_start_delete_fsm(_Node, [_RcPid, {_UUID, ?MANIFEST{bkey={_, K}}=_Manifest},
-                               From, _Args]) ->
+                               From, _GCKey, _Args]) ->
     TotalBlocks = ?BLOCK_NUM_IN_MANIFEST,
     NumDeleted = case re:run(K, <<"^error:in_block_delete/">>) of
                      nomatch -> TotalBlocks;

@@ -124,13 +124,14 @@ initiating_file_delete(continue, ?STATE{batch=[_ManiSetKey | RestKeys],
     ok = continue(),
     {next_state, fetching_next_fileset, State?STATE{batch=RestKeys,
                                                     batch_count=1+BatchCount}};
-initiating_file_delete(continue, ?STATE{current_files=[Manifest | _RestManifests],
+initiating_file_delete(continue, ?STATE{batch=[CurrentFileSetKey | _],
+                                        current_files=[Manifest | _RestManifests],
                                         riak_client=RcPid}=State) ->
     %% Use an instance of `riak_cs_delete_fsm' to handle the
     %% deletion of the file blocks.
     %% Don't worry about delete_fsm failures. Manifests are
     %% rescheduled after a certain time.
-    Args = [RcPid, Manifest, self(), []],
+    Args = [RcPid, Manifest, self(), CurrentFileSetKey, []],
     %% The delete FSM is hard-coded to send a sync event to our registered
     %% name upon terminate(), so we do not have to pass our pid to it
     %% in order to get a reply.

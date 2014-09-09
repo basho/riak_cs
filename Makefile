@@ -31,6 +31,7 @@ compile-riak-test: all
 	## So we'll copy the BEAM files to a place that riak_test is
 	## already using.
 	cp -v ebin/riak_cs_wm_utils.beam riak_test/ebin
+	cp -v ebin/twop_set.beam riak_test/ebin
 
 clean-client-test:
 	@./rebar client_test_clean

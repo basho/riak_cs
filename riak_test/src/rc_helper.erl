@@ -33,14 +33,23 @@ to_riak_bucket(_, CSBucket) ->
 
 to_riak_key(objects, CsKey) ->
     CsKey;
-to_riak_key(_,_) ->
-    throw(not_yet_implemented).
+to_riak_key(blocks, {UUID, Seq}) ->
+    <<UUID/binary, Seq:32>>;
+to_riak_key(Kind, _) ->
+    error({not_yet_implemented, Kind}).
 
 -spec get_riakc_obj([term()], objects | blocks, binary(), term()) -> term().
-get_riakc_obj(RiakNodes, Kind, CsBucket, CsKey) ->
-    Pbc = rtcs:pbc(RiakNodes, Kind, CsBucket),
+get_riakc_obj(RiakNodes, Kind, CsBucket, Opts) ->
+    {Pbc, Key} = case Kind of
+                     objects ->
+                         {rtcs:pbc(RiakNodes, Kind, CsBucket), Opts};
+                     blocks ->
+                         {CsKey, UUID, Seq} = Opts,
+                         {rtcs:pbc(RiakNodes, Kind, {CsBucket, CsKey, UUID}),
+                          {UUID, Seq}}
+                   end,
     RiakBucket = to_riak_bucket(Kind, CsBucket),
-    RiakKey = to_riak_key(Kind, CsKey),
+    RiakKey = to_riak_key(Kind, Key),
     Result = riakc_pb_socket:get(Pbc, RiakBucket, RiakKey),
     riakc_pb_socket:stop(Pbc),
     Result.
