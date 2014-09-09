@@ -207,7 +207,7 @@ invalid_part_number_test_case(Bucket, Key, Config) ->
     ErrorPattern =
         "<Error><Code>InvalidArgument</Code>"
         "<Message>Part number must be an integer between 1 and 10000, inclusive</Message>",
-    ?assertMatch({match, _}, re:run(Body, ErrorPattern [multiline])),
+    ?assertMatch({match, _}, re:run(Body, ErrorPattern, [multiline])),
     abort_uploads(Bucket, Config).
 
 
