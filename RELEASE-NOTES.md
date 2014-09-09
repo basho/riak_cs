@@ -13,6 +13,7 @@
 - Fix wrong log directory for gathering logs on riak-cs-debug [riak_cs/#953](https://github.com/basho/riak_cs/pull/953)
 - Avoid DST-aware translation from localtime to GMT [riak_cs/#954](https://github.com/basho/riak_cs/pull/954)
 - Use new UUID for seed of canonical ID instead of secret [riak_cs/#956](https://github.com/basho/riak_cs/pull/956)
+- Add max part number limitation [riak_cs/#957](https://github.com/basho/riak_cs/pull/957)
 - Set timeout as infinity, default was 5000ms [riak_cs/#963](https://github.com/basho/riak_cs/pull/963)
 - Skip invalid state manifests in GC bucket [riak_cs/#964](https://github.com/basho/riak_cs/pull/964)
 
