@@ -204,8 +204,10 @@ invalid_part_number_test_case(Bucket, Key, Config) ->
                                                  InvalidPartNumber,
                                                  generate_part_data(0, ?GOOD_PART_SIZE),
                                                  Config)),
-    ?assertMatch({match, _},
-                 re:run(Body, riak_cs_s3_response:error_message(invalid_part_number), [multiline])),
+    ErrorPattern =
+        "<Error><Code>InvalidArgument</Code>"
+        "<Message>Part number must be an integer between 1 and 10000, inclusive</Message>",
+    ?assertMatch({match, _}, re:run(Body, ErrorPattern, [multiline])),
     abort_uploads(Bucket, Config).
 
 
