@@ -116,8 +116,9 @@ verify_gc_run(Node, GCKey) ->
     rtcs:gc(1, "batch"),
     true = rt:expect_in_log(Node,
                             "Invalid state manifest in GC bucket at <<\""
-                            ++ binary_to_list(GCKey)
-                            ++ "\">>: "),
+                            ++ binary_to_list(GCKey) ++ "\">>, "
+                            ++ "bucket=<<\"" ++ ?TEST_BUCKET ++ "\">> "
+                            ++ "key=<<\"" ++ ?TEST_KEY_BAD_STATE ++ "\">>: "),
     true = rt:expect_in_log(Node,
                             "Finished garbage collection: \\d+ seconds, "
                             "\\d batch_count, 0 batch_skips, "

@@ -175,12 +175,17 @@ handle_receiving_manifest(State=#state{manifest=Manifest,
                                    total_blocks=BlockCount},
             start_block_servers(NewState);
         {error, invalid_state} ->
-            _ = lager:warning("Invalid state manifest in GC bucket at ~p: ~p",
-                              [GCKey, Manifest]),
+            {Bucket, Key} = Manifest?MANIFEST.bkey,
+            _ = lager:warning("Invalid state manifest in GC bucket at ~p, "
+                              "bucket=~p key=~p: ~p",
+                              [GCKey, Bucket, Key, Manifest]),
             %% If total blocks and deleted blocks are the same,
             %% gc worker attempt to delete the manifest in fileset.
             %% Then manifests and blocks becomes orphan.
             %% To avoid it, set total_blocks > 0 here.
+            %% For now delete FSM stops with pseudo-normal termination to
+            %% let other valid manifests be collected, as the root cause
+            %% of #827 is still unidentified.
             {stop, normal, State#state{total_blocks=1}}
     end.
 
