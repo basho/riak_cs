@@ -68,7 +68,7 @@ confirm() ->
                           assert_storage_json_stats(Spec, JsonStat),
                           assert_storage_xml_stats(Spec, XmlStat)
                   end, TestSpecs),
-    pass.
+    rtcs:pass().
 
 %% @doc garbage data to check #840 regression,
 %% due to this garbages, following tests may fail
@@ -221,14 +221,14 @@ assert_storage_json_stats({Bucket, ExpectedObjects, ExpectedBytes}, Sample) ->
     ?assertEqual(ExpectedBytes,   rtcs:json_get([list_to_binary(Bucket), <<"Bytes">>],     Sample)),
     ?assert(rtcs:json_get([<<"StartTime">>], Sample) =/= notfound),
     ?assert(rtcs:json_get([<<"EndTime">>],   Sample) =/= notfound),
-    pass.
+    ok.
 
 assert_storage_xml_stats({Bucket, ExpectedObjects, ExpectedBytes}, Sample) ->
     ?assertEqual(ExpectedObjects, proplists:get_value('Objects', proplists:get_value(Bucket, Sample))),
     ?assertEqual(ExpectedBytes,   proplists:get_value('Bytes', proplists:get_value(Bucket, Sample))),
     ?assert(proplists:get_value('StartTime', Sample) =/= notfound),
     ?assert(proplists:get_value('EndTime', Sample)   =/= notfound),
-    pass.
+    ok.
 
 storage_stats_request(UserConfig, Begin, End) ->
     {storage_stats_json_request(UserConfig, Begin, End),

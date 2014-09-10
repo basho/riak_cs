@@ -236,7 +236,7 @@ confirm() ->
 
     Obj15 = erlcloud_s3:get_object(?TEST_BUCKET, "object_four", U1C2Config),
     assert_equal_binary(Object4A, proplists:get_value(content,Obj15)),
-    pass.
+    rtcs:pass().
 
 assert_equal_binary(Expected, Expected) ->
     ok;

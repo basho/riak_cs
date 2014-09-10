@@ -51,7 +51,7 @@ confirm() ->
                                        Content, ThreeDates, UserConfig),
     match_condition_test_cases(?TEST_BUCKET, ?TEST_KEY,
                                Content, Etag, UserConfig),
-    pass.
+    rtcs:pass().
 
 setup_object(Bucket, Key, UserConfig) ->
     Content = crypto:rand_bytes(400),

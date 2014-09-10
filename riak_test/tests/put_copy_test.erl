@@ -55,10 +55,10 @@ confirm() ->
     ?assertEqual(ok, erlcloud_s3:create_bucket(?BUCKET2, UserConfig)),
     ?assertEqual(ok, erlcloud_s3:create_bucket(?BUCKET3, UserConfig2)),
 
-    pass = verify_simple_copy(UserConfig),
-    pass = verify_others_copy(UserConfig, UserConfig2),
-    pass = verify_multipart_copy(UserConfig),
-    pass = verify_security(UserConfig, UserConfig2, UserConfig3),
+    ok = verify_simple_copy(UserConfig),
+    ok = verify_others_copy(UserConfig, UserConfig2),
+    ok = verify_multipart_copy(UserConfig),
+    ok = verify_security(UserConfig, UserConfig2, UserConfig3),
 
     ?assertEqual([{delete_marker, false}, {version_id, "null"}],
                  erlcloud_s3:delete_object(?BUCKET, ?KEY, UserConfig)),
@@ -68,7 +68,7 @@ confirm() ->
                  erlcloud_s3:delete_object(?BUCKET2, ?KEY2, UserConfig)),
     ?assertEqual([{delete_marker, false}, {version_id, "null"}],
                  erlcloud_s3:delete_object(?BUCKET3, ?KEY, UserConfig2)),
-    pass.
+    rtcs:pass().
 
 
 verify_simple_copy(UserConfig) ->
@@ -80,7 +80,7 @@ verify_simple_copy(UserConfig) ->
     lager:debug("copied object: ~p", [Props]),
     ?assertEqual(?DATA0, proplists:get_value(content, Props)),
 
-    pass.
+    ok.
 
 
 verify_others_copy(UserConfig, OtherUserConfig) ->
@@ -104,7 +104,7 @@ verify_others_copy(UserConfig, OtherUserConfig) ->
     Props2 = erlcloud_s3:get_object(?BUCKET3, ?KEY, OtherUserConfig),
     lager:debug("copied object: ~p", [Props2]),
     ?assertEqual(?DATA0, proplists:get_value(content, Props2)),
-    pass.
+    ok.
 
 verify_multipart_copy(UserConfig) ->
     %% ~6MB iolist
@@ -148,7 +148,7 @@ verify_multipart_copy(UserConfig) ->
     Props = erlcloud_s3:get_object(?BUCKET2, ?KEY3, UserConfig),
     %% lager:debug("~p> Props => ~p", [?LINE, Props]),
     ?assertEqual(MillionPocketBurgers, proplists:get_value(content, Props)),
-    pass.
+    ok.
 
 verify_security(Alice, Bob, Charlie) ->
     AlicesBucket = "alice",
@@ -236,4 +236,4 @@ verify_security(Alice, Bob, Charlie) ->
     lager:debug("request ~p ~p => ~p ~p", [URL, Headers, Status, Hdr]),
     ?assertEqual("403", Status),
 
-    pass.
+    ok.

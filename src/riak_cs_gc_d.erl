@@ -612,16 +612,16 @@ current_state() ->
 
 -ifdef(TEST).
 
-%% @doc Start the garbage collection server
+%% Start the garbage collection server
 test_link() ->
     gen_fsm:start_link({local, ?SERVER}, ?MODULE, [testing], []).
 
-%% @doc Start the garbage collection server
+%% Start the garbage collection server
 test_link(Interval) ->
     application:set_env(riak_cs, gc_interval, Interval),
     test_link().
 
-%% @doc Manipulate the current state of the fsm for testing
+%% Manipulate the current state of the fsm for testing
 change_state(State) ->
     gen_fsm:sync_send_all_state_event(?SERVER, {change_state, State}).
 

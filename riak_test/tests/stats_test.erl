@@ -49,7 +49,7 @@ confirm() ->
     confirm_stat_count(Stats1, <<"object_get">>, 1),
     confirm_stat_count(Stats1, <<"object_put">>, 1),
     confirm_stat_count(Stats1, <<"object_delete">>, 1),
-    pass.
+    rtcs:pass().
 
 query_stats(UserConfig, Port) ->
     lager:debug("Querying stats"),
