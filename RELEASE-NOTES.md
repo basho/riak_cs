@@ -2,37 +2,42 @@
 
 ## Additions
 
-- Add sleep after update manifests to avoid sibling explosion [riak_cs/#959](https://github.com/basho/riak_cs/pull/959)
-- Multibag support on riak-cs-debug [riak_cs/#930](https://github.com/basho/riak_cs/pull/
+- Add sleep-after-update manifests to avoid sibling explosion [riak_cs/#959](https://github.com/basho/riak_cs/pull/959)
+- Multibag support on `riak-cs-debug` [riak_cs/#930](https://github.com/basho/riak_cs/pull/
 - Add bucket number limit check in Riak CS process [riak_cs/#950](https://github.com/basho/riak_cs/pull/
 - More efficient bucket resolution [riak_cs/#951](https://github.com/basho/riak_cs/pull/
 
 ## Bugs Fixed
 
 - GC may stall due to `riak_cs_delete_fsm` deadlock [riak_cs/#949](https://github.com/basho/riak_cs/pull/949)
-- Fix wrong log directory for gathering logs on riak-cs-debug [riak_cs/#953](https://github.com/basho/riak_cs/pull/953)
-- Avoid DST-aware translation from localtime to GMT [riak_cs/#954](https://github.com/basho/riak_cs/pull/954)
+- Fix wrong log directory for gathering logs on `riak-cs-debug` [riak_cs/#953](https://github.com/basho/riak_cs/pull/953)
+- Avoid DST-aware translation from local time to GMT [riak_cs/#954](https://github.com/basho/riak_cs/pull/954)
 - Use new UUID for seed of canonical ID instead of secret [riak_cs/#956](https://github.com/basho/riak_cs/pull/956)
 - Add max part number limitation [riak_cs/#957](https://github.com/basho/riak_cs/pull/957)
-- Set timeout as infinity, default was 5000ms [riak_cs/#963](https://github.com/basho/riak_cs/pull/963)
+- Set timeout as infinity to replace the default of 5000ms [riak_cs/#963](https://github.com/basho/riak_cs/pull/963)
 - Skip invalid state manifests in GC bucket [riak_cs/#964](https://github.com/basho/riak_cs/pull/964)
 
 ## Notes on Upgrading
 
 ### Bucket number per user
 
-Since 1.5.1 Riak CS have introduced a limit to the number of buckets
-per user. The default maximum number of buckets is 100. As this
-limitation just prohibits creation of new buckets, users having many
-buckets that exceeded the limit can do any other operations, including
-bucket deletion. To change the default limit, add a configuration line
+Beginning with Riak CS 1.5.1, you can limit the number of buckets that
+can be created per user. The default maximum number is 100. While this
+limitation prohibits the creation of new buckets by users, users that
+exceed the limit can still perform other operations, including bucket
+deletion. To change the default limit, add the following line to the
+`riak_cs` section of `app.config`:
 
-```
-  {max_buckets_per_user, 50000},
+
+```erlang
+{riak_cs, [
+    %% ...
+    {max_buckets_per_user, 5000},
+    %% ...
+    ]}
 ```
 
-to `riak_cs` section of app.config. To avoid having a limit, place
-`unlimited` instead of number.
+To avoid having a limit, set `max_buckets_per_user` to `unlimited`.
 
 # Riak CS 1.5.0 Release Notes
 
