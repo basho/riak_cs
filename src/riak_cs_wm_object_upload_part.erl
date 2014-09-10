@@ -36,6 +36,7 @@
 
 -include("riak_cs.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
+-include_lib("webmachine/include/wm_reqstate.hrl").
 -include_lib("xmerl/include/xmerl.hrl").
 
 -spec init(#context{}) -> {ok, #context{}}.
@@ -43,10 +44,26 @@ init(Ctx) ->
     %% {ok, Ctx#context{local_context=#key_context{}}}.
     {ok, Ctx#context{local_context=#key_context{}}}.
 
--spec malformed_request(#wm_reqdata{}, #context{}) -> {false, #wm_reqdata{}, #context{}}.
+-spec malformed_request(#wm_reqdata{}, #context{}) ->
+    {false, #wm_reqdata{}, #context{}} | {{halt, pos_integer()}, #wm_reqdata{}, #context{}}.
 malformed_request(RD,Ctx) ->
-    NewCtx = riak_cs_wm_utils:extract_key(RD, Ctx),
-    {false, RD, NewCtx}.
+    Method = wrq:method(RD),
+    case Method == 'PUT' andalso not valid_part_number(RD) of
+        %% For multipart upload part,
+        true ->
+            riak_cs_s3_response:api_error(invalid_part_number, RD, Ctx);
+        false ->
+            NewCtx = riak_cs_wm_utils:extract_key(RD, Ctx),
+            {false, RD, NewCtx}
+    end.
+
+valid_part_number(RD)  ->
+    case riak_cs_utils:safe_list_to_integer(wrq:get_qs_value("partNumber", RD)) of
+        {ok, PartNumber} ->
+            1 =< PartNumber andalso PartNumber =< ?DEFAULT_MAX_PART_NUMBER;
+        _ ->
+            false
+    end.
 
 %% @doc Get the type of access requested and the manifest with the
 %% object ACL and compare the permission requested with the permission
@@ -87,7 +104,7 @@ post_is_create(RD, Ctx) ->
 
 process_post(RD, Ctx=#context{local_context=LocalCtx, riak_client=RcPid}) ->
     #key_context{bucket=Bucket, key=Key} = LocalCtx,
-    User = riak_cs_mp_utils:user_rec_to_3tuple(Ctx#context.user),
+    User = riak_cs_user:to_3tuple(Ctx#context.user),
     UploadId64 = re:replace(wrq:path(RD), ".*/uploads/", "", [{return, binary}]),
     Body = binary_to_list(wrq:req_body(RD)),
     case {parse_body(Body), catch base64url:decode(UploadId64)} of
@@ -97,8 +114,8 @@ process_post(RD, Ctx=#context{local_context=LocalCtx, riak_client=RcPid}) ->
             case riak_cs_mp_utils:complete_multipart_upload(
                    Bucket, list_to_binary(Key), UploadId, PartETags, User,
                    RcPid) of
-                {ok, ?MANIFEST{content_md5 = {ContentMD5, Suffix}} = _NewManifest} ->
-                    ETag = riak_cs_utils:etag_from_binary(ContentMD5, Suffix),
+                {ok, NewManifest} ->
+                    ETag = riak_cs_manifest:etag(NewManifest),
                     _ = lager:debug("checksum of all parts checksum: ~p", [ETag]),
                     XmlDoc = {'CompleteMultipartUploadResult',
                               [{'xmlns', "http://s3.amazonaws.com/doc/2006-03-01/"}],
@@ -156,7 +173,7 @@ delete_resource(RD, Ctx=#context{local_context=LocalCtx,
         UploadId ->
             #key_context{bucket=Bucket, key=KeyStr} = LocalCtx,
             Key = list_to_binary(KeyStr),
-            User = riak_cs_mp_utils:user_rec_to_3tuple(Ctx#context.user),
+            User = riak_cs_user:to_3tuple(Ctx#context.user),
             case riak_cs_mp_utils:abort_multipart_upload(Bucket, Key, UploadId,
                                                          User, RcPid) of
                 ok ->
@@ -213,7 +230,7 @@ accept_body(RD, Ctx0=#context{local_context=LocalCtx0,
                  get_fsm_pid=GetFsmPid} = LocalCtx0,
     catch riak_cs_get_fsm:stop(GetFsmPid),
     BlockSize = riak_cs_lfs_utils:block_size(),
-    Caller = riak_cs_mp_utils:user_rec_to_3tuple(Ctx0#context.user),
+    Caller = riak_cs_user:to_3tuple(Ctx0#context.user),
 
     DstKey = list_to_binary(Key),
 
@@ -311,7 +328,7 @@ to_xml(RD, Ctx=#context{local_context=LocalCtx,
     UploadId = base64url:decode(re:replace(wrq:path(RD), ".*/uploads/",
                                            "", [{return, binary}])),
     {UserDisplay, _Canon, UserKeyId} = User =
-        riak_cs_mp_utils:user_rec_to_3tuple(Ctx#context.user),
+        riak_cs_user:to_3tuple(Ctx#context.user),
     case riak_cs_mp_utils:list_parts(Bucket, Key, UploadId, User, [], RcPid) of
         {ok, Ps} ->
             Us = [{'Part',
@@ -365,7 +382,7 @@ finalize_request(RD, Ctx=#context{local_context=LocalCtx,
                  upload_id=UploadId,
                  part_number=PartNumber,
                  part_uuid=PartUUID} = LocalCtx,
-    Caller = riak_cs_mp_utils:user_rec_to_3tuple(Ctx#context.user),
+    Caller = riak_cs_user:to_3tuple(Ctx#context.user),
     ContentMD5 = wrq:get_req_header("content-md5", RD),
     case riak_cs_put_fsm:finalize(PutPid, ContentMD5) of
         {ok, M} ->
@@ -373,7 +390,7 @@ finalize_request(RD, Ctx=#context{local_context=LocalCtx,
                    Bucket, Key, UploadId, PartNumber, PartUUID,
                    M?MANIFEST.content_md5, Caller, RcPid) of
                 ok ->
-                    ETag = riak_cs_utils:etag_from_binary(M?MANIFEST.content_md5),
+                    ETag = riak_cs_manifest:etag(M),
                     RD2 = wrq:set_resp_header("ETag", ETag, RD),
                     {{halt, 200}, RD2, Ctx};
                 {error, Reason} ->
@@ -399,7 +416,7 @@ maybe_copy_part(PutPid,
     #key_context{upload_id=UploadId,
                  part_number=PartNumber,
                  part_uuid=PartUUID} = LocalCtx,
-    Caller = riak_cs_mp_utils:user_rec_to_3tuple(User),
+    Caller = riak_cs_user:to_3tuple(User),
 
     case riak_cs_copy_object:test_condition_and_permission(ReadRcPid, SrcManifest, RD, Ctx) of
         {false, _, _} ->
@@ -409,16 +426,20 @@ maybe_copy_part(PutPid,
                             [SrcBucket, SrcKey, DstBucket, DstKey, ReadRcPid]),
 
             Range = riak_cs_copy_object:copy_range(RD, SrcManifest),
+
+            %% Prepare for connection loss or client close
+            FDWatcher = riak_cs_copy_object:connection_checker((RD#wm_reqdata.wm_state)#wm_reqstate.socket),
+
             %% This ain't fail because all permission and 404
             %% possibility has been already checked.
-            case riak_cs_copy_object:copy(PutPid, SrcManifest, ReadRcPid, Range) of
+            case riak_cs_copy_object:copy(PutPid, SrcManifest, ReadRcPid, FDWatcher, Range) of
 
                 {ok, DstManifest} ->
                     case riak_cs_mp_utils:upload_part_finished(
                            DstBucket, DstKey, UploadId, PartNumber, PartUUID,
                            DstManifest?MANIFEST.content_md5, Caller, RcPid) of
                         ok ->
-                            ETag = riak_cs_utils:etag_from_binary(DstManifest?MANIFEST.content_md5),
+                            ETag = riak_cs_manifest:etag(DstManifest),
                             RD2 = wrq:set_resp_header("ETag", ETag, RD),
                             riak_cs_s3_response:copy_part_response(DstManifest, RD2, Ctx);
 

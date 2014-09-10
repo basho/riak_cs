@@ -92,7 +92,7 @@ process_post_helper(RD, Ctx=#context{riak_client=RcPid, local_context=LocalCtx, 
                           %% Per http://docs.amazonwebservices.com/AmazonS3/latest/API/mpUploadInitiate.html
                           <<"binary/octet-stream">>
                   end,
-    User = riak_cs_mp_utils:user_rec_to_3tuple(Ctx#context.user),
+    User = riak_cs_user:to_3tuple(Ctx#context.user),
     Metadata = riak_cs_wm_utils:extract_user_metadata(RD),
     Opts = [{acl, ACL}, {meta_data, Metadata}],
 

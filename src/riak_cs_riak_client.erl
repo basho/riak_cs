@@ -78,14 +78,17 @@ checkout() ->
 
 -spec checkout(atom()) -> {ok, riak_client()} | {error, term()}.
 checkout(Pool) ->
-    case catch poolboy:checkout(Pool, false) of
-        full ->
-            {error, all_workers_busy};
-        {'EXIT', Error} ->
-            {error, {poolboy_error, Error}};
-        RcPid ->
-            ok = gen_server:call(RcPid, cleanup),
-            {ok, RcPid}
+    try
+        case poolboy:checkout(Pool, false) of
+            full ->
+                {error, all_workers_busy};
+            RcPid ->
+                ok = gen_server:call(RcPid, cleanup),
+                {ok, RcPid}
+        end
+    catch
+        _:Error ->
+            {error, {poolboy_error, Error}}
     end.
 
 -spec checkin(riak_client()) -> ok.
@@ -105,11 +108,11 @@ pbc_pool_name(BagId) when is_binary(BagId) ->
 
 -spec get_bucket(riak_client(), binary()) -> {ok, riakc_obj:riakc_obj()} | {error, term()}.
 get_bucket(RcPid, BucketName) when is_binary(BucketName) ->
-    gen_server:call(RcPid, {get_bucket, BucketName}).
+    gen_server:call(RcPid, {get_bucket, BucketName}, infinity).
 
 -spec set_bucket_name(riak_client(), binary()) -> ok | {error, term()}.
 set_bucket_name(RcPid, BucketName) when is_binary(BucketName) ->
-    gen_server:call(RcPid, {set_bucket_name, BucketName}).
+    gen_server:call(RcPid, {set_bucket_name, BucketName}, infinity).
 
 %% @doc Perform an initial read attempt with R=PR=N.
 %% If the initial read fails retry using
@@ -120,11 +123,11 @@ set_bucket_name(RcPid, BucketName) when is_binary(BucketName) ->
                       {ok, {riakc_obj:riakc_obj(), KeepDeletedBuckets :: boolean()}} |
                       {error, term()}.
 get_user(RcPid, UserKey) when is_binary(UserKey) ->
-    gen_server:call(RcPid, {get_user, UserKey}).
+    gen_server:call(RcPid, {get_user, UserKey}, infinity).
 
 -spec save_user(riak_client(), rcs_user(), riakc_obj:riakc_obj()) -> ok | {error, term()}.
 save_user(RcPid, User, OldUserObj) ->
-    gen_server:call(RcPid, {save_user, User, OldUserObj}).
+    gen_server:call(RcPid, {save_user, User, OldUserObj}, infinity).
 
 
 -spec set_manifest(riak_client(), lfs_manifest()) -> ok | {error, term()}.

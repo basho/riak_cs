@@ -35,6 +35,7 @@
 
 -include("riak_cs.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
+-include_lib("webmachine/include/wm_reqstate.hrl").
 
 -spec init(#context{}) -> {ok, #context{}}.
 init(Ctx) ->
@@ -132,7 +133,7 @@ content_types_provided(RD, Ctx=#context{local_context=LocalCtx,
 -spec generate_etag(#wm_reqdata{}, #context{}) -> {string(), #wm_reqdata{}, #context{}}.
 generate_etag(RD, Ctx=#context{local_context=LocalCtx}) ->
     Mfst = LocalCtx#key_context.manifest,
-    ETag = riak_cs_utils:etag_from_binary_no_quotes(Mfst?MANIFEST.content_md5),
+    ETag = riak_cs_manifest:etag_no_quotes(Mfst),
     {ETag, RD, Ctx}.
 
 -spec last_modified(#wm_reqdata{}, #context{}) -> {calendar:datetime(), #wm_reqdata{}, #context{}}.
@@ -176,9 +177,8 @@ produce_body(RD, Ctx=#context{rc_pool=RcPool,
                _ -> <<"object_get">>
            end,
     riak_cs_dtrace:dt_object_entry(?MODULE, Func, [], [UserName, BFile_str]),
-    ContentMd5 = Mfst?MANIFEST.content_md5,
     LastModified = riak_cs_wm_utils:to_rfc_1123(Mfst?MANIFEST.created),
-    ETag = format_etag(ContentMd5),
+    ETag = riak_cs_manifest:etag(Mfst),
     NewRQ1 = lists:foldl(fun({K, V}, Rq) -> wrq:set_resp_header(K, V, Rq) end,
                          RD,
                          [{"ETag",  ETag},
@@ -298,7 +298,7 @@ accept_body(RD, Ctx=#context{riak_client=RcPid,
                                       Mfst?MANIFEST{metadata=Metadata}, NewAcl,
                                       RcPid) of
         ok ->
-            ETag = riak_cs_utils:etag_from_binary(Mfst?MANIFEST.content_md5),
+            ETag = riak_cs_manifest:etag(Mfst),
             RD2 = wrq:set_resp_header("ETag", ETag, RD),
             ResponseMod:copy_object_response(Mfst, RD2, Ctx);
         {error, Err} ->
@@ -379,10 +379,13 @@ handle_copy_put(RD, Ctx, SrcBucket, SrcKey) ->
                         {ok, PutFsmPid} = riak_cs_copy_object:start_put_fsm(Bucket, Key, SrcManifest,
                                                                             Metadata, NewAcl, RcPid),
 
+                        %% Prepare for connection loss or client close
+                        FDWatcher = riak_cs_copy_object:connection_checker((RD#wm_reqdata.wm_state)#wm_reqstate.socket),
+
                         %% This ain't fail because all permission and 404
                         %% possibility has been already checked.
-                        {ok, DstManifest} = riak_cs_copy_object:copy(PutFsmPid, SrcManifest, ReadRcPid),
-                        ETag = riak_cs_utils:etag_from_binary(DstManifest?MANIFEST.content_md5),
+                        {ok, DstManifest} = riak_cs_copy_object:copy(PutFsmPid, SrcManifest, ReadRcPid, FDWatcher),
+                        ETag = riak_cs_manifest:etag(DstManifest),
                         RD2 = wrq:set_resp_header("ETag", ETag, RD),
                         ResponseMod:copy_object_response(DstManifest, RD2,
                                                          Ctx#context{local_context=LocalCtx});
@@ -397,6 +400,8 @@ handle_copy_put(RD, Ctx, SrcBucket, SrcKey) ->
                         Error
 
                 end;
+            {error, notfound} ->
+                ResponseMod:api_error(no_such_key, RD, Ctx);
             {error, Err} ->
                 ResponseMod:api_error(Err, RD, Ctx)
         end
@@ -448,7 +453,7 @@ finalize_request(RD,
     Response =
         case riak_cs_put_fsm:finalize(Pid, ContentMD5) of
             {ok, Manifest} ->
-                ETag = riak_cs_utils:etag_from_binary(Manifest?MANIFEST.content_md5),
+                ETag = riak_cs_manifest:etag(Manifest),
                 %% TODO: probably want something that counts actual bytes uploaded
                 %% instead, to record partial/aborted uploads
                 AccessRD = riak_cs_access_log_handler:set_bytes_in(S, RD),
@@ -491,9 +496,3 @@ zero_length_metadata_update_p(0, RD) ->
     end;
 zero_length_metadata_update_p(_, _) ->
     false.
-
--spec format_etag(binary() | {binary(), string()}) -> string().
-format_etag({ContentMd5, Suffix}) ->
-    riak_cs_utils:etag_from_binary(ContentMd5, Suffix);
-format_etag(ContentMd5) ->
-    riak_cs_utils:etag_from_binary(ContentMd5).

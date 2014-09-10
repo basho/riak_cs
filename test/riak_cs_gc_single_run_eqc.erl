@@ -68,7 +68,7 @@ eqc_test_() ->
              application:set_env(riak_cs, gc_interval, infinity),
              application:set_env(riak_cs, gc_paginated_indexes, true),
 
-             meck:new(riakc_pb_socket),
+             meck:new(riakc_pb_socket, [passthrough]),
              %% For riak_cs_gc_worker, it starts/stops pool worker directly.
              meck_pool_worker(),
              %% GET/DELETE filesets from riak-cs-gc bucket
@@ -248,7 +248,7 @@ meck_delete_fsm_sup() ->
                 fun dummy_start_delete_fsm/2).
 
 dummy_start_delete_fsm(_Node, [_RcPid, {_UUID, ?MANIFEST{bkey={_, K}}=_Manifest},
-                               From, _Args]) ->
+                               From, _GCKey, _Args]) ->
     TotalBlocks = ?BLOCK_NUM_IN_MANIFEST,
     NumDeleted = case re:run(K, <<"^error:in_block_delete/">>) of
                      nomatch -> TotalBlocks;

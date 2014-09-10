@@ -36,7 +36,12 @@
 %% in progress.
 cluster_info([OutFile]) ->
     try
-        cluster_info:dump_local_node(OutFile)
+        case cluster_info:dump_local_node(OutFile) of
+            [ok] -> ok;
+            Result ->
+                io:format("Cluster_info failed ~p~n", [Result]),
+                error
+        end
     catch
         error:{badmatch, {error, eacces}} ->
             io:format("Cluster_info failed, permission denied writing to ~p~n", [OutFile]);
@@ -65,9 +70,11 @@ cluster_info([OutFile]) ->
 %% cleaning up with timestamp 2014-05-11-....
 -spec cleanup_orphan_multipart() -> no_return().
 cleanup_orphan_multipart() ->
-    cleanup_orphan_multipart(riak_cs_wm_utils:iso_8601_datetime()).
+    cleanup_orphan_multipart([]).
 
 -spec cleanup_orphan_multipart(string()|binary()) -> no_return().
+cleanup_orphan_multipart([]) ->
+    cleanup_orphan_multipart(riak_cs_wm_utils:iso_8601_datetime());
 cleanup_orphan_multipart(Timestamp) when is_list(Timestamp) ->
     cleanup_orphan_multipart(list_to_binary(Timestamp));
 cleanup_orphan_multipart(Timestamp) when is_binary(Timestamp) ->
@@ -76,15 +83,15 @@ cleanup_orphan_multipart(Timestamp) when is_binary(Timestamp) ->
     _ = lager:info("cleaning up with timestamp ~s", [Timestamp]),
     _ = io:format("cleaning up with timestamp ~s", [Timestamp]),
     Fun = fun(RcPidForOneBucket, BucketName, GetResult, Acc0) ->
-                  _ = maybe_cleanup_csbucket(RcPidForOneBucket, BucketName,
-                                             GetResult, Timestamp),
+                  ok = maybe_cleanup_csbucket(RcPidForOneBucket, BucketName,
+                                              GetResult, Timestamp),
                   Acc0
           end,
     _ = riak_cs_bucket:fold_all_buckets(Fun, [], RcPid),
 
     ok = riak_cs_riak_client:stop(RcPid),
-    _ = lager:info("All old unaborted orphan multipart uploads has deleted.", []),
-    _ = io:format("~nAll old unaborted orphan multipart uploads has deleted.~n", []).
+    _ = lager:info("All old unaborted orphan multipart uploads have been deleted.", []),
+    _ = io:format("~nAll old unaborted orphan multipart uploads have been deleted.~n", []).
 
 
 %%%===================================================================
@@ -95,7 +102,7 @@ cleanup_orphan_multipart(Timestamp) when is_binary(Timestamp) ->
 -spec maybe_cleanup_csbucket(riak_client(),
                              binary(),
                              {ok, riakc_obj()}|{error, term()},
-                             binary()) -> ok.
+                             binary()) -> ok | {error, term()}.
 maybe_cleanup_csbucket(RcPidForOneBucket, BucketName, {ok, RiakObj}, Timestamp) ->
     case riakc_obj:get_values(RiakObj) of
         [?FREE_BUCKET_MARKER] ->
@@ -108,7 +115,8 @@ maybe_cleanup_csbucket(RcPidForOneBucket, BucketName, {ok, RiakObj}, Timestamp) 
                                           [Count]);
                 Error ->
                     lager:warning("Error in deleting old uploads: ~p~n", [Error]),
-                    io:format("Error in deleting old uploads: ~p <<< ~n", [Error])
+                    io:format("Error in deleting old uploads: ~p <<< ~n", [Error]),
+                    Error
             end;
 
         [<<>>] -> %% tombstone, can't happen
@@ -123,5 +131,6 @@ maybe_cleanup_csbucket(RcPidForOneBucket, BucketName, {ok, RiakObj}, Timestamp) 
 maybe_cleanup_csbucket(_, _, {error, notfound}, _) ->
     ok;
 maybe_cleanup_csbucket(_, BucketName, {error, _} = Error, _) ->
-    io:format("Error: ~p on processing ~s", [Error, BucketName]),
+    lager:error("~p on processing ~s", [Error, BucketName]),
+    io:format("Error: ~p on processing ~s\n", [Error, BucketName]),
     Error.

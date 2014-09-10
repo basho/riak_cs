@@ -23,6 +23,8 @@
          status_code/1,
          respond/3,
          respond/4,
+         error_message/1,
+         error_code/1,
          error_response/1,
          error_response/5,
          copy_object_response/3,
@@ -40,10 +42,11 @@
 
 -type xmlElement() :: #xmlElement{}.
 
--spec error_message(atom() | {'riak_connect_failed', term()}) -> string().
--spec error_code(atom() | {'riak_connect_failed', term()}) -> string().
--spec status_code(atom() | {'riak_connect_failed', term()}) -> pos_integer().
+-type error_reason() :: atom()
+                  | {'riak_connect_failed', term()}
+                  | {'malformed_policy_version', string()}.
 
+-spec error_message(error_reason()) -> string().
 error_message(invalid_access_key_id) ->
     "The AWS Access Key Id you provided does not exist in our records.";
 error_message(invalid_email_address) ->
@@ -54,6 +57,8 @@ error_message(bucket_not_empty) ->
     "The bucket you tried to delete is not empty.";
 error_message(bucket_already_exists) ->
     "The requested bucket name is not available. The bucket namespace is shared by all users of the system. Please select a different name and try again.";
+error_message(toomanybuckets) ->
+    "You have attempted to create more buckets than allowed";
 error_message(user_already_exists) ->
     "The specified email address has already been registered. Email addresses must be unique among all users of the system. Please try again with a different email address.";
 error_message(entity_too_large) ->
@@ -71,6 +76,8 @@ error_message(admin_secret_undefined) -> "Please reduce your request rate.";
 error_message(bucket_owner_unavailable) -> "The user record for the bucket owner was unavailable. Try again later.";
 error_message(econnrefused) -> "Please reduce your request rate.";
 error_message(malformed_policy_json) -> "JSON parsing error";
+error_message({malformed_policy_version, Version}) ->
+    io_lib:format("Document is invalid: Invalid Version ~s", [Version]);
 error_message(malformed_policy_missing) -> "Policy is missing required element";
 error_message(malformed_policy_resource) -> "Policy has invalid resource";
 error_message(malformed_policy_principal) -> "Invalid principal in policy";
@@ -88,17 +95,21 @@ error_message(invalid_argument) -> "Invalid Argument";
 error_message(unresolved_grant_email) -> "The e-mail address you provided does not match any account on record.";
 error_message(invalid_range) -> "The requested range is not satisfiable";
 error_message(invalid_bucket_name) -> "The specified bucket is not valid.";
+error_message(invalid_part_number) -> "Part number must be an integer between 1 and 10000, inclusive";
 error_message(unexpected_content) -> "This request does not support content";
 error_message(canned_acl_and_header_grant) -> "Specifying both Canned ACLs and Header Grants is not allowed";
+error_message(malformed_xml) -> "The XML you provided was not well-formed or did not validate against our published schema";
 error_message(remaining_multipart_upload) -> "Concurrent multipart upload initiation detected. Please stop it to delete bucket.";
 error_message(ErrorName) ->
     _ = lager:debug("Unknown error: ~p", [ErrorName]),
     "Please reduce your request rate.".
 
+-spec error_code(error_reason()) -> string().
 error_code(invalid_access_key_id) -> "InvalidAccessKeyId";
 error_code(access_denied) -> "AccessDenied";
 error_code(bucket_not_empty) -> "BucketNotEmpty";
 error_code(bucket_already_exists) -> "BucketAlreadyExists";
+error_code(toomanybuckets) -> "TooManyBuckets";
 error_code(user_already_exists) -> "UserAlreadyExists";
 error_code(entity_too_large) -> "EntityTooLarge";
 error_code(entity_too_small) -> "EntityTooSmall";
@@ -114,6 +125,7 @@ error_code(bucket_owner_unavailable) -> "ServiceUnavailable";
 error_code(econnrefused) -> "ServiceUnavailable";
 error_code(malformed_policy_json) -> "MalformedPolicy";
 error_code(malformed_policy_missing) -> "MalformedPolicy";
+error_code({malformed_policy_version, _}) -> "MalformedPolicy";
 error_code(malformed_policy_resource) -> "MalformedPolicy";
 error_code(malformed_policy_principal) -> "MalformedPolicy";
 error_code(malformed_policy_action) -> "MalformedPolicy";
@@ -125,10 +137,12 @@ error_code(bad_request) -> "BadRequest";
 error_code(invalid_argument) -> "InvalidArgument";
 error_code(invalid_range) -> "InvalidRange";
 error_code(invalid_bucket_name) -> "InvalidBucketName";
+error_code(invalid_part_number) -> "InvalidArgument";
 error_code(unresolved_grant_email) -> "UnresolvableGrantByEmailAddress";
 error_code(unexpected_content) -> "UnexpectedContent";
 error_code(canned_acl_and_header_grant) -> "InvalidRequest";
 error_code(malformed_acl_error) -> "MalformedACLError";
+error_code(malformed_xml) -> "MalformedXML";
 error_code(remaining_multipart_upload) -> "MultipartUploadRemaining";
 error_code(ErrorName) ->
     _ = lager:debug("Unknown error: ~p", [ErrorName]),
@@ -137,12 +151,14 @@ error_code(ErrorName) ->
 %% These should match:
 %% http://docs.aws.amazon.com/AmazonS3/latest/API/ErrorResponses.html
 
+-spec status_code(error_reason()) -> pos_integer().
 status_code(invalid_access_key_id) -> 403;
 status_code(invalid_email_address) -> 400;
 status_code(access_denied) ->  403;
 status_code(bucket_not_empty) ->  409;
 status_code(bucket_already_exists) -> 409;
 status_code(user_already_exists) -> 409;
+status_code(toomanybuckets) -> 400;
 %% yes, 400, really, not 413
 status_code(entity_too_large) -> 400;
 status_code(entity_too_small) -> 400;
@@ -159,6 +175,7 @@ status_code(multiple_bucket_owners) -> 503;
 status_code(econnrefused) -> 503;
 status_code(unsatisfied_constraint) -> 503;
 status_code(malformed_policy_json) -> 400;
+status_code({malformed_policy_version, _}) -> 400;
 status_code(malformed_policy_missing) -> 400;
 status_code(malformed_policy_resource) -> 400;
 status_code(malformed_policy_principal) -> 400;
@@ -172,9 +189,11 @@ status_code(invalid_argument) -> 400;
 status_code(unresolved_grant_email) -> 400;
 status_code(invalid_range) -> 416;
 status_code(invalid_bucket_name) -> 400;
+status_code(invalid_part_number) -> 400;
 status_code(unexpected_content) -> 400;
 status_code(canned_acl_and_header_grant) -> 400;
 status_code(malformed_acl_error) -> 400;
+status_code(malformed_xml) -> 400;
 status_code(remaining_multipart_upload) -> 409;
 status_code(ErrorName) ->
     _ = lager:debug("Unknown error: ~p", [ErrorName]),
@@ -208,6 +227,14 @@ api_error({riak_connect_failed, _}=Error, RD, Ctx) ->
                    error_message(Error),
                    RD,
                    Ctx);
+api_error({malformed_policy_version, _} = Error, RD, Ctx) ->
+    error_response(status_code(Error),
+                   error_code(Error),
+                   error_message(Error),
+                   RD,
+                   Ctx);
+api_error({toomanybuckets, Current, BucketLimit}, RD, Ctx) ->
+    toomanybuckets_response(Current, BucketLimit, RD, Ctx);
 api_error({error, Reason}, RD, Ctx) ->
     api_error(Reason, RD, Ctx).
 
@@ -224,6 +251,17 @@ error_response(StatusCode, Code, Message, RD, Ctx) ->
                          {'RequestId', [""]}]}],
     respond(StatusCode, riak_cs_xml:to_xml(XmlDoc), RD, Ctx).
 
+toomanybuckets_response(Current,BucketLimit,RD,Ctx) ->
+    XmlDoc = {'Error',
+              [
+               {'Code', [error_code(toomanybuckets)]},
+               {'Message', [error_message(toomanybuckets)]},
+               {'CurrentNumberOfBuckets', [Current]},
+               {'AllowedNumberOfBuckets', [BucketLimit]}
+              ]},
+    Body = riak_cs_xml:to_xml([XmlDoc]),
+    respond(status_code(toomanybuckets), Body, RD, Ctx).
+
 copy_object_response(Manifest, RD, Ctx) ->
     copy_response(Manifest, 'CopyObjectResult', RD, Ctx).
 
@@ -232,7 +270,7 @@ copy_part_response(Manifest, RD, Ctx) ->
 
 copy_response(Manifest, TagName, RD, Ctx) ->
     LastModified = riak_cs_wm_utils:to_iso_8601(Manifest?MANIFEST.created),
-    ETag = riak_cs_utils:etag_from_binary(Manifest?MANIFEST.content_md5),
+    ETag = riak_cs_manifest:etag(Manifest),
     XmlDoc = [{TagName,
                [{'LastModified', [LastModified]},
                 {'ETag', [ETag]}]}],

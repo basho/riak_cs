@@ -24,6 +24,7 @@
 
 -export([confirm/0, upload_id_present/2]).
 -include_lib("eunit/include/eunit.hrl").
+-include("riak_cs.hrl").
 
 -define(TEST_BUCKET, "riak-test-bucket").
 -define(TEST_KEY1, "riak_test_key1").
@@ -51,6 +52,7 @@ confirm() ->
     ok = parts_too_small_test_case(?TEST_BUCKET, ?TEST_KEY1, UserConfig),
     aborted_upload_test_case(?TEST_BUCKET, ?TEST_KEY2, UserConfig),
     nonexistent_bucket_listing_test_case("fake-bucket", UserConfig),
+    invalid_part_number_test_case(?TEST_BUCKET, ?TEST_KEY1, UserConfig),
 
     %% Start 10 uploads for 10 different keys
     Count1 = 10,
@@ -190,6 +192,24 @@ aborted_upload_test_case(Bucket, Key, Config) ->
 
 nonexistent_bucket_listing_test_case(Bucket, Config) ->
     ?assertError({aws_error, {http_error, 404, _, _}}, erlcloud_s3_multipart:list_uploads(Bucket, [], Config)).
+
+invalid_part_number_test_case(Bucket, Key, Config) ->
+    InitUploadRes = erlcloud_s3_multipart:initiate_upload(Bucket, Key, [], [], Config),
+    UploadId = erlcloud_s3_multipart:upload_id(InitUploadRes),
+    InvalidPartNumber = ?DEFAULT_MAX_PART_NUMBER + 1,
+    {'EXIT', {{aws_error, {http_error, 400, _, Body}}, _Backtrace}} =
+        (catch erlcloud_s3_multipart:upload_part(Bucket,
+                                                 Key,
+                                                 UploadId,
+                                                 InvalidPartNumber,
+                                                 generate_part_data(0, ?GOOD_PART_SIZE),
+                                                 Config)),
+    ErrorPattern =
+        "<Error><Code>InvalidArgument</Code>"
+        "<Message>Part number must be an integer between 1 and 10000, inclusive</Message>",
+    ?assertMatch({match, _}, re:run(Body, ErrorPattern, [multiline])),
+    abort_uploads(Bucket, Config).
+
 
 basic_upload_test_case(Bucket, Key, Config) ->
     %% Initiate a multipart upload

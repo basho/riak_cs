@@ -1,3 +1,142 @@
+# Riak CS 1.5.0 リリースノート
+
+## 新規追加
+
+* `cluster-info` 取得を含む新規コマンド `riak-cs-debug` を追加 [riak_cs/#769](https://github.com/basho/riak_cs/pull/769), [riak_cs/#832](https://github.com/basho/riak_cs/pull/832)
+* 既存コマンド群を新規コマンド `riak-cs-admin` へ統合 [riak_cs/#839](https://github.com/basho/riak_cs/pull/839)
+* Stanchion の IP、ポートを変更する新規コマンド `riak-cs-admin stanchion` を追加 [riak_cs/#657](https://github.com/basho/riak_cs/pull/657)
+* 並行 GC によるガベージコレクション性能の向上 [riak_cs/#830](https://github.com/basho/riak_cs/pull/830)
+* Iterator refresh [riak_cs/#805](https://github.com/basho/riak_cs/pull/805)
+* `fold_objects_for_list_keys` 設定をデフォルト有効に変更 [riak_cs/#737](https://github.com/basho/riak_cs/pull/737), [riak_cs/#785](https://github.com/basho/riak_cs/pull/785)
+* Cache-Control ヘッダーのサポートを追加 [riak_cs/#821](https://github.com/basho/riak_cs/pull/821)
+* 猶予期間(`leeway_seconds`)内でもオブジェクトをガベージコレクション可能にする変更 [riak_cs/#470](https://github.com/basho/riak_cs/pull/470)
+* オブジェクト、マルチパートともに PUT Copy API を追加 [riak_cs/#548](https://github.com/basho/riak_cs/pull/548)
+* lager 2.0.3 へ更新
+* R16B0x をビルド環境に追加 (リリースは R15B01 でビルド)
+* `gc_paginated_index` 設定をデフォルト有効に変更 [riak_cs/#881](https://github.com/basho/riak_cs/issues/881)
+* 新規 API: Delete Multiple Objects の追加[riak_cs/#728](https://github.com/basho/riak_cs/pull/728)
+* マニフェストに対して siblings, バイト、履歴の肥大化を警告するログ追加 [riak_cs/#915](https://github.com/basho/riak_cs/pull/915)
+
+## 修正されたバグ
+
+* `ERL_MAX_PORTS` を Riak のデフォルトに合わせ 64000 へ変更 [riak_cs/#636](https://github.com/basho/riak_cs/pull/636)
+* Riak CS 管理リソースを OpenStack API でも利用可能にする修正 [riak_cs/#666](https://github.com/basho/riak_cs/pull/666)
+* Solaris でのソースビルドのバグ修正のため、パス代入コードの変更 [riak_cs/#733](https://github.com/basho/riak_cs/pull/733)
+* `riakc_pb_socket` エラー時の `sanity_check(true,false)` バグを修正 [riak_cs/#683](https://github.com/basho/riak_cs/pull/683)
+* Riak-CS-GC のスケジューラタイムスタンプが 2013 ではなく 0043 になるバグを修正 [riak_cs/#713](https://github.com/basho/riak_cs/pull/713) fixed by [riak_cs/#676](https://github.com/basho/riak_cs/pull/676)
+* OTP code_server プロセスを過剰に呼び出すバグを修正 [riak_cs/#675](https://github.com/basho/riak_cs/pull/675)
+* content-md5 が一致しない場合に HTTP 400 を返すよう修正 [riak_cs/#596](https://github.com/basho/riak_cs/pull/596)
+* `/riak-cs/stats` が `admin_auth_enabled=false` の時に動作しないバグを修正. [riak_cs/#719](https://github.com/basho/riak_cs/pull/719)
+* ストレージ計算で tombstone および undefined の manifest.props を処理できないバグを修正 [riak_cs/#849](https://github.com/basho/riak_cs/pull/849)
+* 未完了のマルチパートオブジェクトが、バケットの削除、作成後にも残るバグを修正 [riak_cs/#857](https://github.com/basho/riak_cs/pull/857) and [stanchion/#78](https://github.com/basho/stanchion/pull/78)
+* list multipart upload の空クエリパラメータの扱いを修正 [riak_cs/#843](https://github.com/basho/riak_cs/pull/843)
+* PUT Object 時にヘッダ指定の ACL が設定されないバグを修正 [riak_cs/#631](https://github.com/basho/riak_cs/pull/631)
+* ping リクエストの poolboy タイムアウト処理を改善 [riak_cs/#763](https://github.com/basho/riak_cs/pull/763)
+* 匿名アクセス時の不要なログを削除 [riak_cs/#876](https://github.com/basho/riak_cs/issues/876)
+* マルチパートでアップロードされたオブジェクトの ETag 不正を修正 [riak_cs/#855](https://github.com/basho/riak_cs/issues/855)
+* PUT Bucket Policy のポリシーバージョン確認の不具合を修正[riak_cs/#911](https://github.com/basho/riak_cs/issues/911)
+* コマンド成功時に終了コード 0 を返すよう修正 [riak_cs/#908](https://github.com/basho/riak_cs/issues/908)
+* `{error, disconnected}` が内部で notfound に書き換えられる問題を修正 [riak_cs/#929](https://github.com/basho/riak_cs/issues/929)
+
+## アップグレードに関する注意事項
+
+### Riak Version
+
+このリリースは Riak 1.4.10 上でテストされました。
+[互換性マトリクス](http://docs.basho.com/riakcs/latest/cookbooks/Version-Compatibility/)
+を参考に、正しいバージョンを使用していることを確認してください。
+
+### 未完了のマルチパートアップロード
+
+[riak_cs/#475](https://github.com/basho/riak_cs/issues/475) はセキュリティ
+に関する問題で、以前に作られた同名のバケットに
+対する未完了のマルチパートアップロードが、新しく作成されたバケットに
+含まれてしまう可能性があります。これは次のように修正されました。
+
+- バケット作成時には、有効なマルチパートが存在するかを確認し、
+  存在する場合には 500 エラーをクライアントに返します。
+
+- バケット削除時には、まず存在する有効なマルチパートの削除を試みた後に、
+  有効なマルチパートが存在するかを(Stanchion 上で)再度確認します。
+  存在する場合には 409 エラーをクライアントに返します。
+
+1.4.x (またはそれより前のバージョン)から 1.5.0 へのアップグレード後には
+いくつかの操作が必要です。
+
+- すべてのバケットを正常な状態にするため、 `riak-cs-admin
+  cleanup-orphan-multipart` を実行します。マルチパートアップロードとバ
+  ケット削除が競合したときに発生しうるコーナーケースを避けるために、こ
+  のコマンドは `2014-07-30T11:09:30.000Z`のような、 ISO 8601 形式の日付
+  を引数として指定することができます。この引数があるとき、バケットのク
+  リーンアップ操作はそのタイムスタンプよりも新しいマルチパートアップロー
+  ドを削除しません。もしこれを指定する場合は、全てのCSノードのアップグ
+  レードが終わって以降の時間がよいでしょう。
+
+- 上記操作が終了するまでの期間は、削除済みのバケットで、未完了のマルチ
+  パートアップロードを含むバケットは再作成が出来ない場合があります。こ
+  のような再作成の失敗は [critical] ログ (`"Multipart upload remains
+  in deleted bucket <bucketname>"`) で確認可能です。
+
+### ガベージコレクションの猶予期間(Leeway seconds)とディスク空き容量
+
+[riak_cs/#470](https://github.com/basho/riak_cs/pull/470) は、
+オブジェクト削除とガベージコレクションの振る舞いを次のように変更します。
+これまで、ガベージコレクションバケットのタイムスタンプはオブジェクトが
+回収される将来の時刻でしたが、削除された時刻そのものへと変わります。
+同時に、ガベージコレクターは現在の時刻までのタイムスタンプを回収していましたが、
+猶予期間(`leeway_seconds`)だけ過去のタイムスタンプまでだけを回収するようになります。
+
+以前(- 1.4.x):
+
+```
+           t1                         t2
+-----------+--------------------------+------------------->
+           DELETE object:             GC 実行:
+           "t1 + leeway"              "t2" までの
+           とマークされる             オブジェクトを回収
+```
+
+今後(1.5.0-):
+
+```
+           t1                         t2
+-----------+--------------------------+------------------->
+           DELETE object:             GC 実行:
+           "t1"                       "t2 - leeway" までの
+           とマークされる             オブジェクトを回収
+```
+
+これにより、1.5.0 へのアップグレード直後(仮に`t0`とします）にはオブジェ
+クトが回収されない期間ができます。つまり `t0` から `t0 + leeway` までの
+期間です。そして `t0` 直前に削除されたオブジェクトは `t0 + 2 * leeway`
+時点で回収可能になります。
+
+ローリングアップグレードに際しては、GC を実行している CS ノードを
+**最初に** アップグレードする必要があります。
+GC を実行しない CS ノードは、猶予期間が正しく動作するために、その後から
+アップグレードして下さい。
+また、`riak-cs-admin gc set-interval infinity` コマンドを実行して
+ガベージコレクションを無効にしておくと、ノードの順序を
+気にすることなくアップグレードが可能です。
+
+マルチデータセンター構成のクラスタは、より慎重になる必要があります。
+ガベージコレクションを確実に無効化してからアップグレードしてください。
+
+## 既知の問題と制限事項
+
+* コピーを実行中にクライアントが次のリクエストを送信するとコピーは中断
+  されます。これはクライアントの切断を検出してコピーを中止する機構の副
+  作用です。詳しくは [#932](https://github.com/basho/riak_cs/pull/932)
+  をご覧ください。
+
+* OOSインターフェースでのコピーはサポートされていません。
+
+* Multibag はオブジェクトのマニフェストとブロックを複数の異なるクラスタ
+  に分けて格納する機能です。これは Riak CS Enterprise の機能として追加
+  されましたが、技術プレビューの段階にあります。クラスタ間レプリケーショ
+  ンによる `proxy_get` はサポートされておりません。Multibagは今のところ、
+  ひとつのDCでのみ動作するように設計されています。
+
 # Riak CS 1.4.5 リリースノート
 
 ## 修正されたバグ
@@ -6,6 +145,12 @@
 * HEADリクエスト時にアクセス集計していた問題を修正 [riak_cs/791](https://github.com/basho/riak_cs/pull/791)
 * POST/PUTリクエスト時のXML中の空白文字の対処 [riak_cs/795](https://github.com/basho/riak_cs/pull/795)
 * ストレージ使用量計算時の誤ったバケット名を修正 [riak_cs/800](https://github.com/basho/riak_cs/pull/800)
+  Riak CS 1.4.4 で混入したバグにより、そのバージョンを使用している期間の
+  ストレージ計算はバケット名が文字列 "struct" に置き換わった結果となっていました。
+  本バージョン 1.4.5 でこのバグ自体は修正されましたが、すでに計算済みの古い結果を
+  さかのぼって修正することは不可能です。バケット名が "struct" に置き換わってしまった
+  計算結果では、個別バケットの使用量を知ることはできませんが、その場合であっても
+  個々のユーザに関して所有バケットにわたる合計は正しい数字を示します。
 * Unicodeのユーザ名とXMLの対応 [riak_cs/807](https://github.com/basho/riak_cs/pull/807)
 * ストレージ使用量で必要なXMLフィールドを追加 [riak_cs/808](https://github.com/basho/riak_cs/pull/808)
 * オブジェクトのfoldのタイムアウトを揃えた [riak_cs/811](https://github.com/basho/riak_cs/pull/811)

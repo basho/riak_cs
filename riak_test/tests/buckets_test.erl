@@ -50,8 +50,12 @@ confirm() ->
 
     ok = verify_bucket_mpcleanup(UserConfig),
 
-    ok = verify_bucket_mpcleanup_racecond_andfix(UserConfig, UserConfig1,
-                                                 RiakNodes, hd(CSNodes)),
+    ok = verify_bucket_mpcleanup_racecond_and_fix(UserConfig, UserConfig1,
+                                                  RiakNodes, hd(CSNodes)),
+
+    ok = verify_cleanup_orphan_mp(UserConfig, UserConfig1, RiakNodes, hd(CSNodes)),
+
+    ok = verify_max_buckets_per_user(UserConfig),
 
     pass.
 
@@ -111,21 +115,11 @@ verify_bucket_mpcleanup(UserConfig) ->
     ok.
 
 %% @doc in race condition: on delete_bucket
-verify_bucket_mpcleanup_racecond_andfix(UserConfig, UserConfig1,
-                                        RiakNodes, CSNode) ->
+verify_bucket_mpcleanup_racecond_and_fix(UserConfig, UserConfig1,
+                                         RiakNodes, CSNode) ->
     Key = ?KEY_MP,
     Bucket = ?TEST_BUCKET,
-    ?assertEqual(ok, erlcloud_s3:create_bucket(Bucket, UserConfig)),
-    InitUploadRes = erlcloud_s3_multipart:initiate_upload(Bucket, Key, [], [], UserConfig),
-    lager:info("InitUploadRes = ~p", [InitUploadRes]),
-
-    %% Reserve riak object to emulate prior 1.4.5 behavior afterwards
-    {ok, ManiObj} = rc_helper:get_riakc_obj(RiakNodes, objects, Bucket, Key),
-
-    ?assertEqual(ok, erlcloud_s3:delete_bucket(?TEST_BUCKET, UserConfig)),
-
-    %% emulate a race condition, during the deletion MP initiate happened
-    ok = rc_helper:update_riakc_obj(RiakNodes, objects, Bucket, Key, ManiObj),
+    prepare_bucket_with_orphan_mp(Bucket, Key, UserConfig, RiakNodes),
 
     %% then fail on creation
     %%TODO: check fail fail fail => 500
@@ -137,8 +131,13 @@ verify_bucket_mpcleanup_racecond_andfix(UserConfig, UserConfig1,
 
     %% but we have a cleanup script, for existing system with 1.4.x or earlier
     %% DO cleanup here
-    Res = rpc:call(CSNode, riak_cs_console, cleanup_orphan_multipart, []),
-    lager:info("Result of cleanup_orphan_multipart: ~p~n", [Res]),
+    case rpc:call(CSNode, riak_cs_console, cleanup_orphan_multipart, []) of
+        {badrpc, Error} ->
+            lager:error("cleanup_orphan_multipart error: ~p~n", [Error]),
+            throw(Error);
+        Res ->
+            lager:info("Result of cleanup_orphan_multipart: ~p~n", [Res])
+    end,
 
     %% list_keys here? wait for GC?
 
@@ -151,3 +150,64 @@ verify_bucket_mpcleanup_racecond_andfix(UserConfig, UserConfig1,
     ?assertEqual([], Uploads2),
     ?assertEqual(Bucket, proplists:get_value(bucket, UploadsList2)),
     ok.
+
+%% @doc cleanup orphan multipart for 30 buckets (> pool size)
+verify_cleanup_orphan_mp(UserConfig, UserConfig1, RiakNodes, CSNode) ->
+    [begin
+         Suffix = integer_to_list(Index),
+         Bucket = ?TEST_BUCKET ++ Suffix,
+         Key = ?KEY_MP ++ Suffix,
+         prepare_bucket_with_orphan_mp(Bucket, Key, UserConfig, RiakNodes)
+     end || Index <- lists:seq(1, 30)],
+
+    %% but we have a cleanup script, for existing system with 1.4.x or earlier
+    %% DO cleanup here
+    case rpc:call(CSNode, riak_cs_console, cleanup_orphan_multipart, []) of
+        {badrpc, Error} ->
+            lager:error("cleanup_orphan_multipart error: ~p~n", [Error]),
+            throw(Error);
+        Res ->
+            lager:info("Result of cleanup_orphan_multipart: ~p~n", [Res])
+    end,
+
+    %% and Okay, it's clear, another user creates same bucket
+    Bucket1 = ?TEST_BUCKET ++ "1",
+    ?assertEqual(ok, erlcloud_s3:create_bucket(Bucket1, UserConfig1)),
+
+    %% Nothing found
+    UploadsList = erlcloud_s3_multipart:list_uploads(Bucket1, [], UserConfig1),
+    Uploads = proplists:get_value(uploads, UploadsList, []),
+    ?assertEqual([], Uploads),
+    ?assertEqual(Bucket1, proplists:get_value(bucket, UploadsList)),
+    ok.
+
+prepare_bucket_with_orphan_mp(BucketName, Key, UserConfig, RiakNodes) ->
+    ?assertEqual(ok, erlcloud_s3:create_bucket(BucketName, UserConfig)),
+    _InitUploadRes = erlcloud_s3_multipart:initiate_upload(BucketName, Key, [], [], UserConfig),
+
+    %% Reserve riak object to emulate prior 1.4.5 behavior afterwards
+    {ok, ManiObj} = rc_helper:get_riakc_obj(RiakNodes, objects, BucketName, Key),
+
+    ?assertEqual(ok, erlcloud_s3:delete_bucket(BucketName, UserConfig)),
+
+    %% emulate a race condition, during the deletion MP initiate happened
+    ok = rc_helper:update_riakc_obj(RiakNodes, objects, BucketName, Key, ManiObj).
+
+
+verify_max_buckets_per_user(UserConfig) ->
+    [{buckets, Buckets}] = erlcloud_s3:list_buckets(UserConfig),
+    lager:debug("existing buckets: ~p", [Buckets]),
+    BucketNameBase = "toomanybuckets",
+    [begin
+         BucketName = BucketNameBase++integer_to_list(N),
+         lager:debug("creating bucket ~p", [BucketName]),
+         ?assertEqual(ok,
+                      erlcloud_s3:create_bucket(BucketName, UserConfig))
+     end
+     || N <- lists:seq(1,100-length(Buckets))],
+    lager:debug("100 buckets created", []),
+    BucketName1 = BucketNameBase ++ "101",
+    ?assertError({aws_error, {http_error, 400, [], _}},
+                 erlcloud_s3:create_bucket(BucketName1, UserConfig)),
+    ok.
+    

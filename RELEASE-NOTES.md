@@ -1,41 +1,94 @@
+# Riak CS 1.5.1 Release Notes
+
+## Additions
+
+- Add sleep-after-update manifests to avoid sibling explosion [riak_cs/#959](https://github.com/basho/riak_cs/pull/959)
+- Multibag support on `riak-cs-debug` [riak_cs/#930](https://github.com/basho/riak_cs/pull/
+- Add bucket number limit check in Riak CS process [riak_cs/#950](https://github.com/basho/riak_cs/pull/
+- More efficient bucket resolution [riak_cs/#951](https://github.com/basho/riak_cs/pull/
+
+## Bugs Fixed
+
+- GC may stall due to `riak_cs_delete_fsm` deadlock [riak_cs/#949](https://github.com/basho/riak_cs/pull/949)
+- Fix wrong log directory for gathering logs on `riak-cs-debug` [riak_cs/#953](https://github.com/basho/riak_cs/pull/953)
+- Avoid DST-aware translation from local time to GMT [riak_cs/#954](https://github.com/basho/riak_cs/pull/954)
+- Use new UUID for seed of canonical ID instead of secret [riak_cs/#956](https://github.com/basho/riak_cs/pull/956)
+- Add max part number limitation [riak_cs/#957](https://github.com/basho/riak_cs/pull/957)
+- Set timeout as infinity to replace the default of 5000ms [riak_cs/#963](https://github.com/basho/riak_cs/pull/963)
+- Skip invalid state manifests in GC bucket [riak_cs/#964](https://github.com/basho/riak_cs/pull/964)
+
+## Notes on Upgrading
+
+### Bucket number per user
+
+Beginning with Riak CS 1.5.1, you can limit the number of buckets that
+can be created per user. The default maximum number is 100. While this
+limitation prohibits the creation of new buckets by users, users that
+exceed the limit can still perform other operations, including bucket
+deletion. To change the default limit, add the following line to the
+`riak_cs` section of `app.config`:
+
+
+```erlang
+{riak_cs, [
+    %% ...
+    {max_buckets_per_user, 5000},
+    %% ...
+    ]}
+```
+
+To avoid having a limit, set `max_buckets_per_user` to `unlimited`.
+
 # Riak CS 1.5.0 Release Notes
 
 ## Additions
 
-* A new command `riak-cs-debug` which retrieves diagnosis info including `cluster-info` [riak_cs/#769](https://github.com/basho/riak_cs/pull/769), [riak_cs/#832](https://github.com/basho/riak_cs/pull/832)
+* A new command `riak-cs-debug` including `cluster-info` [riak_cs/#769](https://github.com/basho/riak_cs/pull/769), [riak_cs/#832](https://github.com/basho/riak_cs/pull/832)
 * Tie up all existing commands into a new command `riak-cs-admin` [riak_cs/#839](https://github.com/basho/riak_cs/pull/839)
-* Add a command `riak-cs-stanchion` to switch Stanchion IP and port manually [riak_cs/#657](https://github.com/basho/riak_cs/pull/657)
+* Add a command `riak-cs-admin stanchion` to switch Stanchion IP and port manually [riak_cs/#657](https://github.com/basho/riak_cs/pull/657)
 * Performance of garbage collection has been improved via Concurrent GC [riak_cs/#830](https://github.com/basho/riak_cs/pull/830)
 * Iterator refresh [riak_cs/#805](https://github.com/basho/riak_cs/pull/805)
-* fold_objects made default in Riak CS [riak_cs/#737](https://github.com/basho/riak_cs/pull/737), [riak_cs/#785](https://github.com/basho/riak_cs/pull/785)
-* Syslog support through lager_syslog [riak_cs/#617](https://github.com/basho/riak_cs/pull/617)
+* `fold_objects_for_list_keys` made default in Riak CS [riak_cs/#737](https://github.com/basho/riak_cs/pull/737), [riak_cs/#785](https://github.com/basho/riak_cs/pull/785)
 * Add support for Cache-Control header [riak_cs/#821](https://github.com/basho/riak_cs/pull/821)
 * Allow objects to be reaped sooner than leeway interval. [riak_cs/#470](https://github.com/basho/riak_cs/pull/470)
-* Add option to allow a delay for the initial GC collection [riak_cs/#688](https://github.com/basho/riak_cs/pull/688)
-* PUT Copy on both objects and upload parts as technical preview [riak_cs/#548](https://github.com/basho/riak_cs/pull/548)
+* PUT Copy on both objects and upload parts [riak_cs/#548](https://github.com/basho/riak_cs/pull/548)
 * Update to lager 2.0.3
 * Compiles with R16B0x (Releases still by R15B01)
 * Change default value of `gc_paginated_index` to `true` [riak_cs/#881](https://github.com/basho/riak_cs/issues/881)
+* Add new API: Delete Multiple Objects [riak_cs/#728](https://github.com/basho/riak_cs/pull/728)
+* Add warning logs for manifests, siblings, bytes and history [riak_cs/#915](https://github.com/basho/riak_cs/pull/915)
 
 ## Bugs Fixed
 
+* Align `ERL_MAX_PORTS` with Riak default: 64000 [riak_cs/#636](https://github.com/basho/riak_cs/pull/636)
+* Allow Riak CS admin resources to be used with OpenStack API [riak_cs/#666](https://github.com/basho/riak_cs/pull/666)
+* Fix path substitution code to fix Solaris source builds [riak_cs/#733](https://github.com/basho/riak_cs/pull/733)
 * `sanity_check(true,false)` logs invalid error on `riakc_pb_socket` error [riak_cs/#683](https://github.com/basho/riak_cs/pull/683)
-* Ignore Owner with an empty ID in AccessControlPolicy blob [riak_cs/#755](https://github.com/basho/riak_cs/pull/755)
 * Riak-CS-GC timestamp for scheduler is in the year 0043, not 2013. [riak_cs/#713](https://github.com/basho/riak_cs/pull/713) fixed by [riak_cs/#676](https://github.com/basho/riak_cs/pull/676)
 * Excessive calls to OTP code_server process #669 fixed by [riak_cs/#675](https://github.com/basho/riak_cs/pull/675)
 * Return HTTP 400 if content-md5 does not match [riak_cs/#596](https://github.com/basho/riak_cs/pull/596)
 * `/riak-cs/stats` and `admin_auth_enabled=false` don't work together correctly. [riak_cs/#719](https://github.com/basho/riak_cs/pull/719)
 * Storage calculation doesn't handle tombstones, nor handle undefined manifest.props [riak_cs/#849](https://github.com/basho/riak_cs/pull/849)
-* MP initiated objects remains after delete/create buckets #475 fixed by [riak_cs/#857](https://github.com/basho/riak_cs/pull/857) and [stanchon/#78](https://github.com/basho/stanchion/pull/78)
+* MP initiated objects remains after delete/create buckets #475 fixed by [riak_cs/#857](https://github.com/basho/riak_cs/pull/857) and [stanchion/#78](https://github.com/basho/stanchion/pull/78)
 * handling empty query string on list multipart upload [riak_cs/#843](https://github.com/basho/riak_cs/pull/843)
 * Setting ACLs via headers at PUT Object creation [riak_cs/#631](https://github.com/basho/riak_cs/pull/631)
 * Improve handling of poolboy timeouts during ping requests [riak_cs/#763](https://github.com/basho/riak_cs/pull/763)
 * Remove unnecessary log message on anonymous access [riak_cs/#876](https://github.com/basho/riak_cs/issues/876)
 * Fix inconsistent ETag on objects uploaded by multipart [riak_cs/#855](https://github.com/basho/riak_cs/issues/855)
+* Fix policy version validation in PUT Bucket Policy [riak_cs/#911](https://github.com/basho/riak_cs/issues/911)
+* Fix return code of several commands, to return 0 for success [riak_cs/#908](https://github.com/basho/riak_cs/issues/908)
+* Fix `{error, disconnected}` repainted with notfound [riak_cs/#929](https://github.com/basho/riak_cs/issues/929)
 
 ## Notes on Upgrading
 
-### Unaborted or incomplete multipart uploads
+### Riak Version
+
+This release of Riak CS was tested with Riak 1.4.10. Be sure to
+consult the
+[Compatibility Matrix](http://docs.basho.com/riakcs/latest/cookbooks/Version-Compatibility/)
+to ensure that you are using the correct version.
+
+### Incomplete multipart uploads
 
 [riak_cs/#475](https://github.com/basho/riak_cs/issues/475) was a
 security issue where a newly created bucket may include unaborted or
@@ -52,24 +105,31 @@ the bucket with same name. This was fixed by:
 Note that a few operations are needed after upgrading from 1.4.x (or
 former) to 1.5.0.
 
-- run `riak_cs_console:cleanup_orphan_multipart/0` or
-  `riak_cs_console:cleanup_orphan_multipart/1` in an attached console
-  to cleanup all buckets
+- run `riak-cs-admin cleanup-orphan-multipart` to cleanup all
+  buckets. To avoid some corner cases where multipart uploads can
+  conflict with bucket deletion, this command can also be run with a
+  timestamp with ISO 8601 format such as `2014-07-30T11:09:30.000Z` as
+  an argument. When this argument is provided, the cleanup operation
+  will not clean up multipart uploads that are newer than the provided
+  timestamp. If used, this should be set to a time when you expect
+  your upgrade to be completed.
+
 - there might be a time period until above cleanup finished, where no
   client can create bucket if unfinished multipart upload remains
-  under deleted bucket. You can find [critical] log if such bucket
+  under deleted bucket. You can find [critical] log (`"Multipart
+  upload remains in deleted bucket <bucketname>"`) if such bucket
   creation is attempted.
 
 ### Leeway seconds and disk space
 
 [riak_cs/#470](https://github.com/basho/riak_cs/pull/470) changed the
 behaviour of object deletion and garbage collection. The timestamps in
-garbage collection bucket were changed from the current time when the
-object is deleted, to the future time when the object is to be
-deleted. Garbage collector was also changed to collect objects until
+garbage collection bucket were changed from the future time when the
+object is to be deleted, to the current time when the object is
+deleted, Garbage collector was also changed to collect objects until
 'now - leeway seconds', from collecting objects until 'now'.
 
-Before:
+Before (-1.4.x):
 
 ```
            t1                         t2
@@ -79,7 +139,7 @@ Before:
            "t1+leeway"                marked as "t2"
 ```
 
-After:
+After (1.5.0-):
 
 ```
            t1                         t2
@@ -89,19 +149,34 @@ After:
            in GC bucket               marked as "t2 - leeway"
 ```
 
-This leads that there exists a period where no objects are collected
-right after upgrade to 1.5.0, say, `t0`, until `t0 + leeway` . And
-objects deleted just before `t0` won't be collected until `t0 +
-2*leeway` .
+This means that there will be a period where no objects are collected
+immediately following an upgrade to 1.5.0. If your cluster is upgraded
+at `t0`, no objects will be cleaned up until `t0 + leeway` . Objects
+deleted just before `t0` won't be collected until `t0 + 2*leeway` .
 
 Also, all CS nodes which run GC should be upgraded *first.* CS nodes
-which do not run GC should be upgraded later, to let leeway second
-system work properly. Or stop GC while upgrading whole cluster, by
-running `riak-cs-gc interval infinity` .
+which do not run GC should be upgraded later, to ensure the leeway
+setting is intiated properly. Alternatively, you may stop GC while
+upgrading, by running `riak-cs-admin gc set-interval infinity` .
 
-Multi-datacenter cluster should be upgraded more carefully, as to
+Multi data center cluster should be upgraded more carefully, as to
 make sure GC is not running while upgrading.
 
+## Known Issues and Limitations
+
+* If a second client request is made using the same connection while a
+  copy operation is in progress, the copy will be aborted. This is a
+  side effect of the way Riak CS currently handles client disconnect
+  detection. See [#932](https://github.com/basho/riak_cs/pull/932) for
+  further information.
+
+* Copying objects in OOS interface is not yet implemented.
+
+* Multibag, the ability to store object manifests and blocks in
+  separate clusters or groups of clusters, has been added as
+  Enterprise feature, but it is in early preview status. `proxy_get`
+  has not yet been implemented for this preview feature.  Multibag is
+  intended for single DC only at this time.
 
 # Riak CS 1.4.5 Release Notes
 

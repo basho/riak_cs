@@ -68,7 +68,8 @@
 
 -export_type([policy1/0]).
 
--define(AMZ_DEFAULT_VERSION, <<"2008-10-17">>).
+-define(AMZ_POLICY_OLD_VERSION, <<"2008-10-17">>).
+-define(AMZ_DEFAULT_VERSION, <<"2012-10-17">>).
 -define(POLICY_UNDEF, {error, policy_undefined}).
 
 %% ===================================================================
@@ -85,10 +86,10 @@ eval(Access, JSON) when is_binary(JSON) ->
         {ok, Policy} ->  eval(Access, Policy);
         {error, _} = E -> E
     end;
-eval(Access, ?POLICY{version=V, statement=Stmts}) ->
-    case V of
-        ?AMZ_DEFAULT_VERSION -> aggregate_evaluation(Access, Stmts);
-        _ -> false
+eval(Access, ?POLICY{statement=Stmts} = Policy) ->
+    case check_version(Policy) of
+        true -> aggregate_evaluation(Access, Stmts);
+        false -> false
     end.
 
 aggregate_evaluation(_, []) -> undefined;
@@ -105,18 +106,31 @@ aggregate_evaluation(Access, [Stmt|Stmts]) ->
 check_policy(#access_v1{bucket=B} = _Access,
              Policy) ->
 
-    case check_all_resources(B, Policy) of
-        false -> {error, malformed_policy_resource};
+    case check_version(Policy) of
+        false -> {error, {malformed_policy_version, Policy?POLICY.version}};
         true ->
-            case check_principals(Policy?POLICY.statement) of
-                false -> {error, malformed_policy_principal};
+            case check_all_resources(B, Policy) of
+                false -> {error, malformed_policy_resource};
                 true ->
-                    case check_actions(Policy?POLICY.statement) of
-                        false -> {error, malformed_policy_action};
-                        true -> ok
+                    case check_principals(Policy?POLICY.statement) of
+                        false -> {error, malformed_policy_principal};
+                        true ->
+                            case check_actions(Policy?POLICY.statement) of
+                                false -> {error, malformed_policy_action};
+                                true -> ok
+                            end
                     end
             end
     end.
+
+-spec check_version(policy1()) -> boolean().
+check_version(?POLICY{version = ?AMZ_DEFAULT_VERSION}) ->
+    true;
+check_version(?POLICY{version = ?AMZ_POLICY_OLD_VERSION}) ->
+    true;
+check_version(?POLICY{version = Version}) ->
+    _ = lager:debug("unknown version: ~p", [Version]),
+    false.
 
 % @doc confirm if forbidden action included in policy
 % s3:CreateBucket and s3:ListAllMyBuckets are prohibited at S3
@@ -224,11 +238,13 @@ policy_from_json(JSON) ->
     end.
 
 -spec policy_to_json_term(policy1()) -> JSON::binary().
-policy_to_json_term( ?POLICY{ version = ?AMZ_DEFAULT_VERSION,
-                              id = ID, statement = Stmts0}) ->
+policy_to_json_term( ?POLICY{ version = Version,
+                              id = ID, statement = Stmts0})
+  when Version =:= ?AMZ_POLICY_OLD_VERSION
+       orelse Version =:= ?AMZ_DEFAULT_VERSION ->
     Stmts = lists:map(fun statement_to_pairs/1, Stmts0),
     % hope no unicode included
-    Policy = [{"Version",?AMZ_DEFAULT_VERSION},{"Id", ID},{"Statement",Stmts}],
+    Policy = [{"Version", Version},{"Id", ID},{"Statement",Stmts}],
     unicode:characters_to_binary(mochijson2:encode(Policy), unicode).
 
 
@@ -358,8 +374,6 @@ resource_matches(BucketBin, KeyBin, #statement{resource=Resources})
                       end;
                  (_) -> false
               end, Resources).
-
-
 
 % functions to eval:
 -spec eval_statement(access(), #statement{}) -> boolean() | undefined.

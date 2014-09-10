@@ -28,8 +28,11 @@
 
 -export([test_condition_and_permission/4,
          start_put_fsm/6, get_copy_source/1,
-         copy/3, copy/4,
+         copy/4, copy/5,
          copy_range/2]).
+
+%% Do not use this
+-export([connection_checker/1]).
 
 -include_lib("webmachine/include/webmachine.hrl").
 
@@ -41,11 +44,11 @@
                                            {boolean()|{halt, non_neg_integer()}, #wm_reqdata{}, #context{}}.
 test_condition_and_permission(RcPid, SrcManifest, RD, Ctx) ->
 
-    ContentMD5 = base64:encode_to_string(SrcManifest?MANIFEST.content_md5),
+    ETag = riak_cs_manifest:etag(SrcManifest),
     LastUpdate = SrcManifest?MANIFEST.created,
 
     %% TODO: write tests around these conditions, any kind of test is okay
-    case condition_check(RD, ContentMD5, LastUpdate) of
+    case condition_check(RD, ETag, LastUpdate) of
         ok ->
             _ = authorize_on_src(RcPid, SrcManifest, RD, Ctx);
         Other ->
@@ -63,7 +66,7 @@ authorize_on_src(RcPid, SrcManifest, RD,
 
     {UserKey, _} = AuthMod:identify(RD, Ctx),
     {User, UserObj} =
-        case riak_cs_utils:get_user(UserKey, RcPid) of
+        case riak_cs_user:get_user(UserKey, RcPid) of
             {ok, {User0, UserObj0}} ->
                 {User0, UserObj0};
             {error, no_user_key} ->
@@ -146,20 +149,28 @@ handle_copy_source(Path0) when is_list(Path0) ->
     end.
 
 %% @doc runs copy
--spec copy(pid(), lfs_manifest(), riak_client()) ->
+-spec copy(pid(), lfs_manifest(), riak_client(), fun(() -> boolean())) ->
                   {ok, DstManifest::lfs_manifest()} | {error, term()}.
-copy(PutFsmPid, SrcManifest, ReadRcPid) ->
-    copy(PutFsmPid, SrcManifest, ReadRcPid, undefined).
+copy(PutFsmPid, SrcManifest, ReadRcPid, ContFun) ->
+    copy(PutFsmPid, SrcManifest, ReadRcPid, ContFun, undefined).
 
 %% @doc runs copy, Target PUT FSM pid and source object manifest are
 %% specified. This function kicks up GET FSM of source object and
-%% streams blocks to specified PUT FSM.
--spec copy(pid(), lfs_manifest(), riak_client(),
+%% streams blocks to specified PUT FSM. ContFun is a function that
+%% returns whether copying should be continued or not; Clients may
+%% disconnect the TCP connection while waiting for copying large
+%% objects. But mochiweb/webmachine cannot notify nor stop copying,
+%% thus some fd watcher is expected here.
+-spec copy(pid(), lfs_manifest(), riak_client(), fun(()->boolean()),
            {non_neg_integer(), non_neg_integer()}|fail|undefined) ->
                   {ok, DstManifest::lfs_manifest()} | {error, term()}.
-copy(_, _, _, fail) ->
+copy(_, _, _, _, fail) ->
     {error, bad_request};
-copy(PutFsmPid, SrcManifest, ReadRcPid, Range0) ->
+copy(PutFsmPid, ?MANIFEST{content_length=0} = _SrcManifest,
+     _ReadRcPid, _, _) ->
+    %% Zero-size copy will successfully create zero-size object
+    riak_cs_put_fsm:finalize(PutFsmPid, undefined);
+copy(PutFsmPid, SrcManifest, ReadRcPid, ContFun, Range0) ->
     {ok, GetFsmPid} = start_get_fsm(SrcManifest, ReadRcPid),
     _RetrievedManifest = riak_cs_get_fsm:get_manifest(GetFsmPid),
 
@@ -177,7 +188,7 @@ copy(PutFsmPid, SrcManifest, ReadRcPid, Range0) ->
         end,
 
     riak_cs_get_fsm:continue(GetFsmPid, Range),
-    get_and_put(GetFsmPid, PutFsmPid, MD5).
+    get_and_put(GetFsmPid, PutFsmPid, MD5, ContFun).
 
 -spec get_content_md5(tuple() | binary()) -> string().
 get_content_md5({_MD5, _Str}) ->
@@ -185,15 +196,24 @@ get_content_md5({_MD5, _Str}) ->
 get_content_md5(MD5) ->
     base64:encode_to_string(MD5).
 
--spec get_and_put(pid(), pid(), list()) -> {ok, lfs_manifest()} | {error, term()}.
-get_and_put(GetPid, PutPid, MD5) ->
-    case riak_cs_get_fsm:get_next_chunk(GetPid) of
-        {done, <<>>} ->
-            riak_cs_get_fsm:stop(GetPid),
-            riak_cs_put_fsm:finalize(PutPid, MD5);
-        {chunk, Block} ->
-            riak_cs_put_fsm:augment_data(PutPid, Block),
-            get_and_put(GetPid, PutPid, MD5)
+-spec get_and_put(pid(), pid(), list(), fun(() -> boolean()))
+                 -> {ok, lfs_manifest()} | {error, term()}.
+get_and_put(GetPid, PutPid, MD5, ContFun) ->
+    case ContFun() of
+        true ->
+            case riak_cs_get_fsm:get_next_chunk(GetPid) of
+                {done, <<>>} ->
+                    riak_cs_get_fsm:stop(GetPid),
+                    riak_cs_put_fsm:finalize(PutPid, MD5);
+                {chunk, Block} ->
+                    riak_cs_put_fsm:augment_data(PutPid, Block),
+                    get_and_put(GetPid, PutPid, MD5, ContFun)
+            end;
+        false ->
+            _ = lager:debug("Connection lost during a copy", []),
+            catch riak_cs_get_fsm:stop(GetPid),
+            catch riak_cs_put_fsm:force_stop(PutPid),
+            {error, connection_lost}
     end.
 
 -spec start_get_fsm(lfs_manifest(), riak_client()) -> {ok, pid()}.
@@ -272,5 +292,27 @@ copy_range(RD, ?MANIFEST{content_length=Len}) ->
                 [{Start, End}|_]  -> {Start, End};
                 [] -> fail;
                 fail -> fail
+            end
+    end.
+
+
+%% @doc  nasty  hack,  do  not  use this  other  than  for  disconnect
+%% detection in copying objects.
+-spec connection_checker(inet:socket()) -> fun(() -> boolean()).
+connection_checker(Socket) ->
+    fun() ->
+            case inet:peername(Socket) of
+                {error,_E} ->
+                    false;
+                {ok,_} ->
+                    case gen_tcp:recv(Socket, 1, 0) of
+                        {error, timeout} ->
+                            true;
+                        {error, _E} ->
+                            false;
+                        {ok, _} ->
+                            %% This cannot happen....
+                            throw(copy_interrupted)
+                    end
             end
     end.

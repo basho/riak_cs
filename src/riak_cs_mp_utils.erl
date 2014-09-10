@@ -56,7 +56,6 @@
          upload_part/6, upload_part/7,
          upload_part_1blob/2,
          upload_part_finished/7, upload_part_finished/8,
-         user_rec_to_3tuple/1,
          is_multipart_manifest/1
         ]).
 -export([get_mp_manifest/1]).
@@ -294,11 +293,6 @@ upload_part_finished(Bucket, Key, UploadId, _PartNumber, PartUUID, MD5,
     do_part_common(upload_part_finished, Bucket, Key, UploadId,
                    Caller, [{upload_part_finished, Extra}], RcPidUnW).
 
-user_rec_to_3tuple(U) ->
-    %% acl_owner3: {display name, canonical id, key id}
-    {U?RCS_USER.display_name, U?RCS_USER.canonical_id,
-     U?RCS_USER.key_id}.
-
 write_new_manifest(M, Opts, RcPidUnW) ->
     MpM = get_mp_manifest(M),
     Owner = MpM?MULTIPART_MANIFEST.owner,
@@ -340,7 +334,7 @@ do_part_common(Op, Bucket, Key, UploadId, {_,_,CallerKeyId} = _Caller, Props, Rc
     case wrap_riak_client(RcPidUnW) of
         {ok, RcPid} ->
             try
-                case riak_cs_utils:get_manifests(?PID(RcPid), Bucket, Key) of
+                case riak_cs_manifest:get_manifests(?PID(RcPid), Bucket, Key) of
                     {ok, Obj, Manifests} ->
                         case find_manifest_with_uploadid(UploadId, Manifests) of
                             false ->
@@ -472,11 +466,12 @@ do_part_common2(upload_part, RcPid, M, _Obj, MpM, Props) ->
     {Bucket, Key, _UploadId, _Caller, PartNumber, Size} =
         proplists:get_value(upload_part, Props),
     BlockSize = riak_cs_lfs_utils:block_size(),
+    BagId = riak_cs_mb_helper:bag_id_from_manifest(M),
     {ok, PutPid} = riak_cs_put_fsm:start_link(
                      {Bucket, Key, Size, <<"x-riak/multipart-part">>,
                       orddict:new(), BlockSize, M?MANIFEST.acl,
                       infinity, self(), RcPid},
-                     false),
+                     {false, BagId}),
     try
         ?MANIFEST{content_length = ContentLength,
                   props = MProps} = M,
@@ -605,7 +600,7 @@ update_keys_and_prefixes({Keys, Prefixes}, _, Prefix, PrefixLen, Group) ->
 multipart_manifests_for_key(Bucket, Key, Opts, Acc, RcPid) ->
     ParameterFilter = build_parameter_filter(Opts),
     Manifests = handle_get_manifests_result(
-                  riak_cs_utils:get_manifests(RcPid, Bucket, Key)),
+                  riak_cs_manifest:get_manifests(RcPid, Bucket, Key)),
     lists:foldl(ParameterFilter, Acc, Manifests).
 
 build_parameter_filter(Opts) ->
@@ -651,7 +646,7 @@ multipart_description(Manifest) ->
 %% @doc Will cause error:{badmatch, {m_ibco, _}} if CallerKeyId does not exist
 
 is_caller_bucket_owner(RcPid, Bucket, CallerKeyId) ->
-    {m_icbo, {ok, {C, _}}} = {m_icbo, riak_cs_utils:get_user(CallerKeyId, RcPid)},
+    {m_icbo, {ok, {C, _}}} = {m_icbo, riak_cs_user:get_user(CallerKeyId, RcPid)},
     Buckets = [iolist_to_binary(B?RCS_BUCKET.name) ||
                   B <- riak_cs_bucket:get_buckets(C)],
     lists:member(Bucket, Buckets).

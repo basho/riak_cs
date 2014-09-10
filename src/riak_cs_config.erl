@@ -51,7 +51,8 @@
          set_user_buckets_prune_time/1,
          riak_host_port/0,
          connect_timeout/0,
-         is_multibag_enabled/0
+         is_multibag_enabled/0,
+         max_buckets_per_user/0
         ]).
 
 %% OpenStack config
@@ -309,6 +310,10 @@ connect_timeout() ->
 -spec is_multibag_enabled() -> boolean().
 is_multibag_enabled() ->
     application:get_env(riak_cs_multibag, bags) =/= undefined.
+
+-spec max_buckets_per_user() -> non_neg_integer() | unlimited.
+max_buckets_per_user() ->
+    get_env(riak_cs, max_buckets_per_user, ?DEFAULT_MAX_BUCKETS_PER_USER).
 
 %% ===================================================================
 %% S3 config options

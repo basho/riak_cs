@@ -40,6 +40,8 @@
          deny_invalid_key/2,
          extract_key/2,
          extract_name/1,
+         extract_canonical_id/1,
+         extract_object_acl/1,
          maybe_update_context_with_acl_from_headers/2,
          maybe_acl_from_context_and_request/3,
          acl_from_headers/4,
@@ -57,6 +59,8 @@
          bucket_access_authorize_helper/4,
          object_access_authorize_helper/4,
          object_access_authorize_helper/5,
+         check_object_authorization/8,
+         translate_bucket_policy/2,
          fetch_bucket_owner/2,
          bucket_owner/1
         ]).
@@ -229,7 +233,7 @@ validate_auth_header(RD, AuthBypass, RcPid, Ctx) ->
         _ ->
             {AuthMod, KeyId, Signature} = parse_auth_header(AuthHeader, AuthBypass)
     end,
-    case riak_cs_utils:get_user(KeyId, RcPid) of
+    case riak_cs_user:get_user(KeyId, RcPid) of
         {ok, {User, UserObj}} when User?RCS_USER.status =:= enabled ->
             case AuthMod:authenticate(User, Signature, RD, Ctx) of
                 ok ->
@@ -319,7 +323,7 @@ deny_invalid_key(RD, Ctx=#context{response_module=ResponseMod}) ->
                             {boolean(), #wm_reqdata{}, #context{}}.
 shift_to_owner(RD, Ctx=#context{response_module=ResponseMod}, OwnerId, RcPid)
   when RcPid /= undefined ->
-    case riak_cs_utils:get_user(OwnerId, RcPid) of
+    case riak_cs_user:get_user(OwnerId, RcPid) of
         {ok, {Owner, OwnerObject}} when Owner?RCS_USER.status =:= enabled ->
             AccessRD = riak_cs_access_log_handler:set_user(Owner, RD),
             {false, AccessRD, Ctx#context{user=Owner,
@@ -378,7 +382,7 @@ to_rfc_1123(Date) when is_list(Date) ->
 -spec iso_8601_to_rfc_1123(binary() | string()) -> string().
 iso_8601_to_rfc_1123(Date) when is_list(Date) ->
     ErlDate = iso_8601_to_erl_date(Date),
-    httpd_util:rfc1123_date(erlang:universaltime_to_localtime(ErlDate)).
+    webmachine_util:rfc1123_date(ErlDate).
 
 %% @doc Convert an ISO 8601 date to Erlang datetime format.
 %% This function assumes the input time is already in GMT time.
@@ -752,6 +756,8 @@ object_access_authorize_helper(AccessType, Deletable, RD, Ctx) ->
 object_access_authorize_helper(AccessType, Deletable, SkipAcl,
                                RD, #context{policy_module=PolicyMod,
                                             local_context=LocalCtx,
+                                            user=User,
+                                            riak_client=RcPid,
                                             response_module=ResponseMod}=Ctx)
   when ( AccessType =:= object_acl orelse
          AccessType =:= object_part orelse
@@ -769,20 +775,50 @@ object_access_authorize_helper(AccessType, Deletable, SkipAcl,
             %% so we can assume to bucket does not exist.
             ResponseMod:api_error(no_such_bucket, RD, Ctx);
         Policy ->
-            check_object_authorization(AccessType, Deletable, SkipAcl, Policy, RD, Ctx)
+            Method = wrq:method(RD),
+            CanonicalId = extract_canonical_id(User),
+            Access = PolicyMod:reqdata_to_access(RD, AccessType, CanonicalId),
+            #key_context{bucket=_Bucket, bucket_object=BucketObj, manifest=Manifest} = LocalCtx,
+            ObjectAcl = extract_object_acl(Manifest),
+
+            case check_object_authorization(Access, SkipAcl, ObjectAcl,
+                                            Policy, CanonicalId,
+                                            PolicyMod, RcPid, BucketObj) of
+                {error, actor_is_owner_but_denied_policy} ->
+                    %% return forbidden or 404 based on the `Method' and `Deletable'
+                    %% values
+                    actor_is_owner_but_denied_policy(User, RD, Ctx, Method, Deletable);
+                {ok, actor_is_owner_and_allowed_policy} ->
+                    %% actor is the owner
+                    actor_is_owner_and_allowed_policy(User, RD, Ctx, LocalCtx);
+                {error, {actor_is_not_owner_and_denied_policy, OwnerId}} ->
+                    actor_is_not_owner_and_denied_policy(OwnerId, RD, Ctx,
+                                                         Method, Deletable);
+                {ok, {actor_is_not_owner_but_allowed_policy, OwnerId}} ->
+                    %% actor is not the owner
+                    actor_is_not_owner_but_allowed_policy(User, OwnerId, RD, Ctx, LocalCtx);
+                {ok, just_allowed_by_policy} ->
+                    %% actor is not the owner, not permitted by ACL but permitted by policy
+                    just_allowed_by_policy(ObjectAcl, RcPid, RD, Ctx, LocalCtx);
+                {error, access_denied} ->
+                    riak_cs_wm_utils:deny_access(RD, Ctx)
+            end
     end.
 
-check_object_authorization(AccessType, Deletable, SkipAcl, Policy,
-                           RD, #context{user=User,
-                                        policy_module=PolicyMod,
-                                        local_context=LocalCtx,
-                                        riak_client=RcPid}=Ctx) ->
-    Method = wrq:method(RD),
-    #key_context{bucket=_Bucket, bucket_object=BucketObj, manifest=Manifest} = LocalCtx,
-    CanonicalId = extract_canonical_id(User),
+
+-spec check_object_authorization(access(), boolean(), undefined|acl(), policy(),
+                                 undefined|string(), atom(), riak_client(), riakc_obj:riakc_obj()) ->
+                                        {ok, actor_is_owner_and_allowed_policy |
+                                         {actor_is_not_owner_but_allowed_policy, string()} |
+                                         just_allowed_by_policy} |
+                                        {error, actor_is_owner_but_denied_policy |
+                                         {actor_is_not_owner_and_denied_policy, string()} |
+                                         access_denied}.
+check_object_authorization(Access, SkipAcl, ObjectAcl, Policy,
+                           CanonicalId, PolicyMod,
+                           RcPid, BucketObj) ->
+    #access_v1{method = Method, target = AccessType} = Access,
     RequestedAccess = requested_access_helper(AccessType, Method),
-    ObjectAcl = extract_object_acl(Manifest),
-    Access = PolicyMod:reqdata_to_access(RD, AccessType, CanonicalId),
     Acl = case SkipAcl of
               true -> true;
               false -> riak_cs_acl:object_access(BucketObj,
@@ -793,25 +829,20 @@ check_object_authorization(AccessType, Deletable, SkipAcl, Policy,
           end,
     case {Acl, PolicyMod:eval(Access, Policy)} of
         {true, false} ->
-            %% return forbidden or 404 based on the `Method' and `Deletable'
-            %% values
-            actor_is_owner_but_denied_policy(User, RD, Ctx, Method, Deletable);
+            {error, actor_is_owner_but_denied_policy};
         {true, _} ->
-            %% actor is the owner
-            actor_is_owner_and_allowed_policy(User, RD, Ctx, LocalCtx);
+            {ok, actor_is_owner_and_allowed_policy};
         {{true, OwnerId}, false} ->
-            actor_is_not_owner_and_denied_policy(OwnerId, RD, Ctx,
-                                                 Method, Deletable);
+            {error, {actor_is_not_owner_and_denied_policy, OwnerId}};
         {{true, OwnerId}, _} ->
-            %% actor is not the owner
-            actor_is_not_owner_but_allowed_policy(User, OwnerId, RD, Ctx, LocalCtx);
+            {ok, {actor_is_not_owner_but_allowed_policy, OwnerId}};
         {false, true} ->
             %% actor is not the owner, not permitted by ACL but permitted by policy
-            just_allowed_by_policy(ObjectAcl, RcPid, RD, Ctx, LocalCtx);
+            {ok, just_allowed_by_policy};
         {false, _} ->
             %% policy says undefined or false
             %% ACL check failed, deny access
-            riak_cs_wm_utils:deny_access(RD, Ctx)
+            {error, access_denied}
     end.
 
 %% ===================================================================
@@ -835,10 +866,8 @@ requested_access_helper(object_acl, Method) ->
 
 -spec extract_object_acl(notfound | lfs_manifest()) ->
                                 undefined | acl().
-extract_object_acl(notfound) ->
-    undefined;
-extract_object_acl(?MANIFEST{acl=Acl}) ->
-    Acl.
+extract_object_acl(Manifest) ->
+    riak_cs_manifest:object_acl(Manifest).
 
 -spec translate_bucket_policy(atom(), riakc_obj:riakc_obj()) ->
                                      policy() |

@@ -31,6 +31,7 @@ compile-riak-test: all
 	## So we'll copy the BEAM files to a place that riak_test is
 	## already using.
 	cp -v ebin/riak_cs_wm_utils.beam riak_test/ebin
+	cp -v ebin/twop_set.beam riak_test/ebin
 
 clean-client-test:
 	@./rebar client_test_clean
@@ -77,7 +78,7 @@ pulse: all
 	@rm -rf $(BASE_DIR)/.eunit
 	@./rebar -D PULSE eunit skip_deps=true suites=$(PULSE_TESTS)
 
-test-client: test-clojure test-python test-erlang test-ruby test-php
+test-client: test-clojure test-python test-erlang test-ruby test-php test-go
 
 test-python:
 	@cd client_tests/python/ && make CS_HTTP_PORT=$(CS_HTTP_PORT)
@@ -97,8 +98,12 @@ test-clojure:
 test-php:
 	@cd client_tests/php && make
 
+test-go:
+	@cd client_tests/go && make
+
 test-int: compile-int-test
 	@./rebar skip_deps=true int_test_run
+
 ##
 ## Release targets
 ##
@@ -111,31 +116,39 @@ relclean:
 ##
 ## Developer targets
 ##
-stage : rel
-	$(foreach dep,$(wildcard deps/*), rm -rf rel/riak-cs/lib/$(shell basename $(dep))-* && ln -sf $(abspath $(dep)) rel/riak-cs/lib;)
-	$(foreach app,$(wildcard apps/*), rm -rf rel/riak-cs/lib/$(shell basename $(app))-* && ln -sf $(abspath $(app)) rel/riak-cs/lib;)
+##  devN - Make a dev build for node N
+##  stagedevN - Make a stage dev build for node N (symlink libraries)
+##  devrel - Make a dev build for 1..$DEVNODES
+##  stagedevrel Make a stagedev build for 1..$DEVNODES
+##
+##  Example, make a 68 node devrel cluster
+##    make stagedevrel DEVNODES=68
 
-devrel: dev1 dev2 dev3 dev4
+.PHONY : stagedevrel devrel
+DEVNODES ?= 6
 
-dev1 dev2 dev3 dev4: all
+# 'seq' is not available on all *BSD, so using an alternate in awk
+SEQ = $(shell awk 'BEGIN { for (i = 1; i < '$(DEVNODES)'; i++) printf("%i ", i); print i ;exit(0);}')
+
+$(eval stagedevrel : $(foreach n,$(SEQ),stagedev$(n)))
+$(eval devrel : $(foreach n,$(SEQ),dev$(n)))
+
+dev% : all
 	mkdir -p dev
-	(cd rel && ../rebar generate skip_deps=true target_dir=../dev/$@ overlay_vars=vars/$@_vars.config)
+	rel/gen_dev $@ rel/vars/dev_vars.config.src rel/vars/$@_vars.config
+	(cd rel && ../rebar generate target_dir=../dev/$@ overlay_vars=vars/$@_vars.config)
 
-stagedevrel: dev1 dev2 dev3 dev4
-	$(foreach dev,$^, \
-	  $(foreach app,$(wildcard apps/*), rm -rf dev/$(dev)/lib/$(shell basename $(app))-* && ln -sf $(abspath $(app)) dev/$(dev)/lib;) \
-	  $(foreach dep,$(wildcard deps/*), rm -rf dev/$(dev)/lib/$(shell basename $(dep))-* && ln -sf $(abspath $(dep)) dev/$(dev)/lib;))
-
-rtdevrel: rtdev1 rtdev2 rtdev3 rtdev4 rtdev5 rtdev6
-
-rtdev1 rtdev2 rtdev3 rtdev4 rtdev5 rtdev6:
-	$(if $(RT_TARGET_CS),,$(error "RT_TARGET_CS var not set, see riak_test/ directory for details"))
-	mkdir -p $(RT_TARGET_CS)/$@
-	 (cd rel && ../rebar generate skip_deps=true target_dir=$(RT_TARGET_CS)/$@ overlay_vars=vars/$@_vars.config)
-
+stagedev% : dev%
+	$(foreach app,$(wildcard apps/*), rm -rf dev/$^/lib/$(shell basename $(app))* && ln -sf $(abspath $(app)) dev/$^/lib;)
+	$(foreach dep,$(wildcard deps/*), rm -rf dev/$^/lib/$(shell basename $(dep))* && ln -sf $(abspath $(dep)) dev/$^/lib;)
 
 devclean: clean
 	rm -rf dev
+
+stage : rel
+	$(foreach app,$(wildcard apps/*), rm -rf rel/riak-cs/lib/$(shell basename $(app))* && ln -sf $(abspath $(app)) rel/riak-cs/lib;)
+	$(foreach dep,$(wildcard deps/*), rm -rf rel/riak-cs/lib/$(shell basename $(dep))* && ln -sf $(abspath $(dep)) rel/riak-cs/lib;)
+
 
 ##
 ## Doc targets

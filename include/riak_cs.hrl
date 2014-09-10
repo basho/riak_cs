@@ -382,6 +382,7 @@
 -define(BUCKETS_BUCKET, <<"moss.buckets">>).
 -define(GC_BUCKET, <<"riak-cs-gc">>).
 -define(FREE_BUCKET_MARKER, <<"0">>).
+-define(DEFAULT_MAX_BUCKETS_PER_USER, 100).
 -define(DEFAULT_MAX_CONTENT_LENGTH, 5368709120). %% 5 GB
 -define(DEFAULT_LFS_BLOCK_SIZE, 1048576).%% 1 MB
 -define(XML_PROLOG, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>").
@@ -464,6 +465,10 @@
 -define(DEFAULT_AUTH_MODULE, riak_cs_s3_auth).
 -define(DEFAULT_LIST_OBJECTS_MAX_KEYS, 1000).
 -define(DEFAULT_MD5_CHUNK_SIZE, 1048576). %% 1 MB
+-define(DEFAULT_MANIFEST_WARN_SIBLINGS, 20).
+-define(DEFAULT_MANIFEST_WARN_BYTES, 5*1024*1024). %% 5MB
+-define(DEFAULT_MANIFEST_WARN_HISTORY, 30).
+-define(DEFAULT_MAX_PART_NUMBER, 10000).
 
 %% General system info
 -define(WORD_SIZE, erlang:system_info(wordsize)).
@@ -471,7 +476,7 @@
 -define(DEFAULT_POLICY_MODULE, riak_cs_s3_policy).
 
 -record(access_v1, {
-          method :: atom(), % PUT / GET / POST / ....
+          method :: 'PUT' | 'GET' | 'POST' | 'DELETE' | 'HEAD',
           target :: atom(), % object | object_acl | ....
           id :: string(),
           bucket :: binary(),

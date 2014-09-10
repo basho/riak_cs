@@ -173,6 +173,28 @@ class BasicTests(S3ApiVerificationTestBase):
         self.assertNotIn(self.key_name,
                          [k.key for k in bucket.get_all_keys()])
 
+    def test_delete_objects(self):
+        bucket = self.conn.create_bucket(self.bucket_name)
+        keys = ['0', '1', u'Unicodeあいうえお', '2']
+        keys.sort()
+        for key in keys:
+            k = Key(bucket)
+            k.key = key
+            k.set_contents_from_string(key)
+
+        all_keys = [k.key for k in bucket.get_all_keys()]
+        all_keys.sort()
+        self.assertEqual(keys, all_keys)
+        result = bucket.delete_keys(keys)
+
+        self.assertEqual(keys, [k.key for k in result.deleted])
+        self.assertEqual([], result.errors)
+        result = bucket.delete_keys(['nosuchkeys'])
+        self.assertEqual([], result.errors)
+        self.assertEqual(['nosuchkeys'], [k.key for k in result.deleted])
+        all_keys = [k.key for k in bucket.get_all_keys()]
+        self.assertEqual([], all_keys)
+
     def test_delete_bucket(self):
         bucket = self.conn.get_bucket(self.bucket_name)
         bucket.delete()
@@ -424,35 +446,57 @@ class BucketPolicyTest(S3ApiVerificationTestBase):
         except S3ResponseError: pass
         else:                   self.fail()
 
-    def test_put_policy_invalid_ip(self):
+    def create_bucket_and_set_policy(self, policy_template):
         bucket = self.conn.create_bucket(self.bucket_name)
         bucket.delete_policy()
-        policy = '''
+        policy = policy_template % bucket.name
+        bucket.set_policy(policy, headers={'content-type':'application/json'})
+        return bucket
+
+    def test_put_policy_invalid_ip(self):
+        policy_template = '''
 {"Version":"2008-10-17","Statement":[{"Sid":"Stmtaaa","Effect":"Allow","Principal":"*","Action":["s3:GetObjectAcl","s3:GetObject"],"Resource":"arn:aws:s3:::%s/*","Condition":{"IpAddress":{"aws:SourceIp":"0"}}}]}
-''' % bucket.name
+'''
         try:
-            bucket.set_policy(policy, headers={'content-type':'application/json'})
+            self.create_bucket_and_set_policy(policy_template)
         except S3ResponseError as e:
             self.assertEqual(e.status, 400)
             self.assertEqual(e.reason, 'Bad Request')
 
     def test_put_policy(self):
-        bucket = self.conn.create_bucket(self.bucket_name)
-        bucket.delete_policy()
-        policy = '''
+        ### old version name
+        policy_template = '''
 {"Version":"2008-10-17","Statement":[{"Sid":"Stmtaaa","Effect":"Allow","Principal":"*","Action":["s3:GetObjectAcl","s3:GetObject"],"Resource":"arn:aws:s3:::%s/*","Condition":{"IpAddress":{"aws:SourceIp":"127.0.0.1/32"}}}]}
-''' % bucket.name
-        self.assertTrue(bucket.set_policy(policy, headers={'content-type':'application/json'}))
-
+'''
+        bucket = self.create_bucket_and_set_policy(policy_template)
         got_policy = bucket.get_policy()
-        self.assertEqual(policy, got_policy)
+        self.assertEqual(policy_template % bucket.name , got_policy)
+
+    def test_put_policy_2(self):
+        ### new version name, also regression of #911
+        policy_template = '''
+{"Version":"2012-10-17","Statement":[{"Sid":"Stmtaaa","Effect":"Allow","Principal":"*","Action":["s3:GetObjectAcl","s3:GetObject"],"Resource":"arn:aws:s3:::%s/*","Condition":{"IpAddress":{"aws:SourceIp":"127.0.0.1/32"}}}]}
+'''
+        bucket = self.create_bucket_and_set_policy(policy_template)
+        got_policy = bucket.get_policy()
+        self.assertEqual(policy_template % bucket.name, got_policy)
+
+    def test_put_policy_3(self):
+        policy_template = '''
+{"Version":"somebadversion","Statement":[{"Sid":"Stmtaaa","Effect":"Allow","Principal":"*","Action":["s3:GetObjectAcl","s3:GetObject"],"Resource":"arn:aws:s3:::%s/*","Condition":{"IpAddress":{"aws:SourceIp":"127.0.0.1/32"}}}]}
+'''
+        try:
+            self.create_bucket_and_set_policy(policy_template)
+        except S3ResponseError as e:
+            self.assertEqual(e.status, 400)
+            self.assertEqual(e.reason, 'Bad Request')
+
 
     def test_ip_addr_policy(self):
-        bucket = self.conn.create_bucket(self.bucket_name)
-        policy = '''
+        policy_template = '''
 {"Version":"2008-10-17","Statement":[{"Sid":"Stmtaaa","Effect":"Deny","Principal":"*","Action":["s3:GetObject"],"Resource":"arn:aws:s3:::%s/*","Condition":{"IpAddress":{"aws:SourceIp":"%s"}}}]}
-''' % (bucket.name, self.host)
-        self.assertTrue(bucket.set_policy(policy, headers={'content-type':'application/json'}))
+''' % ('%s', self.host)
+        bucket = self.create_bucket_and_set_policy(policy_template)
 
         key_name = str(uuid.uuid4())
         key = Key(bucket, key_name)
@@ -702,7 +746,23 @@ class SimpleCopyTest(S3ApiVerificationTestBase):
         self.assertIn(target_key_name,
                       [k.key for k in target_bucket.get_all_keys()])
 
-    def maybe_test_upload_part_copy(self):
+    def test_put_copy_object_from_mp(self):
+        bucket = self.conn.create_bucket(self.bucket_name)
+        (upload, result) = upload_multipart(bucket, self.key_name, [StringIO(self.data)])
+
+        target_bucket_name = str(uuid.uuid4())
+        target_key_name = str(uuid.uuid4())
+        target_bucket = self.conn.create_bucket(target_bucket_name)
+
+        target_bucket.copy_key(target_key_name, self.bucket_name, self.key_name)
+
+        target_key = Key(target_bucket)
+        target_key.key = target_key_name
+        self.assertEqual(target_key.get_contents_as_string(), self.data)
+        self.assertIn(target_key_name,
+                      [k.key for k in target_bucket.get_all_keys()])
+
+    def test_upload_part_from_non_mp(self):
         k = self.create_test_object()
 
         target_bucket_name = str(uuid.uuid4())
@@ -711,7 +771,7 @@ class SimpleCopyTest(S3ApiVerificationTestBase):
         start_offset=0
         end_offset=9
         target_bucket = self.conn.create_bucket(target_bucket_name)
-        upload = bucket.initiate_multipart_upload(target_key_name)
+        upload = target_bucket.initiate_multipart_upload(target_key_name)
         upload.copy_part_from_key(self.bucket_name, self.key_name, part_num=1,
                                   start=start_offset, end=end_offset)
         upload.complete_upload()
@@ -740,6 +800,19 @@ class SimpleCopyTest(S3ApiVerificationTestBase):
         self.assertEqual(self.data[start_offset:(end_offset+1)],
                          target_key.get_contents_as_string())
 
+    def test_put_copy_from_non_existing_key_404(self):
+        bucket = self.conn.create_bucket(self.bucket_name)
+
+        target_bucket_name = str(uuid.uuid4())
+        target_key_name = str(uuid.uuid4())
+        target_bucket = self.conn.create_bucket(target_bucket_name)
+        try:
+            target_bucket.copy_key(target_key_name, self.bucket_name, 'not_existing')
+            self.fail()
+        except S3ResponseError as e:
+            print e
+            self.assertEqual(e.status, 404)
+            self.assertEqual(e.reason, 'Object Not Found')
 
 if __name__ == "__main__":
     unittest.main()

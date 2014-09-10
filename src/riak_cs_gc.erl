@@ -89,7 +89,7 @@ gc_active_manifests(Bucket, Key, RcPid, UUIDs) ->
 -spec get_active_manifests(binary(), binary(), riak_client()) ->
     {ok, riakc_obj:riakc_obj(), [lfs_manifest()]} | {error, term()}.
 get_active_manifests(Bucket, Key, RcPid) ->
-    active_manifests(riak_cs_utils:get_manifests(RcPid, Bucket, Key)).
+    active_manifests(riak_cs_manifest:get_manifests(RcPid, Bucket, Key)).
 
 -spec active_manifests({ok, riakc_obj:riakc_obj(), [lfs_manifest()]}) ->
                           {ok, riakc_obj:riakc_obj(), [lfs_manifest()]};
@@ -179,7 +179,7 @@ gc_specific_manifests(UUIDsToMark, RiakObject, Bucket, Key, RcPid) ->
     ({error, term()}, binary(), binary(), [binary()], riak_client()) ->
     {error, term()} | {ok, riakc_obj:riakc_obj()}.
 handle_mark_as_pending_delete({ok, RiakObject}, Bucket, Key, UUIDsToMark, RcPid) ->
-    Manifests = riak_cs_utils:manifests_from_riak_object(RiakObject),
+    Manifests = riak_cs_manifest:manifests_from_riak_object(RiakObject),
     PDManifests = riak_cs_manifest_utils:manifests_to_gc(UUIDsToMark, Manifests),
     MoveResult = move_manifests_to_gc_bucket(PDManifests, RcPid),
     PDUUIDs = [UUID || {UUID, _} <- PDManifests],
@@ -342,7 +342,7 @@ mark_as_scheduled_delete(UUIDsToMark, RiakObject, Bucket, Key, RcPid) ->
 -spec mark_manifests(riakc_obj:riakc_obj(), binary(), binary(), [binary()], fun(), riak_client()) ->
                     {ok, riakc_obj:riakc_obj()} | {error, term()}.
 mark_manifests(RiakObject, Bucket, Key, UUIDsToMark, ManiFunction, RcPid) ->
-    Manifests = riak_cs_utils:manifests_from_riak_object(RiakObject),
+    Manifests = riak_cs_manifest:manifests_from_riak_object(RiakObject),
     Marked = ManiFunction(Manifests, UUIDsToMark),
     UpdObj0 = riak_cs_utils:update_obj_value(RiakObject,
                                              riak_cs_utils:encode_term(Marked)),

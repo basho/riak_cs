@@ -63,7 +63,7 @@
                 reply_pid :: {pid(), reference()},
                 riak_client :: riak_client(),
                 mani_pid :: undefined | pid(),
-                make_new_manifest_p :: boolean(),
+                make_new_manifest_p :: true | {false, bag_id()},
                 timer_ref :: reference(),
                 bucket :: binary(),
                 key :: binary(),
@@ -94,7 +94,7 @@ start_link(Tuple) when is_tuple(Tuple) ->
 
 -spec start_link({binary(), binary(), non_neg_integer(), binary(),
                   term(), pos_integer(), acl(), timeout(), pid(), riak_client()},
-                 boolean()) ->
+                 true | {false, bag_id()}) ->
                         {ok, pid()} | {error, term()}.
 start_link({_Bucket,
             _Key,
@@ -141,7 +141,7 @@ block_written(Pid, BlockID) ->
 %% make things more confusing?
 -spec init({{binary(), binary(), non_neg_integer(), binary(),
              term(), pos_integer(), acl(), timeout(), pid(), riak_client()},
-            term()}) ->
+            true | {false, bag_id()}}) ->
                   {ok, prepare, #state{}, timeout()}.
 init({{Bucket, Key, ContentLength, ContentType,
        Metadata, BlockSize, Acl, Timeout, Caller, RcPid},
@@ -399,19 +399,35 @@ prepare(State=#state{bucket=Bucket,
     %% this shouldn't be hardcoded.
     %% for now, always populate cluster_id
     ClusterID = riak_cs_config:cluster_id(RcPid),
-    Manifest =
-        riak_cs_lfs_utils:new_manifest(Bucket,
-                                       Key,
-                                       UUID,
-                                       ContentLength,
-                                       ContentType,
-                                       %% we don't know the md5 yet
-                                       undefined,
-                                       Metadata,
-                                       BlockSize,
-                                       Acl,
-                                       [],
-                                       ClusterID),
+    Manifest = case MakeNewManifestP of
+                true ->
+                       riak_cs_lfs_utils:new_manifest(Bucket,
+                                                      Key,
+                                                      UUID,
+                                                      ContentLength,
+                                                      ContentType,
+                                                      %% we don't know the md5 yet
+                                                      undefined,
+                                                      Metadata,
+                                                      BlockSize,
+                                                      Acl,
+                                                      [],
+                                                      ClusterID);
+                {false, BagId} ->
+                       riak_cs_lfs_utils:new_manifest(Bucket,
+                                                      Key,
+                                                      UUID,
+                                                      ContentLength,
+                                                      ContentType,
+                                                      %% we don't know the md5 yet
+                                                      undefined,
+                                                      Metadata,
+                                                      BlockSize,
+                                                      Acl,
+                                                      [],
+                                                      ClusterID,
+                                                      BagId)
+               end,
     NewManifest = Manifest?MANIFEST{write_start_time=os:timestamp()},
 
     Md5 = riak_cs_utils:md5_init(),
@@ -633,7 +649,7 @@ handle_receiving_last_chunk(NewData, State=#state{buffer_queue=BufferQueue,
     Reply = ok,
     {reply, Reply, all_received, NewStateData}.
 
-maybe_riak_cs_manifest_fsm_start_link(false, _Bucket, _Key, _RcPid) ->
+maybe_riak_cs_manifest_fsm_start_link({false, _BagId}, _Bucket, _Key, _RcPid) ->
     {ok, undefined};
 maybe_riak_cs_manifest_fsm_start_link(true, Bucket, Key, RcPid) ->
     riak_cs_manifest_fsm:start_link(Bucket, Key, RcPid).

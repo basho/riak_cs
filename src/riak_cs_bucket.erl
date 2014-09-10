@@ -67,7 +67,10 @@ create_bucket(User, UserObj, Bucket, BagId, ACL, RcPid) ->
         not bucket_exists(CurrentBuckets, binary_to_list(Bucket)),
     case AttemptCreate of
         true ->
+            BucketLimit = riak_cs_config:max_buckets_per_user(),
             case valid_bucket_name(Bucket) of
+                true when length(CurrentBuckets) >= BucketLimit ->
+                    {error, {toomanybuckets, length(CurrentBuckets), BucketLimit}};
                 true ->
                     serialized_bucket_op(Bucket,
                                          BagId,
@@ -207,7 +210,7 @@ fold_delete_uploads(Bucket, RcPid, [D|Ds], Timestamp, Count)->
     Key = D?MULTIPART_DESCR.key,
 
     %% cannot fail here
-    {ok, Obj, Manifests} = riak_cs_utils:get_manifests(RcPid, Bucket, Key),
+    {ok, Obj, Manifests} = riak_cs_manifest:get_manifests(RcPid, Bucket, Key),
 
     UploadId = D?MULTIPART_DESCR.upload_id,
 
@@ -267,8 +270,12 @@ iterate_csbuckets(RcPid, Acc0, Fun, Cont0) ->
 iterate_csbuckets_fold_fun(FunForOneBucket) ->
     fun(BucketName, Acc) ->
             {ok, RcPidForOneBucket} = riak_cs_riak_client:start_link([]),
-            Res = riak_cs_riak_client:get_bucket(RcPidForOneBucket, BucketName),
-            FunForOneBucket(RcPidForOneBucket, BucketName, Res, Acc)
+            try
+                BucketRes = riak_cs_riak_client:get_bucket(RcPidForOneBucket, BucketName),
+                FunForOneBucket(RcPidForOneBucket, BucketName, BucketRes, Acc)
+            after
+                riak_cs_riak_client:stop(RcPidForOneBucket)
+            end
     end.
 
 %% @doc Return a user's buckets.
@@ -635,6 +642,12 @@ resolve_buckets([], Buckets, true) ->
     lists:sort(fun bucket_sorter/2, Buckets);
 resolve_buckets([], Buckets, false) ->
     lists:sort(fun bucket_sorter/2, [Bucket || Bucket <- Buckets, not cleanup_bucket(Bucket)]);
+resolve_buckets([HeadUserRec | RestUserRecs], [], KeepDeletedBuckets) ->
+    %% We can assume there are no bucket duplication under a single
+    %% user record.  It's already resolved. This function works
+    %% without this head, but this head makes it very effecient in
+    %% case of thousands of bucket records under single user.
+    resolve_buckets(RestUserRecs, HeadUserRec?RCS_USER.buckets, KeepDeletedBuckets);
 resolve_buckets([HeadUserRec | RestUserRecs], Buckets, _KeepDeleted) ->
     HeadBuckets = HeadUserRec?RCS_USER.buckets,
     UpdBuckets = lists:foldl(fun bucket_resolver/2, Buckets, HeadBuckets),
@@ -690,7 +703,7 @@ serialized_bucket_op(Bucket, BagId, ACL, User, UserObj, BucketOp, StatName, RcPi
                         {ok, ignore} ->
                             OpResult;
                         {ok, UpdUser} ->
-                            X = riak_cs_utils:save_user(UpdUser, UserObj, RcPid),
+                            X = riak_cs_user:save_user(UpdUser, UserObj, RcPid),
                             ok = riak_cs_stats:update_with_start(StatName,
                                                                  StartTime),
                             X
