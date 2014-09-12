@@ -3,9 +3,9 @@
 ## Additions
 
 - Add sleep-after-update manifests to avoid sibling explosion [riak_cs/#959](https://github.com/basho/riak_cs/pull/959)
-- Multibag support on `riak-cs-debug` [riak_cs/#930](https://github.com/basho/riak_cs/pull/
-- Add bucket number limit check in Riak CS process [riak_cs/#950](https://github.com/basho/riak_cs/pull/
-- More efficient bucket resolution [riak_cs/#951](https://github.com/basho/riak_cs/pull/
+- Multibag support on `riak-cs-debug` [riak_cs/#930](https://github.com/basho/riak_cs/pull/930)
+- Add bucket number limit check in Riak CS process [riak_cs/#950](https://github.com/basho/riak_cs/pull/950)
+- More efficient bucket resolution [riak_cs/#951](https://github.com/basho/riak_cs/pull/951)
 
 ## Bugs Fixed
 
