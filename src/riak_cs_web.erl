@@ -88,6 +88,7 @@ one_three_resources(_Version) ->
      %% Bucket resources
      {["buckets", bucket, "uploads"], riak_cs_wm_common, props(riak_cs_wm_bucket_uploads)},
      {["buckets", bucket, "policy"], riak_cs_wm_common, props(riak_cs_wm_bucket_policy)},
+     {["buckets", bucket, "lifecycle"], riak_cs_wm_common, props(riak_cs_wm_bucket_lifecycle)},
      %% Object resources
      {["buckets", bucket, "objects", object, "uploads", uploadId], riak_cs_wm_common, props(riak_cs_wm_object_upload_part)},
      {["buckets", bucket, "objects", object, "uploads"], riak_cs_wm_common, props(riak_cs_wm_object_upload)}
