@@ -651,9 +651,17 @@ bucket_access_authorize_helper(AccessType, Deletable, RD, Ctx) ->
       RD,
       PermCtx).
 
-handle_bucket_acl_policy_response({error, notfound}, _, _, RD, Ctx) ->
-    ResponseMod = Ctx#context.response_module,
-    ResponseMod:api_error(no_such_bucket, RD, Ctx);
+handle_bucket_acl_policy_response({error, Reason}, _, _, RD, Ctx)
+  when Reason =:= notfound orelse Reason =:= no_such_bucket ->
+    case wrq:method(RD) of
+        'DELETE' ->
+            User = Ctx#context.user,
+            AccessRD = riak_cs_access_log_handler:set_user(User, RD),
+            {false, AccessRD, Ctx};
+        _ ->
+            ResponseMod = Ctx#context.response_module,
+            ResponseMod:api_error(no_such_bucket, RD, Ctx)
+    end;
 handle_bucket_acl_policy_response({error, Reason}, _, _, RD, Ctx) ->
     ResponseMod = Ctx#context.response_module,
     ResponseMod:api_error(Reason, RD, Ctx);

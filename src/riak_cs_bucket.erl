@@ -527,12 +527,19 @@ bucket_fun(delete_policy, Bucket, _BagId, _, KeyId, AdminCreds, StanchionData) -
 bucket_fun(delete, Bucket, _BagId, _ACL, KeyId, AdminCreds, StanchionData) ->
     {StanchionIp, StanchionPort, StanchionSSL} = StanchionData,
     fun() ->
-            velvet:delete_bucket(StanchionIp,
-                                 StanchionPort,
-                                 Bucket,
-                                 KeyId,
-                                 [{ssl, StanchionSSL},
-                                  {auth_creds, AdminCreds}])
+            case velvet:delete_bucket(StanchionIp,
+                                      StanchionPort,
+                                      Bucket,
+                                      KeyId,
+                                      [{ssl, StanchionSSL},
+                                       {auth_creds, AdminCreds}]) of
+                ok ->
+                    ok;
+                {error, {error_status, 404, _, _}} ->
+                    ok;
+                {error, Reason} ->
+                    {error, Reason}
+            end
     end.
 
 %% @doc Generate a JSON document to use for a bucket
