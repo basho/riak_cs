@@ -156,6 +156,15 @@ gc_index_query(RcPid, EndTime, BatchSize, Continuation, UsePaginatedIndexes) ->
                     ?GC_BUCKET, ?KEY_INDEX,
                     riak_cs_gc:epoch_start(), EndTime,
                     Options),
+
+    case QueryResult of
+        {error, disconnected} ->
+            _ = lager:warning("GC index query failed. Client connection status: ~p",
+                              [riakc_pb_socket:is_connected(ManifestPbc)]);
+        _ ->
+            ok
+    end,
+
     {QueryResult, EndTime}.
 
 -ifdef(TEST).

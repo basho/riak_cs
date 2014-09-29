@@ -218,6 +218,11 @@ maybe_create_user({error, no_user_key}=Error, _, _, _, _, _) ->
     %% Anonymous access may be authorized by ACL or policy afterwards,
     %% no logging here.
     Error;
+maybe_create_user({error, disconnected}=Error, _, _, _, _, RcPid) ->
+    {ok, MasterPid} = riak_cs_riak_client:master_pbc(RcPid),
+    _ = lager:warning("User retrieval failed by disconnect. Client connection status: ~p",
+                      [riakc_pb_socket:is_connected(MasterPid)]),
+    Error;
 maybe_create_user({error, Reason}=Error, _, Api, _, _, _) ->
     _ = lager:error("Retrieval of user record for ~p failed. Reason: ~p",
                     [Api, Reason]),

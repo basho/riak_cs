@@ -56,7 +56,7 @@
 -define(SERVER, ?MODULE).
 
 -record(state, {
-          master_pbc,
+          master_pbc :: undefined | pid(),
           bucket_name,
           bucket_obj
          }).
