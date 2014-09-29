@@ -365,20 +365,21 @@ move_manifests_to_gc_bucket(Manifests, RcPid) ->
     Key = generate_key(),
     ManifestSet = build_manifest_set(Manifests),
     {ok, ManifestPbc} = riak_cs_riak_client:manifest_pbc(RcPid),
-    ObjectToWrite = case riakc_pb_socket:get(ManifestPbc, ?GC_BUCKET, Key) of
-        {error, notfound} ->
-            %% There was no previous value, so we'll
-            %% create a new riak object and write it
-            riakc_obj:new(?GC_BUCKET, Key, riak_cs_utils:encode_term(ManifestSet));
-        {ok, PreviousObject} ->
-            %% There is a value currently stored here,
-            %% so resolve all the siblings and add the
-            %% new set in as well. Write this
-            %% value back to riak
-            Resolved = decode_and_merge_siblings(PreviousObject, ManifestSet),
-            riak_cs_utils:update_obj_value(PreviousObject,
-                                           riak_cs_utils:encode_term(Resolved))
-    end,
+    ObjectToWrite =
+        case riakc_pb_socket:get(ManifestPbc, ?GC_BUCKET, Key) of
+            {error, notfound} ->
+                %% There was no previous value, so we'll
+                %% create a new riak object and write it
+                riakc_obj:new(?GC_BUCKET, Key, riak_cs_utils:encode_term(ManifestSet));
+            {ok, PreviousObject} ->
+                %% There is a value currently stored here,
+                %% so resolve all the siblings and add the
+                %% new set in as well. Write this
+                %% value back to riak
+                Resolved = decode_and_merge_siblings(PreviousObject, ManifestSet),
+                riak_cs_utils:update_obj_value(PreviousObject,
+                                               riak_cs_utils:encode_term(Resolved))
+        end,
 
     %% Create a set from the list of manifests
     _ = lager:debug("Manifests scheduled for deletion: ~p", [ManifestSet]),

@@ -107,7 +107,15 @@ get_manifests_raw(RcPid, Bucket, Key) ->
     ManifestBucket = riak_cs_utils:to_bucket_name(objects, Bucket),
     ok = riak_cs_riak_client:set_bucket_name(RcPid, Bucket),
     {ok, ManifestPbc} = riak_cs_riak_client:manifest_pbc(RcPid),
-    riakc_pb_socket:get(ManifestPbc, ManifestBucket, Key).
+    case riakc_pb_socket:get(ManifestPbc, ManifestBucket, Key) of
+        {ok, _} = Result -> Result;
+        {error, disconnected} ->
+            _ = lager:warning("Manifest retrieval failed. Client connection status: ~p",
+                              [riakc_pb_socket:is_connected(ManifestPbc)]),
+            {error, disconnected};
+        Error ->
+            Error
+    end.
 
 gc_deleted_while_writing_manifests(Object, Manifests, Bucket, Key, RcPid) ->
     UUIDs = riak_cs_manifest_utils:deleted_while_writing(Manifests),
