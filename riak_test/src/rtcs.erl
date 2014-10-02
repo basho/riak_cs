@@ -295,6 +295,9 @@ riakcs_binpath(Prefix, N) ->
 riakcs_etcpath(Prefix, N) ->
     io_lib:format("~s/dev/dev~b/etc", [Prefix, N]).
 
+riakcs_libpath(Prefix, N) ->
+    io_lib:format("~s/dev/dev~b/lib", [Prefix, N]).
+
 riakcscmd(Path, N, Cmd) ->
     lists:flatten(io_lib:format("~s ~s", [riakcs_binpath(Path, N), Cmd])).
 
@@ -538,6 +541,16 @@ start_cs(N) ->
 
 stop_cs(N) ->
     Cmd = riakcscmd(rt_config:get(?CS_CURRENT), N, "stop"),
+    lager:info("Running ~p", [Cmd]),
+    os:cmd(Cmd).
+
+repair_gc_bucket(N, Options) ->
+    Prefix = rt_config:get(?CS_CURRENT),
+    RepairScriptWild = string:join([riakcs_libpath(Prefix, N), "riak_cs*",
+                                    "priv/tools/repair_gc_bucket.erl"] , "/"),
+    [RepairScript] = filelib:wildcard(RepairScriptWild),
+    Cmd = riakcscmd(Prefix, N, "escript " ++ RepairScript ++
+                        " " ++ Options),
     lager:info("Running ~p", [Cmd]),
     os:cmd(Cmd).
 

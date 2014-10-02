@@ -39,9 +39,22 @@ confirm() ->
     %% Set up to grep logs to verify messages
     rt:setup_log_capture(hd(CSNodes)),
 
+    lager:info("Test GC run under an invalid state manifest..."),
     {GCKey, {BKey, UUID}} = setup_obj(RiakNodes, UserConfig),
     ok = verify_gc_run(hd(CSNodes), GCKey),
     ok = verify_riak_object_remaining_for_bad_key(RiakNodes, GCKey, {BKey, UUID}),
+
+    lager:info("Test repair script (repair_gc_bucket.erl) with more invlaid states..."),
+    ok = put_more_bad_keys(RiakNodes, UserConfig),
+    timer:sleep(2000),
+    Res = rtcs:repair_gc_bucket(1, "--host 127.0.0.1 --port 10017 "
+                                "--leeway-seconds 1 --page-size 5 --debug"),
+    Lines = binary:split(list_to_binary(Res), [<<"\n">>], [global]),
+    lager:info("Repair script result: ==== BEGIN", []),
+    [lager:info("~s", [L]) || L <- Lines],
+    lager:info("Repair script result: ==== END", []),
+    ok = verify_gc_run2(hd(CSNodes)),
+    throw(dummY),
     pass.
 
 setup_obj(RiakNodes, UserConfig) ->
@@ -110,10 +123,44 @@ change_state_to_active(Pbc, TargetBKey, [GCKey|Rest]) ->
             {ok, GCKey, TargetUUID}
     end.
 
+put_more_bad_keys(RiakNodes, UserConfig) ->
+    %% Put and delete some objects
+    [begin
+         Block = crypto:rand_bytes(10),
+         Key = ?TEST_KEY ++ integer_to_list(Suffix),
+         erlcloud_s3:put_object(?TEST_BUCKET, Key, Block, UserConfig),
+         erlcloud_s3:delete_object(?TEST_BUCKET, Key, UserConfig)
+     end || Suffix <- lists:seq(100, 199)],
+    GCPbc = rtcs:pbc(RiakNodes, objects, ?TEST_BUCKET),
+    {ok, GCKeys} = riakc_pb_socket:list_keys(GCPbc, ?GC_BUCKET),
+    BadGCKeys = put_more_bad_keys(GCPbc, GCKeys, []),
+    lager:info("Bad state manifests have been put at ~p", [BadGCKeys]),
+    ok.
+
+put_more_bad_keys(_Pbc, [], BadGCKeys) ->
+    BadGCKeys;
+put_more_bad_keys(Pbc, [GCKey|Rest], BadGCKeys) ->
+    case riakc_pb_socket:get(Pbc, ?GC_BUCKET, GCKey) of
+        {error, notfound} ->
+            put_more_bad_keys(Pbc, Rest, BadGCKeys);
+        {ok, Obj0} ->
+            Manifests = twop_set:to_list(binary_to_term(riakc_obj:get_value(Obj0))),
+            NewManifests = [{UUID, M?MANIFEST{state = active,
+                                              delete_marked_time=undefined,
+                                              delete_blocks_remaining=undefined}} ||
+                               {UUID, M} <- Manifests],
+            NewManifestSet =
+                lists:foldl(fun twop_set:add_element/2, twop_set:new(), NewManifests),
+            UpdObj = riakc_obj:update_value(Obj0, term_to_binary(NewManifestSet)),
+            ok = riakc_pb_socket:put(Pbc, UpdObj),
+            put_more_bad_keys(Pbc, Rest, [GCKey | BadGCKeys])
+    end.
+
 verify_gc_run(Node, GCKey) ->
     rtcs:gc(1, "set-leeway 1"),
     timer:sleep(2000),
     rtcs:gc(1, "batch"),
+    lager:info("Check log, warning for invalid state and info for GC finish"),
     true = rt:expect_in_log(Node,
                             "Invalid state manifest in GC bucket at <<\""
                             ++ binary_to_list(GCKey) ++ "\">>, "
@@ -123,6 +170,16 @@ verify_gc_run(Node, GCKey) ->
                             "Finished garbage collection: \\d+ seconds, "
                             "\\d batch_count, 0 batch_skips, "
                             "7 manif_count, 4 block_count"),
+    ok.
+
+verify_gc_run2(Node) ->
+    rtcs:gc(1, "batch"),
+    lager:info("Check collected count =:= 101, 1 from setup_obj, "
+               "100 from put_more_bad_keys."),
+    true = rt:expect_in_log(Node,
+                            "Finished garbage collection: \\d+ seconds, "
+                            "\\d+ batch_count, 0 batch_skips, "
+                            "101 manif_count, 101 block_count"),
     ok.
 
 %% Verify riak objects in gc buckets, manifest, block are all remaining.
