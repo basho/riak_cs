@@ -35,7 +35,8 @@
 
 
 confirm() ->
-    {UserConfig, {RiakNodes, CSNodes, _Stanchion}} = rtcs:setup(1),
+    NumNodes = 1,
+    {UserConfig, {RiakNodes, CSNodes, _Stanchion}} = rtcs:setup(NumNodes),
     %% Set up to grep logs to verify messages
     rt:setup_log_capture(hd(CSNodes)),
 
@@ -47,12 +48,8 @@ confirm() ->
     lager:info("Test repair script (repair_gc_bucket.erl) with more invlaid states..."),
     ok = put_more_bad_keys(RiakNodes, UserConfig),
     timer:sleep(2000),
-    Res = rtcs:repair_gc_bucket(1, "--host 127.0.0.1 --port 10017 "
-                                "--leeway-seconds 1 --page-size 5 --debug"),
-    Lines = binary:split(list_to_binary(Res), [<<"\n">>], [global]),
-    lager:info("Repair script result: ==== BEGIN", []),
-    [lager:info("~s", [L]) || L <- Lines],
-    lager:info("Repair script result: ==== END", []),
+    RiakIDs = rtcs:riak_id_per_cluster(NumNodes),
+    [repair_gc_bucket(ID) || ID <- RiakIDs],
     ok = verify_gc_run2(hd(CSNodes)),
     pass.
 
@@ -154,6 +151,16 @@ put_more_bad_keys(Pbc, [GCKey|Rest], BadGCKeys) ->
             ok = riakc_pb_socket:put(Pbc, UpdObj),
             put_more_bad_keys(Pbc, Rest, [GCKey | BadGCKeys])
     end.
+
+repair_gc_bucket(RiakNodeID) ->
+    PbPort = integer_to_list(rtcs:pb_port(RiakNodeID)),
+    Res = rtcs:repair_gc_bucket(1, "--host 127.0.0.1 --port " ++ PbPort ++
+                                " --leeway-seconds 1 --page-size 5 --debug"),
+    Lines = binary:split(list_to_binary(Res), [<<"\n">>], [global]),
+    lager:info("Repair script result: ==== BEGIN", []),
+    [lager:info("~s", [L]) || L <- Lines],
+    lager:info("Repair script result: ==== END", []),
+    ok.
 
 verify_gc_run(Node, GCKey) ->
     rtcs:gc(1, "set-leeway 1"),

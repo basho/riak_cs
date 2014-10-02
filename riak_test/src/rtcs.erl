@@ -140,6 +140,15 @@ config(Key, Secret, Port) ->
                     Port,
                     []).
 
+%% Return Riak node IDs, one per cluster.
+%% For example, in basic single cluster case, just return [1].
+-spec riak_id_per_cluster(pos_integer()) -> [pos_integer()].
+riak_id_per_cluster(NumNodes) ->
+    case rt_config:get(flavor, basic) of
+        basic -> [1];
+        {multibag, _} = Flavor -> rtcs_bag:riak_id_per_cluster(NumNodes, Flavor)
+    end.
+
 create_user(Node, UserIndex) ->
     {A, B, C} = erlang:now(),
     User = "Test User" ++ integer_to_list(UserIndex),
@@ -157,6 +166,11 @@ create_admin_user(Node) ->
     lager:info("KeySecret = ~p",[Secret]),
     lager:info("Id = ~p",[Id]),
     {KeyId, Secret}.
+
+pb_port(N) when is_integer(N) ->
+    10000 + (N * 10) + 7;
+pb_port(Node) ->
+    pb_port(rt_cs_dev:node_id(Node)).
 
 cs_port(Node) ->
     15008 + 10 * rt_cs_dev:node_id(Node).
@@ -609,8 +623,7 @@ update_admin_creds(Config, AdminKey, AdminSecret) ->
                       proplists:delete(admin_key, Config))].
 
 update_cs_port(Config, N) ->
-    PbPort = 10000 + (N * 10) + 7,
-    [{riak_pb_port, PbPort} | proplists:delete(riak_pb_port, Config)].
+    [{riak_pb_port, pb_port(N)} | proplists:delete(riak_pb_port, Config)].
 
 update_stanchion_config(Prefix, Config, {AdminKey, AdminSecret}) ->
     StanchionSection = proplists:get_value(stanchion, Config),
