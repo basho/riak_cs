@@ -54,7 +54,6 @@ confirm() ->
     [lager:info("~s", [L]) || L <- Lines],
     lager:info("Repair script result: ==== END", []),
     ok = verify_gc_run2(hd(CSNodes)),
-    throw(dummY),
     pass.
 
 setup_obj(RiakNodes, UserConfig) ->
