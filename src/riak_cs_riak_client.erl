@@ -245,6 +245,7 @@ stop_pbc(undefined) ->
     ok;
 stop_pbc(Pbc) when is_pid(Pbc) ->
     riak_cs_utils:close_riak_connection(pbc_pool_name(master), Pbc),
+    unlink(Pbc),
     ok.
 
 do_get_bucket(State) ->
@@ -265,8 +266,11 @@ ensure_master_pbc(#state{master_pbc = MasterPbc} = State)
     {ok, State};
 ensure_master_pbc(#state{} = State) ->
     case riak_cs_utils:riak_connection(pbc_pool_name(master)) of
-        {ok, MasterPbc} -> {ok, State#state{master_pbc=MasterPbc}};
-        {error, Reason} -> {error, Reason}
+        {ok, MasterPbc} ->
+            _ = link(MasterPbc),
+            {ok, State#state{master_pbc=MasterPbc}};
+        {error, Reason} ->
+            {error, Reason}
     end.
 
 get_bucket_with_pbc(MasterPbc, BucketName) ->
