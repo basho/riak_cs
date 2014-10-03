@@ -282,7 +282,8 @@ get_user_with_pbc(MasterPbc, Key) ->
             %% be able to properly resolve conflicts).
             KeepDeletedBuckets = false,
             {ok, {Obj, KeepDeletedBuckets}};
-        {error, _} ->
+        {error, Reason0} ->
+            _ = lager:warning("Fetching user record with strong option failed: ~p", [Reason0]),
             WeakOptions = [{r, quorum}, {pr, one}, {notfound_ok, false}],
             case riakc_pb_socket:get(MasterPbc, ?USER_BUCKET, Key, WeakOptions) of
                 {ok, Obj} ->
