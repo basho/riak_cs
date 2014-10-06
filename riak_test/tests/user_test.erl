@@ -41,16 +41,21 @@ confirm() ->
     user_listing_json_test_case([AdminUser], AdminUserConfig, HeadRiakNode),
     user_listing_xml_test_case([AdminUser], AdminUserConfig, HeadRiakNode),
 
-    %% Create 3 users and re-run user listing test cases
+    %% Create other 1003 users and re-run user listing test cases
     Port = rtcs:cs_port(HeadRiakNode),
-    Users = [AdminUser |
-             create_users(Port, [{"bart@simpsons.com", "bart"},
-                                 {"homer@simpsons.com", "homer"},
-                                 {"taro@example.co.jp", japanese_aiueo()}], [])],
-    user_listing_json_test_case(Users, AdminUserConfig, HeadRiakNode),
-    user_listing_xml_test_case(Users, AdminUserConfig, HeadRiakNode),
+    Users1 = [AdminUser |
+              create_users(Port, [{"bart@simpsons.com", "bart"},
+                                  {"homer@simpsons.com", "homer"},
+                                  {"taro@example.co.jp", japanese_aiueo()}], [])],
+    Users2 = Users1 ++ create_200_users(Port),
+    ?assertEqual(1 + 3 + 200, length(Users2)),
+
+    user_listing_json_test_case(Users2, AdminUserConfig, HeadRiakNode),
+    user_listing_xml_test_case(Users2, AdminUserConfig, HeadRiakNode),
+    user_listing_many_times(Users2, AdminUserConfig, HeadRiakNode),
     update_user_json_test_case(AdminUserConfig, HeadRiakNode),
     update_user_xml_test_case(AdminUserConfig, HeadRiakNode),
+    throw(dummy),
     pass.
 
 japanese_aiueo() ->
@@ -59,6 +64,30 @@ japanese_aiueo() ->
     %% unicode:characters_to_binary([12354,12356,12358,12360,12362]).
     Chars = [12354,12356,12358,12360,12362],
     binary_to_list(unicode:characters_to_binary(Chars)).
+
+create_200_users(Port) ->
+    From = self(),
+    Processes = 10,
+    PerProcess = 20,
+    [spawn(fun() ->
+                   Users = create_users(
+                             Port,
+                             [begin
+                                  Name = "zzz-" ++ integer_to_list(I * PerProcess + J),
+                                  {Name ++ "@thousand.example.com", Name}
+                              end || J <- lists:seq(1, PerProcess)],
+                             []),
+                   From ! Users
+           end) ||
+        I <- lists:seq(1, Processes)],
+    collect_users(Processes, []).
+
+collect_users(0, Acc) ->
+    lists:usort(lists:flatten(Acc));
+collect_users(N, Acc) ->
+    receive
+        Users -> collect_users(N-1, [Users | Acc])
+    end.
 
 create_users(_Port, [], Acc) ->
     ordsets:from_list(Acc);
@@ -71,6 +100,11 @@ user_listing_json_test_case(Users, UserConfig, Node) ->
 
 user_listing_xml_test_case(Users, UserConfig, Node) ->
     user_listing_test(Users, UserConfig, Node, ?XML).
+
+user_listing_many_times(Users, UserConfig, Node) ->
+    [user_listing_test(Users, UserConfig, Node, ?JSON) ||
+        _I <- lists:seq(1, 15)],
+    ok.
 
 user_listing_test(ExpectedUsers, UserConfig, Node, ContentType) ->
     Resource = "/riak-cs/users",
