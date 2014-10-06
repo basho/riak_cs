@@ -257,7 +257,7 @@ do_get_bucket(State) ->
                     {error, Reason, NewState}
             end;
         {error, Reason} ->
-            {error, Reason}
+            {error, Reason, State}
     end.
 
 ensure_master_pbc(#state{master_pbc = MasterPbc} = State)
