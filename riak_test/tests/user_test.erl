@@ -55,7 +55,6 @@ confirm() ->
     user_listing_many_times(Users2, AdminUserConfig, HeadRiakNode),
     update_user_json_test_case(AdminUserConfig, HeadRiakNode),
     update_user_xml_test_case(AdminUserConfig, HeadRiakNode),
-    throw(dummy),
     pass.
 
 japanese_aiueo() ->
