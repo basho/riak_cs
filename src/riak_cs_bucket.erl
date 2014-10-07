@@ -38,7 +38,8 @@
          update_bucket_record/1,
          delete_all_uploads/2,
          delete_old_uploads/3,
-         fold_all_buckets/3
+         fold_all_buckets/3,
+         single_user_mode_buckets/1
         ]).
 
 -include("riak_cs.hrl").
@@ -352,6 +353,12 @@ format_acl_policy_response({ok, Acl}, {error, policy_undefined}) ->
 format_acl_policy_response({ok, Acl}, {ok, Policy}) ->
     {Acl, Policy}.
 
+-spec single_user_mode_buckets(rcs_user()) -> [cs_bucket()].
+single_user_mode_buckets(User) ->
+    BucketConfigs = riak_cs_config:single_users_buckets(),
+    Buckets = [single_user_mode_bucket(BucketConfig, User)
+               || BucketConfig <- BucketConfigs],
+    Buckets.
 
 %% ===================================================================
 %% Internal functions
@@ -407,23 +414,44 @@ bucket_empty_any_pred(RcPid, Bucket) ->
 -spec fetch_bucket_object(binary(), riak_client()) ->
                                  {ok, riakc_obj:riakc_obj()} | {error, term()}.
 fetch_bucket_object(BucketName, RcPid) ->
-    case fetch_bucket_object_raw(BucketName, RcPid) of
-        {ok, Obj} ->
-            [Value | _] = riakc_obj:get_values(Obj),
-            case Value of
-                ?FREE_BUCKET_MARKER ->
-                    {error, no_such_bucket};
-                _ ->
-                    {ok, Obj}
+    case riak_cs_config:single_user_mode() of
+        false ->
+            case fetch_bucket_object_from_riak(BucketName, RcPid) of
+                {ok, Obj} ->
+                    [Value | _] = riakc_obj:get_values(Obj),
+                    case Value of
+                        ?FREE_BUCKET_MARKER ->
+                            {error, no_such_bucket};
+                        _ ->
+                            {ok, Obj}
+                    end;
+                {error, _}=Error ->
+                    Error
             end;
-        {error, _}=Error ->
-            Error
+        true ->
+            %% fech bucket object from config
+            {ok, {Key, _Secret}} = riak_cs_config:admin_creds(),
+            %% This object is just dummy; can't mimic true Riak object.
+            {ok,{User,_}} = riak_cs_user:get_user(Key, self()),
+            lager:debug("user: ~p, ~p", [User, BucketName]),
+            lager:debug("user: ~p", [User?RCS_USER.buckets]),
+            case [Bucket0 || Bucket0 <- User?RCS_USER.buckets,
+                             list_to_binary(Bucket0?RCS_BUCKET.name) =:= BucketName] of
+                [] -> {error, no_such_bucket};
+                [Bucket] -> Acl = Bucket?RCS_BUCKET.acl,
+                            UserMeta = [{?MD_ACL, term_to_binary(Acl)}],
+                            Obj = riakc_obj:new_obj(?BUCKETS_BUCKET, BucketName, <<"vclock-is-deadbeef">>,
+                                                    [{dict:from_list([{?MD_USERMETA, UserMeta}]), list_to_binary(Key)}]),
+                            lager:debug("bucket: ~p", [Bucket]),
+                            {ok, Obj}
+            end
     end.
 
+
 %% @doc Fetches the bucket object, even it is marked as free
--spec fetch_bucket_object_raw(binary(), riak_client()) ->
-                                 {ok, riakc_obj:riakc_obj()} | {error, term()}.
-fetch_bucket_object_raw(BucketName, RcPid) ->
+-spec fetch_bucket_object_from_riak(binary(), riak_client()) ->
+                                           {ok, riakc_obj:riakc_obj()} | {error, term()}.
+fetch_bucket_object_from_riak(BucketName, RcPid) ->
     case riak_cs_riak_client:get_bucket(RcPid, BucketName) of
         {ok, Obj} ->
             Values = riakc_obj:get_values(Obj),
@@ -784,3 +812,27 @@ update_user_buckets(User, Bucket) ->
                     {ok, ignore}
             end
     end.
+
+single_user_mode_bucket(Name, ?RCS_USER{key_id=Key,
+                                        display_name=DisplayName,
+                                        canonical_id=CanonicalId}) when is_list(Name) ->
+    Acl = riak_cs_acl_utils:default_acl(DisplayName, CanonicalId, Key),
+    ?RCS_BUCKET{name=Name,
+                last_action=created,
+                creation_date="1970-01-01T00:00:00.000Z",
+                modification_time={0,0,0},
+                acl=Acl};
+single_user_mode_bucket({Name, Options},
+                        ?RCS_USER{key_id=Key,
+                                  display_name=DisplayName,
+                                  canonical_id=CanonicalId}) when is_list(Name) andalso is_list(Options) ->
+    %% example:
+    %%     {"testbucket", [{canned_acl, "public-read"}]}
+    %% for other canned_acl, see canned_acl/3 in riak_cs_acl_utils.erl
+    HeaderVal = proplists:get_value(canned_acl, Options),
+    Acl = riak_cs_acl_utils:canned_acl(HeaderVal, {DisplayName, CanonicalId, Key}, undefined),
+    ?RCS_BUCKET{name=Name,
+                last_action=created,
+                creation_date="1970-01-01T00:00:00.000Z",
+                modification_time={0,0,0},
+                acl=Acl}.

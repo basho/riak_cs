@@ -438,6 +438,7 @@ maybe_update_context_with_acl_from_headers(RD,
                 {ok, {ok, Acl=?ACL{}}} ->
                     {ok, Ctx#context{acl=Acl}};
                 error ->
+                    lager:debug("user: ~p", [User]),
                     DefaultAcl = riak_cs_acl_utils:default_acl(User?RCS_USER.display_name,
                                                                User?RCS_USER.canonical_id,
                                                                User?RCS_USER.key_id),
