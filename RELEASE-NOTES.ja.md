@@ -1,3 +1,41 @@
+# Riak CS 1.5.1 リリースノート
+
+## 新規追加
+
+- Sibling Explosionを避けるために sleep-after-update を追加 [riak_cs/#959](https://github.com/basho/riak_cs/pull/959)
+- `riak-cs-debug` の multibag サポート [riak_cs/#930](https://github.com/basho/riak_cs/pull/930)
+- Riak CS におけるバケット数に上限を追加 [riak_cs/#950](https://github.com/basho/riak_cs/pull/950)
+- バケットの衝突解決を効率化 [riak_cs/#951](https://github.com/basho/riak_cs/pull/951)
+
+## 修正されたバグ
+
+- `riak_cs_delete_fsm` のデッドロックによるGCの停止 [riak_cs/#949](https://github.com/basho/riak_cs/pull/949)
+- `riak-cs-debug` がログを収集するディレクトリのパスを修正 [riak_cs/#953](https://github.com/basho/riak_cs/pull/953)
+- DST-awareなローカルタイムからGMTへの変換を回避 [riak_cs/#954](https://github.com/basho/riak_cs/pull/954)
+- Secretの代わりに UUID をカノニカルID生成時のシードに利用 [riak_cs/#956](https://github.com/basho/riak_cs/pull/956)
+- マルチパートアップロードにおけるパート数の上限を追加 [riak_cs/#957](https://github.com/basho/riak_cs/pull/957)
+- タイムアウトをデフォルトの 5000ms から無限に設定 [riak_cs/#963](https://github.com/basho/riak_cs/pull/963)
+- GC バケット内の無効な状態のマニフェストをスキップ [riak_cs/#964](https://github.com/basho/riak_cs/pull/964)
+
+## アップグレード時の注意点
+
+### ユーザー毎のバケット数
+
+Riak CS 1.5.1 を使うと、ユーザーが作ることのできるバケット数を制限することができます。
+デフォルトでこの最大値は 100 です。この制限はユーザーの新たなバケット作成を禁止しますが、
+既に制限数を超えているユーザーが実施する、バケット削除を含む他の操作へは影響しません。
+デフォルトの制限を変更するには `app.config` の `riak_cs` セクションで次の箇所を変更してください:
+
+```erlang
+{riak_cs, [
+    %% ...
+    {max_buckets_per_user, 5000},
+    %% ...
+    ]}
+```
+
+この制限を利用しない場合は  `max_buckets_per_user` を `unlimited` に設定してください。
+
 # Riak CS 1.5.0 リリースノート
 
 ## 新規追加
