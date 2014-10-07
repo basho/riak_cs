@@ -212,6 +212,9 @@ store(User, RcPid, Record, Slice) ->
                              [Reason, User, Slice]),
             riak_cs_pbc:check_connection_status(MasterPbc,
                                                 "riak_cs_access_archiver:store/4"),
+            riak_cs_utils:maybe_log_lost_access_stats(User,
+                                                      riakc_obj:get_update_value(Record),
+                                                      Slice),
             {error, Reason};
         {'EXIT', {noproc, _}} ->
             %% just haven't gotten the 'DOWN' yet

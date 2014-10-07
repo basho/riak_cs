@@ -63,7 +63,9 @@
          pid_to_binary/1,
          from_bucket_name/1,
          to_bucket_name/2,
-         stanchion_data/0
+         stanchion_data/0,
+         maybe_log_lost_access_stats/2,
+         maybe_log_lost_access_stats/3
         ]).
 
 -include("riak_cs.hrl").
@@ -605,3 +607,16 @@ safe_list_to_integer(Str) ->
     catch _:_ ->
             bad
     end.
+
+maybe_log_lost_access_stats(Table, Slice) ->
+    maybe_log_lost_access_stats(ets:first(Table), Table, Slice).
+
+maybe_log_lost_access_stats('$end_of_table', _Table, _Slice) ->
+    ok;
+maybe_log_lost_access_stats(User, Table, Slice) when is_integer(Table) ->
+    Accesses = [ A || {_, A} <- ets:lookup(Table, User) ],
+    lager:warning("lost access stats: User=~p, Slice=~p, Accesses=~p", [User, Slice, Accesses]),
+    maybe_log_lost_access_stats(ets:next(Table, User), Table, Slice);
+maybe_log_lost_access_stats(User, Record, Slice) ->
+    lager:warning("lost access stats: User=~p, Slice=~p, Accesses=~p", [User, Slice, Record]).
+

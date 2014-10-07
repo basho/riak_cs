@@ -63,6 +63,7 @@ start_link() ->
 %% that the referenced `Table' will be deleted.
 -spec archive(term(), term()) -> term().
 archive(Table, Slice) ->
+    %% TODO riak_cs_utils:maybe_log_lost_access_stats(Table, Slice),
     case gen_server:call(?MODULE, archive, infinity) of
         {ok, Pid} ->
             try
@@ -71,6 +72,7 @@ archive(Table, Slice) ->
 
                     _ = lager:error("~p was not available, access stats for ~p lost",
                                     [?MODULE, Slice]),
+                    riak_cs_utils:maybe_log_lost_access_stats(Table, Slice),
                     %% if the archiver had been alive just now, but crashed
                     %% during operation, the stats also would have been lost,
                     %% so also losing them here is just an efficient way to
@@ -84,6 +86,7 @@ archive(Table, Slice) ->
         _ ->
             _ = lager:error("~p was not available, access stats for ~p lost",
                             [?MODULE, Slice]),
+            riak_cs_utils:maybe_log_lost_access_stats(Table, Slice),
             ets:delete(Table),
             false
     end.
