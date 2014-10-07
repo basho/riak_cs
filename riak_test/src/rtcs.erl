@@ -669,7 +669,7 @@ create_user(Port, EmailAddr, Name) ->
     Cmd="curl -s -H 'Content-Type: application/json' http://localhost:" ++
         integer_to_list(Port) ++
         "/riak-cs/user --data '{\"email\":\"" ++ EmailAddr ++  "\", \"name\":\"" ++ Name ++"\"}'",
-    lager:info("Cmd: ~p", [Cmd]),
+    %% lager:info("Cmd: ~p", [Cmd]),
     Delay = rt_config:get(rt_retry_delay),
     Retries = rt_config:get(rt_max_wait_time) div Delay,
     OutputFun = fun() -> rt:cmd(Cmd) end,

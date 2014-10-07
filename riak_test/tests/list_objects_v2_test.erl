@@ -24,10 +24,34 @@
 
 -export([confirm/0]).
 
+-include_lib("eunit/include/eunit.hrl").
+
 confirm() ->
-    {UserConfig, {_RiakNodes, CSNodes, _Stanchion}} = rtcs:setup(2),
+    {UserConfig, {RiakNodes, CSNodes, _Stanchion}} = rtcs:setup(2),
     assert_v2_is_default(CSNodes),
-    list_objects_test_helper:test(UserConfig).
+    pass = list_objects_test_helper:test(UserConfig),
+
+    ok = list_to_non_existent_bucket_many_times(RiakNodes),
+    pass.
 
 assert_v2_is_default(CSNodes) ->
-    true =:= rpc:call(hd(CSNodes), riak_cs_list_objects_utils, fold_objects_for_list_keys, []).
+    true = rpc:call(hd(CSNodes), riak_cs_list_objects_utils, fold_objects_for_list_keys, []),
+    ok.
+
+list_to_non_existent_bucket_many_times(RiakNodes) ->
+    [?assertEqual({0, "404"},
+                   list_objects_by_anonymous(
+                     RiakNodes,
+                     "non-existent-bucket-" ++ integer_to_list(I))) ||
+        I <- lists:seq(1, 30)],
+    ok.
+
+list_objects_by_anonymous(RiakNodes, Bucket) ->
+    Port = rtcs:cs_port(hd(RiakNodes)),
+    %% --write-out '%{http_code}': output http response status code to stdout
+    Cmd = "curl -s --write-out '%{http_code}' -o /dev/null http://localhost:" ++
+        integer_to_list(Port) ++ "/" ++ Bucket,
+    rt:cmd(Cmd).
+
+
+
