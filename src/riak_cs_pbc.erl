@@ -28,7 +28,8 @@
          put/3,
          put_with_no_meta/2,
          put_with_no_meta/3,
-         list_keys/2]).
+         list_keys/2,
+          check_connection_status/2]).
 
 %% @doc Get an object from Riak
 -spec get_object(pid(), binary(), binary()) ->
@@ -84,4 +85,19 @@ list_keys(PbcPid, BucketName) ->
             {ok, lists:sort(Keys)};
         {error, _}=Error ->
             Error
+    end.
+
+-spec check_connection_status(pid(), term()) -> no_return().
+check_connection_status(Pbc, Where) ->
+    try
+        case riakc_pb_socket:is_connected(Pbc) of
+            true -> ok;
+            Other ->
+                _ = lager:warning("Connection status of ~p at ~p: ~p",
+                                  [Pbc, Where, Other])
+        end
+    catch
+        Type:Error ->
+            _ = lager:warning("Connection status of ~p at ~p: ~p",
+                              [Pbc, Where, {Type, Error}])
     end.

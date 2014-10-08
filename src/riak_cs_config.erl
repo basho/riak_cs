@@ -51,6 +51,8 @@
          set_user_buckets_prune_time/1,
          riak_host_port/0,
          connect_timeout/0,
+         queue_if_disconnected/0,
+         auto_reconnect/0,
          is_multibag_enabled/0,
          max_buckets_per_user/0
         ]).
@@ -305,6 +307,25 @@ connect_timeout() ->
             ConfigValue;
         undefined ->
             10000
+    end.
+
+%% @doc choose client connection option: true by default
+-spec auto_reconnect() -> [{auto_reconnect, boolean()}].
+auto_reconnect() ->
+    case application:get_env(riak_cs, riakc_auto_reconnect) of
+        {ok, true} ->  [{auto_reconnect, true}];
+        {ok, false} -> [{auto_reconnect, false}];
+        _ -> [{auto_reconnect, true}]
+    end.
+
+%% @doc choose client connection option: undefined by default, let
+%% riak-erlang-client choose the default behaviour
+-spec queue_if_disconnected() -> [{queue_if_disconnected, boolean()}].
+queue_if_disconnected() ->
+    case application:get_env(riak_cs, riakc_queue_if_disconnected) of
+        {ok, true} ->  [{queue_if_disconnected, true}];
+        {ok, false} -> [{queue_if_disconnected, false}];
+        _ -> []
     end.
 
 -spec is_multibag_enabled() -> boolean().

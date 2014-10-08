@@ -208,8 +208,10 @@ store(User, RcPid, Record, Slice) ->
                              [User, Slice]);
         {error, Reason} ->
             ok = lager:error("Access archiver storage failed (~p), "
-                             "stats for ~s ~p were lost",
+                             "stats for ~s ~p were lost.",
                              [Reason, User, Slice]),
+            riak_cs_pbc:check_connection_status(MasterPbc,
+                                                "riak_cs_access_archiver:store/4"),
             {error, Reason};
         {'EXIT', {noproc, _}} ->
             %% just haven't gotten the 'DOWN' yet

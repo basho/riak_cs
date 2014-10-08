@@ -151,11 +151,22 @@ gc_index_query(RcPid, EndTime, BatchSize, Continuation, UsePaginatedIndexes) ->
                       []
               end,
     {ok, ManifestPbc} = riak_cs_riak_client:manifest_pbc(RcPid),
+    EpochStart = riak_cs_gc:epoch_start(),
     QueryResult = riakc_pb_socket:get_index_range(
                     ManifestPbc,
                     ?GC_BUCKET, ?KEY_INDEX,
-                    riak_cs_gc:epoch_start(), EndTime,
+                    EpochStart, EndTime,
                     Options),
+
+    case QueryResult of
+        {error, disconnected} ->
+            _ = lager:warning("GC index query ~p to ~p failed.",
+                              [EpochStart, EndTime]),
+            riak_cs_pbc:check_connection_status(ManifestPbc, gc_index_query);
+        _ ->
+            ok
+    end,
+
     {QueryResult, EndTime}.
 
 -ifdef(TEST).
