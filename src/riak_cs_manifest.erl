@@ -110,8 +110,7 @@ get_manifests_raw(RcPid, Bucket, Key) ->
     case riakc_pb_socket:get(ManifestPbc, ManifestBucket, Key) of
         {ok, _} = Result -> Result;
         {error, disconnected} ->
-            _ = lager:warning("Manifest retrieval failed. Client connection status: ~p",
-                              [riakc_pb_socket:is_connected(ManifestPbc)]),
+            riak_cs_pbc:check_connection_status(ManifestPbc, get_manifests_raw),
             {error, disconnected};
         Error ->
             Error

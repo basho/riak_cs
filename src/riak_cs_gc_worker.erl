@@ -223,10 +223,10 @@ fetch_next_fileset(ManifestSetKey, RcPid) ->
         {error, notfound}=Error ->
             Error;
         {error, Reason}=Error ->
-            IsConnected = riakc_pb_socket:is_connected(ManifestPbc),
             _ = lager:info("Error occurred trying to read the fileset"
-                           " for ~p for gc. Reason: ~p, Status: ~p",
-                           [ManifestSetKey, Reason, IsConnected]),
+                           " for ~p for gc. Reason: ~p",
+                           [ManifestSetKey, Reason]),
+            riak_cs_pbc:check_connection_status(ManifestPbc, fetch_next_fileset),
             Error
     end.
 

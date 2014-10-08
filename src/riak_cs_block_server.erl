@@ -387,7 +387,7 @@ constrained_delete(RcPid, RiakObject, BlockId) ->
 secondary_delete_check({error, {unsatisfied_constraint, _, _}}, RcPid, RiakObject) ->
     riakc_pb_socket:delete_obj(block_pbc(RcPid), RiakObject);
 secondary_delete_check({error, Reason} = E, _, _) ->
-    _ = lager:warning("Contrained block deletion failed. Reason: ~p", [Reason]),
+    _ = lager:warning("Constrained block deletion failed. Reason: ~p", [Reason]),
     E;
 secondary_delete_check(_, _, _) ->
     ok.

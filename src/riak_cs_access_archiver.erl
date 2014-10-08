@@ -207,10 +207,11 @@ store(User, RcPid, Record, Slice) ->
             ok = lager:debug("Archived access stats for ~s ~p",
                              [User, Slice]);
         {error, Reason} ->
-            IsConnected = riakc_pb_socket:is_connected(MasterPbc),
             ok = lager:error("Access archiver storage failed (~p), "
-                             "stats for ~s ~p were lost. Connection status: ~p",
-                             [Reason, User, Slice, IsConnected]),
+                             "stats for ~s ~p were lost.",
+                             [Reason, User, Slice]),
+            riak_cs_pbc:check_connection_status(MasterPbc,
+                                                "riak_cs_access_archiver:store/4"),
             {error, Reason};
         {'EXIT', {noproc, _}} ->
             %% just haven't gotten the 'DOWN' yet
