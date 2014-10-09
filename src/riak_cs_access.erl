@@ -161,7 +161,7 @@ flush_to_log(Table, Slice) ->
     Start = rts:iso8601(Start0),
     End = rts:iso8601(End0),
     Fun = fun({User, Accesses0}, _) ->
-                  RiakObj = make_object(User, Accesses0, Slice),
+                  RiakObj = make_object(User, [Accesses0], Slice),
                   Accesses = riakc_obj:get_update_value(RiakObj),
                   flush_to_log(User, Accesses, Start, End)
           end,
