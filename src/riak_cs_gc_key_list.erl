@@ -160,8 +160,6 @@ gc_index_query(RcPid, EndTime, BatchSize, Continuation, UsePaginatedIndexes) ->
 
     case QueryResult of
         {error, disconnected} ->
-            _ = lager:warning("GC index query ~p to ~p failed.",
-                              [EpochStart, EndTime]),
             riak_cs_pbc:check_connection_status(ManifestPbc, gc_index_query);
         _ ->
             ok

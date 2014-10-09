@@ -87,7 +87,8 @@ list_keys(PbcPid, BucketName) ->
             Error
     end.
 
--spec check_connection_status(pid(), term()) -> no_return().
+%% @doc don't reuse return value
+-spec check_connection_status(pid(), term()) -> any().
 check_connection_status(Pbc, Where) ->
     try
         case riakc_pb_socket:is_connected(Pbc) of
