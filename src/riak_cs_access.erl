@@ -157,10 +157,9 @@ group_by_node(Samples) ->
 
 %% @doc If writing access failed, output the data to log
 flush_to_log(Table, Slice) ->
-    {Start0, End0} = Slice,
-    Start = rts:iso8601(Start0),
-    End = rts:iso8601(End0),
-    Fun = fun({User, Accesses}, _) ->
+    {Start, End} = Slice,
+    Fun = fun({User, Accesses0}, _) ->
+                  Accesses = rts:build_json(Start, End, Accesses0),
                   flush_to_log(User, Accesses, Start, End)
           end,
     ets:foldl(Fun, ok, Table).
