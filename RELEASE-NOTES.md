@@ -9,14 +9,20 @@
   prevents losing access stats logs, in case of temporary connection
   failure between Riak and Riak CS. Access logs are stored in
   `console.log` with warning level.
+- Add script to repair invalid gc manifests
+  [riak_cs/#983](https://github.com/basho/riak_cs/pull/983). There is
+  a [known issue](https://github.com/basho/riak_cs/issues/827) where
+  an active manifest stored in GC bucket. This script changes invalid
+  state to valid state.
 
 ## Bugs Fixed
 
 - Fix PB connection pool (`pbc_pool_master`) leak
   [riak_cs/#986](https://github.com/basho/riak_cs/pull/986) . Requests
-  asking for non-existent buckets without an authorization header
-  makes connections leak from the pool and eventually the pool goes
-  empty. This bug was introduced in relase 1.5.0.
+  asking for non-existent buckets without an authorization header and
+  requests asking for listing users make connections leak from the
+  pool, and eventually the pool goes empty. This bug was introduced in
+  relase 1.5.0.
 
 # Riak CS 1.5.1 Release Notes
 
