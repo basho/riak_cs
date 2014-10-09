@@ -2,9 +2,9 @@
 
 ## Additions
 
-- Improved logging around connection failure against Riak
+- Improved logging around connection failures with Riak
   [riak_cs/#987](https://github.com/basho/riak_cs/pull/987).
-- Add amendment log output when storing access logs into Riak failed
+- Add amendment log output when storing access stats into Riak failed
   [riak_cs/#988](https://github.com/basho/riak_cs/pull/988). This
   prevents losing access stats logs, in case of temporary connection
   failure between Riak and Riak CS. Access logs are stored in
@@ -14,9 +14,9 @@
 
 - Fix PB connection pool (`pbc_pool_master`) leak
   [riak_cs/#986](https://github.com/basho/riak_cs/pull/986) . Requests
-  asking for non-existent buckets without authorization header makes
-  connections leak from the pool and eventually the pool gets
-  empty. This bug exists since 1.5.0.
+  asking for non-existent buckets without an authorization header
+  makes connections leak from the pool and eventually the pool goes
+  empty. This bug was introduced in relase 1.5.0.
 
 # Riak CS 1.5.1 Release Notes
 
