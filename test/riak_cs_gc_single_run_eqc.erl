@@ -269,6 +269,7 @@ dummy_start_delete_fsm(_Node, [_RcPid, {_UUID, ?MANIFEST{bkey={_, K}}=_Manifest}
 meck_fileset_get_and_delete() ->
     meck:new(riak_cs_pbc, [passthrough]),
     meck:expect(riak_cs_pbc, get_object, fun dummy_get_object/3),
+    meck:expect(riakc_pb_socket, is_connected, fun always_true/1),
     meck:expect(riakc_pb_socket, delete_obj, fun dummy_delete_object/2).
 
 dummy_get_object(_Pbc, <<"riak-cs-gc">>=B, K) ->
@@ -282,6 +283,8 @@ dummy_get_object(_Pbc, <<"riak-cs-gc">>=B, K) ->
     end;
 dummy_get_object(_Pbc, _B, _K) ->
     error.
+
+always_true(_) -> true.
 
 dummy_delete_object(_Pbc, RiakObj) ->
     Key = riakc_obj:key(RiakObj),
