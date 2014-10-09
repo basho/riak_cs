@@ -42,7 +42,6 @@
 
 -export([
          new_sample/6,
-         build_json/3,
          find_samples/6,
          slice_containing/2,
          next_slice/2,
@@ -73,14 +72,11 @@
 new_sample(Bucket, KeyPostfix, Start, End, Period, Data) ->
     Slice = slice_containing(Start, Period),
     Key = slice_key(Slice, KeyPostfix),
-    Body = build_json(Start, End, Data),
-    riakc_obj:new(Bucket, Key, Body, "application/json").
-
-build_json(Start, End, Data) ->
     MJSON = {struct, [{?START_TIME, iso8601(Start)},
                       {?END_TIME, iso8601(End)}
                       |Data]},
-    iolist_to_binary(mochijson2:encode(MJSON)).
+    Body = iolist_to_binary(mochijson2:encode(MJSON)),
+    riakc_obj:new(Bucket, Key, Body, "application/json").
 
 %% @doc Fetch all of the samples from riak that overlap the specified
 %% time period for the given key postfix.
