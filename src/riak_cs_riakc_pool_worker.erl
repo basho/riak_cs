@@ -53,8 +53,10 @@ start_link(Args) ->
         undefined ->
             10000
     end,
-    StartOptions = [{connect_timeout, Timeout},
-                    {auto_reconnect, true}],
+    StartOptions =
+        [{connect_timeout, Timeout}]
+        ++ riak_cs_config:auto_reconnect()
+        ++ riak_cs_config:queue_if_disconnected(),
     riakc_pb_socket:start_link(Address, Port, StartOptions).
 
 stop(undefined) ->

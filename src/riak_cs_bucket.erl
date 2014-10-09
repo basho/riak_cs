@@ -262,6 +262,7 @@ iterate_csbuckets(RcPid, Acc0, Fun, Cont0) ->
                 _ ->
                     iterate_csbuckets(RcPid, Acc2, Fun, Cont)
             end;
+
         Error ->
             _ = lager:error("iterating CS buckets: ~p", [Error]),
             {error, {Error, Acc0}}

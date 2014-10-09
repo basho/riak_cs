@@ -208,7 +208,7 @@ store(User, RcPid, Record, Slice) ->
                              [User, Slice]);
         {error, Reason} ->
             ok = lager:error("Access archiver storage failed (~p), "
-                             "stats for ~s ~p were lost",
+                             "stats for ~s ~p were lost.",
                              [Reason, User, Slice]),
             riak_cs_access:flush_access_object_to_log(User, Record, Slice),
             {error, Reason};
