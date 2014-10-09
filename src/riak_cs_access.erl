@@ -29,7 +29,7 @@
          make_object/3,
          get_usage/4,
          flush_to_log/2,
-         flush_to_log/3
+         flush_access_object_to_log/3
         ]).
 
 -include("riak_cs.hrl").
@@ -157,24 +157,23 @@ group_by_node(Samples) ->
 
 %% @doc If writing access failed, output the data to log
 flush_to_log(Table, Slice) ->
+    User = ets:first(Table),
+    flush_to_log(User, Table, Slice).
+
+%% @doc iterate over all users on the ets table
+flush_to_log('$end_of_table', _, _) ->
+    ok;
+flush_to_log(User, Table, Slice) ->
+    Accesses = [ A || {_, A} <- ets:lookup(Table, User) ],
+    RiakObj = riak_cs_access:make_object(User, Accesses, Slice),
+    flush_access_object_to_log(User, RiakObj, Slice),
+    flush_to_log(ets:next(Table, User), Table, Slice).
+
+flush_access_object_to_log(User, RiakObj, Slice) ->
     {Start0, End0} = Slice,
     Start = rts:iso8601(Start0),
     End = rts:iso8601(End0),
-    Fun = fun({User, Accesses0}, _) ->
-                  RiakObj = make_object(User, [Accesses0], Slice),
-                  Accesses = riakc_obj:get_update_value(RiakObj),
-                  flush_to_log(User, Accesses, Start, End)
-          end,
-    ets:foldl(Fun, ok, Table).
-
-%% @doc If writing access failed, output to log
-flush_to_log(User, Accesses, Slice) ->
-    {Start0, End0} = Slice,
-    Start = rts:iso8601(Start0),
-    End = rts:iso8601(End0),
-    flush_to_log(User, Accesses, Start, End).
-
-flush_to_log(User, Accesses, Start, End) ->
+    Accesses = riakc_obj:get_update_value(RiakObj),
     _ = lager:warning("lost access stat: User=~s, Slice=(~s, ~s), Accesses:'~s'",
                       [User, Start, End, Accesses]).
 
