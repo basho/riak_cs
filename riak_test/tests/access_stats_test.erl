@@ -111,7 +111,6 @@ verify_stats_lost_logging(UserConfig, RiakNodes, CSNodes) ->
     %% check logs, at same node with flush_access_stats
     CSNode = hd(CSNodes),
     lager:info("Checking log in ~p", [CSNode]),
-    true = rt:expect_in_log(CSNode, "Access archiver storage failed"),
     ExpectLine = io_lib:format("lost access stat: User=~s, Slice=", [KeyId]),
     lager:debug("expected log line: ~s", [ExpectLine]),
     true = rt:expect_in_log(CSNode, ExpectLine),
