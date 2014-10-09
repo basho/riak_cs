@@ -93,10 +93,9 @@ produce_xml(RD, Ctx=#context{riak_client=RcPid}) ->
     end,
     {{stream, {<<>>, fun() -> stream_users(xml, RcPid, Boundary, Status) end}}, UpdRD, Ctx}.
 
-finish_request(RD, Ctx=#context{riak_client=undefined}) ->
-    {true, RD, Ctx};
-finish_request(RD, Ctx=#context{riak_client=RcPid}) ->
-    riak_cs_riak_client:checkin(RcPid),
+finish_request(RD, Ctx=#context{}) ->
+    %% riak_client is still used for streaming response.
+    %% So do not close it here.
     {true, RD, Ctx#context{riak_client=undefined}}.
 
 %% -------------------------------------------------------------------
@@ -107,14 +106,7 @@ stream_users(Format, RcPid, Boundary, Status) ->
     {ok, MasterPbc} = riak_cs_riak_client:master_pbc(RcPid),
     case riakc_pb_socket:stream_list_keys(MasterPbc, ?USER_BUCKET) of
         {ok, ReqId} ->
-            case riak_cs_riak_client:start_link([]) of
-                {ok, RcPid2} ->
-                    Res = wait_for_users(Format, RcPid2, ReqId, Boundary, Status),
-                    riak_cs_utils:close_riak_connection(RcPid2),
-                    Res;
-                {error, _Reason} ->
-                    wait_for_users(Format, RcPid, ReqId, Boundary, Status)
-            end;
+            wait_for_users(Format, RcPid, ReqId, Boundary, Status);
         {error, _Reason} ->
             {<<>>, done}
     end.
@@ -128,6 +120,7 @@ wait_for_users(Format, RcPid, ReqId, Boundary, Status) ->
                             Boundary),
             {Doc, fun() -> wait_for_users(Format, RcPid, ReqId, Boundary, Status) end};
         {ReqId, done} ->
+            ok = riak_cs_riak_client:checkin(RcPid),
             {list_to_binary(["\r\n--", Boundary, "--"]), done};
         _ ->
             wait_for_users(Format, RcPid, ReqId, Boundary, Status)

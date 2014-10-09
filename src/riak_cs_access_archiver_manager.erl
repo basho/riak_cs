@@ -71,6 +71,7 @@ archive(Table, Slice) ->
 
                     _ = lager:error("~p was not available, access stats for ~p lost",
                                     [?MODULE, Slice]),
+                    riak_cs_access:flush_to_log(Table, Slice),
                     %% if the archiver had been alive just now, but crashed
                     %% during operation, the stats also would have been lost,
                     %% so also losing them here is just an efficient way to
@@ -84,6 +85,7 @@ archive(Table, Slice) ->
         _ ->
             _ = lager:error("~p was not available, access stats for ~p lost",
                             [?MODULE, Slice]),
+            riak_cs_access:flush_to_log(Table, Slice),
             ets:delete(Table),
             false
     end.
@@ -144,9 +146,9 @@ init([]) ->
 handle_call(status, _From, State=#state{backlog=Backlog, workers=Workers}) ->
     Props = [{backlog, length(Backlog)},
              {workers, Workers}],
-        {reply, {ok, Props}, State};
+    {reply, {ok, Props}, State};
 handle_call(archive, _From, State=#state{workers=Workers,
-                                                 max_workers=MaxWorkers})
+                                         max_workers=MaxWorkers})
   when length(Workers) >= MaxWorkers ->
     %% All workers are busy so the manager takes ownership and adds an
     %% entry to the backlog
@@ -181,7 +183,7 @@ handle_info({'ETS-TRANSFER', Table, _From, Slice}, State) ->
                 ok = lager:error("Skipping archival of accesses ~p to"
                                  " catch up on backlog",
                                  [DropSlice]),
-                 State#state{backlog=RestBacklog++[{Table, Slice}]}
+                State#state{backlog=RestBacklog++[{Table, Slice}]}
         end,
     {noreply, NewState};
 handle_info(_Info, State) ->

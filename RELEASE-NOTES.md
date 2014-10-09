@@ -1,11 +1,37 @@
+# Riak CS 1.5.2 Release Notes
+
+## Additions
+
+- Improved logging around connection failures with Riak
+  [riak_cs/#987](https://github.com/basho/riak_cs/pull/987).
+- Add amendment log output when storing access stats into Riak failed
+  [riak_cs/#988](https://github.com/basho/riak_cs/pull/988). This
+  prevents losing access stats logs, in case of temporary connection
+  failure between Riak and Riak CS. Access logs are stored in
+  `console.log` with warning level.
+- Add script to repair invalid gc manifests
+  [riak_cs/#983](https://github.com/basho/riak_cs/pull/983). There is
+  a [known issue](https://github.com/basho/riak_cs/issues/827) where
+  an active manifest stored in GC bucket. This script changes invalid
+  state to valid state.
+
+## Bugs Fixed
+
+- Fix PB connection pool (`pbc_pool_master`) leak
+  [riak_cs/#986](https://github.com/basho/riak_cs/pull/986) . Requests
+  asking for non-existent buckets without an authorization header and
+  requests asking for listing users make connections leak from the
+  pool, and eventually the pool goes empty. This bug was introduced in
+  relase 1.5.0.
+
 # Riak CS 1.5.1 Release Notes
 
 ## Additions
 
 - Add sleep-after-update manifests to avoid sibling explosion [riak_cs/#959](https://github.com/basho/riak_cs/pull/959)
-- Multibag support on `riak-cs-debug` [riak_cs/#930](https://github.com/basho/riak_cs/pull/
-- Add bucket number limit check in Riak CS process [riak_cs/#950](https://github.com/basho/riak_cs/pull/
-- More efficient bucket resolution [riak_cs/#951](https://github.com/basho/riak_cs/pull/
+- Multibag support on `riak-cs-debug` [riak_cs/#930](https://github.com/basho/riak_cs/pull/930)
+- Add bucket number limit check in Riak CS process [riak_cs/#950](https://github.com/basho/riak_cs/pull/950)
+- More efficient bucket resolution [riak_cs/#951](https://github.com/basho/riak_cs/pull/951)
 
 ## Bugs Fixed
 

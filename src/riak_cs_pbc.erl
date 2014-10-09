@@ -28,7 +28,8 @@
          put/3,
          put_with_no_meta/2,
          put_with_no_meta/3,
-         list_keys/2]).
+         list_keys/2,
+         check_connection_status/2]).
 
 %% @doc Get an object from Riak
 -spec get_object(pid(), binary(), binary()) ->
@@ -66,7 +67,7 @@ put_with_no_meta(PbcPid, RiakcObj) ->
 %% not explicitly setting the metadata will
 %% cause a siblings exception to be raised.
 -spec put_with_no_meta(pid(), riakc_obj:riakc_obj(), term()) ->
-    ok | {ok, riakc_obj:riakc_obj()} | {ok, binary()} | {error, term()}.
+                              ok | {ok, riakc_obj:riakc_obj()} | {ok, binary()} | {error, term()}.
 put_with_no_meta(PbcPid, RiakcObject, Options) ->
     WithMeta = riakc_obj:update_metadata(RiakcObject, dict:new()),
     riakc_pb_socket:put(PbcPid, WithMeta, Options).
@@ -84,4 +85,20 @@ list_keys(PbcPid, BucketName) ->
             {ok, lists:sort(Keys)};
         {error, _}=Error ->
             Error
+    end.
+
+%% @doc don't reuse return value
+-spec check_connection_status(pid(), term()) -> any().
+check_connection_status(Pbc, Where) ->
+    try
+        case riakc_pb_socket:is_connected(Pbc) of
+            true -> ok;
+            Other ->
+                _ = lager:warning("Connection status of ~p at ~p: ~p",
+                                  [Pbc, Where, Other])
+        end
+    catch
+        Type:Error ->
+            _ = lager:warning("Connection status of ~p at ~p: ~p",
+                              [Pbc, Where, {Type, Error}])
     end.

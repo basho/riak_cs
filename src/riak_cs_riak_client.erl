@@ -56,7 +56,7 @@
 -define(SERVER, ?MODULE).
 
 -record(state, {
-          master_pbc,
+          master_pbc :: undefined | pid(),
           bucket_name,
           bucket_obj
          }).
@@ -169,8 +169,8 @@ handle_call({get_bucket, BucketName}, _From, State) ->
     case do_get_bucket(State#state{bucket_name=BucketName}) of
         {ok, #state{bucket_obj=BucketObj} = NewState} ->
             {reply, {ok, BucketObj}, NewState};
-        {error, Reason} ->
-            {reply, {error, Reason}, State}
+        {error, Reason, NewState} ->
+            {reply, {error, Reason}, NewState}
     end;
 handle_call({set_bucket_name, _BucketName}, _From, State) ->
     {reply, ok, State};
@@ -253,11 +253,11 @@ do_get_bucket(State) ->
             case get_bucket_with_pbc(MasterPbc, BucketName) of
                 {ok, Obj} ->
                     {ok, NewState#state{bucket_obj=Obj}};
-                {error, _}=Error ->
-                    Error
+                {error, Reason} ->
+                    {error, Reason, NewState}
             end;
         {error, Reason} ->
-            {error, Reason}
+            {error, Reason, State}
     end.
 
 ensure_master_pbc(#state{master_pbc = MasterPbc} = State)
@@ -282,7 +282,8 @@ get_user_with_pbc(MasterPbc, Key) ->
             %% be able to properly resolve conflicts).
             KeepDeletedBuckets = false,
             {ok, {Obj, KeepDeletedBuckets}};
-        {error, _} ->
+        {error, Reason0} ->
+            _ = lager:warning("Fetching user record with strong option failed: ~p", [Reason0]),
             WeakOptions = [{r, quorum}, {pr, one}, {notfound_ok, false}],
             case riakc_pb_socket:get(MasterPbc, ?USER_BUCKET, Key, WeakOptions) of
                 {ok, Obj} ->

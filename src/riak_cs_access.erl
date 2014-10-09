@@ -27,7 +27,9 @@
          log_flush_interval/0,
          max_flush_size/0,
          make_object/3,
-         get_usage/4
+         get_usage/4,
+         flush_to_log/2,
+         flush_access_object_to_log/3
         ]).
 
 -include("riak_cs.hrl").
@@ -74,8 +76,8 @@ log_flush_interval() ->
                             {ok, AP div AF};
                         _ ->
                             {error, "riak_cs:access_log_flush_interval"
-                                    " does not evenly divide"
-                                    " riak_cs:access_archive_period"}
+                             " does not evenly divide"
+                             " riak_cs:access_archive_period"}
                     end;
                 APError ->
                     APError
@@ -105,7 +107,7 @@ max_flush_size() ->
 -spec make_object(iodata(),
                   [[{atom()|binary(), number()}]],
                   slice())
-         -> riakc_obj:riakc_obj().
+                 -> riakc_obj:riakc_obj().
 make_object(User, Accesses, {Start, End}) ->
     {ok, Period} = archive_period(),
     Aggregate = aggregate_accesses(Accesses),
@@ -137,7 +139,7 @@ merge_stats(Stats, Acc) ->
                 term(), %% TODO: riak_cs:user_key() type doesn't exist
                 calendar:datetime(),
                 calendar:datetime()) ->
-         {Usage::orddict:orddict(), Errors::[{slice(), term()}]}.
+                       {Usage::orddict:orddict(), Errors::[{slice(), term()}]}.
 get_usage(RcPid, User, Start, End) ->
     {ok, Period} = archive_period(),
     {Usage, Errors} = rts:find_samples(RcPid, ?ACCESS_BUCKET, User,
@@ -152,6 +154,29 @@ group_by_node(Samples) ->
                 end,
                 orddict:new(),
                 Samples).
+
+%% @doc If writing access failed, output the data to log
+flush_to_log(Table, Slice) ->
+    User = ets:first(Table),
+    flush_to_log(User, Table, Slice).
+
+%% @doc iterate over all users on the ets table
+flush_to_log('$end_of_table', _, _) ->
+    ok;
+flush_to_log(User, Table, Slice) ->
+    Accesses = [ A || {_, A} <- ets:lookup(Table, User) ],
+    RiakObj = riak_cs_access:make_object(User, Accesses, Slice),
+    flush_access_object_to_log(User, RiakObj, Slice),
+    flush_to_log(ets:next(Table, User), Table, Slice).
+
+flush_access_object_to_log(User, RiakObj, Slice) ->
+    {Start0, End0} = Slice,
+    Start = rts:iso8601(Start0),
+    End = rts:iso8601(End0),
+    Accesses = riakc_obj:get_update_value(RiakObj),
+    _ = lager:warning("lost access stat: User=~s, Slice=(~s, ~s), Accesses:'~s'",
+                      [User, Start, End, Accesses]).
+
 
 -ifdef(TEST).
 -ifdef(EQC).

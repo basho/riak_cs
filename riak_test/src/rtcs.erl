@@ -140,6 +140,15 @@ config(Key, Secret, Port) ->
                     Port,
                     []).
 
+%% Return Riak node IDs, one per cluster.
+%% For example, in basic single cluster case, just return [1].
+-spec riak_id_per_cluster(pos_integer()) -> [pos_integer()].
+riak_id_per_cluster(NumNodes) ->
+    case rt_config:get(flavor, basic) of
+        basic -> [1];
+        {multibag, _} = Flavor -> rtcs_bag:riak_id_per_cluster(NumNodes, Flavor)
+    end.
+
 create_user(Node, UserIndex) ->
     {A, B, C} = erlang:now(),
     User = "Test User" ++ integer_to_list(UserIndex),
@@ -157,6 +166,11 @@ create_admin_user(Node) ->
     lager:info("KeySecret = ~p",[Secret]),
     lager:info("Id = ~p",[Id]),
     {KeyId, Secret}.
+
+pb_port(N) when is_integer(N) ->
+    10000 + (N * 10) + 7;
+pb_port(Node) ->
+    pb_port(rt_cs_dev:node_id(Node)).
 
 cs_port(Node) ->
     15008 + 10 * rt_cs_dev:node_id(Node).
@@ -294,6 +308,9 @@ riakcs_binpath(Prefix, N) ->
 
 riakcs_etcpath(Prefix, N) ->
     io_lib:format("~s/dev/dev~b/etc", [Prefix, N]).
+
+riakcs_libpath(Prefix, N) ->
+    io_lib:format("~s/dev/dev~b/lib", [Prefix, N]).
 
 riakcscmd(Path, N, Cmd) ->
     lists:flatten(io_lib:format("~s ~s", [riakcs_binpath(Path, N), Cmd])).
@@ -541,6 +558,16 @@ stop_cs(N) ->
     lager:info("Running ~p", [Cmd]),
     os:cmd(Cmd).
 
+repair_gc_bucket(N, Options) ->
+    Prefix = rt_config:get(?CS_CURRENT),
+    RepairScriptWild = string:join([riakcs_libpath(Prefix, N), "riak_cs*",
+                                    "priv/tools/repair_gc_bucket.erl"] , "/"),
+    [RepairScript] = filelib:wildcard(RepairScriptWild),
+    Cmd = riakcscmd(Prefix, N, "escript " ++ RepairScript ++
+                        " " ++ Options),
+    lager:info("Running ~p", [Cmd]),
+    os:cmd(Cmd).
+
 switch_stanchion_cs(N, Host, Port) ->
     SubCmd = io_lib:format("switch ~s ~p", [Host, Port]),
     Cmd = riakcs_switchcmd(rt_config:get(?CS_CURRENT), N, SubCmd),
@@ -596,8 +623,7 @@ update_admin_creds(Config, AdminKey, AdminSecret) ->
                       proplists:delete(admin_key, Config))].
 
 update_cs_port(Config, N) ->
-    PbPort = 10000 + (N * 10) + 7,
-    [{riak_pb_port, PbPort} | proplists:delete(riak_pb_port, Config)].
+    [{riak_pb_port, pb_port(N)} | proplists:delete(riak_pb_port, Config)].
 
 update_stanchion_config(Prefix, Config, {AdminKey, AdminSecret}) ->
     StanchionSection = proplists:get_value(stanchion, Config),
@@ -643,7 +669,7 @@ create_user(Port, EmailAddr, Name) ->
     Cmd="curl -s -H 'Content-Type: application/json' http://localhost:" ++
         integer_to_list(Port) ++
         "/riak-cs/user --data '{\"email\":\"" ++ EmailAddr ++  "\", \"name\":\"" ++ Name ++"\"}'",
-    lager:info("Cmd: ~p", [Cmd]),
+    %% lager:info("Cmd: ~p", [Cmd]),
     Delay = rt_config:get(rt_retry_delay),
     Retries = rt_config:get(rt_max_wait_time) div Delay,
     OutputFun = fun() -> rt:cmd(Cmd) end,
