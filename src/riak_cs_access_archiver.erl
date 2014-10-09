@@ -210,6 +210,9 @@ store(User, RcPid, Record, Slice) ->
             ok = lager:error("Access archiver storage failed (~p), "
                              "stats for ~s ~p were lost",
                              [Reason, User, Slice]),
+            riak_cs_access:flush_to_log(User,
+                                        riakc_obj:get_update_value(Record),
+                                        Slice),
             {error, Reason};
         {'EXIT', {noproc, _}} ->
             %% just haven't gotten the 'DOWN' yet

@@ -156,7 +156,7 @@ close_riak_connection(Pool, Pid) ->
 %% {error, notfound} counts as success in this case,
 %% with the list of UUIDs being [].
 -spec delete_object(binary(), binary(), riak_client()) ->
-    {ok, [binary()]} | {error, term()}.
+                           {ok, [binary()]} | {error, term()}.
 delete_object(Bucket, Key, RcPid) ->
     ok = riak_cs_stats:update_with_start(object_delete, os:timestamp()),
     riak_cs_gc:gc_active_manifests(Bucket, Key, RcPid).
@@ -316,7 +316,7 @@ md5_final(Ctx) -> crypto:md5_final(Ctx).
 
 -spec active_manifest_from_response({ok, orddict:orddict()} |
                                     {error, notfound}) ->
-    {ok, lfs_manifest()} | {error, notfound}.
+                                           {ok, lfs_manifest()} | {error, notfound}.
 active_manifest_from_response({ok, Manifests}) ->
     handle_active_manifests(riak_cs_manifest_utils:active_manifest(Manifests));
 active_manifest_from_response({error, notfound}=NotFound) ->
@@ -325,7 +325,7 @@ active_manifest_from_response({error, notfound}=NotFound) ->
 %% @private
 -spec handle_active_manifests({ok, lfs_manifest()} |
                               {error, no_active_manifest}) ->
-    {ok, lfs_manifest()} | {error, notfound}.
+                                     {ok, lfs_manifest()} | {error, notfound}.
 handle_active_manifests({ok, _Active}=ActiveReply) ->
     ActiveReply;
 handle_active_manifests({error, no_active_manifest}) ->
@@ -386,7 +386,7 @@ pow(Base, Power, Acc) ->
 -type resolve_ok() :: {term(), binary()}.
 -type resolve_error() :: {atom(), atom()}.
 -spec resolve_robj_siblings(RObj::term()) ->
-                      {resolve_ok() | resolve_error(), NeedsRepair::boolean()}.
+                                   {resolve_ok() | resolve_error(), NeedsRepair::boolean()}.
 
 resolve_robj_siblings(Cs) ->
     [{BestRating, BestMDV}|Rest] = lists:sort([{rate_a_dict(MD, V), MDV} ||
@@ -453,7 +453,7 @@ riak_connection(Pool) ->
 %% @doc Set the ACL for an object. Existing ACLs are only
 %% replaced, they cannot be updated.
 -spec set_object_acl(binary(), binary(), lfs_manifest(), acl(), riak_client()) ->
-            ok | {error, term()}.
+                            ok | {error, term()}.
 set_object_acl(Bucket, Key, Manifest, Acl, RcPid) ->
     StartTime = os:timestamp(),
     {ok, ManiPid} = riak_cs_manifest_fsm:start_link(Bucket, Key, RcPid),
@@ -561,7 +561,7 @@ from_bucket_name(BucketNameWithPrefix) ->
 %% @private
 -spec key_exists_handle_get_manifests({ok, riakc_obj:riakc_obj(), list()} |
                                       {error, term()}) ->
-    boolean().
+                                             boolean().
 key_exists_handle_get_manifests({ok, _Object, Manifests}) ->
     active_to_bool(active_manifest_from_response({ok, Manifests}));
 key_exists_handle_get_manifests(Error) ->
