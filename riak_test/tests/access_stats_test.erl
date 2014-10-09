@@ -35,11 +35,14 @@
 confirm() ->
     Config = [{riak, rtcs:riak_config()}, {stanchion, rtcs:stanchion_config()},
               {cs, rtcs:cs_config([{fold_objects_for_list_keys, true}])}],
-    {UserConfig, {_RiakNodes, _CSNodes, _Stanchion}} = rtcs:setup(2, Config),
+    {UserConfig, {RiakNodes, CSNodes, _Stanchion}} = rtcs:setup(2, Config),
+    rt:setup_log_capture(hd(CSNodes)),
+
     {Begin, End} = generate_some_accesses(UserConfig),
     flush_access_stats(),
     assert_access_stats(json, UserConfig, {Begin, End}),
     assert_access_stats(xml, UserConfig, {Begin, End}),
+    verify_stats_lost_logging(UserConfig, RiakNodes, CSNodes),
     pass.
 
 generate_some_accesses(UserConfig) ->
@@ -98,6 +101,22 @@ assert_access_stats(Format, UserConfig, {Begin, End}) ->
     ?assertEqual(  1, sum_samples(Format, "BucketDelete", "Count", Samples)),
     pass.
 
+verify_stats_lost_logging(UserConfig, RiakNodes, CSNodes) ->
+    KeyId = UserConfig#aws_config.access_key_id,
+    {_Begin, _End} = generate_some_accesses(UserConfig),
+    %% kill riak
+    [ rt:brutal_kill(Node) || Node <- RiakNodes ],
+    %% force archive
+    flush_access_stats(),
+    %% check logs, at same node with flush_access_stats
+    CSNode = hd(CSNodes),
+    lager:info("Checking log in ~p", [CSNode]),
+    ExpectLine = io_lib:format("lost access stat: User=~s, Slice=", [KeyId]),
+    lager:debug("expected log line: ~s", [ExpectLine]),
+    true = rt:expect_in_log(CSNode, ExpectLine),
+    pass.
+
+
 node_samples_from_content(json, Node, Content) ->
     Usage = mochijson2:decode(Content),
     ListOfNodeStats = rtcs:json_get([<<"Access">>, <<"Nodes">>], Usage),
@@ -128,7 +147,7 @@ sum_samples_json(Keys, [Sample | Samples], Sum) ->
                        0;
                    Value when is_integer(Value) ->
                        Value
-                  end,
+               end,
     sum_samples_json(Keys, Samples, Sum + InSample).
 
 sum_samples_xml(OperationType, StatsKey, Samples) ->
