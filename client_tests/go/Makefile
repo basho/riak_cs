@@ -21,7 +21,9 @@ all: test-mp-put-get
 ## Test multipart upload completes without error
 ## See: https://github.com/basho/riak_cs/issues/855
 test-mp-put-get: gof3r $(RANDFILE)
-	gof3r put $(GOOPTS) -s 5242880 -p $(RANDFILE) -b $(CS_BUCKET) -k $(CS_KEY)
+	## TODO: change partsize back to 5242881 as s3gof3r fixed.
+	## watch https://github.com/rlmcpherson/s3gof3r/issues/37
+	gof3r put $(GOOPTS) -s 5242881 -p $(RANDFILE) -b $(CS_BUCKET) -k $(CS_KEY)
 	rm -f $(GETFILE)
 	gof3r get $(GOOPTS) -b $(CS_BUCKET) -k $(CS_KEY) - > $(GETFILE)
 	diff $(RANDFILE) $(GETFILE)
