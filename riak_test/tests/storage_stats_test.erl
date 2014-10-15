@@ -39,6 +39,9 @@
 -define(BUCKET6, "storage-stats-test-6").
 -define(BUCKET7, "storage-stats-test-7").
 -define(BUCKET8, "storage-stats-test-8").
+
+-define(BUCKET9, "storage-stats-test-9").
+
 -define(KEY, "1").
 
 -define(HIDDEN_KEY, "5=pockets").
@@ -48,6 +51,9 @@ confirm() ->
               {stanchion, rtcs:stanchion_config()},
               {cs, rtcs:cs_config([{fold_objects_for_list_keys, true}])}],
     {UserConfig, {RiakNodes, _CSNodes, _Stanchion}} = rtcs:setup(1, Config),
+    {AccessKey2, SecretKey2} = rtcs:create_user(hd(RiakNodes), 1),
+    UserConfig2 = rtcs:config(AccessKey2, SecretKey2, rtcs:cs_port(hd(RiakNodes))),
+
     TestSpecs = [store_object(?BUCKET1, UserConfig),
                  delete_object(?BUCKET2, UserConfig),
                  store_objects(?BUCKET3, UserConfig),
@@ -57,7 +63,8 @@ confirm() ->
                  store_object(?BUCKET5, UserConfig),
                  store_object(?BUCKET6, UserConfig),
                  store_object(?BUCKET7, UserConfig),
-                 store_object(?BUCKET8, UserConfig)
+                 store_object(?BUCKET8, UserConfig),
+                 give_over_bucket(?BUCKET9, UserConfig, UserConfig2)
                 ],
 
     verify_cs840_regression(UserConfig, RiakNodes),
@@ -199,6 +206,21 @@ store_objects(Bucket, UserConfig) ->
     ExpectedBytes = 1000,
     {Bucket, ExpectedObjects, ExpectedBytes}.
 
+give_over_bucket(Bucket, UserConfig, AnotherUser) ->
+    %% Create bucket, put/delete object, delete bucket finally
+    ?assertEqual(ok, erlcloud_s3:create_bucket(Bucket, UserConfig)),
+    Block = crypto:rand_bytes(100),
+    ?assertEqual([{version_id, "null"}], erlcloud_s3:put_object(Bucket, ?KEY, Block, UserConfig)),
+    ?assertEqual([{delete_marker, false}, {version_id, "null"}], erlcloud_s3:delete_object(Bucket, ?KEY, UserConfig)),
+    ?assertEqual(ok, erlcloud_s3:delete_bucket(Bucket, UserConfig)),
+
+    %% Another user re-create the bucket and put an object into it.
+    ?assertEqual(ok, erlcloud_s3:create_bucket(Bucket, AnotherUser)),
+    Block2 = crypto:rand_bytes(100),
+    ?assertEqual([{version_id, "null"}],
+                 erlcloud_s3:put_object(Bucket, ?KEY, Block2, AnotherUser)),
+    {Bucket, undefined, undefined}.
+
 calc_storage_stats() ->
     Begin = rtcs:datetime(),
     %% TODO workaround to #766
@@ -212,6 +234,8 @@ calc_storage_stats() ->
     End = rtcs:datetime(),
     {Begin, End}.
 
+assert_storage_json_stats({Bucket, undefined, undefined}, Sample) ->
+    ?assertEqual(notfound, rtcs:json_get([list_to_binary(Bucket)], Sample));
 assert_storage_json_stats({Bucket, ExpectedObjects, ExpectedBytes}, Sample) ->
     ?assertEqual(ExpectedObjects, rtcs:json_get([list_to_binary(Bucket), <<"Objects">>],   Sample)),
     ?assertEqual(ExpectedBytes,   rtcs:json_get([list_to_binary(Bucket), <<"Bytes">>],     Sample)),
@@ -219,6 +243,8 @@ assert_storage_json_stats({Bucket, ExpectedObjects, ExpectedBytes}, Sample) ->
     ?assert(rtcs:json_get([<<"EndTime">>],   Sample) =/= notfound),
     pass.
 
+assert_storage_xml_stats({Bucket, undefined, undefined}, Sample) ->
+    ?assertEqual(undefined, proplists:get_value(Bucket, Sample));
 assert_storage_xml_stats({Bucket, ExpectedObjects, ExpectedBytes}, Sample) ->
     ?assertEqual(ExpectedObjects, proplists:get_value('Objects', proplists:get_value(Bucket, Sample))),
     ?assertEqual(ExpectedBytes,   proplists:get_value('Bytes', proplists:get_value(Bucket, Sample))),
