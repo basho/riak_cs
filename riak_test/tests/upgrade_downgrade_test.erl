@@ -30,7 +30,7 @@
 confirm() ->
     PrevConfig = rtcs:previous_configs(),
     {UserConfig, {RiakNodes, _CSNodes, _Stanchion}} =
-        rtcs:setup(1, PrevConfig, previous),
+        rtcs:setup(2, PrevConfig, previous),
 
     lager:info("nodes> ~p", [rt_config:get(rt_nodes)]),
     lager:info("versions> ~p", [rt_config:get(rt_versions)]),

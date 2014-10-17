@@ -62,6 +62,9 @@ bucket_list_pool_size() ->
 setup(NumNodes) ->
     setup(NumNodes, default_configs(), current).
 
+setup(NumNodes, Configs) ->
+    setup(NumNodes, Configs, current).
+
 setup(NumNodes, Configs, Vsn) ->
     Flavor = rt_config:get(flavor, basic),
     lager:info("Flavor : ~p", [Flavor]),
@@ -80,14 +83,15 @@ setup2x2(Configs) ->
 
 %% 1 cluster with N nodes + M cluster with 1 node
 setupNxMsingles(N, M) ->
-    setupNxMsingles(N, M, default_configs()).
+    setupNxMsingles(N, M, default_configs(), current).
 
-setupNxMsingles(N, M, Configs) ->
+setupNxMsingles(N, M, Configs, Vsn)
+  when Vsn =:= current orelse Vsn =:= previous ->
     JoinFun = fun(Nodes) ->
                       [Target | Joiners] = lists:sublist(Nodes, N),
                       [join(J, Target) || J <- Joiners]
               end,
-    setup_clusters(Configs, JoinFun, N + M, current).
+    setup_clusters(Configs, JoinFun, N + M, Vsn).
 
 flavored_setup(NumNodes, basic, Configs, Vsn) ->
     JoinFun = fun(Nodes) ->
@@ -95,7 +99,8 @@ flavored_setup(NumNodes, basic, Configs, Vsn) ->
                       [join(Node, First) || Node <- Rest]
               end,
     setup_clusters(Configs, JoinFun, NumNodes, Vsn);
-flavored_setup(NumNodes, {multibag, _} = Flavor, Configs, Vsn) ->
+flavored_setup(NumNodes, {multibag, _} = Flavor, Configs, Vsn)
+  when Vsn =:= current orelse Vsn =:= previous ->
     rtcs_bag:flavored_setup(NumNodes, Flavor, Configs, Vsn).
 
 setup_clusters(Configs, JoinFun, NumNodes, Vsn) ->
@@ -169,6 +174,13 @@ riak_id_per_cluster(NumNodes) ->
         basic -> [1];
         {multibag, _} = Flavor -> rtcs_bag:riak_id_per_cluster(NumNodes, Flavor)
     end.
+
+deploy_stanchion(Config) ->
+    %% Set initial config
+    update_stanchion_config(rt_config:get(?STANCHION_CURRENT), Config),
+
+    start_stanchion(),
+    lager:info("Stanchion started").
 
 create_user(Node, UserIndex) ->
     {A, B, C} = erlang:now(),
@@ -511,9 +523,9 @@ start_all_nodes(NodeList, Vsn) ->
     rt:pmap(fun({_CSNode, RiakNode, _Stanchion}) ->
                     N = rt_cs_dev:node_id(RiakNode),
                     NodeVersion = rt_cs_dev:node_version(N),
-                    lager:info("starting riak...~p > ~p => ~p",
-                               [N,  NodeVersion,
-                                rt_cs_dev:relpath(NodeVersion)]),
+                    lager:debug("starting riak #~p > ~p => ~p",
+                                [N,  NodeVersion,
+                                 rt_cs_dev:relpath(NodeVersion)]),
                     rtdev:run_riak(N, rt_cs_dev:relpath(NodeVersion), "start"),
                     rt:wait_for_service(RiakNode, riak_kv),
                     spawn(fun() -> start_stanchion(Vsn) end),
@@ -560,8 +572,8 @@ set_configs(NodeList, Configs, Vsn) ->
                                             proplists:get_value(stanchion, Config));
                ({{_CSNode, RiakNode}, Config}) ->
                     N = rt_cs_dev:node_id(RiakNode),
-                    rt_cs_dev:update_app_config(RiakNode, proplists:get_value(riak,
-                                                                              Config)),
+                    rt_cs_dev:update_app_config(RiakNode,
+                                                proplists:get_value(riak, Config)),
                     update_cs_config(get_rt_config(cs, Vsn), N,
                                      proplists:get_value(cs, Config))
             end,
@@ -595,16 +607,22 @@ reset_nodes(Project, Path) ->
     rtdev:run_git(Path, "reset HEAD --hard"),
     rtdev:run_git(Path, "clean -fd").
 
+start_cs(N) -> start_cs(N, current).
+
 start_cs(N, Vsn) ->
     NodePath = get_rt_config(cs, Vsn),
     Cmd = riakcscmd(NodePath, N, "start"),
     lager:info("Running ~p", [Cmd]),
     os:cmd(Cmd).
 
+stop_cs(N) -> stop_cs(N, current).
+
 stop_cs(N, Vsn) ->
     Cmd = riakcscmd(get_rt_config(cs, Vsn), N, "stop"),
     lager:info("Running ~p", [Cmd]),
     os:cmd(Cmd).
+
+repair_gc_bucket(N, Options) -> repair_gc_bucket(N, Options, current).
 
 repair_gc_bucket(N, Options, Vsn) ->
     Prefix = get_rt_config(cs, Vsn),
@@ -616,37 +634,50 @@ repair_gc_bucket(N, Options, Vsn) ->
     lager:info("Running ~p", [Cmd]),
     os:cmd(Cmd).
 
+switch_stanchion_cs(N, Host, Port) -> switch_stanchion_cs(N, Host, Port, current).
+
 switch_stanchion_cs(N, Host, Port, Vsn) ->
     SubCmd = io_lib:format("switch ~s ~p", [Host, Port]),
     Cmd = riakcs_switchcmd(get_rt_config(cs, Vsn), N, SubCmd),
     lager:info("Running ~p", [Cmd]),
     os:cmd(Cmd).
 
+show_stanchion_cs(N) -> show_stanchion_cs(N, current).
+
 show_stanchion_cs(N, Vsn) ->
     Cmd = riakcs_switchcmd(get_rt_config(cs, Vsn), N, "show"),
     lager:info("Running ~p", [Cmd]),
     os:cmd(Cmd).
+
+start_stanchion() -> start_stanchion(current).
 
 start_stanchion(Vsn) ->
     Cmd = stanchioncmd(get_rt_config(stanchion, Vsn), "start"),
     lager:info("Running ~p", [Cmd]),
     os:cmd(Cmd).
 
+stop_stanchion() -> stop_stanchion(current).
+
 stop_stanchion(Vsn) ->
     Cmd = stanchioncmd(get_rt_config(stanchion, Vsn), "stop"),
     lager:info("Running ~p", [Cmd]),
     os:cmd(Cmd).
+
+flush_access(N) -> flush_access(N, current).
 
 flush_access(N, Vsn) ->
     Cmd = riakcs_accesscmd(get_rt_config(cs, Vsn), N, "flush"),
     lager:info("Running ~p", [Cmd]),
     os:cmd(Cmd).
 
+gc(N, SubCmd) -> gc(N, SubCmd, current).
+
 gc(N, SubCmd, Vsn) ->
     Cmd = riakcs_gccmd(get_rt_config(cs, Vsn), N, SubCmd),
     lager:info("Running ~p", [Cmd]),
     os:cmd(Cmd).
 
+calculate_storage(N) -> calculate_storage(N, current).
 
 calculate_storage(N, Vsn) ->
     Cmd = riakcs_storagecmd(get_rt_config(cs, Vsn), N, "batch -r"),
