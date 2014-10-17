@@ -141,7 +141,7 @@ configs(CustomConfigs) ->
 previous_configs() ->
     CSPrev = rt_config:get(?CS_PREVIOUS),
     AddPaths = filelib:wildcard(CSPrev ++ "/dev/dev1/lib/riak_cs*/ebin"),
-    
+
     [{riak, riak_config([{riak_kv, [{add_paths, AddPaths}]}])},
      {stanchion, stanchion_config()},
      {cs, cs_config()}].
@@ -646,7 +646,7 @@ gc(N, SubCmd, Vsn) ->
     Cmd = riakcs_gccmd(get_rt_config(cs, Vsn), N, SubCmd),
     lager:info("Running ~p", [Cmd]),
     os:cmd(Cmd).
-    
+
 
 calculate_storage(N, Vsn) ->
     Cmd = riakcs_storagecmd(get_rt_config(cs, Vsn), N, "batch -r"),
@@ -835,11 +835,11 @@ error_child_element_verifier(Code, Message, Resource) ->
 %% this function and go back to rt_cs_dev:upgrade/2. This is just
 %% copy&paste and modify.
 %% This also resets config and moves to default CS riak config.
-upgrade_to_20(Node, NewVersion) ->
+upgrade_20(Node, NewVersion) ->
     N = rt_cs_dev:node_id(Node),
     Version = rt_cs_dev:node_version(N),
     lager:info("Upgrading ~p : ~p -> ~p", [Node, Version, NewVersion]),
-    rt_cs_dev:stop(Node),
+    catch rt_cs_dev:stop(Node),
     rt:wait_until_unpingable(Node),
     OldPath = rt_cs_dev:relpath(Version),
     NewPath = rt_cs_dev:relpath(NewVersion),
@@ -864,8 +864,18 @@ upgrade_to_20(Node, NewVersion) ->
 
 %% @doc from previous to current, assuming CS is already stopped
 upgrade_cs(N, Config, AdminCreds) ->
-    update_cs_config(get_rt_config(cs, current),
+    upgrade_cs(N, Config, AdminCreds, current).
+
+upgrade_cs(N, Config, AdminCreds, Vsn) ->
+    update_cs_config(get_rt_config(cs, Vsn),
                      N,
                      proplists:get_value(cs, Config),
                      AdminCreds),
     ok.
+
+upgrade_stanchion(Config, AdminCreds, Vsn) ->
+    update_stanchion_config(get_rt_config(stanchion, Vsn),
+                            proplists:get_value(stanchion, Config),
+                            AdminCreds).
+
+%% maybe_stop_stanchion(1) ->

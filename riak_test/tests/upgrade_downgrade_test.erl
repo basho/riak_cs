@@ -19,7 +19,6 @@
 %% ---------------------------------------------------------------------
 
 -module(upgrade_downgrade_test).
-
 -export([confirm/0]).
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("erlcloud/include/erlcloud_aws.hrl").
@@ -29,9 +28,10 @@
 -define(KEY_MULTIPLE_BLOCK, "riak_test_key2").
 
 confirm() ->
+    PrevConfig = rtcs:previous_configs(),
     {UserConfig, {RiakNodes, _CSNodes, _Stanchion}} =
-        rtcs:setup(1, rtcs:previous_configs(), previous),
-    %% confirm_initial_stats(query_stats(UserConfig, rtcs:cs_port(hd(RiakNodes)))),
+        rtcs:setup(1, PrevConfig, previous),
+
     lager:info("nodes> ~p", [rt_config:get(rt_nodes)]),
     lager:info("versions> ~p", [rt_config:get(rt_versions)]),
 
@@ -47,18 +47,61 @@ confirm() ->
          N = rt_cs_dev:node_id(RiakNode),
          lager:debug("upgrading ~p", [N]),
          rtcs:stop_cs(N, previous),
-         ok = rtcs:upgrade_to_20(RiakNode, ee_current),
+         ok = rtcs:upgrade_20(RiakNode, ee_current),
          rt:wait_for_service(RiakNode, riak_kv),
          ok = rtcs:upgrade_cs(N, NewConfig, AdminCreds),
          rtcs:start_cs(N, current)
      end
      || RiakNode <- RiakNodes],
     rt:wait_until_ring_converged(RiakNodes),
+    rtcs:stop_stanchion(previous),
+    rtcs:upgrade_stanchion(NewConfig, AdminCreds, current),
+    rtcs:start_stanchion(current),
 
     ok = verify_all_data(UserConfig, Data),
+    ok = cleanup_all_data(UserConfig),
+    lager:info("Upgrading to current successfully done"),
+
+    {ok, Data2} = prepare_all_data(UserConfig),
+
+    %% Downgrade!!
+    rtcs:stop_stanchion(current),
+    rtcs:upgrade_stanchion(PrevConfig, AdminCreds, previous),
+    rtcs:start_stanchion(previous),
+    [begin
+         N = rt_cs_dev:node_id(RiakNode),
+         lager:debug("downgrading ~p", [N]),
+         rtcs:stop_cs(N, current),
+         rt:stop(RiakNode),
+         rt:wait_until_unpingable(RiakNode),
+
+         %% get the bitcask directory
+         BitcaskDataDir = filename:join([rt_cs_dev:node_path(RiakNode), "data", "bitcask"]),
+         lager:info("downgrading Bitcask datadir ~s...", [BitcaskDataDir]),
+         %% and run the downgrade script:
+         %% Downgrading from 2.0 does not work...
+         %% https://github.com/basho/bitcask/issues/178
+         %% And here's the downgrade script, which is downloaded at `make compile-riak-test`.
+         %% https://github.com/basho/bitcask/pull/184
+         Result = downgrade_bitcask:main([BitcaskDataDir]),
+         lager:info("downgrade script done: ~p", [Result]),
+
+         ok = rtcs:upgrade_20(RiakNode, ee_previous),
+         rt:wait_for_service(RiakNode, riak_kv),
+         ok = rtcs:upgrade_cs(N, PrevConfig, AdminCreds, previous),
+         timer:sleep(1),
+         rtcs:start_cs(N, previous)
+     end
+     || RiakNode <- RiakNodes],
+    rt:wait_until_ring_converged(RiakNodes),
+
+    timer:sleep(10000),
+    ok = verify_all_data(UserConfig, Data2),
+    lager:info("Downgrading to previous successfully done"),
 
     rtcs:pass().
 
+%% TODO: add more data and test cases
 prepare_all_data(UserConfig) ->
     lager:info("User is valid on the cluster, and has no buckets"),
     ?assertEqual([{buckets, []}], erlcloud_s3:list_buckets(UserConfig)),
@@ -78,7 +121,7 @@ prepare_all_data(UserConfig) ->
     {ok, [{single_block, SingleBlock},
           {multiple_block, MultipleBlock}]}.
 
-
+%% TODO: add more data and test cases
 verify_all_data(UserConfig, Data) ->
     SingleBlock = proplists:get_value(single_block, Data),
     MultipleBlock = proplists:get_value(multiple_block, Data),
@@ -87,6 +130,12 @@ verify_all_data(UserConfig, Data) ->
     basic_get_test_case(?TEST_BUCKET, ?KEY_SINGLE_BLOCK, SingleBlock, UserConfig),
     basic_get_test_case(?TEST_BUCKET, ?KEY_MULTIPLE_BLOCK, MultipleBlock, UserConfig),
 
+    ok.
+
+cleanup_all_data(UserConfig) ->
+    erlcloud_s3:delete_object(?TEST_BUCKET, ?KEY_SINGLE_BLOCK, UserConfig),
+    erlcloud_s3:delete_object(?TEST_BUCKET, ?KEY_MULTIPLE_BLOCK, UserConfig),
+    erlcloud_s3:delete_bucket(?TEST_BUCKET, UserConfig),
     ok.
 
 basic_get_test_case(Bucket, Key, ExpectedContent, Config) ->
