@@ -24,29 +24,78 @@
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("erlcloud/include/erlcloud_aws.hrl").
 
--define(TEST_BUCKET, "riak-test-bucket").
+-define(TEST_BUCKET, "riak-test-bucket-foobar").
+-define(KEY_SINGLE_BLOCK,   "riak_test_key1").
+-define(KEY_MULTIPLE_BLOCK, "riak_test_key2").
 
 confirm() ->
-    {_UserConfig, {_RiakNodes, _CSNodes, _Stanchion}} = rtcs:setup(1, rtcs:default_configs(), previous),
+    {UserConfig, {RiakNodes, _CSNodes, _Stanchion}} =
+        rtcs:setup(1, rtcs:previous_configs(), previous),
     %% confirm_initial_stats(query_stats(UserConfig, rtcs:cs_port(hd(RiakNodes)))),
-    lager:info("~p", [rt_config:get(rt_nodes)]),
-    lager:info("~p", [rt_config:get(rt_versions)]),
-    %% lager:info("creating bucket ~p", [?TEST_BUCKET]),
-    %% ?assertEqual(ok, erlcloud_s3:create_bucket(?TEST_BUCKET, UserConfig)),
+    lager:info("nodes> ~p", [rt_config:get(rt_nodes)]),
+    lager:info("versions> ~p", [rt_config:get(rt_versions)]),
 
-    %% ?assertMatch([{buckets, [[{name, ?TEST_BUCKET}, _]]}],
-    %%     erlcloud_s3:list_buckets(UserConfig)),
+    {ok, Data} = prepare_all_data(UserConfig),
+    ok = verify_all_data(UserConfig, Data),
 
-    %% Object = crypto:rand_bytes(500),
-    %% erlcloud_s3:put_object(?TEST_BUCKET, "object_one", Object, UserConfig),
-    %% erlcloud_s3:get_object(?TEST_BUCKET, "object_one", UserConfig),
-    %% erlcloud_s3:delete_object(?TEST_BUCKET, "object_one", UserConfig),
-    %% erlcloud_s3:list_buckets(UserConfig),
+    NewConfig = rtcs:default_configs(),
+    AdminCreds = {UserConfig#aws_config.access_key_id,
+                  UserConfig#aws_config.secret_access_key},
 
-    %% lager:info("Confirming stats"),
-    %% Stats1 = query_stats(UserConfig, rtcs:cs_port(hd(RiakNodes))),
-    %% confirm_stat_count(Stats1, <<"service_get_buckets">>, 2),
-    %% confirm_stat_count(Stats1, <<"object_get">>, 1),
-    %% confirm_stat_count(Stats1, <<"object_put">>, 1),
-    %% confirm_stat_count(Stats1, <<"object_delete">>, 1),
+    %% Upgrade!!!
+    [begin
+         N = rt_cs_dev:node_id(RiakNode),
+         lager:debug("upgrading ~p", [N]),
+         rtcs:stop_cs(N, previous),
+         ok = rtcs:upgrade_to_20(RiakNode, ee_current),
+         rt:wait_for_service(RiakNode, riak_kv),
+         ok = rtcs:upgrade_cs(N, NewConfig, AdminCreds),
+         rtcs:start_cs(N, current)
+     end
+     || RiakNode <- RiakNodes],
+    rt:wait_until_ring_converged(RiakNodes),
+
+    ok = verify_all_data(UserConfig, Data),
+
     rtcs:pass().
+
+prepare_all_data(UserConfig) ->
+    lager:info("User is valid on the cluster, and has no buckets"),
+    ?assertEqual([{buckets, []}], erlcloud_s3:list_buckets(UserConfig)),
+
+    lager:info("creating bucket ~p", [?TEST_BUCKET]),
+    ?assertEqual(ok, erlcloud_s3:create_bucket(?TEST_BUCKET, UserConfig)),
+
+    ?assertMatch([{buckets, [[{name, ?TEST_BUCKET}, _]]}],
+                 erlcloud_s3:list_buckets(UserConfig)),
+
+    %% setup objects
+    SingleBlock = crypto:rand_bytes(400),
+    erlcloud_s3:put_object(?TEST_BUCKET, ?KEY_SINGLE_BLOCK, SingleBlock, UserConfig),
+    MultipleBlock = crypto:rand_bytes(4000000), % not aligned to block boundary
+    erlcloud_s3:put_object(?TEST_BUCKET, ?KEY_MULTIPLE_BLOCK, MultipleBlock, UserConfig),
+
+    {ok, [{single_block, SingleBlock},
+          {multiple_block, MultipleBlock}]}.
+
+
+verify_all_data(UserConfig, Data) ->
+    SingleBlock = proplists:get_value(single_block, Data),
+    MultipleBlock = proplists:get_value(multiple_block, Data),
+
+    %% basic GET test cases
+    basic_get_test_case(?TEST_BUCKET, ?KEY_SINGLE_BLOCK, SingleBlock, UserConfig),
+    basic_get_test_case(?TEST_BUCKET, ?KEY_MULTIPLE_BLOCK, MultipleBlock, UserConfig),
+
+    ok.
+
+basic_get_test_case(Bucket, Key, ExpectedContent, Config) ->
+    Obj = erlcloud_s3:get_object(Bucket, Key, Config),
+    assert_whole_content(ExpectedContent, Obj).
+
+assert_whole_content(ExpectedContent, ResultObj) ->
+    Content = proplists:get_value(content, ResultObj),
+    ContentLength = proplists:get_value(content_length, ResultObj),
+    ?assertEqual(byte_size(ExpectedContent), list_to_integer(ContentLength)),
+    ?assertEqual(byte_size(ExpectedContent), byte_size(Content)),
+    ?assertEqual(ExpectedContent, Content).
