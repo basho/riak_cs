@@ -42,12 +42,15 @@ confirm() ->
     AdminCreds = {UserConfig#aws_config.access_key_id,
                   UserConfig#aws_config.secret_access_key},
 
+    {_, RiakCurrentVsn} =
+        rtcs:riak_root_and_vsn(current, rt_config:get(build_type, oss)),
+
     %% Upgrade!!!
     [begin
          N = rt_cs_dev:node_id(RiakNode),
          lager:debug("upgrading ~p", [N]),
          rtcs:stop_cs(N, previous),
-         ok = rtcs:upgrade_20(RiakNode, ee_current),
+         ok = rtcs:upgrade_20(RiakNode, RiakCurrentVsn),
          rt:wait_for_service(RiakNode, riak_kv),
          ok = rtcs:upgrade_cs(N, NewConfig, AdminCreds),
          rtcs:start_cs(N, current)
@@ -63,6 +66,10 @@ confirm() ->
     lager:info("Upgrading to current successfully done"),
 
     {ok, Data2} = prepare_all_data(UserConfig),
+
+    {_, RiakPrevVsn} =
+        rtcs:riak_root_and_vsn(previous, rt_config:get(build_type, oss)),
+
 
     %% Downgrade!!
     rtcs:stop_stanchion(current),
@@ -86,16 +93,14 @@ confirm() ->
          Result = downgrade_bitcask:main([BitcaskDataDir]),
          lager:info("downgrade script done: ~p", [Result]),
 
-         ok = rtcs:upgrade_20(RiakNode, ee_previous),
+         ok = rtcs:upgrade_20(RiakNode, RiakPrevVsn),
          rt:wait_for_service(RiakNode, riak_kv),
          ok = rtcs:upgrade_cs(N, PrevConfig, AdminCreds, previous),
-         timer:sleep(1),
          rtcs:start_cs(N, previous)
      end
      || RiakNode <- RiakNodes],
     rt:wait_until_ring_converged(RiakNodes),
 
-    timer:sleep(10000),
     ok = verify_all_data(UserConfig, Data2),
     lager:info("Downgrading to previous successfully done"),
 
