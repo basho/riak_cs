@@ -21,6 +21,7 @@ set -e
 
 R15B01=${R15B01:-$HOME/erlang/R15B01-64}
 R16B02=${R16B02:-$HOME/erlang/R16B02-64}
+: ${RTCS_DEST_DIR:="$HOME/rt/riak_cs"}
 
 checkbuild()
 {
@@ -71,10 +72,26 @@ build()
     cd ..
 }
 
+setup()
+{
+    SRCDIR=$1
+    cd $SRCDIR
+    VERSION=$SRCDIR
+    echo " - Copying devrel to $RTCS_DEST_DIR/$VERSION "
+    mkdir -p $RTCS_DEST_DIR/$VERSION/
+    cp -p -P -R dev $RTCS_DEST_DIR/$VERSION/
+    ## echo " - Writing $RTCS_DEST_DIR/$VERSION/VERSION"
+    ## echo -n $VERSION > $RTCS_DEST_DIR/$VERSION/VERSION
+    cd $RTCS_DEST_DIR
+    echo " - Adding $VERSION to git state of $RTCS_DEST_DIR"
+    git add $VERSION
+    git commit -a -m "riak_test adding version $VERSION" ## > /dev/null 2>&1
+}
+
 download()
 {
   URI=$1
-  FILENAME=`echo $URI | awk -F/ '{ print $7 }'`
+  FILENAME=`echo $URI | awk -F/ '{ print $8 }'`
   if [ ! -f $FILENAME ]; then
     wget $URI
   fi
@@ -87,3 +104,5 @@ download http://s3.amazonaws.com/builds.basho.com/riak-cs/1.5/1.5.1/riak-cs-1.5.
 
 tar -xf riak-cs-1.5.1.tar.gz
 build "riak-cs-1.5.1" $R15B01
+
+setup "riak-cs-1.5.1"
