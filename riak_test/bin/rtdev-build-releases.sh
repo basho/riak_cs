@@ -104,5 +104,3 @@ download http://s3.amazonaws.com/builds.basho.com/riak-cs/1.5/1.5.1/riak-cs-1.5.
 
 tar -xf riak-cs-1.5.1.tar.gz
 build "riak-cs-1.5.1" $R15B01
-
-setup "riak-cs-1.5.1"
