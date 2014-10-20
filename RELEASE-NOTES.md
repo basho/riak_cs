@@ -1,3 +1,13 @@
+# Riak CS 1.5.3 Release Notes
+
+## Bugs Fixed
+
+- Fixed wrong storage calculation on deleted buckets
+  [riak_cs/#996](https://github.com/basho/riak_cs/pull/996). Storage
+  usage of a bucket may charged to multiple users, not only the
+  current owner of the bucket but also past owner (who created and
+  deleted in the past). This bug was introduced before release 1.4.
+
 # Riak CS 1.5.2 Release Notes
 
 ## Additions
@@ -22,7 +32,7 @@
   asking for non-existent buckets without an authorization header and
   requests asking for listing users make connections leak from the
   pool, and eventually the pool goes empty. This bug was introduced in
-  relase 1.5.0.
+  release 1.5.0.
 
 # Riak CS 1.5.1 Release Notes
 
