@@ -15,7 +15,6 @@ $ mkdir ~/rt
 $ cd ~/rt
 $ cd path/to/repo/riak_cs
 $ export RIAK_CS_EE_DEPS=true
-## change runtime to Basho's patched R15B01
 $ riak_test/bin/rtdev-build-releases.sh
 $ riak_test/bin/rtdev-setup-releases.sh
 ## make sure runtime is Basho's patched R16B02-basho5
@@ -26,7 +25,6 @@ Example to setup old and new Stanchion:
 
 ```
 $ cd path/to/repo/stanchion
-## ch runtime to Basho's patched R15B01
 $ riak_test/bin/rtdev-build-releases.sh
 $ riak_test/bin/rtdev-setup-releases.sh
 ## make sure runtime is Basho's patched R16B02-basho5
@@ -110,13 +108,12 @@ $ git commit -m "Add 1.4 series Riak EE"
 
 Running the RiakCS tests for `riak_test` use a different test harness
 (`rt_cs_dev`) than running the Riak tests and so requires a separate
-configuration section. Notice the extra `riak_ee/deps`, `riak_cs/deps`
-and `stanchion/deps` in the `rt_deps` section. `RT_DEST_DIR` should be
-replaced by the path used when setting up `riak_test` builds for Riak
-(by default `$HOME/rt/riak`). The same should be done for
-`RTEE_DEST_DIR` (default `$HOME/rt/riak_ee`), `RTCS_DEST_DIR` (default
-`$HOME/rt/riak_cs`) and `RTSTANCHION_DEST_DIR` (default
-`$HOME/rt/stanchion`).
+configuration section. Notice the extra `riak_cs/deps` in the
+`rt_deps` section. `RT_DEST_DIR` should be replaced by the path used
+when setting up `riak_test` builds for Riak (by default
+`$HOME/rt/riak`). The same should be done for `RTEE_DEST_DIR` (default
+`$HOME/rt/riak_ee`), `RTCS_DEST_DIR` (default `$HOME/rt/riak_cs`) and
+`RTSTANCHION_DEST_DIR` (default `$HOME/rt/stanchion`).
 
 The `build_type` option is used to differentiate between an
 open-source (`oss`) build of RiakCS and the enterprise version (`ee`).
