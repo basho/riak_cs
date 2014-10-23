@@ -254,7 +254,7 @@ confirm() ->
 
     Obj15 = erlcloud_s3:get_object(?TEST_BUCKET, "object_four", U1C2Config),
     ?assertEqual(Object4A, proplists:get_value(content,Obj15)),
-    pass.
+    rtcs:pass().
 
 enable_pg(SourceLeader, SinkName, ANodes, BNodes, BPort) ->
     repl_helpers:connect_clusters13(SourceLeader, ANodes, BPort, SinkName),

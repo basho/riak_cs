@@ -1,10 +1,58 @@
-1. Ensure that s3cmd is installed and that `~/.s3cfg` contains access
-   credentials for the Basho account.
+# General instruction
+
+1. Make sure that your `riak_test` is the latest one for 2.0.
+
 1. Ensure that riak_test builds are in place for:
     * Riak
     * Riak EE
     * Riak CS
     * Stanchion
+
+Example to setup old and new CS:
+
+```
+$ mkdir ~/rt
+$ cd ~/rt
+$ cd path/to/repo/riak_cs
+$ export RIAK_CS_EE_DEPS=true
+$ riak_test/bin/rtdev-build-releases.sh
+$ riak_test/bin/rtdev-setup-releases.sh
+## make sure runtime is Basho's patched R16B02-basho5
+$ make devrel && riak_test/bin/rtdev-current.sh
+```
+
+Example to setup old and new Stanchion:
+
+```
+$ cd path/to/repo/stanchion
+$ riak_test/bin/rtdev-build-releases.sh
+$ riak_test/bin/rtdev-setup-releases.sh
+## make sure runtime is Basho's patched R16B02-basho5
+$ make devrel && riak_test/bin/rtdev-current.sh
+```
+
+Example to setup 1.4.x and 2.0 as old and new Riak (maybe same as Riak
+OSS... while shell scripts are included in riak_test repo):
+
+```
+$ mkdir ~/rt/riak_ee
+## make sure runtime is Basho's patched R16B02-basho5
+$ tar xzf riak-ee-2.0.1.tar.gz
+$ cd riak-ee-2.0.1 && make devrel
+$ riak_test/bin/rteedev-setup-releases.sh
+$ riak_test/bin/rteedev-current.sh
+
+## ch runtime to Basho's patched R15B01
+$ tar xzf riak-ee-1.4.10.tar.gz
+$ cd riak-ee-1.4.10 && make devrel
+$ mkdir ~/rt/riak_ee/riak-ee-1.4.10
+$ cp -r dev ~/rt/riak_ee/riak-ee-1.4.10
+$ cd ~/rt/riak_ee
+$ git add riak-ee-1.4.10
+$ git commit -m "Add 1.4 series Riak EE"
+```
+
+
 1. Setup a `~/.riak_test.config` file like this:
 
 ```erlang
@@ -27,41 +75,45 @@
                       ]}
         ]}.
 
-    {rt_cs_dev, [
-         {rt_project, "riak_cs"},
-         {rt_deps, [
-                    "/Users/kelly/basho/riak_test_builds/riak/deps",
-                    "/Users/kelly/basho/riak_test_builds/riak_cs/deps",
-                    "/Users/kelly/basho/riak_test_builds/stanchion/deps"
+{rt_cs_dev, [
+  {rt_project, "riak_cs"},
+     {rt_deps, [
+                "/home/kuenishi/cs-2.0/riak_cs/deps"
+               ]},
+     {rt_retry_delay, 500},
+     {rt_harness, rt_cs_dev},
+     {build_paths, [{root,              "/home/kuenishi/rt/riak_ee"},
+                    {current,           "/home/kuenishi/rt/riak_ee/current"},
+                    {ee_root,           "/home/kuenishi/rt/riak_ee"},
+                    {ee_current,        "/home/kuenishi/rt/riak_ee/current"},
+                    {ee_previous,       "/home/kuenishi/rt/riak_ee/riak-ee-1.4.10"},
+                    {cs_root,           "/home/kuenishi/rt/riak_cs"},
+                    {cs_current,        "/home/kuenishi/rt/riak_cs/current"},
+                    {cs_previous,
+                           "/home/kuenishi/rt/riak_cs/riak-cs-1.5.1"},
+                    {stanchion_root,    "/home/kuenishi/rt/stanchion"},
+                    {stanchion_current, "/home/kuenishi/rt/stanchion/current"},
+                    {stanchion_previous,
+                       "/home/kuenishi/rt/stanchion/stanchion-1.5.0"}
                    ]},
-         {rt_retry_delay, 500},
-         {rt_harness, rt_cs_dev},
-         {build_paths, [{root, "/Users/kelly/rt/riak"},
-                        {current, "/Users/kelly/rt/riak/current"},
-                        {ee_root, "/Users/kelly/rt/riak_ee"},
-                        {ee_current, "/Users/kelly/rt/riak_ee/current"},
-                        {cs_root, "/Users/kelly/rt/riak_cs"},
-                        {cs_current, "/Users/kelly/rt/riak_cs/current"},
-                        {stanchion_root, "/Users/kelly/rt/stanchion"},
-                        {stanchion_current, "/Users/kelly/rt/stanchion/current"}
-                       ]},
-         {test_paths, ["/Users/kelly/basho/riak_test_builds/riak_cs/riak_test/ebin"]},
-         {src_paths, [{cs_src_root, "/Users/kelly/basho/riak_test_builds/riak_cs"}]},
-         {build_type, oss},
-         {backend, {multi_backend, bitcask}},
-         {flavor, basic}
-        ]}.
+     {test_paths, ["/home/kuenishi/cs-2.0/riak_cs/riak_test/ebin"]},
+     {src_paths, [{cs_src_root, "/home/kuenishi/cs-2.0/riak_cs"}]},
+     {lager_level, debug},
+     %%{build_type, oss},
+     {build_type, ee},
+     {flavor, basic},
+     {backend, {multi_backend, bitcask}}
+]}.
 ```
 
 Running the RiakCS tests for `riak_test` use a different test harness
 (`rt_cs_dev`) than running the Riak tests and so requires a separate
-configuration section. Notice the extra `riak_ee/deps`, `riak_cs/deps`
-and `stanchion/deps` in the `rt_deps` section. `RT_DEST_DIR` should be
-replaced by the path used when setting up `riak_test` builds for Riak
-(by default `$HOME/rt/riak`). The same should be done for
-`RTEE_DEST_DIR` (default `$HOME/rt/riak_ee`), `RTCS_DEST_DIR` (default
-`$HOME/rt/riak_cs`) and `RTSTANCHION_DEST_DIR` (default
-`$HOME/rt/stanchion`).
+configuration section. Notice the extra `riak_cs/deps` in the
+`rt_deps` section. `RT_DEST_DIR` should be replaced by the path used
+when setting up `riak_test` builds for Riak (by default
+`$HOME/rt/riak`). The same should be done for `RTEE_DEST_DIR` (default
+`$HOME/rt/riak_ee`), `RTCS_DEST_DIR` (default `$HOME/rt/riak_cs`) and
+`RTSTANCHION_DEST_DIR` (default `$HOME/rt/stanchion`).
 
 The `build_type` option is used to differentiate between an
 open-source (`oss`) build of RiakCS and the enterprise version (`ee`).
@@ -107,6 +159,8 @@ bag with two riak nodes and two additional bags with one riak node each.
 * Your system must have libevent installed. If you see an error for a 
   missing 'event.h' file during test runs, this is because libevent is
   not installed.
+* Your system must have Ruby > 2.0 and PHP > 5.5 and PHP composer insalled.
+* Your system must have Golang (go, $GOHOME, $GOROOT) correctly installed.
 
 1. Before running the Riak client tests, your
 `~/.riak_test.config` file must contain an entry for `cs_src_root` in

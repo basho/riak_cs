@@ -19,10 +19,9 @@ set -e
 # Or, alternatively, just substitute the paths to the kerl install paths as
 # that should work too.
 
-# R14B04=${R14B04:-$HOME/erlang-R14B04}
-# R15B01=${R15B01:-$HOME/erlang-R15B01}
-R14B04=${R14B04:-$HOME/erlang/R14B04-64}
 R15B01=${R15B01:-$HOME/erlang/R15B01-64}
+R16B02=${R16B02:-$HOME/erlang/R16B02-64}
+: ${RTCS_DEST_DIR:="$HOME/rt/riak_cs"}
 
 checkbuild()
 {
@@ -73,29 +72,35 @@ build()
     cd ..
 }
 
+setup()
+{
+    SRCDIR=$1
+    cd $SRCDIR
+    VERSION=$SRCDIR
+    echo " - Copying devrel to $RTCS_DEST_DIR/$VERSION "
+    mkdir -p $RTCS_DEST_DIR/$VERSION/
+    cp -p -P -R dev $RTCS_DEST_DIR/$VERSION/
+    ## echo " - Writing $RTCS_DEST_DIR/$VERSION/VERSION"
+    ## echo -n $VERSION > $RTCS_DEST_DIR/$VERSION/VERSION
+    cd $RTCS_DEST_DIR
+    echo " - Adding $VERSION to git state of $RTCS_DEST_DIR"
+    git add $VERSION
+    git commit -a -m "riak_test adding version $VERSION" ## > /dev/null 2>&1
+}
+
 download()
 {
   URI=$1
-  FILENAME=`echo $URI | awk -F/ '{ print $7 }'`
+  FILENAME=`echo $URI | awk -F/ '{ print $8 }'`
   if [ ! -f $FILENAME ]; then
-    s3cmd get --continue $URI
+    wget $URI
   fi
 }
 
-checkbuild $R14B04
 checkbuild $R15B01
+checkbuild $R16B02
 
-# Download Riak CS release source, need s3cmd configured
-# You must have the proper credentials configured in ~/.s3cfg for this to work.
-download s3://builds.basho.com/riak-cs/1.2/1.2.2/riak-cs-1.2.2.tar.gz
-download s3://builds.basho.com/riak-cs/1.1/1.1.0/riak-cs-1.1.0.tar.gz
-download s3://builds.basho.com/riak-cs/1.0/1.0.1/riak-cs-1.0.1.tar.gz
+download http://s3.amazonaws.com/builds.basho.com/riak-cs/1.5/1.5.1/riak-cs-1.5.1.tar.gz
 
-tar -xzf riak-cs-1.0.1.tar.gz
-build "riak-cs-1.0.1" $R14B04
-
-tar -xzf riak-cs-1.1.0.tar.gz
-build "riak-cs-1.1.0" $R14B04
-
-tar -xzf riak-cs-1.2.2.tar.gz
-build "riak-cs-1.2.2" $R15B01
+tar -xf riak-cs-1.5.1.tar.gz
+build "riak-cs-1.5.1" $R15B01

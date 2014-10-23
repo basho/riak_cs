@@ -50,7 +50,8 @@ confirm() ->
 
     non_mp_get_cases(UserConfig),
     mp_get_cases(UserConfig),
-    pass.
+
+    rtcs:pass().
 
 non_mp_get_cases(UserConfig) ->
     %% setup objects

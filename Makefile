@@ -23,7 +23,14 @@ compile-client-test: all
 compile-int-test: all
 	@./rebar int_test_compile
 
-compile-riak-test: all
+bitcask-downgrade-script: riak_test/src/downgrade_bitcask.erl
+
+## KLUDGE, as downgrade script is not included in the release.
+riak_test/src/downgrade_bitcask.erl:
+	@wget https://raw.githubusercontent.com/basho/bitcask/develop/priv/scripts/downgrade_bitcask.erl \
+		-O riak_test/src/downgrade_bitcask.erl
+
+compile-riak-test: all bitcask-downgrade-script
 	@./rebar skip_deps=true riak_test_compile
 	## There are some Riak CS internal modules that our riak_test
 	## test would like to use.  But riak_test doesn't have a nice

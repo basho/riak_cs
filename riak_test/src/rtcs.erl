@@ -34,12 +34,16 @@
 
 -define(RIAK_ROOT, <<"build_paths.root">>).
 -define(RIAK_CURRENT, <<"build_paths.current">>).
+-define(RIAK_PREVIOUS, <<"build_paths.previous">>).
 -define(EE_ROOT, <<"build_paths.ee_root">>).
 -define(EE_CURRENT, <<"build_paths.ee_current">>).
+-define(EE_PREVIOUS, <<"build_paths.ee_previous">>).
 -define(CS_ROOT, <<"build_paths.cs_root">>).
 -define(CS_CURRENT, <<"build_paths.cs_current">>).
+-define(CS_PREVIOUS, <<"build_paths.cs_previous">>).
 -define(STANCHION_ROOT, <<"build_paths.stanchion_root">>).
 -define(STANCHION_CURRENT, <<"build_paths.stanchion_current">>).
+-define(STANCHION_PREVIOUS, <<"build_paths.stanchion_previous">>).
 
 -define(PROXY_HOST, "localhost").
 -define(S3_HOST, "s3.amazonaws.com").
@@ -56,12 +60,15 @@ bucket_list_pool_size() ->
     ?BUCKET_LIST_POOL_SIZE.
 
 setup(NumNodes) ->
-    setup(NumNodes, default_configs()).
+    setup(NumNodes, default_configs(), current).
 
 setup(NumNodes, Configs) ->
+    setup(NumNodes, Configs, current).
+
+setup(NumNodes, Configs, Vsn) ->
     Flavor = rt_config:get(flavor, basic),
     lager:info("Flavor : ~p", [Flavor]),
-    flavored_setup(NumNodes, Flavor, Configs).
+    flavored_setup(NumNodes, Flavor, Configs, Vsn).
 
 setup2x2() ->
     setup2x2(default_configs()).
@@ -72,29 +79,31 @@ setup2x2(Configs) ->
                       join(B,A),
                       join(D,C)
               end,
-    setup_clusters(Configs, JoinFun, 4).
+    setup_clusters(Configs, JoinFun, 4, current).
 
 %% 1 cluster with N nodes + M cluster with 1 node
 setupNxMsingles(N, M) ->
-    setupNxMsingles(N, M, default_configs()).
+    setupNxMsingles(N, M, default_configs(), current).
 
-setupNxMsingles(N, M, Configs) ->
+setupNxMsingles(N, M, Configs, Vsn)
+  when Vsn =:= current orelse Vsn =:= previous ->
     JoinFun = fun(Nodes) ->
                       [Target | Joiners] = lists:sublist(Nodes, N),
                       [join(J, Target) || J <- Joiners]
               end,
-    setup_clusters(Configs, JoinFun, N + M).
+    setup_clusters(Configs, JoinFun, N + M, Vsn).
 
-flavored_setup(NumNodes, basic, Configs) ->
+flavored_setup(NumNodes, basic, Configs, Vsn) ->
     JoinFun = fun(Nodes) ->
                       [First|Rest] = Nodes,
                       [join(Node, First) || Node <- Rest]
               end,
-    setup_clusters(Configs, JoinFun, NumNodes);
-flavored_setup(NumNodes, {multibag, _} = Flavor, Configs) ->
-    rtcs_bag:flavored_setup(NumNodes, Flavor, Configs).
+    setup_clusters(Configs, JoinFun, NumNodes, Vsn);
+flavored_setup(NumNodes, {multibag, _} = Flavor, Configs, Vsn)
+  when Vsn =:= current orelse Vsn =:= previous ->
+    rtcs_bag:flavored_setup(NumNodes, Flavor, Configs, Vsn).
 
-setup_clusters(Configs, JoinFun, NumNodes) ->
+setup_clusters(Configs, JoinFun, NumNodes, Vsn) ->
     %% Start the erlcloud app
     erlcloud:start(),
 
@@ -104,19 +113,28 @@ setup_clusters(Configs, JoinFun, NumNodes) ->
 
     Cfgs = configs(Configs),
     lager:info("Configs = ~p", [ Cfgs]),
-    {RiakNodes, _CSNodes, _Stanchion} = Nodes = deploy_nodes(NumNodes, Cfgs),
+    {RiakNodes, _CSNodes, _Stanchion} = Nodes = deploy_nodes(NumNodes, Cfgs, Vsn),
     rt:wait_until_nodes_ready(RiakNodes),
     lager:info("Make cluster"),
     JoinFun(RiakNodes),
     ?assertEqual(ok, wait_until_nodes_ready(RiakNodes)),
     ?assertEqual(ok, wait_until_no_pending_changes(RiakNodes)),
     rt:wait_until_ring_converged(RiakNodes),
-    {AdminKeyId, AdminSecretKey} = setup_admin_user(NumNodes, Cfgs),
+    {AdminKeyId, AdminSecretKey} = setup_admin_user(NumNodes, Cfgs, Vsn),
     AdminConfig = rtcs:config(AdminKeyId,
                               AdminSecretKey,
                               rtcs:cs_port(hd(RiakNodes))),
     {AdminConfig, Nodes}.
 
+
+pass() ->
+    teardown(),
+    pass.
+
+teardown() ->
+    %% catch application:stop(sasl),
+    catch application:stop(erlcloud),
+    catch application:stop(ibrowse).
 
 configs(CustomConfigs) ->
     [{riak, proplists:get_value(riak, CustomConfigs, riak_config())},
@@ -124,6 +142,14 @@ configs(CustomConfigs) ->
      {stanchion, proplists:get_value(stanchion,
                                      CustomConfigs,
                                      stanchion_config())}].
+
+previous_configs() ->
+    CSPrev = rt_config:get(?CS_PREVIOUS),
+    AddPaths = filelib:wildcard(CSPrev ++ "/dev/dev1/lib/riak_cs*/ebin"),
+
+    [{riak, riak_config([{riak_kv, [{add_paths, AddPaths}]}])},
+     {stanchion, stanchion_config()},
+     {cs, cs_config()}].
 
 default_configs() ->
     [{riak, riak_config()},
@@ -148,6 +174,13 @@ riak_id_per_cluster(NumNodes) ->
         basic -> [1];
         {multibag, _} = Flavor -> rtcs_bag:riak_id_per_cluster(NumNodes, Flavor)
     end.
+
+deploy_stanchion(Config) ->
+    %% Set initial config
+    update_stanchion_config(rt_config:get(?STANCHION_CURRENT), Config),
+
+    start_stanchion(),
+    lager:info("Stanchion started").
 
 create_user(Node, UserIndex) ->
     {A, B, C} = erlang:now(),
@@ -192,7 +225,7 @@ riak_config(ee, Backend) ->
     riak_ee_config(Backend).
 
 riak_oss_config(Backend) ->
-    CSCurrent = rt_config:get(<<"build_paths.cs_current">>),
+    CSCurrent = rt_config:get(?CS_CURRENT),
     AddPaths = filelib:wildcard(CSCurrent ++ "/dev/dev1/lib/riak_cs*/ebin"),
     [
      lager_config(),
@@ -219,17 +252,17 @@ backend_config({multi_backend, BlocksBackend}) ->
         [{be_default, riak_kv_eleveldb_backend,
           [
            {max_open_files, 20},
-           {data_root, "./leveldb"}
+           {data_root, "./data/leveldb"}
           ]},
          blocks_backend_config(BlocksBackend)
         ]}
       ].
 
 blocks_backend_config(fs) ->
-    {be_blocks, riak_kv_fs2_backend, [{data_root, "./fs2"},
+    {be_blocks, riak_kv_fs2_backend, [{data_root, "./data/fs2"},
                                       {block_size, 1050000}]};
 blocks_backend_config(_) ->
-    {be_blocks, riak_kv_bitcask_backend, [{data_root, "./bitcask"}]}.
+    {be_blocks, riak_kv_bitcask_backend, [{data_root, "./data/bitcask"}]}.
 
 riak_ee_config(Backend) ->
     [repl_config() | riak_oss_config(Backend)].
@@ -336,15 +369,19 @@ stanchion_etcpath(Prefix) ->
 stanchioncmd(Path, Cmd) ->
     lists:flatten(io_lib:format("~s ~s", [stanchion_binpath(Path), Cmd])).
 
-riak_root_and_current(oss) ->
-    {?RIAK_ROOT, current};
-riak_root_and_current(ee) ->
-    {?EE_ROOT, ee_current}.
+riak_root_and_vsn(current, oss) -> {?RIAK_ROOT, current};
+riak_root_and_vsn(current, ee) ->  {?EE_ROOT, ee_current};
+riak_root_and_vsn(previous, oss) -> {?RIAK_ROOT, previous};
+riak_root_and_vsn(previous, ee) -> {?EE_ROOT, ee_previous}.
 
 cs_current() ->
     ?CS_CURRENT.
 
 deploy_nodes(NumNodes, InitialConfig) ->
+    deploy_nodes(NumNodes, InitialConfig, current).
+
+-spec deploy_nodes(list(), list(), current|previous) -> any().
+deploy_nodes(NumNodes, InitialConfig, Vsn) when Vsn =:= current orelse Vsn =:= previous ->
     lager:info("Initial Config: ~p", [InitialConfig]),
     NodeConfig = [{current, InitialConfig} || _ <- lists:seq(1,NumNodes)],
     RiakNodes = [?DEV(N) || N <- lists:seq(1, NumNodes)],
@@ -355,11 +392,13 @@ deploy_nodes(NumNodes, InitialConfig) ->
 
     NodeMap = orddict:from_list(lists:zip(RiakNodes, lists:seq(1, NumNodes))),
     rt_config:set(rt_nodes, NodeMap),
+    CSNodeMap = orddict:from_list(lists:zip(CSNodes, lists:seq(1, NumNodes))),
+    rt_config:set(rt_cs_nodes, CSNodeMap),
 
-    {RiakRoot, RiakCurrent} =
-        riak_root_and_current(rt_config:get(build_type, oss)),
+    {RiakRoot, RiakVsn} = riak_root_and_vsn(Vsn, rt_config:get(build_type, oss)),
 
-    VersionMap = lists:zip(lists:seq(1, NumNodes), lists:duplicate(NumNodes, RiakCurrent)),
+    lager:debug("setting rt_versions> ~p =>", [Vsn]),
+    VersionMap = lists:zip(lists:seq(1, NumNodes), lists:duplicate(NumNodes, RiakVsn)),
     rt_config:set(rt_versions, VersionMap),
 
     lager:info("VersionMap: ~p", [VersionMap]),
@@ -369,7 +408,7 @@ deploy_nodes(NumNodes, InitialConfig) ->
     NodeList = [{CS1, R1, StanchionNode} | tl(NL0)],
     lager:info("NodeList: ~p", [NodeList]),
 
-    stop_all_nodes(NodeList),
+    stop_all_nodes(NodeList, Vsn),
 
     [reset_nodes(Project, Path) ||
         {Project, Path} <- [{riak_ee, rt_config:get(RiakRoot)},
@@ -381,8 +420,8 @@ deploy_nodes(NumNodes, InitialConfig) ->
     {_Versions, Configs} = lists:unzip(NodeConfig),
 
     %% Set initial config
-    set_configs(NodeList, Configs),
-    start_all_nodes(NodeList),
+    set_configs(NodeList, Configs, Vsn),
+    start_all_nodes(NodeList, Vsn),
 
     Nodes = {RiakNodes, CSNodes, StanchionNode},
     [ok = rt:wait_until_pingable(N) || N <- RiakNodes ++ CSNodes ++ [StanchionNode]],
@@ -392,16 +431,27 @@ deploy_nodes(NumNodes, InitialConfig) ->
 
     Nodes.
 
+node_id(Node) ->
+    NodeMap = rt_config:get(rt_cs_nodes),
+    orddict:fetch(Node, NodeMap).
+
 setup_admin_user(NumNodes, InitialConfig) ->
+    setup_admin_user(NumNodes, InitialConfig, current).
+
+setup_admin_user(NumNodes, InitialConfig, Vsn) when Vsn =:= current orelse Vsn =:= previous ->
     lager:info("Initial Config: ~p", [InitialConfig]),
     NodeConfig = [{current, InitialConfig} || _ <- lists:seq(1,NumNodes)],
     RiakNodes = [?DEV(N) || N <- lists:seq(1, NumNodes)],
     CSNodes = [?CSDEV(N) || N <- lists:seq(1, NumNodes)],
     StanchionNode = 'stanchion@127.0.0.1',
     NodeMap = orddict:from_list(lists:zip(RiakNodes, lists:seq(1, NumNodes))),
+    CSNodeMap = orddict:from_list(lists:zip(CSNodes, lists:seq(1, NumNodes))),
     rt_config:set(rt_nodes, NodeMap),
+    rt_config:set(rt_cs_nodes, CSNodeMap),
 
-    VersionMap = lists:zip(lists:seq(1, NumNodes), lists:duplicate(NumNodes, ee_current)),
+    {_RiakRoot, RiakVsn} = riak_root_and_vsn(Vsn, rt_config:get(build_type, oss)),
+    VersionMap = lists:zip(lists:seq(1, NumNodes), lists:duplicate(NumNodes, RiakVsn)),
+    lager:debug("setting rt_versions> ~p => ~p", [Vsn, VersionMap]),
     rt_config:set(rt_versions, VersionMap),
 
     NL0 = lists:zip(CSNodes, RiakNodes),
@@ -418,7 +468,7 @@ setup_admin_user(NumNodes, InitialConfig) ->
     %% Restart cs and stanchion nodes so admin user takes effect
     %% stop_cs_and_stanchion_nodes(NodeList),
 
-    set_admin_creds_in_configs(NodeList, Configs, AdminCreds),
+    set_admin_creds_in_configs(NodeList, Configs, AdminCreds, Vsn),
 
     UpdateFun = fun({Node, App}) ->
                         ok = rpc:call(Node, application, set_env,
@@ -446,95 +496,104 @@ setup_admin_user(NumNodes, InitialConfig) ->
     AdminCreds.
 
 
-start_cs_and_stanchion_nodes(NodeList) ->
+start_cs_and_stanchion_nodes(NodeList, Vsn) ->
     rt:pmap(fun({_CSNode, RiakNode, _Stanchion}) ->
                     N = rt_cs_dev:node_id(RiakNode),
-                    start_stanchion(),
-                    start_cs(N);
+                    start_stanchion(Vsn),
+                    start_cs(N, Vsn);
                ({_CSNode, RiakNode}) ->
                     N = rt_cs_dev:node_id(RiakNode),
-                    start_cs(N)
+                    start_cs(N, Vsn)
             end, NodeList).
 
-stop_cs_and_stanchion_nodes(NodeList) ->
+stop_cs_and_stanchion_nodes(NodeList, Vsn) ->
     rt:pmap(fun({CSNode, RiakNode, Stanchion}) ->
                     N = rt_cs_dev:node_id(RiakNode),
-                    stop_cs(N),
-                    stop_stanchion(),
+                    stop_cs(N, Vsn),
+                    stop_stanchion(Vsn),
                     rt:wait_until_unpingable(CSNode),
                     rt:wait_until_unpingable(Stanchion);
                ({CSNode, RiakNode}) ->
                     N = rt_cs_dev:node_id(RiakNode),
-                    stop_cs(N),
+                    stop_cs(N, Vsn),
                     rt:wait_until_unpingable(CSNode)
             end, NodeList).
 
-start_all_nodes(NodeList) ->
+start_all_nodes(NodeList, Vsn) ->
     rt:pmap(fun({_CSNode, RiakNode, _Stanchion}) ->
                     N = rt_cs_dev:node_id(RiakNode),
-                    rtdev:run_riak(N, rt_cs_dev:relpath(rt_cs_dev:node_version(N)), "start"),
+                    NodeVersion = rt_cs_dev:node_version(N),
+                    lager:debug("starting riak #~p > ~p => ~p",
+                                [N,  NodeVersion,
+                                 rt_cs_dev:relpath(NodeVersion)]),
+                    rtdev:run_riak(N, rt_cs_dev:relpath(NodeVersion), "start"),
                     rt:wait_for_service(RiakNode, riak_kv),
-                    spawn(fun() -> start_stanchion() end),
-                    spawn(fun() -> start_cs(N) end);
+                    spawn(fun() -> start_stanchion(Vsn) end),
+                    spawn(fun() -> start_cs(N, Vsn) end);
                ({_CSNode, RiakNode}) ->
                     N = rt_cs_dev:node_id(RiakNode),
                     rtdev:run_riak(N, rt_cs_dev:relpath(rt_cs_dev:node_version(N)), "start"),
                     rt:wait_for_service(RiakNode, riak_kv),
-                    spawn(fun() -> start_cs(N) end)
+                    spawn(fun() -> start_cs(N, Vsn) end)
             end, NodeList).
 
-stop_all_nodes(NodeList) ->
+stop_all_nodes(NodeList, Vsn) ->
     rt:pmap(fun({CSNode, RiakNode, Stanchion}) ->
                     N = rt_cs_dev:node_id(RiakNode),
-                    stop_cs(N),
-                    stop_stanchion(),
+                    stop_cs(N, Vsn),
+                    stop_stanchion(Vsn),
                     rtdev:run_riak(N, rt_cs_dev:relpath(rt_cs_dev:node_version(N)), "stop"),
                     rt:wait_until_unpingable(CSNode),
                     rt:wait_until_unpingable(Stanchion),
                     rt:wait_until_unpingable(RiakNode);
                ({CSNode, RiakNode}) ->
                     N = rt_cs_dev:node_id(RiakNode),
-                    stop_cs(N),
+                    stop_cs(N, Vsn),
                     rtdev:run_riak(N, rt_cs_dev:relpath(rt_cs_dev:node_version(N)), "stop"),
                     rt:wait_until_unpingable(CSNode),
                     rt:wait_until_unpingable(RiakNode)
             end, NodeList).
 
-set_configs(NodeList, Configs) ->
+get_rt_config(cs, current) -> rt_config:get(?CS_CURRENT);
+get_rt_config(cs, previous) -> rt_config:get(?CS_PREVIOUS);
+get_rt_config(stanchion, current) -> rt_config:get(?STANCHION_CURRENT);
+get_rt_config(stanchion, previous) -> rt_config:get(?STANCHION_PREVIOUS).
+
+set_configs(NodeList, Configs, Vsn) ->
     rt:pmap(fun({_, default}) ->
                     ok;
                ({{_CSNode, RiakNode, _Stanchion}, Config}) ->
                     N = rt_cs_dev:node_id(RiakNode),
                     rt_cs_dev:update_app_config(RiakNode, proplists:get_value(riak,
                                                                               Config)),
-                    update_cs_config(rt_config:get(?CS_CURRENT), N,
+                    update_cs_config(get_rt_config(cs, Vsn), N,
                                      proplists:get_value(cs, Config)),
-                    update_stanchion_config(rt_config:get(?STANCHION_CURRENT),
+                    update_stanchion_config(get_rt_config(stanchion, Vsn),
                                             proplists:get_value(stanchion, Config));
                ({{_CSNode, RiakNode}, Config}) ->
                     N = rt_cs_dev:node_id(RiakNode),
-                    rt_cs_dev:update_app_config(RiakNode, proplists:get_value(riak,
-                                                                              Config)),
-                    update_cs_config(rt_config:get(?CS_CURRENT), N,
+                    rt_cs_dev:update_app_config(RiakNode,
+                                                proplists:get_value(riak, Config)),
+                    update_cs_config(get_rt_config(cs, Vsn), N,
                                      proplists:get_value(cs, Config))
             end,
             lists:zip(NodeList, Configs)).
 
-set_admin_creds_in_configs(NodeList, Configs, AdminCreds) ->
+set_admin_creds_in_configs(NodeList, Configs, AdminCreds, Vsn) ->
     rt:pmap(fun({_, default}) ->
                     ok;
                ({{_CSNode, RiakNode, _Stanchion}, Config}) ->
                     N = rt_cs_dev:node_id(RiakNode),
-                    update_cs_config(rt_config:get(?CS_CURRENT),
+                    update_cs_config(get_rt_config(cs, Vsn),
                                      N,
                                      proplists:get_value(cs, Config),
                                      AdminCreds),
-                    update_stanchion_config(rt_config:get(?STANCHION_CURRENT),
+                    update_stanchion_config(get_rt_config(stanchion, Vsn),
                                             proplists:get_value(stanchion, Config),
                                             AdminCreds);
                ({{_CSNode, RiakNode}, Config}) ->
                     N = rt_cs_dev:node_id(RiakNode),
-                    update_cs_config(rt_config:get(?CS_CURRENT),
+                    update_cs_config(get_rt_config(cs, Vsn),
                                      N,
                                      proplists:get_value(cs, Config),
                                      AdminCreds)
@@ -548,18 +607,25 @@ reset_nodes(Project, Path) ->
     rtdev:run_git(Path, "reset HEAD --hard"),
     rtdev:run_git(Path, "clean -fd").
 
-start_cs(N) ->
-    Cmd = riakcscmd(rt_config:get(?CS_CURRENT), N, "start"),
+start_cs(N) -> start_cs(N, current).
+
+start_cs(N, Vsn) ->
+    NodePath = get_rt_config(cs, Vsn),
+    Cmd = riakcscmd(NodePath, N, "start"),
     lager:info("Running ~p", [Cmd]),
     os:cmd(Cmd).
 
-stop_cs(N) ->
-    Cmd = riakcscmd(rt_config:get(?CS_CURRENT), N, "stop"),
+stop_cs(N) -> stop_cs(N, current).
+
+stop_cs(N, Vsn) ->
+    Cmd = riakcscmd(get_rt_config(cs, Vsn), N, "stop"),
     lager:info("Running ~p", [Cmd]),
     os:cmd(Cmd).
 
-repair_gc_bucket(N, Options) ->
-    Prefix = rt_config:get(?CS_CURRENT),
+repair_gc_bucket(N, Options) -> repair_gc_bucket(N, Options, current).
+
+repair_gc_bucket(N, Options, Vsn) ->
+    Prefix = get_rt_config(cs, Vsn),
     RepairScriptWild = string:join([riakcs_libpath(Prefix, N), "riak_cs*",
                                     "priv/tools/repair_gc_bucket.erl"] , "/"),
     [RepairScript] = filelib:wildcard(RepairScriptWild),
@@ -568,40 +634,53 @@ repair_gc_bucket(N, Options) ->
     lager:info("Running ~p", [Cmd]),
     os:cmd(Cmd).
 
-switch_stanchion_cs(N, Host, Port) ->
+switch_stanchion_cs(N, Host, Port) -> switch_stanchion_cs(N, Host, Port, current).
+
+switch_stanchion_cs(N, Host, Port, Vsn) ->
     SubCmd = io_lib:format("switch ~s ~p", [Host, Port]),
-    Cmd = riakcs_switchcmd(rt_config:get(?CS_CURRENT), N, SubCmd),
+    Cmd = riakcs_switchcmd(get_rt_config(cs, Vsn), N, SubCmd),
     lager:info("Running ~p", [Cmd]),
     os:cmd(Cmd).
 
-show_stanchion_cs(N) ->
-    Cmd = riakcs_switchcmd(rt_config:get(?CS_CURRENT), N, "show"),
+show_stanchion_cs(N) -> show_stanchion_cs(N, current).
+
+show_stanchion_cs(N, Vsn) ->
+    Cmd = riakcs_switchcmd(get_rt_config(cs, Vsn), N, "show"),
     lager:info("Running ~p", [Cmd]),
     os:cmd(Cmd).
 
-start_stanchion() ->
-    Cmd = stanchioncmd(rt_config:get(?STANCHION_CURRENT), "start"),
+start_stanchion() -> start_stanchion(current).
+
+start_stanchion(Vsn) ->
+    Cmd = stanchioncmd(get_rt_config(stanchion, Vsn), "start"),
     lager:info("Running ~p", [Cmd]),
     os:cmd(Cmd).
 
-stop_stanchion() ->
-    Cmd = stanchioncmd(rt_config:get(?STANCHION_CURRENT), "stop"),
+stop_stanchion() -> stop_stanchion(current).
+
+stop_stanchion(Vsn) ->
+    Cmd = stanchioncmd(get_rt_config(stanchion, Vsn), "stop"),
     lager:info("Running ~p", [Cmd]),
     os:cmd(Cmd).
 
-flush_access(N) ->
-    Cmd = riakcs_accesscmd(rt_config:get(?CS_CURRENT), N, "flush"),
+flush_access(N) -> flush_access(N, current).
+
+flush_access(N, Vsn) ->
+    Cmd = riakcs_accesscmd(get_rt_config(cs, Vsn), N, "flush"),
     lager:info("Running ~p", [Cmd]),
     os:cmd(Cmd).
 
-gc(N, SubCmd) ->
-    Cmd = riakcs_gccmd(rt_config:get(?CS_CURRENT), N, SubCmd),
+gc(N, SubCmd) -> gc(N, SubCmd, current).
+
+gc(N, SubCmd, Vsn) ->
+    Cmd = riakcs_gccmd(get_rt_config(cs, Vsn), N, SubCmd),
     lager:info("Running ~p", [Cmd]),
     os:cmd(Cmd).
-    
 
-calculate_storage(N) ->
-    Cmd = riakcs_storagecmd(rt_config:get(?CS_CURRENT), N, "batch -r"),
+calculate_storage(N) -> calculate_storage(N, current).
+
+calculate_storage(N, Vsn) ->
+    Cmd = riakcs_storagecmd(get_rt_config(cs, Vsn), N, "batch -r"),
     lager:info("Running ~p", [Cmd]),
     os:cmd(Cmd).
 
@@ -635,6 +714,7 @@ update_stanchion_config(Prefix, Config) ->
     update_app_config(stanchion_etcpath(Prefix) ++ "/app.config", Config).
 
 update_app_config(ConfigFile,  Config) ->
+    lager:debug("updating ~s", [ConfigFile]),
     {ok, [BaseConfig]} = file:consult(ConfigFile),
     MergeA = orddict:from_list(Config),
     MergeB = orddict:from_list(BaseConfig),
@@ -649,20 +729,6 @@ update_app_config(ConfigFile,  Config) ->
     NewConfigOut = io_lib:format("~p.", [NewConfig]),
     ?assertEqual(ok, file:write_file(ConfigFile, NewConfigOut)),
     ok.
-
-
-deploy_cs(Config, N) ->
-    update_cs_config(rt_config:get(?CS_CURRENT), N, Config),
-    start_cs(N),
-    lager:info("Riak CS started").
-
-%% this differs from rt_cs_dev:deploy_xxx in that it only starts one node
-deploy_stanchion(Config) ->
-    %% Set initial config
-    update_stanchion_config(rt_config:get(?STANCHION_CURRENT), Config),
-
-    start_stanchion(),
-    lager:info("Stanchion started").
 
 create_user(Port, EmailAddr, Name) ->
     lager:debug("Trying to create user ~p", [EmailAddr]),
@@ -795,3 +861,52 @@ error_child_element_verifier(Code, Message, Resource) ->
        (_) ->
             true
     end.
+
+%% @doc TODO: FIXME: XXX: once we move to 2.0.x series, we stop using
+%% this function and go back to rt_cs_dev:upgrade/2. This is just
+%% copy&paste and modify.
+%% This also resets config and moves to default CS riak config.
+upgrade_20(Node, NewVersion) ->
+    N = rt_cs_dev:node_id(Node),
+    Version = rt_cs_dev:node_version(N),
+    lager:info("Upgrading ~p : ~p -> ~p", [Node, Version, NewVersion]),
+    catch rt_cs_dev:stop(Node),
+    rt:wait_until_unpingable(Node),
+    OldPath = rt_cs_dev:relpath(Version),
+    NewPath = rt_cs_dev:relpath(NewVersion),
+
+    Commands = [
+                io_lib:format("cp -v -p -P -R \"~s/dev/dev~b/data\" \"~s/dev/dev~b\"",
+                              [OldPath, N, NewPath, N]),
+                io_lib:format("rm -rf ~s/dev/dev~b/data/*",
+                              [OldPath, N]),
+                io_lib:format("cp \"~s/dev/dev~b/etc/app.config\" \"~s/dev/dev~b/etc/advanced.config\"",
+                              [OldPath, N, NewPath, N])
+               ],
+    [ begin
+        lager:info("Running: ~s", [Cmd]),
+        os:cmd(Cmd)
+    end || Cmd <- Commands],
+    VersionMap = orddict:store(N, NewVersion, rt_config:get(rt_versions)),
+    rt_config:set(rt_versions, VersionMap),
+    rt_cs_dev:start(Node),
+    rt:wait_until_pingable(Node),
+    ok.
+
+%% @doc from previous to current, assuming CS is already stopped
+upgrade_cs(N, Config, AdminCreds) ->
+    upgrade_cs(N, Config, AdminCreds, current).
+
+upgrade_cs(N, Config, AdminCreds, Vsn) ->
+    update_cs_config(get_rt_config(cs, Vsn),
+                     N,
+                     proplists:get_value(cs, Config),
+                     AdminCreds),
+    ok.
+
+upgrade_stanchion(Config, AdminCreds, Vsn) ->
+    update_stanchion_config(get_rt_config(stanchion, Vsn),
+                            proplists:get_value(stanchion, Config),
+                            AdminCreds).
+
+%% maybe_stop_stanchion(1) ->
