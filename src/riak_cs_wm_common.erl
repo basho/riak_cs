@@ -59,6 +59,8 @@
          default_anon_ok/0,
          default_produce_body/2]).
 
+-export([subresources/0, wm_stats/0, reset_wm_stats/0]).
+
 -include("riak_cs.hrl").
 -include("oos_api.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
@@ -443,12 +445,43 @@ exports_fun(Exports) ->
     end.
 
 
-resource_call(Mod, Fun, Args, true) ->
+resource_call(M, F, A, E) when is_atom(F) ->
+    {Time, Res} = timer:tc(fun() -> resource_call_(M,F,A,E) end),
+    folsom_metrics:notify(F, Time),
+    Res;                                  
+resource_call(M, F, A, E) ->
+    resource_call_(M, F, A, E).
+
+resource_call_(Mod, Fun, Args, true) ->
     erlang:apply(Mod, Fun, Args);
-resource_call(_Mod, Fun, Args, false) ->
+resource_call_(_Mod, Fun, Args, false) ->
     erlang:apply(?MODULE, default(Fun), Args);
-resource_call(Mod, Fun, Args, ExportsFun) ->
+resource_call_(Mod, Fun, Args, ExportsFun) ->
     resource_call(Mod, Fun, Args, ExportsFun(Fun)).
+
+subresources() -> 
+   [authorize, finish_request, init, malformed_request,
+    valid_entity_length, validate_content_checksum, anon_ok,
+    allowed_methods, content_types_accepted, content_types_provided,
+    generate_etag, last_modified, delete_resource, to_xml, to_json,
+    post_is_create, create_path, process_post, resp_body,
+    multiple_choices, accept_body, produce_body].
+
+wm_stats() ->
+    Stats0 = [{Resource, folsom_metrics:get_histogram_statistics(Resource)}
+              || Resource <- subresources()],
+    Stats = lists:map(fun({Resource, Stat}) ->
+                              Lat = proplists:get_value(arithmetic_mean, Stat),
+                              {Lat, Resource, Stat}
+                      end, Stats0),
+    [lager:info("~s: ~w", [Resource, Stat])
+     || {_, Resource, Stat} <- lists:sort(Stats)].
+    
+reset_wm_stats() ->
+    [folsom_metrics:delete_metric(Resource) ||
+        Resource <- subresources() ],
+    [folsom_metrics:new_histogram(Resource) ||
+        Resource <- subresources() ].
 
 %% ===================================================================
 %% Helper Functions Copied from riak_cs_wm_utils that should be removed from that module

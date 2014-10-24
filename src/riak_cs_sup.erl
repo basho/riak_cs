@@ -187,6 +187,8 @@ web_spec(Name, Config) ->
 
 -spec object_web_config(proplist()) -> proplist().
 object_web_config(Options) ->
+    [folsom_metrics:new_histogram(Resource) ||
+        Resource <- riak_cs_wm_common:subresources() ],
     [{dispatch, riak_cs_web:object_api_dispatch_table()},
      {name, object_web},
      {dispatch_group, object_web},
