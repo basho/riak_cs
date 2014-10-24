@@ -326,7 +326,7 @@ handle_normal_put(RD, Ctx) ->
                  putctype=ContentType,
                  size=Size,
                  get_fsm_pid=GetFsmPid} = LocalCtx,
-
+    Start = os:timestamp(),
     BFile_str = [Bucket, $,, Key],
     UserName = riak_cs_wm_utils:extract_name(User),
     riak_cs_dtrace:dt_object_entry(?MODULE, <<"object_put">>,
@@ -334,11 +334,19 @@ handle_normal_put(RD, Ctx) ->
     riak_cs_get_fsm:stop(GetFsmPid),
     Metadata = riak_cs_wm_utils:extract_user_metadata(RD),
     BlockSize = riak_cs_lfs_utils:block_size(),
-
     Args = [{Bucket, list_to_binary(Key), Size, list_to_binary(ContentType),
              Metadata, BlockSize, ACL, timer:seconds(60), self(), RcPid}],
+    Mid0 = os:timestamp(),
     {ok, Pid} = riak_cs_put_fsm_sup:start_put_fsm(node(), Args),
-    accept_streambody(RD, Ctx, Pid, wrq:stream_req_body(RD, riak_cs_lfs_utils:block_size())).
+    Mid1 = os:timestamp(),
+    R = accept_streambody(RD, Ctx, Pid, wrq:stream_req_body(RD, riak_cs_lfs_utils:block_size())),
+    End = os:timestamp(),
+    Diff = timer:now_diff(End, Start),
+    Diff0 = timer:now_diff(Mid1, Mid0),
+    Diff1 = timer:now_diff(End, Mid1),
+    lager:debug("handle_normal_put: ~p + ~p / ~p ms",
+                [Diff0 / 1000.0, Diff1 / 1000.0, Diff / 1000.0]),
+    R.
 
 %% @doc the head is PUT copy path
 -spec handle_copy_put(#wm_reqdata{}, #context{}, binary(), binary()) ->
