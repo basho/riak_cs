@@ -262,6 +262,7 @@ cs_config(UserExtra, OtherApps) ->
            {block_get_max_retries, 1},
            {proxy_get, enabled},
            {anonymous_user_creation, true},
+           {manifest_siblings_bp_threashold, infinity},
            {riak_pb_port, 10017},
            {stanchion_port, 9095},
            {cs_version, 010300}
