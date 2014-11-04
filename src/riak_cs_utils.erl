@@ -31,9 +31,6 @@
          delete_object/3,
          encode_term/1,
          get_keys_and_manifests/3,
-         has_tombstone/1,
-         map_keys_and_manifests/3,
-         maybe_process_resolved/3,
          sha_mac/2,
          sha/1,
          md5/1,
@@ -193,9 +190,9 @@ active_manifests(ManifestBucket, Prefix, RcPid) ->
                     %% instead of exclusive
                     {ManifestBucket, [[<<"starts_with">>, Prefix]]}
             end,
-    Query = [{map, {modfun, riak_cs_utils, map_keys_and_manifests},
+    Query = [{map, {modfun, riak_cs_mapred, map_keys_and_manifests},
               undefined, false},
-             {reduce, {modfun, riak_cs_utils, reduce_keys_and_manifests},
+             {reduce, {modfun, riak_cs_mapred, reduce_keys_and_manifests},
               undefined, true}],
     {ok, ManifestPbc} = riak_cs_riak_client:manifest_pbc(RcPid),
     {ok, ReqId} = riakc_pb_socket:mapred_stream(ManifestPbc, Input, Query, self()),
@@ -221,50 +218,6 @@ receive_keys_and_manifests(ReqId, Acc) ->
             %% overall timeout?
             {error, timeout}
     end.
-
-%% MapReduce function, runs on the Riak nodes, should therefore use
-%% riak_object, not riakc_obj.
-map_keys_and_manifests({error, notfound}, _, _) ->
-    [];
-map_keys_and_manifests(Object, _, _) ->
-    Handler = fun(Resolved) ->
-                      case riak_cs_manifest_utils:active_manifest(Resolved) of
-                          {ok, Manifest} ->
-                              [{riak_object:key(Object), {ok, Manifest}}];
-                          _ ->
-                              []
-                      end
-              end,
-    maybe_process_resolved(Object, Handler, []).
-
-maybe_process_resolved(Object, ResolvedManifestsHandler, ErrorReturn) ->
-    try
-        AllManifests = [ binary_to_term(V)
-                         || {_, V} = Content <- riak_object:get_contents(Object),
-                            not has_tombstone(Content) ],
-        Upgraded = riak_cs_manifest_utils:upgrade_wrapped_manifests(AllManifests),
-        Resolved = riak_cs_manifest_resolution:resolve(Upgraded),
-        ResolvedManifestsHandler(Resolved)
-    catch Type:Reason ->
-            StackTrace = erlang:get_stacktrace(),
-            _ = lager:log(error,
-                          self(),
-                          "Riak CS object mapreduce failed for ~p:~p with reason ~p:~p"
-                          "at ~p",
-                          [riak_object:bucket(Object),
-                           riak_object:key(Object),
-                           Type,
-                           Reason,
-                           StackTrace]),
-            ErrorReturn
-    end.
-
-%% Pipe all the bucket listing results through a passthrough reduce
-%% phase.  This is just a temporary kludge until the sink backpressure
-%% work is done.
-reduce_keys_and_manifests(Acc, _) ->
-    Acc.
-
 
 -ifdef(new_hash).
 -spec sha_mac(iolist() | binary(), iolist() | binary()) -> binary().
@@ -333,13 +286,6 @@ handle_active_manifests({ok, _Active}=ActiveReply) ->
     ActiveReply;
 handle_active_manifests({error, no_active_manifest}) ->
     {error, notfound}.
-
-%% @doc Determine if a set of contents of a riak object has a tombstone.
--spec has_tombstone({dict(), binary()}) -> boolean().
-has_tombstone({_, <<>>}) ->
-    true;
-has_tombstone({MD, _V}) ->
-    dict:is_key(?MD_DELETED, MD) =:= true.
 
 %% @doc Pretty-print a JSON string ... from riak_core's json_pp.erl
 json_pp_print(Str) when is_list(Str) ->

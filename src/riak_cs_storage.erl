@@ -88,9 +88,9 @@ maybe_sum_bucket(User, ?RCS_BUCKET{name=Name} = _Bucket) when is_binary(Name) ->
 -spec sum_bucket(binary()) -> {struct, [{binary(), integer()}]}
                                    | {error, term()}.
 sum_bucket(BucketName) ->
-    Query = [{map, {modfun, riak_cs_storage, object_size_map},
+    Query = [{map, {modfun, riak_cs_mapred, object_size_map},
               [do_prereduce], false},
-             {reduce, {modfun, riak_cs_storage, object_size_reduce},
+             {reduce, {modfun, riak_cs_mapred, object_size_reduce},
               none, true}],
     %% We cannot reuse RcPid because different bucket may use different bag.
     %% This is why each sum_bucket/1 call retrieves new client on every bucket.
@@ -110,25 +110,6 @@ sum_bucket(BucketName) ->
     after
         riak_cs_riak_client:checkin(RcPid)
     end.
-
-object_size_map({error, notfound}, _, _) ->
-    [];
-object_size_map(Object, _, _) ->
-    Handler = fun(Resolved) -> object_size(Resolved) end,
-    riak_cs_utils:maybe_process_resolved(Object, Handler, []).
-
-object_size(Resolved) ->
-    {MPparts, MPbytes} = count_multipart_parts(Resolved),
-    case riak_cs_manifest_utils:active_manifest(Resolved) of
-        {ok, ?MANIFEST{content_length=Length}} ->
-            [{1 + MPparts, Length + MPbytes}];
-        _ ->
-            [{MPparts, MPbytes}]
-    end.
-
-object_size_reduce(Sizes, _) ->
-    {Objects,Bytes} = lists:unzip(Sizes),
-    [{lists:sum(Objects),lists:sum(Bytes)}].
 
 %% @doc Retreive the number of seconds that should elapse between
 %% archivings of storage stats.  This setting is controlled by the
@@ -151,37 +132,6 @@ make_object(User, BucketList, SampleStart, SampleEnd) ->
 get_usage(Riak, User, Start, End) ->
     {ok, Period} = archive_period(),
     rts:find_samples(Riak, ?STORAGE_BUCKET, User, Start, End, Period).
-
--spec count_multipart_parts([{cs_uuid(), lfs_manifest()}]) ->
-                                   {non_neg_integer(), non_neg_integer()}.
-count_multipart_parts(Resolved) ->
-    lists:foldl(fun count_multipart_parts/2, {0, 0}, Resolved).
-
--spec count_multipart_parts({cs_uuid(), lfs_manifest()},
-                            {non_neg_integer(), non_neg_integer()}) ->
-                                   {non_neg_integer(), non_neg_integer()}.
-count_multipart_parts({_UUID, ?MANIFEST{props=Props, state=writing} = M},
-                      {MPparts, MPbytes} = Acc)
-  when is_list(Props) ->
-    case proplists:get_value(multipart, Props) of
-        ?MULTIPART_MANIFEST{parts=Ps} = _  ->
-            {MPparts + length(Ps),
-             MPbytes + lists:sum([P?PART_MANIFEST.content_length ||
-                                     P <- Ps])};
-        undefined ->
-            %% Maybe not a multipart
-            Acc;
-        Other ->
-            %% strange thing happened
-            _ = lager:log(warning, self(),
-                          "strange writing multipart manifest detected at ~p: ~p",
-                          [M?MANIFEST.bkey, Other]),
-            Acc
-    end;
-count_multipart_parts(_, Acc) ->
-    %% Other state than writing, won't be counted
-    %% active manifests will be counted later
-    Acc.
 
 -ifdef(TEST).
 

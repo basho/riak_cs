@@ -31,6 +31,7 @@
 
 -include("riak_cs.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
+-include_lib("riak_cs_subway/include/riak_cs_manifests.hrl").
 
 init(Ctx) ->
     {ok, Ctx#context{local_context=#key_context{}}}.
