@@ -1,8 +1,8 @@
 HashMacroAdded =
-    case erlang:system_info(otp_release) < "R16" of
-        true ->
+    case erlang:system_info(otp_release) of
+        [$R|_] = Vsn when Vsn < "R16" ->
             CONFIG;
-        false ->
+        _ ->
             HashDefine = [{d,new_hash}],
             case lists:keysearch(erl_opts, 1, CONFIG) of
                 {value, {erl_opts, Opts}} ->

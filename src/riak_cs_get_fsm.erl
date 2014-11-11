@@ -78,7 +78,7 @@
                 got_blocks=orddict:new() :: orddict:orddict(),
                 manifest :: term(),
                 blocks_order :: [block_name()],
-                blocks_intransit=queue:new() :: queue(),
+                blocks_intransit=queue:new() :: queue:queue({binary(), non_neg_integer()}),
                 test=false :: boolean(),
                 total_blocks :: pos_integer(),
                 num_sent=0 :: non_neg_integer(),

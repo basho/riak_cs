@@ -37,8 +37,8 @@
 -type subresources() :: [subresource()].
 
 %% @doc Function to rewrite headers prior to processing by webmachine.
--spec rewrite(atom(), atom(), {integer(), integer()}, gb_tree(), string()) ->
-                     {gb_tree(), string()}.
+-spec rewrite(atom(), atom(), {integer(), integer()}, gb_trees:tree(), string()) ->
+                     {gb_trees:tree(), string()}.
 rewrite(Method, _Scheme, _Vsn, Headers, Url) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"rewrite">>),
     Host = mochiweb_headers:get_value("host", Headers),

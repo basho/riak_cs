@@ -53,8 +53,8 @@
          resolve/1
         ]).
 
--type twop_set() :: {set(), set()}.
--export_type([twop_set/0]).
+-type twop_set(T) :: {sets:set(T), sets:set(T)}.
+-export_type([twop_set/1]).
 
 %%%===================================================================
 %%% API
