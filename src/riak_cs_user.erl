@@ -134,7 +134,8 @@ maybe_cached_get_user(KeyId, RcPid) ->
     case riak_cs_config:user_cache_enabled() of
         true ->
             BinKey = list_to_binary(KeyId),
-            riak_cs_user_ets_cache:get(BinKey);
+            %% riak_cs_user_ets_cache:get(BinKey);
+            riak_cs_record_cache:get('moss.users.cache', BinKey);
         _ ->
             get_user(KeyId, RcPid)
     end.

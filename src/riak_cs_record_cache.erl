@@ -6,12 +6,12 @@
 %%% @end
 %%% Created :  8 Aug 2014 by UENISHI Kota <kota@basho.com>
 %%%-------------------------------------------------------------------
--module(riak_cs_user_ets_cache).
+-module(riak_cs_record_cache).
 
 -behaviour(gen_server).
 
 %% API
--export([start_link/0, get/1]).
+-export([start_link/2, get/2]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -22,30 +22,35 @@
 -define(TTL, 4096000). %% microseconds
 -define(COMPACTION_INTERVAL, 1024000). %% milliseconds
 
--record(state, {}).
+-type refresher_fun() :: fun((Key::binary(), riak_client()) -> {ok, Data::term()} | {error, term()}).
+
+-record(state, {
+          name :: atom(),
+          refresher_fun = fun(_, _) -> {error, none} end :: refresher_fun()
+         }).
 
 %%%===================================================================
 %%% API
 %%%===================================================================
 
 %% @doc Starts the server
--spec start_link() -> {ok, pid()} | ignore | {error, Error::term()}.
-start_link() ->
-    gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
+-spec start_link(atom(), refresher_fun()) -> {ok, pid()} | ignore | {error, Error::term()}.
+start_link(Name, RefresherFun) ->
+    gen_server:start_link({local, Name}, ?MODULE, [Name, RefresherFun], []).
 
 %% @doc opaque proxy
--spec get(User::binary()) -> {ok,rcs_user()}.
-get(AccessKey) ->
-    case ets:lookup(?MODULE, AccessKey) of
+-spec get(atom(), User::binary()) -> {ok,rcs_user()}.
+get(Name, AccessKey) ->
+    case ets:lookup(Name, AccessKey) of
         [] ->
             Now = erlang:now(),
-            gen_server:call(?MODULE, {get, AccessKey, Now});
+            gen_server:call(Name, {get, AccessKey, Now});
         [{AccessKey, RcsUser, TimeCached}] ->
             Now = erlang:now(),
             case timer:now_diff(Now, TimeCached) > ?TTL of
                 true -> %% cache expired
                     lager:info("cache expired for ~p", [AccessKey]),
-                    gen_server:call(?MODULE, {get, AccessKey, Now});
+                    gen_server:call(Name, {get, AccessKey, Now});
                 false -> %% cache hit
                     {ok,RcsUser}
             end
@@ -61,22 +66,22 @@ get(AccessKey) ->
                       {ok, #state{}, non_neg_integer()} |
                       ignore |
                       {stop, Reason::atom()}.
-init([]) ->
-    ?MODULE = ets:new(?MODULE, [public,named_table,set,{read_concurrency,true}]),
+init([Name, RefresherFun]) ->
+    Name = ets:new(Name, [public,named_table,set,{read_concurrency,true}]),
     erlang:send_after(?COMPACTION_INTERVAL, self(), compact),
-    {ok, #state{}}.
+    {ok, #state{name=Name, refresher_fun=RefresherFun}}.
 
 %% @private
 %% @doc Handling call messages
-handle_call({get,AccessKey,Now}, _From, State) ->
-    case ets:lookup(?MODULE, AccessKey) of
+handle_call({get,AccessKey,Now}, _From, State = #state{name=Name, refresher_fun=RefresherFun}) ->
+    case ets:lookup(Name, AccessKey) of
         [] ->
-            Reply = refresh(AccessKey),
+            Reply = refresh(AccessKey, Name, RefresherFun),
             {reply,Reply,State};
         [{AccessKey, RcsUser, TimeCached}] ->
             case timer:now_diff(Now, TimeCached) > ?TTL of
                 true -> %% cache expired
-                    Reply = refresh(AccessKey),
+                    Reply = refresh(AccessKey, Name, RefresherFun),
                     {reply,Reply,State};
                 false -> %% cache hit
                     {reply,{ok,RcsUser},State}
@@ -106,8 +111,9 @@ handle_cast(_Msg, State) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_info(compact, State) ->
-    ets:delete_all_objects(?MODULE),
+handle_info(compact, State = #state{name=Name}) ->
+    ets:delete_all_objects(Name),
+    lager:debug("~s compaction at ~p cache", [?MODULE, Name]),
     erlang:send_after(?COMPACTION_INTERVAL, self(), compact),
     {noreply, State}.
 
@@ -122,8 +128,8 @@ handle_info(compact, State) ->
 %% @spec terminate(Reason, State) -> void()
 %% @end
 %%--------------------------------------------------------------------
-terminate(_Reason, _State) ->
-    ets:delete(?MODULE),
+terminate(_Reason, #state{name=Name} = _State) ->
+    ets:delete(Name),
     ok.
 
 %%--------------------------------------------------------------------
@@ -141,16 +147,17 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
-refresh(AccessKey) when is_binary(AccessKey) ->
+refresh(Key, Name, RefresherFun) when is_binary(Key) ->
     {ok, RcPid} = riak_cs_utils:riak_connection(request_pool),
     Now = erlang:now(),
     try
-        Reply = riak_cs_user:get_user(AccessKey, RcPid),
+        %% Reply = riak_cs_user:get_user(AccessKey, RcPid),
+        Reply = RefresherFun(Key, RcPid),
         case Reply of
-            {ok, {_User, _Obj} = Data} ->
+            {ok, Data} ->
                 %% TODO: storing User only might be sufficient and space saving
-                true = ets:insert(?MODULE, {AccessKey, Data, Now}),
-                lager:info("cache updated for ~p", [AccessKey]);
+                true = ets:insert(Name, {Key, Data, Now}),
+                lager:info("cache updated for ~p at ~p", [Key, Name]);
             _ ->
                 false
         end,

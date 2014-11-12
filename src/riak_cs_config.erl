@@ -48,8 +48,9 @@
          gc_key_suffix_max/0,
          set_gc_key_suffix_max/1,
          user_buckets_prune_time/0,
-         user_cache_enabled/0,
          set_user_buckets_prune_time/1,
+         user_cache_enabled/0,
+         bucket_cache_enabled/0,
          riak_host_port/0,
          connect_timeout/0,
          queue_if_disconnected/0,
@@ -290,6 +291,9 @@ set_user_buckets_prune_time(_PruneTime) ->
 
 user_cache_enabled() ->
     get_env(riak_cs, user_cache_enabled, false).
+
+bucket_cache_enabled() ->
+    get_env(riak_cs, bucket_cache_enabled, false).
 
 %% manifest_cache_enabled() ->
 %%     get_env(riak_cs, manifest_cache_enabled, false).
