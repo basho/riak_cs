@@ -2,7 +2,7 @@
 %%% @author UENISHI Kota <kota@basho.com>
 %%% @copyright (C) 2014, UENISHI Kota
 %%% @doc
-%%%
+%%%  We can adopt much smarter cache design, but so far this is it.
 %%% @end
 %%% Created :  8 Aug 2014 by UENISHI Kota <kota@basho.com>
 %%%-------------------------------------------------------------------
@@ -142,34 +142,19 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 
 refresh(AccessKey) when is_binary(AccessKey) ->
-    {ok,Pid} = riakc_pb_socket:start_link(localhost,8087),
+    {ok, RcPid} = riak_cs_utils:riak_connection(request_pool),
     Now = erlang:now(),
-    {ok,Obj} = riakc_pb_socket:get(Pid,?USER_BUCKET,AccessKey),
-    KeepDeletedBuckets = false,
-    Reply = case riakc_obj:value_count(Obj) of
-                1 ->
-                    Value = binary_to_term(riakc_obj:get_value(Obj)),
-                    User = riak_cs_user:update_user_record(Value),
-                    Buckets = riak_cs_bucket:resolve_buckets([Value], [], KeepDeletedBuckets),
-                    {ok,{User?RCS_USER{buckets=Buckets}, Obj}};
-                0 ->
-                    {error, no_value};
-                _ ->
-                    Values = [binary_to_term(Value) ||
-                                 Value <- riakc_obj:get_values(Obj),
-                                 Value /= <<>>  % tombstone
-                             ],
-                    User = riak_cs_user:update_user_record(hd(Values)),
-                    Buckets = riak_cs_bucket:resolve_buckets(Values, [], KeepDeletedBuckets),
-                    {ok, {User?RCS_USER{buckets=Buckets}, Obj}}
-            end,
-
-    ok = riakc_pb_socket:stop(Pid),
-    case Reply of
-        {ok, Data} ->
-            true = ets:insert(?MODULE, {AccessKey, Data, Now}),
-            lager:info("cache updated for ~p", [AccessKey]);
-        _ ->
-            false
-    end,
-    Reply.
+    try
+        Reply = riak_cs_user:get_user(AccessKey, RcPid),
+        case Reply of
+            {ok, {_User, _Obj} = Data} ->
+                %% TODO: storing User only might be sufficient and space saving
+                true = ets:insert(?MODULE, {AccessKey, Data, Now}),
+                lager:info("cache updated for ~p", [AccessKey]);
+            _ ->
+                false
+        end,
+        Reply
+    after
+            ok = riak_cs_utils:close_riak_connection(request_pool, RcPid)
+    end.

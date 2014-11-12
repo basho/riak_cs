@@ -66,7 +66,7 @@ authorize_on_src(RcPid, SrcManifest, RD,
 
     {UserKey, _} = AuthMod:identify(RD, Ctx),
     {User, UserObj} =
-        case riak_cs_user:get_user(UserKey, RcPid) of
+        case riak_cs_user:maybe_cached_get_user(UserKey, RcPid) of
             {ok, {User0, UserObj0}} ->
                 {User0, UserObj0};
             {error, no_user_key} ->

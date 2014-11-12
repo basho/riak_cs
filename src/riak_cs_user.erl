@@ -28,6 +28,7 @@
          create_user/4,
          display_name/1,
          is_admin/1,
+         maybe_cached_get_user/2,
          get_user/2,
          get_user_by_index/3,
          to_3tuple/1,
@@ -127,37 +128,50 @@ update_user(User, UserObj, RcPid) ->
             Error
     end.
 
+maybe_cached_get_user(undefined, _RcPid) ->
+    {error, no_user_key};
+maybe_cached_get_user(KeyId, RcPid) ->
+    case riak_cs_config:user_cache_enabled() of
+        true ->
+            BinKey = list_to_binary(KeyId),
+            riak_cs_user_ets_cache:get(BinKey);
+        _ ->
+            get_user(KeyId, RcPid)
+    end.
+
 %% @doc Retrieve a Riak CS user's information based on their id string.
 -spec get_user('undefined' | list(), riak_client()) -> {ok, {rcs_user(), riakc_obj:riakc_obj()}} | {error, term()}.
 get_user(undefined, _RcPid) ->
     {error, no_user_key};
-get_user(KeyId, _RcPid) ->
+get_user(BinKey, RcPid) when is_binary(BinKey) ->
     %% Check for and resolve siblings to get a
     %% coherent view of the bucket ownership.
+    case riak_cs_riak_client:get_user(RcPid, BinKey) of
+        {ok, {Obj, KeepDeletedBuckets}} ->
+            case riakc_obj:value_count(Obj) of
+                1 ->
+                    Value = binary_to_term(riakc_obj:get_value(Obj)),
+                    User = update_user_record(Value),
+                    Buckets = riak_cs_bucket:resolve_buckets([Value], [], KeepDeletedBuckets),
+                    {ok, {User?RCS_USER{buckets=Buckets}, Obj}};
+                0 ->
+                    {error, no_value};
+                _ ->
+                    Values = [binary_to_term(Value) ||
+                                 Value <- riakc_obj:get_values(Obj),
+                                 Value /= <<>>  % tombstone
+                             ],
+                    User = update_user_record(hd(Values)),
+                    Buckets = riak_cs_bucket:resolve_buckets(Values, [], KeepDeletedBuckets),
+                    {ok, {User?RCS_USER{buckets=Buckets}, Obj}}
+            end;
+        Error ->
+            Error
+    end;
+get_user(KeyId, RcPid) ->
     BinKey = list_to_binary(KeyId),
-    riak_cs_user_ets_cache:get(BinKey).
-    %% case riak_cs_riak_client:get_user(RcPid, BinKey) of
-    %%     {ok, {Obj, KeepDeletedBuckets}} ->
-    %%         case riakc_obj:value_count(Obj) of
-    %%             1 ->
-    %%                 Value = binary_to_term(riakc_obj:get_value(Obj)),
-    %%                 User = update_user_record(Value),
-    %%                 Buckets = riak_cs_bucket:resolve_buckets([Value], [], KeepDeletedBuckets),
-    %%                 {ok, {User?RCS_USER{buckets=Buckets}, Obj}};
-    %%             0 ->
-    %%                 {error, no_value};
-    %%             _ ->
-    %%                 Values = [binary_to_term(Value) ||
-    %%                              Value <- riakc_obj:get_values(Obj),
-    %%                              Value /= <<>>  % tombstone
-    %%                          ],
-    %%                 User = update_user_record(hd(Values)),
-    %%                 Buckets = riak_cs_bucket:resolve_buckets(Values, [], KeepDeletedBuckets),
-    %%                 {ok, {User?RCS_USER{buckets=Buckets}, Obj}}
-    %%         end;
-    %%     Error ->
-    %%         Error
-    %% end.
+    get_user(BinKey, RcPid).
+
 
 %% @doc Retrieve a Riak CS user's information based on their
 %% canonical id string or email.
