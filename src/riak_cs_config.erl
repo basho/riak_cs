@@ -54,7 +54,8 @@
          queue_if_disconnected/0,
          auto_reconnect/0,
          is_multibag_enabled/0,
-         max_buckets_per_user/0
+         max_buckets_per_user/0,
+         read_before_last_manifest_write/0
         ]).
 
 %% OpenStack config
@@ -335,6 +336,15 @@ is_multibag_enabled() ->
 -spec max_buckets_per_user() -> non_neg_integer() | unlimited.
 max_buckets_per_user() ->
     get_env(riak_cs, max_buckets_per_user, ?DEFAULT_MAX_BUCKETS_PER_USER).
+
+%% @doc This options is useful for use case involving high churn and
+%% concurrency on a fixed set of keys and when not using a Riak
+%% version >= 2.0.0 with DVVs enabled. It helps to avoid sibling
+%% explosion in such use cases that can debilitate a system.
+-spec read_before_last_manifest_write() -> boolean().
+read_before_last_manifest_write() ->
+    get_env(riak_cs, read_before_last_manifest_write, false).
+
 
 %% ===================================================================
 %% S3 config options

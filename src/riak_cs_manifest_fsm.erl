@@ -231,10 +231,19 @@ waiting_update_command({update_manifests_with_confirmation, WrappedManifests}, _
                                                          key=Key,
                                                          riak_object=PreviousRiakObject,
                                                          manifests=PreviousManifests}) ->
-    Reply = update_from_previous_read(RcPid, PreviousRiakObject,
-                                      Bucket, Key,
-                                      PreviousManifests, WrappedManifests),
-
+    Reply =
+        case riak_cs_config:read_before_last_manifest_write() of
+            true ->
+                {R, _, _} = get_and_update(RcPid, WrappedManifests, Bucket, Key),
+                R;
+            false ->
+                update_from_previous_read(RcPid,
+                                          PreviousRiakObject,
+                                          Bucket,
+                                          Key,
+                                          PreviousManifests,
+                                          WrappedManifests)
+        end,
     {reply, Reply, waiting_update_command, State#state{riak_object=undefined,
                                                        manifests=undefined}}.
 handle_event(_Event, StateName, State) ->
