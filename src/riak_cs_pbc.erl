@@ -22,20 +22,20 @@
 
 -module(riak_cs_pbc).
 
--export([get_object/3,
+-export([get_object/4,
          put_object/5,
-         put/2,
          put/3,
+         put/4,
          put_with_no_meta/2,
          put_with_no_meta/3,
-         list_keys/2,
+         list_keys/3,
          check_connection_status/2]).
 
 %% @doc Get an object from Riak
--spec get_object(pid(), binary(), binary()) ->
+-spec get_object(pid(), binary(), binary(), proplists:proplist()|timeout()) ->
                         {ok, riakc_obj:riakc_obj()} | {error, term()}.
-get_object(PbcPid, BucketName, Key) ->
-    riakc_pb_socket:get(PbcPid, BucketName, Key).
+get_object(PbcPid, BucketName, Key, Opt) ->
+    riakc_pb_socket:get(PbcPid, BucketName, Key, Opt).
 
 
 %% @doc Store an object in Riak
@@ -50,11 +50,11 @@ put_object(PbcPid, BucketName, Key, Value, Metadata) ->
     NewObj = riakc_obj:update_metadata(RiakObject, Metadata),
     riakc_pb_socket:put(PbcPid, NewObj).
 
-put(PbcPid, RiakcObj) ->
-    put(PbcPid, RiakcObj, []).
+put(PbcPid, RiakcObj, Timeout) ->
+    put(PbcPid, RiakcObj, [], Timeout).
 
-put(PbcPid, RiakcObj, Options) ->
-    riakc_pb_socket:put(PbcPid, RiakcObj, Options).
+put(PbcPid, RiakcObj, Options, Timeout) ->
+    riakc_pb_socket:put(PbcPid, RiakcObj, Options, Timeout).
 
 put_with_no_meta(PbcPid, RiakcObj) ->
     put_with_no_meta(PbcPid, RiakcObj, []).
@@ -73,9 +73,9 @@ put_with_no_meta(PbcPid, RiakcObject, Options) ->
     riakc_pb_socket:put(PbcPid, WithMeta, Options).
 
 %% @doc List the keys from a bucket
--spec list_keys(pid(), binary()) -> {ok, [binary()]} | {error, term()}.
-list_keys(PbcPid, BucketName) ->
-    case riakc_pb_socket:list_keys(PbcPid, BucketName) of
+-spec list_keys(pid(), binary(), timeout()) -> {ok, [binary()]} | {error, term()}.
+list_keys(PbcPid, BucketName, Timeout) ->
+    case riakc_pb_socket:list_keys(PbcPid, BucketName, Timeout) of
         {ok, Keys} ->
             %% TODO:
             %% This is a naive implementation,

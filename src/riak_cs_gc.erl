@@ -365,8 +365,9 @@ move_manifests_to_gc_bucket(Manifests, RcPid) ->
     Key = generate_key(),
     ManifestSet = build_manifest_set(Manifests),
     {ok, ManifestPbc} = riak_cs_riak_client:manifest_pbc(RcPid),
+    Timeout = riak_cs_config:get_gckey_timeout(),
     ObjectToWrite =
-        case riakc_pb_socket:get(ManifestPbc, ?GC_BUCKET, Key) of
+        case riakc_pb_socket:get(ManifestPbc, ?GC_BUCKET, Key, Timeout) of
             {error, notfound} ->
                 %% There was no previous value, so we'll
                 %% create a new riak object and write it
@@ -383,7 +384,8 @@ move_manifests_to_gc_bucket(Manifests, RcPid) ->
 
     %% Create a set from the list of manifests
     _ = lager:debug("Manifests scheduled for deletion: ~p", [ManifestSet]),
-    riak_cs_pbc:put(ManifestPbc, ObjectToWrite).
+    Timeout1 = riak_cs_config:put_gckey_timeout(),
+    riak_cs_pbc:put(ManifestPbc, ObjectToWrite, Timeout1).
 
 -spec build_manifest_set([cs_uuid_and_manifest()]) -> twop_set:twop_set().
 build_manifest_set(Manifests) ->

@@ -382,7 +382,8 @@ bucket_empty(Bucket, RcPid) ->
     ManifestBucket = riak_cs_utils:to_bucket_name(objects, Bucket),
     %% @TODO Use `stream_list_keys' instead
     {ok, ManifestPbc} = riak_cs_riak_client:manifest_pbc(RcPid),
-    ListKeysResult = riak_cs_pbc:list_keys(ManifestPbc, ManifestBucket),
+    Timeout = riak_cs_config:list_keys_list_objects_timeout(),
+    ListKeysResult = riak_cs_pbc:list_keys(ManifestPbc, ManifestBucket, Timeout),
     {ok, bucket_empty_handle_list_keys(RcPid, Bucket, ListKeysResult)}.
 
 -spec bucket_empty_handle_list_keys(riak_client(), binary(),

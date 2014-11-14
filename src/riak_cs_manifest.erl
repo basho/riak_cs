@@ -107,7 +107,8 @@ get_manifests_raw(RcPid, Bucket, Key) ->
     ManifestBucket = riak_cs_utils:to_bucket_name(objects, Bucket),
     ok = riak_cs_riak_client:set_bucket_name(RcPid, Bucket),
     {ok, ManifestPbc} = riak_cs_riak_client:manifest_pbc(RcPid),
-    case riakc_pb_socket:get(ManifestPbc, ManifestBucket, Key) of
+    Timeout = riak_cs_config:get_manifest_timeout(),
+    case riakc_pb_socket:get(ManifestPbc, ManifestBucket, Key, Timeout) of
         {ok, _} = Result -> Result;
         {error, disconnected} ->
             riak_cs_pbc:check_connection_status(ManifestPbc, get_manifests_raw),
