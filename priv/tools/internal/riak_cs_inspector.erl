@@ -275,13 +275,15 @@ print_manifest_summary(_RiakcPid, _Bucket, SiblingNo, {tombstone, {_Bucket, Key}
     io:format("~-32s: ~-8B ~-16s ~-32s ~16B ~-16s~n",
               [Key, SiblingNo, tombstone, tombstone, 0, tombstone]);
 print_manifest_summary(RiakcPid, Bucket, SiblingNo, M) ->
+    State = m_attr(state, M),
     case proplists:get_value(multipart, m_attr(props, M)) of
         %% Print non-MP manifest summary
         undefined ->
             print_nonmp_summary(RiakcPid, Bucket, SiblingNo, M);
 
-        %% Print multipart summary
-        MpM when element(1, MpM) =:= multipart_manifest_v1 ->
+        %% Print incomplete multipart summary
+        MpM when element(1, MpM) =:= multipart_manifest_v1
+                 andalso State =:= writing ->
             print_multipart_summary(RiakcPid, Bucket, SiblingNo, M, MpM)
     end.
 
