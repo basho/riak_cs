@@ -275,10 +275,22 @@ print_manifest_summary(_RiakcPid, _Bucket, SiblingNo, {tombstone, {_Bucket, Key}
     io:format("~-32s: ~-8B ~-16s ~-32s ~16B ~-16s~n",
               [Key, SiblingNo, tombstone, tombstone, 0, tombstone]);
 print_manifest_summary(RiakcPid, Bucket, SiblingNo, M) ->
+    case proplists:get_value(multipart, m_attr(props, M)) of
+        %% Print non-MP manifest summary
+        undefined ->
+            print_nonmp_summary(RiakcPid, Bucket, SiblingNo, M);
+
+        %% Print multipart summary
+        MpM when element(1, MpM) =:= multipart_manifest_v1 ->
+            print_multipart_summary(RiakcPid, Bucket, SiblingNo, M, MpM)
+    end.
+
+print_nonmp_summary(RiakcPid, Bucket, SiblingNo, M) ->
     {_, Key} = m_attr(bkey, M),
     UUID = m_attr(uuid, M),
     FirstBlockId = 0,
     {RiakBucket, RiakKey} = full_bkey(Bucket, Key, UUID, FirstBlockId),
+    State = m_attr(state, M),
     FirstBlockStatus = case riakc_pb_socket:get(RiakcPid, RiakBucket, RiakKey) of
                            {ok, _RiakObject} ->
                                "Found";
@@ -286,8 +298,41 @@ print_manifest_summary(RiakcPid, Bucket, SiblingNo, M) ->
                                "**Not Found**"
                        end,
     io:format("~-32s: ~-8B ~-16s ~-32s ~16B ~-16s~n",
-              [Key, SiblingNo, m_attr(state, M), uuid_hex(M),
+              [Key, SiblingNo, State, uuid_hex(M),
                m_attr(content_length, M), FirstBlockStatus]).
+
+print_multipart_summary(RiakcPid, Bucket, SiblingNo, M, MpM) ->
+    PartManifests = element(4, MpM),
+    {_, Key} = m_attr(bkey, M),
+    DoneParts = element(5, MpM),
+    FirstBlockId = 0,
+    [begin
+         %% StartTime = element(3, PartManifest),
+         PartNumber = element(5, PartManifest),
+         PartId = element(6, PartManifest),
+         Length = element(7, PartManifest),
+         {RiakBucket, RiakKey} = full_bkey(Bucket, Key, PartId, FirstBlockId),
+         State = case proplists:is_defined(PartId, DoneParts) of
+                     true -> part_uploaded;
+                     false -> part_writing
+                 end,
+        FirstBlockStatus = case riakc_pb_socket:get(RiakcPid, RiakBucket, RiakKey) of
+                                   {ok, _RiakObject} ->
+                                       "Found";
+                                   {error, notfound} ->
+                                       "**Not Found**"
+                               end,
+         MPKey = io_lib:format("~s?partNum=~p", [Key, PartNumber]),
+         io:format("~-32s: ~-8B ~-16s ~-32s ~16B ~-16s~n",
+                   [MPKey, SiblingNo, State, mochihex:to_hex(PartId),
+                    Length, FirstBlockStatus])
+
+     end || PartManifest <- PartManifests],
+
+    io:format("~-32s: ~-8B ~-16s ~-32s ~16B ~-16s~n",
+              [Key, SiblingNo, m_attr(state, M), uuid_hex(M),
+               m_attr(content_length, M), "-Multipart-"]).
+
 
 -spec print_object(pid(), string(), string()) -> any().
 print_object(RiakcPid, "moss.buckets" = RiakBucket, Condition) ->
@@ -613,7 +658,7 @@ full_bkey(Bucket, Key, UUID, Seq) ->
 ?user_attr(key_id);
 ?user_attr(key_secret);
 ?user_attr(name).
-
+?m_attr(props);
 ?m_attr(bkey);
 ?m_attr(state);
 ?m_attr(uuid);
