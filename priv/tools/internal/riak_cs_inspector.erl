@@ -2,7 +2,7 @@
 
 %% ---------------------------------------------------------------------
 %%
-%% Copyright (c) 2013 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2013-2014 Basho Technologies, Inc.  All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -24,7 +24,7 @@
 
 %% CAUTION
 %% Some commands are potentially DANGEROUS, for example executes
-%% many requests to Riak. 
+%% many requests to Riak.
 %% To use this scripts, you MUST at least know
 %% - status of data in Riak, # of buckets, # of objects and so on
 %% - how many requests are executed and
@@ -50,7 +50,7 @@
 
 -include_lib("riak_cs/include/riak_cs.hrl").
 
--define(rec_pp_fun(RecName), 
+-define(rec_pp_fun(RecName),
         rec_pp_fun(RecName, N) ->
                case record_info(size, RecName) - 1 of
                    N -> record_info(fields, RecName);
@@ -167,14 +167,20 @@ cs_bucket_info(RiakBucket, KnownNames) ->
 
 -spec list_objects(pid(), string()) -> any().
 list_objects(RiakcPid, "moss.buckets" = Bucket)->
-    io:format("~-64..=s ~-8..=s: ~-40..=s~n",
-              ["CS Bucket Name ", "Sibl. ", "Owner Key "]),
+    io:format("~-64..=s ~-8..=s ~-40..=s~-20..=s~n",
+              ["CS Bucket Name ", "Sibl. ", "Owner Key ", " Last Updated "]),
     {ok, Keys} = riakc_pb_socket:list_keys(RiakcPid, Bucket),
-    lists:foreach(fun(Key) ->
-                          [io:format("~-64s ~-8B: ~-40s~n", [Key, SiblingNo, V])
-                           || {SiblingNo, {_MD, V}}
-                                  <- get_riak_object(RiakcPid, Bucket, Key)]
-                  end, lists:sort(Keys));
+    F = fun(Key) ->
+                [
+                 begin
+                     Date = date_from_bucket_md(MD),
+                     io:format("~-64s ~-8B ~-40s ~-20s~n", [Key, SiblingNo, V, Date])
+                 end
+                 ||
+                    {SiblingNo, {MD, V}}
+                        <- get_riak_object(RiakcPid, Bucket, Key)]
+        end,
+    lists:foreach(F, lists:sort(Keys));
 list_objects(RiakcPid, "moss.users" = Bucket)->
     io:format("~-40..=s ~-8..=s: ~-40..=s ~-40..=s~n",
               ["Key ID ", "Sibl. ", "Name ", "Secret "]),
@@ -237,6 +243,16 @@ list_objects(RiakcPid, Bucket)->
      || Key <- lists:sort(ManifestKeys),
         {SiblingNo, _UUID, M} <- get_manifest(RiakcPid, Bucket, Key)].
 
+date_from_bucket_md(MD) ->
+    {ok, Meta} = dict:find(<<"X-Riak-Meta">>, MD),
+    AclBin = proplists:get_value(<<"X-Moss-Acl">>, Meta),
+    Acl = binary_to_term(AclBin),
+    acl_v2 = element(1, Acl),
+    CreationDate = element(4, Acl), %% For acl_v2
+    {{Y,M,D}, {HH,MM,SS}} = calendar:now_to_local_time(CreationDate),
+    io_lib:format("~4.10.0B-~2.10.0B-~2.10.0B ~2.10.0B:~2.10.0B:~2.10.0B",
+                  [Y,M,D,HH,MM,SS]).
+
 print_gc_manifest_summary(_RiakcPid, _Key, _SiblingNo, header) ->
     io:format("~-32..=s: ~-8..=s ~-16..=s ~-32..=s ~-16..=s ~-32..=s~n",
               ["Key ", "Sibl. ", "State ", "UUID ", "Content-Length", "CS Key "]);
@@ -272,7 +288,7 @@ print_manifest_summary(RiakcPid, Bucket, SiblingNo, M) ->
     io:format("~-32s: ~-8B ~-16s ~-32s ~16B ~-16s~n",
               [Key, SiblingNo, m_attr(state, M), uuid_hex(M),
                m_attr(content_length, M), FirstBlockStatus]).
-    
+
 -spec print_object(pid(), string(), string()) -> any().
 print_object(RiakcPid, "moss.buckets" = RiakBucket, Condition) ->
     "key=" ++ CSBucket = Condition,
@@ -401,7 +417,7 @@ print_storage_stats(Key, SiblingNo, StatsBin) ->
     %% TODO: Error handling, e.g. StatItems = "{error,{timeout,[]}}"
     [io:format("~-36s: ~32B ~32B~n", [Bucket, Objects, Bytes]) ||
         {Bucket, StatItems} <- Buckets,
-        {ObjectsKey, Objects} <- StatItems, ObjectsKey =:= <<"Objects">>, 
+        {ObjectsKey, Objects} <- StatItems, ObjectsKey =:= <<"Objects">>,
         {BytesKey, Bytes}     <- StatItems, BytesKey   =:= <<"Bytes">>].
 
 print_users(RiakcPid, Bucket, Options) ->
@@ -517,8 +533,8 @@ print_block_summary(RiakcPid, Bucket, Key, UUID, Block) ->
             FirstChars = binary:part(Value, 0, min(32, ByteSize)),
             %% http://gambasdoc.org/help/doc/pcre
             %% - :graph: printing excluding space
-            %% - \A:     start of subject 
-            %% - \z:     end of subject 
+            %% - \A:     start of subject
+            %% - \z:     end of subject
             case re:run(FirstChars, "\\A[[:graph:]]*\\z", []) of
                 nomatch ->
                     io:format("~-32s ~8B: ~10B ~64w~n",
@@ -662,7 +678,7 @@ print_manifest({SiblingNo, _, M = #lfs_manifest_v3{}}) ->
     pp(acl,                     M#lfs_manifest_v3.acl),
     pp(props,                   M#lfs_manifest_v3.props),
     pp(cluster_id,              M#lfs_manifest_v3.cluster_id);
-    
+
 print_manifest({SiblingNo, _, M = #lfs_manifest_v2{}}) ->
     {B,K} = M#lfs_manifest_v2.bkey,
     io:nl(),
