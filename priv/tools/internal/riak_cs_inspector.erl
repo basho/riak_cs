@@ -284,7 +284,10 @@ print_manifest_summary(RiakcPid, Bucket, SiblingNo, M) ->
         %% Print incomplete multipart summary
         MpM when element(1, MpM) =:= multipart_manifest_v1
                  andalso State =:= writing ->
-            print_multipart_summary(RiakcPid, Bucket, SiblingNo, M, MpM)
+            print_multipart_summary(RiakcPid, Bucket, SiblingNo, M, MpM);
+
+        _ ->
+            print_nonmp_summary(RiakcPid, Bucket, SiblingNo, M)
     end.
 
 print_nonmp_summary(RiakcPid, Bucket, SiblingNo, M) ->
