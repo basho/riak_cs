@@ -343,7 +343,7 @@ max_buckets_per_user() ->
 %% explosion in such use cases that can debilitate a system.
 -spec read_before_last_manifest_write() -> boolean().
 read_before_last_manifest_write() ->
-    get_env(riak_cs, read_before_last_manifest_write, false).
+    get_env(riak_cs, read_before_last_manifest_write, true).
 
 
 %% ===================================================================
