@@ -199,6 +199,8 @@ parse_lifecycle_rule(#xmlElement{name='Expiration',
     Days = list_to_integer(get_text(C)),
     Rule#lifecycle_rule_v1{expiration=Days};
 parse_lifecycle_rule(#xmlText{value=" "}, Rule) ->
+    Rule;
+parse_lifecycle_rule(#xmlComment{}, Rule) ->
     Rule.
 
 get_text([]) -> "";
@@ -227,7 +229,11 @@ handle_invoke(Lifecycle, State) ->
                 P = State#state.keys_processed,
                 case restore(RcPid, UUID, Manifest, Days) of
                     ok -> {ok, State#state{keys_processed=P+1}};
-                    Error -> Error
+                    Error ->
+                        BKey = riak_cs_manifest:bkey(Manifest),
+                        lager:error("restoration of ~p / ~p failed: ~p",
+                                    [BKey, UUID, Error]),
+                        Error
                 end;
             {block_delete, UUIDb, Manifest} ->
                 P = State#state.keys_processed,
@@ -424,11 +430,13 @@ restore(RcPid, UUIDa, Manifest0, Days) when is_integer(Days) andalso Days > 0 ->
                                                                   timer:seconds(60),
                                                                   self(),
                                                                   RcPid}]),
-                                lager:debug(">>> ~p ~p => ~p", [?FILE, ?LINE, noop]),
+
+            lager:debug(">>> ~p ~p => opening ~p", [?FILE, ?LINE, Filename]),
 
             %% This could be very slow
             {ok, IoDevice} = file:open(Filename, [binary, read]),
-                                lager:debug(">>> ~p ~p => ~p", [?FILE, ?LINE, noop]),
+
+            lager:debug(">>> ~p ~p => ~p", [?FILE, ?LINE, noop]),
             %% Check metadata and size here...?
             %% If this is done by multipart, this can't be trusted...
             MD5 = binary_to_list(base64:encode(Manifest0?MANIFEST.content_md5)),
@@ -449,7 +457,6 @@ restore(RcPid, UUIDa, Manifest0, Days) when is_integer(Days) andalso Days > 0 ->
             %% TODO: do yoyaku against restored object again, it shouldn't be ramaining again?
             UUIDb = riak_cs_manifest:uuid(NewManifest2),
             lager:debug("restoring ~s/~s from ~p to ~p succeeded", [Bucket, Key, UUIDa, UUIDb]),
-
             schedule_block_expiration(UUIDb, NewManifest2, Days)
     end.
 
@@ -462,18 +469,20 @@ copy_all_2(IoDevice, PutFsmPid, Binary, MD5) ->
                 0 -> pass;
                 _ -> done = augment_data(PutFsmPid, Binary, true)
             end,
+            lager:debug("riak_cs_put_fsm:finalize/2"),
             riak_cs_put_fsm:finalize(PutFsmPid, MD5);
         {ok, Data} ->
             %% especially here:
             {ok, Binary2} = augment_data(PutFsmPid, <<Binary/binary, Data/binary>>, false),
             copy_all_2(IoDevice, PutFsmPid, Binary2, MD5)
     end.
-                
+
 augment_data(PutFsmPid, Binary, DoFinish) ->           
     BlockSize = riak_cs_lfs_utils:block_size(),
     case byte_size(Binary) of
         L when L >= BlockSize ->
             <<Data:BlockSize/binary, Rest/binary>> = Binary,
+            lager:debug("sending ~p bytes to put_fsm", [L]),
             riak_cs_put_fsm:augment_data(PutFsmPid, Data),
             augment_data(PutFsmPid, Rest, DoFinish);
         L when L > 0 andalso DoFinish ->
