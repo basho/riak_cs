@@ -58,11 +58,11 @@
 %% @doc Starts the server
 -spec start_link(lfs_manifest()) -> {ok, pid()} | ignore | {error, term()}.
 start_link(Manifest) ->
-    gen_server:start_link(?MODULE, [Manifest], []).
+    gen_server:start_link(?MODULE, [Manifest], [{debug, [{generic_debug, []}]}]).
 
 -spec start_link(lfs_manifest(), riak_client()) -> {ok, pid()} | ignore | {error, term()}.
 start_link(Manifest, RcPid) ->
-    gen_server:start_link(?MODULE, [Manifest, RcPid], []).
+    gen_server:start_link(?MODULE, [Manifest, RcPid], [{debug, [{generic_debug, []}]}]).
 
 %% @doc Start (up to) 'MaxNumServers'
 %% riak_cs_block_server procs.
