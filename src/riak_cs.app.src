@@ -15,7 +15,8 @@
                   poolboy,
                   lager,
                   cluster_info,
-                  folsom
+                  folsom,
+                  sidejob
                  ]},
   {mod, { riak_cs_app, []}},
   {env, [

@@ -98,8 +98,22 @@
                  pos_integer()) -> {ok, pid()} | {error, term()}.
 
 start_link(Bucket, Key, Caller, RcPid, FetchConcurrency, BufferFactor) ->
-    gen_fsm:start_link(?MODULE, [Bucket, Key, Caller, RcPid,
-                                 FetchConcurrency, BufferFactor], []).
+    Args = [Bucket, Key, Caller, RcPid, FetchConcurrency, BufferFactor],
+    case whereis(riak_cs_get_fsm_sj) of
+        undefined ->
+            %% Overload protection disabled
+            gen_fsm:start_link(?MODULE, Args, []);
+        _ ->
+            case sidejob_supervisor:start_child(riak_cs_get_fsm_sj,
+                                                gen_fsm, start_link,
+                                                [?MODULE, Args, []]) of
+                {error, overload} ->
+                    exit({todo,riak_kv_util,overload_reply,[Caller]});
+                    %% {error, overload}
+                {ok, _Pid}=OK ->
+                    OK
+            end
+    end.
 
 stop(Pid) ->
     gen_fsm:send_event(Pid, stop).

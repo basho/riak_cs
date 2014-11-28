@@ -32,6 +32,8 @@
 
 -include("riak_cs.hrl").
 
+-define(DEFAULT_FSM_LIMIT, 10000).
+
 -type start_type() :: normal | {takeover, node()} | {failover, node()}.
 -type start_args() :: term().
 
@@ -43,6 +45,18 @@
 -spec start(start_type(), start_args()) -> {ok, pid()} |
                                            {error, term()}.
 start(_Type, _StartArgs) ->
+    FSM_Limit = case application:get_env(riak_cs, fsm_limit) of
+                    {ok, X} -> X;
+                    _       -> ?DEFAULT_FSM_LIMIT
+                end,
+    case FSM_Limit of
+        undefined ->
+            ok;
+        _ ->
+            %% sidejob:new_resource(riak_cs_put_fsm_sj, sidejob_supervisor, FSM_Limit),
+            sidejob:new_resource(riak_cs_get_fsm_sj, sidejob_supervisor, FSM_Limit)
+    end,
+
     sanity_check(is_config_valid(),
                  check_bucket_props()).
 

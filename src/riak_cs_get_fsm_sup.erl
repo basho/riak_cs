@@ -46,10 +46,14 @@ start_link() ->
 -spec start_get_fsm(node(), binary(), binary(), pid(), riak_client(), pos_integer(),
                     pos_integer()) ->
                            {ok, pid()} | {error, term()}.  %% SLF: R14B04's supervisor:startchild_ret() is broken?
+%% start_get_fsm(Node, Bucket, Key, Caller, RcPid,
+%%               FetchConcurrency, BufferFactor) ->
+%%     supervisor:start_child({?MODULE, Node}, [Bucket, Key, Caller, RcPid,
+%%                                             FetchConcurrency, BufferFactor]).
 start_get_fsm(Node, Bucket, Key, Caller, RcPid,
-              FetchConcurrency, BufferFactor) ->
-    supervisor:start_child({?MODULE, Node}, [Bucket, Key, Caller, RcPid,
-                                            FetchConcurrency, BufferFactor]).
+              FetchConcurrency, BufferFactor) when Node == node() ->
+    riak_cs_get_fsm:start_link(Bucket, Key, Caller, RcPid,
+                               FetchConcurrency, BufferFactor).
 
 %% ===================================================================
 %% Supervisor callbacks
