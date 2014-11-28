@@ -32,6 +32,7 @@
          accept_body/2,
          delete_resource/2,
          valid_entity_length/2]).
+-export([multiple_choices/2]).
 
 -include("riak_cs.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
@@ -467,6 +468,9 @@ finalize_request(RD,
     riak_cs_dtrace:dt_wm_return(?MODULE, <<"finalize_request">>, [S], [UserName, BFile_str]),
     riak_cs_dtrace:dt_object_return(?MODULE, <<"object_put">>, [S], [UserName, BFile_str]),
     Response.
+
+multiple_choices(RD, Ctx) ->
+    {false, RD, Ctx}.
 
 check_0length_metadata_update(Length, RD, Ctx=#context{local_context=LocalCtx}) ->
     %% The authorize() callback has already been called, which means
