@@ -65,14 +65,16 @@ start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
 -spec update(atom(), integer()) -> ok | {error, {unknown_id, atom()}}.
-update(BaseId, ElapsedUs) ->
-    gen_server:call(?MODULE, {update, BaseId, ElapsedUs}).
+update(_BaseId, _ElapsedUs) ->
+ok.
+%    gen_server:call(?MODULE, {update, BaseId, ElapsedUs}).
 
 -spec update_with_start(atom(), erlang:timestamp()) ->
                                    ok | {error, {unknown_id, atom()}}.
-update_with_start(BaseId, StartTime) ->
-    gen_server:call(?MODULE, {update, BaseId,
-                              timer:now_diff(os:timestamp(), StartTime)}).
+update_with_start(_BaseId, _StartTime) ->
+ok
+%    gen_server:call(?MODULE, {update, BaseId,
+%                              timer:now_diff(os:timestamp(), StartTime)}).
 
 -spec report() -> ok.
 report() ->
