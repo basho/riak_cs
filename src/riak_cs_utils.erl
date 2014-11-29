@@ -142,6 +142,7 @@ etag_from_binary_no_quotes(Binary) ->
 %% connection pool.
 -spec close_riak_connection(pid()) -> ok.
 close_riak_connection(Pid) ->
+    %% TODO not hacked
     close_riak_connection(riak_cs_riak_client:pbc_pool_name(master), Pid).
 
 %% @doc Release a protobufs connection from the specified
@@ -438,6 +439,7 @@ find_md_usermeta(MD) ->
 %% from the `request_pool' connection pool of the master bag.
 -spec riak_connection() -> {ok, pid()} | {error, term()}.
 riak_connection() ->
+    %% TODO not hacked
     riak_connection(riak_cs_riak_client:pbc_pool_name(master)).
 
 %% @doc Get a protobufs connection to the riak cluster

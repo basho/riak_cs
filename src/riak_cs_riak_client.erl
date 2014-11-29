@@ -25,7 +25,7 @@
 %% API
 -export([checkout/0, checkout/1,
          checkin/1, checkin/2]).
--export([pbc_pool_name/1]).
+-export([pbc_pool_name/2]).
 -export([
          stop/1,
          get_bucket/2,
@@ -79,7 +79,7 @@ checkout() ->
 -spec checkout(atom()) -> {ok, riak_client()} | {error, term()}.
 checkout(Pool) ->
     try
-        case poolboy:checkout(Pool, false) of
+        case poolboy:checkout(hack_pool_map(Pool), false) of
             full ->
                 {error, all_workers_busy};
             RcPid ->
@@ -98,13 +98,27 @@ checkin(RcPid) ->
 -spec checkin(atom(), riak_client()) -> ok.
 checkin(Pool, RcPid) ->
     ok = gen_server:call(RcPid, cleanup),
-    poolboy:checkin(Pool, RcPid).
+    poolboy:checkin(hack_pool_map(Pool), RcPid).
 
--spec pbc_pool_name(master | bag_id()) -> atom().
-pbc_pool_name(master) ->
-    pbc_pool_master;
-pbc_pool_name(BagId) when is_binary(BagId) ->
-    list_to_atom(lists:flatten(io_lib:format("pbc_pool_~s", [BagId]))).
+-spec pbc_pool_name(master | bag_id(), integer()) -> atom().
+pbc_pool_name(master, 0) ->
+    pbc_pool_master_0;
+pbc_pool_name(master, 1) ->
+    pbc_pool_master_1;
+pbc_pool_name(master, 2) ->
+    pbc_pool_master_2;
+pbc_pool_name(master, 3) ->
+    pbc_pool_master_3;
+pbc_pool_name(master, 4) ->
+    pbc_pool_master_4;
+pbc_pool_name(master, 5) ->
+    pbc_pool_master_5;
+pbc_pool_name(master, 6) ->
+    pbc_pool_master_6;
+pbc_pool_name(master, 7) ->
+    pbc_pool_master_7;
+pbc_pool_name(BagId, N) when is_binary(BagId) ->
+    list_to_atom(lists:flatten(io_lib:format("pbc_pool_~s_~w", [BagId, N]))).
 
 -spec get_bucket(riak_client(), binary()) -> {ok, riakc_obj:riakc_obj()} | {error, term()}.
 get_bucket(RcPid, BucketName) when is_binary(BucketName) ->
@@ -158,6 +172,9 @@ block_pbc(RcPid) ->
 %%% Internal functions
 
 init([]) ->
+    {_, _, USec} = os:timestamp(),
+    XX = USec rem 8,
+    put(hack_pool_map2, XX),
     {ok, fresh_state()}.
 
 handle_call(stop, _From, State) ->
@@ -244,7 +261,7 @@ do_cleanup(State) ->
 stop_pbc(undefined) ->
     ok;
 stop_pbc(Pbc) when is_pid(Pbc) ->
-    riak_cs_utils:close_riak_connection(pbc_pool_name(master), Pbc),
+    riak_cs_utils:close_riak_connection(pbc_pool_name(master, get(hack_pool_map2)), Pbc),
     ok.
 
 do_get_bucket(State) ->
@@ -264,7 +281,7 @@ ensure_master_pbc(#state{master_pbc = MasterPbc} = State)
   when is_pid(MasterPbc) ->
     {ok, State};
 ensure_master_pbc(#state{} = State) ->
-    case riak_cs_utils:riak_connection(pbc_pool_name(master)) of
+    case riak_cs_utils:riak_connection(pbc_pool_name(master, get(hack_pool_map2))) of
         {ok, MasterPbc} -> {ok, State#state{master_pbc=MasterPbc}};
         {error, Reason} -> {error, Reason}
     end.
@@ -306,3 +323,23 @@ save_user_with_pbc(MasterPbc, User, OldUserObj) ->
                                           riak_cs_utils:encode_term(User)),
                    MD),
     riakc_pb_socket:put(MasterPbc, UpdUserObj).
+
+hack_pool_map(request_pool = _Pool) ->
+    N = case get(hack_pool_map) of
+        undefined ->
+            {_, _, USec} = os:timestamp(),
+            XX = USec rem 8,
+            put(hack_pool_map, XX),
+            XX;
+        X ->
+            X
+        end,
+    case N of 0 -> request_pool_0;
+              1 -> request_pool_1;
+              2 -> request_pool_2;
+              3 -> request_pool_3;
+              4 -> request_pool_4;
+              5 -> request_pool_5;
+              6 -> request_pool_6;
+              7 -> request_pool_7
+    end.

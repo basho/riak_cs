@@ -72,7 +72,7 @@ ok.
 -spec update_with_start(atom(), erlang:timestamp()) ->
                                    ok | {error, {unknown_id, atom()}}.
 update_with_start(_BaseId, _StartTime) ->
-ok
+ok.
 %    gen_server:call(?MODULE, {update, BaseId,
 %                              timer:now_diff(os:timestamp(), StartTime)}).
 

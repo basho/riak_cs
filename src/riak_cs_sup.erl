@@ -162,14 +162,15 @@ pbc_pool_specs(Options) ->
                                           end,
                                           {0, 0}, MasterPools),
     Bags = riak_cs_mb_helper:bags(),
-    [pbc_pool_spec(BagId, FixedSum, OverflowSum, Address, Port, WorkerStop)
-     || {BagId, Address, Port} <- Bags].
+    [pbc_pool_spec(BagId, FixedSum, OverflowSum, Address, Port, WorkerStop, N)
+     || {BagId, Address, Port} <- Bags,
+        N <- [0,1,2,3,4,5,6,7] ].
 
 -spec pbc_pool_spec(bag_id(), non_neg_integer(), non_neg_integer(),
-                string(), non_neg_integer(), function()) ->
+                string(), non_neg_integer(), function(), non_neg_integer()) ->
                        supervisor:child_spec().
-pbc_pool_spec(BagId, Fixed, Overflow, Address, Port, WorkerStop) ->
-    Name = riak_cs_riak_client:pbc_pool_name(BagId),
+pbc_pool_spec(BagId, Fixed, Overflow, Address, Port, WorkerStop, N) ->
+    Name = riak_cs_riak_client:pbc_pool_name(BagId, N),
     {Name,
      {poolboy, start_link, [[{name, {local, Name}},
                              {worker_module, riak_cs_riakc_pool_worker},
