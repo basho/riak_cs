@@ -799,7 +799,7 @@ object_access_authorize_helper(AccessType, Deletable, SkipAcl,
                     actor_is_not_owner_but_allowed_policy(User, OwnerId, RD, Ctx, LocalCtx);
                 {ok, just_allowed_by_policy} ->
                     %% actor is not the owner, not permitted by ACL but permitted by policy
-                    just_allowed_by_policy(ObjectAcl, RcPid, RD, Ctx, LocalCtx);
+                    just_allowed_by_policy(Access, ObjectAcl, BucketObj, RcPid, RD, Ctx, LocalCtx);
                 {error, access_denied} ->
                     riak_cs_wm_utils:deny_access(RD, Ctx)
             end
@@ -952,13 +952,28 @@ actor_is_not_owner_but_allowed_policy(_, OwnerId, RD, Ctx, LocalCtx) ->
     UpdCtx = Ctx#context{local_context=LocalCtx#key_context{owner=OwnerId}},
     {false, AccessRD, UpdCtx}.
 
--spec just_allowed_by_policy(ObjectAcl :: acl(),
-                              RcPid :: riak_client(),
-                              RD :: term(),
-                              Ctx :: term(),
-                              LocalCtx :: term()) ->
+-spec just_allowed_by_policy(Access :: access(),
+                             ObjectAcl :: acl(),
+                             BucketObj :: riakc_obj:riakc_obj(),
+                             RcPid :: riak_client(),
+                             RD :: term(),
+                             Ctx :: term(),
+                             LocalCtx :: term()) ->
     authorized_response().
-just_allowed_by_policy(ObjectAcl, RcPid, RD, Ctx, LocalCtx) ->
+just_allowed_by_policy(#access_v1{method = 'PUT', target = object} = _Access,
+                       _User, BucketObj, RcPid, RD, Ctx, LocalCtx) ->
+    %% PUT Object to writable bucket
+    %% Use bucket owner for object owner and access stats responsibility
+    lager:debug("just_allowed_by_policy: PUT object"),
+    {_DisplayName, _CanonicalId, BucketOwnerId} = bucket_owner(BucketObj),
+    %% TODO: handle error
+    {ok, {User, _}} = riak_cs_user:get_user(BucketOwnerId, RcPid),
+    lager:debug("just_allowed_by_policy: User = ~p", [User]),
+    AccessRD = riak_cs_access_log_handler:set_user(BucketOwnerId, RD),
+    UpdLocalCtx = LocalCtx#key_context{owner=BucketOwnerId},
+    {false, AccessRD, Ctx#context{user=User, local_context=UpdLocalCtx}};
+just_allowed_by_policy(_Access, ObjectAcl, _BucketObj, RcPid, RD, Ctx, LocalCtx) ->
+    lager:debug("just_allowed_by_policy: other than PUT object"),
     OwnerId = riak_cs_acl:owner_id(ObjectAcl, RcPid),
     AccessRD = riak_cs_access_log_handler:set_user(OwnerId, RD),
     UpdLocalCtx = LocalCtx#key_context{owner=OwnerId},
