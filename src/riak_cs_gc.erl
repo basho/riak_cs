@@ -353,7 +353,7 @@ mark_manifests(RiakObject, Bucket, Key, UUIDsToMark, ManiFunction, RcPid) ->
     %% with vector clock. This allows us to do a PUT
     %% again without having to re-retrieve the object
     {ok, ManifestPbc} = riak_cs_riak_client:manifest_pbc(RcPid),
-    riak_cs_pbc:put(ManifestPbc, UpdObj, [return_body]).
+    riak_cs_pbc:put(ManifestPbc, UpdObj, [return_body], riak_cs_config:get_gckey_timeout()).
 
 %% @doc Copy data for a list of manifests to the
 %% `riak-cs-gc' bucket to schedule them for deletion.

@@ -165,7 +165,8 @@ process_gc_keys(Pbc, Options, Continuation, [GCKey | Keys]) ->
                                          ok |
                                          {error, term()}.
 repair_manifests_for_gc_key(Pbc, Options, GCKey) ->
-    case riak_cs_pbc:get_object(Pbc, ?GC_BUCKET, GCKey) of
+    Timeout = riak_cs_config:get_gckey_timeout(),
+    case riak_cs_pbc:get_object(Pbc, ?GC_BUCKET, GCKey, Timeout) of
         {ok, GCObj} ->
             FileSet = riak_cs_gc:decode_and_merge_siblings(
                         GCObj, twop_set:new()),

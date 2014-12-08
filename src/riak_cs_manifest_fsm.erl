@@ -295,7 +295,7 @@ get_and_delete(RcPid, UUID, Bucket, Key) ->
             case UpdatedManifests of
                 [] ->
                     DeleteTimeout = riak_cs_config:delete_manifest_timeout(),
-                    riakc_pb_socket:delete_obj(manifest_pbc(RcPid), RiakObject, DeleteTimeout);
+                    riakc_pb_socket:delete_obj(manifest_pbc(RcPid), RiakObject, [], DeleteTimeout);
                 _ ->
                     ObjectToWrite0 =
                         riak_cs_utils:update_obj_value(
