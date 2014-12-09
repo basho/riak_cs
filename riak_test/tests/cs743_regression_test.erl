@@ -67,9 +67,9 @@ assert_storage_stats(UserConfig, Begin, End) ->
               fun(Sample) ->
                       case rtcs:json_get(list_to_binary(?TEST_BUCKET), Sample) of
                           notfound -> false;
-                          ErrorStr ->
-                              ?assert(not is_integer(ErrorStr)),
-                              ?assertEqual(<<"{error,{timeout,[]}}">>, ErrorStr),
+                          ResultStr ->
+                              ?assert(not is_integer(ResultStr)),
+                              ?assertNotEqual(<<"{error,{timeout,[]}}">>, ResultStr),
                               true
                       end
               end,
