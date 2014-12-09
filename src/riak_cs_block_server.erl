@@ -342,11 +342,10 @@ get_block_local(RcPid, FullBucket, FullKey, GetOptions, Timeout) ->
 
 get_block_remote(RcPid, FullBucket, FullKey, ClusterID, GetOptions0) ->
     %% replace get_block_timeout with proxy_get_block_timeout
-    GetOptions1 = proplists:delete(timeout, GetOptions0),
+    GetOptions = proplists:delete(timeout, GetOptions0),
     Timeout = riak_cs_config:proxy_get_block_timeout(),
-    GetOptions2 = [proplists:property(timeout, Timeout) | GetOptions1],
     case riak_repl_pb_api:get(block_pbc(RcPid), FullBucket, FullKey,
-                              ClusterID, GetOptions2) of
+                              ClusterID, GetOptions, Timeout) of
         {ok, RiakObject} ->
             resolve_block_object(RiakObject, RcPid);
         Else ->
