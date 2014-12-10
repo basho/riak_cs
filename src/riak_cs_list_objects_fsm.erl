@@ -491,8 +491,6 @@ make_bkeys(ManifestBucketName, Keys) ->
 
 -spec send_map_reduce_request(riak_client(), list()) -> streaming_req_response().
 send_map_reduce_request(RcPid, BKeyTuples) ->
-    %% TODO: change this:
-    %% default 60 seconds for now
     {ok, ManifestPbc} = riak_cs_riak_client:manifest_pbc(RcPid),
     Timeout = riak_cs_config:list_objects_timeout(),
     riakc_pb_socket:mapred_stream(ManifestPbc,
