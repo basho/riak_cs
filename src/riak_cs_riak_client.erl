@@ -270,11 +270,14 @@ ensure_master_pbc(#state{} = State) ->
     end.
 
 get_bucket_with_pbc(MasterPbc, BucketName) ->
-    riak_cs_pbc:get_object(MasterPbc, ?BUCKETS_BUCKET, BucketName).
+    Timeout = riak_cs_config:get_bucket_timeout(),
+    riak_cs_pbc:get_object(MasterPbc, ?BUCKETS_BUCKET, BucketName, Timeout).
 
 get_user_with_pbc(MasterPbc, Key) ->
     StrongOptions = [{r, all}, {pr, all}, {notfound_ok, false}],
-    case riakc_pb_socket:get(MasterPbc, ?USER_BUCKET, Key, StrongOptions) of
+    Timeout = riak_cs_config:get_user_timeout(),
+    case riakc_pb_socket:get(MasterPbc, ?USER_BUCKET, Key,
+                             StrongOptions, Timeout) of
         {ok, Obj} ->
             %% since we read from all primaries, we're
             %% less concerned with there being an 'out-of-date'
@@ -285,7 +288,8 @@ get_user_with_pbc(MasterPbc, Key) ->
         {error, Reason0} ->
             _ = lager:warning("Fetching user record with strong option failed: ~p", [Reason0]),
             WeakOptions = [{r, quorum}, {pr, one}, {notfound_ok, false}],
-            case riakc_pb_socket:get(MasterPbc, ?USER_BUCKET, Key, WeakOptions) of
+            case riakc_pb_socket:get(MasterPbc, ?USER_BUCKET, Key,
+                                     WeakOptions, Timeout) of
                 {ok, Obj} ->
                     %% We weren't able to read from all primary
                     %% vnodes, so don't risk losing information

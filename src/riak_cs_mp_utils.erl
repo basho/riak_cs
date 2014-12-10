@@ -218,8 +218,9 @@ list_all_multipart_uploads(Bucket, Opts, RcPid) ->
 list_multipart_uploads_with_2ikey(Bucket, Opts, RcPid, Key2i) ->
     HashBucket = riak_cs_utils:to_bucket_name(objects, Bucket),
     {ok, ManifestPbc} = riak_cs_riak_client:manifest_pbc(RcPid),
+    Timeout = riak_cs_config:get_index_list_multipart_uploads_timeout(),
     case riakc_pb_socket:get_index(ManifestPbc, HashBucket,
-                                   Key2i, <<"1">>) of
+                                   Key2i, <<"1">>, Timeout) of
 
         {ok, ?INDEX_RESULTS{keys=Names}} ->
             {ok, list_multipart_uploads2(Bucket, RcPid,

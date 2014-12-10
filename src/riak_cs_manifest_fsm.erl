@@ -294,14 +294,16 @@ get_and_delete(RcPid, UUID, Bucket, Key) ->
             UpdatedManifests = orddict:erase(UUID, ResolvedManifests),
             case UpdatedManifests of
                 [] ->
-                    riakc_pb_socket:delete_obj(manifest_pbc(RcPid), RiakObject);
+                    DeleteTimeout = riak_cs_config:delete_manifest_timeout(),
+                    riakc_pb_socket:delete_obj(manifest_pbc(RcPid), RiakObject, [], DeleteTimeout);
                 _ ->
                     ObjectToWrite0 =
                         riak_cs_utils:update_obj_value(
                           RiakObject, riak_cs_utils:encode_term(UpdatedManifests)),
                     ObjectToWrite = update_md_with_multipart_2i(
                                       ObjectToWrite0, UpdatedManifests, Bucket, Key),
-                    riak_cs_pbc:put(manifest_pbc(RcPid), ObjectToWrite)
+                    PutTimeout = riak_cs_config:put_manifest_timeout(),
+                    riak_cs_pbc:put(manifest_pbc(RcPid), ObjectToWrite, PutTimeout)
             end;
         {error, notfound} ->
             ok
@@ -322,7 +324,8 @@ get_and_update(RcPid, WrappedManifests, Bucket, Key) ->
             ObjectToWrite0 = riakc_obj:new(ManifestBucket, Key, riak_cs_utils:encode_term(WrappedManifests)),
             ObjectToWrite = update_md_with_multipart_2i(
                               ObjectToWrite0, WrappedManifests, Bucket, Key),
-            PutResult = riak_cs_pbc:put(manifest_pbc(RcPid), ObjectToWrite),
+            Timeout = riak_cs_config:put_manifest_timeout(),
+            PutResult = riak_cs_pbc:put(manifest_pbc(RcPid), ObjectToWrite, Timeout),
             {PutResult, undefined, undefined}
     end.
 
@@ -357,7 +360,8 @@ update(RcPid, OldManifests, OldRiakObject, WrappedManifests, Bucket, Key) ->
     {Result, NewRiakObject} =
         case riak_cs_manifest_utils:overwritten_UUIDs(NewManiAdded) of
             [] ->
-                riak_cs_pbc:put(manifest_pbc(RcPid), ObjectToWrite, [return_body]);
+                Timeout = riak_cs_config:put_manifest_timeout(),
+                riak_cs_pbc:put(manifest_pbc(RcPid), ObjectToWrite, [return_body], Timeout);
             OverwrittenUUIDs ->
                 riak_cs_gc:gc_specific_manifests(OverwrittenUUIDs,
                                                  ObjectToWrite,
@@ -387,7 +391,8 @@ update_from_previous_read(RcPid, RiakObject, Bucket, Key,
     %% currently we don't do
     %% anything to make sure
     %% this call succeeded
-    riak_cs_pbc:put(manifest_pbc(RcPid), NewRiakObject).
+    Timeout = riak_cs_config:put_manifest_timeout(),
+    riak_cs_pbc:put(manifest_pbc(RcPid), NewRiakObject, Timeout).
 
 update_md_with_multipart_2i(RiakObject, WrappedManifests, Bucket, Key) ->
     %% During testing, it's handy to delete Riak keys in the

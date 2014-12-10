@@ -33,8 +33,8 @@
 confirm() ->
     Config = [{riak, rtcs:riak_config()}, {stanchion, rtcs:stanchion_config()},
               {cs,
-               [{riakc, [{mapred_timeout,1}]}] %% make storage calc timeout
-               ++ rtcs:cs_config([{storage_archive_period, 1}])}],
+               rtcs:cs_config([{storage_calc_timeout, 1},
+                               {storage_archive_period, 1}])}],
     {UserConfig, {_RiakNodes, CSNodes, _Stanchion}} = rtcs:setup(2, Config),
 
     Begin = rtcs:datetime(),
@@ -67,9 +67,9 @@ assert_storage_stats(UserConfig, Begin, End) ->
               fun(Sample) ->
                       case rtcs:json_get(list_to_binary(?TEST_BUCKET), Sample) of
                           notfound -> false;
-                          ErrorStr ->
-                              ?assert(not is_integer(ErrorStr)),
-                              ?assertEqual(<<"{error,{timeout,[]}}">>, ErrorStr),
+                          ResultStr ->
+                              ?assert(not is_integer(ResultStr)),
+                              ?assertEqual(<<"{error,{timeout,[]}}">>, ResultStr),
                               true
                       end
               end,

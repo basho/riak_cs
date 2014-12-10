@@ -152,11 +152,14 @@ gc_index_query(RcPid, EndTime, BatchSize, Continuation, UsePaginatedIndexes) ->
               end,
     {ok, ManifestPbc} = riak_cs_riak_client:manifest_pbc(RcPid),
     EpochStart = riak_cs_gc:epoch_start(),
+    Timeout = riak_cs_config:get_index_range_gckeys_timeout(),
+    CallTimeout = riak_cs_config:get_index_range_gckeys_call_timeout(),
+    Options1 = [{timeout, Timeout}, {call_timeout, CallTimeout}] ++ Options,
     QueryResult = riakc_pb_socket:get_index_range(
                     ManifestPbc,
                     ?GC_BUCKET, ?KEY_INDEX,
                     EpochStart, EndTime,
-                    Options),
+                    Options1),
 
     case QueryResult of
         {error, disconnected} ->
