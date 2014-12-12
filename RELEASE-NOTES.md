@@ -1,14 +1,19 @@
-
 # Riak CS 1.5.3 Release Notes
 
 ## Additions
 
-* riak_cs/1011: [Add read_before_last_manifest_write option to avoid sibling explosion](https://github.com/basho/riak_cs/pull/1011)
-* riak_cs/1021: [Make all kind of timeouts hitting Riak configurable](https://github.com/basho/riak_cs/pull/1021)
+- Add read_before_last_manifest_write option to help avoid sibling
+  explosion for use cases involving high churn and concurrency on a
+  fixed set of keys. [riak_cs/#1011](https://github.com/basho/riak_cs/pull/1011)
+- Add configurable timeouts for all Riak CS interactions with Riak to
+  provide more flexibility in operational
+  situations. [riak_cs/#1021](https://github.com/basho/riak_cs/pull/1021)
 
 ## Bugs Fixed
 
-* riak_cs/996: [Bugfix: storage calc on deleted buckets (porting to 1.5)](https://github.com/basho/riak_cs/pull/996)
+- Fix storage usage calculation bug where data for deleted buckets
+  would be included in the calculation
+  results. [riak_cs/#996](https://github.com/basho/riak_cs/pull/996)
 
 # Riak CS 1.5.2 Release Notes
 
