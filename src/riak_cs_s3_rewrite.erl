@@ -113,20 +113,51 @@ bucket_from_host(HostHeader, RootHost) ->
                      []    -> HostHeader;
                      [H|_] -> H
                  end,
-    extract_bucket_from_host(HostNoPort,
-                             string:rstr(HostNoPort, RootHost)).
+    case application:get_env(riak_cs, support_customdomain_for_bucket) of
+        {ok , true} -> 
+            extract_bucket_from_host(HostNoPort, RootHost , true);
+        _ -> 
+            extract_bucket_from_host(HostNoPort, RootHost , false)
+    end.
 
 %% @doc Extract the bucket name from the `Host' header value if a
 %% bucket name is present.
--spec extract_bucket_from_host(string(), non_neg_integer()) -> undefined | string().
-extract_bucket_from_host(_Host, 0) ->
-    undefined;
-extract_bucket_from_host(_Host, 1) ->
-    undefined;
-extract_bucket_from_host(Host, RootHostIndex) ->
-    %% Take the substring of the everything up to
-    %% the '.' preceding the root host
-    string:sub_string(Host, 1, RootHostIndex-2).
+-spec extract_bucket_from_host(string(), string() , boolean()) -> undefined | string().
+extract_bucket_from_host(Host, RootHost, SupportCustomDomain) ->
+    case lists:suffix(RootHost , Host) of
+        true ->
+            RootHostIndex = string:rstr(Host , RootHost),
+            case RootHostIndex of
+                1 -> 
+                    undefined;
+                _ ->
+                    case lists:suffix("." ++ RootHost , Host) of
+                        true ->
+                            string:sub_string(Host, 1, RootHostIndex-2);
+                        false ->
+                            extract_bucket_from_host_at_customdomain(Host, SupportCustomDomain)
+                    end
+            end;
+        false ->
+            extract_bucket_from_host_at_customdomain(Host , SupportCustomDomain)
+    end.
+
+%% @doc Extract the bucket name from the `Host' header value when host is custom domain.
+%% If host name is ipv4 format it return undefined, because ip format bucket name is forbidden.
+%% For backward comptiblity this function return undefined when SupportCustomDomain is false.
+-spec extract_bucket_from_host_at_customdomain(string() , boolean()) -> undefined | string().
+extract_bucket_from_host_at_customdomain(Host, SupportCustomDomain) ->
+    case SupportCustomDomain of
+        false ->
+            undefined;
+        true ->
+            case inet_parse:ipv4strict_address(Host) of
+                {ok, _} ->
+                  undefined;
+                {error, _} ->
+                  Host
+            end
+    end.
 
 %% @doc Separate the bucket name from the rest of the raw path in the
 %% case where the bucket name is included in the path.
@@ -217,9 +248,22 @@ valid_subresource({Key, _}) ->
 
 -ifdef(TEST).
 
-rstr_test() ->
+bucket_from_host_test() ->
     ?assertEqual("foo." ++ ?ROOT_HOST,
                  bucket_from_host("foo." ++ ?ROOT_HOST ++ "." ++ ?ROOT_HOST,
+                                  ?ROOT_HOST)),
+    ?assertEqual(undefined,
+                 bucket_from_host("foo." ++ ?ROOT_HOST ++ "xxx",
+                                  ?ROOT_HOST)),
+    ?assertEqual(undefined,
+                 bucket_from_host("a" ++ ?ROOT_HOST ,
+                                  ?ROOT_HOST)),
+    application:set_env(riak_cs, support_customdomain_for_bucket, true),
+    ?assertEqual("foo." ++ ?ROOT_HOST ++ "xxx",
+                 bucket_from_host("foo." ++ ?ROOT_HOST ++ "xxx",
+                                  ?ROOT_HOST)),
+    ?assertEqual("a" ++ ?ROOT_HOST,
+                 bucket_from_host("a" ++ ?ROOT_HOST ,
                                   ?ROOT_HOST)).
 
 rewrite_path_test() ->
@@ -384,7 +428,14 @@ rewrite_path_test() ->
                 "&Expires=1364406757&Signature=x%2B0vteNN1YillZNw4yDGVQWrT2s%3D",
                 rewrite_with(headers([{"host", "testbucket." ++ ?ROOT_HOST}]),
                              "/testobject?Signature=x%2B0vteNN1YillZNw4yDGVQWrT2s%3D"
-                             "&Expires=1364406757&AWSAccessKeyId=BF_BI8XYKFJSIW-NNAIR")).
+                             "&Expires=1364406757&AWSAccessKeyId=BF_BI8XYKFJSIW-NNAIR")),
+    application:set_env(riak_cs, support_customdomain_for_bucket, true),
+    equal_paths("/buckets/testbucket/objects/testobject",
+                rewrite_with(headers([{"host", "testbucket"}]),
+                             "/testobject")),
+    equal_paths("/buckets/testbucket/objects/testobject",
+                rewrite_with(headers([{"host", "127.0.0.1"}]),
+                             "/testbucket/testobject")).
 
 rewrite_header_test() ->
     Path = "/testbucket?y=z&a=b&m=n",
