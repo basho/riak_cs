@@ -143,6 +143,7 @@ extract_bucket_from_host(Host, RootHost, SupportCustomDomain) ->
     end.
 
 %% @doc Extract the bucket name from the `Host' header value when host is custom domain.
+%% If host name is ipv4 format it return undefined, because ip format bucket name is forbidden.
 %% For backward comptiblity this function return undefined when SupportCustomDomain is false.
 -spec extract_bucket_from_host_at_customdomain(string() , boolean()) -> undefined | string().
 extract_bucket_from_host_at_customdomain(Host, SupportCustomDomain) ->
