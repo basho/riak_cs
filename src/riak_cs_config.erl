@@ -54,7 +54,36 @@
          queue_if_disconnected/0,
          auto_reconnect/0,
          is_multibag_enabled/0,
-         max_buckets_per_user/0
+         max_buckets_per_user/0,
+         read_before_last_manifest_write/0
+        ]).
+
+%% Timeouts hitting Riak
+-export([ping_timeout/0,
+         get_user_timeout/0,
+         get_bucket_timeout/0,
+         get_manifest_timeout/0,
+         get_block_timeout/0, %% for n_val=3
+         local_get_block_timeout/0, %% for n_val=1, default 5
+         proxy_get_block_timeout/0, %% for remote
+         get_access_timeout/0,
+         get_gckey_timeout/0,
+         put_manifest_timeout/0,
+         put_block_timeout/0,
+         put_access_timeout/0,
+         put_gckey_timeout/0,
+         put_user_usage_timeout/0,
+         delete_manifest_timeout/0,
+         delete_block_timeout/0,
+         delete_gckey_timeout/0,
+         list_keys_list_objects_timeout/0,
+         list_keys_list_users_timeout/0,
+         storage_calc_timeout/0,
+         list_objects_timeout/0, %% using mapred (v0)
+         fold_objects_timeout/0, %% for cs_bucket_fold
+         get_index_range_gckeys_timeout/0,
+         get_index_range_gckeys_call_timeout/0,
+         get_index_list_multipart_uploads_timeout/0
         ]).
 
 %% OpenStack config
@@ -335,6 +364,63 @@ is_multibag_enabled() ->
 -spec max_buckets_per_user() -> non_neg_integer() | unlimited.
 max_buckets_per_user() ->
     get_env(riak_cs, max_buckets_per_user, ?DEFAULT_MAX_BUCKETS_PER_USER).
+
+%% @doc This options is useful for use case involving high churn and
+%% concurrency on a fixed set of keys and when not using a Riak
+%% version >= 2.0.0 with DVVs enabled. It helps to avoid sibling
+%% explosion in such use cases that can debilitate a system.
+-spec read_before_last_manifest_write() -> boolean().
+read_before_last_manifest_write() ->
+    get_env(riak_cs, read_before_last_manifest_write, true).
+
+
+%% ===================================================================
+%% ALL Timeouts hitting Riak
+%% ===================================================================
+
+-define(TIMEOUT_CONFIG_FUNC(ConfigName),
+        ConfigName() ->
+               get_env(riak_cs, ConfigName,
+                       get_env(riak_cs, riakc_timeouts, ?DEFAULT_RIAK_TIMEOUT))).
+
+%% @doc Return the configured ping timeout. Default is 5 seconds.  The
+%% timeout is used in call to `poolboy:checkout' and if that fails in
+%% the call to `riakc_pb_socket:ping' so the effective cumulative
+%% timeout could be up to 2 * `ping_timeout()'.
+-spec ping_timeout() -> pos_integer().
+ping_timeout() ->
+    get_env(riak_cs, ping_timeout, ?DEFAULT_PING_TIMEOUT).
+
+%% timeouts in milliseconds
+?TIMEOUT_CONFIG_FUNC(get_user_timeout).
+?TIMEOUT_CONFIG_FUNC(get_bucket_timeout).
+?TIMEOUT_CONFIG_FUNC(get_manifest_timeout).
+?TIMEOUT_CONFIG_FUNC(get_block_timeout).
+
+local_get_block_timeout() ->
+    get_env(riak_cs, local_get_block_timeout, timer:seconds(5)).
+
+?TIMEOUT_CONFIG_FUNC(proxy_get_block_timeout).
+?TIMEOUT_CONFIG_FUNC(get_access_timeout).
+?TIMEOUT_CONFIG_FUNC(get_gckey_timeout).
+?TIMEOUT_CONFIG_FUNC(put_manifest_timeout).
+?TIMEOUT_CONFIG_FUNC(put_block_timeout).
+?TIMEOUT_CONFIG_FUNC(put_access_timeout).
+?TIMEOUT_CONFIG_FUNC(put_gckey_timeout).
+?TIMEOUT_CONFIG_FUNC(put_user_usage_timeout).
+?TIMEOUT_CONFIG_FUNC(delete_manifest_timeout).
+?TIMEOUT_CONFIG_FUNC(delete_block_timeout).
+?TIMEOUT_CONFIG_FUNC(delete_gckey_timeout).
+?TIMEOUT_CONFIG_FUNC(list_keys_list_objects_timeout).
+?TIMEOUT_CONFIG_FUNC(list_keys_list_users_timeout).
+?TIMEOUT_CONFIG_FUNC(storage_calc_timeout).
+?TIMEOUT_CONFIG_FUNC(list_objects_timeout).
+?TIMEOUT_CONFIG_FUNC(fold_objects_timeout).
+?TIMEOUT_CONFIG_FUNC(get_index_range_gckeys_timeout).
+?TIMEOUT_CONFIG_FUNC(get_index_range_gckeys_call_timeout).
+?TIMEOUT_CONFIG_FUNC(get_index_list_multipart_uploads_timeout).
+
+-undef(TIMEOUT_CONFIG_FUNC).
 
 %% ===================================================================
 %% S3 config options

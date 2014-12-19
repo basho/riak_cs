@@ -40,13 +40,20 @@ confirm() ->
     %% Set up to grep logs to verify messages
     rt:setup_log_capture(hd(CSNodes)),
 
+    rtcs:gc(1, "set-interval infinity"),
+    rtcs:gc(1, "set-leeway 1"),
+    rtcs:gc(1, "cancel"),
+
     lager:info("Test GC run under an invalid state manifest..."),
     {GCKey, {BKey, UUID}} = setup_obj(RiakNodes, UserConfig),
+    %% Ensure the leeway has expired
+    timer:sleep(2000),
     ok = verify_gc_run(hd(CSNodes), GCKey),
     ok = verify_riak_object_remaining_for_bad_key(RiakNodes, GCKey, {BKey, UUID}),
 
     lager:info("Test repair script (repair_gc_bucket.erl) with more invlaid states..."),
     ok = put_more_bad_keys(RiakNodes, UserConfig),
+    %% Ensure the leeway has expired
     timer:sleep(2000),
     RiakIDs = rtcs:riak_id_per_cluster(NumNodes),
     [repair_gc_bucket(ID) || ID <- RiakIDs],
@@ -163,9 +170,7 @@ repair_gc_bucket(RiakNodeID) ->
     ok.
 
 verify_gc_run(Node, GCKey) ->
-    rtcs:gc(1, "set-leeway 1"),
-    timer:sleep(2000),
-    rtcs:gc(1, "batch"),
+    rtcs:gc(1, "batch 1"),
     lager:info("Check log, warning for invalid state and info for GC finish"),
     true = rt:expect_in_log(Node,
                             "Invalid state manifest in GC bucket at <<\""
@@ -179,7 +184,7 @@ verify_gc_run(Node, GCKey) ->
     ok.
 
 verify_gc_run2(Node) ->
-    rtcs:gc(1, "batch"),
+    rtcs:gc(1, "batch 1"),
     lager:info("Check collected count =:= 101, 1 from setup_obj, "
                "100 from put_more_bad_keys."),
     true = rt:expect_in_log(Node,

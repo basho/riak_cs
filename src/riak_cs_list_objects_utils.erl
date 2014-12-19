@@ -233,5 +233,4 @@ fold_objects_for_list_keys() ->
 
 -spec fold_objects_timeout() -> non_neg_integer().
 fold_objects_timeout() ->
-    riak_cs_config:get_env(riak_cs, fold_objects_timeout,
-                           ?FOLD_OBJECTS_TIMEOUT).
+    riak_cs_config:fold_objects_timeout().

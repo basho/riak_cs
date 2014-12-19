@@ -51,7 +51,8 @@ sum_user(RcPid, User) when is_binary(User) ->
     sum_user(RcPid, binary_to_list(User));
 sum_user(RcPid, User) when is_list(User) ->
     case riak_cs_user:get_user(User, RcPid) of
-        {ok, {?RCS_USER{buckets=Buckets}, _UserObj}} ->
+        {ok, {UserRecord, _UserObj}} ->
+            Buckets = riak_cs_bucket:get_buckets(UserRecord),
             BucketUsages = [maybe_sum_bucket(User, B) || B <- Buckets],
             {ok, BucketUsages};
         {error, Error} ->
@@ -99,7 +100,8 @@ sum_bucket(BucketName) ->
         ok = riak_cs_riak_client:set_bucket_name(RcPid, BucketName),
         {ok, ManifestPbc} = riak_cs_riak_client:manifest_pbc(RcPid),
         ManifestBucket = riak_cs_utils:to_bucket_name(objects, BucketName),
-        case riakc_pb_socket:mapred(ManifestPbc, ManifestBucket, Query) of
+        Timeout = riak_cs_config:storage_calc_timeout(),
+        case riakc_pb_socket:mapred(ManifestPbc, ManifestBucket, Query, Timeout) of
             {ok, Results} ->
                 {1, [{Objects, Bytes}]} = lists:keyfind(1, 1, Results),
                 {struct, [{<<"Objects">>, Objects},

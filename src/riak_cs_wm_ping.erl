@@ -73,19 +73,6 @@ finish_request(RD, Ctx=#ping_context{riak_client=RcPid,
 %% Internal functions
 %% -------------------------------------------------------------------
 
-%% @doc Return the configured ping timeout. Default is 5 seconds.  The
-%% timeout is used in call to `poolboy:checkout' and if that fails in
-%% the call to `riakc_pb_socket:ping' so the effective cumulative
-%% timeout could be up to 2 * `ping_timeout()'.
--spec ping_timeout() -> pos_integer().
-ping_timeout() ->
-    case application:get_env(riak_cs, ping_timeout) of
-        undefined ->
-            ?DEFAULT_PING_TIMEOUT;
-        {ok, Timeout} ->
-            Timeout
-    end.
-
 -spec get_connection_pid() -> {riak_client(), boolean()}.
 get_connection_pid() ->
     case pool_checkout() of
@@ -116,7 +103,8 @@ non_pool_connection() ->
 -spec riak_ping({riak_client(), boolean()}, #ping_context{}) -> {boolean(), #ping_context{}}.
 riak_ping({RcPid, PoolPid}, Ctx) ->
     {ok, MasterPbc} = riak_cs_riak_client:master_pbc(RcPid),
-    Available = case catch riakc_pb_socket:ping(MasterPbc, ping_timeout()) of
+    Timeout = riak_cs_config:ping_timeout(),
+    Available = case catch riakc_pb_socket:ping(MasterPbc, Timeout) of
                     pong ->
                         true;
                     _ ->

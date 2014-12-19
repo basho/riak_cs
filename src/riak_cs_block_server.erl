@@ -198,10 +198,11 @@ handle_cast({delete_block, ReplyPid, Bucket, Key, UUID, BlockNumber}, State=#sta
     dt_entry(<<"delete_block">>, [BlockNumber], [Bucket, Key]),
     {FullBucket, FullKey} = full_bkey(Bucket, Key, UUID, BlockNumber),
     StartTime = os:timestamp(),
+    Timeout = riak_cs_config:get_block_timeout(),
 
     %% do a get first to get the vclock (only do a head request though)
     GetOptions = [{r, 1}, {notfound_ok, false}, {basic_quorum, false}, head],
-    _ = case riakc_pb_socket:get(block_pbc(RcPid), FullBucket, FullKey, GetOptions) of
+    _ = case riakc_pb_socket:get(block_pbc(RcPid), FullBucket, FullKey, GetOptions, Timeout) of
             {ok, RiakObject} ->
                 ok = delete_block(RcPid, ReplyPid, RiakObject, {UUID, BlockNumber});
         {error, notfound} ->
@@ -264,7 +265,7 @@ do_get_block(ReplyPid, Bucket, Key, ClusterID, UseProxyGet, ProxyActive,
                             ProxyActive, UUID, BlockNumber, RcPid, MaxRetries, NewPause)
             end,
 
-    Timeout = timer:seconds(5),
+    Timeout = riak_cs_config:local_get_block_timeout(),
     try_local_get(RcPid, FullBucket, FullKey, GetOptions1, GetOptions2,
                   Timeout, ProceedFun, RetryFun, NumRetries, UseProxyGet,
                   ProxyActive, ClusterID).
@@ -294,7 +295,8 @@ handle_local_notfound(RcPid, FullBucket, FullKey, GetOptions2,
                       ProceedFun, RetryFun, NumRetries, UseProxyGet,
                       ProxyActive, ClusterID) ->
 
-    case get_block_local(RcPid, FullBucket, FullKey, GetOptions2, 60*1000) of
+    Timeout = riak_cs_config:get_block_timeout(),
+    case get_block_local(RcPid, FullBucket, FullKey, GetOptions2, Timeout) of
         {ok, _} = Success ->
             ProceedFun(Success);
 
@@ -333,9 +335,12 @@ get_block_local(RcPid, FullBucket, FullKey, GetOptions, Timeout) ->
             Else
     end.
 
-get_block_remote(RcPid, FullBucket, FullKey, ClusterID, GetOptions) ->
+get_block_remote(RcPid, FullBucket, FullKey, ClusterID, GetOptions0) ->
+    %% replace get_block_timeout with proxy_get_block_timeout
+    GetOptions = proplists:delete(timeout, GetOptions0),
+    Timeout = riak_cs_config:proxy_get_block_timeout(),
     case riak_repl_pb_api:get(block_pbc(RcPid), FullBucket, FullKey,
-                              ClusterID, GetOptions) of
+                              ClusterID, GetOptions, Timeout) of
         {ok, RiakObject} ->
             resolve_block_object(RiakObject, RcPid);
         Else ->
@@ -352,11 +357,13 @@ normal_nval_block_get(ReplyPid, Bucket, Key, ClusterID, UseProxyGet, UUID,
     StartTime = os:timestamp(),
     GetOptions = [{r, 1}, {notfound_ok, false}, {basic_quorum, false}],
     Object = case UseProxyGet of
-        false ->
-            riakc_pb_socket:get(block_pbc(RcPid), FullBucket, FullKey, GetOptions);
-        true ->
-            riak_repl_pb_api:get(block_pbc(RcPid), FullBucket, FullKey, ClusterID, GetOptions)
-    end,
+                 false ->
+                     LocalTimeout = riak_cs_config:get_block_timeout(),
+                     riakc_pb_socket:get(block_pbc(RcPid), FullBucket, FullKey, GetOptions, LocalTimeout);
+                 true ->
+                     RemoteTimeout = riak_cs_config:proxy_get_block_timeout(),
+                     riak_repl_pb_api:get(block_pbc(RcPid), FullBucket, FullKey, ClusterID, GetOptions, RemoteTimeout)
+             end,
     ChunkValue = case Object of
         {ok, RiakObject} ->
             {ok, riakc_obj:get_value(RiakObject)};
@@ -375,12 +382,14 @@ delete_block(RcPid, ReplyPid, RiakObject, BlockId) ->
 
 constrained_delete(RcPid, RiakObject, BlockId) ->
     DeleteOptions = [{r, all}, {pr, all}, {w, all}, {pw, all}],
+    Timeout = riak_cs_config:delete_block_timeout(),
     format_delete_result(
-        riakc_pb_socket:delete_obj(block_pbc(RcPid), RiakObject, DeleteOptions),
+        riakc_pb_socket:delete_obj(block_pbc(RcPid), RiakObject, DeleteOptions, Timeout),
         BlockId).
 
 secondary_delete_check({error, {unsatisfied_constraint, _, _}}, RcPid, RiakObject) ->
-    riakc_pb_socket:delete_obj(block_pbc(RcPid), RiakObject);
+    Timeout = riak_cs_config:delete_block_timeout(),
+    riakc_pb_socket:delete_obj(block_pbc(RcPid), RiakObject, [], Timeout);
 secondary_delete_check({error, Reason} = E, _, _) ->
     _ = lager:warning("Constrained block deletion failed. Reason: ~p", [Reason]),
     E;
@@ -502,8 +511,9 @@ do_put_block(FullBucket, FullKey, VClock, Value, MD, RcPid, FailFun) ->
     RiakObject0 = riakc_obj:new(FullBucket, FullKey, Value),
     RiakObject = riakc_obj:set_vclock(
             riakc_obj:update_metadata(RiakObject0, MD), VClock),
+    Timeout = riak_cs_config:put_block_timeout(),
     StartTime = os:timestamp(),
-    case riakc_pb_socket:put(block_pbc(RcPid), RiakObject) of
+    case riakc_pb_socket:put(block_pbc(RcPid), RiakObject, Timeout) of
         ok ->
             ok = riak_cs_stats:update_with_start(block_put, StartTime),
             ok;

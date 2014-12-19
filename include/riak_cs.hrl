@@ -470,6 +470,9 @@
 -define(DEFAULT_MANIFEST_WARN_HISTORY, 30).
 -define(DEFAULT_MAX_PART_NUMBER, 10000).
 
+%% timeout hitting Riak PB API
+-define(DEFAULT_RIAK_TIMEOUT, 60000).
+
 %% General system info
 -define(WORD_SIZE, erlang:system_info(wordsize)).
 
