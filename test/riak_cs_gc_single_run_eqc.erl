@@ -64,6 +64,9 @@
 eqc_test_() ->
     {foreach,
      fun() ->
+             error_logger:tty(false),
+             error_logger:logfile({open, "riak_cs_gc_single_run_eqc.log"}),
+
              application:set_env(riak_cs, gc_batch_size, 7),
              application:set_env(riak_cs, gc_interval, infinity),
              application:set_env(riak_cs, gc_paginated_indexes, true),
@@ -77,7 +80,8 @@ eqc_test_() ->
              meck_delete_fsm_sup()
      end,
      fun(_) ->
-             meck:unload()
+             meck:unload(),
+             stop_and_wait_for_gc_d()
      end,
      [
       {timeout, ?TESTING_TIME*2,
@@ -97,40 +101,60 @@ eqc_test_() ->
 %%    GET the fileset, spawns riak_cs_delete_fsm and DELETE fileset key at the end.
 %% 4. `riak_cs_gc_d' gathers workers' results and this test asserts them.
 prop_gc_manual_batch(ErrorOrNot) ->
-    ?FORALL(ListOfFilesetKeysInput, list(fileset_keys_input(ErrorOrNot)),
-            ?WHENFAIL(
-               eqc:format("ListOfFilesetKeysInput: ~p", [ListOfFilesetKeysInput]),
-               gc_manual_batch(ListOfFilesetKeysInput)
-              )).
+    ?FORALL(ListOfFilesetKeysInput, non_empty(list(fileset_keys_input(ErrorOrNot))),
+            begin
+                Res = gc_manual_batch(ListOfFilesetKeysInput),
+                {ExpectedBatchCount,
+                 ExpectedBatchSkips,
+                 ExpectedManifCount,
+                 ExpectedBlockCount} =
+                    expectations(ListOfFilesetKeysInput),
+                stop_and_wait_for_gc_d(),
+                ?WHENFAIL(
+                   begin
+                       eqc:format("ListOfFilesetKeysInput: ~p", [ListOfFilesetKeysInput])
+                   end,
+                   conjunction([{batch_count, equals(ExpectedBatchCount, element(1, Res))},
+                                {batch_skips, equals(ExpectedBatchSkips, element(2, Res))},
+                                {manif_count, equals(ExpectedManifCount, element(3, Res))},
+                                {block_count, equals(ExpectedBlockCount, element(4, Res))}]))
+            end).
+
+stop_and_wait_for_gc_d() ->
+    Pid = whereis(riak_cs_gc_d),
+    catch riak_cs_gc_d:stop(),
+    wait_for_stop(Pid).
+
+wait_for_stop(undefined) ->
+    ok;
+wait_for_stop(Pid) ->
+    case is_process_alive(Pid) of
+        true ->
+            timer:sleep(200),
+            wait_for_stop(Pid);
+        false ->
+            ok
+    end.
 
 -spec gc_manual_batch([fileset_keys_input()]) -> eqc:property().
 gc_manual_batch(ListOfFilesetKeysInput) ->
-    try
-        %% For `riak-cs-gc' 2i query, use a process to hold `ListOfFilesetKeysInput'.
-        meck:expect(riakc_pb_socket, get_index_range,
-                    dummy_get_index_range_fun(ListOfFilesetKeysInput)),
+    %% For `riak-cs-gc' 2i query, use a process to hold `ListOfFilesetKeysInput'.
+    meck:expect(riakc_pb_socket, get_index_range,
+                dummy_get_index_range_fun(ListOfFilesetKeysInput)),
 
-        {ok, _} = riak_cs_gc_d:start_link(),
-        riak_cs_gc_d:manual_batch([]),
-        receive
-            {batch_finished, #gc_d_state{batch_count=BatchCount,
-                                         batch_skips=BatchSkips,
-                                         manif_count=ManifCount,
-                                         block_count=BlockCount} = _State} ->
-                {ExpectedBatchCount, ExpectedBatchSkips,
-                 ExpectedManifCount, ExpectedBlockCount} = expectations(ListOfFilesetKeysInput),
-                conjunction(
-                  [{batch_count, equals(ExpectedBatchCount, BatchCount)},
-                   {batch_skips, equals(ExpectedBatchSkips, BatchSkips)},
-                   {manif_count, equals(ExpectedManifCount, ManifCount)},
-                   {block_count, equals(ExpectedBlockCount, BlockCount)}]);
-            OtherMsg ->
-                io:format(user, "OtherMsg: ~p~n", [OtherMsg]),
-                false
-        end
-    after
-        catch riak_cs_gc_d:stop()
+    {ok, _} = riak_cs_gc_d:start_link(),
+    riak_cs_gc_d:manual_batch([]),
+    receive
+        {batch_finished, #gc_d_state{batch_count=BatchCount,
+                                     batch_skips=BatchSkips,
+                                     manif_count=ManifCount,
+                                     block_count=BlockCount} = _State} ->
+            {BatchCount, BatchSkips, ManifCount, BlockCount};
+        OtherMsg ->
+            eqc:format("OtherMsg: ~p~n", [OtherMsg]),
+            {error, error, error, error}
     end.
+
 
 -spec expectations([fileset_keys_input()]) ->
                           {non_neg_integer(), non_neg_integer(),
@@ -238,6 +262,7 @@ dummy_get_index_range(NumFilesetKeys, Prefix, Opts) ->
                      I <- lists:seq(Offset, Offset + NumFilesetKeys - 1)],
             continuation=Continuation}}.
 
+
 %% ====================================================================
 %% Mock helpers for `riak_cs_delete_fsm_sup:start_delete_fsm/2'
 %% which spawns a dummy process and returns its pid.
@@ -268,11 +293,11 @@ dummy_start_delete_fsm(_Node, [_RcPid, {_UUID, ?MANIFEST{bkey={_, K}}=_Manifest}
 %% ====================================================================
 meck_fileset_get_and_delete() ->
     meck:new(riak_cs_pbc, [passthrough]),
-    meck:expect(riak_cs_pbc, get_object, fun dummy_get_object/3),
+    meck:expect(riak_cs_pbc, get_object, fun dummy_get_object/4),
     meck:expect(riakc_pb_socket, is_connected, fun always_true/1),
-    meck:expect(riakc_pb_socket, delete_obj, fun dummy_delete_object/2).
+    meck:expect(riakc_pb_socket, delete_obj, fun dummy_delete_object/4).
 
-dummy_get_object(_Pbc, <<"riak-cs-gc">>=B, K) ->
+dummy_get_object(_Pbc, <<"riak-cs-gc">>=B, K, _Opt) ->
     case re:run(K, <<"^error:in_fileset_fetch/">>) of
         nomatch ->
             {ok, riakc_obj:new_obj(B, K, vclock,
@@ -281,12 +306,12 @@ dummy_get_object(_Pbc, <<"riak-cs-gc">>=B, K) ->
         {match, _} ->
             {error, {dummy_error, in_fileset_fetch}}
     end;
-dummy_get_object(_Pbc, _B, _K) ->
+dummy_get_object(_Pbc, _B, _K, _Opt) ->
     error.
 
 always_true(_) -> true.
 
-dummy_delete_object(_Pbc, RiakObj) ->
+dummy_delete_object(_Pbc, RiakObj, _Opts, _Timeout) ->
     Key = riakc_obj:key(RiakObj),
     case re:run(Key, <<"^error:in_block_delete/">>) of
         nomatch ->
@@ -337,7 +362,7 @@ meck_pool_worker() ->
 dummy_pbc() ->
     receive
         stop -> ok;
-        M -> io:format(user, "dummy_worker received M: ~p~n", [M]),
+        M -> eqc:format("dummy_worker received M: ~p~n", [M]),
              dummy_pbc()
     end.
 
