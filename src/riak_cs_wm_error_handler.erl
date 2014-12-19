@@ -27,7 +27,7 @@ render_error(500, Req, Reason) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"render_error">>),
     {ok, ReqState} = Req:add_response_header("Content-Type", "text/html"),
     {Path,_} = Req:path(),
-    error_logger:error_msg("webmachine error: path=~p~n~p~n~p\n", [Path, {error, {error, Reason, erlang:get_stacktrace()}}]),
+    error_logger:error_msg("webmachine error: path=~p~n~p~n", [Path, {error, {error, Reason, erlang:get_stacktrace()}}]),
 
     ErrorOne = <<"<html><head><title>500 Internal Server Error</title>">>,
     ErrorTwo = <<"</head><body><h1>Internal Server Error</h1>">>,
@@ -39,7 +39,7 @@ render_error(405, Req, Reason) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"render_error">>),
     {ok, ReqState} = Req:add_response_header("Content-Type", "application/xml"),
     {Path,_} = Req:path(),
-    error_logger:error_msg("webmachine error: path=~p~n~p~n~p\n", [Path, {error, {error, Reason, erlang:get_stacktrace()}}]),
+    error_logger:error_msg("webmachine error: path=~p~n~p~n", [Path, {error, {error, Reason, erlang:get_stacktrace()}}]),
     {xml_error_body(Path, <<"MethodNotAllowed">>, <<"The specified method is not allowed against this resource.">>, <<"12345">>), ReqState};
 render_error(_Code, Req, _Reason) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"render_error">>),
