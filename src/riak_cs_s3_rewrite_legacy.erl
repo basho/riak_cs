@@ -25,12 +25,16 @@
 %% @doc Function to rewrite headers prior to processing by webmachine.
 -spec rewrite(atom(), atom(), {integer(), integer()}, gb_tree(), string()) ->
                      {gb_tree(), string()}.
-rewrite(Method, Scheme, Vsn, Headers, Url) ->
+rewrite(Method, _Scheme, _Vsn, Headers, Url) ->
+    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"rewrite">>),
     %% Unquote the path to accomodate some naughty client libs (looking
     %% at you Fog)
-    {Path, QueryString, Fragment} = mochiweb_util:urlsplit_path(Url),
-    UpdatedUrl = mochiweb_util:urlunsplit_path({mochiweb_util:unquote(Path), QueryString, Fragment}),
-    riak_cs_s3_rewrite:rewrite(Method, Scheme, Vsn, Headers, UpdatedUrl).
+    {Path, QueryString, _} = mochiweb_util:urlsplit_path(Url),
+    riak_cs_s3_rewrite:rewrite_path_and_headers(Method,
+                                                Headers,
+                                                Url,
+                                                mochiweb_util:unquote(Path),
+                                                QueryString).
 
 
 -spec original_resource(term()) -> undefined | {string(), [{term(),term()}]}.

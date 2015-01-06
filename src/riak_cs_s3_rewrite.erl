@@ -21,6 +21,7 @@
 -module(riak_cs_s3_rewrite).
 
 -export([rewrite/5, original_resource/1]).
+-export([rewrite_path_and_headers/5]).
 
 -include("riak_cs.hrl").
 -include("s3_api.hrl").
@@ -40,17 +41,8 @@
                      {gb_tree(), string()}.
 rewrite(Method, _Scheme, _Vsn, Headers, Url) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"rewrite">>),
-    Host = mochiweb_headers:get_value("host", Headers),
-    HostBucket = bucket_from_host(Host),
     {Path, QueryString, _} = mochiweb_util:urlsplit_path(Url),
-    RewrittenPath = rewrite_path(Method,
-                                 Path,
-                                 QueryString,
-                                 HostBucket),
-    RewrittenHeaders = mochiweb_headers:default(?RCS_REWRITE_HEADER,
-                                                rcs_rewrite_header(Url, HostBucket),
-                                                Headers),
-    {RewrittenHeaders, RewrittenPath}.
+    rewrite_path_and_headers(Method, Headers, Url, Path, QueryString).
 
 -spec original_resource(term()) -> undefined | {string(), [{term(),term()}]}.
 original_resource(RD) ->
@@ -60,6 +52,21 @@ original_resource(RD) ->
             {Path, QS, _} = mochiweb_util:urlsplit_path(RawPath),
             {Path, mochiweb_util:parse_qs(QS)}
     end.
+
+-spec rewrite_path_and_headers(atom(), gb_tree(), string(), string(), string()) ->
+                    {gb_tree(), string()}.
+rewrite_path_and_headers(Method, Headers, Url, Path, QueryString) ->
+    Host = mochiweb_headers:get_value("host", Headers),
+    HostBucket = bucket_from_host(Host),
+    RewrittenPath = rewrite_path(Method,
+                                 Path,
+                                 QueryString,
+                                 HostBucket),
+    RewrittenHeaders = mochiweb_headers:default(?RCS_REWRITE_HEADER,
+                                                rcs_rewrite_header(Url, HostBucket),
+                                                Headers),
+    {RewrittenHeaders, RewrittenPath}.
+
 
 %% @doc Internal function to handle rewriting the URL
 -spec rewrite_path(atom(),string(), string(), undefined | string()) -> string().
