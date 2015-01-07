@@ -38,18 +38,23 @@
 -define(QC_OUT(P),
         eqc:on_output(fun(Str, Args) ->
                               io:format(user, Str, Args) end, P)).
--define(TEST_ITERATIONS, 1000).
+-define(TESTING_TIME, 20).
 
 %%====================================================================
 %% Eunit tests
 %%====================================================================
 
 eqc_test_() ->
-    [{timeout, 30, ?_assertEqual(true, quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_s3_rewrite()))))},
-     {spawn,
-      [{timeout, 30, ?_assertEqual(true, quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_extract_bucket_from_host()))))}
-      ]
-     }].
+    Tests =
+        [
+         {timeout, ?TESTING_TIME*2,
+          ?_assertEqual(true, quickcheck(eqc:testing_time(?TESTING_TIME,
+                                                          ?QC_OUT(prop_s3_rewrite()))))},
+         {timeout, ?TESTING_TIME*2,
+          ?_assertEqual(true, quickcheck(eqc:testing_time(?TESTING_TIME,
+                                                          ?QC_OUT(prop_extract_bucket_from_host()))))
+         }],
+    [{inparallel, Tests}].
 
 %% ====================================================================
 %% EQC Properties
@@ -114,12 +119,6 @@ prop_extract_bucket_from_host() ->
 %%====================================================================
 %% Helpers
 %%====================================================================
-
-test() ->
-    test(500).
-
-test(Iterations) ->
-    eqc:quickcheck(eqc:numtests(Iterations, prop_extract_bucket_from_host())).
 
 base_host() ->
     oneof(["s3.amazonaws.com", "riakcs.net", "snarf", "hah-hah", ""]).
