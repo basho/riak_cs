@@ -31,10 +31,6 @@
 %% eqc property
 -export([prop_extract_bucket_from_host/0]).
 
-%% Helpers
--export([test/0,
-         test/1]).
-
 -define(QC_OUT(P),
         eqc:on_output(fun(Str, Args) ->
                               io:format(user, Str, Args) end, P)).
