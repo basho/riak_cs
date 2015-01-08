@@ -20,8 +20,6 @@
 
 -module(legacy_s3_rewrite_test).
 
-%% @doc `riak_test' module for testing object get behavior.
-
 -export([confirm/0]).
 -include_lib("erlcloud/include/erlcloud_aws.hrl").
 -include_lib("eunit/include/eunit.hrl").
