@@ -1,6 +1,6 @@
 # Errors
 Function get_block_remote/5 has no local return
-riak_cs_config.erl:214: Function will never be called
+riak_cs_config.erl:243: Function will never be called
 # Warnings
 Unknown functions:
   app_helper:get_prop_or_env/3

@@ -309,6 +309,9 @@ get_and_delete(RcPid, UUID, Bucket, Key) ->
             ok
     end.
 
+-spec get_and_update(riak_client(), orddict:orddict(), binary(), binary()) ->
+                            {ok | error, undefined | riakc_obj:riakc_obj(),
+                             undefined | orddict:orddict()}.
 get_and_update(RcPid, WrappedManifests, Bucket, Key) ->
     case riak_cs_manifest:get_manifests(RcPid, Bucket, Key) of
         {ok, RiakObject, Manifests} ->
