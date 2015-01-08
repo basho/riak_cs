@@ -414,6 +414,7 @@
 -define(JSON_TYPE, "application/json").
 -define(XML_TYPE, "application/xml").
 -define(S3_API_MOD, riak_cs_s3_rewrite).
+-define(S3_LEGACY_API_MOD, riak_cs_s3_rewrite_legacy).
 -define(OOS_API_MOD, riak_cs_oos_rewrite).
 -define(S3_RESPONSE_MOD, riak_cs_s3_response).
 -define(OOS_RESPONSE_MOD, riak_cs_oos_response).

@@ -149,6 +149,8 @@ api() ->
 -spec api({ok, atom()} | undefined) -> s3 | oos | undefined.
 api({ok, ?S3_API_MOD}) ->
     s3;
+api({ok, ?S3_LEGACY_API_MOD}) ->
+    s3;
 api({ok, ?OOS_API_MOD}) ->
     oos;
 api(_) ->
