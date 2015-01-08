@@ -74,7 +74,7 @@ rewrite_path(_Method, "/", _QS, undefined) ->
     "/buckets";
 rewrite_path(Method, Path, QS, undefined) ->
     {Bucket, UpdPath} = separate_bucket_from_path(Path),
-    rewrite_path(Method, UpdPath, QS, Bucket);
+    rewrite_path(Method, UpdPath, QS, mochiweb_util:unquote(Bucket));
 rewrite_path(_Method, Path, _QS, "riak-cs") ->
     "/riak-cs" ++ Path;
 rewrite_path(_Method, Path, _QS, "usage") ->

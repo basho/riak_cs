@@ -230,7 +230,16 @@ rewrite_path(Mod) ->
                 rewrite_with(Mod,
                              headers([{"host", "testbucket." ++ ?ROOT_HOST}]),
                              "/testobject?Signature=x%2B0vteNN1YillZNw4yDGVQWrT2s%3D"
-                             "&Expires=1364406757&AWSAccessKeyId=BF_BI8XYKFJSIW-NNAIR")).
+                             "&Expires=1364406757&AWSAccessKeyId=BF_BI8XYKFJSIW-NNAIR")),
+    %% Urlencoded path-style bucketname.
+    equal_paths("/buckets/testbucket/objects/testobject",
+                rewrite_with(Mod,
+                             headers([]),
+                             "/%74estbucket/testobject")),
+    equal_paths("/buckets/testbucket/objects/path%2Ftestobject",
+                rewrite_with(Mod,
+                             headers([]),
+                             "/%74estbucket/path/testobject")).
 
 strict_rewrite_path(Mod) ->
     equal_paths("/buckets/testbucket/objects/testdir%2Ftestobject%252Bplus",
