@@ -72,8 +72,9 @@ prop_s3_rewrite(Style) ->
              riak_cs_gen:http_version()},
             begin
                 {Encoded, Host} = build_original_path_info(Style, CSBucket, CSKey, RootHost),
+
+                %% Rewrite the path
                 Headers0 = riak_cs_s3_rewrite_test:headers([{"host", Host}]),
-                %% And create double-quoted Path to make wm dispatch
                 {Headers, Path} = RewriteModule:rewrite(Verb, Scheme, Version, Headers0, Encoded),
 
                 %% Let webmachine dispatcher create the #wm_reqdata to
@@ -119,6 +120,7 @@ prop_extract_bucket_from_host() ->
 %%====================================================================
 
 %% @doc Create encoded HTTP URI suffix corresponding to the original key
+%% And create double-quoted Path to make wm dispatch
 build_original_path_info(hoststyle, CSBucket, CSKey, RootHost) ->
     Encoded = mochiweb_util:quote_plus(unicode:characters_to_list(CSKey)),
     Host = lists:flatten([binary_to_list(CSBucket), $. , RootHost]),
