@@ -20,7 +20,7 @@
 
 -module(riak_cs_s3_rewrite_legacy).
 
--export([rewrite/5, original_resource/1]).
+-export([rewrite/5]).
 
 %% @doc Function to rewrite headers prior to processing by webmachine.
 -spec rewrite(atom(), atom(), {integer(), integer()}, gb_tree(), string()) ->
@@ -35,8 +35,3 @@ rewrite(Method, _Scheme, _Vsn, Headers, Url) ->
                                                 Url,
                                                 mochiweb_util:unquote(Path),
                                                 QueryString).
-
-
--spec original_resource(term()) -> undefined | {string(), [{term(),term()}]}.
-original_resource(RD) ->
-    riak_cs_s3_rewrite:original_resource(RD).
