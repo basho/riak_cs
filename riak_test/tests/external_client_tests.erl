@@ -23,37 +23,13 @@ confirm() ->
            {"AWS_ACCESS_KEY_ID",     UserConfig#aws_config.access_key_id},
            {"AWS_SECRET_ACCESS_KEY", UserConfig#aws_config.secret_access_key},
            {"CS_BUCKET",             ?TEST_BUCKET}],
-    case execute_cmd(Cmd, [{cd, CsSrcDir}, {env, Env}, {args, Args}]) of
+    WaitTime = 2 * rt_config:get(rt_max_wait_time),
+    case rtcs:cmd(Cmd, [{cd, CsSrcDir}, {env, Env}, {args, Args}], WaitTime) of
         ok ->
             pass;
         {error, Reason} ->
             lager:error("Error : ~p", [Reason]),
             error({external_client_tests, Reason})
-    end.
-
-execute_cmd(Cmd, Opts) ->
-    lager:info("Command: ~s", [Cmd]),
-    lager:info("Options: ~p", [Opts]),
-    Port = open_port({spawn_executable, Cmd},
-                     [in, exit_status, binary,
-                      stream, stderr_to_stdout,{line, 200} | Opts]),
-    get_cmd_result(Port).
-
-get_cmd_result(Port) ->
-    WaitTime = rt_config:get(rt_max_wait_time),
-    receive
-        {Port, {data, {Flag, Line}}} when Flag =:= eol orelse Flag =:= noeol ->
-            lager:info(Line),
-            get_cmd_result(Port);
-        {Port, {exit_status, 0}} ->
-            ok;
-        {Port, {exit_status, Status}} ->
-            {error, {exit_status, Status}};
-        {Port, Other} ->
-            lager:warning("Other data from port: ~p", [Other]),
-            get_cmd_result(Port)
-    after WaitTime * 2 ->
-            {error, timeout}
     end.
 
 cs_config() ->
