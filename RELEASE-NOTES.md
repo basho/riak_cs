@@ -38,6 +38,21 @@ behaviour, change the `rewrite_module` as follows:
    {rewrite_module, riak_cs_s3_rewrite_legacy},
 ```
 
+This fix also changes path format in access log from single quoted
+style to double quoted style. Old style follows:
+
+```
+127.0.0.1 - - [07/Jan/2015:08:27:07 +0000] "PUT /buckets/test/objects/path1%2Fpath2%2Fte%2Bst.txt HTTP/1.1" 200 0 "" ""
+```
+
+And new style is as following:
+
+```
+127.0.0.1 - - [07/Jan/2015:17:28:23 +0900] "PUT /buckets/test/objects/path1%2Fpath2%2Fte%252Bst.txt HTTP/1.1" 200 0 "" ""
+```
+
+Note that the object path has changed from
+`path1%2Fpath2%2Fte%2Bst.txt` to `path1%2Fpath2%2Fte%252Bst.txt`.
 
 # Riak CS 1.5.3 Release Notes
 
