@@ -18,7 +18,9 @@
 %%
 %% ---------------------------------------------------------------------
 
-%% @doc Rewrite rule of Riak CS S3 API. This is overall url quote/unquote diagram:
+%% @doc Rewrite rule of Riak CS S3 API. Following diagram is overall url quote/unquote diagram
+%% in case of hosted path style object names. Bucket names are much different in case of path
+%% style; they won't be doubly escaped.
 %%
 %% quote state     RAW    escaped(1)  escaped(2)    example
 %%
