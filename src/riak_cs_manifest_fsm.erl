@@ -309,13 +309,23 @@ get_and_delete(RcPid, UUID, Bucket, Key) ->
             ok
     end.
 
+-spec get_and_update(riak_client(), orddict:orddict(), binary(), binary()) ->
+                            {ok | error, undefined | riakc_obj:riakc_obj(),
+                             undefined | orddict:orddict()}.
 get_and_update(RcPid, WrappedManifests, Bucket, Key) ->
     case riak_cs_manifest:get_manifests(RcPid, Bucket, Key) of
         {ok, RiakObject, Manifests} ->
             case update(RcPid, Manifests, RiakObject, WrappedManifests, Bucket, Key) of
                 {ok, _, _} = Res ->
-                    maybe_backpressure_sleep(riakc_obj:value_count(RiakObject)),
-                    Res;
+                    case maybe_backpressure_sleep(riakc_obj:value_count(RiakObject)) of
+                        true ->
+                            %% Backpressure sleep has been triggered. Current object
+                            %% is to be discarded to prevent unnecessary interleaving
+                            %% with other concurrent manifest updates while sleeping.
+                            {ok, undefined, undefined};
+                        false ->
+                            Res
+                    end;
                 OtherRes ->
                     OtherRes
             end;
@@ -329,14 +339,18 @@ get_and_update(RcPid, WrappedManifests, Bucket, Key) ->
             {PutResult, undefined, undefined}
     end.
 
+%% If backpressure is needed, sleep some interval and return `true'.
+%% Otherwise, return `false'.
+-spec maybe_backpressure_sleep(non_neg_integer()) -> boolean().
 maybe_backpressure_sleep(Siblings) ->
     BackpressureThreshold = riak_cs_config:get_env(
                               riak_cs, manifest_siblings_bp_threashold, 5),
     maybe_backpressure_sleep(Siblings, BackpressureThreshold).
 
+-spec maybe_backpressure_sleep(non_neg_integer(), non_neg_integer() | infinity) -> boolean().
 maybe_backpressure_sleep(Siblings, BackpressureThreshold)
   when Siblings < BackpressureThreshold ->
-    ok;
+    false;
 maybe_backpressure_sleep(Siblings, _BackpressureThreshold) ->
     MaxSleep = riak_cs_config:get_env(riak_cs, manifest_siblings_bp_max_sleep, 30*1000),
     Coefficient = riak_cs_config:get_env(riak_cs, manifest_siblings_bp_coefficient, 200),
@@ -345,7 +359,8 @@ maybe_backpressure_sleep(Siblings, _BackpressureThreshold) ->
     SleepMS = crypto:rand_uniform(MeanSleepMS - Delta, MeanSleepMS + Delta),
     lager:debug("maybe_backpressure_sleep: Siblings=~p, SleepMS=~p~n", [Siblings, SleepMS]),
     ok = riak_cs_stats:update(manifest_siblings_bp_sleep, SleepMS * 1000),
-    timer:sleep(SleepMS).
+    ok = timer:sleep(SleepMS),
+    true.
 
 update(RcPid, OldManifests, OldRiakObject, WrappedManifests, Bucket, Key) ->
     NewManiAdded = riak_cs_manifest_resolution:resolve([WrappedManifests, OldManifests]),
