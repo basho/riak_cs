@@ -18,6 +18,27 @@
 %%
 %% ---------------------------------------------------------------------
 
+%% @doc Rewrite rule of Riak CS S3 API. This is overall url quote/unquote diagram:
+%%
+%% quote state     RAW    escaped(1)  escaped(2)    example
+%%
+%%                  *                               'baz/foo bar'        'baz/foo+bar'
+%% client app       +--------+                      'baz/foo%20bar'      'baz/foo%2Bbar'
+%%                           |
+%% HTTP                      |
+%%                           |
+%% webmachine                |
+%% before rewrite            |
+%% rewrite                   +------------+         'baz%2Ffoo%2520bar'  'baz%2Ffoo%252Bbar'
+%% after rewrite                          |
+%%                                        |
+%% extract_key      +---------------------+
+%%                  |
+%%                  v
+%%                  *                               'baz/foo bar'        'baz/foo+bar'
+
+
+
 -module(riak_cs_s3_rewrite).
 
 -export([rewrite/5, original_resource/1]).

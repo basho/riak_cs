@@ -796,6 +796,10 @@ error_child_element_verifier(Code, Message, Resource) ->
             true
     end.
 
+
+%% TODO: this is added as riak-1.4 branch of riak_test/src/rt_cs_dev.erl
+%% throws out the return value. Let's get rid of these functions when
+%% we entered to Riak CS 2.0 dev, updating to riak_test master branch
 cmd(Cmd, Opts) ->
     cmd(Cmd, Opts, rt_config:get(rt_max_wait_time)).
 
