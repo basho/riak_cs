@@ -8,10 +8,13 @@
   triggered under high upload concurrency, and uploads are interleaved
   during the backpressure sleep.
 - Fix wrong path rewrite in S3 API by unnecessary unquote
-  [riak_cs/#1040](https://github.com/basho/riak_cs/pull/1011). For
+  [riak_cs/#1040](https://github.com/basho/riak_cs/pull/1040). For
   example, in case when '+' is included in path, '+' (plus, `%2B` in
   quoted representation) in object key has been mistakenly unquoted to
-  become ' ' (whitespace, `%20` in quoted representaiton).
+  become ' ' (whitespace, `%20` in quoted representaiton). This fix
+  also addresses
+  [riak_cs/#910](https://github.com/basho/riak_cs/pull/910) and
+  [riak_cs/#977](https://github.com/basho/riak_cs/pull/977).
 
 ## Notes on upgrading
 
