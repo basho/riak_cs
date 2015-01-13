@@ -1,3 +1,41 @@
+# Riak CS 1.5.4 Release Notes
+
+## Bugs Fixed
+
+- Disable previous riak object after backpressure sleep is triggered
+  [riak_cs/#1041](https://github.com/basho/riak_cs/pull/1041). This
+  change prevents unnecessary siblings increase when backpressure is
+  triggered under high upload concurrency, and uploads are interleaved
+  during the backpressure sleep.
+- Fix wrong path rewrite in S3 API by unnecessary unquote
+  [riak_cs/#1040](https://github.com/basho/riak_cs/pull/1011). For
+  example, in case when '+' is included in path, '+' (plus, `%2B` in
+  quoted representation) in object key has been mistakenly unquoted to
+  become ' ' (whitespace, `%20` in quoted representaiton).
+
+## Notes on upgrading
+
+Due to the bug #1040, objects including '+' had been mistakenly
+rewritten their path and replaced with ' '. This had led to unexpected
+overwrite of an object including '+' in its key (e.g. `foo+bar`) by a
+different object with a mostly same name but replaced with ' '
+(e.g. `foo bar`), and vice verca.
+
+After upgrading to 1.5.4, objects including '+' in its key
+(e.g. `foo+bar`) become invisible and can be seen as objects with
+those '+' replaced with ' ' (e.g. `foo bar`) by default.
+
+If the old behaviour is preferred maybe because of dependent
+applicaitons, by changing the configuration the old behaviour can be
+restored. **Note that the old behaviour is wrong and implicitly
+overwrites the data as described above.** To restore the old
+behaviour, change the `rewrite_module` as follows:
+
+```
+   {rewrite_module, riak_cs_s3_rewrite_legacy},
+```
+
+
 # Riak CS 1.5.3 Release Notes
 
 ## Additions
