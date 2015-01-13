@@ -795,3 +795,34 @@ error_child_element_verifier(Code, Message, Resource) ->
        (_) ->
             true
     end.
+
+
+%% TODO: this is added as riak-1.4 branch of riak_test/src/rt_cs_dev.erl
+%% throws out the return value. Let's get rid of these functions when
+%% we entered to Riak CS 2.0 dev, updating to riak_test master branch
+cmd(Cmd, Opts) ->
+    cmd(Cmd, Opts, rt_config:get(rt_max_wait_time)).
+
+cmd(Cmd, Opts, WaitTime) ->
+    lager:info("Command: ~s", [Cmd]),
+    lager:info("Options: ~p", [Opts]),
+    Port = open_port({spawn_executable, Cmd},
+                     [in, exit_status, binary,
+                      stream, stderr_to_stdout,{line, 200} | Opts]),
+    get_cmd_result(Port, WaitTime).
+
+get_cmd_result(Port, WaitTime) ->
+    receive
+        {Port, {data, {Flag, Line}}} when Flag =:= eol orelse Flag =:= noeol ->
+            lager:info(Line),
+            get_cmd_result(Port, WaitTime);
+        {Port, {exit_status, 0}} ->
+            ok;
+        {Port, {exit_status, Status}} ->
+            {error, {exit_status, Status}};
+        {Port, Other} ->
+            lager:warning("Other data from port: ~p", [Other]),
+            get_cmd_result(Port, WaitTime)
+    after WaitTime ->
+            {error, timeout}
+    end.
