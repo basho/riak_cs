@@ -1,6 +1,7 @@
 # Errors
-Function get_block_remote/5 has no local return
-riak_cs_config.erl:243: Function will never be called
+riak_cs_block_server.erl:318: The pattern
+riak_cs_block_server.erl:353: The pattern
+riak_cs_config.erl:239: The pattern
 # Warnings
 Unknown functions:
   app_helper:get_prop_or_env/3
@@ -20,4 +21,3 @@ Unknown types:
   riak_kv_backend:fold_objects_fun/0
   riak_object:bucket/0
   riak_object:key/0
-  riakc_pb_socket:index_results/0

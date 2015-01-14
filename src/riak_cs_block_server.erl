@@ -30,6 +30,7 @@
 
 -include("riak_cs.hrl").
 -include_lib("riak_pb/include/riak_pb_kv_codec.hrl").
+-include_lib("riakc/include/riakc.hrl").
 
 %% API
 -export([start_link/1, start_link/2,
@@ -270,6 +271,9 @@ do_get_block(ReplyPid, Bucket, Key, ClusterID, UseProxyGet, ProxyActive,
                   Timeout, ProceedFun, RetryFun, NumRetries, UseProxyGet,
                   ProxyActive, ClusterID).
 
+-spec try_local_get(riak_client(), binary(), binary(), list(), list(),
+                    timeout(), fun(), fun(), non_neg_integer(), boolean(),
+                    boolean(), binary()) -> no_return().
 try_local_get(RcPid, FullBucket, FullKey, GetOptions1, GetOptions2,
               Timeout, ProceedFun, RetryFun, NumRetries, UseProxyGet,
               ProxyActive, ClusterID) ->
@@ -291,6 +295,9 @@ try_local_get(RcPid, FullBucket, FullKey, GetOptions1, GetOptions2,
             RetryFun(failure)
     end.
 
+-spec handle_local_notfound(riak_client(), binary(), binary(), list(),
+                            fun(({ok,binary()}) -> no_return()), fun((non_neg_integer())->no_return()), non_neg_integer(), boolean(),
+                            boolean(), binary()) -> no_return().
 handle_local_notfound(RcPid, FullBucket, FullKey, GetOptions2,
                       ProceedFun, RetryFun, NumRetries, UseProxyGet,
                       ProxyActive, ClusterID) ->
@@ -335,6 +342,8 @@ get_block_local(RcPid, FullBucket, FullKey, GetOptions, Timeout) ->
             Else
     end.
 
+-spec get_block_remote(riak_client(), binary(), binary(), binary(), get_options()) ->
+                              {ok, binary()} | {error, term()}.
 get_block_remote(RcPid, FullBucket, FullKey, ClusterID, GetOptions0) ->
     %% replace get_block_timeout with proxy_get_block_timeout
     GetOptions = proplists:delete(timeout, GetOptions0),
@@ -468,6 +477,8 @@ full_bkey(Bucket, Key, UUID, BlockId) ->
 find_md_usermeta(MD) ->
     dict:find(?MD_USERMETA, MD).
 
+-spec resolve_block_object(riakc_obj:riakc_obj(), riak_client()) ->
+                                  {ok, binary()} | {error, notfound}.
 resolve_block_object(RObj, RcPid) ->
     {{MD, Value}, NeedRepair} =
                                 riak_cs_utils:resolve_robj_siblings(riakc_obj:get_contents(RObj)),
