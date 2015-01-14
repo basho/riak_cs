@@ -41,20 +41,20 @@
 -define(TEST_BUCKET,        "riak-test-bucket").
 -define(KEY_SINGLE_BLOCK,   "riak_test_key1").
 
-%% keys for multipart uploaded objects
--define(KEY_MP,        "riak_test_mp").  % single part, single block
-
-
-
 confirm() ->
     RTConfig = rt_config:get(sibling_benchmark, []),
     Concurrency = proplists:get_value(write_concurrency, RTConfig, 4),
+    ?assert(is_integer(Concurrency) andalso Concurrency >= 0),
     %% msec
     Interval = proplists:get_value(write_interval, RTConfig, 100),
+    ?assert(is_integer(Interval) andalso Interval >= 0),
+
+    Duration = proplists:get_value(duration_sec, RTConfig, 16),
+    ?assert(is_integer(Duration) andalso Duration >= 0),
 
     CSConfig0 = rtcs:replace_cs_config(connection_pools,
                                        [
-                                        {request_pool, {Concurrency*2, 0} },
+                                        {request_pool, {Concurrency*2 + 5, 0} },
                                         {bucket_list_pool, {rtcs:bucket_list_pool_size(), 0} }
                                        ],
                                        rtcs:cs_config()),
@@ -66,8 +66,11 @@ confirm() ->
 
     {UserConfig, {RiakNodes, _CSNodes, _Stanchion}} =
         case proplists:get_value(version, RTConfig, current) of
-            current -> rtcs:setup(4, ConnConfig);
+            current ->
+                put(version, current),
+                rtcs:setup(4, ConnConfig);
             previous ->
+                put(version, previous),
                 PrevConfig =  ConnConfig ++ rtcs:previous_configs(),
                 rtcs:setup(4, PrevConfig, previous)
         end,
@@ -89,8 +92,6 @@ confirm() ->
     {ok, Reader} = start_object_reader(UserConfig),
 
     %% Do your madness or evil here
-    Duration = proplists:get_value(duration_sec, RTConfig, 16),
-
     timer:sleep(Duration * 1000),
     LeaveAndJoin = proplists:get_value(leave_and_join, RTConfig, 0),
     leave_and_join_node(RiakNodes, LeaveAndJoin),
@@ -98,7 +99,7 @@ confirm() ->
     ok = stop_object_reader(Reader),
     [stop_object_writer(Writer) || {ok, Writer} <- Writers],
     lager:info("====================== benchmark done ===================="),
-    {ok, MaxSib} = stop_stats_checker(Pid),
+    MaxSib = stop_stats_checker(Pid),
     %% Max number of siblings should not exceed number of upload concurrency
     %% according to DVVset implementation
     lager:info("MaxSib:Concurrency = ~p:~p", [MaxSib, Concurrency]),
@@ -158,23 +159,25 @@ stop_stats_checker(Pid) ->
     receive Reply -> Reply end.
 
 stats_checker(Nodes, IntervalSec, MaxSib0) ->
-    NewMaxSib = case check_stats(Nodes) of
-                    MaxSib when MaxSib0 < MaxSib -> MaxSib;
-                    _ -> MaxSib0
-                end,
+    NewMaxSib = check_stats(Nodes, MaxSib0),
     receive
-        {stop, From} -> From ! check_stats(Nodes)
+        {stop, From} -> From ! check_stats(Nodes, NewMaxSib)
     after IntervalSec * 1000 ->
             stats_checker(Nodes, IntervalSec, NewMaxSib)
     end.
 
-check_stats(Nodes) ->
+check_stats(Nodes, MaxSib0) ->
     Stats = collect_stats(Nodes),
     MaxSib = pp_siblings(Stats),
     pp_objsize(Stats),
     pp_time(Stats),
     get_counts(Nodes, ?TEST_BUCKET, ?KEY_SINGLE_BLOCK),
-    MaxSib.
+    case MaxSib of
+        _ when is_integer(MaxSib) andalso MaxSib0 < MaxSib ->
+            MaxSib;
+        _ ->
+            MaxSib0
+    end.
 
 collect_stats(Nodes) ->
     RiakNodes = Nodes,
@@ -183,23 +186,34 @@ collect_stats(Nodes) ->
 
 pp_siblings(Stats) -> pp(siblings, Stats).
 
-pp_objsize(Stats) -> pp(objsize, Stats).
+pp_objsize(Stats) ->  pp(objsize, Stats).
 
-pp_time(Stats) ->    pp(time, Stats).
+pp_time(Stats) ->     pp(time, Stats).
 
 pp(Target, Stats) ->
     AtomMeans = list_to_atom(lists:flatten(["node_get_fsm_", atom_to_list(Target), "_mean"])),
     AtomMaxs = list_to_atom(lists:flatten(["node_get_fsm_", atom_to_list(Target), "_100"])),
-    Means = [ proplists:get_value(AtomMeans, Stat) || Stat <- Stats ],
-    Maxs = [ proplists:get_value(AtomMaxs, Stat)   || Stat <- Stats ],
-    MeansStr = [ "\t" ++ integer_to_list(Mean) || Mean <- Means ],
-    MaxsStr = [ "\t" ++ integer_to_list(Max) || Max <- Maxs ],
+    Means = [ safe_get_value(AtomMeans, Stat) || Stat <- Stats ],
+    Maxs = [ safe_get_value(AtomMaxs, Stat)   || Stat <- Stats ],
+    MeansStr = [ "\t" ++ safe_integer_to_list(Mean) || Mean <- Means ],
+    MaxsStr = [ "\t" ++ safe_integer_to_list(Max) || Max <- Maxs ],
     lager:info("~s Mean: ~s", [Target, MeansStr]),
     lager:info("~s Max: ~s", [Target, MaxsStr]),
-    Max = lists:foldl(fun erlang:max/2, 0, Maxs),
-    {ok, Max}.
+    Max = lists:foldl(fun erlang:max/2, 0,
+                      lists:filter(fun is_integer/1, Maxs)),
+    %% lager:debug("Max ~p: ~p <= ~p", [Target, Max, Maxs]),
+    Max.
 
--spec get_counts(list(), binary(), binary()) -> {ok, non_neg_integer(), [non_neg_integer()]}.
+safe_get_value(_AtomKey, {badrpc, _}) -> undefined;
+safe_get_value(AtomKey, Stat) when is_list(Stat) ->  proplists:get_value(AtomKey, Stat);
+safe_get_value(_, _) -> undefined.
+
+safe_integer_to_list(I) when is_integer(I) ->
+    integer_to_list(I);
+safe_integer_to_list(_) ->
+    " - ".
+
+-spec get_counts(list(), string(), string()) -> {ok, non_neg_integer(), [non_neg_integer()]}.
 get_counts(RiakNodes, Bucket, Key) ->
     {ok, RiakObj} = rc_helper:get_riakc_obj(RiakNodes, objects, Bucket, Key),
     SiblingCount = riakc_obj:value_count(RiakObj),
@@ -213,13 +227,13 @@ get_counts(RiakNodes, Bucket, Key) ->
 
 leave_and_join_node(_RiakNodes, 0) -> ok;
 leave_and_join_node(RiakNodes, N) ->
-    lager:info("leaving node2"),
+    lager:info("leaving node2 (~p)", [N]),
     Node2 = hd(tl(RiakNodes)),
     rt:leave(Node2),
     ?assertEqual(ok, rt:wait_until_unpingable(Node2)),
     timer:sleep(1000),
 
-    lager:info("joining node2 again"),
+    lager:info("joining node2 again (~p)", [N]),
     Node1 = hd(RiakNodes),
     rt:start_and_wait(Node2),
     rt:staged_join(Node2, Node1),

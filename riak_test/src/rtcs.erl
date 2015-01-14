@@ -337,8 +337,7 @@ lager_config() ->
     {lager,
      [
       {handlers,
-       [
-        {lager_console_backend, debug},
+       [{lager_console_backend, info},
         {lager_file_backend,
          [
           {"./log/error.log", error, 10485760, "$D0",5},
@@ -747,11 +746,14 @@ create_user(Port, EmailAddr, Name) ->
     Cmd="curl -s -H 'Content-Type: application/json' http://localhost:" ++
         integer_to_list(Port) ++
         "/riak-cs/user --data '{\"email\":\"" ++ EmailAddr ++  "\", \"name\":\"" ++ Name ++"\"}'",
-    %% lager:info("Cmd: ~p", [Cmd]),
+    lager:debug("Cmd: ~p", [Cmd]),
     Delay = rt_config:get(rt_retry_delay),
     Retries = rt_config:get(rt_max_wait_time) div Delay,
     OutputFun = fun() -> rt:cmd(Cmd) end,
-    Condition = fun({Status, Res}) -> Status =:= 0 andalso Res /= [] end,
+    Condition = fun({Status, Res}) ->
+                        lager:debug("Return (~p), Res: ~p", [Status, Res]),
+                        Status =:= 0 andalso Res /= []
+                end,
     {_Status, Output} = wait_until(OutputFun, Condition, Retries, Delay),
     lager:debug("Create user output=~p~n",[Output]),
     {struct, JsonData} = mochijson2:decode(Output),
