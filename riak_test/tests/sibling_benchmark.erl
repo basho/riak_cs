@@ -48,7 +48,7 @@
 
 confirm() ->
     RTConfig = rt_config:get(sibling_benchmark, []),
-    Concurrency = proplists:get_value(write_concurrency, RTConfig, 2),
+    Concurrency = proplists:get_value(write_concurrency, RTConfig, 4),
     %% msec
     Interval = proplists:get_value(write_interval, RTConfig, 100),
 
