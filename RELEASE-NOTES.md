@@ -6,12 +6,13 @@
   [riak_cs/#1041](https://github.com/basho/riak_cs/pull/1041). This
   change prevents unnecessary siblings increase when backpressure is
   triggered under high upload concurrency, and uploads are interleaved
-  during the backpressure sleep.
+  during the backpressure sleep. This issue does not affect multipart
+  uploads.
 - Fix wrong path rewrite in S3 API by unnecessary unquote
   [riak_cs/#1040](https://github.com/basho/riak_cs/pull/1040). For
   example, in case when '+' is included in path, '+' (plus, `%2B` in
   quoted representation) in object key has been mistakenly unquoted to
-  become ' ' (whitespace, `%20` in quoted representaiton). This fix
+  become ' ' (space, `%20` in quoted representaiton). This fix
   also addresses
   [riak_cs/#910](https://github.com/basho/riak_cs/pull/910) and
   [riak_cs/#977](https://github.com/basho/riak_cs/pull/977).
@@ -27,6 +28,13 @@ different object with a mostly same name but replaced with ' '
 After upgrading to 1.5.4, objects including '+' in its key
 (e.g. `foo+bar`) become invisible and can be seen as objects with
 those '+' replaced with ' ' (e.g. `foo bar`) by default.
+
+Another case for this is object keys matching
+`%[0-9a-fA-F][0-9a-fA-F]` before url encoding. Keys like these are to
+be doubly quoted on the wire and inside Riak CS it will be stored in
+Riak with wrong keys different from original ones. This may lead to
+implicit data overwrite of data as well as wrong result of bucket list
+API.
 
 If the old behaviour is preferred maybe because of dependent
 applicaitons, by changing the configuration the old behaviour can be
