@@ -49,6 +49,8 @@
 confirm() ->
     RTConfig = rt_config:get(sibling_benchmark, []),
     Concurrency = proplists:get_value(write_concurrency, RTConfig, 2),
+    %% msec
+    Interval = proplists:get_value(write_interval, RTConfig, 100),
 
     CSConfig0 = rtcs:replace_cs_config(connection_pools,
                                        [
@@ -81,8 +83,9 @@ confirm() ->
     lager:info("====================== run benchmark ====================="),
     {ok, Pid} = start_stats_checker(RiakNodes),
 
-    lager:info("write_concurrency: ~p", [Concurrency]),
-    Writers = [start_object_writer(UserConfig, 100) || _ <- lists:seq(1, Concurrency)],
+    lager:info("write_concurrency: ~p, write_interval: ~p msec", [Concurrency, Interval]),
+
+    Writers = [start_object_writer(UserConfig, Interval) || _ <- lists:seq(1, Concurrency)],
     {ok, Reader} = start_object_reader(UserConfig),
 
     %% Do your madness or evil here
