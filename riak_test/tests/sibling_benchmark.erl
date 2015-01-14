@@ -61,7 +61,7 @@ confirm() ->
     CSConfig1 = rtcs:replace_cs_config(leeway_seconds,
                                        5, CSConfig0),
     CSConfig = rtcs:replace_cs_config(gc_interval,
-                                       10, CSConfig1),
+                                      10, CSConfig1),
     ConnConfig = [{cs, CSConfig}],
 
     {UserConfig, {RiakNodes, _CSNodes, _Stanchion}} =
@@ -150,19 +150,22 @@ object_writer(UserConfig, IntervalMilliSec)->
     end.
 
 start_stats_checker(Nodes) ->
-    Pid = spawn_link(fun() -> stats_checker(Nodes, 5) end),
+    Pid = spawn_link(fun() -> stats_checker(Nodes, 5, -1) end),
     {ok, Pid}.
 
 stop_stats_checker(Pid) ->
     Pid ! {stop, self()},
     receive Reply -> Reply end.
 
-stats_checker(Nodes, IntervalSec) ->
-    check_stats(Nodes),
+stats_checker(Nodes, IntervalSec, MaxSib0) ->
+    NewMaxSib = case check_stats(Nodes) of
+                    MaxSib when MaxSib0 < MaxSib -> MaxSib;
+                    _ -> MaxSib0
+                end,
     receive
         {stop, From} -> From ! check_stats(Nodes)
     after IntervalSec * 1000 ->
-            stats_checker(Nodes, IntervalSec)
+            stats_checker(Nodes, IntervalSec, NewMaxSib)
     end.
 
 check_stats(Nodes) ->
