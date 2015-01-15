@@ -815,4 +815,4 @@ class SimpleCopyTest(S3ApiVerificationTestBase):
             self.assertEqual(e.reason, 'Object Not Found')
 
 if __name__ == "__main__":
-    unittest.main()
+    unittest.main(verbosity=2)
