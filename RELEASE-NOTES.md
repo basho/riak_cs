@@ -2,85 +2,94 @@
 
 ## Bugs Fixed
 
-- Disable previous riak object after backpressure sleep is triggered
+- Disable previous Riak object after backpressure sleep is triggered
   [riak_cs/#1041](https://github.com/basho/riak_cs/pull/1041). This
-  change prevents unnecessary siblings increase when backpressure is
-  triggered under high upload concurrency, and uploads are interleaved
-  during the backpressure sleep. This issue does not affect multipart
-  uploads.
-- Fix wrong path rewrite in S3 API by unnecessary URL decoding
+  change prevents unnecessary siblings growth in cases where (a)
+  backpressure is triggered under high upload concurrency and (b)
+  uploads are interleaved during backpressure sleep. This issue does not
+  affect multipart uploads.
+- Fix an incorrect path rewrite in the S3 API caused by unnecessary URL
+- decoding
   [riak_cs/#1040](https://github.com/basho/riak_cs/pull/1040). Due to
-  the wrong handling of URL encoding/decoding, object keys including
-  `%[0-9a-fA-F][0-9a-fA-F]` (as regular expression) or exact `+` had
-  been mistakenly decoded. As a consequence, the former case is to be
-  decoded to some other binary and for the latter case `+` is to be
-  replaced with ` ` (space). In both case, there is potential
-  possibility of implicit data overwrite. For the latter case, an
-  overwrite occurs for an object including `+` in its key
-  (e.g. `foo+bar`) by a different object with a mostly same name but
-  replaced with ` ` (space, e.g. `foo bar`), and vice verca.  This fix
-  also addresses
+  the incorrect handling of URL encoding/decoding, object keys including
+  `%[0-9a-fA-F][0-9a-fA-F]` (as a regular expression) or `+` had been
+  mistakenly decoded. As a consequence, the former case was decoded to
+  some other binary and for the latter case (`+`) was replaced with ` `
+  (space). In both cases, there was a possibility of an implicit data
+  overwrite. For the latter case, an overwrite occurs for an object
+  including `+` in its key (e.g. `foo+bar`) by a different object with a
+  name that is largely similar but replaced with ` ` (space, e.g. `foo
+  bar`), and vice versa.  This fix also addresses
   [riak_cs/#910](https://github.com/basho/riak_cs/pull/910) and
   [riak_cs/#977](https://github.com/basho/riak_cs/pull/977).
 
 ## Notes on upgrading
 
-After upgrading to 1.5.4, objects including `%[0-9a-fA-F][0-9a-fA-F]`
-or `+` in its key (e.g. `foo+bar`) become invisible and can be seen as
-objects with different name. For the former case, objects will be
-referred as unnecessary decoded key. For the latter case, those
-objects will be referred as keys `+` replaced with ' ' (e.g. `foo
-bar`) by default.
+After upgrading to Riak CS 1.5.4, objects including
+`%[0-9a-fA-F][0-9a-fA-F]` or `+` in their key (e.g. `foo+bar`) become
+invisible and can be seen as objects with a different name. For the
+former case, objects will be referred as unnecessary decoded key. For
+the latter case, those objects will be referred as keys `+` replaced
+with ' ' (e.g. `foo bar`) by default.
 
-Examples on unique objects including `%[0-9a-fA-F][0-9a-fA-F]` through
-upgrade:
+The table below provides examples for URLs including
+`%[0-9a-fA-F][0-9a-fA-F]` and how they will work before and after the
+upgrade.
 
-|           | before upgrade     | after upgrade |
-|-----------|--------------------|---------------|
-|    put as | `a%2Fkey`          |      -        |
-|    got as | `a%2Fkey`or`a/key` | `a/key`       |
-| listed as | `a/key`            | `a/key`       |
+            | before upgrade     | after upgrade |
+:-----------|:-------------------|:--------------|
+ written as | `a%2Fkey`          |      -        |
+    read as | `a%2Fkey`or`a/key` | `a/key`       |
+  listed as | `a/key`            | `a/key`       |
 
-Examples on unique objects including `+` or ` ` through
-upgrade:
+Examples on unique objects including `+` or ` ` through upgrade:
 
-|           | before upgrade   | after upgrade |
-|-----------|------------------|---------------|
-|    put as | `a+key`          |      -        |
-|    got as | `a+key`or`a key` | `a key`       |
-| listed as | `a key`          | `a key`       |
+            | before upgrade   | after upgrade |
+:-----------|------------------|---------------|
+ written as | `a+key`          |      -        |
+    read as | `a+key`or`a key` | `a key`       |
+  listed as | `a key`          | `a key`       |
 
-|           | before upgrade   | after upgrade |
-|-----------|------------------|---------------|
-|    put as | `a key`          |      -        |
-|    got as | `a+key`or`a key` | `a key`       |
-| listed as | `a key`          | `a key`       |
+            | before upgrade   | after upgrade |
+------------|------------------|---------------|
+ written as | `a key`          |      -        |
+    read as | `a+key`or`a key` | `a key`       |
+  listed as | `a key`          | `a key`       |
 
-This fix also changes path format in access log from single
-URL-encoded style to doublely URL-encoded style. Old style follows:
+This fix also changes the path format in access logs from the single
+URL-encoded style to the doubly-encoded URL style. Below is an example
+of the old style:
 
 ```
 127.0.0.1 - - [07/Jan/2015:08:27:07 +0000] "PUT /buckets/test/objects/path1%2Fpath2%2Fte%2Bst.txt HTTP/1.1" 200 0 "" ""
 ```
 
-And new style is as following:
+Below is an example of the new style:
 
 ```
 127.0.0.1 - - [07/Jan/2015:08:27:07 +0000] "PUT /buckets/test/objects/path1%2Fpath2%2Fte%252Bst.txt HTTP/1.1" 200 0 "" ""
 ```
 
 Note that the object path has changed from
-`path1%2Fpath2%2Fte%2Bst.txt` to `path1%2Fpath2%2Fte%252Bst.txt`.
+`path1%2Fpath2%2Fte%2Bst.txt` to `path1%2Fpath2%2Fte%252Bst.txt` between
+the two examples shown.
 
-If the old behaviour is preferred maybe because of dependent
-applicaitons, by changing the configuration the old behaviour can be
-restored. **Note that the old behaviour is wrong and implicitly
-overwrites the data as described above.** To restore the old
-behaviour, change the `rewrite_module` as follows:
+If the old behavior is preferred, perhaps because
+applications using Riak CS have been written to use it, you can retain
+that behavior by modifying your Riak CS configuration upon upgrade.
+Change the `rewrite_module` setting as follows:
 
+```erlang
+{riak_cs, [
+    %% Other settings
+    {rewrite_module, riak_cs_s3_rewrite_legacy},
+    %% Other settings
+]}
 ```
-   {rewrite_module, riak_cs_s3_rewrite_legacy},
-```
+
+**Note**: The old behavior is technically incorrect and implicitly
+overwrites data in the ways described above, so please retain the old
+behavior with caution.
 
 # Riak CS 1.5.3 Release Notes
 
