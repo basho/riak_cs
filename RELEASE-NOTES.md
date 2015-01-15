@@ -8,7 +8,7 @@
   triggered under high upload concurrency, and uploads are interleaved
   during the backpressure sleep. This issue does not affect multipart
   uploads.
-- Fix wrong path rewrite in S3 API by unnecessary URL encoding
+- Fix wrong path rewrite in S3 API by unnecessary URL decoding
   [riak_cs/#1040](https://github.com/basho/riak_cs/pull/1040). Due to
   the wrong handling of URL encoding/decoding, object keys including
   `%[0-9a-fA-F][0-9a-fA-F]` (as regular expression) or exact `+` had
@@ -56,16 +56,6 @@ upgrade:
 |    got as | `a+key`or`a key` | `a key`       |
 | listed as | `a key`          | `a key`       |
 
-If the old behaviour is preferred maybe because of dependent
-applicaitons, by changing the configuration the old behaviour can be
-restored. **Note that the old behaviour is wrong and implicitly
-overwrites the data as described above.** To restore the old
-behaviour, change the `rewrite_module` as follows:
-
-```
-   {rewrite_module, riak_cs_s3_rewrite_legacy},
-```
-
 This fix also changes path format in access log from single
 URL-encoded style to doublely URL-encoded style. Old style follows:
 
@@ -81,6 +71,16 @@ And new style is as following:
 
 Note that the object path has changed from
 `path1%2Fpath2%2Fte%2Bst.txt` to `path1%2Fpath2%2Fte%252Bst.txt`.
+
+If the old behaviour is preferred maybe because of dependent
+applicaitons, by changing the configuration the old behaviour can be
+restored. **Note that the old behaviour is wrong and implicitly
+overwrites the data as described above.** To restore the old
+behaviour, change the `rewrite_module` as follows:
+
+```
+   {rewrite_module, riak_cs_s3_rewrite_legacy},
+```
 
 # Riak CS 1.5.3 Release Notes
 
