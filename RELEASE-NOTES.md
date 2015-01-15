@@ -8,14 +8,15 @@
   triggered under high upload concurrency, and uploads are interleaved
   during the backpressure sleep. This issue does not affect multipart
   uploads.
-- Fix wrong path rewrite in S3 API by unnecessary unquote
+- Fix wrong path rewrite in S3 API by unnecessary URL encoding
   [riak_cs/#1040](https://github.com/basho/riak_cs/pull/1040). Due to
   the wrong handling of URL encoding/decoding, object keys including
   `%[0-9a-fA-F][0-9a-fA-F]` (as regular expression) or exact `+` had
   been mistakenly decoded. As a consequence, the former case is to be
   decoded to some other binary and for the latter case `+` is to be
-  replaced with ` ` (space). For the latter case, this had led to
-  unexpected overwrite of an object including `+` in its key
+  replaced with ` ` (space). In both case, there is potential
+  possibility of implicit data overwrite. For the latter case, an
+  overwrite occurs for an object including `+` in its key
   (e.g. `foo+bar`) by a different object with a mostly same name but
   replaced with ` ` (space, e.g. `foo bar`), and vice verca.  This fix
   also addresses
@@ -34,10 +35,10 @@ bar`) by default.
 Examples on unique objects including `%[0-9a-fA-F][0-9a-fA-F]` through
 upgrade:
 
-|        | before upgrade | after upgrade |
-|--------|----------------|---------------|
-| put as | `some%2Fkey`   |      -        |
-| get as | `some%2Fkey`   | `some/key`    |
+|        | before upgrade     | after upgrade |
+|--------|--------------------|---------------|
+| put as | `a%2Fkey`          |      -        |
+| get as | `a%2Fkey`or`a/key` | `a/key`       |
 
 Examples on unique objects including `+` or ` ` through
 upgrade:
@@ -63,8 +64,8 @@ behaviour, change the `rewrite_module` as follows:
    {rewrite_module, riak_cs_s3_rewrite_legacy},
 ```
 
-This fix also changes path format in access log from single quoted
-style to double quoted style. Old style follows:
+This fix also changes path format in access log from single
+URL-encoded style to doublely URL-encoded style. Old style follows:
 
 ```
 127.0.0.1 - - [07/Jan/2015:08:27:07 +0000] "PUT /buckets/test/objects/path1%2Fpath2%2Fte%2Bst.txt HTTP/1.1" 200 0 "" ""
