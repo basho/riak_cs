@@ -9,32 +9,49 @@
   during the backpressure sleep. This issue does not affect multipart
   uploads.
 - Fix wrong path rewrite in S3 API by unnecessary unquote
-  [riak_cs/#1040](https://github.com/basho/riak_cs/pull/1040). For
-  example, in case when '+' is included in path, '+' (plus, `%2B` in
-  quoted representation) in object key has been mistakenly unquoted to
-  become ' ' (space, `%20` in quoted representaiton). This fix
+  [riak_cs/#1040](https://github.com/basho/riak_cs/pull/1040). Due to
+  the wrong handling of URL encoding/decoding, object keys including
+  `%[0-9a-fA-F][0-9a-fA-F]` (as regular expression) or exact `+` had
+  been mistakenly decoded. As a consequence, the former case is to be
+  decoded to some other binary and for the latter case `+` is to be
+  replaced with ` ` (space). For the latter case, this had led to
+  unexpected overwrite of an object including `+` in its key
+  (e.g. `foo+bar`) by a different object with a mostly same name but
+  replaced with ` ` (space, e.g. `foo bar`), and vice verca.  This fix
   also addresses
   [riak_cs/#910](https://github.com/basho/riak_cs/pull/910) and
   [riak_cs/#977](https://github.com/basho/riak_cs/pull/977).
 
 ## Notes on upgrading
 
-Due to the bug #1040, objects including '+' had been mistakenly
-rewritten their path and replaced with ' '. This had led to unexpected
-overwrite of an object including '+' in its key (e.g. `foo+bar`) by a
-different object with a mostly same name but replaced with ' '
-(e.g. `foo bar`), and vice verca.
+After upgrading to 1.5.4, objects including `%[0-9a-fA-F][0-9a-fA-F]`
+or `+` in its key (e.g. `foo+bar`) become invisible and can be seen as
+objects with different name. For the former case, objects will be
+referred as unnecessary decoded key. For the latter case, those
+objects will be referred as keys `+` replaced with ' ' (e.g. `foo
+bar`) by default.
 
-After upgrading to 1.5.4, objects including '+' in its key
-(e.g. `foo+bar`) become invisible and can be seen as objects with
-those '+' replaced with ' ' (e.g. `foo bar`) by default.
+Examples on unique objects including `%[0-9a-fA-F][0-9a-fA-F]` through
+upgrade:
 
-Another case for this is object keys matching
-`%[0-9a-fA-F][0-9a-fA-F]` before url encoding. Keys like these are to
-be doubly quoted on the wire and inside Riak CS it will be stored in
-Riak with wrong keys different from original ones. This may lead to
-implicit data overwrite of data as well as wrong result of bucket list
-API.
+|        | before upgrade | after upgrade |
+|--------|----------------|---------------|
+| put as | `some%2Fkey`   |      -        |
+| get as | `some%2Fkey`   | `some/key`    |
+
+Examples on unique objects including `+` or ` ` through
+upgrade:
+
+|        | before upgrade   | after upgrade |
+|--------|------------------|---------------|
+| put as | `a+key`          |      -        |
+| get as | `a+key`or`a key` | `a key`       |
+
+|        | before upgrade   | after upgrade |
+|--------|------------------|---------------|
+| put as | `a key`          |      -        |
+| get as | `a+key`or`a key` | `a key`       |
+
 
 If the old behaviour is preferred maybe because of dependent
 applicaitons, by changing the configuration the old behaviour can be
