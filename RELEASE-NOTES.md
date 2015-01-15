@@ -35,24 +35,26 @@ bar`) by default.
 Examples on unique objects including `%[0-9a-fA-F][0-9a-fA-F]` through
 upgrade:
 
-|        | before upgrade     | after upgrade |
-|--------|--------------------|---------------|
-| put as | `a%2Fkey`          |      -        |
-| get as | `a%2Fkey`or`a/key` | `a/key`       |
+|           | before upgrade     | after upgrade |
+|-----------|--------------------|---------------|
+|    put as | `a%2Fkey`          |      -        |
+|    got as | `a%2Fkey`or`a/key` | `a/key`       |
+| listed as | `a/key`            | `a/key`       |
 
 Examples on unique objects including `+` or ` ` through
 upgrade:
 
-|        | before upgrade   | after upgrade |
-|--------|------------------|---------------|
-| put as | `a+key`          |      -        |
-| get as | `a+key`or`a key` | `a key`       |
+|           | before upgrade   | after upgrade |
+|-----------|------------------|---------------|
+|    put as | `a+key`          |      -        |
+|    got as | `a+key`or`a key` | `a key`       |
+| listed as | `a key`          | `a key`       |
 
-|        | before upgrade   | after upgrade |
-|--------|------------------|---------------|
-| put as | `a key`          |      -        |
-| get as | `a+key`or`a key` | `a key`       |
-
+|           | before upgrade   | after upgrade |
+|-----------|------------------|---------------|
+|    put as | `a key`          |      -        |
+|    got as | `a+key`or`a key` | `a key`       |
+| listed as | `a key`          | `a key`       |
 
 If the old behaviour is preferred maybe because of dependent
 applicaitons, by changing the configuration the old behaviour can be
@@ -74,7 +76,7 @@ URL-encoded style to doublely URL-encoded style. Old style follows:
 And new style is as following:
 
 ```
-127.0.0.1 - - [07/Jan/2015:17:28:23 +0900] "PUT /buckets/test/objects/path1%2Fpath2%2Fte%252Bst.txt HTTP/1.1" 200 0 "" ""
+127.0.0.1 - - [07/Jan/2015:08:27:07 +0000] "PUT /buckets/test/objects/path1%2Fpath2%2Fte%252Bst.txt HTTP/1.1" 200 0 "" ""
 ```
 
 Note that the object path has changed from
