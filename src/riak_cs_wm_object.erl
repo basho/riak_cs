@@ -402,6 +402,8 @@ handle_copy_put(RD, Ctx, SrcBucket, SrcKey) ->
                 end;
             {error, notfound} ->
                 ResponseMod:api_error(no_such_key, RD, Ctx);
+            {error, no_active_manifest} ->
+                ResponseMod:api_error(no_such_key, RD, Ctx);
             {error, Err} ->
                 ResponseMod:api_error(Err, RD, Ctx)
         end
