@@ -1,3 +1,87 @@
+# Riak CS 1.5.4 Release Notes
+
+## Bugs Fixed
+
+- Disable previous riak object after backpressure sleep is triggered
+  [riak_cs/#1041](https://github.com/basho/riak_cs/pull/1041). This
+  change prevents unnecessary siblings increase when backpressure is
+  triggered under high upload concurrency, and uploads are interleaved
+  during the backpressure sleep. This issue does not affect multipart
+  uploads.
+- Fix wrong path rewrite in S3 API by unnecessary URL decoding
+  [riak_cs/#1040](https://github.com/basho/riak_cs/pull/1040). Due to
+  the wrong handling of URL encoding/decoding, object keys including
+  `%[0-9a-fA-F][0-9a-fA-F]` (as regular expression) or exact `+` had
+  been mistakenly decoded. As a consequence, the former case is to be
+  decoded to some other binary and for the latter case `+` is to be
+  replaced with ` ` (space). In both case, there is potential
+  possibility of implicit data overwrite. For the latter case, an
+  overwrite occurs for an object including `+` in its key
+  (e.g. `foo+bar`) by a different object with a mostly same name but
+  replaced with ` ` (space, e.g. `foo bar`), and vice verca.  This fix
+  also addresses
+  [riak_cs/#910](https://github.com/basho/riak_cs/pull/910) and
+  [riak_cs/#977](https://github.com/basho/riak_cs/pull/977).
+
+## Notes on upgrading
+
+After upgrading to 1.5.4, objects including `%[0-9a-fA-F][0-9a-fA-F]`
+or `+` in its key (e.g. `foo+bar`) become invisible and can be seen as
+objects with different name. For the former case, objects will be
+referred as unnecessary decoded key. For the latter case, those
+objects will be referred as keys `+` replaced with ' ' (e.g. `foo
+bar`) by default.
+
+Examples on unique objects including `%[0-9a-fA-F][0-9a-fA-F]` through
+upgrade:
+
+|           | before upgrade     | after upgrade |
+|-----------|--------------------|---------------|
+|    put as | `a%2Fkey`          |      -        |
+|    got as | `a%2Fkey`or`a/key` | `a/key`       |
+| listed as | `a/key`            | `a/key`       |
+
+Examples on unique objects including `+` or ` ` through
+upgrade:
+
+|           | before upgrade   | after upgrade |
+|-----------|------------------|---------------|
+|    put as | `a+key`          |      -        |
+|    got as | `a+key`or`a key` | `a key`       |
+| listed as | `a key`          | `a key`       |
+
+|           | before upgrade   | after upgrade |
+|-----------|------------------|---------------|
+|    put as | `a key`          |      -        |
+|    got as | `a+key`or`a key` | `a key`       |
+| listed as | `a key`          | `a key`       |
+
+This fix also changes path format in access log from single
+URL-encoded style to doublely URL-encoded style. Old style follows:
+
+```
+127.0.0.1 - - [07/Jan/2015:08:27:07 +0000] "PUT /buckets/test/objects/path1%2Fpath2%2Fte%2Bst.txt HTTP/1.1" 200 0 "" ""
+```
+
+And new style is as following:
+
+```
+127.0.0.1 - - [07/Jan/2015:08:27:07 +0000] "PUT /buckets/test/objects/path1%2Fpath2%2Fte%252Bst.txt HTTP/1.1" 200 0 "" ""
+```
+
+Note that the object path has changed from
+`path1%2Fpath2%2Fte%2Bst.txt` to `path1%2Fpath2%2Fte%252Bst.txt`.
+
+If the old behaviour is preferred maybe because of dependent
+applicaitons, by changing the configuration the old behaviour can be
+restored. **Note that the old behaviour is wrong and implicitly
+overwrites the data as described above.** To restore the old
+behaviour, change the `rewrite_module` as follows:
+
+```
+   {rewrite_module, riak_cs_s3_rewrite_legacy},
+```
+
 # Riak CS 1.5.3 Release Notes
 
 ## Additions
