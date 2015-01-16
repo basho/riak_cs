@@ -9,7 +9,7 @@
   uploads are interleaved during backpressure sleep. This issue does not
   affect multipart uploads.
 - Fix an incorrect path rewrite in the S3 API caused by unnecessary URL
-- decoding
+  decoding
   [riak_cs/#1040](https://github.com/basho/riak_cs/pull/1040). Due to
   the incorrect handling of URL encoding/decoding, object keys including
   `%[0-9a-fA-F][0-9a-fA-F]` (as a regular expression) or `+` had been
@@ -30,7 +30,7 @@ After upgrading to Riak CS 1.5.4, objects including
 invisible and can be seen as objects with a different name. For the
 former case, objects will be referred as unnecessary decoded key. For
 the latter case, those objects will be referred as keys `+` replaced
-with ' ' (e.g. `foo bar`) by default.
+with ` ` (e.g. `foo bar`) by default.
 
 The table below provides examples for URLs including
 `%[0-9a-fA-F][0-9a-fA-F]` and how they will work before and after the
