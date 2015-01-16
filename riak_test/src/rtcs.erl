@@ -205,8 +205,10 @@ pb_port(N) when is_integer(N) ->
 pb_port(Node) ->
     pb_port(rt_cs_dev:node_id(Node)).
 
+cs_port(N) when is_integer(N) ->
+    15008 + 10 * N;
 cs_port(Node) ->
-    15008 + 10 * rt_cs_dev:node_id(Node).
+    cs_port(rt_cs_dev:node_id(Node)).
 
 
 riak_config() ->
@@ -301,6 +303,15 @@ cs_config(UserExtra, OtherApps) ->
           ]
      }] ++ OtherApps.
 
+replace_cs_config(Key, Value, Config) ->
+    CSConfig0 = proplists:get_value(riak_cs, Config),
+    CSConfig = replace(Key, Value, CSConfig0),
+    replace(riak_cs, CSConfig, Config).
+
+replace(Key, Value, Config0) ->
+    Config1 = proplists:delete(Key, Config0),
+    [proplists:property(Key, Value)|Config1].
+
 stanchion_config() ->
     [
      lager_config(),
@@ -327,7 +338,6 @@ lager_config() ->
      [
       {handlers,
        [
-        {lager_console_backend, debug},
         {lager_file_backend,
          [
           {"./log/error.log", error, 10485760, "$D0",5},
@@ -702,7 +712,8 @@ update_admin_creds(Config, AdminKey, AdminSecret) ->
                       proplists:delete(admin_key, Config))].
 
 update_cs_port(Config, N) ->
-    [{riak_pb_port, pb_port(N)} | proplists:delete(riak_pb_port, Config)].
+    Config2 = [{riak_pb_port, pb_port(N)} | proplists:delete(riak_pb_port, Config)],
+    [{cs_port, cs_port(N)} | proplists:delete(cs_port, Config2)].
 
 update_stanchion_config(Prefix, Config, {AdminKey, AdminSecret}) ->
     StanchionSection = proplists:get_value(stanchion, Config),
@@ -735,11 +746,14 @@ create_user(Port, EmailAddr, Name) ->
     Cmd="curl -s -H 'Content-Type: application/json' http://localhost:" ++
         integer_to_list(Port) ++
         "/riak-cs/user --data '{\"email\":\"" ++ EmailAddr ++  "\", \"name\":\"" ++ Name ++"\"}'",
-    %% lager:info("Cmd: ~p", [Cmd]),
+    lager:debug("Cmd: ~p", [Cmd]),
     Delay = rt_config:get(rt_retry_delay),
     Retries = rt_config:get(rt_max_wait_time) div Delay,
     OutputFun = fun() -> rt:cmd(Cmd) end,
-    Condition = fun({Status, Res}) -> Status =:= 0 andalso Res /= [] end,
+    Condition = fun({Status, Res}) ->
+                        lager:debug("Return (~p), Res: ~p", [Status, Res]),
+                        Status =:= 0 andalso Res /= []
+                end,
     {_Status, Output} = wait_until(OutputFun, Condition, Retries, Delay),
     lager:debug("Create user output=~p~n",[Output]),
     {struct, JsonData} = mochijson2:decode(Output),
