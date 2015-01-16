@@ -337,7 +337,7 @@ lager_config() ->
     {lager,
      [
       {handlers,
-       [{lager_console_backend, info},
+       [
         {lager_file_backend,
          [
           {"./log/error.log", error, 10485760, "$D0",5},
