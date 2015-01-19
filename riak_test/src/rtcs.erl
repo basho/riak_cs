@@ -684,6 +684,15 @@ calculate_storage(N, Vsn) ->
     lager:info("Running ~p", [Cmd]),
     os:cmd(Cmd).
 
+read_config(Vsn, N, Who) ->
+    Prefix = get_rt_config(Who, Vsn),
+    EtcPath = case Who of
+                  cs -> riakcs_etcpath(Prefix, N);
+                  stanchion -> stanchion_etcpath(Prefix)
+              end,
+    {ok, [Config]} = file:consult(EtcPath ++ "/app.config"),
+    Config.
+
 update_cs_config(Prefix, N, Config, {AdminKey, AdminSecret}) ->
     CSSection = proplists:get_value(riak_cs, Config),
     UpdConfig = [{riak_cs, update_admin_creds(CSSection, AdminKey, AdminSecret)} |
@@ -893,20 +902,23 @@ upgrade_20(Node, NewVersion) ->
     rt:wait_until_pingable(Node),
     ok.
 
-%% @doc from previous to current, assuming CS is already stopped
-upgrade_cs(N, Config, AdminCreds) ->
-    upgrade_cs(N, Config, AdminCreds, current).
+%% @doc update current app.config, assuming CS is already stopped
+upgrade_cs(N, AdminCreds) ->
+    migrate_cs(previous, current, N, AdminCreds).
 
-upgrade_cs(N, Config, AdminCreds, Vsn) ->
-    update_cs_config(get_rt_config(cs, Vsn),
-                     N,
-                     proplists:get_value(cs, Config),
-                     AdminCreds),
-    ok.
+%% @doc copy and update config file from `From' to `To' version.
+migrate_cs(From, To, N, AdminCreds) ->
+    migrate(From, To, N, AdminCreds, cs).
 
-upgrade_stanchion(Config, AdminCreds, Vsn) ->
-    update_stanchion_config(get_rt_config(stanchion, Vsn),
-                            proplists:get_value(stanchion, Config),
-                            AdminCreds).
-
-%% maybe_stop_stanchion(1) ->
+migrate(From, To, N, AdminCreds, Who) when
+      (From =:= current andalso To =:= previous)
+      orelse ( From =:= previous andalso To =:= current) ->
+    Config = read_config(From, N, Who),
+    Prefix = get_rt_config(Who, To),
+    case Who of
+        cs -> update_cs_config(Prefix, N, Config, AdminCreds);
+        stanchion -> update_stanchion_config(Prefix, Config, AdminCreds)
+    end.
+    
+migrate_stanchion(From, To, AdminCreds) ->
+    migrate(From, To, -1, AdminCreds, stanchion).

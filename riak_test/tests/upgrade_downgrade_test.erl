@@ -38,10 +38,8 @@ confirm() ->
     {ok, Data} = prepare_all_data(UserConfig),
     ok = verify_all_data(UserConfig, Data),
 
-    NewConfig = rtcs:default_configs(),
     AdminCreds = {UserConfig#aws_config.access_key_id,
                   UserConfig#aws_config.secret_access_key},
-
     {_, RiakCurrentVsn} =
         rtcs:riak_root_and_vsn(current, rt_config:get(build_type, oss)),
 
@@ -52,13 +50,13 @@ confirm() ->
          rtcs:stop_cs(N, previous),
          ok = rtcs:upgrade_20(RiakNode, RiakCurrentVsn),
          rt:wait_for_service(RiakNode, riak_kv),
-         ok = rtcs:upgrade_cs(N, NewConfig, AdminCreds),
+         ok = rtcs:upgrade_cs(N, AdminCreds),
          rtcs:start_cs(N, current)
      end
      || RiakNode <- RiakNodes],
     rt:wait_until_ring_converged(RiakNodes),
     rtcs:stop_stanchion(previous),
-    rtcs:upgrade_stanchion(NewConfig, AdminCreds, current),
+    rtcs:migrate_stanchion(previous, current, AdminCreds),
     rtcs:start_stanchion(current),
 
     ok = verify_all_data(UserConfig, Data),
@@ -73,7 +71,7 @@ confirm() ->
 
     %% Downgrade!!
     rtcs:stop_stanchion(current),
-    rtcs:upgrade_stanchion(PrevConfig, AdminCreds, previous),
+    rtcs:migrate_stanchion(current, previous, AdminCreds),
     rtcs:start_stanchion(previous),
     [begin
          N = rt_cs_dev:node_id(RiakNode),
@@ -95,7 +93,7 @@ confirm() ->
 
          ok = rtcs:upgrade_20(RiakNode, RiakPrevVsn),
          rt:wait_for_service(RiakNode, riak_kv),
-         ok = rtcs:upgrade_cs(N, PrevConfig, AdminCreds, previous),
+         ok = rtcs:migrate_cs(current, previous, N, AdminCreds),
          rtcs:start_cs(N, previous)
      end
      || RiakNode <- RiakNodes],
