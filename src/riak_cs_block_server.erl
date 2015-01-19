@@ -30,6 +30,7 @@
 
 -include("riak_cs.hrl").
 -include_lib("riak_pb/include/riak_pb_kv_codec.hrl").
+-include_lib("riakc/include/riakc.hrl").
 
 %% API
 -export([start_link/1, start_link/2,
@@ -335,6 +336,8 @@ get_block_local(RcPid, FullBucket, FullKey, GetOptions, Timeout) ->
             Else
     end.
 
+-spec get_block_remote(riak_client(), binary(), binary(), binary(), get_options()) ->
+                              {ok, binary()} | {error, term()}.
 get_block_remote(RcPid, FullBucket, FullKey, ClusterID, GetOptions0) ->
     %% replace get_block_timeout with proxy_get_block_timeout
     GetOptions = proplists:delete(timeout, GetOptions0),
@@ -468,6 +471,8 @@ full_bkey(Bucket, Key, UUID, BlockId) ->
 find_md_usermeta(MD) ->
     dict:find(?MD_USERMETA, MD).
 
+-spec resolve_block_object(riakc_obj:riakc_obj(), riak_client()) ->
+                                  {ok, binary()} | {error, notfound}.
 resolve_block_object(RObj, RcPid) ->
     {{MD, Value}, NeedRepair} =
                                 riak_cs_utils:resolve_robj_siblings(riakc_obj:get_contents(RObj)),

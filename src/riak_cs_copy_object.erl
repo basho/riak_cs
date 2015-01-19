@@ -305,7 +305,7 @@ connection_checker(Socket) ->
                 {error,_E} ->
                     false;
                 {ok,_} ->
-                    case gen_tcp:recv(Socket, 1, 0) of
+                    case gen_tcp:recv(Socket, 0, 0) of
                         {error, timeout} ->
                             true;
                         {error, _E} ->

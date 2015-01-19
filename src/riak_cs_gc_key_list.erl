@@ -132,7 +132,7 @@ split_at_most_n(0, L, Acc) ->
 split_at_most_n(N, [H|T], Acc) ->
     split_at_most_n(N-1, T, [H|Acc]).
 
--spec continuation({{ok, riakc_pb_socket:index_results()} | {error, term()}, binary()}) ->
+-spec continuation({{ok, index_results()} | {error, term()}, binary()}) ->
                           continuation().
 continuation({{ok, ?INDEX_RESULTS{continuation=Continuation}},
               _EndTime}) ->
@@ -141,7 +141,7 @@ continuation({{error, _}, _EndTime}) ->
     undefined.
 
 -spec gc_index_query(riak_client(), binary(), non_neg_integer(), continuation(), boolean()) ->
-                            {{ok, riakc_pb_socket:index_results()} | {error, term()}, binary()}.
+                            {{ok, index_results()} | {error, term()}, binary()}.
 gc_index_query(RcPid, EndTime, BatchSize, Continuation, UsePaginatedIndexes) ->
     Options = case UsePaginatedIndexes of
                   true ->
