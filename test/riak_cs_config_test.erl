@@ -14,6 +14,13 @@ riak_cs_config_test() ->
     cuttlefish_unit:assert_config(Config, "riak_cs.anonymous_user_creation", false),
     cuttlefish_unit:assert_config(Config, "riak_cs.admin_key", "admin-key"),
     cuttlefish_unit:assert_config(Config, "riak_cs.admin_secret", "admin-secret"),
+    cuttlefish_unit:assert_config(Config, "riak_cs.cs_root_host", "s3.amazonaws.com"),
+    cuttlefish_unit:assert_config(Config, "riak_cs.cs_version", 10300),
+    cuttlefish_unit:assert_config(Config, "riak_cs.rewrite_module", "riak_cs_s3_rewrite"),
+    cuttlefish_unit:assert_config(Config, "riak_cs.auth_module", "riak_cs_s3_auth"),
+    cuttlefish_unit:assert_config(Config, "riak_cs.fold_objects_for_list_keys", true),
+    cuttlefish_unit:assert_config(Config, "riak_cs.trust_x_forwarded_for", false),
+    cuttlefish_unit:assert_config(Config, "riak_cs.dtrace_support", false),
+    cuttlefish_unit:assert_config(Config, "webmachine.server_name", "Riak CS"),
     ok.
-    
 

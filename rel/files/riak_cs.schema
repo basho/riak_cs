@@ -54,6 +54,7 @@
   {default, "{{admin_key}}"},
   {datatype, string}
 ]}.
+
 {mapping, "admin.secret", "riak_cs.admin_secret", [
   {default, "{{admin_secret}}"},
   {datatype, string}
@@ -67,10 +68,66 @@
   {datatype, string}
 ]}.
 
+%% @doc Switch whether Riak CS trusts 'X-Forwarded-For' header.
+%% If your load balancer adds 'X-Forwarded-For' header
+%% and it is reliable (able to gaurantee it is not added
+%% by malicious user), turn this true. Otherwise, by
+%% default, Riak CS takes source IP address as an input.
+{mapping, "trust_x_forwarded_for", "riak_cs.trust_x_forwarded_for", [
+  {default, off},
+  {datatype, flag}
+]}.
+
 %% @doc custom server name at http response header "Server: Riak CS"
 {mapping, "server.name", "webmachine.server_name", [
   {default, "Riak CS"},
   {datatype, string}
+]}.
+
+%% == API and Authentication ==
+
+%% @doc URL rewrite module.
+{mapping, "rewrite_module", "riak_cs.rewrite_module", [
+  {default, "riak_cs_s3_rewrite"},
+  {datatype, string}
+]}.
+
+%% @doc Authentication module.
+{mapping, "auth_module", "riak_cs.auth_module", [
+  {default, "riak_cs_s3_auth"},
+  {datatype, string}
+]}.
+
+%% == Bucket (List Objects) ==
+
+%% @doc Set this to false if you're running
+%% Riak nodes prior to version 1.4.0.
+{mapping, "fold_objects_for_list_keys", "riak_cs.fold_objects_for_list_keys", [
+  {default, on},
+  {datatype, flag}
+]}.
+
+%% == Rolling upgrade support ==
+
+%% @doc Riak CS version number. This is used to selectively
+%% enable new features for the current version to better
+%% support rolling upgrades. New installs should not
+%% need to modify this. If peforming a rolling upgrade
+%% then keep the original value (if not defined, Riak CS
+%% uses 0 instead) of old app.config until all nodes
+%% have been upgraded and then set to the new value.
+{mapping, "cs_version", "riak_cs.cs_version", [
+  {default, {{cs_version}} },
+  {datatype, integer}
+]}.
+
+%% == DTrace ==
+
+%% @doc If your Erlang virtual machine supports DTrace (or
+%% user-space SystemTap), set dtrace_support to true.
+{mapping, "dtrace_support", "riak_cs.dtrace_support", [
+  {default, off},
+  {datatype, flag}
 ]}.
 
 %% @doc Where to emit the default log messages (typically at 'info'
