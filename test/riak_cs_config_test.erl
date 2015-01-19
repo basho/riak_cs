@@ -21,6 +21,7 @@ riak_cs_config_test() ->
     cuttlefish_unit:assert_config(Config, "riak_cs.fold_objects_for_list_keys", true),
     cuttlefish_unit:assert_config(Config, "riak_cs.trust_x_forwarded_for", false),
     cuttlefish_unit:assert_config(Config, "riak_cs.dtrace_support", false),
+    cuttlefish_unit:assert_config(Config, "riak_cs.connection_pools", [{request_pool, {128, 0}},
+                                                                       {bucket_list_pool, {5, 0}}]),
     cuttlefish_unit:assert_config(Config, "webmachine.server_name", "Riak CS"),
     ok.
-

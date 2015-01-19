@@ -68,6 +68,48 @@
   {datatype, string}
 ]}.
 
+%% @doc Fixed pool size of primary connection pool which is used
+%% to service the majority of API requests related to the upload
+%%  or retrieval of objects.
+{mapping, "pool.request.size", "riak_cs.connection_pools", [
+  {default, 128},
+  {datatype, integer}
+]}.
+
+%% @doc Overflow pool size of primary connection pool which is used
+%% to service the majority of API requests related to the upload
+%%  or retrieval of objects.
+{mapping, "pool.request.overflow", "riak_cs.connection_pools", [
+  {default, 0},
+  {datatype, integer}
+]}.
+
+%% @doc Fixed pool size of secondary connection pool which is used
+%% strictly for requests to list the contents.
+{mapping, "pool.list.size", "riak_cs.connection_pools", [
+  {default, 5},
+  {datatype, integer}
+]}.
+
+%% @doc Overflow pool size of secondary connection pool which is used
+%% strictly for requests to list the contents.
+{mapping, "pool.list.overflow", "riak_cs.connection_pools", [
+  {default, 0},
+  {datatype, integer}
+]}.
+
+{translation,
+ "riak_cs.connection_pools",
+ fun(Conf)->
+   ReqSize = cuttlefish:conf_get("pool.request.size", Conf),
+   ReqOverflow = cuttlefish:conf_get("pool.request.overflow", Conf),
+   ListSize = cuttlefish:conf_get("pool.list.size", Conf),
+   ListOverflow = cuttlefish:conf_get("pool.list.overflow", Conf),
+   [{request_pool, {ReqSize, ReqOverflow}},
+    {bucket_list_pool, {ListSize, ListOverflow}}]
+ end
+}.
+
 %% @doc Switch whether Riak CS trusts 'X-Forwarded-For' header.
 %% If your load balancer adds 'X-Forwarded-For' header
 %% and it is reliable (able to gaurantee it is not added
