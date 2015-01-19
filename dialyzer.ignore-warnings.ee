@@ -1,6 +1,6 @@
 # Errors
-riak_cs_block_server.erl:318: The pattern
-riak_cs_block_server.erl:353: The pattern
+riak_cs_block_server.erl:312: The pattern
+riak_cs_block_server.erl:347: The pattern
 riak_cs_config.erl:239: The pattern
 # Warnings
 Unknown functions:

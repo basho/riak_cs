@@ -271,9 +271,6 @@ do_get_block(ReplyPid, Bucket, Key, ClusterID, UseProxyGet, ProxyActive,
                   Timeout, ProceedFun, RetryFun, NumRetries, UseProxyGet,
                   ProxyActive, ClusterID).
 
--spec try_local_get(riak_client(), binary(), binary(), list(), list(),
-                    timeout(), fun(), fun(), non_neg_integer(), boolean(),
-                    boolean(), binary()) -> no_return().
 try_local_get(RcPid, FullBucket, FullKey, GetOptions1, GetOptions2,
               Timeout, ProceedFun, RetryFun, NumRetries, UseProxyGet,
               ProxyActive, ClusterID) ->
@@ -295,9 +292,6 @@ try_local_get(RcPid, FullBucket, FullKey, GetOptions1, GetOptions2,
             RetryFun(failure)
     end.
 
--spec handle_local_notfound(riak_client(), binary(), binary(), list(),
-                            fun(({ok,binary()}) -> no_return()), fun((non_neg_integer())->no_return()), non_neg_integer(), boolean(),
-                            boolean(), binary()) -> no_return().
 handle_local_notfound(RcPid, FullBucket, FullKey, GetOptions2,
                       ProceedFun, RetryFun, NumRetries, UseProxyGet,
                       ProxyActive, ClusterID) ->
