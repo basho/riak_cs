@@ -55,7 +55,8 @@
          auto_reconnect/0,
          is_multibag_enabled/0,
          max_buckets_per_user/0,
-         read_before_last_manifest_write/0
+         read_before_last_manifest_write/0,
+         use_2i_for_storage_calc/0
         ]).
 
 %% Timeouts hitting Riak
@@ -373,6 +374,14 @@ max_buckets_per_user() ->
 read_before_last_manifest_write() ->
     get_env(riak_cs, read_before_last_manifest_write, true).
 
+%% @doc This switch changes mapreduce input from listkeys to
+%% fold_objects after riak_kv's mapreduce input optimization
+%% merged and enabled. With fold_objects it will have 1/2 IO
+%% when scanning the whole bucket.
+-spec use_2i_for_storage_calc() -> boolean().
+use_2i_for_storage_calc() ->
+    riak_cs_list_objects_utils:fold_objects_for_list_keys()
+        andalso get_env(riak_cs, use_2i_for_storage_calc, false).
 
 %% ===================================================================
 %% ALL Timeouts hitting Riak
