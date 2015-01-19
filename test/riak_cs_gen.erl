@@ -1,6 +1,6 @@
 %% ---------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2015 Basho Technologies, Inc.  All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -27,7 +27,10 @@
 -include_lib("eqc/include/eqc.hrl").
 
 %% Generators
--export([bucket/0,
+-export([http_verb/0,
+         http_version/0,
+         http_scheme/0,
+         bucket/0,
          bucket_or_blank/0,
          file_name/0,
          block_size/0,
@@ -47,8 +50,17 @@
 %% Generators
 %%====================================================================
 
+http_verb() ->
+    oneof(['GET', 'PUT', 'HEAD', 'POST', 'DELETE']).
+
+http_version() ->
+    oneof([{0,9}, {1,0}, {1,1}]).
+
+http_scheme() ->
+    oneof([http, https]).
+
 bucket() ->
-    non_blank_string().
+    rfc1123_hostname().
 
 bucket_or_blank() ->
     maybe_blank_string().
@@ -125,5 +137,35 @@ not_zero(G) ->
 
 bs(Power) ->
     trunc(math:pow(2, Power)).
+
+-define(ALPHABET,
+        "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ").
+-define(DIGIT, "0123456789").
+
+%% @doc This does not support Unicode domain name.
+rfc1123_hostname() ->
+    ?SUCHTHAT(Hostname, rfc1123_hostname_0(),
+              byte_size(Hostname) < 254).
+
+rfc1123_hostname_0() ->
+    ?LET(Ds, not_empty(list(label())),
+         list_to_binary(string:join(Ds, "."))).
+
+label() ->
+    ?SUCHTHAT(Domain, label_0(), length(Domain) < 64).
+
+label_0() ->
+    ?LET({S, M, E}, {char_begin(), list(char_mid()), char_end()},
+         lists:flatten([S, M, E])).
+
+char_begin() ->
+    oneof(?ALPHABET ++ ?DIGIT).
+
+char_mid() ->
+    oneof(?ALPHABET ++ "-" ++ ?DIGIT).
+
+char_end() ->
+    oneof(?ALPHABET ++ ?DIGIT).
+
 
 -endif.
