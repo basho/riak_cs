@@ -43,7 +43,7 @@
 identify(RD,_Ctx) ->
     case wrq:get_req_header("authorization", RD) of
         undefined ->
-            {wrq:get_qs_value(?QS_KEYID, RD), wrq:get_qs_value(?QS_SIGNATURE, RD)};
+            identify_by_query_string(RD);
         AuthHeader ->
             parse_auth_header(AuthHeader)
     end.
@@ -77,6 +77,13 @@ authenticate(User, Signature, RD, _Ctx) ->
 %% Internal functions
 %% ===================================================================
 
+%% Idintify user by query string.
+%% Currently support signature v2 only, does NOT support signature v4.
+identify_by_query_string(RD) ->
+    {wrq:get_qs_value(?QS_KEYID, RD), wrq:get_qs_value(?QS_SIGNATURE, RD)}.
+
+parse_auth_header("AWS4-HMAC-SHA256 " ++ String) ->
+    parse_auth_v4_header(String, undefined, []);
 parse_auth_header("AWS " ++ Key) ->
     case string:tokens(Key, ":") of
         [KeyId, KeyData] ->
@@ -85,6 +92,34 @@ parse_auth_header("AWS " ++ Key) ->
     end;
 parse_auth_header(_) ->
     {undefined, undefined}.
+
+-spec parse_auth_v4_header(string(), undefined | string(), [{string(), string()}]) ->
+                                  {string(), [{string(), string()}]}.
+parse_auth_v4_header("", UserId, Acc) ->
+    {UserId, lists:reverse(Acc)};
+parse_auth_v4_header(String, UserId, Acc) ->
+    {Key, Rest0} = parse_auth_v4_header_key(String, []),
+    {Value, Rest} = parse_auth_v4_header_value(Rest0, []),
+    lager:debug("Auth header ~p=~p~n", [Key, Value]),
+    case Key of
+        "Credential" ->
+            [UserIdInCred | _] = string:tokens(Value, [$/]),
+            parse_auth_v4_header(Rest, UserIdInCred, [{Key, Value} | Acc]);
+        _ ->
+            parse_auth_v4_header(Rest, UserId, [{Key, Value} | Acc])
+    end.
+
+parse_auth_v4_header_key([$= | Rest], Acc) ->
+    {lists:reverse(Acc), Rest};
+parse_auth_v4_header_key([C | Rest], Acc) ->
+    parse_auth_v4_header_key(Rest, [C | Acc]).
+
+parse_auth_v4_header_value([], Acc) ->
+    {lists:reverse(Acc), []};
+parse_auth_v4_header_value([$, | Rest], Acc) ->
+    {lists:reverse(Acc), Rest};
+parse_auth_v4_header_value([C | Rest], Acc) ->
+    parse_auth_v4_header_value(Rest, [C | Acc]).
 
 calculate_signature(KeyData, RD) ->
     Headers = riak_cs_wm_utils:normalize_headers(RD),
