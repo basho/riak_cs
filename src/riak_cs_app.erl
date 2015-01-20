@@ -28,7 +28,8 @@
 -export([start/2,
          stop/1,
          sanity_check/2,
-         check_bucket_props/2]).
+         check_bucket_props/2,
+         atoms_for_check_bucket_props/0]).
 
 -include("riak_cs.hrl").
 
@@ -93,6 +94,11 @@ check_bucket_props() ->
     after
         riakc_pb_socket:stop(MasterPbc)
     end.
+
+%% Put atoms into atom table to suppress warning logs in `check_bucket_props'
+atoms_for_check_bucket_props() ->
+    [riak_core_util, chash_std_keyfun,
+     riak_kv_wm_link_walker, mapreduce_linkfun].
 
 promote_errors(_Elem, {error, _Reason}=E) ->
     E;
