@@ -1,6 +1,6 @@
 %% ---------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2015 Basho Technologies, Inc.  All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -18,9 +18,33 @@
 %%
 %% ---------------------------------------------------------------------
 
+%% @doc Rewrite rule of Riak CS S3 API. Following diagram is overall url quote/unquote diagram
+%% in case of hosted path style object names. Bucket names are much different in case of path
+%% style; they won't be doubly escaped.
+%%
+%% quote state     RAW    escaped(1)  escaped(2)    example
+%%
+%%                  *                               'baz/foo bar'        'baz/foo+bar'
+%% client app       +--------+                      'baz/foo%20bar'      'baz/foo%2Bbar'
+%%                           |
+%% HTTP                      |
+%%                           |
+%% webmachine                |
+%% before rewrite            |
+%% rewrite                   +------------+         'baz%2Ffoo%2520bar'  'baz%2Ffoo%252Bbar'
+%% after rewrite                          |
+%%                                        |
+%% extract_key      +---------------------+
+%%                  |
+%%                  v
+%%                  *                               'baz/foo bar'        'baz/foo+bar'
+
+
+
 -module(riak_cs_s3_rewrite).
 
 -export([rewrite/5, original_resource/1]).
+-export([rewrite_path_and_headers/5]).
 
 -include("riak_cs.hrl").
 -include("s3_api.hrl").
@@ -28,7 +52,6 @@
 -define(RCS_REWRITE_HEADER, "x-rcs-rewrite-path").
 
 -ifdef(TEST).
--include_lib("eunit/include/eunit.hrl").
 -compile(export_all).
 -endif.
 
@@ -41,19 +64,8 @@
                      {gb_tree(), string()}.
 rewrite(Method, _Scheme, _Vsn, Headers, Url) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"rewrite">>),
-    Host = mochiweb_headers:get_value("host", Headers),
-    HostBucket = bucket_from_host(Host),
     {Path, QueryString, _} = mochiweb_util:urlsplit_path(Url),
-    %% Unquote the path to accomodate some naughty client libs (looking
-    %% at you Fog)
-    RewrittenPath = rewrite_path(Method,
-                                 mochiweb_util:unquote(Path),
-                                 QueryString,
-                                 HostBucket),
-    RewrittenHeaders = mochiweb_headers:default(?RCS_REWRITE_HEADER,
-                                                rcs_rewrite_header(Url, HostBucket),
-                                                Headers),
-    {RewrittenHeaders, RewrittenPath}.
+    rewrite_path_and_headers(Method, Headers, Url, Path, QueryString).
 
 -spec original_resource(term()) -> undefined | {string(), [{term(),term()}]}.
 original_resource(RD) ->
@@ -64,13 +76,28 @@ original_resource(RD) ->
             {Path, mochiweb_util:parse_qs(QS)}
     end.
 
+-spec rewrite_path_and_headers(atom(), gb_tree(), string(), string(), string()) ->
+                    {gb_tree(), string()}.
+rewrite_path_and_headers(Method, Headers, Url, Path, QueryString) ->
+    Host = mochiweb_headers:get_value("host", Headers),
+    HostBucket = bucket_from_host(Host),
+    RewrittenPath = rewrite_path(Method,
+                                 Path,
+                                 QueryString,
+                                 HostBucket),
+    RewrittenHeaders = mochiweb_headers:default(?RCS_REWRITE_HEADER,
+                                                rcs_rewrite_header(Url, HostBucket),
+                                                Headers),
+    {RewrittenHeaders, RewrittenPath}.
+
+
 %% @doc Internal function to handle rewriting the URL
 -spec rewrite_path(atom(),string(), string(), undefined | string()) -> string().
 rewrite_path(_Method, "/", _QS, undefined) ->
     "/buckets";
 rewrite_path(Method, Path, QS, undefined) ->
     {Bucket, UpdPath} = separate_bucket_from_path(Path),
-    rewrite_path(Method, UpdPath, QS, Bucket);
+    rewrite_path(Method, UpdPath, QS, mochiweb_util:unquote(Bucket));
 rewrite_path(_Method, Path, _QS, "riak-cs") ->
     "/riak-cs" ++ Path;
 rewrite_path(_Method, Path, _QS, "usage") ->
@@ -210,202 +237,3 @@ get_subresources(QueryString) ->
 valid_subresource({Key, _}) ->
     lists:member(Key, ?SUBRESOURCES).
 
-
-%% ===================================================================
-%% Eunit tests
-%% ===================================================================
-
--ifdef(TEST).
-
-rstr_test() ->
-    ?assertEqual("foo." ++ ?ROOT_HOST,
-                 bucket_from_host("foo." ++ ?ROOT_HOST ++ "." ++ ?ROOT_HOST,
-                                  ?ROOT_HOST)).
-
-rewrite_path_test() ->
-    application:set_env(riak_cs, cs_root_host, ?ROOT_HOST),
-    %% List Buckets URL
-    equal_paths("/buckets",
-                rewrite_with(headers([]), "/")),
-    %% Bucket Operations
-    equal_paths("/buckets/testbucket/objects",
-                rewrite_with('GET', headers([]),
-                             "/testbucket")),
-    equal_paths("/buckets/testbucket/objects",
-                rewrite_with('GET', headers([{"host", "testbucket." ++ ?ROOT_HOST}]),
-                             "/")),
-    equal_paths("/buckets/testbucket/objects?max-keys=20&delimiter=%2F&prefix=123",
-                rewrite_with('GET', headers([]),
-                             "/testbucket?prefix=123&delimiter=/&max-keys=20")),
-    equal_paths("/buckets/testbucket/objects?max-keys=20&delimiter=%2F&prefix=123",
-                rewrite_with('GET', headers([{"host", "testbucket." ++ ?ROOT_HOST}]),
-                             "/?prefix=123&delimiter=/&max-keys=20")),
-    equal_paths("/buckets/testbucket",
-                rewrite_with('HEAD', headers([]), "/testbucket")),
-    equal_paths("/buckets/testbucket",
-                rewrite_with('HEAD', headers([{"host", "testbucket." ++ ?ROOT_HOST}]),
-                             "/")),
-    equal_paths("/buckets/testbucket",
-                rewrite_with('PUT', headers([]),
-                             "/testbucket")),
-    equal_paths("/buckets/testbucket",
-                rewrite_with('PUT', headers([{"host", "testbucket." ++ ?ROOT_HOST}]),
-                             "/")),
-    equal_paths("/buckets/testbucket",
-                rewrite_with('DELETE', headers([]),
-                             "/testbucket")),
-    equal_paths("/buckets/testbucket",
-                rewrite_with('DELETE', headers([{"host", "testbucket." ++ ?ROOT_HOST}]),
-                             "/")),
-    equal_paths("/buckets/testbucket/acl",
-                rewrite_with(headers([]), "/testbucket?acl")),
-    equal_paths("/buckets/testbucket/acl",
-                rewrite_with(headers([{"host", "testbucket." ++ ?ROOT_HOST}]),
-                             "/?acl")),
-    equal_paths("/buckets/testbucket/location",
-                rewrite_with(headers([]), "/testbucket?location")),
-    equal_paths("/buckets/testbucket/location",
-                rewrite_with(headers([{"host", "testbucket." ++ ?ROOT_HOST}]),
-                             "/?location")),
-    equal_paths("/buckets/testbucket/versioning",
-                rewrite_with(headers([]), "/testbucket?versioning")),
-    equal_paths("/buckets/testbucket/versioning",
-                rewrite_with(headers([{"host", "testbucket." ++ ?ROOT_HOST}]),
-                             "/?versioning")),
-    equal_paths("/buckets/testbucket/policy",
-                rewrite_with(headers([]),
-                             "/testbucket?policy")),
-    equal_paths("/buckets/testbucket/policy",
-                rewrite_with(headers([{"host", "testbucket." ++ ?ROOT_HOST}]),
-                             "/?policy")),
-    equal_paths("/buckets/testbucket/uploads",
-                rewrite_with(headers([]),
-                             "/testbucket?uploads")),
-    equal_paths("/buckets/testbucket/uploads",
-                rewrite_with(headers([{"host", "testbucket." ++ ?ROOT_HOST}]),
-                             "/?uploads")),
-    equal_paths("/buckets/testbucket/uploads?delimiter=D&prefix=ABC&max-uploads=10"
-                "&key-marker=bob&upload-id-marker=blah",
-                rewrite_with(headers([]),
-                             "/testbucket?uploads&upload-id-marker=blah&key-marker=bob"
-                             "&max-uploads=10&prefix=ABC&delimiter=D")),
-    equal_paths("/buckets/testbucket/uploads?delimiter=D&prefix=ABC&max-uploads=10"
-                "&key-marker=bob&upload-id-marker=blah",
-                rewrite_with(headers([{"host", "testbucket." ++ ?ROOT_HOST}]),
-                             "/?uploads&upload-id-marker=blah&key-marker=bob"
-                             "&max-uploads=10&prefix=ABC&delimiter=D")),
-    equal_paths("/buckets/testbucket/delete",
-                rewrite_with('POST', headers([]),
-                             "/testbucket/?delete")),
-    equal_paths("/buckets/testbucket/delete",
-                rewrite_with('POST', headers([{"host", "testbucket." ++ ?ROOT_HOST}]),
-                             "/?delete")),
-    %% Object Operations
-    equal_paths("/buckets/testbucket/objects/testobject",
-                rewrite_with(headers([]),
-                             "/testbucket/testobject")),
-    equal_paths("/buckets/testbucket/objects/testdir%2F",
-                rewrite_with(headers([]),
-                             "/testbucket/testdir/")),
-    equal_paths("/buckets/testbucket/objects/testdir%2Ftestobject",
-                rewrite_with(headers([]),
-                             "/testbucket/testdir/testobject")),
-    equal_paths("/buckets/testbucket/objects/testobject",
-                rewrite_with(headers([{"host", "testbucket." ++ ?ROOT_HOST}]),
-                             "/testobject")),
-    equal_paths("/buckets/testbucket/objects/testdir%2F",
-                rewrite_with(headers([{"host", "testbucket." ++ ?ROOT_HOST}]),
-                             "/testdir/")),
-    equal_paths("/buckets/testbucket/objects/testdir%2Ftestobject",
-                rewrite_with(headers([{"host", "testbucket." ++ ?ROOT_HOST}]),
-                             "/testdir/testobject")),
-    equal_paths("/buckets/testbucket/objects/testobject/acl",
-                rewrite_with(headers([]),
-                             "/testbucket/testobject?acl")),
-    equal_paths("/buckets/testbucket/objects/testdir%2F/acl",
-                rewrite_with(headers([]),
-                             "/testbucket/testdir/?acl")),
-    equal_paths("/buckets/testbucket/objects/testdir%2Ftestobject/acl",
-                rewrite_with(headers([]),
-                             "/testbucket/testdir/testobject?acl")),
-    equal_paths("/buckets/testbucket/objects/testobject/acl",
-                rewrite_with(headers([{"host", "testbucket." ++ ?ROOT_HOST}]),
-                             "/testobject?acl")),
-    equal_paths("/buckets/testbucket/objects/testdir%2F/acl",
-                rewrite_with(headers([{"host", "testbucket." ++ ?ROOT_HOST}]),
-                             "/testdir/?acl")),
-    equal_paths("/buckets/testbucket/objects/testdir%2Ftestobject/acl",
-                rewrite_with(headers([{"host", "testbucket." ++ ?ROOT_HOST}]),
-                             "/testdir/testobject?acl")),
-    equal_paths("/buckets/testbucket/objects/testobject/uploads",
-                rewrite_with(headers([]),
-                             "/testbucket/testobject?uploads")),
-    equal_paths("/buckets/testbucket/objects/testobject/uploads",
-                rewrite_with(headers([{"host", "testbucket." ++ ?ROOT_HOST}]),
-                             "/testobject?uploads")),
-    equal_paths("/buckets/testbucket/objects/testobject/uploads/2",
-                rewrite_with(headers([]),
-                             "/testbucket/testobject?uploadId=2")),
-    equal_paths("/buckets/testbucket/objects/testobject/uploads/2",
-                rewrite_with(headers([{"host", "testbucket." ++ ?ROOT_HOST}]),
-                             "/testobject?uploadId=2")),
-    equal_paths("/buckets/testbucket/objects/testobject/uploads/2?partNumber=1",
-                rewrite_with(headers([]),
-                             "/testbucket/testobject?partNumber=1&uploadId=2")),
-    equal_paths("/buckets/testbucket/objects/testobject/uploads/2?partNumber=1",
-                rewrite_with(headers([{"host", "testbucket." ++ ?ROOT_HOST}]),
-                             "/testobject?partNumber=1&uploadId=2")),
-    equal_paths("/buckets/testbucket/objects/testobject/uploads/2?AWSAccessKeyId=BF_BI8XYKFJSIW-NNAIR"
-                "&Expires=1364406757&Signature=x%2B0vteNN1YillZNw4yDGVQWrT2s%3D",
-                rewrite_with(headers([]),
-                             "/testbucket/testobject?Signature=x%2B0vteNN1YillZNw4yDGVQWrT2s%3D"
-                             "&Expires=1364406757&AWSAccessKeyId=BF_BI8XYKFJSIW-NNAIR&uploadId=2")),
-    equal_paths("/buckets/testbucket/objects/testobject/uploads/2?AWSAccessKeyId=BF_BI8XYKFJSIW-NNAIR"
-                "&Expires=1364406757&Signature=x%2B0vteNN1YillZNw4yDGVQWrT2s%3D",
-                rewrite_with(headers([{"host", "testbucket." ++ ?ROOT_HOST}]),
-                             "/testobject?Signature=x%2B0vteNN1YillZNw4yDGVQWrT2s%3D"
-                             "&Expires=1364406757&AWSAccessKeyId=BF_BI8XYKFJSIW-NNAIR&uploadId=2")),
-    equal_paths("/buckets/testbucket/objects/testobject/uploads/2?AWSAccessKeyId=BF_BI8XYKFJSIW-NNAIR"
-                "&Expires=1364406757&Signature=x%2B0vteNN1YillZNw4yDGVQWrT2s%3D&partNumber=1",
-                rewrite_with(headers([]),
-                             "/testbucket/testobject?Signature=x%2B0vteNN1YillZNw4yDGVQWrT2s%3D"
-                             "&Expires=1364406757&AWSAccessKeyId=BF_BI8XYKFJSIW-NNAIR&partNumber=1&uploadId=2")),
-    equal_paths("/buckets/testbucket/objects/testobject/uploads/2?AWSAccessKeyId=BF_BI8XYKFJSIW-NNAIR"
-                "&Expires=1364406757&Signature=x%2B0vteNN1YillZNw4yDGVQWrT2s%3D&partNumber=1",
-                rewrite_with(headers([{"host", "testbucket." ++ ?ROOT_HOST}]),
-                             "/testobject?Signature=x%2B0vteNN1YillZNw4yDGVQWrT2s%3D"
-                             "&Expires=1364406757&AWSAccessKeyId=BF_BI8XYKFJSIW-NNAIR&partNumber=1&uploadId=2")),
-    equal_paths("/buckets/testbucket/objects/testobject?AWSAccessKeyId=BF_BI8XYKFJSIW-NNAIR"
-                "&Expires=1364406757&Signature=x%2B0vteNN1YillZNw4yDGVQWrT2s%3D",
-                rewrite_with(headers([]),
-                             "/testbucket/testobject?Signature=x%2B0vteNN1YillZNw4yDGVQWrT2s%3D"
-                             "&Expires=1364406757&AWSAccessKeyId=BF_BI8XYKFJSIW-NNAIR")),
-    equal_paths("/buckets/testbucket/objects/testobject?AWSAccessKeyId=BF_BI8XYKFJSIW-NNAIR"
-                "&Expires=1364406757&Signature=x%2B0vteNN1YillZNw4yDGVQWrT2s%3D",
-                rewrite_with(headers([{"host", "testbucket." ++ ?ROOT_HOST}]),
-                             "/testobject?Signature=x%2B0vteNN1YillZNw4yDGVQWrT2s%3D"
-                             "&Expires=1364406757&AWSAccessKeyId=BF_BI8XYKFJSIW-NNAIR")).
-
-rewrite_header_test() ->
-    Path = "/testbucket?y=z&a=b&m=n",
-    {Headers, _} = rewrite_with(headers([]), Path),
-    ?assertEqual(Path, mochiweb_headers:get_value(?RCS_REWRITE_HEADER, Headers)).
-
-
-%% Helper function for eunit tests
-headers(HeadersList) ->
-    mochiweb_headers:make(HeadersList).
-
-equal_paths(EPath, {_RHeaders, RPath}) ->
-    ?assertEqual(EPath, RPath).
-
-
-rewrite_with(Headers, Path) ->
-    rewrite_with('GET', Headers, Path).
-
-rewrite_with(Method, Headers, Path) ->
-    Scheme = https,
-    Version = {1, 1},
-    rewrite(Method, Scheme, Version, Headers, Path).
-
--endif.
