@@ -148,6 +148,42 @@
   {datatype, flag}
 ]}.
 
+%% == Garbage Collection ==
+
+%% @doc The number of seconds to retain the block
+%% for an object after it has been deleted.
+%% This leeway time is set to give the delete
+%% indication time to propogate to all replicas.
+%% 86400 is 24-hours.
+{mapping, "gc.leeway_seconds", "riak_cs.leeway_seconds", [
+  {default, "24h"},
+  {datatype, {duration, s}}
+]}.
+
+%% @doc How often the garbage collection daemon
+%% waits in-between gc batches.
+%% 900 is 15-minutes.
+{mapping, "gc.interval", "riak_cs.gc_interval", [
+  {default, "15m"},
+  {datatype, {duration, s}}
+]}.
+
+%% @doc How long a move to the garbage
+%% collection to do list can remain
+%% failed, before we retry it.
+%% 21600 is 6-hours.
+{mapping, "gc.retry_interval", "riak_cs.gc_retry_interval", [
+  {default, "6h"},
+  {datatype, {duration, s}}
+]}.
+
+%% @doc Set this to false if you're running
+%% Riak nodes prior to version 1.4.0.
+{mapping, "gc.paginated_indexes", "riak_cs.gc_paginated_indexes", [
+  {default, on},
+  {datatype, flag}
+]}.
+
 %% @doc custom server name at http response header "Server: Riak CS"
 {mapping, "server.name", "webmachine.server_name", [
   {default, "Riak CS"},
