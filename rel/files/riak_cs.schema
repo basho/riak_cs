@@ -37,6 +37,20 @@
   {datatype, flag}
 ]}.
 
+%% @doc Default cert location for https can be overridden
+%% with the ssl config variable, for example:
+{mapping, "ssl.certfile", "riak_cs.ssl.certfile", [
+  {datatype, file},
+  {commented, "$(platform_etc_dir)/cert.pem"}
+]}.
+
+%% @doc Default key location for https can be overridden with the ssl
+%% config variable, for example:
+{mapping, "ssl.keyfile", "riak_cs.ssl.keyfile", [
+  {datatype, file},
+  {commented, "$(platform_etc_dir)/key.pem"}
+]}.
+
 %% @doc Enable this to allow the creation of an admin user when
 %% setting up a system. It is recommended to only enable this
 %% temporarily unless your use-case specifically dictates letting
@@ -44,6 +58,20 @@
 {mapping, "anonymous_user_creation", "riak_cs.anonymous_user_creation", [
   {default, false},
   {datatype, flag}
+]}.
+
+%% @doc IP address to listen on for system administration tasks.
+{mapping, "admin.ip", "riak_cs.admin_ip", [
+  {commented, "{{admin_ip}}"},
+  {datatype, string},
+  hidden
+]}.
+
+%% @doc Port to listen on for system administration tasks.
+{mapping, "admin.port", "riak_cs.admin_port", [
+  {commented, "{{admin_port}}"},
+  {datatype, integer},
+  hidden
 ]}.
 
 %% @doc Admin user credentials. Admin access like /riak-cs/stats

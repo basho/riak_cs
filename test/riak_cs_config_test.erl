@@ -3,7 +3,7 @@
 
 -include_lib("eunit/include/eunit.hrl").
 
-riak_cs_config_test() ->
+default_config_test() ->
     SchemaFiles = ["../rel/files/riak_cs.schema"],
     {ok, Context} = file:consult("../rel/vars.config"),
     Config = cuttlefish_unit:generate_templated_config(SchemaFiles, [], Context),
@@ -11,9 +11,12 @@ riak_cs_config_test() ->
     cuttlefish_unit:assert_config(Config, "riak_cs.riak_host", {"127.0.0.1", 8087}),
     cuttlefish_unit:assert_config(Config, "riak_cs.stanchion_host", {"127.0.0.1", 8085}),
     cuttlefish_unit:assert_config(Config, "riak_cs.stanchion_ssl", false),
+    cuttlefish_unit:assert_not_configured(Config, "riak_cs.ssl"),
     cuttlefish_unit:assert_config(Config, "riak_cs.anonymous_user_creation", false),
     cuttlefish_unit:assert_config(Config, "riak_cs.admin_key", "admin-key"),
     cuttlefish_unit:assert_config(Config, "riak_cs.admin_secret", "admin-secret"),
+    cuttlefish_unit:assert_not_configured(Config, "riak_cs.admin_ip"),
+    cuttlefish_unit:assert_not_configured(Config, "riak_cs.admin_port"),
     cuttlefish_unit:assert_config(Config, "riak_cs.cs_root_host", "s3.amazonaws.com"),
     cuttlefish_unit:assert_config(Config, "riak_cs.cs_version", 10300),
     cuttlefish_unit:assert_config(Config, "riak_cs.rewrite_module", "riak_cs_s3_rewrite"),
@@ -29,3 +32,25 @@ riak_cs_config_test() ->
                                                {riak_cs_access_log_handler, []}]),
     cuttlefish_unit:assert_config(Config, "webmachine.server_name", "Riak CS"),
     ok.
+
+ssl_config_test() ->
+    SchemaFiles = ["../rel/files/riak_cs.schema"],
+    {ok, Context} = file:consult("../rel/vars.config"),
+    Conf = [{["ssl", "certfile"], "path/certfile"},
+            {["ssl", "keyfile"],  "path/keyfile"}],
+    Config = cuttlefish_unit:generate_templated_config(SchemaFiles, Conf, Context),
+    cuttlefish_unit:assert_config(Config, "riak_cs.ssl", [{keyfile,  "path/keyfile"},
+                                                          {certfile, "path/certfile"}]),
+    ok.
+
+admin_ip_config_test() ->
+    SchemaFiles = ["../rel/files/riak_cs.schema"],
+    {ok, Context} = file:consult("../rel/vars.config"),
+    Conf = [{["admin", "ip"],   "0.0.0.0"},
+            {["admin", "port"], 9999}],
+    Config = cuttlefish_unit:generate_templated_config(SchemaFiles, Conf, Context),
+    cuttlefish_unit:assert_config(Config, "riak_cs.admin_ip", "0.0.0.0"),
+    cuttlefish_unit:assert_config(Config, "riak_cs.admin_port", 9999),
+    ok.
+
+
