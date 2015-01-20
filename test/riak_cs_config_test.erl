@@ -32,6 +32,9 @@ default_config_test() ->
     cuttlefish_unit:assert_config(Config, "riak_cs.access_archive_period", 3600),
     cuttlefish_unit:assert_config(Config, "riak_cs.access_archiver_max_backlog", 2),
     cuttlefish_unit:assert_config(Config, "riak_cs.access_archiver_max_workers", 2),
+    cuttlefish_unit:assert_not_configured(Config, "riak_cs.storage_schedule"),
+    cuttlefish_unit:assert_config(Config, "riak_cs.storage_archive_period", 86400),
+    cuttlefish_unit:assert_config(Config, "riak_cs.usage_request_limit", 744),
     cuttlefish_unit:assert_config(Config, "riak_cs.dtrace_support", false),
     cuttlefish_unit:assert_config(Config, "riak_cs.connection_pools",
                                               [{request_pool, {128, 0}},
@@ -60,6 +63,15 @@ admin_ip_config_test() ->
     Config = cuttlefish_unit:generate_templated_config(SchemaFiles, Conf, Context),
     cuttlefish_unit:assert_config(Config, "riak_cs.admin_ip", "0.0.0.0"),
     cuttlefish_unit:assert_config(Config, "riak_cs.admin_port", 9999),
+    ok.
+
+storage_schedule_config_test() ->
+    SchemaFiles = ["../rel/files/riak_cs.schema"],
+    {ok, Context} = file:consult("../rel/vars.config"),
+    Conf = [{["storage", "stats", "schedule", "1"], "00:00"},
+            {["storage", "stats", "schedule", "2"], "19:45"}],
+    Config = cuttlefish_unit:generate_templated_config(SchemaFiles, Conf, Context),
+    cuttlefish_unit:assert_config(Config, "riak_cs.storage_schedule", ["00:00", "19:45"]),
     ok.
 
 

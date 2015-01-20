@@ -225,6 +225,44 @@
   {datatype, integer}
 ]}.
 
+%% == Storage statistics ==
+
+%% @doc When to automatically start storage calculation
+%% batches; list of "HHMM" UTC times
+%%
+%%  Automatically calculate at 6am UTC every day:
+%%    storage.stats.schedule.1="06:00"
+%%
+%%  Automatically calculate at 6am and 7:45pm every day:
+%%    storage.stats.schedule.1="06:00"
+%%    storage.stats.schedule.2="19:45"
+{mapping, "storage.stats.schedule.$time", "riak_cs.storage_schedule", [
+  {datatype, string}
+]}.
+
+{translation,
+ "riak_cs.storage_schedule",
+ fun(Conf) ->
+   Keys = cuttlefish_variable:fuzzy_matches(["storage","stats","schedule","$time"], Conf),
+   [cuttlefish:conf_get("storage.stats.schedule." ++ Name, Conf)||{Key, Name} <- Keys]
+ end
+}.
+
+%% @doc How large each storage archive object is. Should be
+%% chosen such that each storage_schedule entry falls in
+%% a different period.
+{mapping, "storage.stats.archive_period", "riak_cs.storage_archive_period", [
+  {default, "1d"},
+  {datatype, {duration, s}}
+]}.
+
+%% @doc How many archive periods a user can request in one
+%% usage read, applied independently to access and storage.
+{mapping, "storage.stats.request_limit", "riak_cs.usage_request_limit", [
+  {default, "31d"},
+  {datatype, {duration, h}}
+]}.
+
 %% @doc custom server name at http response header "Server: Riak CS"
 {mapping, "server.name", "webmachine.server_name", [
   {default, "Riak CS"},
