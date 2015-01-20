@@ -125,7 +125,7 @@ init([]) ->
                      {ok, Workers} when is_integer(Workers) -> Workers;
                      _ ->
                          _ = lager:warning(
-                               "access_archiver_max_backlog was unset or"
+                               "access_archiver_max_workers was unset or"
                                " invalid; overriding with default of ~b",
                                [?DEFAULT_MAX_ARCHIVERS]),
                          ?DEFAULT_MAX_ARCHIVERS
