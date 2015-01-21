@@ -290,14 +290,14 @@
 
 %% @doc URL rewrite module.
 {mapping, "rewrite_module", "riak_cs.rewrite_module", [
-  {default, "riak_cs_s3_rewrite"},
-  {datatype, string}
+  {default, riak_cs_s3_rewrite},
+  {datatype, atom}
 ]}.
 
 %% @doc Authentication module.
 {mapping, "auth_module", "riak_cs.auth_module", [
-  {default, "riak_cs_s3_auth"},
-  {datatype, string}
+  {default, riak_cs_s3_auth},
+  {datatype, atom}
 ]}.
 
 %% == Bucket (List Objects) ==
