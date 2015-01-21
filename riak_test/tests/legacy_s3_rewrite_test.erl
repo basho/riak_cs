@@ -59,8 +59,8 @@ cs_config() ->
       [
        {proxy_get, enabled},
        {anonymous_user_creation, true},
-       {riak_pb_port, 10017},
-       {stanchion_port, 9095},
+       {riak_host, {"127.0.0.1", 10017}},
+       {stanchion_host, {"127.0.0.1", 9095}},
        {cs_version, 010300},
        {enforce_multipart_part_size, false},
        {max_buckets_per_user, 150},
