@@ -50,7 +50,7 @@ confirm() ->
     Config = [{riak, rtcs:riak_config([{riak_kv, [{delete_mode, keep}]}])},
               {stanchion, rtcs:stanchion_config()},
               {cs, rtcs:cs_config([{fold_objects_for_list_keys, true}])}],
-    {UserConfig, {RiakNodes, _CSNodes, _Stanchion}} = rtcs:setup(1, Config),
+    {UserConfig, {RiakNodes, CSNodes, _Stanchion}} = rtcs:setup(1, Config),
     {AccessKey2, SecretKey2} = rtcs:create_user(hd(RiakNodes), 1),
     UserConfig2 = rtcs:config(AccessKey2, SecretKey2, rtcs:cs_port(hd(RiakNodes))),
 
@@ -69,7 +69,10 @@ confirm() ->
 
     verify_cs840_regression(UserConfig, RiakNodes),
 
-    {Begin, End} = calc_storage_stats(),
+    %% Set up to grep logs to verify messages
+    rt:setup_log_capture(hd(CSNodes)),
+
+    {Begin, End} = calc_storage_stats(hd(CSNodes)),
     {JsonStat, XmlStat} = storage_stats_request(UserConfig, Begin, End),
     lists:foreach(fun(Spec) ->
                           assert_storage_json_stats(Spec, JsonStat),
@@ -225,7 +228,7 @@ give_over_bucket(Bucket, UserConfig, AnotherUser) ->
                  erlcloud_s3:put_object(Bucket, ?KEY, Block2, AnotherUser)),
     {Bucket, undefined, undefined}.
 
-calc_storage_stats() ->
+calc_storage_stats(CSNode) ->
     Begin = rtcs:datetime(),
     %% TODO workaround to #766
     timer:sleep(1000),
@@ -233,8 +236,7 @@ calc_storage_stats() ->
     lager:info("riak-cs-storage batch result: ~s", [Res]),
     ExpectRegexp = "Batch storage calculation started.\n$",
     ?assertMatch({match, _}, re:run(Res, ExpectRegexp)),
-    %% TODO ensure storage calculation finished.
-    timer:sleep(1000),
+    true = rt:expect_in_log(CSNode, "Finished storage calculation"),
     End = rtcs:datetime(),
     {Begin, End}.
 
