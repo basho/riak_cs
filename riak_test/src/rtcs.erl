@@ -143,13 +143,20 @@ configs(CustomConfigs) ->
                                      CustomConfigs,
                                      stanchion_config())}].
 
+get_config(cs, current) ->
+    cs_config();
+get_config(cs, previous) ->
+    previous_cs_config();
+get_config(stanchion, _) ->
+    stanchion_config().
+
 previous_configs() ->
     CSPrev = rt_config:get(?CS_PREVIOUS),
     AddPaths = filelib:wildcard(CSPrev ++ "/dev/dev1/lib/riak_cs*/ebin"),
 
     [{riak, riak_config([{riak_kv, [{add_paths, AddPaths}]}])},
      {stanchion, stanchion_config()},
-     {cs, cs_config()}].
+     {cs, previous_cs_config()}].
 
 default_configs() ->
     [{riak, riak_config()},
@@ -277,6 +284,32 @@ repl_config() ->
       {proxy_get, enabled}
      ]}.
 
+previous_cs_config() ->
+    previous_cs_config([], []).
+
+previous_cs_config(UserExtra) ->
+    previous_cs_config(UserExtra, []).
+
+previous_cs_config(UserExtra, OtherApps) ->
+    [
+     lager_config(),
+     {riak_cs,
+      UserExtra ++
+          [
+           {connection_pools,
+            [
+             {request_pool, {request_pool_size(), 0} },
+             {bucket_list_pool, {bucket_list_pool_size(), 0} }
+            ]},
+           {block_get_max_retries, 1},
+           {proxy_get, enabled},
+           {anonymous_user_creation, true},
+           {riak_pb_port, 10017},
+           {stanchion_port, 9095},
+           {cs_version, 010300}
+          ]
+     }] ++ OtherApps.
+
 cs_config() ->
     cs_config([], []).
 
@@ -299,8 +332,6 @@ cs_config(UserExtra, OtherApps) ->
            {anonymous_user_creation, true},
            {stanchion_host, {"127.0.0.1", 9095}},
            {riak_host, {"127.0.0.1", 10017}},
-           %%{riak_pb_port, 10017},
-           %%{stanchion_port, 9095},
            {cs_version, 010300}
           ]
      }] ++ OtherApps.
@@ -702,8 +733,13 @@ read_config(Vsn, N, Who) ->
                   cs -> riakcs_etcpath(Prefix, N);
                   stanchion -> stanchion_etcpath(Prefix)
               end,
-    {ok, [Config]} = file:consult(EtcPath ++ "/app.config"),
-    Config.
+    case file:consult(EtcPath ++ "/advanced.config") of
+         {ok, [Config]} ->
+             Config;
+         {error, enoent}->
+             {ok, [Config]} = file:consult(EtcPath ++ "/app.config"),
+             Config
+     end.
 
 update_cs_config(Prefix, N, Config, {AdminKey, AdminSecret}) ->
     CSSection = proplists:get_value(riak_cs, Config),
@@ -715,7 +751,7 @@ update_cs_config(Prefix, N, Config) ->
     CSSection = proplists:get_value(riak_cs, Config),
     UpdConfig = [{riak_cs, update_cs_port(CSSection, N)} |
                  proplists:delete(riak_cs, Config)],
-    update_app_config(riakcs_etcpath(Prefix, N) ++ "/advanced.config", UpdConfig).
+    update_app_config(riakcs_etcpath(Prefix, N), UpdConfig).
 
 update_admin_creds(Config, AdminKey, AdminSecret) ->
     [{admin_key, AdminKey}, {admin_secret, AdminSecret} |
@@ -733,11 +769,23 @@ update_stanchion_config(Prefix, Config, {AdminKey, AdminSecret}) ->
     update_stanchion_config(Prefix, UpdConfig).
 
 update_stanchion_config(Prefix, Config) ->
-    update_app_config(stanchion_etcpath(Prefix) ++ "/app.config", Config).
+    update_app_config(stanchion_etcpath(Prefix), Config).
 
-update_app_config(ConfigFile,  Config) ->
+update_app_config(Path,  Config) ->
+    lager:debug("rtcs:update_app_config(~s,~p)", [Path, Config]),
+    FileFormatString = "~s/~s.config",
+    AppConfigFile = io_lib:format(FileFormatString, [Path, "app"]),
+    AdvConfigFile = io_lib:format(FileFormatString, [Path, "advanced"]),
+
+    {BaseConfig, ConfigFile} = case file:consult(AppConfigFile) of
+        {ok, [ValidConfig]} ->
+            {ValidConfig, AppConfigFile};
+        {error, enoent} ->
+            {ok, [ValidConfig]} = file:consult(AdvConfigFile),
+            {ValidConfig, AdvConfigFile}
+    end,
     lager:debug("updating ~s", [ConfigFile]),
-    {ok, [BaseConfig]} = file:consult(ConfigFile),
+
     MergeA = orddict:from_list(Config),
     MergeB = orddict:from_list(BaseConfig),
     NewConfig =
@@ -887,55 +935,25 @@ error_child_element_verifier(Code, Message, Resource) ->
             true
     end.
 
-%% @doc TODO: FIXME: XXX: once we move to 2.0.x series, we stop using
-%% this function and go back to rt_cs_dev:upgrade/2. This is just
-%% copy&paste and modify.
-%% This also resets config and moves to default CS riak config.
-upgrade_20(Node, NewVersion) ->
-    N = rt_cs_dev:node_id(Node),
-    Version = rt_cs_dev:node_version(N),
-    lager:info("Upgrading ~p : ~p -> ~p", [Node, Version, NewVersion]),
-    catch rt_cs_dev:stop(Node),
-    rt:wait_until_unpingable(Node),
-    OldPath = rt_cs_dev:relpath(Version),
-    NewPath = rt_cs_dev:relpath(NewVersion),
-
-    Commands = [
-                io_lib:format("cp -v -p -P -R \"~s/dev/dev~b/data\" \"~s/dev/dev~b\"",
-                              [OldPath, N, NewPath, N]),
-                io_lib:format("rm -rf ~s/dev/dev~b/data/*",
-                              [OldPath, N]),
-                io_lib:format("cp \"~s/dev/dev~b/etc/app.config\" \"~s/dev/dev~b/etc/advanced.config\"",
-                              [OldPath, N, NewPath, N])
-               ],
-    [ begin
-        lager:info("Running: ~s", [Cmd]),
-        os:cmd(Cmd)
-    end || Cmd <- Commands],
-    VersionMap = orddict:store(N, NewVersion, rt_config:get(rt_versions)),
-    rt_config:set(rt_versions, VersionMap),
-    rt_cs_dev:start(Node),
-    rt:wait_until_pingable(Node),
-    ok.
-
 %% @doc update current app.config, assuming CS is already stopped
 upgrade_cs(N, AdminCreds) ->
     migrate_cs(previous, current, N, AdminCreds).
 
-%% @doc copy and update config file from `From' to `To' version.
+%% @doc update config file from `From' to `To' version.
 migrate_cs(From, To, N, AdminCreds) ->
     migrate(From, To, N, AdminCreds, cs).
 
 migrate(From, To, N, AdminCreds, Who) when
       (From =:= current andalso To =:= previous)
       orelse ( From =:= previous andalso To =:= current) ->
-    Config = read_config(From, N, Who),
     Prefix = get_rt_config(Who, To),
+    Config = get_config(Who, To),
+    lager:debug("migrating ~s => ~s", [get_rt_config(Who, From), Prefix]),
     case Who of
         cs -> update_cs_config(Prefix, N, Config, AdminCreds);
         stanchion -> update_stanchion_config(Prefix, Config, AdminCreds)
     end.
-    
+
 migrate_stanchion(From, To, AdminCreds) ->
     migrate(From, To, -1, AdminCreds, stanchion).
 

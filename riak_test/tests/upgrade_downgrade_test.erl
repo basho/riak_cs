@@ -48,7 +48,7 @@ confirm() ->
          N = rt_cs_dev:node_id(RiakNode),
          lager:debug("upgrading ~p", [N]),
          rtcs:stop_cs(N, previous),
-         ok = rtcs:upgrade_20(RiakNode, RiakCurrentVsn),
+         ok = rt:upgrade(RiakNode, RiakCurrentVsn),
          rt:wait_for_service(RiakNode, riak_kv),
          ok = rtcs:upgrade_cs(N, AdminCreds),
          rtcs:start_cs(N, current)
@@ -91,7 +91,7 @@ confirm() ->
          Result = downgrade_bitcask:main([BitcaskDataDir]),
          lager:info("downgrade script done: ~p", [Result]),
 
-         ok = rtcs:upgrade_20(RiakNode, RiakPrevVsn),
+         ok = rt:upgrade(RiakNode, RiakPrevVsn),
          rt:wait_for_service(RiakNode, riak_kv),
          ok = rtcs:migrate_cs(current, previous, N, AdminCreds),
          rtcs:start_cs(N, previous)
