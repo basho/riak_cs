@@ -55,7 +55,8 @@
          auto_reconnect/0,
          is_multibag_enabled/0,
          max_buckets_per_user/0,
-         read_before_last_manifest_write/0
+         read_before_last_manifest_write/0,
+         region/0
         ]).
 
 %% Timeouts hitting Riak
@@ -96,6 +97,7 @@
 
 -include("riak_cs_gc_d.hrl").
 -include("oos_api.hrl").
+-include("s3_api.hrl").
 -include("list_objects.hrl").
 
 %% ===================================================================
@@ -375,6 +377,12 @@ max_buckets_per_user() ->
 read_before_last_manifest_write() ->
     get_env(riak_cs, read_before_last_manifest_write, true).
 
+%% @doc -> current region name
+%% As Riak CS currently assuming 1 cluster per region,
+%% so region =:= location constraint =:= service endpoint.
+-spec region() -> string().
+region() ->
+    get_env(riak_cs, region, ?DEFAULT_REGION).
 
 %% ===================================================================
 %% ALL Timeouts hitting Riak

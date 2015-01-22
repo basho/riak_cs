@@ -1,7 +1,7 @@
 # Errors
 riak_cs_block_server.erl:312: The pattern
 riak_cs_block_server.erl:347: The pattern
-riak_cs_config.erl:241: The pattern
+riak_cs_config.erl:243: The pattern
 # Warnings
 Unknown functions:
   app_helper:get_prop_or_env/3

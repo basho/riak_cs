@@ -143,3 +143,5 @@
 
 -define(POLICY, #policy_v1).
 -define(ARN,    #arn_v1).
+
+-define(DEFAULT_REGION, "us-east-1").
