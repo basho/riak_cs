@@ -43,13 +43,14 @@
 
 -module(riak_cs_s3_rewrite).
 
--export([rewrite/5, original_resource/1]).
+-export([rewrite/5, original_resource/1, raw_url/1]).
 -export([rewrite_path_and_headers/5]).
 
 -include("riak_cs.hrl").
 -include("s3_api.hrl").
 
 -define(RCS_REWRITE_HEADER, "x-rcs-rewrite-path").
+-define(RCS_RAW_URL_HEADER, "x-rcs-raw-url").
 
 -ifdef(TEST).
 -compile(export_all).
@@ -76,6 +77,15 @@ original_resource(RD) ->
             {Path, mochiweb_util:parse_qs(QS)}
     end.
 
+-spec raw_url(term()) -> undefined | {string(), [{term(), term()}]}.
+raw_url(RD) ->
+    case wrq:get_req_header(?RCS_RAW_URL_HEADER, RD) of
+        undefined -> undefined;
+        RawUrl ->
+            {Path, QS, _} = mochiweb_util:urlsplit_path(RawUrl),
+            {Path, mochiweb_util:parse_qs(QS)}
+    end.
+
 -spec rewrite_path_and_headers(atom(), gb_tree(), string(), string(), string()) ->
                     {gb_tree(), string()}.
 rewrite_path_and_headers(Method, Headers, Url, Path, QueryString) ->
@@ -85,9 +95,11 @@ rewrite_path_and_headers(Method, Headers, Url, Path, QueryString) ->
                                  Path,
                                  QueryString,
                                  HostBucket),
-    RewrittenHeaders = mochiweb_headers:default(?RCS_REWRITE_HEADER,
-                                                rcs_rewrite_header(Url, HostBucket),
-                                                Headers),
+    RewrittenHeaders = mochiweb_headers:default(
+                         ?RCS_RAW_URL_HEADER, Url,
+                         mochiweb_headers:default(?RCS_REWRITE_HEADER,
+                                                  rcs_rewrite_header(Url, HostBucket),
+                                                  Headers)),
     {RewrittenHeaders, RewrittenPath}.
 
 
