@@ -48,9 +48,11 @@ identify(RD,_Ctx) ->
             parse_auth_header(AuthHeader)
     end.
 
--spec authenticate(rcs_user(), string(), term(), term()) -> ok | {error, atom()}.
+-spec authenticate(rcs_user(), term(), term(), term()) -> ok | {error, atom()}.
+authenticate(User, {v4, Attributes}, RD, _Ctx) ->
+    authenticate_v4(User, Attributes, RD);
 authenticate(User, Signature, RD, _Ctx) ->
-    CalculatedSignature = calculate_signature(User?RCS_USER.key_secret, RD),
+    CalculatedSignature = calculate_signature_v2(User?RCS_USER.key_secret, RD),
     case check_auth(Signature, CalculatedSignature) of
         true ->
             Expires = wrq:get_qs_value("Expires", RD),
@@ -96,7 +98,7 @@ parse_auth_header(_) ->
 -spec parse_auth_v4_header(string(), undefined | string(), [{string(), string()}]) ->
                                   {string(), [{string(), string()}]}.
 parse_auth_v4_header("", UserId, Acc) ->
-    {UserId, lists:reverse(Acc)};
+    {UserId, {v4, lists:reverse(Acc)}};
 parse_auth_v4_header(String, UserId, Acc) ->
     {Key, Rest0} = parse_auth_v4_header_key(String, []),
     {Value, Rest} = parse_auth_v4_header_value(Rest0, []),
@@ -121,13 +123,13 @@ parse_auth_v4_header_value([$, | Rest], Acc) ->
 parse_auth_v4_header_value([C | Rest], Acc) ->
     parse_auth_v4_header_value(Rest, [C | Acc]).
 
-calculate_signature(KeyData, RD) ->
+calculate_signature_v2(KeyData, RD) ->
     Headers = riak_cs_wm_utils:normalize_headers(RD),
     AmazonHeaders = riak_cs_wm_utils:extract_amazon_headers(Headers),
     OriginalResource = riak_cs_s3_rewrite:original_resource(RD),
     Resource = case OriginalResource of
         undefined -> []; %% TODO: get noisy here?
-        {Path,QS} -> [Path, canonicalize_qs(QS)]
+        {Path,QS} -> [Path, canonicalize_qs(v2, QS)]
     end,
     Expires = wrq:get_qs_value("Expires", RD),
     case Expires of
@@ -165,42 +167,156 @@ calculate_signature(KeyData, RD) ->
 
     base64:encode_to_string(riak_cs_utils:sha_mac(KeyData, STS)).
 
+authenticate_v4(?RCS_USER{key_secret = SecretAccessKey} = _User, AuthAttrs, RD) ->
+    Method = wrq:method(RD),
+    {Path, Qs} = riak_cs_s3_rewrite:raw_url(RD),
+    AllHeaders = riak_cs_wm_utils:normalize_headers(RD),
+    authenticate_v4(SecretAccessKey, AuthAttrs, Method, Path, Qs, AllHeaders).
+
+authenticate_v4(SecretAccessKey, AuthAttrs, Method, Path, Qs, AllHeaders) ->
+    CanonicalRequest = canonical_request_v4(AuthAttrs, Method, Path, Qs, AllHeaders),
+    _ = lager:debug("CanonicalRequest(v4):~n~s~nEND-OF-CANONICAL-REQUEST", [CanonicalRequest]),
+    {StringToSign, Scope} =
+        string_to_sign_v4(AuthAttrs, AllHeaders, CanonicalRequest),
+    _ = lager:debug("StringToSign(v4):~n~s~nEND-OF-STRING-TO-SIGN", [StringToSign]),
+    CalculatedSignature = calculate_signature_v4(SecretAccessKey, Scope, StringToSign),
+    _ = lager:debug("CalculatedSignature(v4): ~s", [CalculatedSignature]),
+    {"Signature", PresentedSignature} = lists:keyfind("Signature", 1, AuthAttrs),
+    _ = lager:debug("PresentedSignature(v4)  : ~s", [PresentedSignature]),
+    case CalculatedSignature of
+        PresentedSignature -> ok;
+        _ -> {error, {unmatched_signature, PresentedSignature, CalculatedSignature}}
+    end.
+
+canonical_request_v4(AuthAttrs, Method, Path, Qs, AllHeaders) ->
+    CanonicalQs = canonicalize_qs(v4, Qs),
+    {"SignedHeaders", SignedHeaders} = lists:keyfind("SignedHeaders", 1, AuthAttrs),
+    CanonicalHeaders = canonical_headers_v4(AllHeaders,
+                                            string:tokens(SignedHeaders, [$;])),
+    {"x-amz-content-sha256", HashedPayload} =
+        lists:keyfind("x-amz-content-sha256", 1, AllHeaders),
+    CanonicalRequest = [atom_to_list(Method), $\n,
+                        strict_url_encode_for_path(Path), $\n,
+                        CanonicalQs, $\n,
+                        CanonicalHeaders, $\n,
+                        SignedHeaders, $\n,
+                        HashedPayload],
+    CanonicalRequest.
+
+canonical_headers_v4(AllHeaders, HeaderNames) ->
+    %% TODO:
+    %% - Assert `host' and all `x-amz-*' in AllHeaders are included in `HeaderNames'
+    %% - Assert `conetnt-type' is included in `HeaderNames' if it is included in
+    %%   `AllHeaders'
+    canonical_headers_v4(AllHeaders, HeaderNames, []).
+
+canonical_headers_v4(_AllHeaders, [], Acc) ->
+    Acc;
+canonical_headers_v4(AllHeaders, [HeaderName | Rest], Acc) ->
+    {HeaderName, Value} = lists:keyfind(HeaderName, 1, AllHeaders),
+    canonical_headers_v4(AllHeaders, Rest, [Acc | [HeaderName, $:, Value, $\n]]).
+
+string_to_sign_v4(AuthAttrs, AllHeaders, CanonicalRequest) ->
+    %% TODO: Expires?
+    TimeStamp = case lists:keyfind("x-amz-date", 1, AllHeaders) of
+                    false ->
+                        {"date", Date} = lists:keyfind("date", 1, AllHeaders),
+                        riak_cs_wm_utils:to_iso_8601(Date);
+                    {"x-amz-date", XAmzDate} ->
+                        XAmzDate
+                end,
+    {"Credential", Cred} = lists:keyfind("Credential", 1, AuthAttrs),
+    [_UserId, CredDate, AwsRegion, "s3" = AwsService, "aws4_request" = AwsRequest] =
+        string:tokens(Cred, [$/]),
+    %% TODO: Validate `CredDate' be within 7 days
+    Scope = [CredDate, $/, AwsRegion, $/, AwsService, $/, AwsRequest],
+    {["AWS4-HMAC-SHA256", $\n,
+      TimeStamp, $\n,
+      Scope, $\n,
+      hex_sha256hash(CanonicalRequest)],
+     {CredDate, AwsRegion, AwsService, AwsRequest}}.
+
+calculate_signature_v4(SecretAccessKey,
+                       {CredDate, AwsRegion, AwsService, AwsRequest}, StringToSign) ->
+    DateKey              = hmac_sha256(["AWS4", SecretAccessKey], CredDate),
+    DateRegionKey        = hmac_sha256(DateKey, AwsRegion),
+    DateRegionServiceKey = hmac_sha256(DateRegionKey, AwsService),
+    SigningKey           = hmac_sha256(DateRegionServiceKey, AwsRequest),
+    mochihex:to_hex(hmac_sha256(SigningKey, StringToSign)).
+
+hmac_sha256(Key, Data) ->
+    %% TODO: R15* compatibility?
+    crypto:hmac(sha256, Key, Data).
+
+hex_sha256hash(Data) ->
+    mochihex:to_hex(crypto:hash(sha256, Data)).
+
 check_auth(PresentedSignature, CalculatedSignature) ->
     PresentedSignature == CalculatedSignature.
 
-canonicalize_qs(QS) ->
+canonicalize_qs(Version, QS) ->
     %% The QS must be sorted be canonicalized,
     %% and since `canonicalize_qs/2` builds up the
     %% accumulator with cons, it comes back in reverse
     %% order. So we'll sort then reverise, so cons'ing
     %% actually puts it back in the correct order
     ReversedSorted = lists:reverse(lists:sort(QS)),
-    canonicalize_qs(ReversedSorted, []).
-
-canonicalize_qs([], []) ->
-    [];
-canonicalize_qs([], Acc) ->
-    lists:flatten(["?", Acc]);
-canonicalize_qs([{K, []}|T], Acc) ->
-    case lists:member(K, ?SUBRESOURCES) of
-        true ->
-            Amp = if Acc == [] -> "";
-                     true      -> "&"
-                  end,
-            canonicalize_qs(T, [[K, Amp]|Acc]);
-        false ->
-            canonicalize_qs(T, Acc)
-    end;
-canonicalize_qs([{K, V}|T], Acc) ->
-    case lists:member(K, ?SUBRESOURCES) of
-        true ->
-            Amp = if Acc == [] -> "";
-                     true      -> "&"
-                  end,
-            canonicalize_qs(T, [[K, "=", V, Amp]|Acc]);
-        false ->
-            canonicalize_qs(T, Acc)
+    case Version of
+        v2 -> canonicalize_qs_v2(ReversedSorted, []);
+        v4 -> canonicalize_qs_v4(ReversedSorted, [])
     end.
+
+canonicalize_qs_v2([], []) ->
+    [];
+canonicalize_qs_v2([], Acc) ->
+    lists:flatten(["?", Acc]);
+canonicalize_qs_v2([{K, []}|T], Acc) ->
+    case lists:member(K, ?SUBRESOURCES) of
+        true ->
+            Amp = if Acc == [] -> "";
+                     true      -> "&"
+                  end,
+            canonicalize_qs_v2(T, [[K, Amp]|Acc]);
+        false ->
+            canonicalize_qs_v2(T, Acc)
+    end;
+canonicalize_qs_v2([{K, V}|T], Acc) ->
+    case lists:member(K, ?SUBRESOURCES) of
+        true ->
+            Amp = if Acc == [] -> "";
+                     true      -> "&"
+                  end,
+            canonicalize_qs_v2(T, [[K, "=", V, Amp]|Acc]);
+        false ->
+            canonicalize_qs_v2(T, Acc)
+    end.
+
+canonicalize_qs_v4([], []) ->
+    [];
+canonicalize_qs_v4([], Acc) ->
+    Acc;
+canonicalize_qs_v4([{K, V}|T], Acc) ->
+    Amp = if Acc == [] -> "";
+             true      -> "&"
+          end,
+    canonicalize_qs_v4(T, [[strict_url_encode_for_qs_value(K), "=",
+                            strict_url_encode_for_qs_value(V), Amp]|Acc]).
+
+%% Force strict URL encoding for keys and values in query part.
+%% For this part, all unsafe characters MUST be encoded including
+%% slashes (%2f).
+%% Because keys and values from raw query string that is URL-encoded at client
+%% side, they should be URL-decoded once and encoded back.
+strict_url_encode_for_qs_value(Value) ->
+    mochiweb_util:quote_plus(mochiweb_util:unquote(Value)).
+
+%% Force string URL encoding for path part of URL.
+%% Contrary to query part, slashes MUST NOT encoded and left as is.
+strict_url_encode_for_path(Path) ->
+    Tokens = binary:split(list_to_binary(Path), <<"/">>, [global]),
+    EncodedTokens = [mochiweb_util:quote_plus(mochiweb_util:unquote(T)) ||
+                        T <- Tokens],
+    string:join(EncodedTokens, "/").
 
 %% ===================================================================
 %% Eunit tests
@@ -252,7 +368,7 @@ example_get_object() ->
                                {"x-rcs-rewrite-path", OrigPath}]),
     RD = wrq:create(Method, Version, Path, Headers),
     ExpectedSignature = "xXjDGYUmKxnwqr5KXNPGldn5LbA=",
-    CalculatedSignature = calculate_signature(KeyData, RD),
+    CalculatedSignature = calculate_signature_v2(KeyData, RD),
     test_fun("example get object test", ExpectedSignature, CalculatedSignature).
 
 example_put_object() ->
@@ -269,7 +385,7 @@ example_put_object() ->
                                {"Date", "Tue, 27 Mar 2007 21:15:45 +0000"}]),
     RD = wrq:create(Method, Version, Path, Headers),
     ExpectedSignature = "hcicpDDvL9SsO6AkvxqmIWkmOuQ=",
-    CalculatedSignature = calculate_signature(KeyData, RD),
+    CalculatedSignature = calculate_signature_v2(KeyData, RD),
     test_fun("example put object test", ExpectedSignature, CalculatedSignature).
 
 example_list() ->
@@ -285,7 +401,7 @@ example_list() ->
                                {"Date", "Tue, 27 Mar 2007 19:42:41 +0000"}]),
     RD = wrq:create(Method, Version, Path, Headers),
     ExpectedSignature = "jsRt/rhG+Vtp88HrYL706QhE4w4=",
-    CalculatedSignature = calculate_signature(KeyData, RD),
+    CalculatedSignature = calculate_signature_v2(KeyData, RD),
     test_fun("example list test", ExpectedSignature, CalculatedSignature).
 
 example_fetch() ->
@@ -300,7 +416,7 @@ example_fetch() ->
                                {"Date", "Tue, 27 Mar 2007 19:44:46 +0000"}]),
     RD = wrq:create(Method, Version, Path, Headers),
     ExpectedSignature = "thdUi9VAkzhkniLj96JIrOPGi0g=",
-    CalculatedSignature = calculate_signature(KeyData, RD),
+    CalculatedSignature = calculate_signature_v2(KeyData, RD),
     test_fun("example fetch test", ExpectedSignature, CalculatedSignature).
 
 example_delete() ->
@@ -317,7 +433,7 @@ example_delete() ->
                                {"x-amz-date", "Tue, 27 Mar 2007 21:20:26 +0000"}]),
     RD = wrq:create(Method, Version, Path, Headers),
     ExpectedSignature = "k3nL7gH3+PadhTEVn5Ip83xlYzk=",
-    CalculatedSignature = calculate_signature(KeyData, RD),
+    CalculatedSignature = calculate_signature_v2(KeyData, RD),
     test_fun("example delete test", ExpectedSignature, CalculatedSignature).
 
 %% @TODO This test case should be specified using two separate
@@ -352,7 +468,7 @@ example_upload() ->
                                {"Content-Length", 5913339}]),
     RD = wrq:create(Method, Version, Path, Headers),
     ExpectedSignature = "C0FlOtU8Ylb9KDTpZqYkZPX91iI=",
-    CalculatedSignature = calculate_signature(KeyData, RD),
+    CalculatedSignature = calculate_signature_v2(KeyData, RD),
     test_fun("example upload test", ExpectedSignature, CalculatedSignature).
 
 example_list_all_buckets() ->
@@ -366,7 +482,7 @@ example_list_all_buckets() ->
                                {"Date", "Wed, 28 Mar 2007 01:29:59 +0000"}]),
     RD = wrq:create(Method, Version, Path, Headers),
     ExpectedSignature = "Db+gepJSUbZKwpx1FR0DLtEYoZA=",
-    CalculatedSignature = calculate_signature(KeyData, RD),
+    CalculatedSignature = calculate_signature_v2(KeyData, RD),
     test_fun("example list all buckts test", ExpectedSignature, CalculatedSignature).
 
 example_unicode_keys() ->
@@ -381,7 +497,7 @@ example_unicode_keys() ->
                                {"Date", "Wed, 28 Mar 2007 01:49:49 +0000"}]),
     RD = wrq:create(Method, Version, Path, Headers),
     ExpectedSignature = "dxhSBHoI6eVSPcXJqEghlUzZMnY=",
-    CalculatedSignature = calculate_signature(KeyData, RD),
+    CalculatedSignature = calculate_signature_v2(KeyData, RD),
     test_fun("example unicode keys test", ExpectedSignature, CalculatedSignature).
 
 -endif.
