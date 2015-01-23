@@ -28,6 +28,11 @@ from boto.exception import S3ResponseError
 from boto.s3.connection import S3Connection, OrdinaryCallingFormat
 from boto.s3.key import Key
 from boto.utils import compute_md5
+import boto
+
+if not boto.config.get('s3', 'use-sigv4'):
+    boto.config.add_section('s3')
+    boto.config.set('s3', 'use-sigv4', 'True')
 
 def create_user(host, port, name, email):
     url = '/riak-cs/user'
@@ -109,7 +114,8 @@ class S3ApiVerificationTestBase(unittest.TestCase):
 
     def make_connection(self, user):
         return S3Connection(user['key_id'], user['key_secret'], is_secure=False,
-                            host=self.host, port=self.port, debug=False,
+                            host="s3.amazonaws.com", debug=False,
+                            proxy="127.0.0.1", proxy_port=self.port,
                             calling_format=OrdinaryCallingFormat() )
 
     @classmethod
