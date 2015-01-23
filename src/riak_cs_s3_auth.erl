@@ -96,7 +96,7 @@ parse_auth_header(_) ->
     {undefined, undefined}.
 
 -spec parse_auth_v4_header(string(), undefined | string(), [{string(), string()}]) ->
-                                  {string(), [{string(), string()}]}.
+                                  {string(), {v4, [{string(), string()}]}}.
 parse_auth_v4_header("", UserId, Acc) ->
     {UserId, {v4, lists:reverse(Acc)}};
 parse_auth_v4_header(String, UserId, Acc) ->
