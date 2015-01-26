@@ -305,13 +305,15 @@ def one_kb_string():
     "Return a 1KB string of all a's"
     return ''.join(['a' for _ in xrange(1024)])
 
-def kb_gen(num_kilobytes):
+def kb_gen_fn(num_kilobytes):
     s = one_kb_string()
-    return (s for _ in xrange(num_kilobytes))
+    def fn():
+        return (s for _ in xrange(num_kilobytes))
+    return fn
 
 def kb_file_gen(num_kilobytes):
-    gen = kb_gen(num_kilobytes)
-    return FileGenerator(gen, num_kilobytes * 1024)
+    gen_fn = kb_gen_fn(num_kilobytes)
+    return FileGenerator(gen_fn, num_kilobytes * 1024)
 
 def mb_file_gen(num_megabytes):
     return kb_file_gen(num_megabytes * 1024)
@@ -342,6 +344,31 @@ def update_md5_from_file(md5_object, file_object):
 def remove_double_quotes(string):
     "remove double quote from a string"
     return string.replace('"', '')
+
+class FileGenTest(unittest.TestCase):
+    def test_read_twice(self):
+        """ Read 2KB file and reset (seek to the head) and re-read 2KB """
+        num_kb = 2
+        f = kb_file_gen(num_kb)
+
+        first1 = f.read(1024)
+        self.assertEqual(1024, len(first1))
+        first2 = f.read(1024)
+        self.assertEqual(1024, len(first2))
+        self.assertEqual(2048, f.pos)
+        self.assertEqual('', f.read(1))
+        self.assertEqual('', f.read(1))
+        self.assertEqual(2048, f.pos)
+
+        f.seek(0)
+        self.assertEqual(0, f.pos)
+        second1 = f.read(1024)
+        self.assertEqual(1024, len(first1))
+        second2 = f.read(1024)
+        self.assertEqual(1024, len(second2))
+        self.assertEqual(2048, f.pos)
+        self.assertEqual('', f.read(1))
+        self.assertEqual('', f.read(1))
 
 class LargerFileUploadTest(S3ApiVerificationTestBase):
     "Larger, regular key uploads"
