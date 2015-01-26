@@ -28,13 +28,15 @@
 %% keys for non-multipart objects
 -define(TEST_BUCKET,        "riak-test-bucket").
 -define(KEY_SINGLE_BLOCK,   "riak_test_key1").
+-define(REGION,             "boom-boom-tokyo-42").
 
 %% keys for multipart uploaded objects
 -define(KEY_MP,        "riak_test_mp").  % single part, single block
 
 
 confirm() ->
-    {UserConfig, {RiakNodes, CSNodes, _Stanchion}} = rtcs:setup(1),
+    SetupConfig =  [{cs, rtcs:cs_config([{region, ?REGION}])}],
+    {UserConfig, {RiakNodes, CSNodes, _Stanchion}} = rtcs:setup(1, SetupConfig),
 
 
     %% User 1, Cluster 1 config
@@ -45,6 +47,8 @@ confirm() ->
 
     lager:info("creating bucket ~p", [?TEST_BUCKET]),
     ?assertEqual(ok, erlcloud_s3:create_bucket(?TEST_BUCKET, UserConfig)),
+
+    ok = verify_bucket_location(UserConfig),
 
     ok = verify_bucket_delete_fails(UserConfig),
 
@@ -211,3 +215,6 @@ verify_max_buckets_per_user(UserConfig) ->
                  erlcloud_s3:create_bucket(BucketName1, UserConfig)),
     ok.
     
+verify_bucket_location(UserConfig) ->
+    ?assertEqual(?REGION,
+                 erlcloud_s3:get_bucket_attribute(?TEST_BUCKET, location, UserConfig)).
