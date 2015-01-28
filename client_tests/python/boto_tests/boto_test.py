@@ -28,6 +28,29 @@ from boto.exception import S3ResponseError
 from boto.s3.connection import S3Connection, OrdinaryCallingFormat
 from boto.s3.key import Key
 from boto.utils import compute_md5
+import boto
+
+
+def setup_auth_scheme():
+    auth_mech=os.environ.get('CS_AUTH', 'auth-v2')
+    if auth_mech == 'auth-v4':
+        setup_auth_v4()
+    else:
+        setup_auth_v2()
+
+def setup_auth_v4():
+    print('Use AWS Version 4 authentication')
+    if not boto.config.get('s3', 'use-sigv4'):
+        boto.config.add_section('s3')
+        boto.config.set('s3', 'use-sigv4', 'True')
+
+def setup_auth_v2():
+    print('Use AWS Version 2 authentication')
+    if not boto.config.get('s3', 'use-sigv4'):
+        boto.config.add_section('s3')
+        boto.config.set('s3', 'use-sigv4', '')
+
+setup_auth_scheme()
 
 def create_user(host, port, name, email):
     url = '/riak-cs/user'
@@ -58,13 +81,13 @@ def upload_multipart(bucket, key_name, parts_list, metadata={}, policy=None):
     result = upload.complete_upload()
     return upload, result
 
+
 class S3ApiVerificationTestBase(unittest.TestCase):
     host="127.0.0.1"
     try:
         port=int(os.environ['CS_HTTP_PORT'])
     except KeyError:
         port=8080
-
 
     user1 = None
     user2 = None
@@ -106,10 +129,10 @@ class S3ApiVerificationTestBase(unittest.TestCase):
                     "</AccessControlList>" + \
                   "</AccessControlPolicy>"
 
-
     def make_connection(self, user):
         return S3Connection(user['key_id'], user['key_secret'], is_secure=False,
-                            host=self.host, port=self.port, debug=False,
+                            host="s3.amazonaws.com", debug=False,
+                            proxy="127.0.0.1", proxy_port=self.port,
                             calling_format=OrdinaryCallingFormat() )
 
     @classmethod
@@ -299,13 +322,15 @@ def one_kb_string():
     "Return a 1KB string of all a's"
     return ''.join(['a' for _ in xrange(1024)])
 
-def kb_gen(num_kilobytes):
+def kb_gen_fn(num_kilobytes):
     s = one_kb_string()
-    return (s for _ in xrange(num_kilobytes))
+    def fn():
+        return (s for _ in xrange(num_kilobytes))
+    return fn
 
 def kb_file_gen(num_kilobytes):
-    gen = kb_gen(num_kilobytes)
-    return FileGenerator(gen, num_kilobytes * 1024)
+    gen_fn = kb_gen_fn(num_kilobytes)
+    return FileGenerator(gen_fn, num_kilobytes * 1024)
 
 def mb_file_gen(num_megabytes):
     return kb_file_gen(num_megabytes * 1024)
@@ -336,6 +361,31 @@ def update_md5_from_file(md5_object, file_object):
 def remove_double_quotes(string):
     "remove double quote from a string"
     return string.replace('"', '')
+
+class FileGenTest(unittest.TestCase):
+    def test_read_twice(self):
+        """ Read 2KB file and reset (seek to the head) and re-read 2KB """
+        num_kb = 2
+        f = kb_file_gen(num_kb)
+
+        first1 = f.read(1024)
+        self.assertEqual(1024, len(first1))
+        first2 = f.read(1024)
+        self.assertEqual(1024, len(first2))
+        self.assertEqual(2048, f.pos)
+        self.assertEqual('', f.read(1))
+        self.assertEqual('', f.read(1))
+        self.assertEqual(2048, f.pos)
+
+        f.seek(0)
+        self.assertEqual(0, f.pos)
+        second1 = f.read(1024)
+        self.assertEqual(1024, len(first1))
+        second2 = f.read(1024)
+        self.assertEqual(1024, len(second2))
+        self.assertEqual(2048, f.pos)
+        self.assertEqual('', f.read(1))
+        self.assertEqual('', f.read(1))
 
 class LargerFileUploadTest(S3ApiVerificationTestBase):
     "Larger, regular key uploads"
@@ -813,6 +863,6 @@ class SimpleCopyTest(S3ApiVerificationTestBase):
             print e
             self.assertEqual(e.status, 404)
             self.assertEqual(e.reason, 'Object Not Found')
-
+    
 if __name__ == "__main__":
     unittest.main(verbosity=2)

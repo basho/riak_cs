@@ -156,6 +156,11 @@ forbidden(RD, Ctx=#context{auth_module=AuthMod,
                            exports_fun=ExportsFun}) ->
     {AuthResult, AnonOk} =
         case AuthMod:identify(RD, Ctx) of
+            failed ->
+                %% Identification failed, deny access
+                {{error, no_such_key}, false};
+            {failed, Reason} ->
+                {{error, Reason}, false};
             {UserKey, AuthData} ->
                 riak_cs_dtrace:dt_wm_entry({?MODULE, Mod},
                                            <<"forbidden">>,
@@ -169,30 +174,9 @@ forbidden(RD, Ctx=#context{auth_module=AuthMod,
                                      AuthData,
                                      RcPid),
                 {authenticate(UserLookupResult, RD, Ctx, AuthData),
-                 resource_call(Mod, anon_ok, [], ExportsFun)};
-            failed ->
-                %% Identification failed, deny access
-                {{error, no_such_key}, false}
+                 resource_call(Mod, anon_ok, [], ExportsFun)}
         end,
-    case post_authentication(AuthResult, RD, Ctx, fun authorize/2, AnonOk) of
-        {false, _RD2, Ctx2} = FalseRet ->
-            riak_cs_dtrace:dt_wm_return({?MODULE, Mod},
-                                        <<"forbidden">>, [],
-                                        [riak_cs_wm_utils:extract_name(Ctx2#context.user),
-                                         <<"false">>]),
-            FalseRet;
-        {Rsn, _RD2, Ctx2} = Ret ->
-            Reason =
-                case Rsn of
-                    {halt, Code} -> Code;
-                    _            -> -1
-                end,
-            riak_cs_dtrace:dt_wm_return({?MODULE, Mod},
-                                        <<"forbidden">>, [Reason],
-                                        [riak_cs_wm_utils:extract_name(Ctx2#context.user),
-                                        <<"true">>]),
-            Ret
-    end.
+    post_authentication(AuthResult, RD, Ctx, AnonOk).
 
 maybe_create_user({ok, {_, _}}=UserResult, _, _, _, _, _) ->
     UserResult;
@@ -450,9 +434,27 @@ resource_call(_Mod, Fun, Args, false) ->
 resource_call(Mod, Fun, Args, ExportsFun) ->
     resource_call(Mod, Fun, Args, ExportsFun(Fun)).
 
-%% ===================================================================
-%% Helper Functions Copied from riak_cs_wm_utils that should be removed from that module
-%% ===================================================================
+
+post_authentication(AuthResult, RD, Ctx = #context{submodule=Mod}, AnonOk) ->
+    case post_authentication(AuthResult, RD, Ctx, fun authorize/2, AnonOk) of
+        {false, _RD2, Ctx2} = FalseRet ->
+            riak_cs_dtrace:dt_wm_return({?MODULE, Mod},
+                                        <<"forbidden">>, [],
+                                        [riak_cs_wm_utils:extract_name(Ctx2#context.user),
+                                         <<"false">>]),
+            FalseRet;
+        {Rsn, _RD2, Ctx2} = Ret ->
+            Reason =
+                case Rsn of
+                    {halt, Code} -> Code;
+                    _            -> -1
+                end,
+            riak_cs_dtrace:dt_wm_return({?MODULE, Mod},
+                                        <<"forbidden">>, [Reason],
+                                        [riak_cs_wm_utils:extract_name(Ctx2#context.user),
+                                        <<"true">>]),
+            Ret
+    end.
 
 post_authentication({ok, User, UserObj}, RD, Ctx, Authorize, _) ->
     %% given keyid and signature matched, proceed
@@ -470,6 +472,11 @@ post_authentication({error, bad_auth}, RD, Ctx, _, _) ->
     %% given keyid was found, but signature didn't match
     _ = lager:debug("bad_auth"),
     riak_cs_wm_utils:deny_access(RD, Ctx);
+post_authentication({error, {auth_not_supported, AuthType}}, RD,
+                    #context{response_module=ResponseMod} = Ctx, _, _) ->
+    %% given keyid was found, but signature didn't match
+    _ = lager:debug("auth_not_supported: ~s", [AuthType]),
+    ResponseMod:api_error({auth_not_supported, AuthType}, RD, Ctx);
 post_authentication({error, notfound}, RD, Ctx, _, _) ->
     %% This is rubbish. We need to differentiate between
     %% no key_id being presented and the key_id lookup
