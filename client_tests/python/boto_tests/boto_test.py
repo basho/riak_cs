@@ -30,9 +30,27 @@ from boto.s3.key import Key
 from boto.utils import compute_md5
 import boto
 
-if not boto.config.get('s3', 'use-sigv4'):
-    boto.config.add_section('s3')
-    boto.config.set('s3', 'use-sigv4', 'True')
+
+def setup_auth_scheme():
+    auth_mech=os.environ.get('CS_AUTH', 'auth-v2')
+    if auth_mech == 'auth-v4':
+        setup_auth_v4()
+    else:
+        setup_auth_v2()
+
+def setup_auth_v4():
+    print('Use AWS Version 4 authentication')
+    if not boto.config.get('s3', 'use-sigv4'):
+        boto.config.add_section('s3')
+        boto.config.set('s3', 'use-sigv4', 'True')
+
+def setup_auth_v2():
+    print('Use AWS Version 2 authentication')
+    if not boto.config.get('s3', 'use-sigv4'):
+        boto.config.add_section('s3')
+        boto.config.set('s3', 'use-sigv4', '')
+
+setup_auth_scheme()
 
 def create_user(host, port, name, email):
     url = '/riak-cs/user'
@@ -63,13 +81,13 @@ def upload_multipart(bucket, key_name, parts_list, metadata={}, policy=None):
     result = upload.complete_upload()
     return upload, result
 
+
 class S3ApiVerificationTestBase(unittest.TestCase):
     host="127.0.0.1"
     try:
         port=int(os.environ['CS_HTTP_PORT'])
     except KeyError:
         port=8080
-
 
     user1 = None
     user2 = None
@@ -110,7 +128,6 @@ class S3ApiVerificationTestBase(unittest.TestCase):
                        "</Grant>" + \
                     "</AccessControlList>" + \
                   "</AccessControlPolicy>"
-
 
     def make_connection(self, user):
         return S3Connection(user['key_id'], user['key_secret'], is_secure=False,
@@ -846,6 +863,6 @@ class SimpleCopyTest(S3ApiVerificationTestBase):
             print e
             self.assertEqual(e.status, 404)
             self.assertEqual(e.reason, 'Object Not Found')
-
+    
 if __name__ == "__main__":
     unittest.main(verbosity=2)
