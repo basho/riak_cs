@@ -196,7 +196,8 @@ object_web_config(Options) ->
      {rewrite_module, proplists:get_value(rewrite_module, Options)},
      {error_handler, riak_cs_wm_error_handler},
      {resource_module_option, submodule}] ++
-        maybe_add_ssl_opts(proplists:get_value(ssl, Options)).
+        maybe_add_ssl_opts(proplists:get_value(ssl, Options)) ++
+        riak_cs_config:maybe_http_perf_options().
 
 -spec admin_web_config(proplist()) -> proplist().
 admin_web_config(Options) ->

@@ -58,7 +58,8 @@
          max_buckets_per_user/0,
          read_before_last_manifest_write/0,
          region/0,
-         stanchion/0
+         stanchion/0,
+         maybe_http_perf_options/0
         ]).
 
 %% Timeouts hitting Riak
@@ -401,6 +402,36 @@ read_before_last_manifest_write() ->
 -spec region() -> string().
 region() ->
     get_env(riak_cs, region, ?DEFAULT_REGION).
+
+%% TODO: take it from config
+-spec maybe_http_perf_options() -> proplists:proplist().
+maybe_http_perf_options() ->
+    [] ++
+        case application:get_env(riak_cs, http_profile_fun) of
+            %%[{profile_fun, fun(AcceptPerf) -> lager:info("~p", [AcceptPerf]) end},
+            undefined -> [];
+            {Module, Function} when is_atom(Module) andalso is_atom(Function) ->
+                {module, Module} = code:ensure_loaded(Module),
+                Fun = fun Module:Function/1,
+                %% Test call to ensure function can be called
+                Fun([]),
+                [{profile_fun, Fun}]
+        end ++
+        case application:get_env(riak_cs, http_backlog) of %% mochi default is 128
+            undefined -> [];
+            Backlog when is_integer(Backlog) andalso Backlog > 0 ->
+                [{backlog, Backlog}]
+        end ++
+        case application:get_env(riak_cs, http_acceptor_pool_size) of %% mochi default is 16
+            undefined -> [];
+            PoolSize when is_integer(PoolSize) andalso PoolSize > 0 ->
+                [{acceptor_pool_size, PoolSize}]
+        end ++
+        case application:get_env(riak_cs, disable_http_nagle) of
+            undefined -> [];
+            Nodelay when is_boolean(Nodelay) ->
+                [{nodelay, false}] %% mochi default is false
+        end.
 
 %% ===================================================================
 %% ALL Timeouts hitting Riak
