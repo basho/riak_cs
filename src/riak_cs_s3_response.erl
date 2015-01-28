@@ -78,6 +78,8 @@ error_message(econnrefused) -> "Please reduce your request rate.";
 error_message(malformed_policy_json) -> "JSON parsing error";
 error_message({malformed_policy_version, Version}) ->
     io_lib:format("Document is invalid: Invalid Version ~s", [Version]);
+error_message({auth_not_supported, AuthType}) ->
+    io_lib:format("The authorization mechanism you have provided (~s) is not supported.", [AuthType]);
 error_message(malformed_policy_missing) -> "Policy is missing required element";
 error_message(malformed_policy_resource) -> "Policy has invalid resource";
 error_message(malformed_policy_principal) -> "Invalid principal in policy";
@@ -126,6 +128,7 @@ error_code(econnrefused) -> "ServiceUnavailable";
 error_code(malformed_policy_json) -> "MalformedPolicy";
 error_code(malformed_policy_missing) -> "MalformedPolicy";
 error_code({malformed_policy_version, _}) -> "MalformedPolicy";
+error_code({auth_not_supported, _}) -> "InvalidRequest";
 error_code(malformed_policy_resource) -> "MalformedPolicy";
 error_code(malformed_policy_principal) -> "MalformedPolicy";
 error_code(malformed_policy_action) -> "MalformedPolicy";
@@ -181,6 +184,7 @@ status_code(malformed_policy_resource) -> 400;
 status_code(malformed_policy_principal) -> 400;
 status_code(malformed_policy_action) -> 400;
 status_code(malformed_policy_condition) -> 400;
+status_code({auth_not_supported, _}) -> 400;
 status_code(no_such_bucket_policy) -> 404;
 status_code(no_such_upload) -> 404;
 status_code(invalid_digest) -> 400;
@@ -221,13 +225,10 @@ api_error(Error, RD, Ctx) when is_atom(Error) ->
                    error_message(Error),
                    RD,
                    Ctx);
-api_error({riak_connect_failed, _}=Error, RD, Ctx) ->
-    error_response(status_code(Error),
-                   error_code(Error),
-                   error_message(Error),
-                   RD,
-                   Ctx);
-api_error({malformed_policy_version, _} = Error, RD, Ctx) ->
+api_error({Tag, _}=Error, RD, Ctx)
+  when Tag =:= riak_connect_failed orelse
+       Tag =:= malformed_policy_version orelse
+       Tag =:= auth_not_supported ->
     error_response(status_code(Error),
                    error_code(Error),
                    error_message(Error),

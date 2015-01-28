@@ -31,7 +31,24 @@
 -define(VERSION, {1, 1}).
 -define(BUCKET, "examplebucket").
 
-auth_v4_GET_Object_test() ->
+auth_v4_test_() ->
+    {setup,
+     fun setup/0,
+     fun teardown/1,
+     [
+      {"GET Object example"           , ?_test(auth_v4_GET_Object())},
+      {"PUT Object example"           , ?_test(auth_v4_PUT_Object())},
+      {"GET Object lifecycle example" , ?_test(auth_v4_GET_Object_Lifecycle())},
+      {"GET Bucket example"           , ?_test(auth_v4_GET_Bucket())}
+     ]}.
+
+setup() ->
+    application:set_env(riak_cs, auth_v4_enabled, true).
+
+teardown(_) ->
+    application:set_env(riak_cs, auth_v4_enabled, undefined).
+
+auth_v4_GET_Object() ->
     Method = 'GET',
     OriginalPath = "/test.txt",
     AuthAttrs = [{"Credential",
@@ -56,7 +73,7 @@ auth_v4_GET_Object_test() ->
                  riak_cs_s3_auth:authenticate(?RCS_USER{key_secret=?SECRET_ACCESS_KEY},
                                               {v4, AuthAttrs}, RD, Context)).
 
-auth_v4_PUT_Object_test() ->
+auth_v4_PUT_Object() ->
     Method = 'PUT',
     OriginalPath = "/test%24file.text", % `%24=$'
     AuthAttrs = [{"Credential", "AKIAIOSFODNN7EXAMPLE/20130524/us-east-1/s3/aws4_request"},
@@ -79,7 +96,7 @@ auth_v4_PUT_Object_test() ->
                  riak_cs_s3_auth:authenticate(?RCS_USER{key_secret=?SECRET_ACCESS_KEY},
                                               {v4, AuthAttrs}, RD, Context)).
 
-auth_v4_GET_Object_Lifecycle_test() ->
+auth_v4_GET_Object_Lifecycle() ->
     Method = 'GET',
     OriginalPath = "/?lifecycle",
     AuthAttrs = [{"Credential", "AKIAIOSFODNN7EXAMPLE/20130524/us-east-1/s3/aws4_request"},
@@ -101,7 +118,7 @@ auth_v4_GET_Object_Lifecycle_test() ->
                  riak_cs_s3_auth:authenticate(?RCS_USER{key_secret=?SECRET_ACCESS_KEY},
                                               {v4, AuthAttrs}, RD, Context)).
 
-auth_v4_GET_Bucket_test() ->
+auth_v4_GET_Bucket() ->
     Method = 'GET',
     OriginalPath = "/?max-keys=2&prefix=J",
     AuthAttrs = [{"Credential", "AKIAIOSFODNN7EXAMPLE/20130524/us-east-1/s3/aws4_request"},

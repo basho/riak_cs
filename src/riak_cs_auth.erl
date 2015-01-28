@@ -29,7 +29,9 @@
 %%       authenticate/4 are actually `#wm_reqdata{}' and `#context{}'
 %%       from webmachine, but can't compile after `webmachine.hrl' import.
 -callback identify(RD :: wm_reqdata(), Ctx :: wm_context()) ->
-    failed | {string() | undefined, string() | tuple()} |
+    failed |
+    {failed, Reason::term()} |
+    {string() | undefined, string() | tuple()} |
     {string(), undefined}.
 
 -callback authenticate(rcs_user(), string() | {string(), term()} | undefined,

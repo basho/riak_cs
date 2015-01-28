@@ -85,7 +85,12 @@ identify_by_query_string(RD) ->
     {wrq:get_qs_value(?QS_KEYID, RD), wrq:get_qs_value(?QS_SIGNATURE, RD)}.
 
 parse_auth_header("AWS4-HMAC-SHA256 " ++ String) ->
-    parse_auth_v4_header(String, undefined, []);
+    case riak_cs_config:auth_v4_enabled() of
+        true ->
+            parse_auth_v4_header(String, undefined, []);
+        _ ->
+            {failed, {auth_not_supported, "AWS4-HMAC-SHA256"}}
+    end;
 parse_auth_header("AWS " ++ Key) ->
     case string:tokens(Key, ":") of
         [KeyId, KeyData] ->
