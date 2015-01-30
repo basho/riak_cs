@@ -148,8 +148,8 @@ previous_configs() ->
     AddPaths = filelib:wildcard(CSPrev ++ "/dev/dev1/lib/riak_cs*/ebin"),
 
     [{riak, riak_config([{riak_kv, [{add_paths, AddPaths}]}])},
-     {stanchion, stanchion_config()},
-     {cs, cs_config()}].
+     {stanchion, previous_stanchion_config()},
+     {cs, previous_cs_config()}].
 
 default_configs() ->
     [{riak, riak_config()},
@@ -277,6 +277,32 @@ repl_config() ->
       {proxy_get, enabled}
      ]}.
 
+previous_cs_config() ->
+    previous_cs_config([], []).
+
+previous_cs_config(UserExtra) ->
+    previous_cs_config(UserExtra, []).
+
+previous_cs_config(UserExtra, OtherApps) ->
+    [
+     lager_config(),
+     {riak_cs,
+      UserExtra ++
+          [
+           {connection_pools,
+            [
+             {request_pool, {request_pool_size(), 0} },
+             {bucket_list_pool, {bucket_list_pool_size(), 0} }
+            ]},
+           {block_get_max_retries, 1},
+           {proxy_get, enabled},
+           {anonymous_user_creation, true},
+           {riak_pb_port, 10017},
+           {stanchion_port, 9095},
+           {cs_version, 010300}
+          ]
+     }] ++ OtherApps.
+
 cs_config() ->
     cs_config([], []).
 
@@ -297,8 +323,8 @@ cs_config(UserExtra, OtherApps) ->
            {block_get_max_retries, 1},
            {proxy_get, enabled},
            {anonymous_user_creation, true},
-           {riak_pb_port, 10017},
-           {stanchion_port, 9095},
+           {stanchion_host, {"127.0.0.1", 9095}},
+           {riak_host, {"127.0.0.1", 10017}},
            {cs_version, 010300}
           ]
      }] ++ OtherApps.
@@ -312,7 +338,12 @@ replace(Key, Value, Config0) ->
     Config1 = proplists:delete(Key, Config0),
     [proplists:property(Key, Value)|Config1].
 
-stanchion_config() ->
+replace_stanchion_config(Key, Value, Config) ->
+    CSConfig0 = proplists:get_value(stanchion, Config),
+    CSConfig = replace(Key, Value, CSConfig0),
+    replace(stanchion, CSConfig, Config).
+
+previous_stanchion_config() ->
     [
      lager_config(),
      {stanchion,
@@ -322,16 +353,25 @@ stanchion_config() ->
       ]
      }].
 
-stanchion_config(UserExtra) ->
+previous_stanchion_config(UserExtra) ->
+    lists:foldl(fun({Key,Value}, Config0) ->
+                        replace_stanchion_config(Key,Value,Config0)
+                end, previous_stanchion_config(), UserExtra).
+
+stanchion_config() ->
     [
      lager_config(),
      {stanchion,
-      UserExtra ++
-          [
-           {stanchion_port, 9095},
-           {riak_pb_port, 10017}
-          ]
+      [
+       {host, {"127.0.0.1", 9095}},
+       {riak_host, {"127.0.0.1", 10017}}
+      ]
      }].
+    
+stanchion_config(UserExtra) ->
+    lists:foldl(fun({Key,Value}, Config0) ->
+                        replace_stanchion_config(Key,Value,Config0)
+                end, stanchion_config(), UserExtra).
 
 lager_config() ->
     {lager,
@@ -700,8 +740,13 @@ read_config(Vsn, N, Who) ->
                   cs -> riakcs_etcpath(Prefix, N);
                   stanchion -> stanchion_etcpath(Prefix)
               end,
-    {ok, [Config]} = file:consult(EtcPath ++ "/app.config"),
-    Config.
+    case file:consult(EtcPath ++ "/advanced.config") of
+         {ok, [Config]} ->
+             Config;
+         {error, enoent}->
+             {ok, [Config]} = file:consult(EtcPath ++ "/app.config"),
+             Config
+     end.
 
 update_cs_config(Prefix, N, Config, {AdminKey, AdminSecret}) ->
     CSSection = proplists:get_value(riak_cs, Config),
@@ -713,7 +758,7 @@ update_cs_config(Prefix, N, Config) ->
     CSSection = proplists:get_value(riak_cs, Config),
     UpdConfig = [{riak_cs, update_cs_port(CSSection, N)} |
                  proplists:delete(riak_cs, Config)],
-    update_app_config(riakcs_etcpath(Prefix, N) ++ "/app.config", UpdConfig).
+    update_app_config(riakcs_etcpath(Prefix, N), UpdConfig).
 
 update_admin_creds(Config, AdminKey, AdminSecret) ->
     [{admin_key, AdminKey}, {admin_secret, AdminSecret} |
@@ -721,8 +766,8 @@ update_admin_creds(Config, AdminKey, AdminSecret) ->
                       proplists:delete(admin_key, Config))].
 
 update_cs_port(Config, N) ->
-    Config2 = [{riak_pb_port, pb_port(N)} | proplists:delete(riak_pb_port, Config)],
-    [{cs_port, cs_port(N)} | proplists:delete(cs_port, Config2)].
+    Config2 = [{riak_host, {"127.0.0.1", pb_port(N)}} | proplists:delete(riak_host, Config)],
+    [{listener, {"127.0.0.1", cs_port(N)}} | proplists:delete(listener, Config2)].
 
 update_stanchion_config(Prefix, Config, {AdminKey, AdminSecret}) ->
     StanchionSection = proplists:get_value(stanchion, Config),
@@ -731,11 +776,23 @@ update_stanchion_config(Prefix, Config, {AdminKey, AdminSecret}) ->
     update_stanchion_config(Prefix, UpdConfig).
 
 update_stanchion_config(Prefix, Config) ->
-    update_app_config(stanchion_etcpath(Prefix) ++ "/app.config", Config).
+    update_app_config(stanchion_etcpath(Prefix), Config).
 
-update_app_config(ConfigFile,  Config) ->
+update_app_config(Path,  Config) ->
+    lager:debug("rtcs:update_app_config(~s,~p)", [Path, Config]),
+    FileFormatString = "~s/~s.config",
+    AppConfigFile = io_lib:format(FileFormatString, [Path, "app"]),
+    AdvConfigFile = io_lib:format(FileFormatString, [Path, "advanced"]),
+
+    {BaseConfig, ConfigFile} = case file:consult(AppConfigFile) of
+        {ok, [ValidConfig]} ->
+            {ValidConfig, AppConfigFile};
+        {error, enoent} ->
+            {ok, [ValidConfig]} = file:consult(AdvConfigFile),
+            {ValidConfig, AdvConfigFile}
+    end,
     lager:debug("updating ~s", [ConfigFile]),
-    {ok, [BaseConfig]} = file:consult(ConfigFile),
+
     MergeA = orddict:from_list(Config),
     MergeB = orddict:from_list(BaseConfig),
     NewConfig =
@@ -885,57 +942,109 @@ error_child_element_verifier(Code, Message, Resource) ->
             true
     end.
 
-%% @doc TODO: FIXME: XXX: once we move to 2.0.x series, we stop using
-%% this function and go back to rt_cs_dev:upgrade/2. This is just
-%% copy&paste and modify.
-%% This also resets config and moves to default CS riak config.
-upgrade_20(Node, NewVersion) ->
-    N = rt_cs_dev:node_id(Node),
-    Version = rt_cs_dev:node_version(N),
-    lager:info("Upgrading ~p : ~p -> ~p", [Node, Version, NewVersion]),
-    catch rt_cs_dev:stop(Node),
-    rt:wait_until_unpingable(Node),
-    OldPath = rt_cs_dev:relpath(Version),
-    NewPath = rt_cs_dev:relpath(NewVersion),
-
-    Commands = [
-                io_lib:format("cp -v -p -P -R \"~s/dev/dev~b/data\" \"~s/dev/dev~b\"",
-                              [OldPath, N, NewPath, N]),
-                io_lib:format("rm -rf ~s/dev/dev~b/data/*",
-                              [OldPath, N]),
-                io_lib:format("cp \"~s/dev/dev~b/etc/app.config\" \"~s/dev/dev~b/etc/advanced.config\"",
-                              [OldPath, N, NewPath, N])
-               ],
-    [ begin
-        lager:info("Running: ~s", [Cmd]),
-        os:cmd(Cmd)
-    end || Cmd <- Commands],
-    VersionMap = orddict:store(N, NewVersion, rt_config:get(rt_versions)),
-    rt_config:set(rt_versions, VersionMap),
-    rt_cs_dev:start(Node),
-    rt:wait_until_pingable(Node),
-    ok.
-
 %% @doc update current app.config, assuming CS is already stopped
 upgrade_cs(N, AdminCreds) ->
     migrate_cs(previous, current, N, AdminCreds).
 
-%% @doc copy and update config file from `From' to `To' version.
+%% @doc update config file from `From' to `To' version.
 migrate_cs(From, To, N, AdminCreds) ->
     migrate(From, To, N, AdminCreds, cs).
 
 migrate(From, To, N, AdminCreds, Who) when
       (From =:= current andalso To =:= previous)
       orelse ( From =:= previous andalso To =:= current) ->
-    Config = read_config(From, N, Who),
+    Config0 = read_config(From, N, Who),
+    Config1 = migrate_config(From, To, Config0, Who),
     Prefix = get_rt_config(Who, To),
+    lager:debug("migrating ~s => ~s", [get_rt_config(Who, From), Prefix]),
     case Who of
-        cs -> update_cs_config(Prefix, N, Config, AdminCreds);
-        stanchion -> update_stanchion_config(Prefix, Config, AdminCreds)
+        cs -> update_cs_config(Prefix, N, Config1, AdminCreds);
+        stanchion -> update_stanchion_config(Prefix, Config1, AdminCreds)
     end.
-    
+
 migrate_stanchion(From, To, AdminCreds) ->
     migrate(From, To, -1, AdminCreds, stanchion).
+
+migrate_config(previous, current, Conf, stanchion) ->
+    {ShouldMigratedConf, _} = diff_config(Conf, previous_stanchion_config()),
+    {AddList, RemoveList} = diff_config(stanchion_config(),
+                                        previous_stanchion_config()),
+    migrate_config(ShouldMigratedConf, AddList, RemoveList);
+migrate_config(current, previous, Conf, stanchion) ->
+    {ShouldMigratedConf, _} = diff_config(Conf, stanchion_config()),
+    {AddList, RemoveList} = diff_config(previous_stanchion_config(),
+                                        stanchion_config()),
+    migrate_config(ShouldMigratedConf, AddList, RemoveList);
+migrate_config(previous, current, Conf, cs) ->
+    {ShouldMigratedConf, _} = diff_config(Conf, previous_cs_config()),
+    {AddList, RemoveList} = diff_config(cs_config(), previous_cs_config()),
+    migrate_config(ShouldMigratedConf, AddList, RemoveList);
+migrate_config(current, previous, Conf, cs) ->
+    {ShouldMigratedConf, _} = diff_config(Conf, cs_config()),
+    {AddList, RemoveList} = diff_config(previous_cs_config(), cs_config()),
+    migrate_config(ShouldMigratedConf, AddList, RemoveList).
+
+migrate_config(Conf0, AddList, RemoveList) ->
+    RemoveFun = fun(Key, Config) ->
+                  %% Key: riak_cs
+                  InnerConf0 = proplists:get_value(Key, Config),
+                  InnerRemoveList = proplists:get_value(Key, RemoveList),
+                  InnerConf1 = lists:foldl(fun proplists:delete/2,
+                                           InnerConf0,
+                                           proplists:get_keys(InnerRemoveList)),
+                  replace(Key, InnerConf1, Config)
+          end,
+    Conf1 = lists:foldl(RemoveFun, Conf0, proplists:get_keys(RemoveList)),
+
+    AddFun = fun(Key, Config) ->
+                  InnerConf = proplists:get_value(Key, Config)
+                              ++ proplists:get_value(Key, AddList),
+                  replace(Key, InnerConf, Config)
+             end,
+    lists:foldl(AddFun, Conf1, proplists:get_keys(AddList)).
+
+diff_config(Conf, BaseConf)->
+    Keys = lists:umerge(proplists:get_keys(Conf),
+                        proplists:get_keys(BaseConf)),
+
+    Fun = fun(Key, {AddList, RemoveList}) ->
+                  {Add, Remove} = diff_props(proplists:get_value(Key,Conf),
+                                             proplists:get_value(Key, BaseConf)),
+                  case {Add, Remove} of
+                      {[], []} ->
+                          {AddList, RemoveList};
+                      {{}, Remove} ->
+                          {AddList, RemoveList++[{Key, Remove}]};
+                      {Add, []} ->
+                          {AddList++[{Key, Add}], RemoveList};
+                      {Add, Remove} ->
+                          {AddList++[{Key, Add}], RemoveList++[{Key, Remove}]}
+                  end
+          end,
+    lists:foldl(Fun, {[], []}, Keys).
+
+diff_props(undefined, BaseProps) ->
+    {[], BaseProps};
+diff_props(Props, undefined) ->
+    {Props, []};
+diff_props(Props, BaseProps) ->
+    Keys = lists:umerge(proplists:get_keys(Props),
+                        proplists:get_keys(BaseProps)),
+    Fun = fun(Key, {Add, Remove}) ->
+                  Values = {proplists:get_value(Key, Props),
+                            proplists:get_value(Key, BaseProps)},
+                  case Values of
+                      {undefined, V2} ->
+                          {Add, Remove++[{Key, V2}]};
+                      {V1, undefined} ->
+                          {Add++[{Key, V1}], Remove};
+                      {V, V} ->
+                          {Add, Remove};
+                      {V1, V2} ->
+                          {Add++[{Key, V1}], Remove++[{Key, V2}]}
+                  end
+          end,
+    lists:foldl(Fun, {[], []}, Keys).
 
 %% TODO: this is added as riak-1.4 branch of riak_test/src/rt_cs_dev.erl
 %% throws out the return value. Let's get rid of these functions when

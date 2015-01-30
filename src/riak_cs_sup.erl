@@ -33,8 +33,7 @@
 -include("riak_cs.hrl").
 
 -define(OPTIONS, [connection_pools,
-                  {cs_ip, "0.0.0.0"},
-                  {cs_port, 80},
+                  {listener, {"0.0.0.0", 80}},
                   admin_ip,
                   admin_port,
                   ssl,
@@ -187,11 +186,12 @@ web_spec(Name, Config) ->
 
 -spec object_web_config(proplist()) -> proplist().
 object_web_config(Options) ->
+    {IP, Port} = proplists:get_value(listener, Options),
     [{dispatch, riak_cs_web:object_api_dispatch_table()},
      {name, object_web},
      {dispatch_group, object_web},
-     {ip, proplists:get_value(cs_ip, Options)},
-     {port, proplists:get_value(cs_port, Options)},
+     {ip, IP},
+     {port, Port},
      {nodelay, true},
      {rewrite_module, proplists:get_value(rewrite_module, Options)},
      {error_handler, riak_cs_wm_error_handler},

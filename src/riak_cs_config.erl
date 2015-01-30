@@ -57,7 +57,8 @@
          is_multibag_enabled/0,
          max_buckets_per_user/0,
          read_before_last_manifest_write/0,
-         region/0
+         region/0,
+         stanchion/0
         ]).
 
 %% Timeouts hitting Riak
@@ -328,15 +329,10 @@ set_user_buckets_prune_time(_PruneTime) ->
 %% @doc copied from `riak_cs_access_archiver'
 -spec riak_host_port() -> {inet:hostname(), inet:port_number()}.
 riak_host_port() ->
-    Host = case application:get_env(riak_cs, riak_ip) of
-               {ok, Host0} -> Host0;
-               undefined -> "127.0.0.1"
-           end,
-    Port = case application:get_env(riak_cs, riak_pb_port) of
-               {ok, Port0 } -> Port0;
-               undefined -> 8087
-           end,
-    {Host, Port}.
+    case application:get_env(riak_cs, riak_host) of
+        {ok, RiakHost} -> RiakHost;
+        undefined -> {"127.0.0.1", 8087}
+    end.
 
 -spec connect_timeout() -> pos_integer().
 connect_timeout() ->
@@ -373,6 +369,23 @@ is_multibag_enabled() ->
 -spec max_buckets_per_user() -> non_neg_integer() | unlimited.
 max_buckets_per_user() ->
     get_env(riak_cs, max_buckets_per_user, ?DEFAULT_MAX_BUCKETS_PER_USER).
+
+%% @doc Return `stanchion' configuration data.
+-spec stanchion() -> {string(), pos_integer(), boolean()}.
+stanchion() ->
+    {Host, Port} = case application:get_env(riak_cs, stanchion_host) of
+                       {ok, HostPort} -> HostPort;
+                       undefined ->
+                           _ = lager:warning("No stanchion access defined. Using default."),
+                           {?DEFAULT_STANCHION_IP, ?DEFAULT_STANCHION_PORT}
+                   end,
+    SSL = case application:get_env(riak_cs, stanchion_ssl) of
+              {ok, SSL0} -> SSL0;
+              undefined ->
+                  _ = lager:warning("No ssl flag for stanchion access defined. Using default."),
+                  ?DEFAULT_STANCHION_SSL
+          end,
+    {Host, Port, SSL}.
 
 %% @doc This options is useful for use case involving high churn and
 %% concurrency on a fixed set of keys and when not using a Riak

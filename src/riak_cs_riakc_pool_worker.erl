@@ -22,29 +22,12 @@
 
 -module(riak_cs_riakc_pool_worker).
 
--export([riak_host_port/0,
-         start_link/1,
+-export([start_link/1,
          stop/1]).
-
--spec riak_host_port() -> {string(), pos_integer()}.
-riak_host_port() ->
-    case application:get_env(riak_cs, riak_ip) of
-        {ok, Host} ->
-            ok;
-        undefined ->
-            Host = "127.0.0.1"
-    end,
-    case application:get_env(riak_cs, riak_pb_port) of
-        {ok, Port} ->
-            ok;
-        undefined ->
-            Port = 8087
-    end,
-    {Host, Port}.
 
 -spec start_link(term()) -> {ok, pid()} | {error, term()}.
 start_link(Args) ->
-    {MasterAddress, MasterPort} = riak_host_port(),
+    {MasterAddress, MasterPort} = riak_cs_config:riak_host_port(),
     Address = proplists:get_value(address, Args, MasterAddress),
     Port = proplists:get_value(port, Args, MasterPort),
     Timeout = case application:get_env(riak_cs, riakc_connect_timeout) of

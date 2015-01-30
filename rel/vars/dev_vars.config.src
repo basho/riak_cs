@@ -23,8 +23,6 @@
 {stanchion_ip,      "127.0.0.1"}.
 {stanchion_port,    8085}.
 {stanchion_ssl,     false}.
-{request_pool_tuple, "{128, 0}"}.
-{bucket_list_pool_tuple, "{5, 0}"}.
 {cs_version,        010300}.
 {rewrite_module,    riak_cs_s3_rewrite}.
 {auth_module,       riak_cs_s3_auth}.
@@ -48,3 +46,9 @@
 {pipe_dir,           "/tmp/$RUNNER_BASE_DIR/"}.
 {runner_user,        ""}.
 {runner_wait_process, "riak_cs_put_fsm_sup"}.
+
+%%
+%% cuttlefish
+%%
+{cuttlefish,         "on"}.
+{cuttlefish_conf,    "riak_cs.conf"}.

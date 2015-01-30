@@ -1,0 +1,513 @@
+%% -*- erlang -*-
+
+%% Riak CS configuration
+
+%% == Basic Configuration ==
+
+%% @doc Riak CS http/https port and IP address to listen at for object
+%% storage activity
+{mapping, "listener", "riak_cs.listener", [
+  {default, {"{{cs_ip}}", {{cs_port}} }},
+  {datatype, ip},
+  {validators, ["valid_host"]}
+]}.
+
+{validator,
+ "valid_host",
+ "should be a valid host",
+ fun({Host, Port}) -> is_list(Host) andalso Port > 1024 andalso Port < 65536 end}.
+
+%% @doc Riak node to which Riak CS accesses
+{mapping, "riak_host", "riak_cs.riak_host", [
+  {default, {"{{riak_ip}}", {{riak_pb_port}} }},
+  {datatype, ip},
+  {validators, ["valid_host"]}
+]}.
+
+%% @doc Configuration for access to request
+%% serialization service
+{mapping, "stanchion_host", "riak_cs.stanchion_host", [
+  {default, {"{{stanchion_ip}}", {{stanchion_port}} }},
+  {datatype, ip},
+  {validators, ["valid_host"]}
+]}.
+
+{mapping, "stanchion.ssl", "riak_cs.stanchion_ssl", [
+  {default, {{stanchion_ssl}} },
+  {datatype, flag}
+]}.
+
+%% @doc Default cert location for https can be overridden
+%% with the ssl config variable, for example:
+{mapping, "ssl.certfile", "riak_cs.ssl.certfile", [
+  {datatype, file},
+  {commented, "$(platform_etc_dir)/cert.pem"}
+]}.
+
+%% @doc Default key location for https can be overridden with the ssl
+%% config variable, for example:
+{mapping, "ssl.keyfile", "riak_cs.ssl.keyfile", [
+  {datatype, file},
+  {commented, "$(platform_etc_dir)/key.pem"}
+]}.
+
+%% @doc Enable this to allow the creation of an admin user when
+%% setting up a system. It is recommended to only enable this
+%% temporarily unless your use-case specifically dictates letting
+%% anonymous users to create accounts.
+{mapping, "anonymous_user_creation", "riak_cs.anonymous_user_creation", [
+  {default, false},
+  {datatype, flag}
+]}.
+
+%% @doc IP address to listen on for system administration tasks.
+{mapping, "admin.ip", "riak_cs.admin_ip", [
+  {commented, "{{admin_ip}}"},
+  {datatype, string},
+  hidden
+]}.
+
+%% @doc Port to listen on for system administration tasks.
+{mapping, "admin.port", "riak_cs.admin_port", [
+  {commented, "{{admin_port}}"},
+  {datatype, integer},
+  hidden
+]}.
+
+%% @doc Admin user credentials. Admin access like /riak-cs/stats
+%% requires this entry to be set properly. The credentials specified
+%% here must match the admin credentials specified in the stanchion
+%% app.config for the system to function properly.
+{mapping, "admin.key", "riak_cs.admin_key", [
+  {default, "{{admin_key}}"},
+  {datatype, string}
+]}.
+
+{mapping, "admin.secret", "riak_cs.admin_secret", [
+  {default, "{{admin_secret}}"},
+  {datatype, string}
+]}.
+
+%% @doc Root host name which Riak CS accepts.
+%% Your CS bucket at s3.example.com will be accessible
+%% via URL like http://bucket.s3.example.com/object/name
+{mapping, "root_host", "riak_cs.cs_root_host", [
+  {default, "s3.amazonaws.com"},
+  {datatype, string}
+]}.
+
+%% @doc Fixed pool size of primary connection pool which is used
+%% to service the majority of API requests related to the upload
+%%  or retrieval of objects.
+{mapping, "pool.request.size", "riak_cs.connection_pools", [
+  {default, 128},
+  {datatype, integer}
+]}.
+
+%% @doc Overflow pool size of primary connection pool which is used
+%% to service the majority of API requests related to the upload
+%%  or retrieval of objects.
+{mapping, "pool.request.overflow", "riak_cs.connection_pools", [
+  {default, 0},
+  {datatype, integer}
+]}.
+
+%% @doc Fixed pool size of secondary connection pool which is used
+%% strictly for requests to list the contents.
+{mapping, "pool.list.size", "riak_cs.connection_pools", [
+  {default, 5},
+  {datatype, integer}
+]}.
+
+%% @doc Overflow pool size of secondary connection pool which is used
+%% strictly for requests to list the contents.
+{mapping, "pool.list.overflow", "riak_cs.connection_pools", [
+  {default, 0},
+  {datatype, integer}
+]}.
+
+{translation,
+ "riak_cs.connection_pools",
+ fun(Conf)->
+   ReqSize = cuttlefish:conf_get("pool.request.size", Conf),
+   ReqOverflow = cuttlefish:conf_get("pool.request.overflow", Conf),
+   ListSize = cuttlefish:conf_get("pool.list.size", Conf),
+   ListOverflow = cuttlefish:conf_get("pool.list.overflow", Conf),
+   [{request_pool, {ReqSize, ReqOverflow}},
+    {bucket_list_pool, {ListSize, ListOverflow}}]
+ end
+}.
+
+%% @doc Switch whether Riak CS trusts 'X-Forwarded-For' header.
+%% If your load balancer adds 'X-Forwarded-For' header
+%% and it is reliable (able to gaurantee it is not added
+%% by malicious user), turn this true. Otherwise, by
+%% default, Riak CS takes source IP address as an input.
+{mapping, "trust_x_forwarded_for", "riak_cs.trust_x_forwarded_for", [
+  {default, off},
+  {datatype, flag}
+]}.
+
+%% == Garbage Collection ==
+
+%% @doc The number of seconds to retain the block
+%% for an object after it has been deleted.
+%% This leeway time is set to give the delete
+%% indication time to propogate to all replicas.
+%% 86400 is 24-hours.
+{mapping, "gc.leeway_seconds", "riak_cs.leeway_seconds", [
+  {default, "24h"},
+  {datatype, {duration, s}}
+]}.
+
+%% @doc How often the garbage collection daemon
+%% waits in-between gc batches.
+%% 900 is 15-minutes.
+{mapping, "gc.interval", "riak_cs.gc_interval", [
+  {default, "15m"},
+  {datatype, {duration, s}}
+]}.
+
+%% @doc How long a move to the garbage
+%% collection to do list can remain
+%% failed, before we retry it.
+%% 21600 is 6-hours.
+{mapping, "gc.retry_interval", "riak_cs.gc_retry_interval", [
+  {default, "6h"},
+  {datatype, {duration, s}}
+]}.
+
+%% @doc Set this to false if you're running
+%% Riak nodes prior to version 1.4.0.
+{mapping, "gc.paginated_indexes", "riak_cs.gc_paginated_indexes", [
+  {default, on},
+  {datatype, flag}
+]}.
+
+%% == Access statistics ==
+
+%% @doc How often to flush the access log; integer factor of
+%% access_archive_period (1 == once per period; 2 == twice per period,
+%% etc.)
+{mapping, "access.stats.log_flush_factor", "riak_cs.access_log_flush_factor", [
+  {default, 1},
+  {datatype, integer}
+]}.
+
+%% @doc Additional access log flush trigger - flush after
+%% this many accesses are recorded, even if the flush
+%% interval has not expired; integer number of accesses
+{mapping, "access.stats.log_flush_size", "riak_cs.access_log_flush_size", [
+  {default, 1000000},
+  {datatype, integer}
+]}.
+
+%% @doc How large each access archive object is. Should be a
+%% multiple of access_log_flush_interval; integer number
+%% of seconds (3600 == 1 hour)
+{mapping, "access.stats.archive_period", "riak_cs.access_archive_period", [
+  {default, "1h"},
+  {datatype, {duration, s}}
+]}.
+
+%% @doc How many workers to put access log data to Riak are
+%% allowed to run concurrently
+{mapping, "access.stats.archiver_max_workers", "riak_cs.access_archiver_max_workers", [
+  {default, 2},
+  {datatype, integer}
+]}.
+
+%% @doc How many access logs are allowed to pile up in the
+%% archiver's queue before it starts skipping to catch
+%% up; integer number of logs
+{mapping, "access.stats.archiver_max_backlog", "riak_cs.access_archiver_max_backlog", [
+  {default, 2},
+  {datatype, integer}
+]}.
+
+%% == Storage statistics ==
+
+%% @doc When to automatically start storage calculation
+%% batches; list of "HHMM" UTC times
+%%
+%%  Automatically calculate at 6am UTC every day:
+%%    storage.stats.schedule.1="06:00"
+%%
+%%  Automatically calculate at 6am and 7:45pm every day:
+%%    storage.stats.schedule.1="06:00"
+%%    storage.stats.schedule.2="19:45"
+{mapping, "storage.stats.schedule.$time", "riak_cs.storage_schedule", [
+  {datatype, string}
+]}.
+
+{translation,
+ "riak_cs.storage_schedule",
+ fun(Conf) ->
+   Keys = cuttlefish_variable:fuzzy_matches(["storage","stats","schedule","$time"], Conf),
+   [cuttlefish:conf_get("storage.stats.schedule." ++ Name, Conf)||{Key, Name} <- Keys]
+ end
+}.
+
+%% @doc How large each storage archive object is. Should be
+%% chosen such that each storage_schedule entry falls in
+%% a different period.
+{mapping, "storage.stats.archive_period", "riak_cs.storage_archive_period", [
+  {default, "1d"},
+  {datatype, {duration, s}}
+]}.
+
+%% @doc How many archive periods a user can request in one
+%% usage read, applied independently to access and storage.
+{mapping, "storage.stats.request_limit", "riak_cs.usage_request_limit", [
+  {default, "31d"},
+  {datatype, {duration, h}}
+]}.
+
+%% @doc custom server name at http response header "Server: Riak CS"
+{mapping, "server.name", "webmachine.server_name", [
+  {default, "Riak CS"},
+  {datatype, string}
+]}.
+
+%% @doc Access log directory.
+{mapping, "log.access.dir", "webmachine.log_handlers", [
+  {default, "$(platform_log_dir)" },
+  {datatype, string}
+]}.
+
+{translation,
+ "webmachine.log_handlers",
+ fun(Conf) ->
+   Handler = case cuttlefish:conf_get("log.access.dir", Conf) of
+     "" -> [];
+     Dir -> [{webmachine_log_handler, [Dir]}]
+   end,
+   Handler ++ [{riak_cs_access_log_handler, []}]
+ end
+}.
+
+%% == API and Authentication ==
+
+%% @doc URL rewrite module.
+{mapping, "rewrite_module", "riak_cs.rewrite_module", [
+  {default, riak_cs_s3_rewrite},
+  {datatype, atom}
+]}.
+
+%% @doc Authentication module.
+{mapping, "auth_module", "riak_cs.auth_module", [
+  {default, riak_cs_s3_auth},
+  {datatype, atom}
+]}.
+
+%% == Bucket (List Objects) ==
+
+%% @doc Set this to false if you're running
+%% Riak nodes prior to version 1.4.0.
+{mapping, "fold_objects_for_list_keys", "riak_cs.fold_objects_for_list_keys", [
+  {default, on},
+  {datatype, flag}
+]}.
+
+%% == Rolling upgrade support ==
+
+%% @doc Riak CS version number. This is used to selectively
+%% enable new features for the current version to better
+%% support rolling upgrades. New installs should not
+%% need to modify this. If peforming a rolling upgrade
+%% then keep the original value (if not defined, Riak CS
+%% uses 0 instead) of old app.config until all nodes
+%% have been upgraded and then set to the new value.
+{mapping, "cs_version", "riak_cs.cs_version", [
+  {default, {{cs_version}} },
+  {datatype, integer}
+]}.
+
+%% == DTrace ==
+
+%% @doc If your Erlang virtual machine supports DTrace (or
+%% user-space SystemTap), set dtrace_support to true.
+{mapping, "dtrace_support", "riak_cs.dtrace_support", [
+  {default, off},
+  {datatype, flag}
+]}.
+
+%% @doc Where to emit the default log messages (typically at 'info'
+%% severity):
+%%     off: disabled
+%%    file: the file specified by log.console.file
+%% console: to standard output (seen when using `riak attach-direct`)
+%%    both: log.console.file and standard out.
+{mapping, "log.console", "lager.handlers", [
+  {default, {{console_log_default}} },
+  {datatype, {enum, [off, file, console, both]}}
+]}.
+
+%% @doc The severity level of the console log, default is 'info'.
+{mapping, "log.console.level", "lager.handlers", [
+  {default, info},
+  {datatype, {enum, [debug, info, warning, error]}}
+]}.
+
+%% @doc When 'log.console' is set to 'file' or 'both', the file where
+%% console messages will be logged.
+{mapping, "log.console.file", "lager.handlers", [
+  {default, "$(platform_log_dir)/console.log"},
+  {datatype, file}
+]}.
+
+%% @doc The file where error messages will be logged.
+{mapping, "log.error.file", "lager.handlers", [
+  {default, "$(platform_log_dir)/error.log"},
+  {datatype, file}
+]}.
+
+%% @doc When set to 'on', enables log output to syslog.
+{mapping, "log.syslog", "lager.handlers", [
+  {default, off},
+  {datatype, flag}
+]}.
+
+{translation,
+ "lager.handlers",
+ fun(Conf) ->
+    SyslogHandler = [{lager_syslog_backend, ["riak", daemon, info]} ||
+                     cuttlefish:conf_get("log.syslog", Conf)],
+    ErrorHandler = case cuttlefish:conf_get("log.error.file", Conf) of
+      undefined -> [];
+      ErrorFilename -> [{lager_file_backend, [{file, ErrorFilename},
+                                              {level, error},
+                                              {size, 10485760},
+                                              {date, "$D0"},
+                                              {count, 5}]}]
+    end,
+
+    ConsoleLogLevel = cuttlefish:conf_get("log.console.level", Conf),
+    ConsoleLogFile = cuttlefish:conf_get("log.console.file", Conf),
+
+    ConsoleHandler = {lager_console_backend, ConsoleLogLevel},
+    ConsoleFileHandler = {lager_file_backend, [{file, ConsoleLogFile},
+                                               {level, ConsoleLogLevel},
+                                               {size, 10485760},
+                                               {date, "$D0"},
+                                               {count, 5}]},
+
+    ConsoleHandlers = case cuttlefish:conf_get("log.console", Conf) of
+      off -> [];
+      file -> [ConsoleFileHandler];
+      console -> [ConsoleHandler];
+      both -> [ConsoleHandler, ConsoleFileHandler];
+      _ -> []
+    end,
+    SyslogHandler ++ ConsoleHandlers ++ ErrorHandler
+  end
+}.
+
+%% @doc Whether to enable Erlang's built-in error logger.
+{mapping, "sasl", "sasl.sasl_error_logger", [
+  {default, off},
+  {datatype, flag},
+  hidden
+]}.
+
+%% @doc Whether to enable the crash log.
+{mapping, "log.crash", "lager.crash_log", [
+  {default, on},
+  {datatype, flag}
+]}.
+
+%% @doc If the crash log is enabled, the file where its messages will
+%% be written.
+{mapping, "log.crash.file", "lager.crash_log", [
+  {default, "$(platform_log_dir)/crash.log"},
+  {datatype, file}
+]}.
+
+{translation,
+ "lager.crash_log",
+ fun(Conf) ->
+     case cuttlefish:conf_get("log.crash", Conf) of
+         false -> undefined;
+         _ ->
+             cuttlefish:conf_get("log.crash.file", Conf, "{{platform_log_dir}}/crash.log")
+     end
+ end}.
+
+%% @doc Maximum size in bytes of individual messages in the crash log
+{mapping, "log.crash.maximum_message_size", "lager.crash_log_msg_size", [
+  {default, "64KB"},
+  {datatype, bytesize}
+]}.
+
+%% @doc Maximum size of the crash log in bytes, before it is rotated
+{mapping, "log.crash.size", "lager.crash_log_size", [
+  {default, "10MB"},
+  {datatype, bytesize}
+]}.
+
+%% @doc The schedule on which to rotate the crash log.  For more
+%% information see:
+%% https://github.com/basho/lager/blob/master/README.md#internal-log-rotation
+{mapping, "log.crash.rotation", "lager.crash_log_date", [
+  {default, "$D0"}
+]}.
+
+%% @doc The number of rotated crash logs to keep. When set to
+%% 'current', only the current open log file is kept.
+{mapping, "log.crash.rotation.keep", "lager.crash_log_count", [
+  {default, 5},
+  {datatype, [integer, {atom, current}]},
+  {validators, ["rotation_count"]}
+]}.
+
+{validator,
+ "rotation_count",
+ "must be 'current' or a positive integer",
+ fun(current) -> true;
+    (Int) when is_integer(Int) andalso Int >= 0 -> true;
+    (_) -> false
+ end}.
+
+{translation,
+ "lager.crash_log_count",
+ fun(Conf) ->
+    case cuttlefish:conf_get("log.crash.rotation.keep", Conf) of
+       current -> 0;
+       Int -> Int
+    end
+ end}.
+
+%% @doc Whether to redirect error_logger messages into lager -
+%% defaults to true
+{mapping, "log.error.redirect", "lager.error_logger_redirect", [
+  {default, on},
+  {datatype, flag},
+  hidden
+]}.
+
+%% @doc Maximum number of error_logger messages to handle in a second
+{mapping, "log.error.messages_per_second", "lager.error_logger_hwm", [
+  {default, 100},
+  {datatype, integer},
+  hidden
+]}.
+
+{mapping, "platform_log_dir", "riak_cs.platform_log_dir", [
+  {datatype, directory},
+  {default, "{{platform_log_dir}}"}
+]}.
+
+%% @doc Cookie for distributed node communication.  All nodes in the
+%% same cluster should use the same cookie or they will not be able to
+%% communicate.
+{mapping, "distributed_cookie", "vm_args.-setcookie", [
+  {default, "riak"}
+]}.
+
+{{#devrel}}
+%% @doc erlang vm shutdown_time is useful when running a riak_test devrel
+{mapping, "erlang.shutdown_time", "vm_args.-shutdown_time", [
+  {default, "10s"},
+  {datatype, {duration, ms}}
+]}.
+{{/devrel}}
