@@ -27,6 +27,7 @@
          auth_bypass/0,
          admin_auth_enabled/0,
          auth_module/0,
+         auth_v4_enabled/0,
          cluster_id/1,
          cs_version/0,
          disable_local_bucket_check/0,
@@ -169,6 +170,10 @@ admin_auth_enabled() ->
 -spec auth_module() -> atom().
 auth_module() ->
     get_env(riak_cs, auth_module, ?DEFAULT_AUTH_MODULE).
+
+-spec auth_v4_enabled() -> boolean().
+auth_v4_enabled() ->
+    get_env(riak_cs, auth_v4_enabled, false).
 
 -spec disable_local_bucket_check() -> boolean().
 disable_local_bucket_check() ->
