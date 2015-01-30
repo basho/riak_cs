@@ -148,7 +148,7 @@ previous_configs() ->
     AddPaths = filelib:wildcard(CSPrev ++ "/dev/dev1/lib/riak_cs*/ebin"),
 
     [{riak, riak_config([{riak_kv, [{add_paths, AddPaths}]}])},
-     {stanchion, stanchion_config()},
+     {stanchion, previous_stanchion_config()},
      {cs, previous_cs_config()}].
 
 default_configs() ->
@@ -338,7 +338,12 @@ replace(Key, Value, Config0) ->
     Config1 = proplists:delete(Key, Config0),
     [proplists:property(Key, Value)|Config1].
 
-stanchion_config() ->
+replace_stanchion_config(Key, Value, Config) ->
+    CSConfig0 = proplists:get_value(stanchion, Config),
+    CSConfig = replace(Key, Value, CSConfig0),
+    replace(stanchion, CSConfig, Config).
+
+previous_stanchion_config() ->
     [
      lager_config(),
      {stanchion,
@@ -348,16 +353,25 @@ stanchion_config() ->
       ]
      }].
 
-stanchion_config(UserExtra) ->
+previous_stanchion_config(UserExtra) ->
+    lists:foldl(fun({Key,Value}, Config0) ->
+                        replace_stanchion_config(Key,Value,Config0)
+                end, previous_stanchion_config(), UserExtra).
+
+stanchion_config() ->
     [
      lager_config(),
      {stanchion,
-      UserExtra ++
-          [
-           {stanchion_port, 9095},
-           {riak_pb_port, 10017}
-          ]
+      [
+       {host, {"127.0.0.1", 9095}},
+       {riak_host, {"127.0.0.1", 10017}}
+      ]
      }].
+    
+stanchion_config(UserExtra) ->
+    lists:foldl(fun({Key,Value}, Config0) ->
+                        replace_stanchion_config(Key,Value,Config0)
+                end, stanchion_config(), UserExtra).
 
 lager_config() ->
     {lager,
@@ -753,7 +767,7 @@ update_admin_creds(Config, AdminKey, AdminSecret) ->
 
 update_cs_port(Config, N) ->
     Config2 = [{riak_host, {"127.0.0.1", pb_port(N)}} | proplists:delete(riak_host, Config)],
-    [{cs_port, cs_port(N)} | proplists:delete(cs_port, Config2)].
+    [{listener, {"127.0.0.1", cs_port(N)}} | proplists:delete(listener, Config2)].
 
 update_stanchion_config(Prefix, Config, {AdminKey, AdminSecret}) ->
     StanchionSection = proplists:get_value(stanchion, Config),
@@ -951,9 +965,16 @@ migrate(From, To, N, AdminCreds, Who) when
 migrate_stanchion(From, To, AdminCreds) ->
     migrate(From, To, -1, AdminCreds, stanchion).
 
-migrate_config(_From, _To, Conf, stanchion) ->
-    %% TODO
-    Conf;
+migrate_config(previous, current, Conf, stanchion) ->
+    {ShouldMigratedConf, _} = diff_config(Conf, previous_stanchion_config()),
+    {AddList, RemoveList} = diff_config(stanchion_config(),
+                                        previous_stanchion_config()),
+    migrate_config(ShouldMigratedConf, AddList, RemoveList);
+migrate_config(current, previous, Conf, stanchion) ->
+    {ShouldMigratedConf, _} = diff_config(Conf, stanchion_config()),
+    {AddList, RemoveList} = diff_config(previous_stanchion_config(),
+                                        stanchion_config()),
+    migrate_config(ShouldMigratedConf, AddList, RemoveList);
 migrate_config(previous, current, Conf, cs) ->
     {ShouldMigratedConf, _} = diff_config(Conf, previous_cs_config()),
     {AddList, RemoveList} = diff_config(cs_config(), previous_cs_config()),

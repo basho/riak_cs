@@ -30,16 +30,12 @@
 -define(BACKUP_PORT, 9096).
 
 backup_stanchion_config() ->
-    [
-     rtcs:lager_config(),
-     {stanchion,
-      [{stanchion_port, ?BACKUP_PORT},
-       {riak_pb_port, 10017}
-      ]
-      }].
+    rtcs:replace_stanchion_config(host,
+                                  {"127.0.0.1", ?BACKUP_PORT},
+                                  rtcs:stanchion_config()).
 
 confirm() ->
-    {UserConfig, {RiakNodes, _CSNodes, _Stanchion}} = rtcs:setup(1),
+    {UserConfig, {RiakNodes, _CSNodes, Stanchion}} = rtcs:setup(1),
 
     lists:foreach(fun(RiakNode) ->
                           N = rt_cs_dev:node_id(RiakNode),
@@ -55,6 +51,7 @@ confirm() ->
 
     %% stop stanchion to check ops fails
     _ = rtcs:stop_stanchion(),
+    rt:wait_until_unpingable(Stanchion),
 
     %% stanchion ops ng; we get 500 here for sure.
     lager:info("creating bucket ~p", [?TEST_BUCKET]),
@@ -62,6 +59,7 @@ confirm() ->
                     erlcloud_s3:create_bucket(?TEST_BUCKET, UserConfig)),
 
     ok = rtcs:deploy_stanchion(backup_stanchion_config()),
+    rt:wait_until_pingable(Stanchion),
 
     %% stanchion ops ng; we get 500 here for sure.
     lager:info("creating bucket ~p", [?TEST_BUCKET]),

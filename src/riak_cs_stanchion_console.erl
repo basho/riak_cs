@@ -61,7 +61,7 @@ switch([Host, Port]) ->
                 Msg2 = io_lib:format("Succesfully switched stanchion to ~s:~s: This change is only effective until restart.",
                                     [Host, Port]),
                 _ = lager:info(Msg2),
-                io:format("~s~nTo make permanent change, be sure to edit app.config file.~n", [Msg2])
+                io:format("~s~nTo make permanent change, be sure to edit configuration file.~n", [Msg2])
             end, Msg);
 switch(_) ->
     io:format("Usage: riak-cs-admin stanchion switch IP Port~n"),
