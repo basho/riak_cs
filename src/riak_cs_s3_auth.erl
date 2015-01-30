@@ -32,6 +32,8 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
+-type v4_attrs() :: [{string(), string()}].
+
 -define(QS_KEYID, "AWSAccessKeyId").
 -define(QS_SIGNATURE, "Signature").
 
@@ -39,7 +41,9 @@
 %% Public API
 %% ===================================================================
 
--spec identify(term(), term()) -> {string() | undefined , string()}.
+-spec identify(RD::term(), #context{}) ->
+                      {string() | undefined,
+                       string() | {v4, v4_attrs()} | undefined}.
 identify(RD,_Ctx) ->
     case wrq:get_req_header("authorization", RD) of
         undefined ->
@@ -48,7 +52,8 @@ identify(RD,_Ctx) ->
             parse_auth_header(AuthHeader)
     end.
 
--spec authenticate(rcs_user(), term(), term(), term()) -> ok | {error, atom()}.
+-spec authenticate(rcs_user(), string() | {v4, v4_attrs()}, RD::term(), #context{}) ->
+                          ok | {error, atom()}.
 authenticate(User, {v4, Attributes}, RD, _Ctx) ->
     authenticate_v4(User, Attributes, RD);
 authenticate(User, Signature, RD, _Ctx) ->
@@ -172,6 +177,10 @@ calculate_signature_v2(KeyData, RD) ->
 
     base64:encode_to_string(riak_cs_utils:sha_mac(KeyData, STS)).
 
+-spec authenticate_v4(rcs_user(), v4_attrs(), RD::term()) ->
+                             ok |
+                             {error, {unmatched_signature,
+                                      Presented::string(), Calculated::string()}}.
 authenticate_v4(?RCS_USER{key_secret = SecretAccessKey} = _User, AuthAttrs, RD) ->
     Method = wrq:method(RD),
     {Path, Qs} = riak_cs_s3_rewrite:raw_url(RD),
@@ -231,6 +240,9 @@ string_to_sign_v4(AuthAttrs, AllHeaders, CanonicalRequest) ->
                         XAmzDate
                 end,
     {"Credential", Cred} = lists:keyfind("Credential", 1, AuthAttrs),
+    %% Are there any good points to check `AwsRegion' to be region in app env?
+    %% So far, it does not improve security (at least for CS) but
+    %% introduces some complexity for client (config/coding/etc).
     [_UserId, CredDate, AwsRegion, "s3" = AwsService, "aws4_request" = AwsRequest] =
         string:tokens(Cred, [$/]),
     %% TODO: Validate `CredDate' be within 7 days
@@ -250,7 +262,6 @@ calculate_signature_v4(SecretAccessKey,
     mochihex:to_hex(hmac_sha256(SigningKey, StringToSign)).
 
 hmac_sha256(Key, Data) ->
-    %% TODO: R15* compatibility?
     crypto:hmac(sha256, Key, Data).
 
 hex_sha256hash(Data) ->
@@ -318,6 +329,8 @@ strict_url_encode_for_qs_value(Value) ->
 %% Force string URL encoding for path part of URL.
 %% Contrary to query part, slashes MUST NOT encoded and left as is.
 strict_url_encode_for_path(Path) ->
+    %% Use `binary:split/3' here instead of `string:tokens/2' because
+    %% latter drops information about preceding and trailing slashes.
     Tokens = binary:split(list_to_binary(Path), <<"/">>, [global]),
     EncodedTokens = [mochiweb_util:quote_plus(mochiweb_util:unquote(T)) ||
                         T <- Tokens],
