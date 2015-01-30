@@ -230,13 +230,15 @@ give_over_bucket(Bucket, UserConfig, AnotherUser) ->
 
 calc_storage_stats(CSNode) ->
     Begin = rtcs:datetime(),
-    %% TODO workaround to #766
+    %% FIXME: workaround for #766
     timer:sleep(1000),
     Res = rtcs:calculate_storage(1),
     lager:info("riak-cs-storage batch result: ~s", [Res]),
     ExpectRegexp = "Batch storage calculation started.\n$",
     ?assertMatch({match, _}, re:run(Res, ExpectRegexp)),
     true = rt:expect_in_log(CSNode, "Finished storage calculation"),
+    %% FIXME: workaround for #766
+    timer:sleep(1000),
     End = rtcs:datetime(),
     {Begin, End}.
 
