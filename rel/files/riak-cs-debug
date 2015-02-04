@@ -101,6 +101,7 @@ cs_base_dir={{runner_base_dir}}
 cs_bin_dir={{runner_script_dir}}
 cs_etc_dir={{runner_etc_dir}}
 cs_log_dir={{runner_log_dir}}
+cuttlefish_conf_dir=${cs_base_dir}/{{platform_data_dir}}/generated.configs
 
 get_cfgs=0
 get_logs=0
@@ -235,8 +236,9 @@ if [ 0 -ne $(( $get_cfgs + $get_logs + $get_riakcmds + $get_extracmds )) ]; then
     fi
 fi
 
-if [ -f "${cs_etc_dir}"/vm.args ]; then
-    node_name="`egrep '^\-s?name' "${cs_etc_dir}"/vm.args 2>/dev/null | cut -d ' ' -f 2`"
+vmargs=`ls -t ${cuttlefish_conf_dir}/vm.*.args | head -1`
+if [ -f "${vmargs}" ]; then
+    node_name="`egrep '^\-s?name' "${vmargs}" 2>/dev/null | cut -d ' ' -f 2`"
 fi
 
 if [ -z "$node_name" ]; then
@@ -407,7 +409,10 @@ if [ 1 -eq $get_logs ]; then
     cd "${start_dir}"/"${debug_dir}"/logs
 
     # if not already made, make a flat, searchable version of the app.config
-    [ -z "$riak_epaths" ] && riak_epaths=`make_app_epaths "${cs_etc_dir}/app.config"`
+    if [ -z "$riak_epaths" ]; then
+      appconfig=`ls -t ${cuttlefish_conf_dir}/app.*.config | head -1`
+      riak_epaths=`make_app_epaths "${appconfig}"`
+    fi
 
     # grab a listing of the log directory to show if there are crash dumps
     dump ls_log_dir ls -lhR $cs_log_dir
