@@ -43,10 +43,12 @@ auth_v4_test_() ->
      ]}.
 
 setup() ->
+    application:set_env(riak_cs, verify_client_clock_skew, false),
     application:set_env(riak_cs, auth_v4_enabled, true).
 
 teardown(_) ->
-    application:set_env(riak_cs, auth_v4_enabled, undefined).
+    application:unset_env(riak_cs, verify_client_clock_skew),
+    application:unset_env(riak_cs, auth_v4_enabled).
 
 auth_v4_GET_Object() ->
     Method = 'GET',
@@ -58,7 +60,7 @@ auth_v4_GET_Object() ->
                   "f0e8bdb87c964420e857bd35b5d6ed310bd44f0170aba48dd91039c6036bdb41"}],
     AllHeaders = mochiweb_headers:make(
                    [{"Host", "examplebucket.s3.amazonaws.com"},
-                    {"Date", "Date: Fri, 24 May 2013 00:00:00 GMT"},
+                    {"Date", "Fri, 24 May 2013 00:00:00 GMT"},
                     {"Range", "bytes=0-9"},
                     {"x-amz-content-sha256",
                      "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"},

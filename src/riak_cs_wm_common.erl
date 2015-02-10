@@ -407,8 +407,11 @@ authenticate({ok, {User, UserObj}}, RD, Ctx=#context{auth_module=AuthMod, submod
     riak_cs_dtrace:dt_wm_entry({?MODULE, Mod}, <<"authenticate">>, [], [atom_to_binary(AuthMod, latin1)]),
     case AuthMod:authenticate(User, AuthData, RD, Ctx) of
         ok ->
-            riak_cs_dtrace:dt_wm_return({?MODULE, Mod}, <<"authenticate">>, [1], [atom_to_binary(AuthMod, latin1)]),
+            riak_cs_dtrace:dt_wm_return({?MODULE, Mod}, <<"authenticate">>, [2], [atom_to_binary(AuthMod, latin1)]),
             {ok, User, UserObj};
+        {error, reqtime_tooskewed} ->
+            riak_cs_dtrace:dt_wm_return({?MODULE, Mod}, <<"authenticate">>, [1], [atom_to_binary(AuthMod, latin1)]),
+            {error, reqtime_tooskewed};
         {error, _Reason} ->
             riak_cs_dtrace:dt_wm_return({?MODULE, Mod}, <<"authenticate">>, [0], [atom_to_binary(AuthMod, latin1)]),
             {error, bad_auth}

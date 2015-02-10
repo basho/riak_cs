@@ -53,6 +53,8 @@ error_message(invalid_email_address) ->
     "The email address you provided is not a valid.";
 error_message(access_denied) ->
     "Access Denied";
+error_message(reqtime_tooskewed) ->
+    "The difference between the request time and the current time is too large.";
 error_message(bucket_not_empty) ->
     "The bucket you tried to delete is not empty.";
 error_message(bucket_already_exists) ->
@@ -109,6 +111,7 @@ error_message(ErrorName) ->
 -spec error_code(error_reason()) -> string().
 error_code(invalid_access_key_id) -> "InvalidAccessKeyId";
 error_code(access_denied) -> "AccessDenied";
+error_code(reqtime_tooskewed) -> "RequestTimeTooSkewed";
 error_code(bucket_not_empty) -> "BucketNotEmpty";
 error_code(bucket_already_exists) -> "BucketAlreadyExists";
 error_code(toomanybuckets) -> "TooManyBuckets";
@@ -158,6 +161,7 @@ error_code(ErrorName) ->
 status_code(invalid_access_key_id) -> 403;
 status_code(invalid_email_address) -> 400;
 status_code(access_denied) ->  403;
+status_code(reqtime_tooskewed) -> 403;
 status_code(bucket_not_empty) ->  409;
 status_code(bucket_already_exists) -> 409;
 status_code(user_already_exists) -> 409;

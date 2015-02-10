@@ -62,7 +62,9 @@
          check_object_authorization/8,
          translate_bucket_policy/2,
          fetch_bucket_owner/2,
-         bucket_owner/1
+         bucket_owner/1,
+         extract_date/1,
+         check_timeskew/1
         ]).
 
 -include("riak_cs.hrl").
@@ -340,7 +342,7 @@ streaming_get(RcPool, RcPid, FsmPid, StartTime, UserName, BFile_str) ->
             ok = riak_cs_stats:update_with_start(object_get, StartTime),
             riak_cs_riak_client:checkin(RcPool, RcPid),
             riak_cs_dtrace:dt_object_return(riak_cs_wm_object, <<"object_get">>,
-                                               [], [UserName, BFile_str]),
+                                            [], [UserName, BFile_str]),
             {Chunk, done};
         {chunk, Chunk} ->
             {Chunk, fun() -> streaming_get(RcPool, RcPid, FsmPid, StartTime, UserName, BFile_str) end}
@@ -390,13 +392,20 @@ iso_8601_to_rfc_1123(Date) when is_list(Date) ->
 iso_8601_to_erl_date(Date) when is_list(Date) ->
     iso_8601_to_erl_date(iolist_to_binary(Date));
 iso_8601_to_erl_date(Date)  ->
-    %% e.g. "2012-02-17T18:22:50.000Z"
-    <<Yr:4/binary, _:1/binary, Mo:2/binary, _:1/binary, Da:2/binary,
-      _T:1/binary,
-      Hr:2/binary, _:1/binary, Mn:2/binary, _:1/binary, Sc:2/binary,
-      _/binary>> = Date,
-    {{b2i(Yr), b2i(Mo), b2i(Da)},
-     {b2i(Hr), b2i(Mn), b2i(Sc)}}.
+    case Date of
+        %% e.g. "2012-02-17T18:22:50.000Z"
+        <<Yr:4/binary, _:1/binary, Mo:2/binary, _:1/binary, Da:2/binary,
+          _T:1/binary,
+          Hr:2/binary, _:1/binary, Mn:2/binary, _:1/binary, Sc:2/binary,
+          _/binary>> ->
+            {{b2i(Yr), b2i(Mo), b2i(Da)},
+             {b2i(Hr), b2i(Mn), b2i(Sc)}};
+        %% e.g. "20130524T000000Z"
+        <<Yr:4/binary, Mo:2/binary, Da:2/binary, _:1/binary,
+          Hr:2/binary, Mn:2/binary, Sc:2/binary, _/binary>> ->
+            {{b2i(Yr), b2i(Mo), b2i(Da)},
+             {b2i(Hr), b2i(Mn), b2i(Sc)}}
+    end.
 
 %% @doc Return a new context where the bucket and key for the s3 object
 %% have been inserted.
@@ -421,8 +430,8 @@ extract_name(_) ->
 %% an error parsing the header, halt the request. If there is no ACL
 %% information in the headers, use the default ACL.
 -spec maybe_update_context_with_acl_from_headers(#wm_reqdata{}, #context{}) ->
-    {error, {{halt, term()}, #wm_reqdata{}, #context{}}} |
-    {ok, #context{}}.
+                                                        {error, {{halt, term()}, #wm_reqdata{}, #context{}}} |
+                                                        {ok, #context{}}.
 maybe_update_context_with_acl_from_headers(RD,
                                            Ctx=#context{user=User,
                                                         bucket=BucketName,
@@ -449,7 +458,7 @@ maybe_update_context_with_acl_from_headers(RD,
     end.
 
 -spec bucket_obj_from_local_context(term(), binary(), riak_client()) ->
-    {ok, term()} | {'error', term()}.
+                                           {ok, term()} | {'error', term()}.
 bucket_obj_from_local_context(#key_context{bucket_object=BucketObject},
                               _BucketName, _RcPid) ->
     {ok, BucketObject};
@@ -469,10 +478,10 @@ bucket_obj_from_local_context(undefined, BucketName, RcPid) ->
 %% It could also reasonable be called `nothing'.
 -spec maybe_acl_from_context_and_request(#wm_reqdata{}, #context{},
                                          riakc_obj:riakc_obj()) ->
-    {ok, acl_or_error()} | error.
+                                                {ok, acl_or_error()} | error.
 maybe_acl_from_context_and_request(RD, #context{user=User,
                                                 riak_client=RcPid},
-                                  BucketObj) ->
+                                   BucketObj) ->
     case has_acl_header(RD) of
         true ->
             Headers = normalize_headers(RD),
@@ -494,7 +503,7 @@ maybe_acl_from_context_and_request(RD, #context{user=User,
                        Owner :: acl_owner(),
                        BucketOwner :: undefined | acl_owner(),
                        riak_client()) ->
-    acl_or_error().
+                              acl_or_error().
 acl_from_headers(Headers, Owner, BucketOwner, RcPid) ->
     %% TODO: time to make a macro for `"x-amz-acl"'
     %% `Headers' is an ordset. Is there a faster way to retrieve this? Or
@@ -518,13 +527,13 @@ acl_from_headers(Headers, Owner, BucketOwner, RcPid) ->
 -spec extract_acl_headers(term()) -> [{acl_perm(), string()}].
 extract_acl_headers(Headers) ->
     lists:foldl(fun({HeaderName, Value}, Acc) ->
-                case header_name_to_perm(HeaderName) of
-                    undefined ->
-                        Acc;
-                    HeaderAtom ->
-                        [{HeaderAtom, Value} | Acc]
-                end
-        end,
+                        case header_name_to_perm(HeaderName) of
+                            undefined ->
+                                Acc;
+                            HeaderAtom ->
+                                [{HeaderAtom, Value} | Acc]
+                        end
+                end,
                 [], Headers).
 
 %% @doc Turn a ACL header into the corresponding
@@ -953,11 +962,11 @@ actor_is_not_owner_but_allowed_policy(_, OwnerId, RD, Ctx, LocalCtx) ->
     {false, AccessRD, UpdCtx}.
 
 -spec just_allowed_by_policy(ObjectAcl :: acl(),
-                              RcPid :: riak_client(),
-                              RD :: term(),
-                              Ctx :: term(),
-                              LocalCtx :: term()) ->
-    authorized_response().
+                             RcPid :: riak_client(),
+                             RD :: term(),
+                             Ctx :: term(),
+                             LocalCtx :: term()) ->
+                                    authorized_response().
 just_allowed_by_policy(ObjectAcl, RcPid, RD, Ctx, LocalCtx) ->
     OwnerId = riak_cs_acl:owner_id(ObjectAcl, RcPid),
     AccessRD = riak_cs_access_log_handler:set_user(OwnerId, RD),
@@ -980,6 +989,34 @@ bucket_owner(undefined) ->
 bucket_owner(BucketObj) ->
     {ok, Acl} = riak_cs_acl:bucket_acl(BucketObj),
     Acl?ACL.owner.
+
+-spec extract_date(#wm_reqdata{}) -> calendar:datetime().
+extract_date(RD) ->
+    Date1 = case wrq:get_req_header("x-amz-date", RD) of
+               undefined -> wrq:get_req_header("date", RD);
+               Date0 ->     Date0
+            end,
+    case httpd_util:convert_request_date(Date1) of
+        {{_, _, _}, {_, _, _}} = Date ->
+            Date;
+        bad_date ->
+            iso_8601_to_erl_date(Date1)
+    end.
+
+-spec check_timeskew(calendar:datetime()) -> boolean().
+check_timeskew(ReqTimestamp) when is_tuple(ReqTimestamp)->
+    ReqTimestampSec = calendar:datetime_to_gregorian_seconds(ReqTimestamp),
+    NowSec = calendar:datetime_to_gregorian_seconds(calendar:now_to_universal_time(os:timestamp())),
+    Skew = ReqTimestampSec - NowSec,
+    %% This configuration is only for testing;
+    case application:get_env(riak_cs, verify_client_clock_skew) of
+        {ok, false} ->
+            true;
+        _ ->
+            erlang:abs(Skew) < 900 %% 15 minutes
+    end;
+check_timeskew(_) ->
+    false.
 
 %% ===================================================================
 %% Internal functions
@@ -1004,8 +1041,8 @@ any_to_list(V) when is_integer(V) ->
                       non_neg_integer()) -> string().
 iso_8601_format(Year, Month, Day, Hour, Min, Sec) ->
     lists:flatten(
-     io_lib:format("~4.10.0B-~2.10.0B-~2.10.0BT~2.10.0B:~2.10.0B:~2.10.0B.000Z",
-                   [Year, Month, Day, Hour, Min, Sec])).
+      io_lib:format("~4.10.0B-~2.10.0B-~2.10.0BT~2.10.0B:~2.10.0B:~2.10.0B.000Z",
+                    [Year, Month, Day, Hour, Min, Sec])).
 
 b2i(Bin) ->
     list_to_integer(binary_to_list(Bin)).
