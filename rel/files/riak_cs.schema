@@ -32,6 +32,8 @@
   {validators, ["valid_host"]}
 ]}.
 
+%% @doc SSL configuration for access to request serialization
+%% service. With `on`, Riak CS connects to Stanchion with SSL.
 {mapping, "stanchion.ssl", "riak_cs.stanchion_ssl", [
   {default, {{stanchion_ssl}} },
   {datatype, flag}
