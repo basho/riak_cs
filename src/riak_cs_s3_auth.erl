@@ -24,13 +24,14 @@
 
 -export([identify/2, authenticate/4]).
 
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+-export([calculate_signature_v2/2]).
+-endif.
+
 -include("riak_cs.hrl").
 -include("s3_api.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
-
--ifdef(TEST).
--include_lib("eunit/include/eunit.hrl").
--endif.
 
 -type v4_attrs() :: [{string(), string()}].
 

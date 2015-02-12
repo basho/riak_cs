@@ -27,7 +27,8 @@
 -include_lib("eqc/include/eqc.hrl").
 
 %% Generators
--export([http_verb/0,
+-export([base64string/0,
+         http_verb/0,
          http_version/0,
          http_scheme/0,
          bucket/0,
@@ -36,6 +37,7 @@
          block_size/0,
          content_length/0,
          bounded_content_length/0,
+         content_type/0,
          md5/0,
          uuid/0,
          metadata/0,
@@ -46,9 +48,14 @@
          timestamp/0,
          props/0]).
 
+-export([non_blank_string/0]).
+
 %%====================================================================
 %% Generators
 %%====================================================================
+
+base64string() ->
+    ?LET(Bitstring, bitstring(), base64:encode(Bitstring)).
 
 http_verb() ->
     oneof(['GET', 'PUT', 'HEAD', 'POST', 'DELETE']).
@@ -76,6 +83,9 @@ content_length() ->
 
 bounded_content_length() ->
     ?LET(X, bounded_non_zero_nums(), abs(X)).
+
+content_type() ->
+    non_blank_string().
 
 md5() ->
     non_blank_string().
