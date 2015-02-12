@@ -24,6 +24,7 @@
 
 -export([confirm/0]).
 -include_lib("eunit/include/eunit.hrl").
+-include_lib("xmerl/include/xmerl.hrl").
 
 %% keys for non-multipart objects
 -define(TEST_BUCKET,        "riak-test-bucket").
@@ -50,7 +51,7 @@ confirm() ->
 
     non_mp_get_cases(UserConfig),
     mp_get_cases(UserConfig),
-
+    timestamp_skew_cases(UserConfig),
     rtcs:pass().
 
 non_mp_get_cases(UserConfig) ->
@@ -125,6 +126,43 @@ mp_get_cases(UserConfig) ->
      || Start <- [mb(1), mb(16)],
         End   <- [mb(16), mb(30), mb(30) + 500, mb(1000)]],
     ok.
+
+timestamp_skew_cases(UserConfig) ->
+    BucketName = "timestamp-skew-cases",
+    KeyName = "timestamp-skew-cases",
+    Data = <<"bark! bark! bark!!!">>,
+    ?assertEqual(ok, erlcloud_s3:create_bucket(BucketName, UserConfig)),
+    erlcloud_s3:put_object(BucketName, KeyName, Data, UserConfig),
+    
+    meck:new(httpd_util, [passthrough]),
+    %% To emulate clock skew, override erlang:localtime/0 to
+    %% enable random walk time, as long as erlcloud_s3 uses
+    %% httpd_util:rfc1123_date/1 for generating timestamp of
+    %% HTTP request header.
+    %% `Date = httpd_util:rfc1123_date(erlang:localtime()),`
+    meck:expect(httpd_util, rfc1123_date,
+                fun(Localtime) ->
+                        Seconds = calendar:datetime_to_gregorian_seconds(Localtime),
+                        SkewedTime = calendar:gregorian_seconds_to_datetime(Seconds - 987),
+                        Date = meck:passthrough([SkewedTime]),
+                        lager:info("Clock skew: ~p => ~p => ~p", [Localtime, SkewedTime, Date]),
+                        Date
+                end),
+    try
+        erlcloud_s3:get_object(BucketName, KeyName, UserConfig)
+    catch
+        error:{aws_error, {http_error, 403, _, Body0}} ->
+            Body = unicode:characters_to_list(Body0),
+            #xmlElement{name = 'Error'} = XML = element(1,xmerl_scan:string(Body)),
+            ?assertEqual("RequestTimeTooSkewed", erlcloud_xml:get_text("/Error/Code", XML)),
+            ErrMsg = "The difference between the request time and the current time is too large.",
+            ?assertEqual(ErrMsg, erlcloud_xml:get_text("/Error/Message", XML));
+        E:R ->
+            lager:error("~p:~p", [E, R]),
+            ?assert(false)
+    after
+        meck:unload(httpd_util)
+    end.
 
 mb(MegaBytes) ->
     MegaBytes * 1024 * 1024.
