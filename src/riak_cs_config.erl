@@ -148,14 +148,14 @@ cs_version() ->
 
 -spec api() -> s3 | oos.
 api() ->
-    api(application:get_env(riak_cs, rewrite_module)).
+    api(get_env(riak_cs, rewrite_module, ?S3_API_MOD)).
 
--spec api({ok, atom()} | undefined) -> s3 | oos | undefined.
-api({ok, ?S3_API_MOD}) ->
+-spec api(atom() | undefined) -> s3 | oos | undefined.
+api(?S3_API_MOD) ->
     s3;
-api({ok, ?S3_LEGACY_API_MOD}) ->
+api(?S3_LEGACY_API_MOD) ->
     s3;
-api({ok, ?OOS_API_MOD}) ->
+api(?OOS_API_MOD) ->
     oos;
 api(_) ->
     undefined.

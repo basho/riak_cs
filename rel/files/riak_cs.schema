@@ -56,7 +56,7 @@
 %% temporarily unless your use-case specifically dictates letting
 %% anonymous users to create accounts.
 {mapping, "anonymous_user_creation", "riak_cs.anonymous_user_creation", [
-  {default, false},
+  {default, off},
   {datatype, flag}
 ]}.
 
@@ -154,7 +154,6 @@
 %% for an object after it has been deleted.
 %% This leeway time is set to give the delete
 %% indication time to propogate to all replicas.
-%% 86400 is 24-hours.
 {mapping, "gc.leeway_seconds", "riak_cs.leeway_seconds", [
   {default, "24h"},
   {datatype, {duration, s}}
@@ -162,7 +161,6 @@
 
 %% @doc How often the garbage collection daemon
 %% waits in-between gc batches.
-%% 900 is 15-minutes.
 {mapping, "gc.interval", "riak_cs.gc_interval", [
   {default, "15m"},
   {datatype, {duration, s}}
@@ -171,7 +169,6 @@
 %% @doc How long a move to the garbage
 %% collection to do list can remain
 %% failed, before we retry it.
-%% 21600 is 6-hours.
 {mapping, "gc.retry_interval", "riak_cs.gc_retry_interval", [
   {default, "6h"},
   {datatype, {duration, s}}
@@ -181,7 +178,14 @@
 %% Riak nodes prior to version 1.4.0.
 {mapping, "gc.paginated_indexes", "riak_cs.gc_paginated_indexes", [
   {default, on},
-  {datatype, flag}
+  {datatype, flag},
+  hidden
+]}.
+
+{mapping, "gc.max_workers", "riak_cs.gc_max_workers", [
+  {default, 5},
+  {datatype, integer},
+  hidden
 ]}.
 
 %% == Access statistics ==
@@ -189,7 +193,7 @@
 %% @doc How often to flush the access log; integer factor of
 %% access_archive_period (1 == once per period; 2 == twice per period,
 %% etc.)
-{mapping, "access.stats.log_flush_factor", "riak_cs.access_log_flush_factor", [
+{mapping, "access.stats.log.flush_factor", "riak_cs.access_log_flush_factor", [
   {default, 1},
   {datatype, integer}
 ]}.
@@ -197,30 +201,29 @@
 %% @doc Additional access log flush trigger - flush after
 %% this many accesses are recorded, even if the flush
 %% interval has not expired; integer number of accesses
-{mapping, "access.stats.log_flush_size", "riak_cs.access_log_flush_size", [
+{mapping, "access.stats.log.flush_size", "riak_cs.access_log_flush_size", [
   {default, 1000000},
   {datatype, integer}
 ]}.
 
 %% @doc How large each access archive object is. Should be a
-%% multiple of access_log_flush_interval; integer number
-%% of seconds (3600 == 1 hour)
+%% multiple of access_log_flush_interval.
 {mapping, "access.stats.archive_period", "riak_cs.access_archive_period", [
   {default, "1h"},
   {datatype, {duration, s}}
 ]}.
 
-%% @doc How many workers to put access log data to Riak are
-%% allowed to run concurrently
-{mapping, "access.stats.archiver_max_workers", "riak_cs.access_archiver_max_workers", [
+%% @doc How many access logs are allowed to pile up in the
+%% archiver's queue before it starts skipping to catch
+%% up; integer number of logs
+{mapping, "access.stats.archiver.max_backlog", "riak_cs.access_archiver_max_backlog", [
   {default, 2},
   {datatype, integer}
 ]}.
 
-%% @doc How many access logs are allowed to pile up in the
-%% archiver's queue before it starts skipping to catch
-%% up; integer number of logs
-{mapping, "access.stats.archiver_max_backlog", "riak_cs.access_archiver_max_backlog", [
+%% @doc How many workers to put access log data to Riak are
+%% allowed to run concurrently
+{mapping, "access.stats.archiver.max_workers", "riak_cs.access_archiver_max_workers", [
   {default, 2},
   {datatype, integer}
 ]}.
@@ -265,7 +268,7 @@
 
 %% @doc custom server name at http response header "Server: Riak CS"
 {mapping, "server.name", "webmachine.server_name", [
-  {default, "Riak CS"},
+  {default, "Riak CS" },
   {datatype, string}
 ]}.
 
@@ -290,13 +293,13 @@
 
 %% @doc URL rewrite module.
 {mapping, "rewrite_module", "riak_cs.rewrite_module", [
-  {default, riak_cs_s3_rewrite},
+  {commented, riak_cs_s3_rewrite},
   {datatype, atom}
 ]}.
 
 %% @doc Authentication module.
 {mapping, "auth_module", "riak_cs.auth_module", [
-  {default, riak_cs_s3_auth},
+  {commented, riak_cs_s3_auth},
   {datatype, atom}
 ]}.
 
@@ -306,7 +309,8 @@
 %% Riak nodes prior to version 1.4.0.
 {mapping, "fold_objects_for_list_keys", "riak_cs.fold_objects_for_list_keys", [
   {default, on},
-  {datatype, flag}
+  {datatype, flag},
+  hidden
 ]}.
 
 %% == Rolling upgrade support ==
