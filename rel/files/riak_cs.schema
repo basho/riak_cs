@@ -371,7 +371,7 @@
 %% @doc The severity level of the console log, default is 'info'.
 {mapping, "log.console.level", "lager.handlers", [
   {default, info},
-  {datatype, {enum, [debug, info, warning, error]}}
+  {datatype, {enum, [debug, info, notice, warning, error, critical, alert, emergency, none]}}
 ]}.
 
 %% @doc When 'log.console' is set to 'file' or 'both', the file where
@@ -396,8 +396,14 @@
 {translation,
  "lager.handlers",
  fun(Conf) ->
-    SyslogHandler = [{lager_syslog_backend, ["riak", daemon, info]} ||
-                     cuttlefish:conf_get("log.syslog", Conf)],
+    SyslogHandler = case cuttlefish:conf_get("log.syslog", Conf) of
+      true ->
+        Ident = cuttlefish:conf_get("log.syslog.ident", Conf),
+        Facility = cuttlefish:conf_get("log.syslog.facility", Conf),
+        LogLevel = cuttlefish:conf_get("log.syslog.level", Conf),
+        [{lager_syslog_backend, [Ident, Facility, LogLevel]}];
+      _ -> []
+    end,
     ErrorHandler = case cuttlefish:conf_get("log.error.file", Conf) of
       undefined -> [];
       ErrorFilename -> [{lager_file_backend, [{file, ErrorFilename},
