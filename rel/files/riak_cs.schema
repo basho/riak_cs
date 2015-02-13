@@ -296,14 +296,33 @@
 %% @doc URL rewrite module.
 {mapping, "rewrite_module", "riak_cs.rewrite_module", [
   {commented, riak_cs_s3_rewrite},
-  {datatype, atom}
+  {datatype, atom},
+  {validators, ["valid_rewrite_module"]}
 ]}.
+
+{validator,
+  "valid_rewrite_module",
+  "should be a valid rewrite module",
+  fun(riak_cs_s3_rewrite) -> true;
+     (riak_cs_s3_rewrite_legacy) -> true;
+     (riak_cs_oos_rewrite) -> true;
+     (_) -> false
+  end}.
 
 %% @doc Authentication module.
 {mapping, "auth_module", "riak_cs.auth_module", [
   {commented, riak_cs_s3_auth},
-  {datatype, atom}
+  {datatype, atom},
+  {validators, ["valid_auth_module"]}
 ]}.
+
+{validator,
+  "valid_auth_module",
+  "should be a valid auth module",
+  fun(riak_cs_s3_auth) -> true;
+     (riak_cs_keystone_auth) -> true;
+     (_) -> false
+  end}.
 
 %% == Bucket (List Objects) ==
 
