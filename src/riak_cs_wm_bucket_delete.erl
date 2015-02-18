@@ -90,8 +90,6 @@ handle_with_bucket_obj({ok, BucketObj},
             %% Delete Multiple Objects accepts a request to delete up to 1000 Objects.
             ResponseMod:api_error(malformed_xml, RD, Ctx);
         {ok, BinKeys} ->
-            lager:debug("deleting keys at ~p: ~p", [Bucket, BinKeys]),
-
             Policy = riak_cs_wm_utils:translate_bucket_policy(PolicyMod, BucketObj),
             CanonicalId = riak_cs_wm_utils:extract_canonical_id(User),
             Access0 = PolicyMod:reqdata_to_access(RD, object, CanonicalId),
@@ -99,10 +97,13 @@ handle_with_bucket_obj({ok, BucketObj},
             %% map: keys => delete_results => xmlElements
             Results =
                 lists:map(fun(BinKey) ->
-                                  handle_key(RcPid, Bucket, BinKey,
-                                             check_permission(
-                                               RcPid, Bucket, BinKey,
-                                               Access0, CanonicalId, Policy, PolicyMod, BucketObj))
+                                  Result = handle_key(RcPid, Bucket, BinKey,
+                                                      check_permission(
+                                                        RcPid, Bucket, BinKey,
+                                                        Access0, CanonicalId, Policy, PolicyMod, BucketObj)),
+                                  lager:debug("attempted to delete /buckets/~s/objects/~s result=~p",
+                                              [Bucket, to_logging_key(BinKey), element(1, Result)]),
+                                  Result
                           end, BinKeys),
 
             %% xmlDoc => return body.
@@ -173,6 +174,12 @@ parse_body(Body) ->
         Error ->
              Error
     end.
+
+to_logging_key(BinKey) ->
+    mochiweb_util:quote_plus(
+      string:join(lists:map(
+           fun mochiweb_util:quote_plus/1,
+           binary:split(BinKey, <<"/">>, [global])), "/")).
 
 -ifdef(TEST).
 
