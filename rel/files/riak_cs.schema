@@ -194,7 +194,7 @@
 %% @doc How often to flush the access log; integer factor of
 %% access_archive_period (1 == once per period; 2 == twice per period,
 %% etc.)
-{mapping, "access.stats.log.flush_factor", "riak_cs.access_log_flush_factor", [
+{mapping, "stats.access.log.flush_factor", "riak_cs.access_log_flush_factor", [
   {default, 1},
   {datatype, integer}
 ]}.
@@ -202,14 +202,14 @@
 %% @doc Additional access log flush trigger - flush after
 %% this many accesses are recorded, even if the flush
 %% interval has not expired; integer number of accesses
-{mapping, "access.stats.log.flush_size", "riak_cs.access_log_flush_size", [
+{mapping, "stats.access.log.flush_size", "riak_cs.access_log_flush_size", [
   {default, 1000000},
   {datatype, integer}
 ]}.
 
 %% @doc How large each access archive object is. Should be a
 %% multiple of access_log_flush_interval.
-{mapping, "access.stats.archive_period", "riak_cs.access_archive_period", [
+{mapping, "stats.access.archive_period", "riak_cs.access_archive_period", [
   {default, "1h"},
   {datatype, {duration, s}}
 ]}.
@@ -217,14 +217,14 @@
 %% @doc How many access logs are allowed to pile up in the
 %% archiver's queue before it starts skipping to catch
 %% up; integer number of logs
-{mapping, "access.stats.archiver.max_backlog", "riak_cs.access_archiver_max_backlog", [
+{mapping, "stats.access.archiver.max_backlog", "riak_cs.access_archiver_max_backlog", [
   {default, 2},
   {datatype, integer}
 ]}.
 
 %% @doc How many workers to put access log data to Riak are
 %% allowed to run concurrently
-{mapping, "access.stats.archiver.max_workers", "riak_cs.access_archiver_max_workers", [
+{mapping, "stats.access.archiver.max_workers", "riak_cs.access_archiver_max_workers", [
   {default, 2},
   {datatype, integer}
 ]}.
@@ -235,12 +235,12 @@
 %% batches; list of "HHMM" UTC times
 %%
 %%  Automatically calculate at 6am UTC every day:
-%%    storage.stats.schedule.1="06:00"
+%%    stats.storage.schedule.1="06:00"
 %%
 %%  Automatically calculate at 6am and 7:45pm every day:
-%%    storage.stats.schedule.1="06:00"
-%%    storage.stats.schedule.2="19:45"
-{mapping, "storage.stats.schedule.$time", "riak_cs.storage_schedule", [
+%%    stats.storage.schedule.1="06:00"
+%%    stats.storage.schedule.2="19:45"
+{mapping, "stats.storage.schedule.$time", "riak_cs.storage_schedule", [
   {datatype, string}
 ]}.
 
@@ -248,14 +248,14 @@
  "riak_cs.storage_schedule",
  fun(Conf) ->
    Keys = cuttlefish_variable:fuzzy_matches(["storage","stats","schedule","$time"], Conf),
-   [cuttlefish:conf_get("storage.stats.schedule." ++ Name, Conf)||{Key, Name} <- Keys]
+   [cuttlefish:conf_get("stats.storage.schedule." ++ Name, Conf)||{Key, Name} <- Keys]
  end
 }.
 
 %% @doc How large each storage archive object is. Should be
 %% chosen such that each storage_schedule entry falls in
 %% a different period.
-{mapping, "storage.stats.archive_period", "riak_cs.storage_archive_period", [
+{mapping, "stats.storage.archive_period", "riak_cs.storage_archive_period", [
   {default, "1d"},
   {datatype, {duration, s}}
 ]}.
