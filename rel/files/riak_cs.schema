@@ -536,6 +536,19 @@
   {default, "riak"}
 ]}.
 
+%% VM scheduler collapse, part 1 of 2
+{mapping, "erlang.schedulers.force_wakeup_interval", "vm_args.+sfwi", [
+  {default, 500},
+  {datatype, integer},
+  merge
+]}.
+
+%% VM scheduler collapse, part 2 of 2
+{mapping, "erlang.schedulers.compaction_of_load", "vm_args.+scl", [
+  {default, false},
+  merge
+]}.
+
 {{#devrel}}
 %% @doc erlang vm shutdown_time is useful when running a riak_test devrel
 {mapping, "erlang.shutdown_time", "vm_args.-shutdown_time", [
