@@ -184,7 +184,7 @@
 ]}.
 
 {mapping, "gc.max_workers", "riak_cs.gc_max_workers", [
-  {default, 5},
+  {default, 2},
   {datatype, integer},
   hidden
 ]}.
