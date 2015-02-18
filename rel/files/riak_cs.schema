@@ -353,7 +353,7 @@
 
 %% @doc If your Erlang virtual machine supports DTrace (or
 %% user-space SystemTap), set dtrace_support to true.
-{mapping, "dtrace_support", "riak_cs.dtrace_support", [
+{mapping, "dtrace", "riak_cs.dtrace_support", [
   {default, off},
   {datatype, flag}
 ]}.
