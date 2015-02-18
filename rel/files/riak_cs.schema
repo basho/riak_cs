@@ -15,7 +15,7 @@
 {validator,
  "valid_host",
  "should be a valid host",
- fun({Host, Port}) -> is_list(Host) andalso Port > 1024 andalso Port < 65536 end}.
+ fun({Host, Port}) -> is_list(Host) andalso 0 < Port andalso Port < 65536 end}.
 
 %% @doc Riak node to which Riak CS accesses
 {mapping, "riak_host", "riak_cs.riak_host", [
