@@ -152,11 +152,10 @@
 
 %% == Garbage Collection ==
 
-%% @doc The number of seconds to retain the block
-%% for an object after it has been deleted.
-%% This leeway time is set to give the delete
-%% indication time to propogate to all replicas.
-{mapping, "gc.leeway_seconds", "riak_cs.leeway_seconds", [
+%% @doc The time to retain the block for an object after it has been
+%% deleted.  This leeway time is set to give the delete indication
+%% time to propogate to all replicas.
+{mapping, "gc.leeway_seconds", "riak_cs.leeway_period", [
   {default, "24h"},
   {datatype, {duration, s}}
 ]}.
