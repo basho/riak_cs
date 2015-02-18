@@ -155,7 +155,7 @@
 %% @doc The time to retain the block for an object after it has been
 %% deleted.  This leeway time is set to give the delete indication
 %% time to propogate to all replicas.
-{mapping, "gc.leeway_seconds", "riak_cs.leeway_period", [
+{mapping, "gc.leeway_period", "riak_cs.leeway_seconds", [
   {default, "24h"},
   {datatype, {duration, s}}
 ]}.
@@ -247,7 +247,7 @@
 {translation,
  "riak_cs.storage_schedule",
  fun(Conf) ->
-   Keys = cuttlefish_variable:fuzzy_matches(["storage","stats","schedule","$time"], Conf),
+   Keys = cuttlefish_variable:fuzzy_matches(["stats","storage","schedule","$time"], Conf),
    [cuttlefish:conf_get("stats.storage.schedule." ++ Name, Conf)||{Key, Name} <- Keys]
  end
 }.
@@ -271,7 +271,7 @@
 
 %% @doc custom server name at http response header "Server: Riak CS"
 {mapping, "server.name", "webmachine.server_name", [
-  {default, "Riak CS" },
+  {default, "Riak CS"},
   {datatype, string}
 ]}.
 
@@ -545,7 +545,7 @@
 
 %% VM scheduler collapse, part 2 of 2
 {mapping, "erlang.schedulers.compaction_of_load", "vm_args.+scl", [
-  {default, false},
+  {default, "false"},
   merge
 ]}.
 

@@ -53,4 +53,4 @@
 %% cuttlefish
 %%
 {cuttlefish,         "on"}.
-{cuttlefish_conf,    "riak_cs.conf"}.
+{cuttlefish_conf,    "riak-cs.conf"}.
