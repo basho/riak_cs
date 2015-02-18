@@ -65,15 +65,13 @@
 %% @doc IP address to listen on for system administration tasks.
 {mapping, "admin.ip", "riak_cs.admin_ip", [
   {commented, "{{admin_ip}}"},
-  {datatype, string},
-  hidden
+  {datatype, string}
 ]}.
 
 %% @doc Port to listen on for system administration tasks.
 {mapping, "admin.port", "riak_cs.admin_port", [
   {commented, "{{admin_port}}"},
-  {datatype, integer},
-  hidden
+  {datatype, integer}
 ]}.
 
 %% @doc Admin user credentials. Admin access like /riak-cs/stats
