@@ -38,7 +38,7 @@
                   admin_port,
                   ssl,
                   admin_ssl,
-                  {rewrite_module, riak_cs_s3_rewrite}]).
+                  {rewrite_module, ?S3_API_MOD}]).
 
 -type startlink_err() :: {'already_started', pid()} | 'shutdown' | term().
 -type startlink_ret() :: {'ok', pid()} | 'ignore' | {'error', startlink_err()}.
@@ -203,7 +203,7 @@ admin_web_config(Options) ->
     [{dispatch, riak_cs_web:admin_api_dispatch_table()},
      {name, admin_web},
      {dispatch_group, admin_web},
-     {ip, proplists:get_value(admin_ip, Options)},
+     {ip, proplists:get_value(admin_ip, Options, "127.0.0.1")},
      {port, proplists:get_value(admin_port, Options, 8000)},
      {nodelay, true},
      {error_handler, riak_cs_wm_error_handler}] ++

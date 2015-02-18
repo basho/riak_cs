@@ -19,17 +19,12 @@
                  ]},
   {mod, { riak_cs_app, []}},
   {env, [
-         {cs_ip, "127.0.0.1"},
-         {cs_port, 8080},
-         {cs_root_host, "s3.amazonaws.com"},
          {put_fsm_buffer_size_max, 10485760},
          {access_archive_period, 3600},
          {access_log_flush_factor, 1},
          {access_log_flush_size, 1000000},
          {access_archiver_max_backlog, 2},
          {storage_archive_period, 86400},
-         {usage_request_limit, 744},
-         %% Size, MaxOverflow
-         {riakc_pool, {128, 0}}
+         {usage_request_limit, 744}
         ]}
  ]}.

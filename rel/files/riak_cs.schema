@@ -15,7 +15,7 @@
 {validator,
  "valid_host",
  "should be a valid host",
- fun({Host, Port}) -> is_list(Host) andalso Port > 1024 andalso Port < 65536 end}.
+ fun({Host, Port}) -> is_list(Host) andalso 0 < Port andalso Port < 65536 end}.
 
 %% @doc Riak node to which Riak CS accesses
 {mapping, "riak_host", "riak_cs.riak_host", [
@@ -32,6 +32,8 @@
   {validators, ["valid_host"]}
 ]}.
 
+%% @doc SSL configuration for access to request serialization
+%% service. With `on`, Riak CS connects to Stanchion with SSL.
 {mapping, "stanchion.ssl", "riak_cs.stanchion_ssl", [
   {default, {{stanchion_ssl}} },
   {datatype, flag}
@@ -56,22 +58,20 @@
 %% temporarily unless your use-case specifically dictates letting
 %% anonymous users to create accounts.
 {mapping, "anonymous_user_creation", "riak_cs.anonymous_user_creation", [
-  {default, false},
+  {default, off},
   {datatype, flag}
 ]}.
 
 %% @doc IP address to listen on for system administration tasks.
 {mapping, "admin.ip", "riak_cs.admin_ip", [
   {commented, "{{admin_ip}}"},
-  {datatype, string},
-  hidden
+  {datatype, string}
 ]}.
 
 %% @doc Port to listen on for system administration tasks.
 {mapping, "admin.port", "riak_cs.admin_port", [
   {commented, "{{admin_port}}"},
-  {datatype, integer},
-  hidden
+  {datatype, integer}
 ]}.
 
 %% @doc Admin user credentials. Admin access like /riak-cs/stats
@@ -109,7 +109,8 @@
 %%  or retrieval of objects.
 {mapping, "pool.request.overflow", "riak_cs.connection_pools", [
   {default, 0},
-  {datatype, integer}
+  {datatype, integer},
+  hidden
 ]}.
 
 %% @doc Fixed pool size of secondary connection pool which is used
@@ -123,7 +124,8 @@
 %% strictly for requests to list the contents.
 {mapping, "pool.list.overflow", "riak_cs.connection_pools", [
   {default, 0},
-  {datatype, integer}
+  {datatype, integer},
+  hidden
 ]}.
 
 {translation,
@@ -150,19 +152,16 @@
 
 %% == Garbage Collection ==
 
-%% @doc The number of seconds to retain the block
-%% for an object after it has been deleted.
-%% This leeway time is set to give the delete
-%% indication time to propogate to all replicas.
-%% 86400 is 24-hours.
-{mapping, "gc.leeway_seconds", "riak_cs.leeway_seconds", [
+%% @doc The time to retain the block for an object after it has been
+%% deleted.  This leeway time is set to give the delete indication
+%% time to propogate to all replicas.
+{mapping, "gc.leeway_period", "riak_cs.leeway_seconds", [
   {default, "24h"},
   {datatype, {duration, s}}
 ]}.
 
 %% @doc How often the garbage collection daemon
 %% waits in-between gc batches.
-%% 900 is 15-minutes.
 {mapping, "gc.interval", "riak_cs.gc_interval", [
   {default, "15m"},
   {datatype, {duration, s}}
@@ -171,7 +170,6 @@
 %% @doc How long a move to the garbage
 %% collection to do list can remain
 %% failed, before we retry it.
-%% 21600 is 6-hours.
 {mapping, "gc.retry_interval", "riak_cs.gc_retry_interval", [
   {default, "6h"},
   {datatype, {duration, s}}
@@ -181,7 +179,14 @@
 %% Riak nodes prior to version 1.4.0.
 {mapping, "gc.paginated_indexes", "riak_cs.gc_paginated_indexes", [
   {default, on},
-  {datatype, flag}
+  {datatype, flag},
+  hidden
+]}.
+
+{mapping, "gc.max_workers", "riak_cs.gc_max_workers", [
+  {default, 2},
+  {datatype, integer},
+  hidden
 ]}.
 
 %% == Access statistics ==
@@ -189,7 +194,7 @@
 %% @doc How often to flush the access log; integer factor of
 %% access_archive_period (1 == once per period; 2 == twice per period,
 %% etc.)
-{mapping, "access.stats.log_flush_factor", "riak_cs.access_log_flush_factor", [
+{mapping, "stats.access.log.flush_factor", "riak_cs.access_log_flush_factor", [
   {default, 1},
   {datatype, integer}
 ]}.
@@ -197,30 +202,29 @@
 %% @doc Additional access log flush trigger - flush after
 %% this many accesses are recorded, even if the flush
 %% interval has not expired; integer number of accesses
-{mapping, "access.stats.log_flush_size", "riak_cs.access_log_flush_size", [
+{mapping, "stats.access.log.flush_size", "riak_cs.access_log_flush_size", [
   {default, 1000000},
   {datatype, integer}
 ]}.
 
 %% @doc How large each access archive object is. Should be a
-%% multiple of access_log_flush_interval; integer number
-%% of seconds (3600 == 1 hour)
-{mapping, "access.stats.archive_period", "riak_cs.access_archive_period", [
+%% multiple of access_log_flush_interval.
+{mapping, "stats.access.archive_period", "riak_cs.access_archive_period", [
   {default, "1h"},
   {datatype, {duration, s}}
-]}.
-
-%% @doc How many workers to put access log data to Riak are
-%% allowed to run concurrently
-{mapping, "access.stats.archiver_max_workers", "riak_cs.access_archiver_max_workers", [
-  {default, 2},
-  {datatype, integer}
 ]}.
 
 %% @doc How many access logs are allowed to pile up in the
 %% archiver's queue before it starts skipping to catch
 %% up; integer number of logs
-{mapping, "access.stats.archiver_max_backlog", "riak_cs.access_archiver_max_backlog", [
+{mapping, "stats.access.archiver.max_backlog", "riak_cs.access_archiver_max_backlog", [
+  {default, 2},
+  {datatype, integer}
+]}.
+
+%% @doc How many workers to put access log data to Riak are
+%% allowed to run concurrently
+{mapping, "stats.access.archiver.max_workers", "riak_cs.access_archiver_max_workers", [
   {default, 2},
   {datatype, integer}
 ]}.
@@ -231,36 +235,38 @@
 %% batches; list of "HHMM" UTC times
 %%
 %%  Automatically calculate at 6am UTC every day:
-%%    storage.stats.schedule.1="06:00"
+%%    stats.storage.schedule.1="06:00"
 %%
 %%  Automatically calculate at 6am and 7:45pm every day:
-%%    storage.stats.schedule.1="06:00"
-%%    storage.stats.schedule.2="19:45"
-{mapping, "storage.stats.schedule.$time", "riak_cs.storage_schedule", [
+%%    stats.storage.schedule.1="06:00"
+%%    stats.storage.schedule.2="19:45"
+{mapping, "stats.storage.schedule.$time", "riak_cs.storage_schedule", [
   {datatype, string}
 ]}.
 
 {translation,
  "riak_cs.storage_schedule",
  fun(Conf) ->
-   Keys = cuttlefish_variable:fuzzy_matches(["storage","stats","schedule","$time"], Conf),
-   [cuttlefish:conf_get("storage.stats.schedule." ++ Name, Conf)||{Key, Name} <- Keys]
+   Keys = cuttlefish_variable:fuzzy_matches(["stats","storage","schedule","$time"], Conf),
+   [cuttlefish:conf_get("stats.storage.schedule." ++ Name, Conf)||{Key, Name} <- Keys]
  end
 }.
 
 %% @doc How large each storage archive object is. Should be
 %% chosen such that each storage_schedule entry falls in
 %% a different period.
-{mapping, "storage.stats.archive_period", "riak_cs.storage_archive_period", [
+{mapping, "stats.storage.archive_period", "riak_cs.storage_archive_period", [
   {default, "1d"},
   {datatype, {duration, s}}
 ]}.
 
-%% @doc How many archive periods a user can request in one
-%% usage read, applied independently to access and storage.
-{mapping, "storage.stats.request_limit", "riak_cs.usage_request_limit", [
-  {default, "31d"},
-  {datatype, {duration, h}}
+%% @doc How many archive periods a user can request in one usage read,
+%% applied independently to access and storage.  If archive_periods
+%% are defined as 1 hour, then 744 * 1 hour = 31 days will be the
+%% longest limit.
+{mapping, "stats.usage_request_limit", "riak_cs.usage_request_limit", [
+  {default, 744},
+  {datatype, integer}
 ]}.
 
 %% @doc custom server name at http response header "Server: Riak CS"
@@ -290,15 +296,34 @@
 
 %% @doc URL rewrite module.
 {mapping, "rewrite_module", "riak_cs.rewrite_module", [
-  {default, riak_cs_s3_rewrite},
-  {datatype, atom}
+  {commented, riak_cs_s3_rewrite},
+  {datatype, atom},
+  {validators, ["valid_rewrite_module"]}
 ]}.
+
+{validator,
+  "valid_rewrite_module",
+  "should be a valid rewrite module",
+  fun(riak_cs_s3_rewrite) -> true;
+     (riak_cs_s3_rewrite_legacy) -> true;
+     (riak_cs_oos_rewrite) -> true;
+     (_) -> false
+  end}.
 
 %% @doc Authentication module.
 {mapping, "auth_module", "riak_cs.auth_module", [
-  {default, riak_cs_s3_auth},
-  {datatype, atom}
+  {commented, riak_cs_s3_auth},
+  {datatype, atom},
+  {validators, ["valid_auth_module"]}
 ]}.
+
+{validator,
+  "valid_auth_module",
+  "should be a valid auth module",
+  fun(riak_cs_s3_auth) -> true;
+     (riak_cs_keystone_auth) -> true;
+     (_) -> false
+  end}.
 
 %% == Bucket (List Objects) ==
 
@@ -306,7 +331,8 @@
 %% Riak nodes prior to version 1.4.0.
 {mapping, "fold_objects_for_list_keys", "riak_cs.fold_objects_for_list_keys", [
   {default, on},
-  {datatype, flag}
+  {datatype, flag},
+  hidden
 ]}.
 
 %% == Rolling upgrade support ==
@@ -327,7 +353,7 @@
 
 %% @doc If your Erlang virtual machine supports DTrace (or
 %% user-space SystemTap), set dtrace_support to true.
-{mapping, "dtrace_support", "riak_cs.dtrace_support", [
+{mapping, "dtrace", "riak_cs.dtrace_support", [
   {default, off},
   {datatype, flag}
 ]}.
@@ -346,7 +372,7 @@
 %% @doc The severity level of the console log, default is 'info'.
 {mapping, "log.console.level", "lager.handlers", [
   {default, info},
-  {datatype, {enum, [debug, info, warning, error]}}
+  {datatype, {enum, [debug, info, notice, warning, error, critical, alert, emergency, none]}}
 ]}.
 
 %% @doc When 'log.console' is set to 'file' or 'both', the file where
@@ -371,8 +397,14 @@
 {translation,
  "lager.handlers",
  fun(Conf) ->
-    SyslogHandler = [{lager_syslog_backend, ["riak", daemon, info]} ||
-                     cuttlefish:conf_get("log.syslog", Conf)],
+    SyslogHandler = case cuttlefish:conf_get("log.syslog", Conf) of
+      true ->
+        Ident = cuttlefish:conf_get("log.syslog.ident", Conf),
+        Facility = cuttlefish:conf_get("log.syslog.facility", Conf),
+        LogLevel = cuttlefish:conf_get("log.syslog.level", Conf),
+        [{lager_syslog_backend, [Ident, Facility, LogLevel]}];
+      _ -> []
+    end,
     ErrorHandler = case cuttlefish:conf_get("log.error.file", Conf) of
       undefined -> [];
       ErrorFilename -> [{lager_file_backend, [{file, ErrorFilename},
@@ -502,6 +534,19 @@
 %% communicate.
 {mapping, "distributed_cookie", "vm_args.-setcookie", [
   {default, "riak"}
+]}.
+
+%% VM scheduler collapse, part 1 of 2
+{mapping, "erlang.schedulers.force_wakeup_interval", "vm_args.+sfwi", [
+  {default, 500},
+  {datatype, integer},
+  merge
+]}.
+
+%% VM scheduler collapse, part 2 of 2
+{mapping, "erlang.schedulers.compaction_of_load", "vm_args.+scl", [
+  {default, "false"},
+  merge
 ]}.
 
 {{#devrel}}

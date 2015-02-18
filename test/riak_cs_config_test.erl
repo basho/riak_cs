@@ -19,14 +19,15 @@ default_config_test() ->
     cuttlefish_unit:assert_not_configured(Config, "riak_cs.admin_port"),
     cuttlefish_unit:assert_config(Config, "riak_cs.cs_root_host", "s3.amazonaws.com"),
     cuttlefish_unit:assert_config(Config, "riak_cs.cs_version", 10300),
-    cuttlefish_unit:assert_config(Config, "riak_cs.rewrite_module", riak_cs_s3_rewrite),
-    cuttlefish_unit:assert_config(Config, "riak_cs.auth_module", riak_cs_s3_auth),
+    cuttlefish_unit:assert_not_configured(Config, "riak_cs.rewrite_module"),
+    cuttlefish_unit:assert_not_configured(Config, "riak_cs.auth_module"),
     cuttlefish_unit:assert_config(Config, "riak_cs.fold_objects_for_list_keys", true),
     cuttlefish_unit:assert_config(Config, "riak_cs.trust_x_forwarded_for", false),
     cuttlefish_unit:assert_config(Config, "riak_cs.leeway_seconds", 86400),
     cuttlefish_unit:assert_config(Config, "riak_cs.gc_interval", 900),
     cuttlefish_unit:assert_config(Config, "riak_cs.gc_retry_interval", 21600),
     cuttlefish_unit:assert_config(Config, "riak_cs.gc_paginated_indexes", true),
+    cuttlefish_unit:assert_config(Config, "riak_cs.gc_max_workers", 2),
     cuttlefish_unit:assert_config(Config, "riak_cs.access_log_flush_factor", 1),
     cuttlefish_unit:assert_config(Config, "riak_cs.access_log_flush_size", 1000000),
     cuttlefish_unit:assert_config(Config, "riak_cs.access_archive_period", 3600),
@@ -43,6 +44,19 @@ default_config_test() ->
                                               [{webmachine_log_handler, ["./log"]},
                                                {riak_cs_access_log_handler, []}]),
     cuttlefish_unit:assert_config(Config, "webmachine.server_name", "Riak CS"),
+%%    cuttlefish_unit:assert_config(Config, "vm_args.+scl", false),
+    ok.
+
+modules_config_test() ->
+    SchemaFiles = ["../rel/files/riak_cs.schema"],
+    {ok, Context} = file:consult("../rel/vars.config"),
+    Rewrite = riak_cs_oos_rewrite,
+    Auth = riak_cs_keystone_auth,
+    Conf = [{["rewrite_module"], Rewrite},
+            {["auth_module"],  Auth}],
+    Config = cuttlefish_unit:generate_templated_config(SchemaFiles, Conf, Context),
+    cuttlefish_unit:assert_config(Config, "riak_cs.rewrite_module", Rewrite),
+    cuttlefish_unit:assert_config(Config, "riak_cs.auth_module", Auth),
     ok.
 
 ssl_config_test() ->
@@ -68,10 +82,8 @@ admin_ip_config_test() ->
 storage_schedule_config_test() ->
     SchemaFiles = ["../rel/files/riak_cs.schema"],
     {ok, Context} = file:consult("../rel/vars.config"),
-    Conf = [{["storage", "stats", "schedule", "1"], "00:00"},
-            {["storage", "stats", "schedule", "2"], "19:45"}],
+    Conf = [{["stats", "storage", "schedule", "1"], "00:00"},
+            {["stats", "storage", "schedule", "2"], "19:45"}],
     Config = cuttlefish_unit:generate_templated_config(SchemaFiles, Conf, Context),
     cuttlefish_unit:assert_config(Config, "riak_cs.storage_schedule", ["00:00", "19:45"]),
     ok.
-
-
