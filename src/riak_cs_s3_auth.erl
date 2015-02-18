@@ -1,6 +1,6 @@
 %% ---------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2015 Basho Technologies, Inc.  All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -52,20 +52,30 @@ identify(RD,_Ctx) ->
             identify_by_query_string(RD);
         AuthHeader ->
             %% Query string auth does not require date/x-amz-date header
-            Date = riak_cs_wm_utils:extract_date(RD),
-            case riak_cs_wm_utils:check_timeskew(Date) of
-                true ->
-                    parse_auth_header(AuthHeader);
-                false ->
-                    {failed, reqtime_tooskewed}
-            end
+            parse_auth_header(AuthHeader)
     end.
 
 -spec authenticate(rcs_user(), string() | {v4, v4_attrs()}, RD::term(), #context{}) ->
                           ok | {error, atom()}.
-authenticate(User, {v4, Attributes}, RD, _Ctx) ->
+authenticate(User, Signature, RD, Ctx) ->
+    case wrq:get_req_header("authorization", RD) of
+        undefined ->
+            authenticate_1(User, Signature, RD, Ctx);
+        _ ->
+            Date = riak_cs_wm_utils:extract_date(RD),
+            case riak_cs_wm_utils:check_timeskew(Date) of
+                true ->
+                    authenticate_1(User, Signature, RD, Ctx);
+                false ->
+                    {error, reqtime_tooskewed}
+            end
+    end.
+
+-spec authenticate_1(rcs_user(), string() | {v4, v4_attrs()}, RD::term(), #context{}) ->
+                          ok | {error, atom()}.
+authenticate_1(User, {v4, Attributes}, RD, _Ctx) ->
     authenticate_v4(User, Attributes, RD);
-authenticate(User, Signature, RD, _Ctx) ->
+authenticate_1(User, Signature, RD, _Ctx) ->
     CalculatedSignature = calculate_signature_v2(User?RCS_USER.key_secret, RD),
     case check_auth(Signature, CalculatedSignature) of
         true ->
