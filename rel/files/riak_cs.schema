@@ -262,7 +262,7 @@
 
 %% @doc How many archive periods a user can request in one usage read,
 %% applied independently to access and storage.  If archive_periods
-%% are defined as 1 day, then 744 / 24 hours = 31 days will be the
+%% are defined as 1 hour, then 744 * 1 hour = 31 days will be the
 %% longest limit.
 {mapping, "stats.usage_request_limit", "riak_cs.usage_request_limit", [
   {default, 744},
