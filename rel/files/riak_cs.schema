@@ -109,7 +109,8 @@
 %%  or retrieval of objects.
 {mapping, "pool.request.overflow", "riak_cs.connection_pools", [
   {default, 0},
-  {datatype, integer}
+  {datatype, integer},
+  hidden
 ]}.
 
 %% @doc Fixed pool size of secondary connection pool which is used
@@ -123,7 +124,8 @@
 %% strictly for requests to list the contents.
 {mapping, "pool.list.overflow", "riak_cs.connection_pools", [
   {default, 0},
-  {datatype, integer}
+  {datatype, integer},
+  hidden
 ]}.
 
 {translation,
