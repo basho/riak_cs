@@ -101,7 +101,12 @@ cs_base_dir={{runner_base_dir}}
 cs_bin_dir={{runner_script_dir}}
 cs_etc_dir={{runner_etc_dir}}
 cs_log_dir={{runner_log_dir}}
-cuttlefish_conf_dir=${cs_base_dir}/{{platform_data_dir}}/generated.configs
+
+if [ -d {{platform_data_dir}}/generated.configs ]; then
+  cuttlefish_conf_dir={{platform_data_dir}}/generated.configs
+else
+  cuttlefish_conf_dir={{runner_base_dir}}/{{platform_data_dir}}/generated.configs
+fi
 
 get_cfgs=0
 get_logs=0
