@@ -76,14 +76,16 @@ riak-cs-debug: Gather info from a node for troubleshooting. See 'man riak-cs-deb
 
 Usage: riak-cs-debug [-c] [-l] [-r] [-s] [-e] [FILENAME | -]
 
--c, --cfgs      Gather Riak CS configuration information.
--l, --logs      Gather Riak CS logs.
--r, --riakcmds  Gather Riak CS information and command output.
--s, --syscmds   Gather general system commands.
--e, --extracmds Gather extra command output. These commands are too intense to
-                run on all nodes in a cluster but appropriate for a single node.
-    --log-mtime Determine last modified time as n*24 hours, which riak-cs-debug gathers newer logs than the time. (default: 14)
-FILENAME        Output filename for the tar.gz archive. Use - to specify stdout.
+-c, --cfgs           Gather Riak CS configuration information.
+-l, --logs           Gather Riak CS logs.
+-r, --riakcmds       Gather Riak CS information and command output.
+-s, --syscmds        Gather general system commands.
+-e, --extracmds      Gather extra command output. These commands are too intense to
+                     run on all nodes in a cluster but appropriate for a single node.
+    --log-mtime      Determine last modified time as n*24 hours, which riak-cs-debug gathers
+                     newer logs than the time. (default: 14)
+    --skip-accesslog Exclude access.log from logs riak-cs-debug gathers.
+FILENAME             Output filename for the tar.gz archive. Use - to specify stdout.
 
 Defaults: Get configs, logs, riak-cs commands, and system commands.
           Output in current directory to NODE_NAME-riak-cs-debug.tar.gz or
@@ -114,6 +116,7 @@ get_logs=0
 get_riakcmds=0
 get_syscmds=0
 get_extracmds=0
+skip_accesslog=0
 
 log_mtime=14
 
@@ -144,6 +147,9 @@ while [ -n "$1" ]; do
         --log-mtime)
             shift
             log_mtime=$1
+            ;;
+        --skip-accesslog)
+            skip_accesslog=1
             ;;
         -)
             # If truly specifying stdout as the output file, it should be last
@@ -432,15 +438,20 @@ if [ 1 -eq $get_logs ]; then
     # Get any logs in the platform_log_dir
     if [ -d "${cs_log_dir}" ]; then
         # check to ensure there is at least something to get
-        if [ -n "`find "${cs_log_dir}" -maxdepth 1 -mtime -$log_mtime -name '*log*' -print -quit`" ]; then
+        if [ -n "`find "${cs_log_dir}" -maxdepth 1 -mtime -$log_mtime -print -quit`" ]; then
             mkdir_or_die "${start_dir}"/"${debug_dir}"/logs/platform_log_dir
 
             # Mirror the directory, only copying files that match the pattern
             cd "$cs_log_dir"
-            find . -type f -mtime -$log_mtime -name '*log*' -exec sh -c '
+            find . -type f -mtime -$log_mtime -exec sh -c '
                 mkdir -p "$0/${1%/*}";
                 cp -p "$1" "$0/$1"
                 ' "${start_dir}"/"${debug_dir}"/logs/platform_log_dir {} \;
+
+            # Remove access logs
+            if [ 1 -eq $skip_accesslog ]; then
+                find "${start_dir}"/"${debug_dir}"/logs/platform_log_dir -type f -name 'access.log*' -exec rm {} \;
+            fi
         fi
     fi
 
