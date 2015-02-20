@@ -82,6 +82,7 @@ Usage: riak-cs-debug [-c] [-l] [-r] [-s] [-e] [FILENAME | -]
 -s, --syscmds   Gather general system commands.
 -e, --extracmds Gather extra command output. These commands are too intense to
                 run on all nodes in a cluster but appropriate for a single node.
+    --log-mtime Determine last modified time as n*24 hours, which riak-cs-debug gathers newer logs than the time. (default: 14)
 FILENAME        Output filename for the tar.gz archive. Use - to specify stdout.
 
 Defaults: Get configs, logs, riak-cs commands, and system commands.
@@ -114,6 +115,8 @@ get_riakcmds=0
 get_syscmds=0
 get_extracmds=0
 
+log_mtime=14
+
 ###
 ### Parse options
 ###
@@ -137,6 +140,10 @@ while [ -n "$1" ]; do
             ;;
         -e|--extracmds)
             get_extracmds=1
+            ;;
+        --log-mtime)
+            shift
+            log_mtime=$1
             ;;
         -)
             # If truly specifying stdout as the output file, it should be last
@@ -425,14 +432,14 @@ if [ 1 -eq $get_logs ]; then
     # Get any logs in the platform_log_dir
     if [ -d "${cs_log_dir}" ]; then
         # check to ensure there is at least something to get
-        if [ -n "`find "${cs_log_dir}" -maxdepth 1 -name '*log*' -print -quit`" ]; then
+        if [ -n "`find "${cs_log_dir}" -maxdepth 1 -mtime -$log_mtime -name '*log*' -print -quit`" ]; then
             mkdir_or_die "${start_dir}"/"${debug_dir}"/logs/platform_log_dir
 
             # Mirror the directory, only copying files that match the pattern
             cd "$cs_log_dir"
-            find . -type f -name '*log*' -exec sh -c '
+            find . -type f -mtime -$log_mtime -name '*log*' -exec sh -c '
                 mkdir -p "$0/${1%/*}";
-                cp "$1" "$0/$1"
+                cp -p "$1" "$0/$1"
                 ' "${start_dir}"/"${debug_dir}"/logs/platform_log_dir {} \;
         fi
     fi
@@ -452,9 +459,10 @@ if [ 1 -eq $get_logs ]; then
             lager_file="`echo $lager_path | awk -F/ '{print $NF}'`"
             lager_dir="`echo $lager_path | awk -F/$lager_file '{print $1}'|sed 's|/./|/|'`"
             if [ "$cs_log_dir" != "$lager_dir" ]; then
-                if [ -n "`find "${lager_dir}" -maxdepth 1 -name "${lager_file}*" -print -quit`" ]; then
+                if [ -n "`find "${lager_dir}" -maxdepth 1 -mtime -$log_mtime -name "${lager_file}*" -print -quit`" ]; then
                     mkdir_or_die "${start_dir}"/"${debug_dir}"/logs/lager_"${lager_num}"
-                    cp "${lager_path}"* "${start_dir}"/"${debug_dir}"/logs/lager_"${lager_num}"
+                    find "${lager_dir}" -mtime -$log_mtime -name "${lager_file}*" \
+                      -exec cp -p {} "${start_dir}"/"${debug_dir}"/logs/lager_"${lager_num}"/ \;
                 fi
             fi
         lager_num=`expr $lager_num + 1`
