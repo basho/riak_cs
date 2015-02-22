@@ -41,7 +41,7 @@ default_config_test() ->
                                               [{request_pool, {128, 0}},
                                                {bucket_list_pool, {5, 0}}]),
     cuttlefish_unit:assert_config(Config, "webmachine.log_handlers",
-                                              [{webmachine_log_handler, ["./log"]},
+                                              [{webmachine_access_log_handler, ["./log"]},
                                                {riak_cs_access_log_handler, []}]),
     cuttlefish_unit:assert_config(Config, "webmachine.server_name", "Riak CS"),
 %%    cuttlefish_unit:assert_config(Config, "vm_args.+scl", false),
