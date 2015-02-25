@@ -47,7 +47,8 @@
          handle_cast/2,
          handle_info/2,
          terminate/2,
-         code_change/3]).
+         code_change/3,
+         format_status/2]).
 
 -record(state, {riak_client :: riak_client(),
                 close_riak_connection=true :: boolean()}).
@@ -456,6 +457,13 @@ terminate(_Reason, #state{riak_client=RcPid,
 %%--------------------------------------------------------------------
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
+
+%% Define custom `format_status' to include status information of
+%% internal `riak_client'.
+format_status(_Opt, [_PDict, #state{riak_client=RcPid} = State]) ->
+    RcState = (catch sys:get_status(RcPid)),
+    [{block_server_state, State}, {riak_client_state, RcState}].
+
 
 %%%===================================================================
 %%% Internal functions
