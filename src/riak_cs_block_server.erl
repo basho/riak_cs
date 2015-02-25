@@ -148,33 +148,8 @@ init(Manifest, RcPid, State) ->
     ok = riak_cs_riak_client:set_manifest(RcPid, Manifest),
     {ok, State#state{riak_client=RcPid}}.
 
-%%--------------------------------------------------------------------
-%% @private
-%% @doc
-%% Handling call messages
-%%
-%% @spec handle_call(Request, From, State) ->
-%%                                   {reply, Reply, State} |
-%%                                   {reply, Reply, State, Timeout} |
-%%                                   {noreply, State} |
-%%                                   {noreply, State, Timeout} |
-%%                                   {stop, Reason, Reply, State} |
-%%                                   {stop, Reason, State}
-%% @end
-%%--------------------------------------------------------------------
 handle_call(stop, _From, State) ->
     {stop, normal, ok, State}.
-
-%%--------------------------------------------------------------------
-%% @private
-%% @doc
-%% Handling cast messages
-%%
-%% @spec handle_cast(Msg, State) -> {noreply, State} |
-%%                                  {noreply, State, Timeout} |
-%%                                  {stop, Reason, State}
-%% @end
-%%--------------------------------------------------------------------
 
 handle_cast({get_block, ReplyPid, Bucket, Key, ClusterID, UUID, BlockNumber},
             State=#state{riak_client=RcPid}) ->
@@ -416,30 +391,14 @@ format_delete_result({error, "{pw_val_unsatisfied," ++ _}, BlockId) ->
 format_delete_result(Result, _) ->
     Result.
 
-%%--------------------------------------------------------------------
-%% @private
-%% @doc
 %% Handling all non call/cast messages
 %%
-%% @spec handle_info(Info, State) -> {noreply, State} |
-%%                                   {noreply, State, Timeout} |
-%%                                   {stop, Reason, State}
-%% @end
-%%--------------------------------------------------------------------
+-spec handle_info(term(), #state{}) -> {noreply, #state{}} |
+                                       {noreply, #state{}, Timeout::non_neg_integer()} |
+                                       {stop, term(), #state{}}.
 handle_info(_Info, State) ->
     {noreply, State}.
 
-%%--------------------------------------------------------------------
-%% @private
-%% @doc
-%% This function is called by a gen_server when it is about to
-%% terminate. It should be the opposite of Module:init/1 and do any
-%% necessary cleaning up. When it returns, the gen_server terminates
-%% with Reason. The return value is ignored.
-%%
-%% @spec terminate(Reason, State) -> void()
-%% @end
-%%--------------------------------------------------------------------
 terminate(_Reason, #state{close_riak_connection=false}) ->
     ok;
 terminate(_Reason, #state{riak_client=RcPid,
@@ -447,14 +406,6 @@ terminate(_Reason, #state{riak_client=RcPid,
 
     ok = riak_cs_riak_client:checkin(request_pool, RcPid).
 
-%%--------------------------------------------------------------------
-%% @private
-%% @doc
-%% Convert process state when code is changed
-%%
-%% @spec code_change(OldVsn, State, Extra) -> {ok, NewState}
-%% @end
-%%--------------------------------------------------------------------
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
