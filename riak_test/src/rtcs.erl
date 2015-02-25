@@ -410,6 +410,9 @@ riakcs_accesscmd(Path, N, Cmd) ->
 riakcs_storagecmd(Path, N, Cmd) ->
     lists:flatten(io_lib:format("~s-storage ~s", [riakcs_binpath(Path, N), Cmd])).
 
+riakcs_logpath(Vsn, N, File) ->
+    io_lib:format("~s/dev/dev~b/log/~s", [get_rt_config(cs, Vsn), N, File]).
+
 stanchion_binpath(Prefix) ->
     io_lib:format("~s/dev/stanchion/bin/stanchion", [Prefix]).
 
@@ -859,6 +862,25 @@ list_users(UserConfig, Port, Resource, AcceptContentType) ->
     Output = wait_until(OutputFun, Condition, Retries, Delay),
     lager:debug("List users output=~p~n",[Output]),
     Output.
+
+assert_error_log_empty(Vsn, N) ->
+    ErrorLog = riakcs_logpath(Vsn, N, "error.log"),
+    {ok, Errors} = file:read_file(ErrorLog),
+    case Errors of
+        <<>> -> ok;
+        _ ->
+            lager:warning("Not empty error.log (~s): the first few lines are...~n~s",
+                          [ErrorLog,
+                           lists:map(
+                             fun(L) -> io_lib:format("cs ~p dev~p error.log: ~s\n", [Vsn, N, L]) end,
+                             lists:sublist(binary:split(Errors, <<"\n">>, [global]), 3))]),
+            error(not_empty_error_log)
+    end.
+
+truncate_error_log(Vsn, N) ->
+    Cmd = os:find_executable("rm"),
+    ErrorLog = riakcs_logpath(Vsn, N, "error.log"),
+    ok = rtcs:cmd(Cmd, [{args, ["-f", ErrorLog]}]).
 
 wait_until(_, _, 0, _) ->
     fail;
