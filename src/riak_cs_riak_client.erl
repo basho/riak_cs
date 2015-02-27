@@ -136,7 +136,7 @@ save_user(RcPid, User, OldUserObj) ->
 
 -spec set_manifest(riak_client(), lfs_manifest()) -> ok | {error, term()}.
 set_manifest(RcPid, Manifest) ->
-    gen_server:call(RcPid, {set_manifest, Manifest}).
+    gen_server:call(RcPid, {set_manifest, {Manifest?MANIFEST.uuid, Manifest}}).
 
 -spec set_manifest_bag(riak_client(), binary()) -> ok | {error, term()}.
 set_manifest_bag(RcPid, ManifestBagId) ->
@@ -208,7 +208,7 @@ handle_call(manifest_pbc, _From, State) ->
         {error, Reason} ->
             {reply, {error, Reason}, State}
     end;
-handle_call({set_manifest, _Manifest}, _From, State) ->
+handle_call({set_manifest, {_UUID, _Manifest}}, _From, State) ->
     {reply, ok, State};
 handle_call({set_manifest_bag, _ManifestBagId}, _From, State) ->
     {reply, ok, State};
