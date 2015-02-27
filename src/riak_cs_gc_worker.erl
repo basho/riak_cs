@@ -77,7 +77,7 @@ init([BagId, Keys]) ->
     {ok, RcPid} = riak_cs_riak_client:start_link([]),
     ok = riak_cs_riak_client:set_manifest_bag(RcPid, BagId),
     ok = continue(),
-    {ok, fetching_next_fileset, ?STATE{batch=Keys, riak_client=RcPid}}.
+    {ok, fetching_next_fileset, ?STATE{batch=Keys, riak_client=RcPid, bag_id=BagId}}.
 
 %% Asynchronous events
 
@@ -126,12 +126,16 @@ initiating_file_delete(continue, ?STATE{batch=[_ManiSetKey | RestKeys],
                                                     batch_count=1+BatchCount}};
 initiating_file_delete(continue, ?STATE{batch=[CurrentFileSetKey | _],
                                         current_files=[Manifest | _RestManifests],
-                                        riak_client=RcPid}=State) ->
+                                        bag_id=BagId}=State) ->
     %% Use an instance of `riak_cs_delete_fsm' to handle the
     %% deletion of the file blocks.
     %% Don't worry about delete_fsm failures. Manifests are
     %% rescheduled after a certain time.
-    Args = [RcPid, Manifest, self(), CurrentFileSetKey, []],
+    %% Give `BagId' so that delete fsm starts its own riak client process.
+    %% This is because one riak client process is assumed to be used for
+    %% blocks in single bag. It's possible to use one riak client process
+    %% for multiple block bags, but it introduce complexity of mutation.
+    Args = [BagId, Manifest, self(), CurrentFileSetKey, []],
     %% The delete FSM is hard-coded to send a sync event to our registered
     %% name upon terminate(), so we do not have to pass our pid to it
     %% in order to get a reply.
