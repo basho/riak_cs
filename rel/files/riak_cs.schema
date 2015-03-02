@@ -286,7 +286,7 @@
  fun(Conf) ->
    Handler = case cuttlefish:conf_get("log.access.dir", Conf) of
      "" -> [];
-     Dir -> [{webmachine_log_handler, [Dir]}]
+     Dir -> [{webmachine_access_log_handler, [Dir]}]
    end,
    Handler ++ [{riak_cs_access_log_handler, []}]
  end
