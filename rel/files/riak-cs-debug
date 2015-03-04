@@ -76,13 +76,16 @@ riak-cs-debug: Gather info from a node for troubleshooting. See 'man riak-cs-deb
 
 Usage: riak-cs-debug [-c] [-l] [-r] [-s] [-e] [FILENAME | -]
 
--c, --cfgs      Gather Riak CS configuration information.
--l, --logs      Gather Riak CS logs.
--r, --riakcmds  Gather Riak CS information and command output.
--s, --syscmds   Gather general system commands.
--e, --extracmds Gather extra command output. These commands are too intense to
-                run on all nodes in a cluster but appropriate for a single node.
-FILENAME        Output filename for the tar.gz archive. Use - to specify stdout.
+-c, --cfgs           Gather Riak CS configuration information.
+-l, --logs           Gather Riak CS logs.
+-r, --riakcmds       Gather Riak CS information and command output.
+-s, --syscmds        Gather general system commands.
+-e, --extracmds      Gather extra command output. These commands are too intense to
+                     run on all nodes in a cluster but appropriate for a single node.
+    --log-mtime      Determine last modified time as n*24 hours, which riak-cs-debug gathers
+                     newer logs than the time. (default: 14)
+    --skip-accesslog Exclude access.log from logs riak-cs-debug gathers.
+FILENAME             Output filename for the tar.gz archive. Use - to specify stdout.
 
 Defaults: Get configs, logs, riak-cs commands, and system commands.
           Output in current directory to NODE_NAME-riak-cs-debug.tar.gz or
@@ -102,11 +105,20 @@ cs_bin_dir={{runner_script_dir}}
 cs_etc_dir={{runner_etc_dir}}
 cs_log_dir={{runner_log_dir}}
 
+if [ -d {{platform_data_dir}}/generated.configs ]; then
+  cuttlefish_conf_dir={{platform_data_dir}}/generated.configs
+else
+  cuttlefish_conf_dir={{runner_base_dir}}/{{platform_data_dir}}/generated.configs
+fi
+
 get_cfgs=0
 get_logs=0
 get_riakcmds=0
 get_syscmds=0
 get_extracmds=0
+skip_accesslog=0
+
+log_mtime=14
 
 ###
 ### Parse options
@@ -131,6 +143,13 @@ while [ -n "$1" ]; do
             ;;
         -e|--extracmds)
             get_extracmds=1
+            ;;
+        --log-mtime)
+            shift
+            log_mtime=$1
+            ;;
+        --skip-accesslog)
+            skip_accesslog=1
             ;;
         -)
             # If truly specifying stdout as the output file, it should be last
@@ -235,8 +254,9 @@ if [ 0 -ne $(( $get_cfgs + $get_logs + $get_riakcmds + $get_extracmds )) ]; then
     fi
 fi
 
-if [ -f "${cs_etc_dir}"/vm.args ]; then
-    node_name="`egrep '^\-s?name' "${cs_etc_dir}"/vm.args 2>/dev/null | cut -d ' ' -f 2`"
+vmargs=`ls -t ${cuttlefish_conf_dir}/vm.*.args | head -1`
+if [ -f "${vmargs}" ]; then
+    node_name="`egrep '^\-s?name' "${vmargs}" 2>/dev/null | cut -d ' ' -f 2`"
 fi
 
 if [ -z "$node_name" ]; then
@@ -407,7 +427,10 @@ if [ 1 -eq $get_logs ]; then
     cd "${start_dir}"/"${debug_dir}"/logs
 
     # if not already made, make a flat, searchable version of the app.config
-    [ -z "$riak_epaths" ] && riak_epaths=`make_app_epaths "${cs_etc_dir}/app.config"`
+    if [ -z "$riak_epaths" ]; then
+      appconfig=`ls -t ${cuttlefish_conf_dir}/app.*.config | head -1`
+      riak_epaths=`make_app_epaths "${appconfig}"`
+    fi
 
     # grab a listing of the log directory to show if there are crash dumps
     dump ls_log_dir ls -lhR $cs_log_dir
@@ -415,15 +438,20 @@ if [ 1 -eq $get_logs ]; then
     # Get any logs in the platform_log_dir
     if [ -d "${cs_log_dir}" ]; then
         # check to ensure there is at least something to get
-        if [ -n "`find "${cs_log_dir}" -maxdepth 1 -name '*log*' -print -quit`" ]; then
+        if [ -n "`find "${cs_log_dir}" -maxdepth 1 -mtime -$log_mtime -print -quit`" ]; then
             mkdir_or_die "${start_dir}"/"${debug_dir}"/logs/platform_log_dir
 
             # Mirror the directory, only copying files that match the pattern
             cd "$cs_log_dir"
-            find . -type f -name '*log*' -exec sh -c '
+            find . -type f -mtime -$log_mtime -exec sh -c '
                 mkdir -p "$0/${1%/*}";
-                cp "$1" "$0/$1"
+                cp -p "$1" "$0/$1"
                 ' "${start_dir}"/"${debug_dir}"/logs/platform_log_dir {} \;
+
+            # Remove access logs
+            if [ 1 -eq $skip_accesslog ]; then
+                find "${start_dir}"/"${debug_dir}"/logs/platform_log_dir -type f -name 'access.log*' -exec rm {} \;
+            fi
         fi
     fi
 
@@ -442,9 +470,10 @@ if [ 1 -eq $get_logs ]; then
             lager_file="`echo $lager_path | awk -F/ '{print $NF}'`"
             lager_dir="`echo $lager_path | awk -F/$lager_file '{print $1}'|sed 's|/./|/|'`"
             if [ "$cs_log_dir" != "$lager_dir" ]; then
-                if [ -n "`find "${lager_dir}" -maxdepth 1 -name "${lager_file}*" -print -quit`" ]; then
+                if [ -n "`find "${lager_dir}" -maxdepth 1 -mtime -$log_mtime -name "${lager_file}*" -print -quit`" ]; then
                     mkdir_or_die "${start_dir}"/"${debug_dir}"/logs/lager_"${lager_num}"
-                    cp "${lager_path}"* "${start_dir}"/"${debug_dir}"/logs/lager_"${lager_num}"
+                    find "${lager_dir}" -mtime -$log_mtime -name "${lager_file}*" \
+                      -exec cp -p {} "${start_dir}"/"${debug_dir}"/logs/lager_"${lager_num}"/ \;
                 fi
             fi
         lager_num=`expr $lager_num + 1`
@@ -462,11 +491,23 @@ if [ 1 -eq $get_cfgs ]; then
 
     # Use dump to execute the copy. This will provide a progress dot and
     # capture any error messages.
-    dump cp_cfg cp -R "$cs_etc_dir"/* .
+    dump cp_cfg cp -R "$cs_etc_dir"/*.conf* .
 
     # If the copy succeeded, then the output will be empty and it is unneeded.
     if [ 0 -eq $? ]; then
         rm -f cp_cfg
+    fi
+
+    mkdir_or_die "${start_dir}"/"${debug_dir}"/generated.config/.info
+    cd "${start_dir}"/"${debug_dir}"/generated.config
+
+    # Use dump to execute the copy. This will provide a progress dot and
+    # capture any error messages.
+    dump cp_generated_cfg cp -R "$cuttlefish_conf_dir"/* .
+
+    # If the copy succeeded, then the output will be empty and it is unneeded.
+    if [ 0 -eq $? ]; then
+        rm -f cp_generated_cfg
     fi
 fi
 
