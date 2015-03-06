@@ -104,16 +104,16 @@ Note: this is defined in riak_kv.schema
 
 #### Backend configuration
 
-If [riak_kv/1082](https://github.com/basho/riak_kv/pull/1082) is
-merged as it is, new configuration will be
+New configuration format in Riak will be just
 
 ```
 storage_backend = prefix_multi
 cs_version = 20000
 ```
 
-Note: otherwise (or early Riak 2.0) just requires same storage backend
-configuration in `advanced.config` as required in CS 1.4 or 1.5.
+`cs_version` could not removed when Riak is running under Riak. Old
+style backend configuration using `riak_cs_kv_multi_backend` also can
+be written in `advanced.config`.
 
 #### Storage calculation
 
