@@ -193,7 +193,7 @@ Instructions follow:
 5. Update configuration
 6. Start Riak CS
 
-# Downgrading
+## Downgrading
 
 ### to CS 1.4
 
@@ -219,3 +219,137 @@ Bitcask file format has changed between Riak 1.4 and 2.0. It supports
 implicit upgrade of bitcask data files, while downgrading is not
 supported. This is why downgrading requires a script to translate data
 files.
+
+
+
+## Configuration Mapping Table between 1.5 and 2.0
+
+Some important configuration changes happened between 1.5 and 2.0, Not
+only translating items 1:1.
+
+Value following with `=` is its default value.
+
+The file name has changed from `app.config` and `vm.args` to only
+`riak_cs.conf`, whose path haven't changed.
+
+### Riak CS
+
+#### Items effective in the config file in 2.0 by default
+
+Note: `storage.stats.schedule.$time` does not have any default
+value but an example is added.
+
+`riak_cs` section in app.config
+
+|      1.5                           |        2.0                            |
+|:-----------------------------------|:--------------------------------------|
+|`{cs_ip, "127.0.0.1"}`              |`listener = 127.0.0.1:8080`            |
+|`{cs_port, 8080}`                   |                                       |
+|`{riak_ip, "127.0.0.1"}`            |`riak_host = 127.0.0.1:8087`           |
+|`{riak_pb_port, 8087}`              |                                       |
+|`{stanchion_ip, "127.0.0.1"}`       |`stanchion_host = 127.0.0.=:8085`      |
+|`{stanchion_port, 8085 }`           |                                       |
+|`{stanchion_ssl, false }`           |`stanchion_ssl = off`                  |
+|`{anonymous_user_creation, false}`  |`anonymous_user_creation = off`        |
+|`{admin_key, "admin-key"}`          |`admin.key = admin-key`                |
+|`{admin_secret, "admin-secret"}`    |`admin.secret = admin-secret`          |
+|`{cs_root_host, "s3.amazonaws.com"}`|`root_host = s3.amazonaws.com`         |
+|`{connection_pools,[`               |                                       |
+|` {request_pool, {128, 0} },`       |`pool.request.size = 128`              |
+|                                    |`pool.request.overflow = 0`            |
+|` {bucket_list_pool, {5, 0} }`      |`pool.list.size = 5`                   |
+|                                    |`pool.list.overflow = 0`               |
+|`{trust_x_forwarded_for, false}`    |`trust_x_forwarded_for = off` *          |
+|`{leeway_seconds, 86400}`           |`gc.leeway_seconds = 24h`              |
+|`{gc_interval, 900}`                |`gc.interval = 15m`                    |
+|`{gc_retry_interval, 21600}`        |`gc.retry_interval = 6h`               |
+|`{access_log_flush_factor, 1}`      |`access.stats.log.flush_factor = 1`    |
+|`{access_log_flush_size, 1000000}`  |`access.stats.log.flush_size = 1000000`|
+|`{access_archive_period, 3600}`     |`access.stats.archive_period = 1h`     |
+|`{access_archiver_max_backlog, 2}`  |`access.stats.archiver.max_backlog = 2`|
+|no explicit default                 |`access.stats.archiver.max_workers = 2`|
+|`{storage_schedule, []}`            |`storage.stats.schedule.$time = "06:00`|
+|`{storage_archive_period, 86400}`   |`storage.stats.archive_period = 1d`    |
+|`{usage_request_limit, 744}`        |`storage.stats.request_limit = 31d`    |
+|`{cs_version, 10300 }`              |`cs_version = 10300`                   |
+|`{dtrace_support, false}`           |`dtrace_support = off`                 |
+
+`webmachine` section in app.config
+
+|      1.5                           |        2.0                            |
+|:-----------------------------------|:--------------------------------------|
+|`{server_name, "Riak CS"}`          |`server_name = Riak CS`                |
+
+#### Items hidden out in 2.0 by default
+
+The default value is not changed.
+
+| 1.5                                   | 2.0                        |
+|:--------------------------------------|:---------------------------|
+|`{fold_objects_for_list_keys, true}`   |`fold_objects_for_list_keys`|
+|`{n_val_1_get_requests, true}`         |`n_val_1_get_requests`      |
+|`{gc_paginated_indexes, true},`        |`gc.pagenated_indexes`      |
+
+#### Items commented out in 2.0 by default
+
+Thus all of them are undefined and disabled, except modules. `rewrite_module` and
+`auth_module` will be commented out but the default value won't change from 1.5.
+This is for indicating operators how to change these to OOS API.
+
+| 1.5                                   | 2.0                        |
+|:--------------------------------------|:---------------------------|
+|`{rewrite_module, riak_cs_s3_rewrite }`|`rewrite_module`            |
+|`{auth_module, riak_cs_s3_auth },`     |`auth_module`               |
+|`{admin_ip, "127.0.0.1"}`              |`admin.ip`                  |
+|`{admin_port, 8000 }`                  |`admin.port`                |
+|`{ssl, [`                              |                            |
+|`  {certfile, "./etc/cert.pem"}`       |`ssl.certfile`              |
+|`  {keyfile, "./etc/key.pem"}`         |`ssl.keyfile`               |
+
+#### `webmachine` section
+
+               {log_handlers, [
+                               {webmachine_log_handler, ["./log"]},
+                               {riak_cs_access_log_handler, []}
+                              ]}
+              ]},
+
+They will be defined in to `log.access.dir` and the output directory will
+just replaced. **TODO** we have to make kill switch for webmachine access logs.
+
+
+### Items not supported in `riak_cs.conf` and should be written in `advanced.config`
+
+## Stanchion
+
+`stanchion` section in app.config.
+
+|      1.5                           |        2.0                            |
+|:-----------------------------------|:--------------------------------------|
+|`{stanchion_ip, "127.0.0.1"}`       |`listener = 127.0.0.1:8080`            |
+|`{stanchion_port, 8085}`            |                                       |
+|`{riak_ip, "127.0.0.1"}`            |`riak_host = 127.0.0.1:8087`           |
+|`{riak_pb_port, 8087}`              |                                       |
+|`{admin_key, "admin-key"}`          |`admin.key = admin-key`                |
+|`{admin_secret, "admin-secret"}`    |`admin.secret = admin-secret`          |
+
+Commented out by default and consequently `undefined` so as to disable SSL.
+
+|      1.5                           |        2.0                            |
+|:-----------------------------------|:--------------------------------------|
+|`{ssl, [`                           |                                       |
+|`  {certfile, "./etc/cert.pem"}`    |`ssl.certfile`                         |
+|`  {keyfile, "./etc/key.pem"}`      |`ssl.keyfile`                          |
+
+## Miscellaneous
+
+Common both in Stanchion and CS
+
+## lager
+
+Mostly same mapping with Riak or even should be same as copy-and-pasted from Riak.
+
+### vm.args
+
+Same as Riak. See default [erlang_vm.schema](https://github.com/basho/cuttlefish/blob/develop/priv/erlang_vm.schema)
+for conversion.
