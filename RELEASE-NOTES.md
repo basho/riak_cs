@@ -60,9 +60,10 @@ General Instructions are to repeat this overview on every node:
 8. Start Riak
 9. Start Riak CS
 
-Stanchion can be updated at any time during the system upgrade. Be
-careful enough not to run multiple live Stanchion nodes at once where
-both are referred from CS nodes.
+Stanchion can be updated at any time during the system upgrade
+*theoretically*. Although, we recommend updating Stanchion before all
+other instructions. Be careful enough not to run multiple live
+Stanchion nodes at once where both are referred from CS nodes.
 
 ## Configuration upgrade
 
@@ -124,7 +125,7 @@ Including CS path: add following sentence to `advanced.config`:
 
 ```erlang
 {riak_kv, [
-  {add_paths, ["/usr/lib/riak-cs/lib/riak_cs-x.y.z/ebin"]}
+  {add_paths, ["/usr/lib/riak-cs/lib/riak_cs-2.0.0/ebin"]}
 ]}.
 ```
 
@@ -132,8 +133,7 @@ If multibag is to be used, add multibag ebin path:
 
 ```erlang
 {riak_kv, [
-  {add_paths, ["/usr/lib/riak-cs/lib/riak_cs-x.y.z/ebin",
-               "/usr/lib/riak-cs/lib/riak_cs_multibag-a.b.c/ebin"]}
+  {add_paths, ["/usr/lib/riak-cs/lib/riak_cs-2.0.0/ebin"]}
 ]}.
 ```
 
@@ -146,9 +146,9 @@ to preserve same configuration between CS 1.5 and 2.0.
 If obsolete configurations like `fold_objects_for_list_keys`,
 `n_val_1_get_requests` or `gc_paginated_indexes` are still set as
 `false`, **removing any of them from configuraiton file** is strongly
-recommended at Riak CS 2.0, because those configuration items are to
-preserve old and slow behaviours of Riak CS and have no bad effect on
-performance.
+recommended at Riak CS 2.0, because those configuration items are just
+to preserve old and slow behaviours of Riak CS and have no inpact on
+functionality.
 
 #### Multibag configurations
 
@@ -170,9 +170,15 @@ extended at the system configuration.
 ## Special Notes on Upgrading From Riak CS 1.4
 
 An operational procedure
-[to clean up incomplete multipart under deleted buckets](https://github.com/basho/riak_cs/blob/release/1.5/RELEASE-NOTES.md#notes-on-upgrading-2)
+[to clean up incomplete multipart under deleted buckets](https://github.com/basho/riak_cs/blob/release/1.5/RELEASE-NOTES.md#incomplete-multipart-uploads)
 is needed. Otherwise new buckets which used to exist in the past
 couldn't be created. The operation will fail with 409 Conflict.
+
+Leeway seconds and disk space should also be carefully watched during
+the upgrade, because timestamp management of garbage collection had
+been changed since 1.5 release. Consult
+"[Leeway seconds and disk space](https://github.com/basho/riak_cs/blob/release/1.5/RELEASE-NOTES.md#leeway-seconds-and-disk-space)"
+section of 1.5.0 release notes for more detailed description.
 
 ## Riak CS nodes not corriding in a same box with live Riak node
 
