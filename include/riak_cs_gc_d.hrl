@@ -62,6 +62,7 @@
 -record(gc_worker_state, {
           %% Riak connection pid
           riak_client :: undefined | riak_client(),
+          bag_id :: bag_id(),
           current_files :: [lfs_manifest()],
           current_fileset :: twop_set:twop_set(),
           current_riak_object :: riakc_obj:riakc_obj(),

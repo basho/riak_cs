@@ -68,8 +68,8 @@
 %% ===================================================================
 
 %% @doc Start a `riak_cs_delete_fsm'.
-start_link(RcPid, Manifest, GCWorkerPid, GCKey, Options) ->
-    Args = [RcPid, Manifest, GCWorkerPid, GCKey, Options],
+start_link(BagId, Manifest, GCWorkerPid, GCKey, Options) ->
+    Args = [BagId, Manifest, GCWorkerPid, GCKey, Options],
     gen_fsm:start_link(?MODULE, Args, []).
 
 -spec block_deleted(pid(), {ok, {binary(), integer()}} | {error, binary()}) -> ok.
@@ -80,8 +80,11 @@ block_deleted(Pid, Response) ->
 %% gen_fsm callbacks
 %% ====================================================================
 
-init([RcPid, {UUID, Manifest}, GCWorkerPid, GCKey, _Options]) ->
+init([BagId, {UUID, Manifest}, GCWorkerPid, GCKey, _Options]) ->
     {Bucket, Key} = Manifest?MANIFEST.bkey,
+    {ok, RcPid} = riak_cs_riak_client:checkout(),
+    ok = riak_cs_riak_client:set_manifest_bag(RcPid, BagId),
+    ok = riak_cs_riak_client:set_manifest(RcPid, Manifest),
     State = #state{bucket=Bucket,
                    key=Key,
                    manifest=Manifest,
