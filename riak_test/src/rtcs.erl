@@ -312,6 +312,9 @@ riakcs_etcpath(Prefix, N) ->
 riakcs_libpath(Prefix, N) ->
     io_lib:format("~s/dev/dev~b/lib", [Prefix, N]).
 
+riakcs_logpath(Prefix, N, File) ->
+    io_lib:format("~s/dev/dev~b/log/~s", [Prefix, N, File]).
+
 riakcscmd(Path, N, Cmd) ->
     lists:flatten(io_lib:format("~s ~s", [riakcs_binpath(Path, N), Cmd])).
 
@@ -713,6 +716,25 @@ list_users(UserConfig, Port, Resource, AcceptContentType) ->
     Output = wait_until(OutputFun, Condition, Retries, Delay),
     lager:debug("List users output=~p~n",[Output]),
     Output.
+
+assert_error_log_empty(N) ->
+    ErrorLog = riakcs_logpath(rt_config:get(?CS_CURRENT), N, "error.log"),
+    {ok, Errors} = file:read_file(ErrorLog),
+    case Errors of
+        <<>> -> ok;
+        _ ->
+            lager:warning("Not empty error.log (~s): the first few lines are...~n~s",
+                          [ErrorLog,
+                           lists:map(
+                             fun(L) -> io_lib:format("cs dev~p error.log: ~s\n", [N, L]) end,
+                             lists:sublist(binary:split(Errors, <<"\n">>, [global]), 3))]),
+            error(not_empty_error_log)
+    end.
+
+truncate_error_log(N) ->
+    Cmd = os:find_executable("rm"),
+    ErrorLog = riakcs_logpath(rt_config:get(?CS_CURRENT), N, "error.log"),
+    ok = rtcs:cmd(Cmd, [{args, ["-f", ErrorLog]}]).
 
 wait_until(_, _, 0, _) ->
     fail;
