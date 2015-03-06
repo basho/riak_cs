@@ -1,14 +1,3 @@
-# Riak CS 2.0.0 Release Notes (WIP)
-
-## Changes
-
-- Changed default value of `gc_max_workers` from 5 to 2 with its name
-  changed to `gc.max_workers` with migration to config format change.
-
-## Notes on upgrading
-
-- Changed webmachine's access log handler module name.
-
 # Riak CS 1.5.4 Release Notes
 
 ## Bugs Fixed
