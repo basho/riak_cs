@@ -310,28 +310,22 @@ Thus all of them are undefined and disabled, except modules. `rewrite_module` an
 `auth_module` will be commented out but the default value won't change from 1.5.
 This is for indicating operators how to change these to OOS API.
 
-| 1.5                                   | 2.0                        |
-|:--------------------------------------|:---------------------------|
-|`{rewrite_module, riak_cs_s3_rewrite }`|`rewrite_module`            |
-|`{auth_module, riak_cs_s3_auth },`     |`auth_module`               |
-|`{admin_ip, "127.0.0.1"}`              |`admin.ip`                  |
-|`{admin_port, 8000 }`                  |`admin.port`                |
-|`{ssl, [`                              |                            |
-|`  {certfile, "./etc/cert.pem"}`       |`ssl.certfile`              |
-|`  {keyfile, "./etc/key.pem"}`         |`ssl.keyfile`               |
+| 1.5                                   | 2.0                             |
+|:--------------------------------------|:--------------------------------|
+|`{rewrite_module, riak_cs_s3_rewrite }`|`rewrite_module`                 |
+|`{auth_module, riak_cs_s3_auth },`     |`auth_module`                    |
+|`{admin_ip, "127.0.0.1"}`              |`admin.listener = 127.0.0.1:8000`|
+|`{admin_port, 8000 }`                  |                                 |
+|`{ssl, [`                              |                                 |
+|`  {certfile, "./etc/cert.pem"}`       |`ssl.certfile`                   |
+|`  {keyfile, "./etc/key.pem"}`         |`ssl.keyfile`                    |
 
 ### Items not supported in `riak-cs.conf` and should be written in `advanced.config`
 
-These items does not have corresponding item in `riak-cs.conf`. If old
-behaviors are preferred, they must be in `riak_cs` section of
-`advanced.config`.
-
-
-|:--------------------------------------|
-|`{fold_objects_for_list_keys, true}`   |
-|`{n_val_1_get_requests, true}`         |
-|`{gc_paginated_indexes, true},`        |
-|:--------------------------------------|
+`fold_objects_for_list_keys`, `n_val_1_get_requests` and
+`gc_paginated_indexes` - These items do not have corresponding item in
+`riak-cs.conf`. If old behaviors are preferred, they must be in
+`riak_cs` section of `advanced.config`.
 
 ## Stanchion
 
@@ -358,8 +352,3 @@ Commented out by default and consequently `undefined` so as to disable SSL.
 ## lager
 
 Mostly same mapping with Riak or even should be same as copy-and-pasted from Riak.
-
-### vm.args
-
-Same as Riak. See default [erlang_vm.schema](https://github.com/basho/cuttlefish/blob/develop/priv/erlang_vm.schema)
-for conversion.
