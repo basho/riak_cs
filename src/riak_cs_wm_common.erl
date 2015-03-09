@@ -407,8 +407,11 @@ authenticate({ok, {User, UserObj}}, RD, Ctx=#context{auth_module=AuthMod, submod
     riak_cs_dtrace:dt_wm_entry({?MODULE, Mod}, <<"authenticate">>, [], [atom_to_binary(AuthMod, latin1)]),
     case AuthMod:authenticate(User, AuthData, RD, Ctx) of
         ok ->
-            riak_cs_dtrace:dt_wm_return({?MODULE, Mod}, <<"authenticate">>, [1], [atom_to_binary(AuthMod, latin1)]),
+            riak_cs_dtrace:dt_wm_return({?MODULE, Mod}, <<"authenticate">>, [2], [atom_to_binary(AuthMod, latin1)]),
             {ok, User, UserObj};
+        {error, reqtime_tooskewed} ->
+            riak_cs_dtrace:dt_wm_return({?MODULE, Mod}, <<"authenticate">>, [1], [atom_to_binary(AuthMod, latin1)]),
+            {error, reqtime_tooskewed};
         {error, _Reason} ->
             riak_cs_dtrace:dt_wm_return({?MODULE, Mod}, <<"authenticate">>, [0], [atom_to_binary(AuthMod, latin1)]),
             {error, bad_auth}
@@ -472,9 +475,12 @@ post_authentication({error, bad_auth}, RD, Ctx, _, _) ->
     %% given keyid was found, but signature didn't match
     _ = lager:debug("bad_auth"),
     riak_cs_wm_utils:deny_access(RD, Ctx);
+post_authentication({error, reqtime_tooskewed} = Error, RD,
+                    #context{response_module = ResponseMod} = Ctx, _, _) ->
+    _ = lager:debug("reqtime_tooskewed"),
+    ResponseMod:api_error(Error, RD, Ctx);
 post_authentication({error, {auth_not_supported, AuthType}}, RD,
                     #context{response_module=ResponseMod} = Ctx, _, _) ->
-    %% given keyid was found, but signature didn't match
     _ = lager:debug("auth_not_supported: ~s", [AuthType]),
     ResponseMod:api_error({auth_not_supported, AuthType}, RD, Ctx);
 post_authentication({error, notfound}, RD, Ctx, _, _) ->

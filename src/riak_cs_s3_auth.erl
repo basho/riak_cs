@@ -1,6 +1,6 @@
 %% ---------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2015 Basho Technologies, Inc.  All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -24,13 +24,14 @@
 
 -export([identify/2, authenticate/4]).
 
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+-export([calculate_signature_v2/2]).
+-endif.
+
 -include("riak_cs.hrl").
 -include("s3_api.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
-
--ifdef(TEST).
--include_lib("eunit/include/eunit.hrl").
--endif.
 
 -type v4_attrs() :: [{string(), string()}].
 
@@ -43,7 +44,8 @@
 
 -spec identify(RD::term(), #context{}) ->
                       {string() | undefined,
-                       string() | {v4, v4_attrs()} | undefined}.
+                       string() | {v4, v4_attrs()} | undefined} |
+                      {failed, Reason::atom()}.
 identify(RD,_Ctx) ->
     case wrq:get_req_header("authorization", RD) of
         undefined ->
@@ -54,9 +56,25 @@ identify(RD,_Ctx) ->
 
 -spec authenticate(rcs_user(), string() | {v4, v4_attrs()}, RD::term(), #context{}) ->
                           ok | {error, atom()}.
-authenticate(User, {v4, Attributes}, RD, _Ctx) ->
+authenticate(User, Signature, RD, Ctx) ->
+    case wrq:get_req_header("authorization", RD) of
+        undefined ->
+            authenticate_1(User, Signature, RD, Ctx);
+        _ ->
+            Date = riak_cs_wm_utils:extract_date(RD),
+            case riak_cs_wm_utils:check_timeskew(Date) of
+                true ->
+                    authenticate_1(User, Signature, RD, Ctx);
+                false ->
+                    {error, reqtime_tooskewed}
+            end
+    end.
+
+-spec authenticate_1(rcs_user(), string() | {v4, v4_attrs()}, RD::term(), #context{}) ->
+                          ok | {error, atom()}.
+authenticate_1(User, {v4, Attributes}, RD, _Ctx) ->
     authenticate_v4(User, Attributes, RD);
-authenticate(User, Signature, RD, _Ctx) ->
+authenticate_1(User, Signature, RD, _Ctx) ->
     CalculatedSignature = calculate_signature_v2(User?RCS_USER.key_secret, RD),
     case check_auth(Signature, CalculatedSignature) of
         true ->
@@ -133,38 +151,32 @@ parse_auth_v4_header_value([$, | Rest], Acc) ->
 parse_auth_v4_header_value([C | Rest], Acc) ->
     parse_auth_v4_header_value(Rest, [C | Acc]).
 
+-spec calculate_signature_v2(string(), #wm_reqdata{}) -> string().
 calculate_signature_v2(KeyData, RD) ->
     Headers = riak_cs_wm_utils:normalize_headers(RD),
     AmazonHeaders = riak_cs_wm_utils:extract_amazon_headers(Headers),
     OriginalResource = riak_cs_s3_rewrite:original_resource(RD),
     Resource = case OriginalResource of
-        undefined -> []; %% TODO: get noisy here?
-        {Path,QS} -> [Path, canonicalize_qs(v2, QS)]
-    end,
-    Expires = wrq:get_qs_value("Expires", RD),
-    case Expires of
-        undefined ->
-            case proplists:is_defined("x-amz-date", Headers) of
-                true ->
-                    Date = "\n";
-                false ->
-                    Date = [wrq:get_req_header("date", RD), "\n"]
-            end;
-        _ ->
-            Date = Expires ++ "\n"
-    end,
-    case wrq:get_req_header("content-md5", RD) of
-        undefined ->
-            CMD5 = [];
-        CMD5 ->
-            ok
-    end,
-    case wrq:get_req_header("content-type", RD) of
-        undefined ->
-            ContentType = [];
-        ContentType ->
-            ok
-    end,
+                   undefined -> []; %% TODO: get noisy here?
+                   {Path,QS} -> [Path, canonicalize_qs(v2, QS)]
+               end,
+    Date = case wrq:get_qs_value("Expires", RD) of
+               undefined ->
+                   case proplists:is_defined("x-amz-date", Headers) of
+                       true ->  "\n";
+                       false -> [wrq:get_req_header("date", RD), "\n"]
+                   end;
+               Expires ->
+                   Expires ++ "\n"
+           end,
+    CMD5 = case wrq:get_req_header("content-md5", RD) of
+               undefined -> [];
+               CMD5_0 ->    CMD5_0
+           end,
+    ContentType = case wrq:get_req_header("content-type", RD) of
+                      undefined -> [];
+                      ContentType0 -> ContentType0
+                  end,
     STS = [atom_to_list(wrq:method(RD)), "\n",
            CMD5,
            "\n",
@@ -366,9 +378,11 @@ auth_test_() ->
       }]}.
 
 setup() ->
+    application:set_env(riak_cs, verify_client_clock_skew, false),
     application:set_env(riak_cs, cs_root_host, ?ROOT_HOST).
 
 teardown(_) ->
+    application:unset_env(riak_cs, verify_client_clock_skew),
     application:unset_env(riak_cs, cs_root_host).
 
 test_fun(Desc, ExpectedSignature, CalculatedSignature) ->
