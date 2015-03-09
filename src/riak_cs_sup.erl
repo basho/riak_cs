@@ -34,8 +34,7 @@
 
 -define(OPTIONS, [connection_pools,
                   {listener, {"0.0.0.0", 80}},
-                  admin_ip,
-                  admin_port,
+                  admin_listener,
                   ssl,
                   admin_ssl,
                   {rewrite_module, ?S3_API_MOD}]).
@@ -125,7 +124,7 @@ handle_get_env_result(Option, undefined, Default) ->
 -spec web_specs(proplist()) -> [supervisor:child_spec()].
 web_specs(Options) ->
     WebConfigs =
-        case single_web_interface(proplists:get_value(admin_ip, Options)) of
+        case single_web_interface(proplists:get_value(admin_listener, Options)) of
             true ->
                 [{object_web, add_admin_dispatch_table(object_web_config(Options))}];
             false ->
@@ -200,11 +199,12 @@ object_web_config(Options) ->
 
 -spec admin_web_config(proplist()) -> proplist().
 admin_web_config(Options) ->
+    {IP, Port} = proplists:get_value(admin_listener,
+                                     Options, {"127.0.0.1", 8000}),
     [{dispatch, riak_cs_web:admin_api_dispatch_table()},
      {name, admin_web},
      {dispatch_group, admin_web},
-     {ip, proplists:get_value(admin_ip, Options, "127.0.0.1")},
-     {port, proplists:get_value(admin_port, Options, 8000)},
+     {ip, IP}, {port, Port},
      {nodelay, true},
      {error_handler, riak_cs_wm_error_handler}] ++
         maybe_add_ssl_opts(proplists:get_value(admin_ssl, Options)).
