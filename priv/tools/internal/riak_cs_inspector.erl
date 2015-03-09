@@ -210,7 +210,7 @@ connect(Opts) ->
     IP = proplists:get_value(host, Opts),
     Port = case proplists:get_value(dev, Opts) of
                DevNum when DevNum > 0 ->
-                   10008 + 10*DevNum;
+                   10007 + 10*DevNum;
                _ ->
                    proplists:get_value(port, Opts)
     end,
@@ -223,7 +223,7 @@ e(Line) ->
 -spec list_buckets(pid()) -> any().
 list_buckets(RiakcPid) ->
     %% TODO(shino): Can include all names of [a-z][0-9a-zA-Z-]{2..4} ?
-    KnownNames = [{crypto:md5(list_to_binary(B)), B}
+    KnownNames = [{riak_cs_utils:md5(list_to_binary(B)), B}
                   || B <- ?KNOWN_BUCKETS],
     {ok, RiakBuckets} = riakc_pb_socket:list_buckets(RiakcPid),
     io:format("All buckets:~n"),
