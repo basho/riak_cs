@@ -476,7 +476,7 @@ post_authentication({error, bad_auth}, RD, Ctx, _, _) ->
     _ = lager:debug("bad_auth"),
     riak_cs_wm_utils:deny_access(RD, Ctx);
 post_authentication({error, reqtime_tooskewed} = Error, RD,
-                    #context{response_module = ResponseMod} = Ctx, _, false) ->
+                    #context{response_module = ResponseMod} = Ctx, _, _) ->
     _ = lager:debug("reqtime_tooskewed"),
     ResponseMod:api_error(Error, RD, Ctx);
 post_authentication({error, {auth_not_supported, AuthType}}, RD,
