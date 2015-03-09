@@ -69,7 +69,7 @@ Stanchion nodes at once where both are referred from CS nodes.
 At 2.0, Riak has introduced a new configuration style. But it also
 supports old style called `app.config` and `vm.args`. So does Riak
 CS 2.0. But Basho would recommend moving on to unified configuration
-file called `riak.conf`, `riak_cs.config` and `stanchion.conf`.
+file called `riak.conf`, `riak-cs.conf` and `stanchion.conf`.
 
 ### Riak 1.4 to 2.0
 
@@ -229,7 +229,7 @@ only translating items 1:1.
 Value following with `=` is its default value.
 
 The file name has changed from `app.config` and `vm.args` to only
-`riak_cs.conf`, whose path haven't changed.
+`riak-cs.conf`, whose path haven't changed.
 
 ### Riak CS
 
@@ -317,7 +317,7 @@ They will be defined in to `log.access.dir` and the output directory will
 just replaced. **TODO** we have to make kill switch for webmachine access logs.
 
 
-### Items not supported in `riak_cs.conf` and should be written in `advanced.config`
+### Items not supported in `riak-cs.conf` and should be written in `advanced.config`
 
 ## Stanchion
 
