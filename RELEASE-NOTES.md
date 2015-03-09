@@ -120,6 +120,21 @@ cs_version = 20000
 style backend configuration using `riak_cs_kv_multi_backend` also can
 be written in `advanced.config`.
 
+#### Notable changes in `vm.args`
+
+Although
+[Upgrading Your Configuration System](http://docs.basho.com/riak/2.0.5/upgrade-v20/#Upgrading-Your-Configuration-System)
+describes general topics on upgrading from 1.4 Riak series to 2.0
+Riak, here are several major configuration items which are essential
+for Riak CS. `erlang.distribution_buffer_size` is commented out by
+default.
+
+| Riak 1.4                        | Riak 2.0                              |
+|:--------------------------------|:--------------------------------------|
+|`+zdbbl`                         |`erlang.distribution_buffer_size = 1MB`|
+|`-name riak@127.0.0.1`           |`nodename = riak@127.0.0.1`            |
+|`-setcookie riak`                |`distributed_cookie = riak`            |
+
 #### Storage calculation
 
 If
