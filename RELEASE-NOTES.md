@@ -52,9 +52,9 @@ General Instructions are to repeat this overview on every node:
 1. Stop Riak CS process
 2. Stop Riak process
 3. Backup all configuration files
-4. Upgrade Riak CS software
-5. Upgrade Riak software
-6. Update Riak configuration
+4. Uninstall old Riak CS and Riak package
+5. Install new Riak CS and Riak package
+6. Migrate Riak configuration
 7. Migrate Riak CS configuration
 8. Start Riak
 9. Start Riak CS
@@ -103,14 +103,20 @@ Note: this is defined in riak_kv.schema
 
 #### Backend configuration
 
-New configuration format in Riak will be just
+For Riak 2.0.5 or older, Old style backend configuration same as 1.5
+should be written in `riak_kv` section of `advanced.config`. See
+[Setting up the Proper Riak Backend](http://docs.basho.com/riakcs/1.5.4/cookbooks/configuration/Configuring-Riak/#Setting-up-the-Proper-Riak-Backend)
+for details.
+
+For later release than Riak 2.0.5, new configuration in Riak will be
+just
 
 ```
 storage_backend = prefix_multi
 cs_version = 20000
 ```
 
-`cs_version` could not removed when Riak is running under Riak. Old
+`cs_version` could not be removed when Riak is running under Riak. Old
 style backend configuration using `riak_cs_kv_multi_backend` also can
 be written in `advanced.config`.
 
@@ -185,7 +191,7 @@ Riak CS nodes not corriding in a same box with live Riak node can be
 upgraded at any time while corresponding remote Riak is alive.
 Instructions follow:
 
-1. Stop Riak CS node
+1. Stop Riak CS process
 2. Backup configuration files
 3. Uninstall Riak CS package
 4. Install Riak CS 2.0 package
@@ -240,54 +246,48 @@ value but an example is added.
 
 `riak_cs` section in app.config
 
-|      1.5                           |        2.0                            |
-|:-----------------------------------|:--------------------------------------|
-|`{cs_ip, "127.0.0.1"}`              |`listener = 127.0.0.1:8080`            |
-|`{cs_port, 8080}`                   |                                       |
-|`{riak_ip, "127.0.0.1"}`            |`riak_host = 127.0.0.1:8087`           |
-|`{riak_pb_port, 8087}`              |                                       |
-|`{stanchion_ip, "127.0.0.1"}`       |`stanchion_host = 127.0.0.=:8085`      |
-|`{stanchion_port, 8085 }`           |                                       |
-|`{stanchion_ssl, false }`           |`stanchion_ssl = off`                  |
-|`{anonymous_user_creation, false}`  |`anonymous_user_creation = off`        |
-|`{admin_key, "admin-key"}`          |`admin.key = admin-key`                |
-|`{admin_secret, "admin-secret"}`    |`admin.secret = admin-secret`          |
-|`{cs_root_host, "s3.amazonaws.com"}`|`root_host = s3.amazonaws.com`         |
-|`{connection_pools,[`               |                                       |
-|` {request_pool, {128, 0} },`       |`pool.request.size = 128`              |
-|                                    |`pool.request.overflow = 0`            |
-|` {bucket_list_pool, {5, 0} }`      |`pool.list.size = 5`                   |
-|                                    |`pool.list.overflow = 0`               |
-|`{trust_x_forwarded_for, false}`    |`trust_x_forwarded_for = off` *          |
-|`{leeway_seconds, 86400}`           |`gc.leeway_seconds = 24h`              |
-|`{gc_interval, 900}`                |`gc.interval = 15m`                    |
-|`{gc_retry_interval, 21600}`        |`gc.retry_interval = 6h`               |
-|`{access_log_flush_factor, 1}`      |`access.stats.log.flush_factor = 1`    |
-|`{access_log_flush_size, 1000000}`  |`access.stats.log.flush_size = 1000000`|
-|`{access_archive_period, 3600}`     |`access.stats.archive_period = 1h`     |
-|`{access_archiver_max_backlog, 2}`  |`access.stats.archiver.max_backlog = 2`|
-|no explicit default                 |`access.stats.archiver.max_workers = 2`|
-|`{storage_schedule, []}`            |`storage.stats.schedule.$time = "06:00`|
-|`{storage_archive_period, 86400}`   |`storage.stats.archive_period = 1d`    |
-|`{usage_request_limit, 744}`        |`storage.stats.request_limit = 31d`    |
-|`{cs_version, 10300 }`              |`cs_version = 10300`                   |
-|`{dtrace_support, false}`           |`dtrace_support = off`                 |
+|      1.5                           |        2.0                             |
+|:-----------------------------------|:---------------------------------------|
+|`{cs_ip, "127.0.0.1"}`              |`listener = 127.0.0.1:8080`             |
+|`{cs_port, 8080}`                   |                                        |
+|`{riak_ip, "127.0.0.1"}`            |`riak_host = 127.0.0.1:8087`            |
+|`{riak_pb_port, 8087}`              |                                        |
+|`{stanchion_ip, "127.0.0.1"}`       |`stanchion_host = 127.0.0.=:8085`       |
+|`{stanchion_port, 8085 }`           |                                        |
+|`{stanchion_ssl, false }`           |`stanchion_ssl = off`                   |
+|`{anonymous_user_creation, false}`  |`anonymous_user_creation = off`         |
+|`{admin_key, "admin-key"}`          |`admin.key = admin-key`                 |
+|`{admin_secret, "admin-secret"}`    |`admin.secret = admin-secret`           |
+|`{cs_root_host, "s3.amazonaws.com"}`|`root_host = s3.amazonaws.com`          |
+|`{connection_pools,[`               |                                        |
+|` {request_pool, {128, 0} },`       |`pool.request.size = 128`               |
+|                                    |`pool.request.overflow = 0`             |
+|` {bucket_list_pool, {5, 0} }`      |`pool.list.size = 5`                    |
+|                                    |`pool.list.overflow = 0`                |
+|`{trust_x_forwarded_for, false}`    |`trust_x_forwarded_for = off`           |
+|`{leeway_seconds, 86400}`           |`gc.leeway_period = 24h`                |
+|`{gc_interval, 900}`                |`gc.interval = 15m`                     |
+|`{gc_retry_interval, 21600}`        |`gc.retry_interval = 6h`                |
+|`{access_log_flush_factor, 1}`      |`access.stats.log.flush_factor = 1`     |
+|`{access_log_flush_size, 1000000}`  |`access.stats.log.flush_size = 1000000` |
+|`{access_archive_period, 3600}`     |`access.stats.archive_period = 1h`      |
+|`{access_archiver_max_backlog, 2}`  |`access.stats.archiver.max_backlog = 2` |
+|no explicit default                 |`access.stats.archiver.max_workers = 2` |
+|`{storage_schedule, []}`            |`storage.stats.schedule.$time = "06:00"`|
+|`{storage_archive_period, 86400}`   |`storage.stats.archive_period = 1d`     |
+|`{usage_request_limit, 744}`        |`riak_cs.usage_request_limit = 31d`     |
+|`{cs_version, 10300 }`              |`cs_version = 10300`                    |
+|`{dtrace_support, false}`           |`dtrace = off`                          |
 
 `webmachine` section in app.config
 
 |      1.5                           |        2.0                            |
 |:-----------------------------------|:--------------------------------------|
 |`{server_name, "Riak CS"}`          |`server_name = Riak CS`                |
+|`{log_handlers, ....}`              |`log.access.dir = /var/log/riak-cs`    |
 
-#### Items hidden out in 2.0 by default
-
-The default value is not changed.
-
-| 1.5                                   | 2.0                        |
-|:--------------------------------------|:---------------------------|
-|`{fold_objects_for_list_keys, true}`   |`fold_objects_for_list_keys`|
-|`{n_val_1_get_requests, true}`         |`n_val_1_get_requests`      |
-|`{gc_paginated_indexes, true},`        |`gc.pagenated_indexes`      |
+To disable access logging, just remove the line beginning with
+`log.access.dir` from `riak-cs.conf`.
 
 #### Items commented out in 2.0 by default
 
@@ -305,19 +305,18 @@ This is for indicating operators how to change these to OOS API.
 |`  {certfile, "./etc/cert.pem"}`       |`ssl.certfile`              |
 |`  {keyfile, "./etc/key.pem"}`         |`ssl.keyfile`               |
 
-#### `webmachine` section
-
-               {log_handlers, [
-                               {webmachine_log_handler, ["./log"]},
-                               {riak_cs_access_log_handler, []}
-                              ]}
-              ]},
-
-They will be defined in to `log.access.dir` and the output directory will
-just replaced. **TODO** we have to make kill switch for webmachine access logs.
-
-
 ### Items not supported in `riak-cs.conf` and should be written in `advanced.config`
+
+These items does not have corresponding item in `riak-cs.conf`. If old
+behaviors are preferred, they must be in `riak_cs` section of
+`advanced.config`.
+
+
+|:--------------------------------------|
+|`{fold_objects_for_list_keys, true}`   |
+|`{n_val_1_get_requests, true}`         |
+|`{gc_paginated_indexes, true},`        |
+|:--------------------------------------|
 
 ## Stanchion
 
@@ -340,9 +339,6 @@ Commented out by default and consequently `undefined` so as to disable SSL.
 |`  {certfile, "./etc/cert.pem"}`    |`ssl.certfile`                         |
 |`  {keyfile, "./etc/key.pem"}`      |`ssl.keyfile`                          |
 
-## Miscellaneous
-
-Common both in Stanchion and CS
 
 ## lager
 
