@@ -51,7 +51,6 @@ identify(RD,_Ctx) ->
         undefined ->
             identify_by_query_string(RD);
         AuthHeader ->
-            %% Query string auth does not require date/x-amz-date header
             parse_auth_header(AuthHeader)
     end.
 
