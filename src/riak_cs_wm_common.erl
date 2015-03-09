@@ -481,7 +481,6 @@ post_authentication({error, reqtime_tooskewed} = Error, RD,
     ResponseMod:api_error(Error, RD, Ctx);
 post_authentication({error, {auth_not_supported, AuthType}}, RD,
                     #context{response_module=ResponseMod} = Ctx, _, _) ->
-    %% given keyid was found, but signature didn't match
     _ = lager:debug("auth_not_supported: ~s", [AuthType]),
     ResponseMod:api_error({auth_not_supported, AuthType}, RD, Ctx);
 post_authentication({error, notfound}, RD, Ctx, _, _) ->
