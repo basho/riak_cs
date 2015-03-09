@@ -25,9 +25,8 @@ CS's release notes.
 
 * [Riak 1.4 series release notes](https://github.com/basho/riak/blob/1.4/RELEASE-NOTES.md)
 * [Riak 2.0 series release notes](https://github.com/basho/riak/blob/2.0/RELEASE-NOTES.md)
-* [Riak CS 1.4 series release notes](https://github.com/basho/riak_cs/blob/develop/RELEASE-NOTES.md#riak-cs-145-release-notes)
-* [Riak CS 1.5 series release notes](https://github.com/basho/riak_cs/blob/develop/RELEASE-NOTES.md#riak-cs-154-release-notes)
-* Riak CS 2.0 release notes here
+* [Riak CS 1.4 series release notes](https://github.com/basho/riak_cs/blob/release/1.5/RELEASE-NOTES.md#riak-cs-145-release-notes)
+* [Riak CS 1.5 series release notes](https://github.com/basho/riak_cs/blob/release/1.5/RELEASE-NOTES.md#riak-cs-154-release-notes)
 
 ## Upgrading From Riak CS < 1.4
 
