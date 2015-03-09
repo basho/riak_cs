@@ -268,8 +268,8 @@ value but an example is added.
 |`{leeway_seconds, 86400}`           |`gc.leeway_period = 24h`                |
 |`{gc_interval, 900}`                |`gc.interval = 15m`                     |
 |`{gc_retry_interval, 21600}`        |`gc.retry_interval = 6h`                |
-|`{access_log_flush_factor, 1}`      |`access.stats.log.flush_factor = 1`     |
-|`{access_log_flush_size, 1000000}`  |`access.stats.log.flush_size = 1000000` |
+|`{access_log_flush_factor, 1}`      |`access.stats.flush_factor = 1`         |
+|`{access_log_flush_size, 1000000}`  |`access.stats.flush_size = 1000000`     |
 |`{access_archive_period, 3600}`     |`access.stats.archive_period = 1h`      |
 |`{access_archiver_max_backlog, 2}`  |`access.stats.archiver.max_backlog = 2` |
 |no explicit default                 |`access.stats.archiver.max_workers = 2` |
