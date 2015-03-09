@@ -20,6 +20,18 @@
 
 -module(riak_cs_yessir_riak_client).
 
+%% Implemention status
+%%
+%% - [x] list buckets (only one bucket)
+%% - [x] list object (only one entry)
+%% - [x] get object (10-byte, fixed content)
+%% - [x] put object
+%% - [ ] delete object
+%% - [x] GC list keys (empty key list)
+%% - [ ] GC (with some keys)
+%% - [x] access/storage stats PUT
+%% - [ ] access/storage GET
+
 -behaviour(gen_server).
 
 %% gen_server callbacks
@@ -62,14 +74,10 @@ handle_call({get_user, UserKeyBin}, _From, State) ->
     {User, Acl} = new_user(UserKeyBin),
     Obj = user_to_robj(User),
     {reply, {ok, {Obj, true}}, State#state{user=User, acl=Acl}};
-%% handle_call({save_user, User, OldUserObj}, _From, State) ->
-%%     case ensure_master_pbc(State) of
-%%         {ok, #state{master_pbc=MasterPbc} = NewState} ->
-%%             Res = save_user_with_pbc(MasterPbc, User, OldUserObj),
-%%             {reply, Res, NewState};
-%%         {error, Reason} ->
-%%             {reply, {error, Reason}, State}
-%%     end;
+handle_call({save_user, _User, _OldUserObj}, _From, State) ->
+    %% TODO: create user kicks stanchion and therefore riak, but
+    %% no update the key here.
+    {reply, ok, State};
 handle_call({req, #rpbgetreq{} = RpbGetReq, _Timeout},
             _From, State) ->
     {Res, NewState} = process_get_req(RpbGetReq, State),
@@ -134,30 +142,36 @@ code_change(_OldVsn, State, _Extra) ->
 
 %%% Internal functions
 
-process_get_req(#rpbgetreq{bucket=Bucket, key=Key} = _RpbGetReq,
+process_get_req(#rpbgetreq{bucket=RiakBucket, key=Key} = _RpbGetReq,
                 #state{bucket_name=BucketName, acl=Acl} = State) ->
-    case which_bucket(Bucket) of
+    case which_bucket(RiakBucket) of
         objects ->
-            ContentLength = 10,
-            M = new_manifest(BucketName, Key, ContentLength, Acl),
-            Dict = riak_cs_manifest_utils:new_dict(M?MANIFEST.uuid, M),
-            ValueBin = riak_cs_utils:encode_term(Dict),
-            Obj = riakc_obj:new_obj(Bucket, Key, <<"vclock">>,
-                                    [{dict:new(), ValueBin}]),
-            {{ok, Obj}, State#state{manifest = M}};
+            {M, RObj} = new_manifest_ro(BucketName, RiakBucket, Key, Acl),
+            {{ok, RObj}, State#state{manifest = M}};
         blocks ->
             UUIDSize = byte_size(Key) - 32 div 8,
             <<_UUID:UUIDSize/binary, _BlockNumber:32>> = Key,
-            Obj = riakc_obj:new_obj(Bucket, Key, <<"vclock">>,
+            Obj = riakc_obj:new_obj(RiakBucket, Key, <<"vclock">>,
                                     [{dict:new(), binary:copy(<<"a">>, 10)}]),
             {{ok, Obj}, State};
         Other ->
             lager:warning("Unknown #rpbgetreq{} for ~p, bucket=~p, key=~p~n",
-                          [Other, Bucket, Key]),
-            error({not_implemented, {rpbgetreq, Other, Bucket, Key}})
+                          [Other, RiakBucket, Key]),
+            error({not_implemented, {rpbgetreq, Other, RiakBucket, Key}})
     end.
 
-process_put_req(#rpbputreq{} = _RpbPutReq, State) ->
+process_put_req(#rpbputreq{bucket=RiakBucket, key=Key, return_body=1} = _RpbPutReq,
+                #state{bucket_name=BucketName, acl=Acl} = State) ->
+    case which_bucket(RiakBucket) of
+        objects ->
+            {M, RObj} = new_manifest_ro(BucketName, RiakBucket, Key, Acl),
+            {{ok, RObj}, State#state{manifest = M}};
+        Other ->
+            lager:warning("Unknown #rpbgetreq{} with return_body for ~p," " bucket=~p, key=~p~n",
+                          [Other, RiakBucket, Key]),
+            error({not_implemented, {rpbgetreq_with_return_body, Other, RiakBucket, Key}})
+    end;
+process_put_req(_RpbPutReq, State) ->
     {ok, State}.
 
 new_user(UserKeyBin) ->
@@ -182,6 +196,15 @@ user_to_robj(#rcs_user_v2{key_id=Key} = User) ->
 
 default_acl(DisplayName, CannicalId, KeyId) ->
     riak_cs_acl_utils:default_acl(DisplayName, CannicalId, KeyId).
+
+new_manifest_ro(BucketName, RiakBucket, Key, Acl) ->
+    ContentLength = 10,
+    M = new_manifest(BucketName, Key, ContentLength, Acl),
+    Dict = riak_cs_manifest_utils:new_dict(M?MANIFEST.uuid, M),
+    ValueBin = riak_cs_utils:encode_term(Dict),
+    RObj = riakc_obj:new_obj(RiakBucket, Key, <<"vclock">>,
+                            [{dict:new(), ValueBin}]),
+    {M, RObj}.
 
 new_manifest(BucketName, Key, ContentLength, Acl) ->
     %% TODO: iteration is needed for large content length
