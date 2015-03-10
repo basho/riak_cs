@@ -194,7 +194,7 @@
 %% @doc How often to flush the access log; integer factor of
 %% access_archive_period (1 == once per period; 2 == twice per period,
 %% etc.)
-{mapping, "stats.access.log.flush_factor", "riak_cs.access_log_flush_factor", [
+{mapping, "stats.access.flush_factor", "riak_cs.access_log_flush_factor", [
   {default, 1},
   {datatype, integer}
 ]}.
@@ -202,7 +202,7 @@
 %% @doc Additional access log flush trigger - flush after
 %% this many accesses are recorded, even if the flush
 %% interval has not expired; integer number of accesses
-{mapping, "stats.access.log.flush_size", "riak_cs.access_log_flush_size", [
+{mapping, "stats.access.flush_size", "riak_cs.access_log_flush_size", [
   {default, 1000000},
   {datatype, integer}
 ]}.
