@@ -72,11 +72,9 @@ ssl_config_test() ->
 admin_ip_config_test() ->
     SchemaFiles = ["../rel/files/riak_cs.schema"],
     {ok, Context} = file:consult("../rel/vars.config"),
-    Conf = [{["admin", "ip"],   "0.0.0.0"},
-            {["admin", "port"], 9999}],
+    Conf = [{["admin", "listener"],   "0.0.0.0:9999"}],
     Config = cuttlefish_unit:generate_templated_config(SchemaFiles, Conf, Context),
-    cuttlefish_unit:assert_config(Config, "riak_cs.admin_ip", "0.0.0.0"),
-    cuttlefish_unit:assert_config(Config, "riak_cs.admin_port", 9999),
+    cuttlefish_unit:assert_config(Config, "riak_cs.admin_listener", {"0.0.0.0", 9999}),
     ok.
 
 storage_schedule_config_test() ->
