@@ -35,13 +35,11 @@ CS 2.0 case, only upgrades from 1.4 series and 1.5 series are
 supported. Basically this pattern is out of the scope of this
 document.
 
-To upgrade to 2.0 from these versions, operators need another extra
-step to upgrade the whole system to Riak CS 1.4.5 or Riak
-CS 1.5.4. Upgrading to 1.5.4 would rather be recommented than
+To upgrade to 2.0 from these versions prior to 1.4, operators need
+another extra step to upgrade the whole system to Riak CS 1.4.5 or
+Riak CS 1.5.4. Upgrading to 1.5.4 would rather be recommented than
 to 1.4.5. Thus underlying Riak would also better upgraded to 1.4
 series - hopefully the latest 1.4.12.
-
-Notes TBD: any caveats on upgrading to CS 1.4/1.5? or references.
 
 # General Instructions
 
