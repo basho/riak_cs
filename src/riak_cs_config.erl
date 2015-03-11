@@ -409,8 +409,7 @@ region() ->
 %% when scanning the whole bucket.
 -spec use_2i_for_storage_calc() -> boolean().
 use_2i_for_storage_calc() ->
-    riak_cs_list_objects_utils:fold_objects_for_list_keys()
-        andalso get_env(riak_cs, use_2i_for_storage_calc, false).
+    get_env(riak_cs, use_2i_for_storage_calc, false).
 
 %% ===================================================================
 %% ALL Timeouts hitting Riak
