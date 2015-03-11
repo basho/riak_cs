@@ -101,7 +101,8 @@ sum_bucket(BucketName) ->
         {ok, ManifestPbc} = riak_cs_riak_client:manifest_pbc(RcPid),
         ManifestBucket = riak_cs_utils:to_bucket_name(objects, BucketName),
         Input = case riak_cs_config:use_2i_for_storage_calc() of
-                    true -> {index, ManifestBucket, <<"$bucket">>, <<0>>, <<255>>};
+                    true -> {index, ManifestBucket, <<"$bucket">>,
+                             <<0>>, riak_cs_utils:big_end_key()};
                     false -> ManifestBucket
                 end,
         Timeout = riak_cs_config:storage_calc_timeout(),
