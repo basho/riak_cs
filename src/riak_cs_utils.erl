@@ -63,6 +63,8 @@
          pid_to_binary/1,
          from_bucket_name/1,
          to_bucket_name/2,
+         big_end_key/1,
+         big_end_key/0,
          stanchion_data/0
         ]).
 
@@ -515,6 +517,15 @@ update_obj_value(Obj, Value) when is_binary(Value) ->
 -spec key_exists(riak_client(), binary(), binary()) -> boolean().
 key_exists(RcPid, Bucket, Key) ->
     key_exists_handle_get_manifests(riak_cs_manifest:get_manifests(RcPid, Bucket, Key)).
+
+-spec big_end_key(non_neg_integer()) -> binary().
+big_end_key(NumBytes) ->
+    MaxByte = <<255:8/integer>>,
+    iolist_to_binary([MaxByte || _ <- lists:seq(1, NumBytes)]).
+
+-spec big_end_key() -> binary().
+big_end_key() ->
+    big_end_key(128).
 
 %% @doc Return `stanchion' configuration data.
 -spec stanchion_data() -> {string(), pos_integer(), boolean()}.
