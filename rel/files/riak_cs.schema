@@ -204,7 +204,7 @@
 ]}.
 
 %% @doc How large each access archive object is. Should be a
-%% multiple of access_log_flush_interval.
+%% multiple of stats.access.flush_factor.
 {mapping, "stats.access.archive_period", "riak_cs.access_archive_period", [
   {default, "1h"},
   {datatype, {duration, s}}

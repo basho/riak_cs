@@ -63,7 +63,7 @@ archive_period() ->
 
 %% @doc Retrieve the number of seconds that should elapse between
 %% flushes of access stats.  This setting is controlled by the
-%% `access_log_flush_interval' environment variable of the `riak_cs'
+%% `access_log_flush_factor' environment variable of the `riak_cs'
 %% application.
 -spec log_flush_interval() -> {ok, integer()}|{error, term()}.
 log_flush_interval() ->
@@ -75,7 +75,7 @@ log_flush_interval() ->
                         0 ->
                             {ok, AP div AF};
                         _ ->
-                            {error, "riak_cs:access_log_flush_interval"
+                            {error, "riak_cs:access_log_flush_factor"
                              " does not evenly divide"
                              " riak_cs:access_archive_period"}
                     end;
@@ -83,7 +83,7 @@ log_flush_interval() ->
                     APError
             end;
         _ ->
-            {error, "riak_cs:access_log_flush_interval was not an integer"}
+            {error, "riak_cs:access_log_flush_factor was not an integer"}
     end.
 
 %% @doc Retrieve the maximum number of records that should be added to

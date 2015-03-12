@@ -48,11 +48,11 @@
 %%
 %% The log is flushed to Riak at an interval specified by the
 %% `riak_cs' application environment variable
-%% `access_log_flush_interval'.  The value is the maximum number of
-%% seconds between flushes.  This number should be less than or equal
-%% to the `access_archive_period' setting, and should also evenly
-%% divide that setting, or results of later queries may miss
-%% information.
+%% `access_log_flush_factor'. How often to flush the access log;
+%% integer factor of `access_archive_period'
+%% (1 == once per period; 2 == twice per period, etc.)
+%% This number should evenly divide the `access_archive_period'
+%% setting, or results of later queries may miss information.
 
 -module(riak_cs_access_log_handler).
 
