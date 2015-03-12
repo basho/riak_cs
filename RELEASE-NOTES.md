@@ -1,4 +1,4 @@
-# Riak CS 2.0.0 Release Notes
+# Riak CS 2.0.0-pre1 Release Notes
 
 - based upon Riak 2.0
 - configuration format moved line-by-line style
