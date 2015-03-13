@@ -257,7 +257,7 @@ value but an example is added.
 |`{cs_port, 8080}`                   |                                        |
 |`{riak_ip, "127.0.0.1"}`            |`riak_host = 127.0.0.1:8087`            |
 |`{riak_pb_port, 8087}`              |                                        |
-|`{stanchion_ip, "127.0.0.1"}`       |`stanchion_host = 127.0.0.=:8085`       |
+|`{stanchion_ip, "127.0.0.1"}`       |`stanchion_host = 127.0.0.1:8085`       |
 |`{stanchion_port, 8085 }`           |                                        |
 |`{stanchion_ssl, false }`           |`stanchion_ssl = off`                   |
 |`{anonymous_user_creation, false}`  |`anonymous_user_creation = off`         |
@@ -273,13 +273,13 @@ value but an example is added.
 |`{leeway_seconds, 86400}`           |`gc.leeway_period = 24h`                |
 |`{gc_interval, 900}`                |`gc.interval = 15m`                     |
 |`{gc_retry_interval, 21600}`        |`gc.retry_interval = 6h`                |
-|`{access_log_flush_factor, 1}`      |`access.stats.flush_factor = 1`         |
-|`{access_log_flush_size, 1000000}`  |`access.stats.flush_size = 1000000`     |
-|`{access_archive_period, 3600}`     |`access.stats.archive_period = 1h`      |
-|`{access_archiver_max_backlog, 2}`  |`access.stats.archiver.max_backlog = 2` |
-|no explicit default                 |`access.stats.archiver.max_workers = 2` |
-|`{storage_schedule, []}`            |`storage.stats.schedule.$time = "06:00"`|
-|`{storage_archive_period, 86400}`   |`storage.stats.archive_period = 1d`     |
+|`{access_log_flush_factor, 1}`      |`stats.access.flush_factor = 1`         |
+|`{access_log_flush_size, 1000000}`  |`stats.access.flush_size = 1000000`     |
+|`{access_archive_period, 3600}`     |`stats.access.archive_period = 1h`      |
+|`{access_archiver_max_backlog, 2}`  |`stats.access.archiver.max_backlog = 2` |
+|(no explicit default)               |`stats.access.archiver.max_workers = 2` |
+|`{storage_schedule, []}`            |`stats.storage.schedule.$time = "06:00"`|
+|`{storage_archive_period, 86400}`   |`stats.storage.archive_period = 1d`     |
 |`{usage_request_limit, 744}`        |`riak_cs.usage_request_limit = 31d`     |
 |`{cs_version, 10300 }`              |`cs_version = 10300`                    |
 |`{dtrace_support, false}`           |`dtrace = off`                          |
