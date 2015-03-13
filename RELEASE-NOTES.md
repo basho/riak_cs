@@ -147,14 +147,6 @@ Including CS path: add following sentence to `advanced.config`:
 ]}.
 ```
 
-If multibag is to be used, add multibag ebin path:
-
-```erlang
-{riak_kv, [
-  {add_paths, ["/usr/lib/riak-cs/lib/riak_cs-2.0.0/ebin"]}
-]}.
-```
-
 ### Riak CS 1.5 to 2.0, including Stanchion
 
 Consult
