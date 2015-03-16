@@ -44,7 +44,7 @@
 -spec start(start_type(), start_args()) -> {ok, pid()} |
                                            {error, term()}.
 start(_Type, _StartArgs) ->
-    riak_cs_config:notices(),
+    riak_cs_config:warnings(),
     sanity_check(is_config_valid(),
                  check_bucket_props()).
 
