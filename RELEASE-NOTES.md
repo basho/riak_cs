@@ -8,9 +8,14 @@
 - Changed default value of `gc_max_workers` from 5 to 2 with its name
   changed to `gc.max_workers` with migration to config format change.
 
-## Notes on upgrading
+## Deprecation Notice
 
-- Changed webmachine's access log handler module name.
+- Multi-Datacenter Replication on top of v2 replication support has
+  been deprecated.
+- Old list objects which required `fold_objects_for_list_keys` as
+  `false` is deprecated and *will be removed* at next major version.
+- Non-paginated GC in case where `gc_paginated_indexes` is `false` is
+  deprecated and *will be removed* at next major version.
 
 # General Notes on Upgrading to Riak CS 2.0
 
@@ -293,6 +298,20 @@ value but an example is added.
 
 To disable access logging, just remove the line beginning with
 `log.access.dir` from `riak-cs.conf`.
+
+If `log_handlers` are defined in `app.config` or `advanced.config`,
+Log handler's name should be changed due to WebMachine change as
+follows:
+
+```erlang
+    {log_handlers, [
+        {webmachine_access_log_handler, ["/var/log/riak-cs"]},
+        {riak_cs_access_log_handler, []}
+        ]},
+```
+
+This does not have to be changed if `log_handlers` is not defined in
+`app.config` or `advanced.config`.
 
 #### Items commented out in 2.0 by default
 
