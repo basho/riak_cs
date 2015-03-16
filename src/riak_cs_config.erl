@@ -21,6 +21,7 @@
 -module(riak_cs_config).
 
 -export([
+         notices/0,
          admin_creds/0,
          anonymous_user_creation/0,
          api/0,
@@ -102,6 +103,24 @@
 -include("oos_api.hrl").
 -include("s3_api.hrl").
 -include("list_objects.hrl").
+
+-define(NOTICE(Bool, Msg),
+        case (Bool) of
+            true -> _ = lager:warning((Msg));
+            _ -> ok
+        end).
+
+-spec notices() -> ok.
+notices() ->
+    ?NOTICE(not riak_cs_list_objects_utils:fold_objects_for_list_keys(),
+            "`fold_objects_for_list_keys` will be deprecated"
+            " at next major version."),
+    ?NOTICE(anonymous_user_creation(),
+            "`anonymous_user_creation` is set as true. Set this as false"
+            " when this CS nodes is populated as public service."),
+    ?NOTICE(not gc_paginated_indexes(),
+            "`gc_paginated_indexes` is set as false"),
+    ok.
 
 %% ===================================================================
 %% General config options

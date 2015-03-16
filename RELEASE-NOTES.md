@@ -8,9 +8,11 @@
 - Changed default value of `gc_max_workers` from 5 to 2 with its name
   changed to `gc.max_workers` with migration to config format change.
 
-## Notes on upgrading
+## Deprecation Notice
 
-- Changed webmachine's access log handler module name.
+- Replication on top of v2 replication has been deprecated.
+- Old list objects which required `fold_objects_for_list_keys` as
+  `false` *will be deprecated* at next version.
 
 # General Notes on Upgrading to Riak CS 2.0
 
