@@ -10,9 +10,13 @@
 
 ## Deprecation Notice
 
-- Replication on top of v2 replication has been deprecated.
+- Multi-Datacenter Replication on top of v2 replication support has
+  been deprecated.
 - Old list objects which required `fold_objects_for_list_keys` as
-  `false` *will be deprecated* at next version.
+  `false` is deprecated and *will be removed* at next major version.
+- Old GC pagination method used in case where `gc_paginated_indexes`
+  is `false` is deprecated and *will be removed* at next major
+  version.
 
 # General Notes on Upgrading to Riak CS 2.0
 

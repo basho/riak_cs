@@ -113,13 +113,14 @@
 -spec notices() -> ok.
 notices() ->
     ?NOTICE(not riak_cs_list_objects_utils:fold_objects_for_list_keys(),
-            "`fold_objects_for_list_keys` will be deprecated"
+            "`fold_objects_for_list_keys` will be removed"
             " at next major version."),
     ?NOTICE(anonymous_user_creation(),
             "`anonymous_user_creation` is set as true. Set this as false"
             " when this CS nodes is populated as public service."),
     ?NOTICE(not gc_paginated_indexes(),
-            "`gc_paginated_indexes` is set as false"),
+            "`gc_paginated_indexes` is set as false. This will be removed"
+            " at next major version."),
     ok.
 
 %% ===================================================================
