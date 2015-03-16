@@ -296,6 +296,20 @@ value but an example is added.
 To disable access logging, just remove the line beginning with
 `log.access.dir` from `riak-cs.conf`.
 
+If `log_handlers` are defined in `app.config` or `advanced.config`,
+Log handler's name should be changed due to WebMachine change as
+follows:
+
+```erlang
+    {log_handlers, [
+        {webmachine_access_log_handler, ["/var/log/riak-cs"]},
+        {riak_cs_access_log_handler, []}
+        ]},
+```
+
+This does not have to be changed if `log_handlers` is not defined in
+`app.config` or `advanced.config`.
+
 #### Items commented out in 2.0 by default
 
 Thus all of them are undefined and disabled, except modules. `rewrite_module` and
