@@ -14,9 +14,8 @@
   been deprecated.
 - Old list objects which required `fold_objects_for_list_keys` as
   `false` is deprecated and *will be removed* at next major version.
-- Old GC pagination method used in case where `gc_paginated_indexes`
-  is `false` is deprecated and *will be removed* at next major
-  version.
+- Non-paginated GC in case where `gc_paginated_indexes` is `false` is
+  deprecated and *will be removed* at next major version.
 
 # General Notes on Upgrading to Riak CS 2.0
 
