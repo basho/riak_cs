@@ -43,7 +43,7 @@ cs_config() ->
        {stanchion_host, {"127.0.0.1", 9095}},
        {cs_version, 010300},
        {enforce_multipart_part_size, false},
-       {max_buckets_per_user, 150},
+       {max_buckets_per_user, 300},
        {auth_v4_enabled, true}
       ]
      }].
