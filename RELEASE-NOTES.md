@@ -123,6 +123,65 @@ cs_version = 20000
 style backend configuration using `riak_cs_kv_multi_backend` also can
 be written in `advanced.config`.
 
+#### Backend memory size configuration
+
+It is worth noting that since LevelDB has changed its configuration
+item on memory size configuration, from `max_open_files` to
+`leveldb.maximum_memory_percent`. If there are any configuration in
+`eleveldb` section or in `multi_backend` part of `riak_kv` section in
+your 1.4 Riak system configuration, they should be changed to
+`leveldb.maximum_memory.percent` in `riak.conf`, or to
+`total_leveldb_mem_percent` in `eleveldb` section.
+
+Also, `multi_backend.be_default.leveldb.maximum_memory.percent` in
+`riak.conf` or `multi_backend` part of `riak_kv` section in
+`advanced.config` can be used to configure LevelDB. Precedence is
+given to these values, rather than "raw" values defined directly in
+`eleveldb` section.
+
+This configuration is very important because the default value of
+memory cap limitation has changed from proportional number of
+`max_open_files` to specifying percentage of system's physical memory
+size. The default values are
+[35%](https://github.com/basho/eleveldb/blob/2.0.2/priv/eleveldb_multi.schema#L11)
+in `multi_backend` or
+[70%](https://github.com/basho/eleveldb/blob/2.0.2/priv/eleveldb.schema#L17)
+depending on configuration., . *Redesigning memory sizing is strongly
+recommended* due to these changes.
+
+Hereby basic idea of redisigning memory sizing is described: estimate
+total number of objects with their size distribution. Total number of
+keys `N(b)` in Bitcask accross the whole cluster will be:
+
+```
+N(b) = N(o, size <= 1MB) + avg(o, size > 1MB)
+```
+
+where `N(o, size <= 1MB)` is number of objects whose size is less than
+1MB, and `avg(o, size > 1MB)` is average size of objects whose size is
+more than 1MB. If average lifetime of objects is comparably smaller
+than leeway period, take objects waiting for garbage collections into
+account as live objects on disk.
+
+Once numbers of keys figured out, estimate the amount of memory used
+by Bitcask keydir with
+[Bitcask Capacity Planning](http://docs.basho.com/riak/2.0.5/ops/building/planning/bitcask/).
+
+Bucket size is always 19B (see `riak_cs_utils:to_bucket_name/2`), Key
+size is always 20B (see `riak_cs_lfs_utils:block_name/3`). Average
+Value Size might be 1MB if large objects are dominant, otherwise it
+should be estimated under specific usecase. Number of writes is 3.
+
+Note that this only takes bitcask into account, so another room of
+memory for LevelDB should be preserved as described above. Moreover,
+to improve IO performance, extra space for kernel disk cache would
+desirable:
+
+```
+Memory for storage = (Memory for backends) + (Memory for kernel cache)
+Memory for backends = (Memory for Bitcask) + (Memory for LevelDB)
+```
+
 #### Notable changes in `vm.args`
 
 Although
