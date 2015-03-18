@@ -56,6 +56,8 @@ proxy_port = $PORT
 ## say \"no\" to disable TLS
 is_secure = no
 
+api_name = us-east-1
+
 [fixtures]
 ## all the buckets created will start with this prefix;
 ## {random} will be filled with random characters to pad
