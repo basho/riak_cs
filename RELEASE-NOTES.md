@@ -152,6 +152,30 @@ Including CS path: add following sentence to `advanced.config`:
 ]}.
 ```
 
+### Notes on upgrading Riak to 2.0
+
+Riak has updated its underlying Bitcask storage data format at 2.0. At
+the first start of Riak after upgrade, it involves implicit data
+format upgrade conversion, which means reading all data and writing
+down to another file. This might lead to disk load - the duration of
+upgrade will depend on the amount of data stored in bitcask and IO
+performance of underlying disk.
+
+The end of data conversion can be observed as info log at Riak logs
+like this:
+
+```
+2015-03-17 07:18:49.754 [info] <0.609.0>@riak_kv_bitcask_backend:callback:446 Finished upgrading to Bitcask 1.7.0 in /mnt/data/bitcask/1096126227998177188652763624537212264741949407232
+2015-03-17 07:23:07.181 [info] <0.610.0>@riak_kv_bitcask_backend:callback:446 Finished upgrading to Bitcask 1.7.0 in /mnt/data/bitcask/1278813932664540053428224228626747642198940975104
+```
+
+while the start time is like this:
+
+```
+2015-03-17 02:43:20.813 [info] <0.609.0>@riak_kv_bitcask_backend:maybe_start_upgrade_if_bitcask_files:720 Starting upgrade to version 1.7.0 in /mnt/data/bitcask/1096126227998177188652763624537212264741949407232
+2015-03-17 02:43:21.344 [info] <0.610.0>@riak_kv_bitcask_backend:maybe_start_upgrade_if_bitcask_files:720 Starting upgrade to version 1.7.0 in /mnt/data/bitcask/1278813932664540053428224228626747642198940975104
+```
+
 ### Riak CS 1.5 to 2.0, including Stanchion
 
 Consult
