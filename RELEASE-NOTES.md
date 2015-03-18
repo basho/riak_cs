@@ -233,8 +233,8 @@ following instructions for each nodes:
 Bitcask file format has changed between Riak 1.4 and 2.0. It supports
 implicit upgrade of bitcask data files, while downgrading is not
 supported. This is why downgrading requires a script to translate data
-files.
-
+files. See also
+[2.0 downgrade notes](https://github.com/basho/riak/wiki/2.0-downgrade-notes).
 
 
 ## Configuration Mapping Table between 1.5 and 2.0
