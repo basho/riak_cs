@@ -104,50 +104,44 @@ buckets.default.allow_mult = true
 
 Note: this is defined in riak_kv.schema
 
-#### Backend configuration
+#### `riak_kv` configuration
 
-For Riak 2.0.5 or older, Old style backend configuration same as 1.5
-should be written in `riak_kv` section of `advanced.config`. See
+There are two style to configure Riak 2.0 behind Riak CS:
+
+1. Reuse `app.config` of Riak 1.4
+2. Copy proper items in old `app.config` to `advanced.config`
+
+In case of 1., `add_paths` should be changed to new Riak CS binaries
+installed by Riak CS 2.0 package, from
+`"/usr/lib/riak-cs/lib/riak_cs-1.5.4/ebin"` to
+`"/usr/lib/riak-cs/lib/riak_cs-2.0.0/ebin"`.  ```
+
+If Riak-2.0-native way of configuration is preferred, 2. is the
+choice.  Copy all `riak_kv` configuration items of `app.config` to
+`advanced.config` as it is, with `add_paths` updated.
+
+This is because old style backend configuration same as 1.5 should be
+written in `riak_kv` section of `advanced.config`. See
 [Setting up the Proper Riak Backend](http://docs.basho.com/riakcs/1.5.4/cookbooks/configuration/Configuring-Riak/#Setting-up-the-Proper-Riak-Backend)
-for details.
+for details. `app.config` should be removed when `advanced.config`
+should be used.
 
-For later release than Riak 2.0.5, new configuration in Riak will be
-just
+#### Redesign of memory sizing
 
-```
-storage_backend = prefix_multi
-cs_version = 20000
-```
+It is also worth noting that since LevelDB has changed its
+configuration item on memory size configuration, from `max_open_files`
+to `total_leveldb_mem_percent`. This specifies total amount of memory
+consumed by LevelDB. This configuration is very important because the
+default value of memory cap limitation has changed from proportional
+number of `max_open_files` to specifying percentage of system's
+physical memory size.
 
-`cs_version` could not be removed when Riak is running under Riak. Old
-style backend configuration using `riak_cs_kv_multi_backend` also can
-be written in `advanced.config`.
-
-#### Backend memory size configuration
-
-It is worth noting that since LevelDB has changed its configuration
-item on memory size configuration, from `max_open_files` to
-`leveldb.maximum_memory_percent`. If there are any configuration in
-`eleveldb` section or in `multi_backend` part of `riak_kv` section in
-your 1.4 Riak system configuration, they should be changed to
-`leveldb.maximum_memory.percent` in `riak.conf`, or to
-`total_leveldb_mem_percent` in `eleveldb` section.
-
-Also, `multi_backend.be_default.leveldb.maximum_memory.percent` in
-`riak.conf` or `multi_backend` part of `riak_kv` section in
-`advanced.config` can be used to configure LevelDB. Precedence is
-given to these values, rather than "raw" values defined directly in
-`eleveldb` section.
-
-This configuration is very important because the default value of
-memory cap limitation has changed from proportional number of
-`max_open_files` to specifying percentage of system's physical memory
-size. The default values are
-[35%](https://github.com/basho/eleveldb/blob/2.0.2/priv/eleveldb_multi.schema#L11)
-in `multi_backend` or
-[70%](https://github.com/basho/eleveldb/blob/2.0.2/priv/eleveldb.schema#L17)
-depending on configuration., . *Redesigning memory sizing is strongly
-recommended* due to these changes.
+Configuring `total_leveldb_mem_percent` is *strongly recommended* as
+its default value is
+[70%](https://github.com/basho/eleveldb/blob/2.0.2/priv/eleveldb.schema#L17),
+which might be too aggressive for multi-backend configuration that
+also uses bitcask. Bitcask keeps its keydir on memory, which could be
+fairly large depending on use cases.
 
 Hereby basic idea of redisigning memory sizing is described: estimate
 total number of objects with their size distribution. Total number of
@@ -181,6 +175,26 @@ desirable:
 Memory for storage = (Memory for backends) + (Memory for kernel cache)
 Memory for backends = (Memory for Bitcask) + (Memory for LevelDB)
 ```
+
+Note: `leveldb.maximum_memory_percent` (or `leveldb.maximum_memory`)
+in `riak.conf` also can be used. On the other hand, there are a way to
+use cuttlefish-style items starting with `multi_backend.be_default...`
+could be used in `riak.conf`, but that is confusing and less simple
+than recommended way described above.
+
+#### Upcoming Riak 2.1
+
+For later release than Riak 2.1, although Riak CS on Riak 2.1 is
+actually not tested, new configuration in Riak will be just
+
+```
+storage_backend = prefix_multi
+cs_version = 20000
+```
+
+`cs_version` cannot not be removed when Riak is running under Riak. In
+that style, data path for both LevelDB and Bitcask can be set with
+`leveldb.data_root` and `bitcask.data_root`.
 
 #### Notable changes in `vm.args`
 
@@ -305,6 +319,9 @@ Value following with `=` is its default value.
 
 The file name has changed from `app.config` and `vm.args` to only
 `riak-cs.conf`, whose path haven't changed.
+
+Note: **`/etc/riak-cs/app.config` should be removed** when
+`/etc/riak-cs/riak-cs.conf` is to be used.
 
 ### Riak CS
 
