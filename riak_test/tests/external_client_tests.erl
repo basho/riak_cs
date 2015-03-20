@@ -23,7 +23,7 @@ confirm() ->
            {"AWS_ACCESS_KEY_ID",     UserConfig#aws_config.access_key_id},
            {"AWS_SECRET_ACCESS_KEY", UserConfig#aws_config.secret_access_key},
            {"CS_BUCKET",             ?TEST_BUCKET}],
-    WaitTime = 2 * rt_config:get(rt_max_wait_time),
+    WaitTime = 5 * rt_config:get(rt_max_wait_time),
     case rtcs:cmd(Cmd, [{cd, CsSrcDir}, {env, Env}, {args, Args}], WaitTime) of
         ok ->
             rtcs:pass();
@@ -43,7 +43,7 @@ cs_config() ->
        {stanchion_host, {"127.0.0.1", 9095}},
        {cs_version, 010300},
        {enforce_multipart_part_size, false},
-       {max_buckets_per_user, 150},
+       {max_buckets_per_user, 300},
        {auth_v4_enabled, true}
       ]
      }].

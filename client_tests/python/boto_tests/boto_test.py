@@ -33,6 +33,8 @@ import boto
 
 def setup_auth_scheme():
     auth_mech=os.environ.get('CS_AUTH', 'auth-v2')
+    if not boto.config.has_section('s3'):
+        boto.config.add_section('s3')
     if auth_mech == 'auth-v4':
         setup_auth_v4()
     else:
@@ -41,13 +43,11 @@ def setup_auth_scheme():
 def setup_auth_v4():
     print('Use AWS Version 4 authentication')
     if not boto.config.get('s3', 'use-sigv4'):
-        boto.config.add_section('s3')
         boto.config.set('s3', 'use-sigv4', 'True')
 
 def setup_auth_v2():
     print('Use AWS Version 2 authentication')
     if not boto.config.get('s3', 'use-sigv4'):
-        boto.config.add_section('s3')
         boto.config.set('s3', 'use-sigv4', '')
 
 setup_auth_scheme()

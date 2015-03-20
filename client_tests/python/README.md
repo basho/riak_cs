@@ -7,12 +7,13 @@
 
 ## Configuration
 
-Ensure that the Riak CS `app.config` has `anonymous_user_creation` set to
-`true` and `enforce_multipart_part_size` to `false`. Like:
+Ensure that the Riak CS `advanced.config` has the following items:
 
 ```erlang
 {anonymous_user_creation, true},
 {enforce_multipart_part_size, false},
+{max_buckets_per_user, 300},
+{auth_v4_enabled, true},
 ```
 
 ## Execution
