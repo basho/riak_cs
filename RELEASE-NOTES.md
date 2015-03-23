@@ -54,7 +54,7 @@ General Instructions are to repeat this overview on every node:
 
 1. Stop Riak CS process
 2. Stop Riak process
-3. Backup all configuration files
+3. Backup all configuration files and remove all patches
 4. Uninstall old Riak CS and Riak package
 5. Install new Riak CS and Riak package
 6. Migrate Riak configuration
@@ -66,6 +66,12 @@ Stanchion can be updated at any time during the system upgrade
 *theoretically*. Although, we recommend updating Stanchion before all
 other instructions. Be careful enough not to run multiple live
 Stanchion nodes at once where both are referred from CS nodes.
+
+Any patches for CS 1.4 or 1.5 release cannot be applied to Riak CS
+2.0 because they need recompile as Riak CS 2.0 is shipped with
+different Erlang/OTP runtime. This also applies to Riak 2.0, that
+cannot have patches for Riak 1.4. Every official patches for old Riak
+and Riak CS are supposed to be included in this release.
 
 ## Configuration upgrade
 
