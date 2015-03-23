@@ -156,11 +156,11 @@ which might be too aggressive for multi-backend configuration that
 also uses bitcask. Bitcask keeps its keydir on memory, which could be
 fairly large depending on use cases.
 
-Note: `leveldb.maximum_memory_percent` (or `leveldb.maximum_memory`)
-in `riak.conf` also can be used. On the other hand, there are a way to
-use cuttlefish-style items starting with `multi_backend.be_default...`
-could be used in `riak.conf`, but that is confusing and less simple
-than recommended way described above.
+Note: `leveldb.maximum_memory_percent` in `riak.conf` also can be
+used. On the other hand, there are a way to use cuttlefish-style items
+starting with `multi_backend.be_default...` could be used in
+`riak.conf`, but that is confusing and less simple than recommended
+way described above.
 
 ##### Bitcask keydir sizing
 
