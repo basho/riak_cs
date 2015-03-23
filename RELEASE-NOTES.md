@@ -110,24 +110,110 @@ buckets.default.allow_mult = true
 
 Note: this is defined in riak_kv.schema
 
-#### Backend configuration
+#### `riak_kv` configuration
 
-For Riak 2.0.5 or older, Old style backend configuration same as 1.5
-should be written in `riak_kv` section of `advanced.config`. See
+There are two style to configure Riak 2.0 behind Riak CS:
+
+1. Reuse `app.config` of Riak 1.4
+2. Copy proper items in old `app.config` to `advanced.config`
+
+In case of 1., `add_paths` should be changed to new Riak CS binaries
+installed by Riak CS 2.0 package, from
+`"/usr/lib/riak-cs/lib/riak_cs-1.5.4/ebin"` to
+`"/usr/lib/riak-cs/lib/riak_cs-2.0.0/ebin"`.  ```
+
+If Riak-2.0-native way of configuration is preferred, 2. is the
+choice.  Copy all `riak_kv` configuration items of `app.config` to
+`advanced.config` as it is, with `add_paths` updated.
+
+This is because old style backend configuration same as 1.5 should be
+written in `riak_kv` section of `advanced.config`. See
 [Setting up the Proper Riak Backend](http://docs.basho.com/riakcs/1.5.4/cookbooks/configuration/Configuring-Riak/#Setting-up-the-Proper-Riak-Backend)
-for details.
+for details. `app.config` should be removed when `advanced.config`
+should be used.
 
-For later release than Riak 2.0.5, new configuration in Riak will be
-just
+#### Redesign of memory sizing
+
+Since LevelDB has changed its default configuration in memory sizing,
+this might be a good change to review memory sizing. Generally
+speaking about Riak CS. Most dominant memory usage will be by both
+Bitcask keydir and LevelDB block cache. Additionally, extra space for
+kernel disk cache would be desirable to improve IO performance. Thus
+equations below might help designing memory sizing:
+
+```
+Memory for storage = (Memory for backends) + (Memory for kernel cache)
+Memory for backends = (Memory for Bitcask) + (Memory for LevelDB)
+```
+
+##### LevelDB block cache sizing
+
+For LevelDB key config item for memory sizing has changed from
+`max_open_files` to `total_leveldb_mem_percent` at 2.0. This specifies
+total amount of memory consumed by LevelDB. This is very important
+because the default value of memory cap limitation has changed from
+proportional number of `max_open_files` to specifying percentage of
+system's physical memory size.
+
+Configuring `total_leveldb_mem_percent` is *strongly recommended* as
+its default value is
+[70%](http://docs.basho.com/riak/latest/ops/advanced/backends/leveldb/#Configuring-eLevelDB)
+which might be too aggressive for multi-backend configuration that
+also uses bitcask. Bitcask keeps its keydir on memory, which could be
+fairly large depending on use cases.
+
+Note: `leveldb.maximum_memory_percent` in `riak.conf` also can be
+used. On the other hand, there are a way to use cuttlefish-style items
+starting with `multi_backend.be_default...` could be used in
+`riak.conf`, but that is confusing and less simple than recommended
+way described above.
+
+##### Bitcask keydir sizing
+
+Bitcask stores all of its key on memory as well as in disk, estimating
+total number of keys and its average size stored in Bitcask is most
+important to estimate its memory usage. Total number of keys `N(b)` in
+Bitcask accross the whole cluster will be:
+
+```
+N(b) = N(o, size <= 1MB) + N(o, size > 1MB) * avg(o, size > 1MB) / 1MB
+```
+
+where `N(o, size <= 1MB)` is number of objects whose size is less than
+1MB, while `N(o, size > 1MB` is number of objects whose size is more
+than 1MB. `avg(o, size > 1MB)` is average size of objects whose size
+is more than 1MB. Because Riak CS creates one block for each single
+megabyte, divided by 1MB it is number of keys. If average lifetime of
+objects is comparably smaller than leeway period, take objects waiting
+for garbage collections into account as live objects on disk. Actual
+numbers of key count per vnode are included in the result of
+`riak-admin vnode-status`. There is an item named `Status` in each
+vnode section, which includes `key_count` in `be_blocks` section.
+
+Once numbers of keys have been figured out, estimate the amount of
+memory used by Bitcask keydir with
+[Bitcask Capacity Planning](http://docs.basho.com/riak/2.0.5/ops/building/planning/bitcask/).
+
+Bucket name size is always 19 bytes (see
+`riak_cs_utils:to_bucket_name/2`), Key size is always 20 bytes (see
+`riak_cs_lfs_utils:block_name/3`). Average Value Size might be 1MB if
+large objects are dominant, otherwise it should be estimated under
+specific usecase. Number of writes is 3.
+
+
+#### Upcoming Riak 2.1
+
+For later release than Riak 2.1, although Riak CS on Riak 2.1 is
+actually not tested, new configuration in Riak will be just
 
 ```
 storage_backend = prefix_multi
 cs_version = 20000
 ```
 
-`cs_version` could not be removed when Riak is running under Riak. Old
-style backend configuration using `riak_cs_kv_multi_backend` also can
-be written in `advanced.config`.
+`cs_version` cannot not be removed when Riak is running under Riak. In
+that style, data path for both LevelDB and Bitcask can be set with
+`leveldb.data_root` and `bitcask.data_root`.
 
 #### Notable changes in `vm.args`
 
@@ -277,6 +363,9 @@ Value following with `=` is its default value.
 
 The file name has changed from `app.config` and `vm.args` to only
 `riak-cs.conf`, whose path haven't changed.
+
+Note: **`/etc/riak-cs/app.config` should be removed** when
+`/etc/riak-cs/riak-cs.conf` is to be used.
 
 ### Riak CS
 
