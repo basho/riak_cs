@@ -68,9 +68,10 @@ other instructions. Be careful enough not to run multiple live
 Stanchion nodes at once where both are referred from CS nodes.
 
 Any patches for CS 1.4 or 1.5 release cannot be applied to Riak CS
-2.0 because they need recompile as Riak CS 2.0 is shipped with different
-ERTS. Every official patches are supposed to be included in this
-release.
+2.0 because they need recompile as Riak CS 2.0 is shipped with
+different Erlang/OTP runtime. This also applies to Riak 2.0, that
+cannot have patches for Riak 1.4. Every official patches for old Riak
+and Riak CS are supposed to be included in this release.
 
 ## Configuration upgrade
 
