@@ -256,8 +256,8 @@ following instructions for each nodes:
 10. Start CS Process
 
 Bitcask file format has changed between Riak 1.4 and 2.0. It supports
-implicit upgrade of bitcask data files, while downgrading is not
-supported. This is why automatic downgrading requires a script to
+implicit upgrade of bitcask data files, while automatic downgrading
+is not supported. This is why downgrading requires a script to
 translate data files. See also
 [2.0 downgrade notes](https://github.com/basho/riak/wiki/2.0-downgrade-notes).
 
