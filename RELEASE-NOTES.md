@@ -158,6 +158,31 @@ Including CS path: add following sentence to `advanced.config`:
 ]}.
 ```
 
+### Notes on upgrading Riak to 2.0
+
+Riak has updated its underlying Bitcask storage data format at 2.0 to
+[fix several important issues](https://github.com/basho/riak/blob/2.0/RELEASE-NOTES.md#bitcask).
+At the first start of Riak after upgrade, it involves implicit data
+format upgrade conversion, which means reading all data and writing
+down to other files. This might lead to disk load - the duration of
+upgrade will depend on the amount of data stored in bitcask and IO
+performance of underlying disk.
+
+The data conversion will start with logs like this:
+
+```
+2015-03-17 02:43:20.813 [info] <0.609.0>@riak_kv_bitcask_backend:maybe_start_upgrade_if_bitcask_files:720 Starting upgrade to version 1.7.0 in /mnt/data/bitcask/1096126227998177188652763624537212264741949407232
+2015-03-17 02:43:21.344 [info] <0.610.0>@riak_kv_bitcask_backend:maybe_start_upgrade_if_bitcask_files:720 Starting upgrade to version 1.7.0 in /mnt/data/bitcask/1278813932664540053428224228626747642198940975104
+```
+
+And the end of data conversion can be observed as info log at Riak
+logs like this:
+
+```
+2015-03-17 07:18:49.754 [info] <0.609.0>@riak_kv_bitcask_backend:callback:446 Finished upgrading to Bitcask 1.7.0 in /mnt/data/bitcask/1096126227998177188652763624537212264741949407232
+2015-03-17 07:23:07.181 [info] <0.610.0>@riak_kv_bitcask_backend:callback:446 Finished upgrading to Bitcask 1.7.0 in /mnt/data/bitcask/1278813932664540053428224228626747642198940975104
+```
+
 ### Riak CS 1.5 to 2.0, including Stanchion
 
 Consult
@@ -237,10 +262,10 @@ following instructions for each nodes:
 10. Start CS Process
 
 Bitcask file format has changed between Riak 1.4 and 2.0. It supports
-implicit upgrade of bitcask data files, while downgrading is not
-supported. This is why downgrading requires a script to translate data
-files.
-
+implicit upgrade of bitcask data files, while automatic downgrading
+is not supported. This is why downgrading requires a script to
+translate data files. See also
+[2.0 downgrade notes](https://github.com/basho/riak/wiki/2.0-downgrade-notes).
 
 
 ## Configuration Mapping Table between 1.5 and 2.0
