@@ -36,6 +36,7 @@ git init
 ## Some versions of git and/or OS require these fields
 git config user.name "Riak Test"
 git config user.email "dev@basho.com"
+git config --local core.excludesfile global_dot_gitignore_should_be_ignored
 
 git add .
 git commit -a -m "riak_test init" > /dev/null
