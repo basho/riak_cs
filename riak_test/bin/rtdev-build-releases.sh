@@ -66,9 +66,10 @@ build()
 
     RUN="env PATH=$ERLROOT/bin:$ERLROOT/lib/erlang/bin:$PATH \
              C_INCLUDE_PATH=$ERLROOT/usr/include \
-             LD_LIBRARY_PATH=$ERLROOT/usr/lib"
+             LD_LIBRARY_PATH=$ERLROOT/usr/lib \
+             DEVNODES=8"
     echo $RUN
-    $RUN make && $RUN make devrel
+    $RUN make -j 8 && $RUN make -j devrel
     cd ..
 }
 
@@ -100,7 +101,17 @@ download()
 checkbuild $R15B01
 checkbuild $R16B02
 
-download http://s3.amazonaws.com/builds.basho.com/riak-cs/1.5/1.5.1/riak-cs-1.5.1.tar.gz
 
-tar -xf riak-cs-1.5.1.tar.gz
-build "riak-cs-1.5.1" $R15B01
+if env | grep -q 'RIAK_CS_EE_DEPS='
+then
+    echo "RIAK_CS_EE_DEPS is set to \"$RIAK_CS_EE_DEPS\"."
+    echo "This script if for OSS version."
+    echo "unset RIAK_CS_EE_DEPS or use script for ee build."
+    exit 1
+fi
+
+echo "Download and build OSS package..."
+download http://s3.amazonaws.com/downloads.basho.com/riak-cs/1.5/1.5.4/riak-cs-1.5.4.tar.gz
+
+tar -xf riak-cs-1.5.4.tar.gz
+build "riak-cs-1.5.4" $R15B01
