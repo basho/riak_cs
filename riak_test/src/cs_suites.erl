@@ -244,23 +244,23 @@ apply_operation(stats_storage, CurrentCircle,
 apply_operation(gc, Circle, #state{cs_nodes=[CSNode|_]} = State) ->
     timer:sleep(timer:seconds(?GC_LEEWAY + 1)),
     rtcs:gc(1, "batch 1"),
-    rt:wait_until(
-      CSNode,
-      fun(_N) ->
-              Res = rtcs:gc(1, "status"),
-              ExpectSubstr = "There is no garbage collection in progress",
-              case string:str(Res, ExpectSubstr) of
-                  0 ->
-                      {match, Captured} =
-                          re:run(Res, "Elapsed time of current run: [0-9]*\n",
-                                 [{capture, first, binary}]),
-                      lager:debug("riak-cs-gc status: ~s", [Captured]),
-                      false;
-                  _ ->
-                      lager:debug("GC completed"),
-                      true
-              end
-      end),
+    ok = rt:wait_until(
+           CSNode,
+           fun(_N) ->
+                   Res = rtcs:gc(1, "status"),
+                   ExpectSubstr = "There is no garbage collection in progress",
+                   case string:str(Res, ExpectSubstr) of
+                       0 ->
+                           {match, Captured} =
+                               re:run(Res, "Elapsed time of current run: [0-9]*\n",
+                                      [{capture, first, binary}]),
+                           lager:debug("riak-cs-gc status: ~s", [Captured]),
+                           false;
+                       _ ->
+                           lager:debug("GC completed"),
+                           true
+                   end
+           end),
     %% TODO: Calculate manif_count and block_count and assert them specifically
     %% true = rt:expect_in_log(CSNode,
     %%                         "Finished garbage collection: \\d+ seconds, "
@@ -464,26 +464,23 @@ kb(KB) -> KB * 1024.
 mb(MB) -> MB * 1024 * 1024.
 
 merge_all_bitcask(#state{riak_nodes=Nodes, riak_vsn=Vsn} = _State) ->
+    wait_until_merge_worker_idle(Nodes),
     [trigger_bitcask_merge(N, Vsn) || N <- Nodes],
-    %% Wait for merge worker finished
-    [rt:wait_until(
-       N,
-       fun(Node) ->
-               Status = rpc:call(Node, bitcask_merge_worker, status, []),
-               lager:debug("Wait util bitcask_merge_worker finished on ~p:"
-                           " status=~p~n", [Node, Status]),
-               Status =:= {0, undefined}
-       end) || N <- Nodes],
-    %% Wait for merge delete worker finished
-    [rt:wait_until(
-       N,
-       fun(Node) ->
-               QL = rpc:call(Node, bitcask_merge_delete, queue_length, []),
-               lager:debug("Wait util bitcask_merge_delete finished on ~p:"
-                           " queue_length=~p~n", [Node, QL]),
-               QL =:= 0
-       end) || N <- Nodes],
-    [assert_data_files_are_small_enough(N, Vsn) || N <- Nodes],
+    [ok = rt:wait_until(N,
+                        fun(Node) ->
+                                check_data_files_are_small_enough(Node, Vsn)
+                        end) || N <- Nodes],
+    ok.
+
+wait_until_merge_worker_idle(Nodes) ->
+    [ok = rt:wait_until(
+            N,
+            fun(Node) ->
+                    Status = rpc:call(Node, bitcask_merge_worker, status, []),
+                    lager:debug("Wait util bitcask_merge_worker to finish on ~p:"
+                                " status=~p~n", [Node, Status]),
+                    Status =:= {0, undefined}
+            end) || N <- Nodes],
     ok.
 
 trigger_bitcask_merge(Node, Vsn) ->
@@ -529,24 +526,34 @@ bitcask_data_files(Node, Vsn, VnodeName, AbsOrRel) ->
 %% Assert bitcask data is "small"
 %% 1) The number of *.data files should be =< 2
 %% 2) Each *.data file size should be < 32 KiB
-assert_data_files_are_small_enough(Node, Vsn) ->
-    [
-     begin
-         DataFiles = bitcask_data_files(Node, Vsn, VnodeName, abs),
-         FileSizes = [begin
-                          {ok, #file_info{size=S}} = file:read_file_info(F),
-                          {F, S}
-                      end || F <- DataFiles],
-         lager:debug("FileSizes: ~p~n", [FileSizes]),
-         %% Two files per vnode at most
-         %% (bitcask newbie question: why two instead of one?)
-         ?assert(length(FileSizes) =< 2),
-         TotalSize = lists:sum([S || {_, S} <- FileSizes]),
-         %% Smaller than 32KB. Is it small enough? ;)
-         ?assert(TotalSize < 32*1024)
-     end ||
-        VnodeName <- bitcask_vnode_names(Node, Vsn)],
-    ok.
+check_data_files_are_small_enough(Node, Vsn) ->
+    VnodeNames = bitcask_vnode_names(Node, Vsn),
+    check_data_files_are_small_enough(Node, Vsn, VnodeNames).
+
+check_data_files_are_small_enough(_Node, _Vsn, []) ->
+    true;
+check_data_files_are_small_enough(Node, Vsn, [VnodeName|Rest]) ->
+    DataFiles = bitcask_data_files(Node, Vsn, VnodeName, abs),
+    FileSizes = [begin
+                     {ok, #file_info{size=S}} = file:read_file_info(F),
+                     {F, S}
+                 end || F <- DataFiles],
+    lager:debug("FileSizes (~p): ~p~n", [{Node, VnodeName}, FileSizes]),
+    TotalSize = lists:sum([S || {_, S} <- FileSizes]),
+    case {length(FileSizes) =< 2, TotalSize < 32*1024} of
+        {true, true} ->
+            lager:info("bitcask data file check OK for ~p ~p",
+                       [Node, VnodeName]),
+            check_data_files_are_small_enough(Node, Vsn, Rest);
+        {false, _} ->
+            lager:info("bitcask data file check failed, count(files)=~p for ~p ~p",
+                       [Node, VnodeName, length(FileSizes)]),
+            false;
+        {_, false} ->
+            lager:info("bitcask data file check failed, sum(file size)=~p for ~p ~p",
+                       [Node, VnodeName, TotalSize]),
+            false
+    end.
 
 %% Misc utilities
 

@@ -152,7 +152,6 @@ upgrade_nodes(AdminCreds, RiakNodes) ->
         rtcs:riak_root_and_vsn(current, rt_config:get(build_type, oss)),
     [begin
          N = rt_cs_dev:node_id(RiakNode),
-         lager:info("Upgrading ~p", [N]),
          rtcs:stop_cs(N, previous),
          ok = rt:upgrade(RiakNode, RiakCurrentVsn),
          rt:wait_for_service(RiakNode, riak_kv),
@@ -160,5 +159,5 @@ upgrade_nodes(AdminCreds, RiakNodes) ->
          rtcs:start_cs(N, current)
      end
      || RiakNode <- RiakNodes],
-    rt:wait_until_ring_converged(RiakNodes),
+    ok = rt:wait_until_ring_converged(RiakNodes),
     ok.
