@@ -18,7 +18,7 @@ confirm() ->
     CsPortStr = integer_to_list(rtcs:cs_port(hd(RiakNodes))),
 
     Cmd = os:find_executable("make"),
-    Args = ["test-client"],
+    Args = ["-j", "8", "test-client"],
     Env = [{"CS_HTTP_PORT",          CsPortStr},
            {"AWS_ACCESS_KEY_ID",     UserConfig#aws_config.access_key_id},
            {"AWS_SECRET_ACCESS_KEY", UserConfig#aws_config.secret_access_key},
