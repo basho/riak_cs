@@ -144,12 +144,13 @@ configs(CustomConfigs) ->
                                      stanchion_config())}].
 
 previous_configs() ->
-    CSPrev = rt_config:get(?CS_PREVIOUS),
-    AddPaths = filelib:wildcard(CSPrev ++ "/dev/dev1/lib/riak_cs*/ebin"),
+    previous_configs([]).
 
-    [{riak, riak_config([{riak_kv, [{add_paths, AddPaths}]}])},
-     {stanchion, previous_stanchion_config()},
-     {cs, previous_cs_config()}].
+previous_configs(CustomConfigs) ->
+    [{riak, proplists:get_value(riak, CustomConfigs, previous_riak_config())},
+     {cs, proplists:get_value(cs, CustomConfigs, previous_cs_config())},
+     {stanchion, proplists:get_value(stanchion, CustomConfigs,
+                                     previous_stanchion_config())}].
 
 default_configs() ->
     [{riak, riak_config()},
@@ -211,24 +212,25 @@ cs_port(Node) ->
     cs_port(rt_cs_dev:node_id(Node)).
 
 
-riak_config() ->
-    riak_config(
-      rt_config:get(build_type, oss),
-      rt_config:get(backend, {multi_backend, bitcask})).
-
 riak_config(CustomConfig) ->
     orddict:merge(fun(_, LHS, RHS) -> LHS ++ RHS end,
                   orddict:from_list(lists:sort(CustomConfig)),
                   orddict:from_list(lists:sort(riak_config()))).
 
-riak_config(oss, Backend) ->
-    riak_oss_config(Backend);
-riak_config(ee, Backend) ->
-    riak_ee_config(Backend).
+riak_config() ->
+    riak_config(
+      ?CS_CURRENT,
+      rt_config:get(build_type, oss),
+      rt_config:get(backend, {multi_backend, bitcask})).
 
-riak_oss_config(Backend) ->
-    CSCurrent = rt_config:get(?CS_CURRENT),
-    AddPaths = filelib:wildcard(CSCurrent ++ "/dev/dev1/lib/riak_cs*/ebin"),
+riak_config(CsVsn, oss, Backend) ->
+    riak_oss_config(CsVsn, Backend);
+riak_config(CsVsn, ee, Backend) ->
+    riak_ee_config(CsVsn, Backend).
+
+riak_oss_config(CsVsn, Backend) ->
+    CSPath = rt_config:get(CsVsn),
+    AddPaths = filelib:wildcard(CSPath ++ "/dev/dev1/lib/riak_cs*/ebin"),
     [
      lager_config(),
      {riak_core,
@@ -266,8 +268,8 @@ blocks_backend_config(fs) ->
 blocks_backend_config(_) ->
     {be_blocks, riak_kv_bitcask_backend, [{data_root, "./data/bitcask"}]}.
 
-riak_ee_config(Backend) ->
-    [repl_config() | riak_oss_config(Backend)].
+riak_ee_config(CsVsn, Backend) ->
+    [repl_config() | riak_oss_config(CsVsn, Backend)].
 
 repl_config() ->
     {riak_repl,
@@ -276,6 +278,22 @@ repl_config() ->
       {fullsync_interval, disabled},
       {proxy_get, enabled}
      ]}.
+
+previous_riak_config() ->
+    riak_config(
+      ?CS_PREVIOUS,
+      rt_config:get(build_type, oss),
+      rt_config:get(backend, {multi_backend, bitcask})).
+
+previous_riak_config(CustomConfig) ->
+    orddict:merge(fun(_, LHS, RHS) -> LHS ++ RHS end,
+                  orddict:from_list(lists:sort(CustomConfig)),
+                  orddict:from_list(lists:sort(previous_riak_config()))).
+
+previous_riak_config(oss, Backend) ->
+    riak_oss_config(?CS_PREVIOUS, Backend);
+previous_riak_config(ee, Backend) ->
+    riak_ee_config(?CS_PREVIOUS, Backend).
 
 previous_cs_config() ->
     previous_cs_config([], []).
@@ -381,10 +399,14 @@ lager_config() ->
         {lager_file_backend,
          [
           {"./log/error.log", error, 10485760, "$D0",5},
-          {"./log/console.log", debug, 10485760, "$D0", 5}
+          {"./log/console.log", rt_config:get(console_log_level, debug),
+           10485760, "$D0", 5}
          ]}
        ]}
      ]}.
+
+riak_bitcaskroot(Prefix, N) ->
+    io_lib:format("~s/dev/dev~b/data/bitcask", [Prefix, N]).
 
 riakcs_binpath(Prefix, N) ->
     io_lib:format("~s/dev/dev~b/bin/riak-cs", [Prefix, N]).
@@ -607,6 +629,16 @@ stop_all_nodes(NodeList, Vsn) ->
                     rt:wait_until_unpingable(RiakNode)
             end, NodeList).
 
+get_rt_config(riak, current) ->
+    case rt_config:get(build_type, oss) of
+        oss -> rt_config:get(?RIAK_CURRENT);
+        ee  -> rt_config:get(?EE_CURRENT)
+    end;
+get_rt_config(riak, previous) ->
+    case rt_config:get(build_type, oss) of
+        oss -> rt_config:get(?RIAK_PREVIOUS);
+        ee  -> rt_config:get(?EE_PREVIOUS)
+    end;
 get_rt_config(cs, current) -> rt_config:get(?CS_CURRENT);
 get_rt_config(cs, previous) -> rt_config:get(?CS_PREVIOUS);
 get_rt_config(stanchion, current) -> rt_config:get(?STANCHION_CURRENT);
@@ -630,7 +662,8 @@ set_configs(NodeList, Configs, Vsn) ->
                     update_cs_config(get_rt_config(cs, Vsn), N,
                                      proplists:get_value(cs, Config))
             end,
-            lists:zip(NodeList, Configs)).
+            lists:zip(NodeList, Configs)),
+    enable_zdbbl(Vsn).
 
 set_admin_creds_in_configs(NodeList, Configs, AdminCreds, Vsn) ->
     rt:pmap(fun({_, default}) ->
@@ -810,6 +843,13 @@ update_app_config(Path,  Config) ->
     ?assertEqual(ok, file:write_file(ConfigFile, NewConfigOut)),
     ok.
 
+enable_zdbbl(Vsn) ->
+    Fs = filelib:wildcard(filename:join([get_rt_config(riak, Vsn),
+                                         "dev", "dev*", "etc", "vm.args"])),
+    lager:info("rtcs:enable_zdbbl for vm.args : ~p~n", [Fs]),
+    [os:cmd("sed -i -e 's/##+zdbbl /+zdbbl /g' " ++ F) || F <- Fs],
+    ok.
+
 create_user(Port, EmailAddr, Name) ->
     create_user(Port, undefined, EmailAddr, Name).
 
@@ -880,11 +920,14 @@ list_users(UserConfig, Port, Resource, AcceptContentType) ->
     Output.
 
 assert_error_log_empty(N) ->
-    ErrorLog = riakcs_logpath(rt_config:get(?CS_CURRENT), N, "error.log"),
-    {ok, Errors} = file:read_file(ErrorLog),
-    case Errors of
-        <<>> -> ok;
-        _ ->
+    assert_error_log_empty(current, N).
+
+assert_error_log_empty(Vsn, N) ->
+    ErrorLog = riakcs_logpath(get_rt_config(cs, Vsn), N, "error.log"),
+    case file:read_file(ErrorLog) of
+        {error, enoent} -> ok;
+        {ok, <<>>} -> ok;
+        {ok, Errors} ->
             lager:warning("Not empty error.log (~s): the first few lines are...~n~s",
                           [ErrorLog,
                            lists:map(
@@ -980,6 +1023,14 @@ error_child_element_verifier(Code, Message, Resource) ->
             true
     end.
 
+assert_versions(App, Nodes, Regexp) ->
+    [begin
+         {ok, Vsn} = rpc:call(N, application, get_key, [App, vsn]),
+         lager:debug("~s's vsn at ~s: ~s", [App, N, Vsn]),
+         {match, _} = re:run(Vsn, Regexp)
+     end ||
+        N <- Nodes].
+
 %% @doc update current app.config, assuming CS is already stopped
 upgrade_cs(N, AdminCreds) ->
     migrate_cs(previous, current, N, AdminCreds).
@@ -1004,27 +1055,23 @@ migrate_stanchion(From, To, AdminCreds) ->
     migrate(From, To, -1, AdminCreds, stanchion).
 
 migrate_config(previous, current, Conf, stanchion) ->
-    {ShouldMigratedConf, _} = diff_config(Conf, previous_stanchion_config()),
     {AddList, RemoveList} = diff_config(stanchion_config(),
                                         previous_stanchion_config()),
-    migrate_config(ShouldMigratedConf, AddList, RemoveList);
+    migrate_config(Conf, AddList, RemoveList);
 migrate_config(current, previous, Conf, stanchion) ->
-    {ShouldMigratedConf, _} = diff_config(Conf, stanchion_config()),
     {AddList, RemoveList} = diff_config(previous_stanchion_config(),
                                         stanchion_config()),
-    migrate_config(ShouldMigratedConf, AddList, RemoveList);
+    migrate_config(Conf, AddList, RemoveList);
 migrate_config(previous, current, Conf, cs) ->
-    {ShouldMigratedConf, _} = diff_config(Conf, previous_cs_config()),
-    {AddList, RemoveList} = diff_config(cs_config(), previous_cs_config()),
-    migrate_config(ShouldMigratedConf, AddList, RemoveList);
+    {AddList, RemoveList} = diff_config(cs_config([{anonymous_user_creation, false}]),
+                                        previous_cs_config()),
+    migrate_config(Conf, AddList, RemoveList);
 migrate_config(current, previous, Conf, cs) ->
-    {ShouldMigratedConf, _} = diff_config(Conf, cs_config()),
     {AddList, RemoveList} = diff_config(previous_cs_config(), cs_config()),
-    migrate_config(ShouldMigratedConf, AddList, RemoveList).
+    migrate_config(Conf, AddList, RemoveList).
 
 migrate_config(Conf0, AddList, RemoveList) ->
     RemoveFun = fun(Key, Config) ->
-                  %% Key: riak_cs
                   InnerConf0 = proplists:get_value(Key, Config),
                   InnerRemoveList = proplists:get_value(Key, RemoveList),
                   InnerConf1 = lists:foldl(fun proplists:delete/2,
