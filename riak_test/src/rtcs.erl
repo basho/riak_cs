@@ -811,10 +811,26 @@ update_app_config(Path,  Config) ->
     ok.
 
 create_user(Port, EmailAddr, Name) ->
+    create_user(Port, undefined, EmailAddr, Name).
+
+create_user(Port, UserConfig, EmailAddr, Name) ->
     lager:debug("Trying to create user ~p", [EmailAddr]),
-    Cmd="curl -s -H 'Content-Type: application/json' http://localhost:" ++
+    Resource = "/riak-cs/user",
+    Date = httpd_util:rfc1123_date(),
+    Cmd="curl -s -H 'Content-Type: application/json' " ++
+        "-H 'Date: " ++ Date ++ "' " ++
+        case UserConfig of
+            undefined -> "";
+            _ ->
+                "-H 'Authorization: " ++
+                    make_authorization("POST", Resource, "application/json",
+                                       UserConfig, Date) ++
+                    "' "
+        end ++
+        "http://localhost:" ++
         integer_to_list(Port) ++
-        "/riak-cs/user --data '{\"email\":\"" ++ EmailAddr ++  "\", \"name\":\"" ++ Name ++"\"}'",
+        Resource ++
+        " --data '{\"email\":\"" ++ EmailAddr ++  "\", \"name\":\"" ++ Name ++"\"}'",
     lager:debug("Cmd: ~p", [Cmd]),
     Delay = rt_config:get(rt_retry_delay),
     Retries = rt_config:get(rt_max_wait_time) div Delay,
