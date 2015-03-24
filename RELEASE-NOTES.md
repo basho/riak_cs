@@ -1,49 +1,47 @@
 # Riak CS 2.0.0-pre1 Release Notes
 
-- Based upon Riak 2.0
+- Updated to work with Riak 2.0.5
 - Simplified configuration system
 
 ## Changes
 
-- Changed default value of `gc_max_workers` from 5 to 2 with its name
-  changed to `gc.max_workers` with migration to config format change.
+- Changed the name of `gc_max_workers` to `gc.max_workers`, and lowered the
+  default value from 5 to 2.
 
 ## Deprecation Notice
 
-- Multi-Datacenter Replication on top of v2 replication support has
-  been deprecated.
-- Old list objects which required `fold_objects_for_list_keys` as
-  `false` is deprecated and *will be removed* in the next major version.
-- Non-paginated GC in case where `gc_paginated_indexes` is `false` is
+- Multi-Datacenter Replication using v2 replication support has been deprecated.
+- Old list objects which required `fold_objects_for_list_keys` as `false` have
+  been deprecated and *will be removed* in the next major version.
+- Non-paginated GC in cases where `gc_paginated_indexes` is `false` has been
   deprecated and *will be removed* in the next major version.
 
-# General Notes on Upgrading to Riak CS 2.0
+# General Notes on Upgrading to Riak CS 2.0.0
 
-Upgrading Riak CS system involves upgrading the underlying Riak and
+Upgrading Riak CS systems involves upgrading the underlying Riak, Riak CS and
 Stanchion installations. The upgrade process can be non-trivial depending on
-the system configuration and combination of sub-system versions. This document contains
-general instructions on upgrading the whole system to Riak CS 2.0, and
-notices on upgrading.
+system configurations and the combination of sub-system versions. This document
+contains general instructions and notices on upgrading the whole system to Riak
+CS 2.0.
 
-For more detailed information on previous versions, consult the Riak and Riak
-CS's release notes.
+For more detailed information on previous versions, consult the previous Riak
+and Riak CS release notes.
 
-* [Riak 1.4 series release notes](https://github.com/basho/riak/blob/1.4/RELEASE-NOTES.md)
-* [Riak 2.0 series release notes](https://github.com/basho/riak/blob/2.0/RELEASE-NOTES.md)
-* [Riak CS 1.4 series release notes](https://github.com/basho/riak_cs/blob/release/1.5/RELEASE-NOTES.md#riak-cs-145-release-notes)
-* [Riak CS 1.5 series release notes](https://github.com/basho/riak_cs/blob/release/1.5/RELEASE-NOTES.md#riak-cs-154-release-notes)
+* [Riak 1.4 series release notes][riak_1.4_release_notes]
+* [Riak 2.0 series release notes][riak_2.0_release_notes]
+* [Riak CS 1.4 series release notes][riak_cs_1.4_release_notes]
+* [Riak CS 1.5 series release notes][riak_cs_1.5_release_notes]
 
-## Upgrading From Riak CS < 1.4
+## Upgrading From Riak CS < 1.4.x
 
-As Basho only supports 2 older versions prior to the latest release, for Riak
-CS 2.0 only upgrades from 1.4 series and 1.5 series are
-supported.
+As Basho only supports upgrades from the previous 2 major versions prior to the
+latest release, this document will only be suitable for upgrading from Riak CS
+1.4.x and Riak CS 1.5.x.
 
-To upgrade to 2.0 from these versions prior to 1.4, operators need
-another extra step to upgrade the whole system to Riak CS 1.4.5 or
-Riak CS 1.5.4. Upgrading to 1.5.4 rather than to 1.4.5 is recommended.
-The underlying Riak installation should be upgraded to the 1.4
-series - preferably the latest version 1.4.12.
+To upgrade to Riak CS 2.0.0 from versions prior to CS 1.4.x, operators will need
+to first upgrade their system to CS 1.4.5 or CS 1.5.4. Upgrading to CS 1.5.4 is
+recommended. The underlying Riak installation should be upgraded to the Riak
+1.4.x series as well -- preferably the latest version, Riak 1.4.12.
 
 # General Instructions
 
@@ -63,36 +61,39 @@ Repeat these steps on every host:
 
 Stanchion can *theoretically* be updated at any time during the system
 upgrade. In practice, we recommend updating Stanchion before all
-other subsystems. Be careful not to run multiple live
+other subsystems. Be careful not to have multiple live
 Stanchion nodes accessible from CS nodes at the same time.
 
-Patches for the CS 1.4 or 1.5 releases cannot be applied to Riak CS
-2.0 because they need to be recompiles with the Erlang/OTP runtime shipped
-with Riak CS 2.0. This also applies to Riak 2.0, that
-cannot have patches for Riak 1.4. All previous official patches for old Riak
-and Riak CS have been included in this release.
+Patches released for CS 1.4.x and CS 1.5.x cannot be directly applied to Riak CS
+2.0.0 because the version of Erlang/OTP shipped with Riak CS has been updated
+between CS 1.5.4 and CS 2.0.0. Patches will need to be recompiled using the
+newer version of Erlang/OTP before being released for Riak CS 2.0.0.  
+This also applies to Riak 2.0.x; patches released for Riak 1.4.x must be
+recompiled before they can be used with Riak 2.0.x.  
+All previous official patches for older versions of Riak and Riak CS have been
+included in these releases.
 
 ## Configuration upgrade
 
-Riak has introduced a new configuration system (`riak.conf`) with version 2.0.
-It also still supports old style configurations through `app.config` and `vm.args`.
-So does Riak CS 2.0 now follows suit and supports the new configuration style.
-Basho recommends moving to the new unified configuration system and use the 
+Riak 2.0.0 introduced a new configuration system (`riak.conf`). It still
+supports the older style configurations through `app.config` and `vm.args`. Riak
+CS 2.0.0 now follows suit and supports the new configuration style.  
+Basho recommends moving to the new unified configuration system and use the
 files `riak.conf`, `riak-cs.conf` and `stanchion.conf`.
 
-### Riak 1.4 to 2.0
+### Riak 1.4.x to Riak 2.0.5
 
-As Riak CS 2.0 only works on top of Riak 2.0 and does not work on top of the
-Riak 1.x series, the underlying Riak installation *must* be upgraded
-to 2.0. General guides for upgrading Riak to 2.0 are in the
-[2.0 upgrade guide](http://docs.basho.com/riak/2.0.4/upgrade-v20/).
+As Riak CS 2.0.0 only works on top of Riak 2.0.5 -- and does *not* work on top
+of the Riak 1.x.x series -- the underlying Riak installation *must* be upgraded
+to Riak 2.0.5. General guides for upgrading Riak to 2.0.5 are in the
+[Upgrading to 2.0 guide][upgrading_to_2.0].
+
 Below are configuration changes for a Riak cluster supporting Riak CS.
-
 
 #### Default bucket properties
 
-Default bucket properties have been configured in older Riak CS as
-follows:
+In older version of Riak, default bucket properties has been configured in
+the `app.config` as follows:
 
 ```erlang
 {riak_core, [
@@ -102,7 +103,7 @@ follows:
 ]}.
 ```
 
-With Riak 2.0 this becomes:
+With Riak 2.0.5 in `riak.conf` this becomes:
 
 ```
 buckets.default.allow_mult = true
@@ -112,25 +113,22 @@ Note: this is defined in riak_kv.schema
 
 #### `riak_kv` configuration
 
-There are two ways to configure Riak 2.0 behind Riak CS:
+There are two ways to configure Riak 2.0.5 behind Riak CS 2.0.0:
 
-1. Reuse the `app.config` file of Riak 1.4
+1. Reuse the `app.config` file of Riak 1.4.x
 2. Transfer selected items from the old `app.config` to the `advanced.config` file
 
-In case of 1., `add_paths` should be changed to new Riak CS binaries
-installed by Riak CS 2.0 package, from
+In case of 1., `add_paths` should be changed to target the new Riak CS binaries
+installed by the Riak CS 2.0.0 package. From
 `"/usr/lib/riak-cs/lib/riak_cs-1.5.4/ebin"` to
-`"/usr/lib/riak-cs/lib/riak_cs-2.0.0/ebin"`.  ```
+`"/usr/lib/riak-cs/lib/riak_cs-2.0.0/ebin"`.
 
-If the Riak 2.0 way of configuration is preferred, 2. is the
-choice.  Copy all `riak_kv` configuration items of `app.config` to
-`advanced.config`, and update `add_paths`.
+If the Riak 2.0.x configuration is preferred, 2. is the correct choice. Copy all
+`riak_kv` configuration items from `app.config` into `advanced.config`, and
+update `add_paths`.
 
-See
-[Setting up the Proper Riak Backend]
-(http://docs.basho.com/riakcs/1.5.4/cookbooks/configuration/Configuring-Riak/#Setting-up-the-Proper-Riak-Backend)
-for details. `app.config` must be removed when `advanced.config`
-is used.
+See [Setting up the Proper Riak Backend][proper_backend] for details. The
+`app.config` file must be removed when `advanced.config` is used.
 
 #### Review memory size
 
@@ -155,24 +153,22 @@ proportional to the number of `max_open_files` to being a percentage of
 the system's physical memory size.
 
 Configuring `total_leveldb_mem_percent` is *strongly recommended* as
-its default value of [70%]
-(http://docs.basho.com/riak/latest/ops/advanced/backends/leveldb/#Configuring-eLevelDB)
+its [default value of 70%][configuring_elvevedb]
 might be too aggressive for a multi-backend configuration that
 also uses bitcask. Bitcask keeps its keydir in memory, which could be
 fairly large depending on the use case.
 
-Note: `leveldb.maximum_memory_percent` in `riak.conf` also can be
-used. It is also possible to use to use configuration settings
-starting with `multi_backend.be_default...` in
-`riak.conf`, but that is confusing and less simple than the recommended
-way described above.
+Note: `leveldb.maximum_memory_percent` in `riak.conf` can also be used. It is
+also possible to use the configuration settings starting with
+`multi_backend.be_default...` in `riak.conf`, but that is less simple and more
+confusing than the recommended way described above.
 
 ##### Bitcask keydir sizing
 
-Bitcask stores all of its keys in memory as well as on disk. Estimating
-the total number of keys and their average size stored in Bitcask is most
-important to estimate the memory usage. Total number of keys `N(b)` in
-Bitcask accross the whole cluster will be:
+Bitcask stores all of its keys in memory as well as on disk. Correctly
+estimating the total number of keys and their average size in Bitcask is very
+important for estimating Bitcask memory usage. Total number of keys `N(b)` in
+Bitcask across the whole cluster will be:
 
 ```
 N(b) = N(o, size <= 1MB) + N(o, size > 1MB) * avg(o, size > 1MB) / 1MB
@@ -181,8 +177,8 @@ N(b) = N(o, size <= 1MB) + N(o, size > 1MB) * avg(o, size > 1MB) / 1MB
 where `N(o, size <= 1MB)` is the number of objects with a size less than
 1MB, while `N(o, size > 1MB` is the number of objects with a size greater
 than 1MB. `avg(o, size > 1MB)` is the average size of objects greater than
-1MB in size. The number of keys in Riak CS is equivalent to the amount of
-data stored in MB. If the average lifetime of objects is a lot smaller
+1MB in size. The number of keys in Riak CS is related to the amount of
+data stored in MBs. If the average lifetime of objects is significantly smaller
 than the leeway period, treat objects waiting for garbage collections as live
 objects on disk. Actual numbers of key count per vnode are included in the
 output of `riak-admin vnode-status`. There is an item named `Status` in each
@@ -190,8 +186,7 @@ vnode section, which includes the `key_count` in the `be_blocks` section.
 
 Once the numbers of keys is known, estimate the amount of
 memory used by Bitcask keydir as per the
-[Bitcask Capacity Planning]
-(http://docs.basho.com/riak/2.0.5/ops/building/planning/bitcask/)
+[Bitcask Capacity Planning][bitcask_capactiy_planning]
 documentation.
 
 The bucket name size is always 19 bytes (see
@@ -200,10 +195,9 @@ The bucket name size is always 19 bytes (see
 large objects are dominant, otherwise it should be estimated according to the
 specific use case. The number of writes is 3.
 
+#### Upcoming Riak 2.1.0 Compatibility
 
-#### Upcoming Riak 2.1
-
-Riak CS on Riak 2.1 has not yet been tested. However, in the new
+Riak CS 2.0.x on Riak 2.1.0 has not yet been tested. However, in the new
 Riak version the configuration should be
 
 ```
@@ -217,9 +211,8 @@ with `leveldb.data_root` and `bitcask.data_root`, respectively.
 
 #### Notable changes in `vm.args`
 
-The upgrade of Riak from the 1.4 series to the 2.0 series is described in
-[Upgrading Your Configuration System]
-(http://docs.basho.com/riak/2.0.5/upgrade-v20/#Upgrading-Your-Configuration-System).
+The upgrade of Riak from the 1.4.x series to the 2.0.x series is described in
+[Upgrading Your Configuration System][upgrading_your_configuration].
 The following are several major configuration items which are essential
 for Riak CS. `erlang.distribution_buffer_size` is commented out by
 default.
@@ -232,11 +225,10 @@ default.
 
 #### Storage calculation
 
-If [storage statistics]
-(http://docs.basho.com/riakcs/latest/cookbooks/Usage-and-Billing-Data/#Storage-Statistics)
-is desired on your system, several more configurations are required.
+If [storage statistics][storage_statistics] are desired on your system, several
+more configuration options are required.
 
-To include the CS path add the following setting to `advanced.config`:
+To include the CS path add, the following setting to `advanced.config`:
 
 ```erlang
 {riak_kv, [
@@ -244,14 +236,13 @@ To include the CS path add the following setting to `advanced.config`:
 ]}.
 ```
 
-### Notes on upgrading Riak to 2.0
+### Notes on upgrading Riak to 2.0.5
 
-The underlying Bitcask storage format has been changed in Riak 2.0 to
-[fix several important issues]
-(https://github.com/basho/riak/blob/2.0/RELEASE-NOTES.md#bitcask).
+The underlying Bitcask storage format has been changed in Riak 2.0.x to
+[fix several important issues][riak_2.0_release_notes_bitcask].
 The first start of Riak after an upgrade involves an implicit data
-format upgrade conversion, which means that all data files are read
-and written out to new files. This might lead to higher disk load.
+format upgrade conversion, which means that all data files are read,
+and written out to new files. This might lead to higher than normal disk load.
 The duration of the upgrade will depend on the amount of data stored in
 bitcask and the IO performance of the underlying disk.
 
@@ -270,16 +261,16 @@ logs like this:
 2015-03-17 07:23:07.181 [info] <0.610.0>@riak_kv_bitcask_backend:callback:446 Finished upgrading to Bitcask 1.7.0 in /mnt/data/bitcask/1278813932664540053428224228626747642198940975104
 ```
 
-### Riak CS 1.5 to 2.0, including Stanchion
+### Riak CS 1.5.x to 2.0.0, including Stanchion
 
 Consult the Configuration Mapping Table below
 to preserve same configuration between CS 1.5 and 2.0.
 
 If obsolete configurations like `fold_objects_for_list_keys`,
 `n_val_1_get_requests` or `gc_paginated_indexes` are still set as
-`false`, **removing any of them from the configuration file** is strongly
-recommended in Riak CS 2.0, because those configuration items are just
-to preserve old and slow behaviours of Riak CS and have no inpact on
+`false`, **removing them from the configuration file** is strongly
+recommended in Riak CS 2.0.x, because those configuration items are just
+to preserve old and slow behaviours of Riak CS and have no impact on
 functionality.
 
 #### Multibag configurations
@@ -289,97 +280,94 @@ Riak CS and Stanchion.
 
 ## Notes on Upgrading from Riak CS < 1.5.4
 
-[Some objects changes their names]
-(https://github.com/basho/riak_cs/blob/release/1.5/RELEASE-NOTES.md#notes-on-upgrading)
-after the upgrade. Applications may change their behaviour due to this bugfix.
+[Some key objects changed names][riak_cs_1.5_release_notes_upgrading] after the
+upgrade. Applications may need to change their behaviour due to this bugfix.
 
 ## Notes on Upgrading from Riak CS < 1.5.1
 
-[Bucket number limitation per user]
-(https://github.com/basho/riak_cs/blob/release/1.5/RELEASE-NOTES.md#notes-on-upgrading-1)
+[Bucket number limitation per user][riak_cs_1.5_release_notes_upgrading_1]
 have been introduced in 1.5.1. Users who have more than 100 buckets
 cannot create any bucket after the upgrade unless the limit is
 extended in the system configuration.
 
-## Special Notes on Upgrading From Riak CS 1.4
+## Special Notes on Upgrading From Riak CS 1.4.x
 
-An operational procedure [to clean up incomplete multipart under deleted buckets]
-(https://github.com/basho/riak_cs/blob/release/1.5/RELEASE-NOTES.md#incomplete-multipart-uploads)
+An operational procedure [to clean up incomplete multipart under deleted
+buckets][riak_cs_1.5_release_notes_incomplete_mutipart]
 is needed. Otherwise new buckets with names that used to exist in the past
 can't be created. The operation will fail with 409 Conflict.
 
 Leeway seconds and disk space should also be carefully watched during
 the upgrade, because timestamp management of garbage collection has changed
-since the 1.5 release. Consult the "[Leeway seconds and disk space]
-(https://github.com/basho/riak_cs/blob/release/1.5/RELEASE-NOTES.md#leeway-seconds-and-disk-space)"
-section of 1.5.0 release notes for more detailed description.
+since the 1.5.0 release. Consult the "[Leeway seconds and disk
+space][riak_cs_1.5_release_notes_leeway_and_disk]
+section of 1.5 release notes for a more detailed description.
 
 ## Riak CS nodes on different hosts than Riak nodes
 
-Riak CS that are not coinstalled with a Riak node can be
-upgraded at any time while the corresponding remote Riak is alive.
+Riak CS nodes that are not co-installed with Riak nodes can be
+upgraded at any time while the corresponding remote Riak node is alive.
+
 Instructions follow:
 
 1. Stop the Riak CS process
 2. Backup configuration files
-3. Uninstall the Riak CS package
-4. Install the Riak CS 2.0 package
+3. Uninstall the current Riak CS package
+4. Install the Riak CS 2.0.0 package
 5. Update configuration
 6. Start Riak CS
 
 ## Downgrading
 
-### to CS 1.4
+### To CS 1.4.x
 
-We have not yet tested downgrading from Riak CS 2.0 to Riak CS 1.4.
+We have not yet tested downgrading from Riak CS 2.0.0 to Riak CS 1.4.x
 
-### to CS 1.5
+### To CS 1.5.x
 
-To downgrade Riak CS 2.0 system to Riak CS 1.5 system, repeat the
-following instructions for each node:
+To downgrade Riak CS 2.0.0 to Riak CS 1.5.x, repeat the following instructions
+for each node:
 
 1. Stop Riak CS process
 2. Stop Riak process
-3. Uninstall Riak CS
-4. Uninstall Riak
+3. Uninstall Riak CS 2.0.0
+4. Uninstall Riak 2.0.5
 5. Run downgrade bitcask script for all bitcask directories
-6. Install Riak
-7. Install Riak CS
+6. Install Riak 1.4.x
+7. Install Riak CS 1.5.x
 8. Restore configuration files
-9. Start Riak Process
-10. Start CS Process
+9. Start Riak
+10. Start Riak CS
 
-The Bitcask file format has changed between Riak 1.4 and 2.0. It supports
-implicit upgrade of bitcask data files, while automatic downgrading
-is not supported. For this reason downgrading requires a script to
-translate data files. See also the
-[2.0 downgrade notes]
-(https://github.com/basho/riak/wiki/2.0-downgrade-notes).
+The Bitcask file format has changed between Riak 1.4.x and 2.0.0. While the
+implicit upgrade of bitcask data files is supported, automatic downgrades of
+bitcask data files is not. For this reason downgrading requires a script to
+translate data files. See also the [2.0 downgrade notes][downgrade_notes].
 
+## Configuration Mapping Table between Riak CS 1.5.x and Riak CS 2.0.0
 
-## Configuration Mapping Table between 1.5 and 2.0
+Some important configuration changes occurred between 1.5.x and 2.0.0, and not
+all items were translated one-to-one.
 
-Some important configuration changes happened between 1.5 and 2.0. Not all items
-are translated one to one.
-
-In the tables below, the default values are shown.
+In the tables below, old and new default values are shown.
 
 The file name has changed from `app.config` and `vm.args` to only
-`riak-cs.conf`. Configuration files are still in the same location as before.
+`riak-cs.conf`. Configuration files are still stored in the same location as
+before.
 
 Note: **`app.config` should be removed** when
 `riak-cs.conf` is used.
 
 ### Riak CS
 
-#### Items effective in the config file in 2.0 by default
+#### Items enabled by default Riak CS 2.0.0
 
 Note: `storage.stats.schedule.$time` does not have any default
 value but an example is added.
 
 `riak_cs` section in app.config
 
-|      1.5                           |        2.0                             |
+|      1.5.4                         |        2.0.0                           |
 |:-----------------------------------|:---------------------------------------|
 |`{cs_ip, "127.0.0.1"}`              |`listener = 127.0.0.1:8080`             |
 |`{cs_port, 8080}`                   |                                        |
@@ -414,7 +402,7 @@ value but an example is added.
 
 `webmachine` section in app.config
 
-|      1.5                           |        2.0                            |
+|      1.5.4                         |        2.0.0                          |
 |:-----------------------------------|:--------------------------------------|
 |`{server_name, "Riak CS"}`          |`server_name = Riak CS`                |
 |`{log_handlers, ....}`              |`log.access.dir = /var/log/riak-cs`    |
@@ -435,14 +423,14 @@ Due to a WebMachine change, if `log_handlers` are defined in `app.config` or
 This does not have to be changed if `log_handlers` is not defined in
 `app.config` or `advanced.config`.
 
-#### Items commented out in 2.0 by default
+#### Items commented out by default in Riak CS 2.0.0
 
-All commented out items are undefined and disabled, except modules.
-`rewrite_module` and `auth_module` are commented out but the default value
-does not change from 1.5. This is for showing operators how to change these
-to OOS API.
+All commented out items are undefined and disabled, except modules.  
+`rewrite_module` and `auth_module` are commented out, but the default value
+does not change from CS 1.5.4. This section is for showing operators how to
+change these settings to the OOS API.
 
-| 1.5                                   | 2.0                             |
+| 1.5.4                                 | 2.0.0                           |
 |:--------------------------------------|:--------------------------------|
 |`{rewrite_module, riak_cs_s3_rewrite }`|`rewrite_module`                 |
 |`{auth_module, riak_cs_s3_auth },`     |`auth_module`                    |
@@ -452,7 +440,7 @@ to OOS API.
 |`  {certfile, "./etc/cert.pem"}`       |`ssl.certfile`                   |
 |`  {keyfile, "./etc/key.pem"}`         |`ssl.keyfile`                    |
 
-### Items not supported in `riak-cs.conf` and should be written in `advanced.config`
+### Items not supported in `riak-cs.conf` that should be written in `advanced.config`
 
 `fold_objects_for_list_keys`, `n_val_1_get_requests` and
 `gc_paginated_indexes` do not have corresponding items in
@@ -463,7 +451,7 @@ the `riak_cs` section of `advanced.config`.
 
 `stanchion` section in app.config.
 
-|      1.5                           |        2.0                            |
+|      1.5.4                         |        2.0.0                          |
 |:-----------------------------------|:--------------------------------------|
 |`{stanchion_ip, "127.0.0.1"}`       |`listener = 127.0.0.1:8080`            |
 |`{stanchion_port, 8085}`            |                                       |
@@ -474,7 +462,7 @@ the `riak_cs` section of `advanced.config`.
 
 Commented out by default and consequently `undefined` so as to disable SSL.
 
-|      1.5                           |        2.0                            |
+|      1.5.4                         |        2.0.0                          |
 |:-----------------------------------|:--------------------------------------|
 |`{ssl, [`                           |                                       |
 |`  {certfile, "./etc/cert.pem"}`    |`ssl.certfile`                         |
@@ -484,3 +472,21 @@ Commented out by default and consequently `undefined` so as to disable SSL.
 ## lager
 
 Riak's lager configuration can be copied directly.
+
+
+[riak_1.4_release_notes]: https://github.com/basho/riak/blob/1.4/RELEASE-NOTES.md
+[riak_2.0_release_notes]: https://github.com/basho/riak/blob/2.0/RELEASE-NOTES.md
+[riak_2.0_release_notes_bitcask]: https://github.com/basho/riak/blob/2.0/RELEASE-NOTES.md#bitcask
+[riak_cs_1.4_release_notes]: https://github.com/basho/riak_cs/blob/release/1.5/RELEASE-NOTES.md#riak-cs-145-release-notes
+[riak_cs_1.5_release_notes]: https://github.com/basho/riak_cs/blob/release/1.5/RELEASE-NOTES.md#riak-cs-154-release-notes
+[riak_cs_1.5_release_notes_upgrading]: https://github.com/basho/riak_cs/blob/release/1.5/RELEASE-NOTES.md#notes-on-upgrading
+[riak_cs_1.5_release_notes_upgrading_1]: https://github.com/basho/riak_cs/blob/release/1.5/RELEASE-NOTES.md#notes-on-upgrading-1
+[riak_cs_1.5_release_notes_incomplete_mutipart]: https://github.com/basho/riak_cs/blob/release/1.5/RELEASE-NOTES.md#incomplete-multipart-uploads
+[riak_cs_1.5_release_notes_leeway_and_disk]: https://github.com/basho/riak_cs/blob/release/1.5/RELEASE-NOTES.md#leeway-seconds-and-disk-space
+[upgrading_to_2.0]: http://docs.basho.com/riak/2.0.5/upgrade-v20/
+[proper_backend]: http://docs.basho.com/riakcs/1.5.4/cookbooks/configuration/Configuring-Riak/#Setting-up-the-Proper-Riak-Backend
+[configuring_elvevedb]: http://docs.basho.com/riak/latest/ops/advanced/backends/leveldb/#Configuring-eLevelDB
+[bitcask_capactiy_planning]: http://docs.basho.com/riak/2.0.5/ops/building/planning/bitcask/
+[upgrading_your_configuration]: http://docs.basho.com/riak/2.0.5/upgrade-v20/#Upgrading-Your-Configuration-System
+[storage_statistics]: http://docs.basho.com/riakcs/latest/cookbooks/Usage-and-Billing-Data/#Storage-Statistics
+[downgrade_notes]:  https://github.com/basho/riak/wiki/2.0-downgrade-notes
