@@ -547,11 +547,11 @@ check_data_files_are_small_enough(Node, Vsn, [VnodeName|Rest]) ->
             check_data_files_are_small_enough(Node, Vsn, Rest);
         {false, _} ->
             lager:info("bitcask data file check failed, count(files)=~p for ~p ~p",
-                       [Node, VnodeName, length(FileSizes)]),
+                       [length(FileSizes), Node, VnodeName]),
             false;
         {_, false} ->
             lager:info("bitcask data file check failed, sum(file size)=~p for ~p ~p",
-                       [Node, VnodeName, TotalSize]),
+                       [TotalSize, Node, VnodeName]),
             false
     end.
 
