@@ -85,10 +85,16 @@ pulse: all
 	@rm -rf $(BASE_DIR)/.eunit
 	@./rebar -D PULSE eunit skip_deps=true suites=$(PULSE_TESTS)
 
-test-client: test-clojure test-python test-erlang test-ruby test-php test-go
+test-client: test-clojure test-boto test-ceph test-erlang test-ruby test-php test-go
 
 test-python:
 	@cd client_tests/python/ && make CS_HTTP_PORT=$(CS_HTTP_PORT)
+
+test-boto:
+	@cd client_tests/python/ && make boto_tests CS_HTTP_PORT=$(CS_HTTP_PORT)
+
+test-ceph:
+	@cd client_tests/python/ && make ceph_tests CS_HTTP_PORT=$(CS_HTTP_PORT)
 
 test-ruby:
 	@bundle --gemfile client_tests/ruby/Gemfile --path vendor
