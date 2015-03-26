@@ -18,7 +18,7 @@
 
 # General Notes on Upgrading to Riak CS 2.0.0
 
-Upgrading Riak CS systems involves upgrading the underlying Riak, Riak CS and
+Upgrading a Riak CS system involves upgrading the underlying Riak, Riak CS and
 Stanchion installations. The upgrade process can be non-trivial depending on
 system configurations and the combination of sub-system versions. This document
 contains general instructions and notices on upgrading the whole system to Riak
@@ -34,7 +34,7 @@ and Riak CS release notes.
 
 ## Upgrading From Riak CS < 1.4.x
 
-As Basho only supports upgrades from the previous 2 major versions prior to the
+As Basho only supports upgrades from the previous two major versions prior to the
 latest release, this document will only be suitable for upgrading from Riak CS
 1.4.x and Riak CS 1.5.x.
 
@@ -68,6 +68,7 @@ Patches released for CS 1.4.x and CS 1.5.x cannot be directly applied to Riak CS
 2.0.0 because the version of Erlang/OTP shipped with Riak CS has been updated
 between CS 1.5.4 and CS 2.0.0. Patches will need to be recompiled using the
 newer version of Erlang/OTP before being released for Riak CS 2.0.0.  
+
 This also applies to Riak 2.0.x; patches released for Riak 1.4.x must be
 recompiled before they can be used with Riak 2.0.x.  
 All previous official patches for older versions of Riak and Riak CS have been
@@ -93,7 +94,7 @@ Below are configuration changes for a Riak cluster supporting Riak CS.
 
 #### Default bucket properties
 
-In older version of Riak, default bucket properties has been configured in the
+In the older version of Riak, default bucket properties has been configured in the
 `app.config` as follows:
 
 ```erlang
@@ -120,12 +121,12 @@ There are two ways to configure Riak 2.0.5 behind Riak CS 2.0.0:
 2. Transfer selected items from the old `app.config` to the `advanced.config`
    file
 
-In case of 1., `add_paths` should be changed to target the new Riak CS binaries
+In the first case, `add_paths` should be changed to target the new Riak CS binaries
 installed by the Riak CS 2.0.0 package. From
 `"/usr/lib/riak-cs/lib/riak_cs-1.5.4/ebin"` to
 `"/usr/lib/riak-cs/lib/riak_cs-2.0.0/ebin"`.
 
-If the Riak 2.0.x configuration is preferred, 2. is the correct choice. Copy all
+If the Riak 2.0.x configuration is preferred, follow the second option and copy all
 `riak_kv` configuration items from `app.config` into `advanced.config`, and
 update `add_paths`.
 
@@ -135,7 +136,7 @@ See [Setting up the Proper Riak Backend][proper_backend] for details. The
 #### Review memory size
 
 Since the default configuration of the LevelDB memory size has changed, review
-your memory size settings. Riak CS' memory use is dominated by the Bitcask
+your memory size settings. The memory use of Riak CS is dominated by the Bitcask
 keydir and LevelDB block cache. Additionally, to improve IO performance, some
 extra memory for the kernel disc cache should be configured. The equations below
 might help when specifying the memory size:
@@ -180,8 +181,7 @@ while `N(o, size > 1MB` is the number of objects with a size greater than 1MB.
 The number of keys in Riak CS is related to the amount of data stored in MBs. If
 the average lifetime of objects is significantly smaller than the leeway period,
 treat objects waiting for garbage collections as live objects on disk. Actual
-numbers of key count per vnode are included in the output of `riak-admin vnode-
-status`. There is an item named `Status` in each vnode section, which includes
+numbers of key count per vnode are included in the output of `riak-admin vnode-status`. There is an item named `Status` in each vnode section, which includes
 the `key_count` in the `be_blocks` section.
 
 Once the numbers of keys is known, estimate the amount of memory used by Bitcask
