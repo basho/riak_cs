@@ -34,9 +34,9 @@ and Riak CS release notes.
 
 ## Upgrading From Riak CS < 1.4.x
 
-As Basho only supports upgrades from the previous two major versions prior to the
-latest release, this document will only be suitable for upgrading from Riak CS
-1.4.x and Riak CS 1.5.x.
+As Basho only supports upgrades from the previous two major versions prior to
+the latest release, this document will only be suitable for upgrading from Riak
+CS 1.4.x and Riak CS 1.5.x.
 
 To upgrade to Riak CS 2.0.0 from versions prior to CS 1.4.x, operators will need
 to first upgrade their system to CS 1.4.5 or CS 1.5.4. Upgrading to CS 1.5.4 is
@@ -94,7 +94,7 @@ Below are configuration changes for a Riak cluster supporting Riak CS.
 
 #### Default bucket properties
 
-In the older version of Riak, default bucket properties has been configured in the
+In older versions of Riak, default bucket properties has been configured in the
 `app.config` as follows:
 
 ```erlang
@@ -121,13 +121,13 @@ There are two ways to configure Riak 2.0.5 behind Riak CS 2.0.0:
 2. Transfer selected items from the old `app.config` to the `advanced.config`
    file
 
-In the first case, `add_paths` should be changed to target the new Riak CS binaries
-installed by the Riak CS 2.0.0 package. From
+In the first case, `add_paths` should be changed to target the new Riak CS
+binaries installed by the Riak CS 2.0.0 package. From
 `"/usr/lib/riak-cs/lib/riak_cs-1.5.4/ebin"` to
 `"/usr/lib/riak-cs/lib/riak_cs-2.0.0/ebin"`.
 
-If the Riak 2.0.x configuration is preferred, follow the second option and copy all
-`riak_kv` configuration items from `app.config` into `advanced.config`, and
+If the Riak 2.0.x configuration is preferred, follow the second option and copy
+all `riak_kv` configuration items from `app.config` into `advanced.config`, and
 update `add_paths`.
 
 See [Setting up the Proper Riak Backend][proper_backend] for details. The
@@ -181,8 +181,9 @@ while `N(o, size > 1MB` is the number of objects with a size greater than 1MB.
 The number of keys in Riak CS is related to the amount of data stored in MBs. If
 the average lifetime of objects is significantly smaller than the leeway period,
 treat objects waiting for garbage collections as live objects on disk. Actual
-numbers of key count per vnode are included in the output of `riak-admin vnode-status`. There is an item named `Status` in each vnode section, which includes
-the `key_count` in the `be_blocks` section.
+numbers of key count per vnode are included in the output of
+`riak-admin vnode-status`. There is an item named `Status` in each vnode
+section, which includes the `key_count` in the `be_blocks` section.
 
 Once the numbers of keys is known, estimate the amount of memory used by Bitcask
 keydir as per the [Bitcask Capacity Planning][bitcask_capactiy_planning]
@@ -348,8 +349,9 @@ all items were translated one-to-one.
 
 In the tables below, old and new default values are shown.
 
-The file name has changed from `app.config` and `vm.args` to only `riak-
-cs.conf`. Configuration files are still stored in the same location as before.
+The file name has changed from `app.config` and `vm.args` to only
+`riak-cs.conf`. Configuration files are still stored in the same location as
+before.
 
 Note: **`app.config` should be removed** when `riak-cs.conf` is used.
 
