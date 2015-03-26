@@ -1,4 +1,4 @@
-# Riak CS 2.0.0-pre1 Release Notes
+# Riak CS 2.0.0 Release Notes
 
 - Updated to work with Riak 2.0.5
 - Simplified configuration system
@@ -22,7 +22,7 @@ Upgrading a Riak CS system involves upgrading the underlying Riak, Riak CS and
 Stanchion installations. The upgrade process can be non-trivial depending on
 system configurations and the combination of sub-system versions. This document
 contains general instructions and notices on upgrading the whole system to Riak
-CS 2.0.
+CS 2.0.0.
 
 For more detailed information on previous versions, consult the previous Riak
 and Riak CS release notes.
