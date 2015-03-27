@@ -3,10 +3,38 @@
 - Updated to work with Riak 2.0.5
 - Simplified configuration system
 
-## Changes
+## Changes and Additions
 
 - Changed the name of `gc_max_workers` to `gc.max_workers`, and lowered the
-  default value from 5 to 2.
+  default value from 5 to 2 (#1110).
+- Partial support of GET Location API (#1057)
+- Add very preliminally AWS v4 header authentication - without query
+  string authentication, object chunking and payload checksum(#1064).
+  There are still a lot of work to reliably use v4 authentication.
+- Put Enterprise deps into dependency graph (#1065)
+- Introduce Cuttlefish (#1020, #1068, #1076, #1086, #1090)
+  (Stanchion #88, #90, #91)
+- Yessir Riak client to measure performance (#1072, #1083)
+- Inspector improvement with usage change (#1084)
+- Check singed date in S3 authentication (#1067)
+- Update `cluster_info` and various dependent libraries (#1087, #1088)
+  (Stanchion #85, #87, #93)
+- Storage calculation optimization (#1089) With Riak >= 2.1 this works
+  with `use_2i_for_storage_calc` flag might relieve disk read of
+  storage calculation.
+
+## Bugfix
+
+- Fix wrong webmachine log handler name (#1075)
+- Fix lager crash (#1038)
+- Fix hardcoded crashdump path (#1052)
+- Supress unnecessary warnings (#1053)
+- Multibag simpler state transition (Multibag #21)
+- GC block deletion failure after transition to multibag environment
+  (Multibag #19)
+- Connection closing caused errors for objects stored before the
+  transition, after transition from single bag to multibag
+  configuration (Multibag #18).
 
 ## Deprecation Notice
 
