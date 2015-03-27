@@ -6,7 +6,7 @@
 ## Changes and Additions
 
 - Changed the name of `gc_max_workers` to `gc.max_workers`, and lowered the
-  default value from 5 to 2 (#1110).
+  default value from 5 to 2 (#1110) to reduce the workload on the cs cluster.
 - Partial support of GET Location API (#1057)
 - Add very preliminally AWS v4 header authentication - without query
   string authentication, object chunking and payload checksum(#1064).
@@ -92,15 +92,11 @@ In practice, we recommend updating Stanchion before all other subsystems. Be
 careful not to have multiple live Stanchion nodes accessible from CS nodes at
 the same time.
 
-Patches released for CS 1.4.x and CS 1.5.x cannot be directly applied to Riak CS
-2.0.0 because the version of Erlang/OTP shipped with Riak CS has been updated
-between CS 1.5.4 and CS 2.0.0. Patches will need to be recompiled using the
-newer version of Erlang/OTP before being released for Riak CS 2.0.0.  
-
-This also applies to Riak 2.0.x; patches released for Riak 1.4.x must be
-recompiled before they can be used with Riak 2.0.x.  
 All previous official patches for older versions of Riak and Riak CS have been
-included in these releases.
+included in these releases. Patches released for CS 1.4.x and CS 1.5.x cannot be directly applied to Riak CS
+2.0.0 because the version of Erlang/OTP shipped with Riak CS has been updated
+between CS 1.5.4 and CS 2.0.0.   
+
 
 ## Configuration upgrade
 
@@ -223,20 +219,6 @@ average value size is close to 1MB if large objects are dominant, otherwise it
 should be estimated according to the specific use case. The number of writes is
 3.
 
-#### Upcoming Riak 2.1.0 Compatibility
-
-Riak CS 2.0.x on Riak 2.1.0 has not yet been tested. However, in the new Riak
-version the configuration should be
-
-```
-storage_backend = prefix_multi
-cs_version = 20000
-```
-
-`cs_version` must not be removed when Riak is running under Riak CS. In the new
-configuration style, the data path for LevelDB and Bitcask can be set with
-`leveldb.data_root` and `bitcask.data_root`, respectively.
-
 #### Notable changes in `vm.args`
 
 The upgrade of Riak from the 1.4.x series to the 2.0.x series is described in
@@ -344,10 +326,6 @@ Instructions follow:
 6. Start Riak CS
 
 ## Downgrading
-
-### To CS 1.4.x
-
-We have not yet tested downgrading from Riak CS 2.0.0 to Riak CS 1.4.x
 
 ### To CS 1.5.x
 
