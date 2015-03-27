@@ -104,5 +104,5 @@
 -define(DEFAULT_GC_RETRY_INTERVAL, 21600). %% 6 hours
 -define(DEFAULT_GC_KEY_SUFFIX_MAX, 256).
 -define(DEFAULT_GC_BATCH_SIZE, 1000).
--define(DEFAULT_GC_WORKERS, 5).
+-define(DEFAULT_GC_WORKERS, 2).
 -define(EPOCH_START, <<"0">>).
