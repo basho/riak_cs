@@ -16,7 +16,7 @@
 - Changed the name of `gc_max_workers` to `gc.max_workers`, and lowered the
   default value from 5 to 2 (#1110) to reduce the workload on the cs cluster.
 - Partial support of GET Location API (#1057)
-- Add very preliminally AWS v4 header authentication - without query
+- Add very preliminary AWS v4 header authentication - without query
   string authentication, object chunking and payload checksum (#1064).
   There is still a lot of work to reliably use v4 authentication.
 - Put Enterprise deps into dependency graph (#1065)
@@ -24,7 +24,7 @@
   (Stanchion #88, #90, #91)
 - Yessir Riak client to measure performance (#1072, #1083)
 - Inspector improvement with usage change (#1084)
-- Check singed date in S3 authentication (#1067)
+- Check signed date in S3 authentication (#1067)
 - Update `cluster_info` and various dependent libraries (#1087, #1088)
   (Stanchion #85, #87, #93)
 - Storage calculation optimization (#1089) With Riak >= 2.1 this works
@@ -36,7 +36,7 @@
 - Fix wrong webmachine log handler name (#1075)
 - Fix lager crash (#1038)
 - Fix hardcoded crashdump path (#1052)
-- Supress unnecessary warnings (#1053)
+- Suppress unnecessary warnings (#1053)
 - Multibag simpler state transition (Multibag #21)
 - GC block deletion failure after transition to multibag environment
   (Multibag #19)
@@ -163,7 +163,7 @@ See [Setting up the Proper Riak Backend][proper_backend] for additional details.
 Since the default configuration of the LevelDB memory size has changed, you will need to review your memory size settings. The memory use of Riak CS is primarily influenced by the Bitcask keydir and LevelDB block cache. Additionally, to improve IO performance, some extra memory for the kernel disk cache should be planned for. The equations below might help when specifying the memory size:
 
 - Memory for backends = (Memory for Bitcask) + (Memory for LevelDB)
-- Memory for stoarge = (Memory for backends) + (Memory for kernel cache)
+- Memory for storage = (Memory for backends) + (Memory for kernel cache)
 
 ##### LevelDB Block Cache Size
 
@@ -479,3 +479,4 @@ Riak's lager configuration can be copied directly.
 [upgrading_your_configuration]: http://docs.basho.com/riak/2.0.5/upgrade-v20/#Upgrading-Your-Configuration-System
 [storage_statistics]: http://docs.basho.com/riakcs/latest/cookbooks/Usage-and-Billing-Data/#Storage-Statistics
 [downgrade_notes]:  https://github.com/basho/riak/wiki/2.0-downgrade-notes
+
