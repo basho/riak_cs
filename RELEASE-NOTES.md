@@ -122,9 +122,12 @@ time.
 
 Repeat these steps on each node running Stanchion:
 
-1.
-1.
-1. Migrate the Stanchion configuration (See below)
+1. Stop Stanchion
+2. Backup all Stanchion configuration files
+3. Uninstall the current Stanchion package
+4. Install the new Stanchion 2.0.0 package
+5. Migrate the Stanchion configuration (See below)
+6. Start Stanchion
 
 #### Scenario: If Riak CS and Riak are both running on the same host.
 
@@ -132,7 +135,7 @@ Repeat these steps on every host:
 
 1. Stop Riak CS
 2. Stop Riak
-3. Backup all configuration files and remove all patches
+3. Backup all Riak and Riak CS configuration files and remove all patches
 4. Uninstall the current Riak CS package
 5. Uninstall the current Riak Riak packages
 6. Install the new Riak package
@@ -485,15 +488,20 @@ Stanchion 1.5.0, repeat the following instructions for each node:
 1. Stop Riak
 1. Uninstall the Riak CS 2.0.0 package
 1. Uninstall the Riak 2.0.5 package
-1. If Stanchion is installed on this node, uninstall the Stanchion 2.0.0 package
 1. Run the Bitcask downgrade script for all Bitcask directories\*
 1. Install the desired Riak package
 1. Install the desired Riak CS package
-1. If Stanchion was installed on this node, install the desired Stanchion
-   package
 1. Restore configuration files
 1. Start Riak
 1. Start Riak CS
+
+Finally, on any nodes running Stanchion:
+
+1. Stop Stanchion
+2. Uninstall the Stanchion 2.0.0 package
+3. Install the desired Stanchion package
+4. Restore Stanchion configuration files
+5. Start Stanchion
 
 \*The Bitcask file format has changed between Riak 1.4.x and 2.0.0. While the
 implicit upgrade of Bitcask data files is supported, automatic downgrades of
@@ -518,4 +526,5 @@ translate data files. See also the [2.0 downgrade notes][downgrade_notes].
 [upgrading_your_configuration]: http://docs.basho.com/riak/2.0.5/upgrade-v20/#Upgrading-Your-Configuration-System
 [storage_statistics]: http://docs.basho.com/riakcs/latest/cookbooks/Usage-and-Billing-Data/#Storage-Statistics
 [downgrade_notes]:  https://github.com/basho/riak/wiki/2.0-downgrade-notes
+
 
