@@ -1,7 +1,17 @@
 # Riak CS 2.0.0 Release Notes
 
-- Updated to work with Riak 2.0.5
-- Simplified configuration system
+## General Information
+
+- This release updates Riak CS to work with Riak 2.0.5.
+- We have simplified the configuration system.
+- All official patches for older versions of Riak and Riak CS have been included in these releases. There is thus no need to apply any patches released for Riak CS 1.4.x or 1.5.x to the Riak CS 2.0.x series. In fact, such patches cannot be directly applied to Riak CS 2.0.x because the version of Erlang/OTP shipped with Riak CS has been updated in version 2.0.0.
+- Please review the complete **Release Notes** section below before upgrading.
+
+## Known Issues & Limitations
+
+- None.
+
+## Riak CS Enterprise 2.0.0 Release Notes
 
 ## Changes and Additions
 
@@ -9,8 +19,8 @@
   default value from 5 to 2 (#1110) to reduce the workload on the cs cluster.
 - Partial support of GET Location API (#1057)
 - Add very preliminally AWS v4 header authentication - without query
-  string authentication, object chunking and payload checksum(#1064).
-  There are still a lot of work to reliably use v4 authentication.
+  string authentication, object chunking and payload checksum (#1064).
+  There is still a lot of work to reliably use v4 authentication.
 - Put Enterprise deps into dependency graph (#1065)
 - Introduce Cuttlefish (#1020, #1068, #1076, #1086, #1090)
   (Stanchion #88, #90, #91)
@@ -23,7 +33,7 @@
   with `use_2i_for_storage_calc` flag might relieve disk read of
   storage calculation.
 
-## Bugfix
+## Bugfixes
 
 - Fix wrong webmachine log handler name (#1075)
 - Fix lager crash (#1038)
@@ -52,53 +62,7 @@ system configurations and the combination of sub-system versions. This document
 contains general instructions and notices on upgrading the whole system to Riak
 CS 2.0.0.
 
-For more detailed information on previous versions, consult the previous Riak
-and Riak CS release notes.
-
-* [Riak 1.4 series release notes][riak_1.4_release_notes]
-* [Riak 2.0 series release notes][riak_2.0_release_notes]
-* [Riak CS 1.4 series release notes][riak_cs_1.4_release_notes]
-* [Riak CS 1.5 series release notes][riak_cs_1.5_release_notes]
-
-## Upgrading From Riak CS < 1.4.x
-
-As Basho only supports upgrades from the previous two major versions prior to
-the latest release, this document will only be suitable for upgrading from Riak
-CS 1.4.x and Riak CS 1.5.x.
-
-To upgrade to Riak CS 2.0.0 from versions prior to CS 1.4.x, operators will need
-to first upgrade their system to CS 1.4.5 or CS 1.5.4. Upgrading to CS 1.5.4 is
-recommended. The underlying Riak installation should be upgraded to the Riak
-1.4.x series as well -- preferably the latest version, Riak 1.4.12.
-
-# General Instructions
-
-## Riak CS and Riak on the same host
-
-Repeat these steps on every host:
-
-1. Stop the Riak CS node
-2. Stop the Riak node
-3. Back all configuration files up and remove all patches
-4. Uninstall the old Riak CS and Riak packages
-5. Install the new Riak CS and Riak package
-6. Migrate the Riak configuration
-7. Migrate the Riak CS configuration
-8. Start Riak
-9. Start Riak CS
-
-Stanchion can *theoretically* be updated at any time during the system upgrade.
-In practice, we recommend updating Stanchion before all other subsystems. Be
-careful not to have multiple live Stanchion nodes accessible from CS nodes at
-the same time.
-
-All previous official patches for older versions of Riak and Riak CS have been
-included in these releases. Patches released for CS 1.4.x and CS 1.5.x cannot be directly applied to Riak CS
-2.0.0 because the version of Erlang/OTP shipped with Riak CS has been updated
-between CS 1.5.4 and CS 2.0.0.   
-
-
-## Configuration upgrade
+## New Configuration System
 
 Riak 2.0.0 introduced a new configuration system (`riak.conf`). It still
 supports the older style configurations through `app.config` and `vm.args`. Riak
@@ -107,7 +71,51 @@ CS 2.0.0 now follows suit and supports the new configuration style.
 Basho recommends moving to the new unified configuration system and use the
 files `riak.conf`, `riak-cs.conf` and `stanchion.conf`.
 
-### Riak 1.4.x to Riak 2.0.5
+## Note: Upgrading From Riak CS 1.3.x or Older
+
+Basho supports upgrading from the two previous major versions to the latest release. Thus, this document will only cover upgrading from Riak CS 1.4.x or Riak CS 1.5.x.
+
+To upgrade to Riak CS 2.0.0 from versions prior to CS 1.4.x, operators will need to first upgrade their system to Riak CS version 1.4.5 or 1.5.4. Upgrading to Riak CS 1.5.4 is recommended. The underlying Riak installation must also be upgraded to the Riak 1.4.x series, preferably version 1.4.12.
+
+# General Upgrade Instructions
+
+**Before proceeding with these simplified instructions, please read all of the Release Notes in full.**
+
+## Scenario: Riak CS and Riak are both running on the same host.
+
+Repeat these steps on every host:
+
+1. Stop Riak CS
+2. Stop Riak
+3. Backup all configuration files and remove all patches
+4. Uninstall the current Riak CS package
+5. Uninstall the current Riak Riak packages
+6. Install the new Riak package
+7. Install the new Riak CS 2.0.0 package
+8. Migrate the Riak configuration
+9. Migrate the Riak CS configuration
+10. Start Riak
+11. Start Riak CS
+
+## Scenario: Riak CS and Riak are running on separate hosts.
+
+When Riak CS is not installed on the same host as Riak, Riak CS can be upgraded at any time while the corresponding remote Riak node is alive.
+
+Repeat these steps on every host:
+
+1. Stop Riak CS
+2. Backup all configuration files and remove all patches
+3. Uninstall the current Riak CS package
+4. Install the new Riak CS 2.0.0 package
+5. Migrate the Riak CS configuration
+6. Start Riak CS
+
+Stanchion can *theoretically* be updated at any time during the system upgrade.
+In practice, we recommend updating Stanchion before all other subsystems. Be
+careful not to have multiple live Stanchion nodes accessible from CS nodes at
+the same time.
+
+### Upgrading Riak 1.4.x to Riak 2.0.5 for Riak CS 2.0.0
 
 As Riak CS 2.0.0 only works on top of Riak 2.0.5 -- and does *not* work on top
 of the Riak 1.x.x series -- the underlying Riak installation *must* be upgraded
@@ -116,7 +124,7 @@ to Riak 2.0.5. General guides for upgrading Riak to 2.0.5 are in the
 
 Below are configuration changes for a Riak cluster supporting Riak CS.
 
-#### Default bucket properties
+#### Step 1: Set Default Bucket Properties
 
 In older versions of Riak, default bucket properties has been configured in the
 `app.config` as follows:
@@ -137,40 +145,30 @@ buckets.default.allow_mult = true
 
 Note: this is defined in riak_kv.schema
 
-#### `riak_kv` configuration
+#### Step 2: `riak_kv` configuration
 
 There are two ways to configure Riak 2.0.5 behind Riak CS 2.0.0:
 
-1. Reuse the `app.config` file of Riak 1.4.x
-2. Transfer selected items from the old `app.config` to the `advanced.config`
-   file
+**Option 1: Reuse the existing `app.config` file from Riak 1.4.x**
 
-In the first case, `add_paths` should be changed to target the new Riak CS
-binaries installed by the Riak CS 2.0.0 package. From
-`"/usr/lib/riak-cs/lib/riak_cs-1.5.4/ebin"` to
-`"/usr/lib/riak-cs/lib/riak_cs-2.0.0/ebin"`.
+In this case, `add_paths` should be changed to target the new Riak CS binaries installed by the Riak CS 2.0.0 package. These will be changed from `"/usr/lib/riak-cs/lib/riak_cs-1.5.4/ebin"` to `"/usr/lib/riak-cs/lib/riak_cs-2.0.0/ebin"`.
 
-If the Riak 2.0.x configuration is preferred, follow the second option and copy
-all `riak_kv` configuration items from `app.config` into `advanced.config`, and
-update `add_paths`.
+**Option 2: Use Riak 2.0.0's new `advanced.config`
 
-See [Setting up the Proper Riak Backend][proper_backend] for details. The
-`app.config` file must be removed when `advanced.config` is used.
+You will need to copy all riak_kv configuration items from `app.config` into `advanced.config`, and update `add_paths` to target the new Riak CS binaries installed by the Riak CS 2.0.0 package. These will be changed from `"/usr/lib/riak-cs/lib/riak_cs-1.5.4/ebin"` to `"/usr/lib/riak-cs/lib/riak_cs-2.0.0/ebin"`.
 
-#### Review memory size
+The `app.config` file must be removed when `advanced.config` is used.
 
-Since the default configuration of the LevelDB memory size has changed, review
-your memory size settings. The memory use of Riak CS is dominated by the Bitcask
-keydir and LevelDB block cache. Additionally, to improve IO performance, some
-extra memory for the kernel disc cache should be configured. The equations below
-might help when specifying the memory size:
+See [Setting up the Proper Riak Backend][proper_backend] for details. 
 
-```
-Memory for storage = (Memory for backends) + (Memory for kernel cache)
-Memory for backends = (Memory for Bitcask) + (Memory for LevelDB)
-```
+#### Step 3: Review Memory Size
 
-##### LevelDB block cache size
+Since the default configuration of the LevelDB memory size has changed, you will need to review your memory size settings. The memory use of Riak CS is primarily influenced by the Bitcask keydir and LevelDB block cache. Additionally, to improve IO performance, some extra memory for the kernel disk cache should be planned for. The equations below might help when specifying the memory size:
+
+- Memory for backends = (Memory for Bitcask) + (Memory for LevelDB)
+- Memory for stoarge = (Memory for backends) + (Memory for kernel cache)
+
+##### LevelDB Block Cache Size
 
 The configuration setting relating to the memory size of LevelDB has changed
 from `max_open_files` to `total_leveldb_mem_percent` in 2.0. This specifies the
@@ -183,12 +181,7 @@ Configuring `total_leveldb_mem_percent` is *strongly recommended* as its
 multi-backend configuration that also uses bitcask. Bitcask keeps its keydir in
 memory, which could be fairly large depending on the use case.
 
-Note: `leveldb.maximum_memory_percent` in `riak.conf` can also be used. It is
-also possible to use the configuration settings starting with
-`multi_backend.be_default...` in `riak.conf`, but that is less simple and more
-confusing than the recommended way described above.
-
-##### Bitcask keydir sizing
+##### Bitcask keydir Sizing
 
 Bitcask stores all of its keys in memory as well as on disk. Correctly
 estimating the total number of keys and their average size in Bitcask is very
@@ -219,7 +212,7 @@ average value size is close to 1MB if large objects are dominant, otherwise it
 should be estimated according to the specific use case. The number of writes is
 3.
 
-#### Notable changes in `vm.args`
+#### Step 4: Changes in `vm.args`
 
 The upgrade of Riak from the 1.4.x series to the 2.0.x series is described in
 [Upgrading Your Configuration System][upgrading_your_configuration]. The
@@ -232,7 +225,7 @@ following are several major configuration items which are essential for Riak CS.
 |`-name riak@127.0.0.1`           |`nodename = riak@127.0.0.1`            |
 |`-setcookie riak`                |`distributed_cookie = riak`            |
 
-#### Storage calculation
+#### Step 5: Storage Calculation
 
 If [storage statistics][storage_statistics] are desired on your system, several
 more configuration options are required.
@@ -286,19 +279,30 @@ behaviours of Riak CS and have no impact on functionality.
 Multibag configurations must be moved to `advanced.config` for both Riak CS and
 Stanchion.
 
-## Notes on Upgrading from Riak CS < 1.5.4
+## Version Specific Upgrade Notes
+
+#### Upgrading from Riak CS 1.5.3 or Older
 
 [Some key objects changed names][riak_cs_1.5_release_notes_upgrading] after the
 upgrade. Applications may need to change their behaviour due to this bugfix.
 
-## Notes on Upgrading from Riak CS < 1.5.1
+#### Upgrading from Riak CS 1.5.0 or Older
 
 [Bucket number limitation per user][riak_cs_1.5_release_notes_upgrading_1] have
 been introduced in 1.5.1. Users who have more than 100 buckets cannot create any
 bucket after the upgrade unless the limit is extended in the system
 configuration.
-
-## Special Notes on Upgrading From Riak CS 1.4.x
+Stop Riak CS
+Stop Riak
+Uninstall the Riak CS 2.0.0 package
+Uninstall the Riak 2.0.5 package
+Run the Bitcask downgrade script for all Bitcask directories**
+Install the desired Riak package
+Install the desired Riak CS package
+Restore configuration files
+Start Riak
+Start Riak CS
+## Upgrading From Riak CS 1.4.x
 
 An operational procedure [to clean up incomplete multipart under deleted
 buckets][riak_cs_1.5_release_notes_incomplete_mutipart] is needed. Otherwise new
@@ -311,20 +315,6 @@ the 1.5.0 release. Consult the "[Leeway seconds and disk
 space][riak_cs_1.5_release_notes_leeway_and_disk] section of 1.5 release notes
 for a more detailed description.
 
-## Riak CS nodes on different hosts than Riak nodes
-
-Riak CS nodes that are not co-installed with Riak nodes can be upgraded at any
-time while the corresponding remote Riak node is alive.
-
-Instructions follow:
-
-1. Stop the Riak CS process
-2. Backup configuration files
-3. Uninstall the current Riak CS package
-4. Install the Riak CS 2.0.0 package
-5. Update configuration
-6. Start Riak CS
-
 ## Downgrading
 
 ### To CS 1.5.x
@@ -332,18 +322,18 @@ Instructions follow:
 To downgrade Riak CS 2.0.0 to Riak CS 1.5.x, repeat the following instructions
 for each node:
 
-1. Stop Riak CS process
-2. Stop Riak process
-3. Uninstall Riak CS 2.0.0
-4. Uninstall Riak 2.0.5
-5. Run downgrade bitcask script for all bitcask directories
-6. Install Riak 1.4.x
-7. Install Riak CS 1.5.x
+1. Stop Riak CS
+2. Stop Riak
+3. Uninstall the Riak CS 2.0.0 package
+4. Uninstall the Riak 2.0.5 package
+5. Run the Bitcask downgrade script for all Bitcask directories\*
+6. Install the desired Riak package
+7. Install the desired Riak CS package
 8. Restore configuration files
 9. Start Riak
 10. Start Riak CS
 
-The Bitcask file format has changed between Riak 1.4.x and 2.0.0. While the
+\*The Bitcask file format has changed between Riak 1.4.x and 2.0.0. While the
 implicit upgrade of bitcask data files is supported, automatic downgrades of
 bitcask data files is not. For this reason downgrading requires a script to
 translate data files. See also the [2.0 downgrade notes][downgrade_notes].
