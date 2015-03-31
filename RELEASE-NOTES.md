@@ -111,14 +111,15 @@ In practice, we recommend updating Stanchion before all other subsystems. Be
 careful not to have multiple live Stanchion nodes accessible from Riak CS nodes at
 the same time.
 
-## Upgrading Riak 1.4.x to Riak 2.0.5 for Riak CS 2.0.0
+## Upgrade Riak 1.4.x to Riak 2.0.5 and Configure for Riak CS 2.0.0
 
 As Riak CS 2.0.0 only works on top of Riak 2.0.5 -- and does *not* work on top
 of the Riak 1.x.x series -- the underlying Riak installation *must* be upgraded
-to Riak 2.0.5. General guides for upgrading Riak to 2.0.5 are in the
-[Upgrading to 2.0 guide][upgrading_to_2.0].
+to Riak 2.0.5. This document only covers upgrading from Riak 1.4.x. For more general 
+information on upgrading Riak, please see the Riak [upgrading to 2.0 guide][upgrading_to_2.0].
 
-Below are configuration changes for a Riak cluster supporting Riak CS.
+Below are specific configuration changes required for a Riak 2.0.5 cluster 
+supporting Riak CS. 
 
 #### Step 1: Set Default Bucket Properties
 
