@@ -153,7 +153,7 @@ There are two ways to configure Riak 2.0.5 behind Riak CS 2.0.0:
 
 In this case, `add_paths` should be changed to target the new Riak CS binaries installed by the Riak CS 2.0.0 package. These will be changed from `"/usr/lib/riak-cs/lib/riak_cs-1.5.4/ebin"` to `"/usr/lib/riak-cs/lib/riak_cs-2.0.0/ebin"`.
 
-**Option 2: Use Riak 2.0.0's new `advanced.config`
+**Option 2: Use Riak 2.0.0's new `advanced.config`**
 
 You will need to copy all riak_kv configuration items from `app.config` into `advanced.config`, and update `add_paths` to target the new Riak CS binaries installed by the Riak CS 2.0.0 package. These will be changed from `"/usr/lib/riak-cs/lib/riak_cs-1.5.4/ebin"` to `"/usr/lib/riak-cs/lib/riak_cs-2.0.0/ebin"`.
 
