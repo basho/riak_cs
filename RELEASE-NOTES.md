@@ -11,8 +11,6 @@
 
 - None.
 
-## Riak CS Enterprise 2.0.0 Release Notes
-
 ## Changes and Additions
 
 - Changed the name of `gc_max_workers` to `gc.max_workers`, and lowered the
