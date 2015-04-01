@@ -168,7 +168,7 @@ stored in the same location as before.
 
 #### Migrate the Stanchion Configuration
 
-Using the Configuration Mapping Tables below, edit your `riak-cs.conf` to
+Using the Configuration Mapping Tables below, edit your `stanchion.conf` to
 preserve your configuration preferences between Riak CS 1.5.x and 2.0.0.
 
 The tables show the old and new configuration format and default values.
