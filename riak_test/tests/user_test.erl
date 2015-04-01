@@ -66,8 +66,8 @@ japanese_aiueo() ->
 
 create_200_users(Port) ->
     From = self(),
-    Processes = 10,
-    PerProcess = 20,
+    Processes = 5,
+    PerProcess = 40,
     [spawn(fun() ->
                    Users = create_users(
                              Port,
