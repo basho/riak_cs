@@ -136,6 +136,14 @@
  end
 }.
 
+%% @doc Max number of buckets that each user can create.
+%% If this limit is exceeded, bucket creation will fails
+%% for the specific user.
+{mapping, "max_buckets_per_user", "riak_cs.max_buckets_per_user", [
+  {default, 100},
+  {datatype, integer}
+]}.
+
 %% @doc Switch whether Riak CS trusts 'X-Forwarded-For' header.
 %% If your load balancer adds 'X-Forwarded-For' header
 %% and it is reliable (able to gaurantee it is not added
@@ -181,6 +189,12 @@
 
 {mapping, "gc.max_workers", "riak_cs.gc_max_workers", [
   {default, 2},
+  {datatype, integer},
+  hidden
+]}.
+
+{mapping, "gc.batch_size", "riak_cs.gc_batch_size", [
+  {default, 1000},
   {datatype, integer},
   hidden
 ]}.
