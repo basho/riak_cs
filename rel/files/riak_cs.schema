@@ -187,7 +187,7 @@
 
 %% == Access statistics ==
 
-%% @doc How often to flush the access log; integer factor of
+%% @doc How often to flush the access stats; integer factor of
 %% access_archive_period (1 == once per period; 2 == twice per period,
 %% etc.)
 {mapping, "stats.access.flush_factor", "riak_cs.access_log_flush_factor", [
@@ -195,7 +195,7 @@
   {datatype, integer}
 ]}.
 
-%% @doc Additional access log flush trigger - flush after
+%% @doc Additional access stats flush trigger - flush after
 %% this many accesses are recorded, even if the flush
 %% interval has not expired; integer number of accesses
 {mapping, "stats.access.flush_size", "riak_cs.access_log_flush_size", [
@@ -210,7 +210,7 @@
   {datatype, {duration, s}}
 ]}.
 
-%% @doc How many access logs are allowed to pile up in the
+%% @doc How many access stats backlog are allowed to pile up in the
 %% archiver's queue before it starts skipping to catch
 %% up; integer number of logs
 {mapping, "stats.access.archiver.max_backlog", "riak_cs.access_archiver_max_backlog", [
@@ -218,7 +218,7 @@
   {datatype, integer}
 ]}.
 
-%% @doc How many workers to put access log data to Riak are
+%% @doc How many workers to put access stats data to Riak are
 %% allowed to run concurrently
 {mapping, "stats.access.archiver.max_workers", "riak_cs.access_archiver_max_workers", [
   {default, 2},
