@@ -13,7 +13,9 @@
 
 ## Known Issues & Limitations
 
-- None.
+- Access log can't be disabled.
+- Advanced.config should be used to customize value of `max_buckets_per_user`
+  and `gc_batch_size`.
 
 ## Changes and Additions
 
@@ -423,9 +425,6 @@ example is added.
 |:-----------------------------------|:--------------------------------------|
 |`{server_name, "Riak CS"}`          |`server_name = Riak CS`                |
 |`{log_handlers, ....}`              |`log.access.dir = /var/log/riak-cs`    |
-
-To disable access logging, comment out or remove the line beginning with
-`log.access.dir` from `riak-cs.conf`.
 
 Due to a WebMachine change, if `log_handlers` are defined in `app.config` or
 `advanced.config`, the log handler's name should be changed as follows:
