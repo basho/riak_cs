@@ -85,3 +85,43 @@ storage_schedule_config_test() ->
     Config = cuttlefish_unit:generate_templated_config(SchemaFiles, Conf, Context),
     cuttlefish_unit:assert_config(Config, "riak_cs.storage_schedule", ["00:00", "19:45"]),
     ok.
+
+wm_log_config_test_() ->
+    {setup,
+     fun() ->
+             SchemaFiles = ["../rel/files/riak_cs.schema"],
+             {ok, Context} = file:consult("../rel/vars.config"),
+             AssertAlog =
+                 fun(Conf, Expected) ->
+                         Config = cuttlefish_unit:generate_templated_config(
+                                    SchemaFiles, Conf, Context),
+                         case Expected of
+                             no_alog ->
+                                 cuttlefish_unit:assert_config(
+                                   Config, "webmachine.log_handlers",
+                                   [{riak_cs_access_log_handler,[]}]);
+                             _ ->
+                                 cuttlefish_unit:assert_config(
+                                   Config, "webmachine.log_handlers",
+                                   [{webmachine_access_log_handler, Expected},
+                                    {riak_cs_access_log_handler,[]}])
+                         end
+                   end,
+             AssertAlog
+     end,
+     fun(AssertAlog) ->
+             [{"Default access log directory",
+               ?_test(AssertAlog([{["log", "access", "dir"], "$(platform_log_dir)"}],
+                                 ["./log"]))},
+              {"Customized access log directory",
+               ?_test(AssertAlog([{["log", "access", "dir"], "/path/to/custom/dir/"}],
+                                 ["/path/to/custom/dir/"]))},
+              {"No config, fall down to default",
+               ?_test(AssertAlog([],
+                                 ["./log"]))},
+              {"Disable access log",
+               ?_test(AssertAlog([{["log", "access", "dir"], "$(platform_log_dir)"},
+                                  {["log", "access"], "off"}],
+                                 no_alog))}
+             ]
+     end}.

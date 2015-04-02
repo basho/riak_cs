@@ -271,6 +271,12 @@
   {datatype, string}
 ]}.
 
+%% @doc Whether to enable access log.
+{mapping, "log.access", "webmachine.log_handlers", [
+  {default, on},
+  {datatype, flag}
+]}.
+
 %% @doc Access log directory.
 {mapping, "log.access.dir", "webmachine.log_handlers", [
   {default, "$(platform_log_dir)" },
@@ -280,9 +286,10 @@
 {translation,
  "webmachine.log_handlers",
  fun(Conf) ->
-   Handler = case cuttlefish:conf_get("log.access.dir", Conf) of
-     "" -> [];
-     Dir -> [{webmachine_access_log_handler, [Dir]}]
+   Dir = cuttlefish:conf_get("log.access.dir", Conf, undefined),
+   Handler = case cuttlefish:conf_get("log.access", Conf, undefined) of
+                 false -> [];
+                 _     -> [{webmachine_access_log_handler, [Dir]}]
    end,
    Handler ++ [{riak_cs_access_log_handler, []}]
  end
