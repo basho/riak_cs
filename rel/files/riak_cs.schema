@@ -141,7 +141,7 @@
 %% for the specific user.
 {mapping, "max_buckets_per_user", "riak_cs.max_buckets_per_user", [
   {default, 100},
-  {datatype, integer}
+  {datatype, [{atom, unlimited}, integer]}
 ]}.
 
 %% @doc Switch whether Riak CS trusts 'X-Forwarded-For' header.

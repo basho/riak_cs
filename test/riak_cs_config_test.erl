@@ -88,6 +88,23 @@ storage_schedule_config_test() ->
     cuttlefish_unit:assert_config(Config, "riak_cs.storage_schedule", ["00:00", "19:45"]),
     ok.
 
+max_buckets_per_user_test() ->
+    SchemaFiles = ["../rel/files/riak_cs.schema"],
+    {ok, Context} = file:consult("../rel/vars.config"),
+    DefConf = [{["max_buckets_per_user"], "100"}],
+    DefConfig = cuttlefish_unit:generate_templated_config(SchemaFiles, DefConf, Context),
+    cuttlefish_unit:assert_config(DefConfig, "riak_cs.max_buckets_per_user", 100),
+
+    UnlimitedConf = [{["max_buckets_per_user"], "unlimited"}],
+    UnlimitedConfig = cuttlefish_unit:generate_templated_config(SchemaFiles, UnlimitedConf, Context),
+    cuttlefish_unit:assert_config(UnlimitedConfig, "riak_cs.max_buckets_per_user", unlimited),
+    ?assert(1000 < unlimited),
+
+    NoConf = [],
+    NoConfig = cuttlefish_unit:generate_templated_config(SchemaFiles, NoConf, Context),
+    cuttlefish_unit:assert_config(NoConfig, "riak_cs.max_buckets_per_user", 100),
+    ok.
+
 wm_log_config_test_() ->
     {setup,
      fun() ->
