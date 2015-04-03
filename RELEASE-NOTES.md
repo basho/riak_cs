@@ -86,7 +86,7 @@ In particular, for the Riak CS `app.config`:
 - `stanchion_ip` and `stanchion_port` have been combined into `stanchion_host`.
 - `admin_ip` and `admin_port` have been combined into `admin_listener`.
 - `webmachine_log_handler` has become `webmachine_access_log_handler`.
-- `{max_open_files, 50}` has been depricated and should be replaced with
+- `{max_open_files, 50}` has been deprecated and should be replaced with
   `{total_leveldb_mem_percent, 30}`.
 
 For the Stanchion `app.config`:
@@ -133,8 +133,8 @@ configuration.
 
 An operational procedure [to clean up incomplete multipart under deleted
 buckets][riak_cs_1.5_release_notes_incomplete_mutipart] is needed. Otherwise new
-buckets with names that used to exist in the past can't be created. The
-operation will fail with 409 Conflict.
+buckets with names that used to exist can't be created. The operation will fail
+with 409 Conflict.
 
 Leeway seconds and disk space should also be carefully watched during the
 upgrade, because timestamp management of garbage collection was changed in the
@@ -148,7 +148,7 @@ Basho supports upgrading from the two previous major versions to the latest
 release. Thus, this document will only cover upgrading from Riak CS versions
 1.4.x and 1.5.x.
 
-To upgrade to Riak CS 2.0.0 from versions prior to Riak CS 1.4.x, operators will
+To upgrade to Riak CS 2.0.0 from versions prior to Riak CS 1.4.0, operators will
 need to first upgrade their system to Riak CS version 1.4.5 or 1.5.4. Upgrading
 to Riak CS 1.5.4 is recommended. The underlying Riak installation must also be
 upgraded to the Riak 1.4.x series, preferably version 1.4.12.
@@ -165,7 +165,7 @@ time.
 Repeat these steps on each node running Stanchion:
 
 1. Stop Stanchion
-2. Backup all Stanchion configuration files
+2. Back up all Stanchion configuration files
 3. Uninstall the current Stanchion package
 4. Install the new Stanchion 2.0.0 package
 5. Migrate the Stanchion configuration (See below)
@@ -177,7 +177,7 @@ Repeat these steps on every host:
 
 1. Stop Riak CS
 2. Stop Riak
-3. Backup all Riak and Riak CS configuration files and remove all patches
+3. Back up all Riak and Riak CS configuration files and remove all patches
 4. Uninstall the current Riak CS package
 5. Uninstall the current Riak Riak packages
 6. Install the new Riak package
@@ -195,7 +195,7 @@ at any time while the corresponding remote Riak node is alive.
 Repeat these steps on every host:
 
 1. Stop Riak CS
-2. Backup all configuration files and remove all patches
+2. Back up all configuration files and remove all patches
 3. Uninstall the current Riak CS package
 4. Install the new Riak CS 2.0.0 package
 5. Migrate the Riak CS configuration (See below)
