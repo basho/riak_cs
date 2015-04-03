@@ -1,3 +1,16 @@
+# Riak CS 2.0.1 Release Notes
+
+## Known Issues & Limitations
+
+- None
+
+## Bugs Fixed
+
+- Add switch `log.access` to disable access logging
+  [riak_cs/#1115](https://github.com/basho/riak_cs/pull/1115)
+- Add missing `riak-cs.conf` items: `max_buckets_per_user` and `gc.batch_size`
+  [riak_cs/#1115](https://github.com/basho/riak_cs/pull/1115)
+
 # Riak CS 2.0.0 Release Notes
 
 ## General Information
