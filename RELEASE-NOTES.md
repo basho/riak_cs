@@ -93,8 +93,10 @@ For the Stanchion `app.config`:
 - `stanchion_ip` and `stanchion_port` have been combined into `listener`.
 - `riak_ip` and `riak_port` have been combined into `riak_host`.
 
-Each of the above pairs follows a similar form. For example, if your legacy
-`app.config` configuration was previously:
+Each of the above pairs follows a similar form. Where the old form used a
+separate IP and Port parameter, the new form combines those as `{new_option, {
+"IP", Port}}`. For example, if your legacy `app.config` configuration was
+previously:
 
 ```
 {riak_cs, [
