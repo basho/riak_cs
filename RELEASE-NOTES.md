@@ -75,6 +75,46 @@ CS still support the older style configurations through `app.config` and
 **Basho recommends moving to the new unified configuration system**, using the
 files `riak.conf`, `riak-cs.conf` and `stanchion.conf`.
 
+##### Note on Legacy app.config Usage
+
+**If you choose to use the legacy `app.config` files for Riak CS and/or
+Stanchion, some parameters have changed names and must be updated**.
+
+In particular, for the Riak CS `app.config`:
+- `cs_ip` and `cs_port` have been combined into `listener`.
+- `riak_ip` and `riak_pb_port` have been combined into `riak_host`.
+- `stanchion_ip` and `stanchion_port` have been combined into `stanchion_host`.
+- `admin_ip` and `admin_port` have been combined into `admin_listener`.
+- `webmachine_log_handler` has become `webmachine_access_log_handler`.
+- `{max_open_files, 50}` has been depricated and should be replaced with
+  `{total_leveldb_mem_percent, 30}`.
+
+For the Stanchion `app.config`:
+- `stanchion_ip` and `stanchion_port` have been combined into `listener`.
+- `riak_ip` and `riak_port` have been combined into `riak_host`.
+
+Each of the above pairs follows a similar form. For example, if your legacy
+`app.config` configuration was previously:
+
+```
+{riak_cs, [
+    {cs_ip, "127.0.0.1"},
+    {cs_port, 8080 },
+    . . .
+]},
+```
+
+It should now read:
+
+```
+{riak_cs, [
+    {listener, {"127.0.0.1", 8080}},
+    . . .
+]},
+```
+
+and so on.
+
 #### Note: Upgrading from Riak CS 1.5.3 or Older
 
 [Some key objects changed names][riak_cs_1.5_release_notes_upgrading] after the
