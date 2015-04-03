@@ -136,6 +136,14 @@
  end
 }.
 
+%% @doc Max number of buckets that each user can create.
+%% If this limit is exceeded, bucket creation will fails
+%% for the specific user.
+{mapping, "max_buckets_per_user", "riak_cs.max_buckets_per_user", [
+  {default, 100},
+  {datatype, [integer, {atom, unlimited}]}
+]}.
+
 %% @doc Switch whether Riak CS trusts 'X-Forwarded-For' header.
 %% If your load balancer adds 'X-Forwarded-For' header
 %% and it is reliable (able to gaurantee it is not added
@@ -185,9 +193,15 @@
   hidden
 ]}.
 
+{mapping, "gc.batch_size", "riak_cs.gc_batch_size", [
+  {default, 1000},
+  {datatype, integer},
+  hidden
+]}.
+
 %% == Access statistics ==
 
-%% @doc How often to flush the access log; integer factor of
+%% @doc How often to flush the access stats; integer factor of
 %% access_archive_period (1 == once per period; 2 == twice per period,
 %% etc.)
 {mapping, "stats.access.flush_factor", "riak_cs.access_log_flush_factor", [
@@ -195,7 +209,7 @@
   {datatype, integer}
 ]}.
 
-%% @doc Additional access log flush trigger - flush after
+%% @doc Additional access stats flush trigger - flush after
 %% this many accesses are recorded, even if the flush
 %% interval has not expired; integer number of accesses
 {mapping, "stats.access.flush_size", "riak_cs.access_log_flush_size", [
@@ -210,7 +224,7 @@
   {datatype, {duration, s}}
 ]}.
 
-%% @doc How many access logs are allowed to pile up in the
+%% @doc How many access stats backlog are allowed to pile up in the
 %% archiver's queue before it starts skipping to catch
 %% up; integer number of logs
 {mapping, "stats.access.archiver.max_backlog", "riak_cs.access_archiver_max_backlog", [
@@ -218,7 +232,7 @@
   {datatype, integer}
 ]}.
 
-%% @doc How many workers to put access log data to Riak are
+%% @doc How many workers to put access stats data to Riak are
 %% allowed to run concurrently
 {mapping, "stats.access.archiver.max_workers", "riak_cs.access_archiver_max_workers", [
   {default, 2},
@@ -271,6 +285,12 @@
   {datatype, string}
 ]}.
 
+%% @doc Whether to enable access log.
+{mapping, "log.access", "webmachine.log_handlers", [
+  {default, on},
+  {datatype, flag}
+]}.
+
 %% @doc Access log directory.
 {mapping, "log.access.dir", "webmachine.log_handlers", [
   {default, "$(platform_log_dir)" },
@@ -280,9 +300,10 @@
 {translation,
  "webmachine.log_handlers",
  fun(Conf) ->
-   Handler = case cuttlefish:conf_get("log.access.dir", Conf) of
-     "" -> [];
-     Dir -> [{webmachine_access_log_handler, [Dir]}]
+   Dir = cuttlefish:conf_get("log.access.dir", Conf, undefined),
+   Handler = case cuttlefish:conf_get("log.access", Conf, undefined) of
+                 false -> [];
+                 _     -> [{webmachine_access_log_handler, [Dir]}]
    end,
    Handler ++ [{riak_cs_access_log_handler, []}]
  end
