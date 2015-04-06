@@ -86,8 +86,6 @@ In particular, for the Riak CS `app.config`:
 - `stanchion_ip` and `stanchion_port` have been combined into `stanchion_host`.
 - `admin_ip` and `admin_port` have been combined into `admin_listener`.
 - `webmachine_log_handler` has become `webmachine_access_log_handler`.
-- `{max_open_files, 50}` has been deprecated and should be replaced with
-  `{total_leveldb_mem_percent, 30}`.
 
 For the Stanchion `app.config`:
 - `stanchion_ip` and `stanchion_port` have been combined into `listener`.
