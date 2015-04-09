@@ -454,7 +454,10 @@ stats_sample_from_binary([{<<"MossNode">>, Node} | Rest],
     stats_sample_from_binary(Rest, {Start, End, Node, Ops});
 stats_sample_from_binary([{OpName, {struct, Stats}} | Rest],
                          {Start, End, Node, Ops}) ->
-    stats_sample_from_binary(Rest, {Start, End, Node, [{OpName, Stats} | Ops]}).
+    stats_sample_from_binary(Rest, {Start, End, Node, [{OpName, Stats} | Ops]});
+stats_sample_from_binary([{OpName, Other} | Rest],
+                         {Start, End, Node, Ops}) ->
+    stats_sample_from_binary(Rest, {Start, End, Node, [{OpName, Other} | Ops]}).
 
 count_riak_bucket(RiakcPid, Bucket, BucketToDisplay, Timeout) ->
     case riakc_pb_socket:stream_list_keys(RiakcPid, Bucket) of
@@ -523,10 +526,14 @@ print_storage_stats(Key, SiblingNo, StatsBin) ->
     io:format("~-36..=s: ~-32..=s ~-32..=s~n",
               ["Bucket ", "Objects ", "Bytes "]),
     %% TODO: Error handling, e.g. StatItems = "{error,{timeout,[]}}"
-    [io:format("~-36s: ~32B ~32B~n", [Bucket, Objects, Bytes]) ||
-        {Bucket, StatItems} <- Buckets,
-        {ObjectsKey, Objects} <- StatItems, ObjectsKey =:= <<"Objects">>,
-        {BytesKey, Bytes}     <- StatItems, BytesKey   =:= <<"Bytes">>].
+    [case StatItems of
+         ErrorMessage when is_binary(ErrorMessage) ->
+             io:format("~-36s: ~s~n", [Bucket, ErrorMessage]);
+         _ ->
+             {<<"Objects">>, Objects} = lists:keyfind(<<"Objects">>, 1, StatItems),
+             {<<"Bytes">>, Bytes}     = lists:keyfind(<<"Bytes">>, 1, StatItems),
+             io:format("~-36s: ~32B ~32B~n", [Bucket, Objects, Bytes])
+     end || {Bucket, StatItems} <- Buckets].
 
 print_users(RiakcPid, Bucket, Options) ->
     {ok, Keys} = riakc_pb_socket:list_keys(RiakcPid, Bucket),
