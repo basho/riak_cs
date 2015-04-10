@@ -54,7 +54,10 @@ confirm_1(Use2iForStorageCalc) when is_boolean(Use2iForStorageCalc) ->
               {stanchion, rtcs:stanchion_config()},
               {cs, rtcs:cs_config([{fold_objects_for_list_keys, true},
                                    {use_2i_for_storage_calc, Use2iForStorageCalc}])}],
-    {UserConfig, {RiakNodes, CSNodes, _Stanchion}} = rtcs:setup(1, Config),
+    SetupRes = rtcs:setup(1, Config),
+    confirm_2(SetupRes).
+
+confirm_2({UserConfig, {RiakNodes, CSNodes, _Stanchion}}) ->
     {AccessKey2, SecretKey2} = rtcs:create_user(hd(RiakNodes), 1),
     UserConfig2 = rtcs:config(AccessKey2, SecretKey2, rtcs:cs_port(hd(RiakNodes))),
 
