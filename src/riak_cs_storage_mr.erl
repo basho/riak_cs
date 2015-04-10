@@ -182,10 +182,7 @@ bytes_and_blocks_mp(?MANIFEST{state=State, content_length=CL},
     {mp, State, {part_count(MpM), CL, blocks_mp_parts(MpM)}};
 bytes_and_blocks_mp(?MANIFEST{state=State},
                     ?MULTIPART_MANIFEST{}=MpM) ->
-    {mp, State, {part_count(MpM), bytes_mp_parts(MpM), blocks_mp_parts(MpM)}};
-bytes_and_blocks_mp(?MANIFEST{state=State}, _MpM) ->
-    %% Strange data. Don't break storage calc
-    {mp, State, {1, 0, 0}}.
+    {mp, State, {part_count(MpM), bytes_mp_parts(MpM), blocks_mp_parts(MpM)}}.
 
 part_count(?MULTIPART_MANIFEST{parts=PartMs}) ->
     length(PartMs).
