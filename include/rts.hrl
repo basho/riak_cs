@@ -32,10 +32,28 @@
         ['Count' , 'UserErrorCount' , 'SystemErrorCount',
          'BytesIn' , 'UserErrorBytesIn' , 'SystemErrorBytesIn',
          'BytesOut' , 'UserErrorBytesOut' , 'SystemErrorBytesOut',
-         'BytesOutIncomplete', 'Objects', 'Bytes']).
+         'BytesOutIncomplete',
+         'wr_old-ct', 'wr_old-by', 'wr_old-bl',
+         'wr_new-ct', 'wr_new-by', 'wr_new-bl',
+         'wr_mp-ct', 'wr_mp-by', 'wr_mp-bl',
+         'Objects', 'Bytes', 'user-bl',
+         'sd_old-ct', 'sd_old-by', 'sd_old-bl',
+         'sd_new-ct', 'sd_new-by', 'sd_new-bl',
+         'pd_old-ct','pd_old-by', 'pd_old-bl',
+         'pd_new-ct','pd_new-by', 'pd_new-bl',
+         'ac_de-ct','ac_de-by', 'ac_de-bl']).
 
 -define(SUPPORTED_USAGE_FIELD_BIN,
         [<<"Count">> , <<"UserErrorCount">> , <<"SystemErrorCount">>,
          <<"BytesIn">> , <<"UserErrorBytesIn">> , <<"SystemErrorBytesIn">>,
          <<"BytesOut">> , <<"UserErrorBytesOut">> , <<"SystemErrorBytesOut">>,
-         <<"BytesOutIncomplete">>, <<"Objects">>, <<"Bytes">>]).
+         <<"BytesOutIncomplete">>,
+         <<"wr_old-ct">>, <<"wr_old-by">>, <<"wr_old-bl">>,
+         <<"wr_new-ct">>, <<"wr_new-by">>, <<"wr_new-bl">>,
+         <<"wr_mp-ct">>, <<"wr_mp-by">>, <<"wr_mp-bl">>,
+         <<"Objects">>, <<"Bytes">>, <<"user-bl">>,
+         <<"sd_old-ct">>, <<"sd_old-by">>, <<"sd_old-bl">>,
+         <<"sd_new-ct">>, <<"sd_new-by">>, <<"sd_new-bl">>,
+         <<"pd_old-ct">>,<<"pd_old-by">>, <<"pd_old-bl">>,
+         <<"pd_new-ct">>,<<"pd_new-by">>, <<"pd_new-bl">>,
+         <<"ac_de-ct">>,<<"ac_de-by">>, <<"ac_de-bl">>]).

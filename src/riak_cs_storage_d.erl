@@ -62,7 +62,8 @@
           batch_count=0, %% count of users processed so far
           batch_skips=0, %% count of users skipped so far
           batch=[],      %% users left to process in this batch
-          recalc         %% recalculate a user's storage for this period?
+          recalc,        %% recalculate a user's storage for this period?
+          detailed       %% calculate more than counts and total sizes
          }).
 
 -type state() :: #state{}.
@@ -331,6 +332,8 @@ parse_time(HHMM) when is_list(HHMM) ->
 start_batch(Options, Time, State) ->
     BatchStart = calendar:universal_time(),
     Recalc = true == proplists:get_value(recalc, Options),
+    Detailed = proplists:get_value(detailed, Options,
+                                   riak_cs_config:detailed_storage_calc()),
     %% TODO: probably want to do this fetch streaming, to avoid
     %% accidental memory pressure at other points
 
@@ -350,7 +353,8 @@ start_batch(Options, Time, State) ->
                 batch=Batch,
                 batch_count=0,
                 batch_skips=0,
-                recalc=Recalc}.
+                recalc=Recalc,
+                detailed=Detailed}.
 
 %% @doc Grab the whole list of Riak CS users.
 fetch_user_list(RcPid) ->
@@ -368,11 +372,12 @@ fetch_user_list(RcPid) ->
 %% @doc Compute storage for the next user in the batch.
 calculate_next_user(#state{riak_client=RcPid,
                            batch=[User|Rest],
-                           recalc=Recalc}=State) ->
+                           recalc=Recalc,
+                           detailed=Detailed}=State) ->
     Start = calendar:universal_time(),
     case recalc(Recalc, RcPid, User, Start) of
         true ->
-            _ = case riak_cs_storage:sum_user(RcPid, User) of
+            _ = case riak_cs_storage:sum_user(RcPid, User, Detailed) of
                     {ok, BucketList} ->
                         End = calendar:universal_time(),
                         store_user(State, User, BucketList, Start, End);
