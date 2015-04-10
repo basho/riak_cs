@@ -31,6 +31,11 @@
 
 -export([bytes_and_blocks/1]).
 
+-ifdef(TEST).
+-export([object_size/1,
+         count_multipart_parts/1]).
+-endif.
+
 %% Record for summary information, each 3-tuple represents object
 %% count, total bytes and total blocks.  Some of them are estimated
 %% value, maybe (over|under)-estimated.
@@ -57,11 +62,6 @@
 
 -type sum() :: #sum{}.
 -type div_point() :: erlang:timestamp().
-
--ifdef(TEST).
--compile(export_all).
--include_lib("eunit/include/eunit.hrl").
--endif.
 
 bucket_summary_map({error, notfound}, _, _Args) ->
     [];
@@ -273,48 +273,3 @@ bucket_summary_fold([Sum | Sums], Counters) ->
                     fun({K, Num}, Cs) -> orddict:update_counter(K, Num, Cs) end,
                     Counters, Sum),
     bucket_summary_fold(Sums, NewCounters).
-
--ifdef(TEST).
-
-object_size_map_test_() ->
-    M0 = ?MANIFEST{state=active, content_length=25},
-    M1 = ?MANIFEST{state=active, content_length=35},
-    M2 = ?MANIFEST{state=writing, props=undefined, content_length=42},
-    M3 = ?MANIFEST{state=writing, props=pocketburger, content_length=234},
-    M4 = ?MANIFEST{state=writing, props=[{multipart,undefined}],
-                   content_length=23434},
-    M5 = ?MANIFEST{state=writing, props=[{multipart,pocketburger}],
-                   content_length=23434},
-
-    [?_assertEqual([{1,25}], object_size([{uuid,M0}])),
-     ?_assertEqual([{1,35}], object_size([{uuid2,M2},{uuid1,M1}])),
-     ?_assertEqual([{1,35}], object_size([{uuid2,M3},{uuid1,M1}])),
-     ?_assertEqual([{1,35}], object_size([{uuid2,M4},{uuid1,M1}])),
-     ?_assertEqual([{1,35}], object_size([{uuid2,M5},{uuid1,M1}]))].
-
-count_multipart_parts_test_() ->
-    ZeroZero = {0, 0},
-    ValidMPManifest = ?MULTIPART_MANIFEST{parts=[?PART_MANIFEST{content_length=10}]},
-    [?_assertEqual(ZeroZero,
-                   count_multipart_parts({<<"pocketburgers">>,
-                                          ?MANIFEST{props=pocketburgers, state=writing}},
-                                         ZeroZero)),
-     ?_assertEqual(ZeroZero,
-                   count_multipart_parts({<<"pocketburgers">>,
-                                          ?MANIFEST{props=pocketburgers, state=iamyourfather}},
-                                         ZeroZero)),
-     ?_assertEqual(ZeroZero,
-                   count_multipart_parts({<<"pocketburgers">>,
-                                          ?MANIFEST{props=[], state=writing}},
-                                         ZeroZero)),
-     ?_assertEqual(ZeroZero,
-                   count_multipart_parts({<<"pocketburgers">>,
-                                          ?MANIFEST{props=[{multipart, pocketburger}], state=writing}},
-                                         ZeroZero)),
-     ?_assertEqual({1, 10},
-                   count_multipart_parts({<<"pocketburgers">>,
-                                          ?MANIFEST{props=[{multipart, ValidMPManifest}], state=writing}},
-                                         ZeroZero))
-    ].
-
--endif.
