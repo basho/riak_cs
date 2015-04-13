@@ -66,8 +66,7 @@ set_params(IntervalSec, UserQuota) when IntervalSec > 0 ->
     ok = application:set_env(riak_cs, simple_quota_amount, UserQuota),
 
     ok = application:set_env(riak_cs, simple_quota_interval, IntervalSec),
-    ?MODULE ! reset,
-    ok.
+    reset().
 
 -spec state() -> tuple().
 state() ->
@@ -99,8 +98,11 @@ refresher() ->
                       _ -> ?DEFAULT_REFRESH_INTERVAL_SEC
                   end,
     receive
-        reset -> refresher();
-        _ -> ok
+        reset ->
+            lager:debug("reset received: ~p", [?MODULE]),
+            refresher();
+        _ ->
+            ets:delete(?MODULE)
     after IntervalSec * 1000 ->
             lager:debug("~p refresh in ~p secs", [?MODULE, IntervalSec]),
             ets:delete_all_objects(?MODULE),
@@ -115,6 +117,7 @@ refresher() ->
 allow(Owner, #access_v1{req = RD, method = 'PUT'} = _Access, Ctx) ->
     OwnerKey = iolist_to_binary(riak_cs_user:key_id(Owner)),
     lager:debug("access => ~p", [OwnerKey]),
+
     {_, Usage} = case ets:lookup(?MODULE, OwnerKey) of
                      [{OwnerKey, _Usage} = UserState0] -> UserState0;
                      [] -> {OwnerKey, maybe_usage(OwnerKey, Ctx)}
@@ -152,7 +155,7 @@ maybe_usage(User0, _Ctx = #context{riak_client=RiakClient}) ->
     %% come, each access can yield a new fresh state and then
     %% receives not access limitation.
     try
-        ets:insert_new(?MODULE, {User, Usage}),
+        ets:insert_new(?MODULE, {User0, Usage}),
         Usage
     catch _:_ ->
             Usage
@@ -186,7 +189,7 @@ error_response({disk_quota, Current, Limit}, RD, Ctx) ->
     StatusCode = 403,
     XmlDoc = {'Error',
               [
-               {'Code', ["AccessDenied"]},
+               {'Code', [StatusCode]},
                {'Message', ["You have Exceeded your quota. Please delete your data."]},
                {'CurrentValueOfQuota', [Current]},
                {'AllowedLimitOfQuota', [Limit]}

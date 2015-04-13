@@ -71,8 +71,7 @@ set_limits(DurationSec, BandwidthMax, AccessCountMax)
                              BandwidthMax),
     ok = application:set_env(riak_cs, bwlimiter_rate_limit,
                              AccessCountMax),
-    ?MODULE ! reset,
-    ok.
+    reset().
 
 -spec state() -> tuple().
 state() ->
@@ -112,8 +111,11 @@ refresher() ->
                       _ -> ?DEFAULT_REFRESH_INTERVAL_SEC
                   end,
     receive
-        reset -> refresher();
-        _ -> ok
+        reset ->
+            lager:debug("reset received: ~p", [?MODULE]),
+            refresher();
+        _ ->
+            ets:delete(?MODULE)
     after IntervalSec * 1000 ->
             lager:debug("~p refresh in ~p secs", [?MODULE, IntervalSec]),
             ets:delete_all_objects(?MODULE),
@@ -231,7 +233,7 @@ error_response({TypeAtom, Current, Limit}, RD, Ctx) ->
     Message = io_lib:format("You have exceeded your ~p.", [Type]),
     XmlDoc = {'Error',
               [
-               {'Code', ["Too Many Requests"]},
+               {'Code', ["TooManyRequests"]},
                {'Message', [Message]},
                {'CurrentValueOfRate', [Current]},
                {'AllowedLimitOfRate', [Limit]}
@@ -239,4 +241,4 @@ error_response({TypeAtom, Current, Limit}, RD, Ctx) ->
     Body = riak_cs_xml:to_xml([XmlDoc]),
     ReqData = wrq:set_resp_header("Content-Type", ?XML_TYPE, RD),
     UpdReqData = wrq:set_resp_body(Body, ReqData),
-    {StatusCode, UpdReqData, Ctx}.
+    {{StatusCode, "Too Many Requests"}, UpdReqData, Ctx}.
