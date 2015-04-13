@@ -25,8 +25,8 @@
 -include("riak_cs.hrl").
 
 -export([
-         sum_user/3,
-         sum_bucket/2,
+         sum_user/4,
+         sum_bucket/3,
          make_object/4,
          get_usage/4,
          archive_period/0
@@ -45,15 +45,17 @@
 %% @doc Sum the number of bytes stored in active files in all of the
 %% given user's directories.  The result is a list of pairs of
 %% `{BucketName, Bytes}'.
--spec sum_user(riak_client(), string(), boolean()) -> {ok, [{string(), integer()}]}
-                                                          | {error, term()}.
-sum_user(RcPid, User, Detailed) when is_binary(User) ->
-    sum_user(RcPid, binary_to_list(User), Detailed);
-sum_user(RcPid, User, Detailed) when is_list(User) ->
+-spec sum_user(riak_client(), string(), boolean(), erlang:timestamp()) ->
+                      {ok, [{string(), integer()}]}
+                          | {error, term()}.
+sum_user(RcPid, User, Detailed, LeewayEdge) when is_binary(User) ->
+    sum_user(RcPid, binary_to_list(User), Detailed, LeewayEdge);
+sum_user(RcPid, User, Detailed, LeewayEdge) when is_list(User) ->
     case riak_cs_user:get_user(User, RcPid) of
         {ok, {UserRecord, _UserObj}} ->
             Buckets = riak_cs_bucket:get_buckets(UserRecord),
-            BucketUsages = [maybe_sum_bucket(User, B, Detailed) || B <- Buckets],
+            BucketUsages = [maybe_sum_bucket(User, B, Detailed, LeewayEdge) ||
+                               B <- Buckets],
             {ok, BucketUsages};
         {error, Error} ->
             {error, Error}
@@ -63,13 +65,16 @@ sum_user(RcPid, User, Detailed) when is_list(User) ->
 %%      This log is *very* important because unless this log
 %%      there are no other way for operator to know a calculation
 %%      which riak_cs_storage_d failed.
--spec maybe_sum_bucket(string(), cs_bucket(), boolean()) ->
+-spec maybe_sum_bucket(string(), cs_bucket(), boolean(), erlang:timestamp()) ->
                               {binary(), [{binary(), integer()}]} |
                               {binary(), binary()}.
-maybe_sum_bucket(User, ?RCS_BUCKET{name=Name} = Bucket, Detailed) when is_list(Name) ->
-    maybe_sum_bucket(User, Bucket?RCS_BUCKET{name=list_to_binary(Name)}, Detailed);
-maybe_sum_bucket(User, ?RCS_BUCKET{name=Name} = _Bucket, Detailed) when is_binary(Name) ->
-    case sum_bucket(Name, Detailed) of
+maybe_sum_bucket(User, ?RCS_BUCKET{name=Name} = Bucket, Detailed, LeewayEdge)
+  when is_list(Name) ->
+    maybe_sum_bucket(User, Bucket?RCS_BUCKET{name=list_to_binary(Name)},
+                     Detailed, LeewayEdge);
+maybe_sum_bucket(User, ?RCS_BUCKET{name=Name} = _Bucket, Detailed, LeewayEdge)
+  when is_binary(Name) ->
+    case sum_bucket(Name, Detailed, LeewayEdge) of
         {struct, _} = BucketUsage -> {Name, BucketUsage};
         {error, _} = E ->
             _ = lager:error("failed to calculate usage of "
@@ -90,9 +95,10 @@ maybe_sum_bucket(User, ?RCS_BUCKET{name=Name} = _Bucket, Detailed) when is_binar
 %% which is the number of objects that were counted in the bucket, and
 %% `Bytes', which is the total size of all of those objects.  More
 %% fields are included for detailed calculation.
--spec sum_bucket(binary(), boolean()) -> {struct, [{binary(), integer()}]}
-                                             | {error, term()}.
-sum_bucket(BucketName, Detailed) ->
+-spec sum_bucket(binary(), boolean(), erlang:timestamp()) ->
+                        {struct, [{binary(), integer()}]}
+                            | {error, term()}.
+sum_bucket(BucketName, Detailed, LeewayEdge) ->
     Query = case Detailed of
                 false ->
                     [{map, {modfun, riak_cs_storage, object_size_map},
@@ -100,11 +106,8 @@ sum_bucket(BucketName, Detailed) ->
                      {reduce, {modfun, riak_cs_storage, object_size_reduce},
                       none, true}];
                 true ->
-                    Now = riak_cs_utils:second_resolution_timestamp(os:timestamp()),
-                    DivPointTs = Now - riak_cs_gc:leeway_seconds(),
-                    DivPoint = {DivPointTs div 1000000, DivPointTs rem 1000000, 0},
                     [{map, {modfun, riak_cs_storage_mr, bucket_summary_map},
-                      [do_prereduce, {div_point, DivPoint}], false},
+                      [do_prereduce, {leeway_edge, LeewayEdge}], false},
                      {reduce, {modfun, riak_cs_storage_mr, bucket_summary_reduce},
                       none, true}]
             end,

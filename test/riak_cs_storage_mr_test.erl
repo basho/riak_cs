@@ -34,12 +34,12 @@
 -define(PM, (pm())?PART_MANIFEST).
 
 bucket_summary_map_test_() ->
-    DivPoint = {1400, 0, 0},
+    LeewayEdge = {1400, 0, 0},
     CBB = fun(K, Ms) ->
                   History = [{M?MANIFEST.uuid, M} || M <- Ms],
                   [Res] = riak_cs_storage_mr:bucket_summary_map(
                             riak_object:new(History),
-                            kd, [do_prereduce, {div_point, DivPoint}]),
+                            kd, [do_prereduce, {leeway_edge, LeewayEdge}]),
                   {proplists:get_value({K, objects}, Res),
                    proplists:get_value({K, bytes}, Res),
                    proplists:get_value({K, blocks}, Res)} end,
@@ -81,7 +81,7 @@ bucket_summary_map_test_() ->
      ?_assertEqual([],
                    [{K, V} || {K, V} <- riak_cs_storage_mr:bucket_summary_map(
                                           riak_object:new([]),
-                                          kd, [do_prereduce, {div_point, DivPoint}]),
+                                          kd, [do_prereduce, {leeway_edge, LeewayEdge}]),
                               V =/= 0]),
 
      %% Active only

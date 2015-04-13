@@ -1,6 +1,6 @@
 %% ---------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2015 Basho Technologies, Inc.  All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -63,14 +63,13 @@
         }).
 
 -type sum() :: #sum{}.
--type div_point() :: erlang:timestamp().
 
 bucket_summary_map({error, notfound}, _, _Args) ->
     [];
 bucket_summary_map(Object, _, Args) ->
-    DivPoint = proplists:get_value(div_point, Args),
+    LeewayEdge = proplists:get_value(leeway_edge, Args),
     Summary = riak_cs_utils:maybe_process_resolved(
-                Object, fun(History) -> sum_objs(DivPoint, History) end, #sum{}),
+                Object, fun(History) -> sum_objs(LeewayEdge, History) end, #sum{}),
     Res = summary_to_list(Summary),
     [Res].
 
@@ -86,22 +85,22 @@ object_size_reduce(Sizes, _) ->
 
 %% Internal
 
--spec sum_objs(div_point(), [cs_uuid_and_manifest()]) -> sum().
-sum_objs(DivPoint, History) ->
+-spec sum_objs(erlang:timestamp(), [cs_uuid_and_manifest()]) -> sum().
+sum_objs(LeewayEdge, History) ->
     case riak_cs_manifest_utils:active_manifest(History) of
         {ok, Active} ->
             {_, _, CBB} = bytes_and_blocks(Active),
             Sum0 = add_to(#sum{}, #sum.user, CBB),
             Sum = add_to(Sum0, #sum.active, CBB),
             NonActiveHistory = lists:keydelete(Active?MANIFEST.uuid, 1, History),
-            sum_objs(DivPoint, Sum, NonActiveHistory);
+            sum_objs(LeewayEdge, Sum, NonActiveHistory);
         _ ->
-            sum_objs(DivPoint, #sum{}, History)
+            sum_objs(LeewayEdge, #sum{}, History)
     end.
 
-sum_objs(_DivPoint, Sum, []) ->
+sum_objs(_LeewayEdge, Sum, []) ->
     Sum;
-sum_objs(DivPoint, Sum, [{_UUID, M} | Rest]) ->
+sum_objs(LeewayEdge, Sum, [{_UUID, M} | Rest]) ->
     NewSum = case bytes_and_blocks(M) of
                  {_, active, CBB} ->
                      %% Because user accessible active manifest had
@@ -114,28 +113,28 @@ sum_objs(DivPoint, Sum, [{_UUID, M} | Rest]) ->
                      Sum1 = add_to(Sum, #sum.user, CBB),
                      add_to(Sum1, #sum.writing_multipart, CBB);
                  {non_mp, writing, CBB} ->
-                     case new_or_old(DivPoint, M?MANIFEST.write_start_time) of
+                     case new_or_old(LeewayEdge, M?MANIFEST.write_start_time) of
                          new ->
                              add_to(Sum, #sum.writing_new, CBB);
                          old ->
                              add_to(Sum, #sum.writing_old, CBB)
                      end;
                  {_, pending_delete, CBB} ->
-                     case new_or_old(DivPoint, M?MANIFEST.delete_marked_time) of
+                     case new_or_old(LeewayEdge, M?MANIFEST.delete_marked_time) of
                          new ->
                              add_to(Sum, #sum.pending_delete_new, CBB);
                          old ->
                              add_to(Sum, #sum.pending_delete_old, CBB)
                      end;
                  {_, scheduled_delete, CBB} ->
-                     case new_or_old(DivPoint, M?MANIFEST.delete_marked_time) of
+                     case new_or_old(LeewayEdge, M?MANIFEST.delete_marked_time) of
                          new ->
                              add_to(Sum, #sum.scheduled_delete_new, CBB);
                          old ->
                              add_to(Sum, #sum.scheduled_delete_old, CBB)
                      end
              end,
-    sum_objs(DivPoint, NewSum, Rest).
+    sum_objs(LeewayEdge, NewSum, Rest).
 
 -spec bytes_and_blocks(lfs_manifest()) ->
                               {non_mp | mp, State::atom(),
@@ -200,10 +199,10 @@ blocks_mp_parts(?MULTIPART_MANIFEST{parts=PartMs}) ->
                  P?PART_MANIFEST.content_length,
                  P?PART_MANIFEST.block_size) || P <- PartMs]).
 
-% @doc Returns `new' if Timestamp is 3-tuple and greater than `DivPoint',
+% @doc Returns `new' if Timestamp is 3-tuple and greater than `LeewayEdge',
 % otherwise `old'.
--spec new_or_old(div_point(), erlang:timestamp()) -> new | old.
-new_or_old(DivPoint, {_,_,_} = Timestamp) when DivPoint < Timestamp -> new;
+-spec new_or_old(erlang:timestamp(), erlang:timestamp()) -> new | old.
+new_or_old(LeewayEdge, {_,_,_} = Timestamp) when LeewayEdge < Timestamp -> new;
 new_or_old(_, _) -> old.
 
 -spec add_to(sum(), pos_integer(),

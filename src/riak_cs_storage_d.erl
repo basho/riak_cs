@@ -63,7 +63,8 @@
           batch_skips=0, %% count of users skipped so far
           batch=[],      %% users left to process in this batch
           recalc,        %% recalculate a user's storage for this period?
-          detailed       %% calculate more than counts and total sizes
+          detailed,      %% calculate more than counts and total sizes
+          leeway_edge    %% prior to this clock, gc can reclain objects
          }).
 
 -type state() :: #state{}.
@@ -334,6 +335,9 @@ start_batch(Options, Time, State) ->
     Recalc = true == proplists:get_value(recalc, Options),
     Detailed = proplists:get_value(detailed, Options,
                                    riak_cs_config:detailed_storage_calc()),
+    Now = riak_cs_utils:second_resolution_timestamp(os:timestamp()),
+    LeewayEdgeTs = Now - riak_cs_gc:leeway_seconds(),
+    LeewayEdge = {LeewayEdgeTs div 1000000, LeewayEdgeTs rem 1000000, 0},
     %% TODO: probably want to do this fetch streaming, to avoid
     %% accidental memory pressure at other points
 
@@ -354,7 +358,8 @@ start_batch(Options, Time, State) ->
                 batch_count=0,
                 batch_skips=0,
                 recalc=Recalc,
-                detailed=Detailed}.
+                detailed=Detailed,
+                leeway_edge=LeewayEdge}.
 
 %% @doc Grab the whole list of Riak CS users.
 fetch_user_list(RcPid) ->
@@ -373,11 +378,12 @@ fetch_user_list(RcPid) ->
 calculate_next_user(#state{riak_client=RcPid,
                            batch=[User|Rest],
                            recalc=Recalc,
-                           detailed=Detailed}=State) ->
+                           detailed=Detailed,
+                           leeway_edge=LeewayEdge}=State) ->
     Start = calendar:universal_time(),
     case recalc(Recalc, RcPid, User, Start) of
         true ->
-            _ = case riak_cs_storage:sum_user(RcPid, User, Detailed) of
+            _ = case riak_cs_storage:sum_user(RcPid, User, Detailed, LeewayEdge) of
                     {ok, BucketList} ->
                         End = calendar:universal_time(),
                         store_user(State, User, BucketList, Start, End);
