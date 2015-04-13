@@ -87,15 +87,15 @@ bucket_summary_map_test_() ->
      %% Active only
      ?_assertEqual({1, mb(10),    10}, CBB(user,   [MostActive])),
      ?_assertEqual({1, mb(10),    10}, CBB(active, [MostActive])),
-     ?_assertEqual({3, mb(60)+40, 61}, CBB(user,   [MostActiveMP])),
-     ?_assertEqual({3, mb(60)+40, 61}, CBB(active, [MostActiveMP])),
+     ?_assertEqual({1, mb(60)+40, 61}, CBB(user,   [MostActiveMP])),
+     ?_assertEqual({1, mb(60)+40, 61}, CBB(active, [MostActiveMP])),
      %% Old active
      ?_assertEqual({1, mb(10),    10}, CBB(user,             [MostActive, LessActive])),
      ?_assertEqual({1, mb(10),    10}, CBB(active,           [MostActive, LessActive])),
      ?_assertEqual({1, mb(20),    20}, CBB(active_invisible, [MostActive, LessActive])),
      ?_assertEqual({1, mb(10),    10}, CBB(user,             [MostActive, LessActiveMP])),
      ?_assertEqual({1, mb(10),    10}, CBB(active,           [MostActive, LessActiveMP])),
-     ?_assertEqual({3, mb(60)+40, 61}, CBB(active_invisible, [MostActive, LessActiveMP])),
+     ?_assertEqual({1, mb(60)+40, 61}, CBB(active_invisible, [MostActive, LessActiveMP])),
 
      %% Writing MP
      ?_assertEqual({3, mb( 60)+40,  61}, CBB(writing_multipart, [NewWritingMP])),
@@ -115,23 +115,23 @@ bucket_summary_map_test_() ->
      %% PD
      ?_assertEqual({1, mb(10),    10}, CBB(pending_delete_new, [NewPd])),
      ?_assertEqual({1, mb(10),    10}, CBB(pending_delete_old, [OldPd])),
-     ?_assertEqual({3, mb(60)+40, 61}, CBB(pending_delete_new, [NewPdMP])),
-     ?_assertEqual({3, mb(60)+40, 61}, CBB(pending_delete_old, [OldPdMP])),
+     ?_assertEqual({1, mb(60)+40, 61}, CBB(pending_delete_new, [NewPdMP])),
+     ?_assertEqual({1, mb(60)+40, 61}, CBB(pending_delete_old, [OldPdMP])),
      %% SD
      ?_assertEqual({1, mb(10),    10}, CBB(scheduled_delete_new, [NewSd])),
      ?_assertEqual({1, mb(10),    10}, CBB(scheduled_delete_old, [OldSd])),
-     ?_assertEqual({3, mb(60)+40, 61}, CBB(scheduled_delete_new, [NewSdMP])),
-     ?_assertEqual({3, mb(60)+40, 61}, CBB(scheduled_delete_old, [OldSdMP])),
+     ?_assertEqual({1, mb(60)+40, 61}, CBB(scheduled_delete_new, [NewSdMP])),
+     ?_assertEqual({1, mb(60)+40, 61}, CBB(scheduled_delete_old, [OldSdMP])),
 
      %% Combination
      ?_assertEqual({4, mb(70)+40,   71}, CBB(user,                Combination)),
-     ?_assertEqual({3, mb(60)+40,   61}, CBB(active_invisible,    Combination)),
+     ?_assertEqual({1, mb(60)+40,   61}, CBB(active_invisible,    Combination)),
      ?_assertEqual({3, mb(60)+40,   61}, CBB(writing_multipart,   Combination)),
      ?_assertEqual({1, mb(10),      10}, CBB(writing_new,         Combination)),
      ?_assertEqual({2, mb(20),      20}, CBB(pending_delete_new,  Combination)),
-     ?_assertEqual({6, mb(120)+80, 122}, CBB(pending_delete_old,  Combination)),
-     ?_assertEqual({4, mb(70)+40,   71}, CBB(scheduled_delete_new, Combination)),
-     ?_assertEqual({4, mb(70)+40,   71}, CBB(scheduled_delete_old, Combination))
+     ?_assertEqual({2, mb(120)+80, 122}, CBB(pending_delete_old,  Combination)),
+     ?_assertEqual({2, mb(70)+40,   71}, CBB(scheduled_delete_new, Combination)),
+     ?_assertEqual({2, mb(70)+40,   71}, CBB(scheduled_delete_old, Combination))
     ].
 
 m() ->

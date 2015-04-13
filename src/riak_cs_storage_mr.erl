@@ -178,13 +178,16 @@ bytes_and_blocks_non_mp(?MANIFEST{state=State} = _M) ->
 %% because dummy manifests for `cleanup_parts' have beed inserted to
 %% GC bucket directly and no object in manifest buckets.  We don't
 %% count cleanup_parts here.
+bytes_and_blocks_mp(?MANIFEST{state=writing},
+                    ?MULTIPART_MANIFEST{}=MpM) ->
+    {mp, writing, {part_count(MpM), bytes_mp_parts(MpM), blocks_mp_parts(MpM)}};
 bytes_and_blocks_mp(?MANIFEST{state=State, content_length=CL},
                     ?MULTIPART_MANIFEST{}=MpM)
   when State =:= active andalso is_integer(CL) ->
-    {mp, State, {part_count(MpM), CL, blocks_mp_parts(MpM)}};
+    {mp, State, {1, CL, blocks_mp_parts(MpM)}};
 bytes_and_blocks_mp(?MANIFEST{state=State},
                     ?MULTIPART_MANIFEST{}=MpM) ->
-    {mp, State, {part_count(MpM), bytes_mp_parts(MpM), blocks_mp_parts(MpM)}}.
+    {mp, State, {1, bytes_mp_parts(MpM), blocks_mp_parts(MpM)}}.
 
 part_count(?MULTIPART_MANIFEST{parts=PartMs}) ->
     length(PartMs).
