@@ -53,7 +53,7 @@
 
 -record(user_state, {
           user :: binary(),
-          bandwidth = 0 :: non_neg_integer(), %% Bytes per refresh rate
+          bandwidth_acc = 0 :: non_neg_integer(), %% Bytes usage per refresh rate
           access_count = 0 :: non_neg_integer() %% Access count per refresh rate
          }).
 
@@ -107,7 +107,7 @@ start_link() ->
     {ok, Pid}.
 
 refresher() ->
-    IntervalSec = case application:get_env(riak_cs, bw_limitter_interval) of
+    IntervalSec = case application:get_env(riak_cs, bwlimiter_interval) of
                       {ok, V} when is_integer(V) andalso V > 0 -> V;
                       _ -> ?DEFAULT_REFRESH_INTERVAL_SEC
                   end,
@@ -161,16 +161,16 @@ new_user_state(User) ->
     UserState.
 
 test_bandwidth_state(DurationSec,
-                     #user_state{bandwidth = Bandwidth}) ->
+                     #user_state{bandwidth_acc = BandwidthAcc}) ->
     BandwidthMax =
         case application:get_env(riak_cs, bwlimiter_bandwidth_limit) of
             {ok, V} when is_integer(V) -> V;
             _ -> -1
         end,
-    case Bandwidth / DurationSec < BandwidthMax  of
+    case BandwidthAcc / DurationSec < BandwidthMax  of
         true -> ok;
         false when BandwidthMax < 0 -> ok; %% No quota set
-        false -> {error, {bandwidth, Bandwidth, BandwidthMax}}
+        false -> {error, {bandwidth_acc, BandwidthAcc / DurationSec, BandwidthMax}}
     end.
 
 test_access_state(IntervalSec,
@@ -183,7 +183,7 @@ test_access_state(IntervalSec,
     case AccessCount / IntervalSec < AccessCountMax of
         true -> ok;
         false when AccessCountMax < 0 -> ok; %% No quota set
-        false -> {error, {access_count, AccessCount, AccessCountMax}}
+        false -> {error, {access_count, AccessCount / IntervalSec, AccessCountMax}}
     end.
 
 -spec update(binary(), wm_log_data()) -> ok | {error, term()}.
@@ -200,7 +200,7 @@ update(User,
                 Len when is_integer(Len) -> Len + Bytes0;
                 _ -> Bytes0
             end,
-    UpdateOps = [{#user_state.bandwidth, Bytes},
+    UpdateOps = [{#user_state.bandwidth_acc, Bytes},
                  {#user_state.access_count, 1}],
     try
         case ets:update_counter(?MODULE, User, UpdateOps) of
@@ -220,12 +220,18 @@ update(User,
             {error, {Type, Error}}
     end.
 
-error_response({Type, Current, Limit}, RD, Ctx) ->
+error_response({TypeAtom, Current, Limit}, RD, Ctx) ->
+    %% TODO: Webmachine currently does not handle 429, so this yields
+    %% Internal Server Error, which is odd.
     StatusCode = 429,
-    Message = io_lib:format("You have Exceeded your ~p.", [Type]),
+    Type = case TypeAtom of
+               bandwidth_acc -> "bandwidth limit";
+               access_count -> "access rate limit"
+           end,
+    Message = io_lib:format("You have exceeded your ~p.", [Type]),
     XmlDoc = {'Error',
               [
-               {'Code', [StatusCode]},
+               {'Code', ["Too Many Requests"]},
                {'Message', [Message]},
                {'CurrentValueOfRate', [Current]},
                {'AllowedLimitOfRate', [Limit]}

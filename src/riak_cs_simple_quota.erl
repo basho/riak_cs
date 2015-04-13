@@ -186,7 +186,7 @@ error_response({disk_quota, Current, Limit}, RD, Ctx) ->
     StatusCode = 403,
     XmlDoc = {'Error',
               [
-               {'Code', [StatusCode]},
+               {'Code', ["AccessDenied"]},
                {'Message', ["You have Exceeded your quota. Please delete your data."]},
                {'CurrentValueOfQuota', [Current]},
                {'AllowedLimitOfQuota', [Limit]}
