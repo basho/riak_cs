@@ -96,7 +96,8 @@
 
 -callback error_response(Reason :: term(),
                          #wm_reqdata{}, #context{}) ->
-    {non_neg_integer(), #wm_reqdata{}, #context{}}.
+    {non_neg_integer() | {non_neg_integer(), string()},
+     #wm_reqdata{}, #context{}}.
 
 %% @doc for now, to know the accessor, RD should be retrieved from
 %% headers in LogData (not knowing whether he's authenticated or not)

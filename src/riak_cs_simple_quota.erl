@@ -62,7 +62,7 @@
 %% A day
 -define(DEFAULT_REFRESH_INTERVAL_SEC, 86400).
 
--spec set_params(integer(), non_neg_integer()) -> ok.
+-spec set_params(integer(), non_neg_integer()) -> true.
 set_params(IntervalSec, UserQuota) when IntervalSec > 0 ->
     ok = application:set_env(riak_cs, simple_quota_amount, UserQuota),
 
@@ -78,10 +78,11 @@ state() ->
      {cached_quotas,
       ets:tab2list(?MODULE)}}.
 
--spec reset() -> reset.
+-spec reset() -> true.
 reset() ->
     ets:delete_all_objects(?MODULE),
-    ?MODULE ! reset.
+    ?MODULE ! reset,
+    true.
 
 -spec start_link() -> {ok, pid()}.
 start_link() ->
@@ -172,7 +173,11 @@ update(User,
                 Len when is_integer(Len) ->
                     case Method of
                         'PUT' -> Len;
-                        'DELETE' -> - Len
+                        %% In case of DELETE, the quota should be
+                        %% reclaimed. But it will need content size of
+                        %% deleted object, which is not included in
+                        %% the request or context. So, just using 0.
+                        'DELETE' -> 0
                     end;
                 _ -> 0
             end,
@@ -204,18 +209,20 @@ error_response({disk_quota, Current, Limit}, RD, Ctx) ->
 get_latest_usage(Pid, User) ->
     Now = calendar:now_to_datetime(os:timestamp()),
     NowASec = calendar:datetime_to_gregorian_seconds(Now),
-    get_latest_usage(Pid, User, NowASec, 0, 10).
+    LeewaySeconds = riak_cs_gc:leeway_seconds(),
+    get_latest_usage(Pid, User, LeewaySeconds, NowASec, 0, 10).
 
--spec get_latest_usage(pid(), string(),
+-spec get_latest_usage(pid(), string(), non_neg_integer(),
                        non_neg_integer(), non_neg_integer(), non_neg_integer()) ->
                               {ok, list()} | {error, notfound}.
-get_latest_usage(_Pid, _User, _, N, N) -> {error, notfound};
-get_latest_usage(Pid, User, EndSec, N, Max) ->
+get_latest_usage(_Pid, _User, _, _, N, N) -> {error, notfound};
+get_latest_usage(Pid, User, LeewaySeconds, EndSec, N, Max) ->
     End = calendar:gregorian_seconds_to_datetime(EndSec),
-    ADayAgo = calendar:gregorian_seconds_to_datetime(EndSec - 86400),
+    EndSec2 = EndSec - LeewaySeconds,
+    ADayAgo = calendar:gregorian_seconds_to_datetime(EndSec2),
     case riak_cs_storage:get_usage(Pid, User, ADayAgo, End) of
         {[], _} ->
-            get_latest_usage(Pid, User, EndSec - 86400, N+1, Max);
+            get_latest_usage(Pid, User, LeewaySeconds, EndSec2, N+1, Max);
         {Res, _} ->
             {ok, Res}
     end.

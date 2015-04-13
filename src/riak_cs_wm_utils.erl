@@ -817,7 +817,6 @@ object_access_authorize_helper(AccessType, Deletable, SkipAcl,
                             actor_is_not_owner_but_allowed_policy(User, OwnerId, RD2, Ctx2, LocalCtx);
                         {error, Module, Reason, RD3, Ctx3} ->
                             riak_cs_quota:handle_error(Module, Reason, RD3, Ctx3)
-                            %%riak_cs_s3_response:api_error(Reason, RD, Ctx)
                     end;
                 {ok, just_allowed_by_policy} ->
                     %% actor is not the owner, not permitted by ACL but permitted by policy

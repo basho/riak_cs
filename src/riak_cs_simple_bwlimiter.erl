@@ -63,7 +63,7 @@
 %% A day
 -define(DEFAULT_REFRESH_INTERVAL_SEC, 10).
 
--spec set_limits(integer(), integer(), integer()) -> ok.
+-spec set_limits(integer(), integer(), integer()) -> true.
 set_limits(DurationSec, BandwidthMax, AccessCountMax)
   when DurationSec > 0 ->
     ok = application:set_env(riak_cs, bwlimiter_interval,
