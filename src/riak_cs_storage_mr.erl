@@ -29,7 +29,7 @@
 -export([object_size_map/3,
          object_size_reduce/2]).
 
--export([bytes_and_blocks/1]).
+-export([objs_bytes_and_blocks/1]).
 
 -ifdef(TEST).
 -export([object_size/1,
@@ -39,7 +39,7 @@
 %% Record for summary information, each 3-tuple represents object
 %% count, total bytes and total blocks.  Some of them are estimated
 %% value, maybe (over|under)-estimated.
-%% @see bytes_and_blocks/1 for details of calculation/estimation
+%% @see objs_bytes_and_blocks/1 for details of calculation/estimation
 -record(sum,
         {
           %% User accessible objects, which includes active and
@@ -89,9 +89,9 @@ object_size_reduce(Sizes, _) ->
 sum_objs(LeewayEdge, History) ->
     case riak_cs_manifest_utils:active_manifest(History) of
         {ok, Active} ->
-            {_, _, CBB} = bytes_and_blocks(Active),
-            Sum0 = add_to(#sum{}, #sum.user, CBB),
-            Sum = add_to(Sum0, #sum.active, CBB),
+            {_, _, OBB} = objs_bytes_and_blocks(Active),
+            Sum0 = add_to(#sum{}, #sum.user, OBB),
+            Sum = add_to(Sum0, #sum.active, OBB),
             NonActiveHistory = lists:keydelete(Active?MANIFEST.uuid, 1, History),
             sum_objs(LeewayEdge, Sum, NonActiveHistory);
         _ ->
@@ -101,59 +101,61 @@ sum_objs(LeewayEdge, History) ->
 sum_objs(_LeewayEdge, Sum, []) ->
     Sum;
 sum_objs(LeewayEdge, Sum, [{_UUID, M} | Rest]) ->
-    NewSum = case bytes_and_blocks(M) of
-                 {_, active, CBB} ->
+    NewSum = case objs_bytes_and_blocks(M) of
+                 {_, active, OBB} ->
                      %% Because user accessible active manifest had
-                     %% been removed `sum_objs/2', active's here are
+                     %% been removed in `sum_objs/2', active's here are
                      %% invisible for users.
-                     add_to(Sum, #sum.active_invisible, CBB);
-                 {mp, writing, CBB} ->
+                     add_to(Sum, #sum.active_invisible, OBB);
+                 {mp, writing, OBB} ->
                      %% MP writing is visible for user. Also add
                      %% to MP writing counters.
-                     Sum1 = add_to(Sum, #sum.user, CBB),
-                     add_to(Sum1, #sum.writing_multipart, CBB);
-                 {non_mp, writing, CBB} ->
+                     Sum1 = add_to(Sum, #sum.user, OBB),
+                     add_to(Sum1, #sum.writing_multipart, OBB);
+                 {non_mp, writing, OBB} ->
                      case new_or_old(LeewayEdge, M?MANIFEST.write_start_time) of
                          new ->
-                             add_to(Sum, #sum.writing_new, CBB);
+                             add_to(Sum, #sum.writing_new, OBB);
                          old ->
-                             add_to(Sum, #sum.writing_old, CBB)
+                             add_to(Sum, #sum.writing_old, OBB)
                      end;
-                 {_, pending_delete, CBB} ->
+                 {_, pending_delete, OBB} ->
                      case new_or_old(LeewayEdge, M?MANIFEST.delete_marked_time) of
                          new ->
-                             add_to(Sum, #sum.pending_delete_new, CBB);
+                             add_to(Sum, #sum.pending_delete_new, OBB);
                          old ->
-                             add_to(Sum, #sum.pending_delete_old, CBB)
+                             add_to(Sum, #sum.pending_delete_old, OBB)
                      end;
-                 {_, scheduled_delete, CBB} ->
+                 {_, scheduled_delete, OBB} ->
                      case new_or_old(LeewayEdge, M?MANIFEST.delete_marked_time) of
                          new ->
-                             add_to(Sum, #sum.scheduled_delete_new, CBB);
+                             add_to(Sum, #sum.scheduled_delete_new, OBB);
                          old ->
-                             add_to(Sum, #sum.scheduled_delete_old, CBB)
+                             add_to(Sum, #sum.scheduled_delete_old, OBB)
                      end
              end,
     sum_objs(LeewayEdge, NewSum, Rest).
 
--spec bytes_and_blocks(lfs_manifest()) ->
-                              {non_mp | mp, State::atom(),
-                               {Count::non_neg_integer(),
-                                Bytes::non_neg_integer(),
-                                Blocks::non_neg_integer()}}.
-bytes_and_blocks(?MANIFEST{props=Props} = M) when is_list(Props) ->
+%% @doc count objects, bytes and blocks for manifests
+-spec objs_bytes_and_blocks(lfs_manifest()) ->
+                                   {non_mp | mp, State::atom(),
+                                    {Objects::non_neg_integer(),
+                                     Bytes::non_neg_integer(),
+                                     Blocks::non_neg_integer()}}.
+objs_bytes_and_blocks(?MANIFEST{props=Props} = M) when is_list(Props) ->
     case proplists:get_value(multipart, Props) of
-        ?MULTIPART_MANIFEST{} = MpM -> bytes_and_blocks_mp(M, MpM);
-        _ -> bytes_and_blocks_non_mp(M)
+        ?MULTIPART_MANIFEST{} = MpM -> objs_bytes_and_blocks_mp(M, MpM);
+        _ -> objs_bytes_and_blocks_non_mp(M)
     end;
-bytes_and_blocks(M) ->
-    bytes_and_blocks_non_mp(M).
+objs_bytes_and_blocks(M) ->
+    objs_bytes_and_blocks_non_mp(M).
 
-bytes_and_blocks_non_mp(?MANIFEST{state=State, content_length=CL, block_size=BS})
+%% @doc count objects, bytes and blocks, non-MP version
+objs_bytes_and_blocks_non_mp(?MANIFEST{state=State, content_length=CL, block_size=BS})
   when is_integer(CL) andalso is_integer(BS) ->
     BlockCount = riak_cs_lfs_utils:block_count(CL, BS),
     {non_mp, State, {1, CL, BlockCount}};
-bytes_and_blocks_non_mp(?MANIFEST{state=State} = _M) ->
+objs_bytes_and_blocks_non_mp(?MANIFEST{state=State} = _M) ->
     lager:debug("Strange manifest: ~p~n", [_M]),
     %% The branch above is for content_length is properly set.  This
     %% is true for non-MP v2 auth case but not always true for v4 of
@@ -161,10 +163,12 @@ bytes_and_blocks_non_mp(?MANIFEST{state=State} = _M) ->
     %% this objects. Can this be guessed better from write_blocks_remaining?
     {non_mp, State, {1, 0, 0}}.
 
+%% @doc counting parts, bytes and blocks, multipart version
+%%
 %% There are possibility of understimatation and overestimation for
 %% Multipart cases.
 %%
-%% In writing state, there are two active fields in Multipart
+%% In writing state, there are two active fields in multipart
 %% manifests, `parts' and `done_parts'. To count bytes and blocks,
 %% `parts' is used here, these counts may be overestimate because
 %% `parts' includes unfinished blocks. We could use `done_parts'
@@ -173,18 +177,18 @@ bytes_and_blocks_non_mp(?MANIFEST{state=State} = _M) ->
 %%
 %% Once MP turned into active state, unused parts had already been
 %% gone to GC bucket. These UUIDs are remaining in cleanup_parts, but
-%% we can't know whether correspoinding blocks have beed GC'ed or not,
-%% because dummy manifests for `cleanup_parts' have beed inserted to
+%% we can't know whether correspoinding blocks have been GC'ed or not,
+%% because dummy manifests for `cleanup_parts' have been inserted to
 %% GC bucket directly and no object in manifest buckets.  We don't
 %% count cleanup_parts here.
-bytes_and_blocks_mp(?MANIFEST{state=writing},
+objs_bytes_and_blocks_mp(?MANIFEST{state=writing},
                     ?MULTIPART_MANIFEST{}=MpM) ->
     {mp, writing, {part_count(MpM), bytes_mp_parts(MpM), blocks_mp_parts(MpM)}};
-bytes_and_blocks_mp(?MANIFEST{state=State, content_length=CL},
+objs_bytes_and_blocks_mp(?MANIFEST{state=State, content_length=CL},
                     ?MULTIPART_MANIFEST{}=MpM)
   when State =:= active andalso is_integer(CL) ->
     {mp, State, {1, CL, blocks_mp_parts(MpM)}};
-bytes_and_blocks_mp(?MANIFEST{state=State},
+objs_bytes_and_blocks_mp(?MANIFEST{state=State},
                     ?MULTIPART_MANIFEST{}=MpM) ->
     {mp, State, {1, bytes_mp_parts(MpM), blocks_mp_parts(MpM)}}.
 
