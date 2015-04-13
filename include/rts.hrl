@@ -32,10 +32,30 @@
         ['Count' , 'UserErrorCount' , 'SystemErrorCount',
          'BytesIn' , 'UserErrorBytesIn' , 'SystemErrorBytesIn',
          'BytesOut' , 'UserErrorBytesOut' , 'SystemErrorBytesOut',
-         'BytesOutIncomplete', 'Objects', 'Bytes']).
+         'BytesOutIncomplete',
+         'ActiveObjects', 'ActiveBytes', 'ActiveBlocks',
+         'WritingOldObjects', 'WritingOldBytes', 'WritingOldBlocks',
+         'WritingNewObjects', 'WritingNewBytes', 'WritingNewBlocks',
+         'WritingMultipartObjects', 'WritingMultipartBytes', 'WritingMultipartBlocks',
+         'Objects', 'Bytes', 'Blocks',
+         'ScheduledDeleteOldObjects', 'ScheduledDeleteOldBytes', 'ScheduledDeleteOldBlocks',
+         'ScheduledDeleteNewObjects', 'ScheduledDeleteNewBytes', 'ScheduledDeleteNewBlocks',
+         'PendingDeleteOldObjects','PendingDeleteOldBytes', 'PendingDeleteOldBlocks',
+         'PendingDeleteNewObjects','PendingDeleteNewBytes', 'PendingDeleteNewBlocks',
+         'ActiveInvisibleObjects','ActiveInvisibleBytes', 'ActiveInvisibleBlocks']).
 
 -define(SUPPORTED_USAGE_FIELD_BIN,
         [<<"Count">> , <<"UserErrorCount">> , <<"SystemErrorCount">>,
          <<"BytesIn">> , <<"UserErrorBytesIn">> , <<"SystemErrorBytesIn">>,
          <<"BytesOut">> , <<"UserErrorBytesOut">> , <<"SystemErrorBytesOut">>,
-         <<"BytesOutIncomplete">>, <<"Objects">>, <<"Bytes">>]).
+         <<"BytesOutIncomplete">>,
+         <<"ActiveObjects">>, <<"ActiveBytes">>, <<"ActiveBlocks">>,
+         <<"WritingOldObjects">>, <<"WritingOldBytes">>, <<"WritingOldBlocks">>,
+         <<"WritingNewObjects">>, <<"WritingNewBytes">>, <<"WritingNewBlocks">>,
+         <<"WritingMultipartObjects">>, <<"WritingMultipartBytes">>, <<"WritingMultipartBlocks">>,
+         <<"Objects">>, <<"Bytes">>, <<"Blocks">>,
+         <<"ScheduledDeleteOldObjects">>, <<"ScheduledDeleteOldBytes">>, <<"ScheduledDeleteOldBlocks">>,
+         <<"ScheduledDeleteNewObjects">>, <<"ScheduledDeleteNewBytes">>, <<"ScheduledDeleteNewBlocks">>,
+         <<"PendingDeleteOldObjects">>,<<"PendingDeleteOldBytes">>, <<"PendingDeleteOldBlocks">>,
+         <<"PendingDeleteNewObjects">>,<<"PendingDeleteNewBytes">>, <<"PendingDeleteNewBlocks">>,
+         <<"ActiveInvisibleObjects">>,<<"ActiveInvisibleBytes">>, <<"ActiveInvisibleBlocks">>]).

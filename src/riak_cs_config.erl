@@ -60,7 +60,8 @@
          read_before_last_manifest_write/0,
          region/0,
          stanchion/0,
-         use_2i_for_storage_calc/0
+         use_2i_for_storage_calc/0,
+         detailed_storage_calc/0
         ]).
 
 %% Timeouts hitting Riak
@@ -430,6 +431,12 @@ region() ->
 -spec use_2i_for_storage_calc() -> boolean().
 use_2i_for_storage_calc() ->
     get_env(riak_cs, use_2i_for_storage_calc, false).
+
+%% @doc Cauculate detailed summary information of bucket
+%% usage or not.
+-spec detailed_storage_calc() -> boolean().
+detailed_storage_calc() ->
+    get_env(riak_cs, detailed_storage_calc, false).
 
 %% ===================================================================
 %% ALL Timeouts hitting Riak

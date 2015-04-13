@@ -120,7 +120,9 @@
                   {show, [{key, undefined, undefined, string, "access stats key"}]}]}).
 -define(storage_cmd_spec,
         {storage, [{list, ?sort_opt_spec},
-                   {show, [{key, undefined, undefined, string, "storage stats key"}]}]}).
+                   {show, [{key, undefined, undefined, string, "storage stats key"},
+                           {print_zeros, undefined, "print-zeros", {boolean, false},
+                            "print zeros for detaild stat items"}]}]}).
 -define(user_cmd_spec,
         {user, [{list, ?sort_opt_spec},
                 {show, [{key, undefined, "key", string, "User ID"},
@@ -192,7 +194,8 @@ process_command(gc, count, _Opts, RiakcPid) ->
 process_command(storage, list, _Opts, RiakcPid) ->
     list_storage(RiakcPid);
 process_command(storage, show, Opts, RiakcPid) ->
-    show_storage(RiakcPid, proplists:get_value(key, Opts));
+    show_storage(RiakcPid, proplists:get_value(key, Opts),
+                 proplists:get_value(print_zeros, Opts));
 process_command(block, list, Opts, RiakcPid) ->
     list_blocks(RiakcPid,
                proplists:get_value(bucket, Opts),
@@ -362,11 +365,11 @@ list_storage(RiakcPid) ->
                    end]]
      || Key <- lists:sort(Keys)].
 
-show_storage(_RiakcPid, undefined)->
+show_storage(_RiakcPid, undefined, _)->
     usage(storage, show),
     halt(1);
-show_storage(RiakcPid, Key)->
-    [print_storage_stats(Key, SiblingNo, StatsBin)
+show_storage(RiakcPid, Key, PrintZeros)->
+    [print_storage_stats(Key, SiblingNo, StatsBin, PrintZeros)
      || {SiblingNo, {_RiakMD, StatsBin}}
             <- get_riak_object(RiakcPid, "moss.storage", Key)].
 
@@ -454,7 +457,10 @@ stats_sample_from_binary([{<<"MossNode">>, Node} | Rest],
     stats_sample_from_binary(Rest, {Start, End, Node, Ops});
 stats_sample_from_binary([{OpName, {struct, Stats}} | Rest],
                          {Start, End, Node, Ops}) ->
-    stats_sample_from_binary(Rest, {Start, End, Node, [{OpName, Stats} | Ops]}).
+    stats_sample_from_binary(Rest, {Start, End, Node, [{OpName, Stats} | Ops]});
+stats_sample_from_binary([{OpName, Other} | Rest],
+                         {Start, End, Node, Ops}) ->
+    stats_sample_from_binary(Rest, {Start, End, Node, [{OpName, Other} | Ops]}).
 
 count_riak_bucket(RiakcPid, Bucket, BucketToDisplay, Timeout) ->
     case riakc_pb_socket:stream_list_keys(RiakcPid, Bucket) of
@@ -513,20 +519,55 @@ print_access_stats(Key, SiblingNo, StatsBin) ->
         {Op, OpStats} <- Ops,
         {StatsKey, StatsValue} <- OpStats].
 
-print_storage_stats(Key, SiblingNo, StatsBin) ->
+print_storage_stats(Key, SiblingNo, StatsBin, PrintZeros) ->
     {Start, End, _Node, Buckets} = stats_sample_from_binary(StatsBin),
     io:nl(),
     io:format("Key       : ~s~n", [Key]),
     io:format("SiblingNo : ~B~n", [SiblingNo]),
     io:format("StartTime : ~s~n", [Start]),
     io:format("EndTime   : ~s~n", [End]),
-    io:format("~-36..=s: ~-32..=s ~-32..=s~n",
-              ["Bucket ", "Objects ", "Bytes "]),
-    %% TODO: Error handling, e.g. StatItems = "{error,{timeout,[]}}"
-    [io:format("~-36s: ~32B ~32B~n", [Bucket, Objects, Bytes]) ||
-        {Bucket, StatItems} <- Buckets,
-        {ObjectsKey, Objects} <- StatItems, ObjectsKey =:= <<"Objects">>,
-        {BytesKey, Bytes}     <- StatItems, BytesKey   =:= <<"Bytes">>].
+    io:format("~-36..=s: ~-22..=s ~-22..=s ~-22..=s~n",
+              ["Bucket ", "Objects ", "Bytes ", "Blocks "]),
+    [case StatItems of
+         ErrorMessage when is_binary(ErrorMessage) ->
+             io:format("~-36s: ~s~n", [Bucket, ErrorMessage]);
+         _ ->
+             Objects = get_storage_stats_number(<<"Objects">>, StatItems),
+             Bytes = get_storage_stats_number(<<"Bytes">>, StatItems),
+             Blocks = get_storage_stats_number(<<"Blocks">>, StatItems),
+             io:format("~-36s: ~22B ~22B ~22B~n", [Bucket, Objects, Bytes, Blocks]),
+             case length(StatItems) =< 2 of
+                 true -> ok;
+                 false ->
+                     [begin
+                          Ob = get_storage_stats_number(<<Prefix/binary, "Objects">>, StatItems),
+                          By = get_storage_stats_number(<<Prefix/binary, "Bytes">>, StatItems),
+                          Bl = get_storage_stats_number(<<Prefix/binary, "Blocks">>, StatItems),
+                          case {PrintZeros, Ob, By, Bl} of
+                              {false, 0, 0, 0} -> ok;
+                              _ ->
+                                  io:format("  +---~-30s: ~22B ~22B ~22B~n",
+                                            [Prefix, Ob, By, Bl])
+                          end
+                      end || Prefix <- [<<"Active">>,
+                                        <<"WritingMultipart">>,
+                                        <<"ActiveInvisible">>,
+                                        <<"WritingNew">>,
+                                        <<"WritingOld">>,
+                                        <<"ScheduledDeleteNew">>,
+                                        <<"ScheduledDeleteOld">>,
+                                        <<"PendingDeleteNew">>,
+                                        <<"PendingDeleteOld">>]]
+             end
+     end || {Bucket, StatItems} <- Buckets].
+
+get_storage_stats_number(Key, StatItems) when is_binary(Key) ->
+    case lists:keyfind(Key, 1, StatItems) of
+        {Key, Num}  -> Num;
+        false -> -1
+    end;
+get_storage_stats_number(Keys, StatItems) when is_list(Keys) ->
+    get_storage_stats_number(list_to_binary(Keys), StatItems).
 
 print_users(RiakcPid, Bucket, Options) ->
     {ok, Keys} = riakc_pb_socket:list_keys(RiakcPid, Bucket),
