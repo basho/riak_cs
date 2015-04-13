@@ -155,6 +155,9 @@ make_object(User, BucketList, SampleStart, SampleEnd) ->
     rts:new_sample(?STORAGE_BUCKET, User, SampleStart, SampleEnd, Period,
                    BucketList).
 
+-spec get_usage(pid(), string(),
+                calendar:datetime(),
+                calendar:datetime()) -> {list(), list()}.
 get_usage(Riak, User, Start, End) ->
     {ok, Period} = archive_period(),
     rts:find_samples(Riak, ?STORAGE_BUCKET, User, Start, End, Period).

@@ -184,6 +184,15 @@ handle_call(_Request, State) ->
 %% @private
 handle_event({log_access, LogData},
              #state{table=T, size=S, max_size=MaxS}=State) ->
+
+    %% Updates for quotas
+    case lists:keyfind(?STAT(user), 1, LogData#wm_log_data.notes) of
+        {?STAT(user), Key} ->
+            _ = riak_cs_quota:update_all_states(Key, LogData);
+        false ->
+            ignore
+    end,
+
     case access_record(LogData) of
         {ok, Access} ->
             ets:insert(T, Access),

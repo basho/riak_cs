@@ -57,11 +57,11 @@
           current,       %% what schedule we're calculating for now
           next,          %% the next scheduled time
 
-          riak_client,   %% client we're currently using
+          riak_client :: undefined | pid(),   %% client we're currently using
           batch_start,   %% the time we actually started
           batch_count=0, %% count of users processed so far
           batch_skips=0, %% count of users skipped so far
-          batch=[],      %% users left to process in this batch
+          batch=[] :: [string()], %% users left to process in this batch
           recalc         %% recalculate a user's storage for this period?
          }).
 
