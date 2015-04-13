@@ -526,23 +526,48 @@ print_storage_stats(Key, SiblingNo, StatsBin, PrintZeros) ->
     io:format("SiblingNo : ~B~n", [SiblingNo]),
     io:format("StartTime : ~s~n", [Start]),
     io:format("EndTime   : ~s~n", [End]),
-    io:format("~-36..=s: ~-32..=s ~-32..=s~n",
-              ["Bucket ", "Objects ", "Bytes "]),
+    io:format("~-36..=s: ~-22..=s ~-22..=s ~-22..=s~n",
+              ["Bucket ", "Objects ", "Bytes ", "Blocks "]),
     [case StatItems of
          ErrorMessage when is_binary(ErrorMessage) ->
              io:format("~-36s: ~s~n", [Bucket, ErrorMessage]);
          _ ->
-             {<<"Objects">>, Objects} = lists:keyfind(<<"Objects">>, 1, StatItems),
-             {<<"Bytes">>, Bytes}     = lists:keyfind(<<"Bytes">>, 1, StatItems),
-             io:format("~-36s: ~32B ~32B~n", [Bucket, Objects, Bytes]),
+             Objects = get_storage_stats_number(<<"Objects">>, StatItems),
+             Bytes = get_storage_stats_number(<<"Bytes">>, StatItems),
+             Blocks = get_storage_stats_number(<<"Blocks">>, StatItems),
+             io:format("~-36s: ~22B ~22B ~22B~n", [Bucket, Objects, Bytes, Blocks]),
              case length(StatItems) =< 2 of
                  true -> ok;
                  false ->
-                     [io:format("  +--- ~-29s= ~32B~n", [K, V]) ||
-                         {K, V} <- StatItems,
-                         (PrintZeros orelse V =/= 0)]
+                     [begin
+                          Ob = get_storage_stats_number(<<Prefix/binary, "Objects">>, StatItems),
+                          By = get_storage_stats_number(<<Prefix/binary, "Bytes">>, StatItems),
+                          Bl = get_storage_stats_number(<<Prefix/binary, "Blocks">>, StatItems),
+                          case {PrintZeros, Ob, By, Bl} of
+                              {false, 0, 0, 0} -> ok;
+                              _ ->
+                                  io:format("  +---~-30s: ~22B ~22B ~22B~n",
+                                            [Prefix, Ob, By, Bl])
+                          end
+                      end || Prefix <- [<<"Active">>,
+                                        <<"WritingMultipart">>,
+                                        <<"ActiveInvisible">>,
+                                        <<"WritingNew">>,
+                                        <<"WritingOld">>,
+                                        <<"ScheduledDeleteNew">>,
+                                        <<"ScheduledDeleteOld">>,
+                                        <<"PendingDeleteNew">>,
+                                        <<"PendingDeleteOld">>]]
              end
      end || {Bucket, StatItems} <- Buckets].
+
+get_storage_stats_number(Key, StatItems) when is_binary(Key) ->
+    case lists:keyfind(Key, 1, StatItems) of
+        {Key, Num}  -> Num;
+        false -> -1
+    end;
+get_storage_stats_number(Keys, StatItems) when is_list(Keys) ->
+    get_storage_stats_number(list_to_binary(Keys), StatItems).
 
 print_users(RiakcPid, Bucket, Options) ->
     {ok, Keys} = riakc_pb_socket:list_keys(RiakcPid, Bucket),

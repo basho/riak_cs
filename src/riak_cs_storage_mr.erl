@@ -45,19 +45,21 @@
           %% User accessible objects, which includes active and
           %% writing of multipart.
           user = {0, 0, 0},
-          %% `active's but "deleted", i.e. other than user accessible
-          ac_de = {0, 0, 0},
+          %% Most recent active's (double count with `user')
+          active = {0, 0, 0},
+          %% active's those are invisible, older than user accessible
+          active_invisible = {0, 0, 0},
           %% MP writing (double count with `user')
-          wr_mp = {0, 0, 0},
+          writing_multipart = {0, 0, 0},
           %% non-MP writing, divided by <> leeway
-          wr_new = {0, 0, 0},
-          wr_old = {0, 0, 0},
+          writing_new = {0, 0, 0},
+          writing_old = {0, 0, 0},
           %% pending_delete, divided by <> leeway
-          pd_new = {0, 0, 0},
-          pd_old = {0, 0, 0},
+          pending_delete_new = {0, 0, 0},
+          pending_delete_old = {0, 0, 0},
           %% scheduled_delete, divided by <> leeway
-          sd_new = {0, 0, 0},
-          sd_old = {0, 0, 0}
+          scheduled_delete_new = {0, 0, 0},
+          scheduled_delete_old = {0, 0, 0}
         }).
 
 -type sum() :: #sum{}.
@@ -89,7 +91,8 @@ sum_objs(DivPoint, History) ->
     case riak_cs_manifest_utils:active_manifest(History) of
         {ok, Active} ->
             {_, _, CBB} = bytes_and_blocks(Active),
-            Sum = add_to(#sum{}, #sum.user, CBB),
+            Sum0 = add_to(#sum{}, #sum.user, CBB),
+            Sum = add_to(Sum0, #sum.active, CBB),
             NonActiveHistory = lists:keydelete(Active?MANIFEST.uuid, 1, History),
             sum_objs(DivPoint, Sum, NonActiveHistory);
         _ ->
@@ -104,33 +107,32 @@ sum_objs(DivPoint, Sum, [{_UUID, M} | Rest]) ->
                      %% Because user accessible active manifest had
                      %% been removed `sum_objs/2', active's here are
                      %% invisible for users.
-                     add_to(Sum, #sum.ac_de, CBB);
+                     add_to(Sum, #sum.active_invisible, CBB);
                  {mp, writing, CBB} ->
                      %% MP writing is visible for user. Also add
-                     %% to MP writing counters. Only this kind of
-                     %% manifests are doubly counted.
+                     %% to MP writing counters.
                      Sum1 = add_to(Sum, #sum.user, CBB),
-                     add_to(Sum1, #sum.wr_mp, CBB);
+                     add_to(Sum1, #sum.writing_multipart, CBB);
                  {non_mp, writing, CBB} ->
                      case new_or_old(DivPoint, M?MANIFEST.write_start_time) of
                          new ->
-                             add_to(Sum, #sum.wr_new, CBB);
+                             add_to(Sum, #sum.writing_new, CBB);
                          old ->
-                             add_to(Sum, #sum.wr_old, CBB)
+                             add_to(Sum, #sum.writing_old, CBB)
                      end;
                  {_, pending_delete, CBB} ->
                      case new_or_old(DivPoint, M?MANIFEST.delete_marked_time) of
                          new ->
-                             add_to(Sum, #sum.pd_new, CBB);
+                             add_to(Sum, #sum.pending_delete_new, CBB);
                          old ->
-                             add_to(Sum, #sum.pd_old, CBB)
+                             add_to(Sum, #sum.pending_delete_old, CBB)
                      end;
                  {_, scheduled_delete, CBB} ->
                      case new_or_old(DivPoint, M?MANIFEST.delete_marked_time) of
                          new ->
-                             add_to(Sum, #sum.sd_new, CBB);
+                             add_to(Sum, #sum.scheduled_delete_new, CBB);
                          old ->
-                             add_to(Sum, #sum.sd_old, CBB)
+                             add_to(Sum, #sum.scheduled_delete_old, CBB)
                      end
              end,
     sum_objs(DivPoint, NewSum, Rest).
@@ -217,7 +219,7 @@ summary_to_list([], _, Acc) ->
     Acc;
 summary_to_list([F|Fields], [{C, By, Bl}|Triples], Acc) ->
     summary_to_list(Fields, Triples,
-                    [{{F, ct}, C}, {{F, by}, By}, {{F, bl}, Bl} | Acc]).
+                    [{{F, objects}, C}, {{F, bytes}, By}, {{F, blocks}, Bl} | Acc]).
 
 object_size(Resolved) ->
     {MPparts, MPbytes} = count_multipart_parts(Resolved),

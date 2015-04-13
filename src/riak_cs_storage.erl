@@ -149,10 +149,12 @@ detailed_result_json_struct([], Acc) ->
     Acc;
 detailed_result_json_struct([{{K1, K2}, V} | Rest], Acc) ->
     JsonKey = case {K1, K2} of
-              {user, ct} -> <<"Objects">>;
-              {user, by} -> <<"Bytes">>;
-              _ -> list_to_binary(io_lib:format("~s-~s", [K1, K2]))
-          end,
+                  {user, K2} ->
+                      list_to_binary(riak_cs_utils:camel_case(K2));
+                  {K1, K2} ->
+                      list_to_binary([riak_cs_utils:camel_case(K1),
+                                      riak_cs_utils:camel_case(K2)])
+              end,
     detailed_result_json_struct(Rest, [{JsonKey, V} | Acc]).
 
 %% @doc Retreive the number of seconds that should elapse between
