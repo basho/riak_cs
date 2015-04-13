@@ -25,19 +25,20 @@
 %%
 %%    This module enables node-level rate limiting.
 %%
-%%  set_limits(DurationSec, BandwidthMax, AccessCountMax)
+%% set_limits(DurationSec, BandwidthMax, AccessCountMax)
 %%
-%%    Set bandwidth and access limit. DurationSec is refresh rate.
-%%    set_limits(-1, -1, -1) will remove all rate limitation.
+%%   Set bandwidth and access limit. DurationSec is refresh rate.
+%%   set_limits(100, -1, -1) will remove all rate limitation. But it is highly
+%%   recommended to disable this module by not setting `quota_modules`.
 %%
-%%  state()
+%% state()
 %%
-%%    Shows cached list of users being limited.
-%%    {user_state, User Key, Current bytes, Access count}.
+%%   Shows cached list of users being limited.
+%%   {user_state, User Key, Current bytes, Access count}.
 %%
-%%  reset()
+%% reset()
 %%
-%%    Resets current state rate limiting. Limits won't be cleared.
+%%   Resets current state rate limiting. Limits won't be cleared.
 
 -module(riak_cs_simple_bwlimiter).
 

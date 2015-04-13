@@ -28,7 +28,8 @@
 %% set_quotas(DurationSec, UserQuota)
 %%
 %%   Set User Quota. DurationSec is its refresh rate.
-%%   `set_quotas(1, -1)' will remove all quota.
+%%   `set_quotas(100, -1)' will remove all quota. But it is highly
+%%   recommended to disable this module by not setting `quota_modules`.
 %%
 %% state()
 %%
