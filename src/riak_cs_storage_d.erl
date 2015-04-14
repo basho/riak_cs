@@ -402,7 +402,7 @@ recalc(true, _RcPid, _User, _Time) ->
 recalc(false, RcPid, User, Time) ->
     {ok, Period} = riak_cs_storage:archive_period(),
     {Start, End} = rts:slice_containing(Time, Period),
-    case riak_cs_storage:get_usage(RcPid, User, Start, End) of
+    case riak_cs_storage:get_usage(RcPid, User, true, Start, End) of
         {[], _} ->
             %% No samples were found for this time period (or all
             %% attempts ended in error); calculate
