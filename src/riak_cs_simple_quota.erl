@@ -209,20 +209,23 @@ error_response({disk_quota, Current, Limit}, RD, Ctx) ->
 get_latest_usage(Pid, User) ->
     Now = calendar:now_to_datetime(os:timestamp()),
     NowASec = calendar:datetime_to_gregorian_seconds(Now),
-    LeewaySeconds = riak_cs_gc:leeway_seconds(),
-    get_latest_usage(Pid, User, LeewaySeconds, NowASec, 0, 10).
+    ArchivePeriod = case riak_cs_storage:archive_period() of
+                        {ok, Period} -> Period;
+                        _ -> 86400 %% A day is hard coded
+                    end,
+    get_latest_usage(Pid, User, ArchivePeriod, NowASec, 0, 10).
 
 -spec get_latest_usage(pid(), string(), non_neg_integer(),
                        non_neg_integer(), non_neg_integer(), non_neg_integer()) ->
                               {ok, list()} | {error, notfound}.
 get_latest_usage(_Pid, _User, _, _, N, N) -> {error, notfound};
-get_latest_usage(Pid, User, LeewaySeconds, EndSec, N, Max) ->
+get_latest_usage(Pid, User, ArchivePeriod, EndSec, N, Max) ->
     End = calendar:gregorian_seconds_to_datetime(EndSec),
-    EndSec2 = EndSec - LeewaySeconds,
+    EndSec2 = EndSec - ArchivePeriod,
     ADayAgo = calendar:gregorian_seconds_to_datetime(EndSec2),
     case riak_cs_storage:get_usage(Pid, User, ADayAgo, End) of
         {[], _} ->
-            get_latest_usage(Pid, User, LeewaySeconds, EndSec2, N+1, Max);
+            get_latest_usage(Pid, User, ArchivePeriod, EndSec2, N+1, Max);
         {Res, _} ->
             {ok, Res}
     end.
