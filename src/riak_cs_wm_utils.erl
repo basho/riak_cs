@@ -799,16 +799,35 @@ object_access_authorize_helper(AccessType, Deletable, SkipAcl,
                     actor_is_owner_but_denied_policy(User, RD, Ctx, Method, Deletable);
                 {ok, actor_is_owner_and_allowed_policy} ->
                     %% actor is the owner
-                    actor_is_owner_and_allowed_policy(User, RD, Ctx, LocalCtx);
+                    %% Quota hook here
+                    case riak_cs_quota:invoke_all_callbacks(User, Access, Ctx) of
+                        {ok, RD2, Ctx2} ->
+                            actor_is_owner_and_allowed_policy(User, RD2, Ctx2, LocalCtx);
+                        {error, Module, Reason, RD3, Ctx3} ->
+                            riak_cs_quota:handle_error(Module, Reason, RD3, Ctx3)
+                    end;
                 {error, {actor_is_not_owner_and_denied_policy, OwnerId}} ->
                     actor_is_not_owner_and_denied_policy(OwnerId, RD, Ctx,
                                                          Method, Deletable);
                 {ok, {actor_is_not_owner_but_allowed_policy, OwnerId}} ->
                     %% actor is not the owner
-                    actor_is_not_owner_but_allowed_policy(User, OwnerId, RD, Ctx, LocalCtx);
+                    %% Quota hook here
+                    case riak_cs_quota:invoke_all_callbacks(OwnerId, Access, Ctx) of
+                        {ok, RD2, Ctx2} ->
+                            actor_is_not_owner_but_allowed_policy(User, OwnerId, RD2, Ctx2, LocalCtx);
+                        {error, Module, Reason, RD3, Ctx3} ->
+                            riak_cs_quota:handle_error(Module, Reason, RD3, Ctx3)
+                    end;
                 {ok, just_allowed_by_policy} ->
                     %% actor is not the owner, not permitted by ACL but permitted by policy
-                    just_allowed_by_policy(ObjectAcl, RcPid, RD, Ctx, LocalCtx);
+                    %% Quota hook here
+                    OwnerId = riak_cs_acl:owner_id(ObjectAcl, RcPid),
+                    case riak_cs_quota:invoke_all_callbacks(OwnerId, Access, Ctx) of
+                        {ok, RD2, Ctx2} ->
+                            just_allowed_by_policy(OwnerId, RD2, Ctx2, LocalCtx);
+                        {error, Module, Reason, RD3, Ctx3} ->
+                            riak_cs_quota:handle_error(Module, Reason, RD3, Ctx3)
+                    end;
                 {error, access_denied} ->
                     riak_cs_wm_utils:deny_access(RD, Ctx)
             end
@@ -961,14 +980,12 @@ actor_is_not_owner_but_allowed_policy(_, OwnerId, RD, Ctx, LocalCtx) ->
     UpdCtx = Ctx#context{local_context=LocalCtx#key_context{owner=OwnerId}},
     {false, AccessRD, UpdCtx}.
 
--spec just_allowed_by_policy(ObjectAcl :: acl(),
-                             RcPid :: riak_client(),
+-spec just_allowed_by_policy(OwnerId :: string(),
                              RD :: term(),
                              Ctx :: term(),
                              LocalCtx :: term()) ->
                                     authorized_response().
-just_allowed_by_policy(ObjectAcl, RcPid, RD, Ctx, LocalCtx) ->
-    OwnerId = riak_cs_acl:owner_id(ObjectAcl, RcPid),
+just_allowed_by_policy(OwnerId, RD, Ctx, LocalCtx) ->
     AccessRD = riak_cs_access_log_handler:set_user(OwnerId, RD),
     UpdLocalCtx = LocalCtx#key_context{owner=OwnerId},
     {false, AccessRD, Ctx#context{local_context=UpdLocalCtx}}.

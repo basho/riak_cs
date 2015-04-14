@@ -33,7 +33,8 @@
          to_3tuple/1,
          save_user/3,
          update_key_secret/1,
-         update_user/3
+         update_user/3,
+         key_id/1
         ]).
 
 -include("riak_cs.hrl").
@@ -316,3 +317,5 @@ user_record(Name, Email, KeyId, Secret, CanonicalId, Buckets) ->
               canonical_id=CanonicalId,
               buckets=Buckets}.
 
+key_id(?RCS_USER{key_id=KeyId}) ->
+    KeyId.
