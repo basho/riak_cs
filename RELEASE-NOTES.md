@@ -1,8 +1,26 @@
 # Riak CS 2.0.1 Release Notes
 
-## Known Issues & Limitations
+This release is mainly a bugfix release, but includes several new
+experimental fetures.
 
-- None
+## Additions
+
+- Module-level hook point for limiting user access and quota usage has
+  been introduced, with very preliminary simple node-wide limting
+  example modules. Operators can make, plug in or combine different
+  modules as quota-limiting, rate-limiting or bandwidth-limiting
+  depeding on their unique requirements. This is **experimental** and
+  plugin SPI (service provider interface) may or may not change in
+  future effort to improve this
+  system. [riak_cs/#1118](https://github.com/basho/riak_cs/pull/1118)
+- More detailed storage calculation has been introduced. Not only
+  active manifests but stale manifests such as waiting for garbage
+  collection, or currently being written objects will also be taken
+  into account as new storage stats items. This will help accounting
+  disk usage in more detail, although it does not take state of blocks
+  whether they are halfway uploaded, or halfway deleted, or not.  This
+  is still off by default and
+  **experimental**. [riak_cs/#1120](https://github.com/basho/riak_cs/pull/1120)
 
 ## Bugs Fixed
 
