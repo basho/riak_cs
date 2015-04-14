@@ -28,7 +28,7 @@
          sum_user/4,
          sum_bucket/3,
          make_object/4,
-         get_usage/4,
+         get_usage/5,
          archive_period/0
         ]).
 
@@ -179,8 +179,26 @@ make_object(User, BucketList, SampleStart, SampleEnd) ->
                    BucketList).
 
 -spec get_usage(pid(), string(),
+                boolean(),
                 calendar:datetime(),
                 calendar:datetime()) -> {list(), list()}.
-get_usage(Riak, User, Start, End) ->
+get_usage(Riak, User, AdminAccess, Start, End) ->
     {ok, Period} = archive_period(),
-    rts:find_samples(Riak, ?STORAGE_BUCKET, User, Start, End, Period).
+    {Samples, Errors} = rts:find_samples(Riak, ?STORAGE_BUCKET,
+                                         User, Start, End, Period),
+    case AdminAccess of
+        true -> {Samples, Errors};
+        _ -> {[filter_internal_usage(Sample, []) || Sample <- Samples], Errors}
+    end.
+
+filter_internal_usage([], Acc) ->
+    lists:reverse(Acc);
+filter_internal_usage([{K, _V}=T | Rest], Acc)
+  when K =:= <<"StartTime">> orelse K =:= <<"EndTime">> ->
+    filter_internal_usage(Rest, [T|Acc]);
+filter_internal_usage([{Bucket, {struct, UsageList}} | Rest], Acc) ->
+    Objects = lists:keyfind(<<"Objects">>, 1, UsageList),
+    Bytes = lists:keyfind(<<"Bytes">>, 1, UsageList),
+    filter_internal_usage(Rest, [{Bucket, {struct, [Objects, Bytes]}} | Acc]);
+filter_internal_usage([{_Bucket, _ErrorBin}=T | Rest], Acc) ->
+    filter_internal_usage(Rest, [T|Acc]).

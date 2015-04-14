@@ -223,7 +223,7 @@ get_latest_usage(Pid, User, ArchivePeriod, EndSec, N, Max) ->
     End = calendar:gregorian_seconds_to_datetime(EndSec),
     EndSec2 = EndSec - ArchivePeriod,
     ADayAgo = calendar:gregorian_seconds_to_datetime(EndSec2),
-    case riak_cs_storage:get_usage(Pid, User, ADayAgo, End) of
+    case riak_cs_storage:get_usage(Pid, User, false, ADayAgo, End) of
         {[], _} ->
             get_latest_usage(Pid, User, ArchivePeriod, EndSec2, N+1, Max);
         {Res, _} ->
