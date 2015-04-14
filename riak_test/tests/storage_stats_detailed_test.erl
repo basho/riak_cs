@@ -42,22 +42,27 @@ confirm() ->
               {cs, rtcs:cs_config([{fold_objects_for_list_keys, true},
                                    {detailed_storage_calc, true}])}],
     SetupRes = rtcs:setup(1, Config),
-    {UserConfig, {_RiakNodes, CSNodes, _Stanchion}} = SetupRes,
+    {AdminConfig, {RiakNodes, CSNodes, _Stanchion}} = SetupRes,
+    RiakNode = hd(RiakNodes),
+    {AccessKeyId, SecretAccessKey} = rtcs:create_user(RiakNode, 1),
+    UserConfig = rtcs:config(AccessKeyId, SecretAccessKey, rtcs:cs_port(RiakNode)),
+
     setup_objects(UserConfig, ?BUCKET),
     %% Set up to grep logs to verify messages
     rt:setup_log_capture(hd(CSNodes)),
 
     {Begin, End} = storage_stats_test:calc_storage_stats(hd(CSNodes)),
+    lager:info("Admin user will get every fields..."),
     {JsonStat, XmlStat} = storage_stats_test:storage_stats_request(
-                            UserConfig, Begin, End),
+                            AdminConfig, UserConfig, Begin, End),
 
     ?assert(rtcs:json_get([<<"StartTime">>], JsonStat) =/= notfound),
     ?assert(rtcs:json_get([<<"EndTime">>],   JsonStat) =/= notfound),
     ?assert(proplists:get_value('StartTime', XmlStat)  =/= notfound),
     ?assert(proplists:get_value('EndTime',   XmlStat)  =/= notfound),
     lists:foreach(fun({K, V}) ->
-                          assert_storage_json_stats(K, V, JsonStat),
-                          assert_storage_xml_stats(K, V, XmlStat)
+                          assert_storage_json_stats(?BUCKET, K, V, JsonStat),
+                          assert_storage_xml_stats(?BUCKET, K, V, XmlStat)
                   end,
                   [{"Objects",                   1 + 2},
                    {"Bytes",                     300 + 2 * 2*1024*1024},
@@ -68,6 +73,23 @@ confirm() ->
                    {"ScheduledDeleteNewObjects", 2},
                    {"ScheduledDeleteNewBytes",   100 + 200},
                    {"ScheduledDeleteNewBlocks",  2}]),
+
+    lager:info("Non-admin user will get only Objects and Bytes..."),
+    {JsonStat2, XmlStat2} = storage_stats_test:storage_stats_request(
+                              UserConfig, UserConfig, Begin, End),
+    lists:foreach(fun({K, V}) ->
+                          assert_storage_json_stats(?BUCKET, K, V, JsonStat2),
+                          assert_storage_xml_stats(?BUCKET, K, V, XmlStat2)
+                  end,
+                  [{"Objects",                   1 + 2},
+                   {"Bytes",                     300 + 2 * 2*1024*1024},
+                   {"Blocks",                    notfound},
+                   {"WritingMultipartObjects",   notfound},
+                   {"WritingMultipartBytes",     notfound},
+                   {"WritingMultipartBlocks",    notfound},
+                   {"ScheduledDeleteNewObjects", notfound},
+                   {"ScheduledDeleteNewBytes",   notfound},
+                   {"ScheduledDeleteNewBlocks",  notfound}]),
 
     storage_stats_test:confirm_2(SetupRes),
     rtcs:pass().
@@ -97,12 +119,13 @@ setup_objects(UserConfig, Bucket) ->
                                     Bucket, ?KEY3, UploadId, 2, MPBlocks, UserConfig),
     ok.
 
-assert_storage_json_stats(K, V, Sample) ->
+assert_storage_json_stats(Bucket, K, V, Sample) ->
     lager:debug("assert json: ~p", [{K, V}]),
-    ?assertEqual(V, rtcs:json_get([list_to_binary(?BUCKET), list_to_binary(K)],
+    ?assertEqual(V, rtcs:json_get([list_to_binary(Bucket), list_to_binary(K)],
                                   Sample)).
 
-assert_storage_xml_stats(K, V, Sample) ->
+assert_storage_xml_stats(Bucket, K, V, Sample) ->
     lager:debug("assert xml: ~p", [{K, V}]),
     ?assertEqual(V, proplists:get_value(list_to_atom(K),
-                                        proplists:get_value(?BUCKET, Sample))).
+                                        proplists:get_value(Bucket, Sample),
+                                        notfound)).
