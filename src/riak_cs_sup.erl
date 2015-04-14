@@ -94,6 +94,9 @@ process_specs() ->
                  permanent, 5000, worker, dynamic},
     DiagsSup = {riak_cs_diags, {riak_cs_diags, start_link, []},
                    permanent, 5000, worker, dynamic},
+    QuotaSup = {riak_cs_quota_sup,
+                {riak_cs_quota_sup, start_link, []},
+                permanent, 5000, supervisor, dynamic},
     BagProcessSpecs ++
         [Archiver,
          Storage,
@@ -103,7 +106,8 @@ process_specs() ->
          DeleteFsmSup,
          GetFsmSup,
          PutFsmSup,
-         DiagsSup].
+         DiagsSup,
+         QuotaSup].
 
 -spec get_option_val({atom(), term()} | atom()) -> {atom(), term()}.
 get_option_val({Option, Default}) ->

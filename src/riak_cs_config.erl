@@ -61,7 +61,8 @@
          region/0,
          stanchion/0,
          use_2i_for_storage_calc/0,
-         detailed_storage_calc/0
+         detailed_storage_calc/0,
+         quota_modules/0
         ]).
 
 %% Timeouts hitting Riak
@@ -437,6 +438,10 @@ use_2i_for_storage_calc() ->
 -spec detailed_storage_calc() -> boolean().
 detailed_storage_calc() ->
     get_env(riak_cs, detailed_storage_calc, false).
+
+-spec quota_modules() -> [module()].
+quota_modules() ->
+    get_env(riak_cs, quota_modules, []).
 
 %% ===================================================================
 %% ALL Timeouts hitting Riak
