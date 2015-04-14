@@ -20,7 +20,8 @@ experimental fetures.
   disk usage in more detail, although it does not take state of blocks
   whether they are halfway uploaded, or halfway deleted, or not.  This
   is still off by default and
-  **experimental**. [riak_cs/#1120](https://github.com/basho/riak_cs/pull/1120)
+  **experimental**. [riak_cs/#1120](https://github.com/basho/riak_cs/pull/1120),
+  [riak_cs/#1123](https://github.com/basho/riak_cs/pull/1123),
 
 ## Bugs Fixed
 
