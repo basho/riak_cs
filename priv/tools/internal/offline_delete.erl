@@ -24,6 +24,14 @@
 
 -compile(export_all).
 
+%% @doc This is an offline deletion script that'll directly opens
+%% bitcask files and reads some file where keys and partitions which
+%% should be deleted are written, and then delete them, without
+%% bothering KV.
+%%
+%% Note: make sure you remove AAE tree after this script was run, and
+%% turn off AAE on other nodes that's running on the cluster.
+
 main(["--dry-run", BitcaskDir, BlocksListFile]) ->
     offline_delete(BitcaskDir, BlocksListFile, true);
 main([BitcaskDir, BlocksListFile]) ->
@@ -67,6 +75,14 @@ offline_delete(BitcaskDir, BlocksListFile, DryRun) ->
     ok = file:close(Fd).
 
 for_each_line(Fd, BC, DryRun, Count) ->
+    case Count rem 1000 of
+        500 ->
+            io:format(standard_error,
+                      "~p blocks has been deleted.~n",
+                      [Count]);
+        _ ->
+            noop
+    end,
     case file:read_line(Fd) of
         {ok, Line} ->
             Tokens = string:tokens(Line, "\t \n"),
@@ -92,21 +108,26 @@ for_each_line(Fd, BC, DryRun, Count) ->
 -define(VERSION_BYTE, ?VERSION_1).
 
 delete(BC, Idx, Bucket, Key, DryRun) ->
-    {ok, Bitcask} = orddict:find(Idx, BC),
-    BitcaskKey = make_bk(?VERSION_1, Bucket, Key),
-    case (case DryRun of
-              true ->
-                  bitcask:get(Bitcask, BitcaskKey);
-              false ->
-                  bitcask:delete(Bitcask, BitcaskKey)
-          end) of
-        {ok, _Value} ->
-            %% io:format("found.~n");
-            ok;
-        ok ->
-            ok;
-        Error ->
-            io:format(standard_error, "error: ~p~n", [Error])
+    case orddict:find(Idx, BC) of
+        {ok, Bitcask} ->
+            BitcaskKey = make_bk(?VERSION_1, Bucket, Key),
+            case (case DryRun of
+                      true ->
+                          bitcask:get(Bitcask, BitcaskKey);
+                      false ->
+                          bitcask:delete(Bitcask, BitcaskKey)
+                  end) of
+                {ok, _Value} ->
+                    %% io:format("found.~n");
+                    ok;
+                ok ->
+                    ok;
+                Error ->
+                    io:format(standard_error, "error: ~p~n", [Error])
+            end;
+        error ->
+            %% Key does not exist here. Ignore.
+            ok
     end.
 
 make_bk(0, Bucket, Key) ->
