@@ -29,7 +29,12 @@
 -record(state,
         {logger :: pid(),
          ring_size = 64 :: non_neg_integer(),
-         threshold :: non_neg_integer() | undefined}).
+         threshold :: non_neg_integer() | undefined,
+         keycount = 0 :: non_neg_integer(),
+         manifestcount = 0 :: non_neg_integer(),
+         total_manifestcount = 0 :: non_neg_integer(),
+         blockcount = 0 :: non_neg_integer()
+        }).
 
 main([Host, Port0, RingSize0, MinSize0, OutputFile|_Rest]) ->
     Port = case Port0 of
@@ -43,7 +48,7 @@ main([Host, Port0, RingSize0, MinSize0, OutputFile|_Rest]) ->
     StartKey = <<"0">>,
     EndKey = integer_to_list(riak_cs_gc:timestamp()),
     io:format(standard_error, "Connecting ~p:~p~n", [Host, Port]),
-    Opts = [{max_results, 100},
+    Opts = [%% {max_results, 1000},
             {start_key, StartKey},
             {end_key, EndKey},
             {timeout, 6000}],
@@ -67,66 +72,94 @@ main(_) ->
     io:format(standard_error, "options: <host> <port> <ring_size> <threshold-bytes> <output-file>~n", []).
 
 
-handle_fold_results(Pid, ReqID, Objs0, State) ->
-    [begin
-         ManifestSet = riak_cs_gc:decode_and_merge_siblings(
-                         Obj, twop_set:new()),
-         ManifestList = twop_set:to_list(ManifestSet),
-         %% io:format(standard_error, "~p manifests found.~n", [length(ManifestList)]),
-         lists:foreach(fun(Manifest) -> handle_manifest(Manifest, State) end,
-                       ManifestList)
-     end
-     || Obj <- Objs0],
+handle_fold_results(Pid, ReqID, Objs0, State = #state{total_manifestcount=TMC,
+                                                      keycount=KC,
+                                                      manifestcount=MC,
+                                                      blockcount=BC}) ->
+    Nums = [begin
+                ManifestSet = riak_cs_gc:decode_and_merge_siblings(
+                                Obj, twop_set:new()),
+                ManifestList = twop_set:to_list(ManifestSet),
+                {MK, MB} = lists:foldl(fun(Manifest, {MK0, MB0}) ->
+                                               {MK1, MB1} = handle_manifest(Manifest, State),
+                                               {MK0+MK1, MB0+MB1}
+                                       end, {0, 0}, ManifestList),
+                {length(ManifestList), MK, MB}
+            end
+            || Obj <- Objs0],
+    %% io:format(standard_error, "============================== ~p gc keys found.~n", [length(Objs0)]),
+    {A,B,C} = lists:foldl(fun({A0,B0,C0},{A1,B1,C1}) -> {A0+A1, B0+B1, C0+C1} end, {0, 0, 0}, Nums),
     receive
         {ReqID, {ok, Objs}} ->
-            handle_fold_results(Pid, ReqID, Objs, State);
-        {ReqID, {done, Other}} when is_list(Other) ->
-            handle_fold_results(Pid, ReqID, Other, State);
+            handle_fold_results(Pid, ReqID, Objs,
+                                State#state{total_manifestcount=A+TMC,
+                                            keycount=KC+length(Objs0),
+                                            manifestcount=MC+B,
+                                            blockcount=BC+C});
+        %% {ReqID, {done, Other}} when is_list(Other) ->
+        %%     handle_fold_results(Pid, ReqID, Other, State);
         {ReqID, {done, _}} ->
-            done
+            io:format(standard_error,
+                      "keycount: ~p, total_manifestcount ~p, manifestcount ~p, blockcount ~p~n",
+                      [KC, TMC, MC, BC]),
+            done;
+        Other ->
+            io:format(standard_error, "Boom!!! Other; ~p", [Other]),
+            exit(-1)
     end.
 
+%% => {matched_keys, matched_blocks}
 handle_manifest({_UUID,
-                 ?MANIFEST{content_length=ContentLength,
-                           state=pending_delete} = _Manifest},
+                 ?MANIFEST{content_length=ContentLength} = _Manifest},
                 #state{threshold=Threshold} = _State)
-  when ContentLength < Threshold -> ignore;
-handle_manifest({_UUID, ?MANIFEST{bkey=_BK, props=Props} = M}, State) ->
+  when ContentLength < Threshold ->
+    {0, 0};
+handle_manifest({_UUID, ?MANIFEST{bkey=BKey,
+                                  uuid=UUID,
+                                  content_length=ContentLength,
+                                  state=pending_delete,
+                                  props=Props} = M}, State) ->
+    io:format(standard_error, "~p (~p) ~p~n", [BKey, mochihex:to_hex(UUID), ContentLength]),
     case proplists:get_value(multipart, Props) of
         ?MULTIPART_MANIFEST{} = MpM ->
             %% This is Multipart
             PartMs = MpM?MULTIPART_MANIFEST.parts,
-            lists:foreach(fun(Part) ->
-                                  handle_mp_part(Part, State)
-                          end, PartMs);
+            Count = lists:foldl(fun(Part, Sum) ->
+                                        handle_mp_part(Part, State) + Sum
+                                end, 0, PartMs),
+            {1, Count};
         undefined ->
-            ?MANIFEST{bkey=BKey,
-                      uuid=UUID,
-                      block_size=BlockSize,
-                      content_length=ContentLength,
-                      state=pending_delete} = M,
+            ?MANIFEST{block_size=BlockSize} = M,
             %% This is normal manifest
             #state{logger=File, ring_size=RingSize, threshold=_Threshold} = State,
-            io:format(standard_error, "~p (~p) ~p~n", [BKey, mochihex:to_hex(UUID), ContentLength]),
             %% io:format(standard_error, "vnodes:~p ~p ~p~n", vnode_ids(BKey, RingSize, 3)),
-            NumBlocks = ContentLength div BlockSize,
+            NumBlocks = case ContentLength div BlockSize of
+                            0 -> 1;
+                            V -> V
+                        end,
             {Bucket, _Key}= BKey,
-            output_blocks(File, Bucket, UUID, NumBlocks, RingSize)
+            output_blocks(File, Bucket, UUID, NumBlocks, RingSize),
+            {1, NumBlocks}
     end.
 
+%% => numblocks
 handle_mp_part(?PART_MANIFEST{content_length=ContentLength,
                               block_size=BlockSize,
                               part_id=PartId,
                               bucket=Bucket},
                #state{logger=File,
                       ring_size=RingSize}) ->
-    NumBlocks = ContentLength div BlockSize,
-    output_blocks(File, Bucket, PartId, NumBlocks, RingSize).
+    NumBlocks = case ContentLength div BlockSize of
+                    0 -> 1;
+                    V -> V
+                end,
+    output_blocks(File, Bucket, PartId, NumBlocks, RingSize),
+    NumBlocks.
 
 output_blocks(File, Bucket, UUID, NumBlocks, RingSize) ->
     lists:foreach(fun(SeqNo) ->
                           BK = {B,K} = full_bkey(Bucket, dummy, UUID, SeqNo),
-                          VNodes = [[integer_to_list(VNode), " "] || VNode <- vnode_ids(BK, RingSize, 3)],
+                          VNodes = [[integer_to_list(VNode), $\t] || VNode <- vnode_ids(BK, RingSize, 3)],
                           %% Partitions, UUID, SeqNo
                           file:write(File, [VNodes, $\t,
                                             mochihex:to_hex(B), $\t,
