@@ -73,9 +73,9 @@ main(_) ->
 
 
 handle_fold_results(Pid, ReqID, State = #state{total_manifestcount=TMC,
-                                                      keycount=KC,
-                                                      manifestcount=MC,
-                                                      blockcount=BC}) ->
+                                               keycount=KC,
+                                               manifestcount=MC,
+                                               blockcount=BC}) ->
     receive
         {ReqID, {ok, Objs}} ->
             Nums = [begin
@@ -114,53 +114,27 @@ handle_manifest({_UUID,
                 #state{threshold=Threshold} = _State)
   when ContentLength < Threshold ->
     {0, 0};
-handle_manifest({_UUID, ?MANIFEST{bkey=BKey,
+handle_manifest({_UUID, ?MANIFEST{bkey=BKey={Bucket,_},
                                   uuid=UUID,
                                   content_length=ContentLength,
-                                  state=pending_delete,
-                                  props=Props} = M}, State) ->
+                                  state=pending_delete} = M},
+                _State = #state{ring_size=RingSize,
+                              logger=File}
+                              ) ->
     io:format(standard_error, "~p (~p) ~p~n", [BKey, mochihex:to_hex(UUID), ContentLength]),
-    case proplists:get_value(multipart, Props) of
-        ?MULTIPART_MANIFEST{} = MpM ->
-            %% This is Multipart
-            PartMs = MpM?MULTIPART_MANIFEST.parts,
-            Count = lists:foldl(fun(Part, Sum) ->
-                                        handle_mp_part(Part, State) + Sum
-                                end, 0, PartMs),
-            {1, Count};
-        undefined ->
-            ?MANIFEST{block_size=BlockSize} = M,
-            %% This is normal manifest
-            #state{logger=File, ring_size=RingSize, threshold=_Threshold} = State,
-            %% io:format(standard_error, "vnodes:~p ~p ~p~n", vnode_ids(BKey, RingSize, 3)),
-            NumBlocks = (ContentLength div BlockSize) + 1,
-            {Bucket, _Key}= BKey,
-            output_blocks(File, Bucket, UUID, NumBlocks, RingSize),
-            {1, NumBlocks}
-    end.
-
-%% => numblocks
-handle_mp_part(?PART_MANIFEST{content_length=ContentLength,
-                              block_size=BlockSize,
-                              part_id=PartId,
-                              bucket=Bucket},
-               #state{logger=File,
-                      ring_size=RingSize}) ->
-    NumBlocks = (ContentLength div BlockSize) + 1,
-    output_blocks(File, Bucket, PartId, NumBlocks, RingSize),
-    NumBlocks.
-
-output_blocks(File, Bucket, UUID, NumBlocks, RingSize) ->
-    [begin
-         BK = {B,K} = full_bkey(Bucket, dummy, UUID, SeqNo),
-         VNodes = [[integer_to_list(VNode), $\t] || VNode <- vnode_ids(BK, RingSize, 3)],
-         %% Partitions, UUID, SeqNo
-         file:write(File, [VNodes, $\t,
-                           mochihex:to_hex(B), $\t,
-                           mochihex:to_hex(K), $\t,
-                           mochihex:to_hex(UUID), $\t,
-                           integer_to_list(SeqNo), $\n])
-     end || SeqNo <- lists:seq(0, NumBlocks-1)].
+    BlockSequences = riak_cs_lfs_utils:block_sequences_for_manifest(M),
+    Count = ordsets:fold(fun({UUID1, SeqNo}, Count0) ->
+                                 BK = {B,K} = full_bkey(Bucket, dummy, UUID1, SeqNo),
+                                 VNodes = [[integer_to_list(VNode), $\t] || VNode <- vnode_ids(BK, RingSize, 3)],
+                                 %% Partitions, UUID, SeqNo
+                                 file:write(File, [VNodes, $\t,
+                                                   mochihex:to_hex(B), $\t,
+                                                   mochihex:to_hex(K), $\t,
+                                                   mochihex:to_hex(UUID1), $\t,
+                                                   integer_to_list(SeqNo), $\n]),
+                                 Count0 + 1
+                         end, 0, BlockSequences),
+    {1, Count}.
 
 %% From riak_cs
 full_bkey(Bucket, Key, UUID, BlockId) ->

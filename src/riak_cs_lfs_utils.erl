@@ -126,6 +126,9 @@ range_blocks(Start, End, SafeBlockSize, UUID) ->
     {[{UUID, B} || B <- lists:seq(Start div SafeBlockSize, End div SafeBlockSize)],
      SkipInitial, KeepFinal}.
 
+
+
+
 -spec block_sequences_for_manifest(lfs_manifest()) ->
                                           ordsets:ordset({binary(), integer()}).
 block_sequences_for_manifest(?MANIFEST{props=undefined}=Manifest) ->
