@@ -58,7 +58,7 @@ main([Host, Port0, RingSize0, MinSize0, OutputFile|_Rest]) ->
     State = #state{logger = File, ring_size = RingSize, threshold = MinSize},
     try
         {ok, ReqID} = riakc_pb_socket:cs_bucket_fold(Pid, ?GC_BUCKET, Opts),
-        handle_fold_results(Pid, ReqID, [], State),
+        handle_fold_results(Pid, ReqID, State),
         io:format(standard_error,
                   "Finished!~n"
                   "Next action is to run offline delete. Use Riak command like this:~n"
@@ -72,28 +72,28 @@ main(_) ->
     io:format(standard_error, "options: <host> <port> <ring_size> <threshold-bytes> <output-file>~n", []).
 
 
-handle_fold_results(Pid, ReqID, Objs0, State = #state{total_manifestcount=TMC,
+handle_fold_results(Pid, ReqID, State = #state{total_manifestcount=TMC,
                                                       keycount=KC,
                                                       manifestcount=MC,
                                                       blockcount=BC}) ->
-    Nums = [begin
-                ManifestSet = riak_cs_gc:decode_and_merge_siblings(
-                                Obj, twop_set:new()),
-                ManifestList = twop_set:to_list(ManifestSet),
-                {MK, MB} = lists:foldl(fun(Manifest, {MK0, MB0}) ->
-                                               {MK1, MB1} = handle_manifest(Manifest, State),
-                                               {MK0+MK1, MB0+MB1}
-                                       end, {0, 0}, ManifestList),
-                {length(ManifestList), MK, MB}
-            end
-            || Obj <- Objs0],
-    %% io:format(standard_error, "============================== ~p gc keys found.~n", [length(Objs0)]),
-    {A,B,C} = lists:foldl(fun({A0,B0,C0},{A1,B1,C1}) -> {A0+A1, B0+B1, C0+C1} end, {0, 0, 0}, Nums),
     receive
         {ReqID, {ok, Objs}} ->
-            handle_fold_results(Pid, ReqID, Objs,
+            Nums = [begin
+                        ManifestSet = riak_cs_gc:decode_and_merge_siblings(
+                                        Obj, twop_set:new()),
+                        ManifestList = twop_set:to_list(ManifestSet),
+                        {MK, MB} = lists:foldl(fun(Manifest, {MK0, MB0}) ->
+                                                       {MK1, MB1} = handle_manifest(Manifest, State),
+                                                       {MK0+MK1, MB0+MB1}
+                                               end, {0, 0}, ManifestList),
+                        {length(ManifestList), MK, MB}
+                    end
+                    || Obj <- Objs],
+            %% io:format(standard_error, "============================== ~p gc keys found.~n", [length(Objs0)]),
+            {A,B,C} = lists:foldl(fun({A0,B0,C0},{A1,B1,C1}) -> {A0+A1, B0+B1, C0+C1} end, {0, 0, 0}, Nums),
+            handle_fold_results(Pid, ReqID,
                                 State#state{total_manifestcount=A+TMC,
-                                            keycount=KC+length(Objs0),
+                                            keycount=KC+length(Objs),
                                             manifestcount=MC+B,
                                             blockcount=BC+C});
         %% {ReqID, {done, Other}} when is_list(Other) ->
@@ -105,7 +105,7 @@ handle_fold_results(Pid, ReqID, Objs0, State = #state{total_manifestcount=TMC,
             done;
         Other ->
             io:format(standard_error, "Boom!!! Other; ~p", [Other]),
-            exit(-1)
+            error
     end.
 
 %% => {matched_keys, matched_blocks}
@@ -133,10 +133,7 @@ handle_manifest({_UUID, ?MANIFEST{bkey=BKey,
             %% This is normal manifest
             #state{logger=File, ring_size=RingSize, threshold=_Threshold} = State,
             %% io:format(standard_error, "vnodes:~p ~p ~p~n", vnode_ids(BKey, RingSize, 3)),
-            NumBlocks = case ContentLength div BlockSize of
-                            0 -> 1;
-                            V -> V
-                        end,
+            NumBlocks = (ContentLength div BlockSize) + 1,
             {Bucket, _Key}= BKey,
             output_blocks(File, Bucket, UUID, NumBlocks, RingSize),
             {1, NumBlocks}
@@ -149,30 +146,27 @@ handle_mp_part(?PART_MANIFEST{content_length=ContentLength,
                               bucket=Bucket},
                #state{logger=File,
                       ring_size=RingSize}) ->
-    NumBlocks = case ContentLength div BlockSize of
-                    0 -> 1;
-                    V -> V
-                end,
+    NumBlocks = (ContentLength div BlockSize) + 1,
     output_blocks(File, Bucket, PartId, NumBlocks, RingSize),
     NumBlocks.
 
 output_blocks(File, Bucket, UUID, NumBlocks, RingSize) ->
-    lists:foreach(fun(SeqNo) ->
-                          BK = {B,K} = full_bkey(Bucket, dummy, UUID, SeqNo),
-                          VNodes = [[integer_to_list(VNode), $\t] || VNode <- vnode_ids(BK, RingSize, 3)],
-                          %% Partitions, UUID, SeqNo
-                          file:write(File, [VNodes, $\t,
-                                            mochihex:to_hex(B), $\t,
-                                            mochihex:to_hex(K), $\t,
-                                            mochihex:to_hex(UUID), $\t,
-                                            integer_to_list(SeqNo), $\n])
-                  end, lists:seq(0, NumBlocks-1)).
+    [begin
+         BK = {B,K} = full_bkey(Bucket, dummy, UUID, SeqNo),
+         VNodes = [[integer_to_list(VNode), $\t] || VNode <- vnode_ids(BK, RingSize, 3)],
+         %% Partitions, UUID, SeqNo
+         file:write(File, [VNodes, $\t,
+                           mochihex:to_hex(B), $\t,
+                           mochihex:to_hex(K), $\t,
+                           mochihex:to_hex(UUID), $\t,
+                           integer_to_list(SeqNo), $\n])
+     end || SeqNo <- lists:seq(0, NumBlocks-1)].
 
+%% From riak_cs
 full_bkey(Bucket, Key, UUID, BlockId) ->
     PrefixedBucket = riak_cs_utils:to_bucket_name(blocks, Bucket),
     FullKey = riak_cs_lfs_utils:block_name(Key, UUID, BlockId),
     {PrefixedBucket, FullKey}.
-
 
 -define(RINGTOP, trunc(math:pow(2,160)-1)).  % SHA-1 space
 
@@ -192,6 +186,7 @@ vnode_ids(BKey, RingSize, NVal) ->
     PartitionId = ((HashKey div Inc) + 1) rem RingSize,
     [((PartitionId+N) rem RingSize) * Inc  || N <- lists:seq(0, NVal-1)].
 
+%% From riak_core
 sha(Bin) ->
     crypto:hash(sha, Bin).
 
