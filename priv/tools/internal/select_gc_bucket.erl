@@ -27,7 +27,7 @@
 -include_lib("riak_cs/include/riak_cs.hrl").
 
 -record(state,
-        {logger :: pid(),
+        {logger :: file:io_device(),
          ring_size = 64 :: non_neg_integer(),
          threshold :: non_neg_integer() | undefined,
          keycount = 0 :: non_neg_integer(),
@@ -36,26 +36,64 @@
          blockcount = 0 :: non_neg_integer()
         }).
 
-main([Host, Port0, RingSize0, MinSize0, OutputFile|_Rest]) ->
-    Port = case Port0 of
-               "rel" -> 8087;
-               "dev1" -> 10018;
-               _ -> list_to_integer(Port0)
-           end,
-    RingSize = list_to_integer(RingSize0),
-    MinSize = list_to_integer(MinSize0),
-    %% TODO: make this configurable, take leeway into account
-    StartKey = <<"0">>,
-    EndKey = integer_to_list(riak_cs_gc:timestamp()),
+options() ->
+    [{host, $h, "host", {string, "localhost"}, "Address of Riak"},
+     {port, $p, "port", {integer, 8087}, "Port number of Riak PB"},
+     {leeway, $l, "leeway", {integer, 24*60*60}, "Specify leeway seconds"},
+     {ring_size, $r, "ring-size", {integer, 64}, "Ring Size"},
+     {threshold, $t, "threshold", {integer, 5*1024*1024}, "Threshold"},
+     {from, $f, "from", {string, "19700101"}, "Start of the seek period"},
+     {to, $t, "to", {string, "yesterday"}, "End of the seek period"},
+     {output, $o, "output", {string, "/tmp/tmp.txt"},
+      "Output file (absolute path)"},
+     {timeout, $w, "timeout", {integer, 6}, "Timeout in seconds"}].
+
+pgv(Key,Proplist) ->
+    case proplists:get_value(Key, Proplist) of
+        undefined -> getopt:usage(options(), "riak-cs escript me"), halt(-1);
+        Value -> Value
+    end.
+
+maybe_date("today") ->
+    list_to_binary(integer_to_list(riak_cs_gc:timestamp()));
+maybe_date("yesterday") ->
+    list_to_binary(integer_to_list(riak_cs_gc:timestamp() - 86400));
+maybe_date([Y0,Y1,Y2,Y3,M0,M1,D0,D1]) ->
+    DateTime = {{list_to_integer([Y0,Y1,Y2,Y3]),
+                 list_to_integer([M0,M1]),
+                 list_to_integer([D0,D1])},
+                {0,0,0}},
+    Sec = calendar:datetime_to_gregorian_seconds(DateTime) - 62167219200,
+    list_to_binary(integer_to_list(Sec)).
+
+main(Args) ->
+    case getopt:parse(options(), Args) of
+        {ok, {Options, _}} ->
+            Host = pgv(host, Options),
+            Port = pgv(port, Options),
+            RingSize = pgv(ring_size, Options),
+            Threshold = pgv(threshold, Options),
+            %% TODO: make this configurable, take leeway into account
+            StartKey = maybe_date(pgv(from, Options)),
+            EndKey = maybe_date(pgv(to, Options)),
+            OutputFile = pgv(output, Options),
+            Timeout = pgv(timeout, Options) * 1000,
+            State = #state{ring_size = RingSize, threshold = Threshold},
+            work(Host, Port, StartKey, EndKey, Timeout, OutputFile, State);
+        _E ->
+            getopt:usage(options(), "select_gc_bucket.erl")
+    end.
+
+work(Host, Port, StartKey, EndKey, Timeout, OutputFile, State0) ->
     io:format(standard_error, "Connecting ~p:~p~n", [Host, Port]),
     Opts = [%% {max_results, 1000},
             {start_key, StartKey},
             {end_key, EndKey},
-            {timeout, 6000}],
+            {timeout, Timeout}],
     {ok, Pid} = riakc_pb_socket:start_link(Host, Port),
     Options = [write, delayed_write], %, compressed],
     {ok, File} = file:open(OutputFile, Options),
-    State = #state{logger = File, ring_size = RingSize, threshold = MinSize},
+    State = State0#state{logger=File},
     try
         {ok, ReqID} = riakc_pb_socket:cs_bucket_fold(Pid, ?GC_BUCKET, Opts),
         handle_fold_results(Pid, ReqID, State),
@@ -67,10 +105,7 @@ main([Host, Port0, RingSize0, MinSize0, OutputFile|_Rest]) ->
     after
         riakc_pb_socket:stop(Pid),
         file:close(File)
-    end;
-main(_) ->
-    io:format(standard_error, "options: <host> <port> <ring_size> <threshold-bytes> <output-file>~n", []).
-
+    end.
 
 handle_fold_results(Pid, ReqID, State = #state{total_manifestcount=TMC,
                                                keycount=KC,
