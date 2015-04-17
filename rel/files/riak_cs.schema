@@ -168,7 +168,7 @@
 %% waits in-between gc batches.
 {mapping, "gc.interval", "riak_cs.gc_interval", [
   {default, "15m"},
-  {datatype, {duration, s}}
+  {datatype, [{duration, s}, {atom, infinity}]}
 ]}.
 
 %% @doc How long a move to the garbage

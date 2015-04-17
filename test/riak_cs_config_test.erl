@@ -88,6 +88,14 @@ storage_schedule_config_test() ->
     cuttlefish_unit:assert_config(Config, "riak_cs.storage_schedule", ["00:00", "19:45"]),
     ok.
 
+gc_interval_infinity_test() ->
+    SchemaFiles = ["../rel/files/riak_cs.schema"],
+    {ok, Context} = file:consult("../rel/vars.config"),
+    Conf = [{["gc", "interval"], infinity}],
+    Config = cuttlefish_unit:generate_templated_config(SchemaFiles, Conf, Context),
+    cuttlefish_unit:assert_config(Config, "riak_cs.gc_interval", infinity),
+    ok.
+
 max_buckets_per_user_test() ->
     SchemaFiles = ["../rel/files/riak_cs.schema"],
     {ok, Context} = file:consult("../rel/vars.config"),
