@@ -39,7 +39,6 @@
 options() ->
     [{host, $h, "host", {string, "localhost"}, "Address of Riak"},
      {port, $p, "port", {integer, 8087}, "Port number of Riak PB"},
-     {leeway, $l, "leeway", {integer, 24*60*60}, "Specify leeway seconds"},
      {ring_size, $r, "ring-size", {integer, 64}, "Ring Size"},
      {threshold, $t, "threshold", {integer, 5*1024*1024}, "Threshold"},
      {from, $f, "from", {string, "19700101"}, "Start of the seek period"},
@@ -66,6 +65,8 @@ maybe_date([Y0,Y1,Y2,Y3,M0,M1,D0,D1]) ->
     Sec = calendar:datetime_to_gregorian_seconds(DateTime) - 62167219200,
     list_to_binary(integer_to_list(Sec)).
 
+main([]) ->
+    getopt:usage(options(), "select_gc_bucket.erl");
 main(Args) ->
     case getopt:parse(options(), Args) of
         {ok, {Options, _}} ->
@@ -73,7 +74,6 @@ main(Args) ->
             Port = pgv(port, Options),
             RingSize = pgv(ring_size, Options),
             Threshold = pgv(threshold, Options),
-            %% TODO: make this configurable, take leeway into account
             StartKey = maybe_date(pgv(from, Options)),
             EndKey = maybe_date(pgv(to, Options)),
             OutputFile = pgv(output, Options),
