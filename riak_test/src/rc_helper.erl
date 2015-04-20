@@ -21,6 +21,7 @@
 -module(rc_helper).
 -compile(export_all).
 -include_lib("eunit/include/eunit.hrl").
+-include_lib("riak_pb/include/riak_pb_kv_codec.hrl").
 
 to_riak_bucket(objects, CSBucket) ->
     %%  or make version switch here.
@@ -90,3 +91,53 @@ delete_riakc_obj(RiakNodes, Kind, CsBucket, Opts) ->
     Result = riakc_pb_socket:delete(Pbc, RiakBucket, RiakKey),
     riakc_pb_socket:stop(Pbc),
     Result.
+
+%% => [binary()]
+list_keys(RiakNodes, ObjectKind, CsBucket) ->
+    Pbc = rtcs:pbc(RiakNodes, ObjectKind, CsBucket),
+    RiakBucket = to_riak_bucket(ObjectKind, CsBucket),
+    try
+        riakc_pb_socket:list_keys(Pbc, RiakBucket)
+    after
+        riakc_pb_socket:stop(Pbc)
+    end.
+
+%% => [{B, K}]
+filter_tombstones(RiakNodes, ObjectKind, CsBucket, Keys) ->
+    Pbc = rtcs:pbc(RiakNodes, ObjectKind, CsBucket),
+    RiakBucket = to_riak_bucket(ObjectKind, CsBucket),
+    try
+        GetObjectFun =
+            fun(Key) ->
+                    riakc_pb_socket:get(Pbc, RiakBucket, Key)
+            end,
+        FilterTombstoneFun =
+            fun({ok,Obj}) ->
+                    lager:debug("~p siblings in key ~p",
+                                [riakc_obj:value_count(Obj),
+                                 riakc_obj:key(Obj)]),
+                    Contents0 = riakc_obj:get_contents(Obj),
+                    %% Strip for visibility
+                    Contents = [{MD, <<"deadbeef">>} || {MD, _} <- Contents0],
+                    lager:debug("Are they all tombstone?: ~p",
+                                [lists:map(fun has_tombstone/1, Contents)]),
+                    AllTombstone = lists:all(fun has_tombstone/1, Contents),
+                    not AllTombstone;
+               ({error, notfound}) ->
+                    false;
+               (_Error) ->
+                    true
+            end,
+        ToBkFun =
+            fun({ok, Obj}) ->
+                    {riakc_obj:bucket(Obj), riakc_obj:key(Obj)}
+            end,
+        lists:map(ToBkFun,
+                  lists:filter(FilterTombstoneFun, lists:map(GetObjectFun, Keys)))
+    after
+        riakc_pb_socket:stop(Pbc)
+    end.
+
+has_tombstone({_, <<>>}) -> true;
+has_tombstone({MD, _}) -> dict:is_key(?MD_DELETED, MD);
+has_tombstone(_) -> false.
