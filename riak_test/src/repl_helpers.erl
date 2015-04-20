@@ -98,6 +98,7 @@ verify_site_ips(Leader, Site, Listeners) ->
                ExpectedIPs =:= IPs
       end).
 
+%% Start fullsync, at Source
 start_and_wait_until_fullsync_complete(Node) ->
     Status0 = rpc:call(Node, riak_repl_console, status, [quiet]),
     Count = proplists:get_value(server_fullsyncs, Status0) + 1,
@@ -267,6 +268,7 @@ name_cluster(Node, Name) ->
     Res = rpc:call(Node, riak_repl_console, clustername, [[Name]]),
     ?assertEqual(ok, Res).
 
+%% Source: LeaderA, ANodes, Sink: BPort
 connect_clusters13(LeaderA, ANodes, BPort, Name) ->
     lager:info("Connecting to ~p", [Name]),
     connect_cluster13(LeaderA, "127.0.0.1", BPort),

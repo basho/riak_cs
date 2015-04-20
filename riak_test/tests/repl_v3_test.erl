@@ -1,6 +1,8 @@
 -module(repl_v3_test).
 
 -export([confirm/0]).
+
+-export([enable_pg/5, disable_pg/5]).
 -include_lib("eunit/include/eunit.hrl").
 
 -define(TEST_BUCKET, "riak-test-bucket").
