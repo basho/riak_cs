@@ -20,160 +20,181 @@
 
 -module(block_audit).
 
--export([main/1]).
+-mode(compile).
 
--define(DEFAULT_RIAK_HOST, "127.0.0.1").
--define(DEFAULT_RIAK_PORT, 8087).
--define(BUCKET_TOMBSTONE, <<"0">>).
+-export([main/1]).
+-export([info/2, verbose/3]).
+
 -define(SLK_TIMEOUT, 360000000). %% 100 hours
 
 -include_lib("riak_cs/include/riak_cs.hrl").
 
-riak_host_and_port([]) ->
-    {?DEFAULT_RIAK_HOST, ?DEFAULT_RIAK_PORT};
-riak_host_and_port([Host, PortStr | _]) ->
-    try
-        Port = list_to_integer(PortStr),
-        {Host, Port}
-    catch _:_ ->
-            usage()
-    end.
+-record(buuid, {uuid  :: binary(),
+                seqs  :: [non_neg_integer()] % sequence numbers
+               }).
 
-usage() ->
-    io:format("Usage: ./block_audit.escript <RIAK_HOST> <RIAK_PORT>~n").
-
-main(Args) when length(Args) < 2 ->
-    usage();
 main(Args) ->
-    {RiakHost, RiakPort} = riak_host_and_port(Args),
-    {ok, Pid} = riakc_pb_socket:start_link(RiakHost, RiakPort),
-    {ok, Buckets} = riakc_pb_socket:list_keys(Pid, ?BUCKETS_BUCKET),
-    riakc_pb_socket:stop(Pid),
-    io:format("Retrieved bucket list. There are ~p buckets, including tombstones.~n",
-        [length(Buckets)]),
-    io:format("Searching for orphaned blocks. This may take a while..."),
-    log_orphaned_blocks(find_orphaned_blocks(Buckets, RiakHost, RiakPort)).
-
-log_orphaned_blocks(OrphanedBlocks) ->
-    Filename = "orphanedBlocks.log",
-    {ok, File} = file:open(Filename, [write]),
-    TotalCount = lists:foldl(fun({Bucket, UuidCountTuples}, TotalCount) ->
-                    BlockCount = lists:foldl(fun({Uuid, Count}, Total) ->
-                                                 ok = io:format(File, "~p.~n", [{Bucket, Uuid, Count}]),
-                                                 Total + Count
-                                             end, 0, UuidCountTuples),
-                    TotalCount + BlockCount
-                end, 0, OrphanedBlocks),
-    ok = file:close(File),
-    io:format("~nTotal # Missing Manifests: ~p~n", [length(OrphanedBlocks)]),
-    io:format("Total # Orphaned Blocks: ~p (~p MB) ~n", [TotalCount, TotalCount]),
-    io:format("Orphaned Blocks written to ~p~n", [Filename]).
-
-find_orphaned_blocks(Buckets, RiakHost, RiakPort) ->
-    RegOrphanedBlocks = lists:foldl(
-        fun(Bucket, Blocks) ->
-            io:format("~nFinding Orphaned blocks for Bucket ~p~n", [Bucket]),
-            {ok, Pid} = riakc_pb_socket:start_link(RiakHost, RiakPort),
-            {ok, _BlocksTable} = cache_block_keys(Pid, Bucket),
-            case log_object_keys(Pid, Bucket) of
-                {ok, ObjectKeysFilename} ->
-                    ok = delete_cached_manifest_uuids(Pid, Bucket, ObjectKeysFilename),
-                    riakc_pb_socket:stop(Pid),
-                    MissingManifests = find_missing_uuids(Bucket),
-                    {Bucket, Missing} = MissingManifests,
-                    io:format("Found ~p missing manifests for bucket ~p~n", [length(Missing), Bucket]),
-                    NewBlocks = [MissingManifests | Blocks],
-                    ok = file:delete(ObjectKeysFilename),
-                    NewBlocks;
-                {error, Error, ObjectKeysFilename} ->
-                    io:format("Skipping bucket ~p due to error: ~p~n", [Bucket, Error]),
-                    Table = list_to_atom(binary_to_list(Bucket)),
-                    ets:delete(Table),
-                    riakc_pb_socket:stop(Pid),
-                    ok = file:delete(ObjectKeysFilename),
-                    Blocks
+    _ = application:load(lager),
+    ok = application:set_env(lager, handlers, [{lager_console_backend, info}]),
+    ok = lager:start(),
+    {ok, {Options, _PlainArgs}} = getopt:parse(option_spec(), Args),
+    LogLevel = case proplists:get_value(debug, Options) of
+                   0 ->
+                       info;
+                   _ ->
+                       ok = lager:set_loglevel(lager_console_backend, debug),
+                       debug
+               end,
+    debug("Log level is set to ~p", [LogLevel]),
+    debug("Options: ~p", [Options]),
+    case proplists:get_value(host, Options) of
+        undefined ->
+            getopt:usage(option_spec(), "riak-cs escript /path/to/block_audit.erl"),
+            halt(1);
+        Host ->
+            Port = proplists:get_value(port, Options),
+            debug("Connecting to Riak ~s:~B...", [Host, Port]),
+            case riakc_pb_socket:start_link(Host, Port) of
+                {ok, Pid} ->
+                    pong = riakc_pb_socket:ping(Pid),
+                    audit(Pid, Options),
+                    timer:sleep(100);
+                {error, Reason} ->
+                    err("Connection to Riak failed ~p", [Reason]),
+                    halt(2)
             end
-        end, [], Buckets),
-    remove_gc_blocks_from_orphans(RegOrphanedBlocks, RiakHost, RiakPort).
-
-remove_gc_blocks_from_orphans(OrphanedBlocks, RiakHost, RiakPort) ->
-    {ok, Pid} = riakc_pb_socket:start_link(RiakHost, RiakPort),
-    io:format("~nSearching GC bucket...~n"),
-    {ok, Timestamps} = riakc_pb_socket:list_keys(Pid, ?GC_BUCKET),
-    io:format("~p timestamps in gc bucket~n", [length(Timestamps)]),
-    GcUuids = lists:foldl(fun(Timestamp, Acc) ->
-                case riakc_pb_socket:get(Pid, ?GC_BUCKET, Timestamp) of
-                    {ok, ManifestsObj} ->
-                        io:format("*"),
-                        P0 = riak_cs_gc:decode_and_merge_siblings(ManifestsObj, twop_set:new()),
-                        lists:foldl(fun({Uuid, _}, Uuids) ->
-                                        sets:add_element(Uuid, Uuids)
-                                    end, Acc, twop_set:to_list(P0));
-                        _ ->
-                           Acc
-                end
-            end, sets:new(), Timestamps),
-    io:format("~p block uuids retrieved from gc bucket~n", [sets:size(GcUuids)]),
-    Result = subtract_gc_uuids(GcUuids, OrphanedBlocks),
-    riakc_pb_socket:stop(Pid),
-    Result.
-
--spec subtract_gc_uuids(set(), list()) -> list().
-subtract_gc_uuids(GcUuids, OrphanedBlocks) ->
-    io:format("~n"),
-    lists:foldl(fun({Bucket, UuidCountTuples}, Acc) ->
-                    io:format("X"),
-                    Uuids = sets:from_list([Uuid || {Uuid, _} <- UuidCountTuples]),
-                    RemovedUuids = sets:intersection(Uuids, GcUuids),
-                    RemainingUuidCountTuples = lists:foldl(fun(RemovedUuid, Tuples) ->
-                                                               lists:keydelete(RemovedUuid, 1, Tuples)
-                                                           end, UuidCountTuples, sets:to_list(RemovedUuids)),
-                    [{Bucket, RemainingUuidCountTuples} | Acc]
-                end, [], OrphanedBlocks).
-
-cache_block_keys(Pid, Bucket) ->
-    BlocksBucket = riak_cs_utils:to_bucket_name(blocks, Bucket),
-    {ok, ReqId} = riakc_pb_socket:stream_list_keys(Pid, BlocksBucket, ?SLK_TIMEOUT),
-    BlocksTable = list_to_atom(binary_to_list(Bucket)),
-    {ok, NumKeys} = receive_and_cache_blocks(ReqId, BlocksTable),
-    io:format("Logged ~p block keys to ~p~n", [NumKeys, BlocksTable]),
-    {ok, BlocksTable}.
-
-log_object_keys(Pid, Bucket) ->
-    ManifestsBucket = riak_cs_utils:to_bucket_name(objects, Bucket),
-    {ok, ReqId} = riakc_pb_socket:stream_list_keys(Pid, ManifestsBucket, ?SLK_TIMEOUT),
-    ObjectKeysFilename = "./"++binary_to_list(Bucket)++"_object_keys.log",
-    case receive_and_log(ReqId, ObjectKeysFilename, objects) of
-        {ok, NumKeys} ->
-            io:format("Logged ~p object keys to ~p~n", [NumKeys, ObjectKeysFilename]),
-            {ok, ObjectKeysFilename};
-        {error, Reason} ->
-            {error, Reason, ObjectKeysFilename}
     end.
 
-delete_cached_manifest_uuids(Pid, Bucket, ObjectKeysFilename) ->
-    Table = list_to_atom(binary_to_list(Bucket)),
-    {ok, ObjectKeysFile} = file:open(ObjectKeysFilename, [read]),
-    ok = delete_cached_manifest_uuids(Pid, Bucket, Table, ObjectKeysFile),
-    ok = file:close(ObjectKeysFile).
+option_spec() ->
+    [
+     {host, $h, "host", string, "Host of Riak PB"},
+     {port, $p, "port", {integer, 8087}, "Port number of Riak PB"},
+     {bucket, $b, "bucket", string, "CS Bucket to audit, repetitions possible"},
+     {output, $o, "output", {string, "orphaned-blocks"}, "Directory to output resutls"},
+     {debug, $d, "debug", {integer, 0}, "Enable debug (-dd for more verbose)"},
+     {page_size, $s, "page-size", {integer, 1000}, "Specify page size for 2i listing"},
+     {dry_run, undefined, "dry-run", {boolean, false}, "if set, actual update does not happen"}
+    ].
 
-delete_cached_manifest_uuids(Pid, Bucket, Table, ObjectKeysFile) ->
-    ManifestsBucket = riak_cs_utils:to_bucket_name(objects, Bucket),
-    case io:fread(ObjectKeysFile, meh, "~s") of
-        {ok, [Key]} ->
-            Uuids = get_uuids(riakc_pb_socket:get(Pid, ManifestsBucket, Key)),
-            [ets:delete(Table, Uuid) || Uuid <- Uuids],
-            delete_cached_manifest_uuids(Pid, Bucket, Table, ObjectKeysFile);
-        eof ->
-            ok;
-        Error ->
-            io:format("Error in delete_cached_manifest_uuids/5: ~p for Bucket ~p", [Error, Bucket]),
+err(Format, Args) ->
+    log(error, Format, Args).
+
+debug(Format, Args) ->
+    log(debug, Format, Args).
+
+verbose(Options, Format, Args) ->
+    {debug, DebugLevel} = lists:keyfind(debug, 1, Options),
+    case DebugLevel of
+        Level when 2 =< Level ->
+            debug(Format, Args);
+        _ ->
             ok
     end.
 
+info(Format, Args) ->
+    log(info, Format, Args).
+
+log(Level, Format, Args) ->
+    lager:log(Level, self(), Format, Args).
+
+audit(Pid, Opts) ->
+    Buckets = case proplists:get_all_values(bucket, Opts) of
+                  [] ->
+                      {ok, AllBuckets} = riakc_pb_socket:list_keys(Pid, ?BUCKETS_BUCKET),
+                      AllBuckets;
+                  Values ->
+                      Values
+              end,
+    info("Retrieved bucket list. There are ~p buckets, including tombstones.",
+         [length(Buckets)]),
+    info("Searching for orphaned blocks. This may take a while...", []),
+    log_all_orphaned_blocks(Pid, Opts, Buckets).
+
+log_all_orphaned_blocks(_Pid, _Opts, []) ->
+    ok;
+log_all_orphaned_blocks(Pid, Opts, [Bucket | Buckets]) ->
+    _ = log_orphaned_blocks(Pid, Opts, Bucket),
+    log_all_orphaned_blocks(Pid, Opts, Buckets).
+
+log_orphaned_blocks(Pid, Opts, Bucket) when is_binary(Bucket) ->
+    log_orphaned_blocks(Pid, Opts, binary_to_list(Bucket));
+log_orphaned_blocks(Pid, Opts, Bucket) ->
+    info("Finding Orphaned blocks for Bucket ~p", [Bucket]),
+    BlocksTable = list_to_atom(Bucket),
+    ets:new(BlocksTable, [set, named_table, public, {keypos, #buuid.uuid}]),
+    try
+        {ok, NumKeys} = cache_block_keys(Pid, Bucket, BlocksTable),
+        case NumKeys of
+            0 -> ok;
+            _ -> case delete_manifest_uuids(Pid, Bucket, BlocksTable) of
+                     ok ->
+                         write_uuids(Opts, Bucket,
+                                     BlocksTable, ets:info(BlocksTable, size));
+                     _ ->
+                         nop
+                 end
+        end
+    after
+        catch ets:delete(BlocksTable)
+    end.
+
+write_uuids(_Opts, _Bucket, _BlocksTable, 0) ->
+    ok;
+write_uuids(Opts, Bucket, BlocksTable, _) ->
+    OutDir = proplists:get_value(output, Opts),
+    Filename = filename:join(OutDir, Bucket),
+    ok = filelib:ensure_dir(Filename),
+    {ok, File} = file:open(Filename, [write, raw, delayed_write]),
+    {UUIDs, Blocks} = ets:foldl(
+                        fun(#buuid{uuid=UUID, seqs=Seqs},
+                            {TotalUUIDs, TotalBlocks}) ->
+                                verbose(Opts, "~s ~s ~B ~p",
+                                        [Bucket, mochihex:to_hex(UUID),
+                                         length(Seqs), Seqs]),
+                                [file:write(File,
+                                            [Bucket, $ ,
+                                             mochihex:to_hex(UUID), $ ,
+                                             integer_to_list(Seq), $\n]) ||
+                                    Seq <- Seqs],
+                                {TotalUUIDs + 1, TotalBlocks + length(Seqs)}
+                        end, {0, 0}, BlocksTable),
+    ok = file:close(File),
+    info("Total # Missing Block UUIDs: ~p [count]", [UUIDs]),
+    info("Total # Orphaned Blocks: ~p [count]", [Blocks]),
+    info("Orphaned Blocks written to ~p", [Filename]).
+
+cache_block_keys(Pid, Bucket, BlocksTable) ->
+    BlocksBucket = riak_cs_utils:to_bucket_name(blocks, Bucket),
+    {ok, ReqId} = riakc_pb_socket:stream_list_keys(Pid, BlocksBucket, ?SLK_TIMEOUT),
+    {ok, NumKeys} = receive_and_cache_blocks(ReqId, BlocksTable),
+    info("Logged ~p block keys to ~p~n", [NumKeys, BlocksTable]),
+    {ok, NumKeys}.
+
+delete_manifest_uuids(Pid, Bucket, BlocksTable) ->
+    ManifestsBucket = riak_cs_utils:to_bucket_name(objects, Bucket),
+    Opts = [%% {max_results, 1000},
+            {start_key, <<>>},
+            {end_key, big_end_key(128)},
+            {timeout, ?SLK_TIMEOUT}],
+    {ok, ReqID} = riakc_pb_socket:cs_bucket_fold(Pid, ManifestsBucket, Opts),
+    handle_manifest_fold(Pid, Bucket, BlocksTable, ReqID).
+
+handle_manifest_fold(Pid, Bucket, BlocksTable, ReqID) ->
+    receive
+        {ReqID, {ok, Objs}} ->
+            [ets:delete(BlocksTable, UUID) ||
+                Obj <- Objs,
+                UUID <- get_uuids(Obj)],
+            handle_manifest_fold(Pid, Bucket, BlocksTable, ReqID);
+        {ReqID, {done, _}} ->
+            info("handle_manifest_fold done for bucket: ~p", [Bucket]),
+            ok;
+        Other ->
+            err("handle_manifest_fold error; ~p", [Other]),
+            error
+ end.
+
 receive_and_cache_blocks(ReqId, TableName) ->
-    ets:new(TableName, [ordered_set, named_table, public]),
-    io:format("Saving keys to ~p~n", [TableName]),
     receive_and_cache_blocks(ReqId, TableName, 0).
 
 receive_and_cache_blocks(ReqId, Table, Count) ->
@@ -181,69 +202,35 @@ receive_and_cache_blocks(ReqId, Table, Count) ->
         {ReqId, done} ->
             {ok, Count};
         {ReqId, {error, Reason}} ->
-            io:format("receive_and_cache_blocks/3 got error: ~p for table ~p, count: ~p. Returning current count.~n",
+            err("receive_and_cache_blocks/3 got error: ~p for table ~p, count: ~p."
+                " Returning current count.",
                 [Reason, Table, Count]),
             {ok, Count};
         {ReqId, {_, Keys}} ->
-            lists:map(fun(Key) ->
-                        {Uuid, _} = riak_cs_lfs_utils:block_name_to_term(Key),
-                        case ets:lookup(Table, Uuid) of
-                            [{Uuid, BlockCount}] ->
-                                ets:insert(Table, {Uuid, BlockCount+1});
-                            [] ->
-                                ets:insert(Table, {Uuid, 1})
-                        end
-                      end, Keys),
-            receive_and_cache_blocks(ReqId, Table, Count+length(Keys))
+            NewCount = handle_keys(Table, Count, Keys),
+            receive_and_cache_blocks(ReqId, Table, NewCount)
     end.
 
-receive_and_log(ReqId, Filename, Type) ->
-    file:delete(Filename),
-    io:format("Opening ~p~n", [Filename]),
-    {ok, File} = file:open(Filename, [append]),
-    Res = receive_and_log(ReqId, File, Type, 0),
-    ok = file:close(File),
-    Res.
+handle_keys(Table, Count, Keys) ->
+    lists:foldl(
+      fun(Key, Acc) ->
+              {UUID, Seq} = riak_cs_lfs_utils:block_name_to_term(Key),
+              Rec = case ets:lookup(Table, UUID) of
+                        [#buuid{seqs=Seqs} = B] -> B#buuid{seqs=[Seq|Seqs]};
+                        _ -> #buuid{uuid=UUID, seqs=[Seq]}
+                    end,
+              ets:insert(Table, Rec),
+              Acc + 1
+      end, Count, Keys).
 
-receive_and_log(ReqId, File, Type, Count) ->
-    receive
-        {ReqId, done} ->
-            {ok, Count};
-        {ReqId, {error, Reason}} ->
-            io:format("receive_and_log/3 got error: ~p for file ~p, count: ~p.",
-                [Reason, File, Count]),
-            {error, Reason};
-        {ReqId, {_, Keys}} ->
-            case Type of
-                objects ->
-                    [io:format(File, "~s~n", [Key]) || Key <- Keys];
-                blocks ->
-                    lists:map(fun(Key) ->
-                        {UuidBin, _} = riak_cs_lfs_utils:block_name_to_term(Key),
-                        Uuid = mochihex:to_hex(UuidBin),
-                        io:format(File, "~s~n", [Uuid])
-                    end, Keys)
-            end,
-            file:datasync(File),
-            receive_and_log(ReqId, File, Type, Count+length(Keys))
-    end.
+get_uuids(Obj) ->
+    Manifests = riak_cs_manifest:manifests_from_riak_object(Obj),
+    BlockUUIDs = [UUID ||
+                     {_ManiUUID, M} <- Manifests,
+                     %% TODO: more efficient way
+                     {UUID, _} <- riak_cs_lfs_utils:block_sequences_for_manifest(M)],
+    lists:usort(BlockUUIDs).
 
-find_missing_uuids(Bucket) ->
-    Table = list_to_atom(binary_to_list(Bucket)),
-    MissingBlocks = ets:tab2list(Table),
-    ets:delete(Table),
-    {Bucket, MissingBlocks}.
-
-get_uuids({ok, Obj}) ->
-    UuidList = lists:foldl(fun(V, Uuids) ->
-                    case V of
-                        <<>> ->
-                            Uuids;
-                        _ ->
-                            Uuids2 = [Uuid || {Uuid, _} <- binary_to_term(V)],
-                            Uuids ++ Uuids2
-                    end
-                end, [], riakc_obj:get_values(Obj)),
-    sets:to_list(sets:from_list(UuidList));
-get_uuids(_) ->
-    [].
+big_end_key(NumBytes) ->
+    MaxByte = <<255:8/integer>>,
+    iolist_to_binary([MaxByte || _ <- lists:seq(1, NumBytes)]).
