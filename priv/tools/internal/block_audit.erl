@@ -70,10 +70,9 @@ option_spec() ->
      {host, $h, "host", string, "Host of Riak PB"},
      {port, $p, "port", {integer, 8087}, "Port number of Riak PB"},
      {bucket, $b, "bucket", string, "CS Bucket to audit, repetitions possible"},
-     {output, $o, "output", {string, "orphaned-blocks"}, "Directory to output resutls"},
-     {debug, $d, "debug", {integer, 0}, "Enable debug (-dd for more verbose)"},
-     {page_size, $s, "page-size", {integer, 1000}, "Specify page size for 2i listing"},
-     {dry_run, undefined, "dry-run", {boolean, false}, "if set, actual update does not happen"}
+     {output, $o, "output", {string, "maybe-orphaned-blocks"}, "Directory to output resutls"},
+     %% {page_size, $s, "page-size", {integer, 1000}, "Specify page size for 2i listing"},
+     {debug, $d, "debug", {integer, 0}, "Enable debug (-dd for more verbose)"}
     ].
 
 err(Format, Args) ->
@@ -108,17 +107,18 @@ audit(Pid, Opts) ->
     info("Retrieved bucket list. There are ~p buckets, including tombstones.",
          [length(Buckets)]),
     info("Searching for orphaned blocks. This may take a while...", []),
-    log_all_orphaned_blocks(Pid, Opts, Buckets).
+    log_all_maybe_orphaned_blocks(Pid, Opts, Buckets),
+    ok.
 
-log_all_orphaned_blocks(_Pid, _Opts, []) ->
+log_all_maybe_orphaned_blocks(_Pid, _Opts, []) ->
     ok;
-log_all_orphaned_blocks(Pid, Opts, [Bucket | Buckets]) ->
-    _ = log_orphaned_blocks(Pid, Opts, Bucket),
-    log_all_orphaned_blocks(Pid, Opts, Buckets).
+log_all_maybe_orphaned_blocks(Pid, Opts, [Bucket | Buckets]) ->
+    _ = log_maybe_orphaned_blocks(Pid, Opts, Bucket),
+    log_all_maybe_orphaned_blocks(Pid, Opts, Buckets).
 
-log_orphaned_blocks(Pid, Opts, Bucket) when is_binary(Bucket) ->
-    log_orphaned_blocks(Pid, Opts, binary_to_list(Bucket));
-log_orphaned_blocks(Pid, Opts, Bucket) ->
+log_maybe_orphaned_blocks(Pid, Opts, Bucket) when is_binary(Bucket) ->
+    log_maybe_orphaned_blocks(Pid, Opts, binary_to_list(Bucket));
+log_maybe_orphaned_blocks(Pid, Opts, Bucket) ->
     info("Finding Orphaned blocks for Bucket ~p", [Bucket]),
     BlocksTable = list_to_atom(Bucket),
     ets:new(BlocksTable, [set, named_table, public, {keypos, #buuid.uuid}]),
@@ -151,10 +151,10 @@ write_uuids(Opts, Bucket, BlocksTable, _) ->
                                 verbose(Opts, "~s ~s ~B ~p",
                                         [Bucket, mochihex:to_hex(UUID),
                                          length(Seqs), Seqs]),
-                                [file:write(File,
-                                            [Bucket, $ ,
-                                             mochihex:to_hex(UUID), $ ,
-                                             integer_to_list(Seq), $\n]) ||
+                                [ok = file:write(File,
+                                                 [Bucket, $ ,
+                                                  mochihex:to_hex(UUID), $ ,
+                                                  integer_to_list(Seq), $\n]) ||
                                     Seq <- Seqs],
                                 {TotalUUIDs + 1, TotalBlocks + length(Seqs)}
                         end, {0, 0}, BlocksTable),
