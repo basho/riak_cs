@@ -31,8 +31,10 @@ to_riak_bucket(blocks, CSBucket) ->
 to_riak_bucket(_, CSBucket) ->
     CSBucket.
 
-to_riak_key(objects, CsKey) ->
+to_riak_key(objects, CsKey) when is_binary(CsKey) ->
     CsKey;
+to_riak_key(objects, CsKey) when is_list(CsKey) ->
+    list_to_binary(CsKey);
 to_riak_key(blocks, {UUID, Seq}) ->
     <<UUID/binary, Seq:32>>;
 to_riak_key(Kind, _) ->
@@ -56,20 +58,35 @@ get_riakc_obj(RiakNodes, Kind, CsBucket, Opts) ->
 
 -spec update_riakc_obj([term()], objects | blocks, binary(), term(), riakc_obj:riakc_obj()) -> term().
 update_riakc_obj(RiakNodes, ObjectKind, CsBucket, CsKey, NewObj) ->
-    NewMD = riakc_obj:get_metadata(NewObj),
-    NewValue = riakc_obj:get_value(NewObj),
     Pbc = rtcs:pbc(RiakNodes, ObjectKind, CsBucket),
     RiakBucket = to_riak_bucket(ObjectKind, CsBucket),
     RiakKey = to_riak_key(ObjectKind, CsKey),
-    Result = case riakc_pb_socket:get(Pbc, RiakBucket, RiakKey, [deletedvclock]) of
-                 {ok, OldObj} ->
-                     Updated = riakc_obj:update_value(
-                                 riakc_obj:update_metadata(OldObj, NewMD), NewValue),
-                     riakc_pb_socket:put(Pbc, Updated);
-                 {error, notfound} ->
-                     Obj = riakc_obj:new(RiakBucket, RiakKey, NewValue),
-                     Updated = riakc_obj:update_metadata(Obj, NewMD),
-                     riakc_pb_socket:put(Pbc, Updated)
+    OldObj = case riakc_pb_socket:get(Pbc, RiakBucket, RiakKey, [deletedvclock]) of
+                 {ok, Obj} -> Obj;
+                 {error, notfound} -> riakc_obj:new(RiakBucket, RiakKey);
+                 {error, notfound, OldVclock} ->
+                     riakc_obj:set_vclock(riakc_obj:new(RiakBucket, RiakKey),
+                                          OldVclock)
              end,
+    NewMD = riakc_obj:get_metadata(NewObj),
+    NewValue = riakc_obj:get_value(NewObj),
+    Updated = riakc_obj:update_value(
+                riakc_obj:update_metadata(OldObj, NewMD), NewValue),
+    Result = riakc_pb_socket:put(Pbc, Updated),
+    riakc_pb_socket:stop(Pbc),
+    Result.
+
+delete_riakc_obj(RiakNodes, Kind, CsBucket, Opts) ->
+    {Pbc, Key} = case Kind of
+                     objects ->
+                         {rtcs:pbc(RiakNodes, Kind, CsBucket), Opts};
+                     blocks ->
+                         {CsKey, UUID, Seq} = Opts,
+                         {rtcs:pbc(RiakNodes, Kind, {CsBucket, CsKey, UUID}),
+                          {UUID, Seq}}
+                   end,
+    RiakBucket = to_riak_bucket(Kind, CsBucket),
+    RiakKey = to_riak_key(Kind, Key),
+    Result = riakc_pb_socket:delete(Pbc, RiakBucket, RiakKey),
     riakc_pb_socket:stop(Pbc),
     Result.
