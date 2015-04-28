@@ -408,6 +408,9 @@ lager_config() ->
 riak_bitcaskroot(Prefix, N) ->
     io_lib:format("~s/dev/dev~b/data/bitcask", [Prefix, N]).
 
+riakcs_home(Prefix, N) ->
+    io_lib:format("~s/dev/dev~b/", [Prefix, N]).
+
 riakcs_binpath(Prefix, N) ->
     io_lib:format("~s/dev/dev~b/bin/riak-cs", [Prefix, N]).
 
@@ -716,6 +719,19 @@ repair_gc_bucket(N, Options, Vsn) ->
                                     "priv/tools/repair_gc_bucket.erl"] , "/"),
     [RepairScript] = filelib:wildcard(RepairScriptWild),
     Cmd = riakcscmd(Prefix, N, "escript " ++ RepairScript ++
+                        " " ++ Options),
+    lager:info("Running ~p", [Cmd]),
+    os:cmd(Cmd).
+
+exec_priv_escript(N, Command, Options) ->
+    exec_priv_escript(N, Command, Options, current).
+
+exec_priv_escript(N, Command, Options, Vsn) ->
+    Prefix = get_rt_config(cs, Vsn),
+    ScriptWild = string:join([riakcs_libpath(Prefix, N), "riak_cs*",
+                              "priv/tools/"] , "/"),
+    [ToolsDir] = filelib:wildcard(ScriptWild),
+    Cmd = riakcscmd(Prefix, N, "escript " ++ ToolsDir ++ "/" ++ Command ++
                         " " ++ Options),
     lager:info("Running ~p", [Cmd]),
     os:cmd(Cmd).
