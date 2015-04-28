@@ -198,7 +198,7 @@ class BasicTests(S3ApiVerificationTestBase):
 
     def test_delete_objects(self):
         bucket = self.conn.create_bucket(self.bucket_name)
-        keys = ['0', '1', u'Unicodeあいうえお', '2']
+        keys = ['0', '1', u'Unicodeあいうえお', '2', 'multiple   spaces']
         keys.sort()
         for key in keys:
             k = Key(bucket)

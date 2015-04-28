@@ -8,6 +8,10 @@
   [riak_cs/#1115](https://github.com/basho/riak_cs/pull/1115)
 - Add missing `riak-cs.conf` items: `max_buckets_per_user` and `gc.batch_size`
   [riak_cs/#1115](https://github.com/basho/riak_cs/pull/1115)
+- Fix bugs around subsequent space characters for Delete Multiple
+  Objects API and user administration API with XML content
+  [riak_cs/#1129](https://github.com/basho/riak_cs/pull/1129)
+  [riak_cs/#1135](https://github.com/basho/riak_cs/pull/1135)
 
 # Riak CS 2.0.0 Release Notes
 
