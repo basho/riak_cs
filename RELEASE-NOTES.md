@@ -1,7 +1,4 @@
-# Riak CS 2.0.1 Release Notes
-
-This release is mainly a bugfix release, but includes several new
-experimental fetures.
+# Riak CS 2.1.0 Release Notes
 
 ## Additions
 
@@ -22,6 +19,8 @@ experimental fetures.
   is still off by default and
   **experimental**. [riak_cs/#1120](https://github.com/basho/riak_cs/pull/1120),
   [riak_cs/#1123](https://github.com/basho/riak_cs/pull/1123),
+
+# Riak CS 2.0.1 Release Notes
 
 ## Bugs Fixed
 
