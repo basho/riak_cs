@@ -40,7 +40,6 @@
 options() ->
     [{host, $h, "host", {string, "localhost"}, "Address of Riak"},
      {port, $p, "port", {integer, 8087}, "Port number of Riak PB"},
-     {leeway, $l, "leeway", {integer, 24*60*60}, "Specify leeway seconds"},
      {ring_size, $r, "ring-size", {integer, 64}, "Ring Size"},
      {threshold, $t, "threshold", {integer, 5*1024*1024}, "Threshold"},
      {start, $s, "start", {string, "19700101"}, "Start of the seek period"},
