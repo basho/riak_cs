@@ -357,6 +357,12 @@ wait_for_count_riak_bucket(ReqId, Timeout, Acc) ->
             {error, {timeout, Acc}}
     end.
 
+print_cs_bucket(Bucket, SiblingNo, UserKey, tombstone) ->
+    io:nl(),
+    io:format("Bucket    : ~s~n", [Bucket]),
+    io:format("SiblingNo : ~B~n", [SiblingNo]),
+    io:format("Metadata  : ~s~n", [tombstone]),
+    io:format("Owner     : ~s~n", [UserKey]);
 print_cs_bucket(Bucket, SiblingNo, UserKey, MD) ->
     {BagId, Acl, Policy} =
         case dict:find(<<"X-Riak-Meta">>, MD) of
