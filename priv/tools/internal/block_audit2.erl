@@ -55,7 +55,8 @@ main(Args) ->
                 {ok, Pid} ->
                     pong = riakc_pb_socket:ping(Pid),
                     audit2(Pid, Options),
-                    timer:sleep(100);
+                    riakc_pb_socket:stop(Pid),
+                    timer:sleep(100); % OTP-9985
                 {error, Reason} ->
                     err("Connection to Riak failed ~p", [Reason]),
                     halt(2)
@@ -113,10 +114,11 @@ filter_all_actually_orphaned_blocks(Pid, Opts, InDir, OutDir, [Filename | Filena
 
 filter_actually_orphaned_blocks(Pid, Opts, InDir, OutDir, Filename) ->
     InFile = filename:join(InDir, Filename),
-    info("Filter actually orphaned blocks from ~p", [InFile]),
+    info("Filter actually orphaned blocks from ~p", [filename:absname(InFile)]),
     {ok, Input} = file:open(InFile, [read, raw, binary]),
-    {ok, Output} = file:open(filename:join(OutDir, Filename),
-                             [write, raw, delayed_write]),
+    OutFile = filename:join(OutDir, Filename),
+    info("Output goes to ~p", [filename:absname(OutFile)]),
+    {ok, Output} = file:open(OutFile, [write, raw, delayed_write]),
     try
         handle_lines(Pid, Opts, Filename, Input, Output, undefined, undefined)
     after

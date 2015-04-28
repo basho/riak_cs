@@ -58,7 +58,8 @@ main(Args) ->
                 {ok, Pid} ->
                     pong = riakc_pb_socket:ping(Pid),
                     audit(Pid, Options),
-                    timer:sleep(100);
+                    riakc_pb_socket:stop(Pid),
+                    timer:sleep(100); % OTP-9985
                 {error, Reason} ->
                     err("Connection to Riak failed ~p", [Reason]),
                     halt(2)
@@ -155,13 +156,13 @@ write_uuids(Opts, Bucket, BlocksTable, _) ->
                                                  [Bucket, $ ,
                                                   mochihex:to_hex(UUID), $ ,
                                                   integer_to_list(Seq), $\n]) ||
-                                    Seq <- Seqs],
+                                    Seq <- lists:sort(Seqs)],
                                 {TotalUUIDs + 1, TotalBlocks + length(Seqs)}
                         end, {0, 0}, BlocksTable),
     ok = file:close(File),
-    info("Total # Missing Block UUIDs: ~p [count]", [UUIDs]),
-    info("Total # Orphaned Blocks: ~p [count]", [Blocks]),
-    info("Orphaned Blocks written to ~p", [Filename]).
+    info("Total number of UUIDs that has any orphaned blocks: ~p [count]", [UUIDs]),
+    info("Total number of orphaned blocks: ~p [count]", [Blocks]),
+    info("Orphaned Blocks written to ~p", [filename:absname(Filename)]).
 
 cache_block_keys(Pid, Bucket, BlocksTable) ->
     BlocksBucket = riak_cs_utils:to_bucket_name(blocks, Bucket),
@@ -174,7 +175,7 @@ delete_manifest_uuids(Pid, Bucket, BlocksTable) ->
     ManifestsBucket = riak_cs_utils:to_bucket_name(objects, Bucket),
     Opts = [%% {max_results, 1000},
             {start_key, <<>>},
-            {end_key, big_end_key(128)},
+            {end_key, riak_cs_utils:big_end_key()},
             {timeout, ?SLK_TIMEOUT}],
     {ok, ReqID} = riakc_pb_socket:cs_bucket_fold(Pid, ManifestsBucket, Opts),
     handle_manifest_fold(Pid, Bucket, BlocksTable, ReqID).
@@ -230,7 +231,3 @@ get_uuids(Obj) ->
                      %% TODO: more efficient way
                      {UUID, _} <- riak_cs_lfs_utils:block_sequences_for_manifest(M)],
     lists:usort(BlockUUIDs).
-
-big_end_key(NumBytes) ->
-    MaxByte = <<255:8/integer>>,
-    iolist_to_binary([MaxByte || _ <- lists:seq(1, NumBytes)]).
