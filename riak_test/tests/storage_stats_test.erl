@@ -54,7 +54,10 @@ confirm_1(Use2iForStorageCalc) when is_boolean(Use2iForStorageCalc) ->
               {stanchion, rtcs:stanchion_config()},
               {cs, rtcs:cs_config([{fold_objects_for_list_keys, true},
                                    {use_2i_for_storage_calc, Use2iForStorageCalc}])}],
-    {UserConfig, {RiakNodes, CSNodes, _Stanchion}} = rtcs:setup(1, Config),
+    SetupRes = rtcs:setup(1, Config),
+    confirm_2(SetupRes).
+
+confirm_2({UserConfig, {RiakNodes, CSNodes, _Stanchion}}) ->
     {AccessKey2, SecretKey2} = rtcs:create_user(hd(RiakNodes), 1),
     UserConfig2 = rtcs:config(AccessKey2, SecretKey2, rtcs:cs_port(hd(RiakNodes))),
 
@@ -265,19 +268,22 @@ assert_storage_xml_stats({Bucket, ExpectedObjects, ExpectedBytes}, Sample) ->
     ok.
 
 storage_stats_request(UserConfig, Begin, End) ->
-    {storage_stats_json_request(UserConfig, Begin, End),
-     storage_stats_xml_request(UserConfig, Begin, End)}.
+    storage_stats_request(UserConfig, UserConfig, Begin, End).
 
-storage_stats_json_request(UserConfig, Begin, End) ->
-    Samples = samples_from_json_request(UserConfig, {Begin, End}),
+storage_stats_request(SignUserConfig, UserConfig, Begin, End) ->
+    {storage_stats_json_request(SignUserConfig, UserConfig, Begin, End),
+     storage_stats_xml_request(SignUserConfig, UserConfig, Begin, End)}.
+
+storage_stats_json_request(SignUserConfig, UserConfig, Begin, End) ->
+    Samples = samples_from_json_request(SignUserConfig, UserConfig, {Begin, End}),
     lager:debug("Storage samples[json]: ~p", [Samples]),
     ?assertEqual(1, length(Samples)),
     [Sample] = Samples,
     lager:info("Storage sample[json]: ~p", [Sample]),
     Sample.
 
-storage_stats_xml_request(UserConfig, Begin, End) ->
-    Samples = samples_from_xml_request(UserConfig, {Begin, End}),
+storage_stats_xml_request(SignUserConfig, UserConfig, Begin, End) ->
+    Samples = samples_from_xml_request(SignUserConfig, UserConfig, {Begin, End}),
     lager:debug("Storage samples[xml]: ~p", [Samples]),
     ?assertEqual(1, length(Samples)),
     [Sample] = Samples,
@@ -285,19 +291,19 @@ storage_stats_xml_request(UserConfig, Begin, End) ->
     lager:info("Storage sample[xml]: ~p", [ParsedSample]),
     ParsedSample.
 
-samples_from_json_request(UserConfig, {Begin, End}) ->
+samples_from_json_request(SignUserConfig, UserConfig, {Begin, End}) ->
     KeyId = UserConfig#aws_config.access_key_id,
     StatsKey = string:join(["usage", KeyId, "bj", Begin, End], "/"),
-    GetResult = erlcloud_s3:get_object("riak-cs", StatsKey, UserConfig),
+    GetResult = erlcloud_s3:get_object("riak-cs", StatsKey, SignUserConfig),
     lager:debug("GET Storage stats response[json]: ~p", [GetResult]),
     Usage = mochijson2:decode(proplists:get_value(content, GetResult)),
     lager:debug("Usage Response[json]: ~p", [Usage]),
     rtcs:json_get([<<"Storage">>, <<"Samples">>], Usage).
 
-samples_from_xml_request(UserConfig, {Begin, End}) ->
+samples_from_xml_request(SignUserConfig, UserConfig, {Begin, End}) ->
     KeyId = UserConfig#aws_config.access_key_id,
     StatsKey = string:join(["usage", KeyId, "bx", Begin, End], "/"),
-    GetResult = erlcloud_s3:get_object("riak-cs", StatsKey, UserConfig),
+    GetResult = erlcloud_s3:get_object("riak-cs", StatsKey, SignUserConfig),
     lager:debug("GET Storage stats response[xml]: ~p", [GetResult]),
     {Usage, _Rest} = xmerl_scan:string(binary_to_list(proplists:get_value(content, GetResult))),
     lager:debug("Usage Response[xml]: ~p", [Usage]),

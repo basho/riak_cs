@@ -43,6 +43,9 @@
 -define(SCRIPT_NAME, "riak-cs-admin storage").
 -define(BATCH_OPTIONS, [{recalc, $r, "recalc", boolean,
                          "recalculate all users for this period"
+                         " (default=false)"},
+                        {detailed, undefined, "detailed", boolean,
+                         "calculate detailed bucket usage summary"
                          " (default=false)"}]).
 
 %% @doc Kick off a batch of storage calculation, unless one is already

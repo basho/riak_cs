@@ -1,3 +1,37 @@
+# Riak CS 2.0.1 Release Notes
+
+This release is mainly a bugfix release, but includes several new
+experimental fetures.
+
+## Additions
+
+- Module-level hook point for limiting user access and quota usage has
+  been introduced, with very preliminary simple node-wide limting
+  example modules. Operators can make, plug in or combine different
+  modules as quota-limiting, rate-limiting or bandwidth-limiting
+  depeding on their unique requirements. This is **experimental** and
+  plugin SPI (service provider interface) may or may not change in
+  future effort to improve this
+  system. [riak_cs/#1118](https://github.com/basho/riak_cs/pull/1118)
+- More detailed storage calculation has been introduced. Not only
+  active manifests but stale manifests such as waiting for garbage
+  collection, or currently being written objects will also be taken
+  into account as new storage stats items. This will help accounting
+  disk usage in more detail, although it does not take state of blocks
+  whether they are halfway uploaded, or halfway deleted, or not.  This
+  is still off by default and
+  **experimental**. [riak_cs/#1120](https://github.com/basho/riak_cs/pull/1120),
+  [riak_cs/#1123](https://github.com/basho/riak_cs/pull/1123),
+
+## Bugs Fixed
+
+- Fix config item `gc.interval` not working when `infinity` is set
+  [riak_cs/#1126](https://github.com/basho/riak_cs/pull/1126)
+- Add switch `log.access` to disable access logging
+  [riak_cs/#1115](https://github.com/basho/riak_cs/pull/1115)
+- Add missing `riak-cs.conf` items: `max_buckets_per_user` and `gc.batch_size`
+  [riak_cs/#1115](https://github.com/basho/riak_cs/pull/1115)
+
 # Riak CS 2.0.0 Release Notes
 
 ## General Information
@@ -13,7 +47,9 @@
 
 ## Known Issues & Limitations
 
-- None.
+- Access log can't be disabled.
+- Advanced.config should be used to customize value of `max_buckets_per_user`
+  and `gc_batch_size`.
 
 ## Changes and Additions
 
@@ -424,48 +460,48 @@ example is added.
 
 ##### `riak_cs` section of the Riak CS app.config
 
-|      1.5.4 (`app.config`)          |        2.0.0 (`riak-cs.conf`)          |
-|:-----------------------------------|:---------------------------------------|
-|`{cs_ip, "127.0.0.1"}`              |`listener = 127.0.0.1:8080`             |
-|`{cs_port, 8080}`                   |                                        |
-|`{riak_ip, "127.0.0.1"}`            |`riak_host = 127.0.0.1:8087`            |
-|`{riak_pb_port, 8087}`              |                                        |
-|`{stanchion_ip, "127.0.0.1"}`       |`stanchion_host = 127.0.0.1:8085`       |
-|`{stanchion_port, 8085 }`           |                                        |
-|`{stanchion_ssl, false }`           |`stanchion_ssl = off`                   |
-|`{anonymous_user_creation, false}`  |`anonymous_user_creation = off`         |
-|`{admin_key, "admin-key"}`          |`admin.key = admin-key`                 |
-|`{admin_secret, "admin-secret"}`    |`admin.secret = admin-secret`           |
-|`{cs_root_host, "s3.amazonaws.com"}`|`root_host = s3.amazonaws.com`          |
-|`{connection_pools,[`               |                                        |
-|` {request_pool, {128, 0} },`       |`pool.request.size = 128`               |
-|                                    |`pool.request.overflow = 0`             |
-|` {bucket_list_pool, {5, 0} }`      |`pool.list.size = 5`                    |
-|                                    |`pool.list.overflow = 0`                |
-|`{trust_x_forwarded_for, false}`    |`trust_x_forwarded_for = off`           |
-|`{leeway_seconds, 86400}`           |`gc.leeway_period = 24h`                |
-|`{gc_interval, 900}`                |`gc.interval = 15m`                     |
-|`{gc_retry_interval, 21600}`        |`gc.retry_interval = 6h`                |
-|`{access_log_flush_factor, 1}`      |`stats.access.flush_factor = 1`         |
-|`{access_log_flush_size, 1000000}`  |`stats.access.flush_size = 1000000`     |
-|`{access_archive_period, 3600}`     |`stats.access.archive_period = 1h`      |
-|`{access_archiver_max_backlog, 2}`  |`stats.access.archiver.max_backlog = 2` |
-|(no explicit default)               |`stats.access.archiver.max_workers = 2` |
-|`{storage_schedule, []}`            |`stats.storage.schedule.$time = "06:00"`|
-|`{storage_archive_period, 86400}`   |`stats.storage.archive_period = 1d`     |
-|`{usage_request_limit, 744}`        |`riak_cs.usage_request_limit = 31d`     |
-|`{cs_version, 10300 }`              |`cs_version = 10300`                    |
-|`{dtrace_support, false}`           |`dtrace = off`                          |
+|      1.5.4 (`app.config`)          |        2.x (`riak-cs.conf`)            |   Note     |
+|:-----------------------------------|:---------------------------------------|:-----------|
+|`{cs_ip, "127.0.0.1"}`              |`listener = 127.0.0.1:8080`             |            |
+|`{cs_port, 8080}`                   |                                        |            |
+|`{riak_ip, "127.0.0.1"}`            |`riak_host = 127.0.0.1:8087`            |            |
+|`{riak_pb_port, 8087}`              |                                        |            |
+|`{stanchion_ip, "127.0.0.1"}`       |`stanchion_host = 127.0.0.1:8085`       |            |
+|`{stanchion_port, 8085 }`           |                                        |            |
+|`{stanchion_ssl, false }`           |`stanchion_ssl = off`                   |            |
+|`{anonymous_user_creation, false}`  |`anonymous_user_creation = off`         |            |
+|`{admin_key, "admin-key"}`          |`admin.key = admin-key`                 |            |
+|`{admin_secret, "admin-secret"}`    |`admin.secret = admin-secret`           |            |
+|`{cs_root_host, "s3.amazonaws.com"}`|`root_host = s3.amazonaws.com`          |            |
+|`{connection_pools,[`               |                                        |            |
+|` {request_pool, {128, 0} },`       |`pool.request.size = 128`               |            |
+|                                    |`pool.request.overflow = 0`             |            |
+|` {bucket_list_pool, {5, 0} }`      |`pool.list.size = 5`                    |            |
+|                                    |`pool.list.overflow = 0`                |            |
+|`{max_buckets_per_user, 100}`       |`max_buckets_per_user = 100`            | from 2.0.1 |
+|`{trust_x_forwarded_for, false}`    |`trust_x_forwarded_for = off`           |            |
+|`{leeway_seconds, 86400}`           |`gc.leeway_period = 24h`                |            |
+|`{gc_interval, 900}`                |`gc.interval = 15m`                     |            |
+|`{gc_retry_interval, 21600}`        |`gc.retry_interval = 6h`                |            |
+|`{gc_batch_size, 1000}`             |`gc.batch_size = 1000`                  | from 2.0.1 |
+|`{access_log_flush_factor, 1}`      |`stats.access.flush_factor = 1`         |            |
+|`{access_log_flush_size, 1000000}`  |`stats.access.flush_size = 1000000`     |            |
+|`{access_archive_period, 3600}`     |`stats.access.archive_period = 1h`      |            |
+|`{access_archiver_max_backlog, 2}`  |`stats.access.archiver.max_backlog = 2` |            |
+|(no explicit default)               |`stats.access.archiver.max_workers = 2` |            |
+|`{storage_schedule, []}`            |`stats.storage.schedule.$time = "06:00"`|            |
+|`{storage_archive_period, 86400}`   |`stats.storage.archive_period = 1d`     |            |
+|`{usage_request_limit, 744}`        |`riak_cs.usage_request_limit = 31d`     |            |
+|`{cs_version, 10300 }`              |`cs_version = 10300`                    |            |
+|`{dtrace_support, false}`           |`dtrace = off`                          |            |
 
 ##### `webmachine` section of the Riak CS app.config
 
-|      1.5.4 (`app.config`)          |        2.0.0 (`riak-cs.conf`)         |
-|:-----------------------------------|:--------------------------------------|
-|`{server_name, "Riak CS"}`          |`server_name = Riak CS`                |
-|`{log_handlers, ....}`              |`log.access.dir = /var/log/riak-cs`    |
-
-To disable access logging, comment out or remove the line beginning with
-`log.access.dir` from `riak-cs.conf`.
+|      1.5.4 (`app.config`)          |        2.0.0 (`riak-cs.conf`)         |   note     |
+|:-----------------------------------|:--------------------------------------|:-----------|
+|`{server_name, "Riak CS"}`          |`server_name = Riak CS`                |            |
+|`{log_handlers, ....}`              |`log.access = true`                    | from 2.0.1 |
+|                                    |`log.access.dir = /var/log/riak-cs`    |            |
 
 Due to a WebMachine change, if `log_handlers` are defined in `app.config` or
 `advanced.config`, the log handler's name should be changed as follows:

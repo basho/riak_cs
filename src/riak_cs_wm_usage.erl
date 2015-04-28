@@ -153,6 +153,7 @@
           auth_bypass :: boolean(),
           riak_client :: pid(),
           user :: rcs_user(),
+          admin_access=false :: boolean(),
           start_time :: calendar:datetime(),
           end_time :: calendar:datetime(),
           body :: iodata(),
@@ -247,22 +248,23 @@ forbidden(RD, #ctx{auth_bypass=AuthBypass, riak_client=RcPid}=Ctx) ->
     riak_cs_wm_utils:find_and_auth_user(RD, BogusContext, Next, Conv2Ctx, AuthBypass).
 
 forbidden(RD, Ctx, _, true) ->
-    {false, RD, Ctx};
+    %% Treat AuthBypass=true as same as admin access
+    {false, RD, Ctx#ctx{admin_access=true}};
 forbidden(RD, Ctx, undefined, false) ->
     %% anonymous access disallowed
     riak_cs_wm_utils:deny_access(RD, Ctx);
 forbidden(RD, Ctx, User, false) ->
-    case user_key(RD) == User?RCS_USER.key_id of
-        true ->
-            %% user is accessing own stats
-            AccessRD = riak_cs_access_log_handler:set_user(User, RD),
-            {false, AccessRD, Ctx};
-        false ->
-            case riak_cs_config:admin_creds() of
-                {ok, {Admin, _}} when Admin == User?RCS_USER.key_id ->
-                    %% admin can access anyone's stats
-                    {false, RD, Ctx};
-                _ ->
+    case riak_cs_config:admin_creds() of
+        {ok, {Admin, _}} when Admin == User?RCS_USER.key_id ->
+            %% admin can access anyone's stats
+            {false, RD, Ctx#ctx{admin_access=true}};
+        _ ->
+            case user_key(RD) == User?RCS_USER.key_id of
+                true ->
+                    %% user is accessing own stats
+                    AccessRD = riak_cs_access_log_handler:set_user(User, RD),
+                    {false, AccessRD, Ctx};
+                false ->
                     %% no one else is allowed
                     riak_cs_wm_utils:deny_access(RD, Ctx)
             end
@@ -393,11 +395,12 @@ maybe_access(RD, Ctx) ->
 maybe_storage(RD, Ctx) ->
     usage_if(RD, Ctx, "b", riak_cs_storage).
 
-usage_if(RD, #ctx{riak_client=RcPid, start_time=Start, end_time=End},
+usage_if(RD, #ctx{riak_client=RcPid, admin_access=AdminAceess,
+                  start_time=Start, end_time=End},
          QParam, Module) ->
     case true_param(RD, QParam) of
         true ->
-            Module:get_usage(RcPid, user_key(RD), Start, End);
+            Module:get_usage(RcPid, user_key(RD), AdminAceess, Start, End);
         false ->
             not_requested
     end.

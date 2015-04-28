@@ -276,7 +276,9 @@ format_value(Val) when is_binary(Val) ->
 format_value(Val) when is_integer(Val) ->
     integer_to_list(Val);
 format_value(Val) when is_list(Val) ->
-    format_value(list_to_binary(Val)).
+    format_value(list_to_binary(Val));
+format_value(Val) when is_float(Val) ->
+    io_lib:format("~p", [Val]).
 
 %% @doc Map a ACL group atom to its corresponding URI.
 -spec uri_for_group(atom()) -> string().

@@ -27,7 +27,7 @@
          log_flush_interval/0,
          max_flush_size/0,
          make_object/3,
-         get_usage/4,
+         get_usage/5,
          flush_to_log/2,
          flush_access_object_to_log/3
         ]).
@@ -137,10 +137,11 @@ merge_stats(Stats, Acc) ->
 %% list of samples.  Each sample is an orddict full of metrics.
 -spec get_usage(riak_client(),
                 term(), %% TODO: riak_cs:user_key() type doesn't exist
+                boolean(),  %% Not used in this module
                 calendar:datetime(),
                 calendar:datetime()) ->
                        {Usage::orddict:orddict(), Errors::[{slice(), term()}]}.
-get_usage(RcPid, User, Start, End) ->
+get_usage(RcPid, User, _AdminAccess, Start, End) ->
     {ok, Period} = archive_period(),
     {Usage, Errors} = rts:find_samples(RcPid, ?ACCESS_BUCKET, User,
                                        Start, End, Period),

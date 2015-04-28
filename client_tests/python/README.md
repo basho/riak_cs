@@ -1,9 +1,10 @@
-# Riak CS Boto Python Tests
+# Riak CS Python Tests: Boto based tests and ceph's s3-tests
 
 ## Dependencies
 
 * [virtualenv](http://www.virtualenv.org/en/latest/#installation) (I'm using 1.9.1)
 * Python (I'm using 2.7.2)
+* `uuidgen` command (e.g. `apt-get install uuid-runtime` on Debian/Ubuntu)
 
 ## Configuration
 

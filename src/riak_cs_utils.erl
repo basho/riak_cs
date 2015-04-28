@@ -65,7 +65,9 @@
          to_bucket_name/2,
          big_end_key/1,
          big_end_key/0,
-         stanchion_data/0
+         stanchion_data/0,
+         camel_case/1,
+         capitalize/1
         ]).
 
 -include("riak_cs.hrl").
@@ -74,6 +76,7 @@
 
 -ifdef(TEST).
 -compile(export_all).
+-include_lib("eunit/include/eunit.hrl").
 -endif.
 
 %% Definitions for json_pp_print, from riak_core's json_pp.erl
@@ -600,3 +603,33 @@ safe_list_to_integer(Str) ->
     catch _:_ ->
             bad
     end.
+
+-spec camel_case(atom() | string()) -> string().
+camel_case(Atom) when is_atom(Atom) ->
+    camel_case(atom_to_list(Atom));
+camel_case(String) when is_list(String) ->
+    string:join([capitalize(Token) ||
+                 Token <- string:tokens(String, "_")], "").
+
+-spec capitalize(string()) -> string().
+capitalize("") -> "";
+capitalize([H|T]) -> string:to_upper([H]) ++ T.
+
+-ifdef(TEST).
+
+camel_case_test() ->
+    ?assertEqual("", camel_case("")),
+    ?assertEqual("A", camel_case("a")),
+    ?assertEqual("A", camel_case(a)),
+    ?assertEqual("A", camel_case("A")),
+    ?assertEqual("A", camel_case('A')),
+    ?assertEqual("Abc", camel_case("abc")),
+    ?assertEqual("Abc", camel_case(abc)),
+    ?assertEqual("AbcXyz", camel_case("abc_xyz")),
+    ?assertEqual("AbcXyz", camel_case(abc_xyz)),
+    ?assertEqual("AbcXYZ", camel_case("abc_XYZ")),
+    ?assertEqual("AbcXYZ", camel_case(abc_XYZ)),
+    ?assertEqual("AbcXyz123", camel_case("abc_xyz_123")),
+    ?assertEqual("AbcXyz123", camel_case(abc_xyz_123)).
+
+-endif.

@@ -1,6 +1,6 @@
 %% ---------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2015 Basho Technologies, Inc.  All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -25,12 +25,13 @@
 -include("riak_cs.hrl").
 
 -export([
-         sum_user/2,
-         sum_bucket/1,
+         sum_user/4,
+         sum_bucket/3,
          make_object/4,
-         get_usage/4,
+         get_usage/5,
          archive_period/0
         ]).
+
 -export([
          object_size_map/3,
          object_size_reduce/2
@@ -41,19 +42,20 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
-
 %% @doc Sum the number of bytes stored in active files in all of the
 %% given user's directories.  The result is a list of pairs of
 %% `{BucketName, Bytes}'.
--spec sum_user(riak_client(), string()) -> {ok, [{string(), integer()}]}
-                                 | {error, term()}.
-sum_user(RcPid, User) when is_binary(User) ->
-    sum_user(RcPid, binary_to_list(User));
-sum_user(RcPid, User) when is_list(User) ->
+-spec sum_user(riak_client(), string(), boolean(), erlang:timestamp()) ->
+                      {ok, [{string(), integer()}]}
+                          | {error, term()}.
+sum_user(RcPid, User, Detailed, LeewayEdge) when is_binary(User) ->
+    sum_user(RcPid, binary_to_list(User), Detailed, LeewayEdge);
+sum_user(RcPid, User, Detailed, LeewayEdge) when is_list(User) ->
     case riak_cs_user:get_user(User, RcPid) of
         {ok, {UserRecord, _UserObj}} ->
             Buckets = riak_cs_bucket:get_buckets(UserRecord),
-            BucketUsages = [maybe_sum_bucket(User, B) || B <- Buckets],
+            BucketUsages = [maybe_sum_bucket(User, B, Detailed, LeewayEdge) ||
+                               B <- Buckets],
             {ok, BucketUsages};
         {error, Error} ->
             {error, Error}
@@ -63,13 +65,16 @@ sum_user(RcPid, User) when is_list(User) ->
 %%      This log is *very* important because unless this log
 %%      there are no other way for operator to know a calculation
 %%      which riak_cs_storage_d failed.
--spec maybe_sum_bucket(string(), cs_bucket()) ->
+-spec maybe_sum_bucket(string(), cs_bucket(), boolean(), erlang:timestamp()) ->
                               {binary(), [{binary(), integer()}]} |
                               {binary(), binary()}.
-maybe_sum_bucket(User, ?RCS_BUCKET{name=Name} = Bucket) when is_list(Name) ->
-    maybe_sum_bucket(User, Bucket?RCS_BUCKET{name=list_to_binary(Name)});
-maybe_sum_bucket(User, ?RCS_BUCKET{name=Name} = _Bucket) when is_binary(Name) ->
-    case sum_bucket(Name) of
+maybe_sum_bucket(User, ?RCS_BUCKET{name=Name} = Bucket, Detailed, LeewayEdge)
+  when is_list(Name) ->
+    maybe_sum_bucket(User, Bucket?RCS_BUCKET{name=list_to_binary(Name)},
+                     Detailed, LeewayEdge);
+maybe_sum_bucket(User, ?RCS_BUCKET{name=Name} = _Bucket, Detailed, LeewayEdge)
+  when is_binary(Name) ->
+    case sum_bucket(Name, Detailed, LeewayEdge) of
         {struct, _} = BucketUsage -> {Name, BucketUsage};
         {error, _} = E ->
             _ = lager:error("failed to calculate usage of "
@@ -78,21 +83,34 @@ maybe_sum_bucket(User, ?RCS_BUCKET{name=Name} = _Bucket) when is_binary(Name) ->
             {Name, iolist_to_binary(io_lib:format("~p", [E]))}
     end.
 
-%% @doc Sum the number of bytes stored in active files in the named
-%% bucket.  This assumes that the bucket exists; there will be no
-%% difference in output between a non-existent bucket and an empty
-%% one.
+%% @doc Calculate summary for the bucket.
+%%
+%% Basic calculation includes the count and the number of total bytes
+%%  for available files in the named bucket. Detailed one adds some
+%%  more summary information for the bucket.  This assumes that the
+%%  bucket exists; there will be no difference in output between a
+%%  non-existent bucket and an empty one.
 %%
 %% The result is a mochijson structure with two fields: `Objects',
 %% which is the number of objects that were counted in the bucket, and
-%% `Bytes', which is the total size of all of those objects.
--spec sum_bucket(binary()) -> {struct, [{binary(), integer()}]}
-                                   | {error, term()}.
-sum_bucket(BucketName) ->
-    Query = [{map, {modfun, riak_cs_storage, object_size_map},
-              [do_prereduce], false},
-             {reduce, {modfun, riak_cs_storage, object_size_reduce},
-              none, true}],
+%% `Bytes', which is the total size of all of those objects.  More
+%% fields are included for detailed calculation.
+-spec sum_bucket(binary(), boolean(), erlang:timestamp()) ->
+                        {struct, [{binary(), integer()}]}
+                            | {error, term()}.
+sum_bucket(BucketName, Detailed, LeewayEdge) ->
+    Query = case Detailed of
+                false ->
+                    [{map, {modfun, riak_cs_storage, object_size_map},
+                      [do_prereduce], false},
+                     {reduce, {modfun, riak_cs_storage, object_size_reduce},
+                      none, true}];
+                true ->
+                    [{map, {modfun, riak_cs_storage_mr, bucket_summary_map},
+                      [do_prereduce, {leeway_edge, LeewayEdge}], false},
+                     {reduce, {modfun, riak_cs_storage_mr, bucket_summary_reduce},
+                      none, true}]
+            end,
     %% We cannot reuse RcPid because different bucket may use different bag.
     %% This is why each sum_bucket/1 call retrieves new client on every bucket.
     {ok, RcPid} = riak_cs_riak_client:checkout(),
@@ -107,10 +125,8 @@ sum_bucket(BucketName) ->
                 end,
         Timeout = riak_cs_config:storage_calc_timeout(),
         case riakc_pb_socket:mapred(ManifestPbc, Input, Query, Timeout) of
-            {ok, Results} ->
-                {1, [{Objects, Bytes}]} = lists:keyfind(1, 1, Results),
-                {struct, [{<<"Objects">>, Objects},
-                          {<<"Bytes">>, Bytes}]};
+            {ok, MRRes} ->
+                extract_summary(MRRes, Detailed);
             {error, Error} ->
                 {error, Error}
         end
@@ -118,24 +134,31 @@ sum_bucket(BucketName) ->
         riak_cs_riak_client:checkin(RcPid)
     end.
 
-object_size_map({error, notfound}, _, _) ->
-    [];
-object_size_map(Object, _, _) ->
-    Handler = fun(Resolved) -> object_size(Resolved) end,
-    riak_cs_utils:maybe_process_resolved(Object, Handler, []).
+object_size_map(Obj, KD, Args) ->
+    riak_cs_storage_mr:object_size_map(Obj, KD, Args).
 
-object_size(Resolved) ->
-    {MPparts, MPbytes} = count_multipart_parts(Resolved),
-    case riak_cs_manifest_utils:active_manifest(Resolved) of
-        {ok, ?MANIFEST{content_length=Length}} ->
-            [{1 + MPparts, Length + MPbytes}];
-        _ ->
-            [{MPparts, MPbytes}]
-    end.
+object_size_reduce(Values, Args) ->
+    riak_cs_storage_mr:object_size_reduce(Values, Args).
 
-object_size_reduce(Sizes, _) ->
-    {Objects,Bytes} = lists:unzip(Sizes),
-    [{lists:sum(Objects),lists:sum(Bytes)}].
+extract_summary(MRRes, false) ->
+    {1, [{Objects, Bytes}]} = lists:keyfind(1, 1, MRRes),
+    {struct, [{<<"Objects">>, Objects},
+              {<<"Bytes">>, Bytes}]};
+extract_summary(MRRes, true) ->
+    {1, [Summary]} = lists:keyfind(1, 1, MRRes),
+    {struct, detailed_result_json_struct(Summary, [])}.
+
+detailed_result_json_struct([], Acc) ->
+    Acc;
+detailed_result_json_struct([{{K1, K2}, V} | Rest], Acc) ->
+    JsonKey = case {K1, K2} of
+                  {user, K2} ->
+                      list_to_binary(riak_cs_utils:camel_case(K2));
+                  {K1, K2} ->
+                      list_to_binary([riak_cs_utils:camel_case(K1),
+                                      riak_cs_utils:camel_case(K2)])
+              end,
+    detailed_result_json_struct(Rest, [{JsonKey, V} | Acc]).
 
 %% @doc Retreive the number of seconds that should elapse between
 %% archivings of storage stats.  This setting is controlled by the
@@ -155,83 +178,27 @@ make_object(User, BucketList, SampleStart, SampleEnd) ->
     rts:new_sample(?STORAGE_BUCKET, User, SampleStart, SampleEnd, Period,
                    BucketList).
 
-get_usage(Riak, User, Start, End) ->
+-spec get_usage(pid(), string(),
+                boolean(),
+                calendar:datetime(),
+                calendar:datetime()) -> {list(), list()}.
+get_usage(Riak, User, AdminAccess, Start, End) ->
     {ok, Period} = archive_period(),
-    rts:find_samples(Riak, ?STORAGE_BUCKET, User, Start, End, Period).
+    {Samples, Errors} = rts:find_samples(Riak, ?STORAGE_BUCKET,
+                                         User, Start, End, Period),
+    case AdminAccess of
+        true -> {Samples, Errors};
+        _ -> {[filter_internal_usage(Sample, []) || Sample <- Samples], Errors}
+    end.
 
--spec count_multipart_parts([{cs_uuid(), lfs_manifest()}]) ->
-                                   {non_neg_integer(), non_neg_integer()}.
-count_multipart_parts(Resolved) ->
-    lists:foldl(fun count_multipart_parts/2, {0, 0}, Resolved).
-
--spec count_multipart_parts({cs_uuid(), lfs_manifest()},
-                            {non_neg_integer(), non_neg_integer()}) ->
-                                   {non_neg_integer(), non_neg_integer()}.
-count_multipart_parts({_UUID, ?MANIFEST{props=Props, state=writing} = M},
-                      {MPparts, MPbytes} = Acc)
-  when is_list(Props) ->
-    case proplists:get_value(multipart, Props) of
-        ?MULTIPART_MANIFEST{parts=Ps} = _  ->
-            {MPparts + length(Ps),
-             MPbytes + lists:sum([P?PART_MANIFEST.content_length ||
-                                     P <- Ps])};
-        undefined ->
-            %% Maybe not a multipart
-            Acc;
-        Other ->
-            %% strange thing happened
-            _ = lager:log(warning, self(),
-                          "strange writing multipart manifest detected at ~p: ~p",
-                          [M?MANIFEST.bkey, Other]),
-            Acc
-    end;
-count_multipart_parts(_, Acc) ->
-    %% Other state than writing, won't be counted
-    %% active manifests will be counted later
-    Acc.
-
--ifdef(TEST).
-
-
-object_size_map_test_() ->
-    M0 = ?MANIFEST{state=active, content_length=25},
-    M1 = ?MANIFEST{state=active, content_length=35},
-    M2 = ?MANIFEST{state=writing, props=undefined, content_length=42},
-    M3 = ?MANIFEST{state=writing, props=pocketburger, content_length=234},
-    M4 = ?MANIFEST{state=writing, props=[{multipart,undefined}],
-                   content_length=23434},
-    M5 = ?MANIFEST{state=writing, props=[{multipart,pocketburger}],
-                   content_length=23434},
-
-    [?_assertEqual([{1,25}], object_size([{uuid,M0}])),
-     ?_assertEqual([{1,35}], object_size([{uuid2,M2},{uuid1,M1}])),
-     ?_assertEqual([{1,35}], object_size([{uuid2,M3},{uuid1,M1}])),
-     ?_assertEqual([{1,35}], object_size([{uuid2,M4},{uuid1,M1}])),
-     ?_assertEqual([{1,35}], object_size([{uuid2,M5},{uuid1,M1}]))].
-
-count_multipart_parts_test_() ->
-    ZeroZero = {0, 0},
-    ValidMPManifest = ?MULTIPART_MANIFEST{parts=[?PART_MANIFEST{content_length=10}]},
-    [?_assertEqual(ZeroZero,
-                   count_multipart_parts({<<"pocketburgers">>,
-                                          ?MANIFEST{props=pocketburgers, state=writing}},
-                                         ZeroZero)),
-     ?_assertEqual(ZeroZero,
-                   count_multipart_parts({<<"pocketburgers">>,
-                                          ?MANIFEST{props=pocketburgers, state=iamyourfather}},
-                                         ZeroZero)),
-     ?_assertEqual(ZeroZero,
-                   count_multipart_parts({<<"pocketburgers">>,
-                                          ?MANIFEST{props=[], state=writing}},
-                                         ZeroZero)),
-     ?_assertEqual(ZeroZero,
-                   count_multipart_parts({<<"pocketburgers">>,
-                                          ?MANIFEST{props=[{multipart, pocketburger}], state=writing}},
-                                         ZeroZero)),
-     ?_assertEqual({1, 10},
-                   count_multipart_parts({<<"pocketburgers">>,
-                                          ?MANIFEST{props=[{multipart, ValidMPManifest}], state=writing}},
-                                         ZeroZero))
-    ].
-
--endif.
+filter_internal_usage([], Acc) ->
+    lists:reverse(Acc);
+filter_internal_usage([{K, _V}=T | Rest], Acc)
+  when K =:= <<"StartTime">> orelse K =:= <<"EndTime">> ->
+    filter_internal_usage(Rest, [T|Acc]);
+filter_internal_usage([{Bucket, {struct, UsageList}} | Rest], Acc) ->
+    Objects = lists:keyfind(<<"Objects">>, 1, UsageList),
+    Bytes = lists:keyfind(<<"Bytes">>, 1, UsageList),
+    filter_internal_usage(Rest, [{Bucket, {struct, [Objects, Bytes]}} | Acc]);
+filter_internal_usage([{_Bucket, _ErrorBin}=T | Rest], Acc) ->
+    filter_internal_usage(Rest, [T|Acc]).
