@@ -18,7 +18,7 @@
 %%
 %% ---------------------------------------------------------------------
 
--module(block_audit2).
+-module(ensure_orphan_blocks).
 
 -mode(compile).
 
