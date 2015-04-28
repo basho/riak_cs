@@ -66,7 +66,7 @@
 %% `String' is the Body sent from client, which can be anything.
 -spec scan(string()) -> {ok, xmlElement()} | {error, malformed_xml}.
 scan(String) ->
-    case catch xmerl_scan:string(String, [{space, normalize}]) of
+    case catch xmerl_scan:string(String) of
         {'EXIT', _E} ->  {error, malformed_xml};
         { #xmlElement{} = ParsedData, _Rest} -> {ok, ParsedData};
         _E -> {error, malformed_xml}

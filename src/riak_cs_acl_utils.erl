@@ -501,7 +501,7 @@ process_acl_contents([#xmlElement{content=Content,
     end;
 process_acl_contents([#xmlComment{} | RestElements], Acl, RcPid) ->
     process_acl_contents(RestElements, Acl, RcPid);
-process_acl_contents([#xmlText{value=" "} | RestElements], Acl, RcPid) ->
+process_acl_contents([#xmlText{} | RestElements], Acl, RcPid) ->
     %% skip normalized space
     process_acl_contents(RestElements, Acl, RcPid).
 
