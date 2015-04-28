@@ -669,7 +669,9 @@ process_grantee([#xmlElement{content=[Content],
             process_grantee(RestElements, UpdGrant, AclOwner, RcPid)
     end;
 process_grantee([#xmlText{}|RestElements], Grant, Owner, RcPid) ->
-    process_grant(RestElements, Grant, Owner, RcPid).
+    process_grantee(RestElements, Grant, Owner, RcPid);
+process_grantee([#xmlComment{}|RestElements], Grant, Owner, RcPid) ->
+    process_grantee(RestElements, Grant, Owner, RcPid).
 
 %% @doc Process an XML element containing information about
 %% an ACL permission.
@@ -790,10 +792,18 @@ indented_xml_with_comments() ->
         "  </AccessControlList> <!-- c -->"
         "</AccessControlPolicy>    <!-- c -->",
     Xml.
+
 comment_space_test() ->
     Xml = indented_xml_with_comments(),
     %% if cs782 alive, error:{badrecord,xmlElement} thrown here.
-    {ok, ?ACL{} = _Acl} = riak_cs_acl_utils:acl_from_xml(Xml, boom, foo),
+    {ok, ?ACL{} = Acl} = riak_cs_acl_utils:acl_from_xml(Xml, boom, foo),
+    %% Compare the result with the one from XML without comments and extra spaces
+    StrippedXml0 = re:replace(Xml, "<!--[^-]*-->", "", [global]),
+    StrippedXml1 = re:replace(StrippedXml0, " *<", "<", [global]),
+    StrippedXml = binary_to_list(iolist_to_binary(re:replace(StrippedXml1, " *$", "", [global]))),
+    {ok, ?ACL{} = AclFromStripped} = riak_cs_acl_utils:acl_from_xml(StrippedXml, boom, foo),
+    ?assertEqual(AclFromStripped?ACL{creation_time=Acl?ACL.creation_time},
+                 Acl),
     ok.
 
 
