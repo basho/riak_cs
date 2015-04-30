@@ -43,8 +43,9 @@ main([BitcaskDir, BlocksListFile]) ->
     offline_delete(BitcaskDir, BlocksListFile, false, false);
 main(_) ->
     io:format(standard_error,
-              "options: [--dry-run][--old-format] <BitcaskDir> <BlocksListFile>~n"
-              "\033[31m\033[1m[Caution] Make sure Riak is not running!!!\033[0m~n", []).
+              "options: [--dry-run] [--old-format] <BitcaskDir> <BlocksListFile>~n"
+              "\033[31m\033[1m[Caution] Make sure Riak is not running!!!\033[0m~n"
+              "It'd be better if all hinted handoff have been finished before stopping Riak.~n", []).
 
 -spec open_all_bitcask(filename:filename()) ->
                               orddict:orddict(non_neg_integer(), reference()).
@@ -75,7 +76,7 @@ make_sure(Dir) ->
     io:format(standard_error,
               "\033[31m[Warning]\033\[0m~n"
               "Make sure any Riak process using '~s' is not running "
-              "or your data may corrupt.~n", [Dir]),
+              "or your data may corrupt.~n", [filename:absname(Dir)]),
     "y\n" = io:get_line("Accept the terms of conditions? [y/N] ").
 
 offline_delete(BitcaskDir, BlocksListFile, DryRun, OldFormat) ->

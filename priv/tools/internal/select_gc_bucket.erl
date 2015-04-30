@@ -160,9 +160,10 @@ handle_manifest({_UUID, ?MANIFEST{bkey=BKey={Bucket,_},
     BlockSequences = riak_cs_lfs_utils:block_sequences_for_manifest(M),
     Count = ordsets:fold(fun({UUID1, SeqNo}, Count0) ->
                                  BK = {B,K} = full_bkey(Bucket, dummy, UUID1, SeqNo),
-                                 VNodes = [[integer_to_list(VNode), $\t] || VNode <- vnode_ids(BK, RingSize, 3)],
+                                 VNodes = [[integer_to_list(VNode), $\t]
+                                           || VNode <- vnode_ids(BK, RingSize, 3)],
                                  %% Partitions, UUID, SeqNo
-                                 file:write(File, [VNodes, $\t,
+                                 file:write(File, [VNodes,
                                                    mochihex:to_hex(B), $\t,
                                                    mochihex:to_hex(K), $\t,
                                                    mochihex:to_hex(UUID1), $\t,
