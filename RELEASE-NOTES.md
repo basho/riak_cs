@@ -5,18 +5,10 @@ This is a bugfix release.
 
 ## Bug Fixes
 
-* [riak_cs/#1125](https://github.com/basho/riak_cs/issues/1125) - Fix config item `gc.interval` not working when `infinity` is set.
-  * [riak_cs/pull/1126](https://github.com/basho/riak_cs/pull/1126)
-
-* [riak_cs/#](https://github.com/basho/riak_cs/issues/1109) - Add `log.access` switch to disable access logging. 
-  * [riak_cs/pull/1115](https://github.com/basho/riak_cs/pull/1115)
-
-* [riak_cs/#1109](https://github.com/basho/riak_cs/issues/1109) - Add missing riak-cs.conf items:` max_buckets_per_user` and `gc.batch_size`.
-  * [riak_cs/pull/1115](https://github.com/basho/riak_cs/pull/1115)
-
-* [riak_cs/#1129](https://github.com/basho/riak_cs/issues/1129) - Fix bugs around subsequent space characters for Delete Multiple Objects API and user administration API with XML content. 
-  * [riak_cs/pull/1135](https://github.com/basho/riak_cs/pull/1135)
-
+* Fix config item `gc.interval` not working when `infinity` is set ([#1125](https://github.com/basho/riak_cs/issues/1125)/[PR#1126](https://github.com/basho/riak_cs/pull/1126)).
+* Add `log.access` switch to disable access logging ([#1109](https://github.com/basho/riak_cs/issues/1109)/[PR#1115](https://github.com/basho/riak_cs/pull/1115)).
+* Add missing riak-cs.conf items:` max_buckets_per_user` and `gc.batch_size` ([#1109](https://github.com/basho/riak_cs/issues/1109)/[PR#1115](https://github.com/basho/riak_cs/pull/1115)).
+* Fix bugs around subsequent space characters for Delete Multiple Objects API and user administration API with XML content ([#1129](https://github.com/basho/riak_cs/issues/1129)/[PR#1135](https://github.com/basho/riak_cs/pull/1135)).
 
 # Riak CS 2.0.0 Release Notes
 
