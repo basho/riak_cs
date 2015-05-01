@@ -534,9 +534,9 @@ check_data_files_are_small_enough(_Node, _Vsn, []) ->
     true;
 check_data_files_are_small_enough(Node, Vsn, [VnodeName|Rest]) ->
     DataFiles = bitcask_data_files(Node, Vsn, VnodeName, abs),
-    FileSizes = [begin
-                     {ok, #file_info{size=S}} = file:read_file_info(F),
-                     {F, S}
+    FileSizes = [case file:read_file_info(F) of
+                     {ok, #file_info{size=S}} -> {F, S};
+                     {error, enoent} -> {F, 0} % already deleted
                  end || F <- DataFiles],
     lager:debug("FileSizes (~p): ~p~n", [{Node, VnodeName}, FileSizes]),
     TotalSize = lists:sum([S || {_, S} <- FileSizes]),
