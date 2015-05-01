@@ -23,7 +23,7 @@
 -module(riak_cs_gc_key_list).
 
 %% API
--export([new/2, next/1]).
+-export([new/2, next/1, has_next/1]).
 
 -include("riak_cs_gc_d.hrl").
 
@@ -55,6 +55,12 @@ next(#gc_key_list_state{current_riak_client=RcPid,
     lager:debug("next Batch: ~p~n", [Batch]),
     {#gc_key_list_result{bag_id=BagId, batch=Batch},
      State#gc_key_list_state{continuation=UpdContinuation}}.
+
+-spec has_next(gc_key_list_state()) -> boolean().
+has_next(#gc_key_list_state{remaining_bags=[], continuation=undefined}) ->
+    true;
+has_next(_) ->
+    false.
 
 %% @doc Fetch next key list and returns it with updated state
 -spec next_pool(gc_key_list_state()) -> {gc_key_list_result(), gc_key_list_state()}.

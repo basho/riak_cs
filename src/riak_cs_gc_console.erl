@@ -78,19 +78,19 @@ resume(_Opts) ->
 %%%===================================================================
 
 start_batch(Options) ->
-    handle_batch_start(riak_cs_gc_d:manual_batch(Options)).
+    handle_batch_start(riak_cs_gc_manager:start_batch(Options)).
 
 get_status() ->
-    handle_status(riak_cs_gc_d:status()).
+    handle_status(riak_cs_gc_manager:status()).
 
 cancel_batch() ->
-    handle_batch_cancellation(riak_cs_gc_d:cancel_batch()).
+    handle_batch_cancellation(riak_cs_gc_manager:stop_batch()).
 
 pause() ->
-    handle_pause(riak_cs_gc_d:pause()).
+    handle_pause(riak_cs_gc_manager:pause_batch()).
 
 resume() ->
-    handle_resumption(riak_cs_gc_d:resume()).
+    handle_resumption(riak_cs_gc_manager:resume_batch()).
 
 set_interval(undefined) ->
     output("Error: No interval value specified"),
@@ -99,7 +99,7 @@ set_interval({'EXIT', _}) ->
     output("Error: Invalid interval specified."),
     error;
 set_interval(Interval) ->
-    case riak_cs_gc_d:set_interval(Interval) of
+    case riak_cs_gc_manager:set_interval(Interval) of
         ok ->
             output("The garbage collection interval was updated."),
             ok;

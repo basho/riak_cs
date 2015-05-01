@@ -46,6 +46,10 @@
 
 -include("riak_cs_gc_d.hrl").
 
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+-endif.
+
 -export([current_state/1]).
 
 -define(STATE, #gc_worker_state).
@@ -86,7 +90,8 @@ init([BagId, Keys]) ->
 %% handle messages from the outside world (like `status').
 fetching_next_fileset(continue, ?STATE{batch=[]}=State) ->
     %% finished with this batch
-    gen_fsm:send_event(?GC_D, {batch_complete, self(), State}),
+    %% gen_fsm:send_event(?GC_D, {batch_complete, self(), State}),
+    gen_fsm:send_all_state_event(?GC_D, {batch_complete, self(), State}),
     {stop, normal, State};
 fetching_next_fileset(continue, State=?STATE{batch=[FileSetKey | RestKeys],
                                              batch_skips=BatchSkips,
@@ -165,7 +170,8 @@ initiating_file_delete(_Msg, _From, State) ->
     {next_state, initiating_file_delete, State}.
 
 waiting_file_delete({Pid, DelFsmReply}, _From, State=?STATE{delete_fsm_pid=Pid}) ->
-    ok_reply(initiating_file_delete, handle_delete_fsm_reply(DelFsmReply, State));
+    Reply=handle_delete_fsm_reply(DelFsmReply, State),
+    ok_reply(initiating_file_delete, Reply);
 waiting_file_delete(_Msg, _From, State) ->
     {next_state, initiating_file_delete, State}.
 

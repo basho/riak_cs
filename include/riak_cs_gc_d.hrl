@@ -26,32 +26,19 @@
 -type index_result_keys() :: keys().
 
 -record(gc_d_state, {
-          interval :: 'infinity' | non_neg_integer(),
-          %% the last time a deletion was scheduled
-          last :: undefined | non_neg_integer(),
-          %% the next scheduled gc time
-          next :: undefined | non_neg_integer(),
           %% start of the current gc interval
           batch_start :: undefined | non_neg_integer(),
-          %% caller of manual_batch
-          %% Currently only used in `riak_cs_gc_single_run_eqc`.
-          batch_caller :: undefined | pid(),
           batch_count=0 :: non_neg_integer(),
           %% Count of filesets skipped in this batch
           batch_skips=0 :: non_neg_integer(),
           batch=[] :: undefined | [index_result_keys()], % `undefined' only for testing
           manif_count=0 :: non_neg_integer(),
           block_count=0 :: non_neg_integer(),
-          %% state of the fsm when a delete batch was paused
-          pause_state :: undefined | atom(),
           %% used when moving from paused -> idle
           interval_remaining :: undefined | non_neg_integer(),
-          timer_ref :: reference(),
-          initial_delay :: non_neg_integer(),
           leeway :: non_neg_integer(),
           worker_pids=[] :: [pid()],
           max_workers :: non_neg_integer(),
-          active_workers=0 :: non_neg_integer(),
           %% Used for paginated 2I querying of GC bucket
           key_list_state :: undefined | gc_key_list_state(),
           %% Options to use when start workers
@@ -106,3 +93,14 @@
 -define(DEFAULT_GC_BATCH_SIZE, 1000).
 -define(DEFAULT_GC_WORKERS, 2).
 -define(EPOCH_START, <<"0">>).
+
+-record(gc_manager_state, {
+          next :: undefined | non_neg_integer(),
+          gc_d_pid :: undefined | pid(),
+          batch_history = [] :: list(#gc_d_state{}),
+          current_batch :: undefined | #gc_d_state{},
+          interval = ?DEFAULT_GC_INTERVAL:: non_neg_integer() | infinity,
+          initial_delay :: non_neg_integer(),
+          timer_ref :: undefined | reference()
+         }).
+

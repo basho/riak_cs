@@ -64,12 +64,8 @@
 eqc_test_() ->
     {foreach,
      fun() ->
-             error_logger:tty(false),
-             error_logger:logfile({open, "riak_cs_gc_single_run_eqc.log"}),
-
              application:set_env(riak_cs, gc_batch_size, 7),
-             application:set_env(riak_cs, gc_interval, infinity),
-             application:set_env(riak_cs, gc_paginated_indexes, true),
+             meck:new(riak_cs_gc_manager, []),
 
              meck:new(riakc_pb_socket, [passthrough]),
              %% For riak_cs_gc_worker, it starts/stops pool worker directly.
@@ -86,10 +82,10 @@ eqc_test_() ->
      [
       {timeout, ?TESTING_TIME*2,
        ?_assert(quickcheck(eqc:testing_time(?TESTING_TIME,
-                                            ?QC_OUT(prop_gc_manual_batch(no_error)))))},
+                                            ?QC_OUT(prop_gc_batch(no_error)))))},
       {timeout, ?TESTING_TIME*2,
        ?_assert(quickcheck(eqc:testing_time(?TESTING_TIME,
-                                            ?QC_OUT(prop_gc_manual_batch(with_errors)))))}
+                                            ?QC_OUT(prop_gc_batch(with_errors)))))}
      ]}.
 
 %% EQC of single GC runs.
@@ -100,19 +96,25 @@ eqc_test_() ->
 %% 3. `riak_cs_gc_d' starts workers for each fileset key,
 %%    GET the fileset, spawns riak_cs_delete_fsm and DELETE fileset key at the end.
 %% 4. `riak_cs_gc_d' gathers workers' results and this test asserts them.
-prop_gc_manual_batch(ErrorOrNot) ->
-    ?FORALL(ListOfFilesetKeysInput, non_empty(list(fileset_keys_input(ErrorOrNot))),
+prop_gc_batch(ErrorOrNot) ->
+    ?FORALL(ListOfFilesetKeysInput,
+            non_empty(list(fileset_keys_input(ErrorOrNot))),
             begin
-                Res = gc_manual_batch(ListOfFilesetKeysInput),
+                Self = self(),
+                meck:expect(riak_cs_gc_manager, finished,
+                            fun(State) ->
+                                    Self ! {batch_finished, State}
+                            end),
+                Res = gc_batch(ListOfFilesetKeysInput),
                 {ExpectedBatchCount,
                  ExpectedBatchSkips,
                  ExpectedManifCount,
-                 ExpectedBlockCount} =
-                    expectations(ListOfFilesetKeysInput),
+                 ExpectedBlockCount} = expectations(ListOfFilesetKeysInput),
                 stop_and_wait_for_gc_d(),
                 ?WHENFAIL(
                    begin
-                       eqc:format("ListOfFilesetKeysInput: ~p", [ListOfFilesetKeysInput])
+                       eqc:format("ListOfFilesetKeysInput: ~p~n",
+                                  [ListOfFilesetKeysInput])
                    end,
                    conjunction([{batch_count, equals(ExpectedBatchCount, element(1, Res))},
                                 {batch_skips, equals(ExpectedBatchSkips, element(2, Res))},
@@ -136,14 +138,17 @@ wait_for_stop(Pid) ->
             ok
     end.
 
--spec gc_manual_batch([fileset_keys_input()]) -> eqc:property().
-gc_manual_batch(ListOfFilesetKeysInput) ->
+-spec gc_batch([fileset_keys_input()]) -> eqc:property().
+gc_batch(ListOfFilesetKeysInput) ->
     %% For `riak-cs-gc' 2i query, use a process to hold `ListOfFilesetKeysInput'.
+    %% ?debugVal(ListOfFilesetKeysInput),
     meck:expect(riakc_pb_socket, get_index_range,
                 dummy_get_index_range_fun(ListOfFilesetKeysInput)),
 
-    {ok, _} = riak_cs_gc_d:start_link(),
-    riak_cs_gc_d:manual_batch([]),
+    {ok, _} = riak_cs_gc_d:start_link(#gc_d_state{
+                                         batch_start=riak_cs_gc:timestamp(),
+                                         max_workers=5,
+                                         leeway=1}),
     receive
         {batch_finished, #gc_d_state{batch_count=BatchCount,
                                      batch_skips=BatchSkips,
