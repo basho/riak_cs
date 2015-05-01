@@ -164,6 +164,17 @@ class BasicTests(S3ApiVerificationTestBase):
         conn = self.make_connection(bad_user)
         self.assertRaises(S3ResponseError, conn.get_canonical_user_id)
 
+    def test_auth_weird_query_param(self):
+        bucket = self.conn.create_bucket(self.bucket_name)
+        query_args = 'foo=bar%20baz'
+        response = bucket.connection.make_request('GET', bucket.name, "notfound",
+                                                  query_args=query_args)
+        body = response.read()
+        boto.log.debug(body)
+        if response.status != 404:
+            raise bucket.connection.provider.storage_response_error(
+                response.status, response.reason, body)
+
     def test_create_bucket(self):
         self.conn.create_bucket(self.bucket_name)
         self.assertIn(self.bucket_name,
@@ -316,7 +327,6 @@ class MultiPartUploadTests(S3ApiVerificationTestBase):
         uploads = list(bucket.list_multipart_uploads())
         for u in uploads:
             self.assertEqual(u.key_name, key_name)
-
 
 def one_kb_string():
     "Return a 1KB string of all a's"
@@ -665,7 +675,8 @@ class ObjectMetadataTest(S3ApiVerificationTestBase):
         "Expires": "Tue, 19 Jan 2038 03:14:07 GMT",
         "mtime": "1364742057",
         "UID": "0",
-        "with-hypen": "1"}
+        "with-hypen": "1",
+        "space-in-value": "abc xyz"}
 
     updated_metadata = {
         "Content-Disposition": 'attachment; filename="newname.txt"',
@@ -673,6 +684,7 @@ class ObjectMetadataTest(S3ApiVerificationTestBase):
         "Expires": "Tue, 19 Jan 2038 03:14:07 GMT",
         "mtime": "2222222222",
         "uid": "0",
+        "space-in-value": "ABC XYZ",
         "new-entry": "NEW"}
 
     def test_normal_object_metadata(self):
@@ -708,12 +720,14 @@ class ObjectMetadataTest(S3ApiVerificationTestBase):
         self.assertEqual(key.get_metadata("mtime"), "1364742057")
         self.assertEqual(key.get_metadata("uid"), "0")
         self.assertEqual(key.get_metadata("with-hypen"), "1")
+        self.assertEqual(key.get_metadata("space-in-value"), "abc xyz")
         # x-amz-meta-* headers should be normalized to lowercase
         self.assertEqual(key.get_metadata("Mtime"), None)
         self.assertEqual(key.get_metadata("MTIME"), None)
         self.assertEqual(key.get_metadata("Uid"), None)
         self.assertEqual(key.get_metadata("UID"), None)
         self.assertEqual(key.get_metadata("With-Hypen"), None)
+        self.assertEqual(key.get_metadata("Space-In-Value"), None)
 
     def change_metadata(self, bucket, key_name):
         key = Key(bucket, key_name)
@@ -730,6 +744,7 @@ class ObjectMetadataTest(S3ApiVerificationTestBase):
                          'attachment; filename="newname.txt"')
         self.assertEqual(key.cache_control, "private")
         self.assertEqual(key.get_metadata("mtime"), "2222222222")
+        self.assertEqual(key.get_metadata("space-in-value"), "ABC XYZ")
         # removed
         self.assertEqual(key.content_encoding, None)
         self.assertEqual(key.get_metadata("with-hypen"), None)
