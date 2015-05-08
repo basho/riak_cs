@@ -20,11 +20,6 @@
 %%
 %% ---------------------------------------------------------------------
 
--module(offline_delete).
-
--compile(export_all).
--mode(compile).
-
 %% @doc This is an offline deletion script that'll directly opens
 %% bitcask files and reads some file where keys and partitions which
 %% should be deleted are written, and then delete them, without
@@ -33,19 +28,31 @@
 %% Note: make sure you remove AAE tree after this script was run, and
 %% turn off AAE on other nodes that's running on the cluster.
 
-main(["--dry-run", "--old-format", BitcaskDir, BlocksListFile]) ->
-    offline_delete(BitcaskDir, BlocksListFile, true, true);
-main(["--dry-run", BitcaskDir, BlocksListFile]) ->
-    offline_delete(BitcaskDir, BlocksListFile, true, false);
-main(["--old-format", BitcaskDir, BlocksListFile]) ->
-    offline_delete(BitcaskDir, BlocksListFile, false, true);
-main([BitcaskDir, BlocksListFile]) ->
-    offline_delete(BitcaskDir, BlocksListFile, false, false);
-main(_) ->
-    io:format(standard_error,
-              "options: [--dry-run] [--old-format] <BitcaskDir> <BlocksListFile>~n"
-              "\033[31m\033[1m[Caution] Make sure Riak is not running!!!\033[0m~n"
-              "It'd be better if all hinted handoff have been finished before stopping Riak.~n", []).
+-module(offline_delete).
+
+-compile(export_all).
+-mode(compile).
+
+options() ->
+    [{ring_size, $r, "ring-size", {integer, 64}, "Ring size"},
+     {old_format, $O, "old-format", {boolean, false},
+      "Use old (version 0) format for bkeys in bitcask"},
+     {dry_run, undefined, "dry-run", {boolean, false},
+      "if set, actual deletion does not happen"},
+     {yes, undefined, "yes", {boolean, false}, "Automatic yes to prompt"}].
+
+main(Args) ->
+    case getopt:parse(options(), Args) of
+        {ok, {Options, [BitcaskDir, BlocksListFile]}} ->
+            offline_delete(BitcaskDir, BlocksListFile, Options);
+        _Other ->
+            getopt:usage(options(), "offline_delete.erl",
+                         "<bitcask_dir> <blocks_list_file>"),
+            io:format(standard_error,
+                      "\033[31m\033[1m[Caution] Make sure Riak is not running!!!\033[0m~n"
+                      "It'd be better if all hinted handoff have been finished before stopping Riak.~n",
+                      [])
+    end.
 
 -spec open_all_bitcask(filename:filename()) ->
                               orddict:orddict(non_neg_integer(), reference()).
@@ -72,34 +79,45 @@ close_all_bitcask(Bitcasks) ->
 -define(VERSION_1, 1).
 -define(VERSION_BYTE, ?VERSION_1).
 
-make_sure(Dir) ->
+make_sure(Dir, AutomaticYes) ->
     io:format(standard_error,
               "\033[31m[Warning]\033\[0m~n"
               "Make sure any Riak process using '~s' is not running "
               "or your data may corrupt.~n", [filename:absname(Dir)]),
-    "y\n" = io:get_line("Accept the terms of conditions? [y/N] ").
+    case AutomaticYes of
+        true ->
+            io:format(standard_error, "Accept the terms of conditions? [y/N] y\n", []);
+        false ->
+            "y\n" = io:get_line("Accept the terms of conditions? [y/N] ")
+    end.
 
-offline_delete(BitcaskDir, BlocksListFile, DryRun, OldFormat) ->
-    make_sure(BitcaskDir),
+offline_delete(BitcaskDir, BlocksListFile, Options) ->
+    make_sure(BitcaskDir, proplists:get_value(yes, Options)),
     {ok, Fd} = file:open(BlocksListFile, [read]),
     BC = open_all_bitcask(BitcaskDir),
     io:format(standard_error, "~p bitcask directories at ~s opened.~n",
               [length(BC), BitcaskDir]),
-    BKVersion = case OldFormat of
+    BKVersion = case proplists:get_value(old_format, Options) of
                     false -> ?VERSION_1;
                     true -> 0
                 end,
     io:format(standard_error, "Using bitcask key version: ~p.~n",
               [BKVersion]),
-    {ok, Deleted} = for_each_line(Fd, BC, DryRun, 0, BKVersion),
+    RingSize = proplists:get_value(ring_size, Options),
+    DryRun = proplists:get_value(dry_run, Options),
+    {ok, Deleted} = for_each_line(Fd, BC, RingSize, DryRun, 0, BKVersion),
     %% io:format(standard_error, "~p~n", [BC]),
-    io:format(standard_error, "~p blocks at ~s was deleted"
-              " (dry run: ~p).~n",
-              [Deleted, BitcaskDir, DryRun]),
+    Verb = case DryRun of
+               true -> "scanned";
+               false -> "deleted"
+           end,
+    io:format(standard_error,
+              "~p blocks at ~s was ~s (dry run: ~p).~n",
+              [Deleted, BitcaskDir, Verb, DryRun]),
     close_all_bitcask(BC),
     ok = file:close(Fd).
 
-for_each_line(Fd, BC, DryRun, Count, BKVersion) ->
+for_each_line(Fd, BC, RingSize, DryRun, Count, BKVersion) ->
     case Count rem 1000 of
         500 ->
             io:format(standard_error,
@@ -111,18 +129,17 @@ for_each_line(Fd, BC, DryRun, Count, BKVersion) ->
     case file:read_line(Fd) of
         {ok, Line} ->
             Tokens = string:tokens(Line, "\t \n"),
-            [V1, V2, V3, B, K, _UUIDStr, _SeqNo] = Tokens,
+            [B, K | _Rest] = Tokens,
             Bucket = mochihex:to_bin(B),
             Key = mochihex:to_bin(K),
-            %% io:format("trying ~p~n", [{list_to_integer(V1),
-            %%                            list_to_integer(V2),
-            %%                            list_to_integer(V3),
-            %%                            UUIDStr,
-            %%                            list_to_integer(SeqNo)}]),
-            C0 = maybe_delete(BC, list_to_integer(V1), Bucket, Key, DryRun, BKVersion),
-            C1 = maybe_delete(BC, list_to_integer(V2), Bucket, Key, DryRun, BKVersion),
-            C2 = maybe_delete(BC, list_to_integer(V3), Bucket, Key, DryRun, BKVersion),
-            for_each_line(Fd, BC, DryRun, Count+C0+C1+C2, BKVersion);
+            [V1, V2, V3] = vnode_ids({Bucket, Key}, RingSize, 3),
+            %% io:format("trying ~p~n", [{V1, V2, V3,
+            %%                            _UUIDStr,
+            %%                            list_to_integer(_SeqNo)}]),
+            C0 = maybe_delete(BC, V1, Bucket, Key, DryRun, BKVersion),
+            C1 = maybe_delete(BC, V2, Bucket, Key, DryRun, BKVersion),
+            C2 = maybe_delete(BC, V3, Bucket, Key, DryRun, BKVersion),
+            for_each_line(Fd, BC, RingSize, DryRun, Count+C0+C1+C2, BKVersion);
         eof ->
             {ok, Count};
         {error, Reason} ->
@@ -144,7 +161,7 @@ maybe_delete(BC, Idx, Bucket, Key, DryRun, BKVersion) ->
                 ok ->
                     1;
                 Error ->
-                    io:format(standard_error, "error: ~p~n", [Error]),
+                    io:format(standard_error, "error: ~p ~n", [Error]),
                     0
             end;
         error ->
@@ -166,3 +183,28 @@ make_bk(1, Bucket, Key) ->
     BucketSz = size(Bucket),
     <<?VERSION_BYTE:7, 0:1, BucketSz:16/integer,
      Bucket/binary, Key/binary>>.
+
+-define(RINGTOP, trunc(math:pow(2,160)-1)).  % SHA-1 space
+
+%% (hash({B,K}) div Inc)
+
+vnode_id(BKey, RingSize) ->
+    <<HashKey:160/integer>> = key_of(BKey),
+    Inc = ?RINGTOP div RingSize,
+    %% io:format(standard_error, "RingSize ~p, RINGTOP ~p Inc ~p ~n", [RingSize, ?RINGTOP, Inc]),
+    PartitionId = ((HashKey div Inc) + 1) rem RingSize,
+    PartitionId * Inc.
+
+vnode_ids(BKey, RingSize, NVal) ->
+    <<HashKey:160/integer>> = key_of(BKey),
+    Inc = ?RINGTOP div RingSize,
+    %% io:format(standard_error, "RingSize ~p, RINGTOP ~p Inc ~p ~n", [RingSize, ?RINGTOP, Inc]),
+    PartitionId = ((HashKey div Inc) + 1) rem RingSize,
+    [((PartitionId+N) rem RingSize) * Inc  || N <- lists:seq(0, NVal-1)].
+
+%% From riak_core
+sha(Bin) ->
+    crypto:hash(sha, Bin).
+
+key_of(ObjectName) ->
+    sha(term_to_binary(ObjectName)).
