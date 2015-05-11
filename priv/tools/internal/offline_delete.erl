@@ -184,27 +184,8 @@ make_bk(1, Bucket, Key) ->
     <<?VERSION_BYTE:7, 0:1, BucketSz:16/integer,
      Bucket/binary, Key/binary>>.
 
--define(RINGTOP, trunc(math:pow(2,160)-1)).  % SHA-1 space
-
-%% (hash({B,K}) div Inc)
-
-vnode_id(BKey, RingSize) ->
-    <<HashKey:160/integer>> = key_of(BKey),
-    Inc = ?RINGTOP div RingSize,
-    %% io:format(standard_error, "RingSize ~p, RINGTOP ~p Inc ~p ~n", [RingSize, ?RINGTOP, Inc]),
-    PartitionId = ((HashKey div Inc) + 1) rem RingSize,
-    PartitionId * Inc.
-
 vnode_ids(BKey, RingSize, NVal) ->
-    <<HashKey:160/integer>> = key_of(BKey),
-    Inc = ?RINGTOP div RingSize,
-    %% io:format(standard_error, "RingSize ~p, RINGTOP ~p Inc ~p ~n", [RingSize, ?RINGTOP, Inc]),
+    <<HashKey:160/integer>> = chash:key_of(BKey),
+    Inc = chash:ring_increment(RingSize),
     PartitionId = ((HashKey div Inc) + 1) rem RingSize,
     [((PartitionId+N) rem RingSize) * Inc  || N <- lists:seq(0, NVal-1)].
-
-%% From riak_core
-sha(Bin) ->
-    crypto:hash(sha, Bin).
-
-key_of(ObjectName) ->
-    sha(term_to_binary(ObjectName)).
