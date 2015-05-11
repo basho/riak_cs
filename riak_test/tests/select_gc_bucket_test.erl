@@ -23,6 +23,7 @@
 %% @doc `riak_test' module for testing select_gc_bucket script
 
 -export([confirm/0]).
+
 -include_lib("eunit/include/eunit.hrl").
 
 -define(BUCKET, "rt-bucket").
@@ -45,8 +46,8 @@ confirm() ->
 confirm1() ->
     {UserConfig, {RiakNodes, CSNodes, Stanchion}} = rtcs:setup(1),
 
-    BlocksListFile = "/tmp/select_gc.txt",
-    os:cmd("rm -f " ++ BlocksListFile),
+    BlockKeysFile = "/tmp/select_gc.txt",
+    os:cmd("rm -f " ++ BlockKeysFile),
     rtcs:gc(1, "set-interval infinity"),
     rtcs:gc(1, "cancel"),
 
@@ -61,34 +62,11 @@ confirm1() ->
     timer:sleep(1000),
     Res1 = rtcs:exec_priv_escript(1, "internal/select_gc_bucket.erl",
                                   "-h 127.0.0.1 -p 10017 -e today "
-                                  "-o " ++ BlocksListFile),
+                                  "-o " ++ BlockKeysFile),
     lager:debug("select_gc_bucket.erl log:\n~s", [Res1]),
     lager:debug("select_gc_bucket.erl log:============= END"),
 
-    BlockKeys = block_keys(BlocksListFile),
-    lager:info("Assert all blocks still exist."),
-    [assert_block_exists(RiakNodes, ?BUCKET, BlockKey) ||
-        BlockKey <- BlockKeys],
-
-    lager:info("Stop nodes and execute offline_delete script..."),
-    NL0 = lists:zip(CSNodes, RiakNodes),
-    {CS1, R1} = hd(NL0),
-    NodeList = [{CS1, R1, Stanchion} | tl(NL0)],
-    rtcs:stop_all_nodes(NodeList, current),
-
-    Res2 = rtcs:exec_priv_escript(1, "internal/offline_delete.erl",
-                                  "-r 8 --yes " ++
-                                  rtcs:riak_bitcaskroot(rtcs:get_rt_config(riak, current), 1) ++
-                                  " " ++ BlocksListFile,
-                                  riak),
-
-    lager:debug("offline_delete.erl log:\n~s", [Res2]),
-    lager:debug("offline_delete.erl log:============= END"),
-    lager:info("Assert all blocks are non-existent now"),
-    rtcs:start_all_nodes(NodeList, current),
-    [assert_block_not_exists(RiakNodes, ?BUCKET, BlockKey) ||
-        BlockKey <- BlockKeys],
-    lager:info("All cleaned up!"),
+    tools_helper:offline_delete({RiakNodes, CSNodes, Stanchion}, [BlockKeysFile]),
     pass.
 
 upload_object(UserConfig, Bucket, normal, Key) ->
@@ -101,35 +79,6 @@ upload_object(UserConfig, Bucket, mp, Key) ->
 delete_object(UserConfig, Bucket, Key) ->
     ?assertEqual([{delete_marker, false}, {version_id, "null"}],
                  erlcloud_s3:delete_object(Bucket, Key, UserConfig)).
-
-block_keys(FileName) ->
-    {ok, Bin} = file:read_file(FileName),
-    Lines = binary:split(Bin, <<"\n">>, [global]),
-    [begin
-         [_BHex, _KHex, CsKey, UUIDHex, SeqStr] =
-             binary:split(L, [<<"\t">>, <<" ">>], [global]),
-         {CsKey,
-          mochihex:to_bin(binary_to_list(UUIDHex)),
-          list_to_integer(binary_to_list(SeqStr))}
-     end || L <- Lines, L =/= <<>>].
-
-assert_block_exists(RiakNodes, CsBucket, {CsKey, UUID, Seq}) ->
-    ok = case rc_helper:get_riakc_obj(RiakNodes, blocks, CsBucket, {CsKey, UUID, Seq}) of
-             {ok, _Obj} -> ok;
-             Other ->
-                 lager:error("block not found: ~p for ~p~n",
-                             [Other, {CsBucket, CsKey, UUID, Seq}]),
-                 {error, block_notfound}
-         end.
-
-assert_block_not_exists(RiakNodes, CsBucket, {CsKey, UUID, Seq}) ->
-    ok = case rc_helper:get_riakc_obj(RiakNodes, blocks,
-                                      CsBucket, {CsKey, UUID, Seq}) of
-             {error, notfound} -> ok;
-             {ok, _Obj} ->
-                 lager:error("block found: ~p", [{CsBucket, CsKey, UUID, Seq}]),
-                 {error, block_found}
-         end.
 
 mb(MegaBytes) ->
     MegaBytes * 1024 * 1024.
