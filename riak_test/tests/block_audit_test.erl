@@ -45,7 +45,7 @@ confirm() ->
     end.
 
 confirm1() ->
-    {UserConfig, {RiakNodes, _CSNodes, _Stanchion}} = rtcs:setup(1),
+    {UserConfig, {RiakNodes, CSNodes, Stanchion}} = rtcs:setup(1),
     ?assertEqual(ok, erlcloud_s3:create_bucket(?BUCKET1, UserConfig)),
     ?assertEqual(ok, erlcloud_s3:create_bucket(?BUCKET2, UserConfig)),
     FalseOrphans1 =
@@ -70,6 +70,10 @@ confirm1() ->
     lager:debug("ensure_orphan_blocks.erl log:============= END"),
     assert_result(?BUCKET1),
     assert_result(?BUCKET2),
+
+    BlockKeysFileList = [filename:join([Home, "actual-orphaned-blocks", B]) ||
+                        B <- [?BUCKET1, ?BUCKET2]],
+    tools_helper:offline_delete({RiakNodes, CSNodes, Stanchion}, BlockKeysFileList),
     pass.
 
 setup_objects(RiakNodes, UserConfig, Bucket, Type,
@@ -104,12 +108,13 @@ fake_false_orphans(RiakNodes, FalseOrphans) ->
 assert_result(Bucket) ->
     Home = rtcs:riakcs_home(rtcs:get_rt_config(cs, current), 1),
     OutFile1 = filename:join([Home, "actual-orphaned-blocks", Bucket]),
-    BucketBin = list_to_binary(Bucket),
     {ok, Bin} = file:read_file(OutFile1),
     KeySeqs = [begin
-                   [BucketBin, _UUID, Seq, K] =
-                       binary:split(Line, [<<$ >>], [global, trim]),
-                   {binary_to_list(K), list_to_integer(binary_to_list(Seq))}
+                   [_RiakBucketHex, _RiakKeyHex,
+                    _CSBucket, CSKeyHex, _UUIDHex, SeqStr] =
+                       binary:split(Line, [<<$\t>>], [global, trim]),
+                   {binary_to_list(mochihex:to_bin(binary_to_list(CSKeyHex))),
+                    list_to_integer(binary_to_list(SeqStr))}
                end || Line <- binary:split(Bin, [<<$\n>>], [global, trim])],
     ?assertEqual([?KEY_ORPHANED, ?KEY_ORPHANED_MP],
                  lists:sort(proplists:get_keys(KeySeqs))),

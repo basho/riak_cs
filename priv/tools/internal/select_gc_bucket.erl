@@ -29,7 +29,6 @@
 
 -record(state,
         {logger :: file:io_device(),
-         ring_size = 64 :: non_neg_integer(),
          threshold :: non_neg_integer() | undefined,
          keycount = 0 :: non_neg_integer(),
          manifestcount = 0 :: non_neg_integer(),
@@ -40,7 +39,6 @@
 options() ->
     [{host, $h, "host", {string, "localhost"}, "Address of Riak"},
      {port, $p, "port", {integer, 8087}, "Port number of Riak PB"},
-     {ring_size, $r, "ring-size", {integer, 64}, "Ring Size"},
      {threshold, $t, "threshold", {integer, 5*1024*1024}, "Threshold"},
      {start, $s, "start", {string, "19700101"}, "Start of the seek period"},
      {'end', $e, "end", {string, "yesterday"}, "End of the seek period"},
@@ -71,14 +69,13 @@ main(Args) ->
         {ok, {Options, _}} ->
             Host = pgv(host, Options),
             Port = pgv(port, Options),
-            RingSize = pgv(ring_size, Options),
             Threshold = pgv(threshold, Options),
             %% TODO: make this configurable, take leeway into account
             StartKey = maybe_date(pgv(start, Options)),
             EndKey = maybe_date(pgv('end', Options)),
             OutputFile = pgv(output, Options),
             Timeout = pgv(timeout, Options) * 1000,
-            State = #state{ring_size = RingSize, threshold = Threshold},
+            State = #state{threshold = Threshold},
             work(Host, Port, StartKey, EndKey, Timeout, OutputFile, State);
         _E ->
             getopt:usage(options(), "select_gc_bucket.erl")
@@ -149,23 +146,19 @@ handle_manifest({_UUID,
                 #state{threshold=Threshold} = _State)
   when ContentLength < Threshold ->
     {0, 0};
-handle_manifest({_UUID, ?MANIFEST{bkey=BKey={Bucket,_},
+handle_manifest({_UUID, ?MANIFEST{bkey=BKey={CSBucket, CSKey},
                                   uuid=UUID,
                                   content_length=ContentLength,
                                   state=pending_delete} = M},
-                _State = #state{ring_size=RingSize,
-                              logger=File}
-                              ) ->
+                _State = #state{logger=File}) ->
     io:format(standard_error, "~p (~p) ~p~n", [BKey, mochihex:to_hex(UUID), ContentLength]),
     BlockSequences = riak_cs_lfs_utils:block_sequences_for_manifest(M),
     Count = ordsets:fold(fun({UUID1, SeqNo}, Count0) ->
-                                 BK = {B,K} = full_bkey(Bucket, dummy, UUID1, SeqNo),
-                                 VNodes = [[integer_to_list(VNode), $\t]
-                                           || VNode <- vnode_ids(BK, RingSize, 3)],
-                                 %% Partitions, UUID, SeqNo
-                                 file:write(File, [VNodes,
-                                                   mochihex:to_hex(B), $\t,
+                                 {B,K} = full_bkey(CSBucket, dummy, UUID1, SeqNo),
+                                 file:write(File, [mochihex:to_hex(B), $\t,
                                                    mochihex:to_hex(K), $\t,
+                                                   CSBucket, $\t,
+                                                   mochihex:to_hex(CSKey), $\t,
                                                    mochihex:to_hex(UUID1), $\t,
                                                    integer_to_list(SeqNo), $\n]),
                                  Count0 + 1
@@ -177,28 +170,3 @@ full_bkey(Bucket, Key, UUID, BlockId) ->
     PrefixedBucket = riak_cs_utils:to_bucket_name(blocks, Bucket),
     FullKey = riak_cs_lfs_utils:block_name(Key, UUID, BlockId),
     {PrefixedBucket, FullKey}.
-
--define(RINGTOP, trunc(math:pow(2,160)-1)).  % SHA-1 space
-
-%% (hash({B,K}) div Inc)
-
-vnode_id(BKey, RingSize) ->
-    <<HashKey:160/integer>> = key_of(BKey),
-    Inc = ?RINGTOP div RingSize,
-    %% io:format(standard_error, "RingSize ~p, RINGTOP ~p Inc ~p ~n", [RingSize, ?RINGTOP, Inc]),
-    PartitionId = ((HashKey div Inc) + 1) rem RingSize,
-    PartitionId * Inc.
-
-vnode_ids(BKey, RingSize, NVal) ->
-    <<HashKey:160/integer>> = key_of(BKey),
-    Inc = ?RINGTOP div RingSize,
-    %% io:format(standard_error, "RingSize ~p, RINGTOP ~p Inc ~p ~n", [RingSize, ?RINGTOP, Inc]),
-    PartitionId = ((HashKey div Inc) + 1) rem RingSize,
-    [((PartitionId+N) rem RingSize) * Inc  || N <- lists:seq(0, NVal-1)].
-
-%% From riak_core
-sha(Bin) ->
-    crypto:hash(sha, Bin).
-
-key_of(ObjectName) ->
-    sha(term_to_binary(ObjectName)).

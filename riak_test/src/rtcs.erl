@@ -408,6 +408,12 @@ lager_config() ->
 riak_bitcaskroot(Prefix, N) ->
     io_lib:format("~s/dev/dev~b/data/bitcask", [Prefix, N]).
 
+riak_binpath(Prefix, N) ->
+    io_lib:format("~s/dev/dev~b/bin/riak", [Prefix, N]).
+
+riakcmd(Path, N, Cmd) ->
+    lists:flatten(io_lib:format("~s ~s", [riak_binpath(Path, N), Cmd])).
+
 riakcs_home(Prefix, N) ->
     io_lib:format("~s/dev/dev~b/", [Prefix, N]).
 
@@ -724,15 +730,24 @@ repair_gc_bucket(N, Options, Vsn) ->
     os:cmd(Cmd).
 
 exec_priv_escript(N, Command, Options) ->
-    exec_priv_escript(N, Command, Options, current).
+    exec_priv_escript(N, Command, Options, cs).
 
-exec_priv_escript(N, Command, Options, Vsn) ->
-    Prefix = get_rt_config(cs, Vsn),
-    ScriptWild = string:join([riakcs_libpath(Prefix, N), "riak_cs*",
+exec_priv_escript(N, Command, Options, ByWhom) ->
+    CsPrefix = get_rt_config(cs, current),
+    ExecuterPrefix = get_rt_config(ByWhom, current),
+    ScriptWild = string:join([riakcs_libpath(CsPrefix, N), "riak_cs*",
                               "priv/tools/"] , "/"),
     [ToolsDir] = filelib:wildcard(ScriptWild),
-    Cmd = riakcscmd(Prefix, N, "escript " ++ ToolsDir ++ "/" ++ Command ++
-                        " " ++ Options),
+    Cmd = case ByWhom of
+              cs ->
+                  riakcscmd(ExecuterPrefix, N, "escript " ++ ToolsDir ++
+                                "/" ++ Command ++
+                                " " ++ Options);
+              riak ->
+                  riakcmd(ExecuterPrefix, N, "escript " ++ ToolsDir ++
+                              "/" ++ Command ++
+                              " " ++ Options)
+          end,
     lager:info("Running ~p", [Cmd]),
     os:cmd(Cmd).
 
