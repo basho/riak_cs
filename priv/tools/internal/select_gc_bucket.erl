@@ -146,7 +146,7 @@ handle_manifest({_UUID,
                 #state{threshold=Threshold} = _State)
   when ContentLength < Threshold ->
     {0, 0};
-handle_manifest({_UUID, ?MANIFEST{bkey=BKey={Bucket, Key},
+handle_manifest({_UUID, ?MANIFEST{bkey=BKey={CSBucket, CSKey},
                                   uuid=UUID,
                                   content_length=ContentLength,
                                   state=pending_delete} = M},
@@ -154,11 +154,11 @@ handle_manifest({_UUID, ?MANIFEST{bkey=BKey={Bucket, Key},
     io:format(standard_error, "~p (~p) ~p~n", [BKey, mochihex:to_hex(UUID), ContentLength]),
     BlockSequences = riak_cs_lfs_utils:block_sequences_for_manifest(M),
     Count = ordsets:fold(fun({UUID1, SeqNo}, Count0) ->
-                                 {B,K} = full_bkey(Bucket, dummy, UUID1, SeqNo),
+                                 {B,K} = full_bkey(CSBucket, dummy, UUID1, SeqNo),
                                  file:write(File, [mochihex:to_hex(B), $\t,
                                                    mochihex:to_hex(K), $\t,
-                                                   Bucket, $\t,
-                                                   mochihex:to_hex(Key), $\t,
+                                                   CSBucket, $\t,
+                                                   mochihex:to_hex(CSKey), $\t,
                                                    mochihex:to_hex(UUID1), $\t,
                                                    integer_to_list(SeqNo), $\n]),
                                  Count0 + 1

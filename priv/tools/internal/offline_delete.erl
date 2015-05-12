@@ -86,7 +86,7 @@ make_sure(Dir, AutomaticYes) ->
               "or your data may corrupt.~n", [filename:absname(Dir)]),
     case AutomaticYes of
         true ->
-            io:format(standard_error, "Accept the terms of conditions? [y/N] y\n", []);
+            io:format(standard_error, "Accept the terms of conditions? [y/N] y~n", []);
         false ->
             "y\n" = io:get_line("Accept the terms of conditions? [y/N] ")
     end.
