@@ -254,6 +254,19 @@ confirm() ->
 
     Obj15 = erlcloud_s3:get_object(?TEST_BUCKET, "object_four", U1C2Config),
     ?assertEqual(Object4A, proplists:get_value(content,Obj15)),
+
+    lager:info("Disable proxy_get (not disconnect) "
+               "and enable realtime block replication"),
+    set_proxy_get(LeaderA, "disable", "B", ANodes, BNodes),
+    set_block_rt(RiakNodes),
+
+    Object6 = crypto:rand_bytes(4194304),
+    erlcloud_s3:put_object(?TEST_BUCKET, "object_six", Object6, U1C1Config),
+    timer:sleep(1000), % Sorry, but could you please wait for a while
+    lager:info("The object can be downloaded from sink cluster"),
+    Obj16 = erlcloud_s3:get_object(?TEST_BUCKET, "object_six", U1C2Config),
+    ?assertEqual(Object6, proplists:get_value(content, Obj16)),
+
     rtcs:pass().
 
 enable_pg(SourceLeader, SinkName, ANodes, BNodes, BPort) ->
@@ -279,3 +292,6 @@ set_proxy_get(SourceLeader, EnableOrDisable, SinkName, ANodes, BNodes) ->
     rt:wait_until_ring_converged(BNodes),
     ok.
 
+set_block_rt(RiakNodes) ->
+    rpc:multicall(RiakNodes, application, set_env,
+                  [riak_repl, replicate_cs_blocks_realtime, true]).
