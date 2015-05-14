@@ -202,14 +202,16 @@ handle_info({'EXIT', Pid, Reason}, _StateName,
         _ ->
             ok
     end,
-    {next_state, idle, State#gc_manager_state{gc_batch_pid=undefined}};
+    NextState = schedule_next(State#gc_manager_state{gc_batch_pid=undefined}),
+    {next_state, idle, NextState};
 handle_info({start, Options}, idle, State) ->
     case start_batch(State, Options) of
         {ok, NextState} ->
             {next_state, running, NextState};
         Error ->
             _ = lager:error("Cannot start batch. Reason: ~p", [Error]),
-            {next_state, idle, State}
+            NextState = schedule_next(State),
+            {next_state, idle, NextState}
     end;
 handle_info(Info, StateName, State) ->
     _ = lager:warning("Error detected at GC process (~p): ~p",
