@@ -22,7 +22,7 @@
 
 -module(riak_cs_gc).
 
--include("riak_cs_gc_d.hrl").
+-include("riak_cs_gc.hrl").
 -ifdef(TEST).
 -compile(export_all).
 -include_lib("eunit/include/eunit.hrl").

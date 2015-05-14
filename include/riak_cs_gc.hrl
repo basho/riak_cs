@@ -25,7 +25,7 @@
 %% The name is general so declare local type for readability.
 -type index_result_keys() :: keys().
 
--record(gc_d_state, {
+-record(gc_batch_state, {
           %% start of the current gc interval
           batch_start :: undefined | non_neg_integer(),
           batch_count=0 :: non_neg_integer(),
@@ -96,9 +96,9 @@
 
 -record(gc_manager_state, {
           next :: undefined | non_neg_integer(),
-          gc_d_pid :: undefined | pid(),
-          batch_history = [] :: list(#gc_d_state{}),
-          current_batch :: undefined | #gc_d_state{},
+          gc_batch_pid :: undefined | pid(),
+          batch_history = [] :: list(#gc_batch_state{}),
+          current_batch :: undefined | #gc_batch_state{},
           interval = ?DEFAULT_GC_INTERVAL:: non_neg_integer() | infinity,
           initial_delay :: non_neg_integer(),
           timer_ref :: undefined | reference()

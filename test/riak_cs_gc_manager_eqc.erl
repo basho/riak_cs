@@ -22,7 +22,7 @@
 
 -module(riak_cs_gc_manager_eqc).
 
--include("include/riak_cs_gc_d.hrl").
+-include("include/riak_cs_gc.hrl").
 
 -ifdef(EQC).
 -include_lib("eqc/include/eqc.hrl").
@@ -57,7 +57,7 @@
                  end,
                  PPP).
 
--define(STATE, #gc_d_state).
+-define(STATE, #gc_batch_state).
 -record(mc_state, {}).
 
 %%====================================================================
@@ -68,14 +68,10 @@ eqc_test_() ->
     {spawn,
      [{foreach,
        fun() ->
-               meck:new(riak_cs_gc_d, []),
-               meck:expect(riak_cs_gc_d, start_link,
+               meck:new(riak_cs_gc_batch, []),
+               meck:expect(riak_cs_gc_batch, start_link,
                            fun(_GCDState) -> {ok, mock_pid} end),
-               meck:expect(riak_cs_gc_d, stop, fun(_) -> error(from_meck) end),
-
-               meck:new(riak_cs_gc_manager, [passthrough]),
-               meck:expect(riak_cs_gc_manager, cancel_gc_d,
-                           fun(mock_pid) -> ok end)
+               meck:expect(riak_cs_gc_batch, stop, fun(_) -> error(from_meck) end)
        end,
        fun(_) ->
                meck:unload()
@@ -94,7 +90,7 @@ prop_set_interval() ->
     ?FORALL(Interval,
             oneof([?LET(Nat, nat(), Nat + 1), infinity]),
             begin
-                ok = application:set_env(riak_cs, initial_gc_de6lay, 0),
+                ok = application:set_env(riak_cs, initial_gc_delay, 0),
                 {ok, Pid} = riak_cs_gc_manager:test_link(),
                 try
                     {ok, {_, State1}} = riak_cs_gc_manager:status(),

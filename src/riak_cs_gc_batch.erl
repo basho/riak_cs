@@ -27,7 +27,7 @@
 %%                     ^                    |
 %%                     +--------------------+
 
--module(riak_cs_gc_d).
+-module(riak_cs_gc_batch).
 
 -behaviour(gen_fsm).
 
@@ -49,7 +49,7 @@
          terminate/3,
          code_change/4]).
 
--include("riak_cs_gc_d.hrl").
+-include("riak_cs_gc.hrl").
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -57,7 +57,7 @@
 -endif.
 
 -define(SERVER, ?MODULE).
--define(STATE, #gc_d_state).
+-define(STATE, #gc_batch_state).
 
 -define(GC_WORKER, riak_cs_gc_worker).
 

@@ -77,7 +77,7 @@ process_specs() ->
                permanent, 5000, worker, [riak_cs_storage_d]},
     GC = {riak_cs_gc_manager,
           {riak_cs_gc_manager, start_link, []},
-          permanent, 5000, worker, [riak_cs_gc_manager, riak_cs_gc_d]},
+          permanent, 5000, worker, [riak_cs_gc_manager]},
     Stats = {riak_cs_stats, {riak_cs_stats, start_link, []},
              permanent, 5000, worker, dynamic},
     DeleteFsmSup = {riak_cs_delete_fsm_sup,

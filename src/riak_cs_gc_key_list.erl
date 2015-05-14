@@ -25,7 +25,7 @@
 %% API
 -export([new/2, next/1, has_next/1]).
 
--include("riak_cs_gc_d.hrl").
+-include("riak_cs_gc.hrl").
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").

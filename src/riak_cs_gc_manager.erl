@@ -27,7 +27,7 @@
 %%
 %% Message excange chart (not a sequence, but just a list)
 %%
-%%  Message\  sdr/rcver  gc_manager    gc_d
+%%  Message\  sdr/rcver  gc_manager    gc_batch
 %%   spawn_link)                   --->
 %%   cancel)                       --->
 %%   finished)                     <---
@@ -58,12 +58,10 @@
 -export([idle/2, idle/3,
          running/2, running/3]).
 
--export([cancel_gc_d/1]).
-
 -type statename() :: idle | running.
 -export_type([statename/0]).
 
--include("riak_cs_gc_d.hrl").
+-include("riak_cs_gc.hrl").
 
 -define(SERVER, ?MODULE).
 
@@ -156,15 +154,15 @@ idle({start, Options}, _From, State) ->
                                  riak_cs_gc:leeway_seconds()),
 
     %% set many items to GCDState here
-    GCDState = #gc_d_state{
+    GCDState = #gc_batch_state{
                   batch_start=BatchStart,
                   leeway=Leeway,
                   max_workers=MaxWorkers},
 
-    case riak_cs_gc_d:start_link(GCDState) of
+    case riak_cs_gc_batch:start_link(GCDState) of
         {ok, Pid} ->
             {reply, ok, running,
-             State#gc_manager_state{gc_d_pid=Pid,
+             State#gc_manager_state{gc_batch_pid=Pid,
                                     current_batch=GCDState}};
         Error ->
             {reply, Error, idle, State}
@@ -172,16 +170,16 @@ idle({start, Options}, _From, State) ->
 idle(_, _From, State) ->
     {reply, {error, idle}, idle, State}.
 
-running(cancel, _From, State = #gc_manager_state{gc_d_pid=Pid}) ->
-    %% stop gc_d here
-    catch riak_cs_gc_d:stop(Pid),
+running(cancel, _From, State = #gc_manager_state{gc_batch_pid=Pid}) ->
+    %% stop gc_batch here
+    catch riak_cs_gc_batch:stop(Pid),
     NextState=schedule_next(State),
-    {reply, ok, idle, NextState#gc_manager_state{gc_d_pid=undefined}};
+    {reply, ok, idle, NextState#gc_manager_state{gc_batch_pid=undefined}};
 running({finished, Report}, _From, State = #gc_manager_state{batch_history=H}) ->
     %% Add report to history
     NextState=schedule_next(State),
     {reply, ok, idle,
-     NextState#gc_manager_state{gc_d_pid=undefined,
+     NextState#gc_manager_state{gc_batch_pid=undefined,
                                 batch_history=[Report|H]}};
 running(_Event, _From, State) ->
     Reply = {error, running},
@@ -194,25 +192,12 @@ handle_event(_Event, StateName, State) ->
 
 %% @private
 %% @doc
-handle_sync_event({set_interval, Initerval}, _From, StateName,
-                  #gc_manager_state{timer_ref=Ref} = State) ->
-    case Ref of
-        Ref when is_reference(Ref) ->
-            erlang:cancel_timer(Ref);
-        _ ->
-            ok
-    end,
+handle_sync_event({set_interval, Initerval}, _From, StateName, State) ->
     NewState0 = maybe_cancel_timer(State#gc_manager_state{interval=Initerval}),
     NewState = schedule_next(NewState0),
     {reply, ok, StateName, NewState};
-handle_sync_event(status, _From, StateName, #gc_manager_state{gc_d_pid=Pid} = State) ->
-    {_GCDStateName, GCDState} =
-        case Pid of
-            undefined -> {not_running, undefined};
-            mock_pid -> {not_running, undefined}; %% Only for unittest
-            Pid when is_pid(Pid) ->
-                riak_cs_gc_d:current_state(Pid)
-        end,
+handle_sync_event(status, _From, StateName, #gc_manager_state{gc_batch_pid=Pid} = State) ->
+    {_GCDStateName, GCDState} = maybe_current_state(Pid),
     NewState = State#gc_manager_state{current_batch=GCDState},
     {reply, {ok, {StateName, NewState}}, StateName, NewState};
 handle_sync_event(stop, _, _, State) ->
@@ -223,18 +208,18 @@ handle_sync_event(_Event, _From, StateName, State) ->
     {reply, Reply, StateName, State}.
 
 %% @private
-%% @doc Because process flag of trap_exit is true, gc_d
+%% @doc Because process flag of trap_exit is true, gc_batch
 %% failure will be delivered as a message.
 handle_info({'EXIT', _Pid, normal}, StateName, State) ->
-    {next_state, StateName, State#gc_manager_state{gc_d_pid=undefined}};
+    {next_state, StateName, State#gc_manager_state{gc_batch_pid=undefined}};
 handle_info(Info, StateName, State) ->
     _ = lager:warning("GC process error detected: ~p", [Info]),
     {next_state, StateName, State}.
 
 %% @private
 %% @doc
-terminate(_Reason, _StateName, _State = #gc_manager_state{gc_d_pid=Pid}) ->
-    catch riak_cs_gc_d:stop(Pid),
+terminate(_Reason, _StateName, _State = #gc_manager_state{gc_batch_pid=Pid}) ->
+    catch riak_cs_gc_batch:stop(Pid),
     ok.
 
 %% @private
@@ -246,15 +231,18 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
-%% @doc Cancel the garbage collection currently in progress.  Returns `ok' if
-%% a batch was canceled, or `{error, no_batch}' if there was no batch
-%% in progress.
-cancel_gc_d(Pid) ->
-    riak_cs_gc_d:stop(Pid).
+-ifdef(TEST).
+maybe_current_state(undefined) -> {not_running, undefined};
+maybe_current_state(mock_pid) -> {not_running, undefined}.
+-else.
+maybe_current_state(undefined) -> {not_running, undefined};
+maybe_current_state(Pid) when is_pid(Pid) ->
+    riak_cs_gc_batch:current_state(Pid).
+-endif.
 
 maybe_cancel_timer(#gc_manager_state{timer_ref=Ref}=State)
   when is_reference(Ref) ->
-    erlang:cancel_timer(Ref),
+    _ = erlang:cancel_timer(Ref),
     State#gc_manager_state{timer_ref=undefined,
                            next=undefined};
 maybe_cancel_timer(State) ->
@@ -284,17 +272,14 @@ schedule_next(#gc_manager_state{interval=Interval}=State) ->
                            timer_ref=TimerRef}.
 
 
-translate(gc_d_pid, _) -> [];
+translate(gc_batch_pid, _) -> [];
 translate(batch_history, []) -> [];
 translate(batch_history, [H|_]) ->
-    #gc_d_state{batch_start = Last} = H,
+    #gc_batch_state{batch_start = Last} = H,
     [{last, Last}];
 translate(current_batch, undefined) -> [];
 translate(current_batch, GCDState) ->
-    riak_cs_gc_d:status_data(GCDState);
+    riak_cs_gc_batch:status_data(GCDState);
 translate(initial_delay, _) -> [];
 translate(timer_ref, _) -> [];
 translate(T, V) -> {T, V}.
-
-
-

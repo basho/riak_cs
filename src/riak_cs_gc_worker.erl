@@ -44,7 +44,7 @@
          terminate/3,
          code_change/4]).
 
--include("riak_cs_gc_d.hrl").
+-include("riak_cs_gc.hrl").
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -53,7 +53,7 @@
 -export([current_state/1]).
 
 -define(STATE, #gc_worker_state).
--define(GC_D, riak_cs_gc_d).
+-define(GC_D, riak_cs_gc_batch).
 
 %%%===================================================================
 %%% API
