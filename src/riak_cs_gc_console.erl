@@ -124,9 +124,6 @@ set_leeway(Leeway) ->
 handle_batch_start(ok) ->
     output("Garbage collection batch started."),
     ok;
-handle_batch_start({error, no_data_to_collect}) ->
-    output("Batch didn't start: No data to collect."),
-    ok;
 handle_batch_start({error, running}) ->
     output("The garbage collection daemon is already running."),
     error.

@@ -29,6 +29,7 @@
 %%
 %%  Message\  sdr/rcver  gc_manager    gc_batch
 %%   spawn_link)                   --->
+%%   start)                        --->
 %%   cancel)                       --->
 %%   finished)                     <---
 %%
@@ -145,25 +146,9 @@ running(_Event, State) ->
 %% @private
 %% @doc
 idle({start, Options}, _From, State) ->
-    MaxWorkers =  riak_cs_gc:gc_max_workers(),
-    %% StartKey = proplists:get_value(start, Options,
-    %%                                riak_cs_gc:epoch_start()),
-    BatchStart = riak_cs_gc:timestamp(),
-    %% EndKey = proplists:get_value('end', Options, BatchStart),
-    Leeway = proplists:get_value(leeway, Options,
-                                 riak_cs_gc:leeway_seconds()),
-
-    %% set many items to GCDState here
-    GCDState = #gc_batch_state{
-                  batch_start=BatchStart,
-                  leeway=Leeway,
-                  max_workers=MaxWorkers},
-
-    case riak_cs_gc_batch:start_link(GCDState) of
-        {ok, Pid} ->
-            {reply, ok, running,
-             State#gc_manager_state{gc_batch_pid=Pid,
-                                    current_batch=GCDState}};
+    case start_batch(State, Options) of
+        {ok, NextState} ->
+            {reply, ok, running, NextState};
         Error ->
             {reply, Error, idle, State}
     end;
@@ -173,14 +158,13 @@ idle(_, _From, State) ->
 running(cancel, _From, State = #gc_manager_state{gc_batch_pid=Pid}) ->
     %% stop gc_batch here
     catch riak_cs_gc_batch:stop(Pid),
-    NextState=schedule_next(State),
+    NextState = schedule_next(State),
     {reply, ok, idle, NextState#gc_manager_state{gc_batch_pid=undefined}};
-running({finished, Report}, _From, State = #gc_manager_state{batch_history=H}) ->
+running({finished, Report}, _From, State) ->
     %% Add report to history
     NextState=schedule_next(State),
     {reply, ok, idle,
-     NextState#gc_manager_state{gc_batch_pid=undefined,
-                                batch_history=[Report|H]}};
+     NextState#gc_manager_state{batch_history=Report}};
 running(_Event, _From, State) ->
     Reply = {error, running},
     {reply, Reply, running, State}.
@@ -210,10 +194,28 @@ handle_sync_event(_Event, _From, StateName, State) ->
 %% @private
 %% @doc Because process flag of trap_exit is true, gc_batch
 %% failure will be delivered as a message.
-handle_info({'EXIT', _Pid, normal}, StateName, State) ->
-    {next_state, StateName, State#gc_manager_state{gc_batch_pid=undefined}};
+handle_info({'EXIT', Pid, Reason}, _StateName,
+            #gc_manager_state{gc_batch_pid=Pid} = State) ->
+    case Reason of
+        Reason when Reason =/= normal andalso Reason =/= cancel ->
+            _ = lager:warning("GC batch has terminated for reason: ~p", [Reason]);
+        _ ->
+            ok
+    end,
+    {next_state, idle, State#gc_manager_state{gc_batch_pid=undefined}};
+handle_info({start, Options}, idle, State) ->
+    case start_batch(State, Options) of
+        {ok, NextState} ->
+            {next_state, running, NextState};
+        Error ->
+            _ = lager:error("Cannot start batch. Reason: ~p", [Error]),
+            {next_state, idle, State}
+    end;
 handle_info(Info, StateName, State) ->
-    _ = lager:warning("GC process error detected: ~p", [Info]),
+    _ = lager:warning("Error detected at GC process (~p): ~p",
+                      [StateName, Info]),
+    _ = lager:warning("Error detected at GC process (~p): ~p",
+                      [StateName, State]),
     {next_state, StateName, State}.
 
 %% @private
@@ -230,6 +232,35 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
+
+-spec start_batch(#gc_manager_state{}, proplists:proplist()) ->
+                         {ok, #gc_manager_state{}} |
+                         {error, term()}.
+start_batch(State, Options) ->
+    MaxWorkers =  riak_cs_gc:gc_max_workers(),
+    %% StartKey = proplists:get_value(start, Options,
+    %%                                riak_cs_gc:epoch_start()),
+    BatchStart = riak_cs_gc:timestamp(),
+    %% EndKey = proplists:get_value('end', Options, BatchStart),
+    Leeway = proplists:get_value(leeway, Options,
+                                 riak_cs_gc:leeway_seconds()),
+
+    %% set many items to GCDState here
+    GCDState = #gc_batch_state{
+                  batch_start=BatchStart,
+                  leeway=Leeway,
+                  max_workers=MaxWorkers},
+
+    case riak_cs_gc_batch:start_link(GCDState) of
+        {ok, Pid} ->
+            _ = lager:info("Starting garbage collection in ~p: "
+                           "leeway=~p, batch_start=~p, max_workers=~p",
+                           [Pid, Leeway, BatchStart, MaxWorkers]),
+            {ok, State#gc_manager_state{gc_batch_pid=Pid,
+                                        current_batch=GCDState}};
+        Error ->
+            Error
+    end.
 
 -ifdef(TEST).
 maybe_current_state(undefined) -> {not_running, undefined};
@@ -271,11 +302,12 @@ schedule_next(#gc_manager_state{interval=Interval}=State) ->
     State#gc_manager_state{next=RevisedNext,
                            timer_ref=TimerRef}.
 
-
 translate(gc_batch_pid, _) -> [];
 translate(batch_history, []) -> [];
 translate(batch_history, [H|_]) ->
     #gc_batch_state{batch_start = Last} = H,
+    [{last, Last}];
+translate(batch_history, #gc_batch_state{batch_start = Last}) ->
     [{last, Last}];
 translate(current_batch, undefined) -> [];
 translate(current_batch, GCDState) ->

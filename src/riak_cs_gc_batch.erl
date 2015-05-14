@@ -89,18 +89,21 @@ init([State]) ->
 has_batch_finished(?STATE{worker_pids=[],
                           batch=[],
                           key_list_state=KeyListState} = _State) ->
-    riak_cs_gc_key_list:has_next(KeyListState);
+    case KeyListState of
+        undefined -> true;
+        _ -> not riak_cs_gc_key_list:has_next(KeyListState)
+    end;
 has_batch_finished(_) ->
     false.
 
 %% Asynchronous events
 
 prepare(timeout, State) ->
-    State1 = maybe_fetch_first_key(State),
+    State1 = fetch_first_keys(State),
     NextState = maybe_start_workers(State1),
     case has_batch_finished(NextState) of
         true ->
-            {stop, normal, State};
+            {stop, normal, NextState};
         _ ->
             {next_state, waiting_for_workers, NextState}
     end.
@@ -129,7 +132,8 @@ handle_event({batch_complete, WorkerPid, WorkerState}, StateName, State0) ->
         {true, _} ->
             {stop, normal, State};
         {false, waiting_for_workers} ->
-            try_next_batch(State)
+            State2 = maybe_start_workers(State),
+            {next_state, waiting_for_workers, State2}
     end;
 handle_event(_Event, StateName, State) ->
     {next_state, StateName, State}.
@@ -170,8 +174,8 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
-maybe_fetch_first_key(?STATE{batch_start=BatchStart,
-                             leeway=Leeway} = State) ->
+fetch_first_keys(?STATE{batch_start=BatchStart,
+                        leeway=Leeway} = State) ->
 
     %% [Fetch the first set of manifests for deletion]
     %% this does not check out a worker from the riak connection pool;
@@ -189,17 +193,6 @@ maybe_fetch_first_key(?STATE{batch_start=BatchStart,
                 key_list_state=KeyListState,
                 bag_id=BagId}.
 
-maybe_fetch_next_keys(?STATE{key_list_state=undefined} = State) ->
-    State;
-maybe_fetch_next_keys(?STATE{key_list_state=KeyListState} = State) ->
-    %% Fetch the next set of manifests for deletion
-    {KeyListRes, UpdKeyListState} = riak_cs_gc_key_list:next(KeyListState),
-    #gc_key_list_result{bag_id=BagId, batch=Batch} = KeyListRes,
-    _ = lager:debug("Next batch keys: ~p", [Batch]),
-    State?STATE{batch=Batch,
-                key_list_state=UpdKeyListState,
-                bag_id=BagId}.
-
 %% @doc Handle a `batch_complete' event from a GC worker process.
 -spec handle_batch_complete(pid(), #gc_worker_state{}, ?STATE{}) -> ?STATE{}.
 handle_batch_complete(WorkerPid, WorkerState, State) ->
@@ -213,6 +206,7 @@ handle_batch_complete(WorkerPid, WorkerState, State) ->
                      batch_skips=WorkerBatchSkips,
                      manif_count=WorkerManifestCount,
                      block_count=WorkerBlockCount} = WorkerState,
+    _ = lager:debug("~p completed (~p)", [WorkerPid, WorkerState]),
     UpdWorkerPids = lists:delete(WorkerPid, WorkerPids),
     %% @TODO Workout the terminiology for these stats. i.e. Is batch
     %% count just an increment or represenative of something else.
@@ -226,16 +220,17 @@ handle_batch_complete(WorkerPid, WorkerState, State) ->
 %% @doc Start a GC worker and return the apprpriate next state and
 %% updated state record.
 -spec start_worker(?STATE{}) -> ?STATE{}.
-start_worker(State=?STATE{batch=[NextBatch | RestBatches],
-                          bag_id=BagId,
-                          worker_pids=WorkerPids}) ->
-     case ?GC_WORKER:start_link(BagId, NextBatch) of
-         {ok, Pid} ->
-             State?STATE{batch=RestBatches,
-                         worker_pids=[Pid | WorkerPids]};
-         {error, _Reason} ->
-             State
-     end.
+start_worker(?STATE{batch=[NextBatch|RestBatches],
+                    bag_id=BagId,
+                    worker_pids=WorkerPids} = State) ->
+    case ?GC_WORKER:start_link(BagId, NextBatch) of
+        {ok, Pid} ->
+            _ = lager:debug("GC worker ~p for bag ~p has started", [Pid, BagId]),
+            State?STATE{batch=RestBatches,
+                        worker_pids=[Pid | WorkerPids]};
+        {error, _Reason} ->
+            State
+    end.
 
 %% @doc Cancel the current batch of files set for garbage collection.
 -spec cancel_batch(?STATE{}) -> any().
@@ -250,42 +245,43 @@ cancel_batch(?STATE{batch_start=BatchStart,
 ok_reply(NextState, NextStateData) ->
     {reply, ok, NextState, NextStateData}.
 
-try_next_batch(?STATE{batch=Batch} = State) ->
-    State2 = case Batch of
-                 [] ->
-                     maybe_fetch_next_keys(State);
-                 _ ->
-                     State
-             end,
-    case has_batch_finished(State2) of
-        true ->
-            {stop, normal, State2};
-        _ ->
-            %%?debugHere,
-            State3 =  maybe_start_workers(State2),
-            {next_state, waiting_for_workers, State3}
-    end.
-
 maybe_start_workers(?STATE{max_workers=MaxWorkers,
                            worker_pids=WorkerPids} = State)
   when MaxWorkers =:= length(WorkerPids) ->
     State;
 maybe_start_workers(?STATE{max_workers=MaxWorkers,
                            worker_pids=WorkerPids,
+                           key_list_state=undefined,
+                           batch=[]} = State)
+  when MaxWorkers > length(WorkerPids) ->
+    State;
+maybe_start_workers(?STATE{max_workers=MaxWorkers,
+                           worker_pids=WorkerPids,
+                           key_list_state=KeyListState,
+                           batch=[]} = State)
+  when MaxWorkers > length(WorkerPids) ->
+    %% Fetch the next set of manifests for deletion
+    {KeyListRes, UpdKeyListState} = riak_cs_gc_key_list:next(KeyListState),
+    #gc_key_list_result{bag_id=BagId, batch=Batch} = KeyListRes,
+    _ = lager:debug("Next batch keys: ~p", [Batch]),
+    State2 = State?STATE{batch=Batch,
+                         key_list_state=UpdKeyListState,
+                         bag_id=BagId},
+    case UpdKeyListState of
+        undefined -> State2;
+        _ ->         maybe_start_workers(State2)
+    end;
+maybe_start_workers(?STATE{max_workers=MaxWorkers,
+                           worker_pids=WorkerPids,
                            batch=Batch} = State)
   when MaxWorkers > length(WorkerPids) ->
-    case Batch of
-        [] ->
-            State;
-        _ ->
-            NewState2 = start_worker(State),
-            maybe_start_workers(NewState2)
-    end.
+    _ = lager:debug("Batch: ~p", [Batch, WorkerPids]),
+    State2 = start_worker(State),
+    maybe_start_workers(State2).
 
 -spec status_data(?STATE{}) -> [{atom(), term()}].
 status_data(State) ->
-    [{leeway, riak_cs_gc:leeway_seconds()},
-     {current, State?STATE.batch_start},
+    [{current, State?STATE.batch_start},
      {elapsed, elapsed(State?STATE.batch_start)},
      {files_deleted, State?STATE.batch_count},
      {files_skipped, State?STATE.batch_skips},
