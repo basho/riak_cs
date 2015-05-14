@@ -23,8 +23,6 @@
 %%
 %% Simpler State Diagram
 %%
-%%                     +----(pause)---> paused 
-%%                     v
 %%     init -> waiting_for_workers --(batch_complete)--> stop
 %%                     ^                    |
 %%                     +--------------------+
@@ -35,14 +33,16 @@
 
 %% API
 -export([start_link/1,
+         current_state/1,
+         status_data/1,
          stop/1]).
 
 %% gen_fsm callbacks
 -export([init/1,
+         prepare/2,
+         prepare/3,
          waiting_for_workers/2,
          waiting_for_workers/3,
-         paused/2,
-         paused/3,
          handle_event/3,
          handle_sync_event/4,
          handle_info/3,
@@ -67,7 +67,10 @@
 
 %% @doc Start the garbage collection server
 start_link(Options) ->
-    gen_fsm:start_link({local, ?SERVER}, ?MODULE, [Options], [{debug,[trace,log]}]).
+    gen_fsm:start_link({local, ?SERVER}, ?MODULE, [Options], []).
+
+current_state(Pid) ->
+    gen_fsm:sync_send_all_state_event(Pid, current_state, infinity).
 
 %% @doc Stop the daemon
 -spec stop(pid()) -> ok | {error, term()}.
@@ -81,14 +84,7 @@ stop(Pid) ->
 %% @doc Read the storage schedule and go to idle.
 
 init([State]) ->
-    State1 = maybe_fetch_first_key(State),
-    NextState = maybe_start_workers(State1),
-    case has_batch_finished(NextState) of
-        true ->
-            {stop, normal, NextState};
-        _ ->
-            {ok, waiting_for_workers, NextState}
-    end.
+    {ok, prepare, State, 0}.
 
 has_batch_finished(?STATE{worker_pids=[],
                           batch=[],
@@ -99,29 +95,30 @@ has_batch_finished(_) ->
 
 %% Asynchronous events
 
+prepare(timeout, State) ->
+    State1 = maybe_fetch_first_key(State),
+    NextState = maybe_start_workers(State1),
+    case has_batch_finished(NextState) of
+        true ->
+            {stop, normal, State};
+        _ ->
+            {next_state, waiting_for_workers, NextState}
+    end.
+
 %% @doc This state initiates the deletion of a file from
 %% a set of manifests stored for a particular key in the
 %% garbage collection bucket.
 waiting_for_workers(_Msg, State) ->
     {next_state, waiting_for_workers, State}.
-paused(_Msg, State) ->
-    {next_state, paused, State}.
 
 %% Synchronous events
 
-waiting_for_workers(pause, _From, State) ->
-    _ = lager:info("Pausing garbage collection"),
-    ok_reply(paused, State);
+%% Some race condition?
+prepare(_, _, State) ->
+    {reply, {error, preparing}, prepare, State, 0}.
+
 waiting_for_workers(_Msg, _From, State) ->
     {reply, ok, waiting_for_workers, State}.
-
-paused(resume, _From, State) ->
-    case has_batch_finished(State) of
-        true -> {stop, normal, State};
-        false -> try_next_batch(State)
-    end;
-paused(_Msg, _From, State) ->
-    {reply, ok, paused, State}.
 
 %% @doc there are no all-state events for this fsm
 handle_event({batch_complete, WorkerPid, WorkerState}, StateName, State0) ->
@@ -131,8 +128,6 @@ handle_event({batch_complete, WorkerPid, WorkerState}, StateName, State0) ->
     case {has_batch_finished(State), StateName} of
         {true, _} ->
             {stop, normal, State};
-        {false, paused} ->
-            {next_state, paused, State};
         {false, waiting_for_workers} ->
             try_next_batch(State)
     end;
@@ -286,6 +281,18 @@ maybe_start_workers(?STATE{max_workers=MaxWorkers,
             NewState2 = start_worker(State),
             maybe_start_workers(NewState2)
     end.
+
+-spec status_data(?STATE{}) -> [{atom(), term()}].
+status_data(State) ->
+    [{leeway, riak_cs_gc:leeway_seconds()},
+     {current, State?STATE.batch_start},
+     {elapsed, elapsed(State?STATE.batch_start)},
+     {files_deleted, State?STATE.batch_count},
+     {files_skipped, State?STATE.batch_skips},
+     {files_left, if is_list(State?STATE.batch) -> length(State?STATE.batch);
+                     true                       -> 0
+                  end}].
+
 
 %% ===================================================================
 %% Test API and tests

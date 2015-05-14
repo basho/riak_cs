@@ -20,21 +20,16 @@
 %%
 %% State Diagram
 %%
-%%            +-(resume)-paused_finished < --(finish)
-%%            v                                  |
-%% start -> idle -(start)-> running -(pause)-> paused
-%%            ^               | ^                |
-%%            +----(finish)---+ |                |
-%%            +----(stop)-----+ +----(resume)----+
-%%            +-------------(stop)---------------+
+%% start -> idle -(start)-> running
+%%            ^               |
+%%            +----(finish)---+
+%%            +----(stop)-----+
 %%
 %% Message excange chart (not a sequence, but just a list)
 %%
 %%  Message\  sdr/rcver  gc_manager    gc_d
 %%   spawn_link)                   --->
-%%   pause)                        --->
 %%   cancel)                       --->
-%%   resume)                       --->
 %%   finished)                     <---
 %%
 -module(riak_cs_gc_manager).
@@ -43,11 +38,10 @@
 
 %% Console API
 -export([start_batch/1,
-         stop_batch/0,
-         pause_batch/0,
-         resume_batch/0,
+         cancel_batch/0,
          set_interval/1,
-         status/0]).
+         status/0,
+         pp_status/0]).
 
 %% FSM API
 -export([start_link/0, finished/1]).
@@ -62,11 +56,12 @@
          handle_sync_event/4, handle_info/3, terminate/3, code_change/4]).
 
 -export([idle/2, idle/3,
-         running/2, running/3,
-         paused/2, paused/3,
-         paused_finished/2, paused_finished/3]).
+         running/2, running/3]).
 
--export([pause_gc_d/1, cancel_gc_d/1, resume_gc_d/1]).
+-export([cancel_gc_d/1]).
+
+-type statename() :: idle | running.
+-export_type([statename/0]).
 
 -include("riak_cs_gc_d.hrl").
 
@@ -79,17 +74,23 @@
 start_batch(Options) ->
     gen_fsm:sync_send_event(?SERVER, {start, Options}, infinity).
 
-stop_batch() ->
-    gen_fsm:sync_send_event(?SERVER, stop, infinity).
+cancel_batch() ->
+    gen_fsm:sync_send_event(?SERVER, cancel, infinity).
 
-pause_batch() ->
-    gen_fsm:sync_send_event(?SERVER, pause, infinity).
-
-resume_batch() ->
-    gen_fsm:sync_send_event(?SERVER, resume, infinity).
-
+-spec status() -> {ok, {statename(), #gc_manager_state{}}}.
 status() ->
     gen_fsm:sync_send_all_state_event(?SERVER, status, infinity).
+
+-spec pp_status() -> {ok, {statename(), proplists:proplist()}}.
+pp_status() ->
+    {ok, {StateName, State}} = status(),
+    D = lists:zip(record_info(fields, gc_manager_state),
+                  tl(tuple_to_list(State))),
+    Details = lists:flatten(lists:map(fun({Type, Value}) ->
+                                              translate(Type, Value)
+                                      end, D)),
+    {ok, {StateName,
+          [{leeway, riak_cs_gc:leeway_seconds()}] ++ Details}}.
 
 %% @doc Adjust the interval at which the daemon attempts to perform
 %% a garbage collection sweep. Setting the interval to a value of
@@ -99,7 +100,6 @@ status() ->
 set_interval(Interval) when is_integer(Interval)
                             orelse Interval =:= infinity ->
     gen_fsm:sync_send_all_state_event(?SERVER, {set_interval, Interval}, infinity).
-
 
 start_link() ->
     gen_fsm:start_link({local, ?SERVER}, ?MODULE, [], []).
@@ -119,14 +119,20 @@ finished(Report) ->
 %%%===================================================================
 
 init([]) ->
+    process_flag(trap_exit, true),
     InitialDelay = riak_cs_gc:initial_gc_delay(),
-    _ = case riak_cs_gc:gc_interval() of
-            infinity ->
-                ok;
-            Leeway when is_integer(Leeway) ->
-                _TimerRef = erlang:send_after(InitialDelay * 1000, self(), {start, []})
+    State = case riak_cs_gc:gc_interval() of
+                infinity ->
+                    #gc_manager_state{};
+                Interval when is_integer(Interval) ->
+                    Next = riak_cs_gc:timestamp() + InitialDelay,
+                    TimerRef = erlang:send_after(InitialDelay * 1000, self(), {start, []}),
+                    #gc_manager_state{next=Next,
+                                      interval=Interval,
+                                      initial_delay=InitialDelay,
+                                      timer_ref=TimerRef}
         end,
-    {ok, idle, #gc_manager_state{}};
+    {ok, idle, State};
 init([testing]) ->
     {ok, idle, #gc_manager_state{}}.
 
@@ -137,10 +143,6 @@ idle(_Event, State) ->
     {next_state, idle, State}.
 running(_Event, State) ->
     {next_state, running, State}.
-paused_finished(_Event, State) ->
-    {next_state, paused_finished, State}.
-paused(_Event, State) ->
-    {next_state, paused, State}.
 
 %% @private
 %% @doc
@@ -152,7 +154,7 @@ idle({start, Options}, _From, State) ->
     %% EndKey = proplists:get_value('end', Options, BatchStart),
     Leeway = proplists:get_value(leeway, Options,
                                  riak_cs_gc:leeway_seconds()),
-                                 
+
     %% set many items to GCDState here
     GCDState = #gc_d_state{
                   batch_start=BatchStart,
@@ -170,15 +172,7 @@ idle({start, Options}, _From, State) ->
 idle(_, _From, State) ->
     {reply, {error, idle}, idle, State}.
 
-running(pause, _From, State = #gc_manager_state{gc_d_pid=Pid}) ->
-    %% Fully qualified call here to mock in tests
-    case ?MODULE:pause_gc_d(Pid) of
-        ok ->
-            {reply, ok, paused, State};
-        Error ->
-            {reply, Error, running, State}
-    end;
-running(stop, _From, State = #gc_manager_state{gc_d_pid=Pid}) ->
+running(cancel, _From, State = #gc_manager_state{gc_d_pid=Pid}) ->
     %% stop gc_d here
     catch riak_cs_gc_d:stop(Pid),
     NextState=schedule_next(State),
@@ -193,36 +187,6 @@ running(_Event, _From, State) ->
     Reply = {error, running},
     {reply, Reply, running, State}.
 
-paused_finished(resume, _From, State = #gc_manager_state{gc_d_pid=undefined}) ->
-    %% Only resume can move back to idle when paused-finished state
-    NextState=schedule_next(State),
-    {reply, ok, idle, NextState};
-paused_finished(_Event, _From, State) ->
-    Reply = {error, paused_finished},
-    {reply, Reply, paused_finished, State}.
-    
-paused(resume, _From, State = #gc_manager_state{gc_d_pid=Pid}) ->
-    %% Resume here
-    case ?MODULE:resume_gc_d(Pid) of
-        ok ->
-            {reply, ok, running, State};
-        Error ->
-            {reply, Error, paused, State}
-    end;
-
-paused({finished, Report}, _From, State = #gc_manager_state{batch_history=H}) ->
-    %% Add report to history, becoming paused-finished state,
-    %% where gc_d_pid is set undefined and the state is paused
-    {reply, ok, paused_finished,
-     State#gc_manager_state{gc_d_pid=undefined,
-                            batch_history=[Report|H]}};
-paused(stop, _From, State) ->
-    %% Stop here, only for testing
-    {reply, ok, idle, State};
-paused(_Event, _From, State) ->
-    Reply = {error, paused},
-    {reply, Reply, paused, State}.
-
 %% @private
 %% @doc Not used.
 handle_event(_Event, StateName, State) ->
@@ -230,10 +194,27 @@ handle_event(_Event, StateName, State) ->
 
 %% @private
 %% @doc
-handle_sync_event({set_interval, Initerval}, _From, StateName, State) ->
-    {reply, ok, StateName, State#gc_manager_state{interval=Initerval}};
-handle_sync_event(status, _From, StateName, State) ->
-    {reply, {ok, {StateName, State}}, StateName, State};
+handle_sync_event({set_interval, Initerval}, _From, StateName,
+                  #gc_manager_state{timer_ref=Ref} = State) ->
+    case Ref of
+        Ref when is_reference(Ref) ->
+            erlang:cancel_timer(Ref);
+        _ ->
+            ok
+    end,
+    NewState0 = maybe_cancel_timer(State#gc_manager_state{interval=Initerval}),
+    NewState = schedule_next(NewState0),
+    {reply, ok, StateName, NewState};
+handle_sync_event(status, _From, StateName, #gc_manager_state{gc_d_pid=Pid} = State) ->
+    {_GCDStateName, GCDState} =
+        case Pid of
+            undefined -> {not_running, undefined};
+            mock_pid -> {not_running, undefined}; %% Only for unittest
+            Pid when is_pid(Pid) ->
+                riak_cs_gc_d:current_state(Pid)
+        end,
+    NewState = State#gc_manager_state{current_batch=GCDState},
+    {reply, {ok, {StateName, NewState}}, StateName, NewState};
 handle_sync_event(stop, _, _, State) ->
     %% for tests
     {stop, normal, ok, State};
@@ -242,12 +223,16 @@ handle_sync_event(_Event, _From, StateName, State) ->
     {reply, Reply, StateName, State}.
 
 %% @private
-%% @doc Not used
-handle_info(_Info, StateName, State) ->
+%% @doc Because process flag of trap_exit is true, gc_d
+%% failure will be delivered as a message.
+handle_info({'EXIT', _Pid, normal}, StateName, State) ->
+    {next_state, StateName, State#gc_manager_state{gc_d_pid=undefined}};
+handle_info(Info, StateName, State) ->
+    _ = lager:warning("GC process error detected: ~p", [Info]),
     {next_state, StateName, State}.
 
 %% @private
-%% @doc Not used
+%% @doc
 terminate(_Reason, _StateName, _State = #gc_manager_state{gc_d_pid=Pid}) ->
     catch riak_cs_gc_d:stop(Pid),
     ok.
@@ -261,34 +246,55 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
-%% @doc Pause the garbage collection daemon.  Returns `ok' if
-%% the daemon was paused, or `{error, already_paused}' if the daemon
-%% was already paused.
-pause_gc_d(Pid) ->
-    gen_fsm:sync_send_event(Pid, pause, infinity).
-
 %% @doc Cancel the garbage collection currently in progress.  Returns `ok' if
 %% a batch was canceled, or `{error, no_batch}' if there was no batch
 %% in progress.
 cancel_gc_d(Pid) ->
     riak_cs_gc_d:stop(Pid).
 
-%% @doc Resume the garbage collection daemon.  Returns `ok' if the
-%% daemon was resumed, or `{error, not_paused}' if the daemon was
-%% not paused.
-resume_gc_d(Pid) ->
-    gen_fsm:sync_send_event(Pid, resume, infinity).
+maybe_cancel_timer(#gc_manager_state{timer_ref=Ref}=State)
+  when is_reference(Ref) ->
+    erlang:cancel_timer(Ref),
+    State#gc_manager_state{timer_ref=undefined,
+                           next=undefined};
+maybe_cancel_timer(State) ->
+    State.
 
 %% @doc Setup the automatic trigger to start the next
 %% scheduled batch calculation.
 -spec schedule_next(#gc_manager_state{}) -> #gc_manager_state{}.
+schedule_next(#gc_manager_state{timer_ref=Ref}=State)
+  when Ref =/= undefined ->
+    case erlang:read_timer(Ref) of
+        false ->
+            schedule_next(State#gc_manager_state{timer_ref=undefined});
+        _ ->
+            _ = lager:debug("Timer is already scheduled, maybe manually triggered?"),
+            %% Timer is already scheduled, do nothing
+            State
+    end;
 schedule_next(#gc_manager_state{interval=infinity}=State) ->
     %% nothing to schedule, all triggers manual
-    State;
+    State#gc_manager_state{next=undefined};
 schedule_next(#gc_manager_state{interval=Interval}=State) ->
     RevisedNext = riak_cs_gc:timestamp() + Interval,
     TimerValue = Interval * 1000,
     TimerRef = erlang:send_after(TimerValue, self(), {start, []}),
     State#gc_manager_state{next=RevisedNext,
                            timer_ref=TimerRef}.
+
+
+translate(gc_d_pid, _) -> [];
+translate(batch_history, []) -> [];
+translate(batch_history, [H|_]) ->
+    #gc_d_state{batch_start = Last} = H,
+    [{last, Last}];
+translate(current_batch, undefined) -> [];
+translate(current_batch, GCDState) ->
+    riak_cs_gc_d:status_data(GCDState);
+translate(initial_delay, _) -> [];
+translate(timer_ref, _) -> [];
+translate(T, V) -> {T, V}.
+
+
 

@@ -35,9 +35,7 @@
 
 %% States
 -export([idle/1,
-         running/1,
-         paused_finished/1,
-         paused/1]).
+         running/1]).
 
 %% eqc_fsm callbacks
 -export([initial_state/0,
@@ -74,13 +72,9 @@ eqc_test_() ->
                meck:expect(riak_cs_gc_d, start_link,
                            fun(_GCDState) -> {ok, mock_pid} end),
                meck:expect(riak_cs_gc_d, stop, fun(_) -> error(from_meck) end),
-               
+
                meck:new(riak_cs_gc_manager, [passthrough]),
-               meck:expect(riak_cs_gc_manager, pause_gc_d,
-                           fun(mock_pid) -> ok end),
                meck:expect(riak_cs_gc_manager, cancel_gc_d,
-                           fun(mock_pid) -> ok end),
-               meck:expect(riak_cs_gc_manager, resume_gc_d,
                            fun(mock_pid) -> ok end)
        end,
        fun(_) ->
@@ -144,9 +138,7 @@ prop_manual_commands() ->
 
 idle(_S) ->
     [
-     {history, {call, riak_cs_gc_manager, stop_batch, []}},
-     {history, {call, riak_cs_gc_manager, pause_batch, []}},
-     {history, {call, riak_cs_gc_manager, resume_batch, []}},
+     {history, {call, riak_cs_gc_manager, cancel_batch, []}},
      {history, {call, riak_cs_gc_manager, set_interval, [infinity]}},
      {running, {call, riak_cs_gc_manager, start_batch, [[{leeway, 30}]]}},
      {idle, {call, riak_cs_gc_manager, finished, [report]}}
@@ -155,31 +147,9 @@ idle(_S) ->
 running(_S) ->
     [
      {history, {call, riak_cs_gc_manager, start_batch, [[{leeway, 30}]]}},
-     {history, {call, riak_cs_gc_manager, resume_batch, []}},
      {history, {call, riak_cs_gc_manager, set_interval, [infinity]}},
-     {paused, {call, riak_cs_gc_manager, pause_batch, []}},
-     {idle, {call, riak_cs_gc_manager, stop_batch, []}},
+     {idle, {call, riak_cs_gc_manager, cancel_batch, []}},
      {idle, {call, riak_cs_gc_manager, finished, [report]}}
-    ].
-
-paused(_S) ->
-    [
-     {history, {call, riak_cs_gc_manager, start_batch, [[{leeway, 30}]]}},
-     {history, {call, riak_cs_gc_manager, pause_batch, []}},
-     {history, {call, riak_cs_gc_manager, set_interval, [infinity]}},
-     {idle, {call, riak_cs_gc_manager, stop_batch, []}},
-     {running, {call, riak_cs_gc_manager, resume_batch, []}},
-     {paused_finished, {call, riak_cs_gc_manager, finished, [report]}}
-    ].
-
-paused_finished(_S) ->
-    [
-     {history, {call, riak_cs_gc_manager, start_batch, [[{leeway, 30}]]}},
-     {history, {call, riak_cs_gc_manager, pause_batch, []}},
-     {history, {call, riak_cs_gc_manager, set_interval, [infinity]}},
-     {history, {call, riak_cs_gc_manager, stop_batch, []}},
-     {idle, {call, riak_cs_gc_manager, resume_batch, []}},
-     {paused_finished, {call, riak_cs_gc_manager, finished, [report]}}
     ].
 
 initial_state() ->
@@ -216,26 +186,12 @@ expected_result(idle, running, start_batch) ->
 expected_result(idle, idle, _) ->
     {error, idle};
 
-expected_result(running, paused, pause_batch)  ->
-    ok;
 expected_result(running, idle, finished) ->
     ok;
 expected_result(running, running, _) ->
     {error, running};
 
-expected_result(paused, paused_finished, finished) ->
-    ok;
-expected_result(paused, running, resume_batch) ->
-    ok;
-expected_result(paused, paused, _) ->
-    {error, paused};
-
-expected_result(paused_finished, idle, resume_batch) ->
-    ok;
-expected_result(paused_finished, paused_finished, _) ->
-    {error, paused_finished};
-
-expected_result(_From, idle, stop_batch) ->
+expected_result(_From, idle, cancel_batch) ->
     ok.
 
 %% weight(idle, fetching_next_batch, _) -> 10;
