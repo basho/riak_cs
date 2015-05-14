@@ -22,6 +22,8 @@
 
 -module(riak_cs_gc_console).
 
+-export([human_time/1]).
+
 -export([batch/1,
          status/1,
          pause/1,

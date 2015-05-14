@@ -126,6 +126,9 @@ init([]) ->
                 Interval when is_integer(Interval) ->
                     Next = riak_cs_gc:timestamp() + InitialDelay,
                     TimerRef = erlang:send_after(InitialDelay * 1000, self(), {start, []}),
+                    _ = lager:info("Scheduled next batch at ~s",
+                                   [riak_cs_gc_console:human_time(Next)]),
+
                     #gc_manager_state{next=Next,
                                       interval=Interval,
                                       initial_delay=InitialDelay,
@@ -164,7 +167,7 @@ running({finished, Report}, _From, State) ->
     %% Add report to history
     NextState=schedule_next(State),
     {reply, ok, idle,
-     NextState#gc_manager_state{batch_history=Report}};
+     NextState#gc_manager_state{batch_history=[Report]}};
 running(_Event, _From, State) ->
     Reply = {error, running},
     {reply, Reply, running, State}.
@@ -301,6 +304,8 @@ schedule_next(#gc_manager_state{interval=Interval}=State) ->
     RevisedNext = riak_cs_gc:timestamp() + Interval,
     TimerValue = Interval * 1000,
     TimerRef = erlang:send_after(TimerValue, self(), {start, []}),
+    _ = lager:info("Scheduled next batch at ~s",
+                   [riak_cs_gc_console:human_time(RevisedNext)]),
     State#gc_manager_state{next=RevisedNext,
                            timer_ref=TimerRef}.
 
