@@ -124,8 +124,9 @@ init([]) ->
                 infinity ->
                     #gc_manager_state{};
                 Interval when is_integer(Interval) ->
-                    Next = riak_cs_gc:timestamp() + InitialDelay,
-                    TimerRef = erlang:send_after(InitialDelay * 1000, self(), {start, []}),
+                    Interval2 = Interval + InitialDelay,
+                    Next = riak_cs_gc:timestamp() + Interval2,
+                    TimerRef = erlang:send_after(Interval2 * 1000, self(), {start, []}),
                     _ = lager:info("Scheduled next batch at ~s",
                                    [riak_cs_gc_console:human_time(Next)]),
 
