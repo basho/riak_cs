@@ -289,12 +289,6 @@ status_data(State) ->
                      true                       -> 0
                   end}].
 
-
-%% ===================================================================
-%% Test API and tests
-%% ===================================================================
-
-
 %% @doc How many seconds have passed from `Time' to now.
 -spec elapsed(undefined | non_neg_integer()) -> non_neg_integer().
 elapsed(undefined) ->

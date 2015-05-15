@@ -23,7 +23,7 @@
 %% start -> idle -(start)-> running
 %%            ^               |
 %%            +----(finish)---+
-%%            +----(stop)-----+
+%%            +----(cancel)---+
 %%
 %% Message excange chart (not a sequence, but just a list)
 %%
@@ -163,7 +163,7 @@ running(cancel, _From, State = #gc_manager_state{gc_batch_pid=Pid}) ->
     %% stop gc_batch here
     catch riak_cs_gc_batch:stop(Pid),
     NextState = schedule_next(State),
-    {reply, ok, idle, NextState#gc_manager_state{gc_batch_pid=undefined}};
+    {reply, ok, idle, NextState};
 running({finished, Report}, _From, State) ->
     %% Add report to history
     NextState=schedule_next(State),
@@ -218,10 +218,8 @@ handle_info({start, Options}, idle, State) ->
             {next_state, idle, NextState}
     end;
 handle_info(Info, StateName, State) ->
-    _ = lager:warning("Error detected at GC process (~p): ~p",
+    _ = lager:warning("Unexpected message received at GC process (~p): ~p",
                       [StateName, Info]),
-    _ = lager:warning("Error detected at GC process (~p): ~p",
-                      [StateName, State]),
     {next_state, StateName, State}.
 
 %% @private
