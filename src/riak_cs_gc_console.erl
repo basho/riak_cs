@@ -82,8 +82,11 @@ resume(_) ->
 %%% Internal functions
 %%%===================================================================
 
-start_batch(Options) ->
-    handle_batch_start(riak_cs_gc_manager:start_batch(Options)).
+start_batch({ok, Options}) ->
+    handle_batch_start(riak_cs_gc_manager:start_batch(Options));
+start_batch({error, _}) ->
+    getopt:usage(batch_options(), "riak-cs-admin gc", standard_io),
+    output("Invalid argument").
 
 get_status() ->
     handle_status(riak_cs_gc_manager:pp_status()).
@@ -195,10 +198,40 @@ human_time(Seconds) ->
     Seconds0 = Seconds + ?DAYS_FROM_0_TO_1970*?SECONDS_PER_DAY,
     rts:iso8601(calendar:gregorian_seconds_to_datetime(Seconds0)).
 
-parse_batch_opts([]) ->
-    [];
-parse_batch_opts([Leeway | _]) ->
-    [{leeway, catch list_to_integer(Leeway)}].
+parse_batch_opts([Leeway]) ->
+    try
+        LeewayInt = list_to_integer(Leeway),
+        {ok, [{leeway, LeewayInt}]}
+    catch T:E ->
+            {error, {T, E}}
+    end;
+parse_batch_opts(Args) ->
+    case getopt:parse(batch_options(), Args) of
+        {ok, {Options, _}} -> {ok, convert(Options)};
+        {error, _} = E -> E
+    end.
+
+batch_options() ->
+    [{leeway, $l, "leeway", string, "Leeway Seconds"},
+     {start,  $s, "start",  string, "Start time (iso8601, )"},
+     {'end',  $e, "end",    string, "End time (iso8601, )"},
+     {max_workers, $c, "max_workers", integer, "Number of concurrent worker"}].
+
+convert(Options) ->
+    lists:map(fun({leeway, Leeway}) ->
+                      {leeway, list_to_integer(Leeway)};
+                 ({start, Start}) ->
+                      {start, datetime(Start)};
+                 ({'end', End}) ->
+                      {'end', datetime(End)};
+                 (Other) -> Other
+              end, Options).
+
+-spec datetime(string()) -> non_neg_integer().
+datetime(S) ->
+    {ok, Datetime} = rts:datetime(S),
+    GregorianSeconds = calendar:datetime_to_gregorian_seconds(Datetime),
+    GregorianSeconds - 62167219200. %% Unix Epoch in Gregorian second
 
 parse_interval_opts([]) ->
     undefined;

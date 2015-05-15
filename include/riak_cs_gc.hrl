@@ -28,6 +28,8 @@
 -record(gc_batch_state, {
           %% start of the current gc interval
           batch_start :: undefined | non_neg_integer(),
+          start_key :: non_neg_integer(),
+          end_key :: non_neg_integer(),
           batch_count=0 :: non_neg_integer(),
           %% Count of filesets skipped in this batch
           batch_skips=0 :: non_neg_integer(),
@@ -69,8 +71,8 @@
           current_riak_client :: undefined | riak_client(),
           current_bag_id :: bag_id(),
           %% start of the current gc interval
-          batch_start :: undefined | non_neg_integer(),
-          leeway :: non_neg_integer(),
+          start_key :: binary(),
+          end_key :: binary(),
           %% Used for paginated 2I querying of GC bucket
           continuation :: continuation()
          }).
@@ -103,4 +105,3 @@
           initial_delay :: non_neg_integer(),
           timer_ref :: undefined | reference()
          }).
-

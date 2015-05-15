@@ -241,25 +241,25 @@ code_change(_OldVsn, StateName, State, _Extra) ->
                          {ok, #gc_manager_state{}} |
                          {error, term()}.
 start_batch(State, Options) ->
+    %% All these Items should be non_neg_integer()
     MaxWorkers =  riak_cs_gc:gc_max_workers(),
-    %% StartKey = proplists:get_value(start, Options,
-    %%                                riak_cs_gc:epoch_start()),
     BatchStart = riak_cs_gc:timestamp(),
-    %% EndKey = proplists:get_value('end', Options, BatchStart),
     Leeway = proplists:get_value(leeway, Options,
                                  riak_cs_gc:leeway_seconds()),
+    StartKey = proplists:get_value(start, Options,riak_cs_gc:epoch_start()),
+    DefaultEndKey = riak_cs_gc_batch:default_batch_end(BatchStart, Leeway),
+    EndKey = proplists:get_value('end', Options, DefaultEndKey),
 
     %% set many items to GCDState here
     GCDState = #gc_batch_state{
                   batch_start=BatchStart,
+                  start_key=StartKey,
+                  end_key=EndKey,
                   leeway=Leeway,
                   max_workers=MaxWorkers},
 
     case riak_cs_gc_batch:start_link(GCDState) of
         {ok, Pid} ->
-            _ = lager:info("Starting garbage collection in ~p: "
-                           "leeway=~p, batch_start=~p, max_workers=~p",
-                           [Pid, Leeway, BatchStart, MaxWorkers]),
             {ok, State#gc_manager_state{gc_batch_pid=Pid,
                                         current_batch=GCDState}};
         Error ->

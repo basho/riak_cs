@@ -254,14 +254,15 @@ gc_max_workers() ->
 %% @doc Return the start of GC epoch represented as a binary.
 %% This is the time that the GC daemon uses to  begin collecting keys
 %% from the `riak-cs-gc' bucket.
--spec epoch_start() -> binary().
+-spec epoch_start() -> non_neg_integer().
 epoch_start() ->
-    case application:get_env(riak_cs, epoch_start) of
-        undefined ->
-            ?EPOCH_START;
-        {ok, EpochStart} ->
-            EpochStart
-    end.
+    Bin = case application:get_env(riak_cs, epoch_start) of
+              undefined ->
+                  ?EPOCH_START;
+              {ok, EpochStart} ->
+                  EpochStart
+          end,
+    list_to_integer(binary_to_list(Bin)).
 
 %% @doc Return the minimum number of seconds a file manifest waits in
 %% the `scheduled_delete' state before being garbage collected.
