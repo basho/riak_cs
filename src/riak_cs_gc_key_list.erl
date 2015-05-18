@@ -23,9 +23,9 @@
 -module(riak_cs_gc_key_list).
 
 %% API
--export([new/2, next/1]).
+-export([new/2, next/1, has_next/1]).
 
--include("riak_cs_gc_d.hrl").
+-include("riak_cs_gc.hrl").
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -41,7 +41,8 @@ new(BatchStart, Leeway) ->
     next_pool(State).
 
 %% @doc Fetch next key list and returns it with updated state
--spec next(gc_key_list_state()) -> {gc_key_list_result(), gc_key_list_state()}.
+-spec next(gc_key_list_state()) ->
+                  {gc_key_list_result(), gc_key_list_state()|undefined}.
 next(#gc_key_list_state{current_riak_client=RcPid,
                         continuation=undefined} = State) ->
     ok = riak_cs_riak_client:stop(RcPid),
@@ -56,8 +57,14 @@ next(#gc_key_list_state{current_riak_client=RcPid,
     {#gc_key_list_result{bag_id=BagId, batch=Batch},
      State#gc_key_list_state{continuation=UpdContinuation}}.
 
+-spec has_next(gc_key_list_state()) -> boolean().
+has_next(#gc_key_list_state{remaining_bags=[], continuation=undefined}) ->
+    false;
+has_next(_) ->
+    true.
+
 %% @doc Fetch next key list and returns it with updated state
--spec next_pool(gc_key_list_state()) -> {gc_key_list_result(), gc_key_list_state()}.
+-spec next_pool(gc_key_list_state()) -> {gc_key_list_result(), gc_key_list_state()|undefined}.
 next_pool(#gc_key_list_state{remaining_bags=[]}) ->
     {#gc_key_list_result{bag_id=undefined, batch=[]},
      undefined};

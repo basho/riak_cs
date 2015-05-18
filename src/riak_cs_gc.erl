@@ -22,7 +22,7 @@
 
 -module(riak_cs_gc).
 
--include("riak_cs_gc_d.hrl").
+-include("riak_cs_gc.hrl").
 -ifdef(TEST).
 -compile(export_all).
 -include_lib("eunit/include/eunit.hrl").
@@ -202,7 +202,7 @@ handle_move_result({error, _Reason}=Error, _RiakObject, _Bucket, _Key, _PDUUIDs,
 
 %% @doc Return the number of seconds to wait after finishing garbage
 %% collection of a set of files before starting the next.
--spec gc_interval() -> non_neg_integer().
+-spec gc_interval() -> non_neg_integer() | infinity.
 gc_interval() ->
     case application:get_env(riak_cs, gc_interval) of
         undefined ->

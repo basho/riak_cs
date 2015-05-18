@@ -22,6 +22,8 @@
 
 -module(riak_cs_gc_console).
 
+-export([human_time/1]).
+
 -export([batch/1,
          status/1,
          pause/1,
@@ -61,11 +63,14 @@ status(_Opts) ->
 cancel(_Opts) ->
     ?SAFELY(cancel_batch(), "Canceling the garbage collection batch").
 
-pause(_Opts) ->
-    ?SAFELY(pause(), "Pausing the garbage collection daemon").
+pause(_) ->
+    output("Warning: Subcommand 'pause' will be removed in future version."),
+    _ = riak_cs_gc_manager:set_interval(infinity),
+    cancel([]).
 
-resume(_Opts) ->
-    ?SAFELY(resume(), "Resuming the garbage collection daemon").
+resume(_) ->
+    output("Warning: Subcommand 'resume' will be removed in future version."),
+    set_interval(riak_cs_gc:gc_interval()).
 
 'set-interval'(Opts) ->
     ?SAFELY(set_interval(parse_interval_opts(Opts)), "Setting the garbage collection interval").
@@ -78,19 +83,13 @@ resume(_Opts) ->
 %%%===================================================================
 
 start_batch(Options) ->
-    handle_batch_start(riak_cs_gc_d:manual_batch(Options)).
+    handle_batch_start(riak_cs_gc_manager:start_batch(Options)).
 
 get_status() ->
-    handle_status(riak_cs_gc_d:status()).
+    handle_status(riak_cs_gc_manager:pp_status()).
 
 cancel_batch() ->
-    handle_batch_cancellation(riak_cs_gc_d:cancel_batch()).
-
-pause() ->
-    handle_pause(riak_cs_gc_d:pause()).
-
-resume() ->
-    handle_resumption(riak_cs_gc_d:resume()).
+    handle_batch_cancellation(riak_cs_gc_manager:cancel_batch()).
 
 set_interval(undefined) ->
     output("Error: No interval value specified"),
@@ -99,7 +98,7 @@ set_interval({'EXIT', _}) ->
     output("Error: Invalid interval specified."),
     error;
 set_interval(Interval) ->
-    case riak_cs_gc_d:set_interval(Interval) of
+    case riak_cs_gc_manager:set_interval(Interval) of
         ok ->
             output("The garbage collection interval was updated."),
             ok;
@@ -127,56 +126,29 @@ set_leeway(Leeway) ->
 handle_batch_start(ok) ->
     output("Garbage collection batch started."),
     ok;
-handle_batch_start({error, already_deleting}) ->
-    output("Error: A garbage collection batch"
-           " is already in progress."),
-    error;
-handle_batch_start({error, already_paused}) ->
-    output("The garbage collection daemon was already paused."),
+handle_batch_start({error, running}) ->
+    output("The garbage collection daemon is already running."),
     error.
 
 handle_status({ok, {State, Details}}) ->
-    print_status(State, Details),
+    _ = print_state(State),
+    _ = print_details(Details),
     ok.
 
 handle_batch_cancellation(ok) ->
     output("The garbage collection batch was canceled.");
-handle_batch_cancellation({error, no_batch}) ->
+handle_batch_cancellation({error, idle}) ->
     output("No garbage collection batch was running."),
-    error.
-
-handle_pause(ok) ->
-    output("The garbage collection daemon was paused."),
-    ok;
-handle_pause({error, already_paused}) ->
-    output("The garbage collection daemon was already paused."),
-    error.
-
-handle_resumption(ok) ->
-    output("The garbage collection daemon was resumed."),
-    ok;
-handle_resumption({error, not_paused}) ->
-    output("The garbage collection daemon was not paused."),
     error.
 
 output(Output) ->
     io:format(Output ++ "~n").
 
-print_status(State, Details) ->
-    _ = print_state(State),
-    _ = print_details(Details),
-    ok.
-
+-spec print_state(riak_cs_gc_manager:statename()) -> ok.
 print_state(idle) ->
     output("There is no garbage collection in progress");
-print_state(fetching_next_batch) ->
-    output("A garbage collection batch is in progress");
-print_state(feeding_workers) ->
-    output("A garbage collection batch is in progress");
-print_state(waiting_for_workers) ->
-    output("A garbage collection batch is in progress");
-print_state(paused) ->
-    output("A garbage collection batch is currently paused").
+print_state(running) ->
+    output("A garbage collection batch is in progress").
 
 %% @doc Pretty-print the status returned from the gc daemon.
 print_details(Details) ->

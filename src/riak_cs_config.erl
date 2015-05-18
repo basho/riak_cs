@@ -101,7 +101,7 @@
          os_tokens_url/0,
          os_users_url/0]).
 
--include("riak_cs_gc_d.hrl").
+-include("riak_cs_gc.hrl").
 -include("oos_api.hrl").
 -include("s3_api.hrl").
 -include("list_objects.hrl").
