@@ -58,7 +58,35 @@ confirm() ->
     RiakIDs = rtcs:riak_id_per_cluster(NumNodes),
     [repair_gc_bucket(ID) || ID <- RiakIDs],
     ok = verify_gc_run2(hd(CSNodes)),
+
+    %% Determinisitc GC test
+
+    %% Create keys not to be deleted
+    setup_normal_obj([{"spam", 42}, {"ham", 65536}, {"egg", 7}], UserConfig),
+    GCPbc = rtcs:pbc(RiakNodes, objects, ?TEST_BUCKET),
+    {ok, Keys} = riakc_pb_socket:list_keys(GCPbc, ?GC_BUCKET),
+    lager:debug("OldKeys: ~p", [Keys]),
+    timer:sleep(1000), %% Next timestamp...
+
+    %% Create keys to be deleted
+    Start = os:timestamp(),
+    [begin
+         setup_normal_obj([{"hop", 42}, {"step", 65536}, {"jump", 7}], UserConfig),
+         timer:sleep(2000)
+     end || _ <- lists:seq(0,3) ],
+    End = os:timestamp(),
+
+    verify_partial_gc_run(hd(CSNodes), RiakNodes, lists:sort(Keys), Start, End),
     pass.
+
+setup_normal_obj(ObjSpecs, UserConfig) ->
+    %% Put and delete some objects
+    [begin
+         Block = crypto:rand_bytes(Size),
+         Key = ?TEST_KEY ++ Suffix,
+         erlcloud_s3:put_object(?TEST_BUCKET, Key, Block, UserConfig),
+         erlcloud_s3:delete_object(?TEST_BUCKET, Key, UserConfig)
+     end || {Suffix, Size} <- ObjSpecs].
 
 setup_obj(RiakNodes, UserConfig) ->
     %% Setup bucket
@@ -67,13 +95,7 @@ setup_obj(RiakNodes, UserConfig) ->
     lager:info("creating bucket ~p", [?TEST_BUCKET]),
     ?assertEqual(ok, erlcloud_s3:create_bucket(?TEST_BUCKET, UserConfig)),
 
-    %% Put and delete some objects
-    [begin
-         Block = crypto:rand_bytes(Size),
-         Key = ?TEST_KEY ++ Suffix,
-         erlcloud_s3:put_object(?TEST_BUCKET, Key, Block, UserConfig),
-         erlcloud_s3:delete_object(?TEST_BUCKET, Key, UserConfig)
-     end || {Suffix, Size} <- [{"1", 100}, {"2", 200}, {"3", 0}]],
+    setup_normal_obj([{"1", 100}, {"2", 200}, {"3", 0}], UserConfig),
 
     %% Put and delete, but modified to pretend it is in wrong state
     SingleBlock = crypto:rand_bytes(400),
@@ -88,12 +110,7 @@ setup_obj(RiakNodes, UserConfig) ->
     {ok, GCKey, UUID} = change_state_to_active(GCPbc, BKey, GCKeys),
 
     %% Put and delete some more objects
-    [begin
-         Block = crypto:rand_bytes(Size),
-         Key = ?TEST_KEY ++ Suffix,
-         erlcloud_s3:put_object(?TEST_BUCKET, Key, Block, UserConfig),
-         erlcloud_s3:delete_object(?TEST_BUCKET, Key, UserConfig)
-     end || {Suffix, Size} <- [{"Z", 0}, {"Y", 150}, {"X", 1}]],
+    setup_normal_obj([{"Z", 0}, {"Y", 150}, {"X", 1}], UserConfig),
 
     riakc_pb_socket:stop(GCPbc),
     {GCKey, {BKey, UUID}}.
@@ -205,4 +222,38 @@ verify_riak_object_remaining_for_bad_key(RiakNodes, GCKey, {{Bucket, Key}, UUID}
     riakc_pb_socket:stop(GCPbc),
     lager:info("As expected, BAD manifest in GC bucket remains,"
                " stand off orphan manfiests/blocks: ~p", [Manifest]),
+    ok.
+
+verify_partial_gc_run(CSNode, RiakNodes, OldKeys,
+                      {MegaSec0, Sec0, _},
+                      {MegaSec1, Sec1, _}) ->
+    Start0 = MegaSec0 * 1000000 + Sec0,
+    End0 = MegaSec1 * 1000000 + Sec1,
+    Interval = erlang:max(1, (End0 - Start0) div 10),
+    Starts = [ {Start0 + N * Interval, Start0 + (N+1) * Interval}
+               || N <- lists:seq(0, 10) ],
+    [begin
+         %% We have to clear log as the message 'Finished garbage
+         %% col...' has been output many times before, during this
+         %% test.
+         rtcs:reset_log(CSNode),
+
+         lager:debug("GC: (start, end) = (~p, ~p)", [S0, E0]),
+         S = rtcs:iso8601(S0),
+         E = rtcs:iso8601(E0),
+         BatchCmd = "batch -s " ++ S ++ " -e " ++ E,
+         rtcs:gc(1, BatchCmd),
+
+         true = rt:expect_in_log(CSNode,
+                                 "Finished garbage collection: \\d+ seconds, "
+                                 "\\d+ batch_count, 0 batch_skips, "
+                                 "\\d+ manif_count, \\d+ block_count")
+     end || {S0, E0} <- Starts],
+    lager:info("GC target period: (~p, ~p)", [Start0, End0]),
+    %% Reap!
+    timer:sleep(3000),
+    GCPbc = rtcs:pbc(RiakNodes, objects, ?TEST_BUCKET),
+    {ok, Keys} = riakc_pb_socket:list_keys(GCPbc, ?GC_BUCKET),
+    lager:debug("Keys: ~p", [Keys]),
+    ?assertEqual(OldKeys, lists:sort(Keys)),
     ok.
