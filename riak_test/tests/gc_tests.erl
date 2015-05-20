@@ -63,9 +63,6 @@ confirm() ->
 
     %% Create keys not to be deleted
     setup_normal_obj([{"spam", 42}, {"ham", 65536}, {"egg", 7}], UserConfig),
-    GCPbc = rtcs:pbc(RiakNodes, objects, ?TEST_BUCKET),
-    {ok, Keys} = riakc_pb_socket:list_keys(GCPbc, ?GC_BUCKET),
-    lager:debug("OldKeys: ~p", [Keys]),
     timer:sleep(1000), %% Next timestamp...
 
     %% Create keys to be deleted
@@ -76,7 +73,10 @@ confirm() ->
      end || _ <- lists:seq(0,3) ],
     End = os:timestamp(),
 
-    verify_partial_gc_run(hd(CSNodes), RiakNodes, lists:sort(Keys), Start, End),
+    timer:sleep(1000), %% Next timestamp...
+    setup_normal_obj([{"spam", 42}, {"ham", 65536}, {"egg", 7}], UserConfig),
+
+    verify_partial_gc_run(hd(CSNodes), RiakNodes, Start, End),
     pass.
 
 setup_normal_obj(ObjSpecs, UserConfig) ->
@@ -224,14 +224,14 @@ verify_riak_object_remaining_for_bad_key(RiakNodes, GCKey, {{Bucket, Key}, UUID}
                " stand off orphan manfiests/blocks: ~p", [Manifest]),
     ok.
 
-verify_partial_gc_run(CSNode, RiakNodes, OldKeys,
+verify_partial_gc_run(CSNode, RiakNodes,
                       {MegaSec0, Sec0, _},
                       {MegaSec1, Sec1, _}) ->
     Start0 = MegaSec0 * 1000000 + Sec0,
     End0 = MegaSec1 * 1000000 + Sec1,
-    Interval = erlang:max(1, (End0 - Start0) div 10),
+    Interval = erlang:max(1, (End0 - Start0) div 3),
     Starts = [ {Start0 + N * Interval, Start0 + (N+1) * Interval}
-               || N <- lists:seq(0, 10) ],
+               || N <- lists:seq(0, 3) ],
     [begin
          %% We have to clear log as the message 'Finished garbage
          %% col...' has been output many times before, during this
@@ -255,5 +255,15 @@ verify_partial_gc_run(CSNode, RiakNodes, OldKeys,
     GCPbc = rtcs:pbc(RiakNodes, objects, ?TEST_BUCKET),
     {ok, Keys} = riakc_pb_socket:list_keys(GCPbc, ?GC_BUCKET),
     lager:debug("Keys: ~p", [Keys]),
-    ?assertEqual(OldKeys, lists:sort(Keys)),
+    StartKey = list_to_binary(integer_to_list(Start0)),
+    EndKey = list_to_binary(integer_to_list(End0)),
+    HPF = fun(Key) when EndKey < Key -> true; (_Key) -> false end,
+    LPF = fun(Key) when Key < StartKey -> true; (_Key) -> false end,
+
+    lager:debug("Remaining Keys: ~p", [Keys]),
+    lager:debug("HPF result: ~p", [lists:filter(HPF, Keys)]),
+    lager:debug("LPF result: ~p", [lists:filter(LPF, Keys)]),
+    ?assertEqual(3, length(lists:filter(HPF, Keys))),
+    ?assertEqual(3, length(lists:filter(LPF, Keys))),
+    ?assertEqual([], lists:filter(fun(Key) -> HPF(Key) andalso LPF(Key) end, Keys)),
     ok.
