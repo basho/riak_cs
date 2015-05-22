@@ -1192,7 +1192,7 @@ get_cmd_result(Port, WaitTime) ->
             {error, timeout}
     end.
 
-    %% Copy from rts:iso8601/1
+%% Copy from rts:iso8601/1
 iso8601(Timestamp) when is_integer(Timestamp) ->
     GregSec = Timestamp + 719528 * 86400,
     Datetime = calendar:gregorian_seconds_to_datetime(GregSec),
@@ -1200,9 +1200,9 @@ iso8601(Timestamp) when is_integer(Timestamp) ->
     io_lib:format("~4..0b~2..0b~2..0bT~2..0b~2..0b~2..0bZ",
                   [Y, M, D, H, I, S]).
 
-reset_log(CSNode) ->
-    {ok, _Logs} = rpc:call(CSNode, gen_event, delete_handler,
+reset_log(Node) ->
+    {ok, _Logs} = rpc:call(Node, gen_event, delete_handler,
                            [lager_event, riak_test_lager_backend, normal]),
-    ok = rpc:call(CSNode, gen_event, add_handler,
+    ok = rpc:call(Node, gen_event, add_handler,
                   [lager_event, riak_test_lager_backend,
                    [rt_config:get(lager_level, info), false]]).

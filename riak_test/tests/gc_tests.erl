@@ -32,7 +32,7 @@
 -define(TEST_KEY,          "riak_test_key").
 -define(TEST_KEY_MP,        "riak_test_mp").
 -define(TEST_KEY_BAD_STATE, "riak_test_key_bad_state").
-
+-define(TIMESLICES,        5).
 
 confirm() ->
     NumNodes = 1,
@@ -70,7 +70,7 @@ confirm() ->
     [begin
          setup_normal_obj([{"hop", 42}, {"step", 65536}, {"jump", 7}], UserConfig),
          timer:sleep(2000)
-     end || _ <- lists:seq(0,3) ],
+     end || _ <- lists:seq(0,?TIMESLICES) ],
     End = os:timestamp(),
 
     timer:sleep(1000), %% Next timestamp...
@@ -229,9 +229,11 @@ verify_partial_gc_run(CSNode, RiakNodes,
                       {MegaSec1, Sec1, _}) ->
     Start0 = MegaSec0 * 1000000 + Sec0,
     End0 = MegaSec1 * 1000000 + Sec1,
-    Interval = erlang:max(1, (End0 - Start0) div 3),
+    Interval = erlang:max(1, (End0 - Start0) div ?TIMESLICES),
     Starts = [ {Start0 + N * Interval, Start0 + (N+1) * Interval}
-               || N <- lists:seq(0, 3) ],
+               || N <- lists:seq(0, ?TIMESLICES-1) ] ++
+        [{Start0 + ?TIMESLICES * Interval, End0}], 
+    
     [begin
          %% We have to clear log as the message 'Finished garbage
          %% col...' has been output many times before, during this
@@ -257,13 +259,14 @@ verify_partial_gc_run(CSNode, RiakNodes,
     lager:debug("Keys: ~p", [Keys]),
     StartKey = list_to_binary(integer_to_list(Start0)),
     EndKey = list_to_binary(integer_to_list(End0)),
-    HPF = fun(Key) when EndKey < Key -> true; (_Key) -> false end,
-    LPF = fun(Key) when Key < StartKey -> true; (_Key) -> false end,
+    EndKeyHPF = fun(Key) when EndKey < Key -> true; (_Key) -> false end,
+    StartKeyLPF = fun(Key) when Key < StartKey -> true; (_Key) -> false end,
+    BPF = fun(Key) when StartKey < Key andalso Key < EndKey -> true; (_) -> false end,
 
     lager:debug("Remaining Keys: ~p", [Keys]),
-    lager:debug("HPF result: ~p", [lists:filter(HPF, Keys)]),
-    lager:debug("LPF result: ~p", [lists:filter(LPF, Keys)]),
-    ?assertEqual(3, length(lists:filter(HPF, Keys))),
-    ?assertEqual(3, length(lists:filter(LPF, Keys))),
-    ?assertEqual([], lists:filter(fun(Key) -> HPF(Key) andalso LPF(Key) end, Keys)),
+    lager:debug("HPF result: ~p", [lists:filter(EndKeyHPF, Keys)]),
+    lager:debug("LPF result: ~p", [lists:filter(StartKeyLPF, Keys)]),
+    ?assertEqual(3, length(lists:filter(EndKeyHPF, Keys))),
+    ?assertEqual(3, length(lists:filter(StartKeyLPF, Keys))),
+    ?assertEqual([], lists:filter(BPF, Keys)),
     ok.

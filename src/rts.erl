@@ -227,8 +227,8 @@ iso8601_roundtrip_prop() ->
     %% datetime/1 is exported from riak_cs_wm_usage when TEST and
     %% EQC are defined
     ?FORALL(T, datetime_g(),
-            is_binary(iso8601(T)) andalso
-                {ok, T} == riak_cs_wm_usage:datetime(iso8601(T))).
+            is_binary(rts:iso8601(T)) andalso
+                {ok, T} ==rts:datetime(rts:iso8601(T))).
 
 
 slice_containing_test() ->

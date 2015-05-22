@@ -242,12 +242,13 @@ code_change(_OldVsn, StateName, State, _Extra) ->
                          {error, term()}.
 start_batch(State, Options) ->
     %% All these Items should be non_neg_integer()
-    MaxWorkers =  riak_cs_gc:gc_max_workers(),
+    MaxWorkers =  proplists:get_value('max-workers', Options,
+                                     riak_cs_gc:gc_max_workers()),
     BatchStart = riak_cs_gc:timestamp(),
     Leeway = proplists:get_value(leeway, Options,
                                  riak_cs_gc:leeway_seconds()),
     StartKey = proplists:get_value(start, Options,riak_cs_gc:epoch_start()),
-    DefaultEndKey = riak_cs_gc_batch:default_batch_end(BatchStart, Leeway),
+    DefaultEndKey = riak_cs_gc:default_batch_end(BatchStart, Leeway),
     EndKey = proplists:get_value('end', Options, DefaultEndKey),
 
     %% set many items to GCDState here

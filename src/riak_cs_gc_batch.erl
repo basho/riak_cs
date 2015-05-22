@@ -35,8 +35,7 @@
 -export([start_link/1,
          current_state/1,
          status_data/1,
-         stop/1,
-         default_batch_end/2]).
+         stop/1]).
 
 %% gen_fsm callbacks
 -export([init/1,
@@ -78,10 +77,6 @@ current_state(Pid) ->
 stop(Pid) ->
     gen_fsm:sync_send_all_state_event(Pid, stop, infinity).
 
--spec default_batch_end(non_neg_integer(), non_neg_integer()) -> non_neg_integer().
-default_batch_end(BatchStart, Leeway) ->
-    BatchStart - Leeway.
-
 %%%===================================================================
 %%% gen_fsm callbacks
 %%%===================================================================
@@ -94,14 +89,15 @@ init([#gc_batch_state{
          end_key=EndKey,
          leeway=Leeway,
          max_workers=MaxWorkers} = State])
-  when StartKey < EndKey ->
-    case default_batch_end(BatchStart, Leeway) of
+  when StartKey =< EndKey ->
+    case riak_cs_gc:default_batch_end(BatchStart, Leeway) of
         DefaultEndKey when EndKey =< DefaultEndKey ->
             %% StartKey < EndKey
             %% EndKey <= BatchStart - Leeway
             _ = lager:info("Starting garbage collection: "
+                           "(start, end) = (~p, ~p), "
                            "leeway=~p, batch_start=~p, max_workers=~p",
-                           [Leeway, BatchStart, MaxWorkers]),
+                           [StartKey, EndKey, Leeway, BatchStart, MaxWorkers]),
             {ok, prepare, State, 0};
         DefaultEndKey ->
             _ = lager:error("GC did not start: "

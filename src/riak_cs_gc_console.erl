@@ -212,23 +212,24 @@ parse_batch_opts(Args) ->
     end.
 
 batch_options() ->
-    [{leeway, $l, "leeway", string, "Leeway Seconds"},
-     {start,  $s, "start",  string, "Start time (iso8601, )"},
-     {'end',  $e, "end",    string, "End time (iso8601, )"},
-     {max_workers, $c, "max_workers", integer, "Number of concurrent worker"}].
+    [{leeway, $l, "leeway", integer, "Leeway seconds"},
+     {start,  $s, "start",  string, "Start time (iso8601 format, like 19701020T094500Z)"},
+     {'end',  $e, "end",    string, "End time (iso8601 format, like 19701021T094500Z)"},
+     {'max-workers', $c, "max-workers", integer, "Number of concurrent workers"}].
 
 convert(Options) ->
-    lists:map(fun({leeway, Leeway}) ->
-                      {leeway, list_to_integer(Leeway)};
+    lists:map(fun({leeway, Leeway}) when Leeway >= 0 ->
+                      {leeway, Leeway};
                  ({start, Start}) ->
-                      {start, datetime(Start)};
+                      {start, iso8601_to_epoch(Start)};
                  ({'end', End}) ->
-                      {'end', datetime(End)};
-                 (Other) -> Other
+                      {'end', iso8601_to_epoch(End)};
+                 ({'max-workers', Concurrency}) when Concurrency > 0 ->
+                      {'max-workers', Concurrency}
               end, Options).
 
--spec datetime(string()) -> non_neg_integer().
-datetime(S) ->
+-spec iso8601_to_epoch(string()) -> non_neg_integer().
+iso8601_to_epoch(S) ->
     {ok, Datetime} = rts:datetime(S),
     GregorianSeconds = calendar:datetime_to_gregorian_seconds(Datetime),
     GregorianSeconds - 62167219200. %% Unix Epoch in Gregorian second

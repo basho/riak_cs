@@ -32,7 +32,7 @@
 -endif.
 
 %% @doc Start the garbage collection server
--spec new(non_neg_integer(), non_neg_integer()) -> {gc_key_list_result(), gc_key_list_state()}.
+-spec new(non_neg_integer(), non_neg_integer()) -> {gc_key_list_result(), gc_key_list_state()|undefined}.
 new(StartKey, EndKey) ->
     Bags = riak_cs_mb_helper:bags(),
     State =  #gc_key_list_state{remaining_bags = Bags,
@@ -104,24 +104,22 @@ fetch_eligible_manifest_keys(RcPid, StartKey, EndKey, Continuation) ->
                                   UsePaginatedIndexes),
     {eligible_manifest_keys(QueryResults, UsePaginatedIndexes), continuation(QueryResults)}.
 
--spec eligible_manifest_keys({{ok, index_results()} | {error, term()}, binary()},
+-spec eligible_manifest_keys({{ok, index_results()} | {error, term()}, {binary(), binary()}},
                              UsePaginatedIndexes::boolean()) ->
                                     [index_result_keys()].
-eligible_manifest_keys({{ok, ?INDEX_RESULTS{keys=Keys}},
-                        _EndTime},
+eligible_manifest_keys({{ok, ?INDEX_RESULTS{keys=Keys}}, _},
                        true) ->
     case Keys of
         [] -> [];
         _  -> [Keys]
     end;
-eligible_manifest_keys({{ok, ?INDEX_RESULTS{keys=Keys}},
-                        _EndTime},
+eligible_manifest_keys({{ok, ?INDEX_RESULTS{keys=Keys}}, _},
                        false) ->
     split_eligible_manifest_keys(riak_cs_config:gc_batch_size(), Keys, []);
-eligible_manifest_keys({{error, Reason}, EndTime}, _) ->
-    _ = lager:warning("Error occurred trying to query from time 0 to ~p"
+eligible_manifest_keys({{error, Reason}, {StartKey, EndKey}}, _) ->
+    _ = lager:warning("Error occurred trying to query from time ~p to ~p"
                       "in gc key index. Reason: ~p",
-                      [EndTime, Reason]),
+                      [StartKey, EndKey, Reason]),
     [].
 
 %% @doc Break a list of gc-eligible keys from the GC bucket into smaller sets
@@ -141,8 +139,9 @@ split_at_most_n(0, L, Acc) ->
 split_at_most_n(N, [H|T], Acc) ->
     split_at_most_n(N-1, T, [H|Acc]).
 
--spec continuation({{ok, index_results()} | {error, term()}, binary()}) ->
-                          continuation().
+-spec continuation({{ok, index_results()} | {error, term()},
+                    {binary(), binary()}}) ->
+                          continuation() | undefined.
 continuation({{ok, ?INDEX_RESULTS{continuation=Continuation}},
               _EndTime}) ->
     Continuation;
@@ -150,7 +149,8 @@ continuation({{error, _}, _EndTime}) ->
     undefined.
 
 -spec gc_index_query(riak_client(), binary(), binary(), non_neg_integer(), continuation(), boolean()) ->
-                            {{ok, index_results()} | {error, term()}, binary()}.
+                            {{ok, index_results()} | {error, term()},
+                             {binary(), binary()}}.
 gc_index_query(RcPid, StartKey, EndKey, BatchSize, Continuation, UsePaginatedIndexes) ->
     Options = case UsePaginatedIndexes of
                   true ->
@@ -178,7 +178,7 @@ gc_index_query(RcPid, StartKey, EndKey, BatchSize, Continuation, UsePaginatedInd
             ok
     end,
 
-    {QueryResult, EndKey}.
+    {QueryResult, {StartKey, EndKey}}.
 
 -spec int2bin(non_neg_integer()) -> binary().
 int2bin(I) ->

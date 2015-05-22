@@ -42,7 +42,8 @@
          set_leeway_seconds/1,
          max_scheduled_delete_manifests/0,
          move_manifests_to_gc_bucket/2,
-         timestamp/0]).
+         timestamp/0,
+         default_batch_end/2]).
 
 %% export for repl debugging and testing
 -export([get_active_manifests/3]).
@@ -303,6 +304,10 @@ timestamp() ->
 -spec timestamp(erlang:timestamp()) -> non_neg_integer().
 timestamp(ErlangTime) ->
     riak_cs_utils:second_resolution_timestamp(ErlangTime).
+
+-spec default_batch_end(non_neg_integer(), non_neg_integer()) -> non_neg_integer().
+default_batch_end(BatchStart, Leeway) ->
+    BatchStart - Leeway.
 
 %%%===================================================================
 %%% Internal functions

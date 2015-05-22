@@ -144,9 +144,14 @@ gc_batch(ListOfFilesetKeysInput) ->
     %% ?debugVal(ListOfFilesetKeysInput),
     meck:expect(riakc_pb_socket, get_index_range,
                 dummy_get_index_range_fun(ListOfFilesetKeysInput)),
-
+    SortedKeys = lists:sort(ListOfFilesetKeysInput),
+    {StartKey, _} = hd(SortedKeys),
+    {EndKey, _} = lists:last(SortedKeys),
+    BatchStart = riak_cs_gc:timestamp(),
     {ok, _} = riak_cs_gc_batch:start_link(#gc_batch_state{
-                                             batch_start=riak_cs_gc:timestamp(),
+                                             batch_start=BatchStart,
+                                             start_key=StartKey,
+                                             end_key=EndKey,
                                              max_workers=5,
                                              leeway=1}),
     receive
