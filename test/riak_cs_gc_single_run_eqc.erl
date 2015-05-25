@@ -82,11 +82,31 @@ eqc_test_() ->
      [
       {timeout, ?TESTING_TIME*2,
        ?_assert(quickcheck(eqc:testing_time(?TESTING_TIME,
+                                            ?QC_OUT(prop_epochspec()))))},
+      {timeout, ?TESTING_TIME*2,
+       ?_assert(quickcheck(eqc:testing_time(?TESTING_TIME,
                                             ?QC_OUT(prop_gc_batch(no_error)))))},
       {timeout, ?TESTING_TIME*2,
        ?_assert(quickcheck(eqc:testing_time(?TESTING_TIME,
                                             ?QC_OUT(prop_gc_batch(with_errors)))))}
      ]}.
+
+prop_epochspec() ->
+    ?FORALL({N0, N1, N2, Leeway},
+            {nat2(), nat2(), nat2(), oneof([nat(), nat2()])},
+            begin
+                %[StartKey, EndKey, BatchStart] = [N+1000000000||N<-lists:sort([N0,N1,N2])],
+                [StartKey, EndKey, BatchStart] = lists:sort([N0,N1,N2]),
+                State = #gc_batch_state{
+                           batch_start=BatchStart+Leeway,
+                           start_key=StartKey,
+                           end_key=EndKey,
+                           leeway=Leeway},
+                {ok, prepare, State, 0} =:= riak_cs_gc_batch:init([State])
+            end).
+
+nat2() ->
+    ?LET(N, nat(), N+1000000000).
 
 %% EQC of single GC runs.
 %% 1. EQC generates `ListOfFilesetKeysInput', for exapmle
@@ -144,14 +164,15 @@ gc_batch(ListOfFilesetKeysInput) ->
     %% ?debugVal(ListOfFilesetKeysInput),
     meck:expect(riakc_pb_socket, get_index_range,
                 dummy_get_index_range_fun(ListOfFilesetKeysInput)),
-    SortedKeys = lists:sort(ListOfFilesetKeysInput),
-    {StartKey, _} = hd(SortedKeys),
-    {EndKey, _} = lists:last(SortedKeys),
+    %% SortedKeys = lists:sort(ListOfFilesetKeysInput),
+    %% {StartKey, _} = hd(SortedKeys),
+    %% {EndKey, _} = lists:last(SortedKeys),
     BatchStart = riak_cs_gc:timestamp(),
+    %% ?debugVal({StartKey, EndKey, BatchStart}),
     {ok, _} = riak_cs_gc_batch:start_link(#gc_batch_state{
                                              batch_start=BatchStart,
-                                             start_key=StartKey,
-                                             end_key=EndKey,
+                                             start_key=0,
+                                             end_key=BatchStart-1,
                                              max_workers=5,
                                              leeway=1}),
     receive

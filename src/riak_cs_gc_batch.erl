@@ -89,9 +89,14 @@ init([#gc_batch_state{
          end_key=EndKey,
          leeway=Leeway,
          max_workers=MaxWorkers} = State])
-  when StartKey >= 0 andalso StartKey =< EndKey ->
+  when
+      %% StartKey can be negative as <<"-">> is smaller than any numeric digits
+      0 =< StartKey andalso
+      %% EndKey cannot be like 300, or would collect all gc keys
+      StartKey =< EndKey ->
     case riak_cs_gc:default_batch_end(BatchStart, Leeway) of
-        DefaultEndKey when EndKey =< DefaultEndKey ->
+        DefaultEndKey when EndKey =< DefaultEndKey andalso
+                           1000000000 =< EndKey ->
             %% StartKey < EndKey
             %% EndKey <= BatchStart - Leeway
             _ = lager:info("Starting garbage collection: "

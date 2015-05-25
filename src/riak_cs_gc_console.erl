@@ -217,8 +217,10 @@ parse_batch_opts(Args) ->
 
 batch_options() ->
     [{leeway, $l, "leeway", integer, "Leeway seconds"},
-     {start,  $s, "start",  string, "Start time (iso8601 format, like 19701020T094500Z)"},
-     {'end',  $e, "end",    string, "End time (iso8601 format, like 19701021T094500Z)"},
+     {start,  $s, "start",  string,
+      "Start time (iso8601 format, like 20130320T094500Z)"},
+     {'end',  $e, "end",    string,
+      "End time (iso8601 format, like 20130420T094500Z)"},
      {'max-workers', $c, "max-workers", integer, "Number of concurrent workers"}].
 
 convert(Options) ->
