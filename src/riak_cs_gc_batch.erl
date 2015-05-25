@@ -180,6 +180,14 @@ terminate(normal, _StateName, State) ->
                     State?STATE.batch_skips, State?STATE.manif_count,
                     State?STATE.block_count]),
     riak_cs_gc_manager:finished(State);
+terminate(cancel, _StateName, State) ->
+    _ = lager:warning("Garbage collection has been canceled: "
+                      "~b seconds, ~p batch_count, ~p batch_skips, "
+                      "~p manif_count, ~p block_count\n",
+                      [elapsed(State?STATE.batch_start), State?STATE.batch_count,
+                       State?STATE.batch_skips, State?STATE.manif_count,
+                       State?STATE.block_count]),
+    ok;
 terminate(_Reason, _StateName, _State) ->
     ok.
 
