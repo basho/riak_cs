@@ -200,8 +200,12 @@ human_time(Seconds) ->
 
 parse_batch_opts([Leeway]) ->
     try
-        LeewayInt = list_to_integer(Leeway),
-        {ok, [{leeway, LeewayInt}]}
+        case list_to_integer(Leeway) of
+            LeewayInt when LeewayInt >= 0 ->
+                {ok, [{leeway, LeewayInt}]};
+            _O ->
+                {error, negative_leeway}
+        end
     catch T:E ->
             {error, {T, E}}
     end;
@@ -225,7 +229,9 @@ convert(Options) ->
                  ({'end', End}) ->
                       {'end', iso8601_to_epoch(End)};
                  ({'max-workers', Concurrency}) when Concurrency > 0 ->
-                      {'max-workers', Concurrency}
+                      {'max-workers', Concurrency};
+                 (BadArg) ->
+                      error({bad_arg, BadArg})
               end, Options).
 
 -spec iso8601_to_epoch(string()) -> non_neg_integer().
