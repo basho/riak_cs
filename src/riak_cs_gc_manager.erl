@@ -22,16 +22,17 @@
 %%
 %% start -> idle -(start)-> running
 %%            ^               |
-%%            +----(finish)---+
-%%            +----(cancel)---+
+%%            +---(finish)----+
+%%            +---(cancel)----+
 %%
 %% Message excange chart (not a sequence, but just a list)
 %%
-%%  Message\  sdr/rcver  gc_manager    gc_batch
-%%   spawn_link)                   --->
-%%   start)                        --->
-%%   cancel)                       --->
-%%   finished)                     <---
+%%  Message\  sdr/rcver  gc_manager      gc_batch
+%%   start_link)                   ------>
+%%   current_status)               -call->
+%%   stop)                         -call->
+%%   finished)                     <-cast-
+%%   trapped EXIT)                 <------
 %%
 -module(riak_cs_gc_manager).
 
