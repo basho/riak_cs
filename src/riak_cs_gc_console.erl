@@ -82,8 +82,11 @@ resume(_) ->
 %%% Internal functions
 %%%===================================================================
 
-start_batch(Options) ->
-    handle_batch_start(riak_cs_gc_manager:start_batch(Options)).
+start_batch({ok, Options}) ->
+    handle_batch_start(riak_cs_gc_manager:start_batch(Options));
+start_batch({error, _}) ->
+    getopt:usage(batch_options(), "riak-cs-admin gc", standard_io),
+    output("Invalid argument").
 
 get_status() ->
     handle_status(riak_cs_gc_manager:pp_status()).
@@ -195,10 +198,49 @@ human_time(Seconds) ->
     Seconds0 = Seconds + ?DAYS_FROM_0_TO_1970*?SECONDS_PER_DAY,
     rts:iso8601(calendar:gregorian_seconds_to_datetime(Seconds0)).
 
-parse_batch_opts([]) ->
-    [];
-parse_batch_opts([Leeway | _]) ->
-    [{leeway, catch list_to_integer(Leeway)}].
+parse_batch_opts([Leeway]) ->
+    try
+        case list_to_integer(Leeway) of
+            LeewayInt when LeewayInt >= 0 ->
+                {ok, [{leeway, LeewayInt}]};
+            _O ->
+                {error, negative_leeway}
+        end
+    catch T:E ->
+            {error, {T, E}}
+    end;
+parse_batch_opts(Args) ->
+    case getopt:parse(batch_options(), Args) of
+        {ok, {Options, _}} -> {ok, convert(Options)};
+        {error, _} = E -> E
+    end.
+
+batch_options() ->
+    [{leeway, $l, "leeway", integer, "Leeway seconds"},
+     {start,  $s, "start",  string,
+      "Start time (iso8601 format, like 20130320T094500Z)"},
+     {'end',  $e, "end",    string,
+      "End time (iso8601 format, like 20130420T094500Z)"},
+     {'max-workers', $c, "max-workers", integer, "Number of concurrent workers"}].
+
+convert(Options) ->
+    lists:map(fun({leeway, Leeway}) when Leeway >= 0 ->
+                      {leeway, Leeway};
+                 ({start, Start}) ->
+                      {start, iso8601_to_epoch(Start)};
+                 ({'end', End}) ->
+                      {'end', iso8601_to_epoch(End)};
+                 ({'max-workers', Concurrency}) when Concurrency > 0 ->
+                      {'max-workers', Concurrency};
+                 (BadArg) ->
+                      error({bad_arg, BadArg})
+              end, Options).
+
+-spec iso8601_to_epoch(string()) -> non_neg_integer().
+iso8601_to_epoch(S) ->
+    {ok, Datetime} = rts:datetime(S),
+    GregorianSeconds = calendar:datetime_to_gregorian_seconds(Datetime),
+    GregorianSeconds - 62167219200. %% Unix Epoch in Gregorian second
 
 parse_interval_opts([]) ->
     undefined;

@@ -449,10 +449,10 @@ time_param(RD, Param, N, Default) ->
                 {'EXIT', _} ->
                     {ok, Default};
                 TimeString ->
-                    datetime(TimeString)
+                    rts:datetime(TimeString)
             end;
         TimeString ->
-            datetime(TimeString)
+            rts:datetime(TimeString)
     end.
 
 error_msg(RD, Message) ->
@@ -478,19 +478,6 @@ xml_error_msg(Message) ->
     Doc = [{?KEY_ERROR, [{?KEY_MESSAGE, [Message]}]}],
     riak_cs_xml:to_xml(Doc).
 
-%% @doc Produce a datetime tuple from a ISO8601 string
--spec datetime(binary()|string()) -> {ok, calendar:datetime()} | error.
-datetime(Binary) when is_binary(Binary) ->
-    datetime(binary_to_list(Binary));
-datetime(String) when is_list(String) ->
-    case catch io_lib:fread("~4d~2d~2dT~2d~2d~2dZ", String) of
-        {ok, [Y,M,D,H,I,S], _} ->
-            {ok, {{Y,M,D},{H,I,S}}};
-        %% TODO: match {more, _, _, RevList} to allow for shortened
-        %% month-month/etc.
-        _ ->
-            error
-    end.
 
 %% @doc Will this request require more reads than the configured limit?
 -spec too_many_periods(calendar:datetime(), calendar:datetime())
@@ -516,7 +503,7 @@ datetime_test() ->
 %% iso8601 date strings
 datetime_invalid_prop() ->
     ?FORALL(L, list(char()),
-            case datetime(L) of
+            case rts:datetime(L) of
                 {{_,_,_},{_,_,_}} ->
                     %% really, we never expect this to happen, given
                     %% that a random string is highly unlikely to be

@@ -83,18 +83,40 @@ stop(Pid) ->
 
 %% @doc Read the storage schedule and go to idle.
 
-init([State]) ->
-    {ok, prepare, State, 0}.
-
-has_batch_finished(?STATE{worker_pids=[],
-                          batch=[],
-                          key_list_state=KeyListState} = _State) ->
-    case KeyListState of
-        undefined -> true;
-        _ -> not riak_cs_gc_key_list:has_next(KeyListState)
+init([#gc_batch_state{
+         batch_start=BatchStart,
+         start_key=StartKey,
+         end_key=EndKey,
+         leeway=Leeway,
+         max_workers=MaxWorkers} = State])
+  when
+      %% StartKey can be negative as <<"-">> is smaller than any numeric digits
+      0 =< StartKey andalso
+      %% EndKey cannot be like 300, or would collect all gc keys
+      StartKey =< EndKey ->
+    case riak_cs_gc:default_batch_end(BatchStart, Leeway) of
+        DefaultEndKey when EndKey =< DefaultEndKey andalso
+                           1000000000 =< EndKey ->
+            %% StartKey < EndKey
+            %% EndKey <= BatchStart - Leeway
+            _ = lager:info("Starting garbage collection: "
+                           "(start, end) = (~p, ~p), "
+                           "leeway=~p, batch_start=~p, max_workers=~p",
+                           [StartKey, EndKey, Leeway, BatchStart, MaxWorkers]),
+            {ok, prepare, State, 0};
+        DefaultEndKey ->
+            _ = lager:error("GC did not start: "
+                            "End of GC target period was too recent (~p > ~p)",
+                            [EndKey, DefaultEndKey]),
+            {stop, {error, invalid_gc_end_key}}
     end;
-has_batch_finished(_) ->
-    false.
+init([#gc_batch_state{start_key=StartKey,
+                      end_key=EndKey}]) ->
+    _ = lager:error("GC did not start due to wrong GC target period: "
+                    "(start, end) = (~p, ~p)",
+                    [StartKey, EndKey]),
+    {stop, {error, invalid_gc_start_key}}.
+
 
 %% Asynchronous events
 
@@ -163,6 +185,14 @@ terminate(normal, _StateName, State) ->
                     State?STATE.batch_skips, State?STATE.manif_count,
                     State?STATE.block_count]),
     riak_cs_gc_manager:finished(State);
+terminate(cancel, _StateName, State) ->
+    _ = lager:warning("Garbage collection has been canceled: "
+                      "~b seconds, ~p batch_count, ~p batch_skips, "
+                      "~p manif_count, ~p block_count\n",
+                      [elapsed(State?STATE.batch_start), State?STATE.batch_count,
+                       State?STATE.batch_skips, State?STATE.manif_count,
+                       State?STATE.block_count]),
+    ok;
 terminate(_Reason, _StateName, _State) ->
     ok.
 
@@ -174,8 +204,20 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
-fetch_first_keys(?STATE{batch_start=BatchStart,
-                        leeway=Leeway} = State) ->
+has_batch_finished(?STATE{worker_pids=[],
+                          batch=[],
+                          key_list_state=KeyListState} = _State) ->
+    case KeyListState of
+        undefined -> true;
+        _ -> not riak_cs_gc_key_list:has_next(KeyListState)
+    end;
+has_batch_finished(_) ->
+    false.
+
+fetch_first_keys(?STATE{batch_start=_BatchStart,
+                        start_key=StartKey,
+                        end_key=EndKey,
+                        leeway=_Leeway} = State) ->
 
     %% [Fetch the first set of manifests for deletion]
     %% this does not check out a worker from the riak connection pool;
@@ -186,7 +228,7 @@ fetch_first_keys(?STATE{batch_start=BatchStart,
     %% connection, and avoids duplicating the configuration lookup
     %% code.
     {KeyListRes, KeyListState} =
-        riak_cs_gc_key_list:new(BatchStart, Leeway),
+        riak_cs_gc_key_list:new(StartKey, EndKey),
     #gc_key_list_result{bag_id=BagId, batch=Batch} = KeyListRes,
     _ = lager:debug("Initial batch keys: ~p", [Batch]),
     State?STATE{batch=Batch,

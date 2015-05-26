@@ -32,12 +32,12 @@
 -endif.
 
 %% @doc Start the garbage collection server
--spec new(non_neg_integer(), non_neg_integer()) -> {gc_key_list_result(), gc_key_list_state()}.
-new(BatchStart, Leeway) ->
+-spec new(non_neg_integer(), non_neg_integer()) -> {gc_key_list_result(), gc_key_list_state()|undefined}.
+new(StartKey, EndKey) ->
     Bags = riak_cs_mb_helper:bags(),
     State =  #gc_key_list_state{remaining_bags = Bags,
-                                batch_start=BatchStart,
-                                leeway=Leeway},
+                                start_key=int2bin(StartKey),
+                                end_key=int2bin(EndKey)},
     next_pool(State).
 
 %% @doc Fetch next key list and returns it with updated state
@@ -49,10 +49,11 @@ next(#gc_key_list_state{current_riak_client=RcPid,
     next_pool(State#gc_key_list_state{current_riak_client=undefined});
 next(#gc_key_list_state{current_riak_client=RcPid,
                         current_bag_id=BagId,
-                        batch_start=BatchStart, leeway=Leeway,
+                        start_key=StartKey, end_key=EndKey,
+                        %% batch_start=BatchStart, leeway=Leeway,
                         continuation=Continuation} = State) ->
     {Batch, UpdContinuation} =
-        fetch_eligible_manifest_keys(RcPid, BatchStart, Leeway, Continuation),
+        fetch_eligible_manifest_keys(RcPid, StartKey, EndKey, Continuation),
     lager:debug("next Batch: ~p~n", [Batch]),
     {#gc_key_list_result{bag_id=BagId, batch=Batch},
      State#gc_key_list_state{continuation=UpdContinuation}}.
@@ -69,13 +70,14 @@ next_pool(#gc_key_list_state{remaining_bags=[]}) ->
     {#gc_key_list_result{bag_id=undefined, batch=[]},
      undefined};
 next_pool(#gc_key_list_state{
-             batch_start=BatchStart, leeway=Leeway,
+             start_key=StartKey, end_key=EndKey,
+             %% batch_start=BatchStart, leeway=Leeway,
              remaining_bags=[{BagId, _Address, _PortType}|Rest]}=State) ->
     case riak_cs_riak_client:start_link([]) of
         {ok, RcPid} ->
             ok = riak_cs_riak_client:set_manifest_bag(RcPid, BagId),
             {Batch, Continuation} =
-                fetch_eligible_manifest_keys(RcPid, BatchStart, Leeway, undefined),
+                fetch_eligible_manifest_keys(RcPid, StartKey, EndKey, undefined),
             lager:debug("next_bag ~s Batch: ~p~n", [BagId, Batch]),
             {#gc_key_list_result{bag_id=BagId, batch=Batch},
              State#gc_key_list_state{remaining_bags=Rest,
@@ -90,36 +92,34 @@ next_pool(#gc_key_list_state{
 
 %% @doc Fetch the list of keys for file manifests that are eligible
 %% for delete.
--spec fetch_eligible_manifest_keys(riak_client(), non_neg_integer(), non_neg_integer(), continuation()) ->
+-spec fetch_eligible_manifest_keys(riak_client(), binary(), binary(), continuation()) ->
                                           {[index_result_keys()], continuation()}.
-fetch_eligible_manifest_keys(RcPid, IntervalStart, Leeway, Continuation) ->
-    EndTime = list_to_binary(integer_to_list(IntervalStart - Leeway)),
+fetch_eligible_manifest_keys(RcPid, StartKey, EndKey, Continuation) ->
     UsePaginatedIndexes = riak_cs_config:gc_paginated_indexes(),
     QueryResults = gc_index_query(RcPid,
-                                  EndTime,
+                                  StartKey,
+                                  EndKey,
                                   riak_cs_config:gc_batch_size(),
                                   Continuation,
                                   UsePaginatedIndexes),
     {eligible_manifest_keys(QueryResults, UsePaginatedIndexes), continuation(QueryResults)}.
 
--spec eligible_manifest_keys({{ok, index_results()} | {error, term()}, binary()},
+-spec eligible_manifest_keys({{ok, index_results()} | {error, term()}, {binary(), binary()}},
                              UsePaginatedIndexes::boolean()) ->
                                     [index_result_keys()].
-eligible_manifest_keys({{ok, ?INDEX_RESULTS{keys=Keys}},
-                        _EndTime},
+eligible_manifest_keys({{ok, ?INDEX_RESULTS{keys=Keys}}, _},
                        true) ->
     case Keys of
         [] -> [];
         _  -> [Keys]
     end;
-eligible_manifest_keys({{ok, ?INDEX_RESULTS{keys=Keys}},
-                        _EndTime},
+eligible_manifest_keys({{ok, ?INDEX_RESULTS{keys=Keys}}, _},
                        false) ->
     split_eligible_manifest_keys(riak_cs_config:gc_batch_size(), Keys, []);
-eligible_manifest_keys({{error, Reason}, EndTime}, _) ->
-    _ = lager:warning("Error occurred trying to query from time 0 to ~p"
+eligible_manifest_keys({{error, Reason}, {StartKey, EndKey}}, _) ->
+    _ = lager:warning("Error occurred trying to query from time ~p to ~p"
                       "in gc key index. Reason: ~p",
-                      [EndTime, Reason]),
+                      [StartKey, EndKey, Reason]),
     [].
 
 %% @doc Break a list of gc-eligible keys from the GC bucket into smaller sets
@@ -139,17 +139,19 @@ split_at_most_n(0, L, Acc) ->
 split_at_most_n(N, [H|T], Acc) ->
     split_at_most_n(N-1, T, [H|Acc]).
 
--spec continuation({{ok, index_results()} | {error, term()}, binary()}) ->
-                          continuation().
+-spec continuation({{ok, index_results()} | {error, term()},
+                    {binary(), binary()}}) ->
+                          continuation() | undefined.
 continuation({{ok, ?INDEX_RESULTS{continuation=Continuation}},
               _EndTime}) ->
     Continuation;
 continuation({{error, _}, _EndTime}) ->
     undefined.
 
--spec gc_index_query(riak_client(), binary(), non_neg_integer(), continuation(), boolean()) ->
-                            {{ok, index_results()} | {error, term()}, binary()}.
-gc_index_query(RcPid, EndTime, BatchSize, Continuation, UsePaginatedIndexes) ->
+-spec gc_index_query(riak_client(), binary(), binary(), non_neg_integer(), continuation(), boolean()) ->
+                            {{ok, index_results()} | {error, term()},
+                             {binary(), binary()}}.
+gc_index_query(RcPid, StartKey, EndKey, BatchSize, Continuation, UsePaginatedIndexes) ->
     Options = case UsePaginatedIndexes of
                   true ->
                       [{max_results, BatchSize},
@@ -158,14 +160,15 @@ gc_index_query(RcPid, EndTime, BatchSize, Continuation, UsePaginatedIndexes) ->
                       []
               end,
     {ok, ManifestPbc} = riak_cs_riak_client:manifest_pbc(RcPid),
-    EpochStart = riak_cs_gc:epoch_start(),
+
     Timeout = riak_cs_config:get_index_range_gckeys_timeout(),
     CallTimeout = riak_cs_config:get_index_range_gckeys_call_timeout(),
     Options1 = [{timeout, Timeout}, {call_timeout, CallTimeout}] ++ Options,
     QueryResult = riakc_pb_socket:get_index_range(
                     ManifestPbc,
                     ?GC_BUCKET, ?KEY_INDEX,
-                    EpochStart, EndTime,
+                    StartKey, EndKey,
+                    %% EpochStart, EndTime,
                     Options1),
 
     case QueryResult of
@@ -175,7 +178,11 @@ gc_index_query(RcPid, EndTime, BatchSize, Continuation, UsePaginatedIndexes) ->
             ok
     end,
 
-    {QueryResult, EndTime}.
+    {QueryResult, {StartKey, EndKey}}.
+
+-spec int2bin(non_neg_integer()) -> binary().
+int2bin(I) ->
+    list_to_binary(integer_to_list(I)).
 
 -ifdef(TEST).
 

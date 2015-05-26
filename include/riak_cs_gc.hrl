@@ -26,24 +26,25 @@
 -type index_result_keys() :: keys().
 
 -record(gc_batch_state, {
-          %% start of the current gc interval
+          %% start of the current gc batch
           batch_start :: undefined | non_neg_integer(),
+          %% start of a range in riak-cs-gc bucket to be collected in this batch
+          start_key :: non_neg_integer(),
+          %% end of a range in riak-cs-gc bucket to be collected in this batch
+          end_key :: non_neg_integer(),
           batch_count=0 :: non_neg_integer(),
           %% Count of filesets skipped in this batch
           batch_skips=0 :: non_neg_integer(),
           batch=[] :: undefined | [index_result_keys()], % `undefined' only for testing
           manif_count=0 :: non_neg_integer(),
           block_count=0 :: non_neg_integer(),
-          %% used when moving from paused -> idle
-          interval_remaining :: undefined | non_neg_integer(),
           leeway :: non_neg_integer(),
           worker_pids=[] :: [pid()],
           max_workers :: non_neg_integer(),
           %% Used for paginated 2I querying of GC bucket
           key_list_state :: undefined | gc_key_list_state(),
           %% Options to use when start workers
-          bag_id :: binary(),
-          testing=false :: boolean()
+          bag_id :: binary()
          }).
 
 -record(gc_worker_state, {
@@ -69,8 +70,8 @@
           current_riak_client :: undefined | riak_client(),
           current_bag_id :: bag_id(),
           %% start of the current gc interval
-          batch_start :: undefined | non_neg_integer(),
-          leeway :: non_neg_integer(),
+          start_key :: binary(),
+          end_key :: binary(),
           %% Used for paginated 2I querying of GC bucket
           continuation :: continuation()
          }).
@@ -103,4 +104,3 @@
           initial_delay :: non_neg_integer(),
           timer_ref :: undefined | reference()
          }).
-

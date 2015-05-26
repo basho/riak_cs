@@ -436,13 +436,13 @@ riakcs_switchcmd(Path, N, Cmd) ->
     lists:flatten(io_lib:format("~s-stanchion ~s", [riakcs_binpath(Path, N), Cmd])).
 
 riakcs_gccmd(Path, N, Cmd) ->
-    lists:flatten(io_lib:format("~s-gc ~s", [riakcs_binpath(Path, N), Cmd])).
+    lists:flatten(io_lib:format("~s-admin gc ~s", [riakcs_binpath(Path, N), Cmd])).
 
 riakcs_accesscmd(Path, N, Cmd) ->
-    lists:flatten(io_lib:format("~s-access ~s", [riakcs_binpath(Path, N), Cmd])).
+    lists:flatten(io_lib:format("~s-admin access ~s", [riakcs_binpath(Path, N), Cmd])).
 
 riakcs_storagecmd(Path, N, Cmd) ->
-    lists:flatten(io_lib:format("~s-storage ~s", [riakcs_binpath(Path, N), Cmd])).
+    lists:flatten(io_lib:format("~s-admin storage ~s", [riakcs_binpath(Path, N), Cmd])).
 
 stanchion_binpath(Prefix) ->
     io_lib:format("~s/dev/stanchion/bin/stanchion", [Prefix]).
@@ -1191,3 +1191,18 @@ get_cmd_result(Port, WaitTime) ->
     after WaitTime ->
             {error, timeout}
     end.
+
+%% Copy from rts:iso8601/1
+iso8601(Timestamp) when is_integer(Timestamp) ->
+    GregSec = Timestamp + 719528 * 86400,
+    Datetime = calendar:gregorian_seconds_to_datetime(GregSec),
+    {{Y,M,D},{H,I,S}} = Datetime,
+    io_lib:format("~4..0b~2..0b~2..0bT~2..0b~2..0b~2..0bZ",
+                  [Y, M, D, H, I, S]).
+
+reset_log(Node) ->
+    {ok, _Logs} = rpc:call(Node, gen_event, delete_handler,
+                           [lager_event, riak_test_lager_backend, normal]),
+    ok = rpc:call(Node, gen_event, add_handler,
+                  [lager_event, riak_test_lager_backend,
+                   [rt_config:get(lager_level, info), false]]).

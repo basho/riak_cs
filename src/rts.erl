@@ -45,7 +45,8 @@
          find_samples/6,
          slice_containing/2,
          next_slice/2,
-         iso8601/1
+         iso8601/1,
+         datetime/1
         ]).
 
 -include("rts.hrl").
@@ -198,6 +199,20 @@ iso8601({{Y,M,D},{H,I,S}}) ->
       io_lib:format("~4..0b~2..0b~2..0bT~2..0b~2..0b~2..0bZ",
                     [Y, M, D, H, I, S])).
 
+%% @doc Produce a datetime tuple from a ISO8601 string
+-spec datetime(binary()|string()) -> {ok, calendar:datetime()} | error.
+datetime(Binary) when is_binary(Binary) ->
+    datetime(binary_to_list(Binary));
+datetime(String) when is_list(String) ->
+    case catch io_lib:fread("~4d~2d~2dT~2d~2d~2dZ", String) of
+        {ok, [Y,M,D,H,I,S], _} ->
+            {ok, {{Y,M,D},{H,I,S}}};
+        %% TODO: match {more, _, _, RevList} to allow for shortened
+        %% month-month/etc.
+        _ ->
+            error
+    end.
+
 -ifdef(TEST).
 -ifdef(EQC).
 
@@ -212,8 +227,8 @@ iso8601_roundtrip_prop() ->
     %% datetime/1 is exported from riak_cs_wm_usage when TEST and
     %% EQC are defined
     ?FORALL(T, datetime_g(),
-            is_binary(iso8601(T)) andalso
-                {ok, T} == riak_cs_wm_usage:datetime(iso8601(T))).
+            is_binary(rts:iso8601(T)) andalso
+                {ok, T} ==rts:datetime(rts:iso8601(T))).
 
 
 slice_containing_test() ->
