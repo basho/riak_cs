@@ -218,7 +218,11 @@ handle_info({start, Options}, idle, State) ->
             NextState = schedule_next(State),
             {next_state, idle, NextState}
     end;
+handle_info({start, _}, running, State) ->
+    %% The batch has been already started, but no need to write warning log
+    {next_state, running, State};
 handle_info(Info, StateName, State) ->
+    %% This is really unexpected and unknown - warning.
     _ = lager:warning("Unexpected message received at GC process (~p): ~p",
                       [StateName, Info]),
     {next_state, StateName, State}.
