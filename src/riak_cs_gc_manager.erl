@@ -111,7 +111,7 @@ test_link() ->
 
 
 finished(Report) ->
-    gen_fsm:sync_send_event(?SERVER, {finished, Report}, infinity).
+    gen_fsm:send_all_state_event(?SERVER, {finished, Report}).
 
 %%%===================================================================
 %%% gen_fsm callbacks
@@ -164,17 +164,19 @@ running(cancel, _From, State = #gc_manager_state{gc_batch_pid=Pid}) ->
     catch riak_cs_gc_batch:stop(Pid),
     NextState = schedule_next(State),
     {reply, ok, idle, NextState};
-running({finished, Report}, _From, State) ->
-    %% Add report to history
-    NextState=schedule_next(State),
-    {reply, ok, idle,
-     NextState#gc_manager_state{batch_history=[Report]}};
 running(_Event, _From, State) ->
     Reply = {error, running},
     {reply, Reply, running, State}.
 
 %% @private
-%% @doc Not used.
+%% @doc async notification from gc_batch - if this is synchronous
+%% call, deadlock may happen with synchronous message like
+%% `current_state' from manager to gc_batch.
+handle_event({finished, Report}, _StateName, State) ->
+    %% Add report to history
+    NextState=schedule_next(State),
+    {next_state, idle,
+     NextState#gc_manager_state{batch_history=[Report]}};
 handle_event(_Event, StateName, State) ->
     {next_state, StateName, State}.
 

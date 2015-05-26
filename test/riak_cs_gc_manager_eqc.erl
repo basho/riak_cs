@@ -179,6 +179,8 @@ expected_result(S, S, set_interval) ->
 
 expected_result(idle, running, start_batch) ->
     ok;
+expected_result(idle, idle, finished) ->
+    ok;
 expected_result(idle, idle, _) ->
     {error, idle};
 
