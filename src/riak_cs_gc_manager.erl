@@ -22,16 +22,17 @@
 %%
 %% start -> idle -(start)-> running
 %%            ^               |
-%%            +----(finish)---+
-%%            +----(cancel)---+
+%%            +---(finish)----+
+%%            +---(cancel)----+
 %%
 %% Message excange chart (not a sequence, but just a list)
 %%
-%%  Message\  sdr/rcver  gc_manager    gc_batch
-%%   spawn_link)                   --->
-%%   start)                        --->
-%%   cancel)                       --->
-%%   finished)                     <---
+%%  Message\  sdr/rcver  gc_manager      gc_batch
+%%   start_link)                   ------>
+%%   current_state)                -call->
+%%   stop)                         -call->
+%%   finished)                     <-cast-
+%%   trapped EXIT)                 <------
 %%
 -module(riak_cs_gc_manager).
 
@@ -219,7 +220,11 @@ handle_info({start, Options}, idle, State) ->
             NextState = schedule_next(State),
             {next_state, idle, NextState}
     end;
+handle_info({start, _}, running, State) ->
+    %% The batch has been already started, but no need to write warning log
+    {next_state, running, State};
 handle_info(Info, StateName, State) ->
+    %% This is really unexpected and unknown - warning.
     _ = lager:warning("Unexpected message received at GC process (~p): ~p",
                       [StateName, Info]),
     {next_state, StateName, State}.
