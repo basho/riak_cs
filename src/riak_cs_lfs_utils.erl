@@ -51,13 +51,7 @@
 %%      size will be broken up into
 -spec block_count(non_neg_integer(), pos_integer()) -> non_neg_integer().
 block_count(ContentLength, BlockSize) ->
-    Quotient = ContentLength div BlockSize,
-    case ContentLength rem BlockSize of
-        0 ->
-            Quotient;
-        _ ->
-            Quotient + 1
-    end.
+    riak_cs_manifest_utils:block_count(ContentLength, BlockSize).
 
 block_keynames(KeyName, UUID, BlockList) ->
     MapFun = fun(BlockSeq) ->

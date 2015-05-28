@@ -101,9 +101,9 @@ maybe_sum_bucket(User, ?RCS_BUCKET{name=Name} = _Bucket, Detailed, LeewayEdge)
 sum_bucket(BucketName, Detailed, LeewayEdge) ->
     Query = case Detailed of
                 false ->
-                    [{map, {modfun, riak_cs_storage, object_size_map},
+                    [{map, {modfun, riak_cs_storage_mr, object_size_map},
                       [do_prereduce], false},
-                     {reduce, {modfun, riak_cs_storage, object_size_reduce},
+                     {reduce, {modfun, riak_cs_storage_mr, object_size_reduce},
                       none, true}];
                 true ->
                     [{map, {modfun, riak_cs_storage_mr, bucket_summary_map},
@@ -133,12 +133,6 @@ sum_bucket(BucketName, Detailed, LeewayEdge) ->
     after
         riak_cs_riak_client:checkin(RcPid)
     end.
-
-object_size_map(Obj, KD, Args) ->
-    riak_cs_storage_mr:object_size_map(Obj, KD, Args).
-
-object_size_reduce(Values, Args) ->
-    riak_cs_storage_mr:object_size_reduce(Values, Args).
 
 extract_summary(MRRes, false) ->
     {1, [{Objects, Bytes}]} = lists:keyfind(1, 1, MRRes),
