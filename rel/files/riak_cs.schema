@@ -1,4 +1,5 @@
 %% -*- erlang -*-
+%% ex: ft=erlang ts=4 sw=4 et
 
 %% Riak CS configuration
 
@@ -245,11 +246,11 @@
 %% batches; list of "HHMM" UTC times
 %%
 %%  Automatically calculate at 6am UTC every day:
-%%    stats.storage.schedule.1="06:00"
+%%    stats.storage.schedule.1 = 0600
 %%
 %%  Automatically calculate at 6am and 7:45pm every day:
-%%    stats.storage.schedule.1="06:00"
-%%    stats.storage.schedule.2="19:45"
+%%    stats.storage.schedule.1 = 0600
+%%    stats.storage.schedule.2 = 1945
 {mapping, "stats.storage.schedule.$time", "riak_cs.storage_schedule", [
   {datatype, string}
 ]}.

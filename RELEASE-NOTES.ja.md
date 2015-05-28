@@ -433,7 +433,7 @@ Riak CS 2.0.0へのアップグレード時に `app.config` と `vm.args` は �
 |`{access_archive_period, 3600}`     |`stats.access.archive_period = 1h`      |
 |`{access_archiver_max_backlog, 2}`  |`stats.access.archiver.max_backlog = 2` |
 |(no explicit default)               |`stats.access.archiver.max_workers = 2` |
-|`{storage_schedule, []}`            |`stats.storage.schedule.$time = "06:00"`|
+|`{storage_schedule, []}`            |`stats.storage.schedule.$time = 0600`   |
 |`{storage_archive_period, 86400}`   |`stats.storage.archive_period = 1d`     |
 |`{usage_request_limit, 744}`        |`riak_cs.usage_request_limit = 31d`     |
 |`{cs_version, 10300 }`              |`cs_version = 10300`                    |
