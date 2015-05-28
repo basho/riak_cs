@@ -29,7 +29,7 @@
 %%
 %%  Message\  sdr/rcver  gc_manager      gc_batch
 %%   start_link)                   ------>
-%%   current_status)               -call->
+%%   current_state)                -call->
 %%   stop)                         -call->
 %%   finished)                     <-cast-
 %%   trapped EXIT)                 <------
