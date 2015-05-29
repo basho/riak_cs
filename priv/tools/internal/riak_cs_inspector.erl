@@ -1011,7 +1011,7 @@ get_riak_object(RiakcPid, RiakBucket, RiakKey) ->
         {error, notfound} ->
             [];
         {error, notfound, _VC} ->
-            []
+            [{1, {tombstone, tombstone}}]
     end.
 
 %% Other utilities
