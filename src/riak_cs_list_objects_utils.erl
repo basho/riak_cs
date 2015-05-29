@@ -45,11 +45,6 @@
 %%% Exports
 %%%===================================================================
 
-%% API
--export([start_link/5,
-         get_object_list/1,
-         get_internal_state/1]).
-
 %% Shared Helpers
 -export([manifests_and_prefix_length/1,
          tagged_manifest_and_prefix/1,
@@ -63,37 +58,6 @@
          set_key_list_multiplier/1,
          fold_objects_for_list_keys/0,
          fold_objects_timeout/0]).
-
-%%%===================================================================
-%%% API
-%%%===================================================================
-
-
--spec start_link(riak_client(), pid(), list_object_request(), term(),
-                 UseCache :: boolean()) ->
-    {ok, pid()} | {error, term()}.
-%% @doc An abstraction between the old and new list-keys mechanism. Uses the
-%% old mechanism if `fold_objects_for_list_keys' is false, otherwise uses
-%% the new one. After getting a pid back, the API is the same, so users don't
-%% need to differentiate.
-start_link(RcPid, CallerPid, ListKeysRequest, CacheKey, UseCache) ->
-    case fold_objects_for_list_keys() of
-        true ->
-            riak_cs_list_objects_fsm_v2:start_link(RcPid, ListKeysRequest);
-        false ->
-            riak_cs_list_objects_fsm:start_link(RcPid, CallerPid,
-                                                ListKeysRequest, CacheKey,
-                                                UseCache)
-    end.
-
--spec get_object_list(pid()) ->
-    {ok, list_object_response()} |
-    {error, term()}.
-get_object_list(FSMPid) ->
-    gen_fsm:sync_send_all_state_event(FSMPid, get_object_list, infinity).
-
-get_internal_state(FSMPid) ->
-    gen_fsm:sync_send_all_state_event(FSMPid, get_internal_state, infinity).
 
 %%%===================================================================
 %%% Shared Helpers

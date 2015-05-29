@@ -114,9 +114,6 @@
 
 -spec warnings() -> ok.
 warnings() ->
-    ?MAYBE_WARN(not riak_cs_list_objects_utils:fold_objects_for_list_keys(),
-                "`fold_objects_for_list_keys` is set as false."
-                " This will be removed at next major version."),
     ?MAYBE_WARN(anonymous_user_creation(),
                 "`anonymous_user_creation` is set as true. Set this as false"
                 " when this CS nodes is populated as public service."),
