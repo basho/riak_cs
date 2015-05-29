@@ -872,8 +872,13 @@ get_manifest(RiakcPid, Bucket, Key)->
           {UUID, M} <- case MD of
                            tombstone ->
                                [{tombstone, {tombstone, {Bucket, Key}}}];
-                           _ ->
-                               binary_to_term(Value)
+                           _V ->
+                               case dict:find(<<"X-Riak-Deleted">>, MD) of
+                                   {ok, true} ->
+                                       [{tombstone, {tombstone, {Bucket, Key}}}];
+                                   _ ->
+                                       binary_to_term(Value)
+                               end
                        end]).
 
 get_gc_manifest(RiakcPid, Bucket, Key)->

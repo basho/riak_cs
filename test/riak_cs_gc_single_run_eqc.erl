@@ -304,17 +304,14 @@ meck_delete_fsm_sup() ->
                 fun dummy_start_delete_fsm/2).
 
 dummy_start_delete_fsm(_Node, [_RcPid, {_UUID, ?MANIFEST{bkey={_, K}}=_Manifest},
-                               From, _GCKey, _Args]) ->
+                               FinishFun, _GCKey, _Args]) ->
     TotalBlocks = ?BLOCK_NUM_IN_MANIFEST,
     NumDeleted = case re:run(K, <<"^error:in_block_delete/">>) of
                      nomatch -> TotalBlocks;
                      {match, _} -> 0
                  end,
     DummyDeleteFsmPid =
-        spawn(fun() -> gen_fsm:sync_send_event(
-                         From,
-                         {self(), {ok, {NumDeleted, TotalBlocks}}})
-              end),
+        spawn(fun() -> FinishFun({self(), {ok, {b, k, uuid, NumDeleted, TotalBlocks}}}) end),
     {ok, DummyDeleteFsmPid}.
 
 %% ====================================================================
