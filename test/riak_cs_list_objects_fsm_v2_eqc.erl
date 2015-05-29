@@ -312,7 +312,7 @@ list_manifests_to_the_end(DummyRc, Opts, UserPage, BatchSize, CPrefixesAcc, Cont
                                                        UserPage,
                                                        Opts),
     {ok, FsmPid} = riak_cs_list_objects_fsm_v2:start_link(DummyRc, ListKeysRequest, BatchSize),
-    {ok, ListResp} = riak_cs_list_objects_utils:get_object_list(FsmPid),
+    {ok, ListResp} = gen_fsm:sync_send_all_state_event(FsmPid, get_object_list, infinity),
     CommonPrefixes = ListResp?LORESP.common_prefixes,
     Contents = ListResp?LORESP.contents,
     NewCPrefixAcc = [CommonPrefixes | CPrefixesAcc],

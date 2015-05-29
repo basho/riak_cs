@@ -77,8 +77,8 @@ is_config_valid() ->
         andalso
         case riak_cs_list_objects_utils:fold_objects_for_list_keys() of
             false ->
-                _ = lager:fatal("`fold_objects_for_list_keys` is set as false."
-                                " This is removed in this version."),
+                _ = lager:critical("`fold_objects_for_list_keys` is set as false."
+                                   " This is removed in this version."),
                 false;
             _ -> true
         end.

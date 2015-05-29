@@ -32,11 +32,6 @@
          archive_period/0
         ]).
 
--export([
-         object_size_map/3,
-         object_size_reduce/2
-        ]).
-
 -ifdef(TEST).
 -compile(export_all).
 -include_lib("eunit/include/eunit.hrl").
