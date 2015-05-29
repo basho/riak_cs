@@ -82,10 +82,10 @@ admin_ip_config_test() ->
 storage_schedule_config_test() ->
     SchemaFiles = ["../rel/files/riak_cs.schema"],
     {ok, Context} = file:consult("../rel/vars.config"),
-    Conf = [{["stats", "storage", "schedule", "1"], "00:00"},
-            {["stats", "storage", "schedule", "2"], "19:45"}],
+    Conf = [{["stats", "storage", "schedule", "1"], "0000"},
+            {["stats", "storage", "schedule", "2"], "1945"}],
     Config = cuttlefish_unit:generate_templated_config(SchemaFiles, Conf, Context),
-    cuttlefish_unit:assert_config(Config, "riak_cs.storage_schedule", ["00:00", "19:45"]),
+    cuttlefish_unit:assert_config(Config, "riak_cs.storage_schedule", ["0000", "1945"]),
     ok.
 
 gc_interval_infinity_test() ->
