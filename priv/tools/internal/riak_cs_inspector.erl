@@ -1009,7 +1009,9 @@ get_riak_object(RiakcPid, RiakBucket, RiakKey) ->
                     lists:zip(lists:seq(1, length(MDAndValues)), MDAndValues)
             end;
         {error, notfound} ->
-            []
+            [];
+        {error, notfound, _VC} ->
+            [{1, {tombstone, tombstone}}]
     end.
 
 %% Other utilities
