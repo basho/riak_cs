@@ -120,7 +120,7 @@ update_user_json_test_case(AdminConfig, Node) ->
 
 update_user_xml_test_case(AdminConfig, Node) ->
     Users = [{"gru@despicable.me", "Gru"},
-             {"minion@despicable.me", "Minion"},
+             {"minion@despicable.me", "Minion  Minion"},
              {"dr.nefario@despicable.me", "DrNefario"}],
     update_user_test(AdminConfig, Node, ?XML, Users).
 
