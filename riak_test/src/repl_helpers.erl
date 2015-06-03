@@ -362,3 +362,53 @@ disable_pg13(Node, Cluster) ->
     Res = rpc:call(Node, riak_repl_console, proxy_get, [["disable", Cluster]]),
     ?assertEqual(ok, Res).
 
+
+
+configure_all_repl(SourceNodes, SourceName,
+                   SinkNodes, SinkName) ->
+    lager:info("setting up v3 replication between clusters"),
+
+    SourceFirst = hd(SourceNodes),
+    SinkFirst = hd(SinkNodes),
+
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    %% Name and connect Riak Enterprise V3 replication Source -> Sink
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    repl_helpers:name_cluster(SourceFirst,SourceName),
+    repl_helpers:name_cluster(SinkFirst,SinkName),
+
+    rt:wait_until_ring_converged(SourceNodes),
+    rt:wait_until_ring_converged(SinkNodes),
+
+    repl_helpers:wait_until_13_leader(SourceFirst),
+    LeaderA = rpc:call(SourceFirst, riak_core_cluster_mgr, get_leader, []),
+    LeaderB = rpc:call(SinkFirst, riak_core_cluster_mgr, get_leader, []),
+
+    ModeResA = rpc:call(LeaderA, riak_repl_console, modes, [["mode_repl13"]]),
+    ModeResB = rpc:call(LeaderB, riak_repl_console, modes, [["mode_repl13"]]),
+    lager:info("Replication Modes = ~p", [ModeResA]),
+    lager:info("Replication Modes = ~p", [ModeResB]),
+
+    %% Replication from Source to Sink: source connecting BPort
+    {ok, {_IP, BPort}} = rpc:call(SinkFirst, application, get_env,
+                                  [riak_core, cluster_mgr]),
+    repl_helpers:connect_clusters13(LeaderA, SourceNodes, BPort, "sink"),
+
+    %% ?assertEqual(ok, repl_helpers:wait_for_connection13(LeaderA, "source")),
+    rt:wait_until_ring_converged(SourceNodes),
+
+    PGEnableResult = rpc:call(LeaderB, riak_repl_console, proxy_get, [["enable","source"]]),
+    lager:info("Enabled pg: ~p", [PGEnableResult]),
+    Status = rpc:call(LeaderB, riak_repl_console, status, [quiet]),
+
+    case proplists:get_value(proxy_get_enabled, Status) of
+        undefined -> ?assert(false);
+        EnabledFor -> lager:info("PG enabled for cluster ~p",[EnabledFor])
+    end,
+    rt:wait_until_ring_converged(SourceNodes),
+    rt:wait_until_ring_converged(SinkNodes),
+    {ok, {LeaderA, LeaderB}}.
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    %% Done connection replication
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+

@@ -219,6 +219,15 @@ cs_port(Node) ->
 
 stanchion_port() -> 9095.
 
+-spec longrun_duration() -> undefined | forever | pos_integer().
+longrun_duration() ->
+    case os:getenv("RIAK_CS_LONGRUN_DURATION") of
+        false -> undefined;
+        "" -> undefined;
+        "forever" -> forever;
+        Str -> list_to_integer(Str)
+    end.
+
 riak_config(CustomConfig) ->
     orddict:merge(fun(_, LHS, RHS) -> LHS ++ RHS end,
                   orddict:from_list(lists:sort(CustomConfig)),

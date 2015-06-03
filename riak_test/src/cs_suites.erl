@@ -45,6 +45,8 @@
          admin_credential/1]).
 -export([ops/0, reduced_ops/0]).
 
+-export([admin_config/1]).
+
 -export_type([state/0, op/0, tag/0]).
 -type op() :: atom().
 -type tag() :: string().
@@ -128,6 +130,9 @@ new({AdminConfig, {RiakNodes, CSNodes, StanchionNode}}, Ops) ->
                 cs_nodes = CSNodes,
                 stanchion_nodes = [StanchionNode],
                 admin_config = AdminConfig}}.
+
+-spec admin_config(#state{}) -> tuple().
+admin_config(#state{admin_config=AdminConfig}) -> AdminConfig.
 
 %% Utility functions to avoid many `StateN''s by appplying MFA lists sequentially
 -spec fold_with_state(state(), [{module(), atom(), [term()]}]) -> {ok, state()}.
