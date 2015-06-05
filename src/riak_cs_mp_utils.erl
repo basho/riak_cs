@@ -304,18 +304,16 @@ write_new_manifest(?MANIFEST{bkey={Bucket, Key}, uuid=UUID}=M, Opts, RcPidUnW) -
             try
                 Acl = case proplists:get_value(acl, Opts) of
                           undefined ->
-                              % 4th arg, pid(), unused but honor the contract
                               riak_cs_acl_utils:canned_acl("private", Owner, undefined);
                           AnAcl ->
                               AnAcl
                       end,
-                ClusterId = riak_cs_config:cluster_id(?PID(RcPid)),
-                M2 = M?MANIFEST{acl = Acl,
-                                cluster_id=ClusterId,
-                                write_start_time=os:timestamp()},
                 BagId = riak_cs_mb_helper:choose_bag_id(block, {Bucket, Key, UUID}),
-                M3 = riak_cs_lfs_utils:set_bag_id(BagId, M2),
-                {Bucket, Key} = M?MANIFEST.bkey,
+                M2 = riak_cs_lfs_utils:set_bag_id(BagId, M),
+                ClusterId = riak_cs_mb_helper:cluster_id(BagId),
+                M3 = M2?MANIFEST{acl = Acl,
+                                 cluster_id=ClusterId,
+                                 write_start_time=os:timestamp()},
                 {ok, ManiPid} = riak_cs_manifest_fsm:start_link(Bucket, Key,
                                                                 ?PID(RcPid)),
                 try
@@ -476,7 +474,7 @@ do_part_common2(upload_part, RcPid, M, _Obj, MpM, Props) ->
                      {Bucket, Key, Size, <<"x-riak/multipart-part">>,
                       orddict:new(), BlockSize, M?MANIFEST.acl,
                       infinity, self(), RcPid},
-                     {false, BagId}),
+                     false, BagId),
     try
         ?MANIFEST{content_length = ContentLength,
                   props = MProps} = M,
