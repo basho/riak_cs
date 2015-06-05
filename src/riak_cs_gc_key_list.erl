@@ -25,6 +25,8 @@
 %% API
 -export([new/2, next/1, has_next/1]).
 
+-export([find_oldest_entries/1]).
+
 -include("riak_cs_gc.hrl").
 
 -ifdef(TEST).
@@ -179,6 +181,32 @@ gc_index_query(RcPid, StartKey, EndKey, BatchSize, Continuation, UsePaginatedInd
     end,
 
     {QueryResult, {StartKey, EndKey}}.
+
+-spec find_oldest_entries(BagId::binary()|master) -> {binary()|undefined, [string()]}.
+find_oldest_entries(BagId) ->
+    %% walk around
+    {ok, RcPid} = riak_cs_riak_client:start_link([]),
+    ok = riak_cs_riak_client:set_manifest_bag(RcPid, BagId),
+    Start = riak_cs_gc:epoch_start(),
+    End = riak_cs_gc:default_batch_end(riak_cs_gc:timestamp(),
+                                       riak_cs_gc:leeway_seconds()),
+    {QueryResult, _} = gc_index_query(RcPid,
+                                      int2bin(Start), int2bin(End),
+                                      riak_cs_config:gc_batch_size(),
+                                      undefined, true),
+    case QueryResult of
+        {ok, ?INDEX_RESULTS{keys=[]}} ->
+            {undefined, []};
+        {ok, ?INDEX_RESULTS{keys=Keys}} ->
+            {hd(Keys), lists:usort([ gc_key_to_datetime(Key) || Key <- Keys])};
+        {error, Reason} ->
+            error(Reason)
+    end.
+
+-spec gc_key_to_datetime(binary()) -> string().
+gc_key_to_datetime(Key) ->
+    [Str|_] = string:tokens(binary_to_list(Key), "_"),
+    binary_to_list(riak_cs_gc_console:human_time(list_to_integer(Str))).
 
 -spec int2bin(non_neg_integer()) -> binary().
 int2bin(I) ->

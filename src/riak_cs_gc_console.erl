@@ -30,7 +30,8 @@
          resume/1,
          cancel/1,
          'set-interval'/1,
-         'set-leeway'/1]).
+         'set-leeway'/1,
+         'oldest-entries'/1]).
 
 -define(SAFELY(Code, Description),
         try
@@ -77,6 +78,23 @@ resume(_) ->
 
 'set-leeway'(Opts) ->
     ?SAFELY(set_leeway(parse_leeway_opts(Opts)), "Setting the garbage collection leeway time").
+
+'oldest-entries'(_) ->
+    Bags = riak_cs_mb_helper:bags(),
+    ?SAFELY(begin
+                [begin
+                     {First, Dates} = riak_cs_gc_key_list:find_oldest_entries(BagId),
+                     io:format("~s: ", [BagId]),
+                     case First of
+                         undefined ->
+                             io:format("No GC key found.~n");
+                         _ ->
+                             io:format("First key is '~s'.~n", [First])
+                     end,
+                     [output(Date)|| Date <- Dates]
+                 end || {BagId, _, _} <- Bags]
+            end,
+            "Finding oldest entries in GC bucket").
 
 %%%===================================================================
 %%% Internal functions
@@ -193,6 +211,7 @@ human_detail(Name, Value) ->
     %% anything not to bomb if something was added
     {io_lib:format("~p", [Name]), io_lib:format("~p", [Value])}.
 
+-spec human_time(non_neg_integer()|undefined) -> binary().
 human_time(undefined) -> "unknown/never";
 human_time(Seconds) ->
     Seconds0 = Seconds + ?DAYS_FROM_0_TO_1970*?SECONDS_PER_DAY,
