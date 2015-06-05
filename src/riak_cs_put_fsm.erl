@@ -27,7 +27,7 @@
 -include("riak_cs.hrl").
 
 %% API
--export([start_link/1, start_link/2,
+-export([start_link/1, start_link/3,
          get_uuid/1,
          augment_data/2,
          block_written/2,
@@ -64,6 +64,7 @@
                 riak_client :: riak_client(),
                 mani_pid :: undefined | pid(),
                 make_new_manifest_p :: true | {false, bag_id()},
+                bag_id :: bag_id(),
                 timer_ref :: reference(),
                 bucket :: binary(),
                 key :: binary(),
@@ -90,11 +91,11 @@
                   term(), pos_integer(), acl(), timeout(), pid(), riak_client()}) ->
                         {ok, pid()} | {error, term()}.
 start_link(Tuple) when is_tuple(Tuple) ->
-    start_link(Tuple, true).
+    start_link(Tuple, true, undefined).
 
 -spec start_link({binary(), binary(), non_neg_integer(), binary(),
                   term(), pos_integer(), acl(), timeout(), pid(), riak_client()},
-                 true | {false, bag_id()}) ->
+                 boolean(), bag_id()) ->
                         {ok, pid()} | {error, term()}.
 start_link({_Bucket,
             _Key,
@@ -106,8 +107,9 @@ start_link({_Bucket,
             _Timeout,
             _Caller,
             _RcPid}=Arg1,
-           MakeNewManifestP) ->
-    gen_fsm:start_link(?MODULE, {Arg1, MakeNewManifestP}, []).
+           MakeNewManifestP,
+           BagId) ->
+    gen_fsm:start_link(?MODULE, {Arg1, MakeNewManifestP, BagId}, []).
 
 %% -spec get_uuid(pid()) -> binary().
 get_uuid(Pid) ->
@@ -145,7 +147,7 @@ block_written(Pid, BlockID) ->
                   {ok, prepare, #state{}, timeout()}.
 init({{Bucket, Key, ContentLength, ContentType,
        Metadata, BlockSize, Acl, Timeout, Caller, RcPid},
-      MakeNewManifestP}) ->
+      MakeNewManifestP, BagId}) ->
     %% We need to do this (the monitor) for two reasons
     %% 1. We're started through a supervisor, so the
     %%    proc that actually intends to start us isn't
@@ -168,6 +170,7 @@ init({{Bucket, Key, ContentLength, ContentType,
                          content_type=ContentType,
                          riak_client=RcPid,
                          make_new_manifest_p=MakeNewManifestP,
+                         bag_id=BagId,
                          timeout=Timeout},
      0}.
 
@@ -390,7 +393,8 @@ prepare(State=#state{bucket=Bucket,
                      metadata=Metadata,
                      acl=Acl,
                      riak_client=RcPid,
-                     make_new_manifest_p=MakeNewManifestP})
+                     make_new_manifest_p=MakeNewManifestP,
+                     bag_id=BagId})
   when is_integer(ContentLength), ContentLength >= 0 ->
     %% 1. start the manifest_fsm proc
     {ok, ManiPid} = maybe_riak_cs_manifest_fsm_start_link(
@@ -399,35 +403,19 @@ prepare(State=#state{bucket=Bucket,
     %% this shouldn't be hardcoded.
     %% for now, always populate cluster_id
     ClusterID = riak_cs_config:cluster_id(RcPid),
-    Manifest = case MakeNewManifestP of
-                true ->
-                       riak_cs_lfs_utils:new_manifest(Bucket,
-                                                      Key,
-                                                      UUID,
-                                                      ContentLength,
-                                                      ContentType,
-                                                      %% we don't know the md5 yet
-                                                      undefined,
-                                                      Metadata,
-                                                      BlockSize,
-                                                      Acl,
-                                                      [],
-                                                      ClusterID);
-                {false, BagId} ->
-                       riak_cs_lfs_utils:new_manifest(Bucket,
-                                                      Key,
-                                                      UUID,
-                                                      ContentLength,
-                                                      ContentType,
-                                                      %% we don't know the md5 yet
-                                                      undefined,
-                                                      Metadata,
-                                                      BlockSize,
-                                                      Acl,
-                                                      [],
-                                                      ClusterID,
-                                                      BagId)
-               end,
+    Manifest = riak_cs_lfs_utils:new_manifest(Bucket,
+                                              Key,
+                                              UUID,
+                                              ContentLength,
+                                              ContentType,
+                                              %% we don't know the md5 yet
+                                              undefined,
+                                              Metadata,
+                                              BlockSize,
+                                              Acl,
+                                              [],
+                                              ClusterID,
+                                              BagId),
     NewManifest = Manifest?MANIFEST{write_start_time=os:timestamp()},
 
     Md5 = riak_cs_utils:md5_init(),
@@ -649,7 +637,7 @@ handle_receiving_last_chunk(NewData, State=#state{buffer_queue=BufferQueue,
     Reply = ok,
     {reply, Reply, all_received, NewStateData}.
 
-maybe_riak_cs_manifest_fsm_start_link({false, _BagId}, _Bucket, _Key, _RcPid) ->
+maybe_riak_cs_manifest_fsm_start_link(false, _Bucket, _Key, _RcPid) ->
     {ok, undefined};
 maybe_riak_cs_manifest_fsm_start_link(true, Bucket, Key, RcPid) ->
     riak_cs_manifest_fsm:start_link(Bucket, Key, RcPid).
