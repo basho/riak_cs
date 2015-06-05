@@ -147,7 +147,7 @@ block_written(Pid, BlockID) ->
                   {ok, prepare, #state{}, timeout()}.
 init({{Bucket, Key, ContentLength, ContentType,
        Metadata, BlockSize, Acl, Timeout, Caller, RcPid},
-      MakeNewManifestP, BagId}) ->
+      MakeNewManifestP, BagId0}) ->
     %% We need to do this (the monitor) for two reasons
     %% 1. We're started through a supervisor, so the
     %%    proc that actually intends to start us isn't
@@ -159,6 +159,12 @@ init({{Bucket, Key, ContentLength, ContentType,
     CallerRef = erlang:monitor(process, Caller),
 
     UUID = druuid:v4(),
+    BagId = case BagId0 of
+                undefined ->
+                    riak_cs_mb_helper:choose_bag_id(block, {Bucket, Key, UUID});
+                _ ->
+                    BagId0
+            end,
     {ok, prepare, #state{bucket=Bucket,
                          key=Key,
                          block_size=BlockSize,
@@ -399,10 +405,7 @@ prepare(State=#state{bucket=Bucket,
     %% 1. start the manifest_fsm proc
     {ok, ManiPid} = maybe_riak_cs_manifest_fsm_start_link(
                       MakeNewManifestP, Bucket, Key, RcPid),
-    %% TODO:
-    %% this shouldn't be hardcoded.
-    %% for now, always populate cluster_id
-    ClusterID = riak_cs_config:cluster_id(RcPid),
+    ClusterID = riak_cs_mb_helper:cluster_id(BagId),
     Manifest = riak_cs_lfs_utils:new_manifest(Bucket,
                                               Key,
                                               UUID,

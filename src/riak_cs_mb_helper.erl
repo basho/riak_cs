@@ -23,6 +23,8 @@
 -module(riak_cs_mb_helper).
 
 -export([process_specs/0, bags/0,
+         cluster_id/1,
+         get_cluster_id/1,
          choose_bag_id/2,
          set_bag_id_to_manifest/2,
          bag_id_from_manifest/1]).
@@ -63,4 +65,25 @@ bag_id_from_manifest(?MANIFEST{props = Props}) ->
                 false -> undefined;
                 {block_bag, BagId} -> BagId
             end
+    end.
+
+-spec cluster_id(bag_id()) -> cluster_id().
+cluster_id(BagId) ->
+    case riak_cs_config:proxy_get_active() of
+        false ->
+            undefined;
+        true ->
+            Fun = fun get_cluster_id/1,
+            ?MB_ENABLED(riak_cs_config:cluster_id(Fun),
+                        riak_cs_multibag:cluster_id(Fun, BagId))
+    end.
+
+-spec get_cluster_id(bag_id())-> cluster_id().
+get_cluster_id(BagId) ->
+    PbcPool = riak_cs_riak_client:pbc_pool_name(BagId),
+    {ok, Pbc} = riak_cs_utils:riak_connection(PbcPool),
+    try
+        riak_cs_pbc:get_cluster_id(Pbc)
+    after
+        riak_cs_utils:close_riak_connection(PbcPool, Pbc)
     end.
