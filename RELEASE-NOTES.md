@@ -1,24 +1,125 @@
 # Riak CS 2.1.0 Release Notes
 
+## General Information
+
+This is a new release including new garbage collection, metrics system
+and several other new features. Riak CS 2.1 is supposed to work with
+both Riak 2.0.5 and 2.1.1.
+
 ## Additions
 
-- Module-level hook point for limiting user access and quota usage has
-  been introduced, with very preliminary simple node-wide limting
-  example modules. Operators can make, plug in or combine different
-  modules as quota-limiting, rate-limiting or bandwidth-limiting
-  depeding on their unique requirements. This is **experimental** and
-  plugin SPI (service provider interface) may or may not change in
-  future effort to improve this
-  system. [riak_cs/#1118](https://github.com/basho/riak_cs/pull/1118)
+- Add several options to manual garbage collection batch command, for
+  more flexible operation and to address race condition between
+  replication and garbage collection. Specifically, `--leeway` for
+  temporary leeway period, `--start` and `--end` for target period,
+  `--max-workers` for temporary
+  concurrency. [riak_cs/#1147](https://github.com/basho/riak_cs/pull/1147),
+  [riak_cs/#1148](https://github.com/basho/riak_cs/pull/1148),
+  [riak_cs/#1149](https://github.com/basho/riak_cs/pull/1149).
+
+- Refactor and rename `riak_cs_gc_d`, which is garbage collection
+  daemon by splitting user-facing GC execution state machine and
+  working GC daemon
+  [riak_cs/#1144](https://github.com/basho/riak_cs/pull/1144).
+
+- Add orphan blocks scanner and collector. In case inconsistencies
+  between manifests and blocks, especially manifests deleted and
+  blocks remaining, there are no other way to collect those
+  blocks. The scanner compares full list of existing blocks and full
+  list of manifests under single bucket and figures out missing
+  manifests. THe collector deletes all such blocks to reclaim disk and
+  memory
+  spaces. [riak_cs/#1145](https://github.com/basho/riak_cs/pull/1145),
+  [riak_cs/#1134](https://github.com/basho/riak_cs/pull/1134),
+  [riak_cs/#1133](https://github.com/basho/riak_cs/pull/1133).
+
 - More detailed storage calculation has been introduced. Not only
   active manifests but stale manifests such as waiting for garbage
   collection, or currently being written objects will also be taken
   into account as new storage stats items. This will help accounting
   disk usage in more detail, although it does not take state of blocks
   whether they are halfway uploaded, or halfway deleted, or not.  This
-  is still off by default and
-  **experimental**. [riak_cs/#1120](https://github.com/basho/riak_cs/pull/1120),
+  is still off by default, but can be turned on by setting
+  `detailed_storage_calc` in
+  `advanced.config`. [riak_cs/#1120](https://github.com/basho/riak_cs/pull/1120),
   [riak_cs/#1123](https://github.com/basho/riak_cs/pull/1123),
+
+- Module-level hook point for limiting user access and quota usage has
+  been introduced, with very preliminary simple node-wide limting
+  example modules. Operators can make, plug in or combine different
+  modules as quota-limiting, rate-limiting or bandwidth-limiting
+  depeding on their unique
+  requirements. [riak_cs/#1118](https://github.com/basho/riak_cs/pull/1118)
+
+
+## New `riak-cs-admin gc` command
+
+Riak CS 2.0 and older has a race condition where fullsync replication
+and garbage collection may resurrect deleted blocks without any
+reference to delete them again. Also, combined with realtime
+replication in case replication of GC bucket entry object dropped from
+RTQ, blocks may remain in the sink side without being collected.
+
+To address these issues, Riak CS 2.1 introduced deterministic garbage
+collection to avoid fullsync replication and garbage collection run
+concurrently and working on same blocks and manifests. Operators can
+specify the range of time period that garbage collector works on, to
+collect deleted objects synchronously on both sink and source sides.
+
+For Riak CS 2.0 or older, the way to avoid this issue is as follows.
+
+Set `{delete_mode, keep}` at `riak_kv` section in `advanced.config` of
+Riak. Instead this makes all tombstones remain forever in Riak, keys
+of all deleted blocks remain in cluster consuming fair amount of
+memory. Then blocks brought by fullsync will ignored according to the
+vector clock in sink side.
+
+For Riak CS 2.1, by using deterministic garbage collection this issue
+can be addressed as follows.
+
+Deterministic garbage collection enables operator to control where the
+garbage collector moves on - by specifying the target range of GC
+bucket key range, with start and end timestamp, like:
+
+```
+riak-cs-admin gc batch --end=20150801T000000Z
+```
+
+This command means, garbage collector scans time slot starting from
+`epoch_start` defined in `advanced.config` (or its default `<<"0">>`)
+and deletes all blocks and manifests deleted in that time slot. After
+this garbage collection finished in both sink and source sides, The
+state of all manifests and blocks to be deleted are totally
+aligned. With this state fullsync replication may run without any
+inconsistency.
+
+This command is also useful to run garbage collection in incremental
+try-and-error manner by specifying start key of garbage collection
+period like this:
+
+```
+riak-cs-admin gc batch --start=20150801T000000Z --end=20150901T000000Z
+```
+
+See [this gist](https://gist.github.com/shino/1741d0fb7edd00cdd2ea)
+for another case involving RTQ object drops.
+
+(TBD) A tool to know the state of GC bucket will be also added later.
+
+## Par Riak 2.1 Usage
+
+Since Riak 2.1 includes a copy of `riak_cs_kv_multi_backend`, there
+are no need to add long lines specifying special `multi_backend` and
+`add_paths` configurations in Riak's `advanced.config`. Instead just
+set
+
+```
+storage_backend = prefix_multi
+cs_version = 20100
+```
+
+in `riak.conf`. But if storage calculation is needed in your use case,
+`add_paths` config is still needed to load MapReduce codes into Riak.
 
 # Riak CS 2.0.1 Release Notes
 
