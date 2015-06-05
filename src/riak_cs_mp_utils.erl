@@ -52,7 +52,6 @@
          make_content_types_accepted/3,
          make_special_error/1,
          make_special_error/4,
-         new_manifest/5,
          upload_part/6, upload_part/7,
          upload_part_1blob/2,
          upload_part_finished/7, upload_part_finished/8,
@@ -242,7 +241,6 @@ list_parts(Bucket, Key, UploadId, Caller, Opts, RcPidUnW) ->
 new_manifest(Bucket, Key, ContentType, {_, _, _} = Owner, Opts) ->
     UUID = druuid:v4(),
     %% TODO: add object metadata here, e.g. content-disposition et al.
-    %% TODO: add cluster_id ... which means calling new_manifest/11 not /9.
     MetaData = case proplists:get_value(meta_data, Opts) of
                    undefined -> [];
                    AsIsHdrs  -> AsIsHdrs
@@ -257,7 +255,11 @@ new_manifest(Bucket, Key, ContentType, {_, _, _} = Owner, Opts) ->
                                        MetaData,
                                        riak_cs_lfs_utils:block_size(),
                                        %% ACL: needs Riak client pid, so we wait
-                                       no_acl_yet),
+                                       no_acl_yet,
+                                       [],
+                                       %% Cluster ID and Bag ID are added later
+                                       undefined,
+                                       undefined),
     MpM = ?MULTIPART_MANIFEST{upload_id = UUID,
                               owner = Owner},
     M?MANIFEST{props = replace_mp_manifest(MpM, M?MANIFEST.props)}.
@@ -294,7 +296,7 @@ upload_part_finished(Bucket, Key, UploadId, _PartNumber, PartUUID, MD5,
     do_part_common(upload_part_finished, Bucket, Key, UploadId,
                    Caller, [{upload_part_finished, Extra}], RcPidUnW).
 
-write_new_manifest(M, Opts, RcPidUnW) ->
+write_new_manifest(?MANIFEST{bkey={Bucket, Key}, uuid=UUID}=M, Opts, RcPidUnW) ->
     MpM = get_mp_manifest(M),
     Owner = MpM?MULTIPART_MANIFEST.owner,
     case wrap_riak_client(RcPidUnW) of
@@ -309,14 +311,16 @@ write_new_manifest(M, Opts, RcPidUnW) ->
                       end,
                 ClusterId = riak_cs_config:cluster_id(?PID(RcPid)),
                 M2 = M?MANIFEST{acl = Acl,
-                                cluster_id = ClusterId,
+                                cluster_id=ClusterId,
                                 write_start_time=os:timestamp()},
+                BagId = riak_cs_mb_helper:choose_bag_id(block, {Bucket, Key, UUID}),
+                M3 = riak_cs_lfs_utils:set_bag_id(BagId, M2),
                 {Bucket, Key} = M?MANIFEST.bkey,
                 {ok, ManiPid} = riak_cs_manifest_fsm:start_link(Bucket, Key,
                                                                 ?PID(RcPid)),
                 try
-                    ok = riak_cs_manifest_fsm:add_new_manifest(ManiPid, M2),
-                    {ok, M2?MANIFEST.uuid}
+                    ok = riak_cs_manifest_fsm:add_new_manifest(ManiPid, M3),
+                    {ok, M3?MANIFEST.uuid}
                 after
                     ok = riak_cs_manifest_fsm:stop(ManiPid)
                 end
