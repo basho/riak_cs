@@ -96,6 +96,18 @@ gc_interval_infinity_test() ->
     cuttlefish_unit:assert_config(Config, "riak_cs.gc_interval", infinity),
     ok.
 
+lager_syslog_test() ->
+    SchemaFiles = ["../rel/files/riak_cs.schema"],
+    {ok, Context} = file:consult("../rel/vars.config"),
+    Conf = [{["log", "syslog"], on},
+            {["log", "syslog", "ident"], "ident-test"},
+            {["log", "syslog", "facility"], local7},
+            {["log", "syslog", "level"], debug}
+           ],
+    Config = cuttlefish_unit:generate_templated_config(SchemaFiles, Conf, Context),
+    cuttlefish_unit:assert_config(Config, "lager.handlers.lager_syslog_backend", ["ident-test", local7, debug]),
+    ok.
+
 max_buckets_per_user_test() ->
     SchemaFiles = ["../rel/files/riak_cs.schema"],
     {ok, Context} = file:consult("../rel/vars.config"),
