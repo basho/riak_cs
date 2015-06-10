@@ -367,6 +367,16 @@
   {datatype, integer}
 ]}.
 
+%% == Multi-Datacenter Replication ==
+%% @doc Switch to use proxy_get feature of
+%% Multi-Datacenter Replication.  Make sure
+%% to set proxy_get on also in riak side.
+{mapping, "proxy_get", "riak_cs.proxy_get", [
+  {default, off},
+  {datatype, flag},
+  hidden
+]}.
+
 %% == DTrace ==
 
 %% @doc If your Erlang virtual machine supports DTrace (or
