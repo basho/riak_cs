@@ -412,6 +412,29 @@
   {datatype, flag}
 ]}.
 
+%% @doc When set to 'on', enables log output to syslog.
+{mapping, "log.syslog.ident", "lager.handlers", [
+  {default, "riak-cs"},
+  hidden
+]}.
+
+%% @doc Syslog facility to log entries from Riak CS.
+{mapping, "log.syslog.facility", "lager.handlers", [
+  {default, daemon},
+  {datatype, {enum,[kern, user, mail, daemon, auth, syslog,
+                    lpr, news, uucp, clock, authpriv, ftp,
+                    cron, local0, local1, local2, local3,
+                    local4, local5, local6, local7]}},
+  hidden
+]}.
+
+%% @doc The severity level at which to log entries to syslog, default is 'info'.
+{mapping, "log.syslog.level", "lager.handlers", [
+  {default, info},
+  {datatype, {enum, [debug, info, notice, warning, error, critical, alert, emergency, none]}},
+  hidden
+]}.
+
 {translation,
  "lager.handlers",
  fun(Conf) ->
