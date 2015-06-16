@@ -202,7 +202,7 @@ produce_body(RD, Ctx=#context{rc_pool=RcPool,
     if Method == 'HEAD' ->
             riak_cs_dtrace:dt_object_return(?MODULE, <<"object_head">>,
                                             [], [UserName, BFile_str]),
-            ok = riak_cs_stats:update_with_start(object_head, StartTime);
+            ok = riak_cs_stats:update_with_start([object, head], StartTime);
        true ->
             ok
     end,
@@ -465,7 +465,7 @@ finalize_request(RD,
             {error, Reason} ->
                 ResponseMod:api_error(Reason, RD, Ctx)
         end,
-    ok = riak_cs_stats:update_with_start(object_put, StartTime),
+    ok = riak_cs_stats:update_with_start([object, put], StartTime),
     riak_cs_dtrace:dt_wm_return(?MODULE, <<"finalize_request">>, [S], [UserName, BFile_str]),
     riak_cs_dtrace:dt_object_return(?MODULE, <<"object_put">>, [S], [UserName, BFile_str]),
     Response.

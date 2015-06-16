@@ -45,11 +45,17 @@ confirm() ->
 
     lager:info("Confirming stats"),
     Stats1 = query_stats(UserConfig, rtcs:cs_port(hd(RiakNodes))),
+    _Stats2 = status_cmd(),
     confirm_stat_count(Stats1, <<"service_get_buckets">>, 2),
-    confirm_stat_count(Stats1, <<"object_get">>, 1),
-    confirm_stat_count(Stats1, <<"object_put">>, 1),
-    confirm_stat_count(Stats1, <<"object_delete">>, 1),
+    confirm_stat_count(Stats1, <<"object_gets">>, 1),
+    confirm_stat_count(Stats1, <<"object_puts">>, 1),
+    confirm_stat_count(Stats1, <<"object_deletes">>, 1),
     rtcs:pass().
+
+status_cmd() ->
+    Cmd = rtcs:riakcscmd(rtcs:get_rt_config(cs, current),
+                         1, "status"),
+    os:cmd(Cmd).
 
 query_stats(UserConfig, Port) ->
     lager:debug("Querying stats"),
@@ -66,28 +72,38 @@ query_stats(UserConfig, Port) ->
 
 confirm_initial_stats(StatData) ->
     %% Check for values for all meters to be 0 when system is initially started
-    [?assertEqual([0,0.0,0.0,0.0,0.0,0.0],
-                  proplists:get_value(StatType, StatData))
-                  || StatType <- [<<"block_get">>,
-                                  <<"block_put">>,
-                                  <<"block_delete">>,
-                                  <<"service_get_buckets">>,
-                                  <<"bucket_list_keys">>,
-                                  <<"bucket_create">>,
-                                  <<"bucket_delete">>,
-                                  <<"bucket_get_acl">>,
-                                  <<"bucket_put_acl">>,
-                                  <<"object_get">>,
-                                  <<"object_put">>,
-                                  <<"object_head">>,
-                                  <<"object_delete">>,
-                                  <<"object_get_acl">>,
-                                  <<"object_put_acl">>]],
+    ?assertEqual(106, length(StatData)),
+    [?assert(proplists:is_defined(StatType, StatData))
+     || StatType <- [<<"block_gets">>,
+                     <<"block_puts">>,
+                     <<"block_deletes">>,
+                     <<"service_get_buckets">>,
+                     <<"bucket_list_keys">>,
+                     <<"bucket_creates">>,
+                     <<"bucket_deletes">>,
+                     <<"bucket_get_acl">>,
+                     <<"bucket_put_acl">>,
+                     <<"object_gets">>,
+                     <<"object_puts">>,
+                     <<"object_heads">>,
+                     <<"object_deletes">>,
+                     <<"object_get_acl">>,
+                     <<"object_put_acl">>]],
 
-    ?assertEqual([rtcs:request_pool_size()-1,0,1],
-                 proplists:get_value(<<"request_pool">>, StatData)),
-    ?assertEqual([rtcs:bucket_list_pool_size(),0,0],
-                 proplists:get_value(<<"bucket_list_pool">>, StatData)).
+    Exceptions = [<<"request_pool_workers">>,
+                  <<"request_pool_size">>,
+                  <<"bucket_list_pool_workers">>],
+    ShouldBeZeros = lists:foldl(fun proplists:delete/2, StatData, Exceptions),
+    [begin
+         lager:debug("testing ~p:~p", [Name, Value]),
+         ?assertEqual(0, Value)
+     end|| {Name, Value} <- ShouldBeZeros],
+
+    lager:debug("~p", [proplists:get_value(<<"request_pool_workers">>, StatData)]),
+    ?assertEqual(rtcs:request_pool_size()-1,
+                 proplists:get_value(<<"request_pool_workers">>, StatData)),
+    ?assertEqual(rtcs:bucket_list_pool_size(),
+                 proplists:get_value(<<"bucket_list_pool_workers">>, StatData)).
 
 confirm_stat_count(StatData, StatType, ExpectedCount) ->
-    ?assertEqual(ExpectedCount, hd(proplists:get_value(StatType, StatData))).
+    ?assertEqual(ExpectedCount, proplists:get_value(StatType, StatData)).

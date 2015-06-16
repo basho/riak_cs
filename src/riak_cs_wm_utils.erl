@@ -339,7 +339,7 @@ shift_to_owner(RD, Ctx=#context{response_module=ResponseMod}, OwnerId, RcPid)
 streaming_get(RcPool, RcPid, FsmPid, StartTime, UserName, BFile_str) ->
     case riak_cs_get_fsm:get_next_chunk(FsmPid) of
         {done, Chunk} ->
-            ok = riak_cs_stats:update_with_start(object_get, StartTime),
+            ok = riak_cs_stats:update_with_start([object, get], StartTime),
             riak_cs_riak_client:checkin(RcPool, RcPid),
             riak_cs_dtrace:dt_object_return(riak_cs_wm_object, <<"object_get">>,
                                             [], [UserName, BFile_str]),

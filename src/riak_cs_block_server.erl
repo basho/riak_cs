@@ -213,7 +213,7 @@ handle_cast({delete_block, ReplyPid, Bucket, Key, UUID, BlockNumber}, State=#sta
             %% move on to the next block.
             riak_cs_delete_fsm:block_deleted(ReplyPid, {ok, {UUID, BlockNumber}})
     end,
-    ok = riak_cs_stats:update_with_start(block_delete, StartTime),
+    ok = riak_cs_stats:update_with_start([block, delete], StartTime),
     dt_return(<<"delete_block">>, [BlockNumber], [Bucket, Key]),
     {noreply, State};
 handle_cast(_Msg, State) ->
@@ -257,12 +257,12 @@ do_get_block(ReplyPid, Bucket, Key, ClusterID, UseProxyGet, ProxyActive,
     GetOptions2 = r_one_options(),
 
     ProceedFun = fun(OkReply) ->
-            ok = riak_cs_stats:update_with_start(block_get_retry, StartTime),
+            ok = riak_cs_stats:update_with_start([block, get, retry], StartTime),
             ok = riak_cs_get_fsm:chunk(ReplyPid, {UUID, BlockNumber}, OkReply),
             dt_return(<<"get_block">>, [BlockNumber], [Bucket, Key])
       end,
     RetryFun = fun(NewPause) ->
-               ok = riak_cs_stats:update_with_start(block_get_retry, StartTime),
+               ok = riak_cs_stats:update_with_start([block, get, retry], StartTime),
                do_get_block(ReplyPid, Bucket, Key, ClusterID, UseProxyGet,
                             ProxyActive, UUID, BlockNumber, RcPid, MaxRetries, NewPause)
             end,
@@ -374,7 +374,7 @@ normal_nval_block_get(ReplyPid, Bucket, Key, ClusterID, UseProxyGet, UUID,
         {error, notfound}=NotFound ->
             NotFound
     end,
-    ok = riak_cs_stats:update_with_start(block_get, StartTime),
+    ok = riak_cs_stats:update_with_start([block, get], StartTime),
     ok = riak_cs_get_fsm:chunk(ReplyPid, {UUID, BlockNumber}, ChunkValue),
     dt_return(<<"get_block">>, [BlockNumber], [Bucket, Key]).
 
@@ -528,7 +528,7 @@ do_put_block(FullBucket, FullKey, VClock, Value, MD, RcPid, FailFun) ->
     StartTime = os:timestamp(),
     case riakc_pb_socket:put(block_pbc(RcPid), RiakObject, Timeout) of
         ok ->
-            ok = riak_cs_stats:update_with_start(block_put, StartTime),
+            ok = riak_cs_stats:update_with_start([block, put], StartTime),
             ok;
         Else ->
             _ = FailFun(Else),

@@ -163,7 +163,7 @@ close_riak_connection(Pool, Pid) ->
 -spec delete_object(binary(), binary(), riak_client()) ->
                            {ok, [binary()]} | {error, term()}.
 delete_object(Bucket, Key, RcPid) ->
-    ok = riak_cs_stats:update_with_start(object_delete, os:timestamp()),
+    ok = riak_cs_stats:update_with_start([object, delete], os:timestamp()),
     riak_cs_gc:gc_active_manifests(Bucket, Key, RcPid).
 
 -spec encode_term(term()) -> binary().
@@ -470,7 +470,7 @@ set_object_acl(Bucket, Key, Manifest, Acl, RcPid) ->
     Res = riak_cs_manifest_fsm:update_manifest_with_confirmation(ManiPid, UpdManifest),
     riak_cs_manifest_fsm:stop(ManiPid),
     if Res == ok ->
-            ok = riak_cs_stats:update_with_start(object_put_acl, StartTime);
+            ok = riak_cs_stats:update_with_start([object, put_acl], StartTime);
        true ->
             ok
     end,
