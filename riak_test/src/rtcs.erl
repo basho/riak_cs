@@ -104,6 +104,10 @@ flavored_setup(NumNodes, {multibag, _} = Flavor, Configs, Vsn)
     rtcs_bag:flavored_setup(NumNodes, Flavor, Configs, Vsn).
 
 setup_clusters(Configs, JoinFun, NumNodes, Vsn) ->
+    ConfigFun = fun(_Type, Config, _Node) -> Config end,
+    setup_clusters(Configs, ConfigFun, JoinFun, NumNodes, Vsn).
+
+setup_clusters(Configs, ConfigFun, JoinFun, NumNodes, Vsn) ->
     %% Start the erlcloud app
     erlcloud:start(),
 
@@ -113,14 +117,15 @@ setup_clusters(Configs, JoinFun, NumNodes, Vsn) ->
 
     Cfgs = configs(Configs),
     lager:info("Configs = ~p", [ Cfgs]),
-    {RiakNodes, _CSNodes, _Stanchion} = Nodes = deploy_nodes(NumNodes, Cfgs, Vsn),
+    {RiakNodes, _CSNodes, _Stanchion} = Nodes =
+        deploy_nodes(NumNodes, Cfgs, ConfigFun, Vsn),
     rt:wait_until_nodes_ready(RiakNodes),
     lager:info("Make cluster"),
     JoinFun(RiakNodes),
     ?assertEqual(ok, wait_until_nodes_ready(RiakNodes)),
     ?assertEqual(ok, wait_until_no_pending_changes(RiakNodes)),
     rt:wait_until_ring_converged(RiakNodes),
-    {AdminKeyId, AdminSecretKey} = setup_admin_user(NumNodes, Cfgs, Vsn),
+    {AdminKeyId, AdminSecretKey} = setup_admin_user(NumNodes, Cfgs, ConfigFun, Vsn),
     AdminConfig = rtcs:config(AdminKeyId,
                               AdminSecretKey,
                               rtcs:cs_port(hd(RiakNodes))),
@@ -178,7 +183,8 @@ riak_id_per_cluster(NumNodes) ->
 
 deploy_stanchion(Config) ->
     %% Set initial config
-    update_stanchion_config(rt_config:get(?STANCHION_CURRENT), Config),
+    ConfigFun = fun(_, Config0, _) -> Config0 end,
+    update_stanchion_config(rt_config:get(?STANCHION_CURRENT), Config, ConfigFun),
 
     start_stanchion(),
     lager:info("Stanchion started").
@@ -411,8 +417,14 @@ riak_bitcaskroot(Prefix, N) ->
 riak_binpath(Prefix, N) ->
     io_lib:format("~s/dev/dev~b/bin/riak", [Prefix, N]).
 
+riak_repl_binpath(Prefix, N) ->
+    io_lib:format("~s/dev/dev~b/bin/riak-repl", [Prefix, N]).
+
 riakcmd(Path, N, Cmd) ->
     lists:flatten(io_lib:format("~s ~s", [riak_binpath(Path, N), Cmd])).
+
+riak_repl_cmd(Path, N, Cmd) ->
+    lists:flatten(io_lib:format("~s ~s", [riak_repl_binpath(Path, N), Cmd])).
 
 riakcs_home(Prefix, N) ->
     io_lib:format("~s/dev/dev~b/", [Prefix, N]).
@@ -461,11 +473,9 @@ riak_root_and_vsn(previous, ee) -> {?EE_ROOT, ee_previous}.
 cs_current() ->
     ?CS_CURRENT.
 
-deploy_nodes(NumNodes, InitialConfig) ->
-    deploy_nodes(NumNodes, InitialConfig, current).
-
--spec deploy_nodes(list(), list(), current|previous) -> any().
-deploy_nodes(NumNodes, InitialConfig, Vsn) when Vsn =:= current orelse Vsn =:= previous ->
+-spec deploy_nodes(list(), list(), fun(), current|previous) -> any().
+deploy_nodes(NumNodes, InitialConfig, ConfigFun, Vsn)
+  when Vsn =:= current orelse Vsn =:= previous ->
     lager:info("Initial Config: ~p", [InitialConfig]),
     NodeConfig = [{current, InitialConfig} || _ <- lists:seq(1,NumNodes)],
     RiakNodes = [?DEV(N) || N <- lists:seq(1, NumNodes)],
@@ -504,7 +514,7 @@ deploy_nodes(NumNodes, InitialConfig, Vsn) when Vsn =:= current orelse Vsn =:= p
     {_Versions, Configs} = lists:unzip(NodeConfig),
 
     %% Set initial config
-    set_configs(NodeList, Configs, Vsn),
+    set_configs(NodeList, Configs, ConfigFun, Vsn),
     start_all_nodes(NodeList, Vsn),
 
     Nodes = {RiakNodes, CSNodes, StanchionNode},
@@ -519,10 +529,8 @@ node_id(Node) ->
     NodeMap = rt_config:get(rt_cs_nodes),
     orddict:fetch(Node, NodeMap).
 
-setup_admin_user(NumNodes, InitialConfig) ->
-    setup_admin_user(NumNodes, InitialConfig, current).
-
-setup_admin_user(NumNodes, InitialConfig, Vsn) when Vsn =:= current orelse Vsn =:= previous ->
+setup_admin_user(NumNodes, InitialConfig, ConfigFun, Vsn)
+  when Vsn =:= current orelse Vsn =:= previous ->
     lager:info("Initial Config: ~p", [InitialConfig]),
     NodeConfig = [{current, InitialConfig} || _ <- lists:seq(1,NumNodes)],
     RiakNodes = [?DEV(N) || N <- lists:seq(1, NumNodes)],
@@ -549,10 +557,7 @@ setup_admin_user(NumNodes, InitialConfig, Vsn) when Vsn =:= current orelse Vsn =
     %% Create admin user and set in cs and stanchion configs
     {KeyID, KeySecret} = AdminCreds = create_admin_user(hd(RiakNodes)),
 
-    %% Restart cs and stanchion nodes so admin user takes effect
-    %% stop_cs_and_stanchion_nodes(NodeList),
-
-    set_admin_creds_in_configs(NodeList, Configs, AdminCreds, Vsn),
+    set_admin_creds_in_configs(NodeList, Configs, ConfigFun, AdminCreds, Vsn),
 
     UpdateFun = fun({Node, App}) ->
                         ok = rpc:call(Node, application, set_env,
@@ -563,9 +568,6 @@ setup_admin_user(NumNodes, InitialConfig, Vsn) when Vsn =:= current orelse Vsn =
     ZippedNodes = [{StanchionNode, stanchion} |
              [ {CSNode, riak_cs} || CSNode <- CSNodes ]],
     lists:foreach(UpdateFun, ZippedNodes),
-
-    %% start_cs_and_stanchion_nodes(NodeList),
-    %% [ok = rt:wait_until_pingable(N) || N <- CSNodes ++ [StanchionNode]],
 
     lager:info("NodeConfig: ~p", [ NodeConfig ]),
     lager:info("RiakNodes: ~p", [RiakNodes]),
@@ -653,7 +655,7 @@ get_rt_config(cs, previous) -> rt_config:get(?CS_PREVIOUS);
 get_rt_config(stanchion, current) -> rt_config:get(?STANCHION_CURRENT);
 get_rt_config(stanchion, previous) -> rt_config:get(?STANCHION_PREVIOUS).
 
-set_configs(NodeList, Configs, Vsn) ->
+set_configs(NodeList, Configs, ConfigFun, Vsn) ->
     rt:pmap(fun({_, default}) ->
                     ok;
                ({{_CSNode, RiakNode, _Stanchion}, Config}) ->
@@ -661,36 +663,37 @@ set_configs(NodeList, Configs, Vsn) ->
                     rt_cs_dev:update_app_config(RiakNode, proplists:get_value(riak,
                                                                               Config)),
                     update_cs_config(get_rt_config(cs, Vsn), N,
-                                     proplists:get_value(cs, Config)),
+                                     proplists:get_value(cs, Config), ConfigFun),
                     update_stanchion_config(get_rt_config(stanchion, Vsn),
-                                            proplists:get_value(stanchion, Config));
+                                            proplists:get_value(stanchion, Config),
+                                            ConfigFun);
                ({{_CSNode, RiakNode}, Config}) ->
                     N = rt_cs_dev:node_id(RiakNode),
                     rt_cs_dev:update_app_config(RiakNode,
                                                 proplists:get_value(riak, Config)),
                     update_cs_config(get_rt_config(cs, Vsn), N,
-                                     proplists:get_value(cs, Config))
+                                     proplists:get_value(cs, Config), ConfigFun)
             end,
             lists:zip(NodeList, Configs)),
     enable_zdbbl(Vsn).
 
-set_admin_creds_in_configs(NodeList, Configs, AdminCreds, Vsn) ->
+set_admin_creds_in_configs(NodeList, Configs, ConfigFun, AdminCreds, Vsn) ->
     rt:pmap(fun({_, default}) ->
                     ok;
                ({{_CSNode, RiakNode, _Stanchion}, Config}) ->
                     N = rt_cs_dev:node_id(RiakNode),
                     update_cs_config(get_rt_config(cs, Vsn),
                                      N,
-                                     proplists:get_value(cs, Config),
+                                     proplists:get_value(cs, Config), ConfigFun,
                                      AdminCreds),
                     update_stanchion_config(get_rt_config(stanchion, Vsn),
                                             proplists:get_value(stanchion, Config),
-                                            AdminCreds);
+                                            ConfigFun, AdminCreds);
                ({{_CSNode, RiakNode}, Config}) ->
                     N = rt_cs_dev:node_id(RiakNode),
                     update_cs_config(get_rt_config(cs, Vsn),
                                      N,
-                                     proplists:get_value(cs, Config),
+                                     proplists:get_value(cs, Config), ConfigFun,
                                      AdminCreds)
             end,
             lists:zip(NodeList, Configs)).
@@ -801,6 +804,16 @@ calculate_storage(N, Vsn) ->
     lager:info("Running ~p", [Cmd]),
     os:cmd(Cmd).
 
+enable_proxy_get(SrcN, Vsn, SinkCluster) ->
+    Cmd = riak_repl_cmd(get_rt_config(riak, Vsn), SrcN, "proxy_get enable " ++ SinkCluster),
+    lager:info("Running ~p", [Cmd]),
+    os:cmd(Cmd).
+
+disable_proxy_get(SrcN, Vsn, SinkCluster) ->
+    Cmd = riak_repl_cmd(get_rt_config(riak, Vsn), SrcN, "proxy_get disable " ++ SinkCluster),
+    lager:info("Running ~p", [Cmd]),
+    os:cmd(Cmd).
+
 read_config(Vsn, N, Who) ->
     Prefix = get_rt_config(Who, Vsn),
     EtcPath = case Who of
@@ -815,16 +828,17 @@ read_config(Vsn, N, Who) ->
              Config
      end.
 
-update_cs_config(Prefix, N, Config, {AdminKey, AdminSecret}) ->
+update_cs_config(Prefix, N, Config, ConfigFun, {AdminKey, AdminSecret}) ->
     CSSection = proplists:get_value(riak_cs, Config),
     UpdConfig = [{riak_cs, update_admin_creds(CSSection, AdminKey, AdminSecret)} |
                  proplists:delete(riak_cs, Config)],
-    update_cs_config(Prefix, N, UpdConfig).
+    update_cs_config(Prefix, N, UpdConfig, ConfigFun).
 
-update_cs_config(Prefix, N, Config) ->
+update_cs_config(Prefix, N, Config, ConfigFun) ->
     CSSection = proplists:get_value(riak_cs, Config),
-    UpdConfig = [{riak_cs, update_cs_port(CSSection, N)} |
-                 proplists:delete(riak_cs, Config)],
+    UpdConfig0 = [{riak_cs, update_cs_port(CSSection, N)} |
+                  proplists:delete(riak_cs, Config)],
+    UpdConfig = ConfigFun(cs, UpdConfig0, N),
     update_app_config(riakcs_etcpath(Prefix, N), UpdConfig).
 
 update_admin_creds(Config, AdminKey, AdminSecret) ->
@@ -836,16 +850,17 @@ update_cs_port(Config, N) ->
     Config2 = [{riak_host, {"127.0.0.1", pb_port(N)}} | proplists:delete(riak_host, Config)],
     [{listener, {"127.0.0.1", cs_port(N)}} | proplists:delete(listener, Config2)].
 
-update_stanchion_config(Prefix, Config, {AdminKey, AdminSecret}) ->
+update_stanchion_config(Prefix, Config, ConfigFun, {AdminKey, AdminSecret}) ->
     StanchionSection = proplists:get_value(stanchion, Config),
     UpdConfig = [{stanchion, update_admin_creds(StanchionSection, AdminKey, AdminSecret)} |
                  proplists:delete(stanchion, Config)],
-    update_stanchion_config(Prefix, UpdConfig).
+    update_stanchion_config(Prefix, UpdConfig, ConfigFun).
 
-update_stanchion_config(Prefix, Config) ->
+update_stanchion_config(Prefix, Config0, ConfigFun) ->
+    Config = ConfigFun(stanchion, Config0, undefined),
     update_app_config(stanchion_etcpath(Prefix), Config).
 
-update_app_config(Path,  Config) ->
+update_app_config(Path, Config) ->
     lager:debug("rtcs:update_app_config(~s,~p)", [Path, Config]),
     FileFormatString = "~s/~s.config",
     AppConfigFile = io_lib:format(FileFormatString, [Path, "app"]),
