@@ -2,9 +2,9 @@
 
 ## General Information
 
-This is a new release including new garbage collection, metrics system
-and several other new features. Riak CS 2.1 is supposed to work with
-both Riak 2.0.5 and 2.1.1.
+This release includes several garbage collection refinments, metrics
+system and several other new features. Riak CS 2.1 is supposed to work
+with both Riak 2.0.5 and 2.1.1.
 
 ## Additions
 
@@ -27,7 +27,7 @@ both Riak 2.0.5 and 2.1.1.
   blocks remaining, there are no other way to collect those
   blocks. The scanner compares full list of existing blocks and full
   list of manifests under single bucket and figures out missing
-  manifests. THe collector deletes all such blocks to reclaim disk and
+  manifests. The collector deletes all such blocks to reclaim disk and
   memory
   spaces. [riak_cs/#1145](https://github.com/basho/riak_cs/pull/1145),
   [riak_cs/#1134](https://github.com/basho/riak_cs/pull/1134),
@@ -71,8 +71,8 @@ For Riak CS 2.0 or older, the way to avoid this issue is as follows.
 Set `{delete_mode, keep}` at `riak_kv` section in `advanced.config` of
 Riak. Instead this makes all tombstones remain forever in Riak, keys
 of all deleted blocks remain in cluster consuming fair amount of
-memory. Then blocks brought by fullsync will ignored according to the
-vector clock in sink side.
+memory. Then blocks brought by fullsync will be ignored according to
+the vector clock in sink side.
 
 For Riak CS 2.1, by using deterministic garbage collection this issue
 can be addressed as follows.
@@ -94,7 +94,7 @@ aligned. With this state fullsync replication may run without any
 inconsistency.
 
 This command is also useful to run garbage collection in incremental
-try-and-error manner by specifying start key of garbage collection
+trial-and-error manner by specifying start key of garbage collection
 period like this:
 
 ```
@@ -106,7 +106,7 @@ for another case involving RTQ object drops.
 
 (TBD) A tool to know the state of GC bucket will be also added later.
 
-## Par Riak 2.1 Usage
+## Usage combined with Riak 2.1
 
 Since Riak 2.1 includes a copy of `riak_cs_kv_multi_backend`, there
 are no need to add long lines specifying special `multi_backend` and
