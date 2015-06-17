@@ -63,7 +63,7 @@
                 reply_pid :: {pid(), reference()},
                 riak_client :: riak_client(),
                 mani_pid :: undefined | pid(),
-                make_new_manifest_p :: true | {false, bag_id()},
+                make_new_manifest_p :: boolean(),
                 bag_id :: bag_id(),
                 timer_ref :: reference(),
                 bucket :: binary(),
@@ -143,7 +143,7 @@ block_written(Pid, BlockID) ->
 %% make things more confusing?
 -spec init({{binary(), binary(), non_neg_integer(), binary(),
              term(), pos_integer(), acl(), timeout(), pid(), riak_client()},
-            true | {false, bag_id()}}) ->
+            boolean(), bag_id()}) ->
                   {ok, prepare, #state{}, timeout()}.
 init({{Bucket, Key, ContentLength, ContentType,
        Metadata, BlockSize, Acl, Timeout, Caller, RcPid},
