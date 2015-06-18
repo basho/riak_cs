@@ -684,7 +684,8 @@ set_admin_creds_in_configs(NodeList, Configs, ConfigFun, AdminCreds, Vsn) ->
                     N = rt_cs_dev:node_id(RiakNode),
                     update_cs_config(get_rt_config(cs, Vsn),
                                      N,
-                                     proplists:get_value(cs, Config), ConfigFun,
+                                     proplists:get_value(cs, Config),
+                                     ConfigFun,
                                      AdminCreds),
                     update_stanchion_config(get_rt_config(stanchion, Vsn),
                                             proplists:get_value(stanchion, Config),
@@ -693,7 +694,8 @@ set_admin_creds_in_configs(NodeList, Configs, ConfigFun, AdminCreds, Vsn) ->
                     N = rt_cs_dev:node_id(RiakNode),
                     update_cs_config(get_rt_config(cs, Vsn),
                                      N,
-                                     proplists:get_value(cs, Config), ConfigFun,
+                                     proplists:get_value(cs, Config),
+                                     ConfigFun,
                                      AdminCreds)
             end,
             lists:zip(NodeList, Configs)).
@@ -828,13 +830,18 @@ read_config(Vsn, N, Who) ->
              Config
      end.
 
+update_cs_config(Prefix, N, Config, {_,_} = AdminCred) ->
+    update_cs_config(Prefix, N, Config, fun(_,Config0,_) -> Config0 end, AdminCred);
+update_cs_config(Prefix, N, Config, ConfigFun) when is_function(ConfigFun) ->
+    update_cs_config1(Prefix, N, Config, ConfigFun).
+
 update_cs_config(Prefix, N, Config, ConfigFun, {AdminKey, AdminSecret}) ->
     CSSection = proplists:get_value(riak_cs, Config),
     UpdConfig = [{riak_cs, update_admin_creds(CSSection, AdminKey, AdminSecret)} |
                  proplists:delete(riak_cs, Config)],
-    update_cs_config(Prefix, N, UpdConfig, ConfigFun).
+    update_cs_config1(Prefix, N, UpdConfig, ConfigFun).
 
-update_cs_config(Prefix, N, Config, ConfigFun) ->
+update_cs_config1(Prefix, N, Config, ConfigFun) ->
     CSSection = proplists:get_value(riak_cs, Config),
     UpdConfig0 = [{riak_cs, update_cs_port(CSSection, N)} |
                   proplists:delete(riak_cs, Config)],
@@ -850,13 +857,18 @@ update_cs_port(Config, N) ->
     Config2 = [{riak_host, {"127.0.0.1", pb_port(N)}} | proplists:delete(riak_host, Config)],
     [{listener, {"127.0.0.1", cs_port(N)}} | proplists:delete(listener, Config2)].
 
+update_stanchion_config(Prefix, Config, {_,_} = AdminCreds) ->
+    update_stanchion_config(Prefix, Config, fun(_,Config0,_) -> Config0 end, AdminCreds);
+update_stanchion_config(Prefix, Config, ConfigFun) when is_function(ConfigFun) ->
+    update_stanchion_config1(Prefix, Config, ConfigFun).
+
 update_stanchion_config(Prefix, Config, ConfigFun, {AdminKey, AdminSecret}) ->
     StanchionSection = proplists:get_value(stanchion, Config),
     UpdConfig = [{stanchion, update_admin_creds(StanchionSection, AdminKey, AdminSecret)} |
                  proplists:delete(stanchion, Config)],
-    update_stanchion_config(Prefix, UpdConfig, ConfigFun).
+    update_stanchion_config1(Prefix, UpdConfig, ConfigFun).
 
-update_stanchion_config(Prefix, Config0, ConfigFun) ->
+update_stanchion_config1(Prefix, Config0, ConfigFun) when is_function(ConfigFun) ->
     Config = ConfigFun(stanchion, Config0, undefined),
     update_app_config(stanchion_etcpath(Prefix), Config).
 
