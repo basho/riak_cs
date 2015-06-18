@@ -61,12 +61,12 @@ test_condition_and_permission(RcPid, SrcManifest, RD, Ctx) ->
 authorize_on_src(RcPid, SrcManifest, RD,
                  #context{auth_module=AuthMod, local_context=LocalCtx} = Ctx) ->
     {SrcBucket, SrcKey} = SrcManifest?MANIFEST.bkey,
-    {ok, SrcBucketObj} = riak_cs_bucket:fetch_bucket_object(SrcBucket, RcPid),
+    {ok, SrcBucketObj} = riak_cs_bucket:maybe_cache_fetch_bucket_object(SrcBucket, RcPid),
     {ok, SrcBucketAcl} = riak_cs_acl:bucket_acl(SrcBucketObj),
 
     {UserKey, _} = AuthMod:identify(RD, Ctx),
     {User, UserObj} =
-        case riak_cs_user:get_user(UserKey, RcPid) of
+        case riak_cs_user:maybe_cached_get_user(UserKey, RcPid) of
             {ok, {User0, UserObj0}} ->
                 {User0, UserObj0};
             {error, no_user_key} ->

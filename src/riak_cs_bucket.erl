@@ -25,6 +25,7 @@
 
 %% Public API
 -export([
+         maybe_cache_fetch_bucket_object/2,
          fetch_bucket_object/2,
          create_bucket/6,
          delete_bucket/4,
@@ -325,7 +326,7 @@ delete_bucket_policy(User, UserObj, Bucket, RcPid) ->
 -spec get_bucket_acl_policy(binary(), atom(), riak_client()) ->
                                    {acl(), policy()} | {error, term()}.
 get_bucket_acl_policy(Bucket, PolicyMod, RcPid) ->
-    case fetch_bucket_object(Bucket, RcPid) of
+    case maybe_cache_fetch_bucket_object(Bucket, RcPid) of
         {ok, Obj} ->
             %% For buckets there should not be siblings, but in rare
             %% cases it may happen so check for them and attempt to
@@ -403,6 +404,14 @@ bucket_empty_handle_list_keys(_RcPid, _Bucket, _Error) ->
 bucket_empty_any_pred(RcPid, Bucket) ->
     fun (Key) ->
             riak_cs_utils:key_exists(RcPid, Bucket, Key)
+    end.
+
+maybe_cache_fetch_bucket_object(BucketName, RcPid) ->
+    case riak_cs_config:bucket_cache_enabled() of
+        true ->
+            riak_cs_record_cache:get('moss.buckets.cache', BucketName);
+        _ ->
+            fetch_bucket_object(BucketName, RcPid)
     end.
 
 %% @doc Fetches the bucket object and verify its status.

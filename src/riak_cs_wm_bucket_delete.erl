@@ -66,7 +66,7 @@ process_post(RD, Ctx=#context{bucket=Bucket,
     riak_cs_dtrace:dt_bucket_entry(?MODULE, <<"multiple_delete">>, [], [UserName, Bucket]),
 
 
-    handle_with_bucket_obj(riak_cs_bucket:fetch_bucket_object(Bucket, RcPid), RD, Ctx).
+    handle_with_bucket_obj(riak_cs_bucket:maybe_cache_fetch_bucket_object(Bucket, RcPid), RD, Ctx).
 
 handle_with_bucket_obj({error, notfound}, RD,
                        #context{response_module=ResponseMod} = Ctx) ->

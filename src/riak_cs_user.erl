@@ -28,12 +28,14 @@
          create_user/4,
          display_name/1,
          is_admin/1,
+         maybe_cached_get_user/2,
          get_user/2,
          get_user_by_index/3,
          to_3tuple/1,
          save_user/3,
          update_key_secret/1,
-         update_user/3
+         update_user/3,
+         update_user_record/1
         ]).
 
 -include("riak_cs.hrl").
@@ -126,14 +128,25 @@ update_user(User, UserObj, RcPid) ->
             Error
     end.
 
+maybe_cached_get_user(undefined, _RcPid) ->
+    {error, no_user_key};
+maybe_cached_get_user(KeyId, RcPid) ->
+    case riak_cs_config:user_cache_enabled() of
+        true ->
+            BinKey = list_to_binary(KeyId),
+            %% riak_cs_user_ets_cache:get(BinKey);
+            riak_cs_record_cache:get('moss.users.cache', BinKey);
+        _ ->
+            get_user(KeyId, RcPid)
+    end.
+
 %% @doc Retrieve a Riak CS user's information based on their id string.
 -spec get_user('undefined' | list(), riak_client()) -> {ok, {rcs_user(), riakc_obj:riakc_obj()}} | {error, term()}.
 get_user(undefined, _RcPid) ->
     {error, no_user_key};
-get_user(KeyId, RcPid) ->
+get_user(BinKey, RcPid) when is_binary(BinKey) ->
     %% Check for and resolve siblings to get a
     %% coherent view of the bucket ownership.
-    BinKey = list_to_binary(KeyId),
     case riak_cs_riak_client:get_user(RcPid, BinKey) of
         {ok, {Obj, KeepDeletedBuckets}} ->
             case riakc_obj:value_count(Obj) of
@@ -155,7 +168,11 @@ get_user(KeyId, RcPid) ->
             end;
         Error ->
             Error
-    end.
+    end;
+get_user(KeyId, RcPid) ->
+    BinKey = list_to_binary(KeyId),
+    get_user(BinKey, RcPid).
+
 
 %% @doc Retrieve a Riak CS user's information based on their
 %% canonical id string or email.

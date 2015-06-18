@@ -647,7 +647,7 @@ multipart_description(Manifest) ->
 %% @doc Will cause error:{badmatch, {m_ibco, _}} if CallerKeyId does not exist
 
 is_caller_bucket_owner(RcPid, Bucket, CallerKeyId) ->
-    {m_icbo, {ok, {C, _}}} = {m_icbo, riak_cs_user:get_user(CallerKeyId, RcPid)},
+    {m_icbo, {ok, {C, _}}} = {m_icbo, riak_cs_user:maybe_cached_get_user(CallerKeyId, RcPid)},
     Buckets = [iolist_to_binary(B?RCS_BUCKET.name) ||
                   B <- riak_cs_bucket:get_buckets(C)],
     lists:member(Bucket, Buckets).
