@@ -30,17 +30,13 @@
          close_riak_connection/2,
          delete_object/3,
          encode_term/1,
-         get_keys_and_manifests/3,
          has_tombstone/1,
-         map_keys_and_manifests/3,
-         maybe_process_resolved/3,
          sha_mac/2,
          sha/1,
          md5/1,
          md5_init/0,
          md5_update/2,
          md5_final/1,
-         reduce_keys_and_manifests/2,
          active_manifest_from_response/1,
          hexlist_to_binary/1,
          binary_to_hexlist/1,
@@ -174,102 +170,6 @@ encode_term(Term) ->
         false ->
             term_to_binary(Term)
     end.
-
-%% @doc Return a list of keys for a bucket along
-%% with their associated objects.
--spec get_keys_and_manifests(binary(), binary(), riak_client()) -> {ok, [lfs_manifest()]} | {error, term()}.
-get_keys_and_manifests(BucketName, Prefix, RcPid) ->
-    ManifestBucket = to_bucket_name(objects, BucketName),
-    case active_manifests(ManifestBucket, Prefix, RcPid) of
-        {ok, KeyManifests} ->
-            {ok, lists:keysort(1, KeyManifests)};
-        {error, Reason} ->
-            {error, Reason}
-    end.
-
-active_manifests(ManifestBucket, Prefix, RcPid) ->
-    Input = case Prefix of
-                <<>> -> ManifestBucket;
-                _ ->
-                    %% using filtered listkeys instead of 2i here
-                    %% because 2i seems no more than a 10% performance
-                    %% increase, and it requires extra finagling to
-                    %% deal with its range query being inclusive
-                    %% instead of exclusive
-                    {ManifestBucket, [[<<"starts_with">>, Prefix]]}
-            end,
-    Query = [{map, {modfun, riak_cs_utils, map_keys_and_manifests},
-              undefined, false},
-             {reduce, {modfun, riak_cs_utils, reduce_keys_and_manifests},
-              undefined, true}],
-    {ok, ManifestPbc} = riak_cs_riak_client:manifest_pbc(RcPid),
-    {ok, ReqId} = riakc_pb_socket:mapred_stream(ManifestPbc, Input, Query, self()),
-    receive_keys_and_manifests(ReqId, []).
-
-%% Stream keys to avoid riakc_pb_socket:wait_for_mapred/2's use of
-%% orddict:append_list/3, because it's mega-inefficient, to the point
-%% of unusability for large buckets (memory allocation exit of the
-%% erlang vm for a 100k-object bucket observed in testing).
-receive_keys_and_manifests(ReqId, Acc) ->
-    receive
-        {ReqId, done} ->
-            {ok, Acc};
-        {ReqId, {mapred, _Phase, Res}} ->
-            %% The use of ++ here shouldn't be *too* bad, especially
-            %% since Res is always a single list element in Riak 1.1
-            receive_keys_and_manifests(ReqId, Res++Acc);
-        {ReqId, {error, Reason}} ->
-            {error, Reason}
-    after 60000 ->
-            %% timing out after complete inactivity for 1min
-            %% TODO: would shorter be better? should there be an
-            %% overall timeout?
-            {error, timeout}
-    end.
-
-%% MapReduce function, runs on the Riak nodes, should therefore use
-%% riak_object, not riakc_obj.
-map_keys_and_manifests({error, notfound}, _, _) ->
-    [];
-map_keys_and_manifests(Object, _, _) ->
-    Handler = fun(Resolved) ->
-                      case riak_cs_manifest_utils:active_manifest(Resolved) of
-                          {ok, Manifest} ->
-                              [{riak_object:key(Object), {ok, Manifest}}];
-                          _ ->
-                              []
-                      end
-              end,
-    maybe_process_resolved(Object, Handler, []).
-
-maybe_process_resolved(Object, ResolvedManifestsHandler, ErrorReturn) ->
-    try
-        AllManifests = [ binary_to_term(V)
-                         || {_, V} = Content <- riak_object:get_contents(Object),
-                            not has_tombstone(Content) ],
-        Upgraded = riak_cs_manifest_utils:upgrade_wrapped_manifests(AllManifests),
-        Resolved = riak_cs_manifest_resolution:resolve(Upgraded),
-        ResolvedManifestsHandler(Resolved)
-    catch Type:Reason ->
-            StackTrace = erlang:get_stacktrace(),
-            _ = lager:log(error,
-                          self(),
-                          "Riak CS object mapreduce failed for ~p:~p with reason ~p:~p"
-                          "at ~p",
-                          [riak_object:bucket(Object),
-                           riak_object:key(Object),
-                           Type,
-                           Reason,
-                           StackTrace]),
-            ErrorReturn
-    end.
-
-%% Pipe all the bucket listing results through a passthrough reduce
-%% phase.  This is just a temporary kludge until the sink backpressure
-%% work is done.
-reduce_keys_and_manifests(Acc, _) ->
-    Acc.
-
 
 -ifdef(new_hash).
 -spec sha_mac(iolist() | binary(), iolist() | binary()) -> binary().

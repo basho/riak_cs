@@ -73,7 +73,15 @@ sanity_check(true, {error, Reason}) ->
 
 -spec is_config_valid() -> boolean().
 is_config_valid() ->
-    get_env_response_to_bool(application:get_env(riak_cs, connection_pools)).
+    get_env_response_to_bool(application:get_env(riak_cs, connection_pools))
+        andalso
+        case riak_cs_list_objects_utils:fold_objects_for_list_keys() of
+            false ->
+                _ = lager:critical("`fold_objects_for_list_keys` is set as false."
+                                   " This is removed in this version."),
+                false;
+            _ -> true
+        end.
 
 -spec get_env_response_to_bool(term())  -> boolean().
 get_env_response_to_bool({ok, _}) ->
