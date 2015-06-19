@@ -2,7 +2,7 @@
 
 ## General Information
 
-This release includes several garbage collection refinments, metrics
+This release includes several garbage collection refinements, metrics
 system and several other new features. Riak CS 2.1 is supposed to work
 with both Riak 2.0.5 and 2.1.1.
 
@@ -22,14 +22,8 @@ with both Riak 2.0.5 and 2.1.1.
   working GC daemon
   [riak_cs/#1144](https://github.com/basho/riak_cs/pull/1144).
 
-- Add orphan blocks scanner and collector. In case inconsistencies
-  between manifests and blocks, especially manifests deleted and
-  blocks remaining, there are no other way to collect those
-  blocks. The scanner compares full list of existing blocks and full
-  list of manifests under single bucket and figures out missing
-  manifests. The collector deletes all such blocks to reclaim disk and
-  memory
-  spaces. [riak_cs/#1145](https://github.com/basho/riak_cs/pull/1145),
+- Add several internal operation tools to help diagnose or address
+  issues. [riak_cs/#1145](https://github.com/basho/riak_cs/pull/1145),
   [riak_cs/#1134](https://github.com/basho/riak_cs/pull/1134),
   [riak_cs/#1133](https://github.com/basho/riak_cs/pull/1133).
 
@@ -45,7 +39,7 @@ with both Riak 2.0.5 and 2.1.1.
   [riak_cs/#1123](https://github.com/basho/riak_cs/pull/1123),
 
 - Module-level hook point for limiting user access and quota usage has
-  been introduced, with very preliminary simple node-wide limting
+  been introduced, with very preliminary simple node-wide limiting
   example modules. Operators can make, plug in or combine different
   modules as quota-limiting, rate-limiting or bandwidth-limiting
   depeding on their unique
