@@ -46,7 +46,7 @@ main(Args) ->
     debug("Options: ~p", [Options]),
     case proplists:get_value(host, Options) of
         undefined ->
-            getopt:usage(option_spec(), "riak-cs escript /path/to/block_audit2.erl"),
+            getopt:usage(option_spec(), "riak-cs escript /path/to/ensure_orphan_blocks.erl"),
             halt(1);
         Host ->
             Port = proplists:get_value(port, Options),
