@@ -20,21 +20,14 @@
 
 -module(riak_cs_stats).
 
--behaviour(gen_server).
-
 %% API
--export([start_link/0,
-         update/2,
+-export([update/2,
          update_with_start/2,
          report_json/0,
          report_pretty_json/0,
          get_stats/0]).
 
-%% gen_server callbacks
--export([init/1, handle_call/3, handle_cast/2, handle_info/2,
-         terminate/2, code_change/3]).
-
--record(state, {}).
+-export([init/0]).
 
 -type metric_name() :: list(atom()).
 -export_type([metric_name/0]).
@@ -77,6 +70,12 @@
 
          {[service, get, buckets], spiral, [],
           [{one, service_get_buckets}]},
+         {[service, get, buckets, time], histogram, [],
+          [{mean  , service_get_buckets_time_mean},
+           {median, service_get_buckets_time_median},
+           {95    , service_get_buckets_time_95},
+           {99    , service_get_buckets_time_99},
+           {100   , service_get_buckets_time_100}]},
 
          {[bucket, list_keys], spiral, [], [{one, bucket_list_keys}]},
          {[bucket, create], spiral, [],   [{one, bucket_creates}]},
@@ -163,17 +162,22 @@
            {median, object_put_acl_time_median},
            {95    , object_put_acl_time_95},
            {99    , object_put_acl_time_99},
-           {100   , object_put_acl_time_100}]}
+           {100   , object_put_acl_time_100}]},
 
+         {[manifest, siblings_bp_sleep], spiral, [],
+          [{one, manifest_siblings_bp_sleep},
+           {count, manifest_siblings_bp_sleep_total}]},
+         {[manfiest, siblings_bp_sleep, time], histogram, [],
+          [{mean  , manifest_siblings_bp_sleep_time_mean},
+           {median, manifest_siblings_bp_sleep_time_median},
+           {95    , manifest_siblings_bp_sleep_time_95},
+           {99    , manifest_siblings_bp_sleep_time_99},
+           {100   , manifest_siblings_bp_sleep_time_100}]}
         ]).
 
 %% ====================================================================
 %% API
 %% ====================================================================
-
--spec start_link() -> {ok, pid()} | {error, term()}.
-start_link() ->
-    gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
 -spec update(metric_name(), integer()) -> ok | {error, any()}.
 update(BaseId, ElapsedUs) ->
@@ -206,31 +210,9 @@ get_stats() ->
         ++ [raw_report_pool(P) || P <- [request_pool, bucket_list_pool]],
     lists:flatten(Stats).
 
-%% ====================================================================
-%% gen_server callbacks
-%% ====================================================================
-
-init([]) ->
-    %% There are no need to keep this as gen_server in supervision
-    %% tree, should we remove this from the tree, and let it
-    %% initialize somewhere like riak_cs_app?
+init() ->
     _ = [init_item(I) || I <- ?METRICS],
-    {ok, #state{}}.
-
-handle_call(_Msg, _From, State) ->
-    {reply, ok, State}.
-
-handle_cast(_Msg, State) ->
-    {noreply, State}.
-
-handle_info(_Info, State) ->
-    {noreply, State}.
-
-terminate(_Reason, _State) ->
     ok.
-
-code_change(_OldVsn, State, _Extra) ->
-    {ok, State}.
 
 %% ====================================================================
 %% Internal
