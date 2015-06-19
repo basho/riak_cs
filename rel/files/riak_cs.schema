@@ -373,8 +373,7 @@
 %% to set proxy_get on also in riak side.
 {mapping, "proxy_get", "riak_cs.proxy_get", [
   {default, off},
-  {datatype, flag},
-  hidden
+  {datatype, flag}
 ]}.
 
 %% == DTrace ==
