@@ -83,7 +83,9 @@ get_cluster_id(BagId) ->
     PbcPool = riak_cs_riak_client:pbc_pool_name(BagId),
     {ok, Pbc} = riak_cs_utils:riak_connection(PbcPool),
     try
-        riak_cs_pbc:get_cluster_id(Pbc)
+        ClusterId = riak_cs_pbc:get_cluster_id(Pbc),
+        lager:info("Cluster ID for bag ~p : ~p", [BagId, ClusterId]),
+        ClusterId
     after
         riak_cs_utils:close_riak_connection(PbcPool, Pbc)
     end.
