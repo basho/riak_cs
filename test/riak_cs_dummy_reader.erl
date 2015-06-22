@@ -97,15 +97,19 @@ init([CallerPid, Bucket, Key, ContentLength, BlockSize]) ->
 handle_call(get_manifest, _From, #state{bucket=Bucket,
                                                key=Key,
                                                content_length=ContentLength}=State) ->
-    Manifest = riak_cs_lfs_utils:new_manifest(Bucket,
-                                                Key,
-                                                druuid:v4(),
-                                                ContentLength,
-                                                "application/test",
-                                                <<"md5">>,
-                                                orddict:new(),
-                                                riak_cs_lfs_utils:block_size(),
-                                                riak_cs_acl_utils:default_acl("tester", "id123", "keyid123")),
+    Manifest = riak_cs_lfs_utils:new_manifest(
+                 Bucket,
+                 Key,
+                 druuid:v4(),
+                 ContentLength,
+                 "application/test",
+                 <<"md5">>,
+                 orddict:new(),
+                 riak_cs_lfs_utils:block_size(),
+                 riak_cs_acl_utils:default_acl("tester", "id123", "keyid123"),
+                 [],
+                 undefined,
+                 undefined),
     {reply, {ok, Manifest}, State};
 handle_call(_Msg, _From, State) ->
     {reply, ok, State}.
