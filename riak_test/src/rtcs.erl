@@ -417,14 +417,8 @@ riak_bitcaskroot(Prefix, N) ->
 riak_binpath(Prefix, N) ->
     io_lib:format("~s/dev/dev~b/bin/riak", [Prefix, N]).
 
-riak_repl_binpath(Prefix, N) ->
-    io_lib:format("~s/dev/dev~b/bin/riak-repl", [Prefix, N]).
-
 riakcmd(Path, N, Cmd) ->
     lists:flatten(io_lib:format("~s ~s", [riak_binpath(Path, N), Cmd])).
-
-riak_repl_cmd(Path, N, Cmd) ->
-    lists:flatten(io_lib:format("~s ~s", [riak_repl_binpath(Path, N), Cmd])).
 
 riakcs_home(Prefix, N) ->
     io_lib:format("~s/dev/dev~b/", [Prefix, N]).
@@ -807,14 +801,12 @@ calculate_storage(N, Vsn) ->
     os:cmd(Cmd).
 
 enable_proxy_get(SrcN, Vsn, SinkCluster) ->
-    Cmd = riak_repl_cmd(get_rt_config(riak, Vsn), SrcN, "proxy_get enable " ++ SinkCluster),
-    lager:info("Running ~p", [Cmd]),
-    os:cmd(Cmd).
+    rtdev:run_riak_repl(SrcN, get_rt_config(riak, Vsn),
+                        "proxy_get enable " ++ SinkCluster).
 
 disable_proxy_get(SrcN, Vsn, SinkCluster) ->
-    Cmd = riak_repl_cmd(get_rt_config(riak, Vsn), SrcN, "proxy_get disable " ++ SinkCluster),
-    lager:info("Running ~p", [Cmd]),
-    os:cmd(Cmd).
+    rtdev:run_riak_repl(SrcN, get_rt_config(riak, Vsn),
+                        "proxy_get disable " ++ SinkCluster).
 
 read_config(Vsn, N, Who) ->
     Prefix = get_rt_config(Who, Vsn),
@@ -832,20 +824,20 @@ read_config(Vsn, N, Who) ->
 
 update_cs_config(Prefix, N, Config, {_,_} = AdminCred) ->
     update_cs_config(Prefix, N, Config, fun(_,Config0,_) -> Config0 end, AdminCred);
-update_cs_config(Prefix, N, Config, ConfigFun) when is_function(ConfigFun) ->
-    update_cs_config1(Prefix, N, Config, ConfigFun).
+update_cs_config(Prefix, N, Config, ConfigUpdateFun) when is_function(ConfigUpdateFun) ->
+    update_cs_config1(Prefix, N, Config, ConfigUpdateFun).
 
-update_cs_config(Prefix, N, Config, ConfigFun, {AdminKey, AdminSecret}) ->
+update_cs_config(Prefix, N, Config, ConfigUpdateFun, {AdminKey, AdminSecret}) ->
     CSSection = proplists:get_value(riak_cs, Config),
     UpdConfig = [{riak_cs, update_admin_creds(CSSection, AdminKey, AdminSecret)} |
                  proplists:delete(riak_cs, Config)],
-    update_cs_config1(Prefix, N, UpdConfig, ConfigFun).
+    update_cs_config1(Prefix, N, UpdConfig, ConfigUpdateFun).
 
-update_cs_config1(Prefix, N, Config, ConfigFun) ->
+update_cs_config1(Prefix, N, Config, ConfigUpdateFun) ->
     CSSection = proplists:get_value(riak_cs, Config),
     UpdConfig0 = [{riak_cs, update_cs_port(CSSection, N)} |
                   proplists:delete(riak_cs, Config)],
-    UpdConfig = ConfigFun(cs, UpdConfig0, N),
+    UpdConfig = ConfigUpdateFun(cs, UpdConfig0, N),
     update_app_config(riakcs_etcpath(Prefix, N), UpdConfig).
 
 update_admin_creds(Config, AdminKey, AdminSecret) ->
@@ -859,17 +851,17 @@ update_cs_port(Config, N) ->
 
 update_stanchion_config(Prefix, Config, {_,_} = AdminCreds) ->
     update_stanchion_config(Prefix, Config, fun(_,Config0,_) -> Config0 end, AdminCreds);
-update_stanchion_config(Prefix, Config, ConfigFun) when is_function(ConfigFun) ->
-    update_stanchion_config1(Prefix, Config, ConfigFun).
+update_stanchion_config(Prefix, Config, ConfigUpdateFun) when is_function(ConfigUpdateFun) ->
+    update_stanchion_config1(Prefix, Config, ConfigUpdateFun).
 
-update_stanchion_config(Prefix, Config, ConfigFun, {AdminKey, AdminSecret}) ->
+update_stanchion_config(Prefix, Config, ConfigUpdateFun, {AdminKey, AdminSecret}) ->
     StanchionSection = proplists:get_value(stanchion, Config),
     UpdConfig = [{stanchion, update_admin_creds(StanchionSection, AdminKey, AdminSecret)} |
                  proplists:delete(stanchion, Config)],
-    update_stanchion_config1(Prefix, UpdConfig, ConfigFun).
+    update_stanchion_config1(Prefix, UpdConfig, ConfigUpdateFun).
 
-update_stanchion_config1(Prefix, Config0, ConfigFun) when is_function(ConfigFun) ->
-    Config = ConfigFun(stanchion, Config0, undefined),
+update_stanchion_config1(Prefix, Config0, ConfigUpdateFun) when is_function(ConfigUpdateFun) ->
+    Config = ConfigUpdateFun(stanchion, Config0, undefined),
     update_app_config(stanchion_etcpath(Prefix), Config).
 
 update_app_config(Path, Config) ->
