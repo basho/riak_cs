@@ -250,7 +250,6 @@ use_t2b_compression() ->
 %% store the value in app:set_env
 -spec cluster_id(fun()) -> binary().
 cluster_id(GetClusterIdFun) ->
-    ClusterID = GetClusterIdFun(master),
     case application:get_env(riak_cs, cluster_id) of
         {ok, ClusterID} ->
             ClusterID;
