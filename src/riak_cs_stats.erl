@@ -1,6 +1,6 @@
 %% ---------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2015 Basho Technologies, Inc.  All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -21,7 +21,8 @@
 -module(riak_cs_stats).
 
 %% API
--export([update/2,
+-export([safe_update/2,
+         update/2,
          update_with_start/2,
          report_json/0,
          report_pretty_json/0,
@@ -69,7 +70,8 @@
            {100   , block_delete_time_100}]},
 
          {[service, get, buckets], spiral, [],
-          [{one, service_get_buckets}]},
+          [{one, service_get_buckets},
+           {count, service_get_buckets_total}]},
          {[service, get, buckets, time], histogram, [],
           [{mean  , service_get_buckets_time_mean},
            {median, service_get_buckets_time_median},
@@ -77,11 +79,18 @@
            {99    , service_get_buckets_time_99},
            {100   , service_get_buckets_time_100}]},
 
-         {[bucket, list_keys], spiral, [], [{one, bucket_list_keys}]},
-         {[bucket, create], spiral, [],   [{one, bucket_creates}]},
-         {[bucket, delete], spiral, [],   [{one, bucket_deletes}]},
-         {[bucket, get_acl], spiral, [],  [{one, bucket_get_acl}]},
-         {[bucket, put_acl], spiral, [],  [{one, bucket_put_acl}]},
+         {[bucket, list_keys], spiral, [],
+          [{one, bucket_list_keys}, {count, bucket_list_keys_total}]},
+         {[bucket, create], spiral, [],
+          [{one, bucket_creates}, {count, bucket_creates_total}]},
+         {[bucket, delete], spiral, [],
+          [{one, bucket_deletes}, {count, bucket_deletes_total}]},
+         {[bucket, get_acl], spiral, [],
+          [{one, bucket_get_acl}, {count, bucket_get_acl_total}]},
+         {[bucket, put_acl], spiral, [],
+          [{one, bucket_put_acl}, {count, bucket_put_acl_total}]},
+         {[bucket, put_policy], spiral, [],
+          [{one, bucket_put_policy}, {count, bucket_put_policy_total}]},
 
          {[bucket, list_keys, time], histogram, [],
           [{mean  , bucket_list_keys_time_mean},
@@ -120,12 +129,18 @@
            {99    , bucket_put_policy_time_99},
            {100   , bucket_put_policy_time_100}]},
 
-         {[object, get], spiral, [], [{one, object_gets}]},
-         {[object, put], spiral, [], [{one, object_puts}]},
-         {[object, head], spiral, [], [{one, object_heads}]},
-         {[object, delete], spiral, [], [{one, object_deletes}]},
-         {[object, get_acl], spiral, [], [{one, object_get_acl}]},
-         {[object, put_acl], spiral, [], [{one, object_put_acl}]},
+         {[object, get], spiral, [],
+          [{one, object_gets}, {count, object_gets_total}]},
+         {[object, put], spiral, [],
+          [{one, object_puts}, {count, object_puts_total}]},
+         {[object, head], spiral, [],
+          [{one, object_heads}, {count, object_heads_total}]},
+         {[object, delete], spiral, [],
+          [{one, object_deletes}, {count, object_deletes_total}]},
+         {[object, get_acl], spiral, [],
+          [{one, object_get_acl}, {count, object_get_acl_total}]},
+         {[object, put_acl], spiral, [],
+          [{one, object_put_acl}, {count, object_put_acl_total}]},
 
          {[object, get, time], histogram, [],
           [{mean  , object_get_time_mean},
@@ -167,7 +182,7 @@
          {[manifest, siblings_bp_sleep], spiral, [],
           [{one, manifest_siblings_bp_sleep},
            {count, manifest_siblings_bp_sleep_total}]},
-         {[manfiest, siblings_bp_sleep, time], histogram, [],
+         {[manifest, siblings_bp_sleep, time], histogram, [],
           [{mean  , manifest_siblings_bp_sleep_time_mean},
            {median, manifest_siblings_bp_sleep_time_median},
            {95    , manifest_siblings_bp_sleep_time_95},
@@ -179,17 +194,23 @@
 %% API
 %% ====================================================================
 
--spec update(metric_name(), integer()) -> ok | {error, any()}.
-update(BaseId, ElapsedUs) ->
+
+
+-spec safe_update(metric_name(), integer()) -> ok | {error, any()}.
+safe_update(BaseId, ElapsedUs) ->
     %% Just in case those metrics happen to be not registered; should
     %% be a bug and also should not interrupt handling requests by
     %% crashing.
     try
-        ok = exometer:update([riak_cs|BaseId], 1),
-        ok = exometer:update([riak_cs|BaseId]++[time], ElapsedUs)
+        update(BaseId, ElapsedUs)
     catch T:E ->
             lager:error("Failed on storing some metrics: ~p,~p", [T,E])
     end.
+
+-spec update(metric_name(), integer()) -> ok | {error, any()}.
+update(BaseId, ElapsedUs) ->
+    ok = exometer:update([riak_cs|BaseId], 1),
+    ok = exometer:update([riak_cs|BaseId]++[time], ElapsedUs).
 
 -spec update_with_start(metric_name(), erlang:timestamp()) ->
                                    ok | {error, any()}.
@@ -234,3 +255,60 @@ raw_report_pool(Pool) ->
     [{list_to_atom(lists:flatten([Name, $_, "workers"])), PoolWorkers},
      {list_to_atom(lists:flatten([Name, $_, "overflow"])), PoolOverflow},
      {list_to_atom(lists:flatten([Name, $_, "size"])), PoolSize}].
+
+
+
+-ifdef(TEST).
+
+-include_lib("eunit/include/eunit.hrl").
+
+stats_metric_test() ->
+    [begin
+         ?debugVal(Key),
+         case lists:last(Key) of
+             time ->
+                 ?assertEqual(histogram, Type),
+                 [?assert(proplists:is_defined(M, Aliases))
+                  || M <- [mean, median, 95, 99, 100]];
+             _ ->
+                 ?assertNotEqual(false, lists:keyfind(Key, 1, ?METRICS)),
+                 ?assertEqual(spiral, Type),
+                 ?assert(proplists:is_defined(one, Aliases)),
+                 ?assert(proplists:is_defined(count, Aliases))
+         end,
+         ?assertEqual([], Options)
+     end || {Key, Type, Options, Aliases} <- ?METRICS].
+
+stats_test_() ->
+    Apps = [setup, compiler, syntax_tools, goldrush, lager, exometer_core],
+    {setup,
+     fun() ->
+             [ok = application:start(App) || App <- Apps],
+             ok = riak_cs_stats:init()
+     end,
+     fun(_) ->
+             [ok = application:stop(App) || App <- Apps]
+     end,
+     [{inparallel, [fun() ->
+                            %% ?debugVal(Key),
+                            case lists:last(Key) of
+                                time -> ok;
+                                _ -> riak_cs_stats:update(Key, 16#deadbeef)
+                            end
+                    end || {Key, _, _, _} <- ?METRICS]},
+     fun() ->
+             [begin
+                  Items = raw_report_item(I),
+                  %% ?debugVal(Items),
+                  case length(Items) of
+                      2 ->
+                          ?assertEqual([1, 1],
+                                       [N || {_, N} <- Items]);
+                      5 ->
+                          ?assertEqual([16#deadbeef, 16#deadbeef, 16#deadbeef, 16#deadbeef, 0],
+                                       [N || {_, N} <- Items])
+                  end
+              end || I <- ?METRICS]
+     end]}.
+
+-endif.
