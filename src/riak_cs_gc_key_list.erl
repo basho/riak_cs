@@ -182,7 +182,9 @@ gc_index_query(RcPid, StartKey, EndKey, BatchSize, Continuation, UsePaginatedInd
 
     {QueryResult, {StartKey, EndKey}}.
 
--spec find_oldest_entries(BagId::binary()|master) -> {binary()|undefined, [string()]}.
+-spec find_oldest_entries(BagId::binary()|master) ->
+                                 {ok, [{string(), [char()]}]} |
+                                 {error, term()}.
 find_oldest_entries(BagId) ->
     %% walk around
     {ok, RcPid} = riak_cs_riak_client:start_link([]),
@@ -195,18 +197,30 @@ find_oldest_entries(BagId) ->
                                       riak_cs_config:gc_batch_size(),
                                       undefined, true),
     case QueryResult of
-        {ok, ?INDEX_RESULTS{keys=[]}} ->
-            {undefined, []};
         {ok, ?INDEX_RESULTS{keys=Keys}} ->
-            {hd(Keys), lists:usort([ gc_key_to_datetime(Key) || Key <- Keys])};
-        {error, Reason} ->
-            error(Reason)
+            List = correlate([ gc_key_to_datetime(Key) || Key <- Keys]),
+            {ok, non_neg_only(List)};
+        {error, _Reason} = E ->
+            E
     end.
 
--spec gc_key_to_datetime(binary()) -> string().
+-spec gc_key_to_datetime(binary()) -> {string(), non_neg_integer()}.
 gc_key_to_datetime(Key) ->
-    [Str|_] = string:tokens(binary_to_list(Key), "_"),
-    binary_to_list(riak_cs_gc_console:human_time(list_to_integer(Str))).
+    [Str|Suffix] = string:tokens(binary_to_list(Key), "_"),
+    Datetime = binary_to_list(riak_cs_gc_console:human_time(list_to_integer(Str))),
+    case Suffix of
+        [] -> {Datetime, -1}; %% Very old version of Riak CS, has no suffix
+        _ ->  {Datetime, list_to_integer(lists:flatten(Suffix))}
+    end.
+
+non_neg_only(List) ->
+    [{K, lists:sort(lists:filter(fun(V)-> V >= 0 end, Values))} || {K, Values} <- List].
+
+correlate(Pairs) ->
+    F = fun({K,V}, [{K,Vs}|L]) -> [{K,[V|Vs]}|L];
+           ({K,V}, Acc) -> [{K, [V]}|Acc]
+        end,
+    lists:reverse(lists:foldl(F, [], lists:sort(Pairs))).
 
 -spec int2bin(non_neg_integer()) -> binary().
 int2bin(I) ->
@@ -217,6 +231,12 @@ int2bin(I) ->
 %% ===================================================================
 %% Tests
 %% ===================================================================
+
+correlate_test() ->
+    Data = [{a, 10}, {b, -1}, {c, 23}, {a, -1}, {c, 435}, {c, 434}],
+    ?assertEqual([{a, [10]},
+                  {b, []},
+                  {c, [23, 434, 435]}], non_neg_only(correlate(Data))).
 
 split_eligible_manifest_keys_test() ->
     ?assertEqual([], split_eligible_manifest_keys(3, [], [])),

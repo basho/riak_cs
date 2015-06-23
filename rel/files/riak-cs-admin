@@ -23,7 +23,7 @@ case "$1" in
     gc)
         shift
         case "$1" in
-            batch|status|pause|resume|cancel|set-interval|set-leeway|oldest-entries)
+            batch|status|pause|resume|cancel|set-interval|set-leeway|earliest-keys)
                 # Make sure the local node IS running
                 node_up_check
 
@@ -32,7 +32,7 @@ case "$1" in
             *)
                 echo "Usage: $SCRIPT gc { batch [<leeway_seconds>|--help] | status | pause | resume | cancel |"
                 echo "                          set-interval <interval_seconds> | set-leeway <leeway_seconds> |"
-                echo "                          oldest-entries [bag names]}"
+                echo "                          earliest-keys [bag names]}"
                 exit 1
                 ;;
         esac

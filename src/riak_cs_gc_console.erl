@@ -31,7 +31,7 @@
          cancel/1,
          'set-interval'/1,
          'set-leeway'/1,
-         'oldest-entries'/1]).
+         'earliest-keys'/1]).
 
 -define(SAFELY(Code, Description),
         try
@@ -79,19 +79,18 @@ resume(_) ->
 'set-leeway'(Opts) ->
     ?SAFELY(set_leeway(parse_leeway_opts(Opts)), "Setting the garbage collection leeway time").
 
-'oldest-entries'(_) ->
+'earliest-keys'(_) ->
     Bags = riak_cs_mb_helper:bags(),
     ?SAFELY(begin
                 [begin
-                     {First, Dates} = riak_cs_gc_key_list:find_oldest_entries(BagId),
-                     io:format("~s: ", [BagId]),
-                     case First of
-                         undefined ->
-                             io:format("No GC key found.~n");
+                     {ok, Dates} = riak_cs_gc_key_list:find_oldest_entries(BagId),
+                     case Dates of
+                         [] ->
+                             io:format("No GC key found in ~s.~n", [BagId]);
                          _ ->
-                             io:format("First key is '~s'.~n", [First])
-                     end,
-                     [output(Date)|| Date <- Dates]
+                             io:format("GC keys in ~s:~n", [BagId]),
+                             [io:format("~s: ~w~n", [Date, Suffix]) || {Date, Suffix} <- Dates]
+                     end
                  end || {BagId, _, _} <- Bags]
             end,
             "Finding oldest entries in GC bucket").
