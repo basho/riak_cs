@@ -35,7 +35,7 @@
 %%%===================================================================
 
 status([]) ->
-    Stats = lists:sort(riak_cs_stats:get_stats()),
+    Stats = riak_cs_stats:get_stats(),
     [io:format("~p : ~p~n", [Name, Value])
      || {Name, Value} <- Stats].
 
