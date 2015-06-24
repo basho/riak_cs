@@ -20,9 +20,6 @@ compile: deps
 compile-client-test: all
 	@./rebar client_test_compile
 
-compile-int-test: all
-	@./rebar int_test_compile
-
 bitcask-downgrade-script: riak_test/src/downgrade_bitcask.erl
 
 ## KLUDGE, as downgrade script is not included in the release.
@@ -42,9 +39,6 @@ compile-riak-test: all bitcask-downgrade-script
 
 clean-client-test:
 	@./rebar client_test_clean
-
-clean-int-test:
-	@./rebar int_test_clean
 
 clean-riak-test:
 	@./rebar riak_test_clean
@@ -113,9 +107,6 @@ test-php:
 
 test-go:
 	@cd client_tests/go && make
-
-test-int: compile-int-test
-	@./rebar skip_deps=true int_test_run
 
 ##
 ## Release targets

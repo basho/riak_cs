@@ -404,6 +404,7 @@ if [ 1 -eq $get_riakcmds ]; then
 
     dump riak_cs_ping "$cs_bin_dir"/riak-cs ping
     dump riak_cs_version "$cs_bin_dir"/riak-cs version
+    dump riak_cs_status "$cs_bin_dir"/riak-cs-admin status
     dump riak_cs_gc_status "$cs_bin_dir"/riak-cs-admin gc status
     dump riak_cs_storage_status "$cs_bin_dir"/riak-cs-admin storage status
     if [ -f "$cs_bin_dir/riak-cs-multibag" ]; then

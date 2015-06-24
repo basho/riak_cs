@@ -148,7 +148,7 @@ produce_body(RD, Ctx=#context{local_context=LocalCtx,
     riak_cs_dtrace:dt_object_entry(?MODULE, <<"object_get_acl">>,
                                       [], [UserName, BFile_str]),
     riak_cs_get_fsm:stop(GetFsmPid),
-    ok = riak_cs_stats:update_with_start(object_get_acl, StartTime),
+    ok = riak_cs_stats:update_with_start([object, get_acl], StartTime),
     Acl = Mfst?MANIFEST.acl,
     case Acl of
         undefined ->

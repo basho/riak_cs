@@ -65,7 +65,7 @@ api_request(RD, Ctx=#context{bucket=Bucket,
             get_max_keys(RD),
             get_options(RD),
             RcPid),
-    ok = riak_cs_stats:update_with_start(bucket_list_keys, StartTime),
+    ok = riak_cs_stats:update_with_start([bucket, list_keys], StartTime),
     riak_cs_dtrace:dt_bucket_return(?MODULE, <<"list_keys">>, [200], [UserName, Bucket]),
     Res.
 

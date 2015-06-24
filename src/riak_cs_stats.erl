@@ -1,6 +1,6 @@
 %% ---------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2015 Basho Technologies, Inc.  All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -20,68 +20,202 @@
 
 -module(riak_cs_stats).
 
--behaviour(gen_server).
-
 %% API
--export([start_link/0,
+-export([safe_update/2,
          update/2,
          update_with_start/2,
-         report/0,
          report_json/0,
          report_pretty_json/0,
-         report_str/0,
          get_stats/0]).
 
-%% gen_server callbacks
--export([init/1, handle_call/3, handle_cast/2, handle_info/2,
-         terminate/2, code_change/3]).
+-export([init/0]).
 
--record(state, {}).
+-type metric_name() :: list(atom()).
+-export_type([metric_name/0]).
 
--define(IDS, [block_get,
-              block_get_retry,
-              block_put,
-              block_delete,
-              service_get_buckets,
-              bucket_list_keys,
-              bucket_create,
-              bucket_delete,
-              bucket_get_acl,
-              bucket_put_acl,
-              object_get,
-              object_put,
-              object_head,
-              object_delete,
-              object_get_acl,
-              object_put_acl,
-              manifest_siblings_bp_sleep]).
+-define(METRICS,
+        %% [{metric_name(), exometer:type(), [exometer:option()], Aliases}]
+        [{[block, get], spiral, [],
+          [{one, block_gets}, {count, block_gets_total}]},
+         {[block, get, retry], spiral, [],
+          [{one, block_gets_retry}, {count, block_gets_retry_total}]},
+         {[block, put], spiral, [],
+          [{one, block_puts}, {count, block_puts_total}]},
+         {[block, delete], spiral, [],
+          [{one, block_deletes}, {count, block_deletes_total}]},
+
+         {[block, get, time], histogram, [],
+          [{mean  , block_get_time_mean},
+           {median, block_get_time_median},
+           {95    , block_get_time_95},
+           {99    , block_get_time_99},
+           {100   , block_get_time_100}]},
+         {[block, get, retry, time], histogram, [],
+          [{mean  , block_get_retry_time_mean},
+           {median, block_get_retry_time_median},
+           {95    , block_get_retry_time_95},
+           {99    , block_get_retry_time_99},
+           {100   , block_get_retry_time_100}]},
+         {[block, put, time], histogram, [],
+          [{mean  , block_put_time_mean},
+           {median, block_put_time_median},
+           {95    , block_put_time_95},
+           {99    , block_put_time_99},
+           {100   , block_put_time_100}]},
+         {[block, delete, time], histogram, [],
+          [{mean  , block_delete_time_mean},
+           {median, block_delete_time_median},
+           {95    , block_delete_time_95},
+           {99    , block_delete_time_99},
+           {100   , block_delete_time_100}]},
+
+         {[service, get, buckets], spiral, [],
+          [{one, service_get_buckets},
+           {count, service_get_buckets_total}]},
+         {[service, get, buckets, time], histogram, [],
+          [{mean  , service_get_buckets_time_mean},
+           {median, service_get_buckets_time_median},
+           {95    , service_get_buckets_time_95},
+           {99    , service_get_buckets_time_99},
+           {100   , service_get_buckets_time_100}]},
+
+         {[bucket, list_keys], spiral, [],
+          [{one, bucket_list_keys}, {count, bucket_list_keys_total}]},
+         {[bucket, create], spiral, [],
+          [{one, bucket_creates}, {count, bucket_creates_total}]},
+         {[bucket, delete], spiral, [],
+          [{one, bucket_deletes}, {count, bucket_deletes_total}]},
+         {[bucket, get_acl], spiral, [],
+          [{one, bucket_get_acl}, {count, bucket_get_acl_total}]},
+         {[bucket, put_acl], spiral, [],
+          [{one, bucket_put_acl}, {count, bucket_put_acl_total}]},
+         {[bucket, put_policy], spiral, [],
+          [{one, bucket_put_policy}, {count, bucket_put_policy_total}]},
+
+         {[bucket, list_keys, time], histogram, [],
+          [{mean  , bucket_list_keys_time_mean},
+           {median, bucket_list_keys_time_median},
+           {95    , bucket_list_keys_time_95},
+           {99    , bucket_list_keys_time_99},
+           {100   , bucket_list_keys_time_100}]},
+         {[bucket, create, time], histogram, [],
+          [{mean  , bucket_create_time_mean},
+           {median, bucket_create_time_median},
+           {95    , bucket_create_time_95},
+           {99    , bucket_create_time_99},
+           {100   , bucket_create_time_100}]},
+         {[bucket, delete, time], histogram, [],
+          [{mean  , bucket_delete_time_mean},
+           {median, bucket_delete_time_median},
+           {95    , bucket_delete_time_95},
+           {99    , bucket_delete_time_99},
+           {100   , bucket_delete_time_100}]},
+         {[bucket, get_acl, time], histogram, [],
+          [{mean  , bucket_get_acl_time_mean},
+           {median, bucket_get_acl_time_median},
+           {95    , bucket_get_acl_time_95},
+           {99    , bucket_get_acl_time_99},
+           {100   , bucket_get_acl_time_100}]},
+         {[bucket, put_acl, time], histogram, [],
+          [{mean  , bucket_put_acl_time_mean},
+           {median, bucket_put_acl_time_median},
+           {95    , bucket_put_acl_time_95},
+           {99    , bucket_put_acl_time_99},
+           {100   , bucket_put_acl_time_100}]},
+         {[bucket, put_policy, time], histogram, [],
+          [{mean  , bucket_put_policy_time_mean},
+           {median, bucket_put_policy_time_median},
+           {95    , bucket_put_policy_time_95},
+           {99    , bucket_put_policy_time_99},
+           {100   , bucket_put_policy_time_100}]},
+
+         {[object, get], spiral, [],
+          [{one, object_gets}, {count, object_gets_total}]},
+         {[object, put], spiral, [],
+          [{one, object_puts}, {count, object_puts_total}]},
+         {[object, head], spiral, [],
+          [{one, object_heads}, {count, object_heads_total}]},
+         {[object, delete], spiral, [],
+          [{one, object_deletes}, {count, object_deletes_total}]},
+         {[object, get_acl], spiral, [],
+          [{one, object_get_acl}, {count, object_get_acl_total}]},
+         {[object, put_acl], spiral, [],
+          [{one, object_put_acl}, {count, object_put_acl_total}]},
+
+         {[object, get, time], histogram, [],
+          [{mean  , object_get_time_mean},
+           {median, object_get_time_median},
+           {95    , object_get_time_95},
+           {99    , object_get_time_99},
+           {100   , object_get_time_100}]},
+         {[object, put, time], histogram, [],
+          [{mean  , object_put_time_mean},
+           {median, object_put_time_median},
+           {95    , object_put_time_95},
+           {99    , object_put_time_99},
+           {100   , object_put_time_100}]},
+         {[object, head, time], histogram, [],
+          [{mean  , object_head_time_mean},
+           {median, object_head_time_median},
+           {95    , object_head_time_95},
+           {99    , object_head_time_99},
+           {100   , object_head_time_100}]},
+         {[object, delete, time], histogram, [],
+          [{mean  , object_delete_time_mean},
+           {median, object_delete_time_median},
+           {95    , object_delete_time_95},
+           {99    , object_delete_time_99},
+           {100   , object_delete_time_100}]},
+         {[object, get_acl, time], histogram, [],
+          [{mean  , object_get_acl_time_mean},
+           {median, object_get_acl_time_median},
+           {95    , object_get_acl_time_95},
+           {99    , object_get_acl_time_99},
+           {100   , object_get_acl_time_100}]},
+         {[object, put_acl, time], histogram, [],
+          [{mean  , object_put_acl_time_mean},
+           {median, object_put_acl_time_median},
+           {95    , object_put_acl_time_95},
+           {99    , object_put_acl_time_99},
+           {100   , object_put_acl_time_100}]},
+
+         {[manifest, siblings_bp_sleep], spiral, [],
+          [{one, manifest_siblings_bp_sleep},
+           {count, manifest_siblings_bp_sleep_total}]},
+         {[manifest, siblings_bp_sleep, time], histogram, [],
+          [{mean  , manifest_siblings_bp_sleep_time_mean},
+           {median, manifest_siblings_bp_sleep_time_median},
+           {95    , manifest_siblings_bp_sleep_time_95},
+           {99    , manifest_siblings_bp_sleep_time_99},
+           {100   , manifest_siblings_bp_sleep_time_100}]}
+        ]).
 
 %% ====================================================================
 %% API
 %% ====================================================================
 
--spec start_link() -> {ok, pid()} | {error, term()}.
-start_link() ->
-    gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
--spec update(atom(), integer()) -> ok | {error, {unknown_id, atom()}}.
+
+-spec safe_update(metric_name(), integer()) -> ok | {error, any()}.
+safe_update(BaseId, ElapsedUs) ->
+    %% Just in case those metrics happen to be not registered; should
+    %% be a bug and also should not interrupt handling requests by
+    %% crashing.
+    try
+        update(BaseId, ElapsedUs)
+    catch T:E ->
+            lager:error("Failed on storing some metrics: ~p,~p", [T,E])
+    end.
+
+-spec update(metric_name(), integer()) -> ok | {error, any()}.
 update(BaseId, ElapsedUs) ->
-    gen_server:call(?MODULE, {update, BaseId, ElapsedUs}).
+    ok = exometer:update([riak_cs|BaseId], 1),
+    ok = exometer:update([riak_cs|BaseId]++[time], ElapsedUs).
 
--spec update_with_start(atom(), erlang:timestamp()) ->
-                                   ok | {error, {unknown_id, atom()}}.
+-spec update_with_start(metric_name(), erlang:timestamp()) ->
+                                   ok | {error, any()}.
 update_with_start(BaseId, StartTime) ->
-    gen_server:call(?MODULE, {update, BaseId,
-                              timer:now_diff(os:timestamp(), StartTime)}).
-
--spec report() -> ok.
-report() ->
-    _ = [report_item(I) || I <- ?IDS],
-    ok.
-
--spec report_str() -> [string()].
-report_str() ->
-    [lists:flatten(report_item_str(I)) || I <- ?IDS].
+    update(BaseId, timer:now_diff(os:timestamp(), StartTime)).
 
 -spec report_json() -> string().
 report_json() ->
@@ -91,105 +225,90 @@ report_json() ->
 report_pretty_json() ->
     lists:flatten(riak_cs_utils:json_pp_print(report_json())).
 
--spec get_stats() -> [{legend, [atom()]} |
-                      {atom(), [number()]}].
+-spec get_stats() -> proplists:proplist().
 get_stats() ->
-    [{legend, [meter_count, meter_rate, latency_mean, latency_median,
-               latency_95, latency_99]}]
-    ++
-    [raw_report_item(I) || I <- ?IDS]
-    ++
-    [{legend, [workers, overflow, size]}]
-    ++
-    [raw_report_pool(P) || P <- [ request_pool, bucket_list_pool ]].
+    Stats = [raw_report_item(I) || I <- ?METRICS]
+        ++ [raw_report_pool(P) || P <- [request_pool, bucket_list_pool]],
+    lists:flatten(Stats).
 
-%% ====================================================================
-%% gen_server callbacks
-%% ====================================================================
-
-init([]) ->
-    %% Setup a list of all the values we want to track. For each of these, we will
-    %% have a latency histogram and meter
-    _ = [init_item(I) || I <- ?IDS],
-    {ok, #state{}}.
-
-handle_call({get_ids, BaseId}, _From, State) ->
-    {reply, erlang:get(BaseId), State};
-handle_call({update, BaseId, ElapsedUs}, _From, State) ->
-    Reply = case erlang:get(BaseId) of
-                {LatencyId, MeterId} ->
-                    ok = folsom_metrics:notify({LatencyId, ElapsedUs}),
-                    ok = folsom_metrics:notify({MeterId, 1}),
-                    ok;
-                undefined ->
-                    {error, {unknown_id, BaseId}}
-            end,
-    {reply, Reply, State}.
-
-handle_cast(_Msg, State) ->
-    {noreply, State}.
-
-handle_info(_Info, State) ->
-    {noreply, State}.
-
-terminate(_Reason, _State) ->
+init() ->
+    _ = [init_item(I) || I <- ?METRICS],
     ok.
-
-code_change(_OldVsn, State, _Extra) ->
-    {ok, State}.
 
 %% ====================================================================
 %% Internal
 %% ====================================================================
 
-init_item(BaseId) ->
-    LatencyId = list_to_atom(atom_to_list(BaseId) ++ "_latency"),
-    ok = handle_folsom_response(folsom_metrics:new_histogram(LatencyId), histogram),
-    MeterId = list_to_atom(atom_to_list(BaseId) ++ "_meter"),
-    ok = handle_folsom_response(folsom_metrics:new_meter(MeterId), meter),
-    %% Cache the two atom-ized Ids for this counter to avoid doing the
-    %% conversion per update
-    erlang:put(BaseId, {LatencyId, MeterId}).
+init_item({Name, Type, Opts, Aliases}) ->
+    ok = exometer:re_register([riak_cs|Name], Type,
+                              [{aliases, Aliases}|Opts]).
 
-handle_folsom_response(ok, _) ->
-    ok;
-handle_folsom_response({error, Name, metric_already_exists}, histogram) ->
-    folsom_metrics:delete_metric(Name),
-    folsom_metrics:new_histogram(Name);
-handle_folsom_response({error, Name, metric_already_exists}, meter) ->
-    folsom_metrics:delete_metric(Name),
-    folsom_metrics:new_meter(Name);
-handle_folsom_response(Error, _) ->
-    Error.
+raw_report_item({Name, _Type, _Options, Aliases}) ->
 
-report_item(BaseId) ->
-    io:format("~s\n", [report_item_str(BaseId)]).
-
-report_item_str(BaseId) ->
-    {BaseId, [MeterCount, MeterRate, LatencyMean, LatencyMedian,
-              Latency95, Latency99]} = raw_report_item(BaseId),
-    io_lib:format("~20s:\t~p\t~p\t~p\t~p\t~p\t~p",
-                  [BaseId, MeterCount, MeterRate, LatencyMean, LatencyMedian,
-                   Latency95, Latency99]).
-
-raw_report_item(BaseId) ->
-    case gen_server:call(?MODULE, {get_ids, BaseId}) of
-        {LatencyId, MeterId} ->
-            Latency = folsom_metrics:get_histogram_statistics(LatencyId),
-            Meter = folsom_metrics:get_metric_value(MeterId),
-            MeterCount = proplists:get_value(count, Meter),
-            MeterRate = proplists:get_value(mean, Meter),
-            LatencyMean = proplists:get_value(arithmetic_mean, Latency),
-            LatencyMedian = proplists:get_value(median, Latency),
-            Percentile = proplists:get_value(percentile, Latency),
-            Latency95 = proplists:get_value(95, Percentile),
-            Latency99 = proplists:get_value(99, Percentile),
-            {BaseId, [MeterCount, MeterRate, LatencyMean, LatencyMedian,
-             Latency95, Latency99]};
-        undefined ->
-            {BaseId, -1, -1, -1, -1, -1, -1}
-    end.
+    {ok, Values} = exometer:get_value([riak_cs|Name], [D||{D,_Alias}<-Aliases]),
+    [{Alias, Value} ||
+        {{D, Alias}, {D, Value}} <- lists:zip(Aliases, Values)].
 
 raw_report_pool(Pool) ->
     {_PoolState, PoolWorkers, PoolOverflow, PoolSize} = poolboy:status(Pool),
-    {Pool, [PoolWorkers, PoolOverflow, PoolSize]}.
+    Name = binary_to_list(atom_to_binary(Pool, latin1)),
+    [{list_to_atom(lists:flatten([Name, $_, "workers"])), PoolWorkers},
+     {list_to_atom(lists:flatten([Name, $_, "overflow"])), PoolOverflow},
+     {list_to_atom(lists:flatten([Name, $_, "size"])), PoolSize}].
+
+
+
+-ifdef(TEST).
+
+-include_lib("eunit/include/eunit.hrl").
+
+stats_metric_test() ->
+    [begin
+         ?debugVal(Key),
+         case lists:last(Key) of
+             time ->
+                 ?assertEqual(histogram, Type),
+                 [?assert(proplists:is_defined(M, Aliases))
+                  || M <- [mean, median, 95, 99, 100]];
+             _ ->
+                 ?assertNotEqual(false, lists:keyfind(Key, 1, ?METRICS)),
+                 ?assertEqual(spiral, Type),
+                 ?assert(proplists:is_defined(one, Aliases)),
+                 ?assert(proplists:is_defined(count, Aliases))
+         end,
+         ?assertEqual([], Options)
+     end || {Key, Type, Options, Aliases} <- ?METRICS].
+
+stats_test_() ->
+    Apps = [setup, compiler, syntax_tools, goldrush, lager, exometer_core],
+    {setup,
+     fun() ->
+             [ok = application:start(App) || App <- Apps],
+             ok = riak_cs_stats:init()
+     end,
+     fun(_) ->
+             [ok = application:stop(App) || App <- Apps]
+     end,
+     [{inparallel, [fun() ->
+                            %% ?debugVal(Key),
+                            case lists:last(Key) of
+                                time -> ok;
+                                _ -> riak_cs_stats:update(Key, 16#deadbeef)
+                            end
+                    end || {Key, _, _, _} <- ?METRICS]},
+     fun() ->
+             [begin
+                  Items = raw_report_item(I),
+                  %% ?debugVal(Items),
+                  case length(Items) of
+                      2 ->
+                          ?assertEqual([1, 1],
+                                       [N || {_, N} <- Items]);
+                      5 ->
+                          ?assertEqual([16#deadbeef, 16#deadbeef, 16#deadbeef, 16#deadbeef, 0],
+                                       [N || {_, N} <- Items])
+                  end
+              end || I <- ?METRICS]
+     end]}.
+
+-endif.

@@ -78,7 +78,7 @@ create_bucket(User, UserObj, Bucket, BagId, ACL, RcPid) ->
                                          User,
                                          UserObj,
                                          create,
-                                         bucket_create,
+                                         [bucket, create],
                                          RcPid);
                 false ->
                     {error, invalid_bucket_name}
@@ -183,7 +183,7 @@ delete_bucket(User, UserObj, Bucket, RcPid) ->
                                  User,
                                  UserObj,
                                  delete,
-                                 bucket_delete,
+                                 [bucket, delete],
                                  RcPid);
         false ->
             LocalError
@@ -294,7 +294,7 @@ set_bucket_acl(User, UserObj, Bucket, ACL, RcPid) ->
                          User,
                          UserObj,
                          update_acl,
-                         bucket_put_acl,
+                         [bucket, put_acl],
                          RcPid).
 
 %% @doc Set the policy for a bucket. Existing policy is only overwritten.
@@ -306,7 +306,7 @@ set_bucket_policy(User, UserObj, Bucket, PolicyJson, RcPid) ->
                          User,
                          UserObj,
                          update_policy,
-                         bucket_put_policy,
+                         [bucket, put_policy],
                          RcPid).
 
 %% @doc Set the policy for a bucket. Existing policy is only overwritten.
@@ -318,7 +318,7 @@ delete_bucket_policy(User, UserObj, Bucket, RcPid) ->
                          User,
                          UserObj,
                          delete_policy,
-                         bucket_put_policy,
+                         [bucket, put_policy],
                          RcPid).
 
 % @doc fetch moss.bucket and return acl and policy
@@ -661,7 +661,7 @@ resolve_buckets([HeadUserRec | RestUserRecs], Buckets, _KeepDeleted) ->
                            rcs_user(),
                            riakc_obj:riakc_obj(),
                            bucket_operation(),
-                           atom(),
+                           riak_cs_stats:metric_name(),
                            riak_client()) ->
                                   ok |
                                   {error, term()}.
@@ -676,7 +676,7 @@ serialized_bucket_op(Bucket, ACL, User, UserObj, BucketOp, StatName, RcPid) ->
                            rcs_user(),
                            riakc_obj:riakc_obj(),
                            bucket_operation(),
-                           atom(),
+                           riak_cs_stats:metric_name(),
                            riak_client()) ->
                                   ok |
                                   {error, term()}.

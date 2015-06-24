@@ -15,11 +15,16 @@ cd $RUNNER_BASE_DIR
 SCRIPT=`basename $0`
 
 usage() {
-    echo "Usage: $SCRIPT { gc | access | storage | stanchion | cluster-info | cleanup-orphan-multipart }"
+    echo "Usage: $SCRIPT { status | gc | access | storage | stanchion | cluster-info | cleanup-orphan-multipart }"
 }
 
 # Check the first argument for instructions
 case "$1" in
+    status)
+        shift
+        node_up_check
+        $NODETOOL rpc riak_cs_console status
+        ;;
     gc)
         shift
         case "$1" in

@@ -15,7 +15,7 @@
                   poolboy,
                   lager,
                   cluster_info,
-                  folsom
+                  exometer_core
                  ]},
   {mod, { riak_cs_app, []}},
   {env, [

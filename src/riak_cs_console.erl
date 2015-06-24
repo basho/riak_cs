@@ -21,6 +21,7 @@
 -module(riak_cs_console).
 
 -export([
+         status/1,
          cluster_info/1,
          cleanup_orphan_multipart/0,
          cleanup_orphan_multipart/1
@@ -32,6 +33,11 @@
 %%%===================================================================
 %%% Public API
 %%%===================================================================
+
+status([]) ->
+    Stats = riak_cs_stats:get_stats(),
+    [io:format("~p : ~p~n", [Name, Value])
+     || {Name, Value} <- Stats].
 
 %% in progress.
 cluster_info([OutFile]) ->
