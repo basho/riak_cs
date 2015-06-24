@@ -90,7 +90,8 @@
          fold_objects_timeout/0, %% for cs_bucket_fold
          get_index_range_gckeys_timeout/0,
          get_index_range_gckeys_call_timeout/0,
-         get_index_list_multipart_uploads_timeout/0
+         get_index_list_multipart_uploads_timeout/0,
+         cluster_id_timeout/0
         ]).
 
 %% OpenStack config
@@ -247,44 +248,16 @@ use_t2b_compression() ->
 %% doc Return the current cluster ID. Used for repl
 %% After obtaining the clusterid the first time,
 %% store the value in app:set_env
--spec cluster_id(riak_client()) -> binary().
-cluster_id(RcPid) ->
+-spec cluster_id(fun()) -> binary().
+cluster_id(GetClusterIdFun) ->
     case application:get_env(riak_cs, cluster_id) of
         {ok, ClusterID} ->
             ClusterID;
         undefined ->
-            Timeout = case application:get_env(riak_cs, cluster_id_timeout) of
-                          {ok, Value} ->
-                              Value;
-                          undefined   ->
-                              ?DEFAULT_CLUSTER_ID_TIMEOUT
-                      end,
-            maybe_get_cluster_id(proxy_get_active(), RcPid, Timeout)
+            ClusterId = GetClusterIdFun(undefined),
+            application:set_env(riak_cs, cluster_id, ClusterId),
+            ClusterId
     end.
-
-%% @doc If `proxy_get' is enabled then attempt to determine the cluster id
--spec maybe_get_cluster_id(boolean(), riak_client(), integer()) -> undefined | binary().
-maybe_get_cluster_id(true, RcPid, Timeout) ->
-    try
-        %% TODO && FIXME!!: DO NOT support multibag YET!!!
-        {ok, MasterPbc} = riak_cs_riak_client:master_pbc(RcPid),
-        case riak_repl_pb_api:get_clusterid(MasterPbc, Timeout) of
-            {ok, ClusterID} ->
-                application:set_env(riak_cs, cluster_id, ClusterID),
-                ClusterID;
-            _ ->
-                _ = lager:debug("Unable to obtain cluster ID"),
-                undefined
-        end
-    catch _:_ ->
-            %% Disable `proxy_get' so we do not repeatedly have to
-            %% handle this same exception. This would happen if an OSS
-            %% install has `proxy_get' enabled.
-            application:set_env(riak_cs, proxy_get, disabled),
-            undefined
-    end;
-maybe_get_cluster_id(false, _, _) ->
-    undefined.
 
 %% @doc Return the configured md5 chunk size
 -spec md5_chunk_size() -> non_neg_integer().
@@ -488,6 +461,7 @@ local_get_block_timeout() ->
 ?TIMEOUT_CONFIG_FUNC(get_index_range_gckeys_timeout).
 ?TIMEOUT_CONFIG_FUNC(get_index_range_gckeys_call_timeout).
 ?TIMEOUT_CONFIG_FUNC(get_index_list_multipart_uploads_timeout).
+?TIMEOUT_CONFIG_FUNC(cluster_id_timeout).
 
 -undef(TIMEOUT_CONFIG_FUNC).
 

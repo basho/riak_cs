@@ -467,6 +467,9 @@ new_mani_helper() ->
         undefined, %% md5
         orddict:new(),
         10,
+        undefined,
+        [],
+        undefined,
         undefined).
 
 manifest_test_() ->
