@@ -47,15 +47,23 @@ upload_parts(Bucket, Key, UploadId, Config, PartCount, [Size | Sizes], Contents,
                  Sizes, [Content | Contents], [{PartCount, PartEtag} | Parts]).
 
 upload_part_copy(BucketName, Key, UploadId, PartNum, SrcBucket, SrcKey, Config) ->
-    
+    upload_part_copy(BucketName, Key, UploadId, PartNum, SrcBucket, SrcKey, undefined, Config).
+
+upload_part_copy(BucketName, Key, UploadId, PartNum, SrcBucket, SrcKey, SrcRange, Config) ->
     Url = "/" ++ Key,
     Source = filename:join([SrcBucket, SrcKey]),
     Subresources = [{"partNumber", integer_to_list(PartNum)},
                     {"uploadId", UploadId}],
     Headers = [%%{"content-length", byte_size(PartData)},
-               {"x-amz-copy-source", Source}],
+               {"x-amz-copy-source", Source} |
+               source_range(SrcRange)],
     erlcloud_s3:s3_request(Config, put, BucketName, Url,
                            Subresources, [], {<<>>, []}, Headers).
+
+source_range(undefined) -> [];
+source_range({First, Last}) ->
+    [{"x-amz-copy-source-range",
+      lists:flatten(io_lib:format("bytes=~b-~b", [First, Last]))}].
 
 upload_and_assert_part(Bucket, Key, UploadId, PartNum, PartData, Config) ->
     {RespHeaders, _UploadRes} = erlcloud_s3_multipart:upload_part(Bucket, Key, UploadId, PartNum, PartData, Config),

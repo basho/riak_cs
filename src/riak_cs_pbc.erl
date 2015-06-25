@@ -29,6 +29,7 @@
          put_with_no_meta/2,
          put_with_no_meta/3,
          list_keys/3,
+         get_cluster_id/1,
          check_connection_status/2]).
 
 %% @doc Get an object from Riak
@@ -85,6 +86,26 @@ list_keys(PbcPid, BucketName, Timeout) ->
             {ok, lists:sort(Keys)};
         {error, _}=Error ->
             Error
+    end.
+
+%% @doc Attempt to determine the cluster id
+-spec get_cluster_id(pid()) -> undefined | binary().
+get_cluster_id(Pbc) ->
+    Timeout = riak_cs_config:cluster_id_timeout(),
+    try
+        case riak_repl_pb_api:get_clusterid(Pbc, Timeout) of
+            {ok, ClusterID} ->
+                ClusterID;
+            _ ->
+                _ = lager:debug("Unable to obtain cluster ID"),
+                undefined
+        end
+    catch _:_ ->
+            %% Disable `proxy_get' so we do not repeatedly have to
+            %% handle this same exception. This would happen if an OSS
+            %% install has `proxy_get' enabled.
+            application:set_env(riak_cs, proxy_get, disabled),
+            undefined
     end.
 
 %% @doc don't reuse return value

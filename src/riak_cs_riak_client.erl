@@ -107,6 +107,8 @@ checkin(Pool, RcPid) ->
 -spec pbc_pool_name(master | bag_id()) -> atom().
 pbc_pool_name(master) ->
     pbc_pool_master;
+pbc_pool_name(undefined) ->
+    pbc_pool_master;
 pbc_pool_name(BagId) when is_binary(BagId) ->
     list_to_atom(lists:flatten(io_lib:format("pbc_pool_~s", [BagId]))).
 

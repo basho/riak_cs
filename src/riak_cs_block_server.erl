@@ -51,7 +51,8 @@
          format_status/2]).
 
 -record(state, {riak_client :: riak_client(),
-                close_riak_connection=true :: boolean()}).
+                close_riak_connection=true :: boolean(),
+                bag_id :: bag_id()}).
 
 %%%===================================================================
 %%% API
@@ -146,7 +147,8 @@ init([Manifest, RcPid]) ->
 init(Manifest, RcPid, State) ->
     process_flag(trap_exit, true),
     ok = riak_cs_riak_client:set_manifest(RcPid, Manifest),
-    {ok, State#state{riak_client=RcPid}}.
+    BagId = riak_cs_mb_helper:bag_id_from_manifest(Manifest),
+    {ok, State#state{riak_client=RcPid, bag_id=BagId}}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -177,8 +179,8 @@ handle_call(stop, _From, State) ->
 %%--------------------------------------------------------------------
 
 handle_cast({get_block, ReplyPid, Bucket, Key, ClusterID, UUID, BlockNumber},
-            State=#state{riak_client=RcPid}) ->
-    get_block(ReplyPid, Bucket, Key, ClusterID, UUID, BlockNumber, RcPid),
+            State=#state{riak_client=RcPid, bag_id=BagId}) ->
+    get_block(ReplyPid, Bucket, Key, ClusterID, BagId, UUID, BlockNumber, RcPid),
     {noreply, State};
 handle_cast({put_block, ReplyPid, Bucket, Key, UUID, BlockNumber, Value, BCSum},
             State=#state{riak_client=RcPid}) ->
@@ -219,18 +221,18 @@ handle_cast({delete_block, ReplyPid, Bucket, Key, UUID, BlockNumber}, State=#sta
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
-get_block(ReplyPid, Bucket, Key, ClusterID, UUID, BlockNumber, RcPid) ->
+get_block(ReplyPid, Bucket, Key, ClusterId, BagId, UUID, BlockNumber, RcPid) ->
     %% don't use proxy get if it's a local get
     %% or proxy get is disabled
     ProxyActive = riak_cs_config:proxy_get_active(),
-    UseProxyGet = use_proxy_get(RcPid, ClusterID),
+    UseProxyGet = use_proxy_get(ClusterId, BagId),
 
     case riak_cs_utils:n_val_1_get_requests() of
         true ->
-            do_get_block(ReplyPid, Bucket, Key, ClusterID, UseProxyGet, ProxyActive, UUID,
+            do_get_block(ReplyPid, Bucket, Key, ClusterId, UseProxyGet, ProxyActive, UUID,
                          BlockNumber, RcPid);
         false ->
-            normal_nval_block_get(ReplyPid, Bucket, Key, ClusterID,
+            normal_nval_block_get(ReplyPid, Bucket, Key, ClusterId,
                                   UseProxyGet, UUID, BlockNumber, RcPid)
     end.
 
@@ -551,10 +553,12 @@ n_val_one_options() ->
 r_one_options() ->
     [{r, 1}, {notfound_ok, false}, {basic_quorum, false}].
 
--spec use_proxy_get(riak_client(), term()) -> boolean().
-use_proxy_get(RcPid, ClusterID) ->
-    LocalClusterID = riak_cs_config:cluster_id(RcPid),
-    ClusterID /= undefined andalso LocalClusterID /= ClusterID.
+-spec use_proxy_get(cluster_id(), bag_id()) -> boolean().
+use_proxy_get(undefined, _BagId) ->
+    false;
+use_proxy_get(SourceClusterId, BagId) when is_binary(SourceClusterId) ->
+    LocalClusterID = riak_cs_mb_helper:cluster_id(BagId),
+    LocalClusterID =/= SourceClusterId.
 
 dt_entry(Func, Ints, Strings) ->
     riak_cs_dtrace:dtrace(?DT_BLOCK_OP, 1, Ints, ?MODULE, Func, Strings).
