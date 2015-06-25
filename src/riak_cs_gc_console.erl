@@ -79,8 +79,14 @@ resume(_) ->
 'set-leeway'(Opts) ->
     ?SAFELY(set_leeway(parse_leeway_opts(Opts)), "Setting the garbage collection leeway time").
 
-'earliest-keys'(_) ->
+'earliest-keys'([]) ->
     Bags = riak_cs_mb_helper:bags(),
+    earliest_keys(Bags);
+'earliest-keys'(Bags0) ->
+    Bags = [{list_to_binary(Bag), spam, ham} || Bag <- Bags0],
+    earliest_keys(Bags).
+
+earliest_keys(Bags) ->
     ?SAFELY(begin
                 [begin
                      {ok, Dates} = riak_cs_gc_key_list:find_oldest_entries(BagId),
