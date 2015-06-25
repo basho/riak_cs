@@ -46,8 +46,14 @@ confirm() ->
 
     lager:info("Test GC run under an invalid state manifest..."),
     {GCKey, {BKey, UUID}} = setup_obj(RiakNodes, UserConfig),
+
     %% Ensure the leeway has expired
     timer:sleep(2000),
+
+    Result = rtcs:gc(1, "earliest-keys"),
+    lager:debug("~p", [Result]),
+    ?assert(string:str(Result, "GC keys in") > 0),
+
     ok = verify_gc_run(hd(CSNodes), GCKey),
     ok = verify_riak_object_remaining_for_bad_key(RiakNodes, GCKey, {BKey, UUID}),
 
