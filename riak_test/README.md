@@ -14,6 +14,7 @@ Example to setup old and new CS:
 $ mkdir ~/rt
 $ cd ~/rt
 $ cd path/to/repo/riak_cs
+## Only for Enterprise build
 $ export RIAK_CS_EE_DEPS=true
 $ riak_test/bin/rtdev-build-releases.sh
 $ riak_test/bin/rtdev-setup-releases.sh
@@ -42,7 +43,7 @@ $ cd riak-ee-2.0.1 && make devrel
 $ riak_test/bin/rteedev-setup-releases.sh
 $ riak_test/bin/rteedev-current.sh
 
-## ch runtime to Basho's patched R15B01
+## change runtime to Basho's patched R15B01
 $ tar xzf riak-ee-1.4.10.tar.gz
 $ cd riak-ee-1.4.10 && make devrel
 $ mkdir ~/rt/riak_ee/riak-ee-1.4.10

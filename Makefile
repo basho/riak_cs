@@ -1,6 +1,6 @@
-REPO		?= riak_cs
+REPO		    ?= riak_cs
 PKG_REVISION    ?= $(shell git describe --tags)
-PKG_VERSION	?= $(shell git describe --tags | tr - .)
+PKG_VERSION	    ?= $(shell git describe --tags | tr - .)
 PKG_ID           = riak-cs-$(PKG_VERSION)
 PKG_BUILD        = 1
 BASE_DIR         = $(shell pwd)
@@ -8,7 +8,7 @@ ERLANG_BIN       = $(shell dirname $(shell which erl))
 REBAR           ?= $(BASE_DIR)/rebar
 OVERLAY_VARS    ?=
 CS_HTTP_PORT    ?= 8080
-PULSE_TESTS = riak_cs_get_fsm_pulse
+PULSE_TESTS      = riak_cs_get_fsm_pulse
 
 .PHONY: rel stagedevrel deps test depgraph graphviz all compile
 
@@ -153,18 +153,6 @@ stage : rel
 	$(foreach app,$(wildcard apps/*), rm -rf rel/riak-cs/lib/$(shell basename $(app))* && ln -sf $(abspath $(app)) rel/riak-cs/lib;)
 	$(foreach dep,$(wildcard deps/*), rm -rf rel/riak-cs/lib/$(shell basename $(dep))* && ln -sf $(abspath $(dep)) rel/riak-cs/lib;)
 
-
-##
-## Doc targets
-##
-orgs: orgs-doc orgs-README
-
-orgs-doc:
-	@emacs -l orgbatch.el -batch --eval="(riak-export-doc-dir \"doc\" 'html)"
-
-orgs-README:
-	@emacs -l orgbatch.el -batch --eval="(riak-export-doc-file \"README.org\" 'ascii)"
-	@mv README.txt README
 
 DIALYZER_APPS = kernel stdlib sasl erts ssl tools os_mon runtime_tools crypto inets \
 	webtool eunit syntax_tools compiler

@@ -78,7 +78,7 @@ with Riak CS. For more information about Riak CS please visit our [[http://docs.
 
 * Riak CS Fast Track
 
-  http://docs.basho.com/riakcs/latest/riakcs-tutorials/fast-track
+  http://docs.basho.com/riakcs/latest/tutorials/fast-track/
 
 * Contributing to Riak CS
   Basho encourages contributions to Riak CS from the community. Here is
@@ -134,23 +134,7 @@ make test
     rebuilding the PLT unless you have had significant changes in your
     build (a new version of Erlang, for example).
 
-**** Build the PLT
-     Run the command below to build the PLT.
-
-#+BEGIN_SRC shell
-make build_plt
-#+END_SRC
-
-**** Check the PLT
-     If you have built the PLT before, check it before you run
-     Dialyzer again. This will take much less time than building the
-     PLT from scratch.
-
-#+BEGIN_SRC shell
-make check_plt
-#+END_SRC
-
-**** Run Dialyzer
+    Dialyzer can be run with =make=:
 
 #+BEGIN_SRC shell
 make dialyzer
@@ -158,9 +142,4 @@ make dialyzer
 
 *** =riak_test= modules
   Riak CS has a number of integration and regression tests in the
-  =/riak_test/= subdirectory. Currently these tests require the
-  enterprise versions of Riak and Riak CS to function properly, but
-  they will be updated the near future to support running an
-  appropriate subset with an OSS build of Riak and Riak
-  CS. Instructions for setting up and running the tests will also be
-  published at that time.
+  =/riak_test/= subdirectory. Please refer =README.md= under the directory.
