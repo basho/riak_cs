@@ -1,3 +1,33 @@
+# Riak CS 2.0.1 リリースノート
+
+## General Information
+これは Riak CS 2.0.x 系のバグフィックスリリースです。
+
+## バグ修正
+
+* Fix config item `gc.interval` not working when `infinity` is set ([#1125](https://github.com/basho/riak_cs/issues/1125)/[PR#1126](https://github.com/basho/riak_cs/pull/1126)).
+* 設定項目 `gc.interval` に対して `infinity` を設定できないバグを修正
+  ([#1125](https://github.com/basho/riak_cs/issues/1125)
+  / [PR#1126](https://github.com/basho/riak_cs/pull/1126)).
+* Add `log.access` switch to disable access logging ([#1109](https://github.com/basho/riak_cs/issues/1109)/[PR#1115](https://github.com/basho/riak_cs/pull/1115)).
+* アクセスログを無効化する設定項目 `log.access` を追加
+  ([#1109](https://github.com/basho/riak_cs/issues/1109)
+  / [PR#1115](https://github.com/basho/riak_cs/pull/1115)).
+* Add missing riak-cs.conf items:` max_buckets_per_user` and `gc.batch_size` ([#1109](https://github.com/basho/riak_cs/issues/1109)/[PR#1115](https://github.com/basho/riak_cs/pull/1115)).
+* `riak-cs.conf` に不足していた項目 ` max_buckets_per_user` と `gc.batch_size` を追加
+  ([#1109](https://github.com/basho/riak_cs/issues/1109)
+  / [PR#1115](https://github.com/basho/riak_cs/pull/1115))
+* Fix bugs around subsequent space characters for Delete Multiple Objects API and user administration API with XML content ([#1129](https://github.com/basho/riak_cs/issues/1129)/[PR#1135](https://github.com/basho/riak_cs/pull/1135)).
+* XML を HTTP ボディに持つ Delete Multiple Object API とユーザ管理 API において
+  連続する空白文字処理のバグを修正
+  ([#1129](https://github.com/basho/riak_cs/issues/1129)
+  /[PR#1135](https://github.com/basho/riak_cs/pull/1135))
+* Fix URL path resource and query parameters to work in AWS v4 header authentication. Previously, `+` was being input instead of `%20` for blank spaces. ([PR#1141](https://github.com/basho/riak_cs/pull/1141))
+* AWS v4 ヘッダ認証での URL パスリソースとクエリパラメータのバグを修正。以前の
+  バージョンでは空白文字に対して `%20` ではなく `+` が使用されていた。
+  ([PR#1141](https://github.com/basho/riak_cs/pull/1141))
+
+
 # Riak CS 2.0.0 リリースノート
 
 ## 概要
