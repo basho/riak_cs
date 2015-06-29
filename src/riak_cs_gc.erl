@@ -391,7 +391,7 @@ maybe_delete_small_objects(Manifests, RcPid, Threshold) ->
                   when ContentLength < Threshold ->
                     %% actually this won't be scheduled :P
                     UUIDManifest = {UUID, Manifest?MANIFEST{state=scheduled_delete}},
-                    _ = lager:info("trying to delete ~p at ~p", [UUIDManifest, BagId]),
+                    _ = lager:debug("trying to delete ~p at ~p", [UUIDManifest, BagId]),
                     Args = [BagId, UUIDManifest, FinishedFun,
                             dummy_gc_key_in_sync_delete,
                             [{cleanup_manifests, false}]],
