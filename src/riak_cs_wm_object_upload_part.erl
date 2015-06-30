@@ -21,6 +21,7 @@
 -module(riak_cs_wm_object_upload_part).
 
 -export([init/1,
+         stats_prefix/0,
          authorize/2,
          content_types_provided/2,
          allowed_methods/0,
@@ -44,8 +45,11 @@ init(Ctx) ->
     %% {ok, Ctx#context{local_context=#key_context{}}}.
     {ok, Ctx#context{local_context=#key_context{}}}.
 
+-spec stats_prefix() -> multipart_upload.
+stats_prefix() -> multipart_upload.
+
 -spec malformed_request(#wm_reqdata{}, #context{}) ->
-    {false, #wm_reqdata{}, #context{}} | {{halt, pos_integer()}, #wm_reqdata{}, #context{}}.
+                               {false, #wm_reqdata{}, #context{}} | {{halt, pos_integer()}, #wm_reqdata{}, #context{}}.
 malformed_request(RD,Ctx) ->
     Method = wrq:method(RD),
     case Method == 'PUT' andalso not valid_part_number(RD) of

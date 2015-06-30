@@ -91,6 +91,8 @@
                   auth_module :: atom(),
                   response_module :: atom(),
                   policy_module :: atom(),
+                  stats_prefix :: atom(),
+                  stats_key :: [atom()],
                   local_context :: term(),
                   api :: atom()
                  }).

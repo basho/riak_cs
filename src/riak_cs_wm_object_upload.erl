@@ -21,6 +21,7 @@
 -module(riak_cs_wm_object_upload).
 
 -export([init/1,
+         stats_prefix/0,
          authorize/2,
          content_types_provided/2,
          allowed_methods/0,
@@ -37,6 +38,9 @@
 -spec init(#context{}) -> {ok, #context{}}.
 init(Ctx) ->
     {ok, Ctx#context{local_context=#key_context{}}}.
+
+-spec stats_prefix() -> multipart.
+stats_prefix() -> multipart.
 
 -spec malformed_request(#wm_reqdata{}, #context{}) -> {false, #wm_reqdata{}, #context{}}.
 malformed_request(RD,Ctx) ->

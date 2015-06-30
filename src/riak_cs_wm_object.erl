@@ -21,6 +21,7 @@
 -module(riak_cs_wm_object).
 
 -export([init/1,
+         stats_prefix/0,
          authorize/2,
          content_types_provided/2,
          generate_etag/2,
@@ -40,6 +41,9 @@
 -spec init(#context{}) -> {ok, #context{}}.
 init(Ctx) ->
     {ok, Ctx#context{local_context=#key_context{}}}.
+
+-spec stats_prefix() -> object.
+stats_prefix() -> object.
 
 -spec malformed_request(#wm_reqdata{}, #context{}) -> {false, #wm_reqdata{}, #context{}}.
 malformed_request(RD, Ctx) ->
@@ -193,7 +197,7 @@ produce_body(RD, Ctx=#context{rc_pool=RcPool,
                 {Ctx, fun() -> {<<>>, done} end};
             false ->
                 riak_cs_get_fsm:continue(GetFsmPid, {Start, End}),
-                {Ctx#context{auto_rc_close=false},
+                {Ctx#context{auto_rc_close=false, stats_key=no_stats},
                  {<<>>, fun() ->
                                 riak_cs_wm_utils:streaming_get(
                                   RcPool, RcPid, GetFsmPid, StartTime, UserName, BFile_str)
@@ -201,8 +205,7 @@ produce_body(RD, Ctx=#context{rc_pool=RcPool,
         end,
     if Method == 'HEAD' ->
             riak_cs_dtrace:dt_object_return(?MODULE, <<"object_head">>,
-                                            [], [UserName, BFile_str]),
-            ok = riak_cs_stats:update_with_start([object, head], StartTime);
+                                            [], [UserName, BFile_str]);
        true ->
             ok
     end,
@@ -311,7 +314,8 @@ accept_body(RD, #context{response_module=ResponseMod} = Ctx) ->
         {error, _} = Err ->
             ResponseMod:api_error(Err, RD, Ctx);
         {SrcBucket, SrcKey} ->
-            handle_copy_put(RD, Ctx, SrcBucket, SrcKey)
+            handle_copy_put(RD, Ctx#context{stats_key=[object, put_copy]},
+                            SrcBucket, SrcKey)
     end.
 
 -spec handle_normal_put(#wm_reqdata{}, #context{}) ->
@@ -441,7 +445,6 @@ accept_streambody(RD,
 -spec finalize_request(#wm_reqdata{}, #context{}, pid()) -> {{halt, 200}, #wm_reqdata{}, #context{}}.
 finalize_request(RD,
                  Ctx=#context{local_context=LocalCtx,
-                              start_time=StartTime,
                               response_module=ResponseMod,
                               user=User},
                  Pid) ->
@@ -465,7 +468,6 @@ finalize_request(RD,
             {error, Reason} ->
                 ResponseMod:api_error(Reason, RD, Ctx)
         end,
-    ok = riak_cs_stats:update_with_start([object, put], StartTime),
     riak_cs_dtrace:dt_wm_return(?MODULE, <<"finalize_request">>, [S], [UserName, BFile_str]),
     riak_cs_dtrace:dt_object_return(?MODULE, <<"object_put">>, [S], [UserName, BFile_str]),
     Response.
@@ -482,7 +484,9 @@ check_0length_metadata_update(Length, RD, Ctx=#context{local_context=LocalCtx}) 
         true ->
             UpdLocalCtx = LocalCtx#key_context{size=Length,
                                                update_metadata=true},
-            {true, RD, Ctx#context{local_context=UpdLocalCtx}}
+            {true, RD, Ctx#context{
+                         stats_key=[object, put_copy],
+                         local_context=UpdLocalCtx}}
     end.
 
 zero_length_metadata_update_p(0, RD) ->

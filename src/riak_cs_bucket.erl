@@ -294,7 +294,7 @@ set_bucket_acl(User, UserObj, Bucket, ACL, RcPid) ->
                          User,
                          UserObj,
                          update_acl,
-                         [bucket, put_acl],
+                         [bucket, put, acl],
                          RcPid).
 
 %% @doc Set the policy for a bucket. Existing policy is only overwritten.
@@ -306,7 +306,7 @@ set_bucket_policy(User, UserObj, Bucket, PolicyJson, RcPid) ->
                          User,
                          UserObj,
                          update_policy,
-                         [bucket, put_policy],
+                         [bucket, put, policy],
                          RcPid).
 
 %% @doc Set the policy for a bucket. Existing policy is only overwritten.
@@ -318,7 +318,7 @@ delete_bucket_policy(User, UserObj, Bucket, RcPid) ->
                          User,
                          UserObj,
                          delete_policy,
-                         [bucket, put_policy],
+                         [bucket, put, policy],
                          RcPid).
 
 % @doc fetch moss.bucket and return acl and policy
@@ -661,13 +661,13 @@ resolve_buckets([HeadUserRec | RestUserRecs], Buckets, _KeepDeleted) ->
                            rcs_user(),
                            riakc_obj:riakc_obj(),
                            bucket_operation(),
-                           riak_cs_stats:metric_name(),
+                           riak_cs_stats:metric_key(),
                            riak_client()) ->
                                   ok |
                                   {error, term()}.
-serialized_bucket_op(Bucket, ACL, User, UserObj, BucketOp, StatName, RcPid) ->
+serialized_bucket_op(Bucket, ACL, User, UserObj, BucketOp, StatKey, RcPid) ->
     serialized_bucket_op(Bucket, undefined, ACL, User, UserObj,
-                         BucketOp, StatName, RcPid).
+                         BucketOp, StatKey, RcPid).
 
 %% @doc Shared code used when doing a bucket creation or deletion.
 -spec serialized_bucket_op(binary(),
@@ -676,11 +676,11 @@ serialized_bucket_op(Bucket, ACL, User, UserObj, BucketOp, StatName, RcPid) ->
                            rcs_user(),
                            riakc_obj:riakc_obj(),
                            bucket_operation(),
-                           riak_cs_stats:metric_name(),
+                           riak_cs_stats:metric_key(),
                            riak_client()) ->
                                   ok |
                                   {error, term()}.
-serialized_bucket_op(Bucket, BagId, ACL, User, UserObj, BucketOp, StatName, RcPid) ->
+serialized_bucket_op(Bucket, BagId, ACL, User, UserObj, BucketOp, StatKey, RcPid) ->
     StartTime = os:timestamp(),
     case riak_cs_config:admin_creds() of
         {ok, AdminCreds} ->
@@ -699,14 +699,16 @@ serialized_bucket_op(Bucket, BagId, ACL, User, UserObj, BucketOp, StatName, RcPi
                     BucketRecord = bucket_record(Bucket, BucketOp),
                     case update_user_buckets(User, BucketRecord) of
                         {ok, ignore} when BucketOp == update_acl ->
-                            ok = riak_cs_stats:update_with_start(StatName,
+                            %% TODO: FIX
+                            ok = riak_cs_stats:update_with_start(StatKey,
                                                                  StartTime),
                             OpResult;
                         {ok, ignore} ->
                             OpResult;
                         {ok, UpdUser} ->
                             X = riak_cs_user:save_user(UpdUser, UserObj, RcPid),
-                            ok = riak_cs_stats:update_with_start(StatName,
+                            %% TODO: FIX
+                            ok = riak_cs_stats:update_with_start(StatKey,
                                                                  StartTime),
                             X
                     end;

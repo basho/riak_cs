@@ -163,7 +163,6 @@ close_riak_connection(Pool, Pid) ->
 -spec delete_object(binary(), binary(), riak_client()) ->
                            {ok, [binary()]} | {error, term()}.
 delete_object(Bucket, Key, RcPid) ->
-    ok = riak_cs_stats:update_with_start([object, delete], os:timestamp()),
     riak_cs_gc:gc_active_manifests(Bucket, Key, RcPid).
 
 -spec encode_term(term()) -> binary().
@@ -463,17 +462,11 @@ riak_connection(Pool) ->
 -spec set_object_acl(binary(), binary(), lfs_manifest(), acl(), riak_client()) ->
                             ok | {error, term()}.
 set_object_acl(Bucket, Key, Manifest, Acl, RcPid) ->
-    StartTime = os:timestamp(),
     {ok, ManiPid} = riak_cs_manifest_fsm:start_link(Bucket, Key, RcPid),
     _ActiveMfst = riak_cs_manifest_fsm:get_active_manifest(ManiPid),
     UpdManifest = Manifest?MANIFEST{acl=Acl},
     Res = riak_cs_manifest_fsm:update_manifest_with_confirmation(ManiPid, UpdManifest),
     riak_cs_manifest_fsm:stop(ManiPid),
-    if Res == ok ->
-            ok = riak_cs_stats:update_with_start([object, put_acl], StartTime);
-       true ->
-            ok
-    end,
     Res.
 
 -spec second_resolution_timestamp(erlang:timestamp()) -> non_neg_integer().

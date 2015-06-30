@@ -20,7 +20,8 @@
 
 -module(riak_cs_wm_bucket).
 
--export([content_types_provided/2,
+-export([stats_prefix/0,
+         content_types_provided/2,
          to_xml/2,
          allowed_methods/0,
          malformed_request/2,
@@ -31,6 +32,9 @@
 
 -include("riak_cs.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
+
+-spec stats_prefix() -> bucket.
+stats_prefix() -> bucket.
 
 %% @doc Get the list of methods this resource supports.
 -spec allowed_methods() -> [atom()].
@@ -120,7 +124,7 @@ accept_body(RD, Ctx=#context{user=User,
                              bucket=Bucket,
                              response_module=ResponseMod,
                              riak_client=RcPid}) ->
-    riak_cs_dtrace:dt_bucket_entry(?MODULE, <<"bucket_create">>,
+    riak_cs_dtrace:dt_bucket_entry(?MODULE, <<"bucket_put">>,
                                       [], [riak_cs_wm_utils:extract_name(User), Bucket]),
     BagId = riak_cs_mb_helper:choose_bag_id(manifest, Bucket),
     case riak_cs_bucket:create_bucket(User,
@@ -130,12 +134,12 @@ accept_body(RD, Ctx=#context{user=User,
                                       ACL,
                                       RcPid) of
         ok ->
-            riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_create">>,
+            riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_put">>,
                                                [200], [riak_cs_wm_utils:extract_name(User), Bucket]),
             {{halt, 200}, RD, Ctx};
         {error, Reason} ->
             Code = ResponseMod:status_code(Reason),
-            riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_create">>,
+            riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_put">>,
                                               [Code], [riak_cs_wm_utils:extract_name(User), Bucket]),
             ResponseMod:api_error(Reason, RD, Ctx)
     end.
@@ -143,7 +147,8 @@ accept_body(RD, Ctx=#context{user=User,
 %% @doc Callback for deleting a bucket.
 -spec delete_resource(#wm_reqdata{}, #context{}) ->
                              {boolean() | {'halt', term()}, #wm_reqdata{}, #context{}}.
-delete_resource(RD, Ctx=#context{user=User,
+delete_resource(RD, Ctx=#context{start_time=StartTime,
+                                 user=User,
                                  user_object=UserObj,
                                  response_module=ResponseMod,
                                  bucket=Bucket,
@@ -157,6 +162,7 @@ delete_resource(RD, Ctx=#context{user=User,
         ok ->
             riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_delete">>,
                                                [200], [riak_cs_wm_utils:extract_name(User), Bucket]),
+            ok = riak_cs_stats:update_with_start([bucket, delete], StartTime),
             {true, RD, Ctx};
         {error, Reason} ->
             Code = ResponseMod:status_code(Reason),

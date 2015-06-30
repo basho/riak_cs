@@ -20,7 +20,8 @@
 
 -module(riak_cs_wm_bucket_acl).
 
--export([content_types_provided/2,
+-export([stats_prefix/0,
+         content_types_provided/2,
          to_xml/2,
          allowed_methods/0,
          malformed_request/2,
@@ -34,6 +35,9 @@
 -include("riak_cs.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
 
+
+-spec stats_prefix() -> bucket_acl.
+stats_prefix() -> bucket_acl.
 
 %% @doc Get the list of methods this resource supports.
 -spec allowed_methods() -> [atom()].
@@ -72,8 +76,7 @@ authorize(RD, Ctx) ->
 
 -spec to_xml(#wm_reqdata{}, #context{}) ->
                     {binary() | {'halt', non_neg_integer()}, #wm_reqdata{}, #context{}}.
-to_xml(RD, Ctx=#context{start_time=StartTime,
-                        user=User,
+to_xml(RD, Ctx=#context{user=User,
                         bucket=Bucket,
                         riak_client=RcPid}) ->
     riak_cs_dtrace:dt_bucket_entry(?MODULE, <<"bucket_get_acl">>,
@@ -81,14 +84,13 @@ to_xml(RD, Ctx=#context{start_time=StartTime,
     case riak_cs_acl:fetch_bucket_acl(Bucket, RcPid) of
         {ok, Acl} ->
             X = {riak_cs_xml:to_xml(Acl), RD, Ctx},
-            ok = riak_cs_stats:update_with_start([bucket, get_acl], StartTime),
-            riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_get_acl">>,
+            riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_acl_get">>,
                                                [200], [riak_cs_wm_utils:extract_name(User), Bucket]),
             X;
         {error, Reason} ->
             Code = riak_cs_s3_response:status_code(Reason),
             X = riak_cs_s3_response:api_error(Reason, RD, Ctx),
-            riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_get_acl">>,
+            riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_acl">>,
                                                [Code], [riak_cs_wm_utils:extract_name(User), Bucket]),
             X
     end.

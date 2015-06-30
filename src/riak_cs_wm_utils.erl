@@ -22,6 +22,7 @@
 
 -export([service_available/2,
          service_available/3,
+         lower_case_method/1,
          iso_8601_datetime/0,
          iso_8601_datetime/1,
          to_iso_8601/1,
@@ -347,6 +348,20 @@ streaming_get(RcPool, RcPid, FsmPid, StartTime, UserName, BFile_str) ->
         {chunk, Chunk} ->
             {Chunk, fun() -> streaming_get(RcPool, RcPid, FsmPid, StartTime, UserName, BFile_str) end}
     end.
+
+-spec lower_case_method(atom() | string()) -> atom().
+lower_case_method('GET') -> get;
+lower_case_method('HEAD') -> head;
+lower_case_method('POST') -> post;
+lower_case_method('PUT') -> put;
+lower_case_method('DELETE') -> delete;
+lower_case_method('TRACE') -> trace;
+lower_case_method('CONNECT') -> connect;
+lower_case_method('OPTIONS') -> options;
+lower_case_method(Method) when is_atom(Method) ->
+    lower_case_method(atom_to_list(Method));
+lower_case_method(Method) when is_list(Method) ->
+    list_to_atom(string:to_lower(Method)).
 
 %% @doc Get an ISO 8601 formatted timestamp representing
 %% current time.
