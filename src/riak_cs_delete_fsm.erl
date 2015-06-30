@@ -133,6 +133,7 @@ terminate(Reason, _StateName,
                  key=Key,
                  uuid=UUID,
                  riak_client=RcPid,
+                 finished_callback=FinishedCallback,
                  cleanup_manifests=CleanupManifests} = State) ->
     if CleanupManifests ->
             manifest_cleanup(ManifestState, Bucket, Key, UUID, RcPid);
@@ -140,7 +141,7 @@ terminate(Reason, _StateName,
             noop
     end,
     _ = [riak_cs_block_server:stop(P) || P <- AllDeleteWorkers],
-    notify_requester(Reason, State),
+    FinishedCallback(notification_msg(Reason, State)),
     ok.
 
 code_change(_OldVsn, StateName, State, _Extra) ->
@@ -250,10 +251,6 @@ maybe_delete_blocks(State=#state{bucket=Bucket,
     maybe_delete_blocks(State#state{unacked_deletes=NewUnackedDeletes,
                                     free_deleters=NewFreeDeleters,
                                     delete_blocks_remaining=NewDeleteBlocksRemaining}).
-
--spec notify_requester(term(), state()) -> term().
-notify_requester(Reason, State = #state{finished_callback=FinishedCallback}) ->
-    FinishedCallback(notification_msg(Reason, State)).
 
 -spec notification_msg(term(), state()) -> {pid(),
                                             {ok, {non_neg_integer(), non_neg_integer()}} |

@@ -1,6 +1,6 @@
 %% ---------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2015 Basho Technologies, Inc.  All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -408,8 +408,8 @@ maybe_delete_small_objects(Manifests, RcPid, Threshold) ->
                             _ = lager:warning("Active deletion of ~p failed. Reason: ~p",
                                               [UUID, E]),
                             {[{UUID, Manifest}|Survivors], UUIDsToDelete};
-                        {maybe_delete_small_objects, Other} ->
-                            %% Handling unknown error
+                        Other ->
+                            %% Handling unknown error, or died unexpectedly
                             erlang:demonitor(Ref),
                             _ = lager:error("Active deletion failed. Reason: ~p", [Other]),
                             {[{UUID, Manifest}|Survivors], UUIDsToDelete}
