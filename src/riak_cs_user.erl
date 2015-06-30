@@ -34,7 +34,8 @@
          save_user/3,
          update_key_secret/1,
          update_user/3,
-         key_id/1
+         key_id/1,
+         fetch_user_list/1
         ]).
 
 -include("riak_cs.hrl").
@@ -235,6 +236,14 @@ update_key_secret(User=?RCS_USER{email=Email,
 display_name(Email) ->
     Index = string:chr(Email, $@),
     string:sub_string(Email, 1, Index-1).
+
+%% @doc Grab the whole list of Riak CS users.
+-spec fetch_user_list(riak_client()) -> {ok, [binary()]} | {error, term()}.
+fetch_user_list(RcPid) ->
+    {ok, MasterPbc} = riak_cs_riak_client:master_pbc(RcPid),
+    Timeout = riak_cs_config:list_keys_list_users_timeout(),
+    riak_cs_pbc:list_keys(MasterPbc, ?USER_BUCKET, Timeout,
+                          [riakc, list_all_user_keys]).
 
 %% ===================================================================
 %% Internal functions
