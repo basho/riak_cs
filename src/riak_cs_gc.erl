@@ -182,7 +182,7 @@ gc_specific_manifests(UUIDsToMark, RiakObject, Bucket, Key, RcPid) ->
 handle_mark_as_pending_delete({ok, RiakObject}, Bucket, Key, UUIDsToMark, RcPid) ->
     Manifests = riak_cs_manifest:manifests_from_riak_object(RiakObject),
     PDManifests0 = riak_cs_manifest_utils:manifests_to_gc(UUIDsToMark, Manifests),
-    {PDManifests, UUIDsToDelete} =
+    {ToGC, DeletedUUIDs} =
         case riak_cs_config:active_delete_threshold() of
             Threshold when is_integer(Threshold) andalso Threshold > 0 ->
                 %% hereby delete PDUUIDs smaller than threshold
@@ -204,10 +204,10 @@ handle_mark_as_pending_delete({ok, RiakObject}, Bucket, Key, UUIDsToMark, RcPid)
                 {PDManifests0, []}
         end,
 
-    PDUUIDs = [UUID || {UUID, _} <- PDManifests],
-    case move_manifests_to_gc_bucket(PDManifests, RcPid) of
+    PDUUIDs = [UUID || {UUID, _} <- ToGC],
+    case move_manifests_to_gc_bucket(ToGC, RcPid) of
         ok ->
-            mark_as_scheduled_delete(PDUUIDs, UUIDsToDelete, RiakObject, Bucket, Key, RcPid);
+            mark_as_scheduled_delete(PDUUIDs ++ DeletedUUIDs, RiakObject, Bucket, Key, RcPid);
         {error, _} = Error ->
             Error
     end;
@@ -349,13 +349,11 @@ mark_as_pending_delete(UUIDsToMark, RiakObject, Bucket, Key, RcPid) ->
 
 %% @doc Mark a list of manifests as `scheduled_delete' based upon the
 %% UUIDs specified.
--spec mark_as_scheduled_delete([cs_uuid()], [cs_uuid()], riakc_obj:riakc_obj(), binary(), binary(), riak_client()) ->
+-spec mark_as_scheduled_delete([cs_uuid()], riakc_obj:riakc_obj(), binary(), binary(), riak_client()) ->
     {ok, riakc_obj:riakc_obj()} | {error, term()}.
-mark_as_scheduled_delete(UUIDsToMark, UUIDsToDelete, RiakObject, Bucket, Key, RcPid) ->
+mark_as_scheduled_delete(UUIDsToMark, RiakObject, Bucket, Key, RcPid) ->
     mark_manifests(RiakObject, Bucket, Key, UUIDsToMark,
-                   fun(Dict, UTM) ->
-                           riak_cs_manifest_utils:delete_or_mark_scheduled_delete(Dict, UTM, UUIDsToDelete)
-                   end,
+                   fun riak_cs_manifest_utils:mark_scheduled_delete/2,
                    RcPid).
 
 

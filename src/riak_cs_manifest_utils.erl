@@ -37,7 +37,7 @@
          deleted_while_writing/1,
          mark_pending_delete/2,
          mark_deleted/2,
-         delete_or_mark_scheduled_delete/3,
+         mark_scheduled_delete/2,
          manifests_to_gc/2,
          prune/1,
          prune/3,
@@ -180,9 +180,9 @@ mark_pending_delete(Dict, UUIDsToMark) ->
 %% @doc Return `Dict' with the manifests in
 %% `UUIDsToMark' with their state changed to
 %% `scheduled_delete'
--spec delete_or_mark_scheduled_delete(orddict:orddict(), list(cs_uuid()), list(cs_uuid())) ->
-    orddict:orddict().
-delete_or_mark_scheduled_delete(Dict, UUIDsToMark, UUIDsToDelete) ->
+-spec mark_scheduled_delete(orddict:orddict(), list(cs_uuid())) ->
+                                   orddict:orddict().
+mark_scheduled_delete(Dict, UUIDsToMark) ->
     MapFun = fun(K, V) ->
             case lists:member(K, UUIDsToMark) of
                 true ->
@@ -192,10 +192,7 @@ delete_or_mark_scheduled_delete(Dict, UUIDsToMark, UUIDsToDelete) ->
                     V
             end
     end,
-    FilterFun = fun(K, _) ->
-                        not lists:member(K, UUIDsToDelete)
-                end,
-    orddict:map(MapFun, orddict:filter(FilterFun, Dict)).
+    orddict:map(MapFun, Dict).
 
 %% @doc Return a list of manifests that are either
 %% in `PendingDeleteUUIDs' or are in the `pending_delete'
