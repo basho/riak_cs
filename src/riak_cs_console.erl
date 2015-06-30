@@ -23,6 +23,7 @@
 -export([
          status/1,
          cluster_info/1,
+         check_user_buckets/1,
          cleanup_orphan_multipart/0,
          cleanup_orphan_multipart/1
         ]).
@@ -60,6 +61,40 @@ cluster_info([OutFile]) ->
                 [Exception, Reason]),
             io:format("Cluster_info failed, see log for details~n"),
             error
+    end.
+
+check_user_buckets(_Argv) ->
+    {ok, RcPid} = riak_cs_riak_client:start_link([]),
+    {ok, Users} = riak_cs_user:fetch_user_list(RcPid),
+    [ begin
+          UserStr = binary_to_list(User),
+          io:format("Checking user ~s ..~n", [UserStr]),
+          {ok, {RCSUser, _Obj}} = riak_cs_user:get_user(UserStr, RcPid),
+          ?RCS_USER{buckets=Buckets} = RCSUser,
+          [verify_bucket(RcPid, RCSUser, Bucket)
+           || Bucket <- Buckets]
+      end
+      || User <- Users ].
+
+verify_bucket(RcPid,
+              ?RCS_USER{key_id=_KeyId} = _RCSUser,
+              ?RCS_BUCKET{last_action=LastAction, name=BucketName} = _Bucket) ->
+    case riak_cs_bucket:fetch_bucket_object(BucketName, RcPid) of
+        {ok, Obj} ->
+            case riakc_obj:value_count(Obj) of
+                1 ->
+                    %% Run check logic here
+                    ok;
+                N when N > 0 ->
+                    %% warning, continue with first value
+                    warning
+            end;
+        {error, notfound} when LastAction =:= deleted ->
+            ok; %% maybe inconsistent ... shouldbe, but okay
+        {error, notfound} when LastAction =:= created ->
+            bad;
+        {error, _} = E ->
+            E %% somethings is wrong; should stop the system now
     end.
 
 %% @doc This function is for operation, esp cleaning up multipart
