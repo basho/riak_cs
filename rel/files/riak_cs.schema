@@ -200,6 +200,16 @@
   hidden
 ]}.
 
+%% @doc Small objects to be synchronously deleted including blocks on
+%% the fly. If this is used in combination with replication, cluster
+%% configuration must be carefully designed. Please consult our
+%% documentation for further information. To turn of synchronous
+%% deletion, set this as 0.
+{mapping, "active_delete_threshold", "riak_cs.active_delete_threshold", [
+  {default, "0"},
+  {datatype, bytesize}
+]}.
+
 %% == Access statistics ==
 
 %% @doc How often to flush the access stats; integer factor of
