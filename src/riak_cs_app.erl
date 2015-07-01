@@ -114,6 +114,7 @@ promote_errors({ok, true}, Acc) ->
 check_bucket_props(Bucket, MasterPbc) ->
     case catch riakc_pb_socket:get_bucket(MasterPbc, Bucket) of
         {ok, Props} ->
+            maybe_warn_dvv_enabled(lists:keyfind(dvv_enabled, 1, Props)),
             case lists:keyfind(allow_mult, 1, Props) of
                 {allow_mult, true} ->
                     _ = lager:debug("~s bucket was"
@@ -130,6 +131,11 @@ check_bucket_props(Bucket, MasterPbc) ->
                   [Bucket, Reason]),
             E
     end.
+
+maybe_warn_dvv_enabled({dvv_enabled, false}) ->
+    _ = lager:warning("DVV is disabled. Please check configuration");
+maybe_warn_dvv_enabled(_) ->
+    ok.
 
 riak_connection() ->
     {Host, Port} = riak_cs_config:riak_host_port(),
