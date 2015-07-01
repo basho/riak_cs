@@ -58,6 +58,16 @@ main(Args) ->
                               orddict:orddict(non_neg_integer(), reference()).
 open_all_bitcask(BitcaskDir) ->
     {ok, List} = file:list_dir(BitcaskDir),
+    FilterFun = fun(X) ->
+                        case re:run(X, "^[0-9]+$") of
+                            {match, _} ->
+                                true;
+                            _ ->
+                                io:format("skipping ~p in the bitcask dir.", [X]),
+                                false
+                        end
+                end,
+    DataDirs = lists:filter(FilterFun, List),
     Result = lists:map(fun(File) ->
                                Filename = filename:join(BitcaskDir, File),
                                case bitcask:open(Filename, [read_write]) of
@@ -66,7 +76,7 @@ open_all_bitcask(BitcaskDir) ->
                                    Other ->
                                        error({File, Other})
                                end
-                       end, List),
+                       end, DataDirs),
     orddict:from_list(Result).
 
 -spec close_all_bitcask(orddict:orddict(non_neg_integer(), reference())) -> ok.
