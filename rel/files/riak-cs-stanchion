@@ -1,3 +1,10 @@
 #!/bin/sh
 
+cat<<EOS
+### WARNING ################################################################
+# This command has been deprecated and will be removed in a future release.
+# Use "riak-cs-admin stanchion <command>" instead of this.
+############################################################################
+EOS
+
 {{runner_script_dir}}/riak-cs-admin stanchion "$@"
