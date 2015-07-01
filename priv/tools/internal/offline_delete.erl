@@ -42,6 +42,15 @@ options() ->
      {yes, undefined, "yes", {boolean, false}, "Automatic yes to prompt"}].
 
 main(Args) ->
+    case code:ensure_loaded(bitcask) of
+        {module, bitcask} ->
+            ok;
+        {error, _} ->
+            io:format(standard_error,
+                      "\033[31m\033[1m[Error] Riak modules are not loaded. Make sure the script run with 'riak escript', not 'riak-cs escript'.\033[0m~n",
+                      []),
+            halt(1)
+    end,
     case getopt:parse(options(), Args) of
         {ok, {Options, [BitcaskDir, BlocksListFile]}} ->
             offline_delete(BitcaskDir, BlocksListFile, Options);
