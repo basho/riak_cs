@@ -185,8 +185,6 @@ handle_mark_as_pending_delete({ok, RiakObject}, Bucket, Key, UUIDsToMark, RcPid)
     {ToGC, DeletedUUIDs} =
         case riak_cs_config:active_delete_threshold() of
             Threshold when is_integer(Threshold) andalso Threshold > 0 ->
-                %% hereby delete PDUUIDs smaller than threshold
-                
                 %% We do synchronous delete after it is marked
                 %% pending_delete, to reduce the possibility where
                 %% concurrent requests find active manifest (UUID) and
@@ -199,14 +197,21 @@ handle_mark_as_pending_delete({ok, RiakObject}, Bucket, Key, UUIDsToMark, RcPid)
                 %% 2. Request B deletes an object marking active UUID x as pending_delete
                 %% 3. Request B deletes blocks of UUID x according to this synchronous delete -> ok
                 %% 4. Request A refers to blocks pointed by UUID x -> notfound
+                %%
+                %% Manifests with blocks deleted here, have
+                %% `scheduled_delete' state here. They won't be
+                %% collected by garbage collector, as they are not
+                %% stored in GC bucket. Instead they will be collected
+                %% in `riak_cs_manifest_utils:prune/1' invoked via GET
+                %% object, after leeway period has passed.
                 maybe_delete_small_objects(PDManifests0, RcPid, Threshold);
             _ ->
                 {PDManifests0, []}
         end,
 
-    PDUUIDs = [UUID || {UUID, _} <- ToGC],
     case move_manifests_to_gc_bucket(ToGC, RcPid) of
         ok ->
+            PDUUIDs = [UUID || {UUID, _} <- ToGC],
             mark_as_scheduled_delete(PDUUIDs ++ DeletedUUIDs, RiakObject, Bucket, Key, RcPid);
         {error, _} = Error ->
             Error
