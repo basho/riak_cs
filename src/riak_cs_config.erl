@@ -360,7 +360,7 @@ queue_if_disconnected() ->
 
 -spec is_multibag_enabled() -> boolean().
 is_multibag_enabled() ->
-    application:get_env(riak_cs_multibag, bags) =/= undefined.
+    false.
 
 -spec max_buckets_per_user() -> non_neg_integer() | unlimited.
 max_buckets_per_user() ->
