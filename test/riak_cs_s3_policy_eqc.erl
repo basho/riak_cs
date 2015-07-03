@@ -33,25 +33,30 @@
 -include_lib("webmachine/include/wm_reqdata.hrl").
 
 -define(TEST_ITERATIONS, 500).
--define(SET_MODULE, twop_set).
 -define(QC_OUT(P),
         eqc:on_output(fun(Str, Args) -> io:format(user, Str, Args) end, P)).
 
+-define(TIMEOUT, 60).
+
 eqc_test_()->
-    {spawn,
+    {inparallel,
      [
-      {timeout, 20, ?_assertEqual(true,
-                                  quickcheck(numtests(?TEST_ITERATIONS,
-                                                      ?QC_OUT(prop_ip_filter()))))},
-      {timeout, 20, ?_assertEqual(true,
-                                  quickcheck(numtests(?TEST_ITERATIONS,
-                                                      ?QC_OUT(prop_secure_transport()))))},
-      {timeout, 20, ?_assertEqual(true,
-                                  quickcheck(numtests(?TEST_ITERATIONS,
-                                                      ?QC_OUT(prop_eval()))))},
-      {timeout, 20, ?_assertEqual(true,
-                                  quickcheck(numtests(?TEST_ITERATIONS,
-                                                      ?QC_OUT(prop_policy_v1()))))}
+      {timeout, ?TIMEOUT,
+       ?_assertEqual(true,
+                     quickcheck(numtests(?TEST_ITERATIONS,
+                                         ?QC_OUT(prop_ip_filter()))))},
+      {timeout, ?TIMEOUT,
+       ?_assertEqual(true,
+                     quickcheck(numtests(?TEST_ITERATIONS,
+                                         ?QC_OUT(prop_secure_transport()))))},
+      {timeout, ?TIMEOUT,
+       ?_assertEqual(true,
+                     quickcheck(numtests(?TEST_ITERATIONS,
+                                         ?QC_OUT(prop_eval()))))},
+      {timeout, ?TIMEOUT,
+       ?_assertEqual(true,
+                     quickcheck(numtests(?TEST_ITERATIONS,
+                                         ?QC_OUT(prop_policy_v1()))))}
      ]}.
 
 %% accept case of ip filtering
@@ -182,10 +187,13 @@ condition_pair() ->
 %%           {date_condition(),    [{'aws:CurrentTime', binary_char_string()}]},
 %%           {numeric_condition(), [{'aws:EpochTime', nat()}]},
            {'Bool',              [{'aws:SecureTransport', bool()}]},
-           {ip_addr_condition(), [{'aws:SourceIp',  ip_with_mask()}]}
+           {ip_addr_condition(), [{'aws:SourceIp',  one_or_more_ip_with_mask()}]}
 %%           {string_condition(),  [{'aws:UserAgent', binary_char_string()}]},
 %%           {string_condition(),  [{'aws:Referer',   binary_char_string()}]}
           ]).
+
+one_or_more_ip_with_mask() ->
+    oneof([ip_with_mask(), non_empty(list(ip_with_mask()))]).
 
 %% TODO: FIXME: add a more various form of path
 path() ->
