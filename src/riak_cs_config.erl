@@ -277,16 +277,20 @@ set_md5_chunk_size(_) ->
 
 %% doc Check app.config to see if repl proxy_get is enabled
 %% Defaults to false.
+-spec proxy_get_active() -> boolean().
 proxy_get_active() ->
     case application:get_env(riak_cs, proxy_get) of
         {ok, enabled} ->
             true;
         {ok, disabled} ->
             false;
+        {ok, true} ->
+            true;
         {ok, _} ->
-            _ = lager:warning("proxy_get value in app.config is invalid"),
+            _ = lager:warning("proxy_get value in riak.conf (advanced.config) is invalid"),
             false;
-        undefined -> false
+        undefined ->
+            false
     end.
 
 -spec trust_x_forwarded_for() -> true | false.
