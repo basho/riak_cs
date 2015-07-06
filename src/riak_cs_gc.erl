@@ -403,17 +403,17 @@ maybe_delete_small_objects(Manifests, RcPid, Threshold) ->
                     receive
                         {maybe_delete_small_objects, {Pid, {ok, _}}} ->
                             %% successfully deleted
-                            erlang:demonitor(Ref),
+                            erlang:demonitor(Ref, [flush]),
                             _ = lager:debug("Active deletion of ~p succeeded", [UUID]),
                             {Survivors, [UUID|UUIDsToDelete]};
                         {maybe_delete_small_objects, {Pid, {error, _} = E}} ->
-                            erlang:demonitor(Ref),
+                            erlang:demonitor(Ref, [flush]),
                             _ = lager:warning("Active deletion of ~p failed. Reason: ~p",
                                               [UUID, E]),
                             {[{UUID, Manifest}|Survivors], UUIDsToDelete};
                         Other ->
                             %% Handling unknown error, or died unexpectedly
-                            erlang:demonitor(Ref),
+                            erlang:demonitor(Ref, [flush]),
                             _ = lager:error("Active deletion failed. Reason: ~p", [Other]),
                             {[{UUID, Manifest}|Survivors], UUIDsToDelete}
                     end;
