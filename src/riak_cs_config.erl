@@ -62,7 +62,8 @@
          stanchion/0,
          use_2i_for_storage_calc/0,
          detailed_storage_calc/0,
-         quota_modules/0
+         quota_modules/0,
+         active_delete_threshold/0
         ]).
 
 %% Timeouts hitting Riak
@@ -415,6 +416,12 @@ detailed_storage_calc() ->
 -spec quota_modules() -> [module()].
 quota_modules() ->
     get_env(riak_cs, quota_modules, []).
+
+%% @doc smaller than block size recommended, to avoid multiple DELETE
+%% calls to riak per single manifest deletion.
+-spec active_delete_threshold() -> non_neg_integer().
+active_delete_threshold() ->
+    get_env(riak_cs, active_delete_threshold, 0).
 
 %% ===================================================================
 %% ALL Timeouts hitting Riak

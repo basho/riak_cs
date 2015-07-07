@@ -33,6 +33,7 @@
          get_user/2,
          save_user/3,
          set_manifest_bag/2,
+         get_manifest_bag/1,
          set_manifest/2,
          master_pbc/1,
          manifest_pbc/1,
@@ -144,6 +145,10 @@ set_manifest(RcPid, Manifest) ->
 set_manifest_bag(RcPid, ManifestBagId) ->
     gen_server:call(RcPid, {set_manifest_bag, ManifestBagId}).
 
+-spec get_manifest_bag(riak_client()) -> {ok, binary()} | {error, term()}.
+get_manifest_bag(RcPid) ->
+    gen_server:call(RcPid, get_manifest_bag).
+
 %% TODO: Using this function is more or less a cheat.
 %% It's better to export new  function to manipulate manifests
 %% from this module.
@@ -214,6 +219,8 @@ handle_call({set_manifest, {_UUID, _Manifest}}, _From, State) ->
     {reply, ok, State};
 handle_call({set_manifest_bag, _ManifestBagId}, _From, State) ->
     {reply, ok, State};
+handle_call(get_manifest_bag, _From, State) ->
+    {reply, {ok, master}, State};
 handle_call(block_pbc, _From, State) ->
     case ensure_master_pbc(State) of
         {ok, #state{master_pbc=MasterPbc} = NewState} ->

@@ -180,8 +180,8 @@ mark_pending_delete(Dict, UUIDsToMark) ->
 %% @doc Return `Dict' with the manifests in
 %% `UUIDsToMark' with their state changed to
 %% `scheduled_delete'
--spec mark_scheduled_delete(orddict:orddict(), list(binary())) ->
-    orddict:orddict().
+-spec mark_scheduled_delete(orddict:orddict(), list(cs_uuid())) ->
+                                   orddict:orddict().
 mark_scheduled_delete(Dict, UUIDsToMark) ->
     MapFun = fun(K, V) ->
             case lists:member(K, UUIDsToMark) of

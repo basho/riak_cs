@@ -29,6 +29,7 @@ default_config_test() ->
     cuttlefish_unit:assert_config(Config, "riak_cs.gc_paginated_indexes", true),
     cuttlefish_unit:assert_config(Config, "riak_cs.gc_max_workers", 2),
     cuttlefish_unit:assert_config(Config, "riak_cs.gc_batch_size", 1000),
+    cuttlefish_unit:assert_config(Config, "riak_cs.active_delete_threshold", 0),
     cuttlefish_unit:assert_config(Config, "riak_cs.access_log_flush_factor", 1),
     cuttlefish_unit:assert_config(Config, "riak_cs.access_log_flush_size", 1000000),
     cuttlefish_unit:assert_config(Config, "riak_cs.access_archive_period", 3600),
@@ -95,6 +96,12 @@ gc_interval_infinity_test() ->
     Conf = [{["gc", "interval"], infinity}],
     Config = cuttlefish_unit:generate_templated_config(schema_files(), Conf, context()),
     cuttlefish_unit:assert_config(Config, "riak_cs.gc_interval", infinity),
+    ok.
+
+active_delete_threshold_test() ->
+    Conf = [{["active_delete_threshold"], "10mb"}],
+    Config = cuttlefish_unit:generate_templated_config(schema_files(), Conf, context()),
+    cuttlefish_unit:assert_config(Config, "riak_cs.active_delete_threshold", 10*1024*1024),
     ok.
 
 lager_syslog_test() ->
