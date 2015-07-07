@@ -387,7 +387,7 @@ mark_manifests(RiakObject, Bucket, Key, UUIDsToMark, ManiFunction, RcPid) ->
 maybe_delete_small_objects(Manifests, RcPid, Threshold) ->
     {ok, BagId} = riak_cs_riak_client:get_manifest_bag(RcPid),
     Self = self(),
-    FinishedFun = fun(Msg) -> Self ! {maybe_delete_small_objects, Msg} end,
+    FinishedFun = fun(Msg) -> Self ! Msg end,
     DelFun= fun({UUID, Manifest = ?MANIFEST{state=pending_delete,
                                             content_length=ContentLength}},
                 {Survivors, UUIDsToDelete})
@@ -401,15 +401,18 @@ maybe_delete_small_objects(Manifests, RcPid, Threshold) ->
                     {ok, Pid} = riak_cs_delete_fsm_sup:start_delete_fsm(node(), Args),
                     Ref = erlang:monitor(process, Pid),
                     receive
-                        {maybe_delete_small_objects, {Pid, {ok, _}}} ->
+                        {Pid, {ok, _}} ->
                             %% successfully deleted
                             erlang:demonitor(Ref, [flush]),
                             _ = lager:debug("Active deletion of ~p succeeded", [UUID]),
                             {Survivors, [UUID|UUIDsToDelete]};
-                        {maybe_delete_small_objects, {Pid, {error, _} = E}} ->
+                        {Pid, {error, _} = E} ->
                             erlang:demonitor(Ref, [flush]),
                             _ = lager:warning("Active deletion of ~p failed. Reason: ~p",
                                               [UUID, E]),
+                            {[{UUID, Manifest}|Survivors], UUIDsToDelete};
+                        {'DOWN', Ref, _Type, Pid, Reason} ->
+                            _ = lager:warning("Delete FSM for ~p crashed. Reason: ~p", [Reason]),
                             {[{UUID, Manifest}|Survivors], UUIDsToDelete};
                         Other ->
                             %% Handling unknown error, or died unexpectedly
