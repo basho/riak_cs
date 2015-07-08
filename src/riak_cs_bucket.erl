@@ -78,7 +78,7 @@ create_bucket(User, UserObj, Bucket, BagId, ACL, RcPid) ->
                                          User,
                                          UserObj,
                                          create,
-                                         [bucket, create],
+                                         [velvet, create_bucket],
                                          RcPid);
                 false ->
                     {error, invalid_bucket_name}
@@ -183,7 +183,7 @@ delete_bucket(User, UserObj, Bucket, RcPid) ->
                                  User,
                                  UserObj,
                                  delete,
-                                 [bucket, delete],
+                                 [velvet, delete_bucket],
                                  RcPid);
         false ->
             LocalError
@@ -294,7 +294,7 @@ set_bucket_acl(User, UserObj, Bucket, ACL, RcPid) ->
                          User,
                          UserObj,
                          update_acl,
-                         [bucket, put, acl],
+                         [velvet, set_bucket_acl],
                          RcPid).
 
 %% @doc Set the policy for a bucket. Existing policy is only overwritten.
@@ -306,7 +306,7 @@ set_bucket_policy(User, UserObj, Bucket, PolicyJson, RcPid) ->
                          User,
                          UserObj,
                          update_policy,
-                         [bucket, put, policy],
+                         [velvet, set_bucket_policy],
                          RcPid).
 
 %% @doc Set the policy for a bucket. Existing policy is only overwritten.
@@ -318,7 +318,7 @@ delete_bucket_policy(User, UserObj, Bucket, RcPid) ->
                          User,
                          UserObj,
                          delete_policy,
-                         [bucket, put, policy],
+                         [velvet, delete_bucket_policy],
                          RcPid).
 
 % @doc fetch moss.bucket and return acl and policy
@@ -555,13 +555,10 @@ bucket_json(Bucket, BagId, ACL, KeyId)  ->
 %% @doc Return a bucket record for the specified bucket name.
 -spec bucket_record(binary(), bucket_operation()) -> cs_bucket().
 bucket_record(Name, Operation) ->
-    case Operation of
-        create ->
-            Action = created;
-        delete ->
-            Action = deleted;
-        _ ->
-            Action = undefined
+    Action = case Operation of
+                 create -> created;
+                 delete -> deleted;
+                 _ -> undefined
     end,
     ?RCS_BUCKET{name=binary_to_list(Name),
                  last_action=Action,
@@ -680,8 +677,9 @@ serialized_bucket_op(Bucket, ACL, User, UserObj, BucketOp, StatKey, RcPid) ->
                            riak_client()) ->
                                   ok |
                                   {error, term()}.
-serialized_bucket_op(Bucket, BagId, ACL, User, UserObj, BucketOp, StatKey, RcPid) ->
+serialized_bucket_op(Bucket, BagId, ACL, User, UserObj, BucketOp, StatsKey, RcPid) ->
     StartTime = os:timestamp(),
+    _ = riak_cs_stats:inflow(StatsKey),
     case riak_cs_config:admin_creds() of
         {ok, AdminCreds} ->
             BucketFun = bucket_fun(BucketOp,
@@ -691,31 +689,22 @@ serialized_bucket_op(Bucket, BagId, ACL, User, UserObj, BucketOp, StatKey, RcPid
                                    User?RCS_USER.key_id,
                                    AdminCreds,
                                    riak_cs_utils:stanchion_data()),
-            %% Make a call to the bucket request
-            %% serialization service.
+            %% Make a call to the request serialization service.
             OpResult = BucketFun(),
+            _ = riak_cs_stats:update_with_start(StatsKey, StartTime, OpResult),
             case OpResult of
                 ok ->
                     BucketRecord = bucket_record(Bucket, BucketOp),
                     case update_user_buckets(User, BucketRecord) of
                         {ok, ignore} when BucketOp == update_acl ->
-                            %% TODO: FIX
-                            ok = riak_cs_stats:update_with_start(StatKey,
-                                                                 StartTime),
                             OpResult;
                         {ok, ignore} ->
                             OpResult;
                         {ok, UpdUser} ->
-                            X = riak_cs_user:save_user(UpdUser, UserObj, RcPid),
-                            %% TODO: FIX
-                            ok = riak_cs_stats:update_with_start(StatKey,
-                                                                 StartTime),
-                            X
+                            riak_cs_user:save_user(UpdUser, UserObj, RcPid)
                     end;
-
                 {error, {error_status, Status, _, ErrorDoc}} ->
                     handle_stanchion_response(Status, ErrorDoc, BucketOp, Bucket);
-
                 {error, _} ->
                     OpResult
             end;

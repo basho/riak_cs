@@ -22,6 +22,7 @@
 
 %% API
 -export([update/2,
+         update_with_start/3,
          update_with_start/2,
          update_error_with_start/2,
          inflow/1,
@@ -71,11 +72,13 @@ duration_metrics() ->
          [multipart_upload, delete], % Abort
          [multipart_upload, get],    % List Parts
 
-         %% TODO velvet operation stats also use bucket prefix, fix them
-         [bucket, create],
-         [bucket, delete],
-         [bucket, delete, policy],
-         [bucket, put, acl],
+         [velvet, create_user],
+         [velvet, update_user],
+         [velvet, create_bucket],
+         [velvet, delete_bucket],
+         [velvet, set_bucket_acl],
+         [velvet, set_bucket_policy],
+         [velvet, delete_bucket_policy],
 
          %% TODO: Remove backpresure sleep
          [manifest, siblings, bp, sleep],
@@ -94,6 +97,16 @@ duration_metrics() ->
 inflow(Key) ->
     lager:debug("~p:inflow Key: ~p", [?MODULE, Key]),
     ok = exometer:update([riak_cs, in | Key], 1).
+
+-type op_result() :: ok | {ok, _} | {error, _}.
+-spec update_with_start(metric_key(), erlang:timestamp(), op_result()) ->
+                               ok | {error, any()}.
+update_with_start(BaseId, StartTime, ok) ->
+    update_with_start(BaseId, StartTime);
+update_with_start(BaseId, StartTime, {ok, _}) ->
+    update_with_start(BaseId, StartTime);
+update_with_start(BaseId, StartTime, {error, _}) ->
+    update_error_with_start(BaseId, StartTime).
 
 -spec update_with_start(metric_key(), erlang:timestamp()) ->
                                ok | {error, any()}.
