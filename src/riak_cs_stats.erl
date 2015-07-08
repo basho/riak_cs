@@ -30,16 +30,18 @@
          report_pretty_json/0,
          get_stats/0]).
 
-%% For debugging or investigation from shell
--export([report_duration_item/3,
-         raw_report_pool/1]).
+%% Lower level API, mainly for debugging or investigation from shell
+-export([report_duration/3,
+         report_pool/1]).
 
 -export([init/0]).
 
--type metric_key() :: [atom()].
--export_type([metric_key/0]).
+-type key() :: [atom()].
+-export_type([key/0]).
 
--spec duration_metrics() -> [metric_key()].
+-type ok_error_res() :: ok | {ok, _} | {error, _}.
+
+-spec duration_metrics() -> [key()].
 duration_metrics() ->
         [
          [service, get],
@@ -89,34 +91,37 @@ duration_metrics() ->
          [block, delete]
         ].
 
+duration_subkeys() ->
+    [{[in], spiral},
+     {[out], spiral},
+     {[time], histogram},
+     {[out, error], spiral},
+     {[time, error], histogram}].
+
 %% ====================================================================
 %% API
 %% ====================================================================
 
--spec inflow(metric_key()) -> ok | {error, any()}.
+-spec inflow(key()) -> ok.
 inflow(Key) ->
     lager:debug("~p:inflow Key: ~p", [?MODULE, Key]),
     ok = exometer:update([riak_cs, in | Key], 1).
 
--type op_result() :: ok | {ok, _} | {error, _}.
--spec update_with_start(metric_key(), erlang:timestamp(), op_result()) ->
-                               ok | {error, any()}.
-update_with_start(BaseId, StartTime, ok) ->
-    update_with_start(BaseId, StartTime);
-update_with_start(BaseId, StartTime, {ok, _}) ->
-    update_with_start(BaseId, StartTime);
-update_with_start(BaseId, StartTime, {error, _}) ->
-    update_error_with_start(BaseId, StartTime).
+-spec update_with_start(key(), erlang:timestamp(), ok_error_res()) -> ok.
+update_with_start(Key, StartTime, ok) ->
+    update_with_start(Key, StartTime);
+update_with_start(Key, StartTime, {ok, _}) ->
+    update_with_start(Key, StartTime);
+update_with_start(Key, StartTime, {error, _}) ->
+    update_error_with_start(Key, StartTime).
 
--spec update_with_start(metric_key(), erlang:timestamp()) ->
-                               ok | {error, any()}.
-update_with_start(BaseId, StartTime) ->
-    update(BaseId, timer:now_diff(os:timestamp(), StartTime)).
+-spec update_with_start(key(), erlang:timestamp()) -> ok.
+update_with_start(Key, StartTime) ->
+    update(Key, timer:now_diff(os:timestamp(), StartTime)).
 
--spec update_error_with_start(metric_key(), erlang:timestamp()) ->
-                                     ok | {error, any()}.
-update_error_with_start(BaseId, StartTime) ->
-    update([error | BaseId], timer:now_diff(os:timestamp(), StartTime)).
+-spec update_error_with_start(key(), erlang:timestamp()) -> ok.
+update_error_with_start(Key, StartTime) ->
+    update([error | Key], timer:now_diff(os:timestamp(), StartTime)).
 
 -spec report_json() -> string().
 report_json() ->
@@ -128,13 +133,12 @@ report_pretty_json() ->
 
 -spec get_stats() -> proplists:proplist().
 get_stats() ->
-    Stats = [report_duration_item(K, Kind, ExometerType) ||
-                K <- duration_metrics(),
-                {Kind, ExometerType} <- [{[in], spiral},
-                                         {[out], spiral}, {[time], histogram},
-                                         {[out, error], spiral}, {[time, error], histogram}]]
-        ++ [raw_report_pool(P) || P <- [request_pool, bucket_list_pool]],
-    lists:flatten(Stats).
+    DurationStats =
+        [report_duration(Key, SubKey, ExometerType) ||
+            Key <- duration_metrics(),
+            {SubKey, ExometerType} <- duration_subkeys()],
+    PoolStats = [report_pool(P) || P <- [request_pool, bucket_list_pool]],
+    lists:flatten([DurationStats, PoolStats]).
 
 %% ====================================================================
 %% Internal
@@ -145,21 +149,21 @@ init() ->
     ok.
 
 init_duration_item(Key) ->
-    ok = exometer:re_register([riak_cs, in   | Key], spiral, []),
-    ok = exometer:re_register([riak_cs, out  | Key], spiral, []),
-    ok = exometer:re_register([riak_cs, time | Key], histogram, []),
-    ok = exometer:re_register([riak_cs, out,  error | Key], spiral, []),
-    ok = exometer:re_register([riak_cs, time, error | Key], histogram, []).
+    [ok = exometer:re_register([riak_cs | SubKey ++ Key], ExometerType, []) ||
+        {SubKey, ExometerType} <- duration_subkeys()].
 
--spec update(metric_key(), integer()) -> ok | {error, any()}.
+-spec update(key(), integer()) -> ok.
 update(Key, ElapsedUs) ->
     lager:debug("~p:update Key: ~p", [?MODULE, Key]),
     ok = exometer:update([riak_cs, out | Key], 1),
     ok = exometer:update([riak_cs, time | Key], ElapsedUs).
 
-report_duration_item(Key, Kind, ExometerType) ->
-    AtomKeys = [metric_to_atom(Key ++ Kind, Suffix) || Suffix <- suffixes(ExometerType)],
-    {ok, Values} = exometer:get_value([riak_cs | Kind ++ Key], datapoints(ExometerType)),
+-spec report_duration(key(), [atom()], exometer:type()) -> [{atom(), integer()}].
+report_duration(Key, SubKey, ExometerType) ->
+    AtomKeys = [metric_to_atom(Key ++ SubKey, Suffix) ||
+                   Suffix <- suffixes(ExometerType)],
+    {ok, Values} = exometer:get_value([riak_cs | SubKey ++ Key],
+                                      datapoints(ExometerType)),
     [{AtomKey, Value} ||
         {AtomKey, {_DP, Value}} <- lists:zip(AtomKeys, Values)].
 
@@ -173,7 +177,8 @@ suffixes(histogram) ->
 suffixes(spiral) ->
     ["_one", "_count"].
 
-raw_report_pool(Pool) ->
+-spec report_pool(atom()) -> [{atom(), integer()}].
+report_pool(Pool) ->
     {_PoolState, PoolWorkers, PoolOverflow, PoolSize} = poolboy:status(Pool),
     Name = binary_to_list(atom_to_binary(Pool, latin1)),
     [{list_to_atom(lists:flatten([Name, $_, "workers"])), PoolWorkers},
@@ -193,21 +198,29 @@ stats_test_() ->
     {setup,
      fun() ->
              [ok = application:start(App) || App <- Apps],
-             ok = riak_cs_stats:init()
+             ok = init()
      end,
      fun(_) ->
              [ok = application:stop(App) || App <- Apps]
      end,
      [{inparallel, [fun() ->
-                            riak_cs_stats:update(Key, 16#deadbeef)
+                            inflow(Key),
+                            update(Key, 16#deadbeef),
+                            update([error | Key], 16#deadbeef)
                     end || Key <- duration_metrics()]},
       fun() ->
               [begin
-                   ?assertEqual([1, 1],
-                                [N || {_, N} <- report_duration_item(I, spiral)]),
-                   ?assertEqual([16#deadbeef, 16#deadbeef, 16#deadbeef, 16#deadbeef, 0],
-                                [N || {_, N} <- report_duration_item(I, histogram)])
-               end || I <- duration_metrics()]
+                   Report = [N || {_, N} <- report_duration(Key, SubKey, ExometerType)],
+                   case ExometerType of
+                       spiral ->
+                           ?assertEqual([1, 1], Report);
+                       histogram ->
+                           ?assertEqual(
+                              [16#deadbeef, 16#deadbeef, 16#deadbeef, 16#deadbeef, 0],
+                              Report)
+                   end
+               end || Key <- duration_metrics(),
+                      {SubKey, ExometerType} <- duration_subkeys()]
       end]}.
 
 -endif.

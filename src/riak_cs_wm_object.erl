@@ -197,6 +197,9 @@ produce_body(RD, Ctx=#context{rc_pool=RcPool,
                 {Ctx, fun() -> {<<>>, done} end};
             false ->
                 riak_cs_get_fsm:continue(GetFsmPid, {Start, End}),
+                %% Streaming by `known_length_stream' and `StreamBody' function
+                %% will be handled *after* WM's `finish_request' callback complets.
+                %% Use `no_stats` to avoid auto stats update by `riak_cs_wm_common'.
                 {Ctx#context{auto_rc_close=false, stats_key=no_stats},
                  {<<>>, fun() ->
                                 riak_cs_wm_utils:streaming_get(

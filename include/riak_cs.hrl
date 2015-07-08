@@ -91,8 +91,16 @@
                   auth_module :: atom(),
                   response_module :: atom(),
                   policy_module :: atom(),
-                  stats_prefix :: atom(),
-                  stats_key :: [atom()],
+                  %% Key for API rate and latency stats.
+                  %% If `stats_prefix' or `stats_key' is `no_stats', no stats
+                  %% will be gathered by riak_cs_wm_common.
+                  %% The prefix is defined by `stats_prefix()' callback of sub-module.
+                  %% If sub-module provides only `stats_prefix' (almost the case),
+                  %% stats key is [Prefix, HttpMethod]. Otherwise, sum-module
+                  %% can set `stats_key' by any callback that returns this context
+                  %% to specific key.
+                  stats_prefix = no_stats :: atom(),
+                  stats_key :: undefined | riak_cs_stats:key(),
                   local_context :: term(),
                   api :: atom()
                  }).
