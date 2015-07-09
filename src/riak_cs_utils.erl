@@ -463,11 +463,13 @@ riak_connection(Pool) ->
                             ok | {error, term()}.
 set_object_acl(Bucket, Key, Manifest, Acl, RcPid) ->
     {ok, ManiPid} = riak_cs_manifest_fsm:start_link(Bucket, Key, RcPid),
-    _ActiveMfst = riak_cs_manifest_fsm:get_active_manifest(ManiPid),
-    UpdManifest = Manifest?MANIFEST{acl=Acl},
-    Res = riak_cs_manifest_fsm:update_manifest_with_confirmation(ManiPid, UpdManifest),
-    riak_cs_manifest_fsm:stop(ManiPid),
-    Res.
+    try
+        _ActiveMfst = riak_cs_manifest_fsm:get_active_manifest(ManiPid),
+        UpdManifest = Manifest?MANIFEST{acl=Acl},
+        riak_cs_manifest_fsm:update_manifest_with_confirmation(ManiPid, UpdManifest)
+    after
+        riak_cs_manifest_fsm:stop(ManiPid)
+    end.
 
 -spec second_resolution_timestamp(erlang:timestamp()) -> non_neg_integer().
 %% @doc Return the number of seconds this timestamp represents. Truncated to
