@@ -321,7 +321,7 @@ delete_bucket_policy(User, UserObj, Bucket, RcPid) ->
                          [velvet, delete_bucket_policy],
                          RcPid).
 
-% @doc fetch moss.bucket and return acl and policy
+%% @doc fetch moss.bucket and return acl and policy
 -spec get_bucket_acl_policy(binary(), atom(), riak_client()) ->
                                    {acl(), policy()} | {error, term()}.
 get_bucket_acl_policy(Bucket, PolicyMod, RcPid) ->
@@ -389,7 +389,7 @@ bucket_empty(Bucket, RcPid) ->
 -spec bucket_empty_handle_list_keys(riak_client(), binary(),
                                     {ok, list()} |
                                     {error, term()}) ->
-    boolean().
+                                           boolean().
 bucket_empty_handle_list_keys(RcPid, Bucket, {ok, Keys}) ->
     AnyPred = bucket_empty_any_pred(RcPid, Bucket),
     %% `lists:any/2' will break out early as soon
@@ -399,7 +399,7 @@ bucket_empty_handle_list_keys(_RcPid, _Bucket, _Error) ->
     false.
 
 -spec bucket_empty_any_pred(riak_client(), Bucket :: binary()) ->
-    fun((Key :: binary()) -> boolean()).
+                                   fun((Key :: binary()) -> boolean()).
 bucket_empty_any_pred(RcPid, Bucket) ->
     fun (Key) ->
             riak_cs_utils:key_exists(RcPid, Bucket, Key)
@@ -424,7 +424,7 @@ fetch_bucket_object(BucketName, RcPid) ->
 
 %% @doc Fetches the bucket object, even it is marked as free
 -spec fetch_bucket_object_raw(binary(), riak_client()) ->
-                                 {ok, riakc_obj:riakc_obj()} | {error, term()}.
+                                     {ok, riakc_obj:riakc_obj()} | {error, term()}.
 fetch_bucket_object_raw(BucketName, RcPid) ->
     case riak_cs_riak_client:get_bucket(RcPid, BucketName) of
         {ok, Obj} ->
@@ -438,7 +438,7 @@ fetch_bucket_object_raw(BucketName, RcPid) ->
 -spec maybe_log_sibling_warning(binary(), list(riakc_obj:value())) -> ok.
 maybe_log_sibling_warning(Bucket, Values) when length(Values) > 1 ->
     _ = lager:warning("The bucket ~s has ~b siblings that may need resolution.",
-                  [binary_to_list(Bucket), length(Values)]),
+                      [binary_to_list(Bucket), length(Values)]),
     ok;
 maybe_log_sibling_warning(_, _) ->
     ok.
@@ -446,8 +446,8 @@ maybe_log_sibling_warning(_, _) ->
 -spec maybe_log_bucket_owner_error(binary(), list(riakc_obj:value())) -> ok.
 maybe_log_bucket_owner_error(Bucket, Values) when length(Values) > 1 ->
     _ = lager:error("The bucket ~s has ~b owners."
-                      " This situation requires administrator intervention.",
-                      [binary_to_list(Bucket), length(Values)]),
+                    " This situation requires administrator intervention.",
+                    [binary_to_list(Bucket), length(Values)]),
     ok;
 maybe_log_bucket_owner_error(_, _) ->
     ok.
@@ -550,7 +550,7 @@ bucket_json(Bucket, BagId, ACL, KeyId)  ->
         mochijson2:encode({struct, [{<<"bucket">>, Bucket},
                                     {<<"requester">>, list_to_binary(KeyId)},
                                     stanchion_acl_utils:acl_to_json_term(ACL)] ++
-                          BagElement}))).
+                               BagElement}))).
 
 %% @doc Return a bucket record for the specified bucket name.
 -spec bucket_record(binary(), bucket_operation()) -> cs_bucket().
@@ -559,11 +559,11 @@ bucket_record(Name, Operation) ->
                  create -> created;
                  delete -> deleted;
                  _ -> undefined
-    end,
+             end,
     ?RCS_BUCKET{name=binary_to_list(Name),
-                 last_action=Action,
-                 creation_date=riak_cs_wm_utils:iso_8601_datetime(),
-                 modification_time=os:timestamp()}.
+                last_action=Action,
+                creation_date=riak_cs_wm_utils:iso_8601_datetime(),
+                modification_time=os:timestamp()}.
 
 %% @doc Check for and resolve any conflict between
 %% a bucket record from a user record sibling and
@@ -605,21 +605,21 @@ bucket_sorter(?RCS_BUCKET{name=Bucket1},
 cleanup_bucket(?RCS_BUCKET{last_action=created}) ->
     false;
 cleanup_bucket(?RCS_BUCKET{last_action=deleted,
-                            modification_time=ModTime}) ->
+                           modification_time=ModTime}) ->
     %% the prune-time is specified in seconds, so we must
     %% convert Erlang timestamps to seconds first
     NowSeconds = riak_cs_utils:second_resolution_timestamp(os:timestamp()),
     ModTimeSeconds = riak_cs_utils:second_resolution_timestamp(ModTime),
     (NowSeconds - ModTimeSeconds) >
-    riak_cs_config:user_buckets_prune_time().
+        riak_cs_config:user_buckets_prune_time().
 
 %% @doc Determine if an existing bucket from the resolution list
 %% should be kept or replaced when a conflict occurs.
 -spec keep_existing_bucket(cs_bucket(), cs_bucket()) -> boolean().
 keep_existing_bucket(?RCS_BUCKET{last_action=LastAction1,
-                                  modification_time=ModTime1},
+                                 modification_time=ModTime1},
                      ?RCS_BUCKET{last_action=LastAction2,
-                                  modification_time=ModTime2}) ->
+                                 modification_time=ModTime2}) ->
     if
         LastAction1 == LastAction2
         andalso
@@ -717,8 +717,8 @@ serialized_bucket_op(Bucket, BagId, ACL, User, UserObj, BucketOp, StatsKey, RcPi
 %% could come up, add branch here. See tests in
 %% tests/riak_cs_bucket_test.erl
 -spec handle_stanchion_response(200..503, string(), delete|create, binary()) ->
-                                    {error, remaining_multipart_upload} |
-                                    {error, atom()}.
+                                       {error, remaining_multipart_upload} |
+                                       {error, atom()}.
 handle_stanchion_response(409, ErrorDoc, Op, Bucket)
   when Op =:= delete orelse Op =:= create ->
 
