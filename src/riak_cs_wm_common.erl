@@ -57,7 +57,8 @@
          default_validate_content_checksum/2,
          default_delete_resource/2,
          default_anon_ok/0,
-         default_produce_body/2]).
+         default_produce_body/2,
+         default_multiple_choices/2]).
 
 -include("riak_cs.hrl").
 -include("oos_api.hrl").
@@ -527,6 +528,8 @@ default(anon_ok) ->
     default_anon_ok;
 default(produce_body) ->
     default_produce_body;
+default(multiple_choices) ->
+    default_multiple_choices;
 default(_) ->
     undefined.
 
@@ -590,4 +593,7 @@ default_produce_body(RD, Ctx=#context{submodule=Mod,
 %% and simply returns false to signify the request is not fobidden
 -spec default_authorize(term(), term()) -> {false, term(), term()}.
 default_authorize(RD, Ctx) ->
+    {false, RD, Ctx}.
+
+default_multiple_choices(RD, Ctx) ->
     {false, RD, Ctx}.
