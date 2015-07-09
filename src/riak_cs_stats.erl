@@ -83,7 +83,7 @@ duration_metrics() ->
          [velvet, delete_bucket_policy],
 
          %% TODO: Remove backpresure sleep
-         [manifest, siblings, bp, sleep],
+         [manifest, siblings_bp_sleep],
 
          [block, get],
          [block, get, retry],
