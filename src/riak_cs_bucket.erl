@@ -658,7 +658,7 @@ resolve_buckets([HeadUserRec | RestUserRecs], Buckets, _KeepDeleted) ->
                            rcs_user(),
                            riakc_obj:riakc_obj(),
                            bucket_operation(),
-                           riak_cs_stats:metric_key(),
+                           riak_cs_stats:key(),
                            riak_client()) ->
                                   ok |
                                   {error, term()}.
@@ -673,7 +673,7 @@ serialized_bucket_op(Bucket, ACL, User, UserObj, BucketOp, StatKey, RcPid) ->
                            rcs_user(),
                            riakc_obj:riakc_obj(),
                            bucket_operation(),
-                           riak_cs_stats:metric_key(),
+                           riak_cs_stats:key(),
                            riak_client()) ->
                                   ok |
                                   {error, term()}.

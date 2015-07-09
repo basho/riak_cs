@@ -522,7 +522,7 @@ update_stats(RD, #context{start_time=StartTime,
 
 update_stats(StartTime, Code, StatsPrefix, Method, StatsKey0) ->
     StatsKey = case StatsKey0 of
-                   undefined -> [StatsPrefix, Method];
+                   prefix_and_method -> [StatsPrefix, Method];
                    _  -> StatsKey0
                end,
     case Code of
