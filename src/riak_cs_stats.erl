@@ -168,7 +168,7 @@ report_duration(Key, SubKey, ExometerType) ->
         {AtomKey, {_DP, Value}} <- lists:zip(AtomKeys, Values)].
 
 datapoints(histogram) ->
-    [mean, median, 95, 99, 100];
+    [mean, median, 95, 99, max];
 datapoints(spiral) ->
     [one, count].
 
@@ -216,7 +216,8 @@ stats_test_() ->
                            ?assertEqual([1, 1], Report);
                        histogram ->
                            ?assertEqual(
-                              [16#deadbeef, 16#deadbeef, 16#deadbeef, 16#deadbeef, 0],
+                              [16#deadbeef, 16#deadbeef, 16#deadbeef,
+                               16#deadbeef, 16#deadbeef],
                               Report)
                    end
                end || Key <- duration_metrics(),
