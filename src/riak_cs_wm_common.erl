@@ -45,6 +45,7 @@
          finish_request/2]).
 
 -export([default_allowed_methods/0,
+         default_stats_prefix/0,
          default_content_types_accepted/2,
          default_content_types_provided/2,
          default_generate_etag/2,
@@ -80,11 +81,13 @@ init(Config) ->
     PolicyModule = proplists:get_value(policy_module, Config),
     Exports = orddict:from_list(Mod:module_info(exports)),
     ExportsFun = exports_fun(Exports),
+    StatsPrefix = resource_call(Mod, stats_prefix, [], ExportsFun),
     Ctx = #context{auth_bypass=AuthBypass,
                    auth_module=AuthModule,
                    response_module=RespModule,
                    policy_module=PolicyModule,
                    exports_fun=ExportsFun,
+                   stats_prefix=StatsPrefix,
                    start_time=os:timestamp(),
                    submodule=Mod,
                    api=Api},
@@ -106,7 +109,11 @@ service_available(RD, Ctx=#context{submodule=Mod, rc_pool=Pool}) ->
 
 -spec malformed_request(#wm_reqdata{}, #context{}) -> {boolean(), #wm_reqdata{}, #context{}}.
 malformed_request(RD, Ctx=#context{submodule=Mod,
-                                   exports_fun=ExportsFun}) ->
+                                   exports_fun=ExportsFun,
+                                   stats_prefix=StatsPrefix}) ->
+    %% Methoid is used in stats keys, updating inflow should be *after*
+    %% allowed_methods assertion.
+    _ = update_stats_inflow(RD, StatsPrefix),
     riak_cs_dtrace:dt_wm_entry({?MODULE, Mod}, <<"malformed_request">>),
     {Malformed, _, _} = R = resource_call(Mod,
                                           malformed_request,
@@ -366,6 +373,7 @@ finish_request(RD, Ctx=#context{riak_client=RcPid,
                         [RD, Ctx],
                         ExportsFun),
     riak_cs_dtrace:dt_wm_return({?MODULE, Mod}, <<"finish_request">>, [0], []),
+    update_stats(RD, Ctx),
     Res;
 finish_request(RD, Ctx0=#context{riak_client=RcPid,
                                  rc_pool=Pool,
@@ -379,6 +387,7 @@ finish_request(RD, Ctx0=#context{riak_client=RcPid,
                         [RD, Ctx],
                         ExportsFun),
     riak_cs_dtrace:dt_wm_return({?MODULE, Mod}, <<"finish_request">>, [1], []),
+    update_stats(RD, Ctx),
     Res.
 
 %% ===================================================================
@@ -494,6 +503,34 @@ post_authentication({error, Reason}, RD, Ctx, _, _) ->
     _ = lager:debug("Authentication error: ~p", [Reason]),
     riak_cs_wm_utils:deny_invalid_key(RD, Ctx).
 
+update_stats_inflow(_RD, undefined = _StatsPrefix) ->
+    ok;
+update_stats_inflow(RD, StatsPrefix) ->
+    Method = riak_cs_wm_utils:lower_case_method(wrq:method(RD)),
+    Key = [StatsPrefix, Method],
+    riak_cs_stats:inflow(Key).
+
+update_stats(_RD, #context{stats_key=no_stats}) ->
+    ok;
+update_stats(_RD, #context{stats_prefix=no_stats}) ->
+    ok;
+update_stats(RD, #context{start_time=StartTime,
+                          stats_prefix=StatsPrefix, stats_key=StatsKey}) ->
+    update_stats(StartTime, wrq:response_code(RD),
+                 StatsPrefix, riak_cs_wm_utils:lower_case_method(wrq:method(RD)),
+                 StatsKey).
+
+update_stats(StartTime, Code, StatsPrefix, Method, StatsKey0) ->
+    StatsKey = case StatsKey0 of
+                   prefix_and_method -> [StatsPrefix, Method];
+                   _  -> StatsKey0
+               end,
+    case Code of
+        Success when is_integer(Success) andalso Success < 400 ->
+            riak_cs_stats:update_with_start(StatsKey, StartTime);
+        _Error ->
+            riak_cs_stats:update_error_with_start(StatsKey, StartTime)
+    end.
 
 %% ===================================================================
 %% Resource function defaults
@@ -501,6 +538,8 @@ post_authentication({error, Reason}, RD, Ctx, _, _) ->
 
 default(init) ->
     default_init;
+default(stats_prefix) ->
+    default_stats_prefix;
 default(allowed_methods) ->
     default_allowed_methods;
 default(content_types_accepted) ->
@@ -532,6 +571,9 @@ default(_) ->
 
 default_init(Ctx) ->
     {ok, Ctx}.
+
+default_stats_prefix() ->
+    no_stats.
 
 default_malformed_request(RD, Ctx) ->
     {false, RD, Ctx}.

@@ -20,7 +20,8 @@
 
 -module(riak_cs_wm_bucket_policy).
 
--export([content_types_provided/2,
+-export([stats_prefix/0,
+         content_types_provided/2,
          to_json/2,
          allowed_methods/0,
          content_types_accepted/2,
@@ -35,6 +36,9 @@
 -include_lib("webmachine/include/webmachine.hrl").
 -include_lib("riak_pb/include/riak_pb_kv_codec.hrl").
 
+
+-spec stats_prefix() -> bucket_policy.
+stats_prefix() -> bucket_policy.
 
 %% @doc Get the list of methods this resource supports.
 -spec allowed_methods() -> [atom()].

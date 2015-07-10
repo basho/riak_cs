@@ -20,7 +20,8 @@
 
 -module(riak_cs_wm_bucket_versioning).
 
--export([content_types_provided/2,
+-export([stats_prefix/0,
+         content_types_provided/2,
          to_xml/2,
          allowed_methods/0]).
 
@@ -28,6 +29,9 @@
 
 -include("riak_cs.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
+
+-spec stats_prefix() -> bucket_versioning.
+stats_prefix() -> bucket_versioning.
 
 %% @doc Get the list of methods this resource supports.
 -spec allowed_methods() -> [atom()].

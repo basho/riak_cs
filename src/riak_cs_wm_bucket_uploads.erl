@@ -28,6 +28,7 @@
 -module(riak_cs_wm_bucket_uploads).
 
 -export([init/1,
+         stats_prefix/0,
          authorize/2,
          content_types_provided/2,
          to_xml/2,
@@ -45,6 +46,9 @@
 -spec init(#context{}) -> {ok, #context{}}.
 init(Ctx) ->
     {ok, Ctx#context{local_context=#key_context{}}}.
+
+-spec stats_prefix() -> list_uploads.
+stats_prefix() -> list_uploads.
 
 -spec malformed_request(#wm_reqdata{}, #context{}) -> {false, #wm_reqdata{}, #context{}}.
 malformed_request(RD,Ctx=#context{local_context=LocalCtx0}) ->

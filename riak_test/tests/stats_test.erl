@@ -72,7 +72,7 @@ query_stats(UserConfig, Port) ->
 
 confirm_initial_stats(StatData) ->
     %% Check for values for all meters to be 0 when system is initially started
-    ?assertEqual(132, length(StatData)),
+    ?assertEqual(614, length(StatData)),
     [?assert(proplists:is_defined(StatType, StatData))
      || StatType <- [<<"block_gets">>,
                      <<"block_puts">>,
